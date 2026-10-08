@@ -144,11 +144,10 @@
   }
 
   // ── Built-in data import (first-party plugin replacing a built-in feature) ──
-  // "Smart Home", "Fahrzeuge" … (the dataset id when there is no text for it)
-  function datasetName(id) {
-    const key = 'plugins.legacy.dataset.' + id;
-    const s = t(key);
-    return s === key ? String(id) : s;
+  function datasetName(ds) {
+    const k = 'plugins.legacy.dataset.' + ds;
+    const s = t(k);
+    return s === k ? ds : s;
   }
   function legacySummary(counts) {
     return Object.keys(counts || {}).filter((k) => counts[k] > 0).map((k) => counts[k] + ' ' + t('plugins.legacy.count.' + k)).join(', ');

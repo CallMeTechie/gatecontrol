@@ -97,19 +97,17 @@ function portalEntries(userId) {
   const add = (sql, kind) => {
     try { for (const r of db.prepare(sql).all(userId)) out.push({ kind, id: r.id, name: r.name || '' }); } catch { /* integration table missing */ }
   };
-  add(`SELECT d.id, d.name FROM midea_device_owners o JOIN midea_devices d ON d.id = o.midea_device_id
-    WHERE o.user_id = ? ORDER BY d.name`, 'midea');
-  // the built-in Smart Home is off while the gatecontrol-smarthome plugin replaces it
-  let smarthomeReplaced = false;
-  try { smarthomeReplaced = require('./plugins/legacy').replaced('smarthome'); } catch { smarthomeReplaced = false; }
-  if (!smarthomeReplaced) {
+  // a built-in part is off while the first-party plugin replacing it runs
+  const replaced = (feature) => { try { return require('./plugins/legacy').replaced(feature); } catch { return false; } };
+  if (!replaced('midea')) {
+    add(`SELECT d.id, d.name FROM midea_device_owners o JOIN midea_devices d ON d.id = o.midea_device_id
+      WHERE o.user_id = ? ORDER BY d.name`, 'midea');
+  }
+  if (!replaced('smarthome')) {
     add(`SELECT r.id, COALESCE(r.name, r.deconz_id) AS name FROM smarthome_resource_owners o JOIN smarthome_resources r ON r.id = o.resource_id
       WHERE o.user_id = ? ORDER BY r.name`, 'smarthome');
   }
-  // the built-in Fahrzeuge are off while the gatecontrol-skoda plugin replaces them
-  let skodaReplaced = false;
-  try { skodaReplaced = require('./plugins/legacy').replaced('skoda'); } catch { skodaReplaced = false; }
-  if (!skodaReplaced) {
+  if (!replaced('skoda')) {
     add(`SELECT v.id, COALESCE(v.name, v.model, v.vin) AS name FROM skoda_vehicle_owners o JOIN skoda_vehicles v ON v.id = o.skoda_vehicle_id
       WHERE o.user_id = ? ORDER BY v.name`, 'skoda');
   }

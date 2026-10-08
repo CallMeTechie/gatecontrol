@@ -314,8 +314,8 @@ disable/uninstall and when the server shuts down.
     order }]` (≤ 8; `tab` = `home` ("Zuhause") or `car` ("Fahrzeug"); `order`
     0–1000, default 100) → each section is its own sandboxed frame
     (`/portal/plugins/<id>/frame?section=<id>`, `render` gets
-    `view.section`) inside that tab, after the built-in parts (Klimaanlage
-    until it moves into a plugin), ordered by `order`. Several
+    `view.section`) inside that tab, after the built-in parts (while a
+    built-in feature is not replaced by its plugin), ordered by `order`. Several
     plugins share one "Zuhause" tab; the tab is hidden when neither a built-in
     part nor any section has something for the viewer. `ui.portal` needs a
     label, sections or both.
@@ -347,7 +347,8 @@ disable/uninstall and when the server shuts down.
   and not expired). Its `source` says where it comes from: `license` (a key
   of its own), `lifetime`, or `plan` — the plugin is included because the
   customer's GateControl plan contains the former built-in feature (e.g.
-  `smarthome` → `gatecontrol-smarthome`; token `sub` = `plan:<id>`); the UI
+  `smarthome` → `gatecontrol-smarthome`, `midea_integration` →
+  `gatecontrol-midea`; token `sub` = `plan:<id>`); the UI
   shows "Im Plan enthalten". A key entered although the plugin is already
   covered comes back with the error `covered_by_plan` / `covered_by_lifetime`:
   it never decides the state (the covering entitlement does) and the UI says
@@ -397,19 +398,21 @@ untouched.
 ## Built-in data import (built-in → plugin)
 
 GateControl features that move out of the server into a first-party plugin
-(Smart Home → `gatecontrol-smarthome` in Stage 3, Fahrzeuge →
-`gatecontrol-skoda`; Klimaanlage later) bring their data along once. Code:
+(Smart Home → `gatecontrol-smarthome` in Stage 3, Klimaanlage →
+`gatecontrol-midea`, Fahrzeuge → `gatecontrol-skoda`) bring their data along
+once. Code:
 `src/services/plugins/legacy.js`.
 
 * **Fixed mapping** (`DATASETS`): plugin id → built-in dataset, the built-in
   feature it replaces and the home target that the dataset's GateControl
-  routes become (`target`, for the entries of the list `routed`; none for a
-  cloud integration). Today:
+  routes / LAN addresses become (`source.targetRefs`; none for a cloud
+  integration). Today:
 
-  | Plugin | Dataset / feature | Tables | Home target |
+  | Plugin | Dataset (built-in data) | Feature | Home target |
   |---|---|---|---|
-  | `gatecontrol-smarthome` | `smarthome` | `smarthome_gateways`, `_resources`, `_resource_owners`, `_rules` | `gateway` (one per gateway route) |
-  | `gatecontrol-skoda` | `skoda` | `skoda_accounts`, `skoda_vehicles`, `skoda_vehicle_owners` | — (Škoda cloud only) |
+  | `gatecontrol-smarthome` | `smarthome`: `smarthome_gateways`, `_resources`, `_resource_owners`, `_rules` | `smarthome` | `gateway` ← each gateway's route |
+  | `gatecontrol-midea` | `midea`: the Midea cloud account (setting `midea_config`), `midea_devices`, `midea_device_owners` | `midea` | `ac` ← each LAN device's address (`{ kind: 'host' }`; cloud devices need none) |
+  | `gatecontrol-skoda` | `skoda`: `skoda_accounts`, `skoda_vehicles`, `skoda_vehicle_owners` | `skoda` | — (Škoda cloud only) |
 * **Who**: only the mapped id with a **trusted signature** (CallMeTechie key
   or a key in `GC_PLUGIN_PUBKEYS`). For trying an unsigned development build
   the operator can set `GC_PLUGIN_LEGACY_UNSIGNED=1` (the plugin still only
@@ -420,15 +423,19 @@ GateControl features that move out of the server into a first-party plugin
   data exists ("Erneut übernehmen" replaces the plugin's data).
 * **How**: the host reads exactly the mapped tables into a JSON snapshot
   `{ schema: 1, dataset, exportedAt, …lists }` — `smarthome`: `gateways,
-  resources, owners, rules`; `skoda`: `accounts` (with `password`, `spin`,
-  `session: { accessToken, refreshToken }`), `vehicles` (with `state`, the
-  render `image` as base64 and `image_url`), `owners` (`vehicle_id`,
-  `user_id`) — secrets such as the deCONZ API key or the MySkoda password,
-  S-PIN and tokens are decrypted for this hand-over only and never logged.
-  When the dataset has a home target the host turns every referenced
-  GateControl route into an assignment of it (existing assignments are kept,
-  a route already assigned is reused; `gateways[].target = { id, index,
-  label }`, route ids stay in the host). Then it calls the plugin's
+  resources, owners, rules`; `midea`: `cloud` (0–1 `{ app, email, password,
+  session }`), `devices` (with the LAN `token`/`key` of protocol V3),
+  `owners` (`{ device_id, user_id }`); `skoda`: `accounts` (with `password`,
+  `spin`, `session: { accessToken, refreshToken }`), `vehicles` (with
+  `state`, the render `image` as base64 and `image_url`), `owners`
+  (`{ vehicle_id, user_id }`) — (secrets such as the deCONZ API key, the
+  Midea password/session and LAN keys, the MySkoda password, S-PIN and
+  tokens are decrypted for this hand-over only and never logged), turns
+  every referenced GateControl route / LAN address into an assignment of the
+  plugin's home target (existing assignments are kept, one already pointing
+  there is reused; an address plugins may never reach is left out;
+  `gateways[].target` / `devices[].target = { id, index, label }` or null,
+  route ids and addresses stay in the host), and calls the plugin's
   `legacyImport(snapshot, gc)` hook, which writes the data into its own
   storage (ids kept, so owners and rule references stay valid) and answers
   `{ ok: true }`. User ids are the same on this server, so owners keep their
@@ -445,12 +452,14 @@ mapped plugin *may run* (installed, switched on, licensed, signature and
 compatibility ok — `legacy.replaced(feature)`), the built-in feature is off
 so nothing runs twice: its sidebar entry is hidden, its pages redirect to the
 plugin's page (`/smarthome` → `/plugins/gatecontrol-smarthome`,
-`/smarthome/rules` → `…/rules`, `/skoda` → `/plugins/gatecontrol-skoda`), its
-API (`/api/v1/smarthome`, `/api/v1/skoda`) answers `409 replaced_by_plugin`,
-its portal part (`/api/v1/portal/smarthome`, `/api/v1/portal/skoda` and the
-built-in part of "Zuhause" / "Fahrzeug") and its entries in "Was sieht dieser
-Nutzer?" are hidden and its background jobs (deCONZ polling, rule re-sync,
-Škoda cloud polling) stand still. Switch the
+`/smarthome/rules` → `…/rules`, `/midea` → `/plugins/gatecontrol-midea`,
+`/skoda` → `/plugins/gatecontrol-skoda`), its API (`/api/v1/smarthome`,
+`/api/v1/midea`, `/api/v1/skoda`) answers `409 replaced_by_plugin`, its
+portal part (`/api/v1/portal/midea`, `/api/v1/portal/skoda*` answer
+`unavailable`, the built-in part of "Zuhause" / "Fahrzeug" is hidden) and
+its entries in "Was sieht dieser Nutzer?" are hidden and its background jobs
+(deCONZ polling, rule re-sync, Midea LAN polling, Škoda cloud polling) stand
+still. Switch the
 plugin off or uninstall it and the built-in feature is back, with its data:
 built-in data is never deleted by the import.
 
@@ -471,8 +480,8 @@ removes everything.
 
 * the CallMeTechie signing key in `BUILTIN_PUBLIC_KEYS` (until then a signed
   release is only trusted with its key in `GC_PLUGIN_PUBKEYS`);
-* "Nach Updates suchen" against the gatecontrol-plugins catalogue; moving
-  Klimaanlage out of the server; removing the built-in Smart Home and
-  Fahrzeuge code and data (Stage 6) — until then the built-in data import and
+* "Nach Updates suchen" against the gatecontrol-plugins catalogue;
+  removing the built-in Smart Home / Klimaanlage / Fahrzeuge code and data
+  (Stage 6) — until then the built-in data import and
   coexistence above apply;
 * releasing a licence ("Lizenz freigeben") from the plugin card.

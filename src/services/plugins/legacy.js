@@ -12,9 +12,10 @@
 //      as the plugin runs, re-runnable while the built-in data exists). The
 //      host pushes the snapshot into the plugin's `legacyImport(snapshot, gc)`
 //      hook, which writes it into the plugin's own storage. GateControl
-//      routes the built-in rows referenced are turned into assignments of the
-//      plugin's home target first, so the administrator does not have to
-//      assign them again. Every run is recorded (plugin_legacy_imports).
+//      routes and LAN addresses the built-in rows referenced are turned into
+//      assignments of the plugin's home target first, so the administrator
+//      does not have to assign them again. Every run is recorded
+//      (plugin_legacy_imports).
 //
 //   2. COEXISTENCE: while the mapped plugin may run (installed, switched on,
 //      licensed, signature/compatibility ok), the built-in feature is
@@ -88,6 +89,76 @@ const smarthome = {
     }));
     return { gateways, resources, owners, rules };
   },
+  /** Each gateway's GateControl route becomes an assignment of the home target (route ids stay in the host). */
+  targetRefs(data) {
+    return data.gateways.map((gw) => {
+      const rid = gw.route_id;
+      delete gw.route_id; // the plugin only knows its targets
+      return { item: gw, ref: Number.isInteger(rid) && rid > 0 ? { kind: 'route', routeId: rid } : null };
+    });
+  },
+};
+
+const MIDEA_LAN_PORT = 6444;
+
+const midea = {
+  /** Row counts of the built-in data (no secrets); `cloud` = 1 with a configured Midea account. */
+  counts() {
+    const db = getDb();
+    const devices = tableExists('midea_devices') ? db.prepare('SELECT COUNT(*) AS c FROM midea_devices').get().c : 0;
+    const owners = tableExists('midea_device_owners') ? db.prepare('SELECT COUNT(*) AS c FROM midea_device_owners').get().c : 0;
+    const cfg = parseJson(require('../settings').get('midea_config'), null);
+    return { cloud: cfg && typeof cfg.email === 'string' && cfg.email ? 1 : 0, devices, owners };
+  },
+  /**
+   * The Midea cloud account (settings key midea_config) with password and
+   * session decrypted, or null when none is configured.
+   */
+  cloudConfig() {
+    const { decrypt } = require('../../utils/crypto');
+    const cfg = parseJson(require('../settings').get('midea_config'), null);
+    if (!cfg || typeof cfg.email !== 'string' || !cfg.email) return null;
+    let password = null;
+    if (cfg.password) { try { password = decrypt(cfg.password); } catch { password = null; } }
+    let session = null;
+    if (cfg.session) { try { session = parseJson(decrypt(cfg.session), null); } catch { session = null; } }
+    return { app: cfg.app === 'nethome' ? 'nethome' : 'msmarthome', email: cfg.email, password, session };
+  },
+  /**
+   * Snapshot of the Midea account, midea_devices and midea_device_owners.
+   * The cloud password/session and the LAN token/key (protocol V3) are
+   * decrypted here — the snapshot only ever goes to the plugin process.
+   */
+  export() {
+    const { decrypt } = require('../../utils/crypto');
+    const db = getDb();
+    const dec = (v) => { if (!v) return null; try { return decrypt(v); } catch { return null; } };
+    const cfg = midea.cloudConfig();
+    const devices = tableExists('midea_devices') ? db.prepare('SELECT * FROM midea_devices ORDER BY id').all().map((d) => ({
+      id: d.id, name: d.name, device_sn: d.device_sn, device_id: d.device_id == null ? null : String(d.device_id),
+      ip: d.ip || null, port: Number(d.port) || MIDEA_LAN_PORT, protocol_version: Number(d.protocol_version) || 3, model: d.model || null,
+      enabled: d.enabled === 1, transport: d.transport === 'cloud' ? 'cloud' : 'lan',
+      cloud_appliance_id: d.cloud_appliance_id == null ? null : String(d.cloud_appliance_id),
+      token: dec(d.token_enc), key: dec(d.key_enc),
+      last_seen_at: d.last_seen_at || null, created_at: d.created_at || null, updated_at: d.updated_at || null,
+    })) : [];
+    const owners = tableExists('midea_device_owners')
+      ? db.prepare('SELECT midea_device_id, user_id, created_at FROM midea_device_owners ORDER BY midea_device_id, user_id').all()
+        .map((o) => ({ device_id: o.midea_device_id, user_id: o.user_id, created_at: o.created_at || null }))
+      : [];
+    return { cloud: cfg ? [cfg] : [], devices, owners };
+  },
+  /** Each LAN device's address becomes an assignment of the home target "ac" (the address stays in the host). */
+  targetRefs(data) {
+    return data.devices.map((d) => {
+      const host = d.ip;
+      const port = d.port;
+      delete d.ip;
+      delete d.port;
+      if (d.transport !== 'lan' || typeof host !== 'string' || !host) return { item: d, ref: null };
+      return { item: d, ref: { kind: 'host', host, port: port && port !== MIDEA_LAN_PORT ? port : null } };
+    });
+  },
 };
 
 const skoda = {
@@ -129,18 +200,23 @@ const skoda = {
       .map((o) => ({ vehicle_id: o.skoda_vehicle_id, user_id: o.user_id, created_at: o.created_at || null }));
     return { accounts, vehicles, owners };
   },
+  /** A cloud integration: nothing in the home network becomes a target. */
+  targetRefs() {
+    return [];
+  },
 };
 
 /**
  * Fixed mapping: plugin id → the built-in dataset it may import and the
  * built-in feature it replaces. `target` is the plugin's home target that
- * GateControl routes referenced by the data become (one per entry of the
- * dataset list `routed`, e.g. per gateway); null for a cloud integration
- * that has no home target.
+ * the GateControl routes / LAN addresses referenced by the data become (one
+ * per gateway / LAN air conditioner; source.targetRefs); null for a cloud
+ * integration without a home target (skoda).
  */
 const DATASETS = new Map([
-  ['gatecontrol-smarthome', Object.freeze({ dataset: 'smarthome', feature: 'smarthome', target: 'gateway', routed: 'gateways', source: smarthome })],
-  ['gatecontrol-skoda', Object.freeze({ dataset: 'skoda', feature: 'skoda', target: null, routed: null, source: skoda })],
+  ['gatecontrol-smarthome', Object.freeze({ dataset: 'smarthome', feature: 'smarthome', target: 'gateway', source: smarthome })],
+  ['gatecontrol-midea', Object.freeze({ dataset: 'midea', feature: 'midea', target: 'ac', source: midea })],
+  ['gatecontrol-skoda', Object.freeze({ dataset: 'skoda', feature: 'skoda', target: null, source: skoda })],
 ]);
 
 function defOf(pluginId) {
@@ -215,31 +291,43 @@ function status(plugin) {
   };
 }
 
+/** Does an existing assignment already point where `ref` points? */
+function sameTarget(a, ref) {
+  if (!a || a.kind !== ref.kind) return false;
+  if (ref.kind === 'route') return a.routeId === ref.routeId;
+  return a.host === ref.host; // one air conditioner per address
+}
+
+/** A reference of the built-in data → a valid assignment, or null (unknown route, blocked address …). */
+function refToAssignment(ref) {
+  if (!ref) return null;
+  try { return targets.normalise(ref); } catch { return null; }
+}
+
 /**
- * Turn the GateControl routes of the snapshot's routed entries (gateways)
- * into assignments of the plugin's home target (existing assignments are
- * kept; a route already assigned is reused). Sets entry.target = { id, index }
- * or null.
+ * Turn the GateControl routes / LAN addresses the snapshot references
+ * (source.targetRefs) into assignments of the plugin's home target (existing
+ * assignments are kept; one already pointing there is reused). Sets
+ * item.target = { id, index, label } or null.
  */
-function assignTargets(plugin, def, gateways) {
+function assignTargets(plugin, def, refs) {
   const decl = targets.declared(plugin).find((t) => t.id === def.target);
   const current = decl ? (targets.assignments(plugin.id)[def.target] || []) : [];
   const list = current.slice();
   const max = decl && decl.multiple ? 32 : 1;
-  const routeOk = getDb().prepare('SELECT 1 FROM routes WHERE id = ?');
   let changed = false;
-  for (const gw of gateways) {
-    gw.target = null;
-    const rid = gw.route_id;
-    if (!decl || !Number.isInteger(rid) || rid < 1 || !routeOk.get(rid)) continue;
-    let idx = list.findIndex((a) => a && a.kind === 'route' && a.routeId === rid);
+  for (const { item, ref } of refs) {
+    item.target = null;
+    const want = decl ? refToAssignment(ref) : null;
+    if (!want) continue;
+    let idx = list.findIndex((a) => sameTarget(a, want));
     if (idx < 0) {
       if (list.length >= max) continue;
-      list.push({ kind: 'route', routeId: rid });
+      list.push(want);
       idx = list.length - 1;
       changed = true;
     }
-    gw.target = { id: def.target, index: idx, label: targets.display(list[idx]) };
+    item.target = { id: def.target, index: idx, label: targets.display(list[idx]) };
   }
   if (changed) targets.assign(plugin, def.target, list);
   return changed ? list.length - current.length : 0;
@@ -264,9 +352,7 @@ async function runImport(pluginId, { ip } = {}) {
     const data = def.source.export();
     const total = Object.values(data).reduce((n, list) => n + list.length, 0);
     if (!total) throw new LegacyError('legacy_empty', 'there is no built-in data');
-    const routed = def.routed ? data[def.routed] : [];
-    const targetsAdded = def.target ? assignTargets(plugin, def, routed) : 0;
-    for (const gw of routed) delete gw.route_id; // the plugin only knows its targets
+    const targetsAdded = assignTargets(plugin, def, def.source.targetRefs(data)); // the plugin only knows its targets
     const snapshot = { schema: 1, dataset: def.dataset, exportedAt: new Date().toISOString(), ...data };
     let out;
     try {

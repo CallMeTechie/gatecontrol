@@ -9,6 +9,7 @@ const license = require('../license');
 const logger = require('../../utils/logger');
 
 const FEATURE = 'midea_integration';
+const REPLACED_FEATURE = 'midea';      // legacy.DATASETS feature of gatecontrol-midea
 const POLL_INTERVAL_MS = 30000;
 // Cloud state is served from cache within this window (instant page/widget load,
 // no cloud round-trip, no re-login); beyond it the cached state is still served
@@ -317,10 +318,16 @@ function getStatus() {
 
 // ── Poll loop (license-gated, unref'd) ───────────────────────────────────────
 
+// While the gatecontrol-midea plugin replaces the built-in Klimaanlage
+// (src/services/plugins/legacy.js) nothing here talks to the devices.
+function replacedByPlugin() {
+  try { return require('../plugins/legacy').replaced(REPLACED_FEATURE); } catch { return false; }
+}
+
 let pollRunning = false;
 
 async function pollTick() {
-  if (pollRunning) return;                          // no overlapping ticks
+  if (pollRunning || replacedByPlugin()) return;    // no overlapping ticks; off while a plugin replaces it
   if (!license.hasFeature(FEATURE)) {
     stopPolling();
     cache.clear();
@@ -360,5 +367,5 @@ function stopPolling() {
 module.exports = {
   connectCloud, listCloudDevices, addDevice, discoverLan,
   getDevices, getState, setState, testConnection, removeDevice,
-  getStatus, startPolling, stopPolling, pollTick, withDeviceLock,
+  getStatus, startPolling, stopPolling, pollTick, replacedByPlugin, withDeviceLock,
 };

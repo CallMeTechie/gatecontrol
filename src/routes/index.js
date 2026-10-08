@@ -278,6 +278,7 @@ const REPLACED_PAGES = new Map([
   ['skoda', { feature: 'skoda', href: '/plugins/gatecontrol-skoda' }],
   ['smarthome', { feature: 'smarthome', href: '/plugins/gatecontrol-smarthome' }],
   ['smarthome-rules', { feature: 'smarthome', href: '/plugins/gatecontrol-smarthome/rules' }],
+  ['midea', { feature: 'midea', href: '/plugins/gatecontrol-midea' }],
 ]);
 
 // Strings the users page hands to its script (JSON island, like the
