@@ -97,6 +97,7 @@ function tabsFor(req, plg) {
     && !require('../services/plugins/legacy').replaced('smarthome')
     && countSafe(() => require('../services/smarthome/smarthomeOwners').resourcesOwnedBy(owner).length) > 0;
   const skoda = owner != null && w.skoda && license.hasFeature('skoda_integration')
+    && !require('../services/plugins/legacy').replaced('skoda')
     && countSafe(() => require('../services/skoda/skodaOwners').vehiclesOwnedBy(owner).length) > 0;
   return {
     start: true,
@@ -117,12 +118,12 @@ function tabsFor(req, plg) {
   };
 }
 
-/** The portal viewer as plugins see it ({ id, name, role, portal: true }) or null. */
+/** The portal viewer as plugins see it ({ id, name, role, portal: true, loggedIn }) or null. */
 function portalViewer(req) {
   if (req.portalOwnerId == null) return null;
   const u = users.getById(req.portalOwnerId);
   if (!u || u.enabled !== 1) return null;
-  return { id: u.id, name: u.display_name || u.username, role: u.role, portal: true };
+  return { id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: !!req.portalLoggedIn };
 }
 
 /**

@@ -108,7 +108,7 @@ router.get('/portal/plugins/:id/frame', pluginPageLimiter, (req, res, next) => {
   const u = require('../services/users').getById(req.portalOwnerId);
   if (!u || u.enabled !== 1) return errorFrame(res, 403, res.locals.t('plugins.page.forbidden'), l);
   try {
-    const out = await plugins.render(p.id, { view: 'portal', page: null, section: section ? section.id : null, lang: l, user: { id: u.id, name: u.display_name || u.username, role: u.role, portal: true }, loggedIn: !!req.portalLoggedIn });
+    const out = await plugins.render(p.id, { view: 'portal', page: null, section: section ? section.id : null, lang: l, user: { id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: !!req.portalLoggedIn }, loggedIn: !!req.portalLoggedIn });
     frame.headers(res);
     return res.send(frame.document({ html: out.html, lang: l }));
   } catch (e) {

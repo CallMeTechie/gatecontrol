@@ -8,7 +8,10 @@
 // gate, portalIdentity/portalOwner and the CSRF check of signed-in viewers
 // have run. The plugin sees the portal viewer as the acting user — reads
 // need an identified owner, changes a portal or web login (like the
-// built-in portal widgets: device trust is read-only).
+// built-in portal widgets: device trust is read-only). `user.loggedIn` tells
+// the plugin whether the viewer signed in (true) or is only recognised by
+// device trust (false) — sensitive data (e.g. a vehicle's position) only for
+// a real login.
 
 const { Router } = require('express');
 const plugins = require('../../services/plugins');
@@ -24,7 +27,7 @@ function portalUser(req) {
   if (req.method !== 'GET' && !req.portalLoggedIn) return null;
   const u = require('../../services/users').getById(req.portalOwnerId);
   if (!u || u.enabled !== 1) return null;
-  return { id: u.id, name: u.display_name || u.username, role: u.role, portal: true };
+  return { id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: !!req.portalLoggedIn };
 }
 
 // Start tiles and search of the plugins (src/services/plugins/portal.js):

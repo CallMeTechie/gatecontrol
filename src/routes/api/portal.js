@@ -67,7 +67,9 @@ function mideaUnavailable() {
 }
 
 function skodaUnavailable() {
-  return !license.hasFeature('skoda_integration') || skodaVehicles.listRedacted().length === 0;
+  // also while the gatecontrol-skoda plugin replaces the built-in part (its own section in "Fahrzeug")
+  return !license.hasFeature('skoda_integration') || require('../../services/plugins/legacy').replaced('skoda')
+    || skodaVehicles.listRedacted().length === 0;
 }
 // Redact to portal-safe fields only (drop cloud_appliance_id / any secrets).
 function redactMideaDevice(id) {

@@ -161,15 +161,62 @@ const midea = {
   },
 };
 
+const skoda = {
+  /** Row counts of the built-in tables (no secrets). */
+  counts() {
+    if (!tableExists('skoda_accounts')) return { accounts: 0, vehicles: 0, owners: 0 };
+    const db = getDb();
+    const n = (t) => db.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get().c;
+    return { accounts: n('skoda_accounts'), vehicles: n('skoda_vehicles'), owners: n('skoda_vehicle_owners') };
+  },
+  /**
+   * Snapshot of skoda_accounts / _vehicles / _vehicle_owners. The MySkoda
+   * password, S-PIN and session tokens are decrypted here — the snapshot only
+   * ever goes to the plugin process. The render image travels as base64.
+   */
+  export() {
+    const { decrypt } = require('../../utils/crypto');
+    const db = getDb();
+    const plain = (enc) => { if (!enc) return null; try { return decrypt(enc); } catch { return null; } };
+    const accounts = db.prepare('SELECT * FROM skoda_accounts ORDER BY id').all().map((a) => {
+      let session = null;
+      const raw = plain(a.session_enc);
+      if (raw) {
+        const s = parseJson(raw, null);
+        if (s && typeof s.accessToken === 'string' && typeof s.refreshToken === 'string') session = { accessToken: s.accessToken, refreshToken: s.refreshToken };
+      }
+      return {
+        id: a.id, email: a.email, password: plain(a.password_enc), spin: plain(a.spin_enc), session,
+        status: a.status || 'ok', status_detail: a.status_detail || null, backoff_min: Number(a.backoff_min) || 0, next_retry_at: a.next_retry_at || null,
+        created_at: a.created_at || null, updated_at: a.updated_at || null,
+      };
+    });
+    const vehicles = db.prepare('SELECT * FROM skoda_vehicles ORDER BY id').all().map((v) => ({
+      id: v.id, account_id: v.account_id, vin: v.vin, name: v.name || null, model: v.model || null, state: parseJson(v.state_json, null),
+      image: v.image ? Buffer.from(v.image).toString('base64') : null, image_url: v.image_url || null,
+      fetched_at: v.fetched_at || null, created_at: v.created_at || null,
+    }));
+    const owners = db.prepare('SELECT skoda_vehicle_id, user_id, created_at FROM skoda_vehicle_owners ORDER BY skoda_vehicle_id, user_id').all()
+      .map((o) => ({ vehicle_id: o.skoda_vehicle_id, user_id: o.user_id, created_at: o.created_at || null }));
+    return { accounts, vehicles, owners };
+  },
+  /** A cloud integration: nothing in the home network becomes a target. */
+  targetRefs() {
+    return [];
+  },
+};
+
 /**
  * Fixed mapping: plugin id → the built-in dataset it may import and the
  * built-in feature it replaces. `target` is the plugin's home target that
  * the GateControl routes / LAN addresses referenced by the data become (one
- * per gateway / LAN air conditioner; source.targetRefs).
+ * per gateway / LAN air conditioner; source.targetRefs); null for a cloud
+ * integration without a home target (skoda).
  */
 const DATASETS = new Map([
   ['gatecontrol-smarthome', Object.freeze({ dataset: 'smarthome', feature: 'smarthome', target: 'gateway', source: smarthome })],
   ['gatecontrol-midea', Object.freeze({ dataset: 'midea', feature: 'midea', target: 'ac', source: midea })],
+  ['gatecontrol-skoda', Object.freeze({ dataset: 'skoda', feature: 'skoda', target: null, source: skoda })],
 ]);
 
 function defOf(pluginId) {
