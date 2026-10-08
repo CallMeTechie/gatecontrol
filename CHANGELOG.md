@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.149.0] — 2026-10-08
+
+### Features
+- built-in data import and coexistence for first-party plugins (#271)
+
+---
+
 ## [1.148.0] — 2026-10-07
 
 ### Features
