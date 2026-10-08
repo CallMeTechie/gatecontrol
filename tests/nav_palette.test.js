@@ -20,16 +20,22 @@ env.addFilter('bytes', (v) => String(v || 0) + ' B');
 env.addFilter('reltime', () => '—');
 env.addFilter('truncate', (s) => s || '');
 function t(key) { return de[key] !== undefined ? de[key] : key; }
-function renderLayout(activeNav, features) {
+function renderLayout(activeNav, features, pluginNav) {
   const src = '{% extends "aurora/layout.njk" %}{% block content %}<p>x</p>{% endblock %}';
   return env.renderString(src, {
     theme: 'aurora', language: 'de', t, availableLanguages: ['de', 'en'],
     license: { features: features || {}, hasFeature: () => false },
     cspNonce: 'N', csrfToken: 'c', appVersion: '9.9.9', appName: 'GateControl', baseUrl: 'https://gc.example.com',
     user: { username: 'admin', display_name: 'Admin', role: 'admin' }, title: 'T', activeNav, flash: {}, peerCount: 2, routeCount: 7,
+    pluginNav: pluginNav || [],
   });
 }
 const ALL = { gateway_pools: true, internal_dns: true, pihole_integration: true, waf: true, midea_integration: true, skoda_integration: true, smarthome: true };
+// installed plugins with a page (services/plugins navEntries); Smart Home & co. are plugins now
+const PLUGIN_NAV = [
+  { id: 'gatecontrol-midea', href: '/plugins/gatecontrol-midea', label: 'Klimaanlage', icon: 'M2 4h20v10H2z', on: true },
+  { id: 'gatecontrol-skoda', href: '/plugins/gatecontrol-skoda', label: 'Fahrzeuge', icon: 'M5 16l1-5', on: false },
+];
 
 function sidebarGroups(html) {
   const nav = html.slice(html.indexOf('<nav class="sidebar"'), html.indexOf('</nav>', html.indexOf('<nav class="sidebar"')));
@@ -45,24 +51,29 @@ function sidebarGroups(html) {
 
 describe('sidebar groups (§8)', () => {
   it('Übersicht · Netzwerk · Sicherheit · Integrationen · System with every licensed item', () => {
-    const g = sidebarGroups(renderLayout('dashboard', ALL));
+    const g = sidebarGroups(renderLayout('dashboard', ALL, PLUGIN_NAV));
     assert.deepEqual(g.map((x) => x.label), ['Übersicht', 'Netzwerk', 'Sicherheit', 'Integrationen', 'System']);
     assert.deepEqual(g.map((x) => x.hrefs), [
       ['/dashboard'],
       ['/peers', '/routes', '/gateways', '/gateway-pools', '/rdp', '/dns', '/pihole'],
       ['/security', '/certificates', '/waf', '/users'],
-      ['/midea', '/skoda', '/smarthome'],
+      ['/plugins/gatecontrol-midea', '/plugins/gatecontrol-skoda'],
       ['/logs', '/settings'],
     ]);
   });
 
-  it('licence conditions unchanged; the integrations label only with an integration', () => {
+  it('licence conditions unchanged; the integrations label only with an installed plugin', () => {
     const g = sidebarGroups(renderLayout('dashboard', {}));
     assert.deepEqual(g.map((x) => x.label), ['Übersicht', 'Netzwerk', 'Sicherheit', 'System']);
     assert.deepEqual(g[1].hrefs, ['/peers', '/routes', '/gateways', '/rdp']);
     assert.deepEqual(g[2].hrefs, ['/security', '/certificates', '/users'], 'Sicherheits-Check needs no licence');
-    const one = sidebarGroups(renderLayout('dashboard', { skoda_integration: true }));
-    assert.deepEqual(one.find((x) => x.label === 'Integrationen').hrefs, ['/skoda']);
+    // the licence keys of the former built-ins show nothing by themselves
+    assert.equal(sidebarGroups(renderLayout('dashboard', ALL)).some((x) => x.label === 'Integrationen'), false);
+    const html = renderLayout('dashboard', {}, PLUGIN_NAV.slice(1));
+    const one = sidebarGroups(html);
+    assert.deepEqual(one.find((x) => x.label === 'Integrationen').hrefs, ['/plugins/gatecontrol-skoda']);
+    assert.match(html, /data-plugin-nav="gatecontrol-skoda">[^]*?<span class="nav-tag-off">/, 'a plugin that is off keeps its tag');
+    assert.doesNotMatch(html, />Plugins<\/div>/, 'no separate "Plugins" group');
   });
 
   it('badges and active state', () => {
@@ -232,11 +243,10 @@ describe('command palette: pure core', () => {
 
 describe('i18n block (nav.* + palette.* + zones.filter./wafdef + shield.* + bulk.*)', () => {
   const BLOCK = /^(nav\.(group_network|group_security|group_integrations|security_check|more|search)|palette\.|zones\.filter\.|zones\.select_|zones\.wafdef\.|shield\.|bulk\.)/;
-  it('one contiguous block right after nav.skoda in both files, same keys and placeholders', () => {
+  it('one contiguous block in both files, same keys and placeholders', () => {
     for (const [name, loc] of [['de', de], ['en', en]]) {
       const keys = Object.keys(loc);
       const first = keys.findIndex((k) => BLOCK.test(k));
-      assert.equal(keys[first - 1], 'nav.skoda', `${name}: after nav.skoda`);
       let i = first;
       while (i < keys.length && BLOCK.test(keys[i])) i++;
       assert.ok(i - first >= 75, `${name}: block size ${i - first}`);

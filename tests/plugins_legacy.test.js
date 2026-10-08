@@ -1,12 +1,13 @@
 'use strict';
 
-// Built-in → plugin migration (docs/plugins.md "Übernahme eingebauter Daten",
-// src/services/plugins/legacy.js): the first-party plugin mapped to a
-// built-in dataset (gatecontrol-smarthome → Smart Home) gets a one-time
-// snapshot of exactly those tables (deCONZ API keys decrypted for the
-// hand-over only), its routes become the plugin's home-target assignments,
-// the import is recorded and re-runnable; while the plugin runs the
-// built-in Smart Home (sidebar, pages, API, portal, background) is off.
+// Built-in → plugin migration (docs/plugins.md "Built-in data import",
+// src/services/plugins/legacy.js): Smart Home is no longer built in, its
+// tables stay. Without the plugin the dashboard and Settings → Plugins show
+// an upgrade notice and the old page leads to Settings → Plugins; the
+// first-party plugin mapped to the dataset (gatecontrol-smarthome) gets a
+// one-time snapshot of exactly those tables (deCONZ API keys decrypted for
+// the hand-over only, read straight from the tables), its routes become the
+// plugin's home-target assignments, the import is recorded and re-runnable.
 // Also: gc.settings.setSecret and the portalVisible hook.
 
 const { describe, it, before, after } = require('node:test');
@@ -76,13 +77,31 @@ after(async () => {
   teardown();
 });
 
-describe('built-in Smart Home before a plugin replaces it', () => {
-  it('runs as before', async () => {
-    assert.equal(legacy.replaced('smarthome'), false);
-    const r = await agent.get('/api/v1/smarthome/gateways').expect(200);
-    assert.deepEqual(r.body.gateways.map((g) => g.name), ['Wohnung', 'Garten']);
-    const page = await agent.get('/smarthome').expect(200);
-    assert.match(page.text, /href="\/smarthome"/);
+describe('built-in Smart Home data without the plugin', () => {
+  it('nothing of the former built-in is left: page → Settings → Plugins, API gone, no sidebar entry', async () => {
+    const page = await agent.get('/smarthome').expect(302);
+    assert.equal(page.headers.location, '/settings#plugins');
+    assert.equal((await agent.get('/smarthome/rules').expect(302)).headers.location, '/settings#plugins');
+    const api = await agent.get('/api/v1/smarthome/gateways').expect(410);
+    assert.deepEqual([api.body.code, api.body.plugin], ['moved_to_plugin', ID]);
+    await agent.post('/api/v1/smarthome/gateways').set('X-CSRF-Token', csrf).send({}).expect(410);
+    await agent.get('/api/v1/portal/smarthome').expect(404);
+    const dash = await agent.get('/dashboard').expect(200);
+    assert.doesNotMatch(dash.text, /href="\/smarthome"/);
+    assert.doesNotMatch(dash.text, /nav-section-label">Integrations</, 'no integrations group without a plugin');
+  });
+
+  it('the dashboard and Settings → Plugins say that Smart Home is a plugin now (data kept)', async () => {
+    assert.deepEqual(legacy.pendingMoves().map((m) => [m.pluginId, m.dataset, m.counts]),
+      [[ID, 'smarthome', { gateways: 2, resources: 2, owners: 1, rules: 1 }]]);
+    const releases = 'https://github.com/CallMeTechie/gatecontrol-plugins/releases?q=gatecontrol-smarthome&amp;expanded=true';
+    for (const url of ['/dashboard', '/settings']) {
+      const html = (await agent.get(url).expect(200)).text;
+      assert.match(html, /data-builtin-moved="gatecontrol-smarthome"/, url);
+      assert.match(html, /Smart Home is a plugin now\. Install “Smart Home”/, url);
+      assert.ok(html.includes(`href="${releases}"`), url);
+      assert.doesNotMatch(html, /data-builtin-moved="gatecontrol-(midea|skoda)"/, url + ': only datasets with data');
+    }
   });
 });
 
@@ -98,10 +117,10 @@ describe('an unsigned build of the mapped id', () => {
     assert.deepEqual(st.body.legacy.counts, { gateways: 2, resources: 2, owners: 1, rules: 1 });
     const r = await importNow().expect(409);
     assert.equal(r.body.code, 'legacy_unsigned');
-    // it runs (unsigned allowed) → it replaces the built-in
-    assert.equal(legacy.replaced('smarthome'), true);
+    // installed → the old page leads to it and the upgrade notice is gone
+    assert.equal((await agent.get('/smarthome').expect(302)).headers.location, '/plugins/gatecontrol-smarthome');
+    assert.deepEqual(legacy.pendingMoves(), []);
     await agent.put(API + '/policy').set('X-CSRF-Token', csrf).send({ allowUnsigned: false }).expect(200);
-    assert.equal(legacy.replaced('smarthome'), false, 'an unsigned plugin that may not run does not replace anything');
     await agent.post(`${API}/${ID}/uninstall`).set('X-CSRF-Token', csrf).send({ mode: 'wipe', confirm: 'Smart Home' }).expect(200);
   });
 });
@@ -171,31 +190,21 @@ describe('the signed first-party plugin', () => {
     assert.equal((await agent.get(`${API}/${ID}/legacy`)).body.legacy.imported.runs, 2);
   });
 
-  it('replaces the built-in Smart Home while it runs: sidebar, pages, API, portal', async () => {
-    assert.equal(legacy.replaced('smarthome'), true);
-    const api = await agent.get('/api/v1/smarthome/gateways').expect(409);
-    assert.equal(api.body.code, 'replaced_by_plugin');
+  it('the former pages lead to the plugin, which is listed under "Integrationen"; no upgrade notice', async () => {
     const page = await agent.get('/smarthome').expect(302);
     assert.equal(page.headers.location, '/plugins/gatecontrol-smarthome');
     const rules = await agent.get('/smarthome/rules').expect(302);
     assert.equal(rules.headers.location, '/plugins/gatecontrol-smarthome/rules');
     const dash = await agent.get('/plugins/gatecontrol-smarthome').expect(200);
     assert.doesNotMatch(dash.text, /href="\/smarthome"/);
-    assert.match(dash.text, /href="\/plugins\/gatecontrol-smarthome"/);
-    assert.equal(require('../src/services/userVisibility').forUser(adminId).portal.some((e) => e.kind === 'smarthome'), false);
+    assert.match(dash.text, /nav-section-label">Integrations<\/div>\s*<a href="\/plugins\/gatecontrol-smarthome"/);
+    assert.doesNotMatch(dash.text, /nav-section-label">Plugins</);
+    assert.doesNotMatch((await agent.get('/dashboard').expect(200)).text, /data-builtin-moved=/);
   });
 
-  it('the built-in background jobs stand still', async () => {
-    assert.equal(require('../src/services/smarthome').replacedByPlugin(), true);
-    assert.equal(await require('../src/services/smarthome/smarthomeRules').resyncPending(), 0);
-  });
-
-  it('comes back when the plugin is switched off; the built-in data is untouched', async () => {
+  it('switched off: still the plugin page, the built-in data is untouched', async () => {
     await agent.post(`${API}/${ID}/disable`).set('X-CSRF-Token', csrf).expect(200);
-    assert.equal(legacy.replaced('smarthome'), false);
-    await agent.get('/api/v1/smarthome/gateways').expect(200);
-    const page = await agent.get('/smarthome').expect(200);
-    assert.match(page.text, /href="\/smarthome"/);
+    assert.equal((await agent.get('/smarthome').expect(302)).headers.location, '/plugins/gatecontrol-smarthome');
     assert.equal(db.prepare('SELECT COUNT(*) AS c FROM smarthome_resources').get().c, 2);
     const st = (await agent.get(`${API}/${ID}/legacy`)).body.legacy;
     assert.equal(st.running, false);
@@ -204,10 +213,11 @@ describe('the signed first-party plugin', () => {
     assert.equal(await runtime.waitRunning(ID), true);
   });
 
-  it('uninstall "Alles löschen" forgets the import record', async () => {
+  it('uninstall "Alles löschen" forgets the import record; the notice is back while the data exists', async () => {
     await agent.post(`${API}/${ID}/uninstall`).set('X-CSRF-Token', csrf).send({ mode: 'wipe', confirm: 'Smart Home' }).expect(200);
-    assert.equal(legacy.replaced('smarthome'), false);
     assert.equal(db.prepare('SELECT COUNT(*) AS c FROM plugin_legacy_imports').get().c, 0);
+    assert.deepEqual(legacy.pendingMoves().map((m) => m.pluginId), [ID]);
+    assert.equal((await agent.get('/smarthome').expect(302)).headers.location, '/settings#plugins');
   });
 });
 

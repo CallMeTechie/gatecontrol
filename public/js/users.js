@@ -116,7 +116,6 @@
     code: 'M8 9l-4 3 4 3M16 9l4 3-4 3M14 5l-4 14',
     web: 'M3 5h18v14H3zM3 9h18',
     list: 'M4 6h16M4 12h16M4 18h10',
-    home: 'M3 12l9-8 9 8M5 10v10h14V10',
     shield: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8v5',
   };
   function clear(n) { while (n && n.firstChild) n.removeChild(n.firstChild); return n; }
@@ -834,14 +833,6 @@
       panel.appendChild(seeGroup(T('us.see.rdp'), T('us.see.count', { n: v.rdp.visible.length, total: v.rdp.total }), ICON.pc,
         { label: T('us.see.link_shares'), href: '/rdp' }, rdpItems));
     }
-    // Portal
-    const kindLabel = { midea: T('us.see.kind_midea'), smarthome: T('us.see.kind_smarthome'), skoda: T('us.see.kind_skoda') };
-    const kindHref = { midea: '/midea', smarthome: '/smarthome', skoda: '/skoda' };
-    const portalItems = v.portal.map((p) => ({ name: p.name, detail: kindLabel[p.kind], why: 'own', reason: T('us.see.why_owner', { name: firstName(u) }) }));
-    const firstKind = v.portal.length ? v.portal[0].kind : 'smarthome';
-    if (!portalItems.length) portalItems.push({ name: isAdmin ? T('us.see.portal_admin') : T('us.see.portal_none'), tone: isAdmin ? 'us-dot-good' : 'us-dot-off', why: isAdmin ? 'own' : 'all', reason: isAdmin ? T('us.see.why_admin') : '' });
-    panel.appendChild(seeGroup(T('us.see.portal'), v.portal.length ? P('us.see.portal_count', v.portal.length) : '', ICON.home,
-      { label: T('us.see.link_owner'), href: kindHref[firstKind] }, portalItems));
     // Pi-hole
     let piItems;
     if (!v.pihole.licensed) piItems = [{ name: T('us.see.pihole_unlicensed'), tone: 'us-dot-off', why: 'all', reason: '' }];
@@ -1857,9 +1848,7 @@
       const hidden = vis.filter((r) => r.onlyThisUser);
       if (removed.length) list.appendChild(effect('us-dot-warn', T('us.del.vis_title'), P('us.del.vis_text', removed.length, { name: firstName(u) })));
       if (hidden.length) list.appendChild(effect('us-dot-warn', T('us.del.hidden_title'), T('us.del.hidden_text', { name: firstName(u), names: q(hidden) })));
-      const portal = im.portal.midea + im.portal.smarthome + im.portal.skoda;
-      if (portal) list.appendChild(effect('us-dot-warn', T('us.del.portal_title'), P('us.del.portal_text', portal)));
-      if (!im.tokens.length && !im.peers.length && !vis.length && !portal) list.appendChild(effect('us-dot-off', T('us.del.nothing'), ''));
+      if (!im.tokens.length && !im.peers.length && !vis.length) list.appendChild(effect('us-dot-off', T('us.del.nothing'), ''));
       list.appendChild(effect('us-dot-off', T('us.del.logs_title'), T('us.del.logs_text')));
     } catch (err) { clear(list); setError('us-del-error', errMsg(err)); }
   }

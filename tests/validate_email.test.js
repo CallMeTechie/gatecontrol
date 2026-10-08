@@ -1,8 +1,6 @@
 'use strict';
-const { test, before, after, beforeEach } = require('node:test');
+const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const nodeCrypto = require('node:crypto');
-process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || nodeCrypto.randomBytes(32).toString('hex');
 const { validateEmail } = require('../src/utils/validate');
 
 test('validateEmail accepts normal addresses', () => {
@@ -25,23 +23,5 @@ test('validateEmail rejects anything that would break an ACME registration', () 
     'a'.repeat(250) + '@example.com',       // Gesamtlänge > 254
   ]) {
     assert.equal(typeof validateEmail(bad), 'string', `akzeptierte fälschlich: ${JSON.stringify(bad)}`);
-  }
-});
-
-const { setup, teardown } = require('./helpers/setup');
-let accounts;
-before(async () => { await setup(); accounts = require('../src/services/skoda/skodaAccounts'); });
-after(async () => { await teardown(); });
-beforeEach(() => { for (const a of accounts.listAccounts()) accounts.removeAccount(a.id); });
-
-test('createAccount still accepts a valid address (catches a reversed polarity)', () => {
-  const acc = accounts.createAccount({ email: 'me@example.com', password: 'pw' });
-  assert.ok(acc && acc.id);
-  assert.ok(accounts.listAccounts().some((a) => a.email === 'me@example.com'));
-});
-
-test('createAccount still rejects invalid addresses', () => {
-  for (const bad of ['', 'no-at-sign', 'a'.repeat(9000)]) {
-    assert.throws(() => accounts.createAccount({ email: bad, password: 'pw' }), (e) => e.code === 'SKODA_VALIDATION');
   }
 });

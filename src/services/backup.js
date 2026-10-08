@@ -8,7 +8,9 @@ const { validatePeerName, validateDomain, validatePort, validateIp } = require('
 const { validateWebhookUrl } = require('./webhook');
 const logger = require('../utils/logger');
 
-// 5: + data.plugins (docs/plugins.md "Backup"); 2–4 still restore (no plugin data).
+// 5: + data.plugins (docs/plugins.md "Backup") and data.builtin_integrations
+// (tables of the former built-in Smart Home / Klimaanlage / Fahrzeuge,
+// services/builtinBackup.js); 2–4 still restore (no plugin data).
 const BACKUP_VERSION = 5;
 const SUPPORTED_VERSIONS = [2, 3, 4, 5];
 // Settings never taken from a backup: the "unsigned plugins" switch needs a
@@ -215,8 +217,16 @@ function createBackup() {
       webhooks,
       route_auth: routeAuth,
       plugins: exportPlugins(),
+      builtin_integrations: exportBuiltin(db),
     },
   };
+}
+
+function exportBuiltin(db) {
+  try { return require('./builtinBackup').exportAll(db); } catch (err) {
+    logger.warn({ err: err.message }, 'backup export: built-in integration tables skipped');
+    return {};
+  }
 }
 
 function exportPlugins() {
@@ -282,6 +292,7 @@ function validateBackup(backup) {
   }
 
   errors.push(...require('./plugins/backup').validate(backup.data.plugins));
+  errors.push(...require('./builtinBackup').validate(backup.data.builtin_integrations));
 
   if (webhooks) {
     for (let i = 0; i < webhooks.length; i++) {
@@ -355,6 +366,16 @@ function validateEncryptedFields(data) {
       try { decrypt(String(v)); } catch { errors.push(`plugin "${p.id}" ${what}: cannot decrypt`); }
     }
   }
+  const builtin = data.builtin_integrations && typeof data.builtin_integrations === 'object' ? data.builtin_integrations : {};
+  for (const [table, rows] of Object.entries(builtin)) {
+    if (!Array.isArray(rows)) continue;
+    rows.forEach((row, i) => {
+      for (const [col, v] of Object.entries(row || {})) {
+        if (!col.endsWith('_enc') || !v) continue;
+        try { decrypt(String(v)); } catch { errors.push(`${table} #${i + 1} ${col}: cannot decrypt`); }
+      }
+    });
+  }
   const rdp = data.rdp_routes || [];
   for (let i = 0; i < rdp.length; i++) {
     for (const key of ['username_encrypted', 'password_encrypted']) {
@@ -400,6 +421,7 @@ async function restoreBackup(backup) {
     settings,
     webhooks,
     route_auth: routeAuth,
+    builtin_integrations: builtinIntegrations,
   } = backup.data;
 
   // Decrypt-check for all encrypted fields, not just peer keys
@@ -421,6 +443,7 @@ async function restoreBackup(backup) {
     throw new Error('Backup validation failed:\n  - ' + encErrors.join('\n  - '));
   }
 
+  let builtinRows = 0;
   const restore = db.transaction(() => {
     // Clear existing data in dependency order
     db.prepare('DELETE FROM route_peer_acl').run();
@@ -611,6 +634,10 @@ async function restoreBackup(backup) {
         );
       }
     }
+
+    // Tables of the former built-in integrations (kept until imported into
+    // their plugins): replaced only when the backup carries them.
+    builtinRows = require('./builtinBackup').restoreAll(db, builtinIntegrations, { userIdByName });
   });
 
   restore();
@@ -627,6 +654,7 @@ async function restoreBackup(backup) {
     gateway_meta: gatewayMeta.length,
     settings: settings.length,
     webhooks: webhooks.length,
+    builtin_integrations: builtinRows,
   }, 'Backup restored');
 
   await peersService.rewriteWgConfig();

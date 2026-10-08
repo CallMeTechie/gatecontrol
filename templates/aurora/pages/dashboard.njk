@@ -23,6 +23,18 @@
 </div>
 {% endif %}
 
+{#- Former built-in integrations (Smart Home, Klimaanlage, Fahrzeuge) are
+    plugins now: their data waits for the plugin (docs/plugins.md
+    "Built-in data import"). -#}
+{% for mv in builtinMoved or [] %}
+<div class="db-banner db-banner-accent" role="note" data-builtin-moved="{{ mv.pluginId }}">
+  <span class="db-banner-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></span>
+  <span class="db-banner-text">{{ t('plugins.moved.' + mv.dataset) }}</span>
+  <a href="{{ mv.url }}" target="_blank" rel="noopener noreferrer" class="db-btn">{{ t('plugins.moved.download') }}</a>
+  <a href="/settings#plugins" class="db-btn db-btn-primary">{{ t('plugins.moved.install') }}</a>
+</div>
+{% endfor %}
+
 {% if needs_repair_gateways and needs_repair_gateways.length > 0 %}
 <div class="db-banner db-banner-warn" role="alert" id="db-repair">
   <span class="db-banner-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 17v.5"/></svg></span>

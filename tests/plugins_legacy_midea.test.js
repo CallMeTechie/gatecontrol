@@ -1,12 +1,12 @@
 'use strict';
 
-// Built-in Klimaanlage → gatecontrol-midea (docs/plugins.md "Übernahme
-// eingebauter Daten", src/services/plugins/legacy.js): the mapped
+// Built-in Klimaanlage → gatecontrol-midea (docs/plugins.md "Built-in data
+// import", src/services/plugins/legacy.js): the mapped
 // first-party plugin gets one snapshot of the Midea cloud account
 // (password/session decrypted for the hand-over only), midea_devices (LAN
 // token/key decrypted) and midea_device_owners; the LAN devices' addresses
-// become assignments of the plugin's home target "ac"; while the plugin runs
-// the built-in Klimaanlage (sidebar, page, API, portal, polling) is off.
+// become assignments of the plugin's home target "ac". The built-in
+// Klimaanlage itself is gone (only its data waits for the import).
 
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -50,7 +50,6 @@ before(async () => {
   adminId = db.prepare("SELECT id FROM users WHERE username = 'admin'").get().id;
   const { encrypt } = require('../src/utils/crypto');
   const settings = require('../src/services/settings');
-  settings.set('portal.widget.midea', '1');
   // built-in Klimaanlage: the cloud account, a cloud AC, a LAN V3 AC, a LAN AC on a never-reachable address
   settings.set('midea_config', JSON.stringify({ app: 'msmarthome', email: 'ac@example.com', password: encrypt(PASSWORD), session: encrypt(JSON.stringify(SESSION)) }));
   db.prepare(`INSERT INTO midea_devices (id, name, device_sn, transport, cloud_appliance_id, enabled)
@@ -66,14 +65,17 @@ after(async () => {
   teardown();
 });
 
-describe('built-in Klimaanlage before a plugin replaces it', () => {
-  it('runs as before', async () => {
-    assert.equal(legacy.replaced('midea'), false);
-    const r = await agent.get('/api/v1/midea/devices').expect(200);
-    assert.deepEqual(r.body.devices.map((d) => d.name), ['Wohnzimmer', 'Büro', 'Keller']);
-    const page = await agent.get('/midea').expect(200);
-    assert.match(page.text, /href="\/midea"/);
-    assert.equal(require('../src/services/midea').replacedByPlugin(), false);
+describe('built-in Klimaanlage data without the plugin', () => {
+  it('the former page leads to Settings → Plugins, the API and portal part are gone, a notice says why', async () => {
+    assert.equal((await agent.get('/midea').expect(302)).headers.location, '/settings#plugins');
+    const api = await agent.get('/api/v1/midea/devices').expect(410);
+    assert.deepEqual([api.body.code, api.body.plugin], ['moved_to_plugin', ID]);
+    await agent.get('/api/v1/portal/midea').expect(404);
+    assert.deepEqual(legacy.pendingMoves().map((m) => [m.pluginId, m.counts]), [[ID, { cloud: 1, devices: 3, owners: 1 }]]);
+    const html = (await agent.get('/settings').expect(200)).text;
+    assert.match(html, /data-builtin-moved="gatecontrol-midea"/);
+    assert.match(html, /Air conditioning is a plugin now/);
+    assert.doesNotMatch(html, /href="\/midea"/);
   });
 });
 
@@ -125,37 +127,13 @@ describe('the signed first-party plugin gatecontrol-midea', () => {
     }
   });
 
-  it('replaces the built-in Klimaanlage while it runs: sidebar, page, API, portal, polling', async () => {
-    assert.equal(legacy.replaced('midea'), true);
-    assert.equal(legacy.replaced('smarthome'), false, 'only its own feature');
-    const api = await agent.get('/api/v1/midea/devices').expect(409);
-    assert.equal(api.body.code, 'replaced_by_plugin');
-    assert.equal(api.body.plugin, ID);
-    assert.match(api.body.error, /gatecontrol-midea/);
-    const page = await agent.get('/midea').expect(302);
-    assert.equal(page.headers.location, '/plugins/gatecontrol-midea');
-    const dash = await agent.get('/plugins/gatecontrol-midea').expect(200);
-    assert.doesNotMatch(dash.text, /href="\/midea"/);
-    const portal = await agent.get('/api/v1/portal/midea').expect(200);
-    assert.equal(portal.body.reason, 'unavailable');
-    const st = await agent.get('/api/v1/portal/midea/1/state').expect(200);
-    assert.equal(st.body.reason, 'unavailable');
-    const ctl = await agent.post('/api/v1/portal/midea/1/state').set('X-CSRF-Token', csrf).send({ patch: { power: true } }).expect(200);
-    assert.equal(ctl.body.reason, 'unavailable');
-    assert.equal(require('../src/services/userVisibility').forUser(adminId).portal.some((e) => e.kind === 'midea'), false);
-    const midea = require('../src/services/midea');
-    assert.equal(midea.replacedByPlugin(), true);
-    await midea.pollTick();
-    assert.equal(midea.getStatus().lastPollAt, null, 'the poll loop stands still');
-  });
-
-  it('comes back when the plugin is switched off; the built-in data is untouched', async () => {
+  it('the former page leads to the plugin; no upgrade notice while it is installed (on or off)', async () => {
+    assert.equal((await agent.get('/midea').expect(302)).headers.location, '/plugins/gatecontrol-midea');
+    assert.deepEqual(legacy.pendingMoves(), []);
     await agent.post(`${API}/${ID}/disable`).set('X-CSRF-Token', csrf).expect(200);
-    assert.equal(legacy.replaced('midea'), false);
-    await agent.get('/api/v1/midea/devices').expect(200);
-    const page = await agent.get('/midea').expect(200);
-    assert.match(page.text, /href="\/midea"/);
-    assert.equal(require('../src/services/userVisibility').forUser(adminId).portal.some((e) => e.kind === 'midea'), true);
+    assert.equal((await agent.get('/midea').expect(302)).headers.location, '/plugins/gatecontrol-midea');
+    assert.deepEqual(legacy.pendingMoves(), []);
+    // the built-in data is untouched by the import
     assert.equal(db.prepare('SELECT COUNT(*) AS c FROM midea_devices').get().c, 3);
     assert.equal(db.prepare('SELECT COUNT(*) AS c FROM midea_device_owners').get().c, 1);
     assert.ok(require('../src/services/settings').get('midea_config'));
@@ -165,7 +143,7 @@ describe('the signed first-party plugin gatecontrol-midea', () => {
 
   it('uninstall "Alles löschen" forgets the import record', async () => {
     await agent.post(`${API}/${ID}/uninstall`).set('X-CSRF-Token', csrf).send({ mode: 'wipe', confirm: 'Klimaanlage' }).expect(200);
-    assert.equal(legacy.replaced('midea'), false);
+    assert.deepEqual(legacy.pendingMoves().map((m) => m.pluginId), [ID]);
     assert.equal(db.prepare('SELECT COUNT(*) AS c FROM plugin_legacy_imports').get().c, 0);
   });
 });

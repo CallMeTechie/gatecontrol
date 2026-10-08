@@ -38,27 +38,12 @@
   {% endif %}
   <a href="/users" class="nav-item {{ 'active' if activeNav == 'users' }}"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="2"/><path d="M3 20c0-3.3 2.7-5 6-5s6 1.7 6 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.users') }}</a>
 
-  {%- set builtinSmarthome = license.features.smarthome and not (builtinReplaced and builtinReplaced.smarthome) %}
-  {%- set builtinMidea = license.features.midea_integration and not (builtinReplaced and builtinReplaced.midea) %}
-  {%- set builtinSkoda = license.features.skoda_integration and not (builtinReplaced and builtinReplaced.skoda) %}
-  {% if builtinMidea or builtinSkoda or builtinSmarthome %}
-  <div class="nav-section-label">{{ t('nav.group_integrations') }}</div>
-  {% endif %}
-  {% if builtinMidea %}
-  <a href="/midea" class="nav-item {{ 'active' if activeNav == 'midea' }}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="9" rx="2"/><path d="M6 17v2M12 17v2M18 17v2"/></svg>{{ t('nav.midea') }}</a>
-  {% endif %}
-  {% if builtinSkoda %}
-  <a href="/skoda" class="nav-item {{ 'active' if activeNav == 'skoda' }}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 16l1-5 2-3h8l2 3 1 5v3h-2a2 2 0 0 1-4 0H9a2 2 0 0 1-4 0H3v-3z"/><circle cx="7.5" cy="17.5" r="1"/><circle cx="16.5" cy="17.5" r="1"/></svg>{{ t('nav.skoda') }}</a>
-  {% endif %}
-  {% if builtinSmarthome %}
-  <a href="/smarthome" class="nav-item {{ 'active' if activeNav == 'smarthome' }}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21h6M10 21v-3a2 2 0 0 1 4 0v3"/><path d="M5.5 11a6.5 6.5 0 1 1 13 0c0 2.5-1.5 3.8-2.5 4.8-.6.6-1 1.2-1 2.2H9c0-1-.4-1.6-1-2.2C7 14.8 5.5 13.5 5.5 11z"/></svg>{{ t('nav.smarthome') }}</a>
-  {% endif %}
-
   {% if pluginNav and pluginNav.length %}
-  {#- Plugins (docs/plugins.md): one entry per installed plugin with a page;
-      a plugin that is not running stays listed, greyed, tagged "aus" — its
-      page explains why (old bookmarks keep working). -#}
-  <div class="nav-section-label">{{ t('nav.group_plugins') }}</div>
+  {#- Integrationen (docs/plugins.md): one entry per installed plugin with a
+      page (Smart Home, Klimaanlage, Fahrzeuge … are plugins); a plugin that
+      is not running stays listed, greyed, tagged "aus" — its page explains
+      why (old bookmarks keep working). -#}
+  <div class="nav-section-label">{{ t('nav.group_integrations') }}</div>
   {% for pn in pluginNav %}
   <a href="{{ pn.href }}" class="nav-item{{ ' active' if activeNav == 'plugin:' + pn.id }}{{ ' nav-item-off' if not pn.on }}" data-plugin-nav="{{ pn.id }}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{ pn.icon }}"/></svg>{{ pn.label }}{% if not pn.on %}<span class="nav-tag-off">{{ t('plugins.nav_off') }}</span>{% endif %}</a>
   {% endfor %}

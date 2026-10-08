@@ -5,7 +5,7 @@
 //   own tab      ui.portal.label/icon → a tab "plg-<id>" with the plugin's frame
 //   sections     ui.portal.sections [{ id, tab: 'home'|'car', title, order }] →
 //                a section (its own sandboxed frame) inside GateControl's
-//                "Zuhause" / "Fahrzeug" tab, next to the built-in parts
+//                "Zuhause" / "Fahrzeug" tab (these tabs hold plugin sections only)
 //   start tiles  hook portalTiles({ user, lang }) → small declarative tiles
 //                rendered by GateControl on the Start tab (never plugin HTML)
 //   search       hook portalSearch({ user, lang, q }) → declarative results

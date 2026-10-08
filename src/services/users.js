@@ -5,9 +5,6 @@ const { getDb } = require('../db/connection');
 const activity = require('./activity');
 const logger = require('../utils/logger');
 const argon2Options = require('../utils/argon2Options');
-const mideaOwners = require('./midea/mideaOwners');
-const smarthomeOwners = require('./smarthome/smarthomeOwners');
-const skodaOwners = require('./skoda/skodaOwners');
 
 const NO_PASSWORD_SENTINEL = '!';
 
@@ -458,8 +455,8 @@ function parseIdList(json) {
  * Everything a delete changes, computed from the data (the delete dialog
  * lists it): the user's tokens (revoked), owned peers (kept without an
  * owner), route / RDP visibility entries (removed; an entry that only named
- * this user stays so the route stays hidden instead of becoming public),
- * owned portal resources (ownership removed). Activity entries stay.
+ * this user stays so the route stays hidden instead of becoming public).
+ * Activity entries stay.
  */
 function deleteImpact(id) {
   const db = getDb();
@@ -475,11 +472,6 @@ function deleteImpact(id) {
   const routes = visibility('routes', "COALESCE(NULLIF(label, ''), domain)");
   const rdp = visibility('rdp_routes', 'name');
   const count = (sql) => { try { return db.prepare(sql).get(id).c; } catch { return 0; } };
-  const portal = {
-    midea: count('SELECT COUNT(*) AS c FROM midea_device_owners WHERE user_id = ?'),
-    smarthome: count('SELECT COUNT(*) AS c FROM smarthome_resource_owners WHERE user_id = ?'),
-    skoda: count('SELECT COUNT(*) AS c FROM skoda_vehicle_owners WHERE user_id = ?'),
-  };
   const activityCount = count(`SELECT COUNT(*) AS c FROM activity_log WHERE json_valid(details) AND json_extract(details, '$.userId') = ?`);
   return {
     user: { id: user.id, username: user.username, role: user.role },
@@ -487,10 +479,20 @@ function deleteImpact(id) {
     peers,
     routes,
     rdp,
-    portal,
     activity: activityCount,
     lastAdmin: user.role === 'admin' && db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'admin'").get().c <= 1,
   };
+}
+
+// Owner rows of the former built-in integrations (Smart Home, Klimaanlage,
+// Fahrzeuge — plugins now; their tables are kept until the data is imported,
+// docs/plugins.md "Built-in data import"): a deleted user owns nothing there.
+const BUILTIN_OWNER_TABLES = ['midea_device_owners', 'smarthome_resource_owners', 'skoda_vehicle_owners'];
+function removeBuiltinOwnership(db, id) {
+  for (const table of BUILTIN_OWNER_TABLES) {
+    if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)) continue;
+    db.prepare(`DELETE FROM ${table} WHERE user_id = ?`).run(id);
+  }
 }
 
 function stripFromVisibility(db, table, id) {
@@ -507,8 +509,8 @@ function stripFromVisibility(db, table, id) {
 
 /**
  * Delete a user. Prevents deleting the last admin. Tokens are deleted,
- * owned peers stay without an owner, portal ownership and visibility
- * entries are removed (see deleteImpact).
+ * owned peers stay without an owner, visibility entries are removed (see
+ * deleteImpact) and so are owner rows of the former built-in integrations.
  */
 function remove(id, { actorId = null, ip = null } = {}) {
   const db = getDb();
@@ -526,9 +528,7 @@ function remove(id, { actorId = null, ip = null } = {}) {
   db.transaction(() => {
     db.prepare('DELETE FROM api_tokens WHERE user_id = ?').run(id);
     db.prepare('UPDATE peers SET user_id = NULL WHERE user_id = ?').run(id);
-    mideaOwners.removeAllForUser(id);                 // clear AC ownership (no own tx)
-    smarthomeOwners.removeAllForUser(id);             // clear smarthome ownership (no own tx)
-    skodaOwners.removeAllForUser(id);                 // clear Skoda vehicle ownership (no own tx)
+    removeBuiltinOwnership(db, id);
     stripFromVisibility(db, 'routes', id);
     stripFromVisibility(db, 'rdp_routes', id);
     db.prepare('DELETE FROM users WHERE id = ?').run(id);

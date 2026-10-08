@@ -264,22 +264,26 @@ const pages = [
   { path: '/users', template: 'users', titleKey: 'nav.users' },
   { path: '/dns', template: 'dns', titleKey: 'nav.dns' },
   { path: '/pihole', template: 'pihole', titleKey: 'pihole.title' },
-  { path: '/midea', template: 'midea', titleKey: 'midea.title' },
-  { path: '/skoda', template: 'skoda', titleKey: 'skoda.title' },
-  { path: '/smarthome', template: 'smarthome', titleKey: 'smarthome.title' },
-  { path: '/smarthome/rules', template: 'smarthome-rules', titleKey: 'smarthome.rules.title' },
   { path: '/gateway-pools', template: 'gateway-pools', titleKey: 'gateway_pools.title' },
   { path: '/gateways', template: 'gateways', titleKey: 'nav.gateways' },
 ];
 
-// Built-in pages that a first-party plugin replaces while it runs
-// (docs/plugins.md "Übernahme eingebauter Daten").
-const REPLACED_PAGES = new Map([
-  ['skoda', { feature: 'skoda', href: '/plugins/gatecontrol-skoda' }],
-  ['smarthome', { feature: 'smarthome', href: '/plugins/gatecontrol-smarthome' }],
-  ['smarthome-rules', { feature: 'smarthome', href: '/plugins/gatecontrol-smarthome/rules' }],
-  ['midea', { feature: 'midea', href: '/plugins/gatecontrol-midea' }],
-]);
+// Former built-in pages, now first-party plugins (docs/plugins.md "Built-in
+// data import"): old bookmarks lead to the plugin's page when it is
+// installed, otherwise to Settings → Plugins (legacy.movedPage).
+const MOVED_PAGES = [
+  ['/smarthome', 'gatecontrol-smarthome', ''],
+  ['/smarthome/rules', 'gatecontrol-smarthome', '/rules'],
+  ['/midea', 'gatecontrol-midea', ''],
+  ['/skoda', 'gatecontrol-skoda', ''],
+];
+// apiLimiter like /me: the handler checks the role and reads the plugin registry.
+for (const [path, pluginId, sub] of MOVED_PAGES) {
+  router.get(path, apiLimiter, requireAuth, (req, res) => {
+    if (!res.locals.user || res.locals.user.role !== 'admin') return res.redirect('/profile');
+    res.redirect(require('../services/plugins/legacy').movedPage(pluginId, sub));
+  });
+}
 
 // Strings the users page hands to its script (JSON island, like the
 // settings page).
@@ -307,11 +311,10 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
     if (!member && !isAdmin) {
       return res.redirect('/profile');
     }
-    // A built-in page whose feature a plugin replaces (src/services/plugins/
-    // legacy.js) leads to the plugin's page (fixed path, never request data).
-    if (REPLACED_PAGES.has(template)) {
-      const rp = REPLACED_PAGES.get(template);
-      if (require('../services/plugins/legacy').replaced(rp.feature)) return res.redirect(rp.href);
+    // Upgrade notice (dashboard, Settings → Plugins): built-in data of a
+    // former integration whose plugin is not installed yet.
+    if (template === 'dashboard' || template === 'settings') {
+      try { extraLocals.builtinMoved = require('../services/plugins/legacy').pendingMoves(); } catch { extraLocals.builtinMoved = []; }
     }
     if (!isAdmin) extraLocals.portalUrl = portalLink();
 

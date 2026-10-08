@@ -27,7 +27,7 @@ test('portal.css styles the DNS-protection donut and the state rules', async () 
   const res = await supertest(app).get('/css/portal.css').expect(200);
   assert.ok(res.text.includes('.pt-donut'), 'missing .pt-donut');
   assert.ok(res.text.includes('conic-gradient'), 'donut drawn with a conic gradient');
-  for (const sel of ['.pt-empty', '.pt-msg', '.pt-hint', '[hidden]']) assert.ok(res.text.includes(sel), sel);
+  for (const sel of ['.pt-empty', '.pt-msg', '[hidden]']) assert.ok(res.text.includes(sel), sel);
 });
 
 test('portal.js does NOT inject a <style> element (CSP-clean)', async () => {

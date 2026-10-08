@@ -14,7 +14,7 @@
 // nobody assigned. Transport, as GateControl itself reaches these targets:
 //   HTTP route via a gateway   companion proxy http://<gateway VPN IP>:8080
 //                              + X-Gateway-Target-Domain: <route domain>
-//                              (routes.resolveCompanionUrl, like Smart Home)
+//                              (routes.resolveCompanionUrl)
 //   HTTP route, peer/direct    its backend (peer VPN IP or target IP + port)
 //   L4 route                   gateway listener / peer / target as Caddy dials it
 //   peer, host                 direct (host names through the server's DNS,
@@ -131,7 +131,7 @@ function peerIp(peerId) {
   return p ? { name: p.name, ip: String(p.allowed_ips || '').split(',')[0].split('/')[0].trim(), enabled: p.enabled === 1 } : null;
 }
 
-/** Short text of an assignment for the UI ("smarthome.example.com (Route)"). */
+/** Short text of an assignment for the UI ("phoscon.example.com (Route)"). */
 function display(a) {
   if (a.kind === 'route') {
     const r = getDb().prepare('SELECT domain, route_type, l4_listen_port FROM routes WHERE id = ?').get(a.routeId);

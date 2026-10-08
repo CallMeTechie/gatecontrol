@@ -48,6 +48,9 @@ const COMMUNITY_FALLBACK = {
   split_tunnel_preset: false,
   internal_dns: false,
   pihole_integration: false,
+  // Former built-in integrations, now first-party plugins (gatecontrol-midea,
+  // -skoda, -smarthome): the licence server derives the plan-included plugin
+  // entitlement (source "plan") from these keys — they no longer show any UI.
   midea_integration: false,
   skoda_integration: false,
   smarthome: false,

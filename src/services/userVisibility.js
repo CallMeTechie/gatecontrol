@@ -11,7 +11,6 @@
  *                 without one to everybody (enabled HTTP entries only)
  *   RDP           rdpAcl.canAccessRoute: user_ids first, then the legacy
  *                 token_ids list, else everybody
- *   Portal        the owner tables of the integrations
  *   Pi-hole       per device token: the `pihole` scope after the role cap,
  *                 and the licence feature pihole_integration
  *
@@ -91,32 +90,9 @@ function rdpEntries(userId, tokenIds, byId) {
   return { visible, hidden, total: rows.length };
 }
 
-function portalEntries(userId) {
-  const db = getDb();
-  const out = [];
-  const add = (sql, kind) => {
-    try { for (const r of db.prepare(sql).all(userId)) out.push({ kind, id: r.id, name: r.name || '' }); } catch { /* integration table missing */ }
-  };
-  // a built-in part is off while the first-party plugin replacing it runs
-  const replaced = (feature) => { try { return require('./plugins/legacy').replaced(feature); } catch { return false; } };
-  if (!replaced('midea')) {
-    add(`SELECT d.id, d.name FROM midea_device_owners o JOIN midea_devices d ON d.id = o.midea_device_id
-      WHERE o.user_id = ? ORDER BY d.name`, 'midea');
-  }
-  if (!replaced('smarthome')) {
-    add(`SELECT r.id, COALESCE(r.name, r.deconz_id) AS name FROM smarthome_resource_owners o JOIN smarthome_resources r ON r.id = o.resource_id
-      WHERE o.user_id = ? ORDER BY r.name`, 'smarthome');
-  }
-  if (!replaced('skoda')) {
-    add(`SELECT v.id, COALESCE(v.name, v.model, v.vin) AS name FROM skoda_vehicle_owners o JOIN skoda_vehicles v ON v.id = o.skoda_vehicle_id
-      WHERE o.user_id = ? ORDER BY v.name`, 'skoda');
-  }
-  return out;
-}
-
 /**
  * Full picture for the admin tab.
- * Returns { user, role, web, services, rdp, portal, pihole } — `web` is
+ * Returns { user, role, web, services, rdp, pihole } — `web` is
  * 'all' (admin), 'self_service' (member with "Mein Bereich") or 'none'.
  */
 function forUser(userId) {
@@ -148,7 +124,6 @@ function forUser(userId) {
     web,
     services: httpEntries(userId, byId),
     rdp: rdpEntries(userId, tokenIds, byId),
-    portal: portalEntries(userId),
     pihole: { licensed: piholeLicensed, devices },
   };
 }

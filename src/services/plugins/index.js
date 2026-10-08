@@ -424,13 +424,21 @@ function get(id) { return registry.get(id); }
 function storageBytes(id) { return storage.usage(dataDir(id)); }
 
 /** Sidebar entries: every installed plugin with a nav entry; `on` = running. */
+// The former built-in integrations keep their old place in the sidebar
+// (Klimaanlage, Fahrzeuge, Smart Home), every other plugin follows by name.
+const NAV_FIRST = ['gatecontrol-midea', 'gatecontrol-skoda', 'gatecontrol-smarthome'];
+function navRank(id) {
+  const i = NAV_FIRST.indexOf(id);
+  return i < 0 ? NAV_FIRST.length : i;
+}
+
 function navEntries(lang) {
   let rows;
   try { rows = registry.list(); } catch { return []; }
   return rows.filter((p) => p.manifest && p.manifest.ui && p.manifest.ui.nav).map((p) => {
     const ev = evaluate(p);
     return { id: p.id, label: loc(p.manifest.ui.nav.label, lang), icon: p.manifest.ui.nav.icon, href: '/plugins/' + p.id, on: ev.run };
-  });
+  }).sort((a, b) => navRank(a.id) - navRank(b.id)); // stable: the rest stays sorted by name
 }
 
 /** Portal tabs of running plugins with the portal permission. */
