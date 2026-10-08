@@ -67,7 +67,8 @@ router.use('/license', require('./license'));
 router.use('/client', require('./client'));
 router.use('/rdp', require('./rdp'));
 router.use('/pihole', require('./pihole'));
-router.use('/midea', require('./midea'));
+// Off (409 replaced_by_plugin) while the gatecontrol-midea plugin replaces it.
+router.use('/midea', require('../../services/plugins/legacy').guardApi('midea', 'gatecontrol-midea'), require('./midea'));
 router.use('/skoda', require('./skoda'));
 // Off (409 replaced_by_plugin) while the gatecontrol-smarthome plugin replaces it.
 router.use('/smarthome', require('../../services/plugins/legacy').guardApi('smarthome', 'gatecontrol-smarthome'), require('./smarthome'));

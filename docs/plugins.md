@@ -342,7 +342,8 @@ disable/uninstall and when the server shuts down.
   and not expired). Its `source` says where it comes from: `license` (a key
   of its own), `lifetime`, or `plan` — the plugin is included because the
   customer's GateControl plan contains the former built-in feature (e.g.
-  `smarthome` → `gatecontrol-smarthome`; token `sub` = `plan:<id>`); the UI
+  `smarthome` → `gatecontrol-smarthome`, `midea_integration` →
+  `gatecontrol-midea`; token `sub` = `plan:<id>`); the UI
   shows "Im Plan enthalten". A key entered although the plugin is already
   covered comes back with the error `covered_by_plan` / `covered_by_lifetime`:
   it never decides the state (the covering entitlement does) and the UI says
@@ -392,14 +393,18 @@ untouched.
 ## Built-in data import (built-in → plugin)
 
 GateControl features that move out of the server into a first-party plugin
-(Smart Home → `gatecontrol-smarthome` in Stage 3; Klimaanlage, Fahrzeuge
-later) bring their data along once. Code: `src/services/plugins/legacy.js`.
+(Smart Home → `gatecontrol-smarthome` in Stage 3, Klimaanlage →
+`gatecontrol-midea`; Fahrzeuge later) bring their data along once. Code:
+`src/services/plugins/legacy.js`.
 
 * **Fixed mapping** (`DATASETS`): plugin id → built-in dataset, the built-in
   feature it replaces and the home target that the dataset's GateControl
-  routes become. Today: `gatecontrol-smarthome` → `smarthome`
-  (`smarthome_gateways`, `_resources`, `_resource_owners`, `_rules`), target
-  `gateway`.
+  routes / LAN addresses become (`source.targetRefs`). Today:
+
+  | Plugin | Dataset (built-in data) | Feature | Home target |
+  |---|---|---|---|
+  | `gatecontrol-smarthome` | `smarthome`: `smarthome_gateways`, `_resources`, `_resource_owners`, `_rules` | `smarthome` | `gateway` ← each gateway's route |
+  | `gatecontrol-midea` | `midea`: the Midea cloud account (setting `midea_config`), `midea_devices`, `midea_device_owners` | `midea` | `ac` ← each LAN device's address (`{ kind: 'host' }`; cloud devices need none) |
 * **Who**: only the mapped id with a **trusted signature** (CallMeTechie key
   or a key in `GC_PLUGIN_PUBKEYS`). For trying an unsigned development build
   the operator can set `GC_PLUGIN_LEGACY_UNSIGNED=1` (the plugin still only
@@ -409,12 +414,17 @@ later) bring their data along once. Code: `src/services/plugins/legacy.js`.
   too; the administrator confirms; it can be run again while the built-in
   data exists ("Erneut übernehmen" replaces the plugin's data).
 * **How**: the host reads exactly the mapped tables into a JSON snapshot
-  `{ schema: 1, dataset, exportedAt, gateways, resources, owners, rules }`
-  (secrets such as the deCONZ API key are decrypted for this hand-over only
-  and never logged), turns every referenced GateControl route into an
-  assignment of the plugin's home target (existing assignments are kept, a
-  route already assigned is reused; `gateways[].target = { id, index, label }`,
-  route ids stay in the host), and calls the plugin's
+  `{ schema: 1, dataset, exportedAt, …lists }` — `smarthome`: `gateways,
+  resources, owners, rules`; `midea`: `cloud` (0–1 `{ app, email, password,
+  session }`), `devices` (with the LAN `token`/`key` of protocol V3),
+  `owners` (`{ device_id, user_id }`) — (secrets such as the deCONZ API key,
+  the Midea password/session and LAN keys are decrypted for this hand-over
+  only and never logged), turns every referenced GateControl route / LAN
+  address into an assignment of the plugin's home target (existing
+  assignments are kept, one already pointing there is reused; an address
+  plugins may never reach is left out; `gateways[].target` /
+  `devices[].target = { id, index, label }` or null, route ids and
+  addresses stay in the host), and calls the plugin's
   `legacyImport(snapshot, gc)` hook, which writes the data into its own
   storage (ids kept, so owners and rule references stay valid) and answers
   `{ ok: true }`. User ids are the same on this server, so owners keep their
@@ -431,9 +441,12 @@ mapped plugin *may run* (installed, switched on, licensed, signature and
 compatibility ok — `legacy.replaced(feature)`), the built-in feature is off
 so nothing runs twice: its sidebar entry is hidden, its pages redirect to the
 plugin's page (`/smarthome` → `/plugins/gatecontrol-smarthome`,
-`/smarthome/rules` → `…/rules`), its API answers `409 replaced_by_plugin`,
-its portal part and its entries in "Was sieht dieser Nutzer?" are hidden and
-its background jobs (deCONZ polling, rule re-sync) stand still. Switch the
+`/smarthome/rules` → `…/rules`, `/midea` → `/plugins/gatecontrol-midea`),
+its API (`/api/v1/smarthome`, `/api/v1/midea`) answers
+`409 replaced_by_plugin`, its portal part (`/api/v1/portal/midea` answers
+`unavailable`) and its entries in "Was sieht dieser Nutzer?" are hidden and
+its background jobs (deCONZ polling, rule re-sync, Midea LAN polling) stand
+still. Switch the
 plugin off or uninstall it and the built-in feature is back, with its data:
 built-in data is never deleted by the import.
 
@@ -455,7 +468,7 @@ removes everything.
 * the CallMeTechie signing key in `BUILTIN_PUBLIC_KEYS` (until then a signed
   release is only trusted with its key in `GC_PLUGIN_PUBKEYS`);
 * "Nach Updates suchen" against the gatecontrol-plugins catalogue; moving
-  Klimaanlage / Fahrzeuge out of the server; removing the built-in Smart Home
+  Fahrzeuge out of the server; removing the built-in Smart Home / Klimaanlage
   code and data (Stage 6) — until then the built-in data import and
   coexistence above apply;
 * releasing a licence ("Lizenz freigeben") from the plugin card.
