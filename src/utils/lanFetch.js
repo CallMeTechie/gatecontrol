@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * fetch() für admin-konfigurierte LAN-Integrationen (Pi-hole, deCONZ).
+ * fetch() für admin-konfigurierte LAN-Integrationen (Pi-hole).
  *
  * Anders als Webhooks (utils/outboundGuard.js) zeigen diese URLs absichtlich
  * ins LAN — und wegen `network_mode: host` unter Umständen auch auf

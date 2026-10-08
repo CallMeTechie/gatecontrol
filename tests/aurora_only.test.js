@@ -98,11 +98,11 @@ describe('standalone pages load exactly one stylesheet', () => {
     }
   });
 
-  it('the layout and every page together link at most app.css plus a page-local integration sheet', () => {
+  it('the layout and every page together link app.css only', () => {
     const all = [read('templates/aurora/layout.njk'), ...fs.readdirSync(path.join(ROOT, 'templates/aurora/pages')).map((f) => read('templates/aurora/pages/' + f))];
     for (const src of all) {
       for (const m of src.matchAll(/<link rel="stylesheet" href="([^"?]+)/g)) {
-        assert.match(m[1], /\/(app|midea|skoda|smarthome)\.css$/, m[1]);
+        assert.match(m[1], /\/app\.css$/, m[1]);
       }
     }
   });

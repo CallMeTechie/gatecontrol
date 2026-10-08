@@ -177,20 +177,6 @@ async function start() {
     try { require('./services/pihole').start(); }
     catch (err) { logger.warn({ err: err.message }, 'pihole start failed'); }
 
-    // Midea poll loop — best-effort; no-op without license or enrolled devices.
-    try { require('./services/midea').startPolling(); }
-    catch (err) { logger.warn({ err: err.message }, 'midea start failed'); }
-
-    // Skoda Connect poll loop — best-effort; no-op without license or enrolled accounts.
-    try { require('./services/skoda').startPolling(); }
-    catch (err) { logger.warn({ err: err.message }, 'skoda start failed'); }
-
-    // Smart Home (deCONZ) poll loop — best-effort; no-op without license or gateways.
-    try { require('./services/smarthome').startPolling(); }
-    catch (err) { logger.warn({ err: err.message }, 'smarthome start failed'); }
-    // Re-push any rules that lost their deconz_rule_id (e.g. gateway wiped between restarts).
-    require('./services/smarthome/smarthomeRules').resyncPending().catch((e) => logger.warn({ err: e.message }, 'smarthome rule resync failed'));
-
     // Internal DNS — rebuild the addn-hosts file on boot so route domains
     // resolve to the gateway immediately. Without this, the file only gets
     // its route A-records on the next peer/route mutation, leaving internal

@@ -289,7 +289,8 @@ disable/uninstall and when the server shuts down.
 
 ## User interface
 
-* **Sidebar** "Plugins": one entry per installed plugin with `ui.nav`; one that
+* **Sidebar** "Integrationen": one entry per installed plugin with `ui.nav`
+  (Smart Home, Klimaanlage, Fahrzeuge … are plugins); one that
   is not running stays listed, greyed, tagged *aus*. Its page then explains why
   ("… ist derzeit deaktiviert (Grund). Deine Daten sind gespeichert." with a
   link to Settings → Plugins for administrators).
@@ -314,11 +315,10 @@ disable/uninstall and when the server shuts down.
     order }]` (≤ 8; `tab` = `home` ("Zuhause") or `car` ("Fahrzeug"); `order`
     0–1000, default 100) → each section is its own sandboxed frame
     (`/portal/plugins/<id>/frame?section=<id>`, `render` gets
-    `view.section`) inside that tab, after the built-in parts (while a
-    built-in feature is not replaced by its plugin), ordered by `order`. Several
-    plugins share one "Zuhause" tab; the tab is hidden when neither a built-in
-    part nor any section has something for the viewer. `ui.portal` needs a
-    label, sections or both.
+    `view.section`) inside that tab, ordered by `order`. "Zuhause" and
+    "Fahrzeug" hold plugin sections only; several plugins share one tab, and
+    the tab is hidden when no section has something for the viewer.
+    `ui.portal` needs a label, sections or both.
   * **visibility**: the optional hook `portalVisible({ user, lang, section })`
     (`section` = null for the own tab) hides a tab/section for viewers with
     nothing to see. Asked per viewer when the portal is opened.
@@ -326,12 +326,12 @@ disable/uninstall and when the server shuts down.
     `[{ section?, title, value?, unit?, state?, icon? }]` (≤ 8; `state` one of
     `on`, `off`, `good`, `warn`, `crit`; `icon` an SVG path like
     `ui.nav.icon`). GateControl renders them on the Start tab — in the
-    "Zuhause"/"Fahrzeug" card for sections, in a card of its own for the
-    plugin's tab — and links them to the section (`#zuhause` + scroll). Never
+    "Zuhause"/"Fahrzeug" card for sections (shown once a tile arrives), in a
+    card of its own for the plugin's tab — and links them to the section (`#zuhause` + scroll). Never
     plugin HTML on Start. `GET /api/v1/portal/plugins/start`.
   * **search**: optional hook `portalSearch({ user, lang, q })` (`q` 2–100
     characters) → `[{ title, subtitle?, section? }]` (≤ 10), shown after the
-    built-in results, linked like the tiles. `GET /api/v1/portal/plugins/search?q=`.
+    portal's own results (services, devices), linked like the tiles. `GET /api/v1/portal/plugins/search?q=`.
   * Every hook has **1.5 s** per plugin (all plugins in parallel); a slow,
     failing or garbage-answering plugin only loses its own part. Texts are
     capped and control characters removed; a tile/result naming a section
@@ -385,6 +385,13 @@ re-encrypts them like every other secret. All plugins together are capped at
 48 MB per backup; data that does not fit is left out and logged (the restore
 upload accepts up to 96 MB).
 
+The tables of the former built-in integrations (see "Built-in data import")
+travel in `data.builtin_integrations` (`src/services/builtinBackup.js`) until
+their data is imported: rows as stored (ids kept, secrets still encrypted, the
+Škoda render image as base64), user references by user name and a Smart Home
+gateway's route by domain. A restore replaces exactly the tables the backup
+carries; a backup without this part leaves them untouched.
+
 Restore: plugin processes are stopped, every package's signature is verified
 again — a changed package is not restored, an unsigned one is restored but
 stays off while "Unsignierte Plugins erlauben" is off (that switch itself is
@@ -397,22 +404,39 @@ untouched.
 
 ## Built-in data import (built-in → plugin)
 
-GateControl features that move out of the server into a first-party plugin
-(Smart Home → `gatecontrol-smarthome` in Stage 3, Klimaanlage →
-`gatecontrol-midea`, Fahrzeuge → `gatecontrol-skoda`) bring their data along
-once. Code:
+Smart Home (deCONZ/Phoscon), Klimaanlage (Midea) and Fahrzeuge (Škoda) used
+to be built into GateControl. Since 1.152 their code is gone — the features
+are the first-party plugins `gatecontrol-smarthome`, `gatecontrol-midea` and
+`gatecontrol-skoda` and nothing of them remains without the plugin (no
+sidebar entry, page, API, portal part, background job or setting). Their
+data is kept: the tables and settings are never dropped (migrations stay),
+are in backups (see "Backup") and are brought into the plugin once. Code:
 `src/services/plugins/legacy.js`.
 
-* **Fixed mapping** (`DATASETS`): plugin id → built-in dataset, the built-in
-  feature it replaces and the home target that the dataset's GateControl
-  routes / LAN addresses become (`source.targetRefs`; none for a cloud
-  integration). Today:
+* **Fixed mapping** (`DATASETS`): plugin id → built-in dataset and the home
+  target that the dataset's GateControl routes / LAN addresses become
+  (`source.targetRefs`; none for a cloud integration). Each source reads its
+  tables directly (`counts()`, `export()`, secrets decrypted with
+  `utils/crypto`):
 
-  | Plugin | Dataset (built-in data) | Feature | Home target |
-  |---|---|---|---|
-  | `gatecontrol-smarthome` | `smarthome`: `smarthome_gateways`, `_resources`, `_resource_owners`, `_rules` | `smarthome` | `gateway` ← each gateway's route |
-  | `gatecontrol-midea` | `midea`: the Midea cloud account (setting `midea_config`), `midea_devices`, `midea_device_owners` | `midea` | `ac` ← each LAN device's address (`{ kind: 'host' }`; cloud devices need none) |
-  | `gatecontrol-skoda` | `skoda`: `skoda_accounts`, `skoda_vehicles`, `skoda_vehicle_owners` | `skoda` | — (Škoda cloud only) |
+  | Plugin | Dataset (built-in data) | Home target |
+  |---|---|---|
+  | `gatecontrol-smarthome` | `smarthome`: `smarthome_gateways`, `_resources`, `_resource_owners`, `_rules` | `gateway` ← each gateway's route |
+  | `gatecontrol-midea` | `midea`: the Midea cloud account (setting `midea_config`), `midea_devices`, `midea_device_owners` | `ac` ← each LAN device's address (`{ kind: 'host' }`; cloud devices need none) |
+  | `gatecontrol-skoda` | `skoda`: `skoda_accounts`, `skoda_vehicles`, `skoda_vehicle_owners` | — (Škoda cloud only) |
+* **Upgrade notice** (`pendingMoves()`): while a dataset has data
+  (`counts()` > 0) and its plugin is not installed, the dashboard and
+  Settings → Plugins say that the feature is a plugin now ("Smart Home ist
+  jetzt ein Plugin. Installiere „Smart Home“ …", i18n `plugins.moved.*`) and
+  link the plugin's releases
+  (`https://github.com/CallMeTechie/gatecontrol-plugins/releases?q=<id>`).
+  Installing the plugin (on or off) hides the notice.
+* **Former pages and API**: `/smarthome`, `/smarthome/rules`, `/midea`,
+  `/skoda` redirect to `/plugins/<id>` (`…/rules`) when the plugin is
+  installed, else to `/settings#plugins` (`movedPage()`, fixed paths only).
+  `/api/v1/smarthome`, `/api/v1/midea`, `/api/v1/skoda` answer
+  `410 { code: 'moved_to_plugin', plugin }`; the built-in portal endpoints
+  are gone (404).
 * **Who**: only the mapped id with a **trusted signature** (CallMeTechie key
   or a key in `GC_PLUGIN_PUBKEYS`). For trying an unsigned development build
   the operator can set `GC_PLUGIN_LEGACY_UNSIGNED=1` (the plugin still only
@@ -439,29 +463,19 @@ once. Code:
   `legacyImport(snapshot, gc)` hook, which writes the data into its own
   storage (ids kept, so owners and rule references stay valid) and answers
   `{ ok: true }`. User ids are the same on this server, so owners keep their
-  mappings.
+  mappings. The built-in data itself is never changed by the import.
 * **Record**: `plugin_legacy_imports` (when, row counts, number of runs),
   plugin log and activity log (`plugin_legacy_imported`). "Alles löschen"
   removes the record, so a fresh install is offered the import again.
 * **API**: `GET /api/v1/plugins/<id>/legacy` (status: eligible, available,
   counts, imported, running; `null` for plugins without a dataset),
   `POST /api/v1/plugins/<id>/legacy/import` `{ confirm: true }`.
-
-**Coexistence until the built-in code is removed (Stage 6).** While the
-mapped plugin *may run* (installed, switched on, licensed, signature and
-compatibility ok — `legacy.replaced(feature)`), the built-in feature is off
-so nothing runs twice: its sidebar entry is hidden, its pages redirect to the
-plugin's page (`/smarthome` → `/plugins/gatecontrol-smarthome`,
-`/smarthome/rules` → `…/rules`, `/midea` → `/plugins/gatecontrol-midea`,
-`/skoda` → `/plugins/gatecontrol-skoda`), its API (`/api/v1/smarthome`,
-`/api/v1/midea`, `/api/v1/skoda`) answers `409 replaced_by_plugin`, its
-portal part (`/api/v1/portal/midea`, `/api/v1/portal/skoda*` answer
-`unavailable`, the built-in part of "Zuhause" / "Fahrzeug" is hidden) and
-its entries in "Was sieht dieser Nutzer?" are hidden and its background jobs
-(deCONZ polling, rule re-sync, Midea LAN polling, Škoda cloud polling) stand
-still. Switch the
-plugin off or uninstall it and the built-in feature is back, with its data:
-built-in data is never deleted by the import.
+* **Users**: deleting a user still removes that user's rows in the built-in
+  owner tables. "Was sieht dieser Nutzer?" has no built-in portal part any
+  more (plugins decide what a viewer sees).
+* **Licence**: the feature keys `smarthome`, `midea_integration`,
+  `skoda_integration` stay — they are how a plan includes the plugins
+  (entitlement source `plan`, see "Licences"); they show no UI themselves.
 
 ## Lifecycle and activity log
 
@@ -480,8 +494,7 @@ removes everything.
 
 * the CallMeTechie signing key in `BUILTIN_PUBLIC_KEYS` (until then a signed
   release is only trusted with its key in `GC_PLUGIN_PUBKEYS`);
-* "Nach Updates suchen" against the gatecontrol-plugins catalogue;
-  removing the built-in Smart Home / Klimaanlage / Fahrzeuge code and data
-  (Stage 6) — until then the built-in data import and
-  coexistence above apply;
+* "Nach Updates suchen" against the gatecontrol-plugins catalogue (the
+  upgrade notice links the plugin's releases until then);
+* dropping the built-in tables once every installation has imported them;
 * releasing a licence ("Lizenz freigeben") from the plugin card.

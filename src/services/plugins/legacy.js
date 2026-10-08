@@ -1,28 +1,30 @@
 'use strict';
 
-// Built-in → plugin migration (docs/plugins.md "Übernahme eingebauter Daten").
+// Built-in → plugin migration (docs/plugins.md "Built-in data import").
 //
-// While a built-in integration moves out of the server into a first-party
-// plugin, two things are needed until the built-in code is removed:
+// Smart Home (deCONZ), Klimaanlage (Midea) and Fahrzeuge (Škoda) used to be
+// built into GateControl. Their code is gone — the features are the
+// first-party plugins listed in DATASETS below — but their tables and
+// settings are kept (never dropped, still in backups) so an existing
+// installation can bring its data into the plugin:
 //
 //   1. a ONE-TIME DATA IMPORT: the plugin whose id is listed in DATASETS
-//      below may receive a JSON snapshot of exactly the mapped built-in
-//      tables (secrets decrypted for this hand-over only, never logged). The
-//      administrator starts it from the plugin's detail page (offered as soon
-//      as the plugin runs, re-runnable while the built-in data exists). The
-//      host pushes the snapshot into the plugin's `legacyImport(snapshot, gc)`
-//      hook, which writes it into the plugin's own storage. GateControl
-//      routes and LAN addresses the built-in rows referenced are turned into
-//      assignments of the plugin's home target first, so the administrator
-//      does not have to assign them again. Every run is recorded
-//      (plugin_legacy_imports).
+//      may receive a JSON snapshot of exactly the mapped built-in tables
+//      (read here directly, secrets decrypted for this hand-over only, never
+//      logged). The administrator starts it from the plugin's detail page
+//      (offered as soon as the plugin runs, re-runnable while the built-in
+//      data exists). The host pushes the snapshot into the plugin's
+//      `legacyImport(snapshot, gc)` hook, which writes it into the plugin's
+//      own storage. GateControl routes and LAN addresses the built-in rows
+//      referenced are turned into assignments of the plugin's home target
+//      first, so the administrator does not have to assign them again. Every
+//      run is recorded (plugin_legacy_imports).
 //
-//   2. COEXISTENCE: while the mapped plugin may run (installed, switched on,
-//      licensed, signature/compatibility ok), the built-in feature is
-//      replaced(): its sidebar entry, pages, API, portal part and background
-//      jobs are off, so nothing runs twice. When the plugin is switched off
-//      or uninstalled the built-in feature is back. Built-in data is never
-//      deleted here.
+//   2. an UPGRADE NOTICE (pendingMoves): while built-in data exists and the
+//      mapped plugin is not installed, Settings → Plugins and the dashboard
+//      say that the feature is a plugin now and link to its releases. The
+//      former pages (/smarthome, /midea, /skoda) lead to the plugin's page
+//      when it is installed, otherwise to Settings → Plugins (movedPage).
 //
 // Only a plugin with a TRUSTED signature (built-in CallMeTechie key or a key
 // the operator trusts via GC_PLUGIN_PUBKEYS) receives the snapshot. For
@@ -207,50 +209,60 @@ const skoda = {
 };
 
 /**
- * Fixed mapping: plugin id → the built-in dataset it may import and the
- * built-in feature it replaces. `target` is the plugin's home target that
- * the GateControl routes / LAN addresses referenced by the data become (one
- * per gateway / LAN air conditioner; source.targetRefs); null for a cloud
- * integration without a home target (skoda).
+ * Fixed mapping: plugin id → the built-in dataset it may import. `target` is
+ * the plugin's home target that the GateControl routes / LAN addresses
+ * referenced by the data become (one per gateway / LAN air conditioner;
+ * source.targetRefs); null for a cloud integration without a home target
+ * (skoda).
  */
 const DATASETS = new Map([
-  ['gatecontrol-smarthome', Object.freeze({ dataset: 'smarthome', feature: 'smarthome', target: 'gateway', source: smarthome })],
-  ['gatecontrol-midea', Object.freeze({ dataset: 'midea', feature: 'midea', target: 'ac', source: midea })],
-  ['gatecontrol-skoda', Object.freeze({ dataset: 'skoda', feature: 'skoda', target: null, source: skoda })],
+  ['gatecontrol-smarthome', Object.freeze({ dataset: 'smarthome', target: 'gateway', source: smarthome })],
+  ['gatecontrol-midea', Object.freeze({ dataset: 'midea', target: 'ac', source: midea })],
+  ['gatecontrol-skoda', Object.freeze({ dataset: 'skoda', target: null, source: skoda })],
 ]);
 
 function defOf(pluginId) {
   return typeof pluginId === 'string' && DATASETS.has(pluginId) ? DATASETS.get(pluginId) : null;
 }
 
-// ─── Coexistence ────────────────────────────────
+// ─── Upgrade notice and former pages ───────────
 
-/** Is the built-in `feature` replaced by a plugin that may run right now? */
-function replaced(feature) {
-  for (const [id, def] of DATASETS) {
-    if (def.feature !== feature) continue;
-    try {
-      const p = registry.get(id);
-      if (p && require('./index').evaluate(p).run) return true;
-    } catch { /* registry not ready → built-in stays */ }
-  }
-  return false;
+// Releases of the first-party plugins (one tag per plugin: <id>-v<version>).
+const RELEASES_URL = 'https://github.com/CallMeTechie/gatecontrol-plugins/releases';
+
+/** The release list of one plugin (newest first). */
+function releaseUrl(pluginId) {
+  return `${RELEASES_URL}?q=${encodeURIComponent(pluginId)}&expanded=true`;
 }
 
-/** { feature: true } for every replaced built-in feature (template locals). */
-function replacedMap() {
-  const out = {};
-  for (const def of DATASETS.values()) if (replaced(def.feature)) out[def.feature] = true;
+/** Is the plugin installed (on or off, any state)? */
+function installed(pluginId) {
+  try { return !!registry.get(pluginId); } catch { return false; }
+}
+
+/**
+ * Built-in datasets that still hold data while their plugin is not installed:
+ * [{ pluginId, dataset, counts, url }] (the upgrade notice). Never throws.
+ */
+function pendingMoves() {
+  const out = [];
+  for (const [id, def] of DATASETS) {
+    if (installed(id)) continue;
+    let counts;
+    try { counts = def.source.counts(); } catch { continue; }
+    if (!Object.values(counts).some((n) => n > 0)) continue;
+    out.push({ pluginId: id, dataset: def.dataset, counts, url: releaseUrl(id) });
+  }
   return out;
 }
 
-/** Express middleware for a built-in API: 409 while a plugin replaces it. */
-function guardApi(feature, pluginId) {
-  return (req, res, next) => {
-    if (!replaced(feature)) return next();
-    return res.status(409).json({ ok: false, code: 'replaced_by_plugin', plugin: pluginId,
-      error: req.t ? req.t('plugins.legacy.replaced_api', { plugin: pluginId }) : 'Replaced by a plugin' });
-  };
+/**
+ * Where a former built-in page leads: the plugin's page (`sub` = its sub
+ * page, e.g. "/rules") when the plugin is installed, else Settings → Plugins.
+ * Fixed paths only, never request data.
+ */
+function movedPage(pluginId, sub = '') {
+  return defOf(pluginId) && installed(pluginId) ? `/plugins/${pluginId}${sub}` : '/settings#plugins';
 }
 
 // ─── Import ─────────────────────────────────────
@@ -381,4 +393,4 @@ async function runImport(pluginId, { ip } = {}) {
   }
 }
 
-module.exports = { LegacyError, DATASETS, defOf, replaced, replacedMap, guardApi, status, runImport, forget, eligibility };
+module.exports = { LegacyError, DATASETS, defOf, status, runImport, forget, eligibility, pendingMoves, movedPage, releaseUrl };

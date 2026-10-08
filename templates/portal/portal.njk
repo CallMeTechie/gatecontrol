@@ -171,19 +171,19 @@
       </section>
       {% endif %}
 
+      {#- "Zuhause" / "Fahrzeug" hold plugin sections only (docs/plugins.md
+          "Portal"): their Start cards are shown once a plugin sends tiles. #}
       {% if tabs.home %}
-      <section class="pt-card" data-area="home" aria-labelledby="pt-c-home">
+      <section class="pt-card" data-area="home" id="pt-start-card-zuhause" aria-labelledby="pt-c-home" hidden>
         <div class="pt-card-head"><h2 class="pt-h2" id="pt-c-home">{{ t('portal.tab.home') }}</h2><a class="pt-link" href="#zuhause" data-goto="zuhause">{{ t('portal.open') }}</a></div>
-        <div class="pt-card-body" id="pt-start-home"><div class="pt-empty">{{ t('portal.loading') }}</div></div>
-        <div class="pt-plg-tiles" id="pt-start-tiles-zuhause" hidden></div>
+        <div class="pt-plg-tiles" id="pt-start-tiles-zuhause"></div>
       </section>
       {% endif %}
 
       {% if tabs.car %}
-      <section class="pt-card" data-area="car" aria-labelledby="pt-c-car">
+      <section class="pt-card" data-area="car" id="pt-start-card-fahrzeug" aria-labelledby="pt-c-car" hidden>
         <div class="pt-card-head"><h2 class="pt-h2" id="pt-c-car">{{ t('portal.tab.car') }}</h2><a class="pt-link" href="#fahrzeug" data-goto="fahrzeug">{{ t('portal.open') }}</a></div>
-        <div class="pt-card-body" id="pt-start-car"><div class="pt-empty">{{ t('portal.loading') }}</div></div>
-        <div class="pt-plg-tiles" id="pt-start-tiles-fahrzeug" hidden></div>
+        <div class="pt-plg-tiles" id="pt-start-tiles-fahrzeug"></div>
       </section>
       {% endif %}
 
@@ -244,22 +244,9 @@
   <section class="pt-panel" id="panel-zuhause" role="tabpanel" aria-labelledby="tab-zuhause" tabindex="0" data-panel="zuhause" hidden>
     <h1 class="pt-h1 pt-h1-sm">{{ t('portal.tab.home') }}</h1>
     <p class="pt-lead">{{ t('portal.home.lead') }}</p>
-    <div class="pt-hint" id="pt-home-hint" hidden></div>
     <div class="pt-grid pt-grid-wide">
-      {% if tabs.midea %}<div class="pt-ac-list" id="pt-midea" data-area="midea"></div>{% endif %}
-      {% if tabs.smarthome %}
-      <section class="pt-card pt-pad" id="pt-sh-card" data-area="smarthome" aria-labelledby="pt-c-sh">
-        <h2 class="pt-h2 pt-h2-gap" id="pt-c-sh">{{ t('portal.smarthome.title') }}</h2>
-        <div class="pt-sh-tiles" id="pt-sh-tiles"></div>
-        <div class="pt-sh-sensors" id="pt-sh-sensors" hidden>
-          <div class="pt-overline">{{ t('portal.smarthome.sensors') }}</div>
-          <ul class="pt-sensor-list" id="pt-sh-sensor-list"></ul>
-        </div>
-      </section>
-      {% endif %}
       {%- for sec in pluginSections.home %}{{ pluginSection(sec) }}{% endfor %}
     </div>
-    <div class="pt-msg" id="pt-home-msg" role="status" hidden></div>
   </section>
   {% endif %}
 
@@ -267,10 +254,7 @@
   {% if tabs.car %}
   <section class="pt-panel" id="panel-fahrzeug" role="tabpanel" aria-labelledby="tab-fahrzeug" tabindex="0" data-panel="fahrzeug" hidden>
     <h1 class="pt-h1 pt-h1-sm">{{ t('portal.tab.car') }}</h1>
-    <div class="pt-hint" id="pt-car-hint" hidden></div>
-    {% if tabs.skoda %}<div class="pt-car-list" id="pt-skoda" data-area="skoda"></div>{% endif %}
     {%- for sec in pluginSections.car %}{{ pluginSection(sec) }}{% endfor %}
-    <div class="pt-msg" id="pt-car-msg" role="status" hidden></div>
   </section>
   {% endif %}
 

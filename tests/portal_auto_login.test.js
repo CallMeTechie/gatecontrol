@@ -543,7 +543,7 @@ describe('portal templates', () => {
       }
       // The string island carries every portal.* key the script uses.
       const island = JSON.parse(pages[0].text.match(/id="portal-i18n"[^>]*>([^<]*)</)[1]);
-      assert.ok(island['portal.devices.lock_title'] && island['portal.car.confirm_unlock']);
+      assert.ok(island['portal.devices.lock_title'] && island['portal.devices.enroll_failed']);
     });
   }
 

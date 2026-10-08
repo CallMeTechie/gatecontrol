@@ -1437,7 +1437,7 @@ async function bulkUpdate(input) {
 
 /**
  * Resolve the server-side companion proxy URL for a gateway route.
- * The GC server reaches deCONZ/companion via the peer's WireGuard IP on the
+ * The GC server reaches the companion via the peer's WireGuard IP on the
  * companion proxy port (default 8080). Callers also get the domain so they
  * can set X-Gateway-Target-Domain on every request.
  * Returns { baseUrl, domain } or null if the route/peer is not found.

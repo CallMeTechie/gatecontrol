@@ -207,4 +207,63 @@ describe('backup service', () => {
     await backup.restoreBackup(data);
     assert.equal(db.prepare('SELECT COUNT(*) c FROM service_bundles').get().c, 0);
   });
+
+  // Former built-in integrations (Smart Home, Klimaanlage, Fahrzeuge — plugins
+  // now): their tables wait for the import, so backups carry them.
+  it('roundtrip: built-in integration tables survive with re-mapped users and routes', async () => {
+    clearData();
+    const db = getDb();
+    for (const t of ['smarthome_resource_owners', 'smarthome_resources', 'smarthome_gateways', 'midea_device_owners', 'midea_devices', 'skoda_vehicle_owners', 'skoda_vehicles', 'skoda_accounts']) db.prepare(`DELETE FROM ${t}`).run();
+    db.prepare("DELETE FROM users WHERE username = 'ada'").run();
+    const ada = db.prepare("INSERT INTO users (username, password_hash, role) VALUES ('ada', 'x', 'user')").run().lastInsertRowid;
+    const route = db.prepare("INSERT INTO routes (domain, target_ip, target_port, enabled) VALUES ('phoscon.example.com', '10.8.0.5', 80, 1)").run().lastInsertRowid;
+    db.prepare('INSERT INTO smarthome_gateways (id, name, route_id, api_key_enc) VALUES (4, ?, ?, ?)').run('GW', route, encrypt('deconz-key'));
+    db.prepare("INSERT INTO smarthome_resources (id, gateway_id, deconz_id, deconz_type, kind, name) VALUES (9, 4, '1', 'lights', 'light', 'L')").run();
+    db.prepare('INSERT INTO smarthome_resource_owners (resource_id, user_id) VALUES (9, ?)').run(ada);
+    db.prepare("INSERT INTO midea_devices (id, name, device_sn, token_enc) VALUES (2, 'AC', 'sn', ?)").run(encrypt('tok'));
+    db.prepare('INSERT INTO midea_device_owners (midea_device_id, user_id) VALUES (2, ?)').run(ada);
+    db.prepare("INSERT INTO skoda_accounts (id, email, password_enc) VALUES (1, 'a@b.c', ?)").run(encrypt('pw'));
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 255]);
+    db.prepare("INSERT INTO skoda_vehicles (id, account_id, vin, image) VALUES (7, 1, 'TMB1', ?)").run(png);
+    db.prepare('INSERT INTO skoda_vehicle_owners (skoda_vehicle_id, user_id) VALUES (7, ?)').run(ada);
+
+    const data = backup.createBackup();
+    const b = data.data.builtin_integrations;
+    assert.deepEqual(Object.keys(b).sort(), ['midea_device_owners', 'midea_devices', 'skoda_accounts', 'skoda_vehicle_owners', 'skoda_vehicles',
+      'smarthome_gateways', 'smarthome_resource_owners', 'smarthome_resources', 'smarthome_rules']);
+    assert.equal(b.smarthome_gateways[0].route_domain, 'phoscon.example.com');
+    assert.ok(!('route_id' in b.smarthome_gateways[0]));
+    assert.deepEqual(b.smarthome_resource_owners.map((o) => [o.resource_id, o.user_name, o.user_id]), [[9, 'ada', undefined]]);
+    assert.equal(b.skoda_vehicles[0].image_base64, png.toString('base64'));
+    assert.equal(JSON.stringify(b).includes('deconz-key'), false, 'secrets stay encrypted');
+
+    // ids of users and routes change on a restore
+    db.prepare("UPDATE users SET id = id + 500 WHERE username = 'ada'").run();
+    db.prepare('DELETE FROM smarthome_gateways').run();
+    await backup.restoreBackup(data);
+    const newAda = db.prepare("SELECT id FROM users WHERE username = 'ada'").get().id;
+    const newRoute = db.prepare("SELECT id FROM routes WHERE domain = 'phoscon.example.com'").get().id;
+    const gw = db.prepare('SELECT * FROM smarthome_gateways').get();
+    assert.deepEqual([gw.id, gw.name, gw.route_id], [4, 'GW', newRoute]);
+    assert.equal(require('../src/utils/crypto').decrypt(gw.api_key_enc), 'deconz-key');
+    for (const [t, col, id] of [['smarthome_resource_owners', 'resource_id', 9], ['midea_device_owners', 'midea_device_id', 2], ['skoda_vehicle_owners', 'skoda_vehicle_id', 7]]) {
+      assert.deepEqual(db.prepare(`SELECT ${col} AS r, user_id AS u FROM ${t}`).all().map((x) => [x.r, x.u]), [[id, newAda]], t);
+    }
+    assert.ok(Buffer.from(db.prepare('SELECT image FROM skoda_vehicles WHERE id = 7').get().image).equals(png));
+    assert.equal(db.prepare('SELECT COUNT(*) c FROM smarthome_resources').get().c, 1);
+  });
+
+  it('a backup without the built-in part leaves those tables untouched; unknown tables are refused', async () => {
+    const db = getDb();
+    const before = db.prepare('SELECT COUNT(*) c FROM smarthome_resources').get().c;
+    const data = backup.createBackup();
+    delete data.data.builtin_integrations;
+    await backup.restoreBackup(data);
+    assert.equal(db.prepare('SELECT COUNT(*) c FROM smarthome_resources').get().c, before);
+    const bad = backup.createBackup();
+    bad.data.builtin_integrations = { users: [] };
+    assert.ok(backup.validateBackup(bad).some((e) => /builtin_integrations\.users is unknown/.test(e)));
+    bad.data.builtin_integrations = { skoda_vehicles: 'x' };
+    assert.ok(backup.validateBackup(bad).some((e) => /must be a list of rows/.test(e)));
+  });
 });

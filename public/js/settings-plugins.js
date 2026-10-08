@@ -78,6 +78,10 @@
     const grid = $('pg-grid');
     clear(grid);
     $('pg-empty').hidden = state.plugins.length > 0;
+    // upgrade notice of a former built-in integration: gone once its plugin is installed
+    document.querySelectorAll('[data-builtin-moved]').forEach((n) => {
+      n.hidden = state.plugins.some((p) => p.id === n.getAttribute('data-builtin-moved'));
+    });
     for (const p of state.plugins) {
       const st = P.statusChip(p);
       const on = selected === p.id;
@@ -143,7 +147,7 @@
     ]));
   }
 
-  // ── Built-in data import (first-party plugin replacing a built-in feature) ──
+  // ── Built-in data import (first-party plugin of a former built-in feature) ──
   function datasetName(ds) {
     const k = 'plugins.legacy.dataset.' + ds;
     const s = t(k);
@@ -162,7 +166,6 @@
     box.appendChild(el('b', { id: 'pg-legacy-title', text: t('plugins.legacy.title') + '. ' }));
     if (L.imported) box.appendChild(el('span', { text: t('plugins.legacy.done', { date: P.fmtDate(L.imported.at, lang), summary: legacySummary(L.imported.counts) }) + ' ' }));
     else box.appendChild(el('span', { text: t('plugins.legacy.offer', { dataset: datasetName(L.dataset), summary: legacySummary(L.counts) }) + ' ' }));
-    if (p.enabled && p.status === 'running') box.appendChild(el('span', { class: 'pg-sub', text: t('plugins.legacy.replaced') + ' ' }));
     let blocked = null;
     if (!L.eligible) blocked = t('plugins.legacy.unsigned');
     else if (!L.available) blocked = null;

@@ -67,13 +67,12 @@ router.use('/license', require('./license'));
 router.use('/client', require('./client'));
 router.use('/rdp', require('./rdp'));
 router.use('/pihole', require('./pihole'));
-// Off (409 replaced_by_plugin) while the gatecontrol-midea plugin replaces it.
-router.use('/midea', require('../../services/plugins/legacy').guardApi('midea', 'gatecontrol-midea'), require('./midea'));
-// Off (409 replaced_by_plugin) while the gatecontrol-skoda plugin replaces it.
-router.use('/skoda', require('../../services/plugins/legacy').guardApi('skoda', 'gatecontrol-skoda'), require('./skoda'));
-// Off (409 replaced_by_plugin) while the gatecontrol-smarthome plugin replaces it.
-router.use('/smarthome', require('../../services/plugins/legacy').guardApi('smarthome', 'gatecontrol-smarthome'), require('./smarthome'));
 // Plugin platform (docs/plugins.md): management + each plugin's own admin API
 router.use('/plugins', require('./plugins'));
+// Former built-in integrations, now first-party plugins (their API lives
+// under /plugins/<id>/api): 410 with the plugin that provides the feature.
+for (const [path, plugin] of [['/smarthome', 'gatecontrol-smarthome'], ['/midea', 'gatecontrol-midea'], ['/skoda', 'gatecontrol-skoda']]) {
+  router.use(path, (req, res) => res.status(410).json({ ok: false, code: 'moved_to_plugin', plugin }));
+}
 
 module.exports = router;

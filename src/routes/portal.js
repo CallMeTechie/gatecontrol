@@ -80,36 +80,17 @@ function accountUrl() {
   try { return new URL('/profile', config.app.baseUrl).href; } catch { return '/profile'; }
 }
 
-function countSafe(fn) {
-  try { return fn() || 0; } catch { return 0; }
-}
-
 /** Which tabs have something to show (unlicensed or empty areas stay hidden). */
 function tabsFor(req, plg) {
   const sections = (plg && plg.sections) || { home: [], car: [] };
   const w = portalConfig().widgets;
-  const owner = req.portalOwnerId;
   const identified = req.portalPeerId != null;
-  const midea = owner != null && w.midea && license.hasFeature('midea_integration')
-    && !require('../services/plugins/legacy').replaced('midea')
-    && countSafe(() => require('../services/midea/mideaOwners').devicesOwnedBy(owner).length) > 0;
-  const smarthome = owner != null && w.smarthome && license.hasFeature('smarthome')
-    && !require('../services/plugins/legacy').replaced('smarthome')
-    && countSafe(() => require('../services/smarthome/smarthomeOwners').resourcesOwnedBy(owner).length) > 0;
-  const skoda = owner != null && w.skoda && license.hasFeature('skoda_integration')
-    && !require('../services/plugins/legacy').replaced('skoda')
-    && countSafe(() => require('../services/skoda/skodaOwners').vehiclesOwnedBy(owner).length) > 0;
   return {
     start: true,
     services: identified && w.services,
-    home: midea || smarthome || sections.home.length > 0,
-    homeSections: sections.home.length,
-    carSections: sections.car.length,
+    home: sections.home.length > 0,
     plugins: ((plg && plg.tabs) || []).length + sections.home.length + sections.car.length > 0,
-    midea,
-    smarthome,
-    car: skoda || sections.car.length > 0,
-    skoda,
+    car: sections.car.length > 0,
     net: identified && (w.device || w.traffic || w.pihole),
     device: identified && w.device,
     traffic: identified && w.traffic,

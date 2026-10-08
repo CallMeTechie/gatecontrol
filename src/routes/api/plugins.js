@@ -239,7 +239,7 @@ router.put('/:id/discovery', (req, res) => {
   res.json({ ok: true, granted: on });
 });
 
-// ─── Built-in data import (first-party plugins replacing a built-in feature) ─
+// ─── Built-in data import (first-party plugins of former built-in features) ─
 
 const legacy = require('../../services/plugins/legacy');
 

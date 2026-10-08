@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Smart Home (deCONZ/Phoscon), Klimaanlage (Midea) und Fahrzeuge (Škoda) sind nicht mehr eingebaut, sondern nur noch als signierte Plugins verfügbar (`gatecontrol-smarthome`, `gatecontrol-midea`, `gatecontrol-skoda`, Einstellungen → Plugins). Ohne Plugin bleibt von ihnen nichts in GateControl: keine Seiten, keine API, kein Portal-Teil, keine Hintergrundabfragen, keine Portal-Widgets in den Einstellungen.
+- Hinweis bei vorhandenen Daten: Gibt es Daten einer früher eingebauten Integration und ist das passende Plugin nicht installiert, sagen das Dashboard und Einstellungen → Plugins, dass die Funktion jetzt ein Plugin ist, und verlinken dessen Releases. Nach der Installation übernimmt „Daten übernehmen“ auf der Plugin-Seite alles wie bisher (Gateways, Geräte, Regeln, Konten, Fahrzeuge, Besitzer; Zugriffsziele werden zugewiesen).
+- Seitenleiste: Installierte Plugins mit eigener Seite stehen wieder unter „Integrationen“ (statt in einer eigenen Gruppe „Plugins“) — nach der Installation der drei Plugins sieht das Menü aus wie vorher.
+- Alte Lesezeichen: `/smarthome`, `/smarthome/rules`, `/midea` und `/skoda` führen zur Seite des Plugins, wenn es installiert ist, sonst zu Einstellungen → Plugins. Die alten Schnittstellen `/api/v1/smarthome`, `/api/v1/midea` und `/api/v1/skoda` antworten `410 moved_to_plugin`.
+
+### Hinweise
+- Die Daten der früheren Integrationen bleiben unverändert erhalten (Tabellen `smarthome_*`, `midea_devices`, `midea_device_owners`, `skoda_*`, Einstellung `midea_config`), bis sie ins Plugin übernommen sind. Backups enthalten diese Tabellen jetzt (`builtin_integrations`), eine Wiederherstellung bringt sie mit, Benutzer und Routen werden über Name bzw. Domain zugeordnet.
+- „Was sieht dieser Nutzer?“ zeigt keinen Bereich „Im Portal“ mehr; welche Geräte jemand im Portal sieht, entscheidet das jeweilige Plugin. Wird ein Benutzer gelöscht, werden seine Besitz-Einträge in den alten Tabellen weiterhin entfernt.
+- Die Lizenzmerkmale `smarthome`, `midea_integration` und `skoda_integration` bleiben: Sie schalten die im Tarif enthaltenen Plugins frei.
+
+---
+
 ## [1.151.0] — 2026-10-08
 
 ### Features

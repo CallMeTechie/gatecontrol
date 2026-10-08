@@ -214,7 +214,7 @@ function validateEmail(email) {
   if (!trimmed) return 'Email is required';
   // Lineare Prüfungen statt Regex über die Nutzereingabe: /.+@.+/ ist ein
   // polynomial-ReDoS-Risiko (CodeQL js/polynomial-redos) — genau dieser Befund
-  // trat in skodaAccounts.createAccount auf. Streng, weil der Wert in eine
+  // trat früher in der Fahrzeuge-Integration auf. Streng, weil der Wert in eine
   // ACME-Kontoregistrierung wandert: was Let's Encrypt ablehnt, blockiert die
   // Ausstellung für ALLE öffentlichen Domains.
   if (trimmed.length > 254) return 'Email too long (max 254 chars)';

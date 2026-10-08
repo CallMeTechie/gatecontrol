@@ -1415,7 +1415,7 @@
   // ── Portal ──
   let portalSaved = { host: '', internal: '' };
   const PORTAL_MAP = { enabled: 'po-on', autoappear: 'po-auto', trust_owner_mapping: 'po-trust' };
-  const WIDGET_MAP = { device: 'w-device', traffic: 'w-traffic', services: 'w-services', pihole: 'w-pihole', midea: 'w-midea', smarthome: 'w-smarthome', skoda: 'w-skoda' };
+  const WIDGET_MAP = { device: 'w-device', traffic: 'w-traffic', services: 'w-services', pihole: 'w-pihole' };
   function renderPortalPreview() {
     const v = valuesOf('portal');
     const host = U.portalHost(v['po-domain'], v['po-prefix'], portalSaved.internal);
@@ -1442,7 +1442,6 @@
       fill('portal', {
         'po-on': !!d.enabled, 'po-auto': d.autoappear !== false, 'po-trust': !!d.trustOwnerMapping,
         'w-device': !!w.device, 'w-traffic': !!w.traffic, 'w-services': !!w.services, 'w-pihole': !!w.pihole,
-        'w-midea': !!w.midea, 'w-smarthome': !!w.smarthome, 'w-skoda': !!w.skoda,
         'po-domain': d.base_domain || '', 'po-prefix': d.prefix == null ? 'home' : d.prefix,
       });
       renderPortalPreview();

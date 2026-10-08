@@ -13,6 +13,12 @@
       <input type="file" id="pg-file" class="st-sr" accept=".gcplugin,application/octet-stream" aria-label="{{ t('plugins.drop.choose') }}">
     </label>
 
+    {#- Former built-in integrations whose data waits for the plugin
+        (docs/plugins.md "Built-in data import"); settings-plugins.js hides a
+        note once its plugin is installed. -#}
+    {% for mv in builtinMoved or [] %}
+    <p class="st-note st-note-warn pg-moved" role="note" data-builtin-moved="{{ mv.pluginId }}">{{ t('plugins.moved.' + mv.dataset) }} <a href="{{ mv.url }}" class="st-link" target="_blank" rel="noopener noreferrer">{{ t('plugins.moved.download') }}</a></p>
+    {% endfor %}
     <p class="st-err-block" id="pg-load-err" role="alert" hidden></p>
     <div class="pg-grid" id="pg-grid" aria-live="polite"></div>
     <p class="pg-empty" id="pg-empty" hidden>{{ t('plugins.empty') }}</p>

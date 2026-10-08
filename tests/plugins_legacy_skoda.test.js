@@ -5,10 +5,9 @@
 // plugin gets a one-time snapshot of exactly the skoda_* tables (MySkoda
 // password, S-PIN and session tokens decrypted for the hand-over only, the
 // render image as base64); a cloud integration has no home target, so no
-// assignments are made. While the plugin runs the built-in Fahrzeuge
-// (sidebar, page, API, portal part, "Was sieht dieser Nutzer?", polling) is
-// off; switched off it is back with its data. Also: portal viewers carry
-// `loggedIn` to plugins.
+// assignments are made. The built-in Fahrzeuge itself is gone (page, API,
+// portal part, "Was sieht dieser Nutzer?"); its data waits for the import.
+// Also: portal viewers carry `loggedIn` to plugins.
 
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -68,14 +67,22 @@ after(async () => {
   teardown();
 });
 
-describe('built-in Fahrzeuge before a plugin replaces them', () => {
-  it('run as before', async () => {
-    assert.equal(legacy.replaced('skoda'), false);
-    const r = await agent.get('/api/v1/skoda').expect(200);
-    assert.deepEqual(r.body.vehicles.map((v) => v.name), ['Enyaq', 'Elroq']);
-    const page = await agent.get('/skoda').expect(200);
-    assert.match(page.text, /href="\/skoda"/);
-    assert.equal(require('../src/services/userVisibility').forUser(adminId).portal.some((e) => e.kind === 'skoda'), true);
+describe('built-in Fahrzeuge data without the plugin', () => {
+  it('nothing of the former built-in is left; the upgrade notice links the plugin releases', async () => {
+    assert.equal((await agent.get('/skoda').expect(302)).headers.location, '/settings#plugins');
+    const api = await agent.get('/api/v1/skoda').expect(410);
+    assert.deepEqual([api.body.code, api.body.plugin], ['moved_to_plugin', ID]);
+    await agent.post('/api/v1/skoda/vehicles/7/command').set('X-CSRF-Token', csrf).send({ action: 'lock' }).expect(410);
+    await agent.get('/api/v1/portal/skoda').expect(404);
+    await agent.get('/api/v1/portal/skoda/vehicles/7/image').expect(404);
+    assert.equal('portal' in require('../src/services/userVisibility').forUser(adminId), false);
+    assert.deepEqual(legacy.pendingMoves().map((m) => [m.pluginId, m.counts, m.url]),
+      [[ID, { accounts: 2, vehicles: 2, owners: 1 }, 'https://github.com/CallMeTechie/gatecontrol-plugins/releases?q=gatecontrol-skoda&expanded=true']]);
+    const html = (await agent.get('/dashboard').expect(200)).text;
+    assert.match(html, /data-builtin-moved="gatecontrol-skoda"/);
+    assert.match(html, /Vehicles is a plugin now/);
+    assert.match(html, /href="\/settings#plugins"/);
+    assert.doesNotMatch(html, /href="\/skoda"/);
   });
 });
 
@@ -127,35 +134,12 @@ describe('the signed first-party plugin gatecontrol-skoda', () => {
     }
   });
 
-  it('replaces the built-in Fahrzeuge while it runs: sidebar, page, API, portal, visibility', async () => {
-    assert.equal(legacy.replaced('skoda'), true);
-    assert.equal(legacy.replaced('smarthome'), false, 'only the mapped feature');
-    const api = await agent.get('/api/v1/skoda').expect(409);
-    assert.equal(api.body.code, 'replaced_by_plugin');
-    assert.equal(api.body.plugin, ID);
-    assert.match(api.body.error, /gatecontrol-skoda/);
-    await agent.post('/api/v1/skoda/vehicles/7/command').set('X-CSRF-Token', csrf).send({ action: 'lock' }).expect(409);
-    const page = await agent.get('/skoda').expect(302);
-    assert.equal(page.headers.location, '/plugins/gatecontrol-skoda');
+  it('the former page leads to the plugin, listed in the sidebar; no upgrade notice', async () => {
+    assert.equal((await agent.get('/skoda').expect(302)).headers.location, '/plugins/gatecontrol-skoda');
     const dash = await agent.get('/plugins/gatecontrol-skoda').expect(200);
     assert.doesNotMatch(dash.text, /href="\/skoda"/);
     assert.match(dash.text, /href="\/plugins\/gatecontrol-skoda"/);
-    const portal = await agent.get('/api/v1/portal/skoda').expect(200);
-    assert.equal(portal.body.data, null);
-    assert.equal(portal.body.reason, 'unavailable');
-    await agent.get('/api/v1/portal/skoda/vehicles/7/image').expect(404);
-    assert.equal(require('../src/services/userVisibility').forUser(adminId).portal.some((e) => e.kind === 'skoda'), false);
-  });
-
-  it('the built-in polling stands still', async () => {
-    const skoda = require('../src/services/skoda');
-    const accounts = require('../src/services/skoda/skodaAccounts');
-    assert.equal(skoda.replacedByPlugin(), true);
-    const orig = accounts.listAccounts;
-    let asked = 0;
-    accounts.listAccounts = (...a) => { asked++; return orig(...a); };
-    try { skoda.pollTick(); } finally { accounts.listAccounts = orig; }
-    assert.equal(asked, 0, 'the poll loop never looks at the accounts');
+    assert.doesNotMatch((await agent.get('/dashboard').expect(200)).text, /data-builtin-moved=/);
   });
 
   it('portal viewers reach the plugin with loggedIn', async () => {
@@ -164,14 +148,9 @@ describe('the signed first-party plugin gatecontrol-skoda', () => {
     assert.equal(r.body.user.loggedIn, true, 'a web login counts as signed in');
   });
 
-  it('comes back when the plugin is switched off; the built-in data is untouched', async () => {
+  it('switched off: the page stays the plugin page, the built-in data is untouched', async () => {
     await agent.post(`${API}/${ID}/disable`).set('X-CSRF-Token', csrf).expect(200);
-    assert.equal(legacy.replaced('skoda'), false);
-    assert.equal(require('../src/services/skoda').replacedByPlugin(), false);
-    const r = await agent.get('/api/v1/skoda').expect(200);
-    assert.equal(r.body.vehicles.length, 2);
-    const page = await agent.get('/skoda').expect(200);
-    assert.match(page.text, /href="\/skoda"/);
+    assert.equal((await agent.get('/skoda').expect(302)).headers.location, '/plugins/gatecontrol-skoda');
     assert.equal(db.prepare('SELECT COUNT(*) AS c FROM skoda_accounts').get().c, 2);
     assert.equal(db.prepare('SELECT COUNT(*) AS c FROM skoda_vehicle_owners').get().c, 1);
     await agent.post(`${API}/${ID}/enable`).set('X-CSRF-Token', csrf).expect(200);
@@ -180,7 +159,7 @@ describe('the signed first-party plugin gatecontrol-skoda', () => {
 
   it('uninstall "Alles löschen" forgets the import record', async () => {
     await agent.post(`${API}/${ID}/uninstall`).set('X-CSRF-Token', csrf).send({ mode: 'wipe', confirm: 'Fahrzeuge' }).expect(200);
-    assert.equal(legacy.replaced('skoda'), false);
+    assert.deepEqual(legacy.pendingMoves().map((m) => m.pluginId), [ID]);
     assert.equal(db.prepare('SELECT COUNT(*) AS c FROM plugin_legacy_imports').get().c, 0);
   });
 });

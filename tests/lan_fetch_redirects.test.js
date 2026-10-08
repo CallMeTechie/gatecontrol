@@ -1,12 +1,11 @@
 'use strict';
-// LAN-Integrationen (Pi-hole, deCONZ) folgen Redirects nur innerhalb des
+// LAN-Integrationen (Pi-hole) folgen Redirects nur innerhalb des
 // konfigurierten Origins; Cloud-Metadaten sind als Ziel immer gesperrt.
 const { test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { lanFetch, isMetadataHost } = require('../src/utils/lanFetch');
 const pihole = require('../src/services/piholeClient');
-const deconz = require('../src/services/smarthome/deconzClient');
 
 const servers = [];
 function listen(handler) {
@@ -106,19 +105,6 @@ test('Pi-hole client: same-origin redirect still works', async () => {
   const s = await pihole.createClient({ id: 'p', url: base, app_password: 'pw' }).getSummary();
   assert.equal(s.queries.total, 3);
   assert.deepEqual(seen, ['POST /api/auth', 'GET /api/padd', 'GET /api/padd/']);
-});
-
-test('deCONZ client: cross-origin redirect is an error', async () => {
-  const internal = await listen((req, res) => res.end('{}'));
-  const rogue = await listen((req, res) => { res.writeHead(302, { Location: `${internal}/` }); res.end(); });
-  await assert.rejects(() => deconz.createClient({ baseUrl: rogue, apiKey: 'K' }).getLights(),
-    (e) => e.code === 'LAN_REDIRECT_CROSS_ORIGIN' && /^deconz_redirect_blocked/.test(e.message));
-});
-
-test('deCONZ client: normal request ok', async () => {
-  const base = await listen((req, res) => res.end(JSON.stringify({ 1: { name: 'L' } })));
-  const lights = await deconz.createClient({ baseUrl: base, apiKey: 'K' }).getLights();
-  assert.equal(lights['1'].name, 'L');
 });
 
 // ─── Schema-Upgrade http → https (Pi-hole v6, Reverse-Proxies) ────────

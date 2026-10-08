@@ -4,9 +4,9 @@
 // aurora.css, security.css, nav.css, ops.css, problems.css, l4-protect.css and
 // two-factor.css are one file, public/css/app.css, in exactly the order in
 // which layout.njk used to link them — so the cascade, and with it the look,
-// is unchanged. portal.css keeps its own design, and midea/skoda/smarthome stay
-// page-local because they declare unscoped generic selectors (.pill, .banner,
-// .arrow, .avatar) that must not become global.
+// is unchanged. portal.css keeps its own design. (The page-local sheets of the
+// former built-in integrations midea/skoda/smarthome went with them — they
+// are plugins now.)
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -43,10 +43,10 @@ function section(n) {
 }
 
 describe('app.css: one stylesheet', () => {
-  it('the eight merged files are gone; app.css and the page-local sheets remain', () => {
+  it('the eight merged files are gone; app.css and portal.css remain', () => {
     for (const f of MERGED) assert.equal(fs.existsSync(path.join(CSS_DIR, f)), false, f);
     const left = fs.readdirSync(CSS_DIR).sort();
-    assert.deepEqual(left, ['app.css', 'midea.css', 'portal.css', 'skoda.css', 'smarthome.css'], left.join(','));
+    assert.deepEqual(left, ['app.css', 'portal.css'], left.join(','));
   });
 
   it('carries all eight sections, in the order layout.njk used to link them', () => {
@@ -111,13 +111,12 @@ describe('app.css: templates link it exactly once', () => {
     }
   });
 
-  it('standalone pages link app.css once; pages that extend the layout add at most an integration sheet', () => {
+  it('standalone pages link app.css once; pages that extend the layout add none', () => {
     for (const f of pages) {
       const src = read('templates/aurora/pages/' + f);
       const links = Array.from(src.matchAll(/<link rel="stylesheet" href="([^"?]+)/g)).map((m) => m[1]);
       if (/\{% extends/.test(src)) {
-        assert.ok(links.every((l) => /\/(midea|skoda|smarthome)\.css$/.test(l)), `${f}: ${links.join(',')}`);
-        assert.ok(links.length <= 1, `${f}: at most one page-local sheet`);
+        assert.equal(links.length, 0, `${f}: ${links.join(',')}`);
       } else {
         assert.equal(links.length, 1, `${f}: ${links.join(',')}`);
         assert.match(links[0], /\/css\/app\.css$/, f);

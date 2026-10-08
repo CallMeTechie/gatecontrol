@@ -65,10 +65,10 @@ describe('Settings → Plugins', () => {
 });
 
 describe('sidebar, plugin page, frame', () => {
-  it('the sidebar lists the plugin under "Plugins"', async () => {
+  it('the sidebar lists the plugin under "Integrationen"', async () => {
     const html = withoutScripts((await agent.get('/dashboard').expect(200)).text);
-    assert.match(html, /<a href="\/plugins\/hello" class="nav-item" data-plugin-nav="hello">/);
-    assert.ok(html.includes('>Plugins</div>'));
+    assert.match(html, /<div class="nav-section-label">Integrationen<\/div>\s*<a href="\/plugins\/hello" class="nav-item" data-plugin-nav="hello">/);
+    assert.ok(!html.includes('>Plugins</div>'), 'no separate "Plugins" group');
   });
   it('the page embeds the plugin in a sandboxed frame (no allow-same-origin)', async () => {
     const html = withoutScripts((await agent.get('/plugins/hello').expect(200)).text);

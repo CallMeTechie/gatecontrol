@@ -7,10 +7,7 @@
  * which layout.njk used to link them, so the cascade is unchanged.
  *
  * Order: tokens/base → Aurora theme → feature sections.
- * Stays separate on purpose: portal.css (own design) and the page-local
- * integration sheets midea.css / skoda.css / smarthome.css, which declare
- * unscoped generic selectors (.pill, .banner, .arrow, .avatar) that must not
- * become global.
+ * Stays separate on purpose: portal.css (own design).
  * ============================================================================ */
 
 
@@ -3076,7 +3073,7 @@ input.so-num { width: 110px; flex-shrink: 0; padding: 6px 10px; font-size: 12px;
   --bg-input-focus: var(--surface);   /* pro.css uses #fff; aurora uses surface */
   --purple-light:   var(--purple-bg); /* pro.css: #F5F3FF — used by .tag-purple/.badge-purple */
   --amber-border:   var(--amber-bd);  /* pro.css: #FDE68A — used by .btn-amber */
-  --purple-bd:      var(--purple-border); /* ponytail: fills aurora vocab gap; not yet consumed by midea.css */
+  --purple-bd:      var(--purple-border); /* fills an aurora vocab gap */
 }
 
 /* ----------------------------------------------------------------------------
@@ -6365,6 +6362,8 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .nav-tag-off{margin-left:auto; padding:0 6px; border-radius:999px; border:1px solid var(--line-2); color:var(--db-muted); font-size:10.5px; font-weight:700; line-height:1.6}
 .pg-sec-head{display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:12px 20px}
 .pg-root{display:flex; flex-direction:column; gap:18px; min-width:0}
+.pg-moved{margin:0}
+.pg-moved[hidden]{display:none}
 .pg-sub{display:block; color:var(--db-muted); font-size:12.5px}
 .pg-pad{margin:0 0 14px}
 .pg-mt{margin-top:10px}

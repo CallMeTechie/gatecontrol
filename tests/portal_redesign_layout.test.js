@@ -47,12 +47,14 @@ test('Pi-hole donut and scope ids', async () => {
   for (const id of ['pt-pi-donut', 'pt-pi-pct', 'pt-pi-total', 'pt-pi-blocked', 'pt-pi-allowed', 'pt-pi-seg']) assert.ok(h.includes('id="' + id + '"'), id);
 });
 
-test('smart home tiles are buttons with aria-pressed, the AC power is a switch', () => {
+test('"Zuhause" and "Fahrzeug" hold plugin sections only (no built-in Smart Home / Klima / Fahrzeug parts)', () => {
   const js = fs.readFileSync('public/js/portal.js', 'utf8');
-  assert.ok(js.includes("class: 'pt-shtile-main', 'aria-pressed'"));
-  assert.ok(js.includes("role: 'switch', 'aria-checked'"));
-  const css = fs.readFileSync('public/css/portal.css', 'utf8');
-  assert.ok(css.includes('.pt-shtile') && css.includes('.pt-switch') && css.includes('.pt-sensor-list'));
+  for (const s of ['/api/v1/portal/midea', '/api/v1/portal/smarthome', '/api/v1/portal/skoda', 'pt-shtile', 'renderCarCard']) assert.ok(!js.includes(s), s);
+  const tpl = fs.readFileSync('templates/portal/portal.njk', 'utf8');
+  for (const s of ['tabs.midea', 'tabs.smarthome', 'tabs.skoda', 'id="pt-start-home"', 'id="pt-start-car"']) assert.ok(!tpl.includes(s), s);
+  // their Start cards wait for plugin tiles (loadPluginStart shows pt-start-card-<tab>)
+  assert.match(tpl, /id="pt-start-card-zuhause"[^>]*hidden/);
+  assert.match(tpl, /id="pt-start-card-fahrzeug"[^>]*hidden/);
 });
 
 test('services render as tiles (start) and cards (tab)', () => {
