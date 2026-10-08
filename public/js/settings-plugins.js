@@ -67,6 +67,11 @@
 
   function chip(text, tone) { return el('span', { class: 'pg-badge', 'data-state': tone, text }); }
   function verifiedChip(p) { return p.verified ? chip(t('plugins.badge.verified'), 'good') : chip(t('plugins.badge.unverified'), 'warn'); }
+  /** "Im Plan enthalten" / "Lifetime" for plugins licensed without an own key. */
+  function sourceChip(p) {
+    const s = p.license && p.license.licensed && p.license.source;
+    return s === 'plan' || s === 'lifetime' ? chip(t('plugins.lic.source_' + s), 'good') : null;
+  }
 
   // ── Cards ──
   function renderCards() {
@@ -82,7 +87,7 @@
           el('span', { class: 'pg-ic' }, [icon(p.nav ? p.nav.icon : DEFAULT_ICON)]),
           el('span', { class: 'pg-card-name' }, [el('b', { text: p.name }), el('span', { class: 'pg-sub', text: p.publisher + ' · v' + p.version })]),
         ]),
-        el('span', { class: 'pg-chips' }, [chip(t(st.key), st.tone), verifiedChip(p)]),
+        el('span', { class: 'pg-chips' }, [chip(t(st.key), st.tone), verifiedChip(p), sourceChip(p)]),
         el('span', { class: 'pg-card-note', text: noteOf(p) }),
       ]);
       grid.appendChild(card);
@@ -118,6 +123,9 @@
     ]));
     const banner = bannerOf(p);
     if (banner) box.appendChild(banner);
+    const legacyBox = el('div', { id: 'pg-legacy-slot' });
+    box.appendChild(legacyBox);
+    renderLegacy(p, legacyBox);
     const tl = el('div', { class: 'pg-tabs', role: 'tablist', 'aria-label': t('plugins.detail.tabs') });
     for (const id of TABS) {
       tl.appendChild(el('button', { type: 'button', class: 'pg-tab', role: 'tab', id: 'pg-tab-' + id, 'aria-selected': tab === id ? 'true' : 'false', 'aria-controls': 'pg-panel',
@@ -133,6 +141,46 @@
         : el('button', { type: 'button', class: 'st-btn', id: 'pg-enable', text: t('plugins.detail.enable'), on: { click: () => setEnabled(p, true) } }),
       el('button', { type: 'button', class: 'st-btn st-btn-danger', id: 'pg-uninstall', text: t('plugins.detail.uninstall'), on: { click: () => uninstallDialog(p) } }),
     ]));
+  }
+
+  // ── Built-in data import (first-party plugin replacing a built-in feature) ──
+  function legacySummary(counts) {
+    return Object.keys(counts || {}).filter((k) => counts[k] > 0).map((k) => counts[k] + ' ' + t('plugins.legacy.count.' + k)).join(', ');
+  }
+
+  async function renderLegacy(p, slot) {
+    const r = await req('GET', API + '/' + encodeURIComponent(p.id) + '/legacy');
+    if (!r.ok || !r.legacy || selected !== p.id) return;
+    const L = r.legacy;
+    if (!L.available && !L.imported) return;
+    const box = el('section', { class: 'pg-banner pg-legacy', id: 'pg-legacy', role: 'region', 'aria-labelledby': 'pg-legacy-title', 'data-state': L.imported ? 'good' : 'warn' });
+    box.appendChild(el('b', { id: 'pg-legacy-title', text: t('plugins.legacy.title') + '. ' }));
+    if (L.imported) box.appendChild(el('span', { text: t('plugins.legacy.done', { date: P.fmtDate(L.imported.at, lang), summary: legacySummary(L.imported.counts) }) + ' ' }));
+    else box.appendChild(el('span', { text: t('plugins.legacy.offer', { dataset: L.dataset, summary: legacySummary(L.counts) }) + ' ' }));
+    if (p.enabled && p.status === 'running') box.appendChild(el('span', { class: 'pg-sub', text: t('plugins.legacy.replaced') + ' ' }));
+    let blocked = null;
+    if (!L.eligible) blocked = t('plugins.legacy.unsigned');
+    else if (!L.available) blocked = null;
+    else if (!L.running) blocked = t('plugins.legacy.not_running');
+    if (blocked) box.appendChild(el('span', { class: 'pg-sub', text: blocked }));
+    if (L.eligible && L.available && L.running) {
+      if (L.imported) box.appendChild(el('span', { class: 'pg-sub', text: t('plugins.legacy.rerun_hint') + ' ' }));
+      box.appendChild(el('button', { type: 'button', class: 'st-btn st-btn-sm' + (L.imported ? '' : ' st-btn-primary'), id: 'pg-legacy-go',
+        text: t(L.imported ? 'plugins.legacy.rerun' : 'plugins.legacy.go'), on: { click: () => runLegacyImport(p) } }));
+    }
+    clear(slot);
+    slot.appendChild(box);
+  }
+
+  async function runLegacyImport(p) {
+    if (!(await D.confirm({ title: t('plugins.legacy.confirm_title'), message: t('plugins.legacy.confirm_text'), okLabel: t('plugins.legacy.go') }))) return;
+    const btn = $('pg-legacy-go');
+    if (btn) btn.disabled = true;
+    const r = await req('POST', API + '/' + encodeURIComponent(p.id) + '/legacy/import', { confirm: true });
+    if (btn) btn.disabled = false;
+    if (!r.ok) { toast(r.error, 'error'); return; }
+    toast(t('plugins.legacy.ok', { summary: legacySummary(r.counts) }));
+    renderDetail();
   }
 
   function bannerOf(p) {
@@ -294,7 +342,8 @@
     const dl = el('dl', { class: 'pg-dl' });
     const row = (k, v, tone) => { dl.appendChild(el('dt', { text: k })); dl.appendChild(el('dd', { 'data-state': tone || null, text: v || '—' })); };
     row(t('plugins.lic.status'), t('plugins.lic.state.' + L.state), P.licenseTone(L.state));
-    row(t('plugins.lic.key'), L.keyMasked || '');
+    if (L.source === 'plan' || L.source === 'lifetime') row(t('plugins.lic.kind'), t('plugins.lic.source_' + L.source), 'good');
+    row(t('plugins.lic.key'), L.keyMasked || (L.source === 'plan' ? t('plugins.lic.no_key_needed') : ''));
     row(t('plugins.lic.valid_until'), L.expiresAt ? P.fmtDate(L.expiresAt, lang) : (L.state === 'valid' ? t('plugins.lic.unlimited') : ''));
     if (L.updatesUntil) row(t('plugins.lic.updates_until'), P.fmtDate(L.updatesUntil, lang));
     row(t('plugins.lic.source'), L.kind === 'first_party' ? t('plugins.lic.source_gc') : (L.server || ''));
@@ -303,7 +352,8 @@
     const save = el('button', { type: 'button', class: 'st-btn st-btn-primary st-btn-sm', id: 'pg-lic-save', text: t('plugins.lic.save'), on: { click: async () => {
       const r = await req('PUT', API + '/' + encodeURIComponent(p.id) + '/license', { key: input.value });
       if (!r.ok) { msg.textContent = r.error; return; }
-      toast(t('plugins.lic.state.' + r.license.state));
+      if (r.license.coveredBy) toast(t('plugins.lic.covered_' + r.license.coveredBy));
+      else toast(t('plugins.lic.state.' + r.license.state));
       await load();
     } } });
     const check = el('button', { type: 'button', class: 'st-btn st-btn-sm', id: 'pg-lic-check', text: t('plugins.lic.check'), on: { click: async () => {
@@ -315,7 +365,8 @@
     panel.appendChild(el('div', { class: 'pg-lic' }, [dl, el('div', { class: 'pg-lic-form' }, [
       el('label', { class: 'st-label', for: 'pg-lic-key', text: t('plugins.lic.enter') }), input,
       el('div', { class: 'st-btnrow pg-mt' }, [save, check]),
-      el('p', { class: 'pg-sub', text: L.kind === 'first_party' ? t('plugins.lic.hint_gc') : t('plugins.lic.hint_third', { server: L.server || '' }) }),
+      el('p', { class: 'pg-sub', text: L.kind === 'first_party' ? t(L.source === 'plan' ? 'plugins.lic.hint_plan' : 'plugins.lic.hint_gc') : t('plugins.lic.hint_third', { server: L.server || '' }) }),
+      L.coveredBy ? el('p', { class: 'pg-sub', id: 'pg-lic-covered', role: 'note', text: t('plugins.lic.covered_' + L.coveredBy) }) : null,
       msg,
     ])]));
   }

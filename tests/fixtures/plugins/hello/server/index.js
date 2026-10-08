@@ -11,6 +11,14 @@ async function attempt(fn) {
   try { const v = await fn(); return 'ALLOWED' + (v === undefined ? '' : ':' + String(v).slice(0, 40)); } catch (e) { return 'denied:' + (e.code || e.message); }
 }
 
+async function misbehave(gc) {
+  const mode = await gc.storage.get('portal-mode');
+  if (mode === 'slow') await new Promise((r) => setTimeout(r, 5000));
+  if (mode === 'throw') throw new Error('broken on purpose');
+  if (mode === 'garbage') return 'not a list';
+  return null;
+}
+
 module.exports = {
   async start(gc) {
     gc.log.info('hello started');
@@ -94,6 +102,14 @@ module.exports = {
       case '/notify':
         await gc.notify('hello from the plugin', { severity: 'info' });
         return { json: { ok: true } };
+      case '/secret':
+        if (req.method === 'POST') {
+          try { await gc.settings.setSecret(String(req.body.key), req.body.value); } catch (e) { return { status: 400, json: { ok: false, code: e.code || null } }; }
+          return { json: { ok: true } };
+        }
+        return { json: { ok: true, value: await gc.settings.get(String(req.query.key)) } };
+      case '/legacy':
+        return { json: { ok: true, snapshot: await gc.storage.get('legacy') } };
       case '/crash':
         setTimeout(() => process.exit(3), 20);
         return { json: { ok: true } };
@@ -121,6 +137,36 @@ module.exports = {
   async render(view, gc) {
     const s = await gc.settings.all();
     return { html: `<main><h1 id="hello">${esc(s.greeting)} ${esc(view.user && view.user.name)}</h1><p id="view">${esc(view.view)}:${esc(view.page)}</p><script>window.GC && GC.call('GET', 'ping');</script></main>` };
+  },
+
+  // portal tab / section only for viewers listed in the kv key "portal-viewers"
+  // ("section-viewers" for sections) when set
+  async portalVisible(payload, gc) {
+    const ids = await gc.storage.get(payload.section ? 'section-viewers' : 'portal-viewers');
+    return !Array.isArray(ids) || ids.includes(payload.user.id);
+  },
+
+  // Start tiles / search results from kv; "portal-mode" makes the plugin misbehave
+  async portalTiles(payload, gc) {
+    const bad = await misbehave(gc);
+    if (bad) return bad;
+    const tiles = (await gc.storage.get('portal-tiles')) || [];
+    return tiles.map((x) => (x && x.title === '$viewer' ? { ...x, title: 'viewer ' + payload.user.id } : x));
+  },
+  async portalSearch(payload, gc) {
+    const bad = await misbehave(gc);
+    if (bad) return bad;
+    const all = (await gc.storage.get('portal-results')) || [];
+    return all.filter((r) => r && typeof r.title === 'string' && r.title.toLowerCase().includes(payload.q.toLowerCase()));
+  },
+
+  // built-in data handed over by the host (tests/plugins_legacy.test.js)
+  async legacyImport(snapshot, gc) {
+    if (await gc.storage.get('legacy-refuse')) return { ok: false };
+    await gc.storage.set('legacy', snapshot);
+    const runs = ((await gc.storage.get('legacy-runs')) || 0) + 1;
+    await gc.storage.set('legacy-runs', runs);
+    return { ok: true, runs };
   },
 
   async tick(gc) {

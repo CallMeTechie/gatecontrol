@@ -85,23 +85,29 @@ function countSafe(fn) {
 }
 
 /** Which tabs have something to show (unlicensed or empty areas stay hidden). */
-function tabsFor(req) {
+function tabsFor(req, plg) {
+  const sections = (plg && plg.sections) || { home: [], car: [] };
   const w = portalConfig().widgets;
   const owner = req.portalOwnerId;
   const identified = req.portalPeerId != null;
   const midea = owner != null && w.midea && license.hasFeature('midea_integration')
     && countSafe(() => require('../services/midea/mideaOwners').devicesOwnedBy(owner).length) > 0;
   const smarthome = owner != null && w.smarthome && license.hasFeature('smarthome')
+    && !require('../services/plugins/legacy').replaced('smarthome')
     && countSafe(() => require('../services/smarthome/smarthomeOwners').resourcesOwnedBy(owner).length) > 0;
   const skoda = owner != null && w.skoda && license.hasFeature('skoda_integration')
     && countSafe(() => require('../services/skoda/skodaOwners').vehiclesOwnedBy(owner).length) > 0;
   return {
     start: true,
     services: identified && w.services,
-    home: midea || smarthome,
+    home: midea || smarthome || sections.home.length > 0,
+    homeSections: sections.home.length,
+    carSections: sections.car.length,
+    plugins: ((plg && plg.tabs) || []).length + sections.home.length + sections.car.length > 0,
     midea,
     smarthome,
-    car: skoda,
+    car: skoda || sections.car.length > 0,
+    skoda,
     net: identified && (w.device || w.traffic || w.pihole),
     device: identified && w.device,
     traffic: identified && w.traffic,
@@ -110,10 +116,24 @@ function tabsFor(req) {
   };
 }
 
-/** Portal tabs of running plugins (docs/plugins.md) — only for an identified viewer. */
-function pluginTabsFor(req, lang) {
-  if (req.portalOwnerId == null) return [];
-  try { return require('../services/plugins').portalTabs(lang === 'en' ? 'en' : 'de'); } catch { return []; }
+/** The portal viewer as plugins see it ({ id, name, role, portal: true }) or null. */
+function portalViewer(req) {
+  if (req.portalOwnerId == null) return null;
+  const u = users.getById(req.portalOwnerId);
+  if (!u || u.enabled !== 1) return null;
+  return { id: u.id, name: u.display_name || u.username, role: u.role, portal: true };
+}
+
+/**
+ * What running plugins add for this viewer (docs/plugins.md "Portal"): own
+ * tabs and sections in "Zuhause"/"Fahrzeug" — only for an identified viewer,
+ * only those whose plugin has something for this person (portalVisible).
+ */
+async function pluginContributions(req, lang) {
+  const none = { tabs: [], sections: { home: [], car: [] } };
+  const user = portalViewer(req);
+  if (!user) return none;
+  try { return await require('../services/plugins/portal').contributions(user, lang === 'en' ? 'en' : 'de'); } catch { return none; }
 }
 
 /** Who the header shows. */
@@ -138,7 +158,7 @@ function viewerFor(req) {
 }
 
 // ─── GET /portal ───────────────────────────────────────────────────────────
-router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, (req, res) => {
+router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, async (req, res, next) => {
   // A shared device asks first — never IP trust there.
   if (req.portalSharedDevice && req.portalOwnerId == null && !req.portalAnonymous) {
     return res.redirect('/portal/who');
@@ -152,7 +172,10 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, (
   // State-changing portal requests need the session's CSRF token.
   if (req.portalLoggedIn || req.portalAnonymous || req.portalSharedDevice) ensureCsrfToken(req, res);
   const viewer = viewerFor(req);
-  const tabs = tabsFor(req);
+  const lang0 = req.language || res.locals.language;
+  let plg;
+  try { plg = await pluginContributions(req, lang0); } catch (e) { return next(e); }
+  const tabs = tabsFor(req, plg);
   const lang = req.language || res.locals.language;
   const island = (obj) => JSON.stringify(obj).replace(/</g, '\\u003c');
   res.render('portal/portal.njk', {
@@ -169,7 +192,9 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, (
     }),
     widgets: portalConfig().widgets,
     tabs,
-    pluginTabs: pluginTabsFor(req, lang),
+    pluginTabs: plg.tabs,
+    pluginSections: plg.sections,
+    // Start tiles / search of plugins (public/js/portal.js asks /api/v1/portal/plugins/start|search)
     viewer,
     note,
     deviceName: req.portalPeerName,   // null → generic welcome

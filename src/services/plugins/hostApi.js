@@ -267,6 +267,13 @@ async function handle(plugin, api, args, ctx) {
       if (!r.ok) throw new HostApiError('ERR_INVALID', 'invalid setting');
       return null;
     }
+    case 'settings.setSecret': {
+      const v = args && args.value;
+      need(v === null || v === undefined || (typeof v === 'string' && v.length <= 4000), 'ERR_INVALID', 'invalid secret');
+      const r = await pluginSettings.saveSecret(plugin, keyOf(args), v == null || v === '' ? null : v);
+      if (!r.ok) throw new HostApiError('ERR_INVALID', 'invalid setting');
+      return null;
+    }
     case 'users.list':
       need(plugin.manifest.permissions && plugin.manifest.permissions.users, 'ERR_USERS_DENIED', 'this plugin has no users permission');
       return db().prepare('SELECT id, username, display_name, role FROM users WHERE enabled = 1 ORDER BY id LIMIT 5000').all().map(userView);

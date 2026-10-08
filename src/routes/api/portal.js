@@ -429,7 +429,8 @@ router.post('/skoda/vehicles/:id/command', async (req, res) => {
 });
 
 function smarthomeUnavailable() {
-  return !license.hasFeature('smarthome');
+  // also while the gatecontrol-smarthome plugin replaces the built-in part (its own portal tab)
+  return !license.hasFeature('smarthome') || require('../../services/plugins/legacy').replaced('smarthome');
 }
 const SH_STATE_KEYS = new Set(['on', 'bri', 'reachable', 'type', 'value']);
 function redactState(s) {

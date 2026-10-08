@@ -7,6 +7,7 @@
 //                                     that is installed but not running)
 //   GET /plugins/:id/frame/:page      the frame document (plugin HTML, sandboxed)
 //   GET /portal/plugins/:id/frame     the frame of a plugin's portal tab
+//                                     (?section=<id>: one of its sections in Zuhause/Fahrzeug)
 //
 // Admin pages are for administrators like every other admin page (members
 // are sent to /profile). The frame is rendered by the plugin process for the
@@ -98,11 +99,16 @@ router.get('/portal/plugins/:id/frame', pluginPageLimiter, (req, res, next) => {
   const l = lang(req, res);
   const p = findPlugin(req.params.id);
   if (!p || !p.manifest.permissions.portal || !p.manifest.ui.portal) return errorFrame(res, 404, res.locals.t('plugins.page.not_found'), l);
+  // ?section=<id>: one of the plugin's sections in a GateControl portal tab; none = its own tab
+  const sq = req.query.section;
+  const section = typeof sq === 'string' ? (p.manifest.ui.portal.sections || []).find((s) => s.id === sq) : null;
+  if (sq !== undefined && !section) return errorFrame(res, 404, res.locals.t('plugins.page.not_found'), l);
+  if (!section && !p.manifest.ui.portal.label) return errorFrame(res, 404, res.locals.t('plugins.page.not_found'), l);
   if (req.portalOwnerId == null) return errorFrame(res, 403, res.locals.t('plugins.page.forbidden'), l);
   const u = require('../services/users').getById(req.portalOwnerId);
   if (!u || u.enabled !== 1) return errorFrame(res, 403, res.locals.t('plugins.page.forbidden'), l);
   try {
-    const out = await plugins.render(p.id, { view: 'portal', page: null, lang: l, user: { id: u.id, name: u.display_name || u.username, role: u.role, portal: true }, loggedIn: !!req.portalLoggedIn });
+    const out = await plugins.render(p.id, { view: 'portal', page: null, section: section ? section.id : null, lang: l, user: { id: u.id, name: u.display_name || u.username, role: u.role, portal: true }, loggedIn: !!req.portalLoggedIn });
     frame.headers(res);
     return res.send(frame.document({ html: out.html, lang: l }));
   } catch (e) {

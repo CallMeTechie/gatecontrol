@@ -83,6 +83,7 @@ let unlicensed = true; // true wenn ohne Lizenzschlüssel gestartet
 let tokenFeatureKeys = null;
 // Plugin entitlements of the last applied v2 validation (empty without v2).
 let pluginEntitlements = [];
+const PLUGIN_SOURCES = new Set(['license', 'lifetime', 'plan']);
 
 // Offline grace for v2: when the licence server cannot be reached, the last
 // verified token keeps working until its own `exp` or until GRACE_MS after the
@@ -237,7 +238,10 @@ async function verifyPlugins(plugins, fingerprint, { allowExpired }) {
     const entry = {
       slug: p.slug,
       name: typeof p.name === 'string' ? p.name : p.slug,
-      source: p.source === 'lifetime' ? 'lifetime' : 'license',
+      // where the entitlement comes from: an own plugin key ('license'), a
+      // lifetime licence ('lifetime') or the GateControl plan that contained
+      // the former built-in feature ('plan', token sub "plan:<id>")
+      source: PLUGIN_SOURCES.has(p.source) ? p.source : 'license',
       key_masked: typeof p.key_masked === 'string' ? p.key_masked : null,
       valid: false,
       error: typeof p.error === 'string' ? p.error : null,
@@ -780,7 +784,7 @@ async function deactivateLicense(key) {
 
 /**
  * Plugin entitlements of the last v2 validation, without tokens.
- * @returns {{slug:string,name:string,source:'license'|'lifetime',key_masked:string|null,valid:boolean,error:string|null,expires_at:string|null,updates_until:string|null}[]}
+ * @returns {{slug:string,name:string,source:'license'|'lifetime'|'plan',key_masked:string|null,valid:boolean,error:string|null,expires_at:string|null,updates_until:string|null}[]}
  */
 function getPluginEntitlements() {
   return pluginEntitlements.map(({ slug, name, source, key_masked, valid, error, expires_at, updates_until }) => (

@@ -213,6 +213,8 @@ function makeGc(info) {
       get: (key) => hostCall('settings.get', { key }),
       all: () => hostCall('settings.all', {}),
       set: (key, value) => hostCall('settings.set', { key, value }),
+      /** setSecret(key, string|null): a value of the plugin's own, stored encrypted with the server key (never shown in the UI) */
+      setSecret: (key, value) => hostCall('settings.setSecret', { key, value: value == null ? null : String(value) }),
     }),
     users: Object.freeze({
       list: () => hostCall('users.list', {}),
@@ -241,6 +243,20 @@ async function handleCall(method, payload) {
     case 'settingsChanged':
       if (typeof plugin.settingsChanged === 'function') await plugin.settingsChanged(payload, gc);
       return {};
+    case 'portalVisible':
+      // optional: hide the portal tab / a section (payload.section) for viewers with nothing to see
+      if (typeof plugin.portalVisible !== 'function') return { visible: true };
+      return { visible: (await plugin.portalVisible(payload, gc)) !== false };
+    case 'portalTiles':
+      // optional: declarative Start-tab tiles for the viewer (rendered by the host)
+      return typeof plugin.portalTiles === 'function' ? plugin.portalTiles(payload, gc) : [];
+    case 'portalSearch':
+      // optional: declarative portal search results for the viewer
+      return typeof plugin.portalSearch === 'function' ? plugin.portalSearch(payload, gc) : [];
+    case 'legacyImport':
+      // built-in data handed over once by the host (first-party plugins only, src/services/plugins/legacy.js)
+      if (typeof plugin.legacyImport !== 'function') throw new Error('this plugin cannot import built-in data');
+      return plugin.legacyImport(payload, gc);
     default:
       throw new Error('unknown method');
   }

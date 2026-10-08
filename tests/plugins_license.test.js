@@ -65,6 +65,43 @@ describe('first-party (signed by the trusted key)', () => {
     const reasons = registry.logs(id).map((l) => l.message);
     assert.ok(reasons.some((m) => /stopped: license/.test(m)), reasons.join(' | '));
   });
+  it('source "plan": included in the GateControl plan, runs without a key of its own and says so', async () => {
+    license._setPluginEntitlementsForTest([{ slug: id, name: 'x', source: 'plan', key_masked: null, valid: true, error: null, expires_at: null, updates_until: null }]);
+    await plugins.reconcile();
+    assert.equal(await runtime.waitRunning(id), true);
+    const v = await view(id);
+    assert.deepEqual([v.license.state, v.license.source, v.license.licensed, v.license.keyMasked], ['valid', 'plan', true, null]);
+    assert.equal(v.license.coveredBy, undefined);
+  });
+  it('a redundant key ("covered_by_plan" / "covered_by_lifetime") never decides the state and is reported', async () => {
+    for (const [error, by, source] of [['covered_by_plan', 'plan', 'plan'], ['covered_by_lifetime', 'lifetime', 'lifetime']]) {
+      // the redundant key may come first: the covering entitlement still wins
+      license._setPluginEntitlementsForTest([
+        { slug: id, name: 'x', source: 'license', key_masked: 'GCP-HELL-••••-0009', valid: false, error, expires_at: null, updates_until: null },
+        { slug: id, name: 'x', source, key_masked: null, valid: true, error: null, expires_at: null, updates_until: null },
+      ]);
+      await plugins.reconcile();
+      const v = await view(id);
+      assert.deepEqual([v.license.state, v.license.source, v.license.licensed, v.license.coveredBy, v.license.redundantKeyMasked],
+        ['valid', source, true, by, 'GCP-HELL-••••-0009'], error);
+      assert.equal(runtime.info(id).state === 'running' || await runtime.waitRunning(id), true);
+    }
+    // a covered key alone (no covering entitlement in the answer) is no licence
+    license._setPluginEntitlementsForTest([{ slug: id, name: 'x', source: 'license', key_masked: null, valid: false, error: 'covered_by_plan', expires_at: null, updates_until: null }]);
+    assert.deepEqual([(await view(id)).license.state, (await view(id)).license.coveredBy], ['missing', 'plan']);
+  });
+  it('the plugins UI names the plan source and the redundant key', () => {
+    const fs = require('node:fs');
+    const js = fs.readFileSync(require('node:path').join(__dirname, '..', 'public', 'js', 'settings-plugins.js'), 'utf8');
+    assert.match(js, /plugins\.lic\.source_' \+ s/);
+    assert.match(js, /plugins\.lic\.covered_' \+ L\.coveredBy/);
+    for (const l of ['de', 'en']) {
+      const t = require(`../src/i18n/${l}.json`);
+      for (const k of ['plugins.lic.source_plan', 'plugins.lic.source_lifetime', 'plugins.lic.covered_plan', 'plugins.lic.covered_lifetime', 'plugins.lic.hint_plan', 'plugins.lic.kind']) assert.ok(t[k], `${l}: ${k}`);
+    }
+    assert.equal(require('../src/i18n/de.json')['plugins.lic.source_plan'], 'Im Plan enthalten');
+    assert.equal(require('../src/i18n/en.json')['plugins.lic.source_plan'], 'Included in your plan');
+  });
   it('a key entered for it joins the plugin keys of the GateControl licence', async () => {
     const r = await agent.put(`${API}/${id}/license`).set('X-CSRF-Token', csrf).send({ key: 'GCP-HELL-AAAA-0001' }).expect(200);
     assert.ok(license.getPluginKeys().includes('GCP-HELL-AAAA-0001'));

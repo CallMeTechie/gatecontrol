@@ -69,10 +69,21 @@ function expiryState(expiresAt, now) {
   return t - now <= EXPIRING_MS ? 'expiring' : 'valid';
 }
 
+// A plugin key that is not needed: the plugin is already included in the
+// GateControl plan or covered by a lifetime licence (licence server error).
+const COVERED = new Map([['covered_by_plan', 'plan'], ['covered_by_lifetime', 'lifetime']]);
+
 function firstPartyStatus(plugin, now) {
   const license = require('../license');
-  const ent = license.getPluginEntitlements().find((e) => e.slug === plugin.id);
-  const base = { kind: 'first_party', required: true, server: null, keyMasked: ent ? ent.key_masked || null : null };
+  const all = license.getPluginEntitlements().filter((e) => e.slug === plugin.id);
+  // a redundant key ("covered_by_…") never decides the state — the entry that covers it does
+  const isCovered = (e) => !e.valid && COVERED.has(String(e.error || ''));
+  const covered = all.find(isCovered);
+  const real = all.filter((e) => !isCovered(e));
+  const ent = real.find((e) => e.valid) || real[0] || null;
+  const coveredBy = covered ? COVERED.get(String(covered.error)) : null;
+  const base = { kind: 'first_party', required: true, server: null, keyMasked: ent ? ent.key_masked || null : null,
+    ...(coveredBy ? { coveredBy, redundantKeyMasked: covered.key_masked || null } : {}) };
   if (!ent) return { ...base, state: 'missing' };
   if (ent.valid) {
     let state = expiryState(ent.expires_at, now);
@@ -82,6 +93,7 @@ function firstPartyStatus(plugin, now) {
   }
   const err = String(ent.error || '');
   let state = 'invalid';
+  if (ent.source) base.source = ent.source;
   if (err === 'expired') state = 'expired';
   else if (/activation|bound|limit|in_use/.test(err)) state = 'bound_elsewhere';
   else if (/wrong|product|mismatch/.test(err)) state = 'wrong_plugin';
