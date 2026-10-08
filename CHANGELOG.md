@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.150.0] — 2026-10-08
+
+### Features
+- hand the built-in Klimaanlage over to gatecontrol-midea (#272)
+
+---
+
 ## [1.149.0] — 2026-10-08
 
 ### Features
