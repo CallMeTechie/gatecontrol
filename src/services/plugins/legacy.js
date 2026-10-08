@@ -90,13 +90,57 @@ const smarthome = {
   },
 };
 
+const skoda = {
+  /** Row counts of the built-in tables (no secrets). */
+  counts() {
+    if (!tableExists('skoda_accounts')) return { accounts: 0, vehicles: 0, owners: 0 };
+    const db = getDb();
+    const n = (t) => db.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get().c;
+    return { accounts: n('skoda_accounts'), vehicles: n('skoda_vehicles'), owners: n('skoda_vehicle_owners') };
+  },
+  /**
+   * Snapshot of skoda_accounts / _vehicles / _vehicle_owners. The MySkoda
+   * password, S-PIN and session tokens are decrypted here — the snapshot only
+   * ever goes to the plugin process. The render image travels as base64.
+   */
+  export() {
+    const { decrypt } = require('../../utils/crypto');
+    const db = getDb();
+    const plain = (enc) => { if (!enc) return null; try { return decrypt(enc); } catch { return null; } };
+    const accounts = db.prepare('SELECT * FROM skoda_accounts ORDER BY id').all().map((a) => {
+      let session = null;
+      const raw = plain(a.session_enc);
+      if (raw) {
+        const s = parseJson(raw, null);
+        if (s && typeof s.accessToken === 'string' && typeof s.refreshToken === 'string') session = { accessToken: s.accessToken, refreshToken: s.refreshToken };
+      }
+      return {
+        id: a.id, email: a.email, password: plain(a.password_enc), spin: plain(a.spin_enc), session,
+        status: a.status || 'ok', status_detail: a.status_detail || null, backoff_min: Number(a.backoff_min) || 0, next_retry_at: a.next_retry_at || null,
+        created_at: a.created_at || null, updated_at: a.updated_at || null,
+      };
+    });
+    const vehicles = db.prepare('SELECT * FROM skoda_vehicles ORDER BY id').all().map((v) => ({
+      id: v.id, account_id: v.account_id, vin: v.vin, name: v.name || null, model: v.model || null, state: parseJson(v.state_json, null),
+      image: v.image ? Buffer.from(v.image).toString('base64') : null, image_url: v.image_url || null,
+      fetched_at: v.fetched_at || null, created_at: v.created_at || null,
+    }));
+    const owners = db.prepare('SELECT skoda_vehicle_id, user_id, created_at FROM skoda_vehicle_owners ORDER BY skoda_vehicle_id, user_id').all()
+      .map((o) => ({ vehicle_id: o.skoda_vehicle_id, user_id: o.user_id, created_at: o.created_at || null }));
+    return { accounts, vehicles, owners };
+  },
+};
+
 /**
  * Fixed mapping: plugin id → the built-in dataset it may import and the
  * built-in feature it replaces. `target` is the plugin's home target that
- * GateControl routes referenced by the data become (one per gateway).
+ * GateControl routes referenced by the data become (one per entry of the
+ * dataset list `routed`, e.g. per gateway); null for a cloud integration
+ * that has no home target.
  */
 const DATASETS = new Map([
-  ['gatecontrol-smarthome', Object.freeze({ dataset: 'smarthome', feature: 'smarthome', target: 'gateway', source: smarthome })],
+  ['gatecontrol-smarthome', Object.freeze({ dataset: 'smarthome', feature: 'smarthome', target: 'gateway', routed: 'gateways', source: smarthome })],
+  ['gatecontrol-skoda', Object.freeze({ dataset: 'skoda', feature: 'skoda', target: null, routed: null, source: skoda })],
 ]);
 
 function defOf(pluginId) {
@@ -129,7 +173,7 @@ function guardApi(feature, pluginId) {
   return (req, res, next) => {
     if (!replaced(feature)) return next();
     return res.status(409).json({ ok: false, code: 'replaced_by_plugin', plugin: pluginId,
-      error: req.t ? req.t('plugins.legacy.replaced_api') : 'Replaced by a plugin' });
+      error: req.t ? req.t('plugins.legacy.replaced_api', { plugin: pluginId }) : 'Replaced by a plugin' });
   };
 }
 
@@ -172,9 +216,10 @@ function status(plugin) {
 }
 
 /**
- * Turn the GateControl routes of the snapshot's gateways into assignments of
- * the plugin's home target (existing assignments are kept; a route already
- * assigned is reused). Sets gateway.target = { id, index } or null.
+ * Turn the GateControl routes of the snapshot's routed entries (gateways)
+ * into assignments of the plugin's home target (existing assignments are
+ * kept; a route already assigned is reused). Sets entry.target = { id, index }
+ * or null.
  */
 function assignTargets(plugin, def, gateways) {
   const decl = targets.declared(plugin).find((t) => t.id === def.target);
@@ -219,8 +264,9 @@ async function runImport(pluginId, { ip } = {}) {
     const data = def.source.export();
     const total = Object.values(data).reduce((n, list) => n + list.length, 0);
     if (!total) throw new LegacyError('legacy_empty', 'there is no built-in data');
-    const targetsAdded = assignTargets(plugin, def, data.gateways);
-    for (const gw of data.gateways) delete gw.route_id; // the plugin only knows its targets
+    const routed = def.routed ? data[def.routed] : [];
+    const targetsAdded = def.target ? assignTargets(plugin, def, routed) : 0;
+    for (const gw of routed) delete gw.route_id; // the plugin only knows its targets
     const snapshot = { schema: 1, dataset: def.dataset, exportedAt: new Date().toISOString(), ...data };
     let out;
     try {

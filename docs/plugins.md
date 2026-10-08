@@ -185,7 +185,7 @@ module.exports = {
   async start(gc) {},                       // after the process started
   async stop(gc) {},                        // before it is stopped
   async request(req, gc) {                  // the plugin's API (admin and portal)
-    // req = { method, path, query, body, user: { id, name, role, portal? }, lang }
+    // req = { method, path, query, body, user: { id, name, role, portal?, loggedIn? }, lang }
     return { status: 200, json: { ok: true } };
   },
   async render(view, gc) {                  // pages and the portal tab
@@ -229,7 +229,12 @@ check and rate limit, as plain objects; actions run with the requesting
 user's rights (`req.user`) — a plugin never gets admin rights implicitly.
 Admin API: `/api/v1/plugins/<id>/api/<path>` (administrators); portal:
 `/api/v1/portal/plugins/<id>/api/<path>` (the identified portal viewer; changes
-need a portal or web login).
+need a portal or web login). A portal viewer comes as `user.portal = true` with
+`user.loggedIn`: `true` after a portal or web login, `false` when the viewer is
+only recognised by device trust (read-only) — data as sensitive as a vehicle's
+position or departure times belongs to a real login only. The portal hooks
+(`portalVisible`, `portalTiles`, `portalSearch`) and `render` get the same
+viewer.
 
 ## Storage and migrations
 
@@ -309,8 +314,8 @@ disable/uninstall and when the server shuts down.
     order }]` (≤ 8; `tab` = `home` ("Zuhause") or `car` ("Fahrzeug"); `order`
     0–1000, default 100) → each section is its own sandboxed frame
     (`/portal/plugins/<id>/frame?section=<id>`, `render` gets
-    `view.section`) inside that tab, after the built-in parts (Klimaanlage,
-    Fahrzeuge until they move into plugins), ordered by `order`. Several
+    `view.section`) inside that tab, after the built-in parts (Klimaanlage
+    until it moves into a plugin), ordered by `order`. Several
     plugins share one "Zuhause" tab; the tab is hidden when neither a built-in
     part nor any section has something for the viewer. `ui.portal` needs a
     label, sections or both.
@@ -392,14 +397,19 @@ untouched.
 ## Built-in data import (built-in → plugin)
 
 GateControl features that move out of the server into a first-party plugin
-(Smart Home → `gatecontrol-smarthome` in Stage 3; Klimaanlage, Fahrzeuge
-later) bring their data along once. Code: `src/services/plugins/legacy.js`.
+(Smart Home → `gatecontrol-smarthome` in Stage 3, Fahrzeuge →
+`gatecontrol-skoda`; Klimaanlage later) bring their data along once. Code:
+`src/services/plugins/legacy.js`.
 
 * **Fixed mapping** (`DATASETS`): plugin id → built-in dataset, the built-in
   feature it replaces and the home target that the dataset's GateControl
-  routes become. Today: `gatecontrol-smarthome` → `smarthome`
-  (`smarthome_gateways`, `_resources`, `_resource_owners`, `_rules`), target
-  `gateway`.
+  routes become (`target`, for the entries of the list `routed`; none for a
+  cloud integration). Today:
+
+  | Plugin | Dataset / feature | Tables | Home target |
+  |---|---|---|---|
+  | `gatecontrol-smarthome` | `smarthome` | `smarthome_gateways`, `_resources`, `_resource_owners`, `_rules` | `gateway` (one per gateway route) |
+  | `gatecontrol-skoda` | `skoda` | `skoda_accounts`, `skoda_vehicles`, `skoda_vehicle_owners` | — (Škoda cloud only) |
 * **Who**: only the mapped id with a **trusted signature** (CallMeTechie key
   or a key in `GC_PLUGIN_PUBKEYS`). For trying an unsigned development build
   the operator can set `GC_PLUGIN_LEGACY_UNSIGNED=1` (the plugin still only
@@ -409,12 +419,16 @@ later) bring their data along once. Code: `src/services/plugins/legacy.js`.
   too; the administrator confirms; it can be run again while the built-in
   data exists ("Erneut übernehmen" replaces the plugin's data).
 * **How**: the host reads exactly the mapped tables into a JSON snapshot
-  `{ schema: 1, dataset, exportedAt, gateways, resources, owners, rules }`
-  (secrets such as the deCONZ API key are decrypted for this hand-over only
-  and never logged), turns every referenced GateControl route into an
-  assignment of the plugin's home target (existing assignments are kept, a
-  route already assigned is reused; `gateways[].target = { id, index, label }`,
-  route ids stay in the host), and calls the plugin's
+  `{ schema: 1, dataset, exportedAt, …lists }` — `smarthome`: `gateways,
+  resources, owners, rules`; `skoda`: `accounts` (with `password`, `spin`,
+  `session: { accessToken, refreshToken }`), `vehicles` (with `state`, the
+  render `image` as base64 and `image_url`), `owners` (`vehicle_id`,
+  `user_id`) — secrets such as the deCONZ API key or the MySkoda password,
+  S-PIN and tokens are decrypted for this hand-over only and never logged.
+  When the dataset has a home target the host turns every referenced
+  GateControl route into an assignment of it (existing assignments are kept,
+  a route already assigned is reused; `gateways[].target = { id, index,
+  label }`, route ids stay in the host). Then it calls the plugin's
   `legacyImport(snapshot, gc)` hook, which writes the data into its own
   storage (ids kept, so owners and rule references stay valid) and answers
   `{ ok: true }`. User ids are the same on this server, so owners keep their
@@ -431,9 +445,12 @@ mapped plugin *may run* (installed, switched on, licensed, signature and
 compatibility ok — `legacy.replaced(feature)`), the built-in feature is off
 so nothing runs twice: its sidebar entry is hidden, its pages redirect to the
 plugin's page (`/smarthome` → `/plugins/gatecontrol-smarthome`,
-`/smarthome/rules` → `…/rules`), its API answers `409 replaced_by_plugin`,
-its portal part and its entries in "Was sieht dieser Nutzer?" are hidden and
-its background jobs (deCONZ polling, rule re-sync) stand still. Switch the
+`/smarthome/rules` → `…/rules`, `/skoda` → `/plugins/gatecontrol-skoda`), its
+API (`/api/v1/smarthome`, `/api/v1/skoda`) answers `409 replaced_by_plugin`,
+its portal part (`/api/v1/portal/smarthome`, `/api/v1/portal/skoda` and the
+built-in part of "Zuhause" / "Fahrzeug") and its entries in "Was sieht dieser
+Nutzer?" are hidden and its background jobs (deCONZ polling, rule re-sync,
+Škoda cloud polling) stand still. Switch the
 plugin off or uninstall it and the built-in feature is back, with its data:
 built-in data is never deleted by the import.
 
@@ -455,7 +472,7 @@ removes everything.
 * the CallMeTechie signing key in `BUILTIN_PUBLIC_KEYS` (until then a signed
   release is only trusted with its key in `GC_PLUGIN_PUBKEYS`);
 * "Nach Updates suchen" against the gatecontrol-plugins catalogue; moving
-  Klimaanlage / Fahrzeuge out of the server; removing the built-in Smart Home
-  code and data (Stage 6) — until then the built-in data import and
+  Klimaanlage out of the server; removing the built-in Smart Home and
+  Fahrzeuge code and data (Stage 6) — until then the built-in data import and
   coexistence above apply;
 * releasing a licence ("Lizenz freigeben") from the plugin card.

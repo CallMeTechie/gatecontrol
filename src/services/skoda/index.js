@@ -158,9 +158,15 @@ function getVehicleImage(vehicleId) {
   return vehicles.getImage(vehicleId);
 }
 
+// While the gatecontrol-skoda plugin replaces the built-in Fahrzeuge
+// (src/services/plugins/legacy.js) nothing here talks to the Skoda cloud.
+function replacedByPlugin() {
+  try { return require('../plugins/legacy').replaced('skoda'); } catch { return false; }
+}
+
 function pollTick() {
   if (!license.hasFeature(FEATURE)) return;
-  if (pollRunning) return; // skip tick while a previous run is still going
+  if (pollRunning || replacedByPlugin()) return; // skip tick while a previous run is still going
   if (!accounts.listAccounts().length) return;
   pollRunning = true;
   syncAll()
@@ -184,6 +190,6 @@ function _resetForTest() { stopPolling(); refreshCooldown.clear(); cmdRefreshCoo
 
 module.exports = {
   syncAccount, syncAll, refreshVehicle, removeAccount, getStatus, getVehicleImage,
-  startPolling, stopPolling, pollTick, pollIntervalMs, _resetForTest,
+  startPolling, stopPolling, pollTick, pollIntervalMs, replacedByPlugin, _resetForTest,
   clientForAccount, withAccountLock,
 };

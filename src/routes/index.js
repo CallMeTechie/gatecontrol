@@ -275,6 +275,7 @@ const pages = [
 // Built-in pages that a first-party plugin replaces while it runs
 // (docs/plugins.md "Übernahme eingebauter Daten").
 const REPLACED_PAGES = new Map([
+  ['skoda', { feature: 'skoda', href: '/plugins/gatecontrol-skoda' }],
   ['smarthome', { feature: 'smarthome', href: '/plugins/gatecontrol-smarthome' }],
   ['smarthome-rules', { feature: 'smarthome', href: '/plugins/gatecontrol-smarthome/rules' }],
 ]);

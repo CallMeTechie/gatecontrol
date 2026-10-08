@@ -144,6 +144,12 @@
   }
 
   // ── Built-in data import (first-party plugin replacing a built-in feature) ──
+  // "Smart Home", "Fahrzeuge" … (the dataset id when there is no text for it)
+  function datasetName(id) {
+    const key = 'plugins.legacy.dataset.' + id;
+    const s = t(key);
+    return s === key ? String(id) : s;
+  }
   function legacySummary(counts) {
     return Object.keys(counts || {}).filter((k) => counts[k] > 0).map((k) => counts[k] + ' ' + t('plugins.legacy.count.' + k)).join(', ');
   }
@@ -156,7 +162,7 @@
     const box = el('section', { class: 'pg-banner pg-legacy', id: 'pg-legacy', role: 'region', 'aria-labelledby': 'pg-legacy-title', 'data-state': L.imported ? 'good' : 'warn' });
     box.appendChild(el('b', { id: 'pg-legacy-title', text: t('plugins.legacy.title') + '. ' }));
     if (L.imported) box.appendChild(el('span', { text: t('plugins.legacy.done', { date: P.fmtDate(L.imported.at, lang), summary: legacySummary(L.imported.counts) }) + ' ' }));
-    else box.appendChild(el('span', { text: t('plugins.legacy.offer', { dataset: L.dataset, summary: legacySummary(L.counts) }) + ' ' }));
+    else box.appendChild(el('span', { text: t('plugins.legacy.offer', { dataset: datasetName(L.dataset), summary: legacySummary(L.counts) }) + ' ' }));
     if (p.enabled && p.status === 'running') box.appendChild(el('span', { class: 'pg-sub', text: t('plugins.legacy.replaced') + ' ' }));
     let blocked = null;
     if (!L.eligible) blocked = t('plugins.legacy.unsigned');

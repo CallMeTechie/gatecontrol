@@ -106,8 +106,13 @@ function portalEntries(userId) {
     add(`SELECT r.id, COALESCE(r.name, r.deconz_id) AS name FROM smarthome_resource_owners o JOIN smarthome_resources r ON r.id = o.resource_id
       WHERE o.user_id = ? ORDER BY r.name`, 'smarthome');
   }
-  add(`SELECT v.id, COALESCE(v.name, v.model, v.vin) AS name FROM skoda_vehicle_owners o JOIN skoda_vehicles v ON v.id = o.skoda_vehicle_id
-    WHERE o.user_id = ? ORDER BY v.name`, 'skoda');
+  // the built-in Fahrzeuge are off while the gatecontrol-skoda plugin replaces them
+  let skodaReplaced = false;
+  try { skodaReplaced = require('./plugins/legacy').replaced('skoda'); } catch { skodaReplaced = false; }
+  if (!skodaReplaced) {
+    add(`SELECT v.id, COALESCE(v.name, v.model, v.vin) AS name FROM skoda_vehicle_owners o JOIN skoda_vehicles v ON v.id = o.skoda_vehicle_id
+      WHERE o.user_id = ? ORDER BY v.name`, 'skoda');
+  }
   return out;
 }
 
