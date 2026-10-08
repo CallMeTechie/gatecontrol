@@ -277,8 +277,9 @@ const MOVED_PAGES = [
   ['/midea', 'gatecontrol-midea', ''],
   ['/skoda', 'gatecontrol-skoda', ''],
 ];
+// apiLimiter like /me: the handler checks the role and reads the plugin registry.
 for (const [path, pluginId, sub] of MOVED_PAGES) {
-  router.get(path, requireAuth, (req, res) => {
+  router.get(path, apiLimiter, requireAuth, (req, res) => {
     if (!res.locals.user || res.locals.user.role !== 'admin') return res.redirect('/profile');
     res.redirect(require('../services/plugins/legacy').movedPage(pluginId, sub));
   });
