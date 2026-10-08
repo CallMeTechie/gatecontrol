@@ -91,6 +91,7 @@ function tabsFor(req, plg) {
   const owner = req.portalOwnerId;
   const identified = req.portalPeerId != null;
   const midea = owner != null && w.midea && license.hasFeature('midea_integration')
+    && !require('../services/plugins/legacy').replaced('midea')
     && countSafe(() => require('../services/midea/mideaOwners').devicesOwnedBy(owner).length) > 0;
   const smarthome = owner != null && w.smarthome && license.hasFeature('smarthome')
     && !require('../services/plugins/legacy').replaced('smarthome')

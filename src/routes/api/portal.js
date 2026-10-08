@@ -56,8 +56,14 @@ function piholeUnavailable(cache) {
   return !license.hasFeature('pihole_integration') || !cache.instances || cache.instances.length === 0;
 }
 
+// Off without the licence and while the gatecontrol-midea plugin replaces the
+// built-in part (its own section in "Zuhause").
+function mideaOff() {
+  return !license.hasFeature('midea_integration') || require('../../services/plugins/legacy').replaced('midea');
+}
+
 function mideaUnavailable() {
-  return !license.hasFeature('midea_integration') || mideaDevices.listDevices().length === 0;
+  return mideaOff() || mideaDevices.listDevices().length === 0;
 }
 
 function skodaUnavailable() {
@@ -326,7 +332,7 @@ router.get('/midea', async (req, res) => {
 router.get('/midea/:id/state', async (req, res) => {
   try {
     if (!portalConfig().widgets.midea) return res.status(404).json({ ok: false });
-    if (!license.hasFeature('midea_integration')) return res.json({ ok: true, data: null, reason: 'unavailable' });
+    if (mideaOff()) return res.json({ ok: true, data: null, reason: 'unavailable' });
     const id = Number(req.params.id);
     if (!mideaOwners.isOwner(id, req.portalOwnerId)) return res.status(403).json({ ok: false, error: 'MIDEA_NOT_OWNER' });
     const state = await midea.getState(id); // {offline:true} is a known state → passes through
@@ -341,7 +347,7 @@ router.get('/midea/:id/state', async (req, res) => {
 router.post('/midea/:id/state', async (req, res) => {
   try {
     if (!portalConfig().widgets.midea) return res.status(404).json({ ok: false });
-    if (!license.hasFeature('midea_integration')) return res.json({ ok: true, data: null, reason: 'unavailable' });
+    if (mideaOff()) return res.json({ ok: true, data: null, reason: 'unavailable' });
     if (!req.portalLoggedIn) return res.json({ ok: true, data: null, reason: 'login_required' });
     const id = Number(req.params.id);
     if (!mideaOwners.isOwner(id, req.portalOwnerId)) return res.status(403).json({ ok: false, error: 'MIDEA_NOT_OWNER' });
