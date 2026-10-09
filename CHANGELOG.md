@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.152.1] — 2026-10-09
+
+### Fixes
+- calls without a body from plugin pages failed with "Internal server error" (#275)
+
+---
+
 ## [1.152.0] — 2026-10-08
 
 ### Features
