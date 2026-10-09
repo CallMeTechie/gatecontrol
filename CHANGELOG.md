@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.153.0] — 2026-10-09
+
+### Features
+- official plugin catalogue with one-click install and update (#276)
+
+---
+
 ## [1.152.1] — 2026-10-09
 
 ### Fixes
