@@ -20,11 +20,16 @@
 //      first, so the administrator does not have to assign them again. Every
 //      run is recorded (plugin_legacy_imports).
 //
-//   2. an UPGRADE NOTICE (pendingMoves): while built-in data exists and the
-//      mapped plugin is not installed, Settings → Plugins and the dashboard
-//      say that the feature is a plugin now and link to its releases. The
-//      former pages (/smarthome, /midea, /skoda) lead to the plugin's page
-//      when it is installed, otherwise to Settings → Plugins (movedPage).
+//   2. an UPGRADE NOTICE (pendingMoves): while built-in data exists, the
+//      mapped plugin is not installed and the data was never imported,
+//      Settings → Plugins and the dashboard say that the feature is a plugin
+//      now and offer it (official catalogue: "Jetzt installieren"; the
+//      plugin's releases as a fallback). A successful import sets a marker
+//      per dataset (settings key plugins.legacy_imported.<dataset>) that
+//      survives an uninstall — the built-in tables are never dropped, so
+//      without it the notice would come back for good. The former pages
+//      (/smarthome, /midea, /skoda) lead to the plugin's page when it is
+//      installed, otherwise to Settings → Plugins (movedPage).
 //
 // Only a plugin with a TRUSTED signature (built-in CallMeTechie key or a key
 // the operator trusts via GC_PLUGIN_PUBKEYS) receives the snapshot. For
@@ -240,20 +245,45 @@ function installed(pluginId) {
   try { return !!registry.get(pluginId); } catch { return false; }
 }
 
+// ─── "imported once" marker ────────────────────
+// Set by every successful import; never removed by an uninstall (also not by
+// "Alles löschen", which only forgets the plugin's import record). Its only
+// job is to keep the upgrade notice away once the data reached a plugin.
+
+const MARKER_PREFIX = 'plugins.legacy_imported.';
+
+function markImported(dataset) {
+  try { require('../settings').set(MARKER_PREFIX + dataset, new Date().toISOString()); } catch { /* the record stays the source of truth */ }
+}
+
+/** Was this dataset's built-in data ever imported into its plugin? */
+function everImported(pluginId) {
+  const def = defOf(pluginId);
+  if (!def) return false;
+  try { if (require('../settings').get(MARKER_PREFIX + def.dataset)) return true; } catch { /* fall through */ }
+  // installations that imported before the marker existed: their record (kept by "Daten behalten")
+  try { return !!getDb().prepare('SELECT 1 FROM plugin_legacy_imports WHERE plugin_id = ?').get(pluginId); } catch { return false; }
+}
+
 /**
- * Built-in datasets that still hold data while their plugin is not installed:
- * [{ pluginId, dataset, counts, url }] (the upgrade notice). Never throws.
+ * Built-in datasets that still hold data while their plugin is not installed
+ * and was never given that data: [{ pluginId, dataset, counts, url }] (the
+ * upgrade notice). Never throws.
  */
 function pendingMoves() {
   const out = [];
   for (const [id, def] of DATASETS) {
-    if (installed(id)) continue;
+    if (installed(id) || everImported(id)) continue;
     let counts;
     try { counts = def.source.counts(); } catch { continue; }
     if (!Object.values(counts).some((n) => n > 0)) continue;
-    out.push({ pluginId: id, dataset: def.dataset, counts, url: releaseUrl(id) });
+    out.push({ pluginId: id, dataset: def.dataset, counts, url: releaseUrl(id), catalog: catalogEnabled() });
   }
   return out;
+}
+
+function catalogEnabled() {
+  try { return require('./catalog').enabled(); } catch { return false; }
 }
 
 /**
@@ -279,6 +309,11 @@ function record(pluginId) {
   return r ? { dataset: r.dataset, at: r.imported_at, counts: parseJson(r.counts, {}), runs: r.runs } : null;
 }
 
+/**
+ * "Alles löschen": the plugin's import record goes, so a reinstall shows the
+ * import as not done yet (offered again, "Daten übernehmen"). The marker of
+ * the dataset stays (see everImported).
+ */
 function forget(pluginId) {
   try { getDb().prepare('DELETE FROM plugin_legacy_imports WHERE plugin_id = ?').run(pluginId); } catch { /* table missing */ }
 }
@@ -382,6 +417,7 @@ async function runImport(pluginId, { ip } = {}) {
     getDb().prepare(`INSERT INTO plugin_legacy_imports (plugin_id, dataset, imported_at, counts, runs) VALUES (?, ?, ?, ?, 1)
       ON CONFLICT(plugin_id) DO UPDATE SET dataset = excluded.dataset, imported_at = excluded.imported_at, counts = excluded.counts, runs = runs + 1`)
       .run(plugin.id, def.dataset, new Date().toISOString(), JSON.stringify(counts));
+    markImported(def.dataset);
     const summary = Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(', ');
     registry.addLog(plugin.id, 'info', `built-in data imported (${def.dataset}): ${summary}`);
     require('../activity').log('plugin_legacy_imported', `Plugin "${plugin.name}": built-in ${def.dataset} data imported (${summary})`, {
@@ -393,4 +429,4 @@ async function runImport(pluginId, { ip } = {}) {
   }
 }
 
-module.exports = { LegacyError, DATASETS, defOf, status, runImport, forget, eligibility, pendingMoves, movedPage, releaseUrl };
+module.exports = { LegacyError, DATASETS, defOf, status, runImport, forget, eligibility, pendingMoves, everImported, movedPage, releaseUrl };

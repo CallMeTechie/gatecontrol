@@ -31,7 +31,8 @@
   <span class="db-banner-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></span>
   <span class="db-banner-text">{{ t('plugins.moved.' + mv.dataset) }}</span>
   <a href="{{ mv.url }}" target="_blank" rel="noopener noreferrer" class="db-btn">{{ t('plugins.moved.download') }}</a>
-  <a href="/settings#plugins" class="db-btn db-btn-primary">{{ t('plugins.moved.install') }}</a>
+  {% if mv.catalog %}<a href="/settings?install={{ mv.pluginId }}#plugins" class="db-btn db-btn-primary">{{ t('plugins.moved.install_now') }}</a>
+  {% else %}<a href="/settings#plugins" class="db-btn db-btn-primary">{{ t('plugins.moved.install') }}</a>{% endif %}
 </div>
 {% endfor %}
 

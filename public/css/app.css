@@ -6478,6 +6478,23 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .pg-effects li{display:flex; gap:10px}
 .pg-effects li[data-state="crit"] .pg-dot{background:var(--pf-red-ink)}
 .pg-effects li[data-state="good"] .pg-dot{background:var(--pf-green-ink)}
+/* Offizielle Plugins (official catalogue) */
+.pg-cat-note{margin:0 20px 14px}
+.pg-cat-note[hidden]{display:none}
+.pg-cat-list{list-style:none; margin:0; padding:0 20px 8px}
+.pg-cat-list > li.pg-sub{padding:0 0 14px}
+.pg-cat-item{display:flex; flex-wrap:wrap; align-items:flex-start; gap:10px 16px; padding:14px 0; border-top:1px solid var(--line)}
+.pg-cat-main{flex:1 1 300px; min-width:0}
+.pg-cat-head{display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px}
+.pg-cat-head b{font-size:15px; margin-right:2px}
+.pg-cat-desc{margin:6px 0 0; font-size:13px; color:var(--db-muted); max-width:72ch}
+.pg-cat-notes{display:inline-block; margin-top:6px; font-size:12.5px}
+.pg-cat-act{flex:0 0 auto; display:flex; gap:8px}
+.pg-update-slot:empty{display:none}
+.pg-moved-go{margin-left:4px; vertical-align:baseline}
+.pg-perm[data-change="added"],.pg-perm[data-change="changed"]{background:var(--amber-bg)}
+.pg-perm b .pg-badge{margin-left:4px; vertical-align:1px}
+.pg-perm-gone{text-decoration:line-through}
 .pg-confirm{display:block; margin:6px 0 10px}
 .pg-confirm .st-input{width:100%}
 /* plugin page */

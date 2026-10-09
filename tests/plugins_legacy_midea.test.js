@@ -141,9 +141,10 @@ describe('the signed first-party plugin gatecontrol-midea', () => {
     assert.equal(await runtime.waitRunning(ID), true);
   });
 
-  it('uninstall "Alles löschen" forgets the import record', async () => {
+  it('uninstall "Alles löschen" forgets the import record; the upgrade notice stays away (data imported before)', async () => {
     await agent.post(`${API}/${ID}/uninstall`).set('X-CSRF-Token', csrf).send({ mode: 'wipe', confirm: 'Klimaanlage' }).expect(200);
-    assert.deepEqual(legacy.pendingMoves().map((m) => m.pluginId), [ID]);
+    assert.deepEqual(legacy.pendingMoves(), []);
+    assert.equal(legacy.everImported(ID), true);
     assert.equal(db.prepare('SELECT COUNT(*) AS c FROM plugin_legacy_imports').get().c, 0);
   });
 });

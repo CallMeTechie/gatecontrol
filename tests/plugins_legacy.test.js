@@ -102,6 +102,14 @@ describe('built-in Smart Home data without the plugin', () => {
       assert.ok(html.includes(`href="${releases}"`), url);
       assert.doesNotMatch(html, /data-builtin-moved="gatecontrol-(midea|skoda)"/, url + ': only datasets with data');
     }
+    // the dashboard leads to the catalogue's install button in Settings → Plugins
+    const dash = (await agent.get('/dashboard').expect(200)).text;
+    assert.match(dash, /<a href="\/settings\?install=gatecontrol-smarthome#plugins" class="db-btn db-btn-primary">Install now<\/a>/);
+    process.env.GC_PLUGIN_CATALOG = 'off';
+    try {
+      const off = (await agent.get('/dashboard').expect(200)).text;
+      assert.match(off, /<a href="\/settings#plugins" class="db-btn db-btn-primary">Go to plugins<\/a>/, 'without the catalogue: the plugin list');
+    } finally { delete process.env.GC_PLUGIN_CATALOG; }
   });
 });
 
@@ -213,11 +221,51 @@ describe('the signed first-party plugin', () => {
     assert.equal(await runtime.waitRunning(ID), true);
   });
 
-  it('uninstall "Alles löschen" forgets the import record; the notice is back while the data exists', async () => {
+  const marker = () => db.prepare("SELECT value FROM settings WHERE key = 'plugins.legacy_imported.smarthome'").get();
+  const noticeShown = async () => {
+    const out = [];
+    for (const url of ['/dashboard', '/settings']) out.push(/data-builtin-moved=/.test((await agent.get(url).expect(200)).text));
+    return out;
+  };
+
+  it('a successful import leaves a marker that outlives the plugin', () => {
+    assert.match(marker().value, /^\d{4}-\d\d-\d\dT/);
+    assert.equal(legacy.everImported(ID), true);
+    assert.equal(legacy.everImported('gatecontrol-midea'), false);
+  });
+
+  it('uninstall "Daten behalten": the notice does not come back (the built-in data was imported)', async () => {
+    await agent.post(`${API}/${ID}/uninstall`).set('X-CSRF-Token', csrf).send({ mode: 'keep' }).expect(200);
+    assert.ok(db.prepare('SELECT COUNT(*) AS c FROM smarthome_gateways').get().c > 0, 'the built-in tables stay');
+    assert.deepEqual(legacy.pendingMoves(), []);
+    assert.deepEqual(await noticeShown(), [false, false]);
+    // an installation that imported before the marker existed: its kept record is enough
+    db.prepare("DELETE FROM settings WHERE key = 'plugins.legacy_imported.smarthome'").run();
+    assert.deepEqual(legacy.pendingMoves(), []);
+  });
+
+  it('reinstalled after "Daten behalten": the import stays re-runnable', async () => {
+    await install(helloPackage({ overrides: smarthomeManifest() }));
+    assert.equal(await runtime.waitRunning(ID), true);
+    const st = (await agent.get(`${API}/${ID}/legacy`).expect(200)).body.legacy;
+    assert.deepEqual([st.available, st.eligible, st.imported && st.imported.runs], [true, true, 2]);
+    assert.equal((await importNow().expect(200)).body.legacy.imported.runs, 3);
+    assert.ok(marker(), 'the re-run sets the marker again');
+  });
+
+  it('uninstall "Alles löschen" forgets the import record, the notice still stays away; a fresh install is offered the import again', async () => {
     await agent.post(`${API}/${ID}/uninstall`).set('X-CSRF-Token', csrf).send({ mode: 'wipe', confirm: 'Smart Home' }).expect(200);
     assert.equal(db.prepare('SELECT COUNT(*) AS c FROM plugin_legacy_imports').get().c, 0);
-    assert.deepEqual(legacy.pendingMoves().map((m) => m.pluginId), [ID]);
+    assert.deepEqual(legacy.pendingMoves(), []);
+    assert.deepEqual(await noticeShown(), [false, false]);
     assert.equal((await agent.get('/smarthome').expect(302)).headers.location, '/settings#plugins');
+    await install(helloPackage({ overrides: smarthomeManifest() }));
+    assert.equal(await runtime.waitRunning(ID), true);
+    const st = (await agent.get(`${API}/${ID}/legacy`).expect(200)).body.legacy;
+    assert.deepEqual([st.available, st.eligible, st.imported], [true, true, null], 'offered as not imported yet');
+    assert.equal((await importNow().expect(200)).body.legacy.imported.runs, 1);
+    await agent.post(`${API}/${ID}/uninstall`).set('X-CSRF-Token', csrf).send({ mode: 'wipe', confirm: 'Smart Home' }).expect(200);
+    assert.deepEqual(legacy.pendingMoves(), []);
   });
 });
 

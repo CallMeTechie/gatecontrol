@@ -6,9 +6,11 @@ Each plugin runs in **its own process**, isolated from the server, and can only
 use what its `plugin.json` declares and the administrator grants.
 
 Settings → **Plugins** lists the installed plugins, installs new ones (upload of
-a `.gcplugin` file, four steps: *Prüfen → Berechtigungen → Lizenz → Fertig*),
+a `.gcplugin` file, four steps: *Prüfen → Berechtigungen → Lizenz → Fertig*, or
+one click in **Offizielle Plugins** — see "Official plugin catalogue"),
 switches them on and off, enters licences, assigns network targets and
-uninstalls them (keep or delete the data).
+uninstalls them (keep or delete the data). An update shows which permissions
+change compared with the installed version (*neu* / *geändert* / *entfällt*).
 
 Code: `src/services/plugins/` · admin API `src/routes/api/plugins.js` · pages
 `src/routes/plugins.js` · UI `templates/aurora/partials/settings-plugins.njk`,
@@ -49,6 +51,87 @@ Build: `node scripts/plugin-pack.js <folder> [-o file.gcplugin]` — signs when
 are skipped, symbolic links refused. `node scripts/plugin-keygen.js` prints a
 new key pair (run it on your own machine; never commit the private seed).
 
+## Official plugin catalogue
+
+The first-party repository
+[CallMeTechie/gatecontrol-plugins](https://github.com/CallMeTechie/gatecontrol-plugins)
+publishes `catalog.json` as an asset of its rolling release `catalog`
+(`https://github.com/CallMeTechie/gatecontrol-plugins/releases/download/catalog/catalog.json`,
+format in that repository's README, "Catalogue"). Settings → Plugins →
+**Offizielle Plugins** lists it: name, description, version, licence hint,
+state, *Installieren* / *Aktualisieren*, *Katalog neu laden*. Installed
+plugins with a newer compatible version get **Update verfügbar** on their
+card and *Auf vX aktualisieren* in their detail. When GitHub cannot be
+reached the card says so ("Katalog nicht erreichbar – Plugins lassen sich
+weiterhin hochladen.") — the upload is unaffected.
+
+Code: `src/services/plugins/catalog.js` · API `src/routes/api/pluginCatalog.js`.
+
+| Environment | |
+|---|---|
+| `GC_PLUGIN_CATALOG=off` | catalogue switched off completely: no card, no request to GitHub, the API answers `enabled: false` / `catalog_disabled` |
+| `GC_PLUGIN_CATALOG_URL` | another catalogue (https only, no credentials); its host is allowed in addition to the GitHub hosts. Packages from it must still carry a trusted signature (`GC_PLUGIN_PUBKEYS` for an own key) |
+
+**Fetch** (server side): https only; the catalogue URL, every package URL and
+every redirect target must be on an allowed host — `github.com`,
+`objects.githubusercontent.com`, `release-assets.githubusercontent.com`
+(github.com answers release downloads with a 302 to one of those) plus the
+host of `GC_PLUGIN_CATALOG_URL`; anything else, `http:` or a URL with
+credentials ends the request (`catalog_redirect` / `catalog_bad_url`), the
+foreign host is never contacted. At most 5 redirects; catalogue ≤ 2 MB within
+15 s; kept in memory for an hour (*Katalog neu laden* = `?refresh=1`; a
+failure is remembered for a minute). A test run (`NODE_ENV=test`) never
+reaches the internet.
+
+**Validation** (strict — one malformed entry rejects the whole catalogue,
+`catalog_invalid`): `schema: 1`; every key a plugin id by the id rule (and
+equal to the plugin's and each entry's `id`); `publisher`; `versions[]` with
+`schema: 1`, semver `version` (no duplicates), boolean `prerelease` and
+`license_required`, a valid `gatecontrol` range, `size` within the package
+limit (20 MB), lowercase hex `sha256`, `url` (and `release_url`) https on an
+allowed host. `latest` is checked the same way but not used: GateControl
+picks per plugin the **newest non-prerelease version whose `gatecontrol`
+range the running version satisfies** (a semver pre-release such as
+`1.2.0-rc.1` counts as one whatever the flag says).
+
+**State per plugin**: `not_installed`, `installed` (same or newer version
+installed), `update` (installed version < the compatible newest),
+`incompatible` (no version fits this GateControl); `requiresNewer` names a
+newer release that needs a newer GateControl.
+
+**Install / update** (`POST /api/v1/plugin-catalog/install { id, version }`):
+the entry is looked up in the validated catalogue (listed, not a pre-release,
+compatible), the package is downloaded by the server (same host/redirect
+rules, ≤ `size` from the catalogue and ≤ 20 MB, 90 s), its sha256 compared
+with the catalogue, and the bytes — held in memory, never written to disk —
+go into the **same `inspect()`** as an upload: same checks, same staging
+token, same dialog, then the normal `POST /api/v1/plugins/install` with
+`accept: true`. On top of an upload, `inspect()` refuses (before any token
+exists) a package whose `plugin.json` is another id or version than the one
+requested (`catalog_mismatch`) and one without a **trusted** signature
+(`catalog_untrusted`, also when unsigned plugins are allowed). The package
+signature is verified by `signature.verify()` against the trusted keys; the
+catalogue's `signature` / `public_key` fields are informational and never
+used. The activity log entry of the install carries `source: "catalog"`.
+
+What is verified where:
+
+| Check | Where |
+|---|---|
+| https, allowed hosts, redirects, size cap, timeout | `catalog.fetchAllowed()` (catalogue and package) |
+| catalogue structure, ids, versions, urls | `catalog.validate()` |
+| version listed, stable, compatible | `catalog.installable()` |
+| download = catalogue sha256 | `catalog.download()` |
+| package format, manifest, migrations, compatibility, existing plugin | `inspect()` → `analyse()` (as for an upload) |
+| signature against trusted keys; same id and version as requested | `inspect()` with `expect` |
+| permissions accepted, package re-checked before writing | `install()` (as for an upload) |
+
+API (admin session + CSRF; `pluginApiLimiter`, downloads and `?refresh=1`
+also `uploadLimiter`; an API token gets 403):
+
+* `GET /api/v1/plugin-catalog` → `{ enabled, available, serverVersion, fetchedAt, plugins: [{ id, name, description, publisher, state, installedVersion, latest: { version, gatecontrol, licenseRequired, size, releaseUrl, publishedAt } | null, requiresNewer }] }`
+* `POST /api/v1/plugin-catalog/install` `{ id, version }` → the answer of `POST /api/v1/plugins/inspect` (`origin: "catalog"`; on an update `existing.permissions` for the diff)
+
 ## Signature
 
 `signature` is JSON `{ "v": 1, "alg": "Ed25519", "publicKey": "<base64 raw 32>", "sig": "<base64>" }`,
@@ -67,7 +150,7 @@ GCPLUGIN-MANIFEST-V1\n
 | invalid | a signature that does not verify → the package was changed: **always rejected** |
 
 Trusted keys: `BUILTIN_PUBLIC_KEYS` in `src/services/plugins/constants.js`
-(empty until the gatecontrol-plugins signing key exists — Stage 2) plus
+(the CallMeTechie key of the gatecontrol-plugins release CI) plus
 `GC_PLUGIN_PUBKEYS` (JSON array of base64 raw keys; tests, own builds).
 
 **Unsignierte Plugins erlauben** (Settings → Plugins → Sicherheit, default
@@ -425,12 +508,20 @@ are in backups (see "Backup") and are brought into the plugin once. Code:
   | `gatecontrol-midea` | `midea`: the Midea cloud account (setting `midea_config`), `midea_devices`, `midea_device_owners` | `ac` ← each LAN device's address (`{ kind: 'host' }`; cloud devices need none) |
   | `gatecontrol-skoda` | `skoda`: `skoda_accounts`, `skoda_vehicles`, `skoda_vehicle_owners` | — (Škoda cloud only) |
 * **Upgrade notice** (`pendingMoves()`): while a dataset has data
-  (`counts()` > 0) and its plugin is not installed, the dashboard and
-  Settings → Plugins say that the feature is a plugin now ("Smart Home ist
-  jetzt ein Plugin. Installiere „Smart Home“ …", i18n `plugins.moved.*`) and
-  link the plugin's releases
+  (`counts()` > 0), its plugin is not installed and the data was **never
+  imported**, the dashboard and Settings → Plugins say that the feature is a
+  plugin now ("Smart Home ist jetzt ein Plugin. Installiere „Smart Home“ …",
+  i18n `plugins.moved.*`) and offer it: with the catalogue on, *Jetzt
+  installieren* (Settings → Plugins: starts the catalogue install; the
+  dashboard links `/settings?install=<id>#plugins`, which focuses that
+  button), and always the plugin's releases
   (`https://github.com/CallMeTechie/gatecontrol-plugins/releases?q=<id>`).
-  Installing the plugin (on or off) hides the notice.
+  Installing the plugin (on or off) hides the notice. A successful import
+  sets the marker `plugins.legacy_imported.<dataset>` (settings, an ISO
+  date) that no uninstall removes — the built-in tables are never dropped,
+  so without it the notice would come back for good after an uninstall. An
+  import record of the plugin (kept by *Daten behalten*) counts as well
+  (imports made before the marker existed).
 * **Former pages and API**: `/smarthome`, `/smarthome/rules`, `/midea`,
   `/skoda` redirect to `/plugins/<id>` (`…/rules`) when the plugin is
   installed, else to `/settings#plugins` (`movedPage()`, fixed paths only).
@@ -466,7 +557,9 @@ are in backups (see "Backup") and are brought into the plugin once. Code:
   mappings. The built-in data itself is never changed by the import.
 * **Record**: `plugin_legacy_imports` (when, row counts, number of runs),
   plugin log and activity log (`plugin_legacy_imported`). "Alles löschen"
-  removes the record, so a fresh install is offered the import again.
+  removes the record, so a fresh install is offered the import again (as
+  not done yet); the marker of the dataset stays, so the upgrade notice does
+  not return.
 * **API**: `GET /api/v1/plugins/<id>/legacy` (status: eligible, available,
   counts, imported, running; `null` for plugins without a dataset),
   `POST /api/v1/plugins/<id>/legacy/import` `{ confirm: true }`.
@@ -492,9 +585,7 @@ removes everything.
 
 ## Not yet (later stages)
 
-* the CallMeTechie signing key in `BUILTIN_PUBLIC_KEYS` (until then a signed
-  release is only trusted with its key in `GC_PLUGIN_PUBKEYS`);
-* "Nach Updates suchen" against the gatecontrol-plugins catalogue (the
-  upgrade notice links the plugin's releases until then);
+* automatic updates (the catalogue says "Update verfügbar"; the
+  administrator starts each update and confirms its permissions);
 * dropping the built-in tables once every installation has imported them;
 * releasing a licence ("Lizenz freigeben") from the plugin card.

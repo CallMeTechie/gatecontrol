@@ -88,6 +88,47 @@
     return rows;
   }
 
+  /**
+   * Permission rows of an update compared with the installed version:
+   * { rows: [{ label, value, change: null|'added'|'changed', old? }], removed: [{ label, value }], changed: n }.
+   * Without `oldPerm` (a new install) every row has change null.
+   */
+  function permDiff(perm, oldPerm, t) {
+    const now = permRows(perm, t);
+    if (!oldPerm) return { rows: now.map((r) => ({ label: r.label, value: r.value, change: null })), removed: [], changed: 0 };
+    const before = permRows(oldPerm, t);
+    const old = {};
+    before.forEach((r) => { old['k:' + r.label] = r.value; });
+    const rows = now.map((r) => {
+      const k = 'k:' + r.label;
+      if (!Object.prototype.hasOwnProperty.call(old, k)) return { label: r.label, value: r.value, change: 'added' };
+      return old[k] === r.value ? { label: r.label, value: r.value, change: null } : { label: r.label, value: r.value, change: 'changed', old: old[k] };
+    });
+    const labels = now.map((r) => r.label);
+    const removed = before.filter((r) => labels.indexOf(r.label) < 0);
+    return { rows, removed, changed: rows.filter((r) => r.change).length + removed.length };
+  }
+
+  /**
+   * Chip of a catalogue plugin: { tone, key } or null (not installed needs none).
+   * state: not_installed | installed | update | incompatible (GET /api/v1/plugin-catalog)
+   */
+  function catalogChip(item) {
+    if (!item) return null;
+    if (item.state === 'installed') return { tone: 'good', key: 'plugins.cat.state.installed' };
+    if (item.state === 'update') return { tone: 'info', key: 'plugins.cat.state.update' };
+    if (item.state === 'incompatible') return { tone: 'warn', key: 'plugins.cat.state.incompatible' };
+    return null;
+  }
+
+  /** The catalogue action of a plugin: 'install' | 'update' | null. */
+  function catalogAction(item) {
+    if (!item || !item.latest) return null;
+    if (item.state === 'not_installed') return 'install';
+    if (item.state === 'update') return 'update';
+    return null;
+  }
+
   /** What the plugin adds (overview list). */
   function addsOf(p, t) {
     const out = [];
@@ -107,5 +148,5 @@
     return v === p.name || v === n.de || v === n.en;
   }
 
-  return { MAX_PACKAGE_BYTES, protoText, statusChip, licenseTone, checkSymbol, checkKeys, fmtBytes, fmtDate, permRows, addsOf, wipeConfirmed };
+  return { MAX_PACKAGE_BYTES, protoText, statusChip, licenseTone, checkSymbol, checkKeys, fmtBytes, fmtDate, permRows, permDiff, catalogChip, catalogAction, addsOf, wipeConfirmed };
 });
