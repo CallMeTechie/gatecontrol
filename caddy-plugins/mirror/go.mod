@@ -15,6 +15,6 @@ require (
 	// CVE-2026-84445 (v1.83.2).
 	google.golang.org/grpc v1.83.2
 	golang.org/x/crypto v0.55.0 // CVE-2026-56854
-	golang.org/x/net v0.56.0 // CVE-2026-46600
+	golang.org/x/net v0.60.0 // CVE-2026-46600, CVE-2026-78669
 	golang.org/x/text v0.39.0 // CVE-2026-56852
 )

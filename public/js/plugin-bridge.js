@@ -46,9 +46,13 @@
       }
       const opts = { method, credentials: 'same-origin', headers: { Accept: 'application/json' } };
       if (method !== 'GET') {
-        opts.headers['Content-Type'] = 'application/json';
         opts.headers['X-CSRF-Token'] = csrf();
-        opts.body = JSON.stringify(m.body === undefined ? null : m.body);
+        // Only objects/arrays travel as JSON: the host's JSON parser is strict
+        // and rejects a bare null, which a call without a body used to send.
+        if (m.body && typeof m.body === 'object') {
+          opts.headers['Content-Type'] = 'application/json';
+          opts.body = JSON.stringify(m.body);
+        }
       }
       try {
         const res = await fetch(base + path, opts);

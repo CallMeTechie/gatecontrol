@@ -188,6 +188,14 @@ function createApp() {
       });
     }
 
+    // Body parser rejections are client errors, not server errors.
+    if (err.type === 'entity.parse.failed' && req.path.startsWith('/api/')) {
+      return res.status(400).json({ ok: false, code: 'invalid_json', error: 'Invalid JSON body' });
+    }
+    if (err.type === 'entity.too.large' && req.path.startsWith('/api/')) {
+      return res.status(413).json({ ok: false, code: 'payload_too_large', error: 'Payload too large' });
+    }
+
     const status = err.status || 500;
     if (req.path.startsWith('/api/')) {
       return res.status(status).json({ error: 'Internal server error' });
