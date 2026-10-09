@@ -121,6 +121,10 @@ function permissionSummary(m, lang) {
   };
 }
 
+function existingPermissions(p, lang) {
+  try { return p.manifest && p.manifest.permissions && p.manifest.ui ? permissionSummary(p.manifest, lang) : null; } catch { return null; }
+}
+
 function cleanStaging() {
   const now = Date.now();
   for (const [k, v] of staging) if (now - v.at > LIMITS.stagingTtlMs) staging.delete(k);
@@ -129,17 +133,29 @@ function cleanStaging() {
 
 /**
  * Step 1 of an install: read and check an uploaded package. Nothing is written.
+ * @param {Buffer} buf
+ * @param {string} lang
+ * @param {{expect?: {id:string, version:string}, origin?: 'upload'|'catalog'}} [opts]
+ *   expect: the package must be exactly this plugin id and version and carry a
+ *   TRUSTED signature (an install from the official catalogue) — otherwise it
+ *   is refused before a staging token exists.
  */
-function inspect(buf, lang) {
+function inspect(buf, lang, opts = {}) {
   if (!Buffer.isBuffer(buf)) throw new PluginError('package_not_a_package', 'not a .gcplugin file');
   let files;
   try { files = pkg.decode(buf); } catch (e) {
     throw new PluginError(e.code ? 'package_' + e.code : 'package_corrupt', e.message);
   }
   const a = analyse(files);
+  if (opts.expect) {
+    if (a.manifest && (a.manifest.id !== opts.expect.id || a.manifest.version !== opts.expect.version)) {
+      throw new PluginError('catalog_mismatch', 'the package is not the plugin version that was requested');
+    }
+    if (a.sig.status !== 'trusted') throw new PluginError('catalog_untrusted', 'the package is not signed by a trusted publisher');
+  }
   cleanStaging();
   const token = crypto.randomBytes(16).toString('hex');
-  if (a.manifest) staging.set(token, { buf, at: Date.now() });
+  if (a.manifest) staging.set(token, { buf, at: Date.now(), origin: opts.origin === 'catalog' ? 'catalog' : 'upload' });
   const m = a.manifest;
   return {
     token: m && !a.blockers.length ? token : null,
@@ -153,7 +169,12 @@ function inspect(buf, lang) {
       permissions: permissionSummary(m, lang),
       migrations: a.migrations.length,
     } : null,
-    existing: a.existing ? { version: a.existing.version, enabled: a.existing.enabled } : null,
+    existing: a.existing ? {
+      version: a.existing.version, enabled: a.existing.enabled,
+      // what the installed version may do — the update dialog shows the difference
+      permissions: existingPermissions(a.existing, lang),
+    } : null,
+    origin: opts.origin === 'catalog' ? 'catalog' : 'upload',
   };
 }
 
@@ -220,7 +241,7 @@ async function install(token, opts = {}) {
     ? `Plugin "${plugin.name}" updated from ${existing.version} to ${m.version}`
     : `Plugin "${plugin.name}" ${m.version} installed`, {
     source: 'admin', ipAddress: opts.ip, severity: 'info',
-    details: { plugin: m.id, version: m.version, verified: plugin.signature === 'trusted' },
+    details: { plugin: m.id, version: m.version, verified: plugin.signature === 'trusted', source: st.origin || 'upload' },
   });
 
   let licenseError = null;

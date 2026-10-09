@@ -316,6 +316,10 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
     if (template === 'dashboard' || template === 'settings') {
       try { extraLocals.builtinMoved = require('../services/plugins/legacy').pendingMoves(); } catch { extraLocals.builtinMoved = []; }
     }
+    // Settings → Plugins: the "Offizielle Plugins" card (GC_PLUGIN_CATALOG=off hides it)
+    if (template === 'settings') {
+      try { extraLocals.pluginCatalog = require('../services/plugins/catalog').enabled(); } catch { extraLocals.pluginCatalog = false; }
+    }
     if (!isAdmin) extraLocals.portalUrl = portalLink();
 
     // Inject RDP route count for sidebar badge (all pages)

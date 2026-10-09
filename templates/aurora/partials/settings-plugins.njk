@@ -15,7 +15,8 @@
 
     {#- Former built-in integrations whose data waits for the plugin
         (docs/plugins.md "Built-in data import"); settings-plugins.js hides a
-        note once its plugin is installed. -#}
+        note once its plugin is installed and adds "Jetzt installieren" (official
+        catalogue) when the catalogue offers the plugin. -#}
     {% for mv in builtinMoved or [] %}
     <p class="st-note st-note-warn pg-moved" role="note" data-builtin-moved="{{ mv.pluginId }}">{{ t('plugins.moved.' + mv.dataset) }} <a href="{{ mv.url }}" class="st-link" target="_blank" rel="noopener noreferrer">{{ t('plugins.moved.download') }}</a></p>
     {% endfor %}
@@ -24,6 +25,21 @@
     <p class="pg-empty" id="pg-empty" hidden>{{ t('plugins.empty') }}</p>
 
     <article class="pg-detail st-card" id="pg-detail" aria-labelledby="pg-dtitle" hidden></article>
+
+    {#- Official plugins (docs/plugins.md "Official plugin catalogue"): rows are
+        built by settings-plugins.js from GET /api/v1/plugin-catalog. Not shown
+        when the catalogue is switched off (GC_PLUGIN_CATALOG=off). -#}
+    {% if pluginCatalog %}
+    <section class="st-card pg-cat" id="pg-catalog" aria-labelledby="st-c-pgcat" aria-busy="true">
+      <div class="st-card-head">
+        <div class="st-card-headtext"><h3 class="st-card-title" id="st-c-pgcat">{{ t('plugins.cat.title') }}</h3><p class="st-card-desc">{{ t('plugins.cat.desc') }}</p></div>
+        <button type="button" class="st-btn st-btn-sm" id="pg-cat-refresh">{{ t('plugins.cat.refresh') }}</button>
+      </div>
+      <p class="st-note st-note-warn pg-cat-note" id="pg-cat-err" role="status" hidden>{{ t('plugins.cat.unreachable') }}</p>
+      <p class="pg-sub pg-cat-note" id="pg-cat-loading">{{ t('plugins.cat.loading') }}</p>
+      <ul class="pg-cat-list" id="pg-cat-list" aria-live="polite"></ul>
+    </section>
+    {% endif %}
 
     <section class="st-card" id="pg-security" aria-labelledby="st-c-pgsec">
       <div class="st-card-head"><div class="st-card-headtext"><h3 class="st-card-title" id="st-c-pgsec">{{ t('plugins.sec.title') }}</h3></div></div>

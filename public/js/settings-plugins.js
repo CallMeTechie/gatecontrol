@@ -7,7 +7,10 @@
 //   cards of the installed plugins → detail (Übersicht, Einstellungen,
 //   Lizenz, Berechtigungen, Protokoll) · upload + 4-step install dialog ·
 //   deactivate / uninstall (keep or wipe, typed confirmation) · the switch
-//   "Unsignierte Plugins erlauben" (typed confirmation ERLAUBEN).
+//   "Unsignierte Plugins erlauben" (typed confirmation ERLAUBEN) · "Offizielle
+//   Plugins" (official catalogue, GET /api/v1/plugin-catalog): install/update
+//   with a click — the server downloads and checks the package, then the same
+//   install dialog as for an upload follows (update: permission changes).
 //
 // DOM is built with GCDialog.el / textContent only — no HTML strings.
 (function () {
@@ -18,6 +21,7 @@
   const el = D.el;
   const lang = (window.GC && window.GC.language) === 'en' ? 'en' : 'de';
   const API = '/api/v1/plugins';
+  const CAT_API = '/api/v1/plugin-catalog';
 
   let STR = {};
   try { STR = JSON.parse(document.getElementById('st-i18n').textContent || '{}'); } catch (_) { STR = {}; }
@@ -64,6 +68,12 @@
   let selected = null;
   let tab = 'overview';
   try { selected = new URLSearchParams(location.search).get('plugin'); } catch (_) { selected = null; }
+  // official catalogue: { loaded, available, plugins } — `focusInstall` (?install=<id>, the
+  // dashboard's "Jetzt installieren") puts the focus on that plugin's button once
+  let cat = { loaded: false, available: false, plugins: [] };
+  let focusInstall = null;
+  try { focusInstall = new URLSearchParams(location.search).get('install'); } catch (_) { focusInstall = null; }
+  function catItem(id) { return cat.plugins.find((x) => x.id === id) || null; }
 
   function chip(text, tone) { return el('span', { class: 'pg-badge', 'data-state': tone, text }); }
   function verifiedChip(p) { return p.verified ? chip(t('plugins.badge.verified'), 'good') : chip(t('plugins.badge.unverified'), 'warn'); }
@@ -91,11 +101,17 @@
           el('span', { class: 'pg-ic' }, [icon(p.nav ? p.nav.icon : DEFAULT_ICON)]),
           el('span', { class: 'pg-card-name' }, [el('b', { text: p.name }), el('span', { class: 'pg-sub', text: p.publisher + ' · v' + p.version })]),
         ]),
-        el('span', { class: 'pg-chips' }, [chip(t(st.key), st.tone), verifiedChip(p), sourceChip(p)]),
+        el('span', { class: 'pg-chips' }, [chip(t(st.key), st.tone), verifiedChip(p), sourceChip(p), updateChip(p)]),
         el('span', { class: 'pg-card-note', text: noteOf(p) }),
       ]);
       grid.appendChild(card);
     }
+  }
+
+  /** "Update verfügbar" from the official catalogue. */
+  function updateChip(p) {
+    const c = catItem(p.id);
+    return c && c.state === 'update' && c.latest ? el('span', { class: 'pg-badge', 'data-state': 'info', 'data-update': c.latest.version, text: t('plugins.cat.update_badge', { version: c.latest.version }) }) : null;
   }
 
   function noteOf(p) {
@@ -143,8 +159,21 @@
       p.nav && p.status === 'running' ? el('a', { class: 'st-btn', href: '/plugins/' + encodeURIComponent(p.id), text: t('plugins.detail.open') }) : null,
       p.enabled ? el('button', { type: 'button', class: 'st-btn', id: 'pg-disable', text: t('plugins.detail.disable'), on: { click: () => setEnabled(p, false) } })
         : el('button', { type: 'button', class: 'st-btn', id: 'pg-enable', text: t('plugins.detail.enable'), on: { click: () => setEnabled(p, true) } }),
+      el('span', { id: 'pg-update-slot', class: 'pg-update-slot' }),
       el('button', { type: 'button', class: 'st-btn st-btn-danger', id: 'pg-uninstall', text: t('plugins.detail.uninstall'), on: { click: () => uninstallDialog(p) } }),
     ]));
+    fillUpdateSlot(p);
+  }
+
+  /** Detail footer: "Auf vX aktualisieren" when the catalogue has a newer compatible version. */
+  function fillUpdateSlot(p) {
+    const slot = $('pg-update-slot');
+    if (!slot) return;
+    clear(slot);
+    const c = catItem(p.id);
+    if (!c || P.catalogAction(c) !== 'update') return;
+    slot.appendChild(el('button', { type: 'button', class: 'st-btn st-btn-primary', id: 'pg-update', text: t('plugins.cat.update_to', { version: c.latest.version }),
+      on: { click: (e) => installFromCatalog(c, e.currentTarget) } }));
   }
 
   // ── Built-in data import (first-party plugin of a former built-in feature) ──
@@ -383,6 +412,25 @@
     return el('div', { class: 'pg-perms' }, P.permRows(perm, t).map((r) => el('div', { class: 'pg-perm' }, [el('b', { text: r.label }), el('span', { text: r.value })])));
   }
 
+  /** Update: the new permissions, each change marked (neu / geändert / entfällt). */
+  function permDiffList(perm, existing) {
+    const diff = P.permDiff(perm, existing.permissions, t);
+    const wrap = el('div', { id: 'pg-perm-diff', 'data-changed': String(diff.changed) });
+    wrap.appendChild(el('p', { class: 'st-note' + (diff.changed ? ' st-note-warn' : ''), role: 'note',
+      text: diff.changed ? t('plugins.in.perms_changed', { from: existing.version, n: diff.changed }) : t('plugins.in.perms_same', { from: existing.version }) }));
+    const box = el('div', { class: 'pg-perms' });
+    diff.rows.forEach((r) => box.appendChild(el('div', { class: 'pg-perm', 'data-change': r.change || 'same' }, [
+      el('b', null, [r.label, r.change ? ' ' : null, r.change ? chip(t('plugins.perm.diff_' + r.change), 'warn') : null]),
+      el('span', null, [r.value, r.change === 'changed' ? el('span', { class: 'pg-sub', text: t('plugins.perm.diff_before', { value: r.old }) }) : null]),
+    ])));
+    diff.removed.forEach((r) => box.appendChild(el('div', { class: 'pg-perm', 'data-change': 'removed' }, [
+      el('b', null, [r.label, ' ', chip(t('plugins.perm.diff_removed'), 'good')]),
+      el('span', { class: 'pg-perm-gone', text: r.value }),
+    ])));
+    wrap.appendChild(box);
+    return wrap;
+  }
+
   function panelPerms(p, panel) {
     panel.appendChild(el('p', { class: 'pg-sub pg-pad', text: t('plugins.perm.intro') }));
     panel.appendChild(permList(p.permissions));
@@ -466,7 +514,7 @@
   }
 
   function installDialog(file, info) {
-    const d = D.dialog({ title: t('plugins.in.title'), wide: true });
+    const d = D.dialog({ title: t(info.existing ? 'plugins.in.title_update' : 'plugins.in.title'), wide: true });
     const plugin = info.plugin;
     let step = 1;
     let accepted = false;
@@ -498,7 +546,8 @@
       next.hidden = false;
       next.disabled = false;
       if (step === 1) {
-        body.appendChild(el('div', { class: 'pg-file' }, [el('b', { class: 'st-mono', text: file.name }), el('span', { class: 'pg-sub', text: P.fmtBytes(file.size) })]));
+        body.appendChild(el('div', { class: 'pg-file' }, [el('b', { class: 'st-mono', text: file.name }), el('span', { class: 'pg-sub', text: P.fmtBytes(file.size) }),
+          info.origin === 'catalog' ? el('span', { class: 'pg-sub', id: 'pg-in-origin', text: t('plugins.cat.source') }) : null]));
         if (plugin) body.appendChild(el('div', { class: 'pg-in-plugin' }, [el('b', { text: plugin.name + ' v' + plugin.version }), el('span', { class: 'pg-sub', text: plugin.publisher + (plugin.description ? ' · ' + plugin.description : '') })]));
         body.appendChild(el('div', { class: 'pg-h', text: t('plugins.in.checks') }));
         body.appendChild(el('ul', { class: 'pg-checks', id: 'pg-checks' }, (info.checks || []).map((c) => {
@@ -512,7 +561,8 @@
         if (!info.canInstall) { err.textContent = t('plugins.in.blocked'); err.hidden = false; }
       } else if (step === 2) {
         body.appendChild(el('p', { class: 'pg-sub', text: t('plugins.in.perms_intro', { name: plugin.name }) }));
-        body.appendChild(permList(plugin.permissions));
+        if (info.existing && info.existing.permissions) body.appendChild(permDiffList(plugin.permissions, info.existing));
+        else body.appendChild(permList(plugin.permissions));
         const cb = el('input', { type: 'checkbox', id: 'pg-in-accept' });
         cb.checked = accepted;
         cb.addEventListener('change', () => { accepted = cb.checked; next.disabled = !accepted; });
@@ -559,6 +609,97 @@
     render();
   }
 
+  // ── Official plugins (catalogue) ──
+  async function installFromCatalog(item, btn) {
+    if (!item || !item.latest) return;
+    const label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = t('plugins.cat.downloading'); }
+    const r = await req('POST', CAT_API + '/install', { id: item.id, version: item.latest.version });
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    if (!r.ok && !r.checks) { toast(r.error || t('plugins.err.generic'), 'error'); return; }
+    installDialog({ name: item.id + '-' + item.latest.version + '.gcplugin', size: r.size || item.latest.size }, r);
+  }
+
+  function catalogRow(item) {
+    const action = P.catalogAction(item);
+    const c = P.catalogChip(item);
+    const meta = [item.publisher];
+    if (item.latest) meta.push('v' + item.latest.version);
+    if (item.installedVersion && item.state !== 'installed') meta.push(t('plugins.cat.installed_version', { version: item.installedVersion }));
+    const hints = [];
+    if (item.state === 'incompatible' && item.requiresNewer) hints.push(t('plugins.cat.requires', { range: item.requiresNewer.gatecontrol, installed: cat.serverVersion || '' }));
+    else if (item.requiresNewer) hints.push(t('plugins.cat.newer_requires', { version: item.requiresNewer.version, range: item.requiresNewer.gatecontrol }));
+    const lic = item.latest ? chip(t(item.latest.licenseRequired ? 'plugins.cat.license_required' : 'plugins.cat.license_free'), item.latest.licenseRequired ? 'warn' : 'good') : null;
+    const btn = action ? el('button', { type: 'button', class: 'st-btn st-btn-sm st-btn-primary', 'data-cat-action': action,
+      text: t(action === 'update' ? 'plugins.cat.update' : 'plugins.cat.install'), on: { click: (e) => installFromCatalog(item, e.currentTarget) } }) : null;
+    return el('li', { class: 'pg-cat-item', 'data-cat-plugin': item.id, 'data-cat-state': item.state }, [
+      el('div', { class: 'pg-cat-main' }, [
+        el('div', { class: 'pg-cat-head' }, [el('b', { text: item.name }), c ? chip(t(c.key), c.tone) : null, lic]),
+        el('span', { class: 'pg-sub', text: meta.join(' · ') }),
+        item.description ? el('p', { class: 'pg-cat-desc', text: item.description }) : null,
+        hints.length ? el('span', { class: 'pg-sub', 'data-cat-hint': '1', text: hints.join(' ') }) : null,
+        item.latest && item.latest.releaseUrl ? el('a', { class: 'st-link pg-cat-notes', href: item.latest.releaseUrl, target: '_blank', rel: 'noopener noreferrer', text: t('plugins.cat.release_notes') }) : null,
+      ]),
+      btn ? el('div', { class: 'pg-cat-act' }, [btn]) : null,
+    ]);
+  }
+
+  /** "Jetzt installieren" in the notice of a former built-in integration. */
+  function syncMovedNotices() {
+    document.querySelectorAll('[data-builtin-moved]').forEach((n) => {
+      const old = n.querySelector('.pg-moved-go');
+      if (old) old.remove();
+      const item = catItem(n.getAttribute('data-builtin-moved'));
+      if (!item || P.catalogAction(item) !== 'install') return;
+      n.appendChild(document.createTextNode(' '));
+      n.appendChild(el('button', { type: 'button', class: 'st-btn st-btn-sm st-btn-primary pg-moved-go', 'data-cat-install': item.id,
+        text: t('plugins.moved.install_now'), on: { click: (e) => installFromCatalog(item, e.currentTarget) } }));
+    });
+  }
+
+  function renderCatalog() {
+    const list = $('pg-cat-list');
+    if (!list) return;
+    clear(list);
+    $('pg-cat-loading').hidden = cat.loaded;
+    const err = $('pg-cat-err');
+    err.hidden = !cat.loaded || cat.available;
+    if (cat.loaded && !cat.available) err.textContent = cat.error || t('plugins.cat.unreachable');
+    if (cat.available && !cat.plugins.length) list.appendChild(el('li', { class: 'pg-sub', text: t('plugins.cat.empty') }));
+    cat.plugins.forEach((item) => list.appendChild(catalogRow(item)));
+    syncMovedNotices();
+    if (focusInstall && cat.loaded) {
+      const target = (document.querySelector('[data-cat-install="' + CSS.escape(focusInstall) + '"]')
+        || list.querySelector('[data-cat-plugin="' + CSS.escape(focusInstall) + '"] button'));
+      focusInstall = null;
+      if (target) { target.scrollIntoView({ behavior: 'smooth', block: 'center' }); target.focus({ preventScroll: true }); }
+    }
+  }
+
+  async function loadCatalog(refresh) {
+    const box = $('pg-catalog');
+    if (!box) return;
+    box.setAttribute('aria-busy', 'true');
+    const btn = $('pg-cat-refresh');
+    if (btn) btn.disabled = true;
+    const r = await req('GET', CAT_API + (refresh ? '?refresh=1' : ''));
+    if (btn) btn.disabled = false;
+    box.setAttribute('aria-busy', 'false');
+    if (r.ok && r.enabled && r.available) {
+      cat = { loaded: true, available: true, plugins: r.plugins || [], serverVersion: r.serverVersion || '' };
+    } else {
+      // the upload keeps working; say why the list is empty
+      const code = r.code || '';
+      cat = { loaded: true, available: false, plugins: [],
+        error: code === 'catalog_invalid' ? t('plugins.cat.invalid') : (code === 'catalog_config' || (!r.ok && !code && r.error) ? r.error : t('plugins.cat.unreachable')) };
+    }
+    renderCatalog();
+    renderCards();
+    const p = state.plugins.find((x) => x.id === selected);
+    if (p) fillUpdateSlot(p);
+    if (refresh && cat.available) toast(t('plugins.cat.refreshed'));
+  }
+
   // ── Unsigned plugins switch ──
   async function toggleUnsigned() {
     const on = !state.allowUnsigned;
@@ -593,6 +734,7 @@
     renderPolicy();
     renderCards();
     renderDetail();
+    loadCatalog(false); // states follow what is installed now (served from the server's cache)
   }
 
   // ── Wiring ──
@@ -604,6 +746,7 @@
   drop.addEventListener('drop', (e) => { e.preventDefault(); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; upload(f); });
   $('pg-upload-btn').addEventListener('click', () => fileIn.click());
   $('pg-unsigned').addEventListener('click', toggleUnsigned);
+  if ($('pg-cat-refresh')) $('pg-cat-refresh').addEventListener('click', () => loadCatalog(true));
 
   window.GCSettingsExt = window.GCSettingsExt || {};
   window.GCSettingsExt.plugins = { load };

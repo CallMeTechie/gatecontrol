@@ -69,6 +69,8 @@ router.use('/rdp', require('./rdp'));
 router.use('/pihole', require('./pihole'));
 // Plugin platform (docs/plugins.md): management + each plugin's own admin API
 router.use('/plugins', require('./plugins'));
+// Official plugin catalogue (gatecontrol-plugins releases): list, install/update
+router.use('/plugin-catalog', require('./pluginCatalog'));
 // Former built-in integrations, now first-party plugins (their API lives
 // under /plugins/<id>/api): 410 with the plugin that provides the feature.
 for (const [path, plugin] of [['/smarthome', 'gatecontrol-smarthome'], ['/midea', 'gatecontrol-midea'], ['/skoda', 'gatecontrol-skoda']]) {
