@@ -115,6 +115,51 @@ describe('sidebar, plugin page, frame', () => {
   });
 });
 
+describe('frame bridge → plugin API', () => {
+  function runBridge() {
+    const vm = require('node:vm');
+    const calls = [];
+    const replies = [];
+    const handlers = {};
+    const attrs = { 'data-plugin-api': '/api/v1/plugins/hello/api/', 'data-plugin-id': 'hello', 'data-plugin-pages': '[]' };
+    const frame = { contentWindow: { postMessage: (m) => replies.push(m) }, getAttribute: (k) => attrs[k] || null, addEventListener() {}, style: {} };
+    const ctx = {
+      window: { GC: { csrfToken: 'tok' }, addEventListener: (type, fn) => { handlers[type] = fn; } },
+      document: { readyState: 'complete', documentElement: { getAttribute: () => 'dark' }, querySelectorAll: () => [frame], getElementById: () => null },
+      MutationObserver: class { observe() {} },
+      fetch: async (url, opts) => { calls.push({ url, opts }); return { ok: true, status: 200, json: async () => ({ ok: true }) }; },
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'plugin-bridge.js'), 'utf8'), ctx);
+    const send = async (data) => {
+      handlers.message({ source: frame.contentWindow, origin: 'null', data: { type: 'gc-call', id: 1, ...data } });
+      await new Promise((r) => setImmediate(r));
+    };
+    return { calls, replies, send };
+  }
+
+  it('a call without a body sends no body (the strict JSON parser rejects a bare null)', async () => {
+    const b = runBridge();
+    await b.send({ method: 'POST', path: 'sync' });
+    assert.equal(b.calls.length, 1);
+    assert.equal(b.calls[0].url, '/api/v1/plugins/hello/api/sync');
+    assert.equal(b.calls[0].opts.body, undefined);
+    assert.equal(b.calls[0].opts.headers['Content-Type'], undefined);
+    assert.equal(b.calls[0].opts.headers['X-CSRF-Token'], 'tok');
+    await b.send({ method: 'POST', path: 'save', body: { a: 1 } });
+    assert.equal(b.calls[1].opts.body, '{"a":1}');
+    assert.equal(b.calls[1].opts.headers['Content-Type'], 'application/json');
+  });
+  it('a POST without a body reaches the plugin', async () => {
+    const r = await agent.post(API + '/hello/api/ping').set('X-CSRF-Token', csrf).expect(200);
+    assert.equal(r.body.method, 'POST');
+  });
+  it('a malformed JSON body is a 400, not an internal server error', async () => {
+    const r = await agent.post(API + '/hello/api/ping').set('X-CSRF-Token', csrf).set('Content-Type', 'application/json').send('null').expect(400);
+    assert.equal(r.body.code, 'invalid_json');
+    assert.notEqual(r.body.error, 'Internal server error');
+  });
+});
+
 describe('plugins-ui helpers', () => {
   const t = (k, p) => {
     let s = de[k] || k;
