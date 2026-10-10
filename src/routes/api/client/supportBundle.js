@@ -18,6 +18,7 @@
 
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = rateLimit;
 const config = require('../../../../config/default');
 const peers = require('../../../services/peers');
 const activity = require('../../../services/activity');
@@ -36,7 +37,7 @@ const attemptLimiter = rateLimit({
   max: () => Math.max(1, config.supportBundles.perHour) * 4,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `support:${req.tokenId || req.ip}`,
+  keyGenerator: (req) => `support:${req.tokenId || ipKeyGenerator(req.ip)}`,
   handler: (req, res) => res.status(429).json({ ok: false, error: 'rate_limited' }),
 });
 

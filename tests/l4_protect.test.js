@@ -210,6 +210,16 @@ test('validateIpFilter: modes, aliases and rule shapes', () => {
   assert.equal(codeOf(() => rv.validateIpFilter({ ip_filter_rules: [{ type: 'ip', value: 'nope' }] }, {})), 'IP_FILTER_RULE_INVALID/400');
   assert.equal(codeOf(() => rv.validateIpFilter({ ip_filter_rules: [{ type: 'cidr', value: '10.0.0.1' }] }, {})), 'IP_FILTER_RULE_INVALID/400');
   assert.equal(codeOf(() => rv.validateIpFilter({ ip_filter_rules: [{ type: 'nope', value: 'x' }] }, {})), 'IP_FILTER_RULE_INVALID/400');
+  // IPv4 only as a dotted quad: shorthand forms ipaddr.js would expand
+  // ("10.1" = 10.0.0.1) never match in the HTTP filter's text compare.
+  for (const value of ['10.1', '10.1.2', '0x7f.0.0.1', '167772161', '010.0.0.1']) {
+    assert.equal(codeOf(() => rv.validateIpFilter({ ip_filter_rules: [{ type: 'ip', value }] }, {})), 'IP_FILTER_RULE_INVALID/400', value);
+  }
+  assert.equal(codeOf(() => rv.validateIpFilter({ ip_filter_rules: [{ type: 'cidr', value: '10.1/16' }] }, {})), 'IP_FILTER_RULE_INVALID/400');
+  rv.validateIpFilter({ ip_filter_rules: [
+    { type: 'ip', value: '203.0.113.7' }, { type: 'ip', value: '2001:db8::1' },
+    { type: 'cidr', value: '10.0.0.0/8' }, { type: 'cidr', value: '2001:db8::/32' },
+  ] }, { routeType: 'http' });
 
   // country: fine for HTTP, refused for L4 (caddy-l4 has no geo matcher).
   rv.validateIpFilter({ ip_filter_rules: [{ type: 'country', value: 'DE' }] }, { routeType: 'http' });

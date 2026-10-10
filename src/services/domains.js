@@ -94,7 +94,7 @@ async function resolveCaa(host) {
 // (127.0.1.1, 10.8.0.1, ::1 …) must never become "the server address".
 const NON_PUBLIC_RANGES = new Set([
   'unspecified', 'loopback', 'private', 'linkLocal', 'carrierGradeNat', 'broadcast', 'multicast',
-  'uniqueLocal', 'ipv4Mapped', 'discard',
+  'uniqueLocal', 'ipv4Mapped', 'discard', 'deprecatedSiteLocal', // fec0::/10 (ipaddr.js 2.x; 1.x: 'unicast')
 ]);
 function isPublicAddress(addr) {
   try { return !NON_PUBLIC_RANGES.has(ipaddr.parse(String(addr)).range()); }

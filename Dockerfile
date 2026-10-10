@@ -31,18 +31,23 @@ RUN cd /tmp/caddy-mirror && go mod tidy && cd / && \
 
 # Stage 2: Node dependencies
 #
-# Node 24 LTS (Node 20 is EOL since 2026-04). better-sqlite3 needs >= 12.x
-# for node-v137 prebuilds (linuxmusl-x64/arm64); the alpine image has no
-# compiler, so a missing prebuild would fail the build here instead of
-# silently shipping a broken binding. argon2 uses N-API prebuilds (musl
-# included) and is ABI-independent.
+# Node 24 LTS (Node 20 is EOL since 2026-04). better-sqlite3 (>= 13) and
+# argon2 both use N-API prebuilds (musl included) and are ABI-independent.
+# better-sqlite3 ships them inside the package (prebuilds/linuxmusl-x64.node)
+# and picks one at require time: it has no install step anymore and is NOT
+# rebuilt here — `npm rebuild better-sqlite3` would force node-gyp (its
+# binding.gyp), which needs Python and a compiler the alpine image lacks.
+# argon2's install step (node-gyp-build) only selects its musl prebuild. The
+# last line loads both bindings, so a missing or broken prebuild fails the
+# build here instead of shipping a broken image.
 FROM node:24-alpine AS builder
 WORKDIR /app
 ARG NODE_AUTH_TOKEN
 COPY package*.json .npmrc ./
 RUN npm ci --omit=dev --ignore-scripts && \
-    npm rebuild argon2 better-sqlite3 && \
-    rm -f .npmrc
+    npm rebuild argon2 && \
+    rm -f .npmrc && \
+    node -e "new (require('better-sqlite3'))(':memory:').close(); require('argon2')"
 
 # Stage 3: Runtime — same Node major as the builder (native ABI must match).
 #

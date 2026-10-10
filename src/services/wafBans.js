@@ -66,7 +66,7 @@ function nowIso() { return new Date().toISOString(); }
 
 // ─── Addresses ──────────────────────────────────────────
 
-// Network address of addr/prefix (ipaddr.js 1.x has no IPv6 helper for it).
+// Network address of addr/prefix, for IPv4 and IPv6 alike.
 function networkOf(addr, prefix) {
   const bytes = addr.toByteArray();
   for (let i = 0; i < bytes.length; i++) {
@@ -605,9 +605,55 @@ function sweep() {
   }
 }
 
+/**
+ * Rewrites stored ban addresses to the current canonical text. ipaddr.js 1.x
+ * shortened IPv6 at the first zero run ("2a01:4f8::1:0:0:0:5"), 2.x writes
+ * RFC 5952 ("2a01:4f8:0:1::5", what Caddy and Node print). Without this, a
+ * ban stored in the old form could not be removed (DELETE /waf/bans/:ip looks
+ * the row up by its canonical text) and an auto-ban would add a second row
+ * for the same address. When both forms exist, the row with the later expiry
+ * stays (no expiry = permanent wins). Idempotent; runs on start. → rows changed
+ */
+function normalizeStoredBans() {
+  try {
+    const db = getDb();
+    const rows = db.prepare('SELECT ip, expires_at FROM waf_bans').all();
+    const byIp = new Map(rows.map((r) => [r.ip, r]));
+    const renames = [];
+    for (const r of rows) {
+      const p = parseAddress(r.ip);
+      if (p && p.text !== r.ip) renames.push([r.ip, p.text]);
+    }
+    if (renames.length === 0) return 0;
+    const upd = db.prepare('UPDATE waf_bans SET ip = ? WHERE ip = ?');
+    const del = db.prepare('DELETE FROM waf_bans WHERE ip = ?');
+    const outlives = (a, b) => (a.expires_at == null ? b.expires_at != null : b.expires_at != null && a.expires_at > b.expires_at);
+    db.transaction(() => {
+      for (const [from, to] of renames) {
+        const old = byIp.get(from);
+        const cur = byIp.get(to);
+        if (cur && !outlives(old, cur)) {
+          del.run(from);
+        } else {
+          if (cur) del.run(to);
+          upd.run(to, from);
+          byIp.set(to, old);
+        }
+        byIp.delete(from);
+      }
+    })();
+    logger.info({ count: renames.length }, 'waf: stored ban addresses normalised');
+    return renames.length;
+  } catch (err) {
+    logger.warn({ err: err.message }, 'waf: ban address normalisation failed');
+    return 0;
+  }
+}
+
 let _sweepTimer = null;
 function start() {
   if (_sweepTimer) return;
+  normalizeStoredBans();
   _sweepTimer = setInterval(sweep, SWEEP_INTERVAL_MS);
   if (_sweepTimer.unref) _sweepTimer.unref();
 }
@@ -625,6 +671,7 @@ module.exports = {
   isBanRule,
   parseAddress,
   canonIp,
+  normalizeStoredBans,
   isPublicIp,
   getSettings,
   updateSettings,

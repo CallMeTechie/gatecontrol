@@ -25,6 +25,7 @@
 
 const { Router } = require('express');
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = rateLimit;
 const config = require('../../../config/default');
 const { getDb } = require('../../db/connection');
 const tokens = require('../../services/tokens');
@@ -51,7 +52,7 @@ const selfServiceLimiter = rateLimit({
   max: () => Math.max(1, config.auth.rateLimitLogin) * 4,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `me:${userIdOf(req) || req.ip}`,
+  keyGenerator: (req) => `me:${userIdOf(req) || ipKeyGenerator(req.ip)}`,
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: req.t('error.me.rate_limited') });
   },
