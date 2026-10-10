@@ -159,6 +159,15 @@
   /** A plugin rule is a Pro feature (plugin topics, docs "Entscheidungen" 1). */
   function ruleLocked(rule, pro) { return !pro && (rule.group === 'plugins' || !!rule.plugin_id); }
 
+  /** Without the licence the e-mail switch of a non-free core event is locked (free list from the page). */
+  function emailLocked(rule, pro, free) {
+    if (pro) return false;
+    if (rule.group === 'plugins' || rule.plugin_id) return true;
+    const list = Array.isArray(free) ? free : FREE_EVENTS;
+    return list.indexOf(rule.event_id) < 0;
+  }
+  let FREE_EVENTS = [];
+
   /** Recipients as display parts: [{kind:'admins'}|{kind:'user',id,name}|…]. */
   function recipientParts(rcpt, users, groups) {
     const r = normRecipients(rcpt);
@@ -249,14 +258,16 @@
     return { known: true, now, later: sel.length - now, total: sel.length };
   }
   /** "Gültig bis" choices: tonight 23:00 (when ≥ 30 min away) plus fixed spans. */
-  function ttlChoices(nowDate) {
+  function ttlChoices(nowDate, maxTtl) {
     const now = nowDate instanceof Date ? nowDate : new Date();
+    const max = count(maxTtl) || Infinity; // the server allows 60 s … retention_h
     const out = [];
     const tonight = new Date(now.getTime());
     tonight.setHours(23, 0, 0, 0);
     const left = Math.round((tonight.getTime() - now.getTime()) / 1000);
-    if (left >= 1800) out.push({ kind: 'tonight', ttl: left, at: tonight });
-    TTL_CHOICES.forEach((s) => out.push({ kind: 'span', ttl: s }));
+    if (left >= 1800 && left <= max) out.push({ kind: 'tonight', ttl: left, at: tonight });
+    TTL_CHOICES.filter((s) => s <= max).forEach((s) => out.push({ kind: 'span', ttl: s }));
+    if (!out.length) out.push({ kind: 'span', ttl: Math.max(60, Math.min(3600, count(maxTtl) || 3600)) });
     return out;
   }
   function sendBody(target, form) {
@@ -271,13 +282,28 @@
     };
   }
 
-  /** 'plugin:gatecontrol-skoda' → {plugin:'gatecontrol-skoda'}; 'security' → {key}; else {text}. */
-  function sourceKind(source) {
+  // Rule group → overview source (security, devices, services, system, plugins).
+  const GROUP_SOURCE = { security: 'security', peers: 'devices', routes: 'services', system: 'system', plugins: 'plugins' };
+  /**
+   * Where a notification came from. The server writes source 'system' for core
+   * events, 'plugin:<id>' and 'manual:<user id>'; the topic (overview) or the
+   * rule group of the event (history) tells the core events apart.
+   * → {key} | {plugin: id} | {text}
+   */
+  function sourceKind(source, topic, group) {
     const s = str(source);
-    if (SOURCES.indexOf(s) >= 0 || s === 'manual') return { key: 'notify.source.' + s };
+    if (/^manual(:|$)/.test(s)) return { key: 'notify.source.manual' };
     const m = /^plugins?[:.](.+)$/.exec(s);
     if (m) return { plugin: m[1] };
+    if (SOURCES.indexOf(topic) >= 0) return { key: 'notify.source.' + topic };
+    if (GROUP_SOURCE[group]) return { key: 'notify.source.' + GROUP_SOURCE[group] };
+    if (SOURCES.indexOf(s) >= 0) return { key: 'notify.source.' + s };
     return { text: s };
+  }
+  /** Field codes of a 400 (`fields: {field: code}`) → list of {field, code}. */
+  function fieldCodes(data) {
+    const f = isObj(data) && isObj(data.fields) ? data.fields : {};
+    return Object.keys(f).map((k) => ({ field: k, code: str(f[k]) }));
   }
   function historyQuery(o) {
     const f = FILTERS.indexOf(o && o.filter) >= 0 ? o.filter : 'all';
@@ -307,7 +333,7 @@
 
   const pure = {
     TABS, PRIORITIES, GROUPS, SOURCES, FILTERS, DEVICE_STATES, RULE_FIELDS, SETTINGS_FIELDS, TTL_CHOICES, HISTORY_LIMIT,
-    norm, parseHash, hashFor, prioOf, prioTone, idList, normRecipients, sameRecipients, hasRecipient, normRule, copyRule,
+    GROUP_SOURCE, fieldCodes, emailLocked, norm, parseHash, hashFor, prioOf, prioTone, idList, normRecipients, sameRecipients, hasRecipient, normRule, copyRule,
     ruleDiff, ruleMatches, groupRules, ruleLocked, recipientParts, statusOf, histStatusOf, durationOf, spanOf, choicesWith,
     latencyNumber, reachOf, ttlChoices, sendBody, sourceKind, historyQuery, normSettings, settingsDiff, rangeError,
   };
@@ -325,6 +351,7 @@
   const I18N = readJson('nc-i18n');
   const CTX = readJson('nc-ctx');
   const LANG = CTX.lang || doc.documentElement.lang || 'de';
+  FREE_EVENTS = Array.isArray(CTX.free) ? CTX.free.map(String) : [];
 
   function has(key) { return I18N[key] != null || !!(win.GC && win.GC.t && win.GC.t[key] != null); }
   function T(key, params) {
@@ -476,13 +503,20 @@
     throw err;
   }
   function isLicence(err) { return !!err && err.status === 403; }
-  function errText(err) {
+  // Loading (action = false): 404 means the server has no notification centre
+  // yet. Actions: the server's own (localised) message, field codes of a 400
+  // mapped to texts, 503 = push switched off, 403 = licence.
+  function errText(err, action) {
     if (!err) return T('common.error');
-    if (err.status === 404) return T('notify.unavailable');
+    if (err.status === 503) return T('notify.err.push_disabled');
     if (isLicence(err)) return T('notify.err.license');
+    const codes = fieldCodes(err.data);
+    if (err.status === 400 && codes.length) return codes.map((c) => label('notify.err.field.', c.code)).join(' ');
+    if (err.status === 404 && (!action || !(err.data && err.data.error))) return T('notify.unavailable');
+    if (action) return str(err.data && err.data.error) || T('common.error');
     return T('notify.load_error', { msg: str(err.message) || T('common.error') });
   }
-  function errToast(err) { toast(errText(err), 'error'); }
+  function errToast(err) { toast(errText(err, true), 'error'); }
   function busy(btn, on) { if (btn) { btn.disabled = !!on; btn.setAttribute('aria-busy', on ? 'true' : 'false'); } }
 
   /** Calm state box (unavailable / error / licence) with "Erneut versuchen". */
@@ -601,8 +635,10 @@
   });
 
   // ─── Übersicht ───────────────────────────────────────────────────────────
-  function sourceText(source) {
-    const k = sourceKind(source);
+  function sourceText(item) {
+    const it = isObj(item) ? item : { source: item };
+    const rule = state.rules && it.event_id ? state.rules.find((r) => r.event_id === it.event_id) : null;
+    const k = sourceKind(it.source, it.topic, rule ? rule.group : null);
     if (k.key) return T(k.key);
     if (k.plugin) return T('notify.source.plugin', { name: pluginName(k.plugin) });
     return k.text;
@@ -618,8 +654,9 @@
   function sourceIcon(item) {
     if (item.priority === 'critical') return ICON.critical;
     const s = str(item.source);
-    if (ICON[s]) return ICON[s];
     if (/^plugin/.test(s)) return ICON.plugins;
+    if (/^manual/.test(s)) return ICON.manual;
+    if (ICON[item.topic]) return ICON[item.topic];
     return ICON.bell;
   }
   function kpi(id, value, sub, tone) {
@@ -653,6 +690,7 @@
     state.ovLoaded = true;
     stateBox(box, state.ovErr, () => loadOverview());
     renderOverview();
+    refreshTtl();
   }
   function renderOverview() {
     const ov = state.ov;
@@ -677,7 +715,7 @@
     recent.forEach((it) => {
       const st = statusOf(it);
       const prio = prioOf(it.priority);
-      const meta = [sourceText(it.source), T('notify.prio.' + prio)];
+      const meta = [sourceText(it), T('notify.prio.' + prio)];
       if (bool(it.silent)) meta.push(T('notify.status.silent_meta'));
       else if (it.recipients_label) meta.push(T('notify.to', { who: str(it.recipients_label) }));
       list.appendChild(el('li', {}, [
@@ -909,9 +947,11 @@
     // Priorität
     const prioHint = el('p', { class: 'nc-hint', id: 'nc-ed-prio-hint', text: T('notify.prio_hint.' + d.priority) });
     const seg = el('div', { class: 'nc-seg nc-seg-4', role: 'group', 'aria-labelledby': 'nc-ed-prio-legend', 'aria-describedby': 'nc-ed-prio-hint' });
+    const capped = d.group === 'plugins' || !!d.plugin_id; // plugins send at most "high"
     PRIORITIES.forEach((p) => {
       seg.appendChild(el('button', {
         type: 'button', class: 'nc-seg-btn', 'data-prio': p, 'aria-pressed': d.priority === p ? 'true' : 'false', text: T('notify.prio.' + p),
+        disabled: capped && p === 'critical', title: capped && p === 'critical' ? T('notify.err.field.priority_capped') : null,
         on: {
           click: () => {
             d.priority = p;
@@ -988,7 +1028,9 @@
     }
     fallback.addEventListener('change', () => { d.email_fallback_s = count(fallback.value); emailText(); updateEditorState(); });
     const channel = (key, title, hint, extra) => {
-      const cb = el('input', { type: 'checkbox', class: 'nc-check', id: 'nc-ed-' + key, checked: !!d[key], 'aria-describedby': 'nc-ed-' + key + '-hint' });
+      // Without the licence the e-mail of a non-free core event stays as it is (403 otherwise).
+      const mailLocked = key === 'ch_email' && emailLocked(d, state.pro);
+      const cb = el('input', { type: 'checkbox', class: 'nc-check', id: 'nc-ed-' + key, checked: !!d[key], disabled: mailLocked, title: mailLocked ? T('notify.err.license') : null, 'aria-describedby': 'nc-ed-' + key + '-hint' });
       cb.addEventListener('change', () => { d[key] = cb.checked; if (key === 'ch_email') emailText(); updateEditorState(); });
       if (hint && !hint.id) hint.id = 'nc-ed-' + key + '-hint';
       return el('div', { class: 'nc-channel' }, [
@@ -1034,7 +1076,14 @@
     preview.addEventListener('click', async () => {
       busy(preview, true);
       try {
-        await request('POST', '/api/v1/notify/test', { event_id: d.event_id, priority: d.priority });
+        // With the licence: this rule's label and priority to the own person
+        // (POST /send); without: the plain test message (POST /test is free).
+        if (state.pro && CTX.self) {
+          await request('POST', '/api/v1/notify/send', {
+            target: { type: 'users', ids: [CTX.self] }, title: T('notify.ed.preview_title', { name: d.label }).slice(0, TITLE_MAX),
+            body: T('notify.ed.preview_body'), priority: d.priority, ttl_s: 3600,
+          });
+        } else await request('POST', '/api/v1/notify/test', {});
         toast(T('notify.ed.preview_sent'));
       } catch (err) { errToast(err); } finally { busy(preview, false); }
     });
@@ -1123,8 +1172,10 @@
   function deviceRow(d) {
     const unsupported = d.state === 'unsupported';
     const who = d.user ? [str(d.user.name), d.user.role === 'admin' ? T('notify.dev.role_admin') : null].filter(Boolean).join(' · ') : T('notify.dev.no_user');
+    const can = testable(d);
     const test = unsupported ? null : el('button', {
-      type: 'button', class: 'btn btn-sm nc-dev-test', 'data-token-id': str(d.token_id), disabled: d.state === 'offline',
+      type: 'button', class: 'btn btn-sm nc-dev-test', 'data-token-id': str(d.token_id), disabled: !can,
+      title: !can && d.state !== 'offline' ? T('notify.dev.test_pro') : null,
       'aria-label': T('notify.dev.test_label', { name: d.name }), text: T('notify.dev.test'),
     });
     return el('tr', { 'data-token-id': str(d.token_id), 'data-state': d.state }, [
@@ -1141,6 +1192,10 @@
       el('td', { class: 'nc-r' }, [test]),
     ]);
   }
+  // A test to one device needs POST /send (licence); without it only the own
+  // devices can be tested (POST /test reaches all of them).
+  function ownDevice(d) { return !!(d.user && CTX.self && String(d.user.id) === String(CTX.self)); }
+  function testable(d) { return d.state !== 'offline' && d.state !== 'unsupported' && (state.pro || ownDevice(d)); }
   function renderDevices() {
     const body = $('nc-dev-body');
     if (!state.devices) { if (state.devErr) emptyRow(body, 5, '–'); return; }
@@ -1155,7 +1210,11 @@
     if (!d) return;
     busy(b, true);
     try {
-      await request('POST', '/api/v1/notify/test', { token_id: d.token_id });
+      if (state.pro) {
+        await request('POST', '/api/v1/notify/send', {
+          target: { type: 'devices', ids: [d.token_id] }, title: T('notify.dev.test_title'), body: T('notify.dev.test_body'), priority: 'info', ttl_s: 3600,
+        });
+      } else await request('POST', '/api/v1/notify/test', {});
       toast(T('notify.dev.test_sent', { name: d.name }));
     } catch (err) { errToast(err); } finally { busy(b, false); }
   });
@@ -1174,7 +1233,9 @@
     const sel = $('nc-send-ttl');
     const keep = sel.value;
     clear(sel);
-    ttlChoices(new Date()).forEach((c) => {
+    const hub = state.ov && isObj(state.ov.hub) ? state.ov.hub : null;
+    const retention = (state.settings && state.settings.retention_h) || (hub && count(hub.retention_h)) || 0;
+    ttlChoices(new Date(), retention * 3600).forEach((c) => {
       const text = c.kind === 'tonight' ? T('notify.send.ttl_tonight', { time: fmtTime(c.at) }) : T('notify.send.ttl_in', { time: spanText(c.ttl, 'notify.time.now') });
       sel.appendChild(el('option', { value: c.kind === 'tonight' ? 'tonight' : String(c.ttl), 'data-ttl': String(c.ttl), text }));
     });
@@ -1332,7 +1393,7 @@
           el('button', { type: 'button', class: 'nc-row-btn', 'data-id': str(it.id), 'aria-pressed': selected ? 'true' : 'false', text: str(it.title) }),
           el('div', { class: 'nc-sub' }, [el('span', { class: 'nc-prio-text', 'data-prio': prio, text: histMeta(it) })]),
         ]),
-        el('td', { class: 'nc-muted-2', text: sourceText(it.source) }),
+        el('td', { class: 'nc-muted-2', text: sourceText(it) }),
         el('td', { class: 'nc-nowrap' }, [el('span', { class: 'nc-status', 'data-tone': st.tone, text: st.key ? T(st.key, st.params) : st.text })]),
       ]));
     });
@@ -1434,14 +1495,11 @@
     if (tl.length) {
       box.appendChild(el('h3', { class: 'nc-label', text: T('notify.proto.timeline') }));
       box.appendChild(el('ol', { class: 'nc-timeline' }, tl.map((x) => {
+        // The server sends the text already localised; the kind is the fallback.
         const kind = str(x.kind);
-        const known = has('notify.tl.' + kind);
         return el('li', { 'data-kind': kind }, [
           el('span', { class: 'nc-tl-dot', 'aria-hidden': 'true' }),
-          el('span', { class: 'nc-tl-text' }, [
-            el('b', { text: known ? T('notify.tl.' + kind) : (str(x.text) || kind) }),
-            known && x.text ? el('span', { class: 'nc-sub', text: str(x.text) }) : null,
-          ]),
+          el('span', { class: 'nc-tl-text' }, [el('b', { text: str(x.text) || label('notify.tl.', kind) })]),
           el('time', { class: 'nc-mono nc-faint nc-small', datetime: str(x.at), text: fmtTime(x.at, true) }),
         ]);
       })));
@@ -1480,7 +1538,7 @@
       } catch (err) { errToast(err); busy(resend, false); }
     });
     const foot = el('div', { class: 'nc-aside-foot' }, [resend]);
-    if (n.event_id && (rule || !state.rules)) {
+    if (rule) {
       foot.appendChild(el('a', { class: 'btn btn-primary', id: 'nc-proto-rule', href: hashFor('rules', n.event_id), text: T('notify.proto.open_rule') }));
     }
     box.appendChild(foot);

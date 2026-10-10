@@ -105,6 +105,49 @@ describe('/notifications: route and roles', () => {
   });
 });
 
+describe('the real admin API answers what the page reads', () => {
+  it('overview, rules, devices, history, settings', async () => {
+    const ov = (await agent.get('/api/v1/notify/overview').expect(200)).body;
+    for (const k of ['devices_connected', 'devices_total', 'direct', 'tunnel', 'delivered_24h', 'read_24h', 'queued', 'queued_devices', 'failed_7d', 'median_latency_ms']) {
+      assert.ok(k in ov.kpis, 'kpis.' + k);
+    }
+    assert.ok(Array.isArray(ov.recent));
+    for (const k of ['enabled', 'endpoint', 'keepalive_s', 'retention_h', 'max_queue', 'allow_direct']) assert.ok(k in ov.hub, 'hub.' + k);
+    assert.deepEqual(ov.sources.map((s) => s.id), N.SOURCES);
+
+    const rl = (await agent.get('/api/v1/notify/rules').expect(200)).body;
+    assert.ok(rl.rules.length > 10 && Array.isArray(rl.users) && Array.isArray(rl.groups) && typeof rl.pro === 'boolean');
+    const r = N.normRule(rl.rules[0]);
+    assert.ok(N.GROUPS.includes(rl.rules[0].group) && r.event_id === rl.rules[0].event_id);
+    for (const g of new Set(rl.rules.map((x) => x.group))) assert.ok(N.GROUPS.includes(g), g);
+
+    assert.ok(Array.isArray((await agent.get('/api/v1/notify/devices').expect(200)).body.devices));
+    const h = (await agent.get('/api/v1/notify/history' + N.historyQuery({ filter: 'important', days: 30 })).expect(200)).body;
+    assert.ok(Array.isArray(h.items) && 'next_before' in h);
+    const st = (await agent.get('/api/v1/notify/settings').expect(200)).body;
+    assert.deepEqual(Object.keys(N.normSettings(st)).sort(), N.SETTINGS_FIELDS.slice().sort());
+    for (const f of N.SETTINGS_FIELDS) assert.ok(f in st, f);
+  });
+
+  it('the settings ranges of the page match the server ones', () => {
+    const { RANGES } = require('../src/services/notify/config');
+    const njk = read('templates/aurora/pages/notifications.njk');
+    for (const [field, [min, max]] of Object.entries(RANGES)) {
+      const m = new RegExp(`numRow\\('[^']+', '${field}',[^\\n]*?, (\\d+), (\\d+)\\) \\}\\}`).exec(njk);
+      assert.ok(m, field);
+      assert.deepEqual([Number(m[1]), Number(m[2])], [min, max], field);
+    }
+  });
+
+  it('the free e-mail events reach the page context', async () => {
+    const res = await agent.get('/notifications').expect(200);
+    const free = island(res.text, 'nc-ctx').data.free;
+    const want = require('../src/services/notifications').CATALOGUE.flatMap((g) => g.events.filter((e) => e.free).map((e) => e.id));
+    assert.deepEqual(free, want);
+    assert.ok(free.length > 0);
+  });
+});
+
 describe('Settings → Benachrichtigungen', () => {
   it('links to the notification centre instead of the event matrix; recipient, checks and webhooks stay', async () => {
     const res = await agent.get('/settings').expect(200);
@@ -311,6 +354,7 @@ describe('notifications.js: pure helpers', () => {
     assert.equal(evening[0].ttl, 5.5 * 3600);
     assert.deepEqual(evening.slice(1).map((c) => c.ttl), N.TTL_CHOICES);
     assert.equal(N.ttlChoices(at(22, 40))[0].kind, 'span');
+    assert.deepEqual(N.ttlChoices(at(22, 40), 6 * 3600).map((c) => c.ttl), [3600, 6 * 3600], 'capped at retention_h');
   });
 
   it('sendBody trims and caps, all-target sends no ids', () => {
@@ -327,10 +371,19 @@ describe('notifications.js: pure helpers', () => {
     assert.equal(N.historyQuery({}), '?filter=all&days=7&limit=50');
     assert.equal(N.historyQuery({ filter: 'important', days: 30, before: 101 }), '?filter=important&days=30&limit=50&before=101');
     assert.equal(N.historyQuery({ filter: 'x', days: 9 }), '?filter=all&days=7&limit=50');
-    assert.deepEqual(N.sourceKind('security'), { key: 'notify.source.security' });
-    assert.deepEqual(N.sourceKind('manual'), { key: 'notify.source.manual' });
-    assert.deepEqual(N.sourceKind('plugin:gatecontrol-skoda'), { plugin: 'gatecontrol-skoda' });
+    assert.deepEqual(N.sourceKind('system', 'security'), { key: 'notify.source.security' }, 'core event: the topic decides');
+    assert.deepEqual(N.sourceKind('system', null, 'routes'), { key: 'notify.source.services' }, 'history: the rule group decides');
+    assert.deepEqual(N.sourceKind('system'), { key: 'notify.source.system' });
+    assert.deepEqual(N.sourceKind('manual:5', 'admin_notice'), { key: 'notify.source.manual' });
+    assert.deepEqual(N.sourceKind('plugin:gatecontrol-skoda', 'plugin:gatecontrol-skoda:charging'), { plugin: 'gatecontrol-skoda' });
     assert.deepEqual(N.sourceKind('WAF'), { text: 'WAF' });
+    assert.deepEqual(N.fieldCodes({ fields: { recipients: 'unknown_user' } }), [{ field: 'recipients', code: 'unknown_user' }]);
+    assert.deepEqual(N.fieldCodes(null), []);
+    const core = N.normRule({ event_id: 'login_failed', group: 'security' });
+    assert.equal(N.emailLocked(core, true, []), false);
+    assert.equal(N.emailLocked(core, false, ['route_down']), true);
+    assert.equal(N.emailLocked(N.normRule({ event_id: 'route_down', group: 'routes' }), false, ['route_down']), false);
+    assert.equal(N.emailLocked(N.normRule({ event_id: 'plugin:x:y', group: 'plugins' }), false, ['plugin:x:y']), true);
     const s = N.normSettings({ enabled: 1, allow_direct: false, retention_h: '72', max_queue: 200 });
     assert.equal(s.enabled, true);
     assert.equal(s.retention_h, 72);

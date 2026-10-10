@@ -46,14 +46,14 @@ function create(opts) {
     { token_id: 16, name: 'iPhone Gast', user: { id: 4, name: 'Tom', role: 'user' }, platform: 'ios', client_type: 'wireguard', app_version: '', state: 'unsupported', via: null, connected_since: null, last_seen: null, queued: 0, last_ack_at: null, buffer_until: null },
   ];
   const items = [
-    { id: 108, title: 'Gateway „Zuhause“ wieder online', body: 'Wieder erreichbar nach 2 Minuten.', event_id: 'gateway_offline', source: 'devices', priority: 'info', created_at: iso(2 * MIN), delivered: 3, total: 3, read: 0, recipients_label: 'Alle Admins', silent: true, status: 'ok' },
-    { id: 107, title: 'Gateway „Zuhause“ ist offline', body: 'Seit 2 Min. ohne Lebenszeichen.', event_id: 'gateway_offline', source: 'devices', priority: 'critical', created_at: iso(4 * MIN), delivered: 3, total: 3, read: 3, recipients_label: 'Alle Admins', silent: false, status: 'ok' },
-    { id: 106, title: 'IP 185.220.101.4 durch WAF gesperrt', body: '14 Treffer auf nas.example.com', event_id: 'waf_blocked', source: 'security', priority: 'high', created_at: iso(32 * MIN), delivered: 3, total: 3, read: 1, recipients_label: 'Alle Admins', silent: false, status: 'ok' },
-    { id: 105, title: 'Škoda Enyaq: Laden abgeschlossen (80 %)', body: 'Enyaq · 80 % · ca. 390 km', event_id: 'plugin:gatecontrol-skoda:charging', source: 'plugin:gatecontrol-skoda', priority: 'normal', created_at: iso(46 * MIN), delivered: 2, total: 2, read: 2, recipients_label: 'Markus', silent: false, status: 'ok' },
-    { id: 104, title: 'Morgen: Gelber Sack', body: 'Erinnerung 18:00', event_id: 'plugin:gatecontrol-waste:reminder', source: 'plugin:gatecontrol-waste', priority: 'info', created_at: iso(3 * 60 * MIN), delivered: 4, total: 5, read: 2, recipients_label: 'Gruppe „Haushalt“', silent: false, status: 'waiting' },
-    { id: 103, title: 'Wartung heute Abend', body: 'Zwischen 22 und 23 Uhr startet der Server neu.', event_id: null, source: 'manual', priority: 'normal', created_at: iso(4 * 60 * MIN), delivered: 4, total: 4, read: 3, recipients_label: 'Sabine, Markus', silent: false, status: 'ok' },
-    { id: 102, title: 'Zertifikat für portal.example.com läuft in 7 Tagen ab', body: 'Automatische Erneuerung schlug fehl.', event_id: 'cert_expiring', source: 'services', priority: 'high', created_at: iso(12 * 60 * MIN), delivered: 3, total: 3, read: 3, recipients_label: 'Alle Admins', silent: false, status: 'ok' },
-    { id: 101, title: 'Offsite-Backup erfolgreich (1,8 GB)', body: '', event_id: 'backup_ok', source: 'system', priority: 'info', created_at: iso(20 * 60 * MIN), delivered: 0, total: 0, read: 0, recipients_label: 'Alle Admins', silent: true, status: 'ok' },
+    { id: 108, title: 'Gateway „Zuhause“ wieder online', body: 'Wieder erreichbar nach 2 Minuten.', event_id: 'gateway_offline', source: 'system', topic: 'devices', priority: 'info', created_at: iso(2 * MIN), delivered: 3, total: 3, read: 0, recipients_label: 'Alle Admins', silent: true, status: 'ok' },
+    { id: 107, title: 'Gateway „Zuhause“ ist offline', body: 'Seit 2 Min. ohne Lebenszeichen.', event_id: 'gateway_offline', source: 'system', topic: 'devices', priority: 'critical', created_at: iso(4 * MIN), delivered: 3, total: 3, read: 3, recipients_label: 'Alle Admins', silent: false, status: 'ok' },
+    { id: 106, title: 'IP 185.220.101.4 durch WAF gesperrt', body: '14 Treffer auf nas.example.com', event_id: 'waf_blocked', source: 'system', topic: 'security', priority: 'high', created_at: iso(32 * MIN), delivered: 3, total: 3, read: 1, recipients_label: 'Alle Admins', silent: false, status: 'ok' },
+    { id: 105, title: 'Škoda Enyaq: Laden abgeschlossen (80 %)', body: 'Enyaq · 80 % · ca. 390 km', event_id: 'plugin:gatecontrol-skoda:charging', topic: 'plugin:gatecontrol-skoda:charging', source: 'plugin:gatecontrol-skoda', priority: 'normal', created_at: iso(46 * MIN), delivered: 2, total: 2, read: 2, recipients_label: 'Markus', silent: false, status: 'ok' },
+    { id: 104, title: 'Morgen: Gelber Sack', body: 'Erinnerung 18:00', event_id: 'plugin:gatecontrol-waste:reminder', topic: 'plugin:gatecontrol-waste:reminder', source: 'plugin:gatecontrol-waste', priority: 'info', created_at: iso(3 * 60 * MIN), delivered: 4, total: 5, read: 2, recipients_label: 'Gruppe „Haushalt“', silent: false, status: 'waiting' },
+    { id: 103, title: 'Wartung heute Abend', body: 'Zwischen 22 und 23 Uhr startet der Server neu.', event_id: null, source: 'manual:1', topic: 'admin_notice', priority: 'normal', created_at: iso(4 * 60 * MIN), delivered: 4, total: 4, read: 3, recipients_label: 'Sabine, Markus', silent: false, status: 'ok' },
+    { id: 102, title: 'Zertifikat für portal.example.com läuft in 7 Tagen ab', body: 'Automatische Erneuerung schlug fehl.', event_id: 'cert_expiring', source: 'system', topic: 'services', priority: 'high', created_at: iso(12 * 60 * MIN), delivered: 3, total: 3, read: 3, recipients_label: 'Alle Admins', silent: false, status: 'ok' },
+    { id: 101, title: 'Offsite-Backup erfolgreich (1,8 GB)', body: '', event_id: 'backup_ok', source: 'system', topic: 'system', priority: 'info', created_at: iso(20 * 60 * MIN), delivered: 0, total: 0, read: 0, recipients_label: 'Alle Admins', silent: true, status: 'ok' },
   ];
   const settings = { enabled: true, retention_h: 72, history_days: 30, max_queue: 200, keepalive_s: 25, allow_direct: true, email_fallback_s: 600, max_streams: 500 };
 
@@ -63,7 +63,7 @@ function create(opts) {
   function overview() {
     return {
       kpis: { devices_connected: 4, devices_total: 6, direct: 3, tunnel: 1, delivered_24h: 142, read_24h: 118, queued: 3, queued_devices: 2, failed_7d: 0, median_latency_ms: 400 },
-      recent: items.slice(1, 7).map((x) => ({ id: x.id, title: x.title, event_id: x.event_id, topic: x.event_id, priority: x.priority, source: x.source, created_at: x.created_at, recipients_label: x.recipients_label, delivered: x.delivered, total: x.total, read: x.read, silent: x.silent })),
+      recent: items.slice(1, 7).map((x) => ({ id: x.id, title: x.title, event_id: x.event_id, topic: x.topic, priority: x.priority, source: x.source, created_at: x.created_at, recipients_label: x.recipients_label, delivered: x.delivered, total: x.total, read: x.read, silent: x.silent })),
       hub: { enabled: settings.enabled, endpoint: '/api/v1/client/push', keepalive_s: settings.keepalive_s, retention_h: settings.retention_h, max_queue: settings.max_queue, allow_direct: settings.allow_direct },
       sources: [{ id: 'security', count: 41 }, { id: 'devices', count: 29 }, { id: 'services', count: 12 }, { id: 'system', count: 9 }, { id: 'plugins', count: 23 }],
     };
@@ -76,8 +76,10 @@ function create(opts) {
     return {
       notification: n,
       timeline: [
-        { at: at(0), kind: 'detected', text: 'kein Lebenszeichen seit 2 Minuten' },
-        { at: at(0.2), kind: 'distributed', text: 'An 3 Geräte verteilt, Ruhezeiten übersprungen (kritisch)' },
+        { at: at(0), kind: 'created', text: 'Erstellt für 3 Geräte' },
+        { at: at(0.1), kind: 'sent', text: 'An 3 Geräte gesendet' },
+        { at: at(0.3), kind: 'delivered', text: '3 Geräte haben bestätigt' },
+        { at: at(67), kind: 'read', text: '2 Geräte haben geöffnet' },
       ],
       deliveries: [
         { token_id: 11, device_name: 'Pixel 8', user_name: 'Markus', state: 'read', via: 'direct', queued_at: at(0), sent_at: at(0.1), delivered_at: at(0.3), read_at: at(67), latency_ms: 300, action: 'Details' },
@@ -87,7 +89,8 @@ function create(opts) {
       email: { sent: false, at: null },
     };
   }
-  const json = (route, status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  // Like the real API: every success carries ok:true.
+  const json = (route, status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(status < 400 ? Object.assign({ ok: true }, body) : body) });
   const licensed = (route) => json(route, 403, { ok: false, error: 'Feature not available in your plan', feature: 'email_alerts' });
 
   /** page.route handler for /api/v1/notify/** */
@@ -116,7 +119,7 @@ function create(opts) {
     if (method === 'POST' && path === '/send') {
       if (!state.pro) return licensed(route);
       const id = 200 + calls.length;
-      items.unshift({ id, title: body.title, body: body.body, event_id: null, source: 'manual', priority: body.priority, created_at: new Date().toISOString(), delivered: 0, total: 2, read: 0, recipients_label: 'manual', silent: false, status: 'waiting' });
+      items.unshift({ id, title: body.title, body: body.body, event_id: 'manual', source: 'manual:1', topic: 'admin_notice', priority: body.priority, created_at: new Date().toISOString(), delivered: 0, total: 2, read: 0, recipients_label: 'manual', silent: false, status: 'waiting' });
       return json(route, 200, { ok: true, notification_id: id, devices_now: 2, devices_later: 1 });
     }
     if (method === 'POST' && path === '/test') return json(route, 200, { ok: true, devices: 2 });
@@ -127,7 +130,7 @@ function create(opts) {
       if (f === 'important') list = list.filter((x) => x.priority === 'critical' || x.priority === 'high');
       if (f === 'undelivered') list = list.filter((x) => x.delivered < x.total);
       if (f === 'plugins') list = list.filter((x) => /^plugin/.test(x.source));
-      if (f === 'manual') list = list.filter((x) => x.source === 'manual');
+      if (f === 'manual') list = list.filter((x) => /^manual:/.test(x.source));
       if (before) list = list.filter((x) => x.id < Number(before));
       const page = list.slice(0, 5);
       return json(route, 200, { items: page, next_before: list.length > 5 ? page[page.length - 1].id : null });

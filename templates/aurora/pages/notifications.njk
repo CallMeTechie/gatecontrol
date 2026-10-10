@@ -9,8 +9,9 @@
     Address: /notifications#rules, #rules/<event_id>, #devices, #history,
     #history/<id>, #settings. Strings: the #nc-i18n island
     (routes/index.js NOTIFY_I18N_PREFIXES). Styles: §10 of public/css/app.css.
-    Pro parts (own recipients, "Nachricht senden", plugin topics) hang on the
-    licence feature email_alerts. -#}
+    Pro parts (own recipients, "Nachricht senden", plugin topics, e-mail of
+    non-free events) hang on the licence feature email_alerts. Ranges of the
+    settings tab = services/notify/config.js RANGES. -#}
 
 {%- macro numRow(id, field, label, hint, unit, min, max) -%}
 <div class="st-row" data-nc-row="{{ field }}">
@@ -301,16 +302,16 @@
         </div></div>
         {{ switchRow('nc-set-enabled', 'enabled', t('notify.set.enabled'), t('notify.set.enabled_hint')) }}
         {{ switchRow('nc-set-direct', 'allow_direct', t('notify.set.allow_direct'), t('notify.set.allow_direct_hint')) }}
-        {{ numRow('nc-set-keepalive', 'keepalive_s', t('notify.set.keepalive'), t('notify.set.keepalive_hint'), t('notify.unit.s'), 5, 300) }}
-        {{ numRow('nc-set-streams', 'max_streams', t('notify.set.max_streams'), t('notify.set.max_streams_hint'), t('notify.unit.conns'), 1, 100000) }}
+        {{ numRow('nc-set-keepalive', 'keepalive_s', t('notify.set.keepalive'), t('notify.set.keepalive_hint'), t('notify.unit.s'), 10, 300) }}
+        {{ numRow('nc-set-streams', 'max_streams', t('notify.set.max_streams'), t('notify.set.max_streams_hint'), t('notify.unit.conns'), 1, 10000) }}
       </section>
       <section class="st-card" aria-labelledby="nc-h-set-store">
         <div class="st-card-head"><div class="st-card-headtext">
           <h2 class="st-card-title" id="nc-h-set-store">{{ t('notify.set.store_title') }}</h2>
         </div></div>
-        {{ numRow('nc-set-retention', 'retention_h', t('notify.set.retention_h'), t('notify.set.retention_h_hint'), t('notify.unit.h'), 1, 8760) }}
-        {{ numRow('nc-set-queue', 'max_queue', t('notify.set.max_queue'), t('notify.set.max_queue_hint'), t('notify.unit.msgs'), 1, 100000) }}
-        {{ numRow('nc-set-history', 'history_days', t('notify.set.history_days'), t('notify.set.history_days_hint'), t('notify.unit.days'), 1, 3650) }}
+        {{ numRow('nc-set-retention', 'retention_h', t('notify.set.retention_h'), t('notify.set.retention_h_hint'), t('notify.unit.h'), 1, 720) }}
+        {{ numRow('nc-set-queue', 'max_queue', t('notify.set.max_queue'), t('notify.set.max_queue_hint'), t('notify.unit.msgs'), 10, 1000) }}
+        {{ numRow('nc-set-history', 'history_days', t('notify.set.history_days'), t('notify.set.history_days_hint'), t('notify.unit.days'), 1, 365) }}
       </section>
       <section class="st-card" aria-labelledby="nc-h-set-mail">
         <div class="st-card-head"><div class="st-card-headtext">
@@ -329,7 +330,7 @@
 </div>
 
 <script type="application/json" id="nc-i18n" data-prefixes="notify. common." nonce="{{ cspNonce }}">{{ notifyI18n | default('{}') | safe }}</script>
-<script type="application/json" id="nc-ctx" nonce="{{ cspNonce }}">{"pro": {{ ('true' if pro else 'false') | safe }}, "lang": {{ language | dump | safe }}, "self": {{ (user.id if user else 0) | dump | safe }}}</script>
+<script type="application/json" id="nc-ctx" nonce="{{ cspNonce }}">{"pro": {{ ('true' if pro else 'false') | safe }}, "lang": {{ language | dump | safe }}, "self": {{ (user.id if user else 0) | dump | safe }}, "free": {{ notifyFree | default('[]') | safe }}}</script>
 {% endblock %}
 
 {% block scripts %}

@@ -27,9 +27,16 @@ const FIXTURES = JSON.parse(fs.readFileSync(process.env.E2E_FIXTURES || path.joi
 
 const steps = [];
 const problems = [];
+// In GitHub Actions every failed step and page problem also becomes an error
+// annotation, so the check run names it (job logs are not always reachable).
+function annotate(msg) {
+  if (!process.env.GITHUB_ACTIONS) return;
+  console.log('::error title=Browser test::' + String(msg).replace(/%/g, '%25').replace(/\r?\n/g, ' ').slice(0, 900));
+}
 function step(name, ok, info) {
   steps.push({ name, ok, ...(info ? { info } : {}) });
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${info ? ' — ' + info : ''}`);
+  if (!ok) annotate(`${name}${info ? ' — ' + info : ''}`);
 }
 
 const ctx = {
@@ -100,6 +107,7 @@ async function main() {
 
   const failed = steps.filter((s) => !s.ok);
   console.log('\n' + JSON.stringify({ scenarios: wanted, steps: steps.length, failed: failed.length, problems }, null, 1));
+  for (const p of problems.slice(0, 20)) annotate('page problem: ' + JSON.stringify(p));
   if (failed.length || problems.length) {
     console.error(`\n${failed.length} step(s) failed, ${problems.length} page problem(s).`);
     process.exit(1);

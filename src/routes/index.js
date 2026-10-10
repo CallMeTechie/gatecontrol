@@ -359,6 +359,11 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
       // Licence of the Pro parts (own recipients, "Nachricht senden", plugin
       // topics); the rules API repeats it as `pro` and wins once loaded.
       extraLocals.notifyPro = hasFeature('email_alerts');
+      // Events whose e-mail stays free without that licence (CATALOGUE `free`).
+      try {
+        extraLocals.notifyFree = JSON.stringify(require('../services/notifications').CATALOGUE
+          .flatMap((g) => g.events.filter((e) => e.free).map((e) => e.id))).replace(/</g, '\\u003c');
+      } catch { extraLocals.notifyFree = '[]'; }
     }
 
     if (template === 'users') {
