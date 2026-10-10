@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.153.1] — 2026-10-10
+
+### Änderungen
+- batch update otpauth, express-rate-limit 8, ipaddr.js 2, better-sqlite3 13, argon2 0.45, helmet, pino 10, setup-node 7.1 (#277)
+
+---
+
 ## [1.153.0] — 2026-10-09
 
 ### Features
