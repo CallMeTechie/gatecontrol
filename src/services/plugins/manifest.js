@@ -13,6 +13,7 @@ const KEY_RE = /^[a-z][a-z0-9_.-]{0,63}$/;
 const FILE_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$/;
 const ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,600}$/;
 const SETTING_TYPES = new Set(['text', 'number', 'boolean', 'select', 'secret']);
+const NOTIFY_TOPIC_RE = /^[a-z][a-z0-9_-]{0,31}$/;
 
 /** "x" or { de, en } → { de, en } (both filled); null when invalid. */
 function locText(v, max) {
@@ -154,6 +155,25 @@ function validate(raw, opts = {}) {
     }
   }
   m.permissions = perms;
+
+  // notifyTopics (notification center): own push topics, plugin:<id>:<topic>
+  if (raw.notifyTopics != null) {
+    const list = raw.notifyTopics;
+    const topics = [];
+    if (!Array.isArray(list) || list.length > 20) err('notifyTopics: invalid');
+    else if (!perms.notify) err('notifyTopics: needs permissions.notify');
+    else {
+      for (const t of list) {
+        const label = locText(t && t.label, 60);
+        if (!t || typeof t.id !== 'string' || !NOTIFY_TOPIC_RE.test(t.id) || !label || (t.default != null && typeof t.default !== 'boolean')) {
+          err('notifyTopics: invalid'); break;
+        }
+        if (topics.some((x) => x.id === t.id)) { err('notifyTopics: duplicate'); break; }
+        topics.push({ id: t.id, label, default: t.default !== false });
+      }
+      m.notifyTopics = topics;
+    }
+  }
 
   // ui
   const u = raw.ui == null ? {} : raw.ui;

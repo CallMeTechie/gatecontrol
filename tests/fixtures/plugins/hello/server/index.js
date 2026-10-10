@@ -102,6 +102,8 @@ module.exports = {
       case '/notify':
         await gc.notify('hello from the plugin', { severity: 'info' });
         return { json: { ok: true } };
+      case '/notify2':
+        try { return { json: { ok: true, result: await gc.notify(req.body) } }; } catch (e) { return { status: 400, json: { ok: false, code: e.code || null } }; }
       case '/secret':
         if (req.method === 'POST') {
           try { await gc.settings.setSecret(String(req.body.key), req.body.value); } catch (e) { return { status: 400, json: { ok: false, code: e.code || null } }; }

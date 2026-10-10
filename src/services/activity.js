@@ -57,8 +57,14 @@ function log(eventType, message, options = {}) {
     createdAt: new Date().toISOString(),
   });
 
-  // Fire webhook notifications (non-blocking)
-  webhook.notify(eventType, message, details);
+  // Notification center (services/notify): push to the apps per rule. Runs
+  // before the e-mail so a rule with e-mail fallback can claim the mail.
+  const notify = require('./notify');
+  notify.emit(eventType, message, { details, source, severity });
+
+  // Fire webhook notifications (non-blocking) — unless the rule of this
+  // catalogue row switched the webhook channel off.
+  if (notify.webhookAllowed(eventType)) webhook.notify(eventType, message, details);
 
   // Fire email alert if this event type is configured (non-blocking)
   sendEmailAlert(eventType, message, severity, details);
@@ -91,6 +97,10 @@ async function sendEmailAlert(eventType, message, severity, details) {
       '',
       '— GateControl',
     ].filter(Boolean).join('\n');
+
+    // Rule with e-mail fallback and an app device to wait for: the
+    // notification center sends this mail later, only if no device confirmed.
+    if (require('./notify').claimMail(eventType, { subject, text: body })) return;
 
     await sendMail({ to: alertEmail, subject, text: body });
     logger.debug({ eventType, to: alertEmail }, 'Email alert sent');
