@@ -102,6 +102,8 @@ function create(opts) {
     let body = null;
     try { body = req.postDataJSON(); } catch (_) { body = null; }
     calls.push({ method, path, query: url.search, body });
+    // A little latency like a real server, so the scenario must wait for its renders.
+    await new Promise((r) => setTimeout(r, 250));
     if (state.unavailable) return json(route, 404, { ok: false, error: 'Not found' });
 
     if (method === 'GET' && path === '/overview') return json(route, 200, overview());
