@@ -271,6 +271,46 @@ const portalLinkLimiter = rateLimit({
   },
 });
 
+// Push stream of the apps (GET /api/v1/client/push, notification center):
+// connects and reconnects only. Mounted AFTER token authentication and keyed
+// by the authenticated token id (requests without a valid token never get
+// here — requireAuth answers them); a session request falls back to the
+// address. A stream lives for up to an hour; the apps reconnect with backoff.
+const pushStreamLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.tokenAuth && req.tokenId != null ? `push:tok:${req.tokenId}` : `push-ip:${ipKeyGenerator(req.ip)}`),
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'rate_limited' });
+  },
+});
+
+// POST /api/v1/client/push/test — 5 per minute and device.
+const pushTestLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.tokenAuth ? `push-test:${req.tokenId}` : `push-test:${ipKeyGenerator(req.ip)}`),
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'rate_limited' });
+  },
+});
+
+// Test messages and manual sends of the admin / the portal: per account.
+const notifySendLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `notify-send:${(req.session && req.session.userId) || ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'rate_limited' });
+  },
+});
+
 // Own portal PIN (profile) and the admin reset: per signed-in account.
 const portalPinSetLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -315,4 +355,5 @@ const pluginPageLimiter = rateLimit({
 });
 
 module.exports = { pluginApiLimiter, pluginPageLimiter, loginLimiter, twoFactorSetupLimiter, passkeyLoginLimiter, passkeyManageLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayAuthLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter,
-  eventStreamLimiter, portalApiLimiter, portalPageLimiter, portalPinLimiter, portalLinkLimiter, portalPinSetLimiter };
+  eventStreamLimiter, portalApiLimiter, portalPageLimiter, portalPinLimiter, portalLinkLimiter, portalPinSetLimiter,
+  pushStreamLimiter, pushTestLimiter, notifySendLimiter };
