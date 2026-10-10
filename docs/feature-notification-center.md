@@ -148,9 +148,28 @@ CREATE TABLE IF NOT EXISTS notify_device_prefs (   -- vom Gerät gemeldet
 
 **Themen (Topics)** sind die Brücke zwischen Ereignissen und Abos:
 
-* System-Themen: `security`, `devices`, `services`, `admin_notice`.
+* System-Themen: `security`, `devices`, `services`, `system`, `admin_notice`.
+  `security` und `system` (Neustart, Backups, Updates, Ressourcen) sind nur für
+  Admins; `admin_notice` (manuelle Nachrichten, Tests) ist immer an.
+  Zuordnung der `CATALOGUE`-Gruppen: security → `security`, peers → `devices`,
+  routes → `services`, system → `system`.
 * Plugin-Themen: `plugin:<id>:<topic>`, deklariert in der `plugin.json` des
   Plugins (siehe unten).
+
+**Umgesetzt (Phase 1a), Ergänzungen zum Entwurf oben:**
+
+* `notifications` hat zusätzlich `topic`, `count` (Bündeln), `silent`
+  (stille Entwarnung), `target` (JSON der Empfänger, für die Anzeige),
+  `release_at` (zurückgehalten durch `delay_s`), `revoked_at`,
+  `email_state`/`email_due_at`/`email_sent_at` (E-Mail-Rückfall), `meta`
+  (nur Server: die zurückgehaltene E-Mail) und `updated_at`.
+* `notification_deliveries.silent`: in der Ruhezeit zugestellt.
+* `notify_device_prefs` zusätzlich `client_type`, `via`, `last_seen_at`. Eine
+  Zeile heißt: Auf diesem Token läuft eine App mit Push (Stream einmal
+  geöffnet oder `prefs`/`test` gerufen). Nur solche Geräte bekommen eine
+  Warteschlange; reine WireGuard-Peers sind „unsupported“.
+* Zeitstempel sind ISO-8601 UTC mit Millisekunden; an die Geräte gehen
+  `created_at`/`expires_at` ohne Millisekunden.
 
 **Aufräumen:** Ein Job läuft stündlich.
 
@@ -193,6 +212,53 @@ vorhandenen Bus in die Admin-Oberfläche.
 * `GET/PUT /api/v1/me/notify/prefs`: Abos, Ruhezeiten, Zeitzone
 * `GET /api/v1/me/notify/inbox`, `POST /api/v1/me/notify/read`
 * `POST /api/v1/me/notify/test`
+* Umsetzung: Die Routen hängen im „me“-Router, also auch unter
+  `/api/v1/portal/me/notify/*` (Portal-Sitzung). Formen:
+  `GET/PUT prefs` → `{topics:[{id,label,enabled,locked}], quiet_from, quiet_to,
+  tz, critical_bypass, devices:[{token_id,name,state,queued}]}` (PUT
+  `{topics:[{id,enabled}], quiet_from:"HH:MM"|null, quiet_to, tz, critical_bypass}`),
+  `GET inbox?limit&before=<id>` → `{items, unread}`, `POST read`
+  `{ids:[…]}`|`{all:true}` → `{ok, updated}`, `POST test` → `{ok, devices}`.
+
+**Admin-API, Antwortformen (Phase 1a, für die Admin-Seite verbindlich).**
+Alle Antworten tragen zusätzlich `"ok": true`.
+
+* `GET /api/v1/notify/overview` → `{kpis:{devices_connected, devices_total,
+  direct, tunnel, delivered_24h, read_24h, queued, queued_devices, failed_7d,
+  median_latency_ms}, recent:[{id, title, event_id, topic, priority, source,
+  created_at, recipients_label, delivered, total, read, silent}] (8),
+  hub:{enabled, endpoint, keepalive_s, retention_h, max_queue, allow_direct},
+  sources:[{id: security|devices|services|system|plugins, count}] (7 Tage)}`
+* `GET /api/v1/notify/rules` → `{rules:[{event_id, group, label, priority,
+  recipients:{admins, owner, subscribers, users[], groups[]}, ch_app, ch_email,
+  ch_webhook, email_fallback_s, delay_s, bundle_s, recovery, enabled,
+  plugin_id}], users:[{id,name}], groups:[{id,name}], webhooks_count, pro}`;
+  `PUT /api/v1/notify/rules/:eventId` (teilweise) → `{ok, rule}`, Fehler 400
+  `{fields:{feld: code}}`.
+* `GET /api/v1/notify/devices` → `{devices:[{token_id, name, user:{id,name,role},
+  platform, client_type, app_version, state: connected|restricted|offline|unsupported,
+  via, connected_since, last_seen, queued, last_ack_at, buffer_until}]}`.
+  `restricted` = verbunden, aber Akkuoptimierung aktiv; `buffer_until` = wann
+  die älteste wartende Nachricht verfällt.
+* `POST /api/v1/notify/send` `{target:{type: all|users|groups|devices, ids},
+  title, body, priority, ttl_s}` → `{ok, notification_id, devices_now, devices_later}`
+* `POST /api/v1/notify/test` → `{ok, devices}`
+* `GET /api/v1/notify/history?filter=all|important|undelivered|plugins|manual&days=7&before=<id>&limit=50`
+  → `{items:[{id, title, body, event_id, source, priority, created_at,
+  delivered, total, read, recipients_label, silent, status: ok|partial|waiting}], next_before}`
+* `GET /api/v1/notify/history/:id` → `{notification, timeline:[{at, kind, text}],
+  deliveries:[{token_id, device_name, user_name, state, via, queued_at, sent_at,
+  delivered_at, read_at, latency_ms, action}], email:{sent, at}}`;
+  `POST …/history/:id/resend` → `{ok}`
+* `GET/PUT /api/v1/notify/settings` → `{enabled, retention_h, history_days,
+  max_queue, keepalive_s, allow_direct, email_fallback_s, max_streams}`
+  (Schlüssel `notify.*` in der Settings-Tabelle).
+* Ereignisbus (`/api/v1/events`): `push_presence` `{token_id, state, via}` und
+  `notify` `{id}`.
+
+**Gruppen als Empfänger** sind die vorhandenen Peer-Gruppen (`peer_groups`).
+Gemeint sind die **Geräte in der Gruppe** (Tokens, deren Peer in der Gruppe
+ist), nicht alle Geräte der Personen, denen dort ein Gerät gehört.
 
 ## Server: Regeln, Ruhezeiten, Bündeln
 
@@ -217,6 +283,28 @@ vorhandenen Bus in die Admin-Oberfläche.
   Nachricht zusammengefasst („4 IPs durch WAF gesperrt“). Die Geräte bekommen
   die vorhandene Benachrichtigung aktualisiert statt einer neuen.
 * **Prioritäten für Plugins:** höchstens `high`. `critical` bleibt dem System vorbehalten.
+* **Umsetzung (Phase 1a):**
+  * Abos: ein Schalter pro Person und Thema. Ohne Eintrag gilt der Standard
+    (System-Themen an, Plugin-Themen laut `notifyTopics[].default`). „Aus“
+    nimmt die Person aus jedem Empfängerweg dieses Themas, außer bei
+    `critical` und bei `admin_notice`.
+  * E-Mail: `alerts.email_events` bleibt die Quelle für `ch_email` der
+    Kernzeilen; eine Regeländerung schreibt dorthin zurück.
+    `email_fallback_s` NULL: E-Mail sofort wie bisher. Gesetzt (Standard 600 s
+    für `critical`/`high`): Die Mail wartet, bis kein Gerät `delivered`
+    bestätigt hat; gibt es kein App-Gerät, geht sie sofort. Das gilt auch für
+    die eigenen Mails von `route_state` und `update`. Eine Entwarnungs-Mail
+    folgt nur, wenn die Alarm-Mail tatsächlich verschickt wurde.
+  * Entwarnung (`gateway_alive`/`gateway_recovered`, `route_up`,
+    `resource_recovered`): Alle offenen Alarme desselben `collapse_key`
+    werden zurückgezogen (`revoke`). Danach je nach `recovery`: `silent`
+    (stille Meldung, Priorität info), `normal` oder `off`. Ohne offenen Alarm
+    passiert nichts.
+  * Bündeln aktualisiert die vorhandene Nachricht (Titel „3× …“) und stellt
+    sie unter neuen `seq` erneut zu. Start: `login_failed` und
+    `waf_ip_banned` mit 300 s.
+  * `delay_s`: Die Nachricht liegt mit `release_at` ohne Zustellungen in der
+    Datenbank (übersteht Neustarts); ein Ticker (15 s) gibt sie frei.
 
 ## Plugin-API (abwärtskompatibel)
 
@@ -434,7 +522,15 @@ Alle Geräte-Routen verwenden Token-Auth wie die übrigen `/api/v1/client/*`:
 * Fehlerantworten:
   * `404`: Server zu alt. Der Client probiert es stündlich wieder.
   * `503 {"error":"push_disabled"}`: Push ist am Server aus. Der Client probiert es stündlich wieder.
-  * `401`/`403`: wie bei den anderen Client-Routen behandeln.
+  * `503 {"error":"too_many_streams"}`: globale Obergrenze erreicht. Neuer Versuch mit Backoff.
+  * `403 {"error":"direct_not_allowed"}`: Der Admin erlaubt Push nur durch den
+    Tunnel. Neuer Versuch, sobald das VPN steht (bzw. stündlich).
+  * `429 {"error":"rate_limited"}`: zu viele Verbindungsaufbauten (120 je 15 min und Token).
+  * `401`/`403`: wie bei den anderen Client-Routen behandeln (`token_required`,
+    `scope_required`, Maschinenbindung).
+* Alle JSON-Antworten der REST-Routen tragen zusätzlich `"ok": true|false`.
+* `hello.topics` enthält für Admins zusätzlich `system`; Plugin-Themen nur mit
+  der Lizenz `email_alerts`.
 * Pro Token gibt es genau einen Stream; ein neuer beendet den alten.
 
 Ereignisse:
@@ -496,7 +592,8 @@ Dazu gelten diese Regeln:
 ### `GET /api/v1/client/push/inbox?limit=100&before=<seq>`
 
 * Antwort: `{"items":[<notification wie oben> + "state":"delivered"|"read"|"dismissed"],"unread":3}`.
-* Sortiert neueste zuerst; abgelaufene Nachrichten sind nicht enthalten.
+* Sortiert neueste zuerst; abgelaufene und zurückgezogene Nachrichten sind
+  nicht enthalten. Noch nicht bestätigte Einträge erscheinen als `delivered`.
 
 ### `PUT /api/v1/client/push/prefs`
 
