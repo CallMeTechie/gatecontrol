@@ -65,6 +65,7 @@ describe('rules', () => {
     assert.equal(by.gateway_state.ch_webhook, true);
     assert.equal(by.gateway_state.email_fallback_s, 600);
     assert.equal(by.peer_connection.email_fallback_s, null);
+    assert.equal(by.peer_connection.ch_app, false, 'device connect/disconnect must not push by default');
     assert.equal(by.login_failed.bundle_s, 300);
   });
 

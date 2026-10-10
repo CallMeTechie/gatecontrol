@@ -21,7 +21,9 @@ const CORE_DEFAULTS = {
   account_locked: { priority: 'critical' },
   password_changed: { priority: 'high' },
   waf_ip_banned: { priority: 'high', bundle_s: 300 },
-  peer_connection: { priority: 'info' },
+  // Every device connect/disconnect would ping every admin's phone: listed
+  // in the inbox only, app push off until an admin turns it on.
+  peer_connection: { priority: 'info', app: false },
   peer_lifecycle: { priority: 'info' },
   peer_expired: { priority: 'normal' },
   gateway_state: { priority: 'critical' },
@@ -86,12 +88,12 @@ function ensureSeeded() {
   const fallback = config.value('email_fallback_s');
   const ins = db.prepare(`INSERT OR IGNORE INTO notify_rules
     (event_id, priority, recipients, ch_app, ch_email, ch_webhook, email_fallback_s, delay_s, bundle_s, recovery, enabled, updated_at)
-    VALUES (?, ?, '{"admins":true}', 1, ?, 1, ?, 0, ?, 'silent', 1, NULL)`);
+    VALUES (?, ?, '{"admins":true}', ?, ?, 1, ?, 0, ?, 'silent', 1, NULL)`);
   db.transaction(() => {
     for (const ev of notifications.EVENTS) {
       const d = CORE_DEFAULTS[ev.id] || { priority: 'normal' };
       const important = PRIORITY_RANK[d.priority] >= PRIORITY_RANK.high;
-      ins.run(ev.id, d.priority, notifications.eventEmailOn(ev.id) ? 1 : 0, important ? fallback : null, d.bundle_s || 0);
+      ins.run(ev.id, d.priority, d.app === false ? 0 : 1, notifications.eventEmailOn(ev.id) ? 1 : 0, important ? fallback : null, d.bundle_s || 0);
     }
   })();
   _seededDb = db;
