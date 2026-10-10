@@ -8,8 +8,17 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
-    reviewers:
-      - "CallMeTechie"
+    versioning-strategy: increase
+    # Minor/patch updates arrive as one grouped PR (auto-merged once CI is
+    # green, see workflows/dependabot-auto-merge.yml); majors stay separate.
+    groups:
+      npm:
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Private GitHub Packages dep — versioned manually with its own releases.
+      - dependency-name: "@callmetechie/gatecontrol-config-hash"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -21,4 +30,9 @@ updates:
       day: "monday"
     open-pull-requests-limit: 5
     labels:
-      - "ci"
+      - "dependencies"
+    groups:
+      github-actions:
+        update-types:
+          - "minor"
+          - "patch"
