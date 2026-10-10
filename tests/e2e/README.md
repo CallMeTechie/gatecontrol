@@ -1,7 +1,7 @@
 # Browser-Tests (tests/e2e)
 
 Der Satz, der in der CI läuft: Anmeldung inklusive zweitem Faktor, Zonen-Seite,
-Sicherheitsseite, Passkeys, Dashboard, Einstellungen, Benutzer und Portal. Gegen eine echte App mit einer frisch aufgebauten
+Sicherheitsseite, Passkeys, Dashboard, Einstellungen, Benutzer, Portal und Benachrichtigungen. Gegen eine echte App mit einer frisch aufgebauten
 Test-Datenbank, ohne Caddy und ohne WireGuard.
 
 ```
@@ -33,6 +33,12 @@ scenarios/08-portal.js  Portal: Einmal-Link der App → angemeldet, Tabs (URL,
                         gemeinsames Gerät: „Wer bist du?“ mit PIN, Person
                         wechseln, anonym. Eigener Browser, der den Portal-Host
                         auf 127.0.0.1 auflöst und den Identitäts-Header setzt
+scenarios/09-notifications.js /notifications: Benachrichtigungszentrale mit
+                        gemockter Admin-API (notify-mock.js, page.route): Reiter
+                        (URL, Tastatur), Kennzahlen, Regel-Editor (speichert nur
+                        die Änderung), Live-Präsenz, „Nachricht senden“,
+                        Verlauf + Zustellprotokoll, Einstellungen, 404 ohne
+                        Backend, Lizenzsperre, Verweis aus den Einstellungen, 400 px
 ```
 
 ## Ablauf
@@ -53,7 +59,7 @@ export GC_SECRET=$(openssl rand -hex 32) GC_ENCRYPTION_KEY=$(openssl rand -hex 3
 
 node tests/e2e/seed.js
 node src/server.js &
-node tests/e2e/run.js all          # oder: login zones security passkey dashboard settings users portal
+node tests/e2e/run.js all          # oder: login zones security passkey dashboard settings users portal notifications
 ```
 
 `run.js` braucht `playwright` im Modulpfad. Das Projekt hängt **nicht** davon

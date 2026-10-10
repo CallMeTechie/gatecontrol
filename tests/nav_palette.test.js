@@ -58,7 +58,7 @@ describe('sidebar groups (§8)', () => {
       ['/peers', '/routes', '/gateways', '/gateway-pools', '/rdp', '/dns', '/pihole'],
       ['/security', '/certificates', '/waf', '/users'],
       ['/plugins/gatecontrol-midea', '/plugins/gatecontrol-skoda'],
-      ['/logs', '/settings'],
+      ['/notifications', '/logs', '/settings'],
     ]);
   });
 
