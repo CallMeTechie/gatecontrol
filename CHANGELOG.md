@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.153.2] — 2026-10-10
+
+### Fixes
+- pad plugin start tiles inside their card (#281)
+
+---
+
 ## [1.153.1] — 2026-10-10
 
 ### Änderungen
