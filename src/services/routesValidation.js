@@ -117,16 +117,25 @@ function normalizeIpFilterMode(mode) {
   return mode;
 }
 
+// IPv4 only as a dotted quad. ipaddr.js also parses shorthand forms ("10.1"
+// = 10.0.0.1 since 2.x, "0x7f.0.0.1", "167772161"); the HTTP filter
+// (services/ipFilter) compares the stored text with the client address, so
+// such a rule would never match there while the L4 side canonicalises it.
+function isPlainAddress(s) {
+  return ipaddrLib.IPv4.isValidFourPartDecimal(s) || ipaddrLib.IPv6.isValid(s);
+}
+
 function isAddressValue(type, value) {
   const s = String(value == null ? '' : value).trim();
   if (!s || s.length > 64) return false;
   try {
     if (type === 'cidr') {
-      if (!s.includes('/')) return false;
+      const slash = s.indexOf('/');
+      if (slash < 0 || !isPlainAddress(s.slice(0, slash))) return false;
       ipaddrLib.parseCIDR(s);
       return true;
     }
-    return !s.includes('/') && ipaddrLib.isValid(s);
+    return !s.includes('/') && isPlainAddress(s);
   } catch {
     return false;
   }

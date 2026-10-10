@@ -314,6 +314,29 @@ test('adding an own IP lifts its ban; expiry sweep deletes expired bans', async 
   wafBans._resetForTest();
 });
 
+test('stored ban addresses in the old ipaddr.js 1.x text form are normalised (RFC 5952) and removable', async () => {
+  const future = new Date(Date.now() + 3600000).toISOString();
+  const later = new Date(Date.now() + 7200000).toISOString();
+  const ins = db.prepare('INSERT INTO waf_bans (ip, reason, hits, banned_at, expires_at, manual) VALUES (?, ?, 1, ?, ?, 1)');
+  ins.run('2a01:4f8::1:0:0:0:5', 'old', future, future);        // 1.x form of 2a01:4f8:0:1::5
+  ins.run('2001:db8::1:1:1:1:1', 'old', future, later);          // 1.x form, outlives the canonical row
+  ins.run('2001:db8:0:1:1:1:1:1', 'canonical', future, future);
+  ins.run('2001:db8::7:0:0:0:0/96', 'old range', future, future); // 1.x form of 2001:db8:0:7::/96
+
+  assert.equal(wafBans.normalizeStoredBans(), 3);
+  const ips = db.prepare('SELECT ip, reason, expires_at FROM waf_bans WHERE ip LIKE ? ORDER BY ip').all('2%');
+  assert.deepEqual(ips.map((r) => r.ip).filter((ip) => ip.startsWith('2001:db8') || ip.startsWith('2a01')),
+    ['2001:db8:0:1:1:1:1:1', '2001:db8:0:7::/96', '2a01:4f8:0:1::5']);
+  const merged = ips.find((r) => r.ip === '2001:db8:0:1:1:1:1:1');
+  assert.equal(merged.expires_at, later, 'the later expiry wins');
+  assert.equal(wafBans.normalizeStoredBans(), 0, 'idempotent');
+
+  const del = await DEL('/waf/bans/' + encodeURIComponent('2a01:4f8:0:1::5'));
+  assert.equal(del.status, 200);
+  for (const ip of ['2001:db8:0:1:1:1:1:1', '2001:db8:0:7::/96']) db.prepare('DELETE FROM waf_bans WHERE ip = ?').run(ip);
+  wafBans._resetForTest();
+});
+
 test('token auth: PUT /settings/waf is session-only; scope of /waf/bans is routes', () => {
   const { checkScope } = require('../src/services/tokens');
   assert.equal(checkScope(['routes'], '/api/v1/waf/bans', 'POST'), true);

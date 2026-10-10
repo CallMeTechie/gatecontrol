@@ -1,6 +1,12 @@
 'use strict';
 
 const rateLimit = require('express-rate-limit');
+// Every key built from the client address goes through ipKeyGenerator
+// (express-rate-limit 8): IPv6 clients count per /56 prefix (one household
+// or customer allocation), so rotating through the own prefix no longer
+// yields a fresh budget per address; IPv4-mapped IPv6 becomes plain IPv4.
+// A keyGenerator reading req.ip without it is logged as ERR_ERL_KEY_GEN_IPV6.
+const { ipKeyGenerator } = rateLimit;
 const config = require('../../config/default');
 
 const loginLimiter = rateLimit({
@@ -8,7 +14,7 @@ const loginLimiter = rateLimit({
   max: config.auth.rateLimitLogin,
   standardHeaders: true,
   legacyHeaders: true,
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
   handler: (req, res) => {
     res.status(429).json({ error: req.t('error.rate_limit.login') });
   },
@@ -22,7 +28,7 @@ const twoFactorSetupLimiter = rateLimit({
   max: () => Math.max(1, config.auth.rateLimitLogin) * 2,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `2fa:${(req.session && req.session.userId) || req.ip}`,
+  keyGenerator: (req) => `2fa:${(req.session && req.session.userId) || ipKeyGenerator(req.ip)}`,
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: req.t('error.rate_limit.login') });
   },
@@ -37,7 +43,7 @@ const passkeyLoginLimiter = rateLimit({
   max: () => Math.max(1, config.auth.rateLimitLogin) * 4,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `passkey-login:${req.ip}`,
+  keyGenerator: (req) => `passkey-login:${ipKeyGenerator(req.ip)}`,
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: req.t('error.rate_limit.login') });
   },
@@ -50,7 +56,7 @@ const passkeyManageLimiter = rateLimit({
   max: () => Math.max(1, config.auth.rateLimitLogin) * 4,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `passkey-manage:${(req.session && req.session.userId) || req.ip}`,
+  keyGenerator: (req) => `passkey-manage:${(req.session && req.session.userId) || ipKeyGenerator(req.ip)}`,
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: req.t('error.rate_limit.login') });
   },
@@ -71,7 +77,7 @@ const apiLimiter = rateLimit({
   // Intentionally NOT applied to the login / route-auth limiters, where failed
   // attempts MUST count (brute-force protection).
   skipFailedRequests: true,
-  keyGenerator: (req) => req.tokenAuth ? `token:${req.tokenId}` : req.ip,
+  keyGenerator: (req) => req.tokenAuth ? `token:${req.tokenId}` : ipKeyGenerator(req.ip),
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: req.t('error.rate_limit.api') });
   },
@@ -82,7 +88,7 @@ const routeAuthLoginLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: true,
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: req.t('error.rate_limit.route_auth_login') || 'Too many login attempts. Try again later.' });
   },
@@ -93,7 +99,7 @@ const routeAuthCodeLimiter = rateLimit({
   max: 3,
   standardHeaders: true,
   legacyHeaders: true,
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: req.t('error.rate_limit.route_auth_code') || 'Too many code requests. Try again later.' });
   },
@@ -104,7 +110,7 @@ const uploadLimiter = rateLimit({
   max: 15,
   standardHeaders: true,
   legacyHeaders: true,
-  keyGenerator: (req) => req.tokenAuth ? `upload:${req.tokenId}` : `upload:${req.ip}`,
+  keyGenerator: (req) => req.tokenAuth ? `upload:${req.tokenId}` : `upload:${ipKeyGenerator(req.ip)}`,
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: 'Too many uploads. Try again later.' });
   },
@@ -118,7 +124,7 @@ const hostnameReportLimiter = rateLimit({
   max: 3,
   standardHeaders: true,
   legacyHeaders: true,
-  keyGenerator: (req) => req.tokenAuth ? `hostname:${req.tokenId}` : `hostname:${req.ip}`,
+  keyGenerator: (req) => req.tokenAuth ? `hostname:${req.tokenId}` : `hostname:${ipKeyGenerator(req.ip)}`,
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: req.t ? req.t('error.rate_limit.hostname') : 'Too many hostname reports.' });
   },
@@ -152,7 +158,7 @@ const gatewayAuthLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
-  keyGenerator: (req) => `gw-auth:${req.ip}`,
+  keyGenerator: (req) => `gw-auth:${ipKeyGenerator(req.ip)}`,
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: 'Too many failed gateway requests. Try again later.' });
   },
@@ -167,7 +173,7 @@ const gatewayPairLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: true,
-  keyGenerator: (req) => `pair:${req.ip}`,
+  keyGenerator: (req) => `pair:${ipKeyGenerator(req.ip)}`,
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: 'Too many pairing attempts. Try again later.' });
   },
@@ -181,7 +187,7 @@ const clientEnrollLimiter = rateLimit({
   max: () => config.auth.rateLimitEnroll,
   standardHeaders: true,
   legacyHeaders: true,
-  keyGenerator: (req) => `enroll:${req.ip}`,
+  keyGenerator: (req) => `enroll:${ipKeyGenerator(req.ip)}`,
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: 'rate_limited' });
   },
@@ -196,7 +202,7 @@ const shareRedeemLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
 });
 
 // Admin SSE stream (/api/v1/events): connects and reconnects only; a stream
@@ -206,7 +212,7 @@ const eventStreamLimiter = rateLimit({
   max: 600,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `events:${req.ip}`,
+  keyGenerator: (req) => `events:${ipKeyGenerator(req.ip)}`,
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: 'rate_limited' });
   },
@@ -221,7 +227,7 @@ const portalApiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: true,
   skipFailedRequests: true,
-  keyGenerator: (req) => (req.portalPeerId != null ? `portal:peer:${req.portalPeerId}` : `portal:ip:${req.ip}`),
+  keyGenerator: (req) => (req.portalPeerId != null ? `portal:peer:${req.portalPeerId}` : `portal:ip:${ipKeyGenerator(req.ip)}`),
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: req.t('error.rate_limit.api') });
   },
@@ -233,7 +239,7 @@ const portalPageLimiter = rateLimit({
   max: () => config.auth.rateLimitApi * 2,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `portal-page:${req.ip}`,
+  keyGenerator: (req) => `portal-page:${ipKeyGenerator(req.ip)}`,
   handler: (req, res) => {
     res.status(429).type('text/plain').send(req.t('error.rate_limit.api'));
   },
@@ -247,7 +253,7 @@ const portalPinLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `portal-pin:${req.ip}`,
+  keyGenerator: (req) => `portal-pin:${ipKeyGenerator(req.ip)}`,
   handler: (req, res) => {
     res.status(429).type('text/plain').send(req.t('error.rate_limit.login'));
   },
@@ -259,7 +265,7 @@ const portalLinkLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => (req.tokenAuth ? `portal-link:${req.tokenId}` : `portal-link:${req.ip}`),
+  keyGenerator: (req) => (req.tokenAuth ? `portal-link:${req.tokenId}` : `portal-link:${ipKeyGenerator(req.ip)}`),
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: 'rate_limited' });
   },
@@ -271,7 +277,7 @@ const portalPinSetLimiter = rateLimit({
   max: () => Math.max(1, config.auth.rateLimitLogin) * 2,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `pin-set:${(req.session && req.session.userId) || req.ip}`,
+  keyGenerator: (req) => `pin-set:${(req.session && req.session.userId) || ipKeyGenerator(req.ip)}`,
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: req.t('error.rate_limit.login') });
   },
@@ -289,7 +295,7 @@ const pluginApiLimiter = rateLimit({
   keyGenerator: (req) => {
     if (req.session && req.session.userId) return `plugins:u:${req.session.userId}`;
     if (req.portalPeerId != null) return `plugins:peer:${req.portalPeerId}`;
-    return `plugins:ip:${req.ip}`;
+    return `plugins:ip:${ipKeyGenerator(req.ip)}`;
   },
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: req.t ? req.t('error.rate_limit.api') : 'rate_limited' });
@@ -302,7 +308,7 @@ const pluginPageLimiter = rateLimit({
   max: () => config.auth.rateLimitApi * 4,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `plugin-page:${(req.session && req.session.userId) || req.ip}`,
+  keyGenerator: (req) => `plugin-page:${(req.session && req.session.userId) || ipKeyGenerator(req.ip)}`,
   handler: (req, res) => {
     res.status(429).type('text/plain').send(req.t ? req.t('error.rate_limit.api') : 'rate_limited');
   },
