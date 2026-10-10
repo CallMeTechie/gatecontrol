@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.154.0] — 2026-10-10
+
+### Features
+- notification center core – self-hosted push to the apps (#282)
+
+---
+
 ## [1.153.2] — 2026-10-10
 
 ### Fixes
