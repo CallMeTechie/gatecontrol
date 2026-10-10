@@ -153,7 +153,12 @@ jobs:
           registry-url: https://npm.pkg.github.com/
           scope: '@callmetechie'
 
-      - run: npm ci
+      # Like the Docker builder: better-sqlite3 ships its N-API prebuilds in
+      # the package, but a plain `npm ci` still runs npm's implicit
+      # `node-gyp rebuild` for it (binding.gyp), and this container has no
+      # make. argon2 is the only package with an install step we need (its
+      # node-gyp-build only selects the prebuild).
+      - run: npm ci --ignore-scripts && npm rebuild argon2
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
 
