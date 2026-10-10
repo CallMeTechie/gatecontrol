@@ -462,10 +462,10 @@ router.get('/api/v1/events', eventStreamLimiter, requireAuth, requireAdmin, requ
 
 // ─── Push stream of the apps (notification center) — token-authed SSE ──
 // Like /api/v1/events before the apiLimiter (one stream lives up to an hour);
-// own limiter for (re)connects, keyed by the device token. Token, scope
-// `client`, machine binding and "push on" are checked by the handler.
+// own limiter for (re)connects after authentication, keyed by the token id.
+// Token, scope `client`, machine binding and "push on" are checked by the handler.
 const { pushStreamLimiter } = require('../middleware/rateLimit');
-router.get('/api/v1/client/push', pushStreamLimiter, requireAuth, require('./api/client/push').stream);
+router.get('/api/v1/client/push', requireAuth, pushStreamLimiter, require('./api/client/push').stream);
 
 // ─── Portal API (source-IP identity + portal/web session) ───────
 const portalIdentity = require('../middleware/portalIdentity');

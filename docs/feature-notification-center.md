@@ -525,7 +525,7 @@ Alle Geräte-Routen verwenden Token-Auth wie die übrigen `/api/v1/client/*`:
   * `503 {"error":"too_many_streams"}`: globale Obergrenze erreicht. Neuer Versuch mit Backoff.
   * `403 {"error":"direct_not_allowed"}`: Der Admin erlaubt Push nur durch den
     Tunnel. Neuer Versuch, sobald das VPN steht (bzw. stündlich).
-  * `429 {"error":"rate_limited"}`: zu viele Verbindungsaufbauten (120 je 15 min und Token).
+  * `429 {"error":"rate_limited"}`: zu viele Verbindungsaufbauten (120 je 15 min und Token; der Limiter läuft nach der Token-Prüfung).
   * `401`/`403`: wie bei den anderen Client-Routen behandeln (`token_required`,
     `scope_required`, Maschinenbindung).
 * Alle JSON-Antworten der REST-Routen tragen zusätzlich `"ok": true|false`.

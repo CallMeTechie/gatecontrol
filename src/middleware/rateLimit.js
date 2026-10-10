@@ -272,20 +272,16 @@ const portalLinkLimiter = rateLimit({
 });
 
 // Push stream of the apps (GET /api/v1/client/push, notification center):
-// connects and reconnects only, keyed by the device token (hashed — the
-// limiter runs before authentication), otherwise by address. A stream lives
-// for up to an hour; the apps reconnect with backoff.
-function pushTokenKey(req) {
-  const raw = require('./auth').extractToken(req);
-  if (!raw) return `push-ip:${ipKeyGenerator(req.ip)}`;
-  return `push:${require('node:crypto').createHash('sha256').update(raw).digest('hex').slice(0, 32)}`;
-}
+// connects and reconnects only. Mounted AFTER token authentication and keyed
+// by the authenticated token id (requests without a valid token never get
+// here — requireAuth answers them); a session request falls back to the
+// address. A stream lives for up to an hour; the apps reconnect with backoff.
 const pushStreamLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: pushTokenKey,
+  keyGenerator: (req) => (req.tokenAuth && req.tokenId != null ? `push:tok:${req.tokenId}` : `push-ip:${ipKeyGenerator(req.ip)}`),
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: 'rate_limited' });
   },

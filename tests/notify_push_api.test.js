@@ -46,7 +46,8 @@ const send = (ids, title = 'Hallo', priority = 'normal') => hub.sendManual({ use
 
 describe('GET /api/v1/client/push — access', () => {
   it('401 without a token, 403 for a session and for a token without the client scope', async () => {
-    await supertest(app).get('/api/v1/client/push').expect(401);
+    const anon = await supertest(app).get('/api/v1/client/push').expect(401);
+    assert.equal(anon.headers['ratelimit-limit'], undefined, 'the stream limiter runs after authentication');
     const s = await agent.get('/api/v1/client/push').expect(403);
     assert.equal(s.body.error, 'token_required');
     // read-only may GET almost anything — but not the push stream
@@ -102,6 +103,7 @@ describe('GET /api/v1/client/push — stream', () => {
     assert.equal(s.status, 200);
     assert.match(s.headers['content-type'], /text\/event-stream/);
     assert.equal(s.headers['x-accel-buffering'], 'no');
+    assert.equal(s.headers['ratelimit-limit'], '120', 'own limiter per token');
     const hello = await s.waitFor((e) => e.event === 'hello');
     assert.deepEqual(Object.keys(hello.data).sort(), ['keepalive_s', 'retention_h', 'server_time', 'topics', 'unread', 'via']);
     assert.equal(hello.data.keepalive_s, 25);
