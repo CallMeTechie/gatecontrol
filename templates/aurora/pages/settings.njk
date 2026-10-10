@@ -440,17 +440,12 @@
     {{ textRow('st-al-email', 'al-email', t('st.notify.recipient'), t('st.notify.recipient_hint'), type='text', placeholder='admin@example.com', maxlength=1000, autocomplete='email') }}
     <div class="st-note" id="st-al-smtp"></div>
   </section>
-  <section class="st-card" aria-labelledby="st-c-events">
-    {% call cardHead('st-c-events', t('st.notify.events_title'), t('st.notify.events_desc')) %}{% endcall %}
-    {% if not has('email_alerts') %}<div class="st-note st-note-pro">{{ pro(PRO) }} {{ t('st.notify.events_license') }}</div>{% endif %}
-    <div class="st-matrix-wrap" data-st-field="al-events" data-st-custom="1" id="st-al-events">
-      <table class="st-matrix">
-        <caption class="st-sr">{{ t('st.notify.events_title') }}</caption>
-        <thead><tr><th scope="col">{{ t('st.notify.event') }}</th><th scope="col" class="st-mx-c">{{ t('st.notify.col_mail') }}</th><th scope="col" class="st-mx-c">{{ t('st.notify.col_hooks') }}</th></tr></thead>
-        <tbody id="st-matrix-body"></tbody>
-      </table>
-      <span class="st-err st-err-block" id="st-al-events-err" role="alert" hidden></span>
-    </div>
+  {#- The event matrix (e-mail / webhooks per event) moved into the rules of
+      the notification centre (docs/feature-notification-center.md, "Server:
+      Regeln"); the old selection was taken over. Recipient, SMTP, the
+      monitoring checks and the webhooks section stay here. -#}
+  <section class="st-card" aria-labelledby="st-c-events" id="st-notify-moved">
+    {% call cardHead('st-c-events', t('notify.st_link.title'), t('notify.st_link.text')) %}<a class="st-btn st-btn-primary" href="/notifications#rules" id="st-notify-link">{{ t('notify.st_link.btn') }}</a>{% endcall %}
   </section>
   <section class="st-card" aria-labelledby="st-c-checks">
     {% call cardHead('st-c-checks', t('st.checks.title'), t('st.checks.desc'), PRO) %}{% endcall %}
