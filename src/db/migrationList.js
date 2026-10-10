@@ -1983,6 +1983,119 @@ const migrations = [
       );`,
     detect: (db) => tableExists(db, 'plugin_legacy_imports'),
   },
+  {
+    version: 93,
+    name: 'notification_center',
+    // Notification center (docs/feature-notification-center.md): push to the
+    // own apps over a self-hosted SSE stream, no third-party service.
+    //   notify_rules            one rule per catalogue row (event_id = row id,
+    //                           e.g. 'gateway_state') or plugin topic
+    //                           ('plugin:<id>:<topic>'); seeded lazily from
+    //                           CATALOGUE + alerts.email_events on first read
+    //                           (services/notify/rules.js)
+    //   notifications           one message (title ≤ 120, body ≤ 1000, data
+    //                           ≤ 4 KB). Server-side extras beyond the plan:
+    //                           topic, count (bundling), silent (recovery
+    //                           notice), target (JSON, for the recipients
+    //                           label), release_at (held by delay_s), revoked_at,
+    //                           email_state/email_due_at/email_sent_at (e-mail
+    //                           fallback), meta (server-only JSON: the deferred
+    //                           mail), updated_at
+    //   notification_deliveries the queue per device (api_tokens.id); seq is the
+    //                           SSE id, strictly monotonic per server; silent =
+    //                           delivered inside the person's quiet hours
+    //   notify_subscriptions    topics per person (portal), opt-in/opt-out
+    //   notify_user_prefs       quiet hours + time zone per person
+    //   notify_device_prefs     what the device reported (PUT /client/push/prefs
+    //                           and the stream headers); a row means "this
+    //                           device has a push-capable app"
+    sql: `
+      CREATE TABLE IF NOT EXISTS notify_rules (
+        event_id TEXT PRIMARY KEY,
+        priority TEXT NOT NULL DEFAULT 'normal',
+        recipients TEXT NOT NULL DEFAULT '{"admins":true}',
+        ch_app INTEGER NOT NULL DEFAULT 1,
+        ch_email INTEGER NOT NULL DEFAULT 0,
+        ch_webhook INTEGER NOT NULL DEFAULT 1,
+        email_fallback_s INTEGER,
+        delay_s INTEGER NOT NULL DEFAULT 0,
+        bundle_s INTEGER NOT NULL DEFAULT 0,
+        recovery TEXT NOT NULL DEFAULT 'silent',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id TEXT NOT NULL,
+        event_type TEXT,
+        topic TEXT NOT NULL DEFAULT 'admin_notice',
+        source TEXT NOT NULL,
+        priority TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT,
+        data TEXT,
+        collapse_key TEXT,
+        count INTEGER NOT NULL DEFAULT 1,
+        silent INTEGER NOT NULL DEFAULT 0,
+        target TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT,
+        expires_at TEXT,
+        release_at TEXT,
+        revoked_at TEXT,
+        email_state TEXT,
+        email_due_at TEXT,
+        email_sent_at TEXT,
+        meta TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at);
+      CREATE INDEX IF NOT EXISTS idx_notifications_collapse ON notifications(collapse_key);
+      CREATE TABLE IF NOT EXISTS notification_deliveries (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        notification_id INTEGER NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+        token_id INTEGER NOT NULL,
+        user_id INTEGER,
+        state TEXT NOT NULL DEFAULT 'queued',
+        via TEXT,
+        action TEXT,
+        silent INTEGER NOT NULL DEFAULT 0,
+        queued_at TEXT,
+        sent_at TEXT,
+        delivered_at TEXT,
+        read_at TEXT,
+        UNIQUE (notification_id, token_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_nd_token_state ON notification_deliveries(token_id, state);
+      CREATE INDEX IF NOT EXISTS idx_nd_user ON notification_deliveries(user_id);
+      CREATE TABLE IF NOT EXISTS notify_subscriptions (
+        user_id INTEGER NOT NULL,
+        topic TEXT NOT NULL,
+        enabled INTEGER NOT NULL,
+        PRIMARY KEY (user_id, topic)
+      );
+      CREATE TABLE IF NOT EXISTS notify_user_prefs (
+        user_id INTEGER PRIMARY KEY,
+        quiet_from TEXT,
+        quiet_to TEXT,
+        tz TEXT,
+        critical_bypass INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE TABLE IF NOT EXISTS notify_device_prefs (
+        token_id INTEGER PRIMARY KEY,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        mode TEXT,
+        topics TEXT,
+        platform TEXT,
+        client_type TEXT,
+        app_version TEXT,
+        restricted INTEGER NOT NULL DEFAULT 0,
+        via TEXT,
+        last_seen_at TEXT,
+        updated_at TEXT
+      );`,
+    detect: (db) => tableExists(db, 'notify_rules') && tableExists(db, 'notifications')
+      && tableExists(db, 'notification_deliveries') && tableExists(db, 'notify_device_prefs'),
+  },
 ];
 
 module.exports = { migrations };

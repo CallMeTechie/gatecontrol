@@ -481,6 +481,8 @@ function revoke(id, ipAddress, { source = 'admin' } = {}) {
   if (!token) throw new Error('Token not found');
 
   db.prepare('DELETE FROM api_tokens WHERE id = ?').run(id);
+  // A revoked device loses its push stream at once (notification center).
+  require('./notify').onTokenRevoked(id);
 
   activity.log('token_deleted', `API token "${token.name}" revoked`, {
     source,

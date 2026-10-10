@@ -172,7 +172,12 @@ async function checkRoute(route) {
     // mail skips route_down/route_up — services/notifications.js).
     const notifications = require('./notifications');
     const alertEmail = notifications.wantsEmail(eventType) ? notifications.recipient() : '';
-    if (alertEmail) {
+    // Rule with e-mail fallback (notification center): sent later, only when
+    // no app confirmed the push in time.
+    const monitoring = { domain: route.domain, status: newStatus, responseTime: result.responseTime, target: `${targetIp}:${route.target_port}` };
+    if (alertEmail && require('./notify').claimMail(eventType, { subject: `[GateControl] ${message}`, text: message, monitoring })) {
+      // deferred
+    } else if (alertEmail) {
       try {
         const { sendMonitoringAlert } = require('./email');
         await sendMonitoringAlert({

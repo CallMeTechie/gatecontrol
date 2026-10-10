@@ -57,6 +57,8 @@ router.use('/smtp', require('./smtp'));
 router.use('/wg', require('./wireguard'));
 router.use('/caddy', require('./caddy'));
 router.use('/webhooks', require('./webhooks'));
+// Notification center: rules, devices, history, send, settings (admin session)
+router.use('/notify', require('./notify'));
 router.use('/users', require('./users'));
 router.use('/enrollment', require('./enrollment'));
 router.use('/profile', require('./profile'));

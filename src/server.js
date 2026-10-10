@@ -288,6 +288,11 @@ async function start() {
     const retryAlertChecks = withRetry('alert-checks', () => require('./services/alertChecks').run());
     setInterval(retryAlertChecks, 60 * 60 * 1000); // Every hour
 
+    // Notification center: hourly clean-up (queue expiry, history, queue cap)
+    // plus a short ticker for delayed messages and e-mail fallbacks.
+    try { require('./services/notify').start(); }
+    catch (err) { logger.warn({ err: err.message }, 'notification center not started'); }
+
     // ─── Bot blocker counter (every 60s) ──────────────
     // Liest access.log inkrementell und asynchron (services/botBlockerCounter).
     require('./services/botBlockerCounter').start();
@@ -334,6 +339,7 @@ const shutdown = createShutdownHandler({
     () => require('./services/waf').stop(),
     () => require('./services/l4ConnGuard').stop(),
     () => require('./services/updateNotify').stop(),
+    () => require('./services/notify').stop(),
     () => { require('./services/plugins').stop().catch(() => {}); },
   ],
   closeDb: () => { require('./db/connection').closeDb(); },

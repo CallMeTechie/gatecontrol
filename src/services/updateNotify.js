@@ -84,9 +84,15 @@ function recipient(type) {
 }
 
 async function deliver(type, subject, text, details) {
-  require('./webhook').notify(type, subject, details || null);
+  // Update events are not activity entries: the notification center gets
+  // them here (push per rule `update`), the webhook as before.
+  const notify = require('./notify');
+  notify.emit(type, subject.replace(/^\[GateControl\]\s*/, ''), { details: details || null, source: 'system' });
+  if (notify.webhookAllowed(type)) require('./webhook').notify(type, subject, details || null);
   const to = recipient(type);
   if (!to) return false;
+  // Rule with e-mail fallback and an app to wait for: mailed later if needed.
+  if (notify.claimMail(type, { subject, text })) return true;
   const { sendMail } = require('./email');
   await sendMail({ to, subject, text });
   return true;

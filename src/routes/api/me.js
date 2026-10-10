@@ -70,6 +70,9 @@ router.use((req, res, next) => {
   return next();
 });
 
+// Own notification settings, inbox and test (notification center).
+router.use('/notify', require('./meNotify').createRouter());
+
 function me(req) {
   return users.getById(req.meUserId);
 }
