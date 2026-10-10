@@ -198,7 +198,10 @@ unsigned build of the same id.
     }
   },
   "license": { "required": true, "server": "https://licenses.example.com/check" },
-  "migrations": "migrations"
+  "migrations": "migrations",
+  "notifyTopics": [
+    { "id": "charging", "label": { "de": "Laden abgeschlossen", "en": "Charging complete" }, "default": true }
+  ]
 }
 ```
 
@@ -211,6 +214,12 @@ unsigned build of the same id.
   (`options: [{ value, label }]`), `secret` (stored encrypted, never sent to
   the browser).
 * `permissions.network` may also be an array — short for `{ internet: [...] }`.
+* `notifyTopics` (optional, needs `permissions.notify`): up to 20 own push
+  topics, `id` `[a-z][a-z0-9_-]{0,31}`, `label` text (≤ 60), `default`
+  (boolean, default `true`: people get the topic until they switch it off; `false`:
+  only who subscribes). Each becomes the topic `plugin:<id>:<topic>` — a rule in
+  System › Benachrichtigungen, a channel in the apps and a switch in the portal.
+  See "Notifications" below.
 
 ## Network
 
@@ -304,7 +313,8 @@ module.exports = {
 | `gc.settings.get/all/set` | the plugin's settings (secrets decrypted); `set` also keeps undeclared keys of the plugin's own (JSON) |
 | `gc.settings.setSecret(key, value)` | a secret of the plugin's own (e.g. a device API key per gateway): any key `[a-z][a-z0-9_.-]{0,63}` that is not a declared non-secret setting, stored encrypted with the server key like a `secret` setting, read back with `get`/`all`, never sent to the browser, re-keyed by backups; `null` deletes it |
 | `gc.users.list()/get(id)` | `{ id, name, role }` of enabled users (`users`) |
-| `gc.notify(message, { severity })` | activity log + webhooks (`notify`, ≤ 30/h) |
+| `gc.notify(message, { severity })` | activity log + webhooks, and a push on `plugin:<id>:default` (`notify`, ≤ 30/h) — see "Notifications" |
+| `gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data })` | push on a declared `notifyTopics` topic (+ activity row) → `{ pushed, id }` |
 | `gc.license.status()` | `{ required, licensed, state, expiresAt }` |
 
 Requests reach the plugin only after GateControl's own authentication, CSRF
@@ -318,6 +328,45 @@ only recognised by device trust (read-only) — data as sensitive as a vehicle's
 position or departure times belongs to a real login only. The portal hooks
 (`portalVisible`, `portalTiles`, `portalSearch`) and `render` get the same
 viewer.
+
+## Notifications
+
+`gc.notify` reaches the GateControl apps through the notification center
+(docs/feature-notification-center.md) — pushed by GateControl itself, no
+third-party service. Both forms need `permissions.notify` and share the limit
+of **30 per hour and plugin**; every call also writes the `plugin_notice`
+activity entry (and its webhooks) as before.
+
+```js
+// old form — unchanged; push on topic plugin:<id>:default, title = plugin name,
+// priority info (severity warning/error → normal)
+await gc.notify('Laden abgeschlossen', { severity: 'info' });
+
+// new form
+const { pushed, id } = await gc.notify({
+  topic: 'charging',              // declared in plugin.json notifyTopics ('default' always exists)
+  title: 'Laden abgeschlossen',   // ≤ 120 characters, required
+  body: 'Enyaq · 80 % · ca. 390 km', // ≤ 1000
+  priority: 'normal',             // info | normal | high ('critical' is capped to high)
+  users: [12],                    // optional: only these people (otherwise the topic's subscribers)
+  collapseKey: 'charge:VIN123',   // optional: same key replaces the shown notification
+  ttl: 6 * 3600,                  // optional, seconds (60 … retention of the server)
+  data: { vin: 'VIN123' }         // optional JSON ≤ 4 KB; data.route defaults to 'plg-<id>' (the plugin tab)
+});
+```
+
+* Errors: `ERR_NOTIFY_DENIED` (no permission), `ERR_INVALID` (undeclared topic,
+  empty title, bad priority/users/ttl/collapseKey, `data` not an object or over
+  4 KB), `ERR_RATE_LIMIT`.
+* Push needs the licence feature `email_alerts` ("Benachrichtigungen Pro");
+  without it only the activity entry is written and `pushed` is `false`.
+* Who gets it: the rule of the topic (System › Benachrichtigungen; default:
+  subscribers). A person's topic switch (portal) and quiet hours apply; the
+  administrator can switch a plugin topic off.
+* `data.actions` may only use the fixed action types (`open_app_route`,
+  `open_portal`, `mute_1h`, `ack`, `done`); control characters are removed,
+  the apps show text only. Schedules ("evening before 18:00") are the
+  plugin's own job (`background` + `gc.storage`).
 
 ## Storage and migrations
 

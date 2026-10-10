@@ -220,7 +220,10 @@ function makeGc(info) {
       list: () => hostCall('users.list', {}),
       get: (id) => hostCall('users.get', { id }),
     }),
-    notify: (message, opts) => hostCall('notify', { message: String(message), opts: opts || {} }),
+    /** notify(message, { severity }) or notify({ topic, title, body, priority, users, collapseKey, ttl, data }) */
+    notify: (message, opts) => (message && typeof message === 'object' && !Array.isArray(message)
+      ? hostCall('notify', { notification: message })
+      : hostCall('notify', { message: String(message), opts: opts || {} })),
     license: Object.freeze({ status: () => hostCall('license.status', {}) }),
   });
 }

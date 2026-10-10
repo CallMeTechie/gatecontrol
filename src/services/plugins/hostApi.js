@@ -220,17 +220,77 @@ function userView(u) {
   return u ? { id: u.id, name: u.display_name || u.username, role: u.role } : null;
 }
 
-function notify(plugin, args) {
-  need(plugin.manifest.permissions && plugin.manifest.permissions.notify, 'ERR_NOTIFY_DENIED', 'this plugin has no notify permission');
-  const msg = String((args && args.message) || '').replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, 300);
-  need(msg, 'ERR_INVALID', 'empty message');
+const NOTIFY_PRIORITIES = ['info', 'normal', 'high', 'critical'];
+const SEVERITY_PRIORITY = { info: 'info', success: 'info', warning: 'normal', error: 'normal' };
+
+/** Count one message against the plugin's 30/h. */
+function notifyBudget(plugin) {
   const now = Date.now();
   const w = (notifyWindow.get(plugin.id) || []).filter((t) => now - t < 3600000);
   need(w.length < NOTIFY_PER_HOUR, 'ERR_RATE_LIMIT', 'too many notifications');
   w.push(now);
   notifyWindow.set(plugin.id, w);
+}
+
+/**
+ * gc.notify — two forms (docs/plugins.md "Notifications"):
+ *   gc.notify(message, { severity })   activity row + webhooks as before, and
+ *                                      a push on topic plugin:<id>:default
+ *                                      (priority info, warning/error → normal)
+ *   gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data })
+ *                                      push on a topic declared in
+ *                                      plugin.json notifyTopics (+ activity row)
+ * Push needs the email_alerts licence; priority is capped at `high`.
+ */
+function notify(plugin, args) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.notify, 'ERR_NOTIFY_DENIED', 'this plugin has no notify permission');
+  const sanitize = require('../notify/sanitize');
+  const hub = require('../notify/hub');
+  const n = args && args.notification;
+  if (n && typeof n === 'object' && !Array.isArray(n)) {
+    const topic = n.topic == null ? 'default' : String(n.topic);
+    const declared = Array.isArray(plugin.manifest.notifyTopics) ? plugin.manifest.notifyTopics : [];
+    need(topic === 'default' || declared.some((t) => t && t.id === topic), 'ERR_INVALID', 'topic not declared in notifyTopics');
+    const title = sanitize.title(n.title);
+    need(title, 'ERR_INVALID', 'empty title');
+    const body = sanitize.body(n.body);
+    let priority = n.priority == null ? 'normal' : n.priority;
+    need(NOTIFY_PRIORITIES.includes(priority), 'ERR_INVALID', 'invalid priority');
+    if (priority === 'critical') priority = 'high';
+    let users = null;
+    if (n.users != null) {
+      need(Array.isArray(n.users) && n.users.length <= 100 && n.users.every((u) => Number.isSafeInteger(u) && u > 0), 'ERR_INVALID', 'invalid users');
+      users = [...new Set(n.users)];
+    }
+    let collapseKey = null;
+    if (n.collapseKey != null) {
+      collapseKey = sanitize.collapseKey(n.collapseKey);
+      need(collapseKey, 'ERR_INVALID', 'invalid collapseKey');
+    }
+    let ttl = null;
+    if (n.ttl != null) {
+      need(Number.isSafeInteger(n.ttl) && n.ttl >= 60 && n.ttl <= 30 * 86400, 'ERR_INVALID', 'invalid ttl');
+      ttl = n.ttl;
+    }
+    need(n.data == null || (typeof n.data === 'object' && !Array.isArray(n.data)), 'ERR_INVALID', 'invalid data');
+    const d = sanitize.data(n.data == null ? { route: `plg-${plugin.id}` } : { route: `plg-${plugin.id}`, ...n.data });
+    need(d.ok, 'ERR_INVALID', 'data too large (max 4 KB)');
+    notifyBudget(plugin);
+    require('../activity').log('plugin_notice', `${plugin.name}: ${title}`, { source: 'plugin', severity: 'info', details: { plugin: plugin.id, topic } });
+    const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, collapseKey, ttl, data: d.data });
+    return { pushed: r.pushed, id: r.id || null };
+  }
+  const msg = String((args && args.message) || '').replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, 300);
+  need(msg, 'ERR_INVALID', 'empty message');
+  notifyBudget(plugin);
   const sev = args && args.opts && ['info', 'success', 'warning', 'error'].includes(args.opts.severity) ? args.opts.severity : 'info';
   require('../activity').log('plugin_notice', `${plugin.name}: ${msg}`, { source: 'plugin', severity: sev, details: { plugin: plugin.id } });
+  try {
+    hub.emitPlugin(plugin.id, {
+      topic: 'default', title: sanitize.title(plugin.name), body: sanitize.body(msg), priority: SEVERITY_PRIORITY[sev],
+      users: null, collapseKey: null, ttl: null, data: { route: `plg-${plugin.id}` },
+    });
+  } catch { /* the activity row is written; push is best-effort */ }
   return {};
 }
 
