@@ -402,3 +402,110 @@ Jede Phase wird erst gemergt, wenn:
 4. **Aufbewahrung:** Empfehlung: 72 h Warteschlange, 30 Tage Verlauf.
 5. **Alte Einstellungsseite:** Empfehlung: Die Matrix wird durch einen Verweis
    auf die neue Seite ersetzt; die Werte werden übernommen.
+
+## Entscheidungen (Maintainer, 2026-10-10)
+
+Freigegeben: Phase 1, danach direkt Phase 2 und 3; mergen, sobald die CI grün ist.
+Die fünf offenen Punkte gelten wie empfohlen:
+
+1. **Lizenz:** Push für System- und Geräteereignisse, Posteingang, Abos und
+   Testnachricht ist frei. Eigene Empfänger in Regeln (Personen, Gruppen),
+   „Nachricht senden“ und Plugin-Themen hängen am vorhandenen Lizenz-Feature
+   `email_alerts` („Benachrichtigungen Pro“). Es gibt keine neuen Lizenzschlüssel.
+2. **Android:** Beim Einschalten wird „Immer, auch ohne VPN“ vorgeschlagen.
+3. **E-Mail-Rückfall:** Für `critical` und `high` ist er an, nach 600 s ohne Bestätigung.
+4. **Aufbewahrung:** 72 h Warteschlange, 30 Tage Verlauf.
+5. **Alte Matrix:** Sie wird durch einen Verweis ersetzt, die Werte werden übernommen.
+
+## Vertrag Gerät ↔ Server (verbindlich für Server, Android und Windows)
+
+Alle Geräte-Routen verwenden Token-Auth wie die übrigen `/api/v1/client/*`:
+
+* Header `X-API-Token`, `X-Client-Version`, `X-Client-Platform` (`android` | `windows`),
+  bei Windows `X-Client-Type` (`pro` | `community`).
+* `X-Machine-Fingerprint`, wenn das Token gebunden ist.
+* Scope `client`.
+
+### `GET /api/v1/client/push`: SSE-Stream
+
+* Anfrage: optional Header `Last-Event-ID: <seq>` oder `?since=<seq>`.
+  Ohne beides werden alle Nachrichten im Zustand `queued` und `sent` geliefert.
+* Antwort `200 text/event-stream`, Header wie in `events.js`.
+* Fehlerantworten:
+  * `404`: Server zu alt. Der Client probiert es stündlich wieder.
+  * `503 {"error":"push_disabled"}`: Push ist am Server aus. Der Client probiert es stündlich wieder.
+  * `401`/`403`: wie bei den anderen Client-Routen behandeln.
+* Pro Token gibt es genau einen Stream; ein neuer beendet den alten.
+
+Ereignisse:
+
+```
+event: hello
+data: {"server_time":"2026-10-10T21:42:03.120Z","keepalive_s":25,"retention_h":72,
+       "via":"direct","unread":3,
+       "topics":[{"id":"security","label":"Sicherheit"},{"id":"devices","label":"Geräte & Gateways"},
+                 {"id":"services","label":"Dienste"},{"id":"admin_notice","label":"Hinweise vom Admin"},
+                 {"id":"plugin:skoda:charging","label":"Fahrzeug · Laden abgeschlossen"}]}
+
+id: 123
+event: notification
+data: {"seq":123,"id":45,"event_id":"gateway_state","topic":"devices","priority":"critical",
+       "title":"Gateway „Zuhause“ ist offline","body":"Seit 2 Minuten kein Lebenszeichen …",
+       "created_at":"2026-10-10T21:42:03Z","expires_at":"2026-10-13T21:42:03Z",
+       "collapse_key":"gateway:3","silent":false,
+       "data":{"route":"gateways","actions":[{"id":"details","label":"Details","type":"open_app_route","target":"gateways"},
+                                             {"id":"mute_1h","label":"1 h stumm","type":"mute_1h"}]}}
+
+event: read
+data: {"ids":[45]}            # auf einem anderen Gerät derselben Person gelesen → hier ausblenden
+
+event: revoke
+data: {"ids":[45]}            # zurückgezogen (z. B. Entwarnung ersetzt Meldung) → ausblenden
+
+: ping                        # alle keepalive_s Sekunden
+```
+
+Dazu gelten diese Regeln:
+
+* `seq` ist pro Server streng monoton und dient als SSE-`id`.
+* Der Client speichert das zuletzt verarbeitete `seq` und bestätigt jede
+  Nachricht mit `delivered`.
+* `silent:true` bedeutet: in den Posteingang, aber ohne Ton und ohne Banner
+  (Ruhezeit oder Entwarnung).
+* Gleicher `collapse_key` heißt: Die vorhandene Benachrichtigung wird
+  ersetzt bzw. aktualisiert.
+* `priority`: `info` | `normal` | `high` | `critical`.
+* Aktionstypen (feste Liste):
+
+  | Typ | Wirkung |
+  |---|---|
+  | `open_app_route` | `target` ist eine App-Route: `vpn`, `services`, `gateways`, `inbox`, `plg-<id>` |
+  | `open_portal` | `target` ist ein Pfad im Portal; der Client öffnet ihn über den vorhandenen Portal-Link mit Auto-Login |
+  | `mute_1h` | lokale Stummschaltung des Themas für 1 h, zusätzlich `ack` mit `action` |
+  | `done` | `ack` mit `action:"done"` |
+  | `ack` | `ack` mit `action` |
+
+### `POST /api/v1/client/push/ack`
+
+* Body: `{"seqs":[123,124],"state":"delivered"|"read"|"dismissed","action":"details"}`
+  (`action` optional; höchstens 200 `seqs`).
+* Antwort: `{"ok":true}`.
+* `read` und `dismissed` werden an die anderen Geräte derselben Person als
+  `event: read` weitergegeben.
+
+### `GET /api/v1/client/push/inbox?limit=100&before=<seq>`
+
+* Antwort: `{"items":[<notification wie oben> + "state":"delivered"|"read"|"dismissed"],"unread":3}`.
+* Sortiert neueste zuerst; abgelaufene Nachrichten sind nicht enthalten.
+
+### `PUT /api/v1/client/push/prefs`
+
+* Body: `{"enabled":true,"mode":"always"|"vpn_only","muted_topics":["plugin:skoda:charging"],"restricted":false}`.
+* Antwort: `{"ok":true}`.
+* `restricted` meldet Android, wenn die Akkuoptimierung aktiv ist.
+
+### `POST /api/v1/client/push/test`
+
+* Antwort: `{"ok":true,"seq":130}`.
+* Erzeugt eine `info`-Nachricht „Testnachricht“ nur an dieses Gerät, ohne
+  Ruhezeit-Filter und ohne Rate-Limit über 5 pro Minute.
