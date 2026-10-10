@@ -387,7 +387,7 @@ button, input, select { font: inherit; color: inherit; }
 /* Plugin sections in GateControl tabs and their Start tiles (docs/plugins.md "Portal") */
 .pt-plugin-section { min-width: 0; }
 .pt-plugin-section .pt-plugin-frame { min-height: 160px; }
-.pt-plg-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.pt-plg-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0 18px 18px; }
 .pt-plg-tile { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--chip); color: var(--muted); text-decoration: none; min-width: 0; }
 .pt-plg-tile svg { color: var(--muted); }
 .pt-plg-tile b { color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
@@ -398,3 +398,6 @@ button, input, select { font: inherit; color: inherit; }
 .pt-plg-tile[data-tone="crit"] b { color: var(--crit-text); }
 .pt-plg-tile[data-tone="good"] b { color: var(--good-text); }
 .pt-plg-tile:hover { border-color: var(--accent-bd); }
+@media (max-width: 640px) {
+  .pt-plg-tiles { padding: 0 14px 14px; }
+}
