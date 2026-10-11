@@ -586,7 +586,7 @@ Dazu gelten diese Regeln:
   | Typ | Wirkung |
   |---|---|
   | `open_app_route` | `target` ist eine App-Route: `vpn`, `services`, `gateways`, `inbox`, `plg-<id>` |
-  | `open_portal` | `target` ist ein Pfad im Portal; der Client öffnet ihn über den vorhandenen Portal-Link mit Auto-Login |
+  | `open_portal` | `target` ist ein Pfad im Portal; der Client öffnet ihn über den vorhandenen Portal-Link mit Auto-Login (`next`, siehe unten) |
   | `mute_1h` | lokale Stummschaltung des Themas für 1 h, zusätzlich `ack` mit `action` |
   | `done` | `ack` mit `action:"done"` |
   | `ack` | `ack` mit `action` |
@@ -629,3 +629,26 @@ Dazu gelten diese Regeln:
 * Antwort: `{"ok":true,"seq":130}`.
 * Erzeugt eine `info`-Nachricht „Testnachricht“ nur an dieses Gerät, ohne
   Ruhezeit-Filter und ohne Rate-Limit über 5 pro Minute.
+
+### `POST /api/v1/client/portal-link` mit Ziel (`next`)
+
+Der vorhandene Portal-Link mit Auto-Login (Einmal-URL `/auto?t=…`, 60 s,
+einmal verwendbar) nimmt ein optionales Ziel im Portal an, damit die Apps
+direkt in einen Portal-Reiter springen und trotzdem angemeldet werden:
+
+* Anfrage: Body (oder Query) `{"next":"/portal#mitteilungen"}`; `path` ist
+  ein gleichwertiger Alias.
+* Antwort wie bisher, die URL trägt das geprüfte Ziel:
+  `{"ok":true,"url":"https://home.example/auto?t=<ticket>&next=%2Fportal%23mitteilungen","expiresIn":60}`.
+  Die Apps dürfen `next` auch selbst an eine vorhandene `/auto`-URL hängen
+  (URL-kodiert); der Server prüft es beim Aufruf erneut.
+* Erlaubt sind nur Portal-Reiter: `/portal`, `/portal#<reiter>` oder
+  `/#<reiter>` (wird zu `/portal#<reiter>`), höchstens 100 Zeichen.
+  `<reiter>`: `start`, `dienste`, `zuhause`, `fahrzeug`, `netzwerk`,
+  `geraete`, `mitteilungen` (Posteingang), `benachrichtigungen` (Meine
+  Benachrichtigungen) oder ein Plugin-Reiter `plg-<id>`.
+* Alles andere (andere Pfade, `//`, Schema, `\`, Query, unbekannter Reiter,
+  zu lang) wird **ignoriert**, nie ein Fehler: Es gilt dann `/portal`.
+* Ungültiges oder verbrauchtes Ticket: anonymes Portal mit Hinweis, das Ziel
+  entfällt. Gemeinsames Gerät: erst „Wer bist du?“, nach der PIN folgt das Ziel.
+* Für `open_portal`-Aktionen geben die Apps `target` als `next` weiter.

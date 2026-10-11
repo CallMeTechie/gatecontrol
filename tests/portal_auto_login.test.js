@@ -208,6 +208,43 @@ describe('automatic login with the link', () => {
     assert.equal(page.headers.location, '/portal/who');
   });
 
+  it('next: the app deep-links into a portal tab, strictly validated', async () => {
+    const pt = require('../src/services/portalTickets');
+    const nd = device('auto-next', anna);
+    // accepted forms → normalised
+    for (const [raw, want] of [['/portal', '/portal'], ['/portal/', '/portal'], ['/portal#mitteilungen', '/portal#mitteilungen'],
+      ['/#geraete', '/portal#geraete'], ['/portal#plg-skoda', '/portal#plg-skoda'], ['/portal#benachrichtigungen', '/portal#benachrichtigungen']]) {
+      assert.equal(pt.portalNext(raw), want, raw);
+    }
+    // everything else is ignored
+    for (const raw of ['', '/', '//evil.example', '/\\evil.example', 'https://evil.example/portal', '/portal#unknown', '/portal#Geraete',
+      '/portal?x=1', '/portal/who', '/login', 'portal#start', '/portal#plg-', `/portal#${'a'.repeat(120)}`, '/portal#start#x', ' /portal', null, 42]) {
+      assert.equal(pt.portalNext(raw), null, String(raw));
+    }
+    // portal-link: body `next` (or `path`) ends up in the URL, a bad one is dropped
+    let r = await supertest(app).post('/api/v1/client/portal-link').set('Authorization', `Bearer ${nd.raw}`).send({ next: '/portal#mitteilungen' }).expect(200);
+    const u = new URL(r.body.url);
+    assert.equal(u.searchParams.get('next'), '/portal#mitteilungen');
+    assert.match(u.searchParams.get('t'), /^[A-Za-z0-9_-]{43}$/);
+    r = await supertest(app).post('/api/v1/client/portal-link').set('Authorization', `Bearer ${nd.raw}`).send({ path: '/#geraete' }).expect(200);
+    assert.equal(new URL(r.body.url).searchParams.get('next'), '/portal#geraete');
+    r = await supertest(app).post('/api/v1/client/portal-link').set('Authorization', `Bearer ${nd.raw}`).send({ next: '//evil.example' }).expect(200);
+    assert.equal(new URL(r.body.url).searchParams.get('next'), null);
+    // /auto: signs in and lands on the tab
+    const p = portalAgent(nd.ip);
+    let res = await p.get('/auto?t=' + ticketOf((await link(nd)).body.url) + '&next=' + encodeURIComponent('/portal#mitteilungen')).expect(302);
+    assert.equal(res.headers.location, '/portal#mitteilungen');
+    assert.equal(ctxOf((await p.get('/portal')).text).loggedIn, true);
+    // a bad target never leaves the portal
+    for (const bad of ['//evil.example', 'https://evil.example', '/\\evil.example', '/login']) {
+      res = await portalAgent(nd.ip).get('/auto?t=' + ticketOf((await link(nd)).body.url) + '&next=' + encodeURIComponent(bad)).expect(302);
+      assert.equal(res.headers.location, '/portal', bad);
+    }
+    // an invalid ticket ignores the target (anonymous portal with the note)
+    res = await portalAgent(nd.ip).get('/auto?t=x&next=' + encodeURIComponent('/portal#geraete')).expect(302);
+    assert.equal(res.headers.location, '/portal');
+  });
+
   it('the portal session cannot reach admin pages or admin APIs (even of an admin)', async () => {
     const boss = await makeUser('auto-boss', { role: 'admin', displayName: 'Boss' });
     const bdev = device('boss-phone', boss);
@@ -307,6 +344,16 @@ describe('"Wer bist du?" with the portal PIN', () => {
     assert.ok(page.text.includes('data-via="pin"'));
     assert.ok(page.text.includes('id="pt-switch"'));
     assert.equal(ctxOf(page.text).loggedIn, true);
+  });
+
+  it('the deep link of the app follows the PIN on a shared device', async () => {
+    const t = ticketOf((await link(shared)).body.url);
+    const p = portalAgent(shared.ip);
+    const res = await p.get('/auto?t=' + t + '&next=' + encodeURIComponent('/portal#benachrichtigungen')).expect(302);
+    assert.equal(res.headers.location, '/portal/who');
+    const { c } = await pickerCsrf(p);
+    const ok = await p.post('/portal/who').type('form').send({ _csrf: c, user: String(anna), pin: '1234' }).expect(302);
+    assert.equal(ok.headers.location, '/portal#benachrichtigungen');
   });
 
   it('without "stay signed in" the cookie is a browser-session cookie', async () => {

@@ -59,4 +59,27 @@ function consume(raw) {
   return { tokenId: row.token_id, peerId: row.peer_id, userId: row.user_id };
 }
 
-module.exports = { create, consume, cleanup, hashTicket, TTL_MS };
+// ─── Target inside the portal (deep link of the apps) ────────────────────
+// `next` of POST /api/v1/client/portal-link and GET /auto: where the portal
+// opens after the automatic login. Strictly a portal tab: '/portal',
+// '/portal#<tab>' or '/#<tab>' (the portal host rewrites / to /portal) with a
+// known tab or a plugin tab (plg-<id>). Anything else — other paths, '//',
+// schemes, backslashes, queries, too long — is ignored (null), never an error.
+
+const NEXT_MAX = 100;
+const PORTAL_TABS = new Set(['start', 'dienste', 'zuhause', 'fahrzeug', 'netzwerk', 'geraete', 'mitteilungen', 'benachrichtigungen']);
+const PLUGIN_TAB_RE = /^plg-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const NEXT_RE = /^\/(?:portal\/?)?(?:#([a-z0-9-]{1,60}))?$/;
+
+/** Validated portal target → '/portal' or '/portal#<tab>'; null when unusable. */
+function portalNext(raw) {
+  if (typeof raw !== 'string' || !raw || raw.length > NEXT_MAX) return null;
+  const m = NEXT_RE.exec(raw);
+  if (!m) return null;
+  const tab = m[1];
+  if (!tab) return raw === '/' ? null : '/portal';
+  if (!PORTAL_TABS.has(tab) && !PLUGIN_TAB_RE.test(tab)) return null;
+  return `/portal#${tab}`;
+}
+
+module.exports = { create, consume, cleanup, hashTicket, portalNext, TTL_MS, NEXT_MAX, PORTAL_TABS };
