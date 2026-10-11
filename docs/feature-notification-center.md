@@ -439,6 +439,9 @@ In der `plugin.json` kommt ein neuer, optionaler Block hinzu:
 * Ein gesperrtes oder gelöschtes Gerät (Token widerrufen) verliert den Stream sofort.
 * Begrenzung: Titel 120, Text 1000 Zeichen, `data` höchstens 4 KB.
   Steuerzeichen werden entfernt. Die Apps zeigen nur Text an, kein HTML.
+* `data.facts` (optional): höchstens 6 Paare `{label, value}`, je eine
+  Zeile, `label` ≤ 60, `value` ≤ 120 Zeichen; Zahlen werden zu Text, leere
+  oder falsch geformte Einträge fallen weg.
 * Aktionen nur aus einer festen Liste:
   * `open_app_route`
   * `open_portal` (eigene Domain)
@@ -560,7 +563,8 @@ data: {"seq":123,"id":45,"event_id":"gateway_state","topic":"devices","priority"
        "created_at":"2026-10-10T21:42:03Z","expires_at":"2026-10-13T21:42:03Z",
        "collapse_key":"gateway:3","silent":false,
        "data":{"route":"gateways","actions":[{"id":"details","label":"Details","type":"open_app_route","target":"gateways"},
-                                             {"id":"mute_1h","label":"1 h stumm","type":"mute_1h"}]}}
+                                             {"id":"mute_1h","label":"1 h stumm","type":"mute_1h"}],
+               "facts":[{"label":"Zuletzt gesehen","value":"10.10.26, 21:40"},{"label":"Betroffene Routen","value":"3"}]}}
 
 event: read
 data: {"ids":[45]}            # auf einem anderen Gerät derselben Person gelesen → hier ausblenden
@@ -581,6 +585,19 @@ Dazu gelten diese Regeln:
 * Gleicher `collapse_key` heißt: Die vorhandene Benachrichtigung wird
   ersetzt bzw. aktualisiert.
 * `priority`: `info` | `normal` | `high` | `critical`.
+* `data.facts` (optional): `[{label, value}]`, höchstens 6, Text in der
+  Server-Sprache. Die Apps zeigen sie als Liste unter dem Text. Der Server
+  füllt sie für Kernereignisse, wenn er Kontext hat:
+
+  | Ereignis | Fakten |
+  |---|---|
+  | `gateway_down`, `gateway_offline` | Zuletzt gesehen, Betroffene Routen (Anzahl) |
+  | `waf_ip_banned` | IP-Adresse, Treffer, Route (Host), Port (Layer 4), Sperrdauer |
+  | `route_down` | Domain, Antwortzeit |
+  | Zertifikat läuft ab (sobald es ein Kernereignis dafür gibt) | Domain, Tage übrig |
+
+  Beim Bündeln folgt `data` dem neuesten Ereignis. Plugins dürfen eigene
+  `facts` mitgeben (gleiche Grenzen).
 * Aktionstypen (feste Liste):
 
   | Typ | Wirkung |

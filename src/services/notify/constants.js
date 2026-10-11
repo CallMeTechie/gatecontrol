@@ -35,6 +35,9 @@ const LIMITS = {
   inbox: 100,
   mutedTopics: 100,
   actions: 4,
+  facts: 6,
+  factLabel: 60,
+  factValue: 120,
   collapseKey: 120,
 };
 

@@ -108,9 +108,73 @@ function coreTitle(lang, type, name) {
   return null;
 }
 
-function coreData(lang, eventId, alarm) {
+// ─── Facts (data.facts) ─────────────────────────────────────────────────
+// Short label/value pairs with the context the server has for an event —
+// the apps show them under the text. Values in the server language like the
+// stored title; times in the server time zone.
+
+function fmtWhen(ms, lang) {
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  try {
+    return new Intl.DateTimeFormat(lang === 'en' ? 'en-GB' : 'de-DE', {
+      dateStyle: 'short', timeStyle: 'short', timeZone: router.serverTz(),
+    }).format(new Date(ms));
+  } catch { return new Date(ms).toISOString().slice(0, 16).replace('T', ' '); }
+}
+
+function gatewayFacts(lang, peerId) {
+  if (!peerId) return [];
+  const db = require('../../db/connection').getDb();
+  const out = [];
+  let seenMs = null;
+  try {
+    const meta = db.prepare('SELECT last_seen_at FROM gateway_meta WHERE peer_id = ?').get(peerId);
+    if (meta && Number(meta.last_seen_at) > 0) seenMs = Number(meta.last_seen_at);
+  } catch { /* table missing in old test databases */ }
+  if (seenMs == null) {
+    const p = db.prepare('SELECT latest_handshake FROM peers WHERE id = ?').get(peerId);
+    if (p && Number(p.latest_handshake) > 0) seenMs = Number(p.latest_handshake) * 1000;
+  }
+  const when = fmtWhen(seenMs, lang);
+  if (when) out.push({ label: text.t(lang, 'push.fact.last_seen'), value: when });
+  const routes = db.prepare('SELECT COUNT(*) AS n FROM routes WHERE enabled = 1 AND target_peer_id = ?').get(peerId).n;
+  out.push({ label: text.t(lang, 'push.fact.routes'), value: String(routes) });
+  return out;
+}
+
+/** data.facts of a core event ([] when the server knows nothing useful). */
+function coreFacts(lang, type, details, ctx) {
+  const d = details && typeof details === 'object' ? details : {};
+  const f = (key, value) => (value == null || value === '' ? null : { label: text.t(lang, `push.fact.${key}`), value: String(value) });
+  try {
+    if (type === 'gateway_down' || type === 'gateway_offline') return gatewayFacts(lang, ctx.peerId);
+    if (type === 'waf_ip_banned') {
+      return [
+        f('ip', d.ip),
+        f('hits', num(d.hits)),
+        f('route', d.host || d.domain || null),
+        f('port', num(d.port)),
+        f('duration', num(d.duration_h) ? text.t(lang, 'push.fact.hours', { count: String(num(d.duration_h)) }) : null),
+      ].filter(Boolean);
+    }
+    if (type === 'route_down') {
+      const ms = Number(d.responseTime);
+      return [f('domain', d.domain), f('response_time', Number.isFinite(ms) && ms >= 0 ? `${Math.round(ms)} ms` : null)].filter(Boolean);
+    }
+    if (type === 'cert_expiring' || type === 'tls_expiring') {
+      const days = Number(d.days_left != null ? d.days_left : d.days);
+      return [f('domain', d.domain || d.host), f('days_left', Number.isFinite(days) ? String(Math.max(0, Math.floor(days))) : null)].filter(Boolean);
+    }
+  } catch (err) {
+    logger.debug({ err: err.message, type }, 'notify: facts unavailable');
+  }
+  return [];
+}
+
+function coreData(lang, eventId, alarm, facts = null) {
   const route = ROUTE_FOR_EVENT[eventId] || 'inbox';
   const data = { route };
+  if (Array.isArray(facts) && facts.length) data.facts = facts;
   if (alarm) {
     data.actions = [
       { id: 'details', label: text.t(lang, 'push.action.details'), type: 'open_app_route', target: route },
@@ -138,7 +202,7 @@ function emitActivity(type, message, opts = {}) {
   if (rules.RECOVERY_TYPES.has(type)) return recover({ type, ev, rule, ctx, lang, title, body });
   return publish({
     eventId: ev.eventId, eventType: type, topic: ev.topic, source: 'system', priority: rule.priority,
-    title, body, data: coreData(lang, ev.eventId, ALARM_EVENTS.has(ev.eventId)), collapseKey: ctx.collapseKey,
+    title, body, data: coreData(lang, ev.eventId, ALARM_EVENTS.has(ev.eventId), coreFacts(lang, type, opts.details, ctx)), collapseKey: ctx.collapseKey,
     target: { recipients: rule.recipients },
   }, { rule, route: { recipients: rule.recipients, peerId: ctx.peerId }, emitKey: type });
 }
@@ -228,7 +292,10 @@ function bundle(prev, n, o) {
   const count = (prev.count || 1) + 1;
   const lang = text.serverLang();
   const title = sanitize.title(text.t(lang, 'push.bundle', { count: String(count), title: meta.base_title || n.title }));
-  store.updateNotification(prev.id, { count, title, body: n.body || null, updated_at: store.iso(), expires_at: expiresIso(n.ttlS) });
+  // data follows the newest event (its facts: the last banned IP, …)
+  const fields = { count, title, body: n.body || null, updated_at: store.iso(), expires_at: expiresIso(n.ttlS) };
+  if (n.data) fields.data = n.data;
+  store.updateNotification(prev.id, fields);
   publishBus(prev.id);
   if (prev.release_at) {
     remember(o.emitKey, { id: prev.id, held: true, devices: 0, rule: o.rule });
@@ -506,5 +573,5 @@ function _resetForTest() { lastEmit.clear(); }
 module.exports = {
   emitActivity, webhookAllowed, publish, claimMail, sweepEmail, releaseHeld, tick, revoke, emitPlugin,
   sendManual, sendTest, resend, onAck, markRead, syncRead, topicsForUser, writeDelivery, pushRows, licensed,
-  coreContext, coreTitle, sendMailNow, _resetForTest,
+  coreContext, coreTitle, coreFacts, sendMailNow, _resetForTest,
 };

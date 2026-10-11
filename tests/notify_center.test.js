@@ -220,6 +220,46 @@ describe('hub: core events', () => {
     assert.ok(ds.some((d) => d.token_id === adminDev.tokenId && d.state === 'queued'));
   });
 
+  it('data.facts: gateway (last seen, affected routes), WAF ban, route down', () => {
+    const db = H.db();
+    const gw = H.makeDevice(admin1, { name: 'gw-facts', app: false });
+    const seen = Date.UTC(2026, 9, 10, 19, 40);
+    db.prepare("INSERT INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, last_seen_at, created_at) VALUES (?, 9876, ?, 'x', ?, ?)")
+      .run(gw.peerId, 'h-' + gw.peerId, seen, seen);
+    for (const [i, on] of [[1, 1], [2, 1], [3, 0]]) {
+      db.prepare("INSERT INTO routes (domain, target_ip, target_port, enabled, target_peer_id) VALUES (?, '10.0.0.1', 80, ?, ?)").run(`f${i}-${gw.peerId}.example.com`, on, gw.peerId);
+    }
+    activity.log('gateway_offline', 'Gateway gw-facts went offline', { details: { peer_id: gw.peerId, peer_name: 'gw-facts' } });
+    let facts = JSON.parse(H.lastNotification().data).facts;
+    const lang = require('../src/services/notify/text').serverLang();
+    const L = (k) => require('../src/services/notify/text').t(lang, `push.fact.${k}`);
+    assert.equal(facts.length, 2);
+    assert.equal(facts[0].label, L('last_seen'));
+    assert.match(facts[0].value, /2026|26/);
+    assert.deepEqual(facts[1], { label: L('routes'), value: '2' });
+
+    H.clearNotifications();
+    activity.log('waf_ip_banned', 'IP 198.51.100.4 banned for 24 h (scanner: 12 requests)', {
+      details: { ip: '198.51.100.4', hits: 12, host: 'wiki.example.com', duration_h: 24, manual: false },
+    });
+    facts = JSON.parse(H.lastNotification().data).facts;
+    assert.deepEqual(facts.map((f) => f.value), ['198.51.100.4', '12', 'wiki.example.com', '24 h']);
+    assert.deepEqual(facts.map((f) => f.label), [L('ip'), L('hits'), L('route'), L('duration')]);
+
+    H.clearNotifications();
+    activity.log('route_down', 'Route "shop.example.com" is DOWN (5003ms)', { details: { routeId: 77, domain: 'shop.example.com', responseTime: 5003.4 } });
+    facts = JSON.parse(H.lastNotification().data).facts;
+    assert.deepEqual(facts, [{ label: L('domain'), value: 'shop.example.com' }, { label: L('response_time'), value: '5003 ms' }]);
+
+    // nothing useful → no facts key at all
+    H.clearNotifications();
+    activity.log('peer_expired', 'Peer "x" expired', { details: { peerId: gw.peerId } });
+    assert.equal('facts' in (JSON.parse(H.lastNotification().data) || {}), false);
+    // certificate expiry (no catalogue row yet): the builder is ready
+    assert.deepEqual(require('../src/services/notify/hub').coreFacts(lang, 'cert_expiring', { domain: 'a.example.com', days_left: 6.7 }, {}),
+      [{ label: L('domain'), value: 'a.example.com' }, { label: L('days_left'), value: '6' }]);
+  });
+
   it('types outside the catalogue and disabled rules create nothing', () => {
     activity.log('token_created', 'x');
     assert.equal(H.lastNotification(), null);
@@ -475,6 +515,25 @@ describe('payload sanitising', () => {
     assert.deepEqual(r.data.actions.map((a) => a.id), ['a', 'd']);
     assert.equal(S().data({ blob: 'z'.repeat(900), more: 'z'.repeat(900), x: 'z'.repeat(900), y: 'z'.repeat(900), w: 'z'.repeat(900) }).ok, false);
     assert.equal(S().data([1, 2]).ok, false);
+  });
+  it('data.facts: ≤ 6 label/value pairs, one line, 60/120 characters, junk dropped', () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({ label: `L${i}`, value: i }));
+    let r = S().data({ facts: many });
+    assert.equal(r.data.facts.length, 6);
+    assert.deepEqual(r.data.facts[0], { label: 'L0', value: '0' });
+    r = S().data({ facts: [
+      { label: 'a\nb\u0000c' + 'x'.repeat(100), value: 'v\u202e' + 'y'.repeat(300) },
+      { label: '', value: 'x' }, { label: 'x', value: '  ' }, { label: { x: 1 }, value: 'y' }, 'str', null, [1, 2],
+      { label: 'n', value: Infinity }, { label: 'ok', value: 'fine', extra: '<b>' },
+    ] });
+    assert.equal(r.data.facts.length, 2);
+    assert.equal(r.data.facts[0].label.length, 60);
+    assert.ok(!/[\n\u0000]/.test(r.data.facts[0].label));
+    assert.equal(r.data.facts[0].value.length, 120);
+    assert.ok(!r.data.facts[0].value.includes('\u202e'));
+    assert.deepEqual(r.data.facts[1], { label: 'ok', value: 'fine' });
+    assert.equal('facts' in (S().data({ route: 'inbox', facts: 'nope' }).data), false);
+    assert.equal(S().data({ facts: [] }).data, null);
   });
 });
 
