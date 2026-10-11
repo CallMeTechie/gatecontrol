@@ -38,6 +38,29 @@ function endpointHost(endpoint) {
 }
 
 /**
+ * Address the peer `peerId` is connected from right now: the host part of
+ * its current WireGuard endpoint (normalized, IPv4-mapped IPv6 → IPv4), but
+ * only while the peer is enabled and its handshake is fresh (isOnline).
+ * null otherwise and on any error. Also used by the home-network check
+ * (services/homeNetwork.js).
+ */
+async function currentEndpoint(peerId) {
+  if (peerId == null) return null;
+  try {
+    const peer = require('../peers').getById(peerId);
+    if (!peer || !peer.public_key || peer.enabled !== 1) return null;
+    const status = await require('../wireguard').getStatus();
+    if (!status || !status.running || !Array.isArray(status.peers)) return null;
+    const wg = status.peers.find((p) => p.publicKey === peer.public_key);
+    if (!wg || !wg.isOnline || !wg.endpoint) return null;
+    return normalize(endpointHost(wg.endpoint));
+  } catch (err) {
+    logger.debug({ err: err.message, peerId }, 'VPN endpoint lookup failed');
+    return null;
+  }
+}
+
+/**
  * True when the peer `peerId` is enabled, has a fresh handshake and its
  * current WireGuard endpoint is the address `ip` the request came from.
  */
@@ -45,18 +68,8 @@ async function connectedFrom(peerId, ip) {
   if (peerId == null) return false;
   const want = normalize(ip);
   if (!want) return false;
-  try {
-    const peer = require('../peers').getById(peerId);
-    if (!peer || !peer.public_key || peer.enabled !== 1) return false;
-    const status = await require('../wireguard').getStatus();
-    if (!status || !status.running) return false;
-    const wg = status.peers.find((p) => p.publicKey === peer.public_key);
-    if (!wg || !wg.isOnline || !wg.endpoint) return false;
-    return normalize(endpointHost(wg.endpoint)) === want;
-  } catch (err) {
-    logger.debug({ err: err.message, peerId }, 'push: VPN presence check failed');
-    return false;
-  }
+  const have = await currentEndpoint(peerId);
+  return have != null && have === want;
 }
 
 /** Close the VPN-gated streams of these peers (their VPN went down or they were disabled). */
@@ -79,4 +92,4 @@ function install() {
   eventBus.subscribe(onPeerEvent, (type) => type === 'peer');
 }
 
-module.exports = { connectedFrom, drop, install, endpointHost, REASON };
+module.exports = { connectedFrom, currentEndpoint, drop, install, endpointHost, REASON };

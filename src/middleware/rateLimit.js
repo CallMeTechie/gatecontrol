@@ -271,6 +271,19 @@ const portalLinkLimiter = rateLimit({
   },
 });
 
+// GET /api/v1/client/home-network — the apps ask on network changes
+// (trusted-network detection); 30 per minute and device.
+const homeNetworkLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.tokenAuth ? `home-net:${req.tokenId}` : `home-net:${ipKeyGenerator(req.ip)}`),
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'rate_limited' });
+  },
+});
+
 // Push stream of the apps (GET /api/v1/client/push, notification center):
 // connects and reconnects only. Mounted AFTER token authentication and keyed
 // by the authenticated token id (requests without a valid token never get
@@ -356,5 +369,5 @@ const pluginPageLimiter = rateLimit({
 });
 
 module.exports = { pluginApiLimiter, pluginPageLimiter, loginLimiter, twoFactorSetupLimiter, passkeyLoginLimiter, passkeyManageLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayAuthLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter,
-  eventStreamLimiter, portalApiLimiter, portalPageLimiter, portalPinLimiter, portalLinkLimiter, portalPinSetLimiter,
+  eventStreamLimiter, portalApiLimiter, portalPageLimiter, portalPinLimiter, portalLinkLimiter, portalPinSetLimiter, homeNetworkLimiter,
   pushStreamLimiter, pushTestLimiter, notifySendLimiter };
