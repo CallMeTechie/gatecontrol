@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.155.0] — 2026-10-11
+
+### Features
+- admin page for the notification center (#283)
+
+---
+
 ## [1.154.0] — 2026-10-10
 
 ### Features
