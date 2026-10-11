@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.157.2] — 2026-10-11
+
+### Fixes
+- devices with the app but push switched off are no longer "keine GateControl-App" (#287)
+
+---
+
 ## [1.157.1] — 2026-10-11
 
 ### Fixes
