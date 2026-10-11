@@ -258,6 +258,9 @@ const pages = [
   // no licence gate; the sidebar item (activeNav 'security') comes from strand B4.
   { path: '/security', template: 'security', titleKey: 'security.page_title' },
   { path: '/logs', template: 'logs', titleKey: 'nav.logs' },
+  // Notification centre (docs/feature-notification-center.md, "Portal und
+  // Admin-Oberfläche"): five tabs, all data from /api/v1/notify/* at runtime.
+  { path: '/notifications', template: 'notifications', titleKey: 'nav.notifications' },
   { path: '/profile', template: 'profile', titleKey: 'profile.title', member: true },
   { path: '/settings', template: 'settings', titleKey: 'nav.settings' },
   { path: '/rdp', template: 'rdp', titleKey: 'nav.rdp' },
@@ -284,6 +287,10 @@ for (const [path, pluginId, sub] of MOVED_PAGES) {
     res.redirect(require('../services/plugins/legacy').movedPage(pluginId, sub));
   });
 }
+
+// Notification centre page: notify.* plus the common strings its script reads
+// (notifications.njk island data-prefixes must list the same ones).
+const NOTIFY_I18N_PREFIXES = ['notify.', 'common.'];
 
 // Strings the users page hands to its script (JSON island, like the
 // settings page).
@@ -344,6 +351,19 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
       try {
         extraLocals.l4BlockedPorts = require('../../config/default').l4.blockedPorts;
       } catch { extraLocals.l4BlockedPorts = []; }
+    }
+
+    if (template === 'notifications') {
+      extraLocals.notifyI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, NOTIFY_I18N_PREFIXES))
+        .replace(/</g, '\\u003c');
+      // Licence of the Pro parts (own recipients, "Nachricht senden", plugin
+      // topics); the rules API repeats it as `pro` and wins once loaded.
+      extraLocals.notifyPro = hasFeature('email_alerts');
+      // Events whose e-mail stays free without that licence (CATALOGUE `free`).
+      try {
+        extraLocals.notifyFree = JSON.stringify(require('../services/notifications').CATALOGUE
+          .flatMap((g) => g.events.filter((e) => e.free).map((e) => e.id))).replace(/</g, '\\u003c');
+      } catch { extraLocals.notifyFree = '[]'; }
     }
 
     if (template === 'users') {

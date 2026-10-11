@@ -1,0 +1,338 @@
+{% extends theme + "/layout.njk" %}
+
+{#- Notification centre (docs/feature-notification-center.md, "Portal und
+    Admin-Oberfläche"): System › Benachrichtigungen with five tabs —
+    Übersicht, Regeln (table + editor), Geräte (presence + "Nachricht
+    senden" with a phone preview), Verlauf (filters + delivery log) and
+    Einstellungen. Static shell only; every value comes from /api/v1/notify/*
+    at runtime (public/js/notifications.js, el() only — no innerHTML).
+    Address: /notifications#rules, #rules/<event_id>, #devices, #history,
+    #history/<id>, #settings. Strings: the #nc-i18n island
+    (routes/index.js NOTIFY_I18N_PREFIXES). Styles: §10 of public/css/app.css.
+    Pro parts (own recipients, "Nachricht senden", plugin topics, e-mail of
+    non-free events) hang on the licence feature email_alerts. Ranges of the
+    settings tab = services/notify/config.js RANGES. -#}
+
+{%- macro numRow(id, field, label, hint, unit, min, max) -%}
+<div class="st-row" data-nc-row="{{ field }}">
+  <div class="st-row-text">
+    <label class="st-label" for="{{ id }}">{{ label }}</label>
+    {%- if hint %}<span class="st-hint" id="{{ id }}-hint">{{ hint }}</span>{% endif %}
+    <span class="st-err" id="{{ id }}-err" role="alert" hidden></span>
+  </div>
+  <div class="st-row-ctl">
+    <input type="number" class="st-input st-input-num" id="{{ id }}" data-nc-field="{{ field }}" min="{{ min }}" max="{{ max }}" step="1"
+      inputmode="numeric" autocomplete="off" aria-describedby="{% if hint %}{{ id }}-hint {% endif %}{{ id }}-err">
+    <span class="st-unit">{{ unit }}</span>
+  </div>
+</div>
+{%- endmacro -%}
+
+{%- macro switchRow(id, field, label, hint) -%}
+<div class="st-row" data-nc-row="{{ field }}">
+  <div class="st-row-text">
+    <label class="st-label" for="{{ id }}" id="{{ id }}-label">{{ label }}</label>
+    <span class="st-hint" id="{{ id }}-hint">{{ hint }}</span>
+    <span class="st-err" id="{{ id }}-err" role="alert" hidden></span>
+  </div>
+  <div class="st-row-ctl">
+    <button type="button" class="st-switch" role="switch" aria-checked="false" id="{{ id }}" data-nc-field="{{ field }}"
+      aria-describedby="{{ id }}-hint {{ id }}-err"><span class="st-knob" aria-hidden="true"></span></button>
+  </div>
+</div>
+{%- endmacro -%}
+
+{% set pro = notifyPro %}
+{% set tabs = [['overview', 'notify.tab.overview'], ['rules', 'notify.tab.rules'], ['devices', 'notify.tab.devices'], ['history', 'notify.tab.history'], ['settings', 'notify.tab.settings']] %}
+
+{% block content %}
+<div class="nc-page" id="nc-page" data-pro="{{ '1' if pro else '0' }}">
+
+  <div class="page-header nc-header">
+    <div class="nc-header-text">
+      <div class="page-eyebrow">{{ t('nav.system') }}</div>
+      <h1 class="page-title">{{ t('notify.title') }}</h1>
+      <p class="page-sub" id="nc-sub">{{ t('notify.sub.overview') }}</p>
+    </div>
+    <div class="page-actions nc-header-actions">
+      <button type="button" class="btn" id="nc-test-me">{{ t('notify.test_me') }}</button>
+      <button type="button" class="btn btn-primary" id="nc-compose">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+        {{ t('notify.compose') }}{% if not pro %} <span class="st-pro nc-pro">{{ t('notify.pro') }}</span>{% endif %}
+      </button>
+    </div>
+  </div>
+
+  <div class="tabs nc-tabs" id="nc-tabs" role="tablist" aria-label="{{ t('notify.tabs_label') }}">
+    {%- for tb in tabs %}
+    <button type="button" class="tab{{ ' active' if loop.first }}" id="nc-tab-{{ tb[0] }}" role="tab" aria-selected="{{ 'true' if loop.first else 'false' }}"
+      aria-controls="nc-panel-{{ tb[0] }}" data-nc-tab="{{ tb[0] }}"{% if not loop.first %} tabindex="-1"{% endif %}>{{ t(tb[1]) }}</button>
+    {%- endfor %}
+  </div>
+
+  {# ── Übersicht ─────────────────────────────────────────────────────── #}
+  <section class="nc-panel" id="nc-panel-overview" role="tabpanel" aria-labelledby="nc-tab-overview" data-nc-panel="overview">
+    <div class="nc-state" id="nc-ov-state" role="status" hidden></div>
+    <div class="nc-kpis" id="nc-kpis" role="group" aria-label="{{ t('notify.kpi_label') }}">
+      {%- for k in [['devices', 'notify.kpi.devices'], ['delivered', 'notify.kpi.delivered'], ['queued', 'notify.kpi.queued'], ['failed', 'notify.kpi.failed'], ['latency', 'notify.kpi.latency']] %}
+      <div class="nc-kpi" id="nc-kpi-{{ k[0] }}" data-kpi="{{ k[0] }}">
+        <span class="nc-kpi-label">{{ t(k[1]) }}</span>
+        <span class="nc-kpi-val" id="nc-kpi-{{ k[0] }}-val">–</span>
+        <span class="nc-kpi-sub" id="nc-kpi-{{ k[0] }}-sub"></span>
+      </div>
+      {%- endfor %}
+    </div>
+
+    <div class="nc-ov-grid">
+      <section class="nc-card nc-recent" aria-labelledby="nc-h-recent">
+        <div class="nc-card-head">
+          <h2 class="nc-card-title" id="nc-h-recent">{{ t('notify.recent_title') }}</h2>
+          <a class="nc-link" href="#history" id="nc-recent-all">{{ t('notify.recent_all') }}</a>
+        </div>
+        <ul class="nc-recent-list" id="nc-recent-list" aria-labelledby="nc-h-recent">
+          <li class="nc-empty">{{ t('common.loading') }}</li>
+        </ul>
+      </section>
+
+      <div class="nc-ov-side">
+        <section class="nc-card nc-pad" aria-labelledby="nc-h-hub">
+          <div class="nc-card-head nc-card-head-tight">
+            <h2 class="nc-card-title" id="nc-h-hub">{{ t('notify.hub_title') }}</h2>
+            <span class="nc-pill" id="nc-hub-state" data-tone="muted">–</span>
+          </div>
+          <dl class="nc-dl" id="nc-hub"></dl>
+        </section>
+
+        <section class="nc-card nc-pad nc-sources-card" aria-labelledby="nc-h-src">
+          <h2 class="nc-card-title" id="nc-h-src">{{ t('notify.sources_title') }}</h2>
+          <div class="nc-bars" id="nc-sources"></div>
+          {%- set note = t('notify.plugins_note').split('{{fn}}') %}
+          <p class="nc-callout">{{ note[0] }}<code class="nc-mono">gc.notify()</code>{{ note[1] }}</p>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  {# ── Regeln ────────────────────────────────────────────────────────── #}
+  <section class="nc-panel" id="nc-panel-rules" role="tabpanel" aria-labelledby="nc-tab-rules" data-nc-panel="rules" hidden>
+    <div class="nc-split">
+      <section class="nc-card nc-main" aria-label="{{ t('notify.rules_label') }}">
+        <div class="nc-toolbar">
+          <label class="nc-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <span class="nc-sr">{{ t('notify.rules.search') }}</span>
+            <input type="search" id="nc-rule-search" placeholder="{{ t('notify.rules.search_ph') }}" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="nc-sr" for="nc-rule-group">{{ t('notify.rules.source') }}</label>
+          <select class="form-select nc-select" id="nc-rule-group">
+            <option value="">{{ t('notify.rules.all_sources') }}</option>
+            {%- for g in ['security', 'peers', 'routes', 'system', 'plugins'] %}
+            <option value="{{ g }}">{{ t('notify.group.' + g) }}</option>
+            {%- endfor %}
+          </select>
+        </div>
+        <div class="nc-state" id="nc-rules-state" role="status" hidden></div>
+        <div class="nc-table-wrap" tabindex="0" role="region" aria-label="{{ t('notify.rules_label') }}">
+          <table class="nc-table nc-rules-table" id="nc-rules-table">
+            <thead>
+              <tr>
+                <th scope="col">{{ t('notify.rules.col_event') }}</th>
+                <th scope="col">{{ t('notify.rules.col_priority') }}</th>
+                <th scope="col">{{ t('notify.rules.col_recipients') }}</th>
+                <th scope="col" class="nc-c">{{ t('notify.rules.col_app') }}</th>
+                <th scope="col" class="nc-c">{{ t('notify.rules.col_email') }}</th>
+                <th scope="col" class="nc-c">{{ t('notify.rules.col_webhook') }}</th>
+              </tr>
+            </thead>
+            <tbody id="nc-rules-body">
+              <tr class="nc-empty-row"><td colspan="6">{{ t('common.loading') }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <aside class="nc-card nc-aside nc-aside-accent" id="nc-rule-editor" aria-labelledby="nc-ed-title" hidden></aside>
+      <aside class="nc-card nc-aside nc-aside-hint" id="nc-rule-hint">
+        <p>{{ t('notify.rules.pick') }}</p>
+      </aside>
+    </div>
+  </section>
+
+  {# ── Geräte ────────────────────────────────────────────────────────── #}
+  <section class="nc-panel" id="nc-panel-devices" role="tabpanel" aria-labelledby="nc-tab-devices" data-nc-panel="devices" hidden>
+    <div class="nc-split">
+      <section class="nc-card nc-main" aria-labelledby="nc-h-dev">
+        <div class="nc-card-head">
+          <h2 class="nc-card-title" id="nc-h-dev">{{ t('notify.dev.title') }}</h2>
+          <span class="nc-live"><span class="nc-live-dot" aria-hidden="true"></span>{{ t('notify.dev.live') }}</span>
+        </div>
+        <div class="nc-state" id="nc-dev-state" role="status" hidden></div>
+        <div class="nc-table-wrap" tabindex="0" role="region" aria-labelledby="nc-h-dev">
+          <table class="nc-table nc-dev-table" id="nc-dev-table">
+            <thead>
+              <tr>
+                <th scope="col">{{ t('notify.dev.col_device') }}</th>
+                <th scope="col">{{ t('notify.dev.col_conn') }}</th>
+                <th scope="col" class="nc-c">{{ t('notify.dev.col_queued') }}</th>
+                <th scope="col">{{ t('notify.dev.col_ack') }}</th>
+                <th scope="col"><span class="nc-sr">{{ t('notify.dev.col_actions') }}</span></th>
+              </tr>
+            </thead>
+            <tbody id="nc-dev-body">
+              <tr class="nc-empty-row"><td colspan="5">{{ t('common.loading') }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <aside class="nc-card nc-aside nc-send" id="nc-send" aria-labelledby="nc-h-send">
+        <h2 class="nc-card-title" id="nc-h-send">{{ t('notify.send.title') }}{% if not pro %} <span class="st-pro nc-pro">{{ t('notify.pro') }}</span>{% endif %}</h2>
+        <div class="nc-lock" id="nc-send-lock"{% if pro %} hidden{% endif %}>
+          <p class="nc-hint">{{ t('notify.locked_hint') }}</p>
+          <div data-license-hint="email_alerts" data-license-hint-compact></div>
+        </div>
+        <form class="nc-form" id="nc-send-form" novalidate>
+          <fieldset class="nc-fieldset" id="nc-send-fields"{% if not pro %} disabled{% endif %}>
+            <div class="nc-field">
+              <span class="nc-label" id="nc-send-to-label">{{ t('notify.send.to') }}</span>
+              <div class="nc-seg" id="nc-send-target" role="group" aria-labelledby="nc-send-to-label">
+                {%- for tg in ['all', 'users', 'groups', 'devices'] %}
+                <button type="button" class="nc-seg-btn" data-target="{{ tg }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ t('notify.send.target.' + tg) }}</button>
+                {%- endfor %}
+              </div>
+              <div class="nc-chips" id="nc-send-chips" role="list" hidden></div>
+              <label class="nc-sr" for="nc-send-pick" id="nc-send-pick-label">{{ t('notify.rcpt.add_label') }}</label>
+              <select class="form-select nc-select nc-pick" id="nc-send-pick" hidden></select>
+            </div>
+            <div class="nc-field">
+              <label class="nc-label" for="nc-send-title">{{ t('notify.send.msg_title') }}</label>
+              <input type="text" class="form-input" id="nc-send-title" maxlength="120" autocomplete="off" aria-describedby="nc-send-err">
+            </div>
+            <div class="nc-field">
+              <label class="nc-label" for="nc-send-body">{{ t('notify.send.msg_body') }}</label>
+              <textarea class="form-textarea" id="nc-send-body" rows="3" maxlength="1000"></textarea>
+            </div>
+            <div class="nc-field-row">
+              <div class="nc-field">
+                <label class="nc-label" for="nc-send-prio">{{ t('notify.send.priority') }}</label>
+                <select class="form-select" id="nc-send-prio">
+                  {%- for p in ['info', 'normal', 'high', 'critical'] %}
+                  <option value="{{ p }}"{% if p == 'normal' %} selected{% endif %}>{{ t('notify.prio.' + p) }}</option>
+                  {%- endfor %}
+                </select>
+              </div>
+              <div class="nc-field">
+                <label class="nc-label" for="nc-send-ttl">{{ t('notify.send.ttl') }}</label>
+                <select class="form-select" id="nc-send-ttl"></select>
+              </div>
+            </div>
+            <div class="nc-field">
+              <span class="nc-label" id="nc-preview-label">{{ t('notify.send.preview') }}</span>
+              <div class="nc-phone" role="img" aria-labelledby="nc-preview-label nc-pv-title nc-pv-body">
+                <span class="nc-phone-ic" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-4Z"/><path d="m8.5 12 2.5 2.5L16 9"/></svg>
+                </span>
+                <span class="nc-phone-text">
+                  <span class="nc-phone-app" id="nc-pv-app"></span>
+                  <b class="nc-phone-title" id="nc-pv-title"></b>
+                  <span class="nc-phone-body" id="nc-pv-body"></span>
+                </span>
+              </div>
+            </div>
+            <p class="nc-hint" id="nc-send-reach" aria-live="polite"></p>
+            <p class="st-err" id="nc-send-err" role="alert" hidden></p>
+            <button type="submit" class="btn btn-primary nc-send-btn" id="nc-send-btn"></button>
+          </fieldset>
+        </form>
+      </aside>
+    </div>
+  </section>
+
+  {# ── Verlauf ───────────────────────────────────────────────────────── #}
+  <section class="nc-panel" id="nc-panel-history" role="tabpanel" aria-labelledby="nc-tab-history" data-nc-panel="history" hidden>
+    <div class="nc-filters">
+      <div class="filter-chips nc-chips-row" id="nc-hist-filters" role="group" aria-label="{{ t('notify.hist.filters') }}">
+        {%- for f in ['all', 'important', 'undelivered', 'plugins', 'manual'] %}
+        <button type="button" class="filter-chip{{ ' on' if loop.first }}" data-filter="{{ f }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ t('notify.hist.f.' + f) }}</button>
+        {%- endfor %}
+      </div>
+      <label class="nc-sr" for="nc-hist-days">{{ t('notify.hist.range') }}</label>
+      <select class="form-select nc-select" id="nc-hist-days">
+        <option value="1">{{ t('notify.hist.days_1') }}</option>
+        <option value="7" selected>{{ t('notify.hist.days_7') }}</option>
+        <option value="30">{{ t('notify.hist.days_30') }}</option>
+      </select>
+    </div>
+    <div class="nc-split">
+      <section class="nc-card nc-main" aria-label="{{ t('notify.hist.list_label') }}">
+        <div class="nc-state" id="nc-hist-state" role="status" hidden></div>
+        <div class="nc-table-wrap" tabindex="0" role="region" aria-label="{{ t('notify.hist.list_label') }}">
+          <table class="nc-table nc-hist-table" id="nc-hist-table">
+            <thead>
+              <tr>
+                <th scope="col">{{ t('notify.hist.col_time') }}</th>
+                <th scope="col">{{ t('notify.hist.col_msg') }}</th>
+                <th scope="col">{{ t('notify.hist.col_source') }}</th>
+                <th scope="col">{{ t('notify.hist.col_status') }}</th>
+              </tr>
+            </thead>
+            <tbody id="nc-hist-body">
+              <tr class="nc-empty-row"><td colspan="4">{{ t('common.loading') }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="nc-more">
+          <button type="button" class="btn btn-sm" id="nc-hist-more" hidden>{{ t('notify.hist.more') }}</button>
+        </div>
+      </section>
+      <aside class="nc-card nc-aside nc-aside-accent" id="nc-proto" aria-labelledby="nc-proto-title" hidden></aside>
+      <aside class="nc-card nc-aside nc-aside-hint" id="nc-proto-hint">
+        <p>{{ t('notify.hist.pick') }}</p>
+      </aside>
+    </div>
+  </section>
+
+  {# ── Einstellungen ─────────────────────────────────────────────────── #}
+  <section class="nc-panel nc-settings" id="nc-panel-settings" role="tabpanel" aria-labelledby="nc-tab-settings" data-nc-panel="settings" hidden>
+    <div class="nc-state" id="nc-set-state" role="status" hidden></div>
+    <form class="nc-set-form" id="nc-set-form" novalidate>
+      <section class="st-card" aria-labelledby="nc-h-set-push">
+        <div class="st-card-head"><div class="st-card-headtext">
+          <h2 class="st-card-title" id="nc-h-set-push">{{ t('notify.set.push_title') }}</h2>
+          <p class="st-card-desc">{{ t('notify.set.push_desc') }}</p>
+        </div></div>
+        {{ switchRow('nc-set-enabled', 'enabled', t('notify.set.enabled'), t('notify.set.enabled_hint')) }}
+        {{ switchRow('nc-set-direct', 'allow_direct', t('notify.set.allow_direct'), t('notify.set.allow_direct_hint')) }}
+        {{ numRow('nc-set-keepalive', 'keepalive_s', t('notify.set.keepalive'), t('notify.set.keepalive_hint'), t('notify.unit.s'), 10, 300) }}
+        {{ numRow('nc-set-streams', 'max_streams', t('notify.set.max_streams'), t('notify.set.max_streams_hint'), t('notify.unit.conns'), 1, 10000) }}
+      </section>
+      <section class="st-card" aria-labelledby="nc-h-set-store">
+        <div class="st-card-head"><div class="st-card-headtext">
+          <h2 class="st-card-title" id="nc-h-set-store">{{ t('notify.set.store_title') }}</h2>
+        </div></div>
+        {{ numRow('nc-set-retention', 'retention_h', t('notify.set.retention_h'), t('notify.set.retention_h_hint'), t('notify.unit.h'), 1, 720) }}
+        {{ numRow('nc-set-queue', 'max_queue', t('notify.set.max_queue'), t('notify.set.max_queue_hint'), t('notify.unit.msgs'), 10, 1000) }}
+        {{ numRow('nc-set-history', 'history_days', t('notify.set.history_days'), t('notify.set.history_days_hint'), t('notify.unit.days'), 1, 365) }}
+      </section>
+      <section class="st-card" aria-labelledby="nc-h-set-mail">
+        <div class="st-card-head"><div class="st-card-headtext">
+          <h2 class="st-card-title" id="nc-h-set-mail">{{ t('notify.set.email_title') }}</h2>
+        </div></div>
+        {{ numRow('nc-set-fallback', 'email_fallback_s', t('notify.set.email_fallback'), t('notify.set.email_fallback_hint'), t('notify.unit.s'), 0, 86400) }}
+        <div class="st-note st-note-row"><span>{{ t('notify.set.email_note') }}</span><a class="st-btn st-btn-sm" href="/settings#email">{{ t('notify.set.email_link') }}</a></div>
+      </section>
+      <div class="nc-savebar" id="nc-set-bar">
+        <span class="nc-hint" id="nc-set-dirty" hidden>{{ t('notify.set.unsaved') }}</span>
+        <button type="button" class="btn btn-ghost" id="nc-set-discard" disabled>{{ t('notify.set.discard') }}</button>
+        <button type="submit" class="btn btn-primary" id="nc-set-save" disabled>{{ t('notify.set.save') }}</button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<script type="application/json" id="nc-i18n" data-prefixes="notify. common." nonce="{{ cspNonce }}">{{ notifyI18n | default('{}') | safe }}</script>
+<script type="application/json" id="nc-ctx" nonce="{{ cspNonce }}">{"pro": {{ ('true' if pro else 'false') | safe }}, "lang": {{ language | dump | safe }}, "self": {{ (user.id if user else 0) | dump | safe }}, "free": {{ notifyFree | default('[]') | safe }}}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/notifications.js?v={{ appVersion }}"></script>
+{% endblock %}

@@ -38,7 +38,6 @@
   try { FEATURES = JSON.parse(page.dataset.features || '{}'); } catch (_) { FEATURES = {}; }
   let CATALOGUE = [];
   try { CATALOGUE = JSON.parse(document.getElementById('st-catalogue').textContent || '[]'); } catch (_) { CATALOGUE = []; }
-  const ROWS = U.allRows(CATALOGUE);
 
   // ── Small helpers ──
   const $ = (id) => document.getElementById(id);
@@ -1045,46 +1044,14 @@
   });
 
   // ── Benachrichtigungen ──
-  const matrixBody = $('st-matrix-body');
-  const mailBoxes = {};
-  const hookCells = {};
-  (function buildMatrix() {
-    CATALOGUE.forEach((g) => {
-      matrixBody.appendChild(el('tr', { class: 'st-mx-group' }, [el('th', { scope: 'rowgroup', colspan: '3', text: t('st.egroup.' + g.id) })]));
-      g.events.forEach((ev) => {
-        const label = t('st.event.' + ev.id);
-        const locked = !FEATURES.email_alerts && !ev.free;
-        const cb = el('input', { type: 'checkbox', class: 'st-cb', 'data-event': ev.id, 'aria-label': t('st.notify.by_mail', { event: label }), disabled: locked, title: locked ? t('st.err.license') : null });
-        mailBoxes[ev.id] = cb;
-        const hooks = el('span', { class: 'st-mx-hooks', text: '—' });
-        hookCells[ev.id] = hooks;
-        matrixBody.appendChild(el('tr', { 'data-event-row': ev.id }, [
-          el('td', { text: label }),
-          el('td', { class: 'st-mx-c' }, [cb]),
-          el('td', { class: 'st-mx-c' }, [hooks]),
-        ]));
-      });
-    });
-  })();
-  CUSTOM['al-events'] = {
-    get: () => ROWS.filter((r) => mailBoxes[r.id] && mailBoxes[r.id].checked).map((r) => r.id),
-    set: (ids) => { const s = new Set(ids || []); ROWS.forEach((r) => { if (mailBoxes[r.id]) mailBoxes[r.id].checked = s.has(r.id); }); },
-  };
-  function renderHookCounts(hooks) {
-    ROWS.forEach((r) => {
-      const n = U.hooksForRow(r, hooks);
-      const cell = hookCells[r.id];
-      if (!cell) return;
-      cell.textContent = n ? String(n) : '—';
-      cell.setAttribute('aria-label', tp('st.notify.hooks_n', n, { event: t('st.event.' + r.id) }));
-      cell.dataset.on = n ? '1' : '0';
-    });
-  }
-  const ALERT_MAP = { email: 'al-email', events: 'al-events', backup_reminder_days: 'al-backup', resource_cpu_threshold: 'al-cpu', resource_ram_threshold: 'al-ram', resource_disk_threshold: 'al-disk' };
+  // Recipient + monitoring checks. The event matrix (e-mail per event, webhook
+  // counts) moved into the rules of the notification centre (/notifications,
+  // docs/feature-notification-center.md); this section only links there, so
+  // `events` is neither shown nor sent from here any more.
+  const ALERT_MAP = { email: 'al-email', backup_reminder_days: 'al-backup', resource_cpu_threshold: 'al-cpu', resource_ram_threshold: 'al-ram', resource_disk_threshold: 'al-disk' };
   SECTIONS.benachrichtigungen = {
     async load() {
-      const [r, hooks] = await Promise.all([get('/api/v1/settings/alerts'), get('/api/v1/webhooks')]);
-      renderHookCounts((hooks.ok && hooks.webhooks) || []);
+      const r = await get('/api/v1/settings/alerts');
       if (!r.ok) return;
       const d = r.data;
       const note = $('st-al-smtp');
@@ -1096,13 +1063,13 @@
       }
       note.classList.toggle('st-note-warn', !(d.smtp && d.smtp.configured));
       fill('benachrichtigungen', {
-        'al-email': d.email || '', 'al-events': d.events || [], 'al-backup': d.backup_reminder_days,
+        'al-email': d.email || '', 'al-backup': d.backup_reminder_days,
         'al-cpu': d.resource_cpu_threshold, 'al-ram': d.resource_ram_threshold, 'al-disk': d.resource_disk_threshold,
       });
     },
     validate(v, d) { return d.includes('al-email') && !U.recipientsOk(v['al-email']) ? { 'al-email': t('error.settings.recipient_invalid') } : {}; },
     groups: [{
-      fields: Object.values(ALERT_MAP), map: Object.assign({ email_events: 'al-events' }, ALERT_MAP),
+      fields: Object.values(ALERT_MAP), map: ALERT_MAP,
       save: (v, d) => api.put('/api/v1/settings/alerts', U.pickDirty(ALERT_MAP, v, d, (val, f) => (f === 'al-email' ? String(val).trim() : val))),
     }],
   };
