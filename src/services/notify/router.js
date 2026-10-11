@@ -139,6 +139,18 @@ function userPrefs(userId) {
   return getDb().prepare('SELECT * FROM notify_user_prefs WHERE user_id = ?').get(userId) || null;
 }
 
+/**
+ * Quiet hours of a person as the devices see them (SSE `hello`, GET
+ * /client/push/prefs): { from, to, tz, critical_bypass } or null when none
+ * are set (or from = to, which never applies).
+ */
+function quietOf(userId) {
+  if (userId == null) return null;
+  const p = userPrefs(userId);
+  if (!p || !HHMM_RE.test(p.quiet_from || '') || !HHMM_RE.test(p.quiet_to || '') || p.quiet_from === p.quiet_to) return null;
+  return { from: p.quiet_from, to: p.quiet_to, tz: validTz(p.tz) ? p.tz : serverTz(), critical_bypass: p.critical_bypass !== 0 };
+}
+
 // ─── Resolution ─────────────────────────────────────────────────────────
 
 /**
@@ -222,5 +234,5 @@ function tokenAlive(tokenId) {
 module.exports = {
   resolve, tokenAlive, adminIds, isAdmin, subscriberIds, ownerOf, topicOn, topicDefault, subscriptionOf,
   devicesOfUsers, devicesInGroups, devicesByIds, allDevices, isPushDevice,
-  inQuietHours, localMinutes, validTz, serverTz, userPrefs, HHMM_RE,
+  inQuietHours, localMinutes, validTz, serverTz, userPrefs, quietOf, HHMM_RE,
 };

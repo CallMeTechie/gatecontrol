@@ -8,6 +8,8 @@
  *                                     before the apiLimiter, own limiter per token)
  *   POST /api/v1/client/push/ack      { seqs, state, action? } → { ok }
  *   GET  /api/v1/client/push/inbox    ?limit&before → { items, unread }
+ *   GET  /api/v1/client/push/prefs    → { ok, enabled, mode, muted_topics, restricted,
+ *                                         quiet: { from, to, tz, critical_bypass } | null }
  *   PUT  /api/v1/client/push/prefs    { enabled, mode, muted_topics, restricted } → { ok }
  *   POST /api/v1/client/push/test     → { ok, seq }   (≤ 5/min)
  *
@@ -119,6 +121,7 @@ function streamHandler(req, res) {
     via,
     unread: store.unreadCount(tokenId),
     topics: hub.topicsForUser(userId, text.userLang(userId)),
+    quiet: pushRouter.quietOf(userId),
   });
   for (const row of store.pendingForToken(tokenId, since)) {
     if (!hub.writeDelivery(conn, row.seq)) break;
@@ -182,6 +185,24 @@ router.get('/push/inbox', (req, res) => {
   const before = /^\d{1,15}$/.test(String(req.query.before || '')) ? Number(req.query.before) : null;
   res.set('Cache-Control', 'no-store');
   res.json({ ok: true, items: store.inbox(req.tokenId, { limit, before }), unread: store.unreadCount(req.tokenId) });
+});
+
+// ─── GET /api/v1/client/push/prefs ──────────────────────────────────────
+// What the server holds for this device (as last sent with PUT) plus the
+// quiet hours of its person (set in the portal) — read-only, records nothing.
+
+router.get('/push/prefs', (req, res) => {
+  if (!guard(req, res)) return;
+  const cur = store.devicePrefs(req.tokenId);
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    ok: true,
+    enabled: !cur || cur.enabled !== 0,
+    mode: (cur && cur.mode) || null,
+    muted_topics: (cur && Array.isArray(cur.muted_topics)) ? cur.muted_topics : [],
+    restricted: !!cur && cur.restricted === 1,
+    quiet: pushRouter.quietOf(req.tokenUserId == null ? null : req.tokenUserId),
+  });
 });
 
 // ─── PUT /api/v1/client/push/prefs ──────────────────────────────────────

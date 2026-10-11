@@ -186,6 +186,7 @@ CREATE TABLE IF NOT EXISTS notify_device_prefs (   -- vom Gerät gemeldet
 | GET | `/api/v1/client/push` | SSE-Stream. Ereignisse `hello` (Server-Zeit, Keepalive, Themenliste), `notification`, `read` (Gelesen-Abgleich), `revoke` (zurückgezogen), `policy` / `support_bundle` (Phase 5). Wiederaufnahme über `Last-Event-ID`. |
 | POST | `/api/v1/client/push/ack` | `{seqs:[…], state:'delivered'│'read'│'dismissed', action?}` |
 | GET | `/api/v1/client/push/inbox` | Posteingang (letzte 100), für den App-Bildschirm „Mitteilungen“ |
+| GET | `/api/v1/client/push/prefs` | gespeicherte Geräte-Einstellungen plus Ruhezeiten der Person |
 | PUT | `/api/v1/client/push/prefs` | Geräte-Einstellungen: an/aus, Modus, abgewählte Themen, Akku-Status |
 | POST | `/api/v1/client/push/test` | Testnachricht an dieses Gerät |
 
@@ -536,6 +537,9 @@ Alle Geräte-Routen verwenden Token-Auth wie die übrigen `/api/v1/client/*`:
 * Alle JSON-Antworten der REST-Routen tragen zusätzlich `"ok": true|false`.
 * `hello.topics` enthält für Admins zusätzlich `system`; Plugin-Themen nur mit
   der Lizenz `email_alerts`.
+* `hello.quiet`: die Ruhezeiten der Person, wie bei
+  `GET /api/v1/client/push/prefs`, oder `null`. Zusätzliches Feld; ältere
+  Clients ignorieren es.
 * Pro Token gibt es genau einen Stream; ein neuer beendet den alten.
 
 Ereignisse:
@@ -544,6 +548,7 @@ Ereignisse:
 event: hello
 data: {"server_time":"2026-10-10T21:42:03.120Z","keepalive_s":25,"retention_h":72,
        "via":"direct","unread":3,
+       "quiet":{"from":"22:00","to":"07:00","tz":"Europe/Berlin","critical_bypass":true},
        "topics":[{"id":"security","label":"Sicherheit"},{"id":"devices","label":"Geräte & Gateways"},
                  {"id":"services","label":"Dienste"},{"id":"admin_notice","label":"Hinweise vom Admin"},
                  {"id":"plugin:skoda:charging","label":"Fahrzeug · Laden abgeschlossen"}]}
@@ -599,6 +604,19 @@ Dazu gelten diese Regeln:
 * Antwort: `{"items":[<notification wie oben> + "state":"delivered"|"read"|"dismissed"],"unread":3}`.
 * Sortiert neueste zuerst; abgelaufene und zurückgezogene Nachrichten sind
   nicht enthalten. Noch nicht bestätigte Einträge erscheinen als `delivered`.
+
+### `GET /api/v1/client/push/prefs`
+
+* Antwort: `{"ok":true,"enabled":true,"mode":"always"|"vpn_only"|null,"muted_topics":["services"],"restricted":false,
+  "quiet":{"from":"22:00","to":"07:00","tz":"Europe/Berlin","critical_bypass":true}}`.
+* `enabled`, `mode`, `muted_topics`, `restricted`: was das Gerät zuletzt mit
+  `PUT` gemeldet hat (ohne Eintrag: `true`, `null`, `[]`, `false`).
+* `quiet`: Ruhezeiten der Person des Tokens (im Portal eingestellt) oder
+  `null`, wenn keine gesetzt sind (oder `from` = `to`). `from`/`to` sind
+  `HH:MM` in der Zeitzone `tz` (IANA; ohne eigene Angabe die des Servers).
+  `critical_bypass:true` heißt: Kritisches kommt trotzdem mit Ton. Die
+  Ruhezeit wendet der Server an (`silent:true`); die Apps zeigen sie nur an.
+* Liest nur, schreibt nichts (kein Eintrag als Push-Gerät).
 
 ### `PUT /api/v1/client/push/prefs`
 
