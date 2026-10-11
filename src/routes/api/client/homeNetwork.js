@@ -3,16 +3,17 @@
 /**
  * GET /api/v1/client/home-network — trusted-network detection of the apps
  * ("VPN off in a trusted network"), the mode that needs no location
- * permission: "the device is in the server's own home LAN". Called through
- * the normal path (public hostname), with the VPN up or down.
+ * permission: "the device is in the server's own home LAN". The app asks
+ * through the normal path (public hostname) with the VPN up.
  *
  *   200 { ok: true, lan: ["192.168.1.10", …], same_lan: <bool>, via: 'tunnel'|'direct' }
  *
  *   lan       the server's private IPv4 addresses (RFC 1918) on its real LAN
  *             interfaces — max 8 (services/homeNetwork.js)
- *   same_lan  true only when the request comes straight from one of those
- *             LAN subnets, or through the tunnel of the token's own peer
- *             whose current WireGuard endpoint lies in one of them
+ *   same_lan  true only for a request through the tunnel of the token's
+ *             own peer whose current WireGuard endpoint lies in one of those
+ *             LAN subnets (not the server itself, not the host's default
+ *             gateway); a direct request is always false
  *   via       informational only; the apps must not base decisions on it
  *
  *   401/403 token missing / without `client` scope / session request /

@@ -3,9 +3,10 @@
 // GET /api/v1/client/home-network — trusted-network detection of the apps
 // ("is the device in the server's own home LAN?"): the LAN list (private
 // IPv4 only, no WireGuard / container interfaces, dedupe, max 8), same_lan
-// for direct requests (source inside an included LAN subnet) and through the
-// tunnel (the token peer's current WireGuard endpoint inside one), auth,
-// no-store. A false "true" would switch the VPN off in a foreign network.
+// only through the tunnel (the token peer's current WireGuard endpoint inside
+// an included LAN subnet, not a default gateway; route table unreadable →
+// false), never for direct requests, auth, no-store. A false "true" would
+// switch the VPN off in a foreign network.
 
 const crypto = require('node:crypto');
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
@@ -54,6 +55,17 @@ const HOST = () => ({
   wg1: [v4('10.66.0.1', 24)],
 });
 
+// /proc/net/route of that host: default routes via 192.168.1.1 (eth0) and
+// 10.20.0.1 (wlan0, higher metric), plus the connected LAN routes.
+const ROUTES = [
+  'Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT',
+  'eth0\t00000000\t0101A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0',
+  'wlan0\t00000000\t0100140A\t0003\t0\t0\t600\t00000000\t0\t0\t0',
+  'eth0\t0001A8C0\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0',
+  'wlan0\t0000140A\t00000000\t0001\t0\t0\t600\t0000FFFF\t0\t0\t0',
+  '',
+].join('\n');
+
 let app, agent, homeNetwork, wireguard, realStatus, anna, adminId;
 let wgPeers = [];
 
@@ -68,11 +80,13 @@ before(async () => {
 });
 after(() => {
   homeNetwork._setInterfacesForTest(null);
+  homeNetwork._setRouteTableForTest(null);
   wireguard.getStatus = realStatus;
   teardown();
 });
 beforeEach(() => {
   homeNetwork._setInterfacesForTest(HOST);
+  homeNetwork._setRouteTableForTest(() => ROUTES);
   wgPeers = [];
   wireguard.getStatus = async () => ({ running: true, interface: null, peers: wgPeers });
 });
@@ -137,45 +151,34 @@ describe('lan — the server\'s own LAN addresses', () => {
   it('a failing interface scan yields an empty list and same_lan false', async () => {
     homeNetwork._setInterfacesForTest(() => { throw new Error('boom'); });
     const dev = H.makeDevice(anna, { name: 'hn-boom' });
-    const r = await get(dev, '192.168.1.50').expect(200);
+    wgPeers = [wgPeer(dev, '192.168.1.50:51820')];
+    const r = await get(dev, dev.ip).expect(200);
     assert.deepEqual(r.body.lan, []);
     assert.equal(r.body.same_lan, false);
   });
 });
 
-describe('same_lan — direct request (VPN down)', () => {
-  it('true from inside an included LAN subnet (also IPv4-mapped IPv6)', async () => {
+describe('same_lan — direct request (never trusted)', () => {
+  it('false even from inside an included LAN subnet: a LAN reverse proxy or an SNAT-ing router makes internet clients look like LAN sources', async () => {
     const dev = H.makeDevice(anna, { name: 'hn-direct' });
-    for (const ip of ['192.168.1.50', '10.20.3.4', '::ffff:192.168.1.1']) {
-      const r = await get(dev, ip).expect(200);
-      assert.equal(r.body.same_lan, true, ip);
-      assert.equal(r.body.via, 'direct', ip);
-    }
-  });
-
-  it('false from a public address, another private network, an excluded interface\'s subnet or the server itself', async () => {
-    const dev = H.makeDevice(anna, { name: 'hn-direct-no' });
-    for (const ip of ['203.0.113.77', '8.8.8.8', '192.168.2.5', '172.17.0.5', '172.18.4.4', '192.168.122.20', '10.64.0.9', '192.168.50.9', '192.168.1.10', '169.254.10.11', '2001:db8::1']) {
+    wgPeers = [wgPeer(dev, '192.168.1.50:51820')]; // even with a LAN endpoint
+    for (const ip of ['192.168.1.50', '10.20.3.4', '::ffff:192.168.1.1', '192.168.1.1', '203.0.113.77', '8.8.8.8', '172.17.0.5', '192.168.1.10', '2001:db8::1']) {
       const r = await get(dev, ip).expect(200);
       assert.equal(r.body.same_lan, false, ip);
+      assert.equal(r.body.via, 'direct', ip);
     }
+    const r = await get(dev).expect(200); // loopback, no proxy header
+    assert.deepEqual([r.body.same_lan, r.body.via], [false, 'direct']);
   });
 
-  it('false from the WG subnet — also when that subnet sits on a LAN-looking interface', async () => {
+  it('a WG-subnet address on a LAN-looking interface is not part of the LAN', async () => {
     homeNetwork._setInterfacesForTest(() => ({ eth0: [v4('10.8.0.200', 16), v4('192.168.1.10', 24)] }));
     const dev = H.makeDevice(anna, { name: 'hn-wgsub' });
-    const r = await get(dev, '10.8.0.99').expect(200);
+    wgPeers = [wgPeer(dev, '10.8.0.150:51820')];
+    const r = await get(dev, dev.ip).expect(200);
     assert.deepEqual(r.body.lan, ['192.168.1.10']);
-    assert.equal(r.body.same_lan, false);
+    assert.equal(r.body.same_lan, false, 'endpoint inside the WG subnet');
     assert.equal(r.body.via, 'tunnel');
-  });
-
-  it('false when the interface subnet is wider than any RFC 1918 block (misconfigured /0)', async () => {
-    homeNetwork._setInterfacesForTest(() => ({ eth0: [v4('192.168.1.10', 0)] }));
-    const dev = H.makeDevice(anna, { name: 'hn-wide' });
-    const r = await get(dev, '192.168.1.50').expect(200);
-    assert.deepEqual(r.body.lan, []);
-    assert.equal(r.body.same_lan, false);
   });
 });
 
@@ -197,6 +200,8 @@ describe('same_lan — request through the tunnel (VPN up)', () => {
       [[wgPeer(dev, '[2001:db8::7]:51820')], 'IPv6 endpoint'],
       [[wgPeer(dev, '172.17.0.5:51820')], 'docker subnet endpoint'],
       [[wgPeer(dev, '192.168.1.10:51820')], 'server own address'],
+      [[wgPeer(dev, '192.168.2.5:51820')], 'other private network'],
+      [[wgPeer(dev, '192.168.122.20:51820')], 'virbr subnet endpoint'],
       [[wgPeer(dev, '192.168.1.50:51820', false)], 'offline'],
       [[wgPeer(dev, null)], 'no endpoint'],
       [[], 'not in wg show'],
@@ -243,6 +248,43 @@ describe('same_lan — request through the tunnel (VPN up)', () => {
 
     const t = require('../src/services/tokens').create({ name: H.uniq('hn-nopeer'), scopes: ['client'], userId: anna, peerId: null }, '127.0.0.1');
     const r = await supertest(app).get(PATH).set('X-API-Token', t.rawToken).set('X-Forwarded-For', dev.ip).expect(200);
+    assert.equal(r.body.same_lan, false);
+  });
+
+  it('false when the endpoint is a default gateway of the host (router SNATs inbound forwards)', async () => {
+    const dev = H.makeDevice(anna, { name: 'hn-gw' });
+    for (const ep of ['192.168.1.1:51820', '[::ffff:192.168.1.1]:51820', '10.20.0.1:4500']) {
+      wgPeers = [wgPeer(dev, ep)];
+      assert.equal((await get(dev, dev.ip).expect(200)).body.same_lan, false, ep);
+    }
+    wgPeers = [wgPeer(dev, '192.168.1.2:51820')];
+    assert.equal((await get(dev, dev.ip).expect(200)).body.same_lan, true, 'the host next to the gateway');
+  });
+
+  it('fails closed when the route table cannot be read or parsed', async () => {
+    const dev = H.makeDevice(anna, { name: 'hn-noroute' });
+    wgPeers = [wgPeer(dev, '192.168.1.50:51820')];
+    for (const [table, label] of [
+      [() => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }, 'unreadable'],
+      [() => '', 'empty'],
+      [() => 'garbage without a header\n', 'no header'],
+      [() => ROUTES.replace('0101A8C0', 'XYZ'), 'malformed gateway'],
+    ]) {
+      homeNetwork._setRouteTableForTest(table);
+      const r = await get(dev, dev.ip).expect(200);
+      assert.equal(r.body.same_lan, false, label);
+      assert.equal(r.body.via, 'tunnel', label);
+    }
+    homeNetwork._setRouteTableForTest(() => ROUTES.split('\n').filter((l) => !/^\S+\t00000000\t/.test(l)).join('\n'));
+    assert.equal((await get(dev, dev.ip).expect(200)).body.same_lan, true, 'readable table without a default route');
+  });
+
+  it('false when the interface subnet is wider than any RFC 1918 block (misconfigured /0)', async () => {
+    homeNetwork._setInterfacesForTest(() => ({ eth0: [v4('192.168.1.10', 0)] }));
+    const dev = H.makeDevice(anna, { name: 'hn-wide' });
+    wgPeers = [wgPeer(dev, '192.168.1.50:51820')];
+    const r = await get(dev, dev.ip).expect(200);
+    assert.deepEqual(r.body.lan, []);
     assert.equal(r.body.same_lan, false);
   });
 });

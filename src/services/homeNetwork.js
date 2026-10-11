@@ -13,9 +13,10 @@
  *        os.networkInterfaces() (libuv) lists only interfaces that are UP and
  *        RUNNING; the server runs with network_mode: host, so these are the
  *        host's real interfaces.
- * same_lan: see sameLan().
+ * same_lan: see check().
  */
 
+const fs = require('node:fs');
 const os = require('node:os');
 const ipaddr = require('ipaddr.js');
 const config = require('../../config/default');
@@ -39,6 +40,49 @@ const MAX_LAN = 8;
 let _interfaces = () => os.networkInterfaces();
 function _setInterfacesForTest(fn) {
   if (process.env.NODE_ENV === 'test') _interfaces = fn || (() => os.networkInterfaces());
+}
+
+// Injectable seam for the kernel's IPv4 routing table (default gateways).
+// network_mode: host → this is the host's real table.
+const ROUTE_TABLE = '/proc/net/route';
+let _routeTable = () => fs.readFileSync(ROUTE_TABLE, 'utf8');
+function _setRouteTableForTest(fn) {
+  if (process.env.NODE_ENV === 'test') _routeTable = fn || (() => fs.readFileSync(ROUTE_TABLE, 'utf8'));
+}
+
+/** "0101A8C0" (little-endian hex, /proc/net/route) → "192.168.1.1"; null when malformed. */
+function hexToV4(hex) {
+  if (!/^[0-9A-Fa-f]{8}$/.test(String(hex))) return null;
+  const n = parseInt(hex, 16);
+  return [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255].join('.');
+}
+
+/**
+ * IPv4 default gateways of the host: every route with destination 0.0.0.0
+ * and a gateway set (any interface, any metric, any flags — more exclusions
+ * are the safe side). Returns a Set of dotted addresses, or null when the
+ * table cannot be read or parsed: the caller then fails closed.
+ */
+function defaultGateways() {
+  let text;
+  try { text = String(_routeTable() || ''); }
+  catch (err) { logger.debug({ err: err.message }, 'home network: route table unreadable'); return null; }
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return null;
+  const head = lines[0].split(/\s+/);
+  const iDst = head.indexOf('Destination');
+  const iGw = head.indexOf('Gateway');
+  if (iDst < 0 || iGw < 0) return null;
+  const out = new Set();
+  for (const line of lines.slice(1)) {
+    const cols = line.split(/\s+/);
+    if (cols.length <= Math.max(iDst, iGw)) return null;
+    if (cols.at(iDst) !== '00000000') continue;
+    const gw = hexToV4(cols.at(iGw));
+    if (gw == null) return null;
+    if (gw !== '0.0.0.0') out.add(gw);
+  }
+  return out;
 }
 
 /** ipaddr IPv4 of `ip` (IPv4-mapped IPv6 unwrapped), else null. */
@@ -145,36 +189,41 @@ function fromPeerAddress(peer, v4) {
  * Home-network answer for a request from `ip` made with the token of peer
  * `peerId`: { lan, same_lan, via }.
  *
- * same_lan is true only for
- *  (a) a direct request whose source is inside an included LAN subnet
- *      (also hairpin NAT: the phone's or the router's LAN address), or
- *  (b) a request through the tunnel — source inside the WireGuard subnet and
- *      one of the token peer's own tunnel addresses — while that peer is
- *      enabled, online (fresh handshake) and its current WireGuard endpoint
- *      lies inside an included LAN subnet.
- * Exclusions apply to both: WG subnet, the server's own addresses, excluded
- * interfaces. Any error → false.
+ * same_lan is true ONLY for a request through the tunnel — source inside the
+ * WireGuard subnet and one of the token peer's own tunnel addresses
+ * (allowed_ips) — while that peer is enabled and online (fresh handshake)
+ * and its current WireGuard endpoint
+ *  - is an RFC 1918 IPv4 inside one of the included LAN subnets,
+ *  - is not inside the WireGuard subnet and not one of the server's own
+ *    addresses, and
+ *  - is not a default gateway of the host (a router that SNATs inbound
+ *    port-forwards makes every remote peer's endpoint look like its own LAN
+ *    address). Route table unreadable → false (fail closed).
+ * A direct request is always false: a LAN reverse proxy in front of
+ * GateControl, or a router that SNATs inbound forwards, makes internet
+ * clients look like LAN sources. Any error → false.
  */
 async function check(ip, peerId) {
   const lan = lanEntries();
   const out = { lan: lan.entries.map((e) => e.address), same_lan: false, via: 'direct' };
   const v4 = toV4(ip);
-  if (v4 && inWgSubnet(v4)) {
-    out.via = 'tunnel';
-    if (!lan.entries.length || peerId == null) return out;
-    try {
-      const peer = require('./peers').getById(peerId);
-      if (!peer || !fromPeerAddress(peer, v4)) return out;
-      const endpoint = await require('./notify/vpnPresence').currentEndpoint(peerId);
-      out.same_lan = endpoint != null && inLan(endpoint, lan);
-    } catch (err) {
-      logger.debug({ err: err.message, peerId }, 'home network: tunnel check failed');
-      out.same_lan = false;
-    }
-    return out;
+  if (!v4 || !inWgSubnet(v4)) return out;
+  out.via = 'tunnel';
+  if (!lan.entries.length || peerId == null) return out;
+  try {
+    const peer = require('./peers').getById(peerId);
+    if (!peer || !fromPeerAddress(peer, v4)) return out;
+    const endpoint = await require('./notify/vpnPresence').currentEndpoint(peerId);
+    if (endpoint == null || !inLan(endpoint, lan)) return out;
+    const gateways = defaultGateways();
+    if (gateways == null) return out;
+    const ep = toV4(endpoint);
+    out.same_lan = !!ep && !gateways.has(ep.toString());
+  } catch (err) {
+    logger.debug({ err: err.message, peerId }, 'home network: tunnel check failed');
+    out.same_lan = false;
   }
-  out.same_lan = inLan(ip, lan);
   return out;
 }
 
-module.exports = { check, lanEntries, EXCLUDED_IFACE_PREFIXES, MAX_LAN, _setInterfacesForTest };
+module.exports = { check, lanEntries, defaultGateways, EXCLUDED_IFACE_PREFIXES, MAX_LAN, _setInterfacesForTest, _setRouteTableForTest };
