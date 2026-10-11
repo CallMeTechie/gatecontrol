@@ -99,6 +99,29 @@ function median(values) {
 
 const SOURCE_IDS = ['security', 'devices', 'services', 'system', 'plugins'];
 
+// ─── Sidebar badge ──────────────────────────────────────────────────────
+// Messages waiting for offline devices, for the "Benachrichtigungen" badge
+// on every admin page (middleware/locals.js). One indexed COUNT, cached for
+// BADGE_TTL_MS so page views never add up; the notifications page itself
+// refreshes the badge live from the overview.
+
+const BADGE_TTL_MS = 15 * 1000;
+let badgeCache = { at: 0, value: 0 };
+
+function queuedBadge() {
+  const t = Date.now();
+  if (t - badgeCache.at < BADGE_TTL_MS) return badgeCache.value;
+  let value = 0;
+  if (config.value('enabled')) {
+    value = getDb().prepare(`SELECT COUNT(*) AS n FROM notification_deliveries d JOIN notifications n ON n.id = d.notification_id
+       WHERE d.state = 'queued' AND n.revoked_at IS NULL AND (n.expires_at IS NULL OR n.expires_at > ?)`).get(store.iso()).n;
+  }
+  badgeCache = { at: t, value };
+  return value;
+}
+
+function _resetBadgeForTest() { badgeCache = { at: 0, value: 0 }; }
+
 function overview(t) {
   const db = getDb();
   const cfg = config.get();
@@ -279,4 +302,4 @@ function detail(id, t) {
   };
 }
 
-module.exports = { overview, devices, history, detail, recipientsLabel, statsFor, statusOf, FILTERS };
+module.exports = { overview, devices, history, detail, recipientsLabel, statsFor, statusOf, queuedBadge, _resetBadgeForTest, FILTERS };
