@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.157.1] — 2026-10-11
+
+### Fixes
+- "push only through the VPN" works with split tunnels (#286)
+
+---
+
 ## [1.157.0] — 2026-10-11
 
 ### Features
