@@ -81,6 +81,10 @@ function accountUrl() {
   try { return new URL('/profile', config.app.baseUrl).href; } catch { return '/profile'; }
 }
 
+function notifyEnabled() {
+  try { return !!require('../services/notify/config').value('enabled'); } catch { return false; }
+}
+
 /** Which tabs have something to show (unlicensed or empty areas stay hidden). */
 function tabsFor(req, plg) {
   const sections = (plg && plg.sections) || { home: [], car: [] };
@@ -97,6 +101,8 @@ function tabsFor(req, plg) {
     traffic: identified && w.traffic,
     pihole: identified && w.pihole && license.hasFeature('pihole_integration'),
     devices: !!req.portalLoggedIn,
+    // Notification center: bell, inbox, own settings (signed in, push on).
+    notify: !!req.portalLoggedIn && notifyEnabled(),
   };
 }
 

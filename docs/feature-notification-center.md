@@ -424,9 +424,28 @@ In der `plugin.json` kommt ein neuer, optionaler Block hinzu:
   * Verlauf (Filter und Zustellprotokoll)
   * Einstellungen
   * Umsetzung: `el()`, kein innerHTML; i18n DE/EN.
+  * Der Zähler „Benachrichtigungen“ in der Seitenleiste (wartende
+    Nachrichten) kommt mit jeder Admin-Seite (gezählt beim Seitenaufbau,
+    15 s zwischengespeichert).
 * **Portal:**
   * Glocke mit Zähler im Kopf.
   * Seite „Meine Benachrichtigungen“: Themen, „Empfangen auf“, Ruhezeiten, Zuletzt.
+  * Umsetzung (Phase 4a): nur für eine angemeldete Person (Portal- oder
+    Web-Sitzung) und nur, solange Push am Server an ist. Zwei Seiten ohne
+    eigenen Reiter, per URL erreichbar wie die Reiter:
+    * `#mitteilungen` (Glocke): Posteingang, neueste zuerst, Punkt für
+      ungelesen, „Gelesen“ je Eintrag und „Alle als gelesen“, Fakten
+      (`data.facts`), „Ältere laden“ (`before`), Leerzustand.
+    * `#benachrichtigungen` (Verweis in „Meine Geräte“ und im Posteingang):
+      Themen als Schalter (gesperrte grau mit Grund, Plugin-Themen mit ihrem
+      Label), „Empfangen auf“ mit Zustand, wartenden Nachrichten und „Test“
+      je Gerät (`token_id`), Ruhezeiten (an/aus, von/bis, Zeitzone aus dem
+      Browser, „Kritisches trotzdem melden“), „Zuletzt“ (5 Einträge).
+    * Jede Änderung speichert sofort (`PUT prefs` mit nur dem geänderten Feld).
+    * Live: Die Glocke fragt `GET inbox` alle 60 s ab, solange die Seite
+      sichtbar ist, und sofort beim Zurückkehren; kein Stream aus dem Portal.
+    * Die Apps springen mit dem Portal-Link (`next`, siehe Vertrag) direkt
+      auf `#mitteilungen` oder `#benachrichtigungen`.
 * **Dokumentation:**
   * `docs/plugins.md` (neue `gc.notify`-Form, `notifyTopics`).
   * Dieses Dokument wird zur Feature-Doku.
