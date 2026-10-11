@@ -170,7 +170,7 @@ async function main() {
   require('../../src/services/portalDevices').setUsage(livingTok, { usage: 'multi', userIds: [memberId] });
   const annaPhone = clientPeer('anna-phone', '10.8.0.16', memberId, true, 'android', '1.16.0');
   const portalApp = tokens.create({ name: 'Phone (Portal)', scopes: appScopes, userId: memberId, peerId: annaPhone }, '127.0.0.1').rawToken;
-  mkToken('Laptop', ['client', 'client:services'], memberId, annaLaptop, { used: '-3 days', expiresAt: new Date(Date.now() + 90 * 86400000).toISOString() });
+  const laptopToken = mkToken('Laptop', ['client', 'client:services'], memberId, annaLaptop, { used: '-3 days', expiresAt: new Date(Date.now() + 90 * 86400000).toISOString() });
   mkToken('iPad (alt)', ['client'], tomId, tomPad, { used: '-41 days' });
   mkToken('Galaxy Tab', ['client', 'client:services'], kidsId, kidsTab, { used: '-2 hours' });
   mkToken('Home Assistant', ['read-only'], adminRow.id, null, { used: '-4 hours' });
@@ -191,6 +191,34 @@ async function main() {
   userAct.run('user_created', 'User "e2e_member" created', JSON.stringify({ userId: memberId }), '-30 days');
   userAct.run('client_enrollment_redeemed', 'App set up for peer "anna-laptop"', JSON.stringify({ userId: memberId, peerId: annaLaptop }), '-3 days');
 
+  // Notification center in the portal (scenarios/08-portal.js): Anna's
+  // Pixel and Laptop run the app with push, a few messages (one read, one
+  // critical with facts), quiet hours 22:00–07:00.
+  const de = (process.env.GC_DEFAULT_LANGUAGE || 'en') === 'de';
+  const hub = require('../../src/services/notify/hub');
+  const nstore = require('../../src/services/notify/store');
+  for (const [tok, platform] of [[pixelToken, 'android'], [laptopToken, 'windows']]) {
+    nstore.touchDevice(tok, { platform, clientType: platform === 'windows' ? 'pro' : null, appVersion: platform === 'windows' ? '2.5.0' : '1.17.0', via: 'direct' });
+  }
+  const note = (n, ageMin) => {
+    const r = hub.publish({ source: 'system', silent: false, collapseKey: null, target: { type: 'users', ids: [memberId] }, ...n }, { route: { users: [memberId] } });
+    db.prepare("UPDATE notifications SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?) WHERE id = ?").run(`-${ageMin} minutes`, r.id);
+    return r.id;
+  };
+  const notifyIds = {
+    back: note({ eventId: 'route_state', eventType: 'route_up', topic: 'services', priority: 'info',
+      title: de ? '„Fotos“ ist wieder erreichbar' : '“Photos” is reachable again', body: de ? 'fotos.e2e.example.com antwortet wieder.' : 'fotos.e2e.example.com answers again.',
+      data: { route: 'services', facts: [{ label: 'Domain', value: 'fotos.e2e.example.com' }] } }, 26 * 60),
+    maintenance: note({ eventId: 'manual', topic: 'admin_notice', priority: 'normal', source: `manual:${adminRow.id}`,
+      title: de ? 'Wartung heute Abend' : 'Maintenance tonight', body: de ? 'Ab 22 Uhr ist der Server für etwa 15 Minuten nicht erreichbar.' : 'From 10 pm the server is unreachable for about 15 minutes.',
+      data: { route: 'inbox' } }, 95),
+    down: note({ eventId: 'route_state', eventType: 'route_down', topic: 'services', priority: 'critical',
+      title: de ? '„Wiki“ ist nicht erreichbar' : '“Wiki” is unreachable', body: de ? 'wiki.e2e.example.com antwortet nicht.' : 'wiki.e2e.example.com does not answer.',
+      data: { route: 'services', facts: [{ label: 'Domain', value: 'wiki.e2e.example.com' }, { label: de ? 'Antwortzeit' : 'Response time', value: '5003 ms' }] } }, 12),
+  };
+  hub.markRead(memberId, [notifyIds.back]);
+  db.prepare("INSERT INTO notify_user_prefs (user_id, quiet_from, quiet_to, tz, critical_bypass) VALUES (?, '22:00', '07:00', 'Europe/Berlin', 1)").run(memberId);
+
   const fixtures = {
     admin: ADMIN,
     member: { ...MEMBER, id: memberId },
@@ -203,6 +231,7 @@ async function main() {
     peerTraffic,
     webhook: webhookId,
     portal: { token: portalApp, ip: '10.8.0.16', sharedIp: '10.8.0.40', pin: '1234' },
+    notify: { pixel: pixelToken, laptop: laptopToken, ids: notifyIds, unread: 2 },
   };
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, JSON.stringify(fixtures, null, 2));

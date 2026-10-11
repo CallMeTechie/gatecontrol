@@ -94,6 +94,76 @@ module.exports = (ctx) => {
         step('Escape cancels, nothing is locked', !(await p.isVisible('.pt-dialog')) && deleted === 0);
         await shot(p, 'portal-devices');
 
+        // ── Notification center: bell, Mitteilungen, Meine Benachrichtigungen ──
+        const N = FIXTURES.notify;
+        const me = (path, method = 'GET', body) => p.evaluate(async ([u, m, b]) => {
+          const csrf = JSON.parse(document.getElementById('portal-ctx').textContent).csrf;
+          const r = await fetch(u, { method: m, credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: b ? JSON.stringify(b) : undefined });
+          return { status: r.status, body: await r.json().catch(() => null) };
+        }, ['/api/v1/portal/me/notify' + path, method, body]);
+        const r3 = await (await fetch(BASE + '/api/v1/client/portal-link', { method: 'POST', headers: { Authorization: `Bearer ${P.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ next: '/portal#mitteilungen' }) })).json();
+        step('portal-link carries the validated deep link (next)', new URL(r3.url).searchParams.get('next') === '/portal#mitteilungen');
+        const u3 = new URL(r3.url);
+        await p.goto(PORTAL + u3.pathname + u3.search);
+        await p.waitForLoadState('networkidle').catch(() => {});
+        await p.waitForSelector('#pt-inbox .pt-inbox-item', { timeout: 6000 }).catch(() => {});
+        step('the deep link signs in and opens the inbox (#mitteilungen), no tab selected', /\/portal#mitteilungen$/.test(p.url()) && await p.isVisible('#panel-mitteilungen')
+          && !(await p.$('.pt-tab[aria-selected="true"]')), p.url());
+        step('the bell shows the unread count', await p.textContent('#pt-bell-count') === String(N.unread) && await p.isVisible('#pt-bell-count')
+          && /\d/.test(await p.getAttribute('#pt-bell', 'aria-label')));
+        const states = await p.$$eval('#pt-inbox .pt-inbox-item', (li) => li.map((x) => x.getAttribute('data-state')));
+        step('inbox: newest first, unread marked, facts shown', states.length === 3 && states.filter((x) => x === 'unread').length === N.unread
+          && await p.getAttribute('#pt-inbox .pt-inbox-item:first-child', 'data-id') === String(N.ids.down)
+          && !!(await p.$('#pt-inbox .pt-inbox-item:first-child .pt-facts dd')), states.join(' '));
+        await shot(p, 'portal-inbox');
+        await Promise.all([p.waitForResponse((x) => x.url().endsWith('/me/notify/read')), p.click('#pt-inbox .pt-inbox-item:first-child [data-act="read"]')]);
+        await p.waitForTimeout(400);
+        step('"Gelesen" marks one item, the bell counts down', await p.getAttribute('#pt-inbox .pt-inbox-item:first-child', 'data-state') === 'read'
+          && await p.textContent('#pt-bell-count') === String(N.unread - 1));
+        await p.click('#pt-inbox-prefs');
+        await p.waitForSelector('#pt-np-topics .pt-topic', { timeout: 6000 }).catch(() => {});
+        step('"Einstellungen" opens Meine Benachrichtigungen (#benachrichtigungen)', /#benachrichtigungen$/.test(p.url()) && await p.isVisible('#panel-benachrichtigungen'));
+        const topics = await p.$$eval('#pt-np-topics .pt-topic', (li) => li.map((x) => [x.getAttribute('data-topic'), x.querySelector('input').disabled]));
+        step('topics: the member\'s topics, "Hinweise vom Admin" locked, no admin-only ones', topics.some(([id, dis]) => id === 'admin_notice' && dis)
+          && topics.some(([id, dis]) => id === 'services' && !dis) && !topics.some(([id]) => id === 'security' || id === 'system'), JSON.stringify(topics));
+        await Promise.all([p.waitForResponse((x) => x.url().endsWith('/me/notify/prefs') && x.request().method() === 'PUT'), p.click('#pt-np-topics [data-topic="services"] input')]);
+        let prefs = (await me('/prefs')).body;
+        step('a topic switch saves at once', prefs.topics.find((t) => t.id === 'services').enabled === false);
+        await Promise.all([p.waitForResponse((x) => x.url().endsWith('/me/notify/prefs') && x.request().method() === 'PUT'), p.click('#pt-np-topics [data-topic="services"] input')]);
+        step('quiet hours from the server (22:00–07:00, critical still rings)', await p.inputValue('#pt-np-from') === '22:00' && await p.inputValue('#pt-np-to') === '07:00'
+          && await p.isChecked('#pt-np-quiet-on') && await p.isChecked('#pt-np-critical'));
+        await Promise.all([p.waitForResponse((x) => x.url().endsWith('/me/notify/prefs') && x.request().method() === 'PUT'), p.fill('#pt-np-from', '23:15')]);
+        prefs = (await me('/prefs')).body;
+        step('changing a time saves it', prefs.quiet_from === '23:15' && prefs.quiet_to === '07:00' && prefs.tz === 'Europe/Berlin', `${prefs.quiet_from}–${prefs.quiet_to} ${prefs.tz}`);
+        await Promise.all([p.waitForResponse((x) => x.url().endsWith('/me/notify/prefs') && x.request().method() === 'PUT'), p.click('#pt-np-quiet-on')]);
+        prefs = (await me('/prefs')).body;
+        step('switching quiet hours off clears them', prefs.quiet_from === null && prefs.quiet_to === null && await p.isHidden('#pt-np-quiet-fields'));
+        await me('/prefs', 'PUT', { quiet_from: '22:00', quiet_to: '07:00', tz: 'Europe/Berlin' });
+        const devs = await p.$$eval('#pt-np-devices .pt-recv-item', (li) => li.map((x) => [x.getAttribute('data-id'), x.getAttribute('data-state'), !!x.querySelector('[data-act="test"]')]));
+        step('"Empfangen auf": own app devices with state and a Test button', devs.some(([id, st, b]) => id === String(N.pixel) && st === 'offline' && b)
+          && devs.some(([id]) => id === String(N.laptop)), JSON.stringify(devs));
+        const before = (await me('/inbox?limit=1')).body.unread;
+        const [testRes] = await Promise.all([p.waitForResponse((x) => x.url().endsWith('/me/notify/test')), p.click(`#pt-np-devices [data-id="${N.pixel}"] [data-act="test"]`)]);
+        const testBody = await testRes.json().catch(() => ({}));
+        step('"Test" sends to that one device only', testRes.status() === 200 && testBody.devices === 1 && await p.isVisible('.pt-toast.is-on'));
+        await p.waitForTimeout(1800);
+        const after = (await me('/inbox?limit=1')).body.unread;
+        step('the test message lands in the inbox, the bell follows', after === before + 1 && await p.textContent('#pt-bell-count') === String(after), `${before} → ${after}`);
+        await shot(p, 'portal-notify-prefs');
+        await Promise.all([p.waitForResponse((x) => x.url().endsWith('/me/notify/read')), p.click('#pt-np-readall')]);
+        await p.waitForTimeout(500);
+        step('"Alle als gelesen" clears the bell', await p.isHidden('#pt-bell-count') && (await me('/inbox?limit=1')).body.unread === 0);
+        await p.click('.pt-tab[data-tab="geraete"]');
+        step('"Meine Geräte" links to Meine Benachrichtigungen', await p.isVisible('#pt-devices-notify') && await p.getAttribute('#pt-devices-notify', 'data-goto') === 'benachrichtigungen');
+        await p.click('#pt-bell');
+        step('the bell opens the inbox', /#mitteilungen$/.test(p.url()) && await p.isVisible('#panel-mitteilungen'));
+        await p.setViewportSize({ width: 390, height: 844 });
+        await p.goto(PORTAL + '/portal#benachrichtigungen');
+        await p.waitForSelector('#pt-np-topics .pt-topic', { timeout: 6000 }).catch(() => {});
+        step('390 px: Meine Benachrichtigungen without horizontal scroll', await noOverflow(p) && await p.isVisible('#pt-np-devices'));
+        await shot(p, 'portal-notify-390');
+        await p.setViewportSize({ width: 1440, height: 900 });
+
         // ── 390 px ──
         await p.setViewportSize({ width: 390, height: 844 });
         await p.goto(PORTAL + '/portal#start');

@@ -31,7 +31,10 @@ scenarios/07-users.js   /users: Liste + Filter, Detail per ?user=&tab=, Tabs per
 scenarios/08-portal.js  Portal: Einmal-Link der App → angemeldet, Tabs (URL,
                         Tastatur), „Gerät sperren“ fragt nach, 390 px;
                         gemeinsames Gerät: „Wer bist du?“ mit PIN, Person
-                        wechseln, anonym. Eigener Browser, der den Portal-Host
+                        wechseln, anonym; Benachrichtigungen: Portal-Link mit
+                        Ziel (#mitteilungen), Glocke mit Zähler, Posteingang
+                        (gelesen, alle gelesen), Themen-Schalter, Ruhezeiten,
+                        Test je Gerät, 390 px. Eigener Browser, der den Portal-Host
                         auf 127.0.0.1 auflöst und den Identitäts-Header setzt
 scenarios/09-notifications.js /notifications: Benachrichtigungszentrale mit
                         gemockter Admin-API (notify-mock.js, page.route): Reiter
