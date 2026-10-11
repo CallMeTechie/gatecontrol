@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.156.0] — 2026-10-11
+
+### Features
+- notifications in the portal (inbox, topics, quiet hours) + follow-ups (#284)
+
+---
+
 ## [1.155.0] — 2026-10-11
 
 ### Features
