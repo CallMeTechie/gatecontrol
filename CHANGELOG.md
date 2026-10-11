@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.157.3] — 2026-10-11
+
+### Fixes
+- test messages ring like real ones (#288)
+
+---
+
 ## [1.157.2] — 2026-10-11
 
 ### Fixes
