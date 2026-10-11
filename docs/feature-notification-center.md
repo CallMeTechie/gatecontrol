@@ -772,7 +772,7 @@ Richtlinie laden; `peer_enabled` anzeigen bzw. Tunnel-Status anpassen;
 ### `POST /api/v1/client/push/test`
 
 * Antwort: `{"ok":true,"seq":130}`.
-* Erzeugt eine `info`-Nachricht „Testnachricht“ nur an dieses Gerät, ohne
+* Erzeugt eine `normal`-Nachricht (mit Ton, auch auf dem Sperrbildschirm) „Testnachricht“ nur an dieses Gerät, ohne
   Ruhezeit-Filter und ohne Rate-Limit über 5 pro Minute.
 
 ### `POST /api/v1/client/portal-link` mit Ziel (`next`)

@@ -432,14 +432,14 @@ describe('PUT /api/v1/client/push/prefs', () => {
 });
 
 describe('POST /api/v1/client/push/test', () => {
-  it('an info message only to this device, ignoring quiet hours and mutes; ≤ 5 per minute', async () => {
+  it('a normal message only to this device, ignoring quiet hours and mutes; ≤ 5 per minute', async () => {
     H.db().prepare("UPDATE notify_device_prefs SET topics = '[\"admin_notice\"]' WHERE token_id = ?").run(benPhone.tokenId);
     const r = await api('post', '/api/v1/client/push/test', benPhone).expect(200);
     assert.equal(r.body.ok, true);
     assert.ok(Number.isInteger(r.body.seq));
     const row = H.db().prepare('SELECT d.token_id, n.priority, n.title, n.event_id FROM notification_deliveries d JOIN notifications n ON n.id = d.notification_id WHERE d.seq = ?').get(r.body.seq);
     assert.equal(row.token_id, benPhone.tokenId);
-    assert.equal(row.priority, 'info');
+    assert.equal(row.priority, 'normal', 'a test rings like a real message');
     assert.equal(row.event_id, 'test');
     assert.equal(row.title, 'Testnachricht');
     for (let i = 0; i < 4; i++) await api('post', '/api/v1/client/push/test', benPhone).expect(200);

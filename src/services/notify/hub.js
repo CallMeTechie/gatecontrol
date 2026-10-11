@@ -506,7 +506,9 @@ function sendTest({ tokenIds = null, userId = null, source = 'system', lang = nu
   if (!ids) ids = router.devicesOfUsers([userId]).map((d) => d.token_id);
   const l = lang || text.userLang(userId);
   const r = publish({
-    eventId: 'test', eventType: null, topic: 'admin_notice', source, priority: 'info',
+    // 'normal', not 'info': the test must ring and reach the lock screen like a
+    // real message, otherwise it lands silently in the shade and proves little.
+    eventId: 'test', eventType: null, topic: 'admin_notice', source, priority: 'normal',
     title: sanitize.title(text.t(l, 'push.test.title')), body: sanitize.body(text.t(l, 'push.test.body')),
     data: { route: 'inbox' }, collapseKey: null, target: tokenIds ? { type: 'devices', ids: tokenIds } : { type: 'users', ids: [userId] },
   }, { rule: null, route: { tokenIds: ids, bypass: true } });
