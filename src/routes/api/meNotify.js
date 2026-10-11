@@ -11,7 +11,7 @@
  *   PUT  /prefs   { topics:[{id,enabled}], quiet_from, quiet_to, tz, critical_bypass }
  *   GET  /inbox   ?limit&before=<id> → { items, unread }
  *   POST /read    { ids:[…] } | { all:true } → { ok, updated }
- *   POST /test    → { ok, devices }
+ *   POST /test    { token_id? } → { ok, devices }   (token_id: one own app device)
  *
  * Subscriptions are free (no licence); plugin topics are listed only with the
  * email_alerts licence (they are not delivered without it).
@@ -46,6 +46,14 @@ function prefsView(userId, lang) {
     critical_bypass: p.critical_bypass !== 0,
     devices,
   };
+}
+
+/** `token_id` of a test request: null (all own devices), an id, or false (invalid). */
+function testTokenId(body) {
+  const v = body && typeof body === 'object' ? body.token_id : undefined;
+  if (v === undefined || v === null) return null;
+  const n = typeof v === 'string' && /^\d{1,15}$/.test(v) ? Number(v) : v;
+  return Number.isSafeInteger(n) && n > 0 ? n : false;
 }
 
 function createRouter() {
@@ -166,9 +174,15 @@ function createRouter() {
   });
 
   router.post('/test', notifySendLimiter, (req, res) => {
+    const tokenId = testTokenId(req.body);
+    if (tokenId === false) return res.status(400).json({ ok: false, error: req.t('push.error.invalid'), fields: { token_id: 'invalid' } });
     if (!config.value('enabled')) return res.status(503).json({ ok: false, error: 'push_disabled' });
+    // Only an own app device; anything else is "not found" (no probing of other ids).
+    if (tokenId != null && !router_.devicesOfUsers([req.meUserId]).some((d) => d.token_id === tokenId)) {
+      return res.status(404).json({ ok: false, error: req.t('push.error.device_not_found') });
+    }
     try {
-      const r = hub.sendTest({ userId: req.meUserId, source: `manual:${req.meUserId}`, lang: req.language });
+      const r = hub.sendTest({ tokenIds: tokenId == null ? null : [tokenId], userId: req.meUserId, source: `manual:${req.meUserId}`, lang: req.language });
       res.json({ ok: true, devices: r.devices });
     } catch (err) {
       logger.error({ err: err.message }, 'me/notify test failed');
@@ -179,4 +193,4 @@ function createRouter() {
   return router;
 }
 
-module.exports = { createRouter };
+module.exports = { createRouter, testTokenId };

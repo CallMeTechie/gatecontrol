@@ -305,7 +305,8 @@ const notifySendLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `notify-send:${(req.session && req.session.userId) || ipKeyGenerator(req.ip)}`,
+  // req.meUserId: the portal session's person (/api/v1/portal/me/notify/test)
+  keyGenerator: (req) => `notify-send:${req.meUserId || (req.session && req.session.userId) || ipKeyGenerator(req.ip)}`,
   handler: (req, res) => {
     res.status(429).json({ ok: false, error: 'rate_limited' });
   },

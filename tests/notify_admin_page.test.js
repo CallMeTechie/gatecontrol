@@ -103,6 +103,41 @@ describe('/notifications: route and roles', () => {
     assert.deepEqual(hrefs, ['/notifications', '/logs', '/settings']);
     assert.match(nav, /<span class="nav-badge amber" id="nc-nav-badge" hidden><\/span>/);
   });
+
+  it('the badge shows the waiting messages on every admin page (cached count)', async () => {
+    const H = require('./helpers/notify');
+    const admin = require('../src/services/notify/admin');
+    const hub = require('../src/services/notify/hub');
+    const adminId = H.db().prepare("SELECT id FROM users WHERE username = 'admin'").get().id;
+    const dev = H.makeDevice(adminId, { name: 'badge-phone' });
+    H.clearNotifications();
+    hub.sendManual({ userId: adminId, target: { type: 'devices', ids: [dev.tokenId] }, title: 'Eins', body: '', priority: 'normal', ttlS: null });
+    hub.sendManual({ userId: adminId, target: { type: 'devices', ids: [dev.tokenId] }, title: 'Zwei', body: '', priority: 'normal', ttlS: null });
+    admin._resetBadgeForTest();
+    try {
+      for (const path of ['/dashboard', '/settings', '/logs']) {
+        const html = (await agent.get(path).expect(200)).text;
+        const m = html.match(/<span class="nav-badge amber" id="nc-nav-badge" title="([^"]+)">(\d+)<\/span>/);
+        assert.ok(m, path);
+        assert.equal(m[2], '2', path);
+        assert.ok([de, en].some((l) => l['notify.nav_badge_other'].replace('{{count}}', '2') === m[1]), m[1]);
+      }
+      // cached: a new message shows after the TTL, not on every page view
+      hub.sendManual({ userId: adminId, target: { type: 'devices', ids: [dev.tokenId] }, title: 'Drei', body: '', priority: 'normal', ttlS: null });
+      assert.equal(admin.queuedBadge(), 2);
+      admin._resetBadgeForTest();
+      assert.equal(admin.queuedBadge(), 3);
+      // the API answers carry no layout work
+      const counts = [];
+      const orig = admin.queuedBadge;
+      admin.queuedBadge = () => { counts.push(1); return orig(); };
+      try { await agent.get('/api/v1/notify/settings').expect(200); } finally { admin.queuedBadge = orig; }
+      assert.equal(counts.length, 0);
+    } finally {
+      H.clearNotifications();
+      admin._resetBadgeForTest();
+    }
+  });
 });
 
 describe('the real admin API answers what the page reads', () => {

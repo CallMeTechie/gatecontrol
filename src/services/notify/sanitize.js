@@ -70,7 +70,29 @@ function cleanValue(v, depth) {
 }
 
 /**
- * `data` of a notification: { route?, actions?, ...context }. Returns
+ * `data.facts`: up to LIMITS.facts { label, value } pairs the apps show
+ * under the text ("Zuletzt gesehen: 21:40"). One line each, label ≤ 60 and
+ * value ≤ 120 characters, numbers become text; empty or malformed entries
+ * are dropped. → array or null (nothing usable).
+ */
+function facts(raw) {
+  if (!Array.isArray(raw)) return null;
+  const out = [];
+  for (const f of raw.slice(0, 20)) {
+    if (!f || typeof f !== 'object' || Array.isArray(f)) continue;
+    const ok = (v) => typeof v === 'string' || (typeof v === 'number' && Number.isFinite(v));
+    if (!ok(f.label) || !ok(f.value)) continue;
+    const label = line(f.label, LIMITS.factLabel);
+    const value = line(f.value, LIMITS.factValue);
+    if (!label || !value) continue;
+    out.push({ label, value });
+    if (out.length >= LIMITS.facts) break;
+  }
+  return out.length ? out : null;
+}
+
+/**
+ * `data` of a notification: { route?, actions?, facts?, ...context }. Returns
  * { ok, data } — ok=false when it does not fit into 4 KB (callers from a
  * plugin get ERR_INVALID; core events never get there). Unknown action types
  * and bad routes are dropped silently.
@@ -86,6 +108,10 @@ function data(raw) {
     const list = Array.isArray(raw.actions) ? raw.actions.slice(0, LIMITS.actions).map(action).filter(Boolean) : [];
     if (list.length) out.actions = list; else delete out.actions;
   }
+  if ('facts' in out) {
+    const list = facts(raw.facts);
+    if (list) out.facts = list; else delete out.facts;
+  }
   if (!Object.keys(out).length) return { ok: true, data: null };
   const size = Buffer.byteLength(JSON.stringify(out), 'utf8');
   if (size > LIMITS.dataBytes) return { ok: false, data: null };
@@ -98,4 +124,4 @@ function collapseKey(v) {
   return /^[A-Za-z0-9_.:@/-]{1,120}$/.test(s) ? s : null;
 }
 
-module.exports = { line, text, title, body, data, action, portalPath, collapseKey };
+module.exports = { line, text, title, body, data, action, facts, portalPath, collapseKey };

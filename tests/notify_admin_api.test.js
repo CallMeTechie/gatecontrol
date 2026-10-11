@@ -195,6 +195,23 @@ describe('POST /send and /test', () => {
       assert.deepEqual(r.body, { ok: true, devices: 1 });
     })();
   });
+
+  it('POST /test { token_id } → one app device of anybody (free); others 404, garbage 400', async () => {
+    await withoutLicence(async () => {
+      H.clearNotifications();
+      require('../src/middleware/rateLimit').notifySendLimiter.resetKey(`notify-send:${adminId}`);
+      const r = await post('/test').send({ token_id: annaPhone.tokenId }).expect(200);
+      assert.deepEqual(r.body, { ok: true, devices: 1 });
+      const n = H.lastNotification();
+      assert.equal(n.event_id, 'test');
+      assert.deepEqual(H.deliveries(n.id).map((d) => d.token_id), [annaPhone.tokenId]);
+      const plain = H.makeDevice(anna, { name: 'no-app', app: false });
+      await post('/test').send({ token_id: plain.tokenId }).expect(404);
+      await post('/test').send({ token_id: 999999 }).expect(404);
+      for (const bad of ['x', -1, 1.5, { a: 1 }]) await post('/test').send({ token_id: bad }).expect(400);
+      require('../src/middleware/rateLimit').notifySendLimiter.resetKey(`notify-send:${adminId}`);
+    })();
+  });
 });
 
 describe('history', () => {
@@ -311,6 +328,13 @@ describe('/api/v1/me/notify (own settings)', () => {
     assert.equal(r.body.updated, 0);
     r = await m.a.post('/api/v1/me/notify/test').set('X-CSRF-Token', m.csrf).send({}).expect(200);
     assert.deepEqual(r.body, { ok: true, devices: 1 });
+    // one own device by id; another person's device is "not found"
+    H.clearNotifications();
+    r = await m.a.post('/api/v1/me/notify/test').set('X-CSRF-Token', m.csrf).send({ token_id: annaPhone.tokenId }).expect(200);
+    assert.deepEqual(r.body, { ok: true, devices: 1 });
+    assert.deepEqual(H.deliveries(H.lastNotification().id).map((d) => d.token_id), [annaPhone.tokenId]);
+    await m.a.post('/api/v1/me/notify/test').set('X-CSRF-Token', m.csrf).send({ token_id: adminPhone.tokenId }).expect(404);
+    await m.a.post('/api/v1/me/notify/test').set('X-CSRF-Token', m.csrf).send({ token_id: 'abc' }).expect(400);
     const tok = require('../src/services/tokens').create({ name: 'me-tok', scopes: ['full-access'], userId: adminId }, '127.0.0.1');
     await supertest(app).get('/api/v1/me/notify/prefs').set('X-API-Token', tok.rawToken).expect(403);
   });

@@ -546,7 +546,7 @@ function onIngested(rows) {
     const activeBans = new Set(activeBanIps());
     let autoCount = db.prepare('SELECT COUNT(*) AS n FROM waf_bans WHERE manual = 0 AND (expires_at IS NULL OR expires_at > ?)').get(now.toISOString()).n;
     const countStmt = db.prepare(`SELECT COUNT(DISTINCT COALESCE(tx_id, 'row:' || id)) AS hits, MIN(ts) AS first_seen,
-        group_concat(DISTINCT rule_id) AS rules
+        group_concat(DISTINCT rule_id) AS rules, MAX(host) AS host
       FROM waf_events WHERE client_ip = ? AND ts >= ? AND ${BAN_RULE_SQL}`);
     let banned = 0;
     for (const raw of candidates) {
@@ -574,7 +574,7 @@ function onIngested(rows) {
       publishBan('ban', ip);
       try {
         require('./activity').log('waf_ip_banned', `IP ${ip} banned for ${s.autoban.duration_h} h (scanner: ${c.hits} requests)`, {
-          source: 'system', severity: 'warning', details: { ip, hits: c.hits, rules, duration_h: s.autoban.duration_h, manual: false },
+          source: 'system', severity: 'warning', details: { ip, hits: c.hits, rules, host: c.host || null, duration_h: s.autoban.duration_h, manual: false },
         });
       } catch { /* best-effort */ }
     }

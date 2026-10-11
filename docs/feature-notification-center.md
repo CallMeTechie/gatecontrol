@@ -186,6 +186,7 @@ CREATE TABLE IF NOT EXISTS notify_device_prefs (   -- vom Gerät gemeldet
 | GET | `/api/v1/client/push` | SSE-Stream. Ereignisse `hello` (Server-Zeit, Keepalive, Themenliste), `notification`, `read` (Gelesen-Abgleich), `revoke` (zurückgezogen), `policy` / `support_bundle` (Phase 5). Wiederaufnahme über `Last-Event-ID`. |
 | POST | `/api/v1/client/push/ack` | `{seqs:[…], state:'delivered'│'read'│'dismissed', action?}` |
 | GET | `/api/v1/client/push/inbox` | Posteingang (letzte 100), für den App-Bildschirm „Mitteilungen“ |
+| GET | `/api/v1/client/push/prefs` | gespeicherte Geräte-Einstellungen plus Ruhezeiten der Person |
 | PUT | `/api/v1/client/push/prefs` | Geräte-Einstellungen: an/aus, Modus, abgewählte Themen, Akku-Status |
 | POST | `/api/v1/client/push/test` | Testnachricht an dieses Gerät |
 
@@ -218,7 +219,9 @@ vorhandenen Bus in die Admin-Oberfläche.
   tz, critical_bypass, devices:[{token_id,name,state,queued}]}` (PUT
   `{topics:[{id,enabled}], quiet_from:"HH:MM"|null, quiet_to, tz, critical_bypass}`),
   `GET inbox?limit&before=<id>` → `{items, unread}`, `POST read`
-  `{ids:[…]}`|`{all:true}` → `{ok, updated}`, `POST test` → `{ok, devices}`.
+  `{ids:[…]}`|`{all:true}` → `{ok, updated}`, `POST test` `{token_id?}` →
+  `{ok, devices}` (`token_id`: nur eines der eigenen App-Geräte, sonst 404;
+  ohne: alle eigenen Geräte).
 
 **Admin-API, Antwortformen (Phase 1a, für die Admin-Seite verbindlich).**
 Alle Antworten tragen zusätzlich `"ok": true`.
@@ -242,7 +245,10 @@ Alle Antworten tragen zusätzlich `"ok": true`.
   die älteste wartende Nachricht verfällt.
 * `POST /api/v1/notify/send` `{target:{type: all|users|groups|devices, ids},
   title, body, priority, ttl_s}` → `{ok, notification_id, devices_now, devices_later}`
-* `POST /api/v1/notify/test` → `{ok, devices}`
+* `POST /api/v1/notify/test` `{token_id?}` → `{ok, devices}`. Ohne
+  `token_id` an die eigenen Geräte des Admins, mit `token_id` an genau dieses
+  App-Gerät (beliebige Person; kein App-Gerät → 404, ungültig → 400). Frei,
+  ohne Lizenz; Limit wie bisher (10 je Minute und Konto).
 * `GET /api/v1/notify/history?filter=all|important|undelivered|plugins|manual&days=7&before=<id>&limit=50`
   → `{items:[{id, title, body, event_id, source, priority, created_at,
   delivered, total, read, recipients_label, silent, status: ok|partial|waiting}], next_before}`
@@ -418,9 +424,28 @@ In der `plugin.json` kommt ein neuer, optionaler Block hinzu:
   * Verlauf (Filter und Zustellprotokoll)
   * Einstellungen
   * Umsetzung: `el()`, kein innerHTML; i18n DE/EN.
+  * Der Zähler „Benachrichtigungen“ in der Seitenleiste (wartende
+    Nachrichten) kommt mit jeder Admin-Seite (gezählt beim Seitenaufbau,
+    15 s zwischengespeichert).
 * **Portal:**
   * Glocke mit Zähler im Kopf.
   * Seite „Meine Benachrichtigungen“: Themen, „Empfangen auf“, Ruhezeiten, Zuletzt.
+  * Umsetzung (Phase 4a): nur für eine angemeldete Person (Portal- oder
+    Web-Sitzung) und nur, solange Push am Server an ist. Zwei Seiten ohne
+    eigenen Reiter, per URL erreichbar wie die Reiter:
+    * `#mitteilungen` (Glocke): Posteingang, neueste zuerst, Punkt für
+      ungelesen, „Gelesen“ je Eintrag und „Alle als gelesen“, Fakten
+      (`data.facts`), „Ältere laden“ (`before`), Leerzustand.
+    * `#benachrichtigungen` (Verweis in „Meine Geräte“ und im Posteingang):
+      Themen als Schalter (gesperrte grau mit Grund, Plugin-Themen mit ihrem
+      Label), „Empfangen auf“ mit Zustand, wartenden Nachrichten und „Test“
+      je Gerät (`token_id`), Ruhezeiten (an/aus, von/bis, Zeitzone aus dem
+      Browser, „Kritisches trotzdem melden“), „Zuletzt“ (5 Einträge).
+    * Jede Änderung speichert sofort (`PUT prefs` mit nur dem geänderten Feld).
+    * Live: Die Glocke fragt `GET inbox` alle 60 s ab, solange die Seite
+      sichtbar ist, und sofort beim Zurückkehren; kein Stream aus dem Portal.
+    * Die Apps springen mit dem Portal-Link (`next`, siehe Vertrag) direkt
+      auf `#mitteilungen` oder `#benachrichtigungen`.
 * **Dokumentation:**
   * `docs/plugins.md` (neue `gc.notify`-Form, `notifyTopics`).
   * Dieses Dokument wird zur Feature-Doku.
@@ -433,6 +458,9 @@ In der `plugin.json` kommt ein neuer, optionaler Block hinzu:
 * Ein gesperrtes oder gelöschtes Gerät (Token widerrufen) verliert den Stream sofort.
 * Begrenzung: Titel 120, Text 1000 Zeichen, `data` höchstens 4 KB.
   Steuerzeichen werden entfernt. Die Apps zeigen nur Text an, kein HTML.
+* `data.facts` (optional): höchstens 6 Paare `{label, value}`, je eine
+  Zeile, `label` ≤ 60, `value` ≤ 120 Zeichen; Zahlen werden zu Text, leere
+  oder falsch geformte Einträge fallen weg.
 * Aktionen nur aus einer festen Liste:
   * `open_app_route`
   * `open_portal` (eigene Domain)
@@ -531,6 +559,9 @@ Alle Geräte-Routen verwenden Token-Auth wie die übrigen `/api/v1/client/*`:
 * Alle JSON-Antworten der REST-Routen tragen zusätzlich `"ok": true|false`.
 * `hello.topics` enthält für Admins zusätzlich `system`; Plugin-Themen nur mit
   der Lizenz `email_alerts`.
+* `hello.quiet`: die Ruhezeiten der Person, wie bei
+  `GET /api/v1/client/push/prefs`, oder `null`. Zusätzliches Feld; ältere
+  Clients ignorieren es.
 * Pro Token gibt es genau einen Stream; ein neuer beendet den alten.
 
 Ereignisse:
@@ -539,6 +570,7 @@ Ereignisse:
 event: hello
 data: {"server_time":"2026-10-10T21:42:03.120Z","keepalive_s":25,"retention_h":72,
        "via":"direct","unread":3,
+       "quiet":{"from":"22:00","to":"07:00","tz":"Europe/Berlin","critical_bypass":true},
        "topics":[{"id":"security","label":"Sicherheit"},{"id":"devices","label":"Geräte & Gateways"},
                  {"id":"services","label":"Dienste"},{"id":"admin_notice","label":"Hinweise vom Admin"},
                  {"id":"plugin:skoda:charging","label":"Fahrzeug · Laden abgeschlossen"}]}
@@ -550,7 +582,8 @@ data: {"seq":123,"id":45,"event_id":"gateway_state","topic":"devices","priority"
        "created_at":"2026-10-10T21:42:03Z","expires_at":"2026-10-13T21:42:03Z",
        "collapse_key":"gateway:3","silent":false,
        "data":{"route":"gateways","actions":[{"id":"details","label":"Details","type":"open_app_route","target":"gateways"},
-                                             {"id":"mute_1h","label":"1 h stumm","type":"mute_1h"}]}}
+                                             {"id":"mute_1h","label":"1 h stumm","type":"mute_1h"}],
+               "facts":[{"label":"Zuletzt gesehen","value":"10.10.26, 21:40"},{"label":"Betroffene Routen","value":"3"}]}}
 
 event: read
 data: {"ids":[45]}            # auf einem anderen Gerät derselben Person gelesen → hier ausblenden
@@ -571,12 +604,25 @@ Dazu gelten diese Regeln:
 * Gleicher `collapse_key` heißt: Die vorhandene Benachrichtigung wird
   ersetzt bzw. aktualisiert.
 * `priority`: `info` | `normal` | `high` | `critical`.
+* `data.facts` (optional): `[{label, value}]`, höchstens 6, Text in der
+  Server-Sprache. Die Apps zeigen sie als Liste unter dem Text. Der Server
+  füllt sie für Kernereignisse, wenn er Kontext hat:
+
+  | Ereignis | Fakten |
+  |---|---|
+  | `gateway_down`, `gateway_offline` | Zuletzt gesehen, Betroffene Routen (Anzahl) |
+  | `waf_ip_banned` | IP-Adresse, Treffer, Route (Host), Port (Layer 4), Sperrdauer |
+  | `route_down` | Domain, Antwortzeit |
+  | Zertifikat läuft ab (sobald es ein Kernereignis dafür gibt) | Domain, Tage übrig |
+
+  Beim Bündeln folgt `data` dem neuesten Ereignis. Plugins dürfen eigene
+  `facts` mitgeben (gleiche Grenzen).
 * Aktionstypen (feste Liste):
 
   | Typ | Wirkung |
   |---|---|
   | `open_app_route` | `target` ist eine App-Route: `vpn`, `services`, `gateways`, `inbox`, `plg-<id>` |
-  | `open_portal` | `target` ist ein Pfad im Portal; der Client öffnet ihn über den vorhandenen Portal-Link mit Auto-Login |
+  | `open_portal` | `target` ist ein Pfad im Portal; der Client öffnet ihn über den vorhandenen Portal-Link mit Auto-Login (`next`, siehe unten) |
   | `mute_1h` | lokale Stummschaltung des Themas für 1 h, zusätzlich `ack` mit `action` |
   | `done` | `ack` mit `action:"done"` |
   | `ack` | `ack` mit `action` |
@@ -595,6 +641,19 @@ Dazu gelten diese Regeln:
 * Sortiert neueste zuerst; abgelaufene und zurückgezogene Nachrichten sind
   nicht enthalten. Noch nicht bestätigte Einträge erscheinen als `delivered`.
 
+### `GET /api/v1/client/push/prefs`
+
+* Antwort: `{"ok":true,"enabled":true,"mode":"always"|"vpn_only"|null,"muted_topics":["services"],"restricted":false,
+  "quiet":{"from":"22:00","to":"07:00","tz":"Europe/Berlin","critical_bypass":true}}`.
+* `enabled`, `mode`, `muted_topics`, `restricted`: was das Gerät zuletzt mit
+  `PUT` gemeldet hat (ohne Eintrag: `true`, `null`, `[]`, `false`).
+* `quiet`: Ruhezeiten der Person des Tokens (im Portal eingestellt) oder
+  `null`, wenn keine gesetzt sind (oder `from` = `to`). `from`/`to` sind
+  `HH:MM` in der Zeitzone `tz` (IANA; ohne eigene Angabe die des Servers).
+  `critical_bypass:true` heißt: Kritisches kommt trotzdem mit Ton. Die
+  Ruhezeit wendet der Server an (`silent:true`); die Apps zeigen sie nur an.
+* Liest nur, schreibt nichts (kein Eintrag als Push-Gerät).
+
 ### `PUT /api/v1/client/push/prefs`
 
 * Body: `{"enabled":true,"mode":"always"|"vpn_only","muted_topics":["plugin:skoda:charging"],"restricted":false}`.
@@ -606,3 +665,26 @@ Dazu gelten diese Regeln:
 * Antwort: `{"ok":true,"seq":130}`.
 * Erzeugt eine `info`-Nachricht „Testnachricht“ nur an dieses Gerät, ohne
   Ruhezeit-Filter und ohne Rate-Limit über 5 pro Minute.
+
+### `POST /api/v1/client/portal-link` mit Ziel (`next`)
+
+Der vorhandene Portal-Link mit Auto-Login (Einmal-URL `/auto?t=…`, 60 s,
+einmal verwendbar) nimmt ein optionales Ziel im Portal an, damit die Apps
+direkt in einen Portal-Reiter springen und trotzdem angemeldet werden:
+
+* Anfrage: Body (oder Query) `{"next":"/portal#mitteilungen"}`; `path` ist
+  ein gleichwertiger Alias.
+* Antwort wie bisher, die URL trägt das geprüfte Ziel:
+  `{"ok":true,"url":"https://home.example/auto?t=<ticket>&next=%2Fportal%23mitteilungen","expiresIn":60}`.
+  Die Apps dürfen `next` auch selbst an eine vorhandene `/auto`-URL hängen
+  (URL-kodiert); der Server prüft es beim Aufruf erneut.
+* Erlaubt sind nur Portal-Reiter: `/portal`, `/portal#<reiter>` oder
+  `/#<reiter>` (wird zu `/portal#<reiter>`), höchstens 100 Zeichen.
+  `<reiter>`: `start`, `dienste`, `zuhause`, `fahrzeug`, `netzwerk`,
+  `geraete`, `mitteilungen` (Posteingang), `benachrichtigungen` (Meine
+  Benachrichtigungen) oder ein Plugin-Reiter `plg-<id>`.
+* Alles andere (andere Pfade, `//`, Schema, `\`, Query, unbekannter Reiter,
+  zu lang) wird **ignoriert**, nie ein Fehler: Es gilt dann `/portal`.
+* Ungültiges oder verbrauchtes Ticket: anonymes Portal mit Hinweis, das Ziel
+  entfällt. Gemeinsames Gerät: erst „Wer bist du?“, nach der PIN folgt das Ziel.
+* Für `open_portal`-Aktionen geben die Apps `target` als `next` weiter.

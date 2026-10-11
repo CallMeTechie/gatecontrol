@@ -10,7 +10,8 @@
  *   PUT  /rules/:eventId          partial update → { ok, rule }
  *   GET  /devices                 devices with live presence
  *   POST /send                    manual message (licence email_alerts)
- *   POST /test                    test to the own devices → { ok, devices }
+ *   POST /test                    { token_id? } test to the own devices, or to
+ *                                 one app device of anybody → { ok, devices }
  *   GET  /history                 ?filter&days&before&limit → { items, next_before }
  *   GET  /history/:id             notification, timeline, deliveries, email
  *   POST /history/:id/resend      → { ok }
@@ -38,6 +39,8 @@ const admin = require('../../services/notify/admin');
 const stream = require('../../services/notify/stream');
 const sanitize = require('../../services/notify/sanitize');
 const text = require('../../services/notify/text');
+const pushRouter = require('../../services/notify/router');
+const { testTokenId } = require('./meNotify');
 const { PRIORITIES } = require('../../services/notify/constants');
 
 const router = Router();
@@ -198,9 +201,14 @@ router.post('/send', notifySendLimiter, (req, res) => {
 });
 
 router.post('/test', notifySendLimiter, (req, res) => {
+  const tokenId = testTokenId(req.body);
+  if (tokenId === false) return res.status(400).json({ ok: false, error: req.t('push.error.invalid'), fields: { token_id: 'invalid' } });
   if (!config.value('enabled')) return res.status(503).json({ ok: false, error: 'push_disabled' });
+  if (tokenId != null && !pushRouter.devicesByIds([tokenId]).length) {
+    return res.status(404).json({ ok: false, error: req.t('push.error.device_not_found') });
+  }
   try {
-    const r = hub.sendTest({ userId: req.session.userId, source: `manual:${req.session.userId}`, lang: req.language });
+    const r = hub.sendTest({ tokenIds: tokenId == null ? null : [tokenId], userId: req.session.userId, source: `manual:${req.session.userId}`, lang: req.language });
     res.json({ ok: true, devices: r.devices });
   } catch (err) {
     logger.error({ err: err.message }, 'notify test failed');

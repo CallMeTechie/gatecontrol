@@ -105,7 +105,8 @@ describe('GET /api/v1/client/push — stream', () => {
     assert.equal(s.headers['x-accel-buffering'], 'no');
     assert.equal(s.headers['ratelimit-limit'], '120', 'own limiter per token');
     const hello = await s.waitFor((e) => e.event === 'hello');
-    assert.deepEqual(Object.keys(hello.data).sort(), ['keepalive_s', 'retention_h', 'server_time', 'topics', 'unread', 'via']);
+    assert.deepEqual(Object.keys(hello.data).sort(), ['keepalive_s', 'quiet', 'retention_h', 'server_time', 'topics', 'unread', 'via']);
+    assert.equal(hello.data.quiet, null, 'no quiet hours set');
     assert.equal(hello.data.keepalive_s, 25);
     assert.equal(hello.data.retention_h, 72);
     assert.equal(hello.data.via, 'direct');
@@ -290,6 +291,38 @@ describe('PUT /api/v1/client/push/prefs', () => {
     const out = require('../src/services/notify/router').resolve({ users: [anna], topic: 'services', priority: 'normal' });
     assert.ok(!out.some((x) => x.tokenId === annaPhone.tokenId));
     await api('put', '/api/v1/client/push/prefs', annaPhone).send({ muted_topics: [], restricted: false, mode: 'always' }).expect(200);
+  });
+
+  it('GET returns what the device stored plus the quiet hours of its person', async () => {
+    let r = await api('get', '/api/v1/client/push/prefs', benPhone).expect(200);
+    assert.deepEqual(r.body, { ok: true, enabled: true, mode: null, muted_topics: [], restricted: false, quiet: null });
+    assert.equal(r.headers['cache-control'], 'no-store');
+    await api('put', '/api/v1/client/push/prefs', benPhone).send({ mode: 'always', muted_topics: ['services'], restricted: true }).expect(200);
+    H.db().prepare("INSERT INTO notify_user_prefs (user_id, quiet_from, quiet_to, tz, critical_bypass) VALUES (?, '22:00', '07:00', 'Europe/Berlin', 0)").run(ben);
+    try {
+      r = await api('get', '/api/v1/client/push/prefs', benPhone).expect(200);
+      assert.deepEqual(r.body, {
+        ok: true, enabled: true, mode: 'always', muted_topics: ['services'], restricted: true,
+        quiet: { from: '22:00', to: '07:00', tz: 'Europe/Berlin', critical_bypass: false },
+      });
+      // the same quiet hours arrive in `hello`
+      const s = await H.openStream(port, benPhone.raw);
+      const hello = await s.waitFor((e) => e.event === 'hello');
+      assert.deepEqual(hello.data.quiet, { from: '22:00', to: '07:00', tz: 'Europe/Berlin', critical_bypass: false });
+      s.close();
+      // from = to never applies → null; no time zone → the server's
+      H.db().prepare("UPDATE notify_user_prefs SET quiet_to = '22:00' WHERE user_id = ?").run(ben);
+      assert.equal((await api('get', '/api/v1/client/push/prefs', benPhone).expect(200)).body.quiet, null);
+      H.db().prepare("UPDATE notify_user_prefs SET quiet_to = '06:30', tz = NULL WHERE user_id = ?").run(ben);
+      const q = (await api('get', '/api/v1/client/push/prefs', benPhone).expect(200)).body.quiet;
+      assert.equal(q.tz, require('../src/services/notify/router').serverTz());
+      assert.equal(q.critical_bypass, false);
+    } finally {
+      H.db().prepare('DELETE FROM notify_user_prefs WHERE user_id = ?').run(ben);
+      await api('put', '/api/v1/client/push/prefs', benPhone).send({ mode: 'always', muted_topics: [], restricted: false }).expect(200);
+    }
+    // token only, like the other device routes
+    await agent.get('/api/v1/client/push/prefs').expect(403);
   });
 
   it('rejects invalid values', async () => {

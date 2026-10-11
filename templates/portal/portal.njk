@@ -74,6 +74,14 @@
   </nav>
 
   <div class="pt-head-end">
+    {% if tabs.notify %}
+    {#- Notification center (docs/feature-notification-center.md "Portal"):
+        the bell opens the inbox (#mitteilungen); portal.js keeps the count. #}
+    <a class="pt-iconbtn pt-bell" id="pt-bell" href="#mitteilungen" data-goto="mitteilungen" title="{{ t('portal.notify.inbox') }}" aria-label="{{ t('portal.notify.inbox') }}">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      <span class="pt-bell-count" id="pt-bell-count" aria-hidden="true" hidden></span>
+    </a>
+    {% endif %}
     <button type="button" class="pt-iconbtn" id="themeBtn" title="{{ t('portal.theme_toggle') }}" aria-label="{{ t('portal.theme_toggle') }}">
       <svg class="ic-sun" aria-hidden="true" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4.5" stroke="currentColor" stroke-width="2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       <svg class="ic-moon" aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.5 6.5 0 0 0 9.8 9.8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
@@ -338,6 +346,79 @@
       <ul class="pt-devlist" id="pt-devices"><li class="pt-empty">{{ t('portal.loading') }}</li></ul>
     </section>
     <p class="pt-foot" id="pt-devices-foot"></p>
+    {% if tabs.notify %}
+    <a class="pt-card pt-narrow pt-navcard" href="#benachrichtigungen" data-goto="benachrichtigungen" id="pt-devices-notify">
+      <span class="pt-navcard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span>
+      <span class="pt-grow"><b>{{ t('portal.notify.title') }}</b><span class="pt-small pt-muted pt-block">{{ t('portal.notify.navcard') }}</span></span>
+      <span class="pt-navcard-go" aria-hidden="true">›</span>
+    </a>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {#- ═══ Mitteilungen + Meine Benachrichtigungen (notification center) ═══
+      Pages without a tab of their own: the bell, the card in "Meine Geräte"
+      and links lead here; URL-addressable (#mitteilungen,
+      #benachrichtigungen) like the tabs. Data: /api/v1/portal/me/notify/*. #}
+  {% if tabs.notify %}
+  <section class="pt-panel" id="panel-mitteilungen" role="region" aria-labelledby="pt-h-inbox" tabindex="0" data-panel="mitteilungen" data-extra hidden>
+    <div class="pt-hero">
+      <div class="pt-hero-text">
+        <h1 class="pt-h1 pt-h1-sm" id="pt-h-inbox">{{ t('portal.notify.inbox') }}</h1>
+        <p class="pt-lead">{{ t('portal.notify.inbox_lead') }}</p>
+      </div>
+      <div class="pt-hero-actions">
+        <button type="button" class="pt-btn" id="pt-inbox-readall" disabled>{{ t('portal.notify.read_all') }}</button>
+        <a class="pt-btn" href="#benachrichtigungen" data-goto="benachrichtigungen" id="pt-inbox-prefs">{{ t('portal.notify.settings') }}</a>
+      </div>
+    </div>
+    <section class="pt-card pt-narrow" aria-labelledby="pt-h-inbox">
+      <ul class="pt-inbox" id="pt-inbox" aria-live="polite"><li class="pt-empty">{{ t('portal.loading') }}</li></ul>
+      <div class="pt-inbox-more" id="pt-inbox-more-wrap" hidden><button type="button" class="pt-btn pt-btn-sm" id="pt-inbox-more">{{ t('portal.notify.older') }}</button></div>
+    </section>
+  </section>
+
+  <section class="pt-panel" id="panel-benachrichtigungen" role="region" aria-labelledby="pt-h-prefs" tabindex="0" data-panel="benachrichtigungen" data-extra hidden>
+    <h1 class="pt-h1 pt-h1-sm" id="pt-h-prefs">{{ t('portal.notify.title') }}</h1>
+    <p class="pt-lead">{{ t('portal.notify.lead') }}</p>
+    <div class="pt-msg" id="pt-np-msg" role="status" hidden></div>
+    <div class="pt-np-grid" id="pt-np-grid">
+      <section class="pt-card pt-pad" aria-labelledby="pt-h-topics">
+        <h2 class="pt-h2" id="pt-h-topics">{{ t('portal.notify.topics') }}</h2>
+        <p class="pt-card-lead">{{ t('portal.notify.topics_lead') }}</p>
+        <ul class="pt-topics" id="pt-np-topics"><li class="pt-empty">{{ t('portal.loading') }}</li></ul>
+      </section>
+      <div class="pt-np-side">
+        <section class="pt-card pt-pad" aria-labelledby="pt-h-receive">
+          <h2 class="pt-h2 pt-h2-gap" id="pt-h-receive">{{ t('portal.notify.receive') }}</h2>
+          <ul class="pt-recv" id="pt-np-devices"><li class="pt-empty">{{ t('portal.loading') }}</li></ul>
+        </section>
+        <section class="pt-card pt-pad" aria-labelledby="pt-h-quiet">
+          <div class="pt-card-row pt-row-tight">
+            <h2 class="pt-h2" id="pt-h-quiet">{{ t('portal.notify.quiet') }}</h2>
+            <label class="pt-switch-wrap"><span class="pt-sr">{{ t('portal.notify.quiet_on') }}</span><input type="checkbox" role="switch" class="pt-switch" id="pt-np-quiet-on"></label>
+          </div>
+          <div class="pt-quiet" id="pt-np-quiet-fields">
+            <label class="pt-time">{{ t('portal.notify.quiet_from') }} <input type="time" id="pt-np-from" value="22:00" required></label>
+            <label class="pt-time">{{ t('portal.notify.quiet_to') }} <input type="time" id="pt-np-to" value="07:00" required></label>
+          </div>
+          <p class="pt-small pt-muted pt-np-tz" id="pt-np-tz"></p>
+          <label class="pt-switch-row">
+            <span class="pt-grow"><b>{{ t('portal.notify.critical') }}</b><span class="pt-small pt-muted pt-block" id="pt-np-critical-hint">{{ t('portal.notify.critical_hint') }}</span></span>
+            <input type="checkbox" role="switch" class="pt-switch" id="pt-np-critical" aria-describedby="pt-np-critical-hint">
+          </label>
+          <p class="pt-foot">{{ t('portal.notify.quiet_foot') }}</p>
+        </section>
+        <section class="pt-card pt-pad" aria-labelledby="pt-h-recent">
+          <div class="pt-card-row pt-row-tight">
+            <h2 class="pt-h2" id="pt-h-recent">{{ t('portal.notify.recent') }}</h2>
+            <button type="button" class="pt-linkbtn pt-push" id="pt-np-readall" hidden>{{ t('portal.notify.read_all') }}</button>
+          </div>
+          <ul class="pt-inbox pt-inbox-mini" id="pt-np-recent"><li class="pt-empty">{{ t('portal.loading') }}</li></ul>
+          <a class="pt-link pt-link-left" href="#mitteilungen" data-goto="mitteilungen">{{ t('portal.notify.all') }}</a>
+        </section>
+      </div>
+    </div>
   </section>
   {% endif %}
   {#- Plugin tab panels: the plugin's content in a sandboxed frame (opaque

@@ -365,7 +365,10 @@ const { pushed, id } = await gc.notify({
   administrator can switch a plugin topic off.
 * `data.actions` may only use the fixed action types (`open_app_route`,
   `open_portal`, `mute_1h`, `ack`, `done`); control characters are removed,
-  the apps show text only. Schedules ("evening before 18:00") are the
+  the apps show text only.
+* `data.facts` (optional): up to 6 `{ label, value }` pairs the apps show
+  under the text, e.g. `[{ label: 'Akku', value: '80 %' }]` — one line each,
+  label ≤ 60 and value ≤ 120 characters; anything else is dropped. Schedules ("evening before 18:00") are the
   plugin's own job (`background` + `gc.storage`).
 
 ## Storage and migrations

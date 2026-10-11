@@ -7,7 +7,8 @@
  * anonymous mode, device trust).
  *
  *   GET  /portal                 the portal (redesign "variant A": tabs)
- *   GET  /auto?t=<ticket>        one-time login link of the apps
+ *   GET  /auto?t=<ticket>[&next=<tab>]  one-time login link of the apps
+ *                                (next: portalTickets.portalNext, else /portal)
  *   GET  /portal/who             "Wer bist du?" on a shared device
  *   POST /portal/who             pick a person + portal PIN
  *   POST /portal/switch          "Person wechseln" (shared device)
@@ -80,6 +81,10 @@ function accountUrl() {
   try { return new URL('/profile', config.app.baseUrl).href; } catch { return '/profile'; }
 }
 
+function notifyEnabled() {
+  try { return !!require('../services/notify/config').value('enabled'); } catch { return false; }
+}
+
 /** Which tabs have something to show (unlicensed or empty areas stay hidden). */
 function tabsFor(req, plg) {
   const sections = (plg && plg.sections) || { home: [], car: [] };
@@ -96,6 +101,8 @@ function tabsFor(req, plg) {
     traffic: identified && w.traffic,
     pihole: identified && w.pihole && license.hasFeature('pihole_integration'),
     devices: !!req.portalLoggedIn,
+    // Notification center: bell, inbox, own settings (signed in, push on).
+    notify: !!req.portalLoggedIn && notifyEnabled(),
   };
 }
 
@@ -196,6 +203,9 @@ router.get('/auto', portalPageLimiter, enabled, portalIdentity, (req, res, next)
   noStore(res);
   const raw = typeof req.query.t === 'string' ? req.query.t : '';
   const ticket = portalTickets.consume(raw);
+  // Deep link of the app: a validated portal tab, or the portal itself.
+  const rawNext = typeof req.query.next === 'string' ? req.query.next : (typeof req.query.path === 'string' ? req.query.path : '');
+  const target = portalTickets.portalNext(rawNext) || '/portal';
   // Same device as the one the ticket was issued for (when the device is known).
   const valid = !!ticket && (req.portalPeerId == null || req.portalPeerId === ticket.peerId);
   const info = valid ? portalDevices.usageForPeer(ticket.peerId) : null;
@@ -204,18 +214,20 @@ router.get('/auto', portalPageLimiter, enabled, portalIdentity, (req, res, next)
     if (ticket) logger.warn({ ticketPeer: ticket.peerId, requestPeer: req.portalPeerId }, 'portal login link used from another device');
     return freshSession(req, (s) => { s.portalAnonymous = true; s.portalNote = 'link_invalid'; }, fail);
   }
+  const toTarget = (err) => (err ? next(err) : res.redirect(target));
   if (info.mode === 'multi') {
-    return freshSession(req, () => {}, (err) => (err ? next(err) : res.redirect('/portal/who')));
+    // Shared device: the picker first; the target follows the PIN.
+    return freshSession(req, (s) => { if (target !== '/portal') s.portalNext = target; }, (err) => (err ? next(err) : res.redirect('/portal/who')));
   }
   if (!portalOwner.trustEnabled() || ticket.userId == null || !portalDevices.userMayUseDevice(ticket.userId, ticket.peerId)) {
     // Automatic recognition switched off (or nobody to sign in): the portal
     // as it is without the link.
-    return freshSession(req, () => {}, fail);
+    return freshSession(req, () => {}, toTarget);
   }
   return startPortalSession(req, { userId: ticket.userId, peerId: ticket.peerId, via: 'link' }, (err) => {
     if (err) return next(err);
     logger.info({ userId: ticket.userId, peerId: ticket.peerId }, 'portal: signed in with the login link of the app');
-    return res.redirect('/portal');
+    return toTarget();
   });
 });
 
@@ -265,12 +277,14 @@ router.post('/portal/who', portalPinLimiter, enabled, csrfProtection, portalIden
   }
   const remember = req.body.remember === '1' || req.body.remember === 'on';
   const peerId = req.portalPeerId;
+  // The app's deep link (GET /auto on a shared device), validated again.
+  const target = portalTickets.portalNext(req.session && req.session.portalNext) || '/portal';
   return startPortalSession(req, { userId: person.id, peerId, via: 'pin', remember }, (err) => {
     if (err) return next(err);
     activity.log('portal_person_picked', `Portal: a person signed in with the PIN on shared device #${peerId}`, {
       source: 'user', ipAddress: req.ip, severity: 'info', details: { userId: person.id, peerId, remember },
     });
-    return res.redirect('/portal');
+    return res.redirect(target);
   });
 });
 
