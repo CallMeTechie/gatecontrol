@@ -140,6 +140,33 @@ async function create(data) {
 /**
  * Update a peer
  */
+/**
+ * Control events on the devices' push streams (services/notify/control.js).
+ * fn(control) — best-effort, never throws, never fails the peer action.
+ */
+function pushControl(fn) {
+  try { fn(require('./notify/control')); } catch (err) {
+    logger.debug({ err: err.message }, 'push control event not sent');
+  }
+}
+
+/** Fields of a peer row that end up in its client config (getClientConfig). */
+const CONFIG_FIELDS = ['private_key_encrypted', 'preshared_key_encrypted', 'allowed_ips', 'dns', 'persistent_keepalive'];
+
+/** Control events for a peer row that changed from `before` to `after`. */
+function announcePeerChange(before, after) {
+  if (!before || !after) return;
+  pushControl((control) => {
+    if ((before.enabled ? 1 : 0) !== (after.enabled ? 1 : 0)) control.peerState([after.id], !!after.enabled);
+    if (CONFIG_FIELDS.some((f) => (before[f] == null ? null : before[f]) !== (after[f] == null ? null : after[f]))) {
+      control.configChanged({ peerIds: [after.id] });
+    }
+    if ((before.group_id == null ? null : before.group_id) !== (after.group_id == null ? null : after.group_id)) {
+      control.policyChanged({ peerIds: [after.id] });
+    }
+  });
+}
+
 async function update(id, data) {
   const db = getDb();
   const peer = db.prepare('SELECT * FROM peers WHERE id = ?').get(id);
@@ -222,6 +249,9 @@ async function update(id, data) {
     userIdValue !== undefined ? userIdValue : null,
     id
   );
+
+  // Before the WireGuard rewrite: a disabled device still hears it through the tunnel.
+  announcePeerChange(peer, db.prepare('SELECT * FROM peers WHERE id = ?').get(id));
 
   await rewriteWgConfig();
 
@@ -332,6 +362,9 @@ async function toggle(id) {
 
   const newState = peer.enabled ? 0 : 1;
   db.prepare('UPDATE peers SET enabled = ?, updated_at = datetime(\'now\') WHERE id = ?').run(newState, id);
+
+  // Before the WireGuard rewrite / removePeer: the device still hears it through the tunnel.
+  pushControl((control) => control.peerState([peer.id], !!newState));
 
   await rewriteWgConfig();
 
@@ -627,6 +660,7 @@ async function checkExpiredPeers() {
   }
 
   if (needSync) {
+    pushControl((control) => control.peerState(expired.map((p) => p.id), false));
     await rewriteWgConfig();
     // Remove expired peers from running interface
     for (const peer of expired) {
@@ -686,6 +720,10 @@ async function batch(action, ids) {
       db.prepare(`UPDATE routes SET peer_id = NULL WHERE peer_id IN (${placeholders})`).run(...ids);
       db.prepare(`DELETE FROM access_rules WHERE target_type = 'peer' AND target_id IN (${placeholders})`).run(...ids);
     })();
+  }
+
+  if (action === 'enable' || action === 'disable') {
+    pushControl((control) => control.peerState(existing.map((p) => p.id), action === 'enable'));
   }
 
   await rewriteWgConfig();

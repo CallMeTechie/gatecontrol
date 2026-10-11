@@ -7,6 +7,7 @@
 //   router.js     recipients → people → devices, filters, quiet hours
 //   store.js      notifications, per-device queue, device preferences
 //   stream.js     open SSE streams (one per device token)
+//   control.js    control events (policy, support bundle, peer state, config) + hello.state
 //   retention.js  hourly clean-up + ticker
 //   admin.js      queries of the admin API
 

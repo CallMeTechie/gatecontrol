@@ -136,10 +136,18 @@ function getGlobal() {
   return policy;
 }
 
+/** Control event `policy_changed` to the open push streams in scope (best-effort, never throws). */
+function announce(scope) {
+  try { require('./notify/control').policyChanged(scope); } catch (err) {
+    logger.debug({ err: err.message }, 'policy_changed push not sent');
+  }
+}
+
 function saveGlobal(policy) {
   const out = {};
   for (const f of FIELDS) out[f] = policy[f];
   settings.set(SETTINGS_KEY, JSON.stringify(out));
+  announce({ all: true });
 }
 
 /**
@@ -194,12 +202,14 @@ function setGroupOverride(groupId, override) {
   const value = override && Object.keys(override).length ? JSON.stringify(override) : null;
   const info = getDb().prepare('UPDATE peer_groups SET client_policy = ? WHERE id = ?').run(value, groupId);
   if (info.changes === 0) throw new Error('Group not found');
+  announce({ groupIds: [groupId] });
 }
 
 function setPeerOverride(peerId, override) {
   const value = override && Object.keys(override).length ? JSON.stringify(override) : null;
   const info = getDb().prepare('UPDATE peers SET client_policy = ? WHERE id = ?').run(value, peerId);
   if (info.changes === 0) throw new Error('Peer not found');
+  announce({ peerIds: [peerId] });
 }
 
 function listGroups() {

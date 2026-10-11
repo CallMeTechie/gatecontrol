@@ -48,6 +48,11 @@ router.put('/dns', requireFeature('custom_dns'), (req, res) => {
       } else {
         settings.set('custom_dns', '');
       }
+      // DNS is part of every client config without its own peer DNS — tell
+      // the open app streams (best-effort; over-inclusive is fine).
+      try { require('../../../services/notify/control').configChanged({ all: true }); } catch (err) {
+        logger.debug({ err: err.message }, 'config_changed push not sent');
+      }
     }
     activity.log('dns_settings_updated', 'DNS settings updated', {
       source: 'admin', ipAddress: req.ip, severity: 'info',
@@ -112,6 +117,13 @@ router.put('/split-tunnel', (req, res) => {
 
     const preset = { mode, networks, locked: !!locked };
     settings.set('split_tunnel_preset', JSON.stringify(preset));
+    // GET /client/split-tunnel and (when locked) the policy version change
+    // for every device without its own token override.
+    try {
+      const control = require('../../../services/notify/control');
+      control.configChanged({ all: true });
+      control.policyChanged({ all: true });
+    } catch (err) { logger.debug({ err: err.message }, 'split-tunnel push not sent'); }
 
     activity.log('split_tunnel_preset_updated', 'Split-tunnel preset updated', {
       details: preset,

@@ -105,7 +105,7 @@ describe('GET /api/v1/client/push — stream', () => {
     assert.equal(s.headers['x-accel-buffering'], 'no');
     assert.equal(s.headers['ratelimit-limit'], '120', 'own limiter per token');
     const hello = await s.waitFor((e) => e.event === 'hello');
-    assert.deepEqual(Object.keys(hello.data).sort(), ['keepalive_s', 'quiet', 'retention_h', 'server_time', 'topics', 'unread', 'via']);
+    assert.deepEqual(Object.keys(hello.data).sort(), ['keepalive_s', 'quiet', 'retention_h', 'server_time', 'state', 'topics', 'unread', 'via']);
     assert.equal(hello.data.quiet, null, 'no quiet hours set');
     assert.equal(hello.data.keepalive_s, 25);
     assert.equal(hello.data.retention_h, 72);

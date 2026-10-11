@@ -110,8 +110,15 @@ router.delete('/:id', (req, res) => {
       return res.status(404).json({ ok: false, error: req.t('error.peer_groups.not_found') });
     }
 
+    const members = db.prepare('SELECT id FROM peers WHERE group_id = ?').all(group.id).map((p) => p.id);
     db.prepare('UPDATE peers SET group_id = NULL WHERE group_id = ?').run(req.params.id);
     db.prepare('DELETE FROM peer_groups WHERE id = ?').run(req.params.id);
+    // The members lose the group's client policy override.
+    if (members.length) {
+      try { require('../../services/notify/control').policyChanged({ peerIds: members }); } catch (err) {
+        logger.debug({ err: err.message }, 'policy_changed push not sent');
+      }
+    }
 
     res.json({ ok: true });
   } catch (err) {

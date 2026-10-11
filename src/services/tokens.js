@@ -464,6 +464,15 @@ function update(id, data, { ip = null, actorId = null } = {}) {
   if (!fields.length) return { token: formatToken(row), dropped };
   values.push(id);
   db.prepare(`UPDATE api_tokens SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  if (changes.includes('split_tunnel')) {
+    // The token's split-tunnel preset feeds GET /client/split-tunnel and the
+    // policy version: tell its open push stream (best-effort).
+    try {
+      const control = require('./notify/control');
+      control.configChanged({ tokenIds: [row.id] });
+      control.policyChanged({ tokenIds: [row.id] });
+    } catch (err) { logger.debug({ err: err.message }, 'split-tunnel push not sent'); }
+  }
 
   activity.log('token_updated', `API token "${row.name}" updated (${changes.join(', ')})`, {
     source: 'admin', ipAddress: ip, severity: changes.includes('owner') || changes.includes('scopes') ? 'warning' : 'info',

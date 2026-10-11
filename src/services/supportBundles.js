@@ -281,7 +281,13 @@ function cleanup() {
 
 function requestBundle(peerId) {
   getDb().prepare("UPDATE peers SET support_bundle_requested_at = datetime('now') WHERE id = ?").run(peerId);
-  return getRequest(peerId);
+  const requestedAt = getRequest(peerId);
+  // The device hears it at once over its push stream (same value as the
+  // heartbeat's supportBundleRequestedAt); best-effort, never throws.
+  try { require('./notify/control').supportBundleRequested(peerId, requestedAt); } catch (err) {
+    logger.debug({ err: err.message, peerId }, 'support_bundle_requested push not sent');
+  }
+  return requestedAt;
 }
 
 function cancelRequest(peerId) {
