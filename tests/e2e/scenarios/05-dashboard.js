@@ -9,8 +9,32 @@
 // aria-/data-Attribute und die API-Antworten. Die Daten kommen aus seed.js
 // (30 Tage Traffic, ein Client-Peer, fünf Ereignisse).
 
+// Top peers count the UTC calendar day ("today"). The seed records their
+// traffic a minute before it ends, so a run that starts after midnight UTC
+// (seed 23:59, scenario 00:02) would find nothing for "today". Instead of
+// relaxing the check, the scenario writes the seeded per-peer rows again
+// inside today's window when that window holds none yet — same peers, same
+// bytes, so the check stays exactly as strict.
+function ensurePeerTrafficToday(fixtures) {
+  const rows = Array.isArray(fixtures.peerTraffic) ? fixtures.peerTraffic : [];
+  const file = process.env.GC_DB_PATH || require('node:path').join(process.env.GC_DATA_DIR || '.', 'gatecontrol.db');
+  if (!rows.length || !require('node:fs').existsSync(file)) return 0;
+  const Database = require('better-sqlite3');
+  const db = new Database(file);
+  try {
+    db.pragma('busy_timeout = 5000');
+    const d = new Date();
+    const dayStart = `${d.toISOString().slice(0, 10)} 00:00:00`;
+    const have = db.prepare('SELECT COUNT(*) AS n FROM peer_traffic_snapshots WHERE recorded_at >= ?').get(dayStart).n;
+    if (have > 0) return 0;
+    const ins = db.prepare("INSERT INTO peer_traffic_snapshots (peer_id, upload_bytes, download_bytes, recorded_at) VALUES (?, ?, ?, datetime('now'))");
+    db.transaction(() => rows.forEach(([id, up, down]) => ins.run(id, up, down)))();
+    return rows.length;
+  } finally { db.close(); }
+}
+
 module.exports = (ctx) => {
-  const { BASE, step, visible, waitIdle, shot, api } = ctx;
+  const { BASE, FIXTURES, step, visible, waitIdle, shot, api } = ctx;
 
   const theme = async (page, mode) => {
     await page.evaluate((m) => {
@@ -34,8 +58,11 @@ module.exports = (ctx) => {
         step(`API: traffic ${period} has ${n} continuous buckets`, r.status === 200 && data.length === n && data.every((d) => d.time),
           `${data.length} buckets, last ${data.length ? data[data.length - 1].time : '-'}`);
       }
+      const refreshed = ensurePeerTrafficToday(FIXTURES);
       const top = await api(page, 'GET', '/api/v1/dashboard/top-peers?limit=5');
-      step('API: top peers', top.status === 200 && Array.isArray(top.body.peers) && top.body.peers.length > 0, `${top.body && top.body.peers && top.body.peers.length} peers`);
+      const wantPeers = (FIXTURES.peerTraffic || []).length || 1;
+      step('API: top peers', top.status === 200 && Array.isArray(top.body.peers) && top.body.peers.length >= Math.min(5, wantPeers)
+        && top.body.period === 'today', `${top.body && top.body.peers && top.body.peers.length} peers${refreshed ? ' (seeded rows rewritten for the new UTC day)' : ''}`);
       const sec = await api(page, 'GET', '/api/v1/dashboard/security-summary');
       step('API: security summary', sec.status === 200 && sec.body.logins && typeof sec.body.logins.failed_24h === 'number',
         JSON.stringify(sec.body && sec.body.logins));

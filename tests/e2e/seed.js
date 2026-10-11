@@ -92,6 +92,10 @@ async function main() {
     VALUES (?, ?, 3, datetime('now', ?))`);
   const peerSnap = db.prepare(`INSERT INTO peer_traffic_snapshots (peer_id, upload_bytes, download_bytes, recorded_at)
     VALUES (?, ?, ?, datetime('now', ?))`);
+  // Top peers (bytes per peer). scenarios/05-dashboard.js writes the same
+  // rows again when its run starts on a later UTC day than the seed ("today"
+  // is a UTC calendar day — a run across midnight would otherwise see none).
+  const peerTraffic = [[laptop, 7.1e8], [gwHome, 3.9e8], [gwNas, 1.2e8]].map(([id, bytes]) => [id, Math.round(bytes / 6), Math.round(bytes)]);
   db.transaction(() => {
     const wave = (i, k) => Math.max(0.05, 0.5 + 0.45 * Math.sin((i + k) / 3.1) + 0.3 * Math.sin((i * 1.7 + k) / 2.3));
     // 30 days, one row every 20 minutes (older than 2 hours) …
@@ -101,9 +105,7 @@ async function main() {
     }
     // … and every minute for the last two hours (the 1 h view).
     for (let m = 120; m >= 0; m--) snap.run(Math.round(wave(m / 6, 7) * 3e5), Math.round(wave(m / 6, 2) * 2e6), `-${m} minutes`);
-    [[laptop, 7.1e8], [gwHome, 3.9e8], [gwNas, 1.2e8]].forEach(([id, bytes]) => {
-      peerSnap.run(id, Math.round(bytes / 6), Math.round(bytes), '-1 minutes');
-    });
+    peerTraffic.forEach(([id, up, down]) => peerSnap.run(id, up, down, '-1 minutes'));
   })();
   const act = db.prepare(`INSERT INTO activity_log (event_type, message, source, ip_address, severity, created_at)
     VALUES (?, ?, ?, ?, ?, datetime('now', ?))`);
@@ -198,6 +200,7 @@ async function main() {
     hosts: { nas: nas.id, wiki: wiki.id, apex: apex.id },
     gateways: { home: gwHome, nas: gwNas },
     peers: { laptop },
+    peerTraffic,
     webhook: webhookId,
     portal: { token: portalApp, ip: '10.8.0.16', sharedIp: '10.8.0.40', pin: '1234' },
   };
