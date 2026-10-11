@@ -43,6 +43,7 @@ function create(opts) {
     { token_id: 13, name: 'Galaxy A54', user: { id: 3, name: 'Sabine', role: 'user' }, platform: 'android', client_type: 'android', app_version: '1.18', state: 'connected', via: 'direct', connected_since: iso(26 * 60 * MIN), last_seen: iso(41000), queued: 0, last_ack_at: iso(41000), buffer_until: null },
     { token_id: 14, name: 'Tablet Kinder', user: { id: 5, name: 'Haushalt (geteilt)', role: 'user' }, platform: 'android', client_type: 'android', app_version: '1.17', state: 'restricted', via: 'direct', connected_since: iso(50 * MIN), last_seen: iso(9 * MIN), queued: 1, last_ack_at: iso(9 * MIN), buffer_until: null },
     { token_id: 15, name: 'PC-Wohnzimmer', user: { id: 3, name: 'Sabine', role: 'user' }, platform: 'windows', client_type: 'community', app_version: '2.4', state: 'offline', via: null, connected_since: null, last_seen: iso(120 * MIN), queued: 2, last_ack_at: iso(26 * 60 * MIN), buffer_until: isoIn(70 * 60 * MIN) },
+    { token_id: 17, name: 'Pixel10ProFold', user: { id: 3, name: 'Sabine', role: 'user' }, platform: 'android', client_type: null, app_version: '1.18.1', state: 'push_off', via: null, connected_since: null, last_seen: iso(30 * MIN), queued: 0, last_ack_at: null, buffer_until: null },
     { token_id: 16, name: 'iPhone Gast', user: { id: 4, name: 'Tom', role: 'user' }, platform: 'ios', client_type: 'wireguard', app_version: '', state: 'unsupported', via: null, connected_since: null, last_seen: null, queued: 0, last_ack_at: null, buffer_until: null },
   ];
   const items = [

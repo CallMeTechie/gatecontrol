@@ -167,7 +167,9 @@ CREATE TABLE IF NOT EXISTS notify_device_prefs (   -- vom Gerät gemeldet
 * `notify_device_prefs` zusätzlich `client_type`, `via`, `last_seen_at`. Eine
   Zeile heißt: Auf diesem Token läuft eine App mit Push (Stream einmal
   geöffnet oder `prefs`/`test` gerufen). Nur solche Geräte bekommen eine
-  Warteschlange; reine WireGuard-Peers sind „unsupported“.
+  Warteschlange. Ohne Zeile: „push_off“, wenn der Peer eine GateControl-App
+  meldet (`peers.client_version`, Push in der App nie eingeschaltet), sonst
+  „unsupported“ (reine WireGuard-Peers).
 * Zeitstempel sind ISO-8601 UTC mit Millisekunden; an die Geräte gehen
   `created_at`/`expires_at` ohne Millisekunden.
 
@@ -239,9 +241,10 @@ Alle Antworten tragen zusätzlich `"ok": true`.
   `PUT /api/v1/notify/rules/:eventId` (teilweise) → `{ok, rule}`, Fehler 400
   `{fields:{feld: code}}`.
 * `GET /api/v1/notify/devices` → `{devices:[{token_id, name, user:{id,name,role},
-  platform, client_type, app_version, state: connected|restricted|offline|unsupported,
+  platform, client_type, app_version, state: connected|restricted|offline|push_off|unsupported,
   via, connected_since, last_seen, queued, last_ack_at, buffer_until}]}`.
-  `restricted` = verbunden, aber Akkuoptimierung aktiv; `buffer_until` = wann
+  `restricted` = verbunden, aber Akkuoptimierung aktiv; `push_off` = App
+  vorhanden (`peers.client_version`), Push in der App aus; `buffer_until` = wann
   die älteste wartende Nachricht verfällt.
 * `POST /api/v1/notify/send` `{target:{type: all|users|groups|devices, ids},
   title, body, priority, ttl_s}` → `{ok, notification_id, devices_now, devices_later}`

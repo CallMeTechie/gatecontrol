@@ -159,6 +159,44 @@ describe('GET /devices', () => {
     assert.equal(d[0].state, 'connected', 'connected first');
     H.db().prepare('UPDATE notify_device_prefs SET restricted = 0 WHERE token_id = ?').run(groupDev.tokenId);
   });
+
+  it('push_off: the GateControl app reports its version but push was never switched on; unsupported: no app at all', async () => {
+    H.clearNotifications();
+    const clientUpdates = require('../src/services/clientUpdates');
+    const dora = H.makeUser('dora');
+    const fold = H.makeDevice(dora, { name: 'Pixel10ProFold', app: false });
+    const bare = H.makeDevice(dora, { name: 'wg-only', app: false });
+    const blank = H.makeDevice(dora, { name: 'wg-blank', app: false });
+    const pushOn = H.makeDevice(dora, { name: 'dora-tab' });
+    // The app's client API calls carry X-Client-Version / -Type / -Platform.
+    assert.equal(clientUpdates.recordClientVersion(fold.peerId, { version: '1.18.1', product: 'android', platform: 'android' }), true);
+    assert.equal(clientUpdates.recordClientVersion(pushOn.peerId, { version: '1.18.1', product: 'android', platform: 'android' }), true);
+    H.db().prepare("UPDATE peers SET client_version = '' WHERE id = ?").run(blank.peerId);
+
+    hub.sendManual({ userId: adminId, target: { type: 'users', ids: [dora] }, title: 'Q', body: '', priority: 'normal', ttlS: null });
+    let d = (await get('/devices').expect(200)).body.devices;
+    let by = Object.fromEntries(d.map((x) => [x.token_id, x]));
+    assert.equal(by[fold.tokenId].state, 'push_off');
+    assert.equal(by[fold.tokenId].platform, 'android');
+    assert.equal(by[fold.tokenId].app_version, '1.18.1');
+    assert.equal(by[fold.tokenId].queued, 0, 'no queue: the app does not receive push');
+    assert.equal(by[bare.tokenId].state, 'unsupported');
+    assert.equal(by[bare.tokenId].app_version, null);
+    assert.equal(by[blank.tokenId].state, 'unsupported', 'an empty version is no app signal');
+    assert.equal(by[pushOn.tokenId].state, 'offline', 'push on (prefs row) without a stream stays offline');
+    assert.equal(by[pushOn.tokenId].queued, 1);
+    const rank = (t) => d.findIndex((x) => x.token_id === t);
+    assert.ok(rank(pushOn.tokenId) < rank(fold.tokenId), 'offline before push_off');
+    assert.ok(rank(fold.tokenId) < rank(bare.tokenId), 'push_off before unsupported');
+    assert.ok(d.findIndex((x) => x.state === 'push_off') > d.map((x) => x.state).lastIndexOf('offline'));
+    assert.ok(d.map((x) => x.state).lastIndexOf('push_off') < d.findIndex((x) => x.state === 'unsupported'));
+
+    // Push switched on in the app: the stream opens → connected.
+    fakeConn(fold.tokenId, dora, 'direct');
+    d = (await get('/devices').expect(200)).body.devices;
+    by = Object.fromEntries(d.map((x) => [x.token_id, x]));
+    assert.equal(by[fold.tokenId].state, 'connected');
+  });
 });
 
 describe('POST /send and /test', () => {

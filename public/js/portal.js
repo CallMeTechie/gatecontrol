@@ -1034,7 +1034,9 @@
     clear(list);
     (nf.prefs.topics || []).filter(isObj).forEach(function (t, i) { list.appendChild(topicRow(t, i)); });
   }
-  var DEVICE_STATES = ['connected', 'restricted', 'offline', 'unsupported'];
+  var DEVICE_STATES = ['connected', 'restricted', 'offline', 'push_off', 'unsupported'];
+  // No push at all: no app (unsupported) or push never switched on in the app (push_off).
+  function noPush(state) { return state === 'unsupported' || state === 'push_off'; }
   function testDevice(d, btn) {
     btn.disabled = true;
     send('POST', NOTIFY_API + '/test', { token_id: Number(d.token_id) }).then(function (res) {
@@ -1054,7 +1056,7 @@
     if (queued > 0) parts.push(plural('portal.notify.queued', queued));
     var tone = state === 'connected' ? 'good' : (state === 'restricted' ? 'warn' : 'muted');
     var btn = null;
-    if (state !== 'unsupported') {
+    if (!noPush(state)) {
       btn = el('button', { type: 'button', class: 'pt-btn pt-btn-sm', 'data-act': 'test', 'aria-label': T('portal.notify.test_label', { name: d.name }) }, T('portal.notify.test'));
       btn.addEventListener('click', function () { testDevice(d, btn); });
     }
@@ -1069,7 +1071,7 @@
     if (!list || !nf.prefs) return;
     clear(list);
     var devs = (nf.prefs.devices || []).filter(isObj);
-    if (!devs.some(function (d) { return d.state !== 'unsupported'; })) list.appendChild(el('li', { class: 'pt-empty' }, T('portal.notify.no_devices')));
+    if (!devs.some(function (d) { return !noPush(d.state); })) list.appendChild(el('li', { class: 'pt-empty' }, T('portal.notify.no_devices')));
     devs.forEach(function (d) { list.appendChild(deviceRow(d)); });
   }
   function refreshDevices() {
