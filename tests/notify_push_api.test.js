@@ -81,6 +81,105 @@ describe('GET /api/v1/client/push — access', () => {
     } finally { settings.set('notify.allow_direct', '1'); }
   });
 
+  describe('allow_direct=false and a split tunnel (server address not routed through the VPN)', () => {
+    const wireguard = require('../src/services/wireguard');
+    const eventBus = require('../src/services/eventBus');
+    const control = require('../src/services/notify/control');
+    const realStatus = wireguard.getStatus;
+    let wgPeers = [];
+    const keyOf = (dev) => H.db().prepare('SELECT public_key FROM peers WHERE id = ?').get(dev.peerId).public_key;
+    const connectedAt = (dev, endpoint, online = true) => {
+      wgPeers = [{ publicKey: keyOf(dev), endpoint, isOnline: online, latestHandshake: Math.floor(Date.now() / 1000) }];
+    };
+    const fromInternet = (ip) => ({ headers: { 'X-Forwarded-For': ip } });
+    const closed = (s) => new Promise((resolve, reject) => {
+      const t0 = Date.now();
+      (function poll() { if (s.ended) return resolve(); if (Date.now() - t0 > 3000) return reject(new Error('stream still open')); setTimeout(poll, 20); }());
+    });
+
+    beforeEach(() => {
+      settings.set('notify.allow_direct', '0');
+      wgPeers = [];
+      wireguard.getStatus = async () => ({ running: true, interface: null, peers: wgPeers });
+    });
+    after(() => { wireguard.getStatus = realStatus; settings.set('notify.allow_direct', '1'); });
+
+    it('streams from the address the device\'s tunnel is connected from', async () => {
+      connectedAt(annaPhone, '203.0.113.7:51820');
+      const s = await H.openStream(port, annaPhone.raw, fromInternet('203.0.113.7'));
+      assert.equal(s.status, 200);
+      const hello = await s.waitFor((e) => e.event === 'hello');
+      assert.equal(hello.data.via, 'direct', 'the path is still reported as it is');
+      assert.equal(stream.get(annaPhone.tokenId).vpnPeerId, annaPhone.peerId);
+      s.close();
+    });
+
+    it('IPv6 endpoints and IPv4-mapped request addresses match too', async () => {
+      connectedAt(annaPhone, '[2001:db8::7]:51820');
+      const s = await H.openStream(port, annaPhone.raw, fromInternet('2001:db8:0:0::7'));
+      assert.equal(s.status, 200);
+      s.close();
+      connectedAt(annaPhone, '203.0.113.9:4500');
+      const m = await H.openStream(port, annaPhone.raw, fromInternet('::ffff:203.0.113.9'));
+      assert.equal(m.status, 200);
+      m.close();
+    });
+
+    it('403 direct_not_allowed: other address, tunnel offline, no endpoint, another device\'s tunnel, disabled peer', async () => {
+      connectedAt(annaPhone, '203.0.113.7:51820');
+      const other = await api('get', '/api/v1/client/push', annaPhone).set('X-Forwarded-For', '198.51.100.1').expect(403);
+      assert.equal(other.body.error, 'direct_not_allowed');
+
+      connectedAt(annaPhone, '203.0.113.7:51820', false);
+      await api('get', '/api/v1/client/push', annaPhone).set('X-Forwarded-For', '203.0.113.7').expect(403);
+
+      wgPeers = [{ publicKey: keyOf(annaPhone), endpoint: null, isOnline: true }];
+      await api('get', '/api/v1/client/push', annaPhone).set('X-Forwarded-For', '203.0.113.7').expect(403);
+
+      // Ben's tunnel at that address does not help Anna's phone.
+      connectedAt(benPhone, '203.0.113.7:51820');
+      await api('get', '/api/v1/client/push', annaPhone).set('X-Forwarded-For', '203.0.113.7').expect(403);
+
+      connectedAt(annaPhone, '203.0.113.7:51820');
+      H.db().prepare('UPDATE peers SET enabled = 0 WHERE id = ?').run(annaPhone.peerId);
+      try {
+        await api('get', '/api/v1/client/push', annaPhone).set('X-Forwarded-For', '203.0.113.7').expect(403);
+      } finally { H.db().prepare('UPDATE peers SET enabled = 1 WHERE id = ?').run(annaPhone.peerId); }
+
+      wireguard.getStatus = async () => { throw new Error('wg missing'); };
+      await api('get', '/api/v1/client/push', annaPhone).set('X-Forwarded-For', '203.0.113.7').expect(403);
+    });
+
+    it('the stream ends when the device\'s tunnel goes offline; tunnel and other streams stay', async () => {
+      connectedAt(annaPhone, '203.0.113.7:51820');
+      const gated = await H.openStream(port, annaPhone.raw, fromInternet('203.0.113.7'));
+      await gated.waitFor((e) => e.event === 'hello');
+      const viaTunnel = await H.openStream(port, benPhone.raw, fromInternet(benPhone.ip));
+      await viaTunnel.waitFor((e) => e.event === 'hello');
+
+      eventBus.publish('peer', { peerId: benPhone.peerId, connected: false });
+      eventBus.publish('peer', { peerId: annaPhone.peerId, connected: true });
+      await new Promise((r) => setTimeout(r, 50));
+      assert.equal(gated.ended, false);
+
+      eventBus.publish('peer', { peerId: annaPhone.peerId, connected: false });
+      await closed(gated);
+      assert.equal(stream.isConnected(annaPhone.tokenId), false);
+      assert.equal(stream.isConnected(benPhone.tokenId), true, 'a stream through the tunnel ends on its own when the tunnel does');
+      viaTunnel.close();
+    });
+
+    it('disabling the peer sends peer_state and then ends the VPN-gated stream', async () => {
+      connectedAt(annaPhone, '203.0.113.7:51820');
+      const s = await H.openStream(port, annaPhone.raw, fromInternet('203.0.113.7'));
+      await s.waitFor((e) => e.event === 'hello');
+      control.peerState([annaPhone.peerId], false);
+      const ev = await s.waitFor((e) => e.event === 'control' && e.data.type === 'peer_state');
+      assert.equal(ev.data.enabled, false);
+      await closed(s);
+    });
+  });
+
   it('max_streams caps open streams (a token replacing its own stream is fine)', async () => {
     settings.set('notify.max_streams', '1');
     try {

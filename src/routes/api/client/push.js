@@ -30,6 +30,7 @@ const store = require('../../../services/notify/store');
 const stream = require('../../../services/notify/stream');
 const hub = require('../../../services/notify/hub');
 const control = require('../../../services/notify/control');
+const vpnPresence = require('../../../services/notify/vpnPresence');
 const pushRouter = require('../../../services/notify/router');
 const text = require('../../../services/notify/text');
 const { ACK_STATES, TOPIC_RE, LIMITS } = require('../../../services/notify/constants');
@@ -37,6 +38,7 @@ const eventBus = require('../../../services/eventBus');
 const logger = require('../../../utils/logger');
 
 const router = Router();
+vpnPresence.install();
 
 /** 'tunnel' when the request comes from inside the WireGuard network. */
 function viaOf(ip) {
@@ -90,19 +92,26 @@ async function streamHandlerAsync(req, res) {
   if (!guard(req, res)) return;
   const cfg = config.get();
   const via = viaOf(req.ip);
-  if (!cfg.allow_direct && via === 'direct') return res.status(403).json({ ok: false, error: 'direct_not_allowed' });
+  const peerId = req.tokenPeerId == null ? null : req.tokenPeerId;
+  // Push only through the VPN: a split tunnel reaches us from the device's
+  // public address — fine while that is where its tunnel is connected from.
+  let vpnPeerId = null;
+  if (!cfg.allow_direct && via === 'direct') {
+    if (!(await vpnPresence.connectedFrom(peerId, req.ip))) return res.status(403).json({ ok: false, error: 'direct_not_allowed' });
+    if (res.headersSent || res.destroyed || (req.socket && req.socket.destroyed)) return;
+    vpnPeerId = peerId;
+  }
   if (!stream.isConnected(req.tokenId) && stream.count() >= cfg.max_streams) {
     return res.status(503).json({ ok: false, error: 'too_many_streams' });
   }
   // hello.state.config_hash needs the rendered client config (async); the
   // rest of hello.state is read synchronously right before the stream is
   // registered, so no control event can fall between snapshot and stream.
-  const peerId = req.tokenPeerId == null ? null : req.tokenPeerId;
   const configSeqBefore = control.configSeq();
   const configHash = await control.configHashFor(peerId);
   if (res.headersSent || res.destroyed || (req.socket && req.socket.destroyed)) return;
   try {
-    openStream(req, res, { cfg, via, peerId, configHash, configSeqBefore });
+    openStream(req, res, { cfg, via, vpnPeerId, peerId, configHash, configSeqBefore });
   } catch (err) {
     logger.error({ err: err.message, tokenId: req.tokenId }, 'push stream failed');
     if (!res.headersSent) res.status(500).json({ ok: false, error: 'internal' });
@@ -115,7 +124,7 @@ function streamHandler(req, res, next) {
   return streamHandlerAsync(req, res).catch((err) => (typeof next === 'function' ? next(err) : undefined));
 }
 
-function openStream(req, res, { cfg, via, peerId, configHash, configSeqBefore }) {
+function openStream(req, res, { cfg, via, vpnPeerId, peerId, configHash, configSeqBefore }) {
   const rawSince = req.headers['last-event-id'] != null ? req.headers['last-event-id'] : req.query.since;
   const since = /^\d{1,15}$/.test(String(rawSince == null ? '' : rawSince).trim()) ? Number(String(rawSince).trim()) : null;
 
@@ -138,7 +147,7 @@ function openStream(req, res, { cfg, via, peerId, configHash, configSeqBefore })
   const tokenId = req.tokenId;
   const userId = req.tokenUserId == null ? null : req.tokenUserId;
   const state = control.stateFor(tokenId, peerId, configHash);
-  const conn = stream.add({ tokenId, userId, via, res, connectedAt: store.iso() });
+  const conn = stream.add({ tokenId, userId, via, vpnPeerId, res, connectedAt: store.iso() });
 
   stream.writeEvent(conn, 'hello', {
     server_time: new Date().toISOString(),
