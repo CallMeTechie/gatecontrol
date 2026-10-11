@@ -5,7 +5,9 @@
  * "Vertrag Gerät ↔ Server" — binding for the server and both apps):
  *
  *   GET  /api/v1/client/push          SSE stream (mounted in routes/index.js
- *                                     before the apiLimiter, own limiter per token)
+ *                                     before the apiLimiter, own limiter per token);
+ *                                     hello (+ state), notification, read, revoke,
+ *                                     control (services/notify/control.js)
  *   POST /api/v1/client/push/ack      { seqs, state, action? } → { ok }
  *   GET  /api/v1/client/push/inbox    ?limit&before → { items, unread }
  *   GET  /api/v1/client/push/prefs    → { ok, enabled, mode, muted_topics, restricted,
@@ -27,6 +29,7 @@ const config = require('../../../services/notify/config');
 const store = require('../../../services/notify/store');
 const stream = require('../../../services/notify/stream');
 const hub = require('../../../services/notify/hub');
+const control = require('../../../services/notify/control');
 const pushRouter = require('../../../services/notify/router');
 const text = require('../../../services/notify/text');
 const { ACK_STATES, TOPIC_RE, LIMITS } = require('../../../services/notify/constants');
@@ -83,7 +86,7 @@ function recordApp(req, via) {
 
 // ─── GET /api/v1/client/push (SSE) ──────────────────────────────────────
 
-function streamHandler(req, res) {
+async function streamHandlerAsync(req, res) {
   if (!guard(req, res)) return;
   const cfg = config.get();
   const via = viaOf(req.ip);
@@ -91,13 +94,35 @@ function streamHandler(req, res) {
   if (!stream.isConnected(req.tokenId) && stream.count() >= cfg.max_streams) {
     return res.status(503).json({ ok: false, error: 'too_many_streams' });
   }
+  // hello.state.config_hash needs the rendered client config (async); the
+  // rest of hello.state is read synchronously right before the stream is
+  // registered, so no control event can fall between snapshot and stream.
+  const peerId = req.tokenPeerId == null ? null : req.tokenPeerId;
+  const configSeqBefore = control.configSeq();
+  const configHash = await control.configHashFor(peerId);
+  if (res.headersSent || res.destroyed || (req.socket && req.socket.destroyed)) return;
+  try {
+    openStream(req, res, { cfg, via, peerId, configHash, configSeqBefore });
+  } catch (err) {
+    logger.error({ err: err.message, tokenId: req.tokenId }, 'push stream failed');
+    if (!res.headersSent) res.status(500).json({ ok: false, error: 'internal' });
+    else { try { res.end(); } catch { /* gone */ } }
+  }
+}
+
+/** Express 4 does not catch rejected promises — hand errors to next(). */
+function streamHandler(req, res, next) {
+  return streamHandlerAsync(req, res).catch((err) => (typeof next === 'function' ? next(err) : undefined));
+}
+
+function openStream(req, res, { cfg, via, peerId, configHash, configSeqBefore }) {
   const rawSince = req.headers['last-event-id'] != null ? req.headers['last-event-id'] : req.query.since;
   const since = /^\d{1,15}$/.test(String(rawSince == null ? '' : rawSince).trim()) ? Number(String(rawSince).trim()) : null;
 
   const prev = store.devicePrefs(req.tokenId);
   recordApp(req, via);
-  if (req.tokenPeerId != null) {
-    require('../../../services/clientUpdates').recordClientVersion(req.tokenPeerId, {
+  if (peerId != null) {
+    require('../../../services/clientUpdates').recordClientVersion(peerId, {
       version: req.headers['x-client-version'], product: req.headers['x-client-type'], platform: req.headers['x-client-platform'],
     });
   }
@@ -112,6 +137,7 @@ function streamHandler(req, res) {
 
   const tokenId = req.tokenId;
   const userId = req.tokenUserId == null ? null : req.tokenUserId;
+  const state = control.stateFor(tokenId, peerId, configHash);
   const conn = stream.add({ tokenId, userId, via, res, connectedAt: store.iso() });
 
   stream.writeEvent(conn, 'hello', {
@@ -122,15 +148,20 @@ function streamHandler(req, res) {
     unread: store.unreadCount(tokenId),
     topics: hub.topicsForUser(userId, text.userLang(userId)),
     quiet: pushRouter.quietOf(userId),
+    state,
   });
+  // A config change while the hash was being computed: hello may carry the
+  // old hash, so say it explicitly.
+  if (peerId != null && control.configSeq() !== configSeqBefore) control.write(conn, { type: 'config_changed' });
   for (const row of store.pendingForToken(tokenId, since)) {
     if (!hub.writeDelivery(conn, row.seq)) break;
   }
   const revoked = store.revokedForToken(tokenId, prev && prev.last_seen_at);
   if (revoked.length) stream.writeEvent(conn, 'revoke', { ids: revoked });
 
-  // After backpressure: what is still queued goes out now.
+  // After backpressure: held-back control events, then what is still queued.
   conn.onDrain = () => {
+    control.flush(conn);
     for (const row of store.pendingForToken(tokenId, null)) {
       if (row.state !== 'queued') continue;
       if (!hub.writeDelivery(conn, row.seq)) break;

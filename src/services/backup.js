@@ -681,6 +681,13 @@ async function restoreBackup(backup) {
     }
   }
 
+  // Everything a device fetches may differ now — tell the open app streams.
+  try {
+    const control = require('./notify/control');
+    control.configChanged({ all: true });
+    control.policyChanged({ all: true });
+  } catch (err) { logger.debug({ err: err.message }, 'push control events after restore not sent'); }
+
   return {
     peer_groups: (peerGroups || []).length,
     peers: peers.length,
