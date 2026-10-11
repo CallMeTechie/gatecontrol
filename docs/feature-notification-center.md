@@ -183,7 +183,7 @@ CREATE TABLE IF NOT EXISTS notify_device_prefs (   -- vom Gerät gemeldet
 
 | Methode | Pfad | Zweck |
 |---|---|---|
-| GET | `/api/v1/client/push` | SSE-Stream. Ereignisse `hello` (Server-Zeit, Keepalive, Themenliste), `notification`, `read` (Gelesen-Abgleich), `revoke` (zurückgezogen), `policy` / `support_bundle` (Phase 5). Wiederaufnahme über `Last-Event-ID`. |
+| GET | `/api/v1/client/push` | SSE-Stream. Ereignisse `hello` (Server-Zeit, Keepalive, Themenliste), `notification`, `read` (Gelesen-Abgleich), `revoke` (zurückgezogen), `control` (Steuerereignisse ohne `id`: Richtlinie, Support-Bundle, Peer an/aus, WireGuard-Konfiguration; Phase 5). Wiederaufnahme über `Last-Event-ID`. |
 | POST | `/api/v1/client/push/ack` | `{seqs:[…], state:'delivered'│'read'│'dismissed', action?}` |
 | GET | `/api/v1/client/push/inbox` | Posteingang (letzte 100), für den App-Bildschirm „Mitteilungen“ |
 | GET | `/api/v1/client/push/prefs` | gespeicherte Geräte-Einstellungen plus Ruhezeiten der Person |
@@ -478,6 +478,12 @@ In der `plugin.json` kommt ein neuer, optionaler Block hinzu:
 | 4 | Portal (Abos, Ruhezeiten, Posteingang); Plugin-API v2 mit `notifyTopics`; Fahrzeuge-, Smart-Home- und Klima-Plugin melden passende Ereignisse | gatecontrol, gatecontrol-plugins | **mittel**, 2 bis 3 PRs | GC-Minor, Plugin-Patches |
 | 5 | Polling ersetzen: Richtlinie geändert, Support-Bundle angefordert, Gerät gesperrt kommen per Push (Heartbeat bleibt als Rückfall); Gelesen-Abgleich und Bündeln verfeinern | alle | **klein bis mittel** | Patches |
 
+**Stand Phase 5:** Server umgesetzt: `event: control` (`policy_changed`,
+`support_bundle_requested`, `peer_state`, `config_changed`) und
+`hello.state`, siehe Vertrag. Offen: Android und Windows werten die
+Ereignisse aus und senken ihr Polling (Heartbeat, `config/check`) auf einen
+langsamen Rückfall.
+
 **Reihenfolge:** Phase 1 muss zuerst live sein. Danach können 2 und 3
 parallel laufen. Phase 4 setzt Phase 1 voraus. Das Müllabfuhr-Plugin
 (eigene Aufgabe) baut auf Phase 4 auf.
@@ -563,6 +569,9 @@ Alle Geräte-Routen verwenden Token-Auth wie die übrigen `/api/v1/client/*`:
   `GET /api/v1/client/push/prefs`, oder `null`. Zusätzliches Feld; ältere
   Clients ignorieren es.
 * Pro Token gibt es genau einen Stream; ein neuer beendet den alten.
+* `hello.state` (Phase 5): der Stand, den das Gerät sonst per Polling holt,
+  damit es nach einem Neuaufbau nachholt, was es offline verpasst hat (siehe
+  „Steuerereignisse“). Zusätzliches Feld; ältere Clients ignorieren es.
 
 Ereignisse:
 
@@ -570,6 +579,9 @@ Ereignisse:
 event: hello
 data: {"server_time":"2026-10-10T21:42:03.120Z","keepalive_s":25,"retention_h":72,
        "via":"direct","unread":3,
+       "state":{"policy_version":"3f9a0c1d22b4e7a8","peer_enabled":true,
+                "support_bundle_requested":false,"support_bundle_requested_at":null,
+                "config_hash":"9c1e…(sha256, hex)"},
        "quiet":{"from":"22:00","to":"07:00","tz":"Europe/Berlin","critical_bypass":true},
        "topics":[{"id":"security","label":"Sicherheit"},{"id":"devices","label":"Geräte & Gateways"},
                  {"id":"services","label":"Dienste"},{"id":"admin_notice","label":"Hinweise vom Admin"},
@@ -590,6 +602,9 @@ data: {"ids":[45]}            # auf einem anderen Gerät derselben Person gelese
 
 event: revoke
 data: {"ids":[45]}            # zurückgezogen (z. B. Entwarnung ersetzt Meldung) → ausblenden
+
+event: control                # Steuerereignis, ohne id (siehe unten)
+data: {"type":"policy_changed","policy_version":"3f9a0c1d22b4e7a8"}
 
 : ping                        # alle keepalive_s Sekunden
 ```
@@ -626,6 +641,91 @@ Dazu gelten diese Regeln:
   | `mute_1h` | lokale Stummschaltung des Themas für 1 h, zusätzlich `ack` mit `action` |
   | `done` | `ack` mit `action:"done"` |
   | `ack` | `ack` mit `action` |
+
+#### Steuerereignisse (`event: control`, Phase 5)
+
+Server-seitige Änderungen, die die Apps bisher per Polling (Heartbeat alle
+60 s, `config/check`) bemerkt haben, kommen sofort über den Stream. Das
+Polling bleibt als **langsamer Rückfall** (z. B. alle 15 min) bestehen.
+
+```
+event: control
+data: {"type":"policy_changed","policy_version":"3f9a0c1d22b4e7a8"}
+
+event: control
+data: {"type":"support_bundle_requested","requested_at":"2026-10-11 08:15:02"}
+
+event: control
+data: {"type":"peer_state","enabled":false}
+
+event: control
+data: {"type":"config_changed"}
+```
+
+* **Ohne `id:`-Zeile:** Steuerereignisse werden nicht gespeichert, nicht
+  bestätigt (kein `ack`) und nicht wiederholt. Was ein Gerät offline verpasst,
+  holt es beim Neuaufbau aus `hello.state` nach. Unbekannte `type`-Werte
+  ignorieren die Apps (künftige Erweiterungen).
+* `policy_changed`: Die Client-Richtlinie dieses Geräts hat sich (vielleicht)
+  geändert. `policy_version` ist der Wert, den auch der Heartbeat
+  (`policyVersion`) und `GET /api/v1/client/policy` (`version`, ETag) liefern:
+  ein **undurchsichtiger String** (16 Hex-Zeichen, Inhalts-Hash), keine Zahl.
+  Weicht er vom gespeicherten Stand ab, lädt die App `GET /client/policy`.
+  Ziel: globale Richtlinie und globale Split-Tunnel-Vorgabe → alle offenen
+  Streams; Gruppen-Richtlinie → Geräte der Gruppe; Peer-Richtlinie, Peer in
+  andere Gruppe verschoben → dieses Gerät; Gruppe gelöscht → ihre bisherigen
+  Mitglieder; Split-Tunnel-Vorgabe eines Tokens → dieses Token. Jedes Gerät
+  bekommt seine eigene wirksame Version; sie kann gleich bleiben (dann tut die
+  App nichts).
+* `support_bundle_requested`: Ein Admin hat von diesem Gerät ein
+  Support-Bundle angefordert. `requested_at` ist derselbe Wert wie
+  `supportBundleRequestedAt` im Heartbeat und in `peer-info`, also das
+  SQLite-Format `YYYY-MM-DD HH:MM:SS` (UTC), kein ISO-8601 mit `T`/`Z`. Die
+  App fragt ihre Person wie bisher, bevor sie etwas sendet.
+* `peer_state`: Der Peer dieses Geräts wurde ein- oder ausgeschaltet
+  (Schalter, Bearbeiten, Mehrfachauswahl, Ablaufdatum). Beim Ausschalten geht
+  das Ereignis raus, **bevor** der Server den Peer aus WireGuard entfernt; ein
+  Stream durch den Tunnel erhält es also noch. Danach bricht der Stream durch
+  den Tunnel ab, ein direkter Stream bleibt offen.
+* `config_changed`: Die WireGuard-Konfiguration dieses Geräts (das, was
+  `GET /api/v1/client/config` bzw. `config/check` liefert) oder seine
+  Split-Tunnel-Vorgabe (`GET /api/v1/client/split-tunnel`) hat sich geändert.
+  Die App holt `config/check` mit ihrem Hash (bzw. `split-tunnel`) und wendet
+  die neue Konfiguration an. Ziel: Peer bearbeitet (DNS, Keepalive, Schlüssel,
+  Adresse) → dieses Gerät; Server-DNS, globale Split-Tunnel-Vorgabe,
+  Backup-Wiederherstellung → alle offenen Streams; Split-Tunnel-Vorgabe eines
+  Tokens → dieses Token. Gruppen und Routen fließen nicht in die
+  Client-Konfiguration ein und lösen daher kein `config_changed` aus. Lieber
+  ein Ereignis zu viel: Die App prüft per Hash, ob sich wirklich etwas
+  geändert hat.
+* Nur der Stream des betroffenen Geräts (bzw. der betroffenen Geräte) erhält
+  das Ereignis; andere Geräte derselben Person nicht. Steuerereignisse gehen
+  unabhängig von `enabled`, `muted_topics` und Ruhezeiten raus.
+* Ein Fehler beim Senden lässt die Admin-Aktion nie scheitern. Staut der
+  Socket (Backpressure), wartet je Typ das neueste Ereignis bis zum `drain`.
+
+`hello.state` hat dieselben Werte wie die Polling-Routen für dieses Gerät:
+
+| Feld | Typ | Quelle (gleicher Wert) |
+|---|---|---|
+| `policy_version` | String (16 Hex) oder `null` | Heartbeat `policyVersion`, `GET /client/policy` `version`/ETag |
+| `peer_enabled` | Boolean | Heartbeat `peerEnabled`, `peer-info` `peer.enabled` |
+| `support_bundle_requested` | Boolean | Heartbeat/`peer-info` `supportBundleRequested` |
+| `support_bundle_requested_at` | String (`YYYY-MM-DD HH:MM:SS`, UTC) oder `null` | Heartbeat/`peer-info` `supportBundleRequestedAt` |
+| `config_hash` | String (SHA-256, hex) oder `null` | `GET /client/config` bzw. `config/check` `hash`; direkt als `?hash=` für `config/check` verwendbar |
+
+Ein Token, das noch an keinen Peer gebunden ist, bekommt die Version der
+globalen Richtlinie, `peer_enabled:false`, keine Anforderung und
+`config_hash:null`. `config_hash` ist auch `null`, wenn der Server die
+Konfiguration gerade nicht erzeugen kann. Ändert sich die Konfiguration,
+während der Stream aufgebaut wird, folgt direkt nach `hello` ein
+`config_changed`.
+
+Abgleich in der App nach jedem `hello`: `policy_version` ≠ gespeichert →
+Richtlinie laden; `peer_enabled` anzeigen bzw. Tunnel-Status anpassen;
+`support_bundle_requested` → wie beim Heartbeat nachfragen (nur, wenn
+`support_bundle_requested_at` neu ist); `config_hash` ≠ eigener Hash →
+`config/check`.
 
 ### `POST /api/v1/client/push/ack`
 
