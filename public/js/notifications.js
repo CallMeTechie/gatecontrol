@@ -30,7 +30,9 @@
   const GROUPS = ['security', 'peers', 'routes', 'system', 'plugins'];
   const SOURCES = ['security', 'devices', 'services', 'system', 'plugins'];
   const FILTERS = ['all', 'important', 'undelivered', 'plugins', 'manual'];
-  const DEVICE_STATES = ['connected', 'restricted', 'offline', 'unsupported'];
+  const DEVICE_STATES = ['connected', 'restricted', 'offline', 'push_off', 'unsupported'];
+  /** No push at all: no app (unsupported) or push never switched on in the app (push_off). */
+  function noPush(d) { return d.state === 'unsupported' || d.state === 'push_off'; }
   const RECOVERY = ['off', 'silent', 'normal'];
   const TARGETS = ['all', 'users', 'groups', 'devices'];
   const RULE_FIELDS = ['enabled', 'priority', 'recipients', 'ch_app', 'ch_email', 'ch_webhook', 'email_fallback_s', 'delay_s', 'bundle_s', 'recovery'];
@@ -246,7 +248,7 @@
 
   /** Who a manual message reaches right now / later, from the presence list. */
   function reachOf(devices, target) {
-    const list = (Array.isArray(devices) ? devices : []).filter((d) => isObj(d) && d.state !== 'unsupported');
+    const list = (Array.isArray(devices) ? devices : []).filter((d) => isObj(d) && !noPush(d));
     const tg = isObj(target) ? target : { type: 'all', ids: [] };
     const ids = new Set(idList(tg.ids).map(String));
     let sel;
@@ -335,7 +337,7 @@
     TABS, PRIORITIES, GROUPS, SOURCES, FILTERS, DEVICE_STATES, RULE_FIELDS, SETTINGS_FIELDS, TTL_CHOICES, HISTORY_LIMIT,
     GROUP_SOURCE, fieldCodes, emailLocked, norm, parseHash, hashFor, prioOf, prioTone, idList, normRecipients, sameRecipients, hasRecipient, normRule, copyRule,
     ruleDiff, ruleMatches, groupRules, ruleLocked, recipientParts, statusOf, histStatusOf, durationOf, spanOf, choicesWith,
-    latencyNumber, reachOf, ttlChoices, sendBody, sourceKind, historyQuery, normSettings, settingsDiff, rangeError,
+    latencyNumber, reachOf, noPush, ttlChoices, sendBody, sourceKind, historyQuery, normSettings, settingsDiff, rangeError,
   };
   if (!win || !win.document) return pure;
 
@@ -1167,13 +1169,14 @@
     if (d.state === 'connected') return [d.via ? T('notify.dev.via.' + d.via) : null, since(d.connected_since)].filter(Boolean).join(' · ');
     if (d.state === 'restricted') return T('notify.dev.restricted_hint');
     if (d.state === 'unsupported') return T('notify.dev.unsupported_hint');
+    if (d.state === 'push_off') return T('notify.dev.push_off_hint');
     return [since(d.last_seen), d.buffer_until ? T('notify.dev.buffer_until', { time: fmtLong(d.buffer_until) }) : null].filter(Boolean).join(' · ');
   }
   function deviceRow(d) {
-    const unsupported = d.state === 'unsupported';
+    const none = noPush(d);
     const who = d.user ? [str(d.user.name), d.user.role === 'admin' ? T('notify.dev.role_admin') : null].filter(Boolean).join(' · ') : T('notify.dev.no_user');
     const can = testable(d);
-    const test = unsupported ? null : el('button', {
+    const test = none ? null : el('button', {
       type: 'button', class: 'btn btn-sm nc-dev-test', 'data-token-id': str(d.token_id), disabled: !can,
       title: !can && d.state !== 'offline' ? T('notify.dev.test_pro') : null,
       'aria-label': T('notify.dev.test_label', { name: d.name }), text: T('notify.dev.test'),
@@ -1187,15 +1190,15 @@
         el('span', { class: 'nc-conn', 'data-state': d.state }, [el('span', { class: 'nc-dot', 'aria-hidden': 'true' }), T('notify.dev.state.' + d.state)]),
         el('div', { class: 'nc-sub', text: connDetail(d) }),
       ]),
-      el('td', { class: 'nc-c' }, [el('span', { class: 'nc-num', 'data-tone': d.queued ? 'warn' : null, text: unsupported ? '–' : String(d.queued) })]),
-      el('td', { class: 'nc-muted-2', text: unsupported || !d.last_ack_at ? '–' : rel(d.last_ack_at) }),
+      el('td', { class: 'nc-c' }, [el('span', { class: 'nc-num', 'data-tone': d.queued ? 'warn' : null, text: none ? '–' : String(d.queued) })]),
+      el('td', { class: 'nc-muted-2', text: none || !d.last_ack_at ? '–' : rel(d.last_ack_at) }),
       el('td', { class: 'nc-r' }, [test]),
     ]);
   }
   // A test to one device needs POST /send (licence); without it only the own
   // devices can be tested (POST /test reaches all of them).
   function ownDevice(d) { return !!(d.user && CTX.self && String(d.user.id) === String(CTX.self)); }
-  function testable(d) { return d.state !== 'offline' && d.state !== 'unsupported' && (state.pro || ownDevice(d)); }
+  function testable(d) { return d.state !== 'offline' && !noPush(d) && (state.pro || ownDevice(d)); }
   function renderDevices() {
     const body = $('nc-dev-body');
     if (!state.devices) { if (state.devErr) emptyRow(body, 5, '–'); return; }
@@ -1226,7 +1229,7 @@
   function candidates(type) {
     if (type === 'users') return state.users.map((u) => ({ id: u.id, name: str(u.name) }));
     if (type === 'groups') return state.groups.map((g) => ({ id: g.id, name: str(g.name) }));
-    if (type === 'devices') return (state.devices || []).filter((d) => d.state !== 'unsupported').map((d) => ({ id: d.token_id, name: d.name + (d.user ? ' · ' + str(d.user.name) : '') }));
+    if (type === 'devices') return (state.devices || []).filter((d) => !noPush(d)).map((d) => ({ id: d.token_id, name: d.name + (d.user ? ' · ' + str(d.user.name) : '') }));
     return [];
   }
   function refreshTtl() {

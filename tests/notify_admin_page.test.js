@@ -371,14 +371,21 @@ describe('notifications.js: pure helpers', () => {
     assert.equal(N.latencyNumber(12500, 'en'), '13');
   });
 
+  it('noPush: unsupported (no app) and push_off (app, push switched off) get no push; offline still queues', () => {
+    assert.deepEqual(N.DEVICE_STATES, ['connected', 'restricted', 'offline', 'push_off', 'unsupported']);
+    assert.deepEqual(N.DEVICE_STATES.filter((s) => N.noPush({ state: s })), ['push_off', 'unsupported']);
+  });
+
   it('reachOf counts devices now / later per target; groups are resolved by the server', () => {
     const devs = [
       { token_id: 1, state: 'connected', user: { id: 1 } }, { token_id: 2, state: 'restricted', user: { id: 1 } },
       { token_id: 3, state: 'offline', user: { id: 3 } }, { token_id: 4, state: 'unsupported', user: { id: 3 } },
+      { token_id: 5, state: 'push_off', user: { id: 3 } },
     ];
     assert.deepEqual(N.reachOf(devs, { type: 'all', ids: [] }), { known: true, now: 2, later: 1, total: 3 });
     assert.deepEqual(N.reachOf(devs, { type: 'users', ids: [3] }), { known: true, now: 0, later: 1, total: 1 });
     assert.deepEqual(N.reachOf(devs, { type: 'devices', ids: ['1', 4] }), { known: true, now: 1, later: 0, total: 1 });
+    assert.deepEqual(N.reachOf(devs, { type: 'devices', ids: [5] }), { known: true, now: 0, later: 0, total: 0 }, 'push off in the app: not reachable');
     assert.equal(N.reachOf(devs, { type: 'groups', ids: [7] }).known, false);
   });
 

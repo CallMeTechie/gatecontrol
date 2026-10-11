@@ -179,6 +179,18 @@ function overview(t) {
 
 // ─── Devices ────────────────────────────────────────────────────────────
 
+// Device states: connected / restricted (push stream open), offline (app has
+// push on — notify_device_prefs row — but no open stream), push_off (no prefs
+// row, but the peer runs a GateControl app: push was never switched on in the
+// app, e.g. Android where it is off by default) and unsupported (no app at
+// all, e.g. a plain WireGuard peer). The app signal is peers.client_version:
+// it is only ever written by clientUpdates.recordClientVersion from the
+// X-Client-Version header the GateControl apps send on their client API calls
+// (client_product / client_platform are only set together with it).
+function hasApp(r) {
+  return typeof r.client_version === 'string' && r.client_version.trim() !== '';
+}
+
 function devices() {
   const db = getDb();
   const rows = db.prepare(`SELECT t.id, t.name, t.user_id, t.last_used_at, u.username, u.display_name, u.role,
@@ -201,6 +213,7 @@ function devices() {
     let state = 'unsupported';
     if (conn) state = r.restricted === 1 ? 'restricted' : 'connected';
     else if (r.app != null) state = 'offline';
+    else if (hasApp(r)) state = 'push_off';
     const product = r.client_type || (['pro', 'community'].includes(r.client_product) ? r.client_product : null);
     const qq = q.get(r.id);
     return {
@@ -219,7 +232,7 @@ function devices() {
       buffer_until: qq ? qq.until : null,
     };
   });
-  const order = { connected: 0, restricted: 1, offline: 2, unsupported: 3 };
+  const order = { connected: 0, restricted: 1, offline: 2, push_off: 3, unsupported: 4 };
   return list.sort((a, b) => order[a.state] - order[b.state] || String(a.name).localeCompare(String(b.name)));
 }
 

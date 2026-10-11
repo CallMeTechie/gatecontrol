@@ -112,7 +112,7 @@ describe('portal.js and its strings', () => {
 
   it('the dynamic notify keys exist (topics, device states, priorities, plurals)', () => {
     for (const t of ['security', 'devices', 'services', 'system', 'admin_notice', 'plugin']) assert.ok(de[`portal.notify.topic_desc.${t}`] && en[`portal.notify.topic_desc.${t}`], t);
-    for (const s of ['connected', 'restricted', 'offline', 'unsupported']) assert.ok(de[`portal.notify.state.${s}`] && en[`portal.notify.state.${s}`], s);
+    for (const s of ['connected', 'restricted', 'offline', 'push_off', 'unsupported']) assert.ok(de[`portal.notify.state.${s}`] && en[`portal.notify.state.${s}`], s);
     for (const s of ['critical', 'high']) assert.ok(de[`portal.notify.prio.${s}`] && en[`portal.notify.prio.${s}`], s);
     for (const s of ['one', 'other']) assert.ok(de[`portal.notify.queued_${s}`] && en[`portal.notify.queued_${s}`], s);
   });

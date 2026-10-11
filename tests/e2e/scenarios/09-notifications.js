@@ -107,6 +107,10 @@ module.exports = (ctx) => {
       step('every device is a row', await count(page, '#nc-dev-body tr[data-token-id]') === mock.state.devices.length);
       step('an offline device cannot get a test, an unsupported one has no button',
         await page.isDisabled('#nc-dev-body tr[data-token-id="15"] .nc-dev-test') && await count(page, '#nc-dev-body tr[data-token-id="16"] .nc-dev-test') === 0);
+      step('push switched off in the app: own state, no test button, no queue',
+        await attr(page, '#nc-dev-body tr[data-token-id="17"]', 'data-state') === 'push_off'
+        && await count(page, '#nc-dev-body tr[data-token-id="17"] .nc-dev-test') === 0
+        && await ctx.text(page, '#nc-dev-body tr[data-token-id="17"] td:nth-child(3)') === '–');
       await page.evaluate(() => document.dispatchEvent(new CustomEvent('gc:push_presence', { detail: { token_id: 15, state: 'connected', via: 'tunnel' } })));
       step('gc:push_presence updates the row live', await attr(page, '#nc-dev-body tr[data-token-id="15"]', 'data-state') === 'connected');
       await page.click('#nc-send-target [data-target="users"]');

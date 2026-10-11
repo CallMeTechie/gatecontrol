@@ -6,7 +6,8 @@
 // Devices: an api_tokens row with a notify_device_prefs row, i.e. a
 // GateControl app (Android / Windows) that opened the push stream at least
 // once and told the server its platform. Plain WireGuard peers and tokens
-// without such an app are "unsupported" and never get a queue.
+// without such an app ("unsupported" in the admin device list), and apps
+// whose push was never switched on ("push_off"), never get a queue.
 //
 // Groups: the existing peer groups (peer_groups, peers.group_id). A group
 // recipient means the app devices IN that group (tokens bound to a peer of

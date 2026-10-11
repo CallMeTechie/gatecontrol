@@ -6747,7 +6747,7 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .nc-conn .nc-dot{width:8px; height:8px; border-radius:50%; background:currentColor}
 .nc-conn[data-state="connected"]{color:var(--pf-green-ink)}
 .nc-conn[data-state="restricted"]{color:var(--db-warn-ink)}
-.nc-conn[data-state="offline"] .nc-dot{background:transparent; border:2px solid currentColor; width:6px; height:6px}
+.nc-conn[data-state="offline"] .nc-dot, .nc-conn[data-state="push_off"] .nc-dot{background:transparent; border:2px solid currentColor; width:6px; height:6px}
 .nc-conn[data-state="unsupported"]{color:var(--pf-faint)}
 .nc-conn[data-state="unsupported"] .nc-dot{width:8px; height:2px; border-radius:1px}
 .nc-num{font-family:var(--font-mono); font-weight:700}
