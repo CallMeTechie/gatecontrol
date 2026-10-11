@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.157.0] — 2026-10-11
+
+### Features
+- control events over the push stream (policy, support bundle, peer state, config) (#285)
+
+---
+
 ## [1.156.0] — 2026-10-11
 
 ### Features
