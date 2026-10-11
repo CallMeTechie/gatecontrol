@@ -218,7 +218,9 @@ vorhandenen Bus in die Admin-Oberfläche.
   tz, critical_bypass, devices:[{token_id,name,state,queued}]}` (PUT
   `{topics:[{id,enabled}], quiet_from:"HH:MM"|null, quiet_to, tz, critical_bypass}`),
   `GET inbox?limit&before=<id>` → `{items, unread}`, `POST read`
-  `{ids:[…]}`|`{all:true}` → `{ok, updated}`, `POST test` → `{ok, devices}`.
+  `{ids:[…]}`|`{all:true}` → `{ok, updated}`, `POST test` `{token_id?}` →
+  `{ok, devices}` (`token_id`: nur eines der eigenen App-Geräte, sonst 404;
+  ohne: alle eigenen Geräte).
 
 **Admin-API, Antwortformen (Phase 1a, für die Admin-Seite verbindlich).**
 Alle Antworten tragen zusätzlich `"ok": true`.
@@ -242,7 +244,10 @@ Alle Antworten tragen zusätzlich `"ok": true`.
   die älteste wartende Nachricht verfällt.
 * `POST /api/v1/notify/send` `{target:{type: all|users|groups|devices, ids},
   title, body, priority, ttl_s}` → `{ok, notification_id, devices_now, devices_later}`
-* `POST /api/v1/notify/test` → `{ok, devices}`
+* `POST /api/v1/notify/test` `{token_id?}` → `{ok, devices}`. Ohne
+  `token_id` an die eigenen Geräte des Admins, mit `token_id` an genau dieses
+  App-Gerät (beliebige Person; kein App-Gerät → 404, ungültig → 400). Frei,
+  ohne Lizenz; Limit wie bisher (10 je Minute und Konto).
 * `GET /api/v1/notify/history?filter=all|important|undelivered|plugins|manual&days=7&before=<id>&limit=50`
   → `{items:[{id, title, body, event_id, source, priority, created_at,
   delivered, total, read, recipients_label, silent, status: ok|partial|waiting}], next_before}`

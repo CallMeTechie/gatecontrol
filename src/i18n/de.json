@@ -4898,6 +4898,7 @@
   "push.timeline.expired": "Auf {{count}} Geräten abgelaufen",
   "push.error.invalid": "Einige Angaben sind ungültig.",
   "push.error.rule_not_found": "Diese Regel gibt es nicht.",
+  "push.error.device_not_found": "Dieses Gerät gibt es nicht, oder auf ihm läuft keine App mit Push.",
   "push.error.not_found": "Diese Benachrichtigung gibt es nicht (mehr).",
   "push.error.revoked": "Die Benachrichtigung wurde zurückgezogen.",
   "push.error.boolean": "Erlaubt: an oder aus.",

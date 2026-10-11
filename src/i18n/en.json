@@ -4898,6 +4898,7 @@
   "push.timeline.expired": "Expired on {{count}} devices",
   "push.error.invalid": "Some values are invalid.",
   "push.error.rule_not_found": "This rule does not exist.",
+  "push.error.device_not_found": "No such device, or it has no app with push.",
   "push.error.not_found": "This notification does not exist (any more).",
   "push.error.revoked": "The notification was withdrawn.",
   "push.error.boolean": "Allowed: on or off.",
