@@ -557,8 +557,14 @@ Alle Geräte-Routen verwenden Token-Auth wie die übrigen `/api/v1/client/*`:
   * `404`: Server zu alt. Der Client probiert es stündlich wieder.
   * `503 {"error":"push_disabled"}`: Push ist am Server aus. Der Client probiert es stündlich wieder.
   * `503 {"error":"too_many_streams"}`: globale Obergrenze erreicht. Neuer Versuch mit Backoff.
-  * `403 {"error":"direct_not_allowed"}`: Der Admin erlaubt Push nur durch den
-    Tunnel. Neuer Versuch, sobald das VPN steht (bzw. stündlich).
+  * `403 {"error":"direct_not_allowed"}`: Der Admin erlaubt Push nur bei
+    aktivem VPN. Neuer Versuch, sobald das VPN steht (bzw. stündlich).
+    Zugelassen ist ein Stream aus dem WireGuard-Netz oder (Split-Tunnel, die
+    Server-Adresse läuft nicht durch den Tunnel) von der öffentlichen Adresse,
+    von der der Peer des Tokens gerade mit frischem Handshake verbunden ist.
+    `hello.via` bleibt dann `direct`. Geht dieser Peer offline oder wird er
+    deaktiviert, beendet der Server den Stream; der nächste Aufbau bekommt
+    wieder `403`.
   * `429 {"error":"rate_limited"}`: zu viele Verbindungsaufbauten (120 je 15 min und Token; der Limiter läuft nach der Token-Prüfung).
   * `401`/`403`: wie bei den anderen Client-Routen behandeln (`token_required`,
     `scope_required`, Maschinenbindung).

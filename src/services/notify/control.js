@@ -150,6 +150,8 @@ function peerState(peerIds, enabled) {
     for (const d of targets({ peerIds: ids(peerIds) })) {
       if (write(d.conn, { type: 'peer_state', enabled: !!enabled })) n += 1;
     }
+    // A disabled peer has no VPN any more: its VPN-gated streams end (after the event).
+    if (!enabled) require('./vpnPresence').drop(ids(peerIds));
     return n;
   });
 }
