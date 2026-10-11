@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.158.0] — 2026-10-11
+
+### Features
+- home-network endpoint for trusted-network detection (#289)
+
+---
+
 ## [1.157.3] — 2026-10-11
 
 ### Fixes
