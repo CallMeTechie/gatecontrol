@@ -175,6 +175,7 @@ const config = {
     perHour: envInt('GC_SUPPORT_BUNDLE_PER_HOUR', 3),                             // uploads per peer and hour
     keepPerPeer: envInt('GC_SUPPORT_BUNDLE_KEEP', 10),                            // newest N per peer
     maxAgeDays: envInt('GC_SUPPORT_BUNDLE_MAX_AGE_DAYS', 30),
+    maxViewBytes: envInt('GC_SUPPORT_BUNDLE_MAX_VIEW_BYTES', 8 * 1024 * 1024),    // viewer (JSON in the browser); larger → download only
   },
 
   rdp: {

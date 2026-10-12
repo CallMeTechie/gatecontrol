@@ -33,6 +33,8 @@ router.use('/logs', require('./logs'));
 router.use('/peers/:id/access-rules', require('./accessRules')('peer'));
 // Support bundles of a peer (admin session only, docs/feature-support-bundle.md)
 router.use('/peers/:id/support-bundles', require('./supportBundles'));
+// …and the inbox over all devices (System › Support-Pakete)
+router.use('/support-bundles', require('./supportBundlesAll'));
 router.use('/peers', require('./peers'));
 router.use('/peer-groups', require('./peerGroups'));
 router.use('/gateways', require('./gateways'));

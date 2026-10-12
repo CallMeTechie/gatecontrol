@@ -49,11 +49,14 @@ function injectLocals(req, res, next) {
       // with a nav entry, switched-off ones greyed. Pages only, never for API calls.
       res.locals.pluginNav = [];
       res.locals.notifyQueued = 0;
+      res.locals.supportUnviewed = 0;
       if (user && user.role === 'admin' && !req.path.startsWith('/api/')) {
         const lang = req.session.language || user.language;
         res.locals.pluginNav = require('../services/plugins').navEntries(lang === 'en' ? 'en' : 'de');
         // "Benachrichtigungen" badge: messages waiting for offline devices (cached count).
         try { res.locals.notifyQueued = require('../services/notify/admin').queuedBadge(); } catch { res.locals.notifyQueued = 0; }
+        // "Support-Pakete" badge: bundles no admin opened yet.
+        res.locals.supportUnviewed = require('../services/supportBundles').unviewedCount();
       }
     } catch {
       res.locals.peerCount = 0;
@@ -63,6 +66,7 @@ function injectLocals(req, res, next) {
       res.locals.peerGroupCount = 0;
       res.locals.pluginNav = [];
       res.locals.notifyQueued = 0;
+      res.locals.supportUnviewed = 0;
     }
   }
 

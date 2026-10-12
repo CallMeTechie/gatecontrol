@@ -34,6 +34,7 @@ const CORE_DEFAULTS = {
   backup_problem: { priority: 'high' },
   update: { priority: 'info' },
   resources: { priority: 'high' },
+  support_bundle: { priority: 'normal' },
 };
 
 // Event types that end an alarm of their row (same collapse key).

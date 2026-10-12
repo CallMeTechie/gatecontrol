@@ -258,6 +258,8 @@ const pages = [
   // no licence gate; the sidebar item (activeNav 'security') comes from strand B4.
   { path: '/security', template: 'security', titleKey: 'security.page_title' },
   { path: '/logs', template: 'logs', titleKey: 'nav.logs' },
+  // Support bundles of every device: list + viewer (docs/feature-support-bundle.md).
+  { path: '/support-bundles', template: 'support-bundles', titleKey: 'nav.support_bundles' },
   // Notification centre (docs/feature-notification-center.md, "Portal und
   // Admin-Oberfläche"): five tabs, all data from /api/v1/notify/* at runtime.
   { path: '/notifications', template: 'notifications', titleKey: 'nav.notifications' },
@@ -291,6 +293,10 @@ for (const [path, pluginId, sub] of MOVED_PAGES) {
 // Notification centre page: notify.* plus the common strings its script reads
 // (notifications.njk island data-prefixes must list the same ones).
 const NOTIFY_I18N_PREFIXES = ['notify.', 'common.'];
+
+// Support-Pakete page (support-inbox.js): its strings as one JSON island
+// (support-bundles.njk data-prefixes must list the same ones).
+const SB_I18N_PREFIXES = ['support_bundles.', 'common.'];
 
 // Strings the users page hands to its script (JSON island, like the
 // settings page).
@@ -336,12 +342,16 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
       extraLocals.rdpRouteCount = counts.total;
     } catch (err) { logger.debug({ err: err.message }, 'rdp route count for sidebar unavailable'); }
 
-    // Peers: retention of support bundles for the hint in the edit modal.
-    if (template === 'peers') {
+    // Peers / Support-Pakete: retention of support bundles for the hint.
+    if (template === 'peers' || template === 'support-bundles') {
       extraLocals.supportRetention = {
         days: config.supportBundles.maxAgeDays,
         keep: config.supportBundles.keepPerPeer,
       };
+    }
+    if (template === 'support-bundles') {
+      extraLocals.sbI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, SB_I18N_PREFIXES))
+        .replace(/</g, '\\u003c');
     }
 
     if (template === 'zones') {

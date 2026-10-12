@@ -6,6 +6,9 @@
  * tokens are refused: bundles hold device diagnostics).
  *
  *   GET    /                   → { ok, bundles: [...], requestedAt }
+ *   GET    /:bundleId          → { ok, bundle, data } for the viewer: parsed,
+ *                                 redacted once more, size-capped (413
+ *                                 too_large → download only); marks it viewed
  *   GET    /:bundleId/download → the bundle JSON as attachment
  *   DELETE /:bundleId          → { ok }
  *   POST   /request            → ask the device for a bundle { ok, requestedAt }
@@ -60,6 +63,28 @@ router.delete('/request', (req, res) => {
   if (!peer) return;
   supportBundles.cancelRequest(peer.id);
   res.json({ ok: true });
+});
+
+router.get('/:bundleId', (req, res) => {
+  const peer = loadPeer(req, res);
+  if (!peer) return;
+  const id = bundleId(req);
+  const meta = id && supportBundles.getById(peer.id, id);
+  if (!meta) return res.status(404).json({ ok: false, error: req.t('support_bundles.error_not_found') });
+  const view = supportBundles.readForView(peer.id, id);
+  if (view.error === 'too_large') {
+    return res.status(413).json({ ok: false, code: 'too_large', error: req.t('support_bundles.error_too_large') });
+  }
+  if (view.error) return res.status(404).json({ ok: false, error: req.t('support_bundles.error_not_found') });
+
+  const userId = Number(req.session && req.session.userId);
+  if (supportBundles.markViewed(peer.id, id, userId)) {
+    activity.log('support_bundle_viewed', `Support bundle #${id} of "${peer.name}" opened`, {
+      source: 'admin', severity: 'info', ipAddress: req.ip, details: { peerId: peer.id, bundleId: id },
+    });
+  }
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true, bundle: supportBundles.getDetailed(peer.id, id), data: view.data });
 });
 
 router.get('/:bundleId/download', (req, res) => {

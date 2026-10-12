@@ -597,3 +597,21 @@ console.log('%cGateControl', 'font-size:16px;font-weight:bold;color:#0a6e4f');
   setInterval(refresh, 60000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
 })();
+
+// ─── Sidebar "Support-Pakete" badge ──────────────────────
+// A device just sent a support bundle (events.js forwards the activity
+// stream as gc:activity): one more bundle nobody opened yet. The inbox page
+// (support-inbox.js) sets the exact count from its API answer.
+(function () {
+  document.addEventListener('gc:activity', function (e) {
+    var d = (e && e.detail) || {};
+    if (d.eventType !== 'support_bundle_uploaded') return;
+    var b = document.getElementById('sb-nav-badge');
+    if (!b) return;
+    var n = (parseInt(b.textContent, 10) || 0) + 1;
+    b.textContent = String(n);
+    b.hidden = false;
+    var tpl = (window.GC && GC.t && GC.t['support_bundles.nav_badge']) || '';
+    if (tpl) b.title = tpl.split('{{count}}').join(String(n));
+  });
+})();

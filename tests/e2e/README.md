@@ -1,7 +1,7 @@
 # Browser-Tests (tests/e2e)
 
 Der Satz, der in der CI läuft: Anmeldung inklusive zweitem Faktor, Zonen-Seite,
-Sicherheitsseite, Passkeys, Dashboard, Einstellungen, Benutzer, Portal und Benachrichtigungen. Gegen eine echte App mit einer frisch aufgebauten
+Sicherheitsseite, Passkeys, Dashboard, Einstellungen, Benutzer, Portal, Benachrichtigungen und Support-Pakete. Gegen eine echte App mit einer frisch aufgebauten
 Test-Datenbank, ohne Caddy und ohne WireGuard.
 
 ```
@@ -42,6 +42,12 @@ scenarios/09-notifications.js /notifications: Benachrichtigungszentrale mit
                         die Änderung), Live-Präsenz, „Nachricht senden“,
                         Verlauf + Zustellprotokoll, Einstellungen, 404 ohne
                         Backend, Lizenzsperre, Verweis aus den Einstellungen, 400 px
+scenarios/10-support-bundles.js /support-bundles: Support-Pakete aus dem Seed
+                        (neu / angesehen), Filter Status + Gerät, Markierung in
+                        der Peer-Liste, Peer-Dialog (offene Anforderung, Link zum
+                        Viewer), Viewer mit allen Abschnitten ohne Geheimnisse,
+                        Log-Filter + Suche, „angesehen“ (Badge), Löschen,
+                        hell/dunkel, 400 px
 ```
 
 ## Ablauf
@@ -50,7 +56,7 @@ scenarios/09-notifications.js /notifications: Benachrichtigungszentrale mit
 export NODE_ENV=test
 export GC_DATA_DIR=/tmp/gc-e2e GC_DB_PATH=/tmp/gc-e2e/gatecontrol.db
 export GC_CADDY_DATA_DIR=$GC_DATA_DIR/caddy GC_BACKUP_DIR=$GC_DATA_DIR/backups
-export GC_DNS_HOSTS_FILE=$GC_DATA_DIR/dns/peers.hosts
+export GC_DNS_HOSTS_FILE=$GC_DATA_DIR/dns/peers.hosts GC_SUPPORT_BUNDLE_DIR=$GC_DATA_DIR/support
 export GC_ADMIN_USER=e2e_admin GC_ADMIN_PASSWORD='E2eTest!Pass123'
 # Hostname statt IP: das Passkey-Szenario läuft gegen GC_BASE_URL (WebAuthn
 # lehnt IP-Adressen als RP-ID ab), die übrigen gegen BASE.
@@ -62,7 +68,7 @@ export GC_SECRET=$(openssl rand -hex 32) GC_ENCRYPTION_KEY=$(openssl rand -hex 3
 
 node tests/e2e/seed.js
 node src/server.js &
-node tests/e2e/run.js all          # oder: login zones security passkey dashboard settings users portal notifications
+node tests/e2e/run.js all          # oder: login zones security passkey dashboard settings users portal notifications support
 ```
 
 `run.js` braucht `playwright` im Modulpfad. Das Projekt hängt **nicht** davon
