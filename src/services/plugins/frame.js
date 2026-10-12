@@ -71,7 +71,31 @@ const BRIDGE_CLIENT = `(function(){
       setTimeout(function () { if (pending[id]) { delete pending[id]; reject(new Error('timeout')); } }, 60000);
     });
   }
-  function size() { post({ type: 'gc-resize', height: Math.ceil(document.documentElement.scrollHeight) }); }
+  // Height of the frame content: the document's own height (scrollHeight is
+  // never below the frame's current height, so the frame could not shrink
+  // again), plus fixed elements (a plugin's own dialogs), which count towards
+  // neither: an open dialog taller than the page would be cut off by the frame.
+  function height() {
+    var h = document.documentElement.offsetHeight;
+    var all = document.body ? document.body.querySelectorAll('*') : [];
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i], cs = window.getComputedStyle(el);
+      if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden') continue;
+      var r = el.getBoundingClientRect();
+      if (r.width && r.height) h = Math.max(h, Math.max(0, r.top) + el.scrollHeight);
+    }
+    return Math.ceil(h);
+  }
+  var queued = false, last = -1;
+  function size() {
+    if (queued) return;
+    queued = true;
+    (window.requestAnimationFrame || setTimeout)(function () {
+      queued = false;
+      var h = height();
+      if (h !== last) { last = h; post({ type: 'gc-resize', height: h }); }
+    });
+  }
   window.GC = Object.freeze({
     call: call,
     get: function (p) { return call('GET', p); },
@@ -82,6 +106,8 @@ const BRIDGE_CLIENT = `(function(){
     lang: document.documentElement.lang || 'de'
   });
   if (window.ResizeObserver) new ResizeObserver(size).observe(document.documentElement);
+  // a dialog shown or hidden changes no document size: watch the DOM as well
+  if (window.MutationObserver) new MutationObserver(size).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden', 'class', 'style', 'open'] });
   window.addEventListener('load', size);
   post({ type: 'gc-hello' });
 })();`;
