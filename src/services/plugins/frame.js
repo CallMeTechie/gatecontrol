@@ -75,18 +75,25 @@ const BRIDGE_CLIENT = `(function(){
   // never below the frame's current height, so the frame could not shrink
   // again), plus fixed elements (a plugin's own dialogs), which count towards
   // neither: an open dialog taller than the page would be cut off by the frame.
+  // A visible fixed element covering the frame is a dialog backdrop: the
+  // parent then dims its own page around the frame (gc-modal).
+  var modal = false;
   function height() {
     var h = document.documentElement.offsetHeight;
+    var m = false;
     var all = document.body ? document.body.querySelectorAll('*') : [];
     for (var i = 0; i < all.length; i++) {
       var el = all[i], cs = window.getComputedStyle(el);
       if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden') continue;
       var r = el.getBoundingClientRect();
-      if (r.width && r.height) h = Math.max(h, Math.max(0, r.top) + el.scrollHeight);
+      if (!r.width || !r.height) continue;
+      h = Math.max(h, Math.max(0, r.top) + el.scrollHeight);
+      if (r.width >= window.innerWidth * 0.9 && r.height >= window.innerHeight * 0.9) m = true;
     }
+    modal = m;
     return Math.ceil(h);
   }
-  var queued = false, last = -1;
+  var queued = false, last = -1, lastModal = false;
   function size() {
     if (queued) return;
     queued = true;
@@ -94,6 +101,7 @@ const BRIDGE_CLIENT = `(function(){
       queued = false;
       var h = height();
       if (h !== last) { last = h; post({ type: 'gc-resize', height: h }); }
+      if (modal !== lastModal) { lastModal = modal; post({ type: 'gc-modal', open: modal }); }
     });
   }
   window.GC = Object.freeze({

@@ -37,6 +37,41 @@
 
     function sendTheme() { reply({ type: 'gc-theme', theme: theme() }); }
 
+    // A dialog open in the frame (gc-modal): dim this page around the frame
+    // the way the plugin dims its own frame, so the dialog reads as a dialog
+    // of the whole page. A shadow of an element laid over the frame, above
+    // everything and click-through, so the frame stays usable.
+    let dim = null;
+    function placeDim() {
+      if (!dim) return;
+      const r = frame.getBoundingClientRect();
+      dim.style.top = r.top + 'px';
+      dim.style.left = r.left + 'px';
+      dim.style.width = r.width + 'px';
+      dim.style.height = r.height + 'px';
+    }
+    function setModal(open) {
+      if (open && !dim) {
+        dim = document.createElement('div');
+        dim.className = 'plugin-frame-dim';
+        dim.setAttribute('aria-hidden', 'true');
+        Object.assign(dim.style, {
+          position: 'fixed', zIndex: '2147483000', pointerEvents: 'none',
+          borderRadius: getComputedStyle(frame).borderRadius,
+          boxShadow: '0 0 0 200vmax rgba(5, 8, 12, 0.55)',
+        });
+        document.body.appendChild(dim);
+        placeDim();
+        window.addEventListener('scroll', placeDim, true);
+        window.addEventListener('resize', placeDim);
+      } else if (!open && dim) {
+        dim.remove();
+        dim = null;
+        window.removeEventListener('scroll', placeDim, true);
+        window.removeEventListener('resize', placeDim);
+      }
+    }
+
     async function call(m) {
       const method = METHODS.indexOf(String(m.method)) >= 0 ? String(m.method) : null;
       const path = String(m.path || '').replace(/^\/+/, '');
@@ -72,13 +107,15 @@
       else if (m.type === 'gc-resize') {
         const h = Math.max(120, Math.min(20000, Number(m.height) || 0));
         frame.style.height = h + 'px';
-      } else if (m.type === 'gc-hello') sendTheme();
+        placeDim();
+      } else if (m.type === 'gc-modal') setModal(m.open === true);
+      else if (m.type === 'gc-hello') sendTheme();
       else if (m.type === 'gc-nav') {
         const target = pages.find((p) => p === m.page);
         if (target && pluginId && !base.includes('/portal/')) window.location.assign('/plugins/' + encodeURIComponent(pluginId) + '/' + encodeURIComponent(target));
       }
     });
-    frame.addEventListener('load', sendTheme);
+    frame.addEventListener('load', () => { setModal(false); sendTheme(); });
     new MutationObserver(sendTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   }
 
