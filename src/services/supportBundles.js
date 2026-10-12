@@ -11,6 +11,10 @@
  *     (dir 0700, file 0600) with a support_bundles row as index,
  *   - prunes: newest `keepPerPeer` per peer, nothing older than `maxAgeDays`,
  *     files without a row (e.g. after a peer was deleted) are removed.
+ *
+ * Admin side: per-peer list, the inbox over all devices (listAll, "neu" until
+ * an admin opened it — viewed_at/viewed_by, migration 94) and the viewer
+ * (readForView: parsed, size-capped, redacted once more on read).
  */
 
 const fs = require('node:fs');
@@ -114,7 +118,8 @@ function isRateLimited(peerId) {
  * Store a parsed bundle for a peer.
  * @param {number} peerId
  * @param {object} bundle - result of parseBundle
- * @param {object} [meta] - fallbacks from request headers { version, product, platform }
+ * @param {object} [meta] - fallbacks from request headers { version, product, platform },
+ *   plus userId: the person whose app token uploaded it (api_tokens.user_id)
  * @returns {object} the stored row (list shape)
  */
 function store(peerId, bundle, meta = {}) {
@@ -154,9 +159,10 @@ function store(peerId, bundle, meta = {}) {
   try {
     id = db.transaction(() => {
       const info = db.prepare(`
-        INSERT INTO support_bundles (peer_id, file_name, size_bytes, json_bytes, client_version, client_product, client_platform, os, reason)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(peer.id, fileName, gz.byteLength, json.byteLength, row.client_version, row.client_product, row.client_platform, row.os, row.reason);
+        INSERT INTO support_bundles (peer_id, file_name, size_bytes, json_bytes, client_version, client_product, client_platform, os, reason, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(peer.id, fileName, gz.byteLength, json.byteLength, row.client_version, row.client_product, row.client_platform, row.os, row.reason,
+        Number.isSafeInteger(meta.userId) && meta.userId > 0 ? meta.userId : null);
       // The upload answers an open admin request.
       db.prepare('UPDATE peers SET support_bundle_requested_at = NULL WHERE id = ?').run(peer.id);
       return info.lastInsertRowid;
@@ -182,12 +188,99 @@ function toListItem(r) {
     client_platform: r.client_platform,
     os: r.os,
     reason: r.reason,
+    viewed_at: r.viewed_at || null,
+    viewed_by: r.viewed_by == null ? null : r.viewed_by,
+    is_new: !r.viewed_at,
   };
 }
 
 function list(peerId) {
   return getDb().prepare('SELECT * FROM support_bundles WHERE peer_id = ? ORDER BY created_at DESC, id DESC')
     .all(peerId).map(toListItem);
+}
+
+// ── Inbox over all devices ───────────────────────────────────
+
+const STATUSES = new Set(['new', 'viewed']);
+
+function personName(username, displayName) {
+  return displayName || username || null;
+}
+
+/**
+ * Every bundle, newest first, with device and person names.
+ * @param {object} [q] - { peerId, bundleId, status: 'new'|'viewed', limit (1..200), offset }
+ * @returns {{ bundles: object[], total: number }}
+ */
+function listAll({ peerId = null, bundleId = null, status = null, limit = 50, offset = 0 } = {}) {
+  const db = getDb();
+  const where = [];
+  const args = [];
+  if (peerId != null) { where.push('b.peer_id = ?'); args.push(peerId); }
+  if (bundleId != null) { where.push('b.id = ?'); args.push(bundleId); }
+  if (status === 'new') where.push('b.viewed_at IS NULL');
+  else if (status === 'viewed') where.push('b.viewed_at IS NOT NULL');
+  const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const total = db.prepare(`SELECT COUNT(*) AS n FROM support_bundles b ${w}`).get(...args).n;
+  const rows = db.prepare(`
+    SELECT b.*, p.name AS peer_name, p.peer_type,
+           su.username AS sender_username, su.display_name AS sender_display_name,
+           ou.username AS owner_username, ou.display_name AS owner_display_name,
+           vu.username AS viewer_username, vu.display_name AS viewer_display_name
+      FROM support_bundles b
+      JOIN peers p ON p.id = b.peer_id
+      LEFT JOIN users su ON su.id = b.user_id
+      LEFT JOIN users ou ON ou.id = p.user_id
+      LEFT JOIN users vu ON vu.id = b.viewed_by
+      ${w}
+     ORDER BY b.created_at DESC, b.id DESC
+     LIMIT ? OFFSET ?`).all(...args, limit, offset);
+  return {
+    total,
+    bundles: rows.map((r) => ({
+      ...toListItem(r),
+      peer_name: r.peer_name,
+      user_name: personName(r.sender_username, r.sender_display_name) || personName(r.owner_username, r.owner_display_name),
+      viewed_by_name: personName(r.viewer_username, r.viewer_display_name),
+    })),
+  };
+}
+
+/** One bundle in the inbox shape (names included) or null. */
+function getDetailed(peerId, id) {
+  return listAll({ peerId, bundleId: id, limit: 1 }).bundles[0] || null;
+}
+
+/** Devices that have bundles: [{ id, name, count, unviewed }] (for the filter). */
+function peersWithBundles() {
+  return getDb().prepare(`
+    SELECT p.id, p.name, COUNT(*) AS count, SUM(CASE WHEN b.viewed_at IS NULL THEN 1 ELSE 0 END) AS unviewed
+      FROM support_bundles b JOIN peers p ON p.id = b.peer_id
+     GROUP BY p.id ORDER BY p.name COLLATE NOCASE`).all();
+}
+
+/** Bundles nobody opened yet (sidebar badge). */
+function unviewedCount() {
+  try {
+    return getDb().prepare('SELECT COUNT(*) AS n FROM support_bundles WHERE viewed_at IS NULL').get().n;
+  } catch { return 0; } // table/column missing (old test databases)
+}
+
+/** peer id → { total, unviewed } for the peer list. */
+function countsByPeer() {
+  const out = new Map();
+  for (const r of getDb().prepare(`SELECT peer_id, COUNT(*) AS total, SUM(CASE WHEN viewed_at IS NULL THEN 1 ELSE 0 END) AS unviewed
+      FROM support_bundles GROUP BY peer_id`).all()) {
+    out.set(r.peer_id, { total: r.total, unviewed: r.unviewed || 0 });
+  }
+  return out;
+}
+
+/** First view by an admin: viewed_at/viewed_by. → true when it was new. */
+function markViewed(peerId, id, userId) {
+  const info = getDb().prepare(`UPDATE support_bundles SET viewed_at = datetime('now'), viewed_by = ?
+     WHERE id = ? AND peer_id = ? AND viewed_at IS NULL`).run(Number.isSafeInteger(userId) ? userId : null, id, peerId);
+  return info.changes > 0;
 }
 
 function getRow(peerId, id) {
@@ -223,6 +316,32 @@ function removeRow(r) {
     try { fs.unlinkSync(file); } catch (err) { if (err.code !== 'ENOENT') logger.warn({ err: err.message }, 'support bundle unlink failed'); }
   }
   getDb().prepare('DELETE FROM support_bundles WHERE id = ?').run(r.id);
+}
+
+/**
+ * A bundle for the viewer: the parsed JSON, redacted once more on read
+ * (defence in depth — a file from before a rule change, or a client bug).
+ * → { data } | { error: 'not_found' | 'too_large' | 'unreadable' }
+ */
+function readForView(peerId, id) {
+  const r = getRow(peerId, id);
+  const file = filePath(r);
+  if (!file) return { error: 'not_found' };
+  const max = Math.max(1024, opts().maxViewBytes);
+  if (r.json_bytes > max) return { error: 'too_large' };
+  let json;
+  try {
+    json = zlib.gunzipSync(fs.readFileSync(file), { maxOutputLength: max });
+  } catch (err) {
+    if (err && (err.code === 'ERR_BUFFER_TOO_LARGE' || err instanceof RangeError)) return { error: 'too_large' };
+    if (err && err.code === 'ENOENT') return { error: 'not_found' };
+    logger.warn({ err: err.message, peerId, id }, 'support bundle file unreadable');
+    return { error: 'unreadable' };
+  }
+  let parsed;
+  try { parsed = JSON.parse(json.toString('utf8')); } catch { return { error: 'unreadable' }; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { error: 'unreadable' };
+  return { data: redactValue(parsed) };
 }
 
 function remove(peerId, id) {
@@ -306,8 +425,16 @@ module.exports = {
   parseBundle,
   store,
   list,
+  listAll,
+  getDetailed,
+  peersWithBundles,
+  unviewedCount,
+  countsByPeer,
+  markViewed,
+  STATUSES,
   getById,
   readJson,
+  readForView,
   remove,
   prunePeer,
   cleanup,

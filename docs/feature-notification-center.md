@@ -272,6 +272,15 @@ ist), nicht alle Geräte der Personen, denen dort ein Gerät gehört.
 ## Server: Regeln, Ruhezeiten, Bündeln
 
 * **Startwerte:** Alle Zeilen aus `CATALOGUE`, Empfänger „Alle Admins“, App an.
+  * Zeilen (`CATALOGUE` in `src/services/notifications.js`): Sicherheit
+    (`login_failed`, `account_locked`, `password_changed`, `waf_ip_banned`),
+    Geräte & Gateways (`peer_connection` — App aus, `peer_lifecycle`,
+    `peer_expired`, `gateway_state`), Routen (`route_state`,
+    `route_lifecycle`), System (`system_restart`, `backup_restored`,
+    `backup_problem`, `update`, `resources`, `support_bundle`).
+  * `support_bundle` („Support-Paket empfangen“, `support_bundle_uploaded`):
+    Titel „Support-Paket von <Gerät>“, Fakten Client, Anlass, Größe; Thema
+    `system` (nur Admins). Details: `docs/feature-support-bundle.md`.
   * E-Mail an genau dort, wo `alerts.email_events` es heute vorsieht. Das
     bisherige Verhalten bleibt also gleich.
   * Die Einstellungsseite „Benachrichtigungen“ (Matrix E-Mail/Webhooks) wird

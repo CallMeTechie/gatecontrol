@@ -219,6 +219,44 @@ async function main() {
   hub.markRead(memberId, [notifyIds.back]);
   db.prepare("INSERT INTO notify_user_prefs (user_id, quiet_from, quiet_to, tz, critical_bypass) VALUES (?, '22:00', '07:00', 'Europe/Berlin', 1)").run(memberId);
 
+  // Support bundles (scenarios/10-support-bundles.js): a new one from Anna's
+  // Pixel (sent by her, with logs, errors, network and a secret the server
+  // redacts), an older one from the living-room PC that an admin already
+  // opened, and an open request for the laptop.
+  const sb = require('../../src/services/supportBundles');
+  const now = Date.now();
+  const logLines = [];
+  for (let i = 0; i < 180; i++) {
+    const t = new Date(now - (180 - i) * 7000).toISOString().slice(11, 23);
+    const lv = i % 41 === 7 ? 'E' : (i % 17 === 3 ? 'W' : (i % 5 === 0 ? 'D' : 'I'));
+    const msg = lv === 'E' ? 'Handshake did not complete after 5 seconds, retrying'
+      : lv === 'W' ? 'DNS resolver 10.8.0.1 slow (812 ms)'
+        : lv === 'D' ? `keepalive sent seq=${i}` : `tunnel ok rx=${1200 + i * 3} tx=${800 + i}`;
+    logLines.push(`10-12 ${t}  4211  4290 ${lv} GateControl: ${msg}`);
+  }
+  logLines.push('10-12 12:00:00.000  4211  4290 I GateControl: GET /api/v1/client/peer-info Authorization: Bearer gc_e2eSecretToken123456');
+  const pixelBundle = sb.store(annaPixel, {
+    schema: 1, createdAt: new Date(now - 60000).toISOString(), reason: 'user',
+    client: { product: 'android', version: '1.17.0', coreVersion: null, platform: 'android', os: 'Android 15 (SDK 35)', arch: 'arm64-v8a', locale: 'de-DE' },
+    tunnel: { connected: true, connectedSince: new Date(now - 3 * 3600000).toISOString(), lastHandshakeAgeSec: 14, endpoint: 'gate.e2e.example.com:51820', rxBytes: 48211234, txBytes: 9123456, killSwitch: false },
+    settings: { server: { url: 'https://gate.e2e.example.com', apiToken: 'gc_e2eSecretToken123456' }, tunnel: { autoConnect: true, splitTunnel: 'off', dns: ['10.8.0.1'] }, notifications: { push: true } },
+    wireguardConfig: '[Interface]\nPrivateKey = yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=\nAddress = 10.8.0.14/32\nDNS = 10.8.0.1\n\n[Peer]\nEndpoint = gate.e2e.example.com:51820\nAllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25',
+    network: { interfaces: [{ name: 'wlan0', type: 'wifi', addresses: ['192.168.178.23/24'], up: true }, { name: 'tun0', type: 'vpn', addresses: ['10.8.0.14/32'], up: true }],
+      dnsServers: ['10.8.0.1', '192.168.178.1'], routes: '0.0.0.0/0 dev tun0\n192.168.178.0/24 dev wlan0' },
+    logs: { lines: logLines, totalLines: 2400, truncated: true },
+    errors: ['10-12 11:58:02.114  4211  4290 E GateControl: Handshake did not complete after 5 seconds, retrying'],
+    battery: { optimized: true, level: 64 },
+  }, { userId: memberId });
+  const pcBundle = sb.store(livingPc, {
+    schema: 1, createdAt: new Date(now - 2 * 86400000).toISOString(), reason: 'admin_request',
+    client: { product: 'pro', version: '2.5.0', coreVersion: '1.10.0', platform: 'windows', os: 'Windows 11 Pro 10.0.22631', arch: 'x64', locale: 'de' },
+    tunnel: { connected: false, killSwitch: true },
+    logs: { lines: ['[info] service started', '[warn] adapter not found, recreating', '[error] wireguard-nt: access denied'], totalLines: 3, truncated: false },
+    errors: ['[error] wireguard-nt: access denied'],
+  }, { userId: adminRow.id });
+  db.prepare("UPDATE support_bundles SET created_at = datetime('now', '-2 days'), viewed_at = datetime('now', '-1 days'), viewed_by = ? WHERE id = ?").run(adminRow.id, pcBundle.id);
+  db.prepare("UPDATE peers SET support_bundle_requested_at = datetime('now', '-30 minutes') WHERE id = ?").run(annaLaptop);
+
   const fixtures = {
     admin: ADMIN,
     member: { ...MEMBER, id: memberId },
@@ -232,6 +270,7 @@ async function main() {
     webhook: webhookId,
     portal: { token: portalApp, ip: '10.8.0.16', sharedIp: '10.8.0.40', pin: '1234' },
     notify: { pixel: pixelToken, laptop: laptopToken, ids: notifyIds, unread: 2 },
+    support: { pixel: annaPixel, pixelBundle: pixelBundle.id, pc: livingPc, pcBundle: pcBundle.id, laptop: annaLaptop },
   };
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, JSON.stringify(fixtures, null, 2));

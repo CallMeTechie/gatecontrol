@@ -12,6 +12,10 @@
  * Limits: supportBundles.perHour uploads per peer and hour (default 3), plus
  * an attempt limiter per token (failed uploads count too).
  *
+ * Activity `support_bundle_uploaded` — a catalogue event of the notification
+ * center ("Support-Paket empfangen", services/notifications.js), so admins get
+ * a push with client, reason and size as facts.
+ *
  * 201 { ok, bundle: { id, created_at, size_bytes } }
  * 400 invalid_* / unsupported_schema · 403 not bound · 413 too_large · 429 rate_limited
  */
@@ -82,6 +86,7 @@ router.post('/support-bundle', tokenOnly, attemptLimiter, rawBody, bodyErrors, (
       version: req.headers['x-client-version'],
       product: req.headers['x-client-type'],
       platform: req.headers['x-client-platform'],
+      userId: req.tokenUserId,
     });
 
     activity.log('support_bundle_uploaded', `Support bundle received from "${peer.name}"`, {
@@ -93,6 +98,8 @@ router.post('/support-bundle', tokenOnly, attemptLimiter, rawBody, bodyErrors, (
         bundleId: saved.id,
         sizeBytes: saved.size_bytes,
         clientVersion: saved.client_version,
+        clientProduct: saved.client_product,
+        clientPlatform: saved.client_platform,
         reason: saved.reason,
       },
     });

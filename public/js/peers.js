@@ -412,11 +412,22 @@ var DT = function (k, p) { return D.t(k, p); };
         applyFilters();
         renderStatusTags(allPeers);
         renderTagFilters(allPeers);
+        openDeepLink();
       }
     } catch (err) {
       tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--red);padding:40px">' +
         escapeHtml(err.message) + '</td></tr>';
     }
+  }
+
+  // /peers#edit/<id> opens that device's edit dialog once (link from the
+  // support bundle viewer, System › Support-Pakete).
+  var deepLinkHandled = false;
+  function openDeepLink() {
+    if (deepLinkHandled) return;
+    deepLinkHandled = true;
+    var m = /^#edit\/(\d{1,9})$/.exec(window.location.hash || '');
+    if (m && allPeers.some(function (p) { return String(p.id) === m[1]; })) showEditModal(m[1]);
   }
 
   // ─── Render peers table ──────────────────────────────────
@@ -466,6 +477,17 @@ var DT = function (k, p) { return D.t(k, p); };
   }
 
   // ─── Gateway badge ───────────────────────────────────────
+  // Support bundles nobody opened yet → small badge linking to the inbox
+  // filtered to this device. Numbers only; the title is escaped.
+  function getSupportBadge(peer) {
+    var n = Number(peer.support_bundles_unviewed) || 0;
+    if (n <= 0 || !/^\d+$/.test(String(peer.id))) return '';
+    var title = cuT('support_bundles.peer_badge', { count: n });
+    return ' <a class="sb-peer-badge" href="/support-bundles?peer=' + peer.id + '" title="' + escapeHtml(title) + '" aria-label="' + escapeHtml(title) + '">' +
+      '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/></svg>' +
+      n + '</a>';
+  }
+
   function getGatewayBadge(peer) {
     if (peer.peer_type !== 'gateway') return '';
     return ' <span style="display:inline-flex;align-items:center;font-size:10px;padding:1px 6px;border-radius:9999px;background:#0ea5e91a;color:#0ea5e9;border:1px solid #0ea5e940;margin-left:4px;font-weight:600;letter-spacing:0.5px">GATEWAY</span>';
@@ -1902,7 +1924,7 @@ var DT = function (k, p) { return D.t(k, p); };
       var batchTd = batchMode ? '<td class="batch-col"><input type="checkbox" class="batch-checkbox" data-batch-id="' + p.id + '"' + checked + '></td>' : '';
       return '<tr data-peer-id="' + p.id + '">' +
         batchTd +
-        '<td class="cell-name">' + escapeHtml(p.name) + getExpiryTag(p) + getGroupBadge(p) + getGatewayBadge(p) + '</td>' +
+        '<td class="cell-name">' + escapeHtml(p.name) + getExpiryTag(p) + getGroupBadge(p) + getGatewayBadge(p) + getSupportBadge(p) + '</td>' +
         '<td class="mono">' + escapeHtml(ip) + '</td>' +
         '<td>' + lastContact + '</td>' +
         '<td>' + getClientCell(p) + '</td>' +

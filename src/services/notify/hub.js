@@ -65,6 +65,7 @@ const NAMED_TYPES = new Set([
   'account_locked', 'waf_ip_banned', 'peer_connected', 'peer_disconnected', 'peer_created', 'peer_deleted',
   'peer_expired', 'gateway_down', 'gateway_alive', 'gateway_offline', 'gateway_recovered', 'route_down',
   'route_up', 'route_created', 'route_deleted', 'resource_alert', 'resource_recovered',
+  'support_bundle_uploaded',
 ]);
 const ROUTE_FOR_EVENT = {
   gateway_state: 'gateways', peer_connection: 'vpn', peer_lifecycle: 'vpn', peer_expired: 'vpn',
@@ -142,6 +143,24 @@ function gatewayFacts(lang, peerId) {
   return out;
 }
 
+const CLIENT_PRODUCTS = { pro: 'Pro', community: 'Community', android: 'Android' };
+
+function fmtSize(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n < 0) return null;
+  if (n < 1024) return `${Math.round(n)} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Support bundle: client (product + version), reason, size. */
+function supportBundleFacts(lang, d, f) {
+  const product = CLIENT_PRODUCTS[d.clientProduct] || null;
+  const client = [product, d.clientVersion ? sanitize.line(d.clientVersion, 40) : null].filter(Boolean).join(' ');
+  const reason = d.reason === 'admin_request' || d.reason === 'user' ? text.t(lang, `push.fact.reason_${d.reason}`) : null;
+  return [f('client', client || null), f('reason', reason), f('size', fmtSize(d.sizeBytes))].filter(Boolean);
+}
+
 /** data.facts of a core event ([] when the server knows nothing useful). */
 function coreFacts(lang, type, details, ctx) {
   const d = details && typeof details === 'object' ? details : {};
@@ -161,6 +180,7 @@ function coreFacts(lang, type, details, ctx) {
       const ms = Number(d.responseTime);
       return [f('domain', d.domain), f('response_time', Number.isFinite(ms) && ms >= 0 ? `${Math.round(ms)} ms` : null)].filter(Boolean);
     }
+    if (type === 'support_bundle_uploaded') return supportBundleFacts(lang, d, f);
     if (type === 'cert_expiring' || type === 'tls_expiring') {
       const days = Number(d.days_left != null ? d.days_left : d.days);
       return [f('domain', d.domain || d.host), f('days_left', Number.isFinite(days) ? String(Math.max(0, Math.floor(days))) : null)].filter(Boolean);
@@ -198,7 +218,9 @@ function emitActivity(type, message, opts = {}) {
   const ctx = coreContext(type, opts.details);
   const lang = text.serverLang();
   const title = coreTitle(lang, type, ctx.name) || sanitize.title(message) || type;
-  const body = sanitize.body(message);
+  // A type may bring its own text in the server language (push.body.<type>,
+  // e.g. where to look in the admin UI); otherwise the activity message.
+  const body = sanitize.body(text.has(lang, `push.body.${type}`) ? text.t(lang, `push.body.${type}`) : message);
   if (rules.RECOVERY_TYPES.has(type)) return recover({ type, ev, rule, ctx, lang, title, body });
   return publish({
     eventId: ev.eventId, eventType: type, topic: ev.topic, source: 'system', priority: rule.priority,

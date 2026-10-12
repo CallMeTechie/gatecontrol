@@ -40,7 +40,7 @@
         <div id="edit-peer-policy-form"></div>
       </details>
       <div class="form-group" id="edit-peer-support-group" style="display:none">
-        <label class="form-label">{{ t('support_bundles.title') }}</label>
+        <label class="form-label">{{ t('support_bundles.title') }} <span id="edit-peer-support-count" class="tag tag-grey sb-tag" hidden></span></label>
         <small class="form-hint">{{ t('support_bundles.hint', { days: supportRetention.days if supportRetention else 30, keep: supportRetention.keep if supportRetention else 10 }) }}</small>
         <div id="edit-peer-support-list" style="margin-top:6px"></div>
         <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">

@@ -97,6 +97,16 @@ router.get('/', async (req, res) => {
     const uMap = new Map(getDb().prepare('SELECT id, username FROM users').all().map(u => [u.id, u.username]));
     const policy = clientUpdates.getPolicy();
     const enriched = list.map(p => clientPolicy.decoratePeer(clientUpdates.decoratePeer({ ...p, owner_name: p.user_id != null ? (uMap.get(p.user_id) || null) : null }, policy)));
+    // Support bundles per device (admin session only — API tokens never see
+    // anything about them): count and not yet opened ones for the list badge.
+    if (!req.tokenAuth) {
+      const sb = require('../../services/supportBundles').countsByPeer();
+      for (const p of enriched) {
+        const c = sb.get(p.id);
+        p.support_bundles_total = c ? c.total : 0;
+        p.support_bundles_unviewed = c ? c.unviewed : 0;
+      }
+    }
     res.json({
       ok: true,
       peers: enriched.map(stripPeer),

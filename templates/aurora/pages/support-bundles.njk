@@ -1,0 +1,89 @@
+{% extends theme + "/layout.njk" %}
+
+{#- Support-Pakete (docs/feature-support-bundle.md "Admin-Oberfläche"): every
+    support bundle of every device, newest first, "neu" until an admin opened
+    it; the viewer renders one bundle (summary, tunnel, settings, network,
+    WireGuard, errors, logs, raw JSON). Static shell only — every value comes
+    from /api/v1/support-bundles and /api/v1/peers/:id/support-bundles/* at
+    runtime (public/js/support-inbox.js, el()/textContent only, no innerHTML).
+    Address: /support-bundles?peer=<id>&status=new|viewed, viewer
+    #view/<peerId>/<bundleId>. Strings: the #sb-i18n island
+    (routes/index.js SB_I18N_PREFIXES). Styles: §11 of public/css/app.css. -#}
+
+{% block content %}
+<div class="sb-page" id="sb-page">
+  <div class="page-header">
+    <div>
+      <div class="page-eyebrow">{{ t('nav.system') }}</div>
+      <div class="page-title">{{ t('support_bundles.title') }}</div>
+      <div class="page-sub">{{ t('support_bundles.hint', { days: supportRetention.days if supportRetention else 30, keep: supportRetention.keep if supportRetention else 10 }) }}</div>
+    </div>
+    <div class="page-actions">
+      <button class="btn btn-ghost btn-sm" id="sb-refresh" type="button">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+        <span>{{ t('common.refresh') }}</span>
+      </button>
+    </div>
+  </div>
+
+  {# ─── List ─── #}
+  <section id="sb-list-view" aria-labelledby="sb-list-title">
+    <h2 class="sb-sr" id="sb-list-title">{{ t('support_bundles.title') }}</h2>
+    <div class="toolbar sb-toolbar">
+      <label class="sb-field">
+        <span class="sb-field-label">{{ t('support_bundles.filter_device') }}</span>
+        <select id="sb-filter-peer">
+          <option value="">{{ t('support_bundles.filter_all_devices') }}</option>
+        </select>
+      </label>
+      <div class="filter-chips sb-chips" id="sb-chips" role="group" aria-label="{{ t('support_bundles.col_status') }}">
+        <button type="button" class="filter-chip on" data-status="" aria-pressed="true">{{ t('support_bundles.status_all') }}</button>
+        <button type="button" class="filter-chip" data-status="new" aria-pressed="false">{{ t('support_bundles.status_new') }}</button>
+        <button type="button" class="filter-chip" data-status="viewed" aria-pressed="false">{{ t('support_bundles.status_viewed') }}</button>
+      </div>
+      <span class="sb-count" id="sb-count" aria-live="polite"></span>
+    </div>
+
+    <div class="card span12 sb-card">
+      <div class="sb-table-wrap">
+        <table class="data-table sb-table" id="sb-table">
+          <thead>
+            <tr>
+              <th>{{ t('support_bundles.col_time') }}</th>
+              <th>{{ t('support_bundles.col_device') }}</th>
+              <th>{{ t('support_bundles.col_user') }}</th>
+              <th>{{ t('support_bundles.col_client') }}</th>
+              <th>{{ t('support_bundles.col_reason') }}</th>
+              <th class="sb-r">{{ t('support_bundles.col_size') }}</th>
+              <th>{{ t('support_bundles.col_status') }}</th>
+              <th class="sb-r"><span class="sb-sr">{{ t('support_bundles.col_actions') }}</span></th>
+            </tr>
+          </thead>
+          <tbody id="sb-tbody">
+            <tr><td colspan="8" class="sb-loading">{{ t('common.loading') }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="sb-empty" id="sb-empty" hidden>
+        <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+        <div class="sb-empty-title" id="sb-empty-title">{{ t('support_bundles.empty_title') }}</div>
+        <p class="sb-empty-text" id="sb-empty-text">{{ t('support_bundles.empty_text') }}</p>
+        <a class="btn btn-ghost btn-sm" href="/peers" id="sb-empty-peers">{{ t('support_bundles.to_peers') }}</a>
+      </div>
+    </div>
+    <div class="sb-pager" id="sb-pager" hidden>
+      <button type="button" class="btn btn-ghost btn-sm" id="sb-prev">{{ t('support_bundles.page_prev') }}</button>
+      <span id="sb-page-info"></span>
+      <button type="button" class="btn btn-ghost btn-sm" id="sb-next">{{ t('support_bundles.page_next') }}</button>
+    </div>
+  </section>
+
+  {# ─── Viewer (filled by support-inbox.js) ─── #}
+  <section id="sb-viewer" class="sb-viewer" hidden aria-live="polite"></section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="application/json" id="sb-i18n" data-prefixes="support_bundles. common." nonce="{{ cspNonce }}">{{ sbI18n | default('{}') | safe }}</script>
+<script src="/js/support-inbox.js?v={{ appVersion }}"></script>
+{% endblock %}

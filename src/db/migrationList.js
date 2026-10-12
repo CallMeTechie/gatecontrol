@@ -2096,6 +2096,24 @@ const migrations = [
     detect: (db) => tableExists(db, 'notify_rules') && tableExists(db, 'notifications')
       && tableExists(db, 'notification_deliveries') && tableExists(db, 'notify_device_prefs'),
   },
+  {
+    version: 94,
+    name: 'support_bundles_viewed',
+    // Support bundle inbox (docs/feature-support-bundle.md "Admin-Oberfläche"):
+    // a bundle is "neu" until an admin opened it in the viewer.
+    //   viewed_at   first time an admin opened it (UTC, datetime('now') format)
+    //   viewed_by   users.id of that admin (no FK: the user may be deleted later)
+    //   user_id     the person whose app token uploaded it (api_tokens.user_id;
+    //               NULL for old rows / unassigned tokens → the device owner is shown)
+    // Existing bundles stay "neu" — nobody could look at them in the browser before.
+    sql: `
+      ALTER TABLE support_bundles ADD COLUMN viewed_at TEXT;
+      ALTER TABLE support_bundles ADD COLUMN viewed_by INTEGER;
+      ALTER TABLE support_bundles ADD COLUMN user_id INTEGER;
+      CREATE INDEX IF NOT EXISTS idx_support_bundles_created ON support_bundles(created_at);`,
+    detect: (db) => hasColumn(db, 'support_bundles', 'viewed_at') && hasColumn(db, 'support_bundles', 'viewed_by')
+      && hasColumn(db, 'support_bundles', 'user_id'),
+  },
 ];
 
 module.exports = { migrations };

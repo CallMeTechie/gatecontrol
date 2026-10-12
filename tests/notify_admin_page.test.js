@@ -100,7 +100,7 @@ describe('/notifications: route and roles', () => {
     const nav = res.text.slice(res.text.indexOf('<nav class="sidebar"'), res.text.indexOf('</nav>', res.text.indexOf('<nav class="sidebar"')));
     const system = nav.slice(nav.indexOf(`>${de['nav.system']}</div>`));
     const hrefs = Array.from(system.matchAll(/<a href="([^"]+)" class="nav-item/g)).map((m) => m[1]);
-    assert.deepEqual(hrefs, ['/notifications', '/logs', '/settings']);
+    assert.deepEqual(hrefs, ['/notifications', '/support-bundles', '/logs', '/settings']);
     assert.match(nav, /<span class="nav-badge amber" id="nc-nav-badge" hidden><\/span>/);
   });
 
