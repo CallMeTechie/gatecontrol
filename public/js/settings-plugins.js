@@ -399,7 +399,31 @@
       toast(t('plugins.lic.state.' + r.license.state));
       await load();
     } } });
+    // first-party, no entitlement: the plugin may be newer than the last daily
+    // validation of the GateControl licence → revalidate it now
+    // (POST /api/v1/license/refresh; its cooldown answers 429 with a message)
+    let refreshBox = null;
+    if (L.kind === 'first_party' && L.state === 'missing') {
+      const refresh = el('button', { type: 'button', class: 'st-btn st-btn-primary st-btn-sm', id: 'pg-lic-refresh', text: t('plugins.lic.refresh'), on: { click: async () => {
+        msg.textContent = '';
+        refresh.disabled = true;
+        const r = await req('POST', '/api/v1/license/refresh', {});
+        refresh.disabled = false;
+        if (!r.ok) { msg.textContent = r.error || t('plugins.err.generic'); return; }
+        await load();
+        const now = state.plugins.find((x) => x.id === p.id);
+        const st = now && now.license ? now.license.state : 'missing';
+        const m = $('pg-lic-msg');
+        if (st === 'missing') { if (m) m.textContent = t('plugins.lic.refresh_still_missing'); }
+        else toast(t('plugins.lic.state.' + st));
+      } } });
+      refreshBox = el('div', { class: 'pg-lic-refresh', id: 'pg-lic-refresh-box' }, [
+        el('p', { class: 'pg-sub', role: 'note', text: t('plugins.lic.refresh_hint') }),
+        el('div', { class: 'st-btnrow' }, [refresh]),
+      ]);
+    }
     panel.appendChild(el('div', { class: 'pg-lic' }, [dl, el('div', { class: 'pg-lic-form' }, [
+      refreshBox,
       el('label', { class: 'st-label', for: 'pg-lic-key', text: t('plugins.lic.enter') }), input,
       el('div', { class: 'st-btnrow pg-mt' }, [save, check]),
       el('p', { class: 'pg-sub', text: L.kind === 'first_party' ? t(L.source === 'plan' ? 'plugins.lic.hint_plan' : 'plugins.lic.hint_gc') : t('plugins.lic.hint_third', { server: L.server || '' }) }),

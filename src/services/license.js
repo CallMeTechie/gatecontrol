@@ -771,6 +771,11 @@ function isUnlicensedMode() {
   return unlicensed;
 }
 
+/** A GateControl licence key is configured (env or UI) — nothing about its validity. */
+function hasLicenseKey() {
+  return !!config.license.key;
+}
+
 // ─── Remove License ─────────────────────────────
 
 /**
@@ -846,6 +851,7 @@ module.exports = {
   getPlan,
   getLicenseInfo,
   isUnlicensedMode,
+  hasLicenseKey,
   removeLicense,
   COMMUNITY_FALLBACK,
   _getHardwareFingerprint: getHardwareFingerprint,

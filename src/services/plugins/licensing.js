@@ -18,6 +18,13 @@
 //              Checked on entry and daily; a server that cannot be reached
 //              keeps the last good answer for GRACE_MS (14 days, as the
 //              GateControl licence itself).
+//
+// The GateControl licence (and with it the first-party entitlements) is
+// validated once a day. A first-party plugin released after the last
+// validation is therefore "missing" although the licence server already
+// includes it (lifetime licence, plan) — revalidateIfMissing() revalidates
+// once when such a plugin is installed or updated (throttled, only with a
+// GateControl licence key).
 
 const crypto = require('node:crypto');
 const registry = require('./registry');
@@ -31,7 +38,13 @@ const KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,199}$/;
 
 const LICENSED_STATES = new Set(['valid', 'expiring', 'unreachable', 'not_required']);
 
+// one automatic revalidation per process per 10 minutes at most —
+// independent of the cooldown of POST /api/v1/license/refresh
+const AUTO_REFRESH_GAP_MS = 10 * 60 * 1000;
+
 let transport = null; // test seam
+let refreshFn = null; // test seam
+let lastAutoRefresh = 0;
 
 function kindOf(plugin) {
   return plugin.signature === 'trusted' ? 'first_party' : 'third_party';
@@ -209,8 +222,39 @@ async function setKey(plugin, key, { refreshTimeoutMs = 20000 } = {}) {
   return checkThirdParty(plugin);
 }
 
+/**
+ * After the install or update of a first-party plugin that needs a licence:
+ * no entitlement in the last validation, but a GateControl licence key is
+ * configured → revalidate the licence once in the background (the plugin may
+ * be newer than the last daily validation). Throttled to one run per
+ * AUTO_REFRESH_GAP_MS; never for third-party plugins or without a key.
+ * @returns {Promise<object>|null} status() after the revalidation, or null when none runs
+ */
+function revalidateIfMissing(plugin, now = Date.now()) {
+  const m = plugin && plugin.manifest;
+  if (!m || !m.license || !m.license.required || kindOf(plugin) !== 'first_party') return null;
+  const license = require('../license');
+  if (!license.hasLicenseKey()) return null;
+  if (firstPartyStatus(plugin, now).state !== 'missing') return null;
+  if (lastAutoRefresh && now - lastAutoRefresh < AUTO_REFRESH_GAP_MS) return null;
+  lastAutoRefresh = now;
+  return Promise.resolve()
+    .then(() => (refreshFn || license.refreshLicenseInBackground)())
+    .catch(() => {})
+    .then(() => status(plugin));
+}
+
+function _setRefreshForTest(fn) {
+  if (process.env.NODE_ENV !== 'test') return;
+  refreshFn = fn;
+  lastAutoRefresh = 0;
+}
+
 function _setTransportForTest(fn) {
   if (process.env.NODE_ENV === 'test') transport = fn;
 }
 
-module.exports = { status, checkThirdParty, setKey, serverId, kindOf, mask, validKey, GRACE_MS, LICENSED_STATES, _setTransportForTest };
+module.exports = {
+  status, checkThirdParty, setKey, revalidateIfMissing, serverId, kindOf, mask, validKey, GRACE_MS, LICENSED_STATES, AUTO_REFRESH_GAP_MS,
+  _setTransportForTest, _setRefreshForTest,
+};

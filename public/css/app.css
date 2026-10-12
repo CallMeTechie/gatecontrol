@@ -6430,6 +6430,8 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .pg-dl dd[data-state="crit"]{color:var(--pf-red-ink)}
 .pg-lic-form{flex:1 1 280px; padding:14px 16px; border-radius:14px; background:var(--chip); border:1px solid var(--line)}
 .pg-lic-form .st-input{width:100%}
+.pg-lic-refresh{margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--line)}
+.pg-lic-refresh .pg-sub{margin:0 0 8px}
 .pg-perms{display:flex; flex-direction:column; border-radius:14px; border:1px solid var(--line); overflow:hidden; margin-bottom:12px}
 .pg-perm{display:flex; flex-wrap:wrap; gap:4px 14px; padding:12px 16px; border-bottom:1px solid var(--line); font-size:13.5px}
 .pg-perm:last-child{border-bottom:0}

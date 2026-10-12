@@ -490,6 +490,21 @@ disable/uninstall and when the server shuts down.
   that the key is not needed. A key entered for the plugin is added to the plugin keys
   of the GateControl licence (`setPluginKeys`) and a licence refresh runs. The
   14-day offline grace of the GateControl licence applies.
+  The entitlements are those of the last validation, which runs once a day. A
+  plugin released after it (a lifetime licence covers every new plugin, a plan
+  its included ones) would be "fehlt" until the next day, so **installing or
+  updating** a first-party plugin that needs a licence and has no entitlement
+  revalidates the GateControl licence once in the background
+  (`licensing.revalidateIfMissing`: only with a GateControl licence key, never
+  for third-party plugins or when an entitlement exists, at most once per 10
+  minutes per process — independent of the cooldown of
+  `POST /api/v1/license/refresh`). Afterwards the plugins are reconciled, so a
+  plugin that is licensed now starts without a restart; the install answer
+  waits for this at most 15 s. In state "fehlt" the licence tab of a
+  first-party plugin also offers **"Lizenz aktualisieren"**
+  (`POST /api/v1/license/refresh`, 60 s cooldown → 429), which reconciles the
+  plugins right after the refresh as well; entering a key of its own stays
+  possible.
 * **third-party**: the plugin's own licence server (`license.server`, HTTPS
   only, public address), contract of callmetechie.de
   `docs/api/plugin-license-protocol.md`:
