@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.158.2] — 2026-10-12
+
+### Fixes
+- grow the plugin frame for an open dialog and let it shrink again (#292)
+
+---
+
 ## [1.158.1] — 2026-10-12
 
 ### Fixes
