@@ -12,8 +12,8 @@ const frame = require('../src/services/plugins/frame');
 
 function clientScript() {
   const doc = frame.document({ html: '', lang: 'de' });
-  const m = /<script>([\s\S]*?)<\/script>/.exec(doc);
-  return m[1];
+  const start = doc.indexOf('<script>') + '<script>'.length;
+  return doc.slice(start, doc.indexOf('</script>', start));
 }
 
 /** A minimal DOM: a page of `page` px and the fixed elements in `fixed`. */
