@@ -249,7 +249,29 @@ async function install(token, opts = {}) {
     try { await licensing.setKey(plugin, opts.licenseKey); } catch (e) { licenseError = e.code || 'license_failed'; }
   }
   await reconcile();
+  if (!opts.licenseKey) await revalidateAfterInstall(plugin, existing ? 'update' : 'install');
   return { plugin: registry.get(m.id), licenseError };
+}
+
+const REVALIDATE_WAIT_MS = 15000;
+
+/**
+ * A first-party plugin released after the last daily licence validation has
+ * no entitlement yet ("missing"), although the licence server may already
+ * include it (lifetime licence, plan). Revalidate once in the background
+ * (licensing.revalidateIfMissing: throttled, only with a licence key) and
+ * reconcile afterwards — the way the 5-minute reconcile picks up the daily
+ * refresh — so a plugin that is licensed now starts without a restart. The
+ * install answer waits for it at most REVALIDATE_WAIT_MS.
+ */
+async function revalidateAfterInstall(plugin, verb) {
+  const reval = licensing.revalidateIfMissing(plugin);
+  if (!reval) return;
+  const done = reval.then(async (lic) => {
+    registry.addLog(plugin.id, 'info', `licence revalidated after the ${verb}: ${lic.state}`);
+    await reconcile();
+  }).catch((e) => logger.warn({ plugin: plugin.id, err: e.message }, 'plugin licence revalidation failed'));
+  await Promise.race([done, new Promise((r) => { const t = setTimeout(r, REVALIDATE_WAIT_MS); t.unref(); })]);
 }
 
 // ─── Running state ──────────────────────────────

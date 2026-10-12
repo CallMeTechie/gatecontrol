@@ -79,6 +79,9 @@ router.post('/refresh', async (req, res) => {
 
   try {
     await license.refreshLicenseInBackground();
+    // plugin entitlements may have changed (e.g. a newly released plugin):
+    // start/stop plugins now instead of at the next 5-minute reconcile
+    try { await require('../../services/plugins').reconcile(); } catch { /* plugins keep their state */ }
     activity.log('license_refresh_success', `License refreshed — Plan: ${license.getPlan()}`);
     res.json({ ok: true, ...license.getLicenseInfo() });
   } catch (err) {
