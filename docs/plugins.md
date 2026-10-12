@@ -366,6 +366,10 @@ const { pushed, id } = await gc.notify({
 * `data.actions` may only use the fixed action types (`open_app_route`,
   `open_portal`, `mute_1h`, `ack`, `done`); control characters are removed,
   the apps show text only.
+  The apps have no screen of their own for a plugin: an `open_app_route`
+  action to the plugin's own route (`plg-<id>`) is sent as `open_portal` to
+  `/portal#plg-<id>` — the plugin's portal tab, or the GateControl tab
+  ("Zuhause", "Fahrzeug") holding its first section, scrolled to it.
 * `data.facts` (optional): up to 6 `{ label, value }` pairs the apps show
   under the text, e.g. `[{ label: 'Akku', value: '80 %' }]` — one line each,
   label ≤ 60 and value ≤ 120 characters; anything else is dropped. Schedules ("evening before 18:00") are the

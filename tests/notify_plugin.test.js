@@ -108,6 +108,26 @@ describe('hostApi notify', () => {
     assert.ok(Math.abs(ttl - 6 * 3600 * 1000) < 2000);
   });
 
+  it('v2: an action opening the plugin\'s own app route opens the plugin in the portal (the apps have no screen for it)', async () => {
+    const p = fakePlugin('car-open');
+    await call(p, { notification: { topic: 'charging', title: 'Laden abgeschlossen', data: { actions: [
+      { id: 'open', label: 'Öffnen', type: 'open_app_route', target: 'plg-car-open' },
+      { id: 'vpn', label: 'VPN', type: 'open_app_route', target: 'vpn' },
+      { id: 'other', label: 'Anderes Plugin', type: 'open_app_route', target: 'plg-car-one' },
+      { id: 'mute_1h', label: 'Stumm', type: 'mute_1h' },
+    ] } } });
+    const d = JSON.parse(H.lastNotification().data);
+    assert.equal(d.route, 'plg-car-open', 'the route stays');
+    assert.deepEqual(d.actions, [
+      { id: 'open', label: 'Öffnen', type: 'open_portal', target: '/portal#plg-car-open' },
+      { id: 'vpn', label: 'VPN', type: 'open_app_route', target: 'vpn' },
+      { id: 'other', label: 'Anderes Plugin', type: 'open_app_route', target: 'plg-car-one' },
+      { id: 'mute_1h', label: 'Stumm', type: 'mute_1h' },
+    ]);
+    // the portal link of the apps accepts that target
+    assert.equal(require('../src/services/portalTickets').portalNext('/portal#plg-car-open'), '/portal#plg-car-open');
+  });
+
   it('v2: topic default off → only people who opted in', async () => {
     const p = fakePlugin('car-three');
     await call(p, { notification: { topic: 'service', title: 'Wartung fällig' } });

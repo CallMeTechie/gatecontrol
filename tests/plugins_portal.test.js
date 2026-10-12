@@ -78,6 +78,10 @@ describe('sections in GateControl tabs', () => {
     let page = (await agent.get('/portal').expect(200)).text;
     assert.match(page, /id="tab-zuhause"/);
     assert.match(page, /id="pt-sec-plg-hello-sec-garden"[^>]*>\s*<iframe class="pt-plugin-frame" title="(?:Garten|Garden)" src="\/portal\/plugins\/hello-sec\/frame\?section=garden" sandbox="allow-scripts allow-forms"/);
+    // "#plg-hello-sec" (notification links) finds the plugin's sections by data-plugin
+    assert.match(page, /id="pt-sec-plg-hello-sec-garden"[^>]* data-plugin="hello-sec"/);
+    const portalJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'portal.js'), 'utf8');
+    assert.match(portalJs, /function pluginSection\(id\)/);
     assert.match(page, /id="tab-fahrzeug"/);
     assert.match(page, /src="\/portal\/plugins\/hello-sec\/frame\?section=garage"/);
     assert.doesNotMatch(page, /id="tab-plg-hello-sec"/);
