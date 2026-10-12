@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.158.4] — 2026-10-12
+
+### Fixes
+- "Öffnen" in a plugin notification opens the plugin in the portal (#294)
+
+---
+
 ## [1.158.3] — 2026-10-12
 
 ### Fixes
