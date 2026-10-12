@@ -28,14 +28,17 @@ function harness({ page, fixed = [] }) {
     addEventListener() {},
     getComputedStyle: (el) => ({ position: el.position || 'static', display: el.hidden ? 'none' : 'block', visibility: 'visible' }),
     requestAnimationFrame: (fn) => fn(),
+    innerWidth: 800,
+    innerHeight: 600,
     MutationObserver: function (cb) { this.observe = () => observers.push(cb); },
   };
-  for (const el of els) el.getBoundingClientRect = () => (el.hidden ? { width: 0, height: 0, top: 0 } : { width: 400, height: 300, top: el.top || 0 });
+  for (const el of els) el.getBoundingClientRect = () => (el.hidden ? { width: 0, height: 0, top: 0 } : { width: el.w || 400, height: el.h || 300, top: el.top || 0 });
   const ctx = { window: win, MutationObserver: win.MutationObserver, document: { documentElement, body }, setTimeout, Object, Error, Promise, Math, Number, String };
   vm.runInNewContext(clientScript(), ctx);
   const mutate = () => observers.forEach((cb) => cb());
   const heights = () => posted.filter((m) => m.type === 'gc-resize').map((m) => m.height);
-  return { els, mutate, heights, page };
+  const modals = () => posted.filter((m) => m.type === 'gc-modal').map((m) => m.open);
+  return { els, mutate, heights, modals, page };
 }
 
 describe('plugin frame height', () => {
@@ -63,5 +66,22 @@ describe('plugin frame height', () => {
     h.mutate();
     h.mutate();
     assert.deepEqual(h.heights(), [600]);
+  });
+
+  it('a fixed backdrop covering the frame reports gc-modal open, hiding it reports closed (once each)', () => {
+    const h = harness({ page: { h: 340 }, fixed: [{ position: 'fixed', hidden: true, scrollHeight: 964, w: 800, h: 600 }] });
+    h.mutate();
+    h.els[0].hidden = false;
+    h.mutate();
+    h.mutate();
+    h.els[0].hidden = true;
+    h.mutate();
+    assert.deepEqual(h.modals(), [true, false]);
+  });
+
+  it('a toast is no dialog: no gc-modal', () => {
+    const h = harness({ page: { h: 600 }, fixed: [{ position: 'fixed', scrollHeight: 40, top: 10, w: 300, h: 40 }] });
+    h.mutate();
+    assert.deepEqual(h.modals(), []);
   });
 });

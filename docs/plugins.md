@@ -473,7 +473,12 @@ disable/uninstall and when the server shuts down.
     the viewer cannot see is dropped. The hooks get the viewer and must only
     answer with what that person may see (the host passes nobody else).
 * Sandboxed frames have no `alert`/`confirm`/`prompt` (no `allow-modals`):
-  plugins draw their own dialogs.
+  plugins draw their own dialogs. The frame grows with its content and with
+  an open dialog (visible `position: fixed` elements count with their full
+  height) and shrinks again. A dialog drawn as a fixed backdrop covering the
+  frame (e.g. `.modal-overlay { position: fixed; inset: 0 }`) makes
+  GateControl dim its own page around the frame as well, so the dialog reads
+  as one of the whole page.
 
 ## Licences
 
