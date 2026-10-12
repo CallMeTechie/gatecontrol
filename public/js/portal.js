@@ -252,8 +252,22 @@
   function validTab(id) { return tabs().some(function (t) { return t.getAttribute('data-tab') === id; }) || isExtra(id); }
   var panelListeners = [];
   function onPanel(fn) { panelListeners.push(fn); }
+  // "#plg-<id>" of a plugin without a tab of its own (links from its
+  // notifications): the GateControl tab holding its first visible section.
+  function pluginSection(id) {
+    if (!/^plg-[a-z0-9]+(-[a-z0-9]+)*$/.test(id) || validTab(id)) return null;
+    var secs = doc.querySelectorAll('.pt-plugin-section[data-plugin]');
+    for (var i = 0; i < secs.length; i++) {
+      if (secs[i].hidden || 'plg-' + secs[i].getAttribute('data-plugin') !== id) continue;
+      var panel = secs[i].closest('.pt-panel');
+      if (panel && validTab(panel.getAttribute('data-panel'))) return { tab: panel.getAttribute('data-panel'), el: secs[i] };
+    }
+    return null;
+  }
   function activate(id, opts) {
     var o = opts || {};
+    var ps = pluginSection(id);
+    if (ps) id = ps.tab;
     if (!validTab(id)) id = 'start';
     var extra = isExtra(id);
     var list = tabs();
@@ -273,6 +287,7 @@
       try { history.pushState(null, '', '#' + id); } catch (_) { location.hash = id; }
     }
     if (o.scroll) window.scrollTo(0, 0);
+    if (ps && ps.el.scrollIntoView) { try { ps.el.scrollIntoView({ block: 'start' }); } catch (_) { /* old browsers */ } }
     // Redraw the traffic chart once its tab is visible (fixed id, no lookup by name).
     if (id === 'netzwerk' && traffic) renderTraffic();
   }

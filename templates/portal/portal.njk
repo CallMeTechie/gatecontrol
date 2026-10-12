@@ -41,7 +41,7 @@
 } %}
 {#- A plugin's section in a GateControl tab (docs/plugins.md "Portal"): its own sandboxed frame. -#}
 {%- macro pluginSection(sec) %}
-      <section class="pt-plugin-section" id="pt-sec-{{ sec.key }}" data-area="{{ sec.key }}" aria-label="{{ sec.title }}">
+      <section class="pt-plugin-section" id="pt-sec-{{ sec.key }}" data-area="{{ sec.key }}" data-plugin="{{ sec.plugin }}" aria-label="{{ sec.title }}">
         <iframe class="pt-plugin-frame" title="{{ sec.title }}" src="/portal/plugins/{{ sec.plugin }}/frame?section={{ sec.id }}" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" loading="lazy"
           data-plugin-frame data-plugin-id="{{ sec.plugin }}" data-plugin-api="/api/v1/portal/plugins/{{ sec.plugin }}/api/" data-plugin-pages="[]"></iframe>
       </section>

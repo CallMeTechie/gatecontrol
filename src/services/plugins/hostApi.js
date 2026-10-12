@@ -275,6 +275,14 @@ function notify(plugin, args) {
     need(n.data == null || (typeof n.data === 'object' && !Array.isArray(n.data)), 'ERR_INVALID', 'invalid data');
     const d = sanitize.data(n.data == null ? { route: `plg-${plugin.id}` } : { route: `plg-${plugin.id}`, ...n.data });
     need(d.ok, 'ERR_INVALID', 'data too large (max 4 KB)');
+    // The apps have no screen of their own for a plugin: an action opening
+    // the plugin's app route opens the plugin in the portal instead (its own
+    // tab, or the GateControl tab holding its sections — portal "#plg-<id>").
+    if (d.data && Array.isArray(d.data.actions)) {
+      d.data.actions = d.data.actions.map((a) => (a.type === 'open_app_route' && a.target === `plg-${plugin.id}`
+        ? { ...a, type: 'open_portal', target: `/portal#plg-${plugin.id}` }
+        : a));
+    }
     notifyBudget(plugin);
     require('../activity').log('plugin_notice', `${plugin.name}: ${title}`, { source: 'plugin', severity: 'info', details: { plugin: plugin.id, topic } });
     const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, collapseKey, ttl, data: d.data });
