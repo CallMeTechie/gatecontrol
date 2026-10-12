@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.158.1] — 2026-10-12
+
+### Fixes
+- revalidate the licence when a first-party plugin is installed without entitlement (#291)
+
+---
+
 ## [1.158.0] — 2026-10-11
 
 ### Features
