@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.158.3] — 2026-10-12
+
+### Fixes
+- dim the whole page while a plugin dialog is open (#293)
+
+---
+
 ## [1.158.2] — 2026-10-12
 
 ### Fixes
