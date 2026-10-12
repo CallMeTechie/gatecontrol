@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.159.0] — 2026-10-12
+
+### Features
+- support bundle inbox, viewer and notification (#295)
+
+---
+
 ## [1.158.4] — 2026-10-12
 
 ### Fixes
