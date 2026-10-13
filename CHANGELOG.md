@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.161.0] — 2026-10-13
+
+### Features
+- user profile with devices, device page with map, location sharing on tap (#303)
+
+---
+
 ## [1.160.1] — 2026-10-13
 
 ### Fixes
