@@ -406,6 +406,96 @@ router.delete('/:id/self-service', (req, res) => {
   }
 });
 
+/**
+ * Devices and shared locations (docs/feature-device-location.md):
+ *   GET    /api/v1/users/:id/devices                   → { ok, devices, location }
+ *   GET    /api/v1/users/:id/devices/:peerId           → { ok, user, device, location }
+ *   DELETE /api/v1/users/:id/devices/:peerId/locations → { ok, deleted }
+ *   PUT    /api/v1/users/:id/location-sharing          { enabled } → { ok, user }
+ */
+function locationInfo(user) {
+  const loc = require('../../services/deviceLocations');
+  return { allowed: user.location_sharing === 1, keep: loc.LOCATION_KEEP, retention_days: loc.RETENTION_DAYS };
+}
+
+function parsePeerId(req) {
+  const id = Number.parseInt(req.params.peerId, 10);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+router.get('/:id/devices', (req, res) => {
+  try {
+    const id = parseId(req);
+    const user = id && users.getById(id);
+    if (!user) return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, devices: require('../../services/userDevices').list(id), location: locationInfo(user) });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to list user devices');
+    res.status(500).json({ ok: false, error: req.t('error.users.get') });
+  }
+});
+
+router.get('/:id/devices/:peerId', (req, res) => {
+  try {
+    const id = parseId(req);
+    const peerId = parsePeerId(req);
+    const user = id && users.getById(id);
+    const device = user && peerId && require('../../services/userDevices').detail(id, peerId);
+    if (!device) return res.status(404).json({ ok: false, error: req.t('error.users.device_not_found') });
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      user: { id: user.id, username: user.username, display_name: user.display_name, role: user.role, enabled: user.enabled },
+      device,
+      location: locationInfo(user),
+    });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to load user device');
+    res.status(500).json({ ok: false, error: req.t('error.users.get') });
+  }
+});
+
+router.delete('/:id/devices/:peerId/locations', (req, res) => {
+  try {
+    const id = parseId(req);
+    const peerId = parsePeerId(req);
+    const user = id && users.getById(id);
+    const devices = require('../../services/userDevices');
+    if (!user || !peerId || !devices.belongsTo(id, peerId)) {
+      return res.status(404).json({ ok: false, error: req.t('error.users.device_not_found') });
+    }
+    const deleted = require('../../services/deviceLocations').deleteForPeer(peerId);
+    require('../../services/activity').log('user_device_locations_deleted', `Locations of a device of user "${user.username}" deleted by an administrator`, {
+      source: 'admin', ipAddress: req.ip, severity: 'info', details: { userId: id, peerId, actorId: req.session.userId, deleted },
+    });
+    res.json({ ok: true, deleted });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to delete device locations');
+    res.status(500).json({ ok: false, error: req.t('error.users.update') });
+  }
+});
+
+router.put('/:id/location-sharing', (req, res) => {
+  try {
+    const id = parseId(req);
+    const user = id && users.getById(id);
+    if (!user) return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
+    if (typeof (req.body || {}).enabled !== 'boolean') {
+      return res.status(400).json({ ok: false, error: req.t('error.users.invalid_input') });
+    }
+    const { enabled } = req.body;
+    require('../../services/deviceLocations').setAllowedForUser(id, enabled);
+    require('../../services/activity').log('user_location_sharing_changed', `Location sharing ${enabled ? 'allowed' : 'not allowed'} for user "${user.username}"`, {
+      source: 'admin', ipAddress: req.ip, severity: 'info', details: { userId: id, actorId: req.session.userId, enabled },
+    });
+    res.json({ ok: true, user: users.getById(id) });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to change location sharing');
+    res.status(500).json({ ok: false, error: req.t('error.users.update') });
+  }
+});
+
 router.put('/:id/self-enroll', (req, res) => {
   try {
     const id = parseId(req);

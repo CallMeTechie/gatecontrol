@@ -527,6 +527,8 @@ function remove(id, { actorId = null, ip = null } = {}) {
   const impact = deleteImpact(id);
   db.transaction(() => {
     db.prepare('DELETE FROM api_tokens WHERE user_id = ?').run(id);
+    // Positions the person shared go with the person (the peers stay).
+    db.prepare('DELETE FROM device_locations WHERE user_id = ?').run(id);
     db.prepare('UPDATE peers SET user_id = NULL WHERE user_id = ?').run(id);
     removeBuiltinOwnership(db, id);
     stripFromVisibility(db, 'routes', id);

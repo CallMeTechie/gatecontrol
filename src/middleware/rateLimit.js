@@ -411,3 +411,17 @@ const clientActionLimiter = rateLimit({
   },
 });
 module.exports.clientActionLimiter = clientActionLimiter;
+
+// POST/DELETE /api/v1/client/location — location sharing on tap: 10 per
+// minute and device (a person tapping, not a tracker).
+const clientLocationLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.tokenAuth ? `client-location:${req.tokenId}` : `client-location:${ipKeyGenerator(req.ip)}`),
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'rate_limited' });
+  },
+});
+module.exports.clientLocationLimiter = clientLocationLimiter;
