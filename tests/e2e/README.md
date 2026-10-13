@@ -23,9 +23,13 @@ scenarios/06-settings.js /settings: Bereiche (#bereich, alte Tab-Namen, ?tab=),
                         Suche, Speicherleiste (ändern, speichern, neu laden,
                         verwerfen, 400 mit Feldfehler, Rückfrage beim Wechsel),
                         Webhook-Dialog mit Ereignisauswahl, hell/dunkel, 390 px
-scenarios/07-users.js   /users: Liste + Filter, Detail per ?user=&tab=, Tabs per
-                        Tastatur, Zugangs-Assistent bis zum Code, Zugang
-                        bearbeiten, Rückfrage beim Verwerfen, 390 px;
+scenarios/07-users.js   /users: Liste + Filter, Zeile → Profil /users/:id, alter
+                        Link ?user=&tab= landet im Profil, Tabs per Tastatur
+                        und in der Adresse, Kopf-Aktionen (Bearbeiten, Gerät
+                        hinzufügen → Zugangs-Assistent bis zum Code, Mehr →
+                        Rolle), Zugang bearbeiten, Standortfreigabe,
+                        Geräteseite mit Karte (Kacheln gestubbt) und
+                        Brotkrumen zurück, Rückfrage beim Verwerfen, 390 px;
                         Einladung → Passwort → Anmeldung; Mitglied landet in
                         „Konto & Sicherheit“, Mitglieds-Navigation, Weiterleitungen
 scenarios/08-portal.js  Portal: Einmal-Link der App → angemeldet, Tabs (URL,

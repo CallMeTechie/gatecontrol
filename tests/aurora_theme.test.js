@@ -431,27 +431,48 @@ describe('aurora theme — users layout (Task P2-5)', () => {
     assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
   });
 
-  it('renders the redesigned users page contract (list, detail panel, dialogs)', async () => {
+  // The dialogs (partials/users-dialogs.njk) are on the list and on the profile.
+  const DIALOG_IDS = [
+    'us-dlg-roles', 'us-dlg-create', 'us-dlg-wizard', 'us-dlg-edit', 'us-dlg-profile', 'us-dlg-password', 'us-dlg-role', 'us-dlg-delete', 'us-dlg-invite', 'us-dlg-orphans',
+    'us-wz-steps', 'us-wz-next', 'us-wz-back', 'us-wz-presets', 'us-wz-scopes', 'us-wz-peer', 'us-wz-binding-sw', 'us-wz-classic', 'us-wz-code-value',
+    'us-ed-rights', 'us-ed-facts', 'us-del-confirm', 'us-del-ok', 'us-i18n', 'us-ctx',
+  ];
+
+  it('renders the redesigned users page contract (list, dialogs; no side panel)', async () => {
     selectAurora();
     const res = await agent.get('/users').expect(200);
     const ids = [
       // page, role cards, owner-less banner, list
       'us-page', 'us-btn-roles', 'us-btn-add', 'us-orphans', 'us-orphans-assign', 'us-search', 'us-filters', 'us-table', 'us-tbody', 'us-cards',
-      // detail panel with five tabs
-      'us-detail', 'us-tabs', 'us-tab-overview', 'us-tab-access', 'us-tab-see', 'us-tab-security', 'us-tab-activity',
-      'us-panel-overview', 'us-panel-access', 'us-panel-see', 'us-panel-security', 'us-panel-activity',
-      // dialogs
-      'us-dlg-roles', 'us-dlg-create', 'us-dlg-wizard', 'us-dlg-edit', 'us-dlg-password', 'us-dlg-role', 'us-dlg-delete', 'us-dlg-invite', 'us-dlg-orphans',
-      'us-wz-steps', 'us-wz-next', 'us-wz-back', 'us-wz-presets', 'us-wz-scopes', 'us-wz-peer', 'us-wz-binding-sw', 'us-wz-classic', 'us-wz-code-value',
-      'us-ed-rights', 'us-ed-facts', 'us-del-confirm', 'us-del-ok', 'us-i18n', 'us-ctx',
-    ];
+    ].concat(DIALOG_IDS);
     for (const id of ids) assert.match(res.text, new RegExp(`id="${id}"`), `#${id} present`);
-    // the old modal/wizard is gone
-    for (const gone of ['user-modal-overlay', 'token-modal-overlay', 'tw-step-1', 'unassigned-banner']) {
+    // the old modal/wizard and the side panel are gone (editing lives on /users/:id)
+    for (const gone of ['user-modal-overlay', 'token-modal-overlay', 'tw-step-1', 'unassigned-banner', 'us-detail', 'us-tabs', 'us-panel-overview']) {
       assert.doesNotMatch(res.text, new RegExp(`id="${gone}"`), `#${gone} absent`);
     }
-    assert.match(res.text, /role="tablist"/);
     assert.match(res.text, /class="mi danger"/, 'delete dialog keeps the modal-head icon wrapper');
+  });
+
+  it('renders the user profile contract (header actions, five tabs, dialogs)', async () => {
+    selectAurora();
+    const { getDb } = require('../src/db/connection');
+    const id = getDb().prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").get().id;
+    const res = await agent.get(`/users/${id}?tab=security`).expect(200);
+    const ids = [
+      'up-page', 'up-name', 'up-head-chips', 'up-edit', 'up-add-device', 'up-toggle', 'up-more', 'up-menu',
+      'up-act-password', 'up-act-role', 'up-act-invite', 'up-act-delete',
+      'us-tabs', 'us-tab-overview', 'us-tab-access', 'us-tab-see', 'us-tab-security', 'us-tab-activity',
+      'us-panel-overview', 'us-panel-access', 'us-panel-see', 'us-panel-security', 'us-panel-activity',
+    ].concat(DIALOG_IDS);
+    for (const i of ids) assert.match(res.text, new RegExp(`id="${i}"`), `#${i} present`);
+    assert.match(res.text, /role="tablist"/);
+    // ?tab= picks the tab server-side; the others stay hidden
+    assert.match(res.text, /id="us-tab-security"[^>]*aria-selected="true"/);
+    assert.match(res.text, /id="us-tab-overview"[^>]*aria-selected="false"/);
+    assert.match(res.text, /id="us-panel-overview"[^>]*hidden/);
+    assert.doesNotMatch(res.text, /id="us-panel-security"[^>]*hidden/);
+    assert.match(res.text, /\/js\/users\.js/);
+    assert.doesNotMatch(res.text, /\/js\/user-(profile|device)\.js/);
   });
 
   it('inline <style> block has been removed from aurora/pages/users.njk (styles moved to the stylesheet)', () => {
@@ -469,7 +490,8 @@ describe('aurora theme — users layout (Task P2-5)', () => {
 
   it('app.css carries the users-page section (us-) and the old duplicates are gone', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
-    for (const sel of ['.us-layout', '.us-detail', '.us-tab', '.us-steps', '.us-mx', '.us-usage-mode']) assert.ok(css.includes(sel + '{') || css.includes(sel + ' '), sel);
+    for (const sel of ['.us-layout', '.us-tab', '.us-steps', '.us-mx', '.us-usage-mode', '.up-menu', '.up-panel-card']) assert.ok(css.includes(sel + '{') || css.includes(sel + ' '), sel);
+    assert.doesNotMatch(css, /\.us-detail\b/, 'the side panel styles are gone');
     assert.doesNotMatch(css, /\.tw-step\b/, '.tw-step is gone');
     assert.doesNotMatch(css, /\.tw-preset-label\b/, '.tw-preset-label (defined twice) is gone');
     assert.doesNotMatch(css, /\.aurora-user-card\b/);

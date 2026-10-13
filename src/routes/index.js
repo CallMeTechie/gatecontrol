@@ -298,9 +298,14 @@ const NOTIFY_I18N_PREFIXES = ['notify.', 'common.'];
 // (support-bundles.njk data-prefixes must list the same ones).
 const SB_I18N_PREFIXES = ['support_bundles.', 'common.'];
 
-// Strings the users page hands to its script (JSON island, like the
-// settings page).
-const USERS_I18N_PREFIXES = ['us.', 'users.mb.', 'error.users.', 'error.tokens.', 'error.enrollment.', 'enrollment.', 'common.', 'passkey.error_not_found'];
+// Strings the users list and the user profile hand to users.js (one JSON
+// island on both pages, like the settings page; up.* for the profile).
+const USERS_I18N_PREFIXES = ['us.', 'users.mb.', 'error.users.', 'error.tokens.', 'error.enrollment.', 'enrollment.', 'common.', 'passkey.error_not_found', 'up.'];
+
+// Tabs of the user profile (/users/:id?tab=…). The users list had the same
+// five in its side panel; old links /users?user=ID&tab=X lead to the profile.
+const PROFILE_TABS = ['overview', 'access', 'see', 'security', 'activity'];
+function profileTab(v) { return PROFILE_TABS.includes(v) ? v : 'overview'; }
 
 /** The portal link of the member navigation (null when the portal is off). */
 function portalLink() {
@@ -377,6 +382,12 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
     }
 
     if (template === 'users') {
+      // The side panel became the profile page: /users?user=ID&tab=X → /users/ID?tab=X.
+      const legacyId = positiveId(req.query && req.query.user);
+      if (legacyId) {
+        const tab = profileTab(req.query.tab);
+        return res.redirect(`/users/${legacyId}${tab === 'overview' ? '' : `?tab=${tab}`}`);
+      }
       extraLocals.usersI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, USERS_I18N_PREFIXES))
         .replace(/</g, '\\u003c');
     }
@@ -446,7 +457,9 @@ router.get('/me', apiLimiter, requireAuth, (req, res) => res.redirect(portalLink
 // ─── User profile + device page (docs/feature-device-location.md) ─────────
 // Admin-only like the users page; apiLimiter (before requireAuth, as for /me)
 // for the explicit role lookup. Data comes from the
-// users API (/api/v1/users/:id/devices…), the pages only carry ids + strings.
+// users API (/api/v1/users/:id…), the pages only carry ids + strings. The
+// profile runs users.js (USERS_I18N_PREFIXES), the device page
+// user-device.js (PROFILE_I18N_PREFIXES).
 const PROFILE_I18N_PREFIXES = ['up.', 'us.role.', 'common.', 'error.users.'];
 
 function adminOrRedirect(req, res) {
@@ -469,12 +482,16 @@ router.get('/users/:id', apiLimiter, requireAuth, (req, res) => {
   const id = positiveId(req.params.id);
   const target = id && require('../services/users').getById(id);
   if (!target) return res.redirect('/users');
+  const name = target.display_name || target.username;
   return res.render(`${res.locals.theme}/pages/user-profile.njk`, {
     title: res.locals.t('up.title'),
     activeNav: 'users',
     profileUserId: id,
-    profileName: target.display_name || target.username,
-    profileI18n: profileI18n(req, res),
+    profileName: name,
+    // "Was sieht <Vorname>?" — the same first word users.js uses.
+    profileFirstName: String(name).split(/\s+/)[0],
+    profileTab: profileTab(req.query && req.query.tab),
+    usersI18n: JSON.stringify(stringsWithPrefix(req.language || res.locals.language, USERS_I18N_PREFIXES)).replace(/</g, '\\u003c'),
   });
 });
 

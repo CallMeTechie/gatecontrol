@@ -161,6 +161,14 @@ async function main() {
     return t.id;
   };
   const pixelToken = mkToken('Pixel 8', appScopes, memberId, annaPixel, { used: '-12 minutes' });
+  // User profile + device page (scenarios/07-users.js): two positions Anna's
+  // Pixel shared on tap (docs/feature-device-location.md).
+  const locations = require('../../src/services/deviceLocations');
+  for (const [mins, lat, lng, accuracy] of [[95, 51.3391, 12.3713, 24], [18, 51.3397, 12.3731, 12]]) {
+    const at = Date.now() - mins * 60000;
+    locations.record({ peerId: annaPixel, tokenId: pixelToken, userId: memberId, via: 'tunnel', now: at,
+      value: { lat, lng, accuracy, altitude: null, provider: 'fused', capturedAt: at } });
+  }
   // Portal (scenarios/08-portal.js): the app's own token for the one-time
   // login link, Anna's portal PIN and a shared living-room PC ("Wer bist du?").
   // Created last: without a licence only the newest peers stay enabled.
@@ -261,6 +269,7 @@ async function main() {
     admin: ADMIN,
     member: { ...MEMBER, id: memberId },
     users: { member: memberId, tom: tomId, kids: kidsId },
+    devices: { annaPixel },
     tfa: { ...TFA, secret, recovery_codes: confirmed.recovery_codes },
     zone: { domain: ZONE, id: zoneId },
     hosts: { nas: nas.id, wiki: wiki.id, apex: apex.id },

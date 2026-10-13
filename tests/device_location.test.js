@@ -220,8 +220,10 @@ describe('admin API and pages', () => {
   it('profile page renders with its island and script', async () => {
     const r = await agent.get(`/users/${erik}`).expect(200);
     assert.match(r.text, /id="up-page"/);
-    assert.match(r.text, /id="up-i18n"/);
-    assert.match(r.text, /\/js\/user-profile\.js/);
+    // The profile is rendered by users.js (profile mode) from the users island.
+    assert.match(r.text, /id="us-i18n" data-prefixes="[^"]*\bup\.["\s]/);
+    assert.match(r.text, /"up\.loc\.allow"/);
+    assert.match(r.text, /\/js\/users\.js/);
     assert.ok(!hostsOf(r.headers['content-security-policy'], 'img-src').some((h) => h === OSM_HOST));
   });
 
@@ -229,6 +231,9 @@ describe('admin API and pages', () => {
     const r = await agent.get(`/users/${erik}/devices/${phone.peerId}`).expect(200);
     assert.match(r.text, /id="ud-page"/);
     assert.match(r.text, /\/vendor\/leaflet\/leaflet\.js/);
+    assert.match(r.text, /\/js\/user-device\.js/);
+    // Breadcrumb: the name leads back to the profile's devices tab.
+    assert.match(r.text, new RegExp(`href="/users/${erik}\\?tab=access"`));
     const csp = r.headers['content-security-policy'];
     assert.ok(hostsOf(csp, 'img-src').some((h) => h === OSM_HOST));
     assert.ok(!hostsOf(csp, 'script-src').some((h) => h === OSM_HOST));
