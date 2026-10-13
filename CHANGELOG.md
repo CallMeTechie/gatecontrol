@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.162.0] — 2026-10-13
+
+### Features
+- the user profile becomes the user page – tabs, in-place dialogs, list without side panel (#304)
+
+---
+
 ## [1.161.0] — 2026-10-13
 
 ### Features
