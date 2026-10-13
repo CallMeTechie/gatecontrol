@@ -2182,6 +2182,18 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_device_locations_user ON device_locations(user_id);`,
     detect: (db) => tableExists(db, 'device_locations'),
   },
+  {
+    version: 99,
+    name: 'support_bundles_diagnosis',
+    // Diagnosis assistant of the apps (docs/feature-client-diagnosis.md):
+    // index copies for the inbox row and the notification — the start of the
+    // user's problem description (redacted, max 300 chars; the bundle file
+    // keeps the full text) and the diagnosis summary ('ok' | 'warn' | 'fail').
+    sql: `
+      ALTER TABLE support_bundles ADD COLUMN description TEXT;
+      ALTER TABLE support_bundles ADD COLUMN diagnosis_summary TEXT;`,
+    detect: (db) => hasColumn(db, 'support_bundles', 'description') && hasColumn(db, 'support_bundles', 'diagnosis_summary'),
+  },
 ];
 
 module.exports = { migrations };

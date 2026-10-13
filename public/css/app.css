@@ -6797,7 +6797,8 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 
 /* ============================================================================
  * §11 Support bundles (sb-): System › Support-Pakete — list with device/status
- *    filter, viewer (summary, tunnel, settings, network, WireGuard, errors,
+ *    filter, viewer (summary, problem description + diagnosis of the apps'
+ *    diagnosis assistant, tunnel, settings, network, WireGuard, errors,
  *    logs with search + level colours, raw JSON) and the badge in the peer list
  *    (templates/aurora/pages/support-bundles.njk, public/js/support-inbox.js).
  * ============================================================================ */
@@ -6908,6 +6909,45 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .sb-raw > summary{cursor:pointer; list-style:revert}
 .sb-msg{padding:20px; display:flex; flex-direction:column; align-items:flex-start; gap:12px}
 .sb-msg p{margin:0}
+
+/* diagnosis assistant of the apps: problem description, checks, list row extras */
+.sb-row-extra{display:flex; align-items:center; gap:6px; margin-top:3px}
+.sb-table tr.sb-has-desc td{border-bottom:0; padding-bottom:6px}
+.sb-table .sb-desc-row td{padding-top:0; padding-bottom:12px}
+/* width:0 + min-width:100%: the line takes the table's width instead of
+   widening it; the text ellipsizes */
+.sb-row-desc{display:block; width:0; min-width:100%; font-size:12.5px; font-style:italic; color:var(--muted); text-decoration:none;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.sb-row-desc:hover{color:var(--teal)}
+.sb-diag-chip{display:inline-flex; align-items:center; gap:5px; flex:0 0 auto; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:700;
+  border:1px solid var(--line); white-space:nowrap}
+.sb-sec-head .sb-diag-chip{font-size:12px; padding:3px 10px}
+.sb-diag-chip.sb-diag-ok{color:var(--green); background:var(--green-bg); border-color:var(--green-bd)}
+.sb-diag-chip.sb-diag-warn{color:var(--amber); background:var(--amber-bg); border-color:var(--amber-bd)}
+.sb-diag-chip.sb-diag-fail{color:var(--red); background:var(--red-bg); border-color:var(--red-bd)}
+.sb-sec[data-sec="diagnosis"] .sb-sec-head{flex-wrap:wrap}
+.sb-diag-time{margin-left:auto; white-space:nowrap}
+.sb-desc{margin:0; padding:12px 14px; border-left:3px solid var(--teal); background:var(--chip); border-radius:var(--r-sm); font-size:14px; line-height:1.6;
+  white-space:pre-wrap; overflow-wrap:anywhere}
+.sb-diag-counts{margin:0 0 8px}
+.sb-diag{list-style:none; margin:0; padding:0}
+.sb-diag-row{display:flex; gap:12px; align-items:flex-start; padding:10px 4px; border-bottom:1px solid var(--line); min-width:0}
+.sb-diag-row:last-child{border-bottom:0}
+.sb-diag-icon{flex:0 0 auto; display:inline-flex; margin-top:1px}
+.sb-diag-ok .sb-diag-icon{color:var(--green)}
+.sb-diag-warn .sb-diag-icon{color:var(--amber)}
+.sb-diag-fail .sb-diag-icon{color:var(--red)}
+.sb-diag-skipped .sb-diag-icon{color:var(--faint)}
+.sb-diag-skipped .sb-diag-title{color:var(--muted)}
+.sb-diag-body{flex:1 1 auto; min-width:0}
+.sb-diag-head{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+.sb-diag-title{font-weight:700; font-size:13.5px; overflow-wrap:anywhere}
+.sb-diag-value{margin-left:auto; color:var(--muted)}
+.sb-diag-detail{margin:3px 0 0; font-size:13px; color:var(--muted); line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere}
+.sb-diag-hint{margin:6px 0 0; font-size:12.5px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; padding:6px 10px; border-radius:var(--r-sm); background:var(--chip)}
+.sb-diag-hint-label{font-weight:700}
+.sb-diag-warn .sb-diag-hint{background:var(--amber-bg)}
+.sb-diag-fail .sb-diag-hint{background:var(--red-bg)}
 
 @media (max-width:900px){
   .sb-grid{grid-template-columns:minmax(0, 1fr)}

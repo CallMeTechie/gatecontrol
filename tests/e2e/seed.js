@@ -254,6 +254,20 @@ async function main() {
     logs: { lines: logLines, totalLines: 2400, truncated: true },
     errors: ['10-12 11:58:02.114  4211  4290 E GateControl: Handshake did not complete after 5 seconds, retrying'],
     battery: { optimized: true, level: 64 },
+    // "Problem melden" of the diagnosis assistant (docs/feature-client-diagnosis.md)
+    description: 'Seit gestern Abend bricht die Verbindung im Büro-WLAN alle paar Minuten ab.\nZuhause und im Mobilfunk läuft alles.\n\n<b>kein HTML</b>',
+    diagnosis: {
+      startedAt: new Date(now - 75000).toISOString(), finishedAt: new Date(now - 62000).toISOString(), summary: 'fail',
+      checks: [
+        { id: 'internet', status: 'ok', title: 'Internet', detail: 'Erreichbar über WLAN', value: '18 ms' },
+        { id: 'server', status: 'ok', title: 'GateControl-Server', detail: 'gate.e2e.example.com antwortet', value: '42 ms' },
+        { id: 'tunnel', status: 'ok', title: 'Tunnel', detail: 'Verbunden seit 3 h' },
+        { id: 'handshake', status: 'warn', title: 'WireGuard-Handshake', detail: 'Letzter Handshake vor 190 s', value: '190 s', hint: 'Länger als 3 Minuten: Das WLAN blockiert vermutlich UDP oder trennt Verbindungen im Leerlauf.' },
+        { id: 'dns', status: 'fail', title: 'DNS-Leck', detail: 'Das VPN-Netz nutzt 8.8.8.8 statt 10.8.0.1.', hint: 'Privates DNS in den Android-Einstellungen ausschalten.' },
+        { id: 'mtu', status: 'skipped', title: 'MTU', detail: 'Gateway antwortet nicht auf Ping' },
+        { id: 'speed', status: 'ok', title: 'Geschwindigkeit', detail: 'Download 48,2 Mbit/s · Upload 12,1 Mbit/s', value: '48,2 / 12,1 Mbit/s' },
+      ],
+    },
   }, { userId: memberId });
   const pcBundle = sb.store(livingPc, {
     schema: 1, createdAt: new Date(now - 2 * 86400000).toISOString(), reason: 'admin_request',

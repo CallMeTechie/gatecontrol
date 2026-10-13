@@ -46,11 +46,19 @@ request and is marked `reason = admin_request`.
   "wireguardConfig": "[Interface] … PrivateKey = [REDACTED] …",
   "network": { "interfaces": [], "dnsServers": [], "routes": "…" },
   "logs": { "lines": ["…"], "totalLines": 0, "truncated": false },
-  "errors": ["recent error/warn log lines"]
+  "errors": ["recent error/warn log lines"],
+  "description": "optional — the user's problem description (≤ 2000 chars)",
+  "diagnosis": { "startedAt": "…", "finishedAt": "…", "summary": "ok|warn|fail",
+                 "checks": [{ "id": "dns", "status": "ok|warn|fail|skipped",
+                              "title": "…", "detail": "…", "value": "…", "hint": "…" }] }
 }
 ```
 
 Only `schema` is required; everything else is best-effort per platform.
+`description` and `diagnosis` come from the apps' diagnosis assistant
+("Problem melden", [feature-client-diagnosis.md](feature-client-diagnosis.md)):
+cleaned on upload (lengths, max 30 checks, known statuses), an invalid value is
+dropped — never a 400 — so older apps and odd values keep working.
 
 ## Redaction
 
@@ -76,7 +84,10 @@ Mandatory on the client **and** repeated on the server
   `peers.support_bundle_requested_at` for the admin request. Migration 94
   adds `viewed_at` / `viewed_by` (first admin who opened it in the viewer —
   until then the bundle is "neu") and `user_id` (the person whose app token
-  uploaded it; the device owner is shown when NULL).
+  uploaded it; the device owner is shown when NULL). Migration 99 adds
+  `description` (first 300 characters of the redacted problem description)
+  and `diagnosis_summary` (`ok|warn|fail`) for the inbox row and the
+  notification facts.
 * Retention: newest `GC_SUPPORT_BUNDLE_KEEP` (10) per peer, nothing older than
   `GC_SUPPORT_BUNDLE_MAX_AGE_DAYS` (30). Applied on every upload and in the
   6-hourly cleanup, which also removes files without a row (deleted peers).
@@ -119,7 +130,9 @@ the rule or the settings matrix like every core row), webhooks on.
 * Title `push.named.support_bundle_uploaded` ("Support-Paket von <Gerät>"),
   body `push.body.support_bundle_uploaded` (where to look in the admin UI).
 * Facts: Client (`Android 1.17.0`), Anlass (`vom Nutzer gesendet` / `auf
-  Anfrage`), Größe.
+  Anfrage`), Größe; with the diagnosis assistant also Diagnose (`alles in
+  Ordnung` / `mit Warnungen` / `Probleme gefunden`) and Beschreibung (`vom
+  Nutzer beigefügt` — the text itself never leaves the bundle).
 * `data.route` stays `inbox`: the apps have no admin screen and `open_portal`
   only reaches portal tabs, so there is no deep link into the admin UI.
 
@@ -127,8 +140,9 @@ the rule or the settings matrix like every core row), webhooks on.
 
 * **System › Support-Pakete** (`/support-bundles`, `templates/aurora/pages/
   support-bundles.njk`, `public/js/support-inbox.js`, CSS §11 `sb-`): table
-  with time, device (link → filter), user, client + version, reason, size,
-  status (neu / angesehen, with who and when); filter by device
+  with time, device (link → filter; below it a diagnosis chip and the start
+  of the problem description when the app sent them), user, client + version,
+  reason, size, status (neu / angesehen, with who and when); filter by device
   (`?peer=<id>`) and status (`?status=new|viewed`), pages of 50; view,
   download, delete. Empty state explains how a bundle gets here (button in
   the app, "Paket anfordern" in the peer dialog). Sidebar badge = bundles no
@@ -136,7 +150,9 @@ the rule or the settings matrix like every core row), webhooks on.
   `gc:activity support_bundle_uploaded`).
 * **Viewer** (`/support-bundles#view/<peerId>/<bundleId>`): summary (device →
   `/peers#edit/<id>`, user, received, created on the device, reason, client,
-  core, OS, platform, arch, locale, size), tunnel, settings as key/value
+  core, OS, platform, arch, locale, size), problem description (plain text,
+  line breaks kept) and diagnosis (summary chip, counts, one row per check with
+  status icon/colour, title, value, detail, hint) when present, tunnel, settings as key/value
   table, network (interfaces, DNS, routes), WireGuard config, recent errors,
   logs (search with highlighted matches, level filter, error/warn colours from
   logcat / `[level]` / `level=` / `INFO`-style lines, truncation note, at most

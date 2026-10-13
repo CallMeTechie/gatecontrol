@@ -12,9 +12,15 @@
  * Limits: supportBundles.perHour uploads per peer and hour (default 3), plus
  * an attempt limiter per token (failed uploads count too).
  *
+ * Optional top-level keys of the apps' diagnosis assistant: `description`
+ * (the user's problem description) and `diagnosis` (results of the checks) —
+ * cleaned by supportBundles.parseBundle, invalid ones are dropped, never 400
+ * (docs/feature-client-diagnosis.md).
+ *
  * Activity `support_bundle_uploaded` — a catalogue event of the notification
  * center ("Support-Paket empfangen", services/notifications.js), so admins get
- * a push with client, reason and size as facts.
+ * a push with client, reason, size, diagnosis summary and "description
+ * attached" as facts.
  *
  * 201 { ok, bundle: { id, created_at, size_bytes } }
  * 400 invalid_* / unsupported_schema · 403 not bound · 413 too_large · 429 rate_limited
@@ -101,6 +107,10 @@ router.post('/support-bundle', tokenOnly, attemptLimiter, rawBody, bodyErrors, (
         clientProduct: saved.client_product,
         clientPlatform: saved.client_platform,
         reason: saved.reason,
+        // Diagnosis assistant (docs/feature-client-diagnosis.md): facts only,
+        // never the description text itself.
+        diagnosisSummary: saved.diagnosis_summary,
+        hasDescription: !!saved.description,
       },
     });
 
