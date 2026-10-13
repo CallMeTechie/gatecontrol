@@ -425,3 +425,20 @@ const clientLocationLimiter = rateLimit({
   },
 });
 module.exports.clientLocationLimiter = clientLocationLimiter;
+
+// GET/POST /api/v1/client/speedtest* — speed test of the apps' diagnosis
+// screen (docs/feature-client-diagnosis.md). One run is three or four
+// requests moving up to 25 MiB each, so the budget is per token and small:
+// GC_SPEEDTEST_RATE_LIMIT (30) requests per 10 minutes. Failed requests
+// count too (a 413 upload still moved bytes).
+const speedtestLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: () => Math.max(1, config.speedtest.rateLimit),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.tokenAuth && req.tokenId != null ? `speedtest:${req.tokenId}` : `speedtest-ip:${ipKeyGenerator(req.ip)}`),
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'rate_limited' });
+  },
+});
+module.exports.speedtestLimiter = speedtestLimiter;
