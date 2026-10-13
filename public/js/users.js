@@ -732,7 +732,7 @@
             el('div', { class: 'us-item-name' }, [t.name, el('span', { class: 'us-dot ' + (peer && peer.online ? 'us-dot-good' : 'us-dot-off'), 'aria-hidden': 'true' }), el('span', { class: 'us-item-state' }, stateTxt)]),
             meta ? el('div', { class: 'us-hint' }, meta) : null,
           ]),
-          peer ? el('a', { class: 'btn btn-sm us-btn-chip', href: '/users/' + u.id + '/devices/' + peer.id }, T('us.dev.open_device')) : null,
+          peer ? el('a', { class: 'btn btn-sm btn-ghost us-dev-open', href: '/users/' + u.id + '/devices/' + peer.id }, T('us.dev.open_device')) : null,
           el('button', { type: 'button', class: 'btn btn-sm us-btn-chip', on: { click: () => openEdit(t, u) } }, T('us.edit')),
           el('button', { type: 'button', class: 'btn btn-sm us-btn-danger', on: { click: () => revokeToken(t, afterChange) } }, T('us.revoke')),
         ]),
