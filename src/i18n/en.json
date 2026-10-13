@@ -5440,6 +5440,7 @@
   "up.never_logged_in": "never signed in",
   "up.on": "on",
   "up.off": "off",
+  "up.never": "never",
   "up.time.now": "just now",
   "up.time.today": "today {{time}}",
   "up.time.yesterday": "yesterday {{time}}",

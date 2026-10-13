@@ -419,7 +419,7 @@
     fact(data, T('up.device.traffic'), '↓ ' + bytes(p.transfer_rx) + ' · ↑ ' + bytes(p.transfer_tx));
     if (dv.token) {
       fact(data, T('up.device.binding'), dv.token.machine_binding ? T('up.on') : T('up.off'));
-      fact(data, T('up.device.app_used'), dv.token.last_used_at ? rel(dv.token.last_used_at) : T('up.dev.never'));
+      fact(data, T('up.device.app_used'), dv.token.last_used_at ? rel(dv.token.last_used_at) : T('up.never'));
     }
     fact(data, T('up.device.push'), dv.push
       ? (dv.push.enabled ? T('up.device.push_on', { via: dv.push.via === 'tunnel' ? T('up.device.via_tunnel') : T('up.device.via_direct') }) : T('up.off'))
