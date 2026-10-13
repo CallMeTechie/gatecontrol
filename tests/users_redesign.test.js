@@ -263,6 +263,18 @@ describe('users admin API', () => {
     assert.ok(res.body.entries.some((e) => e.message.includes('act-member')));
   });
 
+  it('PATCH /users/:id changes the language, only to an available one', async () => {
+    const id = await makeUser('lang-member');
+    const ok = await agent.patch(`/api/v1/users/${id}`).set('X-CSRF-Token', csrf).send({ language: 'en', displayName: 'Lang Member' }).expect(200);
+    assert.equal(ok.body.user.language, 'en');
+    assert.equal(ok.body.user.display_name, 'Lang Member');
+    for (const bad of ['xx', '', 5, null]) {
+      const res = await agent.patch(`/api/v1/users/${id}`).set('X-CSRF-Token', csrf).send({ language: bad }).expect(400);
+      assert.equal(res.body.code, 'INVALID_LANGUAGE');
+    }
+    assert.equal(db().prepare('SELECT language FROM users WHERE id = ?').get(id).language, 'en');
+  });
+
   it('a token is refused on the session-only users API', async () => {
     const raw = tokens().create({ name: 'full', scopes: ['full-access'] }, '127.0.0.1').rawToken;
     await supertest(app).get('/api/v1/users').set('Authorization', `Bearer ${raw}`).expect(403);
@@ -445,7 +457,7 @@ describe('role-aware navigation', () => {
   });
 
   it('every admin page redirects a member to /profile', async () => {
-    for (const p of ['/dashboard', '/peers', '/routes', '/users', '/settings', '/logs', '/rdp', '/security', '/certificates', '/gateways']) {
+    for (const p of ['/dashboard', '/peers', '/routes', '/users', '/settings', '/logs', '/rdp', '/security', '/certificates', '/gateways', '/users?user=1&tab=see', '/users/1', '/users/1?tab=access']) {
       const res = await m.get(p);
       assert.equal(res.status, 302, p);
       assert.equal(res.headers.location, '/profile', p);
@@ -482,7 +494,8 @@ describe('templates', () => {
   for (const lang of ['de', 'en']) {
     it(`/users, /profile, invite and password pages (${lang}) render without raw keys`, async () => {
       await agent.post('/api/v1/settings/language').set('X-CSRF-Token', csrf).send({ language: lang }).expect(200);
-      for (const p of ['/users', '/profile']) {
+      const profileId = db().prepare("SELECT id FROM users WHERE username = 'admin'").get().id;
+      for (const p of ['/users', '/profile', `/users/${profileId}`, `/users/${profileId}?tab=see`]) {
         const res = await agent.get(p).expect(200);
         const raw = withoutScripts(res.text).match(RAW);
         assert.equal(raw, null, `${p}: ${raw}`);
@@ -494,6 +507,21 @@ describe('templates', () => {
       assert.ok(strings['us.wz.title'] && strings['users.mb.title'] && strings['error.users.last_admin']);
     });
   }
+
+  it('old side-panel links /users?user=ID&tab=X lead to the profile /users/ID?tab=X', async () => {
+    const id = await makeUser('legacy-link');
+    assert.equal((await agent.get(`/users?user=${id}&tab=see`).expect(302)).headers.location, `/users/${id}?tab=see`);
+    assert.equal((await agent.get(`/users?user=${id}&tab=security`).expect(302)).headers.location, `/users/${id}?tab=security`);
+    assert.equal((await agent.get(`/users?user=${id}`).expect(302)).headers.location, `/users/${id}`);
+    assert.equal((await agent.get(`/users?user=${id}&tab=nope`).expect(302)).headers.location, `/users/${id}`);
+    await agent.get('/users?user=abc').expect(200);
+    // The profile renders the tab from the address; an unknown one is the overview.
+    const prof = await agent.get(`/users/${id}?tab=activity`).expect(200);
+    assert.match(prof.text, /id="us-tab-activity"[^>]*aria-selected="true"/);
+    const bad = await agent.get(`/users/${id}?tab=%3Cscript%3E`).expect(200);
+    assert.match(bad.text, /id="us-tab-overview"[^>]*aria-selected="true"/);
+    assert.ok(!bad.text.includes('<script>'));
+  });
 
   it('every us.* / me.* / invite.* / pwchange.* key exists in both languages', () => {
     const de = require('../src/i18n/de.json');

@@ -88,9 +88,10 @@ test('profile card, users modal row and settings toggle render', async () => {
     const setup = await agent.get('/profile?setup2fa=1').expect(200);
     assert.match(setup.text, /id="tf-card"[^>]*data-setup="1"/, theme);
 
-    const users = await agent.get('/users').expect(200);
-    // Users page: 2FA state + reset live in the tab "Anmeldung & Sicherheit"
+    // User profile: 2FA state + reset live in the tab "Anmeldung & Sicherheit"
     // (rendered by users.js from the us-i18n island).
+    const adminId = require('../src/db/connection').getDb().prepare("SELECT id FROM users WHERE username = 'admin'").get().id;
+    const users = await agent.get(`/users/${adminId}`).expect(200);
     assert.match(users.text, /id="us-panel-security"/, theme);
     assert.match(users.text, /id="us-i18n"[^>]*>[^<]*"us\.sec\.reset"/, theme);
 

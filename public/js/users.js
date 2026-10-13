@@ -1,19 +1,28 @@
 'use strict';
 
-// Users page (redesign): list + detail panel (Übersicht, Geräte & Zugänge,
-// "Was sieht …?", Anmeldung & Sicherheit, Aktivität), role comparison,
-// create user, the access wizard (device = setup code that creates and
-// assigns a peer, script = token code or the key shown once), edit access,
+// Users list (/users) and user profile (/users/:id), one script for both.
+// List: role cards, owner-less accesses, search + filters, table / cards; a
+// row leads to the profile. Profile ("profile mode"): header with the
+// actions (edit, add device, disable, more: password, role, invitation,
+// delete) and five tabs (Übersicht, Geräte & Zugänge, "Was sieht …?",
+// Anmeldung & Sicherheit, Aktivität; ?tab= in the address). Dialogs on both
+// pages (partials/users-dialogs.njk): role comparison, create user, the
+// access wizard (device = setup code that creates and assigns a peer,
+// script = token code or the key shown once), edit access, edit profile,
 // new password, change role, delete, invite to "Mein Bereich", owner-less
-// accesses. Strings: #us-i18n (us.*, users.mb.*, error.*, enrollment.*,
-// common.*). No innerHTML — every node is built with el()/textContent.
-// Dialogs keep typed input: Escape, × and the backdrop ask before throwing
-// away a changed form.
+// accesses. Strings: #us-i18n (us.*, up.*, users.mb.*, error.*,
+// enrollment.*, common.*). No innerHTML — every node is built with
+// el()/textContent. Dialogs keep typed input: Escape, × and the backdrop ask
+// before throwing away a changed form.
 (function () {
   const doc = document;
   const D = window.GCDialog;
-  const page = doc.getElementById('us-page');
+  const listPage = doc.getElementById('us-page');
+  const profilePage = doc.getElementById('up-page');
+  const page = listPage || profilePage;
   if (!page) return;
+  // Profile mode: the page belongs to one user, the tabs live on the page.
+  const PROFILE = !listPage;
 
   function readJson(id) {
     try { return JSON.parse((doc.getElementById(id) || {}).textContent || '{}') || {}; } catch (_) { return {}; }
@@ -211,12 +220,19 @@
   }
 
   // ── State ──────────────────────────────────────────────────────────
+  const TABS = ['overview', 'access', 'see', 'security', 'activity'];
+  function tabFromUrl() {
+    try {
+      const t = new URL(window.location.href).searchParams.get('tab');
+      return TABS.indexOf(t) >= 0 ? t : 'overview';
+    } catch (_) { return 'overview'; }
+  }
   const state = {
-    users: [], filter: 'all', q: '', selId: null, tab: 'overview',
-    detail: null, vis: null, sessions: null, activity: null, orphans: [], mb: { licensed: false, mode: 'off' },
+    users: [], filter: 'all', q: '', selId: PROFILE ? Number(CTX.profile) || null : null, tab: PROFILE ? tabFromUrl() : 'overview',
+    detail: null, vis: null, devices: null, loc: null, loginMethod: null, orphans: [], mb: { licensed: false, mode: 'off' },
     self: Number(CTX.self) || null,
   };
-  const TABS = ['overview', 'access', 'see', 'security', 'activity'];
+  function profileHref(id, tab) { return '/users/' + id + (tab && tab !== 'overview' ? '?tab=' + tab : ''); }
 
   function userById(id) { return state.users.find((u) => u.id === id) || null; }
 
@@ -383,9 +399,9 @@
     }
     rows.forEach((u) => {
       const a = authInfo(u);
-      const open = () => openUser(u.id, null);
-      const isSel = u.id === state.selId;
-      const who = el('button', { type: 'button', class: 'us-who', on: { click: open } }, [
+      // Every way into a user is a real link to the profile (new tab, copy link).
+      const href = profileHref(u.id);
+      const who = el('a', { class: 'us-who', href }, [
         avatar(u),
         el('span', { class: 'us-who-text' }, [
           el('span', { class: 'us-who-name' }, [nameOf(u), u.id === state.self ? el('span', { class: 'us-you' }, T('us.you')) : null]),
@@ -393,16 +409,24 @@
         ]),
       ]);
       const last = lastActive(u);
-      tbody.appendChild(el('tr', { class: 'us-row' + (isSel ? ' is-selected' : '') + (u.enabled === 1 ? '' : ' is-off'), 'data-user-id': String(u.id), 'aria-current': isSel ? 'true' : null }, [
+      const row = el('tr', { class: 'us-row' + (u.enabled === 1 ? '' : ' is-off'), 'data-user-id': String(u.id) }, [
         el('td', { class: 'us-col-user' }, who),
         el('td', { class: 'us-col-role' }, roleChips(u)),
         el('td', { class: 'us-col-auth' }, el('span', { class: 'us-auth' }, [el('span', { class: 'us-dot ' + (a.ok ? 'us-dot-good' : 'us-dot-warn'), 'aria-hidden': 'true' }), a.text])),
         el('td', { class: 'us-col-dev' }, devicesText(u.peer_count)),
         el('td', { class: 'us-col-last us-muted' }, last ? rel(last) : T('us.never_active')),
-        el('td', { class: 'us-col-act' }, el('button', { type: 'button', class: 'btn btn-sm us-btn-chip', on: { click: open }, 'aria-label': T('us.open_user', { name: nameOf(u) }) }, T('us.open'))),
-      ]));
-      cards.appendChild(el('li', { class: 'us-card' + (isSel ? ' is-selected' : '') + (u.enabled === 1 ? '' : ' is-off'), 'data-user-id': String(u.id) }, [
-        el('button', { type: 'button', class: 'us-card-btn', on: { click: open } }, [
+        el('td', { class: 'us-col-act' }, el('a', { class: 'btn btn-sm us-btn-chip us-open', href, 'aria-label': T('us.open_user', { name: nameOf(u) }) }, T('us.open'))),
+      ]);
+      // A click anywhere on the row opens the profile (the links keep their
+      // own behaviour: middle click, Ctrl+click, keyboard).
+      row.addEventListener('click', (e) => {
+        if (e.defaultPrevented || e.target.closest('a, button, input, select, textarea')) return;
+        if (window.getSelection && String(window.getSelection())) return;
+        window.location.assign(href);
+      });
+      tbody.appendChild(row);
+      cards.appendChild(el('li', { class: 'us-card' + (u.enabled === 1 ? '' : ' is-off'), 'data-user-id': String(u.id) }, [
+        el('a', { class: 'us-card-btn', href }, [
           avatar(u),
           el('span', { class: 'us-who-text' }, [
             el('span', { class: 'us-who-name' }, [nameOf(u), u.id === state.self ? el('span', { class: 'us-you' }, T('us.you')) : null]),
@@ -420,13 +444,16 @@
     });
   }
 
+  // The list feeds the table (list page) and the owner pickers of the
+  // dialogs (both pages).
   async function loadUsers() {
     try {
       const data = await call('GET', '/api/v1/users');
       state.users = data.users || [];
       if (data.current_user_id) state.self = data.current_user_id;
-      renderList();
+      if (!PROFILE) renderList();
     } catch (err) {
+      if (PROFILE) return;
       const tbody = clear($('us-tbody'));
       tbody.appendChild(el('tr', null, el('td', { colspan: '6', class: 'us-muted us-center', text: T('error.users.list') })));
     }
@@ -434,6 +461,7 @@
 
   // ── Owner-less accesses ────────────────────────────────────────────
   async function loadOrphans() {
+    if (PROFILE) return;
     try {
       const data = await call('GET', '/api/v1/users/unassigned-tokens');
       state.orphans = data.tokens || [];
@@ -464,7 +492,6 @@
           const res = await call('PATCH', '/api/v1/tokens/' + t.id, { user_id: Number(sel.value) });
           toast(res.dropped && res.dropped.length ? T('us.assign.done_capped', { rights: res.dropped.map(rightLabel).join(', ') }) : T('us.assign.done'));
           await Promise.all([loadOrphans(), loadUsers()]);
-          if (state.selId) refreshDetail();
         } catch (err) { window.btnReset(assign); D.alert({ message: errMsg(err), danger: true }); }
       });
       revoke.addEventListener('click', () => revokeToken(t, async () => { await loadOrphans(); }));
@@ -477,91 +504,134 @@
       ]));
     });
   }
-  $('us-orphans-assign').addEventListener('click', () => { renderOrphanDialog(); openDlg('us-dlg-orphans'); });
+  if ($('us-orphans-assign')) $('us-orphans-assign').addEventListener('click', () => { renderOrphanDialog(); openDlg('us-dlg-orphans'); });
 
-  // ── Detail ─────────────────────────────────────────────────────────
+  // ── Profile: address, data, header ─────────────────────────────────
+  // ?tab= follows the tab (Übersicht without it), so every tab can be linked.
   function writeUrl() {
+    if (!PROFILE) return;
     try {
       const u = new URL(window.location.href);
-      if (state.selId) { u.searchParams.set('user', String(state.selId)); u.searchParams.set('tab', state.tab); }
-      else { u.searchParams.delete('user'); u.searchParams.delete('tab'); }
+      if (state.tab === 'overview') u.searchParams.delete('tab'); else u.searchParams.set('tab', state.tab);
       window.history.replaceState(null, '', u.pathname + u.search + u.hash);
     } catch (_) { /* old browser */ }
   }
-
-  async function openUser(id, tab, opts) {
-    const changed = state.selId !== id;
-    state.selId = id;
-    if (tab && TABS.indexOf(tab) >= 0) state.tab = tab;
-    else if (changed && !(opts && opts.keepTab)) state.tab = 'overview';
-    if (changed) { state.detail = null; state.vis = null; state.sessions = null; state.activity = null; }
-    writeUrl();
-    renderList();
-    const aside = $('us-detail');
-    aside.hidden = false;
-    $('us-layout').classList.add('has-detail');
-    await refreshDetail();
-    if (changed && window.matchMedia && window.matchMedia('(max-width: 1279px)').matches) {
-      try { aside.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { aside.scrollIntoView(); }
-    }
-  }
-  function closeDetail() {
-    state.selId = null;
-    state.detail = null;
-    $('us-detail').hidden = true;
-    $('us-layout').classList.remove('has-detail');
-    writeUrl();
-    renderList();
-  }
-  $('us-d-close').addEventListener('click', closeDetail);
 
   async function refreshDetail() {
     const id = state.selId;
     if (!id) return;
     try {
-      const [detail, vis] = await Promise.all([
+      const [detail, vis, devs] = await Promise.all([
         call('GET', '/api/v1/users/' + id),
         call('GET', '/api/v1/users/' + id + '/visibility').catch(() => null),
+        call('GET', '/api/v1/users/' + id + '/devices').catch(() => null),
       ]);
-      if (state.selId !== id) return;
       state.detail = detail;
       state.vis = vis;
+      state.devices = devs ? (devs.devices || []) : null;
+      if (devs && devs.location) state.loc = devs.location;
       if (detail.machine_binding) state.mb = detail.machine_binding;
       renderDetail();
+      loadLoginMethod(detail.user);
     } catch (err) {
-      if (state.selId !== id) return;
-      closeDetail();
-      D.alert({ message: T('error.users.get') + ': ' + errMsg(err), danger: true });
+      const panel = clear($('us-panel-' + state.tab));
+      panel.appendChild(el('p', { class: 'us-error', role: 'alert' }, T('error.users.get') + ': ' + errMsg(err)));
     }
+  }
+
+  // "letzte Anmeldung … (Passkey)": the method of the newest browser session.
+  async function loadLoginMethod(u) {
+    if (!(u.role === 'admin' || u.self_service_enabled) || !u.last_login_at) return;
+    try {
+      const res = await call('GET', '/api/v1/users/' + u.id + '/sessions');
+      const s = (res.sessions || [])[0];
+      const last = toDate(u.last_login_at);
+      // Only when that session is the last sign-in (sessions also expire).
+      const method = s && s.method && s.since && last && Math.abs(s.since - last.getTime()) < 120000 ? s.method : null;
+      if (method !== state.loginMethod) { state.loginMethod = method; if (state.detail) renderHead(state.detail); }
+    } catch (_) { /* the line stays without the method */ }
   }
 
   function renderDetail() {
     const d = state.detail;
     if (!d) return;
+    renderHead(d);
+    renderTabs();
+    renderPanel();
+  }
+
+  function renderHead(d) {
     const u = d.user;
-    const av = $('us-d-avatar');
-    av.className = 'us-avatar us-avatar-lg us-tone-' + roleTone(u.role) + (u.enabled === 1 ? '' : ' us-avatar-off');
+    const off = u.enabled !== 1;
+    const av = $('up-avatar');
+    av.className = 'up-avatar us-tone-' + roleTone(u.role) + (off ? ' us-avatar-off' : '');
     av.textContent = initials(u);
-    $('us-d-name').textContent = nameOf(u);
-    const chip = $('us-d-role');
-    chip.className = 'us-chip us-chip-' + roleTone(u.role);
-    chip.textContent = roleLabel(u.role);
-    show($('us-d-off'), u.enabled !== 1);
-    $('us-d-sub').textContent = subLine(u) + ' · ' + T('us.detail.created', { date: fmtDate(u.created_at) });
-    $('us-d-profile').setAttribute('href', '/users/' + u.id);
+    $('up-name').textContent = nameOf(u);
+    $('up-crumb-name').textContent = nameOf(u);
+    clear($('up-head-chips')).append(
+      el('span', { class: 'us-chip us-chip-' + roleTone(u.role) }, roleLabel(u.role)),
+      el('span', { class: 'us-chip ' + (off ? 'us-chip-crit' : 'us-chip-good') }, off ? T('up.disabled') : T('up.active')),
+    );
+    $('up-sub').textContent = ['@' + u.username, u.email, u.language ? T('up.lang_' + (u.language === 'en' ? 'en' : 'de')) : null]
+      .filter(Boolean).join(' · ');
+    let login = T('up.never_logged_in');
+    if (u.last_login_at) {
+      login = state.loginMethod
+        ? T('up.last_login_method', { when: rel(u.last_login_at), method: T('us.sec.method_' + state.loginMethod) })
+        : T('up.last_login', { when: rel(u.last_login_at) });
+    }
+    $('up-sub2').textContent = [T('up.created', { date: fmtDate(u.created_at) }), login].join(' · ');
+
+    // Actions: the same rules as before in the side panel — the own account
+    // and the last enabled admin cannot be disabled, deleted or re-roled.
+    const lock = lockReason(d);
+    const webLogin = u.role === 'admin' || !!u.self_service_enabled;
+    $('up-edit').disabled = false;
+    const add = $('up-add-device');
+    add.disabled = off;
+    add.title = off ? T('us.dev.disabled_hint') : '';
+    const tg = $('up-toggle');
+    tg.textContent = off ? T('us.enable') : T('us.disable');
+    tg.disabled = !!lock;
+    $('up-more').disabled = false;
+    show($('up-act-password'), webLogin && !d.is_self);
+    show($('up-act-own'), webLogin && d.is_self);
+    $('up-act-role').disabled = !!lock;
+    const inv = $('up-act-invite');
+    show(inv, u.role !== 'admin');
+    inv.textContent = !u.self_service_enabled ? T('us.sec.invite') : (u.has_password ? T('us.sec.reinvite_reset') : T('us.sec.reinvite'));
+    inv.disabled = !u.self_service_enabled && off;
+    $('up-act-delete').disabled = !!lock;
+    const lk = $('up-lock');
+    lk.textContent = lock || '';
+    show(lk, !!lock);
+  }
+
+  function renderTabs() {
+    const u = state.detail ? state.detail.user : null;
     TABS.forEach((t) => {
       const b = $('us-tab-' + t);
-      if (t === 'see') b.textContent = T('us.tab.see', { name: firstName(u) });
+      if (t === 'see' && u) b.textContent = T('us.tab.see', { name: firstName(u) });
       const on = t === state.tab;
       b.setAttribute('aria-selected', on ? 'true' : 'false');
       b.tabIndex = on ? 0 : -1;
       b.classList.toggle('is-active', on);
       $('us-panel-' + t).hidden = !on;
     });
-    renderPanel();
+    if (state.detail) $('up-tab-count').textContent = '(' + state.detail.tokens.length + ')';
+    // Phones: the tab bar scrolls sideways — keep the active tab in view
+    // (scrollLeft only, the page itself stays where it is).
+    const bar = $('us-tabs');
+    const cur = $('us-tab-' + state.tab);
+    if (bar && cur && bar.scrollWidth > bar.clientWidth) {
+      const l = cur.offsetLeft - bar.offsetLeft;
+      if (l < bar.scrollLeft) bar.scrollLeft = l - 8;
+      else if (l + cur.offsetWidth > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = l + cur.offsetWidth - bar.clientWidth + 8;
+    }
   }
 
   function renderPanel() {
+    if (!state.detail) return;
     const panel = clear($('us-panel-' + state.tab));
     if (state.tab === 'overview') renderOverview(panel);
     else if (state.tab === 'access') renderAccess(panel);
@@ -574,19 +644,21 @@
     if (TABS.indexOf(t) < 0) return;
     state.tab = t;
     writeUrl();
-    renderDetail();
+    renderTabs();
+    renderPanel();
     if (focus) $('us-tab-' + t).focus();
   }
-  $('us-tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) selectTab(b.getAttribute('data-tab')); });
-  $('us-tabs').addEventListener('keydown', (e) => {
-    const i = TABS.indexOf(state.tab);
-    let n = null;
-    if (e.key === 'ArrowRight') n = TABS[(i + 1) % TABS.length];
-    else if (e.key === 'ArrowLeft') n = TABS[(i + TABS.length - 1) % TABS.length];
-    else if (e.key === 'Home') n = TABS[0];
-    else if (e.key === 'End') n = TABS[TABS.length - 1];
-    if (n) { e.preventDefault(); selectTab(n, true); }
-  });
+  // A link to another tab of this profile: switches in place (a modified
+  // click still opens it in a new tab).
+  function tabLink(label, tab, cls) {
+    return el('a', { class: cls || 'up-link', href: profileHref(state.selId, tab), on: { click: (e) => {
+      if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button) return;
+      e.preventDefault();
+      selectTab(tab);
+      const bar = $('us-tabs');
+      if (bar && bar.getBoundingClientRect().top < 0) { try { bar.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { bar.scrollIntoView(); } }
+    } } }, label);
+  }
 
   function sectionHead(title, sub, actions) {
     return el('div', { class: 'us-sec-head' }, [
@@ -602,69 +674,153 @@
   }
 
   // ── Tab: Übersicht ─────────────────────────────────────────────────
+  // Devices with the last shared location, latest activity, cards for
+  // access, security and location sharing.
+  const DEV_ICON = {
+    laptop: 'M4 5h16v10H4zM2 19h20',
+    router: 'M3 14h18v6H3zM7 17h.01M11 17h.01M8 10a6 6 0 0 1 8 0M5 7a10 10 0 0 1 14 0',
+    satellite: 'M13 7L9 3 5 7l4 4M17 11l4 4-4 4-4-4M8 12l4 4 6-6-4-4ZM16 8l3-3M9 21a6 6 0 0 0-6-6',
+    chevron: 'M9 6l6 6-6 6',
+  };
+  function sameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+  function fmtTime(d) {
+    try { return d.toLocaleTimeString(LANG, { hour: '2-digit', minute: '2-digit' }); } catch (_) { return d.toISOString().slice(11, 16); }
+  }
+  /** "heute 08:42", "gestern 19:05", else "10.10. 14:22". */
+  function fmtWhen(v) {
+    const d = toDate(v);
+    if (!d) return '';
+    const now = new Date();
+    if (sameDay(d, now)) return T('up.time.today', { time: fmtTime(d) });
+    if (sameDay(d, new Date(now.getTime() - 86400000))) return T('up.time.yesterday', { time: fmtTime(d) });
+    try { return d.toLocaleDateString(LANG, { day: '2-digit', month: '2-digit' }) + ' ' + fmtTime(d); } catch (_) { return fmtDateTime(d); }
+  }
+  function platformLabel(p) {
+    if (!p) return null;
+    if (p.platform === 'android') return 'Android';
+    if (p.platform === 'windows') return 'Windows';
+    return null;
+  }
+  function clientLabel(p) {
+    if (!p || !p.client_version) return null;
+    const prod = p.product === 'pro' ? 'GateControl Pro' : (p.product === 'community' ? 'GateControl Community' : 'GateControl');
+    return prod + ' ' + p.client_version;
+  }
+  function deviceSub(dv) {
+    const p = dv.peer;
+    if (!p) return T('up.dev.not_registered');
+    if (!dv.app) return [T('up.dev.no_app_kind'), p.ip].filter(Boolean).join(' · ');
+    return [platformLabel(p), clientLabel(p), p.ip].filter(Boolean).join(' · ');
+  }
+  function statusLine(p) {
+    const dot = (tone) => el('span', { class: 'us-dot ' + tone, 'aria-hidden': 'true' });
+    if (!p) return el('span', { class: 'up-status' }, [dot('us-dot-off'), T('up.dev.waiting')]);
+    if (!p.enabled) return el('span', { class: 'up-status' }, [dot('us-dot-crit'), T('up.dev.disabled')]);
+    if (p.online) return el('span', { class: 'up-status up-status-on' }, [dot('us-dot-good'), T('up.dev.online')]);
+    if (p.last_handshake) {
+      return el('span', { class: 'up-status' }, [dot('us-dot-off'), el('span', { title: fmtDateTime(p.last_handshake) }, T('up.dev.last_seen', { when: rel(p.last_handshake) }))]);
+    }
+    return el('span', { class: 'up-status' }, [dot('us-dot-off'), T('up.dev.never')]);
+  }
+  function locationChip(dv, allowed) {
+    if (!dv.app) return el('span', { class: 'up-loc up-loc-none' }, T('up.dev.loc_no_app'));
+    if (dv.location) {
+      const at = toDate(dv.location.at);
+      return el('span', { class: 'up-loc up-loc-on', title: fmtDateTime(dv.location.at) }, [icon(DEV_ICON.satellite, 14),
+        T('up.dev.loc_at', { time: at && sameDay(at, new Date()) ? fmtTime(at) : fmtWhen(dv.location.at) })]);
+    }
+    return el('span', { class: 'up-loc up-loc-none' }, allowed ? T('up.dev.loc_never') : T('up.dev.loc_not_allowed'));
+  }
+  function upCard(title, extras, body) {
+    return el('section', { class: 'card up-card' }, [
+      el('div', { class: 'up-card-head' }, [el('h2', { class: 'up-card-title' }, title)].concat(extras || [])),
+    ].concat(body));
+  }
+  function facts(rows) {
+    const dl = el('dl', { class: 'up-facts' });
+    rows.forEach((r) => { if (r) { dl.appendChild(el('dt', null, r[0])); dl.appendChild(el('dd', null, r[1])); } });
+    return dl;
+  }
+
   function renderOverview(panel) {
     const d = state.detail;
     const u = d.user;
-    const isAdmin = u.role === 'admin';
-    const devices = d.tokens.filter(isDevice);
-    const apis = d.tokens.filter((t) => !isDevice(t));
-    const online = devices.filter((t) => t.peer && t.peer.online).length;
-    const lastTok = d.tokens.reduce((m, t) => newer(m, t.last_used_at), null);
-    const vis = state.vis;
-    const tiles = [
-      [T('us.tile.devices'), String(devices.length), T('us.tile.devices_hint', { count: online })],
-      [T('us.tile.apis'), String(apis.length), T('us.tile.apis_hint')],
-      isAdmin
-        ? [T('us.tile.last_login'), u.last_login_at ? rel(u.last_login_at) : T('us.never'), T('us.tile.last_login_hint')]
-        : [T('us.tile.last_active'), lastTok ? rel(lastTok) : T('us.never'), T('us.tile.last_active_hint')],
-      [T('us.tile.services'), vis ? String(vis.services.visible.length) : '…', vis ? T('us.tile.services_hint', { total: vis.services.total }) : ''],
-    ];
-    panel.appendChild(el('div', { class: 'us-tiles' }, tiles.map((t) => el('div', { class: 'us-tile' }, [
-      el('div', { class: 'us-tile-label' }, t[0]), el('div', { class: 'us-tile-value' }, t[1]), el('div', { class: 'us-tile-hint' }, t[2]),
-    ]))));
+    const loc = state.loc || { allowed: false, keep: 20, retention_days: 30 };
 
-    const lock = lockReason(d);
-    const roleBtn = el('button', { type: 'button', class: 'btn btn-sm us-btn-chip', disabled: !!lock, on: { click: () => openRole() } }, T('us.role.change'));
-    const roleText = isAdmin ? T('us.role.admin_long') : (u.self_service_enabled ? T('us.role.member_self_long') : T('us.role.member_long'));
-    panel.appendChild(el('div', { class: 'us-box us-rolebox' }, [
-      el('div', { class: 'us-rolebox-head' }, [el('b', null, T('us.role.current', { role: roleLabel(u.role) })), roleBtn]),
-      el('div', { class: 'us-muted us-small' }, roleText),
-      lock ? el('div', { class: 'us-hint' }, lock) : null,
-    ]));
-
-    // Display name + e-mail
-    const dn = el('input', { type: 'text', class: 'form-input', maxlength: '100', value: u.display_name || '', id: 'us-o-display' });
-    const em = el('input', { type: 'email', class: 'form-input', maxlength: '255', value: u.email || '', id: 'us-o-email' });
-    const save = el('button', { type: 'submit', class: 'btn btn-sm btn-primary' }, T('common.save'));
-    const err = el('div', { class: 'us-error', role: 'alert', hidden: true });
-    const form = el('form', { class: 'us-profile', novalidate: true }, [
-      el('div', { class: 'us-grid2' }, [
-        el('label', { class: 'us-field', for: 'us-o-display' }, [el('span', { class: 'us-label' }, T('us.display_name')), dn]),
-        el('label', { class: 'us-field', for: 'us-o-email' }, [el('span', { class: 'us-label' }, T('us.email')), em]),
-      ]),
-      el('div', { class: 'us-profile-foot' }, [err, save]),
-    ]);
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      err.hidden = true;
-      window.btnLoading(save);
-      try {
-        await call('PATCH', '/api/v1/users/' + u.id, { displayName: dn.value.trim(), email: em.value.trim() || null });
-        toast(T('us.saved'));
-        await loadUsers();
-        await refreshDetail();
-      } catch (ex) { err.textContent = errMsg(ex); err.hidden = false; window.btnReset(save); }
+    // Devices
+    const devList = el('ul', { class: 'up-devices', 'aria-live': 'polite' });
+    const devices = state.devices;
+    if (!devices) devList.appendChild(el('li', { class: 'up-error' }, T('error.users.get')));
+    else if (!devices.length) devList.appendChild(el('li', { class: 'up-muted up-empty' }, T('up.dev.empty')));
+    (devices || []).forEach((dv) => {
+      const inner = [
+        el('span', { class: 'up-dev-ic' + (dv.peer && dv.peer.online ? ' is-on' : ''), 'aria-hidden': 'true' },
+          icon(!dv.app ? DEV_ICON.router : (dv.peer && dv.peer.platform === 'windows' ? DEV_ICON.laptop : ICON.phone), 20)),
+        el('span', { class: 'up-dev-text' }, [
+          el('span', { class: 'up-dev-name' }, (dv.peer && dv.peer.name) || (dv.token && dv.token.name) || '—'),
+          el('span', { class: 'up-dev-sub' }, deviceSub(dv)),
+          el('span', { class: 'up-dev-meta' }, [statusLine(dv.peer), locationChip(dv, loc.allowed)]),
+        ]),
+      ];
+      if (dv.peer) {
+        inner.push(el('span', { class: 'up-dev-go', 'aria-hidden': 'true' }, icon(DEV_ICON.chevron, 18)));
+        devList.appendChild(el('li', null, el('a', { class: 'up-dev', href: '/users/' + u.id + '/devices/' + dv.peer.id }, inner)));
+      } else {
+        devList.appendChild(el('li', null, el('div', { class: 'up-dev is-static' }, inner)));
+      }
     });
-    panel.appendChild(form);
+    const main = el('div', { class: 'up-main' }, [
+      upCard(T('up.devices'), [el('span', { class: 'up-count' }, devices ? P('up.dev.count', devices.length) : ''), tabLink(T('up.manage'), 'access')], [devList]),
+    ]);
 
-    // Danger zone
-    const off = u.enabled !== 1;
-    const toggleBtn = el('button', { type: 'button', class: 'btn btn-ghost', disabled: !!lock, on: { click: () => toggleUser(u) } }, off ? T('us.enable') : T('us.disable'));
-    const delBtn = el('button', { type: 'button', class: 'btn btn-danger', disabled: !!lock, on: { click: () => openDelete(u) } }, T('us.delete'));
-    panel.appendChild(el('div', { class: 'us-danger' }, [
-      el('div', { class: 'us-danger-title' }, T('us.danger')),
-      el('div', { class: 'us-danger-row' }, [toggleBtn, delBtn, lock ? el('span', { class: 'us-hint' }, lock) : null]),
-    ]));
+    // Latest activity (the tab "Aktivität" has more)
+    const act = el('ol', { class: 'up-activity' }, el('li', { class: 'up-muted' }, T('common.loading')));
+    main.appendChild(upCard(T('up.activity'), [tabLink(T('up.activity_all'), 'activity')], [act]));
+    call('GET', '/api/v1/users/' + u.id + '/activity?limit=8').then((res) => {
+      clear(act);
+      const entries = res.entries || [];
+      if (!entries.length) act.appendChild(el('li', { class: 'up-muted' }, T('up.act.empty')));
+      entries.forEach((e) => {
+        const tone = e.severity === 'warning' || e.severity === 'error' ? 'us-dot-warn' : (e.severity === 'success' ? 'us-dot-good' : 'us-dot-accent');
+        act.appendChild(el('li', { class: 'up-act' + (String(e.event_type).indexOf('location') >= 0 ? ' is-loc' : '') }, [
+          el('time', { class: 'up-act-time', datetime: e.created_at, title: fmtDateTime(e.created_at) }, fmtWhen(e.created_at)),
+          el('span', { class: 'us-dot ' + tone, 'aria-hidden': 'true' }),
+          el('span', { class: 'up-act-text' }, e.message),
+        ]));
+      });
+    }).catch((err) => { clear(act).appendChild(el('li', { class: 'up-error' }, errMsg(err))); });
+
+    // Access, security, location sharing
+    const v = state.vis;
+    const access = upCard(T('up.access'), [tabLink(T('up.details'), 'see')], [facts([
+      [T('up.acc.role'), roleLabel(u.role)],
+      v ? [T('up.acc.services'), String(v.services && v.services.visible ? v.services.visible.length : 0)] : null,
+      v && (CTX.rdp || (v.rdp && v.rdp.total)) ? [T('up.acc.rdp'), String(v.rdp && v.rdp.visible ? v.rdp.visible.length : 0)] : null,
+      v ? [T('up.acc.web'), T('up.acc.web_' + (v.web === 'all' || v.web === 'self_service' ? v.web : 'none'))] : null,
+    ])]);
+    const security = upCard(T('up.security'), [tabLink(T('up.details'), 'security')], [facts([
+      [T('up.sec.passkeys'), String((d.passkeys || []).length)],
+      [T('up.sec.totp'), u.totp_enabled ? T('up.on') : T('up.off')],
+      [T('up.sec.tokens'), String(d.tokens.length)],
+      u.role === 'admin' ? null : [T('up.sec.self_service'), u.self_service_enabled ? T('up.on') : T('up.off')],
+    ])]);
+    const sw = el('button', { type: 'button', class: 'st-switch us-switch', role: 'switch', id: 'up-loc-switch', 'aria-checked': loc.allowed ? 'true' : 'false', 'aria-label': T('up.loc.allow') },
+      el('span', { class: 'st-knob', 'aria-hidden': 'true' }));
+    sw.addEventListener('click', async () => {
+      const want = sw.getAttribute('aria-checked') !== 'true';
+      sw.disabled = true;
+      try {
+        await call('PUT', '/api/v1/users/' + u.id + '/location-sharing', { enabled: want });
+        state.loc = Object.assign({}, loc, { allowed: want });
+        toast(want ? T('up.loc.toast_on') : T('up.loc.toast_off'));
+        await refreshDetail();
+      } catch (err) { sw.disabled = false; D.alert({ message: errMsg(err), danger: true }); }
+    });
+    const locCard = upCard(T('up.loc.title'), null, [
+      el('p', { class: 'up-muted' }, loc.allowed ? T('up.loc.allowed_text', { days: loc.retention_days, keep: loc.keep }) : T('up.loc.denied_text')),
+      el('div', { class: 'up-switchrow' }, [el('span', { class: 'up-switchrow-label' }, T('up.loc.allow')), sw]),
+    ]);
+    panel.appendChild(el('div', { class: 'up-grid' }, [main, el('div', { class: 'up-side' }, [access, security, locCard])]));
   }
 
   async function toggleUser(u) {
@@ -1074,6 +1230,8 @@
 
   async function openWizard(opts) {
     const o = opts || {};
+    // The owner picker needs the list (the profile loads it next to the user).
+    if (!state.users.length) await loadUsers();
     wz.step = 1;
     wz.kind = o.kind || 'device';
     wz.ownerId = o.ownerId != null ? o.ownerId : null;
@@ -1865,7 +2023,8 @@
       window.btnReset(btn);
       closeDlg('us-dlg-delete');
       toast(T('us.del.done', { name: nameOf(delUser) }));
-      if (state.selId === delUser.id) closeDetail();
+      // The profile of a deleted user is gone: back to the list.
+      if (PROFILE && state.selId === delUser.id) { window.location.assign('/users'); return; }
       await Promise.all([loadUsers(), loadOrphans()]);
     } catch (err) { window.btnReset(btn); btn.disabled = false; setError('us-del-error', errMsg(err)); }
   });
@@ -1877,7 +2036,7 @@
 
   // ── Invite ─────────────────────────────────────────────────────────
   let invUser = null;
-  function openInvite(u, preset) {
+  function openInvite(u, preset, after) {
     invUser = u;
     const name = firstName(u);
     $('us-inv-title').textContent = T('us.inv.title', { name });
@@ -1887,7 +2046,7 @@
     $('us-inv-create').hidden = false;
     $('us-inv-close').textContent = T('common.cancel');
     const ov = openDlg('us-dlg-invite');
-    ov._onClose = () => afterChange();
+    ov._onClose = () => { afterChange(); if (after) after(); };
     if (preset) showInvite(preset);
   }
   function showInvite(res) {
@@ -1955,8 +2114,9 @@
     if (self) {
       try { invite = await call('POST', '/api/v1/users/' + created.id + '/invite', {}); } catch (err) { D.alert({ message: errMsg(err), danger: true }); }
     }
-    await openUser(created.id, setup ? 'access' : 'overview');
-    const showInv = () => { if (invite) openInvite(userById(created.id) || created, invite); };
+    // Setup code and invitation as before, then on to the new profile.
+    const go = () => window.location.assign(profileHref(created.id, setup ? 'access' : 'overview'));
+    const showInv = () => { if (invite) openInvite(userById(created.id) || created, invite, go); else go(); };
     if (setup) {
       $('us-wz-name').value = '';
       await openWizard({ ownerId: created.id, kind: 'device', after: showInv });
@@ -1965,27 +2125,117 @@
     } else showInv();
   });
 
-  // ── Page wiring ────────────────────────────────────────────────────
-  $('us-btn-add').addEventListener('click', openCreate);
-  $('us-btn-roles').addEventListener('click', () => openDlg('us-dlg-roles'));
-  $('us-search').addEventListener('input', (e) => { state.q = e.target.value; renderList(); });
-  $('us-filters').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-filter]');
-    if (!b) return;
-    state.filter = b.getAttribute('data-filter');
-    renderList();
+  // ── Edit profile (display name, e-mail, language) ──────────────────
+  let pfUser = null;
+  let pfLang = null;
+  function openProfileEdit(u) {
+    pfUser = u;
+    $('us-pf-title').textContent = T('us.pf.title', { name: nameOf(u) });
+    $('us-pf-text').textContent = T('us.pf.text', { username: u.username });
+    $('us-pf-display').value = u.display_name || '';
+    $('us-pf-email').value = u.email || '';
+    $('us-pf-language').value = u.language === 'en' ? 'en' : 'de';
+    pfLang = $('us-pf-language').value;
+    setError('us-pf-error', '');
+    openDlg('us-dlg-profile');
+  }
+  $('us-pf-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    setError('us-pf-error', '');
+    const body = { displayName: $('us-pf-display').value.trim(), email: $('us-pf-email').value.trim() || null };
+    if ($('us-pf-language').value !== pfLang) body.language = $('us-pf-language').value;
+    const btn = $('us-pf-save');
+    window.btnLoading(btn);
+    try {
+      await call('PATCH', '/api/v1/users/' + pfUser.id, body);
+      window.btnReset(btn);
+      closeDlg('us-dlg-profile');
+      toast(T('us.saved'));
+      await afterChange();
+    } catch (err) { window.btnReset(btn); setError('us-pf-error', errMsg(err)); }
   });
 
+  // ── Page wiring ────────────────────────────────────────────────────
+  function bindList() {
+    $('us-btn-add').addEventListener('click', openCreate);
+    $('us-btn-roles').addEventListener('click', () => openDlg('us-dlg-roles'));
+    $('us-search').addEventListener('input', (e) => { state.q = e.target.value; renderList(); });
+    $('us-filters').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-filter]');
+      if (!b) return;
+      state.filter = b.getAttribute('data-filter');
+      renderList();
+    });
+  }
+
+  function bindProfile() {
+    const user = () => state.detail && state.detail.user;
+    $('up-edit').addEventListener('click', () => { if (user()) openProfileEdit(user()); });
+    $('up-add-device').addEventListener('click', () => { if (user()) openWizard({ ownerId: user().id, kind: 'device' }); });
+    $('up-toggle').addEventListener('click', () => { if (user()) toggleUser(user()); });
+
+    // "Mehr": password, role, invitation, delete
+    const more = $('up-more');
+    const menu = $('up-menu');
+    const items = () => Array.from(menu.querySelectorAll('.up-menu-item')).filter((i) => !i.hidden && !i.disabled);
+    function setMenu(open, focusFirst) {
+      menu.hidden = !open;
+      more.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open && focusFirst) { const f = items()[0]; if (f) f.focus(); }
+    }
+    more.addEventListener('click', () => setMenu(menu.hidden, false));
+    more.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setMenu(true, true); }
+    });
+    doc.addEventListener('click', (e) => { if (!menu.hidden && !e.target.closest('.up-more')) setMenu(false); });
+    menu.parentNode.addEventListener('keydown', (e) => {
+      if (menu.hidden) return;
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMenu(false); more.focus(); return; }
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const list = items();
+      if (!list.length) return;
+      e.preventDefault();
+      const i = list.indexOf(doc.activeElement);
+      list[(i + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length].focus();
+    });
+    const ACTIONS = {
+      'up-act-password': (u) => openPassword(u),
+      'up-act-role': () => openRole(),
+      'up-act-invite': (u) => openInvite(u),
+      'up-act-delete': (u) => openDelete(u),
+    };
+    menu.addEventListener('click', (e) => {
+      const item = e.target.closest('.up-menu-item');
+      if (!item) return;
+      // The dialog gives the focus back to "Mehr", not to the hidden item.
+      setMenu(false);
+      more.focus();
+      const run = ACTIONS[item.id];
+      if (run && user() && !item.disabled) run(user());
+    });
+
+    $('us-tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) selectTab(b.getAttribute('data-tab')); });
+    $('us-tabs').addEventListener('keydown', (e) => {
+      const i = TABS.indexOf(state.tab);
+      let n = null;
+      if (e.key === 'ArrowRight') n = TABS[(i + 1) % TABS.length];
+      else if (e.key === 'ArrowLeft') n = TABS[(i + TABS.length - 1) % TABS.length];
+      else if (e.key === 'Home') n = TABS[0];
+      else if (e.key === 'End') n = TABS[TABS.length - 1];
+      if (n) { e.preventDefault(); selectTab(n, true); }
+    });
+  }
+
   async function init() {
+    if (PROFILE) {
+      bindProfile();
+      writeUrl();
+      renderTabs();
+      await Promise.all([loadUsers(), refreshDetail()]);
+      return;
+    }
+    bindList();
     await Promise.all([loadUsers(), loadOrphans()]);
-    let id = null;
-    let tab = null;
-    try {
-      const sp = new URL(window.location.href).searchParams;
-      id = Number.parseInt(sp.get('user'), 10);
-      tab = sp.get('tab');
-    } catch (_) { id = null; }
-    if (id && userById(id)) await openUser(id, TABS.indexOf(tab) >= 0 ? tab : 'overview');
   }
   init();
 })();

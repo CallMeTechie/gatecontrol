@@ -290,6 +290,11 @@ async function update(id, data, opts = {}) {
     values.push(data.email === null ? null : String(data.email).trim() || null);
   }
   if (data.language !== undefined) {
+    let langs = ['en', 'de'];
+    try { langs = require('../../config/default').i18n.availableLanguages || langs; } catch { /* default list */ }
+    if (typeof data.language !== 'string' || !langs.includes(data.language)) {
+      throw codedError('INVALID_LANGUAGE', 'language must be one of the available languages');
+    }
     fields.push('language = ?');
     values.push(data.language);
   }

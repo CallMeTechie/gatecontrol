@@ -7,15 +7,27 @@ position of each device on a map.
 
 ## Admin
 
-- **User profile** `/users/:id` (users page → "Profil öffnen"): header (role, status, e-mail,
-  language, created, last sign-in), device cards (app, platform, client version, tunnel IP,
-  online / last contact, chip "Standort 08:42" for the last shared position), latest activity,
-  cards for access (role, visible services, RDP, web interface), security (passkeys, TOTP,
-  tokens, own area) and **Standortfreigabe** (allow switch per user). Editing stays on the users
-  page; the profile links into its panel tabs.
+- **Users list** `/users`: role cards, owner-less accesses, search, filters, table (cards on
+  phones). A row, a card or "Öffnen" (a real link) leads to the profile; there is no side
+  panel any more. After "Benutzer anlegen" the setup code / invitation follow as before, then
+  the new profile opens. Old links `/users?user=ID&tab=X` redirect (302) to `/users/ID?tab=X`.
+- **User profile** `/users/:id` — the page of a user, all editing happens here: header (role,
+  status, @username, e-mail, language, created, last sign-in with its method) with the actions
+  "Bearbeiten" (display name, e-mail, language), "Gerät hinzufügen" (access wizard for this
+  user), "Deaktivieren"/"Aktivieren" and "Mehr" (password reset, change role, invitation to the
+  portal sign-in for members, delete). Own account and last enabled admin: disable, role and
+  delete are locked, with the reason under the actions. Five tabs (`?tab=overview|access|see|
+  security|activity`, arrow keys, the address follows): **Übersicht** (device cards with online
+  state and the chip "Standort 08:42", latest activity, cards for access, security and
+  **Standortfreigabe** — allow switch per user), **Geräte & Zugänge (n)** (edit, revoke, machine
+  binding, "Gerät öffnen"), **Was sieht …?**, **Anmeldung & Sicherheit** (portal login, PIN,
+  password, 2FA, passkeys, sessions), **Aktivität**. The dialogs live in
+  `templates/aurora/partials/users-dialogs.njk` (list and profile); `public/js/users.js` renders
+  both pages (profile mode) from the `#us-i18n` island (`USERS_I18N_PREFIXES`, incl. `up.`).
 - **Device page** `/users/:id/devices/:peerId` (click a device card, or "Gerät öffnen" in the
-  panel's access tab): last position on an OpenStreetMap map (accuracy circle, coordinates,
-  provider, sent via tunnel or internet), "In OpenStreetMap öffnen", "Standorte löschen", device
+  tab "Geräte & Zugänge"; `public/js/user-device.js`, breadcrumb back to `?tab=access`): last
+  position on an OpenStreetMap map (accuracy circle, coordinates, provider, sent via tunnel or
+  internet), "In OpenStreetMap öffnen", "Standorte löschen", device
   data (tunnel IP, host name, public key shortened, handshake, data, binding, app last active,
   notifications) and the history (newest 20, a click shows the point on the map).
 - Both pages are admin only (non-admins → `/profile`); an unknown user goes back to `/users`, a
@@ -31,6 +43,7 @@ position of each device on a map.
 | GET | `/api/v1/users/:id/devices/:peerId` | `{ ok, user, device: { peer, token, push, locations }, location }` — 404 `error.users.device_not_found` for a foreign peer |
 | DELETE | `/api/v1/users/:id/devices/:peerId/locations` | `{ ok, deleted }` |
 | PUT | `/api/v1/users/:id/location-sharing` | body `{ enabled: boolean }` → `{ ok, user }` (400 otherwise) |
+| PATCH | `/api/v1/users/:id` | `{ displayName?, email?, language? }` (profile "Bearbeiten"); `language` must be an available one, else 400 `INVALID_LANGUAGE` |
 
 Activity: `user_location_sharing_changed`, `user_device_locations_deleted`.
 

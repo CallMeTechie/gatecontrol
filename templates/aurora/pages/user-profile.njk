@@ -1,18 +1,21 @@
 {% extends theme + "/layout.njk" %}
 
-{#- User profile (docs/feature-device-location.md): header, devices with the
-    last shared location, latest activity, access / security / location
-    sharing cards. Rendering lives in public/js/user-profile.js; its strings
-    come from the #up-i18n island (routes/index.js PROFILE_I18N_PREFIXES).
-    Editing stays on the users page (links into its panel tabs). -#}
+{#- User profile /users/:id — THE page of a user (docs/feature-device-location.md):
+    header with the actions (edit, add device, disable, more: password, role,
+    invitation, delete), five tabs (Übersicht, Geräte & Zugänge, "Was sieht
+    …?", Anmeldung & Sicherheit, Aktivität; ?tab= in the address). The
+    dialogs come from partials/users-dialogs.njk; public/js/users.js renders
+    the page ("profile mode"), its strings come from the #us-i18n island
+    (routes/index.js USERS_I18N_PREFIXES). -#}
 
 {% block content %}
+{% set upTabs = ['overview', 'access', 'see', 'security', 'activity'] %}
 <div class="up-page" id="up-page" data-user-id="{{ profileUserId }}">
 
   <nav class="up-crumbs" aria-label="{{ t('up.crumbs') }}">
     <a href="/users">{{ t('nav.users') }}</a>
     <span aria-hidden="true">›</span>
-    <span aria-current="page">{{ profileName }}</span>
+    <span aria-current="page" id="up-crumb-name">{{ profileName }}</span>
   </nav>
 
   <section class="up-head card" aria-labelledby="up-name">
@@ -25,65 +28,51 @@
       <p class="up-sub" id="up-sub"></p>
       <p class="up-sub up-sub-faint" id="up-sub2"></p>
     </div>
-    <div class="up-head-actions">
-      <a class="btn btn-ghost" id="up-edit" href="/users?user={{ profileUserId }}&amp;tab=overview">{{ t('up.edit') }}</a>
-      <a class="btn btn-primary" id="up-add-device" href="/users?user={{ profileUserId }}&amp;tab=access">{{ t('up.add_device') }}</a>
+    <div class="up-head-actions" id="up-actions">
+      <button type="button" class="btn btn-ghost" id="up-edit" disabled>{{ t('up.edit') }}</button>
+      <button type="button" class="btn btn-primary" id="up-add-device" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        {{ t('up.add_device') }}
+      </button>
+      <button type="button" class="btn btn-ghost" id="up-toggle" disabled>{{ t('us.disable') }}</button>
+      <div class="up-more">
+        <button type="button" class="btn btn-ghost up-more-btn" id="up-more" aria-expanded="false" aria-controls="up-menu" disabled>
+          {{ t('up.more') }}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="up-menu" id="up-menu" aria-label="{{ t('up.more_label') }}" hidden>
+          <button type="button" class="up-menu-item" id="up-act-password">{{ t('up.act_password') }}</button>
+          <a class="up-menu-item" id="up-act-own" href="/profile" hidden>{{ t('up.act_own') }}</a>
+          <button type="button" class="up-menu-item" id="up-act-role">{{ t('us.role.change') }}</button>
+          <button type="button" class="up-menu-item" id="up-act-invite" hidden>{{ t('us.sec.invite') }}</button>
+          <button type="button" class="up-menu-item up-menu-danger" id="up-act-delete">{{ t('us.delete') }}</button>
+        </div>
+      </div>
     </div>
+    <p class="up-lock" id="up-lock" hidden></p>
   </section>
 
-  <div class="up-grid">
-    <div class="up-main">
-      <section class="card up-card" aria-labelledby="up-dev-title">
-        <div class="up-card-head">
-          <h2 class="up-card-title" id="up-dev-title">{{ t('up.devices') }}</h2>
-          <span class="up-count" id="up-dev-count"></span>
-        </div>
-        <ul class="up-devices" id="up-devices" aria-live="polite"></ul>
-      </section>
-
-      <section class="card up-card" aria-labelledby="up-act-title">
-        <div class="up-card-head">
-          <h2 class="up-card-title" id="up-act-title">{{ t('up.activity') }}</h2>
-          <a class="up-link" href="/users?user={{ profileUserId }}&amp;tab=activity">{{ t('up.activity_all') }}</a>
-        </div>
-        <ol class="up-activity" id="up-activity"></ol>
-      </section>
-    </div>
-
-    <aside class="up-side">
-      <section class="card up-card" aria-labelledby="up-access-title">
-        <div class="up-card-head">
-          <h2 class="up-card-title" id="up-access-title">{{ t('up.access') }}</h2>
-          <a class="up-link" href="/users?user={{ profileUserId }}&amp;tab=see">{{ t('up.details') }}</a>
-        </div>
-        <dl class="up-facts" id="up-access"></dl>
-      </section>
-
-      <section class="card up-card" aria-labelledby="up-sec-title">
-        <div class="up-card-head">
-          <h2 class="up-card-title" id="up-sec-title">{{ t('up.security') }}</h2>
-          <a class="up-link" href="/users?user={{ profileUserId }}&amp;tab=security">{{ t('up.details') }}</a>
-        </div>
-        <dl class="up-facts" id="up-security"></dl>
-      </section>
-
-      <section class="card up-card" aria-labelledby="up-loc-title">
-        <div class="up-card-head">
-          <h2 class="up-card-title" id="up-loc-title">{{ t('up.loc.title') }}</h2>
-        </div>
-        <p class="up-muted" id="up-loc-text"></p>
-        <label class="up-switch">
-          <input type="checkbox" id="up-loc-switch" role="switch">
-          <span>{{ t('up.loc.allow') }}</span>
-        </label>
-      </section>
-    </aside>
+  <div class="us-tabs up-tabs" role="tablist" aria-label="{{ t('us.tabs.label') }}" id="us-tabs">
+    {% for tab in upTabs %}
+    <button type="button" role="tab" class="us-tab{{ ' is-active' if tab == profileTab }}" id="us-tab-{{ tab }}" data-tab="{{ tab }}" aria-controls="us-panel-{{ tab }}" aria-selected="{{ 'true' if tab == profileTab else 'false' }}" tabindex="{{ '0' if tab == profileTab else '-1' }}">
+      {%- if tab == 'see' %}{{ t('us.tab.see', { name: profileFirstName }) }}{% else %}{{ t('us.tab.' + tab) }}{% endif %}
+      {%- if tab == 'access' %} <span class="up-tab-count" id="up-tab-count"></span>{% endif -%}
+    </button>
+    {% endfor %}
   </div>
+  {% for tab in upTabs %}
+  <div class="us-panel up-panel{{ '' if tab == 'overview' else ' up-panel-card' }}" role="tabpanel" id="us-panel-{{ tab }}" aria-labelledby="us-tab-{{ tab }}" tabindex="0"{{ '' if tab == profileTab else ' hidden' }}>
+    {%- if tab == profileTab %}<p class="up-muted">{{ t('common.loading') }}</p>{% endif -%}
+  </div>
+  {% endfor %}
 </div>
 
-<script type="application/json" id="up-i18n" data-prefixes="up. us.role. common. error.users." nonce="{{ cspNonce }}">{{ profileI18n | default('{}') | safe }}</script>
+{% include "aurora/partials/users-dialogs.njk" %}
+
+<script type="application/json" id="us-i18n" data-prefixes="us. users.mb. error.users. error.tokens. error.enrollment. enrollment. common. passkey.error_not_found up." nonce="{{ cspNonce }}">{{ usersI18n | default('{}') | safe }}</script>
+<script type="application/json" id="us-ctx" nonce="{{ cspNonce }}">{"self": {{ (user.id if user else 0) | dump | safe }}, "lang": {{ language | dump | safe }}, "pihole": {{ ('true' if license.features.pihole_integration else 'false') | safe }}, "rdp": {{ ('true' if license.features.remote_desktop else 'false') | safe }}, "profile": {{ profileUserId | dump | safe }}}</script>
 {% endblock %}
 
 {% block scripts %}
-<script src="/js/user-profile.js?v={{ appVersion }}"></script>
+<script src="/js/users.js?v={{ appVersion }}"></script>
 {% endblock %}

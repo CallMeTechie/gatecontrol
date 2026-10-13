@@ -2,7 +2,7 @@
 
 {#- Device page of the user profile (docs/feature-device-location.md):
     last shared location on an OpenStreetMap map (Leaflet, vendored),
-    device data and the location history. public/js/user-profile.js renders
+    device data and the location history. public/js/user-device.js renders
     it; strings from the #up-i18n island. Only this page allows map tiles
     from tile.openstreetmap.org (routes/index.js). -#}
 
@@ -12,7 +12,7 @@
   <nav class="up-crumbs" aria-label="{{ t('up.crumbs') }}">
     <a href="/users">{{ t('nav.users') }}</a>
     <span aria-hidden="true">›</span>
-    <a href="/users/{{ profileUserId }}">{{ profileName }}</a>
+    <a href="/users/{{ profileUserId }}?tab=access">{{ profileName }}</a>
     <span aria-hidden="true">›</span>
     <span aria-current="page" id="ud-crumb-device"></span>
   </nav>
@@ -75,5 +75,5 @@
 
 {% block scripts %}
 <script src="/vendor/leaflet/leaflet.js?v={{ appVersion }}"></script>
-<script src="/js/user-profile.js?v={{ appVersion }}"></script>
+<script src="/js/user-device.js?v={{ appVersion }}"></script>
 {% endblock %}

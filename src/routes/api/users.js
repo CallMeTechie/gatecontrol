@@ -49,6 +49,7 @@ function sendKnownError(req, res, err) {
     INVALID_ROLE: [400, 'error.users.invalid_role'],
     INVALID: [400, 'error.users.display_name_too_long'],
     INVALID_EMAIL: [400, 'error.users.email_invalid'],
+    INVALID_LANGUAGE: [400, 'error.users.invalid_language'],
     NO_WEB_LOGIN: [400, 'error.users.no_web_login'],
     NOT_MEMBER: [400, 'error.users.not_member'],
     DISABLED: [400, 'error.users.disabled'],
@@ -174,7 +175,7 @@ router.get('/:id', (req, res) => {
 });
 
 /**
- * PATCH /api/v1/users/:id — Update display name / e-mail (a role passed here
+ * PATCH /api/v1/users/:id — Update display name / e-mail / language (a role passed here
  * follows the same rules as POST /:id/role).
  */
 router.patch('/:id', async (req, res) => {
