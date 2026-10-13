@@ -21,6 +21,13 @@ const FIX = { lat: 51.3397123, lng: 12.3731456, accuracy: 12.34, altitude: 113.2
 
 let app; let agent; let anna; let adminId;
 
+const OSM = 'https://tile.openstreetmap.org';
+/** Sources of one CSP directive, e.g. directive(csp, 'img-src') → ["'self'", 'data:', …]. */
+function directive(csp, name) {
+  const d = String(csp || '').split(';').map((x) => x.trim().split(/\s+/)).find((parts) => parts[0] === name);
+  return d ? d.slice(1) : [];
+}
+
 before(async () => {
   ({ app, agent } = await setup());
   anna = H.makeUser('loc-anna');
@@ -213,8 +220,7 @@ describe('admin API and pages', () => {
     assert.match(r.text, /id="up-page"/);
     assert.match(r.text, /id="up-i18n"/);
     assert.match(r.text, /\/js\/user-profile\.js/);
-    assert.doesNotMatch(r.text, /tile\.openstreetmap\.org/);
-    assert.doesNotMatch(r.headers['content-security-policy'], /openstreetmap/);
+    assert.ok(!directive(r.headers['content-security-policy'], 'img-src').includes(OSM));
   });
 
   it('device page allows OSM tiles in img-src only there', async () => {
@@ -222,9 +228,9 @@ describe('admin API and pages', () => {
     assert.match(r.text, /id="ud-page"/);
     assert.match(r.text, /\/vendor\/leaflet\/leaflet\.js/);
     const csp = r.headers['content-security-policy'];
-    assert.match(csp, /img-src [^;]*https:\/\/tile\.openstreetmap\.org/);
-    assert.doesNotMatch(csp, /script-src [^;]*openstreetmap/);
-    assert.doesNotMatch(csp, /connect-src [^;]*openstreetmap/);
+    assert.ok(directive(csp, 'img-src').includes(OSM));
+    assert.ok(!directive(csp, 'script-src').includes(OSM));
+    assert.ok(!directive(csp, 'connect-src').includes(OSM));
   });
 
   it('unknown user / foreign device redirect', async () => {

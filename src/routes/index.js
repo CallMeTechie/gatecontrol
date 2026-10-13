@@ -444,8 +444,8 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
 router.get('/me', apiLimiter, requireAuth, (req, res) => res.redirect(portalLink() || '/profile'));
 
 // ─── User profile + device page (docs/feature-device-location.md) ─────────
-// Admin-only like the users page; apiLimiter for the explicit role lookup
-// (same reasoning as the RDP session page below). Data comes from the
+// Admin-only like the users page; apiLimiter (before requireAuth, as for /me)
+// for the explicit role lookup. Data comes from the
 // users API (/api/v1/users/:id/devices…), the pages only carry ids + strings.
 const PROFILE_I18N_PREFIXES = ['up.', 'us.role.', 'common.', 'error.users.'];
 
@@ -464,7 +464,7 @@ function profileI18n(req, res) {
   return JSON.stringify(stringsWithPrefix(req.language || res.locals.language, PROFILE_I18N_PREFIXES)).replace(/</g, '\\u003c');
 }
 
-router.get('/users/:id', requireAuth, apiLimiter, (req, res) => {
+router.get('/users/:id', apiLimiter, requireAuth, (req, res) => {
   if (!adminOrRedirect(req, res)) return undefined;
   const id = positiveId(req.params.id);
   const target = id && require('../services/users').getById(id);
@@ -478,7 +478,7 @@ router.get('/users/:id', requireAuth, apiLimiter, (req, res) => {
   });
 });
 
-router.get('/users/:id/devices/:peerId', requireAuth, apiLimiter, (req, res) => {
+router.get('/users/:id/devices/:peerId', apiLimiter, requireAuth, (req, res) => {
   if (!adminOrRedirect(req, res)) return undefined;
   const id = positiveId(req.params.id);
   const peerId = positiveId(req.params.peerId);
