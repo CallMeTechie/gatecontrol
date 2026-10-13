@@ -443,6 +443,63 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
 // The target is the configured portal host — never request data.
 router.get('/me', apiLimiter, requireAuth, (req, res) => res.redirect(portalLink() || '/profile'));
 
+// ─── User profile + device page (docs/feature-device-location.md) ─────────
+// Admin-only like the users page; apiLimiter for the explicit role lookup
+// (same reasoning as the RDP session page below). Data comes from the
+// users API (/api/v1/users/:id/devices…), the pages only carry ids + strings.
+const PROFILE_I18N_PREFIXES = ['up.', 'us.role.', 'common.', 'error.users.'];
+
+function adminOrRedirect(req, res) {
+  const actor = require('../services/users').getById(req.session?.userId);
+  if (!actor || actor.role !== 'admin') { res.redirect('/profile'); return false; }
+  return true;
+}
+
+function positiveId(v) {
+  const n = Number.parseInt(v, 10);
+  return Number.isSafeInteger(n) && n > 0 && String(n) === String(v) ? n : null;
+}
+
+function profileI18n(req, res) {
+  return JSON.stringify(stringsWithPrefix(req.language || res.locals.language, PROFILE_I18N_PREFIXES)).replace(/</g, '\\u003c');
+}
+
+router.get('/users/:id', requireAuth, apiLimiter, (req, res) => {
+  if (!adminOrRedirect(req, res)) return undefined;
+  const id = positiveId(req.params.id);
+  const target = id && require('../services/users').getById(id);
+  if (!target) return res.redirect('/users');
+  return res.render(`${res.locals.theme}/pages/user-profile.njk`, {
+    title: res.locals.t('up.title'),
+    activeNav: 'users',
+    profileUserId: id,
+    profileName: target.display_name || target.username,
+    profileI18n: profileI18n(req, res),
+  });
+});
+
+router.get('/users/:id/devices/:peerId', requireAuth, apiLimiter, (req, res) => {
+  if (!adminOrRedirect(req, res)) return undefined;
+  const id = positiveId(req.params.id);
+  const peerId = positiveId(req.params.peerId);
+  const target = id && require('../services/users').getById(id);
+  if (!target) return res.redirect('/users');
+  if (!peerId || !require('../services/userDevices').belongsTo(id, peerId)) return res.redirect(`/users/${id}`);
+  // Map tiles: only this page may load images from OpenStreetMap.
+  const csp = res.getHeader('Content-Security-Policy');
+  if (typeof csp === 'string') {
+    res.setHeader('Content-Security-Policy', csp.replace(/img-src ([^;]*)/, 'img-src $1 https://tile.openstreetmap.org'));
+  }
+  return res.render(`${res.locals.theme}/pages/user-device.njk`, {
+    title: res.locals.t('up.device.title'),
+    activeNav: 'users',
+    profileUserId: id,
+    profilePeerId: peerId,
+    profileName: target.display_name || target.username,
+    profileI18n: profileI18n(req, res),
+  });
+});
+
 // ─── Browser RDP session player page (admin-only, feature-gated) ──────────
 // apiLimiter: this page performs an explicit privileged role lookup (unlike the
 // declarative page routes which only gate on session presence), so rate-limit it

@@ -79,6 +79,8 @@ router.use(require('./client/homeNetwork'));
 // in routes/index.js before the apiLimiter).
 router.use(require('./client/push'));
 router.use(require('./client/actions')); // plugin quick actions of the apps (shortcuts, tiles, widget)
+// Location sharing on tap (satellite button of the Android app).
+router.use(require('./client/location'));
 
 module.exports = router;
 module.exports.updateRouter = require('./client/update');

@@ -280,6 +280,8 @@ async function start() {
       require('./services/waf').cleanup();
       // Support bundles: newest N per peer, max age, orphaned files.
       require('./services/supportBundles').cleanup();
+      // Shared device locations: RETENTION_DAYS (the newest 20 per device are trimmed on insert).
+      require('./services/deviceLocations').purgeExpired();
     });
     setInterval(retryCleanup, 6 * 60 * 60 * 1000);
 

@@ -1,0 +1,89 @@
+{% extends theme + "/layout.njk" %}
+
+{#- User profile (docs/feature-device-location.md): header, devices with the
+    last shared location, latest activity, access / security / location
+    sharing cards. Rendering lives in public/js/user-profile.js; its strings
+    come from the #up-i18n island (routes/index.js PROFILE_I18N_PREFIXES).
+    Editing stays on the users page (links into its panel tabs). -#}
+
+{% block content %}
+<div class="up-page" id="up-page" data-user-id="{{ profileUserId }}">
+
+  <nav class="up-crumbs" aria-label="{{ t('up.crumbs') }}">
+    <a href="/users">{{ t('nav.users') }}</a>
+    <span aria-hidden="true">›</span>
+    <span aria-current="page">{{ profileName }}</span>
+  </nav>
+
+  <section class="up-head card" aria-labelledby="up-name">
+    <span class="up-avatar" id="up-avatar" aria-hidden="true"></span>
+    <div class="up-head-text">
+      <div class="up-head-title">
+        <h1 class="up-name" id="up-name">{{ profileName }}</h1>
+        <span class="up-chips" id="up-head-chips"></span>
+      </div>
+      <p class="up-sub" id="up-sub"></p>
+      <p class="up-sub up-sub-faint" id="up-sub2"></p>
+    </div>
+    <div class="up-head-actions">
+      <a class="btn btn-ghost" id="up-edit" href="/users?user={{ profileUserId }}&amp;tab=overview">{{ t('up.edit') }}</a>
+      <a class="btn btn-primary" id="up-add-device" href="/users?user={{ profileUserId }}&amp;tab=access">{{ t('up.add_device') }}</a>
+    </div>
+  </section>
+
+  <div class="up-grid">
+    <div class="up-main">
+      <section class="card up-card" aria-labelledby="up-dev-title">
+        <div class="up-card-head">
+          <h2 class="up-card-title" id="up-dev-title">{{ t('up.devices') }}</h2>
+          <span class="up-count" id="up-dev-count"></span>
+        </div>
+        <ul class="up-devices" id="up-devices" aria-live="polite"></ul>
+      </section>
+
+      <section class="card up-card" aria-labelledby="up-act-title">
+        <div class="up-card-head">
+          <h2 class="up-card-title" id="up-act-title">{{ t('up.activity') }}</h2>
+          <a class="up-link" href="/users?user={{ profileUserId }}&amp;tab=activity">{{ t('up.activity_all') }}</a>
+        </div>
+        <ol class="up-activity" id="up-activity"></ol>
+      </section>
+    </div>
+
+    <aside class="up-side">
+      <section class="card up-card" aria-labelledby="up-access-title">
+        <div class="up-card-head">
+          <h2 class="up-card-title" id="up-access-title">{{ t('up.access') }}</h2>
+          <a class="up-link" href="/users?user={{ profileUserId }}&amp;tab=see">{{ t('up.details') }}</a>
+        </div>
+        <dl class="up-facts" id="up-access"></dl>
+      </section>
+
+      <section class="card up-card" aria-labelledby="up-sec-title">
+        <div class="up-card-head">
+          <h2 class="up-card-title" id="up-sec-title">{{ t('up.security') }}</h2>
+          <a class="up-link" href="/users?user={{ profileUserId }}&amp;tab=security">{{ t('up.details') }}</a>
+        </div>
+        <dl class="up-facts" id="up-security"></dl>
+      </section>
+
+      <section class="card up-card" aria-labelledby="up-loc-title">
+        <div class="up-card-head">
+          <h2 class="up-card-title" id="up-loc-title">{{ t('up.loc.title') }}</h2>
+        </div>
+        <p class="up-muted" id="up-loc-text"></p>
+        <label class="up-switch">
+          <input type="checkbox" id="up-loc-switch" role="switch">
+          <span>{{ t('up.loc.allow') }}</span>
+        </label>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script type="application/json" id="up-i18n" data-prefixes="up. us.role. common. error.users." nonce="{{ cspNonce }}">{{ profileI18n | default('{}') | safe }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/user-profile.js?v={{ appVersion }}"></script>
+{% endblock %}

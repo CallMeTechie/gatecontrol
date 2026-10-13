@@ -1,0 +1,79 @@
+{% extends theme + "/layout.njk" %}
+
+{#- Device page of the user profile (docs/feature-device-location.md):
+    last shared location on an OpenStreetMap map (Leaflet, vendored),
+    device data and the location history. public/js/user-profile.js renders
+    it; strings from the #up-i18n island. Only this page allows map tiles
+    from tile.openstreetmap.org (routes/index.js). -#}
+
+{% block content %}
+<div class="up-page" id="ud-page" data-user-id="{{ profileUserId }}" data-peer-id="{{ profilePeerId }}">
+
+  <nav class="up-crumbs" aria-label="{{ t('up.crumbs') }}">
+    <a href="/users">{{ t('nav.users') }}</a>
+    <span aria-hidden="true">›</span>
+    <a href="/users/{{ profileUserId }}">{{ profileName }}</a>
+    <span aria-hidden="true">›</span>
+    <span aria-current="page" id="ud-crumb-device"></span>
+  </nav>
+
+  <section class="up-head card" aria-labelledby="ud-name">
+    <span class="up-avatar up-avatar-device" id="ud-icon" aria-hidden="true"></span>
+    <div class="up-head-text">
+      <div class="up-head-title">
+        <h1 class="up-name" id="ud-name"></h1>
+        <span class="up-chips" id="ud-head-chips"></span>
+      </div>
+      <p class="up-sub" id="ud-sub"></p>
+    </div>
+    <div class="up-head-actions">
+      <a class="btn btn-ghost" href="/peers#edit/{{ profilePeerId }}">{{ t('up.device.edit_peer') }}</a>
+    </div>
+  </section>
+
+  <div class="up-grid">
+    <div class="up-main">
+      <section class="card up-card" aria-labelledby="ud-map-title">
+        <div class="up-card-head">
+          <h2 class="up-card-title" id="ud-map-title">{{ t('up.device.last_location') }}</h2>
+          <span class="up-muted" id="ud-map-sub"></span>
+        </div>
+        <div class="ud-map-wrap">
+          <div class="ud-map" id="ud-map" role="region" aria-label="{{ t('up.device.map_label') }}"></div>
+          <div class="ud-map-empty" id="ud-map-empty" hidden>
+            <p id="ud-map-empty-text"></p>
+          </div>
+        </div>
+        <dl class="up-facts up-facts-grid" id="ud-loc-facts"></dl>
+        <div class="ud-loc-actions" id="ud-loc-actions" hidden>
+          <a class="btn btn-ghost" id="ud-osm" href="#" target="_blank" rel="noopener noreferrer">{{ t('up.device.open_osm') }}</a>
+          <button type="button" class="btn btn-ghost ud-danger" id="ud-delete">{{ t('up.device.delete') }}</button>
+        </div>
+      </section>
+    </div>
+
+    <aside class="up-side">
+      <section class="card up-card" aria-labelledby="ud-data-title">
+        <div class="up-card-head"><h2 class="up-card-title" id="ud-data-title">{{ t('up.device.data') }}</h2></div>
+        <dl class="up-facts" id="ud-data"></dl>
+      </section>
+
+      <section class="card up-card" aria-labelledby="ud-hist-title">
+        <div class="up-card-head">
+          <h2 class="up-card-title" id="ud-hist-title">{{ t('up.device.history') }}</h2>
+          <span class="up-count" id="ud-hist-count"></span>
+        </div>
+        <ol class="ud-history" id="ud-history"></ol>
+        <p class="up-muted up-hint" id="ud-hist-hint"></p>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script type="application/json" id="up-i18n" data-prefixes="up. us.role. common. error.users." nonce="{{ cspNonce }}">{{ profileI18n | default('{}') | safe }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="/vendor/leaflet/leaflet.js?v={{ appVersion }}"></script>
+<script src="/js/user-profile.js?v={{ appVersion }}"></script>
+{% endblock %}

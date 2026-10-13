@@ -2144,6 +2144,44 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_route_app_tickets_expires ON route_app_tickets(expires_at);`,
     detect: (db) => tableExists(db, 'route_app_tickets'),
   },
+  {
+    version: 97,
+    name: 'user_location_sharing',
+    // Location sharing on tap (docs/feature-device-location.md): the
+    // administrator allows it per user (default on — the device owner still
+    // has to switch it on in the app and tap the satellite button).
+    sql: 'ALTER TABLE users ADD COLUMN location_sharing INTEGER NOT NULL DEFAULT 1;',
+    detect: (db) => hasColumn(db, 'users', 'location_sharing'),
+  },
+  {
+    version: 98,
+    name: 'device_locations',
+    // Positions a device sent on tap. peer_id = the device (cascade with the
+    // peer), token_id / user_id = who sent it (user deletion removes the
+    // rows in users.remove). lat/lng in degrees, accuracy/altitude in metres,
+    // provider = Android provider name ('fused', 'gps', 'network'),
+    // via = 'tunnel' | 'direct', captured_at = the device's fix time and
+    // received_at = server time, both epoch milliseconds. The service keeps
+    // the newest LOCATION_KEEP per peer and drops rows past the retention.
+    sql: `
+      CREATE TABLE IF NOT EXISTS device_locations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        peer_id INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        token_id INTEGER,
+        user_id INTEGER,
+        lat REAL NOT NULL,
+        lng REAL NOT NULL,
+        accuracy REAL,
+        altitude REAL,
+        provider TEXT,
+        via TEXT,
+        captured_at INTEGER NOT NULL,
+        received_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_device_locations_peer ON device_locations(peer_id, received_at);
+      CREATE INDEX IF NOT EXISTS idx_device_locations_user ON device_locations(user_id);`,
+    detect: (db) => tableExists(db, 'device_locations'),
+  },
 ];
 
 module.exports = { migrations };

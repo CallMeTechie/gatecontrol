@@ -548,6 +548,7 @@
     chip.textContent = roleLabel(u.role);
     show($('us-d-off'), u.enabled !== 1);
     $('us-d-sub').textContent = subLine(u) + ' · ' + T('us.detail.created', { date: fmtDate(u.created_at) });
+    $('us-d-profile').setAttribute('href', '/users/' + u.id);
     TABS.forEach((t) => {
       const b = $('us-tab-' + t);
       if (t === 'see') b.textContent = T('us.tab.see', { name: firstName(u) });
@@ -731,6 +732,7 @@
             el('div', { class: 'us-item-name' }, [t.name, el('span', { class: 'us-dot ' + (peer && peer.online ? 'us-dot-good' : 'us-dot-off'), 'aria-hidden': 'true' }), el('span', { class: 'us-item-state' }, stateTxt)]),
             meta ? el('div', { class: 'us-hint' }, meta) : null,
           ]),
+          peer ? el('a', { class: 'btn btn-sm us-btn-chip', href: '/users/' + u.id + '/devices/' + peer.id }, T('us.dev.open_device')) : null,
           el('button', { type: 'button', class: 'btn btn-sm us-btn-chip', on: { click: () => openEdit(t, u) } }, T('us.edit')),
           el('button', { type: 'button', class: 'btn btn-sm us-btn-danger', on: { click: () => revokeToken(t, afterChange) } }, T('us.revoke')),
         ]),
