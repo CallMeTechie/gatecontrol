@@ -86,8 +86,12 @@ jobs:
     if: needs.decide.outputs.release == 'true'
 
     steps:
+      # The current master, not the pushed commit: runs are serialized by the
+      # concurrency group, so a run for a later merge must see the version
+      # bump the run before it pushed (else both compute the same version).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: master
           fetch-depth: 0
           fetch-tags: true
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -126,7 +130,12 @@ jobs:
         env:
           TAG: ${{ steps.bump.outputs.tag }}
         run: |
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
+          # Already released: a version bump landed after this commit (a re-run,
+          # or a later merge released it together with its own change).
+          if git log --format=%s "${GITHUB_SHA}..HEAD" | grep -q '^chore: bump version'; then
+            echo "Commit already released by a later version bump"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -163,8 +172,20 @@ jobs:
           git add package.json package-lock.json CHANGELOG.md 2>/dev/null || true
           git add package.json
           git commit -m "chore: bump version to $NEW_VERSION"
-          git tag "$TAG"
-          git push origin master --tags
+          # Push the commit first and tag only what landed: master may have
+          # moved since the checkout (a merge right after this one). Rebase the
+          # bump onto it and try again; never leave a tag on a commit that is
+          # not on master (that tag would block the next release).
+          for attempt in 1 2 3; do
+            if git push origin HEAD:master; then
+              git tag "$TAG"
+              git push origin "$TAG"
+              exit 0
+            fi
+            git pull --rebase origin master
+          done
+          echo "::error::Could not push the version bump to master"
+          exit 1
 
       # ─── GHCR: Build & Push ───────────────────────────
       - name: Set image name
