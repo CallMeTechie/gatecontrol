@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.163.0] — 2026-10-13
+
+### Features
+- speed test endpoints, problem description and diagnosis in support bundles (#305)
+
+---
+
 ## [1.162.0] — 2026-10-13
 
 ### Features
