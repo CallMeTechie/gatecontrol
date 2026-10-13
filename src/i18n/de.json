@@ -1285,6 +1285,8 @@
   "route_auth.two_factor": "Zwei-Faktor-Authentifizierung (2FA)",
   "route_auth.two_factor_desc": "Email & Passwort + zusätzlicher Faktor",
   "route_auth.two_factor_active": "Aktiv",
+  "route_auth.app_login": "Anmeldung aus den GateControl-Apps erlauben",
+  "route_auth.app_login_hint": "Geräte, die diese Route sehen dürfen, öffnen sie in der App ohne Login-Seite (auch ohne zweiten Faktor).",
   "route_auth.factor_1": "Faktor 1 — Email & Passwort",
   "route_auth.factor_2_email": "Faktor 2 — Email Code",
   "route_auth.factor_2_totp": "Faktor 2 — TOTP (Authenticator)",

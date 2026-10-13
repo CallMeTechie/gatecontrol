@@ -271,6 +271,32 @@ const portalLinkLimiter = rateLimit({
   },
 });
 
+// POST /api/v1/client/services/:id/open — the apps open a route (optionally
+// with a one-time auto-login ticket); one request per tap, 30 per minute and
+// device.
+const serviceOpenLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.tokenAuth ? `service-open:${req.tokenId}` : `service-open:${ipKeyGenerator(req.ip)}`),
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'rate_limited' });
+  },
+});
+
+// GET /route-auth/app/:ticket — redeem of the ticket above on the route's own
+// domain. A ticket is 256 bits and lives 60 s, so this is anti-noise only;
+// more generous than shareRedeemLimiter because one device opens several
+// routes in a row.
+const routeAppRedeemLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `route-app:${ipKeyGenerator(req.ip)}`,
+});
+
 // GET /api/v1/client/home-network — the apps ask on network changes
 // (trusted-network detection); 30 per minute and device.
 const homeNetworkLimiter = rateLimit({
@@ -369,5 +395,5 @@ const pluginPageLimiter = rateLimit({
 });
 
 module.exports = { pluginApiLimiter, pluginPageLimiter, loginLimiter, twoFactorSetupLimiter, passkeyLoginLimiter, passkeyManageLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayAuthLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter,
-  eventStreamLimiter, portalApiLimiter, portalPageLimiter, portalPinLimiter, portalLinkLimiter, portalPinSetLimiter, homeNetworkLimiter,
+  eventStreamLimiter, portalApiLimiter, portalPageLimiter, portalPinLimiter, portalLinkLimiter, portalPinSetLimiter, homeNetworkLimiter, serviceOpenLimiter, routeAppRedeemLimiter,
   pushStreamLimiter, pushTestLimiter, notifySendLimiter };

@@ -868,6 +868,8 @@
     });
     var raDuration = byId('edit-ra-session-duration');
     if (raDuration) raDuration.value = '86400000';
+    // "Anmeldung aus den GateControl-Apps erlauben" — default off.
+    setToggle('edit-ra-app-login', false);
     pendingTotpSecret = null;
     ['edit-ra-totp-secret', 'edit-ra-2fa-totp-secret', 'edit-ra-totp-qr', 'edit-ra-2fa-totp-qr',
       'edit-ra-totp-status', 'edit-ra-2fa-totp-status'].forEach(function (fid) {
@@ -919,6 +921,7 @@
             if (sfEmail) sfEmail.value = email;
           }
           if (raDuration) raDuration.value = String(auth.session_max_age || 86400000);
+          setToggle('edit-ra-app-login', !!auth.app_login);
         }
       }
     } catch (err) {
@@ -3557,6 +3560,7 @@
           two_factor_method: ra2faActive ? raMethod : null,
           email: raEmailVal,
           session_max_age: parseInt(raSessionDuration, 10),
+          app_login: isOn('edit-ra-app-login'),
         };
         if (raPasswordVal) raPayload.password = raPasswordVal;
         if (pendingTotpSecret) raPayload.totp_secret = pendingTotpSecret;
