@@ -256,6 +256,13 @@ async function handleCall(method, payload) {
     case 'portalSearch':
       // optional: declarative portal search results for the viewer
       return typeof plugin.portalSearch === 'function' ? plugin.portalSearch(payload, gc) : [];
+    case 'quickActions':
+      // optional: declarative quick actions of the apps for the viewer (shortcuts, tiles, widget)
+      return typeof plugin.quickActions === 'function' ? plugin.quickActions(payload, gc) : [];
+    case 'runQuickAction':
+      // runs one of the actions quickActions listed for that viewer (the host checked the id)
+      if (typeof plugin.runQuickAction !== 'function') throw new Error('this plugin has no quick actions');
+      return plugin.runQuickAction(payload, gc);
     case 'legacyImport':
       // built-in data handed over once by the host (first-party plugins only, src/services/plugins/legacy.js)
       if (typeof plugin.legacyImport !== 'function') throw new Error('this plugin cannot import built-in data');

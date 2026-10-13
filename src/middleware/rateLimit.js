@@ -371,3 +371,17 @@ const pluginPageLimiter = rateLimit({
 module.exports = { pluginApiLimiter, pluginPageLimiter, loginLimiter, twoFactorSetupLimiter, passkeyLoginLimiter, passkeyManageLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayAuthLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter,
   eventStreamLimiter, portalApiLimiter, portalPageLimiter, portalPinLimiter, portalLinkLimiter, portalPinSetLimiter, homeNetworkLimiter,
   pushStreamLimiter, pushTestLimiter, notifySendLimiter };
+
+// POST /api/v1/client/actions/:plugin/:id — plugin quick actions of the apps
+// (shortcuts, Quick Settings tiles, widget): 30 runs per minute and device.
+const clientActionLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.tokenAuth ? `client-action:${req.tokenId}` : `client-action:${ipKeyGenerator(req.ip)}`),
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: 'rate_limited' });
+  },
+});
+module.exports.clientActionLimiter = clientActionLimiter;

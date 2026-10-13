@@ -147,4 +147,4 @@ async function search(user, lang, q, contrib) {
   return lists.flat();
 }
 
-module.exports = { contributions, tiles, search, TAB_IDS, HOOK_MS, _targetOf: targetOf };
+module.exports = { contributions, tiles, search, text, TAB_IDS, HOOK_MS, _targetOf: targetOf };
