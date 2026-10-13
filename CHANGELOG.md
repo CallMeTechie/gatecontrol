@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.160.0] — 2026-10-13
+
+### Features
+- open routes from the apps with optional automatic login (#296)
+
+---
+
 ## [1.159.0] — 2026-10-12
 
 ### Features
