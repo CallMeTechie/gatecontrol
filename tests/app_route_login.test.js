@@ -180,7 +180,11 @@ describe('open endpoint', () => {
     assert.equal(res.body.ok, true);
     assert.equal(res.body.autoLogin, true);
     assert.equal(res.body.expiresIn, 60);
-    assert.ok(res.body.url.startsWith('https://arl-open-app.example.com/route-auth/app/'), res.body.url);
+    const u = new URL(res.body.url);
+    assert.equal(u.protocol, 'https:');
+    assert.equal(u.hostname, 'arl-open-app.example.com');
+    assert.match(u.pathname, /^\/route-auth\/app\/[A-Za-z0-9_-]{43}$/);
+    assert.equal(u.search, '');
     const t = ticketOf(res.body.url);
     assert.match(t, /^[A-Za-z0-9_-]{43}$/);
     const row = db().prepare('SELECT * FROM route_app_tickets WHERE ticket_hash = ?').get(sha(t));
@@ -408,9 +412,26 @@ describe('wiring', () => {
   it('route-auth routes get the /route-auth/* sibling proxy on their own domain', () => {
     const id = route('arl-caddy.example.com');
     routeAuth(id, { appLogin: true });
-    const json = JSON.stringify(require('../src/services/caddyConfig').buildCaddyConfig());
-    assert.ok(json.includes('arl-caddy.example.com'));
-    assert.ok(json.includes('"/route-auth/*"'));
+    const cfg = require('../src/services/caddyConfig').buildCaddyConfig();
+    // Walk the structured config: the Caddy route matching exactly this host
+    // must contain the /route-auth/* sibling route.
+    const nodes = [];
+    (function walk(v) {
+      if (Array.isArray(v)) { v.forEach(walk); return; }
+      if (v && typeof v === 'object') { nodes.push(v); Object.values(v).forEach(walk); }
+    })(cfg);
+    const matches = (n, pred) => Array.isArray(n.match) && n.match.some((m) => m && pred(m));
+    const hostRoutes = nodes.filter((n) => matches(n, (m) => Array.isArray(m.host) && m.host.some((h) => h === 'arl-caddy.example.com')));
+    assert.ok(hostRoutes.length > 0, 'route for the domain');
+    const hasAuthProxy = hostRoutes.some((hr) => {
+      const inner = [];
+      (function walk(v) {
+        if (Array.isArray(v)) { v.forEach(walk); return; }
+        if (v && typeof v === 'object') { inner.push(v); Object.values(v).forEach(walk); }
+      })(hr.handle);
+      return inner.some((n) => matches(n, (m) => Array.isArray(m.path) && m.path.length === 1 && m.path[0] === '/route-auth/*'));
+    });
+    assert.ok(hasAuthProxy, '/route-auth/* sibling proxy on the route domain');
   });
 
   it('route editor has the toggle and both locales the texts', () => {
