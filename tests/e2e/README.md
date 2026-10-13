@@ -49,7 +49,8 @@ scenarios/09-notifications.js /notifications: Benachrichtigungszentrale mit
 scenarios/10-support-bundles.js /support-bundles: Support-Pakete aus dem Seed
                         (neu / angesehen), Filter Status + Gerät, Markierung in
                         der Peer-Liste, Peer-Dialog (offene Anforderung, Link zum
-                        Viewer), Viewer mit allen Abschnitten ohne Geheimnisse,
+                        Viewer), Viewer mit allen Abschnitten ohne Geheimnisse
+                        (inkl. Problembeschreibung + Diagnose des Diagnose-Assistenten),
                         Log-Filter + Suche, „angesehen“ (Badge), Löschen,
                         hell/dunkel, 400 px
 ```

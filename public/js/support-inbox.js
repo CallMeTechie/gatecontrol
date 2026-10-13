@@ -6,8 +6,10 @@
 // List of every support bundle of every device (newest first, "neu" until an
 // admin opened it), filter by device (?peer=<id>) and status (?status=new|
 // viewed), pages of 50. The viewer (#view/<peerId>/<bundleId>) renders one
-// bundle: summary, tunnel, settings, network, WireGuard config, recent
-// errors, logs (search + level filter), other data and the raw JSON.
+// bundle: summary, the user's problem description and the diagnosis of the
+// apps' diagnosis assistant (docs/feature-client-diagnosis.md), tunnel,
+// settings, network, WireGuard config, recent errors, logs (search + level
+// filter), other data and the raw JSON.
 //   GET    /api/v1/support-bundles                          list
 //   GET    /api/v1/peers/:id/support-bundles/:bid           viewer (marks it viewed)
 //   GET    /api/v1/peers/:id/support-bundles/:bid/download  JSON attachment
@@ -26,7 +28,11 @@
   const STATUSES = ['', 'new', 'viewed'];
   const LEVELS = ['error', 'warn', 'info', 'debug'];
   const MAX_LOG_ROWS = 2000;
-  const KNOWN_KEYS = ['schema', 'createdAt', 'reason', 'client', 'tunnel', 'settings', 'wireguardConfig', 'network', 'logs', 'errors', 'server'];
+  const KNOWN_KEYS = ['schema', 'createdAt', 'reason', 'client', 'tunnel', 'settings', 'wireguardConfig', 'network', 'logs', 'errors', 'server',
+    'description', 'diagnosis'];
+  const DIAG_STATUSES = ['ok', 'warn', 'fail', 'skipped'];
+  const DIAG_SUMMARIES = ['ok', 'warn', 'fail'];
+  const DIAG_MAX_CHECKS = 30;
   const PRODUCTS = { pro: 'Pro', community: 'Community', android: 'Android' };
 
   // ─── Pure helpers ────────────────────────────────────────────────────────
@@ -189,10 +195,57 @@
     return data && typeof data === 'object' ? Object.keys(data).filter((k) => KNOWN_KEYS.indexOf(k) < 0) : [];
   }
 
+  /** bundle.description → the text to show (string, trimmed) or ''. */
+  function descriptionText(v) {
+    return typeof v === 'string' ? v.replace(/\r\n?/g, '\n').trim() : '';
+  }
+
+  /** One line of a description for the inbox row ('' when none). */
+  function descriptionPreview(v, max) {
+    const s = descriptionText(v).replace(/\s+/g, ' ');
+    const n = max || 90;
+    return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s;
+  }
+
+  /**
+   * bundle.diagnosis in any shape → { summary, checks, counts, startedAt,
+   * finishedAt } or null. Checks without an id or with an unknown status are
+   * left out (the server cleans them on upload; files from before may not be).
+   */
+  function normDiagnosis(d) {
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
+    const checks = (Array.isArray(d.checks) ? d.checks : [])
+      .filter((c) => c && typeof c === 'object' && typeof c.id === 'string' && c.id && DIAG_STATUSES.indexOf(c.status) >= 0)
+      .slice(0, DIAG_MAX_CHECKS)
+      .map((c) => ({
+        id: c.id,
+        status: c.status,
+        title: typeof c.title === 'string' && c.title.trim() ? c.title.trim() : c.id,
+        detail: typeof c.detail === 'string' ? c.detail.trim() : '',
+        hint: typeof c.hint === 'string' ? c.hint.trim() : '',
+        value: c.value == null || typeof c.value === 'object' ? null : c.value,
+      }));
+    const counts = { ok: 0, warn: 0, fail: 0, skipped: 0 };
+    checks.forEach((c) => { counts[c.status] += 1; });
+    let summary = DIAG_SUMMARIES.indexOf(d.summary) >= 0 ? d.summary : null;
+    if (!summary) {
+      if (!checks.length) return null;
+      summary = counts.fail ? 'fail' : (counts.warn ? 'warn' : 'ok');
+    }
+    return {
+      summary,
+      checks,
+      counts,
+      startedAt: typeof d.startedAt === 'string' ? d.startedAt : null,
+      finishedAt: typeof d.finishedAt === 'string' ? d.finishedAt : null,
+    };
+  }
+
   const pure = {
-    PAGE_SIZE, STATUSES, LEVELS, KNOWN_KEYS, MAX_LOG_ROWS,
+    PAGE_SIZE, STATUSES, LEVELS, KNOWN_KEYS, MAX_LOG_ROWS, DIAG_STATUSES,
     parseRoute, viewHash, parseSearch, searchFor, listQuery, productLabel, clientLabel, parseTime, fmtTime,
     logLevel, logEntry, normLogs, filterLines, splitHits, flatten, otherKeys,
+    descriptionText, descriptionPreview, normDiagnosis,
   };
   if (!win || !win.document) return pure;
 
@@ -238,9 +291,10 @@
   }
   function clear(n) { while (n && n.firstChild) n.removeChild(n.firstChild); }
   const SVGNS = 'http://www.w3.org/2000/svg';
-  function icon(d) {
+  function icon(d, size) {
     const svg = doc.createElementNS(SVGNS, 'svg');
-    [['viewBox', '0 0 24 24'], ['width', '14'], ['height', '14'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '2'],
+    const px = String(size || 14);
+    [['viewBox', '0 0 24 24'], ['width', px], ['height', px], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '2'],
       ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']].forEach((a) => svg.setAttribute(a[0], a[1]));
     d.split('|').forEach((part) => {
       const path = doc.createElementNS(SVGNS, 'path');
@@ -251,6 +305,13 @@
   }
   const ICON_DOWNLOAD = 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4|M7 10l5 5 5-5|M12 15V3';
   const ICON_DELETE = 'M4 7h16|M9 7V4h6v3|M6 7l1 13h10l1-13';
+  const CIRCLE = 'M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0';
+  const ICON_DIAG = {
+    ok: CIRCLE + '|M8 12.5l2.5 2.5L16 9.5',
+    warn: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z|M12 9v4|M12 17h.01',
+    fail: CIRCLE + '|M15 9l-6 6|M9 9l6 6',
+    skipped: CIRCLE + '|M8 12h8',
+  };
   function bytes(n) { return win.formatBytes ? win.formatBytes(n) : String(n) + ' B'; }
   function apiBase(peerId) { return '/api/v1/peers/' + encodeURIComponent(peerId) + '/support-bundles'; }
   function toast(msg, type) { if (win.showToast) win.showToast(msg, type); }
@@ -291,6 +352,22 @@
     return el('span', { class: 'sb-faint', title }, T('support_bundles.status_viewed'));
   }
 
+  /** Diagnosis chip under the device name (null without a diagnosis). */
+  function rowExtras(b) {
+    const summary = DIAG_SUMMARIES.indexOf(b.diagnosis_summary) >= 0 ? b.diagnosis_summary : null;
+    if (!summary) return null;
+    return el('div', { class: 'sb-row-extra' },
+      el('span', { class: 'sb-diag-chip sb-diag-' + summary, 'data-diag': summary, text: T('support_bundles.diag_short_' + summary) }));
+  }
+
+  /** Start of the problem description as a line of its own below the row (null without one). */
+  function descRow(b, open) {
+    const preview = descriptionPreview(b.description, 160);
+    if (!preview) return null;
+    return el('tr', { class: 'sb-desc-row' + (b.is_new ? ' sb-row-new' : ''), 'data-desc-for': String(b.id) },
+      el('td', { colspan: '8' }, el('a', { href: open, class: 'sb-row-desc', title: descriptionText(b.description), text: preview })));
+  }
+
   function renderPeers(peers) {
     const keep = state.peerId ? String(state.peerId) : '';
     while (peerSel.options.length > 1) peerSel.remove(1);
@@ -318,10 +395,15 @@
     }
     list.forEach((b) => {
       const open = viewHash(b.peer_id, b.id);
-      const tr = el('tr', { 'data-bundle-id': String(b.id), 'data-peer-id': String(b.peer_id), class: b.is_new ? 'sb-row-new' : null });
+      const desc = descRow(b, open);
+      const tr = el('tr', { 'data-bundle-id': String(b.id), 'data-peer-id': String(b.peer_id),
+        class: [b.is_new ? 'sb-row-new' : '', desc ? 'sb-has-desc' : ''].join(' ').trim() || null });
       tr.append(
         el('td', { class: 'sb-nowrap' }, el('a', { href: open, class: 'sb-time-link', text: fmtTime(b.created_at, LANG), title: str(b.created_at) + ' UTC' })),
-        el('td', { class: 'cell-name' }, el('a', { href: '/support-bundles' + searchFor({ peerId: b.peer_id, status: state.status }), class: 'sb-peer-link', text: str(b.peer_name) || '#' + b.peer_id })),
+        el('td', { class: 'cell-name' }, [
+          el('a', { href: '/support-bundles' + searchFor({ peerId: b.peer_id, status: state.status }), class: 'sb-peer-link', text: str(b.peer_name) || '#' + b.peer_id }),
+          rowExtras(b),
+        ]),
         el('td', { text: str(b.user_name) || '—', class: b.user_name ? null : 'sb-faint' }),
         el('td', { class: 'mono', text: clientLabel(b) || '—', title: str(b.os) || null }),
         el('td', null, reasonTag(b.reason)),
@@ -336,6 +418,7 @@
         ]),
       );
       tbody.append(tr);
+      if (desc) tbody.append(desc);
     });
     const total = Number(data.total) || 0;
     $('sb-count').textContent = T('support_bundles.count', { count: total, new: Number(data.unviewed) || 0 });
@@ -531,6 +614,49 @@
     return section(T('support_bundles.sec_network'), el('div', null, parts), { id: 'network', wide: true });
   }
 
+  function descriptionSection(v) {
+    const text = descriptionText(v);
+    if (!text) return null;
+    return section(T('support_bundles.sec_description'), el('p', { class: 'sb-desc', text }), { id: 'description', wide: true });
+  }
+
+  function diagValue(v) {
+    if (v === true) return T('support_bundles.yes');
+    if (v === false) return T('support_bundles.no');
+    return str(v);
+  }
+
+  function diagnosisSection(raw) {
+    const d = normDiagnosis(raw);
+    if (!d) return null;
+    const ran = d.finishedAt || d.startedAt;
+    const tools = [
+      el('span', { class: 'sb-diag-chip sb-diag-' + d.summary, 'data-diag': d.summary }, [
+        icon(ICON_DIAG[d.summary], 13),
+        el('span', { text: T('support_bundles.diag_summary_' + d.summary) }),
+      ]),
+      ran ? el('span', { class: 'sb-faint sb-small sb-diag-time', title: ran, text: T('support_bundles.diag_ran_at', { time: fmtTime(ran, LANG) }) }) : null,
+    ];
+    const counts = el('p', { class: 'sb-faint sb-small sb-diag-counts', text: T('support_bundles.diag_counts', d.counts) });
+    const list = d.checks.length
+      ? el('ul', { class: 'sb-diag' }, d.checks.map((c) => el('li', { class: 'sb-diag-row sb-diag-' + c.status, 'data-check': c.id, 'data-status': c.status }, [
+        el('span', { class: 'sb-diag-icon', title: T('support_bundles.diag_status_' + c.status) }, [
+          icon(ICON_DIAG[c.status], 18),
+          el('span', { class: 'sb-sr', text: T('support_bundles.diag_status_' + c.status) }),
+        ]),
+        el('div', { class: 'sb-diag-body' }, [
+          el('div', { class: 'sb-diag-head' }, [
+            el('span', { class: 'sb-diag-title', text: c.title }),
+            c.value != null && c.value !== '' ? el('span', { class: 'sb-diag-value sb-mono', text: diagValue(c.value) }) : null,
+          ]),
+          c.detail ? el('p', { class: 'sb-diag-detail', text: c.detail }) : null,
+          c.hint ? el('p', { class: 'sb-diag-hint' }, [el('span', { class: 'sb-diag-hint-label', text: T('support_bundles.diag_hint') + ' ' }), c.hint]) : null,
+        ]),
+      ])))
+      : none();
+    return section(T('support_bundles.sec_diagnosis'), el('div', null, [counts, list]), { id: 'diagnosis', wide: true, tools });
+  }
+
   function lineNode(l, query) {
     const row = el('div', { class: 'sb-line' + (l.level ? ' sb-lv-' + l.level : '') });
     splitHits(l.text, query).forEach((p) => row.append(p.hit ? el('mark', { text: p.text }) : doc.createTextNode(p.text)));
@@ -599,6 +725,8 @@
     const settingsRows = data.settings && typeof data.settings === 'object' ? flatten(data.settings).filter((kv) => kv[0]) : [];
     const other = otherKeys(data);
     const grid = el('div', { class: 'sb-grid' }, [
+      descriptionSection(data.description),
+      diagnosisSection(data.diagnosis),
       tunnelSection(data.tunnel),
       section(T('support_bundles.sec_settings'), data.settings && typeof data.settings === 'object' ? kvTable(settingsRows, true) : listOrTable(data.settings), { id: 'settings' }),
       networkSection(data.network),

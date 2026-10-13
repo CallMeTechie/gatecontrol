@@ -158,7 +158,10 @@ function supportBundleFacts(lang, d, f) {
   const product = CLIENT_PRODUCTS[d.clientProduct] || null;
   const client = [product, d.clientVersion ? sanitize.line(d.clientVersion, 40) : null].filter(Boolean).join(' ');
   const reason = d.reason === 'admin_request' || d.reason === 'user' ? text.t(lang, `push.fact.reason_${d.reason}`) : null;
-  return [f('client', client || null), f('reason', reason), f('size', fmtSize(d.sizeBytes))].filter(Boolean);
+  const diagnosis = ['ok', 'warn', 'fail'].includes(d.diagnosisSummary) ? text.t(lang, `push.fact.diagnosis_${d.diagnosisSummary}`) : null;
+  const description = d.hasDescription === true ? text.t(lang, 'push.fact.description_attached') : null;
+  return [f('client', client || null), f('reason', reason), f('size', fmtSize(d.sizeBytes)),
+    f('diagnosis', diagnosis), f('description', description)].filter(Boolean);
 }
 
 /** data.facts of a core event ([] when the server knows nothing useful). */

@@ -178,6 +178,15 @@ const config = {
     maxViewBytes: envInt('GC_SUPPORT_BUNDLE_MAX_VIEW_BYTES', 8 * 1024 * 1024),    // viewer (JSON in the browser); larger → download only
   },
 
+  // Speed test of the apps' diagnosis screen (GET/POST /api/v1/client/speedtest*,
+  // docs/feature-client-diagnosis.md): the largest download / upload one
+  // request may move, and the requests per token and 10 minutes.
+  speedtest: {
+    maxDownloadBytes: envInt('GC_SPEEDTEST_MAX_DOWNLOAD_BYTES', 25 * 1024 * 1024),
+    maxUploadBytes: envInt('GC_SPEEDTEST_MAX_UPLOAD_BYTES', 25 * 1024 * 1024),
+    rateLimit: envInt('GC_SPEEDTEST_RATE_LIMIT', 30),
+  },
+
   rdp: {
     publicHost: env('GC_RDP_PUBLIC_HOST', ''),
     healthCheckInterval: envInt('GC_RDP_HEALTH_CHECK_INTERVAL', 60000),

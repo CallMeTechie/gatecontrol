@@ -94,7 +94,114 @@ function parseBytes(bytes) {
 function checkBundle(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new BundleError('invalid_bundle', 400);
   if (obj.schema !== SCHEMA_VERSION) throw new BundleError('unsupported_schema', 400);
-  return obj;
+  return normalizeExtras(obj);
+}
+
+// ── Diagnosis + problem description (additive, schema stays 1) ─────────────
+// The apps' "Diagnose-Assistent" (docs/feature-client-diagnosis.md) sends the
+// results of its checks and an optional problem description along with the
+// bundle. Both are optional and best-effort like every other key: an invalid
+// value is dropped (never a 400), oversized parts are cut to the limits below.
+
+const DESCRIPTION_MAX = 2000;
+const DIAG_MAX_CHECKS = 30;
+const DIAG_SUMMARIES = new Set(['ok', 'warn', 'fail']);
+const DIAG_STATUSES = new Set(['ok', 'warn', 'fail', 'skipped']);
+const DIAG_ID_RE = /^[A-Za-z0-9_.-]{1,40}$/;
+const DIAG_LIMITS = { title: 120, detail: 500, hint: 500, value: 120, time: 40 };
+// The inbox row shows the start of the description (support_bundles.description).
+const DESCRIPTION_PREVIEW = 300;
+
+/** Text of the device: CR/LF → LF (kept only when `multiline`), other control characters removed, trimmed, cut. */
+function cleanText(v, max, multiline) {
+  if (typeof v !== 'string') return null;
+  let s = v.replace(/\r\n?/g, '\n');
+  s = multiline ? s.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '') : s.replace(/[\u0000-\u001f\u007f]+/g, ' ');
+  s = s.trim();
+  if (!s) return null;
+  return s.length > max ? s.slice(0, max).replace(/[\ud800-\udbff]$/, '').trimEnd() : s;
+}
+
+/** Optional `description`: the user's own words, ≤ 2000 characters, line breaks kept. */
+function normalizeDescription(v) {
+  return cleanText(v, DESCRIPTION_MAX, true);
+}
+
+function isoTime(v) {
+  const s = cleanText(v, DIAG_LIMITS.time, false);
+  return s && Number.isFinite(Date.parse(s)) ? s : null;
+}
+
+function normalizeCheck(c) {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
+  if (typeof c.id !== 'string' || !DIAG_ID_RE.test(c.id) || !DIAG_STATUSES.has(c.status)) return null;
+  const out = { id: c.id, status: c.status, title: cleanText(c.title, DIAG_LIMITS.title, false) || c.id };
+  const detail = cleanText(c.detail, DIAG_LIMITS.detail, true);
+  if (detail) out.detail = detail;
+  if (typeof c.value === 'number' && Number.isFinite(c.value)) out.value = c.value;
+  else if (typeof c.value === 'boolean') out.value = c.value;
+  else {
+    const value = cleanText(c.value, DIAG_LIMITS.value, false);
+    if (value) out.value = value;
+  }
+  const hint = cleanText(c.hint, DIAG_LIMITS.hint, true);
+  if (hint) out.hint = hint;
+  return out;
+}
+
+/** Worst status of the checks: fail > warn > ok (skipped counts as ok). */
+function summaryOf(checks) {
+  if (checks.some((c) => c.status === 'fail')) return 'fail';
+  if (checks.some((c) => c.status === 'warn')) return 'warn';
+  return 'ok';
+}
+
+/**
+ * Optional `diagnosis`: { startedAt, finishedAt, summary, checks: [{ id,
+ * status, title, detail?, value?, hint? }] } → the cleaned object, or null
+ * when nothing usable is left (not an object, no valid check and no valid
+ * summary). At most 30 checks; checks without a valid id/status are dropped;
+ * a missing/invalid summary is derived from the checks.
+ */
+function normalizeDiagnosis(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const checks = [];
+  if (Array.isArray(v.checks)) {
+    for (const c of v.checks) {
+      if (checks.length >= DIAG_MAX_CHECKS) break;
+      const n = normalizeCheck(c);
+      if (n) checks.push(n);
+    }
+  }
+  const validSummary = DIAG_SUMMARIES.has(v.summary);
+  if (!checks.length && !validSummary) return null;
+  const out = {};
+  const startedAt = isoTime(v.startedAt);
+  const finishedAt = isoTime(v.finishedAt);
+  if (startedAt) out.startedAt = startedAt;
+  if (finishedAt) out.finishedAt = finishedAt;
+  out.summary = validSummary ? v.summary : summaryOf(checks);
+  out.checks = checks;
+  return out;
+}
+
+/** The bundle with `description` / `diagnosis` cleaned (or removed when unusable). */
+function normalizeExtras(obj) {
+  if (!('description' in obj) && !('diagnosis' in obj)) return obj;
+  const out = { ...obj };
+  if ('description' in out) {
+    const d = normalizeDescription(out.description);
+    if (d) out.description = d; else delete out.description;
+  }
+  if ('diagnosis' in out) {
+    const d = normalizeDiagnosis(out.diagnosis);
+    if (d) out.diagnosis = d;
+    else {
+      delete out.diagnosis;
+      logger.debug('support bundle: unusable diagnosis dropped');
+    }
+  }
+  return out;
 }
 
 function timestampName() {
@@ -146,6 +253,10 @@ function store(peerId, bundle, meta = {}) {
     client_platform: shortString(client.platform, 20) || shortString(meta.platform, 20),
     os: shortString(client.os, 120),
     reason: bundle.reason === 'admin_request' || peer.support_bundle_requested_at ? 'admin_request' : 'user',
+    // Index copies for the inbox row and the notification (the file keeps
+    // the full text): the redacted description, cut for the list.
+    description: typeof redacted.description === 'string' ? redacted.description.slice(0, DESCRIPTION_PREVIEW) : null,
+    diagnosis_summary: redacted.diagnosis && DIAG_SUMMARIES.has(redacted.diagnosis.summary) ? redacted.diagnosis.summary : null,
   };
 
   const dir = peerDir(peer.id);
@@ -159,10 +270,11 @@ function store(peerId, bundle, meta = {}) {
   try {
     id = db.transaction(() => {
       const info = db.prepare(`
-        INSERT INTO support_bundles (peer_id, file_name, size_bytes, json_bytes, client_version, client_product, client_platform, os, reason, user_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO support_bundles (peer_id, file_name, size_bytes, json_bytes, client_version, client_product, client_platform, os, reason, user_id,
+          description, diagnosis_summary)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(peer.id, fileName, gz.byteLength, json.byteLength, row.client_version, row.client_product, row.client_platform, row.os, row.reason,
-        Number.isSafeInteger(meta.userId) && meta.userId > 0 ? meta.userId : null);
+        Number.isSafeInteger(meta.userId) && meta.userId > 0 ? meta.userId : null, row.description, row.diagnosis_summary);
       // The upload answers an open admin request.
       db.prepare('UPDATE peers SET support_bundle_requested_at = NULL WHERE id = ?').run(peer.id);
       return info.lastInsertRowid;
@@ -191,6 +303,8 @@ function toListItem(r) {
     viewed_at: r.viewed_at || null,
     viewed_by: r.viewed_by == null ? null : r.viewed_by,
     is_new: !r.viewed_at,
+    description: r.description || null,
+    diagnosis_summary: r.diagnosis_summary || null,
   };
 }
 
@@ -423,6 +537,10 @@ module.exports = {
   SCHEMA_VERSION,
   BundleError,
   parseBundle,
+  normalizeDiagnosis,
+  normalizeDescription,
+  DESCRIPTION_MAX,
+  DIAG_MAX_CHECKS,
   store,
   list,
   listAll,

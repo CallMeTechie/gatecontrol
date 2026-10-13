@@ -106,6 +106,16 @@ function inWgSubnet(v4) {
   return !!(wg && v4.match(wg[0], wg[1]));
 }
 
+/**
+ * 'tunnel' when a request from `ip` came through the WireGuard tunnel (source
+ * inside the WireGuard subnet, IPv4-mapped IPv6 unwrapped), else 'direct'.
+ * Also used by the speed test (GET /api/v1/client/speedtest → viaTunnel).
+ */
+function viaOf(ip) {
+  const v4 = toV4(ip);
+  return v4 && inWgSubnet(v4) ? 'tunnel' : 'direct';
+}
+
 function isExcludedIface(name) {
   const n = String(name || '').toLowerCase();
   if (!n) return true;
@@ -206,9 +216,9 @@ function fromPeerAddress(peer, v4) {
 async function check(ip, peerId) {
   const lan = lanEntries();
   const out = { lan: lan.entries.map((e) => e.address), same_lan: false, via: 'direct' };
-  const v4 = toV4(ip);
-  if (!v4 || !inWgSubnet(v4)) return out;
+  if (viaOf(ip) !== 'tunnel') return out;
   out.via = 'tunnel';
+  const v4 = toV4(ip);
   if (!lan.entries.length || peerId == null) return out;
   try {
     const peer = require('./peers').getById(peerId);
@@ -226,4 +236,4 @@ async function check(ip, peerId) {
   return out;
 }
 
-module.exports = { check, lanEntries, defaultGateways, EXCLUDED_IFACE_PREFIXES, MAX_LAN, _setInterfacesForTest, _setRouteTableForTest };
+module.exports = { check, viaOf, lanEntries, defaultGateways, EXCLUDED_IFACE_PREFIXES, MAX_LAN, _setInterfacesForTest, _setRouteTableForTest };

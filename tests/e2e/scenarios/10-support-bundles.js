@@ -4,7 +4,8 @@
 // inbox lists the seeded bundles (a new one from anna-pixel, a viewed one
 // from wohnzimmer-pc), filters by status and device, the peer list marks
 // the device, the peer dialog links to the viewer, the viewer renders every
-// section (redacted), filters the logs, marks the bundle viewed (sidebar
+// section (redacted) incl. problem description and diagnosis of the apps'
+// diagnosis assistant, filters the logs, marks the bundle viewed (sidebar
 // badge) and deletes; light/dark screenshots, no overflow at 400 px.
 //
 // Against the real API with the bundles from seed.js — no text comparisons,
@@ -41,6 +42,11 @@ module.exports = (ctx) => {
       await waitIdle(page);
       step('list renders the bundles', await until(page, (n) => document.querySelectorAll('#sb-tbody tr[data-bundle-id]').length >= n, 2));
       step('the new bundle is marked new', await count(page, `#sb-tbody tr.sb-row-new[data-bundle-id="${S.pixelBundle}"]`) === 1);
+      step('its row shows the diagnosis chip and the start of the problem description',
+        await count(page, `#sb-tbody tr[data-bundle-id="${S.pixelBundle}"] .sb-row-extra [data-diag="fail"]`) === 1
+        && await count(page, `#sb-tbody tr.sb-desc-row[data-desc-for="${S.pixelBundle}"] .sb-row-desc`) === 1
+        && await count(page, `#sb-tbody tr[data-bundle-id="${S.pcBundle}"] .sb-row-extra`) === 0
+        && await count(page, `#sb-tbody tr[data-desc-for="${S.pcBundle}"]`) === 0);
       step('sidebar badge shows 1 unviewed', (await page.locator('#sb-nav-badge').textContent()).trim() === '1');
       await theme(page, 'dark');
       await shot(page, 'support-list-dark');
@@ -76,7 +82,25 @@ module.exports = (ctx) => {
       // ── Viewer ──
       step('the view link opens the viewer', await visible(page, '#sb-viewer .sb-view-title', 10000), page.url());
       const secs = await page.locator('#sb-viewer [data-sec]').evaluateAll((ns) => ns.map((n) => n.dataset.sec));
-      step('viewer renders every section', ['tunnel', 'settings', 'network', 'wireguard', 'errors', 'logs', 'other', 'raw'].every((s) => secs.includes(s)), secs.join(' '));
+      step('viewer renders every section', ['description', 'diagnosis', 'tunnel', 'settings', 'network', 'wireguard', 'errors', 'logs', 'other', 'raw'].every((s) => secs.includes(s)), secs.join(' '));
+      const desc = await page.evaluate(() => {
+        const p = document.querySelector('#sb-viewer [data-sec="description"] .sb-desc');
+        return p ? { text: p.textContent, html: p.children.length, ws: getComputedStyle(p).whiteSpace } : null;
+      });
+      step('problem description: plain text with its line breaks, no markup',
+        !!desc && desc.text.includes('\n') && desc.text.includes('<b>kein HTML</b>') && desc.html === 0 && desc.ws === 'pre-wrap', JSON.stringify(desc));
+      const diag = await page.locator('#sb-viewer [data-sec="diagnosis"] .sb-diag-row').evaluateAll((ns) => ns.map((n) => n.dataset.check + ':' + n.dataset.status));
+      step('diagnosis: one row per check with its status, summary chip "fail"',
+        diag.join(' ') === 'internet:ok server:ok tunnel:ok handshake:warn dns:fail mtu:skipped speed:ok'
+        && await count(page, '#sb-viewer [data-sec="diagnosis"] .sb-sec-head [data-diag="fail"]') === 1, diag.join(' '));
+      step('diagnosis: hints and details render, colours differ per status', await page.evaluate(() => {
+        const row = (id) => document.querySelector(`#sb-viewer .sb-diag-row[data-check="${id}"]`);
+        const color = (id) => getComputedStyle(row(id).querySelector('.sb-diag-icon')).color;
+        return !!row('dns').querySelector('.sb-diag-hint') && !!row('handshake').querySelector('.sb-diag-detail')
+          && new Set([color('internet'), color('handshake'), color('dns'), color('mtu')]).size === 4;
+      }));
+      step('description and diagnosis are not repeated under "other data"',
+        !(await page.locator('#sb-viewer [data-sec="other"] .sb-sub-title').allTextContents()).some((t) => t === 'diagnosis' || t === 'description'));
       const viewerText = await page.locator('#sb-viewer').textContent();
       step('no secret reaches the page (WireGuard key, API token)',
         !viewerText.includes('yAnz5TF+lXXJte14tji3zlMNq') && !viewerText.includes('e2eSecretToken') && viewerText.includes('[REDACTED]'));
