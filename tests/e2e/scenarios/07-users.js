@@ -18,6 +18,9 @@ module.exports = (ctx) => {
   const idle = (page) => page.waitForLoadState('networkidle', { timeout: 4000 }).catch(() => {});
   const noOverflow = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
   const selected = async (page, tab) => await page.getAttribute(`#us-tab-${tab}`, 'aria-selected') === 'true';
+  // After a change the profile re-reads the user and renders again; wait for
+  // the result instead of a load state (networkidle is reached once per page).
+  const until = (page, fn, arg) => page.waitForFunction(fn, arg, { timeout: 8000 }).then(() => true, () => false);
 
   return {
     async users(page) {
@@ -118,11 +121,11 @@ module.exports = (ctx) => {
         page.waitForResponse((r) => r.url().endsWith(`/api/v1/users/${M}`) && r.request().method() === 'PATCH'),
         page.click('#us-pf-save'),
       ]);
-      await idle(page);
       step('saving sends PATCH /users/:id and the header follows', saved.status() === 200
         && saved.request().postDataJSON().displayName === 'Anna Schmidt-E2E'
-        && (await page.textContent('#up-name')) === 'Anna Schmidt-E2E');
+        && await until(page, (n) => document.getElementById('up-name').textContent === n, 'Anna Schmidt-E2E'));
       await api(page, 'PATCH', `/api/v1/users/${M}`, { displayName: 'Anna Schmidt' });
+      await idle(page);
 
       // ── Header: "Mehr" → change role ──
       await page.click('#up-more');
@@ -141,14 +144,14 @@ module.exports = (ctx) => {
         page.waitForResponse((r) => r.url().endsWith(`/api/v1/users/${M}/location-sharing`) && r.request().method() === 'PUT'),
         page.click('#up-loc-switch'),
       ]);
-      await idle(page);
       step('the location switch saves', off.status() === 200 && off.request().postDataJSON().enabled === false
-        && await page.getAttribute('#up-loc-switch', 'aria-checked') === 'false');
-      await Promise.all([
+        && await until(page, () => { const sw = document.getElementById('up-loc-switch'); return !!sw && !sw.disabled && sw.getAttribute('aria-checked') === 'false'; }));
+      const [on] = await Promise.all([
         page.waitForResponse((r) => r.url().endsWith(`/api/v1/users/${M}/location-sharing`) && r.request().method() === 'PUT'),
         page.click('#up-loc-switch'),
       ]);
-      await idle(page);
+      step('and switches back on', on.status() === 200
+        && await until(page, () => { const sw = document.getElementById('up-loc-switch'); return !!sw && !sw.disabled && sw.getAttribute('aria-checked') === 'true'; }));
 
       // ── Device page and back ──
       const dev = FIXTURES.devices.annaPixel;
