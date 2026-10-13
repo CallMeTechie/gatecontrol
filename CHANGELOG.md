@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.160.1] — 2026-10-13
+
+### Fixes
+- release the next merge even when two merges race (#298)
+
+---
+
 ## [1.160.0] — 2026-10-13
 
 ### Features
