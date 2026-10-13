@@ -65,6 +65,8 @@ router.use(require('./client/ping'));
 router.use(require('./client/peers'));
 router.use(require('./client/status'));
 router.use(require('./client/traffic'));
+// Open a service from the apps (optional one-time auto-login on the route).
+router.use(require('./client/serviceOpen'));
 router.use(require('./client/rdp'));
 router.use(require('./client/splitTunnel'));
 router.use(require('./client/policy'));

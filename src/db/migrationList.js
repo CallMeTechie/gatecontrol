@@ -2114,6 +2114,36 @@ const migrations = [
     detect: (db) => hasColumn(db, 'support_bundles', 'viewed_at') && hasColumn(db, 'support_bundles', 'viewed_by')
       && hasColumn(db, 'support_bundles', 'user_id'),
   },
+  {
+    version: 95,
+    name: 'route_auth_app_login',
+    // "Anmeldung aus den GateControl-Apps erlauben" (per route, opt-in): a
+    // device that may see the route (GET /api/v1/client/services) opens it
+    // from the app without the route-auth login page (one-time ticket,
+    // services/routeAppTickets.js). Default off — existing routes keep their
+    // login page.
+    sql: 'ALTER TABLE route_auth ADD COLUMN app_login INTEGER NOT NULL DEFAULT 0;',
+    detect: (db) => hasColumn(db, 'route_auth', 'app_login'),
+  },
+  {
+    version: 96,
+    name: 'route_app_tickets',
+    // One-time tickets of POST /api/v1/client/services/:id/open, redeemed at
+    // GET /route-auth/app/:ticket on the route's own domain. Only the SHA-256
+    // of the ticket is stored; 60 s TTL, single use (used_at). expires_at /
+    // used_at are epoch milliseconds (same as portal_tickets).
+    sql: `
+      CREATE TABLE IF NOT EXISTS route_app_tickets (
+        ticket_hash TEXT PRIMARY KEY,
+        route_id INTEGER NOT NULL,
+        token_id INTEGER,
+        user_id INTEGER,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_route_app_tickets_expires ON route_app_tickets(expires_at);`,
+    detect: (db) => tableExists(db, 'route_app_tickets'),
+  },
 ];
 
 module.exports = { migrations };

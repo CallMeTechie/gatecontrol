@@ -3,8 +3,10 @@
 const { Router } = require('express');
 const config = require('../../config/default');
 const { i18nMiddleware } = require('../middleware/i18n');
-const { routeAuthLoginLimiter, routeAuthCodeLimiter, shareRedeemLimiter } = require('../middleware/rateLimit');
+const { routeAuthLoginLimiter, routeAuthCodeLimiter, shareRedeemLimiter, routeAppRedeemLimiter } = require('../middleware/rateLimit');
 const shareLinks = require('../services/shareLinks');
+const routeAppTickets = require('../services/routeAppTickets');
+const activity = require('../services/activity');
 const {
   getAuthByDomain,
   verifySession,
@@ -140,6 +142,69 @@ router.get('/verify', (req, res) => {
   })().catch(() => res.sendStatus(500));
 });
 
+// Generic invalid/expired view of the token redeems (share link, app
+// ticket) — the same page for every failure, no enumeration signal.
+function renderRedeemInvalid(req, res) {
+  return res.status(200).render(`${res.locals.theme}/pages/route-auth-login.njk`, {
+    domain: req.query.route || req.headers['x-forwarded-host'] || req.headers.host || '',
+    redirect: '/', authType: 'share', shareInvalid: true,
+    twoFactorEnabled: false, twoFactorMethod: null, is2faStep2: false,
+    maskedEmail: '', routeCsrfToken: '', branding: null,
+  });
+}
+
+// Host of the request as the browser sent it (Caddy sets X-Forwarded-Host),
+// lower-case, without port.
+function requestHost(req) {
+  const raw = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim().toLowerCase();
+  if (raw.startsWith('[')) return raw.slice(0, raw.indexOf(']') + 1);
+  const colon = raw.indexOf(':');
+  return colon === -1 ? raw : raw.slice(0, colon);
+}
+
+// GET /route-auth/app/:ticket — automatic login from the apps
+// (POST /api/v1/client/services/:id/open, route_auth.app_login). The ticket
+// IS the credential; it is single use and lives 60 s. Reached via the Caddy
+// /route-auth/* sibling proxy on the route's own domain, so the session
+// cookie lands on that domain. Never logs the ticket.
+router.get('/app/:ticket', routeAppRedeemLimiter, (req, res) => {
+  try {
+    res.set('Referrer-Policy', 'no-referrer');
+    res.set('Cache-Control', 'no-store');
+    const t = routeAppTickets.consume(req.params.ticket);
+    if (!t) return renderRedeemInvalid(req, res);
+
+    // Re-check at redeem time: the admin may have switched app login off,
+    // disabled the route, enabled Basic Auth, restricted it, revoked the
+    // device or disabled its owner in the meantime.
+    const { getDb } = require('../db/connection');
+    const db = getDb();
+    const route = db.prepare('SELECT id, domain, enabled, basic_auth_enabled FROM routes WHERE id = ?').get(t.routeId);
+    const authConfig = route ? db.prepare('SELECT * FROM route_auth WHERE route_id = ?').get(route.id) : null;
+    const tokenOk = (t.tokenId == null || !!db.prepare('SELECT 1 FROM api_tokens WHERE id = ?').get(t.tokenId))
+      && (t.userId == null || require('../services/users').isEnabled(t.userId));
+    const visible = !!route && require('../services/routes').getForUser(t.userId || null).some((r) => r.id === route.id);
+    if (!route || !route.enabled || route.basic_auth_enabled || !authConfig || authConfig.app_login !== 1
+        || !tokenOk || !visible || String(route.domain).toLowerCase() !== requestHost(req)) {
+      return renderRedeemInvalid(req, res);
+    }
+
+    const who = t.userId != null ? `app:user:${t.userId}` : `app:token:${t.tokenId}`;
+    const maxAge = authConfig.session_max_age || 86400000;
+    const { id: sessionId } = createSession(route.id, who, req.ip, maxAge, false);
+    setSessionCookie(res, sessionId, maxAge);
+    activity.log('route_app_login', `Route ${route.id} opened from the app (automatic login)`, {
+      details: { routeId: route.id, tokenId: t.tokenId, userId: t.userId },
+      source: 'client',
+      ipAddress: req.ip,
+      severity: 'info',
+    });
+    return res.redirect('/');
+  } catch {
+    return res.sendStatus(500);
+  }
+});
+
 // GET /route-auth/share/:token — redeem a share link (the token IS the
 // credential; no login). Reached via the Caddy /route-auth/* sibling proxy
 // (bypasses forward_auth), so it works even when the route is share-gated.
@@ -149,12 +214,7 @@ router.get('/share/:token', shareRedeemLimiter, (req, res) => {
     const result = shareLinks.redeemShareLink(req.params.token, req.ip);
     if (!result) {
       // Generic invalid/expired view — no enumeration signal.
-      return res.status(200).render(`${res.locals.theme}/pages/route-auth-login.njk`, {
-        domain: req.query.route || req.headers['x-forwarded-host'] || req.headers.host || '',
-        redirect: '/', authType: 'share', shareInvalid: true,
-        twoFactorEnabled: false, twoFactorMethod: null, is2faStep2: false,
-        maskedEmail: '', routeCsrfToken: '', branding: null,
-      });
+      return renderRedeemInvalid(req, res);
     }
     const maxAge = new Date(result.expiresAt).getTime() - Date.now();
     setSessionCookie(res, result.sessionId, maxAge > 0 ? maxAge : 1000);

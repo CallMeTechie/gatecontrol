@@ -33,6 +33,7 @@ router.get('/', (req, res) => {
       ok: true,
       data: {
         ...rest,
+        app_login: !!rest.app_login,
         has_password: !!password_hash,
         has_totp: !!totp_secret_encrypted,
       },
@@ -63,6 +64,9 @@ router.post('/', requireFeature('route_auth'), (req, res) => {
       password,
       totp_secret,
       session_max_age,
+      // "Anmeldung aus den GateControl-Apps erlauben" — boolean-ish, optional
+      // (omitted = keep the stored value). POST /api/v1/client/services/:id/open
+      app_login,
     } = req.body;
 
     // Validate auth_type
@@ -119,6 +123,7 @@ router.post('/', requireFeature('route_auth'), (req, res) => {
         password,
         totp_secret,
         session_max_age,
+        app_login,
       },
       req.ip
     );
@@ -136,6 +141,7 @@ router.post('/', requireFeature('route_auth'), (req, res) => {
       ok: true,
       data: {
         ...rest,
+        app_login: !!rest.app_login,
         has_password: !!password_hash,
         has_totp: !!totp_secret_encrypted,
       },

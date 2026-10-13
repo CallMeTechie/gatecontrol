@@ -813,12 +813,15 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
             wrap: { format: 'json' },
             fields: {
               // Credentials in URLs never reach the access log: guest share
-              // links and the one-time portal login link of the apps
-              // (<portal>/auto?t=…, routes/portal.js).
+              // links, the one-time route login link of the apps
+              // (/route-auth/app/<ticket>, routes/routeAuth.js) and the
+              // one-time portal login link of the apps (<portal>/auto?t=…,
+              // routes/portal.js).
               'request>uri': {
                 filter: 'multi_regexp',
                 operations: [
                   { regexp: '/route-auth/share/[^/?]+', value: '/route-auth/share/REDACTED' },
+                  { regexp: '/route-auth/app/[^/?]+', value: '/route-auth/app/REDACTED' },
                   { regexp: '^/auto\\?.*$', value: '/auto?REDACTED' },
                 ],
               },

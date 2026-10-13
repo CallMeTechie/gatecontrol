@@ -116,6 +116,16 @@ function getAuthByDomain(domain) {
 }
 
 /**
+ * Boolean-ish → 0/1 (true, 1, '1', 'true', 'on' → 1; everything else → 0).
+ * Used for app_login ("Anmeldung aus den GateControl-Apps erlauben").
+ */
+function toFlag(v) {
+  if (v === true || v === 1) return 1;
+  if (typeof v === 'string') return ['1', 'true', 'on', 'yes'].includes(v.trim().toLowerCase()) ? 1 : 0;
+  return 0;
+}
+
+/**
  * Create or update auth config for a route.
  * Disables basic_auth on the route (mutual exclusivity).
  * Hashes password with argon2, encrypts TOTP secret.
@@ -131,6 +141,7 @@ async function createOrUpdateAuth(routeId, data, ipAddress) {
     password,
     totp_secret,
     session_max_age,
+    app_login,
   } = data;
 
   // Hash password if provided
@@ -159,6 +170,7 @@ async function createOrUpdateAuth(routeId, data, ipAddress) {
     if (passwordHash !== undefined) { fields.push('password_hash = ?'); values.push(passwordHash); }
     if (totpSecretEncrypted !== undefined) { fields.push('totp_secret_encrypted = ?'); values.push(totpSecretEncrypted); }
     if (session_max_age !== undefined) { fields.push('session_max_age = ?'); values.push(session_max_age); }
+    if (app_login !== undefined) { fields.push('app_login = ?'); values.push(toFlag(app_login)); }
 
     if (fields.length > 0) {
       fields.push("updated_at = datetime('now')");
@@ -167,8 +179,8 @@ async function createOrUpdateAuth(routeId, data, ipAddress) {
     }
   } else {
     db.prepare(`
-      INSERT INTO route_auth (route_id, auth_type, two_factor_enabled, two_factor_method, email, password_hash, totp_secret_encrypted, session_max_age)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO route_auth (route_id, auth_type, two_factor_enabled, two_factor_method, email, password_hash, totp_secret_encrypted, session_max_age, app_login)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       routeId,
       auth_type || 'password',
@@ -177,7 +189,8 @@ async function createOrUpdateAuth(routeId, data, ipAddress) {
       email || null,
       passwordHash || null,
       totpSecretEncrypted || null,
-      session_max_age !== undefined ? session_max_age : 86400000
+      session_max_age !== undefined ? session_max_age : 86400000,
+      toFlag(app_login)
     );
   }
 
@@ -187,7 +200,7 @@ async function createOrUpdateAuth(routeId, data, ipAddress) {
   `).run(routeId);
 
   activity.log('route_auth_updated', `Route auth configured for route ${routeId}`, {
-    details: { routeId, auth_type, two_factor_enabled, two_factor_method },
+    details: { routeId, auth_type, two_factor_enabled, two_factor_method, app_login: app_login === undefined ? undefined : !!toFlag(app_login) },
     source: 'admin',
     ipAddress,
     severity: 'success',

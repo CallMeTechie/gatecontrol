@@ -94,7 +94,29 @@ function hashConfig(config) {
   return crypto.createHash('sha256').update(config).digest('hex');
 }
 
+// How a route of GET /api/v1/client/services is protected, with the same
+// precedence as the Caddy config (caddyConfig.js: Basic Auth wins over a
+// route_auth row). `authRow` is the route's route_auth row ({ app_login })
+// or undefined.
+//   auth      'basic' | 'route' | 'none'
+//   appLogin  true only for route-auth with "Anmeldung aus den
+//             GateControl-Apps erlauben" (route_auth.app_login = 1)
+function routeAuthSummary(route, authRow) {
+  if (route && route.basic_auth_enabled) return { auth: 'basic', appLogin: false };
+  if (authRow) return { auth: 'route', appLogin: authRow.app_login === 1 };
+  return { auth: 'none', appLogin: false };
+}
+
+// routes.monitoring_status → 'up' | 'down' | null (monitoring off or no
+// verdict yet).
+function routeStatus(route) {
+  if (!route || route.monitoring_enabled !== 1) return null;
+  return route.monitoring_status === 'up' || route.monitoring_status === 'down' ? route.monitoring_status : null;
+}
+
 module.exports = {
+  routeAuthSummary,
+  routeStatus,
   clientLabel,
   requirePeerOwnership,
   verifyMachineBinding,

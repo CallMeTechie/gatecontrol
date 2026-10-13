@@ -6,7 +6,7 @@ const peers = require('../../../services/peers');
 const routes = require('../../../services/routes');
 const settings = require('../../../services/settings');
 const logger = require('../../../utils/logger');
-const { requirePeerOwnership, verifyMachineBinding } = require('./helpers');
+const { requirePeerOwnership, verifyMachineBinding, routeAuthSummary, routeStatus } = require('./helpers');
 const { getDb } = require('../../../db/connection');
 
 const router = Router();
@@ -59,12 +59,21 @@ router.get('/traffic', (req, res) => {
 
 /**
  * GET /api/v1/client/services
- * Returns list of configured HTTP routes (services) the client can access
+ * Returns list of configured HTTP routes (services) the client can access.
+ *
+ *   status    'up' | 'down' | null  (monitoring off / no verdict yet)
+ *   auth      'route' | 'basic' | 'none'
+ *   appLogin  true → POST /services/:id/open answers a one-time auto-login
+ *             URL (route_auth.app_login, "Anmeldung aus den
+ *             GateControl-Apps erlauben")
  */
 router.get('/services', (req, res) => {
   try {
     const userId = req.tokenUserId || null;
     const filtered = routes.getForUser(userId);
+    // One query for all route_auth rows instead of one per route.
+    const authRows = new Map(getDb().prepare('SELECT route_id, app_login FROM route_auth').all()
+      .map((row) => [row.route_id, row]));
 
     const services = filtered.map(r => ({
       id: r.id,
@@ -73,6 +82,8 @@ router.get('/services', (req, res) => {
       url: `https://${r.domain}`,
       hasAuth: r.route_auth_enabled === 1,
       tls: r.tls_mode || 'auto',
+      status: routeStatus(r),
+      ...routeAuthSummary(r, authRows.get(r.id)),
     }));
 
     res.json({ ok: true, services });

@@ -195,6 +195,7 @@ function createBackup() {
       two_factor_enabled: ra.two_factor_enabled,
       two_factor_method: ra.two_factor_method,
       session_max_age: ra.session_max_age,
+      app_login: ra.app_login ? 1 : 0,
       created_at: ra.created_at,
       updated_at: ra.updated_at,
     };
@@ -615,8 +616,8 @@ async function restoreBackup(backup) {
     if (Array.isArray(routeAuth) && routeAuth.length > 0) {
       const insertRouteAuth = db.prepare(`
         INSERT INTO route_auth (route_id, auth_type, email, password_hash, totp_secret_encrypted,
-                                two_factor_enabled, two_factor_method, session_max_age)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                two_factor_enabled, two_factor_method, session_max_age, app_login)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const ra of routeAuth) {
         if (!ra.route_domain) continue;
@@ -631,6 +632,7 @@ async function restoreBackup(backup) {
           ra.two_factor_enabled ? 1 : 0,
           ra.two_factor_method || null,
           ra.session_max_age !== undefined ? ra.session_max_age : 86400000,
+          ra.app_login ? 1 : 0,
         );
       }
     }
