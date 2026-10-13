@@ -78,6 +78,7 @@ router.use(require('./client/homeNetwork'));
 // Notification center: ack, inbox, prefs, test (the stream itself is mounted
 // in routes/index.js before the apiLimiter).
 router.use(require('./client/push'));
+router.use(require('./client/actions')); // plugin quick actions of the apps (shortcuts, tiles, widget)
 
 module.exports = router;
 module.exports.updateRouter = require('./client/update');

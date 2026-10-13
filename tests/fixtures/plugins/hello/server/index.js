@@ -162,6 +162,28 @@ module.exports = {
     return all.filter((r) => r && typeof r.title === 'string' && r.title.toLowerCase().includes(payload.q.toLowerCase()));
   },
 
+  // quick actions of the apps (tests/plugins_quick_actions.test.js) from kv
+  // "quick-actions" ('$viewer' as title → the viewer it got); "quick-mode" /
+  // "quick-run-mode" make the plugin misbehave, "quick-result" is the run's answer
+  async quickActions(payload, gc) {
+    const mode = await gc.storage.get('quick-mode');
+    if (mode === 'slow') await new Promise((r) => setTimeout(r, 5000));
+    if (mode === 'throw') throw new Error('broken on purpose');
+    if (mode === 'garbage') return 'not a list';
+    const list = (await gc.storage.get('quick-actions')) || [];
+    const u = payload.user;
+    return list.map((x) => (x && x.title === '$viewer' ? { ...x, title: `v${u.id} ${u.portal}/${u.loggedIn}/${u.app} ${payload.lang}` } : x));
+  },
+  async runQuickAction(payload, gc) {
+    const mode = await gc.storage.get('quick-run-mode');
+    if (mode === 'slow') await new Promise((r) => setTimeout(r, 4000));
+    if (mode === 'throw') throw new Error('broken on purpose');
+    if (mode === 'garbage') return 'not an object';
+    await gc.storage.set('quick-last', { id: payload.id, user: payload.user, lang: payload.lang });
+    const r = await gc.storage.get('quick-result');
+    return r === null || r === undefined ? { ok: true, message: 'ran ' + payload.id, state: 'on' } : r;
+  },
+
   // built-in data handed over by the host (tests/plugins_legacy.test.js)
   async legacyImport(snapshot, gc) {
     if (await gc.storage.get('legacy-refuse')) return { ok: false };

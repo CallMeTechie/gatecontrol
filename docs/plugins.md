@@ -291,6 +291,12 @@ module.exports = {
   },
   async portalTiles({ user, lang }, gc) { return []; },     // optional: Start tiles (see "Portal")
   async portalSearch({ user, lang, q }, gc) { return []; }, // optional: portal search results
+  async quickActions({ user, lang }, gc) {   // optional: quick actions of the apps (see "Quick actions")
+    return [{ id: 'light:3', title: 'Wohnzimmer', subtitle: 'Licht', icon: '<svg path d>', kind: 'toggle', state: 'on' }];
+  },
+  async runQuickAction({ user, lang, id }, gc) {  // optional: runs one of them for that viewer
+    return { ok: true, message: 'Licht eingeschaltet', state: 'on' };
+  },
   async legacyImport(snapshot, gc) {        // optional, first-party only: built-in data handed over once
     return { ok: true };                    // (see "Built-in data import" below)
   },
@@ -327,7 +333,9 @@ need a portal or web login). A portal viewer comes as `user.portal = true` with
 only recognised by device trust (read-only) — data as sensitive as a vehicle's
 position or departure times belongs to a real login only. The portal hooks
 (`portalVisible`, `portalTiles`, `portalSearch`) and `render` get the same
-viewer.
+viewer; the quick-action hooks (`quickActions`, `runQuickAction`) get the
+owner of the app's device token as that viewer, with `loggedIn: true` and
+`app: true` (see "Quick actions").
 
 ## Notifications
 
@@ -476,6 +484,9 @@ disable/uninstall and when the server shuts down.
     capped and control characters removed; a tile/result naming a section
     the viewer cannot see is dropped. The hooks get the viewer and must only
     answer with what that person may see (the host passes nobody else).
+* **Quick actions** (`src/services/plugins/quickActions.js`): see "Quick
+  actions" below — declarative actions for the apps' home-screen shortcuts,
+  Quick Settings tiles and widget.
 * Sandboxed frames have no `alert`/`confirm`/`prompt` (no `allow-modals`):
   plugins draw their own dialogs. The frame grows with its content and with
   an open dialog (visible `position: fixed` elements count with their full
@@ -483,6 +494,79 @@ disable/uninstall and when the server shuts down.
   frame (e.g. `.modal-overlay { position: fixed; inset: 0 }`) makes
   GateControl dim its own page around the frame as well, so the dialog reads
   as one of the whole page.
+
+## Quick actions
+
+Plugins can offer small actions to the GateControl apps — Android home-screen
+shortcuts, Quick Settings tiles and the widget (light on/off, start a scene,
+open the garage …). Like the Start tiles they are declarative data: the apps
+render them, never plugin HTML.
+
+```js
+async quickActions({ user, lang }, gc) {
+  // ≤ 16 entries
+  return [
+    { id: 'light:3', title: 'Wohnzimmer', subtitle: 'Licht', icon: 'M4 12h16', kind: 'toggle', state: 'on' },
+    { id: 'scene:evening', title: 'Abend', kind: 'button', confirm: true },
+  ];
+},
+async runQuickAction({ user, lang, id }, gc) {
+  return { ok: true, message: 'Licht eingeschaltet', state: 'on' };   // state optional (new toggle state)
+},
+```
+
+* **Who is asked**: plugins that may run (enabled, compatible, signed or
+  allowed, licensed), are running and have **`permissions.portal`** — the
+  actions run as the identified viewer, like the portal hooks. There is no
+  permission of their own. A plugin without the hooks has no actions.
+* **Viewer**: the owner of the app's API token as
+  `user = { id, name, role, portal: true, loggedIn: true, app: true }` — the
+  shape the portal hooks get. `loggedIn` is `true` because a (machine-bound)
+  device token of that person is a real credential, unlike device trust in
+  the portal; `app: true` tells the plugin the call comes from an app. A
+  token without an owner gets no actions (and 403 for a run). The hooks must
+  only list and run what that person may see and do.
+* **`quickActions`** — 1.5 s per plugin, all plugins in parallel; a slow,
+  failing or garbage-answering plugin only loses its own actions. At most 16
+  per plugin; each entry is validated and an invalid one dropped:
+  * `id` `[A-Za-z0-9:._-]{1,64}`, unique per plugin (later duplicates dropped);
+  * `title` (required, ≤ 40 characters), `subtitle` (≤ 60) — control
+    characters removed;
+  * `icon`: an SVG path like `ui.nav.icon` (path characters only, ≤ 2000),
+    otherwise `null`;
+  * `kind`: `button` (default) or `toggle`; any other value drops the entry;
+  * `state`: `on`/`off`, toggles only (otherwise `null`);
+  * `confirm`: `true` → the app asks before running it (default `false`).
+* **`runQuickAction`** — 10 s, only for an id the plugin currently lists for
+  that viewer: the host asks that plugin's `quickActions` first (1.5 s) and
+  answers 404 for anything else. The answer is sanitised to
+  `{ ok, message, state }`: `ok` is `false` only when the plugin says
+  `ok: false`, `message` ≤ 120 characters (or `null`), `state` `on`/`off`
+  (or `null`). Every run is an activity log entry `plugin_quick_action`
+  (info, details `{ plugin, action, userId, ok }` — no text of the plugin).
+* **Language** `lang` (`de`/`en`): `?lang=` of the request, else the owner's
+  language setting, else `Accept-Language`, else `de`.
+
+Client API (`src/routes/api/client/actions.js`): API token with scope
+`client` or `full-access`, machine binding like the other `/api/v1/client/*`
+routes (a browser session gets 403 `token_required`), `Cache-Control: no-store`.
+
+```
+GET  /api/v1/client/actions
+  200 { ok: true, actions: [{ plugin: '<plugin id>', pluginName: '<localised name>',
+                              id, title, subtitle, icon, kind, state, confirm }] }
+
+POST /api/v1/client/actions/:plugin/:id        (≤ 30 runs per minute and token)
+  200 { ok, message, state }
+  403 { ok: false, error: 'no_user' }          token without an owner
+  404 { ok: false, error: 'not_found' }        unknown plugin / action
+  502 { ok: false, error: 'plugin_error' }     the plugin failed or answered garbage
+  504 { ok: false, error: 'timeout' }          no answer in time
+  429 { ok: false, error: 'rate_limited' }
+```
+
+A toggle's new `state` comes with the run's answer; the apps reload the list
+when they show their shortcuts, tiles or widget.
 
 ## Licences
 
@@ -653,7 +737,7 @@ install (`plugin_installed`) · update (`plugin_updated`) · enable/disable
 (`plugin_suspended`) · uninstall (`plugin_uninstalled`, mode keep/wipe) ·
 "Unsignierte Plugins erlauben" (`plugin_unsigned_allowed`/`plugin_unsigned_blocked`)
 · access targets (`plugin_target_changed`) · plugin notifications
-(`plugin_notice`).
+(`plugin_notice`) · quick actions run from an app (`plugin_quick_action`).
 
 Uninstall *Daten behalten* removes code and registry entry and keeps data,
 licence and access targets for a reinstall; *Alles löschen* (typed plugin name)
