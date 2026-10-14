@@ -184,6 +184,18 @@ module.exports = {
     return r === null || r === undefined ? { ok: true, message: 'ran ' + payload.id, state: 'on' } : r;
   },
 
+  // app tab (tests/plugins_app.test.js): hidden for the user ids in kv
+  // "app-hidden"; "app-mode" makes the hook misbehave; the viewer it got is
+  // kept in "app-last"
+  async appVisible(user, gc) {
+    const mode = await gc.storage.get('app-mode');
+    if (mode === 'slow') await new Promise((r) => setTimeout(r, 5000));
+    if (mode === 'throw') throw new Error('broken on purpose');
+    await gc.storage.set('app-last', user);
+    const hidden = await gc.storage.get('app-hidden');
+    return !(Array.isArray(hidden) && hidden.includes(user.id));
+  },
+
   // built-in data handed over by the host (tests/plugins_legacy.test.js)
   async legacyImport(snapshot, gc) {
     if (await gc.storage.get('legacy-refuse')) return { ok: false };

@@ -300,7 +300,13 @@ ist), nicht alle Geräte der Personen, denen dort ein Gerät gehört.
 * **Bündeln:** Innerhalb von `bundle_s` werden gleiche Ereignisse zu einer
   Nachricht zusammengefasst („4 IPs durch WAF gesperrt“). Die Geräte bekommen
   die vorhandene Benachrichtigung aktualisiert statt einer neuen.
-* **Prioritäten für Plugins:** höchstens `high`. `critical` bleibt dem System vorbehalten.
+* **Prioritäten für Plugins:** höchstens `high`. `critical` bleibt dem System
+  vorbehalten — außer bei einem Thema, das in `notifyTopics[]` mit
+  `"allowCritical": true` erklärt ist (z. B. SOS eines Familien-Plugins): dort
+  bleibt `critical` erhalten und überspringt die Ruhezeit wie die kritischen
+  Kernereignisse. Der Installationsdialog nennt das. Budget pro Plugin:
+  `permissions.notify: true` = 30 pro Stunde, `{ "perHour": n }` = n (1–120);
+  siehe docs/plugins.md „Notifications“.
 * **Umsetzung (Phase 1a):**
   * Abos: ein Schalter pro Person und Thema. Ohne Eintrag gilt der Standard
     (System-Themen an, Plugin-Themen laut `notifyTopics[].default`). „Aus“
@@ -335,7 +341,7 @@ gc.notify({
   topic: 'charging',              // muss in plugin.json deklariert sein
   title: 'Laden abgeschlossen',
   body: 'Enyaq · 80 % · ca. 390 km',
-  priority: 'normal',             // info|normal|high
+  priority: 'normal',             // info|normal|high (critical nur mit allowCritical)
   users: [12],                    // optional: nur diese Personen (sonst Abonnenten)
   collapseKey: 'charge:VIN123',   // optional
   ttl: 6 * 3600,                  // optional, Sekunden

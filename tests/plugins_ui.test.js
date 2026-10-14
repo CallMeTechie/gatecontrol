@@ -111,7 +111,8 @@ describe('sidebar, plugin page, frame', () => {
   it('portal: running plugins with the portal permission get a tab', () => {
     assert.deepEqual(plugins.portalTabs('en'), [{ id: 'hello', key: 'plg-hello', label: 'Hello', icon: 'M4 12h16' }]);
     const tpl = fs.readFileSync(path.join(__dirname, '..', 'templates', 'portal', 'portal.njk'), 'utf8');
-    assert.match(tpl, /src="\/portal\/plugins\/\{\{ pt\.id \}\}\/frame" sandbox="allow-scripts allow-forms"/);
+    // popups only for ui.maps plugins (docs/plugins.md "Maps")
+    assert.match(tpl, /src="\/portal\/plugins\/\{\{ pt\.id \}\}\/frame" sandbox="allow-scripts allow-forms\{% if pt\.maps %\} allow-popups allow-popups-to-escape-sandbox\{% endif %\}"/);
   });
 });
 

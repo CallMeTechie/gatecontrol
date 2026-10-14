@@ -442,3 +442,36 @@ const speedtestLimiter = rateLimit({
   },
 });
 module.exports.speedtestLimiter = speedtestLimiter;
+
+// /api/v1/client/plugins* — the apps' plugin API (docs/plugins.md "App"):
+// 240 requests per minute and device token (an app syncing a shopping list
+// or answering a locate request, not a scraper). Mounted before the general
+// apiLimiter, which would cap an app at GC_RATE_LIMIT_API per 15 minutes.
+// Failed requests count too.
+const clientPluginApiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.tokenAuth && req.tokenId != null ? `client-plugins:${req.tokenId}` : `client-plugins-ip:${ipKeyGenerator(req.ip)}`),
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, code: 'rate_limited', error: req.t ? req.t('error.rate_limit.api') : 'rate_limited' });
+  },
+});
+module.exports.clientPluginApiLimiter = clientPluginApiLimiter;
+
+// /plugins/_shared/leaflet/* — the vendored Leaflet for map frames of ui.maps
+// plugins (docs/plugins.md "Maps"). Public static files (a sandboxed frame
+// sends no cookies), so per address and generous: one map frame loads up to
+// five files. Own bucket, so map assets never eat the plugin page budget.
+const pluginAssetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => config.auth.rateLimitApi * 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `plugin-asset:${ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    res.status(429).type('text/plain').send('rate_limited');
+  },
+});
+module.exports.pluginAssetLimiter = pluginAssetLimiter;

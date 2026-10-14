@@ -11,7 +11,7 @@ const licensing = require('./licensing');
 const { LIMITS, TIMEOUTS } = require('./constants');
 
 const METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']);
-const NOTIFY_PER_HOUR = 30;
+const { NOTIFY_PER_HOUR_DEFAULT, NOTIFY_PER_HOUR_MAX } = require('./manifest');
 const notifyWindow = new Map();
 
 class HostApiError extends Error {
@@ -223,11 +223,17 @@ function userView(u) {
 const NOTIFY_PRIORITIES = ['info', 'normal', 'high', 'critical'];
 const SEVERITY_PRIORITY = { info: 'info', success: 'info', warning: 'normal', error: 'normal' };
 
-/** Count one message against the plugin's 30/h. */
+/** The plugin's budget per hour: permissions.notify { perHour } (1…120), else 30. */
+function notifyPerHour(plugin) {
+  const n = plugin.manifest.permissions && plugin.manifest.permissions.notifyPerHour;
+  return Number.isInteger(n) && n >= 1 && n <= NOTIFY_PER_HOUR_MAX ? n : NOTIFY_PER_HOUR_DEFAULT;
+}
+
+/** Count one message against the plugin's budget per hour. */
 function notifyBudget(plugin) {
   const now = Date.now();
   const w = (notifyWindow.get(plugin.id) || []).filter((t) => now - t < 3600000);
-  need(w.length < NOTIFY_PER_HOUR, 'ERR_RATE_LIMIT', 'too many notifications');
+  need(w.length < notifyPerHour(plugin), 'ERR_RATE_LIMIT', 'too many notifications');
   w.push(now);
   notifyWindow.set(plugin.id, w);
 }
@@ -240,7 +246,10 @@ function notifyBudget(plugin) {
  *   gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data })
  *                                      push on a topic declared in
  *                                      plugin.json notifyTopics (+ activity row)
- * Push needs the email_alerts licence; priority is capped at `high`.
+ * Push needs the email_alerts licence; priority is capped at `high`, except
+ * on a topic declared with `allowCritical` (critical bypasses quiet hours
+ * like the core's critical events). Budget: permissions.notify — true = 30
+ * per hour, { perHour: n } = n (1…120).
  */
 function notify(plugin, args) {
   need(plugin.manifest.permissions && plugin.manifest.permissions.notify, 'ERR_NOTIFY_DENIED', 'this plugin has no notify permission');
@@ -250,13 +259,15 @@ function notify(plugin, args) {
   if (n && typeof n === 'object' && !Array.isArray(n)) {
     const topic = n.topic == null ? 'default' : String(n.topic);
     const declared = Array.isArray(plugin.manifest.notifyTopics) ? plugin.manifest.notifyTopics : [];
-    need(topic === 'default' || declared.some((t) => t && t.id === topic), 'ERR_INVALID', 'topic not declared in notifyTopics');
+    const decl = declared.find((t) => t && t.id === topic) || null;
+    need(topic === 'default' || decl, 'ERR_INVALID', 'topic not declared in notifyTopics');
     const title = sanitize.title(n.title);
     need(title, 'ERR_INVALID', 'empty title');
     const body = sanitize.body(n.body);
     let priority = n.priority == null ? 'normal' : n.priority;
     need(NOTIFY_PRIORITIES.includes(priority), 'ERR_INVALID', 'invalid priority');
-    if (priority === 'critical') priority = 'high';
+    const allowCritical = topic !== 'default' && !!(decl && decl.allowCritical === true);
+    if (priority === 'critical' && !allowCritical) priority = 'high';
     let users = null;
     if (n.users != null) {
       need(Array.isArray(n.users) && n.users.length <= 100 && n.users.every((u) => Number.isSafeInteger(u) && u > 0), 'ERR_INVALID', 'invalid users');
@@ -275,17 +286,19 @@ function notify(plugin, args) {
     need(n.data == null || (typeof n.data === 'object' && !Array.isArray(n.data)), 'ERR_INVALID', 'invalid data');
     const d = sanitize.data(n.data == null ? { route: `plg-${plugin.id}` } : { route: `plg-${plugin.id}`, ...n.data });
     need(d.ok, 'ERR_INVALID', 'data too large (max 4 KB)');
-    // The apps have no screen of their own for a plugin: an action opening
-    // the plugin's app route opens the plugin in the portal instead (its own
-    // tab, or the GateControl tab holding its sections — portal "#plg-<id>").
-    if (d.data && Array.isArray(d.data.actions)) {
+    // A plugin without its own app tab (ui.app) has no screen in the apps: an
+    // action opening the plugin's app route opens the plugin in the portal
+    // instead (its own tab, or the GateControl tab holding its sections —
+    // portal "#plg-<id>"). With ui.app the app route stays.
+    const appTab = !!(plugin.manifest.ui && plugin.manifest.ui.app);
+    if (!appTab && d.data && Array.isArray(d.data.actions)) {
       d.data.actions = d.data.actions.map((a) => (a.type === 'open_app_route' && a.target === `plg-${plugin.id}`
         ? { ...a, type: 'open_portal', target: `/portal#plg-${plugin.id}` }
         : a));
     }
     notifyBudget(plugin);
     require('../activity').log('plugin_notice', `${plugin.name}: ${title}`, { source: 'plugin', severity: 'info', details: { plugin: plugin.id, topic } });
-    const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, collapseKey, ttl, data: d.data });
+    const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, collapseKey, ttl, data: d.data, allowCritical });
     return { pushed: r.pushed, id: r.id || null };
   }
   const msg = String((args && args.message) || '').replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, 300);

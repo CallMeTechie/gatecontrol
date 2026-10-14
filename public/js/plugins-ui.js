@@ -80,11 +80,19 @@
     if (perm.pages && perm.pages.length) ui.push(t('plugins.perm.ui_pages', { pages: perm.pages.join(', ') }));
     if (perm.portalTab) ui.push(t('plugins.perm.ui_portal', { tab: perm.portalTab }));
     (perm.portalSections || []).forEach((s) => ui.push(t('plugins.perm.ui_portal_section', { title: s.title, tab: t('plugins.portal_tab.' + s.tab) })));
+    if (perm.appTab) ui.push(t('plugins.perm.ui_app', { tab: perm.appTab }));
     if (perm.settings) ui.push(t('plugins.perm.ui_settings', { n: perm.settings }));
     rows.push({ label: t('plugins.perm.ui'), value: ui.length ? ui.join(' · ') : t('plugins.perm.none') });
     rows.push({ label: t('plugins.perm.users'), value: t(perm.users ? 'plugins.perm.users_on' : 'plugins.perm.none') });
+    if (perm.app) rows.push({ label: t('plugins.perm.app'), value: t('plugins.perm.app_on') });
+    if (perm.maps) rows.push({ label: t('plugins.perm.maps'), value: t('plugins.perm.maps_on') });
     if (perm.background) rows.push({ label: t('plugins.perm.background'), value: t('plugins.perm.background_v', { s: perm.background }) });
-    if (perm.notify) rows.push({ label: t('plugins.perm.notify'), value: t('plugins.perm.notify_on') });
+    if (perm.notify) {
+      rows.push({ label: t('plugins.perm.notify'), value: t('plugins.perm.notify_on') + (perm.notifyPerHour ? ' · ' + t('plugins.perm.notify_rate', { n: perm.notifyPerHour }) : '') });
+      if (perm.criticalTopics && perm.criticalTopics.length) {
+        rows.push({ label: t('plugins.perm.notify_critical'), value: t('plugins.perm.notify_critical_v', { topics: perm.criticalTopics.join(', ') }) });
+      }
+    }
     return rows;
   }
 
@@ -135,6 +143,7 @@
     if (p.nav) out.push({ title: t('plugins.adds.page', { name: p.nav.label }), text: t('plugins.adds.page_d') });
     if (p.portal && p.portal.label) out.push({ title: t('plugins.adds.portal', { name: p.portal.label }), text: t('plugins.adds.portal_d') });
     if (p.portal) (p.portal.sections || []).forEach((s) => out.push({ title: t('plugins.adds.portal_section', { title: s.title, tab: t('plugins.portal_tab.' + s.tab) }), text: t('plugins.adds.portal_section_d') }));
+    if (p.app) out.push({ title: t('plugins.adds.app', { name: p.app.label }), text: t('plugins.adds.app_d') });
     if (p.permissions && p.permissions.background) out.push({ title: t('plugins.adds.background'), text: t('plugins.perm.background_v', { s: p.permissions.background }) });
     if (p.settingsCount) out.push({ title: t('plugins.adds.settings'), text: t('plugins.perm.ui_settings', { n: p.settingsCount }) });
     return out;

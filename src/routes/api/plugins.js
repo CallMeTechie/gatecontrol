@@ -296,8 +296,11 @@ function forwardPath(raw) {
 /**
  * Express handler factory: forward to a plugin's own API. `userOf(req)`
  * returns the acting user ({ id, name, role, portal }) or null (→ 403).
+ * `opts.langOf(req)` picks the language handed to the plugin (default: the
+ * request's UI language).
  */
-function forwarder(userOf, idOf = (req) => req.params.id) {
+function forwarder(userOf, idOf = (req) => req.params.id, opts = {}) {
+  const langOf = typeof opts.langOf === 'function' ? opts.langOf : lang;
   return async (req, res) => {
     const id = String(idOf(req) || '');
     const p = ID_RE.test(id) ? plugins.get(id) : null;
@@ -309,7 +312,7 @@ function forwarder(userOf, idOf = (req) => req.params.id) {
     if (!user) return res.status(403).json({ ok: false, code: 'login_required', error: tr(req, 'plugins.err.login_required', 'Sign in first') });
     const body = req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body) ? req.body : null;
     try {
-      const out = await plugins.request(p.id, { method: req.method, path, query: plainQuery(req.query), body, user, lang: lang(req) });
+      const out = await plugins.request(p.id, { method: req.method, path, query: plainQuery(req.query), body, user, lang: langOf(req) });
       res.set('Cache-Control', 'no-store');
       return res.status(out.status).json(out.json);
     } catch (e) {

@@ -13,19 +13,68 @@
 //     API with the user's session, CSRF token and rate limit.
 // The host adds a small base stylesheet (aurora colours for light and dark)
 // and the bridge client below; the plugin's fragment goes into <body>.
+//
+// Maps (plugin.json `ui.maps: true`, docs/plugins.md "Maps"), for those
+// plugins' frames only:
+//   * img-src https://tile.openstreetmap.org — OpenStreetMap tiles;
+//   * the host's vendored Leaflet (public/vendor/leaflet) from
+//     /plugins/_shared/leaflet/{leaflet.js, leaflet.css, images/} — exactly
+//     these URLs of this server's origin are allowed (script-src / style-src
+//     / img-src with a path; 'self' would mean every script of the server);
+//   * Referrer-Policy strict-origin-when-cross-origin: the tiles get the
+//     origin only (OpenStreetMap's tile policy wants a referrer), never the
+//     frame URL;
+//   * sandbox + allow-popups allow-popups-to-escape-sandbox: a plain
+//     <a href="https://www.openstreetmap.org/…" target="_blank" rel="noopener">
+//     opens in a new tab as a normal page.
 
-const CSP = [
-  "default-src 'none'",
-  "script-src 'unsafe-inline'",
-  "style-src 'unsafe-inline'",
-  'img-src data:',
-  'font-src data:',
-  "connect-src 'none'",
-  "form-action 'none'",
-  "base-uri 'none'",
-  "frame-ancestors 'self'",
-  'sandbox allow-scripts allow-forms',
-].join('; ');
+const OSM_TILES = 'https://tile.openstreetmap.org';
+const SHARED_LEAFLET = '/plugins/_shared/leaflet/';
+const SANDBOX = 'sandbox allow-scripts allow-forms';
+const SANDBOX_MAPS = SANDBOX + ' allow-popups allow-popups-to-escape-sandbox';
+
+function directives({ script = [], style = [], img = [], sandbox = SANDBOX } = {}) {
+  return [
+    "default-src 'none'",
+    ["script-src 'unsafe-inline'", ...script].join(' '),
+    ["style-src 'unsafe-inline'", ...style].join(' '),
+    ['img-src data:', ...img].join(' '),
+    'font-src data:',
+    "connect-src 'none'",
+    "form-action 'none'",
+    "base-uri 'none'",
+    "frame-ancestors 'self'",
+    sandbox,
+  ].join('; ');
+}
+
+const CSP = directives();
+
+// "https://gc.example.com[:port]" of the request that loads the frame, or
+// null when the Host header is not a plain host[:port] (then the frame gets
+// the tiles but no shared Leaflet). The value goes into a header: nothing
+// but host characters passes.
+const HOST_RE = /^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,62})(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}))*|\[[0-9A-Fa-f:.]{2,45}\])(?::\d{1,5})?$/;
+function originOf(req) {
+  const proto = req && (req.protocol === 'https' ? 'https' : (req.protocol === 'http' ? 'http' : null));
+  const host = req && typeof req.get === 'function' ? req.get('host') : null;
+  return proto && typeof host === 'string' && host.length <= 260 && HOST_RE.test(host) ? `${proto}://${host.toLowerCase()}` : null;
+}
+
+/** The frame CSP: the base one, or with maps for a `ui.maps` plugin. */
+function cspFor({ maps = false, origin = null } = {}) {
+  if (!maps) return CSP;
+  const base = origin ? origin + SHARED_LEAFLET : null;
+  return directives({
+    script: base ? [base + 'leaflet.js'] : [],
+    style: base ? [base + 'leaflet.css'] : [],
+    img: [OSM_TILES, ...(base ? [base + 'images/'] : [])],
+    sandbox: SANDBOX_MAPS,
+  });
+}
+
+/** sandbox attribute of the <iframe> showing a plugin frame. */
+function sandboxAttr(maps) { return (maps ? SANDBOX_MAPS : SANDBOX).replace(/^sandbox /, ''); }
 
 const BASE_CSS = `
 :root{color-scheme:dark;--bg:#0a0e14;--surface:#111a24;--surface-2:#0f1720;--line:rgba(255,255,255,.08);--line-2:rgba(255,255,255,.14);
@@ -124,23 +173,29 @@ function escAttr(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+const REFERRER = 'no-referrer';
+const REFERRER_MAPS = 'strict-origin-when-cross-origin';
+
 /** The full frame document around a plugin fragment. */
-function document({ html, lang }) {
+function document({ html, lang, maps = false }) {
   const l = lang === 'en' ? 'en' : 'de';
   return '<!doctype html>\n<html lang="' + escAttr(l) + '" data-theme="dark"><head><meta charset="utf-8">'
-    + '<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer">'
+    + '<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="' + (maps ? REFERRER_MAPS : REFERRER) + '">'
     + '<style>' + BASE_CSS + '</style><script>' + BRIDGE_CLIENT + '</script></head><body>'
     + String(html || '') + '</body></html>';
 }
 
-/** Headers of a frame response. */
-function headers(res) {
-  res.set('Content-Security-Policy', CSP);
+/**
+ * Headers of a frame response. `opts.maps` (plugin with ui.maps) with
+ * `opts.origin` (originOf(req)) relaxes the CSP for the map, see above.
+ */
+function headers(res, opts = {}) {
+  res.set('Content-Security-Policy', cspFor(opts));
   res.set('Cache-Control', 'no-store');
   res.set('X-Content-Type-Options', 'nosniff');
-  res.set('Referrer-Policy', 'no-referrer');
+  res.set('Referrer-Policy', opts.maps ? REFERRER_MAPS : REFERRER);
   res.set('X-Frame-Options', 'SAMEORIGIN');
   res.type('html');
 }
 
-module.exports = { CSP, document, headers, escAttr };
+module.exports = { CSP, cspFor, originOf, sandboxAttr, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET };
