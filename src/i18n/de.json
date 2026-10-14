@@ -5228,6 +5228,8 @@
   "plugins.perm.maps_on": "zeigt Karten von OpenStreetMap (Kacheln von tile.openstreetmap.org) und darf Links in einem neuen Tab öffnen",
   "plugins.perm.kiosk": "Kiosk",
   "plugins.perm.kiosk_on": "darf Benutzer als Kiosk-Geräte freigeben (z. B. Wand-Tablet)",
+  "plugins.perm.actions": "Schnellaktionen",
+  "plugins.perm.actions_on": "darf Schnellaktionen anderer Plugins auslösen (z. B. Smart-Home-Szenen)",
   "plugins.log.empty": "Noch keine Einträge.",
   "plugins.toast.enabled": "{{name}} ist aktiviert",
   "plugins.toast.disabled": "{{name}} ist deaktiviert",

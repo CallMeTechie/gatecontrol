@@ -225,6 +225,15 @@ function makeGc(info) {
       allow: (userId, allowed) => hostCall('kiosk.allow', { userId, allowed }),
       list: () => hostCall('kiosk.list', {}),
     }),
+    /**
+     * permissions.actions: quick actions of the other plugins for one user —
+     * list({ userId, lang }) → [{ plugin, pluginName, id, title, subtitle, kind, state }];
+     * run({ userId, plugin, id, lang }) → { ok, message, state } (runs as that user)
+     */
+    actions: Object.freeze({
+      list: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('actions.list', { userId: o.userId, lang: o.lang }); },
+      run: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('actions.run', { userId: o.userId, plugin: o.plugin, id: o.id, lang: o.lang }); },
+    }),
     /** notify(message, { severity }) or notify({ topic, title, body, priority, users, collapseKey, ttl, data }) */
     notify: (message, opts) => (message && typeof message === 'object' && !Array.isArray(message)
       ? hostCall('notify', { notification: message })

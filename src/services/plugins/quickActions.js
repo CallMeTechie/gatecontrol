@@ -91,11 +91,14 @@ function lang2(lang) { return lang === 'en' ? 'en' : 'de'; }
 /**
  * Quick actions of every eligible plugin for one viewer.
  * @param {{id, name, role, portal: true, loggedIn: true, app: true}} user
+ * @param {string} lang
+ * @param {{exclude?: string}} [opts]  exclude: a plugin id that is not asked (gc.actions.list leaves out the caller)
  * @returns {Promise<object[]>} [{ plugin, pluginName, id, title, subtitle, icon, kind, state, confirm }]
  */
-async function list(user, lang) {
+async function list(user, lang, opts = {}) {
   const l = lang2(lang);
-  const lists = await Promise.all(actionPlugins().map(async (p) => {
+  const exclude = opts && typeof opts.exclude === 'string' ? opts.exclude : null;
+  const lists = await Promise.all(actionPlugins().filter((p) => p.id !== exclude).map(async (p) => {
     let out;
     try { out = await runtime.call(p.id, 'quickActions', { user, lang: l }, HOOK_MS); } catch { return []; }
     const pluginName = loc(p.manifest.name, l) || p.name;
