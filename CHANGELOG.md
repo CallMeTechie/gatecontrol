@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.165.0] — 2026-10-14
+
+### Features
+- kiosk devices for wall tablets (pairing code, 90-day rolling login) (#307)
+
+---
+
 ## [1.164.0] — 2026-10-14
 
 ### Features
