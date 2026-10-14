@@ -210,6 +210,13 @@ router.use(require('../middleware/twoFactorPolicy').twoFactorPolicy);
 // ─── Protected page routes ─────────────────────────
 router.get('/', requireAuth, (req, res) => res.redirect('/dashboard'));
 
+// ─── Kiosk devices (docs/feature-kiosk-devices.md) ──────────────────
+// Before every route under /portal and /api/v1/portal (the plugin frames
+// below included): resolves the gc_kiosk cookie and refuses whatever a kiosk
+// device may not reach (allow-list in middleware/kioskSession.js).
+const { kioskSessionLimiter } = require('../middleware/rateLimit');
+router.use(['/portal', '/api/v1/portal'], kioskSessionLimiter, require('../middleware/kioskSession'));
+
 // Plugin pages, their sandboxed frames and the portal tab frames (docs/plugins.md).
 router.use(require('./plugins'));
 

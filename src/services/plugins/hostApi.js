@@ -364,6 +364,23 @@ async function handle(plugin, api, args, ctx) {
       need(Number.isInteger(id) && id > 0, 'ERR_INVALID', 'invalid user id');
       return userView(db().prepare('SELECT id, username, display_name, role FROM users WHERE id = ? AND enabled = 1').get(id));
     }
+    case 'kiosk.allow': {
+      // docs/feature-kiosk-devices.md: mark/unmark a user as a kiosk user (never an admin or a disabled account)
+      need(plugin.manifest.permissions && plugin.manifest.permissions.kiosk, 'ERR_KIOSK_DENIED', 'this plugin has no kiosk permission');
+      const id = Number(args && args.userId);
+      need(Number.isSafeInteger(id) && id > 0, 'ERR_INVALID', 'invalid user id');
+      need(typeof (args && args.allowed) === 'boolean', 'ERR_INVALID', 'allowed must be true or false');
+      try {
+        require('../kiosk').allow(plugin, id, args.allowed);
+      } catch (e) {
+        if (e && e.code === 'ERR_INVALID') throw new HostApiError('ERR_INVALID', e.message);
+        throw e;
+      }
+      return null;
+    }
+    case 'kiosk.list':
+      need(plugin.manifest.permissions && plugin.manifest.permissions.kiosk, 'ERR_KIOSK_DENIED', 'this plugin has no kiosk permission');
+      return require('../kiosk').listAllowed(plugin.id);
     case 'notify': return notify(plugin, args);
     case 'license.status': {
       const s = licensing.status(plugin);

@@ -1179,6 +1179,20 @@
     startPolling();
   }
 
+  // Kiosk device (docs/feature-kiosk-devices.md): "Abmelden" unpairs the
+  // tablet for good — ask first (a tap on a wall tablet is easy).
+  (function wireKioskLogout() {
+    var form = $('pt-kiosk-logout');
+    if (!form) return;
+    var confirmed = false;
+    form.addEventListener('submit', function (e) {
+      if (confirmed) return;
+      e.preventDefault();
+      portalConfirm({ title: T('portal.kiosk.logout'), message: form.getAttribute('data-confirm') || '', okLabel: T('portal.kiosk.logout_ok'), danger: true })
+        .then(function (yes) { if (yes) { confirmed = true; form.submit(); } });
+    });
+  })();
+
   // ─── Boot ───────────────────────────────────────────────────────────────
   activate(location.hash.slice(1) || 'start');
   loadDevice();

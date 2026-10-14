@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="{{ language | default('de') }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>{{ t('portal.kiosk.title') }} · {{ appName }}</title>
+{#- Pairing page of a kiosk device (docs/feature-kiosk-devices.md): the
+    one-time code from the user profile (Kiosk-Geräte → "Kiosk-Gerät koppeln").
+    Plain form, no script. -#}
+<script nonce="{{ cspNonce }}">
+  (function(){
+    try{
+      var s = localStorage.getItem('gc-portal-theme');
+      var t = s || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', t);
+    }catch(e){ document.documentElement.setAttribute('data-theme','dark'); }
+  })();
+</script>
+<link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/bricolage-grotesque-latin.woff2">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/portal.css?v={{ appVersion }}">
+</head>
+<body class="pt-body pt-who-body">
+<main class="pt-who-wrap">
+  <div class="pt-who-card" id="pt-kiosk">
+    <div class="pt-overline pt-accent">{{ t('portal.kiosk.eyebrow') }}</div>
+    <h1 class="pt-h1 pt-h1-sm">{{ t('portal.kiosk.title') }}</h1>
+    <p class="pt-lead">{{ t('portal.kiosk.lead') }}</p>
+
+    {% if pairedAs %}
+    <p class="pt-note" role="status" id="pt-kiosk-paired">{{ t('portal.kiosk.paired_as', { device: pairedAs }) }}</p>
+    {% endif %}
+
+    {% if error %}
+    <div class="pt-who-error" role="alert" id="pt-kiosk-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="/portal/kiosk" id="pt-kiosk-form" novalidate>
+      <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+      {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+      <div class="pt-who-pin">
+        <label class="pt-field-label" for="pt-kiosk-code">{{ t('portal.kiosk.code') }}</label>
+        <input class="pt-pin-input" type="text" id="pt-kiosk-code" name="code" value="{{ code }}" maxlength="32" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" required{% if not code %} autofocus{% endif %}>
+      </div>
+      <button type="submit" class="pt-btn pt-btn-primary pt-btn-block" id="pt-kiosk-submit">{{ t('portal.kiosk.submit') }}</button>
+    </form>
+    <p class="pt-small pt-muted">{{ t('portal.kiosk.hint') }}</p>
+  </div>
+  <div class="pt-who-foot">{{ appName }}</div>
+</main>
+</body>
+</html>

@@ -6212,6 +6212,9 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .us-code-qr img.is-expired{opacity:.2}
 .us-code-value{font:600 17px var(--font-mono); letter-spacing:.04em; white-space:nowrap; user-select:all; text-align:center}
 .us-code-value.is-expired{text-decoration:line-through; color:var(--muted)}
+/* Kiosk devices on the user profile (docs/feature-kiosk-devices.md) */
+.us-kiosk{margin-top:22px}
+#us-ki-result{margin-top:6px}
 .us-code-side{flex:1 1 300px; min-width:0; display:flex; flex-direction:column; gap:8px; align-items:flex-start}
 .us-sum-title{font-weight:800; font-size:15px}
 .us-sum{display:grid; grid-template-columns:130px 1fr; gap:6px 12px; margin:0 0 8px; font-size:13px; width:100%}

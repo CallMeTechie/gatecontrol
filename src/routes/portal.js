@@ -14,12 +14,19 @@
  *   POST /portal/switch          "Person wechseln" (shared device)
  *   POST /portal/anonymous       "nur die Dienste für alle anzeigen"
  *   POST /portal/identify        leave the anonymous mode again
+ *   GET  /portal/kiosk[?code=]   pair this browser as a kiosk device
+ *   POST /portal/kiosk           redeem the pairing code (sets gc_kiosk)
+ *   POST /portal/kiosk/logout    "Abmelden" on a kiosk device (revokes it)
  *
  * Portal sessions are separate from the web UI: session.portalOnly with
  * session.portalUserId (never session.userId), so requireAuth — and with it
  * every admin page and admin API — treats them as logged out. Every
  * login-like step regenerates the session (fixation). Redirect targets are
  * fixed paths only. Ticket values are never logged.
+ *
+ * Kiosk devices (docs/feature-kiosk-devices.md): middleware/kioskSession.js
+ * resolves the gc_kiosk cookie for every /portal… request and enforces the
+ * kiosk allow-list; pairing codes and device tokens are never logged.
  */
 
 const { Router } = require('express');
@@ -36,7 +43,9 @@ const activity = require('../services/activity');
 const logger = require('../utils/logger');
 const { csrfProtection, ensureCsrfToken } = require('../middleware/csrf');
 const { stringsWithPrefix } = require('../middleware/i18n');
-const { portalPageLimiter, portalPinLimiter } = require('../middleware/rateLimit');
+const { portalPageLimiter, portalPinLimiter, kioskPairLimiter } = require('../middleware/rateLimit');
+const kiosk = require('../services/kiosk');
+const kioskSession = require('../middleware/kioskSession');
 
 const router = Router();
 
@@ -100,18 +109,24 @@ function tabsFor(req, plg) {
     device: identified && w.device,
     traffic: identified && w.traffic,
     pihole: identified && w.pihole && license.hasFeature('pihole_integration'),
-    devices: !!req.portalLoggedIn,
+    // A kiosk device never manages devices or notification settings.
+    devices: !!req.portalLoggedIn && !isKiosk(req),
     // Notification center: bell, inbox, own settings (signed in, push on).
-    notify: !!req.portalLoggedIn && notifyEnabled(),
+    notify: !!req.portalLoggedIn && !isKiosk(req) && notifyEnabled(),
   };
 }
 
-/** The portal viewer as plugins see it ({ id, name, role, portal: true, loggedIn }) or null. */
+/** True when the viewer is a kiosk device (portalOwner source 'kiosk'). */
+function isKiosk(req) { return req.portalOwnerSource === 'kiosk' && !!req.portalKiosk; }
+
+/** The portal viewer as plugins see it ({ id, name, role, portal: true, loggedIn, kiosk? }) or null. */
 function portalViewer(req) {
   if (req.portalOwnerId == null) return null;
   const u = users.getById(req.portalOwnerId);
   if (!u || u.enabled !== 1) return null;
-  return { id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: !!req.portalLoggedIn };
+  const v = { id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: !!req.portalLoggedIn };
+  if (isKiosk(req)) v.kiosk = true;
+  return v;
 }
 
 /**
@@ -133,6 +148,13 @@ function viewerFor(req) {
     const u = users.getById(req.portalOwnerId);
     if (u) {
       let via = 'login';
+      if (isKiosk(req)) {
+        const name = portalDevices.displayName(u);
+        return {
+          kind: 'person', via: 'kiosk', name, first: portalDevices.firstName(u), initials: portalDevices.initials(name),
+          deviceName: req.portalKiosk.name, canWebLogin: false, canEnroll: false,
+        };
+      }
       if (req.portalOwnerSource === 'device') via = 'device';
       else if (req.portalOwnerSource === 'portal') via = req.session.portalVia === 'pin' ? 'pin' : 'link';
       const name = portalDevices.displayName(u);
@@ -149,6 +171,12 @@ function viewerFor(req) {
 
 // ─── GET /portal ───────────────────────────────────────────────────────────
 router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, async (req, res, next) => {
+  // Bare portal address on a kiosk tablet ("/" → /portal by Caddy): the
+  // Path=/portal cookie did not come along — once to /portal?kiosk=1.
+  if (!req.portalKiosk && !req.portalKioskPaused && req.cookies && req.cookies[kioskSession.HINT_COOKIE] && !(req.cookies[kioskSession.COOKIE])) {
+    if (req.query.kiosk !== '1') return res.redirect('/portal?kiosk=1');
+    kioskSession.clearKioskCookies(req, res);
+  }
   // A shared device asks first — never IP trust there.
   if (req.portalSharedDevice && req.portalOwnerId == null && !req.portalAnonymous) {
     return res.redirect('/portal/who');
@@ -156,11 +184,12 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, a
   noStore(res);
   let note = null;
   if (req.session && req.session.portalNote) {
-    note = req.session.portalNote === 'link_invalid' ? 'link_invalid' : null;
+    note = ['link_invalid', 'kiosk_logged_out'].includes(req.session.portalNote) ? req.session.portalNote : null;
     delete req.session.portalNote;
   }
   // State-changing portal requests need the session's CSRF token.
   if (req.portalLoggedIn || req.portalAnonymous || req.portalSharedDevice) ensureCsrfToken(req, res);
+  if (!note && req.portalKioskPaused) note = 'kiosk_paused';
   const viewer = viewerFor(req);
   const lang0 = req.language || res.locals.language;
   let plg;
@@ -178,6 +207,7 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, a
       person: viewer.kind === 'person',
       firstName: viewer.kind === 'person' ? viewer.first : '',
       canEnroll: viewer.kind === 'person' && !!req.portalLoggedIn && !!viewer.canEnroll,
+      kiosk: isKiosk(req),
       tabs,
     }),
     widgets: portalConfig().widgets,
@@ -194,6 +224,7 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, a
     // Reflect the (host-scoped) web session so the header shows Login vs Logout.
     loggedIn: !!(req.session && req.session.userId),
     portalLoggedIn: !!req.portalLoggedIn,
+    kiosk: isKiosk(req),
     accountUrl: viewer.kind === 'person' && viewer.canWebLogin ? accountUrl() : null,
   });
 });
@@ -302,6 +333,71 @@ router.post('/portal/anonymous', portalPageLimiter, enabled, csrfProtection, (re
 // Leave the anonymous mode (back to automatic recognition / the picker).
 router.post('/portal/identify', portalPageLimiter, enabled, csrfProtection, (req, res, next) => {
   freshSession(req, () => {}, (err) => (err ? next(err) : res.redirect('/portal')));
+});
+
+// ─── Kiosk devices (docs/feature-kiosk-devices.md) ─────────────────────────
+// Pairing page on the portal host, reachable without a portal login: the
+// one-time code of the administrator (user profile → "Kiosk-Gerät koppeln")
+// makes this browser a kiosk device of that user (cookie gc_kiosk, 90 days,
+// rolling). Wrong, expired, used codes and users no longer eligible all get
+// the same answer.
+
+const CODE_INPUT_MAX = 32;
+
+function kioskNext(req) {
+  const raw = req.body && typeof req.body.next === 'string' ? req.body.next : (typeof req.query.next === 'string' ? req.query.next : '');
+  return portalTickets.portalNext(raw);
+}
+
+function renderKiosk(req, res, { status = 200, error = null, code = '' } = {}) {
+  ensureCsrfToken(req, res);
+  noStore(res);
+  const next = kioskNext(req);
+  res.status(status).render('portal/kiosk.njk', {
+    code: String(code || '').slice(0, CODE_INPUT_MAX),
+    next: next || '',
+    error,
+    pairedAs: req.portalKiosk ? req.portalKiosk.name : null,
+  });
+}
+
+function kioskHostOnly(req, res, next) {
+  if (!kioskSession.onPortalHost(req)) return res.sendStatus(404);
+  return next();
+}
+
+router.get('/portal/kiosk', portalPageLimiter, enabled, kioskHostOnly, (req, res) => {
+  const code = typeof req.query.code === 'string' ? req.query.code : '';
+  return renderKiosk(req, res, { code });
+});
+
+router.post('/portal/kiosk', kioskPairLimiter, enabled, kioskHostOnly, csrfProtection, (req, res, next) => {
+  const t = res.locals.t;
+  const raw = req.body && typeof req.body.code === 'string' ? req.body.code.slice(0, CODE_INPUT_MAX) : '';
+  let result;
+  try {
+    result = kiosk.redeem(raw, { ip: req.ip, userAgent: req.get('User-Agent'), replaceDeviceId: req.portalKiosk ? req.portalKiosk.deviceId : null });
+  } catch (err) {
+    logger.error({ err: err.message }, 'kiosk: pairing failed');
+    return renderKiosk(req, res, { status: 500, error: t('portal.kiosk.err_generic'), code: raw });
+  }
+  if (!result.ok) {
+    if (result.reason === 'locked') return renderKiosk(req, res, { status: 429, error: t('portal.kiosk.err_locked') });
+    return renderKiosk(req, res, { status: 400, error: t('portal.kiosk.err_invalid'), code: raw });
+  }
+  const target = kioskNext(req) || '/portal';
+  return freshSession(req, () => {}, (err) => {
+    if (err) return next(err);
+    kioskSession.setKioskCookies(req, res, result.token);
+    return res.redirect(303, target);
+  });
+});
+
+// "Abmelden" on a kiosk device: revokes the device and removes the cookie.
+router.post('/portal/kiosk/logout', portalPageLimiter, enabled, csrfProtection, (req, res, next) => {
+  if (req.portalKiosk) kiosk.revoke(req.portalKiosk.deviceId, { reason: 'logout', ip: req.ip });
+  kioskSession.clearKioskCookies(req, res);
+  return freshSession(req, (s) => { s.portalAnonymous = true; s.portalNote = 'kiosk_logged_out'; }, (err) => (err ? next(err) : res.redirect(303, '/portal')));
 });
 
 module.exports = router;

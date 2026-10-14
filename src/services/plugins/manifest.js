@@ -141,12 +141,13 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, background: null };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, background: null };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
     if (net) perms.network = net;
-    for (const k of ['storage', 'portal', 'users', 'app']) {
+    // kiosk: may mark users as kiosk devices (gc.kiosk.*, docs/feature-kiosk-devices.md)
+    for (const k of ['storage', 'portal', 'users', 'app', 'kiosk']) {
       if (p[k] == null) continue;
       if (typeof p[k] !== 'boolean') err(`permissions.${k}: invalid`);
       else perms[k] = p[k];

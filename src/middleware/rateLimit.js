@@ -475,3 +475,50 @@ const pluginAssetLimiter = rateLimit({
   },
 });
 module.exports.pluginAssetLimiter = pluginAssetLimiter;
+
+// Kiosk devices (docs/feature-kiosk-devices.md).
+// The kiosk cookie check in front of /portal and /api/v1/portal: counts only
+// requests that carry the cookie, per address, well above what a wall tablet
+// polling its plugin view needs (the routes behind keep their own limits).
+const kioskSessionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => config.auth.rateLimitApi * 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => !(req.cookies && req.cookies.gc_kiosk),
+  keyGenerator: (req) => `kiosk-session:${ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    if (req.originalUrl && req.originalUrl.startsWith('/api/')) return res.status(429).json({ ok: false, error: req.t ? req.t('error.rate_limit.api') : 'rate_limited' });
+    return res.status(429).type('text/plain').send(req.t ? req.t('error.rate_limit.api') : 'rate_limited');
+  },
+});
+
+// POST /portal/kiosk (pairing code): 10 attempts per 15 minutes and address,
+// successful ones included. services/kiosk.js adds a global lock after 50
+// wrong codes.
+const kioskPairLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `kiosk-pair:${ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    res.status(429).type('text/plain').send(req.t ? req.t('portal.kiosk.err_rate') : 'rate_limited');
+  },
+});
+
+// POST /api/v1/users/:id/kiosk/pair (administrator): per admin session,
+// 6x the login cap (30 with the default GC_RATE_LIMIT_LOGIN=5).
+const kioskCodeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => Math.max(1, config.auth.rateLimitLogin) * 6,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `kiosk-code:${(req.session && req.session.userId) || ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, code: 'rate_limited', error: req.t ? req.t('error.rate_limit.api') : 'rate_limited' });
+  },
+});
+module.exports.kioskSessionLimiter = kioskSessionLimiter;
+module.exports.kioskPairLimiter = kioskPairLimiter;
+module.exports.kioskCodeLimiter = kioskCodeLimiter;

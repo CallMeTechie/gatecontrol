@@ -183,6 +183,7 @@ unsigned build of the same id.
     "portal": true,
     "users": true,
     "app": true,
+    "kiosk": true,
     "notify": { "perHour": 60 },
     "background": { "intervalSeconds": 60 }
   },
@@ -229,6 +230,12 @@ unsigned build of the same id.
   See "App".
 * `ui.maps` (boolean): OpenStreetMap tiles and the host's Leaflet in the
   plugin's frames. See "Maps".
+* `permissions.kiosk` (boolean): the plugin may mark users as kiosk users
+  (`gc.kiosk.allow`) — those users can get kiosk devices (wall tablets that
+  stay signed in to the portal for 90 days, see "Kiosk devices" below and
+  [feature-kiosk-devices.md](feature-kiosk-devices.md)). The install/consent
+  dialog shows "darf Benutzer als Kiosk-Geräte freigeben (z. B. Wand-Tablet)"
+  / "may mark users as kiosk devices (e.g. wall tablet)".
 * `notifyTopics` (optional, needs `permissions.notify`): up to 20 own push
   topics, `id` `[a-z][a-z0-9_-]{0,31}`, `label` text (≤ 60), `default`
   (boolean, default `true`: people get the topic until they switch it off; `false`:
@@ -338,6 +345,8 @@ module.exports = {
 | `gc.settings.get/all/set` | the plugin's settings (secrets decrypted); `set` also keeps undeclared keys of the plugin's own (JSON) |
 | `gc.settings.setSecret(key, value)` | a secret of the plugin's own (e.g. a device API key per gateway): any key `[a-z][a-z0-9_.-]{0,63}` that is not a declared non-secret setting, stored encrypted with the server key like a `secret` setting, read back with `get`/`all`, never sent to the browser, re-keyed by backups; `null` deletes it |
 | `gc.users.list()/get(id)` | `{ id, name, role }` of enabled users (`users`) |
+| `gc.kiosk.allow(userId, allowed)` | mark (`true`) or unmark (`false`) a user as a kiosk user (`kiosk`); an administrator, a disabled or an unknown account → `ERR_INVALID` (allowing only; unmarking always works) |
+| `gc.kiosk.list()` | ids of the users this plugin marks (`kiosk`) |
 | `gc.notify(message, { severity })` | activity log + webhooks, and a push on `plugin:<id>:default` (`notify`, ≤ 30/h or `perHour`) — see "Notifications" |
 | `gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data })` | push on a declared `notifyTopics` topic (+ activity row) → `{ pushed, id }` |
 | `gc.license.status()` | `{ required, licensed, state, expiresAt }` |
@@ -356,6 +365,35 @@ position or departure times belongs to a real login only. The portal hooks
 viewer; the quick-action hooks (`quickActions`, `runQuickAction`) get the
 owner of the app's device token as that viewer, with `loggedIn: true` and
 `app: true` (see "Quick actions").
+
+### Kiosk devices (`permissions.kiosk`)
+
+A kiosk device is a browser (typically a wall tablet) paired by an
+administrator on the user's profile; it stays signed in to the portal as
+that user for 90 days, extended by every use. GateControl offers kiosk
+devices only for users a plugin marks with `gc.kiosk.allow(userId, true)`:
+
+* a user is *kiosk-eligible* while at least one installed, enabled, usable
+  plugin with `permissions.kiosk` marks them — never an administrator, never
+  a disabled account (`allow(…, true)` on such a user throws `ERR_INVALID`);
+* when that ends (the plugin unmarks the user, is disabled, uninstalled or
+  loses the permission in an update; the account is disabled, deleted or
+  becomes an administrator) every kiosk device of the user stops working at
+  its next request (checked per request; the plugin part is cached for at
+  most 60 s, `gc.kiosk.allow` takes effect at once). A device of a user who
+  becomes eligible again works again — revoke it to end it for good;
+* the marks are per plugin and survive restarts; reconcile them in `start`
+  (`gc.kiosk.list()` vs. who should be marked). "Alles löschen" on uninstall
+  drops them.
+
+A kiosk device's requests reach the plugin like those of a signed-in portal
+viewer — `req.user = { id, name, role, portal: true, loggedIn: true, kiosk:
+true }` (the `kiosk` key is absent for every other viewer), the same in
+`render`, `portalVisible`, `portalTiles` and `portalSearch`. Writes carry the
+CSRF token like any signed-in viewer. A kiosk device reaches only the portal
+page, the read-only portal widgets, the plugin frames and the plugin API
+(`/api/v1/portal/plugins/…`) — never "Meine Geräte", notification settings,
+account pages or the admin UI.
 
 ## Notifications
 
@@ -873,7 +911,9 @@ install (`plugin_installed`) · update (`plugin_updated`) · enable/disable
 (`plugin_suspended`) · uninstall (`plugin_uninstalled`, mode keep/wipe) ·
 "Unsignierte Plugins erlauben" (`plugin_unsigned_allowed`/`plugin_unsigned_blocked`)
 · access targets (`plugin_target_changed`) · plugin notifications
-(`plugin_notice`) · quick actions run from an app (`plugin_quick_action`).
+(`plugin_notice`) · quick actions run from an app (`plugin_quick_action`) ·
+kiosk users marked/unmarked (`kiosk_user_allowed`/`kiosk_user_disallowed`,
+only when something changed).
 
 Uninstall *Daten behalten* removes code and registry entry and keeps data,
 licence and access targets for a reinstall; *Alles löschen* (typed plugin name)

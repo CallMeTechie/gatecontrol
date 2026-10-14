@@ -92,7 +92,9 @@
       <span class="pt-user-text">
         <span class="pt-user-name">{{ viewer.name }}</span>
         <span class="pt-user-sub">
-          {%- if viewer.via == 'link' or viewer.via == 'device' -%}
+          {%- if viewer.via == 'kiosk' -%}
+            {{ t('portal.viewer.kiosk', { device: viewer.deviceName }) }}
+          {%- elif viewer.via == 'link' or viewer.via == 'device' -%}
             {{ t('portal.viewer.auto_via', { device: viewer.deviceName }) if viewer.deviceName else t('portal.viewer.auto') }}
           {%- elif viewer.via == 'pin' -%}
             {{ t('portal.viewer.picked_on', { device: viewer.deviceName }) if viewer.deviceName else t('portal.viewer.picked') }}
@@ -128,7 +130,13 @@
     {% if accountUrl %}
     <a class="pt-iconbtn" id="pt-account" href="{{ accountUrl }}" rel="noopener" title="{{ t('portal.account') }}" aria-label="{{ t('portal.account') }}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></a>
     {% endif %}
-    {% if loggedIn %}
+    {% if kiosk %}
+    {#- Kiosk device (docs/feature-kiosk-devices.md): "Abmelden" revokes this device. #}
+    <form class="pt-inline" action="/portal/kiosk/logout" method="POST" id="pt-kiosk-logout" data-confirm="{{ t('portal.kiosk.logout_confirm') }}">
+      <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+      <button type="submit" class="pt-iconbtn" title="{{ t('portal.kiosk.logout') }}" aria-label="{{ t('portal.kiosk.logout') }}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </form>
+    {% elif loggedIn %}
     <form class="pt-inline" action="/logout" method="POST">
       <input type="hidden" name="_csrf" value="{{ csrfToken }}">
       <button type="submit" class="pt-iconbtn" title="{{ t('portal.logout') }}" aria-label="{{ t('portal.logout') }}"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -142,6 +150,8 @@
 <main class="pt-main" id="pt-main">
   {% if note == 'link_invalid' %}
   <div class="pt-note" role="status" id="pt-note">{{ t('portal.note.link_invalid') }}</div>
+  {% elif note == 'kiosk_logged_out' or note == 'kiosk_paused' %}
+  <div class="pt-note" role="status" id="pt-note">{{ t('portal.note.' + note) }}</div>
   {% endif %}
 
   {# ═══ Start ═══════════════════════════════════════════════════════════ #}

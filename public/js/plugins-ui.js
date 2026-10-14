@@ -85,6 +85,7 @@
     rows.push({ label: t('plugins.perm.ui'), value: ui.length ? ui.join(' · ') : t('plugins.perm.none') });
     rows.push({ label: t('plugins.perm.users'), value: t(perm.users ? 'plugins.perm.users_on' : 'plugins.perm.none') });
     if (perm.app) rows.push({ label: t('plugins.perm.app'), value: t('plugins.perm.app_on') });
+    if (perm.kiosk) rows.push({ label: t('plugins.perm.kiosk'), value: t('plugins.perm.kiosk_on') });
     if (perm.maps) rows.push({ label: t('plugins.perm.maps'), value: t('plugins.perm.maps_on') });
     if (perm.background) rows.push({ label: t('plugins.perm.background'), value: t('plugins.perm.background_v', { s: perm.background }) });
     if (perm.notify) {

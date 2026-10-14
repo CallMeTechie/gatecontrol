@@ -220,6 +220,11 @@ function makeGc(info) {
       list: () => hostCall('users.list', {}),
       get: (id) => hostCall('users.get', { id }),
     }),
+    /** permissions.kiosk: allow(userId, true|false) marks a user as a kiosk user; list() → [userId] */
+    kiosk: Object.freeze({
+      allow: (userId, allowed) => hostCall('kiosk.allow', { userId, allowed }),
+      list: () => hostCall('kiosk.list', {}),
+    }),
     /** notify(message, { severity }) or notify({ topic, title, body, priority, users, collapseKey, ttl, data }) */
     notify: (message, opts) => (message && typeof message === 'object' && !Array.isArray(message)
       ? hostCall('notify', { notification: message })
