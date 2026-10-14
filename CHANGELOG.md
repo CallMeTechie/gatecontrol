@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.167.1] — 2026-10-14
+
+### Fixes
+- retry the Caddy build on transient Go module errors (#310)
+
+---
+
 ## [1.167.0] — 2026-10-14
 
 ### Features
