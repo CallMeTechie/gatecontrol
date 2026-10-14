@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.166.0] — 2026-10-14
+
+### Features
+- plugins can run other plugins' quick actions (permissions.actions) (#308)
+
+---
+
 ## [1.165.0] — 2026-10-14
 
 ### Features
