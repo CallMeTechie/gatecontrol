@@ -24,7 +24,7 @@ const frame = require('../services/plugins/frame');
 const { loc } = require('../services/plugins/manifest');
 const { ID_RE } = require('../services/plugins/constants');
 const { requireAuth } = require('../middleware/auth');
-const { pluginPageLimiter } = require('../middleware/rateLimit');
+const { pluginPageLimiter, pluginAssetLimiter } = require('../middleware/rateLimit');
 
 const router = Router();
 
@@ -65,13 +65,13 @@ function sharedHeaders(res) {
   res.set('X-Content-Type-Options', 'nosniff');
 }
 
-router.get('/plugins/_shared/leaflet/leaflet.js', (req, res) => {
+router.get('/plugins/_shared/leaflet/leaflet.js', pluginAssetLimiter, (req, res) => {
   sharedHeaders(res);
   res.type('application/javascript');
   return res.sendFile(path.join(LEAFLET_DIR, 'leaflet.js'));
 });
 
-router.get('/plugins/_shared/leaflet/leaflet.css', (req, res) => {
+router.get('/plugins/_shared/leaflet/leaflet.css', pluginAssetLimiter, (req, res) => {
   const css = leafletStylesheet();
   if (!css) return res.sendStatus(404);
   sharedHeaders(res);
@@ -79,7 +79,7 @@ router.get('/plugins/_shared/leaflet/leaflet.css', (req, res) => {
   return res.send(css);
 });
 
-router.get('/plugins/_shared/leaflet/images/:file', (req, res) => {
+router.get('/plugins/_shared/leaflet/images/:file', pluginAssetLimiter, (req, res) => {
   const f = String(req.params.file || '');
   if (!LEAFLET_IMAGES.has(f)) return res.sendStatus(404);
   sharedHeaders(res);

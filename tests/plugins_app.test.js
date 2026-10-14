@@ -257,9 +257,10 @@ describe('maps in plugin frames (ui.maps)', () => {
     const r = await agent.get('/plugins/hello/frame/main').set('Host', 'gc.example.com:8443').expect(200);
     const csp = r.headers['content-security-policy'];
     const origin = 'http://gc.example.com:8443';
-    assert.match(csp, new RegExp(`script-src 'unsafe-inline' ${origin}/plugins/_shared/leaflet/leaflet\\.js;`));
-    assert.match(csp, new RegExp(`style-src 'unsafe-inline' ${origin}/plugins/_shared/leaflet/leaflet\\.css;`));
-    assert.match(csp, new RegExp(`img-src data: https://tile\\.openstreetmap\\.org ${origin}/plugins/_shared/leaflet/images/;`));
+    const directives = csp.split('; ');
+    assert.ok(directives.includes(`script-src 'unsafe-inline' ${origin}/plugins/_shared/leaflet/leaflet.js`), csp);
+    assert.ok(directives.includes(`style-src 'unsafe-inline' ${origin}/plugins/_shared/leaflet/leaflet.css`), csp);
+    assert.ok(directives.includes(`img-src data: https://tile.openstreetmap.org ${origin}/plugins/_shared/leaflet/images/`), csp);
     assert.match(csp, /connect-src 'none'/);
     assert.match(csp, /sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox$/);
     assert.doesNotMatch(csp, /allow-same-origin|'self' 'unsafe|script-src[^;]*'self'/);

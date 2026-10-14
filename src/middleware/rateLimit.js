@@ -459,3 +459,19 @@ const clientPluginApiLimiter = rateLimit({
   },
 });
 module.exports.clientPluginApiLimiter = clientPluginApiLimiter;
+
+// /plugins/_shared/leaflet/* — the vendored Leaflet for map frames of ui.maps
+// plugins (docs/plugins.md "Maps"). Public static files (a sandboxed frame
+// sends no cookies), so per address and generous: one map frame loads up to
+// five files. Own bucket, so map assets never eat the plugin page budget.
+const pluginAssetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => config.auth.rateLimitApi * 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `plugin-asset:${ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    res.status(429).type('text/plain').send('rate_limited');
+  },
+});
+module.exports.pluginAssetLimiter = pluginAssetLimiter;
