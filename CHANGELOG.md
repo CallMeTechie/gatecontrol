@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.167.0] — 2026-10-14
+
+### Features
+- home-network detection through gateway sites (#309)
+
+---
+
 ## [1.166.0] — 2026-10-14
 
 ### Features
