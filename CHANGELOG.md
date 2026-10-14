@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.164.0] — 2026-10-14
+
+### Features
+- app tab, client plugin API, maps for plugin frames (#306)
+
+---
+
 ## [1.163.0] — 2026-10-13
 
 ### Features
