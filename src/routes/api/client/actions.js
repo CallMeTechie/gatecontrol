@@ -27,37 +27,10 @@ const { Router } = require('express');
 const quickActions = require('../../../services/plugins/quickActions');
 const activity = require('../../../services/activity');
 const { clientActionLimiter } = require('../../../middleware/rateLimit');
-const { verifyMachineBinding } = require('./helpers');
+const { requireClientToken: guard, tokenViewer: viewerOf, viewerLang: langOf } = require('./helpers');
 const logger = require('../../../utils/logger');
 
 const router = Router();
-
-/** Token, scope, machine binding. false = answered. */
-function guard(req, res) {
-  if (!req.tokenAuth) { res.status(403).json({ ok: false, error: 'token_required' }); return false; }
-  const scopes = req.tokenScopes || [];
-  if (!scopes.includes('client') && !scopes.includes('full-access')) {
-    res.status(403).json({ ok: false, error: 'scope_required' });
-    return false;
-  }
-  return verifyMachineBinding(req, res);
-}
-
-/** The token's owner as the portal viewer the plugin hooks get; null without one. */
-function viewerOf(req) {
-  if (req.tokenUserId == null) return null;
-  const u = require('../../../services/users').getById(req.tokenUserId);
-  if (!u || u.enabled !== 1) return null;
-  return { user: { id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: true, app: true }, language: u.language };
-}
-
-function langOf(req, v) {
-  const q = typeof req.query.lang === 'string' ? req.query.lang.slice(0, 2).toLowerCase() : '';
-  if (q === 'de' || q === 'en') return q;
-  const own = typeof v.language === 'string' ? v.language.slice(0, 2).toLowerCase() : '';
-  if (own === 'de' || own === 'en') return own;
-  return req.language === 'en' ? 'en' : 'de';
-}
 
 router.get('/actions', async (req, res) => {
   if (!guard(req, res)) return;

@@ -182,7 +182,8 @@ unsigned build of the same id.
     "storage": true,
     "portal": true,
     "users": true,
-    "notify": true,
+    "app": true,
+    "notify": { "perHour": 60 },
     "background": { "intervalSeconds": 60 }
   },
   "ui": {
@@ -195,12 +196,15 @@ unsigned build of the same id.
     "portal": {
       "label": { "de": "Klima", "en": "Climate" }, "icon": "<svg path d>",
       "sections": [{ "id": "smarthome", "tab": "home", "title": { "de": "Smart Home", "en": "Smart Home" }, "order": 20 }]
-    }
+    },
+    "app": { "label": { "de": "Smart Home", "en": "Smart Home" }, "icon": "<svg path d>" },
+    "maps": true
   },
   "license": { "required": true, "server": "https://licenses.example.com/check" },
   "migrations": "migrations",
   "notifyTopics": [
-    { "id": "charging", "label": { "de": "Laden abgeschlossen", "en": "Charging complete" }, "default": true }
+    { "id": "charging", "label": { "de": "Laden abgeschlossen", "en": "Charging complete" }, "default": true },
+    { "id": "alarm", "label": { "de": "Alarm", "en": "Alarm" }, "allowCritical": true }
   ]
 }
 ```
@@ -214,10 +218,22 @@ unsigned build of the same id.
   (`options: [{ value, label }]`), `secret` (stored encrypted, never sent to
   the browser).
 * `permissions.network` may also be an array — short for `{ internet: [...] }`.
+* `permissions.notify`: `true` (≤ 30 pushes per hour) or `{ "perHour": n }`
+  with an integer 1 ≤ n ≤ 120 (no other key); anything else is
+  `permissions.notify: invalid`. See "Notifications".
+* `permissions.app` (boolean): the plugin answers requests of the GateControl
+  apps (device tokens). `ui.app` `{ label, icon }` (optional, needs
+  `permissions.app` — else `ui.app: needs permissions.app`; label ≤ 40, icon
+  an SVG path like `ui.nav.icon`, default a square; no other keys) gives the
+  plugin its own tab in the apps. Without `ui.app` the plugin is API-only.
+  See "App".
+* `ui.maps` (boolean): OpenStreetMap tiles and the host's Leaflet in the
+  plugin's frames. See "Maps".
 * `notifyTopics` (optional, needs `permissions.notify`): up to 20 own push
   topics, `id` `[a-z][a-z0-9_-]{0,31}`, `label` text (≤ 60), `default`
   (boolean, default `true`: people get the topic until they switch it off; `false`:
-  only who subscribes). Each becomes the topic `plugin:<id>:<topic>` — a rule in
+  only who subscribes), `allowCritical` (boolean, default `false`: see
+  "Notifications"). Each becomes the topic `plugin:<id>:<topic>` — a rule in
   System › Benachrichtigungen, a channel in the apps and a switch in the portal.
   See "Notifications" below.
 
@@ -276,8 +292,8 @@ Netz suchen (UDP 6445, 20086) – nur wenn du es erlaubst".
 module.exports = {
   async start(gc) {},                       // after the process started
   async stop(gc) {},                        // before it is stopped
-  async request(req, gc) {                  // the plugin's API (admin and portal)
-    // req = { method, path, query, body, user: { id, name, role, portal?, loggedIn? }, lang }
+  async request(req, gc) {                  // the plugin's API (admin, portal and apps)
+    // req = { method, path, query, body, user: { id, name, role, portal?, loggedIn?, app? }, lang }
     return { status: 200, json: { ok: true } };
   },
   async render(view, gc) {                  // pages and the portal tab
@@ -296,6 +312,9 @@ module.exports = {
   },
   async runQuickAction({ user, lang, id }, gc) {  // optional: runs one of them for that viewer
     return { ok: true, message: 'Licht eingeschaltet', state: 'on' };
+  },
+  async appVisible(user, gc) {              // optional: false hides the app tab (ui.app) for this viewer
+    return true;                            // (no hook → shown; an error or no answer within 3 s → hidden)
   },
   async legacyImport(snapshot, gc) {        // optional, first-party only: built-in data handed over once
     return { ok: true };                    // (see "Built-in data import" below)
@@ -319,7 +338,7 @@ module.exports = {
 | `gc.settings.get/all/set` | the plugin's settings (secrets decrypted); `set` also keeps undeclared keys of the plugin's own (JSON) |
 | `gc.settings.setSecret(key, value)` | a secret of the plugin's own (e.g. a device API key per gateway): any key `[a-z][a-z0-9_.-]{0,63}` that is not a declared non-secret setting, stored encrypted with the server key like a `secret` setting, read back with `get`/`all`, never sent to the browser, re-keyed by backups; `null` deletes it |
 | `gc.users.list()/get(id)` | `{ id, name, role }` of enabled users (`users`) |
-| `gc.notify(message, { severity })` | activity log + webhooks, and a push on `plugin:<id>:default` (`notify`, ≤ 30/h) — see "Notifications" |
+| `gc.notify(message, { severity })` | activity log + webhooks, and a push on `plugin:<id>:default` (`notify`, ≤ 30/h or `perHour`) — see "Notifications" |
 | `gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data })` | push on a declared `notifyTopics` topic (+ activity row) → `{ pushed, id }` |
 | `gc.license.status()` | `{ required, licensed, state, expiresAt }` |
 
@@ -328,7 +347,8 @@ check and rate limit, as plain objects; actions run with the requesting
 user's rights (`req.user`) — a plugin never gets admin rights implicitly.
 Admin API: `/api/v1/plugins/<id>/api/<path>` (administrators); portal:
 `/api/v1/portal/plugins/<id>/api/<path>` (the identified portal viewer; changes
-need a portal or web login). A portal viewer comes as `user.portal = true` with
+need a portal or web login); apps: `/api/v1/client/plugins/<id>/api/<path>`
+(the owner of the device token, `user.app = true`; `permissions.app`, see "App"). A portal viewer comes as `user.portal = true` with
 `user.loggedIn`: `true` after a portal or web login, `false` when the viewer is
 only recognised by device trust (read-only) — data as sensitive as a vehicle's
 position or departure times belongs to a real login only. The portal hooks
@@ -342,8 +362,10 @@ owner of the app's device token as that viewer, with `loggedIn: true` and
 `gc.notify` reaches the GateControl apps through the notification center
 (docs/feature-notification-center.md) — pushed by GateControl itself, no
 third-party service. Both forms need `permissions.notify` and share the limit
-of **30 per hour and plugin**; every call also writes the `plugin_notice`
-activity entry (and its webhooks) as before.
+of **30 per hour and plugin** — or `n` with `"notify": { "perHour": n }`
+(1 ≤ n ≤ 120; the install dialog shows "bis zu n Push-Mitteilungen pro
+Stunde"); every call also writes the `plugin_notice` activity entry (and its
+webhooks) as before.
 
 ```js
 // old form — unchanged; push on topic plugin:<id>:default, title = plugin name,
@@ -355,7 +377,7 @@ const { pushed, id } = await gc.notify({
   topic: 'charging',              // declared in plugin.json notifyTopics ('default' always exists)
   title: 'Laden abgeschlossen',   // ≤ 120 characters, required
   body: 'Enyaq · 80 % · ca. 390 km', // ≤ 1000
-  priority: 'normal',             // info | normal | high ('critical' is capped to high)
+  priority: 'normal',             // info | normal | high | critical (capped to high unless the topic allowCritical)
   users: [12],                    // optional: only these people (otherwise the topic's subscribers)
   collapseKey: 'charge:VIN123',   // optional: same key replaces the shown notification
   ttl: 6 * 3600,                  // optional, seconds (60 … retention of the server)
@@ -371,13 +393,26 @@ const { pushed, id } = await gc.notify({
 * Who gets it: the rule of the topic (System › Benachrichtigungen; default:
   subscribers). A person's topic switch (portal) and quiet hours apply; the
   administrator can switch a plugin topic off.
+* **Critical**: `priority: 'critical'` is capped to `high` — except on a topic
+  declared with `"allowCritical": true` in `notifyTopics[]`: there it is kept
+  and, like the core's critical events, rings through quiet hours (unless the
+  person switched "Kritisches trotzdem melden" off) and through a person's
+  topic switch and device mutes (docs/feature-notification-center.md). The
+  `default` topic never allows critical. The install dialog says so
+  ("Notfall: darf Notfall-Mitteilungen senden, die die Ruhezeit überspringen
+  (<topics>)").
 * `data.actions` may only use the fixed action types (`open_app_route`,
   `open_portal`, `mute_1h`, `ack`, `done`); control characters are removed,
   the apps show text only.
-  The apps have no screen of their own for a plugin: an `open_app_route`
-  action to the plugin's own route (`plg-<id>`) is sent as `open_portal` to
-  `/portal#plg-<id>` — the plugin's portal tab, or the GateControl tab
-  ("Zuhause", "Fahrzeug") holding its first section, scrolled to it.
+  A plugin **without `ui.app`** has no screen of its own in the apps: an
+  `open_app_route` action to the plugin's own route (`plg-<id>`) is sent as
+  `open_portal` to `/portal#plg-<id>` — the plugin's portal tab, or the
+  GateControl tab ("Zuhause", "Fahrzeug") holding its first section,
+  scrolled to it. A plugin **with `ui.app`** keeps `open_app_route` →
+  `plg-<id>` (its app tab); `data.route` is `plg-<id>` either way.
+* Other keys in `data` are context for the plugin's own app screen and pass
+  unchanged (cleaned of control characters), e.g. `data: { familie: { type:
+  'locate_request', requestId: 7 } }` — all of `data` within 4 KB.
 * `data.facts` (optional): up to 6 `{ label, value }` pairs the apps show
   under the text, e.g. `[{ label: 'Akku', value: '80 %' }]` — one line each,
   label ≤ 60 and value ≤ 120 characters; anything else is dropped. Schedules ("evening before 18:00") are the
@@ -487,6 +522,10 @@ disable/uninstall and when the server shuts down.
 * **Quick actions** (`src/services/plugins/quickActions.js`): see "Quick
   actions" below — declarative actions for the apps' home-screen shortcuts,
   Quick Settings tiles and widget.
+* **App tab** (`ui.app`): the apps draw the plugin's screens themselves from
+  its client API — see "App". No plugin HTML in the apps.
+* **Maps** (`ui.maps`): the plugin's frames may show an OpenStreetMap map with
+  the host's Leaflet and open links in a new tab — see "Maps".
 * Sandboxed frames have no `alert`/`confirm`/`prompt` (no `allow-modals`):
   plugins draw their own dialogs. The frame grows with its content and with
   an open dialog (visible `position: fixed` elements count with their full
@@ -567,6 +606,103 @@ POST /api/v1/client/actions/:plugin/:id        (≤ 30 runs per minute and token
 
 A toggle's new `state` comes with the run's answer; the apps reload the list
 when they show their shortcuts, tiles or widget.
+
+## App (permissions.app, ui.app, client API)
+
+Plugins can serve the GateControl apps: `permissions.app: true` lets the apps
+call the plugin's `request()` with their device token; `ui.app` `{ label,
+icon }` additionally asks for a tab of its own in the apps (the app draws it
+natively from the plugin's API — no plugin HTML). Code:
+`src/services/plugins/app.js`, `src/routes/api/client/plugins.js`.
+
+* **Who**: plugins that may run (enabled, compatible, signed or allowed,
+  licensed), are running and declare `permissions.app` — the same "usable"
+  test as the portal and the quick actions.
+* **Viewer**: the owner of the token as `req.user = { id, name, role, portal:
+  true, loggedIn: true, app: true }` (the quick actions' viewer). `app: true`
+  tells the plugin the call comes from an app; the plugin decides itself what
+  an app user may do. A token without an owner gets no plugins (and 403 for
+  the API).
+* **`appVisible(user)`** (optional hook): called with that viewer (the
+  object itself, then `gc`), 3 s; `false` → the plugin is listed with
+  `tab: null` for that person (its API stays usable). No hook → the tab is
+  shown; an error or no answer in time → hidden.
+* **Language** `lang`: `?lang=de|en`, else the owner's language setting, else
+  `Accept-Language`, else `de` (as for the quick actions).
+
+Client API: API token with scope `client` or `full-access` and machine binding
+like every `/api/v1/client/*` route (a browser session gets 403
+`token_required`, another scope 403 `scope_required`), `Cache-Control:
+no-store`. Mounted before the general API limiter; own limit **240 requests
+per minute and token** for both routes (failed requests count) → 429
+`{ ok: false, code: 'rate_limited' }`.
+
+```
+GET /api/v1/client/plugins
+  200 { ok: true, plugins: [
+        { id: 'gatecontrol-familie', name: 'Familie', version: '1.0.0',
+          tab: { label: 'Familie', icon: '<svg path d>' } },      // ui.app, visible
+        { id: 'gatecontrol-alltag', name: 'Alltag', version: '1.2.0', tab: null }  // API only (or hidden)
+      ] }
+  token without an owner → { ok: true, plugins: [] }
+
+ALL /api/v1/client/plugins/:id/api/<path>     GET POST PUT PATCH DELETE
+  → the plugin's request({ method, path, query, body, user, lang }) answer
+  404 { ok: false, code: 'not_found' }     unknown plugin, not usable, no permissions.app
+  403 { ok: false, code: 'no_user' }       token without an owner
+  413 { ok: false, code: 'too_large' }     JSON body over 64 KB
+  502 / 503 / 504                          plugin_error / not_running / timeout (like the portal)
+```
+
+The install dialog shows "App: Daten für die GateControl-App bereitstellen"
+and, with `ui.app`, "App-Tab „<label>“" under *Oberfläche*; the plugin's
+overview lists the app tab.
+
+## Maps
+
+`ui.maps: true` lets the plugin show an OpenStreetMap map in its frames (admin
+pages, portal tab and sections). Only for those plugins' frames
+(`src/services/plugins/frame.js`):
+
+* **CSP**: `img-src data: https://tile.openstreetmap.org <origin>/plugins/_shared/leaflet/images/`,
+  `script-src 'unsafe-inline' <origin>/plugins/_shared/leaflet/leaflet.js`,
+  `style-src 'unsafe-inline' <origin>/plugins/_shared/leaflet/leaflet.css` —
+  `<origin>` is the origin the frame was loaded from (scheme + Host header;
+  a Host that is not a plain `host[:port]` gets the tiles but no shared
+  Leaflet). Exactly these files, not `'self'`; `connect-src` stays `'none'`.
+* **Leaflet**: GateControl's vendored Leaflet 1.9.4 (`public/vendor/leaflet`,
+  the one of the device page), served without a session and with
+  `Cross-Origin-Resource-Policy: cross-origin` (the sandboxed frame has an
+  opaque origin):
+  * `/plugins/_shared/leaflet/leaflet.js`
+  * `/plugins/_shared/leaflet/leaflet.css` (the Leaflet section of
+    `public/css/app.css`, image URLs relative)
+  * `/plugins/_shared/leaflet/images/{marker-icon,marker-icon-2x,marker-shadow,layers,layers-2x}.png`
+    (the default marker works without setting `L.Icon.Default.imagePath`).
+* **Referrer**: `Referrer-Policy: strict-origin-when-cross-origin` (header and
+  meta) instead of `no-referrer` — the tile server gets the origin only, as
+  on the device page (OpenStreetMap's tile policy wants a referrer), never
+  the frame's URL.
+* **Links**: the frame's sandbox (CSP and the `<iframe>` attribute) gets
+  `allow-popups allow-popups-to-escape-sandbox`, so a plain
+  `<a href="https://www.openstreetmap.org/?mlat=…&mlon=…" target="_blank" rel="noopener">`
+  opens in a new tab as a normal page. Frames of other plugins cannot open
+  popups.
+* The install dialog shows "Karten: zeigt Karten von OpenStreetMap …".
+
+```html
+<link rel="stylesheet" href="/plugins/_shared/leaflet/leaflet.css">
+<script src="/plugins/_shared/leaflet/leaflet.js"></script>
+<div id="map" style="height:320px"></div>
+<script>
+  const map = L.map('map').setView([52.52, 13.405], 15);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+  }).addTo(map);
+  L.marker([52.52, 13.405]).addTo(map);
+</script>
+```
 
 ## Licences
 

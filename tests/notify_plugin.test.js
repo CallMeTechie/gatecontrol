@@ -21,10 +21,10 @@ let adminId, anna, annaDev, ben, benDev;
 const TOPICS = [{ id: 'charging', label: { de: 'Laden abgeschlossen', en: 'Charging complete' }, default: true },
   { id: 'service', label: 'Wartung', default: false }];
 
-function fakePlugin(id, { notify = true, topics = TOPICS } = {}) {
+function fakePlugin(id, { notify = true, topics = TOPICS, app = false, ui = null } = {}) {
   const raw = {
     id, name: { de: 'Fahrzeug', en: 'Vehicle' }, version: '1.0.0', publisher: 'Test', gatecontrol: '>=1.0.0', entry: 'server/index.js',
-    permissions: { notify }, ...(topics ? { notifyTopics: topics } : {}),
+    permissions: { notify, ...(app ? { app: true } : {}) }, ...(topics ? { notifyTopics: topics } : {}), ...(ui ? { ui } : {}),
   };
   const v = manifest.validate(raw);
   assert.ok(v.ok, JSON.stringify(v.errors));
@@ -155,6 +155,67 @@ describe('hostApi notify', () => {
     for (let i = 0; i < 15; i++) await call(p, { message: `m${i}` });
     for (let i = 0; i < 15; i++) await call(p, { notification: { topic: 'charging', title: `t${i}` } });
     await assert.rejects(() => call(p, { message: 'one too many' }), (e) => e.code === 'ERR_RATE_LIMIT');
+  });
+
+  it('permissions.notify { perHour: n }: validated (1…120), the budget per hour of that plugin', async () => {
+    const base = { id: 'x-rate', name: 'X', version: '1.0.0', publisher: 'T', gatecontrol: '>=1.0.0', entry: 'server/index.js' };
+    const v = (notify) => manifest.validate({ ...base, permissions: { notify } });
+    assert.deepEqual([v(true).manifest.permissions.notify, v(true).manifest.permissions.notifyPerHour], [true, 30]);
+    assert.deepEqual([v(false).manifest.permissions.notify, v(false).manifest.permissions.notifyPerHour], [false, null]);
+    assert.deepEqual([v({ perHour: 120 }).manifest.permissions.notify, v({ perHour: 120 }).manifest.permissions.notifyPerHour], [true, 120]);
+    assert.equal(v({ perHour: 1 }).manifest.permissions.notifyPerHour, 1);
+    for (const bad of [{ perHour: 0 }, { perHour: 121 }, { perHour: 1.5 }, { perHour: '10' }, {}, { perHour: 10, burst: 2 }, [], 'yes', 1]) {
+      assert.deepEqual(v(bad).errors, ['permissions.notify: invalid'], JSON.stringify(bad));
+    }
+    assert.equal(manifest.validate({ ...base, permissions: { notify: { perHour: 5 } }, notifyTopics: TOPICS }).ok, true, 'topics with the object form');
+
+    const p = fakePlugin('car-rate', { notify: { perHour: 3 } });
+    for (let i = 0; i < 3; i++) await call(p, { notification: { topic: 'charging', title: `t${i}` } });
+    await assert.rejects(() => call(p, { message: 'one too many' }), (e) => e.code === 'ERR_RATE_LIMIT');
+    const big = fakePlugin('car-rate-120', { notify: { perHour: 120 } });
+    for (let i = 0; i < 120; i++) await call(big, { message: `m${i}` });
+    await assert.rejects(() => call(big, { message: 'one too many' }), (e) => e.code === 'ERR_RATE_LIMIT');
+  });
+
+  it('notifyTopics[].allowCritical: critical is kept on that topic only and bypasses quiet hours', async () => {
+    const base = { id: 'x-crit', name: 'X', version: '1.0.0', publisher: 'T', gatecontrol: '>=1.0.0', entry: 'server/index.js', permissions: { notify: true } };
+    const ok = manifest.validate({ ...base, notifyTopics: [{ id: 'sos', label: 'SOS', allowCritical: true }, { id: 'info', label: 'Info', allowCritical: false }] });
+    assert.deepEqual(ok.manifest.notifyTopics, [
+      { id: 'sos', label: { de: 'SOS', en: 'SOS' }, default: true, allowCritical: true },
+      { id: 'info', label: { de: 'Info', en: 'Info' }, default: true },
+    ]);
+    assert.deepEqual(manifest.validate({ ...base, notifyTopics: [{ id: 'sos', label: 'SOS', allowCritical: 'yes' }] }).errors, ['notifyTopics: invalid']);
+
+    const cara = H.makeUser('cara');
+    const caraDev = H.makeDevice(cara);
+    const hhmm = (ms) => new Date(ms).toISOString().slice(11, 16);
+    H.db().prepare("INSERT INTO notify_user_prefs (user_id, quiet_from, quiet_to, tz, critical_bypass) VALUES (?, ?, ?, 'UTC', 1)")
+      .run(cara, hhmm(Date.now() - 3600000), hhmm(Date.now() + 3600000));
+    const p = fakePlugin('car-sos', { topics: [{ id: 'sos', label: 'SOS', allowCritical: true }, ...TOPICS] });
+    await call(p, { notification: { topic: 'sos', title: 'SOS von Tim', priority: 'critical', users: [cara] } });
+    let n = H.lastNotification();
+    assert.equal(n.priority, 'critical');
+    assert.deepEqual(H.deliveries(n.id).map((d) => [d.token_id, d.silent]), [[caraDev.tokenId, 0]], 'rings in the quiet hours');
+    await call(p, { notification: { topic: 'charging', title: 'Laden', priority: 'critical', users: [cara] } });
+    n = H.lastNotification();
+    assert.equal(n.priority, 'high', 'another topic of the same plugin is capped');
+    assert.deepEqual(H.deliveries(n.id).map((d) => d.silent), [1], 'high stays silent in the quiet hours');
+    await call(p, { notification: { title: 'Default', priority: 'critical', users: [cara] } });
+    assert.equal(H.lastNotification().priority, 'high', 'the default topic is capped');
+  });
+
+  it('a plugin with ui.app keeps open_app_route to its own route (the app has a screen now)', async () => {
+    const p = fakePlugin('car-app', { app: true, ui: { app: { label: 'Fahrzeug' } } });
+    await call(p, { notification: { topic: 'charging', title: 'Fertig', data: { familie: { type: 'x', n: 1 }, actions: [
+      { id: 'open', label: 'Öffnen', type: 'open_app_route', target: 'plg-car-app' },
+    ] } } });
+    const d = JSON.parse(H.lastNotification().data);
+    assert.equal(d.route, 'plg-car-app');
+    assert.deepEqual(d.familie, { type: 'x', n: 1 }, 'context keys survive');
+    assert.deepEqual(d.actions, [{ id: 'open', label: 'Öffnen', type: 'open_app_route', target: 'plg-car-app' }]);
+    const apiOnly = fakePlugin('car-api', { app: true });
+    await call(apiOnly, { notification: { topic: 'charging', title: 'Fertig', data: { actions: [{ id: 'open', label: 'Öffnen', type: 'open_app_route', target: 'plg-car-api' }] } } });
+    assert.deepEqual(JSON.parse(H.lastNotification().data).actions, [{ id: 'open', label: 'Öffnen', type: 'open_portal', target: '/portal#plg-car-api' }], 'without ui.app: the portal');
   });
 
   it('without the email_alerts licence: only the activity row, no push', async () => {

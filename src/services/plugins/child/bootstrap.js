@@ -250,6 +250,10 @@ async function handleCall(method, payload) {
       // optional: hide the portal tab / a section (payload.section) for viewers with nothing to see
       if (typeof plugin.portalVisible !== 'function') return { visible: true };
       return { visible: (await plugin.portalVisible(payload, gc)) !== false };
+    case 'appVisible':
+      // optional: hide the app tab (ui.app) for a viewer; payload = the viewer itself
+      if (typeof plugin.appVisible !== 'function') return { visible: true };
+      return { visible: (await plugin.appVisible(payload, gc)) !== false };
     case 'portalTiles':
       // optional: declarative Start-tab tiles for the viewer (rendered by the host)
       return typeof plugin.portalTiles === 'function' ? plugin.portalTiles(payload, gc) : [];

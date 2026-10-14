@@ -8,11 +8,15 @@
 //   GET /plugins/:id/frame/:page      the frame document (plugin HTML, sandboxed)
 //   GET /portal/plugins/:id/frame     the frame of a plugin's portal tab
 //                                     (?section=<id>: one of its sections in Zuhause/Fahrzeug)
+//   GET /plugins/_shared/leaflet/…    the vendored Leaflet for frames of plugins
+//                                     with ui.maps (leaflet.js, leaflet.css, images/*.png)
 //
 // Admin pages are for administrators like every other admin page (members
 // are sent to /profile). The frame is rendered by the plugin process for the
 // requesting user; its HTML never enters a GateControl page (frame.js).
 
+const fs = require('node:fs');
+const path = require('node:path');
 const { Router } = require('express');
 const plugins = require('../services/plugins');
 const runtime = require('../services/plugins/runtime');
@@ -23,6 +27,74 @@ const { requireAuth } = require('../middleware/auth');
 const { pluginPageLimiter } = require('../middleware/rateLimit');
 
 const router = Router();
+
+// ─── Shared Leaflet for map frames (ui.maps, docs/plugins.md "Maps") ─────
+// Public like /vendor (a sandboxed frame has an opaque origin and sends no
+// cookies). Cross-Origin-Resource-Policy cross-origin: helmet's same-origin
+// would block the frame (opaque origin) from loading them. The stylesheet is
+// the Leaflet section of public/css/app.css (the admin pages' only
+// stylesheet carries it), with its image URLs relative to this folder.
+
+const LEAFLET_DIR = path.join(__dirname, '..', '..', 'public', 'vendor', 'leaflet');
+const LEAFLET_IMAGES = new Set(['layers.png', 'layers-2x.png', 'marker-icon.png', 'marker-icon-2x.png', 'marker-shadow.png']);
+const LEAFLET_CSS_START = '/* ---- Leaflet 1.9.4';
+const LEAFLET_CSS_END = '/* ====';
+let leafletCss = null;
+
+/** The Leaflet stylesheet (from app.css), '' when the section cannot be found. */
+function leafletStylesheet() {
+  if (leafletCss !== null) return leafletCss;
+  let css = '';
+  try {
+    const app = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'css', 'app.css'), 'utf8');
+    const a = app.indexOf(LEAFLET_CSS_START);
+    const b = a < 0 ? -1 : app.indexOf(LEAFLET_CSS_END, a);
+    if (a >= 0) {
+      const section = app.slice(a, b < 0 ? app.length : b);
+      css = '/* Leaflet 1.9.4 (BSD-2-Clause, public/vendor/leaflet) for plugin map frames — docs/plugins.md "Maps" */\n'
+        + section.slice(section.indexOf('*/') + 2).replace(/url\(\/vendor\/leaflet\/images\//g, 'url(images/').trim() + '\n';
+    }
+  } catch { css = ''; }
+  leafletCss = css;
+  return css;
+}
+
+function sharedHeaders(res) {
+  res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.set('Cache-Control', process.env.NODE_ENV === 'production' ? 'public, max-age=86400' : 'no-cache');
+  res.set('X-Content-Type-Options', 'nosniff');
+}
+
+router.get('/plugins/_shared/leaflet/leaflet.js', (req, res) => {
+  sharedHeaders(res);
+  res.type('application/javascript');
+  return res.sendFile(path.join(LEAFLET_DIR, 'leaflet.js'));
+});
+
+router.get('/plugins/_shared/leaflet/leaflet.css', (req, res) => {
+  const css = leafletStylesheet();
+  if (!css) return res.sendStatus(404);
+  sharedHeaders(res);
+  res.type('text/css');
+  return res.send(css);
+});
+
+router.get('/plugins/_shared/leaflet/images/:file', (req, res) => {
+  const f = String(req.params.file || '');
+  if (!LEAFLET_IMAGES.has(f)) return res.sendStatus(404);
+  sharedHeaders(res);
+  res.type('image/png');
+  return res.sendFile(path.join(LEAFLET_DIR, 'images', f));
+});
+
+function mapsOf(p) { return !!(p && p.manifest && p.manifest.ui && p.manifest.ui.maps); }
+
+/** Frame headers for plugin `p` (maps → the relaxed CSP for this request's origin). */
+function frameHeaders(req, res, p) {
+  const maps = mapsOf(p);
+  frame.headers(res, { maps, origin: maps ? frame.originOf(req) : null });
+  return maps;
+}
 
 function lang(req, res) { return (req.language || res.locals.language) === 'en' ? 'en' : 'de'; }
 
@@ -56,8 +128,8 @@ router.get('/plugins/:id/frame/:page', pluginPageLimiter, requireAuth, async (re
   const u = res.locals.user;
   try {
     const out = await plugins.render(p.id, { view: 'page', page: page.id, lang: l, user: { id: u.id, name: u.display_name || u.username, role: u.role } });
-    frame.headers(res);
-    return res.send(frame.document({ html: out.html, lang: l }));
+    const maps = frameHeaders(req, res, p);
+    return res.send(frame.document({ html: out.html, lang: l, maps }));
   } catch (e) {
     return errorFrame(res, 503, res.locals.t(e && e.code === 'ERR_NOT_RUNNING' ? 'plugins.page.not_running' : 'plugins.page.error'), l);
   }
@@ -109,11 +181,12 @@ router.get('/portal/plugins/:id/frame', pluginPageLimiter, (req, res, next) => {
   if (!u || u.enabled !== 1) return errorFrame(res, 403, res.locals.t('plugins.page.forbidden'), l);
   try {
     const out = await plugins.render(p.id, { view: 'portal', page: null, section: section ? section.id : null, lang: l, user: { id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: !!req.portalLoggedIn }, loggedIn: !!req.portalLoggedIn });
-    frame.headers(res);
-    return res.send(frame.document({ html: out.html, lang: l }));
+    const maps = frameHeaders(req, res, p);
+    return res.send(frame.document({ html: out.html, lang: l, maps }));
   } catch (e) {
     return errorFrame(res, 503, res.locals.t(e && e.code === 'ERR_NOT_RUNNING' ? 'plugins.page.not_running' : 'plugins.page.error'), l);
   }
 });
 
 module.exports = router;
+module.exports._leafletStylesheet = leafletStylesheet;

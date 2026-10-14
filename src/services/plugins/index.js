@@ -114,6 +114,12 @@ function permissionSummary(m, lang) {
   return {
     network: require('./netPolicy').describe(p, lang),
     storage: p.storage, portal: p.portal, users: p.users, notify: p.notify,
+    // push budget per hour (permissions.notify { perHour }), topics allowed to send critical
+    notifyPerHour: p.notify ? (p.notifyPerHour || manifestLib.NOTIFY_PER_HOUR_DEFAULT) : null,
+    criticalTopics: p.notify ? (m.notifyTopics || []).filter((t) => t.allowCritical === true).map((t) => loc(t.label, lang)) : [],
+    app: !!p.app,
+    appTab: m.ui.app ? loc(m.ui.app.label, lang) : null,
+    maps: !!m.ui.maps,
     background: p.background ? p.background.intervalSeconds : null,
     pages: m.ui.pages.map((x) => loc(x.title, lang)), settings: m.ui.settings.length,
     portalTab: m.ui.portal && m.ui.portal.label ? loc(m.ui.portal.label, lang) : null,
@@ -452,6 +458,8 @@ function view(p, lang) {
     pages: (m.ui && m.ui.pages ? m.ui.pages : []).map((x) => ({ id: x.id, title: loc(x.title, lang) })),
     portal: m.ui && m.ui.portal ? { label: m.ui.portal.label ? loc(m.ui.portal.label, lang) : null,
       sections: (m.ui.portal.sections || []).map((s) => ({ tab: s.tab, title: loc(s.title, lang) })) } : null,
+    app: m.ui && m.ui.app ? { label: loc(m.ui.app.label, lang), icon: m.ui.app.icon } : null,
+    maps: !!(m.ui && m.ui.maps),
     settingsCount: m.ui && m.ui.settings ? m.ui.settings.length : 0,
     installedAt: p.installedAt,
     updatedAt: p.updatedAt,

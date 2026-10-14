@@ -571,6 +571,13 @@ router.get('/api/v1/events', eventStreamLimiter, requireAuth, requireAdmin, requ
 const { pushStreamLimiter } = require('../middleware/rateLimit');
 router.get('/api/v1/client/push', requireAuth, pushStreamLimiter, require('./api/client/push').stream);
 
+// ─── Plugins in the apps (docs/plugins.md "App") — token-authed ──
+// Before the apiLimiter: an app syncing with a plugin would exhaust the
+// general budget (GC_RATE_LIMIT_API per 15 minutes); the router has its own
+// limiter per token (240 per minute). Token, scope `client`/`full-access` and
+// machine binding are checked by the handlers.
+router.use('/api/v1/client/plugins', requireAuth, require('./api/client/plugins'));
+
 // ─── Portal API (source-IP identity + portal/web session) ───────
 const portalIdentity = require('../middleware/portalIdentity');
 const portalOwner = require('../middleware/portalOwner');

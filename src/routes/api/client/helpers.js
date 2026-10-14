@@ -114,7 +114,48 @@ function routeStatus(route) {
   return route.monitoring_status === 'up' || route.monitoring_status === 'down' ? route.monitoring_status : null;
 }
 
+// ─── Plugin endpoints of the apps (quick actions, client plugin API) ─────
+
+/**
+ * Token only (scope `client` or `full-access`) + machine binding. Answers
+ * 403 token_required / scope_required itself; false = answered.
+ */
+function requireClientToken(req, res) {
+  if (!req.tokenAuth) { res.status(403).json({ ok: false, error: 'token_required' }); return false; }
+  const scopes = req.tokenScopes || [];
+  if (!scopes.includes('client') && !scopes.includes('full-access')) {
+    res.status(403).json({ ok: false, error: 'scope_required' });
+    return false;
+  }
+  return verifyMachineBinding(req, res);
+}
+
+/**
+ * The token's owner as the viewer the plugins get —
+ * { user: { id, name, role, portal: true, loggedIn: true, app: true }, language } —
+ * or null (no owner, owner disabled). A machine-bound device token of that
+ * person is a real credential, hence loggedIn.
+ */
+function tokenViewer(req) {
+  if (req.tokenUserId == null) return null;
+  const u = require('../../../services/users').getById(req.tokenUserId);
+  if (!u || u.enabled !== 1) return null;
+  return { user: { id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: true, app: true }, language: u.language };
+}
+
+/** ?lang=de|en, else the owner's language setting, else Accept-Language, else 'de'. */
+function viewerLang(req, v) {
+  const q = typeof req.query.lang === 'string' ? req.query.lang.slice(0, 2).toLowerCase() : '';
+  if (q === 'de' || q === 'en') return q;
+  const own = v && typeof v.language === 'string' ? v.language.slice(0, 2).toLowerCase() : '';
+  if (own === 'de' || own === 'en') return own;
+  return req.language === 'en' ? 'en' : 'de';
+}
+
 module.exports = {
+  requireClientToken,
+  tokenViewer,
+  viewerLang,
   routeAuthSummary,
   routeStatus,
   clientLabel,

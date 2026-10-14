@@ -48,6 +48,13 @@ function createApp() {
   // results, etc. Reject oversized bodies BEFORE express.json runs,
   // because body-parser sets req._body=true after the first parse,
   // so a per-router express.json({ limit: '16kb' }) would be a no-op.
+  // The apps' plugin API (docs/plugins.md "App") takes JSON up to 64 KB.
+  app.use((req, res, next) => {
+    if (!/^\/api\/v1\/client\/plugins\/[^/]+\/api\//i.test(req.path)) return next();
+    const len = parseInt(req.headers['content-length'] || '0', 10);
+    if (len > 64 * 1024) return res.status(413).json({ ok: false, code: 'too_large' });
+    next();
+  });
   app.use((req, res, next) => {
     if (!req.path.startsWith('/api/v1/gateway/')) return next();
     const len = parseInt(req.headers['content-length'] || '0', 10);

@@ -475,7 +475,8 @@ function tick() {
 
 /**
  * A plugin message (already validated by hostApi): { topic, title, body,
- * priority, users, collapseKey, ttl, data }. Needs the email_alerts licence
+ * priority, users, collapseKey, ttl, data, allowCritical }. Priority is
+ * capped at high unless the topic allows critical. Needs the email_alerts licence
  * ("plugin topics"); without it only the activity row is written.
  */
 function emitPlugin(pluginId, n) {
@@ -487,7 +488,8 @@ function emitPlugin(pluginId, n) {
   let r = null;
   if (rule.ch_app) {
     let priority = n.priority || rule.priority;
-    if (PRIORITY_RANK[priority] > PRIORITY_RANK.high) priority = 'high';
+    // critical only for a topic declared with allowCritical (hostApi.notify)
+    if (PRIORITY_RANK[priority] > PRIORITY_RANK.high && n.allowCritical !== true) priority = 'high';
     const users = Array.isArray(n.users) && n.users.length ? n.users : null;
     r = publish({
       eventId, eventType: 'plugin_notice', topic: eventId, source: `plugin:${pluginId}`, priority,

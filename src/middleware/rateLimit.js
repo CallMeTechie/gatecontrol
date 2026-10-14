@@ -442,3 +442,20 @@ const speedtestLimiter = rateLimit({
   },
 });
 module.exports.speedtestLimiter = speedtestLimiter;
+
+// /api/v1/client/plugins* — the apps' plugin API (docs/plugins.md "App"):
+// 240 requests per minute and device token (an app syncing a shopping list
+// or answering a locate request, not a scraper). Mounted before the general
+// apiLimiter, which would cap an app at GC_RATE_LIMIT_API per 15 minutes.
+// Failed requests count too.
+const clientPluginApiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.tokenAuth && req.tokenId != null ? `client-plugins:${req.tokenId}` : `client-plugins-ip:${ipKeyGenerator(req.ip)}`),
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, code: 'rate_limited', error: req.t ? req.t('error.rate_limit.api') : 'rate_limited' });
+  },
+});
+module.exports.clientPluginApiLimiter = clientPluginApiLimiter;

@@ -14,6 +14,9 @@ const FILE_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)
 const ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,600}$/;
 const SETTING_TYPES = new Set(['text', 'number', 'boolean', 'select', 'secret']);
 const NOTIFY_TOPIC_RE = /^[a-z][a-z0-9_-]{0,31}$/;
+// Push budget of a plugin per hour: permissions.notify true → 30, { perHour } → 1…120.
+const NOTIFY_PER_HOUR_DEFAULT = 30;
+const NOTIFY_PER_HOUR_MAX = 120;
 
 /** "x" or { de, en } → { de, en } (both filled); null when invalid. */
 function locText(v, max) {
@@ -138,15 +141,27 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, background: null };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, background: null };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
     if (net) perms.network = net;
-    for (const k of ['storage', 'portal', 'users', 'notify']) {
+    for (const k of ['storage', 'portal', 'users', 'app']) {
       if (p[k] == null) continue;
       if (typeof p[k] !== 'boolean') err(`permissions.${k}: invalid`);
       else perms[k] = p[k];
+    }
+    // notify: true (NOTIFY_PER_HOUR_DEFAULT pushes per hour) or { perHour: 1…120 }
+    if (p.notify != null) {
+      const n = p.notify;
+      if (typeof n === 'boolean') {
+        perms.notify = n;
+        perms.notifyPerHour = n ? NOTIFY_PER_HOUR_DEFAULT : null;
+      } else if (n && typeof n === 'object' && !Array.isArray(n) && Object.keys(n).length === 1
+        && Number.isInteger(n.perHour) && n.perHour >= 1 && n.perHour <= NOTIFY_PER_HOUR_MAX) {
+        perms.notify = true;
+        perms.notifyPerHour = n.perHour;
+      } else err('permissions.notify: invalid');
     }
     if (p.background != null) {
       const iv = p.background && Number(p.background.intervalSeconds);
@@ -165,11 +180,13 @@ function validate(raw, opts = {}) {
     else {
       for (const t of list) {
         const label = locText(t && t.label, 60);
-        if (!t || typeof t.id !== 'string' || !NOTIFY_TOPIC_RE.test(t.id) || !label || (t.default != null && typeof t.default !== 'boolean')) {
+        if (!t || typeof t.id !== 'string' || !NOTIFY_TOPIC_RE.test(t.id) || !label || (t.default != null && typeof t.default !== 'boolean')
+          || (t.allowCritical != null && typeof t.allowCritical !== 'boolean')) {
           err('notifyTopics: invalid'); break;
         }
         if (topics.some((x) => x.id === t.id)) { err('notifyTopics: duplicate'); break; }
-        topics.push({ id: t.id, label, default: t.default !== false });
+        // allowCritical: priority 'critical' is kept for this topic (bypasses quiet hours like core critical events)
+        topics.push({ id: t.id, label, default: t.default !== false, ...(t.allowCritical === true ? { allowCritical: true } : {}) });
       }
       m.notifyTopics = topics;
     }
@@ -177,7 +194,7 @@ function validate(raw, opts = {}) {
 
   // ui
   const u = raw.ui == null ? {} : raw.ui;
-  const ui = { nav: null, pages: [], settings: [], portal: null };
+  const ui = { nav: null, pages: [], settings: [], portal: null, app: null, maps: false };
   if (!u || typeof u !== 'object' || Array.isArray(u)) err('ui: invalid');
   else {
     if (u.nav != null) {
@@ -241,6 +258,20 @@ function validate(raw, opts = {}) {
       else if (!perms.portal) err('ui.portal: needs permissions.portal');
       else ui.portal = { label: label || null, icon, sections };
     }
+    if (u.app != null) {
+      // own tab in the GateControl apps: { label, icon } (icon like ui.nav.icon)
+      const ap = u.app && typeof u.app === 'object' && !Array.isArray(u.app) ? u.app : null;
+      const label = ap ? locText(ap.label, 40) : null;
+      const icon = ap && ap.icon != null ? ap.icon : 'M4 4h16v16H4z';
+      if (!ap || Object.keys(ap).some((k) => k !== 'label' && k !== 'icon') || !label || typeof icon !== 'string' || !ICON_RE.test(icon)) err('ui.app: invalid');
+      else if (!perms.app) err('ui.app: needs permissions.app');
+      else ui.app = { label, icon };
+    }
+    if (u.maps != null) {
+      // OpenStreetMap tiles + the host's Leaflet in the plugin's frames (frame.js)
+      if (typeof u.maps !== 'boolean') err('ui.maps: invalid');
+      else ui.maps = u.maps;
+    }
   }
   m.ui = ui;
 
@@ -283,4 +314,4 @@ function migrationsOf(manifest, files) {
   return out;
 }
 
-module.exports = { validate, loc, locText, migrationsOf, isFile, PORTAL_SECTION_TABS };
+module.exports = { validate, loc, locText, migrationsOf, isFile, PORTAL_SECTION_TABS, NOTIFY_PER_HOUR_DEFAULT, NOTIFY_PER_HOUR_MAX };
