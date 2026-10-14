@@ -1,6 +1,7 @@
 {#- Dialogs of the users list (/users) and the user profile (/users/:id):
     roles compared, create user, access wizard, edit access, edit profile,
-    new password, change role, delete, invitation, owner-less accesses.
+    new password, change role, delete, invitation, kiosk pairing,
+    owner-less accesses.
     public/js/users.js drives them on both pages; their strings come from
     the #us-i18n island (routes/index.js USERS_I18N_PREFIXES). -#}
 
@@ -341,6 +342,27 @@
       <div class="us-error" id="us-inv-error" role="alert" hidden></div>
     </div>
     <div class="modal-foot"><button type="button" class="btn btn-ghost" data-us-close id="us-inv-close">{{ t('common.cancel') }}</button><button type="button" class="btn btn-primary" id="us-inv-create">{{ t('us.inv.create') }}</button></div>
+  </div>
+</div>
+
+{# ── Kiosk device pairing (docs/feature-kiosk-devices.md) ────────── #}
+<div class="modal-overlay us-dlg" id="us-dlg-kiosk" style="display:none" data-us-dialog>
+  <div class="modal us-modal us-modal-sm" role="dialog" aria-modal="true" aria-labelledby="us-ki-title">
+    <div class="modal-head"><div class="us-modal-headtext"><h2 class="modal-title" id="us-ki-title">{{ t('up.kiosk.dlg_title') }}</h2><div class="us-muted" id="us-ki-for"></div></div>{{ closeBtn(t('common.close')) }}</div>
+    <div class="modal-body us-modal-body us-form">
+      <label class="us-field"><span class="us-label">{{ t('up.kiosk.dlg_name') }}</span><input type="text" class="form-input" id="us-ki-name" maxlength="60" data-autofocus></label>
+      <div id="us-ki-result" hidden>
+        <div class="us-code-qr">
+          <img id="us-ki-qr" alt="{{ t('up.kiosk.dlg_qr') }}" width="200" height="200">
+          <div class="us-code-value" id="us-ki-code"></div>
+          <div class="us-hint us-center" id="us-ki-countdown" aria-live="polite"></div>
+        </div>
+        <p class="us-muted us-small" id="us-ki-help"></p>
+      </div>
+      <p class="us-hint" id="us-ki-paired" role="status" hidden></p>
+      <div class="us-error" id="us-ki-error" role="alert" hidden></div>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-us-close id="us-ki-close">{{ t('common.close') }}</button><button type="button" class="btn btn-primary" id="us-ki-create">{{ t('up.kiosk.dlg_create') }}</button></div>
   </div>
 </div>
 

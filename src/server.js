@@ -285,6 +285,13 @@ async function start() {
     });
     setInterval(retryCleanup, 6 * 60 * 60 * 1000);
 
+    // Kiosk devices (docs/feature-kiosk-devices.md): expired pairing codes go
+    // at once, expired devices are logged (kiosk_expired), revoked/expired
+    // devices are deleted after 30 days. Hourly, and once at start.
+    const retryKioskCleanup = withRetry('kiosk-cleanup', async () => require('./services/kiosk').cleanup());
+    setInterval(retryKioskCleanup, 60 * 60 * 1000);
+    retryKioskCleanup();
+
     // Periodic alert checks (every hour): backup reminder, CPU / RAM / disk
     // thresholds, de-duplicated (services/alertChecks.js).
     const retryAlertChecks = withRetry('alert-checks', () => require('./services/alertChecks').run());

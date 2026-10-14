@@ -11,7 +11,8 @@
 // built-in portal widgets: device trust is read-only). `user.loggedIn` tells
 // the plugin whether the viewer signed in (true) or is only recognised by
 // device trust (false) — sensitive data (e.g. a vehicle's position) only for
-// a real login.
+// a real login. A kiosk device (wall tablet) comes with `loggedIn: true` and
+// `kiosk: true`.
 
 const { Router } = require('express');
 const plugins = require('../../services/plugins');
@@ -27,7 +28,11 @@ function portalUser(req) {
   if (req.method !== 'GET' && !req.portalLoggedIn) return null;
   const u = require('../../services/users').getById(req.portalOwnerId);
   if (!u || u.enabled !== 1) return null;
-  return { id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: !!req.portalLoggedIn };
+  const user = { id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: !!req.portalLoggedIn };
+  // A kiosk device (docs/feature-kiosk-devices.md): signed in as this user,
+  // `kiosk: true` in addition to `loggedIn: true`.
+  if (req.portalOwnerSource === 'kiosk' && req.portalKiosk) user.kiosk = true;
+  return user;
 }
 
 // Start tiles and search of the plugins (src/services/plugins/portal.js):

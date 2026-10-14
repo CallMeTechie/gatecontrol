@@ -54,14 +54,15 @@ function portalSessionUser(req) {
  * Resolve the portal OWNER on top of portalIdentity (which set req.portalPeerId).
  * Precedence:
  *   1. a full web session (password/passkey login, session.userId)
- *   2. a portal-only session (login link of the app, or picker + PIN)
- *   3. the anonymous mode the visitor chose ("nur die Dienste für alle")
- *   4. a shared device: nobody — the page asks "Wer bist du?" (never IP trust)
- *   5. a single-person device + automatic owner recognition: peers.user_id
+ *   2. a kiosk device (cookie gc_kiosk, middleware/kioskSession.js)
+ *   3. a portal-only session (login link of the app, or picker + PIN)
+ *   4. the anonymous mode the visitor chose ("nur die Dienste für alle")
+ *   5. a shared device: nobody — the page asks "Wer bist du?" (never IP trust)
+ *   6. a single-person device + automatic owner recognition: peers.user_id
  * The owner id never comes from the request body/query/header (no IDOR).
  *
- * Sets req.portalOwnerId, req.portalOwnerSource ('session' | 'portal' |
- * 'device' | null), req.portalLoggedIn (may control devices),
+ * Sets req.portalOwnerId, req.portalOwnerSource ('session' | 'kiosk' |
+ * 'portal' | 'device' | null), req.portalLoggedIn (may control devices),
  * req.portalAnonymous and req.portalSharedDevice.
  */
 function portalOwner(req, _res, next) {
@@ -84,6 +85,14 @@ function portalOwner(req, _res, next) {
     req.portalLoggedIn = true;
     req.portalOwnerId = req.session.userId;
     req.portalOwnerSource = 'session';
+    return next();
+  }
+  // A kiosk device (middleware/kioskSession.js: valid gc_kiosk cookie of an
+  // eligible user, already checked against the kiosk allow-list).
+  if (req.portalKiosk && req.portalKiosk.userId != null && sessionUserActive(req.portalKiosk.userId)) {
+    req.portalLoggedIn = true;
+    req.portalOwnerId = req.portalKiosk.userId;
+    req.portalOwnerSource = 'kiosk';
     return next();
   }
   const portalUser = portalSessionUser(req);

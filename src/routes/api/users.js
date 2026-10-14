@@ -514,6 +514,91 @@ router.put('/:id/self-enroll', (req, res) => {
 });
 
 /**
+ * Kiosk devices (docs/feature-kiosk-devices.md) — wall tablets that stay
+ * signed in to the portal as this user:
+ *   GET    /api/v1/users/:id/kiosk            → { ok, eligible, reason, plugins, devices }
+ *   POST   /api/v1/users/:id/kiosk/pair       { name } → { ok, code, expiresAt, url, qr }
+ *   DELETE /api/v1/users/:id/kiosk/:deviceId  → { ok }
+ * Only for kiosk-eligible users (a plugin with permissions.kiosk marks them;
+ * never administrators or disabled accounts). The code is shown once, only
+ * its HMAC is stored.
+ */
+function kioskPluginNames(ids, lang) {
+  const plugins = require('../../services/plugins');
+  const { loc } = require('../../services/plugins/manifest');
+  return ids.map((pid) => {
+    const p = plugins.get(pid);
+    return p ? (p.manifest && p.manifest.name ? loc(p.manifest.name, lang) : p.name) : pid;
+  });
+}
+
+function kioskPairUrl(code) {
+  const { effectivePortalHost } = require('../../services/portalConfig');
+  return `https://${effectivePortalHost().host}/portal/kiosk?code=${encodeURIComponent(code)}`;
+}
+
+router.get('/:id/kiosk', (req, res) => {
+  try {
+    const id = parseId(req);
+    const user = id && users.getById(id);
+    if (!user) return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
+    const kiosk = require('../../services/kiosk');
+    const el = kiosk.eligibility(id);
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      eligible: el.eligible,
+      reason: el.reason,
+      plugins: kioskPluginNames(el.plugins, req.language === 'en' ? 'en' : 'de'),
+      devices: kiosk.listForUser(id),
+    });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to list kiosk devices');
+    res.status(500).json({ ok: false, error: req.t('error.users.get') });
+  }
+});
+
+router.post('/:id/kiosk/pair', require('../../middleware/rateLimit').kioskCodeLimiter, async (req, res) => {
+  const id = parseId(req);
+  const user = id && users.getById(id);
+  if (!user) return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
+  const kiosk = require('../../services/kiosk');
+  try {
+    const { code, expiresAt } = kiosk.createCode(id, { name: (req.body || {}).name, actorId: req.session.userId, ip: req.ip });
+    const url = kioskPairUrl(code);
+    let qr = null;
+    try { qr = await require('../../services/qrcode').toDataUrl(url); } catch (e) { logger.warn({ err: e.message }, 'kiosk: QR code failed'); }
+    res.set('Cache-Control', 'no-store');
+    return res.status(201).json({ ok: true, code, expiresAt, url, qr });
+  } catch (err) {
+    const map = {
+      NOT_ELIGIBLE: [403, 'error.users.kiosk_not_eligible'],
+      INVALID_NAME: [400, 'error.users.kiosk_invalid_name'],
+      TOO_MANY_CODES: [409, 'error.users.kiosk_too_many'],
+    };
+    if (map[err.code]) return res.status(map[err.code][0]).json({ ok: false, code: err.code, error: req.t(map[err.code][1]) });
+    logger.error({ error: err.message }, 'Failed to create a kiosk pairing code');
+    return res.status(500).json({ ok: false, error: req.t('error.users.update') });
+  }
+});
+
+router.delete('/:id/kiosk/:deviceId', (req, res) => {
+  try {
+    const id = parseId(req);
+    if (!id || !users.getById(id)) return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
+    const deviceId = Number.parseInt(req.params.deviceId, 10);
+    const kiosk = require('../../services/kiosk');
+    const done = Number.isSafeInteger(deviceId) && deviceId > 0
+      && kiosk.revoke(deviceId, { userId: id, reason: 'revoked', actorId: req.session.userId, ip: req.ip });
+    if (!done) return res.status(404).json({ ok: false, error: req.t('error.users.kiosk_not_found') });
+    return res.json({ ok: true });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to revoke a kiosk device');
+    return res.status(500).json({ ok: false, error: req.t('error.users.update') });
+  }
+});
+
+/**
  * DELETE /api/v1/users/:id — Delete user (prevent self-deletion)
  */
 router.delete('/:id', (req, res) => {

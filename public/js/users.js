@@ -922,7 +922,138 @@
       ]));
     });
     panel.appendChild(alist);
+    if (PROFILE) renderKiosk(panel, u);
   }
+
+  // ── Kiosk devices (docs/feature-kiosk-devices.md) ─────────────────
+  // Wall tablets that stay signed in to the portal as this user. Only for
+  // users a plugin marks as kiosk users; admins never. Devices of a user who
+  // is no longer eligible stay listed (paused) so they can be revoked.
+  async function renderKiosk(panel, u) {
+    const box = el('div', { class: 'us-kiosk', id: 'up-kiosk' });
+    panel.appendChild(box);
+    let res;
+    try { res = await call('GET', '/api/v1/users/' + u.id + '/kiosk'); } catch (err) {
+      box.appendChild(el('div', { class: 'us-error', text: errMsg(err) }));
+      return;
+    }
+    if (state.selId !== u.id || state.tab !== 'access' || !box.isConnected) return;
+    const devices = res.devices || [];
+    if (!res.eligible && !devices.length && res.reason === 'admin') { box.remove(); return; }
+    const pair = res.eligible
+      ? el('button', { type: 'button', class: 'btn btn-sm us-btn-chip', id: 'up-kiosk-pair', on: { click: () => openKiosk(u, devices) } }, T('up.kiosk.pair'))
+      : null;
+    box.appendChild(sectionHead(T('up.kiosk.title'), T('up.kiosk.sub', { name: firstName(u) }), pair ? [pair] : []));
+    if (res.eligible && res.plugins && res.plugins.length) box.appendChild(el('div', { class: 'us-hint us-mb' }, T('up.kiosk.via', { plugins: res.plugins.join(', ') })));
+    if (!res.eligible) {
+      const why = { admin: 'up.kiosk.off_admin', disabled: 'up.kiosk.off_disabled' }[res.reason] || 'up.kiosk.off_plugin';
+      box.appendChild(el('div', { class: 'us-hint us-mb', id: 'up-kiosk-off' }, T(why)));
+    }
+    const list = el('div', { class: 'us-stack' });
+    if (!devices.length && res.eligible) list.appendChild(el('div', { class: 'us-muted us-small' }, T('up.kiosk.empty')));
+    devices.forEach((dv) => {
+      list.appendChild(el('div', { class: 'us-item us-item-api', 'data-kiosk-id': String(dv.id) }, [
+        el('div', { class: 'us-item-row' }, [
+          el('span', { class: 'us-item-ic' }, icon(ICON_KIOSK)),
+          el('div', { class: 'us-item-main' }, [
+            el('div', { class: 'us-item-name' }, [dv.name, dv.expired ? el('span', { class: 'us-chip us-chip-off' }, T('up.kiosk.expired')) : null]),
+            el('div', { class: 'us-hint' }, [
+              T('up.kiosk.paired') + ' ' + fmtDate(dv.created_at),
+              T('up.kiosk.last_seen') + ' ' + (dv.last_seen_at ? rel(dv.last_seen_at) : '–'),
+              T('up.kiosk.last_ip') + ' ' + (dv.last_ip || '–'),
+              T('up.kiosk.expires') + ' ' + fmtDate(dv.expires_at),
+            ].join(' · ')),
+          ]),
+          el('button', { type: 'button', class: 'btn btn-sm us-btn-danger', on: { click: () => revokeKiosk(u, dv) } }, T('up.kiosk.revoke')),
+        ]),
+      ]));
+    });
+    box.appendChild(list);
+  }
+  const ICON_KIOSK = 'M4 4h16v12H4zM9 20h6M12 16v4';
+
+  async function revokeKiosk(u, dv) {
+    const ok = await D.confirm({ title: T('up.kiosk.revoke_title', { name: dv.name }), message: T('up.kiosk.revoke_text'), okLabel: T('up.kiosk.revoke_ok'), danger: true });
+    if (!ok) return;
+    try { await call('DELETE', '/api/v1/users/' + u.id + '/kiosk/' + dv.id); toast(T('up.kiosk.revoked')); renderPanel(); } catch (err) { D.alert({ message: errMsg(err), danger: true }); }
+  }
+
+  // Pairing dialog: name → one-time code (QR + 8 characters, 10 minutes).
+  // While a code is shown the dialog looks every 5 s whether a new device
+  // appeared, and says so.
+  const ki = { user: null, known: [], timer: null, poll: null, expiresAt: 0 };
+  function kioskStop() {
+    if (ki.timer) { clearInterval(ki.timer); ki.timer = null; }
+    if (ki.poll) { clearInterval(ki.poll); ki.poll = null; }
+  }
+  function openKiosk(u, devices) {
+    kioskStop();
+    ki.user = u;
+    ki.known = (devices || []).map((d) => d.id);
+    $('us-ki-for').textContent = T('up.kiosk.dlg_for', { name: nameOf(u) });
+    $('us-ki-name').value = T('up.kiosk.dlg_name_default');
+    $('us-ki-name').readOnly = false;
+    show($('us-ki-result'), false);
+    show($('us-ki-paired'), false);
+    setError('us-ki-error', '');
+    $('us-ki-create').textContent = T('up.kiosk.dlg_create');
+    const ov = openDlg('us-dlg-kiosk');
+    if (ov) ov._onClose = () => { kioskStop(); if (state.tab === 'access') renderPanel(); };
+  }
+  async function kioskPoll() {
+    if (!ki.user) return;
+    try {
+      const res = await call('GET', '/api/v1/users/' + ki.user.id + '/kiosk');
+      const fresh = (res.devices || []).filter((d) => ki.known.indexOf(d.id) < 0);
+      if (!fresh.length) return;
+      ki.known = ki.known.concat(fresh.map((d) => d.id));
+      const p = $('us-ki-paired');
+      p.textContent = T('up.kiosk.dlg_paired', { name: fresh[0].name });
+      show(p, true);
+      kioskStop();
+      $('us-ki-countdown').textContent = '';
+    } catch (_) { /* next round */ }
+  }
+  $('us-ki-create').addEventListener('click', async () => {
+    if (!ki.user) return;
+    const btn = $('us-ki-create');
+    setError('us-ki-error', '');
+    window.btnLoading(btn);
+    let created = false;
+    try {
+      const res = await call('POST', '/api/v1/users/' + ki.user.id + '/kiosk/pair', { name: $('us-ki-name').value });
+      kioskStop();
+      $('us-ki-name').readOnly = true;
+      $('us-ki-qr').src = res.qr || '';
+      $('us-ki-qr').classList.remove('is-expired');
+      $('us-ki-code').textContent = res.code || '';
+      $('us-ki-code').classList.remove('is-expired');
+      $('us-ki-help').textContent = T('up.kiosk.dlg_help', { url: String(res.url || '').split('?')[0] });
+      show($('us-ki-result'), true);
+      show($('us-ki-paired'), false);
+      created = true;
+      const cd = $('us-ki-countdown');
+      const tick = () => {
+        const left = Math.max(0, Math.floor((res.expiresAt - Date.now()) / 1000));
+        if (!left) {
+          kioskStop();
+          cd.textContent = T('up.kiosk.dlg_expired');
+          $('us-ki-qr').classList.add('is-expired');
+          $('us-ki-code').classList.add('is-expired');
+          return;
+        }
+        cd.textContent = T('up.kiosk.dlg_valid', { time: Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') });
+      };
+      tick();
+      ki.timer = setInterval(tick, 1000);
+      ki.poll = setInterval(kioskPoll, 5000);
+    } catch (err) {
+      setError('us-ki-error', errMsg(err));
+    } finally {
+      window.btnReset(btn);
+      if (created) btn.textContent = T('up.kiosk.dlg_new');
+    }
+  });
 
   async function afterChange() {
     await Promise.all([loadUsers(), loadOrphans()]);

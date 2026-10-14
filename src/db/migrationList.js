@@ -2194,6 +2194,56 @@ const migrations = [
       ALTER TABLE support_bundles ADD COLUMN diagnosis_summary TEXT;`,
     detect: (db) => hasColumn(db, 'support_bundles', 'description') && hasColumn(db, 'support_bundles', 'diagnosis_summary'),
   },
+  {
+    version: 100,
+    name: 'kiosk_devices',
+    // Kiosk devices (docs/feature-kiosk-devices.md): wall tablets that stay
+    // signed in to the portal for 90 days (rolling) as one user.
+    //   plugin_kiosk_users  which users a plugin with permissions.kiosk marks
+    //                       as kiosk users (gc.kiosk.allow); a user is
+    //                       eligible while a usable plugin lists them
+    //   kiosk_pair_codes    one-time pairing codes (10 min), only the HMAC of
+    //                       the code is stored
+    //   kiosk_devices       paired devices, only the SHA-256 of the device
+    //                       token (cookie gc_kiosk) is stored
+    // Times are epoch milliseconds (like portal_tickets). Rows go with the
+    // user (ON DELETE CASCADE). end_reason: 'revoked' | 'logout' | 'replaced'
+    // | 'expired' once revoked_at is set.
+    sql: `
+      CREATE TABLE IF NOT EXISTS plugin_kiosk_users (
+        plugin_id TEXT NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (plugin_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_plugin_kiosk_users_user ON plugin_kiosk_users(user_id);
+      CREATE TABLE IF NOT EXISTS kiosk_pair_codes (
+        code_hash TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        created_by INTEGER,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_kiosk_pair_codes_user ON kiosk_pair_codes(user_id);
+      CREATE TABLE IF NOT EXISTS kiosk_devices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL,
+        created_by INTEGER,
+        last_seen_at INTEGER,
+        last_ip TEXT,
+        user_agent TEXT,
+        expires_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        end_reason TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_kiosk_devices_user ON kiosk_devices(user_id);`,
+    detect: (db) => tableExists(db, 'kiosk_devices') && tableExists(db, 'kiosk_pair_codes') && tableExists(db, 'plugin_kiosk_users'),
+  },
 ];
 
 module.exports = { migrations };

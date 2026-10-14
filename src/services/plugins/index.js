@@ -118,6 +118,7 @@ function permissionSummary(m, lang) {
     notifyPerHour: p.notify ? (p.notifyPerHour || manifestLib.NOTIFY_PER_HOUR_DEFAULT) : null,
     criticalTopics: p.notify ? (m.notifyTopics || []).filter((t) => t.allowCritical === true).map((t) => loc(t.label, lang)) : [],
     app: !!p.app,
+    kiosk: !!p.kiosk,
     appTab: m.ui.app ? loc(m.ui.app.label, lang) : null,
     maps: !!m.ui.maps,
     background: p.background ? p.background.intervalSeconds : null,
@@ -317,6 +318,8 @@ function reconcile() {
         logger.warn({ plugin: p.id, err: e.message }, 'plugin reconcile failed');
       }
     }
+    // Kiosk eligibility depends on which plugins may run (docs/feature-kiosk-devices.md).
+    try { require('../kiosk').invalidate(); } catch { /* not loaded */ }
   };
   reconciling = reconciling.then(run, run);
   return reconciling;
@@ -366,7 +369,10 @@ async function removeInstalled(p, mode) {
     registry.removeLicense(id);
     require('./targets').removeAll(id);
     require('./legacy').forget(id);
+    require('../kiosk').forgetPlugin(id);
   }
+  // An uninstalled plugin marks nobody as a kiosk user any more.
+  require('../kiosk').invalidate();
 }
 
 /**

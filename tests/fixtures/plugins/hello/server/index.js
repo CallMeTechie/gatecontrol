@@ -97,6 +97,12 @@ module.exports = {
         return { json: { ok: true, values: await gc.settings.all() } };
       case '/users':
         return { json: { ok: true, users: await gc.users.list() } };
+      case '/kiosk':
+        // gc.kiosk.allow / list (permissions.kiosk, docs/feature-kiosk-devices.md)
+        try {
+          if (req.method === 'POST') await gc.kiosk.allow(req.body.userId, req.body.allowed);
+          return { json: { ok: true, users: await gc.kiosk.list() } };
+        } catch (e) { return { status: 400, json: { ok: false, code: e.code || null } }; }
       case '/license':
         return { json: { ok: true, license: await gc.license.status() } };
       case '/notify':
