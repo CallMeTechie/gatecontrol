@@ -119,6 +119,7 @@ function permissionSummary(m, lang) {
     criticalTopics: p.notify ? (m.notifyTopics || []).filter((t) => t.allowCritical === true).map((t) => loc(t.label, lang)) : [],
     app: !!p.app,
     kiosk: !!p.kiosk,
+    actions: !!p.actions,
     appTab: m.ui.app ? loc(m.ui.app.label, lang) : null,
     maps: !!m.ui.maps,
     background: p.background ? p.background.intervalSeconds : null,

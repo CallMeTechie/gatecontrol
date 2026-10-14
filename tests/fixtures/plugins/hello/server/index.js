@@ -103,6 +103,13 @@ module.exports = {
           if (req.method === 'POST') await gc.kiosk.allow(req.body.userId, req.body.allowed);
           return { json: { ok: true, users: await gc.kiosk.list() } };
         } catch (e) { return { status: 400, json: { ok: false, code: e.code || null } }; }
+      case '/actions':
+        // gc.actions.list / run (permissions.actions, tests/plugins_actions.test.js); the body is passed on as is
+        try {
+          const b = req.body || {};
+          const result = b.op === 'run' ? await gc.actions.run(b.opts) : await gc.actions.list(b.opts);
+          return { json: { ok: true, result } };
+        } catch (e) { return { status: 400, json: { ok: false, code: e.code || null, error: e.message } }; }
       case '/license':
         return { json: { ok: true, license: await gc.license.status() } };
       case '/notify':

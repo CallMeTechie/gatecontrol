@@ -315,6 +315,87 @@ function notify(plugin, args) {
   return {};
 }
 
+// ─── Plugin-to-plugin actions (permissions.actions) ────
+//
+// gc.actions.list({ userId, lang }) / gc.actions.run({ userId, plugin, id, lang }):
+// the quick actions (quickActions.js) other plugins offer to one user, run as
+// that user like the apps do — the target plugin gets the viewer
+// { id, name, role, portal: true, loggedIn: true, automation: true, via: '<caller id>' }
+// and decides itself. The user must exist and be enabled; the caller is never
+// asked or run itself. 60 runs per hour per calling plugin, an activity row
+// `plugin_automation` per run (ids and ok only — no text of either plugin).
+
+const ACTIONS_PER_HOUR = 60;
+const actionsWindow = new Map();
+const LANGS = new Set(['de', 'en']);
+
+function needActions(plugin) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.actions, 'ERR_ACTIONS_DENIED', 'this plugin has no actions permission');
+}
+
+/** The user an action runs for: an existing, enabled account → { user (viewer), lang }. */
+function automationViewer(plugin, args) {
+  const userId = args && args.userId;
+  need(Number.isSafeInteger(userId) && userId > 0, 'ERR_INVALID', 'invalid user id');
+  const lang = args.lang;
+  need(lang == null || (typeof lang === 'string' && LANGS.has(lang)), 'ERR_INVALID', "lang must be 'de' or 'en'");
+  const u = db().prepare('SELECT id, username, display_name, role, enabled, language FROM users WHERE id = ?').get(userId);
+  need(u && u.enabled === 1, 'ERR_INVALID', 'unknown or disabled user');
+  const own = typeof u.language === 'string' ? u.language.slice(0, 2).toLowerCase() : '';
+  return {
+    user: { id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: true, automation: true, via: plugin.id },
+    lang: lang || (LANGS.has(own) ? own : 'de'),
+  };
+}
+
+/** Count one run against the calling plugin's budget per hour. */
+function actionsBudget(plugin) {
+  const now = Date.now();
+  const w = (actionsWindow.get(plugin.id) || []).filter((t) => now - t < 3600000);
+  need(w.length < ACTIONS_PER_HOUR, 'ERR_RATE_LIMIT', 'too many quick action runs (60 per hour)');
+  w.push(now);
+  actionsWindow.set(plugin.id, w);
+}
+
+/** gc.actions.list → [{ plugin, pluginName, id, title, subtitle, kind, state }] of every other plugin. */
+async function actionsList(plugin, args) {
+  needActions(plugin);
+  const { user, lang } = automationViewer(plugin, args);
+  const all = await require('./quickActions').list(user, lang, { exclude: plugin.id });
+  return all.map((a) => ({ plugin: a.plugin, pluginName: a.pluginName, id: a.id, title: a.title, subtitle: a.subtitle, kind: a.kind, state: a.state }));
+}
+
+/** gc.actions.run → { ok, message, state } (+ error 'not_found'|'plugin_error'|'timeout' when it did not run). */
+async function actionsRun(plugin, args) {
+  needActions(plugin);
+  const quickActions = require('./quickActions');
+  const { ID_RE } = require('./constants');
+  const target = args && args.plugin;
+  const actionId = args && args.id;
+  need(typeof target === 'string' && target.length >= 2 && target.length <= 64 && ID_RE.test(target), 'ERR_INVALID', 'invalid plugin id');
+  need(target !== plugin.id, 'ERR_INVALID', 'a plugin cannot run its own quick actions');
+  need(typeof actionId === 'string' && quickActions.ACTION_ID_RE.test(actionId), 'ERR_INVALID', 'invalid action id');
+  const { user, lang } = automationViewer(plugin, args);
+  actionsBudget(plugin);
+  let r;
+  try { r = await quickActions.run(target, actionId, user, lang); } catch { r = { status: 502, body: { ok: false, error: 'plugin_error' } }; }
+  const ok = r.status === 200 && r.body.ok === true;
+  const out = r.status === 200
+    ? { ok: r.body.ok, message: r.body.message, state: r.body.state }
+    : { ok: false, message: null, state: null, error: r.body.error };
+  try {
+    require('../activity').log('plugin_automation', `Plugin "${plugin.id}" ran quick action "${actionId}" of plugin "${target}" (${ok ? 'ok' : 'failed'})`, {
+      source: 'plugin', severity: ok ? 'info' : 'warning',
+      details: { plugin: plugin.id, target, action: actionId, userId: user.id, ok, ...(out.error ? { error: out.error } : {}) },
+    });
+  } catch { /* the run happened; the log is best-effort */ }
+  return out;
+}
+
+function _resetActionsBudgetForTest() {
+  if (process.env.NODE_ENV === 'test') actionsWindow.clear();
+}
+
 /**
  * @param {object} plugin  registry entry (with manifest)
  * @param {string} api
@@ -381,6 +462,8 @@ async function handle(plugin, api, args, ctx) {
     case 'kiosk.list':
       need(plugin.manifest.permissions && plugin.manifest.permissions.kiosk, 'ERR_KIOSK_DENIED', 'this plugin has no kiosk permission');
       return require('../kiosk').listAllowed(plugin.id);
+    case 'actions.list': return actionsList(plugin, args);
+    case 'actions.run': return actionsRun(plugin, args);
     case 'notify': return notify(plugin, args);
     case 'license.status': {
       const s = licensing.status(plugin);
@@ -391,4 +474,4 @@ async function handle(plugin, api, args, ctx) {
   }
 }
 
-module.exports = { handle, closeSockets, HostApiError, _lookup: null, _udpTargets: null };
+module.exports = { handle, closeSockets, HostApiError, ACTIONS_PER_HOUR, _resetActionsBudgetForTest, _lookup: null, _udpTargets: null };

@@ -184,6 +184,7 @@ unsigned build of the same id.
     "users": true,
     "app": true,
     "kiosk": true,
+    "actions": true,
     "notify": { "perHour": 60 },
     "background": { "intervalSeconds": 60 }
   },
@@ -236,6 +237,12 @@ unsigned build of the same id.
   [feature-kiosk-devices.md](feature-kiosk-devices.md)). The install/consent
   dialog shows "darf Benutzer als Kiosk-Geräte freigeben (z. B. Wand-Tablet)"
   / "may mark users as kiosk devices (e.g. wall tablet)".
+* `permissions.actions` (boolean): the plugin may list and run the quick
+  actions other plugins offer to a user (`gc.actions.list` / `gc.actions.run`,
+  e.g. a presence rule switching a smart home scene — see "Running other
+  plugins' quick actions" below). The install/consent dialog shows "darf
+  Schnellaktionen anderer Plugins auslösen (z. B. Smart-Home-Szenen)" / "may
+  run other plugins' quick actions (e.g. smart home scenes)".
 * `notifyTopics` (optional, needs `permissions.notify`): up to 20 own push
   topics, `id` `[a-z][a-z0-9_-]{0,31}`, `label` text (≤ 60), `default`
   (boolean, default `true`: people get the topic until they switch it off; `false`:
@@ -347,6 +354,8 @@ module.exports = {
 | `gc.users.list()/get(id)` | `{ id, name, role }` of enabled users (`users`) |
 | `gc.kiosk.allow(userId, allowed)` | mark (`true`) or unmark (`false`) a user as a kiosk user (`kiosk`); an administrator, a disabled or an unknown account → `ERR_INVALID` (allowing only; unmarking always works) |
 | `gc.kiosk.list()` | ids of the users this plugin marks (`kiosk`) |
+| `gc.actions.list({ userId, lang })` | the quick actions the *other* plugins offer to that user → `[{ plugin, pluginName, id, title, subtitle, kind, state }]` (`actions`) — see "Running other plugins' quick actions" |
+| `gc.actions.run({ userId, plugin, id, lang })` | run one of them as that user → `{ ok, message, state }` (+ `error` when it did not run; `actions`, ≤ 60 runs per hour) |
 | `gc.notify(message, { severity })` | activity log + webhooks, and a push on `plugin:<id>:default` (`notify`, ≤ 30/h or `perHour`) — see "Notifications" |
 | `gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data })` | push on a declared `notifyTopics` topic (+ activity row) → `{ pushed, id }` |
 | `gc.license.status()` | `{ required, licensed, state, expiresAt }` |
@@ -364,7 +373,9 @@ position or departure times belongs to a real login only. The portal hooks
 (`portalVisible`, `portalTiles`, `portalSearch`) and `render` get the same
 viewer; the quick-action hooks (`quickActions`, `runQuickAction`) get the
 owner of the app's device token as that viewer, with `loggedIn: true` and
-`app: true` (see "Quick actions").
+`app: true` (see "Quick actions"), or — when another plugin runs them with
+`gc.actions.*` — that user with `loggedIn: true`, `automation: true` and
+`via: '<calling plugin id>'` (see "Running other plugins' quick actions").
 
 ### Kiosk devices (`permissions.kiosk`)
 
@@ -645,6 +656,52 @@ POST /api/v1/client/actions/:plugin/:id        (≤ 30 runs per minute and token
 A toggle's new `state` comes with the run's answer; the apps reload the list
 when they show their shortcuts, tiles or widget.
 
+### Running other plugins' quick actions (`permissions.actions`)
+
+A plugin with `permissions.actions` can use the quick actions of the other
+plugins for one user — for example a family plugin whose presence rule
+switches on a smart home scene when the first person comes home.
+
+```js
+const actions = await gc.actions.list({ userId: 7, lang: 'de' });
+// [{ plugin: 'gatecontrol-smarthome', pluginName: 'Smart Home', id: 'scene:evening',
+//    title: 'Abend', subtitle: null, kind: 'button', state: null }, …]
+const r = await gc.actions.run({ userId: 7, plugin: 'gatecontrol-smarthome', id: 'scene:evening' });
+// { ok: true, message: 'Szene gestartet', state: null }
+```
+
+* **Which actions**: exactly what the apps get for that user (the same
+  plugins, hooks, timeouts and sanitising as "Quick actions" above), without
+  `icon` and `confirm`, and never the calling plugin's own actions.
+* **As whom**: the target plugin's `quickActions` / `runQuickAction` get the
+  viewer `{ id, name, role, portal: true, loggedIn: true, automation: true,
+  via: '<calling plugin id>' }` (no `app` key) and decide themselves what that
+  user may see and do — like for the apps, `runQuickAction` only reaches an id
+  the plugin currently lists for that user. Any enabled account works (an
+  administrator too); the target plugin may refuse automation runs by
+  checking `user.automation`.
+* **Input** (checked strictly, else `ERR_INVALID` and nothing is asked or
+  run): `userId` a positive integer of an existing, **enabled** user (checked
+  at every call — a disabled, deleted or unknown account → `ERR_INVALID`
+  "unknown or disabled user"); `lang` `de`/`en` or absent (then the user's
+  language setting, else `de`); `plugin` a plugin id other than the caller's
+  own; `id` `[A-Za-z0-9:._-]{1,64}`.
+* **Result** of `run`: the sanitised `{ ok, message, state }` of the target
+  plugin (`ok` `false` only when it says so). When the action did not run the
+  call still resolves, with `{ ok: false, message: null, state: null, error }`:
+  `not_found` (unknown, disabled or not running plugin, a plugin without
+  `permissions.portal`, an id it does not list for that user), `plugin_error`
+  (it failed or answered garbage) or `timeout`.
+* **Limits**: 60 runs per hour per calling plugin (`ERR_RATE_LIMIT` beyond;
+  calls refused with `ERR_*` are not counted, every other run is — also one
+  that ends in `not_found`).
+  Listing is not counted.
+* **Activity log**: every run is an entry `plugin_automation` (info; warning
+  when not `ok`) with details `{ plugin: '<caller>', target, action, userId,
+  ok, error? }` — ids and codes only, no text of either plugin.
+* **Errors**: `ERR_ACTIONS_DENIED` (no `permissions.actions`), `ERR_INVALID`,
+  `ERR_RATE_LIMIT`.
+
 ## App (permissions.app, ui.app, client API)
 
 Plugins can serve the GateControl apps: `permissions.app: true` lets the apps
@@ -912,6 +969,7 @@ install (`plugin_installed`) · update (`plugin_updated`) · enable/disable
 "Unsignierte Plugins erlauben" (`plugin_unsigned_allowed`/`plugin_unsigned_blocked`)
 · access targets (`plugin_target_changed`) · plugin notifications
 (`plugin_notice`) · quick actions run from an app (`plugin_quick_action`) ·
+quick actions run by another plugin (`plugin_automation`) ·
 kiosk users marked/unmarked (`kiosk_user_allowed`/`kiosk_user_disallowed`,
 only when something changed).
 

@@ -5228,6 +5228,8 @@
   "plugins.perm.maps_on": "shows OpenStreetMap maps (tiles from tile.openstreetmap.org) and may open links in a new tab",
   "plugins.perm.kiosk": "Kiosk",
   "plugins.perm.kiosk_on": "may mark users as kiosk devices (e.g. wall tablet)",
+  "plugins.perm.actions": "Quick actions",
+  "plugins.perm.actions_on": "may run other plugins' quick actions (e.g. smart home scenes)",
   "plugins.log.empty": "No entries yet.",
   "plugins.toast.enabled": "{{name}} is switched on",
   "plugins.toast.disabled": "{{name}} is switched off",
