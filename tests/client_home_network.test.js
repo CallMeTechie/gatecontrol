@@ -6,7 +6,8 @@
 // only through the tunnel (the token peer's current WireGuard endpoint inside
 // an included LAN subnet, not a default gateway; route table unreadable →
 // false), never for direct requests, auth, no-store. A false "true" would
-// switch the VPN off in a foreign network.
+// switch the VPN off in a foreign network. The gateway-site rule (server
+// outside the home) is covered in client_home_network_gateway_site.test.js.
 
 const crypto = require('node:crypto');
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
@@ -116,7 +117,8 @@ describe('GET /api/v1/client/home-network — access', () => {
       const dev = H.makeDevice(owner(), { name: 'hn-ok', scopes });
       const r = await get(dev).expect(200);
       assert.equal(r.headers['cache-control'], 'no-store');
-      assert.deepEqual(Object.keys(r.body).sort(), ['lan', 'ok', 'same_lan', 'via']);
+      assert.deepEqual(Object.keys(r.body).sort(), ['lan', 'ok', 'same_lan', 'site', 'via']);
+      assert.equal(r.body.site, null);
       assert.equal(r.body.ok, true);
       assert.equal(r.body.same_lan, false, 'loopback (no proxy header) is not the LAN');
       assert.equal(r.body.via, 'direct');
@@ -189,6 +191,7 @@ describe('same_lan — request through the tunnel (VPN up)', () => {
     const r = await get(dev, dev.ip).expect(200);
     assert.equal(r.body.same_lan, true);
     assert.equal(r.body.via, 'tunnel');
+    assert.deepEqual(r.body.site, { type: 'server' });
     wgPeers = [wgPeer(dev, '[::ffff:10.20.9.9]:4500')];
     assert.equal((await get(dev, dev.ip).expect(200)).body.same_lan, true, 'IPv4-mapped endpoint (hairpin via router)');
   });
