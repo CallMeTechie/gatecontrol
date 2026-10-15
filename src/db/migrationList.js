@@ -2267,6 +2267,36 @@ const migrations = [
       ALTER TABLE users ADD COLUMN avatar_color TEXT;`,
     detect: (db) => tableExists(db, 'user_avatars') && hasColumn(db, 'users', 'avatar_color'),
   },
+  {
+    version: 102,
+    name: 'notify_media',
+    // Pictures of plugin pushes (docs/plugins.md "Notifications",
+    // services/notify/media.js).
+    //   notify_media                  one picture of a gc.notify() call
+    //                                 (PNG, JPEG or WebP, ≤ 300 KB, 32…2560
+    //                                 px a side, stored as sent after header
+    //                                 validation). id is the random part of
+    //                                 the capability URL
+    //                                 /notify-media/<id>.<ext>; expires_at
+    //                                 (ISO UTC) = the push's ttl (24 h
+    //                                 default, 7 days at most) — expired rows
+    //                                 answer 404 and the hourly clean-up of
+    //                                 the notification center deletes them.
+    //   notifications.image_url       that path (relative), shown to the apps
+    //   notifications.image_expires_at as imageUrl until the picture expires.
+    sql: `
+      CREATE TABLE IF NOT EXISTS notify_media (
+        id TEXT PRIMARY KEY,
+        mime TEXT NOT NULL,
+        data BLOB NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_notify_media_expires ON notify_media(expires_at);
+      ALTER TABLE notifications ADD COLUMN image_url TEXT;
+      ALTER TABLE notifications ADD COLUMN image_expires_at TEXT;`,
+    detect: (db) => tableExists(db, 'notify_media') && hasColumn(db, 'notifications', 'image_url') && hasColumn(db, 'notifications', 'image_expires_at'),
+  },
 ];
 
 module.exports = { migrations };

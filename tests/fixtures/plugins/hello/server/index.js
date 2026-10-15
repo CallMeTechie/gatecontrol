@@ -194,7 +194,7 @@ module.exports = {
     if (mode === 'slow') await new Promise((r) => setTimeout(r, 4000));
     if (mode === 'throw') throw new Error('broken on purpose');
     if (mode === 'garbage') return 'not an object';
-    await gc.storage.set('quick-last', { id: payload.id, user: payload.user, lang: payload.lang });
+    await gc.storage.set('quick-last', { id: payload.id, user: payload.user, lang: payload.lang, via: payload.via, automation: payload.automation });
     const r = await gc.storage.get('quick-result');
     return r === null || r === undefined ? { ok: true, message: 'ran ' + payload.id, state: 'on' } : r;
   },
@@ -223,5 +223,8 @@ module.exports = {
   async tick(gc) {
     const n = (await gc.storage.get('ticks')) || 0;
     await gc.storage.set('ticks', n + 1);
+    // "tick-slow-ms": the tick takes that long (tests/plugins_lifecycle.test.js)
+    const slow = await gc.storage.get('tick-slow-ms');
+    if (Number.isInteger(slow) && slow > 0) await new Promise((r) => setTimeout(r, slow));
   },
 };

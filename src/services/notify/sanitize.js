@@ -31,10 +31,33 @@ function portalPath(v) {
   return /^\/(?!\/)[A-Za-z0-9._~!$&'()*+,;=:@%/?#-]{0,300}$/.test(s) && !s.includes('\\') ? s : null;
 }
 
-/** One action → clean action or null (unknown type, bad target). */
-function action(a) {
+// quick_action: the id is a quick action id of the plugin (quickActions.js ACTION_ID_RE)
+const QUICK_ACTION_ID_RE = /^[A-Za-z0-9:._-]{1,64}$/;
+
+/**
+ * A quick_action of a plugin push → { id, label, type, plugin, confirm,
+ * auth? } or null. Only from that plugin itself (`opts.plugin`), never in a
+ * core or administrator message.
+ */
+function quickAction(a, opts) {
+  const pluginId = opts && typeof opts.plugin === 'string' ? opts.plugin : null;
+  if (!pluginId || a.plugin !== pluginId) return null;
+  if (typeof a.id !== 'string' || !QUICK_ACTION_ID_RE.test(a.id)) return null;
+  const label = line(a.label, LIMITS.quickActionLabel);
+  if (!label) return null;
+  const out = { id: a.id, label, type: 'quick_action', plugin: pluginId, confirm: a.confirm === true };
+  if (a.auth === 'device') out.auth = 'device';
+  return out;
+}
+
+/**
+ * One action → clean action or null (unknown type, bad target). opts.plugin:
+ * the id of the plugin sending the message (allows its own quick_action).
+ */
+function action(a, opts = null) {
   if (!a || typeof a !== 'object' || Array.isArray(a)) return null;
   const type = String(a.type || '');
+  if (type === 'quick_action') return quickAction(a, opts);
   if (!ACTION_TYPES.has(type)) return null;
   const id = line(a.id || type, 40);
   if (!/^[A-Za-z0-9_.:-]{1,40}$/.test(id)) return null;
@@ -95,9 +118,10 @@ function facts(raw) {
  * `data` of a notification: { route?, actions?, facts?, ...context }. Returns
  * { ok, data } — ok=false when it does not fit into 4 KB (callers from a
  * plugin get ERR_INVALID; core events never get there). Unknown action types
- * and bad routes are dropped silently.
+ * and bad routes are dropped silently. opts.plugin: the sending plugin
+ * (quick_action entries of that plugin are kept).
  */
-function data(raw) {
+function data(raw, opts = null) {
   if (raw == null) return { ok: true, data: null };
   if (typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, data: null };
   const out = cleanValue(raw, 0) || {};
@@ -105,7 +129,7 @@ function data(raw) {
     if (typeof out.route !== 'string' || !APP_ROUTE_RE.test(out.route)) delete out.route;
   }
   if ('actions' in out) {
-    const list = Array.isArray(raw.actions) ? raw.actions.slice(0, LIMITS.actions).map(action).filter(Boolean) : [];
+    const list = Array.isArray(raw.actions) ? raw.actions.slice(0, LIMITS.actions).map((a) => action(a, opts)).filter(Boolean) : [];
     if (list.length) out.actions = list; else delete out.actions;
   }
   if ('facts' in out) {

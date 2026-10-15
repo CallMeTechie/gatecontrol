@@ -220,6 +220,12 @@ unsigned build of the same id.
   (`options: [{ value, label }]`), `secret` (stored encrypted, never sent to
   the browser).
 * `permissions.network` may also be an array — short for `{ internet: [...] }`.
+* `permissions.background`: `{ "intervalSeconds": n }` with an integer
+  5 ≤ n ≤ 86400 (else `permissions.background.intervalSeconds: invalid`) —
+  the host calls the `tick` hook every n seconds; the install dialog shows
+  "läuft alle n Sekunden". Each tick has 120 s; a tick still running (or one
+  the host gave up on after its timeout and that still runs in the plugin
+  process) is never started twice — the next one is skipped.
 * `permissions.notify`: `true` (≤ 30 pushes per hour) or `{ "perHour": n }`
   with an integer 1 ≤ n ≤ 120 (no other key); anything else is
   `permissions.notify: invalid`. See "Notifications".
@@ -314,7 +320,7 @@ module.exports = {
     // view = { view: 'page'|'portal', page, user, lang }
     return { html: '<h1>…</h1>' };
   },
-  async tick(gc) {},                        // background run (permissions.background)
+  async tick(gc) {},                        // background run (permissions.background, every 5…86400 s)
   async settingsChanged(values, gc) {},
   async portalVisible({ user, lang, section }, gc) {  // optional: false hides the portal tab/section for this viewer
     return true;                            // (no hook, an error or no answer within 1.5 s → shown)
@@ -324,7 +330,7 @@ module.exports = {
   async quickActions({ user, lang }, gc) {   // optional: quick actions of the apps (see "Quick actions")
     return [{ id: 'light:3', title: 'Wohnzimmer', subtitle: 'Licht', icon: '<svg path d>', kind: 'toggle', state: 'on' }];
   },
-  async runQuickAction({ user, lang, id }, gc) {  // optional: runs one of them for that viewer
+  async runQuickAction({ user, lang, id, via, automation }, gc) {  // optional: runs one of them for that viewer
     return { ok: true, message: 'Licht eingeschaltet', state: 'on' };
   },
   async appVisible(user, gc) {              // optional: false hides the app tab (ui.app) for this viewer
@@ -430,13 +436,14 @@ const { pushed, id } = await gc.notify({
   users: [12],                    // optional: only these people (otherwise the topic's subscribers)
   collapseKey: 'charge:VIN123',   // optional: same key replaces the shown notification
   ttl: 6 * 3600,                  // optional, seconds (60 … retention of the server)
-  data: { vin: 'VIN123' }         // optional JSON ≤ 4 KB; data.route defaults to 'plg-<id>' (the plugin tab)
+  data: { vin: 'VIN123' },        // optional JSON ≤ 4 KB; data.route defaults to 'plg-<id>' (the plugin tab)
+  image: { data: '<base64>', mime: 'image/jpeg' }  // optional picture (see below)
 });
 ```
 
 * Errors: `ERR_NOTIFY_DENIED` (no permission), `ERR_INVALID` (undeclared topic,
   empty title, bad priority/users/ttl/collapseKey, `data` not an object or over
-  4 KB), `ERR_RATE_LIMIT`.
+  4 KB, a bad `image`, a bad `quick_action`), `ERR_RATE_LIMIT`.
 * Push needs the licence feature `email_alerts` ("Benachrichtigungen Pro");
   without it only the activity entry is written and `pushed` is `false`.
 * Who gets it: the rule of the topic (System › Benachrichtigungen; default:
@@ -451,7 +458,8 @@ const { pushed, id } = await gc.notify({
   ("Notfall: darf Notfall-Mitteilungen senden, die die Ruhezeit überspringen
   (<topics>)").
 * `data.actions` may only use the fixed action types (`open_app_route`,
-  `open_portal`, `mute_1h`, `ack`, `done`); control characters are removed,
+  `open_portal`, `mute_1h`, `ack`, `done`, and `quick_action` for the
+  plugin's own quick actions — see below); control characters are removed,
   the apps show text only.
   A plugin **without `ui.app`** has no screen of its own in the apps: an
   `open_app_route` action to the plugin's own route (`plg-<id>`) is sent as
@@ -466,6 +474,72 @@ const { pushed, id } = await gc.notify({
   under the text, e.g. `[{ label: 'Akku', value: '80 %' }]` — one line each,
   label ≤ 60 and value ≤ 120 characters; anything else is dropped. Schedules ("evening before 18:00") are the
   plugin's own job (`background` + `gc.storage`).
+
+### Pictures (`image`)
+
+```js
+await gc.notify({
+  topic: 'doorbell', title: 'Es klingelt an der Haustür', priority: 'high', collapseKey: 'cam:front',
+  image: { data: snapshotBase64, mime: 'image/jpeg' },   // 'image/jpeg' | 'image/png' | 'image/webp'
+});
+```
+
+* `data`: the picture as base64 (a `data:<mime>;base64,` URL of the same
+  type is accepted too), at most **300 KB decoded**; `mime` must match the
+  picture. Only the header is read (the parsers of the profile pictures,
+  `services/avatars.js`): PNG, JPEG or WebP, any aspect ratio, each side
+  **32…2560 px**, no animation (APNG, animated WebP). It is stored as sent —
+  no scaling, so the plugin sends a picture of a sensible size. Anything else
+  → `ERR_INVALID` ("invalid image: <reason>"), nothing is pushed or stored and
+  the budget is not used.
+* The picture is stored only when the push goes out (licence, rule) — table
+  `notify_media`, with a random id (24 url-safe characters). It lives as long
+  as the push's `ttl`, **24 h** without one, **7 days** at most; the hourly
+  clean-up of the notification center deletes expired pictures.
+* The apps get it as **`imageUrl`** — a relative path
+  `/notify-media/<id>.<ext>` on their own server — in the push payload and in
+  the inbox (`GET /api/v1/client/push/inbox`, the portal's
+  `GET /api/v1/me/notify/inbox`); `null` without a picture or once it
+  expired. The URL is a capability URL like `/avatars/`: no login, served on
+  every host GateControl answers, rate limited (300 per minute and address),
+  `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src
+  'none'`, `Cross-Origin-Resource-Policy: cross-origin`, `Cache-Control:
+  private, max-age=<seconds left>, immutable`; 404 once expired or unknown.
+* Bundling (same collapse key within the rule's bundle time): the picture
+  follows the newest event — a newer push without a picture removes it.
+* The activity log and the fallback e-mail never contain the picture (nor
+  its URL). The Windows apps may ignore it.
+
+### Quick actions as notification buttons (`quick_action`)
+
+A push may offer one of the plugin's **own** quick actions (see "Quick
+actions") as a button — e.g. "Tür öffnen" on a doorbell push:
+
+```js
+data: { actions: [
+  { type: 'quick_action', label: 'Tür öffnen', plugin: 'gatecontrol-door', id: 'front:open', confirm: true, auth: 'device' },
+  { type: 'open_app_route', id: 'view', label: 'Ansehen', target: 'plg-gatecontrol-door' },
+] }
+```
+
+* Fields: `label` (1…24 characters after removing control characters),
+  `plugin` (must be the calling plugin's own id), `id` (a quick action id,
+  `[A-Za-z0-9:._-]{1,64}` — only the format is checked here), `confirm`
+  (boolean, optional: the app asks before running it), `auth` (optional,
+  only `'device'`: the app requires the device unlock / biometrics before
+  running it). Anything else → `ERR_INVALID` and nothing is pushed.
+* The apps get `{ id, label, type: 'quick_action', plugin, confirm, auth? }`
+  (`confirm` always a boolean, `auth` only when `'device'`). Like every
+  action, at most 4 per push.
+* The app runs it with the normal client call `POST
+  /api/v1/client/actions/<plugin>/<id>` with the body `{ "source":
+  "notification" }` — so the run goes through the normal quick action path
+  and its checks (the plugin must currently list that id for that person,
+  10 s, rate limit, activity log). The plugin's `runQuickAction` gets
+  `via: 'notification'`, `automation: false` and must check everything
+  again — a push is no permission.
+* The core and administrator messages never carry `quick_action`; the
+  portal does not show it.
 
 ## Storage and migrations
 
@@ -610,7 +684,8 @@ async quickActions({ user, lang }, gc) {
     { id: 'scene:evening', title: 'Abend', kind: 'button', confirm: true },
   ];
 },
-async runQuickAction({ user, lang, id }, gc) {
+async runQuickAction({ user, lang, id, via, automation }, gc) {
+  // via: 'app' | 'notification' | '<plugin id>' (gc.actions.run); automation: true only for gc.actions.run
   return { ok: true, message: 'Licht eingeschaltet', state: 'on' };   // state optional (new toggle state)
 },
 ```
@@ -643,7 +718,16 @@ async runQuickAction({ user, lang, id }, gc) {
   `{ ok, message, state }`: `ok` is `false` only when the plugin says
   `ok: false`, `message` ≤ 120 characters (or `null`), `state` `on`/`off`
   (or `null`). Every run is an activity log entry `plugin_quick_action`
-  (info, details `{ plugin, action, userId, ok }` — no text of the plugin).
+  (info, details `{ plugin, action, userId, ok, via }` — no text of the plugin).
+* **Who started it** — `runQuickAction` also gets:
+  * `via`: `'app'` (shortcut, tile, widget or an app screen — the default),
+    `'notification'` (the `quick_action` button of a push, see
+    "Notifications") or the id of the plugin that ran it with
+    `gc.actions.run` (see below);
+  * `automation`: `true` only for `gc.actions.run` (another plugin ran it
+    for the user, nobody tapped anything), `false` for every run a person
+    started. A plugin tells a person's run from an automation by
+    `automation` (not by `via` alone — a plugin id could look like anything).
 * **Language** `lang` (`de`/`en`): `?lang=` of the request, else the owner's
   language setting, else `Accept-Language`, else `de`.
 
@@ -657,7 +741,9 @@ GET  /api/v1/client/actions
                               id, title, subtitle, icon, kind, state, confirm }] }
 
 POST /api/v1/client/actions/:plugin/:id        (≤ 30 runs per minute and token)
+  body { source?: 'app' | 'notification' }     (default 'app'; → via of runQuickAction)
   200 { ok, message, state }
+  400 { ok: false, error: 'invalid_source' }   source not 'app' / 'notification'
   403 { ok: false, error: 'no_user' }          token without an owner
   404 { ok: false, error: 'not_found' }        unknown plugin / action
   502 { ok: false, error: 'plugin_error' }     the plugin failed or answered garbage
@@ -687,8 +773,9 @@ const r = await gc.actions.run({ userId: 7, plugin: 'gatecontrol-smarthome', id:
   `icon` and `confirm`, and never the calling plugin's own actions.
 * **As whom**: the target plugin's `quickActions` / `runQuickAction` get the
   viewer `{ id, name, role, portal: true, loggedIn: true, automation: true,
-  via: '<calling plugin id>' }` (no `app` key) and decide themselves what that
-  user may see and do — like for the apps, `runQuickAction` only reaches an id
+  via: '<calling plugin id>' }` (no `app` key) — `runQuickAction` also with
+  `via: '<calling plugin id>'` and `automation: true` next to `user` — and
+  decide themselves what that user may see and do — like for the apps, `runQuickAction` only reaches an id
   the plugin currently lists for that user. Any enabled account works (an
   administrator too); the target plugin may refuse automation runs by
   checking `user.automation`.

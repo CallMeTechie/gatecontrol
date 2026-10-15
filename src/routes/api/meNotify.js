@@ -150,6 +150,7 @@ function createRouter() {
         collapse_key: n.collapse_key || null,
         silent: n.silent === 1 || n.d_silent === 1,
         data: store.parseJson(n.data, null),
+        imageUrl: store.imageUrlOf(n),
         state: n.is_read ? 'read' : 'delivered',
       })),
       unread,

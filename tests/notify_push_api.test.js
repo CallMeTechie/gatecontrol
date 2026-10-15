@@ -227,7 +227,8 @@ describe('GET /api/v1/client/push — stream', () => {
     const seq1 = H.deliveries(first.id)[0].seq;
     assert.equal(ev1.id, String(seq1));
     assert.deepEqual(Object.keys(ev1.data).sort(),
-      ['body', 'collapse_key', 'created_at', 'data', 'event_id', 'expires_at', 'id', 'priority', 'seq', 'silent', 'title', 'topic']);
+      ['body', 'collapse_key', 'created_at', 'data', 'event_id', 'expires_at', 'id', 'imageUrl', 'priority', 'seq', 'silent', 'title', 'topic']);
+    assert.equal(ev1.data.imageUrl, null, 'no picture');
     assert.equal(ev1.data.seq, seq1);
     assert.equal(ev1.data.id, first.id);
     assert.equal(ev1.data.title, 'Erste');

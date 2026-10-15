@@ -234,7 +234,7 @@ function makeGc(info) {
       list: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('actions.list', { userId: o.userId, lang: o.lang }); },
       run: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('actions.run', { userId: o.userId, plugin: o.plugin, id: o.id, lang: o.lang }); },
     }),
-    /** notify(message, { severity }) or notify({ topic, title, body, priority, users, collapseKey, ttl, data }) */
+    /** notify(message, { severity }) or notify({ topic, title, body, priority, users, collapseKey, ttl, data, image }) */
     notify: (message, opts) => (message && typeof message === 'object' && !Array.isArray(message)
       ? hostCall('notify', { notification: message })
       : hostCall('notify', { message: String(message), opts: opts || {} })),
@@ -244,6 +244,7 @@ function makeGc(info) {
 
 let plugin = null;
 let gc = null;
+let tickRunning = false; // a background tick is running (see call "tick")
 
 async function handleCall(method, payload) {
   if (!plugin) throw new Error('plugin not loaded');
@@ -255,7 +256,12 @@ async function handleCall(method, payload) {
       if (typeof plugin.render !== 'function') return { html: '' };
       return plugin.render(payload, gc);
     case 'tick':
-      if (typeof plugin.tick === 'function') await plugin.tick(gc);
+      // one tick at a time: a tick the host gave up on (timeout) may still be
+      // running here — the next one is skipped until it ends
+      if (typeof plugin.tick !== 'function') return {};
+      if (tickRunning) return { skipped: true };
+      tickRunning = true;
+      try { await plugin.tick(gc); } finally { tickRunning = false; }
       return {};
     case 'settingsChanged':
       if (typeof plugin.settingsChanged === 'function') await plugin.settingsChanged(payload, gc);

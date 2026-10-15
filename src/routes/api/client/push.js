@@ -203,7 +203,8 @@ router.post('/push/ack', (req, res) => {
   if (!ACK_STATES.includes(b.state)) return res.status(400).json({ ok: false, error: 'invalid_state' });
   let action = null;
   if (b.action != null) {
-    if (typeof b.action !== 'string' || !/^[A-Za-z0-9_.:-]{1,40}$/.test(b.action)) return res.status(400).json({ ok: false, error: 'invalid_action' });
+    // ≤ 64: the id of a quick_action (a quick action id) fits too
+    if (typeof b.action !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(b.action)) return res.status(400).json({ ok: false, error: 'invalid_action' });
     action = b.action;
   }
   try {

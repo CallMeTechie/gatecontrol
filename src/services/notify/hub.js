@@ -320,6 +320,11 @@ function bundle(prev, n, o) {
   // data follows the newest event (its facts: the last banned IP, …)
   const fields = { count, title, body: n.body || null, updated_at: store.iso(), expires_at: expiresIso(n.ttlS) };
   if (n.data) fields.data = n.data;
+  // the picture follows the newest event too (none → the old one goes)
+  if (n.image !== undefined || prev.image_url) {
+    fields.image_url = n.image ? n.image.url : null;
+    fields.image_expires_at = n.image ? n.image.expiresAt : null;
+  }
   store.updateNotification(prev.id, fields);
   publishBus(prev.id);
   if (prev.release_at) {
@@ -475,9 +480,11 @@ function tick() {
 
 /**
  * A plugin message (already validated by hostApi): { topic, title, body,
- * priority, users, collapseKey, ttl, data, allowCritical }. Priority is
+ * priority, users, collapseKey, ttl, data, allowCritical, image }. Priority is
  * capped at high unless the topic allows critical. Needs the email_alerts licence
- * ("plugin topics"); without it only the activity row is written.
+ * ("plugin topics"); without it only the activity row is written. `image`
+ * (media.validate()'s result) is stored only when the push goes out — its
+ * path becomes imageUrl of the notification (never part of the mail).
  */
 function emitPlugin(pluginId, n) {
   if (!config.value('enabled')) return { pushed: false, reason: 'disabled' };
@@ -491,10 +498,11 @@ function emitPlugin(pluginId, n) {
     // critical only for a topic declared with allowCritical (hostApi.notify)
     if (PRIORITY_RANK[priority] > PRIORITY_RANK.high && n.allowCritical !== true) priority = 'high';
     const users = Array.isArray(n.users) && n.users.length ? n.users : null;
+    const image = n.image ? require('./media').save(n.image, n.ttl) : null;
     r = publish({
       eventId, eventType: 'plugin_notice', topic: eventId, source: `plugin:${pluginId}`, priority,
       title: n.title, body: n.body, data: n.data, collapseKey: n.collapseKey ? sanitize.collapseKey(`plugin:${pluginId}:${n.collapseKey}`) : null,
-      ttlS: n.ttl, target: users ? { type: 'users', ids: users } : { recipients: rule.recipients },
+      ttlS: n.ttl, image, target: users ? { type: 'users', ids: users } : { recipients: rule.recipients },
     }, { rule, route: users ? { users } : { recipients: rule.recipients }, emitKey: eventId });
   }
   if (rule.ch_email) {

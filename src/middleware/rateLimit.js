@@ -565,6 +565,19 @@ const avatarFileLimiter = rateLimit({
   keyGenerator: (req) => `avatar-file:${ipKeyGenerator(req.ip)}`,
   handler: (req, res) => { res.status(429).end(); },
 });
+
+// GET /notify-media/<id>.<ext> — pictures of plugin pushes (capability URLs,
+// docs/plugins.md "Notifications"): per address; a doorbell picture is
+// fetched once per device and push.
+const notifyMediaLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `notify-media:${ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => { res.status(429).end(); },
+});
+module.exports.notifyMediaLimiter = notifyMediaLimiter;
 module.exports.clientAvatarLimiter = clientAvatarLimiter;
 module.exports.avatarWriteLimiter = avatarWriteLimiter;
 module.exports.avatarFileLimiter = avatarFileLimiter;

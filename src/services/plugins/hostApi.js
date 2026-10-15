@@ -246,13 +246,37 @@ function notifyBudget(plugin) {
 }
 
 /**
+ * data.actions[] entries of type quick_action (docs/plugins.md
+ * "Notifications"): { type: 'quick_action', label (1…24), plugin (the
+ * calling plugin's own id), id (a quick action id — format only, the run
+ * goes through the normal quick action path and its checks), confirm?:
+ * boolean, auth?: 'device' }. Anything else → ERR_INVALID (other action
+ * types are cleaned by notify/sanitize as before).
+ */
+function checkQuickActions(plugin, actions) {
+  const { ACTION_ID_RE } = require('./quickActions');
+  const { line } = require('../notify/sanitize');
+  const { LIMITS: LIMITS_NOTIFY } = require('../notify/constants');
+  for (const a of actions) {
+    if (!a || typeof a !== 'object' || Array.isArray(a) || a.type !== 'quick_action') continue;
+    need(a.plugin === plugin.id, 'ERR_INVALID', "quick_action: plugin must be the plugin's own id");
+    need(typeof a.id === 'string' && ACTION_ID_RE.test(a.id), 'ERR_INVALID', 'quick_action: invalid id');
+    const label = typeof a.label === 'string' ? line(a.label, 1000) : '';
+    need(label.length >= 1 && label.length <= LIMITS_NOTIFY.quickActionLabel, 'ERR_INVALID', 'quick_action: label must be 1…24 characters');
+    need(a.confirm === undefined || a.confirm === null || typeof a.confirm === 'boolean', 'ERR_INVALID', 'quick_action: confirm must be a boolean');
+    need(a.auth === undefined || a.auth === null || a.auth === 'device', 'ERR_INVALID', "quick_action: auth must be 'device'");
+  }
+}
+
+/**
  * gc.notify — two forms (docs/plugins.md "Notifications"):
  *   gc.notify(message, { severity })   activity row + webhooks as before, and
  *                                      a push on topic plugin:<id>:default
  *                                      (priority info, warning/error → normal)
- *   gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data })
+ *   gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data, image })
  *                                      push on a topic declared in
- *                                      plugin.json notifyTopics (+ activity row)
+ *                                      plugin.json notifyTopics (+ activity row,
+ *                                      never with the image)
  * Push needs the email_alerts licence; priority is capped at `high`, except
  * on a topic declared with `allowCritical` (critical bypasses quiet hours
  * like the core's critical events). Budget: permissions.notify — true = 30
@@ -291,7 +315,14 @@ function notify(plugin, args) {
       ttl = n.ttl;
     }
     need(n.data == null || (typeof n.data === 'object' && !Array.isArray(n.data)), 'ERR_INVALID', 'invalid data');
-    const d = sanitize.data(n.data == null ? { route: `plg-${plugin.id}` } : { route: `plg-${plugin.id}`, ...n.data });
+    if (n.data != null && Array.isArray(n.data.actions)) checkQuickActions(plugin, n.data.actions);
+    let image = null;
+    if (n.image != null) {
+      try { image = require('../notify/media').validate(n.image); } catch (e) {
+        throw new HostApiError('ERR_INVALID', e && e.code === 'ERR_INVALID' ? e.message : 'invalid image');
+      }
+    }
+    const d = sanitize.data(n.data == null ? { route: `plg-${plugin.id}` } : { route: `plg-${plugin.id}`, ...n.data }, { plugin: plugin.id });
     need(d.ok, 'ERR_INVALID', 'data too large (max 4 KB)');
     // A plugin without its own app tab (ui.app) has no screen in the apps: an
     // action opening the plugin's app route opens the plugin in the portal
@@ -305,7 +336,7 @@ function notify(plugin, args) {
     }
     notifyBudget(plugin);
     require('../activity').log('plugin_notice', `${plugin.name}: ${title}`, { source: 'plugin', severity: 'info', details: { plugin: plugin.id, topic } });
-    const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, collapseKey, ttl, data: d.data, allowCritical });
+    const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, collapseKey, ttl, data: d.data, allowCritical, image });
     return { pushed: r.pushed, id: r.id || null };
   }
   const msg = String((args && args.message) || '').replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, 300);
