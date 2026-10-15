@@ -168,7 +168,13 @@ module.exports = {
     const bad = await misbehave(gc);
     if (bad) return bad;
     const tiles = (await gc.storage.get('portal-tiles')) || [];
-    return tiles.map((x) => (x && x.title === '$viewer' ? { ...x, title: 'viewer ' + payload.user.id } : x));
+    const u = payload.user;
+    return tiles.map((x) => {
+      if (x && x.title === '$viewer') return { ...x, title: 'viewer ' + u.id };
+      // the whole viewer (tests/plugins_client_tiles.test.js)
+      if (x && x.title === '$app') return { ...x, title: `v${u.id} ${u.portal}/${u.loggedIn}/${u.app} ${payload.lang}` };
+      return x;
+    });
   },
   async portalSearch(payload, gc) {
     const bad = await misbehave(gc);

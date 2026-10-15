@@ -96,31 +96,50 @@ function contributors(contrib) {
 }
 
 /**
+ * One plugin's portalTiles answer → its sanitised tiles (≤ 8) with the
+ * section the tile names (null when none) and its target in the portal.
+ * @param {RegExp} iconRe  the portal's ICON_RE (≤ 600) or a longer one (apps)
+ */
+function sanitizeTiles(id, out, c, iconRe) {
+  if (!Array.isArray(out)) return [];
+  const res = [];
+  for (const t of out.slice(0, MAX_TILES)) {
+    if (!t || typeof t !== 'object' || Array.isArray(t)) continue;
+    const title = text(t.title, 60);
+    const section = typeof t.section === 'string' ? t.section : null;
+    const target = targetOf(id, section, c);
+    if (!title || !target) continue;
+    res.push({
+      plugin: id, section, title, value: text(t.value, 40), unit: text(t.unit, 12),
+      state: typeof t.state === 'string' && STATES.has(t.state) ? t.state : null,
+      icon: typeof t.icon === 'string' && iconRe.test(t.icon) ? t.icon : null, ...target,
+    });
+  }
+  return res;
+}
+
+/**
+ * Start tiles of every plugin the viewer sees (portalVisible as for the
+ * portal), one list per plugin in the portal's order. Shared by the portal's
+ * Start tab and the apps' start card (src/services/plugins/clientTiles.js).
+ * @param {{iconRe?: RegExp}} [opts]
+ * @returns {Promise<object[][]>} [[{ plugin, section, title, value, unit, state, icon, goto, anchor, area }]]
+ */
+async function collectTiles(user, lang, contrib, opts = {}) {
+  const l = lang === 'en' ? 'en' : 'de';
+  const iconRe = opts && opts.iconRe instanceof RegExp ? opts.iconRe : ICON_RE;
+  const c = contrib || await contributions(user, l);
+  return Promise.all(contributors(c).map(async (id) => sanitizeTiles(id, await hook(id, 'portalTiles', { user, lang: l }), c, iconRe)));
+}
+
+/**
  * Start-tab tiles: hook portalTiles({ user, lang }) → [{ section?, title,
  * value?, unit?, state?, icon? }] (≤ 8 per plugin).
  * @returns {Promise<object[]>} [{ plugin, title, value, unit, state, icon, goto, anchor, area }]
  */
 async function tiles(user, lang, contrib) {
-  const l = lang === 'en' ? 'en' : 'de';
-  const c = contrib || await contributions(user, l);
-  const lists = await Promise.all(contributors(c).map(async (id) => {
-    const out = await hook(id, 'portalTiles', { user, lang: l });
-    if (!Array.isArray(out)) return [];
-    const res = [];
-    for (const t of out.slice(0, MAX_TILES)) {
-      if (!t || typeof t !== 'object') continue;
-      const title = text(t.title, 60);
-      const target = targetOf(id, typeof t.section === 'string' ? t.section : null, c);
-      if (!title || !target) continue;
-      res.push({
-        plugin: id, title, value: text(t.value, 40), unit: text(t.unit, 12),
-        state: typeof t.state === 'string' && STATES.has(t.state) ? t.state : null,
-        icon: typeof t.icon === 'string' && ICON_RE.test(t.icon) ? t.icon : null, ...target,
-      });
-    }
-    return res;
-  }));
-  return lists.flat();
+  // the portal's answer stays as it was: no `section` key
+  return (await collectTiles(user, lang, contrib)).flat().map(({ section: _section, ...t }) => t);
 }
 
 /**
@@ -148,4 +167,4 @@ async function search(user, lang, q, contrib) {
   return lists.flat();
 }
 
-module.exports = { contributions, tiles, search, text, TAB_IDS, HOOK_MS, _targetOf: targetOf };
+module.exports = { contributions, tiles, collectTiles, search, text, TAB_IDS, HOOK_MS, MAX_TILES, _targetOf: targetOf };
