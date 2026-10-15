@@ -29,6 +29,30 @@ router.use('/branding', (req, res, next) => {
   fallthrough: false,
 }));
 
+// ─── Profile pictures (public capability URLs, docs/feature-avatars.md) ──
+// /avatars/<avatarId>.<ext>: no login — the random id is the secret and
+// changes with every new picture, so the answer can be cached forever. Served
+// on every host this app answers (admin UI, portal host, the apps' base URL).
+// Cross-Origin-Resource-Policy cross-origin: plugin frames (opaque origin)
+// show the pictures too. Unknown or removed → 404.
+const { avatarFileLimiter } = require('../middleware/rateLimit');
+router.get('/avatars/:file', avatarFileLimiter, (req, res) => {
+  let pic = null;
+  try { pic = require('../services/avatars').getFile(req.params.file); } catch (err) {
+    logger.warn({ err: err.message }, 'avatar: lookup failed');
+  }
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  if (!pic) {
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(404).end();
+  }
+  res.setHeader('Content-Type', pic.mime);
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('Content-Security-Policy', "default-src 'none'");
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  return res.end(pic.data);
+});
+
 // ─── Prometheus metrics (token auth or session) ────
 // Per-identity rate limit so a stolen `read-only`/`system` token can't
 // loop-scrape the endpoint at kilohertz speeds. 60/min/identity is well
@@ -307,7 +331,7 @@ const SB_I18N_PREFIXES = ['support_bundles.', 'common.'];
 
 // Strings the users list and the user profile hand to users.js (one JSON
 // island on both pages, like the settings page; up.* for the profile).
-const USERS_I18N_PREFIXES = ['us.', 'users.mb.', 'error.users.', 'error.tokens.', 'error.enrollment.', 'enrollment.', 'common.', 'passkey.error_not_found', 'up.'];
+const USERS_I18N_PREFIXES = ['us.', 'users.mb.', 'error.users.', 'error.tokens.', 'error.enrollment.', 'enrollment.', 'common.', 'passkey.error_not_found', 'up.', 'avatar.'];
 
 // Tabs of the user profile (/users/:id?tab=…). The users list had the same
 // five in its side panel; old links /users?user=ID&tab=X lead to the profile.
@@ -403,8 +427,9 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
     // without a second factor — the 2FA card opens its setup right away.
     if (template === 'profile') {
       extraLocals.setup2fa = req.query && req.query.setup2fa === '1';
-      // Portal PIN section (profile-pin.js): its strings as one JSON island.
-      extraLocals.pfPinI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, ['profile.pin.', 'common.error']))
+      // Portal PIN section (profile-pin.js) and profile picture / favourite
+      // colour (avatar-edit.js, docs/feature-avatars.md): their strings as one JSON island.
+      extraLocals.pfPinI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, ['profile.pin.', 'common.error', 'avatar.']))
         .replace(/</g, '\\u003c');
       Object.assign(extraLocals, profileLocals(req, res));
     }

@@ -87,6 +87,14 @@
         <input class="form-input pf-input" type="email" id="settings-email" placeholder="admin@example.com" maxlength="255" autocomplete="email">
       </div>
     </div>
+    {#- Profile picture and favourite colour (docs/feature-avatars.md), public/js/avatar-edit.js;
+        its strings come with the #pf-pin-i18n island (avatar.*). -#}
+    <div class="pf-row">
+      <div class="pf-row-label">
+        <span class="pf-label">{{ t('avatar.title') }}</span>
+      </div>
+      <div class="pf-row-control" id="pf-look"></div>
+    </div>
     <div class="pf-msg" id="profile-message" role="status"></div>
     <div class="pf-foot">
       <button type="button" class="btn btn-primary pf-btn" id="btn-save-profile">{{ t('profile.save_changes') }}</button>
@@ -172,7 +180,7 @@
       </div>
       <div class="pf-msg" id="pf-pin-message" role="status"></div>
     </div>
-    <script type="application/json" id="pf-pin-i18n" data-prefixes="profile.pin. common.error" nonce="{{ cspNonce }}">{{ pfPinI18n | default('{}') | safe }}</script>
+    <script type="application/json" id="pf-pin-i18n" data-prefixes="profile.pin. common.error avatar." nonce="{{ cspNonce }}">{{ pfPinI18n | default('{}') | safe }}</script>
 
     <span id="two-factor" class="anchor-target" aria-hidden="true"></span>
     {% include theme + "/partials/two-factor-card.njk" %}
@@ -260,6 +268,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/js/avatar-edit.js?v={{ appVersion }}"></script>
 <script src="/js/profile.js?v={{ appVersion }}"></script>
 <script src="/js/profile-pin.js?v={{ appVersion }}"></script>
 <script src="/js/vendor/qrcode.min.js?v={{ appVersion }}"></script>

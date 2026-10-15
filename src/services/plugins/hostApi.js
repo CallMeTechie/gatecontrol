@@ -216,8 +216,15 @@ function needStorage(plugin) {
 
 function db() { return require('../../db/connection').getDb(); }
 
-function userView(u) {
-  return u ? { id: u.id, name: u.display_name || u.username, role: u.role } : null;
+// gc.users.list / get: { id, name, role, avatarUrl, color, colorHex, initials }
+// (docs/feature-avatars.md) — avatarUrl is the path /avatars/<id>.<ext> (or
+// null), served on this server's every host; color is the favourite colour's
+// palette key (never null), colorHex its #RRGGBB.
+const USER_COLS = 'id, username, display_name, role, avatar_color';
+function userView(u, look) {
+  if (!u) return null;
+  const f = look || require('../avatars').infoMany([u]).get(u.id);
+  return { id: u.id, name: u.display_name || u.username, role: u.role, avatarUrl: f.avatarUrl, color: f.color, colorHex: f.colorHex, initials: f.initials };
 }
 
 const NOTIFY_PRIORITIES = ['info', 'normal', 'high', 'critical'];
@@ -436,14 +443,17 @@ async function handle(plugin, api, args, ctx) {
       if (!r.ok) throw new HostApiError('ERR_INVALID', 'invalid setting');
       return null;
     }
-    case 'users.list':
+    case 'users.list': {
       need(plugin.manifest.permissions && plugin.manifest.permissions.users, 'ERR_USERS_DENIED', 'this plugin has no users permission');
-      return db().prepare('SELECT id, username, display_name, role FROM users WHERE enabled = 1 ORDER BY id LIMIT 5000').all().map(userView);
+      const rows = db().prepare(`SELECT ${USER_COLS} FROM users WHERE enabled = 1 ORDER BY id LIMIT 5000`).all();
+      const looks = require('../avatars').infoMany(rows);
+      return rows.map((u) => userView(u, looks.get(u.id)));
+    }
     case 'users.get': {
       need(plugin.manifest.permissions && plugin.manifest.permissions.users, 'ERR_USERS_DENIED', 'this plugin has no users permission');
       const id = Number(args && args.id);
       need(Number.isInteger(id) && id > 0, 'ERR_INVALID', 'invalid user id');
-      return userView(db().prepare('SELECT id, username, display_name, role FROM users WHERE id = ? AND enabled = 1').get(id));
+      return userView(db().prepare(`SELECT ${USER_COLS} FROM users WHERE id = ? AND enabled = 1`).get(id));
     }
     case 'kiosk.allow': {
       // docs/feature-kiosk-devices.md: mark/unmark a user as a kiosk user (never an admin or a disabled account)

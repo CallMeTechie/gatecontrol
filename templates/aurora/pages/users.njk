@@ -79,10 +79,11 @@
 
 {% include "aurora/partials/users-dialogs.njk" %}
 
-<script type="application/json" id="us-i18n" data-prefixes="us. users.mb. error.users. error.tokens. error.enrollment. enrollment. common. passkey.error_not_found up." nonce="{{ cspNonce }}">{{ usersI18n | default('{}') | safe }}</script>
+<script type="application/json" id="us-i18n" data-prefixes="us. users.mb. error.users. error.tokens. error.enrollment. enrollment. common. passkey.error_not_found up. avatar." nonce="{{ cspNonce }}">{{ usersI18n | default('{}') | safe }}</script>
 <script type="application/json" id="us-ctx" nonce="{{ cspNonce }}">{"self": {{ (user.id if user else 0) | dump | safe }}, "lang": {{ language | dump | safe }}, "pihole": {{ ('true' if license.features.pihole_integration else 'false') | safe }}, "rdp": {{ ('true' if license.features.remote_desktop else 'false') | safe }}}</script>
 {% endblock %}
 
 {% block scripts %}
+<script src="/js/avatar-edit.js?v={{ appVersion }}"></script>
 <script src="/js/users.js?v={{ appVersion }}"></script>
 {% endblock %}

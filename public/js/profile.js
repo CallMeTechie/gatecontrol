@@ -20,10 +20,23 @@
     return chars.join('').toUpperCase();
   }
 
+  // Profile picture or initials on the favourite colour (docs/feature-avatars.md);
+  // `look` comes from /api/v1/profile/avatar (avatar-edit.js).
+  var look = null;
+  var lastName = '';
+  function paintAvatars() {
+    if (!look || !window.GCAvatar) { setText('pf-avatar', initials(lastName)); return; }
+    var l = Object.assign({}, look, { initials: initials(lastName) });
+    window.GCAvatar.paint(byId('pf-avatar'), l);
+    var top = byId('profile-btn');
+    if (top) window.GCAvatar.paint(top, Object.assign({}, l, { initials: (Array.from(lastName)[0] || '?').toUpperCase() }));
+  }
+
   function renderIdentity(profile) {
     var name = profile.display_name || profile.username || '';
+    lastName = name;
     setText('pf-id-name', name);
-    setText('pf-avatar', initials(name));
+    paintAvatars();
     setText('pf-id-email', profile.email || '');
     var wrap = byId('pf-id-email-wrap');
     if (wrap) wrap.hidden = !profile.email;
@@ -225,6 +238,26 @@
     });
     new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     sync();
+  }
+
+  // ─── Profile picture and favourite colour ───────────────
+  var lookHost = byId('pf-look');
+  if (lookHost && window.GCAvatar) {
+    var AV = {};
+    try { AV = JSON.parse(byId('pf-pin-i18n').textContent || '{}') || {}; } catch (e) { AV = {}; }
+    window.GCAvatar.editor(lookHost, {
+      urls: { profile: '/api/v1/profile/avatar', avatar: '/api/v1/profile/avatar', color: '/api/v1/profile/color' },
+      csrf: function () { return (window.GC && window.GC.csrfToken) || ''; },
+      T: function (k) { return AV[k] || k; },
+      toast: function (text, type) { if (window.showToast) window.showToast(text, type || 'success'); },
+      confirm: function (text) { return window.GCDialog.confirm({ message: text, okLabel: AV['avatar.remove'] || 'OK', danger: true }); },
+      help: 'avatar.color_help',
+      onChange: function (l) {
+        look = l;
+        if (!lastName) lastName = (byId('pf-id-name') || {}).textContent || '';
+        paintAvatars();
+      },
+    });
   }
 
   // ─── Init ───────────────────────────────────────────────

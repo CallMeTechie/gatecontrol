@@ -134,6 +134,16 @@ function createBackup() {
     });
   } catch (err) { logger.warn({ err: err.message }, 'backup export: users skipped'); }
 
+  // ── user_avatars (profile pictures, docs/feature-avatars.md) ─
+  // Owner by username, the picture as base64; avatar_id is kept so the
+  // picture URLs stay the same after a restore.
+  let userAvatars = [];
+  try {
+    userAvatars = db.prepare(`SELECT u.username AS user_name, a.avatar_id, a.mime, a.data, a.updated_at
+      FROM user_avatars a JOIN users u ON u.id = a.user_id ORDER BY a.user_id`).all()
+      .map(a => ({ user_name: a.user_name, avatar_id: a.avatar_id, mime: a.mime, data: Buffer.from(a.data).toString('base64'), updated_at: a.updated_at }));
+  } catch (err) { logger.warn({ err: err.message }, 'backup export: user_avatars skipped'); }
+
   // ── api_tokens (resolve peer_id/user_id via names) ──────────
   let apiTokens = [];
   try {
@@ -211,6 +221,7 @@ function createBackup() {
       rdp_routes: rdpRoutes,
       service_bundles: serviceBundles,
       users,
+      user_avatars: userAvatars,
       api_tokens: apiTokens,
       tags,
       gateway_meta: gatewayMeta,
@@ -323,6 +334,7 @@ function getBackupSummary(backup) {
     rdp_routes: (d.rdp_routes || []).length,
     service_bundles: (d.service_bundles || []).length,
     users: (d.users || []).length,
+    user_avatars: (d.user_avatars || []).length,
     api_tokens: (d.api_tokens || []).length,
     tags: (d.tags || []).length,
     gateway_meta: (d.gateway_meta || []).length,
@@ -416,6 +428,7 @@ async function restoreBackup(backup) {
     rdp_routes: rdpRoutes = [],
     service_bundles: serviceBundles = [],
     users = [],
+    user_avatars: userAvatars = [],
     api_tokens: apiTokens = [],
     tags = [],
     gateway_meta: gatewayMeta = [],
@@ -507,6 +520,24 @@ async function restoreBackup(backup) {
         catch { return []; }
       })()
     );
+
+    // Restore profile pictures — only together with the users they belong
+    // to (the user rows were replaced, their old pictures went with them).
+    // Each picture is checked again like an upload; a bad one is skipped.
+    if (Array.isArray(users) && users.length > 0 && Array.isArray(userAvatars)) {
+      const avatars = require('./avatars');
+      const insertAvatar = db.prepare(`INSERT OR REPLACE INTO user_avatars (user_id, avatar_id, mime, data, updated_at)
+        VALUES (?, ?, ?, ?, COALESCE(?, datetime('now')))`);
+      for (const a of userAvatars) {
+        try {
+          const uid = a && userIdByName.get(a.user_name);
+          if (!uid || typeof a.data !== 'string' || typeof a.avatar_id !== 'string' || !/^[A-Za-z0-9_-]{22,64}$/.test(a.avatar_id)) continue;
+          const buf = Buffer.from(a.data, 'base64');
+          const img = avatars.validateImage(buf);
+          insertAvatar.run(uid, a.avatar_id, img.mime, buf, typeof a.updated_at === 'string' ? a.updated_at : null);
+        } catch (e) { logger.warn({ err: e.message, user: a && a.user_name }, 'user avatar restore skipped'); }
+      }
+    }
 
     // Restore tags registry
     for (const t of tags) {

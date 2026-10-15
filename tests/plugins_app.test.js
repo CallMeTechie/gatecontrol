@@ -260,7 +260,7 @@ describe('maps in plugin frames (ui.maps)', () => {
     const directives = csp.split('; ');
     assert.ok(directives.includes(`script-src 'unsafe-inline' ${origin}/plugins/_shared/leaflet/leaflet.js`), csp);
     assert.ok(directives.includes(`style-src 'unsafe-inline' ${origin}/plugins/_shared/leaflet/leaflet.css`), csp);
-    assert.ok(directives.includes(`img-src data: https://tile.openstreetmap.org ${origin}/plugins/_shared/leaflet/images/`), csp);
+    assert.ok(directives.includes(`img-src data: https://tile.openstreetmap.org ${origin}/plugins/_shared/leaflet/images/ ${origin}/avatars/`), csp);
     assert.match(csp, /connect-src 'none'/);
     assert.match(csp, /sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox$/);
     assert.doesNotMatch(csp, /allow-same-origin|'self' 'unsafe|script-src[^;]*'self'/);
@@ -279,9 +279,10 @@ describe('maps in plugin frames (ui.maps)', () => {
     assert.equal(frame.originOf({ protocol: 'ftp', get: () => 'gc.example.com' }), null);
   });
 
-  it('plugins without ui.maps keep the strict frame', async () => {
-    const r = await agent.get('/plugins/hello-np/frame/main').expect(200);
-    assert.equal(r.headers['content-security-policy'], frame.CSP);
+  it('plugins without ui.maps keep the strict frame (only the profile pictures of this origin, docs/feature-avatars.md)', async () => {
+    const r = await agent.get('/plugins/hello-np/frame/main').set('Host', 'gc.example.com').expect(200);
+    assert.equal(r.headers['content-security-policy'], frame.cspFor({ avatars: true, origin: 'http://gc.example.com' }));
+    assert.equal(r.headers['content-security-policy'], frame.CSP.replace('img-src data:', 'img-src data: http://gc.example.com/avatars/'));
     assert.equal(r.headers['referrer-policy'], 'no-referrer');
     assert.doesNotMatch(r.headers['content-security-policy'], /openstreetmap|allow-popups/);
     const page = withoutScripts((await agent.get('/plugins/hello-np').expect(200)).text);
@@ -297,7 +298,9 @@ describe('maps in plugin frames (ui.maps)', () => {
     const fr = await agent.get('/portal/plugins/hello/frame').expect(200);
     assert.match(fr.headers['content-security-policy'], /img-src data: https:\/\/tile\.openstreetmap\.org http:\/\/127\.0\.0\.1:\d+\/plugins\/_shared\/leaflet\/images\//);
     assert.match(fr.headers['content-security-policy'], /allow-popups-to-escape-sandbox$/);
-    assert.equal((await agent.get('/portal/plugins/hello-np/frame').expect(200)).headers['content-security-policy'], frame.CSP);
+    const npCsp = (await agent.get('/portal/plugins/hello-np/frame').expect(200)).headers['content-security-policy'];
+    assert.match(npCsp, /img-src data: http:\/\/127\.0\.0\.1:\d+\/avatars\/;/);
+    assert.doesNotMatch(npCsp, /openstreetmap|allow-popups/);
   });
 
   it('the shared Leaflet is served without a session, loadable from an opaque-origin frame', async () => {

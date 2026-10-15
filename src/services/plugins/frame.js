@@ -27,9 +27,15 @@
 //   * sandbox + allow-popups allow-popups-to-escape-sandbox: a plain
 //     <a href="https://www.openstreetmap.org/…" target="_blank" rel="noopener">
 //     opens in a new tab as a normal page.
+//
+// Profile pictures (docs/feature-avatars.md): gc.users hands out avatarUrl
+// (/avatars/<id>.<ext>); every plugin frame (admin page, portal tab, wall)
+// may show them — img-src <origin>/avatars/ (this origin, this path only;
+// nothing else of the server). The pictures need no cookie.
 
 const OSM_TILES = 'https://tile.openstreetmap.org';
 const SHARED_LEAFLET = '/plugins/_shared/leaflet/';
+const AVATARS = '/avatars/';
 const SANDBOX = 'sandbox allow-scripts allow-forms';
 const SANDBOX_MAPS = SANDBOX + ' allow-popups allow-popups-to-escape-sandbox';
 
@@ -61,14 +67,18 @@ function originOf(req) {
   return proto && typeof host === 'string' && host.length <= 260 && HOST_RE.test(host) ? `${proto}://${host.toLowerCase()}` : null;
 }
 
-/** The frame CSP: the base one, or with maps for a `ui.maps` plugin. */
-function cspFor({ maps = false, origin = null } = {}) {
-  if (!maps) return CSP;
+/**
+ * The frame CSP: the base one, with maps for a `ui.maps` plugin, with the
+ * profile pictures of this origin (`avatars` + a known `origin`).
+ */
+function cspFor({ maps = false, origin = null, avatars = false } = {}) {
+  const pics = avatars && origin ? [origin + AVATARS] : [];
+  if (!maps) return pics.length ? directives({ img: pics }) : CSP;
   const base = origin ? origin + SHARED_LEAFLET : null;
   return directives({
     script: base ? [base + 'leaflet.js'] : [],
     style: base ? [base + 'leaflet.css'] : [],
-    img: [OSM_TILES, ...(base ? [base + 'images/'] : [])],
+    img: [OSM_TILES, ...(base ? [base + 'images/'] : []), ...pics],
     sandbox: SANDBOX_MAPS,
   });
 }
@@ -187,7 +197,8 @@ function document({ html, lang, maps = false }) {
 
 /**
  * Headers of a frame response. `opts.maps` (plugin with ui.maps) with
- * `opts.origin` (originOf(req)) relaxes the CSP for the map, see above.
+ * `opts.origin` (originOf(req)) relaxes the CSP for the map, `opts.avatars`
+ * with `opts.origin` allows the profile pictures, see above.
  */
 function headers(res, opts = {}) {
   res.set('Content-Security-Policy', cspFor(opts));
@@ -198,4 +209,4 @@ function headers(res, opts = {}) {
   res.type('html');
 }
 
-module.exports = { CSP, cspFor, originOf, sandboxAttr, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET };
+module.exports = { CSP, cspFor, originOf, sandboxAttr, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, AVATARS };

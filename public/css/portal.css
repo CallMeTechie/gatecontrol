@@ -497,3 +497,32 @@ button, input, select { font: inherit; color: inherit; }
 @media (max-width: 640px) {
   .pt-plg-tiles { padding: 0 14px 14px; }
 }
+
+/* ---- Profile pictures and favourite colours (docs/feature-avatars.md) ----
+   Initials on the favourite colour (white text) or the picture; the same ten
+   colours as services/avatars.js PALETTE (red is not offered: it means "away"). */
+.av-c-blue{background:#3B82F6; color:#fff; border-color:transparent}
+.av-c-teal{background:#14B8A6; color:#fff; border-color:transparent}
+.av-c-green{background:#22C55E; color:#fff; border-color:transparent}
+.av-c-lime{background:#84CC16; color:#fff; border-color:transparent}
+.av-c-yellow{background:#EAB308; color:#fff; border-color:transparent}
+.av-c-orange{background:#F97316; color:#fff; border-color:transparent}
+.av-c-pink{background:#EC4899; color:#fff; border-color:transparent}
+.av-c-purple{background:#A855F7; color:#fff; border-color:transparent}
+.av-c-indigo{background:#6366F1; color:#fff; border-color:transparent}
+.av-c-slate{background:#64748B; color:#fff; border-color:transparent}
+.has-img{overflow:hidden; padding:0}
+.av-img{display:block; width:100%; height:100%; object-fit:cover; border-radius:inherit}
+.av-editor{display:flex; align-items:flex-start; gap:18px; flex-wrap:wrap}
+.av-preview{width:76px; height:76px; flex:0 0 auto; border-radius:50%; display:grid; place-items:center;
+  font-weight:800; font-size:26px; background:var(--chip); color:var(--text); border:1px solid var(--line-2)}
+.av-side{flex:1 1 240px; min-width:0}
+.av-actions{display:flex; gap:8px; flex-wrap:wrap}
+.av-hint, .av-help{margin:8px 0 0; font-size:12.5px; color:var(--muted)}
+.av-label{margin-top:14px; font-weight:700; font-size:13px}
+.av-swatches{display:flex; gap:9px; flex-wrap:wrap; margin-top:8px}
+.av-swatch{width:30px; height:30px; padding:0; border-radius:50%; border:2px solid transparent; cursor:pointer}
+.av-swatch[aria-checked="true"]{outline:2px solid var(--text); outline-offset:2px}
+.av-swatch:focus-visible{outline:2px solid var(--text); outline-offset:2px}
+.av-msg{margin:8px 0 0; font-size:12.5px; min-height:1em}
+.av-msg.is-bad{color:var(--crit, #e5484d)}

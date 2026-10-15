@@ -31,6 +31,12 @@ function injectLocals(req, res, next) {
       if (user.language) {
         req.session.language = user.language;
       }
+      // Topbar button: profile picture or initials on the favourite colour
+      // (docs/feature-avatars.md). Pages only.
+      res.locals.userLook = null;
+      if (!req.path.startsWith('/api/')) {
+        try { res.locals.userLook = require('../services/avatars').info(user.id); } catch { res.locals.userLook = null; }
+      }
     }
 
     try {

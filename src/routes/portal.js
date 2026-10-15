@@ -38,6 +38,7 @@ const portalTickets = require('../services/portalTickets');
 const portalDevices = require('../services/portalDevices');
 const portalPin = require('../services/portalPin');
 const users = require('../services/users');
+const avatars = require('../services/avatars');
 const license = require('../services/license');
 const activity = require('../services/activity');
 const logger = require('../utils/logger');
@@ -141,6 +142,12 @@ async function pluginContributions(req, lang) {
   try { return await require('../services/plugins/portal').contributions(user, lang === 'en' ? 'en' : 'de'); } catch { return none; }
 }
 
+/** Profile picture and favourite colour of the viewer (docs/feature-avatars.md). */
+function lookOf(u) {
+  const f = avatars.info(u.id) || avatars.fieldsOf(u, null);
+  return { avatarUrl: f.avatarUrl, color: f.color, colorHex: f.colorHex };
+}
+
 /** Who the header shows. */
 function viewerFor(req) {
   const deviceName = req.portalPeerName || '';
@@ -152,7 +159,7 @@ function viewerFor(req) {
         const name = portalDevices.displayName(u);
         return {
           kind: 'person', via: 'kiosk', name, first: portalDevices.firstName(u), initials: portalDevices.initials(name),
-          deviceName: req.portalKiosk.name, canWebLogin: false, canEnroll: false,
+          deviceName: req.portalKiosk.name, canWebLogin: false, canEnroll: false, ...lookOf(u),
         };
       }
       if (req.portalOwnerSource === 'device') via = 'device';
@@ -162,6 +169,7 @@ function viewerFor(req) {
         kind: 'person', via, name, first: portalDevices.firstName(u), initials: portalDevices.initials(name), deviceName,
         canWebLogin: users.canWebLogin(u),
         canEnroll: u.enabled === 1 && (u.role === 'admin' || u.self_enroll_enabled === 1),
+        ...lookOf(u),
       };
     }
   }
@@ -198,7 +206,7 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, a
   const lang = req.language || res.locals.language;
   const island = (obj) => JSON.stringify(obj).replace(/</g, '\\u003c');
   res.render('portal/portal.njk', {
-    portalI18n: island(stringsWithPrefix(lang, ['portal.'])),
+    portalI18n: island(stringsWithPrefix(lang, ['portal.', 'avatar.'])),
     portalCtx: island({
       csrf: res.locals.csrfToken || '',
       lang,
@@ -207,6 +215,8 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, a
       person: viewer.kind === 'person',
       firstName: viewer.kind === 'person' ? viewer.first : '',
       canEnroll: viewer.kind === 'person' && !!req.portalLoggedIn && !!viewer.canEnroll,
+      // Own profile picture and colour on "Meine Geräte" (never on a kiosk device).
+      canEditLook: viewer.kind === 'person' && !!req.portalLoggedIn && !isKiosk(req),
       kiosk: isKiosk(req),
       tabs,
     }),

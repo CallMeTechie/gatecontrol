@@ -1,6 +1,7 @@
 'use strict';
 
-// Own-account two-factor management (docs/feature-admin-2fa.md).
+// Own-account two-factor management (docs/feature-admin-2fa.md), portal PIN
+// and profile picture / favourite colour (docs/feature-avatars.md).
 // Session-only (no API tokens), CSRF via the /api/v1 aggregator.
 
 const { Router } = require('express');
@@ -106,6 +107,20 @@ router.post('/2fa/disable', async (req, res) => {
     fail(res, err, req);
   }
 });
+
+// ─── Profile picture and favourite colour (docs/feature-avatars.md) ──────
+// Own account only (admins and members with "Mein Bereich"):
+//   GET    /api/v1/profile/avatar → { ok, user: { id, name, initials, color, colorHex, avatarUrl }, palette }
+//   PUT    /api/v1/profile/avatar raw body → { ok, avatarUrl }
+//   DELETE /api/v1/profile/avatar → { ok }
+//   PUT    /api/v1/profile/color  { color: key | null } → { ok, color, colorHex }
+const { avatarWriteLimiter } = require('../../middleware/rateLimit');
+const { avatarUpload, handlers: avatarHandlers } = require('./avatarApi');
+const ownAvatar = avatarHandlers((req) => req.session.userId, (req) => ({ actorId: req.session.userId, ip: req.ip, source: 'user' }));
+router.get('/avatar', ownAvatar.profile);
+router.put('/avatar', avatarWriteLimiter, avatarUpload, ownAvatar.putAvatar);
+router.delete('/avatar', avatarWriteLimiter, ownAvatar.deleteAvatar);
+router.put('/color', avatarWriteLimiter, ownAvatar.putColor);
 
 // ─── Portal PIN (shared devices, "Wer bist du?") ──────────────────────────
 // Own PIN only; setting or removing it needs the current password (it is a

@@ -18,7 +18,8 @@ position of each device on a map.
   portal sign-in for members, delete). Own account and last enabled admin: disable, role and
   delete are locked, with the reason under the actions. Five tabs (`?tab=overview|access|see|
   security|activity`, arrow keys, the address follows): **Übersicht** (device cards with online
-  state and the chip "Standort 08:42", latest activity, cards for access, security and
+  state and the chip "Standort 08:42", latest activity, cards for **Profilbild & Farbe**
+  (picture and favourite colour, docs/feature-avatars.md), access, security and
   **Standortfreigabe** — allow switch per user), **Geräte & Zugänge (n)** (edit, revoke, machine
   binding, "Gerät öffnen"), **Was sieht …?**, **Anmeldung & Sicherheit** (portal login, PIN,
   password, 2FA, passkeys, sessions), **Aktivität**. The dialogs live in

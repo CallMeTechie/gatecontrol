@@ -28,7 +28,10 @@
     <svg class="ic-moon" viewBox="0 0 24 24" fill="none"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.5 6.5 0 0 0 9.8 9.8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
   </button>
   <div class="topbar-profile" id="topbar-profile">
-    <button class="topbar-avatar" id="profile-btn" title="{{ user.username if user else 'Admin' }}">{{ ((user.display_name or user.username)[0] if user else 'A') | upper }}</button>
+    <button class="topbar-avatar{{ (' av-c-' + userLook.color) if userLook }}{{ ' has-img' if userLook and userLook.avatarUrl }}" id="profile-btn" title="{{ user.username if user else 'Admin' }}">
+      {%- if userLook and userLook.avatarUrl -%}<img class="av-img" src="{{ userLook.avatarUrl }}" alt="">
+      {%- else -%}{{ ((user.display_name or user.username)[0] if user else 'A') | upper }}{%- endif -%}
+    </button>
     <div class="topbar-dropdown" id="topbar-dropdown">
       <div class="topbar-dropdown-header"><b>{% if user and user.display_name %}{{ user.display_name }}{% elif user %}{{ user.username }}{% else %}Admin{% endif %}</b><span>{% if user %}{{ user.username }}{% else %}admin{% endif %}</span></div>
       {% if user and user.role == 'admin' %}

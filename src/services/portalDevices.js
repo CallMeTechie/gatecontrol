@@ -74,9 +74,14 @@ function peopleForPicker(peerId) {
   const info = usageForPeer(peerId);
   if (!info || info.mode !== 'multi' || !info.allowedUserIds.length) return [];
   const ids = info.allowedUserIds;
-  const rows = getDb().prepare(`SELECT id, username, display_name FROM users WHERE enabled = 1 AND id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+  const rows = getDb().prepare(`SELECT id, username, display_name, avatar_color FROM users WHERE enabled = 1 AND id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+  // Profile picture or initials on the favourite colour (docs/feature-avatars.md).
+  const looks = require('./avatars').infoMany(rows);
   return rows
-    .map((u) => ({ id: u.id, name: firstName(u), initials: initials(displayName(u)), owner: u.id === info.ownerId }))
+    .map((u) => {
+      const look = looks.get(u.id);
+      return { id: u.id, name: firstName(u), initials: initials(displayName(u)), owner: u.id === info.ownerId, avatarUrl: look.avatarUrl, color: look.color };
+    })
     .sort((a, b) => (a.owner === b.owner ? a.name.localeCompare(b.name) : (a.owner ? -1 : 1)));
 }
 

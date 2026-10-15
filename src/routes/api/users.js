@@ -7,8 +7,16 @@ const tokens = require('../../services/tokens');
 const logger = require('../../utils/logger');
 const { validateSplitTunnelPreset } = require('../../utils/validate');
 const { withPeers } = require('../../services/tokenPeers');
+const avatars = require('../../services/avatars');
+const { avatarWriteLimiter } = require('../../middleware/rateLimit');
+const { avatarUpload, handlers: avatarHandlers } = require('./avatarApi');
 
 const router = Router();
+
+/** Profile picture and favourite colour of a user row (docs/feature-avatars.md). */
+function lookOf(f) {
+  return f ? { avatarUrl: f.avatarUrl, color: f.color, colorHex: f.colorHex } : { avatarUrl: null, color: null, colorHex: null };
+}
 
 /** Destroy every login session of a user (sessionStore.destroyByUserId). */
 function revokeSessions(req, userId, reason, exceptSid = null) {
@@ -75,12 +83,15 @@ router.use(requireAdminSession);
  */
 router.get('/', (req, res) => {
   try {
-    const list = users.listForAdmin().map((u) => ({
+    const rows = users.listForAdmin();
+    const looks = avatars.infoMany(rows);
+    const list = rows.map((u) => ({
       ...u,
       // Kept for older callers: number of tokens / bound peers / last token use.
       tokenCount: u.token_count,
       peerCount: u.peer_count,
       lastAccess: u.last_token_use,
+      ...lookOf(looks.get(u.id)),
     }));
     res.json({ ok: true, users: list, current_user_id: req.session.userId });
   } catch (err) {
@@ -159,7 +170,7 @@ router.get('/:id', (req, res) => {
     const enabledAdmins = getDb().prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND enabled = 1").get().c;
     res.json({
       ok: true,
-      user,
+      user: { ...user, ...lookOf(avatars.info(id)) },
       tokens: userTokens,
       peers,
       passkeys,
@@ -597,6 +608,24 @@ router.delete('/:id/kiosk/:deviceId', (req, res) => {
     return res.status(500).json({ ok: false, error: req.t('error.users.update') });
   }
 });
+
+/**
+ * Profile picture and favourite colour (docs/feature-avatars.md):
+ *   PUT    /api/v1/users/:id/avatar  raw body (image/png | image/jpeg | image/webp, ≤ 96 KB) → { ok, avatarUrl }
+ *   DELETE /api/v1/users/:id/avatar  → { ok }
+ *   PUT    /api/v1/users/:id/color   { color: key | null } → { ok, color, colorHex }
+ * Errors as in routes/api/avatarApi.js; unknown user → 404 NOT_FOUND.
+ */
+function avatarTarget(req, res, next) {
+  const id = parseId(req);
+  if (!id || !users.getById(id)) return res.status(404).json({ ok: false, code: 'NOT_FOUND', error: req.t('error.users.not_found') });
+  req.avatarUserId = id;
+  return next();
+}
+const avatarApi = avatarHandlers((req) => req.avatarUserId, (req) => ({ actorId: req.session.userId, ip: req.ip, source: 'admin' }));
+router.put('/:id/avatar', avatarWriteLimiter, avatarTarget, avatarUpload, avatarApi.putAvatar);
+router.delete('/:id/avatar', avatarWriteLimiter, avatarTarget, avatarApi.deleteAvatar);
+router.put('/:id/color', avatarWriteLimiter, avatarTarget, avatarApi.putColor);
 
 /**
  * DELETE /api/v1/users/:id — Delete user (prevent self-deletion)

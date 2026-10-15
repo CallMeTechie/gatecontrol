@@ -25,6 +25,7 @@
 {#- Every portal.* string for portal.js (one JSON island, `<` escaped). -#}
 <script type="application/json" id="portal-i18n" nonce="{{ cspNonce }}">{{ portalI18n | safe }}</script>
 <script type="application/json" id="portal-ctx" nonce="{{ cspNonce }}">{{ portalCtx | safe }}</script>
+<script src="/js/avatar-edit.js?v={{ appVersion }}" defer></script>
 <script src="/js/portal.js?v={{ appVersion }}" defer></script>
 {% if tabs.plugins %}<script src="/js/plugin-bridge.js?v={{ appVersion }}" defer></script>{% endif %}
 </head>
@@ -103,7 +104,7 @@
           {%- endif -%}
         </span>
       </span>
-      <span class="pt-avatar" aria-hidden="true">{{ viewer.initials }}</span>
+      <span class="pt-avatar av-c-{{ viewer.color }}{{ ' has-img' if viewer.avatarUrl }}" id="pt-avatar" aria-hidden="true">{% if viewer.avatarUrl %}<img class="av-img" src="{{ viewer.avatarUrl }}" alt="">{% else %}{{ viewer.initials }}{% endif %}</span>
     </div>
     {% elif viewer.kind == 'anonymous' %}
     <div class="pt-user is-anon" data-viewer="anonymous">
@@ -356,6 +357,13 @@
       <ul class="pt-devlist" id="pt-devices"><li class="pt-empty">{{ t('portal.loading') }}</li></ul>
     </section>
     <p class="pt-foot" id="pt-devices-foot"></p>
+    {% if viewer.kind == 'person' and portalLoggedIn and not kiosk %}
+    {#- Own profile picture and favourite colour (docs/feature-avatars.md), public/js/avatar-edit.js -#}
+    <section class="pt-card pt-narrow pt-look" aria-labelledby="pt-c-look">
+      <h2 class="pt-h2" id="pt-c-look">{{ t('avatar.title') }}</h2>
+      <div id="pt-look"></div>
+    </section>
+    {% endif %}
     {% if tabs.notify %}
     <a class="pt-card pt-narrow pt-navcard" href="#benachrichtigungen" data-goto="benachrichtigungen" id="pt-devices-notify">
       <span class="pt-navcard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span>
