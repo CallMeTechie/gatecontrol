@@ -646,6 +646,9 @@ disable/uninstall and when the server shuts down.
     "Zuhause"/"Fahrzeug" card for sections (shown once a tile arrives), in a
     card of its own for the plugin's tab — and links them to the section (`#zuhause` + scroll). Never
     plugin HTML on Start. `GET /api/v1/portal/plugins/start`.
+    The same tiles are also shown in the apps' start card via
+    `GET /api/v1/client/tiles` (see "Start tiles in the apps" below) — asked
+    with the app's viewer (`app: true`), so answer only what that person may see.
   * **search**: optional hook `portalSearch({ user, lang, q })` (`q` 2–100
     characters) → `[{ title, subtitle?, section? }]` (≤ 10), shown after the
     portal's own results (services, devices), linked like the tiles. `GET /api/v1/portal/plugins/search?q=`.
@@ -753,6 +756,51 @@ POST /api/v1/client/actions/:plugin/:id        (≤ 30 runs per minute and token
 
 A toggle's new `state` comes with the run's answer; the apps reload the list
 when they show their shortcuts, tiles or widget.
+
+### Start tiles in the apps
+
+The start card of the Android app slides through the plugins' Start tiles
+(hook `portalTiles`, see "Portal" above) — e.g. a vehicle's charge level, the
+next waste collection, a smart home sensor. The person picks which tiles the
+card shows and in which order; the app remembers that by each tile's `key`.
+
+* **Which tiles**: exactly what the portal's Start tab would show the token's
+  owner — the same plugins (may run, running, `permissions.portal` and
+  `ui.portal`), `portalVisible` per tab/section, a tile naming a section the
+  viewer cannot see dropped, 1.5 s per plugin (a slow, failing or
+  garbage-answering plugin only loses its own tiles), at most 8 per plugin,
+  `title` ≤ 60, `value` ≤ 40, `unit` ≤ 12 characters (control characters
+  removed; a number becomes text), `state` one of `on`, `off`, `good`,
+  `warn`, `crit` or `null`, `icon` an SVG path (path characters only, ≤ 2000)
+  or `null`. No portal link targets (`goto`/`anchor`) — the app opens the
+  plugin itself.
+* **Viewer**: the token's owner like for the quick actions,
+  `user = { id, name, role, portal: true, loggedIn: true, app: true }`;
+  `lang` like there (`?lang=`, the owner's setting, `Accept-Language`, `de`).
+  A token without an owner gets no tiles.
+* **`key`**: `"<plugin id>/<section or ''>/<title>"`, deterministic and in
+  URL-safe characters only (`[A-Za-z0-9._~-]` plus the two `/`, ≤ 184
+  characters). A section or title that is already short (≤ 48) and URL-safe
+  is taken as it is; anything else becomes its URL-safe form (accents
+  dropped, other characters → `-`, ≤ 48) followed by `~` and the first 10 hex
+  digits of the SHA-256 of the original text (`Restmüll` →
+  `Restmull~1a2b3c4d5e`), so two different titles never share a key. A
+  second tile of the same plugin with the same section and title is dropped.
+  The title is the one in the requested language — the apps ask with a
+  fixed `lang`; a plugin keeps its titles stable so a person's selection
+  survives (a title that changes, e.g. with the value, makes a new tile).
+
+```
+GET /api/v1/client/tiles?lang=de|en
+  200 { ok: true, tiles: [{ key: 'gatecontrol-fahrzeuge/vehicle/Ladestand',
+                            plugin: '<plugin id>', pluginName: '<localised name>',
+                            section: '<section id>' | null, title, value, unit, state, icon }] }
+```
+
+Same auth as `GET /api/v1/client/actions` (API token with scope `client` or
+`full-access`, machine binding, a browser session gets 403
+`token_required`), `Cache-Control: no-store`, the general API rate limit
+like the actions listing.
 
 ### Running other plugins' quick actions (`permissions.actions`)
 

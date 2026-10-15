@@ -79,6 +79,7 @@ router.use(require('./client/homeNetwork'));
 // in routes/index.js before the apiLimiter).
 router.use(require('./client/push'));
 router.use(require('./client/actions')); // plugin quick actions of the apps (shortcuts, tiles, widget)
+router.use(require('./client/tiles')); // plugin Start tiles in the apps' start card
 // Location sharing on tap (satellite button of the Android app).
 router.use(require('./client/location'));
 // Speed test of the apps' diagnosis screen (docs/feature-client-diagnosis.md).
