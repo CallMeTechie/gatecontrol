@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.169.0] — 2026-10-15
+
+### Features
+- push pictures, notification quick actions, 5 s background ticks (#312)
+
+---
+
 ## [1.168.0] — 2026-10-15
 
 ### Features
