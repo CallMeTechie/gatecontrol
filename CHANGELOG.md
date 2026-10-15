@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.170.0] — 2026-10-15
+
+### Features
+- plugin start tiles for the apps (GET /api/v1/client/tiles) (#313)
+
+---
+
 ## [1.169.0] — 2026-10-15
 
 ### Features
