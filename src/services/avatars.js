@@ -133,7 +133,9 @@ function parseWebp(buf) {
  * | 'too_big'.
  */
 function validateImage(buf) {
-  if (!Buffer.isBuffer(buf) || buf.length === 0) throw invalid('empty');
+  // Array.isArray first: a request value is never an array here (callers pass
+  // req.body only when it is a Buffer), and the explicit check says so.
+  if (Array.isArray(buf) || !Buffer.isBuffer(buf) || buf.length === 0) throw invalid('empty');
   if (buf.length > MAX_BYTES) throw invalid('too_large');
   let info;
   if (buf.length >= 8 && buf.subarray(0, 8).equals(PNG_SIG)) info = parsePng(buf);

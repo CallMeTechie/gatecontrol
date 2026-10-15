@@ -535,7 +535,7 @@ async function restoreBackup(backup) {
           const buf = Buffer.from(a.data, 'base64');
           const img = avatars.validateImage(buf);
           insertAvatar.run(uid, a.avatar_id, img.mime, buf, typeof a.updated_at === 'string' ? a.updated_at : null);
-        } catch (e) { logger.warn({ err: e.message, user: a && a.user_name }, 'user avatar restore skipped'); }
+        } catch (e) { logger.warn({ err: e.message }, 'user avatar restore skipped'); }
       }
     }
 
