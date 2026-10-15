@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.168.0] — 2026-10-15
+
+### Features
+- avatars and favourite colours for users (#311)
+
+---
+
 ## [1.167.1] — 2026-10-14
 
 ### Fixes
