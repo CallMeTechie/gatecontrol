@@ -97,6 +97,8 @@ module.exports = {
         return { json: { ok: true, values: await gc.settings.all() } };
       case '/users':
         return { json: { ok: true, users: await gc.users.list() } };
+      case '/user':
+        return { json: { ok: true, user: await gc.users.get(Number(req.query.id)) } };
       case '/kiosk':
         // gc.kiosk.allow / list (permissions.kiosk, docs/feature-kiosk-devices.md)
         try {

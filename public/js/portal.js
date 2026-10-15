@@ -1199,6 +1199,23 @@
   loadTraffic();
   loadPihole('device', true);
   loadServices();
+  // Own profile picture and favourite colour on "Meine Geräte"
+  // (docs/feature-avatars.md; signed in, never on a kiosk device).
+  (function initLook() {
+    var host = $('pt-look');
+    if (!host || !CTX.canEditLook || !window.GCAvatar) return;
+    window.GCAvatar.editor(host, {
+      urls: { profile: '/api/v1/portal/me/profile', avatar: '/api/v1/portal/me/avatar', color: '/api/v1/portal/me/color' },
+      csrf: function () { return CTX.csrf || ''; },
+      T: function (k) { return T(k); },
+      toast: function (text, tone) { toast(text, tone === 'success' ? null : tone); },
+      confirm: function (text) { return portalConfirm({ title: T('avatar.remove'), message: text, okLabel: T('avatar.remove'), danger: true }); },
+      help: 'avatar.color_help',
+      buttonClass: 'pt-btn pt-btn-sm',
+      ghostClass: 'pt-btn pt-btn-sm',
+      onChange: function (look) { window.GCAvatar.paint($('pt-avatar'), look); },
+    });
+  })();
   loadDevices();
   loadPluginStart();
   bootNotify();

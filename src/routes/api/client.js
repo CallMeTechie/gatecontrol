@@ -83,6 +83,8 @@ router.use(require('./client/actions')); // plugin quick actions of the apps (sh
 router.use(require('./client/location'));
 // Speed test of the apps' diagnosis screen (docs/feature-client-diagnosis.md).
 router.use(require('./client/speedtest'));
+// Own profile picture and favourite colour (docs/feature-avatars.md).
+router.use(require('./client/profile'));
 
 module.exports = router;
 module.exports.updateRouter = require('./client/update');

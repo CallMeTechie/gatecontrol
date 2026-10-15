@@ -34,6 +34,8 @@ const activity = require('../../services/activity');
 const logger = require('../../utils/logger');
 const qrcode = require('../../services/qrcode');
 const { isDeviceToken } = require('../../services/userVisibility');
+const { avatarWriteLimiter } = require('../../middleware/rateLimit');
+const { avatarUpload, handlers: avatarHandlers } = require('./avatarApi');
 
 /** The web session's account (the /api/v1/me mount). */
 function webSessionUser(req) {
@@ -173,6 +175,21 @@ router.post('/enrollment', selfServiceLimiter, async (req, res) => {
     res.status(500).json({ ok: false, error: req.t('error.enrollment.create_failed') });
   }
 });
+
+/**
+ * Own profile picture and favourite colour (docs/feature-avatars.md) — on the
+ * portal's "Meine Geräte" tab (never on a kiosk device: the kiosk allow-list
+ * does not contain these paths):
+ *   GET    /api/v1/[portal/]me/profile → { ok, user: { id, name, initials, color, colorHex, avatarUrl }, palette }
+ *   PUT    /api/v1/[portal/]me/avatar  raw body → { ok, avatarUrl }
+ *   DELETE /api/v1/[portal/]me/avatar  → { ok }
+ *   PUT    /api/v1/[portal/]me/color   { color: key | null } → { ok, color, colorHex }
+ */
+const ownAvatar = avatarHandlers((req) => req.meUserId, (req) => ({ actorId: req.meUserId, ip: req.ip, source: 'user' }));
+router.get('/profile', ownAvatar.profile);
+router.put('/avatar', avatarWriteLimiter, avatarUpload, ownAvatar.putAvatar);
+router.delete('/avatar', avatarWriteLimiter, ownAvatar.deleteAvatar);
+router.put('/color', avatarWriteLimiter, ownAvatar.putColor);
 
 /** GET /api/v1/me/services — HTTP services and RDP entries this account reaches */
 router.get('/services', (req, res) => {

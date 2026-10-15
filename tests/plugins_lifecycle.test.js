@@ -150,7 +150,8 @@ describe('host API permissions', () => {
   });
   it('users, notify, licence status, storage', async () => {
     const u = await call('hello', '/users').expect(200);
-    assert.deepEqual(Object.keys(u.body.users[0]).sort(), ['id', 'name', 'role']);
+    // + profile picture and favourite colour (docs/feature-avatars.md)
+    assert.deepEqual(Object.keys(u.body.users[0]).sort(), ['avatarUrl', 'color', 'colorHex', 'id', 'initials', 'name', 'role']);
     await call('hello', '/notify', 'post', {}).expect(200);
     const row = require('../src/db/connection').getDb().prepare("SELECT message FROM activity_log WHERE event_type = 'plugin_notice'").get();
     assert.match(row.message, /hello from the plugin/);

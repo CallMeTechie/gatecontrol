@@ -40,7 +40,7 @@
         {% for p in people %}
         <label class="pt-person">
           <input type="radio" name="user" value="{{ p.id }}" data-name="{{ p.name }}"{% if p.id == selected or (not selected and people.length == 1) %} checked{% endif %}>
-          <span class="pt-person-avatar" aria-hidden="true">{{ p.initials }}</span>
+          <span class="pt-person-avatar av-c-{{ p.color }}{{ ' has-img' if p.avatarUrl }}" aria-hidden="true">{% if p.avatarUrl %}<img class="av-img" src="{{ p.avatarUrl }}" alt="">{% else %}{{ p.initials }}{% endif %}</span>
           <b class="pt-person-name">{{ p.name }}</b>
         </label>
         {% endfor %}

@@ -89,10 +89,13 @@ router.get('/plugins/_shared/leaflet/images/:file', pluginAssetLimiter, (req, re
 
 function mapsOf(p) { return !!(p && p.manifest && p.manifest.ui && p.manifest.ui.maps); }
 
-/** Frame headers for plugin `p` (maps → the relaxed CSP for this request's origin). */
+/**
+ * Frame headers for plugin `p` (maps → the relaxed CSP for this request's
+ * origin; every frame may show the profile pictures of this origin).
+ */
 function frameHeaders(req, res, p) {
   const maps = mapsOf(p);
-  frame.headers(res, { maps, origin: maps ? frame.originOf(req) : null });
+  frame.headers(res, { maps, avatars: true, origin: frame.originOf(req) });
   return maps;
 }
 

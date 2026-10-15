@@ -370,8 +370,16 @@
     });
   }
 
+  // Profile picture or initials on the favourite colour (docs/feature-avatars.md);
+  // the role tone only when the server sent no colour.
+  function paintLook(n, u) {
+    if (!u.color) n.classList.add('us-tone-' + roleTone(u.role));
+    if (window.GCAvatar) window.GCAvatar.paint(n, { avatarUrl: u.avatarUrl, color: u.color, initials: initials(u) });
+    else n.textContent = initials(u);
+    return n;
+  }
   function avatar(u, lg) {
-    return el('span', { class: 'us-avatar us-tone-' + roleTone(u.role) + (lg ? ' us-avatar-lg' : '') + (u.enabled === 1 ? '' : ' us-avatar-off'), 'aria-hidden': 'true' }, initials(u));
+    return paintLook(el('span', { class: 'us-avatar' + (lg ? ' us-avatar-lg' : '') + (u.enabled === 1 ? '' : ' us-avatar-off'), 'aria-hidden': 'true' }), u);
   }
   function roleChips(u) {
     return [el('span', { class: 'us-chip us-chip-' + roleTone(u.role) }, roleLabel(u.role)),
@@ -564,8 +572,8 @@
     const u = d.user;
     const off = u.enabled !== 1;
     const av = $('up-avatar');
-    av.className = 'up-avatar us-tone-' + roleTone(u.role) + (off ? ' us-avatar-off' : '');
-    av.textContent = initials(u);
+    av.className = 'up-avatar' + (off ? ' us-avatar-off' : '');
+    paintLook(av, u);
     $('up-name').textContent = nameOf(u);
     $('up-crumb-name').textContent = nameOf(u);
     clear($('up-head-chips')).append(
@@ -820,7 +828,33 @@
       el('p', { class: 'up-muted' }, loc.allowed ? T('up.loc.allowed_text', { days: loc.retention_days, keep: loc.keep }) : T('up.loc.denied_text')),
       el('div', { class: 'up-switchrow' }, [el('span', { class: 'up-switchrow-label' }, T('up.loc.allow')), sw]),
     ]);
-    panel.appendChild(el('div', { class: 'up-grid' }, [main, el('div', { class: 'up-side' }, [access, security, locCard])]));
+    panel.appendChild(el('div', { class: 'up-grid' }, [main, el('div', { class: 'up-side' }, [lookCard(d), access, security, locCard])]));
+  }
+
+  // "Profilbild & Farbe" (docs/feature-avatars.md): picture (cropped and
+  // scaled down in the browser) and favourite colour of this user.
+  function lookCard(d) {
+    const u = d.user;
+    const host = el('div', { class: 'up-look' });
+    const card = upCard(T('avatar.title'), null, [host]);
+    if (!window.GCAvatar) { card.hidden = true; return card; }
+    const ed = window.GCAvatar.editor(host, {
+      urls: { avatar: '/api/v1/users/' + u.id + '/avatar', color: '/api/v1/users/' + u.id + '/color' },
+      csrf: () => (window.GC && window.GC.csrfToken) || '',
+      T,
+      toast: (text) => toast(text),
+      confirm: (text) => D.confirm({ title: T('avatar.remove'), message: text, okLabel: T('avatar.remove'), danger: true }),
+      help: d.is_self ? 'avatar.color_help' : 'avatar.color_help_other',
+      buttonClass: 'btn btn-sm us-btn-chip',
+      ghostClass: 'btn btn-sm btn-ghost',
+      onChange: (look) => {
+        if (!look || !state.detail || state.detail.user.id !== u.id) return;
+        Object.assign(state.detail.user, { avatarUrl: look.avatarUrl, color: look.color, colorHex: look.colorHex });
+        renderHead(state.detail);
+      },
+    });
+    ed.set({ avatarUrl: u.avatarUrl, color: u.color, colorHex: u.colorHex, initials: initials(u) });
+    return card;
   }
 
   async function toggleUser(u) {

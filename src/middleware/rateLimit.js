@@ -522,3 +522,49 @@ const kioskCodeLimiter = rateLimit({
 module.exports.kioskSessionLimiter = kioskSessionLimiter;
 module.exports.kioskPairLimiter = kioskPairLimiter;
 module.exports.kioskCodeLimiter = kioskCodeLimiter;
+
+// Profile picture / favourite colour (docs/feature-avatars.md).
+// PUT/DELETE /api/v1/client/me/avatar, PUT /api/v1/client/me/color: 30
+// changes per hour and device token.
+const clientAvatarLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.tokenAuth ? `client-avatar:${req.tokenId}` : `client-avatar:${ipKeyGenerator(req.ip)}`),
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, code: 'RATE_LIMITED', error: req.t ? req.t('avatar.err.rate_limited') : 'rate_limited' });
+  },
+});
+
+// The same changes from a browser (administrator, own profile, portal): 60
+// per 15 minutes and signed-in account (portal session: its person).
+const avatarWriteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const s = req.session || {};
+    if (s.userId) return `avatar:u:${s.userId}`;
+    if (s.portalUserId) return `avatar:u:${s.portalUserId}`;
+    return `avatar:ip:${ipKeyGenerator(req.ip)}`;
+  },
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, code: 'RATE_LIMITED', error: req.t ? req.t('avatar.err.rate_limited') : 'rate_limited' });
+  },
+});
+
+// GET /avatars/<id>.<ext> — public capability URLs (cached forever by the
+// browsers and apps): per address, generous (a wall tablet shows a family).
+const avatarFileLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `avatar-file:${ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => { res.status(429).end(); },
+});
+module.exports.clientAvatarLimiter = clientAvatarLimiter;
+module.exports.avatarWriteLimiter = avatarWriteLimiter;
+module.exports.avatarFileLimiter = avatarFileLimiter;

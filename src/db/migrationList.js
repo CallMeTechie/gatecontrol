@@ -2244,6 +2244,29 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_kiosk_devices_user ON kiosk_devices(user_id);`,
     detect: (db) => tableExists(db, 'kiosk_devices') && tableExists(db, 'kiosk_pair_codes') && tableExists(db, 'plugin_kiosk_users'),
   },
+  {
+    version: 101,
+    name: 'user_avatars',
+    // Profile pictures and favourite colours (docs/feature-avatars.md).
+    //   user_avatars        one picture per user, stored as sent after
+    //                       validation (PNG, JPEG or WebP, square, 64…512 px,
+    //                       ≤ 96 KB — services/avatars.js). avatar_id is the
+    //                       random part of the capability URL
+    //                       /avatars/<avatar_id>.<ext>, new on every change.
+    //                       Goes with the user (ON DELETE CASCADE).
+    //   users.avatar_color  palette key of the favourite colour (ring colour
+    //                       "at home"); NULL = derived from the user id.
+    sql: `
+      CREATE TABLE IF NOT EXISTS user_avatars (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        avatar_id TEXT NOT NULL UNIQUE,
+        mime TEXT NOT NULL,
+        data BLOB NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      ALTER TABLE users ADD COLUMN avatar_color TEXT;`,
+    detect: (db) => tableExists(db, 'user_avatars') && hasColumn(db, 'users', 'avatar_color'),
+  },
 ];
 
 module.exports = { migrations };

@@ -351,7 +351,7 @@ module.exports = {
 | `gc.db.query/get/run/exec(sql, params)` | the plugin's own SQLite database (`storage`) |
 | `gc.settings.get/all/set` | the plugin's settings (secrets decrypted); `set` also keeps undeclared keys of the plugin's own (JSON) |
 | `gc.settings.setSecret(key, value)` | a secret of the plugin's own (e.g. a device API key per gateway): any key `[a-z][a-z0-9_.-]{0,63}` that is not a declared non-secret setting, stored encrypted with the server key like a `secret` setting, read back with `get`/`all`, never sent to the browser, re-keyed by backups; `null` deletes it |
-| `gc.users.list()/get(id)` | `{ id, name, role }` of enabled users (`users`) |
+| `gc.users.list()/get(id)` | `{ id, name, role, avatarUrl, color, colorHex, initials }` of enabled users (`users`) — `avatarUrl` is the profile picture's path `/avatars/<id>.<ext>` or `null`, `color` the favourite colour's palette key (never `null`), `colorHex` its `#RRGGBB`, `initials` one or two letters for the fallback (docs/feature-avatars.md; since 1.168.0) |
 | `gc.kiosk.allow(userId, allowed)` | mark (`true`) or unmark (`false`) a user as a kiosk user (`kiosk`); an administrator, a disabled or an unknown account → `ERR_INVALID` (allowing only; unmarking always works) |
 | `gc.kiosk.list()` | ids of the users this plugin marks (`kiosk`) |
 | `gc.actions.list({ userId, lang })` | the quick actions the *other* plugins offer to that user → `[{ plugin, pluginName, id, title, subtitle, kind, state }]` (`actions`) — see "Running other plugins' quick actions" |
@@ -537,6 +537,18 @@ disable/uninstall and when the server shuts down.
   that frame and only calls that plugin's API base with the user's session and
   CSRF token). Chosen over a declarative JSON UI because it is general enough
   for the existing Smart Home / Klimaanlage / Fahrzeuge pages.
+* **Profile pictures** (since 1.168.0, docs/feature-avatars.md): every frame
+  (admin page, portal tab and section, wall) may show the users' pictures —
+  the frame CSP has `img-src data: <origin>/avatars/` (`<origin>` = scheme +
+  Host header of the frame request; only this path of the server, a Host that
+  is not a plain `host[:port]` gets no origin and no pictures). Use the
+  `avatarUrl` of `gc.users` as it is (`<img src="/avatars/…">` — the frame's
+  URL base is that origin); without a picture draw `initials` on `colorHex`
+  (white text). The pictures need no cookie and are sent with
+  `Cross-Origin-Resource-Policy: cross-origin` and
+  `Cache-Control: public, max-age=31536000, immutable` (a new picture has a
+  new URL). Ring colours for presence: at home = `colorHex`, away = `#E5484D`,
+  unknown = a neutral border.
 * **Settings**: declared `ui.settings` are rendered by GateControl
   (Einstellungen tab) — no plugin HTML in the settings page.
 * **Portal** (`src/services/plugins/portal.js`), for identified viewers only:
@@ -759,7 +771,7 @@ overview lists the app tab.
 pages, portal tab and sections). Only for those plugins' frames
 (`src/services/plugins/frame.js`):
 
-* **CSP**: `img-src data: https://tile.openstreetmap.org <origin>/plugins/_shared/leaflet/images/`,
+* **CSP**: `img-src data: https://tile.openstreetmap.org <origin>/plugins/_shared/leaflet/images/ <origin>/avatars/`,
   `script-src 'unsafe-inline' <origin>/plugins/_shared/leaflet/leaflet.js`,
   `style-src 'unsafe-inline' <origin>/plugins/_shared/leaflet/leaflet.css` —
   `<origin>` is the origin the frame was loaded from (scheme + Host header;
