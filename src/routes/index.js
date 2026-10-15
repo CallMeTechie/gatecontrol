@@ -53,6 +53,30 @@ router.get('/avatars/:file', avatarFileLimiter, (req, res) => {
   return res.end(pic.data);
 });
 
+// ─── Pictures of plugin pushes (public capability URLs) ──
+// /notify-media/<id>.<ext> (docs/plugins.md "Notifications",
+// services/notify/media.js): no login — the random id is the secret, like
+// /avatars/, on every host this app answers. The picture never changes, but
+// it lives only until the push's ttl: cached privately for the remaining
+// lifetime at most, 404 once expired or unknown.
+const { notifyMediaLimiter } = require('../middleware/rateLimit');
+router.get('/notify-media/:file', notifyMediaLimiter, (req, res) => {
+  let pic = null;
+  try { pic = require('../services/notify/media').getFile(req.params.file); } catch (err) {
+    logger.warn({ err: err.message }, 'notify media: lookup failed');
+  }
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  if (!pic) {
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(404).end();
+  }
+  res.setHeader('Content-Type', pic.mime);
+  res.setHeader('Cache-Control', `private, max-age=${pic.maxAge}, immutable`);
+  res.setHeader('Content-Security-Policy', "default-src 'none'");
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  return res.end(pic.data);
+});
+
 // ─── Prometheus metrics (token auth or session) ────
 // Per-identity rate limit so a stolen `read-only`/`system` token can't
 // loop-scrape the endpoint at kilohertz speeds. 60/min/identity is well

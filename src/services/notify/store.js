@@ -24,12 +24,12 @@ function createNotification(n) {
   const t = iso();
   const r = getDb().prepare(`INSERT INTO notifications
     (event_id, event_type, topic, source, priority, title, body, data, collapse_key, count, silent, target,
-     created_at, updated_at, expires_at, release_at, meta)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`).run(
+     created_at, updated_at, expires_at, release_at, meta, image_url, image_expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     n.eventId, n.eventType || null, n.topic, n.source, n.priority, n.title, n.body || null,
     n.data ? JSON.stringify(n.data) : null, n.collapseKey || null, n.silent ? 1 : 0,
     n.target ? JSON.stringify(n.target) : null, t, t, n.expiresAt || null, n.releaseAt || null,
-    n.meta ? JSON.stringify(n.meta) : null);
+    n.meta ? JSON.stringify(n.meta) : null, n.image ? n.image.url : null, n.image ? n.image.expiresAt : null);
   return Number(r.lastInsertRowid);
 }
 
@@ -99,7 +99,7 @@ const LIVE_SQL = `n.revoked_at IS NULL AND n.release_at IS NULL AND (n.expires_a
  */
 function pendingForToken(tokenId, since = null) {
   return getDb().prepare(`SELECT d.*, n.event_id, n.topic, n.priority, n.title, n.body, n.data, n.collapse_key,
-         n.created_at, n.expires_at, n.silent AS n_silent
+         n.created_at, n.expires_at, n.silent AS n_silent, n.image_url, n.image_expires_at
        FROM notification_deliveries d JOIN notifications n ON n.id = d.notification_id
       WHERE d.token_id = ? AND d.state IN ('queued', 'sent') AND ${LIVE_SQL}
         ${since != null ? 'AND d.seq > ?' : ''}
@@ -109,8 +109,16 @@ function pendingForToken(tokenId, since = null) {
 /** One delivery joined with its notification (for the wire payload). */
 function deliveryRow(seq) {
   return getDb().prepare(`SELECT d.*, n.event_id, n.topic, n.priority, n.title, n.body, n.data, n.collapse_key,
-         n.created_at, n.expires_at, n.silent AS n_silent
+         n.created_at, n.expires_at, n.silent AS n_silent, n.image_url, n.image_expires_at
        FROM notification_deliveries d JOIN notifications n ON n.id = d.notification_id WHERE d.seq = ?`).get(seq) || null;
+}
+
+/**
+ * imageUrl of a notification row (relative path /notify-media/<id>.<ext>,
+ * services/notify/media.js) while its picture lives, else null.
+ */
+function imageUrlOf(row) {
+  return row && row.image_url && row.image_expires_at && row.image_expires_at > iso() ? row.image_url : null;
 }
 
 /** The `notification` event / inbox item of the device contract. */
@@ -128,6 +136,7 @@ function payload(row) {
     collapse_key: row.collapse_key || null,
     silent: row.silent === 1 || row.n_silent === 1,
     data: parseJson(row.data, null),
+    imageUrl: imageUrlOf(row),
   };
 }
 
@@ -187,7 +196,7 @@ function markReadForUser(userId, notificationIds, { exceptToken = null } = {}) {
 
 function inbox(tokenId, { limit = 100, before = null } = {}) {
   const rows = getDb().prepare(`SELECT d.*, n.event_id, n.topic, n.priority, n.title, n.body, n.data, n.collapse_key,
-         n.created_at, n.expires_at, n.silent AS n_silent
+         n.created_at, n.expires_at, n.silent AS n_silent, n.image_url, n.image_expires_at
        FROM notification_deliveries d JOIN notifications n ON n.id = d.notification_id
       WHERE d.token_id = ? AND d.state IN ('queued', 'sent', 'delivered', 'read', 'dismissed') AND ${LIVE_SQL}
         ${before != null ? 'AND d.seq < ?' : ''}
@@ -252,7 +261,7 @@ function _setClock(fn) { _clock = fn || (() => Date.now()); }
 module.exports = {
   now, iso, wire, parseJson,
   createNotification, getNotification, updateNotification, deleteNotification, latestByCollapse,
-  addDeliveries, requeue, deliveriesOf, markSent, pendingForToken, deliveryRow, payload, ack, markReadForUser,
+  addDeliveries, requeue, deliveriesOf, markSent, pendingForToken, deliveryRow, payload, imageUrlOf, ack, markReadForUser,
   inbox, unreadCount, queuedCount, revokedForToken,
   devicePrefs, touchDevice, seen, setDevicePrefs,
   _setClock,

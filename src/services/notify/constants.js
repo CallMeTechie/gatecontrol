@@ -23,7 +23,9 @@ const DELIVERY_STATES = ['queued', 'sent', 'delivered', 'read', 'dismissed', 'ex
 const ACK_STATES = ['delivered', 'read', 'dismissed'];
 const RECOVERY_MODES = ['off', 'silent', 'normal'];
 
-// Actions a notification may carry (fixed list, docs "Sicherheit").
+// Actions a notification may carry (fixed list, docs "Sicherheit"). Plugin
+// pushes may also carry `quick_action` — one of that plugin's own quick
+// actions (sanitize.quickAction, docs/plugins.md "Notifications").
 const ACTION_TYPES = new Set(['open_app_route', 'open_portal', 'mute_1h', 'ack', 'done']);
 const APP_ROUTE_RE = /^(?:vpn|services|gateways|inbox|plg-[a-z0-9]+(?:-[a-z0-9]+)*)$/;
 
@@ -35,6 +37,7 @@ const LIMITS = {
   inbox: 100,
   mutedTopics: 100,
   actions: 4,
+  quickActionLabel: 24,
   facts: 6,
   factLabel: 60,
   factValue: 120,

@@ -127,6 +127,21 @@ function parseWebp(buf) {
 }
 
 /**
+ * The header of a PNG, JPEG or WebP picture → { mime, width, height }, or
+ * ERR_INVALID with err.reason 'format' | 'animated'. No size rules — shared
+ * with the push pictures (services/notify/media.js).
+ */
+function parseImage(buf) {
+  let info;
+  if (buf.length >= 8 && buf.subarray(0, 8).equals(PNG_SIG)) info = parsePng(buf);
+  else if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) info = parseJpeg(buf);
+  else if (buf.length >= 16 && buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP') info = parseWebp(buf);
+  else throw invalid('format');
+  if (!info.width || !info.height) throw invalid('format');
+  return info;
+}
+
+/**
  * Check a picture. Returns { mime, ext, size, width, height, bytes } (size =
  * the edge length in pixels) or throws ERR_INVALID with err.reason one of
  * 'empty' | 'too_large' | 'format' | 'animated' | 'not_square' | 'too_small'
@@ -137,13 +152,8 @@ function validateImage(buf) {
   // req.body only when it is a Buffer), and the explicit check says so.
   if (Array.isArray(buf) || !Buffer.isBuffer(buf) || buf.length === 0) throw invalid('empty');
   if (buf.length > MAX_BYTES) throw invalid('too_large');
-  let info;
-  if (buf.length >= 8 && buf.subarray(0, 8).equals(PNG_SIG)) info = parsePng(buf);
-  else if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) info = parseJpeg(buf);
-  else if (buf.length >= 16 && buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP') info = parseWebp(buf);
-  else throw invalid('format');
+  const info = parseImage(buf);
   const { width, height } = info;
-  if (!width || !height) throw invalid('format');
   if (width !== height) throw invalid('not_square');
   if (width < MIN_SIZE) throw invalid('too_small');
   if (width > MAX_SIZE) throw invalid('too_big');
@@ -292,6 +302,7 @@ module.exports = {
   MIN_SIZE,
   MAX_SIZE,
   TYPES,
+  parseImage,
   validateImage,
   isColorKey,
   colorOf,

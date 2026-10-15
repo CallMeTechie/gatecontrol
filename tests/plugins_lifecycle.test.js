@@ -181,6 +181,31 @@ describe('settings, background runs, crash and restart', () => {
     await runtime.get('hello').runTick();
     assert.equal((await call('hello', '/ticks').expect(200)).body.ticks, 2);
   });
+  it('background interval: 5 s at the least; a tick still running is never started twice', async () => {
+    const manifest = require('../src/services/plugins/manifest');
+    const base = { id: 'x-bg', name: 'X', version: '1.0.0', publisher: 'T', gatecontrol: '>=1.0.0', entry: 'server/index.js' };
+    const bg = (intervalSeconds) => manifest.validate({ ...base, permissions: { background: { intervalSeconds } } });
+    assert.deepEqual(bg(5).manifest.permissions.background, { intervalSeconds: 5 });
+    assert.equal(manifest.BACKGROUND_MIN_S, 5);
+    for (const bad of [4, 0, 2.5, 86401]) assert.deepEqual(bg(bad).errors, ['permissions.background.intervalSeconds: invalid'], String(bad));
+
+    const p = runtime.get('hello');
+    const before = (await call('hello', '/ticks').expect(200)).body.ticks;
+    await call('hello', '/kv', 'post', { key: 'tick-slow-ms', value: 600 }).expect(200);
+    try {
+      // host side: a second runTick while one runs does nothing
+      await Promise.all([p.runTick(), p.runTick()]);
+      assert.equal((await call('hello', '/ticks').expect(200)).body.ticks, before + 1);
+      // child side: a tick the host gave up on (timeout) still runs — the next one is skipped
+      await assert.rejects(() => p.call('tick', {}, 100), (e) => e.code === 'ERR_TIMEOUT');
+      assert.deepEqual(await p.call('tick', {}, 3000), { skipped: true });
+      await new Promise((r) => setTimeout(r, 800));
+      assert.equal((await call('hello', '/ticks').expect(200)).body.ticks, before + 2);
+      assert.deepEqual(await p.call('tick', {}, 3000), {}, 'runs again once the old one ended');
+    } finally {
+      await call('hello', '/kv', 'post', { key: 'tick-slow-ms', value: null }).expect(200);
+    }
+  });
   it('a crashed process is restarted with backoff', async () => {
     const pid = runtime.info('hello').pid;
     await call('hello', '/crash', 'post', {}).expect(200);

@@ -8,7 +8,8 @@
 //   * each device keeps at most max_queue queued copies; the oldest `info`
 //     messages go first, then the oldest of the rest;
 //   * queues of deleted tokens expire, their device rows are removed;
-//   * fallback mails that are due are sent (hub.sweepEmail).
+//   * fallback mails that are due are sent (hub.sweepEmail);
+//   * expired pictures of plugin pushes (notify_media, media.js) are deleted.
 
 const { getDb } = require('../../db/connection');
 const store = require('./store');
@@ -19,12 +20,12 @@ const HOUR_MS = 60 * 60 * 1000;
 const TICK_MS = 15 * 1000;
 let timers = [];
 
-/** → { expired, purged, capped, orphans } */
+/** → { expired, purged, capped, orphans, media } */
 function run() {
   const db = getDb();
   const cfg = config.get();
   const nowIso = store.iso();
-  const out = { expired: 0, purged: 0, capped: 0, orphans: 0 };
+  const out = { expired: 0, purged: 0, capped: 0, orphans: 0, media: 0 };
 
   out.expired = db.prepare(`UPDATE notification_deliveries SET state = 'expired'
      WHERE state IN ('queued', 'sent') AND notification_id IN (
@@ -50,13 +51,14 @@ function run() {
   out.orphans = db.prepare(`UPDATE notification_deliveries SET state = 'expired'
      WHERE state IN ('queued', 'sent') AND token_id NOT IN (SELECT id FROM api_tokens)`).run().changes;
   db.prepare('DELETE FROM notify_device_prefs WHERE token_id NOT IN (SELECT id FROM api_tokens)').run();
+  out.media = require('./media').cleanup();
   return out;
 }
 
 function hourly() {
   try {
     const r = run();
-    if (r.expired || r.purged || r.capped || r.orphans) logger.info(r, 'notification center clean-up');
+    if (r.expired || r.purged || r.capped || r.orphans || r.media) logger.info(r, 'notification center clean-up');
   } catch (err) {
     logger.warn({ err: err.message }, 'notification center clean-up failed');
   }

@@ -164,7 +164,7 @@ describe('gc.actions.run', () => {
     const res = await runOk({ userId: anna, plugin: 'hello', id: 'light:3' });
     assert.deepEqual(res, { ok: true, message: 'ran light:3', state: 'on' });
     assert.deepEqual(await kvGet('hello', 'quick-last'), {
-      id: 'light:3', lang: 'de',
+      id: 'light:3', lang: 'de', via: 'hello-auto', automation: true,
       user: { id: anna, name: 'pa-anna', role: 'user', portal: true, loggedIn: true, automation: true, via: 'hello-auto' },
     });
     const row = lastActivity();

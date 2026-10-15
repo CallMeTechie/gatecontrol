@@ -146,10 +146,10 @@ describe('POST /api/v1/client/actions/:plugin/:id', () => {
     const r = await runAction(annaDev, 'hello', 'light:3').expect(200);
     assert.deepEqual(r.body, { ok: true, message: 'ran light:3', state: 'on' });
     const last = await kvGet('hello', 'quick-last');
-    assert.deepEqual(last, { id: 'light:3', user: { id: anna, name: 'qa-anna', role: 'user', portal: true, loggedIn: true, app: true }, lang: 'de' });
+    assert.deepEqual(last, { id: 'light:3', user: { id: anna, name: 'qa-anna', role: 'user', portal: true, loggedIn: true, app: true }, lang: 'de', via: 'app', automation: false });
     const row = lastActivity();
     assert.equal(row.severity, 'info');
-    assert.deepEqual(JSON.parse(row.details), { plugin: 'hello', action: 'light:3', userId: anna, ok: true });
+    assert.deepEqual(JSON.parse(row.details), { plugin: 'hello', action: 'light:3', userId: anna, ok: true, via: 'app' });
 
     await kv('hello', 'quick-result', { ok: false, message: 'Gerät\u0007 ' + 'x'.repeat(300), state: 'dim', extra: 'dropped' });
     const bad = await runAction(annaDev, 'hello', 'scene.evening').expect(200);
@@ -161,6 +161,31 @@ describe('POST /api/v1/client/actions/:plugin/:id', () => {
     assert.equal(JSON.parse(lastActivity().details).ok, false);
     assert.doesNotMatch(lastActivity().message, /Gerät/, 'no free text of the plugin in the activity log');
     await kv('hello', 'quick-result', null);
+  });
+
+  it('source: \'notification\' (the action button of a push) reaches the hook as via; never an automation', async () => {
+    await kv('hello', 'quick-result', null);
+    const run = (body) => supertest(app).post(`${LIST}/hello/light:3`).set('X-API-Token', annaDev.raw).send(body);
+    await run({ source: 'notification' }).expect(200);
+    const last = await kvGet('hello', 'quick-last');
+    assert.equal(last.via, 'notification');
+    assert.equal(last.automation, false);
+    assert.equal(last.user.automation, undefined, 'the viewer of a person carries no automation flag');
+    assert.equal(JSON.parse(lastActivity().details).via, 'notification');
+    await run({ source: 'app' }).expect(200);
+    assert.equal((await kvGet('hello', 'quick-last')).via, 'app');
+    await run({ source: null }).expect(200);
+    assert.equal((await kvGet('hello', 'quick-last')).via, 'app', 'null = app');
+
+    const before = lastActivity().id;
+    await kv('hello', 'quick-last', null);
+    for (const source of ['automation', 'hello', 'gatecontrol-familie', 'Notification', '', 1, true, ['notification'], { via: 'notification' }]) {
+      const r = await run({ source });
+      assert.equal(r.status, 400, JSON.stringify(source));
+      assert.deepEqual(r.body, { ok: false, error: 'invalid_source' });
+    }
+    assert.equal(await kvGet('hello', 'quick-last'), null, 'nothing ran');
+    assert.equal(lastActivity().id, before, 'nothing logged');
   });
 
   it('404 for an unknown plugin, an action the plugin does not list and a plugin without the portal permission', async () => {

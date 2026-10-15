@@ -5,7 +5,12 @@
 //
 //   hook quickActions({ user, lang })          → [{ id, title, subtitle?, icon?,
 //                                                  kind: 'button'|'toggle', state?, confirm? }]
-//   hook runQuickAction({ user, lang, id })    → { ok?, message?, state? }
+//   hook runQuickAction({ user, lang, id, via, automation })
+//                                              → { ok?, message?, state? }
+//     via: 'app' (shortcut, tile, widget, app screen) | 'notification' (the
+//     action button of a push) | '<plugin id>' (gc.actions.run of that
+//     plugin); automation: true only for gc.actions.run (another plugin ran
+//     it for the user), false for everything a person started.
 //
 // Asked like the portal hooks (src/services/plugins/portal.js): only plugins
 // that may run, are running and have `permissions.portal` (the actions run as
@@ -107,14 +112,23 @@ async function list(user, lang, opts = {}) {
   return lists.flat();
 }
 
+const VIA_PERSON = new Set(['app', 'notification']);
+
 /**
  * Run one action for one viewer — only an id the plugin currently lists for
  * that viewer.
+ * @param {{via?: string}} [opts]  via: 'app' (default) | 'notification' for a
+ *   run a person started; a viewer with `automation: true` (gc.actions.run)
+ *   always runs with via = its `via` (the calling plugin's id)
  * @returns {Promise<{status: number, body: object}>}
  *   200 { ok, message, state } · 404 not_found · 502 plugin_error · 504 timeout
  */
-async function run(pluginId, actionId, user, lang) {
+async function run(pluginId, actionId, user, lang, opts = {}) {
   const l = lang2(lang);
+  const automation = !!(user && user.automation === true);
+  let via;
+  if (automation) via = String(user.via || '');
+  else via = opts && typeof opts.via === 'string' && VIA_PERSON.has(opts.via) ? opts.via : 'app';
   const notFound = { status: 404, body: { ok: false, error: 'not_found' } };
   const p = pluginById(pluginId);
   if (!p || typeof actionId !== 'string' || !ACTION_ID_RE.test(actionId)) return notFound;
@@ -125,7 +139,7 @@ async function run(pluginId, actionId, user, lang) {
   try { listed = sanitizeList(await runtime.call(p.id, 'quickActions', { user, lang: l }, HOOK_MS)); } catch (e) { return fail(e); }
   if (!listed.some((a) => a.id === actionId)) return notFound;
   let out;
-  try { out = await runtime.call(p.id, 'runQuickAction', { user, lang: l, id: actionId }, runMs); } catch (e) { return fail(e); }
+  try { out = await runtime.call(p.id, 'runQuickAction', { user, lang: l, id: actionId, via, automation }, runMs); } catch (e) { return fail(e); }
   if (!out || typeof out !== 'object' || Array.isArray(out)) return { status: 502, body: { ok: false, error: 'plugin_error' } };
   return { status: 200, body: { ok: out.ok !== false, message: text(out.message, 120), state: state(out.state) } };
 }
@@ -134,4 +148,4 @@ function _setRunTimeoutForTest(ms) {
   if (process.env.NODE_ENV === 'test') runMs = Number.isInteger(ms) && ms > 0 ? ms : RUN_MS;
 }
 
-module.exports = { list, run, sanitize, HOOK_MS, RUN_MS, MAX_ACTIONS, ACTION_ID_RE, _setRunTimeoutForTest };
+module.exports = { list, run, sanitize, HOOK_MS, RUN_MS, MAX_ACTIONS, ACTION_ID_RE, VIA_PERSON, _setRunTimeoutForTest };

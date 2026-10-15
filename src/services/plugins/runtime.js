@@ -207,6 +207,10 @@ class PluginProcess {
     this.pingTimer = null;
   }
 
+  // Background tick every permissions.background.intervalSeconds (5…86400 s),
+  // TIMEOUTS.tick each. Never two at a time: a tick still running (tickBusy)
+  // skips the next one; after a timeout the child itself skips new ticks
+  // until the old one ends (child/bootstrap.js).
   async runTick() {
     if (this.tickBusy || this.state !== 'running') return;
     this.tickBusy = true;

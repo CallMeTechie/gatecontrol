@@ -7,8 +7,9 @@
  *   GET  /api/v1/client/actions
  *     200 { ok: true, actions: [{ plugin, pluginName, id, title, subtitle,
  *                                 icon, kind, state, confirm }] }
- *   POST /api/v1/client/actions/:plugin/:id
+ *   POST /api/v1/client/actions/:plugin/:id     body { source?: 'app' | 'notification' }
  *     200 { ok, message, state }
+ *     400 { ok: false, error: 'invalid_source' }  source not one of those
  *     404 { ok: false, error: 'not_found' }       unknown plugin / action
  *     403 { ok: false, error: 'no_user' }         token without an owner
  *     502 { ok: false, error: 'plugin_error' }    the plugin failed
@@ -19,7 +20,10 @@
  * other client routes. The plugins see the token's owner as the portal
  * viewer `{ id, name, role, portal: true, loggedIn: true, app: true }` —
  * a machine-bound device token of that person is a real credential. A token
- * without an owner gets no actions. Language: ?lang=de|en, else the owner's
+ * without an owner gets no actions. `source` (default 'app'; 'notification'
+ * when the run comes from the action button of a push — docs/plugins.md
+ * "Notifications") reaches the plugin's runQuickAction hook as `via`, with
+ * `automation: false`. Language: ?lang=de|en, else the owner's
  * language setting, else Accept-Language, else 'de'.
  */
 
@@ -52,9 +56,14 @@ router.post('/actions/:plugin/:id', clientActionLimiter, async (req, res) => {
   if (!v) return res.status(403).json({ ok: false, error: 'no_user' });
   const pluginId = String(req.params.plugin || '');
   const actionId = String(req.params.id || '');
+  const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+  const source = body.source == null ? 'app' : body.source;
+  if (typeof source !== 'string' || !quickActions.VIA_PERSON.has(source)) {
+    return res.status(400).json({ ok: false, error: 'invalid_source' });
+  }
   let r;
   try {
-    r = await quickActions.run(pluginId, actionId, v.user, langOf(req, v));
+    r = await quickActions.run(pluginId, actionId, v.user, langOf(req, v), { via: source });
   } catch (err) {
     logger.warn({ tokenId: req.tokenId, err: err.message }, 'quick action failed');
     r = { status: 502, body: { ok: false, error: 'plugin_error' } };
@@ -64,7 +73,7 @@ router.post('/actions/:plugin/:id', clientActionLimiter, async (req, res) => {
     try {
       activity.log('plugin_quick_action', `Quick action "${actionId}" of plugin "${pluginId}" (${r.status === 200 && r.body.ok ? 'ok' : 'failed'})`, {
         source: 'api', severity: 'info', ipAddress: req.ip,
-        details: { plugin: pluginId, action: actionId, userId: v.user.id, ok: r.status === 200 && r.body.ok === true },
+        details: { plugin: pluginId, action: actionId, userId: v.user.id, ok: r.status === 200 && r.body.ok === true, via: source },
       });
     } catch (err) { logger.debug({ err: err.message }, 'quick action: activity log failed'); }
   }

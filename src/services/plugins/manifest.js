@@ -17,6 +17,8 @@ const NOTIFY_TOPIC_RE = /^[a-z][a-z0-9_-]{0,31}$/;
 // Push budget of a plugin per hour: permissions.notify true → 30, { perHour } → 1…120.
 const NOTIFY_PER_HOUR_DEFAULT = 30;
 const NOTIFY_PER_HOUR_MAX = 120;
+// permissions.background.intervalSeconds: shortest interval of the background tick
+const BACKGROUND_MIN_S = 5;
 
 /** "x" or { de, en } → { de, en } (both filled); null when invalid. */
 function locText(v, max) {
@@ -165,9 +167,10 @@ function validate(raw, opts = {}) {
         perms.notifyPerHour = n.perHour;
       } else err('permissions.notify: invalid');
     }
+    // background: { intervalSeconds: 5…86400 } — one tick at a time (runtime.js)
     if (p.background != null) {
       const iv = p.background && Number(p.background.intervalSeconds);
-      if (!Number.isInteger(iv) || iv < 10 || iv > 86400) err('permissions.background.intervalSeconds: invalid');
+      if (!Number.isInteger(iv) || iv < BACKGROUND_MIN_S || iv > 86400) err('permissions.background.intervalSeconds: invalid');
       else perms.background = { intervalSeconds: iv };
     }
   }
@@ -316,4 +319,4 @@ function migrationsOf(manifest, files) {
   return out;
 }
 
-module.exports = { validate, loc, locText, migrationsOf, isFile, PORTAL_SECTION_TABS, NOTIFY_PER_HOUR_DEFAULT, NOTIFY_PER_HOUR_MAX };
+module.exports = { validate, loc, locText, migrationsOf, isFile, PORTAL_SECTION_TABS, NOTIFY_PER_HOUR_DEFAULT, NOTIFY_PER_HOUR_MAX, BACKGROUND_MIN_S };

@@ -178,6 +178,16 @@ CREATE TABLE IF NOT EXISTS notify_device_prefs (   -- vom Gerät gemeldet
 * Nicht zugestellte Nachrichten verfallen nach 72 h (Standard; je Priorität einstellbar).
 * Der Verlauf wird nach 30 Tagen gelöscht.
 * Pro Gerät bleiben höchstens 200 Nachrichten in der Warteschlange; die ältesten Info-Meldungen fallen zuerst.
+* Abgelaufene Bilder von Plugin-Pushes (`notify_media`, siehe unten) werden gelöscht.
+
+**Bilder (Migration v102 `notify_media`, 1.169.0):** Ein Plugin kann einem
+Push ein Bild mitgeben (`gc.notify({ …, image })`, docs/plugins.md
+„Pictures“). Es liegt in `notify_media` (`id` zufällig, 24 URL-sichere
+Zeichen, `mime`, `data`, `created_at`, `expires_at`) und lebt so lange wie
+die `ttl` des Pushs, ohne `ttl` 24 h, höchstens 7 Tage. `notifications`
+bekommt `image_url` (relativer Pfad `/notify-media/<id>.<ext>`) und
+`image_expires_at`; die Apps sehen den Pfad als `imageUrl`, solange das Bild
+lebt.
 
 ## Server: Schnittstellen
 
@@ -345,9 +355,28 @@ gc.notify({
   users: [12],                    // optional: nur diese Personen (sonst Abonnenten)
   collapseKey: 'charge:VIN123',   // optional
   ttl: 6 * 3600,                  // optional, Sekunden
-  data: { route: 'plg-skoda' }    // optional: Deep-Link in den Plugin-Tab
+  data: { route: 'plg-skoda' },   // optional: Deep-Link in den Plugin-Tab
+  image: { data: '<base64>', mime: 'image/jpeg' }  // optional (ab 1.169.0): Bild, siehe unten
 });
 ```
+
+Ab 1.169.0 (Einzelheiten in docs/plugins.md „Notifications“):
+
+* **Bild** (`image`): PNG, JPEG oder WebP als Base64, höchstens 300 KB,
+  jede Seite 32…2560 px, beliebiges Seitenverhältnis, keine Animation; der
+  MIME-Typ muss zum Bild passen. Nur der Kopf wird geprüft (wie bei den
+  Profilbildern). Die Apps bekommen `imageUrl` (relativer Pfad
+  `/notify-media/<id>.<ext>`, ohne Anmeldung abrufbar wie `/avatars/`, auf
+  jedem Host des Servers, mit Ratenbegrenzung; 404, sobald abgelaufen). Das
+  Aktivitätsprotokoll enthält das Bild nie.
+* **Schnellaktion als Knopf** (`data.actions[]` mit `type: 'quick_action'`):
+  `{ type: 'quick_action', label (≤ 24), plugin, id, confirm?: boolean,
+  auth?: 'device' }`. `plugin` muss die eigene Plugin-ID sein, sonst
+  `ERR_INVALID`; `id` ist eine Schnellaktions-ID des Plugins (nur das Format
+  wird geprüft). Die App führt sie über `POST /api/v1/client/actions/<plugin>/<id>`
+  mit `{ "source": "notification" }` aus — der normale Weg mit allen
+  Prüfungen; das Plugin bekommt `via: 'notification'`. `auth: 'device'` heißt:
+  Die App verlangt vorher die Geräteentsperrung bzw. Biometrie.
 
 In der `plugin.json` kommt ein neuer, optionaler Block hinzu:
 `"notifyTopics": [{ "id": "charging", "label": { "de": "Laden abgeschlossen", "en": "Charging complete" }, "default": true }]`.
@@ -483,7 +512,13 @@ In der `plugin.json` kommt ein neuer, optionaler Block hinzu:
   * `open_app_route`
   * `open_portal` (eigene Domain)
   * `mute_1h`, `ack`, `done`
+  * `quick_action` (ab 1.169.0): nur in Pushes eines Plugins und nur für
+    dessen eigene Schnellaktionen; ausgeführt über den normalen
+    Schnellaktions-Weg des Servers (Rechte prüft das Plugin bei jedem Lauf).
   * Freie URLs nur auf die eigene Server-Domain.
+* Bilder von Plugin-Pushes: höchstens 300 KB, nur PNG/JPEG/WebP (Kopf
+  geprüft), zufällige Capability-URL, verfallen mit der `ttl` (höchstens
+  7 Tage), nie im Aktivitätsprotokoll.
 * Manuelle Nachrichten und Regeländerungen landen im Aktivitätsprotokoll.
 
 ## Phasen, Releases und Umfang
@@ -616,7 +651,7 @@ event: notification
 data: {"seq":123,"id":45,"event_id":"gateway_state","topic":"devices","priority":"critical",
        "title":"Gateway „Zuhause“ ist offline","body":"Seit 2 Minuten kein Lebenszeichen …",
        "created_at":"2026-10-10T21:42:03Z","expires_at":"2026-10-13T21:42:03Z",
-       "collapse_key":"gateway:3","silent":false,
+       "collapse_key":"gateway:3","silent":false,"imageUrl":null,
        "data":{"route":"gateways","actions":[{"id":"details","label":"Details","type":"open_app_route","target":"gateways"},
                                              {"id":"mute_1h","label":"1 h stumm","type":"mute_1h"}],
                "facts":[{"label":"Zuletzt gesehen","value":"10.10.26, 21:40"},{"label":"Betroffene Routen","value":"3"}]}}
@@ -643,6 +678,11 @@ Dazu gelten diese Regeln:
 * Gleicher `collapse_key` heißt: Die vorhandene Benachrichtigung wird
   ersetzt bzw. aktualisiert.
 * `priority`: `info` | `normal` | `high` | `critical`.
+* `imageUrl` (ab 1.169.0): relativer Pfad `/notify-media/<id>.<ext>` eines
+  Bildes zur Nachricht (nur Plugin-Pushes) oder `null`. Die App lädt es vom
+  eigenen Server (ohne Token; die URL ist das Geheimnis) und zeigt es groß
+  an. Nach Ablauf (`ttl`, höchstens 7 Tage) antwortet der Server 404 und
+  liefert `imageUrl: null`. Windows-Apps dürfen es ignorieren.
 * `data.facts` (optional): `[{label, value}]`, höchstens 6, Text in der
   Server-Sprache. Die Apps zeigen sie als Liste unter dem Text. Der Server
   füllt sie für Kernereignisse, wenn er Kontext hat:
@@ -665,6 +705,7 @@ Dazu gelten diese Regeln:
   | `mute_1h` | lokale Stummschaltung des Themas für 1 h, zusätzlich `ack` mit `action` |
   | `done` | `ack` mit `action:"done"` |
   | `ack` | `ack` mit `action` |
+  | `quick_action` | `{ id, label, type, plugin, confirm, auth? }` (ab 1.169.0, nur Plugin-Pushes): `POST /api/v1/client/actions/<plugin>/<id>` mit `{"source":"notification"}`; `confirm:true` → vorher fragen; `auth:"device"` → vorher Geräteentsperrung/Biometrie (Android: `setAuthenticationRequired(true)`). Ergebnis als Hinweis bzw. aktualisierte Benachrichtigung |
 
 #### Steuerereignisse (`event: control`, Phase 5)
 
@@ -754,7 +795,8 @@ Richtlinie laden; `peer_enabled` anzeigen bzw. Tunnel-Status anpassen;
 ### `POST /api/v1/client/push/ack`
 
 * Body: `{"seqs":[123,124],"state":"delivered"|"read"|"dismissed","action":"details"}`
-  (`action` optional; höchstens 200 `seqs`).
+  (`action` optional, `[A-Za-z0-9_.:-]{1,64}` — auch die `id` einer
+  `quick_action`; höchstens 200 `seqs`).
 * Antwort: `{"ok":true}`.
 * `read` und `dismissed` werden an die anderen Geräte derselben Person als
   `event: read` weitergegeben.
