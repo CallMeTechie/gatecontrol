@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.172.1] — 2026-10-16
+
+### Fixes
+- show each admin page's title once, in the header (#316)
+
+---
+
 ## [1.172.0] — 2026-10-16
 
 ### Features
