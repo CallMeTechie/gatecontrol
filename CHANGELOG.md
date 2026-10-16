@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.173.0] — 2026-10-16
+
+### Features
+- target states for toggle quick actions (verbs, targets, run with state) (#317)
+
+---
+
 ## [1.172.1] — 2026-10-16
 
 ### Fixes
