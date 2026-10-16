@@ -93,7 +93,7 @@ describe('GET /api/v1/client/tiles', () => {
     assert.equal(r.body.ok, true);
     const mine = r.body.tiles.filter((t) => t.plugin === 'hello');
     const by = (title) => mine.find((t) => t.title === title);
-    assert.deepEqual(by('Ladestand'), { key: 'hello//Ladestand', plugin: 'hello', pluginName: 'Hallo Welt', section: null, title: 'Ladestand', value: '81', unit: '%', state: 'good', icon: 'M4 12h16' });
+    assert.deepEqual(by('Ladestand'), { key: 'hello//Ladestand', plugin: 'hello', pluginName: 'Hallo Welt', section: null, title: 'Ladestand', value: '81', unit: '%', state: 'good', icon: 'M4 12h16', items: [] });
     assert.ok(by(`v${anna} true/true/true de`), 'the token owner as portal viewer, logged in, from the app');
     assert.deepEqual([by('Heizung').state, by('Heizung').icon], [null, null]);
     const ctl = by('A B C');
@@ -104,7 +104,7 @@ describe('GET /api/v1/client/tiles', () => {
     assert.ok(!by('neunte') && !by('zehnte') && !by(''), 'at most 8 per plugin, empty titles dropped');
     assert.deepEqual(mine.map((t) => t.title).length, 5);
     for (const t of r.body.tiles) {
-      assert.deepEqual(Object.keys(t), ['key', 'plugin', 'pluginName', 'section', 'title', 'value', 'unit', 'state', 'icon']);
+      assert.deepEqual(Object.keys(t), ['key', 'plugin', 'pluginName', 'section', 'title', 'value', 'unit', 'state', 'icon', 'items']);
       assert.match(t.key, KEY_RE);
     }
 
@@ -198,6 +198,58 @@ describe('GET /api/v1/client/tiles', () => {
     assert.deepEqual(Object.keys(mine[1]).sort(), ['anchor', 'area', 'goto', 'icon', 'plugin', 'state', 'title', 'unit', 'value']);
     const app = (await list(annaDev).expect(200)).body.tiles.find((x) => x.title === 'Groß');
     assert.equal(app.icon.length, 801);
+  });
+});
+
+describe('tile items (apps only)', () => {
+  const LOCK = 'M6 10V7a6 6 0 0 1 12 0v3';
+  const ITEMS = [
+    { label: 'Ladestand', icon: 'M4 4h16', value: 81, unit: '%', state: 'good' },
+    { label: 'Reichweite', icon: 'M2 2h4', value: 312, unit: 'km' },
+    { label: 'Verriegelt', icon: LOCK, state: 'good' },
+  ];
+  const SANITISED = [
+    { label: 'Ladestand', value: 81, unit: '%', icon: 'M4 4h16', state: 'good' },
+    { label: 'Reichweite', value: 312, unit: 'km', icon: 'M2 2h4', state: null },
+    { label: 'Verriegelt', value: null, unit: null, icon: LOCK, state: 'good' },
+  ];
+
+  it('sanitizeItems: the rules of a widget reading without an id; invalid items dropped, ≤ 4, always a list', () => {
+    const { sanitizeItems } = clientTiles;
+    assert.deepEqual(sanitizeItems(ITEMS), SANITISED);
+    assert.deepEqual(sanitizeItems([{ label: 'Abholung', value: 'morgen', id: 'x', extra: 1 }]), [{ label: 'Abholung', value: 'morgen', unit: null, icon: null, state: null }], 'no id, unknown keys dropped');
+    const it0 = sanitizeItems([{ label: 'L\u0000' + 'l'.repeat(40), value: 'V'.repeat(30), unit: 'U'.repeat(20), icon: 'M' + '1 '.repeat(999), state: 'crit' }])[0];
+    assert.deepEqual([it0.label.length, it0.label.slice(0, 3), it0.value.length, it0.unit.length, it0.icon.length, it0.state], [20, 'L l', 16, 8, 1999, 'crit']);
+    for (const bad of [
+      null, 'x', 42, [], {}, { label: '' }, { value: 1 }, { label: 'A' }, { label: 'A', value: NaN }, { label: 'A', value: '' }, { label: 'A', icon: '<svg>' }, { label: 'A', value: true }, { label: ['A'], value: 1 },
+    ]) assert.deepEqual(sanitizeItems([bad, { label: 'ok', value: 1 }]).map((x) => x.label), ['ok'], JSON.stringify(bad));
+    assert.equal(sanitizeItems([{ label: 'A', value: 1, state: 'neutral' }])[0].state, null);
+    const six = Array.from({ length: 6 }, (_, i) => ({ label: 'I' + i, value: i }));
+    assert.deepEqual(sanitizeItems(six).map((x) => x.label), ['I0', 'I1', 'I2', 'I3']);
+    assert.deepEqual(sanitizeItems([null, null, ...six]).length, 4);
+    for (const v of [undefined, null, 'x', 42, {}, { 0: ITEMS[0] }]) assert.deepEqual(sanitizeItems(v), [], JSON.stringify(v));
+    assert.equal(clientTiles.MAX_ITEMS, 4);
+  });
+
+  it('GET /api/v1/client/tiles: items on every tile ([] without); the portal ignores them', async () => {
+    await kv('hello', 'portal-tiles', [
+      { title: 'Familienauto', value: '81 % · 312 km', icon: 'M4 4h16', items: [...ITEMS, { label: 'kaputt' }, { label: 'Fünfte', value: 5 }, { label: 'Sechste', value: 6 }] },
+      { title: 'Ohne', value: 1 },
+      { title: 'Müll', items: 'x' },
+    ]);
+    const r = await list(annaDev).expect(200);
+    const by = (title) => r.body.tiles.find((t) => t.plugin === 'hello' && t.title === title);
+    assert.deepEqual(by('Familienauto').items, [...SANITISED, { label: 'Fünfte', value: 5, unit: null, icon: null, state: null }], 'invalid one dropped, then the first 4 valid');
+    assert.equal(by('Familienauto').value, '81 % · 312 km', 'value stays');
+    assert.deepEqual(by('Ohne').items, []);
+    assert.deepEqual(by('Müll').items, []);
+    for (const t of r.body.tiles) assert.ok(Array.isArray(t.items), t.key);
+
+    const p = await portal.tiles({ id: anna, name: 'ct-anna', role: 'user', portal: true, loggedIn: true }, 'de');
+    const car = p.find((x) => x.plugin === 'hello' && x.title === 'Familienauto');
+    assert.equal(car.value, '81 % · 312 km');
+    assert.ok(!('items' in car), 'the portal\'s answer has no items');
+    assert.deepEqual(Object.keys(car).sort(), ['anchor', 'area', 'goto', 'icon', 'plugin', 'state', 'title', 'unit', 'value']);
   });
 });
 

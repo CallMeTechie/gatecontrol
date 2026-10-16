@@ -99,8 +99,9 @@ function contributors(contrib) {
  * One plugin's portalTiles answer → its sanitised tiles (≤ 8) with the
  * section the tile names (null when none) and its target in the portal.
  * @param {RegExp} iconRe  the portal's ICON_RE (≤ 600) or a longer one (apps)
+ * @param {Function} [extend]  raw tile → extra sanitised fields (the apps' `items`); none for the portal
  */
-function sanitizeTiles(id, out, c, iconRe) {
+function sanitizeTiles(id, out, c, iconRe, extend) {
   if (!Array.isArray(out)) return [];
   const res = [];
   for (const t of out.slice(0, MAX_TILES)) {
@@ -113,6 +114,7 @@ function sanitizeTiles(id, out, c, iconRe) {
       plugin: id, section, title, value: text(t.value, 40), unit: text(t.unit, 12),
       state: typeof t.state === 'string' && STATES.has(t.state) ? t.state : null,
       icon: typeof t.icon === 'string' && iconRe.test(t.icon) ? t.icon : null, ...target,
+      ...(extend ? extend(t) : {}),
     });
   }
   return res;
@@ -122,14 +124,15 @@ function sanitizeTiles(id, out, c, iconRe) {
  * Start tiles of every plugin the viewer sees (portalVisible as for the
  * portal), one list per plugin in the portal's order. Shared by the portal's
  * Start tab and the apps' start card (src/services/plugins/clientTiles.js).
- * @param {{iconRe?: RegExp}} [opts]
+ * @param {{iconRe?: RegExp, extend?: Function}} [opts]  extend: raw tile → extra sanitised fields
  * @returns {Promise<object[][]>} [[{ plugin, section, title, value, unit, state, icon, goto, anchor, area }]]
  */
 async function collectTiles(user, lang, contrib, opts = {}) {
   const l = lang === 'en' ? 'en' : 'de';
   const iconRe = opts && opts.iconRe instanceof RegExp ? opts.iconRe : ICON_RE;
+  const extend = opts && typeof opts.extend === 'function' ? opts.extend : null;
   const c = contrib || await contributions(user, l);
-  return Promise.all(contributors(c).map(async (id) => sanitizeTiles(id, await hook(id, 'portalTiles', { user, lang: l }), c, iconRe)));
+  return Promise.all(contributors(c).map(async (id) => sanitizeTiles(id, await hook(id, 'portalTiles', { user, lang: l }), c, iconRe, extend)));
 }
 
 /**
