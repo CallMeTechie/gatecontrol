@@ -4,7 +4,13 @@
 // tiles"): the start card of the Android app slides through the same tiles the
 // portal's Start tab shows.
 //
-//   hook portalTiles({ user, lang })  → [{ section?, title, value?, unit?, state?, icon? }]
+//   hook portalTiles({ user, lang })  → [{ section?, title, value?, unit?, state?, icon?, items? }]
+//
+// `items` (apps only, the portal ignores them): ≤ 4 value rows
+// [{ label, icon?, value?, unit?, state? }] with the rules of a quick-action
+// widget's readings (src/services/plugins/quickActions.js) without an id —
+// label ≤ 20 required, a value (string ≤ 16 or finite number) or an icon
+// required; an invalid item is dropped, never the tile. Always a list.
 //
 // Asked exactly like for the portal (src/services/plugins/portal.js): only
 // plugins that may run, are running and have `permissions.portal` and a
@@ -25,6 +31,7 @@ const crypto = require('node:crypto');
 const registry = require('./registry');
 const { loc } = require('./manifest');
 const portal = require('./portal');
+const { sanitizeValueRow } = require('./quickActions');
 
 // SVG path data like ui.nav.icon / the quick actions
 const ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,2000}$/;
@@ -33,8 +40,22 @@ const HASH_LEN = 10;
 // plugin id (≤ 64) + 2 × (48 + '~' + 10) + 2 separators
 const KEY_MAX = 64 + 2 * (KEY_PART_MAX + 1 + HASH_LEN) + 2;
 const KEY_SAFE_RE = /^[A-Za-z0-9._~-]*$/;
+const MAX_ITEMS = 4;
 
 function lang2(lang) { return lang === 'en' ? 'en' : 'de'; }
+
+/** A tile's `items` → at most 4 valid { label, value, unit, icon, state } (invalid ones dropped; [] without). */
+function sanitizeItems(list) {
+  if (!Array.isArray(list)) return [];
+  const res = [];
+  for (const raw of list.slice(0, MAX_ITEMS * 4)) {
+    const it = sanitizeValueRow(raw);
+    if (!it) continue;
+    res.push(it);
+    if (res.length >= MAX_ITEMS) break;
+  }
+  return res;
+}
 
 /**
  * One part of a key: the text itself when it is short and URL-safe
@@ -70,11 +91,11 @@ function pluginNames(l) {
  * Start tiles of every plugin the viewer sees in the portal, for the apps.
  * @param {{id, name, role, portal: true, loggedIn: true, app: true}} user
  * @param {string} lang
- * @returns {Promise<object[]>} [{ key, plugin, pluginName, section, title, value, unit, state, icon }]
+ * @returns {Promise<object[]>} [{ key, plugin, pluginName, section, title, value, unit, state, icon, items }]
  */
 async function list(user, lang) {
   const l = lang2(lang);
-  const lists = await portal.collectTiles(user, l, null, { iconRe: ICON_RE });
+  const lists = await portal.collectTiles(user, l, null, { iconRe: ICON_RE, extend: (t) => ({ items: sanitizeItems(t.items) }) });
   const names = pluginNames(l);
   const out = [];
   for (const tiles of lists) {
@@ -85,11 +106,11 @@ async function list(user, lang) {
       seen.add(key);
       out.push({
         key, plugin: t.plugin, pluginName: names.get(t.plugin) || t.plugin, section: t.section,
-        title: t.title, value: t.value, unit: t.unit, state: t.state, icon: t.icon,
+        title: t.title, value: t.value, unit: t.unit, state: t.state, icon: t.icon, items: t.items,
       });
     }
   }
   return out;
 }
 
-module.exports = { list, tileKey, keyPart, KEY_MAX, ICON_RE };
+module.exports = { list, tileKey, keyPart, sanitizeItems, KEY_MAX, MAX_ITEMS, ICON_RE };

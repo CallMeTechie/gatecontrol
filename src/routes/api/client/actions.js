@@ -6,7 +6,8 @@
  *
  *   GET  /api/v1/client/actions
  *     200 { ok: true, actions: [{ plugin, pluginName, id, title, subtitle,
- *                                 icon, kind, state, confirm, widget }] }
+ *                                 icon, kind, state, confirm, confirmWhen,
+ *                                 look, device, widget }] }
  *   POST /api/v1/client/actions/:plugin/:id
  *     body { source?: 'app' | 'notification', control?: string, value?: number | string }
  *     200 { ok, message, state, widget }

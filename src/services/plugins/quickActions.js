@@ -5,7 +5,7 @@
 //
 //   hook quickActions({ user, lang })          → [{ id, title, subtitle?, icon?,
 //                                                  kind: 'button'|'toggle', state?, confirm?,
-//                                                  widget? }]
+//                                                  confirmWhen?, look?, device?, widget? }]
 //   hook runQuickAction({ user, lang, id, via, automation, control?, value? })
 //                                              → { ok?, message?, state?, widget? }
 //     via: 'app' (shortcut, tile, widget, app screen) | 'notification' (the
@@ -16,12 +16,20 @@
 //     widget (the control's id and the validated value — a number for a
 //     stepper / slider, an option id for a choice); absent otherwise.
 //
+// A device groups the actions of one thing (a car, a lamp, a lock) in the
+// apps: device: { id, title, subtitle?, icon? } (invalid → null, the action
+// stays). Toggles may say how each state looks — look: { on?: { icon?, tone? },
+// off?: { icon?, tone? } }, tone 'good'|'warn'|'crit'|'neutral' — and in which
+// state the app asks first: confirmWhen: 'on'|'off'.
+//
 // A widget is a quick action with extra information and controls, shown by
 // the apps as a card instead of a button:
-//   widget: { value?: string|number, unit?, status?, state?: 'on'|'off'|'good'|'warn'|'crit',
+//   widget: { label?, value?: string|number, unit?, status?, state?: 'on'|'off'|'good'|'warn'|'crit',
+//             readings?: [{ id, label, value?, unit?, icon?, state? }],   (≤ 4, invalid ones dropped)
 //             controls?: [{ id, kind: 'stepper'|'slider', label?, value, min, max, step, unit? },
-//                         { id, kind: 'choice', label?, value, options: [{ id, label }] }] }
-// Anything invalid in it makes the whole widget null; the action stays.
+//                         { id, kind: 'choice', label?, value, options: [{ id, label }] }],
+//             power?: boolean }                                        (default true)
+// Anything invalid in it (but a reading) makes the whole widget null; the action stays.
 //
 // Asked like the portal hooks (src/services/plugins/portal.js): only plugins
 // that may run, are running and have `permissions.portal` (the actions run as
@@ -50,6 +58,9 @@ const CONTROL_ID_RE = /^[A-Za-z0-9_-]{1,24}$/;
 const MAX_CONTROLS = 4;
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 8;
+const DEVICE_ID_RE = /^[A-Za-z0-9:._-]{1,64}$/;
+const TONES = new Set(['good', 'warn', 'crit', 'neutral']);
+const MAX_READINGS = 4;
 
 function evaluate(p) { return require('./index').evaluate(p); }
 
@@ -74,6 +85,76 @@ function pluginById(id) {
 
 function state(v) { return typeof v === 'string' && TOGGLE_STATES.has(v) ? v : null; }
 function num(v) { return typeof v === 'number' && Number.isFinite(v) ? v : null; }
+function icon(v) { return typeof v === 'string' && ICON_RE.test(v) ? v : null; }
+function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+
+/** device: { id, title, subtitle?, icon? } → { id, title, subtitle, icon }, or null (invalid / none). */
+function sanitizeDevice(d) {
+  if (!isObj(d)) return null;
+  if (typeof d.id !== 'string' || !DEVICE_ID_RE.test(d.id)) return null;
+  const title = text(d.title, 40);
+  if (!title) return null;
+  return { id: d.id, title, subtitle: text(d.subtitle, 60), icon: icon(d.icon) };
+}
+
+/** One part (on / off) of a toggle's look → { icon, tone }, or null without a valid icon or tone. */
+function lookPart(p) {
+  if (!isObj(p)) return null;
+  const i = icon(p.icon);
+  const tone = typeof p.tone === 'string' && TONES.has(p.tone) ? p.tone : null;
+  return i || tone ? { icon: i, tone } : null;
+}
+
+/** look of a toggle → { on: {icon, tone}|null, off: {icon, tone}|null }, or null when neither part is valid. */
+function sanitizeLook(l) {
+  if (!isObj(l)) return null;
+  const on = lookPart(l.on);
+  const off = lookPart(l.off);
+  return on || off ? { on, off } : null;
+}
+
+/**
+ * The shared part of a widget reading and a Start tile item (the apps'
+ * value rows) → { label, value, unit, icon, state }, or null: label ≤ 20
+ * (required), value a string ≤ 16 or a finite number, unit ≤ 8, icon an SVG
+ * path, state from the widget states; a value or an icon is required.
+ */
+function sanitizeValueRow(r) {
+  if (!isObj(r)) return null;
+  const label = text(r.label, 20);
+  if (!label) return null;
+  let value = null;
+  if (typeof r.value === 'string') value = text(r.value, 16);
+  else value = num(r.value);
+  const i = icon(r.icon);
+  if (value === null && i === null) return null;
+  return {
+    label, value, unit: text(r.unit, 8), icon: i,
+    state: typeof r.state === 'string' && WIDGET_STATES.has(r.state) ? r.state : null,
+  };
+}
+
+/** One reading of a widget → { id, label, value, unit, icon, state }, or null (dropped). */
+function sanitizeReading(r) {
+  if (!isObj(r) || typeof r.id !== 'string' || !CONTROL_ID_RE.test(r.id)) return null;
+  const row = sanitizeValueRow(r);
+  return row && { id: r.id, ...row };
+}
+
+/** readings of a widget → at most 4 valid ones with unique ids (invalid ones dropped, never the widget). */
+function sanitizeReadings(list) {
+  if (!Array.isArray(list)) return [];
+  const res = [];
+  const seen = new Set();
+  for (const raw of list.slice(0, MAX_READINGS * 4)) {
+    const r = sanitizeReading(raw);
+    if (!r || seen.has(r.id)) continue;
+    seen.add(r.id);
+    res.push(r);
+    if (res.length >= MAX_READINGS) break;
+  }
+  return res;
+}
 
 /** One control of a widget → the sanitised control, or null (invalid). */
 function sanitizeControl(c) {
@@ -107,8 +188,9 @@ function sanitizeControl(c) {
 /**
  * The `widget` of a quick action (listed or in a run's answer) → the sanitised
  * widget, or null when there is none or anything in it is invalid.
- * @returns {null | { value: string|number|null, unit: string|null, status: string|null,
- *   state: string|null, controls: object[] }}
+ * Readings are dropped one by one, they never make the widget null.
+ * @returns {null | { label: string|null, value: string|number|null, unit: string|null,
+ *   status: string|null, state: string|null, readings: object[], controls: object[], power: boolean }}
  */
 function sanitizeWidget(w) {
   if (!w || typeof w !== 'object' || Array.isArray(w)) return null;
@@ -127,11 +209,14 @@ function sanitizeWidget(w) {
     }
   }
   return {
+    label: text(w.label, 24),
     value,
     unit: text(w.unit, 8),
     status: text(w.status, 60),
     state: typeof w.state === 'string' && WIDGET_STATES.has(w.state) ? w.state : null,
+    readings: sanitizeReadings(w.readings),
     controls,
+    power: w.power !== false,
   };
 }
 
@@ -143,14 +228,18 @@ function sanitize(a) {
   if (!title) return null;
   const kind = a.kind == null ? 'button' : a.kind;
   if (!KINDS.has(kind)) return null;
+  const toggle = kind === 'toggle';
   return {
     id: a.id,
     title,
     subtitle: text(a.subtitle, 60),
-    icon: typeof a.icon === 'string' && ICON_RE.test(a.icon) ? a.icon : null,
+    icon: icon(a.icon),
     kind,
-    state: kind === 'toggle' ? state(a.state) : null,
+    state: toggle ? state(a.state) : null,
     confirm: a.confirm === true,
+    confirmWhen: toggle ? state(a.confirmWhen) : null,
+    look: toggle ? sanitizeLook(a.look) : null,
+    device: sanitizeDevice(a.device),
     widget: sanitizeWidget(a.widget),
   };
 }
@@ -177,7 +266,8 @@ function lang2(lang) { return lang === 'en' ? 'en' : 'de'; }
  * @param {{id, name, role, portal: true, loggedIn: true, app: true}} user
  * @param {string} lang
  * @param {{exclude?: string}} [opts]  exclude: a plugin id that is not asked (gc.actions.list leaves out the caller)
- * @returns {Promise<object[]>} [{ plugin, pluginName, id, title, subtitle, icon, kind, state, confirm, widget }]
+ * @returns {Promise<object[]>} [{ plugin, pluginName, id, title, subtitle, icon, kind, state, confirm,
+ *   confirmWhen, look, device, widget }]
  */
 async function list(user, lang, opts = {}) {
   const l = lang2(lang);
@@ -253,4 +343,7 @@ function _setRunTimeoutForTest(ms) {
   if (process.env.NODE_ENV === 'test') runMs = Number.isInteger(ms) && ms > 0 ? ms : RUN_MS;
 }
 
-module.exports = { list, run, sanitize, sanitizeWidget, HOOK_MS, RUN_MS, MAX_ACTIONS, MAX_CONTROLS, ACTION_ID_RE, CONTROL_ID_RE, VIA_PERSON, _setRunTimeoutForTest };
+module.exports = {
+  list, run, sanitize, sanitizeWidget, sanitizeDevice, sanitizeLook, sanitizeReading, sanitizeReadings, sanitizeValueRow,
+  HOOK_MS, MAX_READINGS, TONES, RUN_MS, MAX_ACTIONS, MAX_CONTROLS, ACTION_ID_RE, CONTROL_ID_RE, DEVICE_ID_RE, VIA_PERSON, _setRunTimeoutForTest,
+};

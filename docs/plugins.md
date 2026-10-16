@@ -640,7 +640,8 @@ disable/uninstall and when the server shuts down.
     (`section` = null for the own tab) hides a tab/section for viewers with
     nothing to see. Asked per viewer when the portal is opened.
   * **Start tiles**: optional hook `portalTiles({ user, lang })` →
-    `[{ section?, title, value?, unit?, state?, icon? }]` (≤ 8; `state` one of
+    `[{ section?, title, value?, unit?, state?, icon?, items? }]` (≤ 8; `items`
+    only for the apps, see "Start tiles in the apps"; `state` one of
     `on`, `off`, `good`, `warn`, `crit`; `icon` an SVG path like
     `ui.nav.icon`). GateControl renders them on the Start tab — in the
     "Zuhause"/"Fahrzeug" card for sections (shown once a tile arrives), in a
@@ -716,6 +717,14 @@ async runQuickAction({ user, lang, id, via, automation, control, value }, gc) {
   * `kind`: `button` (default) or `toggle`; any other value drops the entry;
   * `state`: `on`/`off`, toggles only (otherwise `null`);
   * `confirm`: `true` → the app asks before running it (default `false`);
+  * `confirmWhen`: toggles only, `'on'` or `'off'` — the app asks only before
+    switching *into* that state (e.g. a lock: only before unlocking);
+    otherwise `null`, buttons always `null`. Independent of `confirm` — set
+    `confirm: true` as well for older apps, which only know `confirm`;
+  * `look`: toggles only, how each state looks — see "Devices and looks"
+    below (`null` without one, buttons always `null`);
+  * `device`: optional, the device the action belongs to — see "Devices and
+    looks" below (`null` without one or with an invalid one, the action stays);
   * `widget`: optional, see "Widgets" below — anything invalid in it makes the
     whole `widget` `null`, the action stays.
 * **`runQuickAction`** — 10 s, only for an id the plugin currently lists for
@@ -746,7 +755,8 @@ routes (a browser session gets 403 `token_required`), `Cache-Control: no-store`.
 ```
 GET  /api/v1/client/actions
   200 { ok: true, actions: [{ plugin: '<plugin id>', pluginName: '<localised name>',
-                              id, title, subtitle, icon, kind, state, confirm, widget }] }
+                              id, title, subtitle, icon, kind, state, confirm,
+                              confirmWhen, look, device, widget }] }
 
 POST /api/v1/client/actions/:plugin/:id        (≤ 30 runs per minute and token)
   body { source?: 'app' | 'notification',      (default 'app'; → via of runQuickAction)
@@ -765,6 +775,47 @@ POST /api/v1/client/actions/:plugin/:id        (≤ 30 runs per minute and token
 A toggle's new `state` comes with the run's answer; the apps reload the list
 when they show their shortcuts, tiles or widget.
 
+Every key is always present in the listed actions — `null` (or `false` for
+`confirm`) when the plugin did not send it or sent something invalid.
+
+### Devices and looks
+
+The apps list quick actions per **device** — one row per car, air
+conditioner, lamp or lock, with that device's actions and its widget. An
+action names its device with `device`; actions of a plugin with the same
+`device.id` belong together, an action without `device` is a device of its
+own. Repeat the same `device` object in every action of the device.
+
+```js
+// a car: one lock toggle (locked = on) and the climate action carrying the widget
+const car = { id: 'v:42', title: 'Familienauto', subtitle: 'Enyaq', icon: CAR_ICON };
+[
+  { id: 'lock:42', title: 'Verriegelt', kind: 'toggle', state: 'on', device: car,
+    confirm: true, confirmWhen: 'off',                     // ask before unlocking only
+    look: { on: { icon: LOCK_CLOSED, tone: 'good' }, off: { icon: LOCK_OPEN, tone: 'crit' } } },
+  { id: 'climate:42', title: 'Klimatisierung', kind: 'toggle', state: 'off', device: car,
+    widget: { label: 'Ladestand', value: 81, unit: '%', power: false,
+              readings: [{ id: 'range', label: 'Reichweite', value: 312, unit: 'km', icon: ROUTE_ICON }] } },
+]
+```
+
+* `device`: `{ id, title, subtitle?, icon? }` — `id` `[A-Za-z0-9:._-]{1,64}`,
+  `title` required (≤ 40), `subtitle` ≤ 60, `icon` an SVG path like the
+  action's `icon` (otherwise `null`). Anything invalid (no or a bad `id`, no
+  `title`) → `device: null`, the action stays. The answer always has all four
+  keys: `{ id, title, subtitle, icon }`.
+* `look` (toggles only): `{ on?: { icon?, tone? }, off?: { icon?, tone? } }`
+  — the icon and colour the app shows for each state instead of the action's
+  `icon` (e.g. a lock: on = locked, a green closed padlock; off = unlocked, a
+  red open padlock). `tone` is `good`, `warn`, `crit` or `neutral`; `icon` an
+  SVG path like the action's `icon`. The answer is
+  `{ on: { icon, tone } | null, off: { icon, tone } | null }` (a missing key
+  `null`); a part with neither a valid icon nor a valid tone is `null`, and
+  `look` is `null` when both parts are (and always for buttons).
+* `confirmWhen` (toggles only): see above.
+
+Older hosts drop the three fields; older apps ignore them.
+
 ### Widgets
 
 A widget is a quick action with extra information and controls — there is no
@@ -777,14 +828,19 @@ hosts drop the field, older apps ignore it.
 // an air conditioner: temperature, status, a target stepper and a mode choice
 { id: 'ac:7', title: 'Wohnzimmer', subtitle: 'Klima', kind: 'toggle', state: 'on',
   widget: {
+    label: 'Innentemperatur',                    // ≤ 24, the name of the large value
     value: '21,5', unit: '°C',                  // large display: a string ≤ 24 or a finite number
     status: 'Kühlen · Ziel 22 °C',               // ≤ 60, small line under the value
     state: 'on',                                 // 'on' | 'off' | 'good' | 'warn' | 'crit' (colour of the card)
+    readings: [                                  // ≤ 4 extra values, ids unique per widget
+      { id: 'outdoor', label: 'Außen', value: 12.5, unit: '°C', icon: THERMOMETER_ICON },
+    ],
     controls: [                                  // ≤ 4, ids unique per widget
       { id: 'target', kind: 'stepper', label: 'Ziel', value: 22, min: 16, max: 30, step: 0.5, unit: '°C' },
       { id: 'mode', kind: 'choice', label: 'Modus', value: 'cool',
         options: [{ id: 'auto', label: 'Auto' }, { id: 'cool', label: 'Kühlen' }, { id: 'heat', label: 'Heizen' }] },
     ],
+    power: true,                                 // the toggle is the device's on/off switch (default)
   } }
 ```
 
@@ -792,6 +848,24 @@ hosts drop the field, older apps ignore it.
   numbers yourself, e.g. with `toLocaleString`) or a finite number; anything
   else → `null`. `unit` ≤ 8, `status` ≤ 60, `state` one of the five values
   (otherwise `null`). All optional.
+* `label` (≤ 24, optional, otherwise `null`): the name of the large value —
+  the apps show it when the person picks what the card shows ("Ladestand",
+  "Innentemperatur").
+* `readings` (≤ 4, optional): smaller values beside the large one, each
+  `{ id, label, value?, unit?, icon?, state? }` — `id` like a control id and
+  unique among the readings, `label` required (≤ 20), `value` a string
+  (≤ 16) or a finite number (otherwise `null`), `unit` ≤ 8, `icon` an SVG
+  path like the action's `icon`, `state` one of the five widget states (or
+  `null`). A reading needs a `value` or an `icon` (e.g. a padlock without a
+  value). Unlike everything else in a widget, an invalid reading is only
+  dropped — the widget stays; a later reading with an id already seen is
+  dropped as well, and only the first 4 valid ones are kept. The answer is
+  always a list (`[]` without readings), each reading with all six keys.
+* `power` (boolean, default `true`): the action's toggle is the device's
+  on/off switch, shown in the card's header. `false`: the action is shown
+  like the device's other actions, as a button (e.g. a car's climate action
+  carrying the car's widget). Anything but `false` is `true`.
+* A widget with only `readings` (no value, status or controls) is valid.
 * `controls` (≤ 4, optional): `id` `[A-Za-z0-9_-]{1,24}` and unique per
   widget, `kind` `stepper`, `slider` or `choice`, `label` ≤ 20 (optional).
   * `stepper` / `slider`: `value`, `min`, `max`, `step` finite numbers with
@@ -803,6 +877,12 @@ hosts drop the field, older apps ignore it.
 * Anything invalid (a bad control, too many of them, duplicate ids …) makes
   the whole `widget` `null` in the host's answer; the action itself stays.
   An entry without a `widget` lists `widget: null` as well.
+* A sanitised widget always has every key:
+  `{ label, value, unit, status, state, readings, controls, power }`.
+* **One widget per device**: when a device has several actions, give the
+  `widget` to one of them (the device's "carrier"); control runs go to that
+  action. The apps build the card from the carrier's widget and the
+  device's other actions.
 
 **Control runs.** When the person moves a control, the app runs the action
 with `control` (the control's id) and `value` in the body. The host looks
@@ -852,6 +932,15 @@ card shows and in which order; the app remembers that by each tile's `key`.
   `user = { id, name, role, portal: true, loggedIn: true, app: true }`;
   `lang` like there (`?lang=`, the owner's setting, `Accept-Language`, `de`).
   A token without an owner gets no tiles.
+* **`items`** (optional, apps only): up to 4 small values the card shows as a
+  row of icons and values, e.g. charge level, range and lock state of a car
+  — `[{ label, icon?, value?, unit?, state? }]` with the rules of a widget's
+  `readings` (see "Widgets") without the `id`: `label` required (≤ 20),
+  `value` a string (≤ 16) or a finite number, `unit` ≤ 8, `icon` an SVG path,
+  `state` one of the five states; a `value` or an `icon` is required. An
+  invalid item is dropped (the tile stays), only the first 4 valid ones are
+  kept, and the answer always has `items` (`[]` without). The portal's Start
+  tab ignores `items` and keeps showing `value` — send both.
 * **`key`**: `"<plugin id>/<section or ''>/<title>"`, deterministic and in
   URL-safe characters only (`[A-Za-z0-9._~-]` plus the two `/`, ≤ 184
   characters). A section or title that is already short (≤ 48) and URL-safe
@@ -868,7 +957,8 @@ card shows and in which order; the app remembers that by each tile's `key`.
 GET /api/v1/client/tiles?lang=de|en
   200 { ok: true, tiles: [{ key: 'gatecontrol-fahrzeuge/vehicle/Ladestand',
                             plugin: '<plugin id>', pluginName: '<localised name>',
-                            section: '<section id>' | null, title, value, unit, state, icon }] }
+                            section: '<section id>' | null, title, value, unit, state, icon,
+                            items: [{ label, value, unit, icon, state }] }] }
 ```
 
 Same auth as `GET /api/v1/client/actions` (API token with scope `client` or

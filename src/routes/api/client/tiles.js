@@ -6,7 +6,7 @@
  *
  *   GET /api/v1/client/tiles?lang=de|en
  *     200 { ok: true, tiles: [{ key, plugin, pluginName, section, title,
- *                               value, unit, state, icon }] }
+ *                               value, unit, state, icon, items }] }
  *
  * Token only (scope `client` or `full-access`), machine binding like the
  * other client routes, rate limited like the quick-actions listing (the
