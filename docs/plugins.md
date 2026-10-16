@@ -360,7 +360,7 @@ module.exports = {
 | `gc.users.list()/get(id)` | `{ id, name, role, avatarUrl, color, colorHex, initials }` of enabled users (`users`) — `avatarUrl` is the profile picture's path `/avatars/<id>.<ext>` or `null`, `color` the favourite colour's palette key (never `null`), `colorHex` its `#RRGGBB`, `initials` one or two letters for the fallback (docs/feature-avatars.md; since 1.168.0) |
 | `gc.kiosk.allow(userId, allowed)` | mark (`true`) or unmark (`false`) a user as a kiosk user (`kiosk`); an administrator, a disabled or an unknown account → `ERR_INVALID` (allowing only; unmarking always works) |
 | `gc.kiosk.list()` | ids of the users this plugin marks (`kiosk`) |
-| `gc.actions.list({ userId, lang })` | the quick actions the *other* plugins offer to that user → `[{ plugin, pluginName, id, title, subtitle, kind, state, verbs, targets }]` (`actions`) — see "Running other plugins' quick actions" |
+| `gc.actions.list({ userId, lang })` | the quick actions the *other* plugins offer to that user → `[{ plugin, pluginName, id, title, subtitle, icon, kind, state, verbs, targets, device }]` (`actions`) — see "Running other plugins' quick actions" |
 | `gc.actions.run({ userId, plugin, id, lang, state })` | run one of them as that user, `state` (`'on'`/`'off'`, optional) the state a toggle should end in → `{ ok, message, state, unchanged }` (+ `error` when it did not run; `actions`, ≤ 60 runs per hour) |
 | `gc.notify(message, { severity })` | activity log + webhooks, and a push on `plugin:<id>:default` (`notify`, ≤ 30/h or `perHour`) — see "Notifications" |
 | `gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data })` | push on a declared `notifyTopics` topic (+ activity row) → `{ pushed, id }` |
@@ -1052,7 +1052,8 @@ switches on a smart home scene when the first person comes home.
 ```js
 const actions = await gc.actions.list({ userId: 7, lang: 'de' });
 // [{ plugin: 'gatecontrol-smarthome', pluginName: 'Smart Home', id: 'scene:evening',
-//    title: 'Abend', subtitle: null, kind: 'button', state: null, verbs: null, targets: false }, …]
+//    title: 'Abend', subtitle: null, icon: null, kind: 'button', state: null, verbs: null,
+//    targets: false, device: null }, …]
 const r = await gc.actions.run({ userId: 7, plugin: 'gatecontrol-smarthome', id: 'scene:evening' });
 // { ok: true, message: 'Szene gestartet', state: null, unchanged: false }
 await gc.actions.run({ userId: 7, plugin: 'gatecontrol-fahrzeuge', id: 'lock:42', state: 'on' });
@@ -1061,9 +1062,11 @@ await gc.actions.run({ userId: 7, plugin: 'gatecontrol-fahrzeuge', id: 'lock:42'
 
 * **Which actions**: exactly what the apps get for that user (the same
   plugins, hooks, timeouts and sanitising as "Quick actions" above) as
-  `{ plugin, pluginName, id, title, subtitle, kind, state, verbs, targets }`
-  — without `icon`, `confirm`, `look`, `device` and `widget` — and never the
-  calling plugin's own actions.
+  `{ plugin, pluginName, id, title, subtitle, icon, kind, state, verbs,
+  targets, device }` — `icon` and `device` exactly as in the apps' list (an
+  SVG path or `null`; `{ id, title, subtitle, icon }` or `null`, see
+  "Devices and looks"), without `confirm`, `confirmWhen`, `look` and
+  `widget` — and never the calling plugin's own actions.
 * **As whom**: the target plugin's `quickActions` / `runQuickAction` get the
   viewer `{ id, name, role, portal: true, loggedIn: true, automation: true,
   via: '<calling plugin id>' }` (no `app` key) — `runQuickAction` also with

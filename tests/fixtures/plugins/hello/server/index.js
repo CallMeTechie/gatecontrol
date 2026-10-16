@@ -200,7 +200,9 @@ module.exports = {
   },
   async runQuickAction(payload, gc) {
     const mode = await gc.storage.get('quick-run-mode');
-    if (mode === 'slow') await new Promise((r) => setTimeout(r, 4000));
+    // slow: answers only after the host gave up (timeout) and records nothing —
+    // a late write of "quick-last" would land in whatever test runs then
+    if (mode === 'slow') { await new Promise((r) => setTimeout(r, 4000)); return { ok: true, message: 'too late' }; }
     if (mode === 'throw') throw new Error('broken on purpose');
     if (mode === 'garbage') return 'not an object';
     await gc.storage.set('quick-last', {

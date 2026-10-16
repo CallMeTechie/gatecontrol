@@ -129,9 +129,9 @@ describe('gc.actions.list', () => {
   it('the actions of the other plugins for that user — never the caller\'s own, never a plugin without permissions.portal', async () => {
     const all = await listOk({ userId: anna });
     assert.deepEqual(all.find((a) => a.plugin === 'hello'),
-      { plugin: 'hello', pluginName: 'Hallo Welt', id: 'light:3', title: 'Licht', subtitle: 'Wohnzimmer', kind: 'toggle', state: 'off', verbs: null, targets: false });
+      { plugin: 'hello', pluginName: 'Hallo Welt', id: 'light:3', title: 'Licht', subtitle: 'Wohnzimmer', icon: 'M4 12h16', kind: 'toggle', state: 'off', verbs: null, targets: false, device: null });
     assert.deepEqual(all.find((a) => a.id === 'scene:evening'),
-      { plugin: 'hello-two', pluginName: 'Zweites', id: 'scene:evening', title: 'Abend', subtitle: null, kind: 'button', state: null, verbs: null, targets: false });
+      { plugin: 'hello-two', pluginName: 'Zweites', id: 'scene:evening', title: 'Abend', subtitle: null, icon: null, kind: 'button', state: null, verbs: null, targets: false, device: null });
     assert.ok(!all.some((a) => a.plugin === 'hello-auto'), 'the caller is excluded');
     assert.ok(!all.some((a) => a.plugin === 'hello-np'), 'no permissions.portal → not asked');
     // the target sees that user as a logged-in portal viewer (no app flag) in the user's language
@@ -253,16 +253,21 @@ describe('gc.actions.run', () => {
   it('state: a targets toggle gets target; the fallback for other toggles (unchanged / flip / state_unknown); invalid_state', async () => {
     hostApi._resetActionsBudgetForTest();
     const VERBS = { on: 'Verriegeln', off: 'Entriegeln' };
+    const CAR = { id: 'v:42', title: 'Familienauto', icon: '<svg/>' };   // invalid icon → null, the device stays
     await kv('hello', 'quick-actions', [
-      { id: 'lock:1', title: 'Schloss', kind: 'toggle', state: 'on', targets: true, verbs: VERBS },
+      { id: 'lock:1', title: 'Schloss', kind: 'toggle', state: 'on', targets: true, verbs: VERBS, icon: 'M6 10V7', device: CAR, confirm: true, look: { on: { tone: 'good' } } },
       { id: 'lamp:on', title: 'Lampe', kind: 'toggle', state: 'on' },
       { id: 'lamp:unknown', title: 'Lampe 2', kind: 'toggle' },
-      { id: 'scene', title: 'Szene' },
+      { id: 'scene', title: 'Szene', icon: '<script>', device: { id: 'bad id', title: 'X' } },
     ]);
     try {
       const all = await listOk({ userId: anna });
-      assert.deepEqual(all.find((a) => a.id === 'lock:1'),
-        { plugin: 'hello', pluginName: 'Hallo Welt', id: 'lock:1', title: 'Schloss', subtitle: null, kind: 'toggle', state: 'on', verbs: VERBS, targets: true });
+      assert.deepEqual(all.find((a) => a.id === 'lock:1'), {
+        plugin: 'hello', pluginName: 'Hallo Welt', id: 'lock:1', title: 'Schloss', subtitle: null, icon: 'M6 10V7', kind: 'toggle', state: 'on',
+        verbs: VERBS, targets: true, device: { id: 'v:42', title: 'Familienauto', subtitle: null, icon: null },
+      }, 'icon and device like the apps\' list; no confirm, look or widget');
+      assert.equal(all.find((a) => a.id === 'lamp:on').device, null);
+      assert.deepEqual([all.find((a) => a.id === 'scene').icon, all.find((a) => a.id === 'scene').device], [null, null], 'invalid icon / device → null');
 
       // targets: true → target in the payload, the plugin's answer
       await kv('hello', 'quick-result', { ok: true, message: 'Verriegelt', state: 'on' });

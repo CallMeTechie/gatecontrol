@@ -397,14 +397,14 @@ function actionsBudget(plugin) {
   actionsWindow.set(plugin.id, w);
 }
 
-/** gc.actions.list → [{ plugin, pluginName, id, title, subtitle, kind, state, verbs, targets }] of every other plugin. */
+/** gc.actions.list → [{ plugin, pluginName, id, title, subtitle, icon, kind, state, verbs, targets, device }] of every other plugin. */
 async function actionsList(plugin, args) {
   needActions(plugin);
   const { user, lang } = automationViewer(plugin, args);
   const all = await require('./quickActions').list(user, lang, { exclude: plugin.id });
   return all.map((a) => ({
-    plugin: a.plugin, pluginName: a.pluginName, id: a.id, title: a.title, subtitle: a.subtitle, kind: a.kind, state: a.state,
-    verbs: a.verbs, targets: a.targets,
+    plugin: a.plugin, pluginName: a.pluginName, id: a.id, title: a.title, subtitle: a.subtitle, icon: a.icon, kind: a.kind, state: a.state,
+    verbs: a.verbs, targets: a.targets, device: a.device,
   }));
 }
 

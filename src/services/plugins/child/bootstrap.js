@@ -227,7 +227,7 @@ function makeGc(info) {
     }),
     /**
      * permissions.actions: quick actions of the other plugins for one user —
-     * list({ userId, lang }) → [{ plugin, pluginName, id, title, subtitle, kind, state, verbs, targets }];
+     * list({ userId, lang }) → [{ plugin, pluginName, id, title, subtitle, icon, kind, state, verbs, targets, device }];
      * run({ userId, plugin, id, lang, state? }) → { ok, message, state, unchanged } (runs as that user;
      * state 'on'|'off': the state a toggle should end in)
      */
