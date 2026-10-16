@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.171.0] — 2026-10-16
+
+### Features
+- widgets for the apps' quick actions – readings and controls (#314)
+
+---
+
 ## [1.170.0] — 2026-10-15
 
 ### Features
