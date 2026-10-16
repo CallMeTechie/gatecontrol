@@ -185,7 +185,9 @@ module.exports = {
 
   // quick actions of the apps (tests/plugins_quick_actions.test.js) from kv
   // "quick-actions" ('$viewer' as title → the viewer it got); "quick-mode" /
-  // "quick-run-mode" make the plugin misbehave, "quick-result" is the run's answer
+  // "quick-run-mode" make the plugin misbehave, "quick-result" is the run's
+  // answer (a widget in it is passed on as is); "quick-last" keeps what the
+  // run got — control / value only when the host sent them (a control run)
   async quickActions(payload, gc) {
     const mode = await gc.storage.get('quick-mode');
     if (mode === 'slow') await new Promise((r) => setTimeout(r, 5000));
@@ -200,7 +202,10 @@ module.exports = {
     if (mode === 'slow') await new Promise((r) => setTimeout(r, 4000));
     if (mode === 'throw') throw new Error('broken on purpose');
     if (mode === 'garbage') return 'not an object';
-    await gc.storage.set('quick-last', { id: payload.id, user: payload.user, lang: payload.lang, via: payload.via, automation: payload.automation });
+    await gc.storage.set('quick-last', {
+      id: payload.id, user: payload.user, lang: payload.lang, via: payload.via, automation: payload.automation,
+      ...('control' in payload || 'value' in payload ? { control: payload.control, value: payload.value } : {}),
+    });
     const r = await gc.storage.get('quick-result');
     return r === null || r === undefined ? { ok: true, message: 'ran ' + payload.id, state: 'on' } : r;
   },
