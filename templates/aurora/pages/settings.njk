@@ -140,10 +140,6 @@
   data-features='{"webhooks":{{ "true" if has("webhooks") else "false" }},"email_alerts":{{ "true" if has("email_alerts") else "false" }},"scheduled_backups":{{ "true" if has("scheduled_backups") else "false" }},"machine_binding":{{ "true" if has("machine_binding") else "false" }},"split_tunnel_preset":{{ "true" if has("split_tunnel_preset") else "false" }},"custom_dns":{{ "true" if has("custom_dns") else "false" }},"prometheus_metrics":{{ "true" if has("prometheus_metrics") else "false" }},"waf":{{ "true" if has("waf") else "false" }}}'>
 
   <header class="st-head">
-    <div class="st-head-main">
-      <div class="page-eyebrow">{{ t('nav.system') }}</div>
-      <h1 class="st-title">{{ t('nav.settings') }}</h1>
-    </div>
     <div class="st-search">
       <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
       <input type="search" id="st-search" aria-label="{{ t('st.search_label') }}" placeholder="{{ t('st.search_ph') }}" autocomplete="off" spellcheck="false" aria-controls="st-nav">

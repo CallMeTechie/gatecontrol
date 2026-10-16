@@ -2,7 +2,9 @@
   <button class="sidebar-toggle" id="sidebar-toggle" aria-label="{{ t('sidebar.toggle_open') }}" aria-controls="sidebar">
     <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
   </button>
-  <div class="page-crumb">{{ title }}</div>
+  {#- The page's one title and its only <h1>: pages render no heading of
+      their own above their content (no eyebrow / title / subtitle). -#}
+  <h1 class="page-crumb">{{ title }}</h1>
   <div class="topbar-spacer"></div>
   {# Quick search (command-palette.js): Ctrl/⌘+K or "/" — this button is the touch entry point. #}
   <button type="button" class="cp-trigger" id="cp-open" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K /" title="{{ t('palette.shortcut_hint') }}" aria-label="{{ t('palette.shortcut_hint') }}">

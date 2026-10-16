@@ -4,11 +4,7 @@
 {# Must be set before its first use (button + locked notice below). #}
 {% set rdpLocked = not license.hasFeature('remote_desktop') %}
 <div class="page-header">
-  <div>
-    <div class="page-eyebrow">{{ t('nav.routing') }}</div>
-    <h1 class="page-title">{{ t('rdp.title') }}</h1>
-    <p class="page-sub" id="rdp-subtitle">{{ t('rdp.subtitle', { count: '0' }) }}</p>
-  </div>
+  <p class="page-meta" id="rdp-subtitle"></p>
   <div class="page-actions">
     <button class="btn btn-primary" id="btn-add-rdp" {% if rdpLocked %}disabled{% endif %}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>

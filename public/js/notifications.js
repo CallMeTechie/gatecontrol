@@ -573,8 +573,6 @@
       b.tabIndex = on ? 0 : -1;
     });
     page.querySelectorAll('[data-nc-panel]').forEach((p) => { p.hidden = p.dataset.ncPanel !== state.tab; });
-    const sub = $('nc-sub');
-    if (sub) sub.textContent = T('notify.sub.' + state.tab);
     if (!o.keepHash) writeHash(state.tab, id);
     if (state.tab === 'overview') { if (!state.ovLoaded) loadOverview(); }
     if (state.tab === 'rules') {

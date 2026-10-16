@@ -151,7 +151,8 @@ describe('waf.njk renders in every theme', () => {
 
   it('English rendering uses en.json', () => {
     const html = render('aurora', { lang: 'en' });
-    assert.match(html, /<div class="page-title">WAF<\/div>/);
+    assert.match(html, /<h1 class="page-crumb">Web Application Firewall<\/h1>/, 'the title is the topbar h1');
+    assert.doesNotMatch(html, /class="page-(eyebrow|title|sub)"/, 'no in-page title block');
     assert.match(html, /Events 24 h/);
     assert.match(html, /All hosts/);
   });

@@ -532,14 +532,6 @@ a:hover { text-decoration: underline; }
   margin-bottom: 4px;
 }
 
-.page-title {
-  font-size: var(--text-2xl);
-  font-weight: var(--weight-bold);
-  color: var(--text-primary);
-  letter-spacing: -0.025em;
-  line-height: var(--leading-tight);
-}
-
 .page-sub,
 .page-subtitle {
   font-size: var(--text-sm);
@@ -2169,7 +2161,7 @@ table tbody tr:last-child td { border-bottom: none; }
 /* ── Gateway detail view (full-page, mirrors gateway-detail.html mockup) ── */
 .gw-fleet #gw-detail-view .gw-back { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--text-3); font-size: 13px; cursor: pointer; padding: 0; margin-bottom: 16px; font-family: inherit; }
 .gw-fleet #gw-detail-view .gw-back:hover { color: var(--accent); }
-.gw-fleet .gw-detail .page-h h1 { display: inline-flex; align-items: center; gap: 12px; font-size: 22px; margin: 0; }
+.gw-fleet .gw-detail .page-h h2 { display: inline-flex; align-items: center; gap: 12px; font-size: 22px; margin: 0; }
 .gw-fleet .gw-detail-actions { display: flex; gap: 8px; align-items: center; }
 .gw-fleet .gw-update { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 6px 13px; border-radius: var(--radius-sm); border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; white-space: nowrap; }
 .gw-fleet .gw-update:hover { filter: brightness(1.06); }
@@ -3162,7 +3154,8 @@ a{color:inherit}
 .sidebar-toggle{display:none; width:38px;height:38px;border-radius:11px;border:1px solid var(--line);background:var(--chip);color:var(--muted);
   place-items:center;cursor:pointer}
 .sidebar-toggle svg{width:22px;height:22px}
-.page-crumb{font-family:var(--font-display); font-weight:700; font-size:15px; letter-spacing:-.01em}
+/* The page title — the page's only <h1> (pages show no heading of their own). */
+.page-crumb{margin:0; font-family:var(--font-display); font-weight:700; font-size:15px; line-height:1.25; letter-spacing:-.01em; color:var(--text)}
 .page-crumb small{color:var(--faint); font-weight:500; font-family:var(--font-body); margin-left:8px; font-size:12.5px}
 .topbar-spacer{flex:1}
 .topbar-status{display:flex; align-items:center; gap:9px; padding:6px 12px; border:1px solid var(--line);
@@ -3225,13 +3218,21 @@ a{color:inherit}
 @keyframes rise{from{opacity:0; transform:translateY(12px)} to{opacity:1; transform:none}}
 
 /* ----------------------------------------------------------------------------
-   4 · PAGE HEADER (production: .page-header/.page-eyebrow/.page-title/.page-sub)
+   4 · PAGE HEADER (production: .page-header/.page-meta/.page-actions)
    --------------------------------------------------------------------------- */
-.page-header{display:flex; align-items:flex-end; gap:16px; margin-bottom:22px; flex-wrap:wrap}
+/* The page title lives in the topbar (.page-crumb, the page's <h1>); a page
+   header holds no eyebrow / title / subtitle — only an optional data line
+   (.page-meta: counts, summary) on the left and the actions on the right. */
+.page-header{display:flex; flex-direction:row; align-items:center; gap:10px 16px; margin-bottom:22px; flex-wrap:wrap}
+.page-meta{flex:1 1 260px; min-width:0; margin:0; color:var(--muted); font-size:13.5px; line-height:1.45; max-width:72ch}
+.page-meta:empty{display:none}
+/* directly in the flex column of .main its gap is the spacing */
+.main > .page-header{margin-bottom:0}
+.page-header .page-actions{margin-left:auto; display:flex; flex-wrap:wrap; justify-content:flex-end; gap:10px; align-items:center}
+/* Still used outside page headers: the sign-in cards, dialogs (eyebrow) and
+   the gateway detail head (sub line). */
 .page-eyebrow{font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--teal); font-weight:700; margin-bottom:6px}
-.page-title{font-family:var(--font-display); font-weight:800; letter-spacing:-.025em; font-size:clamp(22px,3vw,30px); margin:0; line-height:1.05}
 .page-sub{margin:7px 0 0; color:var(--muted); font-size:14px; max-width:60ch}
-.page-header .page-actions{margin-left:auto; display:flex; gap:10px; align-items:center}
 
 /* ----------------------------------------------------------------------------
    5 · BUTTONS (production: .btn + .btn-primary/.btn-ghost/.btn-secondary/.btn-danger/.btn-sm)
@@ -3824,8 +3825,6 @@ button.rt-tag{cursor:pointer; font-family:inherit}
 .rt-row-end > .rt-field{flex:1 1 220px}
 
 /* ── Page ── */
-.page-header.rt-page-head{margin-bottom:20px}
-.rt-page-titles{flex:1 1 320px; min-width:0}
 .rt-page-actions{display:flex; flex-wrap:wrap; gap:10px}
 .toolbar.rt-toolbar{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 20px; padding:10px; border-radius:16px;
   background:var(--chip); border:1px solid var(--line)}
@@ -4184,7 +4183,6 @@ button.rt-tag{cursor:pointer; font-family:inherit}
 }
 @media (max-width:640px){
   .page-header.rt-page-head{align-items:stretch}
-  .page-header.rt-page-head .rt-page-titles{flex:0 0 auto}
   .page-header.rt-page-head .page-actions{margin-left:0; width:100%}
   .rt-page-actions .btn.rt-btn{flex:1 1 0}
   .toolbar.rt-toolbar{padding:8px; gap:8px}
@@ -4398,7 +4396,6 @@ body.au-page { display: flex; flex-direction: column; align-items: center; justi
 }
 
 .pf-page{max-width:1160px; margin:0 auto}
-.pf-page .page-header{align-items:flex-start}
 .pf-page [hidden]{display:none !important}
 .pf-page :focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 .pf-page .form-input:focus-visible{outline:0}
@@ -4957,9 +4954,8 @@ body.au-page { display: flex; flex-direction: column; align-items: center; justi
 .st-pad{margin:0 22px 14px}
 
 /* header */
-.st-head{display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px 20px; margin-bottom:20px}
-.st-head-main{flex:1 1 300px; min-width:0}
-.st-title{margin:0; font-family:var(--font-display); font-weight:800; font-size:clamp(24px,3vw,30px); letter-spacing:-.025em; line-height:1.05}
+/* no title here (the topbar's): only the settings search, right-aligned */
+.st-head{display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:12px 20px; margin-bottom:20px}
 .st-search{flex:0 1 380px; min-width:0; display:flex; align-items:center; gap:10px; height:44px; padding:0 12px; border-radius:11px;
   border:1px solid var(--line-2); background:var(--pf-input); color:var(--db-muted)}
 .st-search:focus-within{border-color:var(--teal); box-shadow:0 0 0 3px var(--glow1)}
@@ -5729,11 +5725,15 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .rt-dlg .sh-shield, .rt-host .sh-shield{height:26px; padding:0 9px 0 7px}
 @media (pointer:coarse){ .rt-host .sh-shield{height:32px} }
 
-/* ─── Topbar on phones: the search button needs room — the title stays on one line ─── */
+/* ─── Topbar on phones: the title is the page's only heading, so it gets the
+   room — tighter gaps, and a long title wraps onto a second line (clamped)
+   instead of being cut to a few letters. ─── */
 @media (max-width:640px){
-  .topbar{min-width:0}
-  .topbar .page-crumb{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:0 1 auto}
+  .topbar{min-width:0; gap:6px; padding:0 12px}
+  .topbar .page-crumb{min-width:0; flex:0 1 auto; font-size:14px; line-height:1.2; hyphens:auto; overflow-wrap:anywhere;
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; overflow:hidden}
 }
+@media (max-width:400px){ .topbar .page-crumb{font-size:13px} }
 @media (max-width:900px){ body:has(.sidebar.open) .fab-wrap{display:none} }
 
 
@@ -5970,8 +5970,6 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 
 /* head */
 .us-header{margin-bottom:18px}
-.us-header-text{flex:1 1 340px}
-.us-header .page-sub{max-width:640px}
 .us-header-actions{display:flex; flex-wrap:wrap; gap:10px}
 .us-header-actions .btn{min-height:44px}
 .us-rolecards{display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap:12px; margin-bottom:18px}
@@ -6322,7 +6320,6 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
    (GCDialog confirmations at 1100 stay on top of them) */
 .modal-overlay.us-dlg{z-index:1000}
 @media (max-width: 767px){ .us-step.is-current{flex:2 1 0} .us-steps li:has(.is-current){flex:2 1 0} }
-@media (max-width: 767px){ .us-header-text{flex:1 1 auto} }
 
 /* ═══ Plugins (docs/plugins.md): Settings → Plugins, plugin pages, sidebar ═══ */
 .nav-item.nav-item-off{opacity:.62}
@@ -6468,11 +6465,10 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .pg-confirm .st-input{width:100%}
 /* plugin page */
 .pg-plugin-page{display:flex; flex-direction:column; gap:16px; min-width:0}
-.pg-ph{display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px 20px}
-.pg-ph-main{flex:1 1 300px; min-width:0}
-.pg-ph-eyebrow{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:6px}
-.pg-ph-kicker{font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--pf-teal-ink)}
-.pg-ph-title{margin:0; font-family:var(--font-display); font-weight:800; font-size:clamp(24px,3vw,30px); letter-spacing:-.02em}
+/* No title row: the page title is the topbar's. Page tabs left, version /
+   signature / settings link right. */
+.pg-ph{display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px}
+.pg-ph-meta{margin-left:auto; display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px}
 .pg-ptabs{display:flex; gap:6px; flex-wrap:wrap}
 .pg-ptab{padding:6px 12px; border-radius:999px; border:1px solid var(--line-2); color:var(--db-muted); text-decoration:none; font-size:13px; font-weight:700}
 .pg-ptab[aria-current="page"]{color:var(--pf-teal-ink); background:var(--teal-soft); border-color:var(--pf-teal-bd)}
@@ -6528,8 +6524,6 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 
 /* head + tabs */
 .nc-header{margin-bottom:18px}
-.nc-header-text{flex:1 1 360px; min-width:0}
-.nc-header .page-sub{max-width:72ch}
 .nc-header-actions{flex-wrap:wrap}
 .nc-header-actions .btn{min-height:40px}
 .nc-tabs{margin-bottom:20px; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:thin}
@@ -6780,9 +6774,6 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
   .nc-aside, .nc-send{flex-basis:auto; width:auto; position:static}
   .nc-aside-hint{display:none}
   .nc-ov-grid{grid-template-columns:minmax(0, 1fr)}
-}
-@media (max-width:767px){
-  .nc-header-text{flex:1 1 auto}
 }
 @media (max-width:640px){
   .nc-kpis{grid-template-columns:repeat(2, minmax(0, 1fr))}

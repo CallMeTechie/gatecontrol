@@ -2,11 +2,6 @@
 
 {% block content %}
 <div class="page-header">
-  <div>
-    <div class="page-eyebrow">{{ t('nav.routing') }}</div>
-    <h1 class="page-title">{{ t('gateway_pools.title') }}</h1>
-    <p class="page-sub">{{ t('gateway_pools.subtitle') }}</p>
-  </div>
   <div class="page-actions">
     {% if not license.features.gateway_pools %}
     <span class="feature-lock"><svg viewBox="0 0 24 24" width="14" height="14" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="2"/></svg>{{ t('common.pro') }}</span>

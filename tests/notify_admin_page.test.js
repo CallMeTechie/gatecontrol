@@ -247,7 +247,7 @@ describe('i18n: notify.* strings', () => {
 
   it('dynamic keys of the script exist (tabs, sources, states, priorities)', () => {
     const want = [];
-    N.TABS.forEach((t) => want.push('notify.sub.' + t, 'notify.tab.' + t));
+    N.TABS.forEach((t) => want.push('notify.tab.' + t));
     N.SOURCES.concat(['manual']).forEach((s) => want.push('notify.source.' + s));
     N.DEVICE_STATES.forEach((s) => want.push('notify.dev.state.' + s));
     N.PRIORITIES.forEach((p) => want.push('notify.prio_hint.' + p));

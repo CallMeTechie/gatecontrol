@@ -4,13 +4,6 @@
 {% set pfName = (user.display_name if user and user.display_name else (user.username if user else '')) %}
 {% set pfTfOn = user and user.totp_enabled %}
 <div class="pf-page" id="pf-page">
-<div class="page-header">
-  <div>
-    <div class="page-eyebrow">{{ t('nav.account') }}</div>
-    <h1 class="page-title">{{ t('profile.title') }}</h1>
-    <p class="page-sub">{{ t('profile.subtitle') }}</p>
-  </div>
-</div>
 
 {# ─── Identity header ─────────────────────────────────── #}
 <section class="pf-identity" aria-label="{{ t('profile.overview') }}">

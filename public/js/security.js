@@ -407,7 +407,7 @@
       if (res) {
         const s = summaryOf(res);
         sub.textContent = t('security.summary', { time: fmtTime(res.generated_at), pass: s.pass, fail: s.fail, info: s.info });
-      } else sub.textContent = state.checkError ? t('security.load_error') : t('security.page_sub');
+      } else sub.textContent = state.checkError ? t('security.load_error') : '';
     }
     const s = res ? summaryOf(res) : null;
     [['pass', 'pass'], ['fail', 'fail'], ['info', 'info']].forEach(([k]) => {

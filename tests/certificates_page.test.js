@@ -112,7 +112,7 @@ describe('certificates.njk renders in every theme', () => {
 
   it('English rendering uses en.json', () => {
     const html = render('aurora', 'en');
-    assert.match(html, /Certificate status per host/);
+    assert.match(html, /<span class="card-title">SSL \/ Certificates<\/span>/);
     assert.match(html, /Set the ACME e-mail in Settings/);
   });
 });
