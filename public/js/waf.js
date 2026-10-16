@@ -217,7 +217,7 @@
     if (!n) return;
     const s = totals();
     n.textContent = s ? t('waf.summary', { events: s.events_24h, blocked: s.blocked_24h, routes: s.routes })
-      + (s.trusted_24h ? ' · ' + t('waf.summary_trusted', { n: s.trusted_24h }) : '') : t('waf.page_sub');
+      + (s.trusted_24h ? ' · ' + t('waf.summary_trusted', { n: s.trusted_24h }) : '') : '';
   }
 
   function messageRow(node, cls, cols) {

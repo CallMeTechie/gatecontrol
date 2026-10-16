@@ -123,7 +123,7 @@
   function renderSummaryLine() {
     const n = $('tg-summary');
     if (!n) return;
-    if (!state.hosts) { n.textContent = t('tls.page_sub'); return; }
+    if (!state.hosts) { n.textContent = ''; return; }
     const s = summary();
     n.textContent = t('tls.summary', { total: s.total || state.hosts.length, issued: s.issued || 0, problems: (s.failed || 0) + (s.paused || 0) + (s.expiring || 0) });
   }

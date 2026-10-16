@@ -611,6 +611,17 @@ disable/uninstall and when the server shuts down.
   that frame and only calls that plugin's API base with the user's session and
   CSRF token). Chosen over a declarative JSON UI because it is general enough
   for the existing Smart Home / Klimaanlage / Fahrzeuge pages.
+* **Page title**: GateControl shows a page's title once, in its header (the
+  topbar: the plugin's `ui.nav.label`, else its name) — the page's only
+  `<h1>`. The host adds no heading of its own above the frame; above it there
+  is only a slim row with the page tabs (more than one `ui.pages` entry; a
+  page's `title` is its tab label and the frame's accessible name), the
+  version / signature chips and the settings link. A plugin page therefore
+  **must not render its own page title, subtitle or eyebrow** (no
+  "Klimaanlage — Geräte steuern" block at the top of the frame): it starts
+  with its content (toolbar, tiles, lists). Headings inside the content
+  (`<h2>` and below, for cards and sections) are fine, and so is a line of
+  live data (counts, status) as long as it does not repeat the title.
 * **Profile pictures** (since 1.168.0, docs/feature-avatars.md): every frame
   (admin page, portal tab and section, wall) may show the users' pictures —
   the frame CSP has `img-src data: <origin>/avatars/` (`<origin>` = scheme +

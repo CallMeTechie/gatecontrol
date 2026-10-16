@@ -38,6 +38,15 @@ describe('aurora theme — every page renders', () => {
       assert.match(res.text, /class="app"/, 'uses the aurora .app shell');
       assert.match(res.text, /id="theme-btn"/, 'topbar has the mode toggle');
     });
+
+    it(`${url}: the title is shown once — the topbar's h1, no in-page title block`, async () => {
+      selectAurora();
+      const res = await agent.get(url).expect(200);
+      assert.deepEqual(res.text.match(/<h1\b[^>]*>/g), ['<h1 class="page-crumb">'], 'exactly one h1: the topbar title');
+      assert.doesNotMatch(res.text, /class="page-(title|sub)"|class="st-title"|class="pg-ph-title"/, 'no title / subtitle on the page');
+      // (an eyebrow may still label a dialog, e.g. "Rollen vergleichen" on /users)
+      assert.doesNotMatch(res.text, /class="page-header[^"]*">\s*<div[^>]*>\s*<div class="page-eyebrow"/, 'no eyebrow in the page header');
+    });
   }
 });
 
@@ -126,7 +135,8 @@ describe('aurora theme — dashboard layout (redesign)', () => {
     const res = await agent.get('/dashboard').expect(200);
     assert.match(res.text, /class="app"/, 'aurora .app shell present');
     assert.match(res.text, /class="db-page"/, '.db-page present');
-    assert.match(res.text, /<h1 class="db-title" id="db-headline">/, 'one real h1 headline');
+    assert.match(res.text, /<h2 class="db-title" id="db-headline">/, 'status headline is an h2 (the h1 is the topbar title)');
+    assert.deepEqual(res.text.match(/<h1\b[^>]*>/g), ['<h1 class="page-crumb">'], 'exactly one h1: the topbar title');
     for (const id of ['tunnel', 'gateways', 'routes', 'certs', 'check']) {
       assert.match(res.text, new RegExp(`<a class="db-tile" id="db-tile-${id}" href="/`), `#db-tile-${id} is a link`);
     }
@@ -371,7 +381,7 @@ describe('aurora theme — routes page (domain zones)', () => {
     selectAurora();
     const res = await agent.get('/routes').expect(200);
     assert.match(res.text, /class="page-header zn-page-header rt-page-head"/, '.page-header present');
-    assert.match(res.text, /class="page-eyebrow"/, '.page-eyebrow present');
+    assert.doesNotMatch(res.text, /class="page-(eyebrow|title|sub)"/, 'no in-page title block — the title is the topbar\'s');
     assert.match(res.text, /class="page-actions rt-page-actions"/, '.page-actions present');
     assert.match(res.text, /class="toolbar zn-toolbar rt-toolbar"/, '.toolbar present');
     assert.match(res.text, /class="rt-search search-box zn-search"/, '.search-box present');
@@ -515,11 +525,11 @@ describe('aurora theme — certificates layout (Task P2-6)', () => {
     assert.match(res.text, /class="data-table"/, '.data-table present');
   });
 
-  it('renders page-header with page-eyebrow and page-actions on /certificates', async () => {
+  it('renders page-header with page-actions (no in-page title) on /certificates', async () => {
     selectAurora();
     const res = await agent.get('/certificates').expect(200);
     assert.match(res.text, /class="page-header"/, '.page-header present');
-    assert.match(res.text, /class="page-eyebrow"/, '.page-eyebrow present');
+    assert.doesNotMatch(res.text, /class="page-(eyebrow|title|sub)"/, 'no in-page title block — the title is the topbar\'s');
     assert.match(res.text, /class="page-actions"/, '.page-actions present');
     assert.match(res.text, /btn btn-primary/, 'primary action button present in page-actions');
   });
@@ -593,11 +603,11 @@ describe('aurora theme — dns layout (Task P2-7)', () => {
     assert.match(res.text, /class="card-title"/, '.card-title present');
   });
 
-  it('renders page-header with page-eyebrow, page-actions, and feature-lock badge on /dns', async () => {
+  it('renders page-header with page-actions and feature-lock badge (no in-page title) on /dns', async () => {
     selectAurora();
     const res = await agent.get('/dns').expect(200);
     assert.match(res.text, /class="page-header"/, '.page-header present');
-    assert.match(res.text, /class="page-eyebrow"/, '.page-eyebrow present');
+    assert.doesNotMatch(res.text, /class="page-(eyebrow|title|sub)"/, 'no in-page title block — the title is the topbar\'s');
     assert.match(res.text, /class="page-actions"/, '.page-actions present');
     assert.match(res.text, /class="feature-lock"/, '.feature-lock badge present');
   });
@@ -751,15 +761,16 @@ describe('aurora theme — gateway-pools layout (Task P2-9)', () => {
     assert.match(res.text, /class="grid"/, '.grid container present');
     assert.match(res.text, /class="card-title"/, '.card-title present');
     assert.match(res.text, /class="page-header"/, '.page-header present');
-    assert.match(res.text, /class="page-eyebrow"/, '.page-eyebrow present');
+    assert.doesNotMatch(res.text, /class="page-(eyebrow|title|sub)"/, 'no in-page title block — the title is the topbar\'s');
     assert.match(res.text, /class="page-actions"/, '.page-actions present');
   });
 
-  it('renders h1.page-title and p.page-sub (correct elements vs default div)', async () => {
+  it('shows its title once: the topbar h1, no in-page title or subtitle', async () => {
     selectAurora();
     const res = await agent.get('/gateway-pools').expect(200);
-    assert.match(res.text, /<h1 class="page-title"/, '<h1 class="page-title"> used (not div)');
-    assert.match(res.text, /<p class="page-sub"/, '<p class="page-sub"> used (not div)');
+    assert.match(res.text, /<h1 class="page-crumb">Gateway[ -]Pools<\/h1>/, 'topbar title is the h1');
+    assert.equal((res.text.match(/<h1\b/g) || []).length, 1, 'exactly one h1');
+    assert.doesNotMatch(res.text, /class="page-(title|sub)"/, 'no in-page title / subtitle');
   });
 
   it('renders all phase0 JS-contract IDs on /gateway-pools under aurora', async () => {
@@ -851,7 +862,7 @@ describe('aurora theme — rdp layout (Task P2-10)', () => {
     selectAurora();
     const res = await agent.get('/rdp').expect(200);
     assert.match(res.text, /class="page-header"/, '.page-header present');
-    assert.match(res.text, /class="page-eyebrow"/, '.page-eyebrow present');
+    assert.doesNotMatch(res.text, /class="page-(eyebrow|title|sub)"/, 'no in-page title block — the title is the topbar\'s');
     assert.match(res.text, /class="page-actions"/, '.page-actions present');
     assert.match(res.text, /id="btn-add-rdp"/, '#btn-add-rdp inside page-actions');
     assert.match(res.text, /class="page-actions"[\s\S]*id="btn-add-rdp"/, 'btn-add-rdp is inside page-actions');

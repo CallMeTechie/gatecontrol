@@ -157,8 +157,8 @@
   function detailHead(g) {
     var ph = el('div', 'page-h');
     var left = el('div');
-    var h1 = el('h1'); h1.appendChild(document.createTextNode(g.name + ' ')); h1.appendChild(statusPill(g));
-    left.appendChild(h1);
+    var hd = el('h2'); hd.appendChild(document.createTextNode(g.name + ' ')); hd.appendChild(statusPill(g));
+    left.appendChild(hd);
     var parts = [];
     if (g.hostname) parts.push(g.hostname);
     if (g.ip) parts.push(T('gateways.sub_tunnel', 'Tunnel') + ' ' + g.ip);

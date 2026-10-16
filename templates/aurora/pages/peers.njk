@@ -1,19 +1,17 @@
 {% extends theme + "/layout.njk" %}
 
 {% block content %}
+{#- The page title is the topbar's (partials/topbar.njk); this row only
+    carries the licence counter and the page's actions. -#}
 <div class="page-header">
-  <div>
-    <div class="page-eyebrow" data-i18n="peers.eyebrow">{{ t('peers.eyebrow') }}</div>
-    <h1 class="page-title" data-i18n="peers.title">
-      {{ t('peers.title') }}
-      {% if license.features.vpn_peers is defined and license.features.vpn_peers != -1 %}
-        <span class="limit-badge {% if peerCount >= license.features.vpn_peers %}at-limit{% endif %}">
-          {{ peerCount }} / {{ license.features.vpn_peers }}
-        </span>
-      {% endif %}
-    </h1>
-    <p class="page-sub" data-i18n="peers.subtitle">{{ t('peers.subtitle') }}</p>
+  {% if license.features.vpn_peers is defined and license.features.vpn_peers != -1 %}
+  <div class="page-meta">
+    {{ t('st.feature.vpn_peers') }}
+    <span class="limit-badge {% if peerCount >= license.features.vpn_peers %}at-limit{% endif %}">
+      {{ peerCount }} / {{ license.features.vpn_peers }}
+    </span>
   </div>
+  {% endif %}
   <div class="page-actions">
     <button class="btn btn-primary" id="btn-add-peer">
       <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>

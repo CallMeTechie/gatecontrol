@@ -70,7 +70,11 @@ describe('security.njk', () => {
     for (const id of IDS) assert.ok(html.includes(`id="${id}"`), `#${id}`);
     const js = stripComments(read('public/js/security.js'));
     for (const m of js.matchAll(/\$\('([a-z0-9-]+)'\)/g)) assert.ok(html.includes(`id="${m[1]}"`), `security.js queries #${m[1]}`);
-    assert.match(html, /<div class="page-title">Sicherheits-Check<\/div>/);
+    // the title is the topbar's h1 only — no in-page eyebrow / title / subtitle
+    assert.match(html, /<h1 class="page-crumb">Sicherheits-Check<\/h1>/);
+    assert.equal((html.match(/<h1\b/g) || []).length, 1, 'exactly one h1');
+    assert.doesNotMatch(html, /class="page-(eyebrow|title|sub)"/);
+    assert.match(html, /<p class="page-meta" id="sc-summary"><\/p>/, 'summary line starts empty (security.js fills it)');
     assert.match(html, /id="sc-panel-exposure"[^>]*data-sc-panel="exposure" hidden/, 'exposure tab hidden at first');
     assert.match(html, /id="sc-pending" role="status" hidden/);
     assert.match(html, /class="tab active" id="sc-tab-check" role="tab" aria-selected="true"/);
@@ -86,7 +90,7 @@ describe('security.njk', () => {
 
   it('English rendering and script order (app.js → license-hint.js → security.js)', () => {
     const html = render({ lang: 'en' });
-    assert.match(html, /<div class="page-title">Security check<\/div>/);
+    assert.doesNotMatch(html, /class="page-(eyebrow|title|sub)"/, 'no in-page title block');
     assert.ok(html.includes('Publicly reachable'));
     const srcs = Array.from(html.matchAll(/<script src="([^"?]+)\?v=9\.9\.9"/g)).map((m) => m[1]);
     const app = srcs.indexOf('/js/app.js');
