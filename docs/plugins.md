@@ -330,7 +330,7 @@ module.exports = {
   async quickActions({ user, lang }, gc) {   // optional: quick actions of the apps (see "Quick actions")
     return [{ id: 'light:3', title: 'Wohnzimmer', subtitle: 'Licht', icon: '<svg path d>', kind: 'toggle', state: 'on' }];
   },
-  async runQuickAction({ user, lang, id, via, automation }, gc) {  // optional: runs one of them for that viewer
+  async runQuickAction({ user, lang, id, via, automation, target }, gc) {  // optional: runs one of them for that viewer
     return { ok: true, message: 'Licht eingeschaltet', state: 'on' };
   },
   async appVisible(user, gc) {              // optional: false hides the app tab (ui.app) for this viewer
@@ -360,8 +360,8 @@ module.exports = {
 | `gc.users.list()/get(id)` | `{ id, name, role, avatarUrl, color, colorHex, initials }` of enabled users (`users`) — `avatarUrl` is the profile picture's path `/avatars/<id>.<ext>` or `null`, `color` the favourite colour's palette key (never `null`), `colorHex` its `#RRGGBB`, `initials` one or two letters for the fallback (docs/feature-avatars.md; since 1.168.0) |
 | `gc.kiosk.allow(userId, allowed)` | mark (`true`) or unmark (`false`) a user as a kiosk user (`kiosk`); an administrator, a disabled or an unknown account → `ERR_INVALID` (allowing only; unmarking always works) |
 | `gc.kiosk.list()` | ids of the users this plugin marks (`kiosk`) |
-| `gc.actions.list({ userId, lang })` | the quick actions the *other* plugins offer to that user → `[{ plugin, pluginName, id, title, subtitle, kind, state }]` (`actions`) — see "Running other plugins' quick actions" |
-| `gc.actions.run({ userId, plugin, id, lang })` | run one of them as that user → `{ ok, message, state }` (+ `error` when it did not run; `actions`, ≤ 60 runs per hour) |
+| `gc.actions.list({ userId, lang })` | the quick actions the *other* plugins offer to that user → `[{ plugin, pluginName, id, title, subtitle, icon, kind, state, verbs, targets, device }]` (`actions`) — see "Running other plugins' quick actions" |
+| `gc.actions.run({ userId, plugin, id, lang, state })` | run one of them as that user, `state` (`'on'`/`'off'`, optional) the state a toggle should end in → `{ ok, message, state, unchanged }` (+ `error` when it did not run; `actions`, ≤ 60 runs per hour) |
 | `gc.notify(message, { severity })` | activity log + webhooks, and a push on `plugin:<id>:default` (`notify`, ≤ 30/h or `perHour`) — see "Notifications" |
 | `gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data })` | push on a declared `notifyTopics` topic (+ activity row) → `{ pushed, id }` |
 | `gc.license.status()` | `{ required, licensed, state, expiresAt }` |
@@ -699,9 +699,10 @@ async quickActions({ user, lang }, gc) {
     { id: 'scene:evening', title: 'Abend', kind: 'button', confirm: true },
   ];
 },
-async runQuickAction({ user, lang, id, via, automation, control, value }, gc) {
+async runQuickAction({ user, lang, id, via, automation, control, value, target }, gc) {
   // via: 'app' | 'notification' | '<plugin id>' (gc.actions.run); automation: true only for gc.actions.run
   // control / value: only when the app moved a control of the action's widget (see "Widgets")
+  // target: 'on' | 'off' only for a toggle declaring targets: true (see "Target states")
   return { ok: true, message: 'Licht eingeschaltet', state: 'on' };   // state optional (new toggle state)
 },
 ```
@@ -734,6 +735,9 @@ async runQuickAction({ user, lang, id, via, automation, control, value }, gc) {
     `confirm: true` as well for older apps, which only know `confirm`;
   * `look`: toggles only, how each state looks — see "Devices and looks"
     below (`null` without one, buttons always `null`);
+  * `verbs` / `targets`: toggles only, what setting each state is called and
+    whether the plugin honours an explicit `target` — see "Target states"
+    below (`null` / `false` without them, buttons always `null` / `false`);
   * `device`: optional, the device the action belongs to — see "Devices and
     looks" below (`null` without one or with an invalid one, the action stays);
   * `widget`: optional, see "Widgets" below — anything invalid in it makes the
@@ -741,12 +745,14 @@ async runQuickAction({ user, lang, id, via, automation, control, value }, gc) {
 * **`runQuickAction`** — 10 s, only for an id the plugin currently lists for
   that viewer: the host asks that plugin's `quickActions` first (1.5 s) and
   answers 404 for anything else. The answer is sanitised to
-  `{ ok, message, state, widget }`: `ok` is `false` only when the plugin says
-  `ok: false`, `message` ≤ 120 characters (or `null`), `state` `on`/`off`
-  (or `null`), `widget` like a listed one (or `null`). Every run is an
-  activity log entry `plugin_quick_action` (info, details
-  `{ plugin, action, userId, ok, via, control? }` — no text of the plugin,
-  no value).
+  `{ ok, message, state, widget, unchanged }`: `ok` is `false` only when the
+  plugin says `ok: false`, `message` ≤ 120 characters (or `null`), `state`
+  `on`/`off` (or `null`), `widget` like a listed one (or `null`),
+  `unchanged` `false` (`true` only when the host skipped a run with `state`,
+  see "Target states"). Every run is an activity log entry
+  `plugin_quick_action` (info, details
+  `{ plugin, action, userId, ok, via, control?, state?, unchanged? }` — no
+  text of the plugin, no value).
 * **Who started it** — `runQuickAction` also gets:
   * `via`: `'app'` (shortcut, tile, widget or an app screen — the default),
     `'notification'` (the `quick_action` button of a push, see
@@ -767,17 +773,20 @@ routes (a browser session gets 403 `token_required`), `Cache-Control: no-store`.
 GET  /api/v1/client/actions
   200 { ok: true, actions: [{ plugin: '<plugin id>', pluginName: '<localised name>',
                               id, title, subtitle, icon, kind, state, confirm,
-                              confirmWhen, look, device, widget }] }
+                              confirmWhen, look, verbs, targets, device, widget }] }
 
 POST /api/v1/client/actions/:plugin/:id        (≤ 30 runs per minute and token)
   body { source?: 'app' | 'notification',      (default 'app'; → via of runQuickAction)
-         control?: string, value?: number | string }   (a control of the widget, see "Widgets")
-  200 { ok, message, state, widget }
+         control?: string, value?: number | string,   (a control of the widget, see "Widgets")
+         state?: 'on' | 'off' }                (the state a toggle should end in, see "Target states")
+  200 { ok, message, state, widget, unchanged }
   400 { ok: false, error: 'invalid_source' }   source not 'app' / 'notification'
+  400 { ok: false, error: 'invalid_state' }    state not 'on' / 'off', on a button, or with control
   400 { ok: false, error: 'invalid_control' }  control is not a control of the action's widget
   400 { ok: false, error: 'invalid_value' }    value not acceptable for that control
   403 { ok: false, error: 'no_user' }          token without an owner
   404 { ok: false, error: 'not_found' }        unknown plugin / action
+  409 { ok: false, error: 'state_unknown' }    state for a toggle without targets that lists no state
   502 { ok: false, error: 'plugin_error' }     the plugin failed or answered garbage
   504 { ok: false, error: 'timeout' }          no answer in time
   429 { ok: false, error: 'rate_limited' }
@@ -787,7 +796,8 @@ A toggle's new `state` comes with the run's answer; the apps reload the list
 when they show their shortcuts, tiles or widget.
 
 Every key is always present in the listed actions — `null` (or `false` for
-`confirm`) when the plugin did not send it or sent something invalid.
+`confirm` and `targets`) when the plugin did not send it or sent something
+invalid.
 
 ### Devices and looks
 
@@ -826,6 +836,62 @@ const car = { id: 'v:42', title: 'Familienauto', subtitle: 'Enyaq', icon: CAR_IC
 * `confirmWhen` (toggles only): see above.
 
 Older hosts drop the three fields; older apps ignore them.
+
+### Target states
+
+Running a toggle flips it. A rule ("everyone away → lock the car") or an app
+screen with two buttons needs a fixed state instead — running "lock" must
+never unlock an already locked car. A run can therefore say which state it
+wants: `state: 'on' | 'off'` (client API body, `gc.actions.run`; since
+1.173.0). Two optional fields of a toggle (buttons always get `null` /
+`false`) tell the apps and other plugins how to offer that:
+
+```js
+{ id: 'lock:42', title: 'Schloss', kind: 'toggle', state: 'on',
+  verbs: { on: 'Verriegeln', off: 'Entriegeln' },   // the command that sets each state
+  targets: true }                                    // runQuickAction honours `target`
+
+async runQuickAction({ user, lang, id, target }, gc) {
+  const car = await this.car(id);
+  const lock = target ? target === 'on' : !car.locked;   // a target is set, never flipped
+  await (lock ? car.lock() : car.unlock());              // idempotent: locked + 'on' → lock again
+  return { ok: true, state: lock ? 'on' : 'off' };
+},
+```
+
+* `verbs`: `{ on, off }` — what setting each state is called as a command
+  ("Verriegeln" / "Entriegeln", "Einschalten" / "Ausschalten"), shown by the
+  apps on the two target buttons and by rules ("Elroq – Schloss:
+  Verriegeln"). Each a string, trimmed, 1–20 characters, no control
+  characters; both are required — anything else makes `verbs` `null`. Answer
+  in the viewer's `lang`.
+* `targets`: `true` → the plugin honours an explicit `target` in
+  `runQuickAction`: it sets exactly that state (also when the device is
+  already in it — e.g. send the lock command again) and never flips.
+  Anything but `true` is `false`.
+* **A run with `state`** (only for a toggle — on a button, with `control` or
+  with any other value: 400 `invalid_state`, nothing runs):
+  * the action has `targets: true` → `runQuickAction` gets
+    `target: 'on' | 'off'` next to `id`, `via`, `automation` … and answers as
+    usual (`unchanged: false`);
+  * the action has no `targets` — the host's fallback for plugins that do
+    not know targets, by the state the plugin lists at that moment:
+    * listed `state` is the requested one → the plugin is **not** asked; 200
+      `{ ok: true, message: null, state, widget, unchanged: true }` (`widget`
+      the listed one);
+    * listed `state` is the other one → the plain run (a flip reaches the
+      target), no `target` in the payload, `unchanged: false`;
+    * listed `state` `null` (unknown) → 409 `{ ok: false, error:
+      'state_unknown' }`, nothing runs.
+* A run without `state` (or `state: null`) is the plain run — a toggle flips,
+  no `target` key in the payload. `unchanged` is `false` in every answer the
+  plugin gave.
+* Rate limit, activity log (`state` and `unchanged: true` in the details)
+  and `via` / `automation` as for any run; a refused run (400) is not logged,
+  a 409 is (`ok: false`).
+
+Older hosts drop `verbs` / `targets` and ignore `state` (a plain flip) —
+plugins and apps that rely on target states require 1.173.0.
 
 ### Widgets
 
@@ -986,14 +1052,21 @@ switches on a smart home scene when the first person comes home.
 ```js
 const actions = await gc.actions.list({ userId: 7, lang: 'de' });
 // [{ plugin: 'gatecontrol-smarthome', pluginName: 'Smart Home', id: 'scene:evening',
-//    title: 'Abend', subtitle: null, kind: 'button', state: null }, …]
+//    title: 'Abend', subtitle: null, icon: null, kind: 'button', state: null, verbs: null,
+//    targets: false, device: null }, …]
 const r = await gc.actions.run({ userId: 7, plugin: 'gatecontrol-smarthome', id: 'scene:evening' });
-// { ok: true, message: 'Szene gestartet', state: null }
+// { ok: true, message: 'Szene gestartet', state: null, unchanged: false }
+await gc.actions.run({ userId: 7, plugin: 'gatecontrol-fahrzeuge', id: 'lock:42', state: 'on' });
+// a toggle into a fixed state (see "Target states"): { ok: true, message: null, state: 'on', unchanged: true }
 ```
 
 * **Which actions**: exactly what the apps get for that user (the same
-  plugins, hooks, timeouts and sanitising as "Quick actions" above), without
-  `icon` and `confirm`, and never the calling plugin's own actions.
+  plugins, hooks, timeouts and sanitising as "Quick actions" above) as
+  `{ plugin, pluginName, id, title, subtitle, icon, kind, state, verbs,
+  targets, device }` — `icon` and `device` exactly as in the apps' list (an
+  SVG path or `null`; `{ id, title, subtitle, icon }` or `null`, see
+  "Devices and looks"), without `confirm`, `confirmWhen`, `look` and
+  `widget` — and never the calling plugin's own actions.
 * **As whom**: the target plugin's `quickActions` / `runQuickAction` get the
   viewer `{ id, name, role, portal: true, loggedIn: true, automation: true,
   via: '<calling plugin id>' }` (no `app` key) — `runQuickAction` also with
@@ -1007,20 +1080,27 @@ const r = await gc.actions.run({ userId: 7, plugin: 'gatecontrol-smarthome', id:
   at every call — a disabled, deleted or unknown account → `ERR_INVALID`
   "unknown or disabled user"); `lang` `de`/`en` or absent (then the user's
   language setting, else `de`); `plugin` a plugin id other than the caller's
-  own; `id` `[A-Za-z0-9:._-]{1,64}`.
-* **Result** of `run`: the sanitised `{ ok, message, state }` of the target
-  plugin (`ok` `false` only when it says so). When the action did not run the
-  call still resolves, with `{ ok: false, message: null, state: null, error }`:
+  own; `id` `[A-Za-z0-9:._-]{1,64}`. `state` (optional): `'on'` / `'off'`, the
+  state a toggle should end in — handled exactly like the client API's
+  `state` (see "Target states"); `null` / absent = the plain run.
+* **Result** of `run`: the sanitised `{ ok, message, state, unchanged }` of
+  the target plugin (`ok` `false` only when it says so; `unchanged` `true`
+  only when the host skipped a run with `state` because the toggle already
+  was in that state). When the action did not run the call still resolves,
+  with `{ ok: false, message: null, state: null, unchanged: false, error }`:
   `not_found` (unknown, disabled or not running plugin, a plugin without
-  `permissions.portal`, an id it does not list for that user), `plugin_error`
-  (it failed or answered garbage) or `timeout`.
+  `permissions.portal`, an id it does not list for that user),
+  `invalid_state` (`state` not `'on'` / `'off'`, or on a button),
+  `state_unknown` (`state` for a toggle without `targets` that lists no
+  state), `plugin_error` (it failed or answered garbage) or `timeout`.
 * **Limits**: 60 runs per hour per calling plugin (`ERR_RATE_LIMIT` beyond;
   calls refused with `ERR_*` are not counted, every other run is — also one
   that ends in `not_found`).
   Listing is not counted.
 * **Activity log**: every run is an entry `plugin_automation` (info; warning
   when not `ok`) with details `{ plugin: '<caller>', target, action, userId,
-  ok, error? }` — ids and codes only, no text of either plugin.
+  ok, state?, unchanged?, error? }` — ids and codes only, no text of either
+  plugin (`state` only when it is `'on'` / `'off'`).
 * **Errors**: `ERR_ACTIONS_DENIED` (no `permissions.actions`), `ERR_INVALID`,
   `ERR_RATE_LIMIT`.
 

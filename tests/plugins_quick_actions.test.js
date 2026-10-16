@@ -89,8 +89,8 @@ describe('GET /api/v1/client/actions', () => {
     const mine = r.body.actions.filter((a) => a.plugin === 'hello');
     assert.equal(mine.length, 16, 'at most 16 per plugin');
     const by = (id) => mine.find((a) => a.id === id);
-    assert.deepEqual(by('light:3'), { plugin: 'hello', pluginName: 'Hallo Welt', id: 'light:3', title: 'Wohnzimmer', subtitle: 'Licht', icon: 'M4 12h16', kind: 'toggle', state: 'on', confirm: true, confirmWhen: null, look: null, device: null, widget: null });
-    assert.deepEqual(by('scene.evening_1-a'), { plugin: 'hello', pluginName: 'Hallo Welt', id: 'scene.evening_1-a', title: 'Abend', subtitle: null, icon: null, kind: 'button', state: null, confirm: false, confirmWhen: null, look: null, device: null, widget: null });
+    assert.deepEqual(by('light:3'), { plugin: 'hello', pluginName: 'Hallo Welt', id: 'light:3', title: 'Wohnzimmer', subtitle: 'Licht', icon: 'M4 12h16', kind: 'toggle', state: 'on', confirm: true, confirmWhen: null, look: null, verbs: null, targets: false, device: null, widget: null });
+    assert.deepEqual(by('scene.evening_1-a'), { plugin: 'hello', pluginName: 'Hallo Welt', id: 'scene.evening_1-a', title: 'Abend', subtitle: null, icon: null, kind: 'button', state: null, confirm: false, confirmWhen: null, look: null, verbs: null, targets: false, device: null, widget: null });
     assert.deepEqual([by('heater').state, by('heater').icon], [null, null]);
     assert.deepEqual([by('ctl').title, by('ctl').subtitle.length], ['A B C', 60]);
     assert.deepEqual([by('long').title.length, by('long').icon.length], [40, 1999]);
@@ -145,7 +145,7 @@ describe('POST /api/v1/client/actions/:plugin/:id', () => {
   it('runs a listed action for the token owner and answers the sanitised result', async () => {
     await kv('hello', 'quick-result', null);
     const r = await runAction(annaDev, 'hello', 'light:3').expect(200);
-    assert.deepEqual(r.body, { ok: true, message: 'ran light:3', state: 'on', widget: null });
+    assert.deepEqual(r.body, { ok: true, message: 'ran light:3', state: 'on', widget: null, unchanged: false });
     const last = await kvGet('hello', 'quick-last');
     assert.deepEqual(last, { id: 'light:3', user: { id: anna, name: 'qa-anna', role: 'user', portal: true, loggedIn: true, app: true }, lang: 'de', via: 'app', automation: false });
     const row = lastActivity();
@@ -154,7 +154,7 @@ describe('POST /api/v1/client/actions/:plugin/:id', () => {
 
     await kv('hello', 'quick-result', { ok: false, message: 'Gerät\u0007 ' + 'x'.repeat(300), state: 'dim', extra: 'dropped' });
     const bad = await runAction(annaDev, 'hello', 'scene.evening').expect(200);
-    assert.deepEqual(Object.keys(bad.body).sort(), ['message', 'ok', 'state', 'widget']);
+    assert.deepEqual(Object.keys(bad.body).sort(), ['message', 'ok', 'state', 'unchanged', 'widget']);
     assert.equal(bad.body.ok, false);
     assert.equal(bad.body.state, null);
     assert.equal(bad.body.widget, null);
@@ -361,7 +361,7 @@ describe('widgets in the list and control runs', () => {
     assert.equal(by('broken').widget, null, 'invalid widget → null, the action stays');
     assert.equal(by('broken').title, 'Kaputt');
     assert.equal(by('plain').widget, null);
-    assert.deepEqual(Object.keys(by('plain')).sort(), ['confirm', 'confirmWhen', 'device', 'icon', 'id', 'kind', 'look', 'plugin', 'pluginName', 'state', 'subtitle', 'title', 'widget']);
+    assert.deepEqual(Object.keys(by('plain')).sort(), ['confirm', 'confirmWhen', 'device', 'icon', 'id', 'kind', 'look', 'plugin', 'pluginName', 'state', 'subtitle', 'targets', 'title', 'verbs', 'widget']);
   });
 
   it('a control run reaches the hook with control and value (validated) and answers the sanitised widget', async () => {
@@ -370,6 +370,7 @@ describe('widgets in the list and control runs', () => {
     assert.deepEqual(r.body, {
       ok: true, message: 'Ziel 23', state: 'on',
       widget: W({ value: 23, unit: '°C', status: 'S'.repeat(60), state: 'on', controls: [{ id: 'target', kind: 'stepper', label: 'Ziel', value: 23, min: 16, max: 30, step: 0.5, unit: '°C' }] }),
+      unchanged: false,
     });
     const last = await kvGet('hello', 'quick-last');
     assert.deepEqual(last, { id: 'ac:7', user: { id: anna, name: 'qa-anna', role: 'user', portal: true, loggedIn: true, app: true }, lang: 'de', via: 'app', automation: false, control: 'target', value: 23 });
@@ -396,7 +397,7 @@ describe('widgets in the list and control runs', () => {
   it('a plain run has neither control nor value in the hook payload; the answer\'s widget is sanitised or null', async () => {
     await kv('hello', 'quick-result', { ok: true, widget: AC_WIDGET });
     const r = await runCtl('ac:7', {}).expect(200);
-    assert.deepEqual(r.body, { ok: true, message: null, state: null, widget: AC_SANITISED });
+    assert.deepEqual(r.body, { ok: true, message: null, state: null, widget: AC_SANITISED, unchanged: false });
     const last = await kvGet('hello', 'quick-last');
     assert.ok(!('control' in last) && !('value' in last), 'no control / value keys in the payload');
     assert.equal(JSON.parse(lastActivity().details).control, undefined, 'no control in the log');
@@ -449,7 +450,7 @@ describe('widgets in the list and control runs', () => {
     const user = { id: anna, name: 'qa-anna', role: 'user', portal: true, loggedIn: true, app: true };
     await kv('hello', 'quick-result', { ok: true, widget: { value: 'x' } });
     const r = await quickActions.run('hello', 'ac:7', user, 'de', { control: 'mode', value: 'auto' });
-    assert.deepEqual(r, { status: 200, body: { ok: true, message: null, state: null, widget: W({ value: 'x' }) } });
+    assert.deepEqual(r, { status: 200, body: { ok: true, message: null, state: null, widget: W({ value: 'x' }), unchanged: false } });
     assert.deepEqual([(await kvGet('hello', 'quick-last')).control, (await kvGet('hello', 'quick-last')).value], ['mode', 'auto']);
     assert.deepEqual(await quickActions.run('hello', 'ac:7', user, 'de', { control: 'mode', value: 'nope' }), { status: 400, body: { ok: false, error: 'invalid_value' } });
     assert.deepEqual(await quickActions.run('hello', 'ac:7', user, 'de', { control: 'x', value: 1 }), { status: 400, body: { ok: false, error: 'invalid_control' } });
@@ -508,9 +509,30 @@ describe('devices, looks and confirmWhen (sanitize)', () => {
     assert.equal(button({ confirmWhen: 'off', confirm: true }).confirm, true);
   });
 
+  it('verbs (toggles only): { on, off }, each trimmed 1–20 characters without control characters, both required, else null', () => {
+    assert.deepEqual(toggle({ verbs: { on: 'Verriegeln', off: 'Entriegeln' } }).verbs, { on: 'Verriegeln', off: 'Entriegeln' });
+    assert.deepEqual(toggle({ verbs: { on: '  Einschalten ', off: 'Ausschalten  ', extra: 'x' } }).verbs, { on: 'Einschalten', off: 'Ausschalten' }, 'trimmed, extra keys dropped');
+    assert.deepEqual(toggle({ verbs: { on: 'x'.repeat(20), off: 'y' } }).verbs, { on: 'x'.repeat(20), off: 'y' }, '20 characters and 1 character');
+    assert.deepEqual(toggle({ verbs: { on: ' ' + 'x'.repeat(20) + ' ', off: 'Aus' } }).verbs, { on: 'x'.repeat(20), off: 'Aus' }, 'the length counts after trimming');
+    for (const verbs of [
+      undefined, null, 'Verriegeln', ['Verriegeln', 'Entriegeln'], 42, {},
+      { on: 'Verriegeln' }, { off: 'Entriegeln' }, { on: 'Verriegeln', off: null }, { on: 7, off: 'Aus' },
+      { on: 'x'.repeat(21), off: 'Aus' }, { on: 'An', off: 'y'.repeat(21) },
+      { on: '', off: 'Aus' }, { on: '   ', off: 'Aus' }, { on: 'An\u0000', off: 'Aus' }, { on: 'An', off: 'A\u0007us' }, { on: 'An', off: 'Aus\u007f' }, { on: 'An', off: 'Aus\t' },
+    ]) assert.equal(toggle({ verbs }).verbs, null, JSON.stringify(verbs));
+    assert.equal(button({ verbs: { on: 'An', off: 'Aus' } }).verbs, null, 'buttons: always null');
+  });
+
+  it('targets (toggles only): true only for true, else false', () => {
+    assert.equal(toggle({ targets: true }).targets, true);
+    for (const v of [undefined, null, false, 'true', 1, {}, ['x']]) assert.equal(toggle({ targets: v }).targets, false, JSON.stringify(v));
+    assert.equal(button({ targets: true }).targets, false, 'buttons: always false');
+    assert.equal(quickActions.sanitizeVerbs({ on: 'An', off: 'Aus' }).on, 'An');
+  });
+
   it('every action has every key', () => {
-    assert.deepEqual(Object.keys(button()), ['id', 'title', 'subtitle', 'icon', 'kind', 'state', 'confirm', 'confirmWhen', 'look', 'device', 'widget']);
-    assert.deepEqual(button(), { id: 'b', title: 'Knopf', subtitle: null, icon: null, kind: 'button', state: null, confirm: false, confirmWhen: null, look: null, device: null, widget: null });
+    assert.deepEqual(Object.keys(button()), ['id', 'title', 'subtitle', 'icon', 'kind', 'state', 'confirm', 'confirmWhen', 'look', 'verbs', 'targets', 'device', 'widget']);
+    assert.deepEqual(button(), { id: 'b', title: 'Knopf', subtitle: null, icon: null, kind: 'button', state: null, confirm: false, confirmWhen: null, look: null, verbs: null, targets: false, device: null, widget: null });
   });
 });
 
@@ -612,7 +634,7 @@ describe('devices and widget readings through the client API', () => {
     const by = (id) => r.body.actions.find((a) => a.plugin === 'hello' && a.id === id);
     assert.deepEqual(by('lock:42'), {
       plugin: 'hello', pluginName: 'Hallo Welt', id: 'lock:42', title: 'Verriegelt', subtitle: null, icon: null, kind: 'toggle', state: 'on',
-      confirm: true, confirmWhen: 'off', look: LOOK, device: CAR, widget: null,
+      confirm: true, confirmWhen: 'off', look: LOOK, verbs: null, targets: false, device: CAR, widget: null,
     });
     assert.deepEqual(by('climate:42').device, CAR);
     assert.deepEqual(by('climate:42').widget, W({
@@ -632,10 +654,140 @@ describe('devices and widget readings through the client API', () => {
     assert.equal(r.body.widget.label.length, 24);
     assert.equal(r.body.widget.power, true, 'anything but false is true');
     assert.deepEqual(r.body.widget.readings.map((x) => x.id), ['range', 'lock']);
-    assert.deepEqual(Object.keys(r.body).sort(), ['message', 'ok', 'state', 'widget']);
+    assert.deepEqual(Object.keys(r.body).sort(), ['message', 'ok', 'state', 'unchanged', 'widget']);
     await kv('hello', 'quick-result', { ok: true, widget: { readings: 'x' } });
     assert.deepEqual((await run('lock:42').expect(200)).body.widget, W(), 'readings not a list → []');
     await kv('hello', 'quick-result', null);
+  });
+});
+
+describe('target states: runs with state (client API)', () => {
+  const VERBS = { on: 'Verriegeln', off: 'Entriegeln' };
+  const LAMP_WIDGET = { value: 'An', state: 'on', controls: [{ id: 'bri', kind: 'slider', value: 50, min: 1, max: 100, step: 1 }] };
+  const ACTIONS = [
+    { id: 'lock:1', title: 'Schloss', kind: 'toggle', state: 'on', targets: true, verbs: VERBS },   // honours target
+    { id: 'lock:2', title: 'Schloss 2', kind: 'toggle', targets: true },                            // targets, state unknown
+    { id: 'lamp:on', title: 'Lampe', kind: 'toggle', state: 'on', widget: LAMP_WIDGET },             // no targets, on
+    { id: 'lamp:off', title: 'Lampe 2', kind: 'toggle', state: 'off' },                             // no targets, off
+    { id: 'lamp:unknown', title: 'Lampe 3', kind: 'toggle' },                                       // no targets, no state
+    { id: 'scene', title: 'Szene', targets: true, verbs: VERBS },                                   // a button
+  ];
+  // own devices of anna: 30 runs per minute and token (400s count)
+  let devA, devB;
+  const runS = (id, body, dev = devA) => supertest(app).post(`${LIST}/hello/${encodeURIComponent(id)}`).set('X-API-Token', dev.raw).send(body);
+  before(async () => {
+    devA = H.makeDevice(anna, { name: 'qa-state-a' });
+    devB = H.makeDevice(anna, { name: 'qa-state-b' });
+    await kv('hello', 'quick-actions', ACTIONS);
+    await kv('hello', 'quick-mode', null);
+    await kv('hello', 'quick-run-mode', null);
+    await kv('hello', 'quick-result', null);
+  });
+  after(async () => {
+    await kv('hello', 'quick-result', null);
+    await kv('hello', 'quick-actions', [{ id: 'light:3', title: 'Licht', kind: 'toggle', state: 'off' }, { id: 'scene.evening', title: 'Abend' }]);
+  });
+
+  it('GET lists verbs and targets (null / false when not declared, always for buttons)', async () => {
+    const r = await list(devA).expect(200);
+    const by = (id) => r.body.actions.find((a) => a.plugin === 'hello' && a.id === id);
+    assert.deepEqual([by('lock:1').verbs, by('lock:1').targets], [VERBS, true]);
+    assert.deepEqual([by('lock:2').verbs, by('lock:2').targets, by('lock:2').state], [null, true, null]);
+    assert.deepEqual([by('lamp:on').verbs, by('lamp:on').targets], [null, false]);
+    assert.deepEqual([by('scene').verbs, by('scene').targets], [null, false]);
+  });
+
+  it('targets: true → the hook gets target (also when already in that state, also with an unknown state) and answers as usual', async () => {
+    await kv('hello', 'quick-result', { ok: true, message: 'Verriegelt', state: 'on' });
+    const r = await runS('lock:1', { state: 'on' }).expect(200);
+    assert.deepEqual(r.body, { ok: true, message: 'Verriegelt', state: 'on', widget: null, unchanged: false });
+    const last = await kvGet('hello', 'quick-last');
+    assert.deepEqual(last, { id: 'lock:1', user: { id: anna, name: 'qa-anna', role: 'user', portal: true, loggedIn: true, app: true }, lang: 'de', via: 'app', automation: false, target: 'on' });
+    assert.deepEqual(JSON.parse(lastActivity().details), { plugin: 'hello', action: 'lock:1', userId: anna, ok: true, via: 'app', state: 'on' });
+    await kv('hello', 'quick-result', null);
+    await runS('lock:1', { state: 'off', source: 'notification' }).expect(200);
+    const l2 = await kvGet('hello', 'quick-last');
+    assert.deepEqual([l2.target, l2.via], ['off', 'notification']);
+    await runS('lock:2', { state: 'off' }).expect(200);
+    assert.equal((await kvGet('hello', 'quick-last')).target, 'off', 'a targets toggle needs no known state');
+  });
+
+  it('targets: false, already in the requested state → no hook call, 200 unchanged with the listed state and widget', async () => {
+    await kv('hello', 'quick-last', null);
+    const r = await runS('lamp:on', { state: 'on' }).expect(200);
+    assert.deepEqual(r.body, {
+      ok: true, message: null, state: 'on', unchanged: true,
+      widget: W({ value: 'An', state: 'on', controls: [{ id: 'bri', kind: 'slider', label: null, value: 50, min: 1, max: 100, step: 1, unit: null }] }),
+    });
+    assert.deepEqual((await runS('lamp:off', { state: 'off' }).expect(200)).body, { ok: true, message: null, state: 'off', widget: null, unchanged: true });
+    assert.equal(await kvGet('hello', 'quick-last'), null, 'the plugin was not asked to run');
+    assert.deepEqual(JSON.parse(lastActivity().details), { plugin: 'hello', action: 'lamp:off', userId: anna, ok: true, via: 'app', state: 'off', unchanged: true });
+  });
+
+  it('targets: false, in the other state → the plain run (a flip), no target in the payload', async () => {
+    await kv('hello', 'quick-result', { ok: true, message: 'aus', state: 'off' });
+    const r = await runS('lamp:on', { state: 'off' }).expect(200);
+    assert.deepEqual(r.body, { ok: true, message: 'aus', state: 'off', widget: null, unchanged: false });
+    const last = await kvGet('hello', 'quick-last');
+    assert.equal(last.id, 'lamp:on');
+    assert.ok(!('target' in last), 'no target for a plugin that does not declare targets');
+    await kv('hello', 'quick-result', null);
+    await kv('hello', 'quick-last', null);
+    await runS('lamp:off', { state: 'on' }).expect(200);
+    assert.equal((await kvGet('hello', 'quick-last')).id, 'lamp:off');
+  });
+
+  it('targets: false, no listed state → 409 state_unknown; nothing runs, the refusal is logged', async () => {
+    await kv('hello', 'quick-last', null);
+    for (const want of ['on', 'off']) {
+      const r = await runS('lamp:unknown', { state: want });
+      assert.equal(r.status, 409, want);
+      assert.deepEqual(r.body, { ok: false, error: 'state_unknown' });
+    }
+    assert.equal(await kvGet('hello', 'quick-last'), null, 'nothing ran');
+    assert.deepEqual(JSON.parse(lastActivity().details), { plugin: 'hello', action: 'lamp:unknown', userId: anna, ok: false, via: 'app', state: 'off' });
+  });
+
+  it('400 invalid_state: a bad value, state on a button, state with control; nothing runs, nothing is logged', async () => {
+    await kv('hello', 'quick-last', null);
+    const before = lastActivity().id;
+    for (const [id, body] of [
+      ['lock:1', { state: 'ON' }], ['lock:1', { state: '' }], ['lock:1', { state: 'toggle' }], ['lock:1', { state: 1 }], ['lock:1', { state: true }],
+      ['lock:1', { state: false }], ['lock:1', { state: ['on'] }], ['lock:1', { state: { on: true } }], ['lamp:on', { state: 'dim' }],
+      ['scene', { state: 'on' }], ['scene', { state: 'off' }],
+      ['lamp:on', { state: 'on', control: 'bri', value: 20 }], ['lamp:on', { state: 'off', control: 'bri', value: 20 }],
+    ]) {
+      const r = await runS(id, body, devB);
+      assert.equal(r.status, 400, `${id} ${JSON.stringify(body)}`);
+      assert.deepEqual(r.body, { ok: false, error: 'invalid_state' }, `${id} ${JSON.stringify(body)}`);
+    }
+    assert.equal(await kvGet('hello', 'quick-last'), null, 'nothing ran');
+    assert.equal(lastActivity().id, before, 'nothing logged');
+    assert.deepEqual((await runS('lamp:9', { state: 'nope' }, devB).expect(404)).body, { ok: false, error: 'not_found' }, '404 before 400');
+  });
+
+  it('without state (or state: null) a toggle runs as before; every answer that reached the plugin is unchanged: false', async () => {
+    await kv('hello', 'quick-result', null);
+    for (const body of [{}, { state: null }]) {
+      await kv('hello', 'quick-last', null);
+      const r = await runS('lamp:on', body).expect(200);
+      assert.deepEqual(r.body, { ok: true, message: 'ran lamp:on', state: 'on', widget: null, unchanged: false });
+      assert.ok(!('target' in await kvGet('hello', 'quick-last')));
+    }
+    await runS('lock:1', {}).expect(200);
+    assert.ok(!('target' in await kvGet('hello', 'quick-last')), 'a targets toggle without state gets no target');
+    assert.equal(JSON.parse(lastActivity().details).state, undefined);
+  });
+
+  it('hook level: run() with opts.state', async () => {
+    const user = { id: anna, name: 'qa-anna', role: 'user', portal: true, loggedIn: true, app: true };
+    await kv('hello', 'quick-last', null);
+    assert.deepEqual(await quickActions.run('hello', 'lamp:off', user, 'de', { state: 'off' }), { status: 200, body: { ok: true, message: null, state: 'off', widget: null, unchanged: true } });
+    assert.deepEqual(await quickActions.run('hello', 'lamp:unknown', user, 'de', { state: 'on' }), { status: 409, body: { ok: false, error: 'state_unknown' } });
+    assert.deepEqual(await quickActions.run('hello', 'scene', user, 'de', { state: 'on' }), { status: 400, body: { ok: false, error: 'invalid_state' } });
+    assert.equal(await kvGet('hello', 'quick-last'), null);
+    const r = await quickActions.run('hello', 'lock:1', user, 'de', { state: 'off' });
+    assert.deepEqual([r.status, r.body.unchanged, (await kvGet('hello', 'quick-last')).target], [200, false, 'off']);
   });
 });
 

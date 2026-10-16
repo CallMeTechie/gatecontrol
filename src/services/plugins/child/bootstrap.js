@@ -227,12 +227,13 @@ function makeGc(info) {
     }),
     /**
      * permissions.actions: quick actions of the other plugins for one user —
-     * list({ userId, lang }) → [{ plugin, pluginName, id, title, subtitle, kind, state }];
-     * run({ userId, plugin, id, lang }) → { ok, message, state } (runs as that user)
+     * list({ userId, lang }) → [{ plugin, pluginName, id, title, subtitle, icon, kind, state, verbs, targets, device }];
+     * run({ userId, plugin, id, lang, state? }) → { ok, message, state, unchanged } (runs as that user;
+     * state 'on'|'off': the state a toggle should end in)
      */
     actions: Object.freeze({
       list: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('actions.list', { userId: o.userId, lang: o.lang }); },
-      run: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('actions.run', { userId: o.userId, plugin: o.plugin, id: o.id, lang: o.lang }); },
+      run: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('actions.run', { userId: o.userId, plugin: o.plugin, id: o.id, lang: o.lang, state: o.state }); },
     }),
     /** notify(message, { severity }) or notify({ topic, title, body, priority, users, collapseKey, ttl, data, image }) */
     notify: (message, opts) => (message && typeof message === 'object' && !Array.isArray(message)

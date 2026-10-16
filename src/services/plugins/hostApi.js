@@ -355,12 +355,14 @@ function notify(plugin, args) {
 
 // ─── Plugin-to-plugin actions (permissions.actions) ────
 //
-// gc.actions.list({ userId, lang }) / gc.actions.run({ userId, plugin, id, lang }):
+// gc.actions.list({ userId, lang }) / gc.actions.run({ userId, plugin, id, lang, state? }):
 // the quick actions (quickActions.js) other plugins offer to one user, run as
 // that user like the apps do — the target plugin gets the viewer
 // { id, name, role, portal: true, loggedIn: true, automation: true, via: '<caller id>' }
 // and decides itself. The user must exist and be enabled; the caller is never
-// asked or run itself. 60 runs per hour per calling plugin, an activity row
+// asked or run itself. `state` ('on'|'off') is the state a toggle should end
+// in, handled by quickActions.run like for the apps (`target` / the host's
+// fallback, `unchanged`). 60 runs per hour per calling plugin, an activity row
 // `plugin_automation` per run (ids and ok only — no text of either plugin).
 
 const ACTIONS_PER_HOUR = 60;
@@ -395,15 +397,21 @@ function actionsBudget(plugin) {
   actionsWindow.set(plugin.id, w);
 }
 
-/** gc.actions.list → [{ plugin, pluginName, id, title, subtitle, kind, state }] of every other plugin. */
+/** gc.actions.list → [{ plugin, pluginName, id, title, subtitle, icon, kind, state, verbs, targets, device }] of every other plugin. */
 async function actionsList(plugin, args) {
   needActions(plugin);
   const { user, lang } = automationViewer(plugin, args);
   const all = await require('./quickActions').list(user, lang, { exclude: plugin.id });
-  return all.map((a) => ({ plugin: a.plugin, pluginName: a.pluginName, id: a.id, title: a.title, subtitle: a.subtitle, kind: a.kind, state: a.state }));
+  return all.map((a) => ({
+    plugin: a.plugin, pluginName: a.pluginName, id: a.id, title: a.title, subtitle: a.subtitle, icon: a.icon, kind: a.kind, state: a.state,
+    verbs: a.verbs, targets: a.targets, device: a.device,
+  }));
 }
 
-/** gc.actions.run → { ok, message, state } (+ error 'not_found'|'plugin_error'|'timeout' when it did not run). */
+/**
+ * gc.actions.run → { ok, message, state, unchanged } (+ error 'not_found'|'invalid_state'|
+ * 'state_unknown'|'plugin_error'|'timeout' when it did not run).
+ */
 async function actionsRun(plugin, args) {
   needActions(plugin);
   const quickActions = require('./quickActions');
@@ -415,16 +423,22 @@ async function actionsRun(plugin, args) {
   need(typeof actionId === 'string' && quickActions.ACTION_ID_RE.test(actionId), 'ERR_INVALID', 'invalid action id');
   const { user, lang } = automationViewer(plugin, args);
   actionsBudget(plugin);
+  const want = args.state;
   let r;
-  try { r = await quickActions.run(target, actionId, user, lang); } catch { r = { status: 502, body: { ok: false, error: 'plugin_error' } }; }
+  try { r = await quickActions.run(target, actionId, user, lang, { state: want }); } catch { r = { status: 502, body: { ok: false, error: 'plugin_error' } }; }
   const ok = r.status === 200 && r.body.ok === true;
   const out = r.status === 200
-    ? { ok: r.body.ok, message: r.body.message, state: r.body.state }
-    : { ok: false, message: null, state: null, error: r.body.error };
+    ? { ok: r.body.ok, message: r.body.message, state: r.body.state, unchanged: r.body.unchanged === true }
+    : { ok: false, message: null, state: null, unchanged: false, error: r.body.error };
   try {
     require('../activity').log('plugin_automation', `Plugin "${plugin.id}" ran quick action "${actionId}" of plugin "${target}" (${ok ? 'ok' : 'failed'})`, {
       source: 'plugin', severity: ok ? 'info' : 'warning',
-      details: { plugin: plugin.id, target, action: actionId, userId: user.id, ok, ...(out.error ? { error: out.error } : {}) },
+      details: {
+        plugin: plugin.id, target, action: actionId, userId: user.id, ok,
+        ...(quickActions.TOGGLE_STATES.has(want) ? { state: want } : {}),
+        ...(out.unchanged ? { unchanged: true } : {}),
+        ...(out.error ? { error: out.error } : {}),
+      },
     });
   } catch { /* the run happened; the log is best-effort */ }
   return out;

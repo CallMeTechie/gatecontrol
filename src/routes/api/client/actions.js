@@ -7,14 +7,17 @@
  *   GET  /api/v1/client/actions
  *     200 { ok: true, actions: [{ plugin, pluginName, id, title, subtitle,
  *                                 icon, kind, state, confirm, confirmWhen,
- *                                 look, device, widget }] }
+ *                                 look, verbs, targets, device, widget }] }
  *   POST /api/v1/client/actions/:plugin/:id
- *     body { source?: 'app' | 'notification', control?: string, value?: number | string }
- *     200 { ok, message, state, widget }
+ *     body { source?: 'app' | 'notification', control?: string, value?: number | string,
+ *            state?: 'on' | 'off' }
+ *     200 { ok, message, state, widget, unchanged }
  *     400 { ok: false, error: 'invalid_source' }  source not one of those
+ *     400 { ok: false, error: 'invalid_state' }   state not 'on'/'off', with control, or on a button
  *     400 { ok: false, error: 'invalid_control' } control: not a control of the action's widget
  *     400 { ok: false, error: 'invalid_value' }   value not acceptable for that control
  *     404 { ok: false, error: 'not_found' }       unknown plugin / action
+ *     409 { ok: false, error: 'state_unknown' }   state for a toggle without `targets` that lists no state
  *     403 { ok: false, error: 'no_user' }         token without an owner
  *     502 { ok: false, error: 'plugin_error' }    the plugin failed
  *     504 { ok: false, error: 'timeout' }         no answer within 10 s
@@ -31,7 +34,12 @@
  * action's widget (docs/plugins.md "Widgets") — the control must be one the
  * plugin currently lists for that action and the value acceptable for it
  * (a finite number within min..max, or one of the option ids); both reach
- * the hook validated. Language: ?lang=de|en, else the owner's language
+ * the hook validated. `state`: the state a toggle should end in — a toggle
+ * declaring `targets: true` gets it as `target`; for any other toggle the
+ * run is skipped (200 with `unchanged: true`, the listed state and widget)
+ * when the listed state already is the requested one, runs as a flip when it
+ * is the other one, and is refused (409) when the plugin lists no state;
+ * `unchanged` is false for every run that reached the plugin. Language: ?lang=de|en, else the owner's language
  * setting, else Accept-Language, else 'de'.
  */
 
@@ -71,6 +79,7 @@ router.post('/actions/:plugin/:id', clientActionLimiter, async (req, res) => {
   }
   const opts = { via: source };
   if (body.control != null) { opts.control = body.control; opts.value = body.value; }
+  if (body.state != null) opts.state = body.state;
   let r;
   try {
     r = await quickActions.run(pluginId, actionId, v.user, langOf(req, v), opts);
@@ -80,13 +89,16 @@ router.post('/actions/:plugin/:id', clientActionLimiter, async (req, res) => {
   }
   if (r.status !== 404 && r.status !== 400) {
     // only ids the plugin listed reach this point (validated, no free text of
-    // the plugin); of a control run the control's id, never its value
+    // the plugin); of a control run the control's id, never its value; the
+    // requested state ('on'/'off' only) and whether the run was skipped
     try {
       activity.log('plugin_quick_action', `Quick action "${actionId}" of plugin "${pluginId}" (${r.status === 200 && r.body.ok ? 'ok' : 'failed'})`, {
         source: 'api', severity: 'info', ipAddress: req.ip,
         details: {
           plugin: pluginId, action: actionId, userId: v.user.id, ok: r.status === 200 && r.body.ok === true, via: source,
           ...(opts.control !== undefined ? { control: String(opts.control) } : {}),
+          ...(quickActions.TOGGLE_STATES.has(opts.state) ? { state: opts.state } : {}),
+          ...(r.status === 200 && r.body.unchanged === true ? { unchanged: true } : {}),
         },
       });
     } catch (err) { logger.debug({ err: err.message }, 'quick action: activity log failed'); }
