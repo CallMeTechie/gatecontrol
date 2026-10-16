@@ -4,13 +4,24 @@
 // Android home-screen shortcuts, Quick Settings tiles and the widget.
 //
 //   hook quickActions({ user, lang })          → [{ id, title, subtitle?, icon?,
-//                                                  kind: 'button'|'toggle', state?, confirm? }]
-//   hook runQuickAction({ user, lang, id, via, automation })
-//                                              → { ok?, message?, state? }
+//                                                  kind: 'button'|'toggle', state?, confirm?,
+//                                                  widget? }]
+//   hook runQuickAction({ user, lang, id, via, automation, control?, value? })
+//                                              → { ok?, message?, state?, widget? }
 //     via: 'app' (shortcut, tile, widget, app screen) | 'notification' (the
 //     action button of a push) | '<plugin id>' (gc.actions.run of that
 //     plugin); automation: true only for gc.actions.run (another plugin ran
 //     it for the user), false for everything a person started.
+//     control / value: only when the app moved a control of the action's
+//     widget (the control's id and the validated value — a number for a
+//     stepper / slider, an option id for a choice); absent otherwise.
+//
+// A widget is a quick action with extra information and controls, shown by
+// the apps as a card instead of a button:
+//   widget: { value?: string|number, unit?, status?, state?: 'on'|'off'|'good'|'warn'|'crit',
+//             controls?: [{ id, kind: 'stepper'|'slider', label?, value, min, max, step, unit? },
+//                         { id, kind: 'choice', label?, value, options: [{ id, label }] }] }
+// Anything invalid in it makes the whole widget null; the action stays.
 //
 // Asked like the portal hooks (src/services/plugins/portal.js): only plugins
 // that may run, are running and have `permissions.portal` (the actions run as
@@ -33,6 +44,12 @@ const ACTION_ID_RE = /^[A-Za-z0-9:._-]{1,64}$/;
 const ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,2000}$/;
 const KINDS = new Set(['button', 'toggle']);
 const TOGGLE_STATES = new Set(['on', 'off']);
+const WIDGET_STATES = new Set(['on', 'off', 'good', 'warn', 'crit']);
+const CONTROL_KINDS = new Set(['stepper', 'slider', 'choice']);
+const CONTROL_ID_RE = /^[A-Za-z0-9_-]{1,24}$/;
+const MAX_CONTROLS = 4;
+const MIN_OPTIONS = 2;
+const MAX_OPTIONS = 8;
 
 function evaluate(p) { return require('./index').evaluate(p); }
 
@@ -56,6 +73,67 @@ function pluginById(id) {
 }
 
 function state(v) { return typeof v === 'string' && TOGGLE_STATES.has(v) ? v : null; }
+function num(v) { return typeof v === 'number' && Number.isFinite(v) ? v : null; }
+
+/** One control of a widget → the sanitised control, or null (invalid). */
+function sanitizeControl(c) {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
+  if (typeof c.id !== 'string' || !CONTROL_ID_RE.test(c.id)) return null;
+  if (typeof c.kind !== 'string' || !CONTROL_KINDS.has(c.kind)) return null;
+  const label = text(c.label, 20);
+  if (c.kind === 'choice') {
+    if (!Array.isArray(c.options) || c.options.length < MIN_OPTIONS || c.options.length > MAX_OPTIONS) return null;
+    const options = [];
+    const seen = new Set();
+    for (const o of c.options) {
+      if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+      if (typeof o.id !== 'string' || !CONTROL_ID_RE.test(o.id) || seen.has(o.id)) return null;
+      const l = text(o.label, 20);
+      if (!l) return null;
+      seen.add(o.id);
+      options.push({ id: o.id, label: l });
+    }
+    const value = typeof c.value === 'string' && seen.has(c.value) ? c.value : options[0].id;
+    return { id: c.id, kind: 'choice', label, value, options };
+  }
+  const min = num(c.min);
+  const max = num(c.max);
+  const step = num(c.step);
+  const value = num(c.value);
+  if (min === null || max === null || step === null || value === null || !(min < max) || !(step > 0)) return null;
+  return { id: c.id, kind: c.kind, label, value: Math.min(max, Math.max(min, value)), min, max, step, unit: text(c.unit, 8) };
+}
+
+/**
+ * The `widget` of a quick action (listed or in a run's answer) → the sanitised
+ * widget, or null when there is none or anything in it is invalid.
+ * @returns {null | { value: string|number|null, unit: string|null, status: string|null,
+ *   state: string|null, controls: object[] }}
+ */
+function sanitizeWidget(w) {
+  if (!w || typeof w !== 'object' || Array.isArray(w)) return null;
+  let value = null;
+  if (typeof w.value === 'string') value = text(w.value, 24);
+  else if (typeof w.value === 'number' && Number.isFinite(w.value)) value = w.value;
+  const controls = [];
+  if (w.controls != null) {
+    if (!Array.isArray(w.controls) || w.controls.length > MAX_CONTROLS) return null;
+    const seen = new Set();
+    for (const raw of w.controls) {
+      const c = sanitizeControl(raw);
+      if (!c || seen.has(c.id)) return null;
+      seen.add(c.id);
+      controls.push(c);
+    }
+  }
+  return {
+    value,
+    unit: text(w.unit, 8),
+    status: text(w.status, 60),
+    state: typeof w.state === 'string' && WIDGET_STATES.has(w.state) ? w.state : null,
+    controls,
+  };
+}
 
 /** One entry of quickActions → the sanitised action, or null (dropped). */
 function sanitize(a) {
@@ -73,6 +151,7 @@ function sanitize(a) {
     kind,
     state: kind === 'toggle' ? state(a.state) : null,
     confirm: a.confirm === true,
+    widget: sanitizeWidget(a.widget),
   };
 }
 
@@ -98,7 +177,7 @@ function lang2(lang) { return lang === 'en' ? 'en' : 'de'; }
  * @param {{id, name, role, portal: true, loggedIn: true, app: true}} user
  * @param {string} lang
  * @param {{exclude?: string}} [opts]  exclude: a plugin id that is not asked (gc.actions.list leaves out the caller)
- * @returns {Promise<object[]>} [{ plugin, pluginName, id, title, subtitle, icon, kind, state, confirm }]
+ * @returns {Promise<object[]>} [{ plugin, pluginName, id, title, subtitle, icon, kind, state, confirm, widget }]
  */
 async function list(user, lang, opts = {}) {
   const l = lang2(lang);
@@ -115,13 +194,27 @@ async function list(user, lang, opts = {}) {
 const VIA_PERSON = new Set(['app', 'notification']);
 
 /**
+ * The value the app sent for one control of the listed widget → the validated
+ * value (a number for a stepper / slider, an option id for a choice), or
+ * undefined when it is not acceptable.
+ */
+function controlValue(c, v) {
+  if (c.kind === 'choice') return typeof v === 'string' && c.options.some((o) => o.id === v) ? v : undefined;
+  return typeof v === 'number' && Number.isFinite(v) && v >= c.min && v <= c.max ? v : undefined;
+}
+
+/**
  * Run one action for one viewer — only an id the plugin currently lists for
  * that viewer.
- * @param {{via?: string}} [opts]  via: 'app' (default) | 'notification' for a
- *   run a person started; a viewer with `automation: true` (gc.actions.run)
- *   always runs with via = its `via` (the calling plugin's id)
+ * @param {{via?: string, control?: string, value?: number|string}} [opts]
+ *   via: 'app' (default) | 'notification' for a run a person started; a
+ *   viewer with `automation: true` (gc.actions.run) always runs with via =
+ *   its `via` (the calling plugin's id). control: the id of a control of the
+ *   listed action's widget the app moved, value its new value — both reach
+ *   the hook validated; without `control` the hook gets neither.
  * @returns {Promise<{status: number, body: object}>}
- *   200 { ok, message, state } · 404 not_found · 502 plugin_error · 504 timeout
+ *   200 { ok, message, state, widget } · 400 invalid_control | invalid_value ·
+ *   404 not_found · 502 plugin_error · 504 timeout
  */
 async function run(pluginId, actionId, user, lang, opts = {}) {
   const l = lang2(lang);
@@ -129,6 +222,7 @@ async function run(pluginId, actionId, user, lang, opts = {}) {
   let via;
   if (automation) via = String(user.via || '');
   else via = opts && typeof opts.via === 'string' && VIA_PERSON.has(opts.via) ? opts.via : 'app';
+  const controlRun = !!opts && opts.control !== undefined && opts.control !== null;
   const notFound = { status: 404, body: { ok: false, error: 'not_found' } };
   const p = pluginById(pluginId);
   if (!p || typeof actionId !== 'string' || !ACTION_ID_RE.test(actionId)) return notFound;
@@ -137,15 +231,26 @@ async function run(pluginId, actionId, user, lang, opts = {}) {
     : { status: 502, body: { ok: false, error: 'plugin_error' } });
   let listed;
   try { listed = sanitizeList(await runtime.call(p.id, 'quickActions', { user, lang: l }, HOOK_MS)); } catch (e) { return fail(e); }
-  if (!listed.some((a) => a.id === actionId)) return notFound;
+  const action = listed.find((a) => a.id === actionId);
+  if (!action) return notFound;
+  const payload = { user, lang: l, id: actionId, via, automation };
+  if (controlRun) {
+    const c = typeof opts.control === 'string' && action.widget
+      ? action.widget.controls.find((x) => x.id === opts.control) : undefined;
+    if (!c) return { status: 400, body: { ok: false, error: 'invalid_control' } };
+    const value = controlValue(c, opts.value);
+    if (value === undefined) return { status: 400, body: { ok: false, error: 'invalid_value' } };
+    payload.control = c.id;
+    payload.value = value;
+  }
   let out;
-  try { out = await runtime.call(p.id, 'runQuickAction', { user, lang: l, id: actionId, via, automation }, runMs); } catch (e) { return fail(e); }
+  try { out = await runtime.call(p.id, 'runQuickAction', payload, runMs); } catch (e) { return fail(e); }
   if (!out || typeof out !== 'object' || Array.isArray(out)) return { status: 502, body: { ok: false, error: 'plugin_error' } };
-  return { status: 200, body: { ok: out.ok !== false, message: text(out.message, 120), state: state(out.state) } };
+  return { status: 200, body: { ok: out.ok !== false, message: text(out.message, 120), state: state(out.state), widget: sanitizeWidget(out.widget) } };
 }
 
 function _setRunTimeoutForTest(ms) {
   if (process.env.NODE_ENV === 'test') runMs = Number.isInteger(ms) && ms > 0 ? ms : RUN_MS;
 }
 
-module.exports = { list, run, sanitize, HOOK_MS, RUN_MS, MAX_ACTIONS, ACTION_ID_RE, VIA_PERSON, _setRunTimeoutForTest };
+module.exports = { list, run, sanitize, sanitizeWidget, HOOK_MS, RUN_MS, MAX_ACTIONS, MAX_CONTROLS, ACTION_ID_RE, CONTROL_ID_RE, VIA_PERSON, _setRunTimeoutForTest };

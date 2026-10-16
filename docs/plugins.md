@@ -687,8 +687,9 @@ async quickActions({ user, lang }, gc) {
     { id: 'scene:evening', title: 'Abend', kind: 'button', confirm: true },
   ];
 },
-async runQuickAction({ user, lang, id, via, automation }, gc) {
+async runQuickAction({ user, lang, id, via, automation, control, value }, gc) {
   // via: 'app' | 'notification' | '<plugin id>' (gc.actions.run); automation: true only for gc.actions.run
+  // control / value: only when the app moved a control of the action's widget (see "Widgets")
   return { ok: true, message: 'Licht eingeschaltet', state: 'on' };   // state optional (new toggle state)
 },
 ```
@@ -714,14 +715,18 @@ async runQuickAction({ user, lang, id, via, automation }, gc) {
     otherwise `null`;
   * `kind`: `button` (default) or `toggle`; any other value drops the entry;
   * `state`: `on`/`off`, toggles only (otherwise `null`);
-  * `confirm`: `true` → the app asks before running it (default `false`).
+  * `confirm`: `true` → the app asks before running it (default `false`);
+  * `widget`: optional, see "Widgets" below — anything invalid in it makes the
+    whole `widget` `null`, the action stays.
 * **`runQuickAction`** — 10 s, only for an id the plugin currently lists for
   that viewer: the host asks that plugin's `quickActions` first (1.5 s) and
   answers 404 for anything else. The answer is sanitised to
-  `{ ok, message, state }`: `ok` is `false` only when the plugin says
+  `{ ok, message, state, widget }`: `ok` is `false` only when the plugin says
   `ok: false`, `message` ≤ 120 characters (or `null`), `state` `on`/`off`
-  (or `null`). Every run is an activity log entry `plugin_quick_action`
-  (info, details `{ plugin, action, userId, ok, via }` — no text of the plugin).
+  (or `null`), `widget` like a listed one (or `null`). Every run is an
+  activity log entry `plugin_quick_action` (info, details
+  `{ plugin, action, userId, ok, via, control? }` — no text of the plugin,
+  no value).
 * **Who started it** — `runQuickAction` also gets:
   * `via`: `'app'` (shortcut, tile, widget or an app screen — the default),
     `'notification'` (the `quick_action` button of a push, see
@@ -741,12 +746,15 @@ routes (a browser session gets 403 `token_required`), `Cache-Control: no-store`.
 ```
 GET  /api/v1/client/actions
   200 { ok: true, actions: [{ plugin: '<plugin id>', pluginName: '<localised name>',
-                              id, title, subtitle, icon, kind, state, confirm }] }
+                              id, title, subtitle, icon, kind, state, confirm, widget }] }
 
 POST /api/v1/client/actions/:plugin/:id        (≤ 30 runs per minute and token)
-  body { source?: 'app' | 'notification' }     (default 'app'; → via of runQuickAction)
-  200 { ok, message, state }
+  body { source?: 'app' | 'notification',      (default 'app'; → via of runQuickAction)
+         control?: string, value?: number | string }   (a control of the widget, see "Widgets")
+  200 { ok, message, state, widget }
   400 { ok: false, error: 'invalid_source' }   source not 'app' / 'notification'
+  400 { ok: false, error: 'invalid_control' }  control is not a control of the action's widget
+  400 { ok: false, error: 'invalid_value' }    value not acceptable for that control
   403 { ok: false, error: 'no_user' }          token without an owner
   404 { ok: false, error: 'not_found' }        unknown plugin / action
   502 { ok: false, error: 'plugin_error' }     the plugin failed or answered garbage
@@ -756,6 +764,72 @@ POST /api/v1/client/actions/:plugin/:id        (≤ 30 runs per minute and token
 
 A toggle's new `state` comes with the run's answer; the apps reload the list
 when they show their shortcuts, tiles or widget.
+
+### Widgets
+
+A widget is a quick action with extra information and controls — there is no
+second concept. Any `quickActions` entry may carry a `widget` object; the
+apps then let the person pin that action to their Start tab as a card with a
+large value, a status line and controls instead of a small button. Older
+hosts drop the field, older apps ignore it.
+
+```js
+// an air conditioner: temperature, status, a target stepper and a mode choice
+{ id: 'ac:7', title: 'Wohnzimmer', subtitle: 'Klima', kind: 'toggle', state: 'on',
+  widget: {
+    value: '21,5', unit: '°C',                  // large display: a string ≤ 24 or a finite number
+    status: 'Kühlen · Ziel 22 °C',               // ≤ 60, small line under the value
+    state: 'on',                                 // 'on' | 'off' | 'good' | 'warn' | 'crit' (colour of the card)
+    controls: [                                  // ≤ 4, ids unique per widget
+      { id: 'target', kind: 'stepper', label: 'Ziel', value: 22, min: 16, max: 30, step: 0.5, unit: '°C' },
+      { id: 'mode', kind: 'choice', label: 'Modus', value: 'cool',
+        options: [{ id: 'auto', label: 'Auto' }, { id: 'cool', label: 'Kühlen' }, { id: 'heat', label: 'Heizen' }] },
+    ],
+  } }
+```
+
+* `value`: a string (≤ 24 characters, control characters removed — format
+  numbers yourself, e.g. with `toLocaleString`) or a finite number; anything
+  else → `null`. `unit` ≤ 8, `status` ≤ 60, `state` one of the five values
+  (otherwise `null`). All optional.
+* `controls` (≤ 4, optional): `id` `[A-Za-z0-9_-]{1,24}` and unique per
+  widget, `kind` `stepper`, `slider` or `choice`, `label` ≤ 20 (optional).
+  * `stepper` / `slider`: `value`, `min`, `max`, `step` finite numbers with
+    `min < max` and `step > 0`; `value` is clamped into `[min, max]`;
+    `unit` ≤ 8 (optional).
+  * `choice`: `options` 2–8 of `{ id, label }` (ids like a control id, unique;
+    `label` required, ≤ 20); `value` is an option id — any other value
+    becomes the first option.
+* Anything invalid (a bad control, too many of them, duplicate ids …) makes
+  the whole `widget` `null` in the host's answer; the action itself stays.
+  An entry without a `widget` lists `widget: null` as well.
+
+**Control runs.** When the person moves a control, the app runs the action
+with `control` (the control's id) and `value` in the body. The host looks
+the control up in the widget the plugin lists for that action at that
+moment and validates the value — a finite number within `[min, max]` for a
+stepper / slider, one of the option ids for a choice — and answers 400
+`invalid_control` / `invalid_value` otherwise; nothing reaches the plugin
+then. A valid run reaches `runQuickAction` with `control` and `value` (the
+validated number or option id); a plain run (tap, tile, shortcut,
+notification, `gc.actions.run`) has neither — `control` is `undefined`,
+so a plugin can tell the two apart. `gc.actions.run` never sends a control:
+other plugins only trigger actions, they do not move controls.
+
+```js
+async runQuickAction({ user, lang, id, control, value }, gc) {
+  const d = await this.device(id);
+  if (control === 'target') await d.set({ targetTemp: value });       // value: a number in 16..30
+  else if (control === 'mode') await d.set({ mode: value });           // value: 'auto' | 'cool' | 'heat'
+  else await d.set({ power: !d.power });                               // the plain run: toggle
+  return { ok: true, state: d.power ? 'on' : 'off', widget: this.widgetOf(d, lang) };
+},
+```
+
+The answer's `widget` (same format as in the list, sanitised the same way,
+`null` when missing or invalid) lets the app show the new state at once
+without reloading the list. The activity log entry of a control run carries
+the control's id in `details.control`, never the value.
 
 ### Start tiles in the apps
 
