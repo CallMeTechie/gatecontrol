@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.172.0] — 2026-10-16
+
+### Features
+- devices, toggle looks and widget readings for the apps' quick actions (#315)
+
+---
+
 ## [1.171.0] — 2026-10-16
 
 ### Features
