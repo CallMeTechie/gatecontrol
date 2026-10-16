@@ -5,8 +5,9 @@
 //
 //   hook quickActions({ user, lang })          → [{ id, title, subtitle?, icon?,
 //                                                  kind: 'button'|'toggle', state?, confirm?,
-//                                                  confirmWhen?, look?, device?, widget? }]
-//   hook runQuickAction({ user, lang, id, via, automation, control?, value? })
+//                                                  confirmWhen?, look?, verbs?, targets?,
+//                                                  device?, widget? }]
+//   hook runQuickAction({ user, lang, id, via, automation, control?, value?, target? })
 //                                              → { ok?, message?, state?, widget? }
 //     via: 'app' (shortcut, tile, widget, app screen) | 'notification' (the
 //     action button of a push) | '<plugin id>' (gc.actions.run of that
@@ -15,12 +16,24 @@
 //     control / value: only when the app moved a control of the action's
 //     widget (the control's id and the validated value — a number for a
 //     stepper / slider, an option id for a choice); absent otherwise.
+//     target: 'on'|'off' only for a toggle that declares `targets: true`
+//     when the run asks for a state — the plugin sets that state (never
+//     flips); absent otherwise.
 //
 // A device groups the actions of one thing (a car, a lamp, a lock) in the
 // apps: device: { id, title, subtitle?, icon? } (invalid → null, the action
 // stays). Toggles may say how each state looks — look: { on?: { icon?, tone? },
 // off?: { icon?, tone? } }, tone 'good'|'warn'|'crit'|'neutral' — and in which
 // state the app asks first: confirmWhen: 'on'|'off'.
+//
+// Target states (toggles only): verbs: { on, off } names the command that
+// sets each state ("Verriegeln" / "Entriegeln"); targets: true says the plugin
+// honours `target` in runQuickAction. A run with `state` ('on'|'off', the
+// client API and gc.actions.run) reaches a `targets` toggle as `target`; for
+// any other toggle the host only runs it when the listed state is the other
+// one (a flip reaches the target), answers `unchanged: true` without asking
+// the plugin when it is already there, and 409 state_unknown when the plugin
+// lists no state.
 //
 // A widget is a quick action with extra information and controls, shown by
 // the apps as a card instead of a button:
@@ -61,6 +74,8 @@ const MAX_OPTIONS = 8;
 const DEVICE_ID_RE = /^[A-Za-z0-9:._-]{1,64}$/;
 const TONES = new Set(['good', 'warn', 'crit', 'neutral']);
 const MAX_READINGS = 4;
+const MAX_VERB = 20;
+const CTRL_RE = /[\0-\x1f\x7f]/;
 
 function evaluate(p) { return require('./index').evaluate(p); }
 
@@ -87,6 +102,21 @@ function state(v) { return typeof v === 'string' && TOGGLE_STATES.has(v) ? v : n
 function num(v) { return typeof v === 'number' && Number.isFinite(v) ? v : null; }
 function icon(v) { return typeof v === 'string' && ICON_RE.test(v) ? v : null; }
 function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+
+/** One verb of a toggle: a string, trimmed 1–20 characters without control characters, else null. */
+function verb(v) {
+  if (typeof v !== 'string' || CTRL_RE.test(v)) return null;
+  const s = v.trim();
+  return s.length >= 1 && s.length <= MAX_VERB ? s : null;
+}
+
+/** verbs of a toggle: { on, off } → { on, off } (both valid), or null. */
+function sanitizeVerbs(v) {
+  if (!isObj(v)) return null;
+  const on = verb(v.on);
+  const off = verb(v.off);
+  return on && off ? { on, off } : null;
+}
 
 /** device: { id, title, subtitle?, icon? } → { id, title, subtitle, icon }, or null (invalid / none). */
 function sanitizeDevice(d) {
@@ -239,6 +269,8 @@ function sanitize(a) {
     confirm: a.confirm === true,
     confirmWhen: toggle ? state(a.confirmWhen) : null,
     look: toggle ? sanitizeLook(a.look) : null,
+    verbs: toggle ? sanitizeVerbs(a.verbs) : null,
+    targets: toggle && a.targets === true,
     device: sanitizeDevice(a.device),
     widget: sanitizeWidget(a.widget),
   };
@@ -267,7 +299,7 @@ function lang2(lang) { return lang === 'en' ? 'en' : 'de'; }
  * @param {string} lang
  * @param {{exclude?: string}} [opts]  exclude: a plugin id that is not asked (gc.actions.list leaves out the caller)
  * @returns {Promise<object[]>} [{ plugin, pluginName, id, title, subtitle, icon, kind, state, confirm,
- *   confirmWhen, look, device, widget }]
+ *   confirmWhen, look, verbs, targets, device, widget }]
  */
 async function list(user, lang, opts = {}) {
   const l = lang2(lang);
@@ -296,15 +328,19 @@ function controlValue(c, v) {
 /**
  * Run one action for one viewer — only an id the plugin currently lists for
  * that viewer.
- * @param {{via?: string, control?: string, value?: number|string}} [opts]
+ * @param {{via?: string, control?: string, value?: number|string, state?: string}} [opts]
  *   via: 'app' (default) | 'notification' for a run a person started; a
  *   viewer with `automation: true` (gc.actions.run) always runs with via =
  *   its `via` (the calling plugin's id). control: the id of a control of the
  *   listed action's widget the app moved, value its new value — both reach
- *   the hook validated; without `control` the hook gets neither.
+ *   the hook validated; without `control` the hook gets neither. state:
+ *   'on'|'off', the state a toggle should end in (never with `control`) —
+ *   `target` in the payload of a `targets` toggle, else the host's fallback
+ *   (no run when already there, a flip when in the other state).
  * @returns {Promise<{status: number, body: object}>}
- *   200 { ok, message, state, widget } · 400 invalid_control | invalid_value ·
- *   404 not_found · 502 plugin_error · 504 timeout
+ *   200 { ok, message, state, widget, unchanged } · 400 invalid_state |
+ *   invalid_control | invalid_value · 404 not_found · 409 state_unknown ·
+ *   502 plugin_error · 504 timeout
  */
 async function run(pluginId, actionId, user, lang, opts = {}) {
   const l = lang2(lang);
@@ -313,6 +349,7 @@ async function run(pluginId, actionId, user, lang, opts = {}) {
   if (automation) via = String(user.via || '');
   else via = opts && typeof opts.via === 'string' && VIA_PERSON.has(opts.via) ? opts.via : 'app';
   const controlRun = !!opts && opts.control !== undefined && opts.control !== null;
+  const stateRun = !!opts && opts.state !== undefined && opts.state !== null;
   const notFound = { status: 404, body: { ok: false, error: 'not_found' } };
   const p = pluginById(pluginId);
   if (!p || typeof actionId !== 'string' || !ACTION_ID_RE.test(actionId)) return notFound;
@@ -324,6 +361,16 @@ async function run(pluginId, actionId, user, lang, opts = {}) {
   const action = listed.find((a) => a.id === actionId);
   if (!action) return notFound;
   const payload = { user, lang: l, id: actionId, via, automation };
+  if (stateRun) {
+    const want = state(opts.state);
+    if (!want || controlRun || action.kind !== 'toggle') return { status: 400, body: { ok: false, error: 'invalid_state' } };
+    if (action.targets) payload.target = want;
+    else if (action.state === want) {
+      // already there: the plugin is not asked (a run would flip it away)
+      return { status: 200, body: { ok: true, message: null, state: want, widget: action.widget, unchanged: true } };
+    } else if (action.state === null) return { status: 409, body: { ok: false, error: 'state_unknown' } };
+    // else: in the other state — the plain run flips it into the target
+  }
   if (controlRun) {
     const c = typeof opts.control === 'string' && action.widget
       ? action.widget.controls.find((x) => x.id === opts.control) : undefined;
@@ -336,7 +383,7 @@ async function run(pluginId, actionId, user, lang, opts = {}) {
   let out;
   try { out = await runtime.call(p.id, 'runQuickAction', payload, runMs); } catch (e) { return fail(e); }
   if (!out || typeof out !== 'object' || Array.isArray(out)) return { status: 502, body: { ok: false, error: 'plugin_error' } };
-  return { status: 200, body: { ok: out.ok !== false, message: text(out.message, 120), state: state(out.state), widget: sanitizeWidget(out.widget) } };
+  return { status: 200, body: { ok: out.ok !== false, message: text(out.message, 120), state: state(out.state), widget: sanitizeWidget(out.widget), unchanged: false } };
 }
 
 function _setRunTimeoutForTest(ms) {
@@ -344,6 +391,6 @@ function _setRunTimeoutForTest(ms) {
 }
 
 module.exports = {
-  list, run, sanitize, sanitizeWidget, sanitizeDevice, sanitizeLook, sanitizeReading, sanitizeReadings, sanitizeValueRow,
-  HOOK_MS, MAX_READINGS, TONES, RUN_MS, MAX_ACTIONS, MAX_CONTROLS, ACTION_ID_RE, CONTROL_ID_RE, DEVICE_ID_RE, VIA_PERSON, _setRunTimeoutForTest,
+  list, run, sanitize, sanitizeWidget, sanitizeDevice, sanitizeLook, sanitizeVerbs, sanitizeReading, sanitizeReadings, sanitizeValueRow,
+  HOOK_MS, MAX_READINGS, TONES, RUN_MS, MAX_ACTIONS, MAX_CONTROLS, ACTION_ID_RE, CONTROL_ID_RE, DEVICE_ID_RE, VIA_PERSON, TOGGLE_STATES, MAX_VERB, _setRunTimeoutForTest,
 };

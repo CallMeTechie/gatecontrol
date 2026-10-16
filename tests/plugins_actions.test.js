@@ -129,9 +129,9 @@ describe('gc.actions.list', () => {
   it('the actions of the other plugins for that user — never the caller\'s own, never a plugin without permissions.portal', async () => {
     const all = await listOk({ userId: anna });
     assert.deepEqual(all.find((a) => a.plugin === 'hello'),
-      { plugin: 'hello', pluginName: 'Hallo Welt', id: 'light:3', title: 'Licht', subtitle: 'Wohnzimmer', kind: 'toggle', state: 'off' });
+      { plugin: 'hello', pluginName: 'Hallo Welt', id: 'light:3', title: 'Licht', subtitle: 'Wohnzimmer', kind: 'toggle', state: 'off', verbs: null, targets: false });
     assert.deepEqual(all.find((a) => a.id === 'scene:evening'),
-      { plugin: 'hello-two', pluginName: 'Zweites', id: 'scene:evening', title: 'Abend', subtitle: null, kind: 'button', state: null });
+      { plugin: 'hello-two', pluginName: 'Zweites', id: 'scene:evening', title: 'Abend', subtitle: null, kind: 'button', state: null, verbs: null, targets: false });
     assert.ok(!all.some((a) => a.plugin === 'hello-auto'), 'the caller is excluded');
     assert.ok(!all.some((a) => a.plugin === 'hello-np'), 'no permissions.portal → not asked');
     // the target sees that user as a logged-in portal viewer (no app flag) in the user's language
@@ -162,7 +162,7 @@ describe('gc.actions.run', () => {
   it('runs as that user with automation: true and via: the caller; logs ids and ok only', async () => {
     await kv('hello', 'quick-result', null);
     const res = await runOk({ userId: anna, plugin: 'hello', id: 'light:3' });
-    assert.deepEqual(res, { ok: true, message: 'ran light:3', state: 'on' });
+    assert.deepEqual(res, { ok: true, message: 'ran light:3', state: 'on', unchanged: false });
     assert.deepEqual(await kvGet('hello', 'quick-last'), {
       id: 'light:3', lang: 'de', via: 'hello-auto', automation: true,
       user: { id: anna, name: 'pa-anna', role: 'user', portal: true, loggedIn: true, automation: true, via: 'hello-auto' },
@@ -183,7 +183,7 @@ describe('gc.actions.run', () => {
     await kv('hello', 'quick-result', { ok: false, message: 'Geheim\u0007 ' + 'x'.repeat(300), state: 'dim', extra: 'dropped' });
     try {
       const res = await runOk({ userId: anna, plugin: 'hello', id: 'light:3' });
-      assert.deepEqual(Object.keys(res).sort(), ['message', 'ok', 'state']);
+      assert.deepEqual(Object.keys(res).sort(), ['message', 'ok', 'state', 'unchanged']);
       assert.equal(res.ok, false);
       assert.equal(res.state, null);
       assert.equal(res.message.length, 120);
@@ -195,7 +195,7 @@ describe('gc.actions.run', () => {
   });
 
   it('not listed / unknown / no portal permission / disabled target → ok: false with error not_found', async () => {
-    const nf = { ok: false, message: null, state: null, error: 'not_found' };
+    const nf = { ok: false, message: null, state: null, unchanged: false, error: 'not_found' };
     assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'light:4' }), nf);
     assert.deepEqual(await runOk({ userId: anna, plugin: 'nope', id: 'light:3' }), nf);
     assert.deepEqual(await runOk({ userId: anna, plugin: 'hello-np', id: 'np' }), nf);
@@ -216,7 +216,7 @@ describe('gc.actions.run', () => {
     try {
       for (const [mode, error] of [['throw', 'plugin_error'], ['garbage', 'plugin_error'], ['slow', 'timeout']]) {
         await kv('hello', 'quick-run-mode', mode);
-        assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'light:3' }), { ok: false, message: null, state: null, error }, mode);
+        assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'light:3' }), { ok: false, message: null, state: null, unchanged: false, error }, mode);
       }
     } finally {
       quickActions._setRunTimeoutForTest(null);
@@ -248,6 +248,60 @@ describe('gc.actions.run', () => {
     await refused('run', { userId: u, plugin: 'hello', id: 'light:3' }, 'ERR_INVALID');
     H.db().prepare('DELETE FROM users WHERE id = ?').run(u);
     await refused('run', { userId: u, plugin: 'hello', id: 'light:3' }, 'ERR_INVALID');
+  });
+
+  it('state: a targets toggle gets target; the fallback for other toggles (unchanged / flip / state_unknown); invalid_state', async () => {
+    hostApi._resetActionsBudgetForTest();
+    const VERBS = { on: 'Verriegeln', off: 'Entriegeln' };
+    await kv('hello', 'quick-actions', [
+      { id: 'lock:1', title: 'Schloss', kind: 'toggle', state: 'on', targets: true, verbs: VERBS },
+      { id: 'lamp:on', title: 'Lampe', kind: 'toggle', state: 'on' },
+      { id: 'lamp:unknown', title: 'Lampe 2', kind: 'toggle' },
+      { id: 'scene', title: 'Szene' },
+    ]);
+    try {
+      const all = await listOk({ userId: anna });
+      assert.deepEqual(all.find((a) => a.id === 'lock:1'),
+        { plugin: 'hello', pluginName: 'Hallo Welt', id: 'lock:1', title: 'Schloss', subtitle: null, kind: 'toggle', state: 'on', verbs: VERBS, targets: true });
+
+      // targets: true → target in the payload, the plugin's answer
+      await kv('hello', 'quick-result', { ok: true, message: 'Verriegelt', state: 'on' });
+      assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lock:1', state: 'on' }), { ok: true, message: 'Verriegelt', state: 'on', unchanged: false });
+      const last = await kvGet('hello', 'quick-last');
+      assert.deepEqual([last.target, last.via, last.automation], ['on', 'hello-auto', true]);
+      assert.deepEqual(JSON.parse(lastActivity().details), { plugin: 'hello-auto', target: 'hello', action: 'lock:1', userId: anna, ok: true, state: 'on' });
+      await kv('hello', 'quick-result', null);
+
+      // no targets, already there → not run, unchanged
+      await kv('hello', 'quick-last', null);
+      assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lamp:on', state: 'on' }), { ok: true, message: null, state: 'on', unchanged: true });
+      assert.equal(await kvGet('hello', 'quick-last'), null, 'the target plugin was not asked to run');
+      assert.deepEqual(JSON.parse(lastActivity().details), { plugin: 'hello-auto', target: 'hello', action: 'lamp:on', userId: anna, ok: true, state: 'on', unchanged: true });
+
+      // no targets, the other state → the plain run (flip), no target
+      assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lamp:on', state: 'off' }), { ok: true, message: 'ran lamp:on', state: 'on', unchanged: false });
+      assert.ok(!('target' in await kvGet('hello', 'quick-last')));
+
+      // no targets, no listed state → state_unknown; a button or a bad value → invalid_state
+      await kv('hello', 'quick-last', null);
+      const no = (error) => ({ ok: false, message: null, state: null, unchanged: false, error });
+      assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lamp:unknown', state: 'off' }), no('state_unknown'));
+      assert.deepEqual(JSON.parse(lastActivity().details), { plugin: 'hello-auto', target: 'hello', action: 'lamp:unknown', userId: anna, ok: false, state: 'off', error: 'state_unknown' });
+      assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'scene', state: 'on' }), no('invalid_state'));
+      for (const state of ['ON', 'toggle', '', 1, true, ['on']]) {
+        assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lock:1', state }), no('invalid_state'), JSON.stringify(state));
+        assert.equal(JSON.parse(lastActivity().details).state, undefined, 'a bad state never reaches the log');
+      }
+      assert.equal(await kvGet('hello', 'quick-last'), null, 'nothing ran');
+
+      // without state (or null): the plain run as before
+      assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lock:1', state: null }), { ok: true, message: 'ran lock:1', state: 'on', unchanged: false });
+      assert.ok(!('target' in await kvGet('hello', 'quick-last')));
+    } finally {
+      await kv('hello', 'quick-result', null);
+      await kv('hello', 'quick-actions', [{ id: 'light:3', title: 'Licht', subtitle: 'Wohnzimmer', icon: 'M4 12h16', kind: 'toggle', state: 'off', confirm: true }]);
+      hostApi._resetActionsBudgetForTest();
+    }
   });
 
   it(`at most ${60} runs per hour per calling plugin (listing is not counted)`, async () => {
