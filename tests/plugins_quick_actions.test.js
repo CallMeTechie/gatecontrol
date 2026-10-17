@@ -238,9 +238,9 @@ const AC_WIDGET = {
   ],
 };
 // a sanitised widget: every key, with the defaults for what the plugin left out
-const W = (over = {}) => ({ label: null, value: null, unit: null, status: null, state: null, readings: [], controls: [], power: true, ...over });
+const W = (over = {}) => ({ label: null, value: null, unit: null, status: null, state: null, readings: [], controls: [], power: true, badge: null, ...over });
 const AC_SANITISED = {
-  label: null, value: '21,5', unit: '°C', status: 'Kühlen · Ziel 22 °C', state: 'on', readings: [], power: true,
+  label: null, value: '21,5', unit: '°C', status: 'Kühlen · Ziel 22 °C', state: 'on', readings: [], power: true, badge: null,
   controls: [
     { id: 'target', kind: 'stepper', label: 'Ziel', value: 22, min: 16, max: 30, step: 0.5, unit: '°C' },
     { id: 'mode', kind: 'choice', label: 'Modus', value: 'cool', options: [{ id: 'auto', label: 'Auto', icon: null }, { id: 'cool', label: 'Kühlen', icon: 'M12 2v20M2 12h20' }, { id: 'heat', label: 'Heizen', icon: null }] },
@@ -378,7 +378,7 @@ describe('widgets in the list and control runs', () => {
     const r = await list(annaDev).expect(200);
     const by = (id) => r.body.actions.find((a) => a.plugin === 'hello' && a.id === id);
     assert.deepEqual(by('ac:7').widget, AC_SANITISED);
-    assert.deepEqual(by('lamp').widget, { label: null, value: 'Aus', unit: null, status: null, state: 'off', readings: [], power: true, controls: [{ id: 'bri', kind: 'slider', label: null, value: 100, min: 1, max: 100, step: 1, unit: '%' }] });
+    assert.deepEqual(by('lamp').widget, { label: null, value: 'Aus', unit: null, status: null, state: 'off', readings: [], power: true, badge: null, controls: [{ id: 'bri', kind: 'slider', label: null, value: 100, min: 1, max: 100, step: 1, unit: '%' }] });
     assert.equal(by('broken').widget, null, 'invalid widget → null, the action stays');
     assert.equal(by('broken').title, 'Kaputt');
     assert.equal(by('plain').widget, null);
@@ -621,7 +621,77 @@ describe('widget label, readings and power (sanitizeWidget)', () => {
   it('a widget with only readings is valid; every key always present', () => {
     const w = sanitizeWidget({ readings: [reading()] });
     assert.deepEqual(w, W({ readings: [{ id: 'range', label: 'Reichweite', value: 312, unit: 'km', icon: 'M4 12h16', state: 'good' }] }));
-    assert.deepEqual(Object.keys(w), ['label', 'value', 'unit', 'status', 'state', 'readings', 'controls', 'power']);
+    assert.deepEqual(Object.keys(w), ['label', 'value', 'unit', 'status', 'state', 'readings', 'controls', 'power', 'badge']);
+  });
+});
+
+describe('widget badge (sanitizeWidget)', () => {
+  let sanitizeWidget;
+  before(() => { ({ sanitizeWidget } = quickActions); });
+  const BATTERY = 'M7 4h10v17H7zM10 2h4v2h-4z';
+  const badge = (over = {}) => ({ icon: BATTERY, value: '24', unit: '%', state: 'warn', label: 'Akku 24 %', ...over });
+  const B = (over = {}) => sanitizeWidget({ badge: badge(over) }).badge;
+
+  it('a valid badge passes with every key: { icon, value, unit, state, label }', () => {
+    assert.deepEqual(B(), { icon: BATTERY, value: '24', unit: '%', state: 'warn', label: 'Akku 24 %' });
+    assert.deepEqual(Object.keys(B()), ['icon', 'value', 'unit', 'state', 'label']);
+    assert.deepEqual(sanitizeWidget({ badge: { icon: BATTERY } }).badge, { icon: BATTERY, value: null, unit: null, state: null, label: null }, 'an icon alone is a badge');
+    assert.deepEqual(B({ value: '  1/2 ', label: ' Tür ' }), { icon: BATTERY, value: '1/2', unit: '%', state: 'warn', label: 'Tür' }, 'trimmed');
+    assert.deepEqual(quickActions.sanitizeBadge(badge({ extra: 1 })), B(), 'exported; unknown keys dropped');
+  });
+
+  it('value: a finite number stays a number', () => {
+    assert.equal(B({ value: 24 }).value, 24);
+    assert.equal(B({ value: -0.5 }).value, -0.5);
+    assert.equal(B({ value: 0 }).value, 0);
+    for (const v of [NaN, Infinity, -Infinity]) assert.deepEqual([B({ value: v }).value, B({ value: v }).unit], [null, null], String(v));
+  });
+
+  it('missing / invalid icon → badge null, the widget stays', () => {
+    for (const i of [undefined, null, '', '<svg>', 'M4 4<script>', 42, {}, 'M'.repeat(2001)]) {
+      const w = sanitizeWidget({ value: 81, badge: badge({ icon: i }) });
+      assert.ok(w, JSON.stringify(i));
+      assert.equal(w.value, 81);
+      assert.equal(w.badge, null, JSON.stringify(i));
+    }
+    for (const b of [undefined, null, 'x', 42, true, [], [badge()]]) assert.equal(sanitizeWidget({ value: 1, badge: b }).badge, null, JSON.stringify(b));
+  });
+
+  it('value too long / with control characters / not a string or number → null value, the badge stays (never cut)', () => {
+    assert.equal(B({ value: '12345678' }).value, '12345678', '8 characters');
+    for (const v of ['123456789', 'A\u0000B', 'a\nb', '', '   ', true, {}, [], null, undefined]) {
+      const b = B({ value: v });
+      assert.ok(b, JSON.stringify(v));
+      assert.deepEqual([b.icon, b.value, b.unit], [BATTERY, null, null], JSON.stringify(v) + ': no unit without a value');
+    }
+  });
+
+  it('unit ≤ 4 (only with a value), label ≤ 20; too long or invalid → null', () => {
+    assert.equal(B({ unit: 'km/h' }).unit, 'km/h');
+    for (const u of ['kWh/d', 'a\tb', '', 5, {}]) assert.equal(B({ unit: u }).unit, null, JSON.stringify(u));
+    assert.equal(B({ label: 'L'.repeat(20) }).label, 'L'.repeat(20));
+    for (const l of ['L'.repeat(21), 'A\u0007B', '  ', 7, []]) assert.equal(B({ label: l }).label, null, JSON.stringify(l));
+  });
+
+  it('state: good | warn | crit, anything else → null', () => {
+    for (const st of ['good', 'warn', 'crit']) assert.equal(B({ state: st }).state, st);
+    for (const st of ['on', 'off', 'neutral', 'WARN', '', 1, null, ['good']]) assert.equal(B({ state: st }).state, null, JSON.stringify(st));
+    assert.deepEqual([...quickActions.BADGE_STATES], ['good', 'warn', 'crit']);
+  });
+
+  it('the badge key is always present; an invalid badge never makes the widget null', () => {
+    assert.equal(sanitizeWidget({}).badge, null);
+    assert.ok('badge' in sanitizeWidget({ readings: [] }));
+    assert.deepEqual(sanitizeWidget({ badge: { value: 24 } }), W(), 'a badge without an icon');
+    assert.equal(sanitizeWidget({ badge: badge(), controls: [{ id: 'x', kind: 'dial' }] }), null, 'a bad control still makes the widget null');
+    assert.deepEqual(quickActions.sanitize({ id: 'a', title: 'A', widget: { badge: badge() } }).widget, W({ badge: B() }));
+  });
+
+  it('a widget without a main value stays valid (value: null — the apps show no main value)', () => {
+    const w = sanitizeWidget({ label: 'Auto', status: 'Geparkt', badge: badge() });
+    assert.deepEqual(w, W({ label: 'Auto', status: 'Geparkt', badge: B() }));
+    assert.equal(w.value, null);
+    assert.deepEqual(sanitizeWidget({ value: null, unit: '%' }), W({ unit: '%' }), 'an explicit null value; the unit is kept as sent');
   });
 });
 
@@ -630,6 +700,7 @@ describe('devices and widget readings through the client API', () => {
   const LOOK = { on: { icon: LOCK_CLOSED, tone: 'good' }, off: { icon: LOCK_OPEN, tone: 'crit' } };
   const CAR_WIDGET = {
     label: 'Ladestand', value: 81, unit: '%', status: 'Lädt', state: 'good', power: false,
+    badge: { icon: 'M7 4h10v17H7z', value: 81, unit: '%', state: 'good', label: 'Akku 81 %' },
     readings: [{ id: 'range', label: 'Reichweite', value: 312, unit: 'km', icon: 'M2 2h4' }, { id: 'lock', label: 'Verriegelt', icon: LOCK_CLOSED, state: 'good' }, { id: 'bad id', label: 'X', value: 1 }],
   };
   let dev;
@@ -650,7 +721,7 @@ describe('devices and widget readings through the client API', () => {
     await kv('hello', 'quick-actions', [{ id: 'light:3', title: 'Licht', kind: 'toggle', state: 'off' }, { id: 'scene.evening', title: 'Abend' }]);
   });
 
-  it('GET lists device, look, confirmWhen and the widget\'s label, readings and power', async () => {
+  it('GET lists device, look, confirmWhen and the widget\'s label, readings, power and badge', async () => {
     const r = await list(dev).expect(200);
     const by = (id) => r.body.actions.find((a) => a.plugin === 'hello' && a.id === id);
     assert.deepEqual(by('lock:42'), {
@@ -660,6 +731,7 @@ describe('devices and widget readings through the client API', () => {
     assert.deepEqual(by('climate:42').device, CAR);
     assert.deepEqual(by('climate:42').widget, W({
       label: 'Ladestand', value: 81, unit: '%', status: 'Lädt', state: 'good', power: false,
+      badge: { icon: 'M7 4h10v17H7z', value: 81, unit: '%', state: 'good', label: 'Akku 81 %' },
       readings: [
         { id: 'range', label: 'Reichweite', value: 312, unit: 'km', icon: 'M2 2h4', state: null },
         { id: 'lock', label: 'Verriegelt', value: null, unit: null, icon: LOCK_CLOSED, state: 'good' },
@@ -675,6 +747,7 @@ describe('devices and widget readings through the client API', () => {
     assert.equal(r.body.widget.label.length, 24);
     assert.equal(r.body.widget.power, true, 'anything but false is true');
     assert.deepEqual(r.body.widget.readings.map((x) => x.id), ['range', 'lock']);
+    assert.deepEqual(r.body.widget.badge, CAR_WIDGET.badge, 'the badge in a run\'s answer');
     assert.deepEqual(Object.keys(r.body).sort(), ['message', 'ok', 'state', 'unchanged', 'widget']);
     await kv('hello', 'quick-result', { ok: true, widget: { readings: 'x' } });
     assert.deepEqual((await run('lock:42').expect(200)).body.widget, W(), 'readings not a list → []');

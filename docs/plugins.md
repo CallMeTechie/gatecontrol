@@ -920,6 +920,7 @@ hosts drop the field, older apps ignore it.
                   { id: 'heat', label: 'Heizen', icon: FLAME_ICON }] },
     ],
     power: true,                                 // the toggle is the device's on/off switch (default)
+    badge: { icon: FILTER_ICON, value: 92, unit: '%', state: 'good', label: 'Filter 92 %' },
   } }
 ```
 
@@ -945,6 +946,28 @@ hosts drop the field, older apps ignore it.
   like the device's other actions, as a button (e.g. a car's climate action
   carrying the car's widget). Anything but `false` is `true`.
 * A widget with only `readings` (no value, status or controls) is valid.
+* A widget without a `value` (missing or invalid → `value: null`) is valid
+  as well; the apps then show **no** main value (not a dash) — e.g. a card
+  that only carries a status, readings, controls or a badge.
+* `badge` (optional): one small value the apps show in the card's **head,
+  right of the device name** — e.g. a car's battery as a battery icon and
+  "24 %". `{ icon, value?, unit?, state?, label? }`:
+  * `icon` (required): an SVG path like the action's `icon`; a missing or
+    invalid icon makes the whole badge `null`.
+  * `value`: a string (trimmed, 1–8 characters, no control characters) or
+    a finite number (format it yourself for a decimal comma); anything
+    else → `null` — a string that is too long or contains a control
+    character becomes `null`, it is **not** cut. An icon without a value is
+    a valid badge.
+  * `unit`: a string (trimmed, 1–4 characters, no control characters), only
+    with a value (without a value → `null`).
+  * `state`: `'good'` | `'warn'` | `'crit'` (the colour), otherwise `null`.
+  * `label`: a string (trimmed, 1–20 characters, no control characters),
+    the accessible name for screen readers ("Akku 24 %"), otherwise `null`.
+
+  An invalid field becomes `null`; an invalid badge becomes `badge: null` —
+  it never makes the widget `null`. A sanitised badge always has all five
+  keys: `{ icon, value, unit, state, label }`.
 * `controls` (≤ 4, optional): `id` `[A-Za-z0-9_-]{1,24}` and unique per
   widget, `kind` `stepper`, `slider` or `choice`, `label` ≤ 20 (optional).
   * `stepper` / `slider`: `value`, `min`, `max`, `step` finite numbers with
@@ -962,7 +985,8 @@ hosts drop the field, older apps ignore it.
   the whole `widget` `null` in the host's answer; the action itself stays.
   An entry without a `widget` lists `widget: null` as well.
 * A sanitised widget always has every key:
-  `{ label, value, unit, status, state, readings, controls, power }`.
+  `{ label, value, unit, status, state, readings, controls, power, badge }`
+  (`badge` is `null` without a valid one).
 * **One widget per device**: when a device has several actions, give the
   `widget` to one of them (the device's "carrier"); control runs go to that
   action. The apps build the card from the carrier's widget and the

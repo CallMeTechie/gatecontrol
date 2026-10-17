@@ -41,8 +41,11 @@
 //             readings?: [{ id, label, value?, unit?, icon?, state? }],   (≤ 4, invalid ones dropped)
 //             controls?: [{ id, kind: 'stepper'|'slider', label?, value, min, max, step, unit? },
 //                         { id, kind: 'choice', label?, value, options: [{ id, label, icon? }] }],
-//             power?: boolean }                                        (default true)
-// Anything invalid in it (but a reading) makes the whole widget null; the action stays.
+//             power?: boolean,                                         (default true)
+//             badge?: { icon, value?, unit?, state?: 'good'|'warn'|'crit', label? } }
+// Anything invalid in it (but a reading or the badge) makes the whole widget null;
+// the action stays. An invalid badge becomes null (badge: one small value in the
+// card's head, right of the device name, e.g. a car's battery).
 //
 // Asked like the portal hooks (src/services/plugins/portal.js): only plugins
 // that may run, are running and have `permissions.portal` (the actions run as
@@ -75,6 +78,10 @@ const DEVICE_ID_RE = /^[A-Za-z0-9:._-]{1,64}$/;
 const TONES = new Set(['good', 'warn', 'crit', 'neutral']);
 const MAX_READINGS = 4;
 const MAX_VERB = 20;
+const BADGE_STATES = new Set(['good', 'warn', 'crit']);
+const MAX_BADGE_VALUE = 8;
+const MAX_BADGE_UNIT = 4;
+const MAX_BADGE_LABEL = 20;
 const CTRL_RE = /[\0-\x1f\x7f]/;
 
 function evaluate(p) { return require('./index').evaluate(p); }
@@ -104,10 +111,38 @@ function icon(v) { return typeof v === 'string' && ICON_RE.test(v) ? v : null; }
 function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
 
 /** One verb of a toggle: a string, trimmed 1–20 characters without control characters, else null. */
-function verb(v) {
+function verb(v) { return shortText(v, MAX_VERB); }
+
+/**
+ * A short text of a badge: a string, trimmed 1–max characters without
+ * control characters, else null (too long → null, never cut).
+ */
+function shortText(v, max) {
   if (typeof v !== 'string' || CTRL_RE.test(v)) return null;
   const s = v.trim();
-  return s.length >= 1 && s.length <= MAX_VERB ? s : null;
+  return s.length >= 1 && s.length <= max ? s : null;
+}
+
+/**
+ * badge of a widget (one small value in the card's head, right of the device
+ * name) → { icon, value, unit, state, label }, or null: icon an SVG path
+ * (required — without a valid one the badge is null), value a string ≤ 8 or
+ * a finite number, unit ≤ 4 (only with a value), state 'good'|'warn'|'crit',
+ * label ≤ 20 (the accessible name); an invalid field becomes null, a string
+ * that is too long or has control characters as well.
+ */
+function sanitizeBadge(b) {
+  if (!isObj(b)) return null;
+  const i = icon(b.icon);
+  if (!i) return null;
+  const value = typeof b.value === 'number' ? num(b.value) : shortText(b.value, MAX_BADGE_VALUE);
+  return {
+    icon: i,
+    value,
+    unit: value === null ? null : shortText(b.unit, MAX_BADGE_UNIT),
+    state: typeof b.state === 'string' && BADGE_STATES.has(b.state) ? b.state : null,
+    label: shortText(b.label, MAX_BADGE_LABEL),
+  };
 }
 
 /** verbs of a toggle: { on, off } → { on, off } (both valid), or null. */
@@ -218,9 +253,12 @@ function sanitizeControl(c) {
 /**
  * The `widget` of a quick action (listed or in a run's answer) → the sanitised
  * widget, or null when there is none or anything in it is invalid.
- * Readings are dropped one by one, they never make the widget null.
+ * Readings are dropped one by one and an invalid badge becomes null — they
+ * never make the widget null. A widget without a value (value: null) is valid.
  * @returns {null | { label: string|null, value: string|number|null, unit: string|null,
- *   status: string|null, state: string|null, readings: object[], controls: object[], power: boolean }}
+ *   status: string|null, state: string|null, readings: object[], controls: object[], power: boolean,
+ *   badge: { icon: string, value: string|number|null, unit: string|null, state: string|null,
+ *   label: string|null } | null }}
  */
 function sanitizeWidget(w) {
   if (!w || typeof w !== 'object' || Array.isArray(w)) return null;
@@ -247,6 +285,7 @@ function sanitizeWidget(w) {
     readings: sanitizeReadings(w.readings),
     controls,
     power: w.power !== false,
+    badge: sanitizeBadge(w.badge),
   };
 }
 
@@ -391,6 +430,6 @@ function _setRunTimeoutForTest(ms) {
 }
 
 module.exports = {
-  list, run, sanitize, sanitizeWidget, sanitizeDevice, sanitizeLook, sanitizeVerbs, sanitizeReading, sanitizeReadings, sanitizeValueRow,
-  HOOK_MS, MAX_READINGS, TONES, RUN_MS, MAX_ACTIONS, MAX_CONTROLS, ACTION_ID_RE, CONTROL_ID_RE, DEVICE_ID_RE, VIA_PERSON, TOGGLE_STATES, MAX_VERB, _setRunTimeoutForTest,
+  list, run, sanitize, sanitizeWidget, sanitizeDevice, sanitizeLook, sanitizeVerbs, sanitizeReading, sanitizeReadings, sanitizeValueRow, sanitizeBadge,
+  HOOK_MS, MAX_READINGS, TONES, RUN_MS, MAX_ACTIONS, MAX_CONTROLS, ACTION_ID_RE, CONTROL_ID_RE, DEVICE_ID_RE, VIA_PERSON, TOGGLE_STATES, MAX_VERB, BADGE_STATES, _setRunTimeoutForTest,
 };
