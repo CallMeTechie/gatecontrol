@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.174.0] — 2026-10-17
+
+### Features
+- icons for the options of widget choice controls (#318)
+
+---
+
 ## [1.173.0] — 2026-10-16
 
 ### Features
