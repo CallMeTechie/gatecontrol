@@ -240,6 +240,27 @@ function makeGc(info) {
       ? hostCall('notify', { notification: message })
       : hostCall('notify', { message: String(message), opts: opts || {} })),
     license: Object.freeze({ status: () => hostCall('license.status', {}) }),
+    /**
+     * plugin.json `media`: files the users uploaded (PUT …/plugins/<id>/media, GC.upload) —
+     * info(id) → { mediaId, mime, bytes, sha256, owner, createdAt, claimed } | null; claim(id) keeps
+     * a new file (else removed after 24 h); delete(id) → boolean; usage() → { bytes, count, quota,
+     * maxBytes, types }; url(id, { user, ttlS }) → '/plugin-media/<token>' for frames
+     */
+    media: Object.freeze({
+      info: (id) => hostCall('media.info', { id }),
+      claim: (id) => hostCall('media.claim', { id }),
+      delete: (id) => hostCall('media.delete', { id }),
+      usage: () => hostCall('media.usage', {}),
+      url: (id, opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('media.url', { id, user: o.user, ttlS: o.ttlS }); },
+    }),
+    /** permissions.events: emit({ users: [ids], type, data }) → { delivered } — realtime, not stored */
+    events: Object.freeze({
+      emit: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('events.emit', { users: o.users, type: o.type, data: o.data }); },
+    }),
+    /** permissions.services: call({ plugin, service, userId, payload }) → the providing plugin's answer */
+    services: Object.freeze({
+      call: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('services.call', { plugin: o.plugin, service: o.service, userId: o.userId, payload: o.payload }); },
+    }),
   });
 }
 
@@ -288,6 +309,15 @@ async function handleCall(method, payload) {
       // runs one of the actions quickActions listed for that viewer (the host checked the id)
       if (typeof plugin.runQuickAction !== 'function') throw new Error('this plugin has no quick actions');
       return plugin.runQuickAction(payload, gc);
+    case 'mediaAccess':
+      // optional (plugin.json `media`): may payload.user see media payload.mediaId? No hook → null
+      // (the host then allows the uploader only)
+      if (typeof plugin.mediaAccess !== 'function') return { allowed: null };
+      return { allowed: (await plugin.mediaAccess(payload, gc)) === true };
+    case 'service':
+      // a service of services.provides called by another plugin (gc.services.call): { name, caller, user, payload }
+      if (typeof plugin.service !== 'function') throw new Error('this plugin offers no services');
+      return { result: await plugin.service(payload, gc) };
     case 'legacyImport':
       // built-in data handed over once by the host (first-party plugins only, src/services/plugins/legacy.js)
       if (typeof plugin.legacyImport !== 'function') throw new Error('this plugin cannot import built-in data');

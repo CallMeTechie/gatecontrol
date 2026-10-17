@@ -2297,6 +2297,43 @@ const migrations = [
       ALTER TABLE notifications ADD COLUMN image_expires_at TEXT;`,
     detect: (db) => tableExists(db, 'notify_media') && hasColumn(db, 'notifications', 'image_url') && hasColumn(db, 'notifications', 'image_expires_at'),
   },
+  {
+    version: 103,
+    name: 'plugin_media',
+    // Plugin media and chat notifications (docs/plugins.md "Media" and
+    // "Chat notifications", services/plugins/media.js).
+    //   plugin_media          one uploaded file of a plugin declaring `media`
+    //                         (picture, voice message, document). id is 32 hex
+    //                         characters; the file itself lives in
+    //                         <data>/plugin-media/<plugin>/<id[0..2]>/<id>,
+    //                         encrypted (AES-256-GCM in 64 KiB chunks) with a
+    //                         key of its own — key_enc is that key, wrapped
+    //                         with a key derived from the server secret.
+    //                         sha256 / bytes describe the plaintext.
+    //                         ref_count 0 = not claimed by the plugin yet:
+    //                         such a row is removed 24 h after created_at.
+    //   notifications.kind    NULL for every notification so far, 'message'
+    //                         for a chat notification (notifyTopics[].chat):
+    //                         not in the inbox, title/body hidden from the
+    //                         administrator, purged after the push retention.
+    sql: `
+      CREATE TABLE IF NOT EXISTS plugin_media (
+        id TEXT PRIMARY KEY,
+        plugin TEXT NOT NULL,
+        owner_user_id INTEGER,
+        mime TEXT NOT NULL,
+        bytes INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        ref_count INTEGER NOT NULL DEFAULT 0,
+        claimed_at TEXT,
+        key_enc TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_plugin_media_plugin ON plugin_media(plugin);
+      CREATE INDEX IF NOT EXISTS idx_plugin_media_unclaimed ON plugin_media(ref_count, created_at);
+      ALTER TABLE notifications ADD COLUMN kind TEXT;`,
+    detect: (db) => tableExists(db, 'plugin_media') && hasColumn(db, 'notifications', 'kind'),
+  },
 ];
 
 module.exports = { migrations };

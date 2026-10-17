@@ -4,6 +4,12 @@
 //   *  /api/v1/portal/plugins/:id/api/<path>   forwarded to the plugin
 //   GET /api/v1/portal/plugins/start           Start-tab tiles of all plugins
 //   GET /api/v1/portal/plugins/search?q=       search results of all plugins
+//   PUT /api/v1/portal/plugins/:id/media       an upload of the plugin's frame
+//                                              (GC.upload, plugin.json `media`) — a
+//                                              portal or web login, CSRF
+//   GET /api/v1/portal/plugins/:id/events      SSE: the plugin's realtime events for
+//                                              the viewer (permissions.events) — a
+//                                              portal or web login (or a kiosk device)
 // Mounted inside the portal API router (routes/api/portal.js): the portal
 // gate, portalIdentity/portalOwner and the CSRF check of signed-in viewers
 // have run. The plugin sees the portal viewer as the acting user — reads
@@ -62,6 +68,39 @@ router.get('/search', async (req, res) => {
   } catch {
     res.json({ ok: true, results: [] });
   }
+});
+
+/** A running portal plugin with this id (may run, running), or null. */
+function runningPortalPlugin(req) {
+  const id = String(req.params.id || '');
+  const p = ID_RE.test(id) ? plugins.get(id) : null;
+  if (!p || !p.manifest || !p.manifest.permissions || !p.manifest.permissions.portal) return null;
+  return plugins.evaluate(p).run && require('../../services/plugins/runtime').info(p.id).state === 'running' ? p : null;
+}
+
+// ─── Media upload of a frame (GC.upload → public/js/plugin-bridge.js) ────
+const media = require('../../services/plugins/media');
+
+router.put('/:id/media', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const p = runningPortalPlugin(req);
+  if (!p || !media.declOf(p)) return res.status(404).json({ ok: false, code: 'not_found' });
+  const user = portalUser(req); // a change: portal or web login only
+  if (!user) return res.status(403).json({ ok: false, code: 'login_required' });
+  try {
+    return res.json({ ok: true, ...(await media.store(p, user.id, req)) });
+  } catch (e) { return media.failure(res, e); }
+});
+
+// ─── Realtime events of the plugin (services/plugins/events.js) ────
+// Pushed by the core without asking the plugin, so for signed-in viewers
+// only (device trust alone is not enough for live private data).
+router.get('/:id/events', (req, res) => {
+  const p = runningPortalPlugin(req);
+  if (!p || !p.manifest.permissions.events) return res.status(404).json({ ok: false, code: 'not_found' });
+  const user = portalUser(req);
+  if (!user || !user.loggedIn) return res.status(403).json({ ok: false, code: 'login_required' });
+  return require('../../services/plugins/events').openStream(req, res, p.id, user.id);
 });
 
 router.all('/:id/api/*', (req, res, next) => {

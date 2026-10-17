@@ -15,8 +15,9 @@ const { uploadLimiter } = require('../../../middleware/rateLimit');
 const gcbk = require('../../../services/offsite/gcbk');
 
 // Backups carry plugin code and data since format 5 (≤ 48 MB raw, see
-// services/plugins/backup.js) — base64 in JSON needs room above that.
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 96 * 1024 * 1024 } });
+// services/plugins/backup.js) — base64 in JSON needs room above that — and,
+// with "Plugin-Medien im Backup", up to 128 MB of plugin media (raw).
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 288 * 1024 * 1024 } });
 
 const router = Router();
 

@@ -48,6 +48,9 @@ const KIOSK_ALLOW = [
   // Plugins: Start tiles, search, and the plugin API of portal plugins (any method; CSRF like every signed-in viewer)
   { methods: ['GET', 'HEAD'], re: /^\/api\/v1\/portal\/plugins\/(?:start|search)$/ },
   { methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'], re: new RegExp(`^/api/v1/portal/plugins/${PLUGIN_ID}/api/[^?#]*$`) },
+  // ... a frame's uploads (GC.upload) and its realtime events (docs/plugins.md "Media", "Realtime events")
+  { methods: ['PUT'], re: new RegExp(`^/api/v1/portal/plugins/${PLUGIN_ID}/media$`) },
+  { methods: ['GET'], re: new RegExp(`^/api/v1/portal/plugins/${PLUGIN_ID}/events$`) },
 ];
 
 /** Path of the request without the query (the raw path express routes on). */

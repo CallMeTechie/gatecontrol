@@ -125,7 +125,8 @@ function createRouter() {
     const limit = /^\d{1,3}$/.test(String(req.query.limit || '')) ? Math.min(100, Math.max(1, Number(req.query.limit))) : 100;
     const before = /^\d{1,15}$/.test(String(req.query.before || '')) ? Number(req.query.before) : null;
     const nowIso = store.iso();
-    const live = 'n.revoked_at IS NULL AND n.release_at IS NULL AND (n.expires_at IS NULL OR n.expires_at > ?)';
+    // chat notifications (store.NOT_CHAT_SQL) belong to the plugin's chat, not to the inbox
+    const live = `n.revoked_at IS NULL AND n.release_at IS NULL AND (n.expires_at IS NULL OR n.expires_at > ?) AND ${store.NOT_CHAT_SQL}`;
     const db = getDb();
     const rows = db.prepare(`SELECT n.*, MAX(CASE WHEN d.state IN ('read', 'dismissed') THEN 1 ELSE 0 END) AS is_read,
          MIN(d.silent) AS d_silent

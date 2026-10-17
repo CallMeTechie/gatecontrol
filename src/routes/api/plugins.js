@@ -4,8 +4,8 @@
 // /api/v1/plugins behind requireAuth + apiLimiter + CSRF + requireAdmin
 // (routes/api/index.js). Session only: an API token cannot install code.
 //
-//   GET    /                       installed plugins + policy
-//   PUT    /policy                 { allowUnsigned, confirm: 'ERLAUBEN' }
+//   GET    /                       installed plugins + policy (allowUnsigned, backupMedia)
+//   PUT    /policy                 { allowUnsigned, confirm: 'ERLAUBEN' } and/or { backupMedia }
 //   POST   /inspect                the .gcplugin (application/octet-stream) → checks + token
 //   POST   /install                { token, accept: true, licenseKey? }
 //   GET    /:id                    one plugin (+ storage size)
@@ -21,6 +21,10 @@
 //   POST   /:id/license/check
 //   GET    /:id/legacy             built-in data this plugin may import (null if none)
 //   POST   /:id/legacy/import      { confirm: true } hand the built-in data over to the plugin
+//   GET    /:id/media/settings     plugin.json `media`: limits, quota, usage
+//   PUT    /:id/media/settings     { quotaBytes } (null = the declared default)
+//   PUT    /:id/media              an upload of the plugin's admin frame (GC.upload, raw body)
+//   GET    /:id/events             SSE: the plugin's realtime events for this administrator
 //   *      /:id/api/<path>         forwarded to the plugin (its own admin API)
 
 const express = require('express');
@@ -71,18 +75,31 @@ function currentUser(req) {
   return u ? { id: u.id, name: u.display_name || u.username, role: u.role } : null;
 }
 
+const media = require('../../services/plugins/media');
+
 router.get('/', (req, res) => {
   try {
-    res.json({ ok: true, allowUnsigned: plugins.allowUnsigned(), serverVersion: plugins.serverVersion(), plugins: plugins.list(lang(req)) });
+    res.json({ ok: true, allowUnsigned: plugins.allowUnsigned(), backupMedia: media.backupEnabled(), serverVersion: plugins.serverVersion(), plugins: plugins.list(lang(req)) });
   } catch (e) { fail(req, res, e); }
 });
 
 router.put('/policy', async (req, res) => {
-  const on = req.body && req.body.allowUnsigned;
-  if (typeof on !== 'boolean') return res.status(400).json({ ok: false, code: 'invalid', error: tr(req, 'plugins.err.invalid', 'Invalid request') });
+  const b = req.body || {};
+  const on = b.allowUnsigned;
+  const bm = b.backupMedia;
+  if ((on !== undefined && typeof on !== 'boolean') || (bm !== undefined && typeof bm !== 'boolean') || (on === undefined && bm === undefined)) {
+    return res.status(400).json({ ok: false, code: 'invalid', error: tr(req, 'plugins.err.invalid', 'Invalid request') });
+  }
   try {
-    await plugins.setAllowUnsigned(on, { confirm: req.body.confirm, ip: req.ip });
-    res.json({ ok: true, allowUnsigned: plugins.allowUnsigned(), plugins: plugins.list(lang(req)) });
+    if (on !== undefined) await plugins.setAllowUnsigned(on, { confirm: b.confirm, ip: req.ip });
+    // "Plugin-Medien im Backup" (docs/plugins.md "Backup"): off by default
+    if (bm !== undefined && bm !== media.backupEnabled()) {
+      media.setBackupEnabled(bm);
+      require('../../services/activity').log('plugin_media_backup', bm ? 'Plugin media are included in backups' : 'Plugin media are no longer included in backups', {
+        source: 'admin', ipAddress: req.ip, severity: 'info', details: { backupMedia: bm },
+      });
+    }
+    res.json({ ok: true, allowUnsigned: plugins.allowUnsigned(), backupMedia: media.backupEnabled(), plugins: plugins.list(lang(req)) });
   } catch (e) { fail(req, res, e); }
 });
 
@@ -265,6 +282,69 @@ router.post('/:id/legacy/import', async (req, res) => {
     }
     fail(req, res, e);
   }
+});
+
+// ─── Media (plugin.json `media`, services/plugins/media.js) ─────
+
+function mediaView(p) {
+  const decl = media.declOf(p);
+  return { maxBytes: decl.maxBytes, types: decl.types, quotaDefault: decl.quotaDefault, quota: media.quotaOf(p), usage: media.usage(p.id) };
+}
+
+router.get('/:id/media/settings', (req, res) => {
+  const p = pluginParam(req, res);
+  if (!p) return;
+  if (!media.declOf(p)) return res.status(404).json({ ok: false, code: 'no_media', error: tr(req, 'plugins.err.not_found', 'Plugin not found') });
+  res.json({ ok: true, media: mediaView(p) });
+});
+
+router.put('/:id/media/settings', (req, res) => {
+  const p = pluginParam(req, res);
+  if (!p) return;
+  if (!media.declOf(p)) return res.status(404).json({ ok: false, code: 'no_media', error: tr(req, 'plugins.err.not_found', 'Plugin not found') });
+  const q = req.body ? req.body.quotaBytes : undefined;
+  try {
+    media.setQuota(p, q === undefined ? NaN : q);
+  } catch {
+    return res.status(400).json({ ok: false, code: 'invalid', error: tr(req, 'plugins.err.invalid', 'Invalid request') });
+  }
+  const view = mediaView(p);
+  require('../../services/plugins/registry').addLog(p.id, 'info', `media quota set by an administrator: ${q === null ? 'default' : view.quota + ' bytes'}`);
+  require('../../services/activity').log('plugin_media_quota', `Plugin "${p.name}": media quota ${q === null ? 'reset to the default' : 'changed'}`, {
+    source: 'admin', ipAddress: req.ip, severity: 'info', details: { plugin: p.id, quota: view.quota },
+  });
+  res.json({ ok: true, media: view });
+});
+
+/** The plugin of an admin frame request: installed, may run, running. */
+function runningPlugin(req, res) {
+  const p = pluginParam(req, res);
+  if (!p) return null;
+  if (!plugins.evaluate(p).run || require('../../services/plugins/runtime').info(p.id).state !== 'running') {
+    res.status(503).json({ ok: false, code: 'not_running', error: tr(req, 'plugins.err.not_running', 'Plugin unavailable') });
+    return null;
+  }
+  return p;
+}
+
+router.put('/:id/media', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const p = runningPlugin(req, res);
+  if (!p) return undefined;
+  if (!media.declOf(p)) return res.status(404).json({ ok: false, code: 'not_found', error: tr(req, 'plugins.err.not_found', 'Plugin not found') });
+  const user = currentUser(req);
+  if (!user) return res.status(403).json({ ok: false, code: 'login_required' });
+  try {
+    return res.json({ ok: true, ...(await media.store(p, user.id, req)) });
+  } catch (e) { return media.failure(res, e); }
+});
+
+// ─── Realtime events (permissions.events, services/plugins/events.js) ────
+router.get('/:id/events', (req, res) => {
+  const p = runningPlugin(req, res);
+  if (!p) return undefined;
+  if (!p.manifest.permissions || !p.manifest.permissions.events) return res.status(404).json({ ok: false, code: 'not_found' });
+  return require('../../services/plugins/events').openStream(req, res, p.id, req.session.userId);
 });
 
 // ─── Forwarded to the plugin ────────────────────

@@ -37,20 +37,32 @@
 // (/avatars/<id>.<ext>); every plugin frame (admin page, portal tab, wall)
 // may show them — img-src <origin>/avatars/ (this origin, this path only;
 // nothing else of the server). The pictures need no cookie.
+//
+// Media (plugin.json `media`, docs/plugins.md "Media"), for those plugins'
+// frames only: img-src and media-src <origin>/plugin-media/ — the signed
+// capability URLs of gc.media.url (pictures, voice messages; no cookie).
+// window.GC.upload(file) hands a file to the parent page, which uploads it
+// with the session (public/js/plugin-bridge.js); the parent's <iframe> gets
+// allow="microphone *" for such plugins (voice recording in the portal).
+//
+// Realtime events (permissions.events): window.GC.on('event', fn) — the
+// parent page holds the plugin's event stream and passes each event on.
 
 const OSM_TILES = 'https://tile.openstreetmap.org';
 const SHARED_LEAFLET = '/plugins/_shared/leaflet/';
 const SHARED_TILES = '/plugins/_shared/tiles/';
 const AVATARS = '/avatars/';
+const PLUGIN_MEDIA = '/plugin-media/';
 const SANDBOX = 'sandbox allow-scripts allow-forms';
 const SANDBOX_MAPS = SANDBOX + ' allow-popups allow-popups-to-escape-sandbox';
 
-function directives({ script = [], style = [], img = [], sandbox = SANDBOX } = {}) {
+function directives({ script = [], style = [], img = [], media = [], sandbox = SANDBOX } = {}) {
   return [
     "default-src 'none'",
     ["script-src 'unsafe-inline'", ...script].join(' '),
     ["style-src 'unsafe-inline'", ...style].join(' '),
     ['img-src data:', ...img].join(' '),
+    ...(media.length ? [['media-src', ...media].join(' ')] : []),
     'font-src data:',
     "connect-src 'none'",
     "form-action 'none'",
@@ -75,16 +87,19 @@ function originOf(req) {
 
 /**
  * The frame CSP: the base one, with maps for a `ui.maps` plugin, with the
- * profile pictures of this origin (`avatars` + a known `origin`).
+ * profile pictures of this origin (`avatars` + a known `origin`), with the
+ * plugin media of this origin (`media` + a known `origin`).
  */
-function cspFor({ maps = false, origin = null, avatars = false } = {}) {
-  const pics = avatars && origin ? [origin + AVATARS] : [];
-  if (!maps) return pics.length ? directives({ img: pics }) : CSP;
+function cspFor({ maps = false, origin = null, avatars = false, media = false } = {}) {
+  const mediaSrc = media && origin ? [origin + PLUGIN_MEDIA] : [];
+  const pics = [...(avatars && origin ? [origin + AVATARS] : []), ...mediaSrc];
+  if (!maps) return pics.length ? directives({ img: pics, media: mediaSrc }) : CSP;
   const base = origin ? origin + SHARED_LEAFLET : null;
   return directives({
     script: base ? [base + 'leaflet.js'] : [],
     style: base ? [base + 'leaflet.css'] : [],
     img: [OSM_TILES, ...(base ? [base + 'images/', origin + SHARED_TILES] : []), ...pics],
+    media: mediaSrc,
     sandbox: SANDBOX_MAPS,
   });
 }
@@ -115,7 +130,7 @@ table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:8px;bord
 
 // Runs inside the sandboxed frame. Talks to window.parent only.
 const BRIDGE_CLIENT = `(function(){
-  var seq = 0, pending = {};
+  var seq = 0, pending = {}, listeners = [];
   function post(msg){ try { window.parent.postMessage(msg, '*'); } catch (e) { /* no parent */ } }
   window.addEventListener('message', function (e) {
     if (e.source !== window.parent) return;
@@ -123,7 +138,12 @@ const BRIDGE_CLIENT = `(function(){
     if (!m || typeof m !== 'object') return;
     if (m.type === 'gc-result' && pending[m.id]) {
       var p = pending[m.id]; delete pending[m.id];
+      if (p.timer) clearTimeout(p.timer);
       if (m.ok) p.resolve(m.data); else p.reject(Object.assign(new Error(m.error || 'request failed'), { status: m.status, data: m.data }));
+    } else if (m.type === 'gc-upload-progress' && pending[m.id] && pending[m.id].progress) {
+      try { pending[m.id].progress({ loaded: Number(m.loaded) || 0, total: Number(m.total) || 0 }); } catch (e) { /* the plugin's callback */ }
+    } else if (m.type === 'gc-event' && m.event && typeof m.event === 'object') {
+      for (var i = 0; i < listeners.length; i++) { try { listeners[i](m.event); } catch (e) { /* the plugin's listener */ } }
     } else if (m.type === 'gc-theme') {
       document.documentElement.setAttribute('data-theme', m.theme === 'light' ? 'light' : 'dark');
     }
@@ -135,6 +155,28 @@ const BRIDGE_CLIENT = `(function(){
       post({ type: 'gc-call', id: id, method: String(method || 'GET').toUpperCase(), path: String(path || ''), body: body === undefined ? null : body });
       setTimeout(function () { if (pending[id]) { delete pending[id]; reject(new Error('timeout')); } }, 60000);
     });
+  }
+  // plugin.json media: the parent page uploads the file with the session → { mediaId, mime, bytes }
+  function upload(file, opts) {
+    return new Promise(function (resolve, reject) {
+      if (typeof Blob === 'undefined' || !(file instanceof Blob)) { reject(new Error('GC.upload needs a File or Blob')); return; }
+      var id = ++seq;
+      var progress = opts && typeof opts.onProgress === 'function' ? opts.onProgress : null;
+      pending[id] = { resolve: resolve, reject: reject, progress: progress };
+      pending[id].timer = setTimeout(function () { if (pending[id]) { delete pending[id]; reject(new Error('timeout')); } }, 15 * 60000);
+      post({ type: 'gc-upload', id: id, file: file, mime: String(file.type || ''), progress: !!progress });
+    });
+  }
+  // permissions.events: realtime events of the plugin ({ plugin, type, data })
+  function on(name, fn) {
+    if (name !== 'event' || typeof fn !== 'function') return;
+    if (listeners.indexOf(fn) < 0) listeners.push(fn);
+    if (listeners.length === 1) post({ type: 'gc-subscribe' });
+  }
+  function off(name, fn) {
+    var i = listeners.indexOf(fn);
+    if (name === 'event' && i >= 0) listeners.splice(i, 1);
+    if (name === 'event' && i >= 0 && !listeners.length) post({ type: 'gc-unsubscribe' });
   }
   // Height of the frame content: the document's own height (scrollHeight is
   // never below the frame's current height, so the frame could not shrink
@@ -176,6 +218,9 @@ const BRIDGE_CLIENT = `(function(){
     put: function (p, b) { return call('PUT', p, b); },
     del: function (p) { return call('DELETE', p); },
     navigate: function (page) { post({ type: 'gc-nav', page: String(page || '') }); },
+    upload: upload,
+    on: on,
+    off: off,
     lang: document.documentElement.lang || 'de',
     tiles: /*GC_TILES*/null
   });
@@ -214,7 +259,8 @@ function document({ html, lang, maps = false, tiles = null }) {
 /**
  * Headers of a frame response. `opts.maps` (plugin with ui.maps) with
  * `opts.origin` (originOf(req)) relaxes the CSP for the map, `opts.avatars`
- * with `opts.origin` allows the profile pictures, see above.
+ * with `opts.origin` allows the profile pictures, `opts.media` with
+ * `opts.origin` the plugin's media URLs, see above.
  */
 function headers(res, opts = {}) {
   res.set('Content-Security-Policy', cspFor(opts));
@@ -225,4 +271,4 @@ function headers(res, opts = {}) {
   res.type('html');
 }
 
-module.exports = { CSP, cspFor, originOf, sandboxAttr, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS };
+module.exports = { CSP, cspFor, originOf, sandboxAttr, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA };

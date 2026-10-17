@@ -12,6 +12,8 @@
 //                                     with ui.maps (leaflet.js, leaflet.css, images/*.png)
 //   GET /plugins/_shared/tiles/<token>/<z>/<x>/<y>.png
 //                                     OpenStreetMap tiles for those frames (tiles.js)
+//   GET /plugin-media/<token>         a plugin's media file for its frames (signed
+//                                     capability URL of gc.media.url, media.js)
 //
 // Admin pages are for administrators like every other admin page (members
 // are sent to /profile). The frame is rendered by the plugin process for the
@@ -114,11 +116,29 @@ router.get('/plugins/_shared/tiles/:token/:z/:x/:y.png', pluginTileLimiter, asyn
   return res.end(out.body);
 });
 
+// ─── Plugin media for frames (docs/plugins.md "Media", media.js) ─────
+// No session (a sandboxed frame sends no cookies): the signed token is the
+// permission — minted by the plugin (gc.media.url) for a viewer it allowed,
+// valid ≤ 24 h. The file must still exist and its plugin still declare
+// `media`. Range for audio and video; 404 for everything that does not fit.
+
+const media = require('../services/plugins/media');
+const { pluginMediaLimiter } = require('../middleware/rateLimit');
+
+router.get('/plugin-media/:token', pluginMediaLimiter, async (req, res) => {
+  const hit = media.resolveToken(req.params.token);
+  const p = hit ? plugins.get(hit.row.plugin) : null;
+  if (!hit || !p || !media.declOf(p)) return tileError(res, 404, 'not found');
+  const left = Math.max(0, hit.exp - Math.floor(Date.now() / 1000));
+  return media.send(req, res, hit.row, `private, max-age=${left}, immutable`);
+});
+
 function mapsOf(p) { return !!(p && p.manifest && p.manifest.ui && p.manifest.ui.maps); }
 
 /**
  * Frame headers for plugin `p` (maps → the relaxed CSP for this request's
- * origin; every frame may show the profile pictures of this origin).
+ * origin; every frame may show the profile pictures of this origin; a
+ * plugin declaring `media` its media URLs).
  * Returns what frame.document() needs: `maps`, and `tiles` (the relay's URL
  * template for window.GC.tiles) for a maps frame with a known origin — the
  * CSP allows the relay only then.
@@ -126,7 +146,7 @@ function mapsOf(p) { return !!(p && p.manifest && p.manifest.ui && p.manifest.ui
 function frameHeaders(req, res, p) {
   const maps = mapsOf(p);
   const origin = frame.originOf(req);
-  frame.headers(res, { maps, avatars: true, origin });
+  frame.headers(res, { maps, avatars: true, origin, media: !!media.declOf(p) });
   return { maps, tiles: maps && origin ? tiles.template() : null };
 }
 

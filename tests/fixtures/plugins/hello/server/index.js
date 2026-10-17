@@ -114,6 +114,20 @@ module.exports = {
         } catch (e) { return { status: 400, json: { ok: false, code: e.code || null, error: e.message } }; }
       case '/license':
         return { json: { ok: true, license: await gc.license.status() } };
+      case '/media':
+        // gc.media.<op>(id, opts) (plugin.json `media`, tests/plugins_media.test.js)
+        try {
+          const b = req.body || {};
+          const op = String(b.op);
+          const result = op === 'usage' ? await gc.media.usage() : (op === 'url' ? await gc.media.url(b.id, b.opts) : await gc.media[op](b.id));
+          return { json: { ok: true, result } };
+        } catch (e) { return { status: 400, json: { ok: false, code: e.code || null, error: e.message } }; }
+      case '/events':
+        // gc.events.emit (permissions.events, tests/plugins_events.test.js); the body is passed on as is
+        try { return { json: { ok: true, result: await gc.events.emit(req.body) } }; } catch (e) { return { status: 400, json: { ok: false, code: e.code || null, error: e.message } }; }
+      case '/service':
+        // gc.services.call (permissions.services, tests/plugins_services.test.js)
+        try { return { json: { ok: true, result: await gc.services.call(req.body) } }; } catch (e) { return { status: 400, json: { ok: false, code: e.code || null, error: e.message } }; }
       case '/notify':
         await gc.notify('hello from the plugin', { severity: 'info' });
         return { json: { ok: true } };
@@ -224,6 +238,29 @@ module.exports = {
     await gc.storage.set('app-last', user);
     const hidden = await gc.storage.get('app-hidden');
     return !(Array.isArray(hidden) && hidden.includes(user.id));
+  },
+
+  // plugin media (tests/plugins_media.test.js): allowed for the user ids in kv
+  // "media-access" (or true for everyone); "media-access-mode" throw/slow; the
+  // last call is kept in "media-access-last"
+  async mediaAccess(payload, gc) {
+    const mode = await gc.storage.get('media-access-mode');
+    if (mode === 'slow') await new Promise((r) => setTimeout(r, 2000));
+    if (mode === 'throw') throw new Error('broken on purpose');
+    await gc.storage.set('media-access-last', payload);
+    const allowed = await gc.storage.get('media-access');
+    return allowed === true || (Array.isArray(allowed) && allowed.includes(payload.user.id));
+  },
+
+  // services of services.provides (tests/plugins_services.test.js): the call is
+  // kept in "service-last"; "service-mode" throw / slow / big; else an echo
+  async service(payload, gc) {
+    await gc.storage.set('service-last', payload);
+    const mode = await gc.storage.get('service-mode');
+    if (mode === 'throw') throw new Error('broken on purpose');
+    if (mode === 'slow') await new Promise((r) => setTimeout(r, 2000));
+    if (mode === 'big') return { blob: 'x'.repeat(17 * 1024) };
+    return { ok: true, name: payload.name, caller: payload.caller, echo: payload.payload };
   },
 
   // built-in data handed over by the host (tests/plugins_legacy.test.js)

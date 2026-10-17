@@ -126,6 +126,12 @@ function permissionSummary(m, lang) {
     pages: m.ui.pages.map((x) => loc(x.title, lang)), settings: m.ui.settings.length,
     portalTab: m.ui.portal && m.ui.portal.label ? loc(m.ui.portal.label, lang) : null,
     portalSections: m.ui.portal && m.ui.portal.sections ? m.ui.portal.sections.map((s) => ({ tab: s.tab, title: loc(s.title, lang) })) : [],
+    // messenger foundations (docs/plugins.md "Media", "Realtime events", "Chat notifications", "Services")
+    media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault } : null,
+    events: !!p.events,
+    chatTopics: p.notify ? (m.notifyTopics || []).filter((t) => t.chat === true).map((t) => loc(t.label, lang)) : [],
+    services: Array.isArray(p.services) ? p.services : [],
+    servicesProvided: m.services && m.services.provides ? Object.values(m.services.provides).map((x) => loc(x.label, lang)) : [],
   };
 }
 
@@ -363,10 +369,12 @@ async function removeInstalled(p, mode) {
   const id = p.id;
   await runtime.ensureStopped(id);
   await storage.close(id);
+  require('./events').closeStreams(id);
   rmrf(path.join(pluginsRoot(), id));
   registry.remove(id);
   if (mode === 'wipe') {
     rmrf(dataDir(id));
+    require('./media').removeAll(id);
     registry.removeLicense(id);
     require('./targets').removeAll(id);
     require('./legacy').forget(id);
@@ -467,6 +475,8 @@ function view(p, lang) {
       sections: (m.ui.portal.sections || []).map((s) => ({ tab: s.tab, title: loc(s.title, lang) })) } : null,
     app: m.ui && m.ui.app ? { label: loc(m.ui.app.label, lang), icon: m.ui.app.icon } : null,
     maps: !!(m.ui && m.ui.maps),
+    media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault } : null,
+    events: !!(m.permissions && m.permissions.events),
     settingsCount: m.ui && m.ui.settings ? m.ui.settings.length : 0,
     installedAt: p.installedAt,
     updatedAt: p.updatedAt,
@@ -563,6 +573,14 @@ async function checkThirdPartyLicences() {
   await reconcile();
 }
 
+function hourly() {
+  try {
+    const n = require('./media').cleanup();
+    if (n) logger.info({ removed: n }, 'plugin media clean-up');
+  } catch (e) { logger.warn({ err: e.message }, 'plugin media clean-up failed'); }
+  try { require('./hostApi').flushChatSummary(); } catch { /* best-effort */ }
+}
+
 function start() {
   if (timers.length) return;
   fs.mkdirSync(pluginsRoot(), { recursive: true });
@@ -570,6 +588,8 @@ function start() {
   // licence states change in the background (daily licence refresh, expiry): look every 5 minutes
   timers.push(setInterval(() => reconcile().catch(() => {}), 5 * 60 * 1000));
   timers.push(setInterval(() => checkThirdPartyLicences().catch(() => {}), 24 * 60 * 60 * 1000));
+  // hourly: unclaimed plugin media older than 24 h, the neutral line of chat notifications sent
+  timers.push(setInterval(hourly, 60 * 60 * 1000));
   setTimeout(() => checkThirdPartyLicences().catch(() => {}), 60 * 1000).unref();
   for (const t of timers) t.unref();
 }
@@ -577,6 +597,8 @@ function start() {
 async function stop() {
   for (const t of timers) clearInterval(t);
   timers = [];
+  try { require('./hostApi').flushChatSummary(); } catch { /* best-effort */ }
+  require('./events').closeStreams();
   await runtime.stopAll();
   await storage.closeAll();
 }

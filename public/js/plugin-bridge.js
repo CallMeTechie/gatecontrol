@@ -6,8 +6,45 @@
 // messages from the frame's own window are taken, only relative paths below
 // that plugin's API base are called, with this page's session and CSRF token.
 // Used by the admin plugin page (plugin.njk) and the portal (portal.njk).
+//
+// Uploads (GC.upload, plugin.json `media`): the frame posts the File/Blob,
+// this page PUTs it raw to the plugin's media endpoint (…/plugins/<id>/media)
+// with the session and CSRF token, reports progress and answers
+// { mediaId, mime, bytes }. Realtime events (GC.on('event'), frames with
+// data-plugin-events): one EventSource per plugin and page
+// (…/plugins/<id>/events), opened when the first frame subscribes, each
+// event passed to the subscribed frames of that plugin.
 (function () {
   const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+  const MAX_UPLOAD = 100 * 1024 * 1024;
+  const streams = {}; // plugin id → { es, frames: Set<reply fn> }
+
+  function subscribe(pluginId, url, sink) {
+    let s = streams[pluginId];
+    if (!s) {
+      s = { es: null, frames: new Set() };
+      streams[pluginId] = s;
+      try {
+        s.es = new EventSource(url, { withCredentials: true });
+        s.es.addEventListener('plugin', (ev) => {
+          let data = null;
+          try { data = JSON.parse(ev.data); } catch (_) { return; }
+          s.frames.forEach((fn) => fn({ type: 'gc-event', event: data }));
+        });
+      } catch (_) { s.es = null; }
+    }
+    s.frames.add(sink);
+  }
+
+  function unsubscribe(pluginId, sink) {
+    const s = streams[pluginId];
+    if (!s) return;
+    s.frames.delete(sink);
+    if (!s.frames.size) {
+      if (s.es) s.es.close();
+      delete streams[pluginId];
+    }
+  }
   const PATH_RE = /^[A-Za-z0-9._~!$&'()*+,;=:@%/-]*(\?[A-Za-z0-9._~!$&'()*+,;=:@%/?-]*)?$/;
 
   function csrf() {
@@ -33,6 +70,41 @@
       // The frame has an opaque origin ("null"): '*' is the only target that
       // reaches it; the receiver is pinned by contentWindow.
       if (frame.contentWindow) frame.contentWindow.postMessage(msg, '*');
+    }
+    const mediaUrl = base.replace(/api\/$/, 'media');
+    const eventsUrl = base.replace(/api\/$/, 'events');
+    const eventsOn = frame.getAttribute('data-plugin-events') != null;
+    let subscribed = false;
+    function setSubscribed(on) {
+      if (!eventsOn || on === subscribed) return;
+      subscribed = on;
+      if (on) subscribe(pluginId, eventsUrl, reply); else unsubscribe(pluginId, reply);
+    }
+
+    function upload(m) {
+      const file = m.file;
+      if (typeof Blob === 'undefined' || !(file instanceof Blob) || !file.size || file.size > MAX_UPLOAD) {
+        reply({ type: 'gc-result', id: m.id, ok: false, status: 400, error: 'invalid file' });
+        return;
+      }
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', mediaUrl);
+      xhr.withCredentials = true;
+      xhr.setRequestHeader('Accept', 'application/json');
+      xhr.setRequestHeader('X-CSRF-Token', csrf());
+      xhr.setRequestHeader('Content-Type', String(file.type || m.mime || 'application/octet-stream'));
+      if (m.progress) {
+        xhr.upload.onprogress = (e) => reply({ type: 'gc-upload-progress', id: m.id, loaded: e.loaded, total: e.lengthComputable ? e.total : file.size });
+      }
+      xhr.onload = () => {
+        let data = null;
+        try { data = JSON.parse(xhr.responseText); } catch (_) { data = null; }
+        const ok = xhr.status >= 200 && xhr.status < 300 && !!data && data.ok === true;
+        const out = ok ? { mediaId: data.mediaId, mime: data.mime, bytes: data.bytes } : data;
+        reply({ type: 'gc-result', id: m.id, ok, status: xhr.status, data: out, error: ok ? null : ((data && (data.code || data.error)) || ('HTTP ' + xhr.status)) });
+      };
+      xhr.onerror = () => reply({ type: 'gc-result', id: m.id, ok: false, status: 0, error: 'network error' });
+      xhr.send(file);
     }
 
     function sendTheme() { reply({ type: 'gc-theme', theme: theme() }); }
@@ -104,12 +176,19 @@
       const m = e.data;
       if (!m || typeof m !== 'object') return;
       if (m.type === 'gc-call' && Number.isInteger(m.id)) call(m);
+      else if (m.type === 'gc-upload' && Number.isInteger(m.id)) upload(m);
+      else if (m.type === 'gc-subscribe') setSubscribed(true);
+      else if (m.type === 'gc-unsubscribe') setSubscribed(false);
       else if (m.type === 'gc-resize') {
         const h = Math.max(120, Math.min(20000, Number(m.height) || 0));
         frame.style.height = h + 'px';
         placeDim();
       } else if (m.type === 'gc-modal') setModal(m.open === true);
-      else if (m.type === 'gc-hello') sendTheme();
+      else if (m.type === 'gc-hello') {
+        // a new document in the frame (first load, reload): it subscribes again when it wants events
+        setSubscribed(false);
+        sendTheme();
+      }
       else if (m.type === 'gc-nav') {
         const target = pages.find((p) => p === m.page);
         if (target && pluginId && !base.includes('/portal/')) window.location.assign('/plugins/' + encodeURIComponent(pluginId) + '/' + encodeURIComponent(target));
