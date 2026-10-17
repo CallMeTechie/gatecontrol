@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.175.0] — 2026-10-17
+
+### Features
+- a badge in the head of quick action widgets (#319)
+
+---
+
 ## [1.174.0] — 2026-10-17
 
 ### Features
