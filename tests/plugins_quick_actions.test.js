@@ -234,7 +234,7 @@ const AC_WIDGET = {
   value: '21,5', unit: '°C', status: 'Kühlen · Ziel 22 °C', state: 'on',
   controls: [
     { id: 'target', kind: 'stepper', label: 'Ziel', value: 22, min: 16, max: 30, step: 0.5, unit: '°C' },
-    { id: 'mode', kind: 'choice', label: 'Modus', value: 'cool', options: [{ id: 'auto', label: 'Auto' }, { id: 'cool', label: 'Kühlen' }, { id: 'heat', label: 'Heizen' }] },
+    { id: 'mode', kind: 'choice', label: 'Modus', value: 'cool', options: [{ id: 'auto', label: 'Auto' }, { id: 'cool', label: 'Kühlen', icon: 'M12 2v20M2 12h20' }, { id: 'heat', label: 'Heizen', icon: '<svg/>' }] },
   ],
 };
 // a sanitised widget: every key, with the defaults for what the plugin left out
@@ -243,7 +243,7 @@ const AC_SANITISED = {
   label: null, value: '21,5', unit: '°C', status: 'Kühlen · Ziel 22 °C', state: 'on', readings: [], power: true,
   controls: [
     { id: 'target', kind: 'stepper', label: 'Ziel', value: 22, min: 16, max: 30, step: 0.5, unit: '°C' },
-    { id: 'mode', kind: 'choice', label: 'Modus', value: 'cool', options: [{ id: 'auto', label: 'Auto' }, { id: 'cool', label: 'Kühlen' }, { id: 'heat', label: 'Heizen' }] },
+    { id: 'mode', kind: 'choice', label: 'Modus', value: 'cool', options: [{ id: 'auto', label: 'Auto', icon: null }, { id: 'cool', label: 'Kühlen', icon: 'M12 2v20M2 12h20' }, { id: 'heat', label: 'Heizen', icon: null }] },
   ],
 };
 const stepper = (over = {}) => ({ id: 'target', kind: 'stepper', value: 22, min: 16, max: 30, step: 0.5, ...over });
@@ -299,7 +299,7 @@ describe('widget sanitiser (sanitizeWidget)', () => {
 
   it('choice: 2–8 options with valid unique ids and labels; an unknown value falls back to the first option', () => {
     const ok = (over) => sanitizeWidget({ controls: [choice(over)] });
-    assert.deepEqual(ok({}).controls, [{ id: 'mode', kind: 'choice', label: null, value: 'cool', options: [{ id: 'auto', label: 'Auto' }, { id: 'cool', label: 'Kühlen' }] }]);
+    assert.deepEqual(ok({}).controls, [{ id: 'mode', kind: 'choice', label: null, value: 'cool', options: [{ id: 'auto', label: 'Auto', icon: null }, { id: 'cool', label: 'Kühlen', icon: null }] }]);
     assert.equal(ok({ value: 'heat' }).controls[0].value, 'auto', 'not an option → first option');
     assert.equal(ok({ value: 3 }).controls[0].value, 'auto');
     assert.equal(ok({ value: undefined }).controls[0].value, 'auto');
@@ -312,6 +312,27 @@ describe('widget sanitiser (sanitizeWidget)', () => {
       [{ id: 'a', label: 'A' }, { id: 'b' }], [{ id: 'a', label: 'A' }, { id: 'b', label: '' }], [{ id: 'a', label: 'A' }, 'b'], [{ id: 'a', label: 'A' }, null],
     ]) assert.equal(ok({ options }), null, JSON.stringify(options));
     assert.equal(sanitizeWidget({ controls: [stepper({ kind: 'choice' })] }), null, 'a choice needs options');
+  });
+
+  it('choice: an option carries an icon (SVG path) — valid kept, invalid or missing → null, the option stays', () => {
+    const SNOW = 'M12 2v20M2 12h20M5 5l14 14M19 5L5 19';
+    const w = sanitizeWidget({ controls: [choice({ options: [
+      { id: 'auto', label: 'Auto', icon: SNOW },
+      { id: 'cool', label: 'Kühlen', icon: '<svg onload="x">' },
+      { id: 'heat', label: 'Heizen' },
+      { id: 'dry', label: 'Trocken', icon: 42 },
+      { id: 'fan', label: 'Lüften', icon: 'M'.repeat(2001) },
+    ] })] });
+    assert.ok(w, 'an invalid icon never drops the control');
+    assert.deepEqual(w.controls[0].options, [
+      { id: 'auto', label: 'Auto', icon: SNOW },
+      { id: 'cool', label: 'Kühlen', icon: null },
+      { id: 'heat', label: 'Heizen', icon: null },
+      { id: 'dry', label: 'Trocken', icon: null },
+      { id: 'fan', label: 'Lüften', icon: null },
+    ]);
+    const a = quickActions.sanitize({ id: 'ac', title: 'Klima', widget: { controls: [choice({ options: [{ id: 'auto', label: 'Auto', icon: SNOW }, { id: 'cool', label: 'Kühlen', icon: '"><script>' }] })] } });
+    assert.deepEqual(a.widget.controls[0].options, [{ id: 'auto', label: 'Auto', icon: SNOW }, { id: 'cool', label: 'Kühlen', icon: null }], 'the listed entry carries the icons');
   });
 
   it('controls: at most 4, unique ids, a list; one bad control makes the whole widget null', () => {
