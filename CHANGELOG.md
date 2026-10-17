@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.177.0] — 2026-10-17
+
+### Features
+- plugin media, realtime events, chat notifications and services (messenger foundations) (#321)
+
+---
+
 ## [1.176.0] — 2026-10-17
 
 ### Features
