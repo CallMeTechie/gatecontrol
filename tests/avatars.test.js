@@ -548,7 +548,7 @@ describe('plugins: gc.users and the frame CSP', () => {
     assert.equal(bad.headers['content-security-policy'], frame.CSP);
     // maps frames keep their sources and add the pictures
     assert.ok(frame.cspFor({ maps: true, avatars: true, origin: 'https://gc.example.com' }).split('; ')
-      .includes('img-src data: https://tile.openstreetmap.org https://gc.example.com/plugins/_shared/leaflet/images/ https://gc.example.com/avatars/'));
+      .includes('img-src data: https://tile.openstreetmap.org https://gc.example.com/plugins/_shared/leaflet/images/ https://gc.example.com/plugins/_shared/tiles/ https://gc.example.com/avatars/'));
   });
 });
 

@@ -4,7 +4,7 @@
 // "App" and "Maps"): permissions.app / ui.app / ui.maps in plugin.json,
 // GET /api/v1/client/plugins, the forwarded client plugin API
 // /api/v1/client/plugins/:id/api/* (src/routes/api/client/plugins.js), the
-// relaxed frame CSP and the shared Leaflet of ui.maps plugins.
+// relaxed frame CSP, the shared Leaflet and the tile relay of ui.maps plugins.
 
 const crypto = require('node:crypto');
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
@@ -260,12 +260,16 @@ describe('maps in plugin frames (ui.maps)', () => {
     const directives = csp.split('; ');
     assert.ok(directives.includes(`script-src 'unsafe-inline' ${origin}/plugins/_shared/leaflet/leaflet.js`), csp);
     assert.ok(directives.includes(`style-src 'unsafe-inline' ${origin}/plugins/_shared/leaflet/leaflet.css`), csp);
-    assert.ok(directives.includes(`img-src data: https://tile.openstreetmap.org ${origin}/plugins/_shared/leaflet/images/ ${origin}/avatars/`), csp);
+    assert.ok(directives.includes(`img-src data: https://tile.openstreetmap.org ${origin}/plugins/_shared/leaflet/images/ ${origin}/plugins/_shared/tiles/ ${origin}/avatars/`), csp);
     assert.match(csp, /connect-src 'none'/);
     assert.match(csp, /sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox$/);
     assert.doesNotMatch(csp, /allow-same-origin|'self' 'unsafe|script-src[^;]*'self'/);
     assert.equal(r.headers['referrer-policy'], 'strict-origin-when-cross-origin');
     assert.match(r.text, /<meta name="referrer" content="strict-origin-when-cross-origin">/);
+    const tpl = /tiles: "(\/plugins\/_shared\/tiles\/[^"]+)"/.exec(r.text);
+    assert.ok(tpl, 'window.GC.tiles');
+    assert.match(tpl[1], /^\/plugins\/_shared\/tiles\/\d+\.[A-Za-z0-9_-]{22}\/\{z\}\/\{x\}\/\{y\}\.png$/);
+    assert.equal(tpl[1], require('../src/services/plugins/tiles').template());
     const page = withoutScripts((await agent.get('/plugins/hello').expect(200)).text);
     assert.match(/<iframe class="pg-frame"[^>]*>/.exec(page)[0], /sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"/);
   });
@@ -274,6 +278,7 @@ describe('maps in plugin frames (ui.maps)', () => {
     const r = await agent.get('/plugins/hello/frame/main').set('Host', 'evil.example;script-src *').expect(200);
     const csp = r.headers['content-security-policy'];
     assert.match(csp, /script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https:\/\/tile\.openstreetmap\.org;/);
+    assert.match(r.text, /tiles: null/, 'no relay without a known origin (the CSP would block it)');
     assert.equal(frame.originOf({ protocol: 'https', get: () => 'GC.Example.com' }), 'https://gc.example.com');
     assert.equal(frame.originOf({ protocol: 'https', get: () => 'a b' }), null);
     assert.equal(frame.originOf({ protocol: 'ftp', get: () => 'gc.example.com' }), null);
@@ -284,7 +289,8 @@ describe('maps in plugin frames (ui.maps)', () => {
     assert.equal(r.headers['content-security-policy'], frame.cspFor({ avatars: true, origin: 'http://gc.example.com' }));
     assert.equal(r.headers['content-security-policy'], frame.CSP.replace('img-src data:', 'img-src data: http://gc.example.com/avatars/'));
     assert.equal(r.headers['referrer-policy'], 'no-referrer');
-    assert.doesNotMatch(r.headers['content-security-policy'], /openstreetmap|allow-popups/);
+    assert.doesNotMatch(r.headers['content-security-policy'], /openstreetmap|allow-popups|_shared\/tiles/);
+    assert.match(r.text, /tiles: null/);
     const page = withoutScripts((await agent.get('/plugins/hello-np').expect(200)).text);
     const tag = /<iframe class="pg-frame"[^>]*>/.exec(page)[0];
     assert.match(tag, /sandbox="allow-scripts allow-forms"/);
@@ -298,9 +304,13 @@ describe('maps in plugin frames (ui.maps)', () => {
     const fr = await agent.get('/portal/plugins/hello/frame').expect(200);
     assert.match(fr.headers['content-security-policy'], /img-src data: https:\/\/tile\.openstreetmap\.org http:\/\/127\.0\.0\.1:\d+\/plugins\/_shared\/leaflet\/images\//);
     assert.match(fr.headers['content-security-policy'], /allow-popups-to-escape-sandbox$/);
-    const npCsp = (await agent.get('/portal/plugins/hello-np/frame').expect(200)).headers['content-security-policy'];
+    assert.match(fr.headers['content-security-policy'], /http:\/\/127\.0\.0\.1:\d+\/plugins\/_shared\/tiles\/ /);
+    assert.match(fr.text, /tiles: "\/plugins\/_shared\/tiles\/[^"]+\/\{z\}\/\{x\}\/\{y\}\.png"/);
+    const np = await agent.get('/portal/plugins/hello-np/frame').expect(200);
+    assert.match(np.text, /tiles: null/);
+    const npCsp = np.headers['content-security-policy'];
     assert.match(npCsp, /img-src data: http:\/\/127\.0\.0\.1:\d+\/avatars\/;/);
-    assert.doesNotMatch(npCsp, /openstreetmap|allow-popups/);
+    assert.doesNotMatch(npCsp, /openstreetmap|allow-popups|_shared\/tiles/);
   });
 
   it('the shared Leaflet is served without a session, loadable from an opaque-origin frame', async () => {
@@ -319,5 +329,47 @@ describe('maps in plugin frames (ui.maps)', () => {
     assert.equal(png.headers['content-type'], 'image/png');
     assert.equal(png.headers['cross-origin-resource-policy'], 'cross-origin');
     for (const bad of ['images/nope.png', 'images/..%2fleaflet.js', 'LICENSE', 'README.md']) await supertest(app).get('/plugins/_shared/leaflet/' + bad).expect(404);
+  });
+
+  it('the tile relay: no session, the token and the coordinates checked, upstream mapped (src/services/plugins/tiles.js)', async () => {
+    const tiles = require('../src/services/plugins/tiles');
+    const logger = require('../src/utils/logger');
+    tiles._reset();
+    mock.method(logger, 'warn', () => {});
+    const body = Buffer.concat([Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'), Buffer.alloc(32, 1)]);
+    let answer = () => new Response(body, { status: 200, headers: { 'content-type': 'image/png', 'cache-control': 'max-age=604800' } });
+    const f = mock.method(globalThis, 'fetch', async () => answer());
+    try {
+      const url = (z, x, y, tok = tiles.token()) => `/plugins/_shared/tiles/${tok}/${z}/${x}/${y}.png`;
+      const r = await supertest(app).get(url(3, 4, 2)).expect(200);
+      assert.equal(r.headers['content-type'], 'image/png');
+      assert.equal(r.headers['cache-control'], 'public, max-age=86400');
+      assert.equal(r.headers['cross-origin-resource-policy'], 'cross-origin');
+      assert.equal(r.headers['x-content-type-options'], 'nosniff');
+      assert.ok(Buffer.from(r.body).equals(body));
+      assert.equal(f.mock.calls[0].arguments[0], 'https://tile.openstreetmap.org/3/4/2.png');
+      await supertest(app).get(url(3, 4, 2)).expect(200);
+      assert.equal(f.mock.callCount(), 1, 'from the cache');
+      // the frame's template, filled in by Leaflet
+      const tpl = tiles.template().replace('{z}', '3').replace('{x}', '4').replace('{y}', '2');
+      await supertest(app).get(tpl).expect(200);
+      const [exp, sig] = tiles.token().split('.');
+      for (const bad of [url(3, 4, 2, `${exp}.${sig.replace(/^./, (c) => (c === 'A' ? 'B' : 'A'))}`), url(3, 4, 2, `${Math.floor(Date.now() / 1000) - 1}.${sig}`), url(3, 4, 2, 'x'),
+        url(20, 0, 0), url(3, 8, 0), url(3, 0, 8), url(3, -1, 0), url(3, 'a', 0), url(3, 1.5, 0)]) {
+        const e = await supertest(app).get(bad).expect(404);
+        assert.equal(e.headers['cache-control'], 'no-store', bad);
+      }
+      await supertest(app).get(`/plugins/_shared/tiles/${tiles.token()}/3/4/2.jpg`).expect(404);
+      assert.equal(f.mock.callCount(), 1, 'nothing invalid reaches the upstream');
+      answer = () => new Response('', { status: 404 });
+      await supertest(app).get(url(3, 5, 2)).expect(404);
+      answer = () => { throw new TypeError('fetch failed'); };
+      const e = await supertest(app).get(url(3, 6, 2)).expect(502);
+      assert.match(e.headers['content-type'], /text\/plain/);
+      assert.ok(e.text.length < 40);
+    } finally {
+      mock.restoreAll();
+      tiles._reset();
+    }
   });
 });

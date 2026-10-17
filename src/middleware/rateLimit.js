@@ -476,6 +476,22 @@ const pluginAssetLimiter = rateLimit({
 });
 module.exports.pluginAssetLimiter = pluginAssetLimiter;
 
+// /plugins/_shared/tiles/* — the map tile relay for the frames of ui.maps
+// plugins (docs/plugins.md "Maps"). No session either; one map view loads
+// 20–60 tiles and panning loads more, so 600 per minute and address, in a
+// bucket of its own (the tiles never eat the Leaflet or plugin page budget).
+const pluginTileLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `plugin-tile:${ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    res.status(429).type('text/plain').send('rate_limited');
+  },
+});
+module.exports.pluginTileLimiter = pluginTileLimiter;
+
 // Kiosk devices (docs/feature-kiosk-devices.md).
 // The kiosk cookie check in front of /portal and /api/v1/portal: counts only
 // requests that carry the cookie, per address, well above what a wall tablet
