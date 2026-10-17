@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.176.0] — 2026-10-17
+
+### Features
+- tile relay for plugin maps (OpenStreetMap blocks the sandboxed frames' referrer-less requests) (#320)
+
+---
+
 ## [1.175.0] — 2026-10-17
 
 ### Features
