@@ -915,7 +915,9 @@ hosts drop the field, older apps ignore it.
     controls: [                                  // ≤ 4, ids unique per widget
       { id: 'target', kind: 'stepper', label: 'Ziel', value: 22, min: 16, max: 30, step: 0.5, unit: '°C' },
       { id: 'mode', kind: 'choice', label: 'Modus', value: 'cool',
-        options: [{ id: 'auto', label: 'Auto' }, { id: 'cool', label: 'Kühlen' }, { id: 'heat', label: 'Heizen' }] },
+        options: [{ id: 'auto', label: 'Auto', icon: AUTO_ICON },   // icon optional, an SVG path
+                  { id: 'cool', label: 'Kühlen', icon: SNOWFLAKE_ICON },
+                  { id: 'heat', label: 'Heizen', icon: FLAME_ICON }] },
     ],
     power: true,                                 // the toggle is the device's on/off switch (default)
   } }
@@ -948,9 +950,14 @@ hosts drop the field, older apps ignore it.
   * `stepper` / `slider`: `value`, `min`, `max`, `step` finite numbers with
     `min < max` and `step > 0`; `value` is clamped into `[min, max]`;
     `unit` ≤ 8 (optional).
-  * `choice`: `options` 2–8 of `{ id, label }` (ids like a control id, unique;
-    `label` required, ≤ 20); `value` is an option id — any other value
-    becomes the first option.
+  * `choice`: `options: [{ id, label, icon? }]`, 2–8 of them (ids like a
+    control id, unique; `label` required, ≤ 20; `icon` optional, SVG path
+    data `d` for a 24×24 viewBox like the action's `icon` — an invalid icon
+    becomes `null`, the option stays; a sanitised option always has all
+    three keys); `value` is an option id — any other value becomes the first
+    option. The apps draw the options as icon buttons (the label as the
+    accessible name) and fall back to the label for an option without an
+    icon.
 * Anything invalid (a bad control, too many of them, duplicate ids …) makes
   the whole `widget` `null` in the host's answer; the action itself stays.
   An entry without a `widget` lists `widget: null` as well.

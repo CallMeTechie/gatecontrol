@@ -40,7 +40,7 @@
 //   widget: { label?, value?: string|number, unit?, status?, state?: 'on'|'off'|'good'|'warn'|'crit',
 //             readings?: [{ id, label, value?, unit?, icon?, state? }],   (≤ 4, invalid ones dropped)
 //             controls?: [{ id, kind: 'stepper'|'slider', label?, value, min, max, step, unit? },
-//                         { id, kind: 'choice', label?, value, options: [{ id, label }] }],
+//                         { id, kind: 'choice', label?, value, options: [{ id, label, icon? }] }],
 //             power?: boolean }                                        (default true)
 // Anything invalid in it (but a reading) makes the whole widget null; the action stays.
 //
@@ -202,7 +202,7 @@ function sanitizeControl(c) {
       const l = text(o.label, 20);
       if (!l) return null;
       seen.add(o.id);
-      options.push({ id: o.id, label: l });
+      options.push({ id: o.id, label: l, icon: icon(o.icon) }); // invalid icon → null, the option stays
     }
     const value = typeof c.value === 'string' && seen.has(c.value) ? c.value : options[0].id;
     return { id: c.id, kind: 'choice', label, value, options };
