@@ -10,6 +10,8 @@
 //                                     (?section=<id>: one of its sections in Zuhause/Fahrzeug)
 //   GET /plugins/_shared/leaflet/…    the vendored Leaflet for frames of plugins
 //                                     with ui.maps (leaflet.js, leaflet.css, images/*.png)
+//   GET /plugins/_shared/tiles/<token>/<z>/<x>/<y>.png
+//                                     OpenStreetMap tiles for those frames (tiles.js)
 //
 // Admin pages are for administrators like every other admin page (members
 // are sent to /profile). The frame is rendered by the plugin process for the
@@ -21,10 +23,11 @@ const { Router } = require('express');
 const plugins = require('../services/plugins');
 const runtime = require('../services/plugins/runtime');
 const frame = require('../services/plugins/frame');
+const tiles = require('../services/plugins/tiles');
 const { loc } = require('../services/plugins/manifest');
 const { ID_RE } = require('../services/plugins/constants');
 const { requireAuth } = require('../middleware/auth');
-const { pluginPageLimiter, pluginAssetLimiter } = require('../middleware/rateLimit');
+const { pluginPageLimiter, pluginAssetLimiter, pluginTileLimiter } = require('../middleware/rateLimit');
 
 const router = Router();
 
@@ -87,16 +90,44 @@ router.get('/plugins/_shared/leaflet/images/:file', pluginAssetLimiter, (req, re
   return res.sendFile(path.join(LEAFLET_DIR, 'images', f));
 });
 
+// ─── Tile relay for map frames (docs/plugins.md "Maps", tiles.js) ─────
+// The sandboxed frame sends no Referer, OpenStreetMap refuses such tile
+// requests; the frame gets the tiles from here (window.GC.tiles). No session
+// (no cookies from an opaque origin): the token in the URL is the permission.
+// Invalid or expired token, coordinates outside the zoom level → 404.
+
+function tileError(res, status, text) {
+  res.set('Cache-Control', 'no-store');
+  res.set('X-Content-Type-Options', 'nosniff');
+  return res.status(status).type('text/plain').send(text);
+}
+
+router.get('/plugins/_shared/tiles/:token/:z/:x/:y.png', pluginTileLimiter, async (req, res) => {
+  const c = tiles.verify(req.params.token) ? tiles.coords(req.params.z, req.params.x, req.params.y) : null;
+  if (!c) return tileError(res, 404, 'not found');
+  const out = await tiles.get(c);
+  if (out.status !== 200) return tileError(res, out.status, out.status === 404 ? 'not found' : 'tile unavailable');
+  res.set('Content-Type', 'image/png');
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.set('X-Content-Type-Options', 'nosniff');
+  return res.end(out.body);
+});
+
 function mapsOf(p) { return !!(p && p.manifest && p.manifest.ui && p.manifest.ui.maps); }
 
 /**
  * Frame headers for plugin `p` (maps → the relaxed CSP for this request's
  * origin; every frame may show the profile pictures of this origin).
+ * Returns what frame.document() needs: `maps`, and `tiles` (the relay's URL
+ * template for window.GC.tiles) for a maps frame with a known origin — the
+ * CSP allows the relay only then.
  */
 function frameHeaders(req, res, p) {
   const maps = mapsOf(p);
-  frame.headers(res, { maps, avatars: true, origin: frame.originOf(req) });
-  return maps;
+  const origin = frame.originOf(req);
+  frame.headers(res, { maps, avatars: true, origin });
+  return { maps, tiles: maps && origin ? tiles.template() : null };
 }
 
 function lang(req, res) { return (req.language || res.locals.language) === 'en' ? 'en' : 'de'; }
@@ -131,8 +162,8 @@ router.get('/plugins/:id/frame/:page', pluginPageLimiter, requireAuth, async (re
   const u = res.locals.user;
   try {
     const out = await plugins.render(p.id, { view: 'page', page: page.id, lang: l, user: { id: u.id, name: u.display_name || u.username, role: u.role } });
-    const maps = frameHeaders(req, res, p);
-    return res.send(frame.document({ html: out.html, lang: l, maps }));
+    const opts = frameHeaders(req, res, p);
+    return res.send(frame.document({ html: out.html, lang: l, ...opts }));
   } catch (e) {
     return errorFrame(res, 503, res.locals.t(e && e.code === 'ERR_NOT_RUNNING' ? 'plugins.page.not_running' : 'plugins.page.error'), l);
   }
@@ -186,8 +217,8 @@ router.get('/portal/plugins/:id/frame', pluginPageLimiter, (req, res, next) => {
     const viewer = { id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: !!req.portalLoggedIn };
     if (req.portalOwnerSource === 'kiosk' && req.portalKiosk) viewer.kiosk = true; // kiosk device (docs/feature-kiosk-devices.md)
     const out = await plugins.render(p.id, { view: 'portal', page: null, section: section ? section.id : null, lang: l, user: viewer, loggedIn: !!req.portalLoggedIn });
-    const maps = frameHeaders(req, res, p);
-    return res.send(frame.document({ html: out.html, lang: l, maps }));
+    const opts = frameHeaders(req, res, p);
+    return res.send(frame.document({ html: out.html, lang: l, ...opts }));
   } catch (e) {
     return errorFrame(res, 503, res.locals.t(e && e.code === 'ERR_NOT_RUNNING' ? 'plugins.page.not_running' : 'plugins.page.error'), l);
   }

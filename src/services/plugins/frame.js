@@ -16,14 +16,19 @@
 //
 // Maps (plugin.json `ui.maps: true`, docs/plugins.md "Maps"), for those
 // plugins' frames only:
-//   * img-src https://tile.openstreetmap.org — OpenStreetMap tiles;
+//   * img-src <origin>/plugins/_shared/tiles/ — OpenStreetMap tiles through
+//     this server (tiles.js), the frame finds the URL template in
+//     window.GC.tiles. Loaded directly, OpenStreetMap answers 403: the frame
+//     has an opaque origin, and Chromium sends no Referer from one, whatever
+//     the Referrer-Policy says;
+//   * img-src https://tile.openstreetmap.org — still allowed for plugins
+//     that load the tiles directly;
 //   * the host's vendored Leaflet (public/vendor/leaflet) from
 //     /plugins/_shared/leaflet/{leaflet.js, leaflet.css, images/} — exactly
 //     these URLs of this server's origin are allowed (script-src / style-src
 //     / img-src with a path; 'self' would mean every script of the server);
-//   * Referrer-Policy strict-origin-when-cross-origin: the tiles get the
-//     origin only (OpenStreetMap's tile policy wants a referrer), never the
-//     frame URL;
+//   * Referrer-Policy strict-origin-when-cross-origin: never the frame URL
+//     (Chromium sends none at all from the opaque origin, see above);
 //   * sandbox + allow-popups allow-popups-to-escape-sandbox: a plain
 //     <a href="https://www.openstreetmap.org/…" target="_blank" rel="noopener">
 //     opens in a new tab as a normal page.
@@ -35,6 +40,7 @@
 
 const OSM_TILES = 'https://tile.openstreetmap.org';
 const SHARED_LEAFLET = '/plugins/_shared/leaflet/';
+const SHARED_TILES = '/plugins/_shared/tiles/';
 const AVATARS = '/avatars/';
 const SANDBOX = 'sandbox allow-scripts allow-forms';
 const SANDBOX_MAPS = SANDBOX + ' allow-popups allow-popups-to-escape-sandbox';
@@ -58,8 +64,8 @@ const CSP = directives();
 
 // "https://gc.example.com[:port]" of the request that loads the frame, or
 // null when the Host header is not a plain host[:port] (then the frame gets
-// the tiles but no shared Leaflet). The value goes into a header: nothing
-// but host characters passes.
+// the direct tiles but no shared Leaflet and no tile relay). The value goes
+// into a header: nothing but host characters passes.
 const HOST_RE = /^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,62})(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}))*|\[[0-9A-Fa-f:.]{2,45}\])(?::\d{1,5})?$/;
 function originOf(req) {
   const proto = req && (req.protocol === 'https' ? 'https' : (req.protocol === 'http' ? 'http' : null));
@@ -78,7 +84,7 @@ function cspFor({ maps = false, origin = null, avatars = false } = {}) {
   return directives({
     script: base ? [base + 'leaflet.js'] : [],
     style: base ? [base + 'leaflet.css'] : [],
-    img: [OSM_TILES, ...(base ? [base + 'images/'] : []), ...pics],
+    img: [OSM_TILES, ...(base ? [base + 'images/', origin + SHARED_TILES] : []), ...pics],
     sandbox: SANDBOX_MAPS,
   });
 }
@@ -170,7 +176,8 @@ const BRIDGE_CLIENT = `(function(){
     put: function (p, b) { return call('PUT', p, b); },
     del: function (p) { return call('DELETE', p); },
     navigate: function (page) { post({ type: 'gc-nav', page: String(page || '') }); },
-    lang: document.documentElement.lang || 'de'
+    lang: document.documentElement.lang || 'de',
+    tiles: /*GC_TILES*/null
   });
   if (window.ResizeObserver) new ResizeObserver(size).observe(document.documentElement);
   // a dialog shown or hidden changes no document size: watch the DOM as well
@@ -186,12 +193,21 @@ function escAttr(s) {
 const REFERRER = 'no-referrer';
 const REFERRER_MAPS = 'strict-origin-when-cross-origin';
 
-/** The full frame document around a plugin fragment. */
-function document({ html, lang, maps = false }) {
+// window.GC.tiles of a maps frame: the tile relay's URL template (tiles.js
+// template(): a path of this server). Nothing but path characters passes, so
+// it is safe inside the script.
+const TILES_RE = /^\/plugins\/_shared\/tiles\/[A-Za-z0-9._-]+\/\{z\}\/\{x\}\/\{y\}\.png$/;
+
+/**
+ * The full frame document around a plugin fragment. `tiles` (maps frames
+ * only) becomes window.GC.tiles, otherwise GC.tiles is null.
+ */
+function document({ html, lang, maps = false, tiles = null }) {
   const l = lang === 'en' ? 'en' : 'de';
+  const t = maps && typeof tiles === 'string' && TILES_RE.test(tiles) ? JSON.stringify(tiles) : 'null';
   return '<!doctype html>\n<html lang="' + escAttr(l) + '" data-theme="dark"><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="' + (maps ? REFERRER_MAPS : REFERRER) + '">'
-    + '<style>' + BASE_CSS + '</style><script>' + BRIDGE_CLIENT + '</script></head><body>'
+    + '<style>' + BASE_CSS + '</style><script>' + BRIDGE_CLIENT.replace('/*GC_TILES*/null', () => t) + '</script></head><body>'
     + String(html || '') + '</body></html>';
 }
 
@@ -209,4 +225,4 @@ function headers(res, opts = {}) {
   res.type('html');
 }
 
-module.exports = { CSP, cspFor, originOf, sandboxAttr, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, AVATARS };
+module.exports = { CSP, cspFor, originOf, sandboxAttr, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS };

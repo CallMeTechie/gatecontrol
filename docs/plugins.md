@@ -675,7 +675,8 @@ disable/uninstall and when the server shuts down.
 * **App tab** (`ui.app`): the apps draw the plugin's screens themselves from
   its client API — see "App". No plugin HTML in the apps.
 * **Maps** (`ui.maps`): the plugin's frames may show an OpenStreetMap map with
-  the host's Leaflet and open links in a new tab — see "Maps".
+  the host's Leaflet and the tiles through GateControl (`window.GC.tiles`) and
+  open links in a new tab — see "Maps".
 * Sandboxed frames have no `alert`/`confirm`/`prompt` (no `allow-modals`):
   plugins draw their own dialogs. The frame grows with its content and with
   an open dialog (visible `position: fixed` elements count with their full
@@ -1192,12 +1193,46 @@ overview lists the app tab.
 pages, portal tab and sections). Only for those plugins' frames
 (`src/services/plugins/frame.js`):
 
-* **CSP**: `img-src data: https://tile.openstreetmap.org <origin>/plugins/_shared/leaflet/images/ <origin>/avatars/`,
+* **CSP**: `img-src data: https://tile.openstreetmap.org <origin>/plugins/_shared/leaflet/images/ <origin>/plugins/_shared/tiles/ <origin>/avatars/`,
   `script-src 'unsafe-inline' <origin>/plugins/_shared/leaflet/leaflet.js`,
   `style-src 'unsafe-inline' <origin>/plugins/_shared/leaflet/leaflet.css` —
   `<origin>` is the origin the frame was loaded from (scheme + Host header;
-  a Host that is not a plain `host[:port]` gets the tiles but no shared
-  Leaflet). Exactly these files, not `'self'`; `connect-src` stays `'none'`.
+  a Host that is not a plain `host[:port]` gets the direct tiles but no
+  shared Leaflet and no tile relay). Exactly these files, not `'self'`;
+  `connect-src` stays `'none'`.
+* **Tiles** (`src/services/plugins/tiles.js`): the frame loads the
+  OpenStreetMap tiles from GateControl, `window.GC.tiles` is the URL template
+  for Leaflet — `/plugins/_shared/tiles/<token>/{z}/{x}/{y}.png`, `null` in
+  frames of other plugins (and without a known origin). Loaded directly from
+  `https://tile.openstreetmap.org`, every tile is a 403 "Access blocked":
+  the frame is sandboxed without `allow-same-origin`, so its document has an
+  opaque origin, and Chromium sends **no Referer at all** from such a
+  document, whatever the Referrer-Policy says; OpenStreetMap blocks
+  referrer-less tile requests (tile usage policy). `allow-same-origin` is no
+  way out — the frame would share GateControl's origin. The relay:
+  * no session (the frame sends no cookies); the token is the permission:
+    `<exp>.<sig>`, `exp` = the next full hour + 24 h in unix seconds (the
+    template stays the same for an hour, so the browser cache works), `sig`
+    = HMAC-SHA256 over `plugin-tiles:<exp>` with the server secret
+    (`GC_SECRET`), base64url, 22 characters. Valid while
+    `now < exp ≤ now + 26 h`; a frame open for more than a day gets new
+    tiles after a reload. Invalid or expired token, `z` outside 0–19, `x` /
+    `y` outside 0 … 2^z − 1 → 404;
+  * upstream `https://tile.openstreetmap.org/<z>/<x>/<y>.png` from the
+    server with `User-Agent: GateControl/<version> (+https://github.com/CallMeTechie/gatecontrol)`,
+    10 s timeout, at most 2 requests at a time (the rest waits), one request
+    per tile however many frames ask for it at once;
+  * cached in memory (LRU, 64 MB) for the upstream `max-age`, clamped to
+    1–7 days; when the upstream fails, a stale copy is served if there is
+    one. Upstream 404 → 404, other failures without a copy → 502;
+  * answers `Content-Type: image/png`, `Cache-Control: public, max-age=86400`,
+    `Cross-Origin-Resource-Policy: cross-origin`; 600 tiles per minute and
+    address (own rate limit).
+
+  Use `GC.tiles` when it is set, the direct URL otherwise (an older
+  GateControl): `L.tileLayer(GC.tiles || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', …)`.
+  `img-src https://tile.openstreetmap.org` stays for plugins that load the
+  tiles directly.
 * **Leaflet**: GateControl's vendored Leaflet 1.9.4 (`public/vendor/leaflet`,
   the one of the device page), served without a session and with
   `Cross-Origin-Resource-Policy: cross-origin` (the sandboxed frame has an
@@ -1208,9 +1243,8 @@ pages, portal tab and sections). Only for those plugins' frames
   * `/plugins/_shared/leaflet/images/{marker-icon,marker-icon-2x,marker-shadow,layers,layers-2x}.png`
     (the default marker works without setting `L.Icon.Default.imagePath`).
 * **Referrer**: `Referrer-Policy: strict-origin-when-cross-origin` (header and
-  meta) instead of `no-referrer` — the tile server gets the origin only, as
-  on the device page (OpenStreetMap's tile policy wants a referrer), never
-  the frame's URL.
+  meta) instead of `no-referrer` — never the frame's URL. From the frame's
+  opaque origin Chromium sends no referrer at all anyway (see **Tiles**).
 * **Links**: the frame's sandbox (CSP and the `<iframe>` attribute) gets
   `allow-popups allow-popups-to-escape-sandbox`, so a plain
   `<a href="https://www.openstreetmap.org/?mlat=…&mlon=…" target="_blank" rel="noopener">`
@@ -1224,7 +1258,8 @@ pages, portal tab and sections). Only for those plugins' frames
 <div id="map" style="height:320px"></div>
 <script>
   const map = L.map('map').setView([52.52, 13.405], 15);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  // GC.tiles: the tiles through GateControl (see "Tiles"); the direct URL only on an older GateControl
+  L.tileLayer(GC.tiles || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
   }).addTo(map);
