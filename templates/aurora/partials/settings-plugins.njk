@@ -54,5 +54,15 @@
       </div>
       <p class="st-note st-note-warn" id="pg-unsigned-on" hidden><b>{{ t('plugins.sec.on_title') }}</b> {{ t('plugins.sec.on_text') }}</p>
       <p class="st-note" id="pg-unsigned-off">{{ t('plugins.sec.off_note') }}</p>
+      {#- docs/plugins.md "Backup": plugin media (chats …) travel in backups only when switched on -#}
+      <div class="st-row">
+        <div class="st-row-text">
+          <label class="st-label" for="pg-backup-media">{{ t('plugins.sec.backup_media') }}</label>
+          <span class="st-hint" id="pg-backup-media-hint">{{ t('plugins.sec.backup_media_hint') }}</span>
+        </div>
+        <div class="st-row-ctl">
+          <button type="button" class="st-switch" role="switch" aria-checked="false" id="pg-backup-media" aria-describedby="pg-backup-media-hint"><span class="st-knob" aria-hidden="true"></span></button>
+        </div>
+      </div>
     </section>
   </div>

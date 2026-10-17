@@ -24,12 +24,13 @@ function createNotification(n) {
   const t = iso();
   const r = getDb().prepare(`INSERT INTO notifications
     (event_id, event_type, topic, source, priority, title, body, data, collapse_key, count, silent, target,
-     created_at, updated_at, expires_at, release_at, meta, image_url, image_expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+     created_at, updated_at, expires_at, release_at, meta, image_url, image_expires_at, kind)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     n.eventId, n.eventType || null, n.topic, n.source, n.priority, n.title, n.body || null,
     n.data ? JSON.stringify(n.data) : null, n.collapseKey || null, n.silent ? 1 : 0,
     n.target ? JSON.stringify(n.target) : null, t, t, n.expiresAt || null, n.releaseAt || null,
-    n.meta ? JSON.stringify(n.meta) : null, n.image ? n.image.url : null, n.image ? n.image.expiresAt : null);
+    n.meta ? JSON.stringify(n.meta) : null, n.image ? n.image.url : null, n.image ? n.image.expiresAt : null,
+    n.kind === 'message' ? 'message' : null);
   return Number(r.lastInsertRowid);
 }
 
@@ -92,6 +93,10 @@ function markSent(seq, via) {
 }
 
 const LIVE_SQL = `n.revoked_at IS NULL AND n.release_at IS NULL AND (n.expires_at IS NULL OR n.expires_at > ?)`;
+// Chat notifications (kind 'message', docs/plugins.md "Chat notifications")
+// are pushed like every notification but belong to the plugin's chat, not to
+// the GateControl inbox: neither listed there nor counted as unread.
+const NOT_CHAT_SQL = `n.kind IS NULL`;
 
 /**
  * What a (re)connecting device still has to get: deliveries in state
@@ -99,7 +104,7 @@ const LIVE_SQL = `n.revoked_at IS NULL AND n.release_at IS NULL AND (n.expires_a
  */
 function pendingForToken(tokenId, since = null) {
   return getDb().prepare(`SELECT d.*, n.event_id, n.topic, n.priority, n.title, n.body, n.data, n.collapse_key,
-         n.created_at, n.expires_at, n.silent AS n_silent, n.image_url, n.image_expires_at
+         n.created_at, n.expires_at, n.silent AS n_silent, n.image_url, n.image_expires_at, n.kind
        FROM notification_deliveries d JOIN notifications n ON n.id = d.notification_id
       WHERE d.token_id = ? AND d.state IN ('queued', 'sent') AND ${LIVE_SQL}
         ${since != null ? 'AND d.seq > ?' : ''}
@@ -109,7 +114,7 @@ function pendingForToken(tokenId, since = null) {
 /** One delivery joined with its notification (for the wire payload). */
 function deliveryRow(seq) {
   return getDb().prepare(`SELECT d.*, n.event_id, n.topic, n.priority, n.title, n.body, n.data, n.collapse_key,
-         n.created_at, n.expires_at, n.silent AS n_silent, n.image_url, n.image_expires_at
+         n.created_at, n.expires_at, n.silent AS n_silent, n.image_url, n.image_expires_at, n.kind
        FROM notification_deliveries d JOIN notifications n ON n.id = d.notification_id WHERE d.seq = ?`).get(seq) || null;
 }
 
@@ -137,6 +142,8 @@ function payload(row) {
     silent: row.silent === 1 || row.n_silent === 1,
     data: parseJson(row.data, null),
     imageUrl: imageUrlOf(row),
+    // only on chat notifications: the apps render them as a conversation (MessagingStyle)
+    ...(row.kind === 'message' ? { kind: 'message' } : {}),
   };
 }
 
@@ -196,9 +203,9 @@ function markReadForUser(userId, notificationIds, { exceptToken = null } = {}) {
 
 function inbox(tokenId, { limit = 100, before = null } = {}) {
   const rows = getDb().prepare(`SELECT d.*, n.event_id, n.topic, n.priority, n.title, n.body, n.data, n.collapse_key,
-         n.created_at, n.expires_at, n.silent AS n_silent, n.image_url, n.image_expires_at
+         n.created_at, n.expires_at, n.silent AS n_silent, n.image_url, n.image_expires_at, n.kind
        FROM notification_deliveries d JOIN notifications n ON n.id = d.notification_id
-      WHERE d.token_id = ? AND d.state IN ('queued', 'sent', 'delivered', 'read', 'dismissed') AND ${LIVE_SQL}
+      WHERE d.token_id = ? AND d.state IN ('queued', 'sent', 'delivered', 'read', 'dismissed') AND ${LIVE_SQL} AND ${NOT_CHAT_SQL}
         ${before != null ? 'AND d.seq < ?' : ''}
       ORDER BY d.seq DESC LIMIT ?`).all(...[tokenId, iso(), ...(before != null ? [before] : []), limit]);
   return rows.map((r) => ({ ...payload(r), state: r.state === 'read' || r.state === 'dismissed' ? r.state : 'delivered' }));
@@ -206,7 +213,7 @@ function inbox(tokenId, { limit = 100, before = null } = {}) {
 
 function unreadCount(tokenId) {
   return getDb().prepare(`SELECT COUNT(*) AS n FROM notification_deliveries d JOIN notifications n ON n.id = d.notification_id
-     WHERE d.token_id = ? AND d.state IN ('queued', 'sent', 'delivered') AND ${LIVE_SQL}`).get(tokenId, iso()).n;
+     WHERE d.token_id = ? AND d.state IN ('queued', 'sent', 'delivered') AND ${LIVE_SQL} AND ${NOT_CHAT_SQL}`).get(tokenId, iso()).n;
 }
 
 function queuedCount(tokenId) {
@@ -259,6 +266,7 @@ function setDevicePrefs(tokenId, p) {
 function _setClock(fn) { _clock = fn || (() => Date.now()); }
 
 module.exports = {
+  NOT_CHAT_SQL,
   now, iso, wire, parseJson,
   createNotification, getNotification, updateNotification, deleteNotification, latestByCollapse,
   addDeliveries, requeue, deliveriesOf, markSent, pendingForToken, deliveryRow, payload, imageUrlOf, ack, markReadForUser,

@@ -792,6 +792,153 @@ Richtlinie laden; `peer_enabled` anzeigen bzw. Tunnel-Status anpassen;
 `support_bundle_requested_at` neu ist); `config_hash` ≠ eigener Hash →
 `config/check`.
 
+#### Plugin-Ereignisse (`event: plugin`, ab 1.177.0)
+
+Plugins mit `permissions.events` senden flüchtige Echtzeit-Ereignisse an
+bestimmte Personen (`gc.events.emit`, docs/plugins.md „Realtime events“) —
+z. B. der Messenger: neue Nachricht, „schreibt …“, gelesen. Jeder offene
+Stream einer genannten Person erhält:
+
+```
+event: plugin
+data: {"plugin":"gatecontrol-messenger","type":"message.new","data":{"conversationId":"12","messageId":4711}}
+```
+
+* **Ohne `id:`-Zeile**, nicht gespeichert, nicht bestätigt, nicht wiederholt
+  (wie `control`): Ein Gerät, das offline war oder neu verbindet, holt den
+  Stand über die Client-API des Plugins nach
+  (`/api/v1/client/plugins/<plugin>/api/…`). Unter Backpressure verwirft der
+  Server das Ereignis.
+* `plugin`: Plugin-ID; `type`: `[a-z][a-z0-9._-]{0,63}`, vom Plugin
+  festgelegt; `data`: beliebiges JSON (≤ 4 KB) oder `null`. Die Apps leiten
+  das Ereignis an die Ansicht des Plugins weiter (Android: `PushStreamClient`
+  → z. B. `ChatRepository`) und ignorieren Plugins/Typen, die sie nicht
+  kennen.
+* Unabhängig von `enabled`, `muted_topics`, Themen-Abos und Ruhezeiten — es
+  ist keine Benachrichtigung, die Apps zeigen dafür nie selbst etwas an.
+
+#### Chat-Benachrichtigungen (`kind: "message"`, ab 1.177.0)
+
+Ein Plugin-Thema mit `notifyTopics[].chat: true` (docs/plugins.md „Chat
+notifications“) liefert Nachrichten zwischen Personen. Sie kommen als ganz
+normales `event: notification` (gleiche `seq`, gleiches `ack`), mit diesen
+Unterschieden:
+
+```
+id: 130
+event: notification
+data: {"seq":130,"id":52,"event_id":"plugin:gatecontrol-messenger:message","topic":"plugin:gatecontrol-messenger:message",
+       "priority":"normal","title":"Anna","body":"Bist du schon unterwegs?","kind":"message",
+       "created_at":"2026-10-17T18:02:11Z","expires_at":"2026-10-20T18:02:11Z",
+       "collapse_key":"plugin:gatecontrol-messenger:chat:12","silent":false,"imageUrl":null,
+       "data":{"route":"plg-gatecontrol-messenger","messageId":4711,
+               "conversation":{"id":"12","title":"Familie","isGroup":true},
+               "sender":{"id":7,"name":"Anna","avatarUrl":"/avatars/Xk3….webp"},
+               "actions":[{"id":"reply","label":"Antworten","type":"reply","path":"conversations/12/messages"},
+                          {"id":"mark_read","label":"Gelesen","type":"mark_read","path":"conversations/12/read","body":{"upTo":4711}}]}}
+```
+
+* `kind: "message"` gibt es nur bei Chat-Benachrichtigungen; bei allen
+  anderen fehlt das Feld (Vertrag unverändert). Ältere Apps zeigen sie wie
+  jede Benachrichtigung an.
+* `data.conversation` `{ id (String), title (String|null), isGroup }` und
+  `data.sender` `{ id (Zahl oder String), name, avatarUrl (relativer Pfad
+  `/avatars/…` oder `/plugin-media/…` des eigenen Servers, oder null) }` sind
+  vom Server geprüft. `title` ist der Anzeigename des Absenders (bzw. bei
+  ausgeschalteter Vorschau „Neue Nachricht von Anna“), `body` der Text (bei
+  ausgeschalteter Vorschau leer) — das entscheidet das Plugin.
+* `collapse_key` ist pro Unterhaltung gleich (`plugin:<id>:chat:<conversation.id>`,
+  sofern das Plugin keinen eigenen setzt). Chat-Benachrichtigungen werden am
+  Server **nie gebündelt** und nie zurückgehalten; jede Nachricht kommt
+  einzeln (neue `seq`, neue `id`). Ruhezeiten machen sie wie üblich `silent`.
+* Nicht im Posteingang: `GET /api/v1/client/push/inbox` (und das Postfach im
+  Portal) liefern keine `kind:"message"`-Einträge, `unread` (auch in
+  `hello`) zählt sie nicht. Sie gehören in den Chat des Plugins.
+
+**Darstellung Android** (verbindlich):
+
+* Eigener Kanal „Chats“ (Wichtigkeit hoch), getrennt von den übrigen
+  Kanälen. Eine Benachrichtigung **pro Unterhaltung** (`conversation.id`,
+  Notification-Tag = `collapse_key`), Stil `NotificationCompat.MessagingStyle`:
+  `Person` „Ich“ als Nutzer; jede eingehende Chat-Benachrichtigung fügt eine
+  `MessagingStyle.Message(body, created_at, Person(sender.name, Icon aus
+  sender.avatarUrl, key = sender.id))` an die vorhandene Benachrichtigung der
+  Unterhaltung an (die App hält die letzten Nachrichten je Unterhaltung, z. B.
+  bis zu 7). `conversation.isGroup` → `setGroupConversation(true)` und
+  `setConversationTitle(conversation.title)`. Bilder: `imageUrl` als
+  `setData("image/…", uri)` der Nachricht, wenn vorhanden.
+* Gruppierung: alle Chat-Benachrichtigungen in einer Gruppe
+  (`setGroup("chats")`) mit Zusammenfassung; optional Shortcuts/Bubbles je
+  Unterhaltung (`setShortcutId`, `LocusId` = `conversation.id`).
+* Aktion `reply`: Aktion mit `RemoteInput` (Label = `label`). Die App sendet
+  `POST /api/v1/client/plugins/<plugin>/api/<path>` mit dem JSON
+  `{ ...body, "clientId": "<UUID>", "kind": "text", "text": "<Eingabe>",
+  "source": "notification" }` (Token wie jede Client-Route; `clientId` für
+  idempotentes Wiederholen). Bei Erfolg die eigene Antwort als Nachricht von
+  „Ich“ an den `MessagingStyle` anhängen (`setSilent`), bei Fehler die
+  Benachrichtigung mit Fehlerhinweis aktualisieren. Danach wie `mark_read`
+  verfahren (die eigene Antwort heißt: gelesen).
+* Aktion `mark_read`: `POST /api/v1/client/plugins/<plugin>/api/<path>` mit
+  `body` (oder `{}`), dann `POST /api/v1/client/push/ack` mit `state:"read"`
+  und `action:"mark_read"` für **alle** `seq` dieser Unterhaltung, die die App
+  gerade anzeigt, und die Benachrichtigung entfernen.
+* Antippen: öffnet den Chat-Tab des Plugins in dieser Unterhaltung
+  (`data.route` + `conversation.id`), `ack` `read` wie oben.
+* Öffnet die Person eine Unterhaltung in der App, bestätigt die App die
+  angezeigten `seq` dieser Unterhaltung mit `read` und entfernt die
+  Benachrichtigung.
+* `event: read` / `event: revoke` mit einer `id` einer Chat-Benachrichtigung:
+  diese Nachricht aus dem `MessagingStyle` entfernen; ist keine mehr übrig,
+  die Benachrichtigung der Unterhaltung entfernen. Zusätzlich darf die App
+  Plugin-Ereignisse (`event: plugin`, z. B. Messenger-Typ `read` einer
+  Unterhaltung) nutzen, um Benachrichtigungen dieser Unterhaltung zu entfernen.
+
+**Darstellung Windows** (client-core, Pro, Community):
+
+* Ein Toast pro Nachricht mit `Tag` = `collapse_key` und `Group` = `chats`
+  (ersetzt den vorherigen Toast derselben Unterhaltung), Kopfzeile
+  `conversation.title` (Gruppe) bzw. `sender.name`, Text `body`, Bild
+  `sender.avatarUrl` als App-Logo (rund).
+* `reply` → Toast-`input` (Textfeld) mit Schaltfläche `label`; senden wie bei
+  Android (`POST …/api/<path>` mit `{ ...body, clientId, kind: "text", text,
+  source: "notification" }`). `mark_read` → Schaltfläche, Ablauf wie bei
+  Android. Ohne Unterstützung für Eingaben (ältere Systeme) nur die
+  Schaltfläche „Öffnen“.
+* `read`/`revoke` → Toast entfernen (`ToastNotificationHistory.Remove(tag, group)`).
+
+#### Plugin-Medien in den Apps (ab 1.177.0)
+
+Plugins mit `media` in der plugin.json (docs/plugins.md „Media“) nehmen
+Dateien über GateControl entgegen — Upload und Download sind Kern-Routen mit
+derselben Token-Prüfung wie die Client-API der Plugins:
+
+```
+PUT /api/v1/client/plugins/<plugin>/media
+  Content-Type: <ein Typ aus media.types des Plugins>   (z. B. image/webp, audio/ogg)
+  Content-Length: <Bytes, ≤ media.maxBytes>             (Pflicht, kein chunked)
+  Body: die Datei selbst (roh, kein JSON, kein multipart)
+  200 {"ok":true,"mediaId":"<32 hex>","mime":"image/webp","bytes":183422}
+  404 not_found (Plugin unbekannt, nicht nutzbar, ohne media) · 403 no_user
+  411 length_required · 413 too_large · 415 unsupported_type · 507 quota_exceeded
+  400 aborted | length_mismatch
+
+GET /api/v1/client/plugins/<plugin>/media/<mediaId>     (auch HEAD)
+  Range: bytes=<a>-<b> (optional, eine Range; für Sprachnachrichten/Seeking)
+  200 / 206 (Content-Range) mit Content-Type, Accept-Ranges: bytes, ETag,
+  Cache-Control: private, max-age=86400, immutable · 416 bei unerfüllbarer Range
+  404 not_found, wenn das Plugin (Hook mediaAccess) dieser Person die Datei
+  nicht zeigt — oder ohne Hook: nur der hochladenden Person
+```
+
+* Die Medien-ID bindet erst das Plugin (`gc.media.claim`) — die App schickt
+  sie nach dem Upload an die Plugin-API (z. B. mit der Nachricht); nicht
+  gebundene Uploads löscht der Server nach 24 h.
+* Bilder verkleinert die App vor dem Upload (lange Kante 2048 px, WebP/JPEG),
+  ein Vorschaubild (≤ 64 KB) lädt sie als eigene Datei hoch. Der Server
+  rechnet nichts um.
+* Bilder, Audio und Video kommen `inline`, alle anderen Typen mit
+  `Content-Disposition: attachment`.
+
 ### `POST /api/v1/client/push/ack`
 
 * Body: `{"seqs":[123,124],"state":"delivered"|"read"|"dismissed","action":"details"}`
@@ -806,6 +953,8 @@ Richtlinie laden; `peer_enabled` anzeigen bzw. Tunnel-Status anpassen;
 * Antwort: `{"items":[<notification wie oben> + "state":"delivered"|"read"|"dismissed"],"unread":3}`.
 * Sortiert neueste zuerst; abgelaufene und zurückgezogene Nachrichten sind
   nicht enthalten. Noch nicht bestätigte Einträge erscheinen als `delivered`.
+* Chat-Benachrichtigungen (`kind:"message"`, ab 1.177.0) sind nicht enthalten
+  und zählen nicht zu `unread`.
 
 ### `GET /api/v1/client/push/prefs`
 

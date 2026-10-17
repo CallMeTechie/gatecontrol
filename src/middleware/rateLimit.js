@@ -597,3 +597,18 @@ module.exports.notifyMediaLimiter = notifyMediaLimiter;
 module.exports.clientAvatarLimiter = clientAvatarLimiter;
 module.exports.avatarWriteLimiter = avatarWriteLimiter;
 module.exports.avatarFileLimiter = avatarFileLimiter;
+
+// /plugin-media/<token> — media files of plugins for their frames (signed
+// capability URLs, docs/plugins.md "Media"): no session, per address. A chat
+// view loads a few dozen pictures at once and seeks in voice messages (Range).
+const pluginMediaLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `plugin-media:${ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    res.status(429).type('text/plain').send('rate_limited');
+  },
+});
+module.exports.pluginMediaLimiter = pluginMediaLimiter;

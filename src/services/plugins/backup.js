@@ -15,6 +15,11 @@
 // Caps: MAX_PLUGIN_BYTES per backup; a plugin whose data does not fit is
 // backed up without data (code, registry and settings secrets still are),
 // noted in `skipped`.
+//   * plugin media (plugin.json `media`, media.js) only with "Plugin-Medien
+//     im Backup" on (off by default) and outside MAX_PLUGIN_BYTES, with a cap
+//     of their own (MAX_MEDIA_BYTES for all plugins): the claimed files as
+//     stored (encrypted) plus each file key as a backup secret; a plugin's
+//     media that do not fit are left out (`skipped: ['media']`).
 //
 // Restore (async, after the main restore): processes are stopped, the
 // signature is verified again (a changed package is not restored; an
@@ -35,6 +40,7 @@ const { ID_RE, LIMITS, codeDir, dataDir, dbDir, filesDir, pluginsRoot } = requir
 const logger = require('../../utils/logger');
 
 const MAX_PLUGIN_BYTES = 48 * 1024 * 1024; // raw bytes of all plugins in one backup
+const MAX_MEDIA_BYTES = 128 * 1024 * 1024; // plugin media (option, off by default) of all plugins in one backup
 const SQLITE_MAGIC = Buffer.from('SQLite format 3\0', 'latin1');
 
 function db() { return require('../../db/connection').getDb(); }
@@ -112,6 +118,8 @@ function exportAll() {
   let rows;
   try { rows = registry.list(); } catch { return []; }
   const budget = { left: MAX_PLUGIN_BYTES };
+  const media = require('./media');
+  const mediaBudget = media.backupEnabled() ? { left: MAX_MEDIA_BYTES } : null;
   const out = [];
   for (const p of rows) {
     const entry = { id: p.id, version: p.version, enabled: p.enabled, installed_at: p.installedAt, updated_at: p.updatedAt, skipped: [] };
@@ -135,6 +143,12 @@ function exportAll() {
     const lic = registry.getLicense(p.id);
     entry.license = lic ? { key_encrypted: lic.keyEncrypted, state: lic.state } : null;
     entry.targets = exportTargets(p.id);
+    if (mediaBudget && media.declOf(p)) {
+      try { entry.media = media.exportPlugin(p.id, mediaBudget); } catch (e) {
+        logger.warn({ plugin: p.id, err: e.message }, 'backup: plugin media skipped');
+        entry.skipped.push('media');
+      }
+    }
     out.push(entry);
   }
   return out;
@@ -148,6 +162,7 @@ function validate(list) {
   list.forEach((e, i) => {
     if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !ID_RE.test(e.id)) errors.push(`Plugin #${i + 1}: invalid id`);
     else if (e.files != null && (typeof e.files !== 'object' || Array.isArray(e.files))) errors.push(`Plugin "${e.id}": invalid files`);
+    else if (e.media != null && !Array.isArray(e.media)) errors.push(`Plugin "${e.id}": invalid media`);
   });
   return errors;
 }
@@ -259,7 +274,9 @@ async function restoreAll(list, { removeOthers = false } = {}) {
       const values = new Map();
       for (const [k, v] of Object.entries(secrets)) if (typeof v === 'string' && /^[a-z][a-z0-9_.-]{0,63}$/.test(k)) values.set(k, { enc: v });
       if (values.size && snapshot) await storage.forPlugin(id).call('settings.set', { values: Object.fromEntries(values) });
-      registry.addLog(id, 'info', `restored from a backup (v${m.version}, signature: ${sig.status})`);
+      // plugin media of the backup (only when it was made with "Plugin-Medien im Backup")
+      const mediaRestored = Array.isArray(e.media) ? require('./media').importPlugin(id, e.media) : 0;
+      registry.addLog(id, 'info', `restored from a backup (v${m.version}, signature: ${sig.status}${mediaRestored ? `, ${mediaRestored} media files` : ''})`);
       result.restored++;
     } catch (err) {
       logger.warn({ plugin: id, err: err.message }, 'plugin restore failed');
@@ -270,4 +287,4 @@ async function restoreAll(list, { removeOthers = false } = {}) {
   return result;
 }
 
-module.exports = { exportAll, restoreAll, validate, MAX_PLUGIN_BYTES };
+module.exports = { exportAll, restoreAll, validate, MAX_PLUGIN_BYTES, MAX_MEDIA_BYTES };

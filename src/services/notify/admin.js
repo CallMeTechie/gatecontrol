@@ -70,10 +70,13 @@ function recipientsLabel(n, t) {
 
 function itemOf(n, st, t) {
   const s = st || { total: 0, delivered: 0, read: 0, silent: 0 };
+  // a chat notification (docs/plugins.md "Chat notifications") is a private
+  // message between people: the administrator sees that it went out, never its text
+  const chat = n.kind === 'message';
   return {
     id: n.id,
-    title: n.title,
-    body: n.body || '',
+    title: chat ? t('push.chat_hidden') : n.title,
+    body: chat ? '' : (n.body || ''),
     event_id: n.event_id,
     topic: n.topic,
     priority: n.priority,
@@ -303,7 +306,8 @@ function detail(id, t) {
     notification: {
       ...item,
       event_type: n.event_type || null,
-      data: store.parseJson(n.data, null),
+      // chat: sender and conversation are part of the private message too
+      data: n.kind === 'message' ? null : store.parseJson(n.data, null),
       collapse_key: n.collapse_key || null,
       count: n.count,
       expires_at: n.expires_at,

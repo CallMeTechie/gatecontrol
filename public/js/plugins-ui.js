@@ -40,7 +40,8 @@
     const v = Number(n) || 0;
     if (v < 1024) return v + ' B';
     if (v < 1024 * 1024) return (v / 1024).toFixed(1) + ' KB';
-    return (v / 1024 / 1024).toFixed(1) + ' MB';
+    if (v < 1024 * 1024 * 1024) return (v / 1024 / 1024).toFixed(1) + ' MB';
+    return (v / 1024 / 1024 / 1024).toFixed(1) + ' GB';
   }
 
   function fmtDate(iso, lang) {
@@ -59,6 +60,17 @@
     const m = /^(http|tcp|udp)(?::(.+))?$/.exec(String(p));
     if (!m) return String(p);
     return m[1].toUpperCase() + (m[2] ? ' ' + m[2].split(',').map((x) => x.trim()).join(', ') : '');
+  }
+
+  /** ['image/jpeg', 'image/png', 'audio/ogg', 'application/pdf'] → "JPEG, PNG, OGG, PDF" */
+  function mediaTypes(list) {
+    const out = [];
+    (list || []).forEach((m) => {
+      const sub = String(m).split('/')[1] || String(m);
+      const name = sub.replace(/^(?:x-|vnd\.)/, '').split(/[.+;-]/)[0].toUpperCase();
+      if (name && out.indexOf(name) < 0) out.push(name);
+    });
+    return out.join(', ');
   }
 
   function permRows(perm, t) {
@@ -94,6 +106,22 @@
       if (perm.criticalTopics && perm.criticalTopics.length) {
         rows.push({ label: t('plugins.perm.notify_critical'), value: t('plugins.perm.notify_critical_v', { topics: perm.criticalTopics.join(', ') }) });
       }
+      if (perm.chatTopics && perm.chatTopics.length) {
+        rows.push({ label: t('plugins.perm.chat'), value: t('plugins.perm.chat_v', { topics: perm.chatTopics.join(', ') }) });
+      }
+    }
+    // messenger foundations (docs/plugins.md "Media", "Realtime events", "Services")
+    if (perm.media) {
+      rows.push({ label: t('plugins.perm.media'), value: t('plugins.perm.media_v', {
+        max: fmtBytes(perm.media.maxBytes), quota: fmtBytes(perm.media.quotaDefault), types: mediaTypes(perm.media.types),
+      }) });
+    }
+    if (perm.events) rows.push({ label: t('plugins.perm.events'), value: t('plugins.perm.events_on') });
+    if (perm.services && perm.services.length) {
+      rows.push({ label: t('plugins.perm.services'), value: t('plugins.perm.services_v', { services: perm.services.map((x) => x.replace(':', ': ')).join(', ') }) });
+    }
+    if (perm.servicesProvided && perm.servicesProvided.length) {
+      rows.push({ label: t('plugins.perm.services_provided'), value: t('plugins.perm.services_provided_v', { services: perm.servicesProvided.join(', ') }) });
     }
     return rows;
   }
@@ -159,5 +187,5 @@
     return v === p.name || v === n.de || v === n.en;
   }
 
-  return { MAX_PACKAGE_BYTES, protoText, statusChip, licenseTone, checkSymbol, checkKeys, fmtBytes, fmtDate, permRows, permDiff, catalogChip, catalogAction, addsOf, wipeConfirmed };
+  return { MAX_PACKAGE_BYTES, protoText, statusChip, licenseTone, checkSymbol, checkKeys, fmtBytes, fmtDate, mediaTypes, permRows, permDiff, catalogChip, catalogAction, addsOf, wipeConfirmed };
 });

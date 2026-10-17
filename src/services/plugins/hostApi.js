@@ -292,6 +292,7 @@ function notify(plugin, args) {
     const declared = Array.isArray(plugin.manifest.notifyTopics) ? plugin.manifest.notifyTopics : [];
     const decl = declared.find((t) => t && t.id === topic) || null;
     need(topic === 'default' || decl, 'ERR_INVALID', 'topic not declared in notifyTopics');
+    if (decl && decl.chat === true) return notifyChat(plugin, topic, n);
     const title = sanitize.title(n.title);
     need(title, 'ERR_INVALID', 'empty title');
     const body = sanitize.body(n.body);
@@ -351,6 +352,272 @@ function notify(plugin, args) {
     });
   } catch { /* the activity row is written; push is best-effort */ }
   return {};
+}
+
+// ─── Chat notifications (notifyTopics[].chat) ────
+//
+// gc.notify({ topic: <chat topic>, title, body, users, conversation, sender,
+// priority?, collapseKey?, ttl?, data?, image? }) — docs/plugins.md "Chat
+// notifications". A message from one person to others: `users` (1…100) is
+// required, `conversation` { id, title?, isGroup? } and `sender` { id, name,
+// avatarUrl? } become data.conversation / data.sender (the apps group the
+// notifications per conversation, Android MessagingStyle). data.actions may
+// carry `reply` and `mark_read` { label, path, body? } — `path` a path of the
+// plugin's own client API (needs permissions.app), where the app POSTs the
+// reply / the read mark. Own budget (CHAT_PER_HOUR per plugin, CHAT_PER_USER_HOUR
+// per recipient — a recipient over it is skipped and listed in `skipped`),
+// never the e-mail channel, never bundled or held back, no activity row with
+// the text: an hourly neutral line with the count (flushChatSummary).
+
+const CHAT_PER_HOUR = 1200;
+const CHAT_PER_USER_HOUR = 120;
+const chatWindow = new Map();     // plugin id → [timestamps]
+const chatUserWindow = new Map(); // `${plugin}:${user}` → [timestamps]
+const chatCounts = new Map();     // plugin id → chat notifications since the last summary
+const CONV_ID_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
+const SENDER_ID_RE = /^[A-Za-z0-9_.:@-]{1,64}$/;
+// a picture of this server: a profile picture or a plugin media URL
+const AVATAR_URL_RE = /^\/(?:avatars|plugin-media)\/[A-Za-z0-9._-]{1,200}$/;
+
+function recent(map, key, now) {
+  const w = (map.get(key) || []).filter((t) => now - t < 3600000);
+  map.set(key, w);
+  return w;
+}
+
+function chatParts(n, plugin) {
+  const { line } = require('../notify/sanitize');
+  const c = n.conversation;
+  need(c && typeof c === 'object' && !Array.isArray(c), 'ERR_INVALID', 'conversation required on a chat topic');
+  const convId = typeof c.id === 'number' && Number.isSafeInteger(c.id) ? String(c.id) : c.id;
+  need(typeof convId === 'string' && CONV_ID_RE.test(convId), 'ERR_INVALID', 'invalid conversation.id');
+  need(c.title == null || typeof c.title === 'string', 'ERR_INVALID', 'invalid conversation.title');
+  need(c.isGroup == null || typeof c.isGroup === 'boolean', 'ERR_INVALID', 'invalid conversation.isGroup');
+  const conversation = { id: convId, title: c.title == null ? null : (line(c.title, 80) || null), isGroup: c.isGroup === true };
+  const sd = n.sender;
+  need(sd && typeof sd === 'object' && !Array.isArray(sd), 'ERR_INVALID', 'sender required on a chat topic');
+  const sid = typeof sd.id === 'number' && Number.isSafeInteger(sd.id) ? sd.id : (typeof sd.id === 'string' && SENDER_ID_RE.test(sd.id) ? sd.id : null);
+  need(sid !== null, 'ERR_INVALID', 'invalid sender.id');
+  const name = typeof sd.name === 'string' ? line(sd.name, 80) : '';
+  need(name, 'ERR_INVALID', 'sender.name required');
+  need(sd.avatarUrl == null || (typeof sd.avatarUrl === 'string' && AVATAR_URL_RE.test(sd.avatarUrl)), 'ERR_INVALID', 'sender.avatarUrl must be a /avatars/ or /plugin-media/ path');
+  const sender = { id: sid, name, avatarUrl: sd.avatarUrl == null ? null : sd.avatarUrl };
+  // reply / mark_read: strict here (sanitize drops what does not fit)
+  const actions = n.data && Array.isArray(n.data.actions) ? n.data.actions : [];
+  const { pluginPath, CHAT_ACTIONS, CHAT_BODY_BYTES } = require('../notify/sanitize');
+  for (const a of actions) {
+    if (!a || typeof a !== 'object' || !CHAT_ACTIONS.has(a.type)) continue;
+    need(plugin.manifest.permissions && plugin.manifest.permissions.app, 'ERR_INVALID', `${a.type}: needs permissions.app (the app posts to the plugin's client API)`);
+    need(pluginPath(a.path), 'ERR_INVALID', `${a.type}: invalid path`);
+    const label = typeof a.label === 'string' ? line(a.label, 1000) : '';
+    need(label.length >= 1 && label.length <= 24, 'ERR_INVALID', `${a.type}: label must be 1…24 characters`);
+    let size = 0;
+    try { size = a.body == null ? 0 : Buffer.byteLength(JSON.stringify(a.body)); } catch { size = Infinity; }
+    need(a.body == null || (typeof a.body === 'object' && !Array.isArray(a.body) && size <= CHAT_BODY_BYTES), 'ERR_INVALID', `${a.type}: body must be an object ≤ 1 KB`);
+  }
+  return { conversation, sender };
+}
+
+function notifyChat(plugin, topic, n) {
+  const sanitize = require('../notify/sanitize');
+  const hub = require('../notify/hub');
+  const title = sanitize.title(n.title);
+  need(title, 'ERR_INVALID', 'empty title');
+  const body = sanitize.body(n.body);
+  let priority = n.priority == null ? 'normal' : n.priority;
+  need(NOTIFY_PRIORITIES.includes(priority), 'ERR_INVALID', 'invalid priority');
+  if (priority === 'critical') priority = 'high';
+  need(Array.isArray(n.users) && n.users.length >= 1 && n.users.length <= 100 && n.users.every((u) => Number.isSafeInteger(u) && u > 0), 'ERR_INVALID', 'users (1…100 ids) required on a chat topic');
+  const { conversation, sender } = chatParts(n, plugin);
+  let collapseKey = sanitize.collapseKey(`chat:${conversation.id}`);
+  if (n.collapseKey != null) {
+    collapseKey = sanitize.collapseKey(n.collapseKey);
+    need(collapseKey, 'ERR_INVALID', 'invalid collapseKey');
+  }
+  let ttl = null;
+  if (n.ttl != null) {
+    need(Number.isSafeInteger(n.ttl) && n.ttl >= 60 && n.ttl <= 30 * 86400, 'ERR_INVALID', 'invalid ttl');
+    ttl = n.ttl;
+  }
+  need(n.data == null || (typeof n.data === 'object' && !Array.isArray(n.data)), 'ERR_INVALID', 'invalid data');
+  if (n.data != null && Array.isArray(n.data.actions)) checkQuickActions(plugin, n.data.actions);
+  let image = null;
+  if (n.image != null) {
+    try { image = require('../notify/media').validate(n.image); } catch (e) {
+      throw new HostApiError('ERR_INVALID', e && e.code === 'ERR_INVALID' ? e.message : 'invalid image');
+    }
+  }
+  const d = sanitize.data({ route: `plg-${plugin.id}`, ...(n.data || {}), conversation, sender }, { plugin: plugin.id, chat: true });
+  need(d.ok, 'ERR_INVALID', 'data too large (max 4 KB)');
+  // budgets: the plugin's (refused when used up), each recipient's (skipped)
+  const now = Date.now();
+  const w = recent(chatWindow, plugin.id, now);
+  need(w.length < CHAT_PER_HOUR, 'ERR_RATE_LIMIT', `too many chat notifications (${CHAT_PER_HOUR} per hour)`);
+  const users = [];
+  const skipped = [];
+  for (const u of [...new Set(n.users)]) {
+    if (recent(chatUserWindow, `${plugin.id}:${u}`, now).length >= CHAT_PER_USER_HOUR) skipped.push(u); else users.push(u);
+  }
+  need(users.length, 'ERR_RATE_LIMIT', `too many chat notifications for these recipients (${CHAT_PER_USER_HOUR} per hour each)`);
+  w.push(now);
+  for (const u of users) chatUserWindow.get(`${plugin.id}:${u}`).push(now);
+  chatCounts.set(plugin.id, (chatCounts.get(plugin.id) || 0) + 1);
+  const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, collapseKey, ttl, data: d.data, allowCritical: false, image, chat: true });
+  return { pushed: r.pushed, id: r.id || null, skipped };
+}
+
+/**
+ * Hourly (plugins/index.js): one neutral activity row per plugin that sent
+ * chat notifications — the count only, never a title, text or person.
+ */
+function flushChatSummary() {
+  for (const [id, count] of chatCounts) {
+    if (!count) continue;
+    let name = id;
+    try { const p = require('./registry').get(id); if (p) name = p.name; } catch { /* keep the id */ }
+    try {
+      require('../activity').log('plugin_notice', `${name}: ${count} chat notification${count === 1 ? '' : 's'} sent`, {
+        source: 'plugin', severity: 'info', details: { plugin: id, chat: true, count },
+      });
+    } catch { /* best-effort */ }
+  }
+  chatCounts.clear();
+}
+
+// ─── Media (plugin.json `media`, services/plugins/media.js) ────
+//
+// gc.media.info(id) / claim(id) / delete(id) / usage() / url(id, { user, ttlS }):
+// the files the plugin's users uploaded (docs/plugins.md "Media").
+
+function needMedia(plugin) {
+  need(require('./media').declOf(plugin), 'ERR_MEDIA_DENIED', 'plugin.json declares no media');
+  return require('./media');
+}
+
+function mediaId(args) {
+  const id = args && args.id;
+  need(typeof id === 'string' && /^[0-9a-f]{32}$/.test(id), 'ERR_INVALID', 'invalid media id');
+  return id;
+}
+
+function mediaCall(plugin, op, args) {
+  const media = needMedia(plugin);
+  switch (op) {
+    case 'info': return media.info(media.row(plugin.id, mediaId(args)));
+    case 'claim': {
+      const out = media.claim(plugin.id, mediaId(args));
+      need(out, 'ERR_INVALID', 'unknown media id');
+      return out;
+    }
+    case 'delete': return media.remove(plugin.id, mediaId(args));
+    case 'usage': {
+      const decl = media.declOf(plugin);
+      return { ...media.usage(plugin.id), quota: media.quotaOf(plugin), maxBytes: decl.maxBytes, types: decl.types };
+    }
+    case 'url': {
+      const id = mediaId(args);
+      need(media.row(plugin.id, id), 'ERR_INVALID', 'unknown media id');
+      const user = args.user == null ? null : args.user;
+      need(user === null || (Number.isSafeInteger(user) && user > 0), 'ERR_INVALID', 'invalid user id');
+      const ttlS = args.ttlS == null ? null : args.ttlS;
+      need(ttlS === null || (Number.isSafeInteger(ttlS) && ttlS >= media.URL_TTL_MIN_S && ttlS <= media.URL_TTL_MAX_S), 'ERR_INVALID', 'ttlS must be 60…86400');
+      return media.url(plugin.id, id, { user, ttlS });
+    }
+    default: throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
+  }
+}
+
+// ─── Realtime events (permissions.events, services/plugins/events.js) ────
+
+function eventsEmit(plugin, args) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.events, 'ERR_EVENTS_DENIED', 'this plugin has no events permission');
+  try {
+    return require('./events').emit(plugin.id, args);
+  } catch (e) {
+    if (e && (e.code === 'ERR_INVALID' || e.code === 'ERR_RATE_LIMIT')) throw new HostApiError(e.code, e.message);
+    throw e;
+  }
+}
+
+// ─── Services between plugins (services.provides / permissions.services) ────
+//
+// gc.services.call({ plugin, service, userId?, payload? }) → the provider's
+// answer: its hook service({ name, caller, user, payload }) runs in the
+// providing plugin. The caller must list "<plugin>:<service>" in
+// permissions.services, the provider must declare the service in
+// services.provides and be usable (may run, running). `user` is the account
+// the call is about ({ id, name, role } of an enabled user, or null without
+// userId). Payload and answer ≤ 16 KB of JSON, SERVICE_TIMEOUT_MS, 60 calls per
+// hour per calling plugin, an activity row `plugin_service` per call (ids
+// and ok only).
+
+const SERVICES_PER_HOUR = 60;
+const SERVICE_JSON_MAX = 16 * 1024;
+const SERVICE_TIMEOUT_MS = 15000;
+const servicesWindow = new Map();
+
+function jsonBounded(v, what) {
+  let s;
+  try { s = JSON.stringify(v === undefined ? null : v); } catch { s = undefined; }
+  need(s !== undefined && Buffer.byteLength(s, 'utf8') <= SERVICE_JSON_MAX, what === 'payload' ? 'ERR_INVALID' : 'ERR_SERVICE_FAILED', `${what} must be JSON ≤ 16 KB`);
+  return JSON.parse(s);
+}
+
+async function servicesCall(plugin, args) {
+  const { ID_RE } = require('./constants');
+  const { SERVICE_NAME_RE } = require('./manifest');
+  const a = args && typeof args === 'object' ? args : {};
+  need(typeof a.plugin === 'string' && a.plugin.length >= 2 && a.plugin.length <= 64 && ID_RE.test(a.plugin), 'ERR_INVALID', 'invalid plugin id');
+  need(typeof a.service === 'string' && SERVICE_NAME_RE.test(a.service), 'ERR_INVALID', 'invalid service name');
+  const allowed = plugin.manifest.permissions && Array.isArray(plugin.manifest.permissions.services) ? plugin.manifest.permissions.services : [];
+  need(allowed.includes(`${a.plugin}:${a.service}`), 'ERR_SERVICES_DENIED', 'service not listed in permissions.services');
+  need(a.plugin !== plugin.id, 'ERR_INVALID', 'a plugin cannot call its own services');
+  let user = null;
+  if (a.userId != null) {
+    need(Number.isSafeInteger(a.userId) && a.userId > 0, 'ERR_INVALID', 'invalid user id');
+    const u = db().prepare('SELECT id, username, display_name, role, enabled FROM users WHERE id = ?').get(a.userId);
+    need(u && u.enabled === 1, 'ERR_INVALID', 'unknown or disabled user');
+    user = { id: u.id, name: u.display_name || u.username, role: u.role };
+  }
+  const payload = jsonBounded(a.payload, 'payload');
+  const provider = require('./registry').get(a.plugin);
+  const provides = provider && provider.manifest && provider.manifest.services && provider.manifest.services.provides ? provider.manifest.services.provides : {};
+  const runtime = require('./runtime');
+  need(provider && Object.prototype.hasOwnProperty.call(provides, a.service) && require('./index').evaluate(provider).run
+    && runtime.info(a.plugin).state === 'running', 'ERR_SERVICE_UNAVAILABLE', 'the providing plugin or service is not available');
+  const now = Date.now();
+  const w = recent(servicesWindow, plugin.id, now);
+  need(w.length < SERVICES_PER_HOUR, 'ERR_RATE_LIMIT', `too many service calls (${SERVICES_PER_HOUR} per hour)`);
+  w.push(now);
+  let out;
+  let error = null;
+  try {
+    out = await runtime.call(a.plugin, 'service', { name: a.service, caller: plugin.id, user, payload }, module.exports._serviceTimeoutMs || SERVICE_TIMEOUT_MS);
+  } catch (e) {
+    error = e && e.code === 'ERR_TIMEOUT' ? new HostApiError('ERR_TIMEOUT', 'the service did not answer in time')
+      : new HostApiError('ERR_SERVICE_FAILED', String((e && e.message) || 'service failed').slice(0, 200));
+  }
+  let result = null;
+  if (!error) {
+    try { result = jsonBounded(out && out.result, 'result'); } catch (e) { error = e; }
+  }
+  try {
+    require('../activity').log('plugin_service', `Plugin "${plugin.id}" called service "${a.service}" of plugin "${a.plugin}" (${error ? 'failed' : 'ok'})`, {
+      source: 'plugin', severity: error ? 'warning' : 'info',
+      details: { plugin: plugin.id, target: a.plugin, service: a.service, userId: user ? user.id : null, ok: !error, ...(error ? { error: error.code } : {}) },
+    });
+  } catch { /* the call happened; the log is best-effort */ }
+  if (error) throw error;
+  return result;
+}
+
+function _resetBudgetsForTest() {
+  if (process.env.NODE_ENV !== 'test') return;
+  chatWindow.clear();
+  chatUserWindow.clear();
+  chatCounts.clear();
+  servicesWindow.clear();
+  notifyWindow.clear();
 }
 
 // ─── Plugin-to-plugin actions (permissions.actions) ────
@@ -520,6 +787,13 @@ async function handle(plugin, api, args, ctx) {
     case 'actions.list': return actionsList(plugin, args);
     case 'actions.run': return actionsRun(plugin, args);
     case 'notify': return notify(plugin, args);
+    case 'media.info': return mediaCall(plugin, 'info', args);
+    case 'media.claim': return mediaCall(plugin, 'claim', args);
+    case 'media.delete': return mediaCall(plugin, 'delete', args);
+    case 'media.usage': return mediaCall(plugin, 'usage', args);
+    case 'media.url': return mediaCall(plugin, 'url', args);
+    case 'events.emit': return eventsEmit(plugin, args);
+    case 'services.call': return servicesCall(plugin, args);
     case 'license.status': {
       const s = licensing.status(plugin);
       return { required: s.required, licensed: s.licensed, state: s.state, expiresAt: s.expiresAt || null };
@@ -529,4 +803,7 @@ async function handle(plugin, api, args, ctx) {
   }
 }
 
-module.exports = { handle, closeSockets, HostApiError, ACTIONS_PER_HOUR, _resetActionsBudgetForTest, _lookup: null, _udpTargets: null };
+module.exports = {
+  handle, closeSockets, HostApiError, ACTIONS_PER_HOUR, CHAT_PER_HOUR, CHAT_PER_USER_HOUR, SERVICES_PER_HOUR, SERVICE_JSON_MAX,
+  flushChatSummary, _resetActionsBudgetForTest, _resetBudgetsForTest, _lookup: null, _udpTargets: null, _serviceTimeoutMs: null,
+};

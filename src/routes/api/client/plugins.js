@@ -15,6 +15,13 @@
  *     413 { ok: false, code: 'too_large' }     JSON body over 64 KB
  *     429 { ok: false, code: 'rate_limited' }
  *     502/503/504 like the admin and portal forwarders (plugin_error, not_running, timeout)
+ *   PUT /api/v1/client/plugins/:id/media           raw body (plugin.json `media`, docs/plugins.md "Media")
+ *     200 { ok: true, mediaId, mime, bytes }
+ *     404 not_found / no_media · 411 length_required · 413 too_large · 415 unsupported_type
+ *     507 quota_exceeded · 400 aborted / length_mismatch
+ *   GET|HEAD /api/v1/client/plugins/:id/media/:mediaId
+ *     the file (Range → 206, unsatisfiable → 416) when the plugin's hook
+ *     mediaAccess allows the token's owner (no hook: the uploader only), else 404
  *
  * Token only (scope `client` or `full-access`), machine binding — the guard
  * of the quick actions (helpers.requireClientToken). The plugin sees the
@@ -56,6 +63,40 @@ function bodyBytes(body) {
 }
 
 const forward = forwarder((req) => req.appViewer.user, (req) => req.params.id, { langOf: (req) => viewerLang(req, req.appViewer) });
+
+// ─── Media (plugin.json `media`, services/plugins/media.js) ─────
+// The body is the file itself (Content-Type from the plugin's `types`,
+// Content-Length ≤ its `maxBytes`) — never JSON, never through a body parser.
+
+const media = require('../../../services/plugins/media');
+
+/** Token, a usable plugin declaring media, an owner → { p, v } or null (answered). */
+function mediaGuard(req, res) {
+  if (!requireClientToken(req, res)) return null;
+  res.set('Cache-Control', 'no-store');
+  const p = appPlugins.pluginById(String(req.params.id || ''));
+  if (!p || !media.declOf(p)) { res.status(404).json({ ok: false, code: 'not_found' }); return null; }
+  const v = tokenViewer(req);
+  if (!v) { res.status(403).json({ ok: false, code: 'no_user' }); return null; }
+  return { p, v };
+}
+
+router.put('/:id/media', async (req, res) => {
+  const g = mediaGuard(req, res);
+  if (!g) return undefined;
+  try {
+    return res.json({ ok: true, ...(await media.store(g.p, g.v.user.id, req)) });
+  } catch (e) { return media.failure(res, e); }
+});
+
+async function mediaGet(req, res) {
+  const g = mediaGuard(req, res);
+  if (!g) return undefined;
+  const r = media.row(g.p.id, String(req.params.mediaId || ''));
+  if (!r || !(await media.mayRead(g.p.id, g.v.user, r))) return res.status(404).json({ ok: false, code: 'not_found' });
+  return media.send(req, res, r, 'private, max-age=86400, immutable');
+}
+router.get('/:id/media/:mediaId', mediaGet); // HEAD too (Express answers it with the GET route)
 
 router.all('/:id/api/*', (req, res, next) => {
   if (!requireClientToken(req, res)) return undefined;

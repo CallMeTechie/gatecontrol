@@ -61,9 +61,12 @@ async function contributions(user, lang) {
   for (const p of portalPlugins()) {
     const ui = p.manifest.ui.portal;
     const maps = !!p.manifest.ui.maps; // the frame's sandbox gets allow-popups (frame.js "Maps")
-    if (ui.label) items.push({ kind: 'tab', plugin: p.id, key: 'plg-' + p.id, label: loc(ui.label, l), icon: ui.icon, section: null, maps });
+    // media: the frame's <iframe> gets allow="microphone *" (voice recording); events: the
+    // parent page may hold the plugin's event stream — both keys only when set
+    const extra = { ...(p.manifest.media ? { media: true } : {}), ...(p.manifest.permissions.events ? { events: true } : {}) };
+    if (ui.label) items.push({ kind: 'tab', plugin: p.id, key: 'plg-' + p.id, label: loc(ui.label, l), icon: ui.icon, section: null, maps, ...extra });
     for (const s of ui.sections || []) {
-      items.push({ kind: 'section', plugin: p.id, id: s.id, key: `plg-${p.id}-${s.id}`, tab: s.tab, goto: TAB_IDS[s.tab], title: loc(s.title, l), order: s.order, section: s.id, maps });
+      items.push({ kind: 'section', plugin: p.id, id: s.id, key: `plg-${p.id}-${s.id}`, tab: s.tab, goto: TAB_IDS[s.tab], title: loc(s.title, l), order: s.order, section: s.id, maps, ...extra });
     }
   }
   const shown = await Promise.all(items.map(async (it) => {
@@ -75,7 +78,8 @@ async function contributions(user, lang) {
   for (const it of visible.filter((x) => x.kind === 'section')) sections[it.tab].push(it);
   for (const k of Object.keys(sections)) sections[k].sort((a, b) => a.order - b.order || a.key.localeCompare(b.key));
   return {
-    tabs: visible.filter((x) => x.kind === 'tab').map((x) => ({ id: x.plugin, key: x.key, label: x.label, icon: x.icon, maps: x.maps })),
+    tabs: visible.filter((x) => x.kind === 'tab').map((x) => ({ id: x.plugin, key: x.key, label: x.label, icon: x.icon, maps: x.maps,
+      ...(x.media ? { media: true } : {}), ...(x.events ? { events: true } : {}) })),
     sections,
   };
 }

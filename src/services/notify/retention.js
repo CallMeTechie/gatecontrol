@@ -9,7 +9,8 @@
 //     messages go first, then the oldest of the rest;
 //   * queues of deleted tokens expire, their device rows are removed;
 //   * fallback mails that are due are sent (hub.sweepEmail);
-//   * expired pictures of plugin pushes (notify_media, media.js) are deleted.
+//   * expired pictures of plugin pushes (notify_media, media.js) are deleted;
+//   * chat notifications (kind 'message') are purged after retention_h, not history_days.
 
 const { getDb } = require('../../db/connection');
 const store = require('./store');
@@ -36,6 +37,9 @@ function run() {
 
   out.purged = db.prepare('DELETE FROM notifications WHERE created_at <= ? AND release_at IS NULL')
     .run(store.iso(store.now() - cfg.history_days * 24 * HOUR_MS)).changes;
+  // chat notifications carry private message text: gone after the push retention, not kept as history
+  out.purged += db.prepare("DELETE FROM notifications WHERE kind = 'message' AND created_at <= ?")
+    .run(store.iso(store.now() - cfg.retention_h * HOUR_MS)).changes;
 
   const over = db.prepare(`SELECT token_id, COUNT(*) AS n FROM notification_deliveries WHERE state = 'queued'
      GROUP BY token_id HAVING n > ?`).all(cfg.max_queue);

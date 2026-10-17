@@ -50,14 +50,52 @@ function quickAction(a, opts) {
   return out;
 }
 
+// reply / mark_read: a path of the sending plugin's own client API
+// (POST /api/v1/client/plugins/<plugin>/api/<path>), relative, no '..'
+const PLUGIN_PATH_RE = /^[A-Za-z0-9._~!$&'()*+,;=:@%/-]{1,300}$/;
+const CHAT_ACTIONS = new Set(['reply', 'mark_read']);
+const CHAT_BODY_BYTES = 1024;
+
+/** A relative plugin API path ('conversations/12/messages') or null. */
+function pluginPath(v) {
+  const s = typeof v === 'string' ? v.replace(/^\/+/, '') : '';
+  return PLUGIN_PATH_RE.test(s) && !s.split('/').some((x) => x === '..' || x === '.') ? s : null;
+}
+
+/**
+ * reply / mark_read of a chat notification (docs/plugins.md "Chat
+ * notifications") → { id, label, type, path, body? } or null. Only in a
+ * plugin push on a chat topic (`opts.chat`). `body`: a JSON object ≤ 1 KB
+ * the app sends along (reply: merged with { clientId, kind, text }).
+ */
+function chatAction(a, opts) {
+  if (!opts || opts.chat !== true || typeof opts.plugin !== 'string') return null;
+  const path = pluginPath(a.path);
+  if (!path) return null;
+  const id = line(a.id || a.type, 40);
+  if (!/^[A-Za-z0-9_.:-]{1,40}$/.test(id)) return null;
+  const label = line(a.label, LIMITS.quickActionLabel);
+  if (!label) return null;
+  const out = { id, label, type: a.type, path };
+  if (a.body != null) {
+    if (typeof a.body !== 'object' || Array.isArray(a.body)) return null;
+    const body = cleanValue(a.body, 1);
+    if (Buffer.byteLength(JSON.stringify(body), 'utf8') > CHAT_BODY_BYTES) return null;
+    out.body = body;
+  }
+  return out;
+}
+
 /**
  * One action → clean action or null (unknown type, bad target). opts.plugin:
- * the id of the plugin sending the message (allows its own quick_action).
+ * the id of the plugin sending the message (allows its own quick_action);
+ * opts.chat: a chat topic of that plugin (allows reply / mark_read).
  */
 function action(a, opts = null) {
   if (!a || typeof a !== 'object' || Array.isArray(a)) return null;
   const type = String(a.type || '');
   if (type === 'quick_action') return quickAction(a, opts);
+  if (CHAT_ACTIONS.has(type)) return chatAction(a, opts);
   if (!ACTION_TYPES.has(type)) return null;
   const id = line(a.id || type, 40);
   if (!/^[A-Za-z0-9_.:-]{1,40}$/.test(id)) return null;
@@ -148,4 +186,4 @@ function collapseKey(v) {
   return /^[A-Za-z0-9_.:@/-]{1,120}$/.test(s) ? s : null;
 }
 
-module.exports = { line, text, title, body, data, action, facts, portalPath, collapseKey };
+module.exports = { line, text, title, body, data, action, facts, portalPath, pluginPath, collapseKey, CHAT_ACTIONS, CHAT_BODY_BYTES };

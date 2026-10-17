@@ -480,11 +480,14 @@ function tick() {
 
 /**
  * A plugin message (already validated by hostApi): { topic, title, body,
- * priority, users, collapseKey, ttl, data, allowCritical, image }. Priority is
+ * priority, users, collapseKey, ttl, data, allowCritical, image, chat }. Priority is
  * capped at high unless the topic allows critical. Needs the email_alerts licence
  * ("plugin topics"); without it only the activity row is written. `image`
  * (media.validate()'s result) is stored only when the push goes out — its
  * path becomes imageUrl of the notification (never part of the mail).
+ * `chat` (a notifyTopics[].chat topic, docs/plugins.md "Chat notifications"):
+ * stored as kind 'message', never bundled or held back (the rule's
+ * bundle/delay do not apply; quiet hours still make it silent), never mailed.
  */
 function emitPlugin(pluginId, n) {
   if (!config.value('enabled')) return { pushed: false, reason: 'disabled' };
@@ -499,13 +502,18 @@ function emitPlugin(pluginId, n) {
     if (PRIORITY_RANK[priority] > PRIORITY_RANK.high && n.allowCritical !== true) priority = 'high';
     const users = Array.isArray(n.users) && n.users.length ? n.users : null;
     const image = n.image ? require('./media').save(n.image, n.ttl) : null;
+    const chat = n.chat === true;
     r = publish({
       eventId, eventType: 'plugin_notice', topic: eventId, source: `plugin:${pluginId}`, priority,
       title: n.title, body: n.body, data: n.data, collapseKey: n.collapseKey ? sanitize.collapseKey(`plugin:${pluginId}:${n.collapseKey}`) : null,
-      ttlS: n.ttl, image, target: users ? { type: 'users', ids: users } : { recipients: rule.recipients },
-    }, { rule, route: users ? { users } : { recipients: rule.recipients }, emitKey: eventId });
+      ttlS: n.ttl, image, target: users ? { type: 'users', ids: users } : { recipients: rule.recipients }, kind: chat ? 'message' : null,
+    }, {
+      rule: chat ? { ...rule, delay_s: 0, bundle_s: 0 } : rule,
+      route: users ? { users } : { recipients: rule.recipients },
+      emitKey: chat ? null : eventId,
+    });
   }
-  if (rule.ch_email) {
+  if (rule.ch_email && n.chat !== true) {
     const mail = { subject: `[GateControl] ${n.title}`, text: [n.title, '', n.body || '', '', '— GateControl'].join('\n') };
     if (!r || !claimMail(eventId, mail)) sendMailNow(mail).catch((err) => logger.warn({ err: err.message, pluginId }, 'plugin notification mail failed'));
   }
@@ -585,8 +593,9 @@ function onAck(tokenId, userId, changed, state) {
 /** Portal "gelesen": every device of the person. ids null = all. */
 function markRead(userId, ids) {
   const db = require('../../db/connection').getDb();
-  const list = ids || db.prepare(`SELECT DISTINCT notification_id AS id FROM notification_deliveries
-     WHERE user_id = ? AND state IN ('queued', 'sent', 'delivered')`).all(userId).map((r) => r.id);
+  // "all" = the inbox: chat notifications are not part of it (store.NOT_CHAT_SQL)
+  const list = ids || db.prepare(`SELECT DISTINCT d.notification_id AS id FROM notification_deliveries d JOIN notifications n ON n.id = d.notification_id
+     WHERE d.user_id = ? AND d.state IN ('queued', 'sent', 'delivered') AND ${store.NOT_CHAT_SQL}`).all(userId).map((r) => r.id);
   const rows = store.markReadForUser(userId, list);
   const changedIds = [...new Set(rows.map((r) => r.notification_id))];
   syncRead(userId, changedIds);

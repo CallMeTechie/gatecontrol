@@ -186,8 +186,12 @@ unsigned build of the same id.
     "kiosk": true,
     "actions": true,
     "notify": { "perHour": 60 },
-    "background": { "intervalSeconds": 60 }
+    "background": { "intervalSeconds": 60 },
+    "events": true,
+    "services": ["gatecontrol-messenger:send_message"]
   },
+  "media": { "maxBytes": 26214400, "types": ["image/jpeg", "image/webp", "audio/ogg", "application/pdf"], "quotaDefault": "10GB" },
+  "services": { "provides": { "scene": { "label": { "de": "Szene schalten", "en": "Switch a scene" } } } },
   "ui": {
     "nav": { "label": { "de": "Smart Home", "en": "Smart Home" }, "icon": "<svg path d>" },
     "pages": [{ "id": "main", "title": { "de": "Smart Home", "en": "Smart Home" } }],
@@ -206,7 +210,8 @@ unsigned build of the same id.
   "migrations": "migrations",
   "notifyTopics": [
     { "id": "charging", "label": { "de": "Laden abgeschlossen", "en": "Charging complete" }, "default": true },
-    { "id": "alarm", "label": { "de": "Alarm", "en": "Alarm" }, "allowCritical": true }
+    { "id": "alarm", "label": { "de": "Alarm", "en": "Alarm" }, "allowCritical": true },
+    { "id": "message", "label": { "de": "Nachrichten", "en": "Messages" }, "chat": true }
   ]
 }
 ```
@@ -255,7 +260,31 @@ unsigned build of the same id.
   only who subscribes), `allowCritical` (boolean, default `false`: see
   "Notifications"). Each becomes the topic `plugin:<id>:<topic>` — a rule in
   System › Benachrichtigungen, a channel in the apps and a switch in the portal.
-  See "Notifications" below.
+  See "Notifications" below. `chat` (boolean, default `false`, since 1.177.0):
+  a topic for messages between people — see "Chat notifications"; never
+  together with `allowCritical`, never on `default` (else `notifyTopics: chat
+  topic cannot be critical or default`).
+* `media` (optional, since 1.177.0): `{ maxBytes, types, quotaDefault }` —
+  files the plugin's users upload through GateControl (pictures, voice
+  messages, documents). `maxBytes` an integer 1024 … 104857600 (100 MB) per
+  file; `types` 1 … 32 MIME types (`image|audio|video|application|text/…`,
+  lower-cased; never types a browser runs — HTML, XML, SVG, JavaScript, CSS —
+  nor the host's own body types JSON / form data); `quotaDefault` the storage
+  quota of all the plugin's files, `"10GB"`, `"500 MB"` (KB/MB/GB/TB) or bytes,
+  1 MB … 1 TB and ≥ `maxBytes`, default 1 GB — the administrator changes it on
+  the plugin's overview. Errors `media: invalid`, `media.maxBytes: invalid`,
+  `media.types: invalid`, `media.quotaDefault: invalid`. See "Media".
+* `permissions.events` (boolean, since 1.177.0): realtime events to the
+  plugin's users (`gc.events.emit`) — see "Realtime events". The install
+  dialog shows "Live-Ereignisse: darf Live-Ereignisse an die Apps und
+  Plugin-Seiten seiner Benutzer senden".
+* `services` (optional, since 1.177.0): `{ "provides": { "<name>": { "label" } } }`
+  — services other plugins may call (`<name>` `[a-z][a-z0-9_]{0,31}`, ≤ 32,
+  label text ≤ 60, no other keys; errors `services: invalid`,
+  `services.provides: invalid`). `permissions.services`: `["<plugin>:<service>"]`
+  (≤ 32) — the services of other plugins this plugin may call
+  (`permissions.services: invalid`; one of its own: `permissions.services:
+  own service`). See "Services".
 
 ## Network
 
@@ -339,6 +368,12 @@ module.exports = {
   async legacyImport(snapshot, gc) {        // optional, first-party only: built-in data handed over once
     return { ok: true };                    // (see "Built-in data import" below)
   },
+  async mediaAccess({ user, mediaId, owner, mime }, gc) {  // optional (`media`): may this viewer read the file?
+    return false;                           // true only; no hook → the uploader only (see "Media")
+  },
+  async service({ name, caller, user, payload }, gc) {     // optional (`services.provides`): called by another plugin
+    return { ok: true };                    // JSON ≤ 16 KB (see "Services")
+  },
 };
 ```
 
@@ -364,6 +399,14 @@ module.exports = {
 | `gc.actions.run({ userId, plugin, id, lang, state })` | run one of them as that user, `state` (`'on'`/`'off'`, optional) the state a toggle should end in → `{ ok, message, state, unchanged }` (+ `error` when it did not run; `actions`, ≤ 60 runs per hour) |
 | `gc.notify(message, { severity })` | activity log + webhooks, and a push on `plugin:<id>:default` (`notify`, ≤ 30/h or `perHour`) — see "Notifications" |
 | `gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data })` | push on a declared `notifyTopics` topic (+ activity row) → `{ pushed, id }` |
+| `gc.notify({ topic: <chat topic>, title, body, users, conversation, sender, … })` | a chat notification (`notifyTopics[].chat`) → `{ pushed, id, skipped }` — see "Chat notifications" |
+| `gc.media.info(id)` | `{ mediaId, mime, bytes, sha256, owner, createdAt, claimed }` of one of the plugin's files, or `null` (`media`) — see "Media" |
+| `gc.media.claim(id)` | keep a new upload (unclaimed files are removed after 24 h); idempotent → the info; unknown id → `ERR_INVALID` |
+| `gc.media.delete(id)` | delete the file → `true` (`false` when unknown) |
+| `gc.media.usage()` | `{ bytes, count, quota, maxBytes, types }` |
+| `gc.media.url(id, { user, ttlS })` | `/plugin-media/<token>` — a signed URL a frame can show (`<img>`, `<audio>`) for `ttlS` seconds (60 … 86400, default 3600) |
+| `gc.events.emit({ users, type, data })` | realtime event to the listed people's apps and frames → `{ delivered }` (`events`, ≤ 600/min) — see "Realtime events" |
+| `gc.services.call({ plugin, service, userId, payload })` | another plugin's service → its answer (`permissions.services`, ≤ 60/h) — see "Services" |
 | `gc.license.status()` | `{ required, licensed, state, expiresAt }` |
 
 Requests reach the plugin only after GateControl's own authentication, CSRF
@@ -420,7 +463,8 @@ third-party service. Both forms need `permissions.notify` and share the limit
 of **30 per hour and plugin** — or `n` with `"notify": { "perHour": n }`
 (1 ≤ n ≤ 120; the install dialog shows "bis zu n Push-Mitteilungen pro
 Stunde"); every call also writes the `plugin_notice` activity entry (and its
-webhooks) as before.
+webhooks) as before. Chat topics (`notifyTopics[].chat`) have their own budget
+and rules — see "Chat notifications" below.
 
 ```js
 // old form — unchanged; push on topic plugin:<id>:default, title = plugin name,
@@ -540,6 +584,197 @@ data: { actions: [
   again — a push is no permission.
 * The core and administrator messages never carry `quick_action`; the
   portal does not show it.
+
+### Chat notifications (`notifyTopics[].chat`)
+
+Since 1.177.0. A topic declared with `"chat": true` carries messages between
+people (the messenger plugin): the apps show them as a conversation (Android
+`MessagingStyle`, a Windows toast with a reply field) — the exact rendering
+is part of the device contract (docs/feature-notification-center.md
+"Chat-Benachrichtigungen").
+
+```js
+const { pushed, id, skipped } = await gc.notify({
+  topic: 'message',                         // a notifyTopics entry with chat: true
+  title: 'Anna',                            // sender (or "Neue Nachricht von Anna" without preview) ≤ 120
+  body: 'Bist du schon unterwegs?',         // the message text ≤ 1000 (or '' without preview)
+  users: [12, 15],                          // required: the recipients, 1 … 100 user ids
+  conversation: { id: '12', title: 'Familie', isGroup: true },  // id [A-Za-z0-9_.:-]{1,64} (a number is taken as text), title ≤ 80
+  sender: { id: 7, name: 'Anna', avatarUrl: '/avatars/Xk3….webp' }, // id number or [A-Za-z0-9_.:@-]{1,64}, name ≤ 80,
+                                            // avatarUrl a /avatars/ or /plugin-media/ path of this server, or null
+  priority: 'normal',                       // info | normal | high (critical is capped to high)
+  data: { messageId: 4711, actions: [
+    { type: 'reply', label: 'Antworten', path: 'conversations/12/messages' },
+    { type: 'mark_read', label: 'Gelesen', path: 'conversations/12/read', body: { upTo: 4711 } },
+  ] },
+  // optional as usual: collapseKey (default 'chat:<conversation.id>' — one notification per chat), ttl, image
+});
+```
+
+* `conversation` and `sender` become `data.conversation` / `data.sender`
+  (they count towards the 4 KB of `data`); the payload of a chat notification
+  carries `kind: "message"` (absent on every other notification).
+* Action types of chat topics only: `reply` and `mark_read` `{ label (1 … 24),
+  path, body? }` — `path` is a path of the plugin's own **client API**
+  (relative, no `..`, the leading `/` is dropped; needs `permissions.app`,
+  else `ERR_INVALID`), `body` an optional JSON object ≤ 1 KB. `reply`: the
+  app posts `{ ...body, clientId, kind: 'text', text, source: 'notification' }`
+  to `/api/v1/client/plugins/<id>/api/<path>`; `mark_read`: the app posts
+  `body` (or `{}`) there and acks the notification as read. The other action
+  types (`open_app_route`, `quick_action`, …) work as usual; on a normal topic
+  `reply`/`mark_read` are dropped like any unknown type.
+* **Budget** of its own, apart from `permissions.notify`: 1200 chat
+  notifications per hour and plugin (`ERR_RATE_LIMIT` beyond), 120 per hour
+  and recipient — a recipient over it is left out and listed in `skipped`
+  (all of them left out → `ERR_RATE_LIMIT`).
+* **Never** an activity row with title or text: GateControl writes one
+  neutral `plugin_notice` line per hour and plugin ("<Plugin>: 57 chat
+  notifications sent"). **Never** e-mail (the rule's e-mail switch does not
+  apply), **never** bundled or held back (the rule's bundle/delay do not
+  apply). A person's topic switch, device mutes and quiet hours apply as for
+  every plugin topic (quiet hours: delivered silently). The administrator can
+  switch the topic off (System › Benachrichtigungen).
+* Private: the administrator's delivery log shows "Chat-Nachricht (Inhalt
+  privat)" without text, data, sender or conversation; chat notifications
+  are not part of the GateControl inbox (`/api/v1/client/push/inbox`, the
+  portal's inbox, unread counts, "alle gelesen") and are purged after the
+  push retention (72 h), not kept as history.
+* Read on one device: the app acks it as `read` → the person's other devices
+  get `event: read` and remove it (the existing read-sync). A plugin that
+  learns a conversation was read elsewhere (its own API) tells the devices
+  with a realtime event (see "Realtime events").
+* The per-person "Inhalt in Benachrichtigung" switch (preview) is the
+  plugin's own preference: without preview it sends a neutral title and an
+  empty body.
+* Push needs the licence feature `email_alerts` like every plugin push.
+
+## Media (plugin.json `media`)
+
+Since 1.177.0. Plugins that work with files of their users (pictures, voice
+messages, documents — the messenger) let GateControl store them: the plugin
+never handles the bytes, it gets a **media id** (32 hex characters) and keeps
+it in its own data. Code: `src/services/plugins/media.js`.
+
+* **Upload** (the body is the file itself — no JSON, no multipart; streamed
+  to disk, never held in memory): `Content-Type` one of `media.types`,
+  `Content-Length` required (no chunked upload) and ≤ `media.maxBytes`, the
+  plugin's quota not exceeded:
+  * apps: `PUT /api/v1/client/plugins/<id>/media` with the device token (like
+    the client API, `permissions.app`; the token's owner is the uploader);
+  * frames: `GC.upload(fileOrBlob, { onProgress })` → the parent page PUTs it
+    to `/api/v1/portal/plugins/<id>/media` (a portal or web login, CSRF) or
+    `/api/v1/plugins/<id>/media` (the admin page) with the session →
+    `{ mediaId, mime, bytes }`; `onProgress({ loaded, total })` while it
+    uploads; a failed upload rejects with `status` and the error code.
+  * Answers: `200 { ok: true, mediaId, mime, bytes }`; `404 not_found`
+    (unknown, not usable, no `media`), `411 length_required`, `413 too_large`,
+    `415 unsupported_type`, `507 quota_exceeded`, `400 aborted |
+    length_mismatch`.
+* **Claim**: a new file is unclaimed; the plugin binds it with
+  `gc.media.claim(id)` (e.g. when the message using it is stored). Unclaimed
+  files are removed **24 h** after the upload (hourly clean-up).
+* **Who may read** a file: the plugin's hook `mediaAccess({ user, mediaId,
+  owner, mime })` → `true` (anything else, an error or no answer within 5 s =
+  no). Without the hook only the uploader (`owner`) may. The hook gets the
+  viewer like `request()` (`app: true` for the apps).
+  * apps: `GET /api/v1/client/plugins/<id>/media/<mediaId>` (and `HEAD`) with
+    the device token — `Range: bytes=a-b` (one range) → `206` with
+    `Content-Range` (voice messages, seeking), unsatisfiable → `416`; `404`
+    when the hook says no;
+  * frames (no session — opaque origin): the plugin hands out
+    `gc.media.url(id, { user, ttlS })` → `/plugin-media/<token>`, a signed
+    capability URL like the tile relay: `<id>.<exp>.<uid>.<sig>`, sig =
+    HMAC-SHA256 over the media id, the plugin id, the expiry and the user id
+    with the server secret; valid for `ttlS` (60 … 86400 s, default 3600),
+    the expiry rounded up to 5 minutes (the same URL for a while — browser
+    cache). Range like above; 404 once expired, tampered, deleted, or when the
+    plugin no longer declares `media`. The plugin decides who gets a URL
+    (call it for a viewer `mediaAccess` would allow).
+  * Every answer: the stored type, `X-Content-Type-Options: nosniff`,
+    `Content-Security-Policy: default-src 'none'; sandbox`,
+    `Cross-Origin-Resource-Policy: cross-origin`, `Accept-Ranges: bytes`, an
+    `ETag`; pictures, audio and video inline, every other type as a download
+    (`Content-Disposition: attachment`).
+* **Frames** of a plugin with `media` get `img-src` and `media-src`
+  `<origin>/plugin-media/` in their CSP, and the `<iframe>` gets
+  `allow="microphone *"` — voice recording (`MediaRecorder`, Opus) works in
+  the portal and on the admin page.
+* **At rest**: `<data>/plugin-media/<plugin>/<id[0..2]>/<id>`, encrypted with
+  AES-256-GCM in 64 KiB chunks (each chunk authenticated with its index and a
+  "last" flag), with a random key per file; that key is stored in the core
+  table `plugin_media` (`id, plugin, owner_user_id, mime, bytes, sha256,
+  created_at, ref_count, claimed_at, key_enc`) wrapped with a key derived
+  (HKDF-SHA256) from the server secret (`GC_SECRET`). Honest limit: whoever
+  has root on the server can decrypt them; the encryption protects against
+  copies of the data folder.
+* **Quota**: `media.quotaDefault`, changed by the administrator on the
+  plugin's overview (Settings → Plugins → Übersicht → Medien; API `GET/PUT
+  /api/v1/plugins/<id>/media/settings` `{ quotaBytes }`, `null` = the default;
+  activity `plugin_media_quota`). Unclaimed files count.
+* No conversion: the apps scale pictures before the upload (long side 2048
+  px, WebP/JPEG) and may upload a small preview (≤ 64 KB) as a file of its
+  own. GateControl has no image or audio processing.
+* Uninstall "Daten behalten" keeps the files, "Alles löschen" deletes them.
+* Errors of `gc.media.*`: `ERR_MEDIA_DENIED` (no `media` in plugin.json),
+  `ERR_INVALID` (bad id, unknown id for `claim`/`url`, bad `user`/`ttlS`). A
+  plugin only ever sees its own files.
+
+## Realtime events (`permissions.events`)
+
+Since 1.177.0. `gc.events.emit({ users, type, data })` sends an ephemeral
+event to the listed people — a new message, "schreibt …", read marks:
+
+* `users` 1 … 500 user ids, `type` `[a-z][a-z0-9._-]{0,63}`, `data` any JSON
+  ≤ 4 KB (or nothing → `null`). → `{ delivered }`: the number of streams it
+  was written to. Errors `ERR_EVENTS_DENIED`, `ERR_INVALID`,
+  `ERR_RATE_LIMIT` (600 calls per minute and plugin).
+* Ephemeral: not stored, not in the inbox, not in the push budget, no
+  replay. A stream under backpressure drops it. After a reconnect clients
+  fetch the current state from the plugin's API.
+* **Apps** (Android, Windows): on their push stream (`GET
+  /api/v1/client/push`) as `event: plugin` with `{ plugin, type, data }` and
+  no SSE id — every open stream of a listed person (docs/feature-notification-center.md
+  "Plugin-Ereignisse").
+* **Frames** (portal, admin page): `GC.on('event', fn)` — `fn({ plugin, type,
+  data })`; `GC.off('event', fn)`. The parent page opens one EventSource per
+  plugin when a frame first subscribes (`GET /api/v1/portal/plugins/<id>/events`
+  for a signed-in portal viewer or a kiosk device — device trust alone gets
+  `403`; `GET /api/v1/plugins/<id>/events` on the admin page) and passes each
+  event to the plugin's subscribed frames. At most 16 such streams per person.
+
+## Services between plugins (`services`)
+
+Since 1.177.0. A plugin offers named services in `services.provides`; another
+plugin lists the ones it calls in `permissions.services` (shown in both
+install dialogs: "Dienste anderer Plugins: darf nutzen: …" / "Eigene Dienste:
+bietet anderen Plugins an: …"):
+
+```js
+// caller (permissions.services: ["gatecontrol-messenger:send_message"])
+const res = await gc.services.call({ plugin: 'gatecontrol-messenger', service: 'send_message', userId: 12,
+  payload: { to: { group: 'familie' }, text: 'Tim ist zu Hause' } });
+
+// provider (services.provides.send_message)
+async service({ name, caller, user, payload }, gc) {
+  // name 'send_message', caller 'gatecontrol-familie', user { id, name, role } | null
+  return { ok: true, messageId: 4711 };
+}
+```
+
+* The provider must be usable (installed, may run, running) and declare the
+  service; the caller must list exactly `"<plugin>:<service>"`. `userId`
+  (optional) must be an existing, enabled account — the provider gets it as
+  `user: { id, name, role }` (`null` without) and decides itself what the
+  call may do for that person.
+* `payload` and the answer: JSON ≤ 16 KB each; 15 s; **60 calls per hour**
+  and calling plugin; an activity row `plugin_service` per call (ids and ok
+  only, never the payload).
+* Errors: `ERR_SERVICES_DENIED` (not listed), `ERR_SERVICE_UNAVAILABLE`
+  (provider not installed / not running / no such service), `ERR_INVALID`
+  (bad ids, user, payload over 16 KB, the caller's own plugin),
+  `ERR_RATE_LIMIT`, `ERR_TIMEOUT`, `ERR_SERVICE_FAILED` (the hook threw — its
+  message — or answered more than 16 KB; a provider without the hook:
+  "this plugin offers no services").
 
 ## Storage and migrations
 
@@ -677,6 +912,11 @@ disable/uninstall and when the server shuts down.
 * **Maps** (`ui.maps`): the plugin's frames may show an OpenStreetMap map with
   the host's Leaflet and the tiles through GateControl (`window.GC.tiles`) and
   open links in a new tab — see "Maps".
+* **Uploads** (`media`): `window.GC.upload(fileOrBlob, { onProgress })` →
+  `{ mediaId, mime, bytes }` (the parent page uploads with the session), media
+  shown through `gc.media.url` URLs, microphone allowed — see "Media".
+* **Live updates** (`permissions.events`): `window.GC.on('event', fn)` /
+  `GC.off` — see "Realtime events".
 * Sandboxed frames have no `alert`/`confirm`/`prompt` (no `allow-modals`):
   plugins draw their own dialogs. The frame grows with its content and with
   an open dialog (visible `position: fixed` elements count with their full
@@ -1324,8 +1564,18 @@ third-party licence entry and the access targets (routes by domain, peers by
 name — ids change on restore). `secret` settings are additionally stored as
 plain encrypted backup fields, so restoring an off-site archive with its key
 re-encrypts them like every other secret. All plugins together are capped at
-48 MB per backup; data that does not fit is left out and logged (the restore
-upload accepts up to 96 MB).
+48 MB per backup; data that does not fit is left out and logged.
+
+Plugin **media** (see "Media") are not part of that and not in a backup by
+default: Settings → Plugins → Sicherheit → "Plugin-Medien im Backup" (off by
+default; API `PUT /api/v1/plugins/policy { backupMedia }`, activity
+`plugin_media_backup`) adds each plugin's claimed files — as stored
+(encrypted), each with its file key as a regular backup secret (encrypted
+with `GC_ENCRYPTION_KEY`, re-keyed with off-site archives) — up to 128 MB for
+all plugins together; a plugin whose media do not fit is backed up without
+them (`skipped: ['media']`). A restore writes them back and keeps media of
+the plugin that are not in the backup. The restore upload accepts up to
+288 MB.
 
 The tables of the former built-in integrations (see "Built-in data import")
 travel in `data.builtin_integrations` (`src/services/builtinBackup.js`) until
@@ -1439,7 +1689,10 @@ install (`plugin_installed`) · update (`plugin_updated`) · enable/disable
 (`plugin_notice`) · quick actions run from an app (`plugin_quick_action`) ·
 quick actions run by another plugin (`plugin_automation`) ·
 kiosk users marked/unmarked (`kiosk_user_allowed`/`kiosk_user_disallowed`,
-only when something changed).
+only when something changed) · services called by another plugin
+(`plugin_service`) · media quota changed (`plugin_media_quota`) · "Plugin-Medien
+im Backup" switched (`plugin_media_backup`) · chat notifications: one neutral
+`plugin_notice` line per hour with the count.
 
 Uninstall *Daten behalten* removes code and registry entry and keeps data,
 licence and access targets for a reinstall; *Alles löschen* (typed plugin name)

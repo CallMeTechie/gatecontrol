@@ -64,7 +64,7 @@
   }
 
   // ── State ──
-  let state = { plugins: [], allowUnsigned: false };
+  let state = { plugins: [], allowUnsigned: false, backupMedia: false };
   let selected = null;
   let tab = 'overview';
   try { selected = new URLSearchParams(location.search).get('plugin'); } catch (_) { selected = null; }
@@ -250,6 +250,37 @@
     const r = await req('GET', API + '/' + encodeURIComponent(p.id));
     const s = $('pg-storage');
     if (s && r.ok) s.textContent = P.fmtBytes(r.plugin.storageBytes);
+    if (p.media) await renderMedia(p, panel);
+  }
+
+  // ── Medien (plugin.json `media`): usage and the quota an administrator sets ──
+  async function renderMedia(p, panel) {
+    const r = await req('GET', API + '/' + encodeURIComponent(p.id) + '/media/settings');
+    if (!r.ok || !r.media) return;
+    const m = r.media;
+    const old = $('pg-media');
+    if (old) old.remove();
+    const box = el('section', { class: 'pg-targets', id: 'pg-media', 'aria-labelledby': 'pg-media-title' });
+    box.appendChild(el('div', { class: 'pg-h', id: 'pg-media-title', text: t('plugins.media.title') }));
+    box.appendChild(el('p', { class: 'pg-sub pg-pad', id: 'pg-media-usage',
+      text: t('plugins.media.usage', { used: P.fmtBytes(m.usage.bytes), quota: P.fmtBytes(m.quota), count: m.usage.count }) }));
+    box.appendChild(el('p', { class: 'pg-sub pg-pad', text: t('plugins.media.limits', { max: P.fmtBytes(m.maxBytes), types: P.mediaTypes(m.types) }) }));
+    const gb = el('input', { type: 'number', class: 'st-input st-input-num', id: 'pg-media-quota', min: 0.001, max: 1024, step: 'any',
+      value: String(Math.round((m.quota / (1024 * 1024 * 1024)) * 1000) / 1000) });
+    const save = async (quotaBytes) => {
+      const res = await req('PUT', API + '/' + encodeURIComponent(p.id) + '/media/settings', { quotaBytes });
+      if (!res.ok) { toast(res.error, 'error'); return; }
+      toast(t('plugins.media.saved'));
+      await renderMedia(p, panel);
+    };
+    box.appendChild(el('div', { class: 'pg-target-add' }, [
+      el('label', { class: 'st-label', for: 'pg-media-quota', text: t('plugins.media.quota') }), gb,
+      el('button', { type: 'button', class: 'st-btn st-btn-primary st-btn-sm', text: t('plugins.media.save'),
+        on: { click: () => save(Math.round(Number(gb.value) * 1024 * 1024 * 1024)) } }),
+      el('button', { type: 'button', class: 'st-btn st-btn-sm', text: t('plugins.media.reset', { quota: P.fmtBytes(m.quotaDefault) }),
+        on: { click: () => save(null) } }),
+    ]));
+    panel.appendChild(box);
   }
 
   // ── Zugriffsziele (home-network targets the plugin declared) ──
@@ -746,13 +777,23 @@
     sw.setAttribute('aria-checked', state.allowUnsigned ? 'true' : 'false');
     $('pg-unsigned-on').hidden = !state.allowUnsigned;
     $('pg-unsigned-off').hidden = state.allowUnsigned;
+    const bm = $('pg-backup-media');
+    if (bm) bm.setAttribute('aria-checked', state.backupMedia ? 'true' : 'false');
+  }
+
+  // ── "Plugin-Medien im Backup" (off by default) ──
+  async function toggleBackupMedia() {
+    const r = await req('PUT', API + '/policy', { backupMedia: !state.backupMedia });
+    if (!r.ok) { toast(r.error, 'error'); return; }
+    state.backupMedia = !!r.backupMedia;
+    renderPolicy();
   }
 
   async function load() {
     const r = await req('GET', API);
     if (!r.ok) { $('pg-load-err').textContent = r.error; $('pg-load-err').hidden = false; return; }
     $('pg-load-err').hidden = true;
-    state = { plugins: r.plugins || [], allowUnsigned: !!r.allowUnsigned };
+    state = { plugins: r.plugins || [], allowUnsigned: !!r.allowUnsigned, backupMedia: !!r.backupMedia };
     if (selected && !state.plugins.some((p) => p.id === selected)) selected = null;
     if (!selected && state.plugins.length) selected = state.plugins[0].id;
     renderPolicy();
@@ -770,6 +811,7 @@
   drop.addEventListener('drop', (e) => { e.preventDefault(); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; upload(f); });
   $('pg-upload-btn').addEventListener('click', () => fileIn.click());
   $('pg-unsigned').addEventListener('click', toggleUnsigned);
+  if ($('pg-backup-media')) $('pg-backup-media').addEventListener('click', toggleBackupMedia);
   if ($('pg-cat-refresh')) $('pg-cat-refresh').addEventListener('click', () => loadCatalog(true));
 
   window.GCSettingsExt = window.GCSettingsExt || {};
