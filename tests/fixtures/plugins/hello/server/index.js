@@ -128,6 +128,14 @@ module.exports = {
       case '/service':
         // gc.services.call (permissions.services, tests/plugins_services.test.js)
         try { return { json: { ok: true, result: await gc.services.call(req.body) } }; } catch (e) { return { status: 400, json: { ok: false, code: e.code || null, error: e.message } }; }
+      case '/service-available': {
+        // gc.services.available(plugin, service) — positional, or the object form with { object: true }
+        const b = req.body || {};
+        try {
+          const result = b.object ? await gc.services.available({ plugin: b.plugin, service: b.service }) : await gc.services.available(b.plugin, b.service);
+          return { json: { ok: true, result } };
+        } catch (e) { return { status: 400, json: { ok: false, code: e.code || null, error: e.message } }; }
+      }
       case '/notify':
         await gc.notify('hello from the plugin', { severity: 'info' });
         return { json: { ok: true } };

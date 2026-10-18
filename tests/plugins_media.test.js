@@ -423,6 +423,30 @@ describe('clean-up, frames, backup, uninstall', () => {
     assert.match(fc, /media-src http:\/\/127\.0\.0\.1:\d+\/plugin-media\//);
   });
 
+  it('frames of a media plugin: allow-downloads in the CSP sandbox and the <iframe> sandbox (admin page, portal tab) — not for other plugins', async () => {
+    const csp = (await agent.get('/plugins/hello-media/frame/main').expect(200)).headers['content-security-policy'];
+    assert.match(csp, /; sandbox allow-scripts allow-forms allow-downloads$/);
+    const fc = (await agent.get('/portal/plugins/hello-media/frame').expect(200)).headers['content-security-policy'];
+    assert.match(fc, /; sandbox allow-scripts allow-forms allow-downloads$/);
+    const plain = (await agent.get('/plugins/hello-plain/frame/main').expect(200)).headers['content-security-policy'];
+    assert.match(plain, /; sandbox allow-scripts allow-forms$/);
+    const page = (await agent.get('/plugins/hello-media').expect(200)).text;
+    assert.match(/<iframe class="pg-frame"[^>]*>/.exec(page)[0], /sandbox="allow-scripts allow-forms allow-downloads" referrerpolicy="no-referrer" allow="microphone \*"/);
+    assert.doesNotMatch((await agent.get('/plugins/hello-plain').expect(200)).text, /allow-downloads/);
+    const portal = (await agent.get('/portal').expect(200)).text;
+    assert.match(portal, /src="\/portal\/plugins\/hello-media\/frame" sandbox="allow-scripts allow-forms allow-downloads" referrerpolicy="no-referrer" loading="lazy" allow="microphone \*"/);
+    assert.match(portal, /src="\/portal\/plugins\/hello-plain\/frame" sandbox="allow-scripts allow-forms" referrerpolicy/);
+    // the helpers agree: maps keep their popups, media adds downloads, nothing else changes
+    const frame = require('../src/services/plugins/frame');
+    assert.equal(frame.sandboxAttr(false), 'allow-scripts allow-forms');
+    assert.equal(frame.sandboxAttr(false, true), 'allow-scripts allow-forms allow-downloads');
+    assert.equal(frame.sandboxAttr(true, true), 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads');
+    assert.match(frame.cspFor({ maps: true, origin: 'https://gc.example', media: true }), /; sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads$/);
+    assert.match(frame.cspFor({ media: true }), /; sandbox allow-scripts allow-forms allow-downloads$/);
+    assert.equal(frame.cspFor({}), frame.CSP);
+    assert.doesNotMatch(frame.cspFor({ maps: true, origin: 'https://gc.example', avatars: true }), /allow-downloads/);
+  });
+
   it('backup: off by default (no media); on → the claimed files travel encrypted with their key as a backup secret; restore brings them back', async () => {
     const pbackup = require('../src/services/plugins/backup');
     let entry = pbackup.exportAll().find((e) => e.id === 'hello-media');

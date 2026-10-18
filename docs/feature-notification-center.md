@@ -801,7 +801,7 @@ Stream einer genannten Person erhält:
 
 ```
 event: plugin
-data: {"plugin":"gatecontrol-messenger","type":"message.new","data":{"conversationId":"12","messageId":4711}}
+data: {"plugin":"gatecontrol-messenger","type":"message.new","data":{"conversationId":12,"messageId":4711}}
 ```
 
 * **Ohne `id:`-Zeile**, nicht gespeichert, nicht bestätigt, nicht wiederholt
@@ -866,7 +866,10 @@ data: {"seq":130,"id":52,"event_id":"plugin:gatecontrol-messenger:message","topi
   Unterhaltung an (die App hält die letzten Nachrichten je Unterhaltung, z. B.
   bis zu 7). `conversation.isGroup` → `setGroupConversation(true)` und
   `setConversationTitle(conversation.title)`. Bilder: `imageUrl` als
-  `setData("image/…", uri)` der Nachricht, wenn vorhanden.
+  `setData("image/…", uri)` der Nachricht, wenn vorhanden (ab 1.178.0 kann
+  das Plugin dafür die Vorschau eines Fotos aus seinen Medien nennen,
+  `image: { mediaId }` — für die App bleibt es derselbe
+  `/notify-media/…`-Pfad ohne Anmeldung).
 * Gruppierung: alle Chat-Benachrichtigungen in einer Gruppe
   (`setGroup("chats")`) mit Zusammenfassung; optional Shortcuts/Bubbles je
   Unterhaltung (`setShortcutId`, `LocusId` = `conversation.id`).
