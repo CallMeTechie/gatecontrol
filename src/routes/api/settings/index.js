@@ -39,6 +39,9 @@ const TOKEN_FORBIDDEN = [
   // Client-Richtlinien (Kill-Switch, Auto-Connect, Einstellungs-Sperre …):
   // nur eine Admin-Session darf sie festlegen.
   /^\/client-policy(\/|$)/,
+  // Wo die Anordnung der App-Tabs gilt (pro Gerät / Konto / global): nur eine
+  // Admin-Session darf das festlegen.
+  /^\/client-layout$/,
 ];
 router.use((req, res, next) => {
   if (!req.tokenAuth) return next();
@@ -68,5 +71,7 @@ router.use('/', require('./waf'));
 router.use('/', require('./clientUpdates'));
 // Client policies: global defaults + per-group overrides
 router.use('/', require('./clientPolicy'));
+// Order of the apps' Start / Familie tabs: per device, per account or global
+router.use('/', require('./clientLayout'));
 
 module.exports = router;

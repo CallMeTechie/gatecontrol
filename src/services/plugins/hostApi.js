@@ -269,6 +269,27 @@ function checkQuickActions(plugin, actions) {
 }
 
 /**
+ * data.actions[] entries of type callback (docs/plugins.md "Callback
+ * buttons"): { type: 'callback', id ([a-z0-9_-]{1,32}, unique among the
+ * push's callbacks), label (1…24) } — pressed, the app acks the push with
+ * that id and the host calls this plugin's notifyAction hook once
+ * (notifyActions.js). Anything else → ERR_INVALID.
+ */
+function checkCallbacks(actions) {
+  const { line, CALLBACK_ID_RE } = require('../notify/sanitize');
+  const { LIMITS: LIMITS_NOTIFY } = require('../notify/constants');
+  const seen = new Set();
+  for (const a of actions) {
+    if (!a || typeof a !== 'object' || Array.isArray(a) || a.type !== 'callback') continue;
+    need(typeof a.id === 'string' && CALLBACK_ID_RE.test(a.id), 'ERR_INVALID', 'callback: id must be [a-z0-9_-]{1,32}');
+    need(!seen.has(a.id), 'ERR_INVALID', 'callback: duplicate id');
+    seen.add(a.id);
+    const label = typeof a.label === 'string' ? line(a.label, 1000) : '';
+    need(label.length >= 1 && label.length <= LIMITS_NOTIFY.quickActionLabel, 'ERR_INVALID', 'callback: label must be 1…24 characters');
+  }
+}
+
+/**
  * gc.notify — two forms (docs/plugins.md "Notifications"):
  *   gc.notify(message, { severity })   activity row + webhooks as before, and
  *                                      a push on topic plugin:<id>:default
@@ -316,7 +337,7 @@ function notify(plugin, args) {
       ttl = n.ttl;
     }
     need(n.data == null || (typeof n.data === 'object' && !Array.isArray(n.data)), 'ERR_INVALID', 'invalid data');
-    if (n.data != null && Array.isArray(n.data.actions)) checkQuickActions(plugin, n.data.actions);
+    if (n.data != null && Array.isArray(n.data.actions)) { checkQuickActions(plugin, n.data.actions); checkCallbacks(n.data.actions); }
     let image = null;
     if (n.image != null) {
       try { image = require('../notify/media').validate(n.image); } catch (e) {
@@ -475,7 +496,7 @@ function notifyChat(plugin, topic, n) {
     ttl = n.ttl;
   }
   need(n.data == null || (typeof n.data === 'object' && !Array.isArray(n.data)), 'ERR_INVALID', 'invalid data');
-  if (n.data != null && Array.isArray(n.data.actions)) checkQuickActions(plugin, n.data.actions);
+  if (n.data != null && Array.isArray(n.data.actions)) { checkQuickActions(plugin, n.data.actions); checkCallbacks(n.data.actions); }
   let image = null;
   if (n.image != null) {
     try { image = require('../notify/media').validate(n.image); } catch (e) {
@@ -689,7 +710,8 @@ function _resetBudgetsForTest() {
 
 // ─── Plugin-to-plugin actions (permissions.actions) ────
 //
-// gc.actions.list({ userId, lang, interactive? }) / gc.actions.run({ userId, actionId | plugin + id, params?, lang, state?, via?, interactive? }):
+// gc.actions.list({ userId, lang, interactive?, withWidget? }) / gc.actions.get({ userId, actionId | plugin + id, lang, interactive?, withWidget? }) /
+// gc.actions.run({ userId, actionId | plugin + id, params?, lang, state?, via?, interactive? }):
 // the quick actions (quickActions.js) other plugins offer to one user, run as
 // that user like the apps do — the target plugin gets the viewer
 // { id, name, role, portal: true, loggedIn: true, automation: true, via: '<caller id>' }
@@ -707,6 +729,9 @@ function _resetBudgetsForTest() {
 // treats it like that person's tap in the apps. 60 runs per minute per
 // calling plugin, an activity row `plugin_automation` per run naming the user
 // and the caller (ids, the account's name and ok only — no text of either plugin).
+// `withWidget: true` (list / get, since 1.181.0) adds each action's widget
+// values (widgetView) — what a rule needs to compare a device value; `get`
+// asks only the named plugin's hook and answers that one action or null.
 
 const ACTIONS_PER_MINUTE = 60;
 const ACTIONS_WINDOW_MS = 60000;
@@ -780,20 +805,52 @@ function needsConfirm(a) {
   return (a.state === 'on' ? 'off' : 'on') === a.confirmWhen;
 }
 
+/** `withWidget` of a list / get call: true, or false when absent / null / false. */
+function withWidgetOf(args) {
+  const v = args && args.withWidget;
+  if (v === undefined || v === null || v === false) return false;
+  need(v === true, 'ERR_INVALID', 'withWidget must be a boolean');
+  return true;
+}
+
+/**
+ * The values of a (sanitised) widget another plugin gets with withWidget —
+ * { value, unit, label, badge: { value, unit, label, state } | null,
+ *   readings: [{ id, label, value, unit }], state, status } or null. No
+ * controls, icons or power: reading values, not drawing the card.
+ */
+function widgetView(w) {
+  if (!w) return null;
+  return {
+    value: w.value, unit: w.unit, label: w.label,
+    badge: w.badge ? { value: w.badge.value, unit: w.badge.unit, label: w.badge.label, state: w.badge.state } : null,
+    readings: w.readings.map((r) => ({ id: r.id, label: r.label, value: r.value, unit: r.unit })),
+    state: w.state, status: w.status,
+  };
+}
+
+/** One listed action as gc.actions.list / get answer it (+ widget with withWidget). */
+function actionView(a, withWidget) {
+  return {
+    actionId: `${a.plugin}/${a.id}`, plugin: a.plugin, pluginName: a.pluginName, id: a.id, label: a.title, title: a.title,
+    subtitle: a.subtitle, icon: a.icon, kind: a.kind, state: a.state, needsConfirm: needsConfirm(a), confirmWhen: a.confirmWhen,
+    verbs: a.verbs, targets: a.targets, device: a.device,
+    ...(withWidget ? { widget: widgetView(a.widget) } : {}),
+  };
+}
+
 /**
  * gc.actions.list → [{ actionId, plugin, pluginName, id, label, title, subtitle, icon, kind, state,
- * needsConfirm, confirmWhen, verbs, targets, device }] of every other plugin.
+ * needsConfirm, confirmWhen, verbs, targets, device, widget? }] of every other plugin
+ * (widget only with withWidget: true).
  */
 async function actionsList(plugin, args) {
   needActions(plugin);
   const interactive = interactiveOf(plugin, args);
+  const withWidget = withWidgetOf(args);
   const { user, lang } = automationViewer(plugin, args, interactive);
   const all = await require('./quickActions').list(user, lang, { exclude: plugin.id });
-  return all.map((a) => ({
-    actionId: `${a.plugin}/${a.id}`, plugin: a.plugin, pluginName: a.pluginName, id: a.id, label: a.title, title: a.title,
-    subtitle: a.subtitle, icon: a.icon, kind: a.kind, state: a.state, needsConfirm: needsConfirm(a), confirmWhen: a.confirmWhen,
-    verbs: a.verbs, targets: a.targets, device: a.device,
-  }));
+  return all.map((a) => actionView(a, withWidget));
 }
 
 /** The action a run names: `actionId` '<plugin>/<id>', or `plugin` + `id` → { target, actionId }. */
@@ -814,7 +871,7 @@ function runTarget(plugin, args, ACTION_ID_RE) {
     actionId = args.id;
   }
   need(typeof target === 'string' && target.length >= 2 && target.length <= 64 && ID_RE.test(target), 'ERR_INVALID', 'invalid plugin id');
-  need(target !== plugin.id, 'ERR_INVALID', 'a plugin cannot run its own quick actions');
+  need(target !== plugin.id, 'ERR_INVALID', 'a plugin cannot use its own quick actions through gc.actions');
   need(typeof actionId === 'string' && ACTION_ID_RE.test(actionId), 'ERR_INVALID', 'invalid action id');
   return { target, actionId };
 }
@@ -828,6 +885,25 @@ function runState(args) {
   if (params.state === undefined || params.state === null) return args.state;
   need(args.state === undefined || args.state === null, 'ERR_INVALID', 'state or params.state, not both');
   return params.state;
+}
+
+/**
+ * gc.actions.get → one action of another plugin, exactly as list() would
+ * answer it for that user (widget only with withWidget: true), or null when
+ * that plugin does not offer it to the user (unknown, not eligible, not
+ * listed, the hook failed). Only the named plugin's hook is asked; not
+ * counted in the run budget.
+ */
+async function actionsGet(plugin, args) {
+  needActions(plugin);
+  const quickActions = require('./quickActions');
+  need(args && typeof args === 'object', 'ERR_INVALID', 'invalid arguments');
+  const { target, actionId } = runTarget(plugin, args, quickActions.ACTION_ID_RE);
+  const withWidget = withWidgetOf(args);
+  const interactive = interactiveOf(plugin, args);
+  const { user, lang } = automationViewer(plugin, args, interactive);
+  const found = (await quickActions.listOf(target, user, lang)).find((a) => a.id === actionId);
+  return found ? actionView(found, withWidget) : null;
 }
 
 /**
@@ -948,6 +1024,7 @@ async function handle(plugin, api, args, ctx) {
       need(plugin.manifest.permissions && plugin.manifest.permissions.kiosk, 'ERR_KIOSK_DENIED', 'this plugin has no kiosk permission');
       return require('../kiosk').listAllowed(plugin.id);
     case 'actions.list': return actionsList(plugin, args);
+    case 'actions.get': return actionsGet(plugin, args);
     case 'actions.run': return actionsRun(plugin, args);
     case 'notify': return notify(plugin, await notifyImageFromMedia(plugin, args));
     case 'media.info': return mediaCall(plugin, 'info', args);

@@ -11,6 +11,8 @@
 //   support_bundle_requested  { requested_at }     an admin asked this device for a bundle
 //   peer_state                { enabled }          the device's peer was enabled/disabled
 //   config_changed            {}                   the device's WireGuard config changed
+//   layout                    { scope, updated_at } the order of the apps' Start / Familie
+//                                                  tabs changed (services/clientLayout.js)
 //
 // Every entry point is best-effort: it never throws (the admin action that
 // triggered it must not fail because of push) and it touches the database
@@ -22,7 +24,7 @@ const logger = require('../../utils/logger');
 
 let configCounter = 0;
 
-const TYPES = Object.freeze(['policy_changed', 'support_bundle_requested', 'peer_state', 'config_changed']);
+const TYPES = Object.freeze(['policy_changed', 'support_bundle_requested', 'peer_state', 'config_changed', 'layout']);
 
 function db() { return require('../../db/connection').getDb(); }
 
@@ -169,6 +171,26 @@ function configChanged(scope) {
 }
 
 /**
+ * The shared layout of the apps' tabs changed (services/clientLayout.js):
+ * { userId } → that person's open streams (scope user), { all: true } →
+ * every open stream (scope global, or the administrator changed the scope).
+ * exceptToken: the device that saved it already knows. updated_at is what
+ * GET /api/v1/client/layout now reports as updatedAt (null: nothing stored /
+ * scope device). No database access — the streams know their person.
+ */
+function layoutChanged({ userId = null, all = false, exceptToken = null, scope, updatedAt = null }) {
+  return safely('layout', () => {
+    let n = 0;
+    for (const conn of stream.list()) {
+      if (conn.closed || conn.tokenId === exceptToken) continue;
+      if (!all && (userId == null || conn.userId !== userId)) continue;
+      if (write(conn, { type: 'layout', scope, updated_at: updatedAt })) n += 1;
+    }
+    return n;
+  });
+}
+
+/**
  * Hash of the device's WireGuard client config — exactly what
  * GET /client/config and /client/config/check return as `hash`; null for a
  * token without a peer or when the config cannot be built. Never throws.
@@ -227,6 +249,7 @@ module.exports = {
   supportBundleRequested,
   peerState,
   configChanged,
+  layoutChanged,
   stateFor,
   configHashFor,
   configSeq,

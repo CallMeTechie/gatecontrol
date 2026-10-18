@@ -263,8 +263,8 @@ unsigned build of the same id.
   [feature-kiosk-devices.md](feature-kiosk-devices.md)). The install/consent
   dialog shows "darf Benutzer als Kiosk-Geräte freigeben (z. B. Wand-Tablet)"
   / "may mark users as kiosk devices (e.g. wall tablet)".
-* `permissions.actions` (boolean): the plugin may list and run the quick
-  actions other plugins offer to a user (`gc.actions.list` / `gc.actions.run`,
+* `permissions.actions` (boolean): the plugin may list, read and run the quick
+  actions other plugins offer to a user (`gc.actions.list` / `gc.actions.get` / `gc.actions.run`,
   e.g. a presence rule switching a smart home scene, or a chat's "open the
   front door" button that runs as the person who pressed it — see "Running
   other plugins' quick actions" below). The install/consent dialog shows "darf
@@ -400,6 +400,8 @@ module.exports = {
   async service({ name, caller, user, payload }, gc) {     // optional (`services.provides`): called by another plugin
     return { ok: true };                    // JSON ≤ 16 KB (see "Services")
   },
+  async notifyAction({ userId, notificationId, action, data }, gc) {  // optional: a `callback` button of one of
+  },                                        // this plugin's pushes was pressed — once per push and button (see "Callback buttons")
 };
 ```
 
@@ -421,7 +423,8 @@ module.exports = {
 | `gc.users.list()/get(id)` | `{ id, name, role, avatarUrl, color, colorHex, initials }` of enabled users (`users`) — `avatarUrl` is the profile picture's path `/avatars/<id>.<ext>` or `null`, `color` the favourite colour's palette key (never `null`), `colorHex` its `#RRGGBB`, `initials` one or two letters for the fallback (docs/feature-avatars.md; since 1.168.0) |
 | `gc.kiosk.allow(userId, allowed)` | mark (`true`) or unmark (`false`) a user as a kiosk user (`kiosk`); an administrator, a disabled or an unknown account → `ERR_INVALID` (allowing only; unmarking always works) |
 | `gc.kiosk.list()` | ids of the users this plugin marks (`kiosk`) |
-| `gc.actions.list({ userId, lang, interactive })` | the quick actions the *other* plugins offer to that user → `[{ actionId, plugin, pluginName, id, label, title, subtitle, icon, kind, state, needsConfirm, confirmWhen, verbs, targets, device }]` (`actions`; `actionId`, `label`, `needsConfirm`, `confirmWhen` since 1.180.0) — see "Running other plugins' quick actions" |
+| `gc.actions.list({ userId, lang, interactive, withWidget })` | the quick actions the *other* plugins offer to that user → `[{ actionId, plugin, pluginName, id, label, title, subtitle, icon, kind, state, needsConfirm, confirmWhen, verbs, targets, device, widget? }]` (`actions`; `actionId`, `label`, `needsConfirm`, `confirmWhen` since 1.180.0; `withWidget: true` adds `widget` — the device values — since 1.181.0) — see "Running other plugins' quick actions" |
+| `gc.actions.get({ userId, actionId, lang, interactive, withWidget })` | one of them (`'<plugin>/<id>'`, or `plugin` + `id`) exactly as `list` answers it, or `null` when that plugin does not offer it to the user — asks only that plugin's hook (`actions`, since 1.181.0) — see "Device values" |
 | `gc.actions.run({ userId, actionId, params, via, interactive, lang })` | run one of them as that user (`interactive: true`: a person tapped it in this plugin, needs `actions: { interactive: true }`) — `actionId` `'<plugin>/<id>'` from the list (or `plugin` + `id`), `params.state` (`'on'`/`'off'`, optional; or `state`) the state a toggle should end in → `{ ok, result, code, message, state, unchanged }` (`code` when not `ok`; `actions`, ≤ 60 runs per minute; `actionId`, `params`, `via`, `result`, `code` since 1.180.0, before ≤ 60 per hour) |
 | `gc.notify(message, { severity })` | activity log + webhooks, and a push on `plugin:<id>:default` (`notify`, ≤ 30/h or `perHour`) — see "Notifications" |
 | `gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data, image })` | push on a declared `notifyTopics` topic (+ activity row) → `{ pushed, id }`; `image` `{ data, mime }` or `{ mediaId }` — see "Pictures" |
@@ -516,7 +519,7 @@ const { pushed, id } = await gc.notify({
 
 * Errors: `ERR_NOTIFY_DENIED` (no permission), `ERR_INVALID` (undeclared topic,
   empty title, bad priority/users/ttl/collapseKey, `data` not an object or over
-  4 KB, a bad `image`, a bad `quick_action`), `ERR_RATE_LIMIT`.
+  4 KB, a bad `image`, a bad `quick_action` or `callback`), `ERR_RATE_LIMIT`.
 * Push needs the licence feature `email_alerts` ("Benachrichtigungen Pro");
   without it only the activity entry is written and `pushed` is `false`.
 * Who gets it: the rule of the topic (System › Benachrichtigungen; default:
@@ -531,8 +534,9 @@ const { pushed, id } = await gc.notify({
   ("Notfall: darf Notfall-Mitteilungen senden, die die Ruhezeit überspringen
   (<topics>)").
 * `data.actions` may only use the fixed action types (`open_app_route`,
-  `open_portal`, `mute_1h`, `ack`, `done`, and `quick_action` for the
-  plugin's own quick actions — see below); control characters are removed,
+  `open_portal`, `mute_1h`, `ack`, `done`, `quick_action` for the
+  plugin's own quick actions and `callback` for a button that reaches the
+  plugin's `notifyAction` hook — see below); control characters are removed,
   the apps show text only.
   A plugin **without `ui.app`** has no screen of its own in the apps: an
   `open_app_route` action to the plugin's own route (`plg-<id>`) is sent as
@@ -637,6 +641,61 @@ data: { actions: [
   again — a push is no permission.
 * The core and administrator messages never carry `quick_action`; the
   portal does not show it.
+
+### Callback buttons (`callback`)
+
+Since 1.181.0. A push may carry buttons whose press comes back to the
+plugin itself — e.g. "In 1 h erinnern" and "Erledigt" on a reminder:
+
+```js
+const { id } = await gc.notify({
+  topic: 'reminder', title: 'Fenster schließen', users: [7],
+  data: {
+    reminder: { ruleId: 12, key: 'sched:2026-10-18' },   // the plugin's own context
+    actions: [
+      { type: 'callback', id: 'snooze_1h', label: 'In 1 h' },
+      { type: 'callback', id: 'done', label: 'Erledigt' },
+    ],
+  },
+});
+
+module.exports = {
+  // …
+  async notifyAction({ userId, notificationId, action, data }, gc) {
+    // action 'snooze_1h' | 'done', data = { reminder: { ruleId: 12, key: 'sched:2026-10-18' } }
+  },
+};
+```
+
+* Fields: `id` (`[a-z0-9_-]{1,32}`, unique among the push's callbacks),
+  `label` (1…24 characters after removing control characters). Anything
+  else → `ERR_INVALID` and nothing is pushed. Like every action, at most 4
+  per push (`quick_action`, `callback` and the fixed types together). Allowed
+  on chat topics too.
+* The apps get `{ id, label, type: 'callback' }`. A press is answered like a
+  `done` button: `POST /api/v1/client/push/ack` with `{ seqs, state: 'read',
+  action: '<id>' }` (docs/feature-notification-center.md).
+* The host then calls the sending plugin's **`notifyAction`** hook with
+  `{ userId, notificationId, action, data }` — **once per push and button**:
+  a second press, the person's other device or another recipient of the
+  same push change nothing (table `notify_action_calls`). Another button of
+  the same push is its own call.
+  * `userId`: the person who pressed it (the acked delivery's person);
+  * `notificationId`: the `id` `gc.notify` answered;
+  * `action`: the callback id;
+  * `data`: the push's `data` without the fields the host interprets
+    (`route`, `actions`, `facts`, `conversation`, `sender`) — the plugin's
+    own context, cleaned as when it was sent.
+* Only an ack with `state: 'read'` of the acking device's own delivery
+  counts, only for an id that is a `callback` of that very push (a fixed
+  `done` button of a push without a callback `done` stays a plain ack).
+  The plugin must still be allowed to run and running — otherwise nothing is
+  recorded and a later press can still reach it. The hook runs in the
+  background (10 s); its answer is ignored, an error or timeout is logged in
+  the server log and never reaches the app. A push is no permission: check
+  what the person may do in the hook again.
+* The core and administrator messages never carry `callback`; the portal
+  does not show it.
 
 ### Chat notifications (`notifyTopics[].chat`)
 
@@ -1454,6 +1513,36 @@ await gc.actions.run({ userId: 7, actionId: 'gatecontrol-door/front:open' });
 The older form `run({ userId, plugin, id, state })` (before 1.180.0) works
 unchanged — `actionId` is `plugin + '/' + id` (neither may contain `/`).
 
+**Device values** (since 1.181.0) — e.g. a reminder "only when the car's
+battery is below 30 %" or "when it is warmer than 26 °C inside":
+
+```js
+const all = await gc.actions.list({ userId: 7, withWidget: true });
+// [{ actionId: 'gatecontrol-klima/room:3', …, widget: { value: 21.5, unit: '°C', label: 'Innen',
+//    badge: null, readings: [{ id: 'outdoor', label: 'Außen', value: 12, unit: '°C' }],
+//    state: 'good', status: 'Heizt' } }, …]
+const car = await gc.actions.get({ userId: 7, actionId: 'gatecontrol-fahrzeuge/lock:42', withWidget: true });
+// → the same entry as in list (badge: { value: '32', unit: '%', label: 'Akku', state: 'warn' }), or null
+```
+
+* `withWidget: true` (list and get; a boolean, absent / `null` / `false` =
+  without): every entry gets `widget` — the values of the action's widget
+  (see "Widgets") after the same sanitising as for the apps: `{ value, unit,
+  label, badge: { value, unit, label, state } | null, readings: [{ id,
+  label, value, unit }], state, status }`, or `null` when the action has no
+  (valid) widget. Not passed on: controls, icons, `power` — values to compare,
+  not a card to draw. `value` / reading values are what the plugin lists
+  (a number, or a text like `'32 %'` — parse it yourself).
+* `get({ userId, actionId, lang, interactive, withWidget })`: one action,
+  exactly as `list` would answer it for that user (same viewer, `interactive`
+  rules and checks; `actionId` `'<plugin>/<id>'` or `plugin` + `id`, never the
+  caller's own), or `null` when that plugin does not offer it to the user
+  right now (unknown, disabled, unlicensed, not running, without
+  `permissions.portal`, not listed, its hook failed or timed out). Only the
+  named plugin's `quickActions` hook is asked (1.5 s) — cheaper than `list`
+  for a rule that watches one device. Neither `list` nor `get` runs anything,
+  counts against the run limit or writes an activity entry.
+
 * **Which actions**: exactly what the apps get for that user (the same
   plugins, hooks, timeouts and sanitising as "Quick actions" above): only
   plugins that may run (enabled, licensed, compatible, signed as required),
@@ -1482,7 +1571,8 @@ unchanged — `actionId` is `plugin + '/' + id` (neither may contain `/`).
     — for a run with `params.state`, ask when that state equals
     `confirmWhen` (or `needsConfirm` came from `confirm: true`).
 
-  Not passed on: `confirm` (folded into `needsConfirm`), `look`, `widget`.
+  Not passed on: `confirm` (folded into `needsConfirm`), `look`, `widget`
+  (its values only with `withWidget: true`, see "Device values").
 * **As whom**: the target plugin's `quickActions` / `runQuickAction` get the
   viewer `{ id, name, role, portal: true, loggedIn: true, automation: true,
   via: '<calling plugin id>' }` (no `app` key) — `runQuickAction` also with
@@ -1547,7 +1637,7 @@ unchanged — `actionId` is `plugin + '/' + id` (neither may contain `/`).
   either plugin (`state` only when it is `'on'` / `'off'`).
 * **Errors** (thrown): `ERR_ACTIONS_DENIED` (no `permissions.actions`, or
   `interactive: true` without `{ interactive: true }`),
-  `ERR_INVALID`, `ERR_RATE_LIMIT`.
+  `ERR_INVALID` (also a non-boolean `withWidget`), `ERR_RATE_LIMIT` (runs only).
 
 ## App (permissions.app, ui.app, client API)
 

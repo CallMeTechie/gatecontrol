@@ -364,6 +364,11 @@
       <div class="st-card-foot"><button type="button" class="st-btn" id="st-cp-inherit">{{ t('st.cp.inherit_all') }}</button></div>
     </div>
   </section>
+  {#- Where the order of the apps' Start / Familie tabs applies (docs/feature-client-layout.md) -#}
+  <section class="st-card" aria-labelledby="st-c-cl" id="card-client-layout">
+    {% call cardHead('st-c-cl', t('st.cl.title'), t('st.cl.desc')) %}{% endcall %}
+    {{ segRow('st-cl-scope', 'cl-scope', t('st.cl.scope'), [['device', t('st.cl.scope_device')], ['user', t('st.cl.scope_user')], ['global', t('st.cl.scope_global')]], t('st.cl.scope_hint')) }}
+  </section>
 </section>
 
 {# ══ Clients · Split-Tunnel-Vorgabe ═══════════════════════════════════ #}

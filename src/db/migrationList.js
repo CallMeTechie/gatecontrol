@@ -2334,6 +2334,50 @@ const migrations = [
       ALTER TABLE notifications ADD COLUMN kind TEXT;`,
     detect: (db) => tableExists(db, 'plugin_media') && hasColumn(db, 'notifications', 'kind'),
   },
+  {
+    version: 104,
+    name: 'client_layouts',
+    // Order of the apps' Start and Familie tabs shared by the account
+    // (GET/PUT /api/v1/client/layout, services/clientLayout.js). The
+    // administrator picks where it applies — setting client_layout_scope
+    // 'device' | 'user' (default) | 'global'.
+    //   client_layouts   one stored layout. key 'user:<id>' (scope user) or
+    //                    'global' (scope global); user_id is that person
+    //                    (NULL for the global one — a person's row goes with
+    //                    the account); layout is the JSON
+    //                    { start, startHidden, familie, familieHidden }
+    //                    (lists of entry ids); updated_at ISO UTC with
+    //                    milliseconds; updated_by the account that saved it
+    //                    (no FK: an administrator may be deleted later).
+    sql: `
+      CREATE TABLE IF NOT EXISTS client_layouts (
+        key TEXT PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        layout TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        updated_by INTEGER
+      );`,
+  },
+  {
+    version: 105,
+    name: 'notify_action_calls',
+    // `callback` buttons of plugin pushes (docs/plugins.md "Callback buttons",
+    // services/plugins/notifyActions.js): the sending plugin's notifyAction
+    // hook runs once per notification and action, whichever device or person
+    // presses it first.
+    //   notify_action_calls  one hook call: notification_id + action (the
+    //                        callback id) are the key, user_id the person who
+    //                        pressed it, created_at ISO UTC. Goes with the
+    //                        notification (retention clean-up).
+    sql: `
+      CREATE TABLE IF NOT EXISTS notify_action_calls (
+        notification_id INTEGER NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+        action TEXT NOT NULL,
+        user_id INTEGER,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (notification_id, action)
+      );`,
+  },
 ];
 
 module.exports = { migrations };

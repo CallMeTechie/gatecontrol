@@ -25,7 +25,9 @@ const RECOVERY_MODES = ['off', 'silent', 'normal'];
 
 // Actions a notification may carry (fixed list, docs "Sicherheit"). Plugin
 // pushes may also carry `quick_action` — one of that plugin's own quick
-// actions (sanitize.quickAction, docs/plugins.md "Notifications").
+// actions (sanitize.quickAction, docs/plugins.md "Notifications") — and
+// `callback` — a button reaching that plugin's notifyAction hook
+// (sanitize.callback, docs/plugins.md "Callback buttons").
 const ACTION_TYPES = new Set(['open_app_route', 'open_portal', 'mute_1h', 'ack', 'done']);
 const APP_ROUTE_RE = /^(?:vpn|services|gateways|inbox|plg-[a-z0-9]+(?:-[a-z0-9]+)*)$/;
 
