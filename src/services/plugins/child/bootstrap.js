@@ -227,13 +227,18 @@ function makeGc(info) {
     }),
     /**
      * permissions.actions: quick actions of the other plugins for one user —
-     * list({ userId, lang }) → [{ plugin, pluginName, id, title, subtitle, icon, kind, state, verbs, targets, device }];
-     * run({ userId, plugin, id, lang, state? }) → { ok, message, state, unchanged } (runs as that user;
+     * list({ userId, lang }) → [{ actionId: '<plugin>/<id>', plugin, pluginName, id, label, title, subtitle, icon,
+     *   kind, state, needsConfirm, confirmWhen, verbs, targets, device }];
+     * run({ userId, actionId | plugin + id, params?: { state }, lang, state?, via? })
+     *   → { ok, message, state, unchanged, result?, code?, error? } (runs as that user;
      * state 'on'|'off': the state a toggle should end in)
      */
     actions: Object.freeze({
       list: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('actions.list', { userId: o.userId, lang: o.lang }); },
-      run: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('actions.run', { userId: o.userId, plugin: o.plugin, id: o.id, lang: o.lang, state: o.state }); },
+      run: (opts) => {
+        const o = opts && typeof opts === 'object' ? opts : {};
+        return hostCall('actions.run', { userId: o.userId, actionId: o.actionId, plugin: o.plugin, id: o.id, params: o.params, lang: o.lang, state: o.state, via: o.via });
+      },
     }),
     /** notify(message, { severity }) or notify({ topic, title, body, priority, users, collapseKey, ttl, data, image }) — image { data, mime } or { mediaId } */
     notify: (message, opts) => (message && typeof message === 'object' && !Array.isArray(message)

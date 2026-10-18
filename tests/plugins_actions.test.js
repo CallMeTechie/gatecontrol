@@ -4,8 +4,11 @@
 // actions"): permissions.actions + gc.actions.list / gc.actions.run — the
 // quick actions other plugins offer to one user, run as that user with
 // `automation: true, via: '<caller>'`; strict input checks, never for an
-// unknown or disabled user, the caller itself excluded, 60 runs per hour per
-// calling plugin, an activity row per run.
+// unknown or disabled user, the caller itself excluded, 60 runs per minute per
+// calling plugin, an activity row per run naming the user and the caller.
+// Since 1.180.0 also the shape of the messenger's home actions: actionId
+// '<plugin>/<id>', label, needsConfirm, run({ actionId, params, via }) →
+// { ok, result?, code? }.
 
 const crypto = require('node:crypto');
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
@@ -129,9 +132,9 @@ describe('gc.actions.list', () => {
   it('the actions of the other plugins for that user — never the caller\'s own, never a plugin without permissions.portal', async () => {
     const all = await listOk({ userId: anna });
     assert.deepEqual(all.find((a) => a.plugin === 'hello'),
-      { plugin: 'hello', pluginName: 'Hallo Welt', id: 'light:3', title: 'Licht', subtitle: 'Wohnzimmer', icon: 'M4 12h16', kind: 'toggle', state: 'off', verbs: null, targets: false, device: null });
+      { actionId: 'hello/light:3', plugin: 'hello', pluginName: 'Hallo Welt', id: 'light:3', label: 'Licht', title: 'Licht', subtitle: 'Wohnzimmer', icon: 'M4 12h16', kind: 'toggle', state: 'off', needsConfirm: true, confirmWhen: null, verbs: null, targets: false, device: null });
     assert.deepEqual(all.find((a) => a.id === 'scene:evening'),
-      { plugin: 'hello-two', pluginName: 'Zweites', id: 'scene:evening', title: 'Abend', subtitle: null, icon: null, kind: 'button', state: null, verbs: null, targets: false, device: null });
+      { actionId: 'hello-two/scene:evening', plugin: 'hello-two', pluginName: 'Zweites', id: 'scene:evening', label: 'Abend', title: 'Abend', subtitle: null, icon: null, kind: 'button', state: null, needsConfirm: false, confirmWhen: null, verbs: null, targets: false, device: null });
     assert.ok(!all.some((a) => a.plugin === 'hello-auto'), 'the caller is excluded');
     assert.ok(!all.some((a) => a.plugin === 'hello-np'), 'no permissions.portal → not asked');
     // the target sees that user as a logged-in portal viewer (no app flag) in the user's language
@@ -162,15 +165,15 @@ describe('gc.actions.run', () => {
   it('runs as that user with automation: true and via: the caller; logs ids and ok only', async () => {
     await kv('hello', 'quick-result', null);
     const res = await runOk({ userId: anna, plugin: 'hello', id: 'light:3' });
-    assert.deepEqual(res, { ok: true, message: 'ran light:3', state: 'on', unchanged: false });
+    assert.deepEqual(res, { ok: true, message: 'ran light:3', state: 'on', unchanged: false, result: { message: 'ran light:3', state: 'on', unchanged: false } });
     assert.deepEqual(await kvGet('hello', 'quick-last'), {
       id: 'light:3', lang: 'de', via: 'hello-auto', automation: true,
       user: { id: anna, name: 'pa-anna', role: 'user', portal: true, loggedIn: true, automation: true, via: 'hello-auto' },
     });
     const row = lastActivity();
     assert.equal(row.severity, 'info');
-    assert.deepEqual(JSON.parse(row.details), { plugin: 'hello-auto', target: 'hello', action: 'light:3', userId: anna, ok: true });
-    assert.equal(row.message, 'Plugin "hello-auto" ran quick action "light:3" of plugin "hello" (ok)');
+    assert.deepEqual(JSON.parse(row.details), { plugin: 'hello-auto', via: 'hello-auto', target: 'hello', action: 'light:3', userId: anna, ok: true });
+    assert.equal(row.message, 'Quick action "light:3" of plugin "hello" run for user "pa-anna" via plugin "hello-auto" (ok)');
 
     // any enabled user, an administrator too — the target plugin decides; lang passed on
     await runOk({ userId: admin, plugin: 'hello', id: 'light:3', lang: 'en' });
@@ -183,8 +186,10 @@ describe('gc.actions.run', () => {
     await kv('hello', 'quick-result', { ok: false, message: 'Geheim\u0007 ' + 'x'.repeat(300), state: 'dim', extra: 'dropped' });
     try {
       const res = await runOk({ userId: anna, plugin: 'hello', id: 'light:3' });
-      assert.deepEqual(Object.keys(res).sort(), ['message', 'ok', 'state', 'unchanged']);
+      assert.deepEqual(Object.keys(res).sort(), ['code', 'message', 'ok', 'result', 'state', 'unchanged']);
       assert.equal(res.ok, false);
+      assert.equal(res.code, 'ERR_ACTION_FAILED', 'it ran, the plugin said no');
+      assert.deepEqual(res.result, { message: res.message, state: null, unchanged: false });
       assert.equal(res.state, null);
       assert.equal(res.message.length, 120);
       const row = lastActivity();
@@ -195,12 +200,12 @@ describe('gc.actions.run', () => {
   });
 
   it('not listed / unknown / no portal permission / disabled target → ok: false with error not_found', async () => {
-    const nf = { ok: false, message: null, state: null, unchanged: false, error: 'not_found' };
+    const nf = { ok: false, message: null, state: null, unchanged: false, error: 'not_found', code: 'ERR_NOT_FOUND' };
     assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'light:4' }), nf);
     assert.deepEqual(await runOk({ userId: anna, plugin: 'nope', id: 'light:3' }), nf);
     assert.deepEqual(await runOk({ userId: anna, plugin: 'hello-np', id: 'np' }), nf);
     assert.equal(await kvGet('hello-np', 'quick-last'), null, 'never run');
-    assert.deepEqual(JSON.parse(lastActivity().details), { plugin: 'hello-auto', target: 'hello-np', action: 'np', userId: anna, ok: false, error: 'not_found' });
+    assert.deepEqual(JSON.parse(lastActivity().details), { plugin: 'hello-auto', via: 'hello-auto', target: 'hello-np', action: 'np', userId: anna, ok: false, error: 'not_found' });
     await agent.post(`${API}/hello-two/disable`).set('X-CSRF-Token', csrf).expect(200);
     try {
       assert.deepEqual(await runOk({ userId: anna, plugin: 'hello-two', id: 'scene:evening' }), nf);
@@ -214,9 +219,9 @@ describe('gc.actions.run', () => {
   it('a failing or slow target → ok: false with error plugin_error / timeout', async () => {
     quickActions._setRunTimeoutForTest(1500);
     try {
-      for (const [mode, error] of [['throw', 'plugin_error'], ['garbage', 'plugin_error'], ['slow', 'timeout']]) {
+      for (const [mode, error, code] of [['throw', 'plugin_error', 'ERR_PLUGIN_FAILED'], ['garbage', 'plugin_error', 'ERR_PLUGIN_FAILED'], ['slow', 'timeout', 'ERR_TIMEOUT']]) {
         await kv('hello', 'quick-run-mode', mode);
-        assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'light:3' }), { ok: false, message: null, state: null, unchanged: false, error }, mode);
+        assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'light:3' }), { ok: false, message: null, state: null, unchanged: false, error, code }, mode);
       }
     } finally {
       quickActions._setRunTimeoutForTest(null);
@@ -263,35 +268,36 @@ describe('gc.actions.run', () => {
     try {
       const all = await listOk({ userId: anna });
       assert.deepEqual(all.find((a) => a.id === 'lock:1'), {
-        plugin: 'hello', pluginName: 'Hallo Welt', id: 'lock:1', title: 'Schloss', subtitle: null, icon: 'M6 10V7', kind: 'toggle', state: 'on',
-        verbs: VERBS, targets: true, device: { id: 'v:42', title: 'Familienauto', subtitle: null, icon: null },
-      }, 'icon and device like the apps\' list; no confirm, look or widget');
+        actionId: 'hello/lock:1', plugin: 'hello', pluginName: 'Hallo Welt', id: 'lock:1', label: 'Schloss', title: 'Schloss', subtitle: null, icon: 'M6 10V7', kind: 'toggle', state: 'on',
+        needsConfirm: true, confirmWhen: null, verbs: VERBS, targets: true, device: { id: 'v:42', title: 'Familienauto', subtitle: null, icon: null },
+      }, 'icon and device like the apps\' list; needsConfirm instead of confirm; no look or widget');
       assert.equal(all.find((a) => a.id === 'lamp:on').device, null);
       assert.deepEqual([all.find((a) => a.id === 'scene').icon, all.find((a) => a.id === 'scene').device], [null, null], 'invalid icon / device → null');
 
       // targets: true → target in the payload, the plugin's answer
       await kv('hello', 'quick-result', { ok: true, message: 'Verriegelt', state: 'on' });
-      assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lock:1', state: 'on' }), { ok: true, message: 'Verriegelt', state: 'on', unchanged: false });
+      const ran = (message, state, unchanged = false) => ({ ok: true, message, state, unchanged, result: { message, state, unchanged } });
+      assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lock:1', state: 'on' }), ran('Verriegelt', 'on'));
       const last = await kvGet('hello', 'quick-last');
       assert.deepEqual([last.target, last.via, last.automation], ['on', 'hello-auto', true]);
-      assert.deepEqual(JSON.parse(lastActivity().details), { plugin: 'hello-auto', target: 'hello', action: 'lock:1', userId: anna, ok: true, state: 'on' });
+      assert.deepEqual(JSON.parse(lastActivity().details), { plugin: 'hello-auto', via: 'hello-auto', target: 'hello', action: 'lock:1', userId: anna, ok: true, state: 'on' });
       await kv('hello', 'quick-result', null);
 
       // no targets, already there → not run, unchanged
       await kv('hello', 'quick-last', null);
-      assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lamp:on', state: 'on' }), { ok: true, message: null, state: 'on', unchanged: true });
+      assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lamp:on', state: 'on' }), ran(null, 'on', true));
       assert.equal(await kvGet('hello', 'quick-last'), null, 'the target plugin was not asked to run');
-      assert.deepEqual(JSON.parse(lastActivity().details), { plugin: 'hello-auto', target: 'hello', action: 'lamp:on', userId: anna, ok: true, state: 'on', unchanged: true });
+      assert.deepEqual(JSON.parse(lastActivity().details), { plugin: 'hello-auto', via: 'hello-auto', target: 'hello', action: 'lamp:on', userId: anna, ok: true, state: 'on', unchanged: true });
 
       // no targets, the other state → the plain run (flip), no target
-      assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lamp:on', state: 'off' }), { ok: true, message: 'ran lamp:on', state: 'on', unchanged: false });
+      assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lamp:on', state: 'off' }), ran('ran lamp:on', 'on'));
       assert.ok(!('target' in await kvGet('hello', 'quick-last')));
 
       // no targets, no listed state → state_unknown; a button or a bad value → invalid_state
       await kv('hello', 'quick-last', null);
-      const no = (error) => ({ ok: false, message: null, state: null, unchanged: false, error });
+      const no = (error) => ({ ok: false, message: null, state: null, unchanged: false, error, code: { state_unknown: 'ERR_STATE_UNKNOWN', invalid_state: 'ERR_INVALID_STATE' }[error] });
       assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lamp:unknown', state: 'off' }), no('state_unknown'));
-      assert.deepEqual(JSON.parse(lastActivity().details), { plugin: 'hello-auto', target: 'hello', action: 'lamp:unknown', userId: anna, ok: false, state: 'off', error: 'state_unknown' });
+      assert.deepEqual(JSON.parse(lastActivity().details), { plugin: 'hello-auto', via: 'hello-auto', target: 'hello', action: 'lamp:unknown', userId: anna, ok: false, state: 'off', error: 'state_unknown' });
       assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'scene', state: 'on' }), no('invalid_state'));
       for (const state of ['ON', 'toggle', '', 1, true, ['on']]) {
         assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lock:1', state }), no('invalid_state'), JSON.stringify(state));
@@ -300,7 +306,7 @@ describe('gc.actions.run', () => {
       assert.equal(await kvGet('hello', 'quick-last'), null, 'nothing ran');
 
       // without state (or null): the plain run as before
-      assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lock:1', state: null }), { ok: true, message: 'ran lock:1', state: 'on', unchanged: false });
+      assert.deepEqual(await runOk({ userId: anna, plugin: 'hello', id: 'lock:1', state: null }), ran('ran lock:1', 'on'));
       assert.ok(!('target' in await kvGet('hello', 'quick-last')));
     } finally {
       await kv('hello', 'quick-result', null);
@@ -309,14 +315,113 @@ describe('gc.actions.run', () => {
     }
   });
 
-  it(`at most ${60} runs per hour per calling plugin (listing is not counted)`, async () => {
-    assert.equal(hostApi.ACTIONS_PER_HOUR, 60);
+  it(`at most ${60} runs per minute per calling plugin (listing is not counted)`, async () => {
+    assert.equal(hostApi.ACTIONS_PER_MINUTE, 60);
     hostApi._resetActionsBudgetForTest();
     for (let i = 0; i < 60; i += 1) assert.equal((await runOk({ userId: anna, plugin: 'hello-two', id: 'scene:evening' })).ok, true, `run ${i}`);
     const before = activityCount();
     await refused('run', { userId: anna, plugin: 'hello-two', id: 'scene:evening' }, 'ERR_RATE_LIMIT');
     assert.equal(activityCount(), before, 'a refused run is not logged');
     assert.ok((await listOk({ userId: anna })).length > 0);
+    // a minute later the budget is back
+    const realNow = Date.now;
+    const later = realNow() + 61000;
+    Date.now = () => later;
+    try {
+      assert.equal((await runOk({ userId: anna, plugin: 'hello-two', id: 'scene:evening' })).ok, true);
+    } finally { Date.now = realNow; }
     hostApi._resetActionsBudgetForTest();
+  });
+});
+
+describe('home actions shape (since 1.180.0): actionId, label, needsConfirm, run({ actionId, params, via })', () => {
+  before(() => hostApi._resetActionsBudgetForTest());
+  after(async () => {
+    await kv('hello', 'quick-actions', [{ id: 'light:3', title: 'Licht', subtitle: 'Wohnzimmer', icon: 'M4 12h16', kind: 'toggle', state: 'off', confirm: true }]);
+    await kv('hello', 'quick-result', null);
+    hostApi._resetActionsBudgetForTest();
+  });
+
+  it('needsConfirm: confirm, or a toggle whose plain run (a flip) ends in its confirmWhen state; unknown state asks', async () => {
+    await kv('hello', 'quick-actions', [
+      { id: 'btn', title: 'Knopf' },
+      { id: 'btn:c', title: 'Knopf!', confirm: true },
+      { id: 'lock:locked', title: 'Schloss zu', kind: 'toggle', state: 'on', confirmWhen: 'off' },
+      { id: 'lock:open', title: 'Schloss offen', kind: 'toggle', state: 'off', confirmWhen: 'off' },
+      { id: 'lock:unknown', title: 'Schloss ?', kind: 'toggle', confirmWhen: 'off' },
+      { id: 'lamp', title: 'Lampe', kind: 'toggle', state: 'on' },
+      { id: 'btn:cw', title: 'Knopf cw', confirmWhen: 'on' },
+    ]);
+    const all = await listOk({ userId: anna });
+    const by = (id) => all.find((a) => a.plugin === 'hello' && a.id === id);
+    assert.deepEqual(
+      ['btn', 'btn:c', 'lock:locked', 'lock:open', 'lock:unknown', 'lamp', 'btn:cw'].map((id) => [id, by(id).needsConfirm, by(id).confirmWhen]),
+      [['btn', false, null], ['btn:c', true, null], ['lock:locked', true, 'off'], ['lock:open', false, 'off'],
+        ['lock:unknown', true, 'off'], ['lamp', false, null], ['btn:cw', false, null]],
+    );
+    for (const a of all) {
+      assert.equal(a.actionId, `${a.plugin}/${a.id}`);
+      assert.equal(a.label, a.title);
+      assert.equal(typeof a.needsConfirm, 'boolean');
+      assert.ok(!('confirm' in a) && !('look' in a) && !('widget' in a));
+    }
+  });
+
+  it('run({ userId, actionId, params: { state }, via }) runs like plugin + id; result and no code when ok', async () => {
+    await kv('hello', 'quick-actions', [{ id: 'lock:1', title: 'Schloss', kind: 'toggle', state: 'off', targets: true }, { id: 'btn', title: 'Knopf' }]);
+    await kv('hello', 'quick-result', { ok: true, message: 'Verriegelt', state: 'on' });
+    const res = await runOk({ userId: anna, actionId: 'hello/lock:1', params: { state: 'on' }, via: 'hello-auto' });
+    assert.deepEqual(res, { ok: true, message: 'Verriegelt', state: 'on', unchanged: false, result: { message: 'Verriegelt', state: 'on', unchanged: false } });
+    const last = await kvGet('hello', 'quick-last');
+    assert.deepEqual([last.id, last.target, last.via, last.automation, last.user.id], ['lock:1', 'on', 'hello-auto', true, anna]);
+    const row = lastActivity();
+    assert.equal(row.message, 'Quick action "lock:1" of plugin "hello" run for user "pa-anna" via plugin "hello-auto" (ok)');
+    assert.deepEqual(JSON.parse(row.details), { plugin: 'hello-auto', via: 'hello-auto', target: 'hello', action: 'lock:1', userId: anna, ok: true, state: 'on' });
+    await kv('hello', 'quick-result', null);
+    // an action id with ':' and '.' — the plugin id ends at the first '/'
+    assert.equal((await runOk({ userId: anna, actionId: 'hello/btn', params: {} })).ok, true);
+    assert.equal((await runOk({ userId: anna, actionId: 'hello/btn', params: null, via: null })).ok, true);
+    // the user's display name in the log
+    const named = H.makeUser('pa-named');
+    H.db().prepare('UPDATE users SET display_name = ? WHERE id = ?').run('Anna B.', named);
+    await runOk({ userId: named, actionId: 'hello/btn' });
+    assert.equal(lastActivity().message, 'Quick action "btn" of plugin "hello" run for user "Anna B." via plugin "hello-auto" (ok)');
+  });
+
+  it('did not run → ok false with code ERR_NOT_FOUND (unknown id or plugin, disabled or unlicensed plugin)', async () => {
+    const nf = { ok: false, message: null, state: null, unchanged: false, error: 'not_found', code: 'ERR_NOT_FOUND' };
+    assert.deepEqual(await runOk({ userId: anna, actionId: 'hello/nope' }), nf);
+    assert.deepEqual(await runOk({ userId: anna, actionId: 'nope/btn' }), nf);
+    const licensing = require('../src/services/plugins/licensing');
+    const realStatus = licensing.status;
+    licensing.status = (p) => (p && p.id === 'hello' ? { required: true, licensed: false, state: 'missing', expiresAt: null } : realStatus(p));
+    try {
+      await kv('hello', 'quick-last', null);
+      assert.deepEqual(await runOk({ userId: anna, actionId: 'hello/btn' }), nf);
+      assert.ok(!(await listOk({ userId: anna })).some((a) => a.plugin === 'hello'), 'an unlicensed plugin\'s actions are not listed');
+      assert.equal(await kvGet('hello', 'quick-last'), null, 'never run');
+    } finally { licensing.status = realStatus; }
+    assert.ok((await listOk({ userId: anna })).some((a) => a.plugin === 'hello'));
+  });
+
+  it('strict input for the new fields — ERR_INVALID, nothing runs, nothing is logged', async () => {
+    await kv('hello', 'quick-last', null);
+    const before = activityCount();
+    for (const opts of [
+      { userId: anna, actionId: 'hello' }, { userId: anna, actionId: '/btn' }, { userId: anna, actionId: 'hello/' },
+      { userId: anna, actionId: 'Hello/btn' }, { userId: anna, actionId: 'hello/b/tn' }, { userId: anna, actionId: 'hello/bad id' },
+      { userId: anna, actionId: 7 }, { userId: anna, actionId: 'hello/' + 'x'.repeat(65) }, { userId: anna, actionId: 'x'.repeat(200) },
+      { userId: anna, actionId: 'hello-auto/own' },
+      { userId: anna, actionId: 'hello/btn', plugin: 'hello' }, { userId: anna, actionId: 'hello/btn', id: 'btn' },
+      { userId: anna, actionId: 'hello/btn', params: 'on' }, { userId: anna, actionId: 'hello/btn', params: ['on'] },
+      { userId: anna, actionId: 'hello/btn', params: { control: 'x' } },
+      { userId: anna, actionId: 'hello/lock:1', params: { state: 'on' }, state: 'on' },
+      { userId: anna, actionId: 'hello/btn', via: 'hello' }, { userId: anna, actionId: 'hello/btn', via: 'Messenger' }, { userId: anna, actionId: 'hello/btn', via: 7 },
+      { actionId: 'hello/btn' },
+    ]) await refused('run', opts, 'ERR_INVALID');
+    assert.equal(await kvGet('hello', 'quick-last'), null, 'the target never ran');
+    assert.equal(await kvGet('hello-auto', 'quick-last'), null, 'the caller never ran itself');
+    assert.equal(activityCount(), before);
+    await refused('run', { userId: anna, actionId: 'hello/btn' }, 'ERR_ACTIONS_DENIED', 'hello');
   });
 });
