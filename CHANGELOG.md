@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.179.0] — 2026-10-18
+
+### Features
+- location and inbox for plugin frames (ui.geolocation, ui.inbox) (#323)
+
+---
+
 ## [1.178.0] — 2026-10-18
 
 ### Features
