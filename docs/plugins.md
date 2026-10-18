@@ -851,12 +851,13 @@ provider documents its own.
   (optional) must be an existing, enabled account — the provider gets it as
   `user: { id, name, role }` (`null` without) and decides itself what the
   call may do for that person.
-* `payload` and the answer: JSON ≤ 16 KB each; 15 s; **60 calls per hour**
+* `payload`: JSON ≤ 512 KB (16 KB before 1.180.0 — enough for a small
+  base64 image); the answer: JSON ≤ 16 KB; 15 s; **60 calls per hour**
   and calling plugin; an activity row `plugin_service` per call (ids and ok
   only, never the payload).
 * Errors of `call()`: `ERR_SERVICES_DENIED` (not listed), `ERR_SERVICE_UNAVAILABLE`
   (provider not installed / not running / no such service), `ERR_INVALID`
-  (bad ids, user, payload over 16 KB, the caller's own plugin),
+  (bad ids, user, payload over 512 KB, the caller's own plugin),
   `ERR_RATE_LIMIT`, `ERR_TIMEOUT`, `ERR_SERVICE_FAILED` (the hook threw — its
   message — or answered more than 16 KB; a provider without the hook:
   "this plugin offers no services").

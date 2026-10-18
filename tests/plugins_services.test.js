@@ -3,7 +3,7 @@
 // Services between plugins (docs/plugins.md "Services"): plugin.json
 // services.provides and permissions.services, gc.services.call({ plugin,
 // service, userId, payload }) → the provider's hook service({ name, caller,
-// user, payload }); 60 calls per hour and caller, payload and answer ≤ 16 KB,
+// user, payload }); 60 calls per hour and caller, payload ≤ 512 KB, answer ≤ 16 KB,
 // an activity row per call.
 
 const crypto = require('node:crypto');
@@ -128,7 +128,7 @@ describe('gc.services.call', () => {
     assert.equal(await errCode('hello-call', { plugin: 'hello-prov', service: 'send_message', userId: 999999 }), 'ERR_INVALID');
     const off = H.makeUser('svc-off', { enabled: 0 });
     assert.equal(await errCode('hello-call', { plugin: 'hello-prov', service: 'send_message', userId: off }), 'ERR_INVALID');
-    assert.equal(await errCode('hello-call', { plugin: 'hello-prov', service: 'send_message', payload: { x: 'y'.repeat(16 * 1024) } }), 'ERR_INVALID');
+    assert.equal(await errCode('hello-call', { plugin: 'hello-prov', service: 'send_message', payload: { x: 'y'.repeat(512 * 1024) } }), 'ERR_INVALID');
   });
 
   it('a disabled provider is unavailable', async () => {

@@ -582,7 +582,7 @@ function eventsEmit(plugin, args) {
 // permissions.services, the provider must declare the service in
 // services.provides and be usable (may run, running). `user` is the account
 // the call is about ({ id, name, role } of an enabled user, or null without
-// userId). Payload and answer ≤ 16 KB of JSON, SERVICE_TIMEOUT_MS, 60 calls per
+// userId). Payload ≤ 512 KB and answer ≤ 16 KB of JSON, SERVICE_TIMEOUT_MS, 60 calls per
 // hour per calling plugin, an activity row `plugin_service` per call (ids
 // and ok only).
 //
@@ -594,13 +594,16 @@ function eventsEmit(plugin, args) {
 
 const SERVICES_PER_HOUR = 60;
 const SERVICE_JSON_MAX = 16 * 1024;
+// Payloads may carry a small image (e.g. a doorbell snapshot as base64).
+const SERVICE_PAYLOAD_MAX = 512 * 1024;
 const SERVICE_TIMEOUT_MS = 15000;
 const servicesWindow = new Map();
 
 function jsonBounded(v, what) {
   let s;
   try { s = JSON.stringify(v === undefined ? null : v); } catch { s = undefined; }
-  need(s !== undefined && Buffer.byteLength(s, 'utf8') <= SERVICE_JSON_MAX, what === 'payload' ? 'ERR_INVALID' : 'ERR_SERVICE_FAILED', `${what} must be JSON ≤ 16 KB`);
+  const max = what === 'payload' ? SERVICE_PAYLOAD_MAX : SERVICE_JSON_MAX;
+  need(s !== undefined && Buffer.byteLength(s, 'utf8') <= max, what === 'payload' ? 'ERR_INVALID' : 'ERR_SERVICE_FAILED', `${what} must be JSON ≤ ${max / 1024} KB`);
   return JSON.parse(s);
 }
 
@@ -965,6 +968,6 @@ async function handle(plugin, api, args, ctx) {
 }
 
 module.exports = {
-  handle, closeSockets, HostApiError, ACTIONS_PER_MINUTE, CHAT_PER_HOUR, CHAT_PER_USER_HOUR, SERVICES_PER_HOUR, SERVICE_JSON_MAX,
+  handle, closeSockets, HostApiError, ACTIONS_PER_MINUTE, CHAT_PER_HOUR, CHAT_PER_USER_HOUR, SERVICES_PER_HOUR, SERVICE_JSON_MAX, SERVICE_PAYLOAD_MAX,
   flushChatSummary, _resetActionsBudgetForTest, _resetBudgetsForTest, _lookup: null, _udpTargets: null, _serviceTimeoutMs: null,
 };
