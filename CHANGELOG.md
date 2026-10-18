@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.178.0] — 2026-10-18
+
+### Features
+- gc.services.available, push pictures from plugin media, downloads in media frames (#322)
+
+---
+
 ## [1.177.0] — 2026-10-17
 
 ### Features
