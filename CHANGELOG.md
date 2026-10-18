@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.181.0] — 2026-10-18
+
+### Features
+- shared app layout, device values for plugins and push callback buttons (#325)
+
+---
+
 ## [1.180.0] — 2026-10-18
 
 ### Features
