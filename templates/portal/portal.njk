@@ -43,7 +43,7 @@
 {#- A plugin's section in a GateControl tab (docs/plugins.md "Portal"): its own sandboxed frame. -#}
 {%- macro pluginSection(sec) %}
       <section class="pt-plugin-section" id="pt-sec-{{ sec.key }}" data-area="{{ sec.key }}" data-plugin="{{ sec.plugin }}" aria-label="{{ sec.title }}">
-        <iframe class="pt-plugin-frame" title="{{ sec.title }}" src="/portal/plugins/{{ sec.plugin }}/frame?section={{ sec.id }}" sandbox="allow-scripts allow-forms{% if sec.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}" referrerpolicy="no-referrer" loading="lazy"{% if sec.media %} allow="microphone *"{% endif %}
+        <iframe class="pt-plugin-frame" title="{{ sec.title }}" src="/portal/plugins/{{ sec.plugin }}/frame?section={{ sec.id }}" sandbox="allow-scripts allow-forms{% if sec.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}{% if sec.media %} allow-downloads{% endif %}" referrerpolicy="no-referrer" loading="lazy"{% if sec.media %} allow="microphone *"{% endif %}
           data-plugin-frame data-plugin-id="{{ sec.plugin }}" data-plugin-api="/api/v1/portal/plugins/{{ sec.plugin }}/api/" data-plugin-pages="[]"{% if sec.events %} data-plugin-events{% endif %}></iframe>
       </section>
 {%- endmacro %}
@@ -444,7 +444,7 @@
   {%- for pt in pluginTabs %}
   <section class="pt-panel" id="panel-{{ pt.key }}" role="tabpanel" aria-labelledby="tab-{{ pt.key }}" tabindex="0" data-panel="{{ pt.key }}" hidden>
     <h1 class="pt-h1 pt-h1-sm">{{ pt.label }}</h1>
-    <iframe class="pt-plugin-frame" title="{{ pt.label }}" src="/portal/plugins/{{ pt.id }}/frame" sandbox="allow-scripts allow-forms{% if pt.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}" referrerpolicy="no-referrer" loading="lazy"{% if pt.media %} allow="microphone *"{% endif %}
+    <iframe class="pt-plugin-frame" title="{{ pt.label }}" src="/portal/plugins/{{ pt.id }}/frame" sandbox="allow-scripts allow-forms{% if pt.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}{% if pt.media %} allow-downloads{% endif %}" referrerpolicy="no-referrer" loading="lazy"{% if pt.media %} allow="microphone *"{% endif %}
       data-plugin-frame data-plugin-id="{{ pt.id }}" data-plugin-api="/api/v1/portal/plugins/{{ pt.id }}/api/" data-plugin-pages="[]"{% if pt.events %} data-plugin-events{% endif %}></iframe>
   </section>
   {%- endfor %}

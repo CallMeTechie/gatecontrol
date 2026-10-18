@@ -44,6 +44,10 @@
 // window.GC.upload(file) hands a file to the parent page, which uploads it
 // with the session (public/js/plugin-bridge.js); the parent's <iframe> gets
 // allow="microphone *" for such plugins (voice recording in the portal).
+// Their sandbox (CSP and <iframe> attribute alike) adds allow-downloads: a
+// file that is no picture, audio or video is answered as a download
+// (Content-Disposition: attachment), which a sandbox without that flag
+// silently drops. Nothing else of the sandbox changes.
 //
 // Realtime events (permissions.events): window.GC.on('event', fn) — the
 // parent page holds the plugin's event stream and passes each event on.
@@ -55,6 +59,10 @@ const AVATARS = '/avatars/';
 const PLUGIN_MEDIA = '/plugin-media/';
 const SANDBOX = 'sandbox allow-scripts allow-forms';
 const SANDBOX_MAPS = SANDBOX + ' allow-popups allow-popups-to-escape-sandbox';
+const SANDBOX_DOWNLOADS = ' allow-downloads';
+
+/** The CSP sandbox directive: the base flags, + popups for maps, + downloads for media. */
+function sandboxOf(maps, media) { return (maps ? SANDBOX_MAPS : SANDBOX) + (media ? SANDBOX_DOWNLOADS : ''); }
 
 function directives({ script = [], style = [], img = [], media = [], sandbox = SANDBOX } = {}) {
   return [
@@ -93,19 +101,19 @@ function originOf(req) {
 function cspFor({ maps = false, origin = null, avatars = false, media = false } = {}) {
   const mediaSrc = media && origin ? [origin + PLUGIN_MEDIA] : [];
   const pics = [...(avatars && origin ? [origin + AVATARS] : []), ...mediaSrc];
-  if (!maps) return pics.length ? directives({ img: pics, media: mediaSrc }) : CSP;
+  if (!maps) return pics.length || media ? directives({ img: pics, media: mediaSrc, sandbox: sandboxOf(false, media) }) : CSP;
   const base = origin ? origin + SHARED_LEAFLET : null;
   return directives({
     script: base ? [base + 'leaflet.js'] : [],
     style: base ? [base + 'leaflet.css'] : [],
     img: [OSM_TILES, ...(base ? [base + 'images/', origin + SHARED_TILES] : []), ...pics],
     media: mediaSrc,
-    sandbox: SANDBOX_MAPS,
+    sandbox: sandboxOf(true, media),
   });
 }
 
-/** sandbox attribute of the <iframe> showing a plugin frame. */
-function sandboxAttr(maps) { return (maps ? SANDBOX_MAPS : SANDBOX).replace(/^sandbox /, ''); }
+/** sandbox attribute of the <iframe> showing a plugin frame (`media`: a plugin declaring media). */
+function sandboxAttr(maps, media = false) { return sandboxOf(maps, media).replace(/^sandbox /, ''); }
 
 const BASE_CSS = `
 :root{color-scheme:dark;--bg:#0a0e14;--surface:#111a24;--surface-2:#0f1720;--line:rgba(255,255,255,.08);--line-2:rgba(255,255,255,.14);

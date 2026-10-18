@@ -354,6 +354,41 @@ function notify(plugin, args) {
   return {};
 }
 
+// ─── Push pictures from the plugin's media (image: { mediaId }) ────
+//
+// gc.notify({ …, image: { mediaId } }) — on any topic, chat topics included:
+// instead of sending the bytes, a plugin declaring `media` names one of its
+// own files (e.g. the small preview the apps upload next to a photo). The
+// host reads it and hands it on as { data, mime }, so it goes through the
+// very same checks as a sent picture (notify/media.validate: PNG / JPEG /
+// WebP, ≤ 300 KB, 32…2560 px a side, no animation) and is copied into
+// notify_media like one — the push's imageUrl is /notify-media/<id>.<ext>,
+// living as long as the push, independent of the media file afterwards.
+
+const MEDIA_ID_RE = /^[0-9a-f]{32}$/;
+
+async function notifyImageFromMedia(plugin, args) {
+  const n = args && args.notification;
+  const im = n && typeof n === 'object' && !Array.isArray(n) ? n.image : null;
+  if (!im || typeof im !== 'object' || Array.isArray(im) || !Object.prototype.hasOwnProperty.call(im, 'mediaId')) return args;
+  need(plugin.manifest.permissions && plugin.manifest.permissions.notify, 'ERR_NOTIFY_DENIED', 'this plugin has no notify permission');
+  need(Object.keys(im).length === 1, 'ERR_INVALID', 'invalid image: mediaId cannot be combined with data or mime');
+  need(typeof im.mediaId === 'string' && MEDIA_ID_RE.test(im.mediaId), 'ERR_INVALID', 'invalid image: invalid media id');
+  const media = needMedia(plugin);
+  const notifyMedia = require('../notify/media');
+  const r = media.row(plugin.id, im.mediaId);
+  need(r, 'ERR_INVALID', 'invalid image: unknown media id');
+  need(Object.prototype.hasOwnProperty.call(notifyMedia.TYPES, r.mime), 'ERR_INVALID', 'invalid image: mime');
+  need(r.bytes <= notifyMedia.MAX_BYTES, 'ERR_INVALID', 'invalid image: too_large');
+  const parts = [];
+  try {
+    for await (const part of media.readRange(r, 0, r.bytes - 1)) parts.push(part);
+  } catch {
+    throw new HostApiError('ERR_INVALID', 'invalid image: media file unreadable');
+  }
+  return { ...args, notification: { ...n, image: { data: Buffer.concat(parts).toString('base64'), mime: r.mime } } };
+}
+
 // ─── Chat notifications (notifyTopics[].chat) ────
 //
 // gc.notify({ topic: <chat topic>, title, body, users, conversation, sender,
@@ -550,6 +585,12 @@ function eventsEmit(plugin, args) {
 // userId). Payload and answer ≤ 16 KB of JSON, SERVICE_TIMEOUT_MS, 60 calls per
 // hour per calling plugin, an activity row `plugin_service` per call (ids
 // and ok only).
+//
+// gc.services.available(plugin, service) → boolean: would a call reach the
+// provider right now — listed in the caller's permissions.services, not the
+// caller itself, provider installed, may run, running and declaring the
+// service. Asks nobody (the provider's hook is not run), not counted in the
+// budget, no activity row. Malformed ids/names → ERR_INVALID like call().
 
 const SERVICES_PER_HOUR = 60;
 const SERVICE_JSON_MAX = 16 * 1024;
@@ -563,14 +604,40 @@ function jsonBounded(v, what) {
   return JSON.parse(s);
 }
 
-async function servicesCall(plugin, args) {
+/** The { plugin, service } of a services.* call (format checked) → the args object. */
+function serviceRef(args) {
   const { ID_RE } = require('./constants');
   const { SERVICE_NAME_RE } = require('./manifest');
   const a = args && typeof args === 'object' ? args : {};
   need(typeof a.plugin === 'string' && a.plugin.length >= 2 && a.plugin.length <= 64 && ID_RE.test(a.plugin), 'ERR_INVALID', 'invalid plugin id');
   need(typeof a.service === 'string' && SERVICE_NAME_RE.test(a.service), 'ERR_INVALID', 'invalid service name');
+  return a;
+}
+
+/** Does the caller list "<plugin>:<service>" in permissions.services? */
+function serviceAllowed(plugin, a) {
   const allowed = plugin.manifest.permissions && Array.isArray(plugin.manifest.permissions.services) ? plugin.manifest.permissions.services : [];
-  need(allowed.includes(`${a.plugin}:${a.service}`), 'ERR_SERVICES_DENIED', 'service not listed in permissions.services');
+  return allowed.includes(`${a.plugin}:${a.service}`);
+}
+
+/** Is the provider installed, allowed to run, running and declaring the service? Never asks the provider. */
+function serviceProvided(a) {
+  let provider = null;
+  try { provider = require('./registry').get(a.plugin); } catch { provider = null; }
+  const provides = provider && provider.manifest && provider.manifest.services && provider.manifest.services.provides ? provider.manifest.services.provides : {};
+  return !!provider && Object.prototype.hasOwnProperty.call(provides, a.service) && !!require('./index').evaluate(provider).run
+    && require('./runtime').info(a.plugin).state === 'running';
+}
+
+/** gc.services.available(plugin, service) → boolean (see above). */
+function servicesAvailable(plugin, args) {
+  const a = serviceRef(args);
+  return a.plugin !== plugin.id && serviceAllowed(plugin, a) && serviceProvided(a);
+}
+
+async function servicesCall(plugin, args) {
+  const a = serviceRef(args);
+  need(serviceAllowed(plugin, a), 'ERR_SERVICES_DENIED', 'service not listed in permissions.services');
   need(a.plugin !== plugin.id, 'ERR_INVALID', 'a plugin cannot call its own services');
   let user = null;
   if (a.userId != null) {
@@ -580,11 +647,8 @@ async function servicesCall(plugin, args) {
     user = { id: u.id, name: u.display_name || u.username, role: u.role };
   }
   const payload = jsonBounded(a.payload, 'payload');
-  const provider = require('./registry').get(a.plugin);
-  const provides = provider && provider.manifest && provider.manifest.services && provider.manifest.services.provides ? provider.manifest.services.provides : {};
   const runtime = require('./runtime');
-  need(provider && Object.prototype.hasOwnProperty.call(provides, a.service) && require('./index').evaluate(provider).run
-    && runtime.info(a.plugin).state === 'running', 'ERR_SERVICE_UNAVAILABLE', 'the providing plugin or service is not available');
+  need(serviceProvided(a), 'ERR_SERVICE_UNAVAILABLE', 'the providing plugin or service is not available');
   const now = Date.now();
   const w = recent(servicesWindow, plugin.id, now);
   need(w.length < SERVICES_PER_HOUR, 'ERR_RATE_LIMIT', `too many service calls (${SERVICES_PER_HOUR} per hour)`);
@@ -786,7 +850,7 @@ async function handle(plugin, api, args, ctx) {
       return require('../kiosk').listAllowed(plugin.id);
     case 'actions.list': return actionsList(plugin, args);
     case 'actions.run': return actionsRun(plugin, args);
-    case 'notify': return notify(plugin, args);
+    case 'notify': return notify(plugin, await notifyImageFromMedia(plugin, args));
     case 'media.info': return mediaCall(plugin, 'info', args);
     case 'media.claim': return mediaCall(plugin, 'claim', args);
     case 'media.delete': return mediaCall(plugin, 'delete', args);
@@ -794,6 +858,7 @@ async function handle(plugin, api, args, ctx) {
     case 'media.url': return mediaCall(plugin, 'url', args);
     case 'events.emit': return eventsEmit(plugin, args);
     case 'services.call': return servicesCall(plugin, args);
+    case 'services.available': return servicesAvailable(plugin, args);
     case 'license.status': {
       const s = licensing.status(plugin);
       return { required: s.required, licensed: s.licensed, state: s.state, expiresAt: s.expiresAt || null };

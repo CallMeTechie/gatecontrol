@@ -398,7 +398,7 @@ module.exports = {
 | `gc.actions.list({ userId, lang })` | the quick actions the *other* plugins offer to that user → `[{ plugin, pluginName, id, title, subtitle, icon, kind, state, verbs, targets, device }]` (`actions`) — see "Running other plugins' quick actions" |
 | `gc.actions.run({ userId, plugin, id, lang, state })` | run one of them as that user, `state` (`'on'`/`'off'`, optional) the state a toggle should end in → `{ ok, message, state, unchanged }` (+ `error` when it did not run; `actions`, ≤ 60 runs per hour) |
 | `gc.notify(message, { severity })` | activity log + webhooks, and a push on `plugin:<id>:default` (`notify`, ≤ 30/h or `perHour`) — see "Notifications" |
-| `gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data })` | push on a declared `notifyTopics` topic (+ activity row) → `{ pushed, id }` |
+| `gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data, image })` | push on a declared `notifyTopics` topic (+ activity row) → `{ pushed, id }`; `image` `{ data, mime }` or `{ mediaId }` — see "Pictures" |
 | `gc.notify({ topic: <chat topic>, title, body, users, conversation, sender, … })` | a chat notification (`notifyTopics[].chat`) → `{ pushed, id, skipped }` — see "Chat notifications" |
 | `gc.media.info(id)` | `{ mediaId, mime, bytes, sha256, owner, createdAt, claimed }` of one of the plugin's files, or `null` (`media`) — see "Media" |
 | `gc.media.claim(id)` | keep a new upload (unclaimed files are removed after 24 h); idempotent → the info; unknown id → `ERR_INVALID` |
@@ -407,6 +407,7 @@ module.exports = {
 | `gc.media.url(id, { user, ttlS })` | `/plugin-media/<token>` — a signed URL a frame can show (`<img>`, `<audio>`) for `ttlS` seconds (60 … 86400, default 3600) |
 | `gc.events.emit({ users, type, data })` | realtime event to the listed people's apps and frames → `{ delivered }` (`events`, ≤ 600/min) — see "Realtime events" |
 | `gc.services.call({ plugin, service, userId, payload })` | another plugin's service → its answer (`permissions.services`, ≤ 60/h) — see "Services" |
+| `gc.services.available(plugin, service)` | `true`/`false`: would `call()` reach that provider now (listed, installed, running, provided) — the provider is not run, not counted (since 1.178.0) |
 | `gc.license.status()` | `{ required, licensed, state, expiresAt }` |
 
 Requests reach the plugin only after GateControl's own authentication, CSRF
@@ -481,7 +482,7 @@ const { pushed, id } = await gc.notify({
   collapseKey: 'charge:VIN123',   // optional: same key replaces the shown notification
   ttl: 6 * 3600,                  // optional, seconds (60 … retention of the server)
   data: { vin: 'VIN123' },        // optional JSON ≤ 4 KB; data.route defaults to 'plg-<id>' (the plugin tab)
-  image: { data: '<base64>', mime: 'image/jpeg' }  // optional picture (see below)
+  image: { data: '<base64>', mime: 'image/jpeg' }  // optional picture (see below), or { mediaId } of the plugin's media
 });
 ```
 
@@ -554,6 +555,30 @@ await gc.notify({
 * The activity log and the fallback e-mail never contain the picture (nor
   its URL). The Windows apps may ignore it.
 
+**From the plugin's media** (since 1.178.0): a plugin declaring `media` (see
+"Media") can name one of its own stored files instead of sending the bytes —
+on any topic, chat topics included:
+
+```js
+await gc.notify({ topic: 'message', /* … */ image: { mediaId: thumbId } });  // 32 hex characters, nothing else in `image`
+```
+
+* The host reads the file and treats it exactly like a sent picture: same
+  checks (stored type `image/png|jpeg|webp`, ≤ 300 KB, 32…2560 px a side, no
+  animation, the stored type must match the bytes), copied into
+  `notify_media`, the apps get the same `imageUrl` (`/notify-media/<id>.<ext>`,
+  no login, lives as long as the push). Later deleting the media file does not
+  remove the picture of a push already sent, nor does the push keep the media
+  file alive. `mediaAccess` is not asked: the plugin chooses the recipients.
+* Meant for the small preview the apps upload next to a photo ("Media": ≤ 64
+  KB) — a full photo is usually over 300 KB. Check `gc.media.info(id)` (`mime`,
+  `bytes`) first if unsure.
+* Errors: `ERR_MEDIA_DENIED` (no `media` in plugin.json), `ERR_INVALID`
+  ("invalid image: invalid media id" | "unknown media id" — another plugin's
+  file is unknown too — | "mediaId cannot be combined with data or mime" |
+  "mime" | "too_large" | "media file unreadable" | the reasons of a sent
+  picture); nothing is pushed and no budget is used.
+
 ### Quick actions as notification buttons (`quick_action`)
 
 A push may offer one of the plugin's **own** quick actions (see "Quick
@@ -607,7 +632,8 @@ const { pushed, id, skipped } = await gc.notify({
     { type: 'reply', label: 'Antworten', path: 'conversations/12/messages' },
     { type: 'mark_read', label: 'Gelesen', path: 'conversations/12/read', body: { upTo: 4711 } },
   ] },
-  // optional as usual: collapseKey (default 'chat:<conversation.id>' — one notification per chat), ttl, image
+  // optional as usual: collapseKey (default 'chat:<conversation.id>' — one notification per chat), ttl,
+  // image ({ data, mime } or { mediaId } of a picture preview, see "Pictures")
 });
 ```
 
@@ -645,7 +671,11 @@ const { pushed, id, skipped } = await gc.notify({
   with a realtime event (see "Realtime events").
 * The per-person "Inhalt in Benachrichtigung" switch (preview) is the
   plugin's own preference: without preview it sends a neutral title and an
-  empty body.
+  empty body — and no `image`.
+* **Picture preview**: a message with a photo may carry `image: { mediaId:
+  <the photo's preview file> }` (see "Pictures"); the apps get it as
+  `imageUrl` in the payload (Android: `MessagingStyle.Message.setData`) and
+  fetch it without login. Older apps ignore it.
 * Push needs the licence feature `email_alerts` like every plugin push.
 
 ## Media (plugin.json `media`)
@@ -698,7 +728,13 @@ it in its own data. Code: `src/services/plugins/media.js`.
 * **Frames** of a plugin with `media` get `img-src` and `media-src`
   `<origin>/plugin-media/` in their CSP, and the `<iframe>` gets
   `allow="microphone *"` — voice recording (`MediaRecorder`, Opus) works in
-  the portal and on the admin page.
+  the portal and on the admin page. Since 1.178.0 their sandbox (the CSP
+  `sandbox` directive and the `<iframe sandbox>` of the portal tab, the
+  portal sections and the admin page alike) also has `allow-downloads`: a
+  link to a `/plugin-media/<token>` URL of a document (answered as
+  `Content-Disposition: attachment`) downloads the file instead of being
+  dropped silently. Nothing else of the sandbox changes; plugins without
+  `media` keep the sandbox as it was.
 * **At rest**: `<data>/plugin-media/<plugin>/<id[0..2]>/<id>`, encrypted with
   AES-256-GCM in 64 KiB chunks (each chunk authenticated with its index and a
   "last" flag), with a random key per file; that key is stored in the core
@@ -750,16 +786,37 @@ install dialogs: "Dienste anderer Plugins: darf nutzen: …" / "Eigene Dienste:
 bietet anderen Plugins an: …"):
 
 ```js
-// caller (permissions.services: ["gatecontrol-messenger:send_message"])
-const res = await gc.services.call({ plugin: 'gatecontrol-messenger', service: 'send_message', userId: 12,
-  payload: { to: { group: 'familie' }, text: 'Tim ist zu Hause' } });
+// caller (permissions.services: ["gatecontrol-messenger:sync_group", "gatecontrol-messenger:send_message"])
+if (await gc.services.available('gatecontrol-messenger', 'send_message')) {
+  await gc.services.call({ plugin: 'gatecontrol-messenger', service: 'sync_group',
+    payload: { key: 'family', title: 'Familie', userIds: [12, 15, 17] } });
+  const res = await gc.services.call({ plugin: 'gatecontrol-messenger', service: 'send_message', userId: 12,
+    payload: { conversation: 'family', text: 'Tim ist zu Hause' } });   // or 'user:<id>', 'group:<id>'; title? for a notice channel
+  // res: { ok: true, conversationId: 12, messageId: 4711 } — or { ok: false, code: 'invalid' | 'not_found' | 'forbidden' }
+}
 
 // provider (services.provides.send_message)
 async service({ name, caller, user, payload }, gc) {
   // name 'send_message', caller 'gatecontrol-familie', user { id, name, role } | null
-  return { ok: true, messageId: 4711 };
+  return { ok: true, conversationId: 12, messageId: 4711 };
 }
 ```
+
+The payloads above are the messenger's (its README, "Services"); each
+provider documents its own.
+
+* **`gc.services.available(plugin, service)`** (since 1.178.0; also
+  `available({ plugin, service })`) → `true` | `false`: would a call reach the
+  provider right now — the caller lists `"<plugin>:<service>"` in
+  `permissions.services`, it is not the caller itself, and the provider is
+  installed, may run (enabled, compatible, signed or allowed, licensed), is
+  running and declares the service in `services.provides`. It asks nobody:
+  the provider's hook is not run, it does not count towards the 60 calls per
+  hour, no activity row. Only a malformed plugin id or service name throws
+  (`ERR_INVALID`). A `true` is a snapshot — `call()` can still fail
+  (`ERR_SERVICE_UNAVAILABLE` when the provider stopped meanwhile, the
+  provider's own refusal), so handle its errors anyway. Use it to hide a
+  feature (a "Familie im Messenger" switch) when the messenger is not there.
 
 * The provider must be usable (installed, may run, running) and declare the
   service; the caller must list exactly `"<plugin>:<service>"`. `userId`
@@ -769,7 +826,7 @@ async service({ name, caller, user, payload }, gc) {
 * `payload` and the answer: JSON ≤ 16 KB each; 15 s; **60 calls per hour**
   and calling plugin; an activity row `plugin_service` per call (ids and ok
   only, never the payload).
-* Errors: `ERR_SERVICES_DENIED` (not listed), `ERR_SERVICE_UNAVAILABLE`
+* Errors of `call()`: `ERR_SERVICES_DENIED` (not listed), `ERR_SERVICE_UNAVAILABLE`
   (provider not installed / not running / no such service), `ERR_INVALID`
   (bad ids, user, payload over 16 KB, the caller's own plugin),
   `ERR_RATE_LIMIT`, `ERR_TIMEOUT`, `ERR_SERVICE_FAILED` (the hook threw — its
@@ -840,7 +897,8 @@ disable/uninstall and when the server shuts down.
   allow-scripts allow-forms; connect-src 'none'; form-action 'none'; …` and
   shown in an `<iframe sandbox="allow-scripts allow-forms">` (no
   `allow-same-origin`): an opaque origin without cookies, storage or access to
-  the page, even when the URL is opened directly. The frame talks to its
+  the page, even when the URL is opened directly (a plugin declaring `media`
+  adds `allow-downloads` to both, see "Media"). The frame talks to its
   plugin's API through the parent page (`window.GC.call()` inside the frame →
   `postMessage` → `public/js/plugin-bridge.js`, which only accepts messages of
   that frame and only calls that plugin's API base with the user's session and

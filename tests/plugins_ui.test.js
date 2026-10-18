@@ -112,7 +112,7 @@ describe('sidebar, plugin page, frame', () => {
     assert.deepEqual(plugins.portalTabs('en'), [{ id: 'hello', key: 'plg-hello', label: 'Hello', icon: 'M4 12h16' }]);
     const tpl = fs.readFileSync(path.join(__dirname, '..', 'templates', 'portal', 'portal.njk'), 'utf8');
     // popups only for ui.maps plugins (docs/plugins.md "Maps")
-    assert.match(tpl, /src="\/portal\/plugins\/\{\{ pt\.id \}\}\/frame" sandbox="allow-scripts allow-forms\{% if pt\.maps %\} allow-popups allow-popups-to-escape-sandbox\{% endif %\}"/);
+    assert.match(tpl, /src="\/portal\/plugins\/\{\{ pt\.id \}\}\/frame" sandbox="allow-scripts allow-forms\{% if pt\.maps %\} allow-popups allow-popups-to-escape-sandbox\{% endif %\}\{% if pt\.media %\} allow-downloads\{% endif %\}"/);
   });
 });
 

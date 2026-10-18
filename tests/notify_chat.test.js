@@ -25,10 +25,10 @@ const TOPICS = [
   { id: 'news', label: 'Neuigkeiten' },
 ];
 
-function fakePlugin(id, { app: withApp = true, topics = TOPICS } = {}) {
+function fakePlugin(id, { app: withApp = true, topics = TOPICS, media = null } = {}) {
   const raw = {
     id, name: { de: 'Chats', en: 'Chats' }, version: '1.0.0', publisher: 'Test', gatecontrol: '>=1.0.0', entry: 'server/index.js',
-    permissions: { notify: true, ...(withApp ? { app: true } : {}) }, notifyTopics: topics,
+    permissions: { notify: true, ...(withApp ? { app: true } : {}) }, notifyTopics: topics, ...(media ? { media } : {}),
   };
   const v = manifest.validate(raw);
   assert.ok(v.ok, JSON.stringify(v.errors));
@@ -218,6 +218,69 @@ describe('gc.notify on a chat topic', () => {
     assert.equal(await code(p, msg({ users: [ben] })), 'ERR_RATE_LIMIT');
     // the budget of the normal topics is a different one
     await call(p, { topic: 'news', title: 'still', users: [ben] });
+  });
+});
+
+describe('push picture from the plugin\'s media (image: { mediaId })', () => {
+  const { Readable } = require('node:stream');
+  const MEDIA = { maxBytes: 1024 * 1024, types: ['image/png', 'image/jpeg', 'application/pdf'], quotaDefault: '10MB' };
+  const URL_RE = /^\/notify-media\/[A-Za-z0-9_-]{22,64}\.png$/;
+  // a PNG header the server accepts (only the header is parsed)
+  function png(w, h = w, pad = 0) {
+    const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); return Buffer.concat([len, Buffer.from(type, 'latin1'), data, Buffer.alloc(4)]); };
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+    return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', Buffer.alloc(16 + pad, 7)), chunk('IEND', Buffer.alloc(0))]);
+  }
+  async function upload(p, buf, mime) {
+    const req = Readable.from([buf]);
+    req.headers = { 'content-type': mime, 'content-length': String(buf.length) };
+    return (await require('../src/services/plugins/media').store(p, anna, req)).mediaId;
+  }
+
+  it('a chat push with the plugin\'s own picture: copied into notify_media, imageUrl in the payload — the bytes as stored', async () => {
+    const p = fakePlugin('chat-pic', { media: MEDIA });
+    const pic = png(320, 240);
+    const id = await upload(p, pic, 'image/png');
+    const r = await call(p, msg({ image: { mediaId: id } }));
+    assert.equal(r.pushed, true);
+    const n = H.lastNotification();
+    assert.match(n.image_url, URL_RE);
+    const payload = store.payload(store.deliveryRow(H.deliveries(n.id)[0].seq));
+    assert.equal(payload.kind, 'message');
+    assert.equal(payload.imageUrl, n.image_url);
+    const file = require('../src/services/notify/media').getFile(n.image_url.split('/').pop());
+    assert.equal(file.mime, 'image/png');
+    assert.deepEqual(Buffer.from(file.data), pic);
+    // a normal topic takes it too
+    await call(p, { topic: 'news', title: 'Neu', users: [ben], image: { mediaId: id } });
+    assert.match(H.lastNotification().image_url, URL_RE);
+  });
+
+  it('refusals: no media declared, bad or unknown id, combined with data, not a picture, too large, bad picture', async () => {
+    const p = fakePlugin('chat-pic2', { media: MEDIA });
+    const before = H.db().prepare('SELECT COUNT(*) AS n FROM notifications').get().n;
+    const reason = async (n) => { try { await call(p, n); return null; } catch (e) { return `${e.code} ${e.message}`; } };
+    const ok = await upload(p, png(64), 'image/png');
+    assert.equal(await reason(msg({ image: { mediaId: 'nope' } })), 'ERR_INVALID invalid image: invalid media id');
+    assert.equal(await reason(msg({ image: { mediaId: 'a'.repeat(32) } })), 'ERR_INVALID invalid image: unknown media id');
+    assert.equal(await reason(msg({ image: { mediaId: ok, mime: 'image/png' } })), 'ERR_INVALID invalid image: mediaId cannot be combined with data or mime');
+    const pdf = await upload(p, Buffer.from('%PDF-1.4 hello'), 'application/pdf');
+    assert.equal(await reason(msg({ image: { mediaId: pdf } })), 'ERR_INVALID invalid image: mime');
+    const big = await upload(p, png(64, 64, 310 * 1024), 'image/png');
+    assert.equal(await reason(msg({ image: { mediaId: big } })), 'ERR_INVALID invalid image: too_large');
+    const tiny = await upload(p, png(16), 'image/png');
+    assert.equal(await reason(msg({ image: { mediaId: tiny } })), 'ERR_INVALID invalid image: too_small');
+    const fake = await upload(p, png(64), 'image/jpeg'); // declared jpeg, a PNG inside
+    assert.equal(await reason(msg({ image: { mediaId: fake } })), 'ERR_INVALID invalid image: mime_mismatch');
+    // another plugin's file is unknown here
+    const other = fakePlugin('chat-pic3', { media: MEDIA });
+    assert.equal(await reason({ ...msg(), image: { mediaId: await upload(other, png(64), 'image/png') } }), 'ERR_INVALID invalid image: unknown media id');
+    // without `media` in plugin.json
+    const plain = fakePlugin('chat-pic4');
+    await assert.rejects(() => call(plain, msg({ image: { mediaId: ok } })), (e) => e.code === 'ERR_MEDIA_DENIED');
+    assert.equal(H.db().prepare('SELECT COUNT(*) AS n FROM notifications').get().n, before, 'nothing pushed');
+    assert.ok(H.db().prepare('SELECT 1 FROM plugin_media WHERE id = ?').get(ok), 'the media file itself is untouched');
   });
 });
 

@@ -235,7 +235,7 @@ function makeGc(info) {
       list: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('actions.list', { userId: o.userId, lang: o.lang }); },
       run: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('actions.run', { userId: o.userId, plugin: o.plugin, id: o.id, lang: o.lang, state: o.state }); },
     }),
-    /** notify(message, { severity }) or notify({ topic, title, body, priority, users, collapseKey, ttl, data, image }) */
+    /** notify(message, { severity }) or notify({ topic, title, body, priority, users, collapseKey, ttl, data, image }) — image { data, mime } or { mediaId } */
     notify: (message, opts) => (message && typeof message === 'object' && !Array.isArray(message)
       ? hostCall('notify', { notification: message })
       : hostCall('notify', { message: String(message), opts: opts || {} })),
@@ -257,9 +257,17 @@ function makeGc(info) {
     events: Object.freeze({
       emit: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('events.emit', { users: o.users, type: o.type, data: o.data }); },
     }),
-    /** permissions.services: call({ plugin, service, userId, payload }) → the providing plugin's answer */
+    /**
+     * permissions.services: call({ plugin, service, userId, payload }) → the providing plugin's answer;
+     * available(plugin, service) (or ({ plugin, service })) → boolean: would call() reach the provider
+     * now — not run, not counted in the budget
+     */
     services: Object.freeze({
       call: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('services.call', { plugin: o.plugin, service: o.service, userId: o.userId, payload: o.payload }); },
+      available: (pluginId, service) => {
+        const o = pluginId && typeof pluginId === 'object' ? pluginId : { plugin: pluginId, service };
+        return hostCall('services.available', { plugin: o.plugin, service: o.service });
+      },
     }),
   });
 }

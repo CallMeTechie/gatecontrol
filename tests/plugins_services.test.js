@@ -176,3 +176,58 @@ describe('gc.services.call', () => {
     assert.equal(runtime.info('hello-bare').state, 'running');
   });
 });
+
+describe('gc.services.available', () => {
+  const avail = (id, body) => agent.post(`${API}/${id}/api/service-available`).set('X-CSRF-Token', csrf).send(body);
+  const serviceRows = () => H.db().prepare("SELECT COUNT(*) AS n FROM activity_log WHERE event_type = 'plugin_service'").get().n;
+
+  it('true for a listed, provided service of a running provider — positional or object form, through the plugin process', async () => {
+    assert.equal((await avail('hello-call', { plugin: 'hello-prov', service: 'send_message' }).expect(200)).body.result, true);
+    assert.equal((await avail('hello-call', { plugin: 'hello-prov', service: 'send_message', object: true }).expect(200)).body.result, true);
+  });
+
+  it('false when not listed, not provided, not installed, or the caller itself', async () => {
+    const caller = registry.get('hello-call');
+    const ask = (plugin, service, who = caller) => hostApi.handle(who, 'services.available', { plugin, service });
+    assert.equal(await ask('hello-prov', 'sync_group'), false, 'provided, but not listed by the caller');
+    assert.equal(await ask('hello-prov', 'send_message', registry.get('hello-other')), false, 'no permissions.services');
+    assert.equal(await ask('hello-prov', 'nope'), false, 'listed, not provided');
+    assert.equal(await ask('hello-gone', 'send_message'), false, 'not installed');
+    const self = { ...caller, manifest: { ...caller.manifest, permissions: { ...caller.manifest.permissions, services: ['hello-call:send_message'] } } };
+    assert.equal(await ask('hello-call', 'send_message', self), false, 'its own plugin');
+  });
+
+  it('malformed plugin id or service name → ERR_INVALID', async () => {
+    let r = await avail('hello-call', { plugin: 'Hello', service: 'send_message' }).expect(400);
+    assert.equal(r.body.code, 'ERR_INVALID');
+    r = await avail('hello-call', { plugin: 'hello-prov', service: 'Send' }).expect(400);
+    assert.equal(r.body.code, 'ERR_INVALID');
+    r = await avail('hello-call', {}).expect(400);
+    assert.equal(r.body.code, 'ERR_INVALID');
+  });
+
+  it('a disabled or stopped provider is not available', async () => {
+    await agent.post(`${API}/hello-prov/disable`).set('X-CSRF-Token', csrf).expect(200);
+    try {
+      assert.equal((await avail('hello-call', { plugin: 'hello-prov', service: 'send_message' }).expect(200)).body.result, false);
+    } finally {
+      await agent.post(`${API}/hello-prov/enable`).set('X-CSRF-Token', csrf).expect(200);
+      assert.equal(await runtime.waitRunning('hello-prov'), true);
+    }
+    assert.equal((await avail('hello-call', { plugin: 'hello-prov', service: 'send_message' }).expect(200)).body.result, true);
+  });
+
+  it('never runs the provider, never counts against the budget, no activity row', async () => {
+    const caller = registry.get('hello-call');
+    await kv('hello-prov', 'service-last', null);
+    const rows = serviceRows();
+    for (let i = 0; i < hostApi.SERVICES_PER_HOUR + 5; i++) assert.equal(await hostApi.handle(caller, 'services.available', { plugin: 'hello-prov', service: 'send_message' }), true);
+    assert.equal(await kvGet('hello-prov', 'service-last'), null, 'the hook did not run');
+    assert.equal(serviceRows(), rows, 'no plugin_service row');
+    // the full budget is still there
+    for (let i = 0; i < hostApi.SERVICES_PER_HOUR; i++) await hostApi.handle(caller, 'services.call', { plugin: 'hello-prov', service: 'send_message', payload: i });
+    await assert.rejects(() => hostApi.handle(caller, 'services.call', { plugin: 'hello-prov', service: 'send_message' }), (e) => e.code === 'ERR_RATE_LIMIT');
+    // …and over budget, available still answers (it is not a call)
+    assert.equal(await hostApi.handle(caller, 'services.available', { plugin: 'hello-prov', service: 'send_message' }), true);
+  });
+});
