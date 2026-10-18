@@ -247,7 +247,7 @@ function validate(raw, opts = {}) {
 
   // ui
   const u = raw.ui == null ? {} : raw.ui;
-  const ui = { nav: null, pages: [], settings: [], portal: null, app: null, maps: false };
+  const ui = { nav: null, pages: [], settings: [], portal: null, app: null, maps: false, geolocation: false, inbox: false };
   if (!u || typeof u !== 'object' || Array.isArray(u)) err('ui: invalid');
   else {
     if (u.nav != null) {
@@ -324,6 +324,19 @@ function validate(raw, opts = {}) {
       // OpenStreetMap tiles + the host's Leaflet in the plugin's frames (frame.js)
       if (typeof u.maps !== 'boolean') err('ui.maps: invalid');
       else ui.maps = u.maps;
+    }
+    if (u.geolocation != null) {
+      // the browser's location in the plugin's frames: <iframe allow="geolocation *"> (frame.js);
+      // the browser still asks the person, the frame gets nothing else
+      if (typeof u.geolocation !== 'boolean') err('ui.geolocation: invalid');
+      else ui.geolocation = u.geolocation;
+    }
+    if (u.inbox != null) {
+      // the viewer's own notification inbox in the portal frames: unread count and the newest
+      // title (window.GC.inbox, frame.js / plugin-bridge.js) — only together with a portal UI
+      if (typeof u.inbox !== 'boolean') err('ui.inbox: invalid');
+      else if (u.inbox && !ui.portal) err('ui.inbox: needs ui.portal');
+      else ui.inbox = u.inbox;
     }
   }
   m.ui = ui;

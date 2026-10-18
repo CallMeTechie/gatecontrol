@@ -493,6 +493,13 @@ In der `plugin.json` kommt ein neuer, optionaler Block hinzu:
       sichtbar ist, und sofort beim Zurückkehren; kein Stream aus dem Portal.
     * Die Apps springen mit dem Portal-Link (`next`, siehe Vertrag) direkt
       auf `#mitteilungen` oder `#benachrichtigungen`.
+    * Plugin-Rahmen mit `ui.inbox` (ab 1.179.0, z. B. der angeheftete Eintrag
+      „GateControl“ im Chat-Tab des Messengers): `portal.js` meldet den Stand
+      der Glocke als DOM-Ereignis `gc:inbox` (Zahl ungelesen, Titel, Zeit und
+      Priorität der neuesten Mitteilung), `plugin-bridge.js` reicht nur das an
+      `window.GC.inbox` weiter; `GC.inbox.open()` öffnet `#mitteilungen`. Kein
+      Text, keine Daten, nur das eigene Postfach, nichts änderbar
+      (docs/plugins.md „User interface“).
 * **Dokumentation:**
   * `docs/plugins.md` (neue `gc.notify`-Form, `notifyTopics`).
   * Dieses Dokument wird zur Feature-Doku.

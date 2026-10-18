@@ -100,6 +100,8 @@
     if (perm.kiosk) rows.push({ label: t('plugins.perm.kiosk'), value: t('plugins.perm.kiosk_on') });
     if (perm.actions) rows.push({ label: t('plugins.perm.actions'), value: t('plugins.perm.actions_on') });
     if (perm.maps) rows.push({ label: t('plugins.perm.maps'), value: t('plugins.perm.maps_on') });
+    if (perm.geolocation) rows.push({ label: t('plugins.perm.geolocation'), value: t('plugins.perm.geolocation_on') });
+    if (perm.inbox) rows.push({ label: t('plugins.perm.inbox'), value: t('plugins.perm.inbox_on') });
     if (perm.background) rows.push({ label: t('plugins.perm.background'), value: t('plugins.perm.background_v', { s: perm.background }) });
     if (perm.notify) {
       rows.push({ label: t('plugins.perm.notify'), value: t('plugins.perm.notify_on') + (perm.notifyPerHour ? ' · ' + t('plugins.perm.notify_rate', { n: perm.notifyPerHour }) : '') });

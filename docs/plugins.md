@@ -204,7 +204,9 @@ unsigned build of the same id.
       "sections": [{ "id": "smarthome", "tab": "home", "title": { "de": "Smart Home", "en": "Smart Home" }, "order": 20 }]
     },
     "app": { "label": { "de": "Smart Home", "en": "Smart Home" }, "icon": "<svg path d>" },
-    "maps": true
+    "maps": true,
+    "geolocation": true,
+    "inbox": true
   },
   "license": { "required": true, "server": "https://licenses.example.com/check" },
   "migrations": "migrations",
@@ -242,6 +244,19 @@ unsigned build of the same id.
   See "App".
 * `ui.maps` (boolean): OpenStreetMap tiles and the host's Leaflet in the
   plugin's frames. See "Maps".
+* `ui.geolocation` (boolean, since 1.179.0): the plugin's frames may ask for
+  the browser's location — the `<iframe>` gets `allow="geolocation *"` (next
+  to `microphone *` of a `media` plugin), so `navigator.geolocation` works in
+  the sandboxed frame; the browser still asks the person. Nothing else of the
+  frame changes. The install dialog shows "Standort: darf in seinen Seiten
+  nach dem Standort des Browsers fragen …". Errors `ui.geolocation: invalid`.
+* `ui.inbox` (boolean, since 1.179.0, needs `ui.portal` — else `ui.inbox:
+  needs ui.portal`): the plugin's portal frames may show the viewer's own
+  notification inbox as an entry (`window.GC.inbox`, see "User interface"):
+  the unread count and the newest item's title, time and priority, and a call
+  that opens the portal's inbox. The install dialog shows "Postfach: sieht im
+  Portal, wie viele Mitteilungen … ungelesen sind …". Errors `ui.inbox:
+  invalid`.
 * `permissions.kiosk` (boolean): the plugin may mark users as kiosk users
   (`gc.kiosk.allow`) — those users can get kiosk devices (wall tablets that
   stay signed in to the portal for 90 days, see "Kiosk devices" below and
@@ -975,6 +990,26 @@ disable/uninstall and when the server shuts down.
   shown through `gc.media.url` URLs, microphone allowed — see "Media".
 * **Live updates** (`permissions.events`): `window.GC.on('event', fn)` /
   `GC.off` — see "Realtime events".
+* **Location** (`ui.geolocation`, since 1.179.0): the frame's `<iframe>` has
+  `allow="geolocation *"`, so `navigator.geolocation.getCurrentPosition()`
+  works after the person agrees in the browser (asked for GateControl's
+  origin; the frame needs a secure context, i.e. GateControl on HTTPS). Check
+  `document.featurePolicy.allowsFeature('geolocation')` where the browser has
+  it, and always handle the error callback — an older GateControl, a browser
+  that refuses sandboxed frames or a "no" from the person all end there.
+* **Inbox** (`ui.inbox`, portal frames only, since 1.179.0):
+  `window.GC.inbox.on(fn)` calls `fn({ available, unread, latest })` with the
+  viewer's own inbox — `latest` = `{ title, createdAt, priority }` of the
+  newest notification or null — first when subscribing and again whenever the
+  portal's bell changes (it polls every minute); `GC.inbox.off(fn)` stops,
+  `GC.inbox.open()` shows the portal's inbox (`#mitteilungen`). This is the
+  portal page's own state handed on by `plugin-bridge.js` (DOM events
+  `gc:inbox`, `gc:inbox-request`, `gc:inbox-open` between `portal.js` and the
+  bridge): never bodies, data or ids of notifications, never another person's
+  inbox, nothing to change (reading happens in the portal's inbox).
+  `available: false` without the flag, on the admin pages and in a portal
+  without the notification center — hide the entry then. `GC.inbox` is
+  missing on GateControl before 1.179.0: feature-detect it.
 * Sandboxed frames have no `alert`/`confirm`/`prompt` (no `allow-modals`):
   plugins draw their own dialogs. The frame grows with its content and with
   an open dialog (visible `position: fixed` elements count with their full
