@@ -354,6 +354,21 @@ async function list(user, lang, opts = {}) {
   return lists.flat();
 }
 
+/**
+ * Quick actions of ONE plugin for one viewer (gc.actions.get): only that
+ * plugin's hook is asked; [] when it is not eligible, fails or answers garbage.
+ * @returns {Promise<object[]>} the same entries as list()
+ */
+async function listOf(pluginId, user, lang) {
+  const p = pluginById(pluginId);
+  if (!p) return [];
+  const l = lang2(lang);
+  let out;
+  try { out = await runtime.call(p.id, 'quickActions', { user, lang: l }, HOOK_MS); } catch { return []; }
+  const pluginName = loc(p.manifest.name, l) || p.name;
+  return sanitizeList(out).map((a) => ({ plugin: p.id, pluginName, ...a }));
+}
+
 const VIA_PERSON = new Set(['app', 'notification']);
 
 /**
@@ -435,6 +450,6 @@ function _setRunTimeoutForTest(ms) {
 }
 
 module.exports = {
-  list, run, sanitize, sanitizeWidget, sanitizeDevice, sanitizeLook, sanitizeVerbs, sanitizeReading, sanitizeReadings, sanitizeValueRow, sanitizeBadge,
+  list, listOf, run, sanitize, sanitizeWidget, sanitizeDevice, sanitizeLook, sanitizeVerbs, sanitizeReading, sanitizeReadings, sanitizeValueRow, sanitizeBadge,
   HOOK_MS, MAX_READINGS, TONES, RUN_MS, MAX_ACTIONS, MAX_CONTROLS, ACTION_ID_RE, CONTROL_ID_RE, DEVICE_ID_RE, VIA_PERSON, TOGGLE_STATES, MAX_VERB, BADGE_STATES, _setRunTimeoutForTest,
 };

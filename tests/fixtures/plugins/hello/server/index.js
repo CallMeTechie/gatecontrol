@@ -106,10 +106,13 @@ module.exports = {
           return { json: { ok: true, users: await gc.kiosk.list() } };
         } catch (e) { return { status: 400, json: { ok: false, code: e.code || null } }; }
       case '/actions':
-        // gc.actions.list / run (permissions.actions, tests/plugins_actions.test.js); the body is passed on as is
+        // gc.actions.list / get / run (permissions.actions, tests/plugins_actions.test.js); the body is passed on as is
         try {
           const b = req.body || {};
-          const result = b.op === 'run' ? await gc.actions.run(b.opts) : await gc.actions.list(b.opts);
+          let result;
+          if (b.op === 'run') result = await gc.actions.run(b.opts);
+          else if (b.op === 'get') result = await gc.actions.get(b.opts);
+          else result = await gc.actions.list(b.opts);
           return { json: { ok: true, result } };
         } catch (e) { return { status: 400, json: { ok: false, code: e.code || null, error: e.message } }; }
       case '/license':
@@ -269,6 +272,17 @@ module.exports = {
     if (mode === 'slow') await new Promise((r) => setTimeout(r, 2000));
     if (mode === 'big') return { blob: 'x'.repeat(17 * 1024) };
     return { ok: true, name: payload.name, caller: payload.caller, echo: payload.payload };
+  },
+
+  // callback buttons of its pushes (tests/notify_callbacks.test.js): every call
+  // is appended to kv "notify-actions"; "notify-action-mode" throw / slow
+  async notifyAction(payload, gc) {
+    const mode = await gc.storage.get('notify-action-mode');
+    if (mode === 'slow') await new Promise((r) => setTimeout(r, 2000));
+    const calls = (await gc.storage.get('notify-actions')) || [];
+    calls.push(payload);
+    await gc.storage.set('notify-actions', calls);
+    if (mode === 'throw') throw new Error('broken on purpose');
   },
 
   // built-in data handed over by the host (tests/plugins_legacy.test.js)

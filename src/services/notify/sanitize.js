@@ -50,6 +50,23 @@ function quickAction(a, opts) {
   return out;
 }
 
+// callback: a button whose press reaches the sending plugin's notifyAction
+// hook (docs/plugins.md "Callback buttons", services/plugins/notifyActions.js)
+const CALLBACK_ID_RE = /^[a-z0-9_-]{1,32}$/;
+
+/**
+ * A callback button of a plugin push → { id, label, type: 'callback' } or
+ * null. Only in a push of a plugin (`opts.plugin`), never in a core or
+ * administrator message. The app answers it with an ack naming the id.
+ */
+function callback(a, opts) {
+  if (!opts || typeof opts.plugin !== 'string') return null;
+  if (typeof a.id !== 'string' || !CALLBACK_ID_RE.test(a.id)) return null;
+  const label = line(a.label, LIMITS.quickActionLabel);
+  if (!label) return null;
+  return { id: a.id, label, type: 'callback' };
+}
+
 // reply / mark_read: a path of the sending plugin's own client API
 // (POST /api/v1/client/plugins/<plugin>/api/<path>), relative, no '..'
 const PLUGIN_PATH_RE = /^[A-Za-z0-9._~!$&'()*+,;=:@%/-]{1,300}$/;
@@ -88,13 +105,15 @@ function chatAction(a, opts) {
 
 /**
  * One action → clean action or null (unknown type, bad target). opts.plugin:
- * the id of the plugin sending the message (allows its own quick_action);
+ * the id of the plugin sending the message (allows its own quick_action and
+ * callback buttons);
  * opts.chat: a chat topic of that plugin (allows reply / mark_read).
  */
 function action(a, opts = null) {
   if (!a || typeof a !== 'object' || Array.isArray(a)) return null;
   const type = String(a.type || '');
   if (type === 'quick_action') return quickAction(a, opts);
+  if (type === 'callback') return callback(a, opts);
   if (CHAT_ACTIONS.has(type)) return chatAction(a, opts);
   if (!ACTION_TYPES.has(type)) return null;
   const id = line(a.id || type, 40);
@@ -186,4 +205,4 @@ function collapseKey(v) {
   return /^[A-Za-z0-9_.:@/-]{1,120}$/.test(s) ? s : null;
 }
 
-module.exports = { line, text, title, body, data, action, facts, portalPath, pluginPath, collapseKey, CHAT_ACTIONS, CHAT_BODY_BYTES };
+module.exports = { line, text, title, body, data, action, facts, portalPath, pluginPath, collapseKey, CHAT_ACTIONS, CHAT_BODY_BYTES, CALLBACK_ID_RE };

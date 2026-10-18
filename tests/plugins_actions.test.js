@@ -8,7 +8,8 @@
 // calling plugin, an activity row per run naming the user and the caller.
 // Since 1.180.0 also the shape of the messenger's home actions: actionId
 // '<plugin>/<id>', label, needsConfirm, run({ actionId, params, via }) →
-// { ok, result?, code? }.
+// { ok, result?, code? }. Since 1.181.0 list({ withWidget }) and
+// get({ userId, actionId, withWidget }) — the device values a rule compares.
 
 const crypto = require('node:crypto');
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
@@ -510,5 +511,91 @@ describe('interactive runs (since 1.180.0): permissions.actions { interactive: t
     await refused('run', { userId: anna, actionId: 'hello/door:open', interactive: true }, 'ERR_ACTIONS_DENIED', 'hello');
     assert.equal(await kvGet('hello', 'quick-last'), null, 'never ran');
     assert.equal(activityCount(), before);
+  });
+});
+
+describe('device values (since 1.181.0): list({ withWidget }) and get({ userId, actionId, withWidget })', () => {
+  const WIDGET = {
+    label: 'Innen', value: 21.5, unit: '°C', status: 'Heizt', state: 'good', power: false,
+    readings: [{ id: 'outdoor', label: 'Außen', value: 12, unit: '°C', icon: 'M4 12h16', state: 'warn' }, { id: 'bad id', label: 'x', value: 1 }],
+    controls: [{ id: 'target', kind: 'stepper', label: 'Soll', value: 21, min: 16, max: 28, step: 0.5, unit: '°C' }],
+    badge: { icon: 'M4 12h16', value: '32', unit: '%', label: 'Akku', state: 'warn' },
+  };
+  const VIEW = {
+    value: 21.5, unit: '°C', label: 'Innen',
+    badge: { value: '32', unit: '%', label: 'Akku', state: 'warn' },
+    readings: [{ id: 'outdoor', label: 'Außen', value: 12, unit: '°C' }],
+    state: 'good', status: 'Heizt',
+  };
+  before(async () => {
+    await kv('hello-two', 'quick-actions', [
+      { id: 'klima:1', title: 'Wohnzimmer', kind: 'toggle', state: 'on', widget: WIDGET },
+      { id: 'scene:evening', title: 'Abend' },
+      { id: 'broken', title: 'Kaputt', widget: { controls: 'nope' } },
+    ]);
+  });
+  after(async () => {
+    await kv('hello-two', 'quick-actions', [{ id: 'scene:evening', title: 'Abend' }, { id: 'viewer', title: '$viewer' }]);
+    await kv('hello', 'quick-mode', null);
+  });
+
+  it('list({ withWidget: true }) adds the sanitised widget values (no controls, icons, power) — null without a valid widget', async () => {
+    const all = await listOk({ userId: anna, withWidget: true });
+    const by = (id) => all.find((a) => a.actionId === id);
+    assert.deepEqual(by('hello-two/klima:1').widget, VIEW);
+    assert.equal(by('hello-two/scene:evening').widget, null);
+    assert.equal(by('hello-two/broken').widget, null, 'an invalid widget is null, the action stays');
+    assert.ok(all.every((a) => 'widget' in a));
+    for (const withWidget of [undefined, null, false]) {
+      const plain = await listOk({ userId: anna, withWidget });
+      assert.ok(plain.length && plain.every((a) => !('widget' in a)), String(withWidget));
+    }
+  });
+
+  it('get → exactly the list entry for that user, or null (not offered, unknown plugin, unlicensed)', async () => {
+    const listed = (await listOk({ userId: anna, withWidget: true })).find((a) => a.actionId === 'hello-two/klima:1');
+    const r = await call('get', { userId: anna, actionId: 'hello-two/klima:1', withWidget: true });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body.result, listed);
+    const plain = (await call('get', { userId: anna, actionId: 'hello-two/klima:1' })).body.result;
+    assert.ok(!('widget' in plain));
+    assert.equal(plain.state, 'on');
+    // the older form plugin + id works like for run
+    assert.deepEqual((await call('get', { userId: anna, plugin: 'hello-two', id: 'klima:1', withWidget: true })).body.result, listed);
+    for (const actionId of ['hello-two/nope', 'nope/klima:1', 'hello-np/np']) {
+      const x = await call('get', { userId: anna, actionId, withWidget: true });
+      assert.equal(x.status, 200, actionId);
+      assert.equal(x.body.result, null, actionId);
+    }
+    const licensing = require('../src/services/plugins/licensing');
+    const realStatus = licensing.status;
+    licensing.status = (p) => (p && p.id === 'hello-two' ? { required: true, licensed: false, state: 'missing', expiresAt: null } : realStatus(p));
+    try {
+      assert.equal((await call('get', { userId: anna, actionId: 'hello-two/klima:1' })).body.result, null);
+    } finally { licensing.status = realStatus; }
+  });
+
+  it('get asks only the named plugin (a slow other plugin does not delay it) and runs nothing', async () => {
+    await kv('hello', 'quick-mode', 'slow');
+    await kv('hello-two', 'quick-last', null);
+    const before = activityCount();
+    const t0 = Date.now();
+    const r = await call('get', { userId: anna, actionId: 'hello-two/scene:evening' });
+    assert.equal(r.body.result.id, 'scene:evening');
+    assert.ok(Date.now() - t0 < quickActions.HOOK_MS, `took ${Date.now() - t0} ms`);
+    await kv('hello', 'quick-mode', null);
+    assert.equal(await kvGet('hello-two', 'quick-last'), null, 'never ran');
+    assert.equal(activityCount(), before, 'not logged, not a run');
+  });
+
+  it('strict input like run; permissions.actions required', async () => {
+    for (const opts of [
+      { userId: anna, actionId: 'hello-two/klima:1', withWidget: 'yes' }, { userId: anna, actionId: 'hello-two/klima:1', withWidget: 1 },
+      { userId: anna, withWidget: true }, { userId: anna, actionId: 'hello-auto/own' }, { userId: anna, actionId: 'hello-two' },
+      { userId: anna, actionId: 'hello-two/klima:1', plugin: 'hello-two' }, { actionId: 'hello-two/klima:1' }, { userId: 999999, actionId: 'hello-two/klima:1' },
+      { userId: anna, actionId: 'hello-two/klima:1', lang: 'fr' },
+    ]) await refused('get', opts, 'ERR_INVALID');
+    await refused('list', { userId: anna, withWidget: 'yes' }, 'ERR_INVALID');
+    await refused('get', { userId: anna, actionId: 'hello-two/klima:1' }, 'ERR_ACTIONS_DENIED', 'hello');
   });
 });

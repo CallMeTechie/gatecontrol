@@ -828,7 +828,8 @@
   let cpGroupId = '';
   SECTIONS.richtlinien = {
     async load() {
-      const r = await get('/api/v1/settings/client-policy');
+      const [r, cl] = await Promise.all([get('/api/v1/settings/client-policy'), get('/api/v1/settings/client-layout')]);
+      if (cl.ok) fill('richtlinien', { 'cl-scope': cl.data.scope || 'user' });
       if (!r.ok) return;
       this.apply(r.data);
     },
@@ -863,6 +864,8 @@
         after: (r) => { if (r.data) SECTIONS.richtlinien.apply(r.data); } },
       { fields: ['cp-group'], errorField: 'cp-group', save: (v) => api.put('/api/v1/settings/client-policy/groups/' + cpGroupId, v['cp-group']),
         after: (r) => { if (r.data) SECTIONS.richtlinien.apply(r.data); } },
+      // where the order of the apps' Start / Familie tabs applies
+      { fields: ['cl-scope'], errorField: 'cl-scope', save: (v) => api.put('/api/v1/settings/client-layout', { scope: v['cl-scope'] }) },
     ],
   };
   cpSel.addEventListener('change', async () => {

@@ -8,7 +8,9 @@
  *                                     before the apiLimiter, own limiter per token);
  *                                     hello (+ state), notification, read, revoke,
  *                                     control (services/notify/control.js)
- *   POST /api/v1/client/push/ack      { seqs, state, action? } → { ok }
+ *   POST /api/v1/client/push/ack      { seqs, state, action? } → { ok } — state 'read' with the
+ *                                     id of a `callback` button reaches the sending plugin's
+ *                                     notifyAction hook (services/plugins/notifyActions.js)
  *   GET  /api/v1/client/push/inbox    ?limit&before → { items, unread }
  *   GET  /api/v1/client/push/prefs    → { ok, enabled, mode, muted_topics, restricted,
  *                                         quiet: { from, to, tz, critical_bypass } | null }
@@ -211,6 +213,9 @@ router.post('/push/ack', (req, res) => {
     const changed = store.ack(req.tokenId, [...new Set(seqs)], b.state, action);
     hub.onAck(req.tokenId, req.tokenUserId == null ? null : req.tokenUserId, changed, b.state);
     if (changed.length) eventBus.publish('notify', { id: changed[0].notification_id });
+    // a callback button of a plugin push: the plugin's hook, in the background
+    // (once per push and button; its outcome never reaches the app)
+    if (action && b.state === 'read' && changed.length) require('../../../services/plugins/notifyActions').onAck(changed, action);
     res.json({ ok: true });
   } catch (err) {
     logger.error({ err: err.message, tokenId: req.tokenId }, 'push ack failed');

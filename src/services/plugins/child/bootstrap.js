@@ -227,15 +227,24 @@ function makeGc(info) {
     }),
     /**
      * permissions.actions: quick actions of the other plugins for one user —
-     * list({ userId, lang, interactive? }) → [{ actionId: '<plugin>/<id>', plugin, pluginName, id, label, title, subtitle, icon,
-     *   kind, state, needsConfirm, confirmWhen, verbs, targets, device }];
+     * list({ userId, lang, interactive?, withWidget? }) → [{ actionId: '<plugin>/<id>', plugin, pluginName, id, label, title, subtitle, icon,
+     *   kind, state, needsConfirm, confirmWhen, verbs, targets, device, widget? }]
+     *   (widget { value, unit, label, badge, readings, state, status } | null only with withWidget: true);
+     * get({ userId, actionId | plugin + id, lang, interactive?, withWidget? }) → one such entry or null (asks only that plugin);
      * run({ userId, actionId | plugin + id, params?: { state }, lang, state?, via?, interactive? })
      *   → { ok, message, state, unchanged, result?, code?, error? } (runs as that user;
      * state 'on'|'off': the state a toggle should end in; interactive: true — a person pressed
      * the button for this action in this plugin just now, needs permissions.actions { interactive: true })
      */
     actions: Object.freeze({
-      list: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('actions.list', { userId: o.userId, lang: o.lang, interactive: o.interactive }); },
+      list: (opts) => {
+        const o = opts && typeof opts === 'object' ? opts : {};
+        return hostCall('actions.list', { userId: o.userId, lang: o.lang, interactive: o.interactive, withWidget: o.withWidget });
+      },
+      get: (opts) => {
+        const o = opts && typeof opts === 'object' ? opts : {};
+        return hostCall('actions.get', { userId: o.userId, actionId: o.actionId, plugin: o.plugin, id: o.id, lang: o.lang, interactive: o.interactive, withWidget: o.withWidget });
+      },
       run: (opts) => {
         const o = opts && typeof opts === 'object' ? opts : {};
         return hostCall('actions.run', { userId: o.userId, actionId: o.actionId, plugin: o.plugin, id: o.id, params: o.params, lang: o.lang, state: o.state, via: o.via, interactive: o.interactive });
@@ -323,6 +332,11 @@ async function handleCall(method, payload) {
       // runs one of the actions quickActions listed for that viewer (the host checked the id)
       if (typeof plugin.runQuickAction !== 'function') throw new Error('this plugin has no quick actions');
       return plugin.runQuickAction(payload, gc);
+    case 'notifyAction':
+      // optional: a person pressed a `callback` button of one of this plugin's pushes
+      // ({ userId, notificationId, action, data }); called once per push and button, the answer is ignored
+      if (typeof plugin.notifyAction === 'function') await plugin.notifyAction(payload, gc);
+      return {};
     case 'mediaAccess':
       // optional (plugin.json `media`): may payload.user see media payload.mediaId? No hook → null
       // (the host then allows the uploader only)

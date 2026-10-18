@@ -713,6 +713,7 @@ Dazu gelten diese Regeln:
   | `done` | `ack` mit `action:"done"` |
   | `ack` | `ack` mit `action` |
   | `quick_action` | `{ id, label, type, plugin, confirm, auth? }` (ab 1.169.0, nur Plugin-Pushes): `POST /api/v1/client/actions/<plugin>/<id>` mit `{"source":"notification"}`; `confirm:true` → vorher fragen; `auth:"device"` → vorher Geräteentsperrung/Biometrie (Android: `setAuthenticationRequired(true)`). Ergebnis als Hinweis bzw. aktualisierte Benachrichtigung |
+  | `callback` | `{ id, label, type }` (ab 1.181.0, nur Plugin-Pushes): `ack` mit `state:"read"` und `action:"<id>"` (wie `done`); der Server ruft daraufhin einmal pro Mitteilung und Knopf den Hook `notifyAction` des sendenden Plugins auf (docs/plugins.md „Callback buttons“). Die App zeigt kein Ergebnis an und blendet die Mitteilung wie bei `done` aus |
 
 #### Steuerereignisse (`event: control`, Phase 5)
 
@@ -732,6 +733,9 @@ data: {"type":"peer_state","enabled":false}
 
 event: control
 data: {"type":"config_changed"}
+
+event: control
+data: {"type":"layout","scope":"user","updated_at":"2026-10-18T09:12:44.120Z"}
 ```
 
 * **Ohne `id:`-Zeile:** Steuerereignisse werden nicht gespeichert, nicht
@@ -770,8 +774,18 @@ data: {"type":"config_changed"}
   Client-Konfiguration ein und lösen daher kein `config_changed` aus. Lieber
   ein Ereignis zu viel: Die App prüft per Hash, ob sich wirklich etwas
   geändert hat.
+* `layout` (ab 1.181.0): Die gemeinsame Anordnung des Start- und
+  Familie-Tabs hat sich geändert (docs/feature-client-layout.md). Die App lädt
+  `GET /api/v1/client/layout`, sobald der Tab offen ist (oder beim nächsten
+  Öffnen). `scope` ist der aktuelle Geltungsbereich (`device` | `user` |
+  `global`), `updated_at` der neue `updatedAt` (`null`: entfernt, oder der
+  Administrator hat den Geltungsbereich geändert). Ziel: Scope `user` → die
+  anderen offenen Streams derselben Person (nicht das speichernde Gerät);
+  Scope `global` → alle offenen Streams außer dem speichernden; Änderung des
+  Geltungsbereichs in den Einstellungen → alle offenen Streams.
 * Nur der Stream des betroffenen Geräts (bzw. der betroffenen Geräte) erhält
-  das Ereignis; andere Geräte derselben Person nicht. Steuerereignisse gehen
+  das Ereignis; andere Geräte derselben Person nicht (Ausnahme: `layout`,
+  das gerade für die anderen Geräte der Person gedacht ist). Steuerereignisse gehen
   unabhängig von `enabled`, `muted_topics` und Ruhezeiten raus.
 * Ein Fehler beim Senden lässt die Admin-Aktion nie scheitern. Staut der
   Socket (Backpressure), wartet je Typ das neueste Ereignis bis zum `drain`.
