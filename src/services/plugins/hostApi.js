@@ -582,7 +582,7 @@ function eventsEmit(plugin, args) {
 // permissions.services, the provider must declare the service in
 // services.provides and be usable (may run, running). `user` is the account
 // the call is about ({ id, name, role } of an enabled user, or null without
-// userId). Payload and answer ≤ 16 KB of JSON, SERVICE_TIMEOUT_MS, 60 calls per
+// userId). Payload ≤ 512 KB and answer ≤ 16 KB of JSON, SERVICE_TIMEOUT_MS, 60 calls per
 // hour per calling plugin, an activity row `plugin_service` per call (ids
 // and ok only).
 //
@@ -594,13 +594,16 @@ function eventsEmit(plugin, args) {
 
 const SERVICES_PER_HOUR = 60;
 const SERVICE_JSON_MAX = 16 * 1024;
+// Payloads may carry a small image (e.g. a doorbell snapshot as base64).
+const SERVICE_PAYLOAD_MAX = 512 * 1024;
 const SERVICE_TIMEOUT_MS = 15000;
 const servicesWindow = new Map();
 
 function jsonBounded(v, what) {
   let s;
   try { s = JSON.stringify(v === undefined ? null : v); } catch { s = undefined; }
-  need(s !== undefined && Buffer.byteLength(s, 'utf8') <= SERVICE_JSON_MAX, what === 'payload' ? 'ERR_INVALID' : 'ERR_SERVICE_FAILED', `${what} must be JSON ≤ 16 KB`);
+  const max = what === 'payload' ? SERVICE_PAYLOAD_MAX : SERVICE_JSON_MAX;
+  need(s !== undefined && Buffer.byteLength(s, 'utf8') <= max, what === 'payload' ? 'ERR_INVALID' : 'ERR_SERVICE_FAILED', `${what} must be JSON ≤ ${max / 1024} KB`);
   return JSON.parse(s);
 }
 
@@ -686,26 +689,59 @@ function _resetBudgetsForTest() {
 
 // ─── Plugin-to-plugin actions (permissions.actions) ────
 //
-// gc.actions.list({ userId, lang }) / gc.actions.run({ userId, plugin, id, lang, state? }):
+// gc.actions.list({ userId, lang, interactive? }) / gc.actions.run({ userId, actionId | plugin + id, params?, lang, state?, via?, interactive? }):
 // the quick actions (quickActions.js) other plugins offer to one user, run as
 // that user like the apps do — the target plugin gets the viewer
 // { id, name, role, portal: true, loggedIn: true, automation: true, via: '<caller id>' }
 // and decides itself. The user must exist and be enabled; the caller is never
-// asked or run itself. `state` ('on'|'off') is the state a toggle should end
+// asked or run itself. Only plugins that may run (enabled, licensed,
+// compatible, signed) and are running are asked (quickActions.eligible).
+// `actionId` is the listed '<plugin>/<id>' (neither may contain '/');
+// `params.state` / `state` ('on'|'off') is the state a toggle should end
 // in, handled by quickActions.run like for the apps (`target` / the host's
-// fallback, `unchanged`). 60 runs per hour per calling plugin, an activity row
-// `plugin_automation` per run (ids and ok only — no text of either plugin).
+// fallback, `unchanged`); `via`, when given, must be the caller's own id (the
+// host always names the caller). `interactive: true` (needs
+// permissions.actions { interactive: true }): a person pressed a button for
+// exactly this action in the caller's UI just now — the target plugin then
+// sees { ..., automation: false, interactive: true, via: '<caller id>' } and
+// treats it like that person's tap in the apps. 60 runs per minute per
+// calling plugin, an activity row `plugin_automation` per run naming the user
+// and the caller (ids, the account's name and ok only — no text of either plugin).
 
-const ACTIONS_PER_HOUR = 60;
+const ACTIONS_PER_MINUTE = 60;
+const ACTIONS_WINDOW_MS = 60000;
 const actionsWindow = new Map();
 const LANGS = new Set(['de', 'en']);
+const RUN_PARAMS = new Set(['state']);
+// what quickActions.run answers when the action did not run → `code`
+const RUN_CODES = new Map([
+  ['not_found', 'ERR_NOT_FOUND'], ['invalid_state', 'ERR_INVALID_STATE'], ['state_unknown', 'ERR_STATE_UNKNOWN'],
+  ['plugin_error', 'ERR_PLUGIN_FAILED'], ['timeout', 'ERR_TIMEOUT'],
+]);
 
 function needActions(plugin) {
   need(plugin.manifest.permissions && plugin.manifest.permissions.actions, 'ERR_ACTIONS_DENIED', 'this plugin has no actions permission');
 }
 
-/** The user an action runs for: an existing, enabled account → { user (viewer), lang }. */
-function automationViewer(plugin, args) {
+/**
+ * `interactive` of a call: true (a person pressed the button in the caller's
+ * UI) only with permissions.actions { interactive: true }; absent / null /
+ * false = an automation run.
+ */
+function interactiveOf(plugin, args) {
+  const v = args && args.interactive;
+  if (v === undefined || v === null || v === false) return false;
+  need(v === true, 'ERR_INVALID', 'interactive must be a boolean');
+  need(plugin.manifest.permissions.actionsInteractive === true, 'ERR_ACTIONS_DENIED', 'this plugin may not run actions interactively (permissions.actions { interactive: true })');
+  return true;
+}
+
+/**
+ * The user an action runs for: an existing, enabled account → { user (viewer), lang }.
+ * An automation run: { automation: true, via }; an interactive one:
+ * { automation: false, interactive: true, via } — like that person's tap.
+ */
+function automationViewer(plugin, args, interactive = false) {
   const userId = args && args.userId;
   need(Number.isSafeInteger(userId) && userId > 0, 'ERR_INVALID', 'invalid user id');
   const lang = args.lang;
@@ -714,58 +750,121 @@ function automationViewer(plugin, args) {
   need(u && u.enabled === 1, 'ERR_INVALID', 'unknown or disabled user');
   const own = typeof u.language === 'string' ? u.language.slice(0, 2).toLowerCase() : '';
   return {
-    user: { id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: true, automation: true, via: plugin.id },
+    user: {
+      id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: true,
+      automation: !interactive, ...(interactive ? { interactive: true } : {}), via: plugin.id,
+    },
     lang: lang || (LANGS.has(own) ? own : 'de'),
   };
 }
 
-/** Count one run against the calling plugin's budget per hour. */
+/** Count one run against the calling plugin's budget per minute. */
 function actionsBudget(plugin) {
   const now = Date.now();
-  const w = (actionsWindow.get(plugin.id) || []).filter((t) => now - t < 3600000);
-  need(w.length < ACTIONS_PER_HOUR, 'ERR_RATE_LIMIT', 'too many quick action runs (60 per hour)');
+  const w = (actionsWindow.get(plugin.id) || []).filter((t) => now - t < ACTIONS_WINDOW_MS);
+  need(w.length < ACTIONS_PER_MINUTE, 'ERR_RATE_LIMIT', `too many quick action runs (${ACTIONS_PER_MINUTE} per minute)`);
   w.push(now);
   actionsWindow.set(plugin.id, w);
 }
 
-/** gc.actions.list → [{ plugin, pluginName, id, title, subtitle, icon, kind, state, verbs, targets, device }] of every other plugin. */
+/**
+ * Should the person be asked before the plain run (a press of the button)?
+ * `confirm`, or a toggle whose run switches into its `confirmWhen` state —
+ * a plain run flips, so the state it ends in is the other one; a toggle
+ * without a listed state could end in either, so it asks as well.
+ */
+function needsConfirm(a) {
+  if (a.confirm === true) return true;
+  if (a.kind !== 'toggle' || !a.confirmWhen) return false;
+  if (a.state === null) return true;
+  return (a.state === 'on' ? 'off' : 'on') === a.confirmWhen;
+}
+
+/**
+ * gc.actions.list → [{ actionId, plugin, pluginName, id, label, title, subtitle, icon, kind, state,
+ * needsConfirm, confirmWhen, verbs, targets, device }] of every other plugin.
+ */
 async function actionsList(plugin, args) {
   needActions(plugin);
-  const { user, lang } = automationViewer(plugin, args);
+  const interactive = interactiveOf(plugin, args);
+  const { user, lang } = automationViewer(plugin, args, interactive);
   const all = await require('./quickActions').list(user, lang, { exclude: plugin.id });
   return all.map((a) => ({
-    plugin: a.plugin, pluginName: a.pluginName, id: a.id, title: a.title, subtitle: a.subtitle, icon: a.icon, kind: a.kind, state: a.state,
+    actionId: `${a.plugin}/${a.id}`, plugin: a.plugin, pluginName: a.pluginName, id: a.id, label: a.title, title: a.title,
+    subtitle: a.subtitle, icon: a.icon, kind: a.kind, state: a.state, needsConfirm: needsConfirm(a), confirmWhen: a.confirmWhen,
     verbs: a.verbs, targets: a.targets, device: a.device,
   }));
 }
 
+/** The action a run names: `actionId` '<plugin>/<id>', or `plugin` + `id` → { target, actionId }. */
+function runTarget(plugin, args, ACTION_ID_RE) {
+  const { ID_RE } = require('./constants');
+  let target;
+  let actionId;
+  if (args.actionId !== undefined && args.actionId !== null) {
+    need(args.plugin == null && args.id == null, 'ERR_INVALID', 'actionId or plugin + id, not both');
+    const ref = args.actionId;
+    need(typeof ref === 'string' && ref.length <= 129, 'ERR_INVALID', "actionId must be '<plugin>/<id>'");
+    const slash = ref.indexOf('/');
+    need(slash > 0, 'ERR_INVALID', "actionId must be '<plugin>/<id>'");
+    target = ref.slice(0, slash);
+    actionId = ref.slice(slash + 1);
+  } else {
+    target = args.plugin;
+    actionId = args.id;
+  }
+  need(typeof target === 'string' && target.length >= 2 && target.length <= 64 && ID_RE.test(target), 'ERR_INVALID', 'invalid plugin id');
+  need(target !== plugin.id, 'ERR_INVALID', 'a plugin cannot run its own quick actions');
+  need(typeof actionId === 'string' && ACTION_ID_RE.test(actionId), 'ERR_INVALID', 'invalid action id');
+  return { target, actionId };
+}
+
+/** The state a run asks for: `params.state` or `state` (not both) — validated by quickActions.run. */
+function runState(args) {
+  const params = args.params;
+  if (params === undefined || params === null) return args.state;
+  need(typeof params === 'object' && !Array.isArray(params), 'ERR_INVALID', 'params must be an object');
+  for (const k of Object.keys(params)) need(RUN_PARAMS.has(k), 'ERR_INVALID', `unknown param ${String(k).slice(0, 32)}`);
+  if (params.state === undefined || params.state === null) return args.state;
+  need(args.state === undefined || args.state === null, 'ERR_INVALID', 'state or params.state, not both');
+  return params.state;
+}
+
 /**
- * gc.actions.run → { ok, message, state, unchanged } (+ error 'not_found'|'invalid_state'|
- * 'state_unknown'|'plugin_error'|'timeout' when it did not run).
+ * gc.actions.run → { ok, message, state, unchanged, result?, code?, error? }:
+ * result { message, state, unchanged } when the target plugin answered (or
+ * the host skipped an unchanged toggle); ok false → code ERR_NOT_FOUND |
+ * ERR_INVALID_STATE | ERR_STATE_UNKNOWN | ERR_PLUGIN_FAILED | ERR_TIMEOUT
+ * (did not run; + error 'not_found'|'invalid_state'|'state_unknown'|
+ * 'plugin_error'|'timeout') or ERR_ACTION_FAILED (ran, the plugin said no).
  */
 async function actionsRun(plugin, args) {
   needActions(plugin);
   const quickActions = require('./quickActions');
-  const { ID_RE } = require('./constants');
-  const target = args && args.plugin;
-  const actionId = args && args.id;
-  need(typeof target === 'string' && target.length >= 2 && target.length <= 64 && ID_RE.test(target), 'ERR_INVALID', 'invalid plugin id');
-  need(target !== plugin.id, 'ERR_INVALID', 'a plugin cannot run its own quick actions');
-  need(typeof actionId === 'string' && quickActions.ACTION_ID_RE.test(actionId), 'ERR_INVALID', 'invalid action id');
-  const { user, lang } = automationViewer(plugin, args);
+  need(args && typeof args === 'object', 'ERR_INVALID', 'invalid arguments');
+  const { target, actionId } = runTarget(plugin, args, quickActions.ACTION_ID_RE);
+  need(args.via === undefined || args.via === null || args.via === plugin.id, 'ERR_INVALID', "via must be the calling plugin's own id");
+  const want = runState(args);
+  const interactive = interactiveOf(plugin, args);
+  const { user, lang } = automationViewer(plugin, args, interactive);
   actionsBudget(plugin);
-  const want = args.state;
   let r;
   try { r = await quickActions.run(target, actionId, user, lang, { state: want }); } catch { r = { status: 502, body: { ok: false, error: 'plugin_error' } }; }
   const ok = r.status === 200 && r.body.ok === true;
-  const out = r.status === 200
-    ? { ok: r.body.ok, message: r.body.message, state: r.body.state, unchanged: r.body.unchanged === true }
-    : { ok: false, message: null, state: null, unchanged: false, error: r.body.error };
+  let out;
+  if (r.status === 200) {
+    const result = { message: r.body.message, state: r.body.state, unchanged: r.body.unchanged === true };
+    out = { ok: r.body.ok, ...result, result, ...(ok ? {} : { code: 'ERR_ACTION_FAILED' }) };
+  } else {
+    const error = r.body.error;
+    out = { ok: false, message: null, state: null, unchanged: false, error, code: RUN_CODES.get(error) || 'ERR_PLUGIN_FAILED' };
+  }
   try {
-    require('../activity').log('plugin_automation', `Plugin "${plugin.id}" ran quick action "${actionId}" of plugin "${target}" (${ok ? 'ok' : 'failed'})`, {
+    require('../activity').log('plugin_automation', `Quick action "${actionId}" of plugin "${target}" run for user "${user.name}" via plugin "${plugin.id}"${interactive ? ' (interactive)' : ''} (${ok ? 'ok' : 'failed'})`, {
       source: 'plugin', severity: ok ? 'info' : 'warning',
       details: {
-        plugin: plugin.id, target, action: actionId, userId: user.id, ok,
+        plugin: plugin.id, via: plugin.id, target, action: actionId, userId: user.id, ok,
+        ...(interactive ? { interactive: true } : {}),
         ...(quickActions.TOGGLE_STATES.has(want) ? { state: want } : {}),
         ...(out.unchanged ? { unchanged: true } : {}),
         ...(out.error ? { error: out.error } : {}),
@@ -869,6 +968,6 @@ async function handle(plugin, api, args, ctx) {
 }
 
 module.exports = {
-  handle, closeSockets, HostApiError, ACTIONS_PER_HOUR, CHAT_PER_HOUR, CHAT_PER_USER_HOUR, SERVICES_PER_HOUR, SERVICE_JSON_MAX,
+  handle, closeSockets, HostApiError, ACTIONS_PER_MINUTE, CHAT_PER_HOUR, CHAT_PER_USER_HOUR, SERVICES_PER_HOUR, SERVICE_JSON_MAX, SERVICE_PAYLOAD_MAX,
   flushChatSummary, _resetActionsBudgetForTest, _resetBudgetsForTest, _lookup: null, _udpTargets: null, _serviceTimeoutMs: null,
 };

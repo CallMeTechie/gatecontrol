@@ -180,7 +180,7 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, background: null, events: false, services: [] };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [] };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
@@ -188,10 +188,20 @@ function validate(raw, opts = {}) {
     // kiosk: may mark users as kiosk devices (gc.kiosk.*, docs/feature-kiosk-devices.md)
     // actions: may list/run other plugins' quick actions for a user (gc.actions.*)
     // events: may send realtime events to devices and frames (gc.events.emit)
-    for (const k of ['storage', 'portal', 'users', 'app', 'kiosk', 'actions', 'events']) {
+    for (const k of ['storage', 'portal', 'users', 'app', 'kiosk', 'events']) {
       if (p[k] == null) continue;
       if (typeof p[k] !== 'boolean') err(`permissions.${k}: invalid`);
       else perms[k] = p[k];
+    }
+    // actions: true, or { interactive: boolean } — interactive: may also run
+    // them as a person's tap in this plugin's UI (gc.actions.run interactive: true)
+    if (p.actions != null) {
+      const a = p.actions;
+      if (typeof a === 'boolean') perms.actions = a;
+      else if (a && typeof a === 'object' && !Array.isArray(a) && Object.keys(a).length === 1 && typeof a.interactive === 'boolean') {
+        perms.actions = true;
+        perms.actionsInteractive = a.interactive;
+      } else err('permissions.actions: invalid');
     }
     // notify: true (NOTIFY_PER_HOUR_DEFAULT pushes per hour) or { perHour: 1…120 }
     if (p.notify != null) {

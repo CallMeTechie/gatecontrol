@@ -265,10 +265,21 @@ unsigned build of the same id.
   / "may mark users as kiosk devices (e.g. wall tablet)".
 * `permissions.actions` (boolean): the plugin may list and run the quick
   actions other plugins offer to a user (`gc.actions.list` / `gc.actions.run`,
-  e.g. a presence rule switching a smart home scene — see "Running other
-  plugins' quick actions" below). The install/consent dialog shows "darf
+  e.g. a presence rule switching a smart home scene, or a chat's "open the
+  front door" button that runs as the person who pressed it — see "Running
+  other plugins' quick actions" below). The install/consent dialog shows "darf
   Schnellaktionen anderer Plugins auslösen (z. B. Smart-Home-Szenen)" / "may
   run other plugins' quick actions (e.g. smart home scenes)".
+  `permissions.actions: { interactive: true }` (since 1.180.0) grants the
+  same and additionally *interactive* runs (`gc.actions.run({ …,
+  interactive: true })`: a person pressed the button for exactly this action
+  in this plugin's UI just now — the target plugin treats it like that
+  person's tap); the dialog then also shows "darf Aktionen auslösen, wenn
+  eine Person sie in diesem Plugin antippt (z. B. Tür öffnen aus dem Chat)" /
+  "may run actions when a person taps them in this plugin (e.g. open the door
+  from the chat)". `{ interactive: false }` equals `true`; any other value →
+  `permissions.actions: invalid` (a plugin using the object form needs
+  `"gatecontrol": ">=1.180.0"`).
 * `notifyTopics` (optional, needs `permissions.notify`): up to 20 own push
   topics, `id` `[a-z][a-z0-9_-]{0,31}`, `label` text (≤ 60), `default`
   (boolean, default `true`: people get the topic until they switch it off; `false`:
@@ -410,8 +421,8 @@ module.exports = {
 | `gc.users.list()/get(id)` | `{ id, name, role, avatarUrl, color, colorHex, initials }` of enabled users (`users`) — `avatarUrl` is the profile picture's path `/avatars/<id>.<ext>` or `null`, `color` the favourite colour's palette key (never `null`), `colorHex` its `#RRGGBB`, `initials` one or two letters for the fallback (docs/feature-avatars.md; since 1.168.0) |
 | `gc.kiosk.allow(userId, allowed)` | mark (`true`) or unmark (`false`) a user as a kiosk user (`kiosk`); an administrator, a disabled or an unknown account → `ERR_INVALID` (allowing only; unmarking always works) |
 | `gc.kiosk.list()` | ids of the users this plugin marks (`kiosk`) |
-| `gc.actions.list({ userId, lang })` | the quick actions the *other* plugins offer to that user → `[{ plugin, pluginName, id, title, subtitle, icon, kind, state, verbs, targets, device }]` (`actions`) — see "Running other plugins' quick actions" |
-| `gc.actions.run({ userId, plugin, id, lang, state })` | run one of them as that user, `state` (`'on'`/`'off'`, optional) the state a toggle should end in → `{ ok, message, state, unchanged }` (+ `error` when it did not run; `actions`, ≤ 60 runs per hour) |
+| `gc.actions.list({ userId, lang, interactive })` | the quick actions the *other* plugins offer to that user → `[{ actionId, plugin, pluginName, id, label, title, subtitle, icon, kind, state, needsConfirm, confirmWhen, verbs, targets, device }]` (`actions`; `actionId`, `label`, `needsConfirm`, `confirmWhen` since 1.180.0) — see "Running other plugins' quick actions" |
+| `gc.actions.run({ userId, actionId, params, via, interactive, lang })` | run one of them as that user (`interactive: true`: a person tapped it in this plugin, needs `actions: { interactive: true }`) — `actionId` `'<plugin>/<id>'` from the list (or `plugin` + `id`), `params.state` (`'on'`/`'off'`, optional; or `state`) the state a toggle should end in → `{ ok, result, code, message, state, unchanged }` (`code` when not `ok`; `actions`, ≤ 60 runs per minute; `actionId`, `params`, `via`, `result`, `code` since 1.180.0, before ≤ 60 per hour) |
 | `gc.notify(message, { severity })` | activity log + webhooks, and a push on `plugin:<id>:default` (`notify`, ≤ 30/h or `perHour`) — see "Notifications" |
 | `gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data, image })` | push on a declared `notifyTopics` topic (+ activity row) → `{ pushed, id }`; `image` `{ data, mime }` or `{ mediaId }` — see "Pictures" |
 | `gc.notify({ topic: <chat topic>, title, body, users, conversation, sender, … })` | a chat notification (`notifyTopics[].chat`) → `{ pushed, id, skipped }` — see "Chat notifications" |
@@ -440,7 +451,9 @@ viewer; the quick-action hooks (`quickActions`, `runQuickAction`) get the
 owner of the app's device token as that viewer, with `loggedIn: true` and
 `app: true` (see "Quick actions"), or — when another plugin runs them with
 `gc.actions.*` — that user with `loggedIn: true`, `automation: true` and
-`via: '<calling plugin id>'` (see "Running other plugins' quick actions").
+`via: '<calling plugin id>'`, or for an interactive run (since 1.180.0)
+`automation: false`, `interactive: true` and that `via` (see "Running other
+plugins' quick actions").
 
 ### Kiosk devices (`permissions.kiosk`)
 
@@ -838,12 +851,13 @@ provider documents its own.
   (optional) must be an existing, enabled account — the provider gets it as
   `user: { id, name, role }` (`null` without) and decides itself what the
   call may do for that person.
-* `payload` and the answer: JSON ≤ 16 KB each; 15 s; **60 calls per hour**
+* `payload`: JSON ≤ 512 KB (16 KB before 1.180.0 — enough for a small
+  base64 image); the answer: JSON ≤ 16 KB; 15 s; **60 calls per hour**
   and calling plugin; an activity row `plugin_service` per call (ids and ok
   only, never the payload).
 * Errors of `call()`: `ERR_SERVICES_DENIED` (not listed), `ERR_SERVICE_UNAVAILABLE`
   (provider not installed / not running / no such service), `ERR_INVALID`
-  (bad ids, user, payload over 16 KB, the caller's own plugin),
+  (bad ids, user, payload over 512 KB, the caller's own plugin),
   `ERR_RATE_LIMIT`, `ERR_TIMEOUT`, `ERR_SERVICE_FAILED` (the hook threw — its
   message — or answered more than 16 KB; a provider without the hook:
   "this plugin offers no services").
@@ -1034,7 +1048,7 @@ async quickActions({ user, lang }, gc) {
   ];
 },
 async runQuickAction({ user, lang, id, via, automation, control, value, target }, gc) {
-  // via: 'app' | 'notification' | '<plugin id>' (gc.actions.run); automation: true only for gc.actions.run
+  // via: 'app' | 'notification' | '<plugin id>' (gc.actions.run); automation: true only for gc.actions.run without interactive
   // control / value: only when the app moved a control of the action's widget (see "Widgets")
   // target: 'on' | 'off' only for a toggle declaring targets: true (see "Target states")
   return { ok: true, message: 'Licht eingeschaltet', state: 'on' };   // state optional (new toggle state)
@@ -1092,9 +1106,11 @@ async runQuickAction({ user, lang, id, via, automation, control, value, target }
     `'notification'` (the `quick_action` button of a push, see
     "Notifications") or the id of the plugin that ran it with
     `gc.actions.run` (see below);
-  * `automation`: `true` only for `gc.actions.run` (another plugin ran it
-    for the user, nobody tapped anything), `false` for every run a person
-    started. A plugin tells a person's run from an automation by
+  * `automation`: `true` only for `gc.actions.run` without `interactive`
+    (another plugin ran it for the user, nobody tapped anything), `false`
+    for every run a person started — in the apps, or (since 1.180.0) in
+    another plugin's UI with `gc.actions.run({ …, interactive: true })`;
+    then `user.interactive` is `true` and `via` the id of that plugin. A plugin tells a person's run from an automation by
     `automation` (not by `via` alone — a plugin id could look like anything).
 * **Language** `lang` (`de`/`en`): `?lang=` of the request, else the owner's
   language setting, else `Accept-Language`, else `de`.
@@ -1412,62 +1428,126 @@ like the actions listing.
 
 A plugin with `permissions.actions` can use the quick actions of the other
 plugins for one user — for example a family plugin whose presence rule
-switches on a smart home scene when the first person comes home.
+switches on a smart home scene when the first person comes home, or a
+messenger that offers "Haustür öffnen" as a button in a chat and runs it as
+the person who pressed it.
 
 ```js
 const actions = await gc.actions.list({ userId: 7, lang: 'de' });
-// [{ plugin: 'gatecontrol-smarthome', pluginName: 'Smart Home', id: 'scene:evening',
-//    title: 'Abend', subtitle: null, icon: null, kind: 'button', state: null, verbs: null,
-//    targets: false, device: null }, …]
-const r = await gc.actions.run({ userId: 7, plugin: 'gatecontrol-smarthome', id: 'scene:evening' });
-// { ok: true, message: 'Szene gestartet', state: null, unchanged: false }
-await gc.actions.run({ userId: 7, plugin: 'gatecontrol-fahrzeuge', id: 'lock:42', state: 'on' });
-// a toggle into a fixed state (see "Target states"): { ok: true, message: null, state: 'on', unchanged: true }
+// [{ actionId: 'gatecontrol-smarthome/scene:evening', plugin: 'gatecontrol-smarthome',
+//    pluginName: 'Smart Home', id: 'scene:evening', label: 'Abend', title: 'Abend',
+//    subtitle: null, icon: null, kind: 'button', state: null, needsConfirm: false,
+//    confirmWhen: null, verbs: null, targets: false, device: null }, …]
+const r = await gc.actions.run({ userId: 7, actionId: 'gatecontrol-smarthome/scene:evening', via: gc.plugin.id });
+// a person pressed "Haustür öffnen" in this plugin's chat just now (needs actions: { interactive: true }):
+await gc.actions.run({ userId: 7, actionId: 'gatecontrol-door/front:open', interactive: true });
+// { ok: true, result: { message: 'Szene gestartet', state: null, unchanged: false },
+//   message: 'Szene gestartet', state: null, unchanged: false }
+await gc.actions.run({ userId: 7, actionId: 'gatecontrol-fahrzeuge/lock:42', params: { state: 'on' } });
+// a toggle into a fixed state (see "Target states"):
+// { ok: true, result: { message: null, state: 'on', unchanged: true }, message: null, state: 'on', unchanged: true }
+await gc.actions.run({ userId: 7, actionId: 'gatecontrol-door/front:open' });
+// not (or no longer) offered to that user:
+// { ok: false, code: 'ERR_NOT_FOUND', error: 'not_found', message: null, state: null, unchanged: false }
 ```
 
+The older form `run({ userId, plugin, id, state })` (before 1.180.0) works
+unchanged — `actionId` is `plugin + '/' + id` (neither may contain `/`).
+
 * **Which actions**: exactly what the apps get for that user (the same
-  plugins, hooks, timeouts and sanitising as "Quick actions" above) as
-  `{ plugin, pluginName, id, title, subtitle, icon, kind, state, verbs,
-  targets, device }` — `icon` and `device` exactly as in the apps' list (an
-  SVG path or `null`; `{ id, title, subtitle, icon }` or `null`, see
-  "Devices and looks"), without `confirm`, `confirmWhen`, `look` and
-  `widget` — and never the calling plugin's own actions.
+  plugins, hooks, timeouts and sanitising as "Quick actions" above): only
+  plugins that may run (enabled, licensed, compatible, signed as required),
+  are running and have `permissions.portal` — a disabled or unlicensed
+  plugin's actions are neither listed nor run — and never the calling
+  plugin's own actions (a plugin runs its own actions with its own code).
+  Each entry:
+  * `actionId`: `'<plugin>/<id>'`, what `run` takes (since 1.180.0);
+  * `plugin`, `pluginName` (localised), `id` (the plugin's own action id);
+  * `label` (since 1.180.0) = `title`: the action's name (≤ 40 characters,
+    no control characters); `subtitle` or `null`;
+  * `icon`: an SVG path (path data like `ui.nav.icon`, e.g.
+    `'M12 2a5 5 0 0 1 5 5v3h1a2 2 0 0 1 2 2v8 …'`, ≤ 2000 characters) or
+    `null` — draw it in a 24×24 `viewBox`;
+  * `kind`: `'button'` (one run) or `'toggle'` (switches between `'on'` and
+    `'off'`; `state` the current state or `null` when the plugin lists none;
+    buttons always `null`); `verbs` / `targets`: see "Target states";
+    `device`: see "Devices and looks" (`{ id, title, subtitle, icon }` or
+    `null`);
+  * `needsConfirm` (boolean, since 1.180.0): ask the person before a plain
+    run (a press of the button) — `true` when the plugin set `confirm: true`,
+    or for a toggle whose run switches *into* its `confirmWhen` state (a
+    plain run flips, so it ends in the state other than the listed one; a
+    toggle that lists no state but has a `confirmWhen` counts as `true`);
+  * `confirmWhen` (since 1.180.0): toggles only, `'on'` / `'off'` or `null`
+    — for a run with `params.state`, ask when that state equals
+    `confirmWhen` (or `needsConfirm` came from `confirm: true`).
+
+  Not passed on: `confirm` (folded into `needsConfirm`), `look`, `widget`.
 * **As whom**: the target plugin's `quickActions` / `runQuickAction` get the
   viewer `{ id, name, role, portal: true, loggedIn: true, automation: true,
   via: '<calling plugin id>' }` (no `app` key) — `runQuickAction` also with
   `via: '<calling plugin id>'` and `automation: true` next to `user` — and
-  decide themselves what that user may see and do — like for the apps, `runQuickAction` only reaches an id
-  the plugin currently lists for that user. Any enabled account works (an
-  administrator too); the target plugin may refuse automation runs by
-  checking `user.automation`.
+  decide themselves what that user may see and do — like for the apps,
+  `runQuickAction` only reaches an id the plugin currently lists for that
+  user (listing and run go through the same `quickActions.run` as the
+  client API). Any enabled account works (an administrator too); the target
+  plugin may refuse automation runs by checking `user.automation`.
+* **Interactive runs** (since 1.180.0, `permissions.actions: { interactive:
+  true }`): `interactive: true` on `run` says "a person pressed a button for
+  exactly this action in the calling plugin's UI just now" — use it only
+  then, never for rules, schedules or retries. The target plugin's hooks
+  get the viewer `{ id, name, role, portal: true, loggedIn: true,
+  automation: false, interactive: true, via: '<calling plugin id>' }` and
+  `runQuickAction` `automation: false`, `via: '<calling plugin id>'` — like
+  that person's tap in the apps (`via` the caller instead of `'app'`), so a
+  plugin that refuses automation runs (e.g. a door plugin's `open`) runs
+  it. `list({ userId, interactive: true })` asks the targets with the same
+  viewer (what that person would get offered). Without the object form →
+  `ERR_ACTIONS_DENIED`; a non-boolean `interactive` → `ERR_INVALID`;
+  `false` / `null` / absent = the automation run as above. Same limit and
+  log (marked "(interactive)").
 * **Input** (checked strictly, else `ERR_INVALID` and nothing is asked or
-  run): `userId` a positive integer of an existing, **enabled** user (checked
+  run): `interactive` (optional) a boolean, see above; `userId` a positive integer of an existing, **enabled** user (checked
   at every call — a disabled, deleted or unknown account → `ERR_INVALID`
   "unknown or disabled user"); `lang` `de`/`en` or absent (then the user's
-  language setting, else `de`); `plugin` a plugin id other than the caller's
-  own; `id` `[A-Za-z0-9:._-]{1,64}`. `state` (optional): `'on'` / `'off'`, the
-  state a toggle should end in — handled exactly like the client API's
-  `state` (see "Target states"); `null` / absent = the plain run.
-* **Result** of `run`: the sanitised `{ ok, message, state, unchanged }` of
-  the target plugin (`ok` `false` only when it says so; `unchanged` `true`
-  only when the host skipped a run with `state` because the toggle already
-  was in that state). When the action did not run the call still resolves,
-  with `{ ok: false, message: null, state: null, unchanged: false, error }`:
-  `not_found` (unknown, disabled or not running plugin, a plugin without
-  `permissions.portal`, an id it does not list for that user),
-  `invalid_state` (`state` not `'on'` / `'off'`, or on a button),
-  `state_unknown` (`state` for a toggle without `targets` that lists no
-  state), `plugin_error` (it failed or answered garbage) or `timeout`.
-* **Limits**: 60 runs per hour per calling plugin (`ERR_RATE_LIMIT` beyond;
-  calls refused with `ERR_*` are not counted, every other run is — also one
-  that ends in `not_found`).
+  language setting, else `de`); either `actionId` `'<plugin>/<id>'` or
+  `plugin` + `id` (not both) — the plugin id one other than the caller's
+  own, `id` `[A-Za-z0-9:._-]{1,64}`; `params` (optional) an object whose
+  only key is `state`; `params.state` or `state` (not both, optional):
+  `'on'` / `'off'`, the state a toggle should end in — handled exactly like
+  the client API's `state` (see "Target states"); `null` / absent = the
+  plain run; `via` (optional) the calling plugin's own id (`gc.plugin.id`) —
+  anything else is refused: the host always names the calling plugin
+  itself.
+* **Result** of `run`: when the target plugin answered (or the host skipped
+  an unchanged toggle) `{ ok, result: { message, state, unchanged },
+  message, state, unchanged }` — the sanitised answer (`ok` `false` only
+  when the plugin says so, then also `code: 'ERR_ACTION_FAILED'`;
+  `unchanged` `true` only when the host skipped a run with `state` because
+  the toggle already was in that state). When the action did not run the
+  call still resolves, with `{ ok: false, code, error, message: null,
+  state: null, unchanged: false }` (no `result`): `ERR_NOT_FOUND` /
+  `not_found` (unknown, disabled, unlicensed or not running plugin, a plugin
+  without `permissions.portal`, an id it does not list for that user — the
+  user may not run it), `ERR_INVALID_STATE` / `invalid_state` (`state` not
+  `'on'` / `'off'`, or on a button), `ERR_STATE_UNKNOWN` / `state_unknown`
+  (`state` for a toggle without `targets` that lists no state),
+  `ERR_PLUGIN_FAILED` / `plugin_error` (it failed or answered garbage) or
+  `ERR_TIMEOUT` / `timeout` (no answer within 10 s).
+* **Limits**: 60 runs per minute per calling plugin (`ERR_RATE_LIMIT`
+  beyond; before 1.180.0: 60 per hour; calls refused with `ERR_*` are not
+  counted, every other run is — also one that ends in `ERR_NOT_FOUND`).
   Listing is not counted.
 * **Activity log**: every run is an entry `plugin_automation` (info; warning
-  when not `ok`) with details `{ plugin: '<caller>', target, action, userId,
-  ok, state?, unchanged?, error? }` — ids and codes only, no text of either
-  plugin (`state` only when it is `'on'` / `'off'`).
-* **Errors**: `ERR_ACTIONS_DENIED` (no `permissions.actions`), `ERR_INVALID`,
-  `ERR_RATE_LIMIT`.
+  when not `ok`) "Quick action "<id>" of plugin "<target>" run for user
+  "<name>" via plugin "<caller>" [(interactive)] (ok|failed)" with details
+  `{ plugin: '<caller>', via: '<caller>', interactive?, target, action,
+  userId, ok, state?, unchanged?, error? }` (`interactive: true` only for
+  interactive runs) — ids, the account's name and codes only, no text of
+  either plugin (`state` only when it is `'on'` / `'off'`).
+* **Errors** (thrown): `ERR_ACTIONS_DENIED` (no `permissions.actions`, or
+  `interactive: true` without `{ interactive: true }`),
+  `ERR_INVALID`, `ERR_RATE_LIMIT`.
 
 ## App (permissions.app, ui.app, client API)
 

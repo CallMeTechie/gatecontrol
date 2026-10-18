@@ -99,6 +99,7 @@
     if (perm.app) rows.push({ label: t('plugins.perm.app'), value: t('plugins.perm.app_on') });
     if (perm.kiosk) rows.push({ label: t('plugins.perm.kiosk'), value: t('plugins.perm.kiosk_on') });
     if (perm.actions) rows.push({ label: t('plugins.perm.actions'), value: t('plugins.perm.actions_on') });
+    if (perm.actionsInteractive) rows.push({ label: t('plugins.perm.actions_interactive'), value: t('plugins.perm.actions_interactive_on') });
     if (perm.maps) rows.push({ label: t('plugins.perm.maps'), value: t('plugins.perm.maps_on') });
     if (perm.geolocation) rows.push({ label: t('plugins.perm.geolocation'), value: t('plugins.perm.geolocation_on') });
     if (perm.inbox) rows.push({ label: t('plugins.perm.inbox'), value: t('plugins.perm.inbox_on') });
