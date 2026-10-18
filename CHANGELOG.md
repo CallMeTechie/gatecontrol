@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.180.0] — 2026-10-18
+
+### Features
+- gc.actions – plugins run quick actions on behalf of a user (#324)
+
+---
+
 ## [1.179.0] — 2026-10-18
 
 ### Features
