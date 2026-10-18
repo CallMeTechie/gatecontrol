@@ -5203,6 +5203,8 @@
   "plugins.perm.kiosk_on": "may mark users as kiosk devices (e.g. wall tablet)",
   "plugins.perm.actions": "Quick actions",
   "plugins.perm.actions_on": "may run other plugins' quick actions (e.g. smart home scenes)",
+  "plugins.perm.actions_interactive": "Actions on tap",
+  "plugins.perm.actions_interactive_on": "may run actions when a person taps them in this plugin (e.g. open the door from the chat)",
   "plugins.perm.media": "Media",
   "plugins.perm.media_v": "stores files of its users on GateControl (up to {{max}} per file, quota {{quota}}): {{types}} – in the portal also with the microphone for voice recordings",
   "plugins.perm.events": "Live events",

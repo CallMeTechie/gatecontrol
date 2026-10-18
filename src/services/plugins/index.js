@@ -120,6 +120,7 @@ function permissionSummary(m, lang) {
     app: !!p.app,
     kiosk: !!p.kiosk,
     actions: !!p.actions,
+    actionsInteractive: !!(p.actions && p.actionsInteractive),
     appTab: m.ui.app ? loc(m.ui.app.label, lang) : null,
     maps: !!m.ui.maps,
     geolocation: !!m.ui.geolocation,

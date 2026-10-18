@@ -686,7 +686,7 @@ function _resetBudgetsForTest() {
 
 // ─── Plugin-to-plugin actions (permissions.actions) ────
 //
-// gc.actions.list({ userId, lang }) / gc.actions.run({ userId, actionId | plugin + id, params?, lang, state?, via? }):
+// gc.actions.list({ userId, lang, interactive? }) / gc.actions.run({ userId, actionId | plugin + id, params?, lang, state?, via?, interactive? }):
 // the quick actions (quickActions.js) other plugins offer to one user, run as
 // that user like the apps do — the target plugin gets the viewer
 // { id, name, role, portal: true, loggedIn: true, automation: true, via: '<caller id>' }
@@ -697,9 +697,13 @@ function _resetBudgetsForTest() {
 // `params.state` / `state` ('on'|'off') is the state a toggle should end
 // in, handled by quickActions.run like for the apps (`target` / the host's
 // fallback, `unchanged`); `via`, when given, must be the caller's own id (the
-// host always names the caller). 60 runs per minute per calling plugin, an
-// activity row `plugin_automation` per run naming the user and the caller
-// (ids, the account's name and ok only — no text of either plugin).
+// host always names the caller). `interactive: true` (needs
+// permissions.actions { interactive: true }): a person pressed a button for
+// exactly this action in the caller's UI just now — the target plugin then
+// sees { ..., automation: false, interactive: true, via: '<caller id>' } and
+// treats it like that person's tap in the apps. 60 runs per minute per
+// calling plugin, an activity row `plugin_automation` per run naming the user
+// and the caller (ids, the account's name and ok only — no text of either plugin).
 
 const ACTIONS_PER_MINUTE = 60;
 const ACTIONS_WINDOW_MS = 60000;
@@ -716,8 +720,25 @@ function needActions(plugin) {
   need(plugin.manifest.permissions && plugin.manifest.permissions.actions, 'ERR_ACTIONS_DENIED', 'this plugin has no actions permission');
 }
 
-/** The user an action runs for: an existing, enabled account → { user (viewer), lang }. */
-function automationViewer(plugin, args) {
+/**
+ * `interactive` of a call: true (a person pressed the button in the caller's
+ * UI) only with permissions.actions { interactive: true }; absent / null /
+ * false = an automation run.
+ */
+function interactiveOf(plugin, args) {
+  const v = args && args.interactive;
+  if (v === undefined || v === null || v === false) return false;
+  need(v === true, 'ERR_INVALID', 'interactive must be a boolean');
+  need(plugin.manifest.permissions.actionsInteractive === true, 'ERR_ACTIONS_DENIED', 'this plugin may not run actions interactively (permissions.actions { interactive: true })');
+  return true;
+}
+
+/**
+ * The user an action runs for: an existing, enabled account → { user (viewer), lang }.
+ * An automation run: { automation: true, via }; an interactive one:
+ * { automation: false, interactive: true, via } — like that person's tap.
+ */
+function automationViewer(plugin, args, interactive = false) {
   const userId = args && args.userId;
   need(Number.isSafeInteger(userId) && userId > 0, 'ERR_INVALID', 'invalid user id');
   const lang = args.lang;
@@ -726,7 +747,10 @@ function automationViewer(plugin, args) {
   need(u && u.enabled === 1, 'ERR_INVALID', 'unknown or disabled user');
   const own = typeof u.language === 'string' ? u.language.slice(0, 2).toLowerCase() : '';
   return {
-    user: { id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: true, automation: true, via: plugin.id },
+    user: {
+      id: u.id, name: u.display_name || u.username, role: u.role, portal: true, loggedIn: true,
+      automation: !interactive, ...(interactive ? { interactive: true } : {}), via: plugin.id,
+    },
     lang: lang || (LANGS.has(own) ? own : 'de'),
   };
 }
@@ -759,7 +783,8 @@ function needsConfirm(a) {
  */
 async function actionsList(plugin, args) {
   needActions(plugin);
-  const { user, lang } = automationViewer(plugin, args);
+  const interactive = interactiveOf(plugin, args);
+  const { user, lang } = automationViewer(plugin, args, interactive);
   const all = await require('./quickActions').list(user, lang, { exclude: plugin.id });
   return all.map((a) => ({
     actionId: `${a.plugin}/${a.id}`, plugin: a.plugin, pluginName: a.pluginName, id: a.id, label: a.title, title: a.title,
@@ -817,7 +842,8 @@ async function actionsRun(plugin, args) {
   const { target, actionId } = runTarget(plugin, args, quickActions.ACTION_ID_RE);
   need(args.via === undefined || args.via === null || args.via === plugin.id, 'ERR_INVALID', "via must be the calling plugin's own id");
   const want = runState(args);
-  const { user, lang } = automationViewer(plugin, args);
+  const interactive = interactiveOf(plugin, args);
+  const { user, lang } = automationViewer(plugin, args, interactive);
   actionsBudget(plugin);
   let r;
   try { r = await quickActions.run(target, actionId, user, lang, { state: want }); } catch { r = { status: 502, body: { ok: false, error: 'plugin_error' } }; }
@@ -831,10 +857,11 @@ async function actionsRun(plugin, args) {
     out = { ok: false, message: null, state: null, unchanged: false, error, code: RUN_CODES.get(error) || 'ERR_PLUGIN_FAILED' };
   }
   try {
-    require('../activity').log('plugin_automation', `Quick action "${actionId}" of plugin "${target}" run for user "${user.name}" via plugin "${plugin.id}" (${ok ? 'ok' : 'failed'})`, {
+    require('../activity').log('plugin_automation', `Quick action "${actionId}" of plugin "${target}" run for user "${user.name}" via plugin "${plugin.id}"${interactive ? ' (interactive)' : ''} (${ok ? 'ok' : 'failed'})`, {
       source: 'plugin', severity: ok ? 'info' : 'warning',
       details: {
         plugin: plugin.id, via: plugin.id, target, action: actionId, userId: user.id, ok,
+        ...(interactive ? { interactive: true } : {}),
         ...(quickActions.TOGGLE_STATES.has(want) ? { state: want } : {}),
         ...(out.unchanged ? { unchanged: true } : {}),
         ...(out.error ? { error: out.error } : {}),

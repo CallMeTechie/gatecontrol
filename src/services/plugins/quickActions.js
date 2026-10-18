@@ -12,7 +12,9 @@
 //     via: 'app' (shortcut, tile, widget, app screen) | 'notification' (the
 //     action button of a push) | '<plugin id>' (gc.actions.run of that
 //     plugin); automation: true only for gc.actions.run (another plugin ran
-//     it for the user), false for everything a person started.
+//     it for the user), false for everything a person started — also for
+//     gc.actions.run with interactive: true (a person pressed the button in
+//     that plugin; the viewer then has interactive: true).
 //     control / value: only when the app moved a control of the action's
 //     widget (the control's id and the validated value — a number for a
 //     stepper / slider, an option id for a choice); absent otherwise.
@@ -369,8 +371,8 @@ function controlValue(c, v) {
  * that viewer.
  * @param {{via?: string, control?: string, value?: number|string, state?: string}} [opts]
  *   via: 'app' (default) | 'notification' for a run a person started; a
- *   viewer with `automation: true` (gc.actions.run) always runs with via =
- *   its `via` (the calling plugin's id). control: the id of a control of the
+ *   viewer with `automation: true` or `interactive: true` (gc.actions.run)
+ *   always runs with via = its `via` (the calling plugin's id). control: the id of a control of the
  *   listed action's widget the app moved, value its new value — both reach
  *   the hook validated; without `control` the hook gets neither. state:
  *   'on'|'off', the state a toggle should end in (never with `control`) —
@@ -384,8 +386,11 @@ function controlValue(c, v) {
 async function run(pluginId, actionId, user, lang, opts = {}) {
   const l = lang2(lang);
   const automation = !!(user && user.automation === true);
+  // gc.actions.run: an automation run, or an interactive one (a person
+  // pressed the button in the calling plugin) — via is the caller's id
+  const byPlugin = automation || !!(user && user.interactive === true);
   let via;
-  if (automation) via = String(user.via || '');
+  if (byPlugin) via = String(user.via || '');
   else via = opts && typeof opts.via === 'string' && VIA_PERSON.has(opts.via) ? opts.via : 'app';
   const controlRun = !!opts && opts.control !== undefined && opts.control !== null;
   const stateRun = !!opts && opts.state !== undefined && opts.state !== null;

@@ -425,3 +425,90 @@ describe('home actions shape (since 1.180.0): actionId, label, needsConfirm, run
     await refused('run', { userId: anna, actionId: 'hello/btn' }, 'ERR_ACTIONS_DENIED', 'hello');
   });
 });
+
+describe('interactive runs (since 1.180.0): permissions.actions { interactive: true }', () => {
+  const tapOverrides = () => ({ id: 'hello-tap', name: 'Antippen', permissions: { ...helloManifest.permissions, actions: { interactive: true } } });
+  before(async () => {
+    hostApi._resetActionsBudgetForTest();
+    await install(helloPackage({ overrides: tapOverrides() }));
+    assert.equal(await runtime.waitRunning('hello-tap'), true);
+    await kv('hello', 'quick-actions', [{ id: 'door:open', title: 'Tür öffnen', icon: 'M4 12h16', confirm: true }]);
+  });
+  after(async () => {
+    await kv('hello', 'quick-actions', [{ id: 'light:3', title: 'Licht', subtitle: 'Wohnzimmer', icon: 'M4 12h16', kind: 'toggle', state: 'off', confirm: true }]);
+    hostApi._resetActionsBudgetForTest();
+  });
+
+  it('plugin.json: true or { interactive: boolean }; the summary and the consent dialog show it (DE + EN)', async () => {
+    const manifest = require('../src/services/plugins/manifest');
+    const base = JSON.parse(JSON.stringify(helloManifest));
+    const perms = (v) => { base.permissions.actions = v; return manifest.validate(base); };
+    assert.deepEqual([perms(true).manifest.permissions.actions, perms(true).manifest.permissions.actionsInteractive], [true, false]);
+    assert.deepEqual([perms(false).manifest.permissions.actions, perms(false).manifest.permissions.actionsInteractive], [false, false]);
+    assert.deepEqual([perms({ interactive: true }).manifest.permissions.actions, perms({ interactive: true }).manifest.permissions.actionsInteractive], [true, true]);
+    assert.deepEqual([perms({ interactive: false }).manifest.permissions.actions, perms({ interactive: false }).manifest.permissions.actionsInteractive], [true, false]);
+    for (const bad of [{}, { interactive: 'yes' }, { interactive: true, extra: 1 }, { other: true }, [true]]) {
+      const r = perms(bad);
+      assert.equal(r.ok, false, JSON.stringify(bad));
+      assert.ok(r.errors.includes('permissions.actions: invalid'), JSON.stringify(bad));
+    }
+    const r = await agent.post(API + '/inspect').set('X-CSRF-Token', csrf).set('Content-Type', 'application/octet-stream')
+      .send(helloPackage({ overrides: { ...tapOverrides(), id: 'hello-tap2' } })).expect(200);
+    assert.equal(r.body.plugin.permissions.actions, true);
+    assert.equal(r.body.plugin.permissions.actionsInteractive, true);
+    const r2 = await agent.post(API + '/inspect').set('X-CSRF-Token', csrf).set('Content-Type', 'application/octet-stream')
+      .send(helloPackage({ overrides: { ...autoOverrides(), id: 'hello-auto3' } })).expect(200);
+    assert.equal(r2.body.plugin.permissions.actionsInteractive, false);
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'plugins-ui.js'), 'utf8');
+    assert.ok(src.includes("t('plugins.perm.actions_interactive_on')"));
+    const read = (lang) => JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', `${lang}.json`), 'utf8'));
+    assert.equal(read('de')['plugins.perm.actions_interactive_on'], 'darf Aktionen auslösen, wenn eine Person sie in diesem Plugin antippt (z. B. Tür öffnen aus dem Chat)');
+    assert.equal(read('en')['plugins.perm.actions_interactive_on'], 'may run actions when a person taps them in this plugin (e.g. open the door from the chat)');
+    for (const lang of ['de', 'en']) assert.ok(read(lang)['plugins.perm.actions_interactive'], lang);
+  });
+
+  it('interactive: true → the target sees a person\'s tap: automation false, interactive true, via the caller; logged as interactive', async () => {
+    await kv('hello', 'quick-last', null);
+    const r = await call('run', { userId: anna, actionId: 'hello/door:open', interactive: true, via: 'hello-tap' }, 'hello-tap');
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body.result, { ok: true, message: 'ran door:open', state: 'on', unchanged: false, result: { message: 'ran door:open', state: 'on', unchanged: false } });
+    assert.deepEqual(await kvGet('hello', 'quick-last'), {
+      id: 'door:open', lang: 'de', via: 'hello-tap', automation: false,
+      user: { id: anna, name: 'pa-anna', role: 'user', portal: true, loggedIn: true, automation: false, interactive: true, via: 'hello-tap' },
+    });
+    const row = lastActivity();
+    assert.equal(row.message, 'Quick action "door:open" of plugin "hello" run for user "pa-anna" via plugin "hello-tap" (interactive) (ok)');
+    assert.deepEqual(JSON.parse(row.details), { plugin: 'hello-tap', via: 'hello-tap', interactive: true, target: 'hello', action: 'door:open', userId: anna, ok: true });
+  });
+
+  it('without interactive (or false / null) the same plugin runs as an automation, exactly as before', async () => {
+    for (const interactive of [undefined, false, null]) {
+      await kv('hello', 'quick-last', null);
+      const r = await call('run', { userId: anna, actionId: 'hello/door:open', interactive }, 'hello-tap');
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      const last = await kvGet('hello', 'quick-last');
+      assert.deepEqual([last.automation, last.via, last.user.automation, 'interactive' in last.user], [true, 'hello-tap', true, false], String(interactive));
+      assert.equal(lastActivity().message, 'Quick action "door:open" of plugin "hello" run for user "pa-anna" via plugin "hello-tap" (ok)');
+      assert.equal(JSON.parse(lastActivity().details).interactive, undefined);
+    }
+  });
+
+  it('list({ interactive: true }) asks the targets with the interactive viewer', async () => {
+    const r = await call('list', { userId: anna, interactive: true }, 'hello-tap');
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.ok(r.body.result.some((a) => a.actionId === 'hello/door:open' && a.needsConfirm === true));
+  });
+
+  it('permissions.actions: true only → interactive refused with ERR_ACTIONS_DENIED; a non-boolean → ERR_INVALID; nothing runs', async () => {
+    await kv('hello', 'quick-last', null);
+    const before = activityCount();
+    await refused('run', { userId: anna, actionId: 'hello/door:open', interactive: true }, 'ERR_ACTIONS_DENIED');
+    await refused('list', { userId: anna, interactive: true }, 'ERR_ACTIONS_DENIED');
+    for (const interactive of ['yes', 1, 'true', {}]) {
+      await refused('run', { userId: anna, actionId: 'hello/door:open', interactive }, 'ERR_INVALID', 'hello-tap');
+    }
+    await refused('run', { userId: anna, actionId: 'hello/door:open', interactive: true }, 'ERR_ACTIONS_DENIED', 'hello');
+    assert.equal(await kvGet('hello', 'quick-last'), null, 'never ran');
+    assert.equal(activityCount(), before);
+  });
+});

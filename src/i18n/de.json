@@ -5203,6 +5203,8 @@
   "plugins.perm.kiosk_on": "darf Benutzer als Kiosk-Geräte freigeben (z. B. Wand-Tablet)",
   "plugins.perm.actions": "Schnellaktionen",
   "plugins.perm.actions_on": "darf Schnellaktionen anderer Plugins auslösen (z. B. Smart-Home-Szenen)",
+  "plugins.perm.actions_interactive": "Aktionen per Antippen",
+  "plugins.perm.actions_interactive_on": "darf Aktionen auslösen, wenn eine Person sie in diesem Plugin antippt (z. B. Tür öffnen aus dem Chat)",
   "plugins.perm.media": "Medien",
   "plugins.perm.media_v": "speichert Dateien seiner Benutzer bei GateControl (bis {{max}} je Datei, Kontingent {{quota}}): {{types}} – im Portal auch mit dem Mikrofon für Sprachaufnahmen",
   "plugins.perm.events": "Live-Ereignisse",

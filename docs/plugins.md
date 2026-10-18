@@ -270,6 +270,16 @@ unsigned build of the same id.
   other plugins' quick actions" below). The install/consent dialog shows "darf
   Schnellaktionen anderer Plugins auslösen (z. B. Smart-Home-Szenen)" / "may
   run other plugins' quick actions (e.g. smart home scenes)".
+  `permissions.actions: { interactive: true }` (since 1.180.0) grants the
+  same and additionally *interactive* runs (`gc.actions.run({ …,
+  interactive: true })`: a person pressed the button for exactly this action
+  in this plugin's UI just now — the target plugin treats it like that
+  person's tap); the dialog then also shows "darf Aktionen auslösen, wenn
+  eine Person sie in diesem Plugin antippt (z. B. Tür öffnen aus dem Chat)" /
+  "may run actions when a person taps them in this plugin (e.g. open the door
+  from the chat)". `{ interactive: false }` equals `true`; any other value →
+  `permissions.actions: invalid` (a plugin using the object form needs
+  `"gatecontrol": ">=1.180.0"`).
 * `notifyTopics` (optional, needs `permissions.notify`): up to 20 own push
   topics, `id` `[a-z][a-z0-9_-]{0,31}`, `label` text (≤ 60), `default`
   (boolean, default `true`: people get the topic until they switch it off; `false`:
@@ -411,8 +421,8 @@ module.exports = {
 | `gc.users.list()/get(id)` | `{ id, name, role, avatarUrl, color, colorHex, initials }` of enabled users (`users`) — `avatarUrl` is the profile picture's path `/avatars/<id>.<ext>` or `null`, `color` the favourite colour's palette key (never `null`), `colorHex` its `#RRGGBB`, `initials` one or two letters for the fallback (docs/feature-avatars.md; since 1.168.0) |
 | `gc.kiosk.allow(userId, allowed)` | mark (`true`) or unmark (`false`) a user as a kiosk user (`kiosk`); an administrator, a disabled or an unknown account → `ERR_INVALID` (allowing only; unmarking always works) |
 | `gc.kiosk.list()` | ids of the users this plugin marks (`kiosk`) |
-| `gc.actions.list({ userId, lang })` | the quick actions the *other* plugins offer to that user → `[{ actionId, plugin, pluginName, id, label, title, subtitle, icon, kind, state, needsConfirm, confirmWhen, verbs, targets, device }]` (`actions`; `actionId`, `label`, `needsConfirm`, `confirmWhen` since 1.180.0) — see "Running other plugins' quick actions" |
-| `gc.actions.run({ userId, actionId, params, via, lang })` | run one of them as that user — `actionId` `'<plugin>/<id>'` from the list (or `plugin` + `id`), `params.state` (`'on'`/`'off'`, optional; or `state`) the state a toggle should end in → `{ ok, result, code, message, state, unchanged }` (`code` when not `ok`; `actions`, ≤ 60 runs per minute; `actionId`, `params`, `via`, `result`, `code` since 1.180.0, before ≤ 60 per hour) |
+| `gc.actions.list({ userId, lang, interactive })` | the quick actions the *other* plugins offer to that user → `[{ actionId, plugin, pluginName, id, label, title, subtitle, icon, kind, state, needsConfirm, confirmWhen, verbs, targets, device }]` (`actions`; `actionId`, `label`, `needsConfirm`, `confirmWhen` since 1.180.0) — see "Running other plugins' quick actions" |
+| `gc.actions.run({ userId, actionId, params, via, interactive, lang })` | run one of them as that user (`interactive: true`: a person tapped it in this plugin, needs `actions: { interactive: true }`) — `actionId` `'<plugin>/<id>'` from the list (or `plugin` + `id`), `params.state` (`'on'`/`'off'`, optional; or `state`) the state a toggle should end in → `{ ok, result, code, message, state, unchanged }` (`code` when not `ok`; `actions`, ≤ 60 runs per minute; `actionId`, `params`, `via`, `result`, `code` since 1.180.0, before ≤ 60 per hour) |
 | `gc.notify(message, { severity })` | activity log + webhooks, and a push on `plugin:<id>:default` (`notify`, ≤ 30/h or `perHour`) — see "Notifications" |
 | `gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data, image })` | push on a declared `notifyTopics` topic (+ activity row) → `{ pushed, id }`; `image` `{ data, mime }` or `{ mediaId }` — see "Pictures" |
 | `gc.notify({ topic: <chat topic>, title, body, users, conversation, sender, … })` | a chat notification (`notifyTopics[].chat`) → `{ pushed, id, skipped }` — see "Chat notifications" |
@@ -441,7 +451,9 @@ viewer; the quick-action hooks (`quickActions`, `runQuickAction`) get the
 owner of the app's device token as that viewer, with `loggedIn: true` and
 `app: true` (see "Quick actions"), or — when another plugin runs them with
 `gc.actions.*` — that user with `loggedIn: true`, `automation: true` and
-`via: '<calling plugin id>'` (see "Running other plugins' quick actions").
+`via: '<calling plugin id>'`, or for an interactive run (since 1.180.0)
+`automation: false`, `interactive: true` and that `via` (see "Running other
+plugins' quick actions").
 
 ### Kiosk devices (`permissions.kiosk`)
 
@@ -1035,7 +1047,7 @@ async quickActions({ user, lang }, gc) {
   ];
 },
 async runQuickAction({ user, lang, id, via, automation, control, value, target }, gc) {
-  // via: 'app' | 'notification' | '<plugin id>' (gc.actions.run); automation: true only for gc.actions.run
+  // via: 'app' | 'notification' | '<plugin id>' (gc.actions.run); automation: true only for gc.actions.run without interactive
   // control / value: only when the app moved a control of the action's widget (see "Widgets")
   // target: 'on' | 'off' only for a toggle declaring targets: true (see "Target states")
   return { ok: true, message: 'Licht eingeschaltet', state: 'on' };   // state optional (new toggle state)
@@ -1093,10 +1105,11 @@ async runQuickAction({ user, lang, id, via, automation, control, value, target }
     `'notification'` (the `quick_action` button of a push, see
     "Notifications") or the id of the plugin that ran it with
     `gc.actions.run` (see below);
-  * `automation`: `true` only for `gc.actions.run` (another plugin ran it
-    for the user — a rule, or a person pressing a button inside that plugin,
-    e.g. a chat card; the host cannot tell which), `false` for every run a
-    person started in the apps. A plugin tells a person's run from an automation by
+  * `automation`: `true` only for `gc.actions.run` without `interactive`
+    (another plugin ran it for the user, nobody tapped anything), `false`
+    for every run a person started — in the apps, or (since 1.180.0) in
+    another plugin's UI with `gc.actions.run({ …, interactive: true })`;
+    then `user.interactive` is `true` and `via` the id of that plugin. A plugin tells a person's run from an automation by
     `automation` (not by `via` alone — a plugin id could look like anything).
 * **Language** `lang` (`de`/`en`): `?lang=` of the request, else the owner's
   language setting, else `Accept-Language`, else `de`.
@@ -1425,6 +1438,8 @@ const actions = await gc.actions.list({ userId: 7, lang: 'de' });
 //    subtitle: null, icon: null, kind: 'button', state: null, needsConfirm: false,
 //    confirmWhen: null, verbs: null, targets: false, device: null }, …]
 const r = await gc.actions.run({ userId: 7, actionId: 'gatecontrol-smarthome/scene:evening', via: gc.plugin.id });
+// a person pressed "Haustür öffnen" in this plugin's chat just now (needs actions: { interactive: true }):
+await gc.actions.run({ userId: 7, actionId: 'gatecontrol-door/front:open', interactive: true });
 // { ok: true, result: { message: 'Szene gestartet', state: null, unchanged: false },
 //   message: 'Szene gestartet', state: null, unchanged: false }
 await gc.actions.run({ userId: 7, actionId: 'gatecontrol-fahrzeuge/lock:42', params: { state: 'on' } });
@@ -1476,8 +1491,22 @@ unchanged — `actionId` is `plugin + '/' + id` (neither may contain `/`).
   user (listing and run go through the same `quickActions.run` as the
   client API). Any enabled account works (an administrator too); the target
   plugin may refuse automation runs by checking `user.automation`.
+* **Interactive runs** (since 1.180.0, `permissions.actions: { interactive:
+  true }`): `interactive: true` on `run` says "a person pressed a button for
+  exactly this action in the calling plugin's UI just now" — use it only
+  then, never for rules, schedules or retries. The target plugin's hooks
+  get the viewer `{ id, name, role, portal: true, loggedIn: true,
+  automation: false, interactive: true, via: '<calling plugin id>' }` and
+  `runQuickAction` `automation: false`, `via: '<calling plugin id>'` — like
+  that person's tap in the apps (`via` the caller instead of `'app'`), so a
+  plugin that refuses automation runs (e.g. a door plugin's `open`) runs
+  it. `list({ userId, interactive: true })` asks the targets with the same
+  viewer (what that person would get offered). Without the object form →
+  `ERR_ACTIONS_DENIED`; a non-boolean `interactive` → `ERR_INVALID`;
+  `false` / `null` / absent = the automation run as above. Same limit and
+  log (marked "(interactive)").
 * **Input** (checked strictly, else `ERR_INVALID` and nothing is asked or
-  run): `userId` a positive integer of an existing, **enabled** user (checked
+  run): `interactive` (optional) a boolean, see above; `userId` a positive integer of an existing, **enabled** user (checked
   at every call — a disabled, deleted or unknown account → `ERR_INVALID`
   "unknown or disabled user"); `lang` `de`/`en` or absent (then the user's
   language setting, else `de`); either `actionId` `'<plugin>/<id>'` or
@@ -1510,11 +1539,13 @@ unchanged — `actionId` is `plugin + '/' + id` (neither may contain `/`).
   Listing is not counted.
 * **Activity log**: every run is an entry `plugin_automation` (info; warning
   when not `ok`) "Quick action "<id>" of plugin "<target>" run for user
-  "<name>" via plugin "<caller>" (ok|failed)" with details `{ plugin:
-  '<caller>', via: '<caller>', target, action, userId, ok, state?,
-  unchanged?, error? }` — ids, the account's name and codes only, no text of
+  "<name>" via plugin "<caller>" [(interactive)] (ok|failed)" with details
+  `{ plugin: '<caller>', via: '<caller>', interactive?, target, action,
+  userId, ok, state?, unchanged?, error? }` (`interactive: true` only for
+  interactive runs) — ids, the account's name and codes only, no text of
   either plugin (`state` only when it is `'on'` / `'off'`).
-* **Errors** (thrown): `ERR_ACTIONS_DENIED` (no `permissions.actions`),
+* **Errors** (thrown): `ERR_ACTIONS_DENIED` (no `permissions.actions`, or
+  `interactive: true` without `{ interactive: true }`),
   `ERR_INVALID`, `ERR_RATE_LIMIT`.
 
 ## App (permissions.app, ui.app, client API)
