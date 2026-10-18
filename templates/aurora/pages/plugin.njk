@@ -28,7 +28,7 @@
 
   {% if running %}
     <iframe class="pg-frame" id="pg-frame" title="{{ page.title }}" src="/plugins/{{ plugin.id }}/frame/{{ page.id }}"
-      sandbox="allow-scripts allow-forms{% if plugin.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}{% if plugin.media %} allow-downloads{% endif %}" referrerpolicy="no-referrer"{% if plugin.media %} allow="microphone *"{% endif %}
+      sandbox="allow-scripts allow-forms{% if plugin.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}{% if plugin.media %} allow-downloads{% endif %}" referrerpolicy="no-referrer"{% if plugin.media or plugin.geolocation %} allow="{{ 'microphone *' if plugin.media }}{{ '; ' if plugin.media and plugin.geolocation }}{{ 'geolocation *' if plugin.geolocation }}"{% endif %}
       data-plugin-frame data-plugin-id="{{ plugin.id }}" data-plugin-api="/api/v1/plugins/{{ plugin.id }}/api/" data-plugin-pages="{{ pagesJson }}"{% if plugin.events %} data-plugin-events{% endif %}></iframe>
   {% else %}
     <section class="pg-off" id="pg-off" data-reason="{{ reason }}" aria-labelledby="pg-off-title">

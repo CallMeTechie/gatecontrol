@@ -14,6 +14,17 @@
 // data-plugin-events): one EventSource per plugin and page
 // (…/plugins/<id>/events), opened when the first frame subscribes, each
 // event passed to the subscribed frames of that plugin.
+//
+// Inbox (GC.inbox, frames with data-plugin-inbox = plugin.json `ui.inbox`,
+// portal frames only): this page's own inbox state, never fetched here. The
+// portal (public/js/portal.js) announces it as a `gc:inbox` DOM event
+// ({ unread, latest }); a frame's gc-inbox-subscribe asks it with
+// `gc:inbox-request` (the portal sets detail.handled and announces its state,
+// polling first when it has none), gc-inbox-open with `gc:inbox-open` (the
+// portal shows #mitteilungen). Only the unread count and the newest item's
+// title, time and priority reach the frame; a page without the notification
+// center, the admin pages and frames without the attribute get
+// { available: false }.
 (function () {
   const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
   const MAX_UPLOAD = 100 * 1024 * 1024;
@@ -45,6 +56,35 @@
       delete streams[pluginId];
     }
   }
+  // ── inbox (portal) ──
+  const inboxSinks = new Set(); // reply fns of the frames subscribed to the inbox
+  const INBOX_OFF = { available: false, unread: 0, latest: null };
+  const PRIORITIES = ['info', 'normal', 'high', 'critical'];
+  function cleanInbox(d) {
+    if (!d || typeof d !== 'object') return null;
+    const unread = Math.max(0, Math.min(1000000, Math.floor(Number(d.unread) || 0)));
+    const l = d.latest && typeof d.latest === 'object' ? d.latest : null;
+    const latest = l && typeof l.title === 'string' ? {
+      title: l.title.slice(0, 200),
+      createdAt: typeof l.createdAt === 'string' ? l.createdAt.slice(0, 40) : null,
+      priority: PRIORITIES.indexOf(l.priority) >= 0 ? l.priority : 'normal',
+    } : null;
+    return { available: true, unread, latest };
+  }
+  /** Ask the page (portal.js) — true when it took the request. */
+  function askPage(type) {
+    if (typeof CustomEvent !== 'function' || !document.dispatchEvent) return false;
+    const ev = new CustomEvent(type, { detail: { handled: false } });
+    document.dispatchEvent(ev);
+    return !!(ev.detail && ev.detail.handled === true);
+  }
+  if (document.addEventListener) {
+    document.addEventListener('gc:inbox', (e) => {
+      const st = cleanInbox(e && e.detail);
+      if (st) inboxSinks.forEach((fn) => fn({ type: 'gc-inbox', inbox: st }));
+    });
+  }
+
   const PATH_RE = /^[A-Za-z0-9._~!$&'()*+,;=:@%/-]*(\?[A-Za-z0-9._~!$&'()*+,;=:@%/?-]*)?$/;
 
   function csrf() {
@@ -79,6 +119,18 @@
       if (!eventsOn || on === subscribed) return;
       subscribed = on;
       if (on) subscribe(pluginId, eventsUrl, reply); else unsubscribe(pluginId, reply);
+    }
+
+    // GC.inbox: portal frames of plugins with ui.inbox only
+    const inboxOn = frame.getAttribute('data-plugin-inbox') != null && base.indexOf('/api/v1/portal/') === 0;
+    let inboxSub = false;
+    function setInbox(on) {
+      if (!on) { inboxSub = false; inboxSinks.delete(reply); return; }
+      if (inboxSub) return;
+      if (!inboxOn) { reply({ type: 'gc-inbox', inbox: INBOX_OFF }); return; }
+      inboxSub = true;
+      inboxSinks.add(reply);
+      if (!askPage('gc:inbox-request')) { setInbox(false); reply({ type: 'gc-inbox', inbox: INBOX_OFF }); }
     }
 
     function upload(m) {
@@ -179,6 +231,9 @@
       else if (m.type === 'gc-upload' && Number.isInteger(m.id)) upload(m);
       else if (m.type === 'gc-subscribe') setSubscribed(true);
       else if (m.type === 'gc-unsubscribe') setSubscribed(false);
+      else if (m.type === 'gc-inbox-subscribe') setInbox(true);
+      else if (m.type === 'gc-inbox-unsubscribe') setInbox(false);
+      else if (m.type === 'gc-inbox-open') { if (inboxOn) askPage('gc:inbox-open'); }
       else if (m.type === 'gc-resize') {
         const h = Math.max(120, Math.min(20000, Number(m.height) || 0));
         frame.style.height = h + 'px';
@@ -187,6 +242,7 @@
       else if (m.type === 'gc-hello') {
         // a new document in the frame (first load, reload): it subscribes again when it wants events
         setSubscribed(false);
+        setInbox(false);
         sendTheme();
       }
       else if (m.type === 'gc-nav') {

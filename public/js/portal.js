@@ -839,7 +839,7 @@
   var POLL_MS = 60000;
   var PAGE = 30;
   var RECENT = 5;
-  var nf = { prefs: null, prefsReq: null, items: [], recent: [], unread: 0, more: false, loaded: false, failed: false, lastPoll: 0, timer: null };
+  var nf = { prefs: null, prefsReq: null, items: [], recent: [], unread: 0, more: false, loaded: false, failed: false, lastPoll: 0, timer: null, known: false, announced: null };
   var TOPIC_ICON = {
     security: 'M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z',
     devices: 'M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2',
@@ -920,7 +920,21 @@
     }
     show($('pt-inbox-more-wrap'), nf.more);
   }
+  // ── Plugin frames with ui.inbox (window.GC.inbox, public/js/plugin-bridge.js) ──
+  // The bridge hears this page's state as a `gc:inbox` DOM event: the unread
+  // count and the newest item's title, time and priority — nothing else
+  // (no body, no data, no ids) and nobody else's inbox.
+  function announceInbox(force) {
+    if (!nf.known) return;
+    var it = nf.recent[0] || nf.items[0] || null;
+    var detail = { unread: nf.unread, latest: it ? { title: String(it.title || ''), createdAt: String(it.created_at || ''), priority: String(it.priority || 'normal') } : null };
+    var key = JSON.stringify(detail);
+    if (!force && key === nf.announced) return;
+    nf.announced = key;
+    try { doc.dispatchEvent(new CustomEvent('gc:inbox', { detail: detail })); } catch (_) { /* old browsers */ }
+  }
   function renderRecent() {
+    announceInbox(false);
     var list = $('pt-np-recent');
     if (!list) return;
     clear(list);
@@ -941,6 +955,7 @@
       var items = validItems(res.body);
       nf.failed = false;
       nf.loaded = true;
+      nf.known = true;
       nf.items = more ? nf.items.concat(items) : items;
       nf.more = items.length >= PAGE;
       if (!more) nf.recent = items.slice(0, RECENT);
@@ -961,6 +976,7 @@
         return;
       }
       nf.failed = false;
+      nf.known = true;
       nf.recent = validItems(res.body).slice(0, RECENT);
       setUnread(res.body.unread);
       renderRecent();
@@ -1171,6 +1187,17 @@
     onPanel(function (id) {
       if (id === 'mitteilungen') { loadPrefs(false); loadInbox(false); }
       if (id === 'benachrichtigungen') { loadPrefs(false); poll(); }
+    });
+    // a plugin frame with ui.inbox (via plugin-bridge.js): its summary, and "open the inbox"
+    doc.addEventListener('gc:inbox-request', function (e) {
+      if (e.detail) e.detail.handled = true;
+      if (nf.known) announceInbox(true); else poll();
+    });
+    doc.addEventListener('gc:inbox-open', function (e) {
+      if (e.detail) e.detail.handled = true;
+      activate('mitteilungen', { push: true, scroll: true });
+      var panel = $('panel-mitteilungen');
+      if (panel && !panel.hidden) panel.focus({ preventScroll: true });
     });
   })();
   function bootNotify() {

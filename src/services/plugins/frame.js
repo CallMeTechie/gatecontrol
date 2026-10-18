@@ -51,6 +51,21 @@
 //
 // Realtime events (permissions.events): window.GC.on('event', fn) — the
 // parent page holds the plugin's event stream and passes each event on.
+//
+// Location (plugin.json `ui.geolocation`): the parent's <iframe> gets
+// allow="geolocation *", so navigator.geolocation works in the frame — the
+// browser still asks the person (for GateControl's origin). Nothing in the
+// CSP or the sandbox changes; without the flag the Permissions Policy keeps
+// the frame from asking at all.
+//
+// Inbox (plugin.json `ui.inbox`, portal frames only): window.GC.inbox.on(fn)
+// gets { available, unread, latest: { title, createdAt, priority } | null }
+// of the viewer's own notification inbox — the portal page's own state
+// (public/js/portal.js), handed on by the parent (plugin-bridge.js): never
+// another person's inbox, never bodies or data of the notifications, and no
+// way to change anything there. GC.inbox.open() asks the portal to show its
+// own inbox (#mitteilungen). Frames of other plugins, the admin pages and a
+// portal without the notification center get { available: false }.
 
 const OSM_TILES = 'https://tile.openstreetmap.org';
 const SHARED_LEAFLET = '/plugins/_shared/leaflet/';
@@ -138,7 +153,7 @@ table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:8px;bord
 
 // Runs inside the sandboxed frame. Talks to window.parent only.
 const BRIDGE_CLIENT = `(function(){
-  var seq = 0, pending = {}, listeners = [];
+  var seq = 0, pending = {}, listeners = [], inboxListeners = [], inboxLast = null;
   function post(msg){ try { window.parent.postMessage(msg, '*'); } catch (e) { /* no parent */ } }
   window.addEventListener('message', function (e) {
     if (e.source !== window.parent) return;
@@ -152,6 +167,10 @@ const BRIDGE_CLIENT = `(function(){
       try { pending[m.id].progress({ loaded: Number(m.loaded) || 0, total: Number(m.total) || 0 }); } catch (e) { /* the plugin's callback */ }
     } else if (m.type === 'gc-event' && m.event && typeof m.event === 'object') {
       for (var i = 0; i < listeners.length; i++) { try { listeners[i](m.event); } catch (e) { /* the plugin's listener */ } }
+    } else if (m.type === 'gc-inbox' && m.inbox && typeof m.inbox === 'object') {
+      inboxLast = m.inbox;
+      var ls = inboxListeners.slice();
+      for (var k = 0; k < ls.length; k++) { try { ls[k](m.inbox); } catch (e) { /* the plugin's listener */ } }
     } else if (m.type === 'gc-theme') {
       document.documentElement.setAttribute('data-theme', m.theme === 'light' ? 'light' : 'dark');
     }
@@ -186,6 +205,22 @@ const BRIDGE_CLIENT = `(function(){
     if (name === 'event' && i >= 0) listeners.splice(i, 1);
     if (name === 'event' && i >= 0 && !listeners.length) post({ type: 'gc-unsubscribe' });
   }
+  // ui.inbox: the viewer's inbox summary ({ available, unread, latest }) and a way to open it
+  var inbox = Object.freeze({
+    on: function (fn) {
+      if (typeof fn !== 'function' || inboxListeners.indexOf(fn) >= 0) return;
+      inboxListeners.push(fn);
+      if (inboxListeners.length === 1) post({ type: 'gc-inbox-subscribe' });
+      else if (inboxLast) { var last = inboxLast; setTimeout(function () { try { fn(last); } catch (e) { /* the plugin's listener */ } }, 0); }
+    },
+    off: function (fn) {
+      var i = inboxListeners.indexOf(fn);
+      if (i < 0) return;
+      inboxListeners.splice(i, 1);
+      if (!inboxListeners.length) { inboxLast = null; post({ type: 'gc-inbox-unsubscribe' }); }
+    },
+    open: function () { post({ type: 'gc-inbox-open' }); }
+  });
   // Height of the frame content: the document's own height (scrollHeight is
   // never below the frame's current height, so the frame could not shrink
   // again), plus fixed elements (a plugin's own dialogs), which count towards
@@ -229,6 +264,7 @@ const BRIDGE_CLIENT = `(function(){
     upload: upload,
     on: on,
     off: off,
+    inbox: inbox,
     lang: document.documentElement.lang || 'de',
     tiles: /*GC_TILES*/null
   });
