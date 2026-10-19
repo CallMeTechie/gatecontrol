@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.183.0] — 2026-10-19
+
+### Features
+- plugin page under Einstellungen › Plugins, built like the mockup (#327)
+
+---
+
 ## [1.182.0] — 2026-10-19
 
 ### Features
