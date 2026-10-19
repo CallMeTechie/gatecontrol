@@ -366,6 +366,58 @@ function tcpConnect({ address, family, port }, { timeoutMs = 10000 } = {}) {
   });
 }
 
+// ─── WebSocket ──────────────────────────────────
+
+/**
+ * A ws:/wss: URL checked like http.fetch: its http(s) twin against the
+ * internet allowlist (host, port, public addresses only).
+ * @returns {Promise<{ok:true, address, family, url:URL, port}|{ok:false, reason}>}
+ */
+async function checkWebSocket(url, policy, opts = {}) {
+  let u;
+  try { u = new URL(String(url)); } catch { return { ok: false, reason: 'invalid_url' }; }
+  if (u.protocol !== 'ws:' && u.protocol !== 'wss:') return { ok: false, reason: 'protocol' };
+  if (u.hash) return { ok: false, reason: 'invalid_url' };
+  const r = await checkTarget(new URL(u.href.replace(/^ws/, 'http')), policy, opts);
+  return r.ok ? { ...r, url: u } : r;
+}
+
+/**
+ * Open a WebSocket to an address the caller has checked already: pinned (no
+ * DNS between check and connect), no redirects, no compression.
+ * @returns {Promise<import('ws')>} the open socket
+ */
+function wsConnect(target, { headers, protocols, timeoutMs = 10000, maxPayload = 1024 * 1024 } = {}) {
+  const WebSocket = require('ws');
+  const hostname = target.url.hostname.replace(/^\[|\]$/g, '');
+  return new Promise((resolve, reject) => {
+    let ws;
+    try {
+      ws = new WebSocket(target.url.href, protocols || [], {
+        headers: cleanHeaders(headers),
+        handshakeTimeout: timeoutMs,
+        maxPayload,
+        followRedirects: false,
+        perMessageDeflate: false,
+        servername: isIpLiteral(hostname) ? '' : hostname,
+        lookup: (_h, o, cb) => {
+          if (o && o.all) return cb(null, [{ address: target.address, family: target.family }]);
+          return cb(null, target.address, target.family);
+        },
+      });
+    } catch (e) { reject(Object.assign(new Error(e.message), { code: 'ERR_NET' })); return; }
+    const fail = (msg) => {
+      ws.removeAllListeners();
+      ws.on('error', () => {});
+      ws.terminate();
+      reject(Object.assign(new Error(msg), { code: 'ERR_NET' }));
+    };
+    ws.once('open', () => { ws.removeAllListeners('error'); ws.removeAllListeners('unexpected-response'); resolve(ws); });
+    ws.once('unexpected-response', (_req, res) => fail(`unexpected response ${res.statusCode}`));
+    ws.once('error', (e) => fail(String((e && e.message) || e)));
+  });
+}
+
 // ─── UDP discovery ──────────────────────────────
 
 function ipv4ToInt(s) { return s.split('.').reduce((acc, o) => ((acc << 8) >>> 0) + Number(o), 0) >>> 0; }
@@ -452,6 +504,6 @@ function _setReservedForTest(nets) {
 
 module.exports = {
   parseEntry, parseList, parsePorts, compile, classify, isHostReserved, checkInternet, checkTarget, inRanges, toAddr, isIpLiteral,
-  pinnedRequest, fetchWithPolicy, tcpConnect, udpExchange, lanBroadcasts, hostReserved, describe, cleanHeaders, lookupAll,
+  pinnedRequest, fetchWithPolicy, tcpConnect, checkWebSocket, wsConnect, udpExchange, lanBroadcasts, hostReserved, describe, cleanHeaders, lookupAll,
   _setReservedForTest, _setTestPrivateForTest,
 };

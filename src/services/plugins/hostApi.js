@@ -133,12 +133,18 @@ function socketsOf(id) {
   return m;
 }
 
-/** Close every socket of a plugin (process ended, stopped, uninstalled). */
+/** Close every socket and WebSocket of a plugin (process ended, stopped, uninstalled). */
 function closeSockets(id) {
   const m = sockets.get(id);
-  if (!m) return;
-  for (const s of m.values()) s.destroy();
-  sockets.delete(id);
+  if (m) {
+    for (const s of m.values()) s.destroy();
+    sockets.delete(id);
+  }
+  const w = websockets.get(id);
+  if (w) {
+    for (const ws of w.values()) ws.terminate();
+    websockets.delete(id);
+  }
 }
 
 async function tcpConnect(plugin, args, ctx) {
@@ -175,6 +181,100 @@ function tcpWrite(plugin, args) {
   return new Promise((resolve, reject) => {
     s.write(Buffer.from(args.b64, 'base64'), (e) => (e ? reject(new HostApiError('ERR_NET', e.message)) : resolve(null)));
   });
+}
+
+// ─── WebSocket (proxied; internet hosts of plugin.json) ──
+
+const MAX_WEBSOCKETS = 8;
+const WS_MAX_MESSAGE = 1024 * 1024;        // a message from the server (larger → closed, 1009)
+const WS_MAX_SEND = 256 * 1024;            // a message from the plugin
+const WS_MAX_BUFFER = 1024 * 1024;         // unsent data before send answers ERR_BUSY
+const WS_MAX_PER_SECOND = 200;             // messages from the server per second (more → closed, 1008)
+const WS_PROTOCOL_RE = /^[!#$%&'*+.^_`|~0-9a-z-]{1,64}$/i;
+const websockets = new Map(); // plugin id → Map<wsId, WebSocket>
+
+function websocketsOf(id) {
+  let m = websockets.get(id);
+  if (!m) { m = new Map(); websockets.set(id, m); }
+  return m;
+}
+
+/**
+ * gc.http.websocket(url, { headers, protocols, timeoutMs }): a ws:/wss: URL
+ * checked like http.fetch (internet hosts of plugin.json, public addresses
+ * only, pinned). Messages travel as events { t: 'ws', id, ev }.
+ */
+async function wsConnect(plugin, args, ctx) {
+  need(ctx && typeof ctx.emit === 'function', 'ERR_INVALID', 'no event channel');
+  const m = websocketsOf(plugin.id);
+  need(m.size < MAX_WEBSOCKETS, 'ERR_BUSY', 'too many open websockets');
+  const url = args && args.url;
+  need(typeof url === 'string' && url.length <= 8192, 'ERR_INVALID', 'invalid url');
+  const o = (args && args.opts) || {};
+  const protocols = o.protocols == null ? [] : [].concat(o.protocols);
+  need(protocols.length <= 8 && protocols.every((p) => typeof p === 'string' && WS_PROTOCOL_RE.test(p)) && new Set(protocols).size === protocols.length, 'ERR_INVALID', 'invalid protocols');
+  const headers = {};
+  for (const [k, v] of Object.entries(o.headers && typeof o.headers === 'object' ? o.headers : {})) {
+    if (!/^sec-websocket-/i.test(k)) headers[k] = v;
+  }
+  const timeoutMs = Math.max(1000, Math.min(30000, Number(o.timeoutMs) || 10000));
+  let ws;
+  try {
+    const target = await netPolicy.checkWebSocket(url, policyOf(plugin), netOpts());
+    if (!target.ok) throw Object.assign(new Error('connection refused by the plugin policy: ' + target.reason), { code: 'ERR_NET_DENIED' });
+    // the check is async: the limit again, so parallel connects cannot pass it together
+    need(m.size < MAX_WEBSOCKETS, 'ERR_BUSY', 'too many open websockets');
+    ws = await netPolicy.wsConnect(target, { headers, protocols, timeoutMs, maxPayload: WS_MAX_MESSAGE });
+  } catch (e) { throw e instanceof HostApiError ? e : netError(e); }
+  // the plugin stopped while connecting (closeSockets dropped its map) → nobody to deliver to
+  if (websockets.get(plugin.id) !== m) { ws.terminate(); throw new HostApiError('ERR_NET', 'plugin stopped'); }
+  if (m.size >= MAX_WEBSOCKETS) { ws.terminate(); throw new HostApiError('ERR_BUSY', 'too many open websockets'); }
+  const id = ++socketSeq;
+  m.set(id, ws);
+  let windowAt = Date.now();
+  let count = 0;
+  ws.on('message', (data, isBinary) => {
+    const now = Date.now();
+    if (now - windowAt >= 1000) { windowAt = now; count = 0; }
+    if (++count > WS_MAX_PER_SECOND) { ws.close(1008, 'too many messages'); return; }
+    const buf = Buffer.isBuffer(data) ? data : Buffer.concat([].concat(data));
+    if (isBinary) ctx.emit({ t: 'ws', id, ev: 'message', b64: buf.toString('base64') });
+    else ctx.emit({ t: 'ws', id, ev: 'message', text: buf.toString('utf8') });
+  });
+  ws.on('error', (e) => ctx.emit({ t: 'ws', id, ev: 'error', error: String((e && e.message) || e).slice(0, 200) }));
+  ws.on('close', (code, reason) => {
+    m.delete(id);
+    ctx.emit({ t: 'ws', id, ev: 'close', code: Number(code) || 1006, reason: String(reason || '').slice(0, 123) });
+  });
+  return { id, protocol: ws.protocol || '' };
+}
+
+function wsOf(plugin, args) {
+  const ws = websocketsOf(plugin.id).get(Number(args && args.id));
+  need(ws, 'ERR_INVALID', 'unknown websocket');
+  return ws;
+}
+
+function wsSend(plugin, args) {
+  const ws = wsOf(plugin, args);
+  const binary = typeof args.b64 === 'string';
+  need(binary || typeof args.text === 'string', 'ERR_INVALID', 'invalid data');
+  const data = binary ? Buffer.from(args.b64, 'base64') : args.text;
+  need(Buffer.byteLength(data) <= WS_MAX_SEND, 'ERR_INVALID', 'message too large');
+  need(ws.readyState === ws.OPEN, 'ERR_NET', 'websocket is not open');
+  need(ws.bufferedAmount <= WS_MAX_BUFFER, 'ERR_BUSY', 'websocket send buffer full');
+  return new Promise((resolve, reject) => {
+    ws.send(data, { binary }, (e) => (e ? reject(new HostApiError('ERR_NET', e.message)) : resolve(null)));
+  });
+}
+
+function wsClose(plugin, args) {
+  const ws = websocketsOf(plugin.id).get(Number(args && args.id));
+  if (!ws) return null;
+  const code = Number(args.code);
+  const valid = code === 1000 || (code >= 3000 && code <= 4999);
+  ws.close(valid ? code : 1000, typeof args.reason === 'string' ? args.reason.slice(0, 123) : undefined);
+  return null;
 }
 
 function datagram(args) {
@@ -962,6 +1062,9 @@ function _resetActionsBudgetForTest() {
 async function handle(plugin, api, args, ctx) {
   switch (api) {
     case 'http.fetch': return httpFetch(plugin, args);
+    case 'ws.connect': return wsConnect(plugin, args, ctx);
+    case 'ws.send': return wsSend(plugin, args);
+    case 'ws.close': return wsClose(plugin, args);
     case 'target.tcp': return tcpConnect(plugin, args, ctx);
     case 'tcp.write': return tcpWrite(plugin, args);
     case 'tcp.end': sockOf(plugin, args).end(); return null;

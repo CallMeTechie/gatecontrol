@@ -438,6 +438,20 @@ that 3xx). The result has `status`, `headers` (lower case; `set-cookie` as a
 list), `body` or `bodyBase64`, `url`, `redirects`. Response bodies are capped
 at 5 MB.
 
+`http.websocket(url, opts)` (since 1.184.0) opens a WebSocket to an
+**internet** host: a `ws:`/`wss:` URL checked exactly like `http.fetch` (its
+host and port in the allowlist, public addresses only, pinned to the checked
+address; no redirects, no compression). The host holds the connection; the
+plugin gets an EventEmitter with `message` (a string for text frames, a Buffer
+for binary ones), `close` (code, reason) and `error`, plus `send(string |
+Buffer)` and `close(code, reason)`. Options: `headers` (the handshake headers
+`sec-websocket-*` stay the host's), `protocols` (≤ 8 sub-protocols),
+`timeoutMs` (handshake, ≤ 30 s). Limits: 8 open WebSockets per plugin, 256 KB
+per message sent, 1 MB per message received, 200 messages per second from the
+server (more closes the connection with 1008); all of them close when the
+plugin process ends. A plugin that also runs on older versions checks
+`typeof gc.http.websocket === 'function'` first.
+
 The install step *Berechtigungen* shows this in plain words, e.g.
 "Internet: identity.vwgroup.io …", "Heimnetz: 1 Ziel, das du nach der
 Installation zuweist: deCONZ-Gateway (HTTP)", "Lokale Suche: Geräte im lokalen
@@ -494,6 +508,7 @@ module.exports = {
 | `gc.plugin` | `{ id, version, filesDir }` — `filesDir` is the only folder the plugin may write |
 | `gc.log.debug/info/warn/error(...)` | the plugin's log (*Protokoll* tab); `console.*` goes there too |
 | `gc.http.fetch(url, opts)` | internet hosts |
+| `gc.http.websocket(url, opts)` | WebSocket to an internet host (events `message`, `close`, `error`; `send`, `close`; since 1.184.0) |
 | `gc.net.targets()` | the assigned home targets |
 | `gc.net.fetchTarget(id, path, opts)` | HTTP to an assigned target |
 | `gc.net.tcpTarget(id, { index, port })` | TCP socket (events `data`, `close`, `error`, `timeout`; `write`, `end`, `destroy`, `setTimeout`) |

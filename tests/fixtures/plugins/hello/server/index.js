@@ -66,6 +66,24 @@ module.exports = {
         } catch (e) {
           return { status: 502, json: { ok: false, code: e.code || null, error: e.message } };
         }
+      case '/ws':
+        try {
+          const ws = await gc.http.websocket(String(req.body.url), req.body.opts || {});
+          const want = Number(req.body.expect) || 0;
+          const out = await new Promise((resolve) => {
+            const got = [];
+            let closed = null;
+            const done = () => resolve({ got, closed });
+            ws.on('message', (m) => { got.push(Buffer.isBuffer(m) ? { b64: m.toString('base64') } : m); if (got.length >= want && !req.body.waitClose) done(); });
+            ws.on('close', (code, reason) => { closed = { code, reason }; done(); });
+            setTimeout(done, 2000);
+            for (const s of req.body.send || []) ws.send(typeof s === 'string' ? s : Buffer.from(String(s.b64), 'base64')).catch((e) => got.push({ sendError: e.code || e.message }));
+          });
+          if (!req.body.keepOpen) await ws.close(1000, 'bye');
+          return { json: { ok: true, protocol: ws.protocol, ...out } };
+        } catch (e) {
+          return { status: 502, json: { ok: false, code: e.code || null, error: e.message } };
+        }
       case '/discover':
         try {
           const found = await gc.net.discover(Buffer.from('probe'), { ports: req.body.ports, timeoutMs: 500 });
