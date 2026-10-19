@@ -92,6 +92,24 @@ describe('catalogue: store metadata and release notes', () => {
     assert.equal(catalog.detail(cat, 'nope', 'de', () => null, '1.181.0'), null);
     assert.deepEqual(catalog.notesBetween(cat, 'hello', '1.0.1', '1.2.0').map((x) => x.version), ['1.2.0', '1.1.0']);
   });
+  it('detail page metadata: adds, permissions, shows, needs, languages, highlight tags — lenient', () => {
+    const T = (de, en) => ({ de, en: en || de });
+    const cat = catalog.validate(doc([entry('1.0.0')], {
+      adds: [{ icon: 'page', title: T('Admin-Seite', 'Admin page'), text: T('Nodes') }, { icon: '<x>', title: T('Ohne Symbol') }, { title: 7 }],
+      permissions: [{ icon: 'network', title: T('Heimnetz'), text: T('nur der Host'), tag: T('Netzwerk', 'Network') }],
+      shows: [{ kind: 'tile', caption: T('Startkachel'), value: '3/3' }, { kind: 'video', caption: T('x') }, { kind: 'widget', caption: T('Widget'), value: 'way too long value' }],
+      needs: T('API-Token'), languages: ['de', 'en', 'fr', 'de'],
+      highlight: { version: '1.1.0', title: T('Neu!'), tags: [{ icon: 'clock', text: T('Sonntag') }, 'Montag', { icon: 'nope', text: T('Ohne') }, 5] },
+    }));
+    const v = catalog.view(cat, 'en', () => null, '1.181.0')[0];
+    assert.deepEqual(v.adds, [{ icon: 'page', title: 'Admin page', text: 'Nodes' }, { icon: null, title: 'Ohne Symbol', text: '' }]);
+    assert.deepEqual(v.permissions, [{ icon: 'network', title: 'Heimnetz', text: 'nur der Host', tag: 'Network' }]);
+    assert.deepEqual(v.shows, [{ kind: 'tile', caption: 'Startkachel', value: '3/3' }, { kind: 'widget', caption: 'Widget', value: null }]);
+    assert.deepEqual([v.needs, v.languages], ['API-Token', ['de', 'en']]);
+    assert.deepEqual(v.highlight.tags, [{ icon: 'clock', text: 'Sonntag' }, { icon: null, text: 'Montag' }, { icon: null, text: 'Ohne' }]);
+    const bad = catalog.validate(doc([entry('1.0.0')], { adds: 'x', permissions: {}, shows: [1], needs: 3, languages: 'de' }));
+    for (const k of ['adds', 'permissions', 'shows', 'needs', 'languages']) assert.equal(k in bad.plugins.get('hello').meta, false, k);
+  });
   it('an old catalogue without metadata still works (category "other")', () => {
     const d = doc([entry('1.0.0')]);
     for (const k of ['category', 'icon', 'summary', 'audience', 'keywords', 'related', 'highlight']) delete d.plugins.hello[k];
@@ -119,6 +137,14 @@ describe('updates, history, restart', () => {
     assert.ok(h[0].user, 'the acting administrator');
     const p = (await agent.get(API).expect(200)).body.plugins.find((x) => x.id === 'hello');
     assert.deepEqual([p.errors7d, p.uses, p.usedBy], [0, [], []]);
+    assert.ok(p.events24h >= 1, 'log entries of the last 24 h');
+  });
+
+  it('GET /contributions: quick actions and widgets per plugin (none for a plugin without the hook)', async () => {
+    const r = (await agent.get(API + '/contributions').expect(200)).body;
+    assert.equal(r.ok, true);
+    assert.equal(typeof r.counts, 'object');
+    for (const c of Object.values(r.counts)) assert.ok(c.actions >= c.widgets);
   });
 
   it('GET /plugin-catalog/updates: kind and the notes of every version in between', async () => {
@@ -136,8 +162,11 @@ describe('updates, history, restart', () => {
   });
 
   it('the sidebar badge counts the cached update; the plugin area page renders', async () => {
-    const html = withoutScripts((await agent.get('/plugins').expect(200)).text);
-    assert.match(html, /id="nav-plugins">[\s\S]*?<span class="nav-badge amber" id="pg-nav-badge"[^>]*>1<\/span>/);
+    const html = withoutScripts((await agent.get('/settings/plugins').expect(200)).text);
+    assert.match(html, /id="nav-settings">[\s\S]*?<span class="nav-badge amber" id="pg-nav-badge"[^>]*>1<\/span>/);
+    assert.doesNotMatch(html, /id="nav-plugins"/, 'no entry of its own in the sidebar');
+    // Settings › Plugins marks it too
+    assert.match(withoutScripts((await agent.get('/settings').expect(200)).text), /data-section="plugins"[\s\S]*?<span class="st-nav-dot" data-dot>/);
   });
 
   it('regular check: reported once per new version', async () => {
@@ -213,13 +242,13 @@ describe('updates, history, restart', () => {
     await agent.post(API + '/nope/restart').set('X-CSRF-Token', csrf).send({}).expect(404);
   });
 
-  it('/plugins/manage/hello renders; uninstall is recorded in the history', async () => {
-    const html = withoutScripts((await agent.get('/plugins/manage/hello').expect(200)).text);
+  it('/settings/plugins/manage/hello renders; uninstall is recorded in the history', async () => {
+    const html = withoutScripts((await agent.get('/settings/plugins/manage/hello').expect(200)).text);
     assert.match(html, /data-view="manage" data-target="hello"/);
     await agent.post(API + '/hello/uninstall').set('X-CSRF-Token', csrf).send({ mode: 'keep' }).expect(200);
     const h = (await agent.get(API + '/history').expect(200)).body.history[0];
     assert.deepEqual([h.action, h.from, h.to, h.mode], ['uninstall', '1.1.1', null, 'keep']);
-    await agent.get('/plugins/manage/hello').expect(404);
+    await agent.get('/settings/plugins/manage/hello').expect(404);
   });
 });
 

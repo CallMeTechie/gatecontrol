@@ -1,16 +1,17 @@
 {# ══ Erweiterungen · Plugins (docs/plugins.md "Plugin area") ═══════════════
-   Plugins have an area of their own (/plugins): installed plugins, the
-   catalogue, updates, licences and the security rules. This section only
-   points there; public/js/settings-plugins.js forwards old links
-   (/settings#plugins, ?plugin=<id>, ?install=<id>) to the new pages. #}
+   The plugin area is a page of its own under Einstellungen › Plugins
+   (/settings/plugins): installed plugins, the catalogue, updates, licences,
+   security and the log. public/js/settings-plugins.js opens it when this
+   entry is chosen and forwards old links (/settings#plugins, ?plugin=<id>,
+   ?install=<id>); this card is what stays without JavaScript. #}
   <div class="st-sec-head">
     <div><h2 class="st-sec-title" id="st-h-plugins" tabindex="-1">{{ t('st.nav.plugins') }}</h2><p class="st-sec-desc">{{ t('st.desc.plugins') }}</p></div>
   </div>
   <section class="st-card" id="pg-moved-card" aria-labelledby="st-c-pgmoved">
     <div class="st-card-head"><div class="st-card-headtext"><h3 class="st-card-title" id="st-c-pgmoved">{{ t('plugins.x.page_moved') }}</h3><p class="st-card-desc">{{ t('plugins.x.page_moved_d') }}</p></div></div>
     <div class="st-btnrow pg-moved-actions">
-      <a class="st-btn st-btn-primary" href="/plugins" id="pg-to-area">{{ t('plugins.x.to_plugins') }}</a>
-      {%- if pluginCatalog %}<a class="st-btn" href="/plugins/catalog">{{ t('plugins.area.page_catalog') }}</a>{% endif %}
-      <a class="st-btn" href="/plugins/security">{{ t('plugins.area.security') }}</a>
+      <a class="st-btn st-btn-primary" href="/settings/plugins" id="pg-to-area">{{ t('plugins.x.to_plugins') }}</a>
+      {%- if pluginCatalog %}<a class="st-btn" href="/settings/plugins/catalog">{{ t('plugins.area.page_catalog') }}</a>{% endif %}
+      <a class="st-btn" href="/settings/plugins/security">{{ t('plugins.area.security') }}</a>
     </div>
   </section>

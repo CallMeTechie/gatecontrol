@@ -58,7 +58,7 @@ The first-party repository
 publishes `catalog.json` as an asset of its rolling release `catalog`
 (`https://github.com/CallMeTechie/gatecontrol-plugins/releases/download/catalog/catalog.json`,
 format in that repository's README, "Catalogue"). The plugin area shows it
-as a page of its own (**Plugins › Katalog**, see "Plugin area" below): areas,
+as a page of its own (**Einstellungen › Plugins › Katalog**, see "Plugin area" below): areas,
 search, highlight, cards with *Installieren* / *Aktualisieren*, one page per
 plugin with its release notes. When GitHub cannot be reached the page says so
 ("Katalog nicht erreichbar – Plugins lassen sich weiterhin hochladen.") — the
@@ -69,9 +69,18 @@ an unknown or malformed value is dropped, never the catalogue): per plugin
 `category` (`family` | `home` | `mobility` | `infrastructure` | `other`),
 `icon` (`family` `chat` `calendar` `door` `bulb` `snowflake` `car` `server`
 `nas` `puzzle`), `summary` `{de, en}`, `audience` (`all` | `admins`),
-`keywords`, `related` (plugin ids) and `highlight` `{version, title, text}`;
-per version `notes` (its CHANGELOG section, Markdown). Without them a plugin
-is listed under "Weitere" with the default icon.
+`keywords`, `related` (plugin ids) and `highlight` `{version, title, text,
+tags}` (`tags`: up to 4 texts or `{icon, text}` for the hero); for the
+plugin's catalogue page `adds` and `permissions` (up to 8 / 10
+`{icon, title, text, tag?}` — "Was … hinzufügt", "Das darf das Plugin";
+`tag` marks a sensitive permission), `shows` (up to 3 `{kind: tile|list|widget,
+caption, value?}` — the wireframes of "So sieht es bei dir aus"), `needs`
+(what it needs besides GateControl, e.g. an API token) and `languages`
+(`de`, `en`); symbols: `page app portal widget tile action bell clock data
+network chat key location users door calendar camera car bulb server shield
+link`. Per version `notes` (its CHANGELOG section, Markdown). Without them a
+plugin is listed under "Weitere" with the default icon, its page shows only
+what the catalogue knows.
 
 Code: `src/services/plugins/catalog.js` · API `src/routes/api/pluginCatalog.js`.
 
@@ -138,32 +147,42 @@ API (admin session + CSRF; `pluginApiLimiter`, downloads and `?refresh=1`
 also `uploadLimiter`; an API token gets 403):
 
 * `GET /api/v1/plugin-catalog` → `{ enabled, available, serverVersion, fetchedAt, plugins: [{ id, name, description, publisher, state, installedVersion, latest: { version, gatecontrol, licenseRequired, size, releaseUrl, publishedAt } | null, requiresNewer }] }`
-* `GET /api/v1/plugin-catalog` items also carry `category, icon, summary, audience, keywords, related, highlight` and `latest.notes`; the answer `source: { host, official }`
+* `GET /api/v1/plugin-catalog` items also carry `category, icon, summary, audience, keywords, related, highlight, adds, permissions, shows, needs, languages` and `latest.notes`; the answer `source: { host, official }`
 * `GET /api/v1/plugin-catalog/updates` → `{ updates: [{ id, name, from, to, kind: patch|minor|major, gatecontrol, size, needsApproval, notes: [{ version, publishedAt, notes }] }], autoUpdate, catalogCheck, history }`
 * `GET /api/v1/plugin-catalog/:id` → one plugin with `versions` (newest first, at most 20, with `notes`)
 * `POST /api/v1/plugin-catalog/install` `{ id, version }` → the answer of `POST /api/v1/plugins/inspect` (`origin: "catalog"`; on an update `existing.permissions` for the diff)
 
 ## Plugin area
 
-Plugins have an area of their own in the sidebar group "Integrationen"
-(**Plugins**, badge: plugins stopped by a problem or crashed plus the updates
-of the cached catalogue). One page, `templates/aurora/pages/plugins.njk`, the
-views are built by `public/js/plugins-page.js` (pure helpers in
-`public/js/plugins-ui.js`):
+The plugin area is a page of its own under **Einstellungen › Plugins**
+(`/settings/plugins`; choosing "Plugins" in the settings navigation opens
+it). The sidebar entry "Einstellungen" and the settings entry "Plugins" carry
+a badge / dot: plugins stopped by a problem or crashed plus the updates of the
+cached catalogue. One page, `templates/aurora/pages/plugins.njk`, with a side
+column (back to Einstellungen; Plugins: Meine Plugins, Katalog, Updates,
+Lizenzen; Verwaltung: Sicherheit & Upload, Protokoll — on a phone tabs on top);
+the views are built by `public/js/plugins-page.js` (pure helpers in
+`public/js/plugins-ui.js`), layout and wording follow the mockup "Plugins –
+UI & UX Konzept":
 
 | URL | View |
 |---|---|
-| `/plugins` | Meine Plugins: state tiles, "Braucht deine Aufmerksamkeit" (crashed, licence, unsigned, expiring licence, updates — each with its action), search, filter, list or tiles grouped by area, suggestions; without plugins the first-run page |
-| `/plugins/catalog`, `/plugins/catalog/<id>` | the catalogue; one plugin with description, versions and the install panel |
-| `/plugins/manage/<id>` | one installed plugin: Übersicht, Einstellungen, Berechtigungen, Lizenz, Protokoll, Versionen; restart, switch, update, uninstall |
-| `/plugins/updates` | updates with release notes, *Alle aktualisieren*, automatic updates, history |
-| `/plugins/licenses` | a first-party licence key without naming the plugin; the licences of all plugins |
-| `/plugins/security` | upload with preview, unsigned plugins, media in backups, update checks, catalogue source |
+| `/settings/plugins` | Meine Plugins: state tiles, "Braucht deine Aufmerksamkeit" (crashed, licence, unsigned, expiring licence, updates — each with its action), search, filter, list or tiles grouped by area, suggestions; without plugins the first-run page |
+| `/settings/plugins/catalog`, `…/catalog/<id>` | the catalogue (areas and filters in the side column); one plugin: what it adds, what it may do, how it looks, versions, the install panel |
+| `/settings/plugins/manage/<id>` | one installed plugin: Übersicht, Einstellungen, Berechtigungen, Lizenz, Protokoll, Versionen; restart, switch, update, uninstall |
+| `/settings/plugins/updates` | updates with release notes, *Alle aktualisieren*, automatic updates, recently updated |
+| `/settings/plugins/licenses` | a first-party licence key without naming the plugin; the licences of all plugins |
+| `/settings/plugins/security` | upload with preview, unsigned plugins, media in backups, update checks, catalogue source |
+| `/settings/plugins/log` | installs, updates and uninstalls (who, when, automatic or not) |
 
-These path segments are reserved: `plugin.json` cannot use `catalog`,
-`updates`, `licenses`, `security` or `manage` as its id. Settings → Plugins
-only points here; old links (`/settings#plugins`, `?plugin=<id>`,
-`?install=<id>`) are forwarded.
+The addresses of GateControl 1.182 (`/plugins`, `/plugins/catalog[/<id>]`,
+`/plugins/updates`, `/plugins/licenses`, `/plugins/security`,
+`/plugins/manage/<id>`) are forwarded to the same view, so these path
+segments stay reserved: `plugin.json` cannot use `catalog`, `updates`,
+`licenses`, `security` or `manage` as its id. Old settings links
+(`/settings#plugins`, `?plugin=<id>`, `?install=<id>`) are forwarded too.
+"Was … hinzufügt" of an installed plugin also counts the quick actions and
+widgets it lists right now (`GET /api/v1/plugins/contributions`).
 
 Installing or updating (catalogue or uploaded file) is one dialog: **Prüfen**
 (checks, permissions — sensitive ones marked, on an update the difference —,

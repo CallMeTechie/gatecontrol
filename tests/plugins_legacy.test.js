@@ -80,23 +80,22 @@ after(async () => {
 describe('built-in Smart Home data without the plugin', () => {
   it('nothing of the former built-in is left: page → its catalogue page, API gone, no sidebar entry', async () => {
     const page = await agent.get('/smarthome').expect(302);
-    assert.equal(page.headers.location, '/plugins/catalog/gatecontrol-smarthome');
-    assert.equal((await agent.get('/smarthome/rules').expect(302)).headers.location, '/plugins/catalog/gatecontrol-smarthome');
+    assert.equal(page.headers.location, '/settings/plugins/catalog/gatecontrol-smarthome');
+    assert.equal((await agent.get('/smarthome/rules').expect(302)).headers.location, '/settings/plugins/catalog/gatecontrol-smarthome');
     const api = await agent.get('/api/v1/smarthome/gateways').expect(410);
     assert.deepEqual([api.body.code, api.body.plugin], ['moved_to_plugin', ID]);
     await agent.post('/api/v1/smarthome/gateways').set('X-CSRF-Token', csrf).send({}).expect(410);
     await agent.get('/api/v1/portal/smarthome').expect(404);
     const dash = await agent.get('/dashboard').expect(200);
     assert.doesNotMatch(dash.text, /href="\/smarthome"/);
-    assert.doesNotMatch(dash.text, /data-plugin-nav=/, 'no plugin entry without a plugin');
-    assert.match(dash.text, /nav-section-label">Integrations<\/div>\s*<a href="\/plugins" class="nav-item " id="nav-plugins">/, 'the plugin area');
+    assert.doesNotMatch(dash.text, /nav-section-label">Integrations</, 'no integrations group without a plugin');
   });
 
   it('the dashboard and the plugin area say that Smart Home is a plugin now (data kept)', async () => {
     assert.deepEqual(legacy.pendingMoves().map((m) => [m.pluginId, m.dataset, m.counts]),
       [[ID, 'smarthome', { gateways: 2, resources: 2, owners: 1, rules: 1 }]]);
     const releases = 'https://github.com/CallMeTechie/gatecontrol-plugins/releases?q=gatecontrol-smarthome&amp;expanded=true';
-    for (const url of ['/dashboard', '/plugins']) {
+    for (const url of ['/dashboard', '/settings/plugins']) {
       const html = (await agent.get(url).expect(200)).text;
       assert.match(html, /data-builtin-moved="gatecontrol-smarthome"/, url);
       assert.match(html, /Smart Home is a plugin now\. Install “Smart Home”/, url);
@@ -105,11 +104,11 @@ describe('built-in Smart Home data without the plugin', () => {
     }
     // the dashboard leads to the plugin's catalogue page
     const dash = (await agent.get('/dashboard').expect(200)).text;
-    assert.match(dash, /<a href="\/plugins\/catalog\/gatecontrol-smarthome" class="db-btn db-btn-primary">Install now<\/a>/);
+    assert.match(dash, /<a href="\/settings\/plugins\/catalog\/gatecontrol-smarthome" class="db-btn db-btn-primary">Install now<\/a>/);
     process.env.GC_PLUGIN_CATALOG = 'off';
     try {
       const off = (await agent.get('/dashboard').expect(200)).text;
-      assert.match(off, /<a href="\/plugins" class="db-btn db-btn-primary">Go to plugins<\/a>/, 'without the catalogue: the plugin list');
+      assert.match(off, /<a href="\/settings\/plugins" class="db-btn db-btn-primary">Go to plugins<\/a>/, 'without the catalogue: the plugin list');
     } finally { delete process.env.GC_PLUGIN_CATALOG; }
   });
 });
@@ -206,7 +205,7 @@ describe('the signed first-party plugin', () => {
     assert.equal(rules.headers.location, '/plugins/gatecontrol-smarthome/rules');
     const dash = await agent.get('/plugins/gatecontrol-smarthome').expect(200);
     assert.doesNotMatch(dash.text, /href="\/smarthome"/);
-    assert.match(dash.text, /nav-section-label">Integrations<\/div>\s*<a href="\/plugins" class="nav-item[^"]*" id="nav-plugins">[\s\S]*?<\/a>\s*<a href="\/plugins\/gatecontrol-smarthome"/);
+    assert.match(dash.text, /nav-section-label">Integrations<\/div>\s*<a href="\/plugins\/gatecontrol-smarthome"/);
     assert.doesNotMatch(dash.text, /nav-section-label">Plugins</);
     assert.doesNotMatch((await agent.get('/dashboard').expect(200)).text, /data-builtin-moved=/);
   });
@@ -225,7 +224,7 @@ describe('the signed first-party plugin', () => {
   const marker = () => db.prepare("SELECT value FROM settings WHERE key = 'plugins.legacy_imported.smarthome'").get();
   const noticeShown = async () => {
     const out = [];
-    for (const url of ['/dashboard', '/plugins']) out.push(/data-builtin-moved=/.test((await agent.get(url).expect(200)).text));
+    for (const url of ['/dashboard', '/settings/plugins']) out.push(/data-builtin-moved=/.test((await agent.get(url).expect(200)).text));
     return out;
   };
 
@@ -259,7 +258,7 @@ describe('the signed first-party plugin', () => {
     assert.equal(db.prepare('SELECT COUNT(*) AS c FROM plugin_legacy_imports').get().c, 0);
     assert.deepEqual(legacy.pendingMoves(), []);
     assert.deepEqual(await noticeShown(), [false, false]);
-    assert.equal((await agent.get('/smarthome').expect(302)).headers.location, '/plugins/catalog/gatecontrol-smarthome');
+    assert.equal((await agent.get('/smarthome').expect(302)).headers.location, '/settings/plugins/catalog/gatecontrol-smarthome');
     await install(helloPackage({ overrides: smarthomeManifest() }));
     assert.equal(await runtime.waitRunning(ID), true);
     const st = (await agent.get(`${API}/${ID}/legacy`).expect(200)).body.legacy;

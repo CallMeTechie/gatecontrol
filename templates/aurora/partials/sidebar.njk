@@ -38,15 +38,12 @@
   {% endif %}
   <a href="/users" class="nav-item {{ 'active' if activeNav == 'users' }}"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="2"/><path d="M3 20c0-3.3 2.7-5 6-5s6 1.7 6 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.users') }}</a>
 
-  {#- Integrationen (docs/plugins.md): the plugin area first (installed
-      plugins, catalogue, updates, licences; badge: problems + updates),
-      then one entry per installed plugin with a page (Smart Home,
-      Klimaanlage, Fahrzeuge … are plugins); a plugin that is not running
-      stays listed, greyed, tagged "aus" — its page explains why (old
-      bookmarks keep working). -#}
-  <div class="nav-section-label">{{ t('nav.group_integrations') }}</div>
-  <a href="/plugins" class="nav-item {{ 'active' if activeNav == 'plugins' }}" id="nav-plugins"><svg viewBox="0 0 24 24" fill="none"><path d="M14 4h-4v3H7v4h3v3h4v-3h3V7h-3zM5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('nav.plugins') }}{% if pluginBadge > 0 %}<span class="nav-badge amber" id="pg-nav-badge" title="{{ t('plugins.area.badge', { count: pluginBadge }) }}">{{ pluginBadge }}</span>{% endif %}</a>
   {% if pluginNav and pluginNav.length %}
+  {#- Integrationen (docs/plugins.md): one entry per installed plugin with a
+      page (Smart Home, Klimaanlage, Fahrzeuge … are plugins); a plugin that
+      is not running stays listed, greyed, tagged "aus" — its page explains
+      why (old bookmarks keep working). -#}
+  <div class="nav-section-label">{{ t('nav.group_integrations') }}</div>
   {% for pn in pluginNav %}
   <a href="{{ pn.href }}" class="nav-item{{ ' active' if activeNav == 'plugin:' + pn.id }}{{ ' nav-item-off' if not pn.on }}" data-plugin-nav="{{ pn.id }}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{ pn.icon }}"/></svg>{{ pn.label }}{% if not pn.on %}<span class="nav-tag-off">{{ t('plugins.nav_off') }}</span>{% endif %}</a>
   {% endfor %}
@@ -63,6 +60,8 @@
   {%- set sbNew = supportUnviewed or 0 %}
   <a href="/support-bundles" class="nav-item {{ 'active' if activeNav == 'support-bundles' }}"><svg viewBox="0 0 24 24" fill="none"><path d="M21 8v13H3V8" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M1 3h22v5H1z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M10 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.support_bundles') }}{% if sbNew > 0 %}<span class="nav-badge coral" id="sb-nav-badge" title="{{ t('support_bundles.nav_badge', { count: sbNew }) }}">{{ sbNew }}</span>{% else %}<span class="nav-badge coral" id="sb-nav-badge" hidden></span>{% endif %}</a>
   <a href="/logs" class="nav-item {{ 'active' if activeNav == 'logs' }}"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('nav.logs') }}</a>
-  <a href="/settings" class="nav-item {{ 'active' if activeNav == 'settings' }}"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>{{ t('nav.settings') }}</a>
+  {#- Badge: plugins stopped by a problem or crashed plus the cached plugin
+      updates (Einstellungen › Plugins, docs/plugins.md "Plugin area"). -#}
+  <a href="/settings" class="nav-item {{ 'active' if activeNav == 'settings' }}" id="nav-settings"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>{{ t('nav.settings') }}{% if pluginBadge > 0 %}<span class="nav-badge amber" id="pg-nav-badge" title="{{ t('plugins.area.badge', { count: pluginBadge }) }}">{{ pluginBadge }}</span>{% endif %}</a>
   {% endif %}
 </nav>

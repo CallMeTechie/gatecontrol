@@ -209,6 +209,80 @@
     puzzle: 'M14 4h-4v3H7v4h3v3h4v-3h3V7h-3zM5 20h14',
   };
 
+  // Symbols of the detail lists (catalog.js DETAIL_ICONS): 24×24 stroke paths.
+  const DETAIL_ICON_PATHS = {
+    page: 'M6 3h8l4 4v14H6zM14 3v4h4',
+    app: 'M9 2.5h6A2.5 2.5 0 0 1 17.5 5v14a2.5 2.5 0 0 1-2.5 2.5H9A2.5 2.5 0 0 1 6.5 19V5A2.5 2.5 0 0 1 9 2.5zM11 18.5h2',
+    portal: 'M5.5 4h13A2.5 2.5 0 0 1 21 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11A2.5 2.5 0 0 1 5.5 4zM3 9h18',
+    widget: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
+    tile: 'M9 2.5h6A2.5 2.5 0 0 1 17.5 5v14a2.5 2.5 0 0 1-2.5 2.5H9A2.5 2.5 0 0 1 6.5 19V5A2.5 2.5 0 0 1 9 2.5zM11 18.5h2',
+    action: 'M13 3L5 14h6l-1 7 8-11h-6z',
+    bell: 'M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 21h4',
+    clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+    data: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
+    network: 'M9 3h6v5H9zM3 16h6v5H3zM15 16h6v5h-6zM12 8v4M6 16v-4h12v4',
+    chat: 'M4 5h16v11H9l-5 4z',
+    key: 'M8 19a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM11 12l9-9M16 7l3 3',
+    location: 'M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+    users: 'M9 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6',
+    door: 'M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17M3 21h18M14.5 11.5v1',
+    calendar: 'M6 5h12a2.5 2.5 0 0 1 2.5 2.5v10A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5v-10A2.5 2.5 0 0 1 6 5zM3.5 10h17M8 3v4M16 3v4',
+    camera: 'M4 8h3l2-3h6l2 3h3v11H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z',
+    car: 'M4 17v-5l2.2-5.2A1.5 1.5 0 0 1 7.6 6h8.8a1.5 1.5 0 0 1 1.4.8L20 12v5zM4 12h16M7.5 17v2.5M16.5 17v2.5',
+    bulb: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z',
+    server: 'M5.5 4h13a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM5.5 13h13a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2z',
+    shield: 'M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z',
+    link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
+  };
+
+  /**
+   * "Was … hinzufügt" of an installed plugin: [{ icon, title, text, kind }] —
+   * page, portal (area, sections), app tab, quick actions and widgets it lists
+   * right now (`contrib` = { actions, widgets } of /api/v1/plugins/contributions),
+   * notifications, background, settings, services for other plugins.
+   */
+  function addRows(p, contrib, t) {
+    const out = [];
+    if (!p) return out;
+    const c = contrib || {};
+    const perm = p.permissions || {};
+    if (p.app) out.push({ kind: 'app', icon: 'app', title: t('plugins.adds.app', { name: p.app.label }), text: t('plugins.adds.app_d') });
+    if (p.portal && p.portal.label) out.push({ kind: 'portal', icon: 'portal', title: t('plugins.adds.portal', { name: p.portal.label }), text: t('plugins.adds.portal_d') });
+    if (p.portal) (p.portal.sections || []).forEach((s) => out.push({ kind: 'portal', icon: 'portal', title: t('plugins.adds.portal_section', { title: s.title, tab: t('plugins.portal_tab.' + s.tab) }), text: t('plugins.adds.portal_section_d') }));
+    if (p.nav) out.push({ kind: 'page', icon: 'page', title: t('plugins.adds.page', { name: p.nav.label }), text: t('plugins.adds.page_d') });
+    if (c.widgets) out.push({ kind: 'widgets', icon: 'widget', title: t('plugins.x.add_widgets', { n: c.widgets }), text: t('plugins.x.add_widgets_d') });
+    if (c.actions) out.push({ kind: 'actions', icon: 'action', title: t('plugins.x.add_actions', { n: c.actions }), text: t('plugins.x.add_actions_d') });
+    if (perm.background) out.push({ kind: 'background', icon: 'clock', title: t('plugins.adds.background'), text: t('plugins.perm.background_v', { s: perm.background }) });
+    if (perm.notify) out.push({ kind: 'notify', icon: 'bell', title: t('plugins.x.add_notify_t'), text: t('plugins.x.add_notify_d') });
+    if (p.provides && p.provides.length) out.push({ kind: 'services', icon: 'link', title: t('plugins.x.add_services', { n: p.provides.length }), text: t('plugins.x.add_services_d') });
+    if (p.settingsCount) out.push({ kind: 'settings', icon: 'key', title: t('plugins.adds.settings'), text: t('plugins.perm.ui_settings', { n: p.settingsCount }) });
+    return out;
+  }
+
+  /** Short chips of a plugin row ("App-Tab", "Portal „Zuhause“", "4 Widgets" …), at most `max`. */
+  function addChips(p, contrib, t, max) {
+    const out = [];
+    if (!p) return out;
+    const c = contrib || {};
+    if (p.app) out.push(t('plugins.x.add_app'));
+    if (p.portal && p.portal.label) out.push(t('plugins.x.add_portal_named', { name: p.portal.label }));
+    else if (p.portal && (p.portal.sections || []).length) out.push(t('plugins.x.add_portal_named', { name: p.portal.sections[0].title }));
+    if (p.nav) out.push(t('plugins.x.add_page'));
+    if (c.actions) out.push(t('plugins.x.chip_actions', { n: c.actions }));
+    if (c.widgets) out.push(t('plugins.x.chip_widgets', { n: c.widgets }));
+    if (p.provides && p.provides.length) out.push(t('plugins.x.add_services_short', { n: p.provides.length }));
+    if (p.permissions && p.permissions.notify && out.length < 3) out.push(t('plugins.x.add_notify'));
+    if (p.permissions && p.permissions.background && out.length < 3) out.push(t('plugins.x.add_bg'));
+    return out.slice(0, max || 4);
+  }
+
+  /** Whole days from now until `iso` (negative when past), null without a date. */
+  function daysUntil(iso, now) {
+    const at = Date.parse(iso || '');
+    if (!Number.isFinite(at)) return null;
+    return Math.ceil((at - (now == null ? Date.now() : now)) / 86400000);
+  }
+
   function categoryOf(meta) {
     const c = meta && meta.category;
     return CATEGORIES.indexOf(c) >= 0 ? c : 'other';
@@ -337,5 +411,5 @@
   }
 
   return { MAX_PACKAGE_BYTES, protoText, statusChip, licenseTone, checkSymbol, checkKeys, fmtBytes, fmtDate, mediaTypes, permRows, permDiff, catalogChip, catalogAction, addsOf, wipeConfirmed,
-    CATEGORIES, ICON_PATHS, categoryOf, iconPath, isProblem, licenseExpiring, attention, matches, filterInstalled, groupByCategory, sortCatalog, updateKind, noteLines, sensitivePerms };
+    CATEGORIES, ICON_PATHS, DETAIL_ICON_PATHS, addRows, addChips, daysUntil, categoryOf, iconPath, isProblem, licenseExpiring, attention, matches, filterInstalled, groupByCategory, sortCatalog, updateKind, noteLines, sensitivePerms };
 });

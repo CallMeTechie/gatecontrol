@@ -106,9 +106,12 @@ function logs(id, limit = 200) {
 }
 
 /** Log entries of `level` since `sinceMs` (epoch ms). */
+/** Log entries of plugin `id` since `sinceMs` (`level` null: every level). */
 function countLogs(id, level, sinceMs) {
   try {
-    const r = getDb().prepare('SELECT COUNT(*) AS c FROM plugin_logs WHERE plugin_id = ? AND level = ? AND created_at >= ?').get(id, level, sinceMs);
+    const r = level == null
+      ? getDb().prepare('SELECT COUNT(*) AS c FROM plugin_logs WHERE plugin_id = ? AND created_at >= ?').get(id, sinceMs)
+      : getDb().prepare('SELECT COUNT(*) AS c FROM plugin_logs WHERE plugin_id = ? AND level = ? AND created_at >= ?').get(id, level, sinceMs);
     return r ? r.c : 0;
   } catch { return 0; }
 }

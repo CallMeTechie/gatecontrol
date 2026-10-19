@@ -597,6 +597,7 @@ function view(p, lang) {
     installedAt: p.installedAt,
     updatedAt: p.updatedAt,
     errors7d: registry.countLogs(p.id, 'error', Date.now() - 7 * 24 * 60 * 60 * 1000),
+    events24h: registry.countLogs(p.id, null, Date.now() - 24 * 60 * 60 * 1000),
     // services: "<provider id>:<service>" used, service names provided (docs/plugins.md "Services")
     uses: [...new Set((m.permissions && Array.isArray(m.permissions.services) ? m.permissions.services : [])
       .map((x) => String(x).split(':')[0]).filter((x) => x && x !== p.id))],

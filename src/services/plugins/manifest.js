@@ -61,8 +61,8 @@ function loc(text, lang) {
 
 function rangeStr([a, b]) { return a === b ? String(a) : `${a}-${b}`; }
 
-// The pages of the plugin area use these path segments (/plugins/catalog …,
-// routes/plugins.js) — a plugin cannot be called like one of them.
+// The old addresses of the plugin area (/plugins/catalog …, forwarded to
+// /settings/plugins/…, routes/plugins.js) — a plugin cannot be called like one of them.
 const RESERVED_IDS = new Set(['catalog', 'updates', 'licenses', 'security', 'manage']);
 
 const TARGET_ID_RE = /^[a-z][a-z0-9-]{0,31}$/;

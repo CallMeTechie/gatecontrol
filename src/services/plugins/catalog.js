@@ -225,6 +225,12 @@ function entry(e, id, where, hosts) {
 
 const CATEGORIES = new Set(['family', 'home', 'mobility', 'infrastructure', 'other']);
 const ICONS = new Set(['family', 'chat', 'calendar', 'door', 'bulb', 'snowflake', 'car', 'server', 'nas', 'puzzle']);
+// symbols of the detail page's lists ("Was … hinzufügt", "Das darf das Plugin")
+const DETAIL_ICONS = new Set(['page', 'app', 'portal', 'widget', 'tile', 'action', 'bell', 'clock', 'data', 'network', 'chat', 'key',
+  'location', 'users', 'door', 'calendar', 'camera', 'car', 'bulb', 'server', 'shield', 'link']);
+// wireframes of "So sieht es bei dir aus"
+const SHOW_KINDS = new Set(['tile', 'list', 'widget']);
+const LANGS = new Set(['de', 'en']);
 const NOTES_MAX = 8000;
 
 /** { de, en } of at most `max` characters each, or null. */
@@ -254,7 +260,36 @@ function meta(p, key) {
   if (isObj(h) && semver.valid(h.version)) {
     const title = optTexts(h.title, 120);
     const text = optTexts(h.text, 400);
-    if (title) out.highlight = { version: h.version, title, text: text || { de: '', en: '' } };
+    // the hero's tags: "text" or { icon, text }
+    const tags = Array.isArray(h.tags) ? h.tags.map((x) => {
+      const text = optTexts(isObj(x) && !('de' in x) && !('en' in x) ? x.text : x, 40);
+      return text ? { icon: isObj(x) && DETAIL_ICONS.has(x.icon) ? x.icon : null, text } : null;
+    }).filter(Boolean).slice(0, 4) : [];
+    if (title) out.highlight = { version: h.version, title, text: text || { de: '', en: '' }, tags };
+  }
+  // detail page: what the plugin adds, what it may do, how it looks, what it needs
+  const rows = (list, max, textMax) => (Array.isArray(list) ? list : []).map((x) => {
+    if (!isObj(x)) return null;
+    const title = optTexts(x.title, 80);
+    if (!title) return null;
+    return { icon: DETAIL_ICONS.has(x.icon) ? x.icon : null, title, text: optTexts(x.text, textMax), tag: optTexts(x.tag, 24) };
+  }).filter(Boolean).slice(0, max);
+  const adds = rows(p.adds, 8, 120);
+  if (adds.length) out.adds = adds.map(({ icon, title, text }) => ({ icon, title, text }));
+  const perms = rows(p.permissions, 10, 200);
+  if (perms.length) out.permissions = perms;
+  const shows = (Array.isArray(p.shows) ? p.shows : []).map((x) => {
+    if (!isObj(x) || !SHOW_KINDS.has(x.kind)) return null;
+    const caption = optTexts(x.caption, 60);
+    if (!caption) return null;
+    return { kind: x.kind, caption, value: typeof x.value === 'string' && x.value.length <= 12 ? x.value : null };
+  }).filter(Boolean).slice(0, 3);
+  if (shows.length) out.shows = shows;
+  const needs = optTexts(p.needs, 80);
+  if (needs) out.needs = needs;
+  if (Array.isArray(p.languages)) {
+    const langs = [...new Set(p.languages.filter((x) => LANGS.has(x)))];
+    if (langs.length) out.languages = langs;
   }
   return out;
 }
@@ -337,7 +372,13 @@ function metaView(p, l) {
     audience: m.audience || 'all',
     keywords: m.keywords || [],
     related: m.related || [],
-    highlight: m.highlight ? { version: m.highlight.version, title: pickText(m.highlight.title, l), text: pickText(m.highlight.text, l) } : null,
+    highlight: m.highlight ? { version: m.highlight.version, title: pickText(m.highlight.title, l), text: pickText(m.highlight.text, l),
+      tags: (m.highlight.tags || []).map((x) => ({ icon: x.icon, text: pickText(x.text, l) })) } : null,
+    adds: (m.adds || []).map((x) => ({ icon: x.icon, title: pickText(x.title, l), text: x.text ? pickText(x.text, l) : '' })),
+    permissions: (m.permissions || []).map((x) => ({ icon: x.icon, title: pickText(x.title, l), text: x.text ? pickText(x.text, l) : '', tag: x.tag ? pickText(x.tag, l) : null })),
+    shows: (m.shows || []).map((x) => ({ kind: x.kind, caption: pickText(x.caption, l), value: x.value })),
+    needs: m.needs ? pickText(m.needs, l) : null,
+    languages: m.languages || [],
   };
 }
 

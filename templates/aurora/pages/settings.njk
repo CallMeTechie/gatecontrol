@@ -167,7 +167,7 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ it[1] }}"/></svg>
             <span class="st-nav-label">{{ t('st.nav.' + it[0]) }}</span>
             {%- if it[2] %}<span class="st-pro st-pro-sm">{{ PRO }}</span>{% endif %}
-            <span class="st-nav-dot" data-dot hidden><span class="st-sr">{{ t('st.attention') }}</span></span>
+            <span class="st-nav-dot" data-dot{{ '' if (it[0] == 'plugins' and pluginBadge > 0) else ' hidden' }}><span class="st-sr">{{ t('st.attention') }}</span></span>
           </button></li>
           {%- endif %}{% endfor %}
         </ul>
