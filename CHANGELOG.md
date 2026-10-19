@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.184.0] — 2026-10-19
+
+### Features
+- plugins can open WebSockets to their internet hosts (gc.http.websocket) (#330)
+
+---
+
 ## [1.183.0] — 2026-10-19
 
 ### Features
