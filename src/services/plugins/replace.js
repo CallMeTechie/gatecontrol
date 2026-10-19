@@ -87,7 +87,7 @@ function moveFolders(oldId, newId) {
 
 /** `old` as a whole token (not part of a longer id) → `new`, in any text. */
 function swapToken(text, oldId, newId) {
-  const esc = oldId.replace(/[-]/g, '\\-');
+  const esc = String(oldId).replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
   return String(text).replace(new RegExp(`(?<![a-z0-9-])${esc}(?![a-z0-9-])`, 'g'), newId);
 }
 
