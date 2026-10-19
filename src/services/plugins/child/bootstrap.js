@@ -348,6 +348,9 @@ async function handleCall(method, payload) {
     case 'settingsChanged':
       if (typeof plugin.settingsChanged === 'function') await plugin.settingsChanged(payload, gc);
       return {};
+    case 'settingsStatus':
+      // optional (since 1.185.0): status lines of the settings form, e.g. an account's sign-in
+      return typeof plugin.settingsStatus === 'function' ? plugin.settingsStatus(payload, gc) : [];
     case 'portalVisible':
       // optional: hide the portal tab / a section (payload.section) for viewers with nothing to see
       if (typeof plugin.portalVisible !== 'function') return { visible: true };

@@ -106,7 +106,8 @@
   let inst = { loaded: false, plugins: [], allowUnsigned: false, backupMedia: false, autoUpdate: 'off', catalogCheck: true, serverVersion: '' };
   let cat = { loaded: false, available: false, plugins: [], error: '', fetchedAt: null, source: null, serverVersion: '' };
   let contrib = {};
-  function catItem(id) { return cat.plugins.find((x) => x.id === id) || null; }
+  // an installed plugin a catalogue plugin replaces (new id) maps to that one
+  function catItem(id) { return cat.plugins.find((x) => x.id === id) || cat.plugins.find((x) => x.replaces && x.replaces.id === id) || null; }
   function installedOf(id) { return inst.plugins.find((x) => x.id === id) || null; }
   function metaOf(id) { return catItem(id) || { category: 'other', icon: null, summary: '', keywords: [], related: [] }; }
 
@@ -1264,9 +1265,14 @@
 
     if (c && c.state === 'update' && c.latest) {
       main.appendChild(el('div', { class: 'pgx-banner', 'data-tone': 'info', role: 'status' }, [icon(I.refresh, 18),
-        el('span', { class: 'pgx-grow' }, [el('b', { text: t('plugins.x.update_available', { version: c.latest.version }) }), ' ', el('span', { class: 'pgx-muted', text: t('plugins.x.update_kind.' + P.updateKind(p.version, c.latest.version)) })]),
+        el('span', { class: 'pgx-grow' }, [el('b', { text: t('plugins.x.update_available', { version: c.latest.version }) }), ' ', el('span', { class: 'pgx-muted', text: c.replaces ? t('plugins.x.replaced_by', { name: c.name }) : t('plugins.x.update_kind.' + P.updateKind(p.version, c.latest.version)) })]),
         linkBtn(t('plugins.x.whats_new'), () => setTab('versions')),
-        btn(t('plugins.cat.update'), { primary: true, small: true, id: 'pgx-update', onClick: (e) => installFromCatalog(c, e.currentTarget).then(async (r) => { if (r) { await Promise.all([loadInstalled(), loadCatalog(false)]); renderManage(); updateNav(); } }) })]));
+        btn(t('plugins.cat.update'), { primary: true, small: true, id: 'pgx-update', onClick: (e) => installFromCatalog(c, e.currentTarget).then(async (r) => {
+          if (!r) return;
+          // taken over under a new id: this page's plugin is gone
+          if (c.replaces) { window.location.assign(U.manage(c.id)); return; }
+          await Promise.all([loadInstalled(), loadCatalog(false)]); renderManage(); updateNav();
+        }) })]));
     }
     const banner = problemBanner(p);
     if (banner) main.appendChild(banner);
@@ -1556,7 +1562,32 @@
     if (!r.defs.length) { box.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.settings.none') })); return; }
     const form = el('form', { class: 'pg-form', id: 'pg-settings-form', novalidate: true, autocomplete: 'off' });
     const inputs = {};
-    for (const d of r.defs) {
+    // status lines of the plugin (hook settingsStatus): above the form or under a group heading
+    const TONES = { ok: 'good', info: 'blue', warn: 'warn', error: 'crit' };
+    const statusSlots = new Map();
+    const statusSlot = (gid) => {
+      const slot = el('div', { class: 'pgx-set-st', 'data-group': gid || '', role: 'status', 'aria-live': 'polite' });
+      statusSlots.set(gid || '', slot);
+      return slot;
+    };
+    const showStatus = (lines) => {
+      for (const [gid, slot] of statusSlots) {
+        slot.replaceChildren(...(lines || []).filter((x) => (x.group || '') === gid).map((x) => el('p', { class: 'pgx-set-line', 'data-tone': TONES[x.tone] || 'blue', text: x.text })));
+      }
+    };
+    form.appendChild(statusSlot(null));
+    const groups = r.groups || [];
+    const sections = [{ id: null, defs: r.defs.filter((d) => !d.group || !groups.some((g) => g.id === d.group)) }]
+      .concat(groups.map((g) => ({ id: g.id, g, defs: r.defs.filter((d) => d.group === g.id) })));
+    for (const sec of sections) {
+      if (sec.g) {
+        form.appendChild(el('div', { class: 'pgx-set-group' }, [
+          el('h3', { class: 'pgx-set-gh', text: sec.g.label }),
+          sec.g.help ? el('p', { class: 'pgx-muted pgx-set-gd', text: sec.g.help }) : null,
+          statusSlot(sec.id),
+        ]));
+      }
+      for (const d of sec.defs) {
       const id = 'pg-set-' + d.key.replace(/[^a-z0-9_-]/g, '_');
       const v = r.values[d.key];
       let ctl;
@@ -1577,7 +1608,9 @@
           el('span', { class: 'st-err', id: id + '-err', role: 'alert', hidden: true })]),
         el('div', { class: 'st-row-ctl' }, [ctl]),
       ]));
+      }
     }
+    showStatus(r.status);
     const msg = el('span', { class: 'st-foot-msg', role: 'status' });
     form.appendChild(el('div', { class: 'pg-formfoot' }, [msg, el('button', { type: 'submit', class: 'st-btn st-btn-primary', id: 'pg-settings-save', text: t('plugins.settings.save') })]));
     form.addEventListener('submit', async (e) => {
@@ -1589,9 +1622,22 @@
         else if (d.type === 'secret') { if (ctl.value) values[k] = ctl.value; }
         else values[k] = ctl.value === '' ? null : ctl.value;
       }
+      const save = $('pg-settings-save');
+      save.disabled = true;
+      msg.textContent = t('plugins.settings.saving');
       const res = await req('PUT', API + '/' + enc(p.id) + '/settings', { values });
+      save.disabled = false;
       form.querySelectorAll('.st-err').forEach((n) => { n.textContent = ''; n.hidden = true; });
-      if (res.ok) { msg.textContent = ''; toast(t('plugins.settings.saved')); return; }
+      if (res.ok) {
+        msg.textContent = '';
+        // secrets are never shown again: empty the fields, the placeholder says one is set
+        for (const { d, ctl } of Object.values(inputs)) {
+          if (d.type === 'secret') { const set = res.values && res.values[d.key] && res.values[d.key].set; ctl.value = ''; ctl.placeholder = set ? t('plugins.settings.secret_set') : ''; }
+        }
+        showStatus(res.status);
+        toast(t('plugins.settings.saved'));
+        return;
+      }
       if (res.fields) {
         for (const k of Object.keys(res.fields)) {
           const n = inputs[k] && $(inputs[k].ctl.id + '-err');
@@ -1673,14 +1719,14 @@
     done();
   }
 
-  const KIND_TONE = { patch: 'good', minor: 'blue', major: 'warn' };
+  const KIND_TONE = { patch: 'good', minor: 'blue', major: 'warn', replace: 'blue' };
 
   function historyRow(h) {
     return el('div', { class: 'pgx-hist', 'data-action': h.action }, [
       el('span', { class: 'pgx-mono pgx-hist-d', text: fmtDay(h.at) }),
-      el('span', { class: 'pgx-t pgx-t-row' }, [el('b', { text: h.name || h.id }), ' ', el('span', { class: 'pgx-mono pgx-muted', text: h.action === 'uninstall' ? t('plugins.x.h_uninstalled') : (h.from ? h.from + ' → ' + h.to : h.to) })]),
+      el('span', { class: 'pgx-t pgx-t-row' }, [el('b', { text: h.name || h.id }), ' ', el('span', { class: 'pgx-mono pgx-muted', text: h.action === 'uninstall' ? t('plugins.x.h_uninstalled') : (h.action === 'replace' ? t('plugins.x.h_replaced', { name: h.replacedBy || h.source || '' }) : (h.from ? h.from + ' → ' + h.to : h.to)) })]),
       pill(h.by === 'auto' ? t('plugins.x.h_auto') : (h.user ? t('plugins.x.h_by', { name: h.user }) : t('plugins.x.h_admin')), 'mute'),
-      h.action !== 'uninstall' && catItem(h.id) ? link(t('plugins.x.notes'), U.item(h.id, 'tab=versions'), { class: 'pgx-a pgx-small' }) : null,
+      h.action !== 'uninstall' && h.action !== 'replace' && catItem(h.id) ? link(t('plugins.x.notes'), U.item(h.id, 'tab=versions'), { class: 'pgx-a pgx-small' }) : null,
     ]);
   }
 
@@ -1728,7 +1774,7 @@
           pill(t('plugins.x.update_kind.' + u.kind), KIND_TONE[u.kind] || 'blue'),
           item ? btn(t('plugins.cat.update'), { primary: true, small: true, action: 'update', onClick: (e) => installFromCatalog(item, e.currentTarget).then(async (res) => { if (res) await reloadUpdates(); }) }) : null,
         ]),
-        el('div', { class: 'pgx-uc-b' }, (u.notes.length ? u.notes.map((n) => el('div', { class: 'pgx-uc-notes' }, [u.notes.length > 1 ? el('b', { class: 'pgx-mono pgx-small', text: n.version }) : null, notesBlock(n.notes, 12)]))
+        el('div', { class: 'pgx-uc-b' }, (u.replaces ? [el('p', { class: 'pgx-note', role: 'note', text: t('plugins.x.replaces_note', { old: u.replaces.name, name: u.name }) })] : []).concat(u.notes.length ? u.notes.map((n) => el('div', { class: 'pgx-uc-notes' }, [u.notes.length > 1 ? el('b', { class: 'pgx-mono pgx-small', text: n.version }) : null, notesBlock(n.notes, 12)]))
           : [el('p', { class: 'pgx-muted', text: t('plugins.x.no_notes') })]).concat([
           u.needsApproval ? el('p', { class: 'pgx-note pgx-note-warn', role: 'note' }, [icon(I.shield, 18), el('span', null, [el('b', { text: t('plugins.x.new_perm') + ' ' }), t('plugins.x.needs_approval_short')])]) : null,
           el('p', { class: 'pgx-okline' }, [icon(I.check, 16), el('span', null, [t('plugins.x.up_fits', { installed: (inst.serverVersion || '').split('.').slice(0, 2).join('.'), range: rng(u.gatecontrol), size: P.fmtBytes(u.size) }),

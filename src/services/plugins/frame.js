@@ -261,6 +261,8 @@ const BRIDGE_CLIENT = `(function(){
     put: function (p, b) { return call('PUT', p, b); },
     del: function (p) { return call('DELETE', p); },
     navigate: function (page) { post({ type: 'gc-nav', page: String(page || '') }); },
+    // since 1.185.0: the plugin's settings (Einstellungen › Plugins › <plugin> › Einstellungen); admin pages only
+    openSettings: function () { post({ type: 'gc-settings' }); },
     upload: upload,
     on: on,
     off: off,

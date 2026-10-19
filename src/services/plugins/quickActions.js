@@ -103,7 +103,7 @@ function actionPlugins() {
 function pluginById(id) {
   if (typeof id !== 'string' || id.length < 2 || id.length > 64 || !ID_RE.test(id)) return null;
   let p;
-  try { p = registry.get(id); } catch { return null; }
+  try { p = registry.resolve(id); } catch { return null; } // also the plugin that replaced it (plugin.json `replaces`)
   return p && eligible(p) ? p : null;
 }
 

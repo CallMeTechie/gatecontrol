@@ -60,8 +60,12 @@ function contextOf(data) {
 async function dispatchOne(notificationId, userId, action) {
   const n = db().prepare('SELECT id, source, data FROM notifications WHERE id = ?').get(notificationId);
   if (!n) return false;
-  const pluginId = pluginOf(n.source);
-  if (!pluginId) return false;
+  const sourceId = pluginOf(n.source);
+  if (!sourceId) return false;
+  // a push of a plugin that was replaced since (plugin.json `replaces`) goes to the plugin that replaced it
+  let resolved = null;
+  try { resolved = registry.resolve(sourceId); } catch { resolved = null; }
+  const pluginId = resolved ? resolved.id : sourceId;
   let data;
   try { data = n.data ? JSON.parse(n.data) : null; } catch { data = null; }
   if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
