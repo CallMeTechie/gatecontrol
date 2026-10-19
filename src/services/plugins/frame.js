@@ -194,6 +194,16 @@ const BRIDGE_CLIENT = `(function(){
       post({ type: 'gc-upload', id: id, file: file, mime: String(file.type || ''), progress: !!progress });
     });
   }
+  // since 1.186.0: hand a file (Blob) to the page, which offers it as a download → { ok: true }
+  function saveFile(file, name) {
+    return new Promise(function (resolve, reject) {
+      if (typeof Blob === 'undefined' || !(file instanceof Blob)) { reject(new Error('GC.saveFile needs a Blob')); return; }
+      var id = ++seq;
+      pending[id] = { resolve: resolve, reject: reject };
+      pending[id].timer = setTimeout(function () { if (pending[id]) { delete pending[id]; reject(new Error('timeout')); } }, 60000);
+      post({ type: 'gc-save', id: id, file: file, name: String(name == null ? '' : name) });
+    });
+  }
   // permissions.events: realtime events of the plugin ({ plugin, type, data })
   function on(name, fn) {
     if (name !== 'event' || typeof fn !== 'function') return;
@@ -264,6 +274,7 @@ const BRIDGE_CLIENT = `(function(){
     // since 1.185.0: the plugin's settings (Einstellungen › Plugins › <plugin> › Einstellungen); admin pages only
     openSettings: function () { post({ type: 'gc-settings' }); },
     upload: upload,
+    saveFile: saveFile,
     on: on,
     off: off,
     inbox: inbox,
