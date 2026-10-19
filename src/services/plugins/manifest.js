@@ -61,6 +61,10 @@ function loc(text, lang) {
 
 function rangeStr([a, b]) { return a === b ? String(a) : `${a}-${b}`; }
 
+// The pages of the plugin area use these path segments (/plugins/catalog …,
+// routes/plugins.js) — a plugin cannot be called like one of them.
+const RESERVED_IDS = new Set(['catalog', 'updates', 'licenses', 'security', 'manage']);
+
 const TARGET_ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
 
 /**
@@ -161,6 +165,7 @@ function validate(raw, opts = {}) {
 
   const m = {};
   if (typeof raw.id !== 'string' || raw.id.length < 2 || raw.id.length > 64 || !ID_RE.test(raw.id)) err('id: invalid');
+  else if (RESERVED_IDS.has(raw.id)) err('id: reserved');
   else m.id = raw.id;
 
   m.name = locText(raw.name, 60);

@@ -60,6 +60,9 @@ const CATALOGUE = [
     // A device sent a support bundle (docs/feature-support-bundle.md); the
     // inbox is System › Support-Pakete. System topic: admins only.
     { id: 'support_bundle', types: ['support_bundle_uploaded'] },
+    // Plugin updates (docs/plugins.md "Updates"): new versions in the official
+    // catalogue, nightly automatic updates, an update waiting for approval.
+    { id: 'plugin_updates', types: ['plugin_update_available', 'plugin_auto_updated', 'plugin_update_needs_approval'] },
   ] },
 ];
 

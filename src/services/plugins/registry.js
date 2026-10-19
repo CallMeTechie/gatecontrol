@@ -105,4 +105,12 @@ function logs(id, limit = 200) {
     .all(id, Math.max(1, Math.min(500, limit)));
 }
 
-module.exports = { list, get, upsert, setEnabled, setStatusReason, remove, getLicense, setLicense, removeLicense, addLog, logs };
+/** Log entries of `level` since `sinceMs` (epoch ms). */
+function countLogs(id, level, sinceMs) {
+  try {
+    const r = getDb().prepare('SELECT COUNT(*) AS c FROM plugin_logs WHERE plugin_id = ? AND level = ? AND created_at >= ?').get(id, level, sinceMs);
+    return r ? r.c : 0;
+  } catch { return 0; }
+}
+
+module.exports = { list, get, upsert, setEnabled, setStatusReason, remove, getLicense, setLicense, removeLicense, addLog, logs, countLogs };

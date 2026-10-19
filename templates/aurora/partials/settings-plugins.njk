@@ -1,68 +1,16 @@
-{# ══ Erweiterungen · Plugins (docs/plugins.md) ═══════════════════════════
-   Content of the section (the <section> itself is in settings.njk). Static frame only; cards, detail, dialogs: public/js/settings-plugins.js
-   (data from GET /api/v1/plugins). #}
-  <div class="st-sec-head pg-sec-head">
+{# ══ Erweiterungen · Plugins (docs/plugins.md "Plugin area") ═══════════════
+   Plugins have an area of their own (/plugins): installed plugins, the
+   catalogue, updates, licences and the security rules. This section only
+   points there; public/js/settings-plugins.js forwards old links
+   (/settings#plugins, ?plugin=<id>, ?install=<id>) to the new pages. #}
+  <div class="st-sec-head">
     <div><h2 class="st-sec-title" id="st-h-plugins" tabindex="-1">{{ t('st.nav.plugins') }}</h2><p class="st-sec-desc">{{ t('st.desc.plugins') }}</p></div>
-    <button type="button" class="st-btn st-btn-primary" id="pg-upload-btn">{{ t('plugins.upload') }}</button>
   </div>
-
-  <div id="pg-root" class="pg-root">
-    <label class="pg-drop" id="pg-drop" for="pg-file">
-      <span class="pg-drop-ic" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg></span>
-      <span class="pg-drop-text"><b>{{ t('plugins.drop.title') }}</b><span class="pg-sub">{{ t('plugins.drop.hint') }}</span></span>
-      <input type="file" id="pg-file" class="st-sr" accept=".gcplugin,application/octet-stream" aria-label="{{ t('plugins.drop.choose') }}">
-    </label>
-
-    {#- Former built-in integrations whose data waits for the plugin
-        (docs/plugins.md "Built-in data import"); settings-plugins.js hides a
-        note once its plugin is installed and adds "Jetzt installieren" (official
-        catalogue) when the catalogue offers the plugin. -#}
-    {% for mv in builtinMoved or [] %}
-    <p class="st-note st-note-warn pg-moved" role="note" data-builtin-moved="{{ mv.pluginId }}">{{ t('plugins.moved.' + mv.dataset) }} <a href="{{ mv.url }}" class="st-link" target="_blank" rel="noopener noreferrer">{{ t('plugins.moved.download') }}</a></p>
-    {% endfor %}
-    <p class="st-err-block" id="pg-load-err" role="alert" hidden></p>
-    <div class="pg-grid" id="pg-grid" aria-live="polite"></div>
-    <p class="pg-empty" id="pg-empty" hidden>{{ t('plugins.empty') }}</p>
-
-    <article class="pg-detail st-card" id="pg-detail" aria-labelledby="pg-dtitle" hidden></article>
-
-    {#- Official plugins (docs/plugins.md "Official plugin catalogue"): rows are
-        built by settings-plugins.js from GET /api/v1/plugin-catalog. Not shown
-        when the catalogue is switched off (GC_PLUGIN_CATALOG=off). -#}
-    {% if pluginCatalog %}
-    <section class="st-card pg-cat" id="pg-catalog" aria-labelledby="st-c-pgcat" aria-busy="true">
-      <div class="st-card-head">
-        <div class="st-card-headtext"><h3 class="st-card-title" id="st-c-pgcat">{{ t('plugins.cat.title') }}</h3><p class="st-card-desc">{{ t('plugins.cat.desc') }}</p></div>
-        <button type="button" class="st-btn st-btn-sm" id="pg-cat-refresh">{{ t('plugins.cat.refresh') }}</button>
-      </div>
-      <p class="st-note st-note-warn pg-cat-note" id="pg-cat-err" role="status" hidden>{{ t('plugins.cat.unreachable') }}</p>
-      <p class="pg-sub pg-cat-note" id="pg-cat-loading">{{ t('plugins.cat.loading') }}</p>
-      <ul class="pg-cat-list" id="pg-cat-list" aria-live="polite"></ul>
-    </section>
-    {% endif %}
-
-    <section class="st-card" id="pg-security" aria-labelledby="st-c-pgsec">
-      <div class="st-card-head"><div class="st-card-headtext"><h3 class="st-card-title" id="st-c-pgsec">{{ t('plugins.sec.title') }}</h3></div></div>
-      <div class="st-row">
-        <div class="st-row-text">
-          <label class="st-label" for="pg-unsigned">{{ t('plugins.sec.unsigned') }}</label>
-          <span class="st-hint" id="pg-unsigned-hint">{{ t('plugins.sec.unsigned_hint') }}</span>
-        </div>
-        <div class="st-row-ctl">
-          <button type="button" class="st-switch" role="switch" aria-checked="false" id="pg-unsigned" aria-describedby="pg-unsigned-hint"><span class="st-knob" aria-hidden="true"></span></button>
-        </div>
-      </div>
-      <p class="st-note st-note-warn" id="pg-unsigned-on" hidden><b>{{ t('plugins.sec.on_title') }}</b> {{ t('plugins.sec.on_text') }}</p>
-      <p class="st-note" id="pg-unsigned-off">{{ t('plugins.sec.off_note') }}</p>
-      {#- docs/plugins.md "Backup": plugin media (chats …) travel in backups only when switched on -#}
-      <div class="st-row">
-        <div class="st-row-text">
-          <label class="st-label" for="pg-backup-media">{{ t('plugins.sec.backup_media') }}</label>
-          <span class="st-hint" id="pg-backup-media-hint">{{ t('plugins.sec.backup_media_hint') }}</span>
-        </div>
-        <div class="st-row-ctl">
-          <button type="button" class="st-switch" role="switch" aria-checked="false" id="pg-backup-media" aria-describedby="pg-backup-media-hint"><span class="st-knob" aria-hidden="true"></span></button>
-        </div>
-      </div>
-    </section>
-  </div>
+  <section class="st-card" id="pg-moved-card" aria-labelledby="st-c-pgmoved">
+    <div class="st-card-head"><div class="st-card-headtext"><h3 class="st-card-title" id="st-c-pgmoved">{{ t('plugins.x.page_moved') }}</h3><p class="st-card-desc">{{ t('plugins.x.page_moved_d') }}</p></div></div>
+    <div class="st-btnrow pg-moved-actions">
+      <a class="st-btn st-btn-primary" href="/plugins" id="pg-to-area">{{ t('plugins.x.to_plugins') }}</a>
+      {%- if pluginCatalog %}<a class="st-btn" href="/plugins/catalog">{{ t('plugins.area.page_catalog') }}</a>{% endif %}
+      <a class="st-btn" href="/plugins/security">{{ t('plugins.area.security') }}</a>
+    </div>
+  </section>

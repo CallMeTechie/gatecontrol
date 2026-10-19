@@ -288,11 +288,13 @@ function catalogEnabled() {
 
 /**
  * Where a former built-in page leads: the plugin's page (`sub` = its sub
- * page, e.g. "/rules") when the plugin is installed, else Settings → Plugins.
+ * page, e.g. "/rules") when the plugin is installed, else its catalogue page
+ * (the plugin area's start page when the catalogue is switched off).
  * Fixed paths only, never request data.
  */
 function movedPage(pluginId, sub = '') {
-  return defOf(pluginId) && installed(pluginId) ? `/plugins/${pluginId}${sub}` : '/settings#plugins';
+  if (defOf(pluginId) && installed(pluginId)) return `/plugins/${pluginId}${sub}`;
+  return catalogEnabled() ? `/plugins/catalog/${pluginId}` : '/plugins';
 }
 
 // ─── Import ─────────────────────────────────────

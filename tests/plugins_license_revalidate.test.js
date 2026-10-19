@@ -139,7 +139,7 @@ describe('POST /api/v1/license/refresh', () => {
 
 describe('licence UI: "Lizenz aktualisieren" for a first-party plugin without licence', () => {
   it('the licence panel offers the refresh (POST /api/v1/license/refresh) with the hint', () => {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'settings-plugins.js'), 'utf8');
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'plugins-page.js'), 'utf8');
     assert.match(js, /L\.kind === 'first_party' && L\.state === 'missing'/);
     assert.match(js, /req\('POST', '\/api\/v1\/license\/refresh'/);
     assert.match(js, /t\('plugins\.lic\.refresh'\)/);
