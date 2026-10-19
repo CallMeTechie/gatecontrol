@@ -33,7 +33,8 @@ const kv = (id, key, value) => agent.post(`${API}/${id}/api/kv`).set('X-CSRF-Tok
 const kvGet = async (id, key) => (await agent.get(`${API}/${id}/api/kv`).query({ key }).expect(200)).body.value;
 
 // "hello-two": a second plugin with the portal permission; "hello-np": one without
-function twoOverrides() { return { id: 'hello-two', name: { de: 'Zweites', en: 'Second' } }; }
+// hello-two replaced an (uninstalled) plugin: its actions name the old id (formerly, since 1.186.2)
+function twoOverrides() { return { id: 'hello-two', name: { de: 'Zweites', en: 'Second' }, replaces: ['hello-alt'] }; }
 function noPortalOverrides() {
   const permissions = JSON.parse(JSON.stringify(helloManifest.permissions));
   delete permissions.portal;
@@ -97,7 +98,7 @@ describe('GET /api/v1/client/actions', () => {
     assert.equal(by('viewer').title, `v${anna} true/true/true de`, 'the token owner as portal viewer, logged in, from the app');
     for (const id of ['bad id', 'x'.repeat(65), 'notitle', 'slider']) assert.equal(by(id), undefined, id);
     assert.equal(mine.filter((a) => a.id === 'light:3').length, 1, 'duplicate ids dropped');
-    assert.deepEqual(r.body.actions.filter((a) => a.plugin === 'hello-two').map((a) => [a.id, a.pluginName, a.kind]), [['scene:evening', 'Zweites', 'button']]);
+    assert.deepEqual(r.body.actions.filter((a) => a.plugin === 'hello-two').map((a) => [a.id, a.pluginName, a.kind, a.formerly]), [['scene:evening', 'Zweites', 'button', ['hello-alt']]]);
     assert.ok(!r.body.actions.some((a) => a.plugin === 'hello-np'), 'a plugin without permissions.portal is never asked');
   });
 

@@ -107,6 +107,16 @@ function pluginById(id) {
   return p && eligible(p) ? p : null;
 }
 
+/**
+ * The ids a first-party plugin replaced (plugin.json `replaces`, since
+ * 1.185.0) — the apps move pins and widgets stored under such an old id to
+ * this plugin (since 1.186.2). Empty for every other plugin.
+ */
+function formerlyOf(p) {
+  const r = p && p.signature === 'trusted' && p.manifest && Array.isArray(p.manifest.replaces) ? p.manifest.replaces : [];
+  return r.filter((x) => typeof x === 'string' && ID_RE.test(x) && x !== p.id).slice(0, 8);
+}
+
 function state(v) { return typeof v === 'string' && TOGGLE_STATES.has(v) ? v : null; }
 function num(v) { return typeof v === 'number' && Number.isFinite(v) ? v : null; }
 function icon(v) { return typeof v === 'string' && ICON_RE.test(v) ? v : null; }
@@ -339,8 +349,8 @@ function lang2(lang) { return lang === 'en' ? 'en' : 'de'; }
  * @param {{id, name, role, portal: true, loggedIn: true, app: true}} user
  * @param {string} lang
  * @param {{exclude?: string}} [opts]  exclude: a plugin id that is not asked (gc.actions.list leaves out the caller)
- * @returns {Promise<object[]>} [{ plugin, pluginName, id, title, subtitle, icon, kind, state, confirm,
- *   confirmWhen, look, verbs, targets, device, widget }]
+ * @returns {Promise<object[]>} [{ plugin, pluginName, formerly?, id, title, subtitle, icon, kind, state, confirm,
+ *   confirmWhen, look, verbs, targets, device, widget }] — formerly: the ids the plugin replaced (only when it did)
  */
 async function list(user, lang, opts = {}) {
   const l = lang2(lang);
@@ -349,7 +359,8 @@ async function list(user, lang, opts = {}) {
     let out;
     try { out = await runtime.call(p.id, 'quickActions', { user, lang: l }, HOOK_MS); } catch { return []; }
     const pluginName = loc(p.manifest.name, l) || p.name;
-    return sanitizeList(out).map((a) => ({ plugin: p.id, pluginName, ...a }));
+    const formerly = formerlyOf(p);
+    return sanitizeList(out).map((a) => ({ plugin: p.id, pluginName, ...(formerly.length ? { formerly } : {}), ...a }));
   }));
   return lists.flat();
 }

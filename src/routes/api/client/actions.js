@@ -5,7 +5,7 @@
  * Android home-screen shortcuts, Quick Settings tiles, widget.
  *
  *   GET  /api/v1/client/actions
- *     200 { ok: true, actions: [{ plugin, pluginName, id, title, subtitle,
+ *     200 { ok: true, actions: [{ plugin, pluginName, formerly?, id, title, subtitle,
  *                                 icon, kind, state, confirm, confirmWhen,
  *                                 look, verbs, targets, device, widget }] }
  *   POST /api/v1/client/actions/:plugin/:id

@@ -246,7 +246,10 @@ as it was (`replace_conflict` when data already exists under the new id).
 Ids stored elsewhere — quick action ids in other plugins' rules, service
 calls (`plugin: '<old>'`), callback buttons of earlier pushes — resolve to the
 new plugin; first-party licence entitlements of the old slug count for the
-new plugin, so no new licence is needed.
+new plugin, so no new licence is needed. The apps keep their own copies of
+pinned quick actions and widgets: the quick action list names the old ids
+of such a plugin (`formerly: ['<old>']`, since 1.186.2), and the apps move
+what they stored under an old id to the new plugin.
 
 In the catalogue the old entry is no longer listed; with the old plugin
 installed the new one appears as its update (state `update`, `replaces:
