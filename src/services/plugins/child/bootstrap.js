@@ -157,6 +157,32 @@ function onSocketEvent(m) {
   else if (m.ev === 'close') { s.closed = true; sockets.delete(m.id); s.emit('close'); }
 }
 
+// Proxied WebSockets (gc.http.websocket): the host holds the real connection.
+const websockets = new Map();
+
+class PluginWebSocket extends EventEmitter {
+  constructor(id, info) {
+    super();
+    this.id = id;
+    this.protocol = info.protocol || '';
+    this.closed = false;
+  }
+  /** send(string | Buffer): text frames for strings, binary frames for Buffers */
+  send(data) {
+    if (Buffer.isBuffer(data)) return hostCall('ws.send', { id: this.id, b64: data.toString('base64') });
+    return hostCall('ws.send', { id: this.id, text: String(data) });
+  }
+  close(code, reason) { return hostCall('ws.close', { id: this.id, code, reason }).catch(() => null); }
+}
+
+function onWebSocketEvent(m) {
+  const w = websockets.get(m.id);
+  if (!w) return;
+  if (m.ev === 'message') w.emit('message', typeof m.b64 === 'string' ? Buffer.from(m.b64, 'base64') : String(m.text || ''));
+  else if (m.ev === 'error') w.emit('error', Object.assign(new Error(m.error || 'websocket error'), { code: 'ERR_NET' }));
+  else if (m.ev === 'close') { w.closed = true; websockets.delete(m.id); w.emit('close', m.code, m.reason || ''); }
+}
+
 function makeGc(info) {
   const log = (level) => (...a) => send({ t: 'log', level, message: fmt(a) });
   return Object.freeze({
@@ -168,6 +194,17 @@ function makeGc(info) {
        *   → { status, headers (set-cookie as a list), body | bodyBase64, url, redirects }
        */
       fetch: (url, opts) => hostCall('http.fetch', { url: String(url), opts: opts || {} }),
+      /**
+       * websocket(url, { headers, protocols, timeoutMs }) → an open WebSocket to an internet host of
+       * plugin.json (EventEmitter: message (string | Buffer), close (code, reason), error; send, close)
+       */
+      websocket: async (url, opts) => {
+        const o = opts || {};
+        const r = await hostCall('ws.connect', { url: String(url), opts: { headers: o.headers, protocols: o.protocols, timeoutMs: o.timeoutMs } });
+        const w = new PluginWebSocket(r.id, r);
+        websockets.set(r.id, w);
+        return w;
+      },
     }),
     net: Object.freeze({
       /** Home-network targets an administrator assigned: [{ id, protocols, assigned: [{ index, label }] }] */
@@ -400,6 +437,7 @@ process.on('message', (msg) => {
     return;
   }
   if (msg.t === 'sock') { onSocketEvent(msg); return; }
+  if (msg.t === 'ws') { onWebSocketEvent(msg); return; }
   if (msg.t === 'ping') { send({ t: 'pong', id: msg.id }); return; }
   if (msg.t === 'stop') {
     Promise.resolve()
