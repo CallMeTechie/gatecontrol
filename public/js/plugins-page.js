@@ -900,7 +900,7 @@
       linkBtn(t('plugins.x.check_now'), async (e) => {
         e.currentTarget.disabled = true;
         await loadCatalog(true);
-        toast(t('plugins.cat.refreshed'));
+        toast(cat.available ? t('plugins.cat.refreshed') : (cat.error || t('plugins.cat.unreachable')), cat.available ? undefined : 'error');
         renderCatalog();
         updateNav();
       }, { id: 'pgx-cat-refresh' }),
@@ -1746,6 +1746,8 @@
       linkBtn(t('plugins.x.check_now'), async (e) => {
         e.currentTarget.disabled = true;
         const nr = await req('GET', CAT_API + '/updates?refresh=1');
+        // a refused check (rate limit, unreachable) says so — never „all current“ from an error
+        if (!nr.ok) { e.currentTarget.disabled = false; toast(nr.error || t('plugins.cat.unreachable'), 'error'); return; }
         await loadCatalog(false);
         renderUpdates(nr);
         updateNav();

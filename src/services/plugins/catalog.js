@@ -40,8 +40,9 @@ const CATALOG_MAX_BYTES = 2 * 1024 * 1024;
 const CATALOG_TIMEOUT_MS = 15000;
 const DOWNLOAD_TIMEOUT_MS = 90000;
 const MAX_REDIRECTS = 5;
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const CACHE_TTL_MS = 15 * 60 * 1000; // a new release shows within 15 min (before 1.186.3: 1 h)
 const ERROR_TTL_MS = 60 * 1000;
+const CACHED_MAX_MS = 24 * 60 * 60 * 1000; // cached(): the last catalogue without a fetch, up to a day old
 const MAX_PLUGINS = 500;
 const MAX_VERSIONS = 200;
 const OFF_WORDS = new Set(['off', '0', 'false', 'no', 'disabled']);
@@ -466,7 +467,7 @@ function notesBetween(cat, id, from, to) {
 
 /** The catalogue in the cache — no fetch (null when there is none). */
 function cached() {
-  return cache && cache.cat && Date.now() - cache.at < CACHE_TTL_MS * 24 ? cache.cat : null;
+  return cache && cache.cat && Date.now() - cache.at < CACHED_MAX_MS ? cache.cat : null;
 }
 
 // ─── Fetch + cache ──────────────────────────────
