@@ -38,32 +38,45 @@ describe('the plugin area', () => {
     const html = (await agent.get('/settings').expect(200)).text;
     const s = section(withoutScripts(html), 'plugins');
     assert.match(s, /id="pg-moved-card"/);
-    assert.match(s, /<a class="st-btn st-btn-primary" href="\/plugins" id="pg-to-area">/);
+    assert.match(s, /<a class="st-btn st-btn-primary" href="\/settings\/plugins" id="pg-to-area">/);
     assert.doesNotMatch(s, /\b(plugins|st)\.[a-z_]+\.[a-z_.]+/, 'no raw i18n keys');
     assert.match(withoutScripts(html), /class="st-nav-item" data-section="plugins"/);
     assert.match(html, /<script src="\/js\/settings-plugins\.js[^"]*"><\/script>\s*<script src="\/js\/settings\.js/);
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'settings-plugins.js'), 'utf8');
     assert.match(js, /location\.hash === '#plugins'/);
-    assert.match(js, /'\/plugins\/manage\/' \+ encodeURIComponent\(plugin\)/);
-    assert.match(js, /'\/plugins\/catalog\/' \+ encodeURIComponent\(install\)/);
+    assert.match(js, /BASE = '\/settings\/plugins'/);
+    assert.match(js, /BASE \+ '\/manage\/' \+ encodeURIComponent\(plugin\)/);
+    assert.match(js, /BASE \+ '\/catalog\/' \+ encodeURIComponent\(install\)/);
+    assert.match(js, /\.st-nav-item\[data-section="plugins"\]/, 'the settings entry opens the plugin page');
   });
-  for (const [url, view, tab] of [['/plugins', 'installed', 'installed'], ['/plugins/catalog', 'catalog', 'catalog'], ['/plugins/updates', 'updates', 'updates'],
-    ['/plugins/licenses', 'licenses', 'licenses'], ['/plugins/security', 'security', 'security'], ['/plugins/catalog/gatecontrol-familie', 'catalogItem', 'catalog']]) {
+  const B = '/settings/plugins';
+  for (const [url, view, tab] of [[B, 'installed', 'installed'], [B + '/catalog', 'catalog', 'catalog'], [B + '/updates', 'updates', 'updates'],
+    [B + '/licenses', 'licenses', 'licenses'], [B + '/security', 'security', 'security'], [B + '/log', 'log', 'log'], [B + '/catalog/gatecontrol-familie', 'catalogItem', null]]) {
     it(`${url}: the ${view} view with its tab — no raw keys`, async () => {
       const html = (await agent.get(url).expect(200)).text;
       const page = withoutScripts(html);
       assert.match(page, new RegExp(`<div class="pgx" id="pgx" data-view="${view}"`));
-      assert.match(page, new RegExp(`<a class="pgx-nav-item" href="[^"]+" data-tab="${tab}" aria-current="page">`));
-      assert.match(page, /class="nav-item active" id="nav-plugins"/);
+      if (tab) assert.match(page, new RegExp(`<a class="pgx-sl" href="[^"]+" data-tab="${tab}" aria-current="page">`));
+      else assert.doesNotMatch(page, /class="pgx-side"/, 'one plugin: no side column');
+      assert.match(page, /class="nav-item active" id="nav-settings"/, 'under Einstellungen');
+      assert.match(page, /<h1 class="page-crumb">Einstellungen \/ Plugins<\/h1>/);
       assert.doesNotMatch(page, /\b(plugins|nav)\.[a-z_]+\.[a-z_.]+/, 'no raw i18n keys');
       assert.match(html, /<script src="\/js\/plugins-ui\.js[^"]*"><\/script>\s*<script src="\/js\/plugins-page\.js/);
       const island = JSON.parse(/<script type="application\/json" id="pgx-i18n"[^>]*>([\s\S]*?)<\/script>/.exec(html)[1]);
       assert.ok(island['plugins.x.attention'] && island['plugins.lic.state.valid'] && island['common.cancel']);
     });
   }
-  it('/plugins/manage/<id> of a plugin that is not installed is a 404; members are sent to their profile', async () => {
-    await agent.get('/plugins/manage/not-installed').expect(404);
-    await agent.get('/plugins/catalog/..%2Fx').expect(404);
+  it('manage/<id> of a plugin that is not installed is a 404; members are sent to their profile', async () => {
+    await agent.get('/settings/plugins/manage/not-installed').expect(404);
+    await agent.get('/settings/plugins/catalog/..%2Fx').expect(404);
+  });
+  it('the old addresses (/plugins, /plugins/catalog …) lead to the same view under Einstellungen › Plugins', async () => {
+    for (const [from, to] of [['/plugins', '/settings/plugins'], ['/plugins/catalog?cat=home', '/settings/plugins/catalog?cat=home'], ['/plugins/updates', '/settings/plugins/updates'],
+      ['/plugins/licenses', '/settings/plugins/licenses'], ['/plugins/security', '/settings/plugins/security'], ['/plugins/catalog/gatecontrol-familie', '/settings/plugins/catalog/gatecontrol-familie'],
+      ['/plugins/manage/hello?tab=log', '/settings/plugins/manage/hello?tab=log']]) {
+      assert.equal((await agent.get(from).expect(302)).headers.location, to, from);
+    }
+    await agent.get('/plugins/manage/..%2Fx').expect(404);
   });
   it('the page scripts build the DOM without innerHTML', () => {
     const src = ['settings-plugins.js', 'plugins-page.js', 'plugin-bridge.js'].map((f) => fs.readFileSync(path.join(__dirname, '..', 'public', 'js', f), 'utf8')).join('\n');
@@ -92,7 +105,7 @@ describe('the plugin area', () => {
 describe('sidebar, plugin page, frame', () => {
   it('the sidebar lists the plugin under "Integrationen"', async () => {
     const html = withoutScripts((await agent.get('/dashboard').expect(200)).text);
-    assert.match(html, /<div class="nav-section-label">Integrationen<\/div>\s*<a href="\/plugins" class="nav-item " id="nav-plugins">[\s\S]*?<\/a>\s*<a href="\/plugins\/hello" class="nav-item" data-plugin-nav="hello">/);
+    assert.match(html, /<div class="nav-section-label">Integrationen<\/div>\s*<a href="\/plugins\/hello" class="nav-item" data-plugin-nav="hello">/);
     assert.ok(!html.includes('>Plugins</div>'), 'no separate "Plugins" group');
   });
   it('the page embeds the plugin in a sandboxed frame (no allow-same-origin)', async () => {
@@ -127,7 +140,7 @@ describe('sidebar, plugin page, frame', () => {
     assert.match(page, /id="pg-off" data-reason="disabled"/);
     assert.ok(page.includes('Hallo Welt ist derzeit deaktiviert'));
     assert.ok(page.includes('Deine Daten sind gespeichert.'));
-    assert.match(page, /href="\/plugins\/manage\/hello"/);
+    assert.match(page, /href="\/settings\/plugins\/manage\/hello"/);
     const fr = await agent.get('/plugins/hello/frame/main').expect(503);
     assert.match(fr.headers['content-security-policy'], /sandbox/);
     await agent.post(API + '/hello/enable').set('X-CSRF-Token', csrf).send({}).expect(200);

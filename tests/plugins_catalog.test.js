@@ -419,9 +419,9 @@ describe('catalogue API', () => {
     assert.equal((await agent.get(API).expect(200)).body.plugins[0].state, 'installed');
   });
   it('the catalogue has a page of its own in the plugin area — no raw keys, DOM without innerHTML', async () => {
-    const html = withoutScripts((await agent.get('/plugins/catalog').expect(200)).text);
-    assert.match(html, /<div class="pgx" id="pgx" data-view="catalog" data-target="" data-catalog="1">/);
-    assert.match(html, /<a class="pgx-nav-item" href="\/plugins\/catalog" data-tab="catalog" aria-current="page">/);
+    const html = withoutScripts((await agent.get('/settings/plugins/catalog').expect(200)).text);
+    assert.match(html, /<div class="pgx" id="pgx" data-view="catalog" data-target="" data-catalog="1" data-base="\/settings\/plugins">/);
+    assert.match(html, /<a class="pgx-sl" href="\/settings\/plugins\/catalog" data-tab="catalog" aria-current="page">/);
     assert.doesNotMatch(html, /\b(plugins|st)\.[a-z_]+\.[a-z_.]+/, 'no raw i18n keys');
     const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'plugins-page.js'), 'utf8');
     assert.doesNotMatch(src, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
@@ -436,7 +436,7 @@ describe('catalogue API', () => {
       const i = await post({ id: 'hello', version: '1.1.0' }).expect(404);
       assert.equal(i.body.code, 'catalog_disabled');
       assert.deepEqual(fetched, []);
-      const html = withoutScripts((await agent.get('/plugins').expect(200)).text);
+      const html = withoutScripts((await agent.get('/settings/plugins').expect(200)).text);
       assert.match(html, /data-catalog="0"/);
       assert.doesNotMatch(html, /data-tab="catalog"/, 'no catalogue tab');
     } finally {

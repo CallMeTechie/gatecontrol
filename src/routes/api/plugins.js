@@ -8,6 +8,7 @@
 //   PUT    /policy                 { allowUnsigned, confirm: 'ERLAUBEN' } and/or { backupMedia } and/or
 //                                  { autoUpdate: 'off'|'patch'|'all' } and/or { catalogCheck }
 //   GET    /history                the last installs, updates and uninstalls
+//   GET    /contributions          per plugin: quick actions and widgets it lists for this administrator
 //   POST   /license-key            { key } a first-party key without naming the plugin
 //   POST   /inspect                the .gcplugin (application/octet-stream) → checks + token
 //   POST   /install                { token, accept: true, licenseKey? }
@@ -92,6 +93,23 @@ router.get('/', (req, res) => {
 
 router.get('/history', (req, res) => {
   res.json({ ok: true, history: plugins.history() });
+});
+
+// What the plugins add to the apps right now (the plugin area's "Was … hinzufügt"):
+// the quick actions each plugin lists for this administrator, those with a widget.
+router.get('/contributions', async (req, res) => {
+  const u = currentUser(req);
+  if (!u) return res.status(403).json({ ok: false, code: 'login_required' });
+  try {
+    const all = await require('../../services/plugins/quickActions').list({ ...u, portal: true, loggedIn: true, app: true }, lang(req));
+    const counts = {};
+    for (const a of all) {
+      const c = counts[a.plugin] || (counts[a.plugin] = { actions: 0, widgets: 0 });
+      c.actions += 1;
+      if (a.widget) c.widgets += 1;
+    }
+    res.json({ ok: true, counts });
+  } catch (e) { fail(req, res, e); }
 });
 
 router.post('/license-key', async (req, res) => {

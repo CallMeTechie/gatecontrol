@@ -57,22 +57,21 @@ describe('sidebar groups (§8)', () => {
       ['/dashboard'],
       ['/peers', '/routes', '/gateways', '/gateway-pools', '/rdp', '/dns', '/pihole'],
       ['/security', '/certificates', '/waf', '/users'],
-      ['/plugins', '/plugins/gatecontrol-midea', '/plugins/gatecontrol-skoda'],
+      ['/plugins/gatecontrol-midea', '/plugins/gatecontrol-skoda'],
       ['/notifications', '/support-bundles', '/logs', '/settings'],
     ]);
   });
 
-  it('licence conditions unchanged; "Integrationen" holds the plugin area, then one entry per plugin', () => {
+  it('licence conditions unchanged; the integrations label only with an installed plugin', () => {
     const g = sidebarGroups(renderLayout('dashboard', {}));
-    assert.deepEqual(g.map((x) => x.label), ['Übersicht', 'Netzwerk', 'Sicherheit', 'Integrationen', 'System']);
-    assert.deepEqual(g[3].hrefs, ['/plugins'], 'the plugin area even without a plugin');
+    assert.deepEqual(g.map((x) => x.label), ['Übersicht', 'Netzwerk', 'Sicherheit', 'System']);
     assert.deepEqual(g[1].hrefs, ['/peers', '/routes', '/gateways', '/rdp']);
     assert.deepEqual(g[2].hrefs, ['/security', '/certificates', '/users'], 'Sicherheits-Check needs no licence');
     // the licence keys of the former built-ins show nothing by themselves
-    assert.deepEqual(sidebarGroups(renderLayout('dashboard', ALL)).find((x) => x.label === 'Integrationen').hrefs, ['/plugins']);
+    assert.equal(sidebarGroups(renderLayout('dashboard', ALL)).some((x) => x.label === 'Integrationen'), false);
     const html = renderLayout('dashboard', {}, PLUGIN_NAV.slice(1));
     const one = sidebarGroups(html);
-    assert.deepEqual(one.find((x) => x.label === 'Integrationen').hrefs, ['/plugins', '/plugins/gatecontrol-skoda']);
+    assert.deepEqual(one.find((x) => x.label === 'Integrationen').hrefs, ['/plugins/gatecontrol-skoda']);
     assert.match(html, /data-plugin-nav="gatecontrol-skoda">[^]*?<span class="nav-tag-off">/, 'a plugin that is off keeps its tag');
     assert.doesNotMatch(html, />Plugins<\/div>/, 'no separate "Plugins" group');
   });

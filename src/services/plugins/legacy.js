@@ -294,7 +294,7 @@ function catalogEnabled() {
  */
 function movedPage(pluginId, sub = '') {
   if (defOf(pluginId) && installed(pluginId)) return `/plugins/${pluginId}${sub}`;
-  return catalogEnabled() ? `/plugins/catalog/${pluginId}` : '/plugins';
+  return catalogEnabled() ? `/settings/plugins/catalog/${pluginId}` : '/settings/plugins';
 }
 
 // ─── Import ─────────────────────────────────────

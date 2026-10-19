@@ -1,20 +1,24 @@
 'use strict';
 
-// The plugin area (templates/aurora/pages/plugins.njk, docs/plugins.md
-// "Plugin area"). One script for every view of /plugins:
+// The plugin area under Einstellungen › Plugins (templates/aurora/pages/plugins.njk,
+// docs/plugins.md "Plugin area"; layout, wording and order follow the
+// artboards of the mockup "Plugins – UI & UX Konzept"). One script for every
+// view of /settings/plugins:
 //
 //   installed    Meine Plugins: state tiles, "Braucht deine Aufmerksamkeit",
-//                search / filter / list or tiles grouped by area, suggestions
-//                from the catalogue; without plugins: the first-run page
-//   catalog      the catalogue as a store: areas, search, sort, highlight, cards
-//   catalogItem  one catalogue plugin: description, versions, install panel
+//                search / filter / list or tiles grouped by area, "Passt zu
+//                deinem Server"; without plugins: the first-run page
+//   catalog      the catalogue as a store: areas and filters in the side
+//                column, search, sort, highlight, "Noch nicht bei dir", cards
+//   catalogItem  one catalogue plugin: what it adds, what it may do, versions,
+//                install panel
 //   manage       one installed plugin: overview, settings, permissions,
 //                licence, log, versions; restart, switch, update, uninstall
 //   updates      updates with release notes, "Alle aktualisieren", automatic
-//                updates, history
+//                updates, recently updated
 //   licenses     licence key without naming the plugin, all licences
-//   security     upload with preview, unsigned plugins, media in backups,
-//                update checks, catalogue source
+//   security     upload with preview, the rules, catalogue source
+//   log          installs, updates and uninstalls
 //
 // Installing and updating — from the catalogue or an uploaded file — is one
 // dialog: Prüfen (checks, permissions, licence key) → Installieren → fertig.
@@ -31,7 +35,16 @@
   const VIEW = root.getAttribute('data-view') || 'installed';
   const TARGET = root.getAttribute('data-target') || '';
   const CATALOG_ON = root.getAttribute('data-catalog') === '1';
+  // the area's address (src/routes/plugins.js AREA_BASE) — fixed, never read from the page
+  const B = '/settings/plugins';
   const SHOP_URL = 'https://callmetechie.de/products/gatecontrol/pricing';
+  const enc = encodeURIComponent;
+  const U = {
+    mine: B, catalog: B + '/catalog', updates: B + '/updates', licenses: B + '/licenses', security: B + '/security', log: B + '/log',
+    item: (id, q) => B + '/catalog/' + enc(id) + (q ? '?' + q : ''),
+    manage: (id, tab) => B + '/manage/' + enc(id) + (tab ? '?tab=' + enc(tab) : ''),
+    cat: (c) => B + '/catalog?cat=' + enc(c),
+  };
 
   let STR = {};
   try { STR = JSON.parse(document.getElementById('pgx-i18n').textContent || '{}'); } catch (_) { STR = {}; }
@@ -42,32 +55,34 @@
     return s;
   }
   const $ = (id) => document.getElementById(id);
-  const main = $('pgx-main');
+  const main = $('pgx-view');
+  const busy = $('pgx-main');
   function clear(n) { while (n && n.firstChild) n.removeChild(n.firstChild); }
   function toast(msg, type) { if (window.showToast) window.showToast(msg, type || 'success'); }
   const query = new URLSearchParams(location.search);
-  const enc = encodeURIComponent;
 
   const NS = 'http://www.w3.org/2000/svg';
-  function icon(d, size) {
+  const PATH_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]+$/;
+  /** An inline 24×24 stroke icon: a path, or the name of a detail symbol. */
+  function icon(d, size, width) {
     const svg = document.createElementNS(NS, 'svg');
     [['viewBox', '0 0 24 24'], ['width', String(size || 20)], ['height', String(size || 20)], ['fill', 'none'], ['stroke', 'currentColor'],
-      ['stroke-width', '1.9'], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']].forEach((a) => svg.setAttribute(a[0], a[1]));
+      ['stroke-width', String(width || 2)], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']].forEach((a) => svg.setAttribute(a[0], a[1]));
     const p = document.createElementNS(NS, 'path');
-    p.setAttribute('d', /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]+$/.test(d || '') ? d : P.ICON_PATHS.puzzle);
+    const named = d && Object.prototype.hasOwnProperty.call(P.DETAIL_ICON_PATHS, d) ? P.DETAIL_ICON_PATHS[d] : d;
+    p.setAttribute('d', PATH_RE.test(named || '') ? named : P.ICON_PATHS.puzzle);
     svg.appendChild(p);
     return svg;
   }
   const I = {
     check: 'M5 12l5 5 9-10', x: 'M6 6l12 12M18 6L6 18', back: 'M15 18l-6-6 6-6', next: 'M9 6l6 6-6 6', search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-3.5-3.5',
     upload: 'M12 20V9M7 13l5-5 5 5M5 4h14', download: 'M12 4v11M7 10l5 5 5-5M5 20h14', plus: 'M12 5v14M5 12h14', refresh: 'M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5',
-    shield: 'M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6zM9 12l2 2 4-4', key: 'M8 19a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM11 12l9-9M16 7l3 3',
-    alert: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v5M12 16.5h.01', trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13', ext: 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
-    list: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01', grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z', more: 'M12 6h.01M12 12h.01M12 18h.01',
-    app: 'M9 2.5h6A2.5 2.5 0 0 1 17.5 5v14a2.5 2.5 0 0 1-2.5 2.5H9A2.5 2.5 0 0 1 6.5 19V5A2.5 2.5 0 0 1 9 2.5zM11 18.5h2', portal: 'M5.5 4h13A2.5 2.5 0 0 1 21 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11A2.5 2.5 0 0 1 5.5 4zM3 9h18',
-    page: 'M6 3h8l4 4v14H6zM14 3v4h4', clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2', gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.1-2.7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.7-1.1V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1.3z',
-    bell: 'M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 21h4', link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
-    spark: 'M12 3l2.2 5.8L20 11l-5.8 2.2L12 19l-2.2-5.8L4 11l5.8-2.2z', file: 'M6 3h8l4 4v14H6zM14 3v4h4', power: 'M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0',
+    shield: 'M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z', shieldOk: 'M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6zM9 12l2 2 4-4',
+    key: 'M8 19a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM11 12l9-9M16 7l3 3',
+    alert: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v5M12 16.5h.01', trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
+    ext: 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
+    list: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01', grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z', more: 'M12 5h.01M12 12h.01M12 19h.01',
+    file: 'M6 3h8l4 4v14H6zM14 3v4h4', bag: 'M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2', perms: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
   };
 
   async function req(method, url, body) {
@@ -90,6 +105,7 @@
   // ── State ──
   let inst = { loaded: false, plugins: [], allowUnsigned: false, backupMedia: false, autoUpdate: 'off', catalogCheck: true, serverVersion: '' };
   let cat = { loaded: false, available: false, plugins: [], error: '', fetchedAt: null, source: null, serverVersion: '' };
+  let contrib = {};
   function catItem(id) { return cat.plugins.find((x) => x.id === id) || null; }
   function installedOf(id) { return inst.plugins.find((x) => x.id === id) || null; }
   function metaOf(id) { return catItem(id) || { category: 'other', icon: null, summary: '', keywords: [], related: [] }; }
@@ -114,51 +130,75 @@
     }
   }
 
+  /** Quick actions and widgets per plugin (asks the running plugins — after the first paint). */
+  async function loadContrib() {
+    const r = await req('GET', API + '/contributions');
+    contrib = r.ok && r.counts ? r.counts : {};
+    return contrib;
+  }
+
   function showError(msg) {
     const e = $('pgx-err');
     e.textContent = msg || t('plugins.err.generic');
     e.hidden = false;
   }
 
-  // ── Small building blocks ──
-  const TONE = { good: 'good', info: 'info', crit: 'crit', warn: 'warn', off: 'off' };
-  function pill(text, tone, dot) {
-    return el('span', { class: 'pgx-pill', 'data-tone': TONE[tone] || 'off' }, [dot ? el('span', { class: 'pgx-dot', 'aria-hidden': 'true' }) : null, text]);
+  // ── Building blocks (mockup classes, pgx- prefixed) ──
+  const TONES = { good: 'good', warn: 'warn', crit: 'crit', info: 'blue', blue: 'blue', off: 'mute', mute: 'mute', new: 'new' };
+  function pill(text, tone, dot, attrs) {
+    return el('span', Object.assign({ class: 'pgx-pill', 'data-tone': TONES[tone] || 'mute' }, attrs || {}), [dot ? el('span', { class: 'pgx-d', 'aria-hidden': 'true' }) : null, text]);
   }
-  function statusPill(p) {
-    const s = P.statusChip(p);
-    return pill(t(s.key), s.tone, true);
-  }
+  const ICON_SIZE = { sm: 18, md: 22, md48: 24, lg: 28, xl: 34, xxl: 44, hero: 56 };
   function plugIcon(id, installed, size) {
     const meta = metaOf(id);
-    return el('span', { class: 'pgx-ic' + (size === 'lg' ? ' pgx-ic-lg' : (size === 'xl' ? ' pgx-ic-xl' : (size === 'sm' ? ' pgx-ic-sm' : ''))), 'data-cat': P.categoryOf(meta), 'aria-hidden': 'true' },
-      [icon(P.iconPath(meta, installed), size === 'xl' ? 40 : (size === 'lg' ? 30 : (size === 'sm' ? 17 : 22)))]);
+    return el('span', { class: 'pgx-ic', 'data-size': size || 'md', 'data-cat': P.categoryOf(meta), 'aria-hidden': 'true' }, [icon(P.iconPath(meta, installed), ICON_SIZE[size || 'md'])]);
   }
+  function sic(name, cat) { return el('span', { class: 'pgx-sic', 'data-cat': cat || null, 'aria-hidden': 'true' }, [icon(name || 'page', 17)]); }
   function btn(text, o) {
     const opt = o || {};
-    const cls = 'st-btn' + (opt.primary ? ' st-btn-primary' : '') + (opt.danger ? ' st-btn-danger' : '') + (opt.small ? ' st-btn-sm' : '') + (opt.cls ? ' ' + opt.cls : '');
-    const kids = [opt.icon ? icon(opt.icon, 16) : null, text];
-    if (opt.href) return el('a', { class: cls, href: opt.href, id: opt.id || null, target: opt.external ? '_blank' : null, rel: opt.external ? 'noopener noreferrer' : null }, kids);
-    return el('button', { type: 'button', class: cls, id: opt.id || null, disabled: !!opt.disabled, 'data-action': opt.action || null, on: opt.onClick ? { click: opt.onClick } : null }, kids);
+    const cls = 'pgx-btn' + (opt.primary ? ' pgx-btn-pri' : '') + (opt.danger ? ' pgx-btn-danger' : '') + (opt.small ? ' pgx-btn-sm' : '') + (opt.large ? ' pgx-btn-lg' : '')
+      + (opt.ghost ? ' pgx-btn-ghost' : '') + (opt.cls ? ' ' + opt.cls : '');
+    const kids = [opt.icon ? icon(opt.icon, opt.small ? 16 : 17) : null, text];
+    if (opt.href) return el('a', { class: cls, href: opt.href, id: opt.id || null, target: opt.external ? '_blank' : null, rel: opt.external ? 'noopener noreferrer' : null, 'aria-label': opt.label || null }, kids);
+    return el('button', { type: 'button', class: cls, id: opt.id || null, disabled: !!opt.disabled, 'data-action': opt.action || null, 'aria-label': opt.label || null, on: opt.onClick ? { click: opt.onClick } : null }, kids);
   }
-  function switchBtn(on, label, onClick, id) {
-    return el('button', { type: 'button', class: 'st-switch', role: 'switch', id: id || null, 'aria-checked': on ? 'true' : 'false', 'aria-label': label, on: { click: onClick } },
-      [el('span', { class: 'st-knob', 'aria-hidden': 'true' })]);
+  function sw(on, label, onClick, id) {
+    return el('button', { type: 'button', class: 'pgx-sw', role: 'switch', id: id || null, 'aria-checked': on ? 'true' : 'false', 'aria-label': label, on: { click: onClick } },
+      [el('span', { 'aria-hidden': 'true' })]);
   }
-  function card(cls, kids, attrs) { return el('section', Object.assign({ class: 'pgx-card' + (cls ? ' ' + cls : '') }, attrs || {}), kids); }
-  function cardHead(title, extra, id) {
-    return el('div', { class: 'pgx-card-head' }, [el('h2', { class: 'pgx-h2', id: id || null, text: title })].concat(extra || []));
+  function card(kids, attrs, cls) { return el('section', Object.assign({ class: 'pgx-card' + (cls ? ' ' + cls : '') }, attrs || {}), kids); }
+  function h2(text, id, cls) { return el('h2', { class: 'pgx-h2' + (cls ? ' ' + cls : ''), id: id || null, text }); }
+  function lbl(text, attrs) { return el('span', Object.assign({ class: 'pgx-lbl' }, attrs || {}), [text]); }
+  function link(text, href, attrs) { return el('a', Object.assign({ class: 'pgx-a', href }, attrs || {}), [text]); }
+  function linkBtn(text, onClick, attrs) { return el('button', Object.assign({ type: 'button', class: 'pgx-a', on: { click: onClick } }, attrs || {}), [text]); }
+  /** Page title (h2 styled as the mockup's h1 — the topbar holds the page's h1). */
+  function pageHead(title, sub, actions, eyebrow) {
+    return el('div', { class: 'pgx-ph' }, [
+      el('div', { class: 'pgx-ph-t' }, [eyebrow ? lbl(eyebrow, { class: 'pgx-lbl pgx-eyebrow' }) : null, el('h2', { class: 'pgx-h1', id: 'pgx-title', text: title }),
+        sub ? el('p', { class: 'pgx-sub' }, Array.isArray(sub) ? sub : [sub]) : null]),
+      actions && actions.filter(Boolean).length ? el('div', { class: 'pgx-ph-a' }, actions.filter(Boolean)) : null,
+    ]);
   }
-  function lbl(text) { return el('span', { class: 'pgx-lbl', text }); }
   function kv(rows) {
-    return el('dl', { class: 'pgx-kv' }, rows.filter(Boolean).reduce((acc, r) => acc.concat([el('dt', { text: r[0] }), el('dd', { class: r[2] ? 'st-mono' : null, text: r[1] == null || r[1] === '' ? '—' : String(r[1]) })]), []));
+    return el('div', { class: 'pgx-kvs' }, rows.filter(Boolean).map((r) => el('div', { class: 'pgx-kv' }, [el('span', { text: r[0] }),
+      el('span', { class: r[2] ? 'pgx-mono' : null }, Array.isArray(r[1]) ? r[1] : [r[1] == null || r[1] === '' ? '—' : String(r[1])])])));
   }
   function catName(c) { return t('plugins.x.cat.' + c); }
+  /** A GateControl version range for people: ">=1.154.0" → "≥ 1.154". */
+  function rng(r) { return String(r || '').replace(/>=\s*/g, '≥ ').replace(/(\d+\.\d+)\.0\b/g, '$1'); }
   function fmtDateTime(iso) {
     if (!iso) return '';
     const d = new Date(typeof iso === 'number' ? iso : String(iso).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(String(iso)) || String(iso).includes('T') ? '' : 'Z'));
     if (Number.isNaN(d.getTime())) return '';
     try { return d.toLocaleString(lang === 'en' ? 'en-GB' : 'de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch (_) { return d.toISOString(); }
+  }
+  function fmtTime(ms) {
+    try { return new Date(ms).toLocaleTimeString(lang === 'en' ? 'en-GB' : 'de-DE', { hour: '2-digit', minute: '2-digit' }); } catch (_) { return ''; }
+  }
+  function fmtDay(iso) {
+    const d = new Date(String(iso || '').replace(' ', 'T'));
+    if (Number.isNaN(d.getTime())) return '';
+    try { return d.toLocaleDateString(lang === 'en' ? 'en-GB' : 'de-DE', { day: '2-digit', month: '2-digit' }) + (lang === 'en' ? '' : '.'); } catch (_) { return ''; }
   }
   function ago(iso) {
     const ms = Date.now() - (Date.parse(iso || '') || 0);
@@ -170,7 +210,7 @@
     if (h < 48) return t('plugins.x.ago_h', { n: h });
     return t('plugins.x.ago_d', { n: Math.round(h / 24) });
   }
-  /** Release notes as text nodes (CHANGELOG markdown, plugins-ui.js noteLines). */
+  /** Release notes as a list (CHANGELOG markdown, plugins-ui.js noteLines). */
   function notesBlock(md, max) {
     const lines = P.noteLines(md, max);
     const box = el('div', { class: 'pgx-notes' });
@@ -184,45 +224,32 @@
     if (!lines.length) box.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.x.no_notes') }));
     return box;
   }
-
-  /** Short "what it adds" chips of an installed plugin. */
-  function addChips(p) {
-    const out = [];
-    if (p.app) out.push(t('plugins.x.add_app'));
-    if (p.portal && p.portal.label) out.push(t('plugins.x.add_portal'));
-    else if (p.portal && (p.portal.sections || []).length) out.push(t('plugins.x.add_portal_sections', { n: p.portal.sections.length }));
-    if (p.nav) out.push(t('plugins.x.add_page'));
-    if (p.permissions && p.permissions.notify) out.push(t('plugins.x.add_notify'));
-    if (p.permissions && p.permissions.background) out.push(t('plugins.x.add_bg'));
-    if (p.provides && p.provides.length) out.push(t('plugins.x.add_services', { n: p.provides.length }));
-    return out;
-  }
-
-  function noteOf(p) {
-    if (p.status === 'crashed') return t('plugins.note.crashed', { error: (p.process && p.process.lastError) || '' });
-    if (p.status === 'blocked') return t('plugins.reason.' + (p.reason || 'broken'));
-    if (P.licenseExpiring(p)) return t('plugins.x.lic_expiring_on', { date: P.fmtDate(p.license.expiresAt, lang) });
+  function summaryOf(p) {
     const m = catItem(p.id);
     return (m && m.summary) || p.description || '';
+  }
+  function noteOf(p) {
+    if (p.status === 'crashed') return t('plugins.x.crashed_short', { error: (p.process && p.process.lastError) || t('plugins.reason.crashed') });
+    if (p.status === 'blocked') return t('plugins.reason.' + (p.reason || 'broken'));
+    return summaryOf(p);
   }
 
   function updateNav() {
     const set = (id, n, tone) => {
-      const e = $('pgx-count-' + id);
-      if (!e) return;
-      e.hidden = !n;
-      e.textContent = n ? String(n) : '';
-      e.setAttribute('data-tone', tone || 'off');
+      [$('pgx-count-' + id), $('pgx-mcount-' + id)].forEach((e) => {
+        if (!e) return;
+        e.hidden = !n;
+        e.textContent = n ? String(n) : '';
+        e.setAttribute('data-tone', tone || 'mute');
+      });
     };
-    set('installed', inst.loaded ? inst.plugins.length : 0, 'off');
-    if (cat.available) set('catalog', cat.plugins.length, 'off');
-    const ups = cat.plugins.filter((x) => x.state === 'update').length;
-    set('updates', ups, 'info');
-    const lic = inst.plugins.filter((p) => p.license && p.license.required && !['valid', 'not_required'].includes(p.license.state)).length;
-    set('licenses', lic, 'warn');
+    set('installed', inst.loaded ? inst.plugins.length : 0, 'plain');
+    if (cat.available) set('catalog', cat.plugins.length, 'plain');
+    set('updates', cat.plugins.filter((x) => x.state === 'update').length, 'blue');
+    set('licenses', inst.plugins.filter((p) => p.license && p.license.required && !['valid', 'not_required'].includes(p.license.state)).length, 'warn');
   }
 
-  function done() { main.setAttribute('aria-busy', 'false'); updateNav(); }
+  function done() { busy.setAttribute('aria-busy', 'false'); updateNav(); }
 
   // ── Actions ──
   async function setEnabled(p, on) {
@@ -243,6 +270,15 @@
   // Install / update dialog (catalogue or uploaded file)
   // ════════════════════════════════════════════════════════════
 
+  /** A GCDialog in the mockup's look: own header in the body, the × top right. */
+  function dlg(title, width) {
+    const d = D.dialog({ title, wide: true });
+    const box = d.overlay.firstChild;
+    box.classList.add('pgx-dlg');
+    if (width) box.setAttribute('data-w', width);
+    return d;
+  }
+
   /** Catalogue: the server downloads, checks the sha256 and inspects; then the dialog. */
   async function installFromCatalog(item, button) {
     if (!item || !item.latest) return null;
@@ -262,23 +298,49 @@
     return { info: r, file: { name: file.name, size: file.size } };
   }
 
+  /**
+   * "Das Plugin darf": the sensitive permissions one by one (amber), the
+   * usual ones in one line that opens to the full list. With `existing`
+   * (an update): what changed against the installed version.
+   */
   function permRowsBox(perm, existing) {
-    const sens = P.sensitivePerms(perm).map((k) => t(k));
-    const box = el('div', { class: 'pgx-perms' });
+    const sensKeys = P.sensitivePerms(perm);
+    const sens = sensKeys.map((k) => t(k));
+    const box = el('div', { class: 'pgx-prs' });
+    const row = (r, s, change) => el('div', { class: 'pgx-pr' + (s ? ' pgx-pr-s' : ''), 'data-change': change || null, 'data-sensitive': s ? '1' : null }, [
+      icon(s ? I.shield : I.perms, 19), el('span', { class: 'pgx-t' }, [el('b', null, [r.label, change ? ' ' : null, change ? pill(t('plugins.perm.diff_' + change), change === 'removed' ? 'good' : 'warn') : null]),
+        el('small', { class: change === 'removed' ? 'pgx-gone' : null, text: r.value }), r.old ? el('small', { text: t('plugins.perm.diff_before', { value: r.old }) }) : null]),
+    ]);
     if (existing && existing.permissions) {
       const diff = P.permDiff(perm, existing.permissions, t);
       box.appendChild(el('p', { class: 'pgx-note' + (diff.changed ? ' pgx-note-warn' : ''), role: 'note', id: 'pgx-perm-diff', 'data-changed': String(diff.changed),
         text: diff.changed ? t('plugins.in.perms_changed', { from: existing.version, n: diff.changed }) : t('plugins.in.perms_same', { from: existing.version }) }));
-      diff.rows.forEach((r) => box.appendChild(el('div', { class: 'pgx-perm', 'data-change': r.change || 'same', 'data-sensitive': sens.indexOf(r.label) >= 0 ? '1' : null }, [
-        el('b', null, [r.label, r.change ? ' ' : null, r.change ? pill(t('plugins.perm.diff_' + r.change), 'warn') : null]),
-        el('span', null, [r.value, r.change === 'changed' ? el('span', { class: 'pgx-muted pgx-block', text: t('plugins.perm.diff_before', { value: r.old }) }) : null]),
-      ])));
-      diff.removed.forEach((r) => box.appendChild(el('div', { class: 'pgx-perm', 'data-change': 'removed' }, [
-        el('b', null, [r.label, ' ', pill(t('plugins.perm.diff_removed'), 'good')]), el('span', { class: 'pgx-gone', text: r.value })])));
+      diff.rows.filter((r) => r.change).forEach((r) => box.appendChild(row(r, sens.indexOf(r.label) >= 0, r.change)));
+      diff.removed.forEach((r) => box.appendChild(row(r, false, 'removed')));
+      const same = diff.rows.filter((r) => !r.change);
+      if (same.length) box.appendChild(usualRow(same));
       return box;
     }
-    P.permRows(perm, t).forEach((r) => box.appendChild(el('div', { class: 'pgx-perm', 'data-sensitive': sens.indexOf(r.label) >= 0 ? '1' : null }, [el('b', { text: r.label }), el('span', { text: r.value })])));
+    const rows = P.permRows(perm, t);
+    rows.filter((r) => sens.indexOf(r.label) >= 0).forEach((r) => box.appendChild(row(r, true)));
+    const usual = rows.filter((r) => sens.indexOf(r.label) < 0);
+    if (usual.length) box.appendChild(usualRow(usual));
     return box;
+    function usualRow(list) {
+      const more = el('div', { class: 'pgx-pr-more', hidden: true }, list.map((r) => el('div', { class: 'pgx-kv' }, [el('span', { text: r.label }), el('span', { text: r.value })])));
+      const open = linkBtn(t('plugins.x.perm_each'), () => { more.hidden = !more.hidden; open.setAttribute('aria-expanded', String(!more.hidden)); }, { 'aria-expanded': 'false' });
+      return el('div', { class: 'pgx-pr' }, [icon(I.perms, 19), el('span', { class: 'pgx-t' }, [
+        el('b', { text: list.map((r) => r.label).join(', ') }), el('small', null, [t('plugins.x.perm_usual') + ' · ', open]), more])]);
+    }
+  }
+
+  function steps(phase) {
+    return el('ol', { class: 'pgx-steps', 'aria-label': t('plugins.in.steps') }, [['check', 1], ['install', 2]].map(([k, n], i) => {
+      const doneStep = (k === 'check' && phase !== 'check') || phase === 'done';
+      const on = phase === k || (k === 'install' && phase === 'done');
+      return el('li', { 'aria-current': on && !doneStep ? 'step' : 'false', 'data-done': doneStep ? '1' : '0' },
+        [i ? el('span', { class: 'pgx-steps-sep', 'aria-hidden': 'true', text: '—' }) : null, el('span', { class: 'pgx-steps-n', text: doneStep ? '✓' : String(n) }), t('plugins.x.step_' + k)]);
+    }));
   }
 
   /**
@@ -290,57 +352,52 @@
   function installDialog(info, file, item) {
     const plugin = info.plugin;
     const isUpdate = !!info.existing;
-    const d = D.dialog({ title: t(isUpdate ? 'plugins.in.title_update' : 'plugins.in.title'), wide: true });
+    const title = plugin ? t(isUpdate ? 'plugins.x.dlg_update' : 'plugins.x.dlg_install', { name: plugin.name }) : file.name;
+    const d = dlg(title);
     const body = el('div', { class: 'pgx-in' });
     const err = el('p', { class: 'st-err-block', role: 'alert', hidden: true });
     d.body.appendChild(body);
     d.body.appendChild(err);
-    const cancel = el('button', { type: 'button', class: 'btn btn-ghost', text: t('common.cancel'), on: { click: () => d.close(null) } });
-    const go = el('button', { type: 'button', class: 'btn btn-primary', id: 'pgx-in-go' });
+    const cancel = el('button', { type: 'button', class: 'pgx-btn', text: t('common.cancel'), on: { click: () => d.close(null) } });
+    const go = el('button', { type: 'button', class: 'pgx-btn pgx-btn-pri', id: 'pgx-in-go' });
     d.foot.appendChild(cancel);
     d.foot.appendChild(go);
-    const keyIn = el('input', { type: 'text', class: 'st-input st-mono pgx-key', id: 'pgx-in-key', placeholder: t('plugins.lic.placeholder'), maxLength: 200, autocomplete: 'off', spellcheck: 'false' });
-    const accept = el('input', { type: 'checkbox', id: 'pgx-in-accept' });
+    const keyIn = el('input', { type: 'text', class: 'pgx-key', id: 'pgx-in-key', placeholder: t('plugins.lic.placeholder'), maxLength: 200, autocomplete: 'off', spellcheck: 'false' });
     const setup = el('input', { type: 'checkbox', id: 'pgx-in-setup' });
     setup.checked = true;
     let phase = 'check';
     let installed = null;
     let result = null;
+    const started = Date.now();
 
-    const steps = () => el('ol', { class: 'pgx-steps', 'aria-label': t('plugins.in.steps') }, [['check', 1], ['install', 2]].map(([k, n]) => {
-      const doneStep = k === 'check' && phase !== 'check';
-      return el('li', { 'aria-current': (phase === k || (k === 'install' && phase === 'done')) ? 'step' : 'false', 'data-done': doneStep || phase === 'done' ? '1' : '0' },
-        [el('span', { class: 'pgx-step-n', text: doneStep || (phase === 'done') ? '✓' : String(n) }), t('plugins.x.step_' + k)]);
-    }));
-
-    function header() {
+    function head(text, sub, done) {
       const id = plugin ? plugin.id : '';
-      return el('div', { class: 'pgx-in-head' }, [
-        plugin ? plugIcon(id, installedOf(id), 'lg') : el('span', { class: 'pgx-ic pgx-ic-lg' }, [icon(I.file, 26)]),
-        el('div', { class: 'pgx-in-title' }, [
-          el('b', { text: plugin ? plugin.name + ' ' + plugin.version : file.name }),
-          el('span', { class: 'pgx-muted', text: [P.fmtBytes(file.size), plugin ? (plugin.verified ? t('plugins.x.signed_by', { publisher: plugin.publisher }) : t('plugins.badge.unverified')) : '',
-            info.origin === 'catalog' ? t('plugins.x.from_catalog') : t('plugins.x.from_upload')].filter(Boolean).join(' · ') }),
-        ]),
-      ]);
+      const ic = plugin ? plugIcon(id, installedOf(id), 'lg') : el('span', { class: 'pgx-ic', 'data-size': 'lg', 'data-cat': 'other' }, [icon(I.file, 28)]);
+      if (done) ic.appendChild(el('span', { class: 'pgx-ic-ok', 'aria-hidden': 'true' }, [icon(I.check, 12, 3.5)]));
+      return el('div', { class: 'pgx-in-head' }, [ic, el('div', { class: 'pgx-in-title' }, [el('h3', { class: 'pgx-dh', text }), sub ? el('span', { class: 'pgx-muted', text: sub }) : null])]);
+    }
+    function metaLine() {
+      const compat = (info.checks || []).find((c) => c.key === 'compatibility');
+      return [plugin ? t('plugins.x.version_v', { version: plugin.version }) : '', P.fmtBytes(file.size),
+        plugin ? (plugin.verified ? t('plugins.x.signed') : t('plugins.badge.unverified')) : '',
+        compat && compat.status === 'ok' ? t('plugins.x.fits_gc', { version: inst.serverVersion || (compat.params && compat.params.installed) || '' }) : ''].filter(Boolean).join(' · ');
     }
 
     function render() {
       clear(body);
       err.hidden = true;
-      body.appendChild(steps());
-      body.appendChild(header());
+      body.appendChild(steps(phase));
       if (phase === 'check') {
+        body.appendChild(head(title, metaLine()));
         const failed = (info.checks || []).filter((c) => c.status !== 'ok');
-        const checks = el('ul', { class: 'pgx-checks', id: 'pgx-checks' }, (failed.length ? info.checks : []).map((c) => {
-          const k = P.checkKeys(c);
-          const params = Object.assign({}, c.params || {});
-          return el('li', { 'data-state': c.status, 'data-check': c.key + '.' + c.code }, [el('span', { class: 'pgx-check-ic', 'aria-hidden': 'true', text: P.checkSymbol(c.status) }),
-            el('span', null, [el('b', { text: t(k.title, params) }), el('span', { class: 'pgx-muted pgx-block', text: t(k.detail, params) })])]);
-        }));
-        if (!failed.length) {
-          body.appendChild(el('p', { class: 'pgx-ok-line', id: 'pgx-checks-ok' }, [icon(I.check, 16), t('plugins.x.checks_ok', { n: (info.checks || []).length })]));
-        } else body.appendChild(checks);
+        if (failed.length) {
+          body.appendChild(el('ul', { class: 'pgx-checks', id: 'pgx-checks' }, info.checks.map((c) => {
+            const k = P.checkKeys(c);
+            const params = Object.assign({}, c.params || {});
+            return el('li', { 'data-state': c.status, 'data-check': c.key + '.' + c.code }, [el('span', { class: 'pgx-check-ic', 'aria-hidden': 'true', text: P.checkSymbol(c.status) }),
+              el('span', null, [el('b', { text: t(k.title, params) }), el('small', { text: t(k.detail, params) })])]);
+          })));
+        }
         if (!info.canInstall) {
           err.textContent = t('plugins.in.blocked');
           err.hidden = false;
@@ -353,36 +410,38 @@
         const licensed = item && installedOf(item.id) && installedOf(item.id).license && installedOf(item.id).license.licensed;
         if (plugin.license.required && !licensed) {
           body.appendChild(el('label', { class: 'pgx-lbl', for: 'pgx-in-key', text: t('plugins.lic.key') }));
-          body.appendChild(keyIn);
-          body.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.x.key_later') }));
+          body.appendChild(el('div', { class: 'pgx-keyfld' }, [icon(I.key, 18), keyIn]));
+          body.appendChild(el('p', { class: 'pgx-hint' }, [t('plugins.x.key_later') + ' ', el('a', { class: 'pgx-a', href: SHOP_URL, target: '_blank', rel: 'noopener noreferrer', text: t('plugins.x.no_key_shop') })]));
         }
-        body.appendChild(el('label', { class: 'pgx-check-line' }, [accept, t('plugins.in.accept')]));
         if (!isUpdate) body.appendChild(el('label', { class: 'pgx-check-line' }, [setup, t('plugins.x.setup_after')]));
         go.textContent = t(isUpdate ? 'plugins.x.accept_update' : 'plugins.x.accept_install');
-        go.disabled = !accept.checked;
-        accept.onchange = () => { go.disabled = !accept.checked; };
+        go.disabled = false;
       } else if (phase === 'install') {
-        const rows = [['download', true], ['verify', true], ['install', false], ['start', false]];
-        body.appendChild(el('ol', { class: 'pgx-progress' }, rows.map(([k, ok]) => el('li', { 'data-state': ok ? 'done' : (k === 'install' ? 'run' : 'wait') }, [
-          el('span', { class: 'pgx-prog-ic', 'aria-hidden': 'true', text: ok ? '✓' : '' }), t('plugins.x.prog_' + k)]))));
-        body.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.x.prog_bg') }));
+        body.appendChild(el('div', { class: 'pgx-in-title pgx-in-pad' }, [el('h3', { class: 'pgx-dh', text: t(isUpdate ? 'plugins.x.updating_t' : 'plugins.x.installing_t', { name: plugin.name }) }),
+          el('span', { class: 'pgx-muted', text: t('plugins.x.prog_bg') })]));
+        const rows = [['download', 'done', P.fmtBytes(file.size)], ['verify', 'done', 'sha256 ✓'], ['install', 'run', '…'], ['start', 'wait', '']];
+        body.appendChild(el('ol', { class: 'pgx-progress' }, rows.map(([k, st, small]) => el('li', { 'data-state': st }, [
+          el('span', { class: 'pgx-prog-ic', 'aria-hidden': 'true' }, st === 'done' ? [icon(I.check, 14, 3)] : []), el('span', { class: 'pgx-grow', text: t('plugins.x.prog_' + k) }),
+          small ? el('small', { text: small }) : null]))));
+        body.appendChild(el('div', { class: 'pgx-bar', 'aria-hidden': 'true' }, [el('span')]));
         go.textContent = t('plugins.x.installing');
         go.disabled = true;
       } else {
         const p = installed;
         const running = p && p.status === 'running';
-        body.appendChild(el('div', { class: 'pgx-done' }, [
-          el('span', { class: 'pgx-done-ic', 'aria-hidden': 'true' }, [icon(I.check, 26)]),
-          el('div', null, [
-            el('h3', { class: 'pgx-h3', text: t(isUpdate ? 'plugins.in.done_update' : 'plugins.in.done', { name: plugin.name }) }),
-            el('p', { class: 'pgx-muted', text: running ? t('plugins.x.done_running') : t('plugins.reason.' + ((p && p.reason) || 'starting')) }),
-          ]),
-        ]));
+        const secs = Math.max(1, Math.round((Date.now() - started) / 1000));
+        body.appendChild(head(t(isUpdate ? 'plugins.in.done_update' : 'plugins.in.done', { name: plugin.name }),
+          [p && p.license && p.license.required ? t('plugins.lic.state.' + p.license.state) : null, running ? t('plugins.x.done_running_short') : t('plugins.reason.' + ((p && p.reason) || 'starting')),
+            t('plugins.x.done_in', { n: secs })].filter(Boolean).join(' · '), true));
         if (result && result.licenseError) body.appendChild(el('p', { class: 'pgx-note pgx-note-warn', text: t('plugins.err.' + result.licenseError) }));
-        const adds = p ? P.addsOf(p, t) : [];
+        if (!isUpdate && p && p.settingsCount) {
+          body.appendChild(lbl(t('plugins.x.next_step')));
+          body.appendChild(el('div', { class: 'pgx-nx pgx-nx-on' }, [icon('link', 20), el('span', { class: 'pgx-t' }, [el('b', { text: t('plugins.x.next_setup', { name: plugin.name }) }), el('small', { text: t('plugins.x.next_setup_d', { n: p.settingsCount }) })])]));
+        }
+        const adds = p ? P.addRows(p, null, t) : [];
         if (!isUpdate && adds.length) {
           body.appendChild(lbl(t('plugins.x.new_for_you')));
-          body.appendChild(el('ul', { class: 'pgx-adds pgx-adds-tight' }, adds.map((a) => el('li', null, [el('b', { text: a.title }), el('span', { class: 'pgx-muted pgx-block', text: a.text })]))));
+          adds.slice(0, 4).forEach((a) => body.appendChild(el('div', { class: 'pgx-nx' }, [icon(a.icon, 20), el('span', { class: 'pgx-t' }, [el('b', { text: a.title }), el('small', { text: a.text })])])));
         }
         cancel.textContent = t('plugins.x.later');
         cancel.hidden = false;
@@ -392,8 +451,8 @@
     }
 
     go.addEventListener('click', async () => {
-      if (phase === 'done') { d.close(installed); location.href = '/plugins/manage/' + enc(installed.id) + (installed.settingsCount && !isUpdate ? '?tab=settings' : ''); return; }
-      if (phase !== 'check' || !accept.checked) return;
+      if (phase === 'done') { d.close(installed); location.href = U.manage(installed.id, installed.settingsCount && !isUpdate ? 'settings' : null); return; }
+      if (phase !== 'check') return;
       phase = 'install';
       cancel.hidden = true;
       render();
@@ -401,9 +460,9 @@
       if (!r.ok) { phase = 'check'; cancel.hidden = false; render(); err.textContent = r.error; err.hidden = false; return; }
       installed = r.plugin;
       result = r;
-      if (!isUpdate && setup.checked) {
+      if (!isUpdate && setup.checked && installed.settingsCount) {
         d.close(installed);
-        location.href = '/plugins/manage/' + enc(installed.id) + (installed.settingsCount ? '?tab=settings' : '');
+        location.href = U.manage(installed.id, 'settings');
         return;
       }
       phase = 'done';
@@ -417,41 +476,37 @@
   async function updateAll(items, after) {
     const list = (items || []).filter((x) => x && x.latest);
     if (!list.length) return;
-    const d = D.dialog({ title: t('plugins.x.update_all_title', { n: list.length }), wide: true });
+    const d = dlg(t('plugins.x.update_all_title', { n: list.length }));
     const box = el('div', { class: 'pgx-in' });
     const err = el('p', { class: 'st-err-block', role: 'alert', hidden: true });
     d.body.appendChild(box);
     d.body.appendChild(err);
-    const cancel = el('button', { type: 'button', class: 'btn btn-ghost', text: t('common.cancel'), on: { click: () => d.close(null) } });
-    const go = el('button', { type: 'button', class: 'btn btn-primary', id: 'pgx-ua-go', text: t('plugins.x.prepare'), disabled: true });
+    const cancel = el('button', { type: 'button', class: 'pgx-btn', text: t('common.cancel'), on: { click: () => d.close(null) } });
+    const go = el('button', { type: 'button', class: 'pgx-btn pgx-btn-pri', id: 'pgx-ua-go', text: t('plugins.x.prepare'), disabled: true });
     d.foot.appendChild(cancel);
     d.foot.appendChild(go);
     const rows = list.map((it) => ({ it, state: 'wait', info: null, error: null }));
-    const accept = el('input', { type: 'checkbox', id: 'pgx-ua-accept' });
     let phase = 'prepare';
+    function samePerm(info) { return JSON.stringify(info.plugin.permissions) === JSON.stringify(info.existing.permissions); }
     function render() {
       clear(box);
+      box.appendChild(el('div', { class: 'pgx-in-title' }, [el('h3', { class: 'pgx-dh', text: t('plugins.x.update_all_title', { n: list.length }) }),
+        el('span', { class: 'pgx-muted', text: t('plugins.x.update_all_d') })]));
       box.appendChild(el('ul', { class: 'pgx-ua' }, rows.map((r) => {
         const changed = r.info && r.info.existing && !samePerm(r.info);
         return el('li', { 'data-state': r.state }, [
           plugIcon(r.it.id, installedOf(r.it.id), 'sm'),
-          el('span', { class: 'pgx-grow' }, [el('b', { text: r.it.name }), el('span', { class: 'pgx-muted pgx-block st-mono', text: (r.it.installedVersion || '') + ' → ' + r.it.latest.version })]),
+          el('span', { class: 'pgx-t' }, [el('b', { text: r.it.name }), el('small', { class: 'pgx-mono', text: (r.it.installedVersion || '') + ' → ' + r.it.latest.version })]),
           changed ? pill(t('plugins.x.perm_changes'), 'warn') : null,
           el('span', { class: 'pgx-ua-state', text: t('plugins.x.ua_' + r.state) + (r.error ? ': ' + r.error : '') }),
         ]);
       })));
       if (phase === 'confirm') {
-        const changes = rows.filter((r) => r.info && r.info.existing && !samePerm(r.info));
-        if (changes.length) {
-          changes.forEach((r) => { box.appendChild(lbl(r.it.name)); box.appendChild(permRowsBox(r.info.plugin.permissions, r.info.existing)); });
-        }
-        box.appendChild(el('label', { class: 'pgx-check-line' }, [accept, changes.length ? t('plugins.x.accept_changes') : t('plugins.x.accept_updates')]));
+        rows.filter((r) => r.info && r.info.existing && !samePerm(r.info)).forEach((r) => { box.appendChild(lbl(r.it.name)); box.appendChild(permRowsBox(r.info.plugin.permissions, r.info.existing)); });
         go.textContent = t('plugins.x.update_n', { n: rows.filter((r) => r.state === 'ready').length });
-        go.disabled = !accept.checked;
-        accept.onchange = () => { go.disabled = !accept.checked; };
+        go.disabled = !rows.some((r) => r.state === 'ready');
       }
     }
-    function samePerm(info) { return JSON.stringify(info.plugin.permissions) === JSON.stringify(info.existing.permissions); }
     render();
     for (const r of rows) {
       r.state = 'loading';
@@ -464,7 +519,7 @@
     render();
     go.addEventListener('click', async () => {
       if (phase === 'finished') { d.close(true); return; }
-      if (!accept.checked) return;
+      if (phase !== 'confirm') return;
       phase = 'running';
       go.disabled = true;
       cancel.hidden = true;
@@ -484,50 +539,119 @@
     if (after) await after();
   }
 
+  function uninstallDialog(p) {
+    const d = dlg(t('plugins.un.title', { name: p.name }), 'sm');
+    let mode = 'keep';
+    d.body.appendChild(el('div', { class: 'pgx-in-head' }, [plugIcon(p.id, p, 'lg'), el('div', { class: 'pgx-in-title' }, [
+      el('h3', { class: 'pgx-dh', text: t('plugins.x.un_title', { name: p.name }) }), el('span', { class: 'pgx-muted', text: t('plugins.x.un_intro') })])]));
+    const lost = P.addRows(p, contrib[p.id], t).map((a) => a.title);
+    if (lost.length) {
+      d.body.appendChild(lbl(t('plugins.x.un_lost')));
+      d.body.appendChild(el('ul', { class: 'pgx-lost' }, lost.map((x) => el('li', null, [icon(I.x, 16), x]))));
+    }
+    const users = (p.usedBy || []).map((id) => installedOf(id)).filter(Boolean);
+    if (users.length) d.body.appendChild(el('p', { class: 'pgx-note pgx-note-warn', id: 'pgx-un-used', role: 'note' }, [icon(I.alert, 18), el('span', { text: t('plugins.x.un_used_by', { names: users.map((u) => u.name).join(', ') }) })]));
+    const opts = el('div', { class: 'pgx-opts', role: 'radiogroup', 'aria-label': t('plugins.un.data') });
+    const confirmIn = el('input', { type: 'text', class: 'pgx-fld-in', id: 'pg-un-confirm', autocomplete: 'off', spellcheck: 'false', 'aria-label': t('plugins.un.type', { name: p.name }) });
+    const confirmWrap = el('label', { class: 'pgx-confirm', hidden: true }, [el('span', { class: 'pgx-hint', text: t('plugins.un.type', { name: p.name }) }), confirmIn]);
+    const go = el('button', { type: 'button', class: 'pgx-btn pgx-btn-crit', id: 'pg-un-go' });
+    const sync = () => {
+      opts.querySelectorAll('.pgx-opt').forEach((b) => b.setAttribute('aria-checked', b.dataset.mode === mode ? 'true' : 'false'));
+      confirmWrap.hidden = mode !== 'wipe';
+      clear(go);
+      go.appendChild(icon(I.trash, 17));
+      go.appendChild(document.createTextNode(t(mode === 'wipe' ? 'plugins.un.go_wipe' : 'plugins.un.go')));
+      go.disabled = mode === 'wipe' && !P.wipeConfirmed(p, confirmIn.value);
+    };
+    for (const m of ['keep', 'wipe']) {
+      opts.appendChild(el('button', { type: 'button', class: 'pgx-opt', role: 'radio', 'data-mode': m, on: { click: () => { mode = m; sync(); } } }, [
+        el('span', { class: 'pgx-opt-dot', 'aria-hidden': 'true' }),
+        el('span', { class: 'pgx-t' }, [el('b', { text: t('plugins.un.' + m) }),
+          el('small', { text: t('plugins.un.' + m + '_d') })]),
+      ]));
+    }
+    confirmIn.addEventListener('input', sync);
+    d.body.appendChild(lbl(t('plugins.un.data')));
+    d.body.appendChild(opts);
+    d.body.appendChild(confirmWrap);
+    if (p.license && p.license.required) d.body.appendChild(el('p', { class: 'pgx-hint pgx-hint-ic' }, [icon(I.key, 16), t('plugins.un.license_note')]));
+    const err = el('p', { class: 'st-err-block', role: 'alert', hidden: true });
+    d.body.appendChild(err);
+    d.foot.appendChild(el('button', { type: 'button', class: 'pgx-btn', text: t('common.cancel'), on: { click: () => d.close(null) } }));
+    go.addEventListener('click', async () => {
+      const r = await req('POST', API + '/' + enc(p.id) + '/uninstall', { mode, confirm: confirmIn.value });
+      if (!r.ok) { err.textContent = r.error; err.hidden = false; return; }
+      d.close(true);
+      toast(t('plugins.toast.uninstalled', { name: p.name }));
+      location.href = U.mine;
+    });
+    d.foot.appendChild(go);
+    sync();
+  }
+
   // ════════════════════════════════════════════════════════════
   // Meine Plugins
   // ════════════════════════════════════════════════════════════
-  const ui = { q: '', filter: query.get('filter') || 'all', layout: 'list' };
+  const ui = { q: '', filter: ['all', 'active', 'problems', 'off'].indexOf(query.get('filter')) >= 0 ? query.get('filter') : 'all', layout: 'list' };
   try { ui.layout = localStorage.getItem('gc.plugins.layout') === 'grid' ? 'grid' : 'list'; } catch (_) { ui.layout = 'list'; }
+  let fillList = null;
 
   async function viewInstalled() {
     await Promise.all([loadInstalled(), loadCatalog(false)]);
     renderInstalled();
     done();
+    if (inst.plugins.length) { await loadContrib(); if (fillList) fillList(); }
+  }
+
+  /** The licence that ends first among the plugins that need one: { p, days } or null. */
+  function soonestExpiry(ps) {
+    let best = null;
+    ps.forEach((p) => {
+      const L = p.license || {};
+      if (!L.required || !L.expiresAt || !P.licenseExpiring(p)) return;
+      const days = P.daysUntil(L.expiresAt);
+      if (days != null && (!best || days < best.days)) best = { p, days };
+    });
+    return best;
   }
 
   function renderInstalled() {
     clear(main);
+    fillList = null;
     if (!inst.loaded) return;
     if (!inst.plugins.length) { renderFirstRun(); return; }
+    root.classList.remove('pgx-first-mode');
     const ps = inst.plugins;
     const running = ps.filter((p) => p.status === 'running').length;
-    const problems = ps.filter((p) => P.isProblem(p)).length;
+    const probs = ps.filter((p) => P.isProblem(p));
     const ups = cat.plugins.filter((x) => x.state === 'update');
-    const lic = ps.filter((p) => P.licenseExpiring(p) || (p.status === 'blocked' && p.reason === 'license')).length;
+    const licWarn = ps.filter((p) => P.licenseExpiring(p) || (p.status === 'blocked' && p.reason === 'license'));
+    const soon = soonestExpiry(ps);
 
-    main.appendChild(el('div', { class: 'pgx-lead' }, [
-      el('p', { class: 'pgx-muted', text: [t('plugins.x.n_installed', { n: ps.length }), t('plugins.x.local'),
-        cat.fetchedAt ? t('plugins.x.checked_ago', { ago: ago(cat.fetchedAt) }) : null].filter(Boolean).join(' · ') }),
-      el('div', { class: 'pgx-actions' }, [btn(t('plugins.x.upload'), { href: '/plugins/security', icon: I.upload }),
-        CATALOG_ON ? btn(t('plugins.x.discover'), { href: '/plugins/catalog', primary: true, icon: I.plus }) : null]),
+    main.appendChild(pageHead(t('plugins.area.mine'), [t('plugins.x.n_installed', { n: ps.length }), t('plugins.x.local'),
+      cat.fetchedAt ? t('plugins.x.checked_last', { ago: ago(cat.fetchedAt) }) : null].filter(Boolean).join(' · '), [
+      btn(t('plugins.x.upload'), { href: U.security, icon: I.upload, cls: 'pgx-hide-m' }),
+      CATALOG_ON ? btn(t('plugins.x.discover'), { href: U.catalog, primary: true, icon: I.plus, cls: 'pgx-hide-m' }) : null,
     ]));
 
-    const stat = (key, value, of, text, tone, href, filter) => el(href ? 'a' : 'button', {
-      class: 'pgx-stat', href: href || null, type: href ? null : 'button', 'data-tone': tone, 'aria-pressed': filter ? String(ui.filter === filter) : null,
-      on: filter ? { click: () => { ui.filter = ui.filter === filter ? 'all' : filter; renderInstalled(); } } : null,
-    }, [el('span', { class: 'pgx-lbl', text: t('plugins.x.stat_' + key) }), el('b', null, [String(value), of != null ? el('small', { text: ' / ' + of }) : null]), el('span', { class: 'pgx-muted', text })]);
+    const stat = (tone, label, value, of, sub, mobile, o) => el(o.href ? 'a' : 'button', {
+      class: 'pgx-card pgx-stat' + (o.cls ? ' ' + o.cls : ''), 'data-tone': tone, href: o.href || null, type: o.href ? null : 'button',
+      'aria-pressed': o.filter ? String(ui.filter === o.filter) : null,
+      on: o.filter ? { click: () => { ui.filter = ui.filter === o.filter ? 'all' : o.filter; renderInstalled(); } } : null,
+    }, [lbl(label), el('b', null, [String(value), of != null ? el('small', { text: ' / ' + of }) : null]), el('span', { class: 'pgx-stat-d', text: sub }), el('small', { class: 'pgx-stat-m', text: mobile })]);
     main.appendChild(el('div', { class: 'pgx-stats' }, [
-      stat('running', running, ps.length, t('plugins.x.stat_running_d'), 'good', null, 'active'),
-      stat('problems', problems, null, problems ? ps.filter((p) => P.isProblem(p)).map((p) => p.name).join(', ') : t('plugins.x.stat_none'), problems ? 'crit' : 'off', null, 'problems'),
-      stat('updates', ups.length, null, ups.length ? t('plugins.x.stat_updates_d') : t('plugins.x.stat_uptodate'), ups.length ? 'info' : 'off', '/plugins/updates'),
-      stat('licenses', lic, null, lic ? t('plugins.x.stat_lic_d') : t('plugins.x.stat_lic_ok'), lic ? 'warn' : 'off', '/plugins/licenses'),
+      stat('good', t('plugins.x.stat_running'), running, ps.length, t('plugins.x.stat_running_d'), t('plugins.x.stat_running_m'), { filter: 'active' }),
+      stat('crit', t('plugins.x.stat_problems'), probs.length, null, probs.length ? probs.map((p) => p.name).join(', ') : t('plugins.x.stat_none'), t('plugins.x.stat_problems_m'),
+        { filter: 'problems', cls: probs.length ? 'pgx-stat-hot' : null }),
+      stat('blue', t('plugins.x.stat_updates'), ups.length, null, ups.length ? t('plugins.x.stat_updates_d') : t('plugins.x.stat_uptodate'), '', { href: U.updates, cls: 'pgx-hide-m' }),
+      stat('warn', t('plugins.x.stat_licenses'), licWarn.length, null, soon ? t('plugins.x.stat_lic_days', { n: Math.max(0, soon.days) }) : (licWarn.length ? t('plugins.x.stat_lic_d') : t('plugins.x.stat_lic_ok')),
+        t('plugins.x.stat_licenses'), { href: U.licenses, cls: licWarn.length ? 'pgx-stat-hot' : null }),
     ]));
 
     const att = P.attention(ps, cat.plugins);
     if (att.length) main.appendChild(attentionCard(att));
 
-    const search = el('input', { type: 'search', class: 'pgx-search-in', id: 'pgx-q', placeholder: t('plugins.x.search_installed'), 'aria-label': t('plugins.x.search_installed'), value: ui.q });
+    const search = el('input', { type: 'search', id: 'pgx-q', placeholder: t('plugins.x.search_installed'), 'aria-label': t('plugins.x.search_installed'), value: ui.q });
     const seg = el('div', { class: 'pgx-seg', role: 'group', 'aria-label': t('plugins.x.filter') }, ['all', 'active', 'problems', 'off'].map((f) => el('button', {
       type: 'button', 'aria-pressed': String(ui.filter === f), 'data-filter': f, on: { click: () => { ui.filter = f; renderInstalled(); } },
     }, [t('plugins.x.f_' + f), el('em', { text: String(P.filterInstalled(ps, f).length) })])));
@@ -535,75 +659,101 @@
       type: 'button', 'aria-pressed': String(ui.layout === k), 'aria-label': t('plugins.x.layout_' + k), title: t('plugins.x.layout_' + k),
       on: { click: () => { ui.layout = k; try { localStorage.setItem('gc.plugins.layout', k); } catch (_) { /* private mode */ } renderInstalled(); } },
     }, [icon(ic, 17)])));
-    main.appendChild(el('div', { class: 'pgx-toolbar' }, [el('label', { class: 'pgx-search' }, [icon(I.search, 17), search]), seg, layoutSeg]));
+    main.appendChild(el('div', { class: 'pgx-toolbar pgx-hide-m' }, [el('label', { class: 'pgx-fld' }, [icon(I.search, 17), search]), seg, layoutSeg]));
 
     const listBox = el('div', { id: 'pgx-list' });
     main.appendChild(listBox);
-    const fill = () => {
+    fillList = () => {
       clear(listBox);
       const shown = P.filterInstalled(ps, ui.filter).filter((p) => P.matches(Object.assign({}, metaOf(p.id), p), ui.q));
-      if (!shown.length) { listBox.appendChild(el('p', { class: 'pgx-empty', text: t('plugins.x.none_match') })); return; }
+      if (!shown.length) { listBox.appendChild(card([el('p', { class: 'pgx-empty', text: t('plugins.x.none_match') })])); return; }
       const groups = P.groupByCategory(shown, (p) => metaOf(p.id));
-      const wrap = el('div', { class: ui.layout === 'grid' ? 'pgx-tiles' : 'pgx-card pgx-list' });
-      groups.forEach((g) => {
-        if (ui.layout === 'grid') {
-          wrap.appendChild(el('div', { class: 'pgx-group-h pgx-span' }, [el('span', { class: 'pgx-lbl', text: catName(g.category) }), el('span', { class: 'pgx-muted', text: String(g.items.length) })]));
+      const grid = ui.layout === 'grid';
+      const wrap = el('div', { class: grid ? 'pgx-tiles' : 'pgx-lists' });
+      if (grid) {
+        groups.forEach((g) => {
+          wrap.appendChild(el('div', { class: 'pgx-grp pgx-span' }, [lbl(catName(g.category)), el('span', { class: 'pgx-ver', text: String(g.items.length) })]));
           g.items.forEach((p) => wrap.appendChild(pluginTile(p)));
-        } else {
-          wrap.appendChild(el('div', { class: 'pgx-group-h' }, [el('span', { class: 'pgx-lbl', text: catName(g.category) }), el('span', { class: 'pgx-muted', text: String(g.items.length) })]));
-          g.items.forEach((p) => wrap.appendChild(pluginRow(p)));
-        }
-      });
+        });
+      } else {
+        // desktop: one card with group headings; phone: one card per group (mockup)
+        const one = card([], { 'aria-label': t('plugins.x.installed_list') }, 'pgx-list');
+        groups.forEach((g) => {
+          one.appendChild(el('div', { class: 'pgx-grp' }, [lbl(catName(g.category)), el('span', { class: 'pgx-ver', text: String(g.items.length) })]));
+          const box = el('div', { class: 'pgx-grp-rows' });
+          g.items.forEach((p) => box.appendChild(pluginRow(p)));
+          one.appendChild(box);
+        });
+        wrap.appendChild(one);
+      }
       listBox.appendChild(wrap);
     };
-    search.addEventListener('input', () => { ui.q = search.value; fill(); });
-    fill();
+    search.addEventListener('input', () => { ui.q = search.value; fillList(); });
+    fillList();
 
-    const sugg = cat.plugins.filter((x) => x.state === 'not_installed').slice(0, 3);
+    const sugg = cat.plugins.filter((x) => x.state === 'not_installed').slice(0, 2);
     if (sugg.length) {
-      main.appendChild(el('section', { class: 'pgx-sec', 'aria-labelledby': 'pgx-sugg-h' }, [
-        el('div', { class: 'pgx-sec-head' }, [el('h2', { class: 'pgx-h2', id: 'pgx-sugg-h', text: t('plugins.x.suggestions') }), el('a', { class: 'pgx-more', href: '/plugins/catalog', text: t('plugins.x.whole_catalog') })]),
-        el('div', { class: 'pgx-mini-grid' }, sugg.map((x) => el('a', { class: 'pgx-card pgx-mini', href: '/plugins/catalog/' + enc(x.id) }, [
-          plugIcon(x.id, null), el('span', { class: 'pgx-grow' }, [el('b', { text: x.name }), el('span', { class: 'pgx-muted pgx-block', text: x.summary || x.description })]),
-          el('span', { class: 'st-btn st-btn-sm', text: t('plugins.x.view') }),
+      main.appendChild(el('section', { class: 'pgx-sec pgx-hide-m', 'aria-labelledby': 'pgx-sugg-h' }, [
+        el('div', { class: 'pgx-sec-h' }, [h2(t('plugins.x.suggestions'), 'pgx-sugg-h'), link(t('plugins.x.whole_catalog'), U.catalog, { class: 'pgx-a pgx-push' })]),
+        el('div', { class: 'pgx-minis' }, sugg.map((x) => el('a', { class: 'pgx-card pgx-mini', href: U.item(x.id) }, [
+          plugIcon(x.id, null), el('span', { class: 'pgx-t' }, [el('b', { text: x.name }), el('small', { text: [x.summary || x.description, x.audience === 'admins' ? t('plugins.x.admins_only') : null].filter(Boolean).join(' · ') })]),
+          el('span', { class: 'pgx-btn pgx-btn-sm', text: t('plugins.x.view') }),
         ]))),
       ]));
     }
   }
 
-  function enabledSwitch(p) {
-    return switchBtn(p.enabled, t('plugins.x.active_of', { name: p.name }), async (e) => {
+  function enabledSwitch(p, after) {
+    return sw(p.enabled, t('plugins.x.active_of', { name: p.name }), async (e) => {
       const b = e.currentTarget;
       b.disabled = true;
-      if (await setEnabled(p, !p.enabled)) { await loadInstalled(); renderInstalled(); } else b.disabled = false;
+      if (await setEnabled(p, !p.enabled)) { await loadInstalled(); if (after) after(); else renderInstalled(); updateNav(); } else b.disabled = false;
     });
   }
 
+  /** The state of a row: update › problem › expiring licence › running / off. */
+  function rowState(p) {
+    const c = catItem(p.id);
+    if (P.isProblem(p)) {
+      const s = P.statusChip(p);
+      return { pill: pill(p.status === 'crashed' ? t('plugins.x.disturbed') : t(s.key), s.tone, true), dot: s.tone === 'warn' ? 'warn' : 'crit', crit: s.tone !== 'warn' };
+    }
+    if (c && c.state === 'update' && c.latest) return { pill: pill(t('plugins.x.update_to', { version: c.latest.version }), 'blue'), badge: t('plugins.x.update_badge'), mobile: t('plugins.x.update_to_m', { version: c.latest.version }) };
+    if (P.licenseExpiring(p)) {
+      const days = P.daysUntil(p.license.expiresAt);
+      return { pill: pill(t('plugins.x.lic_days_short', { n: Math.max(0, days || 0) }), 'warn', true), dot: 'warn' };
+    }
+    const s = P.statusChip(p);
+    return { pill: pill(t(s.key), s.tone, true), dot: s.tone === 'good' ? 'good' : (s.tone === 'info' ? 'blue' : 'mute') };
+  }
+
   function pluginRow(p) {
-    const href = '/plugins/manage/' + enc(p.id);
-    return el('div', { class: 'pgx-row', 'data-plugin': p.id, 'data-status': p.status }, [
+    const st = rowState(p);
+    const chips = P.addChips(p, contrib[p.id], t, 4);
+    const mobileLine = [p.version, st.mobile || chips.slice(0, 3).join(', ') || summaryOf(p)].filter(Boolean).join(' · ');
+    return el('div', { class: 'pgx-row' + (st.crit ? ' pgx-row-crit' : ''), 'data-plugin': p.id, 'data-status': p.status }, [
       plugIcon(p.id, p),
-      el('div', { class: 'pgx-row-name' }, [
-        el('a', { class: 'pgx-row-link', href }, [el('b', { text: p.name }), el('span', { class: 'pgx-ver', text: p.version })]),
-        el('span', { class: 'pgx-muted pgx-clamp', 'data-tone': P.isProblem(p) ? 'crit' : null, text: noteOf(p) }),
+      el('span', { class: 'pgx-nm' }, [
+        el('a', { class: 'pgx-row-link', href: U.manage(p.id) }, [el('b', null, [p.name, ' ', el('span', { class: 'pgx-ver', text: p.version })])]),
+        el('small', { class: 'pgx-nm-d', 'data-tone': st.crit ? 'crit' : null, text: noteOf(p) }),
+        el('small', { class: 'pgx-nm-m', text: mobileLine }),
       ]),
-      el('div', { class: 'pgx-chips' }, addChips(p).map((x) => el('span', { class: 'pgx-chip', text: x }))),
-      updatePill(p) || statusPill(p),
-      enabledSwitch(p),
+      el('span', { class: 'pgx-adds' }, chips.map((x) => el('span', { class: 'pgx-add', text: x }))),
+      el('span', { class: 'pgx-row-st' }, [st.pill]),
+      st.badge ? el('span', { class: 'pgx-mbadge', text: st.badge }) : el('span', { class: 'pgx-mdot', 'data-tone': st.dot || 'mute', role: 'img', 'aria-label': t(P.statusChip(p).key) }),
+      el('span', { class: 'pgx-row-sw' }, [enabledSwitch(p)]),
     ]);
   }
 
   function pluginTile(p) {
-    return el('div', { class: 'pgx-card pgx-tile', 'data-plugin': p.id, 'data-status': p.status }, [
-      el('div', { class: 'pgx-tile-top' }, [plugIcon(p.id, p), el('a', { class: 'pgx-row-link pgx-grow', href: '/plugins/manage/' + enc(p.id) }, [el('b', { text: p.name }), el('span', { class: 'pgx-ver', text: p.version })]), enabledSwitch(p)]),
-      el('p', { class: 'pgx-muted pgx-clamp', text: noteOf(p) }),
-      el('div', { class: 'pgx-tile-foot' }, [updatePill(p) || statusPill(p), el('div', { class: 'pgx-chips' }, addChips(p).slice(0, 3).map((x) => el('span', { class: 'pgx-chip', text: x })))]),
+    const st = rowState(p);
+    return el('article', { class: 'pgx-card pgx-pc', 'data-plugin': p.id, 'data-status': p.status }, [
+      el('div', { class: 'pgx-pc-top' }, [plugIcon(p.id, p), el('span', { class: 'pgx-nm' }, [
+        el('a', { class: 'pgx-row-link', href: U.manage(p.id) }, [el('b', { text: p.name })]), el('small', { text: catName(P.categoryOf(metaOf(p.id))) })]),
+      el('span', { class: 'pgx-row-sw' }, [enabledSwitch(p)])]),
+      el('p', { class: 'pgx-pc-p', text: noteOf(p) }),
+      el('div', { class: 'pgx-pc-ft' }, [el('span', { class: 'pgx-ver', text: p.version }), el('span', { class: 'pgx-push' }, [st.pill])]),
     ]);
-  }
-
-  function updatePill(p) {
-    const c = catItem(p.id);
-    return c && c.state === 'update' && c.latest && p.status !== 'crashed' && p.status !== 'blocked' ? pill(t('plugins.x.update_to', { version: c.latest.version }), 'info') : null;
   }
 
   function attentionCard(items) {
@@ -612,71 +762,81 @@
         const list = a.ids.map((id) => catItem(id)).filter(Boolean);
         return el('div', { class: 'pgx-att', 'data-kind': 'updates' }, [
           el('span', { class: 'pgx-ic', 'data-cat': 'update', 'aria-hidden': 'true' }, [icon(I.refresh, 22)]),
-          el('span', { class: 'pgx-grow' }, [el('b', { text: t('plugins.x.att_updates', { n: list.length }) }),
-            el('span', { class: 'pgx-muted pgx-block', text: list.map((x) => x.name + ' ' + x.installedVersion + ' → ' + x.latest.version).join(' · ') })]),
-          btn(t('plugins.x.whats_new'), { href: '/plugins/updates', small: true }),
-          btn(t('plugins.x.update_all'), { small: true, primary: true, id: 'pgx-att-update-all', onClick: () => updateAll(list, async () => { await Promise.all([loadInstalled(), loadCatalog(false)]); renderInstalled(); updateNav(); }) }),
+          el('span', { class: 'pgx-t' }, [el('b', { text: t('plugins.x.att_updates', { n: list.length }) }),
+            el('small', { text: list.map((x) => x.name + ' ' + x.installedVersion + ' → ' + x.latest.version).join(' · ') + (inst.serverVersion ? ' · ' + t('plugins.x.all_fit', { version: inst.serverVersion.split('.').slice(0, 2).join('.') }) : '') })]),
+          btn(t('plugins.x.whats_new'), { href: U.updates, small: true }),
+          btn(t('plugins.x.update_all'), { small: true, primary: true, id: 'pgx-att-update-all', onClick: () => updateAll(list, reloadInstalled) }),
         ]);
       }
       const p = installedOf(a.id);
-      const tone = a.kind === 'expiring' || a.kind === 'unsigned' ? 'warn' : 'crit';
       const actions = [];
+      let tone = 'crit';
+      let pillText = t(P.statusChip(p).key);
       if (a.kind === 'crashed') {
-        actions.push(btn(t('plugins.tab.log'), { href: '/plugins/manage/' + enc(p.id) + '?tab=log', small: true }));
-        actions.push(btn(t('plugins.x.restart'), { small: true, primary: true, onClick: async (e) => { e.currentTarget.disabled = true; await restart(p); await loadInstalled(); renderInstalled(); } }));
+        pillText = t('plugins.x.disturbed');
+        actions.push(btn(t('plugins.tab.log'), { href: U.manage(p.id, 'log'), small: true }));
+        actions.push(btn(t('plugins.x.restart'), { small: true, primary: true, onClick: async (e) => { e.currentTarget.disabled = true; await restart(p); await reloadInstalled(); } }));
       } else if (a.kind === 'license' || a.kind === 'expiring') {
-        actions.push(btn(t(a.kind === 'expiring' ? 'plugins.x.renew' : 'plugins.banner.license_action'), { href: '/plugins/manage/' + enc(p.id) + '?tab=license', small: true, primary: a.kind === 'license' }));
+        if (a.kind === 'expiring') { tone = 'warn'; pillText = t('plugins.x.days_n', { n: Math.max(0, P.daysUntil(p.license.expiresAt) || 0) }); }
+        actions.push(btn(t(a.kind === 'expiring' ? 'plugins.x.renew' : 'plugins.banner.license_action'), { href: a.kind === 'expiring' ? U.licenses : U.manage(p.id, 'license'), small: true, primary: a.kind === 'license' }));
       } else if (a.kind === 'unsigned') {
-        actions.push(btn(t('plugins.banner.unsigned_action'), { href: '/plugins/security', small: true }));
+        tone = 'warn';
+        actions.push(btn(t('plugins.banner.unsigned_action'), { href: U.security, small: true }));
       } else if (a.kind === 'incompatible') {
         const c = catItem(p.id);
         if (c && c.state === 'update') actions.push(btn(t('plugins.cat.update'), { small: true, primary: true, onClick: (e) => installFromCatalog(c, e.currentTarget).then(reloadInstalled) }));
-      } else actions.push(btn(t('plugins.x.details'), { href: '/plugins/manage/' + enc(p.id), small: true }));
-      const text = a.kind === 'crashed' ? ((p.process && p.process.lastError) || t('plugins.reason.crashed'))
-        : (a.kind === 'expiring' ? t('plugins.x.att_expiring_d', { date: P.fmtDate(p.license.expiresAt, lang) }) : (a.kind === 'license' ? t('plugins.lic.state.' + ((p.license && p.license.state) || 'missing')) + ' · ' + t('plugins.reason.license') : t('plugins.reason.' + (a.kind === 'broken' ? (p.reason || 'broken') : a.kind))));
-      return el('div', { class: 'pgx-att', 'data-kind': a.kind }, [
+      } else actions.push(btn(t('plugins.x.details'), { href: U.manage(p.id), small: true }));
+      const crashes = (p.process && p.process.crashes) || 0;
+      const text = a.kind === 'crashed' ? [(p.process && p.process.lastError) || t('plugins.reason.crashed'), crashes ? t('plugins.x.restarts_n', { n: crashes }) : null].filter(Boolean).join(' · ')
+        : (a.kind === 'expiring' ? t('plugins.x.att_expiring_d', { date: P.fmtDate(p.license.expiresAt, lang) })
+          : (a.kind === 'license' ? t('plugins.lic.state.' + ((p.license && p.license.state) || 'missing')) + ' · ' + t('plugins.reason.license') : t('plugins.reason.' + (a.kind === 'broken' ? (p.reason || 'broken') : a.kind))));
+      return el('div', { class: 'pgx-att', 'data-kind': a.kind, 'data-tone': tone }, [
         plugIcon(p.id, p),
-        el('span', { class: 'pgx-grow' }, [el('b', { text: t('plugins.x.att_' + a.kind, { name: p.name }) }), el('span', { class: 'pgx-muted pgx-block', text })]),
-        pill(t(a.kind === 'expiring' ? 'plugins.lic.state.expiring' : P.statusChip(p).key), tone, true),
+        el('span', { class: 'pgx-t' }, [el('b', { text: t('plugins.x.att_' + a.kind, { name: p.name, date: p.license && p.license.expiresAt ? fmtDay(p.license.expiresAt) : '' }) }), el('small', { text })]),
+        pill(pillText, tone, true),
       ].concat(actions));
     });
-    return card('pgx-att-card', [cardHead(t('plugins.x.attention'), [pill(String(items.length), 'off')], 'pgx-att-h')].concat(rows), { 'aria-labelledby': 'pgx-att-h', id: 'pgx-attention' });
+    return card([el('div', { class: 'pgx-card-h' }, [h2(t('plugins.x.attention'), 'pgx-att-h'), pill(String(items.length), 'mute')])].concat(rows),
+      { 'aria-labelledby': 'pgx-att-h', id: 'pgx-attention' }, 'pgx-att-card');
   }
 
   async function reloadInstalled() { await Promise.all([loadInstalled(), loadCatalog(false)]); renderInstalled(); updateNav(); }
 
+  /** No plugin yet (mockup "Leerer Zustand"): what plugins are, combinations, how it works. */
   function renderFirstRun() {
+    root.classList.add('pgx-first-mode');
     if (cat.loaded && !cat.available && !cat.disabled) {
-      main.appendChild(el('div', { class: 'pgx-note pgx-note-warn pgx-row-note', role: 'status' }, [icon(I.alert, 18), el('span', { class: 'pgx-grow', text: t('plugins.x.offline') }),
+      main.appendChild(el('div', { class: 'pgx-banner', 'data-tone': 'warn', role: 'status' }, [icon(I.alert, 18), el('span', { class: 'pgx-grow', text: t('plugins.x.offline') }),
         btn(t('plugins.x.retry'), { small: true, onClick: async () => { await loadCatalog(true); renderInstalled(); updateNav(); } })]));
     }
     main.appendChild(el('div', { class: 'pgx-first' }, [
-      el('span', { class: 'pgx-eyebrow', text: t('plugins.area.title') }),
-      el('h2', { class: 'pgx-display', text: t('plugins.x.first_title') }),
-      el('p', { class: 'pgx-muted pgx-big', text: t('plugins.x.first_text') }),
-      el('div', { class: 'pgx-actions' }, [CATALOG_ON ? btn(t('plugins.x.open_catalog'), { href: '/plugins/catalog', primary: true }) : null, btn(t('plugins.x.upload'), { href: '/plugins/security' })]),
+      lbl(t('plugins.area.title'), { class: 'pgx-lbl pgx-eyebrow' }),
+      el('h2', { class: 'pgx-h1 pgx-h1-xl', id: 'pgx-title', text: t('plugins.x.first_title') }),
+      el('p', { class: 'pgx-lead', text: t('plugins.x.first_text') }),
+      el('div', { class: 'pgx-acts' }, [CATALOG_ON ? btn(t('plugins.x.open_catalog'), { href: U.catalog, primary: true, large: true }) : null, btn(t('plugins.x.upload'), { href: U.security, large: true })]),
     ]));
-    const groups = P.groupByCategory(cat.plugins, (x) => x).filter((g) => g.category !== 'other');
+    const groups = P.groupByCategory(cat.plugins, (x) => x).filter((g) => g.category !== 'other' && g.category !== 'mobility');
     if (groups.length) {
       main.appendChild(el('section', { class: 'pgx-sec', 'aria-labelledby': 'pgx-bundles-h' }, [
-        el('h2', { class: 'pgx-h2', id: 'pgx-bundles-h', text: t('plugins.x.bundles') }),
-        el('div', { class: 'pgx-mini-grid' }, groups.map((g) => el('a', { class: 'pgx-card pgx-bundle', href: '/plugins/catalog?cat=' + enc(g.category) }, [
+        h2(t('plugins.x.bundles'), 'pgx-bundles-h'),
+        el('div', { class: 'pgx-bnds' }, groups.map((g) => el('a', { class: 'pgx-card pgx-bnd', href: U.cat(g.category) }, [
           el('span', { class: 'pgx-stack' }, g.items.slice(0, 4).map((x) => plugIcon(x.id, null, 'sm'))),
-          el('b', { text: t('plugins.x.bundle.' + g.category) }),
-          el('span', { class: 'pgx-muted', text: g.items.map((x) => x.name).join(', ') }),
-          el('span', { class: 'pgx-more', text: t('plugins.x.n_view', { n: g.items.length }) }),
+          el('b', { class: 'pgx-bnd-t', text: t('plugins.x.bundle.' + g.category) }),
+          el('p', { text: t('plugins.x.bundle_d.' + g.category) }),
+          el('span', { class: 'pgx-a', text: t('plugins.x.n_view', { n: g.items.length }) }),
         ]))),
       ]));
     }
-    main.appendChild(card('pgx-how', [cardHead(t('plugins.x.how')), el('ol', { class: 'pgx-how-list' }, [1, 2, 3].map((n) => el('li', null, [
-      el('span', { class: 'pgx-how-n', text: String(n) }), el('span', null, [el('b', { text: t('plugins.x.how' + n) }), el('span', { class: 'pgx-muted pgx-block', text: t('plugins.x.how' + n + '_d') })]),
-    ])))]));
+    main.appendChild(card([h2(t('plugins.x.how'), 'pgx-how-h'), el('ol', { class: 'pgx-hows' }, [1, 2, 3].map((n) => el('li', { class: 'pgx-how' }, [
+      el('span', { class: 'pgx-how-n', text: String(n) }), el('span', { class: 'pgx-t' }, [el('b', { text: t('plugins.x.how' + n) }), el('small', { text: t('plugins.x.how' + n + '_d') })]),
+    ])))], { 'aria-labelledby': 'pgx-how-h' }, 'pgx-how-card'));
   }
 
   // ════════════════════════════════════════════════════════════
   // Katalog
   // ════════════════════════════════════════════════════════════
   const cf = { q: query.get('q') || '', cat: query.get('cat') || 'all', sort: 'recommended', installed: true, notInstalled: true, updatesOnly: false, compatibleOnly: true };
+  if (cf.cat !== 'all' && P.CATEGORIES.indexOf(cf.cat) < 0) cf.cat = 'all';
 
   async function viewCatalog() {
     await Promise.all([loadInstalled(), loadCatalog(false)]);
@@ -684,16 +844,17 @@
     done();
   }
 
-  function catalogAction(x, small) {
+  /** The action of a catalogue card / panel. */
+  function catalogAction(x, small, large) {
     const a = P.catalogAction(x);
-    if (a === 'install') return btn(t('plugins.cat.install'), { primary: true, small, cls: 'pgx-raise', action: 'install', onClick: (e) => installFromCatalog(x, e.currentTarget).then(afterCatalogInstall) });
-    if (a === 'update') return btn(t('plugins.cat.update'), { small, cls: 'pgx-raise pgx-btn-info', action: 'update', onClick: (e) => installFromCatalog(x, e.currentTarget).then(afterCatalogInstall) });
+    if (a === 'install') return btn(t('plugins.cat.install'), { primary: true, small, large, icon: large ? I.download : null, cls: 'pgx-raise', action: 'install', onClick: (e) => installFromCatalog(x, e.currentTarget).then(afterCatalogInstall) });
+    if (a === 'update') return btn(t('plugins.cat.update'), { small, large, cls: 'pgx-raise pgx-btn-upd', action: 'update', onClick: (e) => installFromCatalog(x, e.currentTarget).then(afterCatalogInstall) });
     if (x.state === 'installed') {
       const p = installedOf(x.id);
-      return el('a', { class: 'pgx-installed pgx-raise', href: '/plugins/manage/' + enc(x.id), 'data-tone': p && P.isProblem(p) ? 'crit' : 'good' },
-        [icon(p && P.isProblem(p) ? I.alert : I.check, 15), p && P.isProblem(p) ? t('plugins.x.installed_problem') : t('plugins.cat.state.installed')]);
+      if (p && P.isProblem(p)) return el('a', { class: 'pgx-pill pgx-raise', 'data-tone': 'crit', href: U.manage(x.id) }, [t('plugins.x.installed_problem')]);
+      return el('a', { class: 'pgx-btn pgx-btn-done pgx-raise' + (small ? ' pgx-btn-sm' : ''), href: U.manage(x.id) }, [icon(I.check, 16), t('plugins.cat.state.installed')]);
     }
-    if (x.state === 'incompatible' && x.requiresNewer) return pill(t('plugins.x.needs_gc', { range: x.requiresNewer.gatecontrol }), 'warn');
+    if (x.state === 'incompatible' && x.requiresNewer) return pill(t('plugins.x.needs_gc', { range: rng(x.requiresNewer.gatecontrol) }), 'warn');
     return null;
   }
 
@@ -711,70 +872,78 @@
     try { history.replaceState(null, '', location.pathname + (u.toString() ? '?' + u.toString() : '')); } catch (_) { /* ignore */ }
   }
 
+  /** The side column of the catalogue: back to Meine Plugins, areas, filters, source. */
+  function renderCatalogSide(counts, refresh) {
+    const side = $('pgx-side');
+    if (!side) return;
+    clear(side);
+    side.setAttribute('aria-label', t('plugins.x.filters'));
+    side.appendChild(el('a', { class: 'pgx-sl pgx-sl-back', href: U.mine }, [icon(I.back, 17), t('plugins.area.mine')]));
+    side.appendChild(lbl(t('plugins.x.areas')));
+    [['all', cat.plugins.length]].concat(P.CATEGORIES.filter((c) => counts[c]).map((c) => [c, counts[c]])).forEach(([c, n]) => side.appendChild(el('button', {
+      type: 'button', class: 'pgx-sl', 'aria-pressed': String(cf.cat === c), 'data-cat': c, on: { click: () => { cf.cat = c; refresh(); } },
+    }, [c === 'all' ? icon(I.bag, 19) : el('span', { class: 'pgx-dot', 'data-cat': c, 'aria-hidden': 'true' }), el('span', { class: 'pgx-grow', text: c === 'all' ? t('plugins.x.all') : catName(c) }), el('span', { class: 'pgx-cnt', text: String(n) })])));
+    side.appendChild(lbl(t('plugins.x.show')));
+    [['installed', 'show_installed'], ['notInstalled', 'show_not_installed'], ['updatesOnly', 'show_updates'], ['compatibleOnly', 'show_compatible']].forEach(([k, key]) => {
+      const cb = el('input', { type: 'checkbox' });
+      cb.checked = !!cf[k];
+      cb.addEventListener('change', () => { cf[k] = cb.checked; refresh(true); });
+      side.appendChild(el('label', { class: 'pgx-chk' }, [cb, el('span', { text: t('plugins.x.' + key, { version: (cat.serverVersion || inst.serverVersion || '').split('.').slice(0, 2).join('.') }) })]));
+    });
+    side.appendChild(lbl(t('plugins.x.source')));
+    side.appendChild(el('p', { class: 'pgx-side-p' }, [
+      cat.source && !cat.source.official ? t('plugins.x.source_custom', { host: cat.source.host }) : t('plugins.x.source_official'), el('br'),
+      cat.fetchedAt ? t('plugins.x.checked_at', { when: fmtDateTime(cat.fetchedAt) }) + ' · ' : '',
+      linkBtn(t('plugins.x.check_now'), async (e) => {
+        e.currentTarget.disabled = true;
+        await loadCatalog(true);
+        toast(t('plugins.cat.refreshed'));
+        renderCatalog();
+        updateNav();
+      }, { id: 'pgx-cat-refresh' }),
+    ]));
+  }
+
   function renderCatalog() {
     clear(main);
     if (!cat.available) {
-      main.appendChild(card('pgx-offline', [
-        el('div', { class: 'pgx-row-note' }, [icon(I.alert, 20), el('span', { class: 'pgx-grow', text: cat.error || t('plugins.cat.unreachable') })]),
-        el('div', { class: 'pgx-actions' }, [btn(t('plugins.x.retry'), { primary: true, onClick: async (e) => { e.currentTarget.disabled = true; await loadCatalog(true); renderCatalog(); updateNav(); } }),
-          btn(t('plugins.x.upload'), { href: '/plugins/security', icon: I.upload })]),
-      ]));
+      main.appendChild(pageHead(t('plugins.x.cat_title'), cat.error || t('plugins.cat.unreachable'), null, t('plugins.area.page_catalog')));
+      main.appendChild(card([el('div', { class: 'pgx-row-note' }, [icon(I.alert, 20), el('span', { class: 'pgx-grow', text: cat.error || t('plugins.cat.unreachable') })]),
+        el('div', { class: 'pgx-acts' }, [btn(t('plugins.x.retry'), { primary: true, onClick: async (e) => { e.currentTarget.disabled = true; await loadCatalog(true); renderCatalog(); updateNav(); } }),
+          btn(t('plugins.x.upload'), { href: U.security, icon: I.upload })])], null, 'pgx-pad'));
       return;
     }
     const counts = {};
     cat.plugins.forEach((x) => { const c = P.categoryOf(x); counts[c] = (counts[c] || 0) + 1; });
-    const layout = el('div', { class: 'pgx-cat' });
-    const filters = el('aside', { class: 'pgx-filters', 'aria-label': t('plugins.x.filters') });
-    const mainCol = el('div', { class: 'pgx-cat-main' });
-    layout.appendChild(filters);
-    layout.appendChild(mainCol);
-    main.appendChild(layout);
+    const results = el('div', { class: 'pgx-results', id: 'pgx-results' });
+    const refresh = (keepSide) => { syncUrl(); if (!keepSide) renderCatalogSide(counts, refresh); renderResults(); };
 
-    const results = el('div', { id: 'pgx-results' });
-    const refresh = () => { syncUrl(); renderFilters(); renderResults(); };
-
-    function renderFilters() {
-      clear(filters);
-      filters.appendChild(lbl(t('plugins.x.areas')));
-      const nav = el('div', { class: 'pgx-fl', role: 'group', 'aria-label': t('plugins.x.areas') });
-      [['all', cat.plugins.length]].concat(P.CATEGORIES.filter((c) => counts[c]).map((c) => [c, counts[c]])).forEach(([c, n]) => nav.appendChild(el('button', {
-        type: 'button', class: 'pgx-fl-item', 'aria-pressed': String(cf.cat === c), 'data-cat': c, on: { click: () => { cf.cat = c; refresh(); } },
-      }, [c === 'all' ? icon(P.ICON_PATHS.puzzle, 16) : el('span', { class: 'pgx-cat-dot', 'data-cat': c, 'aria-hidden': 'true' }), el('span', { class: 'pgx-grow', text: c === 'all' ? t('plugins.x.all') : catName(c) }), el('em', { text: String(n) })])));
-      filters.appendChild(nav);
-      filters.appendChild(lbl(t('plugins.x.show')));
-      [['installed', 'show_installed'], ['notInstalled', 'show_not_installed'], ['updatesOnly', 'show_updates'], ['compatibleOnly', 'show_compatible']].forEach(([k, key]) => {
-        const cb = el('input', { type: 'checkbox' });
-        cb.checked = !!cf[k];
-        cb.addEventListener('change', () => { cf[k] = cb.checked; renderResults(); });
-        filters.appendChild(el('label', { class: 'pgx-check-line pgx-fl-check' }, [cb, t('plugins.x.' + key, { version: cat.serverVersion || inst.serverVersion })]));
-      });
-      filters.appendChild(lbl(t('plugins.x.source')));
-      filters.appendChild(el('p', { class: 'pgx-muted pgx-small' }, [
-        cat.source && !cat.source.official ? t('plugins.x.source_custom', { host: cat.source.host }) : t('plugins.x.source_official'), el('br'),
-        cat.fetchedAt ? t('plugins.x.checked_ago', { ago: ago(cat.fetchedAt) }) + ' · ' : '',
-        el('button', { type: 'button', class: 'pgx-link', id: 'pgx-cat-refresh', text: t('plugins.x.check_now'), on: { click: async (e) => {
-          e.currentTarget.disabled = true;
-          await loadCatalog(true);
-          toast(t('plugins.cat.refreshed'));
-          renderCatalog();
-          updateNav();
-        } } }),
-      ]));
-    }
-
-    const search = el('input', { type: 'search', class: 'pgx-search-in', id: 'pgx-cq', placeholder: t('plugins.x.search_catalog'), 'aria-label': t('plugins.x.search_catalog'), value: cf.q });
+    const pubs = [...new Set(cat.plugins.map((x) => x.publisher).filter(Boolean))];
+    main.appendChild(pageHead(t('plugins.x.cat_title'), t('plugins.x.cat_sub', { n: cat.plugins.length, publisher: pubs.length === 1 ? pubs[0] : t('plugins.x.publishers', { n: pubs.length }) }), null, t('plugins.area.page_catalog')));
+    const search = el('input', { type: 'search', id: 'pgx-cq', placeholder: t('plugins.x.search_catalog'), 'aria-label': t('plugins.x.search_catalog'), value: cf.q });
     search.addEventListener('input', () => { cf.q = search.value; syncUrl(); renderResults(); });
-    const sort = el('select', { class: 'st-select pgx-sort', 'aria-label': t('plugins.x.sort') }, ['recommended', 'recent', 'name'].map((k) => {
+    const sort = el('select', { class: 'pgx-sel', 'aria-label': t('plugins.x.sort') }, ['recommended', 'recent', 'name'].map((k) => {
       const o = el('option', { value: k, text: t('plugins.x.sort_' + k) });
       if (cf.sort === k) o.selected = true;
       return o;
     }));
     sort.addEventListener('change', () => { cf.sort = sort.value; renderResults(); });
-    mainCol.appendChild(el('div', { class: 'pgx-toolbar' }, [el('label', { class: 'pgx-search pgx-search-lg' }, [icon(I.search, 19), search]), sort]));
-    mainCol.appendChild(results);
+    main.appendChild(el('div', { class: 'pgx-srow' }, [el('label', { class: 'pgx-srch' }, [icon(I.search, 19), search]), sort]));
+    // phone: the areas as chips (mockup "Katalog mobil")
+    const chips = el('div', { class: 'pgx-chips-m', role: 'group', 'aria-label': t('plugins.x.areas') });
+    main.appendChild(chips);
+    main.appendChild(results);
+
+    function renderChips() {
+      clear(chips);
+      [['all', cat.plugins.length]].concat(P.CATEGORIES.filter((c) => counts[c]).map((c) => [c, counts[c]])).forEach(([c, n]) => chips.appendChild(el('button', {
+        type: 'button', class: 'pgx-chip', 'aria-pressed': String(cf.cat === c), on: { click: () => { cf.cat = c; refresh(); } },
+      }, [c === 'all' ? null : el('i', { class: 'pgx-dot', 'data-cat': c, 'aria-hidden': 'true' }), c === 'all' ? t('plugins.x.all_n', { n }) : t('plugins.x.cat_short.' + c)])));
+    }
 
     function renderResults() {
       clear(results);
+      renderChips();
       const filtered = cf.cat !== 'all' || !!cf.q.trim() || cf.updatesOnly || !cf.installed || !cf.notInstalled;
       let list = cat.plugins.filter((x) => (cf.cat === 'all' || P.categoryOf(x) === cf.cat) && P.matches(x, cf.q));
       list = list.filter((x) => {
@@ -785,78 +954,109 @@
         return true;
       });
       list = P.sortCatalog(list, cf.sort, lang);
+      const desk = el('div', { class: 'pgx-results-d' });
       if (!filtered) {
         const hl = cat.plugins.filter((x) => x.highlight && x.highlight.title).sort((a, b) => (Date.parse((b.latest && b.latest.publishedAt) || '') || 0) - (Date.parse((a.latest && a.latest.publishedAt) || '') || 0))[0];
-        if (hl) results.appendChild(heroCard(hl));
+        if (hl) desk.appendChild(heroCard(hl));
         const fresh = cat.plugins.filter((x) => x.state === 'not_installed');
         if (fresh.length) {
-          results.appendChild(el('section', { class: 'pgx-sec', 'aria-labelledby': 'pgx-fresh-h' }, [
-            el('div', { class: 'pgx-sec-head' }, [el('h2', { class: 'pgx-h2', id: 'pgx-fresh-h', text: t('plugins.x.not_yours') }), el('span', { class: 'pgx-muted', text: t('plugins.x.fits') })]),
-            el('div', { class: 'pgx-feat-grid' }, fresh.slice(0, 4).map((x) => featureCard(x))),
+          desk.appendChild(el('section', { class: 'pgx-sec', 'aria-labelledby': 'pgx-fresh-h' }, [
+            el('div', { class: 'pgx-sec-h' }, [h2(t('plugins.x.not_yours'), 'pgx-fresh-h'), el('span', { class: 'pgx-sec-s', text: t('plugins.x.fits') })]),
+            el('div', { class: 'pgx-feats' }, fresh.slice(0, 4).map((x) => featureCard(x))),
           ]));
         }
       }
-      results.appendChild(el('section', { class: 'pgx-sec', 'aria-labelledby': 'pgx-all-h' }, [
-        el('div', { class: 'pgx-sec-head' }, [el('h2', { class: 'pgx-h2', id: 'pgx-all-h', text: cf.cat === 'all' ? t('plugins.x.all_plugins') : catName(cf.cat) }), el('span', { class: 'pgx-ver', text: String(list.length) })]),
-        list.length ? el('div', { class: 'pgx-grid', id: 'pgx-cat-grid' }, list.map((x) => catalogCard(x)))
-          : el('div', { class: 'pgx-empty' }, [t('plugins.x.none_found'), ' ', el('button', { type: 'button', class: 'pgx-link', text: t('plugins.x.reset_filters'), on: { click: () => {
-            Object.assign(cf, { q: '', cat: 'all', installed: true, notInstalled: true, updatesOnly: false, compatibleOnly: true });
-            search.value = '';
-            refresh();
-          } } })]),
+      desk.appendChild(el('section', { class: 'pgx-sec', 'aria-labelledby': 'pgx-all-h' }, [
+        el('div', { class: 'pgx-sec-h' }, [h2(cf.cat === 'all' ? t('plugins.x.all_plugins') : catName(cf.cat), 'pgx-all-h'), el('span', { class: 'pgx-ver', text: String(list.length) })]),
+        list.length ? el('div', { class: 'pgx-grid', id: 'pgx-cat-grid' }, list.map((x) => catalogCard(x))) : emptyResult(),
       ]));
-      results.appendChild(card('pgx-upload-teaser', [el('div', { class: 'pgx-row-note' }, [
-        el('span', { class: 'pgx-ic', 'data-cat': 'other', 'aria-hidden': 'true' }, [icon(I.upload, 22)]),
-        el('span', { class: 'pgx-grow' }, [el('b', { text: t('plugins.x.own_plugin') }), el('span', { class: 'pgx-muted pgx-block', text: t('plugins.x.own_plugin_d') })]),
-        btn(t('plugins.x.upload'), { href: '/plugins/security' }),
-      ])]));
+      desk.appendChild(card([sic(I.upload), el('span', { class: 'pgx-t' }, [el('b', { text: t('plugins.x.own_plugin') }), el('small', { text: t('plugins.x.own_plugin_d') })]),
+        btn(t('plugins.x.upload'), { href: U.security })], null, 'pgx-teaser'));
+      results.appendChild(desk);
+
+      // phone: "Noch nicht bei dir" / "Installiert" as lists
+      const mob = el('div', { class: 'pgx-results-m' });
+      const fresh = list.filter((x) => x.state === 'not_installed' || x.state === 'incompatible');
+      const mine = list.filter((x) => x.state === 'installed' || x.state === 'update');
+      if (fresh.length) { mob.appendChild(lbl(t('plugins.x.not_yours'))); mob.appendChild(el('div', { class: 'pgx-card pgx-mlist' }, fresh.map((x) => mobileItem(x)))); }
+      if (mine.length) { mob.appendChild(lbl(t('plugins.x.installed_lbl'))); mob.appendChild(el('div', { class: 'pgx-card pgx-mlist' }, mine.map((x) => mobileItem(x)))); }
+      if (!list.length) mob.appendChild(emptyResult());
+      results.appendChild(mob);
+    }
+    function emptyResult() {
+      return el('div', { class: 'pgx-empty' }, [t('plugins.x.none_found'), ' ', linkBtn(t('plugins.x.reset_filters'), () => {
+        Object.assign(cf, { q: '', cat: 'all', installed: true, notInstalled: true, updatesOnly: false, compatibleOnly: true });
+        search.value = '';
+        refresh();
+      })]);
     }
     refresh();
   }
 
   function heroCard(x) {
     const h = x.highlight;
-    return el('section', { class: 'pgx-hero', 'aria-labelledby': 'pgx-hero-h', id: 'pgx-hero' }, [
-      el('div', { class: 'pgx-hero-text' }, [
-        pill(t('plugins.x.new_in', { name: x.name, version: h.version }), 'info'),
-        el('h2', { class: 'pgx-display', id: 'pgx-hero-h', text: h.title }),
-        h.text ? el('p', { class: 'pgx-muted pgx-big', text: h.text }) : null,
-        el('div', { class: 'pgx-actions' }, [btn(t('plugins.x.view'), { href: '/plugins/catalog/' + enc(x.id), primary: true }), catalogAction(x)]),
+    const inst0 = x.state === 'installed' || x.state === 'update';
+    const tags = (h.tags || []).filter((g) => g && g.text);
+    return el('section', { class: 'pgx-card pgx-hero', 'aria-labelledby': 'pgx-hero-h', id: 'pgx-hero' }, [
+      el('div', { class: 'pgx-hero-t' }, [
+        pill(t('plugins.x.new_in', { name: x.name, version: h.version.split('.').slice(0, 2).join('.') }), 'new'),
+        el('h2', { class: 'pgx-hero-h', id: 'pgx-hero-h', text: h.title }),
+        h.text ? el('p', { text: h.text }) : null,
+        el('div', { class: 'pgx-acts' }, [btn(t('plugins.x.view'), { href: inst0 ? U.manage(x.id) : U.item(x.id), primary: true }),
+          inst0 ? el('span', { class: 'pgx-btn pgx-btn-done' }, [icon(I.check, 16), t('plugins.x.installed_here_cap')]) : catalogAction(x)]),
       ]),
-      el('div', { class: 'pgx-hero-art', 'aria-hidden': 'true' }, [plugIcon(x.id, installedOf(x.id), 'xl')]),
+      tags.length ? el('div', { class: 'pgx-hero-tags', 'aria-hidden': 'true' }, tags.map((g, i) => el('span', { class: 'pgx-tg' + (i === tags.length - 1 ? ' pgx-tg-on' : ''), style: 'margin-left:' + (i * 28) + 'px' },
+        [icon(g.icon || ['clock', 'car', 'calendar', 'bell'][i % 4], 16), g.text])))
+        : el('div', { class: 'pgx-hero-art', 'aria-hidden': 'true' }, [plugIcon(x.id, installedOf(x.id), 'hero')]),
     ]);
   }
 
   function chipsOf(x) {
     return [catName(P.categoryOf(x)), x.audience === 'admins' ? t('plugins.x.admins_only') : null, x.latest && x.latest.licenseRequired ? t('plugins.x.license') : t('plugins.cat.license_free')].filter(Boolean)
-      .map((c) => el('span', { class: 'pgx-chip', text: c }));
+      .map((c) => pill(c, 'mute'));
   }
 
   function featureCard(x) {
     return el('article', { class: 'pgx-card pgx-feat', 'data-cat-plugin': x.id }, [
       plugIcon(x.id, null, 'lg'),
-      el('div', { class: 'pgx-grow' }, [
-        el('a', { class: 'pgx-card-link', href: '/plugins/catalog/' + enc(x.id) }, [el('b', { text: x.name })]),
-        el('p', { class: 'pgx-muted pgx-clamp3', text: x.summary || x.description }),
-        el('div', { class: 'pgx-chips' }, chipsOf(x)),
+      el('span', { class: 'pgx-t' }, [
+        el('a', { class: 'pgx-row-link', href: U.item(x.id) }, [el('b', { text: x.name })]),
+        el('p', { text: x.summary || x.description }),
+        el('span', { class: 'pgx-pills' }, chipsOf(x)),
       ]),
       catalogAction(x, true),
     ]);
   }
 
+  function isNewItem(x) {
+    return !!(x.highlight && x.latest && x.highlight.version && x.latest.version.split('.').slice(0, 2).join('.') === x.highlight.version.split('.').slice(0, 2).join('.'));
+  }
+
   function catalogCard(x) {
-    const isNew = x.highlight && x.latest && x.highlight.version && x.latest.version.split('.').slice(0, 2).join('.') === x.highlight.version.split('.').slice(0, 2).join('.');
+    const p = installedOf(x.id);
+    const href = p ? U.manage(x.id) : U.item(x.id);
     return el('article', { class: 'pgx-card pgx-pc', 'data-cat-plugin': x.id, 'data-cat-state': x.state }, [
-      el('div', { class: 'pgx-pc-top' }, [plugIcon(x.id, installedOf(x.id)), el('div', { class: 'pgx-grow' }, [
-        el('a', { class: 'pgx-card-link', href: '/plugins/catalog/' + enc(x.id) }, [el('b', { text: x.name })]),
-        el('span', { class: 'pgx-muted pgx-block pgx-small', text: catName(P.categoryOf(x)) }),
-      ]), isNew ? pill(t('plugins.x.new_v', { version: x.highlight.version.split('.').slice(0, 2).join('.') }), 'info') : null]),
-      el('p', { class: 'pgx-muted pgx-clamp3', text: x.summary || x.description }),
-      el('div', { class: 'pgx-pc-foot' }, [
+      el('div', { class: 'pgx-pc-top' }, [plugIcon(x.id, p), el('span', { class: 'pgx-nm' }, [
+        el('a', { class: 'pgx-row-link', href }, [el('b', { text: x.name })]),
+        el('small', { text: catName(P.categoryOf(x)) }),
+      ]), isNewItem(x) ? pill(t('plugins.x.new_v', { version: x.highlight.version.split('.').slice(0, 2).join('.') }), 'new') : null]),
+      el('p', { class: 'pgx-pc-p', text: x.summary || x.description }),
+      el('div', { class: 'pgx-pc-ft' }, [
         el('span', { class: 'pgx-ver', text: x.state === 'update' ? x.installedVersion + ' → ' + x.latest.version : ((x.latest ? x.latest.version : '') + (x.latest ? ' · ' + P.fmtBytes(x.latest.size) : '')) }),
-        catalogAction(x, true),
+        el('span', { class: 'pgx-push' }, [catalogAction(x, true)]),
       ]),
     ]);
+  }
+
+  function mobileItem(x) {
+    const a = P.catalogAction(x);
+    let end;
+    if (a === 'install') end = el('span', { class: 'pgx-get', text: t('plugins.x.get') });
+    else if (a === 'update') end = el('span', { class: 'pgx-mupd', text: x.latest.version });
+    else if (x.state === 'installed') end = el('span', { class: 'pgx-has', text: '✓ ' + t('plugins.x.current') });
+    else end = null;
+    return el('a', { class: 'pgx-mit', href: installedOf(x.id) ? U.manage(x.id) : U.item(x.id) }, [plugIcon(x.id, installedOf(x.id)),
+      el('span', { class: 'pgx-t' }, [el('b', { text: x.name }), el('small', { text: [x.summary || x.description, x.audience === 'admins' ? t('plugins.x.admins_only') : null].filter(Boolean).join(' · ') })]), end]);
   }
 
   // ── One catalogue plugin ──
@@ -864,7 +1064,7 @@
     const [, , r] = await Promise.all([loadInstalled(), loadCatalog(false), req('GET', CAT_API + '/' + enc(TARGET))]);
     clear(main);
     if (!r.ok || !r.plugin) {
-      main.appendChild(card('pgx-offline', [el('p', { text: r.error || t('plugins.err.catalog_unknown') }), btn(t('plugins.x.back_catalog'), { href: '/plugins/catalog', icon: I.back })]));
+      main.appendChild(card([el('p', { text: r.error || t('plugins.err.catalog_unknown') }), btn(t('plugins.x.back_catalog'), { href: U.catalog, icon: I.back })], null, 'pgx-pad'));
       done();
       return;
     }
@@ -872,97 +1072,134 @@
     if (!catItem(x.id)) cat.plugins.push(x);
     const p = installedOf(x.id);
     const category = P.categoryOf(x);
-    main.appendChild(el('nav', { class: 'pgx-crumb', 'aria-label': t('plugins.x.path') }, [el('a', { href: '/plugins/catalog', text: t('plugins.area.catalog') }), ' › ',
-      el('a', { href: '/plugins/catalog?cat=' + enc(category), text: catName(category) }), ' › ', el('span', { 'aria-current': 'page', text: x.name })]));
-    const tabs = ['overview', 'versions'];
-    let tab = query.get('tab') === 'versions' ? 'versions' : 'overview';
+    main.appendChild(el('nav', { class: 'pgx-crumb', 'aria-label': t('plugins.x.path') }, [link(t('plugins.area.catalog'), U.catalog), el('span', { 'aria-hidden': 'true', text: '›' }),
+      link(catName(category), U.cat(category)), el('span', { 'aria-hidden': 'true', text: '›' }), el('span', { 'aria-current': 'page', text: x.name })]));
     const left = el('div', { class: 'pgx-colm' });
     const aside = el('aside', { class: 'pgx-aside', 'aria-label': t('plugins.x.install_panel') });
     main.appendChild(el('div', { class: 'pgx-cols' }, [left, aside]));
 
-    left.appendChild(el('div', { class: 'pgx-dhero' }, [plugIcon(x.id, p, 'xl'), el('div', { class: 'pgx-grow' }, [
-      el('h2', { class: 'pgx-display', text: x.name }),
-      el('p', { class: 'pgx-muted pgx-big', text: x.summary || '' }),
-      el('div', { class: 'pgx-chips' }, chipsOf(x).concat([el('span', { class: 'pgx-chip', text: x.publisher })])),
+    left.appendChild(el('div', { class: 'pgx-dhero' }, [plugIcon(x.id, p, 'xxl'), el('div', { class: 'pgx-dhero-t' }, [
+      el('h2', { class: 'pgx-h1 pgx-h1-lg', id: 'pgx-title', text: x.name }),
+      el('p', { class: 'pgx-dhero-s', text: x.summary || x.description || '' }),
+      el('span', { class: 'pgx-pills' }, [pill(catName(category), 'mute'), x.audience === 'admins' ? pill(t('plugins.x.admins_long'), 'mute') : null, pill(x.publisher, 'mute')]),
     ])]));
-    const tl = el('div', { class: 'pg-tabs pgx-tabs', role: 'tablist', 'aria-label': t('plugins.detail.tabs') });
+    if ((x.shows || []).length) left.appendChild(showsBlock(x));
+
+    const perms = x.permissions || [];
+    const tabs = [['overview', t('plugins.tab.overview'), null], ['perms', t('plugins.tab.perms'), perms.length || (p ? P.permRows(p.permissions, t).length : null)], ['versions', t('plugins.x.tab_versions'), (x.versions || []).length]];
+    let tab = ['perms', 'versions'].indexOf(query.get('tab')) >= 0 ? query.get('tab') : 'overview';
+    const tl = el('div', { class: 'pgx-tabs', role: 'tablist', 'aria-label': t('plugins.detail.tabs') });
     const panel = el('div', { class: 'pgx-panel', role: 'tabpanel', id: 'pgx-panel' });
     left.appendChild(tl);
     left.appendChild(panel);
     const renderTab = () => {
       clear(tl);
-      tabs.forEach((id) => tl.appendChild(el('button', { type: 'button', class: 'pg-tab', role: 'tab', 'aria-selected': String(tab === id), id: 'pgx-tab-' + id,
-        text: id === 'versions' ? t('plugins.x.tab_versions') + ' ' + (x.versions || []).length : t('plugins.tab.overview'), on: { click: () => { tab = id; renderTab(); } } })));
+      tabs.forEach(([id, text, n]) => tl.appendChild(el('button', { type: 'button', class: 'pgx-tab', role: 'tab', 'aria-selected': String(tab === id), id: 'pgx-tab-' + id,
+        on: { click: () => { tab = id; renderTab(); } } }, [text, n ? el('em', { text: String(n) }) : null])));
       panel.setAttribute('aria-labelledby', 'pgx-tab-' + tab);
       clear(panel);
-      if (tab === 'versions') { panel.appendChild(versionsList(x.versions || [], p ? p.version : null)); return; }
-      if (x.highlight && x.highlight.title) {
-        panel.appendChild(el('div', { class: 'pgx-hl' }, [pill(t('plugins.x.new_v', { version: x.highlight.version }), 'info'), el('b', { text: x.highlight.title }), x.highlight.text ? el('p', { class: 'pgx-muted', text: x.highlight.text }) : null]));
+      if (tab === 'versions') { panel.appendChild(versionsCard(x.versions || [], p ? p.version : null, null)); return; }
+      if (tab === 'perms') { panel.appendChild(catalogPermsCard(x, p)); return; }
+      const adds = (x.adds || []).length ? x.adds : (p ? P.addRows(p, contrib[p.id], t) : []);
+      if (adds.length) {
+        panel.appendChild(el('section', { class: 'pgx-sec', 'aria-labelledby': 'pgx-give-h' }, [h2(t('plugins.x.adds_to', { name: x.name }), 'pgx-give-h'),
+          el('div', { class: 'pgx-gives' }, adds.map((a) => el('div', { class: 'pgx-give' }, [sic(a.icon, category), el('span', { class: 'pgx-t' }, [el('b', { text: a.title }), a.text ? el('small', { text: a.text }) : null])])))]));
+      } else if (x.description && x.description !== x.summary) {
+        panel.appendChild(el('p', { class: 'pgx-desc', text: x.description }));
       }
-      if (x.description) panel.appendChild(el('p', { class: 'pgx-desc', text: x.description }));
-      if (p) {
-        const adds = P.addsOf(p, t);
-        if (adds.length) {
-          panel.appendChild(el('h3', { class: 'pgx-h3', text: t('plugins.x.adds_to', { name: x.name }) }));
-          panel.appendChild(el('ul', { class: 'pgx-adds' }, adds.map((a) => el('li', null, [el('b', { text: a.title }), el('span', { class: 'pgx-muted pgx-block', text: a.text })]))));
-        }
-      } else {
-        panel.appendChild(el('p', { class: 'pgx-note', role: 'note' }, [icon(I.shield, 16), ' ', t('plugins.x.perms_before')]));
-      }
-      if (x.latest && x.latest.notes) {
-        panel.appendChild(el('h3', { class: 'pgx-h3', text: t('plugins.x.new_in_version', { version: x.latest.version }) }));
-        panel.appendChild(notesBlock(x.latest.notes, 14));
-        panel.appendChild(el('button', { type: 'button', class: 'pgx-link', text: t('plugins.x.all_versions'), on: { click: () => { tab = 'versions'; renderTab(); } } }));
-      }
+      panel.appendChild(catalogPermsCard(x, p));
+      if ((x.versions || []).length) panel.appendChild(versionsCard(x.versions.slice(0, 2), p ? p.version : null, t('plugins.x.new_in_version', { version: x.versions[0].version })));
     };
     renderTab();
 
     // install panel
-    const act = catalogAction(x);
     const lines = [];
     if (x.latest) {
-      lines.push(el('div', { class: 'pgx-line', 'data-tone': x.latest.compatible === false ? 'warn' : 'good' }, [icon(x.latest.compatible === false ? I.alert : I.check, 17),
-        el('span', null, [t(x.latest.compatible === false ? 'plugins.x.not_fitting' : 'plugins.x.fitting'), el('span', { class: 'pgx-muted', text: ' ' + t('plugins.x.gc_needs', { installed: r.serverVersion, range: x.latest.gatecontrol }) })])]));
+      lines.push(el('div', { class: 'pgx-line', 'data-tone': x.latest.compatible === false ? 'warn' : 'good' }, [icon(x.latest.compatible === false ? I.alert : I.check, 18),
+        el('span', null, [t(x.latest.compatible === false ? 'plugins.x.not_fitting' : 'plugins.x.fitting'), ' ', el('span', { class: 'pgx-muted', text: t('plugins.x.gc_needs', { installed: (r.serverVersion || '').split('.').slice(0, 2).join('.'), range: rng(x.latest.gatecontrol) }) })])]));
     } else if (x.requiresNewer) {
-      lines.push(el('div', { class: 'pgx-line', 'data-tone': 'warn' }, [icon(I.alert, 17), t('plugins.cat.requires', { range: x.requiresNewer.gatecontrol, installed: r.serverVersion })]));
+      lines.push(el('div', { class: 'pgx-line', 'data-tone': 'warn' }, [icon(I.alert, 18), el('span', { text: t('plugins.cat.requires', { range: x.requiresNewer.gatecontrol, installed: r.serverVersion }) })]));
     }
-    lines.push(el('div', { class: 'pgx-line', 'data-tone': 'good' }, [icon(I.shield, 17), el('span', null, [t('plugins.x.signed_by', { publisher: x.publisher }), el('span', { class: 'pgx-muted', text: ' · ' + t('plugins.x.sha_checked') })])]));
+    lines.push(el('div', { class: 'pgx-line', 'data-tone': 'good' }, [icon(I.shieldOk, 18), el('span', null, [t('plugins.x.signed_by', { publisher: x.publisher }), ' ', el('span', { class: 'pgx-muted', text: '· ' + t('plugins.x.sha_checked') })])]));
     if (x.latest && x.latest.licenseRequired && !(p && p.license && p.license.licensed)) {
-      lines.push(el('div', { class: 'pgx-note pgx-note-warn' }, [icon(I.key, 17), el('span', null, [t('plugins.x.license_needed'), ' ', el('a', { href: SHOP_URL, target: '_blank', rel: 'noopener noreferrer', text: t('plugins.x.shop') })])]));
+      lines.push(el('div', { class: 'pgx-line pgx-line-box', 'data-tone': 'warn' }, [icon(I.key, 18), el('span', null, [t('plugins.x.license_needed'), ' ',
+        el('a', { href: SHOP_URL, target: '_blank', rel: 'noopener noreferrer', class: 'pgx-a-inherit', text: t('plugins.x.shop') + ' ›' })])]));
     }
-    aside.appendChild(card('pgx-install', [act ? el('div', { class: 'pgx-install-act' }, [act]) : null].concat(lines)));
-    aside.appendChild(card('', [lbl(t('plugins.x.details')), kv([
+    const act = catalogAction(x, false, true);
+    aside.appendChild(card([act ? el('div', { class: 'pgx-install-act' }, [act]) : null].concat(lines), null, 'pgx-install'));
+    aside.appendChild(card([lbl(t('plugins.x.details')), kv([
       [t('plugins.tile.version'), x.latest ? x.latest.version : (x.versions && x.versions[0] ? x.versions[0].version : ''), true],
       p ? [t('plugins.x.installed_v'), p.version, true] : null,
       [t('plugins.x.size'), x.latest ? P.fmtBytes(x.latest.size) : ''],
       [t('plugins.x.publisher'), x.publisher],
       [t('plugins.x.for'), x.audience === 'admins' ? t('plugins.x.admins') : t('plugins.x.everyone')],
-      [t('plugins.x.published'), x.latest ? P.fmtDate(x.latest.publishedAt, lang) : ''],
-      [t('plugins.x.needs'), x.latest ? 'GateControl ' + x.latest.gatecontrol : ''],
-    ])]));
+      x.needs ? [t('plugins.x.needs_what'), x.needs] : [t('plugins.x.needs'), x.latest ? 'GateControl ' + rng(x.latest.gatecontrol) : ''],
+      (x.languages || []).length ? [t('plugins.x.languages'), x.languages.map((l) => t('plugins.x.lang_' + l)).join(', ')] : null,
+    ])], null, 'pgx-pad'));
     const rel = (x.related || []).map((id) => catItem(id)).filter(Boolean);
     if (rel.length) {
-      aside.appendChild(card('', [lbl(t('plugins.x.related'))].concat(rel.map((y) => el('a', { class: 'pgx-rel', href: '/plugins/catalog/' + enc(y.id) }, [
-        plugIcon(y.id, installedOf(y.id), 'sm'), el('span', { class: 'pgx-grow' }, [el('b', { text: y.name }), el('span', { class: 'pgx-muted pgx-block pgx-small', text: y.state === 'installed' || y.state === 'update' ? t('plugins.cat.state.installed') : catName(P.categoryOf(y)) })]),
-        icon(I.next, 16)])))));
+      aside.appendChild(card([lbl(t('plugins.x.related'))].concat(rel.map((y) => el('a', { class: 'pgx-rel', href: installedOf(y.id) ? U.manage(y.id) : U.item(y.id) }, [
+        plugIcon(y.id, installedOf(y.id), 'sm'), el('span', { class: 'pgx-t' }, [el('b', { text: y.name }), el('small', { text: y.summary || catName(P.categoryOf(y)) })]),
+        icon(I.next, 16)]))), null, 'pgx-pad pgx-stack-card'));
     }
-    if (p) aside.appendChild(btn(t('plugins.x.manage'), { href: '/plugins/manage/' + enc(p.id), icon: I.gear }));
+    if (p) aside.appendChild(btn(t('plugins.x.manage'), { href: U.manage(p.id), icon: 'key' }));
     done();
   }
 
-  function versionsList(versions, installedVersion) {
-    const box = el('ol', { class: 'pgx-versions' });
-    if (!versions.length) box.appendChild(el('li', { class: 'pgx-muted', text: t('plugins.x.no_versions') }));
-    versions.forEach((v) => box.appendChild(el('li', { 'data-version': v.version }, [
-      el('div', { class: 'pgx-v-head' }, [el('b', { class: 'st-mono', text: v.version }), v.version === installedVersion ? pill(t('plugins.x.installed_here'), 'good') : null,
-        v.compatible === false ? pill(t('plugins.x.needs_gc', { range: v.gatecontrol }), 'warn') : null, el('span', { class: 'pgx-muted pgx-small', text: P.fmtDate(v.publishedAt, lang) })]),
-      v.notes ? notesBlock(v.notes) : el('p', { class: 'pgx-muted', text: t('plugins.x.no_notes') }),
-    ])));
-    return box;
+  /** "So sieht es bei dir aus": wireframes of what the plugin shows (catalogue `shows`). */
+  function showsBlock(x) {
+    const cat0 = P.categoryOf(x);
+    const bar = (w, extra) => el('div', { class: 'pgx-bar' + (extra ? ' ' + extra : ''), style: 'width:' + w });
+    const frame = (s) => {
+      if (s.kind === 'tile') {
+        return el('div', { class: 'pgx-shot-f', 'aria-hidden': 'true' }, [
+          el('div', { class: 'pgx-shot-r' }, [el('span', { class: 'pgx-sic pgx-sic-xs', 'data-cat': cat0 }), bar('90px', 'pgx-bar-text'), pill(s.value || '3/3', 'good', false, { class: 'pgx-pill pgx-pill-xs' })]),
+          el('div', { class: 'pgx-shot-g' }, [el('span'), el('span'), el('span')]), bar('70%'), bar('50%')]);
+      }
+      if (s.kind === 'list') {
+        return el('div', { class: 'pgx-shot-f', 'aria-hidden': 'true' }, [
+          el('div', { class: 'pgx-shot-r' }, [bar('60px', 'pgx-bar-acc'), bar('40px'), bar('40px')]),
+          ...['good', 'good', 'warn', 'mute'].map((tone) => el('div', { class: 'pgx-shot-r' }, [el('span', { class: 'pgx-shot-dot', 'data-tone': tone }), bar('auto', 'pgx-grow'), bar('30px')]))]);
+      }
+      return el('div', { class: 'pgx-shot-f pgx-shot-w', 'aria-hidden': 'true' }, [el('div', { class: 'pgx-shot-wd' }, [bar('60%'), el('b', { text: s.value || '12 / 14' }), bar('80%', 'pgx-bar-acc')])]);
+    };
+    return el('section', { class: 'pgx-sec', 'aria-labelledby': 'pgx-shots-h', 'data-cat': cat0 }, [
+      el('h2', { class: 'pgx-lbl', id: 'pgx-shots-h', text: t('plugins.x.looks_like') }),
+      el('div', { class: 'pgx-shots' }, x.shows.map((s) => el('figure', { class: 'pgx-shot' }, [frame(s), el('figcaption', { text: s.caption })]))),
+    ]);
+  }
+
+  /** "Das darf das Plugin" of a catalogue plugin: the catalogue's list, else (installed) the manifest's. */
+  function catalogPermsCard(x, p) {
+    const rows = [];
+    (x.permissions || []).forEach((r) => rows.push(el('div', { class: 'pgx-perm' }, [icon(r.icon || 'shield', 19), el('span', { class: 'pgx-t' }, [el('b', { text: r.title }), r.text ? el('small', { text: r.text }) : null]),
+      r.tag ? pill(r.tag, 'warn') : null])));
+    if (!rows.length && p) {
+      const sens = P.sensitivePerms(p.permissions).map((k) => t(k));
+      P.permRows(p.permissions, t).forEach((r) => rows.push(el('div', { class: 'pgx-perm' }, [icon(sens.indexOf(r.label) >= 0 ? I.shield : I.perms, 19), el('span', { class: 'pgx-t' }, [el('b', { text: r.label }), el('small', { text: r.value })]),
+        sens.indexOf(r.label) >= 0 ? pill(t('plugins.x.sensitive'), 'warn') : null])));
+    }
+    if (!rows.length) rows.push(el('p', { class: 'pgx-note pgx-in-pad', role: 'note' }, [icon(I.shield, 16), el('span', { text: t('plugins.x.perms_before') })]));
+    return card([el('div', { class: 'pgx-card-h' }, [h2(t('plugins.x.may_title'), 'pgx-perm-h'), el('span', { class: 'pgx-sec-s', text: t('plugins.x.may_confirm') })])].concat(rows),
+      { 'aria-labelledby': 'pgx-perm-h', id: 'pgx-perms' }, 'pgx-flush');
+  }
+
+  /** Versions with their notes (newest first). */
+  function versionsCard(versions, installedVersion, title) {
+    const rows = versions.map((v, i) => el('div', { class: 'pgx-vr', 'data-version': v.version }, [
+      el('span', { class: 'pgx-vr-v' + (i === 0 ? ' pgx-vr-new' : ''), text: v.version }),
+      el('span', { class: 'pgx-t' }, [
+        el('span', { class: 'pgx-vr-m' }, [v.version === installedVersion ? pill(t('plugins.x.installed_here'), 'good') : null,
+          v.compatible === false ? pill(t('plugins.x.needs_gc', { range: rng(v.gatecontrol) }), 'warn') : null, el('small', { text: P.fmtDate(v.publishedAt, lang) })]),
+        v.notes ? notesBlock(v.notes) : el('small', { text: t('plugins.x.no_notes') }),
+      ]),
+    ]));
+    if (!rows.length) rows.push(el('p', { class: 'pgx-empty', text: t('plugins.x.no_versions') }));
+    return card([el('div', { class: 'pgx-card-h' }, [h2(title || t('plugins.x.tab_versions'), 'pgx-ver-h')])].concat(rows), { 'aria-labelledby': 'pgx-ver-h', id: 'pgx-versions' }, 'pgx-flush');
   }
 
   // ════════════════════════════════════════════════════════════
-  // One installed plugin (/plugins/manage/<id>)
+  // One installed plugin (manage/<id>)
   // ════════════════════════════════════════════════════════════
   const TABS = ['overview', 'settings', 'perms', 'license', 'log', 'versions'];
   let mtab = TABS.indexOf(query.get('tab')) >= 0 ? query.get('tab') : 'overview';
@@ -971,46 +1208,64 @@
     await Promise.all([loadInstalled(), loadCatalog(false)]);
     renderManage();
     done();
+    if (installedOf(TARGET)) {
+      await loadContrib();
+      if (mtab === 'overview') renderManage();
+    }
+  }
+
+  function setTab(id) {
+    mtab = id;
+    try { history.replaceState(null, '', location.pathname + (id === 'overview' ? '' : '?tab=' + id)); } catch (_) { /* ignore */ }
+    renderManage();
+  }
+
+  function sinceText(p) {
+    const proc = p.process || {};
+    if (p.status === 'running' && proc.startedAt) return t('plugins.x.running_since', { ago: ago(new Date(proc.startedAt).toISOString()).replace(/^vor /, '') });
+    return t(P.statusChip(p).key);
   }
 
   function renderManage() {
     clear(main);
     const p = installedOf(TARGET);
-    if (!p) { main.appendChild(card('pgx-offline', [el('p', { text: t('plugins.err.not_found') }), btn(t('plugins.x.back_mine'), { href: '/plugins', icon: I.back })])); return; }
+    if (!p) { main.appendChild(card([el('p', { text: t('plugins.err.not_found') }), btn(t('plugins.x.back_mine'), { href: U.mine, icon: I.back })], null, 'pgx-pad')); return; }
     const c = catItem(p.id);
-    main.appendChild(el('nav', { class: 'pgx-crumb', 'aria-label': t('plugins.x.path') }, [el('a', { href: '/plugins', text: t('plugins.area.title') }), ' › ', el('span', { 'aria-current': 'page', text: p.name })]));
+    main.appendChild(el('nav', { class: 'pgx-crumb', 'aria-label': t('plugins.x.path') }, [link(t('plugins.area.title'), U.mine), el('span', { 'aria-hidden': 'true', text: '›' }),
+      link(t('plugins.area.mine'), U.mine), el('span', { 'aria-hidden': 'true', text: '›' }), el('span', { 'aria-current': 'page', text: p.name })]));
 
-    const proc = p.process || {};
-    const since = p.status === 'running' && proc.startedAt ? t('plugins.x.running_since', { ago: ago(new Date(proc.startedAt).toISOString()) }) : t(P.statusChip(p).key);
     const menu = el('details', { class: 'pgx-menu' }, [
-      el('summary', { class: 'st-btn pgx-icon-btn', 'aria-label': t('plugins.x.more_actions'), title: t('plugins.x.more_actions') }, [icon(I.more, 18)]),
+      el('summary', { class: 'pgx-ib', 'aria-label': t('plugins.x.more_actions'), title: t('plugins.x.more_actions') }, [icon(I.more, 18)]),
       el('div', { class: 'pgx-menu-pop', role: 'menu' }, [
-        el('button', { type: 'button', role: 'menuitem', text: t('plugins.x.check_license'), on: { click: () => { mtab = 'license'; renderManage(); } } }),
+        el('button', { type: 'button', role: 'menuitem', text: t('plugins.x.check_license'), on: { click: () => setTab('license') } }),
+        c ? el('a', { role: 'menuitem', href: U.item(p.id), text: t('plugins.x.in_catalog') }) : null,
         el('button', { type: 'button', role: 'menuitem', 'data-tone': 'crit', id: 'pgx-uninstall-menu', text: t('plugins.detail.uninstall'), on: { click: () => uninstallDialog(p) } }),
       ]),
     ]);
-    main.appendChild(card('pgx-mhero', [
+    const open = p.status === 'running' && (p.portal || p.nav)
+      ? btn(t(p.nav ? 'plugins.detail.open' : 'plugins.x.open_portal'), { href: p.nav ? '/plugins/' + enc(p.id) : '/portal', icon: I.ext, external: !p.nav }) : null;
+    main.appendChild(card([
       plugIcon(p.id, p, 'xl'),
-      el('div', { class: 'pgx-grow' }, [
-        el('div', { class: 'pgx-title-row' }, [el('h2', { class: 'pgx-display', id: 'pgx-dtitle', text: p.name }), pill(since, P.statusChip(p).tone, true)]),
-        el('p', { class: 'pgx-muted', text: (c && c.summary) || p.description || '' }),
-        el('div', { class: 'pgx-metaline' }, [el('span', { class: 'st-mono', text: 'v' + p.version }), el('span', { text: p.publisher }),
-          el('span', { 'data-tone': p.verified ? 'good' : 'warn' }, [icon(I.shield, 14), ' ', t(p.verified ? 'plugins.badge.verified' : 'plugins.badge.unverified')]),
+      el('div', { class: 'pgx-mh-t' }, [
+        el('div', { class: 'pgx-mh-r' }, [el('h2', { class: 'pgx-h1', id: 'pgx-dtitle', text: p.name }), pill(sinceText(p), P.statusChip(p).tone, true)]),
+        el('span', { class: 'pgx-mh-s', text: summaryOf(p) }),
+        el('span', { class: 'pgx-mh-m' }, [el('span', { class: 'pgx-mono', text: 'v' + p.version }), el('span', { text: p.publisher }),
+          el('span', { class: 'pgx-mh-sig', 'data-tone': p.verified ? 'good' : 'warn' }, [icon(I.shieldOk, 15), t(p.verified ? 'plugins.x.signed' : 'plugins.badge.unverified')]),
           el('span', { text: catName(P.categoryOf(metaOf(p.id))) })]),
       ]),
-      el('div', { class: 'pgx-actions' }, [
-        p.nav && p.status === 'running' ? btn(t('plugins.detail.open'), { href: '/plugins/' + enc(p.id), icon: I.ext }) : null,
+      el('div', { class: 'pgx-mh-a' }, [
+        open,
         btn(t('plugins.x.restart'), { icon: I.refresh, id: 'pgx-restart', disabled: !p.enabled, onClick: async (e) => { e.currentTarget.disabled = true; await restart(p); await loadInstalled(); renderManage(); } }),
-        el('span', { class: 'pgx-switch-box' }, [el('span', { text: t(p.enabled ? 'plugins.detail.active' : 'plugins.detail.inactive') }),
-          switchBtn(p.enabled, t('plugins.detail.active'), async () => { if (await setEnabled(p, !p.enabled)) { await loadInstalled(); renderManage(); updateNav(); } }, 'pgx-toggle')]),
+        el('span', { class: 'pgx-swbox' }, [el('span', { text: t(p.enabled ? 'plugins.detail.active' : 'plugins.detail.inactive') }),
+          sw(p.enabled, t('plugins.x.active_of', { name: p.name }), async () => { if (await setEnabled(p, !p.enabled)) { await loadInstalled(); renderManage(); updateNav(); } }, 'pgx-toggle')]),
         menu,
       ]),
-    ], { 'aria-labelledby': 'pgx-dtitle' }));
+    ], { 'aria-labelledby': 'pgx-dtitle' }, 'pgx-mhero'));
 
     if (c && c.state === 'update' && c.latest) {
       main.appendChild(el('div', { class: 'pgx-banner', 'data-tone': 'info', role: 'status' }, [icon(I.refresh, 18),
         el('span', { class: 'pgx-grow' }, [el('b', { text: t('plugins.x.update_available', { version: c.latest.version }) }), ' ', el('span', { class: 'pgx-muted', text: t('plugins.x.update_kind.' + P.updateKind(p.version, c.latest.version)) })]),
-        el('button', { type: 'button', class: 'pgx-link', text: t('plugins.x.whats_new'), on: { click: () => { mtab = 'versions'; renderManage(); } } }),
+        linkBtn(t('plugins.x.whats_new'), () => setTab('versions')),
         btn(t('plugins.cat.update'), { primary: true, small: true, id: 'pgx-update', onClick: (e) => installFromCatalog(c, e.currentTarget).then(async (r) => { if (r) { await Promise.all([loadInstalled(), loadCatalog(false)]); renderManage(); updateNav(); } }) })]));
     }
     const banner = problemBanner(p);
@@ -1019,19 +1274,17 @@
     main.appendChild(legacySlot);
     renderLegacy(p, legacySlot);
 
-    const tl = el('div', { class: 'pg-tabs pgx-tabs', role: 'tablist', 'aria-label': t('plugins.detail.tabs') });
+    const tl = el('div', { class: 'pgx-tabs', role: 'tablist', 'aria-label': t('plugins.detail.tabs') });
     TABS.forEach((id) => {
       if (id === 'versions' && !c) return;
       const n = id === 'perms' ? P.permRows(p.permissions, t).length : null;
-      tl.appendChild(el('button', { type: 'button', class: 'pg-tab', role: 'tab', id: 'pg-tab-' + id, 'aria-selected': String(mtab === id), 'aria-controls': 'pg-panel',
-        on: { click: () => { mtab = id; try { history.replaceState(null, '', location.pathname + (id === 'overview' ? '' : '?tab=' + id)); } catch (_) { /* ignore */ } renderManage(); } } },
-      [id === 'versions' ? t('plugins.x.tab_versions') : t('plugins.tab.' + id), n ? el('em', { class: 'pgx-tab-n', text: String(n) }) : null]));
+      tl.appendChild(el('button', { type: 'button', class: 'pgx-tab', role: 'tab', id: 'pg-tab-' + id, 'aria-selected': String(mtab === id), 'aria-controls': 'pg-panel', 'data-tab': id,
+        on: { click: () => setTab(id) } }, [id === 'versions' ? t('plugins.x.tab_versions') : t('plugins.tab.' + id), n ? el('em', { text: String(n) }) : null]));
     });
-    const left = el('div', { class: 'pgx-colm' }, [tl]);
-    const panel = el('div', { class: 'pgx-panel', id: 'pg-panel', role: 'tabpanel', 'aria-labelledby': 'pg-tab-' + mtab });
-    left.appendChild(panel);
+    main.appendChild(tl);
+    const panel = el('div', { class: 'pgx-colm pgx-panel', id: 'pg-panel', role: 'tabpanel', 'aria-labelledby': 'pg-tab-' + mtab });
     const aside = el('aside', { class: 'pgx-aside', 'aria-label': t('plugins.x.details') });
-    main.appendChild(el('div', { class: 'pgx-cols' }, [left, aside]));
+    main.appendChild(el('div', { class: 'pgx-cols' }, [panel, aside]));
     const PANELS = new Map([['overview', panelOverview], ['settings', panelSettings], ['license', panelLicense], ['perms', panelPerms], ['log', panelLog], ['versions', panelVersions]]);
     const render = PANELS.get(mtab);
     if (typeof render === 'function') render(p, panel, c);
@@ -1041,8 +1294,8 @@
   function problemBanner(p) {
     if (!P.isProblem(p)) return null;
     let action = null;
-    if (p.reason === 'license') action = btn(t('plugins.banner.license_action'), { small: true, onClick: () => { mtab = 'license'; renderManage(); } });
-    else if (p.reason === 'unsigned') action = btn(t('plugins.banner.unsigned_action'), { small: true, href: '/plugins/security' });
+    if (p.reason === 'license') action = btn(t('plugins.banner.license_action'), { small: true, onClick: () => setTab('license') });
+    else if (p.reason === 'unsigned') action = btn(t('plugins.banner.unsigned_action'), { small: true, href: U.security });
     else if (p.status === 'crashed') action = btn(t('plugins.x.restart'), { small: true, primary: true, onClick: async () => { await restart(p); await loadInstalled(); renderManage(); } });
     const title = p.status === 'crashed' ? t('plugins.state.crashed') : t(P.statusChip(p).key);
     return el('div', { class: 'pgx-banner', role: 'status', 'data-tone': p.reason === 'unsigned' ? 'warn' : 'crit' }, [icon(I.alert, 18),
@@ -1050,71 +1303,83 @@
       action]);
   }
 
+  function licenseHeadline(L) {
+    if (L.source === 'plan' || L.source === 'lifetime') return t('plugins.lic.source_' + L.source);
+    if (L.expiresAt) return t('plugins.x.until', { date: P.fmtDate(L.expiresAt, lang) });
+    return L.state === 'valid' ? t('plugins.lic.unlimited') : t('plugins.lic.state.' + L.state);
+  }
+
   function manageAside(p, c, aside) {
     const L = p.license || {};
     if (L.required) {
-      aside.appendChild(card('pgx-lic-card', [
-        el('div', { class: 'pgx-title-row' }, [lbl(t('plugins.tab.license')), pill(t('plugins.lic.state.' + L.state), P.licenseTone(L.state), true)]),
-        el('b', { class: 'pgx-big-v', text: L.source === 'plan' || L.source === 'lifetime' ? t('plugins.lic.source_' + L.source) : (L.expiresAt ? t('plugins.x.until', { date: P.fmtDate(L.expiresAt, lang) }) : (L.state === 'valid' ? t('plugins.lic.unlimited') : t('plugins.lic.state.' + L.state))) }),
-        L.keyMasked ? el('span', { class: 'pgx-muted pgx-small' }, [t('plugins.lic.key') + ' ', el('span', { class: 'st-mono', text: L.keyMasked })]) : null,
-        el('button', { type: 'button', class: 'pgx-link', text: t('plugins.x.manage_license'), on: { click: () => { mtab = 'license'; renderManage(); } } }),
-      ]));
+      aside.appendChild(card([
+        el('div', { class: 'pgx-card-r' }, [lbl(t('plugins.tab.license')), el('span', { class: 'pgx-push' }, [pill(t('plugins.lic.state.' + L.state), P.licenseTone(L.state), true)])]),
+        el('b', { class: 'pgx-big-v', text: licenseHeadline(L) }),
+        el('small', { class: 'pgx-muted' }, [t('plugins.x.bound_here') + (L.keyMasked ? ' · ' + t('plugins.lic.key') + ' ' : ''), L.keyMasked ? el('span', { class: 'pgx-mono', text: L.keyMasked }) : null]),
+        linkBtn(t('plugins.x.manage_license'), () => setTab('license')),
+      ], null, 'pgx-pad pgx-stack-card'));
     }
-    aside.appendChild(card('', [lbl(t('plugins.x.details')), kv([
+    const pkgSize = c && c.latest && c.latest.version === p.version ? P.fmtBytes(c.latest.size) : null;
+    aside.appendChild(card([lbl(t('plugins.x.details')), kv([
       [t('plugins.tile.version'), p.version + (c && c.state === 'update' && c.latest ? ' → ' + c.latest.version : (c ? ' · ' + t('plugins.x.current') : '')), true],
       [t('plugins.tile.installed'), P.fmtDate(p.installedAt, lang)],
       [t('plugins.x.updated'), P.fmtDate(p.updatedAt, lang)],
-      [t('plugins.x.needs'), 'GateControl ' + (p.requires || '') + (p.compatible ? ' ✓' : '')],
+      pkgSize ? [t('plugins.x.size'), pkgSize] : null,
+      [t('plugins.x.needs'), ['GateControl ' + rng(p.requires) + ' ', p.compatible ? el('span', { class: 'pgx-ok', text: '✓' }) : null]],
       [t('plugins.x.publisher'), p.publisher],
-      [t('plugins.x.origin'), c ? t('plugins.x.source_official') : t('plugins.x.origin_upload')],
-    ])]));
+      [t('plugins.x.origin'), c ? t('plugins.x.source_official_short') : t('plugins.x.origin_upload')],
+    ])], null, 'pgx-pad'));
     const sens = P.sensitivePerms(p.permissions);
-    aside.appendChild(card('', [lbl(t('plugins.tab.perms')),
-      el('p', { class: 'pgx-muted pgx-small', text: t('plugins.x.perms_count', { n: P.permRows(p.permissions, t).length, s: sens.length }) }),
-      sens.length ? el('div', { class: 'pgx-chips' }, sens.map((k) => pill(t(k), 'warn'))) : null,
-      el('button', { type: 'button', class: 'pgx-link', text: t('plugins.x.view_all'), on: { click: () => { mtab = 'perms'; renderManage(); } } })]));
-    if (c) aside.appendChild(btn(t('plugins.x.in_catalog'), { href: '/plugins/catalog/' + enc(p.id), icon: P.ICON_PATHS.puzzle }));
+    aside.appendChild(card([lbl(t('plugins.tab.perms')),
+      el('span', { class: 'pgx-muted pgx-small', text: t('plugins.x.perms_granted', { n: P.permRows(p.permissions, t).length, s: sens.length }) }),
+      sens.length ? el('span', { class: 'pgx-pills' }, sens.map((k) => pill(t(k), 'warn'))) : null,
+      linkBtn(t('plugins.x.view_all'), () => setTab('perms'))], null, 'pgx-pad pgx-stack-card'));
     aside.appendChild(btn(t('plugins.detail.uninstall'), { danger: true, icon: I.trash, id: 'pg-uninstall', onClick: () => uninstallDialog(p) }));
   }
 
   async function panelOverview(p, panel, c) {
     const proc = p.process || {};
-    const tiles = el('div', { class: 'pgx-mtiles' });
-    const tile = (label, value, sub, tone, id) => el('div', { class: 'pgx-mtile' }, [lbl(label), el('b', { id: id || null, 'data-tone': tone || null, text: value }), sub ? el('span', { class: 'pgx-muted pgx-small', text: sub }) : null]);
-    tiles.appendChild(tile(t('plugins.tile.status'), t(P.statusChip(p).key), p.status === 'running' && proc.startedAt ? t('plugins.x.since', { date: fmtDateTime(proc.startedAt) }) : '', P.statusChip(p).tone));
-    tiles.appendChild(tile(t('plugins.x.data'), '…', t('plugins.x.data_d'), null, 'pg-storage'));
-    tiles.appendChild(tile(t('plugins.x.errors7d'), String(p.errors7d || 0), proc.crashes ? t('plugins.x.crashes', { n: proc.crashes }) : t('plugins.x.no_crashes'), p.errors7d ? 'warn' : null));
-    tiles.appendChild(tile(t('plugins.tile.version'), p.version, c && c.state === 'update' && c.latest ? t('plugins.x.update_to', { version: c.latest.version }) : (c ? t('plugins.x.current') : '')));
-    panel.appendChild(tiles);
-    if (p.description) panel.appendChild(el('p', { class: 'pgx-desc', text: p.description }));
-    const adds = P.addsOf(p, t);
+    const tile = (label, value, sub, tone, id, cls) => el('div', { class: 'pgx-card pgx-tile' + (cls ? ' ' + cls : '') }, [lbl(label), el('b', { id: id || null, 'data-tone': tone || null, text: value }), sub ? el('small', { text: sub }) : null]);
+    const L = p.license || {};
+    panel.appendChild(el('div', { class: 'pgx-tiles4' }, [
+      tile(t('plugins.tile.status'), t(P.statusChip(p).key), p.status === 'running' && proc.startedAt ? t('plugins.x.since', { date: fmtDateTime(proc.startedAt) }) : '', P.statusChip(p).tone, null, 'pgx-hide-m'),
+      L.required ? tile(t('plugins.tab.license'), licenseHeadline(L), null, P.licenseTone(L.state), null, 'pgx-only-m') : null,
+      tile(t('plugins.x.data'), '…', t('plugins.x.data_d'), null, 'pg-storage'),
+      tile(t('plugins.x.events24h'), String(p.events24h || 0), t('plugins.x.events24h_d')),
+      tile(t('plugins.x.errors7d'), String(p.errors7d || 0), proc.crashes ? t('plugins.x.crashes', { n: proc.crashes }) : t('plugins.x.no_crashes'), p.errors7d ? 'warn' : null),
+    ]));
+    const adds = P.addRows(p, contrib[p.id], t);
     if (adds.length) {
-      panel.appendChild(el('h3', { class: 'pgx-h3', text: t('plugins.x.adds_to', { name: p.name }) }));
-      panel.appendChild(el('ul', { class: 'pgx-adds' }, adds.map((a) => el('li', null, [el('b', { text: a.title }), el('span', { class: 'pgx-muted pgx-block', text: a.text })]))));
+      panel.appendChild(card([el('div', { class: 'pgx-card-h' }, [h2(t('plugins.x.adds_to', { name: p.name }), 'pgx-adds-h')])].concat(adds.map((a) => {
+        let act = null;
+        if (a.kind === 'page' && p.status === 'running') act = btn(t('plugins.x.open'), { href: '/plugins/' + enc(p.id), small: true });
+        else if (a.kind === 'portal' && p.status === 'running') act = btn(t('plugins.x.open'), { href: '/portal', small: true, external: true });
+        else if (a.kind === 'settings') act = btn(t('plugins.x.to_settings'), { small: true, onClick: () => setTab('settings') });
+        return el('div', { class: 'pgx-sfc' }, [sic(a.icon), el('span', { class: 'pgx-t' }, [el('b', { text: a.title }), el('small', { text: a.text })]), act]);
+      })), { 'aria-labelledby': 'pgx-adds-h' }, 'pgx-flush'));
     }
     const peers = [];
     (p.uses || []).forEach((id) => peers.push({ id, rel: 'uses' }));
     (p.usedBy || []).forEach((id) => { if (!peers.some((x) => x.id === id)) peers.push({ id, rel: 'used_by' }); });
     ((c && c.related) || []).forEach((id) => { if (!peers.some((x) => x.id === id)) peers.push({ id, rel: 'related' }); });
     if (peers.length) {
-      panel.appendChild(el('h3', { class: 'pgx-h3', text: t('plugins.x.works_with') }));
-      panel.appendChild(el('p', { class: 'pgx-muted pgx-small', text: t('plugins.x.works_with_d') }));
-      panel.appendChild(el('div', { class: 'pgx-deps' }, peers.map((d) => {
-        const o = installedOf(d.id);
-        const ci = catItem(d.id);
-        const name = (o && o.name) || (ci && ci.name) || d.id;
-        return el('a', { class: 'pgx-dep', href: o ? '/plugins/manage/' + enc(d.id) : '/plugins/catalog/' + enc(d.id), 'data-installed': o ? '1' : '0' }, [
-          plugIcon(d.id, o, 'sm'),
-          el('span', { class: 'pgx-grow' }, [el('b', { text: name }), el('span', { class: 'pgx-muted pgx-block pgx-small', text: t('plugins.x.rel_' + d.rel) })]),
-          o ? icon(I.check, 16) : el('span', { class: 'pgx-muted pgx-small', text: t('plugins.x.not_installed') }),
-        ]);
-      })));
+      panel.appendChild(card([el('div', { class: 'pgx-card-h pgx-card-h0' }, [h2(t('plugins.x.works_with'), 'pgx-dep-h'), el('span', { class: 'pgx-sec-s', text: t('plugins.x.works_with_d') })]),
+        el('div', { class: 'pgx-deps' }, peers.map((d) => {
+          const o = installedOf(d.id);
+          const ci = catItem(d.id);
+          const name = (o && o.name) || (ci && ci.name) || d.id;
+          return el('a', { class: 'pgx-dep', href: o ? U.manage(d.id) : U.item(d.id), 'data-installed': o ? '1' : '0' }, [
+            plugIcon(d.id, o, 'sm'),
+            el('span', { class: 'pgx-t' }, [el('b', { text: name }), el('small', { text: (ci && ci.summary) ? ci.summary : t('plugins.x.rel_' + d.rel) })]),
+            o ? el('span', { class: 'pgx-ok', 'aria-label': t('plugins.cat.state.installed') }, [icon(I.check, 16)]) : el('small', { class: 'pgx-muted', text: t('plugins.x.not_installed') }),
+          ]);
+        }))], { 'aria-labelledby': 'pgx-dep-h' }, 'pgx-pad pgx-stack-card'));
     }
     const logs = await req('GET', API + '/' + enc(p.id) + '/logs');
     if (logs.ok && logs.logs.length) {
-      panel.appendChild(el('div', { class: 'pgx-sec-head' }, [el('h3', { class: 'pgx-h3', text: t('plugins.x.recent') }),
-        el('button', { type: 'button', class: 'pgx-link', text: t('plugins.x.whole_log'), on: { click: () => { mtab = 'log'; renderManage(); } } })]));
-      panel.appendChild(logList(logs.logs.slice(0, 5)));
+      panel.appendChild(card([el('div', { class: 'pgx-card-h' }, [h2(t('plugins.x.recent'), 'pgx-log-h'), linkBtn(t('plugins.x.whole_log'), () => setTab('log'), { class: 'pgx-a pgx-push' })]),
+        el('div', { class: 'pgx-mlog' }, logs.logs.slice(0, 5).map((e) => el('div', { 'data-level': e.level }, [el('b', { text: fmtTime(e.created_at) }), '  ' + e.message])))],
+      { 'aria-labelledby': 'pgx-log-h' }, 'pgx-flush pgx-hide-m'));
     }
     const r = await req('GET', API + '/' + enc(p.id));
     const s = $('pg-storage');
@@ -1123,7 +1388,7 @@
   }
 
   function logList(entries) {
-    const list = el('ol', { class: 'pg-log', id: 'pg-log' });
+    const list = el('ol', { class: 'pg-log pgx-log', id: 'pg-log' });
     entries.forEach((e) => {
       let ts = '';
       try { ts = new Date(e.created_at).toLocaleString(lang === 'en' ? 'en-GB' : 'de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }); } catch (_) { ts = ''; }
@@ -1135,18 +1400,21 @@
 
   async function panelLog(p, panel) {
     const r = await req('GET', API + '/' + enc(p.id) + '/logs');
-    panel.appendChild(logList(r.ok ? r.logs : []));
+    panel.appendChild(card([el('div', { class: 'pgx-card-h' }, [h2(t('plugins.tab.log'), 'pgx-plog-h')]), logList(r.ok ? r.logs : [])], { 'aria-labelledby': 'pgx-plog-h' }, 'pgx-flush'));
   }
 
   function panelPerms(p, panel) {
-    panel.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.perm.intro') }));
-    panel.appendChild(permRowsBox(p.permissions, null));
+    const sens = P.sensitivePerms(p.permissions).map((k) => t(k));
+    panel.appendChild(card([el('div', { class: 'pgx-card-h' }, [h2(t('plugins.tab.perms'), 'pgx-pp-h'), el('span', { class: 'pgx-sec-s', text: t('plugins.perm.intro') })])]
+      .concat(P.permRows(p.permissions, t).map((r) => el('div', { class: 'pgx-perm', 'data-sensitive': sens.indexOf(r.label) >= 0 ? '1' : null }, [
+        icon(sens.indexOf(r.label) >= 0 ? I.shield : I.perms, 19), el('span', { class: 'pgx-t' }, [el('b', { text: r.label }), el('small', { text: r.value })]),
+        sens.indexOf(r.label) >= 0 ? pill(t('plugins.x.sensitive'), 'warn') : null]))), { 'aria-labelledby': 'pgx-pp-h' }, 'pgx-flush'));
   }
 
-  async function panelVersions(p, panel, c) {
+  async function panelVersions(p, panel) {
     const r = await req('GET', CAT_API + '/' + enc(p.id));
     if (!r.ok) { panel.appendChild(el('p', { class: 'pgx-muted', text: r.error })); return; }
-    panel.appendChild(versionsList(r.plugin.versions || [], p.version));
+    panel.appendChild(versionsCard(r.plugin.versions || [], p.version, null));
   }
 
   // ── Built-in data import (first-party plugin of a former built-in feature) ──
@@ -1197,8 +1465,8 @@
     const m = r.media;
     const old = $('pg-media');
     if (old) old.remove();
-    const box = el('section', { class: 'pgx-subcard', id: 'pg-media', 'aria-labelledby': 'pg-media-title' });
-    box.appendChild(el('h3', { class: 'pgx-h3', id: 'pg-media-title', text: t('plugins.media.title') }));
+    const box = el('section', { class: 'pgx-card pgx-pad pgx-stack-card', id: 'pg-media', 'aria-labelledby': 'pg-media-title' });
+    box.appendChild(h2(t('plugins.media.title'), 'pg-media-title'));
     box.appendChild(el('p', { class: 'pgx-muted', id: 'pg-media-usage', text: t('plugins.media.usage', { used: P.fmtBytes(m.usage.bytes), quota: P.fmtBytes(m.quota), count: m.usage.count }) }));
     box.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.media.limits', { max: P.fmtBytes(m.maxBytes), types: P.mediaTypes(m.types) }) }));
     const gb = el('input', { type: 'number', class: 'st-input st-input-num', id: 'pg-media-quota', min: 0.001, max: 1024, step: 'any',
@@ -1221,8 +1489,8 @@
   async function renderTargets(p, panel) {
     const r = await req('GET', API + '/' + enc(p.id) + '/targets');
     if (!r.ok || (!r.declared.length && !r.discovery)) return;
-    const box = el('section', { class: 'pgx-subcard', id: 'pg-targets', 'aria-labelledby': 'pg-tg-title' });
-    box.appendChild(el('h3', { class: 'pgx-h3', id: 'pg-tg-title', text: t('plugins.tg.title') }));
+    const box = el('section', { class: 'pgx-card pgx-pad pgx-stack-card', id: 'pg-targets', 'aria-labelledby': 'pg-tg-title' });
+    box.appendChild(h2(t('plugins.tg.title'), 'pg-tg-title'));
     box.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.tg.intro') }));
     for (const d of r.declared) {
       const isHttp = d.protocols.indexOf('http') >= 0;
@@ -1264,16 +1532,16 @@
       box.appendChild(row);
     }
     if (r.discovery) {
-      const sw = switchBtn(r.discovery.granted, t('plugins.tg.discovery'), async () => {
-        const on = sw.getAttribute('aria-checked') !== 'true';
+      const dsw = sw(r.discovery.granted, t('plugins.tg.discovery'), async () => {
+        const on = dsw.getAttribute('aria-checked') !== 'true';
         const res = await req('PUT', API + '/' + enc(p.id) + '/discovery', { granted: on });
         if (!res.ok) { toast(res.error, 'error'); return; }
-        sw.setAttribute('aria-checked', on ? 'true' : 'false');
+        dsw.setAttribute('aria-checked', on ? 'true' : 'false');
       }, 'pg-discovery');
       box.appendChild(el('div', { class: 'st-row pg-target' }, [
         el('div', { class: 'st-row-text' }, [el('label', { class: 'st-label', for: 'pg-discovery', text: t('plugins.tg.discovery') }),
           el('span', { class: 'st-hint', text: t('plugins.tg.discovery_hint', { ports: r.discovery.udp.join(', ') }) })]),
-        el('div', { class: 'st-row-ctl' }, [sw]),
+        el('div', { class: 'st-row-ctl' }, [dsw]),
       ]));
     }
     panel.appendChild(box);
@@ -1281,10 +1549,11 @@
 
   async function panelSettings(p, panel) {
     await renderTargets(p, panel);
-    panel.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.settings.hint') }));
+    const box = card([h2(t('plugins.tab.settings'), 'pgx-set-h'), el('p', { class: 'pgx-muted', text: t('plugins.settings.hint') })], { 'aria-labelledby': 'pgx-set-h' }, 'pgx-pad pgx-stack-card');
+    panel.appendChild(box);
     const r = await req('GET', API + '/' + enc(p.id) + '/settings');
-    if (!r.ok) { panel.appendChild(el('p', { class: 'st-err-block', text: r.error })); return; }
-    if (!r.defs.length) { if (!panel.querySelector('#pg-targets')) panel.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.settings.none') })); return; }
+    if (!r.ok) { box.appendChild(el('p', { class: 'st-err-block', text: r.error })); return; }
+    if (!r.defs.length) { box.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.settings.none') })); return; }
     const form = el('form', { class: 'pg-form', id: 'pg-settings-form', novalidate: true, autocomplete: 'off' });
     const inputs = {};
     for (const d of r.defs) {
@@ -1331,12 +1600,14 @@
       }
       msg.textContent = res.error || t('plugins.err.generic');
     });
-    panel.appendChild(form);
+    box.appendChild(form);
   }
 
   function panelLicense(p, panel) {
     const L = p.license || {};
-    if (!L.required) { panel.appendChild(el('p', { class: 'pgx-muted', id: 'pg-lic-none', text: t('plugins.lic.not_required') })); return; }
+    const box = card([h2(t('plugins.tab.license'), 'pgx-lic-h')], { 'aria-labelledby': 'pgx-lic-h' }, 'pgx-pad pgx-stack-card');
+    panel.appendChild(box);
+    if (!L.required) { box.appendChild(el('p', { class: 'pgx-muted', id: 'pg-lic-none', text: t('plugins.lic.not_required') })); return; }
     const dl = el('dl', { class: 'pg-dl' });
     const row = (k, v, tone) => { dl.appendChild(el('dt', { text: k })); dl.appendChild(el('dd', { 'data-state': tone || null, text: v || '—' })); };
     row(t('plugins.lic.status'), t('plugins.lic.state.' + L.state), P.licenseTone(L.state));
@@ -1381,7 +1652,7 @@
       } } });
       refreshBox = el('div', { class: 'pg-lic-refresh', id: 'pg-lic-refresh-box' }, [el('p', { class: 'pgx-muted', role: 'note', text: t('plugins.lic.refresh_hint') }), el('div', { class: 'st-btnrow' }, [refresh])]);
     }
-    panel.appendChild(el('div', { class: 'pg-lic' }, [dl, el('div', { class: 'pg-lic-form' }, [
+    box.appendChild(el('div', { class: 'pg-lic' }, [dl, el('div', { class: 'pg-lic-form' }, [
       refreshBox,
       el('label', { class: 'st-label', for: 'pg-lic-key', text: t('plugins.lic.enter') }), input,
       el('div', { class: 'st-btnrow pgx-mt' }, [save, check]),
@@ -1391,53 +1662,6 @@
     ])]));
   }
 
-  function uninstallDialog(p) {
-    const d = D.dialog({ title: t('plugins.un.title', { name: p.name }) });
-    let mode = 'keep';
-    d.body.appendChild(el('p', { class: 'zn-dialog-msg', text: t('plugins.x.un_intro') }));
-    const lost = P.addsOf(p, t).map((a) => a.title);
-    if (lost.length) {
-      d.body.appendChild(lbl(t('plugins.x.un_lost')));
-      d.body.appendChild(el('ul', { class: 'pgx-lost' }, lost.map((x) => el('li', null, [icon(I.x, 15), x]))));
-    }
-    const users = (p.usedBy || []).map((id) => installedOf(id)).filter(Boolean);
-    if (users.length) d.body.appendChild(el('p', { class: 'pgx-note pgx-note-warn', id: 'pgx-un-used', role: 'note' }, [icon(I.alert, 16), ' ', t('plugins.x.un_used_by', { names: users.map((u) => u.name).join(', ') })]));
-    const opts = el('div', { class: 'pg-radios', role: 'radiogroup', 'aria-label': t('plugins.un.data') });
-    const confirmWrap = el('label', { class: 'pg-confirm', hidden: true }, [el('span', { class: 'st-label', text: t('plugins.un.type', { name: p.name }) })]);
-    const confirmIn = el('input', { type: 'text', class: 'st-input', id: 'pg-un-confirm', autocomplete: 'off', spellcheck: 'false' });
-    confirmWrap.appendChild(confirmIn);
-    const go = el('button', { type: 'button', class: 'btn btn-danger', id: 'pg-un-go' });
-    const sync = () => {
-      opts.querySelectorAll('.pg-radio').forEach((b) => b.setAttribute('aria-checked', b.dataset.mode === mode ? 'true' : 'false'));
-      confirmWrap.hidden = mode !== 'wipe';
-      go.textContent = t(mode === 'wipe' ? 'plugins.un.go_wipe' : 'plugins.un.go');
-      go.disabled = mode === 'wipe' && !P.wipeConfirmed(p, confirmIn.value);
-    };
-    for (const m of ['keep', 'wipe']) {
-      opts.appendChild(el('button', { type: 'button', class: 'pg-radio', role: 'radio', 'data-mode': m, on: { click: () => { mode = m; sync(); } } }, [
-        el('span', { class: 'pg-radio-dot', 'aria-hidden': 'true' }),
-        el('span', null, [el('b', { text: t('plugins.un.' + m) }), el('span', { class: 'pgx-muted pgx-block', text: t('plugins.un.' + m + '_d') })]),
-      ]));
-    }
-    confirmIn.addEventListener('input', sync);
-    d.body.appendChild(lbl(t('plugins.un.data')));
-    d.body.appendChild(opts);
-    d.body.appendChild(confirmWrap);
-    if (p.license && p.license.required) d.body.appendChild(el('p', { class: 'pgx-muted pgx-row-note' }, [icon(I.key, 16), ' ', t('plugins.un.license_note')]));
-    const err = el('p', { class: 'st-err-block', role: 'alert', hidden: true });
-    d.body.appendChild(err);
-    d.foot.appendChild(el('button', { type: 'button', class: 'btn btn-ghost', text: t('common.cancel'), on: { click: () => d.close(null) } }));
-    if (p.enabled) d.foot.appendChild(el('button', { type: 'button', class: 'btn btn-ghost', text: t('plugins.detail.disable'), on: { click: async () => { d.close(null); if (await setEnabled(p, false)) { await loadInstalled(); renderManage(); } } } }));
-    go.addEventListener('click', async () => {
-      const r = await req('POST', API + '/' + enc(p.id) + '/uninstall', { mode, confirm: confirmIn.value });
-      if (!r.ok) { err.textContent = r.error; err.hidden = false; return; }
-      d.close(true);
-      toast(t('plugins.toast.uninstalled', { name: p.name }));
-      location.href = '/plugins';
-    });
-    d.foot.appendChild(go);
-    sync();
-  }
 
   // ════════════════════════════════════════════════════════════
   // Updates
@@ -1449,24 +1673,32 @@
     done();
   }
 
+  const KIND_TONE = { patch: 'good', minor: 'blue', major: 'warn' };
+
+  function historyRow(h) {
+    return el('div', { class: 'pgx-hist', 'data-action': h.action }, [
+      el('span', { class: 'pgx-mono pgx-hist-d', text: fmtDay(h.at) }),
+      el('span', { class: 'pgx-t pgx-t-row' }, [el('b', { text: h.name || h.id }), ' ', el('span', { class: 'pgx-mono pgx-muted', text: h.action === 'uninstall' ? t('plugins.x.h_uninstalled') : (h.from ? h.from + ' → ' + h.to : h.to) })]),
+      pill(h.by === 'auto' ? t('plugins.x.h_auto') : (h.user ? t('plugins.x.h_by', { name: h.user }) : t('plugins.x.h_admin')), 'mute'),
+      h.action !== 'uninstall' && catItem(h.id) ? link(t('plugins.x.notes'), U.item(h.id, 'tab=versions'), { class: 'pgx-a pgx-small' }) : null,
+    ]);
+  }
+
   function renderUpdates(r) {
     clear(main);
     const ups = (r && r.updates) || [];
-    main.appendChild(el('div', { class: 'pgx-lead' }, [
-      el('p', { class: 'pgx-muted' }, [
-        ups.length ? t('plugins.x.n_updates', { n: ups.length }) : t('plugins.x.all_current'),
-        cat.fetchedAt ? ' · ' + t('plugins.x.checked_ago', { ago: ago(cat.fetchedAt) }) + ' · ' : ' · ',
-        el('button', { type: 'button', class: 'pgx-link', id: 'pgx-up-refresh', text: t('plugins.x.check_now'), on: { click: async (e) => {
-          e.currentTarget.disabled = true;
-          const [nr] = await Promise.all([req('GET', CAT_API + '/updates?refresh=1'), loadCatalog(false)]);
-          await loadCatalog(false);
-          renderUpdates(nr);
-          updateNav();
-          toast(t('plugins.cat.refreshed'));
-        } } }),
-      ]),
-      ups.length ? btn(t('plugins.x.update_all_n', { n: ups.length }), { primary: true, icon: I.refresh, id: 'pgx-update-all', onClick: () => updateAll(ups.map((u) => catItem(u.id)).filter(Boolean), reloadUpdates) }) : null,
-    ]));
+    main.appendChild(pageHead(t('plugins.area.updates'), [
+      ups.length ? t('plugins.x.n_ready', { n: ups.length }) : t('plugins.x.all_current'),
+      cat.fetchedAt ? ' · ' + t('plugins.x.checked_ago', { ago: ago(cat.fetchedAt) }) + ' · ' : ' · ',
+      linkBtn(t('plugins.x.check_now'), async (e) => {
+        e.currentTarget.disabled = true;
+        const nr = await req('GET', CAT_API + '/updates?refresh=1');
+        await loadCatalog(false);
+        renderUpdates(nr);
+        updateNav();
+        toast(t('plugins.cat.refreshed'));
+      }, { id: 'pgx-up-refresh' }),
+    ], [ups.length ? btn(t('plugins.x.update_all_n', { n: ups.length }), { primary: true, icon: I.refresh, id: 'pgx-update-all', onClick: () => updateAll(ups.map((u) => catItem(u.id)).filter(Boolean), reloadUpdates) }) : null]));
     if (r && r.enabled !== false && r.available === false) main.appendChild(el('p', { class: 'pgx-note pgx-note-warn', role: 'status', text: r.error || t('plugins.cat.unreachable') }));
 
     const au = el('div', { class: 'pgx-seg', role: 'group', 'aria-label': t('plugins.x.auto_title'), id: 'pgx-auto' }, ['off', 'patch', 'all'].map((m) => el('button', {
@@ -1478,40 +1710,37 @@
         toast(t('plugins.x.auto_saved'));
       } },
     }, [t('plugins.x.auto_' + m)])));
-    main.appendChild(card('pgx-auto-card', [el('div', { class: 'pgx-row-note' }, [
-      el('div', { class: 'pgx-grow' }, [el('h2', { class: 'pgx-h2', id: 'pgx-auto-h', text: t('plugins.x.auto_title') }), el('p', { class: 'pgx-muted', text: t('plugins.x.auto_d') })]), au,
-    ])], { 'aria-labelledby': 'pgx-auto-h' }));
+    main.appendChild(card([
+      el('div', { class: 'pgx-t pgx-grow' }, [el('div', { class: 'pgx-card-r' }, [h2(t('plugins.x.auto_title'), 'pgx-auto-h', 'pgx-h2-sm'), pill(t('plugins.x.new'), 'new')]),
+        el('small', { text: t('plugins.x.auto_d') })]), au,
+    ], { 'aria-labelledby': 'pgx-auto-h' }, 'pgx-auto-card'));
 
     if (!ups.length) {
-      main.appendChild(card('pgx-uptodate', [el('div', { class: 'pgx-row-note' }, [el('span', { class: 'pgx-done-ic', 'aria-hidden': 'true' }, [icon(I.check, 22)]),
-        el('span', null, [el('b', { text: t('plugins.x.all_current') }), el('span', { class: 'pgx-muted pgx-block', text: t('plugins.x.all_current_d') })])])]));
+      main.appendChild(card([el('span', { class: 'pgx-okbig', 'aria-hidden': 'true' }, [icon(I.check, 22)]),
+        el('span', { class: 'pgx-t' }, [el('b', { text: t('plugins.x.all_current') }), el('small', { text: t('plugins.x.all_current_d') })])], null, 'pgx-uptodate'));
     }
     ups.forEach((u) => {
       const item = catItem(u.id);
-      main.appendChild(card('pgx-upcard', [
-        el('div', { class: 'pgx-up-head' }, [
-          plugIcon(u.id, installedOf(u.id), 'lg'),
-          el('div', { class: 'pgx-grow' }, [el('b', { class: 'pgx-up-name', text: u.name }), el('span', { class: 'pgx-vv' }, [el('s', { text: u.from }), ' → ', el('span', { text: u.to })])]),
-          pill(t('plugins.x.update_kind.' + u.kind), u.kind === 'patch' ? 'good' : 'info'),
+      main.appendChild(card([
+        el('div', { class: 'pgx-uc-h' }, [
+          plugIcon(u.id, installedOf(u.id), 'md48'),
+          el('span', { class: 'pgx-t' }, [el('b', { class: 'pgx-uc-n', text: u.name }), el('span', { class: 'pgx-vv' }, [el('s', { text: u.from }), el('span', { 'aria-hidden': 'true', class: 'pgx-vv-a', text: ' → ' }), el('span', { class: 'pgx-vv-to', text: u.to })])]),
+          pill(t('plugins.x.update_kind.' + u.kind), KIND_TONE[u.kind] || 'blue'),
           item ? btn(t('plugins.cat.update'), { primary: true, small: true, action: 'update', onClick: (e) => installFromCatalog(item, e.currentTarget).then(async (res) => { if (res) await reloadUpdates(); }) }) : null,
         ]),
-        el('div', { class: 'pgx-up-body' }, [
-          u.needsApproval ? el('p', { class: 'pgx-note pgx-note-warn', role: 'note' }, [icon(I.shield, 16), ' ', t('plugins.x.needs_approval')]) : null,
-        ].concat(u.notes.length ? u.notes.map((n) => el('div', { class: 'pgx-up-notes' }, [u.notes.length > 1 ? el('b', { class: 'st-mono pgx-small', text: n.version }) : null, notesBlock(n.notes, 12)]))
+        el('div', { class: 'pgx-uc-b' }, (u.notes.length ? u.notes.map((n) => el('div', { class: 'pgx-uc-notes' }, [u.notes.length > 1 ? el('b', { class: 'pgx-mono pgx-small', text: n.version }) : null, notesBlock(n.notes, 12)]))
           : [el('p', { class: 'pgx-muted', text: t('plugins.x.no_notes') })]).concat([
-          el('p', { class: 'pgx-ok-line' }, [icon(I.check, 15), t('plugins.x.up_fits', { installed: inst.serverVersion, range: u.gatecontrol, size: P.fmtBytes(u.size) })]),
+          u.needsApproval ? el('p', { class: 'pgx-note pgx-note-warn', role: 'note' }, [icon(I.shield, 18), el('span', null, [el('b', { text: t('plugins.x.new_perm') + ' ' }), t('plugins.x.needs_approval_short')])]) : null,
+          el('p', { class: 'pgx-okline' }, [icon(I.check, 16), el('span', null, [t('plugins.x.up_fits', { installed: (inst.serverVersion || '').split('.').slice(0, 2).join('.'), range: rng(u.gatecontrol), size: P.fmtBytes(u.size) }),
+            u.needsApproval ? null : ' · ' + t('plugins.x.no_new_perms'), ' · ', link(t('plugins.x.all_notes'), U.item(u.id, 'tab=versions'))])]),
         ])),
-      ], { 'data-update': u.id }));
+      ], { 'data-update': u.id, 'aria-label': u.name + ' ' + u.to }, 'pgx-uc'));
     });
 
-    const hist = (r && r.history) || [];
+    const hist = ((r && r.history) || []).filter((h) => h.action !== 'uninstall').slice(0, 8);
     if (hist.length) {
-      main.appendChild(card('pgx-hist', [cardHead(t('plugins.x.history'), null, 'pgx-hist-h'), el('ol', { class: 'pgx-hist-list' }, hist.map((h) => el('li', null, [
-        el('span', { class: 'pgx-muted st-mono pgx-small', text: P.fmtDate(h.at, lang) }),
-        el('span', { class: 'pgx-grow' }, [el('b', { text: h.name || h.id }), ' ', el('span', { class: 'pgx-muted st-mono', text: h.action === 'uninstall' ? t('plugins.x.h_uninstalled') : (h.from ? h.from + ' → ' + h.to : h.to) })]),
-        pill(h.by === 'auto' ? t('plugins.x.h_auto') : (h.user ? t('plugins.x.h_by', { name: h.user }) : t('plugins.x.h_admin')), 'off'),
-        h.action !== 'uninstall' && catItem(h.id) ? el('a', { class: 'pgx-link', href: '/plugins/catalog/' + enc(h.id) + '?tab=versions', text: t('plugins.x.notes') }) : null,
-      ])))], { 'aria-labelledby': 'pgx-hist-h' }));
+      main.appendChild(card([el('div', { class: 'pgx-card-h' }, [h2(t('plugins.x.recently_updated'), 'pgx-hist-h'), link(t('plugins.area.log') + ' ›', U.log, { class: 'pgx-a pgx-push pgx-small' })])].concat(hist.map(historyRow)),
+        { 'aria-labelledby': 'pgx-hist-h' }, 'pgx-flush'));
     }
   }
 
@@ -1531,18 +1760,26 @@
     done();
   }
 
+  function licenseKind(L) {
+    if (L.source === 'plan' || L.source === 'lifetime') return [t('plugins.lic.source_' + L.source), null];
+    if (L.kind !== 'first_party') return [t('plugins.x.lic_third'), L.server || null];
+    if (L.expiresAt) return [t('plugins.x.lic_key_kind'), t(L.state === 'expiring' || L.state === 'expired' ? 'plugins.x.lic_ends' : 'plugins.x.lic_renews', { date: P.fmtDate(L.expiresAt, lang) })];
+    return [t('plugins.x.lic_key_kind'), null];
+  }
+
   function renderLicenses(resultMsg) {
     clear(main);
-    const req2 = inst.plugins.filter((p) => p.license && p.license.required);
-    const ok = req2.filter((p) => p.license.licensed && p.license.state !== 'expiring').length;
-    main.appendChild(el('div', { class: 'pgx-lead' }, [
-      el('p', { class: 'pgx-muted', text: t('plugins.x.lic_lead', { n: req2.length, ok, warn: req2.length - ok }) }),
-      btn(t('plugins.x.shop'), { href: SHOP_URL, external: true, icon: I.ext }),
-    ]));
-    const keyIn = el('input', { type: 'text', class: 'st-input st-mono pgx-key', id: 'pgx-lic-key', placeholder: t('plugins.lic.placeholder'), maxLength: 200, autocomplete: 'off', spellcheck: 'false', 'aria-label': t('plugins.lic.key') });
-    const msg = el('p', { class: 'pgx-muted', id: 'pgx-lic-msg', role: 'status' });
+    const need = inst.plugins.filter((p) => p.license && p.license.required);
+    const ok = need.filter((p) => p.license.licensed && p.license.state !== 'expiring').length;
+    const soon = need.filter((p) => p.license.state === 'expiring').length;
+    main.appendChild(pageHead(t('plugins.area.licenses'), [t('plugins.x.n_plugins', { n: need.length }), t('plugins.x.n_valid', { n: ok }),
+      soon ? t('plugins.x.n_expiring', { n: soon }) : null, need.length - ok - soon > 0 ? t('plugins.x.n_problem', { n: need.length - ok - soon }) : null].filter(Boolean).join(' · '),
+    [btn(t('plugins.x.to_shop'), { href: SHOP_URL, external: true, icon: I.ext })]));
+
+    const keyIn = el('input', { type: 'text', id: 'pgx-lic-key', placeholder: t('plugins.lic.placeholder'), maxLength: 200, autocomplete: 'off', spellcheck: 'false', 'aria-label': t('plugins.lic.key') });
+    const msg = el('p', { class: 'pgx-hint', id: 'pgx-lic-msg', role: 'status' });
     if (resultMsg) { msg.textContent = resultMsg.text; msg.setAttribute('data-tone', resultMsg.tone); }
-    const go = btn(t('plugins.x.key_assign'), { primary: true, id: 'pgx-lic-go', onClick: async (e) => {
+    const go = btn(t('plugins.x.key_assign'), { primary: true, id: 'pgx-lic-go', cls: 'pgx-btn-tall', onClick: async (e) => {
       const b = e.currentTarget;
       if (!keyIn.value.trim()) return;
       b.disabled = true;
@@ -1557,38 +1794,36 @@
       else text = t('plugins.x.key_ok', { name: r.name });
       renderLicenses({ text, tone: r.valid ? 'good' : 'crit' });
       updateNav();
-      if (r.valid && !r.installed && catItem(r.pluginId)) {
-        $('pgx-lic-msg').appendChild(el('a', { class: 'pgx-link', href: '/plugins/catalog/' + enc(r.pluginId), text: ' ' + t('plugins.x.to_catalog_item') }));
-      }
+      if (r.valid && !r.installed && catItem(r.pluginId)) $('pgx-lic-msg').appendChild(link(' ' + t('plugins.x.to_catalog_item'), U.item(r.pluginId)));
     } });
-    main.appendChild(card('pgx-key-card', [cardHead(t('plugins.x.key_title'), null, 'pgx-key-h'),
-      el('div', { class: 'pgx-inline' }, [keyIn, go]),
-      el('p', { class: 'pgx-muted pgx-small', text: t('plugins.x.key_d') }), msg], { 'aria-labelledby': 'pgx-key-h' }));
+    main.appendChild(card([h2(t('plugins.x.key_title'), 'pgx-key-h', 'pgx-h2-sm'),
+      el('div', { class: 'pgx-inline' }, [el('label', { class: 'pgx-keyfld pgx-grow' }, [icon(I.key, 18), keyIn]), go]),
+      resultMsg ? msg : el('p', { class: 'pgx-hint', text: t('plugins.x.key_d') }), resultMsg ? null : msg], { 'aria-labelledby': 'pgx-key-h' }, 'pgx-pad pgx-stack-card'));
 
-    const rows = req2.slice().sort((a, b) => Number(a.license.licensed && a.license.state !== 'expiring') - Number(b.license.licensed && b.license.state !== 'expiring') || a.name.localeCompare(b.name));
+    const rows = need.slice().sort((a, b) => Number(a.license.licensed && a.license.state !== 'expiring') - Number(b.license.licensed && b.license.state !== 'expiring') || a.name.localeCompare(b.name));
     const tbl = el('table', { class: 'pgx-table', id: 'pgx-lic-table' }, [
-      el('thead', null, [el('tr', null, [t('plugins.x.col_plugin'), t('plugins.lic.kind'), t('plugins.lic.status'), t('plugins.lic.valid_until'), t('plugins.lic.key')].map((h) => el('th', { scope: 'col', text: h }))
+      el('thead', null, [el('tr', null, [t('plugins.x.col_plugin'), t('plugins.x.col_kind'), t('plugins.lic.status'), t('plugins.lic.key')].map((h) => el('th', { scope: 'col', text: h }))
         .concat([el('th', null, [el('span', { class: 'st-sr', text: t('plugins.x.col_action') })])]))]),
       el('tbody', null, rows.length ? rows.map((p) => {
         const L = p.license;
-        const kind = L.source === 'plan' || L.source === 'lifetime' ? t('plugins.lic.source_' + L.source) : (L.kind === 'first_party' ? t('plugins.x.lic_key_kind') : t('plugins.x.lic_third'));
+        const [kind, sub] = licenseKind(L);
         const warn = !L.licensed || L.state === 'expiring';
+        const stateText = L.state === 'expiring' && L.expiresAt ? t('plugins.x.lic_ends_on', { date: fmtDay(L.expiresAt) }) : t('plugins.lic.state.' + L.state);
         return el('tr', { 'data-plugin': p.id, 'data-tone': warn ? (L.licensed ? 'warn' : 'crit') : null }, [
-          el('td', null, [el('a', { class: 'pgx-tlink', href: '/plugins/manage/' + enc(p.id) + '?tab=license' }, [plugIcon(p.id, p, 'sm'), el('b', { text: p.name })])]),
-          el('td', { text: kind }),
-          el('td', null, [pill(t('plugins.lic.state.' + L.state), P.licenseTone(L.state), true)]),
-          el('td', { text: L.expiresAt ? P.fmtDate(L.expiresAt, lang) : (L.licensed ? t('plugins.lic.unlimited') : '—') }),
-          el('td', { class: 'st-mono pgx-muted', text: L.keyMasked || '—' }),
-          el('td', { class: 'pgx-right' }, [L.state === 'expiring' || L.state === 'expired' ? btn(t('plugins.x.renew'), { href: SHOP_URL, external: true, small: true, primary: true })
-            : btn(t('plugins.x.manage_short'), { href: '/plugins/manage/' + enc(p.id) + '?tab=license', small: true })]),
+          el('td', null, [el('a', { class: 'pgx-tnm', href: U.manage(p.id, 'license') }, [plugIcon(p.id, p, 'sm'), el('b', { text: p.name })])]),
+          el('td', null, [kind, sub ? el('small', { text: sub }) : null]),
+          el('td', null, [pill(stateText, P.licenseTone(L.state), true)]),
+          el('td', { class: 'pgx-mono pgx-muted', text: L.keyMasked || '—' }),
+          el('td', { class: 'pgx-right' }, [L.state === 'expiring' || L.state === 'expired' ? btn(t('plugins.x.renew_short'), { href: SHOP_URL, external: true, small: true, primary: true })
+            : btn(t('plugins.x.manage_short'), { href: U.manage(p.id, 'license'), small: true })]),
         ]);
-      }) : [el('tr', null, [el('td', { colspan: '6', class: 'pgx-muted', text: t('plugins.x.no_licensed') })])]),
+      }) : [el('tr', null, [el('td', { colspan: '5', class: 'pgx-muted', text: t('plugins.x.no_licensed') })])]),
     ]);
-    main.appendChild(card('pgx-table-card', [el('div', { class: 'pgx-table-wrap' }, [tbl])]));
-    main.appendChild(card('pgx-legend', [cardHead(t('plugins.x.legend'), null, 'pgx-legend-h')].concat(['expiring', 'grace', 'offline', 'elsewhere'].map((k) => el('div', { class: 'pgx-legend-row' }, [
-      pill(t('plugins.x.lg.' + k), k === 'offline' ? 'info' : (k === 'elsewhere' ? 'crit' : 'warn')),
-      el('span', null, [el('b', { text: t('plugins.x.lg.' + k + '_t') }), el('span', { class: 'pgx-muted pgx-block', text: t('plugins.x.lg.' + k + '_d') })]),
-    ]))), { 'aria-labelledby': 'pgx-legend-h' }));
+    main.appendChild(card([el('div', { class: 'pgx-table-wrap' }, [tbl])], { 'aria-label': t('plugins.x.lic_table') }, 'pgx-flush'));
+    main.appendChild(card([h2(t('plugins.x.legend'), 'pgx-legend-h', 'pgx-h2-sm')].concat(['expiring', 'grace', 'offline', 'elsewhere'].map((k) => el('div', { class: 'pgx-lg' }, [
+      pill(t('plugins.x.lg.' + k), k === 'offline' ? 'blue' : (k === 'elsewhere' ? 'crit' : 'warn')),
+      el('span', { class: 'pgx-t' }, [el('span', { text: t('plugins.x.lg.' + k + '_t') }), el('small', { text: t('plugins.x.lg.' + k + '_d') })]),
+    ]))), { 'aria-labelledby': 'pgx-legend-h' }, 'pgx-pad'));
   }
 
   // ════════════════════════════════════════════════════════════
@@ -1604,52 +1839,54 @@
 
   function renderSecurity() {
     clear(main);
+    main.appendChild(pageHead(t('plugins.area.security'), t('plugins.x.sec_sub')));
     const fileIn = $('pgx-file');
-    const drop = el('label', { class: 'pg-drop pgx-drop', id: 'pg-drop', for: 'pgx-file' }, [
-      el('span', { class: 'pg-drop-ic', 'aria-hidden': 'true' }, [icon(I.upload, 22)]),
-      el('span', { class: 'pg-drop-text' }, [el('b', { text: t('plugins.drop.title') }), el('span', { class: 'pgx-muted pgx-block', text: t('plugins.drop.hint') })]),
+    const drop = el('div', { class: 'pgx-drop', id: 'pg-drop', tabindex: '0', role: 'button', 'aria-label': t('plugins.drop.title') }, [
+      el('span', { class: 'pgx-drop-ic', 'aria-hidden': 'true' }, [icon(I.upload, 24)]),
+      el('b', { text: t('plugins.x.drop_title') }),
+      el('span', { class: 'pgx-muted' }, [t('plugins.x.drop_or') + ' ', el('span', { class: 'pgx-a', text: t('plugins.x.drop_choose') }), ' · ' + t('plugins.x.drop_max', { size: P.fmtBytes(P.MAX_PACKAGE_BYTES) })]),
     ]);
     ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('is-over'); }));
     ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove('is-over')));
     drop.addEventListener('drop', (e) => { e.preventDefault(); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; stage(f); });
+    drop.addEventListener('click', () => fileIn.click());
     drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileIn.click(); } });
-    drop.setAttribute('tabindex', '0');
     const preview = el('div', { id: 'pgx-staged' });
-    main.appendChild(card('pgx-upload', [cardHead(t('plugins.x.upload_title'), [el('span', { class: 'pgx-muted pgx-small', text: t('plugins.x.upload_d') })], 'pgx-up-h'), drop, preview], { 'aria-labelledby': 'pgx-up-h' }));
+    main.appendChild(card([el('div', { class: 'pgx-sec-h' }, [h2(t('plugins.x.upload_title'), 'pgx-up-h'), el('span', { class: 'pgx-sec-s', text: t('plugins.x.upload_d') })]), drop, preview],
+      { 'aria-labelledby': 'pgx-up-h' }, 'pgx-pad pgx-stack-card'));
     renderStaged(preview);
 
-    const rowOf = (id, label, hint, on, onClick, isNew) => el('div', { class: 'st-row' }, [
-      el('div', { class: 'st-row-text' }, [el('label', { class: 'st-label', for: id }, [label, isNew ? ' ' : null, isNew ? pill(t('plugins.x.new'), 'info') : null]), el('span', { class: 'st-hint', id: id + '-hint', text: hint })]),
-      el('div', { class: 'st-row-ctl' }, [el('button', { type: 'button', class: 'st-switch', role: 'switch', id, 'aria-checked': on ? 'true' : 'false', 'aria-describedby': id + '-hint', on: { click: onClick } }, [el('span', { class: 'st-knob', 'aria-hidden': 'true' })])]),
+    const setRow = (id, label, hint, on, onClick, isNew) => el('div', { class: 'pgx-set', id: id === 'pg-unsigned' ? 'unsigned' : null }, [
+      el('span', { class: 'pgx-t' }, [el('b', null, [el('label', { for: id, text: label }), isNew ? pill(t('plugins.x.new'), 'new', false, { class: 'pgx-pill pgx-pill-xs' }) : null]), el('small', { id: id + '-hint', text: hint })]),
+      el('button', { type: 'button', class: 'pgx-sw', role: 'switch', id, 'aria-checked': on ? 'true' : 'false', 'aria-describedby': id + '-hint', on: { click: onClick } }, [el('span', { 'aria-hidden': 'true' })]),
     ]);
-    main.appendChild(card('pgx-rules', [cardHead(t('plugins.x.rules'), null, 'pgx-rules-h'),
-      rowOf('pg-unsigned', t('plugins.sec.unsigned'), t('plugins.sec.unsigned_hint'), inst.allowUnsigned, toggleUnsigned),
-      el('p', { class: 'pgx-note' + (inst.allowUnsigned ? ' pgx-note-warn' : ''), id: inst.allowUnsigned ? 'pg-unsigned-on' : 'pg-unsigned-off' },
-        inst.allowUnsigned ? [el('b', { text: t('plugins.sec.on_title') + ' ' }), t('plugins.sec.on_text')] : [t('plugins.sec.off_note')]),
-      rowOf('pg-backup-media', t('plugins.sec.backup_media'), t('plugins.sec.backup_media_hint'), inst.backupMedia, async () => {
+    main.appendChild(card([el('div', { class: 'pgx-card-h' }, [h2(t('plugins.x.rules'), 'pgx-rules-h')]),
+      setRow('pg-unsigned', t('plugins.sec.unsigned'), t('plugins.sec.unsigned_hint'), inst.allowUnsigned, toggleUnsigned),
+      inst.allowUnsigned ? el('p', { class: 'pgx-note pgx-note-warn pgx-in-pad', id: 'pg-unsigned-on' }, [el('b', { text: t('plugins.sec.on_title') + ' ' }), t('plugins.sec.on_text')]) : el('span', { id: 'pg-unsigned-off', hidden: true }),
+      setRow('pg-backup-media', t('plugins.sec.backup_media'), t('plugins.sec.backup_media_hint'), inst.backupMedia, async () => {
         const r = await req('PUT', API + '/policy', { backupMedia: !inst.backupMedia });
         if (!r.ok) { toast(r.error, 'error'); return; }
         inst.backupMedia = !!r.backupMedia;
         renderSecurity();
       }),
-      CATALOG_ON ? rowOf('pgx-catalog-check', t('plugins.x.check_title'), t('plugins.x.check_d'), inst.catalogCheck, async () => {
+      CATALOG_ON ? setRow('pgx-catalog-check', t('plugins.x.check_title'), t('plugins.x.check_d'), inst.catalogCheck, async () => {
         const r = await req('PUT', API + '/policy', { catalogCheck: !inst.catalogCheck });
         if (!r.ok) { toast(r.error, 'error'); return; }
         inst.catalogCheck = r.catalogCheck !== false;
         renderSecurity();
       }, true) : null,
-    ], { 'aria-labelledby': 'pgx-rules-h', id: 'pg-security' }));
+    ], { 'aria-labelledby': 'pgx-rules-h', id: 'pg-security' }, 'pgx-flush'));
 
     if (CATALOG_ON) {
-      main.appendChild(card('pgx-source', [cardHead(t('plugins.x.source_title'), [pill(cat.available ? t('plugins.x.reachable') : t('plugins.x.unreachable'), cat.available ? 'good' : 'warn', true)], 'pgx-src-h'),
+      main.appendChild(card([el('div', { class: 'pgx-card-r' }, [h2(t('plugins.x.source_title'), 'pgx-src-h'), el('span', { class: 'pgx-push' }, [pill(cat.available ? t('plugins.x.reachable') : t('plugins.x.unreachable'), cat.available ? 'good' : 'warn')])]),
         kv([
-          [t('plugins.x.source'), cat.source && !cat.source.official ? t('plugins.x.source_custom', { host: cat.source.host }) : t('plugins.x.source_official')],
+          [t('plugins.x.source'), cat.source && !cat.source.official ? t('plugins.x.source_custom', { host: cat.source.host }) : t('plugins.x.source_official_long')],
           [t('plugins.x.address'), cat.source ? cat.source.host : '', true],
           [t('plugins.x.verification'), t('plugins.x.verification_v')],
-          [t('plugins.x.last_check'), cat.fetchedAt ? fmtDateTime(cat.fetchedAt) + ' · ' + t('plugins.x.n_plugins', { n: cat.plugins.length }) : '—'],
+          [t('plugins.x.last_check'), [cat.fetchedAt ? fmtDateTime(cat.fetchedAt) + ' · ' + t('plugins.x.n_plugins', { n: cat.plugins.length }) + ' · ' : '',
+            linkBtn(t('plugins.x.check_now'), async (e) => { e.currentTarget.disabled = true; await loadCatalog(true); renderSecurity(); updateNav(); })]],
         ]),
-        btn(t('plugins.x.check_now'), { small: true, icon: I.refresh, onClick: async (e) => { e.currentTarget.disabled = true; await loadCatalog(true); renderSecurity(); updateNav(); } }),
-      ], { 'aria-labelledby': 'pgx-src-h' }));
+      ], { 'aria-labelledby': 'pgx-src-h' }, 'pgx-pad'));
     }
   }
 
@@ -1667,19 +1904,20 @@
     const info = staged.info;
     const pl = info.plugin;
     const unsignedBlocked = (info.checks || []).some((c) => c.key === 'signature' && c.status === 'fail' && (c.code === 'unsigned' || c.code === 'untrusted'));
-    const tone = info.canInstall ? (pl && pl.verified ? 'good' : 'warn') : 'crit';
+    const tone = info.canInstall ? (pl && pl.verified ? 'good' : 'warn') : (unsignedBlocked ? 'warn' : 'crit');
+    const compat = (info.checks || []).find((c) => c.key === 'compatibility') || { params: {} };
     box.appendChild(el('div', { class: 'pgx-staged', 'data-tone': tone }, [
-      el('div', { class: 'pgx-row-note' }, [
-        el('span', { class: 'pgx-ic', 'data-cat': 'other', 'aria-hidden': 'true' }, [icon(I.file, 22)]),
-        el('span', { class: 'pgx-grow' }, [el('b', { class: 'st-mono', text: staged.file.name }),
-          el('span', { class: 'pgx-muted pgx-block st-mono pgx-small', text: [P.fmtBytes(staged.file.size), pl ? pl.name + ' ' + pl.version : '', pl ? t('plugins.x.gc_needs_short', { range: (info.checks.find((c) => c.key === 'compatibility') || { params: {} }).params.required || '' }) : ''].filter(Boolean).join(' · ') })]),
-        pill(pl && pl.verified ? t('plugins.badge.verified') : t('plugins.badge.unverified'), pl && pl.verified ? 'good' : 'warn'),
+      el('div', { class: 'pgx-card-r' }, [
+        el('span', { class: 'pgx-staged-ic', 'aria-hidden': 'true' }, [icon(I.file, 22)]),
+        el('span', { class: 'pgx-t' }, [el('b', { text: staged.file.name }),
+          el('small', { class: 'pgx-mono', text: [P.fmtBytes(staged.file.size), pl ? pl.name + ' ' + pl.version : '', compat.params.required ? t('plugins.x.gc_needs_short', { range: rng(compat.params.required) }) + (compat.status === 'ok' ? ' ✓' : '') : ''].filter(Boolean).join(' · ') })]),
+        el('span', { class: 'pgx-push' }, [pill(pl && pl.verified ? t('plugins.badge.verified') : t('plugins.x.not_signed'), pl && pl.verified ? 'good' : 'warn')]),
       ]),
-      el('p', { class: 'pgx-small', text: unsignedBlocked ? t('plugins.x.unsigned_blocked') : (info.canInstall ? (pl && pl.verified ? t('plugins.x.staged_ok') : t('plugins.x.staged_unsigned')) : t('plugins.in.blocked')) }),
-      el('div', { class: 'pgx-actions' }, [
+      el('p', { text: unsignedBlocked ? t('plugins.x.unsigned_blocked') : (info.canInstall ? (pl && pl.verified ? t('plugins.x.staged_ok') : t('plugins.x.staged_unsigned')) : t('plugins.in.blocked')) }),
+      el('div', { class: 'pgx-acts' }, [
         btn(t('plugins.x.discard'), { small: true, onClick: () => { staged = null; renderStaged(box); } }),
         unsignedBlocked && !inst.allowUnsigned ? btn(t('plugins.x.allow_unsigned'), { small: true, onClick: toggleUnsigned }) : null,
-        btn(t('plugins.x.check_install'), { small: true, primary: true, disabled: !info.canInstall, id: 'pgx-staged-go', onClick: async () => {
+        btn(t('plugins.cat.install'), { small: true, primary: true, disabled: !info.canInstall, id: 'pgx-staged-go', onClick: async () => {
           const r = await installDialog(info, staged.file, null);
           if (r) { staged = null; await loadInstalled(); renderSecurity(); }
         } }),
@@ -1706,6 +1944,29 @@
     renderSecurity();
   }
 
+  // ════════════════════════════════════════════════════════════
+  // Protokoll
+  // ════════════════════════════════════════════════════════════
+  let logFilter = 'all';
+  async function viewLog() {
+    const [, r] = await Promise.all([loadInstalled(), req('GET', API + '/history'), loadCatalog(false)]);
+    renderLog((r && r.history) || []);
+    done();
+  }
+
+  function renderLog(hist) {
+    clear(main);
+    main.appendChild(pageHead(t('plugins.area.log'), t('plugins.x.log_sub')));
+    const kinds = { all: () => true, install: (h) => h.action === 'install', update: (h) => h.action === 'update', uninstall: (h) => h.action === 'uninstall' };
+    const seg = el('div', { class: 'pgx-seg', role: 'group', 'aria-label': t('plugins.x.filter') }, Object.keys(kinds).map((k) => el('button', {
+      type: 'button', 'aria-pressed': String(logFilter === k), on: { click: () => { logFilter = k; renderLog(hist); } },
+    }, [t('plugins.x.log_f_' + k), el('em', { text: String(hist.filter(kinds[k]).length) })])));
+    main.appendChild(el('div', { class: 'pgx-toolbar' }, [seg]));
+    const shown = hist.filter(kinds[logFilter] || kinds.all);
+    main.appendChild(card([el('div', { class: 'pgx-card-h' }, [h2(t('plugins.x.log_title'), 'pgx-logv-h')])]
+      .concat(shown.length ? shown.map(historyRow) : [el('p', { class: 'pgx-empty', text: t('plugins.x.log_empty') })]), { 'aria-labelledby': 'pgx-logv-h' }, 'pgx-flush'));
+  }
+
   // ── Wiring ──
   const fileIn = $('pgx-file');
   fileIn.addEventListener('change', async () => {
@@ -1714,9 +1975,11 @@
     if (!f) return;
     if (VIEW === 'security') { await stage(f); return; }
     const r = await uploadFile(f);
-    if (r) { const p = await installDialog(r.info, r.file, null); if (p) location.href = '/plugins/manage/' + enc(p.id); }
+    if (r) { const p = await installDialog(r.info, r.file, null); if (p) location.href = U.manage(p.id); }
   });
 
-  const VIEWS = { installed: viewInstalled, catalog: viewCatalog, catalogItem: viewCatalogItem, manage: viewManage, updates: viewUpdates, licenses: viewLicenses, security: viewSecurity };
-  (VIEWS[VIEW] || viewInstalled)().catch(() => { showError(t('plugins.err.generic')); main.setAttribute('aria-busy', 'false'); });
+  const VIEWS = new Map([['installed', viewInstalled], ['catalog', viewCatalog], ['catalogItem', viewCatalogItem], ['manage', viewManage], ['updates', viewUpdates],
+    ['licenses', viewLicenses], ['security', viewSecurity], ['log', viewLog]]);
+  const start = VIEWS.get(VIEW) || viewInstalled;
+  start().catch(() => { showError(t('plugins.err.generic')); busy.setAttribute('aria-busy', 'false'); });
 }());
