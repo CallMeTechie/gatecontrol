@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.186.1] — 2026-10-19
+
+### Fixes
+- show updates that wait for a newer GateControl (#334)
+
+---
+
 ## [1.186.0] — 2026-10-19
 
 ### Features
