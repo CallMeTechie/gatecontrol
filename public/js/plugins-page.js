@@ -720,6 +720,8 @@
       return { pill: pill(p.status === 'crashed' ? t('plugins.x.disturbed') : t(s.key), s.tone, true), dot: s.tone === 'warn' ? 'warn' : 'crit', crit: s.tone !== 'warn' };
     }
     if (c && c.state === 'update' && c.latest) return { pill: pill(t('plugins.x.update_to', { version: c.latest.version }), 'blue'), badge: t('plugins.x.update_badge'), mobile: t('plugins.x.update_to_m', { version: c.latest.version }) };
+    // a newer version that needs a newer GateControl: say so instead of showing nothing
+    if (c && c.state === 'installed' && c.requiresNewer) return { pill: pill(t('plugins.x.update_needs_gc', { version: c.requiresNewer.version, range: rng(c.requiresNewer.gatecontrol) }), 'warn'), mobile: t('plugins.x.update_needs_gc_m', { version: c.requiresNewer.version }) };
     if (P.licenseExpiring(p)) {
       const days = P.daysUntil(p.license.expiresAt);
       return { pill: pill(t('plugins.x.lic_days_short', { n: Math.max(0, days || 0) }), 'warn', true), dot: 'warn' };
@@ -1274,6 +1276,11 @@
           await Promise.all([loadInstalled(), loadCatalog(false)]); renderManage(); updateNav();
         }) })]));
     }
+    if (c && c.state === 'installed' && c.requiresNewer) {
+      main.appendChild(el('div', { class: 'pgx-banner', 'data-tone': 'warn', role: 'status', id: 'pgx-update-blocked' }, [icon(I.alert, 18),
+        el('span', { class: 'pgx-grow', text: t('plugins.x.blocked_line', { version: c.requiresNewer.version, range: rng(c.requiresNewer.gatecontrol), installed: inst.serverVersion || '' }) }),
+        linkBtn(t('plugins.x.whats_new'), () => setTab('versions'))]));
+    }
     const banner = problemBanner(p);
     if (banner) main.appendChild(banner);
     const legacySlot = el('div', { id: 'pg-legacy-slot' });
@@ -1761,6 +1768,18 @@
         el('small', { text: t('plugins.x.auto_d') })]), au,
     ], { 'aria-labelledby': 'pgx-auto-h' }, 'pgx-auto-card'));
 
+    // updates that wait for a newer GateControl (the catalogue lists them, the server cannot install them yet)
+    const blocked = (cat.plugins || []).filter((x) => x.state === 'installed' && x.requiresNewer && !ups.some((u) => u.id === x.id));
+    if (blocked.length) {
+      main.appendChild(card([el('div', { class: 'pgx-card-h' }, [h2(t('plugins.x.blocked_title'), 'pgx-blocked-h', 'pgx-h2-sm')]),
+        el('p', { class: 'pgx-muted pgx-small', text: t('plugins.x.blocked_d', { installed: inst.serverVersion || '' }) })]
+        .concat(blocked.map((x) => el('div', { class: 'pgx-hist', 'data-blocked': x.id }, [
+          plugIcon(x.id, installedOf(x.id), 'md'),
+          el('span', { class: 'pgx-t pgx-t-row' }, [el('b', { text: x.name }), ' ', el('span', { class: 'pgx-mono pgx-muted', text: (x.installedVersion || '') + ' → ' + x.requiresNewer.version })]),
+          pill(t('plugins.x.needs_gc', { range: rng(x.requiresNewer.gatecontrol) }), 'warn'),
+          link(t('plugins.x.notes'), U.item(x.id, 'tab=versions'), { class: 'pgx-a pgx-small' }),
+        ]))), { 'aria-labelledby': 'pgx-blocked-h', id: 'pgx-blocked' }, 'pgx-flush'));
+    }
     if (!ups.length) {
       main.appendChild(card([el('span', { class: 'pgx-okbig', 'aria-hidden': 'true' }, [icon(I.check, 22)]),
         el('span', { class: 'pgx-t' }, [el('b', { text: t('plugins.x.all_current') }), el('small', { text: t('plugins.x.all_current_d') })])], null, 'pgx-uptodate'));
