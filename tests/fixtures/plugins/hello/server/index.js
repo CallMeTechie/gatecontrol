@@ -194,6 +194,17 @@ module.exports = {
     }
   },
 
+  // settings form status (GateControl ≥ 1.185.0): a sign-in that takes a moment, like an account would
+  async settingsChanged(values, gc) {
+    await new Promise((r) => setTimeout(r, 50));
+    await gc.storage.set('signedIn', values.token === 'good' ? 'yes' : (values.token ? 'no' : null));
+  },
+  async settingsStatus({ lang }, gc) {
+    const s = await gc.storage.get('signedIn');
+    if (s === 'yes') return [{ group: 'account', tone: 'ok', text: lang === 'en' ? 'Signed in' : 'Angemeldet' }, { tone: 'info', text: 'Hallo\u0007 Welt' }];
+    if (s === 'no') return [{ group: 'account', tone: 'error', text: 'Anmeldung fehlgeschlagen' }, { group: 'nope', tone: 'loud', text: 'x' }];
+    return [];
+  },
   async render(view, gc) {
     const s = await gc.settings.all();
     return { html: `<main><h1 id="hello">${esc(s.greeting)} ${esc(view.user && view.user.name)}</h1><p id="view">${esc(view.view)}:${esc(view.page)}</p><script>window.GC && GC.call('GET', 'ping');</script></main>` };

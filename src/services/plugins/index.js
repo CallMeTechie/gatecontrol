@@ -106,9 +106,12 @@ function analyse(files) {
     try { cmp = semver.compare(manifest.version, existing.version); } catch { cmp = 0; }
     add('existing', cmp < 0 ? 'warn' : 'ok', cmp > 0 ? 'update' : (cmp < 0 ? 'downgrade' : 'reinstall'), { from: existing.version, to: manifest.version });
   }
-  if (!existing && fs.existsSync(dataDir(manifest.id))) add('data', 'ok', 'kept_data');
+  // plugin.json `replaces` (first-party only): this package takes over an installed plugin under a new id
+  const replaced = require('./replace').candidate(manifest, sig.status);
+  if (replaced) add('replaces', 'ok', 'takeover', { name: replaced.name, id: replaced.id, version: replaced.version });
+  if (!existing && !replaced && fs.existsSync(dataDir(manifest.id))) add('data', 'ok', 'kept_data');
 
-  return { manifest, sig, migrations, checks, blockers: checks.filter((c) => c.status === 'fail'), existing };
+  return { manifest, sig, migrations, checks, blockers: checks.filter((c) => c.status === 'fail'), existing, replaced };
 }
 
 function permissionSummary(m, lang) {
@@ -231,7 +234,15 @@ async function install(token, opts = {}) {
   const tmpDir = path.join(pluginsRoot(), m.id, `.tmp-${crypto.randomBytes(6).toString('hex')}`);
 
   if (existing) await runtime.ensureStopped(m.id);
+  // a replaced plugin (plugin.json `replaces`): stop it and move its folders to the new id first
+  const replace = require('./replace');
+  const replaced = a.replaced;
+  let undoMove = null;
   try {
+    if (replaced) {
+      await replace.detach(replaced.id);
+      undoMove = replace.moveFolders(replaced.id, m.id);
+    }
     extract(files, tmpDir);
     fs.mkdirSync(dataDir(m.id), { recursive: true, mode: 0o700 });
     if (a.migrations.length) {
@@ -241,15 +252,20 @@ async function install(token, opts = {}) {
     fs.renameSync(tmpDir, finalDir);
   } catch (e) {
     rmrf(tmpDir);
-    if (existing) await reconcile();
-    throw e instanceof PluginError ? e : new PluginError('install_failed', e.message);
+    if (undoMove) { await storage.close(m.id); undoMove(); }
+    if (existing || replaced) await reconcile();
+    throw e instanceof PluginError ? e : new PluginError(e.code === 'replace_conflict' ? 'replace_conflict' : 'install_failed', e.message);
+  }
+  if (replaced) {
+    replace.moveRecords(replaced.id, m.id);
+    replace.removeOld(replaced.id);
   }
 
   const plugin = registry.upsert({
     manifest: m,
     signature: a.sig.status === 'trusted' ? 'trusted' : (a.sig.status === 'untrusted' ? 'untrusted' : 'none'),
     signerKey: a.sig.publicKey || null,
-    enabled: existing ? existing.enabled : true,
+    enabled: existing ? existing.enabled : (replaced ? replaced.enabled : true),
   });
   if (existing && existing.version !== m.version) rmrf(codeDir(m.id, existing.version));
   staging.delete(token);
@@ -265,6 +281,13 @@ async function install(token, opts = {}) {
   });
   addHistory({ action: existing ? 'update' : 'install', id: m.id, name: plugin.name, from: existing ? existing.version : null, to: m.version,
     by: auto ? 'auto' : 'admin', user: auto ? null : (opts.user || null), source: st.origin || 'upload' });
+  if (replaced) {
+    registry.addLog(m.id, 'info', `took over ${replaced.id} ${replaced.version} (data, settings, assignments)`);
+    activity().log('plugin_replaced', `Plugin "${replaced.name}" ${replaced.version} replaced by "${plugin.name}" ${m.version} (data taken over)`, {
+      source: auto ? 'system' : 'admin', ipAddress: opts.ip, severity: 'info', details: { plugin: m.id, replaced: replaced.id, from: replaced.version, version: m.version },
+    });
+    addHistory({ action: 'replace', id: replaced.id, name: replaced.name, from: replaced.version, to: null, by: auto ? 'auto' : 'admin', user: auto ? null : (opts.user || null), source: m.id, replacedBy: plugin.name });
+  }
   if (!auto) require('./updates').forgetApproval(m.id);
 
   let licenseError = null;
@@ -698,10 +721,36 @@ async function render(id, viewReq) {
   return { html };
 }
 
-async function settingsChanged(id) {
+async function settingsChanged(id, { timeoutMs = TIMEOUTS.request } = {}) {
   const p = registry.get(id);
   if (!p || runtime.info(id).state !== 'running') return;
-  try { await runtime.call(id, 'settingsChanged', await require('./pluginSettings').forPlugin(p), TIMEOUTS.request); } catch { /* plugin may not care */ }
+  try { await runtime.call(id, 'settingsChanged', await require('./pluginSettings').forPlugin(p), timeoutMs); } catch { /* plugin may not care */ }
+}
+
+const STATUS_TONES = new Set(['ok', 'info', 'warn', 'error']);
+const STATUS_MS = 3000;
+
+/**
+ * The plugin's status lines for its settings form (hook settingsStatus, since
+ * 1.185.0): [{ group, tone, text }] — group one of ui.settingsGroups or null
+ * (above the form), at most 10, text ≤ 200 characters, no markup. A plugin
+ * that is not running, has no hook, fails or takes longer than 3 s → [].
+ */
+async function settingsStatus(id, lang) {
+  const p = registry.get(id);
+  if (!p || runtime.info(id).state !== 'running') return [];
+  let out;
+  try { out = await runtime.call(id, 'settingsStatus', { lang: lang === 'en' ? 'en' : 'de' }, STATUS_MS); } catch { return []; }
+  if (!Array.isArray(out)) return [];
+  const groups = new Set(((p.manifest.ui && p.manifest.ui.settingsGroups) || []).map((g) => g.id));
+  const lines = [];
+  for (const x of out.slice(0, 10)) {
+    if (!x || typeof x !== 'object' || typeof x.text !== 'string') continue;
+    const text = x.text.replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, 200);
+    if (!text) continue;
+    lines.push({ group: typeof x.group === 'string' && groups.has(x.group) ? x.group : null, tone: STATUS_TONES.has(x.tone) ? x.tone : 'info', text });
+  }
+  return lines;
 }
 
 // ─── Boot / shutdown ────────────────────────────
@@ -750,7 +799,7 @@ async function stop() {
 
 module.exports = {
   PluginError, inspect, install, evaluate, reconcile, setEnabled, restart, uninstall, setAllowUnsigned, allowUnsigned,
-  setLicenseKey, assignLicenseKey, checkLicense, attentionCount, list, view, get, navEntries, history, addHistory, autoUpdateMode, setAutoUpdate, catalogCheck, setCatalogCheck, portalTabs, portalTabsFor, request, render, settingsChanged, storageBytes,
+  setLicenseKey, assignLicenseKey, checkLicense, attentionCount, list, view, get, navEntries, history, addHistory, autoUpdateMode, setAutoUpdate, catalogCheck, setCatalogCheck, portalTabs, portalTabsFor, request, render, settingsChanged, settingsStatus, storageBytes,
   serverVersion, start, stop, extract, readManifest, removeNotIn,
   _staging: staging,
 };

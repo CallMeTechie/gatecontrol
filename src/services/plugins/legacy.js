@@ -227,7 +227,13 @@ const DATASETS = new Map([
 ]);
 
 function defOf(pluginId) {
-  return typeof pluginId === 'string' && DATASETS.has(pluginId) ? DATASETS.get(pluginId) : null;
+  if (typeof pluginId !== 'string') return null;
+  if (DATASETS.has(pluginId)) return DATASETS.get(pluginId);
+  // a first-party plugin that replaced a listed one (plugin.json `replaces`) imports its dataset
+  let p = null;
+  try { p = registry.get(pluginId); } catch { p = null; }
+  const old = p && p.signature === 'trusted' && Array.isArray(p.manifest.replaces) ? p.manifest.replaces.find((id) => DATASETS.has(id)) : null;
+  return old ? DATASETS.get(old) : null;
 }
 
 // ─── Upgrade notice and former pages ───────────
@@ -241,8 +247,9 @@ function releaseUrl(pluginId) {
 }
 
 /** Is the plugin installed (on or off, any state)? */
+/** Installed — under this id or as the plugin that replaced it. */
 function installed(pluginId) {
-  try { return !!registry.get(pluginId); } catch { return false; }
+  try { return !!registry.resolve(pluginId); } catch { return false; }
 }
 
 // ─── "imported once" marker ────────────────────
@@ -293,7 +300,7 @@ function catalogEnabled() {
  * Fixed paths only, never request data.
  */
 function movedPage(pluginId, sub = '') {
-  if (defOf(pluginId) && installed(pluginId)) return `/plugins/${pluginId}${sub}`;
+  if (defOf(pluginId) && installed(pluginId)) return `/plugins/${registry.resolve(pluginId).id}${sub}`;
   return catalogEnabled() ? `/settings/plugins/catalog/${pluginId}` : '/settings/plugins';
 }
 

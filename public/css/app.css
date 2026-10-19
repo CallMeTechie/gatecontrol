@@ -8400,3 +8400,15 @@ a.up-dev:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 .av-swatch:focus-visible{outline:2px solid var(--text); outline-offset:2px}
 .av-msg{margin:8px 0 0; font-size:12.5px; min-height:1em}
 .av-msg.is-bad{color:var(--crit, #e5484d)}
+
+/* Plugin settings: group headings and the plugin's status lines (settingsGroups / settingsStatus, 1.185.0) */
+.pgx-set-group{margin:18px 0 4px; padding-top:14px; border-top:1px solid var(--pg-line)}
+.pgx-set-gh{margin:0 0 4px; font:700 15px var(--font-body); color:var(--pg-text)}
+.pgx-set-gd{margin:0 0 8px}
+.pgx-set-st{display:flex; flex-direction:column; gap:6px}
+.pgx-set-st:empty{display:none}
+.pgx-set-line{margin:0; display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:10px; font-size:13.5px; font-weight:600; background:var(--pg-blue-bg); color:var(--pg-blue)}
+.pgx-set-line::before{content:""; width:8px; height:8px; border-radius:50%; background:currentColor; flex:none}
+.pgx-set-line[data-tone="good"]{background:var(--pg-good-bg); color:var(--pg-good)}
+.pgx-set-line[data-tone="warn"]{background:var(--pg-warn-bg); color:var(--pg-warn)}
+.pgx-set-line[data-tone="crit"]{background:var(--pg-crit-bg); color:var(--pg-crit)}

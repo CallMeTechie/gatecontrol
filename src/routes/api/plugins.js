@@ -193,10 +193,11 @@ router.get('/:id/settings', async (req, res) => {
   try {
     const l = lang(req);
     const defs = pluginSettings.defsOf(p).map((d) => ({
-      key: d.key, type: d.type, label: loc(d.label, l), help: d.help ? loc(d.help, l) : '', min: d.min ?? null, max: d.max ?? null,
+      key: d.key, type: d.type, label: loc(d.label, l), help: d.help ? loc(d.help, l) : '', min: d.min ?? null, max: d.max ?? null, group: d.group || null,
       options: d.options ? d.options.map((o) => ({ value: o.value, label: loc(o.label, l) })) : null,
     }));
-    res.json({ ok: true, defs, values: defs.length ? await pluginSettings.forUi(p) : {} });
+    const groups = ((p.manifest.ui && p.manifest.ui.settingsGroups) || []).map((g) => ({ id: g.id, label: loc(g.label, l), help: g.help ? loc(g.help, l) : '' }));
+    res.json({ ok: true, defs, groups, values: defs.length ? await pluginSettings.forUi(p) : {}, status: await plugins.settingsStatus(p.id, l) });
   } catch (e) { fail(req, res, e); }
 });
 
@@ -207,8 +208,9 @@ router.put('/:id/settings', async (req, res) => {
     const r = await pluginSettings.save(p, req.body && req.body.values);
     if (!r.ok) return res.status(400).json({ ok: false, code: 'invalid', error: tr(req, 'plugins.err.invalid', 'Invalid request'), fields: r.fields });
     require('../../services/plugins/registry').addLog(p.id, 'info', 'settings changed by an administrator');
-    plugins.settingsChanged(p.id).catch(() => {});
-    res.json({ ok: true, values: await pluginSettings.forUi(p) });
+    // wait (up to 20 s) so the status lines show the outcome — e.g. the sign-in to an account
+    await plugins.settingsChanged(p.id, { timeoutMs: 20000 }).catch(() => {});
+    res.json({ ok: true, values: await pluginSettings.forUi(p), status: await plugins.settingsStatus(p.id, lang(req)) });
   } catch (e) { fail(req, res, e); }
 });
 

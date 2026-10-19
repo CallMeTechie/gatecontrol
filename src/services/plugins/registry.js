@@ -32,6 +32,18 @@ function get(id) {
   return rowToPlugin(getDb().prepare('SELECT * FROM plugins WHERE id = ?').get(id));
 }
 
+/**
+ * The installed plugin for an id — or, when none is installed under it, the
+ * first-party plugin that replaced it (plugin.json `replaces`, since
+ * 1.185.0): quick action ids, services and callback buttons stored with the
+ * old id keep working. Null when neither exists.
+ */
+function resolve(id) {
+  const p = get(id);
+  if (p) return p;
+  return list().find((q) => q.signature === 'trusted' && Array.isArray(q.manifest.replaces) && q.manifest.replaces.includes(id)) || null;
+}
+
 function upsert({ manifest, signature, signerKey, enabled }) {
   const db = getDb();
   const name = typeof manifest.name === 'string' ? manifest.name : (manifest.name.de || manifest.name.en);
@@ -116,4 +128,5 @@ function countLogs(id, level, sinceMs) {
   } catch { return 0; }
 }
 
-module.exports = { list, get, upsert, setEnabled, setStatusReason, remove, getLicense, setLicense, removeLicense, addLog, logs, countLogs };
+module.exports = {
+  resolve, list, get, upsert, setEnabled, setStatusReason, remove, getLicense, setLicense, removeLicense, addLog, logs, countLogs };

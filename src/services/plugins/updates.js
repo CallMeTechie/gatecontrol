@@ -85,6 +85,28 @@ function available(cat, lang = 'de') {
       notes: catalog.notesBetween(cat, p.id, p.version, s.latest.version),
     });
   }
+  // a catalogue plugin under a new id that replaces an installed one: offered
+  // in place of the old plugin's own updates, installed by hand only
+  for (const q of cat.plugins.values()) {
+    const old = catalog.replacing(q, (id) => registry.get(id));
+    const latest = old && catalog.pick(q, gc);
+    if (!latest) continue;
+    const i = out.findIndex((u) => u.id === old.id);
+    if (i >= 0) out.splice(i, 1);
+    out.push({
+      id: q.id,
+      name: (lang === 'en' ? q.name.en : q.name.de) || q.id,
+      from: old.version,
+      to: latest.version,
+      kind: 'replace',
+      replaces: { id: old.id, name: (old.manifest && loc(old.manifest.name, lang)) || old.name },
+      gatecontrol: latest.gatecontrol,
+      size: latest.size,
+      verified: old.signature === 'trusted',
+      needsApproval: false,
+      notes: catalog.notesBetween(cat, q.id, null, latest.version).slice(0, 1),
+    });
+  }
   return out.sort((a, b) => a.name.localeCompare(b.name, lang));
 }
 
@@ -149,6 +171,7 @@ async function runAutoUpdate(mode) {
   const results = [];
   const approvals = readMap(K_APPROVAL);
   for (const u of available(cat)) {
+    if (u.replaces) continue; // a plugin under a new id: an administrator decides
     const p = registry.get(u.id);
     if (!p || p.signature !== 'trusted') continue;
     if (mode === 'patch' && u.kind !== 'patch') continue;

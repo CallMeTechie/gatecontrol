@@ -214,6 +214,45 @@ matches names the plugin; a key the licence server calls invalid is not kept;
 no answer yet → `license_pending`). `GET /api/v1/plugins` items also carry
 `errors7d`, `uses` / `usedBy` (services between plugins) and `provides`.
 
+### Replacing a plugin (`replaces`)
+
+Since 1.185.0 a plugin can move to a new id — a new name for the same
+plugin, e.g. `gatecontrol-raumklima` for `gatecontrol-midea`:
+
+```json
+{ "id": "gatecontrol-raumklima", "version": "2.0.0", "gatecontrol": ">=1.185.0",
+  "replaces": ["gatecontrol-midea"] }
+```
+
+`replaces` lists up to three other plugin ids. It only acts for a package
+whose signature is trusted (first-party), whose own id is not installed yet,
+while one of the listed ids is installed. Installing it then (the install
+dialog says so, check `replaces`):
+
+1. stops the old plugin and moves its folders `plugin-data/<old>` (database
+   with settings and secrets, `files/`) and `plugin-media/<old>` to the new
+   id. The database keeps its `_gc_migrations`: **the new plugin continues
+   the old migration numbering** (`001_…`, `002_…` are not run again);
+2. installs the new code and runs its migrations;
+3. moves everything stored under the old id: home targets and discovery
+   grant, licence key, kiosk users, the built-in import record, media rows
+   and the media quota, notification rules, subscriptions and muted topics
+   (`plugin:<old>:…` → `plugin:<new>:…`), and the apps' saved layouts (tiles,
+   widgets, shortcuts naming the old id as a whole word);
+4. removes the old code, registry row and log, and keeps the enabled state.
+
+If anything fails before step 3 the folders move back and the old plugin is
+as it was (`replace_conflict` when data already exists under the new id).
+Ids stored elsewhere — quick action ids in other plugins' rules, service
+calls (`plugin: '<old>'`), callback buttons of earlier pushes — resolve to the
+new plugin; first-party licence entitlements of the old slug count for the
+new plugin, so no new licence is needed.
+
+In the catalogue the old entry is no longer listed; with the old plugin
+installed the new one appears as its update (state `update`, `replaces:
+{ id, name, version }`; on the Updates page kind `replace`). Automatic updates
+never install it — an administrator does, once.
+
 ## Signature
 
 `signature` is JSON `{ "v": 1, "alg": "Ed25519", "publicKey": "<base64 raw 32>", "sig": "<base64>" }`,
@@ -277,9 +316,12 @@ unsigned build of the same id.
   "ui": {
     "nav": { "label": { "de": "Smart Home", "en": "Smart Home" }, "icon": "<svg path d>" },
     "pages": [{ "id": "main", "title": { "de": "Smart Home", "en": "Smart Home" } }],
+    "settingsGroups": [
+      { "id": "account", "label": { "de": "Konto", "en": "Account" }, "help": { "de": "Zugang zum Dienst", "en": "Access to the service" } }
+    ],
     "settings": [
       { "key": "interval", "type": "number", "label": "Abfrageintervall", "min": 10, "max": 3600, "default": 30 },
-      { "key": "token", "type": "secret", "label": "API-Schlüssel" }
+      { "key": "token", "type": "secret", "label": "API-Schlüssel", "group": "account" }
     ],
     "portal": {
       "label": { "de": "Klima", "en": "Climate" }, "icon": "<svg path d>",
@@ -472,7 +514,10 @@ module.exports = {
     return { html: '<h1>…</h1>' };
   },
   async tick(gc) {},                        // background run (permissions.background, every 5…86400 s)
-  async settingsChanged(values, gc) {},
+  async settingsChanged(values, gc) {},     // after an administrator saved the settings (saving waits ≤ 20 s for it)
+  async settingsStatus({ lang }, gc) {      // optional (since 1.185.0): status lines of the settings form
+    return [{ group: 'account', tone: 'ok', text: 'Verbunden als ada@example.com' }];
+  },
   async portalVisible({ user, lang, section }, gc) {  // optional: false hides the portal tab/section for this viewer
     return true;                            // (no hook, an error or no answer within 1.5 s → shown)
   },
@@ -1089,6 +1134,10 @@ disable/uninstall and when the server shuts down.
   that frame and only calls that plugin's API base with the user's session and
   CSRF token). Chosen over a declarative JSON UI because it is general enough
   for the existing Smart Home / Klimaanlage / Fahrzeuge pages.
+  `window.GC.navigate(pageId)` opens another of the plugin's pages and (since
+  1.185.0) `window.GC.openSettings()` its settings tab (Einstellungen ›
+  Plugins › the plugin › Einstellungen) — both on admin pages only, never
+  from the portal.
 * **Page title**: GateControl shows a page's title once, in its header (the
   topbar: the plugin's `ui.nav.label`, else its name) — the page's only
   `<h1>`. The host adds no heading of its own above the frame; above it there
@@ -1113,7 +1162,18 @@ disable/uninstall and when the server shuts down.
   new URL). Ring colours for presence: at home = `colorHex`, away = `#E5484D`,
   unknown = a neutral border.
 * **Settings**: declared `ui.settings` are rendered by GateControl
-  (Einstellungen tab) — no plugin HTML in the settings page.
+  (Einstellungen tab) — no plugin HTML in the settings page. Since 1.185.0
+  `ui.settingsGroups` (≤ 10: `id` `[a-z][a-z0-9_-]{0,31}`, `label`, optional
+  `help`) give the form headings, in that order; a setting joins one with
+  `group` (an unknown group is an invalid manifest), settings without a group
+  stand above the first heading. The optional hook `settingsStatus({ lang })`
+  answers status lines `[{ group, tone, text }]` — `tone` `ok` | `info` |
+  `warn` | `error`, `text` ≤ 200 characters (plain text), `group` one of the
+  groups or `null` for above the form, at most 10 lines, within 3 s — shown
+  when the form opens and after saving. Saving waits up to 20 s for
+  `settingsChanged`, so an account the plugin signs in to there shows the
+  outcome right away (e.g. "Verbunden als …" or "Anmeldung fehlgeschlagen").
+  Accounts and other credentials belong here, not on the plugin's own page.
 * **Portal** (`src/services/plugins/portal.js`), for identified viewers only:
   * **own tab**: `ui.portal.label`/`icon` → a tab `plg-<id>` with the plugin's
     frame (`/portal/plugins/<id>/frame`).

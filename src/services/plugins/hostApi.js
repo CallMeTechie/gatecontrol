@@ -747,10 +747,10 @@ function serviceAllowed(plugin, a) {
 /** Is the provider installed, allowed to run, running and declaring the service? Never asks the provider. */
 function serviceProvided(a) {
   let provider = null;
-  try { provider = require('./registry').get(a.plugin); } catch { provider = null; }
+  try { provider = require('./registry').resolve(a.plugin); } catch { provider = null; } // also the plugin that replaced it
   const provides = provider && provider.manifest && provider.manifest.services && provider.manifest.services.provides ? provider.manifest.services.provides : {};
   return !!provider && Object.prototype.hasOwnProperty.call(provides, a.service) && !!require('./index').evaluate(provider).run
-    && require('./runtime').info(a.plugin).state === 'running';
+    && require('./runtime').info(provider.id).state === 'running';
 }
 
 /** gc.services.available(plugin, service) → boolean (see above). */
@@ -773,6 +773,7 @@ async function servicesCall(plugin, args) {
   const payload = jsonBounded(a.payload, 'payload');
   const runtime = require('./runtime');
   need(serviceProvided(a), 'ERR_SERVICE_UNAVAILABLE', 'the providing plugin or service is not available');
+  need(require('./registry').resolve(a.plugin).id !== plugin.id, 'ERR_INVALID', 'a plugin cannot call its own services');
   const now = Date.now();
   const w = recent(servicesWindow, plugin.id, now);
   need(w.length < SERVICES_PER_HOUR, 'ERR_RATE_LIMIT', `too many service calls (${SERVICES_PER_HOUR} per hour)`);
@@ -780,7 +781,7 @@ async function servicesCall(plugin, args) {
   let out;
   let error = null;
   try {
-    out = await runtime.call(a.plugin, 'service', { name: a.service, caller: plugin.id, user, payload }, module.exports._serviceTimeoutMs || SERVICE_TIMEOUT_MS);
+    out = await runtime.call(require('./registry').resolve(a.plugin).id, 'service', { name: a.service, caller: plugin.id, user, payload }, module.exports._serviceTimeoutMs || SERVICE_TIMEOUT_MS);
   } catch (e) {
     error = e && e.code === 'ERR_TIMEOUT' ? new HostApiError('ERR_TIMEOUT', 'the service did not answer in time')
       : new HostApiError('ERR_SERVICE_FAILED', String((e && e.message) || 'service failed').slice(0, 200));
@@ -971,7 +972,9 @@ function runTarget(plugin, args, ACTION_ID_RE) {
     actionId = args.id;
   }
   need(typeof target === 'string' && target.length >= 2 && target.length <= 64 && ID_RE.test(target), 'ERR_INVALID', 'invalid plugin id');
-  need(target !== plugin.id, 'ERR_INVALID', 'a plugin cannot use its own quick actions through gc.actions');
+  let resolved = null;
+  try { resolved = require('./registry').resolve(target); } catch { resolved = null; }
+  need(target !== plugin.id && (!resolved || resolved.id !== plugin.id), 'ERR_INVALID', 'a plugin cannot use its own quick actions through gc.actions');
   need(typeof actionId === 'string' && ACTION_ID_RE.test(actionId), 'ERR_INVALID', 'invalid action id');
   return { target, actionId };
 }

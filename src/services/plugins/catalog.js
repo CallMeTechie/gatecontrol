@@ -204,6 +204,8 @@ function entry(e, id, where, hosts) {
   if (e.release_url != null && !releaseUrl) throw bad('release_url');
   // release notes (the CHANGELOG section): optional, informational — a bad value is dropped
   const notes = typeof e.notes === 'string' && e.notes.trim() ? e.notes.trim().slice(0, NOTES_MAX) : null;
+  // plugins this one replaces (plugin.json `replaces`): optional, a bad value is dropped
+  const replaces = Array.isArray(e.replaces) ? [...new Set(e.replaces.filter((r) => validId(r) && r !== id))].slice(0, 3) : [];
   return Object.freeze({
     version: e.version,
     // a semver pre-release ("1.2.0-rc.1") is a pre-release whatever the flag says
@@ -216,6 +218,7 @@ function entry(e, id, where, hosts) {
     releaseUrl: releaseUrl ? releaseUrl.href : null,
     publishedAt: e.published_at || null,
     notes,
+    replaces: Object.freeze(replaces),
   });
 }
 
@@ -323,6 +326,8 @@ function validate(doc, hosts = allowedHosts()) {
       description: p.description == null ? { de: '', en: '' } : texts(p.description, 2000, `${key}.description`),
       publisher: p.publisher,
       versions: Object.freeze(versions),
+      // what the newest release replaces (an installed one moves over on install)
+      replaces: (versions.find((v) => !v.prerelease) || versions[0]).replaces,
       meta: Object.freeze(meta(p, key)),
     }));
   }
@@ -387,25 +392,50 @@ function versionView(v, gcVersion) {
     licenseRequired: v.licenseRequired, size: v.size, releaseUrl: v.releaseUrl, publishedAt: v.publishedAt, notes: v.notes || null };
 }
 
+/**
+ * The installed plugin a catalogue plugin would replace (it is not installed
+ * itself and lists the installed one under `replaces`), or null.
+ */
+function replacing(p, installedOf) {
+  if (!p.replaces || !p.replaces.length || installedOf(p.id)) return null;
+  for (const id of p.replaces) {
+    const old = installedOf(id);
+    if (old) return old;
+  }
+  return null;
+}
+
+/** Ids a listed catalogue plugin replaces — left out of the list (the new one stands for them). */
+function replacedIds(cat) {
+  const out = new Set();
+  for (const p of cat.plugins.values()) for (const id of p.replaces || []) out.add(id);
+  return out;
+}
+
 function itemView(p, l, installedOf, gcVersion) {
-  const s = stateOf(p, installedOf(p.id), gcVersion);
+  const old = replacing(p, installedOf);
+  const s = stateOf(p, installedOf(p.id) || old, gcVersion);
   return {
     id: p.id,
     name: (l === 'en' ? p.name.en : p.name.de) || p.id,
     description: (l === 'en' ? p.description.en : p.description.de) || '',
     publisher: p.publisher,
     ...metaView(p, l),
-    state: s.state,
+    // taking over an earlier id is offered like an update, whatever the version numbers say
+    state: old && s.latest ? 'update' : s.state,
     installedVersion: s.installedVersion,
     latest: s.latest ? versionView(s.latest, gcVersion) : null,
     requiresNewer: s.blocked,
+    // installed under an earlier id: installing this one takes it over ("update")
+    replaces: old ? { id: old.id, name: old.name || old.id, version: old.version } : null,
   };
 }
 
 function view(cat, lang, installedOf, gcVersion) {
   const l = lang === 'en' ? 'en' : 'de';
   const out = [];
-  for (const p of cat.plugins.values()) out.push(itemView(p, l, installedOf, gcVersion));
+  const replaced = replacedIds(cat);
+  for (const p of cat.plugins.values()) if (!replaced.has(p.id)) out.push(itemView(p, l, installedOf, gcVersion));
   return out.sort((a, b) => a.name.localeCompare(b.name, l));
 }
 
@@ -517,7 +547,7 @@ async function download(id, version, gcVersion, { refresh = false } = {}) {
 
 module.exports = {
   CatalogError, DEFAULT_URL, GITHUB_HOSTS, CACHE_TTL_MS,
-  enabled, catalogUrl, allowedHosts, allowedUrl, validate, pick, stateOf, view, detail, notesBetween, cached, get, fetchedAt, installable, download, fetchAllowed,
+  enabled, catalogUrl, allowedHosts, allowedUrl, validate, pick, stateOf, replacing, view, detail, notesBetween, cached, get, fetchedAt, installable, download, fetchAllowed,
   CATEGORIES, ICONS,
   _setTransport(fn) { transportOverride = fn || null; },
   _setAgent(a) { agent = a || null; },

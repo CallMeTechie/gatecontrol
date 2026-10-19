@@ -10,6 +10,7 @@ const { ID_RE } = require('./constants');
 
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const KEY_RE = /^[a-z][a-z0-9_.-]{0,63}$/;
+const GROUP_RE = /^[a-z][a-z0-9_-]{0,31}$/;
 const FILE_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$/;
 const ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,600}$/;
 const SETTING_TYPES = new Set(['text', 'number', 'boolean', 'select', 'secret']);
@@ -176,6 +177,15 @@ function validate(raw, opts = {}) {
   else m.publisher = raw.publisher.trim();
   m.description = raw.description == null ? { de: '', en: '' } : locText(raw.description, 600);
   if (!m.description) err('description: invalid');
+  // replaces (since 1.185.0): ids of plugins this one takes over (a new id for the same plugin) —
+  // only honoured for first-party (trusted) packages, see replace.js
+  m.replaces = [];
+  if (raw.replaces != null) {
+    if (!Array.isArray(raw.replaces) || raw.replaces.length > 3
+      || !raw.replaces.every((x) => typeof x === 'string' && x.length >= 2 && x.length <= 64 && ID_RE.test(x) && !RESERVED_IDS.has(x) && x !== raw.id)
+      || new Set(raw.replaces).size !== raw.replaces.length) err('replaces: invalid');
+    else m.replaces = raw.replaces.slice();
+  }
   if (typeof raw.gatecontrol !== 'string' || !semver.validRange(raw.gatecontrol)) err('gatecontrol: invalid');
   else m.gatecontrol = raw.gatecontrol.trim();
   if (!isFile(raw.entry) || !/\.(c?js)$/.test(raw.entry)) err('entry: invalid');
@@ -262,7 +272,7 @@ function validate(raw, opts = {}) {
 
   // ui
   const u = raw.ui == null ? {} : raw.ui;
-  const ui = { nav: null, pages: [], settings: [], portal: null, app: null, maps: false, geolocation: false, inbox: false };
+  const ui = { nav: null, pages: [], settings: [], settingsGroups: [], portal: null, app: null, maps: false, geolocation: false, inbox: false };
   if (!u || typeof u !== 'object' || Array.isArray(u)) err('ui: invalid');
   else {
     if (u.nav != null) {
@@ -283,6 +293,18 @@ function validate(raw, opts = {}) {
       }
     }
     if (ui.nav && !ui.pages.length) err('ui.nav: needs ui.pages');
+    // ui.settingsGroups (since 1.185.0): headings of the settings form, in this order
+    if (u.settingsGroups != null) {
+      if (!Array.isArray(u.settingsGroups) || u.settingsGroups.length > 10) err('ui.settingsGroups: invalid');
+      else {
+        for (const g of u.settingsGroups) {
+          const label = locText(g && g.label, 60);
+          if (!g || typeof g.id !== 'string' || !GROUP_RE.test(g.id) || !label) { err('ui.settingsGroups: invalid'); break; }
+          if (ui.settingsGroups.some((x) => x.id === g.id)) { err('ui.settingsGroups: duplicate'); break; }
+          ui.settingsGroups.push({ id: g.id, label, help: g.help == null ? null : locText(g.help, 300) });
+        }
+      }
+    }
     if (u.settings != null) {
       if (!Array.isArray(u.settings) || u.settings.length > 50) err('ui.settings: invalid');
       else {
@@ -291,6 +313,10 @@ function validate(raw, opts = {}) {
           if (!s || typeof s.key !== 'string' || !KEY_RE.test(s.key) || !SETTING_TYPES.has(s.type) || !label) { err('ui.settings: invalid'); break; }
           if (ui.settings.some((x) => x.key === s.key)) { err('ui.settings: duplicate'); break; }
           const def = { key: s.key, type: s.type, label, help: s.help == null ? null : locText(s.help, 300) };
+          if (s.group != null) {
+            if (!ui.settingsGroups.some((g) => g.id === s.group)) { err('ui.settings: unknown group'); break; }
+            def.group = s.group;
+          }
           if (s.type === 'select') {
             if (!Array.isArray(s.options) || !s.options.length || s.options.length > 50) { err('ui.settings: invalid'); break; }
             def.options = [];

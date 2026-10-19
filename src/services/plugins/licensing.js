@@ -88,7 +88,9 @@ const COVERED = new Map([['covered_by_plan', 'plan'], ['covered_by_lifetime', 'l
 
 function firstPartyStatus(plugin, now) {
   const license = require('../license');
-  const all = license.getPluginEntitlements().filter((e) => e.slug === plugin.id);
+  // a plugin that replaced others (plugin.json `replaces`) keeps their entitlements (the licence server knows the old slug)
+  const slugs = new Set([plugin.id, ...(Array.isArray(plugin.manifest && plugin.manifest.replaces) ? plugin.manifest.replaces : [])]);
+  const all = license.getPluginEntitlements().filter((e) => slugs.has(e.slug));
   // a redundant key ("covered_by_…") never decides the state — the entry that covers it does
   const isCovered = (e) => !e.valid && COVERED.has(String(e.error || ''));
   const covered = all.find(isCovered);

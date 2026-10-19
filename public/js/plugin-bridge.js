@@ -245,6 +245,9 @@
         setInbox(false);
         sendTheme();
       }
+      else if (m.type === 'gc-settings') {
+        if (pluginId && !base.includes('/portal/')) window.location.assign('/settings/plugins/manage/' + encodeURIComponent(pluginId) + '?tab=settings');
+      }
       else if (m.type === 'gc-nav') {
         const target = pages.find((p) => p === m.page);
         if (target && pluginId && !base.includes('/portal/')) window.location.assign('/plugins/' + encodeURIComponent(pluginId) + '/' + encodeURIComponent(target));
