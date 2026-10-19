@@ -35,7 +35,8 @@
   const VIEW = root.getAttribute('data-view') || 'installed';
   const TARGET = root.getAttribute('data-target') || '';
   const CATALOG_ON = root.getAttribute('data-catalog') === '1';
-  const B = root.getAttribute('data-base') || '/settings/plugins';
+  // the area's address (src/routes/plugins.js AREA_BASE) — fixed, never read from the page
+  const B = '/settings/plugins';
   const SHOP_URL = 'https://callmetechie.de/products/gatecontrol/pricing';
   const enc = encodeURIComponent;
   const U = {
