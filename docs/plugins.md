@@ -1149,6 +1149,21 @@ disable/uninstall and when the server shuts down.
   1.185.0) `window.GC.openSettings()` its settings tab (Einstellungen ›
   Plugins › the plugin › Einstellungen) — both on admin pages only, never
   from the portal.
+* **Downloads** (since 1.186.0): `await GC.saveFile(blob, 'Fahrtenbuch
+  2026-10.csv')` hands a `Blob` the frame built (e.g. from an answer of
+  `GC.call`) to the parent page, which offers it as a download from its own
+  document — any plugin, admin page and portal alike, no `media` needed (the
+  frame's sandbox stays without `allow-downloads`). The page takes only these
+  types (the Blob's `type`, parameters such as `;charset=utf-8` ignored):
+  `text/csv`, `application/pdf`, `text/plain`, `application/json`,
+  `image/png`, `image/jpeg`, `text/calendar`; 1 byte … 20 MB; one download per
+  1.5 s and frame. The name keeps letters (umlauts too), digits, space and
+  `. _ ( ) -` (anything else → `_`, a path is cut off, ≤ 100 characters) and
+  always ends in the type's extension (`.csv`, `.pdf`, `.txt`, `.json`,
+  `.png`, `.jpg`, `.ics`). → `{ ok: true, name }`; a refusal rejects with
+  `status` 400 (type, size) or 429 (too fast). A plugin answer is JSON of at
+  most 1 MB — return a file as text or base64 and build the Blob in the frame
+  (`new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type })`).
 * **Page title**: GateControl shows a page's title once, in its header (the
   topbar: the plugin's `ui.nav.label`, else its name) — the page's only
   `<h1>`. The host adds no heading of its own above the frame; above it there

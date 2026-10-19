@@ -7,6 +7,11 @@
 // that plugin's API base are called, with this page's session and CSRF token.
 // Used by the admin plugin page (plugin.njk) and the portal (portal.njk).
 //
+// Downloads (GC.saveFile, since 1.186.0): the frame posts a Blob and a name,
+// this page checks type (csv, pdf, txt, json, png, jpeg, ics) and size
+// (≤ 20 MB, one per 1.5 s), cleans the name and offers the file as a download
+// from its own (not sandboxed) document — any plugin, no `media` needed.
+//
 // Uploads (GC.upload, plugin.json `media`): the frame posts the File/Blob,
 // this page PUTs it raw to the plugin's media endpoint (…/plugins/<id>/media)
 // with the session and CSRF token, reports progress and answers
@@ -28,6 +33,22 @@
 (function () {
   const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
   const MAX_UPLOAD = 100 * 1024 * 1024;
+  // GC.saveFile (since 1.186.0): the types a frame may hand over as a download, with their extension
+  const SAVE_TYPES = {
+    'text/csv': 'csv', 'application/pdf': 'pdf', 'text/plain': 'txt', 'application/json': 'json',
+    'image/png': 'png', 'image/jpeg': 'jpg', 'text/calendar': 'ics',
+  };
+  const MAX_SAVE = 20 * 1024 * 1024;
+  const SAVE_GAP_MS = 1500;
+
+  /** A safe download name: letters, digits, space, . _ ( ) - (umlauts kept), ≤ 100, with the type's extension. */
+  function saveName(raw, ext) {
+    let n = String(raw || '').split(/[\\/]/).pop().normalize('NFC')
+      .replace(/[^\p{L}\p{N} ._()-]+/gu, '_').replace(/^[ .]+|[ .]+$/g, '').slice(0, 100);
+    if (!n) n = 'download';
+    if (!n.toLowerCase().endsWith('.' + ext)) n = n.replace(/\.[A-Za-z0-9]{1,5}$/, '') + '.' + ext;
+    return n;
+  }
   const streams = {}; // plugin id → { es, frames: Set<reply fn> }
 
   function subscribe(pluginId, url, sink) {
@@ -159,6 +180,35 @@
       xhr.send(file);
     }
 
+    // GC.saveFile: a Blob of an allowed type, offered as a download by this page (not sandboxed)
+    let lastSave = 0;
+    function save(m) {
+      const file = m.file;
+      const type = file && typeof file.type === 'string' ? file.type.split(';')[0].trim().toLowerCase() : '';
+      const ext = SAVE_TYPES[type];
+      if (typeof Blob === 'undefined' || !(file instanceof Blob) || !file.size || file.size > MAX_SAVE || !ext) {
+        reply({ type: 'gc-result', id: m.id, ok: false, status: 400, error: 'invalid file' });
+        return;
+      }
+      const now = Date.now();
+      if (now - lastSave < SAVE_GAP_MS) {
+        reply({ type: 'gc-result', id: m.id, ok: false, status: 429, error: 'too many downloads' });
+        return;
+      }
+      lastSave = now;
+      const url = URL.createObjectURL(new Blob([file], { type }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = saveName(m.name, ext);
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      reply({ type: 'gc-result', id: m.id, ok: true, status: 200, data: { ok: true, name: a.download } });
+    }
+
     function sendTheme() { reply({ type: 'gc-theme', theme: theme() }); }
 
     // A dialog open in the frame (gc-modal): dim this page around the frame
@@ -229,6 +279,7 @@
       if (!m || typeof m !== 'object') return;
       if (m.type === 'gc-call' && Number.isInteger(m.id)) call(m);
       else if (m.type === 'gc-upload' && Number.isInteger(m.id)) upload(m);
+      else if (m.type === 'gc-save' && Number.isInteger(m.id)) save(m);
       else if (m.type === 'gc-subscribe') setSubscribed(true);
       else if (m.type === 'gc-unsubscribe') setSubscribed(false);
       else if (m.type === 'gc-inbox-subscribe') setInbox(true);
