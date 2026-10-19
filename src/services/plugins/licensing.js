@@ -195,6 +195,25 @@ async function checkThirdParty(plugin, now = Date.now()) {
   return status(plugin, now);
 }
 
+/**
+ * Does a masked key ("GCP-7HQ2-••••-K2M8") of the licence server belong to
+ * `key`? The visible start and end must match (case-insensitive) and show
+ * at least four letters or digits together; without a mask the keys must be equal.
+ */
+function maskMatches(masked, key) {
+  if (typeof masked !== 'string' || typeof key !== 'string') return false;
+  const m = masked.trim().toUpperCase();
+  const k = key.trim().toUpperCase();
+  if (!m || !k) return false;
+  const bullets = /[•*…·]+|x{3,}/i;
+  const parts = m.split(bullets);
+  if (parts.length === 1) return m === k;
+  const head = parts[0];
+  const tail = parts[parts.length - 1];
+  if ((head + tail).replace(/[^A-Z0-9]/g, '').length < 4) return false;
+  return k.startsWith(head) && k.endsWith(tail) && k.length >= head.length + tail.length;
+}
+
 function validKey(key) {
   return typeof key === 'string' && KEY_RE.test(key.trim());
 }
@@ -255,6 +274,6 @@ function _setTransportForTest(fn) {
 }
 
 module.exports = {
-  status, checkThirdParty, setKey, revalidateIfMissing, serverId, kindOf, mask, validKey, GRACE_MS, LICENSED_STATES, AUTO_REFRESH_GAP_MS,
+  status, checkThirdParty, setKey, revalidateIfMissing, serverId, kindOf, mask, maskMatches, validKey, GRACE_MS, LICENSED_STATES, AUTO_REFRESH_GAP_MS,
   _setTransportForTest, _setRefreshForTest,
 };

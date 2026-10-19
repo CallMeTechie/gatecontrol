@@ -25,6 +25,8 @@ const { LIMITS, TIMEOUTS, pluginsRoot, codeDir, dataDir } = require('./constants
 const logger = require('../../utils/logger');
 
 const K_ALLOW_UNSIGNED = 'plugins.allow_unsigned';
+const K_HISTORY = 'plugins.history';
+const HISTORY_MAX = 100;
 const CONFIRM_WORDS = new Set(['ERLAUBEN', 'ALLOW']);
 const staging = new Map();
 let timers = [];
@@ -253,13 +255,17 @@ async function install(token, opts = {}) {
   staging.delete(token);
 
   const verb = existing ? 'updated' : 'installed';
-  registry.addLog(m.id, 'info', existing ? `updated ${existing.version} → ${m.version}` : `installed v${m.version}`);
+  const auto = opts.by === 'auto';
+  registry.addLog(m.id, 'info', (existing ? `updated ${existing.version} → ${m.version}` : `installed v${m.version}`) + (auto ? ' (automatic update)' : ''));
   activity().log(`plugin_${verb}`, existing
-    ? `Plugin "${plugin.name}" updated from ${existing.version} to ${m.version}`
+    ? `Plugin "${plugin.name}" updated from ${existing.version} to ${m.version}${auto ? ' (automatic update)' : ''}`
     : `Plugin "${plugin.name}" ${m.version} installed`, {
-    source: 'admin', ipAddress: opts.ip, severity: 'info',
-    details: { plugin: m.id, version: m.version, verified: plugin.signature === 'trusted', source: st.origin || 'upload' },
+    source: auto ? 'system' : 'admin', ipAddress: opts.ip, severity: 'info',
+    details: { plugin: m.id, version: m.version, verified: plugin.signature === 'trusted', source: st.origin || 'upload', ...(auto ? { auto: true } : {}) },
   });
+  addHistory({ action: existing ? 'update' : 'install', id: m.id, name: plugin.name, from: existing ? existing.version : null, to: m.version,
+    by: auto ? 'auto' : 'admin', user: auto ? null : (opts.user || null), source: st.origin || 'upload' });
+  if (!auto) require('./updates').forgetApproval(m.id);
 
   let licenseError = null;
   if (opts.licenseKey && m.license.required) {
@@ -347,6 +353,17 @@ async function setEnabled(id, on, { ip } = {}) {
   return registry.get(id);
 }
 
+/** Stop and start a plugin again (e.g. after a crash; resets the restart back-off). */
+async function restart(id, { ip } = {}) {
+  const p = registry.get(id);
+  if (!p) throw new PluginError('not_found', 'plugin not installed');
+  await runtime.ensureStopped(id);
+  registry.addLog(id, 'info', 'restarted by an administrator');
+  activity().log('plugin_restarted', `Plugin "${p.name}" restarted`, { source: 'admin', ipAddress: ip, severity: 'info', details: { plugin: id } });
+  await reconcile();
+  return registry.get(id);
+}
+
 function nameMatches(p, confirm) {
   const c = typeof confirm === 'string' ? confirm.trim() : '';
   const n = p.manifest && p.manifest.name ? p.manifest.name : { de: p.name, en: p.name };
@@ -357,12 +374,15 @@ function nameMatches(p, confirm) {
  * @param {'keep'|'wipe'} mode  keep: data stays for a reinstall; wipe: data, settings and licence are deleted
  * @param {string} confirm      for 'wipe': the plugin's name, typed by the administrator
  */
-async function uninstall(id, { mode, confirm, ip } = {}) {
+async function uninstall(id, opts = {}) {
+  const { mode, confirm, ip } = opts;
   const p = registry.get(id);
   if (!p) throw new PluginError('not_found', 'plugin not installed');
   if (mode !== 'keep' && mode !== 'wipe') throw new PluginError('invalid_mode', 'mode must be keep or wipe');
   if (mode === 'wipe' && !nameMatches(p, confirm)) throw new PluginError('confirm_mismatch', 'type the plugin name to confirm');
   await removeInstalled(p, mode);
+  addHistory({ action: 'uninstall', id, name: p.name, from: p.version, to: null, by: 'admin', user: opts.user || null, mode });
+  require('./updates').forgetApproval(id);
   activity().log('plugin_uninstalled', `Plugin "${p.name}" uninstalled (${mode === 'wipe' ? 'data deleted' : 'data kept'})`, {
     source: 'admin', ipAddress: ip, severity: 'warning', details: { plugin: id, mode },
   });
@@ -426,6 +446,46 @@ async function setLicenseKey(id, key) {
   return st;
 }
 
+/**
+ * Plugins › Lizenzen "Schlüssel eingeben": a first-party plugin key without
+ * naming the plugin. The key joins the plugin keys of the GateControl licence,
+ * the licence is validated, and the licence server's answer says which plugin
+ * it belongs to (entitlement slug, matched by the masked key). A key the
+ * licence server reports as unknown or invalid is not kept.
+ * @returns {Promise<{pluginId, name, installed, valid, error, license}>}
+ */
+async function assignLicenseKey(key, { ip } = {}) {
+  if (!licensing.validKey(key)) throw new PluginError('invalid_key', 'invalid licence key');
+  const k = key.trim();
+  const license = require('../license');
+  const before = license.getPluginKeys();
+  const had = before.includes(k);
+  if (!had) {
+    try { license.setPluginKeys([...before, k]); } catch (e) { throw new PluginError('invalid_key', e.message); }
+  }
+  await Promise.race([
+    Promise.resolve(license.refreshLicenseInBackground()).catch(() => {}),
+    new Promise((r) => { const t = setTimeout(r, 20000); t.unref(); }),
+  ]);
+  const hits = license.getPluginEntitlements().filter((e) => licensing.maskMatches(e.key_masked, k));
+  const ent = hits.find((e) => e.valid) || hits[0] || null;
+  if (!ent) throw new PluginError('license_pending', 'the licence server has not answered for this key yet');
+  if (!ent.valid && !had && /invalid|not_found|unknown/.test(String(ent.error || ''))) {
+    license.setPluginKeys(license.getPluginKeys().filter((x) => x !== k));
+  }
+  const p = registry.get(ent.slug);
+  if (p) {
+    registry.addLog(p.id, 'info', `licence key entered: ${licensing.status(p).state}`);
+    await reconcile();
+  }
+  activity().log('plugin_license_key', `Plugin licence key entered for "${p ? p.name : ent.name || ent.slug}" (${ent.valid ? 'valid' : ent.error || 'invalid'})`, {
+    source: 'admin', ipAddress: ip, severity: 'info', details: { plugin: ent.slug, valid: !!ent.valid, installed: !!p },
+  });
+  const now = p ? registry.get(p.id) : null;
+  return { pluginId: ent.slug, name: p ? p.name : (ent.name || ent.slug), installed: !!p, valid: !!ent.valid, error: ent.valid ? null : (ent.error || 'invalid'),
+    license: now ? licensing.status(now) : null };
+}
+
 async function checkLicense(id) {
   const p = registry.get(id);
   if (!p) throw new PluginError('not_found', 'plugin not installed');
@@ -438,6 +498,58 @@ async function checkLicense(id) {
   registry.addLog(id, 'info', `licence checked: ${st.state}`);
   await reconcile();
   return st;
+}
+
+// ─── History (Plugins › Updates "Zuletzt aktualisiert") ─────────
+// The last HISTORY_MAX installs, updates and uninstalls, newest first:
+// { at, action, id, name, from, to, by: 'admin'|'auto', user, source?, mode? }.
+
+function history() {
+  let list;
+  try { list = JSON.parse(settings().get(K_HISTORY, '[]')); } catch { list = []; }
+  return Array.isArray(list) ? list.filter((e) => e && typeof e === 'object') : [];
+}
+
+function addHistory(entry) {
+  try {
+    const user = typeof entry.user === 'string' ? entry.user.slice(0, 100) : null;
+    const next = [{ at: new Date().toISOString(), ...entry, user }, ...history()].slice(0, HISTORY_MAX);
+    settings().set(K_HISTORY, JSON.stringify(next));
+  } catch (e) { logger.warn({ err: e.message }, 'plugin history not written'); }
+}
+
+// ─── Policy: automatic updates, catalogue checks ────────────
+// plugins.auto_update  off | patch (bug-fix releases only) | all — first-party
+//                      plugins from the official catalogue, nightly, never
+//                      when an update asks for new permissions (updates.js)
+// plugins.catalog_check  1 (default) | 0 — look for updates every 6 hours
+//                      and tell the administrators once per new version
+
+const K_AUTO_UPDATE = 'plugins.auto_update';
+const K_CATALOG_CHECK = 'plugins.catalog_check';
+const AUTO_UPDATE_MODES = new Set(['off', 'patch', 'all']);
+
+function autoUpdateMode() {
+  let v = 'off';
+  try { v = settings().get(K_AUTO_UPDATE, 'off'); } catch { v = 'off'; }
+  return AUTO_UPDATE_MODES.has(v) ? v : 'off';
+}
+
+function catalogCheck() {
+  try { return settings().get(K_CATALOG_CHECK, '1') !== '0'; } catch { return true; }
+}
+
+function setAutoUpdate(mode, { ip } = {}) {
+  if (!AUTO_UPDATE_MODES.has(mode)) throw new PluginError('invalid', 'auto update mode must be off, patch or all');
+  if (mode === autoUpdateMode()) return;
+  settings().set(K_AUTO_UPDATE, mode);
+  activity().log('plugin_auto_update', `Automatic plugin updates: ${mode}`, { source: 'admin', ipAddress: ip, severity: 'info', details: { mode } });
+}
+
+function setCatalogCheck(on, { ip } = {}) {
+  if (on === catalogCheck()) return;
+  settings().set(K_CATALOG_CHECK, on ? '1' : '0');
+  activity().log('plugin_catalog_check', `Regular plugin update checks ${on ? 'on' : 'off'}`, { source: 'admin', ipAddress: ip, severity: 'info', details: { on } });
 }
 
 // ─── Views ──────────────────────────────────────
@@ -484,11 +596,19 @@ function view(p, lang) {
     settingsCount: m.ui && m.ui.settings ? m.ui.settings.length : 0,
     installedAt: p.installedAt,
     updatedAt: p.updatedAt,
+    errors7d: registry.countLogs(p.id, 'error', Date.now() - 7 * 24 * 60 * 60 * 1000),
+    // services: "<provider id>:<service>" used, service names provided (docs/plugins.md "Services")
+    uses: [...new Set((m.permissions && Array.isArray(m.permissions.services) ? m.permissions.services : [])
+      .map((x) => String(x).split(':')[0]).filter((x) => x && x !== p.id))],
+    provides: m.services && m.services.provides ? Object.keys(m.services.provides) : [],
   };
 }
 
+/** Every installed plugin; `usedBy`: the installed plugins that use one of its services. */
 function list(lang) {
-  return registry.list().map((p) => view(p, lang));
+  const out = registry.list().map((p) => view(p, lang));
+  for (const v of out) v.usedBy = out.filter((o) => o.id !== v.id && o.uses.includes(v.id)).map((o) => o.id);
+  return out;
 }
 
 function get(id) { return registry.get(id); }
@@ -511,6 +631,23 @@ function navEntries(lang) {
     const ev = evaluate(p);
     return { id: p.id, label: loc(p.manifest.ui.nav.label, lang), icon: p.manifest.ui.nav.icon, href: '/plugins/' + p.id, on: ev.run };
   }).sort((a, b) => navRank(a.id) - navRank(b.id)); // stable: the rest stays sorted by name
+}
+
+/**
+ * The badge of the sidebar item "Plugins": installed plugins that should run
+ * but do not (crashed, licence, unsigned, incompatible, files missing) plus
+ * the updates of the cached catalogue.
+ */
+function attentionCount() {
+  let n = 0;
+  try {
+    for (const p of registry.list()) {
+      const ev = evaluate(p);
+      if (ev.run ? runtime.info(p.id).state === 'crashed' : ev.reason !== 'disabled') n++;
+    }
+  } catch { /* registry not ready */ }
+  try { n += require('./updates').cachedCount(); } catch { /* no catalogue */ }
+  return n;
 }
 
 /** Portal tabs of running plugins with the portal permission. */
@@ -596,11 +733,14 @@ function start() {
   timers.push(setInterval(hourly, 60 * 60 * 1000));
   setTimeout(() => checkThirdPartyLicences().catch(() => {}), 60 * 1000).unref();
   for (const t of timers) t.unref();
+  // update check every 6 hours, nightly automatic update (updates.js)
+  require('./updates').start();
 }
 
 async function stop() {
   for (const t of timers) clearInterval(t);
   timers = [];
+  require('./updates').stop();
   try { require('./hostApi').flushChatSummary(); } catch { /* best-effort */ }
   require('./events').closeStreams();
   await runtime.stopAll();
@@ -608,8 +748,8 @@ async function stop() {
 }
 
 module.exports = {
-  PluginError, inspect, install, evaluate, reconcile, setEnabled, uninstall, setAllowUnsigned, allowUnsigned,
-  setLicenseKey, checkLicense, list, view, get, navEntries, portalTabs, portalTabsFor, request, render, settingsChanged, storageBytes,
+  PluginError, inspect, install, evaluate, reconcile, setEnabled, restart, uninstall, setAllowUnsigned, allowUnsigned,
+  setLicenseKey, assignLicenseKey, checkLicense, attentionCount, list, view, get, navEntries, history, addHistory, autoUpdateMode, setAutoUpdate, catalogCheck, setCatalogCheck, portalTabs, portalTabsFor, request, render, settingsChanged, storageBytes,
   serverVersion, start, stop, extract, readManifest, removeNotIn,
   _staging: staging,
 };

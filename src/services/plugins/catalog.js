@@ -202,6 +202,8 @@ function entry(e, id, where, hosts) {
   if (e.published_at != null && !str(e.published_at, 40)) throw bad('published_at');
   const releaseUrl = e.release_url == null ? null : allowedUrl(e.release_url, hosts);
   if (e.release_url != null && !releaseUrl) throw bad('release_url');
+  // release notes (the CHANGELOG section): optional, informational — a bad value is dropped
+  const notes = typeof e.notes === 'string' && e.notes.trim() ? e.notes.trim().slice(0, NOTES_MAX) : null;
   return Object.freeze({
     version: e.version,
     // a semver pre-release ("1.2.0-rc.1") is a pre-release whatever the flag says
@@ -213,7 +215,48 @@ function entry(e, id, where, hosts) {
     url: url.href,
     releaseUrl: releaseUrl ? releaseUrl.href : null,
     publishedAt: e.published_at || null,
+    notes,
   });
+}
+
+// ─── Store metadata (catalog-meta.json of the plugins repository) ───────
+// Optional and lenient: an unknown or malformed value is dropped, never the
+// catalogue (older GateControls ignore these fields altogether).
+
+const CATEGORIES = new Set(['family', 'home', 'mobility', 'infrastructure', 'other']);
+const ICONS = new Set(['family', 'chat', 'calendar', 'door', 'bulb', 'snowflake', 'car', 'server', 'nas', 'puzzle']);
+const NOTES_MAX = 8000;
+
+/** { de, en } of at most `max` characters each, or null. */
+function optTexts(v, max) {
+  try {
+    const t = texts(v, max, 'meta');
+    return t.de || t.en ? t : null;
+  } catch { return null; }
+}
+
+function meta(p, key) {
+  const out = {};
+  if (CATEGORIES.has(p.category)) out.category = p.category;
+  if (ICONS.has(p.icon)) out.icon = p.icon;
+  const summary = optTexts(p.summary, 300);
+  if (summary) out.summary = summary;
+  if (p.audience === 'all' || p.audience === 'admins') out.audience = p.audience;
+  if (Array.isArray(p.keywords)) {
+    const kw = p.keywords.filter((k) => typeof k === 'string' && k.length > 0 && k.length <= 40).slice(0, 20).map((k) => k.toLowerCase());
+    if (kw.length) out.keywords = kw;
+  }
+  if (Array.isArray(p.related)) {
+    const rel = p.related.filter((r) => validId(r) && r !== key).slice(0, 6);
+    if (rel.length) out.related = rel;
+  }
+  const h = p.highlight;
+  if (isObj(h) && semver.valid(h.version)) {
+    const title = optTexts(h.title, 120);
+    const text = optTexts(h.text, 400);
+    if (title) out.highlight = { version: h.version, title, text: text || { de: '', en: '' } };
+  }
+  return out;
 }
 
 /**
@@ -245,6 +288,7 @@ function validate(doc, hosts = allowedHosts()) {
       description: p.description == null ? { de: '', en: '' } : texts(p.description, 2000, `${key}.description`),
       publisher: p.publisher,
       versions: Object.freeze(versions),
+      meta: Object.freeze(meta(p, key)),
     }));
   }
   return { generatedAt: str(doc.generated_at, 40) ? doc.generated_at : null, plugins };
@@ -281,24 +325,77 @@ function stateOf(plugin, installedPlugin, gcVersion) {
   return { state, latest, installedVersion: installedPlugin ? installedPlugin.version : null, blocked };
 }
 
+function pickText(t, l) { return t ? ((l === 'en' ? t.en : t.de) || '') : ''; }
+
+/** Store metadata of one catalogue plugin in one language. */
+function metaView(p, l) {
+  const m = p.meta || {};
+  return {
+    category: m.category || 'other',
+    icon: m.icon || null,
+    summary: pickText(m.summary, l),
+    audience: m.audience || 'all',
+    keywords: m.keywords || [],
+    related: m.related || [],
+    highlight: m.highlight ? { version: m.highlight.version, title: pickText(m.highlight.title, l), text: pickText(m.highlight.text, l) } : null,
+  };
+}
+
+function versionView(v, gcVersion) {
+  return { version: v.version, gatecontrol: v.gatecontrol, compatible: semver.satisfies(gcVersion, v.gatecontrol), prerelease: v.prerelease,
+    licenseRequired: v.licenseRequired, size: v.size, releaseUrl: v.releaseUrl, publishedAt: v.publishedAt, notes: v.notes || null };
+}
+
+function itemView(p, l, installedOf, gcVersion) {
+  const s = stateOf(p, installedOf(p.id), gcVersion);
+  return {
+    id: p.id,
+    name: (l === 'en' ? p.name.en : p.name.de) || p.id,
+    description: (l === 'en' ? p.description.en : p.description.de) || '',
+    publisher: p.publisher,
+    ...metaView(p, l),
+    state: s.state,
+    installedVersion: s.installedVersion,
+    latest: s.latest ? versionView(s.latest, gcVersion) : null,
+    requiresNewer: s.blocked,
+  };
+}
+
 function view(cat, lang, installedOf, gcVersion) {
   const l = lang === 'en' ? 'en' : 'de';
   const out = [];
-  for (const p of cat.plugins.values()) {
-    const s = stateOf(p, installedOf(p.id), gcVersion);
-    out.push({
-      id: p.id,
-      name: (l === 'en' ? p.name.en : p.name.de) || p.id,
-      description: (l === 'en' ? p.description.en : p.description.de) || '',
-      publisher: p.publisher,
-      state: s.state,
-      installedVersion: s.installedVersion,
-      latest: s.latest ? { version: s.latest.version, gatecontrol: s.latest.gatecontrol, licenseRequired: s.latest.licenseRequired,
-        size: s.latest.size, releaseUrl: s.latest.releaseUrl, publishedAt: s.latest.publishedAt } : null,
-      requiresNewer: s.blocked,
-    });
-  }
+  for (const p of cat.plugins.values()) out.push(itemView(p, l, installedOf, gcVersion));
   return out.sort((a, b) => a.name.localeCompare(b.name, l));
+}
+
+/**
+ * One catalogue plugin with its version history (newest first, at most
+ * `max`, pre-releases left out) — the "Versionen" tab and the update notes.
+ * null when the catalogue does not list it.
+ */
+function detail(cat, id, lang, installedOf, gcVersion, max = 20) {
+  const p = validId(id) ? cat.plugins.get(id) : null;
+  if (!p) return null;
+  const l = lang === 'en' ? 'en' : 'de';
+  return { ...itemView(p, l, installedOf, gcVersion),
+    versions: p.versions.filter((v) => !v.prerelease).slice(0, max).map((v) => versionView(v, gcVersion)) };
+}
+
+/**
+ * Release notes of the versions after `from` up to and including `to`
+ * (newest first) — what an update brings. [] when not in the catalogue.
+ */
+function notesBetween(cat, id, from, to) {
+  const p = validId(id) ? cat.plugins.get(id) : null;
+  if (!p || !semver.valid(to)) return [];
+  return p.versions.filter((v) => !v.prerelease && semver.compare(v.version, to) <= 0
+    && (!semver.valid(from) || semver.compare(v.version, from) > 0))
+    .map((v) => ({ version: v.version, publishedAt: v.publishedAt, notes: v.notes || null }));
+}
+
+/** The catalogue in the cache — no fetch (null when there is none). */
+function cached() {
+  return cache && cache.cat && Date.now() - cache.at < CACHE_TTL_MS * 24 ? cache.cat : null;
 }
 
 // ─── Fetch + cache ──────────────────────────────
@@ -379,7 +476,8 @@ async function download(id, version, gcVersion, { refresh = false } = {}) {
 
 module.exports = {
   CatalogError, DEFAULT_URL, GITHUB_HOSTS, CACHE_TTL_MS,
-  enabled, catalogUrl, allowedHosts, allowedUrl, validate, pick, stateOf, view, get, fetchedAt, installable, download, fetchAllowed,
+  enabled, catalogUrl, allowedHosts, allowedUrl, validate, pick, stateOf, view, detail, notesBetween, cached, get, fetchedAt, installable, download, fetchAllowed,
+  CATEGORIES, ICONS,
   _setTransport(fn) { transportOverride = fn || null; },
   _setAgent(a) { agent = a || null; },
   _reset() { cache = null; inFlight = null; transportOverride = null; agent = null; },

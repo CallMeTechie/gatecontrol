@@ -418,15 +418,12 @@ describe('catalogue API', () => {
     assert.equal((await agent.get(PAPI + '/hello').expect(200)).body.plugin.version, '1.1.0');
     assert.equal((await agent.get(API).expect(200)).body.plugins[0].state, 'installed');
   });
-  it('Settings → Plugins has the "Offizielle Plugins" card — no raw keys, DOM without innerHTML', async () => {
-    const html = withoutScripts((await agent.get('/settings').expect(200)).text);
-    const s = html.slice(html.indexOf('id="pg-root"'), html.indexOf('id="pg-security"'));
-    assert.match(s, /<section class="st-card pg-cat" id="pg-catalog"/);
-    assert.ok(s.includes('Offizielle Plugins'));
-    assert.ok(s.includes('Katalog nicht erreichbar – Plugins lassen sich weiterhin hochladen.'));
-    assert.match(s, /id="pg-cat-refresh"/);
-    assert.doesNotMatch(s, /\b(plugins|st)\.[a-z_]+\.[a-z_.]+/, 'no raw i18n keys');
-    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'settings-plugins.js'), 'utf8');
+  it('the catalogue has a page of its own in the plugin area — no raw keys, DOM without innerHTML', async () => {
+    const html = withoutScripts((await agent.get('/plugins/catalog').expect(200)).text);
+    assert.match(html, /<div class="pgx" id="pgx" data-view="catalog" data-target="" data-catalog="1">/);
+    assert.match(html, /<a class="pgx-nav-item" href="\/plugins\/catalog" data-tab="catalog" aria-current="page">/);
+    assert.doesNotMatch(html, /\b(plugins|st)\.[a-z_]+\.[a-z_.]+/, 'no raw i18n keys');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'plugins-page.js'), 'utf8');
     assert.doesNotMatch(src, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
     assert.match(src, /\/api\/v1\/plugin-catalog/);
   });
@@ -439,8 +436,9 @@ describe('catalogue API', () => {
       const i = await post({ id: 'hello', version: '1.1.0' }).expect(404);
       assert.equal(i.body.code, 'catalog_disabled');
       assert.deepEqual(fetched, []);
-      const html = withoutScripts((await agent.get('/settings').expect(200)).text);
-      assert.doesNotMatch(html, /id="pg-catalog"/);
+      const html = withoutScripts((await agent.get('/plugins').expect(200)).text);
+      assert.match(html, /data-catalog="0"/);
+      assert.doesNotMatch(html, /data-tab="catalog"/, 'no catalogue tab');
     } finally {
       delete process.env.GC_PLUGIN_CATALOG;
     }

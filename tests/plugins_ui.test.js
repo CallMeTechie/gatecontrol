@@ -33,25 +33,50 @@ function section(html, id) {
   return html.slice(a, html.indexOf('<section class="st-section"', a + 10));
 }
 
-describe('Settings → Plugins', () => {
-  it('renders the section: upload, list, security switch — no raw keys', async () => {
+describe('the plugin area', () => {
+  it('Settings → Plugins points to the plugin area; old links are forwarded', async () => {
     const html = (await agent.get('/settings').expect(200)).text;
     const s = section(withoutScripts(html), 'plugins');
-    assert.match(s, /id="pg-drop"/);
-    assert.match(s, /<input type="file" id="pg-file"[^>]*accept=".gcplugin/);
-    assert.match(s, /id="pg-grid"/);
-    assert.match(s, /role="switch" aria-checked="false" id="pg-unsigned"/);
-    assert.ok(s.includes('Unsignierte Plugins erlauben') || s.includes('Allow unsigned plugins'));
+    assert.match(s, /id="pg-moved-card"/);
+    assert.match(s, /<a class="st-btn st-btn-primary" href="\/plugins" id="pg-to-area">/);
     assert.doesNotMatch(s, /\b(plugins|st)\.[a-z_]+\.[a-z_.]+/, 'no raw i18n keys');
     assert.match(withoutScripts(html), /class="st-nav-item" data-section="plugins"/);
-    assert.match(html, /<script src="\/js\/plugins-ui\.js[^"]*"><\/script>\s*<script src="\/js\/settings-plugins\.js[^"]*"><\/script>\s*<script src="\/js\/settings\.js/);
-    const island = /id="st-i18n" data-prefixes="([^"]+)"/.exec(html)[1].split(' ');
-    assert.ok(island.includes('plugins.'));
+    assert.match(html, /<script src="\/js\/settings-plugins\.js[^"]*"><\/script>\s*<script src="\/js\/settings\.js/);
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'settings-plugins.js'), 'utf8');
+    assert.match(js, /location\.hash === '#plugins'/);
+    assert.match(js, /'\/plugins\/manage\/' \+ encodeURIComponent\(plugin\)/);
+    assert.match(js, /'\/plugins\/catalog\/' \+ encodeURIComponent\(install\)/);
   });
-  it('the settings script builds the DOM without innerHTML', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'settings-plugins.js'), 'utf8')
-      + fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'plugin-bridge.js'), 'utf8');
+  for (const [url, view, tab] of [['/plugins', 'installed', 'installed'], ['/plugins/catalog', 'catalog', 'catalog'], ['/plugins/updates', 'updates', 'updates'],
+    ['/plugins/licenses', 'licenses', 'licenses'], ['/plugins/security', 'security', 'security'], ['/plugins/catalog/gatecontrol-familie', 'catalogItem', 'catalog']]) {
+    it(`${url}: the ${view} view with its tab — no raw keys`, async () => {
+      const html = (await agent.get(url).expect(200)).text;
+      const page = withoutScripts(html);
+      assert.match(page, new RegExp(`<div class="pgx" id="pgx" data-view="${view}"`));
+      assert.match(page, new RegExp(`<a class="pgx-nav-item" href="[^"]+" data-tab="${tab}" aria-current="page">`));
+      assert.match(page, /class="nav-item active" id="nav-plugins"/);
+      assert.doesNotMatch(page, /\b(plugins|nav)\.[a-z_]+\.[a-z_.]+/, 'no raw i18n keys');
+      assert.match(html, /<script src="\/js\/plugins-ui\.js[^"]*"><\/script>\s*<script src="\/js\/plugins-page\.js/);
+      const island = JSON.parse(/<script type="application\/json" id="pgx-i18n"[^>]*>([\s\S]*?)<\/script>/.exec(html)[1]);
+      assert.ok(island['plugins.x.attention'] && island['plugins.lic.state.valid'] && island['common.cancel']);
+    });
+  }
+  it('/plugins/manage/<id> of a plugin that is not installed is a 404; members are sent to their profile', async () => {
+    await agent.get('/plugins/manage/not-installed').expect(404);
+    await agent.get('/plugins/catalog/..%2Fx').expect(404);
+  });
+  it('the page scripts build the DOM without innerHTML', () => {
+    const src = ['settings-plugins.js', 'plugins-page.js', 'plugin-bridge.js'].map((f) => fs.readFileSync(path.join(__dirname, '..', 'public', 'js', f), 'utf8')).join('\n');
     assert.doesNotMatch(src, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
+  });
+  it('every string the page script asks for exists in both languages', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'plugins-page.js'), 'utf8');
+    const keys = new Set([...src.matchAll(/t\('((?:plugins|common|nav)\.[a-z0-9_.]*[a-z0-9])'/g)].map((m) => m[1]));
+    assert.ok(keys.size > 150);
+    for (const l of ['de', 'en']) {
+      const t = require(`../src/i18n/${l}.json`);
+      for (const k of keys) assert.ok(t[k], `${l}: ${k}`);
+    }
   });
   it('the list API carries what the cards need', async () => {
     const r = await agent.post(API + '/inspect').set('X-CSRF-Token', csrf).set('Content-Type', 'application/octet-stream').send(helloPackage()).expect(200);
@@ -67,7 +92,7 @@ describe('Settings → Plugins', () => {
 describe('sidebar, plugin page, frame', () => {
   it('the sidebar lists the plugin under "Integrationen"', async () => {
     const html = withoutScripts((await agent.get('/dashboard').expect(200)).text);
-    assert.match(html, /<div class="nav-section-label">Integrationen<\/div>\s*<a href="\/plugins\/hello" class="nav-item" data-plugin-nav="hello">/);
+    assert.match(html, /<div class="nav-section-label">Integrationen<\/div>\s*<a href="\/plugins" class="nav-item " id="nav-plugins">[\s\S]*?<\/a>\s*<a href="\/plugins\/hello" class="nav-item" data-plugin-nav="hello">/);
     assert.ok(!html.includes('>Plugins</div>'), 'no separate "Plugins" group');
   });
   it('the page embeds the plugin in a sandboxed frame (no allow-same-origin)', async () => {
@@ -102,7 +127,7 @@ describe('sidebar, plugin page, frame', () => {
     assert.match(page, /id="pg-off" data-reason="disabled"/);
     assert.ok(page.includes('Hallo Welt ist derzeit deaktiviert'));
     assert.ok(page.includes('Deine Daten sind gespeichert.'));
-    assert.match(page, /href="\/settings\?plugin=hello#plugins"/);
+    assert.match(page, /href="\/plugins\/manage\/hello"/);
     const fr = await agent.get('/plugins/hello/frame/main').expect(503);
     assert.match(fr.headers['content-security-policy'], /sandbox/);
     await agent.post(API + '/hello/enable').set('X-CSRF-Token', csrf).send({}).expect(200);
@@ -197,5 +222,65 @@ describe('plugins-ui helpers', () => {
     assert.equal(PUI.wipeConfirmed(p, ' Hello World '), true);
     assert.equal(PUI.wipeConfirmed(p, 'hallo welt'), false);
     assert.equal(PUI.fmtBytes(1536), '1.5 KB');
+  });
+});
+
+describe('plugin area helpers (plugins-ui.js)', () => {
+  const ps = [
+    { id: 'a', name: 'Familie', status: 'running', category: 'family' },
+    { id: 'b', name: 'Klimaanlage', status: 'crashed', process: { lastError: 'x' } },
+    { id: 'c', name: 'NAS', status: 'blocked', reason: 'license', license: { required: true, state: 'missing' } },
+    { id: 'd', name: 'Tür', status: 'disabled' },
+    { id: 'e', name: 'Fahrzeuge', status: 'running', license: { required: true, state: 'expiring', expiresAt: '2026-10-28' } },
+  ];
+  it('attention: problems per plugin, expiring licences, one entry for all updates', () => {
+    assert.deepEqual(PUI.attention(ps, [{ id: 'a', state: 'update' }, { id: 'x', state: 'installed' }]), [
+      { kind: 'crashed', id: 'b' }, { kind: 'license', id: 'c' }, { kind: 'expiring', id: 'e' }, { kind: 'updates', ids: ['a'] }]);
+    assert.deepEqual(PUI.attention([], []), []);
+  });
+  it('filterInstalled', () => {
+    assert.deepEqual(PUI.filterInstalled(ps, 'active').map((p) => p.id), ['a', 'e']);
+    assert.deepEqual(PUI.filterInstalled(ps, 'problems').map((p) => p.id), ['b', 'c', 'e']);
+    assert.deepEqual(PUI.filterInstalled(ps, 'off').map((p) => p.id), ['d']);
+    assert.equal(PUI.filterInstalled(ps, 'all').length, 5);
+  });
+  it('matches: words in name, summary and keywords, without accents and case', () => {
+    const it2 = { id: 'gatecontrol-door', name: 'Tür & Kamera', summary: 'Nuki und Ring', keywords: ['klingel'] };
+    assert.equal(PUI.matches(it2, 'tur KLIN'), true);
+    assert.equal(PUI.matches(it2, 'ring'), true);
+    assert.equal(PUI.matches(it2, 'nas'), false);
+    assert.equal(PUI.matches(it2, '  '), true);
+  });
+  it('groupByCategory keeps the display order and leaves empty groups out', () => {
+    const g = PUI.groupByCategory([{ id: 'x', category: 'infrastructure' }, { id: 'y' }, { id: 'z', category: 'family' }], (i) => i);
+    assert.deepEqual(g.map((x) => [x.category, x.items.map((i) => i.id)]), [['family', ['z']], ['infrastructure', ['x']], ['other', ['y']]]);
+  });
+  it('sortCatalog: recommended / recent / name', () => {
+    const items = [
+      { id: 'a', name: 'B', state: 'installed', latest: { publishedAt: '2026-10-01' } },
+      { id: 'b', name: 'A', state: 'not_installed', latest: { publishedAt: '2026-09-01' } },
+      { id: 'c', name: 'C', state: 'update', latest: { publishedAt: '2026-10-10' } },
+    ];
+    assert.deepEqual(PUI.sortCatalog(items, 'recommended').map((x) => x.id), ['b', 'c', 'a']);
+    assert.deepEqual(PUI.sortCatalog(items, 'recent').map((x) => x.id), ['c', 'a', 'b']);
+    assert.deepEqual(PUI.sortCatalog(items, 'name').map((x) => x.id), ['b', 'a', 'c']);
+  });
+  it('updateKind, iconPath, categoryOf', () => {
+    assert.deepEqual([PUI.updateKind('1.4.2', '1.4.3'), PUI.updateKind('1.4.2', '1.5.0'), PUI.updateKind('1.4.2', '2.0.0'), PUI.updateKind('x', '1.0.0')], ['patch', 'minor', 'major', 'major']);
+    assert.equal(PUI.iconPath({ icon: 'car' }, null), PUI.ICON_PATHS.car);
+    assert.equal(PUI.iconPath({ icon: 'unknown' }, { nav: { icon: 'M1 1' } }), 'M1 1');
+    assert.equal(PUI.iconPath(null, null), PUI.ICON_PATHS.puzzle);
+    assert.equal(PUI.categoryOf({ category: 'weapons' }), 'other');
+  });
+  it('noteLines: CHANGELOG markdown as plain lines', () => {
+    assert.deepEqual(PUI.noteLines('Braucht **GC ≥ 1.169**.\n- **Behoben:** a\n  - `dings` [Link](https://x)\n    weiter\n## Kopf\n\n- b'), [
+      { kind: 'p', level: 0, text: 'Braucht GC ≥ 1.169.' }, { kind: 'li', level: 0, text: 'Behoben: a' },
+      { kind: 'li', level: 1, text: 'dings Link weiter' }, { kind: 'li', level: 0, text: 'b' }]);
+    assert.equal(PUI.noteLines('- a\n- b\n- c', 2).length, 2);
+  });
+  it('sensitivePerms', () => {
+    assert.deepEqual(PUI.sensitivePerms({ network: { internet: [], homeTargets: [{}] }, actions: true, criticalTopics: ['x'] }),
+      ['plugins.perm.lan', 'plugins.perm.actions', 'plugins.perm.notify_critical']);
+    assert.deepEqual(PUI.sensitivePerms(null), []);
   });
 });

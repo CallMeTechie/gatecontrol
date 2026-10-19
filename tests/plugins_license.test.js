@@ -92,8 +92,8 @@ describe('first-party (signed by the trusted key)', () => {
   });
   it('the plugins UI names the plan source and the redundant key', () => {
     const fs = require('node:fs');
-    const js = fs.readFileSync(require('node:path').join(__dirname, '..', 'public', 'js', 'settings-plugins.js'), 'utf8');
-    assert.match(js, /plugins\.lic\.source_' \+ s/);
+    const js = fs.readFileSync(require('node:path').join(__dirname, '..', 'public', 'js', 'plugins-page.js'), 'utf8');
+    assert.match(js, /plugins\.lic\.source_' \+ L\.source/);
     assert.match(js, /plugins\.lic\.covered_' \+ L\.coveredBy/);
     for (const l of ['de', 'en']) {
       const t = require(`../src/i18n/${l}.json`);

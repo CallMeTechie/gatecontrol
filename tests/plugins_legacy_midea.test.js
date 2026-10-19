@@ -66,13 +66,13 @@ after(async () => {
 });
 
 describe('built-in Klimaanlage data without the plugin', () => {
-  it('the former page leads to Settings → Plugins, the API and portal part are gone, a notice says why', async () => {
-    assert.equal((await agent.get('/midea').expect(302)).headers.location, '/settings#plugins');
+  it('the former page leads to its catalogue page, the API and portal part are gone, a notice says why', async () => {
+    assert.equal((await agent.get('/midea').expect(302)).headers.location, '/plugins/catalog/gatecontrol-midea');
     const api = await agent.get('/api/v1/midea/devices').expect(410);
     assert.deepEqual([api.body.code, api.body.plugin], ['moved_to_plugin', ID]);
     await agent.get('/api/v1/portal/midea').expect(404);
     assert.deepEqual(legacy.pendingMoves().map((m) => [m.pluginId, m.counts]), [[ID, { cloud: 1, devices: 3, owners: 1 }]]);
-    const html = (await agent.get('/settings').expect(200)).text;
+    const html = (await agent.get('/plugins').expect(200)).text;
     assert.match(html, /data-builtin-moved="gatecontrol-midea"/);
     assert.match(html, /Air conditioning is a plugin now/);
     assert.doesNotMatch(html, /href="\/midea"/);

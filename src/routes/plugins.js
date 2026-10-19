@@ -2,6 +2,13 @@
 
 // Plugin pages (docs/plugins.md "Oberfläche").
 //
+//   GET /plugins                      the plugin area (docs/plugins.md "Plugin area"):
+//   GET /plugins/catalog[/:id]          Meine Plugins · Katalog (+ one plugin) ·
+//   GET /plugins/updates                Updates · Lizenzen · Sicherheit & Upload ·
+//   GET /plugins/licenses               one installed plugin (/plugins/manage/:id) —
+//   GET /plugins/security               one aurora page, the views are built by
+//   GET /plugins/manage/:id             public/js/plugins-page.js (admins only;
+//                                       these path segments are reserved plugin ids)
 //   GET /plugins/:id[/:page]          aurora page: header + sandboxed iframe
 //                                     (or "derzeit deaktiviert" for a plugin
 //                                     that is installed but not running)
@@ -172,6 +179,53 @@ function errorFrame(res, status, text, l) {
 }
 
 const REASON_KEYS = new Set(['disabled', 'license', 'unsigned', 'incompatible', 'files_missing', 'broken', 'crashed', 'starting']);
+
+// ─── The plugin area ────────────────────────────
+
+const { stringsWithPrefix } = require('../middleware/i18n');
+const catalog = require('../services/plugins/catalog');
+
+// strings plugins-page.js reads (the island's data-prefixes list the same ones)
+const AREA_I18N_PREFIXES = ['plugins.', 'common.'];
+const AREA_VIEWS = { '': 'installed', catalog: 'catalog', updates: 'updates', licenses: 'licenses', security: 'security' };
+
+function areaPage(req, res, view, extra = {}) {
+  if (!isAdmin(res)) return res.redirect('/profile');
+  const l = lang(req, res);
+  // upgrade notice of a former built-in integration whose plugin is not installed yet
+  let builtinMoved = [];
+  if (view === 'installed') {
+    try { builtinMoved = require('../services/plugins/legacy').pendingMoves(); } catch { builtinMoved = []; }
+  }
+  const titleKey = { installed: 'plugins.area.title', catalog: 'plugins.area.page_catalog', catalogItem: 'plugins.area.page_catalog',
+    updates: 'plugins.area.page_updates', licenses: 'plugins.area.page_licenses', security: 'plugins.area.page_security', manage: 'plugins.area.title' }[view];
+  return res.render(`${res.locals.theme}/pages/plugins.njk`, {
+    title: res.locals.t(titleKey),
+    activeNav: 'plugins',
+    pgView: view,
+    pgTarget: extra.target || '',
+    pgCatalog: catalog.enabled(),
+    builtinMoved,
+    pgI18n: JSON.stringify(stringsWithPrefix(l, AREA_I18N_PREFIXES)).replace(/</g, '\\u003c'),
+  });
+}
+
+for (const [seg, view] of Object.entries(AREA_VIEWS)) {
+  router.get(seg ? `/plugins/${seg}` : '/plugins', pluginPageLimiter, requireAuth, (req, res) => areaPage(req, res, view));
+}
+
+router.get('/plugins/catalog/:id', pluginPageLimiter, requireAuth, (req, res) => {
+  const id = String(req.params.id || '');
+  if (!ID_RE.test(id) || id.length > 64) return res.status(404).render(`${res.locals.theme}/pages/404.njk`, { title: '404' });
+  return areaPage(req, res, 'catalogItem', { target: id });
+});
+
+router.get('/plugins/manage/:id', pluginPageLimiter, requireAuth, (req, res) => {
+  if (!isAdmin(res)) return res.redirect('/profile');
+  const p = findPlugin(req.params.id);
+  if (!p) return res.status(404).render(`${res.locals.theme}/pages/404.njk`, { title: '404' });
+  return areaPage(req, res, 'manage', { target: p.id });
+});
 
 router.get('/plugins/:id/frame/:page', pluginPageLimiter, requireAuth, async (req, res) => {
   const l = lang(req, res);

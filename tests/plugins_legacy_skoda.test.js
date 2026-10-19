@@ -69,7 +69,7 @@ after(async () => {
 
 describe('built-in Fahrzeuge data without the plugin', () => {
   it('nothing of the former built-in is left; the upgrade notice links the plugin releases', async () => {
-    assert.equal((await agent.get('/skoda').expect(302)).headers.location, '/settings#plugins');
+    assert.equal((await agent.get('/skoda').expect(302)).headers.location, '/plugins/catalog/gatecontrol-skoda');
     const api = await agent.get('/api/v1/skoda').expect(410);
     assert.deepEqual([api.body.code, api.body.plugin], ['moved_to_plugin', ID]);
     await agent.post('/api/v1/skoda/vehicles/7/command').set('X-CSRF-Token', csrf).send({ action: 'lock' }).expect(410);
@@ -81,7 +81,7 @@ describe('built-in Fahrzeuge data without the plugin', () => {
     const html = (await agent.get('/dashboard').expect(200)).text;
     assert.match(html, /data-builtin-moved="gatecontrol-skoda"/);
     assert.match(html, /Vehicles is a plugin now/);
-    assert.match(html, /href="\/settings\?install=gatecontrol-skoda#plugins"/);
+    assert.match(html, /href="\/plugins\/catalog\/gatecontrol-skoda"/);
     assert.doesNotMatch(html, /href="\/skoda"/);
   });
 });

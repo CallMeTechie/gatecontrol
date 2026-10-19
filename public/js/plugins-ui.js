@@ -1,7 +1,7 @@
 'use strict';
 
-// Pure helpers of Settings → Plugins (no DOM) — public/js/settings-plugins.js
-// uses them in the browser, tests/plugins_ui.test.js in node.
+// Pure helpers of the plugin area (no DOM) — public/js/plugins-page.js uses
+// them in the browser, tests/plugins_ui.test.js in node.
 (function (root, factory) {
   const api = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -190,5 +190,152 @@
     return v === p.name || v === n.de || v === n.en;
   }
 
-  return { MAX_PACKAGE_BYTES, protoText, statusChip, licenseTone, checkSymbol, checkKeys, fmtBytes, fmtDate, mediaTypes, permRows, permDiff, catalogChip, catalogAction, addsOf, wipeConfirmed };
+  // ── Plugin area (Meine Plugins, Katalog, Updates) ──
+
+  // Store categories of catalog-meta.json (catalog.js CATEGORIES), in display order.
+  const CATEGORIES = ['family', 'home', 'mobility', 'infrastructure', 'other'];
+
+  // Icons of catalog-meta.json (catalog.js ICONS): 24×24 stroke paths.
+  const ICON_PATHS = {
+    family: 'M9 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6',
+    chat: 'M4 5h16v11H9l-5 4z',
+    calendar: 'M6 5h12a2.5 2.5 0 0 1 2.5 2.5v10A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5v-10A2.5 2.5 0 0 1 6 5zM3.5 10h17M8 3v4M16 3v4',
+    door: 'M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17M3 21h18M14.5 11.5v1',
+    bulb: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z',
+    snowflake: 'M12 2v20M4.5 6.5l15 11M19.5 6.5l-15 11M9 4l3 2 3-2M9 20l3-2 3 2',
+    car: 'M4 17v-5l2.2-5.2A1.5 1.5 0 0 1 7.6 6h8.8a1.5 1.5 0 0 1 1.4.8L20 12v5zM4 12h16M7.5 17v2.5M16.5 17v2.5',
+    server: 'M5.5 4h13a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM5.5 13h13a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2zM7 7.5h.01M7 16.5h.01',
+    nas: 'M7.5 3h9A2.5 2.5 0 0 1 19 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 18.5v-13A2.5 2.5 0 0 1 7.5 3zM9 7h6M9 10.5h6M12 17h.01',
+    puzzle: 'M14 4h-4v3H7v4h3v3h4v-3h3V7h-3zM5 20h14',
+  };
+
+  function categoryOf(meta) {
+    const c = meta && meta.category;
+    return CATEGORIES.indexOf(c) >= 0 ? c : 'other';
+  }
+
+  /** The icon path of a plugin: catalogue icon name, else its nav icon path, else the default. */
+  function iconPath(meta, installed) {
+    if (meta && ICON_PATHS[meta.icon]) return ICON_PATHS[meta.icon];
+    if (installed && installed.nav && installed.nav.icon) return installed.nav.icon;
+    return ICON_PATHS.puzzle;
+  }
+
+  /** Installed plugin that should run but does not (not just switched off). */
+  function isProblem(p) {
+    return !!p && (p.status === 'crashed' || p.status === 'blocked');
+  }
+
+  function licenseExpiring(p) {
+    return !!(p && p.license && p.license.required && p.license.state === 'expiring');
+  }
+
+  /**
+   * "Braucht deine Aufmerksamkeit": [{ kind, id?, ids? }] — crashed /
+   * license / unsigned / incompatible / broken per plugin, expiring licences,
+   * and one entry for all updates (`updates`: catalogue items with state update).
+   */
+  function attention(plugins, updates) {
+    const out = [];
+    (plugins || []).forEach((p) => {
+      if (p.status === 'crashed') out.push({ kind: 'crashed', id: p.id });
+      else if (p.status === 'blocked') {
+        const r = p.reason;
+        out.push({ kind: r === 'license' || r === 'unsigned' || r === 'incompatible' ? r : 'broken', id: p.id });
+      } else if (licenseExpiring(p)) out.push({ kind: 'expiring', id: p.id });
+    });
+    const ups = (updates || []).filter((u) => u && u.state === 'update');
+    if (ups.length) out.push({ kind: 'updates', ids: ups.map((u) => u.id) });
+    return out;
+  }
+
+  function norm(s) {
+    return String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  /** Does a plugin/catalogue item match the search text (name, id, summary, description, keywords)? */
+  function matches(item, q) {
+    const words = norm(q).split(/\s+/).filter(Boolean);
+    if (!words.length) return true;
+    const hay = norm([item.name, item.id, item.summary, item.description, item.publisher].concat(item.keywords || []).join(' '));
+    return words.every((w) => hay.indexOf(w) >= 0);
+  }
+
+  /** Installed plugins by filter: all | active | problems | off. */
+  function filterInstalled(plugins, filter) {
+    return (plugins || []).filter((p) => {
+      if (filter === 'active') return p.status === 'running' || p.status === 'starting';
+      if (filter === 'problems') return isProblem(p) || licenseExpiring(p);
+      if (filter === 'off') return p.status === 'disabled';
+      return true;
+    });
+  }
+
+  /** Items grouped by category in display order: [{ category, items }] (empty groups left out). */
+  function groupByCategory(items, metaOf) {
+    const by = {};
+    (items || []).forEach((it) => {
+      const c = categoryOf(metaOf ? metaOf(it) : it);
+      (by[c] = by[c] || []).push(it);
+    });
+    return CATEGORIES.filter((c) => by[c]).map((c) => ({ category: c, items: by[c] }));
+  }
+
+  /** Catalogue order: recommended (not installed first, then updates, then installed) | recent | name. */
+  function sortCatalog(items, sort, lang) {
+    const list = (items || []).slice();
+    const byName = (a, b) => String(a.name).localeCompare(String(b.name), lang === 'en' ? 'en' : 'de');
+    if (sort === 'name') return list.sort(byName);
+    if (sort === 'recent') {
+      const at = (x) => Date.parse((x.latest && x.latest.publishedAt) || '') || 0;
+      return list.sort((a, b) => at(b) - at(a) || byName(a, b));
+    }
+    const rank = { not_installed: 0, update: 1, installed: 2, incompatible: 3 };
+    return list.sort((a, b) => (rank[a.state] ?? 4) - (rank[b.state] ?? 4) || byName(a, b));
+  }
+
+  /** 'major' | 'minor' | 'patch' between two x.y.z versions. */
+  function updateKind(from, to) {
+    const a = /^(\d+)\.(\d+)\.(\d+)/.exec(String(from || ''));
+    const b = /^(\d+)\.(\d+)\.(\d+)/.exec(String(to || ''));
+    if (!a || !b) return 'major';
+    if (a[1] !== b[1]) return 'major';
+    if (a[2] !== b[2]) return 'minor';
+    return 'patch';
+  }
+
+  /**
+   * CHANGELOG markdown → lines to render as text: [{ kind: 'p'|'li', level, text }].
+   * Headings and empty lines are dropped, **bold** and `code` lose their markers.
+   */
+  function noteLines(md, max) {
+    const out = [];
+    const clean = (s) => s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/`([^`]*)`/g, '$1').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').trim();
+    String(md || '').split(/\r?\n/).forEach((raw) => {
+      if (!raw.trim() || /^\s*#/.test(raw)) return;
+      const m = /^(\s*)[-*]\s+(.*)$/.exec(raw);
+      if (m) out.push({ kind: 'li', level: Math.min(2, Math.floor(m[1].length / 2)), text: clean(m[2]) });
+      else if (out.length && out[out.length - 1].kind === 'li' && /^\s{2,}\S/.test(raw)) out[out.length - 1].text += ' ' + clean(raw);
+      else out.push({ kind: 'p', level: 0, text: clean(raw) });
+    });
+    return max ? out.slice(0, max) : out;
+  }
+
+  /** Permission rows the install dialog marks as sensitive: i18n label keys. */
+  function sensitivePerms(perm) {
+    if (!perm) return [];
+    const n = perm.network || {};
+    const out = [];
+    if ((n.homeTargets || []).length || n.discovery) out.push('plugins.perm.lan');
+    if ((n.internet || []).length) out.push('plugins.perm.internet');
+    if (perm.actions) out.push('plugins.perm.actions');
+    if (perm.geolocation) out.push('plugins.perm.geolocation');
+    if (perm.criticalTopics && perm.criticalTopics.length) out.push('plugins.perm.notify_critical');
+    if (perm.users) out.push('plugins.perm.users');
+    if (perm.kiosk) out.push('plugins.perm.kiosk');
+    return out;
+  }
+
+  return { MAX_PACKAGE_BYTES, protoText, statusChip, licenseTone, checkSymbol, checkKeys, fmtBytes, fmtDate, mediaTypes, permRows, permDiff, catalogChip, catalogAction, addsOf, wipeConfirmed,
+    CATEGORIES, ICON_PATHS, categoryOf, iconPath, isProblem, licenseExpiring, attention, matches, filterInstalled, groupByCategory, sortCatalog, updateKind, noteLines, sensitivePerms };
 });

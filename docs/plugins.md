@@ -57,13 +57,21 @@ The first-party repository
 [CallMeTechie/gatecontrol-plugins](https://github.com/CallMeTechie/gatecontrol-plugins)
 publishes `catalog.json` as an asset of its rolling release `catalog`
 (`https://github.com/CallMeTechie/gatecontrol-plugins/releases/download/catalog/catalog.json`,
-format in that repository's README, "Catalogue"). Settings → Plugins →
-**Offizielle Plugins** lists it: name, description, version, licence hint,
-state, *Installieren* / *Aktualisieren*, *Katalog neu laden*. Installed
-plugins with a newer compatible version get **Update verfügbar** on their
-card and *Auf vX aktualisieren* in their detail. When GitHub cannot be
-reached the card says so ("Katalog nicht erreichbar – Plugins lassen sich
-weiterhin hochladen.") — the upload is unaffected.
+format in that repository's README, "Catalogue"). The plugin area shows it
+as a page of its own (**Plugins › Katalog**, see "Plugin area" below): areas,
+search, highlight, cards with *Installieren* / *Aktualisieren*, one page per
+plugin with its release notes. When GitHub cannot be reached the page says so
+("Katalog nicht erreichbar – Plugins lassen sich weiterhin hochladen.") — the
+upload is unaffected.
+
+Store metadata (optional, from `catalog-meta.json` of the plugins repository;
+an unknown or malformed value is dropped, never the catalogue): per plugin
+`category` (`family` | `home` | `mobility` | `infrastructure` | `other`),
+`icon` (`family` `chat` `calendar` `door` `bulb` `snowflake` `car` `server`
+`nas` `puzzle`), `summary` `{de, en}`, `audience` (`all` | `admins`),
+`keywords`, `related` (plugin ids) and `highlight` `{version, title, text}`;
+per version `notes` (its CHANGELOG section, Markdown). Without them a plugin
+is listed under "Weitere" with the default icon.
 
 Code: `src/services/plugins/catalog.js` · API `src/routes/api/pluginCatalog.js`.
 
@@ -130,7 +138,62 @@ API (admin session + CSRF; `pluginApiLimiter`, downloads and `?refresh=1`
 also `uploadLimiter`; an API token gets 403):
 
 * `GET /api/v1/plugin-catalog` → `{ enabled, available, serverVersion, fetchedAt, plugins: [{ id, name, description, publisher, state, installedVersion, latest: { version, gatecontrol, licenseRequired, size, releaseUrl, publishedAt } | null, requiresNewer }] }`
+* `GET /api/v1/plugin-catalog` items also carry `category, icon, summary, audience, keywords, related, highlight` and `latest.notes`; the answer `source: { host, official }`
+* `GET /api/v1/plugin-catalog/updates` → `{ updates: [{ id, name, from, to, kind: patch|minor|major, gatecontrol, size, needsApproval, notes: [{ version, publishedAt, notes }] }], autoUpdate, catalogCheck, history }`
+* `GET /api/v1/plugin-catalog/:id` → one plugin with `versions` (newest first, at most 20, with `notes`)
 * `POST /api/v1/plugin-catalog/install` `{ id, version }` → the answer of `POST /api/v1/plugins/inspect` (`origin: "catalog"`; on an update `existing.permissions` for the diff)
+
+## Plugin area
+
+Plugins have an area of their own in the sidebar group "Integrationen"
+(**Plugins**, badge: plugins stopped by a problem or crashed plus the updates
+of the cached catalogue). One page, `templates/aurora/pages/plugins.njk`, the
+views are built by `public/js/plugins-page.js` (pure helpers in
+`public/js/plugins-ui.js`):
+
+| URL | View |
+|---|---|
+| `/plugins` | Meine Plugins: state tiles, "Braucht deine Aufmerksamkeit" (crashed, licence, unsigned, expiring licence, updates — each with its action), search, filter, list or tiles grouped by area, suggestions; without plugins the first-run page |
+| `/plugins/catalog`, `/plugins/catalog/<id>` | the catalogue; one plugin with description, versions and the install panel |
+| `/plugins/manage/<id>` | one installed plugin: Übersicht, Einstellungen, Berechtigungen, Lizenz, Protokoll, Versionen; restart, switch, update, uninstall |
+| `/plugins/updates` | updates with release notes, *Alle aktualisieren*, automatic updates, history |
+| `/plugins/licenses` | a first-party licence key without naming the plugin; the licences of all plugins |
+| `/plugins/security` | upload with preview, unsigned plugins, media in backups, update checks, catalogue source |
+
+These path segments are reserved: `plugin.json` cannot use `catalog`,
+`updates`, `licenses`, `security` or `manage` as its id. Settings → Plugins
+only points here; old links (`/settings#plugins`, `?plugin=<id>`,
+`?install=<id>`) are forwarded.
+
+Installing or updating (catalogue or uploaded file) is one dialog: **Prüfen**
+(checks, permissions — sensitive ones marked, on an update the difference —,
+licence key, "gleich einrichten") → **Installieren** → done.
+
+## Updates
+
+`src/services/plugins/updates.js`:
+
+* **Update check** (setting `plugins.catalog_check`, default on): every 6
+  hours the catalogue is fetched; a new version is logged once as
+  `plugin_update_available` (notification centre, row "Plugin-Updates").
+* **Automatic updates** (setting `plugins.auto_update`: `off` (default) |
+  `patch` | `all`): once a night between 03:00 and 05:00 server time the
+  updates of signed first-party plugins are installed exactly like a click
+  (download, sha256, `inspect()` with the trusted-signature requirement,
+  `install()`), logged as `plugin_auto_updated`. An update that asks for other
+  permissions is never installed automatically: `plugin_update_needs_approval`
+  once per version, the Updates page marks it.
+* **History** (setting `plugins.history`, the last 100): install, update and
+  uninstall with versions, `by: admin|auto` and the administrator.
+
+API (admin session + CSRF): `PUT /api/v1/plugins/policy` also takes
+`{ autoUpdate }` and `{ catalogCheck }`; `GET /api/v1/plugins/history`;
+`POST /api/v1/plugins/:id/restart`; `POST /api/v1/plugins/license-key`
+`{ key }` (first-party: the key joins the plugin keys of the GateControl
+licence, the licence is validated and the entitlement whose masked key
+matches names the plugin; a key the licence server calls invalid is not kept;
+no answer yet → `license_pending`). `GET /api/v1/plugins` items also carry
+`errors7d`, `uses` / `usedBy` (services between plugins) and `provides`.
 
 ## Signature
 
@@ -153,7 +216,7 @@ Trusted keys: `BUILTIN_PUBLIC_KEYS` in `src/services/plugins/constants.js`
 (the CallMeTechie key of the gatecontrol-plugins release CI) plus
 `GC_PLUGIN_PUBKEYS` (JSON array of base64 raw keys; tests, own builds).
 
-**Unsignierte Plugins erlauben** (Settings → Plugins → Sicherheit, default
+**Unsignierte Plugins erlauben** (Plugins › Sicherheit & Upload, default
 off; switching on needs the typed word `ERLAUBEN`, checked by the server):
 off → unsigned packages are rejected at upload and installed unsigned plugins
 are switched off (data kept). A signed plugin can never be updated by an
@@ -325,7 +388,7 @@ host, which checks it against three target classes:
    pinned to the checked address (no DNS rebinding between check and connect).
 2. **homeTargets** — what the plugin needs in the home network, by id. The
    **administrator** assigns the concrete target after installation
-   (Settings → Plugins → Einstellungen → *Zugriffsziele*): a GateControl route
+   (Plugins › the plugin › Einstellungen → *Zugriffsziele*): a GateControl route
    (HTTP or L4, internal or external), a VPN peer, or an address (host, IP,
    also internal-only domains of the VPN DNS). The plugin only names the id
    (`gc.net.fetchTarget('gateway', '/api/…')`, `gc.net.tcpTarget('ac', { index })`)
@@ -831,7 +894,7 @@ it in its own data. Code: `src/services/plugins/media.js`.
   has root on the server can decrypt them; the encryption protects against
   copies of the data folder.
 * **Quota**: `media.quotaDefault`, changed by the administrator on the
-  plugin's overview (Settings → Plugins → Übersicht → Medien; API `GET/PUT
+  plugin's overview (Plugins › the plugin › Übersicht → Medien; API `GET/PUT
   /api/v1/plugins/<id>/media/settings` `{ quotaBytes }`, `null` = the default;
   activity `plugin_media_quota`). Unclaimed files count.
 * No conversion: the apps scale pictures before the upload (long side 2048
@@ -978,7 +1041,7 @@ disable/uninstall and when the server shuts down.
   (Smart Home, Klimaanlage, Fahrzeuge … are plugins); one that
   is not running stays listed, greyed, tagged *aus*. Its page then explains why
   ("… ist derzeit deaktiviert (Grund). Deine Daten sind gespeichert." with a
-  link to Settings → Plugins for administrators).
+  link to the plugin's page in the plugin area for administrators).
 * **Pages and portal tab**: plugin HTML is untrusted, so it never becomes part
   of a GateControl page. It is served on its own URL (`/plugins/<id>/frame/<page>`,
   `/portal/plugins/<id>/frame`) with `Content-Security-Policy: sandbox
@@ -1830,7 +1893,7 @@ re-encrypts them like every other secret. All plugins together are capped at
 48 MB per backup; data that does not fit is left out and logged.
 
 Plugin **media** (see "Media") are not part of that and not in a backup by
-default: Settings → Plugins → Sicherheit → "Plugin-Medien im Backup" (off by
+default: Plugins › Sicherheit & Upload → "Plugin-Medien im Backup" (off by
 default; API `PUT /api/v1/plugins/policy { backupMedia }`, activity
 `plugin_media_backup`) adds each plugin's claimed files — as stored
 (encrypted), each with its file key as a regular backup secret (encrypted
@@ -1881,10 +1944,10 @@ are in backups (see "Backup") and are brought into the plugin once. Code:
   | `gatecontrol-skoda` | `skoda`: `skoda_accounts`, `skoda_vehicles`, `skoda_vehicle_owners` | — (Škoda cloud only) |
 * **Upgrade notice** (`pendingMoves()`): while a dataset has data
   (`counts()` > 0), its plugin is not installed and the data was **never
-  imported**, the dashboard and Settings → Plugins say that the feature is a
+  imported**, the dashboard and the plugin area say that the feature is a
   plugin now ("Smart Home ist jetzt ein Plugin. Installiere „Smart Home“ …",
   i18n `plugins.moved.*`) and offer it: with the catalogue on, *Jetzt
-  installieren* (Settings → Plugins: starts the catalogue install; the
+  installieren* (the plugin's catalogue page; the
   dashboard links `/settings?install=<id>#plugins`, which focuses that
   button), and always the plugin's releases
   (`https://github.com/CallMeTechie/gatecontrol-plugins/releases?q=<id>`).
@@ -1904,7 +1967,7 @@ are in backups (see "Backup") and are brought into the plugin once. Code:
   or a key in `GC_PLUGIN_PUBKEYS`). For trying an unsigned development build
   the operator can set `GC_PLUGIN_LEGACY_UNSIGNED=1` (the plugin still only
   runs with *Unsignierte Plugins erlauben*).
-* **When**: offered on the plugin's detail page (Settings → Plugins) as soon
+* **When**: offered on the plugin's page in the plugin area as soon
   as the plugin runs and built-in data exists — right after the install,
   too; the administrator confirms; it can be run again while the built-in
   data exists ("Erneut übernehmen" replaces the plugin's data).

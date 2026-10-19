@@ -1,0 +1,55 @@
+{% extends theme + "/layout.njk" %}
+
+{#- The plugin area (docs/plugins.md "Plugin area"): Meine Plugins, the
+    catalogue (one page per plugin too), Updates, Lizenzen, Sicherheit &
+    Upload and one installed plugin (/plugins/manage/<id>). One page for all
+    views: the sub-navigation is static, the view is built by
+    public/js/plugins-page.js from the admin APIs (/api/v1/plugins,
+    /api/v1/plugin-catalog). Styles: the pgx- block in public/css/app.css. -#}
+
+{%- set tabs = [
+  ['installed', '/plugins', 'plugins.area.title', 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z'],
+  ['catalog', '/plugins/catalog', 'plugins.area.catalog', 'M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2'],
+  ['updates', '/plugins/updates', 'plugins.area.updates', 'M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5'],
+  ['licenses', '/plugins/licenses', 'plugins.area.licenses', 'M8 19a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM11 12l9-9M16 7l3 3'],
+  ['security', '/plugins/security', 'plugins.area.security', 'M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z']
+] %}
+{%- set current = 'catalog' if pgView == 'catalogItem' else ('installed' if pgView == 'manage' else pgView) %}
+
+{% block content %}
+<div class="pgx" id="pgx" data-view="{{ pgView }}" data-target="{{ pgTarget }}" data-catalog="{{ '1' if pgCatalog else '0' }}">
+  <nav class="pgx-nav" aria-label="{{ t('plugins.area.nav') }}">
+    {%- for tb in tabs %}
+    {%- if tb[0] != 'catalog' or pgCatalog %}
+    <a class="pgx-nav-item" href="{{ tb[1] }}" data-tab="{{ tb[0] }}"{% if tb[0] == current %} aria-current="page"{% endif %}>
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ tb[3] }}"/></svg>
+      <span>{{ t(tb[2]) }}</span><span class="pgx-nav-count" id="pgx-count-{{ tb[0] }}" hidden></span>
+    </a>
+    {%- endif %}
+    {%- endfor %}
+  </nav>
+
+  {#- Former built-in integrations whose data waits for the plugin
+      (docs/plugins.md "Built-in data import"). -#}
+  {%- for mv in builtinMoved or [] %}
+  <div class="pgx-banner" data-tone="warn" role="note" data-builtin-moved="{{ mv.pluginId }}">
+    <span class="pgx-grow">{{ t('plugins.moved.' + mv.dataset) }}</span>
+    <a href="{{ mv.url }}" class="st-btn st-btn-sm" target="_blank" rel="noopener noreferrer">{{ t('plugins.moved.download') }}</a>
+    {%- if mv.catalog %}<a href="/plugins/catalog/{{ mv.pluginId }}" class="st-btn st-btn-sm st-btn-primary">{{ t('plugins.moved.install_now') }}</a>{% endif %}
+  </div>
+  {%- endfor %}
+  <p class="st-err-block" id="pgx-err" role="alert" hidden></p>
+  <div class="pgx-main" id="pgx-main" aria-busy="true">
+    <p class="pgx-loading" id="pgx-loading">{{ t('plugins.area.loading') }}</p>
+  </div>
+  <input type="file" id="pgx-file" class="st-sr" accept=".gcplugin,application/octet-stream" tabindex="-1" aria-hidden="true">
+</div>
+
+{#- plugins.* and common.* strings (src/routes/plugins.js AREA_I18N_PREFIXES) -#}
+<script type="application/json" id="pgx-i18n" data-prefixes="plugins. common." nonce="{{ cspNonce }}">{{ pgI18n | default('{}') | safe }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/plugins-ui.js?v={{ appVersion }}"></script>
+<script src="/js/plugins-page.js?v={{ appVersion }}"></script>
+{% endblock %}

@@ -4,15 +4,18 @@
 // /api/v1/plugins behind requireAuth + apiLimiter + CSRF + requireAdmin
 // (routes/api/index.js). Session only: an API token cannot install code.
 //
-//   GET    /                       installed plugins + policy (allowUnsigned, backupMedia)
-//   PUT    /policy                 { allowUnsigned, confirm: 'ERLAUBEN' } and/or { backupMedia }
+//   GET    /                       installed plugins + policy (allowUnsigned, backupMedia, autoUpdate, catalogCheck)
+//   PUT    /policy                 { allowUnsigned, confirm: 'ERLAUBEN' } and/or { backupMedia } and/or
+//                                  { autoUpdate: 'off'|'patch'|'all' } and/or { catalogCheck }
+//   GET    /history                the last installs, updates and uninstalls
+//   POST   /license-key            { key } a first-party key without naming the plugin
 //   POST   /inspect                the .gcplugin (application/octet-stream) → checks + token
 //   POST   /install                { token, accept: true, licenseKey? }
 //   GET    /:id                    one plugin (+ storage size)
 //   GET    /:id/logs
 //   GET    /:id/settings           declared settings + values (secrets only as set/unset)
 //   PUT    /:id/settings           { values }
-//   POST   /:id/enable | /:id/disable
+//   POST   /:id/enable | /:id/disable | /:id/restart
 //   POST   /:id/uninstall          { mode: 'keep'|'wipe', confirm: <name> for wipe }
 //   PUT    /:id/license            { key }
 //   GET    /:id/targets            declared home targets, assignments, route/peer choices
@@ -77,9 +80,26 @@ function currentUser(req) {
 
 const media = require('../../services/plugins/media');
 
+function policy() {
+  return { allowUnsigned: plugins.allowUnsigned(), backupMedia: media.backupEnabled(), autoUpdate: plugins.autoUpdateMode(), catalogCheck: plugins.catalogCheck() };
+}
+
 router.get('/', (req, res) => {
   try {
-    res.json({ ok: true, allowUnsigned: plugins.allowUnsigned(), backupMedia: media.backupEnabled(), serverVersion: plugins.serverVersion(), plugins: plugins.list(lang(req)) });
+    res.json({ ok: true, ...policy(), serverVersion: plugins.serverVersion(), plugins: plugins.list(lang(req)) });
+  } catch (e) { fail(req, res, e); }
+});
+
+router.get('/history', (req, res) => {
+  res.json({ ok: true, history: plugins.history() });
+});
+
+router.post('/license-key', async (req, res) => {
+  const key = req.body && req.body.key;
+  if (typeof key !== 'string') return res.status(400).json({ ok: false, code: 'invalid_key', error: tr(req, 'plugins.err.invalid_key', 'Invalid licence key') });
+  try {
+    const r = await plugins.assignLicenseKey(key, { ip: req.ip });
+    res.json({ ok: true, ...r, plugins: plugins.list(lang(req)) });
   } catch (e) { fail(req, res, e); }
 });
 
@@ -87,10 +107,16 @@ router.put('/policy', async (req, res) => {
   const b = req.body || {};
   const on = b.allowUnsigned;
   const bm = b.backupMedia;
-  if ((on !== undefined && typeof on !== 'boolean') || (bm !== undefined && typeof bm !== 'boolean') || (on === undefined && bm === undefined)) {
+  const au = b.autoUpdate;
+  const cc = b.catalogCheck;
+  if ((on !== undefined && typeof on !== 'boolean') || (bm !== undefined && typeof bm !== 'boolean')
+    || (au !== undefined && !['off', 'patch', 'all'].includes(au)) || (cc !== undefined && typeof cc !== 'boolean')
+    || (on === undefined && bm === undefined && au === undefined && cc === undefined)) {
     return res.status(400).json({ ok: false, code: 'invalid', error: tr(req, 'plugins.err.invalid', 'Invalid request') });
   }
   try {
+    if (au !== undefined) plugins.setAutoUpdate(au, { ip: req.ip });
+    if (cc !== undefined) plugins.setCatalogCheck(cc, { ip: req.ip });
     if (on !== undefined) await plugins.setAllowUnsigned(on, { confirm: b.confirm, ip: req.ip });
     // "Plugin-Medien im Backup" (docs/plugins.md "Backup"): off by default
     if (bm !== undefined && bm !== media.backupEnabled()) {
@@ -99,7 +125,7 @@ router.put('/policy', async (req, res) => {
         source: 'admin', ipAddress: req.ip, severity: 'info', details: { backupMedia: bm },
       });
     }
-    res.json({ ok: true, allowUnsigned: plugins.allowUnsigned(), backupMedia: media.backupEnabled(), plugins: plugins.list(lang(req)) });
+    res.json({ ok: true, ...policy(), plugins: plugins.list(lang(req)) });
   } catch (e) { fail(req, res, e); }
 });
 
@@ -125,7 +151,8 @@ router.post('/install', async (req, res) => {
   if (typeof b.token !== 'string' || !/^[0-9a-f]{32}$/.test(b.token)) return res.status(400).json({ ok: false, code: 'staging_expired', error: tr(req, 'plugins.err.staging_expired', 'Upload expired') });
   if (b.licenseKey != null && typeof b.licenseKey !== 'string') return res.status(400).json({ ok: false, code: 'invalid_key', error: tr(req, 'plugins.err.invalid_key', 'Invalid licence key') });
   try {
-    const r = await plugins.install(b.token, { accept: b.accept === true, licenseKey: b.licenseKey ? b.licenseKey.trim() : null, ip: req.ip });
+    const u = currentUser(req);
+    const r = await plugins.install(b.token, { accept: b.accept === true, licenseKey: b.licenseKey ? b.licenseKey.trim() : null, ip: req.ip, user: u ? u.name : null });
     res.json({ ok: true, plugin: plugins.view(r.plugin, lang(req)), licenseError: r.licenseError });
   } catch (e) { fail(req, res, e); }
 });
@@ -178,11 +205,21 @@ for (const [action, on] of [['enable', true], ['disable', false]]) {
   });
 }
 
+router.post('/:id/restart', async (req, res) => {
+  const p = pluginParam(req, res);
+  if (!p) return;
+  try {
+    const after = await plugins.restart(p.id, { ip: req.ip });
+    res.json({ ok: true, plugin: plugins.view(after, lang(req)) });
+  } catch (e) { fail(req, res, e); }
+});
+
 router.post('/:id/uninstall', async (req, res) => {
   const p = pluginParam(req, res);
   if (!p) return;
   try {
-    await plugins.uninstall(p.id, { mode: req.body && req.body.mode, confirm: req.body && req.body.confirm, ip: req.ip });
+    const u = currentUser(req);
+    await plugins.uninstall(p.id, { mode: req.body && req.body.mode, confirm: req.body && req.body.confirm, ip: req.ip, user: u ? u.name : null });
     res.json({ ok: true });
   } catch (e) { fail(req, res, e); }
 });

@@ -5,7 +5,9 @@
 // requireAdmin (routes/api/index.js). Session only, like /api/v1/plugins: an
 // API token cannot install code.
 //
-//   GET  /            catalogue plugins with their state (?refresh=1 fetches again)
+//   GET  /            catalogue plugins with their state and store metadata (?refresh=1 fetches again)
+//   GET  /updates     the updates for the installed plugins with their release notes
+//   GET  /:id         one catalogue plugin with its version history (release notes)
 //   POST /install     { id, version } → download, sha256, inspect — the same
 //                     answer as POST /api/v1/plugins/inspect (checks + token);
 //                     the administrator confirms with POST /api/v1/plugins/install
@@ -58,8 +60,16 @@ function refreshLimit(req, res, next) {
   next();
 }
 
+/** Where the catalogue comes from: its host, and whether it is the official one. */
+function source() {
+  try {
+    const u = catalog.catalogUrl();
+    return { host: u.host, official: u.href === catalog.DEFAULT_URL };
+  } catch { return null; }
+}
+
 router.get('/', refreshLimit, async (req, res) => {
-  const base = { ok: true, enabled: catalog.enabled(), serverVersion: plugins.serverVersion() };
+  const base = { ok: true, enabled: catalog.enabled(), serverVersion: plugins.serverVersion(), source: source() };
   if (!base.enabled) return res.json({ ...base, available: false, plugins: [] });
   try {
     const cat = await catalog.get({ refresh: req.query.refresh === '1' });
@@ -72,6 +82,33 @@ router.get('/', refreshLimit, async (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json({ ...base, available: false, code: e.code, error: tr(req, 'plugins.err.' + e.code, tr(req, 'plugins.err.generic', 'Plugin action failed')), plugins: [] });
   }
+});
+
+router.get('/updates', refreshLimit, async (req, res) => {
+  const updates = require('../../services/plugins/updates');
+  const base = { ok: true, enabled: catalog.enabled(), autoUpdate: plugins.autoUpdateMode(), catalogCheck: plugins.catalogCheck(), history: plugins.history().slice(0, 30) };
+  res.set('Cache-Control', 'no-store');
+  if (!base.enabled) return res.json({ ...base, available: false, updates: [] });
+  try {
+    const cat = await catalog.get({ refresh: req.query.refresh === '1' });
+    res.json({ ...base, available: true, fetchedAt: catalog.fetchedAt(), updates: updates.available(cat, lang(req)) });
+  } catch (e) {
+    if (!(e instanceof catalog.CatalogError)) return fail(req, res, e);
+    res.json({ ...base, available: false, code: e.code, error: tr(req, 'plugins.err.' + e.code, tr(req, 'plugins.err.generic', 'Plugin action failed')), updates: [] });
+  }
+});
+
+router.get('/:id', async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!ID_RE.test(id) || id.length < 2 || id.length > 64) return res.status(404).json({ ok: false, code: 'catalog_unknown', error: tr(req, 'plugins.err.catalog_unknown', 'Not in the catalogue') });
+  if (!catalog.enabled()) return fail(req, res, new catalog.CatalogError('catalog_disabled'));
+  try {
+    const cat = await catalog.get();
+    const item = catalog.detail(cat, id, lang(req), installedOf, plugins.serverVersion());
+    if (!item) return fail(req, res, new catalog.CatalogError('catalog_unknown'));
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, serverVersion: plugins.serverVersion(), plugin: item });
+  } catch (e) { fail(req, res, e); }
 });
 
 router.post('/install', uploadLimiter, async (req, res) => {
