@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.186.3] — 2026-10-19
+
+### Fixes
+- catalogue fresher, and a failed "Jetzt prüfen" says so (#336)
+
+---
+
 ## [1.186.2] — 2026-10-19
 
 ### Fixes
