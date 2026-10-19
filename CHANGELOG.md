@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.186.0] — 2026-10-19
+
+### Features
+- GC.saveFile — a plugin frame offers a file as a download (#333)
+
+---
+
 ## [1.185.0] — 2026-10-19
 
 ### Features
