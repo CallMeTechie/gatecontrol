@@ -1015,13 +1015,24 @@ install dialogs: "Dienste anderer Plugins: darf nutzen: …" / "Eigene Dienste:
 bietet anderen Plugins an: …"):
 
 ```js
-// caller (permissions.services: ["gatecontrol-messenger:sync_group", "gatecontrol-messenger:send_message"])
+// caller (permissions.services: ["gatecontrol-messenger:sync_group", "gatecontrol-messenger:send_message",
+//   "gatecontrol-messenger:release_group"])
 if (await gc.services.available('gatecontrol-messenger', 'send_message')) {
   await gc.services.call({ plugin: 'gatecontrol-messenger', service: 'sync_group',
     payload: { key: 'family', title: 'Familie', userIds: [12, 15, 17] } });
   const res = await gc.services.call({ plugin: 'gatecontrol-messenger', service: 'send_message', userId: 12,
-    payload: { conversation: 'family', text: 'Tim ist zu Hause' } });   // or 'user:<id>', 'group:<id>'; title? for a notice channel
+    payload: { conversation: 'family', text: 'Tim ist zu Hause' } });
+  // conversation: 'family' | 'group:<id>' | 'user:<id>' (notice channel, title? names it) | 'direct:<id>' (needs userId)
   // res: { ok: true, conversationId: 12, messageId: 4711 } — or { ok: false, code: 'invalid' | 'not_found' | 'forbidden' }
+
+  // several targets in one call (1…20; each sent on its own, one refusal does not stop the others)
+  const many = await gc.services.call({ plugin: 'gatecontrol-messenger', service: 'send_message',
+    payload: { conversation: ['family', 'user:15'], text: 'Müll rausbringen' } });
+  // many: { ok: true, sent: 2, failed: 0, results: [{ conversation: 'family', ok: true, conversationId, messageId }, …] }
+
+  // the feature is switched off: hand the group back (a normal group again, the given members its admins)
+  await gc.services.call({ plugin: 'gatecontrol-messenger', service: 'release_group',
+    payload: { key: 'family', adminIds: [12] } });   // delete: true removes it for everyone instead
 }
 
 // provider (services.provides.send_message)
