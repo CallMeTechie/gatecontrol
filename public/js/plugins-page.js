@@ -1032,7 +1032,9 @@
     left.appendChild(panel);
     const aside = el('aside', { class: 'pgx-aside', 'aria-label': t('plugins.x.details') });
     main.appendChild(el('div', { class: 'pgx-cols' }, [left, aside]));
-    ({ overview: panelOverview, settings: panelSettings, license: panelLicense, perms: panelPerms, log: panelLog, versions: panelVersions })[mtab](p, panel, c);
+    const PANELS = new Map([['overview', panelOverview], ['settings', panelSettings], ['license', panelLicense], ['perms', panelPerms], ['log', panelLog], ['versions', panelVersions]]);
+    const render = PANELS.get(mtab);
+    if (typeof render === 'function') render(p, panel, c);
     manageAside(p, c, aside);
   }
 
