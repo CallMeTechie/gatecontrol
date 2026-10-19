@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.182.0] — 2026-10-19
+
+### Features
+- plugin area with its own catalogue page, updates, licences and automatic updates (#326)
+
+---
+
 ## [1.181.0] — 2026-10-18
 
 ### Features
