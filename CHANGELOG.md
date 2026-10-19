@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.185.0] — 2026-10-19
+
+### Features
+- settings groups with status lines, plugin replacement (replaces) (#331)
+
+---
+
 ## [1.184.0] — 2026-10-19
 
 ### Features
