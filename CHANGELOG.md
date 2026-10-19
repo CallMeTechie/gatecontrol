@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.186.2] — 2026-10-19
+
+### Fixes
+- name a replacing plugin's old ids in the apps' quick actions (#335)
+
+---
+
 ## [1.186.1] — 2026-10-19
 
 ### Fixes
