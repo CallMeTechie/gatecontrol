@@ -239,9 +239,9 @@ const AC_WIDGET = {
   ],
 };
 // a sanitised widget: every key, with the defaults for what the plugin left out
-const W = (over = {}) => ({ label: null, value: null, unit: null, status: null, state: null, readings: [], controls: [], power: true, badge: null, ...over });
+const W = (over = {}) => ({ label: null, value: null, unit: null, icon: null, status: null, state: null, readings: [], controls: [], power: true, badge: null, ...over });
 const AC_SANITISED = {
-  label: null, value: '21,5', unit: '°C', status: 'Kühlen · Ziel 22 °C', state: 'on', readings: [], power: true, badge: null,
+  label: null, value: '21,5', unit: '°C', icon: null, status: 'Kühlen · Ziel 22 °C', state: 'on', readings: [], power: true, badge: null,
   controls: [
     { id: 'target', kind: 'stepper', label: 'Ziel', value: 22, min: 16, max: 30, step: 0.5, unit: '°C' },
     { id: 'mode', kind: 'choice', label: 'Modus', value: 'cool', options: [{ id: 'auto', label: 'Auto', icon: null }, { id: 'cool', label: 'Kühlen', icon: 'M12 2v20M2 12h20' }, { id: 'heat', label: 'Heizen', icon: null }] },
@@ -379,7 +379,7 @@ describe('widgets in the list and control runs', () => {
     const r = await list(annaDev).expect(200);
     const by = (id) => r.body.actions.find((a) => a.plugin === 'hello' && a.id === id);
     assert.deepEqual(by('ac:7').widget, AC_SANITISED);
-    assert.deepEqual(by('lamp').widget, { label: null, value: 'Aus', unit: null, status: null, state: 'off', readings: [], power: true, badge: null, controls: [{ id: 'bri', kind: 'slider', label: null, value: 100, min: 1, max: 100, step: 1, unit: '%' }] });
+    assert.deepEqual(by('lamp').widget, { label: null, value: 'Aus', unit: null, icon: null, status: null, state: 'off', readings: [], power: true, badge: null, controls: [{ id: 'bri', kind: 'slider', label: null, value: 100, min: 1, max: 100, step: 1, unit: '%' }] });
     assert.equal(by('broken').widget, null, 'invalid widget → null, the action stays');
     assert.equal(by('broken').title, 'Kaputt');
     assert.equal(by('plain').widget, null);
@@ -622,7 +622,12 @@ describe('widget label, readings and power (sanitizeWidget)', () => {
   it('a widget with only readings is valid; every key always present', () => {
     const w = sanitizeWidget({ readings: [reading()] });
     assert.deepEqual(w, W({ readings: [{ id: 'range', label: 'Reichweite', value: 312, unit: 'km', icon: 'M4 12h16', state: 'good' }] }));
-    assert.deepEqual(Object.keys(w), ['label', 'value', 'unit', 'status', 'state', 'readings', 'controls', 'power', 'badge']);
+    assert.deepEqual(Object.keys(w), ['label', 'value', 'unit', 'icon', 'status', 'state', 'readings', 'controls', 'power', 'badge']);
+  });
+
+  it('icon beside the value (1.187): an SVG path, anything else null', () => {
+    assert.equal(sanitizeWidget({ value: 65, unit: 'km', icon: 'M4 6h16v14H4zM4 10h16M9 3v4M15 3v4' }).icon, 'M4 6h16v14H4zM4 10h16M9 3v4M15 3v4');
+    for (const v of [undefined, null, '', 7, {}, '<script>', 'javascript:x']) assert.equal(sanitizeWidget({ value: 1, icon: v }).icon, null, JSON.stringify(v));
   });
 });
 

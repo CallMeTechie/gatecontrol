@@ -40,6 +40,8 @@
 // A widget is a quick action with extra information and controls, shown by
 // the apps as a card instead of a button:
 //   widget: { label?, value?: string|number, unit?, status?, state?: 'on'|'off'|'good'|'warn'|'crit',
+//             icon?,                    (1.187: an SVG path beside the value, e.g. a calendar for „this month“;
+//                                       an invalid one becomes null)
 //             readings?: [{ id, label, value?, unit?, icon?, state? }],   (≤ 4, invalid ones dropped)
 //             controls?: [{ id, kind: 'stepper'|'slider', label?, value, min, max, step, unit? },
 //                         { id, kind: 'choice', label?, value, options: [{ id, label, icon? }] }],
@@ -267,7 +269,7 @@ function sanitizeControl(c) {
  * widget, or null when there is none or anything in it is invalid.
  * Readings are dropped one by one and an invalid badge becomes null — they
  * never make the widget null. A widget without a value (value: null) is valid.
- * @returns {null | { label: string|null, value: string|number|null, unit: string|null,
+ * @returns {null | { label: string|null, value: string|number|null, unit: string|null, icon: string|null,
  *   status: string|null, state: string|null, readings: object[], controls: object[], power: boolean,
  *   badge: { icon: string, value: string|number|null, unit: string|null, state: string|null,
  *   label: string|null } | null }}
@@ -292,6 +294,7 @@ function sanitizeWidget(w) {
     label: text(w.label, 24),
     value,
     unit: text(w.unit, 8),
+    icon: icon(w.icon),
     status: text(w.status, 60),
     state: typeof w.state === 'string' && WIDGET_STATES.has(w.state) ? w.state : null,
     readings: sanitizeReadings(w.readings),

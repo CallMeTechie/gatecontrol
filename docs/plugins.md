@@ -1526,6 +1526,10 @@ hosts drop the field, older apps ignore it.
 * `label` (≤ 24, optional, otherwise `null`): the name of the large value —
   the apps show it when the person picks what the card shows ("Ladestand",
   "Innentemperatur").
+* `icon` (optional, GateControl ≥ 1.187): an SVG path like the action's `icon`,
+  shown small beside the large value instead of a text — e.g. a calendar for
+  "this month". An invalid one becomes `null`; the widget stays. Apps that do
+  not know it show `label` as before.
 * `readings` (≤ 4, optional): smaller values beside the large one, each
   `{ id, label, value?, unit?, icon?, state? }` — `id` like a control id and
   unique among the readings, `label` required (≤ 20), `value` a string
