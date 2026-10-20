@@ -6921,6 +6921,8 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .pgx-dlg .modal-foot{padding:16px 24px 24px; border:0; background:none; display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap}
 .pgx-dlg .pgx-btn{min-height:44px; padding:0 18px; font-size:14px}
 .pgx-in{display:flex; flex-direction:column; gap:12px}
+/* The key field's flex-basis (300px, for the licence page's row) would be its height in this column. */
+.pgx-in .pgx-keyfld{flex:0 0 auto}
 .pgx-in-head{display:flex; gap:16px; align-items:center; padding-right:44px}
 .pgx-in-title{display:flex; flex-direction:column; gap:2px; min-width:0}
 .pgx-in-title .pgx-muted{font-size:13.5px}
