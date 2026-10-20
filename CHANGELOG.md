@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.188.0] — 2026-10-20
+
+### Features
+- profile sections in the portal, a settings page in the settings tab, camera in frames (#339)
+
+---
+
 ## [1.187.1] — 2026-10-20
 
 ### Fixes
