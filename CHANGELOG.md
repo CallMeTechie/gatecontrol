@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.187.0] — 2026-10-20
+
+### Features
+- a widget's large value can carry an icon (#337)
+
+---
+
 ## [1.186.3] — 2026-10-19
 
 ### Fixes
