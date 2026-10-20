@@ -333,6 +333,7 @@ unsigned build of the same id.
     "app": { "label": { "de": "Smart Home", "en": "Smart Home" }, "icon": "<svg path d>" },
     "maps": true,
     "geolocation": true,
+    "camera": true,
     "inbox": true
   },
   "license": { "required": true, "server": "https://licenses.example.com/check" },
@@ -377,6 +378,28 @@ unsigned build of the same id.
   the sandboxed frame; the browser still asks the person. Nothing else of the
   frame changes. The install dialog shows "Standort: darf in seinen Seiten
   nach dem Standort des Browsers fragen …". Errors `ui.geolocation: invalid`.
+* `ui.camera` (boolean, since 1.188.0): the plugin's frames may use the
+  camera (e.g. to scan a QR code) — every `<iframe>` of the plugin (admin
+  page, settings page, portal tab and sections) gets `allow="camera *"` (after
+  `microphone *` / `geolocation *`), so `navigator.mediaDevices.getUserMedia({
+  video })` works in the sandboxed frame; the browser still asks the person
+  (for GateControl's origin, which needs HTTPS). Nothing else of the frame
+  changes. The install dialog shows "Kamera: darf in seinen Seiten die Kamera
+  verwenden (z. B. einen QR-Code scannen) …", marked as sensitive. Errors
+  `ui.camera: invalid`. An older
+  GateControl ignores the key — feature-detect and offer another way (e.g. a
+  picture upload decoded in the frame).
+* `ui.settingsPage` (since 1.188.0): the id of one of `ui.pages` (never the
+  first one — the navigation opens that) that is the plugin's own settings
+  UI: GateControl shows it in the plugin's settings tab (Einstellungen ›
+  Plugins › the plugin › Einstellungen) as its own sandboxed frame, above the
+  declared `ui.settings` (or alone when there are none), and no longer as a
+  page tab; `window.GC.openSettings()` leads there. The frame is the same
+  admin page frame (`render` gets `view: 'page'` and that `page`, the admin
+  API, administrators only). For accounts or devices a declarative form
+  cannot hold — several accounts, a QR code scanned with the camera, a list
+  of people to map. Errors `ui.settingsPage: invalid`. An older GateControl
+  ignores the key and shows the page as a page tab.
 * `ui.inbox` (boolean, since 1.179.0, needs `ui.portal` — else `ui.inbox:
   needs ui.portal`): the plugin's portal frames may show the viewer's own
   notification inbox as an entry (`window.GC.inbox`, see "User interface"):
@@ -1203,6 +1226,10 @@ disable/uninstall and when the server shuts down.
   `settingsChanged`, so an account the plugin signs in to there shows the
   outcome right away (e.g. "Verbunden als …" or "Anmeldung fehlgeschlagen").
   Accounts and other credentials belong here, not on the plugin's own page.
+  A settings UI a form cannot express (several accounts, scanning a QR code,
+  mapping people) is a plugin page named `ui.settingsPage` (since 1.188.0):
+  GateControl shows its frame in this tab, above the declared settings
+  (see "plugin.json").
 * **Portal** (`src/services/plugins/portal.js`), for identified viewers only:
   * **own tab**: `ui.portal.label`/`icon` → a tab `plg-<id>` with the plugin's
     frame (`/portal/plugins/<id>/frame`).
@@ -1214,6 +1241,21 @@ disable/uninstall and when the server shuts down.
     "Fahrzeug" hold plugin sections only; several plugins share one tab, and
     the tab is hidden when no section has something for the viewer.
     `ui.portal` needs a label, sections or both.
+  * **profile sections** (since 1.188.0): `ui.portal.profileSections: [{ id,
+    title, order }]` (≤ 4; ids like sections, unique together with
+    `sections`; no `tab`) → each section is its own sandboxed frame
+    (`/portal/plugins/<id>/frame?section=<id>`, `render` gets
+    `view.section`) on the viewer's **own profile** in the portal ("Meine
+    Geräte", below the profile picture and favourite colour), ordered by
+    `order` — e.g. "link your own account of a service to your GateControl
+    account". Only for a signed-in person (`user.loggedIn`), never on a kiosk
+    device or for a viewer only recognised by device trust (the frame URL
+    answers 403 there, `portalVisible` is not even asked). Internally (the
+    install dialog, `portalVisible({ section })`, tiles naming the section)
+    they are sections of the tab `profile`. A section only ever shows the
+    viewer's own things: the plugin's portal API gets the same viewer — let
+    it change only what belongs to that person. An older GateControl ignores
+    the key (the plugin still installs; there is no profile section).
   * **visibility**: the optional hook `portalVisible({ user, lang, section })`
     (`section` = null for the own tab) hides a tab/section for viewers with
     nothing to see. Asked per viewer when the portal is opened.

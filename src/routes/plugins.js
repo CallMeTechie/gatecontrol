@@ -17,7 +17,8 @@
 //                                     that is installed but not running)
 //   GET /plugins/:id/frame/:page      the frame document (plugin HTML, sandboxed)
 //   GET /portal/plugins/:id/frame     the frame of a plugin's portal tab
-//                                     (?section=<id>: one of its sections in Zuhause/Fahrzeug)
+//                                     (?section=<id>: one of its sections in Zuhause/Fahrzeug
+//                                     or on the viewer's profile — signed in, no kiosk)
 //   GET /plugins/_shared/leaflet/…    the vendored Leaflet for frames of plugins
 //                                     with ui.maps (leaflet.js, leaflet.css, images/*.png)
 //   GET /plugins/_shared/tiles/<token>/<z>/<x>/<y>.png
@@ -306,6 +307,10 @@ router.get('/portal/plugins/:id/frame', pluginPageLimiter, (req, res, next) => {
   if (sq !== undefined && !section) return errorFrame(res, 404, res.locals.t('plugins.page.not_found'), l);
   if (!section && !p.manifest.ui.portal.label) return errorFrame(res, 404, res.locals.t('plugins.page.not_found'), l);
   if (req.portalOwnerId == null) return errorFrame(res, 403, res.locals.t('plugins.page.forbidden'), l);
+  // a profile section (since 1.188.0): the viewer's own profile — a signed-in person, never a kiosk device
+  if (section && section.tab === 'profile' && (!req.portalLoggedIn || (req.portalOwnerSource === 'kiosk' && req.portalKiosk))) {
+    return errorFrame(res, 403, res.locals.t('plugins.page.forbidden'), l);
+  }
   const u = require('../services/users').getById(req.portalOwnerId);
   if (!u || u.enabled !== 1) return errorFrame(res, 403, res.locals.t('plugins.page.forbidden'), l);
   try {

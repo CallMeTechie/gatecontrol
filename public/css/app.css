@@ -8410,6 +8410,8 @@ a.up-dev:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 .pgx-set-st{display:flex; flex-direction:column; gap:6px}
 .pgx-set-st:empty{display:none}
 .pgx-set-line{margin:0; display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:10px; font-size:13.5px; font-weight:600; background:var(--pg-blue-bg); color:var(--pg-blue)}
+.pgx-set-frame-card{padding:0; background:transparent; border:0; box-shadow:none; overflow:visible}
+.pgx-set-frame-card .pgx-set-frame{min-height:160px}
 .pgx-set-line::before{content:""; width:8px; height:8px; border-radius:50%; background:currentColor; flex:none}
 .pgx-set-line[data-tone="good"]{background:var(--pg-good-bg); color:var(--pg-good)}
 .pgx-set-line[data-tone="warn"]{background:var(--pg-warn-bg); color:var(--pg-warn)}

@@ -6,6 +6,10 @@
 //   sections     ui.portal.sections [{ id, tab: 'home'|'car', title, order }] →
 //                a section (its own sandboxed frame) inside GateControl's
 //                "Zuhause" / "Fahrzeug" tab (these tabs hold plugin sections only)
+//   profile      (since 1.188.0) ui.portal.profileSections [{ id, title, order }]
+//                (tab 'profile') → a section on the viewer's own profile
+//                ("Meine Geräte", below picture and colour) — only for a
+//                signed-in person, never a kiosk device or device trust
 //   start tiles  hook portalTiles({ user, lang }) → small declarative tiles
 //                rendered by GateControl on the Start tab (never plugin HTML)
 //   search       hook portalSearch({ user, lang, q }) → declarative results
@@ -18,6 +22,7 @@
 const runtime = require('./runtime');
 const registry = require('./registry');
 const { loc } = require('./manifest');
+const frame = require('./frame');
 
 const HOOK_MS = 1500;
 const MAX_TILES = 8;
@@ -25,7 +30,10 @@ const MAX_RESULTS = 10;
 const ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,600}$/;
 const STATES = new Set(['on', 'off', 'good', 'warn', 'crit']);
 /** GateControl tab of a section → the portal's tab id (panel-<id>). */
-const TAB_IDS = Object.freeze({ home: 'zuhause', car: 'fahrzeug' });
+const TAB_IDS = Object.freeze({ home: 'zuhause', car: 'fahrzeug', profile: 'geraete' });
+
+/** May this viewer see profile sections? A signed-in person, not a kiosk device. */
+function profileViewer(user) { return !!(user && user.loggedIn === true && user.kiosk !== true); }
 
 function evaluate(p) { return require('./index').evaluate(p); }
 
@@ -53,7 +61,7 @@ function text(v, max) {
  * Tabs and sections of the running plugins for one viewer (portalVisible
  * asked per tab/section; no hook, an error or a timeout → shown).
  * @param {{id, name, role, portal: true}} user
- * @returns {Promise<{tabs: object[], sections: {home: object[], car: object[]}}>}
+ * @returns {Promise<{tabs: object[], sections: {home: object[], car: object[], profile: object[]}}>}
  */
 async function contributions(user, lang) {
   const l = lang === 'en' ? 'en' : 'de';
@@ -63,11 +71,15 @@ async function contributions(user, lang) {
     const maps = !!p.manifest.ui.maps; // the frame's sandbox gets allow-popups (frame.js "Maps")
     // media: the frame's <iframe> gets allow="microphone *" (voice recording); events: the
     // parent page may hold the plugin's event stream; geolocation: allow="geolocation *";
-    // inbox: the frame may ask for the viewer's inbox summary (GC.inbox) — keys only when set
+    // camera: allow="camera *"; inbox: the frame may ask for the viewer's inbox summary
+    // (GC.inbox) — keys only when set; allow: the iframe's allow attribute ('' = none)
     const extra = { ...(p.manifest.media ? { media: true } : {}), ...(p.manifest.permissions.events ? { events: true } : {}),
-      ...(p.manifest.ui.geolocation ? { geolocation: true } : {}), ...(p.manifest.ui.inbox ? { inbox: true } : {}) };
+      ...(p.manifest.ui.geolocation ? { geolocation: true } : {}), ...(p.manifest.ui.camera ? { camera: true } : {}),
+      ...(p.manifest.ui.inbox ? { inbox: true } : {}),
+      allow: frame.allowAttr({ media: !!p.manifest.media, geolocation: !!p.manifest.ui.geolocation, camera: !!p.manifest.ui.camera }) };
     if (ui.label) items.push({ kind: 'tab', plugin: p.id, key: 'plg-' + p.id, label: loc(ui.label, l), icon: ui.icon, section: null, maps, ...extra });
     for (const s of ui.sections || []) {
+      if (s.tab === 'profile' && !profileViewer(user)) continue;
       items.push({ kind: 'section', plugin: p.id, id: s.id, key: `plg-${p.id}-${s.id}`, tab: s.tab, goto: TAB_IDS[s.tab], title: loc(s.title, l), order: s.order, section: s.id, maps, ...extra });
     }
   }
@@ -76,20 +88,20 @@ async function contributions(user, lang) {
     return !(out && out.visible === false);
   }));
   const visible = items.filter((_, i) => shown[i]);
-  const sections = { home: [], car: [] };
+  const sections = { home: [], car: [], profile: [] };
   for (const it of visible.filter((x) => x.kind === 'section')) sections[it.tab].push(it);
   for (const k of Object.keys(sections)) sections[k].sort((a, b) => a.order - b.order || a.key.localeCompare(b.key));
   return {
     tabs: visible.filter((x) => x.kind === 'tab').map((x) => ({ id: x.plugin, key: x.key, label: x.label, icon: x.icon, maps: x.maps,
       ...(x.media ? { media: true } : {}), ...(x.events ? { events: true } : {}),
-      ...(x.geolocation ? { geolocation: true } : {}), ...(x.inbox ? { inbox: true } : {}) })),
+      ...(x.geolocation ? { geolocation: true } : {}), ...(x.camera ? { camera: true } : {}), ...(x.inbox ? { inbox: true } : {}), allow: x.allow })),
     sections,
   };
 }
 
 /** Where a plugin's tile/result leads: one of its visible sections, else its own tab. */
 function targetOf(pluginId, sectionId, contrib) {
-  const secs = [...contrib.sections.home, ...contrib.sections.car].filter((s) => s.plugin === pluginId);
+  const secs = [...contrib.sections.home, ...contrib.sections.car, ...(contrib.sections.profile || [])].filter((s) => s.plugin === pluginId);
   const sec = secs.find((s) => s.id === sectionId) || (sectionId == null ? null : undefined);
   if (sec) return { goto: sec.goto, anchor: 'pt-sec-' + sec.key, area: sec.tab };
   if (sec === undefined) return null; // names a section the viewer cannot see
@@ -99,7 +111,8 @@ function targetOf(pluginId, sectionId, contrib) {
 }
 
 function contributors(contrib) {
-  return [...new Set([...contrib.tabs.map((t) => t.id), ...contrib.sections.home.map((s) => s.plugin), ...contrib.sections.car.map((s) => s.plugin)])];
+  return [...new Set([...contrib.tabs.map((t) => t.id), ...contrib.sections.home.map((s) => s.plugin), ...contrib.sections.car.map((s) => s.plugin),
+    ...(contrib.sections.profile || []).map((s) => s.plugin)])];
 }
 
 /**
@@ -177,4 +190,4 @@ async function search(user, lang, q, contrib) {
   return lists.flat();
 }
 
-module.exports = { contributions, tiles, collectTiles, search, text, TAB_IDS, HOOK_MS, MAX_TILES, _targetOf: targetOf };
+module.exports = { contributions, tiles, collectTiles, search, text, TAB_IDS, profileViewer, HOOK_MS, MAX_TILES, _targetOf: targetOf };

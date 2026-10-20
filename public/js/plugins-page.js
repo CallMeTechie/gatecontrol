@@ -452,7 +452,7 @@
     }
 
     go.addEventListener('click', async () => {
-      if (phase === 'done') { d.close(installed); location.href = U.manage(installed.id, installed.settingsCount && !isUpdate ? 'settings' : null); return; }
+      if (phase === 'done') { d.close(installed); location.href = U.manage(installed.id, (installed.settingsCount || installed.settingsPage) && !isUpdate ? 'settings' : null); return; }
       if (phase !== 'check') return;
       phase = 'install';
       cancel.hidden = true;
@@ -1560,13 +1560,39 @@
     panel.appendChild(box);
   }
 
+  /**
+   * The plugin's own settings page (plugin.json ui.settingsPage, since 1.188.0): its sandboxed
+   * frame like on the plugin's page (public/js/plugin-bridge.js forwards its API calls), above
+   * the declared settings — only while the plugin runs.
+   */
+  function settingsFrame(p) {
+    const f = document.createElement('iframe');
+    const attrs = {
+      class: 'pg-frame pgx-set-frame', id: 'pg-settings-frame', title: p.settingsPage.title || p.name,
+      src: '/plugins/' + enc(p.id) + '/frame/' + enc(p.settingsPage.id),
+      sandbox: 'allow-scripts allow-forms' + (p.maps ? ' allow-popups allow-popups-to-escape-sandbox' : '') + (p.media ? ' allow-downloads' : ''),
+      referrerpolicy: 'no-referrer', 'data-plugin-frame': '', 'data-plugin-id': p.id, 'data-plugin-api': '/api/v1/plugins/' + p.id + '/api/',
+      'data-plugin-pages': JSON.stringify((p.pages || []).map((x) => x.id)),
+    };
+    if (p.allow) attrs.allow = p.allow;
+    if (p.events) attrs['data-plugin-events'] = '';
+    Object.keys(attrs).forEach((k) => f.setAttribute(k, attrs[k]));
+    if (window.GCPluginBridge && typeof window.GCPluginBridge.attach === 'function') window.GCPluginBridge.attach(f);
+    return card([f], { 'aria-label': p.settingsPage.title || p.name }, 'pgx-set-frame-card');
+  }
+
   async function panelSettings(p, panel) {
     await renderTargets(p, panel);
+    if (p.settingsPage && p.status === 'running') panel.appendChild(settingsFrame(p));
     const box = card([h2(t('plugins.tab.settings'), 'pgx-set-h'), el('p', { class: 'pgx-muted', text: t('plugins.settings.hint') })], { 'aria-labelledby': 'pgx-set-h' }, 'pgx-pad pgx-stack-card');
     panel.appendChild(box);
     const r = await req('GET', API + '/' + enc(p.id) + '/settings');
     if (!r.ok) { box.appendChild(el('p', { class: 'st-err-block', text: r.error })); return; }
-    if (!r.defs.length) { box.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.settings.none') })); return; }
+    if (!r.defs.length) {
+      if (p.settingsPage) box.remove(); // the plugin's own settings page is all there is
+      else box.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.settings.none') }));
+      return;
+    }
     const form = el('form', { class: 'pg-form', id: 'pg-settings-form', novalidate: true, autocomplete: 'off' });
     const inputs = {};
     // status lines of the plugin (hook settingsStatus): above the form or under a group heading

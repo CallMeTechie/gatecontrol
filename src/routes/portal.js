@@ -97,14 +97,15 @@ function notifyEnabled() {
 
 /** Which tabs have something to show (unlicensed or empty areas stay hidden). */
 function tabsFor(req, plg) {
-  const sections = (plg && plg.sections) || { home: [], car: [] };
+  const sections = (plg && plg.sections) || { home: [], car: [], profile: [] };
+  const profile = sections.profile || [];
   const w = portalConfig().widgets;
   const identified = req.portalPeerId != null;
   return {
     start: true,
     services: identified && w.services,
     home: sections.home.length > 0,
-    plugins: ((plg && plg.tabs) || []).length + sections.home.length + sections.car.length > 0,
+    plugins: ((plg && plg.tabs) || []).length + sections.home.length + sections.car.length + profile.length > 0,
     car: sections.car.length > 0,
     net: identified && (w.device || w.traffic || w.pihole),
     device: identified && w.device,
@@ -136,7 +137,7 @@ function portalViewer(req) {
  * only those whose plugin has something for this person (portalVisible).
  */
 async function pluginContributions(req, lang) {
-  const none = { tabs: [], sections: { home: [], car: [] } };
+  const none = { tabs: [], sections: { home: [], car: [], profile: [] } };
   const user = portalViewer(req);
   if (!user) return none;
   try { return await require('../services/plugins/portal').contributions(user, lang === 'en' ? 'en' : 'de'); } catch { return none; }
@@ -223,7 +224,8 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, a
     widgets: portalConfig().widgets,
     tabs,
     pluginTabs: plg.tabs,
-    pluginSections: plg.sections,
+    // profile sections (since 1.188.0) only where "Meine Geräte" is shown: a signed-in person, no kiosk
+    pluginSections: { ...plg.sections, profile: tabs.devices ? (plg.sections.profile || []) : [] },
     // Start tiles / search of plugins (public/js/portal.js asks /api/v1/portal/plugins/start|search)
     viewer,
     note,

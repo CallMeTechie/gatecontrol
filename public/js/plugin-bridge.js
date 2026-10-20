@@ -5,7 +5,9 @@
 // its plugin's API (window.GC.call inside the frame → postMessage). Only
 // messages from the frame's own window are taken, only relative paths below
 // that plugin's API base are called, with this page's session and CSRF token.
-// Used by the admin plugin page (plugin.njk) and the portal (portal.njk).
+// Used by the admin plugin page (plugin.njk), the portal (portal.njk) and the
+// plugin area (plugins.njk: a plugin's settings page in its settings tab,
+// attached later with window.GCPluginBridge.attach).
 //
 // Downloads (GC.saveFile, since 1.186.0): the frame posts a Blob and a name,
 // this page checks type (csv, pdf, txt, json, png, jpeg, ics) and size
@@ -121,6 +123,8 @@
   }
 
   function attach(frame) {
+    if (!frame || frame.__gcBridge) return;
+    frame.__gcBridge = true;
     const base = frame.getAttribute('data-plugin-api') || '';
     const pluginId = frame.getAttribute('data-plugin-id') || '';
     let pages = [];
@@ -309,5 +313,7 @@
   }
 
   function init() { document.querySelectorAll('iframe[data-plugin-frame]').forEach(attach); }
+  // a frame a page adds later (the settings tab's ui.settingsPage frame, public/js/plugins-page.js)
+  window.GCPluginBridge = Object.freeze({ attach });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 }());
