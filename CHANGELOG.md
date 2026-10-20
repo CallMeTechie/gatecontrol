@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.187.1] — 2026-10-20
+
+### Fixes
+- licence key field in the install dialog no longer 300 px tall (#338)
+
+---
+
 ## [1.187.0] — 2026-10-20
 
 ### Features
