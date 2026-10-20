@@ -58,6 +58,11 @@
 // CSP or the sandbox changes; without the flag the Permissions Policy keeps
 // the frame from asking at all.
 //
+// Camera (plugin.json `ui.camera`, since 1.188.0): the parent's <iframe> gets
+// allow="camera *" (after microphone / geolocation), so getUserMedia({ video })
+// works in the frame — e.g. to scan a QR code; the browser still asks the
+// person. Nothing in the CSP or the sandbox changes.
+//
 // Inbox (plugin.json `ui.inbox`, portal frames only): window.GC.inbox.on(fn)
 // gets { available, unread, latest: { title, createdAt, priority } | null }
 // of the viewer's own notification inbox — the portal page's own state
@@ -125,6 +130,15 @@ function cspFor({ maps = false, origin = null, avatars = false, media = false } 
     media: mediaSrc,
     sandbox: sandboxOf(true, media),
   });
+}
+
+/**
+ * The allow attribute of the <iframe> showing a plugin frame: microphone for a
+ * `media` plugin, geolocation for `ui.geolocation`, camera for `ui.camera`
+ * ('' when none — then the iframe gets no allow attribute).
+ */
+function allowAttr({ media = false, geolocation = false, camera = false } = {}) {
+  return [media && 'microphone *', geolocation && 'geolocation *', camera && 'camera *'].filter(Boolean).join('; ');
 }
 
 /** sandbox attribute of the <iframe> showing a plugin frame (`media`: a plugin declaring media). */
@@ -328,4 +342,4 @@ function headers(res, opts = {}) {
   res.type('html');
 }
 
-module.exports = { CSP, cspFor, originOf, sandboxAttr, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA };
+module.exports = { CSP, cspFor, originOf, sandboxAttr, allowAttr, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA };

@@ -102,6 +102,7 @@
     if (perm.actionsInteractive) rows.push({ label: t('plugins.perm.actions_interactive'), value: t('plugins.perm.actions_interactive_on') });
     if (perm.maps) rows.push({ label: t('plugins.perm.maps'), value: t('plugins.perm.maps_on') });
     if (perm.geolocation) rows.push({ label: t('plugins.perm.geolocation'), value: t('plugins.perm.geolocation_on') });
+    if (perm.camera) rows.push({ label: t('plugins.perm.camera'), value: t('plugins.perm.camera_on') });
     if (perm.inbox) rows.push({ label: t('plugins.perm.inbox'), value: t('plugins.perm.inbox_on') });
     if (perm.background) rows.push({ label: t('plugins.perm.background'), value: t('plugins.perm.background_v', { s: perm.background }) });
     if (perm.notify) {
@@ -404,6 +405,7 @@
     if ((n.internet || []).length) out.push('plugins.perm.internet');
     if (perm.actions) out.push('plugins.perm.actions');
     if (perm.geolocation) out.push('plugins.perm.geolocation');
+    if (perm.camera) out.push('plugins.perm.camera');
     if (perm.criticalTopics && perm.criticalTopics.length) out.push('plugins.perm.notify_critical');
     if (perm.users) out.push('plugins.perm.users');
     if (perm.kiosk) out.push('plugins.perm.kiosk');

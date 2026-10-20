@@ -41,9 +41,9 @@
   geraete: 'M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2'
 } %}
 {#- A plugin's section in a GateControl tab (docs/plugins.md "Portal"): its own sandboxed frame. -#}
-{%- macro pluginSection(sec) %}
-      <section class="pt-plugin-section" id="pt-sec-{{ sec.key }}" data-area="{{ sec.key }}" data-plugin="{{ sec.plugin }}" aria-label="{{ sec.title }}">
-        <iframe class="pt-plugin-frame" title="{{ sec.title }}" src="/portal/plugins/{{ sec.plugin }}/frame?section={{ sec.id }}" sandbox="allow-scripts allow-forms{% if sec.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}{% if sec.media %} allow-downloads{% endif %}" referrerpolicy="no-referrer" loading="lazy"{% if sec.media or sec.geolocation %} allow="{{ 'microphone *' if sec.media }}{{ '; ' if sec.media and sec.geolocation }}{{ 'geolocation *' if sec.geolocation }}"{% endif %}
+{%- macro pluginSection(sec, cls) %}
+      <section class="pt-plugin-section{{ ' ' + cls if cls }}" id="pt-sec-{{ sec.key }}" data-area="{{ sec.key }}" data-plugin="{{ sec.plugin }}" aria-label="{{ sec.title }}">
+        <iframe class="pt-plugin-frame" title="{{ sec.title }}" src="/portal/plugins/{{ sec.plugin }}/frame?section={{ sec.id }}" sandbox="allow-scripts allow-forms{% if sec.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}{% if sec.media %} allow-downloads{% endif %}" referrerpolicy="no-referrer" loading="lazy"{% if sec.allow %} allow="{{ sec.allow }}"{% endif %}
           data-plugin-frame data-plugin-id="{{ sec.plugin }}" data-plugin-api="/api/v1/portal/plugins/{{ sec.plugin }}/api/" data-plugin-pages="[]"{% if sec.events %} data-plugin-events{% endif %}{% if sec.inbox %} data-plugin-inbox{% endif %}></iframe>
       </section>
 {%- endmacro %}
@@ -364,6 +364,9 @@
       <div id="pt-look"></div>
     </section>
     {% endif %}
+    {#- Plugin sections on the viewer's own profile (docs/plugins.md "Portal", since 1.188.0):
+        a signed-in person only, never a kiosk device (routes/portal.js). #}
+    {%- for sec in pluginSections.profile %}{{ pluginSection(sec, 'pt-narrow') }}{% endfor %}
     {% if tabs.notify %}
     <a class="pt-card pt-narrow pt-navcard" href="#benachrichtigungen" data-goto="benachrichtigungen" id="pt-devices-notify">
       <span class="pt-navcard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span>
@@ -444,7 +447,7 @@
   {%- for pt in pluginTabs %}
   <section class="pt-panel" id="panel-{{ pt.key }}" role="tabpanel" aria-labelledby="tab-{{ pt.key }}" tabindex="0" data-panel="{{ pt.key }}" hidden>
     <h1 class="pt-h1 pt-h1-sm">{{ pt.label }}</h1>
-    <iframe class="pt-plugin-frame" title="{{ pt.label }}" src="/portal/plugins/{{ pt.id }}/frame" sandbox="allow-scripts allow-forms{% if pt.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}{% if pt.media %} allow-downloads{% endif %}" referrerpolicy="no-referrer" loading="lazy"{% if pt.media or pt.geolocation %} allow="{{ 'microphone *' if pt.media }}{{ '; ' if pt.media and pt.geolocation }}{{ 'geolocation *' if pt.geolocation }}"{% endif %}
+    <iframe class="pt-plugin-frame" title="{{ pt.label }}" src="/portal/plugins/{{ pt.id }}/frame" sandbox="allow-scripts allow-forms{% if pt.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}{% if pt.media %} allow-downloads{% endif %}" referrerpolicy="no-referrer" loading="lazy"{% if pt.allow %} allow="{{ pt.allow }}"{% endif %}
       data-plugin-frame data-plugin-id="{{ pt.id }}" data-plugin-api="/api/v1/portal/plugins/{{ pt.id }}/api/" data-plugin-pages="[]"{% if pt.events %} data-plugin-events{% endif %}{% if pt.inbox %} data-plugin-inbox{% endif %}></iframe>
   </section>
   {%- endfor %}

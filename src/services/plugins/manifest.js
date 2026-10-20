@@ -137,6 +137,28 @@ function portalSections(raw, err) {
   return out;
 }
 
+// Since 1.188.0: sections on the viewer's own profile in the portal ("Meine
+// Geräte", below picture and colour) — ui.portal.profileSections
+// [{ id, title, order }], normalised to sections with tab 'profile'. A key of
+// its own, so an older GateControl ignores it (the plugin still installs there).
+const PROFILE_SECTIONS_MAX = 4;
+
+/** ui.portal.profileSections → [{ id, tab: 'profile', title, order }] (null when invalid). */
+function profileSections(raw, err) {
+  if (raw == null) return [];
+  if (!Array.isArray(raw) || raw.length > PROFILE_SECTIONS_MAX) { err('ui.portal.profileSections: invalid'); return null; }
+  const out = [];
+  for (const s of raw) {
+    const title = locText(s && s.title, 60);
+    const order = s && s.order != null ? Number(s.order) : 100;
+    if (!s || typeof s.id !== 'string' || !SLUG_RE.test(s.id) || s.id.length > 40 || !title || s.tab !== undefined
+      || !Number.isInteger(order) || order < 0 || order > 1000) { err('ui.portal.profileSections: invalid'); return null; }
+    if (out.some((x) => x.id === s.id)) { err('ui.portal.profileSections: duplicate'); return null; }
+    out.push({ id: s.id, tab: 'profile', title, order });
+  }
+  return out;
+}
+
 /** "10GB", "500 MB", or a number of bytes → bytes (null when invalid). */
 function quotaBytes(v) {
   if (Number.isSafeInteger(v)) return v;
@@ -272,7 +294,7 @@ function validate(raw, opts = {}) {
 
   // ui
   const u = raw.ui == null ? {} : raw.ui;
-  const ui = { nav: null, pages: [], settings: [], settingsGroups: [], portal: null, app: null, maps: false, geolocation: false, inbox: false };
+  const ui = { nav: null, pages: [], settings: [], settingsGroups: [], settingsPage: null, portal: null, app: null, maps: false, geolocation: false, camera: false, inbox: false };
   if (!u || typeof u !== 'object' || Array.isArray(u)) err('ui: invalid');
   else {
     if (u.nav != null) {
@@ -293,6 +315,13 @@ function validate(raw, opts = {}) {
       }
     }
     if (ui.nav && !ui.pages.length) err('ui.nav: needs ui.pages');
+    // ui.settingsPage (since 1.188.0): one of the pages (never the first: the navigation opens
+    // that one) shown inside the plugin's settings tab instead of as a page tab of its own
+    if (u.settingsPage != null) {
+      const i = typeof u.settingsPage === 'string' ? ui.pages.findIndex((x) => x.id === u.settingsPage) : -1;
+      if (i < 1) err('ui.settingsPage: invalid');
+      else ui.settingsPage = u.settingsPage;
+    }
     // ui.settingsGroups (since 1.185.0): headings of the settings form, in this order
     if (u.settingsGroups != null) {
       if (!Array.isArray(u.settingsGroups) || u.settingsGroups.length > 10) err('ui.settingsGroups: invalid');
@@ -347,7 +376,10 @@ function validate(raw, opts = {}) {
       const po = u.portal && typeof u.portal === 'object' && !Array.isArray(u.portal) ? u.portal : null;
       const label = po && po.label != null ? locText(po.label, 40) : null;
       const icon = po && po.icon != null ? String(po.icon) : 'M4 4h16v16H4z';
-      const sections = po ? portalSections(po.sections, err) : null;
+      const own = po ? portalSections(po.sections, err) : null;
+      const profile = po ? profileSections(po.profileSections, err) : null;
+      if (own && profile && profile.some((p) => own.some((x) => x.id === p.id))) { err('ui.portal.profileSections: duplicate'); }
+      const sections = own && profile ? own.concat(profile) : null;
       if (!po || (po.label != null && !label) || !ICON_RE.test(icon) || !sections || (!label && !sections.length)) err('ui.portal: invalid');
       else if (!perms.portal) err('ui.portal: needs permissions.portal');
       else ui.portal = { label: label || null, icon, sections };
@@ -371,6 +403,12 @@ function validate(raw, opts = {}) {
       // the browser still asks the person, the frame gets nothing else
       if (typeof u.geolocation !== 'boolean') err('ui.geolocation: invalid');
       else ui.geolocation = u.geolocation;
+    }
+    if (u.camera != null) {
+      // since 1.188.0: the camera in the plugin's frames (e.g. scanning a QR code):
+      // <iframe allow="camera *"> (frame.js); the browser still asks the person
+      if (typeof u.camera !== 'boolean') err('ui.camera: invalid');
+      else ui.camera = u.camera;
     }
     if (u.inbox != null) {
       // the viewer's own notification inbox in the portal frames: unread count and the newest
