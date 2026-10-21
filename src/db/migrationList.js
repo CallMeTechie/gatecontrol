@@ -2389,6 +2389,38 @@ const migrations = [
     sql: `ALTER TABLE plugin_media ADD COLUMN name TEXT;`,
     detect: (db) => hasColumn(db, 'plugin_media', 'name'),
   },
+  {
+    version: 107,
+    name: 'notify_routes',
+    // Where notifications appear (docs/plugins.md "Notifications in chats",
+    // services/notify/chatRoutes.js) — only while a sink plugin
+    // (permissions.notifySink) is active; otherwise everything goes to the
+    // inbox as before.
+    //   notify_routes         one person's choice per topic: dest 'inbox' |
+    //                         'own' (the sink's own chat of the source). No
+    //                         row = 'inbox'. Goes with the account.
+    //   notify_family_routes  the household's choice per topic: a row = this
+    //                         topic goes to the family chat for everyone it
+    //                         reaches. set_by the person who set it (admin or
+    //                         family parent; NULL once that account is gone),
+    //                         set_at ISO UTC.
+    // Rows of a removed plugin stay harmless (its topics are no longer listed
+    // and never published).
+    sql: `
+      CREATE TABLE IF NOT EXISTS notify_routes (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        topic TEXT NOT NULL,
+        dest TEXT NOT NULL CHECK (dest IN ('inbox', 'own')),
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, topic)
+      );
+      CREATE INDEX IF NOT EXISTS idx_notify_routes_topic ON notify_routes(topic, dest);
+      CREATE TABLE IF NOT EXISTS notify_family_routes (
+        topic TEXT PRIMARY KEY,
+        set_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        set_at TEXT NOT NULL
+      );`,
+  },
 ];
 
 module.exports = { migrations };

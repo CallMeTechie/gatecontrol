@@ -16,6 +16,11 @@
 //   tick()                             releases held (delay_s) messages and
 //                                      sends due fallback mails
 //
+// Chats (chatRoutes.js): after the recipients are resolved, people who route
+// the topic into a chat (family chat of the household, own chat) are handed
+// to the sink plugin instead of getting inbox deliveries; whoever the sink
+// does not cover gets the inbox delivery afterwards (deliverLate).
+//
 // Delay: a held message is stored with release_at and no deliveries; a
 // recovery event with the same collapse key inside the delay deletes it and
 // nothing is sent at all. Bundling: a new event with the same collapse key
@@ -33,6 +38,7 @@ const stream = require('./stream');
 const config = require('./config');
 const text = require('./text');
 const sanitize = require('./sanitize');
+const chatRoutes = require('./chatRoutes');
 const { PRIORITY_RANK, CORE_TOPICS, ADMIN_ONLY_TOPICS } = require('./constants');
 const eventBus = require('../eventBus');
 const logger = require('../../utils/logger');
@@ -246,7 +252,9 @@ function webhookAllowed(type) {
 
 /**
  * n: { eventId, eventType, topic, source, priority, title, body, data,
- *      collapseKey, silent, target, ttlS }
+ *      collapseKey, silent, target, ttlS, image, kind, card }
+ *      card: a plugin's chat card (hostApi notifyCard) — kept in meta, only
+ *      for the sink (chatRoutes), never part of the device payload
  * o: { rule (delay/bundle; null = none), route (router.resolve input),
  *      emitKey (for claimMail) }
  */
@@ -267,7 +275,7 @@ function publish(n, o = {}) {
     ...n,
     expiresAt: expiresIso(n.ttlS),
     releaseAt: held ? store.iso(t0 + delayS * 1000) : null,
-    meta: { base_title: n.title, route, ttl_s: n.ttlS || null },
+    meta: { base_title: n.title, route, ttl_s: n.ttlS || null, ...(n.card ? { card: n.card } : {}) },
   });
   publishBus(id);
   if (held) {
@@ -286,8 +294,26 @@ function resolveFor(notif, route) {
 function deliverNew(id, route) {
   const notif = store.getNotification(id);
   const targets = resolveFor(notif, route);
-  const rows = store.addDeliveries(id, targets);
-  return { devices: rows.length, ...pushRows(rows) };
+  const { inbox, divert } = chatRoutes.split(notif, targets);
+  const rows = store.addDeliveries(id, inbox);
+  if (divert) chatRoutes.dispatch(notif, divert, (missing) => deliverLate(id, missing));
+  return { devices: rows.length, ...pushRows(rows), ...(divert ? { routed: divert.users.length } : {}) };
+}
+
+/**
+ * The inbox delivery of people the sink did not cover (error, timeout, not
+ * in `covered`): exactly what deliverNew would have queued for them.
+ * replace: re-queue under new seqs (a bundled notification). Nothing for a
+ * notification that is gone, revoked or expired meanwhile.
+ */
+function deliverLate(id, targets, { replace = false } = {}) {
+  const notif = store.getNotification(id);
+  if (!notif || notif.revoked_at || (notif.expires_at && notif.expires_at <= store.iso())) return null;
+  const tokens = new Set(targets.map((t) => t.tokenId));
+  const rows = (replace ? store.requeue(id, targets) : store.addDeliveries(id, targets)).filter((r) => tokens.has(r.token_id));
+  const r = pushRows(rows);
+  publishBus(id);
+  return { devices: rows.length, ...r };
 }
 
 /** Write queued rows to their connected streams. → { now, later } */
@@ -325,6 +351,12 @@ function bundle(prev, n, o) {
     fields.image_url = n.image ? n.image.url : null;
     fields.image_expires_at = n.image ? n.image.expiresAt : null;
   }
+  // so does a plugin's chat card
+  if (n.card || meta.card) {
+    const next = { ...meta };
+    if (n.card) next.card = n.card; else delete next.card;
+    fields.meta = next;
+  }
   store.updateNotification(prev.id, fields);
   publishBus(prev.id);
   if (prev.release_at) {
@@ -333,7 +365,9 @@ function bundle(prev, n, o) {
   }
   const notif = store.getNotification(prev.id);
   const targets = resolveFor(notif, meta.route || o.route || {});
-  const rows = store.requeue(prev.id, targets);
+  const { inbox, divert } = chatRoutes.split(notif, targets);
+  const rows = store.requeue(prev.id, inbox);
+  if (divert) chatRoutes.dispatch(notif, divert, (missing) => deliverLate(prev.id, missing, { replace: true }));
   const r = pushRows(rows);
   remember(o.emitKey, { id: prev.id, held: false, devices: rows.length, rule: o.rule });
   return { id: prev.id, held: false, bundled: true, devices: rows.length, ...r };
@@ -480,7 +514,7 @@ function tick() {
 
 /**
  * A plugin message (already validated by hostApi): { topic, title, body,
- * priority, users, collapseKey, ttl, data, allowCritical, image, chat }. Priority is
+ * priority, users, collapseKey, ttl, data, allowCritical, image, chat, card }. Priority is
  * capped at high unless the topic allows critical. Needs the email_alerts licence
  * ("plugin topics"); without it only the activity row is written. `image`
  * (media.validate()'s result) is stored only when the push goes out — its
@@ -488,6 +522,8 @@ function tick() {
  * `chat` (a notifyTopics[].chat topic, docs/plugins.md "Chat notifications"):
  * stored as kind 'message', never bundled or held back (the rule's
  * bundle/delay do not apply; quiet hours still make it silent), never mailed.
+ * `card` (hostApi notifyCard): how the message looks in a chat when a person
+ * routes the topic there (chatRoutes.js); never on a chat topic.
  */
 function emitPlugin(pluginId, n) {
   if (!config.value('enabled')) return { pushed: false, reason: 'disabled' };
@@ -507,6 +543,7 @@ function emitPlugin(pluginId, n) {
       eventId, eventType: 'plugin_notice', topic: eventId, source: `plugin:${pluginId}`, priority,
       title: n.title, body: n.body, data: n.data, collapseKey: n.collapseKey ? sanitize.collapseKey(`plugin:${pluginId}:${n.collapseKey}`) : null,
       ttlS: n.ttl, image, target: users ? { type: 'users', ids: users } : { recipients: rule.recipients }, kind: chat ? 'message' : null,
+      card: !chat && n.card ? n.card : null,
     }, {
       rule: chat ? { ...rule, delay_s: 0, bundle_s: 0 } : rule,
       route: users ? { users } : { recipients: rule.recipients },
@@ -619,5 +656,5 @@ function _resetForTest() { lastEmit.clear(); }
 module.exports = {
   emitActivity, webhookAllowed, publish, claimMail, sweepEmail, releaseHeld, tick, revoke, emitPlugin,
   sendManual, sendTest, resend, onAck, markRead, syncRead, topicsForUser, writeDelivery, pushRows, licensed,
-  coreContext, coreTitle, coreFacts, sendMailNow, _resetForTest,
+  coreContext, coreTitle, coreFacts, sendMailNow, deliverLate, _resetForTest,
 };

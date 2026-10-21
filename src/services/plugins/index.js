@@ -138,6 +138,8 @@ function permissionSummary(m, lang) {
     // messenger foundations (docs/plugins.md "Media", "Realtime events", "Chat notifications", "Services")
     media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false } : null,
     events: !!p.events,
+    // delivers notifications into chats (docs/plugins.md "Notifications in chats")
+    notifySink: !!p.notifySink,
     chatTopics: p.notify ? (m.notifyTopics || []).filter((t) => t.chat === true).map((t) => loc(t.label, lang)) : [],
     services: Array.isArray(p.services) ? p.services : [],
     servicesProvided: m.services && m.services.provides ? Object.values(m.services.provides).map((x) => loc(x.label, lang)) : [],

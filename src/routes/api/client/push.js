@@ -16,6 +16,10 @@
  *                                         quiet: { from, to, tz, critical_bypass } | null }
  *   PUT  /api/v1/client/push/prefs    { enabled, mode, muted_topics, restricted } → { ok }
  *   POST /api/v1/client/push/test     → { ok, seq }   (≤ 5/min)
+ *   GET  /api/v1/client/push/routes   where the token owner's notifications appear —
+ *   PUT  /api/v1/client/push/routes   same shapes as /api/v1/me/notify/routes
+ *                                     (services/notify/chatRoutes.js); token without
+ *                                     an owner → 403 { error: 'no_user' }
  *
  * Token only (scope `client` or `full-access`), machine binding like the
  * other client routes. Push switched off → 503 { error: 'push_disabled' }.
@@ -35,6 +39,7 @@ const control = require('../../../services/notify/control');
 const vpnPresence = require('../../../services/notify/vpnPresence');
 const pushRouter = require('../../../services/notify/router');
 const text = require('../../../services/notify/text');
+const chatRoutes = require('../../../services/notify/chatRoutes');
 const { ACK_STATES, TOPIC_RE, LIMITS } = require('../../../services/notify/constants');
 const eventBus = require('../../../services/eventBus');
 const logger = require('../../../utils/logger');
@@ -299,6 +304,42 @@ router.post('/push/test', pushTestLimiter, (req, res) => {
     res.json({ ok: true, seq: row ? row.seq : null });
   } catch (err) {
     logger.error({ err: err.message, tokenId: req.tokenId }, 'push test failed');
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+// ─── GET / PUT /api/v1/client/push/routes ───────────────────────────────
+// Where notifications appear (inbox, family chat, own chat) — the token
+// owner's choices, same shapes as the web API (routes/api/meNotify.js).
+
+function routesUser(req, res) {
+  if (!guard(req, res)) return null;
+  if (req.tokenUserId == null) { res.status(403).json({ ok: false, error: 'no_user' }); return null; }
+  return req.tokenUserId;
+}
+
+router.get('/push/routes', async (req, res) => {
+  const uid = routesUser(req, res);
+  if (uid == null) return;
+  try {
+    res.set('Cache-Control', 'no-store');
+    res.json(await chatRoutes.view(uid, text.userLang(uid)));
+  } catch (err) {
+    logger.error({ err: err.message, tokenId: req.tokenId }, 'push routes failed');
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+router.put('/push/routes', async (req, res) => {
+  const uid = routesUser(req, res);
+  if (uid == null) return;
+  const b = req.body || {};
+  try {
+    const r = await chatRoutes.setRoute(uid, b.topic, b.dest);
+    if (r.status !== 200) return res.status(r.status).json({ ok: false, error: r.error });
+    res.json(await chatRoutes.view(uid, text.userLang(uid)));
+  } catch (err) {
+    logger.error({ err: err.message, tokenId: req.tokenId }, 'push routes update failed');
     res.status(500).json({ ok: false, error: 'internal' });
   }
 });

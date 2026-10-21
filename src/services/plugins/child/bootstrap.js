@@ -288,9 +288,18 @@ function makeGc(info) {
       },
     }),
     /** notify(message, { severity }) or notify({ topic, title, body, priority, users, collapseKey, ttl, data, image }) — image { data, mime } or { mediaId } */
-    notify: (message, opts) => (message && typeof message === 'object' && !Array.isArray(message)
+    notify: Object.freeze(Object.assign((message, opts) => (message && typeof message === 'object' && !Array.isArray(message)
       ? hostCall('notify', { notification: message })
-      : hostCall('notify', { message: String(message), opts: opts || {} })),
+      : hostCall('notify', { message: String(message), opts: opts || {} })), {
+      /**
+       * permissions.notifySink (since 1.191.0): where a person's notifications appear —
+       * get({ userId, lang }) → like GET /api/v1/me/notify/routes; set({ userId, topic, dest }) → like the PUT
+       */
+      routes: Object.freeze({
+        get: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('notify.routes.get', { userId: o.userId, lang: o.lang }); },
+        set: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('notify.routes.set', { userId: o.userId, topic: o.topic, dest: o.dest }); },
+      }),
+    })),
     license: Object.freeze({ status: () => hostCall('license.status', {}) }),
     /**
      * plugin.json `media`: files the users uploaded (PUT …/plugins/<id>/media, GC.upload) or the
@@ -388,6 +397,15 @@ async function handleCall(method, payload) {
       // (the host then allows the uploader only)
       if (typeof plugin.mediaAccess !== 'function') return { allowed: null };
       return { allowed: (await plugin.mediaAccess(payload, gc)) === true };
+    case 'deliverNotice':
+      // optional (permissions.notifySink, since 1.191.0): notifications people route into chats
+      // → { covered: [userIds] } (who got it in a chat; everyone else gets the inbox delivery)
+      if (typeof plugin.deliverNotice !== 'function') return { covered: [] };
+      return plugin.deliverNotice(payload, gc);
+    case 'mayRouteToFamily':
+      // optional (permissions.notifySink): may payload.user send topics to the family chat? No hook → no
+      if (typeof plugin.mayRouteToFamily !== 'function') return { allowed: false };
+      return { allowed: (await plugin.mayRouteToFamily(payload, gc)) === true };
     case 'service':
       // a service of services.provides called by another plugin (gc.services.call): { name, caller, user, payload }
       if (typeof plugin.service !== 'function') throw new Error('this plugin offers no services');

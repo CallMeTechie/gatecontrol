@@ -122,6 +122,7 @@
       }) });
     }
     if (perm.events) rows.push({ label: t('plugins.perm.events'), value: t('plugins.perm.events_on') });
+    if (perm.notifySink) rows.push({ label: t('plugins.perm.notify_sink'), value: t('plugins.perm.notify_sink_on') });
     if (perm.services && perm.services.length) {
       rows.push({ label: t('plugins.perm.services'), value: t('plugins.perm.services_v', { services: perm.services.map((x) => x.replace(':', ': ')).join(', ') }) });
     }

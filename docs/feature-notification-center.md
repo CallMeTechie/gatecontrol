@@ -201,6 +201,7 @@ lebt.
 | GET | `/api/v1/client/push/prefs` | gespeicherte Geräte-Einstellungen plus Ruhezeiten der Person |
 | PUT | `/api/v1/client/push/prefs` | Geräte-Einstellungen: an/aus, Modus, abgewählte Themen, Akku-Status |
 | POST | `/api/v1/client/push/test` | Testnachricht an dieses Gerät |
+| GET / PUT | `/api/v1/client/push/routes` | Wo Mitteilungen erscheinen (GateControl, Familien-Chat, eigener Chat) je Thema – seit 1.191.0, Form wie `/api/v1/me/notify/routes` (docs/plugins.md „Notifications in chats“) |
 
 Für den Stream gelten diese Regeln:
 

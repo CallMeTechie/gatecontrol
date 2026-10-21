@@ -459,6 +459,10 @@ unsigned build of the same id.
   plugin's users (`gc.events.emit`) — see "Realtime events". The install
   dialog shows "Live-Ereignisse: darf Live-Ereignisse an die Apps und
   Plugin-Seiten seiner Benutzer senden".
+* `permissions.notifySink` (boolean, since 1.191.0): the plugin delivers
+  notifications people route into chats (hooks `deliverNotice`,
+  `mayRouteToFamily`) — see "Notifications in chats". The install dialog
+  shows "Mitteilungen in Chats zustellen".
 * `services` (optional, since 1.177.0): `{ "provides": { "<name>": { "label" } } }`
   — services other plugins may call (`<name>` `[a-z][a-z0-9_]{0,31}`, ≤ 32,
   label text ≤ 60, no other keys; errors `services: invalid`,
@@ -572,6 +576,12 @@ module.exports = {
   async service({ name, caller, user, payload }, gc) {     // optional (`services.provides`): called by another plugin
     return { ok: true };                    // JSON ≤ 16 KB (see "Services")
   },
+  async deliverNotice(notice, gc) {         // optional (`permissions.notifySink`): notifications routed into chats
+    return { covered: [12, 15] };           // who got it in a chat (see "Notifications in chats")
+  },
+  async mayRouteToFamily({ user }, gc) {     // optional (`permissions.notifySink`): may this person send topics
+    return false;                           // to the family chat? true only; no hook → no
+  },
   async notifyAction({ userId, notificationId, action, data }, gc) {  // optional: a `callback` button of one of
   },                                        // this plugin's pushes was pressed — once per push and button (see "Callback buttons")
 };
@@ -602,6 +612,7 @@ module.exports = {
 | `gc.notify(message, { severity })` | activity log + webhooks, and a push on `plugin:<id>:default` (`notify`, ≤ 30/h or `perHour`) — see "Notifications" |
 | `gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data, image })` | push on a declared `notifyTopics` topic (+ activity row) → `{ pushed, id }`; `image` `{ data, mime }` or `{ mediaId }` — see "Pictures" |
 | `gc.notify({ topic: <chat topic>, title, body, users, conversation, sender, … })` | a chat notification (`notifyTopics[].chat`) → `{ pushed, id, skipped }` — see "Chat notifications" |
+| `gc.notify.routes.get({ userId, lang })` / `gc.notify.routes.set({ userId, topic, dest })` | where a person's notifications appear, like `GET`/`PUT /api/v1/me/notify/routes` (`notifySink`, since 1.191.0) — see "Notifications in chats" |
 | `gc.media.info(id)` | `{ mediaId, mime, bytes, sha256, owner, createdAt, claimed, name }` of one of the plugin's files, or `null` (`media`) — see "Media" |
 | `gc.media.claim(id)` | keep a new upload (unclaimed files are removed after 24 h); idempotent → the info; unknown id → `ERR_INVALID` |
 | `gc.media.delete(id)` | delete the file → `true` (`false` when unknown) |
@@ -725,6 +736,21 @@ const { pushed, id } = await gc.notify({
   under the text, e.g. `[{ label: 'Akku', value: '80 %' }]` — one line each,
   label ≤ 60 and value ≤ 120 characters; anything else is dropped. Schedules ("evening before 18:00") are the
   plugin's own job (`background` + `gc.storage`).
+* `card` (optional, since 1.191.0): how the notification looks in a chat
+  when a person routes the topic there (see "Notifications in chats") —
+  `{ text, link?: { label, route }, actions? }`. `text` (required, newlines
+  kept) is cut to 4000 characters, `link.label` to 40; `link.route` is an
+  app route like `data.route` (`plg-<id>`, `inbox`, …); `actions` are checked
+  and cleaned exactly like `data.actions` (at most 4, unknown types dropped,
+  a bad `quick_action` / `callback` → `ERR_INVALID`). Not an object, an empty
+  text, a link without label or with another route → `ERR_INVALID`. The card
+  is kept with the notification for the sink only — the apps' push payload
+  and inbox never carry it. Ignored on chat topics.
+
+  ```js
+  await gc.notify({ topic: 'messages', title: 'Elternbrief', body: 'Liebe Eltern, …', users: [12],
+    card: { text: fullText, link: { label: 'Ganze Nachricht lesen', route: 'plg-gatecontrol-schule' } } });
+  ```
 
 ### Pictures (`image`)
 
@@ -938,6 +964,95 @@ const { pushed, id, skipped } = await gc.notify({
   `imageUrl` in the payload (Android: `MessagingStyle.Message.setData`) and
   fetch it without login. Older apps ignore it.
 * Push needs the licence feature `email_alerts` like every plugin push.
+
+## Notifications in chats (`permissions.notifySink`)
+
+Since 1.191.0. Per topic (core topics and every plugin topic) each person
+chooses where a notification appears: **GateControl** (the inbox, default),
+the household's **family chat** or an **own chat** of the source. Chats
+belong to the **sink**: the first enabled plugin declaring
+`"permissions": { "notifySink": true }` that may run (in practice the
+messenger). Without an active sink nothing changes — every notification
+goes to the inbox as before and the routes are dormant.
+
+* **Stored**: per person and topic `inbox` | `own` (none = `inbox`); per
+  topic a household family route (set by an administrator, or a person the
+  sink's `mayRouteToFamily` allows — the family parents; it applies to
+  everyone). Locked — always the inbox, cannot be changed: `security` and
+  `admin_notice`. Chat topics (`notifyTopics[].chat`) are no route targets
+  and are not listed.
+* **Delivery**: after the recipients are resolved as before (rule,
+  subscriptions, device mutes, quiet hours), a topic with a family route
+  sends **all** its recipients to the sink as `family`; otherwise people who
+  chose `own` go as `own`; everyone else gets the inbox delivery unchanged.
+  Then the host calls the sink's hook (asynchronously, after the
+  notification is stored):
+
+  ```js
+  async deliverNotice(notice, gc) {
+    // notice = { id, topic, source: 'core' | 'plugin:<id>', sourceLabel: 'GateControl' | 'Schule',
+    //   topicLabel: 'Nachrichten der Schule', title, body, priority, createdAt, data, imageUrl?,
+    //   card?: { text, link?: { label, route }, actions? }, family: [userIds], own: [userIds], lang }
+    return { covered: [12, 15] };   // who got it in a chat
+  }
+  ```
+
+  Title, body and data are the sanitised values the inbox shows too;
+  `imageUrl` is the push picture's path (while it lives), `card` the
+  sender's card (see "Notifications"), labels and `lang` in the server
+  language (the language notifications are stored in). People in `covered`
+  get **no** inbox delivery and **no** push from GateControl (the chat pushes
+  itself). Everyone else of `family`/`own` — the hook threw, did not answer
+  within **10 s**, or did not list them — gets the normal inbox delivery
+  afterwards: never lost, never twice. A bundled notification (rule
+  `bundle_s`) goes to the sink again with its new title. The rule's e-mail
+  and webhook channels are not affected. A sink that is not running at that
+  moment → inbox right away.
+* **Family permission**: `mayRouteToFamily({ user: { id, name, role } })` →
+  `true` allows that person to set (or lift) family routes. Administrators
+  always may; the hook is asked for everyone else (3 s; no hook, an error or
+  no answer → no).
+* **API** (same shapes): `GET/PUT /api/v1/me/notify/routes` (web and portal
+  session, also `/api/v1/portal/me/notify/routes`) and
+  `GET/PUT /api/v1/client/push/routes` (app token with an owner, else 403
+  `no_user`).
+
+  ```
+  GET → { ok, sink: true|false, canFamily: true|false,
+          groups: [ { source: 'core'|'plugin:<id>', label: 'GateControl'|'Schule', topics: [
+            { id: 'plugin:gatecontrol-schule:messages', label: 'Nachrichten der Schule',
+              dest: 'inbox'|'own'|'family', locked: false, familySetBy: 'Marc'|null } ] } ] }
+  PUT { topic, dest: 'inbox'|'own'|'family' } → the GET answer
+  ```
+
+  `dest: 'family'` = the household route is set (the same for everyone);
+  without a sink every `dest` reads `inbox`. PUT `family` needs `canFamily`
+  (else 403 `family_not_allowed`); PUT `inbox`/`own` on a topic with a
+  household route lifts it and sets the own choice — only with `canFamily`
+  (else 403 `family_not_allowed`). Locked topic → 409 `locked`; no sink and
+  `own`/`family` → 409 `no_sink`; a topic the person cannot get (or a chat
+  topic) → 404 `unknown_topic`; bad `dest`/`topic` → 400 `invalid_dest` /
+  `invalid_topic`. Topic labels follow the person's language.
+* **Host API of the sink** (since 1.191.0; only with `permissions.notifySink`,
+  else `ERR_NOTIFY_SINK_DENIED`) — for the page "Wo Mitteilungen erscheinen"
+  in the sink's own frame:
+
+  ```js
+  const view = await gc.notify.routes.get({ userId: user.id, lang: 'de' });   // = the GET answer for that person
+  const next = await gc.notify.routes.set({ userId: user.id, topic, dest });  // = the PUT (same rules) → the GET answer
+  ```
+
+  `lang` `de`/`en` (else the person's language) only changes the labels.
+  `set` checks exactly like the PUT for that person (family routes only
+  when that person may set them — admin or the sink's own
+  `mayRouteToFamily`). Refusals are thrown with `e.message` = the API's error
+  code: `ERR_INVALID` (`invalid_user` — not an enabled account —,
+  `invalid_topic`, `invalid_dest`), `ERR_NOT_FOUND` (`unknown_topic`),
+  `ERR_CONFLICT` (`locked`, `no_sink`), `ERR_FORBIDDEN`
+  (`family_not_allowed`). The plugin must only pass the id of the person
+  actually using its page.
+* Rows of a removed plugin stay harmless: its topics are no longer listed or
+  sent.
 
 ## Media (plugin.json `media`)
 

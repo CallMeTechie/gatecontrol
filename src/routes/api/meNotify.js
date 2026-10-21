@@ -12,6 +12,10 @@
  *   GET  /inbox   ?limit&before=<id> → { items, unread }
  *   POST /read    { ids:[…] } | { all:true } → { ok, updated }
  *   POST /test    { token_id? } → { ok, devices }   (token_id: one own app device)
+ *   GET  /routes  where notifications appear → { ok, sink, canFamily, groups:[{ source, label,
+ *                   topics:[{ id, label, dest, locked, familySetBy }] }] } (services/notify/chatRoutes.js)
+ *   PUT  /routes  { topic, dest: 'inbox'|'own'|'family' } → the GET answer; 400 invalid_*,
+ *                   404 unknown_topic, 409 locked / no_sink, 403 family_not_allowed
  *
  * Subscriptions are free (no licence); plugin topics are listed only with the
  * email_alerts licence (they are not delivered without it).
@@ -25,6 +29,7 @@ const router_ = require('../../services/notify/router');
 const store = require('../../services/notify/store');
 const config = require('../../services/notify/config');
 const admin = require('../../services/notify/admin');
+const chatRoutes = require('../../services/notify/chatRoutes');
 const { LOCKED_TOPICS } = require('../../services/notify/constants');
 const logger = require('../../utils/logger');
 
@@ -188,6 +193,28 @@ function createRouter() {
       res.json({ ok: true, devices: r.devices });
     } catch (err) {
       logger.error({ err: err.message }, 'me/notify test failed');
+      res.status(500).json({ ok: false, error: req.t('common.error') });
+    }
+  });
+
+  router.get('/routes', async (req, res) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      res.json(await chatRoutes.view(req.meUserId, req.language));
+    } catch (err) {
+      logger.error({ err: err.message }, 'me/notify routes failed');
+      res.status(500).json({ ok: false, error: req.t('common.error') });
+    }
+  });
+
+  router.put('/routes', async (req, res) => {
+    const b = req.body || {};
+    try {
+      const r = await chatRoutes.setRoute(req.meUserId, b.topic, b.dest);
+      if (r.status !== 200) return res.status(r.status).json({ ok: false, error: r.error });
+      res.json(await chatRoutes.view(req.meUserId, req.language));
+    } catch (err) {
+      logger.error({ err: err.message }, 'me/notify routes update failed');
       res.status(500).json({ ok: false, error: req.t('common.error') });
     }
   });
