@@ -48,8 +48,10 @@ const PIN_FAILURES_MAX = 5;
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 32 };
 const UNLOCK_TTL_S = 3600;
 const UNLOCK_COOKIE = 'gc_pl';
-// a download resumed (Range not from 0) within this time is not counted again
+// a download resumed (Range not from 0) within this time is not counted again —
+// only by the client that made the counted download (its resume cookie)
 const RESUME_WINDOW_MS = 6 * 3600 * 1000;
+const RESUME_COOKIE = 'gc_pr';
 // rows of ended links (expired, revoked) are kept this long for list()
 const KEEP_AFTER_END_MS = 30 * 24 * 3600 * 1000;
 const SETTING = 'plugins.public_links.';
@@ -384,23 +386,62 @@ async function tryPin(link, pin) {
   return { ok: false, locked: r.locked, left: r.left };
 }
 
-/**
- * May this request download file `f` of the link (state active, unlocked)?
- * `start` is where its Range starts (0 without one): from 0 it is a new
- * download — refused when the file used up its downloads; later it is the
- * continuation of one, allowed within RESUME_WINDOW_MS of the last counted
- * download of that file.
- */
-function mayDownload(link, f, start, now = Date.now()) {
-  if (start === 0) return !fileUsedUp(link, f);
-  return !!f.last_download_at && now - Date.parse(f.last_download_at) < RESUME_WINDOW_MS;
+// ─── Downloads ──────────────────────────────────
+//
+// A request for a file from byte 0 (no Range, or a Range from 0) is a new
+// download: it is counted — refused (410) when the file has used up its
+// maxDownloads — and the client gets a resume cookie for that file (HttpOnly,
+// Path=/s/<token>/f/<n>, RESUME_WINDOW_MS, HMAC over the link, the file and
+// the expiry with the server secret). A Range from later in the file is the
+// continuation of a download: free with a valid resume cookie of that file;
+// without one it is a new download like above (so a used-up file can never be
+// fetched again piece by piece by someone else holding the URL).
+
+function resumeSig(link, idx, exp) {
+  return crypto.createHmac('sha256', String(config.app.secret)).update(`public-link-resume:${link.token_hash}:${idx}:${exp}`).digest('base64url');
 }
 
-/** Count a new download of `files` (one file, or all of them for the ZIP) and tell the plugin. */
+/** Set-Cookie value after a counted download of file `f`: resuming it stays free for RESUME_WINDOW_MS. */
+function resumeCookie(link, token, f, now = Date.now()) {
+  const ttl = Math.floor(RESUME_WINDOW_MS / 1000);
+  const exp = Math.floor(now / 1000) + ttl;
+  const secure = /^https:/i.test(String(config.app.baseUrl || ''));
+  return `${RESUME_COOKIE}=${exp}.${resumeSig(link, f.idx, exp)}; Path=/s/${token}/f/${f.idx}; Max-Age=${ttl}; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
+}
+
+/** Does the request carry a valid resume cookie for file `f` of the link? */
+function mayResume(req, link, f, now = Date.now()) {
+  const v = req.cookies && typeof req.cookies[RESUME_COOKIE] === 'string' ? req.cookies[RESUME_COOKIE] : '';
+  const m = /^(\d{1,12})\.([A-Za-z0-9_-]{43})$/.exec(v);
+  if (!m) return false;
+  const exp = Number(m[1]);
+  const s = Math.floor(now / 1000);
+  if (exp <= s || exp > s + Math.floor(RESUME_WINDOW_MS / 1000)) return false;
+  const want = Buffer.from(resumeSig(link, f.idx, exp));
+  const got = Buffer.from(m[2]);
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
+
+/**
+ * Count a new download of `files` (one file, or all of them for the ZIP) and
+ * tell the plugin. Atomic: a file that used up its downloads (also by a
+ * parallel request) counts nothing at all → false.
+ */
 function countDownload(link, files, { zip = false } = {}, now = Date.now()) {
   const conn = db();
-  const upd = conn.prepare('UPDATE plugin_public_link_files SET downloads = downloads + 1, last_download_at = ? WHERE token_hash = ? AND idx = ?');
-  conn.transaction(() => { for (const f of files) upd.run(iso(now), link.token_hash, f.idx); })();
+  const upd = conn.prepare(`UPDATE plugin_public_link_files SET downloads = downloads + 1, last_download_at = ?
+    WHERE token_hash = ? AND idx = ? AND (? IS NULL OR downloads < ?)`);
+  const max = link.max_downloads == null ? null : link.max_downloads;
+  const ok = conn.transaction(() => {
+    for (const f of files) {
+      if (upd.run(iso(now), link.token_hash, f.idx, max, max).changes !== 1) throw new LinkError('used');
+    }
+    return true;
+  });
+  try { ok(); } catch (e) {
+    if (e instanceof LinkError) return false;
+    throw e;
+  }
   const token = tokenOf(link);
   const total = conn.prepare('SELECT COALESCE(SUM(downloads), 0) AS n FROM plugin_public_link_files WHERE token_hash = ?').get(link.token_hash).n;
   if (token) {
@@ -409,6 +450,7 @@ function countDownload(link, files, { zip = false } = {}, now = Date.now()) {
       file: zip ? null : { id: String(files[0].idx), name: files[0].name || files[0].media_name || null },
     });
   }
+  return true;
 }
 
 // ─── Hook and housekeeping ──────────────────────
@@ -450,7 +492,7 @@ function activeCount(pluginId, now = Date.now()) {
 }
 
 module.exports = {
-  LinkError, TOKEN_RE, FILES_MAX, TITLE_MAX, NOTE_MAX, TTL_MAX_MS, PIN_FAILURES_MAX, UNLOCK_COOKIE, RESUME_WINDOW_MS, SETTING,
+  LinkError, TOKEN_RE, FILES_MAX, TITLE_MAX, NOTE_MAX, TTL_MAX_MS, PIN_FAILURES_MAX, UNLOCK_COOKIE, RESUME_COOKIE, RESUME_WINDOW_MS, SETTING,
   declared, allowed, setAllowed, enabled, publicBase, hashToken, create, list, get, revoke, revokeForMedia, removeAll,
-  resolve, senderName, unlockCookie, unlocked, tryPin, mayDownload, countDownload, fileUsedUp, sweep, activeCount, stateOf,
+  resolve, senderName, unlockCookie, unlocked, tryPin, resumeCookie, mayResume, countDownload, fileUsedUp, sweep, activeCount, stateOf,
 };

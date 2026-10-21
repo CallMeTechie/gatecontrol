@@ -16,7 +16,7 @@
 const crypto = require('node:crypto');
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
 
-const { describe, it, before, after } = require('node:test');
+const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -294,6 +294,12 @@ describe('public links', () => {
   const pub = () => supertest(app);
   const tokenOf = (url) => url.split('/s/')[1];
 
+  // the tests send more than the per-address budget of the public routes in a minute
+  beforeEach(() => {
+    const { publicLinkLimiter } = require('../src/middleware/rateLimit');
+    for (const ip of ['127.0.0.1', '::ffff:127.0.0.1', '::1']) publicLinkLimiter.resetKey(`public-link:${require('express-rate-limit').ipKeyGenerator(ip)}`);
+  });
+
   before(async () => {
     fileA = crypto.randomBytes(CHUNK + 777);
     fileB = crypto.randomBytes(3000);
@@ -376,7 +382,11 @@ describe('public links', () => {
     assert.equal(f.headers['content-disposition'], `attachment; filename="Strand _.pdf"; filename*=UTF-8''Strand%20%C3%84.pdf`);
     assert.equal(f.headers['x-content-type-options'], 'nosniff');
     assert.equal(f.headers['cache-control'], 'no-store');
-    f = await pub().get(`/s/${token}/f/1`).set('Range', `bytes=${CHUNK - 10}-${CHUNK + 9}`).buffer(true).parse(binary).expect(206);
+    // the counted download hands out the resume cookie of that file; with it a Range is a free continuation
+    const resume = f.headers['set-cookie'][0].split(';')[0];
+    assert.match(f.headers['set-cookie'][0], new RegExp(`^gc_pr=\\d+\\.[A-Za-z0-9_-]{43}; Path=/s/${token}/f/1; Max-Age=21600; HttpOnly; SameSite=Lax; Secure$`));
+    f = await pub().get(`/s/${token}/f/1`).set('Cookie', resume).set('Range', `bytes=${CHUNK - 10}-${CHUNK + 9}`).buffer(true).parse(binary).expect(206);
+    assert.equal(f.headers['set-cookie'], undefined, 'a continuation is not counted');
     assert.ok(f.body.equals(fileA.subarray(CHUNK - 10, CHUNK + 10)));
     await pub().get(`/s/${token}/f/3`).expect(404);
     await pub().get(`/s/${token}/f/0`).expect(404);
@@ -414,11 +424,69 @@ describe('public links', () => {
     await pub().post(`/s/${'A'.repeat(24)}/unlock`).send({ pin: '1234' }).expect(404);
   });
 
-  it('maxDownloads per file: a new download after the last one → 410; a resumed one within 6 h still works', async () => {
+  it('maxDownloads per file: a new download after the last one → 410; only the downloading client resumes', async () => {
+    const { token } = (await create({ maxDownloads: 1, files: [{ mediaId: a }, { mediaId: b }] }).expect(200)).body.result;
+    const first = await pub().get(`/s/${token}/f/1`).expect(200);
+    const resume = first.headers['set-cookie'][0].split(';')[0];
+    await pub().get(`/s/${token}/f/1`).expect(410);
+    await pub().get(`/s/${token}/f/1`).set('Cookie', resume).expect(410); // from 0 always counts, cookie or not
+    // the downloading client resumes (any later start, within 6 h)…
+    let r = await pub().get(`/s/${token}/f/1`).set('Cookie', resume).set('Range', 'bytes=100-').buffer(true).parse(binary).expect(206);
+    assert.ok(r.body.equals(fileA.subarray(100)));
+    await pub().get(`/s/${token}/f/1`).set('Cookie', resume).set('Range', 'bytes=1-').expect(206);
+    // …a fresh client with the URL does not, nor with another file's or a forged cookie
+    await pub().get(`/s/${token}/f/1`).set('Range', 'bytes=1-').expect(410);
+    await pub().get(`/s/${token}/f/1`).set('Range', 'bytes=100-200').expect(410);
+    const linkRow = db().prepare('SELECT * FROM plugin_public_links WHERE token_hash = ?').get(links.hashToken(token));
+    const other = links.resumeCookie(linkRow, token, { idx: 2 }).split(';')[0];
+    await pub().get(`/s/${token}/f/1`).set('Cookie', other).set('Range', 'bytes=1-').expect(410); // file 2's cookie does not open file 1
+    await pub().get(`/s/${token}/f/1`).set('Cookie', resume.replace(/.$/, (x) => (x === 'A' ? 'B' : 'A'))).set('Range', 'bytes=1-').expect(410);
+    const expired = (() => { const [n, v] = resume.split('='); const [, sig] = v.split('.'); return `${n}=1.${sig}`; })();
+    await pub().get(`/s/${token}/f/1`).set('Cookie', expired).set('Range', 'bytes=1-').expect(410);
+    assert.equal(db().prepare('SELECT downloads FROM plugin_public_link_files WHERE token_hash = ? AND idx = 1').get(links.hashToken(token)).downloads, 1);
+    // the resume window ends after 6 h
+    const realNow = Date.now;
+    Date.now = () => realNow() + links.RESUME_WINDOW_MS + 60000;
+    try { await pub().get(`/s/${token}/f/1`).set('Cookie', resume).set('Range', 'bytes=1-').expect(410); } finally { Date.now = realNow; }
+    // file 2 is still there: a Range request of a fresh client is a new, counted download
+    r = await pub().get(`/s/${token}/f/2`).set('Range', 'bytes=1-').expect(206);
+    assert.match(r.headers['set-cookie'][0], new RegExp(`^gc_pr=.*; Path=/s/${token}/f/2;`));
+    await pub().get(`/s/${token}/f/2`).set('Range', 'bytes=1-').expect(410);
+    const page0 = await pub().get(`/s/${token}`).set('Accept-Language', 'de').expect(410);
+    assert.match(page0.text, /Bereits heruntergeladen/);
+  });
+
+  it('maxDownloads 3: every download from 0 and every Range without the resume cookie counts, continuations do not', async () => {
+    const { token } = (await create({ maxDownloads: 3, files: [{ mediaId: a }, { mediaId: b }] }).expect(200)).body.result;
+    const count = () => db().prepare('SELECT idx, downloads FROM plugin_public_link_files WHERE token_hash = ? ORDER BY idx').all(links.hashToken(token)).map((x) => x.downloads);
+    const one = await pub().get(`/s/${token}/f/1`).expect(200);
+    const c1 = one.headers['set-cookie'][0].split(';')[0];
+    await pub().get(`/s/${token}/f/1`).set('Cookie', c1).set('Range', 'bytes=10-').expect(206);
+    await pub().get(`/s/${token}/f/1`).set('Cookie', c1).set('Range', 'bytes=20-').expect(206);
+    assert.deepEqual(count(), [1, 0]);
+    await pub().head(`/s/${token}/f/1`).expect(200);
+    assert.deepEqual(count(), [1, 0], 'HEAD never counts');
+    await pub().get(`/s/${token}/f/1`).set('Range', 'bytes=10-').expect(206);
+    assert.deepEqual(count(), [2, 0], 'a Range of a fresh client counts');
+    await pub().get(`/s/${token}/zip`).expect(200);
+    assert.deepEqual(count(), [3, 1], 'the ZIP counts each file');
+    await pub().get(`/s/${token}/zip`).expect(410);
+    assert.deepEqual(count(), [3, 1], 'a refused ZIP counts nothing');
+    await pub().get(`/s/${token}/f/1`).expect(410);
+    await pub().get(`/s/${token}/f/1`).set('Cookie', c1).set('Range', 'bytes=30-').expect(206);
+    await pub().get(`/s/${token}/f/2`).expect(200);
+    await pub().get(`/s/${token}/f/2`).expect(200);
+    await pub().get(`/s/${token}/f/2`).expect(410);
+    assert.deepEqual(count(), [3, 3]);
+    // parallel requests for the last download: exactly one wins
+    const { token: t2 } = (await create({ maxDownloads: 1, files: [{ mediaId: b }] }).expect(200)).body.result;
+    const res = await Promise.all([1, 2, 3, 4].map(() => pub().get(`/s/${t2}/f/1`)));
+    assert.deepEqual(res.map((x) => x.status).sort(), [200, 410, 410, 410]);
+  });
+
+  it('maxDownloads 1 with two files: the ZIP and the single files share the budget', async () => {
     const { token } = (await create({ maxDownloads: 1, files: [{ mediaId: a }, { mediaId: b }] }).expect(200)).body.result;
     await pub().get(`/s/${token}/f/1`).expect(200);
-    await pub().get(`/s/${token}/f/1`).expect(410);
-    await pub().get(`/s/${token}/f/1`).set('Range', 'bytes=100-').expect(206);
     const page = await pub().get(`/s/${token}`).expect(200);
     assert.ok(!page.text.includes(`/s/${token}/zip`), 'no ZIP once a file is used up');
     await pub().get(`/s/${token}/zip`).expect(410);
@@ -426,7 +494,8 @@ describe('public links', () => {
     const ended = await pub().get(`/s/${token}`).set('Accept-Language', 'de').expect(410);
     assert.match(ended.text, /Bereits heruntergeladen/);
     const fresh = (await create({ maxDownloads: 1, files: [{ mediaId: a }] }).expect(200)).body.result.token;
-    // a Range from the middle before any counted download is refused
+    // a Range from the middle as the first request is that client's (counted) download — once
+    await pub().get(`/s/${fresh}/f/1`).set('Range', 'bytes=100-').expect(206);
     await pub().get(`/s/${fresh}/f/1`).set('Range', 'bytes=100-').expect(410);
   });
 
