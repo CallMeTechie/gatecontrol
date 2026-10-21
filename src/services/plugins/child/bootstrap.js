@@ -402,6 +402,11 @@ async function handleCall(method, payload) {
       // → { covered: [userIds] } (who got it in a chat; everyone else gets the inbox delivery)
       if (typeof plugin.deliverNotice !== 'function') return { covered: [] };
       return plugin.deliverNotice(payload, gc);
+    case 'ensureNoticeChat':
+      // optional (permissions.notifySink, since 1.192.0): a person chose "own chat" for a topic — the chat
+      // of that source now ({ user, source, sourceLabel, lang }) → { conversationId, created } (null: none)
+      if (typeof plugin.ensureNoticeChat !== 'function') return { chat: null };
+      return { chat: (await plugin.ensureNoticeChat(payload, gc)) || null };
     case 'mayRouteToFamily':
       // optional (permissions.notifySink): may payload.user send topics to the family chat? No hook → no
       if (typeof plugin.mayRouteToFamily !== 'function') return { allowed: false };

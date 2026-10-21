@@ -434,6 +434,30 @@ describe('API', () => {
     assert.equal(await chatRoutes.mayRouteToFamily(adminId), true, 'admins always');
   });
 
+  it('1.192.0: choosing "own" creates the chat of that source at once, or uses the existing one', async () => {
+    await kv('sink-chats', null); // the sink has no chat of this source yet
+    let r = await appPut(annaDev, { topic: TOPIC, dest: 'own' }).expect(200);
+    assert.deepEqual(r.body.chat, { source: 'plugin:rt-school', label: 'Schule', conversationId: 'c1', created: true });
+    const last = await kvGet('sink-ensure-last');
+    assert.deepEqual([last.user.id, last.source, last.sourceLabel], [anna, 'plugin:rt-school', 'Schule']);
+    // the same source again (another topic or the same): the existing chat
+    r = await appPut(annaDev, { topic: TOPIC, dest: 'own' }).expect(200);
+    assert.deepEqual([r.body.chat.conversationId, r.body.chat.created], ['c1', false]);
+    // inbox / family: no chat
+    r = await appPut(annaDev, { topic: TOPIC, dest: 'inbox' }).expect(200);
+    assert.equal(r.body.chat, null);
+    // the hook failing, too slow or answering nothing: the route is set anyway, chat null
+    for (const mode of ['throw', 'none', 'slow']) {
+      await kv('sink-ensure', mode);
+      chatRoutes._ensureMs = 300;
+      r = await appPut(annaDev, { topic: TOPIC, dest: 'own' }).expect(200);
+      assert.equal(r.body.chat, null, mode);
+      assert.equal(topicOf(r.body, TOPIC).dest, 'own');
+    }
+    chatRoutes._ensureMs = null;
+    await kv('sink-ensure', null);
+  });
+
   it('no sink: sink false, everything inbox, own / family → 409 no_sink, inbox allowed', async () => {
     setOwn(anna);
     await withoutSink(async () => {

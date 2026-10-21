@@ -582,6 +582,9 @@ module.exports = {
   async mayRouteToFamily({ user }, gc) {     // optional (`permissions.notifySink`): may this person send topics
     return false;                           // to the family chat? true only; no hook → no
   },
+  async ensureNoticeChat({ user, source, sourceLabel, lang }, gc) { // optional (`notifySink`, since 1.192.0):
+    return { conversationId: '42', created: true };  // a person chose "own chat": that source's chat now
+  },
   async notifyAction({ userId, notificationId, action, data }, gc) {  // optional: a `callback` button of one of
   },                                        // this plugin's pushes was pressed — once per push and button (see "Callback buttons")
 };
@@ -1012,6 +1015,14 @@ goes to the inbox as before and the routes are dormant.
   `true` allows that person to set (or lift) family routes. Administrators
   always may; the hook is asked for everyone else (3 s; no hook, an error or
   no answer → no).
+* **Own chat at once** (since 1.192.0): when a person chooses `own` for a
+  topic, the host asks the sink right away for that source's chat:
+  `ensureNoticeChat({ user: { id, name, role }, source, sourceLabel, lang })`
+  → `{ conversationId, created }` — an existing chat of that source is used
+  (`created: false`), else one is created. No hook, an error or no answer
+  within 5 s → `null` (the chat then appears with the first notification).
+  The PUT answer (and `gc.notify.routes.set`) carries it as
+  `chat: { source, label, conversationId, created } | null`.
 * **API** (same shapes): `GET/PUT /api/v1/me/notify/routes` (web and portal
   session, also `/api/v1/portal/me/notify/routes`) and
   `GET/PUT /api/v1/client/push/routes` (app token with an owner, else 403
@@ -1022,7 +1033,7 @@ goes to the inbox as before and the routes are dormant.
           groups: [ { source: 'core'|'plugin:<id>', label: 'GateControl'|'Schule', topics: [
             { id: 'plugin:gatecontrol-schule:messages', label: 'Nachrichten der Schule',
               dest: 'inbox'|'own'|'family', locked: false, familySetBy: 'Marc'|null } ] } ] }
-  PUT { topic, dest: 'inbox'|'own'|'family' } → the GET answer
+  PUT { topic, dest: 'inbox'|'own'|'family' } → the GET answer + chat (1.192.0: the own chat, else null)
   ```
 
   `dest: 'family'` = the household route is set (the same for everyone);

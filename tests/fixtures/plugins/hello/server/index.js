@@ -348,6 +348,22 @@ module.exports = {
     return parents.includes(payload.user.id);
   },
 
+  // 1.192.0: "own chat" chosen — kv "sink-chats" maps "<userId>:<source>" → conversation id (created
+  // on the first call, then reused); kv "sink-ensure" 'throw' / 'slow' (answers after 2 s) / 'none'
+  async ensureNoticeChat(payload, gc) {
+    const mode = await gc.storage.get('sink-ensure');
+    if (mode === 'throw') throw new Error('broken on purpose');
+    if (mode === 'slow') await new Promise((r) => setTimeout(r, 2000));
+    if (mode === 'none') return null;
+    const chats = (await gc.storage.get('sink-chats')) || {};
+    const key = `${payload.user.id}:${payload.source}`;
+    const created = !chats[key];
+    if (created) chats[key] = `c${Object.keys(chats).length + 1}`;
+    await gc.storage.set('sink-chats', chats);
+    await gc.storage.set('sink-ensure-last', payload);
+    return { conversationId: chats[key], created };
+  },
+
   // built-in data handed over by the host (tests/plugins_legacy.test.js)
   async legacyImport(snapshot, gc) {
     if (await gc.storage.get('legacy-refuse')) return { ok: false };
