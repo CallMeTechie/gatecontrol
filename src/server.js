@@ -312,6 +312,10 @@ async function start() {
       severity: 'info',
     });
   });
+  // Media uploads up to 2 GB (docs/plugins.md "Media", since 1.193.0) may take
+  // longer than Node's 5-minute requestTimeout: the server allows the upload
+  // deadline, middleware/requestDeadline.js keeps 5 minutes for every other body.
+  server.requestTimeout = require('./middleware/requestDeadline').UPLOAD_DEADLINE_MS;
 }
 
 start().catch((err) => {

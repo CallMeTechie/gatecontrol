@@ -73,10 +73,12 @@ function itemOf(n, st, t) {
   // a chat notification (docs/plugins.md "Chat notifications") is a private
   // message between people: the administrator sees that it went out, never its text
   const chat = n.kind === 'message';
+  // a silent data push (kind 'data', since 1.193.0) shows nobody anything: only that it went out
+  const dataPush = n.kind === 'data';
   return {
     id: n.id,
     title: chat ? t('push.chat_hidden') : n.title,
-    body: chat ? '' : (n.body || ''),
+    body: chat || dataPush ? '' : (n.body || ''),
     event_id: n.event_id,
     topic: n.topic,
     priority: n.priority,
@@ -307,7 +309,8 @@ function detail(id, t) {
       ...item,
       event_type: n.event_type || null,
       // chat: sender and conversation are part of the private message too
-      data: n.kind === 'message' ? null : store.parseJson(n.data, null),
+      // a data push's data is the plugin's private payload (keys, tickets)
+      data: n.kind === 'message' || n.kind === 'data' ? null : store.parseJson(n.data, null),
       collapse_key: n.collapse_key || null,
       count: n.count,
       expires_at: n.expires_at,

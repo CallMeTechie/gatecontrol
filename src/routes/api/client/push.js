@@ -57,6 +57,20 @@ function viaOf(ip) {
   } catch { return 'direct'; }
 }
 
+/**
+ * The path of a stream for plugins (gc.devices.list `via`, since 1.193.0):
+ * 'vpn' through the tunnel, 'lan' from a private address (the server in the
+ * same home network), else 'internet'.
+ */
+function netOf(ip, via) {
+  if (via === 'tunnel') return 'vpn';
+  try {
+    let addr = ipaddr.parse(String(ip || ''));
+    if (addr.kind() === 'ipv6' && addr.isIPv4MappedAddress()) addr = addr.toIPv4Address();
+    return ['private', 'uniqueLocal', 'linkLocal', 'loopback'].includes(addr.range()) ? 'lan' : 'internet';
+  } catch { return 'internet'; }
+}
+
 function platformOf(h) {
   const s = String(h || '').trim().toLowerCase();
   if (s === 'win32' || s === 'windows') return 'windows';
@@ -154,7 +168,7 @@ function openStream(req, res, { cfg, via, vpnPeerId, peerId, configHash, configS
   const tokenId = req.tokenId;
   const userId = req.tokenUserId == null ? null : req.tokenUserId;
   const state = control.stateFor(tokenId, peerId, configHash);
-  const conn = stream.add({ tokenId, userId, via, vpnPeerId, res, connectedAt: store.iso() });
+  const conn = stream.add({ tokenId, userId, via, net: netOf(req.ip, via), vpnPeerId, res, connectedAt: store.iso() });
 
   stream.writeEvent(conn, 'hello', {
     server_time: new Date().toISOString(),
@@ -347,4 +361,5 @@ router.put('/push/routes', async (req, res) => {
 module.exports = router;
 module.exports.stream = streamHandler;
 module.exports.viaOf = viaOf;
+module.exports.netOf = netOf;
 module.exports._keepaliveMs = null; // tests only

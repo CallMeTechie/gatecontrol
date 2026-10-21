@@ -110,10 +110,11 @@ function send(msg) {
   try { process.send(msg); } catch { /* host gone */ }
 }
 
-function hostCall(api, args) {
+// `timeoutMs`: longer for the calls moving big files (the host allows them as long, hostApi.callTimeout)
+function hostCall(api, args, timeoutMs = HOST_TIMEOUT_MS) {
   const id = ++seq;
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`host call ${api} timed out`)); }, HOST_TIMEOUT_MS);
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`host call ${api} timed out`)); }, Math.max(HOST_TIMEOUT_MS, timeoutMs));
     pending.set(id, { resolve, reject, timer });
     send({ t: 'host', id, api, args: args === undefined ? {} : args });
   });
@@ -226,6 +227,16 @@ function makeGc(info) {
         const list = await hostCall('target.udp', { target: String(id), index: o.index, port: o.port, dataBase64: buf.toString('base64'), timeoutMs: o.timeoutMs });
         return list.map((x) => ({ address: x.address, port: x.port, data: Buffer.from(x.dataBase64, 'base64') }));
       },
+      /**
+       * uploadTarget(id, '/path', { index, method: 'POST'|'PUT', query, headers, form: { fields, file: { field, mediaId, name, mime } },
+       *   mediaFrom: { plugin, mediaId }, timeoutMs (≤ 30 min), binary }) — since 1.193.0: a multipart/form-data upload of a media
+       *   file to an assigned target, streamed by the host → like fetchTarget
+       */
+      uploadTarget: (id, path, opts) => {
+        const o = opts && typeof opts === 'object' ? opts : {};
+        const t = Number.isFinite(o.timeoutMs) ? Math.min(o.timeoutMs, 30 * 60 * 1000) : 10 * 60 * 1000;
+        return hostCall('target.upload', { target: String(id), index: o.index, path: String(path || '/'), opts: o }, t + 10000);
+      },
       /** discover(Buffer, { ports, timeoutMs, maxResponses, repeat }) → [{ address, port, data }] (localDiscovery, granted by an administrator) */
       discover: async (data, opts) => {
         const o = opts || {};
@@ -287,7 +298,10 @@ function makeGc(info) {
         return hostCall('actions.run', { userId: o.userId, actionId: o.actionId, plugin: o.plugin, id: o.id, params: o.params, lang: o.lang, state: o.state, via: o.via, interactive: o.interactive });
       },
     }),
-    /** notify(message, { severity }) or notify({ topic, title, body, priority, users, collapseKey, ttl, data, image }) — image { data, mime } or { mediaId } */
+    /**
+     * notify(message, { severity }) or notify({ topic, title, body, priority, users, devices, silent, collapseKey, ttl, data, image })
+     * — image { data, mime } or { mediaId }; devices / silent (since 1.193.0, permissions.devices)
+     */
     notify: Object.freeze(Object.assign((message, opts) => (message && typeof message === 'object' && !Array.isArray(message)
       ? hostCall('notify', { notification: message })
       : hostCall('notify', { message: String(message), opts: opts || {} })), {
@@ -319,6 +333,29 @@ function makeGc(info) {
         const o = opts && typeof opts === 'object' ? opts : {};
         return hostCall('media.fetch', { url: String(url), opts: { headers: o.headers, timeoutMs: o.timeoutMs, mime: o.mime, name: o.name, maxBytes: o.maxBytes } });
       },
+      /**
+       * handOver(id, { toPlugin, user }) → { mediaId, mime, bytes, name } — since 1.193.0: a new, unclaimed file of another
+       * plugin (it must list one of that plugin's services in permissions.services)
+       */
+      handOver: (id, opts) => {
+        const o = opts && typeof opts === 'object' ? opts : {};
+        return hostCall('media.handOver', { id, toPlugin: o.toPlugin, user: o.user }, 11 * 60 * 1000);
+      },
+    }),
+    /**
+     * permissions.publicLinks (since 1.193.0, only while an administrator allows them):
+     * create({ title, note, files: [{ mediaId, name }], expiresAt, maxDownloads, pin, ownerUserId }) → { token, url, expiresAt };
+     * list({ ownerUserId }) → [link]; get(token) → link | null; revoke(token) → boolean
+     */
+    publicLinks: Object.freeze({
+      create: (opts) => hostCall('publicLinks.create', opts && typeof opts === 'object' ? opts : {}),
+      list: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('publicLinks.list', { ownerUserId: o.ownerUserId }); },
+      get: (token) => hostCall('publicLinks.get', { token }),
+      revoke: (token) => hostCall('publicLinks.revoke', { token }),
+    }),
+    /** permissions.devices (since 1.193.0): list({ userId }) → [{ id, name, platform, clientType, appVersion, online, lastSeen, via }] */
+    devices: Object.freeze({
+      list: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('devices.list', { userId: o.userId }); },
     }),
     /** permissions.events: emit({ users: [ids], type, data }) → { delivered } — realtime, not stored */
     events: Object.freeze({
@@ -411,6 +448,10 @@ async function handleCall(method, payload) {
       // optional (permissions.notifySink): may payload.user send topics to the family chat? No hook → no
       if (typeof plugin.mayRouteToFamily !== 'function') return { allowed: false };
       return { allowed: (await plugin.mayRouteToFamily(payload, gc)) === true };
+    case 'publicLinkEvent':
+      // optional (permissions.publicLinks, since 1.193.0): { token, event: 'download'|'locked'|'expired', … }; the answer is ignored
+      if (typeof plugin.publicLinkEvent === 'function') await plugin.publicLinkEvent(payload, gc);
+      return {};
     case 'service':
       // a service of services.provides called by another plugin (gc.services.call): { name, caller, user, payload }
       if (typeof plugin.service !== 'function') throw new Error('this plugin offers no services');

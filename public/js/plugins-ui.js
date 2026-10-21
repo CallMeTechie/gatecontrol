@@ -67,7 +67,8 @@
     const out = [];
     (list || []).forEach((m) => {
       const sub = String(m).split('/')[1] || String(m);
-      const name = sub.replace(/^(?:x-|vnd\.)/, '').split(/[.+;-]/)[0].toUpperCase();
+      // a whole family ("video/*", since 1.193.0) is named as such
+      const name = sub === '*' ? String(m) : sub.replace(/^(?:x-|vnd\.)/, '').split(/[.+;-]/)[0].toUpperCase();
       if (name && out.indexOf(name) < 0) out.push(name);
     });
     return out.join(', ');
@@ -122,6 +123,9 @@
       }) });
     }
     if (perm.events) rows.push({ label: t('plugins.perm.events'), value: t('plugins.perm.events_on') });
+    // since 1.193.0 (GateDrop): public download links (an administrator still has to allow them), the people's devices
+    if (perm.publicLinks) rows.push({ label: t('plugins.perm.public_links'), value: t('plugins.perm.public_links_on') });
+    if (perm.devices) rows.push({ label: t('plugins.perm.devices'), value: t('plugins.perm.devices_on') });
     if (perm.notifySink) rows.push({ label: t('plugins.perm.notify_sink'), value: t('plugins.perm.notify_sink_on') });
     if (perm.services && perm.services.length) {
       rows.push({ label: t('plugins.perm.services'), value: t('plugins.perm.services_v', { services: perm.services.map((x) => x.replace(':', ': ')).join(', ') }) });
@@ -411,6 +415,7 @@
     if (perm.criticalTopics && perm.criticalTopics.length) out.push('plugins.perm.notify_critical');
     if (perm.users) out.push('plugins.perm.users');
     if (perm.kiosk) out.push('plugins.perm.kiosk');
+    if (perm.publicLinks) out.push('plugins.perm.public_links');
     return out;
   }
 

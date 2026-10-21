@@ -1422,6 +1422,33 @@
       .concat(P.permRows(p.permissions, t).map((r) => el('div', { class: 'pgx-perm', 'data-sensitive': sens.indexOf(r.label) >= 0 ? '1' : null }, [
         icon(sens.indexOf(r.label) >= 0 ? I.shield : I.perms, 19), el('span', { class: 'pgx-t' }, [el('b', { text: r.label }), el('small', { text: r.value })]),
         sens.indexOf(r.label) >= 0 ? pill(t('plugins.x.sensitive'), 'warn') : null]))), { 'aria-labelledby': 'pgx-pp-h' }, 'pgx-flush'));
+    if (p.permissions && p.permissions.publicLinks) renderPublicLinks(p, panel);
+  }
+
+  // ── Öffentliche Links (permissions.publicLinks, since 1.193.0): the administrator's switch, default off ──
+  async function renderPublicLinks(p, panel) {
+    const r = await req('GET', API + '/' + enc(p.id) + '/public-links');
+    if (!r.ok || !r.publicLinks) return;
+    const L = r.publicLinks;
+    const old = $('pg-public-links');
+    if (old) old.remove();
+    const box = el('section', { class: 'pgx-card pgx-pad pgx-stack-card', id: 'pg-public-links', 'aria-labelledby': 'pg-pl-title' });
+    box.appendChild(h2(t('plugins.pl.title'), 'pg-pl-title'));
+    const psw = sw(L.allowed, t('plugins.pl.switch'), async () => {
+      const on = psw.getAttribute('aria-checked') !== 'true';
+      const res = await req('PUT', API + '/' + enc(p.id) + '/public-links', { allowed: on });
+      if (!res.ok) { toast(res.error, 'error'); return; }
+      psw.setAttribute('aria-checked', on ? 'true' : 'false');
+      toast(t(on ? 'plugins.pl.on' : 'plugins.pl.off'));
+    }, 'pg-public-links-sw');
+    box.appendChild(el('div', { class: 'st-row' }, [
+      el('div', { class: 'st-row-text' }, [el('label', { class: 'st-label', for: 'pg-public-links-sw', text: t('plugins.pl.switch') }),
+        el('span', { class: 'st-hint', text: t('plugins.pl.hint') })]),
+      el('div', { class: 'st-row-ctl' }, [psw]),
+    ]));
+    if (!L.publicUrl) box.appendChild(el('p', { class: 'pgx-muted', id: 'pg-public-links-nourl', text: t('plugins.pl.no_url') }));
+    box.appendChild(el('p', { class: 'pgx-muted pgx-small', text: t('plugins.pl.active', { n: L.active }) }));
+    panel.appendChild(box);
   }
 
   async function panelVersions(p, panel) {

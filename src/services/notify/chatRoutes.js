@@ -83,7 +83,8 @@ function isChatTopic(topic) {
 
 /** May this notification leave the inbox path at all? */
 function routable(notif) {
-  if (!notif || notif.kind === 'message') return false;
+  // chat notifications and silent data pushes (kind 'data', since 1.193.0) stay on their path
+  if (!notif || notif.kind === 'message' || notif.kind === 'data') return false;
   if (ROUTE_LOCKED_TOPICS.has(notif.topic)) return false;
   return CORE_TOPICS.includes(notif.topic) || String(notif.topic).startsWith('plugin:');
 }

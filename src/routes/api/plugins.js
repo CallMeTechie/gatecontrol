@@ -313,6 +313,37 @@ router.put('/:id/discovery', (req, res) => {
   res.json({ ok: true, granted: on });
 });
 
+// ─── Public links (permissions.publicLinks, services/plugins/publicLinks.js, since 1.193.0) ─
+// The administrator's switch per plugin (default off), shown on the plugin's
+// Berechtigungen tab: { allowed, publicUrl (the base links are built on, or
+// null), active (links that work now) }.
+
+const publicLinks = require('../../services/plugins/publicLinks');
+
+function publicLinksView(p) {
+  return { allowed: publicLinks.allowed(p.id), publicUrl: publicLinks.publicBase(), active: publicLinks.activeCount(p.id) };
+}
+
+router.get('/:id/public-links', (req, res) => {
+  const p = pluginParam(req, res);
+  if (!p) return;
+  if (!publicLinks.declared(p)) return res.status(404).json({ ok: false, code: 'not_declared', error: tr(req, 'plugins.err.not_found', 'Plugin not found') });
+  res.json({ ok: true, publicLinks: publicLinksView(p) });
+});
+
+router.put('/:id/public-links', (req, res) => {
+  const p = pluginParam(req, res);
+  if (!p) return;
+  const on = req.body && req.body.allowed;
+  if (!publicLinks.declared(p) || typeof on !== 'boolean') return res.status(400).json({ ok: false, code: 'invalid', error: tr(req, 'plugins.err.invalid', 'Invalid request') });
+  publicLinks.setAllowed(p.id, on);
+  require('../../services/plugins/registry').addLog(p.id, 'info', `public links ${on ? 'allowed' : 'switched off'} by an administrator`);
+  require('../../services/activity').log('plugin_public_links', `Plugin "${p.name}": public links ${on ? 'allowed' : 'switched off'}`, {
+    source: 'admin', ipAddress: req.ip, severity: on ? 'warning' : 'info', details: { plugin: p.id, allowed: on },
+  });
+  res.json({ ok: true, publicLinks: publicLinksView(p) });
+});
+
 // ─── Built-in data import (first-party plugins of former built-in features) ─
 
 const legacy = require('../../services/plugins/legacy');
@@ -392,7 +423,7 @@ router.put('/:id/media', async (req, res) => {
   const user = currentUser(req);
   if (!user) return res.status(403).json({ ok: false, code: 'login_required' });
   try {
-    return res.json({ ok: true, ...(await media.store(p, user.id, req)) });
+    return res.json({ ok: true, ...(await media.upload(p, user.id, req)) });
   } catch (e) { return media.failure(res, e); }
 });
 

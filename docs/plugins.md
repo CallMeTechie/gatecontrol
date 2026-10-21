@@ -312,7 +312,9 @@ unsigned build of the same id.
     "notify": { "perHour": 60 },
     "background": { "intervalSeconds": 60 },
     "events": true,
-    "services": ["gatecontrol-messenger:send_message"]
+    "services": ["gatecontrol-messenger:send_message"],
+    "publicLinks": true,
+    "devices": true
   },
   "media": { "maxBytes": 26214400, "types": ["image/jpeg", "image/webp", "audio/ogg", "application/pdf"], "quotaDefault": "10GB" },
   "services": { "provides": { "scene": { "label": { "de": "Szene schalten", "en": "Switch a scene" } } } },
@@ -442,7 +444,7 @@ unsigned build of the same id.
   topic cannot be critical or default`).
 * `media` (optional, since 1.177.0): `{ maxBytes, types, quotaDefault }` —
   files the plugin's users upload through GateControl (pictures, voice
-  messages, documents). `maxBytes` an integer 1024 … 104857600 (100 MB) per
+  messages, documents). `maxBytes` an integer 1024 … 2147483648 (2 GB; 100 MB before 1.193.0) per
   file; `types` 1 … 32 MIME types (`image|audio|video|application|text/…`,
   lower-cased; never types a browser runs — HTML, XML, SVG, JavaScript, CSS —
   nor the host's own body types JSON / form data); `quotaDefault` the storage
@@ -455,6 +457,18 @@ unsigned build of the same id.
   Internet lädt … – keine Uploads seiner Benutzer". Errors `media: invalid`,
   `media.maxBytes: invalid`, `media.types: invalid`, `media.quotaDefault:
   invalid`, `media.uploads: invalid`. See "Media".
+  Since 1.193.0: `maxBytes` up to 2147483648 (2 GB; before 100 MB);
+  `types` may also name a whole family — `"image/*"`, `"video/*"`,
+  `"audio/*"`, `"application/*"` (never `"text/*"`) — every concrete type of
+  it except the ones never stored (HTML, XML, SVG, JavaScript, CSS, JSON, form
+  data); `resumable` (boolean, default `false`): uploads of the apps and
+  frames may continue after an abort (see "Resumable uploads");
+  `handOverMaxBytes` (1024 … 2 GB, ≤ the quota, default `maxBytes`): the
+  largest file another plugin may hand over to this one (`gc.media.handOver`)
+  — e.g. a messenger keeping 25 MB for its own uploads but taking 2 GB files
+  from GateDrop. Errors `media.resumable: invalid`, `media.handOverMaxBytes:
+  invalid`. An older GateControl refuses the new keys (`media: invalid`) —
+  declare `"gatecontrol": ">=1.193.0"`.
 * `permissions.events` (boolean, since 1.177.0): realtime events to the
   plugin's users (`gc.events.emit`) — see "Realtime events". The install
   dialog shows "Live-Ereignisse: darf Live-Ereignisse an die Apps und
@@ -463,6 +477,19 @@ unsigned build of the same id.
   notifications people route into chats (hooks `deliverNotice`,
   `mayRouteToFamily`) — see "Notifications in chats". The install dialog
   shows "Mitteilungen in Chats zustellen".
+* `permissions.publicLinks` (boolean, since 1.193.0): the plugin may share
+  some of its media files through download links that work **without a
+  login** (`gc.publicLinks.*`) — but only after an administrator switched
+  "Öffentliche Links erlauben" on for this plugin (default off). The install
+  dialog shows "Öffentliche Links: Öffentliche Download-Links ohne Anmeldung
+  …", marked as sensitive. Errors `permissions.publicLinks: invalid`. See
+  "Public links".
+* `permissions.devices` (boolean, since 1.193.0): the plugin sees the
+  GateControl apps of a person (`gc.devices.list`), gets the asking device
+  with every app request (`user.device`) and may send notifications to single
+  devices and silent data notifications (`gc.notify` `devices` / `silent`).
+  The install dialog shows "Geräte: sieht die GateControl-Apps …". Errors
+  `permissions.devices: invalid`. See "Devices".
 * `services` (optional, since 1.177.0): `{ "provides": { "<name>": { "label" } } }`
   — services other plugins may call (`<name>` `[a-z][a-z0-9_]{0,31}`, ≤ 32,
   label text ≤ 60, no other keys; errors `services: invalid`,
@@ -515,6 +542,39 @@ that 3xx). The result has `status`, `headers` (lower case; `set-cookie` as a
 list), `body` or `bodyBase64`, `url`, `redirects`. Response bodies are capped
 at 5 MB.
 
+`gc.net.uploadTarget(id, path, opts)` (since 1.193.0, host API
+`target.upload`) sends one media file to an assigned home target as
+`multipart/form-data` — e.g. GateDrop's "Ablegen" on a NAS through the
+Synology plugin (File Station upload). Same target, protocol (`http`) and
+address checks as `fetchTarget`, the route's headers win, no redirects; the
+host streams the file from the media store (decrypted on the way, never
+through the plugin process, `Content-Length` known):
+
+```js
+const r = await gc.net.uploadTarget('nas', '/webapi/entry.cgi', {
+  index: 0,                       // like fetchTarget
+  method: 'POST',                 // or 'PUT'
+  query: { api: 'SYNO.FileStation.Upload', version: 2, method: 'upload', _sid: sid },
+  headers: { 'X-Requested-With': 'GateControl' },   // Content-Type is the host's (multipart boundary)
+  form: {
+    fields: { path: '/home/Drop', create_parents: true, overwrite: false },  // ≤ 50, ≤ 64 KB, before the file
+    file: { field: 'file', mediaId, name: 'Bericht.pdf', mime: 'application/pdf' },  // name/mime default: the media's
+  },
+  // instead of form.file.mediaId: a file of another plugin that could hand it over to this one
+  // (it lists one of this plugin's services in permissions.services) — no copy needed
+  // mediaFrom: { plugin: 'gatecontrol-gatedrop', mediaId },
+  timeoutMs: 20 * 60 * 1000,      // 1 s … 30 min, default 10 min (the host call waits as long)
+});
+// → like fetchTarget: { status, headers, body | bodyBase64 (binary: true), url, redirects } — answer ≤ 5 MB
+```
+
+The file part is `Content-Disposition: form-data; name="<field>";
+filename="<name>"` (UTF-8, `"` / CR / LF percent-encoded like browsers do) and
+`Content-Type: <mime>`. Errors like `fetchTarget` (`ERR_NET_DENIED`,
+`ERR_NET`, `ERR_INVALID` for a path leaving the target or bad arguments),
+`ERR_TIMEOUT`, `ERR_MEDIA_DENIED` (no `media`, or `mediaFrom` of a plugin that
+may not hand over to this one), `ERR_INVALID` for an unknown media id.
+
 `http.websocket(url, opts)` (since 1.184.0) opens a WebSocket to an
 **internet** host: a `ws:`/`wss:` URL checked exactly like `http.fetch` (its
 host and port in the allowlist, public addresses only, pinned to the checked
@@ -541,7 +601,7 @@ module.exports = {
   async start(gc) {},                       // after the process started
   async stop(gc) {},                        // before it is stopped
   async request(req, gc) {                  // the plugin's API (admin, portal and apps)
-    // req = { method, path, query, body, user: { id, name, role, portal?, loggedIn?, app? }, lang }
+    // req = { method, path, query, body, user: { id, name, role, portal?, loggedIn?, app?, device? }, lang }
     return { status: 200, json: { ok: true } };
   },
   async render(view, gc) {                  // pages and the portal tab
@@ -587,6 +647,8 @@ module.exports = {
   },
   async notifyAction({ userId, notificationId, action, data }, gc) {  // optional: a `callback` button of one of
   },                                        // this plugin's pushes was pressed — once per push and button (see "Callback buttons")
+  async publicLinkEvent({ token, event, file, zip, downloads }, gc) {  // optional (`publicLinks`, since 1.193.0):
+  },                                        // 'download' | 'locked' | 'expired' of one of its links (see "Public links")
 };
 ```
 
@@ -622,6 +684,11 @@ module.exports = {
 | `gc.media.usage()` | `{ bytes, count, quota, maxBytes, types, uploads }` |
 | `gc.media.url(id, { user, ttlS })` | `/plugin-media/<token>` — a signed URL a frame can show (`<img>`, `<audio>`) for `ttlS` seconds (60 … 86400, default 3600) |
 | `gc.media.fetch(url, { headers, timeoutMs, mime, name, maxBytes })` | since 1.190.0: download a file from the internet straight into the plugin's media (checked like `gc.http.fetch`) → `{ mediaId, mime, bytes, name }`, unclaimed, no owner — see "Media" |
+| `gc.media.handOver(id, { toPlugin, user })` | since 1.193.0: the file becomes a new, unclaimed file of another plugin → `{ mediaId, mime, bytes, name }` there (the caller lists one of that plugin's services) — see "Hand-over" |
+| `gc.net.uploadTarget(id, path, { form: { fields, file }, mediaFrom, query, headers, timeoutMs })` | since 1.193.0: a media file as `multipart/form-data` to an assigned home target, streamed → like `fetchTarget` — see "Network" |
+| `gc.publicLinks.create/list/get/revoke` | since 1.193.0: download links without login for some of the plugin's media (`publicLinks`, only while an administrator allows them) — see "Public links" |
+| `gc.devices.list({ userId })` | since 1.193.0: the person's GateControl apps `[{ id, name, platform, clientType, appVersion, online, lastSeen, via }]` (`devices`) — see "Devices" |
+| `gc.notify({ …, users, devices, silent, data })` | since 1.193.0: only to these devices of `users`; `silent: true` a data notification without display (`devices`) — see "Devices" |
 | `gc.events.emit({ users, type, data })` | realtime event to the listed people's apps and frames → `{ delivered }` (`events`, ≤ 600/min) — see "Realtime events" |
 | `gc.services.call({ plugin, service, userId, payload })` | another plugin's service → its answer (`permissions.services`, ≤ 60/h) — see "Services" |
 | `gc.services.available(plugin, service)` | `true`/`false`: would `call()` reach that provider now (listed, installed, running, provided) — the provider is not run, not counted (since 1.178.0) |
@@ -1087,6 +1154,43 @@ it in its own data. Code: `src/services/plugins/media.js`.
     (unknown, not usable, no `media`), `403 uploads_disabled` (`media.uploads:
     false`, since 1.190.0), `411 length_required`, `413 too_large`, `415
     unsupported_type`, `507 quota_exceeded`, `400 aborted | length_mismatch`.
+  * Time (since 1.193.0): an upload body may take up to 2 hours in all and
+    is ended when no byte arrives for 5 minutes; every other request body
+    keeps Node's 5 minutes (`src/middleware/requestDeadline.js`). The upload
+    route has no body-size limit of its own besides `media.maxBytes` (it is
+    never parsed). Apps upload files over 50 MB resumably.
+* **Resumable uploads** (since 1.193.0, `media.resumable: true`): a large
+  upload goes in parts and continues after an abort (lost connection, app
+  killed). The client picks an `uploadId` (8 … 64 of `[A-Za-z0-9_-]`, e.g. a
+  UUID) — it is scoped to the plugin and the uploader, nobody else sees or
+  continues it:
+
+  ```
+  PUT …/plugins/<id>/media?uploadId=<id>&offset=<n>     (apps, portal, admin frames — like a plain upload)
+    Content-Type: <one of media.types>  Content-Length: <end - n + 1>
+    Content-Range: bytes <n>-<end>/<total>
+    → 200 { ok: true, complete: false, uploadId, offset, total }      a part stored; go on at `offset`
+    → 200 { ok: true, complete: true, mediaId, mime, bytes }          the last part: the file exists
+    409 { ok: false, code: 'offset_mismatch' | 'upload_mismatch' | 'busy', offset }
+    400 not_resumable | invalid_upload_id | range_required | invalid_range, and the plain upload's codes
+  HEAD …/plugins/<id>/media/uploads/<uploadId>   → 200, headers Upload-Offset / Upload-Length
+  GET  …/plugins/<id>/media/uploads/<uploadId>   → 200 { ok: true, uploadId, offset, total, mime }; 404 unknown / expired
+  ```
+
+  (`…` = `/api/v1/client` with the device token, `/api/v1/portal` with a
+  portal login.) The first part (`offset=0`) opens the upload: type, `total ≤
+  maxBytes` and the quota are checked for the whole file. Every further part
+  must start exactly at the stored `offset` (else 409 with the right
+  `offset`); `offset` grows in whole 64 KiB chunks — what an aborted part sent
+  after its last whole chunk is dropped and sent again. Parts should be
+  multiples of 64 KiB (e.g. 8 MiB); a part that is not simply leaves the rest
+  of its last chunk for the next part (the answer's `offset` says so). One
+  part at a time per upload (409 `busy`). Type and `total` must stay the same
+  (409 `upload_mismatch`). Every whole chunk is encrypted on arrival like any
+  file; the finished file is checked against the quota again, gets its
+  SHA-256 and is **unclaimed** like every upload. An upload not finished
+  within 24 h is removed. `offset` in the query is optional (it must equal the
+  range start when given).
 * **Fetch** (since 1.190.0): `gc.media.fetch(url, opts)` downloads one file
   from the internet straight into the plugin's media — e.g. an attachment of a
   web service the plugin is logged in to; the file never passes through the
@@ -1182,12 +1286,178 @@ it in its own data. Code: `src/services/plugins/media.js`.
   px, WebP/JPEG) and may upload a small preview (≤ 64 KB) as a file of its
   own. GateControl has no image or audio processing.
 * Uninstall "Daten behalten" keeps the files, "Alles löschen" deletes them.
+* **Hand-over** (since 1.193.0): `gc.media.handOver(id, { toPlugin, user })`
+  → `{ mediaId, mime, bytes, name }` — the file becomes a new file of plugin
+  `toPlugin`, e.g. GateDrop handing a photo to the messenger before calling
+  its service `send_file`, or to the Synology plugin for `save_file`:
+
+  ```js
+  const { mediaId } = await gc.media.handOver(id, { toPlugin: 'gatecontrol-messenger', user: 12 });
+  await gc.services.call({ plugin: 'gatecontrol-messenger', service: 'send_file', userId: 12, payload: { mediaIds: [mediaId], … } });
+  ```
+
+  * Allowed like a service call: the caller lists one of the target's
+    services (`"<toPlugin>:<service>"` the target provides) in
+    `permissions.services` (else `ERR_SERVICES_DENIED`); the target is
+    installed and may run (else `ERR_SERVICE_UNAVAILABLE`) and declares
+    `media` (else `ERR_MEDIA_DENIED`); not the caller itself (`ERR_INVALID`).
+  * The target's declaration decides: the type (`ERR_MEDIA_TYPE`), the size
+    against its `handOverMaxBytes` (default its `maxBytes`,
+    `ERR_MEDIA_TOO_LARGE`), its quota — the file counts there
+    (`ERR_MEDIA_QUOTA`).
+  * The new file is **unclaimed** (24 h, `gc.media.claim` by the target) and
+    belongs to `user` (an enabled account) or nobody. The caller's file stays
+    as it is (delete it when done).
+  * The encrypted file is hard-linked (copied when the link fails), never
+    decrypted; a file of 2 GB is handed over at once. ≤ 600 per hour per
+    calling plugin, an activity row `plugin_media_handover` (ids only).
 * Errors of `gc.media.*`: `ERR_MEDIA_DENIED` (no `media` in plugin.json),
   `ERR_INVALID` (bad id, unknown id for `claim`/`url`, bad `user`/`ttlS`, bad
   `fetch` arguments); `gc.media.fetch` also `ERR_MEDIA_TOO_LARGE`,
   `ERR_MEDIA_EMPTY`, `ERR_MEDIA_QUOTA`, `ERR_MEDIA_TYPE`, `ERR_HTTP`,
   `ERR_NET_DENIED`, `ERR_NET`, `ERR_TIMEOUT`. A plugin only ever sees its own
   files.
+* `gc.media.usage()` (since 1.193.0) also answers `resumable` and
+  `handOverMaxBytes`.
+
+## Public links (`permissions.publicLinks`)
+
+Since 1.193.0. A plugin shares some of its media files with people **without
+a GateControl account** — GateDrop's "Link für Externe": a link valid for a
+while, optionally with a PIN, a page to download the files, all of them as one
+ZIP. GateControl serves it; the plugin only creates, lists and revokes. Code:
+`src/services/plugins/publicLinks.js`, `src/routes/publicLinks.js`.
+
+* **Two locks**: `permissions.publicLinks: true` in plugin.json, and the
+  administrator's switch *Öffentliche Links erlauben* on the plugin's
+  *Berechtigungen* tab (Einstellungen › Plugins › the plugin) — **off** by
+  default; API `GET/PUT /api/v1/plugins/<id>/public-links` `{ allowed }` →
+  `{ allowed, publicUrl, active }`, activity `plugin_public_links`. While
+  either is missing, every `gc.publicLinks.*` call throws
+  `ERR_PUBLIC_LINKS_DISABLED` and existing links answer 404 (they work again
+  when it is switched back on).
+* **URL**: built on GateControl's configured public URL (`GC_BASE_URL`) — it
+  must be `https` with a public host name (not localhost, not an internal
+  suffix such as `.lan` / `.local` / `.internal`, not a private address), else
+  `create` throws `ERR_NO_PUBLIC_URL`. The URL is `<GC_BASE_URL origin>/s/<token>`.
+
+```js
+const { token, url, expiresAt } = await gc.publicLinks.create({
+  ownerUserId: 12,                 // required: the person who shares (an enabled account; the page shows the name)
+  title: 'Urlaubsfotos',           // optional, ≤ 120 characters
+  note: 'Viel Spaß!',              // optional, ≤ 500 characters (newlines kept)
+  files: [{ mediaId, name: 'Strand.jpg' }],   // 1 … 20 CLAIMED files of the plugin; name optional (default: the media's)
+  expiresAt: Date.now() + 86400000,           // ms, 1 minute … 30 days ahead
+  maxDownloads: 1,                 // optional, 1 … 1000 downloads per file (none: unlimited)
+  pin: '4711',                     // optional, 4 … 8 digits as a string — stored only as an scrypt hash
+});
+// token: 24 characters base64url (144 bits); url: 'https://gc.example.com/s/<token>'
+
+await gc.publicLinks.list({ ownerUserId: 12 });   // the plugin's links (of one person), newest first
+await gc.publicLinks.get(token);                  // one link or null
+await gc.publicLinks.revoke(token);               // → true when it was active
+```
+
+A link (`list` / `get`): `{ token, url, title, note, ownerUserId, createdAt
+(ISO), expiresAt (ms), maxDownloads, pin (boolean), pinFailures, state:
+'active'|'expired'|'revoked'|'locked'|'used'|'gone', active, revoked, locked,
+expired, downloads (all files), files: [{ id ('1' …), mediaId, name, mime,
+bytes, downloads, lastDownloadAt }] }`. `used`: every file reached
+`maxDownloads`; `gone`: one of its files was deleted.
+
+**The core's routes** (no login, before every authenticated route, nothing
+but the files of that link is ever served):
+
+```
+GET  /s/<token>             the page (de/en by the browser's Accept-Language): title, "Geteilt von <name>",
+                            expiry; with a PIN first only the PIN form; then the note, the files with their
+                            sizes, a download button each and "Alle als ZIP herunterladen" (more than one file)
+POST /s/<token>/unlock      { pin } as a form → 303 back to the page + cookie | JSON (Accept / Content-Type
+                            application/json) → { ok: true }; wrong → 403 (page with the attempts left /
+                            { ok: false, code: 'wrong_pin', left }); the 5th wrong PIN locks the link → 410
+GET  /s/<token>/f/<n>       file n (1 …): Content-Disposition attachment with the UTF-8 name, Range (206/416)
+GET  /s/<token>/zip         all files as one ZIP (stored, streamed, Content-Length known, ZIP64 beyond 4 GiB)
+```
+
+* Unknown token → 404 (the same page for every miss); ended (expired,
+  revoked, locked, used up, a file deleted) → 410 with the reason; a PIN link
+  without the unlock cookie → 403 for files and the ZIP.
+* PIN: a right PIN sets an HttpOnly cookie for `Path=/s/<token>` only (1 h,
+  HMAC with the server secret, `Secure` with an https `GC_BASE_URL`); five
+  wrong PINs in a row lock the link for good. A form from another `Origin` is
+  refused. The PIN never appears in a log.
+* Downloads: a request from byte 0 (no `Range`, or a `Range` from 0) of a
+  file counts one download of it; the ZIP counts one of each file. A file at
+  `maxDownloads` is refused (410) — except a resumed download (`Range` not
+  from 0) within 6 h of its last counted one. `HEAD` never counts.
+* Every answer: `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow,
+  noarchive`, `Referrer-Policy: no-referrer`, `nosniff`, `X-Frame-Options:
+  DENY`; the page a strict CSP without any script (`default-src 'none'`,
+  styles of this server, `form-action 'self'`, `frame-ancestors 'none'`);
+  files `default-src 'none'; sandbox`.
+* Rate limits per address: 120 requests per minute on `/s/…` (failed ones
+  count), 20 PIN entries per 15 minutes.
+* A link ends with its files: `gc.media.delete` (or the clean-up of a file)
+  revokes every link using it; uninstalling the plugin deletes its links
+  (with "Daten behalten" too). Only claimed files can be shared
+  (`ERR_INVALID` otherwise). Rows of ended links are deleted 30 days after
+  their end (hourly).
+* **Hook** `publicLinkEvent({ token, event, … })` (optional, in the
+  background, the answer is ignored): `'download'` with `file: { id, name }`
+  (or `zip: true`, `file: null`) and `downloads` (all files), `'locked'` (5
+  wrong PINs), `'expired'` (noticed by the hourly run) — for the plugin's own
+  notifications ("Dein Link wurde geladen").
+* Errors of `gc.publicLinks.*`: `ERR_PUBLIC_LINKS_DISABLED`,
+  `ERR_NO_PUBLIC_URL`, `ERR_INVALID` (bad arguments, unknown / unclaimed /
+  other plugin's media), `ERR_RATE_LIMIT` (5000 links per plugin). Activity
+  `plugin_public_link` when a link is created (count of files, no names) and
+  when one is locked.
+
+## Devices (`permissions.devices`)
+
+Since 1.193.0. A plugin that works with a person's own devices — GateDrop's
+"Meine Geräte" — sees the GateControl apps of that person and can reach a
+single device. Code: `src/services/plugins/devices.js`.
+
+* `gc.devices.list({ userId })` → the person's app installations that
+  receive pushes (an API token of the person with scope `client` whose app
+  opened the push stream once — never admin or automation tokens):
+
+  ```js
+  [{ id: '42',                 // string, stable: the device token's id
+     name: 'Pixel 8',          // the token's name
+     platform: 'android',      // 'android' | 'windows' | 'ios' | 'web' | null
+     clientType: 'pro',        // 'pro' | 'community' | null (Windows editions)
+     appVersion: '2.4.0',      // or null
+     online: true,             // push stream connected now, or within the last 60 s
+     lastSeen: '2026-10-21T09:12:40.000Z',
+     via: 'lan' }]             // the open stream's path: 'vpn' | 'lan' | 'internet'; null while offline
+  ```
+
+  `ERR_DEVICES_DENIED` without the permission, `ERR_INVALID` for an unknown or
+  disabled person.
+* **The asking device**: requests of the apps (`/api/v1/client/plugins/<id>/api/…`)
+  to a plugin with `permissions.devices` carry `req.user.device = { id,
+  platform }` (the same `id` as in the list; `platform` from the app's
+  `X-Client-Platform` header, else what it reported). Other plugins never get
+  it.
+* **To single devices**: `gc.notify({ topic, title, users: [12], devices:
+  ['42'], … })` — only these devices (token ids as strings or numbers, ≤ 100)
+  get it; each must be an app device of one of `users` (else `ERR_INVALID`,
+  `devices` without `users` too). A device that is offline gets it when it
+  connects again, like every delivery.
+* **Silent data notifications**: `gc.notify({ topic, users, devices?, silent:
+  true, data })` — the app gets only `data` and shows nothing (no banner, no
+  sound, not in the inbox): `kind: "data"` and `silent: true` in the push
+  payload (docs/feature-notification-center.md "Daten-Mitteilungen"). `title`
+  is optional (default the plugin's name), `image` not allowed, never
+  bundled, held back, mailed or routed into a chat, no activity row; own
+  budget of 600 per hour and plugin (`ERR_RATE_LIMIT`). The topic is any of
+  `notifyTopics` (not a chat topic); the person's topic switch and device
+  mutes apply like for every plugin notification. For "device X: fetch
+  transfer Y".
+* `devices` and `silent` need `permissions.devices` (`ERR_DEVICES_DENIED`);
+  on a chat topic they are `ERR_INVALID`.
 
 ## Realtime events (`permissions.events`)
 
@@ -2071,7 +2341,9 @@ natively from the plugin's API — no plugin HTML). Code:
   licensed), are running and declare `permissions.app` — the same "usable"
   test as the portal and the quick actions.
 * **Viewer**: the owner of the token as `req.user = { id, name, role, portal:
-  true, loggedIn: true, app: true }` (the quick actions' viewer). `app: true`
+  true, loggedIn: true, app: true }` (the quick actions' viewer; since
+  1.193.0 plus `device: { id, platform }` for plugins with
+  `permissions.devices` — see "Devices"). `app: true`
   tells the plugin the call comes from an app; the plugin decides itself what
   an app user may do. A token without an owner gets no plugins (and 403 for
   the API).

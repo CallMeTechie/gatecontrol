@@ -30,7 +30,7 @@ function createNotification(n) {
     n.data ? JSON.stringify(n.data) : null, n.collapseKey || null, n.silent ? 1 : 0,
     n.target ? JSON.stringify(n.target) : null, t, t, n.expiresAt || null, n.releaseAt || null,
     n.meta ? JSON.stringify(n.meta) : null, n.image ? n.image.url : null, n.image ? n.image.expiresAt : null,
-    n.kind === 'message' ? 'message' : null);
+    n.kind === 'message' || n.kind === 'data' ? n.kind : null);
   return Number(r.lastInsertRowid);
 }
 
@@ -95,7 +95,8 @@ function markSent(seq, via) {
 const LIVE_SQL = `n.revoked_at IS NULL AND n.release_at IS NULL AND (n.expires_at IS NULL OR n.expires_at > ?)`;
 // Chat notifications (kind 'message', docs/plugins.md "Chat notifications")
 // are pushed like every notification but belong to the plugin's chat, not to
-// the GateControl inbox: neither listed there nor counted as unread.
+// the GateControl inbox: neither listed there nor counted as unread. The same
+// for silent data pushes (kind 'data', since 1.193.0).
 const NOT_CHAT_SQL = `n.kind IS NULL`;
 
 /**
@@ -142,8 +143,11 @@ function payload(row) {
     silent: row.silent === 1 || row.n_silent === 1,
     data: parseJson(row.data, null),
     imageUrl: imageUrlOf(row),
-    // only on chat notifications: the apps render them as a conversation (MessagingStyle)
-    ...(row.kind === 'message' ? { kind: 'message' } : {}),
+    // only on chat notifications: the apps render them as a conversation (MessagingStyle);
+    // 'data' (since 1.193.0): a silent data push — the app hands `data` to the plugin's
+    // feature and shows nothing (no banner, no sound, not in the inbox); `silent` is true too,
+    // so an app that does not know the kind yet at least makes no sound
+    ...(row.kind === 'message' || row.kind === 'data' ? { kind: row.kind } : {}),
   };
 }
 

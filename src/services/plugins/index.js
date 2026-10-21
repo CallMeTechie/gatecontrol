@@ -142,6 +142,9 @@ function permissionSummary(m, lang) {
     notifySink: !!p.notifySink,
     chatTopics: p.notify ? (m.notifyTopics || []).filter((t) => t.chat === true).map((t) => loc(t.label, lang)) : [],
     services: Array.isArray(p.services) ? p.services : [],
+    // since 1.193.0: download links without sign-in (only while an administrator allows them), the people's devices
+    publicLinks: !!p.publicLinks,
+    devices: !!p.devices,
     servicesProvided: m.services && m.services.provides ? Object.values(m.services.provides).map((x) => loc(x.label, lang)) : [],
   };
 }
@@ -419,6 +422,8 @@ async function removeInstalled(p, mode) {
   await runtime.ensureStopped(id);
   await storage.close(id);
   require('./events').closeStreams(id);
+  // its public links end with the plugin, whatever happens to its data
+  require('./publicLinks').removeAll(id);
   rmrf(path.join(pluginsRoot(), id));
   registry.remove(id);
   if (mode === 'wipe') {
@@ -778,6 +783,8 @@ function hourly() {
     if (n) logger.info({ removed: n }, 'plugin media clean-up');
   } catch (e) { logger.warn({ err: e.message }, 'plugin media clean-up failed'); }
   try { require('./hostApi').flushChatSummary(); } catch { /* best-effort */ }
+  // public links: the plugin hears of expiries, ended links go after 30 days
+  try { require('./publicLinks').sweep(); } catch (e) { logger.warn({ err: e.message }, 'public link sweep failed'); }
 }
 
 function start() {

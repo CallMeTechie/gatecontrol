@@ -514,7 +514,11 @@ function tick() {
 
 /**
  * A plugin message (already validated by hostApi): { topic, title, body,
- * priority, users, collapseKey, ttl, data, allowCritical, image, chat, card }. Priority is
+ * priority, users, devices, silent, collapseKey, ttl, data, allowCritical, image, chat, card }.
+ * `devices` (since 1.193.0, token ids of `users`' app devices): only those
+ * devices get it. `silent` (since 1.193.0): a data push — stored as kind
+ * 'data' with silent set, never bundled, held back, mailed or routed into a
+ * chat, not in the inbox; the app hands `data` on and shows nothing. Priority is
  * capped at high unless the topic allows critical. Needs the email_alerts licence
  * ("plugin topics"); without it only the activity row is written. `image`
  * (media.validate()'s result) is stored only when the push goes out — its
@@ -537,20 +541,28 @@ function emitPlugin(pluginId, n) {
     // critical only for a topic declared with allowCritical (hostApi.notify)
     if (PRIORITY_RANK[priority] > PRIORITY_RANK.high && n.allowCritical !== true) priority = 'high';
     const users = Array.isArray(n.users) && n.users.length ? n.users : null;
-    const image = n.image ? require('./media').save(n.image, n.ttl) : null;
+    const tokenIds = users && Array.isArray(n.devices) && n.devices.length ? n.devices : null;
+    const dataOnly = n.silent === true && n.chat !== true;
+    const image = n.image && !dataOnly ? require('./media').save(n.image, n.ttl) : null;
     const chat = n.chat === true;
+    let target = { recipients: rule.recipients };
+    if (tokenIds) target = { type: 'devices', ids: tokenIds };
+    else if (users) target = { type: 'users', ids: users };
+    let route = { recipients: rule.recipients };
+    if (tokenIds) route = { tokenIds };
+    else if (users) route = { users };
     r = publish({
       eventId, eventType: 'plugin_notice', topic: eventId, source: `plugin:${pluginId}`, priority,
       title: n.title, body: n.body, data: n.data, collapseKey: n.collapseKey ? sanitize.collapseKey(`plugin:${pluginId}:${n.collapseKey}`) : null,
-      ttlS: n.ttl, image, target: users ? { type: 'users', ids: users } : { recipients: rule.recipients }, kind: chat ? 'message' : null,
-      card: !chat && n.card ? n.card : null,
+      ttlS: n.ttl, image, target, kind: chat ? 'message' : (dataOnly ? 'data' : null), silent: dataOnly,
+      card: !chat && !dataOnly && n.card ? n.card : null,
     }, {
-      rule: chat ? { ...rule, delay_s: 0, bundle_s: 0 } : rule,
-      route: users ? { users } : { recipients: rule.recipients },
-      emitKey: chat ? null : eventId,
+      rule: chat || dataOnly ? { ...rule, delay_s: 0, bundle_s: 0 } : rule,
+      route,
+      emitKey: chat || dataOnly ? null : eventId,
     });
   }
-  if (rule.ch_email && n.chat !== true) {
+  if (rule.ch_email && n.chat !== true && n.silent !== true) {
     const mail = { subject: `[GateControl] ${n.title}`, text: [n.title, '', n.body || '', '', '— GateControl'].join('\n') };
     if (!r || !claimMail(eventId, mail)) sendMailNow(mail).catch((err) => logger.warn({ err: err.message, pluginId }, 'plugin notification mail failed'));
   }

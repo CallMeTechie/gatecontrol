@@ -277,14 +277,18 @@ function cleanHeaders(h) {
 
 /**
  * One HTTP(S) request pinned to an already checked address. No redirects.
+ * `bodyStream` (since 1.193.0, target.upload): { length, read: () =>
+ * AsyncIterable<Buffer> } instead of `body` — written with backpressure,
+ * Content-Length = length.
  * @returns {Promise<{status:number, headers:object, body:Buffer}>}
  */
-function pinnedRequest({ target, method = 'GET', headers, body, timeoutMs = 15000, maxBytes = 5 * 1024 * 1024 }) {
+function pinnedRequest({ target, method = 'GET', headers, body, bodyStream = null, timeoutMs = 15000, maxBytes = 5 * 1024 * 1024 }) {
   const u = target.url;
   const lib = u.protocol === 'https:' ? https : http;
   const payload = body == null ? null : (Buffer.isBuffer(body) ? body : Buffer.from(String(body), 'utf8'));
   const hdrs = cleanHeaders(headers);
   if (payload) hdrs['content-length'] = String(payload.length);
+  if (bodyStream) hdrs['content-length'] = String(bodyStream.length);
   const hostname = u.hostname.replace(/^\[|\]$/g, '');
   return new Promise((resolve, reject) => {
     const req = lib.request({
@@ -321,6 +325,16 @@ function pinnedRequest({ target, method = 'GET', headers, body, timeoutMs = 1500
     const timer = setTimeout(() => req.destroy(new Error('timeout')), timeoutMs);
     req.on('close', () => clearTimeout(timer));
     req.on('error', reject);
+    if (bodyStream) {
+      (async () => {
+        for await (const part of bodyStream.read()) {
+          if (req.destroyed) return;
+          if (!req.write(part)) await new Promise((r) => { req.once('drain', r); req.once('close', r); });
+        }
+        req.end();
+      })().catch((e) => req.destroy(e));
+      return;
+    }
     if (payload) req.write(payload);
     req.end();
   });
@@ -332,7 +346,7 @@ function pinnedRequest({ target, method = 'GET', headers, body, timeoutMs = 1500
  * location (e.g. an OAuth app scheme) and returns that 3xx.
  * @returns {Promise<{status, headers, body: Buffer, url: string, redirects: string[]}>}
  */
-async function fetchWithPolicy(policy, url, { method = 'GET', headers, body, timeoutMs, maxBytes, redirect = 'manual', lookup, reserved, check, deadline } = {}) {
+async function fetchWithPolicy(policy, url, { method = 'GET', headers, body, bodyStream = null, timeoutMs, maxBytes, redirect = 'manual', lookup, reserved, check, deadline } = {}) {
   let current = String(url);
   let m = method;
   let b = body;
@@ -344,9 +358,11 @@ async function fetchWithPolicy(policy, url, { method = 'GET', headers, body, tim
     // `deadline` (epoch ms, optional): every hop together within it (gc.media.fetch)
     const left = deadline ? deadline - Date.now() : null;
     if (left !== null && left <= 0) throw Object.assign(new Error('timeout'), { code: 'ERR_TIMEOUT' });
-    const res = await pinnedRequest({ target, method: m, headers: h, body: b, timeoutMs: left !== null ? Math.min(timeoutMs || 15000, left) : timeoutMs, maxBytes });
+    const res = await pinnedRequest({ target, method: m, headers: h, body: b, bodyStream: hop === 0 ? bodyStream : null,
+      timeoutMs: left !== null ? Math.min(timeoutMs || 15000, left) : timeoutMs, maxBytes });
     const loc = res.headers.location;
-    if (redirect !== 'follow' || ![301, 302, 303, 307, 308].includes(res.status) || typeof loc !== 'string') {
+    // a streamed body cannot be sent twice: its request never follows a redirect
+    if (bodyStream || redirect !== 'follow' || ![301, 302, 303, 307, 308].includes(res.status) || typeof loc !== 'string') {
       return { ...res, url: current, redirects };
     }
     let next;

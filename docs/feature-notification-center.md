@@ -682,7 +682,8 @@ Dazu gelten diese Regeln:
 * Der Client speichert das zuletzt verarbeitete `seq` und bestätigt jede
   Nachricht mit `delivered`.
 * `silent:true` bedeutet: in den Posteingang, aber ohne Ton und ohne Banner
-  (Ruhezeit oder Entwarnung).
+  (Ruhezeit oder Entwarnung). Zusammen mit `kind:"data"` (ab 1.193.0): gar
+  nicht anzeigen, nur `data` verarbeiten (siehe „Daten-Mitteilungen“).
 * Gleicher `collapse_key` heißt: Die vorhandene Benachrichtigung wird
   ersetzt bzw. aktualisiert.
 * `priority`: `info` | `normal` | `high` | `critical`.
@@ -930,6 +931,42 @@ data: {"seq":130,"id":52,"event_id":"plugin:gatecontrol-messenger:message","topi
   Android. Ohne Unterstützung für Eingaben (ältere Systeme) nur die
   Schaltfläche „Öffnen“.
 * `read`/`revoke` → Toast entfernen (`ToastNotificationHistory.Remove(tag, group)`).
+
+#### Daten-Mitteilungen (`kind: "data"`, ab 1.193.0)
+
+Ein Plugin mit `permissions.devices` kann mit `gc.notify({ …, silent: true,
+data })` eine **stille Daten-Mitteilung** an bestimmte Geräte schicken
+(docs/plugins.md „Devices“) — z. B. GateDrop: „Gerät X: hol Sendung Y“. Sie
+kommt als ganz normales `event: notification` (gleiche `seq`, gleiches `ack`,
+beim Wiederverbinden nachgeliefert wie jede Zustellung), mit diesen
+Unterschieden:
+
+```
+id: 140
+event: notification
+data: {"seq":140,"id":61,"event_id":"plugin:gatecontrol-gatedrop:received","topic":"plugin:gatecontrol-gatedrop:received",
+       "priority":"normal","title":"GateDrop","body":"","kind":"data","silent":true,
+       "created_at":"2026-10-21T09:12:40Z","expires_at":null,"collapse_key":null,"imageUrl":null,
+       "data":{"route":"plg-gatecontrol-gatedrop","gatedrop":{"transfer":"t-81","mode":"pull"}}}
+```
+
+* `kind: "data"` heißt: **nichts anzeigen** — kein Banner, kein Ton, kein
+  Eintrag in der Benachrichtigungsleiste. Die App gibt `data` an die
+  Funktion des Plugins weiter (`data.route` = `plg-<id>` sagt, an welche)
+  und bestätigt die Zustellung mit `ack` `delivered` (nach der Verarbeitung
+  gern `read`). Kennt die App das Plugin nicht, verwirft sie die Mitteilung
+  (nach `ack` `delivered`).
+* `silent` ist zusätzlich immer `true`: Eine App, die `kind: "data"` noch
+  nicht kennt, zeigt sie dann wenigstens ohne Ton (Verhalten älterer Apps).
+* Nicht im Posteingang: `GET /api/v1/client/push/inbox` und das Postfach im
+  Portal liefern keine `kind:"data"`-Einträge, `unread` zählt sie nicht. Nie
+  gebündelt, nie zurückgehalten, nie per E-Mail, nie in einen Chat
+  umgeleitet; nach `retention_h` gelöscht. Im Admin-Verlauf erscheint nur,
+  dass sie verschickt wurde (ohne `data`).
+* Empfänger: nur die genannten Geräte (`devices`, Token-IDs der Apps der in
+  `users` genannten Personen) bzw. ohne `devices` alle Apps dieser Personen.
+  Thema, Abo-Schalter der Person und Geräte-Stummschaltungen gelten wie bei
+  jeder Plugin-Mitteilung.
 
 #### Plugin-Medien in den Apps (ab 1.177.0)
 

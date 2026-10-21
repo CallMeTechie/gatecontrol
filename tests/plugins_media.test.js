@@ -81,7 +81,7 @@ describe('plugin.json media', () => {
   it('is normalised: types lower case without duplicates, quotaDefault in bytes (default 1 GB)', () => {
     let r = check({ maxBytes: 26214400, types: ['image/JPEG', 'image/jpeg', ' audio/ogg '], quotaDefault: '10GB' });
     assert.equal(r.ok, true, r.errors.join(', '));
-    assert.deepEqual(r.manifest.media, { maxBytes: 26214400, types: ['image/jpeg', 'audio/ogg'], quotaDefault: 10 * 1024 ** 3, uploads: true });
+    assert.deepEqual(r.manifest.media, { maxBytes: 26214400, types: ['image/jpeg', 'audio/ogg'], quotaDefault: 10 * 1024 ** 3, uploads: true, resumable: false, handOverMaxBytes: 26214400 });
     assert.equal(check({ maxBytes: 4096, types: ['image/png'], uploads: false }).manifest.media.uploads, false);
     assert.equal(check({ maxBytes: 4096, types: ['image/png'], uploads: true }).manifest.media.uploads, true);
     r = check({ maxBytes: 4096, types: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'] });
@@ -95,7 +95,7 @@ describe('plugin.json media', () => {
     const errs = (d) => check(d).errors;
     assert.deepEqual(errs('yes'), ['media: invalid']);
     assert.deepEqual(errs({ maxBytes: 4096, types: ['image/png'], extra: 1 }), ['media: invalid']);
-    for (const maxBytes of [0, 1023, 100 * 1024 * 1024 + 1, 1.5, '1000']) assert.deepEqual(errs({ maxBytes, types: ['image/png'] }), ['media.maxBytes: invalid'], String(maxBytes));
+    for (const maxBytes of [0, 1023, 2 * 1024 ** 3 + 1, 1.5, '1000']) assert.deepEqual(errs({ maxBytes, types: ['image/png'] }), ['media.maxBytes: invalid'], String(maxBytes));
     for (const types of [[], 'image/png', ['image'], ['text/html'], ['image/svg+xml'], ['application/json'], ['application/xhtml+xml'], ['text/javascript'],
       ['application/ld+json'], ['multipart/form-data'], new Array(33).fill(0).map((_, i) => `image/x-${i}`)]) {
       assert.deepEqual(errs({ maxBytes: 4096, types }), ['media.types: invalid'], JSON.stringify(types));
@@ -334,7 +334,7 @@ describe('gc.media through the plugin process', () => {
     await gcMedia('hello-media', { op: 'claim', id }).expect(200);
     assert.equal(db().prepare('SELECT ref_count FROM plugin_media WHERE id = ?').get(id).ref_count, 1);
     r = await gcMedia('hello-media', { op: 'usage' }).expect(200);
-    assert.deepEqual(Object.keys(r.body.result).sort(), ['bytes', 'count', 'maxBytes', 'quota', 'types', 'uploads']);
+    assert.deepEqual(Object.keys(r.body.result).sort(), ['bytes', 'count', 'handOverMaxBytes', 'maxBytes', 'quota', 'resumable', 'types', 'uploads']);
     assert.equal(r.body.result.uploads, true);
     assert.equal(r.body.result.maxBytes, 512 * 1024);
     assert.equal(r.body.result.count, media.usage('hello-media').count);

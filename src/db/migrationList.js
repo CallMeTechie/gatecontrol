@@ -2421,6 +2421,55 @@ const migrations = [
         set_at TEXT NOT NULL
       );`,
   },
+  {
+    version: 108,
+    name: 'plugin_public_links',
+    // Public download links of plugins (docs/plugins.md "Public links",
+    // services/plugins/publicLinks.js, since 1.193.0).
+    //   plugin_public_links       one link: token_hash = SHA-256 of the token
+    //                             (hex; the token itself only encrypted in
+    //                             token_enc for gc.publicLinks.list), the
+    //                             plugin it belongs to, the person who shares
+    //                             (goes with the account), title / note,
+    //                             expires_at ISO UTC, max_downloads per file
+    //                             (NULL = unlimited), pin_hash (scrypt, NULL =
+    //                             no PIN), pin_failures (5 → locked_at),
+    //                             revoked_at, expired_at (the expiry was
+    //                             noticed, hook publicLinkEvent 'expired').
+    //                             Rows go 30 days after their end.
+    //   plugin_public_link_files  its files in order: idx (1 …), the plugin's
+    //                             media id, the download name, downloads,
+    //                             last_download_at (a resumed download within
+    //                             6 h is not counted again).
+    sql: `
+      CREATE TABLE IF NOT EXISTS plugin_public_links (
+        token_hash TEXT PRIMARY KEY,
+        token_enc TEXT NOT NULL,
+        plugin TEXT NOT NULL,
+        owner_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        title TEXT,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        max_downloads INTEGER,
+        pin_hash TEXT,
+        pin_failures INTEGER NOT NULL DEFAULT 0,
+        locked_at TEXT,
+        revoked_at TEXT,
+        expired_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_plugin_public_links_plugin ON plugin_public_links(plugin, owner_user_id);
+      CREATE TABLE IF NOT EXISTS plugin_public_link_files (
+        token_hash TEXT NOT NULL REFERENCES plugin_public_links(token_hash) ON DELETE CASCADE,
+        idx INTEGER NOT NULL,
+        media_id TEXT NOT NULL,
+        name TEXT,
+        downloads INTEGER NOT NULL DEFAULT 0,
+        last_download_at TEXT,
+        PRIMARY KEY (token_hash, idx)
+      );
+      CREATE INDEX IF NOT EXISTS idx_plugin_public_link_files_media ON plugin_public_link_files(media_id);`,
+  },
 ];
 
 module.exports = { migrations };
