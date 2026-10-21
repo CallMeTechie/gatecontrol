@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.191.0] — 2026-10-21
+
+### Features
+- route notifications into chats (family chat, own chats) through a sink plugin (#342)
+
+---
+
 ## [1.190.0] — 2026-10-21
 
 ### Features
