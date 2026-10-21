@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.189.0] — 2026-10-21
+
+### Features
+- a quick action can open a page of the apps (opens) (#340)
+
+---
+
 ## [1.188.0] — 2026-10-20
 
 ### Features
