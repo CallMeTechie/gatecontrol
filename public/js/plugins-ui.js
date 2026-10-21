@@ -116,7 +116,8 @@
     }
     // messenger foundations (docs/plugins.md "Media", "Realtime events", "Services")
     if (perm.media) {
-      rows.push({ label: t('plugins.perm.media'), value: t('plugins.perm.media_v', {
+      // media.uploads false (since 1.190.0): no uploads, only files the plugin fetches itself (gc.media.fetch)
+      rows.push({ label: t('plugins.perm.media'), value: t(perm.media.uploads === false ? 'plugins.perm.media_fetch_v' : 'plugins.perm.media_v', {
         max: fmtBytes(perm.media.maxBytes), quota: fmtBytes(perm.media.quotaDefault), types: mediaTypes(perm.media.types),
       }) });
     }

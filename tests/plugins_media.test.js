@@ -81,7 +81,9 @@ describe('plugin.json media', () => {
   it('is normalised: types lower case without duplicates, quotaDefault in bytes (default 1 GB)', () => {
     let r = check({ maxBytes: 26214400, types: ['image/JPEG', 'image/jpeg', ' audio/ogg '], quotaDefault: '10GB' });
     assert.equal(r.ok, true, r.errors.join(', '));
-    assert.deepEqual(r.manifest.media, { maxBytes: 26214400, types: ['image/jpeg', 'audio/ogg'], quotaDefault: 10 * 1024 ** 3 });
+    assert.deepEqual(r.manifest.media, { maxBytes: 26214400, types: ['image/jpeg', 'audio/ogg'], quotaDefault: 10 * 1024 ** 3, uploads: true });
+    assert.equal(check({ maxBytes: 4096, types: ['image/png'], uploads: false }).manifest.media.uploads, false);
+    assert.equal(check({ maxBytes: 4096, types: ['image/png'], uploads: true }).manifest.media.uploads, true);
     r = check({ maxBytes: 4096, types: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'] });
     assert.equal(r.manifest.media.quotaDefault, 1024 ** 3);
     assert.equal(check({ maxBytes: 4096, types: ['image/png'], quotaDefault: 50 * 1024 * 1024 }).manifest.media.quotaDefault, 50 * 1024 * 1024);
@@ -100,11 +102,12 @@ describe('plugin.json media', () => {
     }
     for (const quotaDefault of ['10 XB', 'ten', 512 * 1024, '2TB', 1024]) assert.deepEqual(errs({ maxBytes: 4096, types: ['image/png'], quotaDefault }), ['media.quotaDefault: invalid'], String(quotaDefault));
     assert.deepEqual(errs({ maxBytes: 50 * 1024 * 1024, types: ['image/png'], quotaDefault: '10MB' }), ['media.quotaDefault: invalid'], 'quota below maxBytes');
+    for (const uploads of ['no', 0, null, 1]) assert.deepEqual(errs({ maxBytes: 4096, types: ['image/png'], uploads }), ['media.uploads: invalid'], String(uploads));
   });
 
   it('the install dialog names the media (size, quota, types) and the live events', () => {
     const perm = inspected.plugin.permissions;
-    assert.deepEqual(perm.media, { maxBytes: 512 * 1024, types: ['image/png', 'audio/ogg', 'application/pdf'], quotaDefault: 10 * 1024 * 1024 });
+    assert.deepEqual(perm.media, { maxBytes: 512 * 1024, types: ['image/png', 'audio/ogg', 'application/pdf'], quotaDefault: 10 * 1024 * 1024, uploads: true });
     assert.equal(perm.events, true);
     const t = (k, p) => { let s = de[k] || k; for (const [a, b] of Object.entries(p || {})) s = s.split('{{' + a + '}}').join(String(b)); return s; };
     const rows = Object.fromEntries(PUI.permRows(perm, t).map((r) => [r.label, r.value]));
@@ -323,14 +326,16 @@ describe('gc.media through the plugin process', () => {
 
   it('info, claim (idempotent), usage', async () => {
     let r = await gcMedia('hello-media', { op: 'info', id }).expect(200);
-    assert.deepEqual(Object.keys(r.body.result).sort(), ['bytes', 'claimed', 'createdAt', 'mediaId', 'mime', 'owner', 'sha256']);
+    assert.deepEqual(Object.keys(r.body.result).sort(), ['bytes', 'claimed', 'createdAt', 'mediaId', 'mime', 'name', 'owner', 'sha256']);
+    assert.equal(r.body.result.name, null, 'uploads have no name');
     assert.deepEqual([r.body.result.mediaId, r.body.result.bytes, r.body.result.owner, r.body.result.claimed], [id, 3000, anna, false]);
     r = await gcMedia('hello-media', { op: 'claim', id }).expect(200);
     assert.equal(r.body.result.claimed, true);
     await gcMedia('hello-media', { op: 'claim', id }).expect(200);
     assert.equal(db().prepare('SELECT ref_count FROM plugin_media WHERE id = ?').get(id).ref_count, 1);
     r = await gcMedia('hello-media', { op: 'usage' }).expect(200);
-    assert.deepEqual(Object.keys(r.body.result).sort(), ['bytes', 'count', 'maxBytes', 'quota', 'types']);
+    assert.deepEqual(Object.keys(r.body.result).sort(), ['bytes', 'count', 'maxBytes', 'quota', 'types', 'uploads']);
+    assert.equal(r.body.result.uploads, true);
     assert.equal(r.body.result.maxBytes, 512 * 1024);
     assert.equal(r.body.result.count, media.usage('hello-media').count);
     assert.equal((await gcMedia('hello-media', { op: 'info', id: 'f'.repeat(32) }).expect(200)).body.result, null);
@@ -496,5 +501,205 @@ describe('clean-up, frames, backup, uninstall', () => {
     await agent.post(`${API}/hello-gone/uninstall`).set('X-CSRF-Token', csrf).send({ mode: 'wipe', confirm: 'Hallo Medien' }).expect(200);
     assert.equal(media.row('hello-gone', id), null);
     assert.equal(fs.existsSync(path.join(process.env.GC_DATA_DIR, 'plugin-media', 'hello-gone')), false);
+  });
+});
+
+describe('gc.media.fetch, file names, media.uploads (since 1.190.0)', () => {
+  // A loopback server stands in for a public host: files.example resolves to
+  // 127.0.0.1, which the test seam of netPolicy counts as public.
+  let files, filesPort, hostApi, netPolicy, base;
+  const hits = [];
+  const PDF = randomBytes(2000);
+  const PNG = randomBytes(3000);
+  const FETCH_OVERRIDES = {
+    ...mediaOverrides('hello-fetch'),
+    name: { de: 'Hallo Abruf', en: 'Hello fetch' },
+    permissions: { ...clone(helloManifest.permissions), app: true, network: { ...clone(helloManifest.permissions.network), internet: ['files.example'] } },
+    media: { ...MEDIA, quotaDefault: '1MB', uploads: false },
+  };
+  const fetchMedia = (url, opts) => gcMedia('hello-fetch', { op: 'fetch', url, opts });
+  const failCode = async (url, opts) => { const r = await fetchMedia(url, opts).expect(400); return r.body.code; };
+
+  before(async () => {
+    hostApi = require('../src/services/plugins/hostApi');
+    netPolicy = require('../src/services/plugins/netPolicy');
+    files = http.createServer((req, res) => {
+      hits.push({ url: req.url, method: req.method, authorization: req.headers.authorization || null });
+      const u = req.url;
+      if (u === '/doc.pdf') { res.writeHead(200, { 'content-type': 'application/PDF; charset=binary', 'content-length': PDF.length }); return res.end(PDF); }
+      if (u === '/pic') { res.writeHead(200, { 'content-type': 'image/png' }); return res.end(PNG); }
+      if (u === '/octet') { res.writeHead(200, { 'content-type': 'application/octet-stream' }); return res.end(PDF); }
+      if (u === '/html') { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<html></html>'); }
+      if (u === '/redirect') { res.writeHead(302, { location: '/doc.pdf' }); return res.end(); }
+      if (u === '/offsite') { res.writeHead(302, { location: 'https://evil.example/doc.pdf' }); return res.end(); }
+      if (u === '/missing') { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('no'); }
+      if (u === '/empty') { res.writeHead(200, { 'content-type': 'image/png', 'content-length': 0 }); return res.end(); }
+      if (u === '/big') { const b = randomBytes(600 * 1024); res.writeHead(200, { 'content-type': 'image/png', 'content-length': b.length }); return res.end(b); }
+      if (u === '/big-chunked') {
+        res.writeHead(200, { 'content-type': 'image/png' });
+        let n = 0;
+        const more = () => { if (res.destroyed) return; if (n++ >= 20) { res.end(); return; } res.write(randomBytes(32 * 1024), more); };
+        return more();
+      }
+      if (u === '/slow') { setTimeout(() => { if (!res.destroyed) { res.writeHead(200, { 'content-type': 'image/png' }); res.end(PNG); } }, 2500); return undefined; }
+      res.writeHead(404);
+      return res.end();
+    });
+    await new Promise((r) => files.listen(0, '127.0.0.1', r));
+    filesPort = files.address().port;
+    base = `http://files.example:${filesPort}`;
+    netPolicy._setTestPrivateForTest({ '127.0.0.1': 'public' });
+    netPolicy._setReservedForTest(['10.8.0.0/24']);
+    hostApi._lookup = async (h) => (h === 'files.example' ? [{ address: '127.0.0.1', family: 4 }] : [{ address: '93.184.216.34', family: 4 }]);
+    const ins = await install(helloPackage({ overrides: FETCH_OVERRIDES }));
+    assert.deepEqual(ins.plugin.permissions.media, { maxBytes: 512 * 1024, types: ['image/png', 'audio/ogg', 'application/pdf'], quotaDefault: 1024 * 1024, uploads: false });
+    assert.equal(await runtime.waitRunning('hello-fetch'), true);
+  });
+  after(async () => {
+    hostApi._lookup = null;
+    netPolicy._setTestPrivateForTest(null);
+    netPolicy._setReservedForTest(null);
+    await new Promise((r) => files.close(r));
+  });
+
+  it('units: cleanName keeps the last path segment without control characters, ≤ 200 characters', () => {
+    assert.equal(media.cleanName('../../etc/Elternbrief.pdf'), 'Elternbrief.pdf');
+    assert.equal(media.cleanName('C:\\Users\\x\\Brief.pdf'), 'Brief.pdf');
+    assert.equal(media.cleanName(' Brief\u0000\u0007\n.pdf '), 'Brief.pdf');
+    assert.equal(media.cleanName('rechnung\u202Efdp.exe'), 'rechnungfdp.exe', 'no bidi override');
+    for (const v of [null, undefined, '', '   ', '/', 'a/', '..', '.']) assert.equal(media.cleanName(v), null, String(v));
+    const long = media.cleanName('ä'.repeat(300) + '.pdf');
+    assert.equal(Array.from(long).length, 200);
+    assert.ok(long.endsWith('.pdf'), 'the extension stays');
+    assert.equal(Array.from(media.cleanName('x'.repeat(250))).length, 200);
+  });
+
+  it('units: Content-Disposition with an ASCII fallback and the UTF-8 name', () => {
+    assert.equal(media.contentDisposition('attachment', 'Elternbrief "Mai" ä.pdf', 'i'),
+      "attachment; filename=\"Elternbrief Mai _.pdf\"; filename*=UTF-8''Elternbrief%20%22Mai%22%20%C3%A4.pdf");
+    assert.equal(media.contentDisposition('inline', "Foto (1)'s*.png", 'i'), "inline; filename=\"Foto (1)'s*.png\"; filename*=UTF-8''Foto%20%281%29%27s%2A.png");
+    assert.equal(media.contentDisposition('inline', null, 'abc'), null);
+    assert.equal(media.contentDisposition('attachment', null, 'abc'), 'attachment; filename="abc"');
+    assert.equal(media.contentDisposition('attachment', '"', 'abc'), "attachment; filename=\"abc\"; filename*=UTF-8''%22");
+  });
+
+  it('fetch: an allowed host → { mediaId, mime, bytes, name }, stored encrypted, unclaimed, no owner', async () => {
+    const r = await fetchMedia(`${base}/doc.pdf`, { name: '../x/Elternbrief "Mai" ä.pdf', headers: { authorization: 'Bearer t0k' } }).expect(200);
+    const f = r.body.result;
+    assert.match(f.mediaId, /^[0-9a-f]{32}$/);
+    assert.deepEqual([f.mime, f.bytes, f.name], ['application/pdf', PDF.length, 'Elternbrief "Mai" ä.pdf']);
+    assert.deepEqual(Object.keys(f).sort(), ['bytes', 'mediaId', 'mime', 'name']);
+    assert.deepEqual(hits.at(-1), { url: '/doc.pdf', method: 'GET', authorization: 'Bearer t0k' });
+    const row = db().prepare('SELECT * FROM plugin_media WHERE id = ?').get(f.mediaId);
+    assert.deepEqual([row.plugin, row.owner_user_id, row.ref_count, row.mime, row.bytes, row.name], ['hello-fetch', null, 0, 'application/pdf', PDF.length, 'Elternbrief "Mai" ä.pdf']);
+    assert.equal(row.sha256, crypto.createHash('sha256').update(PDF).digest('hex'));
+    const disk = fs.readFileSync(media.fileOf('hello-fetch', f.mediaId));
+    assert.equal(disk.length, media.sealedSize(PDF.length));
+    assert.equal(disk.includes(PDF.subarray(100, 164)), false, 'no plaintext on disk');
+    const info = (await gcMedia('hello-fetch', { op: 'info', id: f.mediaId }).expect(200)).body.result;
+    assert.deepEqual([info.owner, info.claimed, info.name], [null, false, 'Elternbrief "Mai" ä.pdf']);
+    assert.equal((await gcMedia('hello-fetch', { op: 'claim', id: f.mediaId }).expect(200)).body.result.claimed, true);
+
+    // reading: only who mediaAccess allows (owner null — nobody else by default)
+    await kv('hello-fetch', 'media-access', null);
+    await get(annaDev, 'hello-fetch', f.mediaId).expect(404);
+    const last = (await agent.get(`${API}/hello-fetch/api/kv`).query({ key: 'media-access-last' }).expect(200)).body.value;
+    assert.equal(last.owner, null);
+    await kv('hello-fetch', 'media-access', [anna]);
+    const bin = (req) => req.buffer(true).parse((res, cb) => { const c = []; res.on('data', (d) => c.push(d)); res.on('end', () => cb(null, Buffer.concat(c))); });
+    const g = await bin(get(annaDev, 'hello-fetch', f.mediaId)).expect(200);
+    assert.equal(Buffer.compare(g.body, PDF), 0);
+    assert.equal(g.headers['content-type'], 'application/pdf');
+    assert.equal(g.headers['content-disposition'], "attachment; filename=\"Elternbrief Mai _.pdf\"; filename*=UTF-8''Elternbrief%20%22Mai%22%20%C3%A4.pdf");
+    await get(benDev, 'hello-fetch', f.mediaId).expect(404);
+  });
+
+  it('fetch: redirects are followed, pictures with a name inline (also through /plugin-media/<token>)', async () => {
+    let r = await fetchMedia(`${base}/redirect`).expect(200);
+    assert.deepEqual([r.body.result.mime, r.body.result.bytes, r.body.result.name], ['application/pdf', PDF.length, null]);
+    r = await fetchMedia(`${base}/pic`, { name: 'Foto.png' }).expect(200);
+    const id = r.body.result.mediaId;
+    const url = (await gcMedia('hello-fetch', { op: 'url', id, opts: { ttlS: 600 } }).expect(200)).body.result;
+    const f = await supertest(app).get(url).expect(200);
+    assert.equal(f.headers['content-disposition'], "inline; filename=\"Foto.png\"; filename*=UTF-8''Foto.png");
+    assert.equal(f.headers['content-type'], 'image/png');
+  });
+
+  it('fetch: the type — opts.mime overrides, it must be one of media.types', async () => {
+    let r = await fetchMedia(`${base}/octet`, { mime: 'Application/PDF' }).expect(200);
+    assert.equal(r.body.result.mime, 'application/pdf');
+    assert.equal(await failCode(`${base}/octet`), 'ERR_MEDIA_TYPE');
+    assert.equal(await failCode(`${base}/html`), 'ERR_MEDIA_TYPE');
+    const before0 = hits.length;
+    assert.equal(await failCode(`${base}/doc.pdf`, { mime: 'image/jpeg' }), 'ERR_MEDIA_TYPE');
+    assert.equal(hits.length, before0, 'a forced type outside media.types is refused before the download');
+    r = await fetchMedia(`${base}/doc.pdf`, { mime: 'image/png' }).expect(200);
+    assert.equal(r.body.result.mime, 'image/png', 'the plugin may name the type itself');
+  });
+
+  it('fetch: the network policy — other hosts, offsite redirects, non-public addresses → ERR_NET_DENIED', async () => {
+    assert.equal(await failCode('https://evil.example/doc.pdf'), 'ERR_NET_DENIED');
+    assert.equal(await failCode(`${base}/offsite`), 'ERR_NET_DENIED');
+    assert.equal(await failCode(`ftp://files.example:${filesPort}/doc.pdf`), 'ERR_NET_DENIED');
+    hostApi._lookup = async () => [{ address: '10.8.0.9', family: 4 }];
+    try { assert.equal(await failCode(`${base}/doc.pdf`), 'ERR_NET_DENIED'); } finally {
+      hostApi._lookup = async (h) => (h === 'files.example' ? [{ address: '127.0.0.1', family: 4 }] : [{ address: '93.184.216.34', family: 4 }]);
+    }
+  });
+
+  it('fetch: size, empty answer, HTTP status, timeout — and nothing is stored', async () => {
+    const count0 = media.usage('hello-fetch').count;
+    assert.equal(await failCode(`${base}/big`), 'ERR_MEDIA_TOO_LARGE');
+    assert.equal(await failCode(`${base}/big-chunked`), 'ERR_MEDIA_TOO_LARGE');
+    assert.equal(await failCode(`${base}/doc.pdf`, { maxBytes: 1000 }), 'ERR_MEDIA_TOO_LARGE');
+    assert.equal(await failCode(`${base}/empty`), 'ERR_MEDIA_EMPTY');
+    const r = await fetchMedia(`${base}/missing`).expect(400);
+    assert.deepEqual([r.body.code, r.body.status], ['ERR_HTTP', 404]);
+    assert.equal(await failCode(`${base}/slow`, { timeoutMs: 1000 }), 'ERR_TIMEOUT');
+    assert.equal(media.usage('hello-fetch').count, count0);
+    const dir = path.join(process.env.GC_DATA_DIR, 'plugin-media', 'hello-fetch');
+    assert.deepEqual(fs.readdirSync(dir).filter((x) => x.startsWith('.tmp-')), []);
+  });
+
+  it('fetch: the quota like an upload → ERR_MEDIA_QUOTA', async () => {
+    const quota = media.quotaOf({ id: 'hello-fetch', manifest: { media: { quotaDefault: 1024 * 1024 } } });
+    const used = media.usage('hello-fetch').bytes;
+    const fake = 'f'.repeat(31) + '0';
+    const add = (bytes) => db().prepare(`INSERT INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc)
+      VALUES (?, 'hello-fetch', NULL, 'image/png', ?, ?, ?, 1, NULL, 'x')`).run(fake, bytes, '0'.repeat(64), new Date().toISOString());
+    try {
+      add(quota - used - 100); // room for 100 bytes: the 2000-byte document does not fit
+      assert.equal(await failCode(`${base}/doc.pdf`), 'ERR_MEDIA_QUOTA');
+      db().prepare('DELETE FROM plugin_media WHERE id = ?').run(fake);
+      add(quota - used); // full: refused before the download
+      const before0 = hits.length;
+      assert.equal(await failCode(`${base}/doc.pdf`), 'ERR_MEDIA_QUOTA');
+      assert.equal(hits.length, before0);
+    } finally { db().prepare('DELETE FROM plugin_media WHERE id = ?').run(fake); }
+  });
+
+  it('fetch: bad arguments → ERR_INVALID; a plugin without media → ERR_MEDIA_DENIED', async () => {
+    assert.equal(await failCode(`${base}/doc.pdf`, { maxBytes: 'big' }), 'ERR_INVALID');
+    assert.equal(await failCode(`${base}/doc.pdf`, { maxBytes: 0 }), 'ERR_INVALID');
+    assert.equal(await failCode(`${base}/doc.pdf`, { headers: ['x'] }), 'ERR_INVALID');
+    assert.equal(await failCode(`${base}/doc.pdf`, { name: 5 }), 'ERR_INVALID');
+    assert.equal(await failCode(`${base}/doc.pdf`, { mime: 7 }), 'ERR_INVALID');
+    assert.equal(await failCode(`${base}/doc.pdf`, { timeoutMs: 'soon' }), 'ERR_INVALID');
+    assert.equal((await gcMedia('hello-plain', { op: 'fetch', url: `${base}/doc.pdf` }).expect(400)).body.code, 'ERR_MEDIA_DENIED');
+  });
+
+  it('media.uploads false: apps, portal and admin page uploads → 403 uploads_disabled; usage says so; the install dialog too', async () => {
+    let r = await put(annaDev, 'hello-fetch', randomBytes(100)).expect(403);
+    assert.deepEqual(r.body, { ok: false, code: 'uploads_disabled' });
+    r = await agent.put('/api/v1/portal/plugins/hello-fetch/media').set('X-CSRF-Token', csrf).set('Content-Type', 'image/png').send(randomBytes(100)).expect(403);
+    assert.equal(r.body.code, 'uploads_disabled');
+    r = await agent.put(`${API}/hello-fetch/media`).set('X-CSRF-Token', csrf).set('Content-Type', 'image/png').send(randomBytes(100)).expect(403);
+    assert.equal(r.body.code, 'uploads_disabled');
+    const u = (await gcMedia('hello-fetch', { op: 'usage' }).expect(200)).body.result;
+    assert.equal(u.uploads, false);
+    const t = (k, p) => { let s = de[k] || k; for (const [a, b] of Object.entries(p || {})) s = s.split('{{' + a + '}}').join(String(b)); return s; };
+    const rows = Object.fromEntries(PUI.permRows({ media: { maxBytes: 512 * 1024, types: ['application/pdf'], quotaDefault: 1024 * 1024, uploads: false } }, t).map((x) => [x.label, x.value]));
+    assert.match(rows.Medien, /selbst aus dem Internet lädt.*PDF – keine Uploads/);
+    assert.ok(de['plugins.perm.media_fetch_v'] && en['plugins.perm.media_fetch_v']);
   });
 });

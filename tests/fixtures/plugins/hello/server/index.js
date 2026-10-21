@@ -136,13 +136,17 @@ module.exports = {
       case '/license':
         return { json: { ok: true, license: await gc.license.status() } };
       case '/media':
-        // gc.media.<op>(id, opts) (plugin.json `media`, tests/plugins_media.test.js)
+        // gc.media.<op>(id, opts), gc.media.fetch(url, opts) (plugin.json `media`, tests/plugins_media.test.js)
         try {
           const b = req.body || {};
           const op = String(b.op);
-          const result = op === 'usage' ? await gc.media.usage() : (op === 'url' ? await gc.media.url(b.id, b.opts) : await gc.media[op](b.id));
+          let result;
+          if (op === 'usage') result = await gc.media.usage();
+          else if (op === 'url') result = await gc.media.url(b.id, b.opts);
+          else if (op === 'fetch') result = await gc.media.fetch(b.url, b.opts);
+          else result = await gc.media[op](b.id);
           return { json: { ok: true, result } };
-        } catch (e) { return { status: 400, json: { ok: false, code: e.code || null, error: e.message } }; }
+        } catch (e) { return { status: 400, json: { ok: false, code: e.code || null, error: e.message, ...(e.status ? { status: e.status } : {}) } }; }
       case '/events':
         // gc.events.emit (permissions.events, tests/plugins_events.test.js); the body is passed on as is
         try { return { json: { ok: true, result: await gc.events.emit(req.body) } }; } catch (e) { return { status: 400, json: { ok: false, code: e.code || null, error: e.message } }; }

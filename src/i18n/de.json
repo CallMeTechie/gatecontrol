@@ -5222,6 +5222,7 @@
   "plugins.perm.actions_interactive_on": "darf Aktionen auslösen, wenn eine Person sie in diesem Plugin antippt (z. B. Tür öffnen aus dem Chat)",
   "plugins.perm.media": "Medien",
   "plugins.perm.media_v": "speichert Dateien seiner Benutzer bei GateControl (bis {{max}} je Datei, Kontingent {{quota}}): {{types}} – im Portal auch mit dem Mikrofon für Sprachaufnahmen",
+  "plugins.perm.media_fetch_v": "speichert Dateien, die es selbst aus dem Internet lädt, bei GateControl (bis {{max}} je Datei, Kontingent {{quota}}): {{types}} – keine Uploads seiner Benutzer",
   "plugins.perm.events": "Live-Ereignisse",
   "plugins.perm.events_on": "darf Live-Ereignisse an die Apps und Plugin-Seiten seiner Benutzer senden",
   "plugins.perm.chat": "Chat-Mitteilungen",

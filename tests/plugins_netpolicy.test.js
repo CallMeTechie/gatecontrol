@@ -100,6 +100,16 @@ describe('HTTP client (loopback test server stands in for a public host)', () =>
   it('follow re-checks every hop against the allowlist', async () => {
     await assert.rejects(N.fetchWithPolicy(policy(), `http://127.0.0.1:${port}/offsite`, { redirect: 'follow', lookup: look('93.184.216.34') }), (e) => e.code === 'ERR_NET_DENIED');
   });
+  it('deadline (gc.media.fetch): all hops together, a passed deadline → ERR_TIMEOUT before a request', async () => {
+    await assert.rejects(N.fetchWithPolicy(policy(), `http://127.0.0.1:${port}/x`, { deadline: Date.now() - 1 }), (e) => e.code === 'ERR_TIMEOUT');
+    const r = await N.fetchWithPolicy(policy(), `http://127.0.0.1:${port}/x`, { deadline: Date.now() + 5000, timeoutMs: 60000 });
+    assert.equal(r.status, 200);
+  });
+  it('a body beyond maxBytes is refused, never handed on cut off (HEAD: no body)', async () => {
+    await assert.rejects(N.fetchWithPolicy(policy(), `http://127.0.0.1:${port}/x`, { maxBytes: 5 }), /response_too_large/);
+    const h = await N.fetchWithPolicy(policy(), `http://127.0.0.1:${port}/x`, { method: 'HEAD', maxBytes: 5 });
+    assert.equal(h.status, 200, 'HEAD has no body');
+  });
   it('request bodies arrive as sent', async () => {
     const r = await N.fetchWithPolicy(policy(), `http://127.0.0.1:${port}/x`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'a=1&b=2' });
     assert.deepEqual(JSON.parse(r.body), { url: '/x', method: 'POST', type: 'application/x-www-form-urlencoded', body: 'a=1&b=2' });

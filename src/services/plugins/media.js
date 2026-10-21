@@ -11,6 +11,9 @@
 //     to disk, never held in memory: Content-Type from the plugin's `types`,
 //     Content-Length ≤ `maxBytes`, the plugin's quota (admin-adjustable,
 //     default `quotaDefault`);
+//   * storeBuffer(): a file the host fetched for the plugin (gc.media.fetch,
+//     hostApi.js) — no owner, an optional display name; same checks, same
+//     writer;
 //   * on disk: <data>/plugin-media/<plugin>/<id[0..2]>/<id>, encrypted with a
 //     random key per file (AES-256-GCM in CHUNK-sized chunks, each with its
 //     own nonce — prefix ‖ chunk index — and the chunk index plus a "last"
@@ -160,27 +163,39 @@ function baseType(ct) {
 
 // ─── Upload ─────────────────────────────────────
 
-/**
- * Stream one upload to disk. `req` is the incoming request (a readable
- * stream with headers). Checks before a byte is read: declared media,
- * Content-Type in `types`, Content-Length present, 1 ≤ length ≤ maxBytes,
- * quota. Afterwards the received length must equal Content-Length.
- * @returns {Promise<{ mediaId, mime, bytes }>}
- * @throws {MediaError} no_media (404), unsupported_type (415), length_required (411),
- *   too_large (413), quota_exceeded (507), aborted / length_mismatch (400)
- */
-async function store(plugin, ownerUserId, req) {
-  const decl = declOf(plugin);
-  if (!decl) throw new MediaError('no_media', 404);
-  const mime = baseType(req.headers['content-type']);
-  if (!decl.types.includes(mime)) throw new MediaError('unsupported_type', 415);
-  const rawLen = req.headers['content-length'];
-  if (rawLen == null || !/^\d{1,12}$/.test(String(rawLen)) || req.headers['transfer-encoding']) throw new MediaError('length_required', 411);
-  const length = Number(rawLen);
-  if (length < 1) throw new MediaError('length_required', 411);
-  if (length > decl.maxBytes) throw new MediaError('too_large', 413);
-  if (usage(plugin.id).bytes + length > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
+const NAME_MAX = 200;
+// control characters (C0, DEL, C1) and the bidi controls that could disguise an extension
+const NAME_STRIP_RE = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
+/**
+ * A file name for display / download (gc.media.fetch opts.name): the last
+ * path segment only, no control characters, trimmed, ≤ NAME_MAX characters
+ * (a long name keeps its extension). null when nothing is left.
+ */
+function cleanName(v) {
+  if (v == null) return null;
+  let s = String(v).split(/[\\/]/).pop().replace(NAME_STRIP_RE, '').trim();
+  if (!s || s === '.' || s === '..') return null;
+  const chars = Array.from(s);
+  if (chars.length > NAME_MAX) {
+    const dot = s.lastIndexOf('.');
+    const ext = dot > 0 ? Array.from(s.slice(dot)) : [];
+    s = ext.length > 1 && ext.length <= 16
+      ? chars.slice(0, NAME_MAX - ext.length).join('').trimEnd() + ext.join('')
+      : chars.slice(0, NAME_MAX).join('').trimEnd();
+  }
+  return s || null;
+}
+
+/**
+ * Encrypt `length` bytes from `source` (an async iterable of Buffers) into a
+ * new file of the plugin and add its row (unclaimed). The one writer of
+ * store() and storeBuffer(). The quota is checked again after writing
+ * (parallel uploads of the same plugin may have filled it meanwhile).
+ * `incomplete()` names the code when the source ended early.
+ * @returns {{ mediaId, mime, bytes }}
+ */
+async function writeFile(plugin, { source, length, mime, owner, name, incomplete }) {
   const id = crypto.randomBytes(16).toString('hex');
   const final = fileOf(plugin.id, id);
   fs.mkdirSync(path.dirname(final), { recursive: true, mode: 0o700 });
@@ -194,7 +209,7 @@ async function store(plugin, ownerUserId, req) {
   let pending = Buffer.alloc(0);
   try {
     fs.writeSync(fd, Buffer.concat([MAGIC, prefix]));
-    for await (const chunk of req) {
+    for await (const chunk of source) {
       received += chunk.length;
       if (received > length) throw new MediaError('length_mismatch', 400);
       hash.update(chunk);
@@ -205,7 +220,7 @@ async function store(plugin, ownerUserId, req) {
         pending = pending.subarray(CHUNK);
       }
     }
-    if (received !== length) throw new MediaError(req.aborted || req.destroyed ? 'aborted' : 'length_mismatch', 400);
+    if (received !== length) throw new MediaError(incomplete ? incomplete() : 'length_mismatch', 400);
     fs.writeSync(fd, sealChunk(key, prefix, index, true, pending));
     fs.fsyncSync(fd);
   } catch (e) {
@@ -215,15 +230,61 @@ async function store(plugin, ownerUserId, req) {
     throw new MediaError('aborted', 400, e && e.message);
   }
   fs.closeSync(fd);
-  // the quota again: parallel uploads of the same plugin may have filled it meanwhile
   if (usage(plugin.id).bytes + length > quotaOf(plugin)) {
     fs.rmSync(tmp, { force: true });
     throw new MediaError('quota_exceeded', 507);
   }
   fs.renameSync(tmp, final);
-  db().prepare(`INSERT INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)`).run(id, plugin.id, ownerUserId == null ? null : ownerUserId, mime, length, hash.digest('hex'), new Date().toISOString(), wrapKey(key, id));
+  db().prepare(`INSERT INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc, name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)`).run(id, plugin.id, owner == null ? null : owner, mime, length, hash.digest('hex'),
+    new Date().toISOString(), wrapKey(key, id), name == null ? null : name);
   return { mediaId: id, mime, bytes: length };
+}
+
+/**
+ * Stream one upload to disk. `req` is the incoming request (a readable
+ * stream with headers). Checks before a byte is read: declared media,
+ * uploads allowed (`media.uploads`), Content-Type in `types`,
+ * Content-Length present, 1 ≤ length ≤ maxBytes, quota. Afterwards the
+ * received length must equal Content-Length.
+ * @returns {Promise<{ mediaId, mime, bytes }>}
+ * @throws {MediaError} no_media (404), uploads_disabled (403), unsupported_type (415),
+ *   length_required (411), too_large (413), quota_exceeded (507), aborted / length_mismatch (400)
+ */
+async function store(plugin, ownerUserId, req) {
+  const decl = declOf(plugin);
+  if (!decl) throw new MediaError('no_media', 404);
+  if (decl.uploads === false) throw new MediaError('uploads_disabled', 403);
+  const mime = baseType(req.headers['content-type']);
+  if (!decl.types.includes(mime)) throw new MediaError('unsupported_type', 415);
+  const rawLen = req.headers['content-length'];
+  if (rawLen == null || !/^\d{1,12}$/.test(String(rawLen)) || req.headers['transfer-encoding']) throw new MediaError('length_required', 411);
+  const length = Number(rawLen);
+  if (length < 1) throw new MediaError('length_required', 411);
+  if (length > decl.maxBytes) throw new MediaError('too_large', 413);
+  if (usage(plugin.id).bytes + length > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
+  return writeFile(plugin, { source: req, length, mime, owner: ownerUserId, name: null,
+    incomplete: () => (req.aborted || req.destroyed ? 'aborted' : 'length_mismatch') });
+}
+
+/**
+ * Store bytes the host holds already (gc.media.fetch): no owner, `name`
+ * cleaned (cleanName). Same checks as store(): declared media, type in
+ * `types`, 1 ≤ bytes ≤ maxBytes, quota; same file format.
+ * @returns {Promise<{ mediaId, mime, bytes, name }>}
+ * @throws {MediaError} no_media, unsupported_type, empty, too_large, quota_exceeded
+ */
+async function storeBuffer(plugin, buf, { mime, name = null, owner = null } = {}) {
+  const decl = declOf(plugin);
+  if (!decl) throw new MediaError('no_media', 404);
+  const type = baseType(mime);
+  if (!decl.types.includes(type)) throw new MediaError('unsupported_type', 415);
+  if (!Buffer.isBuffer(buf) || buf.length < 1) throw new MediaError('empty', 400);
+  if (buf.length > decl.maxBytes) throw new MediaError('too_large', 413);
+  if (usage(plugin.id).bytes + buf.length > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
+  const clean = cleanName(name);
+  const out = await writeFile(plugin, { source: [buf], length: buf.length, mime: type, owner, name: clean });
+  return { ...out, name: clean };
 }
 
 // ─── Reading ────────────────────────────────────
@@ -238,7 +299,7 @@ function row(pluginId, id) {
 function info(r) {
   if (!r) return null;
   return { mediaId: r.id, mime: r.mime, bytes: r.bytes, sha256: r.sha256, owner: r.owner_user_id == null ? null : r.owner_user_id,
-    createdAt: r.created_at, claimed: r.ref_count > 0 };
+    createdAt: r.created_at, claimed: r.ref_count > 0, name: r.name == null ? null : r.name };
 }
 
 /**
@@ -294,6 +355,21 @@ async function* readRange(r, start, end) {
 const INLINE_RE = /^(?:image|audio|video)\//;
 
 /**
+ * Content-Disposition of a stored file: with a name
+ * `<type>; filename="<ASCII fallback>"; filename*=UTF-8''<percent-encoded>`
+ * (RFC 6266 / 8187); without one, documents as a download named by their id
+ * and pictures, audio and video inline without the header (null).
+ */
+function contentDisposition(type, name, id) {
+  if (name) {
+    const ascii = String(name).replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '');
+    const pct = encodeURIComponent(name).replace(/['()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+    return `${type}; filename="${ascii || id}"; filename*=UTF-8''${pct}`;
+  }
+  return type === 'attachment' ? `attachment; filename="${id}"` : null;
+}
+
+/**
  * Answer a GET for a stored file: Range (206/416), Accept-Ranges, the
  * stored type, nosniff, a sandboxing CSP; pictures, audio and video inline,
  * everything else as a download. `cache` is the Cache-Control value.
@@ -313,7 +389,8 @@ async function send(req, res, r, cache) {
   const { start, end } = range || { start: 0, end: r.bytes - 1 };
   res.setHeader('Content-Type', r.mime);
   res.setHeader('Cache-Control', cache);
-  if (!INLINE_RE.test(r.mime)) res.setHeader('Content-Disposition', `attachment; filename="${r.id}"`);
+  const disposition = contentDisposition(INLINE_RE.test(r.mime) ? 'inline' : 'attachment', r.name, r.id);
+  if (disposition) res.setHeader('Content-Disposition', disposition);
   res.setHeader('Content-Length', String(end - start + 1));
   if (range) res.setHeader('Content-Range', `bytes ${start}-${end}/${r.bytes}`);
   res.status(range ? 206 : 200);
@@ -470,7 +547,7 @@ function exportPlugin(pluginId, budget) {
     const data = fs.readFileSync(fileOf(r.plugin, r.id));
     budget.left -= data.length;
     out.push({ id: r.id, owner_user_id: r.owner_user_id, mime: r.mime, bytes: r.bytes, sha256: r.sha256, created_at: r.created_at,
-      claimed_at: r.claimed_at, key: encrypt(unwrapKey(r.key_enc, r.id).toString('hex')), data: data.toString('base64') });
+      claimed_at: r.claimed_at, name: r.name == null ? null : r.name, key: encrypt(unwrapKey(r.key_enc, r.id).toString('hex')), data: data.toString('base64') });
   }
   return out;
 }
@@ -491,10 +568,10 @@ function importPlugin(pluginId, list) {
       const file = fileOf(pluginId, e.id);
       fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
       fs.writeFileSync(file, data, { mode: 0o600 });
-      db().prepare(`INSERT OR REPLACE INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`).run(e.id, pluginId, Number.isSafeInteger(e.owner_user_id) ? e.owner_user_id : null, baseType(e.mime),
+      db().prepare(`INSERT OR REPLACE INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc, name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`).run(e.id, pluginId, Number.isSafeInteger(e.owner_user_id) ? e.owner_user_id : null, baseType(e.mime),
         e.bytes, e.sha256, typeof e.created_at === 'string' ? e.created_at : new Date().toISOString(),
-        typeof e.claimed_at === 'string' ? e.claimed_at : new Date().toISOString(), wrapKey(key, e.id));
+        typeof e.claimed_at === 'string' ? e.claimed_at : new Date().toISOString(), wrapKey(key, e.id), cleanName(e.name));
       n++;
     } catch (err) {
       logger.warn({ plugin: pluginId, err: err.message }, 'plugin media: restore of a file failed');
@@ -505,7 +582,7 @@ function importPlugin(pluginId, list) {
 
 module.exports = {
   MediaError, ID_RE, CHUNK, URL_PREFIX, URL_TTL_MIN_S, URL_TTL_MAX_S, UNCLAIMED_TTL_MS, QUOTA_SETTING, BACKUP_SETTING,
-  mediaRoot, fileOf, declOf, quotaOf, setQuota, usage, baseType, store, row, info, parseRange, readRange, send, mayRead, failure,
+  mediaRoot, fileOf, declOf, quotaOf, setQuota, usage, baseType, store, storeBuffer, cleanName, contentDisposition, row, info, parseRange, readRange, send, mayRead, failure,
   claim, remove, removeAll, url, resolveToken, cleanup, backupEnabled, setBackupEnabled, exportPlugin, importPlugin, sealedSize,
   _accessMs: null,
 };

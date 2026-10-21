@@ -166,15 +166,20 @@ function quotaBytes(v) {
   return mm ? Number(mm[1]) * QUOTA_UNIT[mm[2].toUpperCase()] : null;
 }
 
-/** media → { maxBytes, types, quotaDefault } (null when invalid). */
+/**
+ * media → { maxBytes, types, quotaDefault, uploads } (null when invalid).
+ * uploads (since 1.190.0, default true): false = the plugin's users cannot
+ * upload (PUT …/media → 403 uploads_disabled), only gc.media.fetch adds files.
+ */
 function validateMedia(v, err) {
-  if (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).some((k) => !['maxBytes', 'types', 'quotaDefault'].includes(k))) { err('media: invalid'); return null; }
+  if (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).some((k) => !['maxBytes', 'types', 'quotaDefault', 'uploads'].includes(k))) { err('media: invalid'); return null; }
+  if (v.uploads !== undefined && typeof v.uploads !== 'boolean') { err('media.uploads: invalid'); return null; }
   if (!Number.isSafeInteger(v.maxBytes) || v.maxBytes < 1024 || v.maxBytes > MEDIA_MAX_BYTES) { err('media.maxBytes: invalid'); return null; }
   const types = Array.isArray(v.types) ? [...new Set(v.types.map((x) => (typeof x === 'string' ? x.trim().toLowerCase() : '')))] : null;
   if (!types || !types.length || types.length > MEDIA_TYPES_MAX || !types.every((x) => MIME_RE.test(x) && !MIME_DENY_RE.test(x))) { err('media.types: invalid'); return null; }
   const quota = v.quotaDefault == null ? MEDIA_QUOTA_DEFAULT : quotaBytes(v.quotaDefault);
   if (quota == null || quota < MEDIA_QUOTA_MIN || quota > MEDIA_QUOTA_MAX || quota < v.maxBytes) { err('media.quotaDefault: invalid'); return null; }
-  return { maxBytes: v.maxBytes, types, quotaDefault: quota };
+  return { maxBytes: v.maxBytes, types, quotaDefault: quota, uploads: v.uploads !== false };
 }
 
 function isFile(p) {
@@ -420,7 +425,7 @@ function validate(raw, opts = {}) {
   }
   m.ui = ui;
 
-  // media: { maxBytes, types, quotaDefault } — uploads through GateControl (gc.media)
+  // media: { maxBytes, types, quotaDefault, uploads } — files through GateControl (gc.media)
   m.media = raw.media == null ? null : validateMedia(raw.media, err);
 
   // services: { provides: { <name>: { label } } } — offered to other plugins (gc.services.call)

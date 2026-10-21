@@ -303,12 +303,19 @@ function pinnedRequest({ target, method = 'GET', headers, body, timeoutMs = 1500
     }, (res) => {
       const chunks = [];
       let size = 0;
+      let tooLarge = false;
+      // settle at once: an 'end' already queued must not resolve with a cut-off body
+      const refuse = () => { tooLarge = true; const e = new Error('response_too_large'); reject(e); req.destroy(e); };
+      // a declared length beyond the limit is refused before a byte is read (HEAD has no body)
+      const declared = Number(res.headers['content-length']);
+      if (method !== 'HEAD' && Number.isFinite(declared) && declared > maxBytes) { refuse(); return; }
       res.on('data', (c) => {
+        if (tooLarge) return;
         size += c.length;
-        if (size > maxBytes) { req.destroy(new Error('response_too_large')); return; }
+        if (size > maxBytes) { refuse(); return; }
         chunks.push(c);
       });
-      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+      res.on('end', () => { if (!tooLarge) resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }); });
       res.on('error', reject);
     });
     const timer = setTimeout(() => req.destroy(new Error('timeout')), timeoutMs);
@@ -325,7 +332,7 @@ function pinnedRequest({ target, method = 'GET', headers, body, timeoutMs = 1500
  * location (e.g. an OAuth app scheme) and returns that 3xx.
  * @returns {Promise<{status, headers, body: Buffer, url: string, redirects: string[]}>}
  */
-async function fetchWithPolicy(policy, url, { method = 'GET', headers, body, timeoutMs, maxBytes, redirect = 'manual', lookup, reserved, check } = {}) {
+async function fetchWithPolicy(policy, url, { method = 'GET', headers, body, timeoutMs, maxBytes, redirect = 'manual', lookup, reserved, check, deadline } = {}) {
   let current = String(url);
   let m = method;
   let b = body;
@@ -334,7 +341,10 @@ async function fetchWithPolicy(policy, url, { method = 'GET', headers, body, tim
   for (let hop = 0; ; hop++) {
     const target = check ? await check(current) : await checkTarget(current, policy, { lookup, reserved });
     if (!target.ok) throw Object.assign(new Error('connection refused by the plugin policy: ' + target.reason), { code: 'ERR_NET_DENIED', reason: target.reason });
-    const res = await pinnedRequest({ target, method: m, headers: h, body: b, timeoutMs, maxBytes });
+    // `deadline` (epoch ms, optional): every hop together within it (gc.media.fetch)
+    const left = deadline ? deadline - Date.now() : null;
+    if (left !== null && left <= 0) throw Object.assign(new Error('timeout'), { code: 'ERR_TIMEOUT' });
+    const res = await pinnedRequest({ target, method: m, headers: h, body: b, timeoutMs: left !== null ? Math.min(timeoutMs || 15000, left) : timeoutMs, maxBytes });
     const loc = res.headers.location;
     if (redirect !== 'follow' || ![301, 302, 303, 307, 308].includes(res.status) || typeof loc !== 'string') {
       return { ...res, url: current, redirects };
