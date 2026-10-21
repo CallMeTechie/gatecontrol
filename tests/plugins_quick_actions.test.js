@@ -90,8 +90,8 @@ describe('GET /api/v1/client/actions', () => {
     const mine = r.body.actions.filter((a) => a.plugin === 'hello');
     assert.equal(mine.length, 16, 'at most 16 per plugin');
     const by = (id) => mine.find((a) => a.id === id);
-    assert.deepEqual(by('light:3'), { plugin: 'hello', pluginName: 'Hallo Welt', id: 'light:3', title: 'Wohnzimmer', subtitle: 'Licht', icon: 'M4 12h16', kind: 'toggle', state: 'on', confirm: true, confirmWhen: null, look: null, verbs: null, targets: false, device: null, widget: null });
-    assert.deepEqual(by('scene.evening_1-a'), { plugin: 'hello', pluginName: 'Hallo Welt', id: 'scene.evening_1-a', title: 'Abend', subtitle: null, icon: null, kind: 'button', state: null, confirm: false, confirmWhen: null, look: null, verbs: null, targets: false, device: null, widget: null });
+    assert.deepEqual(by('light:3'), { plugin: 'hello', pluginName: 'Hallo Welt', id: 'light:3', title: 'Wohnzimmer', subtitle: 'Licht', icon: 'M4 12h16', kind: 'toggle', state: 'on', confirm: true, confirmWhen: null, look: null, verbs: null, targets: false, device: null, widget: null, opens: null });
+    assert.deepEqual(by('scene.evening_1-a'), { plugin: 'hello', pluginName: 'Hallo Welt', id: 'scene.evening_1-a', title: 'Abend', subtitle: null, icon: null, kind: 'button', state: null, confirm: false, confirmWhen: null, look: null, verbs: null, targets: false, device: null, widget: null, opens: null });
     assert.deepEqual([by('heater').state, by('heater').icon], [null, null]);
     assert.deepEqual([by('ctl').title, by('ctl').subtitle.length], ['A B C', 60]);
     assert.deepEqual([by('long').title.length, by('long').icon.length], [40, 1999]);
@@ -250,6 +250,21 @@ const AC_SANITISED = {
 const stepper = (over = {}) => ({ id: 'target', kind: 'stepper', value: 22, min: 16, max: 30, step: 0.5, ...over });
 const choice = (over = {}) => ({ id: 'mode', kind: 'choice', value: 'cool', options: [{ id: 'auto', label: 'Auto' }, { id: 'cool', label: 'Kühlen' }], ...over });
 
+describe('opens (a page of the apps, 1.189)', () => {
+  it('a valid { screen, ref } passes, ref optional; anything else becomes null', () => {
+    const o = (opens) => quickActions.sanitize({ id: 'lb:3', title: 'Fahrtenbuch', opens }).opens;
+    assert.deepEqual(o({ screen: 'logbook', ref: '3' }), { screen: 'logbook', ref: '3' });
+    assert.deepEqual(o({ screen: 'logbook' }), { screen: 'logbook', ref: null });
+    assert.deepEqual(o({ screen: 'trip-map_2', ref: null, extra: 1 }), { screen: 'trip-map_2', ref: null });
+    assert.equal(o(undefined), null, 'an entry without opens lists opens: null');
+    for (const bad of [null, 'logbook', [], { screen: '' }, { screen: 'Logbook' }, { screen: '1abc' }, { screen: 'a'.repeat(41) },
+      { screen: 'logbook', ref: 3 }, { screen: 'logbook', ref: '' }, { screen: 'logbook', ref: 'x'.repeat(81) }, { screen: 'logbook', ref: 'a\nb' }]) {
+      assert.equal(o(bad), null, JSON.stringify(bad));
+    }
+    assert.ok(quickActions.sanitize({ id: 'a', title: 'A', opens: 'x' }), 'an invalid opens keeps the action');
+  });
+});
+
 describe('widget sanitiser (sanitizeWidget)', () => {
   let sanitizeWidget;
   before(() => { ({ sanitizeWidget } = quickActions); });
@@ -383,7 +398,7 @@ describe('widgets in the list and control runs', () => {
     assert.equal(by('broken').widget, null, 'invalid widget → null, the action stays');
     assert.equal(by('broken').title, 'Kaputt');
     assert.equal(by('plain').widget, null);
-    assert.deepEqual(Object.keys(by('plain')).sort(), ['confirm', 'confirmWhen', 'device', 'icon', 'id', 'kind', 'look', 'plugin', 'pluginName', 'state', 'subtitle', 'targets', 'title', 'verbs', 'widget']);
+    assert.deepEqual(Object.keys(by('plain')).sort(), ['confirm', 'confirmWhen', 'device', 'icon', 'id', 'kind', 'look', 'opens', 'plugin', 'pluginName', 'state', 'subtitle', 'targets', 'title', 'verbs', 'widget']);
   });
 
   it('a control run reaches the hook with control and value (validated) and answers the sanitised widget', async () => {
@@ -553,8 +568,8 @@ describe('devices, looks and confirmWhen (sanitize)', () => {
   });
 
   it('every action has every key', () => {
-    assert.deepEqual(Object.keys(button()), ['id', 'title', 'subtitle', 'icon', 'kind', 'state', 'confirm', 'confirmWhen', 'look', 'verbs', 'targets', 'device', 'widget']);
-    assert.deepEqual(button(), { id: 'b', title: 'Knopf', subtitle: null, icon: null, kind: 'button', state: null, confirm: false, confirmWhen: null, look: null, verbs: null, targets: false, device: null, widget: null });
+    assert.deepEqual(Object.keys(button()), ['id', 'title', 'subtitle', 'icon', 'kind', 'state', 'confirm', 'confirmWhen', 'look', 'verbs', 'targets', 'device', 'widget', 'opens']);
+    assert.deepEqual(button(), { id: 'b', title: 'Knopf', subtitle: null, icon: null, kind: 'button', state: null, confirm: false, confirmWhen: null, look: null, verbs: null, targets: false, device: null, widget: null, opens: null });
   });
 });
 
@@ -732,7 +747,7 @@ describe('devices and widget readings through the client API', () => {
     const by = (id) => r.body.actions.find((a) => a.plugin === 'hello' && a.id === id);
     assert.deepEqual(by('lock:42'), {
       plugin: 'hello', pluginName: 'Hallo Welt', id: 'lock:42', title: 'Verriegelt', subtitle: null, icon: null, kind: 'toggle', state: 'on',
-      confirm: true, confirmWhen: 'off', look: LOOK, verbs: null, targets: false, device: CAR, widget: null,
+      confirm: true, confirmWhen: 'off', look: LOOK, verbs: null, targets: false, device: CAR, widget: null, opens: null,
     });
     assert.deepEqual(by('climate:42').device, CAR);
     assert.deepEqual(by('climate:42').widget, W({

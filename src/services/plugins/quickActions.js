@@ -6,7 +6,7 @@
 //   hook quickActions({ user, lang })          → [{ id, title, subtitle?, icon?,
 //                                                  kind: 'button'|'toggle', state?, confirm?,
 //                                                  confirmWhen?, look?, verbs?, targets?,
-//                                                  device?, widget? }]
+//                                                  device?, widget?, opens? }]
 //   hook runQuickAction({ user, lang, id, via, automation, control?, value?, target? })
 //                                              → { ok?, message?, state?, widget? }
 //     via: 'app' (shortcut, tile, widget, app screen) | 'notification' (the
@@ -36,6 +36,12 @@
 // one (a flip reaches the target), answers `unchanged: true` without asking
 // the plugin when it is already there, and 409 state_unknown when the plugin
 // lists no state.
+//
+// A page of the apps (1.189): opens: { screen, ref? } — an app that has that
+// native screen for the plugin (e.g. gatecontrol-skoda + 'logbook') opens it
+// with `ref` (e.g. a vehicle id) when the action is tapped, instead of
+// running it; an app without it runs the action as before. screen: a
+// lowercase word (1–40), ref: up to 80 characters (invalid → opens: null).
 //
 // A widget is a quick action with extra information and controls, shown by
 // the apps as a card instead of a button:
@@ -87,6 +93,8 @@ const MAX_BADGE_VALUE = 8;
 const MAX_BADGE_UNIT = 4;
 const MAX_BADGE_LABEL = 20;
 const CTRL_RE = /[\0-\x1f\x7f]/;
+const SCREEN_RE = /^[a-z][a-z0-9_-]{0,39}$/;
+const MAX_REF = 80;
 
 function evaluate(p) { return require('./index').evaluate(p); }
 
@@ -304,6 +312,18 @@ function sanitizeWidget(w) {
   };
 }
 
+/** opens: { screen, ref? } → { screen, ref } or null (1.189). */
+function sanitizeOpens(o) {
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+  if (typeof o.screen !== 'string' || !SCREEN_RE.test(o.screen)) return null;
+  let ref = null;
+  if (o.ref != null) {
+    if (typeof o.ref !== 'string' || !o.ref.length || o.ref.length > MAX_REF || CTRL_RE.test(o.ref)) return null;
+    ref = o.ref;
+  }
+  return { screen: o.screen, ref };
+}
+
 /** One entry of quickActions → the sanitised action, or null (dropped). */
 function sanitize(a) {
   if (!a || typeof a !== 'object' || Array.isArray(a)) return null;
@@ -327,6 +347,7 @@ function sanitize(a) {
     targets: toggle && a.targets === true,
     device: sanitizeDevice(a.device),
     widget: sanitizeWidget(a.widget),
+    opens: sanitizeOpens(a.opens),
   };
 }
 
@@ -353,7 +374,7 @@ function lang2(lang) { return lang === 'en' ? 'en' : 'de'; }
  * @param {string} lang
  * @param {{exclude?: string}} [opts]  exclude: a plugin id that is not asked (gc.actions.list leaves out the caller)
  * @returns {Promise<object[]>} [{ plugin, pluginName, formerly?, id, title, subtitle, icon, kind, state, confirm,
- *   confirmWhen, look, verbs, targets, device, widget }] — formerly: the ids the plugin replaced (only when it did)
+ *   confirmWhen, look, verbs, targets, device, widget, opens }] — formerly: the ids the plugin replaced (only when it did)
  */
 async function list(user, lang, opts = {}) {
   const l = lang2(lang);

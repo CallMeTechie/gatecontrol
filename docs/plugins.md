@@ -1376,7 +1376,16 @@ async runQuickAction({ user, lang, id, via, automation, control, value, target }
   * `device`: optional, the device the action belongs to — see "Devices and
     looks" below (`null` without one or with an invalid one, the action stays);
   * `widget`: optional, see "Widgets" below — anything invalid in it makes the
-    whole `widget` `null`, the action stays.
+    whole `widget` `null`, the action stays;
+  * `opens` (1.189.0): optional `{ screen, ref? }` — a page of the apps the
+    action stands for. An app that has that native screen for the plugin
+    opens it with `ref` when the action is tapped (button, widget, home-screen
+    widget, shortcut) instead of running it; an app without it runs the action
+    as before, so `runQuickAction` should still answer something sensible
+    (e.g. a message where to find the page). `screen`: a lowercase word
+    (`[a-z][a-z0-9_-]`, ≤ 40), `ref`: ≤ 80 characters (e.g. a vehicle id);
+    invalid → `null`. Screens the Android app knows: `gatecontrol-skoda` +
+    `logbook` (ref: the vehicle id) — the logbook with its maps (app 1.56).
 * **`runQuickAction`** — 10 s, only for an id the plugin currently lists for
   that viewer: the host asks that plugin's `quickActions` first (1.5 s) and
   answers 404 for anything else. The answer is sanitised to
@@ -1410,7 +1419,7 @@ routes (a browser session gets 403 `token_required`), `Cache-Control: no-store`.
 GET  /api/v1/client/actions
   200 { ok: true, actions: [{ plugin: '<plugin id>', pluginName: '<localised name>',
                               id, title, subtitle, icon, kind, state, confirm,
-                              confirmWhen, look, verbs, targets, device, widget }] }
+                              confirmWhen, look, verbs, targets, device, widget, opens }] }
 
 POST /api/v1/client/actions/:plugin/:id        (≤ 30 runs per minute and token)
   body { source?: 'app' | 'notification',      (default 'app'; → via of runQuickAction)
