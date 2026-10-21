@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.192.0] — 2026-10-21
+
+### Features
+- choosing "own chat" creates that source's chat at once (or uses the existing one) (#343)
+
+---
+
 ## [1.191.0] — 2026-10-21
 
 ### Features
