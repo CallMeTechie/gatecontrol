@@ -173,7 +173,9 @@ class PluginProcess {
       return;
     }
     this.hostCalls++;
-    const timeout = new Promise((_r, rej) => { const t = setTimeout(() => rej(Object.assign(new Error('host call timed out'), { code: 'ERR_TIMEOUT' })), TIMEOUTS.hostCall); t.unref(); });
+    // longer for the calls moving big files (target.upload, media.handOver — hostApi.callTimeout)
+    const limit = hostApi.callTimeout(String(m.api || ''), m.args || {}) || TIMEOUTS.hostCall;
+    const timeout = new Promise((_r, rej) => { const t = setTimeout(() => rej(Object.assign(new Error('host call timed out'), { code: 'ERR_TIMEOUT' })), limit); t.unref(); });
     const ctx = { emit: (msg) => reply(msg) };
     Promise.race([hostApi.handle(this.plugin, String(m.api || ''), m.args || {}, ctx), timeout])
       .then((value) => reply({ t: 'hostResult', id: m.id, ok: true, value: value === undefined ? null : value }),

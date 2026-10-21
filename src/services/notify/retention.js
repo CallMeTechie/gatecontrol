@@ -37,8 +37,9 @@ function run() {
 
   out.purged = db.prepare('DELETE FROM notifications WHERE created_at <= ? AND release_at IS NULL')
     .run(store.iso(store.now() - cfg.history_days * 24 * HOUR_MS)).changes;
-  // chat notifications carry private message text: gone after the push retention, not kept as history
-  out.purged += db.prepare("DELETE FROM notifications WHERE kind = 'message' AND created_at <= ?")
+  // chat notifications carry private message text, silent data pushes (since 1.193.0) a
+  // plugin's private data: gone after the push retention, not kept as history
+  out.purged += db.prepare("DELETE FROM notifications WHERE kind IN ('message', 'data') AND created_at <= ?")
     .run(store.iso(store.now() - cfg.retention_h * HOUR_MS)).changes;
 
   const over = db.prepare(`SELECT token_id, COUNT(*) AS n FROM notification_deliveries WHERE state = 'queued'

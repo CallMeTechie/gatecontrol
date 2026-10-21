@@ -336,6 +336,16 @@ function notifyPerHour(plugin) {
   return Number.isInteger(n) && n >= 1 && n <= NOTIFY_PER_HOUR_MAX ? n : NOTIFY_PER_HOUR_DEFAULT;
 }
 
+// Silent data pushes (gc.notify silent: true, since 1.193.0): a budget of their own per plugin and hour.
+const DATA_PER_HOUR = 600;
+const dataWindow = new Map();
+
+function dataBudget(plugin) {
+  const w = recent(dataWindow, plugin.id, Date.now());
+  need(w.length < DATA_PER_HOUR, 'ERR_RATE_LIMIT', `too many silent pushes (${DATA_PER_HOUR} per hour)`);
+  w.push(Date.now());
+}
+
 /** Count one message against the plugin's budget per hour. */
 function notifyBudget(plugin) {
   const now = Date.now();
@@ -455,8 +465,16 @@ function notify(plugin, args) {
     const declared = Array.isArray(plugin.manifest.notifyTopics) ? plugin.manifest.notifyTopics : [];
     const decl = declared.find((t) => t && t.id === topic) || null;
     need(topic === 'default' || decl, 'ERR_INVALID', 'topic not declared in notifyTopics');
-    if (decl && decl.chat === true) return notifyChat(plugin, topic, n);
-    const title = sanitize.title(n.title);
+    if (decl && decl.chat === true) {
+      need(n.devices == null && n.silent == null, 'ERR_INVALID', 'devices / silent are not for chat topics');
+      return notifyChat(plugin, topic, n);
+    }
+    // since 1.193.0 (permissions.devices): `devices` — only these app devices of `users`;
+    // `silent: true` — a data push (no banner, no sound, not in the inbox, title optional)
+    need(n.silent == null || typeof n.silent === 'boolean', 'ERR_INVALID', 'silent must be a boolean');
+    const silent = n.silent === true;
+    if (silent || n.devices != null) need(plugin.manifest.permissions && plugin.manifest.permissions.devices === true, 'ERR_DEVICES_DENIED', 'devices / silent need permissions.devices');
+    const title = sanitize.title(n.title) || (silent ? sanitize.title(plugin.name) : '');
     need(title, 'ERR_INVALID', 'empty title');
     const body = sanitize.body(n.body);
     let priority = n.priority == null ? 'normal' : n.priority;
@@ -468,6 +486,18 @@ function notify(plugin, args) {
       need(Array.isArray(n.users) && n.users.length <= 100 && n.users.every((u) => Number.isSafeInteger(u) && u > 0), 'ERR_INVALID', 'invalid users');
       users = [...new Set(n.users)];
     }
+    let devices = null;
+    if (n.devices != null) {
+      need(Array.isArray(n.devices) && n.devices.length >= 1 && n.devices.length <= 100, 'ERR_INVALID', 'invalid devices');
+      const D = require('./devices');
+      const ids = n.devices.map(D.idOf);
+      need(ids.every((x) => x !== null), 'ERR_INVALID', 'invalid device id');
+      need(users && users.length, 'ERR_INVALID', 'devices need users (their owners)');
+      const own = D.ownedBy(users, [...new Set(ids)]);
+      need(ids.every((x) => own.has(x)), 'ERR_INVALID', "a device is not an app device of the listed users");
+      devices = [...new Set(ids)];
+    }
+    need(!(silent && n.image != null), 'ERR_INVALID', 'a silent push carries no image');
     let collapseKey = null;
     if (n.collapseKey != null) {
       collapseKey = sanitize.collapseKey(n.collapseKey);
@@ -499,9 +529,15 @@ function notify(plugin, args) {
         ? { ...a, type: 'open_portal', target: `/portal#plg-${plugin.id}` }
         : a));
     }
+    if (silent) {
+      // own budget, no activity row: data pushes are machine traffic (e.g. "device X: fetch transfer Y")
+      dataBudget(plugin);
+      const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, devices, silent: true, collapseKey, ttl, data: d.data, allowCritical: false, image: null, card: null });
+      return { pushed: r.pushed, id: r.id || null };
+    }
     notifyBudget(plugin);
     require('../activity').log('plugin_notice', `${plugin.name}: ${title}`, { source: 'plugin', severity: 'info', details: { plugin: plugin.id, topic } });
-    const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, collapseKey, ttl, data: d.data, allowCritical, image, card });
+    const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, devices, collapseKey, ttl, data: d.data, allowCritical, image, card });
     return { pushed: r.pushed, id: r.id || null };
   }
   const msg = String((args && args.message) || '').replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, 300);
@@ -761,7 +797,7 @@ async function mediaFetch(plugin, args) {
   need(o.maxBytes == null || (Number.isSafeInteger(o.maxBytes) && o.maxBytes >= 1), 'ERR_INVALID', 'invalid maxBytes');
   need(o.timeoutMs == null || Number.isFinite(o.timeoutMs), 'ERR_INVALID', 'invalid timeoutMs');
   const forced = o.mime == null || o.mime === '' ? null : media.baseType(o.mime);
-  if (forced !== null) need(decl.types.includes(forced), 'ERR_MEDIA_TYPE', `type ${forced} is not declared in media.types`);
+  if (forced !== null) need(media.typeAllowed(decl, forced), 'ERR_MEDIA_TYPE', `type ${forced} is not declared in media.types`);
   const limit = Math.min(o.maxBytes == null ? decl.maxBytes : o.maxBytes, decl.maxBytes);
   need(media.usage(plugin.id).bytes < media.quotaOf(plugin), 'ERR_MEDIA_QUOTA', 'media quota exhausted');
   const timeoutMs = Math.max(1000, Math.min(60000, o.timeoutMs == null ? MEDIA_FETCH_TIMEOUT_DEFAULT : o.timeoutMs));
@@ -778,7 +814,7 @@ async function mediaFetch(plugin, args) {
   }
   if (res.status < 200 || res.status > 299) throw Object.assign(new HostApiError('ERR_HTTP', `HTTP ${res.status}`), { status: res.status });
   const mime = forced !== null ? forced : media.baseType(res.headers['content-type']);
-  need(decl.types.includes(mime), 'ERR_MEDIA_TYPE', `type ${mime || '(none)'} is not declared in media.types`);
+  need(media.typeAllowed(decl, mime), 'ERR_MEDIA_TYPE', `type ${mime || '(none)'} is not declared in media.types`);
   try {
     return await media.storeBuffer(plugin, res.body, { mime, name: o.name == null ? null : o.name, owner: null });
   } catch (e) {
@@ -799,7 +835,8 @@ function mediaCall(plugin, op, args) {
     case 'delete': return media.remove(plugin.id, mediaId(args));
     case 'usage': {
       const decl = media.declOf(plugin);
-      return { ...media.usage(plugin.id), quota: media.quotaOf(plugin), maxBytes: decl.maxBytes, types: decl.types, uploads: decl.uploads !== false };
+      return { ...media.usage(plugin.id), quota: media.quotaOf(plugin), maxBytes: decl.maxBytes, types: decl.types, uploads: decl.uploads !== false,
+        resumable: decl.resumable === true, handOverMaxBytes: decl.handOverMaxBytes || decl.maxBytes };
     }
     case 'url': {
       const id = mediaId(args);
@@ -931,6 +968,243 @@ async function servicesCall(plugin, args) {
   return result;
 }
 
+
+// ─── Hand-over of media between plugins (gc.media.handOver, since 1.193.0) ────
+//
+// gc.media.handOver(mediaId, { toPlugin, user }) → { mediaId, mime, bytes,
+// name } — the id of a new, unclaimed file (24 h) of plugin `toPlugin`
+// (owner `user` or none), e.g. GateDrop handing a file to the messenger
+// before calling its service send_file. Allowed like a service call: the
+// caller lists one of the target's services ("<toPlugin>:<service>" that the
+// target provides) in permissions.services; the target is installed, may
+// run and declares media taking the type and the size (handOverMaxBytes,
+// default maxBytes), with room in its quota (the file counts there). The
+// sealed file is hard-linked (copied on another file system), never
+// decrypted. 600 per hour per calling plugin; an activity row
+// plugin_media_handover (ids only).
+
+const HANDOVER_PER_HOUR = 600;
+const HANDOVER_TIMEOUT_MS = 10 * 60 * 1000;
+const handOverWindow = new Map();
+const MEDIA_HOST_ERRORS = { ...MEDIA_ERRORS, not_found: 'ERR_INVALID', no_media: 'ERR_MEDIA_DENIED' };
+
+/** The target plugin of a hand-over from `from` to `toId`, or a HostApiError. */
+function handOverTarget(from, toId) {
+  const { ID_RE } = require('./constants');
+  need(typeof toId === 'string' && toId.length >= 2 && toId.length <= 64 && ID_RE.test(toId), 'ERR_INVALID', 'invalid toPlugin');
+  let target = null;
+  try { target = require('./registry').resolve(toId); } catch { target = null; }
+  need(target, 'ERR_SERVICE_UNAVAILABLE', 'the target plugin is not installed');
+  need(target.id !== from.id && toId !== from.id, 'ERR_INVALID', 'a plugin cannot hand files over to itself');
+  need(handOverAllowed(from, target, toId), 'ERR_SERVICES_DENIED', "none of the target plugin's services is listed in permissions.services");
+  need(require('./index').evaluate(target).run, 'ERR_SERVICE_UNAVAILABLE', 'the target plugin is not available');
+  need(require('./media').declOf(target), 'ERR_MEDIA_DENIED', 'the target plugin declares no media');
+  return target;
+}
+
+/** Does `from` list a service the target provides ("<id>:<service>", by the target's id or the id asked for)? */
+function handOverAllowed(from, target, askedId = target.id) {
+  const listed = from.manifest.permissions && Array.isArray(from.manifest.permissions.services) ? from.manifest.permissions.services : [];
+  const provides = target.manifest && target.manifest.services && target.manifest.services.provides ? target.manifest.services.provides : {};
+  return listed.some((ref) => {
+    const i = ref.indexOf(':');
+    const p = ref.slice(0, i);
+    return (p === target.id || p === askedId) && Object.prototype.hasOwnProperty.call(provides, ref.slice(i + 1));
+  });
+}
+
+async function mediaHandOver(plugin, args) {
+  const media = needMedia(plugin);
+  const id = mediaId(args);
+  const target = handOverTarget(plugin, args && args.toPlugin);
+  let owner = null;
+  if (args.user != null) {
+    need(Number.isSafeInteger(args.user) && args.user > 0, 'ERR_INVALID', 'invalid user id');
+    need(db().prepare('SELECT 1 FROM users WHERE id = ? AND enabled = 1').get(args.user), 'ERR_INVALID', 'unknown or disabled user');
+    owner = args.user;
+  }
+  need(media.row(plugin.id, id), 'ERR_INVALID', 'unknown media id');
+  const w = recent(handOverWindow, plugin.id, Date.now());
+  need(w.length < HANDOVER_PER_HOUR, 'ERR_RATE_LIMIT', `too many hand-overs (${HANDOVER_PER_HOUR} per hour)`);
+  w.push(Date.now());
+  let out;
+  try {
+    out = await media.handOver(plugin, id, target, { owner });
+  } catch (e) {
+    if (e instanceof media.MediaError && MEDIA_HOST_ERRORS[e.code]) throw new HostApiError(MEDIA_HOST_ERRORS[e.code], e.code);
+    throw e;
+  }
+  try {
+    require('../activity').log('plugin_media_handover', `Plugin "${plugin.id}" handed a file over to plugin "${target.id}"`, {
+      source: 'plugin', severity: 'info', details: { plugin: plugin.id, target: target.id, bytes: out.bytes, userId: owner },
+    });
+  } catch { /* the file is there; the log is best-effort */ }
+  return out;
+}
+
+// ─── Public links (permissions.publicLinks, publicLinks.js, since 1.193.0) ────
+
+async function publicLinksCall(plugin, op, args) {
+  const links = require('./publicLinks');
+  try {
+    switch (op) {
+      case 'create': return await links.create(plugin, args);
+      case 'list': return links.list(plugin, args);
+      case 'get': return links.get(plugin, args);
+      case 'revoke': return links.revoke(plugin, args);
+      default: throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
+    }
+  } catch (e) {
+    if (e instanceof links.LinkError) throw new HostApiError(e.code, e.message);
+    throw e;
+  }
+}
+
+// ─── Devices (permissions.devices, devices.js, since 1.193.0) ────
+
+function devicesList(plugin, args) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.devices === true, 'ERR_DEVICES_DENIED', 'this plugin has no devices permission');
+  const uid = args && args.userId;
+  need(Number.isSafeInteger(uid) && uid > 0, 'ERR_INVALID', 'invalid user id');
+  need(db().prepare('SELECT 1 FROM users WHERE id = ? AND enabled = 1').get(uid), 'ERR_INVALID', 'unknown or disabled user');
+  return require('./devices').list(uid);
+}
+
+// ─── Uploads to a home target (gc.net.uploadTarget → target.upload, since 1.193.0) ────
+//
+// gc.net.uploadTarget(id, path, { index, method, query, headers, form: {
+// fields, file: { field, mediaId, name, mime } }, mediaFrom: { plugin,
+// mediaId }, timeoutMs, binary }) — a multipart/form-data request (POST,
+// or PUT) to an assigned home target like fetchTarget (same target and
+// protocol checks, the route's headers win, no redirects), the file streamed
+// from the media store: the plugin's own file (form.file.mediaId), or
+// `mediaFrom` — a file of another plugin that could hand it over to this one
+// (it lists one of this plugin's services). Answer like fetchTarget (≤ 5 MB).
+
+const UPLOAD_TIMEOUT_DEFAULT_MS = 10 * 60 * 1000;
+const UPLOAD_TIMEOUT_MAX_MS = 30 * 60 * 1000;
+const FORM_FIELDS_MAX = 50;
+const FORM_FIELDS_BYTES = 64 * 1024;
+const FORM_NAME_RE = /^[\x21\x23-\x5b\x5d-\x7e]{1,100}$/; // printable ASCII without " and \
+const MIME_SHAPE_RE = /^[a-z0-9][a-z0-9.+-]{0,63}\/[a-z0-9][a-z0-9.+-]{0,99}$/;
+
+/** A name in a multipart header the way browsers write it (HTML: ", CR, LF percent-encoded). */
+function formQuoted(v) { return String(v).replace(/"/g, '%22').replace(/\r/g, '%0D').replace(/\n/g, '%0A'); }
+
+function uploadOptions(plugin, args) {
+  const o = args && args.opts != null ? args.opts : {};
+  need(typeof o === 'object' && !Array.isArray(o), 'ERR_INVALID', 'invalid options');
+  need(o.method == null || o.method === 'POST' || o.method === 'PUT', 'ERR_INVALID', 'method must be POST or PUT');
+  need(o.headers == null || (typeof o.headers === 'object' && !Array.isArray(o.headers)), 'ERR_INVALID', 'invalid headers');
+  need(o.query == null || (typeof o.query === 'object' && !Array.isArray(o.query)), 'ERR_INVALID', 'invalid query');
+  need(o.timeoutMs == null || Number.isFinite(o.timeoutMs), 'ERR_INVALID', 'invalid timeoutMs');
+  const form = o.form;
+  need(form && typeof form === 'object' && !Array.isArray(form), 'ERR_INVALID', 'form required');
+  const fields = [];
+  let size = 0;
+  if (form.fields != null) {
+    need(typeof form.fields === 'object' && !Array.isArray(form.fields), 'ERR_INVALID', 'invalid form.fields');
+    for (const [k, v] of Object.entries(form.fields)) {
+      need(FORM_NAME_RE.test(k), 'ERR_INVALID', 'invalid form field name');
+      need(['string', 'number', 'boolean'].includes(typeof v), 'ERR_INVALID', 'form field values must be strings, numbers or booleans');
+      fields.push([k, String(v)]);
+      size += k.length + Buffer.byteLength(String(v));
+    }
+  }
+  need(fields.length <= FORM_FIELDS_MAX && size <= FORM_FIELDS_BYTES, 'ERR_INVALID', 'form fields too large');
+  const file = form.file;
+  need(file && typeof file === 'object' && !Array.isArray(file), 'ERR_INVALID', 'form.file required');
+  need(typeof file.field === 'string' && FORM_NAME_RE.test(file.field), 'ERR_INVALID', 'invalid form.file.field');
+  need(file.name == null || (typeof file.name === 'string' && file.name.length <= 4096), 'ERR_INVALID', 'invalid form.file.name');
+  need(file.mime == null || (typeof file.mime === 'string' && MIME_SHAPE_RE.test(file.mime.toLowerCase())), 'ERR_INVALID', 'invalid form.file.mime');
+  const media = require('./media');
+  let row;
+  if (o.mediaFrom != null) {
+    const mf = o.mediaFrom;
+    need(file.mediaId == null, 'ERR_INVALID', 'form.file.mediaId or mediaFrom, not both');
+    need(mf && typeof mf === 'object' && typeof mf.mediaId === 'string' && media.ID_RE.test(mf.mediaId), 'ERR_INVALID', 'invalid mediaFrom');
+    const { ID_RE } = require('./constants');
+    need(typeof mf.plugin === 'string' && ID_RE.test(mf.plugin), 'ERR_INVALID', 'invalid mediaFrom.plugin');
+    let source = null;
+    try { source = require('./registry').resolve(mf.plugin); } catch { source = null; }
+    need(source && source.id !== plugin.id && handOverAllowed(source, plugin), 'ERR_MEDIA_DENIED', 'that plugin cannot hand files over to this one');
+    row = media.row(source.id, mf.mediaId);
+  } else {
+    needMedia(plugin);
+    need(typeof file.mediaId === 'string' && media.ID_RE.test(file.mediaId), 'ERR_INVALID', 'invalid form.file.mediaId');
+    row = media.row(plugin.id, file.mediaId);
+  }
+  need(row, 'ERR_INVALID', 'unknown media id');
+  const timeoutMs = Math.max(1000, Math.min(UPLOAD_TIMEOUT_MAX_MS, o.timeoutMs == null ? UPLOAD_TIMEOUT_DEFAULT_MS : o.timeoutMs));
+  return {
+    o, fields, row, timeoutMs, method: o.method || 'POST',
+    field: file.field, name: media.cleanName(file.name) || row.name || row.id, mime: file.mime ? file.mime.toLowerCase() : row.mime,
+  };
+}
+
+async function targetUpload(plugin, args) {
+  const { id, index } = targetArgs(args);
+  const path = String((args && args.path) || '/');
+  need(path.startsWith('/') && path.length <= 4096 && !/[\s\\]/.test(path), 'ERR_INVALID', 'path must start with /');
+  const u = uploadOptions(plugin, args);
+  let ep;
+  try { ep = await targets.resolve(plugin, id, index, 'http', netOpts()); } catch (e) { throw netError(e); }
+  const hostPart = ep.host.includes(':') ? `[${ep.host}]` : ep.host;
+  const base = new URL(`${ep.scheme}://${hostPart}:${ep.port}`);
+  const url = new URL(path, base);
+  if (url.origin !== base.origin) throw new HostApiError('ERR_INVALID', 'path leaves the target');
+  for (const [k, v] of Object.entries(u.o.query || {})) {
+    need(typeof k === 'string' && k.length <= 200 && ['string', 'number', 'boolean'].includes(typeof v), 'ERR_INVALID', 'invalid query');
+    url.searchParams.append(k, String(v));
+  }
+  need(url.href.length <= 8192, 'ERR_INVALID', 'url too long');
+  const boundary = `----GateControl${require('node:crypto').randomBytes(16).toString('hex')}`;
+  const head = Buffer.from(u.fields.map(([k, v]) => `--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`).join('')
+    + `--${boundary}\r\nContent-Disposition: form-data; name="${u.field}"; filename="${formQuoted(u.name)}"\r\nContent-Type: ${u.mime}\r\n\r\n`, 'utf8');
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+  const media = require('./media');
+  const row = u.row;
+  async function* body() {
+    yield head;
+    for await (const part of media.readRange(row, 0, row.bytes - 1)) yield part;
+    yield tail;
+  }
+  const headers = {};
+  for (const [k, v] of Object.entries(u.o.headers || {})) if (k.toLowerCase() !== 'content-type') headers[k] = v;
+  for (const k of Object.keys(headers)) if (ep.headers[k.toLowerCase()] !== undefined) delete headers[k];
+  Object.assign(headers, ep.headers, { 'content-type': `multipart/form-data; boundary=${boundary}` });
+  const check = async (next) => {
+    const nu = new URL(next);
+    if (nu.origin !== base.origin) return { ok: false, reason: 'redirect_off_target' };
+    return { ok: true, url: nu, port: ep.port, address: ep.address, family: ep.family };
+  };
+  let res;
+  try {
+    res = await netPolicy.fetchWithPolicy(null, url.href, {
+      method: u.method, headers, bodyStream: { length: head.length + row.bytes + tail.length, read: body },
+      timeoutMs: u.timeoutMs, maxBytes: LIMITS.fetchResponseBytes, redirect: 'manual', check,
+    });
+  } catch (e) {
+    if (String((e && e.message) || e) === 'timeout') throw new HostApiError('ERR_TIMEOUT', 'the upload did not finish in time');
+    throw netError(e);
+  }
+  return fetchResult(res, u.o);
+}
+
+/**
+ * How long the host waits for one call (runtime.js): TIMEOUTS.hostCall,
+ * longer for the calls moving big files (since 1.193.0).
+ */
+function callTimeout(api, args) {
+  if (api === 'target.upload') {
+    const o = args && args.opts;
+    const t = o && Number.isFinite(o.timeoutMs) ? o.timeoutMs : UPLOAD_TIMEOUT_DEFAULT_MS;
+    return Math.max(1000, Math.min(UPLOAD_TIMEOUT_MAX_MS, t)) + 5000;
+  }
+  if (api === 'media.handOver') return HANDOVER_TIMEOUT_MS;
+  return TIMEOUTS.hostCall;
+}
+
 function _resetBudgetsForTest() {
   if (process.env.NODE_ENV !== 'test') return;
   chatWindow.clear();
@@ -938,6 +1212,8 @@ function _resetBudgetsForTest() {
   chatCounts.clear();
   servicesWindow.clear();
   notifyWindow.clear();
+  dataWindow.clear();
+  handOverWindow.clear();
 }
 
 // ─── Plugin-to-plugin actions (permissions.actions) ────
@@ -1205,6 +1481,7 @@ async function handle(plugin, api, args, ctx) {
     case 'tcp.destroy': sockOf(plugin, args).destroy(); return null;
     case 'tcp.setTimeout': sockOf(plugin, args).setTimeout(Math.max(0, Math.min(3600000, Number(args.ms) || 0))); return null;
     case 'target.fetch': return targetFetch(plugin, args);
+    case 'target.upload': return targetUpload(plugin, args);
     case 'target.udp': return udpTarget(plugin, args);
     case 'targets.list': return targets.listFor(plugin);
     case 'discover': return discover(plugin, args);
@@ -1272,6 +1549,12 @@ async function handle(plugin, api, args, ctx) {
     case 'media.usage': return mediaCall(plugin, 'usage', args);
     case 'media.url': return mediaCall(plugin, 'url', args);
     case 'media.fetch': return mediaFetch(plugin, args);
+    case 'media.handOver': return mediaHandOver(plugin, args);
+    case 'publicLinks.create': return publicLinksCall(plugin, 'create', args);
+    case 'publicLinks.list': return publicLinksCall(plugin, 'list', args);
+    case 'publicLinks.get': return publicLinksCall(plugin, 'get', args);
+    case 'publicLinks.revoke': return publicLinksCall(plugin, 'revoke', args);
+    case 'devices.list': return devicesList(plugin, args);
     case 'events.emit': return eventsEmit(plugin, args);
     case 'services.call': return servicesCall(plugin, args);
     case 'services.available': return servicesAvailable(plugin, args);
@@ -1286,5 +1569,6 @@ async function handle(plugin, api, args, ctx) {
 
 module.exports = {
   handle, closeSockets, HostApiError, ACTIONS_PER_MINUTE, CHAT_PER_HOUR, CHAT_PER_USER_HOUR, SERVICES_PER_HOUR, SERVICE_JSON_MAX, SERVICE_PAYLOAD_MAX,
+  DATA_PER_HOUR, HANDOVER_PER_HOUR, callTimeout, handOverAllowed,
   flushChatSummary, _resetActionsBudgetForTest, _resetBudgetsForTest, _lookup: null, _udpTargets: null, _serviceTimeoutMs: null,
 };

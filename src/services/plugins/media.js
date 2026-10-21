@@ -24,6 +24,14 @@
 //     messages): only the chunks of the range are read and decrypted;
 //   * a new file is "unclaimed" (ref_count 0) until the plugin binds it with
 //     gc.media.claim(id) — cleanup() removes unclaimed files after 24 h;
+//   * resumable uploads (media.resumable, since 1.193.0): storePart() writes
+//     one part (Content-Range) of an upload the client names (uploadId, per
+//     plugin and uploader) into <plugin>/.uploads/<key>.part — sealed chunk
+//     by chunk like every file, so an aborted part keeps every whole chunk;
+//     uploadStatus() says where to continue. Parts left for 24 h are removed;
+//   * handOver() (gc.media.handOver, since 1.193.0): a file of one plugin
+//     becomes an unclaimed file of another — a hard link of the same sealed
+//     file (a copy on another file system), its key wrapped for the new id;
 //   * frames (no session, opaque origin) load a file through a signed
 //     capability URL /plugin-media/<token> (gc.media.url), like the tile
 //     relay: `<id>.<exp>.<uid>.<sig>`, sig = HMAC-SHA256 over
@@ -161,6 +169,11 @@ function baseType(ct) {
   return String(ct || '').split(';')[0].trim().toLowerCase();
 }
 
+/** Is `mime` (baseType) allowed by the declaration — listed, or in a declared family ("image/*")? */
+function typeAllowed(decl, mime) {
+  return !!decl && require('./manifest').typeAllowed(decl.types, mime);
+}
+
 // ─── Upload ─────────────────────────────────────
 
 const NAME_MAX = 200;
@@ -241,6 +254,15 @@ async function writeFile(plugin, { source, length, mime, owner, name, incomplete
   return { mediaId: id, mime, bytes: length };
 }
 
+/** Content-Length of an upload (1 … 12 digits, no chunked body) or MediaError length_required. */
+function contentLength(req) {
+  const rawLen = req.headers['content-length'];
+  if (rawLen == null || !/^\d{1,12}$/.test(String(rawLen)) || req.headers['transfer-encoding']) throw new MediaError('length_required', 411);
+  const length = Number(rawLen);
+  if (length < 1) throw new MediaError('length_required', 411);
+  return length;
+}
+
 /**
  * Stream one upload to disk. `req` is the incoming request (a readable
  * stream with headers). Checks before a byte is read: declared media,
@@ -256,11 +278,8 @@ async function store(plugin, ownerUserId, req) {
   if (!decl) throw new MediaError('no_media', 404);
   if (decl.uploads === false) throw new MediaError('uploads_disabled', 403);
   const mime = baseType(req.headers['content-type']);
-  if (!decl.types.includes(mime)) throw new MediaError('unsupported_type', 415);
-  const rawLen = req.headers['content-length'];
-  if (rawLen == null || !/^\d{1,12}$/.test(String(rawLen)) || req.headers['transfer-encoding']) throw new MediaError('length_required', 411);
-  const length = Number(rawLen);
-  if (length < 1) throw new MediaError('length_required', 411);
+  if (!typeAllowed(decl, mime)) throw new MediaError('unsupported_type', 415);
+  const length = contentLength(req);
   if (length > decl.maxBytes) throw new MediaError('too_large', 413);
   if (usage(plugin.id).bytes + length > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
   return writeFile(plugin, { source: req, length, mime, owner: ownerUserId, name: null,
@@ -278,13 +297,180 @@ async function storeBuffer(plugin, buf, { mime, name = null, owner = null } = {}
   const decl = declOf(plugin);
   if (!decl) throw new MediaError('no_media', 404);
   const type = baseType(mime);
-  if (!decl.types.includes(type)) throw new MediaError('unsupported_type', 415);
+  if (!typeAllowed(decl, type)) throw new MediaError('unsupported_type', 415);
   if (!Buffer.isBuffer(buf) || buf.length < 1) throw new MediaError('empty', 400);
   if (buf.length > decl.maxBytes) throw new MediaError('too_large', 413);
   if (usage(plugin.id).bytes + buf.length > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
   const clean = cleanName(name);
   const out = await writeFile(plugin, { source: [buf], length: buf.length, mime: type, owner, name: clean });
   return { ...out, name: clean };
+}
+
+// ─── Resumable uploads (media.resumable, since 1.193.0) ─────
+//
+// PUT …/media?uploadId=<id>&offset=<n> with `Content-Range: bytes
+// <n>-<end>/<total>` and Content-Length = end - n + 1. The first part (n = 0)
+// opens the upload (type, total ≤ maxBytes and the quota checked once for the
+// whole file); every further part must start where the upload stands
+// (uploadStatus().offset, a multiple of CHUNK — 409 offset_mismatch with
+// `offset` otherwise). Each whole chunk of a part is sealed and written at
+// its place in the part file; what an aborted part sent after its last whole
+// chunk is dropped (the client sends it again from `offset`). The key is
+// wrapped for the media id chosen when the upload opened, so the finished
+// part file is renamed into place as it is. One part at a time per upload
+// (409 busy); the uploadId is the client's (8 … 64 of [A-Za-z0-9_-]) and
+// only ever refers to that uploader's upload in that plugin.
+
+const UPLOAD_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+const UPLOAD_TTL_MS = 24 * 3600 * 1000;
+const CONTENT_RANGE_RE = /^bytes (\d{1,15})-(\d{1,15})\/(\d{1,15})$/;
+const busyUploads = new Set();
+
+function uploadsDir(pluginId) { return path.join(pluginDir(pluginId), '.uploads'); }
+
+/** Files of one upload: the sealed part file and its state (JSON). */
+function uploadFiles(pluginId, owner, uploadId) {
+  const key = crypto.createHash('sha256').update(`${pluginId}\0${owner == null ? '' : owner}\0${uploadId}`).digest('hex').slice(0, 32);
+  const dir = uploadsDir(pluginId);
+  return { key, part: path.join(dir, `${key}.part`), state: path.join(dir, `${key}.json`) };
+}
+
+function readUploadState(f) {
+  try {
+    const st = JSON.parse(fs.readFileSync(f.state, 'utf8'));
+    return st && st.v === 1 && ID_RE.test(String(st.mediaId)) && Number.isSafeInteger(st.total) && Number.isSafeInteger(st.chunks) ? st : null;
+  } catch { return null; }
+}
+
+function writeUploadState(f, st) {
+  const tmp = `${f.state}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(st), { mode: 0o600 });
+  fs.renameSync(tmp, f.state);
+}
+
+function dropUpload(f) {
+  fs.rmSync(f.part, { force: true });
+  fs.rmSync(f.state, { force: true });
+}
+
+function uploadExpired(st, now = Date.now()) { return !st || !(now - st.createdAt < UPLOAD_TTL_MS); }
+
+/** Bytes of an upload that are stored for good (whole chunks). */
+function committedOf(st) { return Math.min(st.total, st.chunks * CHUNK); }
+
+/**
+ * HEAD/GET …/media/uploads/<uploadId>: where the uploader's upload stands →
+ * { uploadId, offset, total, mime } or null (unknown, expired, another uploader's).
+ */
+function uploadStatus(plugin, ownerUserId, uploadId) {
+  if (!declOf(plugin) || !UPLOAD_ID_RE.test(String(uploadId || ''))) return null;
+  const f = uploadFiles(plugin.id, ownerUserId, String(uploadId));
+  const st = readUploadState(f);
+  if (!st || uploadExpired(st)) return null;
+  return { uploadId: String(uploadId), offset: committedOf(st), total: st.total, mime: st.mime };
+}
+
+function mediaError(code, status, extra) { return Object.assign(new MediaError(code, status), extra || {}); }
+
+/**
+ * One part of a resumable upload (see above).
+ * @returns {Promise<{ complete: false, uploadId, offset, total } | { complete: true, mediaId, mime, bytes }>}
+ * @throws {MediaError} like store(), and not_resumable (400), invalid_upload_id (400),
+ *   range_required / invalid_range (400), offset_mismatch / upload_mismatch / busy (409,
+ *   with `offset` where the upload stands)
+ */
+async function storePart(plugin, ownerUserId, req) {
+  const decl = declOf(plugin);
+  if (!decl) throw new MediaError('no_media', 404);
+  if (decl.uploads === false) throw new MediaError('uploads_disabled', 403);
+  if (decl.resumable !== true) throw new MediaError('not_resumable', 400);
+  const uploadId = String(req.query.uploadId);
+  if (!UPLOAD_ID_RE.test(uploadId)) throw new MediaError('invalid_upload_id', 400);
+  const mime = baseType(req.headers['content-type']);
+  if (!typeAllowed(decl, mime)) throw new MediaError('unsupported_type', 415);
+  const length = contentLength(req);
+  const m = CONTENT_RANGE_RE.exec(String(req.headers['content-range'] || '').trim());
+  if (!m) throw new MediaError('range_required', 400);
+  const [start, end, total] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (end < start || end >= total || end - start + 1 !== length) throw new MediaError('invalid_range', 400);
+  if (req.query.offset != null && String(req.query.offset) !== String(start)) throw new MediaError('invalid_range', 400);
+  if (total > decl.maxBytes) throw new MediaError('too_large', 413);
+  const f = uploadFiles(plugin.id, ownerUserId, uploadId);
+  if (busyUploads.has(f.key)) throw new MediaError('busy', 409);
+  busyUploads.add(f.key);
+  try {
+    fs.mkdirSync(uploadsDir(plugin.id), { recursive: true, mode: 0o700 });
+    let st = readUploadState(f);
+    if (st && uploadExpired(st)) { dropUpload(f); st = null; }
+    if (st && (st.mime !== mime || st.total !== total)) throw mediaError('upload_mismatch', 409, { offset: committedOf(st) });
+    if (!st) {
+      if (start !== 0) throw mediaError('offset_mismatch', 409, { offset: 0 });
+      if (usage(plugin.id).bytes + total > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
+      const id = crypto.randomBytes(16).toString('hex');
+      const prefix = crypto.randomBytes(PREFIX_LEN);
+      st = { v: 1, mediaId: id, mime, total, chunks: 0, prefix: prefix.toString('base64'),
+        keyEnc: wrapKey(crypto.randomBytes(32), id), createdAt: Date.now() };
+      fs.writeFileSync(f.part, Buffer.concat([MAGIC, prefix]), { mode: 0o600 });
+      writeUploadState(f, st);
+    } else if (start !== committedOf(st)) {
+      throw mediaError('offset_mismatch', 409, { offset: committedOf(st) });
+    }
+    const key = unwrapKey(st.keyEnc, st.mediaId);
+    const prefix = Buffer.from(st.prefix, 'base64');
+    const lastIndex = Math.ceil(total / CHUNK) - 1;
+    const fd = fs.openSync(f.part, 'r+');
+    let index = st.chunks;
+    let pending = Buffer.alloc(0);
+    let received = 0;
+    let failure = null;
+    try {
+      for await (const chunk of req) {
+        received += chunk.length;
+        if (received > length) { failure = new MediaError('length_mismatch', 400); break; }
+        pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
+        while (index <= lastIndex) {
+          const plainLen = index === lastIndex ? total - index * CHUNK : CHUNK;
+          if (pending.length < plainLen) break;
+          const sealed = sealChunk(key, prefix, index, index === lastIndex, pending.subarray(0, plainLen));
+          fs.writeSync(fd, sealed, 0, sealed.length, HEADER_LEN + index * (CHUNK + TAG_LEN));
+          pending = pending.subarray(plainLen);
+          index++;
+        }
+      }
+    } catch (e) {
+      failure = new MediaError('aborted', 400, e && e.message);
+    }
+    if (!failure && received !== length) failure = new MediaError(req.aborted || req.destroyed ? 'aborted' : 'length_mismatch', 400);
+    try {
+      fs.ftruncateSync(fd, index > lastIndex ? sealedSize(total) : HEADER_LEN + index * (CHUNK + TAG_LEN));
+      fs.fsyncSync(fd);
+    } finally { fs.closeSync(fd); }
+    st.chunks = index;
+    writeUploadState(f, st);
+    const offset = committedOf(st);
+    if (failure) throw Object.assign(failure, { offset });
+    if (offset < total) return { complete: false, uploadId, offset, total };
+    // complete: the quota again (other uploads meanwhile), the plaintext hash, the file into place
+    if (usage(plugin.id).bytes + total > quotaOf(plugin)) { dropUpload(f); throw new MediaError('quota_exceeded', 507); }
+    const r = { id: st.mediaId, plugin: plugin.id, bytes: total, key_enc: st.keyEnc };
+    const hash = crypto.createHash('sha256');
+    for await (const part of readRange(r, 0, total - 1, f.part)) hash.update(part);
+    const final = fileOf(plugin.id, st.mediaId);
+    fs.mkdirSync(path.dirname(final), { recursive: true, mode: 0o700 });
+    fs.renameSync(f.part, final);
+    fs.rmSync(f.state, { force: true });
+    db().prepare(`INSERT INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc, name)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, NULL)`).run(st.mediaId, plugin.id, ownerUserId == null ? null : ownerUserId, mime, total,
+      hash.digest('hex'), new Date().toISOString(), st.keyEnc);
+    return { complete: true, mediaId: st.mediaId, mime, bytes: total };
+  } finally {
+    busyUploads.delete(f.key);
+  }
+}
+
+/** PUT …/media: a part of a resumable upload (?uploadId=…) or a whole file. */
+function upload(plugin, ownerUserId, req) {
+  return req.query && req.query.uploadId != null ? storePart(plugin, ownerUserId, req) : store(plugin, ownerUserId, req);
 }
 
 // ─── Reading ────────────────────────────────────
@@ -328,12 +514,13 @@ function parseRange(header, size) {
 
 /**
  * Plaintext bytes start…end (inclusive) of a stored file, decrypted chunk
- * by chunk (only the chunks of the range are read).
+ * by chunk (only the chunks of the range are read). `file`: another sealed
+ * file of the same key (a finished resumable upload before it moves).
  * @returns {AsyncGenerator<Buffer>}
  */
-async function* readRange(r, start, end) {
+async function* readRange(r, start, end, file = null) {
   const key = unwrapKey(r.key_enc, r.id);
-  const fh = await fs.promises.open(fileOf(r.plugin, r.id), 'r');
+  const fh = await fs.promises.open(file || fileOf(r.plugin, r.id), 'r');
   try {
     const head = Buffer.alloc(HEADER_LEN);
     await fh.read(head, 0, HEADER_LEN, 0);
@@ -373,8 +560,10 @@ function contentDisposition(type, name, id) {
  * Answer a GET for a stored file: Range (206/416), Accept-Ranges, the
  * stored type, nosniff, a sandboxing CSP; pictures, audio and video inline,
  * everything else as a download. `cache` is the Cache-Control value.
+ * opts (since 1.193.0, public links): `attachment` — always a download;
+ * `name` — the download name instead of the stored one.
  */
-async function send(req, res, r, cache) {
+async function send(req, res, r, cache, opts = {}) {
   const range = parseRange(req.headers.range, r.bytes);
   res.setHeader('Accept-Ranges', 'bytes');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -389,7 +578,7 @@ async function send(req, res, r, cache) {
   const { start, end } = range || { start: 0, end: r.bytes - 1 };
   res.setHeader('Content-Type', r.mime);
   res.setHeader('Cache-Control', cache);
-  const disposition = contentDisposition(INLINE_RE.test(r.mime) ? 'inline' : 'attachment', r.name, r.id);
+  const disposition = contentDisposition(!opts.attachment && INLINE_RE.test(r.mime) ? 'inline' : 'attachment', opts.name || r.name, r.id);
   if (disposition) res.setHeader('Content-Disposition', disposition);
   res.setHeader('Content-Length', String(end - start + 1));
   if (range) res.setHeader('Content-Range', `bytes ${start}-${end}/${r.bytes}`);
@@ -426,7 +615,7 @@ async function mayRead(pluginId, user, r) {
 
 /** Status and code of a failed store() for the routes. */
 function failure(res, e) {
-  if (e instanceof MediaError) return res.status(e.status).json({ ok: false, code: e.code });
+  if (e instanceof MediaError) return res.status(e.status).json({ ok: false, code: e.code, ...(Number.isSafeInteger(e.offset) ? { offset: e.offset } : {}) });
   logger.warn({ err: e && e.message }, 'plugin media: upload failed');
   return res.status(500).json({ ok: false, code: 'internal' });
 }
@@ -441,12 +630,20 @@ function claim(pluginId, id) {
   return info(row(pluginId, id));
 }
 
+/** Public links (publicLinks.js) that serve a removed file end with it. */
+function revokeLinks(pluginId, mediaIds) {
+  try { require('./publicLinks').revokeForMedia(pluginId, mediaIds); } catch (e) {
+    logger.warn({ plugin: pluginId, err: e.message }, 'plugin media: revoking public links failed');
+  }
+}
+
 /** Delete one file (row and disk). → true when it existed. */
 function remove(pluginId, id) {
   const r = row(pluginId, id);
   if (!r) return false;
   db().prepare('DELETE FROM plugin_media WHERE id = ?').run(r.id);
   fs.rmSync(fileOf(r.plugin, r.id), { force: true });
+  revokeLinks(pluginId, [r.id]);
   return true;
 }
 
@@ -454,6 +651,47 @@ function remove(pluginId, id) {
 function removeAll(pluginId) {
   db().prepare('DELETE FROM plugin_media WHERE plugin = ?').run(pluginId);
   fs.rmSync(pluginDir(pluginId), { recursive: true, force: true });
+  revokeLinks(pluginId, null);
+}
+
+// ─── Hand-over between plugins (gc.media.handOver, since 1.193.0) ────
+
+/**
+ * A file of plugin `from` becomes a new, unclaimed file of plugin `to`
+ * (owner `owner` or none). `to` must declare media taking the type, the
+ * size (handOverMaxBytes, default maxBytes) and have room in its quota.
+ * The sealed file is hard-linked (copied when that fails, e.g. another file
+ * system) — the bytes are never decrypted; its key is wrapped for the new id.
+ * The permission (permissions.services) is the caller's job (hostApi.js).
+ * @returns {Promise<{ mediaId, mime, bytes, name }>}
+ * @throws {MediaError} not_found, no_media, unsupported_type, too_large, quota_exceeded
+ */
+async function handOver(from, id, to, { owner = null } = {}) {
+  const r = row(from.id, id);
+  if (!r) throw new MediaError('not_found', 404);
+  const decl = declOf(to);
+  if (!decl) throw new MediaError('no_media', 404);
+  if (!typeAllowed(decl, r.mime)) throw new MediaError('unsupported_type', 415);
+  if (r.bytes > (decl.handOverMaxBytes || decl.maxBytes)) throw new MediaError('too_large', 413);
+  if (usage(to.id).bytes + r.bytes > quotaOf(to)) throw new MediaError('quota_exceeded', 507);
+  const newId = crypto.randomBytes(16).toString('hex');
+  const final = fileOf(to.id, newId);
+  fs.mkdirSync(path.dirname(final), { recursive: true, mode: 0o700 });
+  const tmp = path.join(pluginDir(to.id), `.tmp-${newId}`);
+  try {
+    try { await fs.promises.link(fileOf(from.id, r.id), tmp); } catch { await fs.promises.copyFile(fileOf(from.id, r.id), tmp); }
+    if (usage(to.id).bytes + r.bytes > quotaOf(to)) throw new MediaError('quota_exceeded', 507);
+    fs.renameSync(tmp, final);
+  } catch (e) {
+    fs.rmSync(tmp, { force: true });
+    if (e instanceof MediaError) throw e;
+    throw new MediaError('not_found', 404, e && e.message);
+  }
+  const key = unwrapKey(r.key_enc, r.id);
+  db().prepare(`INSERT INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc, name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)`).run(newId, to.id, owner == null ? null : owner, r.mime, r.bytes, r.sha256,
+    new Date().toISOString(), wrapKey(key, newId), r.name == null ? null : r.name);
+  return { mediaId: newId, mime: r.mime, bytes: r.bytes, name: r.name == null ? null : r.name };
 }
 
 // ─── Capability URLs for frames ─────────────────
@@ -491,8 +729,9 @@ function resolveToken(token, now = Date.now()) {
 // ─── Clean-up ───────────────────────────────────
 
 /**
- * Hourly (plugins/index.js): unclaimed files older than 24 h and leftovers
- * of aborted uploads (.tmp-*, older than an hour) go. Files of an
+ * Hourly (plugins/index.js): unclaimed files older than 24 h, leftovers
+ * of aborted uploads (.tmp-*, older than an hour) and resumable uploads
+ * not finished within 24 h go. Files of an
  * uninstalled plugin stay ("Daten behalten"; "Alles löschen" → removeAll).
  * → number of files removed.
  */
@@ -503,6 +742,7 @@ function cleanup(now = Date.now()) {
   for (const r of old) {
     db().prepare('DELETE FROM plugin_media WHERE id = ? AND ref_count = 0').run(r.id);
     try { fs.rmSync(fileOf(r.plugin, r.id), { force: true }); } catch { /* gone */ }
+    revokeLinks(r.plugin, [r.id]);
     n++;
   }
   let dirs = [];
@@ -515,6 +755,25 @@ function cleanup(now = Date.now()) {
       if (!e.startsWith('.tmp-')) continue;
       const f = path.join(mediaRoot(), d.name, e);
       try { if (fs.statSync(f).mtimeMs < now - 3600 * 1000) { fs.rmSync(f, { force: true }); n++; } } catch { /* gone */ }
+    }
+    n += cleanupUploads(path.join(mediaRoot(), d.name, '.uploads'), now);
+  }
+  return n;
+}
+
+/** Resumable uploads of one plugin older than UPLOAD_TTL_MS (state and part, or a part without state). */
+function cleanupUploads(dir, now) {
+  let n = 0;
+  let ents = [];
+  try { ents = fs.readdirSync(dir); } catch { return 0; }
+  for (const e of ents) {
+    const m = /^([0-9a-f]{32})\.(part|json)$/.exec(e);
+    if (!m) continue;
+    const f = { part: path.join(dir, `${m[1]}.part`), state: path.join(dir, `${m[1]}.json`) };
+    if (m[2] === 'json') {
+      if (uploadExpired(readUploadState(f), now)) { dropUpload(f); n++; }
+    } else if (!fs.existsSync(f.state)) {
+      try { if (fs.statSync(f.part).mtimeMs < now - UPLOAD_TTL_MS) { fs.rmSync(f.part, { force: true }); n++; } } catch { /* gone */ }
     }
   }
   return n;
@@ -582,7 +841,8 @@ function importPlugin(pluginId, list) {
 
 module.exports = {
   MediaError, ID_RE, CHUNK, URL_PREFIX, URL_TTL_MIN_S, URL_TTL_MAX_S, UNCLAIMED_TTL_MS, QUOTA_SETTING, BACKUP_SETTING,
-  mediaRoot, fileOf, declOf, quotaOf, setQuota, usage, baseType, store, storeBuffer, cleanName, contentDisposition, row, info, parseRange, readRange, send, mayRead, failure,
-  claim, remove, removeAll, url, resolveToken, cleanup, backupEnabled, setBackupEnabled, exportPlugin, importPlugin, sealedSize,
+  mediaRoot, fileOf, declOf, quotaOf, setQuota, usage, baseType, typeAllowed, store, storeBuffer, storePart, upload, uploadStatus, UPLOAD_ID_RE, UPLOAD_TTL_MS,
+  cleanName, contentDisposition, row, info, parseRange, readRange, send, mayRead, failure,
+  claim, remove, removeAll, handOver, url, resolveToken, cleanup, backupEnabled, setBackupEnabled, exportPlugin, importPlugin, sealedSize,
   _accessMs: null,
 };

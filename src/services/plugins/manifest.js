@@ -23,12 +23,17 @@ const BACKGROUND_MIN_S = 5;
 
 // `media` (docs/plugins.md "Media"): files a plugin's users upload through
 // GateControl (gc.media, services/plugins/media.js).
-const MEDIA_MAX_BYTES = 100 * 1024 * 1024;          // largest maxBytes a plugin may declare
+// Since 1.193.0 up to 2 GB (before 100 MB): files of GateDrop-like plugins.
+const MEDIA_MAX_BYTES = 2 * 1024 * 1024 * 1024;     // largest maxBytes / handOverMaxBytes a plugin may declare
 const MEDIA_QUOTA_DEFAULT = 1024 * 1024 * 1024;     // quotaDefault when none is declared (1 GB)
 const MEDIA_QUOTA_MIN = 1024 * 1024;
 const MEDIA_QUOTA_MAX = 1024 * 1024 * 1024 * 1024;  // 1 TB
 const MEDIA_TYPES_MAX = 32;
 const MIME_RE = /^(?:image|audio|video|application|text)\/[a-z0-9][a-z0-9.+-]{0,99}$/;
+// Since 1.193.0 a type may also be a whole family: "image/*", "video/*",
+// "audio/*", "application/*" (never "text/*") — every concrete type of it
+// except MIME_DENY_RE (checked per upload, typeAllowed()).
+const MIME_WILDCARD_RE = /^(?:image|audio|video|application)\/\*$/;
 // Never stored or served from GateControl's origin, whatever a plugin
 // declares: types a browser would run as a document, style or script, and
 // the body types the host's own parsers take (the upload is a raw body).
@@ -167,19 +172,41 @@ function quotaBytes(v) {
 }
 
 /**
- * media → { maxBytes, types, quotaDefault, uploads } (null when invalid).
+ * Is `mime` (a base type, lower case) one of the declared `types` — listed
+ * itself, or within a declared family ("image/*", since 1.193.0)? Never a
+ * type of MIME_DENY_RE, whatever is declared.
+ */
+function typeAllowed(types, mime) {
+  const m = String(mime || '');
+  if (!MIME_RE.test(m) || MIME_DENY_RE.test(m) || !Array.isArray(types)) return false;
+  return types.includes(m) || types.includes(m.split('/')[0] + '/*');
+}
+
+const MEDIA_KEYS = ['maxBytes', 'types', 'quotaDefault', 'uploads', 'resumable', 'handOverMaxBytes'];
+
+/**
+ * media → { maxBytes, types, quotaDefault, uploads, resumable, handOverMaxBytes } (null when invalid).
  * uploads (since 1.190.0, default true): false = the plugin's users cannot
  * upload (PUT …/media → 403 uploads_disabled), only gc.media.fetch adds files.
+ * Since 1.193.0: maxBytes up to 2 GB; types may name families ("video/*");
+ * resumable (default false): an upload may continue after an abort
+ * (PUT …/media?uploadId=…&offset=… with Content-Range, media.js storePart);
+ * handOverMaxBytes (default maxBytes): the largest file another plugin may
+ * hand over to this one (gc.media.handOver) — e.g. a messenger keeping
+ * 25 MB for its own uploads but taking 2 GB files from GateDrop.
  */
 function validateMedia(v, err) {
-  if (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).some((k) => !['maxBytes', 'types', 'quotaDefault', 'uploads'].includes(k))) { err('media: invalid'); return null; }
+  if (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).some((k) => !MEDIA_KEYS.includes(k))) { err('media: invalid'); return null; }
   if (v.uploads !== undefined && typeof v.uploads !== 'boolean') { err('media.uploads: invalid'); return null; }
+  if (v.resumable !== undefined && typeof v.resumable !== 'boolean') { err('media.resumable: invalid'); return null; }
   if (!Number.isSafeInteger(v.maxBytes) || v.maxBytes < 1024 || v.maxBytes > MEDIA_MAX_BYTES) { err('media.maxBytes: invalid'); return null; }
   const types = Array.isArray(v.types) ? [...new Set(v.types.map((x) => (typeof x === 'string' ? x.trim().toLowerCase() : '')))] : null;
-  if (!types || !types.length || types.length > MEDIA_TYPES_MAX || !types.every((x) => MIME_RE.test(x) && !MIME_DENY_RE.test(x))) { err('media.types: invalid'); return null; }
+  if (!types || !types.length || types.length > MEDIA_TYPES_MAX || !types.every((x) => MIME_WILDCARD_RE.test(x) || (MIME_RE.test(x) && !MIME_DENY_RE.test(x)))) { err('media.types: invalid'); return null; }
   const quota = v.quotaDefault == null ? MEDIA_QUOTA_DEFAULT : quotaBytes(v.quotaDefault);
   if (quota == null || quota < MEDIA_QUOTA_MIN || quota > MEDIA_QUOTA_MAX || quota < v.maxBytes) { err('media.quotaDefault: invalid'); return null; }
-  return { maxBytes: v.maxBytes, types, quotaDefault: quota, uploads: v.uploads !== false };
+  const handOver = v.handOverMaxBytes == null ? v.maxBytes : v.handOverMaxBytes;
+  if (!Number.isSafeInteger(handOver) || handOver < 1024 || handOver > MEDIA_MAX_BYTES || handOver > quota) { err('media.handOverMaxBytes: invalid'); return null; }
+  return { maxBytes: v.maxBytes, types, quotaDefault: quota, uploads: v.uploads !== false, resumable: v.resumable === true, handOverMaxBytes: handOver };
 }
 
 function isFile(p) {
@@ -222,7 +249,7 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
@@ -232,7 +259,11 @@ function validate(raw, opts = {}) {
     // events: may send realtime events to devices and frames (gc.events.emit)
     // notifySink: delivers notifications people route into chats (hooks
     // deliverNotice / mayRouteToFamily, docs/plugins.md "Notifications in chats")
-    for (const k of ['storage', 'portal', 'users', 'app', 'kiosk', 'events', 'notifySink']) {
+    // publicLinks (since 1.193.0): download links without sign-in (gc.publicLinks,
+    // only while an administrator allows them — publicLinks.js)
+    // devices (since 1.193.0): a person's app installations (gc.devices.list,
+    // gc.notify devices / silent, user.device on app requests)
+    for (const k of ['storage', 'portal', 'users', 'app', 'kiosk', 'events', 'notifySink', 'publicLinks', 'devices']) {
       if (p[k] == null) continue;
       if (typeof p[k] !== 'boolean') err(`permissions.${k}: invalid`);
       else perms[k] = p[k];
@@ -427,7 +458,7 @@ function validate(raw, opts = {}) {
   }
   m.ui = ui;
 
-  // media: { maxBytes, types, quotaDefault, uploads } — files through GateControl (gc.media)
+  // media: { maxBytes, types, quotaDefault, uploads, resumable, handOverMaxBytes } — files through GateControl (gc.media)
   m.media = raw.media == null ? null : validateMedia(raw.media, err);
 
   // services: { provides: { <name>: { label } } } — offered to other plugins (gc.services.call)
@@ -488,5 +519,5 @@ function migrationsOf(manifest, files) {
 
 module.exports = {
   validate, loc, locText, migrationsOf, isFile, quotaBytes, PORTAL_SECTION_TABS, NOTIFY_PER_HOUR_DEFAULT, NOTIFY_PER_HOUR_MAX, BACKGROUND_MIN_S,
-  MEDIA_MAX_BYTES, MEDIA_QUOTA_DEFAULT, MEDIA_QUOTA_MIN, MEDIA_QUOTA_MAX, MIME_DENY_RE, SERVICE_REF_RE, SERVICE_NAME_RE,
+  MEDIA_MAX_BYTES, MEDIA_QUOTA_DEFAULT, MEDIA_QUOTA_MIN, MEDIA_QUOTA_MAX, MIME_DENY_RE, SERVICE_REF_RE, SERVICE_NAME_RE, typeAllowed,
 };

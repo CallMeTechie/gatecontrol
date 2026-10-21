@@ -77,6 +77,12 @@ router.get('/notify-media/:file', notifyMediaLimiter, (req, res) => {
   return res.end(pic.data);
 });
 
+// ─── Public download links of plugins (no login, docs/plugins.md "Public links") ──
+// /s/<token>, /s/<token>/unlock, /s/<token>/f/<n>, /s/<token>/zip
+// (routes/publicLinks.js, since 1.193.0): the token is the permission —
+// served before every authenticated route, own limiters per address.
+router.use(require('./publicLinks'));
+
 // ─── Prometheus metrics (token auth or session) ────
 // Per-identity rate limit so a stolen `read-only`/`system` token can't
 // loop-scrape the endpoint at kilohertz speeds. 60/min/identity is well

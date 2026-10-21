@@ -6,7 +6,9 @@
 //   GET /api/v1/portal/plugins/search?q=       search results of all plugins
 //   PUT /api/v1/portal/plugins/:id/media       an upload of the plugin's frame
 //                                              (GC.upload, plugin.json `media`) — a
-//                                              portal or web login, CSRF
+//                                              portal or web login, CSRF; a part of a
+//                                              resumable upload with ?uploadId= (1.193.0)
+//   GET /api/v1/portal/plugins/:id/media/uploads/:uploadId   where it stands (HEAD too)
 //   GET /api/v1/portal/plugins/:id/events      SSE: the plugin's realtime events for
 //                                              the viewer (permissions.events) — a
 //                                              portal or web login (or a kiosk device)
@@ -88,8 +90,18 @@ router.put('/:id/media', async (req, res) => {
   const user = portalUser(req); // a change: portal or web login only
   if (!user) return res.status(403).json({ ok: false, code: 'login_required' });
   try {
-    return res.json({ ok: true, ...(await media.store(p, user.id, req)) });
+    return res.json({ ok: true, ...(await media.upload(p, user.id, req)) });
   } catch (e) { return media.failure(res, e); }
+});
+
+// where a resumable upload of this viewer stands (media.resumable, since 1.193.0; HEAD: headers only)
+router.get('/:id/media/uploads/:uploadId', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const p = runningPortalPlugin(req);
+  if (!p || !media.declOf(p)) return res.status(404).json({ ok: false, code: 'not_found' });
+  const user = portalUser(req);
+  if (!user || !user.loggedIn) return res.status(403).json({ ok: false, code: 'login_required' });
+  return require('./client/plugins').uploadStatus(res, media.uploadStatus(p, user.id, String(req.params.uploadId || '')));
 });
 
 // ─── Realtime events of the plugin (services/plugins/events.js) ────

@@ -612,3 +612,34 @@ const pluginMediaLimiter = rateLimit({
   },
 });
 module.exports.pluginMediaLimiter = pluginMediaLimiter;
+
+// /s/<token>… — public download links of plugins (docs/plugins.md "Public
+// links", routes/publicLinks.js): no login, per address. The page and its
+// files (a page with 20 files, a resumed download) share one budget; failed
+// requests count, so guessing tokens is slow on top of their 144 bits.
+const publicLinkLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `public-link:${ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(429).type('text/plain').send('rate_limited');
+  },
+});
+// POST /s/<token>/unlock — PIN entries per address (each link also locks
+// itself after 5 wrong PINs).
+const publicLinkUnlockLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `public-link-unlock:${ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(429).type('text/plain').send('rate_limited');
+  },
+});
+module.exports.publicLinkLimiter = publicLinkLimiter;
+module.exports.publicLinkUnlockLimiter = publicLinkUnlockLimiter;

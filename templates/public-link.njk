@@ -1,0 +1,84 @@
+{#- Public download link of a plugin (routes/publicLinks.js, docs/plugins.md "Public links").
+    No login, no scripts (CSP without script-src); the look of the route-auth login (app.css au-*). -#}
+<!DOCTYPE html>
+<html lang="{{ lang }}" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>{% if title %}{{ title }} — {% endif %}{{ t('public_link.page_title') }}</title>
+  <link rel="stylesheet" href="/css/app.css?v={{ appVersion }}">
+  <style nonce="{{ cspNonce }}">
+    .pl-meta { margin: 10px 0 0; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+    .pl-meta strong { color: var(--text); font-weight: 600; }
+    .pl-note { margin: 16px 0 0; padding: 12px 14px; border-radius: 10px; background: var(--bg-hover, rgba(127,127,127,.08)); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; color: var(--text); }
+    .pl-files { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 8px; }
+    .pl-file { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border, rgba(127,127,127,.25)); border-radius: 10px; }
+    .pl-file-t { flex: 1 1 auto; min-width: 0; }
+    .pl-file-t b { display: block; font-weight: 600; font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+    .pl-file-t small { color: var(--muted); font-size: 12.5px; }
+    .pl-file .btn { flex: 0 0 auto; padding: 7px 12px; font-size: 13px; text-decoration: none; }
+    .pl-zip { display: block; margin-top: 16px; text-align: center; text-decoration: none; }
+    .pl-foot { margin-top: 18px; text-align: center; font-size: 12px; color: var(--muted); }
+    .pl-pin { letter-spacing: .3em; text-align: center; font-size: 20px; }
+  </style>
+</head>
+<body class="au-page">
+  <main class="au-wrap">
+    <div class="au-brand">
+      <span class="mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="nm">GateControl</span>
+    </div>
+
+    <div class="card au-card">
+      {% if kind == 'missing' %}
+        <div class="page-eyebrow">{{ t('public_link.eyebrow') }}</div>
+        <h1 class="au-title">{{ t('public_link.missing_title') }}</h1>
+        <p class="au-info">{{ t('public_link.missing_text') }}</p>
+      {% elif kind == 'expired' or kind == 'revoked' or kind == 'locked' or kind == 'used' or kind == 'gone' %}
+        <div class="page-eyebrow">{{ t('public_link.eyebrow') }}</div>
+        <h1 class="au-title">{{ t('public_link.ended_' + kind + '_title') }}</h1>
+        {% if title %}<p class="pl-meta"><strong>{{ title }}</strong></p>{% endif %}
+        <p class="au-info">{{ t('public_link.ended_' + kind + '_text') }}</p>
+      {% else %}
+        <div class="page-eyebrow">{% if sender %}{{ t('public_link.shared_by') }} {{ sender }}{% else %}{{ t('public_link.eyebrow') }}{% endif %}</div>
+        <h1 class="au-title">{{ title if title else t('public_link.untitled') }}</h1>
+        <p class="pl-meta">{{ t('public_link.expires') }} <strong>{{ expires }}</strong></p>
+
+        {% if kind == 'pin' %}
+          <p class="au-info">{{ t('public_link.pin_intro') }}</p>
+          {% if wrong %}
+          <div class="login-error" role="alert">{{ t('public_link.pin_wrong', { left: left }) }}</div>
+          {% endif %}
+          <form method="POST" action="/s/{{ token }}/unlock" autocomplete="off">
+            <div class="form-group">
+              <label class="form-label" for="pl-pin">{{ t('public_link.pin_label') }}</label>
+              <input class="form-input pl-pin" type="password" id="pl-pin" name="pin" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" required autofocus>
+            </div>
+            <button type="submit" class="btn btn-primary au-submit">{{ t('public_link.pin_submit') }}</button>
+          </form>
+        {% else %}
+          {% if note %}<p class="pl-note">{{ note }}</p>{% endif %}
+          <ul class="pl-files">
+            {% for f in files %}
+            <li class="pl-file">
+              <span class="pl-file-t"><b>{{ f.name }}</b><small>{{ f.size }}</small></span>
+              {% if f.usedUp %}
+              <small class="pl-meta">{{ t('public_link.used_up') }}</small>
+              {% else %}
+              <a class="btn btn-primary" href="{{ f.href }}" download>{{ t('public_link.download') }}</a>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% if zip %}
+          <a class="btn btn-primary au-submit pl-zip" href="{{ zip }}" download>{{ t('public_link.download_zip') }} ({{ total }})</a>
+          {% endif %}
+        {% endif %}
+      {% endif %}
+    </div>
+    <p class="pl-foot">{{ t('public_link.footer') }}</p>
+  </main>
+</body>
+</html>

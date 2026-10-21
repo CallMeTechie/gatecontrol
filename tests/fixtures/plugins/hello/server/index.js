@@ -147,6 +147,19 @@ module.exports = {
           else result = await gc.media[op](b.id);
           return { json: { ok: true, result } };
         } catch (e) { return { status: 400, json: { ok: false, code: e.code || null, error: e.message, ...(e.status ? { status: e.status } : {}) } }; }
+      case '/gc': {
+        // since 1.193.0 (tests/plugins_gatedrop.test.js): any gc function by its dotted path,
+        // e.g. { fn: 'publicLinks.create', args: [{ … }] } → { ok, result } | { ok: false, code, error }
+        const b = req.body || {};
+        const parts = String(b.fn || '').split('.');
+        let owner = gc;
+        for (const k of parts.slice(0, -1)) owner = owner && Object.prototype.hasOwnProperty.call(owner, k) ? owner[k] : null;
+        const fn = owner && Object.prototype.hasOwnProperty.call(owner, parts[parts.length - 1]) ? owner[parts[parts.length - 1]] : null;
+        if (typeof fn !== 'function') return { status: 404, json: { ok: false, error: 'no such function' } };
+        try { return { json: { ok: true, result: await fn(...(Array.isArray(b.args) ? b.args : [])) } }; } catch (e) {
+          return { status: 400, json: { ok: false, code: e.code || null, error: e.message, ...(e.status ? { status: e.status } : {}) } };
+        }
+      }
       case '/events':
         // gc.events.emit (permissions.events, tests/plugins_events.test.js); the body is passed on as is
         try { return { json: { ok: true, result: await gc.events.emit(req.body) } }; } catch (e) { return { status: 400, json: { ok: false, code: e.code || null, error: e.message } }; }
@@ -362,6 +375,13 @@ module.exports = {
     await gc.storage.set('sink-chats', chats);
     await gc.storage.set('sink-ensure-last', payload);
     return { conversationId: chats[key], created };
+  },
+
+  // public links (tests/plugins_gatedrop.test.js): every event is appended to kv "public-link-events"
+  async publicLinkEvent(payload, gc) {
+    const list = (await gc.storage.get('public-link-events')) || [];
+    list.push(payload);
+    await gc.storage.set('public-link-events', list);
   },
 
   // built-in data handed over by the host (tests/plugins_legacy.test.js)

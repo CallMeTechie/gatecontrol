@@ -19,6 +19,14 @@
  *     200 { ok: true, mediaId, mime, bytes }
  *     404 not_found / no_media · 411 length_required · 413 too_large · 415 unsupported_type
  *     507 quota_exceeded · 400 aborted / length_mismatch
+ *   PUT /api/v1/client/plugins/:id/media?uploadId=<id>&offset=<n>   one part (Content-Range) of a
+ *     resumable upload (media.resumable, since 1.193.0)
+ *     200 { ok: true, complete: false, uploadId, offset, total } | { ok: true, complete: true, mediaId, mime, bytes }
+ *     409 offset_mismatch / upload_mismatch / busy (+ offset) · 400 not_resumable / invalid_upload_id /
+ *     range_required / invalid_range (+ the codes above)
+ *   HEAD|GET /api/v1/client/plugins/:id/media/uploads/:uploadId
+ *     where the token owner's upload stands: header Upload-Offset / Upload-Length,
+ *     GET 200 { ok: true, uploadId, offset, total, mime }; 404 unknown or expired
  *   GET|HEAD /api/v1/client/plugins/:id/media/:mediaId
  *     the file (Range → 206, unsatisfiable → 416) when the plugin's hook
  *     mediaAccess allows the token's owner (no hook: the uploader only), else 404
@@ -26,7 +34,9 @@
  * Token only (scope `client` or `full-access`), machine binding — the guard
  * of the quick actions (helpers.requireClientToken). The plugin sees the
  * token's owner as `req.user = { id, name, role, portal: true, loggedIn:
- * true, app: true }` and decides itself what an app user may do. Language:
+ * true, app: true }` and decides itself what an app user may do; a plugin
+ * with permissions.devices (since 1.193.0) also gets the asking device as
+ * `req.user.device = { id, platform }` (gc.devices.list ids). Language:
  * ?lang=de|en, else the owner's language setting, else Accept-Language, else 'de'.
  */
 
@@ -85,9 +95,24 @@ router.put('/:id/media', async (req, res) => {
   const g = mediaGuard(req, res);
   if (!g) return undefined;
   try {
-    return res.json({ ok: true, ...(await media.store(g.p, g.v.user.id, req)) });
+    return res.json({ ok: true, ...(await media.upload(g.p, g.v.user.id, req)) });
   } catch (e) { return media.failure(res, e); }
 });
+
+// where a resumable upload stands (HEAD: headers only)
+router.get('/:id/media/uploads/:uploadId', (req, res) => {
+  const g = mediaGuard(req, res);
+  if (!g) return undefined;
+  return uploadStatus(res, media.uploadStatus(g.p, g.v.user.id, String(req.params.uploadId || '')));
+});
+
+/** Answer of …/media/uploads/<uploadId> (client and portal). */
+function uploadStatus(res, st) {
+  if (!st) return res.status(404).json({ ok: false, code: 'not_found' });
+  res.set('Upload-Offset', String(st.offset));
+  res.set('Upload-Length', String(st.total));
+  return res.json({ ok: true, ...st });
+}
 
 async function mediaGet(req, res) {
   const g = mediaGuard(req, res);
@@ -105,9 +130,15 @@ router.all('/:id/api/*', (req, res, next) => {
   const v = tokenViewer(req);
   if (!v) return res.status(403).json({ ok: false, code: 'no_user' });
   if (bodyBytes(req.body) > MAX_BODY_BYTES) return res.status(413).json({ ok: false, code: 'too_large' });
+  const p = appPlugins.pluginById(String(req.params.id || ''));
+  // the asking device, for plugins that see devices (permissions.devices)
+  if (p && p.manifest.permissions && p.manifest.permissions.devices === true) {
+    try { v.user.device = require('../../../services/plugins/devices').viewerDevice(req); } catch { /* no device */ }
+  }
   req.appViewer = v;
   return next();
 }, forward);
 
 module.exports = router;
 module.exports.MAX_BODY_BYTES = MAX_BODY_BYTES;
+module.exports.uploadStatus = uploadStatus;

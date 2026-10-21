@@ -43,6 +43,9 @@ function createApp() {
     crossOriginEmbedderPolicy: false,
   }));
 
+  // ─── Request bodies: 5 min each, media uploads longer (middleware/requestDeadline.js) ──
+  app.use(require('./middleware/requestDeadline').requestDeadline);
+
   // ─── Body parsing ────────────────────────────────
   // Gateway companion endpoints must stay small: heartbeats, probe
   // results, etc. Reject oversized bodies BEFORE express.json runs,
