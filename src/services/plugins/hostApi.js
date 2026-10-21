@@ -550,6 +550,7 @@ async function notifyRoutes(plugin, op, args) {
   if (op === 'set') {
     const r = await chatRoutes.setRoute(uid, a.topic, a.dest);
     if (r.status !== 200) throw new HostApiError(ROUTE_ERRORS[r.error] || 'ERR_INVALID', r.error);
+    return { ...(await chatRoutes.view(uid, lang)), chat: r.chat || null };
   }
   return chatRoutes.view(uid, lang);
 }

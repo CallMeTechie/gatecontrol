@@ -337,7 +337,7 @@ router.put('/push/routes', async (req, res) => {
   try {
     const r = await chatRoutes.setRoute(uid, b.topic, b.dest);
     if (r.status !== 200) return res.status(r.status).json({ ok: false, error: r.error });
-    res.json(await chatRoutes.view(uid, text.userLang(uid)));
+    res.json({ ...(await chatRoutes.view(uid, text.userLang(uid))), chat: r.chat || null });
   } catch (err) {
     logger.error({ err: err.message, tokenId: req.tokenId }, 'push routes update failed');
     res.status(500).json({ ok: false, error: 'internal' });

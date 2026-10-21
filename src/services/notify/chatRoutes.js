@@ -16,7 +16,9 @@
 //                             not listed in `covered` — gets the normal inbox
 //                             delivery afterwards (fallback). Never lost,
 //                             never doubled.
-//   view / setRoute           GET / PUT …/notify/routes (web and app)
+//   view / setRoute           GET / PUT …/notify/routes (web and app); 1.192.0: choosing 'own'
+//                             asks the sink to create (or find) that source's chat at once
+//                             (ensureNoticeChat, ≤ 5 s) instead of with the first notification
 //
 // Locked topics (security, admin_notice) and chat topics (kind 'message')
 // never leave the inbox path.
@@ -30,6 +32,7 @@ const logger = require('../../utils/logger');
 const DESTS = ['inbox', 'own', 'family'];
 const HOOK_MS = 10000;   // deliverNotice
 const ASK_MS = 3000;     // mayRouteToFamily
+const ENSURE_MS = 5000;  // ensureNoticeChat
 const inflight = new Set();
 
 function db() { return getDb(); }
@@ -240,6 +243,30 @@ function routeTopics(userId, lang) {
   return out;
 }
 
+const CONV_ID_RE = /^[A-Za-z0-9_.:-]{1,80}$/;
+
+/**
+ * 1.192.0: the sink's chat for `topic`'s source, created now when missing (hook ensureNoticeChat,
+ * ≤ 5 s) → { source, label, conversationId, created } or null (no hook, an error, no answer —
+ * the chat then appears with the first notification, as before).
+ */
+async function ensureChat(userId, topic, sink, lang) {
+  const u = userOf(userId);
+  if (!sink || !u) return null;
+  const l = labelsOf(topic, lang);
+  try {
+    const out = await runtime().call(sink.id, 'ensureNoticeChat', {
+      user: { id: u.id, name: u.display_name || u.username, role: u.role }, source: l.source, sourceLabel: l.sourceLabel, lang,
+    }, module.exports._ensureMs || ENSURE_MS);
+    const c = out && out.chat;
+    if (!c || typeof c !== 'object' || c.conversationId == null || !CONV_ID_RE.test(String(c.conversationId))) return null;
+    return { source: l.source, label: l.sourceLabel, conversationId: String(c.conversationId), created: c.created === true };
+  } catch (err) {
+    logger.warn({ err: err.message, sink: sink.id }, 'ensureNoticeChat failed');
+    return null;
+  }
+}
+
 function nameOf(userId) {
   if (userId == null) return null;
   const u = userOf(userId);
@@ -306,12 +333,14 @@ async function setRoute(userId, topic, dest) {
       d.prepare('DELETE FROM notify_routes WHERE user_id = ? AND topic = ?').run(userId, topic);
     }
   })();
+  // 1.192.0: the own chat exists right away (an existing one of that source is used)
+  if (dest === 'own') return { status: 200, chat: await ensureChat(userId, topic, sink, lang) };
   return { status: 200 };
 }
 
 module.exports = {
-  DESTS, HOOK_MS, ASK_MS,
+  DESTS, HOOK_MS, ASK_MS, ENSURE_MS,
   activeSink, runningSink, split, dispatch, settled, noticePayload, labelsOf, routable,
   mayRouteToFamily, view, setRoute, routeTopics,
-  _hookMs: null, _askMs: null, // tests only
+  _hookMs: null, _askMs: null, _ensureMs: null, // tests only
 };

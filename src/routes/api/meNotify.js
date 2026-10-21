@@ -212,7 +212,7 @@ function createRouter() {
     try {
       const r = await chatRoutes.setRoute(req.meUserId, b.topic, b.dest);
       if (r.status !== 200) return res.status(r.status).json({ ok: false, error: r.error });
-      res.json(await chatRoutes.view(req.meUserId, req.language));
+      res.json({ ...(await chatRoutes.view(req.meUserId, req.language)), chat: r.chat || null });
     } catch (err) {
       logger.error({ err: err.message }, 'me/notify routes update failed');
       res.status(500).json({ ok: false, error: req.t('common.error') });
