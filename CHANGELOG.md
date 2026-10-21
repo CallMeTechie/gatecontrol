@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.193.1] — 2026-10-21
+
+### Fixes
+- public links — a used-up file can't be fetched again with a Range request (#345)
+
+---
+
 ## [1.193.0] — 2026-10-21
 
 ### Features
