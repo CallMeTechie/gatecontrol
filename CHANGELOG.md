@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.193.0] — 2026-10-21
+
+### Features
+- GateDrop host APIs — 2 GB media, public links, devices, hand-over, target upload (#344)
+
+---
+
 ## [1.192.0] — 2026-10-21
 
 ### Features
