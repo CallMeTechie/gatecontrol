@@ -1388,8 +1388,14 @@ GET  /s/<token>/zip         all files as one ZIP (stored, streamed, Content-Leng
   refused. The PIN never appears in a log.
 * Downloads: a request from byte 0 (no `Range`, or a `Range` from 0) of a
   file counts one download of it; the ZIP counts one of each file. A file at
-  `maxDownloads` is refused (410) — except a resumed download (`Range` not
-  from 0) within 6 h of its last counted one. `HEAD` never counts.
+  `maxDownloads` is refused (410 `used`); counting is atomic (parallel
+  requests for the last download: one wins). A counted download sets a resume
+  cookie for that file (HttpOnly, `Path=/s/<token>/f/<n>`, 6 h, signed with
+  the server secret): with it, a `Range` later in the file is a free
+  continuation, even once the file is used up. A `Range` later in the file
+  without that cookie (another client holding the URL) is a new download — it
+  counts, and is refused once the file is used up (since 1.193.1; before, any
+  client could resume within 6 h). `HEAD` never counts.
 * Every answer: `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow,
   noarchive`, `Referrer-Policy: no-referrer`, `nosniff`, `X-Frame-Options:
   DENY`; the page a strict CSP without any script (`default-src 'none'`,

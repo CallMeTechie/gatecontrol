@@ -15,7 +15,10 @@
 //                              JSON { ok: false, code: 'wrong_pin', left }),
 //                              the fifth wrong PIN locks the link (410)
 //   GET  /s/<token>/f/<n>      file n (1 …) as a download: Range, the name as
-//                              Content-Disposition attachment (UTF-8)
+//                              Content-Disposition attachment (UTF-8); a counted
+//                              download sets the file's resume cookie — only with
+//                              it a Range later in the file is free (publicLinks.js
+//                              "Downloads"), else it counts like a new download
 //   GET  /s/<token>/zip        every file of the link as one ZIP (stored,
 //                              streamed, Content-Length known)
 //
@@ -157,8 +160,11 @@ router.get('/s/:token/f/:n', publicLinkLimiter, async (req, res) => {
   const range = media.parseRange(req.headers.range, row.bytes);
   if (range !== false && req.method === 'GET') {
     const start = range ? range.start : 0;
-    if (!links.mayDownload(r.link, f, start)) return res.status(410).type('text/plain').send('used');
-    if (start === 0) links.countDownload(r.link, [f]);
+    // from 0, or a continuation without this client's resume cookie: a new, counted download
+    if (start === 0 || !links.mayResume(req, r.link, f)) {
+      if (!links.countDownload(r.link, [f])) return res.status(410).type('text/plain').send('used');
+      res.setHeader('Set-Cookie', links.resumeCookie(r.link, req.params.token, f));
+    }
   }
   return media.send(req, res, row, 'no-store', { attachment: true, name: f.name || row.name || `file-${f.idx}` });
 });
@@ -173,12 +179,13 @@ router.get('/s/:token/zip', publicLinkLimiter, async (req, res) => {
     name: f.name || row.name || `file-${f.idx}`, size: row.bytes, read: () => media.readRange(row, 0, row.bytes - 1),
   }));
   const zipName = `${media.cleanName(r.link.title) || 'download'}.zip`;
+  // counted before the first byte (atomic: a parallel download of a last file loses here)
+  if (req.method === 'GET' && !links.countDownload(r.link, r.files, { zip: true })) return res.status(410).type('text/plain').send('used');
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', media.contentDisposition('attachment', zipName, 'download.zip'));
   res.setHeader('Content-Length', String(zipLength(entries)));
   res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
   if (req.method === 'HEAD') return res.end();
-  links.countDownload(r.link, r.files, { zip: true });
   try {
     for await (const part of zipStream(entries, new Date(r.link.created_at))) {
       if (res.destroyed) return undefined;
