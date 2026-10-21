@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.190.0] — 2026-10-21
+
+### Features
+- gc.media.fetch, media file names and media.uploads (#341)
+
+---
+
 ## [1.189.0] — 2026-10-21
 
 ### Features
