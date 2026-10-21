@@ -136,7 +136,7 @@ function permissionSummary(m, lang) {
     portalTab: m.ui.portal && m.ui.portal.label ? loc(m.ui.portal.label, lang) : null,
     portalSections: m.ui.portal && m.ui.portal.sections ? m.ui.portal.sections.map((s) => ({ tab: s.tab, title: loc(s.title, lang) })) : [],
     // messenger foundations (docs/plugins.md "Media", "Realtime events", "Chat notifications", "Services")
-    media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault } : null,
+    media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false } : null,
     events: !!p.events,
     chatTopics: p.notify ? (m.notifyTopics || []).filter((t) => t.chat === true).map((t) => loc(t.label, lang)) : [],
     services: Array.isArray(p.services) ? p.services : [],
@@ -620,7 +620,7 @@ function view(p, lang) {
     camera: !!(m.ui && m.ui.camera),
     // the <iframe allow="…"> of the plugin's frames (frame.allowAttr)
     allow: require('./frame').allowAttr({ media: !!m.media, geolocation: !!(m.ui && m.ui.geolocation), camera: !!(m.ui && m.ui.camera) }),
-    media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault } : null,
+    media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false } : null,
     events: !!(m.permissions && m.permissions.events),
     settingsCount: m.ui && m.ui.settings ? m.ui.settings.length : 0,
     installedAt: p.installedAt,

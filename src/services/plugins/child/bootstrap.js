@@ -293,10 +293,12 @@ function makeGc(info) {
       : hostCall('notify', { message: String(message), opts: opts || {} })),
     license: Object.freeze({ status: () => hostCall('license.status', {}) }),
     /**
-     * plugin.json `media`: files the users uploaded (PUT …/plugins/<id>/media, GC.upload) —
-     * info(id) → { mediaId, mime, bytes, sha256, owner, createdAt, claimed } | null; claim(id) keeps
-     * a new file (else removed after 24 h); delete(id) → boolean; usage() → { bytes, count, quota,
-     * maxBytes, types }; url(id, { user, ttlS }) → '/plugin-media/<token>' for frames
+     * plugin.json `media`: files the users uploaded (PUT …/plugins/<id>/media, GC.upload) or the
+     * plugin fetched — info(id) → { mediaId, mime, bytes, sha256, owner, createdAt, claimed, name } | null;
+     * claim(id) keeps a new file (else removed after 24 h); delete(id) → boolean; usage() → { bytes,
+     * count, quota, maxBytes, types, uploads }; url(id, { user, ttlS }) → '/plugin-media/<token>' for
+     * frames; fetch(url, { headers, timeoutMs, mime, name, maxBytes }) → { mediaId, mime, bytes, name }
+     * (since 1.190.0: a file from the internet, checked like http.fetch, unclaimed, no owner)
      */
     media: Object.freeze({
       info: (id) => hostCall('media.info', { id }),
@@ -304,6 +306,10 @@ function makeGc(info) {
       delete: (id) => hostCall('media.delete', { id }),
       usage: () => hostCall('media.usage', {}),
       url: (id, opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('media.url', { id, user: o.user, ttlS: o.ttlS }); },
+      fetch: (url, opts) => {
+        const o = opts && typeof opts === 'object' ? opts : {};
+        return hostCall('media.fetch', { url: String(url), opts: { headers: o.headers, timeoutMs: o.timeoutMs, mime: o.mime, name: o.name, maxBytes: o.maxBytes } });
+      },
     }),
     /** permissions.events: emit({ users: [ids], type, data }) → { delivered } — realtime, not stored */
     events: Object.freeze({
@@ -429,7 +435,8 @@ process.on('message', (msg) => {
     if (!p) return;
     pending.delete(msg.id);
     clearTimeout(p.timer);
-    if (msg.ok) p.resolve(msg.value); else p.reject(Object.assign(new Error(msg.error || 'host call failed'), { code: msg.code || undefined }));
+    if (msg.ok) p.resolve(msg.value);
+    else p.reject(Object.assign(new Error(msg.error || 'host call failed'), { code: msg.code || undefined }, Number.isInteger(msg.status) ? { status: msg.status } : {}));
     return;
   }
   if (msg.t === 'call') {

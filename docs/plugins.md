@@ -448,8 +448,13 @@ unsigned build of the same id.
   nor the host's own body types JSON / form data); `quotaDefault` the storage
   quota of all the plugin's files, `"10GB"`, `"500 MB"` (KB/MB/GB/TB) or bytes,
   1 MB … 1 TB and ≥ `maxBytes`, default 1 GB — the administrator changes it on
-  the plugin's overview. Errors `media: invalid`, `media.maxBytes: invalid`,
-  `media.types: invalid`, `media.quotaDefault: invalid`. See "Media".
+  the plugin's overview. `uploads` (boolean, since 1.190.0, default `true`):
+  `false` = the plugin's users cannot upload (apps, portal, admin page,
+  `GC.upload` → `403 uploads_disabled`), only `gc.media.fetch` adds files;
+  the install dialog then says "speichert Dateien, die es selbst aus dem
+  Internet lädt … – keine Uploads seiner Benutzer". Errors `media: invalid`,
+  `media.maxBytes: invalid`, `media.types: invalid`, `media.quotaDefault:
+  invalid`, `media.uploads: invalid`. See "Media".
 * `permissions.events` (boolean, since 1.177.0): realtime events to the
   plugin's users (`gc.events.emit`) — see "Realtime events". The install
   dialog shows "Live-Ereignisse: darf Live-Ereignisse an die Apps und
@@ -597,11 +602,12 @@ module.exports = {
 | `gc.notify(message, { severity })` | activity log + webhooks, and a push on `plugin:<id>:default` (`notify`, ≤ 30/h or `perHour`) — see "Notifications" |
 | `gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data, image })` | push on a declared `notifyTopics` topic (+ activity row) → `{ pushed, id }`; `image` `{ data, mime }` or `{ mediaId }` — see "Pictures" |
 | `gc.notify({ topic: <chat topic>, title, body, users, conversation, sender, … })` | a chat notification (`notifyTopics[].chat`) → `{ pushed, id, skipped }` — see "Chat notifications" |
-| `gc.media.info(id)` | `{ mediaId, mime, bytes, sha256, owner, createdAt, claimed }` of one of the plugin's files, or `null` (`media`) — see "Media" |
+| `gc.media.info(id)` | `{ mediaId, mime, bytes, sha256, owner, createdAt, claimed, name }` of one of the plugin's files, or `null` (`media`) — see "Media" |
 | `gc.media.claim(id)` | keep a new upload (unclaimed files are removed after 24 h); idempotent → the info; unknown id → `ERR_INVALID` |
 | `gc.media.delete(id)` | delete the file → `true` (`false` when unknown) |
-| `gc.media.usage()` | `{ bytes, count, quota, maxBytes, types }` |
+| `gc.media.usage()` | `{ bytes, count, quota, maxBytes, types, uploads }` |
 | `gc.media.url(id, { user, ttlS })` | `/plugin-media/<token>` — a signed URL a frame can show (`<img>`, `<audio>`) for `ttlS` seconds (60 … 86400, default 3600) |
+| `gc.media.fetch(url, { headers, timeoutMs, mime, name, maxBytes })` | since 1.190.0: download a file from the internet straight into the plugin's media (checked like `gc.http.fetch`) → `{ mediaId, mime, bytes, name }`, unclaimed, no owner — see "Media" |
 | `gc.events.emit({ users, type, data })` | realtime event to the listed people's apps and frames → `{ delivered }` (`events`, ≤ 600/min) — see "Realtime events" |
 | `gc.services.call({ plugin, service, userId, payload })` | another plugin's service → its answer (`permissions.services`, ≤ 60/h) — see "Services" |
 | `gc.services.available(plugin, service)` | `true`/`false`: would `call()` reach that provider now (listed, installed, running, provided) — the provider is not run, not counted (since 1.178.0) |
@@ -952,9 +958,53 @@ it in its own data. Code: `src/services/plugins/media.js`.
     `{ mediaId, mime, bytes }`; `onProgress({ loaded, total })` while it
     uploads; a failed upload rejects with `status` and the error code.
   * Answers: `200 { ok: true, mediaId, mime, bytes }`; `404 not_found`
-    (unknown, not usable, no `media`), `411 length_required`, `413 too_large`,
-    `415 unsupported_type`, `507 quota_exceeded`, `400 aborted |
-    length_mismatch`.
+    (unknown, not usable, no `media`), `403 uploads_disabled` (`media.uploads:
+    false`, since 1.190.0), `411 length_required`, `413 too_large`, `415
+    unsupported_type`, `507 quota_exceeded`, `400 aborted | length_mismatch`.
+* **Fetch** (since 1.190.0): `gc.media.fetch(url, opts)` downloads one file
+  from the internet straight into the plugin's media — e.g. an attachment of a
+  web service the plugin is logged in to; the file never passes through the
+  plugin process:
+
+  ```js
+  const f = await gc.media.fetch('https://files.example.com/a/123', {
+    headers: { authorization: 'Bearer …' }, // optional, like http.fetch
+    timeoutMs: 30000,  // 1000 … 60000, default 30000 (all hops together, and within the host call's 30 s)
+    mime: 'application/pdf', // optional: instead of the answer's Content-Type
+    name: 'Elternbrief.pdf', // optional display / download name
+    maxBytes: 10485760,      // optional, never above media.maxBytes
+  });
+  // → { mediaId, mime, bytes, name } — unclaimed (24 h), owner null
+  await gc.media.claim(f.mediaId);
+  ```
+
+  * The URL is checked exactly like `gc.http.fetch`: hosts of
+    `permissions.network.internet` only, public addresses only, DNS pinned;
+    `GET` only; redirects are followed and every hop is checked again
+    (`Authorization` / `Cookie` dropped when the origin changes).
+  * Size ≤ `min(opts.maxBytes, media.maxBytes)` — a larger answer (declared
+    `Content-Length` or the bytes received) is aborted → `ERR_MEDIA_TOO_LARGE`;
+    an empty answer → `ERR_MEDIA_EMPTY`; the quota like an upload →
+    `ERR_MEDIA_QUOTA`.
+  * Type: `opts.mime`, else the answer's `Content-Type` (without parameters,
+    lower case); it must be one of `media.types` → else `ERR_MEDIA_TYPE`
+    (with `opts.mime` checked before anything is downloaded).
+  * A status other than 2xx → `ERR_HTTP` (the error has `status`); network
+    errors like `http.fetch`: `ERR_NET_DENIED` (not allowed, not public),
+    `ERR_NET`; `ERR_TIMEOUT` when the download does not finish within
+    `timeoutMs`; `ERR_INVALID` for bad arguments.
+  * `name`: the last path segment only, control characters removed, trimmed,
+    ≤ 200 characters (a long name keeps its extension), `null` when empty.
+  * The new file is **unclaimed** and has **no owner** (`owner_user_id`
+    NULL): bind it with `gc.media.claim(id)`; without the hook `mediaAccess`
+    nobody may read it — the hook decides who does.
+  * Stored like every media file (encrypted, see "At rest"). The answer is held
+    in memory while it is checked (at most `media.maxBytes`).
+* **Name** (since 1.190.0): a file with a name (`gc.media.fetch` `name`;
+  `gc.media.info` → `name`, `null` for uploads) is served with
+  `Content-Disposition: inline|attachment; filename="<ASCII fallback>";
+  filename*=UTF-8''<percent-encoded name>` — inline for pictures, audio and
+  video, a download for everything else, as without a name.
 * **Claim**: a new file is unclaimed; the plugin binds it with
   `gc.media.claim(id)` (e.g. when the message using it is stored). Unclaimed
   files are removed **24 h** after the upload (hourly clean-up).
@@ -994,7 +1044,7 @@ it in its own data. Code: `src/services/plugins/media.js`.
   AES-256-GCM in 64 KiB chunks (each chunk authenticated with its index and a
   "last" flag), with a random key per file; that key is stored in the core
   table `plugin_media` (`id, plugin, owner_user_id, mime, bytes, sha256,
-  created_at, ref_count, claimed_at, key_enc`) wrapped with a key derived
+  created_at, ref_count, claimed_at, key_enc, name`) wrapped with a key derived
   (HKDF-SHA256) from the server secret (`GC_SECRET`). Honest limit: whoever
   has root on the server can decrypt them; the encryption protects against
   copies of the data folder.
@@ -1007,8 +1057,11 @@ it in its own data. Code: `src/services/plugins/media.js`.
   own. GateControl has no image or audio processing.
 * Uninstall "Daten behalten" keeps the files, "Alles löschen" deletes them.
 * Errors of `gc.media.*`: `ERR_MEDIA_DENIED` (no `media` in plugin.json),
-  `ERR_INVALID` (bad id, unknown id for `claim`/`url`, bad `user`/`ttlS`). A
-  plugin only ever sees its own files.
+  `ERR_INVALID` (bad id, unknown id for `claim`/`url`, bad `user`/`ttlS`, bad
+  `fetch` arguments); `gc.media.fetch` also `ERR_MEDIA_TOO_LARGE`,
+  `ERR_MEDIA_EMPTY`, `ERR_MEDIA_QUOTA`, `ERR_MEDIA_TYPE`, `ERR_HTTP`,
+  `ERR_NET_DENIED`, `ERR_NET`, `ERR_TIMEOUT`. A plugin only ever sees its own
+  files.
 
 ## Realtime events (`permissions.events`)
 

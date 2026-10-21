@@ -177,7 +177,8 @@ class PluginProcess {
     const ctx = { emit: (msg) => reply(msg) };
     Promise.race([hostApi.handle(this.plugin, String(m.api || ''), m.args || {}, ctx), timeout])
       .then((value) => reply({ t: 'hostResult', id: m.id, ok: true, value: value === undefined ? null : value }),
-        (e) => reply({ t: 'hostResult', id: m.id, ok: false, error: String((e && e.message) || e).slice(0, 300), code: (e && e.code) || null }))
+        (e) => reply({ t: 'hostResult', id: m.id, ok: false, error: String((e && e.message) || e).slice(0, 300), code: (e && e.code) || null,
+          ...(e && Number.isInteger(e.status) && e.code === 'ERR_HTTP' ? { status: e.status } : {}) }))
       .finally(() => { this.hostCalls--; });
   }
 

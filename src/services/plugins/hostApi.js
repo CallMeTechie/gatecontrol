@@ -642,8 +642,9 @@ function flushChatSummary() {
 
 // ─── Media (plugin.json `media`, services/plugins/media.js) ────
 //
-// gc.media.info(id) / claim(id) / delete(id) / usage() / url(id, { user, ttlS }):
-// the files the plugin's users uploaded (docs/plugins.md "Media").
+// gc.media.info(id) / claim(id) / delete(id) / usage() / url(id, { user, ttlS }) /
+// fetch(url, opts): the files the plugin's users uploaded or the plugin
+// fetched (docs/plugins.md "Media").
 
 function needMedia(plugin) {
   need(require('./media').declOf(plugin), 'ERR_MEDIA_DENIED', 'plugin.json declares no media');
@@ -654,6 +655,56 @@ function mediaId(args) {
   const id = args && args.id;
   need(typeof id === 'string' && /^[0-9a-f]{32}$/.test(id), 'ERR_INVALID', 'invalid media id');
   return id;
+}
+
+const MEDIA_FETCH_TIMEOUT_DEFAULT = 30000;
+const MEDIA_ERRORS = { unsupported_type: 'ERR_MEDIA_TYPE', too_large: 'ERR_MEDIA_TOO_LARGE', quota_exceeded: 'ERR_MEDIA_QUOTA', empty: 'ERR_MEDIA_EMPTY' };
+
+/**
+ * gc.media.fetch(url, { headers, timeoutMs, mime, name, maxBytes }) → { mediaId, mime, bytes, name }:
+ * one file from the internet straight into the plugin's media — checked like
+ * http.fetch (permissions.network.internet, public addresses only, DNS
+ * pinned, every redirect hop again), GET only, redirects followed. The file
+ * is unclaimed and has no owner (gc.media.claim, hook mediaAccess). All hops
+ * together end within the host call's time (TIMEOUTS.hostCall).
+ */
+async function mediaFetch(plugin, args) {
+  const media = needMedia(plugin);
+  const decl = media.declOf(plugin);
+  const url = args && args.url;
+  need(typeof url === 'string' && url.length <= 8192, 'ERR_INVALID', 'invalid url');
+  const o = args && args.opts != null ? args.opts : {};
+  need(typeof o === 'object' && !Array.isArray(o), 'ERR_INVALID', 'invalid options');
+  need(o.headers == null || (typeof o.headers === 'object' && !Array.isArray(o.headers)), 'ERR_INVALID', 'invalid headers');
+  need(o.mime == null || (typeof o.mime === 'string' && o.mime.length <= 200), 'ERR_INVALID', 'invalid mime');
+  need(o.name == null || (typeof o.name === 'string' && o.name.length <= 4096), 'ERR_INVALID', 'invalid name');
+  need(o.maxBytes == null || (Number.isSafeInteger(o.maxBytes) && o.maxBytes >= 1), 'ERR_INVALID', 'invalid maxBytes');
+  need(o.timeoutMs == null || Number.isFinite(o.timeoutMs), 'ERR_INVALID', 'invalid timeoutMs');
+  const forced = o.mime == null || o.mime === '' ? null : media.baseType(o.mime);
+  if (forced !== null) need(decl.types.includes(forced), 'ERR_MEDIA_TYPE', `type ${forced} is not declared in media.types`);
+  const limit = Math.min(o.maxBytes == null ? decl.maxBytes : o.maxBytes, decl.maxBytes);
+  need(media.usage(plugin.id).bytes < media.quotaOf(plugin), 'ERR_MEDIA_QUOTA', 'media quota exhausted');
+  const timeoutMs = Math.max(1000, Math.min(60000, o.timeoutMs == null ? MEDIA_FETCH_TIMEOUT_DEFAULT : o.timeoutMs));
+  const deadline = Date.now() + Math.min(timeoutMs, TIMEOUTS.hostCall - 1000);
+  let res;
+  try {
+    res = await netPolicy.fetchWithPolicy(policyOf(plugin), url, { method: 'GET', headers: { ...(o.headers || {}) }, body: null,
+      timeoutMs, maxBytes: limit, redirect: 'follow', deadline, ...netOpts() });
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    if (msg === 'response_too_large') throw new HostApiError('ERR_MEDIA_TOO_LARGE', `the file is larger than ${limit} bytes`);
+    if ((e && e.code === 'ERR_TIMEOUT') || msg === 'timeout') throw new HostApiError('ERR_TIMEOUT', 'the download did not finish in time');
+    throw netError(e);
+  }
+  if (res.status < 200 || res.status > 299) throw Object.assign(new HostApiError('ERR_HTTP', `HTTP ${res.status}`), { status: res.status });
+  const mime = forced !== null ? forced : media.baseType(res.headers['content-type']);
+  need(decl.types.includes(mime), 'ERR_MEDIA_TYPE', `type ${mime || '(none)'} is not declared in media.types`);
+  try {
+    return await media.storeBuffer(plugin, res.body, { mime, name: o.name == null ? null : o.name, owner: null });
+  } catch (e) {
+    if (e instanceof media.MediaError && MEDIA_ERRORS[e.code]) throw new HostApiError(MEDIA_ERRORS[e.code], e.code === 'empty' ? 'the response is empty' : e.code);
+    throw e;
+  }
 }
 
 function mediaCall(plugin, op, args) {
@@ -668,7 +719,7 @@ function mediaCall(plugin, op, args) {
     case 'delete': return media.remove(plugin.id, mediaId(args));
     case 'usage': {
       const decl = media.declOf(plugin);
-      return { ...media.usage(plugin.id), quota: media.quotaOf(plugin), maxBytes: decl.maxBytes, types: decl.types };
+      return { ...media.usage(plugin.id), quota: media.quotaOf(plugin), maxBytes: decl.maxBytes, types: decl.types, uploads: decl.uploads !== false };
     }
     case 'url': {
       const id = mediaId(args);
@@ -1138,6 +1189,7 @@ async function handle(plugin, api, args, ctx) {
     case 'media.delete': return mediaCall(plugin, 'delete', args);
     case 'media.usage': return mediaCall(plugin, 'usage', args);
     case 'media.url': return mediaCall(plugin, 'url', args);
+    case 'media.fetch': return mediaFetch(plugin, args);
     case 'events.emit': return eventsEmit(plugin, args);
     case 'services.call': return servicesCall(plugin, args);
     case 'services.available': return servicesAvailable(plugin, args);

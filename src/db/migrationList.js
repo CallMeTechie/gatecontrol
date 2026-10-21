@@ -2378,6 +2378,17 @@ const migrations = [
         PRIMARY KEY (notification_id, action)
       );`,
   },
+  {
+    version: 106,
+    name: 'plugin_media_name',
+    // Plugin media file names (docs/plugins.md "Media", since 1.190.0):
+    //   plugin_media.name  the display / download name of a file
+    //                      (gc.media.fetch opts.name, sanitised: no path, no
+    //                      control characters, ≤ 200 characters) or NULL.
+    //                      Sent as Content-Disposition filename when served.
+    sql: `ALTER TABLE plugin_media ADD COLUMN name TEXT;`,
+    detect: (db) => hasColumn(db, 'plugin_media', 'name'),
+  },
 ];
 
 module.exports = { migrations };
