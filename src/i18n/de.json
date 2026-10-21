@@ -5225,6 +5225,8 @@
   "plugins.perm.media_fetch_v": "speichert Dateien, die es selbst aus dem Internet lädt, bei GateControl (bis {{max}} je Datei, Kontingent {{quota}}): {{types}} – keine Uploads seiner Benutzer",
   "plugins.perm.events": "Live-Ereignisse",
   "plugins.perm.events_on": "darf Live-Ereignisse an die Apps und Plugin-Seiten seiner Benutzer senden",
+  "plugins.perm.notify_sink": "Mitteilungen in Chats zustellen",
+  "plugins.perm.notify_sink_on": "stellt Mitteilungen von GateControl und den Plugins in Chats zu (Familien-Chat, eigene Chats), wenn Personen ein Thema dorthin legen",
   "plugins.perm.chat": "Chat-Mitteilungen",
   "plugins.perm.chat_v": "darf Chat-Nachrichten als Mitteilung mit Antwortfeld senden ({{topics}}) – der Text kommt nicht ins Protokoll und nie per E-Mail",
   "plugins.perm.services": "Dienste anderer Plugins",

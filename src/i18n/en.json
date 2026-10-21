@@ -5225,6 +5225,8 @@
   "plugins.perm.media_fetch_v": "stores files it downloads from the internet itself on GateControl (up to {{max}} per file, quota {{quota}}): {{types}} – no uploads by its users",
   "plugins.perm.events": "Live events",
   "plugins.perm.events_on": "may send live events to the apps and plugin pages of its users",
+  "plugins.perm.notify_sink": "Deliver notifications in chats",
+  "plugins.perm.notify_sink_on": "delivers notifications of GateControl and the plugins in chats (family chat, own chats) when people move a topic there",
   "plugins.perm.chat": "Chat notifications",
   "plugins.perm.chat_v": "may send chat messages as notifications with a reply field ({{topics}}) – the text never goes to the activity log or by e-mail",
   "plugins.perm.services": "Other plugins' services",

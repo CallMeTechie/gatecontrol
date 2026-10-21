@@ -389,12 +389,54 @@ function checkCallbacks(actions) {
   }
 }
 
+const CARD_TEXT_MAX = 4000;
+const CARD_LINK_LABEL_MAX = 40;
+
+/**
+ * `card` of gc.notify (docs/plugins.md "Notifications in chats", since
+ * 1.191.0): how the notification looks in a chat when a person routes its
+ * topic there — { text (≤ 4000, newlines kept), link?: { label (≤ 40),
+ * route (an app route like data.route) }, actions?: [like data.actions] }.
+ * Text and label are cut to their limits; a card that is not an object, an
+ * empty text, a link without label or with a bad route, actions that are not
+ * a list or a bad quick_action / callback → ERR_INVALID. Actions are cleaned
+ * like data.actions (unknown types dropped, at most 4). → card or null.
+ */
+function notifyCard(plugin, raw) {
+  if (raw == null) return null;
+  const sanitize = require('../notify/sanitize');
+  const { APP_ROUTE_RE, LIMITS: LIMITS_NOTIFY } = require('../notify/constants');
+  need(typeof raw === 'object' && !Array.isArray(raw), 'ERR_INVALID', 'invalid card');
+  need(typeof raw.text === 'string', 'ERR_INVALID', 'card.text required');
+  const cardText = sanitize.text(raw.text, CARD_TEXT_MAX);
+  need(cardText, 'ERR_INVALID', 'card.text empty');
+  const out = { text: cardText };
+  if (raw.link != null) {
+    const l = raw.link;
+    need(typeof l === 'object' && !Array.isArray(l), 'ERR_INVALID', 'invalid card.link');
+    const label = typeof l.label === 'string' ? sanitize.line(l.label, CARD_LINK_LABEL_MAX) : '';
+    need(label, 'ERR_INVALID', 'card.link.label required');
+    need(typeof l.route === 'string' && APP_ROUTE_RE.test(l.route), 'ERR_INVALID', 'card.link.route must be an app route');
+    out.link = { label, route: l.route };
+  }
+  if (raw.actions != null) {
+    need(Array.isArray(raw.actions), 'ERR_INVALID', 'invalid card.actions');
+    checkQuickActions(plugin, raw.actions);
+    checkCallbacks(raw.actions);
+    const appTab = !!(plugin.manifest.ui && plugin.manifest.ui.app);
+    const list = raw.actions.slice(0, LIMITS_NOTIFY.actions).map((a) => sanitize.action(a, { plugin: plugin.id })).filter(Boolean)
+      .map((a) => (!appTab && a.type === 'open_app_route' && a.target === `plg-${plugin.id}` ? { ...a, type: 'open_portal', target: `/portal#plg-${plugin.id}` } : a));
+    if (list.length) out.actions = list;
+  }
+  return out;
+}
+
 /**
  * gc.notify — two forms (docs/plugins.md "Notifications"):
  *   gc.notify(message, { severity })   activity row + webhooks as before, and
  *                                      a push on topic plugin:<id>:default
  *                                      (priority info, warning/error → normal)
- *   gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data, image })
+ *   gc.notify({ topic, title, body, priority, users, collapseKey, ttl, data, image, card })
  *                                      push on a topic declared in
  *                                      plugin.json notifyTopics (+ activity row,
  *                                      never with the image)
@@ -446,6 +488,7 @@ function notify(plugin, args) {
     }
     const d = sanitize.data(n.data == null ? { route: `plg-${plugin.id}` } : { route: `plg-${plugin.id}`, ...n.data }, { plugin: plugin.id });
     need(d.ok, 'ERR_INVALID', 'data too large (max 4 KB)');
+    const card = notifyCard(plugin, n.card);
     // A plugin without its own app tab (ui.app) has no screen in the apps: an
     // action opening the plugin's app route opens the plugin in the portal
     // instead (its own tab, or the GateControl tab holding its sections —
@@ -458,7 +501,7 @@ function notify(plugin, args) {
     }
     notifyBudget(plugin);
     require('../activity').log('plugin_notice', `${plugin.name}: ${title}`, { source: 'plugin', severity: 'info', details: { plugin: plugin.id, topic } });
-    const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, collapseKey, ttl, data: d.data, allowCritical, image });
+    const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, collapseKey, ttl, data: d.data, allowCritical, image, card });
     return { pushed: r.pushed, id: r.id || null };
   }
   const msg = String((args && args.message) || '').replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, 300);
@@ -473,6 +516,42 @@ function notify(plugin, args) {
     });
   } catch { /* the activity row is written; push is best-effort */ }
   return {};
+}
+
+// ─── Where notifications appear (sink plugins only) ────
+//
+// gc.notify.routes.get({ userId, lang }) / .set({ userId, topic, dest })
+// (docs/plugins.md "Notifications in chats", since 1.191.0): the sink shows
+// the page "Wo Mitteilungen erscheinen" in its own frame — the same answer
+// and the same rules as GET / PUT /api/v1/me/notify/routes for that person
+// (services/notify/chatRoutes.js). Only for permissions.notifySink
+// (ERR_NOTIFY_SINK_DENIED). Refusals of the PUT become HostApiError codes,
+// the message is the API's error code:
+//   ERR_INVALID    invalid_user (not an enabled account), invalid_topic, invalid_dest
+//   ERR_NOT_FOUND  unknown_topic (not one of that person's routable topics)
+//   ERR_CONFLICT   locked, no_sink
+//   ERR_FORBIDDEN  family_not_allowed
+
+const ROUTE_ERRORS = {
+  invalid_topic: 'ERR_INVALID', invalid_dest: 'ERR_INVALID', unknown_topic: 'ERR_NOT_FOUND',
+  locked: 'ERR_CONFLICT', no_sink: 'ERR_CONFLICT', family_not_allowed: 'ERR_FORBIDDEN',
+};
+
+async function notifyRoutes(plugin, op, args) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.notifySink === true, 'ERR_NOTIFY_SINK_DENIED', 'this plugin is no notification sink (permissions.notifySink)');
+  const a = args && typeof args === 'object' ? args : {};
+  const uid = a.userId;
+  need(Number.isSafeInteger(uid) && uid > 0, 'ERR_INVALID', 'invalid_user');
+  const u = require('../../db/connection').getDb().prepare('SELECT id, language FROM users WHERE id = ? AND enabled = 1').get(uid);
+  need(u, 'ERR_INVALID', 'invalid_user');
+  const chatRoutes = require('../notify/chatRoutes');
+  const text = require('../notify/text');
+  const lang = a.lang === 'de' || a.lang === 'en' ? a.lang : text.userLang(uid);
+  if (op === 'set') {
+    const r = await chatRoutes.setRoute(uid, a.topic, a.dest);
+    if (r.status !== 200) throw new HostApiError(ROUTE_ERRORS[r.error] || 'ERR_INVALID', r.error);
+  }
+  return chatRoutes.view(uid, lang);
 }
 
 // ─── Push pictures from the plugin's media (image: { mediaId }) ────
@@ -1184,6 +1263,8 @@ async function handle(plugin, api, args, ctx) {
     case 'actions.get': return actionsGet(plugin, args);
     case 'actions.run': return actionsRun(plugin, args);
     case 'notify': return notify(plugin, await notifyImageFromMedia(plugin, args));
+    case 'notify.routes.get': return notifyRoutes(plugin, 'get', args);
+    case 'notify.routes.set': return notifyRoutes(plugin, 'set', args);
     case 'media.info': return mediaCall(plugin, 'info', args);
     case 'media.claim': return mediaCall(plugin, 'claim', args);
     case 'media.delete': return mediaCall(plugin, 'delete', args);

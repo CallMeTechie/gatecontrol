@@ -11,6 +11,9 @@ const PRIORITY_RANK = { info: 0, normal: 1, high: 2, critical: 3 };
 const CORE_TOPICS = ['security', 'devices', 'services', 'system', 'admin_notice'];
 const ADMIN_ONLY_TOPICS = new Set(['security', 'system']);
 const LOCKED_TOPICS = new Set(['admin_notice']);
+// Topics that always go to the GateControl inbox — never into a chat
+// (chatRoutes.js, docs/plugins.md "Notifications in chats").
+const ROUTE_LOCKED_TOPICS = new Set(['security', 'admin_notice']);
 
 // CATALOGUE group → topic.
 const GROUP_TOPIC = { security: 'security', peers: 'devices', routes: 'services', system: 'system' };
@@ -49,7 +52,7 @@ const LIMITS = {
 const ENDPOINT = '/api/v1/client/push';
 
 module.exports = {
-  PRIORITIES, PRIORITY_RANK, CORE_TOPICS, ADMIN_ONLY_TOPICS, LOCKED_TOPICS, GROUP_TOPIC,
+  PRIORITIES, PRIORITY_RANK, CORE_TOPICS, ADMIN_ONLY_TOPICS, LOCKED_TOPICS, ROUTE_LOCKED_TOPICS, GROUP_TOPIC,
   PLUGIN_TOPIC_ID_RE, TOPIC_RE, DELIVERY_STATES, ACK_STATES, RECOVERY_MODES,
   ACTION_TYPES, APP_ROUTE_RE, LIMITS, ENDPOINT,
 };

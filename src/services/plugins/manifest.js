@@ -222,7 +222,7 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [] };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
@@ -230,7 +230,9 @@ function validate(raw, opts = {}) {
     // kiosk: may mark users as kiosk devices (gc.kiosk.*, docs/feature-kiosk-devices.md)
     // actions: may list/run other plugins' quick actions for a user (gc.actions.*)
     // events: may send realtime events to devices and frames (gc.events.emit)
-    for (const k of ['storage', 'portal', 'users', 'app', 'kiosk', 'events']) {
+    // notifySink: delivers notifications people route into chats (hooks
+    // deliverNotice / mayRouteToFamily, docs/plugins.md "Notifications in chats")
+    for (const k of ['storage', 'portal', 'users', 'app', 'kiosk', 'events', 'notifySink']) {
       if (p[k] == null) continue;
       if (typeof p[k] !== 'boolean') err(`permissions.${k}: invalid`);
       else perms[k] = p[k];

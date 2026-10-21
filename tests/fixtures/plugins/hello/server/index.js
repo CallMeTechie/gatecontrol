@@ -164,6 +164,12 @@ module.exports = {
       case '/notify':
         await gc.notify('hello from the plugin', { severity: 'info' });
         return { json: { ok: true } };
+      case '/notify-routes':
+        // gc.notify.routes (tests/notify_routes.test.js): body { op: 'get'|'set', ...opts }
+        try {
+          const { op, ...o } = req.body || {};
+          return { json: { ok: true, result: await (op === 'set' ? gc.notify.routes.set(o) : gc.notify.routes.get(o)) } };
+        } catch (e) { return { status: 400, json: { ok: false, code: e.code || null, message: e.message } }; }
       case '/notify2':
         try { return { json: { ok: true, result: await gc.notify(req.body) } }; } catch (e) { return { status: 400, json: { ok: false, code: e.code || null } }; }
       case '/secret':
@@ -316,6 +322,30 @@ module.exports = {
     calls.push(payload);
     await gc.storage.set('notify-actions', calls);
     if (mode === 'throw') throw new Error('broken on purpose');
+  },
+
+  // notification sink (permissions.notifySink, tests/notify_routes.test.js):
+  // every payload is appended to kv "sink-notices"; kv "sink-cover" decides
+  // the answer — null (everyone in family + own), a list of user ids,
+  // 'throw', or 'slow' (answers after 2 s)
+  async deliverNotice(payload, gc) {
+    const list = (await gc.storage.get('sink-notices')) || [];
+    list.push(payload);
+    await gc.storage.set('sink-notices', list);
+    const mode = await gc.storage.get('sink-cover');
+    if (mode === 'throw') throw new Error('broken on purpose');
+    if (mode === 'slow') await new Promise((r) => setTimeout(r, 2000));
+    if (Array.isArray(mode)) return { covered: mode };
+    return { covered: [...payload.family, ...payload.own] };
+  },
+
+  // kv "sink-parents": user ids the sink treats as family parents ('throw' /
+  // 'slow': fails / answers yes after 2 s)
+  async mayRouteToFamily(payload, gc) {
+    const parents = (await gc.storage.get('sink-parents')) || [];
+    if (parents === 'throw') throw new Error('broken on purpose');
+    if (parents === 'slow') { await new Promise((r) => setTimeout(r, 2000)); return true; }
+    return parents.includes(payload.user.id);
   },
 
   // built-in data handed over by the host (tests/plugins_legacy.test.js)
