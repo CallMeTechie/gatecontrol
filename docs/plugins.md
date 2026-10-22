@@ -1425,9 +1425,11 @@ Since 1.193.0. A plugin that works with a person's own devices — GateDrop's
 "Meine Geräte" — sees the GateControl apps of that person and can reach a
 single device. Code: `src/services/plugins/devices.js`.
 
-* `gc.devices.list({ userId })` → the person's app installations that
-  receive pushes (an API token of the person with scope `client` whose app
-  opened the push stream once — never admin or automation tokens):
+* `gc.devices.list({ userId })` → the person's app installations: an API
+  token of the person with scope `client` that an app used (push stream,
+  registered peer or any request), or — since 1.194.1 — a `full-access`
+  token on which an app identified itself (client type/version on the push
+  stream or a registered peer). Never admin or automation tokens:
 
   ```js
   [{ id: '42',                 // string, stable: the device token's id

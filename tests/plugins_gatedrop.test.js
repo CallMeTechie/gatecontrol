@@ -634,6 +634,27 @@ describe('devices', () => {
     const adminTok = H.makeDevice(anna, { name: 'gd-anna-admin', scopes: ['full-access'] });
     const ids = (await gcCall('gd-drop', 'devices.list', { userId: anna }).expect(200)).body.result.map((d) => d.id);
     assert.ok(!ids.includes(String(adminTok.tokenId)));
+    const conn2 = require('../src/db/connection').getDb();
+    // a Windows app set up with an all-access token: it identified itself on the push stream → a device
+    const fullApp = H.makeDevice(anna, { name: 'gd-anna-surface', scopes: ['full-access'], platform: 'windows' });
+    conn2.prepare("UPDATE notify_device_prefs SET client_type = 'pro', app_version = '1.38.0' WHERE token_id = ?").run(fullApp.tokenId);
+    // an app token that never opened the push stream (notifications off) but registered its peer → a device
+    const quiet = H.makeDevice(anna, { name: 'gd-anna-laptop', app: false });
+    conn2.prepare("UPDATE peers SET client_platform = 'windows', client_product = 'community', client_seen_at = ? WHERE id = ?").run(new Date().toISOString(), quiet.peerId);
+    // an app token nobody ever used → no device yet
+    const unused = H.makeDevice(anna, { name: 'gd-anna-unused', app: false });
+    const all = (await gcCall('gd-drop', 'devices.list', { userId: anna }).expect(200)).body.result;
+    const byId = new Map(all.map((d) => [d.id, d]));
+    assert.ok(byId.has(String(fullApp.tokenId)));
+    assert.equal(byId.get(String(fullApp.tokenId)).platform, 'windows');
+    assert.ok(byId.has(String(quiet.tokenId)));
+    assert.deepEqual([byId.get(String(quiet.tokenId)).platform, byId.get(String(quiet.tokenId)).clientType, byId.get(String(quiet.tokenId)).online], ['windows', 'community', true]);
+    assert.ok(!byId.has(String(unused.tokenId)));
+    assert.ok(!byId.has(String(adminTok.tokenId)));
+    for (const t of [fullApp, quiet, unused]) {
+      conn2.prepare('DELETE FROM notify_device_prefs WHERE token_id = ?').run(t.tokenId);
+      conn2.prepare('DELETE FROM api_tokens WHERE id = ?').run(t.tokenId);
+    }
     assert.equal((await gcCall('gd-drop', 'devices.list', { userId: 999999 }).expect(400)).body.code, 'ERR_INVALID');
     assert.equal((await gcCall('gd-plain', 'devices.list', { userId: anna }).expect(400)).body.code, 'ERR_DEVICES_DENIED');
   });
