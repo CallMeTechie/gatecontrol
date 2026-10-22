@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.194.1] — 2026-10-22
+
+### Fixes
+- app devices without client scope or push stream are GateDrop targets (#347)
+
+---
+
 ## [1.194.0] — 2026-10-22
 
 ### Features
