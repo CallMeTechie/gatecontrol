@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.194.0] — 2026-10-22
+
+### Features
+- store category "Arbeit & Team" (work) for business plugins (#346)
+
+---
+
 ## [1.193.1] — 2026-10-21
 
 ### Fixes
