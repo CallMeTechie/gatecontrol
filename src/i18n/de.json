@@ -5535,6 +5535,7 @@
   "plugins.err.license_pending": "Der Lizenzserver hat zu diesem Schlüssel noch nicht geantwortet. Der Schlüssel ist gespeichert – versuche es in ein paar Minuten noch einmal.",
   "plugins.x.cat.family": "Familie & Alltag",
   "plugins.x.cat.home": "Zuhause & Geräte",
+  "plugins.x.cat.work": "Arbeit & Team",
   "plugins.x.cat.mobility": "Mobilität",
   "plugins.x.cat.infrastructure": "Infrastruktur",
   "plugins.x.cat.other": "Weitere",

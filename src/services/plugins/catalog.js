@@ -227,7 +227,7 @@ function entry(e, id, where, hosts) {
 // Optional and lenient: an unknown or malformed value is dropped, never the
 // catalogue (older GateControls ignore these fields altogether).
 
-const CATEGORIES = new Set(['family', 'home', 'mobility', 'infrastructure', 'other']);
+const CATEGORIES = new Set(['family', 'home', 'work', 'mobility', 'infrastructure', 'other']);
 const ICONS = new Set(['family', 'chat', 'calendar', 'door', 'bulb', 'snowflake', 'car', 'server', 'nas', 'puzzle']);
 // symbols of the detail page's lists ("Was … hinzufügt", "Das darf das Plugin")
 const DETAIL_ICONS = new Set(['page', 'app', 'portal', 'widget', 'tile', 'action', 'bell', 'clock', 'data', 'network', 'chat', 'key',
