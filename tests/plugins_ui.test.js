@@ -265,8 +265,8 @@ describe('plugin area helpers (plugins-ui.js)', () => {
     assert.equal(PUI.matches(it2, '  '), true);
   });
   it('groupByCategory keeps the display order and leaves empty groups out', () => {
-    const g = PUI.groupByCategory([{ id: 'x', category: 'infrastructure' }, { id: 'y' }, { id: 'z', category: 'family' }], (i) => i);
-    assert.deepEqual(g.map((x) => [x.category, x.items.map((i) => i.id)]), [['family', ['z']], ['infrastructure', ['x']], ['other', ['y']]]);
+    const g = PUI.groupByCategory([{ id: 'x', category: 'infrastructure' }, { id: 'y' }, { id: 'w', category: 'work' }, { id: 'z', category: 'family' }], (i) => i);
+    assert.deepEqual(g.map((x) => [x.category, x.items.map((i) => i.id)]), [['family', ['z']], ['work', ['w']], ['infrastructure', ['x']], ['other', ['y']]]);
   });
   it('sortCatalog: recommended / recent / name', () => {
     const items = [
@@ -284,6 +284,14 @@ describe('plugin area helpers (plugins-ui.js)', () => {
     assert.equal(PUI.iconPath({ icon: 'unknown' }, { nav: { icon: 'M1 1' } }), 'M1 1');
     assert.equal(PUI.iconPath(null, null), PUI.ICON_PATHS.puzzle);
     assert.equal(PUI.categoryOf({ category: 'weapons' }), 'other');
+    assert.equal(PUI.categoryOf({ category: 'work' }), 'work');
+    // the page and the server know the same categories
+    assert.deepEqual([...require('../src/services/plugins/catalog').CATEGORIES].sort(), [...PUI.CATEGORIES].sort());
+    for (const c of PUI.CATEGORIES) { assert.ok(de['plugins.x.cat.' + c], c); assert.ok(en['plugins.x.cat.' + c], c); }
+    assert.equal(PUI.categoryOf({ category: 'work' }), 'work');
+    // the page and the server know the same categories
+    assert.deepEqual([...require('../src/services/plugins/catalog').CATEGORIES].sort(), [...PUI.CATEGORIES].sort());
+    for (const c of PUI.CATEGORIES) { assert.ok(de['plugins.x.cat.' + c], c); assert.ok(en['plugins.x.cat.' + c], c); }
   });
   it('noteLines: CHANGELOG markdown as plain lines', () => {
     assert.deepEqual(PUI.noteLines('Braucht **GC ≥ 1.169**.\n- **Behoben:** a\n  - `dings` [Link](https://x)\n    weiter\n## Kopf\n\n- b'), [

@@ -5535,6 +5535,7 @@
   "plugins.err.license_pending": "The licence server has not answered for this key yet. The key is saved – try again in a few minutes.",
   "plugins.x.cat.family": "Family & everyday",
   "plugins.x.cat.home": "Home & devices",
+  "plugins.x.cat.work": "Work & team",
   "plugins.x.cat.mobility": "Mobility",
   "plugins.x.cat.infrastructure": "Infrastructure",
   "plugins.x.cat.other": "Other",

@@ -200,7 +200,7 @@
   // ── Plugin area (Meine Plugins, Katalog, Updates) ──
 
   // Store categories of catalog-meta.json (catalog.js CATEGORIES), in display order.
-  const CATEGORIES = ['family', 'home', 'mobility', 'infrastructure', 'other'];
+  const CATEGORIES = ['family', 'home', 'work', 'mobility', 'infrastructure', 'other'];
 
   // Icons of catalog-meta.json (catalog.js ICONS): 24×24 stroke paths.
   const ICON_PATHS = {
