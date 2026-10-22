@@ -2,9 +2,14 @@
 
 // A person's devices for plugins (permissions.devices, docs/plugins.md
 // "Devices", since 1.193.0): the GateControl apps (Android, Windows) of that
-// person that receive pushes — an api_tokens row of the person with scope
-// `client` and a notify_device_prefs row (the app opened the push stream).
-// Admin and automation tokens (no `client` scope) are never devices.
+// person — an api_tokens row of the person that an app uses:
+//   * scope `client` and the app showed up: it opened the push stream
+//     (notify_device_prefs row), registered its peer (peers.client_platform)
+//     or used the token at all;
+//   * scope `full-access` (an app set up with an all-access token) only when
+//     an app identified itself: client type / version on the push stream or a
+//     registered peer — never a script or automation token.
+// Online: the push stream, else the last sign of life within a minute.
 //
 //   list(userId)        gc.devices.list — [{ id, name, platform, clientType,
 //                       appVersion, online, lastSeen, via }]
@@ -38,12 +43,29 @@ function idOf(v) {
   return typeof v === 'string' && ID_RE.test(v) ? Number(v) : null;
 }
 
-const DEVICE_SQL = `SELECT t.id, t.name, t.scopes, t.expires_at, t.user_id, dp.platform, dp.client_type, dp.app_version, dp.last_seen_at,
-    p.client_platform, p.client_product, p.client_version
-  FROM api_tokens t JOIN notify_device_prefs dp ON dp.token_id = t.id LEFT JOIN peers p ON p.id = t.peer_id`;
+const DEVICE_SQL = `SELECT t.id, t.name, t.scopes, t.expires_at, t.user_id, t.last_used_at,
+    dp.token_id AS dp_token, dp.platform, dp.client_type, dp.app_version, dp.last_seen_at,
+    p.client_platform, p.client_product, p.client_version, p.client_seen_at
+  FROM api_tokens t LEFT JOIN notify_device_prefs dp ON dp.token_id = t.id LEFT JOIN peers p ON p.id = t.peer_id`;
+
+/** An app identified itself on this token (push stream headers or a registered peer). */
+function appSeen(r) {
+  return !!(r.client_type || r.app_version || r.client_platform || r.client_product);
+}
 
 function isDevice(r, nowIso) {
-  return scopesOf(r.scopes).includes('client') && !(r.expires_at && r.expires_at <= nowIso);
+  if (r.expires_at && r.expires_at <= nowIso) return false;
+  const scopes = scopesOf(r.scopes);
+  if (scopes.includes('client')) return r.dp_token != null || appSeen(r) || !!r.last_used_at;
+  if (scopes.includes('full-access')) return appSeen(r);
+  return false;
+}
+
+/** The latest sign of life of a device row (ISO) or null. */
+function lastSeenOf(r) {
+  const t = [r.last_seen_at, r.client_seen_at].filter((v) => v && Number.isFinite(Date.parse(v)));
+  t.sort((a, b) => Date.parse(b) - Date.parse(a));
+  return t[0] || null;
 }
 
 /** gc.devices.list({ userId }) for an existing, enabled person (checked by the caller). */
@@ -52,7 +74,8 @@ function list(userId, now = Date.now()) {
   const rows = db().prepare(`${DEVICE_SQL} WHERE t.user_id = ? ORDER BY t.id`).all(userId);
   return rows.filter((r) => isDevice(r, nowIso)).map((r) => {
     const conn = stream.get(r.id);
-    const seen = conn ? now : Date.parse(r.last_seen_at || '');
+    const last = lastSeenOf(r);
+    const seen = conn ? now : Date.parse(last || '');
     const product = r.client_type || (['pro', 'community'].includes(r.client_product) ? r.client_product : null);
     return {
       id: String(r.id),
@@ -61,7 +84,7 @@ function list(userId, now = Date.now()) {
       clientType: product,
       appVersion: r.app_version || r.client_version || null,
       online: !!conn || (Number.isFinite(seen) && now - seen <= ONLINE_WINDOW_MS),
-      lastSeen: conn ? nowIso : (r.last_seen_at || null),
+      lastSeen: conn ? nowIso : last,
       via: conn ? (conn.net || (conn.via === 'tunnel' ? 'vpn' : 'internet')) : null,
     };
   });
