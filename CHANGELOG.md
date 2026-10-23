@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.195.0] — 2026-10-23
+
+### Features
+- config API names the internal DNS (domain + resolver) (#348)
+
+---
+
 ## [1.194.1] — 2026-10-22
 
 ### Fixes
