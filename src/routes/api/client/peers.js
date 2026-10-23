@@ -188,6 +188,16 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
 });
 
 /**
+ * Where the clients send lookups for peer hostnames (`<host>.<domain>`):
+ * the dnsmasq bound to the VPN gateway. null when internal DNS is off, so
+ * clients install no resolver rule for it.
+ */
+function internalDns() {
+  if (!config.dns.enabled) return null;
+  return { domain: config.dns.domain, server: config.wireguard.gatewayIp };
+}
+
+/**
  * GET /api/v1/client/config
  * Fetch WireGuard config for a registered peer
  * Query: ?peerId=123
@@ -206,7 +216,7 @@ router.get('/config', async (req, res) => {
     const config = await peers.getClientConfig(peer.id);
     const hash = hashConfig(config);
 
-    res.json({ ok: true, config, hash, peerName: peer.name });
+    res.json({ ok: true, config, hash, peerName: peer.name, internalDns: internalDns() });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to fetch client config');
     res.status(500).json({ ok: false, error: req.t ? req.t('error.peers.config') : 'Failed to get config' });
@@ -237,7 +247,7 @@ router.get('/config/check', async (req, res) => {
       return res.json({ ok: true, updated: false });
     }
 
-    res.json({ ok: true, updated: true, config, hash: currentHash });
+    res.json({ ok: true, updated: true, config, hash: currentHash, internalDns: internalDns() });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to check client config');
     res.status(500).json({ ok: false, error: req.t ? req.t('error.peers.config') : 'Failed to check config' });
