@@ -317,6 +317,30 @@ describe('event: control — config_changed', () => {
   });
 });
 
+describe('GET /client/config — internal DNS', () => {
+  it('names the resolver for peer hostnames from the server settings; null when internal DNS is off', async () => {
+    const cfg = require('../config/default');
+    const saved = { ...cfg.dns };
+    const savedGw = cfg.wireguard.gatewayIp;
+    try {
+      cfg.dns.enabled = true;
+      cfg.dns.domain = 'vpn.home';
+      cfg.wireguard.gatewayIp = '10.44.0.1';
+      const full = await client('get', `/api/v1/client/config?peerId=${annaPhone.peerId}`, annaPhone).expect(200);
+      assert.deepEqual(full.body.internalDns, { domain: 'vpn.home', server: '10.44.0.1' });
+      const check = await client('get', `/api/v1/client/config/check?peerId=${annaPhone.peerId}`, annaPhone).expect(200);
+      assert.deepEqual(check.body.internalDns, { domain: 'vpn.home', server: '10.44.0.1' });
+
+      cfg.dns.enabled = false;
+      const off = await client('get', `/api/v1/client/config?peerId=${annaPhone.peerId}`, annaPhone).expect(200);
+      assert.equal(off.body.internalDns, null);
+    } finally {
+      Object.assign(cfg.dns, saved);
+      cfg.wireguard.gatewayIp = savedGw;
+    }
+  });
+});
+
 describe('event: control — robustness', () => {
   it('the admin action succeeds when emitting throws', async () => {
     const saved = {};
