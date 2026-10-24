@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.195.1] — 2026-10-24
+
+### Fixes
+- Sicherheits-Updates – config-hash 1.3.1 (zod 4.6), body-parser, multer, nodemailer (#350)
+
+---
+
 ## [1.195.0] — 2026-10-23
 
 ### Features
