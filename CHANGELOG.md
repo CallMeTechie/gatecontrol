@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixes
+- Push-Streams: Warum ein Stream endet, steht jetzt im normalen Log (info) – immer, wenn der Server ihn beendet (`replaced`, `revoked`, `write_failed`, `drain_timeout`, …), und wenn der Client ihn nach weniger als 30 s schließt. Mit Weg (`via`), Laufzeit und bei `replaced` dem Weg der neuen Verbindung. So lässt sich ein Stream, der alle paar Sekunden neu verbindet, ohne Debug-Log zuordnen.
+
+---
+
 ## [1.196.0] — 2026-10-24
 
 ### Features
