@@ -146,6 +146,81 @@ describe('Start tiles', () => {
   });
 });
 
+describe('Start tiles: QR code, hidden line, end (1.197.0)', () => {
+  const start = () => agent.get('/api/v1/portal/plugins/start').expect(200);
+  const WIFI = 'WIFI:T:WPA;S:Gäste\\;WLAN;P:geheim\\:1;;';
+
+  it('qr → a PNG drawn by GateControl (never the text), secret and until passed on, past until drops the tile', async () => {
+    const soon = new Date(Date.now() + 5 * 60000).toISOString();
+    await kv('hello', 'portal-tiles', [
+      { title: 'WLAN Gäste', value: 'Gäste;WLAN', qr: WIFI, secret: { label: 'Passwort', value: 'geheim:1' }, until: soon },
+      { title: 'Abgelaufen', qr: WIFI, until: new Date(Date.now() - 1000).toISOString() },
+      { title: 'Schlecht', qr: 'x'.repeat(513), secret: { label: 'P', value: 'a\nb' }, until: 'morgen' },
+      { title: 'Weit weg', until: new Date(Date.now() + 500 * 86400000).toISOString(), secret: { label: '', value: 'x' } },
+      { title: 'Steuerzeichen', qr: 'a\u0007b', secret: ['x'] },
+    ]);
+    const r = await start();
+    const mine = r.body.tiles.filter((x) => x.plugin === 'hello');
+    assert.deepEqual(mine.map((x) => x.title), ['WLAN Gäste', 'Schlecht', 'Weit weg', 'Steuerzeichen'], 'a tile whose time is up is dropped');
+    const w = mine[0];
+    assert.match(w.qrImage, /^data:image\/png;base64,[A-Za-z0-9+/=]+$/);
+    assert.ok(!('qr' in w), 'the QR text is not sent on');
+    assert.ok(!JSON.stringify(r.body).includes('WIFI:'), 'nowhere');
+    assert.deepEqual(w.secret, { label: 'Passwort', value: 'geheim:1' });
+    assert.equal(w.until, soon);
+    assert.equal(w.value, 'Gäste;WLAN');
+    for (const t of mine.slice(1)) {
+      assert.deepEqual(Object.keys(t).sort(), ['anchor', 'area', 'goto', 'icon', 'plugin', 'state', 'title', 'unit', 'value'], `${t.title}: invalid extras dropped, the tile stays`);
+    }
+  });
+
+  it('the QR picture reads back as the text', async () => {
+    const jsqrPath = path.join(__dirname, '..', 'public', 'vendor', 'jsqr', 'jsQR.js');
+    const { PNG } = (() => { try { return require('pngjs'); } catch { return {}; } })();
+    if (!PNG || !fs.existsSync(jsqrPath)) return; // decoder or PNG reader not available here
+    const jsQR = require(jsqrPath);
+    await kv('hello', 'portal-tiles', [{ title: 'WLAN', qr: WIFI }]);
+    const t = (await start()).body.tiles.find((x) => x.plugin === 'hello');
+    const png = PNG.sync.read(Buffer.from(t.qrImage.split(',')[1], 'base64'));
+    const code = jsQR(new Uint8ClampedArray(png.data), png.width, png.height);
+    assert.equal(code && code.data, WIFI);
+  });
+
+  it('startExtras: only valid values, as keys only when set', () => {
+    const now = Date.parse('2026-10-24T12:00:00Z');
+    assert.deepEqual(portal.startExtras({}, now), {});
+    assert.deepEqual(portal.startExtras({ qr: '', secret: { label: 'a' }, until: 5 }, now), {});
+    assert.deepEqual(portal.startExtras({ until: '2026-10-24T11:59:59Z' }, now), { expired: true });
+    assert.deepEqual(portal.startExtras({ until: '2026-10-24T13:00:00+01:00' }, now), { expired: true });
+    assert.deepEqual(portal.startExtras({ until: '2026-10-24T12:05:00Z', qr: 'q', secret: { label: 'L'.repeat(40), value: 'v' } }, now),
+      { qr: 'q', secret: { label: 'L'.repeat(30), value: 'v' }, until: '2026-10-24T12:05:00.000Z' });
+    assert.deepEqual(portal.startExtras({ secret: { label: 'x', value: 'v'.repeat(129) } }, now), {});
+  });
+
+  it('the apps\' start card never gets them', async () => {
+    await kv('hello', 'portal-tiles', [{ title: 'WLAN', qr: WIFI, secret: { label: 'P', value: 'geheim' }, until: new Date(Date.now() + 60000).toISOString() }]);
+    const lists = await portal.collectTiles(viewer(), 'de');
+    const t = lists.flat().find((x) => x.plugin === 'hello');
+    assert.deepEqual(Object.keys(t).sort(), ['anchor', 'area', 'goto', 'icon', 'plugin', 'section', 'state', 'title', 'unit', 'value']);
+    const clientTiles = require('../src/services/plugins/clientTiles');
+    const app = (await clientTiles.list({ ...viewer(), loggedIn: true, app: true }, 'de')).find((x) => x.plugin === 'hello');
+    assert.ok(app && !('qrImage' in app) && !('secret' in app) && !('until' in app) && !('qr' in app));
+    await kv('hello', 'portal-tiles', null);
+  });
+
+  it('portal.js draws such a tile as a card with countdown and asks again every minute', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'portal.js'), 'utf8');
+    assert.match(js, /pt-plg-qr/);
+    assert.match(js, /TILE_REFRESH_MS = 60000/);
+    assert.match(js, /'portal\.tile\.show'|T\('portal\.tile\.show'\)/);
+    const de = require('../src/i18n/de.json');
+    const en = require('../src/i18n/en.json');
+    for (const k of ['portal.tile.left', 'portal.tile.hours', 'portal.tile.days', 'portal.tile.show', 'portal.tile.hide', 'portal.tile.qr']) {
+      assert.ok(de[k] && en[k], k);
+    }
+  });
+});
+
 describe('search', () => {
   const search = (q) => agent.get('/api/v1/portal/plugins/search').query({ q }).expect(200);
 

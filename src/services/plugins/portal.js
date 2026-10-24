@@ -11,7 +11,11 @@
 //                ("Meine Geräte", below picture and colour) — only for a
 //                signed-in person, never a kiosk device or device trust
 //   start tiles  hook portalTiles({ user, lang }) → small declarative tiles
-//                rendered by GateControl on the Start tab (never plugin HTML)
+//                rendered by GateControl on the Start tab (never plugin HTML);
+//                since 1.197.0 a tile may carry a QR code (`qr`, drawn by
+//                GateControl as a PNG), a hidden line (`secret`, shown on a
+//                tap) and an end (`until`, a countdown; gone after it) —
+//                Start tab only, never the apps' start card
 //   search       hook portalSearch({ user, lang, q }) → declarative results
 //
 // Every hook is optional and asked per viewer with a timeout; a plugin that
@@ -23,12 +27,19 @@ const runtime = require('./runtime');
 const registry = require('./registry');
 const { loc } = require('./manifest');
 const frame = require('./frame');
+const qrcode = require('../qrcode');
 
 const HOOK_MS = 1500;
 const MAX_TILES = 8;
 const MAX_RESULTS = 10;
 const ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,600}$/;
 const STATES = new Set(['on', 'off', 'good', 'warn', 'crit']);
+// Start-tab extras of a tile (since 1.197.0, portal only)
+const QR_MAX = 512;
+const SECRET_LABEL_MAX = 30;
+const SECRET_MAX = 128;
+const UNTIL_MAX_MS = 400 * 24 * 3600 * 1000;
+const CONTROL_RE = /[\0-\x1f\x7f]/;
 /** GateControl tab of a section → the portal's tab id (panel-<id>). */
 const TAB_IDS = Object.freeze({ home: 'zuhause', car: 'fahrzeug', profile: 'geraete' });
 
@@ -159,13 +170,48 @@ async function collectTiles(user, lang, contrib, opts = {}) {
 }
 
 /**
+ * The Start-tab extras of a raw tile (since 1.197.0; the apps never get them):
+ *   qr      text 1–512 characters without control characters → drawn here as a QR code
+ *   secret  { label ≤ 30, value 1–128 characters } → a line the portal hides until tapped
+ *   until   ISO time → the portal counts down and drops the tile then; a time in
+ *           the past drops the tile now, one more than 400 days ahead is ignored
+ * Keys only when valid; an invalid extra is dropped, never the tile (but a past `until`).
+ */
+function startExtras(t, now = Date.now()) {
+  const out = {};
+  if (typeof t.qr === 'string' && t.qr.length >= 1 && t.qr.length <= QR_MAX && !CONTROL_RE.test(t.qr)) out.qr = t.qr;
+  const sec = t.secret;
+  if (sec && typeof sec === 'object' && !Array.isArray(sec)) {
+    const label = text(sec.label, SECRET_LABEL_MAX);
+    const value = typeof sec.value === 'string' && sec.value.length >= 1 && sec.value.length <= SECRET_MAX && !CONTROL_RE.test(sec.value) ? sec.value : null;
+    if (label && value) out.secret = { label, value };
+  }
+  if (typeof t.until === 'string' && t.until.length <= 40) {
+    const ms = Date.parse(t.until);
+    if (Number.isFinite(ms) && ms <= now) out.expired = true;
+    else if (Number.isFinite(ms) && ms - now <= UNTIL_MAX_MS) out.until = new Date(ms).toISOString();
+  }
+  return out;
+}
+
+/**
  * Start-tab tiles: hook portalTiles({ user, lang }) → [{ section?, title,
- * value?, unit?, state?, icon? }] (≤ 8 per plugin).
- * @returns {Promise<object[]>} [{ plugin, title, value, unit, state, icon, goto, anchor, area }]
+ * value?, unit?, state?, icon?, qr?, secret?, until? }] (≤ 8 per plugin).
+ * A `qr` becomes `qrImage` (a PNG data URL); the text itself is not sent on.
+ * @returns {Promise<object[]>} [{ plugin, title, value, unit, state, icon, goto, anchor, area, qrImage?, secret?, until? }]
  */
 async function tiles(user, lang, contrib) {
-  // the portal's answer stays as it was: no `section` key
-  return (await collectTiles(user, lang, contrib)).flat().map(({ section: _section, ...t }) => t);
+  const now = Date.now();
+  const list = (await collectTiles(user, lang, contrib, { extend: (t) => startExtras(t, now) })).flat();
+  const out = [];
+  for (const { section: _section, expired, qr, ...t } of list) { // the portal's answer has no `section` key
+    if (expired) continue;
+    if (qr) {
+      try { t.qrImage = await qrcode.toDataUrl(qr); } catch { /* too long for a QR code: the tile without it */ }
+    }
+    out.push(t);
+  }
+  return out;
 }
 
 /**
@@ -193,4 +239,4 @@ async function search(user, lang, q, contrib) {
   return lists.flat();
 }
 
-module.exports = { contributions, tiles, collectTiles, search, text, TAB_IDS, profileViewer, HOOK_MS, MAX_TILES, _targetOf: targetOf };
+module.exports = { contributions, tiles, collectTiles, search, text, startExtras, TAB_IDS, profileViewer, HOOK_MS, MAX_TILES, QR_MAX, _targetOf: targetOf };
