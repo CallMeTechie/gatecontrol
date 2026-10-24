@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.196.0] — 2026-10-24
 
 ### Features
 - Plugins können QR-Codes über GateControl scannen lassen (`GC.scanQr`, plugin.json `ui.scanQr`): Die GateControl-Seite selbst öffnet einen Kamera-Dialog (Vorschau mit Rahmen, Kamerawechsel, „Abbrechen“, Hinweis des Plugins), liest den Code mit `BarcodeDetector` oder dem mitgelieferten jsQR 1.4.0 und gibt dem Plugin nur den gelesenen Text – das Bild bleibt in GateControl, die Kamera geht sofort wieder aus. Optionaler Präfix-Filter (`accept`), ein Scan zur Zeit, nur bei sichtbarer Seite, Klick im Plugin nötig (sonst fragt der Dialog erst nach), klare Meldung ohne HTTPS. Admin-Seiten, Einstellungsseite und Portal.
