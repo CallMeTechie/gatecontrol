@@ -27,16 +27,32 @@ function presence(conn, state) {
  */
 function add(conn) {
   const old = conns.get(conn.tokenId);
-  if (old) close(old, 'replaced');
+  if (old) close(old, 'replaced', conn);
   conn.lagging = false;
+  conn.openedMs = Date.now();
   conn.closed = false;
   conns.set(conn.tokenId, conn);
   presence(conn, 'connected');
   return conn;
 }
 
-/** End a stream (and forget it). */
-function close(conn, reason) {
+// A stream the client itself ends after this long is routine (app closed,
+// network change); a shorter one, or any server-side reason, is logged at
+// info so a flapping stream ("Push connected" every few seconds) can be
+// traced to its cause without debug logging.
+const SHORT_STREAM_MS = 30000;
+
+function logClose(conn, reason, by) {
+  const livedMs = conn.openedMs ? Date.now() - conn.openedMs : null;
+  const info = reason !== 'client_closed' || (livedMs != null && livedMs < SHORT_STREAM_MS);
+  const fields = { tokenId: conn.tokenId, reason, via: conn.via, lived_s: livedMs == null ? null : Math.round(livedMs / 100) / 10 };
+  if (by) fields.replaced_by_via = by.via;
+  if (info && reason !== 'test') logger.info(fields, 'push stream closed');
+  else logger.debug(fields, 'push stream closed');
+}
+
+/** End a stream (and forget it). `by`: the stream that replaces it (reason 'replaced'). */
+function close(conn, reason, by) {
   if (!conn || conn.closed) return;
   conn.closed = true;
   if (conn.keepalive) clearInterval(conn.keepalive);
@@ -47,7 +63,7 @@ function close(conn, reason) {
     if (typeof conn.onClose === 'function') { try { conn.onClose(reason); } catch { /* ignore */ } }
   }
   try { conn.res.end(); } catch { /* already gone */ }
-  logger.debug({ tokenId: conn.tokenId, reason }, 'push stream closed');
+  logClose(conn, reason, by);
 }
 
 function closeToken(tokenId, reason = 'closed') { const c = conns.get(tokenId); if (c) close(c, reason); }
