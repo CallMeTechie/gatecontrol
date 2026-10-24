@@ -740,34 +740,125 @@
   // ═══ Plugins: Start tiles (declarative data, rendered here) ═════════════
   // GET /api/v1/portal/plugins/start → [{ title, value, unit, state, icon, goto, anchor }]
   // goto = the portal tab (zuhause, fahrzeug, plg-<id>), anchor = the plugin's section in it.
+  // Since 1.197.0 a tile may also bring qrImage (a PNG data URL drawn by the server),
+  // secret { label, value } (hidden until "Anzeigen") and until (ISO): such a tile is a
+  // card of its own with a countdown, dropped when its time is up; while one is shown
+  // the tiles are asked again every minute (an ended share goes from an open page too).
   var TILE_STATES = ['on', 'off', 'good', 'warn', 'crit'];
+  var TILE_REFRESH_MS = 60000;
+  var tileTimer = null;
+  var tileClock = null;
+  var lastTiles = null;
+  function tileLeft(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000));
+    if (s < 3600) return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    if (s < 2 * 86400) return T('portal.tile.hours', { h: Math.floor(s / 3600), m: String(Math.floor((s % 3600) / 60)).padStart(2, '0') });
+    return T('portal.tile.days', { d: Math.floor(s / 86400) });
+  }
   function pluginTile(t) {
     var tone = TILE_STATES.indexOf(t.state) >= 0 ? t.state : null;
     var value = t.value == null ? '' : String(t.value) + (t.unit ? ' ' + t.unit : '');
-    return el('a', { class: 'pt-plg-tile', href: '#' + t.goto, 'data-goto': t.goto, 'data-section': t.anchor || null, 'data-tone': tone }, [
-      t.icon ? icon(t.icon, 16) : null,
-      el('span', { class: 'pt-plg-tile-t' }, t.title),
-      value ? el('b', null, value) : null,
+    var rich = typeof t.qrImage === 'string' || (t.secret && typeof t.secret === 'object') || typeof t.until === 'string';
+    if (!rich) {
+      return el('a', { class: 'pt-plg-tile', href: '#' + t.goto, 'data-goto': t.goto, 'data-section': t.anchor || null, 'data-tone': tone }, [
+        t.icon ? icon(t.icon, 16) : null,
+        el('span', { class: 'pt-plg-tile-t' }, t.title),
+        value ? el('b', null, value) : null,
+      ]);
+    }
+    var until = typeof t.until === 'string' ? Date.parse(t.until) : NaN;
+    var left = isFinite(until) ? el('span', { class: 'pt-plg-qr-left pt-small pt-muted', 'aria-live': 'off' }) : null;
+    var secret = null;
+    if (t.secret && typeof t.secret.value === 'string' && t.secret.value) {
+      var shown = false;
+      var val = el('code', { class: 'pt-plg-qr-secret' }, '••••••••');
+      var toggle = el('button', { type: 'button', class: 'pt-btn pt-btn-sm', 'aria-pressed': 'false' }, T('portal.tile.show'));
+      toggle.addEventListener('click', function () {
+        shown = !shown;
+        val.textContent = shown ? t.secret.value : '••••••••';
+        toggle.textContent = T(shown ? 'portal.tile.hide' : 'portal.tile.show');
+        toggle.setAttribute('aria-pressed', shown ? 'true' : 'false');
+      });
+      secret = el('div', { class: 'pt-plg-qr-row' }, [el('span', { class: 'pt-small pt-muted' }, String(t.secret.label || '')), val, toggle]);
+    }
+    var card = el('div', { class: 'pt-plg-qr', 'data-tone': tone }, [
+      el('a', { class: 'pt-plg-qr-head', href: '#' + t.goto, 'data-goto': t.goto, 'data-section': t.anchor || null }, [
+        t.icon ? icon(t.icon, 16) : null,
+        el('span', { class: 'pt-plg-tile-t' }, t.title),
+        value ? el('b', null, value) : null,
+      ]),
+      typeof t.qrImage === 'string' ? el('img', { class: 'pt-plg-qr-img', src: t.qrImage, alt: T('portal.tile.qr', { title: t.title }), width: '200', height: '200' }) : null,
+      secret,
+      left,
     ]);
+    if (left) { card._until = until; card._left = left; }
+    return card;
+  }
+  /** Countdown of timed tiles; a tile whose time is up goes (and its card when it was the last one). */
+  function tickTiles() {
+    var cards = doc.querySelectorAll('.pt-plg-qr');
+    var timed = 0;
+    for (var i = 0; i < cards.length; i++) {
+      var c = cards[i];
+      if (!c._left) continue;
+      var ms = c._until - Date.now();
+      if (ms <= 0) {
+        var box = c.parentNode;
+        c.remove();
+        if (box && !box.children.length) {
+          box.hidden = true;
+          var card = $(box.id.replace('pt-start-tiles-', 'pt-start-card-'));
+          if (card) card.hidden = true;
+        }
+        continue;
+      }
+      timed++;
+      c._left.textContent = T('portal.tile.left', { time: tileLeft(ms) });
+    }
+    if (!timed && tileClock) { clearInterval(tileClock); tileClock = null; }
   }
   function loadPluginStart() {
     if (!TABS.plugins) return;
+    clearTimeout(tileTimer);
+    tileTimer = null;
     getJson('/api/v1/portal/plugins/start').then(function (res) {
       var list = res && res.status === 200 && res.body && Array.isArray(res.body.tiles) ? res.body.tiles : [];
+      var same = JSON.stringify(list) === lastTiles; // unchanged: keep the DOM (a password shown stays shown)
+      lastTiles = JSON.stringify(list);
       var by = {};
+      var rich = false;
       list.forEach(function (t) {
         if (!t || typeof t.goto !== 'string' || !/^[a-z0-9-]{1,80}$/.test(t.goto)) return;
         (by[t.goto] = by[t.goto] || []).push(t);
+        if (typeof t.qrImage === 'string' || typeof t.until === 'string' || t.secret) rich = true;
       });
-      Object.keys(by).forEach(function (goto) {
-        var box = $('pt-start-tiles-' + goto);
-        if (!box) return;
-        clear(box);
-        by[goto].forEach(function (t) { box.appendChild(pluginTile(t)); });
-        box.hidden = false;
-        var card = $('pt-start-card-' + goto);
-        if (card) card.hidden = false;
-      });
+      if (!same) {
+        // a card that had tiles before and has none now (a refresh) is hidden again
+        var boxes = doc.querySelectorAll('.pt-plg-tiles');
+        for (var i = 0; i < boxes.length; i++) {
+          var gone = boxes[i].id.replace('pt-start-tiles-', '');
+          if (by[gone] || !boxes[i].children.length) continue;
+          clear(boxes[i]);
+          boxes[i].hidden = true;
+          var old = $('pt-start-card-' + gone);
+          if (old) old.hidden = true;
+        }
+        Object.keys(by).forEach(function (goto) {
+          var box = $('pt-start-tiles-' + goto);
+          if (!box) return;
+          clear(box);
+          by[goto].forEach(function (t) { box.appendChild(pluginTile(t)); });
+          box.hidden = false;
+          var card = $('pt-start-card-' + goto);
+          if (card) card.hidden = false;
+        });
+      }
+      tickTiles();
+      if (!tileClock && doc.querySelector('.pt-plg-qr')) tileClock = setInterval(tickTiles, 1000);
+      if (rich) tileTimer = setTimeout(function again() {
+        if (doc.hidden) { tileTimer = setTimeout(again, TILE_REFRESH_MS); return; }
+        loadPluginStart();
+      }, TILE_REFRESH_MS);
     }).catch(function () { /* tiles are optional */ });
   }
 

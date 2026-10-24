@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Start-Kacheln von Plugins können im Portal einen QR-Code (`qr`, von GateControl als Bild gezeichnet – das Portal bekommt nur das Bild), eine verdeckte Zeile (`secret`, „Anzeigen“ blendet sie ein) und ein Ende (`until`, mit Restzeit; danach verschwindet die Kachel) tragen. Solange eine solche Kachel zu sehen ist, fragt die Startseite die Kacheln jede Minute neu ab. Nur auf der Portal-Startseite, nie in der Start-Karte der Apps. Grundlage für die WLAN-Freigabe aus Vault.
+
+---
+
 ## [1.196.1] — 2026-10-24
 
 ### Fixes

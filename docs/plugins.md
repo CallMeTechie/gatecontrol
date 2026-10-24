@@ -1737,6 +1737,28 @@ disable/uninstall and when the server shuts down.
     The same tiles are also shown in the apps' start card via
     `GET /api/v1/client/tiles` (see "Start tiles in the apps" below) — asked
     with the app's viewer (`app: true`), so answer only what that person may see.
+  * **QR codes, a hidden line and an end on Start** (since 1.197.0; the
+    portal's Start tab only — the apps' start card and search never get them):
+    a tile may add
+    * `qr` — text of 1–512 characters without control characters (e.g. a
+      Wi-Fi code `WIFI:T:WPA;S:…;P:…;;`). GateControl draws it on the server
+      as a QR code (PNG, dark on white in every theme) and sends the portal
+      only the picture (`qrImage`, a `data:image/png` URL), never the text;
+    * `secret` — `{ label, value }` (label ≤ 30, value 1–128 characters, no
+      control characters): a line shown as `••••••••` until the viewer taps
+      "Anzeigen" (e.g. the Wi-Fi password);
+    * `until` — an ISO time: the tile shows the time left ("noch 4:59") and
+      the portal drops it then; a time already past drops the tile at once,
+      one more than 400 days ahead is ignored.
+
+    Such a tile is a card across the Start card's width (title linked like
+    any tile, the picture ~200 px, the line, the countdown). While one is
+    shown, the portal asks for the tiles again every minute (not while the
+    page is hidden), so a tile the plugin stops sending goes from an open page
+    within a minute; an unchanged answer leaves the cards as they are. An
+    invalid extra is dropped, never the tile. Everything on a tile is visible
+    to whoever looks at that screen — answer it only for viewers that may see
+    it (e.g. `user.loggedIn === true`, not `user.kiosk`, not `user.app`).
   * **search**: optional hook `portalSearch({ user, lang, q })` (`q` 2–100
     characters) → `[{ title, subtitle?, section? }]` (≤ 10), shown after the
     portal's own results (services, devices), linked like the tiles. `GET /api/v1/portal/plugins/search?q=`.

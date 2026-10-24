@@ -542,3 +542,16 @@ button, input, select { font: inherit; color: inherit; }
 .av-swatch:focus-visible{outline:2px solid var(--text); outline-offset:2px}
 .av-msg{margin:8px 0 0; font-size:12.5px; min-height:1em}
 .av-msg.is-bad{color:var(--crit, #e5484d)}
+
+/* Start tiles with a QR code, a hidden line and/or a countdown (docs/plugins.md
+   "Portal" → "Start tiles", since 1.197.0): a card across both columns; the
+   code always dark on white, whatever the theme, so phones read it. */
+.pt-plg-qr { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--chip); min-width: 0; }
+.pt-plg-qr[data-tone="on"] { border-color: var(--accent-bd); background: var(--accent-soft); }
+.pt-plg-qr-head { display: flex; align-items: center; gap: 8px; align-self: stretch; color: var(--muted); text-decoration: none; min-width: 0; flex-wrap: wrap; }
+.pt-plg-qr-head b { color: var(--text); font-size: 15px; overflow-wrap: anywhere; }
+.pt-plg-qr-head:hover .pt-plg-tile-t { text-decoration: underline; }
+.pt-plg-qr-img { width: 200px; height: 200px; max-width: 100%; padding: 8px; background: #fff; border-radius: 10px; image-rendering: pixelated; box-sizing: content-box; }
+.pt-plg-qr-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 100%; }
+.pt-plg-qr-secret { font-family: var(--mono, ui-monospace, monospace); font-size: 14px; color: var(--text); overflow-wrap: anywhere; user-select: all; }
+.pt-plg-qr-left { font-variant-numeric: tabular-nums; }
