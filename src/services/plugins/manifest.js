@@ -332,7 +332,7 @@ function validate(raw, opts = {}) {
 
   // ui
   const u = raw.ui == null ? {} : raw.ui;
-  const ui = { nav: null, pages: [], settings: [], settingsGroups: [], settingsPage: null, portal: null, app: null, maps: false, geolocation: false, camera: false, inbox: false };
+  const ui = { nav: null, pages: [], settings: [], settingsGroups: [], settingsPage: null, portal: null, app: null, maps: false, geolocation: false, camera: false, scanQr: false, inbox: false };
   if (!u || typeof u !== 'object' || Array.isArray(u)) err('ui: invalid');
   else {
     if (u.nav != null) {
@@ -444,9 +444,19 @@ function validate(raw, opts = {}) {
     }
     if (u.camera != null) {
       // since 1.188.0: the camera in the plugin's frames (e.g. scanning a QR code):
-      // <iframe allow="camera *"> (frame.js); the browser still asks the person
+      // <iframe allow="camera *"> (frame.js); the browser still asks the person.
+      // Chromium refuses getUserMedia in the sandboxed (opaque-origin) frame whatever
+      // the allow attribute says, so since 1.196.0 the flag also grants GC.scanQr
+      // (below) — kept for plugins that declared it, new ones declare ui.scanQr.
       if (typeof u.camera !== 'boolean') err('ui.camera: invalid');
       else ui.camera = u.camera;
+    }
+    if (u.scanQr != null) {
+      // since 1.196.0: window.GC.scanQr() — GateControl's own page opens the camera,
+      // reads a QR code and hands the plugin only the text (frame.js, plugin-bridge.js,
+      // qr-scan.js); the plugin never sees a picture, its frame gets no camera
+      if (typeof u.scanQr !== 'boolean') err('ui.scanQr: invalid');
+      else ui.scanQr = u.scanQr;
     }
     if (u.inbox != null) {
       // the viewer's own notification inbox in the portal frames: unread count and the newest

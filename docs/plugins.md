@@ -335,7 +335,7 @@ unsigned build of the same id.
     "app": { "label": { "de": "Smart Home", "en": "Smart Home" }, "icon": "<svg path d>" },
     "maps": true,
     "geolocation": true,
-    "camera": true,
+    "scanQr": true,
     "inbox": true
   },
   "license": { "required": true, "server": "https://licenses.example.com/check" },
@@ -380,17 +380,27 @@ unsigned build of the same id.
   the sandboxed frame; the browser still asks the person. Nothing else of the
   frame changes. The install dialog shows "Standort: darf in seinen Seiten
   nach dem Standort des Browsers fragen …". Errors `ui.geolocation: invalid`.
-* `ui.camera` (boolean, since 1.188.0): the plugin's frames may use the
-  camera (e.g. to scan a QR code) — every `<iframe>` of the plugin (admin
-  page, settings page, portal tab and sections) gets `allow="camera *"` (after
-  `microphone *` / `geolocation *`), so `navigator.mediaDevices.getUserMedia({
-  video })` works in the sandboxed frame; the browser still asks the person
-  (for GateControl's origin, which needs HTTPS). Nothing else of the frame
-  changes. The install dialog shows "Kamera: darf in seinen Seiten die Kamera
-  verwenden (z. B. einen QR-Code scannen) …", marked as sensitive. Errors
-  `ui.camera: invalid`. An older
-  GateControl ignores the key — feature-detect and offer another way (e.g. a
-  picture upload decoded in the frame).
+* `ui.scanQr` (boolean, since 1.196.0): the plugin's frames may read QR
+  codes with `window.GC.scanQr()` — GateControl's own page opens its camera
+  dialog and hands the frame only the text that was read (see "QR codes"
+  under "User interface"). The frame gets no camera, its `<iframe>` no
+  `allow`; the frame document has `GC.scanQr` and the `<iframe>`
+  `data-plugin-scanqr` only for such plugins. The install dialog shows
+  "QR-Codes: Kamera zum Scannen von QR-Codes (das Bild bleibt in GateControl,
+  das Plugin bekommt nur den gelesenen Text)". Errors `ui.scanQr: invalid`.
+  An older GateControl ignores the key (`GC.scanQr` is missing there:
+  feature-detect it and offer another way, e.g. a picture upload decoded in
+  the frame).
+* `ui.camera` (boolean, since 1.188.0; **use `ui.scanQr`**): every `<iframe>`
+  of the plugin (admin page, settings page, portal tab and sections) gets
+  `allow="camera *"` (after `microphone *` / `geolocation *`). That is not
+  enough in Chromium (Chrome, Edge, Android): `getUserMedia` in the sandboxed
+  frame fails with "SecurityError: Invalid security origin" — the frame's
+  origin is opaque — so a camera scan in the frame does not work there.
+  Since 1.196.0 the key also grants `GC.scanQr`, so plugins that declared it
+  keep a working scan once they call it. The install dialog shows "Kamera:
+  darf in seinen Seiten die Kamera verwenden …", marked as sensitive, and the
+  QR-Codes row. Errors `ui.camera: invalid`.
 * `ui.settingsPage` (since 1.188.0): the id of one of `ui.pages` (never the
   first one — the navigation opens that) that is the plugin's own settings
   UI: GateControl shows it in the plugin's settings tab (Einstellungen ›
@@ -1768,6 +1778,42 @@ disable/uninstall and when the server shuts down.
   `available: false` without the flag, on the admin pages and in a portal
   without the notification center — hide the entry then. `GC.inbox` is
   missing on GateControl before 1.179.0: feature-detect it.
+* **QR codes** (`ui.scanQr`, or the older `ui.camera`; since 1.196.0):
+  `const { text, code } = await GC.scanQr({ hint, accept, timeout })` —
+  GateControl's page (its own origin, a secure context) shows its camera
+  dialog: the preview with a frame, "Kamera wechseln" when there are several
+  cameras, "Abbrechen", the plugin's name and `hint`. It reads QR codes with
+  the browser's `BarcodeDetector` where there is one (Android, macOS), else
+  with the host's vendored jsQR 1.4.0 (`public/vendor/jsqr`, Apache-2.0,
+  loaded only then), and answers only the text — the picture never leaves
+  the page, and the camera stops the moment there is a result, a cancel, a
+  timeout or the page is hidden. Admin pages, the settings page frame and
+  portal tabs and sections alike.
+  * `hint`: a line of text shown below the preview (≤ 200 characters, plain
+    text).
+  * `accept`: a prefix or a list of ≤ 8 prefixes (1–100 characters,
+    case-insensitive), e.g. `['otpauth://', 'otpauth-migration://']` or
+    `'untis://setschool?'` — other codes keep the dialog open with "Dieser
+    QR-Code passt hier nicht …". Without `accept` any code is answered.
+  * `timeout`: seconds, 10–600, default 120.
+  * The promise never rejects. `text` is the code's content (≤ 4096
+    characters) or `null`; `code` is `null` on success, else `cancelled`
+    (Abbrechen, Escape), `timeout`, `hidden` (the page or the frame's portal
+    tab went out of view), `denied` (the person or the browser refused the
+    camera), `no_camera`, `camera_error` (e.g. in use by another app),
+    `insecure` (GateControl not on HTTPS — the camera needs a secure context;
+    `http://localhost` counts as one), `unsupported`, `decoder_error`,
+    `busy` (another scan is open on the page), `rate_limited` (one start per
+    1.5 s per frame), `no_gesture`, `invalid` (bad `accept`), `not_allowed`
+    (the plugin has neither key). On the errors the dialog shows the reason
+    until the person closes it; then the promise resolves.
+  * Call it from a click handler: the click's user activation reaches
+    GateControl's page and the camera starts at once. A call without a click
+    (e.g. on load) shows the dialog with "Kamera starten" first, and a
+    repeat within 10 s answers `no_gesture`.
+  * One scan at a time on the page, only while the page and the frame are
+    visible. Check `typeof GC.scanQr === 'function'` and keep another way for
+    older hosts (a picture upload decoded in the frame, manual entry).
 * Sandboxed frames have no `alert`/`confirm`/`prompt` (no `allow-modals`):
   plugins draw their own dialogs. The frame grows with its content and with
   an open dialog (visible `position: fixed` elements count with their full

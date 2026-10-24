@@ -1603,6 +1603,7 @@
     };
     if (p.allow) attrs.allow = p.allow;
     if (p.events) attrs['data-plugin-events'] = '';
+    if (p.scanQr) { attrs['data-plugin-scanqr'] = ''; attrs['data-plugin-name'] = p.name || p.id; }
     Object.keys(attrs).forEach((k) => f.setAttribute(k, attrs[k]));
     if (window.GCPluginBridge && typeof window.GCPluginBridge.attach === 'function') window.GCPluginBridge.attach(f);
     return card([f], { 'aria-label': p.settingsPage.title || p.name }, 'pgx-set-frame-card');

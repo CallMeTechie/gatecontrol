@@ -59,9 +59,19 @@
 // the frame from asking at all.
 //
 // Camera (plugin.json `ui.camera`, since 1.188.0): the parent's <iframe> gets
-// allow="camera *" (after microphone / geolocation), so getUserMedia({ video })
-// works in the frame — e.g. to scan a QR code; the browser still asks the
-// person. Nothing in the CSP or the sandbox changes.
+// allow="camera *" (after microphone / geolocation). Chromium (Chrome, Edge,
+// Android) still refuses getUserMedia in the sandboxed frame ("SecurityError:
+// Invalid security origin" — the frame's origin is opaque), so the flag also
+// grants GC.scanQr (below) since 1.196.0.
+//
+// QR codes (plugin.json `ui.scanQr`, or `ui.camera`; since 1.196.0):
+// window.GC.scanQr({ hint, accept, timeout }) → { text, code }. The frame never
+// gets the camera: it asks the parent page (gc-scan), and GateControl's own
+// page (its origin, a secure context) opens its camera dialog
+// (public/js/qr-scan.js), reads the code there and answers only the text.
+// The frame document has GC.scanQr only for such plugins (scanQrOf), and the
+// parent only takes the request from an <iframe data-plugin-scanqr> — an
+// attribute the server renders, which the frame cannot set.
 //
 // Inbox (plugin.json `ui.inbox`, portal frames only): window.GC.inbox.on(fn)
 // gets { available, unread, latest: { title, createdAt, priority } | null }
@@ -141,6 +151,12 @@ function allowAttr({ media = false, geolocation = false, camera = false } = {}) 
   return [media && 'microphone *', geolocation && 'geolocation *', camera && 'camera *'].filter(Boolean).join('; ');
 }
 
+/** May the plugin's frames read QR codes through the page (GC.scanQr)? `ui.scanQr`, or the older `ui.camera`. */
+function scanQrOf(manifest) {
+  const ui = manifest && manifest.ui;
+  return !!(ui && (ui.scanQr === true || ui.camera === true));
+}
+
 /** sandbox attribute of the <iframe> showing a plugin frame (`media`: a plugin declaring media). */
 function sandboxAttr(maps, media = false) { return sandboxOf(maps, media).replace(/^sandbox /, ''); }
 
@@ -218,6 +234,19 @@ const BRIDGE_CLIENT = `(function(){
       post({ type: 'gc-save', id: id, file: file, name: String(name == null ? '' : name) });
     });
   }
+  // ui.scanQr (since 1.196.0): GateControl's page reads a QR code with its camera → { text, code }.
+  // Never rejects: text is the code's content, or null with a code (cancelled, timeout, denied, …).
+  function scanQr(opts) {
+    return new Promise(function (resolve) {
+      var o = opts && typeof opts === 'object' ? opts : {};
+      var accept = o.accept == null ? [] : (Array.isArray(o.accept) ? o.accept : [o.accept]);
+      var id = ++seq;
+      var done = function (d) { resolve({ text: d && typeof d.text === 'string' ? d.text : null, code: d && d.code ? String(d.code) : (d && typeof d.text === 'string' ? null : 'failed') }); };
+      pending[id] = { resolve: done, reject: function (e) { done({ code: (e && e.data && e.data.code) || 'failed' }); } };
+      pending[id].timer = setTimeout(function () { if (pending[id]) { delete pending[id]; done({ code: 'timeout' }); } }, 11 * 60000);
+      post({ type: 'gc-scan', id: id, hint: o.hint == null ? '' : String(o.hint), accept: accept.map(function (a) { return String(a); }), timeout: Number(o.timeout) || 0 });
+    });
+  }
   // permissions.events: realtime events of the plugin ({ plugin, type, data })
   function on(name, fn) {
     if (name !== 'event' || typeof fn !== 'function') return;
@@ -278,7 +307,7 @@ const BRIDGE_CLIENT = `(function(){
       if (modal !== lastModal) { lastModal = modal; post({ type: 'gc-modal', open: modal }); }
     });
   }
-  window.GC = Object.freeze({
+  var api = {
     call: call,
     get: function (p) { return call('GET', p); },
     post: function (p, b) { return call('POST', p, b); },
@@ -294,7 +323,9 @@ const BRIDGE_CLIENT = `(function(){
     inbox: inbox,
     lang: document.documentElement.lang || 'de',
     tiles: /*GC_TILES*/null
-  });
+  };
+  if (/*GC_SCANQR*/false) api.scanQr = scanQr;
+  window.GC = Object.freeze(api);
   if (window.ResizeObserver) new ResizeObserver(size).observe(document.documentElement);
   // a dialog shown or hidden changes no document size: watch the DOM as well
   if (window.MutationObserver) new MutationObserver(size).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden', 'class', 'style', 'open'] });
@@ -316,14 +347,16 @@ const TILES_RE = /^\/plugins\/_shared\/tiles\/[A-Za-z0-9._-]+\/\{z\}\/\{x\}\/\{y
 
 /**
  * The full frame document around a plugin fragment. `tiles` (maps frames
- * only) becomes window.GC.tiles, otherwise GC.tiles is null.
+ * only) becomes window.GC.tiles, otherwise GC.tiles is null; `scanQr`
+ * (scanQrOf the plugin) gives the frame window.GC.scanQr.
  */
-function document({ html, lang, maps = false, tiles = null }) {
+function document({ html, lang, maps = false, tiles = null, scanQr = false }) {
   const l = lang === 'en' ? 'en' : 'de';
   const t = maps && typeof tiles === 'string' && TILES_RE.test(tiles) ? JSON.stringify(tiles) : 'null';
+  const client = BRIDGE_CLIENT.replace('/*GC_TILES*/null', () => t).replace('/*GC_SCANQR*/false', scanQr === true ? 'true' : 'false');
   return '<!doctype html>\n<html lang="' + escAttr(l) + '" data-theme="dark"><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="' + (maps ? REFERRER_MAPS : REFERRER) + '">'
-    + '<style>' + BASE_CSS + '</style><script>' + BRIDGE_CLIENT.replace('/*GC_TILES*/null', () => t) + '</script></head><body>'
+    + '<style>' + BASE_CSS + '</style><script>' + client + '</script></head><body>'
     + String(html || '') + '</body></html>';
 }
 
@@ -342,4 +375,4 @@ function headers(res, opts = {}) {
   res.type('html');
 }
 
-module.exports = { CSP, cspFor, originOf, sandboxAttr, allowAttr, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA };
+module.exports = { CSP, cspFor, originOf, sandboxAttr, allowAttr, scanQrOf, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA };

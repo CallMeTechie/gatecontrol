@@ -32,6 +32,17 @@
 // title, time and priority reach the frame; a page without the notification
 // center, the admin pages and frames without the attribute get
 // { available: false }.
+//
+// QR codes (GC.scanQr, frames with data-plugin-scanqr = plugin.json
+// `ui.scanQr` or `ui.camera`, since 1.196.0): the frame cannot use the camera
+// (opaque origin), so this page reads the code in its own dialog
+// (public/js/qr-scan.js) and answers only { text, code }. One scan at a time
+// on the page, only while the page and the frame are shown, at most one start
+// per 1.5 s per frame. A call that comes with a click in the frame (the
+// click's transient user activation reaches this page too) starts the camera
+// at once; one without asks the person to press "Kamera starten" first, and
+// is refused (no_gesture) when it repeats within 10 s. A new document in the
+// frame (gc-hello) ends its scan.
 (function () {
   const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
   const MAX_UPLOAD = 100 * 1024 * 1024;
@@ -51,6 +62,9 @@
     if (!n.toLowerCase().endsWith('.' + ext)) n = n.replace(/\.[A-Za-z0-9]{1,5}$/, '') + '.' + ext;
     return n;
   }
+  // GC.scanQr: one start per 1.5 s per frame; without a click, one per 10 s
+  const SCAN_GAP_MS = 1500;
+  const SCAN_NO_GESTURE_GAP_MS = 10000;
   const streams = {}; // plugin id → { es, frames: Set<reply fn> }
 
   function subscribe(pluginId, url, sink) {
@@ -213,6 +227,44 @@
       reply({ type: 'gc-result', id: m.id, ok: true, status: 200, data: { ok: true, name: a.download } });
     }
 
+    // GC.scanQr: the page's own camera dialog, the frame gets the text only
+    const scanOn = frame.getAttribute('data-plugin-scanqr') != null;
+    let lastScan = 0;
+    let lastAsk = 0;
+    let myScan = null;
+    function frameShown() {
+      if (document.visibilityState && document.visibilityState !== 'visible') return false;
+      if (frame.isConnected === false) return false;
+      if (typeof frame.checkVisibility === 'function') return frame.checkVisibility();
+      return !!(frame.getClientRects && frame.getClientRects().length);
+    }
+    function scan(m) {
+      const answer = (text, code) => reply({ type: 'gc-result', id: m.id, ok: true, status: 200, data: { text: typeof text === 'string' ? text : null, code: code || null } });
+      const Q = window.GCQrScan;
+      if (!scanOn) { answer(null, 'not_allowed'); return; }
+      if (!Q || typeof Q.open !== 'function') { answer(null, 'unsupported'); return; }
+      const o = Q.normalize(m);
+      if (!o.ok) { answer(null, 'invalid'); return; }
+      if (!frameShown()) { answer(null, 'hidden'); return; }
+      if (Q.active()) { answer(null, 'busy'); return; }
+      const now = Date.now();
+      if (now - lastScan < SCAN_GAP_MS) { answer(null, 'rate_limited'); return; }
+      const ua = typeof navigator !== 'undefined' ? navigator.userActivation : null;
+      const gesture = !ua || ua.isActive === true; // a browser without the API: the dialog is the check
+      if (!gesture && now - lastAsk < SCAN_NO_GESTURE_GAP_MS) { answer(null, 'no_gesture'); return; }
+      lastScan = now;
+      if (!gesture) lastAsk = now;
+      const name = (frame.getAttribute('data-plugin-name') || pluginId).slice(0, 80);
+      const run = Q.open({ name, hint: o.hint, accept: o.accept, timeoutMs: o.timeoutMs, gesture, visible: frameShown });
+      myScan = run;
+      run.promise.then((r) => {
+        if (myScan === run) myScan = null;
+        const text = r && typeof r.text === 'string' && r.text.length <= Q.MAX_TEXT ? r.text : null;
+        answer(text, text ? null : ((r && r.code) || 'cancelled'));
+      });
+    }
+    function endScan() { if (myScan) myScan.cancel('cancelled'); }
+
     function sendTheme() { reply({ type: 'gc-theme', theme: theme() }); }
 
     // A dialog open in the frame (gc-modal): dim this page around the frame
@@ -284,6 +336,7 @@
       if (m.type === 'gc-call' && Number.isInteger(m.id)) call(m);
       else if (m.type === 'gc-upload' && Number.isInteger(m.id)) upload(m);
       else if (m.type === 'gc-save' && Number.isInteger(m.id)) save(m);
+      else if (m.type === 'gc-scan' && Number.isInteger(m.id)) scan(m);
       else if (m.type === 'gc-subscribe') setSubscribed(true);
       else if (m.type === 'gc-unsubscribe') setSubscribed(false);
       else if (m.type === 'gc-inbox-subscribe') setInbox(true);
@@ -298,6 +351,7 @@
         // a new document in the frame (first load, reload): it subscribes again when it wants events
         setSubscribed(false);
         setInbox(false);
+        endScan();
         sendTheme();
       }
       else if (m.type === 'gc-settings') {

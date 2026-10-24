@@ -27,7 +27,8 @@
 <script type="application/json" id="portal-ctx" nonce="{{ cspNonce }}">{{ portalCtx | safe }}</script>
 <script src="/js/avatar-edit.js?v={{ appVersion }}" defer></script>
 <script src="/js/portal.js?v={{ appVersion }}" defer></script>
-{% if tabs.plugins %}<script src="/js/plugin-bridge.js?v={{ appVersion }}" defer></script>{% endif %}
+{% if tabs.plugins %}<script src="/js/qr-scan.js?v={{ appVersion }}" defer></script>
+<script src="/js/plugin-bridge.js?v={{ appVersion }}" defer></script>{% endif %}
 </head>
 <body class="pt-body">
 <a class="pt-skip" href="#pt-main">{{ t('portal.skip') }}</a>
@@ -44,7 +45,7 @@
 {%- macro pluginSection(sec, cls) %}
       <section class="pt-plugin-section{{ ' ' + cls if cls }}" id="pt-sec-{{ sec.key }}" data-area="{{ sec.key }}" data-plugin="{{ sec.plugin }}" aria-label="{{ sec.title }}">
         <iframe class="pt-plugin-frame" title="{{ sec.title }}" src="/portal/plugins/{{ sec.plugin }}/frame?section={{ sec.id }}" sandbox="allow-scripts allow-forms{% if sec.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}{% if sec.media %} allow-downloads{% endif %}" referrerpolicy="no-referrer" loading="lazy"{% if sec.allow %} allow="{{ sec.allow }}"{% endif %}
-          data-plugin-frame data-plugin-id="{{ sec.plugin }}" data-plugin-api="/api/v1/portal/plugins/{{ sec.plugin }}/api/" data-plugin-pages="[]"{% if sec.events %} data-plugin-events{% endif %}{% if sec.inbox %} data-plugin-inbox{% endif %}></iframe>
+          data-plugin-frame data-plugin-id="{{ sec.plugin }}" data-plugin-api="/api/v1/portal/plugins/{{ sec.plugin }}/api/" data-plugin-pages="[]"{% if sec.events %} data-plugin-events{% endif %}{% if sec.inbox %} data-plugin-inbox{% endif %}{% if sec.scanQr %} data-plugin-scanqr data-plugin-name="{{ sec.name }}"{% endif %}></iframe>
       </section>
 {%- endmacro %}
 {%- set TABS = [
@@ -448,7 +449,7 @@
   <section class="pt-panel" id="panel-{{ pt.key }}" role="tabpanel" aria-labelledby="tab-{{ pt.key }}" tabindex="0" data-panel="{{ pt.key }}" hidden>
     <h1 class="pt-h1 pt-h1-sm">{{ pt.label }}</h1>
     <iframe class="pt-plugin-frame" title="{{ pt.label }}" src="/portal/plugins/{{ pt.id }}/frame" sandbox="allow-scripts allow-forms{% if pt.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}{% if pt.media %} allow-downloads{% endif %}" referrerpolicy="no-referrer" loading="lazy"{% if pt.allow %} allow="{{ pt.allow }}"{% endif %}
-      data-plugin-frame data-plugin-id="{{ pt.id }}" data-plugin-api="/api/v1/portal/plugins/{{ pt.id }}/api/" data-plugin-pages="[]"{% if pt.events %} data-plugin-events{% endif %}{% if pt.inbox %} data-plugin-inbox{% endif %}></iframe>
+      data-plugin-frame data-plugin-id="{{ pt.id }}" data-plugin-api="/api/v1/portal/plugins/{{ pt.id }}/api/" data-plugin-pages="[]"{% if pt.events %} data-plugin-events{% endif %}{% if pt.inbox %} data-plugin-inbox{% endif %}{% if pt.scanQr %} data-plugin-scanqr data-plugin-name="{{ pt.name }}"{% endif %}></iframe>
   </section>
   {%- endfor %}
 </main>
