@@ -152,13 +152,14 @@ function mapsOf(p) { return !!(p && p.manifest && p.manifest.ui && p.manifest.ui
  * plugin declaring `media` its media URLs).
  * Returns what frame.document() needs: `maps`, and `tiles` (the relay's URL
  * template for window.GC.tiles) for a maps frame with a known origin — the
- * CSP allows the relay only then.
+ * CSP allows the relay only then; `scanQr` (ui.scanQr / ui.camera) for
+ * window.GC.scanQr.
  */
 function frameHeaders(req, res, p) {
   const maps = mapsOf(p);
   const origin = frame.originOf(req);
   frame.headers(res, { maps, avatars: true, origin, media: !!media.declOf(p) });
-  return { maps, tiles: maps && origin ? tiles.template() : null };
+  return { maps, tiles: maps && origin ? tiles.template() : null, scanQr: frame.scanQrOf(p && p.manifest) };
 }
 
 function lang(req, res) { return (req.language || res.locals.language) === 'en' ? 'en' : 'de'; }

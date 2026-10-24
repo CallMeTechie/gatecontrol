@@ -104,6 +104,8 @@
     if (perm.maps) rows.push({ label: t('plugins.perm.maps'), value: t('plugins.perm.maps_on') });
     if (perm.geolocation) rows.push({ label: t('plugins.perm.geolocation'), value: t('plugins.perm.geolocation_on') });
     if (perm.camera) rows.push({ label: t('plugins.perm.camera'), value: t('plugins.perm.camera_on') });
+    // since 1.196.0: GC.scanQr — GateControl's own dialog reads the code, the plugin gets the text
+    if (perm.scanQr) rows.push({ label: t('plugins.perm.scan_qr'), value: t('plugins.perm.scan_qr_on') });
     if (perm.inbox) rows.push({ label: t('plugins.perm.inbox'), value: t('plugins.perm.inbox_on') });
     if (perm.background) rows.push({ label: t('plugins.perm.background'), value: t('plugins.perm.background_v', { s: perm.background }) });
     if (perm.notify) {

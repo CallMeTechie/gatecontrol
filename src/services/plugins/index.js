@@ -130,6 +130,8 @@ function permissionSummary(m, lang) {
     maps: !!m.ui.maps,
     geolocation: !!m.ui.geolocation,
     camera: !!m.ui.camera,
+    // since 1.196.0: GC.scanQr — GateControl reads QR codes with its own camera dialog, the plugin gets the text
+    scanQr: require('./frame').scanQrOf(m),
     inbox: !!m.ui.inbox,
     background: p.background ? p.background.intervalSeconds : null,
     pages: m.ui.pages.map((x) => loc(x.title, lang)), settings: m.ui.settings.length,
@@ -625,6 +627,8 @@ function view(p, lang) {
     maps: !!(m.ui && m.ui.maps),
     geolocation: !!(m.ui && m.ui.geolocation),
     camera: !!(m.ui && m.ui.camera),
+    // GC.scanQr in the plugin's frames: the <iframe data-plugin-scanqr> (plugin-bridge.js)
+    scanQr: require('./frame').scanQrOf(m),
     // the <iframe allow="…"> of the plugin's frames (frame.allowAttr)
     allow: require('./frame').allowAttr({ media: !!m.media, geolocation: !!(m.ui && m.ui.geolocation), camera: !!(m.ui && m.ui.camera) }),
     media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false } : null,
