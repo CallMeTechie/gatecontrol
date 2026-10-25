@@ -431,12 +431,19 @@ function toggle(id, { actorId = null, ip = null } = {}) {
 
   const newEnabled = user.enabled === 1 ? 0 : 1;
   db.transaction(() => {
-    db.prepare("UPDATE users SET enabled = ?, updated_at = datetime('now') WHERE id = ?").run(newEnabled, id);
+    // disabled_reason: 'admin' here; the directory sync sets 'directory'.
+    db.prepare("UPDATE users SET enabled = ?, disabled_reason = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(newEnabled, newEnabled ? null : 'admin', id);
     if (!newEnabled && user.role === 'user') {
       db.prepare('UPDATE users SET self_service_enabled = 0, self_enroll_enabled = 0 WHERE id = ?').run(id);
       clearWebLogin(db, id);
     }
   })();
+
+  // Group memberships rest while the account is disabled (services/groups.js).
+  try { require('./groups').userEnabledChanged(id, !!newEnabled); } catch (err) {
+    logger.warn({ err: err.message }, 'group change events for a toggled user skipped');
+  }
 
   activity.log('user_toggled', `User "${user.username}" ${newEnabled ? 'enabled' : 'disabled'}`, {
     source: 'admin',
@@ -530,6 +537,10 @@ function remove(id, { actorId = null, ip = null } = {}) {
   }
 
   const impact = deleteImpact(id);
+  // Group memberships go with the account (FK cascade); the groups service
+  // announces them as removed (access rebuild, plugin hooks).
+  let memberships = [];
+  try { memberships = require('./groups').membershipsOfUser(id); } catch { memberships = []; }
   db.transaction(() => {
     db.prepare('DELETE FROM api_tokens WHERE user_id = ?').run(id);
     // Positions the person shared go with the person (the peers stay).
@@ -540,6 +551,11 @@ function remove(id, { actorId = null, ip = null } = {}) {
     stripFromVisibility(db, 'rdp_routes', id);
     db.prepare('DELETE FROM users WHERE id = ?').run(id);
   })();
+  if (memberships.length) {
+    try { require('./groups').userDeleted(id, memberships); } catch (err) {
+      logger.warn({ err: err.message }, 'group change events for a deleted user skipped');
+    }
+  }
 
   activity.log('user_deleted', `User "${user.username}" deleted`, {
     source: 'admin',

@@ -2470,6 +2470,84 @@ const migrations = [
       );
       CREATE INDEX IF NOT EXISTS idx_plugin_public_link_files_media ON plugin_public_link_files(media_id);`,
   },
+  {
+    version: 109,
+    name: 'person_groups',
+    // Person groups ("Gruppenverwaltung", docs/groups.md, services/groups.js):
+    // teams, departments, projects, sites and the family — one set for access,
+    // plugins and chats. Admin rights never come from a group.
+    //   groups            one group: parent_id (NULL = top level, at most 3
+    //                     levels, no cycles — services/groups.js), kind
+    //                     'department' | 'team' | 'project' | 'site' |
+    //                     'family', name unique per parent (case-insensitive,
+    //                     idx_groups_parent_name), color '#rrggbb' or NULL,
+    //                     source 'local' | 'directory:<id>' | 'plugin:<id>'
+    //                     (non-local groups are read-only in the admin UI),
+    //                     external_id (directory object id or the plugin's
+    //                     key, unique per source), ends_at 'YYYY-MM-DD'
+    //                     (projects: archived after that day), archived_at
+    //                     ISO UTC (access ends, data kept).
+    //   group_members     direct memberships: role member | lead | deputy |
+    //                     admin (family: parent | child), source 'local' or
+    //                     the group's own source (members that came with the
+    //                     directory / plugin), added_by, added_at. Goes with
+    //                     the group and with the account.
+    //   group_invites     invitation links: token_hash = SHA-256 of the token
+    //                     (the token itself is only shown once), role,
+    //                     created_at / expires_at ISO UTC, max_uses / uses.
+    //   route_group_acl   HTTP routes released for a group (access layer).
+    //   rdp_routes.group_ids  JSON array of group ids, like user_ids.
+    //   users.disabled_reason 'directory' | 'admin' | NULL — why an account
+    //                     is disabled (directory sync).
+    sql: `
+      CREATE TABLE IF NOT EXISTS groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_id INTEGER REFERENCES groups(id) ON DELETE RESTRICT,
+        kind TEXT NOT NULL CHECK (kind IN ('department', 'team', 'project', 'site', 'family')),
+        name TEXT NOT NULL,
+        description TEXT,
+        color TEXT,
+        source TEXT NOT NULL DEFAULT 'local',
+        external_id TEXT,
+        ends_at TEXT,
+        archived_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_parent_name ON groups(COALESCE(parent_id, 0), lower(name));
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_external ON groups(source, external_id) WHERE external_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_groups_parent ON groups(parent_id);
+      CREATE TABLE IF NOT EXISTS group_members (
+        group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member', 'lead', 'deputy', 'admin', 'parent', 'child')),
+        source TEXT NOT NULL DEFAULT 'local',
+        added_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        added_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (group_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
+      CREATE TABLE IF NOT EXISTS group_invites (
+        token_hash TEXT PRIMARY KEY,
+        group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        role TEXT NOT NULL DEFAULT 'member',
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        max_uses INTEGER,
+        uses INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_group_invites_group ON group_invites(group_id);
+      CREATE TABLE IF NOT EXISTS route_group_acl (
+        route_id INTEGER NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+        group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        PRIMARY KEY (route_id, group_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_route_group_acl_group ON route_group_acl(group_id);
+      ALTER TABLE rdp_routes ADD COLUMN group_ids TEXT;
+      ALTER TABLE users ADD COLUMN disabled_reason TEXT;`,
+    detect: (db) => tableExists(db, 'groups') && hasColumn(db, 'rdp_routes', 'group_ids') && hasColumn(db, 'users', 'disabled_reason'),
+  },
 ];
 
 module.exports = { migrations };

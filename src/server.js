@@ -292,6 +292,13 @@ async function start() {
     setInterval(retryKioskCleanup, 60 * 60 * 1000);
     retryKioskCleanup();
 
+    // Person groups (docs/groups.md): projects whose end date has passed are
+    // archived (access ends, data stays); ended invitation links are purged.
+    // Hourly, and once at start.
+    const retryGroupsArchive = withRetry('groups-archive', async () => require('./services/groups').archiveExpired());
+    setInterval(retryGroupsArchive, 60 * 60 * 1000);
+    retryGroupsArchive();
+
     // Periodic alert checks (every hour): backup reminder, CPU / RAM / disk
     // thresholds, de-duplicated (services/alertChecks.js).
     const retryAlertChecks = withRetry('alert-checks', () => require('./services/alertChecks').run());
