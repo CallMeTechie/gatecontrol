@@ -138,6 +138,20 @@ router.get('/verify', (req, res) => {
     const session = verifySession(sessionId, authConfig.route_id);
     if (!session) return res.sendStatus(401);
 
+    // Sessions of the automatic login from the apps belong to a person (or a
+    // device token): checked again on every request, so leaving a group,
+    // being taken off the route or a disabled account end access at once
+    // (docs/groups.md "Zugriff per Gruppe"). Password/e-mail sessions are
+    // route credentials, not GateControl accounts.
+    const who = String(session.email || '');
+    if (who.startsWith('app:')) {
+      const m = /^app:user:(\d+)$/.exec(who);
+      const uid = m ? Number(m[1]) : null;
+      if (uid != null && !require('../services/users').isEnabled(uid)) return res.sendStatus(401);
+      const row = db.prepare('SELECT id, user_ids FROM routes WHERE id = ?').get(authConfig.route_id);
+      if (!require('../services/groupAccess').canSeeRoute(row, uid)) return res.sendStatus(401);
+    }
+
     return res.sendStatus(200);
   })().catch(() => res.sendStatus(500));
 });

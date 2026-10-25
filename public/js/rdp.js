@@ -664,37 +664,19 @@
   // Pre-fetch peers on page load
   fetchPeers();
 
-  // -- Fetch users for visibility control ---------------------------
-  var allUsers = [];
-  async function fetchUsers() {
-    try {
-      var data = await api.get('/api/v1/users');
-      allUsers = data.users || [];
-    } catch (e) { /* ignore */ }
+  // "Wer darf zugreifen?" — groups and persons in one field (access-picker.js,
+  // docs/groups.md "Zugriff per Gruppe"): user_ids + group_ids.
+  var accessPicker = null;
+  function picker() {
+    if (accessPicker) return accessPicker;
+    var host = document.getElementById('rdp-access-picker');
+    if (!host || !window.GCAccessPicker) return null;
+    accessPicker = window.GCAccessPicker.mount(host, { devices: false });
+    return accessPicker;
   }
-  fetchUsers();
-
-  function renderUserCheckboxes(containerId, selectedIds) {
-    var container = document.getElementById(containerId);
-    container.textContent = '';
-    allUsers.forEach(function (u) {
-      var label = document.createElement('label');
-      label.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:12px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer';
-      var cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.value = u.id;
-      cb.className = 'rdp-user-cb';
-      cb.checked = selectedIds.includes(u.id);
-      cb.style.cssText = 'accent-color:var(--accent)';
-      label.appendChild(cb);
-      var txt = document.createTextNode(u.display_name || u.username);
-      label.appendChild(txt);
-      container.appendChild(label);
-    });
-    if (!allUsers.length) {
-      container.textContent = D.t('users.no_users');
-      container.style.cssText = 'font-size:12px;color:var(--text-3)';
-    }
+  function setAccess(userIds, groupIds) {
+    var p = picker();
+    if (p) p.setValue({ userIds: userIds || [], groupIds: groupIds || [], peerIds: [] });
   }
 
   function openCreateModal() {
@@ -713,7 +695,7 @@
     });
     var storedBanner = document.getElementById('rdp-cred-stored-banner');
     if (storedBanner) storedBanner.style.display = 'none';
-    renderUserCheckboxes('rdp-user-ids', []);
+    setAccess([], []);
     openModal('rdp-modal-overlay');
   }
 
@@ -819,10 +801,12 @@
       document.getElementById('rdp-browser-audio-vnc').checked = !!r.browser_enable_audio;
       document.getElementById('rdp-audio-servername').value = r.audio_servername || '';
 
-      // User visibility
+      // "Wer darf zugreifen?" — persons and groups
       var userIds = [];
+      var groupIds = [];
       try { userIds = JSON.parse(r.user_ids || '[]'); } catch (e) { /* ignore */ }
-      renderUserCheckboxes('rdp-user-ids', Array.isArray(userIds) ? userIds : []);
+      try { groupIds = JSON.parse(r.group_ids || '[]'); } catch (e) { /* ignore */ }
+      setAccess(Array.isArray(userIds) ? userIds : [], Array.isArray(groupIds) ? groupIds : []);
 
       // Trigger change events
       credMode.dispatchEvent(new Event('change'));
@@ -949,12 +933,10 @@
         ? (document.getElementById('rdp-audio-servername').value || null) : null;
     })();
 
-    // User visibility
-    var selectedUserIds = [];
-    document.querySelectorAll('.rdp-user-cb:checked').forEach(function (cb) {
-      selectedUserIds.push(parseInt(cb.value, 10));
-    });
-    data.user_ids = selectedUserIds.length > 0 ? selectedUserIds : null;
+    // "Wer darf zugreifen?" — persons and groups
+    var access = picker() ? picker().getValue() : { userIds: [], groupIds: [] };
+    data.user_ids = access.userIds.length > 0 ? access.userIds : null;
+    data.group_ids = access.groupIds;
 
     // ── THE UNMODIFIED-CREDENTIAL OMISSION RULE (Chain H4 — CRITICAL) ──────
     // Must run BEFORE serializeForm. See applyUnmodifiedCredentialOmission.

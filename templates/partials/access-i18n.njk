@@ -1,0 +1,7 @@
+{#
+  "Wer darf zugreifen?" (access-picker.js, docs/groups.md "Zugriff per Gruppe"):
+  every acc.* string as JSON island #acc-i18n (accessI18n, rendered with
+  stringsWithPrefix by src/routes/index.js for the zones and RDP pages).
+  Include it inside the content block.
+#}
+<script type="application/json" id="acc-i18n" data-prefixes="acc." nonce="{{ cspNonce }}">{{ accessI18n | default('{}') | safe }}</script>

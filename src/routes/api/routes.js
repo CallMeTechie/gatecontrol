@@ -100,6 +100,22 @@ const httpRouteCountFn = () => getDb().prepare("SELECT COUNT(*) as count FROM ro
 const l4RouteCountFn = () => getDb().prepare("SELECT COUNT(*) as count FROM routes WHERE route_type = 'l4'").get().count;
 
 const stripRoute = (r) => stripFields(r, ['basic_auth_password_hash', 'tls']);
+
+// Persons (user_ids) and groups (group_ids) of a route — docs/groups.md
+// "Zugriff per Gruppe". Absent = keep; groups must exist and not be archived
+// unless the route already carries them. → { fields } or { error, code }.
+function accessInput(req, currentGroupIds) {
+  const groupAccess = require('../../services/groupAccess');
+  const out = {};
+  try {
+    if (req.body.user_ids !== undefined) out.user_ids = groupAccess.validateUserIds(req.body.user_ids);
+    if (req.body.group_ids !== undefined) out.group_ids = groupAccess.validateGroupIds(req.body.group_ids, { current: currentGroupIds || [] });
+  } catch (err) {
+    const key = { GROUP_NOT_FOUND: 'error.access.group_not_found', GROUP_ARCHIVED: 'error.access.group_archived' }[err.code] || 'error.access.invalid';
+    return { code: err.code, error: req.t(key) };
+  }
+  return { fields: out };
+}
 // TLS guard verdict attached by routes.create/update → top-level `tls` in the answer.
 const tlsOf = (r) => (r && r.tls ? { tls: r.tls } : {});
 
@@ -554,7 +570,11 @@ router.post('/',
     const ebErr = validateExternalBlock(req.body, req.body.domain, null);
     if (ebErr) return res.status(400).json({ ok: false, error: ebErr });
 
+    const access = accessInput(req, []);
+    if (access.error) return res.status(400).json({ ok: false, error: access.error, code: access.code });
+
     const route = await routes.create({
+      ...access.fields,
       domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled,
       basic_auth_user, basic_auth_password,
@@ -757,7 +777,11 @@ router.put('/:id',
     const ebErrU = validateExternalBlock(req.body, req.body.domain || existingRoute.domain, existingRoute);
     if (ebErrU) return res.status(400).json({ ok: false, error: ebErrU });
 
+    const accessU = accessInput(req, existingRoute.group_ids);
+    if (accessU.error) return res.status(400).json({ ok: false, error: accessU.error, code: accessU.code });
+
     const route = await routes.update(req.params.id, {
+      ...accessU.fields,
       domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled,
       basic_auth_user, basic_auth_password, enabled,

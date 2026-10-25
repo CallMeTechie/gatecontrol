@@ -615,6 +615,18 @@ function remove(id, opts = {}) {
       if (!rest.length && !(users && users.length)) continue;
       upd.run(rest.length ? JSON.stringify(rest) : null, r.id);
     }
+    // route_group_acl goes with the group (FK cascade). An HTTP route that
+    // was released for this group only (no other group, no person) gets the
+    // NOBODY marker [0] in user_ids and stays closed instead of opening up
+    // (services/groupAccess.js).
+    const solo = db.prepare(`SELECT r.id, r.user_ids FROM routes r JOIN route_group_acl a ON a.route_id = r.id
+      WHERE a.group_id = ? AND NOT EXISTS (SELECT 1 FROM route_group_acl b WHERE b.route_id = r.id AND b.group_id <> ?)`).all(row.id, row.id);
+    for (const r of solo) {
+      let persons = [];
+      try { persons = JSON.parse(r.user_ids || '[]'); } catch { persons = []; }
+      if (Array.isArray(persons) && persons.length) continue;
+      db.prepare("UPDATE routes SET user_ids = '[0]' WHERE id = ?").run(r.id);
+    }
     db.prepare('DELETE FROM groups WHERE id = ?').run(row.id); // members, invites, route ACL cascade
   })();
   activity.log('group_deleted', `Group "${path}" deleted`, {

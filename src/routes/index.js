@@ -425,6 +425,13 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
         .replace(/</g, '\\u003c');
     }
 
+    // "Wer darf zugreifen?" picker of the route editor and the RDP dialog
+    // (access-picker.js, partials/access-i18n.njk).
+    if (template === 'zones' || template === 'rdp') {
+      extraLocals.accessI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, ['acc.']))
+        .replace(/</g, '\\u003c');
+    }
+
     if (template === 'zones') {
       try {
         extraLocals.gatewayPools = require('../services/gatewayPool').listPools();

@@ -64,6 +64,8 @@ router.use('/notify', require('./notify'));
 router.use('/users', require('./users'));
 // Person groups (docs/groups.md): admin session only, like /users
 router.use('/groups', require('./groups'));
+// "Wer darf zugreifen?": principals + preview for the route/RDP dialogs (admin session)
+router.use('/access', require('./access'));
 router.use('/enrollment', require('./enrollment'));
 router.use('/profile', require('./profile'));
 // "Mein Bereich" (member self-service, session only, own account only)

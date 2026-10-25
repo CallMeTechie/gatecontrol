@@ -248,6 +248,8 @@ function getById(id) {
   `).get(id);
   if (route) {
     route.acl_peers = getAclPeers(id).map(p => p.peer_id);
+    // Groups released for the route (docs/groups.md "Zugriff per Gruppe").
+    route.group_ids = require('./groupAccess').routeGroupIds(route.id);
   }
   return route;
 }
@@ -487,7 +489,7 @@ async function create(data, opts = {}) {
     mirrorTargetsJson,
     data.debug_enabled ? 1 : 0,
     data.bot_blocker_enabled ? 1 : 0, data.bot_blocker_mode || 'block', data.bot_blocker_config || null,
-    data.user_ids ? JSON.stringify(data.user_ids) : null,
+    userIdsColumn(data.user_ids),
     data.external_enabled ? 1 : 0,
     data.external_block_action || 'inherit',
     data.external_block_body != null ? String(data.external_block_body) : null,
@@ -524,6 +526,10 @@ async function create(data, opts = {}) {
   // Set ACL peers if provided
   if (data.acl_enabled && Array.isArray(data.acl_peers)) {
     setAclPeers(routeId, data.acl_peers);
+  }
+  // Groups released for the route (route_group_acl, cascades with the row).
+  if (Array.isArray(data.group_ids) && data.group_ids.length) {
+    require('./groupAccess').setRouteGroups(routeId, data.group_ids);
   }
 
   // Sync to Caddy — rollback DB insert on failure. Orchestrators creating
@@ -1004,6 +1010,25 @@ async function update(id, data) {
     db.prepare(`UPDATE routes SET target_peer_id = NULL, target_pool_id = NULL, target_lan_host = NULL, target_lan_port = NULL, wol_enabled = 0, wol_mac = NULL WHERE id = ?`).run(id);
   }
 
+  // Persons and groups (docs/groups.md "Zugriff per Gruppe"): sent = set or
+  // clear (the COALESCE above cannot clear user_ids), absent = keep.
+  const groupAccess = require('./groupAccess');
+  const oldGroupIds = groupAccess.routeGroupIds(id);
+  if (data.user_ids !== undefined) {
+    db.prepare('UPDATE routes SET user_ids = ? WHERE id = ?').run(userIdsColumn(data.user_ids), id);
+  }
+  if (data.group_ids !== undefined) {
+    groupAccess.setRouteGroups(id, Array.isArray(data.group_ids) ? data.group_ids : []);
+    const newGroupIds = groupAccess.routeGroupIds(id);
+    if (JSON.stringify(newGroupIds) !== JSON.stringify(oldGroupIds)) {
+      activity.log('route_groups_changed', `Route "${route.domain}" released for groups updated`, {
+        source: 'admin',
+        severity: 'info',
+        details: { routeId: id, old_groups: oldGroupIds, new_groups: newGroupIds },
+      });
+    }
+  }
+
   // Update ACL peers if provided
   const oldAclPeers = getAclPeers(id).map(p => p.peer_id).sort();
   if (data.acl_peers !== undefined) {
@@ -1035,7 +1060,10 @@ async function update(id, data) {
   // snapshot restore so security-critical fields (ip_filter_*, acl_*,
   // bot_blocker_*, monitoring_*, branding_*, retry_*, ...) aren't
   // silently reset to defaults when the rollback path fires.
-  await withCaddySync(syncToCaddy, () => restoreRouteRow(db, id, snapshot), 'route update');
+  await withCaddySync(syncToCaddy, () => {
+    restoreRouteRow(db, id, snapshot);
+    if (data.group_ids !== undefined) groupAccess.setRouteGroups(id, oldGroupIds);
+  }, 'route update');
 
   activity.log('route_updated', `Route "${route.domain}" updated`, {
     source: 'admin',
@@ -1102,6 +1130,8 @@ async function remove(id) {
   // but drops its time-based access windows — a route that was only protected
   // by a schedule would silently become reachable around the clock.
   const accessRulesSnapshot = require('./accessRules').listRules('route', id);
+  // route_group_acl goes with the row (FK cascade); a rollback brings it back.
+  const groupSnapshot = require('./groupAccess').routeGroupIds(id);
   // Captured before the delete: the last entry takes its host with it.
   const refs = hostRefs(db, [route.bundle_id]);
 
@@ -1119,6 +1149,7 @@ async function remove(id) {
   await withCaddySync(syncToCaddy, () => {
     reinsertRouteRow(db, route);
     require('./accessRules').restoreRules(accessRulesSnapshot);
+    if (groupSnapshot.length) require('./groupAccess').setRouteGroups(id, groupSnapshot);
   }, 'route delete');
 
   if (route.bundle_id) cleanupEmptyBundles(db, [route.bundle_id]);
@@ -1211,6 +1242,7 @@ async function batch(action, ids) {
   // already solved.
   const snapshots = db.prepare(`SELECT * FROM routes WHERE id IN (${placeholders})`).all(...ids);
   const aclSnapshots = db.prepare(`SELECT * FROM route_peer_acl WHERE route_id IN (${placeholders})`).all(...ids);
+  const groupAclSnapshots = db.prepare(`SELECT * FROM route_group_acl WHERE route_id IN (${placeholders})`).all(...ids);
   // Access rules must also survive a delete-rollback (see remove()); a restored
   // route would otherwise lose its scheduled access windows.
   const accessRuleSnapshots = action === 'delete'
@@ -1238,6 +1270,8 @@ async function batch(action, ids) {
         for (const row of snapshots) reinsertRouteRow(db, row);
         const insertAcl = db.prepare('INSERT OR IGNORE INTO route_peer_acl (route_id, peer_id) VALUES (?, ?)');
         for (const a of aclSnapshots) insertAcl.run(a.route_id, a.peer_id);
+        const insertGroupAcl = db.prepare('INSERT OR IGNORE INTO route_group_acl (route_id, group_id) VALUES (?, ?)');
+        for (const a of groupAclSnapshots) insertGroupAcl.run(a.route_id, a.group_id);
         require('./accessRules').restoreRules(accessRuleSnapshots);
       } else {
         for (const row of snapshots) restoreRouteRow(db, row.id, row);
@@ -1456,24 +1490,25 @@ function resolveCompanionUrl(routeId) {
 }
 
 /**
- * Get HTTP routes filtered by user_ids for client API.
- * If user_ids is set on a route, only matching users see it.
- * If not set, route is visible to all.
+ * HTTP routes an account may see (client API, route login of the apps):
+ * an entry restricted to persons and/or groups (user_ids, route_group_acl)
+ * only for the listed persons and the effective members of the listed
+ * groups; an entry without either for everybody. Rules: services/groupAccess.js.
  */
 function getForUser(userId) {
   const db = getDb();
+  const groupAccess = require('./groupAccess');
   const routes = db.prepare("SELECT * FROM routes WHERE enabled = 1 AND (route_type = 'http' OR route_type IS NULL)").all();
-  return routes.filter(r => {
-    if (r.user_ids) {
-      try {
-        const allowed = JSON.parse(r.user_ids);
-        if (Array.isArray(allowed) && allowed.length > 0) {
-          return userId ? allowed.includes(userId) : false;
-        }
-      } catch { /* malformed user_ids JSON → treated as "no restriction" (same as rdpAcl) */ }
-    }
-    return true;
-  });
+  const routeGroups = groupAccess.routeGroupMap();
+  const userGroups = routeGroups.size && userId ? groupAccess.userGroupSet(userId) : new Set();
+  return routes.filter(r => groupAccess.canSeeRoute(r, userId || null, { routeGroups, userGroups }));
+}
+
+// routes.user_ids column value: an array (empty → NULL = nobody picked).
+function userIdsColumn(v) {
+  if (v == null || v === '') return null;
+  if (Array.isArray(v)) return v.length ? JSON.stringify(v) : null;
+  return JSON.stringify(v);
 }
 
 module.exports = {

@@ -299,6 +299,16 @@
         {% endif %}
         </div>
 
+        {# "Wer darf zugreifen?" — groups, persons and (with the peer ACL licence)
+           devices in one field, live list of who gets access (access-picker.js,
+           docs/groups.md "Zugriff per Gruppe"). Persons → user_ids, groups →
+           route_group_acl, devices → route_peer_acl (enforced with the ACL on). #}
+        <div class="rt-ee-card rt-ee-http-only" id="edit-access-card">
+          <div class="rt-ee-ttl" id="edit-access-ttl">{{ t('acc.title') }}</div>
+          <div class="rt-ee-desc">{{ t('acc.desc') if license.features.peer_acl else t('acc.desc_rdp') }}</div>
+          <div id="route-access-picker" data-devices="{{ '1' if license.features.peer_acl else '0' }}" aria-labelledby="edit-access-ttl"></div>
+        </div>
+
         <div class="rt-ee-http-only">
         {% if license.features.peer_acl %}
         <div class="rt-ee-card">
@@ -310,8 +320,7 @@
             <div class="toggle" id="edit-route-acl" data-managed="true" aria-label="{{ t('acl.title') }}"></div>
           </div>
           <div id="edit-acl-fields" style="display:none" class="rt-ee-sub">
-            <div class="rt-label">{{ t('acl.select_peers') }}</div>
-            <div id="edit-acl-peers-list" class="rt-ee-checklist"></div>
+            <div class="rt-hint">{{ t('acc.acl_from_picker') }}</div>
             <div id="edit-acl-hint" class="rt-hint"></div>
           </div>
         </div>
@@ -347,12 +356,6 @@
         {% endif %}
         </div>
 
-        {# Section: Sichtbarkeit (portal) #}
-        <div class="rt-ee-card">
-          <div class="rt-ee-ttl">{{ t('routes.visible_to_users') }}</div>
-          <div class="rt-ee-desc">{{ t('routes.visible_to_users_hint') }}</div>
-          <div id="route-user-ids" class="rt-ee-chips"></div>
-        </div>
       </section>
 
       {# ═══ Anmeldung (HTTPS) ══════════════════════════════ #}

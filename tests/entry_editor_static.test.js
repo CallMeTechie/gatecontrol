@@ -72,7 +72,10 @@ test('entry-editor.js does not depend on the removed routes.js closure state', (
     assert.doesNotMatch(editorJs, new RegExp('\\b' + name + '\\b'), 'entry-editor.js references ' + name);
   }
   assert.match(editorJs, /\/api\/routes\/peers/, 'fetches peers itself');
-  assert.match(editorJs, /\/api\/v1\/users/, 'fetches users itself');
+  // Persons, groups and devices come from the "Wer darf zugreifen?" picker
+  // (access-picker.js → /api/v1/access/principals, docs/groups.md).
+  assert.match(editorJs, /GCAccessPicker\.mount/, 'mounts the access picker');
+  assert.match(read('public', 'js', 'access-picker.js'), /\/api\/v1\/access\/principals/, 'picker fetches the principals');
   assert.match(editorJs, /\/api\/v1\/settings\/domains/, 'fetches domains itself');
   assert.match(editorJs, /'\/api\/routes\/' \+ id\)/, 'fetches GET /api/routes/:id');
 });
@@ -87,7 +90,7 @@ const EDITOR_DYNAMIC_IDS = new Set([
 ]);
 // Ids built as prefix + suffix with prefix 'edit' (setupAclToggle, setupIpFilter, …).
 const EDITOR_PREFIXED_IDS = [
-  'edit-route-acl', 'edit-acl-fields', 'edit-acl-peers-list', 'edit-acl-hint',
+  'edit-route-acl', 'edit-acl-fields', 'edit-acl-hint',
   'edit-route-ip-filter', 'edit-ip-filter-fields', 'edit-ip-filter-mode-group', 'edit-ip-filter-mode',
   'edit-ip-filter-add', 'edit-ip-filter-input', 'edit-ip-filter-type', 'edit-ip-filter-rules-list',
   'edit-route-external', 'edit-route-block-wrap', 'edit-route-block-action', 'edit-route-block-body',
