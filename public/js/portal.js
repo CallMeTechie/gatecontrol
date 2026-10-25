@@ -742,11 +742,19 @@
   // goto = the portal tab (zuhause, fahrzeug, plg-<id>), anchor = the plugin's section in it.
   // Since 1.197.0 a tile may also bring qrImage (a PNG data URL drawn by the server),
   // secret { label, value } (hidden until "Anzeigen") and until (ISO): such a tile is a
-  // card of its own with a countdown, dropped when its time is up; while one is shown
-  // the tiles are asked again every minute (an ended share goes from an open page too).
+  // card of its own with a countdown, dropped when its time is up.
+  // Since 1.198.0 the open Start tab asks for its tiles again by itself — there is no live
+  // channel for the Start tab (the plugin event streams belong to plugin frames): every
+  // minute while the page is visible and Start is the open tab, and at once when the page
+  // or the Start tab comes back into view (at most once per TILE_MIN_GAP_MS). A hidden
+  // page or another tab asks nothing; never two requests at a time. An unchanged answer
+  // keeps the DOM. A new share or one that ended shows within a minute.
   var TILE_STATES = ['on', 'off', 'good', 'warn', 'crit'];
   var TILE_REFRESH_MS = 60000;
+  var TILE_MIN_GAP_MS = 15000;
   var tileTimer = null;
+  var tileBusy = false;
+  var tileAt = 0;
   var tileClock = null;
   var lastTiles = null;
   function tileLeft(ms) {
@@ -817,20 +825,39 @@
     }
     if (!timed && tileClock) { clearInterval(tileClock); tileClock = null; }
   }
+  /** Is the Start tab what the person sees right now? */
+  function startShown() {
+    var p = $('panel-start');
+    return !doc.hidden && !!p && !p.hidden;
+  }
+  /** The next round in a minute; it only asks when Start is in view (else it waits for it). */
+  function scheduleTiles() {
+    clearTimeout(tileTimer);
+    tileTimer = setTimeout(function () {
+      tileTimer = null;
+      if (startShown()) loadPluginStart();
+    }, TILE_REFRESH_MS);
+  }
+  /** Start came into view (page visible again, focus, the tab opened): ask now unless just asked. */
+  function tilesBack() {
+    if (!TABS.plugins || !startShown()) return;
+    if (Date.now() - tileAt < TILE_MIN_GAP_MS) { if (!tileTimer && !tileBusy) scheduleTiles(); return; }
+    loadPluginStart();
+  }
   function loadPluginStart() {
-    if (!TABS.plugins) return;
+    if (!TABS.plugins || tileBusy) return;
     clearTimeout(tileTimer);
     tileTimer = null;
+    tileBusy = true;
+    tileAt = Date.now();
     getJson('/api/v1/portal/plugins/start').then(function (res) {
       var list = res && res.status === 200 && res.body && Array.isArray(res.body.tiles) ? res.body.tiles : [];
       var same = JSON.stringify(list) === lastTiles; // unchanged: keep the DOM (a password shown stays shown)
       lastTiles = JSON.stringify(list);
       var by = {};
-      var rich = false;
       list.forEach(function (t) {
         if (!t || typeof t.goto !== 'string' || !/^[a-z0-9-]{1,80}$/.test(t.goto)) return;
         (by[t.goto] = by[t.goto] || []).push(t);
-        if (typeof t.qrImage === 'string' || typeof t.until === 'string' || t.secret) rich = true;
       });
       if (!same) {
         // a card that had tiles before and has none now (a refresh) is hidden again
@@ -855,12 +882,14 @@
       }
       tickTiles();
       if (!tileClock && doc.querySelector('.pt-plg-qr')) tileClock = setInterval(tickTiles, 1000);
-      if (rich) tileTimer = setTimeout(function again() {
-        if (doc.hidden) { tileTimer = setTimeout(again, TILE_REFRESH_MS); return; }
-        loadPluginStart();
-      }, TILE_REFRESH_MS);
-    }).catch(function () { /* tiles are optional */ });
+    }).catch(function () { /* tiles are optional */ }).then(function () {
+      tileBusy = false;
+      scheduleTiles();
+    });
   }
+  doc.addEventListener('visibilitychange', function () { if (!doc.hidden) tilesBack(); });
+  window.addEventListener('focus', tilesBack);
+  onPanel(function (id) { if (id === 'start') tilesBack(); });
 
   // ═══ Search (start) ═════════════════════════════════════════════════════
   (function wireSearch() {

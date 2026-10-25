@@ -1752,10 +1752,16 @@ disable/uninstall and when the server shuts down.
       one more than 400 days ahead is ignored.
 
     Such a tile is a card across the Start card's width (title linked like
-    any tile, the picture ~200 px, the line, the countdown). While one is
-    shown, the portal asks for the tiles again every minute (not while the
-    page is hidden), so a tile the plugin stops sending goes from an open page
-    within a minute; an unchanged answer leaves the cards as they are. An
+    any tile, the picture ~200 px, the line, the countdown). An unchanged
+    answer leaves the cards as they are.
+  * **The open Start tab stays current** (since 1.198.0): there is no live
+    channel for Start, so the portal asks for every plugin's tiles again
+    every minute while the page is visible and Start is the open tab, and at
+    once when the page or the Start tab comes back into view (at most once
+    per 15 s; never two requests at a time; a hidden page or another tab asks
+    nothing). A tile a plugin starts or stops sending shows or goes within a
+    minute — keep `portalTiles` cheap (it runs about once a minute per open
+    Start tab, within the plugin API's rate limit). An
     invalid extra is dropped, never the tile. Everything on a tile is visible
     to whoever looks at that screen — answer it only for viewers that may see
     it (e.g. `user.loggedIn === true`, not `user.kiosk`, not `user.app`).
