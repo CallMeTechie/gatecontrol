@@ -43,6 +43,15 @@
 // at once; one without asks the person to press "Kamera starten" first, and
 // is refused (no_gesture) when it repeats within 10 s. A new document in the
 // frame (gc-hello) ends its scan.
+//
+// Viewport (since 1.199.0): every frame learns the height it can take
+// without the page scrolling — the window's height minus what stands above
+// the frame and below it on the page (gc-viewport { height, width }; in the
+// frame window.GC.viewport, the CSS variable --gc-viewport-height on its
+// root and a `gc:viewport` event). Sent on load, a new document, a resize of
+// the window, and when the page around the frame changes (a banner, the
+// frame shown in another tab); only when the value changes. A frame that
+// does not use it still grows with its content as before.
 (function () {
   const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
   const MAX_UPLOAD = 100 * 1024 * 1024;
@@ -267,6 +276,56 @@
 
     function sendTheme() { reply({ type: 'gc-theme', theme: theme() }); }
 
+    // GC.viewport: the height this frame can take without the page scrolling.
+    // The end of the page's content (viewport coordinates): the lowest of
+    // body's children with their bottom margins, plus body's own padding and
+    // margin — not scrollHeight, which a body with min-height: 100vh (the
+    // portal) never lets go below the window.
+    function contentBottom() {
+      const body = document.body;
+      if (!body) return 0;
+      let end = body.getBoundingClientRect().top;
+      for (const el of body.children) {
+        if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE') continue;
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.position === 'fixed' || cs.position === 'absolute') continue;
+        end = Math.max(end, el.getBoundingClientRect().bottom + (parseFloat(cs.marginBottom) || 0));
+      }
+      const bs = getComputedStyle(body);
+      return end + (parseFloat(bs.paddingBottom) || 0) + (parseFloat(bs.borderBottomWidth) || 0) + (parseFloat(bs.marginBottom) || 0);
+    }
+    let lastView = '';
+    function sendViewport(force) {
+      if (!frame.isConnected || !frame.offsetParent) return; // not shown (another tab): later
+      const r = frame.getBoundingClientRect();
+      const top = r.top + window.scrollY;
+      const below = Math.max(0, contentBottom() - r.bottom);
+      const height = Math.max(200, Math.min(20000, Math.floor(window.innerHeight - top - below)));
+      const width = Math.max(0, Math.floor(r.width));
+      const key = height + 'x' + width;
+      if (!force && key === lastView) return;
+      lastView = key;
+      reply({ type: 'gc-viewport', height, width });
+    }
+    let viewQueued = false;
+    function viewSoon() {
+      if (viewQueued) return;
+      viewQueued = true;
+      (window.requestAnimationFrame || setTimeout)(() => { viewQueued = false; sendViewport(false); });
+    }
+    window.addEventListener('resize', viewSoon);
+    if (window.ResizeObserver) {
+      // the frame itself (shown in another tab, its width) and what stands around it: body's children (a
+      // banner above, a list below) — body alone would not do with min-height: 100vh
+      const ro = new ResizeObserver(viewSoon);
+      ro.observe(frame);
+      if (document.body) {
+        ro.observe(document.body);
+        for (const el of document.body.children) ro.observe(el);
+        new MutationObserver(() => { for (const el of document.body.children) ro.observe(el); viewSoon(); }).observe(document.body, { childList: true });
+      }
+    }
+
     // A dialog open in the frame (gc-modal): dim this page around the frame
     // the way the plugin dims its own frame, so the dialog reads as a dialog
     // of the whole page. A shadow of an element laid over the frame, above
@@ -353,6 +412,7 @@
         setInbox(false);
         endScan();
         sendTheme();
+        sendViewport(true);
       }
       else if (m.type === 'gc-settings') {
         if (pluginId && !base.includes('/portal/')) window.location.assign('/settings/plugins/manage/' + encodeURIComponent(pluginId) + '?tab=settings');
@@ -362,7 +422,7 @@
         if (target && pluginId && !base.includes('/portal/')) window.location.assign('/plugins/' + encodeURIComponent(pluginId) + '/' + encodeURIComponent(target));
       }
     });
-    frame.addEventListener('load', () => { setModal(false); sendTheme(); });
+    frame.addEventListener('load', () => { setModal(false); sendTheme(); sendViewport(true); });
     new MutationObserver(sendTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   }
 

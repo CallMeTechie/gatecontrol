@@ -30,7 +30,7 @@
 {% if tabs.plugins %}<script src="/js/qr-scan.js?v={{ appVersion }}" defer></script>
 <script src="/js/plugin-bridge.js?v={{ appVersion }}" defer></script>{% endif %}
 </head>
-<body class="pt-body">
+<body class="pt-body{% if kiosk %} pt-kiosk{% endif %}">
 <a class="pt-skip" href="#pt-main">{{ t('portal.skip') }}</a>
 
 {%- set ICONS = {
