@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.199.0] — 2026-10-25
 
 ### Features
 - Plugin-Fenster erfahren, wie hoch sie sein dürfen, ohne dass die Seite scrollt (`GC.viewport`, CSS-Variable `--gc-viewport-height`, Ereignis `gc:viewport`): Fensterhöhe minus das, was über und unter dem Plugin-Fenster steht – neu bei Größenänderung, einem Banner darüber oder wenn das Fenster in einem anderen Tab sichtbar wird. So kann die Familie-Wand auf großen und kleinen Tablets genau den Bildschirm füllen. Ein Kiosk-Gerät zeigt im Portal keine Fußzeile mehr und hat unten weniger Rand.
