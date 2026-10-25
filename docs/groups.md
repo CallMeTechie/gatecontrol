@@ -62,7 +62,7 @@ Every group has a source:
 
 - **local** — created in GateControl (by hand or with the CSV import).
 - **directory** — comes from Active Directory, Entra ID or LDAP (directory
-  sync). Name, structure and the members from the directory are read-only
+  sync, see "Verzeichnis-Abgleich und Anmeldung"). Name, structure and the members from the directory are read-only
   here and are changed in the directory. You can still give **GateControl
   roles** (lead, deputy, group admin) and add **extra local members** (e.g. an
   external tax office); these are marked "GateControl" and the directory
@@ -249,6 +249,235 @@ restored with their original ids (`user_ref`), so `user_ids` lists, group
 members and plugin data still name the same person; an id the backup does not
 know becomes `0` (nobody). A backup without the groups section leaves the
 groups as they are.
+
+## Verzeichnis-Abgleich und Anmeldung
+
+GateControl takes accounts and groups from the company directory —
+**Active Directory**, **Microsoft Entra ID** or a generic **LDAP** server
+(OpenLDAP, Synology Directory Server, FreeIPA) — and lets those people sign in
+with their company account. The admin page is **Benutzer › Verzeichnis**
+(`/directory`, a sub-item next to Gruppen). Google Workspace is not supported
+yet.
+
+**Admin rights never come from the directory.** The sync only creates member
+accounts (role `user`), never disables, enables or merges an administrator, and
+local administrators always sign in with their local password — also when the
+directory is down.
+
+### What the sync does
+
+- **Selected groups only.** On the page you search the directory's groups and
+  tick the ones that come to GateControl. Every selected group becomes one
+  GateControl group (kind *Team*, source `directory:<id>`, `external_id` =
+  objectGUID / Entra object id / entryUUID). Nested directory groups are
+  **resolved transitively** (AD: `LDAP_MATCHING_RULE_IN_CHAIN`; Entra:
+  `transitiveMembers`; LDAP: DN members that are groups are followed, ≤ 10
+  levels): members of a nested group count as members of the selected group.
+  The GateControl tree stays **flat** below an optional *übergeordnete Gruppe*
+  (a local group) — directory nesting is often deep and would collide with the
+  3-level limit, so it is not mirrored. A name that is already taken at that
+  level gets the suffix ` (<directory name>)`. A group renamed in the directory
+  is renamed here; a group taken out of the selection (or deleted in the
+  directory) is **archived** and comes back when it is selected again.
+- **Accounts.** Whoever is an enabled member of at least one selected group
+  gets an account with role `user` when **Konten automatisch anlegen** is on
+  (user name from sAMAccountName / uid / the UPN's local part, `-2`, `-3` …
+  when taken). With company-account sign-in on, "Mein Bereich" is switched on
+  and no invitation is needed; otherwise an invitation to "Mein Bereich" is
+  mailed (when SMTP is set up and the person has an address). Name and e-mail
+  follow the directory.
+- **Matching.** The stable id is kept in `directory_links`. The first time a
+  person is seen, GateControl looks for an account with the same **e-mail
+  address**: if one exists, it never links silently but records a
+  **conflict** — *Zusammenführen* links the existing account (members only;
+  administrators always stay local), *Getrennt lassen* leaves it alone and the
+  directory person gets an own account at the next run.
+- **Disabling.** With **Im Verzeichnis deaktiviert = in GateControl gesperrt**
+  on, a linked account is disabled (`users.disabled_reason = 'directory'`)
+  when the person is disabled or deleted in the directory or is in none of the
+  selected groups any more. At once: all web and portal sessions end, the
+  person's app/API tokens are revoked, and the person's **VPN peers** (peers
+  they own and peers bound to their app tokens, never gateways) are disabled
+  and removed from WireGuard. When the person is active again, the account and
+  exactly the peers the sync disabled are enabled again — the revoked tokens
+  are not (the apps register again). An account an admin disabled by hand is
+  never enabled by the sync. Group memberships of disabled accounts rest as
+  everywhere.
+- **Group members.** Members that come from the directory are read-only in
+  GateControl (source `directory:<id>`). GateControl roles (lead, deputy,
+  group admin) and extra local members can still be given; the directory
+  never removes them.
+- **Mass-change guard.** If a run would disable **more than 10 % of the
+  linked accounts (at least 3)** or every selected group comes back empty,
+  nothing is changed: the run stops as *angehalten* and the page shows who
+  would be disabled. **Bestätigen und ausführen** runs the sync again and
+  applies exactly that — if more people would be affected by then, it stops
+  again. **Verwerfen** drops it. While a run waits, the schedule pauses
+  ("Jetzt abgleichen" still works).
+- **Directory unreachable** (network, TLS, credentials): the run fails and
+  **nothing changes**.
+- **Schedule.** Every 15 minutes by default (5–1440) and with **Jetzt
+  abgleichen**. Version 1 reads the full member lists on every run (no Entra
+  delta query / uSNChanged yet), so every run is a full sync and a full sync
+  happens at least every 24 h.
+- **Logs.** Every run is kept with its result (new accounts, disabled,
+  enabled, group changes, conflicts, warnings, errors; the last 50 per
+  directory) and shown under *Letzte Abgleiche*. The activity log gets an
+  entry for every created account (`user_created`), every disable/enable
+  (`user_toggled`, details `reason: 'directory'`), merge
+  (`directory_user_linked`), conflict (`directory_conflict`), stopped run
+  (`directory_sync_pending`) and failure (`directory_sync_failed`).
+- **The user profile** shows the account source (local or the directory with
+  the sign-in name) and why an account is disabled.
+- Deleting a directory account in GateControl does not remove the person from
+  the directory: while they are in a selected group, the next run creates the
+  account again. Take them out of the group in the directory instead (or
+  switch "Konten automatisch anlegen" off).
+- Removing a directory (**Trennen**, name typed) archives its groups and turns
+  them into local groups; the accounts stay as local accounts without a
+  password, disabled ones stay disabled.
+
+### Sign-in with the company account
+
+- **Active Directory / LDAP:** with **Anmeldung mit dem Windows-Passwort**
+  (LDAP: *Verzeichnis-Passwort*) on, the normal login form accepts for
+  directory accounts the user name, the Windows sign-in name, `DOMAIN\name`,
+  the UPN or the e-mail address. GateControl looks the person up with the
+  service account by the stable id and checks the password with an **LDAP
+  bind** as that person; the password is only passed through and never
+  stored. An **empty password is refused before the directory is contacted**
+  (an empty bind counts as anonymous and "successful" on some servers), login
+  names are only accepted in a fixed format and every value in an LDAP filter
+  is escaped (RFC 4515). The existing lockout (per account and per address)
+  and rate limits apply; GateControl's own 2FA and passkeys are still required
+  when the person set them up. A directory that cannot be reached gives a
+  clear message and is not counted as a wrong password.
+- **Entra ID:** with **„Mit Microsoft anmelden“** on, the login page shows the
+  button. It runs the OpenID Connect **authorization code flow with PKCE**,
+  `state` and `nonce` (`/auth/oidc/<id>/start` → Microsoft →
+  `/auth/oidc/<id>/callback`). The ID token is verified (RS256 with the
+  tenant's JWKS, issuer, audience = client id, expiry, not-before, nonce, the
+  configured **tenant id**) and mapped to the account by its **object id
+  (`oid`) only, never by e-mail**. Only accounts the sync created or linked
+  can sign in; MFA is Microsoft's job (GateControl's own TOTP still follows
+  when the person switched it on). Entra accounts cannot use the password
+  form. The login transaction lives 10 minutes, is single use and is bound to
+  the browser by the cookie `gc.oidc` (HttpOnly, SameSite=Lax — the session
+  cookie is SameSite=Strict, so the callback continues with a short same-site
+  page).
+- Applies to web sessions of members ("Mein Bereich") and the portal.
+  Administrators are never directory accounts and keep signing in locally.
+- **Apps:** the apps are set up with setup codes and open the portal with
+  their login link; there is no username/password flow in the apps today.
+  A directory member signs in on the web with the company account and — when
+  an admin allowed *eigene Geräte einrichten* — creates the setup code there.
+  A native "Mit Firmenkonto anmelden" button in the Android / Windows setup
+  (browser sign-in that hands the token to the app) and the kiosk pairing are
+  a follow-up.
+
+### Setting up
+
+**Reachability.** GateControl must reach the domain controller / LDAP server
+as `host:port`: directly, through a peer's VPN address, or through an L4 route
+of a gateway in the home network (like other home targets). When the
+certificate names another host than the address you enter, put that name into
+*Name im Zertifikat*. Only **LDAPS** (636) or **StartTLS** (389) is accepted;
+the certificate is always verified — upload your own CA (PEM) for an internal
+CA such as AD Certificate Services.
+
+**Active Directory**
+
+1. Create a service account with read rights (a normal domain user is
+   enough), e.g. `CN=svc-gatecontrol,OU=Dienste,DC=corp,DC=local`.
+2. *Verzeichnis verbinden* → Active Directory: server, encryption, port,
+   service account and password, base DN (optionally separate bases for
+   accounts and groups), CA certificate if needed. *Verbindung testen*.
+3. Search and tick the groups, choose the options, *Jetzt abgleichen*.
+
+Attributes used: `objectGUID` (id), `sAMAccountName` and `userPrincipalName`
+(sign-in), `mail`, `displayName` (or `givenName sn`), `userAccountControl`
+(bit 2 = disabled), groups `objectClass=group` with `cn`.
+
+**Microsoft Entra ID**
+
+1. Entra admin center → *App registrations* → *New registration* (single
+   tenant). Note the **Application (client) ID** and the **Directory
+   (tenant) ID**.
+2. *Certificates & secrets* → new **client secret**; copy the value.
+3. *API permissions* → Microsoft Graph → **Application permissions**
+   **`User.Read.All`** and **`GroupMember.Read.All`** → *Grant admin
+   consent*.
+4. For "Mit Microsoft anmelden": *Authentication* → *Add a platform* → **Web**,
+   redirect URI `https://<GC_BASE_URL host>/auth/oidc/<id>/callback` (shown on
+   the directory page after saving; the delegated permissions `openid`,
+   `profile`, `email` are standard).
+5. In GateControl: tenant id, client id, client secret; test; pick groups.
+
+**LDAP (OpenLDAP, Synology Directory Server, FreeIPA)**
+
+Server, encryption, service account (e.g. `uid=root,cn=users,dc=nas,dc=local`
+on Synology) and base DN as above. The attribute mapping (*Attribut-
+Zuordnung*) defaults to OpenLDAP / Synology:
+
+| Field | Default | Notes |
+|---|---|---|
+| Stable id (account) | `entryUUID` | FreeIPA: `ipaUniqueID`; `objectGUID` (Samba) works too |
+| Sign-in name | `uid` | |
+| E-mail | `mail` | |
+| Display name | `displayName` | falls back to `cn` |
+| Stable id (group) | `entryUUID` | |
+| Group name | `cn` | |
+| Member attribute | `member` | `member` / `uniqueMember` (DNs) or `memberUid` (posixGroup, sign-in names; Synology) |
+| Disabled attribute | — | e.g. `nsAccountLock` (FreeIPA, 389 DS) or `pwdAccountLockedTime` (OpenLDAP ppolicy) |
+| Account filter | `(\|(objectClass=inetOrgPerson)(objectClass=posixAccount))` | |
+| Group filter | `(\|(objectClass=groupOfNames)(objectClass=groupOfUniqueNames)(objectClass=posixGroup))` | |
+
+**Secrets.** The bind password and the Entra client secret are stored
+encrypted with the server key (`GC_ENCRYPTION_KEY`, like licence keys) and are
+never returned by the API or shown in the UI (only a mask); leaving the field
+empty keeps the stored value. The directory settings are not part of the
+server backup yet — after a restore, connect the directory again (the accounts
+are matched again by e-mail → conflicts to merge).
+
+### Directory API
+
+Admin session only (like `/api/v1/groups`); API tokens get 403. Writes need
+the session's CSRF token.
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/v1/directories` | list with state, counts, last run, waiting run |
+| POST | `/api/v1/directories` | `{ kind: 'ad'\|'entra'\|'ldap', name, config, secret, enabled, loginEnabled, provision, deprovision, intervalMin, parentGroupId, selectedGroups }` |
+| POST | `/api/v1/directories/test` | test unsaved settings `{ kind, config, secret[, id] }` (stored secret used when `id` is given and `secret` is empty) |
+| GET / PATCH / DELETE | `/api/v1/directories/:id` | read / change (`secret` empty or absent = keep) / remove (`?confirm=<name>`) |
+| POST | `/api/v1/directories/:id/test` | connection test with the stored settings → `{ ok, result }` or `{ ok: false, code, error, detail }` |
+| GET | `/api/v1/directories/:id/groups?q=` | search groups in the directory (`selected` marks the chosen ones) |
+| POST | `/api/v1/directories/:id/sync` | run now (202, in the background) |
+| GET | `/api/v1/directories/:id/runs`, `/runs/:runId` | last runs / one run with details |
+| POST | `/api/v1/directories/:id/runs/:runId/confirm`, `/discard` | decide a stopped mass change |
+| GET | `/api/v1/directories/:id/conflicts[?status=all]` | open (or all) conflicts |
+| POST | `/api/v1/directories/:id/conflicts/:conflictId/merge`, `/separate` | decide a conflict |
+
+`config` per kind — AD: `host, port, security ('ldaps'|'starttls'),
+tlsServerName, caCert, baseDn, userBaseDn, groupBaseDn, bindDn`; LDAP: the same
+plus `userFilter, groupFilter, attrs { id, login, email, name, groupId,
+groupName, member, disabled }`; Entra: `tenantId, clientId` (GUIDs). Errors
+carry a `code` (`NOT_FOUND`, `INVALID_*`, `CONFIRM_MISMATCH`, `RUNNING`,
+`RUN_NOT_PENDING`, `CONFLICT_RESOLVED`, `ALREADY_LINKED`,
+`ADMIN_NOT_MERGEABLE`, …). The user detail (`GET /api/v1/users/:id`) carries
+`directory: { id, name, kind, loginName, state, lastSeenAt } | null`.
+
+Sign-in: `GET /auth/oidc/:directoryId/start[?returnTo=/portal…]` and
+`GET /auth/oidc/:directoryId/callback`.
+
+For developers: `src/services/directory/` — `store.js` (connections, secrets),
+`sync.js` (plan → guard → apply, runs, conflicts, scheduler tick
+`runDue()` every minute from `server.js`), `adapters.js` (the adapter
+interface: `test`, `searchGroups`, `fetch`, `authenticate`; tests install
+fakes), `ad.js` / `ldap.js` (ldapts, `ldapConn.js`, `ldapUtil.js`),
+`entra.js` (Graph), `auth.js` (password form), `oidc.js` (code flow, ID-token
+verification with Node's `crypto`). Tables: `directories`, `directory_links`,
+`directory_conflicts`, `directory_runs` (migration 110).
 
 ## Admin API
 

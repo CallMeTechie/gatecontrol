@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="{{ language }}" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  {#- Company-account sign-in (routes/oidc.js): the callback continues with a
+      same-site navigation so the SameSite=Strict session cookie is sent.
+      `target` is always one of our own paths. -#}
+  <meta http-equiv="refresh" content="0;url={{ target }}">
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title>{{ t('auth.login') }} — {{ appName }}</title>
+  <link rel="stylesheet" href="/css/app.css?v={{ appVersion }}">
+</head>
+<body class="au-page">
+  <main class="au-wrap">
+    <div class="card au-card">
+      <p class="au-sub">{{ t('auth.oidc.continue') }}</p>
+      <a class="btn btn-primary au-submit" href="{{ target }}">{{ t('auth.oidc.continue_button') }}</a>
+    </div>
+  </main>
+</body>
+</html>

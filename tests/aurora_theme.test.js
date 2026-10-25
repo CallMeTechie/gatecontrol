@@ -24,7 +24,7 @@ after(() => teardown());
 // dns/pihole are feature-gated (not unlocked in setup) → verified manually.
 const PAGES = [
   '/dashboard', '/peers', '/routes', '/gateways', '/gateway-pools',
-  '/rdp', '/certificates', '/users', '/groups', '/logs', '/settings', '/profile',
+  '/rdp', '/certificates', '/users', '/groups', '/directory', '/logs', '/settings', '/profile',
 ];
 
 describe('aurora theme — every page renders', () => {

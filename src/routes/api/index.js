@@ -64,6 +64,8 @@ router.use('/notify', require('./notify'));
 router.use('/users', require('./users'));
 // Person groups (docs/groups.md): admin session only, like /users
 router.use('/groups', require('./groups'));
+// Directory sync (docs/groups.md "Verzeichnis-Abgleich und Anmeldung"): admin session only
+router.use('/directories', require('./directories'));
 // "Wer darf zugreifen?": principals + preview for the route/RDP dialogs (admin session)
 router.use('/access', require('./access'));
 // Picker for groups and people of plugin frames (GC.pickPrincipals): admin session only

@@ -36,6 +36,22 @@ function groupsOf(id) {
   }
 }
 
+/** The directory an account belongs to (null = local account). */
+function directoryOf(id) {
+  try {
+    const row = require('../../db/connection').getDb().prepare(`SELECT l.directory_id, l.login_name, l.upn, l.state, l.last_seen_at,
+        l.linked_at, d.name, d.kind FROM directory_links l JOIN directories d ON d.id = l.directory_id WHERE l.user_id = ?`).get(id);
+    if (!row) return null;
+    return {
+      id: row.directory_id, name: row.name, kind: row.kind, loginName: row.login_name || row.upn || null,
+      state: row.state, lastSeenAt: row.last_seen_at, linkedAt: row.linked_at,
+    };
+  } catch (err) {
+    logger.warn({ err: err.message }, 'directory of user unavailable');
+    return null;
+  }
+}
+
 function parseId(req) {
   const id = Number.parseInt(req.params.id, 10);
   return Number.isSafeInteger(id) && id > 0 ? id : null;
@@ -188,6 +204,8 @@ router.get('/:id', (req, res) => {
       machine_binding: tokens.machineBindingState(),
       // Person groups with role; inherited ones (from a subgroup) direct: false.
       groups: groupsOf(id),
+      // Source of the account (docs/groups.md "Verzeichnis-Abgleich"): null = local.
+      directory: directoryOf(id),
     });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get user');

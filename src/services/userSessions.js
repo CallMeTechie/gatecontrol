@@ -56,7 +56,7 @@ function list(userId, currentSid = null) {
     return {
       ref: refOf(r.sid),
       current: currentSid != null && r.sid === currentSid,
-      method: ['password', 'totp', 'passkey'].includes(d.authMethod) ? d.authMethod : null,
+      method: ['password', 'totp', 'passkey', 'oidc'].includes(d.authMethod) ? d.authMethod : null,
       since: Number(d.authAt) || null,
       browser: agent.browser,
       os: agent.os,
