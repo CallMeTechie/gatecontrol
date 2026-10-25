@@ -28,7 +28,8 @@
 <script src="/js/avatar-edit.js?v={{ appVersion }}" defer></script>
 <script src="/js/portal.js?v={{ appVersion }}" defer></script>
 {% if tabs.plugins %}<script src="/js/qr-scan.js?v={{ appVersion }}" defer></script>
-<script src="/js/plugin-bridge.js?v={{ appVersion }}" defer></script>{% endif %}
+<script src="/js/plugin-bridge.js?v={{ appVersion }}" defer></script>
+<script src="/js/principal-picker.js?v={{ appVersion }}" defer></script>{% endif %}
 </head>
 <body class="pt-body{% if kiosk %} pt-kiosk{% endif %}">
 <a class="pt-skip" href="#pt-main">{{ t('portal.skip') }}</a>
@@ -39,13 +40,14 @@
   zuhause: 'M9 21V12h6v9M3 10l9-7 9 7v11H3z',
   fahrzeug: 'M5 16l1.5-5h11L19 16M4 16h16v3H4zM7 19v2M17 19v2',
   netzwerk: 'M3 17l5-5 4 4 8-8',
-  geraete: 'M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2'
+  geraete: 'M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2',
+  gruppen: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75'
 } %}
 {#- A plugin's section in a GateControl tab (docs/plugins.md "Portal"): its own sandboxed frame. -#}
 {%- macro pluginSection(sec, cls) %}
       <section class="pt-plugin-section{{ ' ' + cls if cls }}" id="pt-sec-{{ sec.key }}" data-area="{{ sec.key }}" data-plugin="{{ sec.plugin }}" aria-label="{{ sec.title }}">
         <iframe class="pt-plugin-frame" title="{{ sec.title }}" src="/portal/plugins/{{ sec.plugin }}/frame?section={{ sec.id }}" sandbox="allow-scripts allow-forms{% if sec.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}{% if sec.media %} allow-downloads{% endif %}" referrerpolicy="no-referrer" loading="lazy"{% if sec.allow %} allow="{{ sec.allow }}"{% endif %}
-          data-plugin-frame data-plugin-id="{{ sec.plugin }}" data-plugin-api="/api/v1/portal/plugins/{{ sec.plugin }}/api/" data-plugin-pages="[]"{% if sec.events %} data-plugin-events{% endif %}{% if sec.inbox %} data-plugin-inbox{% endif %}{% if sec.scanQr %} data-plugin-scanqr data-plugin-name="{{ sec.name }}"{% endif %}></iframe>
+          data-plugin-frame data-plugin-id="{{ sec.plugin }}" data-plugin-api="/api/v1/portal/plugins/{{ sec.plugin }}/api/" data-plugin-pages="[]"{% if sec.events %} data-plugin-events{% endif %}{% if sec.inbox %} data-plugin-inbox{% endif %}{% if sec.scanQr %} data-plugin-scanqr data-plugin-name="{{ sec.name }}"{% endif %}{% if sec.groups %} data-plugin-groups{% if not sec.scanQr %} data-plugin-name="{{ sec.name }}"{% endif %}{% endif %}></iframe>
       </section>
 {%- endmacro %}
 {%- set TABS = [
@@ -54,7 +56,8 @@
   ['zuhause', 'portal.tab.home', tabs.home],
   ['fahrzeug', 'portal.tab.car', tabs.car],
   ['netzwerk', 'portal.tab.net', tabs.net],
-  ['geraete', 'portal.tab.devices', tabs.devices]
+  ['geraete', 'portal.tab.devices', tabs.devices],
+  ['gruppen', 'portal.tab.groups', tabs.groups]
 ] %}
 
 <header class="pt-header">
@@ -378,6 +381,21 @@
   </section>
   {% endif %}
 
+  {# ═══ Meine Gruppen (docs/groups.md "Portal") ═════════════════════════
+     Own groups; leads and group admins maintain theirs. Data:
+     /api/v1/portal/groups (public/js/portal.js "Meine Gruppen"). #}
+  {% if tabs.groups %}
+  <section class="pt-panel" id="panel-gruppen" role="tabpanel" aria-labelledby="tab-gruppen" tabindex="0" data-panel="gruppen" hidden>
+    <h1 class="pt-h1 pt-h1-sm">{{ t('portal.groups.title') }}</h1>
+    <p class="pt-lead">{{ t('portal.groups.lead') }}</p>
+    <div class="pt-grp-chips" id="pt-grp-chips" role="group" aria-label="{{ t('portal.groups.title') }}"><div class="pt-empty">{{ t('portal.loading') }}</div></div>
+    <div class="pt-grp-layout" id="pt-grp-layout" hidden>
+      <section class="pt-card pt-pad pt-grp-main" id="pt-grp-main" aria-live="polite"></section>
+      <div class="pt-grp-side" id="pt-grp-side"></div>
+    </div>
+  </section>
+  {% endif %}
+
   {#- ═══ Mitteilungen + Meine Benachrichtigungen (notification center) ═══
       Pages without a tab of their own: the bell, the card in "Meine Geräte"
       and links lead here; URL-addressable (#mitteilungen,
@@ -449,7 +467,7 @@
   <section class="pt-panel" id="panel-{{ pt.key }}" role="tabpanel" aria-labelledby="tab-{{ pt.key }}" tabindex="0" data-panel="{{ pt.key }}" hidden>
     <h1 class="pt-h1 pt-h1-sm">{{ pt.label }}</h1>
     <iframe class="pt-plugin-frame" title="{{ pt.label }}" src="/portal/plugins/{{ pt.id }}/frame" sandbox="allow-scripts allow-forms{% if pt.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}{% if pt.media %} allow-downloads{% endif %}" referrerpolicy="no-referrer" loading="lazy"{% if pt.allow %} allow="{{ pt.allow }}"{% endif %}
-      data-plugin-frame data-plugin-id="{{ pt.id }}" data-plugin-api="/api/v1/portal/plugins/{{ pt.id }}/api/" data-plugin-pages="[]"{% if pt.events %} data-plugin-events{% endif %}{% if pt.inbox %} data-plugin-inbox{% endif %}{% if pt.scanQr %} data-plugin-scanqr data-plugin-name="{{ pt.name }}"{% endif %}></iframe>
+      data-plugin-frame data-plugin-id="{{ pt.id }}" data-plugin-api="/api/v1/portal/plugins/{{ pt.id }}/api/" data-plugin-pages="[]"{% if pt.events %} data-plugin-events{% endif %}{% if pt.inbox %} data-plugin-inbox{% endif %}{% if pt.scanQr %} data-plugin-scanqr data-plugin-name="{{ pt.name }}"{% endif %}{% if pt.groups %} data-plugin-groups{% if not pt.scanQr %} data-plugin-name="{{ pt.name }}"{% endif %}{% endif %}></iframe>
   </section>
   {%- endfor %}
 </main>

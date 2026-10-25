@@ -496,6 +496,26 @@ button, input, select { font: inherit; color: inherit; }
 .gc-qr-privacy { margin: 0; color: var(--faint); font-size: 12px; }
 .gc-qr-switch { margin-right: auto; }
 .gc-qr-switch[hidden] { display: none; }
+/* Picker for groups and people of the plugin frames (GC.pickPrincipals, public/js/principal-picker.js) */
+.gc-pp-box { width: min(560px, 100%); }
+.gc-pp-head { display: flex; flex-direction: column; gap: 2px; }
+.gc-pp-sub { margin: 0; }
+.gc-pp-body { display: flex; flex-direction: column; gap: 10px; }
+.gc-pp-search { width: 100%; min-height: 42px; padding: 0 12px; border-radius: var(--r-sm); border: 1px solid var(--line-2); background: var(--input); color: var(--text); font: 15px var(--font-body); }
+.gc-pp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.gc-pp-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 12px; border-radius: 999px; border: 1px solid var(--accent-bd); background: var(--accent-soft); color: var(--text); font-size: 13px; }
+.gc-pp-chip-x { border: 0; background: transparent; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 4px; }
+.gc-pp-none { color: var(--faint); font-size: 12.5px; }
+.gc-pp-list { list-style: none; margin: 0; padding: 0; max-height: min(46vh, 380px); overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.gc-pp-opt { width: 100%; display: flex; align-items: baseline; gap: 10px; padding: 10px 12px; border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; color: var(--text); font: 500 14px var(--font-body); text-align: left; cursor: pointer; }
+.gc-pp-opt:hover { background: var(--chip); }
+.gc-pp-opt:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+.gc-pp-opt.is-on { border-color: var(--accent-bd); background: var(--accent-soft); }
+.gc-pp-kind { flex: 0 0 auto; min-width: 52px; color: var(--muted); font-size: 11.5px; }
+.gc-pp-label { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.gc-pp-sub2 { flex: 0 0 auto; color: var(--faint); font-size: 12px; }
+.gc-pp-status { margin: 0; min-height: 1.2em; color: var(--muted); font-size: 13.5px; }
+.gc-pp-privacy { margin: 0; color: var(--faint); font-size: 12px; }
 /* Plugin sections in GateControl tabs and their Start tiles (docs/plugins.md "Portal") */
 .pt-plugin-section { min-width: 0; }
 .pt-plugin-section .pt-plugin-frame { min-height: 160px; }
@@ -560,3 +580,41 @@ button, input, select { font: inherit; color: inherit; }
    Familie wall) gets the screen's height through --gc-viewport-height (public/js/plugin-bridge.js). */
 .pt-kiosk .pt-footer { display: none; }
 .pt-kiosk .pt-main { padding-bottom: 16px; }
+
+/* ============ Meine Gruppen (docs/groups.md "Portal", public/js/portal.js) ============ */
+.pt-grp-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.pt-grp-chip { min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--chip); color: var(--text); font: 500 13px var(--font-body); cursor: pointer; overflow-wrap: anywhere; text-align: left; }
+.pt-grp-chip:hover { border-color: var(--accent-bd); }
+.pt-grp-chip.is-on { border-color: var(--accent-bd); background: var(--accent-soft); color: var(--accent-text); font-weight: 700; }
+.pt-grp-chip:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.pt-grp-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 320px); gap: 16px; align-items: start; }
+.pt-grp-layout[hidden] { display: none; }
+.pt-grp-main, .pt-grp-card { min-width: 0; }
+.pt-grp-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.pt-grp-sub { margin: 4px 0 0; }
+.pt-grp-h3 { margin: 18px 0 8px; font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
+.pt-grp-card .pt-h2 + .pt-grp-llist, .pt-grp-card .pt-h2 + p { margin-top: 10px; }
+.pt-grp-members, .pt-grp-llist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.pt-grp-member { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); min-width: 0; }
+.pt-grp-member:first-child { border-top: 0; }
+.pt-grp-member.is-inherited { opacity: .8; }
+.pt-grp-meta { overflow-wrap: anywhere; }
+.pt-grp-av { width: 34px; height: 34px; font-size: 12px; }
+.pt-grp-role { flex: 0 0 auto; font-size: 12.5px; color: var(--muted); }
+.pt-grp-role.is-lead { color: var(--accent-text); font-weight: 700; }
+.pt-grp-select, .pt-grp-input { min-height: 38px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--input); color: var(--text); font: 14px var(--font-body); }
+.pt-grp-input { width: 100%; }
+.pt-field-label .pt-grp-select, .pt-field-label .pt-grp-input { display: block; width: 100%; margin-top: 6px; }
+.pt-grp-gap { margin-top: 12px; }
+.pt-grp-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.pt-grp-lrow { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.pt-grp-invites { margin-top: 6px; }
+.pt-grp-invite { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--chip); margin-top: 8px; }
+.pt-grp-link { gap: 12px; }
+.pt-grp-url { display: block; max-width: 100%; padding: 10px 12px; border-radius: 10px; background: var(--input); border: 1px solid var(--line-2); font: 12.5px var(--font-mono); overflow-wrap: anywhere; user-select: all; }
+.pt-grp-dialog { width: min(520px, 100%); }
+@media (max-width: 820px) {
+  .pt-grp-layout { grid-template-columns: minmax(0, 1fr); }
+  .pt-grp-fields { grid-template-columns: minmax(0, 1fr); }
+  .pt-grp-member { flex-wrap: wrap; }
+}

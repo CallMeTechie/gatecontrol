@@ -147,6 +147,8 @@ function permissionSummary(m, lang) {
     // since 1.193.0: download links without sign-in (only while an administrator allows them), the people's devices
     publicLinks: !!p.publicLinks,
     devices: !!p.devices,
+    // person groups (docs/plugins.md "Groups"): 'read' | 'manage' | null
+    groups: p.groups === 'read' || p.groups === 'manage' ? p.groups : null,
     servicesProvided: m.services && m.services.provides ? Object.values(m.services.provides).map((x) => loc(x.label, lang)) : [],
   };
 }
@@ -629,6 +631,8 @@ function view(p, lang) {
     camera: !!(m.ui && m.ui.camera),
     // GC.scanQr in the plugin's frames: the <iframe data-plugin-scanqr> (plugin-bridge.js)
     scanQr: require('./frame').scanQrOf(m),
+    // GC.pickPrincipals in the plugin's frames (permissions.groups): the <iframe data-plugin-groups>
+    pickPrincipals: require('./frame').pickPrincipalsOf(m),
     // the <iframe allow="…"> of the plugin's frames (frame.allowAttr)
     allow: require('./frame').allowAttr({ media: !!m.media, geolocation: !!(m.ui && m.ui.geolocation), camera: !!(m.ui && m.ui.camera) }),
     media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false } : null,
@@ -804,12 +808,15 @@ function start() {
   for (const t of timers) t.unref();
   // update check every 6 hours, nightly automatic update (updates.js)
   require('./updates').start();
+  // person groups: groupsChanged / groupUsage / groupDeleting of plugins with permissions.groups
+  try { require('./groups').init(); } catch (e) { logger.warn({ err: e.message }, 'plugin group hooks not wired'); }
 }
 
 async function stop() {
   for (const t of timers) clearInterval(t);
   timers = [];
   require('./updates').stop();
+  try { require('./groups').shutdown(); } catch { /* best-effort */ }
   try { require('./hostApi').flushChatSummary(); } catch { /* best-effort */ }
   require('./events').closeStreams();
   await runtime.stopAll();

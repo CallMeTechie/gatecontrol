@@ -53,6 +53,13 @@
  *   unarchive(id, { actor, ip, owner } = {}) → group         (clears a past endsAt)
  *   remove(id, { confirmName, actor, ip, owner } = {}) → true
  *       confirmName must equal the name; groups with subgroups are refused.
+ *   async removeWithHooks(id, { confirmName, successorUserId, actor, ip, owner })
+ *       → true — remove() after the pre-remove hooks (registerRemoveHook):
+ *       same checks first, then every hook in parallel within 30 s in total
+ *       (failures logged, the deletion proceeds). successorUserId defaults to
+ *       the group's leader (leadersOf) or null.
+ *   registerRemoveHook(fn) → unregister()   fn({ groupId, name, path,
+ *       successorUserId, owner }) — plugins' groupDeleting hook.
  *
  *   setMember(groupId, userId, role = 'member', { source = 'local', actor, ip,
  *       owner } = {}) → { groupId, userId, role, source, created, changed }
@@ -590,14 +597,20 @@ function parseIdList(json) {
   } catch { return null; }
 }
 
-function remove(id, opts = {}) {
-  const db = getDb();
+/** The checks of remove(): writable, name confirmed, no subgroups → the row. */
+function removable(db, id, opts) {
   const row = rowOrThrow(db, id);
   assertWritable(row, opts);
   const typed = typeof opts.confirmName === 'string' ? opts.confirmName.trim() : '';
   if (typed !== row.name) throw codedError('CONFIRM_MISMATCH', 'type the group name to confirm');
   const kids = db.prepare('SELECT COUNT(*) AS c FROM groups WHERE parent_id = ?').get(row.id).c;
   if (kids) throw codedError('HAS_CHILDREN', 'delete or move the subgroups first');
+  return row;
+}
+
+function remove(id, opts = {}) {
+  const db = getDb();
+  const row = removable(db, id, opts);
   const all = loadAll(db);
   const path = pathOf(all, row.id);
   const memberRows = db.prepare('SELECT user_id, role FROM group_members WHERE group_id = ?').all(row.id);
@@ -624,6 +637,57 @@ function remove(id, opts = {}) {
   for (const m of memberRows) queue({ type: 'member_removed', groupId: row.id, userId: m.user_id, role: m.role, reason: 'group_deleted' });
   queue({ type: 'group_deleted', groupId: row.id });
   return true;
+}
+
+// ─── pre-remove hooks (plugins: groupDeleting) ────────────────────────────
+
+const removeHooks = new Set();
+const REMOVE_HOOKS_MS = 30000;
+
+/**
+ * fn({ groupId, name, path, successorUserId, owner }) → Promise — called by
+ * removeWithHooks() before a group is deleted (all hooks in parallel, one
+ * budget of 30 s for all of them; failures are logged, the deletion goes on).
+ */
+function registerRemoveHook(fn) {
+  if (typeof fn !== 'function') throw new TypeError('remove hook must be a function');
+  removeHooks.add(fn);
+  return () => removeHooks.delete(fn);
+}
+
+/**
+ * remove() with the pre-remove hooks first. Checks like remove() before the
+ * hooks run (a refused deletion asks nobody) and again afterwards.
+ * opts.successorUserId: who takes over what hangs on the group (e.g. a team
+ * folder); default the group's leader (lead, else deputy — walking up), or null.
+ */
+async function removeWithHooks(id, opts = {}) {
+  const db = getDb();
+  const row = removable(db, id, opts);
+  if (removeHooks.size) {
+    let successor = null;
+    if (opts.successorUserId != null && opts.successorUserId !== '') {
+      successor = toId(opts.successorUserId);
+      if (!successor || !db.prepare('SELECT 1 FROM users WHERE id = ?').get(successor)) throw codedError('USER_NOT_FOUND', 'successor not found');
+    } else {
+      const l = leadersOf(0, { groupId: row.id });
+      successor = l.length ? l[0].userId : null;
+    }
+    const info = { groupId: row.id, name: row.name, path: pathOf(loadAll(db), row.id), successorUserId: successor, owner: opts.owner || null };
+    const budget = Math.max(1, Number(module.exports._removeHooksMs) || REMOVE_HOOKS_MS);
+    let timer = null;
+    const deadline = new Promise((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), budget);
+      if (typeof timer.unref === 'function') timer.unref();
+    });
+    const all = Promise.all([...removeHooks].map((fn) => Promise.resolve().then(() => fn(info)).catch((err) => {
+      logger.warn({ err: err && err.message, groupId: row.id }, 'groups: a pre-remove hook failed');
+    })));
+    const outcome = await Promise.race([all.then(() => 'done'), deadline]);
+    clearTimeout(timer);
+    if (outcome === 'timeout') logger.warn({ groupId: row.id, budgetMs: budget }, 'groups: pre-remove hooks took too long — deleting anyway');
+  }
+  return remove(row.id, opts);
 }
 
 // ─── members ──────────────────────────────────────────────────────────────
@@ -1152,7 +1216,7 @@ function archiveExpired(now = new Date()) {
 module.exports = {
   KINDS, ROLES, FAMILY_ROLES, MAX_DEPTH, SEP, BATCH_MS,
   rolesFor,
-  list, get, create, update, move, archive, unarchive, remove,
+  list, get, create, update, move, archive, unarchive, remove, removeWithHooks, registerRemoveHook,
   setMember, removeMember, members, groupsOfUser, isMember, leadersOf, effectiveUserIds, membershipsOfUser,
   createInvite, lookupInvite, acceptInvite, listInvites, revokeInvite, purgeInvites,
   importCsv,
@@ -1160,4 +1224,5 @@ module.exports = {
   events, flushEvents,
   userDeleted, userEnabledChanged,
   archiveExpired,
+  _removeHooksMs: null,
 };

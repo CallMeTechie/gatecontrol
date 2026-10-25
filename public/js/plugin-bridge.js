@@ -44,6 +44,14 @@
 // is refused (no_gesture) when it repeats within 10 s. A new document in the
 // frame (gc-hello) ends its scan.
 //
+// People and groups (GC.pickPrincipals, frames with data-plugin-groups =
+// plugin.json `permissions.groups`): the frame gets no list of people. This
+// page opens GateControl's own picker (public/js/principal-picker.js) with
+// what the viewer may see — admin pages every group and person, the portal
+// the groups by name and the viewer — and answers only the chosen entries
+// [{ type: 'group'|'user', id, label }], or null when cancelled. One picker
+// at a time on the page; a new document in the frame (gc-hello) closes its own.
+//
 // Viewport (since 1.199.0): every frame learns the height it can take
 // without the page scrolling — the window's height minus what stands above
 // the frame and below it on the page (gc-viewport { height, width }; in the
@@ -274,6 +282,24 @@
     }
     function endScan() { if (myScan) myScan.cancel('cancelled'); }
 
+    // GC.pickPrincipals: the page's picker for groups and people, the frame gets the chosen entries only
+    const pickOn = frame.getAttribute('data-plugin-groups') != null;
+    let myPick = null;
+    function pick(m) {
+      const answer = (list) => reply({ type: 'gc-result', id: m.id, ok: true, status: 200, data: Array.isArray(list) ? list : null });
+      const P = window.GCPrincipalPicker;
+      if (!pickOn || !P || typeof P.open !== 'function' || !frameShown()) { answer(null); return; }
+      const run = P.open({
+        name: (frame.getAttribute('data-plugin-name') || pluginId).slice(0, 80),
+        title: typeof m.title === 'string' ? m.title : '',
+        groups: m.groups !== false, users: m.users === true, multiple: m.multiple === true,
+        portal: base.indexOf('/api/v1/portal/') === 0,
+      });
+      myPick = run;
+      run.promise.then((list) => { if (myPick === run) myPick = null; answer(list); }, () => { if (myPick === run) myPick = null; answer(null); });
+    }
+    function endPick() { if (myPick) { myPick.cancel(); myPick = null; } }
+
     function sendTheme() { reply({ type: 'gc-theme', theme: theme() }); }
 
     // GC.viewport: the height this frame can take without the page scrolling.
@@ -396,6 +422,7 @@
       else if (m.type === 'gc-upload' && Number.isInteger(m.id)) upload(m);
       else if (m.type === 'gc-save' && Number.isInteger(m.id)) save(m);
       else if (m.type === 'gc-scan' && Number.isInteger(m.id)) scan(m);
+      else if (m.type === 'gc-pick' && Number.isInteger(m.id)) pick(m);
       else if (m.type === 'gc-subscribe') setSubscribed(true);
       else if (m.type === 'gc-unsubscribe') setSubscribed(false);
       else if (m.type === 'gc-inbox-subscribe') setInbox(true);
@@ -411,6 +438,7 @@
         setSubscribed(false);
         setInbox(false);
         endScan();
+        endPick();
         sendTheme();
         sendViewport(true);
       }

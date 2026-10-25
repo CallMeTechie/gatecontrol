@@ -249,7 +249,7 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
@@ -289,6 +289,13 @@ function validate(raw, opts = {}) {
         perms.notify = true;
         perms.notifyPerHour = n.perHour;
       } else err('permissions.notify: invalid');
+    }
+    // groups: "read" (gc.groups.list/get/members/isMember/leadersOf, hooks groupsChanged /
+    // groupUsage / groupDeleting, gc.notify groups, GC.pickPrincipals) or "manage" (also
+    // gc.groups.ensure/remove of its own groups, source plugin:<id>) — docs/plugins.md "Groups"
+    if (p.groups != null) {
+      if (p.groups === 'read' || p.groups === 'manage') perms.groups = p.groups;
+      else err('permissions.groups: invalid');
     }
     // services: ["<plugin>:<service>"] — services of other plugins it may call (gc.services.call)
     if (p.services != null) {

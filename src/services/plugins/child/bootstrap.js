@@ -357,6 +357,29 @@ function makeGc(info) {
     devices: Object.freeze({
       list: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('devices.list', { userId: o.userId }); },
     }),
+    /**
+     * permissions.groups ("read" | "manage"): person groups of GateControl —
+     * list({ userId, kind, includeInherited, includeArchived }) → [{ id, name, path, kind, role?, direct?, source, archived, … }];
+     * get(id) → group | null; members(id, { nested, roles }) → [{ userId, name, role, direct, source, groupId, enabled }];
+     * isMember(userId, groupId, { nested }) → boolean; leadersOf(userId, { groupId }) → [{ userId, name, role, groupId }];
+     * "manage" only: ensure({ key, name, kind, parentKey, members: [{ userId, role }] }) → the plugin's own group
+     * (+ created, added, removed, changed); remove(key) → boolean
+     */
+    groups: Object.freeze({
+      list: (opts) => {
+        const o = opts && typeof opts === 'object' ? opts : {};
+        return hostCall('groups.list', { userId: o.userId, kind: o.kind, includeInherited: o.includeInherited, includeArchived: o.includeArchived });
+      },
+      get: (id) => hostCall('groups.get', { id }),
+      members: (id, opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('groups.members', { id, nested: o.nested, roles: o.roles }); },
+      isMember: (userId, groupId, opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('groups.isMember', { userId, groupId, nested: o.nested }); },
+      leadersOf: (userId, opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('groups.leadersOf', { userId, groupId: o.groupId }); },
+      ensure: (spec) => {
+        const o = spec && typeof spec === 'object' ? spec : {};
+        return hostCall('groups.ensure', { key: o.key, name: o.name, kind: o.kind, parentKey: o.parentKey, members: o.members });
+      },
+      remove: (key) => hostCall('groups.remove', { key }, 50000),
+    }),
     /** permissions.events: emit({ users: [ids], type, data }) → { delivered } — realtime, not stored */
     events: Object.freeze({
       emit: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('events.emit', { users: o.users, type: o.type, data: o.data }); },
@@ -451,6 +474,17 @@ async function handleCall(method, payload) {
     case 'publicLinkEvent':
       // optional (permissions.publicLinks, since 1.193.0): { token, event: 'download'|'locked'|'expired', … }; the answer is ignored
       if (typeof plugin.publicLinkEvent === 'function') await plugin.publicLinkEvent(payload, gc);
+      return {};
+    case 'groupsChanged':
+      // optional (permissions.groups): { changes: [{ type, groupId, userId?, role?, reason? }] }, batched ≤ 1×/s; answer ignored
+      if (typeof plugin.groupsChanged === 'function') await plugin.groupsChanged(payload, gc);
+      return {};
+    case 'groupUsage':
+      // optional (permissions.groups): what the plugin keeps for payload.groupId → [{ kind, label, onDelete }]
+      return typeof plugin.groupUsage === 'function' ? plugin.groupUsage(payload, gc) : [];
+    case 'groupDeleting':
+      // optional (permissions.groups): { groupId, successorUserId } — clean up before the group goes (≤ 30 s)
+      if (typeof plugin.groupDeleting === 'function') await plugin.groupDeleting(payload, gc);
       return {};
     case 'service':
       // a service of services.provides called by another plugin (gc.services.call): { name, caller, user, payload }
