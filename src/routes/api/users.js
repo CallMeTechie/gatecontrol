@@ -28,6 +28,14 @@ function revokeSessions(req, userId, reason, exceptSid = null) {
   return 0;
 }
 
+/** The person's groups for the profile (services/groups.js); [] when unavailable. */
+function groupsOf(id) {
+  try { return require('../../services/groups').groupsOfUser(id, { includeInherited: true }); } catch (err) {
+    logger.warn({ err: err.message }, 'groups of user unavailable');
+    return [];
+  }
+}
+
 function parseId(req) {
   const id = Number.parseInt(req.params.id, 10);
   return Number.isSafeInteger(id) && id > 0 ? id : null;
@@ -178,6 +186,8 @@ router.get('/:id', (req, res) => {
       is_self: id === req.session.userId,
       last_admin: user.role === 'admin' && user.enabled === 1 && enabledAdmins <= 1,
       machine_binding: tokens.machineBindingState(),
+      // Person groups with role; inherited ones (from a subgroup) direct: false.
+      groups: groupsOf(id),
     });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to get user');

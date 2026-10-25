@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="{{ language }}" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#f2f0eb">
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <script nonce="{{ cspNonce }}">
+(function(){try{var s=localStorage.getItem('gc-theme-mode');var t=s||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
+</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css?v={{ appVersion }}">
+  <title>{{ t('grp.join.title') }} — {{ appName }}</title>
+</head>
+{#- Joining a person group with an invitation link (routes/groupJoin.js,
+    docs/groups.md). Standalone like invite.njk: works on the portal host
+    and on the web UI host. -#}
+<body class="au-page">
+  <main class="au-wrap">
+    <div class="au-brand">
+      <span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m8.5 12 2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="nm">{{ appName }}</span>
+    </div>
+
+    {% if done %}
+    <div class="card au-card au-center" data-group-join="done">
+      <div class="au-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6"/></svg></div>
+      <h1 class="au-title">{{ t('grp.join.already_title') if already else t('grp.join.done_title') }}</h1>
+      <p class="au-sub">{{ t('grp.join.done_text', { group: groupPath, role: role }) }}</p>
+      <a class="btn btn-primary au-submit" href="/portal">{{ t('grp.join.to_portal') }}</a>
+    </div>
+    {% elif invite %}
+    <div class="card au-card" data-group-join="valid">
+      <div class="page-eyebrow">{{ t('grp.join.eyebrow') }}</div>
+      <h1 class="au-title">{{ invite.path }}</h1>
+      <p class="au-sub">{{ t('grp.join.intro', { role: invite.role }) }}</p>
+      {% if error %}
+      <div class="login-error" role="alert">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        <span>{{ error }}</span>
+      </div>
+      {% endif %}
+      {% if needLogin %}
+      <p class="au-meta">{{ t('grp.join.login_needed') }}</p>
+      <a class="btn btn-primary au-submit" href="{{ loginUrl }}">{{ t('grp.join.login') }}</a>
+      {% elif already %}
+      <p class="au-meta">{{ t('grp.join.already_text') }}</p>
+      <a class="btn btn-ghost au-submit" href="/portal">{{ t('grp.join.to_portal') }}</a>
+      {% else %}
+      <form method="POST" action="/portal/groups/join/{{ token }}">
+        <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+        <button type="submit" class="btn btn-primary au-submit">{{ t('grp.join.submit') }}</button>
+      </form>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="card au-card au-center" data-group-join="invalid">
+      <div class="au-icon au-icon-danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></div>
+      <h1 class="au-title">{{ t('grp.join.invalid_title') }}</h1>
+      <p class="au-sub">{{ t('grp.join.invalid_text') }}</p>
+      <a class="btn btn-ghost au-submit" href="/portal">{{ t('grp.join.to_portal') }}</a>
+    </div>
+    {% endif %}
+    <div class="au-foot">{{ appName }}</div>
+  </main>
+</body>
+</html>

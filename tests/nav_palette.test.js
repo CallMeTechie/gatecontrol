@@ -56,7 +56,7 @@ describe('sidebar groups (§8)', () => {
     assert.deepEqual(g.map((x) => x.hrefs), [
       ['/dashboard'],
       ['/peers', '/routes', '/gateways', '/gateway-pools', '/rdp', '/dns', '/pihole'],
-      ['/security', '/certificates', '/waf', '/users'],
+      ['/security', '/certificates', '/waf', '/users', '/groups'],
       ['/plugins/gatecontrol-midea', '/plugins/gatecontrol-skoda'],
       ['/notifications', '/support-bundles', '/logs', '/settings'],
     ]);
@@ -66,7 +66,7 @@ describe('sidebar groups (§8)', () => {
     const g = sidebarGroups(renderLayout('dashboard', {}));
     assert.deepEqual(g.map((x) => x.label), ['Übersicht', 'Netzwerk', 'Sicherheit', 'System']);
     assert.deepEqual(g[1].hrefs, ['/peers', '/routes', '/gateways', '/rdp']);
-    assert.deepEqual(g[2].hrefs, ['/security', '/certificates', '/users'], 'Sicherheits-Check needs no licence');
+    assert.deepEqual(g[2].hrefs, ['/security', '/certificates', '/users', '/groups'], 'Sicherheits-Check needs no licence; Gruppen in every edition');
     // the licence keys of the former built-ins show nothing by themselves
     assert.equal(sidebarGroups(renderLayout('dashboard', ALL)).some((x) => x.label === 'Integrationen'), false);
     const html = renderLayout('dashboard', {}, PLUGIN_NAV.slice(1));

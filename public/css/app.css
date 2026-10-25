@@ -8436,3 +8436,109 @@ a.up-dev:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 .gc-qr-privacy{margin:8px 0 0; font-size:12px; color:var(--faint)}
 .gc-qr-switch{margin-right:auto}
 .gc-qr-switch[hidden]{display:none}
+
+/* ============================================================================
+ * §12 Groups (grp-): Benutzer › Gruppen — tree with kind colour, source badge
+ *    and members incl. subgroups; the group detail (members, invitation links,
+ *    "Wird genutzt von"); dialogs reuse the us- dialog parts. Sidebar sub-item.
+ *    docs/groups.md, public/js/groups.js, templates/aurora/pages/groups.njk.
+ * ============================================================================ */
+.nav-item.nav-item-sub{padding-left:24px; font-size:13px}
+.nav-item.nav-item-sub svg{width:16px; height:16px}
+.grp-page [hidden]{display:none !important}
+.grp-header{align-items:flex-end}
+.grp-intro{margin:0; flex:1 1 320px; color:var(--muted); font-size:13.5px; max-width:680px}
+.grp-layout{display:grid; grid-template-columns:minmax(260px, 340px) minmax(0, 1fr); gap:18px; align-items:start}
+.grp-tree-card, .grp-detail{min-width:0; border-radius:18px; background:var(--surface); border:1px solid var(--line); box-shadow:var(--shadow)}
+.grp-tree-card{padding:12px; position:sticky; top:12px; max-height:calc(100vh - 140px); display:flex; flex-direction:column}
+.grp-tree-tools{display:flex; flex-direction:column; gap:8px; margin-bottom:8px}
+.grp-tree-tools .us-search{flex:0 0 auto}
+.grp-archived-toggle{display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--muted); padding:0 4px}
+.grp-tree{list-style:none; margin:0; padding:0; overflow-y:auto; display:flex; flex-direction:column; gap:2px}
+.grp-tree-empty{padding:16px 8px; display:flex; flex-direction:column; gap:10px; align-items:flex-start}
+.grp-node{width:100%; display:flex; align-items:center; gap:8px; padding:8px 10px; border:0; border-radius:9px; background:transparent;
+  color:var(--text); font:500 13.5px var(--font-body); text-align:left; cursor:pointer}
+.grp-node:hover{background:var(--chip)}
+.grp-node:focus-visible{outline:2px solid var(--teal); outline-offset:-2px}
+.grp-node.is-active{background:var(--teal-soft); color:var(--us-ink, var(--teal)); font-weight:700}
+.grp-node.is-archived .grp-node-name{color:var(--faint); text-decoration:line-through}
+.grp-depth-2{padding-left:30px}
+.grp-depth-3{padding-left:50px}
+.grp-node-name{flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.grp-node-badge{font-size:11px; color:var(--muted); white-space:nowrap}
+.grp-node-count{font-size:12px; color:var(--muted); min-width:22px; text-align:right; font-variant-numeric:tabular-nums}
+.grp-dot{width:9px; height:9px; border-radius:50%; flex:0 0 auto; background:var(--line-2)}
+.grp-dot.grp-kind-department{background:var(--blue)}
+.grp-dot.grp-kind-team{background:var(--teal)}
+.grp-dot.grp-kind-project{background:var(--amber)}
+.grp-dot.grp-kind-site{background:var(--purple)}
+.grp-dot.grp-kind-family{background:var(--green)}
+.grp-detail{padding:20px 22px; display:flex; flex-direction:column; gap:16px}
+.grp-empty{padding:30px 10px; text-align:center}
+.grp-head{display:flex; flex-wrap:wrap; gap:12px; align-items:flex-start}
+.grp-head-text{flex:1 1 260px; min-width:0}
+.grp-crumbs{font-size:12.5px; color:var(--muted); overflow-wrap:anywhere}
+.grp-title{margin:2px 0 0; font-family:var(--font-display); font-size:22px; font-weight:800; overflow-wrap:anywhere}
+.grp-chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+.grp-chips .us-chip + .us-chip{margin-left:0}
+.grp-chip-kind.grp-kind-department{color:var(--blue); background:var(--blue-bg); border-color:var(--blue-bd)}
+.grp-chip-kind.grp-kind-team{color:var(--us-ink, var(--teal)); background:var(--teal-soft); border-color:var(--us-accent-bd, var(--line-2))}
+.grp-chip-kind.grp-kind-project{color:var(--amber); background:var(--amber-bg); border-color:var(--amber-bd)}
+.grp-chip-kind.grp-kind-site{color:var(--purple); background:var(--purple-bg); border-color:var(--purple-border)}
+.grp-chip-kind.grp-kind-family{color:var(--green); background:var(--green-bg); border-color:var(--green-bd)}
+.grp-head-actions{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+.grp-head-actions .btn svg, .grp-foot .btn svg{vertical-align:-2px}
+.grp-desc{margin:0; font-size:13.5px; color:var(--muted)}
+.grp-note{font-size:13px; color:var(--muted); background:var(--chip); border:1px solid var(--line); border-radius:10px; padding:10px 12px}
+.grp-note-warn{background:var(--amber-bg); border-color:var(--amber-bd); color:var(--text)}
+.grp-section{display:flex; flex-direction:column; gap:8px}
+.grp-section-title{margin:0; display:flex; align-items:center; gap:8px; font-family:var(--font-display); font-size:15px; font-weight:800}
+.grp-section-count{font:600 12px var(--font-body); color:var(--muted)}
+.grp-table td{padding:9px 8px}
+.grp-table td:first-child{min-width:200px}
+.grp-person{display:flex; align-items:center; gap:10px; min-width:0}
+.grp-avatar{width:32px; height:32px; font-size:11.5px}
+.grp-person-text{display:flex; flex-direction:column; min-width:0}
+.grp-person-name{font-weight:600; color:var(--text); text-decoration:none; overflow-wrap:anywhere}
+.grp-person-name:hover{text-decoration:underline}
+.grp-person-sub{font-size:12px; color:var(--muted); overflow-wrap:anywhere}
+.grp-role-select{min-height:36px; padding:6px 10px; width:auto; min-width:150px}
+.grp-icon-btn{padding:6px 8px}
+.grp-inherited-box{border:1px solid var(--line); border-radius:12px; padding:10px 12px; background:var(--chip)}
+.grp-inherited-box summary{cursor:pointer; font-weight:600; font-size:13px}
+.grp-inherited{list-style:none; margin:8px 0 0; padding:0; display:flex; flex-direction:column; gap:8px}
+.grp-inherited li{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px}
+.grp-via{font-size:12px; color:var(--muted)}
+.grp-invites{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px}
+.grp-invites li{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:8px 12px; border:1px solid var(--line); border-radius:10px; font-size:13px}
+.grp-usage{display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:10px}
+.grp-usage > p{grid-column:1 / -1; margin:0}
+.grp-use{border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:13px; min-width:0}
+.grp-use-kind{font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--faint)}
+.grp-use-label{font-weight:600; margin-top:2px; overflow-wrap:anywhere}
+.grp-foot{display:flex; flex-wrap:wrap; gap:8px; padding-top:12px; border-top:1px solid var(--line)}
+.grp-foot .btn-danger{margin-left:auto}
+.grp-effect{align-items:flex-start}
+.grp-effect-kind{flex:0 0 84px; font-size:12px; color:var(--muted); padding-top:1px}
+.grp-user-pick{min-height:150px; padding:4px}
+.grp-user-pick option{padding:6px 8px; border-radius:6px}
+.grp-inv-grid{display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px}
+.grp-color-row{display:flex; gap:10px; align-items:center}
+.grp-color{width:48px; height:36px; padding:2px; border:1px solid var(--line-2); border-radius:8px; background:var(--surface)}
+.grp-csv-sample{margin:0; padding:10px 12px; border-radius:10px; background:var(--chip); border:1px solid var(--line); font:12px var(--font-mono); white-space:pre-wrap; overflow-wrap:anywhere}
+.grp-csv-text{min-height:140px}
+.grp-import-sum{font-weight:600}
+.grp-import-errors{margin:8px 0 0; padding-left:18px; font-size:12.5px; color:var(--muted); max-height:180px; overflow-y:auto}
+@media (max-width: 860px){
+  .grp-layout{grid-template-columns:minmax(0, 1fr)}
+  .grp-tree-card{position:static; max-height:none}
+  .grp-tree{max-height:320px}
+  .grp-inv-grid{grid-template-columns:minmax(0, 1fr)}
+  .grp-detail{padding:16px}
+}
+/* User profile: the person's groups (users.js, card "Gruppen") */
+.up-groups{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px}
+.up-groups li{display:flex; align-items:center; gap:8px; font-size:13px; min-width:0}
+.up-groups a{flex:1 1 auto; min-width:0; color:var(--text); text-decoration:none; overflow-wrap:anywhere}
+.up-groups a:hover{text-decoration:underline}
+.up-groups .grp-dot{margin-top:1px}

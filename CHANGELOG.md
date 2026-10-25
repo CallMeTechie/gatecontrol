@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Gruppenverwaltung (Grundlage, docs/groups.md): Teams, Abteilungen, Projekte, Standorte und die Familie als feste Funktion von GateControl, in jeder Version ohne Lizenz. Neue Seite „Benutzer › Gruppen“ mit Baum (Art, Quelle, Personen inkl. Untergruppen, Suche, Archivierte), Gruppenseite mit Mitgliedern und Rollen (Mitglied, Leitung, Vertretung, Gruppen-Admin; Familie: Eltern und Kind), Einladungslinks (Gültigkeit, Nutzungszahl, Beitreten nur angemeldet unter `/portal/groups/join/…`), „Wird genutzt von“, Archivieren und Löschen mit Liste der Abhängigkeiten und eingetipptem Namen sowie CSV-Import (`pfad;email;rolle`, fehlende Gruppen werden angelegt). Höchstens 3 Ebenen, Name je Ebene eindeutig; wer in einer Untergruppe ist, gehört auch zu den Gruppen darüber; ohne Leitung gilt die Leitung darüber. Projekte mit Enddatum werden am Tag danach archiviert (Zugriffe enden, Daten bleiben). Gruppen aus Verzeichnis oder Plugin sind für Name, Aufbau und eigene Mitglieder schreibgeschützt; bei Verzeichnisgruppen lassen sich Rollen und eigene Mitglieder trotzdem vergeben. Admin-Rechte kommen nie aus einer Gruppe. Die Benutzerseite zeigt die Gruppen der Person. Admin-API unter `/api/v1/groups` (nur Admin-Sitzung). Gesperrte Konten ruhen in ihren Gruppen, gelöschte verlieren ihre Mitgliedschaften.
+
+---
+
 ## [1.199.0] — 2026-10-25
 
 ### Features

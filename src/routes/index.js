@@ -328,6 +328,8 @@ const pages = [
   { path: '/settings', template: 'settings', titleKey: 'nav.settings' },
   { path: '/rdp', template: 'rdp', titleKey: 'nav.rdp' },
   { path: '/users', template: 'users', titleKey: 'nav.users' },
+  // Person groups (docs/groups.md): tree + detail, data from /api/v1/groups.
+  { path: '/groups', template: 'groups', titleKey: 'nav.groups' },
   { path: '/dns', template: 'dns', titleKey: 'nav.dns' },
   { path: '/pihole', template: 'pihole', titleKey: 'pihole.title' },
   { path: '/gateway-pools', template: 'gateway-pools', titleKey: 'gateway_pools.title' },
@@ -362,6 +364,9 @@ const SB_I18N_PREFIXES = ['support_bundles.', 'common.'];
 // Strings the users list and the user profile hand to users.js (one JSON
 // island on both pages, like the settings page; up.* for the profile).
 const USERS_I18N_PREFIXES = ['us.', 'users.mb.', 'error.users.', 'error.tokens.', 'error.enrollment.', 'enrollment.', 'common.', 'passkey.error_not_found', 'up.', 'avatar.'];
+
+// Strings of the groups page (groups.js).
+const GROUPS_I18N_PREFIXES = ['grp.', 'error.groups.', 'common.'];
 
 // Tabs of the user profile (/users/:id?tab=…). The users list had the same
 // five in its side panel; old links /users?user=ID&tab=X lead to the profile.
@@ -450,6 +455,13 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
         return res.redirect(`/users/${legacyId}${tab === 'overview' ? '' : `?tab=${tab}`}`);
       }
       extraLocals.usersI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, USERS_I18N_PREFIXES))
+        .replace(/</g, '\\u003c');
+    }
+
+    // Groups page (public/js/groups.js): its strings as one JSON island
+    // (groups.njk data-prefixes must list the same ones).
+    if (template === 'groups') {
+      extraLocals.groupsI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, GROUPS_I18N_PREFIXES))
         .replace(/</g, '\\u003c');
     }
 
@@ -645,6 +657,14 @@ const portalIdentity = require('../middleware/portalIdentity');
 const portalOwner = require('../middleware/portalOwner');
 const { portalApiLimiter } = require('../middleware/rateLimit');
 router.use('/api/v1/portal', portalIdentity, portalApiLimiter, portalOwner, require('./api/portal'));
+
+// ─── Joining a person group with an invitation link (docs/groups.md) ──
+// Signed-in people only (web or portal session); not behind the portal's
+// "enabled" switch, so the link also works on the web UI host.
+const groupJoin = require('./groupJoin');
+const { portalPageLimiter } = require('../middleware/rateLimit');
+router.get('/portal/groups/join/:token', portalPageLimiter, portalIdentity, portalOwner, groupJoin.page);
+router.post('/portal/groups/join/:token', portalPageLimiter, csrfProtection, portalIdentity, portalOwner, groupJoin.accept);
 
 // ─── Portal pages: /portal, /auto (login link of the apps), "Wer bist du?" ──
 router.use(require('./portal'));

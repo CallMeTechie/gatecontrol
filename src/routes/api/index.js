@@ -62,6 +62,8 @@ router.use('/webhooks', require('./webhooks'));
 // Notification center: rules, devices, history, send, settings (admin session)
 router.use('/notify', require('./notify'));
 router.use('/users', require('./users'));
+// Person groups (docs/groups.md): admin session only, like /users
+router.use('/groups', require('./groups'));
 router.use('/enrollment', require('./enrollment'));
 router.use('/profile', require('./profile'));
 // "Mein Bereich" (member self-service, session only, own account only)
