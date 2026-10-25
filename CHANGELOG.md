@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.198.0] — 2026-10-25
 
 ### Features
 - Die offene Portal-Startseite holt die Kacheln der Plugins von selbst neu: jede Minute, solange die Seite sichtbar und „Start“ geöffnet ist, und sofort, wenn die Seite oder der Start-Tab wieder in den Blick kommt (höchstens alle 15 s, nie zwei Anfragen gleichzeitig). Eine neue WLAN-Freigabe aus Vault erscheint so ohne Neuladen; eine verborgene Seite oder ein anderer Tab fragt nichts.
