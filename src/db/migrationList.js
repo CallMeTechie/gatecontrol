@@ -2548,6 +2548,108 @@ const migrations = [
       ALTER TABLE users ADD COLUMN disabled_reason TEXT;`,
     detect: (db) => tableExists(db, 'groups') && hasColumn(db, 'rdp_routes', 'group_ids') && hasColumn(db, 'users', 'disabled_reason'),
   },
+  {
+    version: 110,
+    name: 'directory_sync',
+    // Directory sync and sign-in with the company account (docs/groups.md
+    // "Verzeichnis-Abgleich und Anmeldung", services/directory/).
+    //   directories        one connection: kind 'ad' | 'entra' | 'ldap', name,
+    //                      config_json (non-secret settings: server, base DNs,
+    //                      attribute mapping, tenant/client id, custom CA PEM),
+    //                      secret_enc (bind password / Entra client secret,
+    //                      utils/crypto encrypt — never returned by the API),
+    //                      selected_groups (JSON [{ externalId, name, dn }]),
+    //                      parent_group_id (optional local group the imported
+    //                      groups are placed below), the switches enabled,
+    //                      login_enabled, provision (create accounts),
+    //                      deprovision (disable accounts), interval_min
+    //                      (5–1440), state of the last run (last_sync_at,
+    //                      last_full_sync_at, last_status, last_error) and
+    //                      cursor (reserved for delta queries).
+    //   directory_links    an account that belongs to a directory: the stable
+    //                      external id (objectGUID / Entra object id /
+    //                      entryUUID), login names (login_name, upn), the
+    //                      current DN, e-mail, state 'active' | 'disabled'
+    //                      and disabled_peer_ids (JSON: the VPN peers the sync
+    //                      disabled — exactly these are enabled again).
+    //                      One directory per account (user_id primary key).
+    //   directory_conflicts a directory person whose e-mail address belongs to
+    //                      an existing account that is not linked: status
+    //                      'open' | 'merged' | 'separate' (the admin decides).
+    //   directory_runs     one sync run: trigger, status 'running' | 'ok' |
+    //                      'error' | 'pending' (mass-change guard stopped it,
+    //                      the admin confirms or discards) | 'confirmed' |
+    //                      'discarded', summary_json (counts), details_json
+    //                      (names per change), plan_json (pending: the user
+    //                      ids the run would disable), guard_reason, error.
+    sql: `
+      CREATE TABLE IF NOT EXISTS directories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('ad', 'entra', 'ldap')),
+        name TEXT NOT NULL,
+        config_json TEXT NOT NULL DEFAULT '{}',
+        secret_enc TEXT,
+        selected_groups TEXT NOT NULL DEFAULT '[]',
+        parent_group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        login_enabled INTEGER NOT NULL DEFAULT 0,
+        provision INTEGER NOT NULL DEFAULT 1,
+        deprovision INTEGER NOT NULL DEFAULT 1,
+        interval_min INTEGER NOT NULL DEFAULT 15,
+        last_sync_at TEXT,
+        last_full_sync_at TEXT,
+        last_status TEXT,
+        last_error TEXT,
+        cursor TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS directory_links (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        directory_id INTEGER NOT NULL REFERENCES directories(id) ON DELETE CASCADE,
+        external_id TEXT NOT NULL,
+        login_name TEXT,
+        upn TEXT,
+        dn TEXT,
+        email TEXT,
+        state TEXT NOT NULL DEFAULT 'active',
+        disabled_peer_ids TEXT,
+        linked_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_seen_at TEXT,
+        UNIQUE (directory_id, external_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_directory_links_login ON directory_links(lower(login_name));
+      CREATE INDEX IF NOT EXISTS idx_directory_links_upn ON directory_links(lower(upn));
+      CREATE TABLE IF NOT EXISTS directory_conflicts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        directory_id INTEGER NOT NULL REFERENCES directories(id) ON DELETE CASCADE,
+        external_id TEXT NOT NULL,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        email TEXT,
+        display_name TEXT,
+        login_name TEXT,
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        resolved_at TEXT,
+        resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        UNIQUE (directory_id, external_id)
+      );
+      CREATE TABLE IF NOT EXISTS directory_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        directory_id INTEGER NOT NULL REFERENCES directories(id) ON DELETE CASCADE,
+        trigger TEXT NOT NULL DEFAULT 'schedule',
+        status TEXT NOT NULL DEFAULT 'running',
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        summary_json TEXT,
+        details_json TEXT,
+        plan_json TEXT,
+        guard_reason TEXT,
+        error TEXT,
+        actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_directory_runs_dir ON directory_runs(directory_id, id);`,
+  },
 ];
 
 module.exports = { migrations };

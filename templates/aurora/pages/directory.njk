@@ -1,0 +1,169 @@
+{% extends theme + "/layout.njk" %}
+
+{#- Benutzer › Verzeichnis (docs/groups.md "Verzeichnis-Abgleich und Anmeldung"):
+    the connected directories (Active Directory, Entra ID, LDAP) as cards, the
+    selected one below with settings, options, group selection, the last runs,
+    a stopped mass change waiting for confirmation and e-mail conflicts.
+    public/js/directory.js renders everything from /api/v1/directories; its
+    strings come from the #dir-i18n island (routes/index.js
+    DIRECTORY_I18N_PREFIXES). -#}
+
+{% macro closeBtn(label) %}<button type="button" class="modal-close" data-close-modal aria-label="{{ label }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>{% endmacro %}
+
+{% block content %}
+<div class="dir-page" id="dir-page">
+
+  <div class="page-header grp-header">
+    <p class="grp-intro">{{ t('dir.intro') }}</p>
+    <div class="page-actions">
+      <button type="button" class="btn btn-primary" id="dir-btn-add">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        {{ t('dir.add') }}
+      </button>
+    </div>
+  </div>
+
+  <div class="dir-cards" id="dir-cards" aria-live="polite">
+    <p class="us-muted">{{ t('common.loading') }}</p>
+  </div>
+
+  <section class="dir-detail" id="dir-detail" aria-live="polite" hidden></section>
+</div>
+
+{# ── Create / edit a directory ─────────────────────────────────────── #}
+<div class="modal-overlay us-dlg" id="dir-dlg-form" style="display:none" data-dir-dialog>
+  <div class="modal us-modal us-modal-md" role="dialog" aria-modal="true" aria-labelledby="dir-form-title">
+    <div class="modal-head"><h2 class="modal-title" id="dir-form-title">{{ t('dir.form.title_new') }}</h2>{{ closeBtn(t('common.close')) }}</div>
+    <form class="modal-body us-modal-body us-form dir-form" id="dir-form" autocomplete="off" novalidate>
+      <label class="us-field" id="dir-f-kind-field"><span class="us-label">{{ t('dir.f.kind') }}</span>
+        <select class="form-input" id="dir-f-kind">
+          <option value="ad">{{ t('dir.kind.ad') }}</option>
+          <option value="entra">{{ t('dir.kind.entra') }}</option>
+          <option value="ldap">{{ t('dir.kind.ldap') }}</option>
+        </select>
+      </label>
+      <label class="us-field"><span class="us-label">{{ t('dir.f.name') }}</span>
+        <input type="text" class="form-input" id="dir-f-name" maxlength="100" required data-autofocus>
+      </label>
+
+      <fieldset class="us-fieldset dir-kind-ldap" data-kinds="ad ldap">
+        <div class="dir-grid">
+          <label class="us-field dir-span-2"><span class="us-label">{{ t('dir.f.host') }}</span>
+            <input type="text" class="form-input us-mono" id="dir-f-host" maxlength="253" spellcheck="false" placeholder="dc01.corp.local">
+            <span class="us-hint">{{ t('dir.f.host_hint') }}</span>
+          </label>
+          <label class="us-field"><span class="us-label">{{ t('dir.f.security') }}</span>
+            <select class="form-input" id="dir-f-security">
+              <option value="ldaps">{{ t('dir.f.security_ldaps') }}</option>
+              <option value="starttls">{{ t('dir.f.security_starttls') }}</option>
+            </select>
+          </label>
+          <label class="us-field"><span class="us-label">{{ t('dir.f.port') }}</span>
+            <input type="number" class="form-input" id="dir-f-port" min="1" max="65535" placeholder="636">
+          </label>
+        </div>
+        <label class="us-field"><span class="us-label">{{ t('dir.f.bind_dn') }}</span>
+          <input type="text" class="form-input us-mono" id="dir-f-bind-dn" maxlength="500" spellcheck="false" placeholder="CN=svc-gatecontrol,OU=Dienste,DC=corp,DC=local">
+        </label>
+        <label class="us-field"><span class="us-label">{{ t('dir.f.base_dn') }}</span>
+          <input type="text" class="form-input us-mono" id="dir-f-base-dn" maxlength="500" spellcheck="false" placeholder="DC=corp,DC=local">
+        </label>
+        <div class="dir-grid">
+          <label class="us-field"><span class="us-label">{{ t('dir.f.user_base_dn') }} <span class="us-muted">{{ t('dir.f.optional') }}</span></span>
+            <input type="text" class="form-input us-mono" id="dir-f-user-base" maxlength="500" spellcheck="false" placeholder="OU=Mitarbeiter,DC=corp,DC=local">
+          </label>
+          <label class="us-field"><span class="us-label">{{ t('dir.f.group_base_dn') }} <span class="us-muted">{{ t('dir.f.optional') }}</span></span>
+            <input type="text" class="form-input us-mono" id="dir-f-group-base" maxlength="500" spellcheck="false" placeholder="OU=Gruppen,DC=corp,DC=local">
+          </label>
+        </div>
+        <details class="dir-more">
+          <summary>{{ t('dir.f.tls_more') }}</summary>
+          <label class="us-field"><span class="us-label">{{ t('dir.f.tls_name') }} <span class="us-muted">{{ t('dir.f.optional') }}</span></span>
+            <input type="text" class="form-input us-mono" id="dir-f-tls-name" maxlength="253" spellcheck="false">
+            <span class="us-hint">{{ t('dir.f.tls_name_hint') }}</span>
+          </label>
+          <label class="us-field"><span class="us-label">{{ t('dir.f.ca') }} <span class="us-muted">{{ t('dir.f.optional') }}</span></span>
+            <textarea class="form-input us-mono" id="dir-f-ca" rows="4" spellcheck="false" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+            <span class="us-hint">{{ t('dir.f.ca_hint') }}</span>
+          </label>
+        </details>
+      </fieldset>
+
+      <fieldset class="us-fieldset" data-kinds="ldap">
+        <details class="dir-more">
+          <summary>{{ t('dir.f.mapping') }}</summary>
+          <p class="us-hint">{{ t('dir.f.mapping_hint') }}</p>
+          <div class="dir-grid">
+            <label class="us-field"><span class="us-label">{{ t('dir.f.attr_id') }}</span><input type="text" class="form-input us-mono" id="dir-f-attr-id" placeholder="entryUUID"></label>
+            <label class="us-field"><span class="us-label">{{ t('dir.f.attr_login') }}</span><input type="text" class="form-input us-mono" id="dir-f-attr-login" placeholder="uid"></label>
+            <label class="us-field"><span class="us-label">{{ t('dir.f.attr_email') }}</span><input type="text" class="form-input us-mono" id="dir-f-attr-email" placeholder="mail"></label>
+            <label class="us-field"><span class="us-label">{{ t('dir.f.attr_name') }}</span><input type="text" class="form-input us-mono" id="dir-f-attr-name" placeholder="displayName"></label>
+            <label class="us-field"><span class="us-label">{{ t('dir.f.attr_group_id') }}</span><input type="text" class="form-input us-mono" id="dir-f-attr-group-id" placeholder="entryUUID"></label>
+            <label class="us-field"><span class="us-label">{{ t('dir.f.attr_group_name') }}</span><input type="text" class="form-input us-mono" id="dir-f-attr-group-name" placeholder="cn"></label>
+            <label class="us-field"><span class="us-label">{{ t('dir.f.attr_member') }}</span>
+              <select class="form-input" id="dir-f-attr-member"><option value="member">member</option><option value="uniqueMember">uniqueMember</option><option value="memberUid">memberUid</option></select>
+            </label>
+            <label class="us-field"><span class="us-label">{{ t('dir.f.attr_disabled') }} <span class="us-muted">{{ t('dir.f.optional') }}</span></span><input type="text" class="form-input us-mono" id="dir-f-attr-disabled" placeholder="nsAccountLock"></label>
+          </div>
+          <label class="us-field"><span class="us-label">{{ t('dir.f.user_filter') }} <span class="us-muted">{{ t('dir.f.optional') }}</span></span><input type="text" class="form-input us-mono" id="dir-f-user-filter" maxlength="500" placeholder="(|(objectClass=inetOrgPerson)(objectClass=posixAccount))"></label>
+          <label class="us-field"><span class="us-label">{{ t('dir.f.group_filter') }} <span class="us-muted">{{ t('dir.f.optional') }}</span></span><input type="text" class="form-input us-mono" id="dir-f-group-filter" maxlength="500" placeholder="(|(objectClass=groupOfNames)(objectClass=groupOfUniqueNames)(objectClass=posixGroup))"></label>
+        </details>
+      </fieldset>
+
+      <fieldset class="us-fieldset" data-kinds="entra">
+        <p class="us-hint">{{ t('dir.f.entra_hint') }}</p>
+        <label class="us-field"><span class="us-label">{{ t('dir.f.tenant') }}</span>
+          <input type="text" class="form-input us-mono" id="dir-f-tenant" maxlength="36" spellcheck="false" placeholder="00000000-0000-0000-0000-000000000000">
+        </label>
+        <label class="us-field"><span class="us-label">{{ t('dir.f.client') }}</span>
+          <input type="text" class="form-input us-mono" id="dir-f-client" maxlength="36" spellcheck="false" placeholder="00000000-0000-0000-0000-000000000000">
+        </label>
+        <p class="us-hint" id="dir-f-redirect" hidden></p>
+      </fieldset>
+
+      <label class="us-field"><span class="us-label" id="dir-f-secret-label">{{ t('dir.f.secret_ldap') }}</span>
+        <input type="password" class="form-input" id="dir-f-secret" maxlength="1024" autocomplete="new-password">
+        <span class="us-hint" id="dir-f-secret-hint" hidden>{{ t('dir.f.secret_keep') }}</span>
+      </label>
+
+      <div class="dir-test-result" id="dir-form-test" role="status" hidden></div>
+      <div class="us-error" id="dir-form-error" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-ghost" id="dir-form-test-btn">{{ t('dir.test') }}</button>
+      <span class="dir-foot-spacer"></span>
+      <button type="button" class="btn btn-ghost" data-close-modal>{{ t('common.cancel') }}</button>
+      <button type="submit" form="dir-form" class="btn btn-primary" id="dir-form-ok">{{ t('common.save') }}</button>
+    </div>
+  </div>
+</div>
+
+{# ── Delete ─────────────────────────────────────────────────────────── #}
+<div class="modal-overlay us-dlg" id="dir-dlg-delete" style="display:none" data-dir-dialog>
+  <div class="modal us-modal us-modal-sm" role="alertdialog" aria-modal="true" aria-labelledby="dir-del-title">
+    <div class="modal-head"><h2 class="modal-title" id="dir-del-title">{{ t('dir.del.title') }}</h2>{{ closeBtn(t('common.close')) }}</div>
+    <form class="modal-body us-modal-body us-form" id="dir-del-form" novalidate>
+      <p class="us-del-intro">{{ t('dir.del.text') }}</p>
+      <label class="us-field"><span class="us-label" id="dir-del-label"></span><input type="text" class="form-input" id="dir-del-confirm" autocomplete="off" spellcheck="false"></label>
+      <div class="us-error" id="dir-del-error" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close-modal>{{ t('common.cancel') }}</button><button type="submit" form="dir-del-form" class="btn btn-danger solid" id="dir-del-ok" disabled>{{ t('dir.del.ok') }}</button></div>
+  </div>
+</div>
+
+{# ── Run details ────────────────────────────────────────────────────── #}
+<div class="modal-overlay us-dlg" id="dir-dlg-run" style="display:none" data-dir-dialog>
+  <div class="modal us-modal us-modal-md" role="dialog" aria-modal="true" aria-labelledby="dir-run-title">
+    <div class="modal-head"><h2 class="modal-title" id="dir-run-title">{{ t('dir.run.title') }}</h2>{{ closeBtn(t('common.close')) }}</div>
+    <div class="modal-body us-modal-body" id="dir-run-body"></div>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close-modal>{{ t('common.close') }}</button></div>
+  </div>
+</div>
+
+<script type="application/json" id="dir-i18n" data-prefixes="dir. error.directory. common." nonce="{{ cspNonce }}">{{ directoryI18n | default('{}') | safe }}</script>
+<script type="application/json" id="dir-ctx" nonce="{{ cspNonce }}">{"lang": {{ language | dump | safe }}}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/directory.js?v={{ appVersion }}"></script>
+{% endblock %}

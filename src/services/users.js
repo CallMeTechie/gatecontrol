@@ -455,6 +455,64 @@ function toggle(id, { actorId = null, ip = null } = {}) {
   return getById(id);
 }
 
+/**
+ * Directory sync (services/directory): a new member account for a person of
+ * the company directory. Always role 'user' — admin rights never come from
+ * a directory. No password (the directory checks it at sign-in, or the
+ * person signs in with Microsoft); `webLogin` switches "Mein Bereich" on so
+ * the company-account login works without an invitation. `username` must be
+ * free (the caller picks a unique one).
+ */
+function createDirectoryUser({ username, displayName, email, webLogin = false }, { directoryId = null, directoryName = null } = {}) {
+  validateProfileFields({ displayName, email });
+  const db = getDb();
+  const name = String(username || '').trim();
+  if (!name) throw new Error('Username is required');
+  if (db.prepare('SELECT id FROM users WHERE username = ?').get(name)) throw codedError('USERNAME_TAKEN', 'Username already exists');
+  const info = db.prepare(`
+    INSERT INTO users (username, password_hash, display_name, email, role, language, self_service_enabled)
+    VALUES (?, ?, ?, ?, 'user', ?, ?)
+  `).run(name, NO_PASSWORD_SENTINEL, displayName || null, email || null, defaultLanguage(), webLogin ? 1 : 0);
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
+  activity.log('user_created', `User "${name}" created by the directory sync${directoryName ? ` (${directoryName})` : ''}`, {
+    source: 'system', severity: 'info', details: { userId: user.id, role: 'user', directoryId },
+  });
+  return stripSensitive(user);
+}
+
+/**
+ * Directory sync: disable (disabled_reason 'directory') or enable an account.
+ * Never touches an administrator. Unlike toggle(), the web login (2FA,
+ * passkeys, "Mein Bereich") is kept so re-enabling restores the account as
+ * it was; sessions, tokens and devices are handled by the caller. An
+ * account an admin disabled (reason 'admin') is not enabled here. Returns
+ * true when something changed. Logged as 'user_toggled' (the same event the
+ * admin toggle writes, so access rules and the Caddy ACL follow).
+ */
+function setDirectoryEnabled(id, enabled, { directoryId = null, directoryName = null, why = null } = {}) {
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  if (!user || user.role !== 'user') return false;
+  if (enabled) {
+    if (user.enabled === 1 || user.disabled_reason !== 'directory') return false;
+    db.prepare("UPDATE users SET enabled = 1, disabled_reason = NULL, updated_at = datetime('now') WHERE id = ?").run(id);
+  } else {
+    if (user.enabled !== 1) return false;
+    db.prepare("UPDATE users SET enabled = 0, disabled_reason = 'directory', updated_at = datetime('now') WHERE id = ?").run(id);
+  }
+  try { require('./groups').userEnabledChanged(id, !!enabled); } catch (err) {
+    logger.warn({ err: err.message }, 'group change events for a directory toggle skipped');
+  }
+  const dirText = directoryName ? ` (${directoryName})` : '';
+  activity.log('user_toggled', enabled
+    ? `User "${user.username}" enabled again by the directory sync${dirText}`
+    : `User "${user.username}" disabled by the directory sync${dirText}${why ? `: ${why}` : ''}`, {
+    source: 'system', severity: enabled ? 'info' : 'warning',
+    details: { userId: id, enabled: !!enabled, reason: 'directory', directoryId, why },
+  });
+  return true;
+}
+
 function parseIdList(json) {
   if (!json) return null;
   try {
@@ -639,6 +697,8 @@ module.exports = {
   disableSelfService,
   setSelfEnroll,
   toggle,
+  createDirectoryUser,
+  setDirectoryEnabled,
   deleteImpact,
   remove,
   isEnabled,

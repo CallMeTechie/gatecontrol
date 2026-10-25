@@ -8613,3 +8613,67 @@ a.up-dev:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 @media (max-width: 720px){
   .acc-grid{grid-template-columns:minmax(0, 1fr)}
 }
+
+/* ── Benutzer › Verzeichnis (docs/groups.md "Verzeichnis-Abgleich und Anmeldung") ── */
+.dir-page [hidden]{display:none !important}
+.dir-cards{display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:14px; margin-bottom:18px}
+.dir-card{display:flex; flex-direction:column; gap:6px; text-align:left; padding:16px 18px; border-radius:16px; cursor:pointer; font:inherit; color:inherit; min-width:0}
+.dir-card:hover{border-color:var(--line-2)}
+.dir-card:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+.dir-card.is-active{border-color:var(--teal); box-shadow:0 0 0 1px var(--teal) inset, var(--shadow)}
+.dir-card-head{display:flex; align-items:center; justify-content:space-between; gap:8px}
+.dir-card-name{font-family:var(--font-display); font-weight:800; font-size:16px; overflow-wrap:anywhere}
+.dir-card-kind{font-size:12px; color:var(--muted); font-weight:600}
+.dir-card-where{font-size:12.5px; overflow-wrap:anywhere}
+.dir-card-stats{font-size:13px}
+.dir-card-last{font-size:12px}
+.dir-empty{padding:22px; border-radius:16px}
+.dir-empty p{margin:0 0 6px}
+.dir-detail{min-width:0; border-radius:18px; background:var(--surface); border:1px solid var(--line); box-shadow:var(--shadow); padding:20px 22px; display:flex; flex-direction:column; gap:18px}
+.dir-facts dd{overflow-wrap:anywhere}
+.dir-opt{padding:10px 0; border-bottom:1px solid var(--line)}
+.dir-opt-name{font-weight:600; font-size:14px}
+.dir-opt-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:12px; margin-top:6px}
+.dir-pending{border:1px solid var(--amber-bd); background:var(--amber-bg); border-radius:14px; padding:14px 16px; display:flex; flex-direction:column; gap:6px}
+.dir-pending p{margin:0}
+.dir-names{margin:0; padding-left:18px; font-size:13px; display:flex; flex-direction:column; gap:3px; overflow-wrap:anywhere}
+.dir-picked{display:flex; flex-wrap:wrap; gap:6px; align-items:center}
+.dir-chip{display:inline-flex; align-items:center; gap:4px}
+.dir-chip-x{border:0; background:transparent; color:inherit; cursor:pointer; font-size:15px; line-height:1; padding:0 2px}
+.dir-search{display:flex; gap:8px; flex-wrap:wrap}
+.dir-search .form-input{flex:1 1 240px; min-width:0}
+.dir-results{list-style:none; margin:0; padding:0; max-height:300px; overflow-y:auto; border:1px solid var(--line); border-radius:12px}
+.dir-results > li{padding:9px 12px; border-bottom:1px solid var(--line); font-size:13px}
+.dir-results > li:last-child{border-bottom:0}
+.dir-result{display:flex; gap:10px; align-items:flex-start}
+.dir-result input{margin-top:3px; flex:0 0 auto}
+.dir-result label{display:flex; flex-direction:column; min-width:0; cursor:pointer}
+.dir-result-name{font-weight:600}
+.dir-result-dn{font-size:11.5px; color:var(--muted); overflow-wrap:anywhere}
+.dir-conflicts{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px}
+.dir-conflict{display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; justify-content:space-between; padding:12px 14px; border:1px solid var(--amber-bd); border-radius:12px; background:var(--amber-bg)}
+.dir-conflict-text{display:flex; flex-direction:column; gap:2px; min-width:0; flex:1 1 260px; overflow-wrap:anywhere; font-size:13px}
+.dir-conflict .us-btnrow{margin-top:0}
+.dir-run-more{padding:2px 8px; margin-left:6px; font-size:12px; min-height:0}
+.dir-run-h{margin:14px 0 6px; font-size:14px; font-weight:800}
+.dir-grid{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px}
+.dir-span-2{grid-column:span 2}
+.dir-form{display:flex; flex-direction:column; gap:12px}
+.dir-form .us-fieldset{display:flex; flex-direction:column; gap:12px}
+.dir-more summary{cursor:pointer; font-weight:600; font-size:13px; margin-bottom:8px}
+.dir-more[open]{display:flex; flex-direction:column; gap:10px}
+.dir-test-result{padding:10px 12px; border-radius:10px; font-size:13px; background:var(--chip); border:1px solid var(--line); overflow-wrap:anywhere}
+.dir-test-result.is-ok{background:var(--green-bg); border-color:var(--green-bd); color:var(--green)}
+.dir-test-result.is-bad{background:var(--red-bg); border-color:var(--red-bd); color:var(--red)}
+.dir-foot-spacer{flex:1 1 auto}
+@media (max-width: 720px){
+  .dir-detail{padding:16px}
+  .dir-grid{grid-template-columns:minmax(0, 1fr)}
+  .dir-span-2{grid-column:auto}
+}
+/* Login page: "Mit Microsoft anmelden" and the company-account hint */
+.btn.au-sso-btn{display:inline-flex; align-items:center; justify-content:center; gap:10px; text-decoration:none}
+.btn.au-sso-btn svg{flex:0 0 auto}
+.au-sso + form, .au-sso{margin-top:4px}
+.au-sso .au-divider{margin:16px 0 8px}
+.au-hint{margin:-4px 0 12px; font-size:12.5px; color:var(--muted); line-height:1.45}

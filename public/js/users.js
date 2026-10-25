@@ -800,8 +800,17 @@
 
     // Access, security, location sharing
     const v = state.vis;
+    // Source of the account and why it is disabled (docs/groups.md "Verzeichnis-Abgleich").
+    const dirInfo = d.directory;
+    const sourceText = dirInfo
+      ? T('up.acc.source_directory', { name: dirInfo.name }) + (dirInfo.loginName ? ' · ' + dirInfo.loginName : '')
+      : T('up.acc.source_local');
+    const disabledText = u.enabled === 1 ? null
+      : (u.disabled_reason === 'directory' ? T('up.disabled_directory') : T('up.acc.disabled_admin'));
     const access = upCard(T('up.access'), [tabLink(T('up.details'), 'see')], [facts([
       [T('up.acc.role'), roleLabel(u.role)],
+      [T('up.acc.source'), dirInfo ? el('a', { href: '/directory?id=' + dirInfo.id }, sourceText) : sourceText],
+      disabledText ? [T('up.acc.disabled'), disabledText] : null,
       v ? [T('up.acc.services'), String(v.services && v.services.visible ? v.services.visible.length : 0)] : null,
       v && (CTX.rdp || (v.rdp && v.rdp.total)) ? [T('up.acc.rdp'), String(v.rdp && v.rdp.visible ? v.rdp.visible.length : 0)] : null,
       v ? [T('up.acc.web'), T('up.acc.web_' + (v.web === 'all' || v.web === 'self_service' ? v.web : 'none'))] : null,

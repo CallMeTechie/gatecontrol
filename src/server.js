@@ -299,6 +299,13 @@ async function start() {
     setInterval(retryGroupsArchive, 60 * 60 * 1000);
     retryGroupsArchive();
 
+    // Directory sync (docs/groups.md "Verzeichnis-Abgleich und Anmeldung"):
+    // every minute the directories whose interval (5–1440 min, default 15)
+    // has passed are synchronised (a full sync each time, so at least every
+    // 24 h). A directory that cannot be read changes nothing.
+    const retryDirectorySync = withRetry('directory-sync', async () => require('./services/directory/sync').runDue());
+    setInterval(retryDirectorySync, 60 * 1000);
+
     // Zugriff per Gruppe (docs/groups.md): routes with the device ACL allow
     // the devices of released persons and group members — membership, device
     // and account changes rebuild the Caddy config, at most once per 5 s.
