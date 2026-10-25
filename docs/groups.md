@@ -125,6 +125,69 @@ The overview of a user (**Benutzer** → the user) shows the person's groups
 with role; groups the person only belongs to through a subgroup are marked
 "über Untergruppe".
 
+## Zugriff per Gruppe
+
+HTTP routes and RDP entries can be released for groups, persons and — HTTP
+routes only — devices. In the route editor (section **Zugriff**) and in the
+RDP dialog (step **Zugriff**) one field **Wer darf zugreifen?** takes chips
+for *Gruppe*, *Person* and *Gerät* (devices only with the peer ACL licence;
+RDP has no devices). Below it, **Darf zugreifen · N Personen** lists the
+people who get access with the reason ("Buchhaltung (Leitung)", "Verwaltung
+über Verwaltung › Buchhaltung", "einzeln freigegeben", "Gerät · Laptop Mia");
+disabled accounts appear as a hint ("… ist im Verzeichnis gesperrt und wird
+nicht mehr durchgelassen"), archived groups as well.
+
+Rules (`src/services/groupAccess.js`, the same for every entry point):
+
+- **Nobody listed** (no person, no group) → no person restriction, as before.
+- Otherwise only the **listed persons ∪ the effective members of the listed
+  groups**: members of subgroups count for the group above, archived groups
+  and disabled accounts do not count. Checked on every request — leaving a
+  group, being disabled or a project ending takes effect at once.
+- A **stale entry never opens access**: the id of a deleted account, an
+  archived group or a deleted group keeps the entry closed. When the only
+  group of an HTTP route is deleted, the route keeps the marker `[0]`
+  ("Gelöschter Eintrag (niemand)") in `user_ids` and stays closed until the
+  admin changes the selection. RDP entries keep the stale group id.
+- New group ids must exist and must not be archived; a group the entry already
+  carries may stay after it was archived.
+
+Where it applies:
+
+| Entry point | Check |
+|---|---|
+| App service list, `POST /client/services/:id/open` | `routes.getForUser` |
+| RDP list and every `/client/rdp/:id/*`, browser sessions | `rdp.canAccessRoute` (pure `rdpAcl.canAccessRoute` with the person's groups) |
+| Portal tiles (`/api/portal/services`) | same rules; an HTTP route with the device ACL only when the portal device may reach it |
+| Route login from the apps | at redeem and on **every** `/route-auth/verify` of an `app:user:<id>` session |
+| "Was sieht <Name>?" / `/me/services` | reason `group` with the group path |
+
+**Device ACL (Caddy).** With **Geräte-Zugriffskontrolle (ACL)** on, Caddy
+lets through the source IPs of the listed devices **plus the devices of the
+listed persons and of the effective group members** (peers the person owns
+and peers bound to their app tokens; gateways never). When something is listed
+but no address results (empty group, everybody disabled), the route fails
+closed (`0.0.0.0/32`); with nothing listed it behaves as before. Membership
+changes (`groups.events`), device and account changes (activity events
+`peer_*`, `token_*`, `client_registered`, `client_enrollment_redeemed`,
+`device_usage_changed`, `user_toggled`, `user_updated`, `user_deleted`)
+rebuild the Caddy config — throttled to at most one reload per 5 seconds and
+only when a route with the ACL depends on persons or groups. Note: persons
+listed on a route with the ACL on now bring their devices, too.
+
+Storage: HTTP routes `routes.user_ids` (persons, JSON), `route_group_acl`
+(groups), `route_peer_acl` (devices); RDP `rdp_routes.user_ids` and
+`rdp_routes.group_ids` (JSON). **Wird genutzt von** on the group page lists
+both.
+
+**Backup.** The server backup carries `groups` (ids kept, nesting,
+archived state), `group_members` (by username), `group_invites` (SHA-256
+hashes only — the links keep working) and per route `group_refs`. Users are
+restored with their original ids (`user_ref`), so `user_ids` lists, group
+members and plugin data still name the same person; an id the backup does not
+know becomes `0` (nobody). A backup without the groups section leaves the
+groups as they are.
+
 ## Admin API
 
 Admin session only (like `/api/v1/users`); API tokens get 403.
@@ -143,6 +206,13 @@ Admin session only (like `/api/v1/users`); API tokens get 403.
 | GET / POST | `/api/v1/groups/:id/invites` | list / create `{ role, expiresInDays, maxUses }` |
 | DELETE | `/api/v1/groups/:id/invites/:inviteId` | revoke |
 | POST | `/api/v1/groups/import` | CSV as `text/plain` or `{ csv }` |
+| GET | `/api/v1/access/principals` | groups, persons and devices for "Wer darf zugreifen?" |
+| POST | `/api/v1/access/preview` | `{ userIds, groupIds, peerIds }` → `{ count, people: [{ userId, name, disabled, disabledReason, reasons }], devices, groups, unknownUserIds }` |
+
+Routes take `user_ids` and `group_ids` on `POST/PUT /api/v1/routes` (absent =
+keep, `null`/`[]` = clear; errors `GROUP_NOT_FOUND`, `GROUP_ARCHIVED`), RDP
+entries `user_ids` and `group_ids` on `POST/PATCH /api/v1/rdp`; `GET
+/api/v1/routes/:id` returns `group_ids`.
 
 Errors carry a `code`: `NOT_FOUND`, `NAME_TAKEN`, `DEPTH_EXCEEDED`, `CYCLE`,
 `READ_ONLY`, `HAS_CHILDREN`, `CONFIRM_MISMATCH`, `INVALID_ROLE`, … 
@@ -154,4 +224,11 @@ every function (`list`, `get`, `members`, `groupsOfUser`, `isMember`,
 `leadersOf`, `effectiveUserIds`, invitations, `importCsv`, `usage` /
 `registerUsageProvider`) and the change events (`events` emits `'change'`
 with a batch of `{ type, groupId, userId?, role? }` at most once per second).
-Activity entries use the event types `group_*`.
+Activity entries use the event types `group_*` (and `route_groups_changed`).
+
+`src/services/groupAccess.js` holds the access rules (`allows`,
+`canSeeRoute`, `userGroupSet`, `effectiveUsers`, `devicesOfUsers`,
+`aclPeers` / `aclRanges`, `preview`, `validateGroupIds`) and the throttled
+Caddy reload (`createReloader`, `startCaddySync` from `server.js`).
+`rdpAcl.canAccessRoute(route, tokenId, userId, { userGroups | groupsOf })`
+stays free of DB access; `rdp.canAccessRoute` passes the resolver.

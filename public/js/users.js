@@ -1142,6 +1142,7 @@
   function reasonOf(e, user) {
     if (e.reason === 'all') return { why: 'all', reason: T('us.see.why_all') };
     if (e.reason === 'token') return { why: 'pick', reason: T('us.see.why_token') };
+    if (e.reason === 'group') return { why: 'pick', reason: T('us.see.why_group', { groups: (e.groups || []).join(', ') }) };
     const names = (e.names || []).length ? e.names.join(', ') : firstName(user);
     return { why: 'pick', reason: T('us.see.why_picked', { names }) };
   }

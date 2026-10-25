@@ -12,7 +12,47 @@ const {
   clearCredentials,
 } = require('./rdpCredentials');
 const { isInMaintenanceWindow } = require('./rdpMaintenance');
-const { canAccessRoute } = require('./rdpAcl');
+const rdpAcl = require('./rdpAcl');
+
+/**
+ * rdpAcl.canAccessRoute with group membership resolved from the DB
+ * (groupAccess.userGroupSet, only when the entry lists groups). Every entry
+ * point (list, by id, guacamole) goes through here — docs/groups.md
+ * "Zugriff per Gruppe".
+ */
+function canAccessRoute(route, tokenId, userId, opts = {}) {
+  return rdpAcl.canAccessRoute(route, tokenId, userId, {
+    groupsOf: (uid) => require('./groupAccess').userGroupSet(uid),
+    ...opts,
+  });
+}
+
+// Persons (user_ids) and groups (group_ids) of an entry, checked and
+// normalised: groups must exist and not be archived unless the entry already
+// carries them (groupAccess.validateGroupIds). Empty lists are stored as NULL.
+function accessFields(data, existing) {
+  const groupAccess = require('./groupAccess');
+  const out = {};
+  try {
+    if (data.user_ids !== undefined) out.user_ids = groupAccess.validateUserIds(data.user_ids);
+    if (data.group_ids !== undefined) {
+      out.group_ids = groupAccess.validateGroupIds(data.group_ids, {
+        current: existing ? groupAccess.parseIdList(existing.group_ids) : [],
+      });
+    }
+  } catch (e) {
+    const field = /^USERS?_/.test(e.code) ? 'user_ids' : 'group_ids';
+    const msg = {
+      GROUP_NOT_FOUND: 'Group not found',
+      GROUP_ARCHIVED: 'Group is archived',
+    }[e.code] || (field === 'user_ids' ? 'User IDs must be an array' : 'Group IDs must be an array');
+    const err = new Error(msg);
+    err.fields = { [field]: msg };
+    err.code = e.code;
+    throw err;
+  }
+  return out;
+}
 
 // --- Validation ------------------------------------------------
 
@@ -306,13 +346,16 @@ function _assertListenPortFree(listenPort, excludeL4RouteId) {
   });
 }
 
-async function create(data) {
-  const errors = validateRdpRoute(data, false);
+async function create(input) {
+  const errors = validateRdpRoute(input, false);
   if (errors) {
     const err = new Error(Object.values(errors)[0]);
     err.fields = errors;
     throw err;
   }
+  const access = accessFields(input, null);
+  const data = { ...input };
+  if (access.user_ids) data.user_ids = access.user_ids.length ? access.user_ids : null;
 
   // Phase-2b: merge-aware cross-field validation (browser/ssh/sftp/ascii).
   // On create, plaintext creds are in data itself.
@@ -470,6 +513,9 @@ async function create(data) {
   );
 
   const routeId = result.lastInsertRowid;
+  if (access.group_ids && access.group_ids.length) {
+    db.prepare('UPDATE rdp_routes SET group_ids = ? WHERE id = ?').run(JSON.stringify(access.group_ids), routeId);
+  }
 
   // Gateway access mode: spin up a linked L4 TCP route that forwards
   // the external listen-port to the RDP target via the gateway's
@@ -564,6 +610,7 @@ async function update(id, data) {
     err.fields = errors;
     throw err;
   }
+  const access = accessFields(data, existing);
 
   // Validate the merged post-update shape: a PATCH that nulls
   // gateway_peer_id while access_mode stays 'gateway' would otherwise
@@ -728,9 +775,13 @@ async function update(id, data) {
     sets.push('token_ids = ?');
     values.push(data.token_ids ? JSON.stringify(data.token_ids) : null);
   }
-  if (data.user_ids !== undefined) {
+  if (access.user_ids) {
     sets.push('user_ids = ?');
-    values.push(data.user_ids ? JSON.stringify(data.user_ids) : null);
+    values.push(access.user_ids.length ? JSON.stringify(access.user_ids) : null);
+  }
+  if (access.group_ids) {
+    sets.push('group_ids = ?');
+    values.push(access.group_ids.length ? JSON.stringify(access.group_ids) : null);
   }
   if (data.tags !== undefined) {
     sets.push('tags = ?');
@@ -925,13 +976,16 @@ function resolveConnectEndpoint(route, { baseUrl, publicHost } = {}) {
 }
 
 // --- Token-filtered access -------------------------------------
-// canAccessRoute lives in ./rdpAcl — keep getForToken here because
+// canAccessRoute (pure) lives in ./rdpAcl — keep getForToken here because
 // it ties together the DB query with stripSensitive, which is a
 // route-shape concern owned by this module.
 function getForToken(tokenId, userId) {
   const db = getDb();
   const routes = db.prepare('SELECT * FROM rdp_routes WHERE enabled = 1').all();
-  return routes.filter(r => canAccessRoute(r, tokenId, userId)).map(r => stripSensitive(r));
+  // The user's groups are looked up once, and only if an entry lists groups.
+  let mine = null;
+  const groupsOf = (uid) => (mine || (mine = require('./groupAccess').userGroupSet(uid)));
+  return routes.filter(r => canAccessRoute(r, tokenId, userId, { groupsOf })).map(r => stripSensitive(r));
 }
 
 module.exports = {

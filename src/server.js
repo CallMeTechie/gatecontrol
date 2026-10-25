@@ -299,6 +299,12 @@ async function start() {
     setInterval(retryGroupsArchive, 60 * 60 * 1000);
     retryGroupsArchive();
 
+    // Zugriff per Gruppe (docs/groups.md): routes with the device ACL allow
+    // the devices of released persons and group members — membership, device
+    // and account changes rebuild the Caddy config, at most once per 5 s.
+    try { require('./services/groupAccess').startCaddySync(); }
+    catch (err) { logger.warn({ err: err.message }, 'group access: Caddy sync not started'); }
+
     // Periodic alert checks (every hour): backup reminder, CPU / RAM / disk
     // thresholds, de-duplicated (services/alertChecks.js).
     const retryAlertChecks = withRetry('alert-checks', () => require('./services/alertChecks').run());
@@ -354,6 +360,7 @@ const shutdown = createShutdownHandler({
     () => require('./services/gatewayHealth').stopWatchdog(),
     () => require('./services/caddyReconciler').stopReconciler(),
     () => require('./services/accessReconciler').stop(),
+    () => require('./services/groupAccess').stopCaddySync(),
     () => require('./services/tlsGuard').stop(),
     () => require('./services/botBlockerCounter').stop(),
     () => require('./services/waf').stop(),

@@ -46,7 +46,7 @@ const { buildTlsAutomation } = require('./caddyTlsAutomation');
 const { buildRouteAuthProxy, buildAuthHandlerChain, buildRequestBodyHandler } = require('./caddyAuthSubroute');
 const { appUpstream } = require('./caddyAppUpstream');
 const { backendCaPath, mtlsCaPath } = require('./caddyPemFiles');
-const { getAclPeers, setAclPeers } = require('./caddyAcl');
+const { getAclPeers, setAclPeers, aclRanges } = require('./caddyAcl');
 const { renderMaintenancePage } = require('./caddyMaintenance');
 const { renderAccessWindowPage } = require('./caddyAccessWindow');
 const { getOwnerId, ownerMarkerRoute, extractOwner, ownershipDecision, MARKER_HOST } = require('./caddyOwner');
@@ -73,6 +73,10 @@ const HSTS_HEADER = 'Strict-Transport-Security';
 // the HTTP gate here and the L4 gate in services/l4.js share a single source
 // of truth. Default: VPN subnet only; GC_HUB_PUBLIC_IP appends a /32.
 const INTERNAL_ONLY_RANGES = config.wireguard.internalOnlyRanges;
+
+// Peer ACL that resolves to no device: 0.0.0.0 is never a connection's
+// source address, so the route answers nobody (fail closed).
+const ACL_NOBODY_RANGE = '0.0.0.0/32';
 
 // Every sync is a full POST /load, and Caddy closes all upgraded connections
 // (WebSockets: web terminal, guacamole RDP tunnel) of the replaced config
@@ -705,16 +709,18 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       handle: routeHandlers,
     };
 
-    // Peer ACL
+    // Peer ACL: the listed devices plus the devices of the released persons
+    // and of the effective members of the released groups (docs/groups.md
+    // "Zugriff per Gruppe", services/groupAccess.js). Something listed but no
+    // address left (e.g. every member left the group, accounts disabled) →
+    // fail closed with a source range no connection comes from; nothing
+    // listed keeps the historic behaviour (no peer matcher).
     if (route.acl_enabled) {
-      const aclPeers = getAclPeers(route.id);
-      if (aclPeers.length > 0) {
-        const ranges = aclPeers
-          .map(p => p.allowed_ips ? p.allowed_ips.split('/')[0] + '/32' : null)
-          .filter(Boolean);
-        if (ranges.length > 0) {
-          routeConfig.match = [{ remote_ip: { ranges } }];
-        }
+      const { configured, ranges } = aclRanges(route);
+      if (ranges.length > 0) {
+        routeConfig.match = [{ remote_ip: { ranges } }];
+      } else if (configured) {
+        routeConfig.match = [{ remote_ip: { ranges: [ACL_NOBODY_RANGE] } }];
       }
     }
 

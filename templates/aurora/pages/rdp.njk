@@ -441,9 +441,11 @@
 
         {# Wizard-Step 6: Visibility / User Access #}
         <div data-wizard-step="6" data-step-key="access">
-          <div style="font-size:12px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">{{ t('routes.visible_to_users') }}</div>
-          <div style="font-size:11px;color:var(--faint);margin-bottom:6px">{{ t('routes.visible_to_users_hint') }}</div>
-          <div id="rdp-user-ids" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+          {# "Wer darf zugreifen?" — groups and persons (access-picker.js,
+             docs/groups.md "Zugriff per Gruppe"): user_ids + group_ids. #}
+          <div id="rdp-access-ttl" style="font-size:12px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">{{ t('acc.title') }}</div>
+          <div style="font-size:11px;color:var(--faint)">{{ t('acc.desc_rdp') }}</div>
+          <div id="rdp-access-picker" data-devices="0" aria-labelledby="rdp-access-ttl"></div>
         </div>
 
         {# Wizard-Step 6: Review & Save #}
@@ -537,11 +539,14 @@
 
 {# Session history modal (opened by Aurora card "Session-Verlauf" button) #}
 {% include theme + "/partials/modals/peer-traffic.njk" %}
+{# "Wer darf zugreifen?" strings (access-picker.js) #}
+{% include "partials/access-i18n.njk" %}
 
 {% endblock %}
 
 {% block scripts %}
 <script src="/js/rdp-form-logic.js?v={{ appVersion }}"></script>
 <script src="/js/rdp-cred-omission.js?v={{ appVersion }}"></script>
+<script src="/js/access-picker.js?v={{ appVersion }}"></script>
 <script src="/js/rdp.js?v={{ appVersion }}"></script>
 {% endblock %}
