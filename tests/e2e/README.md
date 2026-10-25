@@ -53,6 +53,11 @@ scenarios/10-support-bundles.js /support-bundles: Support-Pakete aus dem Seed
                         (inkl. Problembeschreibung + Diagnose des Diagnose-Assistenten),
                         Log-Filter + Suche, „angesehen“ (Badge), Löschen,
                         hell/dunkel, 400 px
+scenarios/11-portal-start.js Portal-Start ohne Server: echtes portal.js auf einer
+                        Minimalseite, Kacheln per page.route gezählt, Uhr von
+                        Playwright: neue Kachel binnen einer Minute ohne Neuladen,
+                        verschwundene Kachel geht, verborgene Seite / anderer Tab
+                        fragt nichts, zurück → sofort (höchstens alle 15 s)
 ```
 
 ## Ablauf
