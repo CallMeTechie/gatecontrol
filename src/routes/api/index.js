@@ -66,6 +66,8 @@ router.use('/users', require('./users'));
 router.use('/groups', require('./groups'));
 // "Wer darf zugreifen?": principals + preview for the route/RDP dialogs (admin session)
 router.use('/access', require('./access'));
+// Picker for groups and people of plugin frames (GC.pickPrincipals): admin session only
+router.use('/principals', require('./principals'));
 router.use('/enrollment', require('./enrollment'));
 router.use('/profile', require('./profile'));
 // "Mein Bereich" (member self-service, session only, own account only)

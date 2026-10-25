@@ -11,7 +11,9 @@
  *   POST   /api/v1/groups/import                      CSV (text/plain body or { csv })
  *   GET    /api/v1/groups/:id                         group + members (incl. inherited) + invites
  *   PATCH  /api/v1/groups/:id                         name, description, color, kind, endsAt, parentId
- *   DELETE /api/v1/groups/:id?confirm=<name>          delete (name typed to confirm)
+ *   DELETE /api/v1/groups/:id?confirm=<name>[&successor=<userId>]
+ *                                                     delete (name typed to confirm; plugins'
+ *                                                     groupDeleting hooks run first, ≤ 30 s)
  *   POST   /api/v1/groups/:id/archive | /unarchive
  *   GET    /api/v1/groups/:id/usage                   "Wird genutzt von" (core + providers)
  *   PUT    /api/v1/groups/:id/members/:userId { role }
@@ -124,11 +126,14 @@ router.patch('/:id', (req, res) => {
   } catch (err) { fail(req, res, err); }
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const confirmName = typeof req.query.confirm === 'string' ? req.query.confirm
       : (req.body && typeof req.body.confirm === 'string' ? req.body.confirm : '');
-    groups.remove(req.params.id, opts(req, { confirmName }));
+    // successor: who takes over what plugins keep for the group (groupDeleting hook); default its leader
+    const successor = req.query.successor != null ? req.query.successor : (req.body && req.body.successor != null ? req.body.successor : null);
+    // plugins clean up first (groupDeleting, ≤ 30 s in total), then the group goes
+    await groups.removeWithHooks(req.params.id, opts(req, { confirmName, successorUserId: successor }));
     res.json({ ok: true });
   } catch (err) { fail(req, res, err); }
 });
@@ -189,3 +194,4 @@ router.delete('/:id/invites/:inviteId', (req, res) => {
 });
 
 module.exports = router;
+module.exports.inviteBase = inviteBase;

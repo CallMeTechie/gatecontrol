@@ -98,6 +98,68 @@ not changed and no use is counted for them. Links point to the portal host
 when the portal is on, otherwise to the web UI (`/portal/groups/join/<token>`).
 Plugin groups have no invitation links.
 
+## Portal: "Meine Gruppen"
+
+The portal has a tab **Gruppen** ("Meine Gruppen") for signed-in people who
+belong to at least one group — a portal or web session; never a kiosk
+device, never the read-only device recognition.
+
+- **Everybody** sees their groups as chips (direct and through a subgroup),
+  the chosen one with path, own role, source ("eigene GateControl-Gruppe",
+  "aus dem Verzeichnis", "von einem Plugin gepflegt"), end date, and who leads
+  it (lead and deputy, walking up like everywhere).
+- A **lead** or **group admin** (family: a parent) — a direct role in exactly
+  that group; a lead of a group above does not manage the subgroups — also
+  sees the members (with e-mail address, members from subgroups marked) and
+  maintains the group:
+  - **Person hinzufügen** by the exact user name or e-mail address of an
+    existing, enabled account (there is no directory of people for
+    non-admins; unknown and disabled accounts get the same answer);
+  - roles **Mitglied**, **Vertretung**, **Gruppen-Admin** (family: Kind);
+    the lead (family: parent) is given and changed only by a server admin,
+    and nobody changes their own membership here;
+  - remove members;
+  - **Einladungslinks** like on the admin page (1–30 days, 1–500 uses, role
+    member/deputy/group admin), shown once, open ones listed and revocable.
+- **Directory groups**: only the extra local members can be added, changed
+  and removed; **plugin groups** are read-only for everybody.
+- The deputy card explains that the deputy steps in when a plugin reports
+  the lead as absent; a manager sets it by giving a member the role
+  "Vertretung".
+
+Every change is written to the activity log as the person's own (source
+`user`, `actorId`).
+
+Portal API (`/api/v1/portal/groups`, CSRF token of the session for writes):
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/v1/portal/groups` | own groups: role, direct, path, source, `manage`, leaders |
+| GET | `/api/v1/portal/groups/:id` | a group of the viewer; for managers also `members` (with `canEditRole`, `canRemove`), `invites`, `roles` |
+| POST | `/api/v1/portal/groups/:id/members` | `{ login, role }` — user name or e-mail address |
+| PUT | `/api/v1/portal/groups/:id/members/:userId` | `{ role }` |
+| DELETE | `/api/v1/portal/groups/:id/members/:userId` | remove a member |
+| GET / POST | `/api/v1/portal/groups/:id/invites` | list / create `{ role, expiresInDays, maxUses }` |
+| DELETE | `/api/v1/portal/groups/:id/invites/:inviteId` | revoke |
+| GET | `/api/v1/portal/groups/principals` | what `GC.pickPrincipals` offers in portal frames: groups by name, the viewer |
+
+Errors carry a `code`: `LOGIN_REQUIRED` (401), `NOT_MEMBER`, `NOT_MANAGER`,
+`PROTECTED` (lead / parent), `SELF`, `READ_ONLY` (403), `USER_NOT_FOUND`,
+`MEMBER_NOT_FOUND`, `INVITE_NOT_FOUND`, `NOT_FOUND` (404), `ALREADY_MEMBER`
+(409), `INVALID`, `INVALID_ROLE` (400).
+
+## Plugins
+
+Plugins with `permissions.groups` read the groups (`gc.groups.list`, `get`,
+`members`, `isMember`, `leadersOf`), hear of changes (`groupsChanged`), report
+what they keep for a group (`groupUsage` → "Wird genutzt von" and the delete
+dialog), clean up before a group is deleted (`groupDeleting`, 30 s in total),
+send notifications to groups (`gc.notify({ groups })`) and open GateControl's
+picker for groups and people in their pages (`GC.pickPrincipals`). With
+`"manage"` they keep groups of their own (`gc.groups.ensure` / `remove`,
+source `plugin:<id>`) — e.g. the family of the Familie plugin. See
+[plugins.md](plugins.md) "Groups".
+
 ## CSV import
 
 **CSV importieren** takes one line per person, separated by semicolons:
@@ -198,7 +260,8 @@ Admin session only (like `/api/v1/users`); API tokens get 403.
 | POST | `/api/v1/groups` | `{ parentId, kind, name, description, color, endsAt }` (always local) |
 | GET | `/api/v1/groups/:id` | group, members (incl. inherited), invitation links, roles |
 | PATCH | `/api/v1/groups/:id` | `name, description, color, kind, endsAt, parentId` |
-| DELETE | `/api/v1/groups/:id?confirm=<name>` | delete |
+| DELETE | `/api/v1/groups/:id?confirm=<name>[&successor=<userId>]` | delete — plugins' `groupDeleting` runs first (≤ 30 s); `successor` defaults to the group's lead |
+| GET | `/api/v1/principals` | groups and enabled people for `GC.pickPrincipals` on admin pages |
 | POST | `/api/v1/groups/:id/archive`, `/unarchive` | archive / restore |
 | GET | `/api/v1/groups/:id/usage` | "Wird genutzt von" |
 | PUT | `/api/v1/groups/:id/members/:userId` | `{ role }` — add or change role |
@@ -222,7 +285,7 @@ Errors carry a `code`: `NOT_FOUND`, `NAME_TAKEN`, `DEPTH_EXCEEDED`, `CYCLE`,
 `src/services/groups.js` is the single source of truth; its header documents
 every function (`list`, `get`, `members`, `groupsOfUser`, `isMember`,
 `leadersOf`, `effectiveUserIds`, invitations, `importCsv`, `usage` /
-`registerUsageProvider`) and the change events (`events` emits `'change'`
+`registerUsageProvider`, `removeWithHooks` / `registerRemoveHook`) and the change events (`events` emits `'change'`
 with a batch of `{ type, groupId, userId?, role? }` at most once per second).
 Activity entries use the event types `group_*` (and `route_groups_changed`).
 

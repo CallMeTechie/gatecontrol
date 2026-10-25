@@ -29,7 +29,7 @@
   {% if running %}
     <iframe class="pg-frame" id="pg-frame" title="{{ page.title }}" src="/plugins/{{ plugin.id }}/frame/{{ page.id }}"
       sandbox="allow-scripts allow-forms{% if plugin.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}{% if plugin.media %} allow-downloads{% endif %}" referrerpolicy="no-referrer"{% if plugin.allow %} allow="{{ plugin.allow }}"{% endif %}
-      data-plugin-frame data-plugin-id="{{ plugin.id }}" data-plugin-api="/api/v1/plugins/{{ plugin.id }}/api/" data-plugin-pages="{{ pagesJson }}"{% if plugin.events %} data-plugin-events{% endif %}{% if plugin.scanQr %} data-plugin-scanqr data-plugin-name="{{ plugin.name }}"{% endif %}></iframe>
+      data-plugin-frame data-plugin-id="{{ plugin.id }}" data-plugin-api="/api/v1/plugins/{{ plugin.id }}/api/" data-plugin-pages="{{ pagesJson }}"{% if plugin.events %} data-plugin-events{% endif %}{% if plugin.scanQr %} data-plugin-scanqr data-plugin-name="{{ plugin.name }}"{% endif %}{% if plugin.pickPrincipals %} data-plugin-groups{% if not plugin.scanQr %} data-plugin-name="{{ plugin.name }}"{% endif %}{% endif %}></iframe>
   {% else %}
     <section class="pg-off" id="pg-off" data-reason="{{ reason }}" aria-labelledby="pg-off-title">
       <span class="pg-off-ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.4 6.6a9 9 0 1 1-12.8 0M12 2v10"/></svg></span>
@@ -47,5 +47,6 @@
 
 {% block scripts %}
 {% if running %}<script src="/js/qr-scan.js?v={{ appVersion }}"></script>
-<script src="/js/plugin-bridge.js?v={{ appVersion }}"></script>{% endif %}
+<script src="/js/plugin-bridge.js?v={{ appVersion }}"></script>
+<script src="/js/principal-picker.js?v={{ appVersion }}"></script>{% endif %}
 {% endblock %}

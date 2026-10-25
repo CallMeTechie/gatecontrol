@@ -8437,6 +8437,26 @@ a.up-dev:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 .gc-qr-switch{margin-right:auto}
 .gc-qr-switch[hidden]{display:none}
 
+/* Picker for groups and people of the plugin frames (GC.pickPrincipals, public/js/principal-picker.js) */
+.gc-pp-box{width:min(560px, 100%)}
+.gc-pp-box .modal-title small{margin-top:2px}
+.gc-pp-search{width:100%; min-height:40px; padding:0 12px; border-radius:10px; border:1px solid var(--line-2); background:var(--surface); color:var(--text); font:14px var(--font-body)}
+.gc-pp-chips{display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 0}
+.gc-pp-chip{display:inline-flex; align-items:center; gap:6px; padding:4px 6px 4px 12px; border-radius:999px; border:1px solid var(--line-2); background:var(--teal-soft, var(--chip)); font-size:13px; color:var(--text)}
+.gc-pp-chip-x{border:0; background:transparent; color:var(--muted); font-size:16px; line-height:1; cursor:pointer; padding:0 4px; border-radius:50%}
+.gc-pp-chip-x:hover{color:var(--text)}
+.gc-pp-none{font-size:12.5px; color:var(--faint)}
+.gc-pp-list{list-style:none; margin:10px 0 0; padding:0; max-height:min(46vh, 380px); overflow-y:auto; display:flex; flex-direction:column; gap:2px}
+.gc-pp-opt{width:100%; display:flex; align-items:baseline; gap:10px; padding:9px 10px; border:1px solid transparent; border-radius:10px; background:transparent; color:var(--text); font:500 13.5px var(--font-body); text-align:left; cursor:pointer}
+.gc-pp-opt:hover{background:var(--chip)}
+.gc-pp-opt:focus-visible{outline:2px solid var(--teal); outline-offset:-2px}
+.gc-pp-opt.is-on{border-color:var(--teal); background:var(--teal-soft, var(--chip))}
+.gc-pp-kind{flex:0 0 auto; font-size:11px; color:var(--muted); min-width:52px}
+.gc-pp-label{flex:1 1 auto; min-width:0; overflow-wrap:anywhere}
+.gc-pp-sub2{flex:0 0 auto; font-size:12px; color:var(--faint)}
+.gc-pp-status{margin:8px 0 0; min-height:1.2em; font-size:13px; color:var(--muted)}
+.gc-pp-privacy{margin:4px 0 0; font-size:12px; color:var(--faint)}
+
 /* ============================================================================
  * §12 Groups (grp-): Benutzer › Gruppen — tree with kind colour, source badge
  *    and members incl. subgroups; the group detail (members, invitation links,

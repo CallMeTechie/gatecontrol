@@ -73,6 +73,16 @@
 // parent only takes the request from an <iframe data-plugin-scanqr> — an
 // attribute the server renders, which the frame cannot set.
 //
+// People and groups (plugin.json `permissions.groups`): window.GC.pickPrincipals({
+// groups, users, multiple, title }) → [{ type: 'group'|'user', id, label }] |
+// null. The frame never gets a list of people: it asks the parent page
+// (gc-pick), which opens GateControl's own picker (public/js/principal-picker.js)
+// with what the viewer may see (admins: every group and person; portal: the
+// groups by name and the viewer), and answers only the chosen entries. The
+// frame document has GC.pickPrincipals only for such plugins
+// (pickPrincipalsOf), and the parent only takes the request from an
+// <iframe data-plugin-groups> — an attribute the server renders.
+//
 // Inbox (plugin.json `ui.inbox`, portal frames only): window.GC.inbox.on(fn)
 // gets { available, unread, latest: { title, createdAt, priority } | null }
 // of the viewer's own notification inbox — the portal page's own state
@@ -155,6 +165,12 @@ function allowAttr({ media = false, geolocation = false, camera = false } = {}) 
 function scanQrOf(manifest) {
   const ui = manifest && manifest.ui;
   return !!(ui && (ui.scanQr === true || ui.camera === true));
+}
+
+/** May the plugin's frames open the picker for groups and people (GC.pickPrincipals)? `permissions.groups`. */
+function pickPrincipalsOf(manifest) {
+  const g = manifest && manifest.permissions && manifest.permissions.groups;
+  return g === 'read' || g === 'manage';
 }
 
 /** sandbox attribute of the <iframe> showing a plugin frame (`media`: a plugin declaring media). */
@@ -254,6 +270,19 @@ const BRIDGE_CLIENT = `(function(){
       post({ type: 'gc-scan', id: id, hint: o.hint == null ? '' : String(o.hint), accept: accept.map(function (a) { return String(a); }), timeout: Number(o.timeout) || 0 });
     });
   }
+  // permissions.groups: GateControl's picker for groups and people → [{ type, id, label }] | null (cancelled).
+  // Never rejects.
+  function pickPrincipals(opts) {
+    return new Promise(function (resolve) {
+      var o = opts && typeof opts === 'object' ? opts : {};
+      var id = ++seq;
+      var done = function (d) { resolve(Array.isArray(d) ? d : null); };
+      pending[id] = { resolve: done, reject: function () { done(null); } };
+      pending[id].timer = setTimeout(function () { if (pending[id]) { delete pending[id]; done(null); } }, 30 * 60000);
+      post({ type: 'gc-pick', id: id, groups: o.groups !== false, users: o.users === true, multiple: o.multiple === true,
+        title: o.title == null ? '' : String(o.title).slice(0, 120) });
+    });
+  }
   // permissions.events: realtime events of the plugin ({ plugin, type, data })
   function on(name, fn) {
     if (name !== 'event' || typeof fn !== 'function') return;
@@ -334,6 +363,7 @@ const BRIDGE_CLIENT = `(function(){
     tiles: /*GC_TILES*/null
   };
   if (/*GC_SCANQR*/false) api.scanQr = scanQr;
+  if (/*GC_PICK*/false) api.pickPrincipals = pickPrincipals;
   window.GC = Object.freeze(api);
   if (window.ResizeObserver) new ResizeObserver(size).observe(document.documentElement);
   // a dialog shown or hidden changes no document size: watch the DOM as well
@@ -357,12 +387,14 @@ const TILES_RE = /^\/plugins\/_shared\/tiles\/[A-Za-z0-9._-]+\/\{z\}\/\{x\}\/\{y
 /**
  * The full frame document around a plugin fragment. `tiles` (maps frames
  * only) becomes window.GC.tiles, otherwise GC.tiles is null; `scanQr`
- * (scanQrOf the plugin) gives the frame window.GC.scanQr.
+ * (scanQrOf the plugin) gives the frame window.GC.scanQr, `pickPrincipals`
+ * (pickPrincipalsOf) window.GC.pickPrincipals.
  */
-function document({ html, lang, maps = false, tiles = null, scanQr = false }) {
+function document({ html, lang, maps = false, tiles = null, scanQr = false, pickPrincipals = false }) {
   const l = lang === 'en' ? 'en' : 'de';
   const t = maps && typeof tiles === 'string' && TILES_RE.test(tiles) ? JSON.stringify(tiles) : 'null';
-  const client = BRIDGE_CLIENT.replace('/*GC_TILES*/null', () => t).replace('/*GC_SCANQR*/false', scanQr === true ? 'true' : 'false');
+  const client = BRIDGE_CLIENT.replace('/*GC_TILES*/null', () => t).replace('/*GC_SCANQR*/false', scanQr === true ? 'true' : 'false')
+    .replace('/*GC_PICK*/false', pickPrincipals === true ? 'true' : 'false');
   return '<!doctype html>\n<html lang="' + escAttr(l) + '" data-theme="dark"><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="' + (maps ? REFERRER_MAPS : REFERRER) + '">'
     + '<style>' + BASE_CSS + '</style><script>' + client + '</script></head><body>'
@@ -384,4 +416,4 @@ function headers(res, opts = {}) {
   res.type('html');
 }
 
-module.exports = { CSP, cspFor, originOf, sandboxAttr, allowAttr, scanQrOf, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA };
+module.exports = { CSP, cspFor, originOf, sandboxAttr, allowAttr, scanQrOf, pickPrincipalsOf, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA };

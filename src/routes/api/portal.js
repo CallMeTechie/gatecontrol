@@ -33,6 +33,10 @@ router.use((req, res, next) => {
 // portal or web session (never via device trust), always the session's user.
 router.use('/me', createMeRouter((req) => (req.portalLoggedIn ? req.portalOwnerId : null)));
 
+// "Meine Gruppen" (docs/groups.md "Portal"): own groups; leads and group admins maintain theirs.
+// Signed-in people only (never device trust, never a kiosk device).
+router.use('/groups', require('./portalGroups'));
+
 // Plugin portal tabs (docs/plugins.md): requests forwarded to the plugin.
 router.use('/plugins', require('./pluginsPortal'));
 
