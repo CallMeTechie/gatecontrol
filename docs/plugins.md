@@ -1842,6 +1842,19 @@ disable/uninstall and when the server shuts down.
   * One scan at a time on the page, only while the page and the frame are
     visible. Check `typeof GC.scanQr === 'function'` and keep another way for
     older hosts (a picture upload decoded in the frame, manual entry).
+* **Viewport** (since 1.199.0): a frame grows with its content; to fill the
+  screen instead (a dashboard, the Familie wall tablet), it can take the
+  height it has without the page scrolling — the window's height minus what
+  stands above the frame and below it on the page. GateControl tells every
+  frame on load, on a new document, when the window is resized and when the
+  page around the frame changes (a banner above, the frame shown in another
+  tab), only when the value changes: `window.GC.viewport` → `{ height, width }`
+  (px; `null` until known — an older GateControl never sets it), the CSS
+  variable `--gc-viewport-height` on the frame's root and a `gc:viewport`
+  event on `window` (`detail` = the same object). Use it with a fallback,
+  e.g. `height: var(--gc-viewport-height, 640px)`; at least 200 px. A kiosk
+  device's portal has no footer and a short bottom margin, so a wall gets
+  as much of the screen as possible.
 * Sandboxed frames have no `alert`/`confirm`/`prompt` (no `allow-modals`):
   plugins draw their own dialogs. The frame grows with its content and with
   an open dialog (visible `position: fixed` elements count with their full

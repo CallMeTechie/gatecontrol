@@ -58,6 +58,10 @@ scenarios/11-portal-start.js Portal-Start ohne Server: echtes portal.js auf eine
                         Playwright: neue Kachel binnen einer Minute ohne Neuladen,
                         verschwundene Kachel geht, verborgene Seite / anderer Tab
                         fragt nichts, zurück → sofort (höchstens alle 15 s)
+scenarios/12-plugin-viewport.js Plugin-Fenster ohne Server: echtes Frame-Dokument
+                        (frame.js) + plugin-bridge.js, Kopf darüber, Fuß darunter:
+                        GC.viewport / --gc-viewport-height = Platz ohne Scrollen,
+                        neu bei Größenänderung, Banner darüber, Tab-Wechsel
 ```
 
 ## Ablauf

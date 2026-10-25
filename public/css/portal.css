@@ -555,3 +555,8 @@ button, input, select { font: inherit; color: inherit; }
 .pt-plg-qr-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 100%; }
 .pt-plg-qr-secret { font-family: var(--mono, ui-monospace, monospace); font-size: 14px; color: var(--text); overflow-wrap: anywhere; user-select: all; }
 .pt-plg-qr-left { font-variant-numeric: tabular-nums; }
+
+/* A kiosk device (wall tablet, since 1.199.0): no footer, a short bottom margin — the plugin frame (the
+   Familie wall) gets the screen's height through --gc-viewport-height (public/js/plugin-bridge.js). */
+.pt-kiosk .pt-footer { display: none; }
+.pt-kiosk .pt-main { padding-bottom: 16px; }

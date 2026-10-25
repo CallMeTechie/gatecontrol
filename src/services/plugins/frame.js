@@ -183,7 +183,7 @@ table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:8px;bord
 
 // Runs inside the sandboxed frame. Talks to window.parent only.
 const BRIDGE_CLIENT = `(function(){
-  var seq = 0, pending = {}, listeners = [], inboxListeners = [], inboxLast = null;
+  var seq = 0, pending = {}, listeners = [], inboxListeners = [], inboxLast = null, viewport = null;
   function post(msg){ try { window.parent.postMessage(msg, '*'); } catch (e) { /* no parent */ } }
   window.addEventListener('message', function (e) {
     if (e.source !== window.parent) return;
@@ -203,6 +203,13 @@ const BRIDGE_CLIENT = `(function(){
       for (var k = 0; k < ls.length; k++) { try { ls[k](m.inbox); } catch (e) { /* the plugin's listener */ } }
     } else if (m.type === 'gc-theme') {
       document.documentElement.setAttribute('data-theme', m.theme === 'light' ? 'light' : 'dark');
+    } else if (m.type === 'gc-viewport') {
+      // since 1.199.0: the height this frame can take without the page scrolling
+      var vh = Math.floor(Number(m.height)), vw = Math.floor(Number(m.width));
+      if (!(vh >= 200 && vh <= 20000)) return;
+      viewport = Object.freeze({ height: vh, width: vw >= 0 && vw <= 20000 ? vw : 0 });
+      document.documentElement.style.setProperty('--gc-viewport-height', vh + 'px');
+      try { window.dispatchEvent(new CustomEvent('gc:viewport', { detail: viewport })); } catch (e) { /* old browsers */ }
     }
   });
   function call(method, path, body) {
@@ -322,6 +329,8 @@ const BRIDGE_CLIENT = `(function(){
     off: off,
     inbox: inbox,
     lang: document.documentElement.lang || 'de',
+    // since 1.199.0: { height, width } — what the frame can take without the page scrolling (null until known)
+    get viewport() { return viewport; },
     tiles: /*GC_TILES*/null
   };
   if (/*GC_SCANQR*/false) api.scanQr = scanQr;
