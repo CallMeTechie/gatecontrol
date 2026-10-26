@@ -66,6 +66,37 @@ function canWebLogin(user) {
 }
 
 /**
+ * May an account create setup codes for its own devices (portal "Meine
+ * Geräte", POST /api/v1/me/enrollment, the sign-in in the apps —
+ * routes/api/client/signin.js)? Only enabled accounts:
+ *   via 'admin'      administrators, always
+ *   via 'user'       members with the per-user permission (self_enroll_enabled)
+ *   via 'directory'  accounts of a directory with "Geräte selbst einrichten
+ *                    erlauben" on (directories.self_enroll, connection enabled)
+ * enrollRule(user) → { allowed, via, directory: { id, name } | null };
+ * `directory` names the directory that allows it (or would, for the users
+ * page) whenever the account is linked to one with the switch on.
+ */
+function enrollRule(user) {
+  if (!user) return { allowed: false, via: null, directory: null };
+  let directory = null;
+  if (user.role === 'user') {
+    try {
+      const d = getDb().prepare(`SELECT d.id, d.name FROM directory_links l JOIN directories d ON d.id = l.directory_id
+        WHERE l.user_id = ? AND d.enabled = 1 AND d.self_enroll = 1`).get(user.id);
+      if (d) directory = { id: d.id, name: d.name };
+    } catch { directory = null; } // older schema without directories.self_enroll
+  }
+  if (user.enabled !== 1) return { allowed: false, via: null, directory };
+  if (user.role === 'admin') return { allowed: true, via: 'admin', directory: null };
+  if (user.self_enroll_enabled === 1) return { allowed: true, via: 'user', directory };
+  if (directory) return { allowed: true, via: 'directory', directory };
+  return { allowed: false, via: null, directory: null };
+}
+
+function mayEnroll(user) { return enrollRule(user).allowed; }
+
+/**
  * Password policy for every password this service sets (admin reset, role
  * change, invitation): at least PASSWORD_MIN_LENGTH characters plus the
  * configurable complexity rules (Einstellungen → Anmeldung). Returns a list
@@ -685,6 +716,8 @@ module.exports = {
   filterScopesForRole,
   stripSensitive,
   canWebLogin,
+  enrollRule,
+  mayEnroll,
   passwordPolicyErrors,
   list,
   listForAdmin,

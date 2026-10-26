@@ -40,11 +40,13 @@ function groupsOf(id) {
 function directoryOf(id) {
   try {
     const row = require('../../db/connection').getDb().prepare(`SELECT l.directory_id, l.login_name, l.upn, l.state, l.last_seen_at,
-        l.linked_at, d.name, d.kind FROM directory_links l JOIN directories d ON d.id = l.directory_id WHERE l.user_id = ?`).get(id);
+        l.linked_at, d.name, d.kind, d.enabled, d.self_enroll FROM directory_links l JOIN directories d ON d.id = l.directory_id WHERE l.user_id = ?`).get(id);
     if (!row) return null;
     return {
       id: row.directory_id, name: row.name, kind: row.kind, loginName: row.login_name || row.upn || null,
       state: row.state, lastSeenAt: row.last_seen_at, linkedAt: row.linked_at,
+      // "Geräte selbst einrichten erlauben" of the directory (users.mayEnroll)
+      selfEnroll: row.enabled === 1 && row.self_enroll === 1,
     };
   } catch (err) {
     logger.warn({ err: err.message }, 'directory of user unavailable');

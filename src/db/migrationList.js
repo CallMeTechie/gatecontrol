@@ -2675,6 +2675,18 @@ const migrations = [
     },
     detect: (db) => hasColumn(db, 'routes', 'acl_people'),
   },
+  {
+    version: 112,
+    name: 'directory_self_enroll',
+    // "Geräte selbst einrichten erlauben" per directory (docs/groups.md
+    // "Anmeldung in den Apps"): directories.self_enroll = 1 lets every
+    // enabled account of this directory create setup codes for its own
+    // devices (portal "Meine Geräte", sign-in in the apps) without the
+    // per-user permission users.self_enroll_enabled. Off by default — the
+    // per-user switch keeps working either way (services/users.js mayEnroll).
+    sql: `ALTER TABLE directories ADD COLUMN self_enroll INTEGER NOT NULL DEFAULT 0;`,
+    detect: (db) => hasColumn(db, 'directories', 'self_enroll'),
+  },
 ];
 
 module.exports = { migrations };

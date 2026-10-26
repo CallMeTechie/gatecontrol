@@ -13,7 +13,9 @@
  *   secretOf(row) → decrypted secret or ''
  *   create(input, { actor, ip }) / update(id, patch, { actor, ip })
  *       input: { kind, name, config, secret, enabled, loginEnabled,
- *       provision, deprovision, intervalMin, parentGroupId, selectedGroups }
+ *       provision, deprovision, intervalMin, parentGroupId, selectedGroups,
+ *       selfEnroll } — selfEnroll: the accounts of this directory may set
+ *       up own devices (services/users.js mayEnroll), default off
  *       secret: undefined / '' = keep, string = replace, null = clear
  *   remove(id, { confirmName, actor, ip }) — the imported groups are
  *       archived (access through them ends), links, conflicts and runs go;
@@ -193,6 +195,7 @@ function shape(row) {
     loginEnabled: row.login_enabled === 1,
     provision: row.provision === 1,
     deprovision: row.deprovision === 1,
+    selfEnroll: row.self_enroll === 1,
     intervalMin: row.interval_min,
     parentGroupId: row.parent_group_id,
     config,
@@ -244,6 +247,7 @@ function create(input = {}, { actor = null, ip = null } = {}) {
     bool(input.provision, true) ? 1 : 0, bool(input.deprovision, true) ? 1 : 0, cleanInterval(input.intervalMin),
   );
   const id = Number(info.lastInsertRowid);
+  if (bool(input.selfEnroll, false)) db.prepare('UPDATE directories SET self_enroll = 1 WHERE id = ?').run(id);
   activity.log('directory_created', `Directory "${name}" (${kind}) connected`, {
     source: 'admin', ipAddress: ip, severity: 'info', details: { directoryId: id, kind, actorId: actor },
   });
@@ -276,6 +280,7 @@ function update(id, patch = {}, { actor = null, ip = null } = {}) {
   if (p.provision !== undefined) put('provision', bool(p.provision, true) ? 1 : 0, 'provision');
   if (p.deprovision !== undefined) put('deprovision', bool(p.deprovision, true) ? 1 : 0, 'deprovision');
   if (p.intervalMin !== undefined) put('interval_min', cleanInterval(p.intervalMin), 'intervalMin');
+  if (p.selfEnroll !== undefined) put('self_enroll', bool(p.selfEnroll, false) ? 1 : 0, 'selfEnroll');
   if (!sets.length) return get(row.id);
   db.prepare(`UPDATE directories SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`).run(...vals, row.id);
   activity.log('directory_updated', `Directory "${row.name}" changed (${changed.join(', ')})`, {

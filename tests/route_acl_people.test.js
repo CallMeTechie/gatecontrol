@@ -86,7 +86,7 @@ describe('migration 111 (route_acl_people)', () => {
     const m = migration();
     assert.ok(m, 'migration 111 exists');
     const versions = require('../src/db/migrationList').migrations.map((x) => x.version);
-    assert.equal(Math.max(...versions), 111);
+    assert.equal(versions[versions.indexOf(110) + 1], 111, 'right after 110 (later migrations may follow)');
     assert.equal(typeof m.detect, 'function');
     assert.equal(typeof m.run, 'function');
     assert.match(m.sql, /ALTER TABLE routes ADD COLUMN acl_people INTEGER NOT NULL DEFAULT 1/);

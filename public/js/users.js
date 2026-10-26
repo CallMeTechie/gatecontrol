@@ -1310,7 +1310,12 @@
       } catch (err) { sw.disabled = false; D.alert({ message: errMsg(err), danger: true }); }
     });
     panel.appendChild(el('div', { class: 'us-box us-switchrow' }, [
-      el('div', { class: 'us-switchrow-text' }, [el('b', null, T('us.sec.self_enroll')), el('div', { class: 'us-hint' }, T('us.sec.self_enroll_text', { name }))]),
+      el('div', { class: 'us-switchrow-text' }, [
+        el('b', null, T('us.sec.self_enroll')),
+        el('div', { class: 'us-hint' }, T('us.sec.self_enroll_text', { name })),
+        // The account's directory may allow it for all its accounts (users.mayEnroll).
+        d.directory && d.directory.selfEnroll ? el('div', { class: 'us-hint' }, T('us.sec.self_enroll_dir', { name: d.directory.name })) : null,
+      ]),
       sw,
     ]));
   }

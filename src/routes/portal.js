@@ -176,7 +176,7 @@ function viewerFor(req) {
       return {
         kind: 'person', via, name, first: portalDevices.firstName(u), initials: portalDevices.initials(name), deviceName,
         canWebLogin: users.canWebLogin(u),
-        canEnroll: u.enabled === 1 && (u.role === 'admin' || u.self_enroll_enabled === 1),
+        canEnroll: users.mayEnroll(u),
         ...lookOf(u),
       };
     }
