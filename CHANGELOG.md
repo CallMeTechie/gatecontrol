@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Links v2 für Plugins (docs/plugins.md „Folder links, upload links, view only, the log“, vierter Teil des Server-Kerns für GateControl Drive): Neben Links auf einzelne Dateien gibt es **Ordner-Links** – ein Ordner eines Bereichs mit seinem jeweils aktuellen Inhalt: Unterordner, Galerie für Bilder und Videos, die übrigen Dateien, „Ordner als ZIP herunterladen“ – und **Upload-Links**, über die Personen ohne Konto Dateien in einen Ordner bringen (Name freiwillig, Fortschritt je Datei, sie sehen nur ihre eigenen Uploads; Grenzen für Anzahl, Gesamtgröße und Dateitypen, die auch bei gleichzeitigen Uploads halten; ein belegter Name bekommt „(2)“). Links lassen sich auf **„nur ansehen“** stellen (Bilder, Videos und Ton im Browser, kein Download, kein ZIP). Ein zweiter Schalter in den Plugin-Berechtigungen erlaubt **Links ohne Ablaufdatum**; schaltet der Admin ihn aus, enden solche Links endgültig. Jeder Link führt ein **Protokoll** (geöffnet, geladen, hochgeladen, PIN) mit gekürzter Adresse (IPv4 /24, IPv6 /48) und zufälliger Besucher-ID; Plugins lesen es über `gc.publicLinks.events` und die Uploads über `gc.publicLinks.uploads`, der Hook `publicLinkEvent` meldet auch `upload`. Migration 117.
+
+---
+
 ## [1.204.1] — 2026-10-26
 
 ### Features

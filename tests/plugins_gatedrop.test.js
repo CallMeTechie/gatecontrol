@@ -311,7 +311,7 @@ describe('public links', () => {
     let r = await create().expect(400);
     assert.equal(r.body.code, 'ERR_PUBLIC_LINKS_DISABLED');
     r = await agent.get(`${API}/gd-drop/public-links`).expect(200);
-    assert.deepEqual(r.body.publicLinks, { allowed: false, publicUrl: 'https://gc.home-test.net', active: 0 });
+    assert.deepEqual(r.body.publicLinks, { allowed: false, unlimited: false, publicUrl: 'https://gc.home-test.net', active: 0 });
     await agent.get(`${API}/gd-plain/public-links`).expect(404);
     await agent.put(`${API}/gd-plain/public-links`).set('X-CSRF-Token', csrf).send({ allowed: true }).expect(400);
     await agent.put(`${API}/gd-drop/public-links`).set('X-CSRF-Token', csrf).send({ allowed: 'yes' }).expect(400);

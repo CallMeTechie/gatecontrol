@@ -1388,7 +1388,7 @@ WebDAV, an S3 bucket). Code: `src/services/plugins/mediaAreas.js`.
 * Errors: `ERR_MEDIA_DENIED` (no `media.areas`), `ERR_INVALID`,
   `ERR_RATE_LIMIT` (too many areas), `ERR_MEDIA_QUOTA`.
 
-### Readable files, moves and versions (since 1.205.0)
+### Readable files, moves and versions (since 1.204.1)
 
 On a folder or a NAS (SMB, WebDAV) an area has a **form**, chosen by the
 administrator next to its place:
@@ -1518,7 +1518,7 @@ ZIP. GateControl serves it; the plugin only creates, lists and revokes. Code:
   administrator's switch *Öffentliche Links erlauben* on the plugin's
   *Berechtigungen* tab (Einstellungen › Plugins › the plugin) — **off** by
   default; API `GET/PUT /api/v1/plugins/<id>/public-links` `{ allowed }` →
-  `{ allowed, publicUrl, active }`, activity `plugin_public_links`. While
+  `{ allowed, unlimited, publicUrl, active }`, activity `plugin_public_links`. While
   either is missing, every `gc.publicLinks.*` call throws
   `ERR_PUBLIC_LINKS_DISABLED` and existing links answer 404 (they work again
   when it is switched back on).
@@ -1604,6 +1604,99 @@ GET  /s/<token>/zip         all files as one ZIP (stored, streamed, Content-Leng
   other plugin's media), `ERR_RATE_LIMIT` (5000 links per plugin). Activity
   `plugin_public_link` when a link is created (count of files, no names) and
   when one is locked.
+
+### Folder links, upload links, view only, the log (since 1.205.0)
+
+A link has a **kind** and a **mode**:
+
+* `kind: 'files'` (default) — the files of the list above.
+* `kind: 'folder'` — a folder of a media area (needs `media.areas`): `area`
+  and `path` ('' or missing = the whole area). The page always shows the
+  folder's **current** content: its sub folders (`?p=<sub folder>`, never
+  above the link's folder), a gallery of pictures and videos, the other files,
+  "Ordner als ZIP herunterladen" (the folder shown, with its sub folders, up to
+  10 000 files). Only current files (no versions) of that area below that
+  path are served; files added later appear, deleted ones go.
+* `kind: 'upload'` — people **bring** files into a folder of an area (needs
+  `media.areas`, not `media.uploads: false`): a name field ("Dein Name",
+  optional), file choice and drop zone, a progress bar per file. The visitor
+  never sees other files of the folder, only the ones they uploaded
+  themselves (by their visitor cookie). Limits: `maxFiles` (1 … 10 000,
+  default 500), `maxBytes` (all files together, 1 MB … 1 TB, default 5 GB),
+  `types` (optional, ≤ 32: MIME types, families `"image/*"` or extensions
+  `".pdf"`); the plugin's own `media.maxBytes`, `media.types`, quota and the
+  room on the server apply on top. Count and bytes are reserved atomically
+  before a file is stored (parallel uploads never pass a limit; a failed one
+  gives its share back). The file belongs to the link's owner, lands claimed
+  under `<path>/<name>` — a taken name gets " (2)", " (3)", … — and syncs to
+  the area's storage target like every other file.
+* `mode: 'view'` (`'download'` default; not for uploads) — pictures, videos
+  and sound only shown in the page; no download button, no ZIP, the download
+  routes answer 403 `view only`. (A browser can still save what it shows —
+  "view only" is no copy protection.)
+
+```js
+await gc.publicLinks.create({ ownerUserId: 12, kind: 'folder', area: 'docs', path: 'Fotos/2026',
+  mode: 'view', title: 'Urlaub', expiresAt: Date.now() + 7 * 86400000 });
+await gc.publicLinks.create({ ownerUserId: 12, kind: 'upload', area: 'docs', path: 'Eingang',
+  maxFiles: 50, maxBytes: 2 * 1024 ** 3, types: ['image/*', '.pdf'], expiresAt: Date.now() + 86400000 });
+
+await gc.publicLinks.events(token, { limit: 100, before });   // the log, newest first (≤ 500 per call)
+await gc.publicLinks.uploads(token);                          // what came in through an upload link
+```
+
+* `maxDownloads` belongs to `kind: 'files'` only (`ERR_INVALID` otherwise);
+  `files` only to it, `area` / `path` only to the others (unknown area,
+  a path with `..` → `ERR_INVALID`).
+* A link (`list` / `get`) also has `kind`, `mode`, `opens` (page views),
+  for folder and upload links `area` and `path`, for upload links `upload:
+  { maxFiles, maxBytes, types, files, bytes }`; `downloads` of a folder link
+  counts downloads and ZIPs of the log. State `gone` also: the link's area
+  was removed.
+* **Without an end** — `expiresAt: null` — only while the administrator's
+  second switch *Links ohne Ablaufdatum erlauben* is on (off by default; API
+  `PUT /api/v1/plugins/<id>/public-links { unlimited }`, `GET` answers
+  `unlimited` too; activity `plugin_public_links`). Switching it off ends
+  every such link of the plugin for good (state `revoked`; switching it on
+  again brings none back). `expiresAt` of such a link is `null`, the page
+  says "Ohne Ablaufdatum".
+* **The log** (`events`): `{ id, at (ISO), kind, ip, visitor, name, mediaId,
+  bytes, uploader }` with kind `open` (the page, once per visitor and hour;
+  `opens` counts every view), `download`, `zip`, `upload`, `unlock`,
+  `pin_failed`, `locked`. `ip` is shortened before it is stored — IPv4 to its
+  /24 (`203.0.113.0`), IPv6 to its /48 (`2001:db8:1::`) — and `visitor` is a
+  random id from a cookie of the link's path (`gc_pv`, 30 days, HttpOnly).
+  Up to 5000 lines per link (the oldest go); the log goes with the link.
+* `uploads(token)`: `[{ mediaId, name, path, uploader, bytes, at }]`
+  (`uploader`: the name the visitor typed, ≤ 80 characters, or null).
+* **Hook** `publicLinkEvent` also: `'upload'` with `{ mediaId, name, path,
+  uploader, bytes }`; `'download'` of a folder link with `path` (and `file:
+  { mediaId, name }`, or `zip: true`).
+
+Routes of v2:
+
+```
+GET  /s/<token>?p=<sub>     folder link: that sub folder
+GET  /s/<token>/m/<id>      a file of a folder link (below its folder, a current file): download (logged);
+                            ?view=1 inline for pictures / videos / sound (not logged)
+GET  /s/<token>/f/<n>?view=1  a file of a files link inline (pictures / videos / sound; not counted)
+GET  /s/<token>/zip?p=<sub> folder link: that folder with its sub folders as one ZIP
+PUT  /s/<token>/u?name=<file>&type=<MIME>&by=<name>
+                            one file into an upload link; the body is the file (application/octet-stream,
+                            Content-Length) → { ok: true, name (the one it got), bytes }; errors
+                            { ok: false, code }: 400 name, 415 type, 413 limit / too_large, 507 quota_exceeded /
+                            server_full, 403 another Origin, 410 the link ended
+```
+
+* Inline views are only for pictures, videos and sound, never for a type a
+  browser would run (`text/html`, SVG, …): those answer 403 `no preview`.
+* The upload page is the only one with a script (`/js/public-link-upload.js`
+  of this server; CSP `script-src 'self'; connect-src 'self'`); the others
+  stay without any. Pages may show pictures and videos of this server
+  (`img-src 'self' data:; media-src 'self'`).
+* Rate limits per address: the files of a folder link (`/m/…`, a gallery
+  loads many) 1500 per minute; uploads 1000 per hour. An upload body has the
+  long deadline of media uploads.
 
 ## Devices (`permissions.devices`)
 

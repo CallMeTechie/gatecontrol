@@ -19,6 +19,9 @@ async function misbehave(gc) {
   return null;
 }
 
+// the appends of publicLinkEvent, one after another
+let linkEvents = Promise.resolve();
+
 module.exports = {
   async start(gc) {
     gc.log.info('hello started');
@@ -377,11 +380,15 @@ module.exports = {
     return { conversationId: chats[key], created };
   },
 
-  // public links (tests/plugins_gatedrop.test.js): every event is appended to kv "public-link-events"
-  async publicLinkEvent(payload, gc) {
-    const list = (await gc.storage.get('public-link-events')) || [];
-    list.push(payload);
-    await gc.storage.set('public-link-events', list);
+  // public links (tests/plugins_gatedrop.test.js): every event is appended to kv "public-link-events" —
+  // one after another, the host calls the hook in the background and two calls may overlap
+  publicLinkEvent(payload, gc) {
+    linkEvents = linkEvents.catch(() => {}).then(async () => {
+      const list = (await gc.storage.get('public-link-events')) || [];
+      list.push(payload);
+      await gc.storage.set('public-link-events', list);
+    });
+    return linkEvents;
   },
 
   // built-in data handed over by the host (tests/plugins_legacy.test.js)

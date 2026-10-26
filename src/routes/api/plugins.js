@@ -325,7 +325,7 @@ router.put('/:id/discovery', (req, res) => {
 const publicLinks = require('../../services/plugins/publicLinks');
 
 function publicLinksView(p) {
-  return { allowed: publicLinks.allowed(p.id), publicUrl: publicLinks.publicBase(), active: publicLinks.activeCount(p.id) };
+  return { allowed: publicLinks.allowed(p.id), unlimited: publicLinks.unlimitedAllowed(p.id), publicUrl: publicLinks.publicBase(), active: publicLinks.activeCount(p.id) };
 }
 
 router.get('/:id/public-links', (req, res) => {
@@ -338,8 +338,21 @@ router.get('/:id/public-links', (req, res) => {
 router.put('/:id/public-links', (req, res) => {
   const p = pluginParam(req, res);
   if (!p) return;
-  const on = req.body && req.body.allowed;
-  if (!publicLinks.declared(p) || typeof on !== 'boolean') return res.status(400).json({ ok: false, code: 'invalid', error: tr(req, 'plugins.err.invalid', 'Invalid request') });
+  const b = req.body && typeof req.body === 'object' ? req.body : {};
+  // since 1.205.0 also { unlimited }: links without an end (switched off, such links end)
+  if (!publicLinks.declared(p) || (typeof b.allowed !== 'boolean' && typeof b.unlimited !== 'boolean')
+    || (b.allowed !== undefined && typeof b.allowed !== 'boolean') || (b.unlimited !== undefined && typeof b.unlimited !== 'boolean')) {
+    return res.status(400).json({ ok: false, code: 'invalid', error: tr(req, 'plugins.err.invalid', 'Invalid request') });
+  }
+  if (typeof b.unlimited === 'boolean') {
+    publicLinks.setUnlimitedAllowed(p.id, b.unlimited);
+    require('../../services/plugins/registry').addLog(p.id, 'info', `public links without an end ${b.unlimited ? 'allowed' : 'switched off'} by an administrator`);
+    require('../../services/activity').log('plugin_public_links', `Plugin "${p.name}": public links without an end ${b.unlimited ? 'allowed' : 'switched off'}`, {
+      source: 'admin', ipAddress: req.ip, severity: b.unlimited ? 'warning' : 'info', details: { plugin: p.id, unlimited: b.unlimited },
+    });
+    if (typeof b.allowed !== 'boolean') return res.json({ ok: true, publicLinks: publicLinksView(p) });
+  }
+  const on = b.allowed;
   publicLinks.setAllowed(p.id, on);
   require('../../services/plugins/registry').addLog(p.id, 'info', `public links ${on ? 'allowed' : 'switched off'} by an administrator`);
   require('../../services/activity').log('plugin_public_links', `Plugin "${p.name}": public links ${on ? 'allowed' : 'switched off'}`, {

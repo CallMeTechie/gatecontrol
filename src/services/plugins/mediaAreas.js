@@ -12,7 +12,7 @@
 //   * 'blocks': the sealed file (encrypted 64 KiB chunks) under an opaque key
 //     <plugin>/<area>/<id[0..2]>/<id> — the only form on S3 and the form on
 //     this server.
-//   * 'files' (since 1.205.0, the default on a folder or NAS): the plain file
+//   * 'files' (since 1.204.1, the default on a folder or NAS): the plain file
 //     under the plugin's path, <plugin>/<area>/<path>, so people can open it
 //     on the NAS and back it up with the NAS. Versions kept with
 //     gc.media.version go to <plugin>/<area>/.gcdrive/versions/…, files
