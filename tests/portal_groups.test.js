@@ -170,7 +170,10 @@ describe('the lead', () => {
     const leaders = (await S.carla.p.get(`/api/v1/portal/groups/${team.id}`).expect(200)).body.leaders;
     assert.deepEqual(leaders.map((l) => [l.userId, l.role]), [[U.anna, 'lead'], [U.frank, 'deputy']], 'nobody is their own leader');
     const g = (await S.dora.p.get('/api/v1/portal/groups').expect(200)).body.groups.find((x) => x.id === team.id);
-    assert.deepEqual(g.leaders[0], { userId: U.anna, name: 'pg-anna', role: 'lead', groupId: team.id }, 'lead before deputies');
+    const { avatarUrl, color, colorHex, ...lead } = g.leaders[0];
+    assert.deepEqual(lead, { userId: U.anna, name: 'pg-anna', role: 'lead', groupId: team.id }, 'lead before deputies');
+    assert.equal(avatarUrl, null);
+    assert.ok(color && /^#[0-9A-F]{6}$/.test(colorHex), 'the look of the lead (docs/feature-avatars.md)');
     assert.deepEqual(g.leaders.slice(1).map((l) => [l.userId, l.role]).sort((a, b) => a[0] - b[0]), [[U.carla, 'deputy'], [U.frank, 'deputy']].sort((a, b) => a[0] - b[0]));
     assert.equal((await put(U.carla, 'lead')).body.code, 'PROTECTED', 'lead only by server admins');
     assert.equal((await put(U.carla, 'boss')).body.code, 'INVALID_ROLE');

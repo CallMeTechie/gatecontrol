@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixes
+- Gruppen zeigen Personen jetzt mit Profilbild bzw. Lieblingsfarbe wie die Benutzerseite: auf der Seite „Benutzer › Gruppen“ (Mitglieder, geerbte Mitglieder, „Mitglied hinzufügen“ als Liste mit Bild, Nachfolger im Löschen-Dialog), im Portal-Tab „Gruppen“ (Leitung, Vertretung, Mitglieder) und auf der Einladungsseite (wer beitritt und wer die Gruppe leitet – nur angemeldet). Die Gruppen-APIs liefern dafür `avatarUrl`, `color` und `colorHex` je Person (`GET /api/v1/groups/:id`, `defaultSuccessor`, `/api/v1/principals`, `/api/v1/portal/groups[/:id]`); die Plugin-API `gc.groups.members` bleibt unverändert.
+
+---
+
 ## [1.200.0] — 2026-10-26
 
 ### Features

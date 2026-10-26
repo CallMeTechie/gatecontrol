@@ -19,6 +19,14 @@
 {#- Joining a person group with an invitation link (routes/groupJoin.js,
     docs/groups.md). Standalone like invite.njk: works on the portal host
     and on the web UI host. -#}
+{#- A person with the profile picture or the initials on the favourite colour
+    (docs/feature-avatars.md); avatarUrl is a server path /avatars/<id>.<ext>. -#}
+{% macro personRow(p, label) %}
+<div class="grp-join-person">
+  <span class="us-avatar grp-join-av av-c-{{ p.color }}{{ ' has-img' if p.avatarUrl }}" aria-hidden="true">{% if p.avatarUrl %}<img class="av-img" src="{{ p.avatarUrl }}" alt="">{% else %}{{ p.initials }}{% endif %}</span>
+  <span class="grp-join-person-text"><span class="grp-join-label">{{ label }}</span><b>{{ p.name }}</b></span>
+</div>
+{% endmacro %}
 <body class="au-page">
   <main class="au-wrap">
     <div class="au-brand">
@@ -31,6 +39,7 @@
       <div class="au-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6"/></svg></div>
       <h1 class="au-title">{{ t('grp.join.already_title') if already else t('grp.join.done_title') }}</h1>
       <p class="au-sub">{{ t('grp.join.done_text', { group: groupPath, role: role }) }}</p>
+      {% if viewer %}<div class="grp-join-people">{{ personRow(viewer, t('grp.join.as')) }}</div>{% endif %}
       <a class="btn btn-primary au-submit" href="/portal">{{ t('grp.join.to_portal') }}</a>
     </div>
     {% elif invite %}
@@ -38,6 +47,12 @@
       <div class="page-eyebrow">{{ t('grp.join.eyebrow') }}</div>
       <h1 class="au-title">{{ invite.path }}</h1>
       <p class="au-sub">{{ t('grp.join.intro', { role: invite.role }) }}</p>
+      {% if not needLogin and (viewer or leaders.length) %}
+      <div class="grp-join-people">
+        {% if viewer %}{{ personRow(viewer, t('grp.join.as')) }}{% endif %}
+        {% for l in leaders %}{{ personRow(l, t('grp.join.leaders') + ' · ' + roleOf(l.role)) }}{% endfor %}
+      </div>
+      {% endif %}
       {% if error %}
       <div class="login-error" role="alert">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>

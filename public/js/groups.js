@@ -87,6 +87,14 @@
     if (!w.length) return '?';
     return (w.length > 1 ? Array.from(w[0])[0] + Array.from(w[1])[0] : Array.from(w[0]).slice(0, 2).join('')).toUpperCase();
   }
+  // A person's avatar like on the users page: profile picture, else the
+  // initials on the favourite colour (window.GCAvatar, avatar-edit.js;
+  // docs/feature-avatars.md). `p` carries name, avatarUrl and color.
+  function avatarOf(p, cls) {
+    const n = el('span', { class: 'us-avatar us-tone-member ' + (cls || 'grp-avatar'), 'aria-hidden': 'true' }, initials(p && p.name));
+    if (window.GCAvatar && p) window.GCAvatar.paint(n, { avatarUrl: p.avatarUrl, color: p.color, initials: initials(p.name) });
+    return n;
+  }
 
   async function call(method, url, body) {
     const fn = { GET: 'get', POST: 'post', PUT: 'put', PATCH: 'patch', DELETE: 'del' }[method];
@@ -286,7 +294,7 @@
 
   function personCell(m) {
     return el('div', { class: 'grp-person' }, [
-      el('span', { class: 'us-avatar us-tone-member grp-avatar' + (m.enabled ? '' : ' us-avatar-off'), 'aria-hidden': 'true' }, initials(m.name)),
+      avatarOf(m, 'grp-avatar' + (m.enabled ? '' : ' us-avatar-off')),
       el('span', { class: 'grp-person-text' }, [
         el('a', { class: 'grp-person-name', href: '/users/' + m.userId }, m.name),
         el('span', { class: 'grp-person-sub' }, [m.email || ('@' + m.username), m.enabled ? null : ' · ' + T('grp.disabled')]),
@@ -534,24 +542,48 @@
   async function loadUsers() {
     if (state.users) return state.users;
     const res = await call('GET', '/api/v1/users');
-    state.users = (res.users || []).map((u) => ({ id: u.id, name: u.display_name || u.username, username: u.username, email: u.email || '', enabled: u.enabled === 1 }));
+    state.users = (res.users || []).map((u) => ({
+      id: u.id, name: u.display_name || u.username, username: u.username, email: u.email || '', enabled: u.enabled === 1,
+      avatarUrl: u.avatarUrl || null, color: u.color || null,
+    }));
     return state.users;
   }
+  // The people to pick from: one radio row each with avatar, name and e-mail
+  // (a <select> cannot show pictures). The first row is preselected.
   function fillUserPick() {
-    const sel = clear($('grp-member-user'));
+    const box = $('grp-member-user');
+    const keep = pickedUser();
+    clear(box);
     const d = state.detail;
     const taken = new Set((d.members || []).filter((m) => m.direct).map((m) => m.userId));
     const q = $('grp-member-filter').value.trim().toLowerCase();
-    (state.users || []).filter((u) => !taken.has(u.id))
+    const list = (state.users || []).filter((u) => !taken.has(u.id))
       .filter((u) => !q || (u.name + ' ' + u.username + ' ' + u.email).toLowerCase().indexOf(q) >= 0)
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .forEach((u) => sel.appendChild(el('option', { value: String(u.id) }, u.name + (u.email ? ' · ' + u.email : '') + (u.enabled ? '' : ' (' + T('grp.disabled') + ')'))));
-    if (sel.options.length) sel.selectedIndex = 0;
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (!list.length) { box.appendChild(el('p', { class: 'us-muted grp-pick-empty' }, T('grp.member.none_found'))); return; }
+    list.forEach((u, i) => {
+      const radio = el('input', { type: 'radio', class: 'grp-pick-radio', value: String(u.id), checked: keep ? keep === u.id : i === 0 });
+      radio.name = 'grp-member-user';
+      box.appendChild(el('label', { class: 'grp-pick-row' + (u.enabled ? '' : ' is-off') }, [
+        radio,
+        avatarOf(u, 'grp-avatar' + (u.enabled ? '' : ' us-avatar-off')),
+        el('span', { class: 'grp-person-text' }, [
+          el('span', { class: 'grp-pick-name' }, u.name),
+          el('span', { class: 'grp-person-sub' }, [u.email || ('@' + u.username), u.enabled ? null : ' · ' + T('grp.disabled')]),
+        ]),
+      ]));
+    });
+    if (!box.querySelector('input:checked')) box.querySelector('input').checked = true;
+  }
+  function pickedUser() {
+    const r = $('grp-member-user').querySelector('input[name="grp-member-user"]:checked');
+    return r ? Number(r.value) : 0;
   }
   async function openMember() {
     const d = state.detail;
     setError('grp-member-error', '');
     $('grp-member-filter').value = '';
+    clear($('grp-member-user'));
     $('grp-member-note').hidden = srcType(d.group.source) !== 'directory';
     const role = clear($('grp-member-role'));
     (d.roles || []).forEach((r) => role.appendChild(el('option', { value: r }, roleLabel(r))));
@@ -562,7 +594,7 @@
   $('grp-member-filter').addEventListener('input', fillUserPick);
   $('grp-member-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const uid = Number($('grp-member-user').value);
+    const uid = pickedUser();
     if (!uid) { setError('grp-member-error', T('grp.member.pick')); return; }
     try {
       await call('PUT', '/api/v1/groups/' + state.detail.group.id + '/members/' + uid, { role: $('grp-member-role').value });
@@ -633,6 +665,20 @@
     });
     if (others.children.length) sel.appendChild(others);
     sel.value = def ? String(def.userId) : 'none';
+    succ.def = def;
+    succ.list = list;
+    paintSuccessor();
+  }
+  // The chosen successor's avatar next to the list (an <option> shows no picture).
+  const succ = { def: null, list: [] };
+  function paintSuccessor() {
+    const host = $('grp-del-successor-av');
+    if (!host) return;
+    const v = $('grp-del-successor').value;
+    const u = v && v !== 'none' ? (succ.list.find((x) => String(x.id) === v) || (succ.def && String(succ.def.userId) === v ? succ.def : null)) : null;
+    clear(host);
+    host.hidden = !u;
+    if (u) host.appendChild(avatarOf({ name: u.label || u.name, avatarUrl: u.avatarUrl, color: u.color }));
   }
   // A plugin text that continues the label ("wird in … verschoben") reads as
   // one sentence after it; a full sentence (core keys) gets its own line.
@@ -670,6 +716,7 @@
     list.appendChild(el('li', { class: 'us-muted' }, T('common.loading')));
     clear($('grp-del-successor'));
     $('grp-del-successor').disabled = true;
+    paintSuccessor();
     $('grp-del-confirm').value = '';
     $('grp-del-ok').disabled = true;
     setError('grp-del-error', g.childIds && g.childIds.length ? T('error.groups.has_children') : '');
@@ -680,6 +727,7 @@
     $('grp-del-successor').disabled = false;
   }
   $('grp-del-successor').addEventListener('change', () => {
+    paintSuccessor();
     const g = state.detail && state.detail.group;
     if (g) loadEffects(g, $('grp-del-successor').value);
   });

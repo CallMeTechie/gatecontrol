@@ -20,6 +20,9 @@
  *   GET    /principals                     GC.pickPrincipals in portal frames:
  *                                          groups by name + the viewer
  *   GET    /:id                            a group (members etc. for managers)
+ *
+ * People (leaders, members) carry their look — avatarUrl, color,
+ * colorHex (docs/feature-avatars.md) — like everywhere else in the portal.
  *   POST   /:id/members { login, role }    add a person (user name or e-mail)
  *   PUT    /:id/members/:userId { role }   change a member's role
  *   DELETE /:id/members/:userId            remove a (local) member
@@ -30,6 +33,7 @@
 
 const express = require('express');
 const groups = require('../../services/groups');
+const avatars = require('../../services/avatars');
 const { getDb } = require('../../db/connection');
 const logger = require('../../utils/logger');
 
@@ -103,7 +107,7 @@ function needManager(uid, groupId) {
 }
 
 function leadersView(uid, groupId, nm) {
-  return groups.leadersOf(uid, { groupId }).map((l) => ({ userId: l.userId, name: nm.get(l.userId) || null, role: l.role, groupId: l.groupId }));
+  return avatars.withLooks(groups.leadersOf(uid, { groupId }).map((l) => ({ userId: l.userId, name: nm.get(l.userId) || null, role: l.role, groupId: l.groupId })));
 }
 
 /** May the manager `uid` change this member (role / removal) in group `g`? */
@@ -171,10 +175,10 @@ router.get('/:id', (req, res) => {
     };
     if (manage) {
       out.roles = assignable(g.kind);
-      out.members = groups.members(g.id, { nested: true }).map((m) => ({
+      out.members = avatars.withLooks(groups.members(g.id, { nested: true }).map((m) => ({
         userId: m.userId, name: m.name, email: m.email, role: m.role, direct: m.direct, source: m.source === 'local' ? 'local' : 'directory',
         enabled: m.enabled, self: m.userId === u.id, ...memberRights(u.id, g, m),
-      }));
+      })));
       out.invites = groups.listInvites(g.id).filter((i) => i.active);
     }
     res.set('Cache-Control', 'no-store');
@@ -209,7 +213,8 @@ router.post('/:id/members', (req, res) => {
     if (groups.membershipsOfUser(target.id).some((m) => m.group_id === g.id)) throw coded('ALREADY_MEMBER');
     const r = groups.setMember(g.id, target.id, role, opts(req, u.id));
     const m = groups.members(g.id).find((x) => x.userId === target.id);
-    return res.status(201).json({ ok: true, member: m ? { userId: m.userId, name: m.name, email: m.email, role: r.role, direct: true, source: 'local', enabled: m.enabled, self: false, ...memberRights(u.id, g, m) } : null });
+    const member = m ? { userId: m.userId, name: m.name, email: m.email, role: r.role, direct: true, source: 'local', enabled: m.enabled, self: false, ...memberRights(u.id, g, m) } : null;
+    return res.status(201).json({ ok: true, member: member ? avatars.withLooks([member])[0] : null });
   } catch (err) { return fail(req, res, err); }
 });
 

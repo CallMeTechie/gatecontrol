@@ -131,6 +131,11 @@ device, never the read-only device recognition.
     member/deputy/group admin), shown once, open ones listed and revocable.
 - **Directory groups**: only the extra local members can be added, changed
   and removed; **plugin groups** are read-only for everybody.
+- People are shown with their **profile picture**, else the initials on their
+  favourite colour (docs/feature-avatars.md) — on the admin page (members,
+  the "Mitglied hinzufügen" list, the successor in the delete dialog), in
+  the portal tab and on the invitation page (who joins and who leads, only
+  for a signed-in person).
 - The deputy card explains that the deputy steps in when a plugin reports
   the lead as absent; a manager sets it by giving a member the role
   "Vertretung".
@@ -143,7 +148,7 @@ Portal API (`/api/v1/portal/groups`, CSRF token of the session for writes):
 | Method | Path | |
 |---|---|---|
 | GET | `/api/v1/portal/groups` | own groups: role, direct, path, source, `manage`, leaders |
-| GET | `/api/v1/portal/groups/:id` | a group of the viewer; for managers also `members` (with `canEditRole`, `canRemove`), `invites`, `roles` |
+| GET | `/api/v1/portal/groups/:id` | a group of the viewer; for managers also `members` (with `canEditRole`, `canRemove`), `invites`, `roles`; leaders and members carry `avatarUrl`, `color`, `colorHex` |
 | POST | `/api/v1/portal/groups/:id/members` | `{ login, role }` — user name or e-mail address |
 | PUT | `/api/v1/portal/groups/:id/members/:userId` | `{ role }` |
 | DELETE | `/api/v1/portal/groups/:id/members/:userId` | remove a member |
@@ -551,7 +556,7 @@ Admin session only (like `/api/v1/users`); API tokens get 403.
 |---|---|---|
 | GET | `/api/v1/groups?tree=1&kind=&archived=1` | list, flat or as a tree |
 | POST | `/api/v1/groups` | `{ parentId, kind, name, description, color, endsAt }` (always local) |
-| GET | `/api/v1/groups/:id` | group, members (incl. inherited), invitation links, roles |
+| GET | `/api/v1/groups/:id` | group, members (incl. inherited; each with `avatarUrl`, `color`, `colorHex` like the users API), invitation links, roles |
 | PATCH | `/api/v1/groups/:id` | `name, description, color, kind, endsAt, parentId` |
 | DELETE | `/api/v1/groups/:id?confirm=<name>[&successor=<userId>\|none]` | delete — plugins' `groupDeleting` runs first (≤ 30 s); `successor` defaults to the group's lead, else deputy (walking up); `none` = nobody; a disabled account is refused (`USER_DISABLED`) |
 | GET | `/api/v1/principals` | groups and enabled people for `GC.pickPrincipals` on admin pages |

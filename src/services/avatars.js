@@ -219,6 +219,37 @@ function infoMany(users) {
 }
 
 /**
+ * Map userId → fields for the given user ids (people lists that only carry
+ * the id, e.g. group members): one query for the users, one for the pictures.
+ */
+function infoByIds(ids) {
+  const list = [...new Set((ids || []).map(Number).filter((n) => Number.isSafeInteger(n) && n > 0))];
+  if (!list.length) return new Map();
+  const db = getDb();
+  const rows = [];
+  // Chunks stay far below SQLite's limit of bound parameters.
+  for (let i = 0; i < list.length; i += 500) {
+    const part = list.slice(i, i + 500);
+    rows.push(...db.prepare(`SELECT id, username, display_name, avatar_color FROM users WHERE id IN (${part.map(() => '?').join(',')})`).all(...part));
+  }
+  return infoMany(rows);
+}
+
+/**
+ * The look of every person in `list` (objects with the user id in `key`):
+ * a copy of each entry plus { avatarUrl, color, colorHex } — what the people
+ * lists of the pages paint with GCAvatar.paint (docs/feature-avatars.md).
+ */
+function withLooks(list, key = 'userId') {
+  const arr = Array.isArray(list) ? list : [];
+  const looks = infoByIds(arr.map((x) => x && x[key]));
+  return arr.map((x) => {
+    const f = x && looks.get(Number(x[key]));
+    return { ...x, avatarUrl: f ? f.avatarUrl : null, color: f ? f.color : null, colorHex: f ? f.colorHex : null };
+  });
+}
+
+/**
  * The profile answer of the APIs (client, own profile, portal):
  * { user: { id, name, initials, color, colorHex, avatarUrl }, palette }.
  */
@@ -311,6 +342,8 @@ module.exports = {
   fieldsOf,
   info,
   infoMany,
+  infoByIds,
+  withLooks,
   profileOf,
   set,
   remove,
