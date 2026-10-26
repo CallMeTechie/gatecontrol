@@ -194,7 +194,7 @@ Verwaltung/Einkauf;j.keller@firma.de;mitglied</pre>
   </div>
 </div>
 
-<script type="application/json" id="grp-i18n" data-prefixes="grp. error.groups. common." nonce="{{ cspNonce }}">{{ groupsI18n | default('{}') | safe }}</script>
+<script type="application/json" id="grp-i18n" data-prefixes="grp. error.groups. common. avatar." nonce="{{ cspNonce }}">{{ groupsI18n | default('{}') | safe }}</script>
 <script type="application/json" id="grp-ctx" nonce="{{ cspNonce }}">{"self": {{ (user.id if user else 0) | dump | safe }}, "lang": {{ language | dump | safe }}}</script>
 {% endblock %}
 

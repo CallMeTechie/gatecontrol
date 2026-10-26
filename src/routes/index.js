@@ -380,7 +380,7 @@ const SB_I18N_PREFIXES = ['support_bundles.', 'common.'];
 const USERS_I18N_PREFIXES = ['us.', 'users.mb.', 'error.users.', 'error.tokens.', 'error.enrollment.', 'enrollment.', 'common.', 'passkey.error_not_found', 'up.', 'avatar.'];
 
 // Strings of the groups page (groups.js).
-const GROUPS_I18N_PREFIXES = ['grp.', 'error.groups.', 'common.'];
+const GROUPS_I18N_PREFIXES = ['grp.', 'error.groups.', 'common.', 'avatar.'];
 
 // Strings of the directory page (directory.js).
 const DIRECTORY_I18N_PREFIXES = ['dir.', 'error.directory.', 'common.'];
