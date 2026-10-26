@@ -60,6 +60,73 @@ jobs:
           path: coverage/
           retention-days: 3
 
+  # Storage targets (docs/storage-targets.md) against real servers: S3
+  # (moto), WebDAV (wsgidav) and SMB (Samba with smbclient, as in the image).
+  storage-targets:
+    name: storage targets (S3, WebDAV, SMB)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com/
+          scope: '@callmetechie'
+
+      - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+
+      - name: Start S3, WebDAV and SMB test servers
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends samba smbclient
+          python3 -m venv /tmp/st
+          /tmp/st/bin/pip install -q "moto[server]==5.2.4" "wsgidav==4.4.0" "cheroot==11.1.2"
+          nohup /tmp/st/bin/moto_server -H 127.0.0.1 -p 5055 > /tmp/moto.log 2>&1 &
+          mkdir -p /tmp/davroot
+          printf '%s\n' 'host: 127.0.0.1' 'port: 8085' 'provider_mapping:' '  "/dav": "/tmp/davroot"' 'http_authenticator:' \
+            '  domain_controller: null' '  accept_basic: true' '  accept_digest: false' '  default_to_digest: false' \
+            'simple_dc:' '  user_mapping:' '    "*":' '      "gc":' '        password: "secret123"' > /tmp/wsgidav.yaml
+          nohup /tmp/st/bin/wsgidav --config /tmp/wsgidav.yaml > /tmp/wsgidav.log 2>&1 &
+          mkdir -p /tmp/smbshare /tmp/smbrun/ncalrpc && chmod 777 /tmp/smbshare
+          printf '%s\n' '[global]' '  workgroup = WG' '  server role = standalone server' '  map to guest = never' '  smb ports = 4445' \
+            '  pid directory = /tmp/smbrun' '  lock directory = /tmp/smbrun' '  state directory = /tmp/smbrun' '  cache directory = /tmp/smbrun' \
+            '  private dir = /tmp/smbrun' '  ncalrpc dir = /tmp/smbrun/ncalrpc' '  log file = /tmp/smbrun/log.%m' '  server min protocol = SMB2' \
+            '[share]' '  path = /tmp/smbshare' '  read only = no' '  valid users = gctest' > /tmp/smb.conf
+          sudo useradd -M gctest
+          printf 'pass1234\npass1234\n' | sudo smbpasswd -c /tmp/smb.conf -s -a gctest
+          sudo smbd -s /tmp/smb.conf -D
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:5055/ && curl -s -o /dev/null -u gc:secret123 -X PROPFIND http://127.0.0.1:8085/dav/ \
+              && smbclient //127.0.0.1/share -p 4445 -U gctest%pass1234 -c ls > /dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -sf -X PUT http://127.0.0.1:5055/gc-test-bucket
+
+      - name: Run the live storage target tests
+        run: node --test --test-force-exit tests/storage_targets_live.test.js
+        env:
+          NODE_ENV: test
+          GC_TEST_S3_ENDPOINT: http://127.0.0.1:5055
+          GC_TEST_S3_BUCKET: gc-test-bucket
+          GC_TEST_S3_KEY: testing
+          GC_TEST_S3_SECRET: testing
+          GC_TEST_S3_NO_AUTH: '1'
+          GC_TEST_WEBDAV_URL: http://127.0.0.1:8085/dav
+          GC_TEST_WEBDAV_USER: gc
+          GC_TEST_WEBDAV_PASSWORD: secret123
+          GC_TEST_SMB_HOST: 127.0.0.1
+          GC_TEST_SMB_PORT: '4445'
+          GC_TEST_SMB_SHARE: share
+          GC_TEST_SMB_USER: gctest
+          GC_TEST_SMB_PASSWORD: pass1234
+
+      - name: Server logs
+        if: failure()
+        run: tail -n 50 /tmp/moto.log /tmp/wsgidav.log; sudo tail -n 50 /tmp/smbrun/log.smbd || true
+
   eslint-security:
     name: ESLint Security
     runs-on: ubuntu-latest
@@ -204,7 +271,7 @@ jobs:
       - name: Browser scenarios
         env:
           NODE_PATH: /tmp/pw/node_modules
-        run: node tests/e2e/run.js ${{ github.event_name == 'workflow_dispatch' && inputs.browser_scenarios || 'login zones security passkey dashboard settings users portal portalstart pluginviewport notifications support' }}
+        run: node tests/e2e/run.js ${{ github.event_name == 'workflow_dispatch' && inputs.browser_scenarios || 'login zones security passkey dashboard settings users portal portalstart pluginviewport notifications support storage' }}
 
       - name: App log
         if: failure()

@@ -18,6 +18,7 @@
 //                updates, recently updated
 //   licenses     licence key without naming the plugin, all licences
 //   security     upload with preview, the rules, catalogue source
+//   storage      storage targets: folder, NAS (SMB, WebDAV), S3 — add, check, edit
 //   log          installs, updates and uninstalls
 //
 // Installing and updating — from the catalogue or an uploaded file — is one
@@ -40,7 +41,7 @@
   const SHOP_URL = 'https://callmetechie.de/products/gatecontrol/pricing';
   const enc = encodeURIComponent;
   const U = {
-    mine: B, catalog: B + '/catalog', updates: B + '/updates', licenses: B + '/licenses', security: B + '/security', log: B + '/log',
+    mine: B, catalog: B + '/catalog', updates: B + '/updates', licenses: B + '/licenses', security: B + '/security', storage: B + '/storage', log: B + '/log',
     item: (id, q) => B + '/catalog/' + enc(id) + (q ? '?' + q : ''),
     manage: (id, tab) => B + '/manage/' + enc(id) + (tab ? '?tab=' + enc(tab) : ''),
     cat: (c) => B + '/catalog?cat=' + enc(c),
@@ -2068,6 +2069,304 @@
   }
 
   // ════════════════════════════════════════════════════════════
+  // Speicher: storage targets (docs/storage-targets.md) — where the
+  // plugins that keep files in areas (plugin.json media.areas) store them
+  // ════════════════════════════════════════════════════════════
+  const ST_API = '/api/v1/storage-targets';
+  const ST_KINDS = ['local', 'smb', 'webdav', 's3'];
+  const ST_ICON = {
+    local: 'M4 5h16v6H4zM4 13h16v6H4zM8 8h.01M8 16h.01',
+    smb: 'M3 6h18v9H3zM8 19h8M12 15v4M7 10.5h.01M11 10.5h.01',
+    webdav: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3.6 9h16.8M3.6 15h16.8M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18',
+    s3: 'M7 18a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 9.5a4.5 4.5 0 0 1-.5 8.5z',
+  };
+  let stg = { targets: [], choices: null };
+
+  async function viewStorage() {
+    await loadInstalled();
+    await loadTargets();
+    renderStorage();
+    done();
+  }
+
+  async function loadTargets() {
+    const r = await req('GET', ST_API);
+    if (!r.ok) { showError(r.error); return false; }
+    stg.targets = r.targets || [];
+    return true;
+  }
+
+  function fmtFree(c) {
+    if (!c || c.free == null) return '';
+    return c.total ? t('plugins.stg.free_of', { free: P.fmtBytes(c.free), total: P.fmtBytes(c.total) }) : t('plugins.stg.free', { free: P.fmtBytes(c.free) });
+  }
+
+  function checkPill(tg) {
+    const c = tg.check;
+    if (tg.needsSecret) return pill(t('plugins.stg.needs_secret'), 'warn', true);
+    if (!c) return pill(t('plugins.stg.unchecked'), 'mute', true);
+    return c.ok ? pill(t('plugins.stg.ok_at', { at: fmtDateTime(c.at) }), 'good', true) : pill(t('plugins.stg.failed_at', { at: fmtDateTime(c.at) }), 'crit', true);
+  }
+
+  function usedText(tg) {
+    if (!tg.usedBy || !tg.usedBy.length) return t('plugins.stg.unused');
+    return t('plugins.stg.used_by', { list: tg.usedBy.map((u) => (u.pluginName || u.plugin) + ' · ' + (u.label || u.area)).join(', ') });
+  }
+
+  function renderStorage() {
+    clear(main);
+    main.appendChild(pageHead(t('plugins.stg.title'), t('plugins.stg.sub'),
+      [btn(t('plugins.stg.add'), { primary: true, icon: I.plus, id: 'pgx-stg-add', onClick: () => targetDialog(null) })]));
+    const rows = stg.targets.map((tg) => {
+      const err = tg.check && !tg.check.ok && tg.check.error ? el('p', { class: 'pgx-stg-err', text: stgErrorText(tg.check.error) }) : null;
+      return el('div', { class: 'pgx-row pgx-stg-row', 'data-target': String(tg.id), 'data-kind': tg.kind }, [
+        el('span', { class: 'pgx-ic', 'data-size': 'md', 'data-cat': 'system', 'aria-hidden': 'true' }, [icon(ST_ICON[tg.kind], 22)]),
+        el('span', { class: 'pgx-t pgx-grow' }, [
+          el('b', { text: tg.label }),
+          el('small', { class: 'pgx-mono', text: tg.display }),
+          el('small', { class: 'pgx-muted', text: [t('plugins.stg.kind_' + tg.kind), fmtFree(tg.check), usedText(tg)].filter(Boolean).join(' · ') }),
+          err,
+        ]),
+        el('span', { class: 'pgx-stg-state' }, [checkPill(tg), tg.encrypted ? pill(t('plugins.stg.encrypted'), 'blue') : null]),
+        el('span', { class: 'pgx-acts' }, [
+          btn(t('plugins.stg.check'), { small: true, icon: I.refresh, action: 'check', onClick: async (e) => {
+            const b = e.currentTarget;
+            b.disabled = true;
+            const r = await req('POST', ST_API + '/' + tg.id + '/check', {});
+            b.disabled = false;
+            if (!r.ok) { toast(r.error, 'error'); return; }
+            toast(r.check.ok ? t('plugins.stg.check_ok') : stgErrorText(r.check.error), r.check.ok ? 'success' : 'error');
+            await loadTargets();
+            renderStorage();
+          } }),
+          btn(t('plugins.stg.edit'), { small: true, action: 'edit', onClick: () => targetDialog(tg) }),
+          btn(t('plugins.stg.delete'), { small: true, ghost: true, action: 'delete', disabled: !!(tg.usedBy && tg.usedBy.length), label: t('plugins.stg.delete_l', { name: tg.label }), onClick: async () => {
+            if (!(await D.confirm({ title: t('plugins.stg.delete_title', { name: tg.label }), message: t('plugins.stg.delete_text'), okLabel: t('plugins.stg.delete'), danger: true }))) return;
+            const r = await req('DELETE', ST_API + '/' + tg.id);
+            if (!r.ok) { toast(r.error, 'error'); return; }
+            toast(t('plugins.stg.deleted'));
+            await loadTargets();
+            renderStorage();
+          } }),
+        ]),
+      ]);
+    });
+    main.appendChild(card([el('div', { class: 'pgx-card-h' }, [h2(t('plugins.stg.list'), 'pgx-stg-h')]),
+      rows.length ? el('div', { class: 'pgx-stg-list', id: 'pgx-stg-list' }, rows) : el('p', { class: 'pgx-muted pgx-in-pad', id: 'pgx-stg-empty', text: t('plugins.stg.empty') })],
+    { 'aria-labelledby': 'pgx-stg-h' }, 'pgx-flush pgx-list'));
+    main.appendChild(card([h2(t('plugins.stg.about'), 'pgx-stg-about-h'),
+      el('ul', { class: 'pgx-stg-about' }, ['server', 'local', 'smb', 'webdav', 's3'].map((k) => el('li', null, [el('b', { text: t('plugins.stg.about_' + k + '_t') }), ' ', t('plugins.stg.about_' + k)]))),
+      el('p', { class: 'pgx-hint', text: t('plugins.stg.about_backup') }),
+    ], { 'aria-labelledby': 'pgx-stg-about-h' }, 'pgx-pad pgx-stack-card'));
+  }
+
+  /** An error code of a check → a sentence for people. */
+  function stgErrorText(code) {
+    const c = String(code || '').split(':')[0];
+    const s = t('plugins.stg.err_' + c);
+    return s === 'plugins.stg.err_' + c ? t('plugins.stg.err_failed') : s;
+  }
+
+  async function stgChoices() {
+    if (stg.choices) return stg.choices;
+    const r = await req('GET', ST_API + '/choices');
+    stg.choices = r.ok ? { peers: r.peers || [], routes: r.routes || [] } : { peers: [], routes: [] };
+    return stg.choices;
+  }
+
+  /**
+   * "Speicherziel hinzufügen" / "bearbeiten": the kind (new targets only),
+   * its fields, Prüfen (checks the settings without saving), Speichern
+   * (saves, then checks the stored target). → the saved target or null.
+   */
+  async function targetDialog(existing) {
+    const choices = await stgChoices();
+    const title = existing ? t('plugins.stg.dlg_edit', { name: existing.label }) : t('plugins.stg.dlg_add');
+    const d = dlg(title, 'md');
+    let kind = existing ? existing.kind : 'smb';
+    const cfg = existing ? existing.config : {};
+    const secretSet = existing ? existing.secretSet : {};
+    const form = el('div', { class: 'pgx-stg-form', id: 'pgx-stg-form' });
+    const result = el('div', { id: 'pgx-stg-result', 'aria-live': 'polite' });
+    const err = el('p', { class: 'st-err-block', role: 'alert', hidden: true });
+    const headIc = el('span', { class: 'pgx-ic', 'data-size': 'lg', 'data-cat': 'system', 'aria-hidden': 'true' }, [icon(ST_ICON[kind], 28)]);
+    d.body.appendChild(el('div', { class: 'pgx-in-head pgx-stg-head' }, [headIc,
+      el('div', { class: 'pgx-in-title' }, [el('h3', { class: 'pgx-dh', text: title }), el('span', { class: 'pgx-muted', text: existing ? t('plugins.stg.kind_' + kind) + ' · ' + existing.display : t('plugins.stg.dlg_add_sub') })])]));
+    d.body.appendChild(form);
+    d.body.appendChild(result);
+    d.body.appendChild(err);
+    const inputs = {};
+
+    function input(name, o) {
+      const opt = o || {};
+      const i = el('input', { type: opt.type || 'text', class: 'pgx-fld-in', id: 'pgx-stg-' + name, name, autocomplete: opt.type === 'password' ? 'new-password' : 'off',
+        spellcheck: 'false', maxLength: opt.max || 400, placeholder: opt.placeholder || '', value: opt.value == null ? '' : String(opt.value) });
+      inputs[name] = i;
+      return i;
+    }
+    function field(name, label, control, hint) {
+      return el('div', { class: 'pgx-stg-f', 'data-field': name }, [el('label', { class: 'pgx-lbl', for: 'pgx-stg-' + name, text: label }), control,
+        hint ? el('small', { class: 'pgx-hint', text: hint }) : null]);
+    }
+    function select(name, options, value) {
+      const s = el('select', { class: 'pgx-fld-in', id: 'pgx-stg-' + name, name }, options.map((o) => el('option', { value: String(o[0]), text: o[1] })));
+      if (value != null) s.value = String(value);
+      inputs[name] = s;
+      return s;
+    }
+    /** The target's own certificate or CA (PEM) — for a NAS with a self-signed certificate. */
+    function caField() {
+      const ta = el('textarea', { class: 'pgx-fld-in pgx-stg-pem', id: 'pgx-stg-tlsCa', name: 'tlsCa', rows: 4, spellcheck: 'false', maxLength: 65536,
+        placeholder: '-----BEGIN CERTIFICATE-----' });
+      ta.value = cfg.tlsCa || '';
+      inputs.tlsCa = ta;
+      const info = existing && existing.tlsCaInfo && existing.tlsCaInfo.length
+        ? existing.tlsCaInfo.map((c) => c.subject + ' · SHA-256 ' + c.fingerprint.slice(0, 16) + '…').join(' / ') : null;
+      return field('tlsCa', t('plugins.stg.f_ca'), ta, info ? t('plugins.stg.f_ca_set', { info }) : t('plugins.stg.f_ca_h'));
+    }
+    function secretInput(name) {
+      return input(name, { type: 'password', max: 512, placeholder: secretSet[name] ? t('plugins.stg.secret_kept') : '' });
+    }
+
+    function render() {
+      clear(form);
+      clear(headIc);
+      headIc.appendChild(icon(ST_ICON[kind], 28));
+      Object.keys(inputs).forEach((k) => delete inputs[k]);
+      clear(result);
+      err.hidden = true;
+      if (!existing) {
+        form.appendChild(el('div', { class: 'pgx-stg-kinds', role: 'radiogroup', 'aria-label': t('plugins.stg.kind') }, ST_KINDS.map((k) => el('button', {
+          type: 'button', class: 'pgx-opt pgx-stg-kind', role: 'radio', 'aria-checked': k === kind ? 'true' : 'false', 'data-kind': k,
+          on: { click: () => { kind = k; render(); } },
+        }, [icon(ST_ICON[k], 20), el('span', { class: 'pgx-t' }, [el('b', { text: t('plugins.stg.kind_' + k) }), el('small', { text: t('plugins.stg.kind_' + k + '_d') })])]))));
+      }
+      form.appendChild(field('label', t('plugins.stg.f_label'), input('label', { max: 60, value: existing ? existing.label : '' })));
+      if (kind === 'local') {
+        form.appendChild(field('path', t('plugins.stg.f_path'), input('path', { value: cfg.path, placeholder: '/mnt/usb/gatecontrol' }), t('plugins.stg.f_path_h')));
+      } else if (kind === 'smb') {
+        const v = cfg.via || { kind: 'host' };
+        const how = select('via', [['host', t('plugins.stg.via_host')], ['peer', t('plugins.stg.via_peer')], ['route', t('plugins.stg.via_route')]], v.kind);
+        form.appendChild(field('via', t('plugins.stg.f_via'), how));
+        const hostF = field('host', t('plugins.stg.f_host'), input('host', { value: v.kind === 'host' ? v.host : '', placeholder: 'nas.fritz.box' }));
+        const peerF = field('peerId', t('plugins.stg.f_peer'), select('peerId', choices.peers.map((p) => [p.id, p.label + ' (' + p.ip + ')']), v.peerId));
+        const routeF = field('routeId', t('plugins.stg.f_route'), select('routeId', choices.routes.map((r) => [r.id, r.label]), v.routeId), t('plugins.stg.f_route_h'));
+        const portF = field('port', t('plugins.stg.f_port'), input('port', { type: 'number', value: v.port && v.port !== 445 ? v.port : '', placeholder: '445', max: 5 }));
+        const sync = () => { hostF.hidden = how.value !== 'host'; peerF.hidden = how.value !== 'peer'; routeF.hidden = how.value !== 'route'; portF.hidden = how.value === 'route'; };
+        how.addEventListener('change', sync);
+        [hostF, peerF, routeF, portF].forEach((f) => form.appendChild(f));
+        sync();
+        form.appendChild(field('share', t('plugins.stg.f_share'), input('share', { value: cfg.share, placeholder: 'home', max: 80 })));
+        form.appendChild(field('folder', t('plugins.stg.f_folder'), input('folder', { value: cfg.folder, placeholder: 'GateControl' }), t('plugins.stg.f_folder_h')));
+        form.appendChild(field('username', t('plugins.stg.f_user'), input('username', { value: cfg.username, max: 120 })));
+        form.appendChild(field('password', t('plugins.stg.f_password'), secretInput('password')));
+        form.appendChild(field('domain', t('plugins.stg.f_domain'), input('domain', { value: cfg.domain, max: 120 }), t('plugins.stg.f_domain_h')));
+      } else if (kind === 'webdav') {
+        form.appendChild(field('url', t('plugins.stg.f_url'), input('url', { value: cfg.url, placeholder: 'https://nas.example.de:5006/GateControl' }), t('plugins.stg.f_url_h')));
+        form.appendChild(field('username', t('plugins.stg.f_user'), input('username', { value: cfg.username, max: 120 })));
+        form.appendChild(field('password', t('plugins.stg.f_password'), secretInput('password')));
+        form.appendChild(caField());
+      } else {
+        form.appendChild(field('endpoint', t('plugins.stg.f_endpoint'), input('endpoint', { value: cfg.endpoint, placeholder: 'https://fsn1.your-objectstorage.com' })));
+        form.appendChild(field('region', t('plugins.stg.f_region'), input('region', { value: cfg.region, placeholder: 'us-east-1', max: 40 })));
+        form.appendChild(field('bucket', t('plugins.stg.f_bucket'), input('bucket', { value: cfg.bucket, max: 63 })));
+        form.appendChild(field('prefix', t('plugins.stg.f_prefix'), input('prefix', { value: cfg.prefix, placeholder: 'gatecontrol' }), t('plugins.stg.f_prefix_h')));
+        form.appendChild(field('accessKeyId', t('plugins.stg.f_key'), input('accessKeyId', { value: cfg.accessKeyId, max: 128 })));
+        form.appendChild(field('secretAccessKey', t('plugins.stg.f_secret'), secretInput('secretAccessKey')));
+        const ps = el('input', { type: 'checkbox', id: 'pgx-stg-pathStyle' });
+        ps.checked = cfg.pathStyle !== false;
+        inputs.pathStyle = ps;
+        form.appendChild(el('label', { class: 'pgx-check-line', 'data-field': 'pathStyle' }, [ps, t('plugins.stg.f_pathstyle')]));
+        form.appendChild(caField());
+        form.appendChild(el('p', { class: 'pgx-note', text: t('plugins.stg.s3_note') }));
+      }
+      const first = form.querySelector('input,select');
+      if (first && !existing) setTimeout(() => { const l = inputs.label; if (l) l.focus(); }, 0);
+    }
+
+    function values() {
+      const v = { kind };
+      Object.keys(inputs).forEach((k) => { v[k] = inputs[k].type === 'checkbox' ? inputs[k].checked : inputs[k].value; });
+      if (kind === 'smb') {
+        const how = v.via;
+        v.via = how === 'peer' ? { kind: 'peer', peerId: Number(v.peerId) } : how === 'route' ? { kind: 'route', routeId: Number(v.routeId) } : { kind: 'host' };
+        delete v.peerId;
+        delete v.routeId;
+      }
+      return v;
+    }
+
+    function showFail(r) {
+      form.querySelectorAll('[data-invalid]').forEach((n) => n.removeAttribute('data-invalid'));
+      if (r.field) {
+        const f = form.querySelector('[data-field="' + r.field + '"]');
+        if (f) { f.setAttribute('data-invalid', '1'); const i = f.querySelector('input,select,textarea'); if (i) i.focus(); }
+      }
+      err.textContent = r.error || t('plugins.err.generic');
+      err.hidden = false;
+    }
+
+    function showCheck(c) {
+      clear(result);
+      const names = ['connect', 'folder', 'write', 'read', 'delete'];
+      result.appendChild(el('ul', { class: 'pgx-checks pgx-stg-checks', id: 'pgx-stg-checks' }, names.map((n) => {
+        const s = (c.steps || []).find((x) => x.step === n);
+        const state = !s ? 'wait' : (s.ok ? 'ok' : 'fail');
+        return el('li', { 'data-state': state === 'wait' ? 'warn' : state, 'data-step': n }, [
+          el('span', { class: 'pgx-check-ic', 'aria-hidden': 'true', text: state === 'ok' ? '✓' : (state === 'fail' ? '✕' : '–') }),
+          el('span', null, [el('b', { text: t('plugins.stg.step_' + n) }), state === 'fail' ? el('small', { text: stgErrorText(c.error) }) : null]),
+        ]);
+      })));
+      if (c.ok) result.appendChild(el('p', { class: 'pgx-note pgx-note-good', id: 'pgx-stg-ok', text: [t('plugins.stg.check_ok'), fmtFree(c)].filter(Boolean).join(' · ') }));
+    }
+
+    const cancel = el('button', { type: 'button', class: 'pgx-btn', text: t('common.cancel'), on: { click: () => d.close(null) } });
+    const checkBtn = el('button', { type: 'button', class: 'pgx-btn', id: 'pgx-stg-check', text: t('plugins.stg.check') });
+    const save = el('button', { type: 'button', class: 'pgx-btn pgx-btn-pri', id: 'pgx-stg-save', text: t('plugins.stg.save') });
+    d.foot.appendChild(cancel);
+    d.foot.appendChild(checkBtn);
+    d.foot.appendChild(save);
+    const busyOn = (on) => { checkBtn.disabled = on; save.disabled = on; };
+
+    checkBtn.addEventListener('click', async () => {
+      busyOn(true);
+      err.hidden = true;
+      clear(result);
+      result.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.stg.checking') }));
+      const body = Object.assign(values(), existing ? { id: existing.id } : {});
+      const r = await req('POST', ST_API + '/check', body);
+      busyOn(false);
+      clear(result);
+      if (!r.ok) { showFail(r); return; }
+      showCheck(r.check);
+    });
+    save.addEventListener('click', async () => {
+      busyOn(true);
+      err.hidden = true;
+      const r = existing ? await req('PATCH', ST_API + '/' + existing.id, values()) : await req('POST', ST_API, values());
+      if (!r.ok) { busyOn(false); showFail(r); return; }
+      clear(result);
+      result.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.stg.checking') }));
+      const c = await req('POST', ST_API + '/' + r.target.id + '/check', {});
+      busyOn(false);
+      toast(t(existing ? 'plugins.stg.saved' : 'plugins.stg.created'));
+      if (c.ok && !c.check.ok) {
+        // saved, but it does not work yet: keep the dialog open with the result
+        existing = c.target;
+        showCheck(c.check);
+        return;
+      }
+      d.close(r.target);
+    });
+
+    render();
+    const out = await d.promise;
+    await loadTargets();
+    if (VIEW === 'storage') renderStorage();
+    return out;
+  }
+
+  // ════════════════════════════════════════════════════════════
   // Protokoll
   // ════════════════════════════════════════════════════════════
   let logFilter = 'all';
@@ -2102,7 +2401,7 @@
   });
 
   const VIEWS = new Map([['installed', viewInstalled], ['catalog', viewCatalog], ['catalogItem', viewCatalogItem], ['manage', viewManage], ['updates', viewUpdates],
-    ['licenses', viewLicenses], ['security', viewSecurity], ['log', viewLog]]);
+    ['licenses', viewLicenses], ['security', viewSecurity], ['storage', viewStorage], ['log', viewLog]]);
   const start = VIEWS.get(VIEW) || viewInstalled;
   start().catch(() => { showError(t('plugins.err.generic')); busy.setAttribute('aria-busy', 'false'); });
 }());
