@@ -13,6 +13,8 @@
 //   picker.setValue({ userIds: [], groupIds: [], peerIds: [] });
 //   picker.getValue();            // same shape, ids as numbers
 //   picker.setAclEnabled(bool);   // HTTP: devices only count with the ACL on
+//   picker.setAclPeople(bool);    // HTTP: the ACL lets the devices of people
+//                                 // and groups through (routes.acl_people)
 //
 // Data: GET /api/v1/access/principals (once per page), POST
 // /api/v1/access/preview (debounced). Strings: #acc-i18n (acc.*), German
@@ -101,6 +103,7 @@
       value: { userIds: [], groupIds: [], peerIds: [] },
       devices: !!o.devices,
       acl: false,
+      aclPeople: true,
       expanded: false,
       preview: null,
       active: -1,
@@ -279,6 +282,8 @@
       timer = null;
       var my = ++previewSeq;
       var body = { userIds: state.value.userIds, groupIds: state.value.groupIds, peerIds: state.devices ? state.value.peerIds : [] };
+      // HTTP routes: do the devices of people and groups pass the ACL?
+      if (state.devices) body.aclPeople = state.aclPeople;
       window.api.post('/api/v1/access/preview', body).then(function (d) {
         if (my !== previewSeq) return;
         state.preview = d && d.ok ? d : null;
@@ -294,7 +299,11 @@
       clear(prevList);
       clear(side);
       var p = state.preview;
-      var devicesCount = (state.devices && state.acl && p) ? p.devices.length : 0;
+      // With the ACL on, the devices that pass: the ticked ones plus — with
+      // "Geräte der Personen und Gruppen durchlassen" — those of the people.
+      var peopleThrough = state.acl && state.aclPeople;
+      var devicesCount = (state.devices && state.acl && p)
+        ? p.devices.length + (peopleThrough && p.personDevices ? p.personDevices.length : 0) : 0;
       // Devices only count with the device ACL on (HTTP routes).
       var people = p ? p.people.filter(function (x) {
         if (state.acl) return true;
@@ -311,9 +320,15 @@
         var shown = state.expanded ? active : active.slice(0, 5);
         shown.forEach(function (x) {
           var reasons = x.reasons.filter(function (r) { return state.acl || r.type !== 'device'; });
-          prevList.appendChild(el('li', { class: 'acc-prev-row' }, [
+          var why = reasons.map(whyText);
+          // Device ACL on: say whether the person's own devices get through.
+          if (state.devices && state.acl) {
+            if (state.aclPeople && x.ownDevices > 0) why.push(T(x.ownDevices === 1 ? 'acc.why_devices_pass_one' : 'acc.why_devices_pass', { count: x.ownDevices }));
+            else if (!state.aclPeople && x.visibleOnly) why.push(T('acc.why_visible_only'));
+          }
+          prevList.appendChild(el('li', { class: 'acc-prev-row' + (state.devices && state.acl && !state.aclPeople && x.visibleOnly ? ' is-visible-only' : '') }, [
             el('span', { class: 'acc-prev-name', text: x.name }),
-            el('span', { class: 'acc-prev-why', text: reasons.map(whyText).join(' · ') }),
+            el('span', { class: 'acc-prev-why', text: why.join(' · ') }),
           ]));
         });
         moreBtn.hidden = active.length <= 5;
@@ -333,7 +348,9 @@
       if (state.devices) {
         var txt;
         if (!state.acl) txt = state.value.peerIds.length ? T('acc.devices_hint_off') : T('acc.devices_acl_off');
-        else txt = T('acc.devices_hint', { count: devicesCount });
+        else if (state.aclPeople) txt = T('acc.devices_hint', { count: devicesCount });
+        else if (state.value.peerIds.length) txt = T('acc.devices_hint_listed', { count: devicesCount });
+        else txt = T('acc.devices_hint_none');
         side.appendChild(el('div', { class: 'acc-note', text: txt }));
       }
       side.hidden = !side.firstChild;
@@ -374,6 +391,13 @@
         state.acl = !!on;
         renderChips();
         renderPreview();
+      },
+      setAclPeople: function (on) {
+        var next = !!on;
+        if (next === state.aclPeople) return;
+        state.aclPeople = next;
+        renderPreview();
+        schedulePreview();
       },
       reload: function () { return loadPrincipals(true).then(function () { renderChips(); }); },
     };

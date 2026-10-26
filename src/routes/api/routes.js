@@ -116,6 +116,12 @@ function accessInput(req, currentGroupIds) {
   }
   return { fields: out };
 }
+// acl_people ("Geräte der Personen und Gruppen durchlassen", docs/groups.md
+// "Zugriff per Gruppe"): a boolean (0/1 accepted); absent/null = default on
+// create, keep on update.
+function validAclPeople(v) {
+  return v === undefined || v === null || typeof v === 'boolean' || v === 0 || v === 1;
+}
 // TLS guard verdict attached by routes.create/update → top-level `tls` in the answer.
 const tlsOf = (r) => (r && r.tls ? { tls: r.tls } : {});
 
@@ -445,6 +451,7 @@ router.post('/',
     return requireLimit('http_routes', httpRouteCountFn)(req, res, next);
   },
   requireFeatureField('acl_enabled', 'peer_acl'),
+  requireFeatureField('acl_people', 'peer_acl'),
   requireFeatureField('ip_filter_enabled', 'ip_access_control'),
   requireFeatureField('rate_limit_enabled', 'rate_limiting'),
   requireFeatureField('compress_enabled', 'compression'),
@@ -469,7 +476,7 @@ router.post('/',
       route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
-      acl_enabled, acl_peers, compress_enabled, custom_headers,
+      acl_enabled, acl_peers, acl_people, compress_enabled, custom_headers,
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
@@ -510,6 +517,7 @@ router.post('/',
       const bgErr = validateCssBg(branding_bg);
       if (bgErr) fields.branding_bg = req.t('error.routes.branding_bg_invalid') || bgErr;
     }
+    if (!validAclPeople(acl_people)) fields.acl_people = req.t('error.routes.acl_people_invalid');
     if (Object.keys(fields).length > 0) {
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
     }
@@ -585,7 +593,7 @@ router.post('/',
       l4_conn_window_s: req.body.l4_conn_window_s,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
-      acl_enabled, acl_peers, compress_enabled, custom_headers,
+      acl_enabled, acl_peers, acl_people, compress_enabled, custom_headers,
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
@@ -630,6 +638,7 @@ router.post('/',
  */
 router.put('/:id',
   requireFeatureField('acl_enabled', 'peer_acl'),
+  requireFeatureField('acl_people', 'peer_acl'),
   requireFeatureField('ip_filter_enabled', 'ip_access_control'),
   requireFeatureField('rate_limit_enabled', 'rate_limiting'),
   requireFeatureField('compress_enabled', 'compression'),
@@ -654,7 +663,7 @@ router.put('/:id',
       route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
-      acl_enabled, acl_peers, compress_enabled, custom_headers,
+      acl_enabled, acl_peers, acl_people, compress_enabled, custom_headers,
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
@@ -713,6 +722,7 @@ router.put('/:id',
       const bgErr = validateCssBg(branding_bg);
       if (bgErr) fields.branding_bg = req.t('error.routes.branding_bg_invalid') || bgErr;
     }
+    if (!validAclPeople(acl_people)) fields.acl_people = req.t('error.routes.acl_people_invalid');
     if (Object.keys(fields).length > 0) {
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
     }
@@ -792,7 +802,7 @@ router.put('/:id',
       l4_conn_window_s: req.body.l4_conn_window_s,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
-      acl_enabled, acl_peers, compress_enabled, custom_headers,
+      acl_enabled, acl_peers, acl_people, compress_enabled, custom_headers,
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,

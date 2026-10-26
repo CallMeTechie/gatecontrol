@@ -222,12 +222,32 @@
     return accessValue().peerIds;
   }
 
+  // "Geräte der Personen und Gruppen durchlassen" (routes.acl_people): off →
+  // only the ticked devices pass the ACL, persons and groups only control
+  // who sees the route. No switch in the page (no licence) counts as on.
+  function aclPeopleOn(prefix) {
+    var t = byId(prefix + '-route-acl-people');
+    return !t || t.classList.contains('on');
+  }
+  function syncAclPeopleHints(prefix) {
+    var on = aclPeopleOn(prefix);
+    showIf(prefix + '-acl-from-people', on);
+    showIf(prefix + '-acl-from-listed', !on);
+  }
+
   function updateAclHint(prefix) {
     var hint = byId(prefix + '-acl-hint');
     if (!hint) return;
     var v = accessValue();
-    // Nothing in "Wer darf zugreifen?": the ACL has no device to allow.
-    if (!v.peerIds.length && !v.userIds.length && !v.groupIds.length) {
+    syncAclPeopleHints(prefix);
+    if (!aclPeopleOn(prefix) && !v.peerIds.length && (v.userIds.length || v.groupIds.length)) {
+      // Persons/groups only steer visibility here: without a ticked device the
+      // ACL restricts nothing (no peer matcher, as before person groups).
+      hint.style.display = '';
+      hint.textContent = T('acl.people_off_no_devices', 'No device ticked: device access control restricts nothing this way — people and groups only control who sees the route.');
+      hint.style.color = warnColor();
+    } else if (!v.peerIds.length && !v.userIds.length && !v.groupIds.length) {
+      // Nothing in "Wer darf zugreifen?": the ACL has no device to allow.
       hint.style.display = '';
       hint.textContent = T('acl.no_peers_selected', 'No peers selected');
       hint.style.color = warnColor();
@@ -259,6 +279,22 @@
     });
     toggle.addEventListener('keydown', function (e) {
       if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle.click(); }
+    });
+    var people = byId(prefix + '-route-acl-people');
+    if (!people) return;
+    people.setAttribute('role', 'switch');
+    people.setAttribute('tabindex', '0');
+    people.setAttribute('aria-checked', people.classList.contains('on') ? 'true' : 'false');
+    people.addEventListener('click', function () {
+      people.classList.toggle('on');
+      var on = people.classList.contains('on');
+      people.setAttribute('aria-checked', on ? 'true' : 'false');
+      var p = picker();
+      if (p && p.setAclPeople) p.setAclPeople(on);
+      updateAclHint(prefix);
+    });
+    people.addEventListener('keydown', function (e) {
+      if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); people.click(); }
     });
   }
 
@@ -1576,6 +1612,11 @@
       aclToggle.classList.toggle('on', !!route.acl_enabled);
       showIf('edit-acl-fields', route.acl_enabled);
     }
+    // "Geräte der Personen und Gruppen durchlassen" (acl_people; 0 for routes
+    // that kept the behaviour from before person groups).
+    var aclPeopleVal = detail && detail.acl_people != null ? detail.acl_people : route.acl_people;
+    var aclPeople = aclPeopleVal == null ? true : Number(aclPeopleVal) !== 0;
+    setToggle('edit-route-acl-people', aclPeople);
 
     // Rate limit
     setToggle('edit-route-rate-limit', route.rate_limit_enabled);
@@ -1697,6 +1738,7 @@
         peerIds: (detail && detail.acl_peers) || [],
       });
       p.setAclEnabled(!!route.acl_enabled);
+      if (p.setAclPeople) p.setAclPeople(aclPeopleOn('edit'));
     }
     updateAclHint('edit');
   }
@@ -3387,6 +3429,9 @@
         // Devices stay stored with the ACL off (chips in "Wer darf zugreifen?");
         // Caddy only enforces them while the ACL is on.
         acl_peers: getSelectedAclPeers(),
+        // Only with the ACL on (the switch is part of it; licence-gated like
+        // acl_enabled): absent = the stored value stays.
+        acl_people: aclEnabled && byId('edit-route-acl-people') ? isOn('edit-route-acl-people') : undefined,
         rate_limit_enabled: rateLimitEnabled,
         rate_limit_requests: rateLimitEnabled ? parseInt(val('edit-rate-limit-requests', '100'), 10) : 100,
         rate_limit_window: rateLimitEnabled ? val('edit-rate-limit-window', '1m') : '1m',

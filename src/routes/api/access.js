@@ -11,10 +11,13 @@
  *              totalMemberCount }], users: [{ id, name, username, enabled,
  *              disabledReason }], peers: [{ id, name, ip, userId, owner,
  *              enabled }] }   (gateways are not offered as devices)
- *   POST /api/v1/access/preview { userIds, groupIds, peerIds }
+ *   POST /api/v1/access/preview { userIds, groupIds, peerIds, aclPeople? }
  *        → { ok, count, people: [{ userId, name, username, disabled,
- *              disabledReason, reasons: [...] }], devices: [...],
- *              groups: [...], unknownUserIds: [...] }
+ *              disabledReason, reasons: [...], ownDevices, visibleOnly }],
+ *              devices: [...], groups: [...], unknownUserIds: [...],
+ *              aclPeople, personDevices: [...] }
+ *        aclPeople (boolean, route editor with the device ACL): whether the
+ *        devices of the persons and group members pass (routes.acl_people).
  */
 
 const express = require('express');
@@ -54,7 +57,7 @@ router.get('/principals', (req, res) => {
 router.post('/preview', (req, res) => {
   try {
     const body = req.body || {};
-    const out = groupAccess.preview({ userIds: body.userIds, groupIds: body.groupIds, peerIds: body.peerIds });
+    const out = groupAccess.preview({ userIds: body.userIds, groupIds: body.groupIds, peerIds: body.peerIds, aclPeople: typeof body.aclPeople === 'boolean' ? body.aclPeople : undefined });
     res.json({ ok: true, ...out });
   } catch (err) {
     if (/_INVALID$/.test(err.code || '')) {

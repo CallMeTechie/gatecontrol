@@ -845,6 +845,12 @@ async function restoreBackup(backup) {
       if (row.bundle_id != null) row.bundle_id = bundleIdMap.get(row.bundle_id) || null;
       if (row.enabled === undefined) row.enabled = 1;
       row.circuit_breaker_status = 'closed';
+      // acl_people (docs/groups.md "Zugriff per Gruppe"): a backup from before
+      // the switch gets the rule of migration 111 (ACL on + persons → 0, only
+      // the listed devices pass), so restoring it never widens access.
+      row.acl_people = r.acl_people === undefined || r.acl_people === null
+        ? require('./groupAccess').legacyAclPeople(r)
+        : (r.acl_people === 0 || r.acl_people === false || r.acl_people === '0' ? 0 : 1);
       row.user_ids = remapIdList(row.user_ids, remapUsers);
       const excluded = ['peer_name', 'target_peer_name', 'acl_peer_names', 'group_refs'];
       const result = dynamicInsert(db, 'routes', excluded, row);

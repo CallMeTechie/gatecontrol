@@ -11,6 +11,7 @@
  *   persons  routes.user_ids / rdp_routes.user_ids  JSON array of user ids
  *   groups   route_group_acl (HTTP routes) / rdp_routes.group_ids (JSON array)
  *   devices  route_peer_acl (HTTP routes only; Caddy, when acl_enabled)
+ *   acl_people  routes.acl_people (HTTP routes; Caddy layer only, see below)
  *
  * Rules
  *   • persons AND groups empty → no person restriction (everybody, as before).
@@ -24,9 +25,20 @@
  *   • Malformed JSON in user_ids / group_ids counts as "no restriction"
  *     (historic behaviour of rdpAcl / routes.getForUser).
  *   • Caddy peer ACL (acl_enabled): allowed source IPs = the listed devices ∪
- *     the devices (peers owned, peers bound to their tokens) of the persons
- *     and of the effective group members. When something is listed but no IP
- *     results, the route fails closed (aclRanges → configured, no ranges).
+ *     — only with acl_people = 1 — the devices (peers owned, peers bound to
+ *     their tokens) of the persons and of the effective group members. When
+ *     something counts as listed but no IP results, the route fails closed
+ *     (aclRanges → configured, no ranges).
+ *   • acl_people = 0 ("Geräte der Personen und Gruppen durchlassen" off):
+ *     only the listed devices pass, exactly the behaviour before person
+ *     groups — persons and groups do not count as listed, so an ACL route
+ *     without devices has no peer matcher at all (historic). Migration 111
+ *     sets 0 for existing routes with the ACL on and at least one person
+ *     (legacyAclPeople), so the update does not widen their access; every
+ *     other route, and every new one, has 1. acl_people only touches the
+ *     Caddy source-IP layer: who may see / open an entry (client API, portal
+ *     visibility, route login, RDP, "Was sieht <Name>?") is decided by
+ *     persons and groups either way.
  *
  * API
  *   NOBODY
@@ -40,13 +52,19 @@
  *   canSeeRoute(route, userId, { userGroups, routeGroups }) → boolean
  *   effectiveUsers({ persons, groups }) → Set<userId> (enabled accounts only)
  *   devicesOfUsers(userIds) → [{ peerId, name, allowedIps, userId }]
+ *   aclPeopleOn(route) → boolean   acl_people of the row (read from the
+ *       database when the object lacks it; unknown route → true)
+ *   legacyAclPeople({ acl_enabled, user_ids }) → 0 | 1   value for a route
+ *       that predates acl_people (migration 111, restore of an old backup)
  *   aclPeers(route) → [{ peerId, name, allowedIps, userId|null, via }]
  *   aclRanges(route) → { configured, ranges }   for caddyConfig
  *   validateGroupIds(input, { current }) / validateUserIds(input)
  *       → number[]; throws err.code GROUPS_INVALID | GROUP_NOT_FOUND |
  *         GROUP_ARCHIVED | USERS_INVALID
- *   preview({ userIds, groupIds, peerIds }) → { count, people, devices, groups }
- *   aclDependsOnPeople() → boolean  (a route with acl_enabled has persons/groups)
+ *   preview({ userIds, groupIds, peerIds, aclPeople }) → { count, people,
+ *       devices, groups, personDevices, aclPeople }
+ *   aclDependsOnPeople() → boolean  (a route with acl_enabled and acl_people
+ *       has persons/groups)
  *   createReloader({ reload, intervalMs, now, setTimer, clearTimer })
  *   startCaddySync() / stopCaddySync()  — rebuild Caddy (≤ 1× per 5 s) when
  *       memberships, devices or accounts change.
@@ -199,7 +217,42 @@ function devicesOfUsers(userIds) {
   return [...seen.values()].sort((a, b) => a.peerId - b.peerId);
 }
 
-/** Every peer that may reach an acl_enabled route (explicit ∪ people's devices). */
+function flagOn(v) {
+  if (v === true) return true;
+  if (v === false || v == null || v === '' || v === '0' || v === 'false') return false;
+  return Number(v) !== 0;
+}
+
+/**
+ * Value of acl_people for a route that predates the column (migration 111,
+ * restore of a backup without it): ACL on AND at least one person → 0 (only
+ * the listed devices pass, as before); everything else → 1.
+ */
+function legacyAclPeople(row) {
+  const r = row || {};
+  return flagOn(r.acl_enabled) && parseIdList(r.user_ids).length > 0 ? 0 : 1;
+}
+
+/**
+ * Do the devices of the route's persons and group members pass its peer ACL?
+ * The row's own acl_people when present; otherwise the stored value (a
+ * caller may hand a partial object); a route the database does not know → 1.
+ */
+function aclPeopleOn(route) {
+  if (!route) return true;
+  if (route.acl_people !== undefined && route.acl_people !== null) return flagOn(route.acl_people);
+  const rid = toId(route.id);
+  if (!rid) return true;
+  try {
+    const row = getDb().prepare('SELECT acl_people FROM routes WHERE id = ?').get(rid);
+    return row ? flagOn(row.acl_people) : true;
+  } catch { return true; } // column not there yet (before migration 111)
+}
+
+/**
+ * Every peer that may reach an acl_enabled route: the listed devices ∪ —
+ * with acl_people — the devices of its persons and group members.
+ */
 function aclPeers(route) {
   if (!route || route.id == null) return [];
   const db = getDb();
@@ -208,6 +261,7 @@ function aclPeers(route) {
       JOIN peers p ON p.id = a.peer_id WHERE a.route_id = ? ORDER BY p.id`).all(route.id)) {
     out.set(p.id, { peerId: p.id, name: p.name, allowedIps: p.allowed_ips, userId: p.user_id || null, via: 'device' });
   }
+  if (!aclPeopleOn(route)) return [...out.values()];
   const persons = parseIdList(route.user_ids);
   const groups = routeGroupIds(route.id);
   if (isRestricted(persons, groups)) {
@@ -225,14 +279,16 @@ function ipOf(allowedIps) {
 
 /**
  * Source ranges of an acl_enabled route. configured = something is listed
- * (devices, persons or groups); a configured route with no ranges must fail
- * closed (caddyConfig), an unconfigured one keeps the historic behaviour.
+ * (devices; with acl_people also persons or groups); a configured route with
+ * no ranges must fail closed (caddyConfig), an unconfigured one keeps the
+ * historic behaviour (no peer matcher).
  */
 function aclRanges(route) {
   const db = getDb();
   const explicit = route && route.id != null
     ? db.prepare('SELECT COUNT(*) AS c FROM route_peer_acl WHERE route_id = ?').get(route.id).c : 0;
-  const configured = explicit > 0 || isRestricted(parseIdList(route && route.user_ids), routeGroupIds(route && route.id));
+  const configured = explicit > 0 || (aclPeopleOn(route)
+    && isRestricted(parseIdList(route && route.user_ids), routeGroupIds(route && route.id)));
   const ranges = [...new Set(aclPeers(route).map((p) => ipOf(p.allowedIps)).filter(Boolean).map((ip) => `${ip}/32`))];
   return { configured, ranges };
 }
@@ -284,11 +340,20 @@ function validateUserIds(input) {
  *   → { count (enabled people), people: [{ userId, name, username, disabled,
  *       disabledReason, reasons: [{ type: 'person' } | { type: 'group',
  *       groupId, path, role, direct, viaPath } | { type: 'device', peerId,
- *       name }] }], devices: [{ peerId, name, ip, userId, owner }],
- *       groups: [{ id, path, archived, missing, kind }], unknownUserIds }
+ *       name, via: 'device' }], ownDevices, visibleOnly }],
+ *       devices: [{ peerId, name, ip, userId, owner }],
+ *       groups: [{ id, path, archived, missing, kind }], unknownUserIds,
+ *       aclPeople, personDevices: [{ peerId, name, ip, userId, owner }] }
  * Devices without an owner appear in `devices` only.
+ *
+ * aclPeople (HTTP routes with the device ACL, routes.acl_people): true → the
+ * devices of the enabled persons reached through a person or group reason
+ * pass the ACL too: listed in personDevices (without the listed devices),
+ * per person ownDevices = how many of them. false → they do not pass;
+ * visibleOnly marks a person who sees the entry but has no listed device.
+ * Omitted (RDP) → neither is computed (ownDevices 0, visibleOnly false).
  */
-function preview({ userIds = [], groupIds = [], peerIds = [] } = {}) {
+function preview({ userIds = [], groupIds = [], peerIds = [], aclPeople } = {}) {
   const db = getDb();
   const groupsSvc = require('./groups');
   const persons = normalizeInput(userIds, 'USERS_INVALID');
@@ -332,20 +397,44 @@ function preview({ userIds = [], groupIds = [], peerIds = [] } = {}) {
     for (const d of db.prepare(`SELECT id, name, allowed_ips, user_id FROM peers WHERE id IN (${ph}) ORDER BY name`).all(...pids)) {
       const owner = d.user_id ? person(d.user_id) : null;
       devices.push({ peerId: d.id, name: d.name, ip: ipOf(d.allowed_ips), userId: d.user_id || null, owner: owner ? owner.name : null });
-      if (owner) owner.reasons.push({ type: 'device', peerId: d.id, name: d.name });
+      if (owner) owner.reasons.push({ type: 'device', peerId: d.id, name: d.name, via: 'device' });
+    }
+  }
+  const peopleMode = aclPeople === undefined || aclPeople === null ? null : flagOn(aclPeople);
+  const personDevices = [];
+  const released = [];
+  for (const p of people.values()) {
+    p.ownDevices = 0;
+    p.visibleOnly = false;
+    if (p.disabled || !p.reasons.some((r) => r.type !== 'device')) continue;
+    released.push(p);
+    if (peopleMode === false) p.visibleOnly = !p.reasons.some((r) => r.type === 'device');
+  }
+  if (peopleMode === true && released.length) {
+    for (const d of devicesOfUsers(released.map((p) => p.userId))) {
+      const p = people.get(d.userId);
+      if (p) p.ownDevices += 1;
+      if (pids.includes(d.peerId)) continue;
+      personDevices.push({ peerId: d.peerId, name: d.name, ip: ipOf(d.allowedIps), userId: d.userId, owner: p ? p.name : null });
     }
   }
   const list = [...people.values()].filter((p) => p.reasons.length)
     .sort((a, b) => (Number(a.disabled) - Number(b.disabled)) || a.name.localeCompare(b.name));
-  return { count: list.filter((p) => !p.disabled).length, people: list, devices, groups: groupInfo, unknownUserIds };
+  return {
+    count: list.filter((p) => !p.disabled).length, people: list, devices, groups: groupInfo, unknownUserIds,
+    aclPeople: peopleMode, personDevices,
+  };
 }
 
 // ─── Caddy reload on membership / device changes ──────────────────────────
 
-/** Is there an acl_enabled route whose source IPs depend on persons/groups? */
+/**
+ * Is there an acl_enabled route whose source IPs depend on persons/groups?
+ * Only routes with acl_people = 1 — with 0 only the listed devices count.
+ */
 function aclDependsOnPeople() {
   try {
-    return !!getDb().prepare(`SELECT 1 FROM routes r WHERE r.acl_enabled = 1
+    return !!getDb().prepare(`SELECT 1 FROM routes r WHERE r.acl_enabled = 1 AND r.acl_people = 1
       AND (EXISTS (SELECT 1 FROM route_group_acl a WHERE a.route_id = r.id)
            OR (r.user_ids IS NOT NULL AND r.user_ids NOT IN ('', '[]', 'null'))) LIMIT 1`).get();
   } catch { return false; }
@@ -424,7 +513,7 @@ module.exports = {
   NOBODY, RELOAD_INTERVAL_MS, DEVICE_EVENTS,
   parseIdList, isRestricted, allows, userGroupSet,
   routeGroupMap, routeGroupIds, setRouteGroups, canSeeRoute,
-  effectiveUsers, devicesOfUsers, aclPeers, aclRanges,
+  effectiveUsers, devicesOfUsers, aclPeopleOn, legacyAclPeople, aclPeers, aclRanges,
   validateGroupIds, validateUserIds,
   preview,
   aclDependsOnPeople, createReloader, startCaddySync, stopCaddySync,

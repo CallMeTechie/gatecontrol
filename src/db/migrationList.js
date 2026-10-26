@@ -2650,6 +2650,31 @@ const migrations = [
       );
       CREATE INDEX IF NOT EXISTS idx_directory_runs_dir ON directory_runs(directory_id, id);`,
   },
+  {
+    version: 111,
+    name: 'route_acl_people',
+    // Device ACL and persons/groups (docs/groups.md "Zugriff per Gruppe",
+    // services/groupAccess.js): routes.acl_people = 1 lets the Caddy peer ACL
+    // of an acl_enabled route also pass the devices of the route's persons
+    // (user_ids) and of the effective members of its groups; 0 = only the
+    // listed devices (route_peer_acl) pass, persons and groups only control
+    // visibility — the behaviour before person groups. Existing routes with
+    // the ACL on AND at least one person keep that behaviour (acl_people = 0,
+    // otherwise the update would silently widen their access); everything
+    // else — routes without the ACL, ACL routes without persons, new routes —
+    // gets 1. user_ids is parsed in JS like groupAccess.parseIdList (NULL, '',
+    // '[]' and malformed JSON hold no id) by `run`, which the migration
+    // runner executes after `sql` in the same transaction.
+    sql: `ALTER TABLE routes ADD COLUMN acl_people INTEGER NOT NULL DEFAULT 1;`,
+    run: (db) => {
+      const { legacyAclPeople } = require('../services/groupAccess');
+      const off = db.prepare('UPDATE routes SET acl_people = 0 WHERE id = ?');
+      for (const r of db.prepare('SELECT id, acl_enabled, user_ids FROM routes').all()) {
+        if (legacyAclPeople(r) === 0) off.run(r.id);
+      }
+    },
+    detect: (db) => hasColumn(db, 'routes', 'acl_people'),
+  },
 ];
 
 module.exports = { migrations };

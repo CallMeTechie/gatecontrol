@@ -423,7 +423,7 @@ async function create(data, opts = {}) {
                         route_type, l4_protocol, l4_listen_port, l4_tls_mode,
                         l4_conn_limit, l4_conn_window_s, monitoring_enabled,
                         ip_filter_enabled, ip_filter_mode, ip_filter_rules,
-                        branding_title, branding_text, branding_color, branding_bg, acl_enabled, compress_enabled,
+                        branding_title, branding_text, branding_color, branding_bg, acl_enabled, acl_people, compress_enabled,
                         custom_headers, rate_limit_enabled, rate_limit_requests, rate_limit_window,
                         retry_enabled, retry_count, retry_match_status,
                         backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
@@ -438,7 +438,7 @@ async function create(data, opts = {}) {
                         waf_enabled, waf_mode, waf_paranoia, waf_mode_changed_at, backend_tls_fingerprint,
                         label, on_demand,
                         enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
     domain,
     targetIp,
@@ -470,6 +470,9 @@ async function create(data, opts = {}) {
     data.branding_color || null,
     data.branding_bg || null,
     data.acl_enabled ? 1 : 0,
+    // Devices of the persons / group members pass the peer ACL (docs/groups.md
+    // "Zugriff per Gruppe"); new routes default to on.
+    aclPeopleFlag(data.acl_people, 1),
     data.compress_enabled ? 1 : 0,
     customHeaders,
     data.rate_limit_enabled ? 1 : 0,
@@ -558,7 +561,7 @@ async function create(data, opts = {}) {
     activity.log('route_acl_toggled', `Route "${domain}" ACL enabled`, {
       source: 'admin',
       severity: 'info',
-      details: { routeId, acl_enabled: true, acl_peers: data.acl_peers || [] },
+      details: { routeId, acl_enabled: true, acl_peers: data.acl_peers || [], acl_people: aclPeopleFlag(data.acl_people, 1) === 1 },
     });
   }
 
@@ -858,6 +861,7 @@ async function update(id, data) {
       branding_color = COALESCE(?, branding_color),
       branding_bg = COALESCE(?, branding_bg),
       acl_enabled = COALESCE(?, acl_enabled),
+      acl_people = COALESCE(?, acl_people),
       compress_enabled = COALESCE(?, compress_enabled),
       custom_headers = ?,
       rate_limit_enabled = COALESCE(?, rate_limit_enabled),
@@ -947,6 +951,7 @@ async function update(id, data) {
     data.branding_color !== undefined ? (data.branding_color || null) : null,
     data.branding_bg !== undefined ? (data.branding_bg || null) : null,
     data.acl_enabled !== undefined ? (data.acl_enabled ? 1 : 0) : null,
+    aclPeopleFlag(data.acl_people, null),
     data.compress_enabled !== undefined ? (data.compress_enabled ? 1 : 0) : null,
     updateCustomHeaders,
     data.rate_limit_enabled !== undefined ? (data.rate_limit_enabled ? 1 : 0) : null,
@@ -1038,11 +1043,20 @@ async function update(id, data) {
   // Log ACL changes
   const newAclEnabled = data.acl_enabled !== undefined ? !!data.acl_enabled : !!route.acl_enabled;
   const oldAclEnabled = !!route.acl_enabled;
+  const oldAclPeople = route.acl_people !== 0;
+  const newAclPeople = aclPeopleFlag(data.acl_people, oldAclPeople ? 1 : 0) === 1;
   if (newAclEnabled !== oldAclEnabled) {
     activity.log('route_acl_toggled', `Route "${route.domain}" ACL ${newAclEnabled ? 'enabled' : 'disabled'}`, {
       source: 'admin',
       severity: 'info',
-      details: { routeId: id, acl_enabled: newAclEnabled },
+      details: { routeId: id, acl_enabled: newAclEnabled, acl_people: newAclPeople },
+    });
+  }
+  if (newAclPeople !== oldAclPeople) {
+    activity.log('route_acl_people_changed', `Route "${route.domain}" ACL: devices of people and groups ${newAclPeople ? 'let through' : 'no longer let through'}`, {
+      source: 'admin',
+      severity: 'info',
+      details: { routeId: id, acl_enabled: newAclEnabled, old_acl_people: oldAclPeople, new_acl_people: newAclPeople },
     });
   }
   if (data.acl_peers !== undefined) {
@@ -1502,6 +1516,13 @@ function getForUser(userId) {
   const routeGroups = groupAccess.routeGroupMap();
   const userGroups = routeGroups.size && userId ? groupAccess.userGroupSet(userId) : new Set();
   return routes.filter(r => groupAccess.canSeeRoute(r, userId || null, { routeGroups, userGroups }));
+}
+
+// routes.acl_people column value: true/1 → 1, false/0 → 0; absent (undefined
+// or null) → fallback (create: 1, update: null = keep via COALESCE).
+function aclPeopleFlag(v, fallback) {
+  if (v === undefined || v === null) return fallback;
+  return v === true || v === 1 || v === '1' || v === 'true' ? 1 : 0;
 }
 
 // routes.user_ids column value: an array (empty → NULL = nobody picked).

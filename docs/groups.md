@@ -252,11 +252,42 @@ changes (`groups.events`), device and account changes (activity events
 `peer_*`, `token_*`, `client_registered`, `client_enrollment_redeemed`,
 `device_usage_changed`, `user_toggled`, `user_updated`, `user_deleted`)
 rebuild the Caddy config — throttled to at most one reload per 5 seconds and
-only when a route with the ACL depends on persons or groups. Note: persons
-listed on a route with the ACL on now bring their devices, too.
+only when a route with the ACL depends on persons or groups.
+
+**Geräte der Personen und Gruppen durchlassen** (`routes.acl_people`). A
+switch under the ACL toggle decides whether persons and groups count for
+Caddy at all:
+
+- **On** (default for new routes): as described above — listed devices ∪
+  the devices of the persons and group members; fail closed when nothing
+  results.
+- **Off**: only the ticked devices pass ("Aus: Nur die angehakten Geräte
+  kommen durch, Personen und Gruppen steuern nur die Sichtbarkeit.") —
+  exactly the behaviour before groups existed, including "ACL on, no device
+  ticked = no peer matcher". Persons and groups then only decide who sees and
+  opens the route (app, portal tiles, route login, "Was sieht <Name>?"); that
+  part never depends on the switch. Membership changes do not rebuild Caddy
+  for such routes.
+
+The preview **Darf zugreifen** follows the switch: with it on a person shows
+"N eigene Geräte kommen durch", with it off a person without a ticked device
+shows "sieht die Route, Geräte nicht durchgelassen"; the device note counts
+the devices that pass (`POST /api/v1/access/preview` takes `aclPeople` and
+answers `personDevices`, `ownDevices`, `visibleOnly`).
+
+*Update from a version without groups:* migration 111 sets the switch **off**
+for every existing route with the ACL on **and** at least one person in
+`user_ids` (parsed like `parseIdList`: `NULL`, `''`, `[]` and malformed JSON
+hold no person) — before, `user_ids` only controlled visibility, so the
+update must not silently let those persons' devices through. Every other
+route gets **on** (switching the ACL on later is a new, deliberate decision).
+The routes API takes `acl_people` (boolean; absent = default on create, keep
+on update; turning it on needs the `peer_acl` licence like `acl_enabled`) and
+returns it; changes are logged as `route_acl_people_changed`.
 
 Storage: HTTP routes `routes.user_ids` (persons, JSON), `route_group_acl`
-(groups), `route_peer_acl` (devices); RDP `rdp_routes.user_ids` and
+(groups), `route_peer_acl` (devices), `routes.acl_people` (0/1, see
+above); RDP `rdp_routes.user_ids` and
 `rdp_routes.group_ids` (JSON). **Wird genutzt von** on the group page lists
 both.
 
@@ -266,7 +297,9 @@ hashes only — the links keep working) and per route `group_refs`. Users are
 restored with their original ids (`user_ref`), so `user_ids` lists, group
 members and plugin data still name the same person; an id the backup does not
 know becomes `0` (nobody). A backup without the groups section leaves the
-groups as they are. It also carries the directory connections (see
+groups as they are. Routes carry `acl_people`; a backup without it gets the
+rule of migration 111 (ACL on + persons → off), so restoring an old backup
+never widens access. It also carries the directory connections (see
 "Verzeichnis-Abgleich und Anmeldung" › Secrets) with their links and
 conflicts.
 
