@@ -385,8 +385,10 @@ function claimInto(plugin, r, opts) {
 function move(plugin, r, opts) {
   if (!declared(plugin)) throw new AreaError('no_areas', 'plugin.json declares no media.areas', 403);
   if (r.area == null) throw new AreaError('invalid', 'the file is in no area — gc.media.claim() it into one');
-  if (r.version_of != null) throw new AreaError('invalid', 'a version does not move');
   const o = opts && typeof opts === 'object' ? opts : {};
+  // since 1.207.0 a version comes back to a path (restore): it is the current file there again
+  const restore = r.version_of != null;
+  if (restore && (o.path == null || o.path === '')) throw new AreaError('invalid', 'a version moves only to a path (restore)');
   const area = o.area == null ? r.area : String(o.area);
   const a = rowOf(plugin.id, area);
   if (!a) throw new AreaError('invalid', 'unknown area');
@@ -396,7 +398,8 @@ function move(plugin, r, opts) {
     const q = effectiveQuota(a);
     if (q != null && usageOf(plugin.id, area).bytes + r.bytes > q) throw new AreaError('quota', 'the area is full', 507);
   }
-  db().prepare('UPDATE plugin_media SET area = ?, path = ? WHERE id = ?').run(area, p, r.id);
+  if (restore) db().prepare('UPDATE plugin_media SET area = ?, path = ?, version_of = NULL, version_at = NULL WHERE id = ?').run(area, p, r.id);
+  else db().prepare('UPDATE plugin_media SET area = ?, path = ? WHERE id = ?').run(area, p, r.id);
   setWant(r.id);
   kick();
 }

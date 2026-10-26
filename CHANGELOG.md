@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Versionen wiederherstellen (docs/plugins.md „Readable files, moves and versions“, für GateControl Drive): `gc.media.move(versionId, { path })` macht eine Version wieder zur aktuellen Datei an diesem Pfad – auf der NAS wandert sie aus `.gcdrive/versions` zurück an ihren Platz. `gc.media.move(id, { path: null })` nimmt eine Datei von ihrem Pfad (z. B. für einen Papierkorb; auf der NAS unter `.gcdrive/files`) und `move(id, { path })` holt sie zurück.
+
+---
+
 ## [1.206.0] — 2026-10-26
 
 ### Features

@@ -1414,8 +1414,15 @@ move of the area. API:
 * `gc.media.version(id)` → the file's info: keeps the file as a version of its
   path (`versionOf`, `versionAt` in `gc.media.info`; `path` becomes null, the
   media id stays) — the path is free for the next file. Typical for an
-  overwrite: `version(old)`, then `claim(new, { area, path })`. A version does
-  not move; delete it with `gc.media.delete`.
+  overwrite: `version(old)`, then `claim(new, { area, path })`. Delete a
+  version with `gc.media.delete`. **Restore** (since 1.207.0):
+  `gc.media.move(versionId, { path })` makes the version the current file at
+  that path again (`versionOf` gone; on the NAS it moves back from
+  `.gcdrive/versions`) — free the path first, e.g. `version(current)`; a
+  version moves only to a path (`ERR_INVALID` without one).
+* `gc.media.move(id, { path: null })` takes a file off its path (it stays in
+  the area, on the NAS below `.gcdrive/files`) — e.g. a trash; `move(id, {
+  path })` brings it back.
 * `gc.media.claim(id, { area, path })` refuses a path another file of the area
   has (`ERR_CONFLICT`) and a file of another area (use `move`).
 
