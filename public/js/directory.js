@@ -2,9 +2,10 @@
 
 // Benutzer › Verzeichnis (/directory, docs/groups.md "Verzeichnis-Abgleich und
 // Anmeldung"). Cards of the connected directories (state, where, counts, last
-// run); the selected one below: actions (sync now, test, edit, delete), a
-// stopped mass change with confirm / discard, the settings, the options
-// (create accounts, disable, sign-in, interval, parent group), the group
+// run and its kind); the selected one below: actions (sync now, full sync,
+// test, edit, delete), a stopped mass change with confirm / discard, the
+// settings, the options (create accounts, disable, sign-in, interval, full
+// sync interval with the next full sync, parent group), the group
 // selection (search in the directory, checkboxes), conflicts (merge / keep
 // separate) and the last runs with details. Strings: #dir-i18n (dir.*,
 // error.directory.*, common.*). No innerHTML — every node is built with el().
@@ -107,7 +108,15 @@
     return parts.join(' · ');
   }
   function lastOf(d) {
-    return T('dir.last', { interval: d.intervalMin, when: d.lastSyncAt ? fmtDateTime(d.lastSyncAt) : T('dir.never') });
+    const p = { interval: d.intervalMin, when: d.lastSyncAt ? fmtDateTime(d.lastSyncAt) : T('dir.never') };
+    if (d.lastSyncAt && d.lastRunMode) return T('dir.last_mode', Object.assign(p, { mode: T('dir.mode.' + d.lastRunMode) }));
+    return T('dir.last', p);
+  }
+  // When the next run reads everything (sync.js "Delta").
+  function nextFullOf(d) {
+    if (d.deltaUnsupported) return T('dir.next_full_always');
+    if (!d.deltaReady || !d.nextFullSyncAt) return T('dir.next_full_next');
+    return T('dir.next_full', { when: fmtDateTime(d.nextFullSyncAt) });
   }
 
   // ── Cards ──────────────────────────────────────────────────────────
@@ -234,7 +243,8 @@
     const st = statusOf(d);
 
     // Head
-    const syncBtn = el('button', { type: 'button', class: 'btn btn-primary', disabled: state.running, on: { click: syncNow } }, state.running ? T('dir.syncing') : T('dir.sync_now'));
+    const syncBtn = el('button', { type: 'button', class: 'btn btn-primary', disabled: state.running, on: { click: () => syncNow(false) } }, state.running ? T('dir.syncing') : T('dir.sync_now'));
+    const fullBtn = el('button', { type: 'button', class: 'btn btn-ghost', disabled: state.running, title: T('dir.sync_full_help'), on: { click: () => syncNow(true) } }, T('dir.sync_full'));
     box.appendChild(el('div', { class: 'grp-head' }, [
       el('div', { class: 'grp-head-text' }, [
         el('div', { class: 'grp-crumbs' }, T('dir.crumb', { kind: kindLabel(d.kind) })),
@@ -243,6 +253,7 @@
       ]),
       el('div', { class: 'grp-head-actions' }, [
         syncBtn,
+        fullBtn,
         el('button', { type: 'button', class: 'btn btn-ghost', on: { click: testStored } }, T('dir.test')),
         el('button', { type: 'button', class: 'btn btn-ghost', on: { click: () => openForm(d) } }, T('common.edit')),
         el('button', { type: 'button', class: 'btn btn-ghost btn-danger', on: { click: openDelete } }, T('common.delete')),
@@ -281,6 +292,13 @@
     intervalSel.addEventListener('change', async () => {
       try { await patch({ intervalMin: Number(intervalSel.value) }, T('dir.saved')); } catch (err) { D.alert({ message: errMsg(err), danger: true }); }
     });
+    const fullSel = el('select', { class: 'form-input dir-interval', 'aria-label': T('dir.opt.full_interval') });
+    [1, 2, 4, 6, 12, 24, 48, 72, 168].concat([d.fullSyncHours]).filter((v, i, a) => v && a.indexOf(v) === i).sort((a, b) => a - b).forEach((h) => {
+      fullSel.appendChild(el('option', { value: String(h), selected: h === d.fullSyncHours }, h === 1 ? T('dir.opt.full_every_1') : T('dir.opt.full_every', { hours: h })));
+    });
+    fullSel.addEventListener('change', async () => {
+      try { await patch({ fullSyncHours: Number(fullSel.value) }, T('dir.saved')); renderDetail(); } catch (err) { D.alert({ message: errMsg(err), danger: true }); }
+    });
     const parentSel = el('select', { class: 'form-input', 'aria-label': T('dir.opt.parent') });
     parentSel.appendChild(el('option', { value: '' }, T('dir.opt.parent_none')));
     state.localGroups.forEach((g) => parentSel.appendChild(el('option', { value: String(g.id), selected: g.id === d.parentGroupId }, g.path)));
@@ -298,6 +316,8 @@
       switchRow(T('dir.opt.readonly'), T('dir.opt.readonly_help'), true, null, { locked: true }),
       el('div', { class: 'dir-opt-grid' }, [
         el('label', { class: 'us-field' }, [el('span', { class: 'us-label' }, T('dir.opt.interval')), intervalSel, el('span', { class: 'us-hint' }, T('dir.opt.interval_help'))]),
+        el('label', { class: 'us-field' }, [el('span', { class: 'us-label' }, T('dir.opt.full_interval')), fullSel,
+          el('span', { class: 'us-hint' }, T('dir.opt.full_interval_help')), el('span', { class: 'us-hint dir-next-full' }, nextFullOf(d))]),
         el('label', { class: 'us-field' }, [el('span', { class: 'us-label' }, T('dir.opt.parent')), parentSel, el('span', { class: 'us-hint' }, T('dir.opt.parent_help'))]),
       ]),
     ]));
@@ -481,7 +501,9 @@
       ol.appendChild(el('li', { class: 'us-log-item' }, [
         el('span', { class: 'us-dot ' + runTone(r), 'aria-hidden': 'true' }),
         el('span', { class: 'us-log-text' }, [
-          el('strong', null, T('dir.run.status.' + r.status)), ' · ', runLine(r),
+          el('strong', null, T('dir.run.status.' + r.status)), ' · ',
+          r.status !== 'running' && r.status !== 'error' ? el('span', { class: 'us-chip dir-run-mode' }, T('dir.mode.' + (r.mode || 'full'))) : null,
+          r.status !== 'running' && r.status !== 'error' ? ' ' : null, runLine(r),
           r.status === 'ok' || r.status === 'confirmed' ? el('button', { type: 'button', class: 'btn btn-ghost dir-run-more', on: { click: () => showRun(r.id) } }, T('dir.run.details')) : null,
         ]),
         el('time', { class: 'us-muted', datetime: r.startedAt }, fmtDateTime(r.startedAt)),
@@ -500,6 +522,11 @@
       const x = r.details || {};
       clear(body);
       body.appendChild(el('p', { class: 'us-muted' }, fmtDateTime(r.startedAt) + ' · ' + T('dir.run.trigger.' + r.trigger)));
+      const sum = r.summary || {};
+      const mode = T('dir.mode.' + (r.mode || 'full'));
+      const reason = sum.fullReason && sum.fullReason !== 'no_delta' ? T('dir.run.reason.' + sum.fullReason) : '';
+      body.appendChild(el('p', { class: 'us-muted' }, [reason ? T('dir.run.mode_reason', { mode, reason }) : T('dir.run.mode', { mode }),
+        sum.changes ? ' · ' + T('dir.run.changes', { users: sum.changes.users || 0, groups: sum.changes.groups || 0, removed: sum.changes.removed || 0 }) : null]));
       const block = (title, items, fmt) => {
         if (!items || !items.length) return;
         body.appendChild(el('h3', { class: 'dir-run-h' }, title + ' · ' + items.length));
@@ -519,17 +546,17 @@
       block(T('dir.run.admins_kept'), x.adminsKept, (i) => i.name);
       block(T('dir.run.warnings'), x.warnings, (i) => T('dir.warn.' + i.code, { name: i.name || '' }));
       block(T('dir.run.errors'), x.errors, (i) => (i.name ? i.name + ': ' : '') + (i.message || i.code));
-      if (body.children.length === 1) body.appendChild(el('p', null, T('dir.run.nothing')));
+      if (body.children.length === 2) body.appendChild(el('p', null, T('dir.run.nothing')));
     } catch (err) {
       clear(body).appendChild(el('p', { class: 'us-error' }, errMsg(err)));
     }
   }
 
-  async function syncNow() {
+  async function syncNow(full) {
     try {
-      await call('POST', '/api/v1/directories/' + state.detail.id + '/sync');
+      await call('POST', '/api/v1/directories/' + state.detail.id + '/sync', full ? { full: true } : {});
       state.running = true;
-      toast(T('dir.sync_started'));
+      toast(full ? T('dir.sync_full_started') : T('dir.sync_started'));
     } catch (err) { D.alert({ message: errMsg(err), danger: true }); }
     await loadDetail();
   }

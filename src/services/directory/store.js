@@ -13,14 +13,17 @@
  *   secretOf(row) → decrypted secret or ''
  *   create(input, { actor, ip }) / update(id, patch, { actor, ip })
  *       input: { kind, name, config, secret, enabled, loginEnabled,
- *       provision, deprovision, intervalMin, parentGroupId, selectedGroups,
- *       selfEnroll } — selfEnroll: the accounts of this directory may set
- *       up own devices (services/users.js mayEnroll), default off
+ *       provision, deprovision, intervalMin, fullSyncHours, parentGroupId,
+ *       selectedGroups, selfEnroll } — selfEnroll: the accounts of this
+ *       directory may set up own devices (services/users.js mayEnroll),
+ *       default off
  *       secret: undefined / '' = keep, string = replace, null = clear
  *   remove(id, { confirmName, actor, ip }) — the imported groups are
  *       archived (access through them ends), links, conflicts and runs go;
  *       the accounts stay (as local accounts without password).
  *   cleanConfig(kind, config) — validation per kind (throws err.code)
+ *   fingerprint(row) — what the delta state of the sync belongs to (kind,
+ *       settings, selected groups); another value forces a full sync
  */
 
 const { getDb } = require('../../db/connection');
@@ -32,6 +35,10 @@ const KINDS = Object.freeze(['ad', 'entra', 'ldap']);
 const INTERVAL_MIN = 5;
 const INTERVAL_MAX = 1440;
 const INTERVAL_DEFAULT = 15;
+// Between two full syncs the runs only fetch the changes (sync.js).
+const FULL_HOURS_MIN = 1;
+const FULL_HOURS_MAX = 168;
+const FULL_HOURS_DEFAULT = 24;
 const MASK = '••••••••';
 const MAX_SELECTED = 200;
 
@@ -133,6 +140,13 @@ function cleanInterval(v) {
   return n;
 }
 
+function cleanFullHours(v) {
+  if (v == null || v === '') return FULL_HOURS_DEFAULT;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < FULL_HOURS_MIN || n > FULL_HOURS_MAX) throw codedError('INVALID_FULL_INTERVAL', `full sync interval must be ${FULL_HOURS_MIN}–${FULL_HOURS_MAX} hours`, { field: 'fullSyncHours' });
+  return n;
+}
+
 function cleanName(v) {
   const s = str(v, 100, 'name');
   if (!s) throw codedError('INVALID_NAME', 'name is required', { field: 'name' });
@@ -167,6 +181,37 @@ function secretOf(row) {
   }
 }
 
+function fingerprint(row) {
+  const sel = (row.selectedGroups || []).map((g) => String(g.externalId).toLowerCase()).sort();
+  return require('node:crypto').createHash('sha256')
+    .update(JSON.stringify([row.kind, row.config_json || JSON.stringify(row.config || {}), sel])).digest('hex').slice(0, 32);
+}
+
+/**
+ * Delta state of the sync for the page: the kind of the last applied run,
+ * whether the next scheduled run can fetch only the changes and when the
+ * next full sync is due (null = the next run is full).
+ */
+function syncInfo(db, row) {
+  const last = db.prepare("SELECT mode FROM directory_runs WHERE directory_id = ? AND status = 'ok' ORDER BY id DESC LIMIT 1").get(row.id);
+  const st = db.prepare('SELECT fingerprint, cursor_json IS NOT NULL AS has_cursor FROM directory_sync_state WHERE directory_id = ?').get(row.id);
+  const hours = row.full_sync_hours || FULL_HOURS_DEFAULT;
+  const ready = !!st && st.has_cursor === 1 && st.fingerprint === fingerprint(row) && !!row.last_full_sync_at;
+  let nextFull = null;
+  if (ready) {
+    const t = Date.parse(row.last_full_sync_at);
+    if (Number.isFinite(t)) nextFull = new Date(t + hours * 3600000).toISOString();
+  }
+  return {
+    lastRunMode: last ? last.mode : null,
+    deltaReady: ready,
+    // the last full sync found no way to fetch only changes (LDAP server
+    // without modifyTimestamp): every run is full
+    deltaUnsupported: !!st && st.has_cursor !== 1 && st.fingerprint === fingerprint(row),
+    nextFullSyncAt: nextFull,
+  };
+}
+
 function redirectUri(id) {
   let base = '';
   try { base = new URL(require('../../../config/default').app.baseUrl).origin; } catch { base = ''; }
@@ -197,6 +242,7 @@ function shape(row) {
     deprovision: row.deprovision === 1,
     selfEnroll: row.self_enroll === 1,
     intervalMin: row.interval_min,
+    fullSyncHours: row.full_sync_hours || FULL_HOURS_DEFAULT,
     parentGroupId: row.parent_group_id,
     config,
     hasSecret: !!row.secret_enc,
@@ -207,6 +253,7 @@ function shape(row) {
     selectedGroups: row.selectedGroups,
     lastSyncAt: row.last_sync_at,
     lastFullSyncAt: row.last_full_sync_at,
+    ...syncInfo(db, row),
     lastStatus: row.last_status,
     lastError: row.last_error,
     stats: stats(db, row.id),
@@ -241,10 +288,11 @@ function create(input = {}, { actor = null, ip = null } = {}) {
   const secret = secretValue(input.secret);
   if (!secret) throw codedError('INVALID_SECRET', kind === 'entra' ? 'client secret is required' : 'service account password is required', { field: 'secret' });
   const info = db.prepare(`INSERT INTO directories (kind, name, config_json, secret_enc, selected_groups, parent_group_id, enabled,
-      login_enabled, provision, deprovision, interval_min) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      login_enabled, provision, deprovision, interval_min, full_sync_hours) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     kind, name, JSON.stringify(config), encrypt(secret), JSON.stringify(cleanSelected(input.selectedGroups)),
     cleanParent(db, input.parentGroupId), bool(input.enabled, true) ? 1 : 0, bool(input.loginEnabled, false) ? 1 : 0,
     bool(input.provision, true) ? 1 : 0, bool(input.deprovision, true) ? 1 : 0, cleanInterval(input.intervalMin),
+    cleanFullHours(input.fullSyncHours),
   );
   const id = Number(info.lastInsertRowid);
   if (bool(input.selfEnroll, false)) db.prepare('UPDATE directories SET self_enroll = 1 WHERE id = ?').run(id);
@@ -281,6 +329,7 @@ function update(id, patch = {}, { actor = null, ip = null } = {}) {
   if (p.deprovision !== undefined) put('deprovision', bool(p.deprovision, true) ? 1 : 0, 'deprovision');
   if (p.intervalMin !== undefined) put('interval_min', cleanInterval(p.intervalMin), 'intervalMin');
   if (p.selfEnroll !== undefined) put('self_enroll', bool(p.selfEnroll, false) ? 1 : 0, 'selfEnroll');
+  if (p.fullSyncHours !== undefined) put('full_sync_hours', cleanFullHours(p.fullSyncHours), 'fullSyncHours');
   if (!sets.length) return get(row.id);
   db.prepare(`UPDATE directories SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`).run(...vals, row.id);
   activity.log('directory_updated', `Directory "${row.name}" changed (${changed.join(', ')})`, {
@@ -316,6 +365,6 @@ function remove(id, { confirmName, actor = null, ip = null } = {}) {
 }
 
 module.exports = {
-  KINDS, MASK, INTERVAL_MIN, INTERVAL_MAX, INTERVAL_DEFAULT,
-  list, get, load, secretOf, create, update, remove, cleanConfig, cleanSelected, redirectUri, shape, toId,
+  KINDS, MASK, INTERVAL_MIN, INTERVAL_MAX, INTERVAL_DEFAULT, FULL_HOURS_MIN, FULL_HOURS_MAX, FULL_HOURS_DEFAULT,
+  list, get, load, secretOf, create, update, remove, cleanConfig, cleanSelected, redirectUri, shape, toId, fingerprint,
 };

@@ -22,6 +22,10 @@
  *                          ',' and '='.
  *   loginNameOk(name)      the fixed format accepted for login names before
  *                          anything is sent to a directory.
+ *   isUnder(dn, base)      dn is base or lies below it (normalised compare).
+ *   fullSyncRequired(reason)  the error an adapter's fetchDelta throws when
+ *                          only a full read is correct (sync.js then reads
+ *                          everything in the same run).
  */
 
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -106,6 +110,21 @@ function normDn(dn) {
 const LOGIN_RE = /^(?:[\p{L}\p{N}._-]{1,64}\\)?[\p{L}\p{N}._@'+-]{1,256}$/u;
 function loginNameOk(name) { return typeof name === 'string' && name.length <= 256 && LOGIN_RE.test(name); }
 
+function isUnder(dn, base) {
+  const d = normDn(dn);
+  const b = normDn(base);
+  if (!b) return true;
+  return d === b || d.endsWith(',' + b);
+}
+
+function fullSyncRequired(reason, message) {
+  const err = new Error(message || `full sync required (${reason})`);
+  err.code = 'FULL_SYNC_REQUIRED';
+  err.reason = reason;
+  return err;
+}
+
 module.exports = {
+  isUnder, fullSyncRequired,
   escapeFilterValue, escapeBinary, isGuid, guidToString, guidToBuffer, first, all, rawFirst, normDn, loginNameOk,
 };

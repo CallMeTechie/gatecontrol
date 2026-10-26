@@ -11,6 +11,12 @@
  *       users:  [{ externalId, loginName, upn, dn, email, displayName, enabled }] }
  *     members are resolved transitively (nested groups count); throws when
  *     the directory cannot be read — the engine then changes nothing.
+ *     fetch(selected, { cursor: true }) also returns `cursor`: the position
+ *     for the next delta (null = this directory cannot do delta).
+ *   fetchDelta(selected, { cursor, snapshot }) → { groups, users,
+ *       removedUsers, cursor }   optional: only the changes since `cursor`
+ *     (sync.js mergeDelta describes the shape); throws err.code
+ *     'FULL_SYNC_REQUIRED' (err.reason) when only a full read is correct.
  *   authenticate(link, password) → { ok, reason?: 'invalid' | 'disabled' |
  *       'not_found' | 'oidc_only', profile? }           throws when unreachable
  *

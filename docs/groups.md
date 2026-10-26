@@ -375,10 +375,12 @@ directory is down.
 - **Directory unreachable** (network, TLS, credentials): the run fails and
   **nothing changes**.
 - **Schedule.** Every 15 minutes by default (5–1440) and with **Jetzt
-  abgleichen**. Version 1 reads the full member lists on every run (no Entra
-  delta query / uSNChanged yet), so every run is a full sync and a full sync
-  happens at least every 24 h.
-- **Logs.** Every run is kept with its result (new accounts, disabled,
+  abgleichen**. Most runs only fetch the **changes** (see *Delta sync*
+  below); a **full sync** reads everything at least every 24 hours
+  (*Vollständiger Abgleich*, 1–168 hours) and with **Vollständig
+  abgleichen**.
+- **Logs.** Every run is kept with its kind (*Änderungen* or
+  *Vollständig*, and why a run was full) and its result (new accounts, disabled,
   enabled, group changes, conflicts, warnings, errors; the last 50 per
   directory) and shown under *Letzte Abgleiche*. The activity log gets an
   entry for every created account (`user_created`), every disable/enable
@@ -394,6 +396,64 @@ directory is down.
 - Removing a directory (**Trennen**, name typed) archives its groups and turns
   them into local groups; the accounts stay as local accounts without a
   password, disabled ones stay disabled.
+
+### Delta sync
+
+Between two full syncs a run only asks the directory what changed and
+applies that to the state of the last applied run (`directory_sync_state`,
+migration 112: the directory's delta position and a snapshot of the groups
+with their members and the member profiles). **Plan, guard and apply always
+work on the complete result**, exactly like a full run: the mass-change guard
+counts against all linked accounts of the directory (≥ 3 and > 10 %), a
+person disabled in the directory is disabled at once (sessions, tokens, VPN
+peers — the same code path), administrators are never touched. The page shows
+per directory whether the last run was *Änderungen* or *Vollständig* and when
+the next full sync is due; the run history shows the kind per run.
+
+| Directory | Changes from | Full sync instead when |
+|---|---|---|
+| Entra ID | Graph delta queries `/users/delta` and `/groups/delta` (with `members`); the deltaLinks are taken at the start of every full sync with `$deltatoken=latest` (no enumeration of the tenant) | Graph answers 410 Gone or a resync / sync-state error |
+| Active Directory | `uSNChanged` greater than the `highestCommittedUSN` the RootDSE of the same domain controller reported at the start of the last run | another domain controller answers (`dnsHostName` / `dsServiceName` differ — e.g. a DNS name with several DCs) or its USN went back (restored DC) |
+| LDAP (OpenLDAP, Synology, 389 DS / FreeIPA) | `modifyTimestamp >=` a watermark (the newest timestamp seen, at most the start of the last read minus 10 minutes) | the server keeps no `modifyTimestamp` or refuses the filter: then **every** run is full |
+
+What a delta run sees:
+
+- **Entra ID:** changed properties of known members (Graph sends partial
+  objects; only what is present is taken over — `accountEnabled: false`
+  disables), deleted users (`@removed`, soft and hard deletion), deleted
+  selected groups (*not found*, like a full sync), renamed groups, added and
+  removed members of a flat selected group (`members@delta`; a new person's
+  profile is read with `/users/<id>`). A change inside a nested group, or a
+  group added as member, makes GateControl read that selected group's
+  transitive members again (the nested groups of every selected group are
+  remembered at every full sync). Paging follows `@odata.nextLink` up to the
+  new `@odata.deltaLink`.
+- **Active Directory:** per selected group the member accounts with a newer
+  `uSNChanged` (name, mail, UPN, `userAccountControl` — a disabled account is
+  seen here) and accounts moved out of or into the account base. Members are
+  added and removed on the **group**, not on the account: when the selected
+  group or one of its nested groups changed, its complete member list is read
+  again. **Deleted accounts are not visible** to `uSNChanged` searches (they
+  move to *Deleted Objects*, which needs a special control); a deleted
+  account usually also drops out of its groups, but only the full sync is
+  sure to catch it. That is the reason for the periodic full sync.
+- **LDAP:** changed member accounts (name, mail, the disabled attribute) and
+  changed groups: a changed selected or nested group, a member whose DN or
+  login name changed, or a new account matching a `memberUid` that could not
+  be resolved before → that selected group is resolved again (known accounts
+  from the snapshot, others are looked up one by one). Deleted accounts are
+  only seen by the full sync. The server's clock should be roughly right
+  (the 10-minute margin covers small differences and replicas).
+
+A run is **full** when it is forced (*Vollständig abgleichen*), on the first
+run, after the settings or the group selection changed, when the full-sync
+interval has passed, when the directory cannot do delta, or when the delta
+asks for it (table above — then the same run reads everything). Confirming a
+stopped full run runs a full one again. The delta position is stored only
+after a run was **applied**: a run stopped by the guard or a failed run keeps
+the old position, so the next run sees the same changes again. The position
+is not in the backup; after a restore the first run of every directory is
+full.
 
 ### Sign-in with the company account
 
@@ -571,10 +631,11 @@ empty keeps the stored value.
 
 **Backup.** The server backup carries `directories` (ids kept, so the groups'
 source `directory:<id>` still matches; the secret exactly as stored, i.e.
-encrypted), `directory_links` (by `user_ref` — users keep their ids — else
+encrypted; the intervals including `full_sync_hours`), `directory_links` (by `user_ref` — users keep their ids — else
 by username; the peers the sync disabled by name) and `directory_conflicts`;
-the run log (`directory_runs`) is not saved, and a run that waited for
-confirmation is dropped. Restored on a server with a **different
+the run log (`directory_runs`) and the delta position
+(`directory_sync_state`) are not saved — the first run after a restore is
+full — and a run that waited for confirmation is dropped. Restored on a server with a **different
 `GC_ENCRYPTION_KEY`**, the secret cannot be read: the connection, its groups
 and links are restored anyway, the secret is left empty and the directory
 page asks for it again ("Das Passwort des Dienstkontos fehlt …", API field
@@ -590,16 +651,25 @@ the session's CSRF token.
 | Method | Path | |
 |---|---|---|
 | GET | `/api/v1/directories` | list with state, counts, last run, waiting run |
-| POST | `/api/v1/directories` | `{ kind: 'ad'\|'entra'\|'ldap', name, config, secret, enabled, loginEnabled, provision, deprovision, intervalMin, parentGroupId, selectedGroups, selfEnroll }` (`selfEnroll`: „Geräte selbst einrichten erlauben“, default `false`) |
+| POST | `/api/v1/directories` | `{ kind: 'ad'\|'entra'\|'ldap', name, config, secret, enabled, loginEnabled, provision, deprovision, intervalMin, fullSyncHours, parentGroupId, selectedGroups, selfEnroll }` (`selfEnroll`: „Geräte selbst einrichten erlauben“, default `false`) |
 | POST | `/api/v1/directories/test` | test unsaved settings `{ kind, config, secret[, id] }` (stored secret used when `id` is given and `secret` is empty) |
 | GET / PATCH / DELETE | `/api/v1/directories/:id` | read / change (`secret` empty or absent = keep) / remove (`?confirm=<name>`) |
 | POST | `/api/v1/directories/:id/test` | connection test with the stored settings → `{ ok, result }` or `{ ok: false, code, error, detail }` |
 | GET | `/api/v1/directories/:id/groups?q=` | search groups in the directory (`selected` marks the chosen ones) |
-| POST | `/api/v1/directories/:id/sync` | run now (202, in the background) |
+| POST | `/api/v1/directories/:id/sync` | run now (202, in the background); `{ full: true }` = *Vollständig abgleichen* |
 | GET | `/api/v1/directories/:id/runs`, `/runs/:runId` | last runs / one run with details |
 | POST | `/api/v1/directories/:id/runs/:runId/confirm`, `/discard` | decide a stopped mass change |
 | GET | `/api/v1/directories/:id/conflicts[?status=all]` | open (or all) conflicts |
 | POST | `/api/v1/directories/:id/conflicts/:conflictId/merge`, `/separate` | decide a conflict |
+
+A directory also carries `fullSyncHours` (1–168, default 24), `lastRunMode`
+(`'full'` \| `'delta'` of the last applied run), `deltaReady` (the next
+scheduled run can fetch only changes), `deltaUnsupported` (LDAP without
+`modifyTimestamp`: every run is full) and `nextFullSyncAt` (null = the next
+run is full). Runs carry `mode` and in `summary` `mode`, `fullReason`
+(`first`, `forced`, `confirm`, `due`, `settings_changed`, `unsupported`,
+`resync`, `dc_changed`, `usn_rollback`, `too_many_changes`) and for delta runs
+`changes { users, groups, removed }`.
 
 `config` per kind — AD: `host, port, security ('ldaps'|'starttls'),
 tlsServerName, caCert, baseDn, userBaseDn, groupBaseDn, bindDn`; LDAP: the same
@@ -607,7 +677,7 @@ plus `userFilter, groupFilter, attrs { id, login, email, name, groupId,
 groupName, member, disabled }`; Entra: `tenantId, clientId` (GUIDs). Errors
 carry a `code` (`NOT_FOUND`, `INVALID_*`, `CONFIRM_MISMATCH`, `RUNNING`,
 `RUN_NOT_PENDING`, `CONFLICT_RESOLVED`, `ALREADY_LINKED`,
-`ADMIN_NOT_MERGEABLE`, …). The user detail (`GET /api/v1/users/:id`) carries
+`ADMIN_NOT_MERGEABLE`, `INVALID_FULL_INTERVAL`, …). The user detail (`GET /api/v1/users/:id`) carries
 `directory: { id, name, kind, loginName, state, lastSeenAt, selfEnroll } | null`
 (`selfEnroll`: the directory lets its accounts set up own devices).
 
@@ -617,16 +687,17 @@ Sign-in: `GET /auth/oidc/:directoryId/start[?returnTo=/portal…]` and
 (see "Anmeldung in den Apps").
 
 For developers: `src/services/directory/` — `store.js` (connections, secrets),
-`sync.js` (plan → guard → apply, runs, conflicts, scheduler tick
-`runDue()` every minute from `server.js`), `adapters.js` (the adapter
-interface: `test`, `searchGroups`, `fetch`, `authenticate`; tests install
-fakes), `ad.js` / `ldap.js` (ldapts, `ldapConn.js`, `ldapUtil.js`),
+`sync.js` (full or delta → plan → guard → apply, runs, conflicts, scheduler tick
+`runDue()` every minute from `server.js`; `mergeDelta` applies a delta to the
+snapshot), `adapters.js` (the adapter interface: `test`, `searchGroups`,
+`fetch`, optional `fetchDelta`, `authenticate`; tests install fakes), `ad.js` / `ldap.js` (ldapts, `ldapConn.js`, `ldapUtil.js`),
 `entra.js` (Graph), `auth.js` (password form), `oidc.js` (code flow, ID-token
 verification with Node's `crypto`). Tables: `directories`, `directory_links`,
-`directory_conflicts`, `directory_runs` (migration 110), `directories.self_enroll`
-(migration 112). The sign-in in the apps: `src/services/appSignin.js`,
-`src/routes/api/client/signin.js`, the `client=app` branch of
-`src/routes/oidc.js`.
+`directory_conflicts`, `directory_runs` (migration 110), `directory_sync_state`,
+`directories.full_sync_hours` and `directory_runs.mode` (migration 112),
+`directories.self_enroll` (migration 113). The sign-in in the apps:
+`src/services/appSignin.js`, `src/routes/api/client/signin.js`, the
+`client=app` branch of `src/routes/oidc.js`.
 
 ## Admin API
 

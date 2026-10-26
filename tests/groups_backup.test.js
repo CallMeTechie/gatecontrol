@@ -185,7 +185,10 @@ describe('backup round trip with directory connections', () => {
   });
 
   it('restores ids, secret, links (same user ids, peers by name) and conflicts; a waiting run is dropped', async () => {
+    db().prepare('UPDATE directories SET full_sync_hours = 6 WHERE id = ?').run(dirId);
+    db().prepare("INSERT INTO directory_sync_state (directory_id, fingerprint, cursor_json, snapshot_json) VALUES (?, 'fp', '{\"usn\":\"9\"}', '{}')").run(dirId);
     const b = JSON.parse(JSON.stringify(backup().createBackup()));
+    assert.ok(!('directory_sync_state' in b.data), 'the delta position is not saved');
     db().prepare("UPDATE directories SET name = 'Umbenannt' WHERE id = ?").run(dirId);
     db().prepare('DELETE FROM directory_links').run();
     const result = await backup().restoreBackup(b);
@@ -208,6 +211,10 @@ describe('backup round trip with directory connections', () => {
     assert.equal(conflict.user_id, ben);
     assert.equal(db().prepare('SELECT COUNT(*) AS c FROM directory_runs').get().c, 0);
     assert.equal(store().get(dirId).stats.linked, 1);
+    // the full-sync interval comes back; the delta position does not (the first run is full)
+    assert.equal(store().get(dirId).fullSyncHours, 6);
+    assert.equal(db().prepare('SELECT COUNT(*) AS c FROM directory_sync_state').get().c, 0);
+    assert.equal(store().get(dirId).deltaReady, false);
   });
 
   it('a secret from a server with another key is dropped and marked for re-entry, the restore goes on', async () => {

@@ -397,6 +397,9 @@ function restoreDirectories(db, { directories, links, conflicts }, { userIdMap, 
   const dCols = columnsOf(db, 'directories');
   if (!dCols.length) return result;
   try {
+    // The delta position of the sync is not saved: after a restore the first
+    // run of every directory reads everything (sync.js "Delta").
+    if (columnsOf(db, 'directory_sync_state').length) db.prepare('DELETE FROM directory_sync_state').run();
     db.prepare('DELETE FROM directory_runs').run();
     db.prepare('DELETE FROM directory_conflicts').run();
     db.prepare('DELETE FROM directory_links').run();

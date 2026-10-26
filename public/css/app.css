@@ -8674,6 +8674,8 @@ a.up-dev:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 .dir-conflict-text{display:flex; flex-direction:column; gap:2px; min-width:0; flex:1 1 260px; overflow-wrap:anywhere; font-size:13px}
 .dir-conflict .us-btnrow{margin-top:0}
 .dir-run-more{padding:2px 8px; margin-left:6px; font-size:12px; min-height:0}
+.dir-run-mode{font-size:11px; padding:1px 7px; vertical-align:1px}
+.dir-next-full{font-weight:600}
 .dir-run-h{margin:14px 0 6px; font-size:14px; font-weight:800}
 .dir-grid{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px}
 .dir-span-2{grid-column:span 2}

@@ -444,9 +444,9 @@ describe('"Mit Microsoft anmelden" for the app (?client=app)', () => {
   });
 });
 
-describe('migration 112 (directory_self_enroll)', () => {
+describe('migration 113 (directory_self_enroll)', () => {
   it('adds directories.self_enroll, off by default', () => {
-    const m = require('../src/db/migrationList').migrations.find((x) => x.version === 112);
+    const m = require('../src/db/migrationList').migrations.find((x) => x.version === 113);
     assert.equal(m.name, 'directory_self_enroll');
     assert.match(m.sql, /ALTER TABLE directories ADD COLUMN self_enroll INTEGER NOT NULL DEFAULT 0/);
     assert.equal(m.detect(db()), true);
