@@ -1536,6 +1536,40 @@
     return pill(t(a.target.id == null ? 'plugins.areas.st_server' : 'plugins.areas.st_ok'), 'good', true);
   }
 
+  /** Readable areas: the last look for changes on the NAS, "Jetzt abgleichen", the mass-removal guard. */
+  function scanLine(p, a, rerender) {
+    const sc = a.scan;
+    const st = sc.stats;
+    const txt = sc.at ? t('plugins.areas.scan_at', { at: fmtDateTime(sc.at), files: st ? st.files : 0, added: st ? st.added : 0, changed: st ? st.changed : 0, removed: st ? st.removed : 0 })
+      : t('plugins.areas.scan_never');
+    const base = API + '/' + enc(p.id) + '/media/areas/' + enc(a.area);
+    const run = async (e, url, okKey) => {
+      const b = e.currentTarget;
+      b.disabled = true;
+      const res = await req('POST', url, {});
+      b.disabled = false;
+      if (!res.ok) { toast(res.error, 'error'); return; }
+      toast(t(okKey));
+      await rerender();
+    };
+    const kids = [el('small', { class: 'pgx-muted', text: txt }),
+      btn(t('plugins.areas.scan_now'), { small: true, ghost: true, icon: I.refresh, action: 'scan', onClick: (e) => run(e, base + '/scan', 'plugins.areas.scan_done') })];
+    const out = [el('div', { class: 'pgx-inline pgx-area-scan' }, kids)];
+    if (sc.error === 'mass_missing') {
+      out.push(el('div', { class: 'pgx-area-warn', role: 'alert' }, [
+        el('p', { text: t('plugins.areas.mass_missing', { count: st ? st.missing : 0 }) }),
+        btn(t('plugins.areas.mass_confirm'), { small: true, danger: true, action: 'confirm-removals', onClick: async (e) => {
+          const target = e.currentTarget;
+          if (!(await D.confirm({ title: t('plugins.areas.mass_title', { name: a.label }), message: t('plugins.areas.mass_text', { count: st ? st.missing : 0 }), okLabel: t('plugins.areas.mass_confirm'), danger: true }))) return;
+          await run({ currentTarget: target }, base + '/confirm-removals', 'plugins.areas.scan_done');
+        } }),
+      ]));
+    } else if (sc.error) {
+      out.push(el('p', { class: 'pgx-stg-err', text: stgErrorText(sc.error) }));
+    }
+    return el('div', { class: 'pgx-area-scanbox' }, out);
+  }
+
   async function renderAreas(p, panel) {
     const r = await req('GET', API + '/' + enc(p.id) + '/media/areas');
     if (!r.ok) return;
@@ -1569,14 +1603,28 @@
         value: a.quota == null ? '' : String(Math.round((a.quota / GB) * 1000) / 1000), placeholder: t('plugins.areas.quota_none') });
       const used = t('plugins.areas.usage', { size: P.fmtBytes(a.bytes), count: a.count }) + (a.quota != null ? ' · ' + t('plugins.areas.of_quota', { quota: P.fmtBytes(a.quota) }) : '')
         + (a.free != null ? ' · ' + t('plugins.areas.free', { free: P.fmtBytes(a.free) }) : '');
+      // the form (since 1.205.0): readable files or sealed blocks — only on a folder / NAS
+      const curTarget = r.targets.find((tg) => tg.id === cur);
+      const form = el('select', { class: 'st-select', 'aria-label': t('plugins.areas.form_l', { name: a.label }), 'data-form': a.area, hidden: !(curTarget && curTarget.files) },
+        ['files', 'blocks'].map((f) => el('option', { value: f, text: t('plugins.areas.form_' + f) })));
+      form.value = a.form;
+      form.addEventListener('change', async () => {
+        if (a.count && !(await D.confirm({ title: t('plugins.areas.form_title', { name: a.label }), message: t('plugins.areas.form_text_' + form.value, { count: a.count }), okLabel: t('plugins.areas.move_ok') }))) {
+          form.value = a.form;
+          return;
+        }
+        await put(a.area, { form: form.value }, t(a.count ? 'plugins.areas.moving_started' : 'plugins.areas.saved'));
+      });
+      const scanBox = a.scan ? scanLine(p, a, rerender) : null;
       list.appendChild(el('div', { class: 'pgx-area', 'data-area': a.area, 'data-state': a.state }, [
         el('div', { class: 'pgx-area-head' }, [
           el('span', { class: 'pgx-t pgx-grow' }, [el('b', { text: a.label }), el('small', { class: 'pgx-muted', text: used })]),
-          el('span', { class: 'pgx-stg-state' }, [areaState(a), pill(t('plugins.stg.encrypted'), 'blue')]),
+          el('span', { class: 'pgx-stg-state' }, [areaState(a), a.encrypted ? pill(t('plugins.stg.encrypted'), 'blue') : pill(t('plugins.areas.readable'), 'mute')]),
         ]),
         a.state === 'unreachable' && a.error ? el('p', { class: 'pgx-stg-err', text: stgErrorText(a.error) }) : null,
+        scanBox,
         el('div', { class: 'pgx-inline pgx-area-ctl' }, [
-          el('label', { class: 'st-label', text: t('plugins.areas.where') }), sel,
+          el('label', { class: 'st-label', text: t('plugins.areas.where') }), sel, form,
           el('label', { class: 'st-label', text: t('plugins.areas.quota') }), quota,
           btn(t('plugins.media.save'), { small: true, primary: true, action: 'quota', onClick: () => {
             const v = quota.value.trim();

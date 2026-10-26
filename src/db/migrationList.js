@@ -2800,6 +2800,48 @@ const migrations = [
       );`,
     detect: (db) => tableExists(db, 'plugin_media_areas') && hasColumn(db, 'plugin_media', 'push_error') && tableExists(db, 'plugin_media_gone'),
   },
+  {
+    version: 116,
+    name: 'plugin_media_files',
+    // Readable files on storage targets (docs/plugins.md "Media areas"): an
+    // area's form — 'blocks' (sealed, opaque keys) or 'files' (the plugin's
+    // paths, plain bytes, e.g. on a NAS) — and its last scan for changes made
+    // on the target. Per file: stored_form (form of the remote copy), want_key
+    // (where the copy belongs now), version_of / version_at (a version kept
+    // with gc.media.version), remote_size / remote_mtime (as the target
+    // listed it), missing_since (gone on the target, removed after a second
+    // scan). plugin_media_changes: the journal of changes found on targets
+    // (gc.media.areas.changes).
+    sql: `
+      ALTER TABLE plugin_media_areas ADD COLUMN form TEXT NOT NULL DEFAULT 'blocks';
+      ALTER TABLE plugin_media_areas ADD COLUMN scanned_at TEXT;
+      ALTER TABLE plugin_media_areas ADD COLUMN scan_error TEXT;
+      ALTER TABLE plugin_media_areas ADD COLUMN scan_stats TEXT;
+      ALTER TABLE plugin_media_areas ADD COLUMN confirm_removals INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE plugin_media ADD COLUMN stored_form TEXT;
+      ALTER TABLE plugin_media ADD COLUMN want_key TEXT;
+      ALTER TABLE plugin_media ADD COLUMN version_of TEXT;
+      ALTER TABLE plugin_media ADD COLUMN version_at TEXT;
+      ALTER TABLE plugin_media ADD COLUMN remote_size INTEGER;
+      ALTER TABLE plugin_media ADD COLUMN remote_mtime INTEGER;
+      ALTER TABLE plugin_media ADD COLUMN missing_since TEXT;
+      UPDATE plugin_media SET stored_form = 'blocks' WHERE target_id IS NOT NULL;
+      UPDATE plugin_media SET want_key = plugin || '/' || area || '/' || substr(id, 1, 2) || '/' || id WHERE area IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_plugin_media_path ON plugin_media(plugin, area, path);
+      CREATE INDEX IF NOT EXISTS idx_plugin_media_remote ON plugin_media(target_id, remote_key);
+      CREATE TABLE IF NOT EXISTS plugin_media_changes (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        plugin TEXT NOT NULL,
+        area TEXT NOT NULL,
+        type TEXT NOT NULL,
+        media_id TEXT,
+        previous_id TEXT,
+        path TEXT,
+        at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_plugin_media_changes ON plugin_media_changes(plugin, area, seq);`,
+    detect: (db) => hasColumn(db, 'plugin_media', 'missing_since') && tableExists(db, 'plugin_media_changes'),
+  },
 ];
 
 module.exports = { migrations };

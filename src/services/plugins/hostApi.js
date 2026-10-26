@@ -841,7 +841,8 @@ async function mediaFetch(plugin, args) {
 }
 
 // errors of media areas (mediaAreas.js AreaError codes) → host API codes
-const AREA_ERRORS = { invalid: 'ERR_INVALID', not_found: 'ERR_INVALID', not_empty: 'ERR_INVALID', limit: 'ERR_RATE_LIMIT', quota: 'ERR_MEDIA_QUOTA', no_areas: 'ERR_MEDIA_DENIED' };
+const AREA_ERRORS = { invalid: 'ERR_INVALID', not_found: 'ERR_INVALID', not_empty: 'ERR_INVALID', limit: 'ERR_RATE_LIMIT', quota: 'ERR_MEDIA_QUOTA',
+  no_areas: 'ERR_MEDIA_DENIED', exists: 'ERR_CONFLICT' };
 
 function areaCall(fn) {
   try { return fn(); } catch (e) {
@@ -853,9 +854,11 @@ function areaCall(fn) {
 
 /**
  * gc.media.areas.ensure(area, { label, quota }) / info(area) / list() /
- * remove(area) (media.areas, since 1.204.0, docs/plugins.md "Media areas").
+ * remove(area) (media.areas, since 1.204.0, docs/plugins.md "Media areas");
+ * since 1.205.0 scan(area) (look for changes on the target now → stats) and
+ * changes(area, { since, limit }) (the journal of changes found there).
  */
-function mediaAreasCall(plugin, op, args) {
+async function mediaAreasCall(plugin, op, args) {
   needMedia(plugin);
   const areas = require('./mediaAreas');
   need(areas.declared(plugin), 'ERR_MEDIA_DENIED', 'plugin.json declares no media.areas');
@@ -866,6 +869,14 @@ function mediaAreasCall(plugin, op, args) {
       case 'info': return areas.info(plugin.id, String(a.area || ''));
       case 'list': return areas.list(plugin.id);
       case 'remove': return areas.remove(plugin, String(a.area || ''));
+      case 'scan': {
+        need(areas.rowOf(plugin.id, String(a.area || '')), 'ERR_INVALID', 'unknown area');
+        return areas.scanArea(plugin.id, String(a.area));
+      }
+      case 'changes': {
+        const o = a.opts && typeof a.opts === 'object' ? a.opts : {};
+        return areas.changes(plugin.id, String(a.area || ''), { since: o.since, limit: o.limit });
+      }
       default: throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
     }
   });
@@ -883,6 +894,21 @@ function mediaCall(plugin, op, args) {
       return out;
     }
     case 'delete': return media.remove(plugin.id, mediaId(args));
+    // since 1.205.0 (media.areas): a new path / area, keep as a version
+    case 'move': {
+      const o = args && args.opts != null ? args.opts : null;
+      need(o !== null && typeof o === 'object' && !Array.isArray(o), 'ERR_INVALID', 'invalid options');
+      const r = media.row(plugin.id, mediaId(args));
+      need(r, 'ERR_INVALID', 'unknown media id');
+      areaCall(() => require('./mediaAreas').move(plugin, r, o));
+      return media.info(media.row(plugin.id, r.id));
+    }
+    case 'version': {
+      const r = media.row(plugin.id, mediaId(args));
+      need(r, 'ERR_INVALID', 'unknown media id');
+      areaCall(() => require('./mediaAreas').version(plugin, r));
+      return media.info(media.row(plugin.id, r.id));
+    }
     case 'usage': {
       const decl = media.declOf(plugin);
       return { ...media.usage(plugin.id), quota: media.quotaOf(plugin), maxBytes: decl.maxBytes, types: decl.types, uploads: decl.uploads !== false,
@@ -1601,6 +1627,10 @@ async function handle(plugin, api, args, ctx) {
     case 'media.areas.info': return mediaAreasCall(plugin, 'info', args);
     case 'media.areas.list': return mediaAreasCall(plugin, 'list', args);
     case 'media.areas.remove': return mediaAreasCall(plugin, 'remove', args);
+    case 'media.areas.scan': return mediaAreasCall(plugin, 'scan', args);
+    case 'media.areas.changes': return mediaAreasCall(plugin, 'changes', args);
+    case 'media.move': return mediaCall(plugin, 'move', args);
+    case 'media.version': return mediaCall(plugin, 'version', args);
     case 'media.delete': return mediaCall(plugin, 'delete', args);
     case 'media.usage': return mediaCall(plugin, 'usage', args);
     case 'media.url': return mediaCall(plugin, 'url', args);

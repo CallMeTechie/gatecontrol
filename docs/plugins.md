@@ -1388,24 +1388,88 @@ WebDAV, an S3 bucket). Code: `src/services/plugins/mediaAreas.js`.
 * Errors: `ERR_MEDIA_DENIED` (no `media.areas`), `ERR_INVALID`,
   `ERR_RATE_LIMIT` (too many areas), `ERR_MEDIA_QUOTA`.
 
+### Readable files, moves and versions (since 1.205.0)
+
+On a folder or a NAS (SMB, WebDAV) an area has a **form**, chosen by the
+administrator next to its place:
+
+* **Lesbare Dateien** (`files`, the default there): the plain file lies under
+  the plugin's path, `<plugin>/<area>/<path>` below the target's folder — people
+  can open it on the NAS and back it up with the NAS. Not encrypted there
+  (`info.encrypted` false). A path a NAS cannot hold (`" < > | ? * : \`, a name
+  ending in `.` or a space) is kept below `<plugin>/<area>/.gcdrive/files/`;
+  versions go to `<plugin>/<area>/.gcdrive/versions/<path> (<time> <id>)<.ext>`.
+* **Verschlüsselte Blöcke** (`blocks`): the sealed file under an opaque key —
+  the only form on S3 and on this server.
+
+Switching the form (or the place) moves the files in the background like a
+move of the area. API:
+
+* `gc.media.move(id, { path, area })` → the file's info: a new path (unique in
+  the area, `ERR_CONFLICT` when taken) and/or another area of the plugin (its
+  quota). On the target the worker renames the readable file (no bytes
+  travel) or copies it to the other area's place.
+* `gc.media.version(id)` → the file's info: keeps the file as a version of its
+  path (`versionOf`, `versionAt` in `gc.media.info`; `path` becomes null, the
+  media id stays) — the path is free for the next file. Typical for an
+  overwrite: `version(old)`, then `claim(new, { area, path })`. A version does
+  not move; delete it with `gc.media.delete`.
+* `gc.media.claim(id, { area, path })` refuses a path another file of the area
+  has (`ERR_CONFLICT`) and a file of another area (use `move`).
+
+**Changes made on the NAS** (form `files`): every 15 minutes (and with
+`gc.media.areas.scan(area)` or "Jetzt abgleichen") the server lists the area's
+folder:
+
+* a file changed there (size or time) becomes a **new media file** at its path;
+  the old one becomes a version of it when its bytes are still here (a local
+  copy — it then goes to `.gcdrive/versions`), else it is gone;
+* a **new file** there is taken in at its path (claimed, type from the
+  extension, read once for size and SHA-256 — no local copy). When the area
+  still wants to put one of its files at that path, the NAS file becomes a
+  conflict copy `Name (Konflikt <time>).ext` (renamed on the NAS too);
+* a **missing file** is marked and removed at the next scan when it is still
+  missing. More than 50 files and 20 % of the area at once are not removed:
+  the area shows `scan.error` `mass_missing` until the administrator presses
+  "Löschungen übernehmen";
+* files changed in the last minute (still being written) wait for the next
+  scan; `.gcdrive` is the server's own.
+
+Every change goes into a journal the plugin reads:
+`gc.media.areas.changes(area, { since, limit })` → `{ changes: [{ seq, type:
+'added'|'changed'|'removed', mediaId, previous, path, at }], next, more }`
+(≤ 1000 per page, kept 30 days). After a scan with changes the server calls the
+optional hook `mediaChanged({ area, seq, count })`; a plugin that was not
+running catches up from its last `seq`.
+
+`gc.media.areas.info` also answers `form` and `scan: { at, error, stats: {
+files, added, changed, removed, missing } }` (form `files`). Admin API:
+`PUT /api/v1/plugins/<id>/media/areas/<area>` also takes `form`;
+`POST …/media/areas/<area>/scan`, `POST …/media/areas/<area>/confirm-removals`
+(activity `plugin_media_area_removals`). Migration 116 (`plugin_media_areas.form,
+scanned_at, scan_error, scan_stats, confirm_removals`, the columns
+`stored_form, want_key, version_of, version_at, remote_size, remote_mtime,
+missing_since` of `plugin_media`, `plugin_media_changes`).
+
 How the files travel:
 
 * Every file arrives on this server first (upload, `gc.media.fetch`,
   hand-over) and is sealed like all plugin media. For an area on a storage
-  target a background worker (every 15 s, and right after a claim) copies the
-  **sealed** file there under an opaque key
+  target a background worker (every 15 s, and right after a claim) copies it
+  there: in the form `blocks` the **sealed** file under an opaque key
   `<plugin>/<area>/<id[0..2]>/<id>` — the target only ever sees encrypted
-  64 KiB blocks, never names or paths. Only after the copy is complete and
+  64 KiB blocks, never names or paths; in the form `files` the plain file under
+  its path (above). Only after the copy is complete and
   its size checked does the file count as stored there; the local copy stays
   as **cache**.
 * **Cache**: local copies of files kept on targets, at most the size set on
   the page *Plugins › Speicher* (setting `plugins.media_cache_bytes`, default
   5 GB, 256 MB … 100 TB); the least recently read go first. Files still
   waiting to be copied are never dropped and do not count.
-* **Reading** a file without a local copy: from a target that reads ranges
-  (folder, WebDAV, S3) only the sealed blocks of the requested range are
-  fetched and decrypted (video seeking works); from SMB the whole file comes
-  into the cache first. A target that does not answer gives `503
+* **Reading** a file without a local copy: a readable file is read straight
+  from the target (the requested range); a sealed one from a target that reads
+  ranges (folder, WebDAV, S3) by the sealed blocks of the requested range
+  (video seeking works); from SMB a sealed file comes into the cache first. A target that does not answer gives `503
   storage_unavailable` before any byte is sent.
 * **Moving** an area (the administrator picks another place): its files are
   copied in the background, the old copies deleted afterwards; until a file

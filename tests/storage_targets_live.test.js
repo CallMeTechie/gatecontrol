@@ -67,6 +67,23 @@ for (const kind of ['s3', 'webdav', 'smb']) {
       if (kind !== 's3') assert.equal(await d.remove(at), false);
     });
 
+    it('readable files: list finds files in sub folders with size and time; a move never overwrites', { skip: kind === 's3' ? 'S3 holds no readable files' : false }, async () => {
+      assert.equal(d.files, true);
+      const base = `list-${crypto.randomBytes(3).toString('hex')}`;
+      const a = crypto.randomBytes(1000);
+      const b = crypto.randomBytes(2345);
+      await d.put(`${base}/eins.txt`, source(a));
+      await d.put(`${base}/Unter Ordner/zwei ä.bin`, source(b));
+      const list = (await d.list(base)).sort((x, y) => (x.key < y.key ? -1 : 1));
+      assert.deepEqual(list.map((e) => [e.key, e.size]), [[`${base}/Unter Ordner/zwei ä.bin`, 2345], [`${base}/eins.txt`, 1000]]);
+      assert.ok(list.every((e) => e.mtime > 0));
+      assert.deepEqual(await d.list(`${base}-missing`), []);
+      await assert.rejects(d.move(`${base}/eins.txt`, `${base}/Unter Ordner/zwei ä.bin`), (e) => e.code === 'exists');
+      assert.ok((await collect(await d.get(`${base}/Unter Ordner/zwei ä.bin`))).equals(b), 'the destination is untouched');
+      await d.remove(`${base}/eins.txt`);
+      await d.remove(`${base}/Unter Ordner/zwei ä.bin`);
+    });
+
     it('a missing object: head null, get not_found', async () => {
       assert.equal(await d.head('nope/missing'), null);
       await assert.rejects(async () => collect(await d.get('nope/missing')), (e) => e.code === 'not_found');

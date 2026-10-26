@@ -2,7 +2,8 @@
 
 // Storage target "Ordner auf dem Server" (kind 'local'): a folder of this
 // server — another disk or a mounted volume. Keys are relative paths below
-// it; a key that would leave the folder is refused.
+// it; a key that would leave the folder is refused. `files`: readable files
+// (media areas in the form 'files') can live here; `list` finds what changed.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -53,10 +54,35 @@ function create(cfg) {
     }
   }
 
+  /** Rename; never over an existing object (`exists`). */
   async function move(from, to) {
     const dest = full(to);
     await fs.promises.mkdir(path.dirname(dest), { recursive: true });
+    // (not link + unlink: FAT/exFAT disks have no hard links)
+    if (await fs.promises.lstat(dest).then(() => true, () => false)) throw new StorageError('exists', 'the destination exists');
     try { await fs.promises.rename(full(from), dest); } catch (e) { throw StorageError.from(e); }
+  }
+
+  /** Every file below `prefix` (recursive) → [{ key, size, mtime }]; [] when the folder is missing. */
+  async function list(prefix) {
+    const out = [];
+    const walk = async (dir, rel) => {
+      let entries;
+      try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch (e) {
+        if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return;
+        throw StorageError.from(e);
+      }
+      for (const e of entries) {
+        const r = rel ? `${rel}/${e.name}` : e.name;
+        if (e.isDirectory()) await walk(path.join(dir, e.name), r);
+        else if (e.isFile() && !e.name.startsWith('.gc-upload-')) {
+          try { const st = await fs.promises.stat(path.join(dir, e.name)); out.push({ key: r, size: st.size, mtime: Math.floor(st.mtimeMs) }); } catch { /* gone meanwhile */ }
+        }
+      }
+    };
+    const base = String(prefix || '').replace(/^\/+|\/+$/g, '');
+    await walk(base ? full(base) : root, base);
+    return out;
   }
 
   async function space() {
@@ -72,7 +98,7 @@ function create(cfg) {
     if (!st.isDirectory()) throw new StorageError('not_found', 'not a folder');
   }
 
-  return { kind: 'local', ranges: true, put, get, head, remove, move, space, prepare };
+  return { kind: 'local', ranges: true, files: true, put, get, head, remove, move, list, space, prepare };
 }
 
 module.exports = { create };

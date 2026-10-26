@@ -327,11 +327,17 @@ function makeGc(info) {
       info: (id) => hostCall('media.info', { id }),
       // since 1.204.0: claim(id, { area, path }) for plugins with media.areas
       claim: (id, opts) => hostCall('media.claim', opts == null ? { id } : { id, opts }),
+      // since 1.205.0 (media.areas): move(id, { path, area }) → info; version(id) keeps the file as a version of its path → info
+      move: (id, opts) => hostCall('media.move', { id, opts: opts == null ? {} : opts }),
+      version: (id) => hostCall('media.version', { id }),
       areas: Object.freeze({
         ensure: (area, opts) => hostCall('media.areas.ensure', { area, opts: opts == null ? {} : opts }),
         info: (area) => hostCall('media.areas.info', { area }),
         list: () => hostCall('media.areas.list', {}),
         remove: (area) => hostCall('media.areas.remove', { area }),
+        // since 1.205.0: scan(area) looks for changes made on the target now; changes(area, { since, limit }) reads the journal
+        scan: (area) => hostCall('media.areas.scan', { area }),
+        changes: (area, opts) => hostCall('media.areas.changes', { area, opts: opts == null ? {} : opts }),
       }),
       delete: (id) => hostCall('media.delete', { id }),
       usage: () => hostCall('media.usage', {}),
@@ -481,6 +487,11 @@ async function handleCall(method, payload) {
     case 'publicLinkEvent':
       // optional (permissions.publicLinks, since 1.193.0): { token, event: 'download'|'locked'|'expired', … }; the answer is ignored
       if (typeof plugin.publicLinkEvent === 'function') await plugin.publicLinkEvent(payload, gc);
+      return {};
+    case 'mediaChanged':
+      // optional (media.areas, since 1.205.0): files changed on a storage target were taken in —
+      // { area, seq, count }; read them with gc.media.areas.changes(area, { since }). Answer ignored
+      if (typeof plugin.mediaChanged === 'function') await plugin.mediaChanged(payload, gc);
       return {};
     case 'groupsChanged':
       // optional (permissions.groups): { changes: [{ type, groupId, userId?, role?, reason? }] }, batched ≤ 1×/s; answer ignored

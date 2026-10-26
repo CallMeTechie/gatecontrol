@@ -174,7 +174,8 @@ function create(cfg, secret) {
 
   async function space() { return { free: null, total: null }; }
 
-  return { kind: 's3', ranges: true, put, get, head, remove, space, prepare };
+  // files: false — on S3 media areas always keep sealed blocks under opaque keys
+  return { kind: 's3', ranges: true, files: false, put, get, head, remove, space, prepare };
 }
 
 module.exports = { create, sign, uriEncode, PART_SIZE };
