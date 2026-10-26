@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.206.0] — 2026-10-26
 
 ### Features
 - Lizenz mit Stufe und Personen, größere Plugin-Datenbank, Symbol „cloud“ (docs/plugins.md „Tier and people“, „Storage and migrations“; fünfter Teil des Server-Kerns für GateControl Drive): Eine Plugin-Lizenz kann jetzt eine **Stufe** (Familie, Business oder Kombi) und eine **Personenzahl** tragen – 5 inklusive plus hinzugebuchte Personen je Art. GateControl übernimmt beides nur aus dem signierten Plugin-Token des Lizenzservers. Plugins lesen mit `gc.license.info()`, wie viele Personen sie freischalten dürfen (bei Kombi teilen sich Familie und Business die inklusiven Personen), und holen mit `gc.license.refresh()` nach einem Kauf („Personen hinzubuchen“) sofort die neue Lizenz (höchstens einmal pro Minute). Der Lizenz-Reiter zeigt Stufe und Personen. Plugins mit vielen Einträgen dürfen ihre Datenbank mit `storage.maxMB` im plugin.json auf bis zu 4 GB vergrößern (Standard 256 MB); die Übersicht zeigt die Obergrenze. Neues Katalog-Symbol `cloud`.
