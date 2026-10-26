@@ -37,6 +37,7 @@ function mkfifo(p) {
 /** An NT_STATUS line of smbclient's output → StorageError code. */
 function codeOf(status) {
   if (/LOGON_FAILURE|WRONG_PASSWORD|ACCOUNT_(?:DISABLED|LOCKED_OUT|RESTRICTION|EXPIRED)|PASSWORD_(?:EXPIRED|MUST_CHANGE)|NO_SUCH_USER/.test(status)) return 'auth';
+  if (/OBJECT_NAME_COLLISION/.test(status)) return 'exists';
   if (/ACCESS_DENIED|MEDIA_WRITE_PROTECTED|SHARING_VIOLATION/.test(status)) return 'denied';
   if (/BAD_NETWORK_NAME|OBJECT_NAME_NOT_FOUND|OBJECT_PATH_NOT_FOUND|NO_SUCH_FILE|NOT_A_DIRECTORY|OBJECT_NAME_INVALID/.test(status)) return 'not_found';
   if (/DISK_FULL|QUOTA_EXCEEDED/.test(status)) return 'full';
@@ -201,6 +202,35 @@ function create(cfg, secret) {
     await run([`rename ${q(a)} ${q(b)}`]);
   }
 
+  // one line of `ls`: name (may hold spaces), attributes, size, date
+  const LS_RE = /^ {2}(.+?)\s+([A-Za-z]*)\s+(\d+)\s+(\w{3} \w{3} [ \d]\d \d\d:\d\d:\d\d \d{4})\s*$/;
+
+  /** Every file below `prefix` (recurse ls) → [{ key, size, mtime }]; [] when the folder is missing. */
+  async function list(prefix) {
+    const rel = String(prefix || '').replace(/^\/+|\/+$/g, '');
+    const start = smbPath(rel);
+    let r;
+    try {
+      r = await run(['recurse ON', 'prompt OFF', `ls ${q((start ? start + '\\' : '') + '*')}`], { long: true, allow: ['NT_STATUS_NO_SUCH_FILE'] });
+    } catch (e) {
+      if (e.code === 'not_found') return [];
+      throw e;
+    }
+    const rootLen = root.length ? root.join('\\').length + 1 : 0;
+    const out = [];
+    let cur = start;
+    for (const line of r.out.split(/\r?\n/)) {
+      if (line.startsWith('\\')) { cur = line.slice(1).trim(); continue; }
+      const m = LS_RE.exec(line);
+      if (!m) continue;
+      const name = m[1].trimEnd();
+      if (name === '.' || name === '..' || m[2].includes('D')) continue;
+      const full = (cur ? cur + '\\' : '') + name;
+      out.push({ key: full.slice(rootLen).split('\\').join('/'), size: Number(m[3]), mtime: Date.parse(m[4]) || null });
+    }
+    return out;
+  }
+
   async function space() {
     try {
       const r = await run(['du']);
@@ -216,7 +246,7 @@ function create(cfg, secret) {
     await run(dirs.length ? dirs : ['ls'], { allow: ['NT_STATUS_OBJECT_NAME_COLLISION'] });
   }
 
-  return { kind: 'smb', ranges: false, put, get, head, remove, move, space, prepare };
+  return { kind: 'smb', ranges: false, files: true, put, get, head, remove, move, list, space, prepare };
 }
 
 module.exports = { create, codeOf };

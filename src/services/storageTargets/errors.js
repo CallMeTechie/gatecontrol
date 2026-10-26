@@ -11,6 +11,8 @@
 //   blocked_address   an address a storage target may not use
 //   full              no space left on the target
 //   length_mismatch   fewer / more bytes than announced
+//   exists            the destination of a move / a readable file is taken already
+//   changed           the object on the target is not what was stored (changed there)
 //   protocol          an answer the driver does not understand
 //   failed            anything else
 
@@ -26,6 +28,7 @@ class StorageError extends Error {
     if (e instanceof StorageError) return e;
     const c = e && e.code;
     if (c === 'ENOENT') return new StorageError('not_found', e.message);
+    if (c === 'EEXIST' || c === 'ENOTEMPTY') return new StorageError('exists', e.message);
     if (c === 'EACCES' || c === 'EPERM' || c === 'EROFS') return new StorageError('denied', e.message);
     if (c === 'ENOSPC' || c === 'EDQUOT') return new StorageError('full', e.message);
     if (c === 'blocked_address') return new StorageError(c, e.message);

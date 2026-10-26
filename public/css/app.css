@@ -8728,3 +8728,6 @@ a.up-dev:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 .pgx-area-ctl{flex-wrap:wrap}
 .pgx-area-ctl .st-select{max-width:100%}
 .pgx-stg-cache-in{width:120px}
+.pgx-area-scan{gap:8px}
+.pgx-area-warn{border:1px solid var(--pg-warn-bd, #e0b44a); border-radius:12px; padding:10px 12px; display:flex; flex-direction:column; gap:8px}
+.pgx-area-warn p{margin:0; font-size:14px}

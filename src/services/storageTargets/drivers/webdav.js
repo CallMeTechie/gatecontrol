@@ -35,6 +35,7 @@ function create(cfg, secret) {
     if (status === 401) return new StorageError('auth', msg);
     if (status === 403) return new StorageError('denied', msg);
     if (status === 404 || status === 409) return new StorageError('not_found', msg);
+    if (status === 412) return new StorageError('exists', msg);
     if (status === 507) return new StorageError('full', msg);
     return new StorageError('failed', msg);
   }
@@ -89,6 +90,48 @@ function create(cfg, secret) {
     if (res.status !== 201 && res.status !== 204) throw failure(res.status, 'move');
   }
 
+  const PROPS = Buffer.from('<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getcontentlength/><d:getlastmodified/></d:prop></d:propfind>');
+  const tag = (name) => new RegExp(`<(?:[A-Za-z0-9]+:)?${name}\\b[^>]*>([\\s\\S]*?)</(?:[A-Za-z0-9]+:)?${name}>`);
+  const RESPONSE_RE = /<(?:[A-Za-z0-9]+:)?response\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z0-9]+:)?response>/g;
+  const COLLECTION_RE = /<(?:[A-Za-z0-9]+:)?collection\b/;
+  const HREF_RE = tag('href');
+  const LEN_RE = tag('getcontentlength');
+  const MOD_RE = tag('getlastmodified');
+  const MAX_LIST = 1000000;
+
+  /**
+   * Every file below `prefix` → [{ key, size, mtime }] (PROPFIND Depth 1 per
+   * folder — many servers refuse Depth infinity); [] when the folder is missing.
+   */
+  async function list(prefix) {
+    const out = [];
+    const basePath = decodeURIComponent(base.pathname);
+    const queue = [String(prefix || '').replace(/^\/+|\/+$/g, '')];
+    while (queue.length) {
+      const dir = queue.shift();
+      const res = await call('PROPFIND', dir ? urlOf(dir, true) : base, { headers: { depth: '1', 'content-type': 'application/xml' }, body: PROPS });
+      const xml = (await net.readBody(res.stream, 64 * 1024 * 1024)).toString('utf8');
+      if (res.status === 404) continue;
+      if (res.status !== 207) throw failure(res.status, 'list');
+      for (const m of xml.matchAll(RESPONSE_RE)) {
+        const block = m[1];
+        const href = HREF_RE.exec(block);
+        if (!href) continue;
+        let p;
+        try { p = decodeURIComponent(new URL(href[1].trim().replace(/&amp;/g, '&'), base).pathname); } catch { continue; }
+        if (!p.startsWith(basePath)) continue;
+        const rel = p.slice(basePath.length).replace(/\/+$/, '');
+        if (!rel || rel === dir) continue;
+        if (COLLECTION_RE.test(block)) { queue.push(rel); continue; }
+        const len = LEN_RE.exec(block);
+        const mod = MOD_RE.exec(block);
+        out.push({ key: rel, size: len ? Number(len[1].trim()) : 0, mtime: mod ? Date.parse(mod[1].trim()) || null : null });
+        if (out.length > MAX_LIST) throw new StorageError('protocol', 'too many files');
+      }
+    }
+    return out;
+  }
+
   async function space() {
     const body = Buffer.from('<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:quota-available-bytes/><d:quota-used-bytes/></d:prop></d:propfind>');
     try {
@@ -118,7 +161,7 @@ function create(cfg, secret) {
     if (st !== 207) throw failure(st, 'folder');
   }
 
-  return { kind: 'webdav', ranges: true, put, get, head, remove, move, space, prepare };
+  return { kind: 'webdav', ranges: true, files: true, put, get, head, remove, move, list, space, prepare };
 }
 
 module.exports = { create };

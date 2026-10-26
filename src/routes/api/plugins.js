@@ -28,7 +28,9 @@
 //   GET    /:id/media/settings     plugin.json `media`: limits, quota, usage
 //   PUT    /:id/media/settings     { quotaBytes } (null = the declared default)
 //   GET    /:id/media/areas        media.areas: the plugin's areas, the storage targets, the cache
-//   PUT    /:id/media/areas/:area  { targetId (null = this server), quotaBytes (null = the plugin's) }
+//   PUT    /:id/media/areas/:area  { targetId (null = this server), form ('files'|'blocks'), quotaBytes (null = the plugin's) }
+//   POST   /:id/media/areas/:area/scan               look for changes on the target now (form 'files')
+//   POST   /:id/media/areas/:area/confirm-removals   the next scan may remove many files at once
 //   PUT    /:id/media              an upload of the plugin's admin frame (GC.upload, raw body)
 //   GET    /:id/events             SSE: the plugin's realtime events for this administrator
 //   *      /:id/api/<path>         forwarded to the plugin (its own admin API)
@@ -416,7 +418,7 @@ router.get('/:id/media/areas', (req, res) => {
   const areas = require('../../services/plugins/mediaAreas');
   if (!areas.declared(p)) return res.status(404).json({ ok: false, code: 'no_areas', error: tr(req, 'plugins.err.not_found', 'Plugin not found') });
   const targetsList = require('../../services/storageTargets').list()
-    .map((t) => ({ id: t.id, kind: t.kind, label: t.label, display: t.display, check: t.check, encrypted: t.encrypted }));
+    .map((t) => ({ id: t.id, kind: t.kind, label: t.label, display: t.display, check: t.check, encrypted: t.encrypted, files: t.kind !== 's3' }));
   res.json({ ok: true, areas: areas.list(p.id, { admin: true }), targets: targetsList, cache: areas.cacheStats() });
 });
 
@@ -432,11 +434,13 @@ router.put('/:id/media/areas/:area', (req, res) => {
     const before = areas.info(p.id, area, { admin: true });
     if (!before) throw new areas.AreaError('not_found', 'no such area', 404);
     if (Object.prototype.hasOwnProperty.call(b, 'quotaBytes')) view = areas.setAdminQuota(p.id, area, b.quotaBytes);
-    if (Object.prototype.hasOwnProperty.call(b, 'targetId')) {
-      view = areas.setTarget(p.id, area, b.targetId == null ? null : Number(b.targetId));
-      if (before.target.id !== (b.targetId == null ? null : Number(b.targetId)) || before.moving) {
-        require('../../services/activity').log('plugin_media_area_target', `Plugin "${p.name}": area "${before.label}" → ${view.moving ? 'moving' : 'kept'} on ${b.targetId == null ? 'this server' : 'storage target #' + b.targetId}`, {
-          source: 'admin', ipAddress: req.ip, severity: 'info', details: { plugin: p.id, area, targetId: b.targetId == null ? null : Number(b.targetId) },
+    if (Object.prototype.hasOwnProperty.call(b, 'targetId') || Object.prototype.hasOwnProperty.call(b, 'form')) {
+      const tid = Object.prototype.hasOwnProperty.call(b, 'targetId') ? (b.targetId == null ? null : Number(b.targetId))
+        : (before.moving ? before.moving.to.id : before.target.id);
+      view = areas.setTarget(p.id, area, tid, { form: b.form == null ? undefined : String(b.form) });
+      if (before.target.id !== tid || before.form !== view.form || before.moving) {
+        require('../../services/activity').log('plugin_media_area_target', `Plugin "${p.name}": area "${before.label}" → ${view.moving ? 'moving' : 'kept'} on ${tid == null ? 'this server' : 'storage target #' + tid} (${view.form})`, {
+          source: 'admin', ipAddress: req.ip, severity: 'info', details: { plugin: p.id, area, targetId: tid, form: view.form },
         });
       }
     }
@@ -445,6 +449,35 @@ router.put('/:id/media/areas/:area', (req, res) => {
     return res.status(AREA_STATUS[code] || 400).json({ ok: false, code: code || 'invalid', error: tr(req, 'plugins.areas.err_' + (code || 'invalid'), tr(req, 'plugins.err.invalid', 'Invalid request')) });
   }
   res.json({ ok: true, area: view || areas.info(p.id, area, { admin: true }) });
+});
+
+/** The plugin with media.areas and its area of an admin request (else answered). */
+function areaParam(req, res) {
+  const p = pluginParam(req, res);
+  if (!p) return null;
+  const areas = require('../../services/plugins/mediaAreas');
+  if (!areas.declared(p)) { res.status(404).json({ ok: false, code: 'no_areas', error: tr(req, 'plugins.err.not_found', 'Plugin not found') }); return null; }
+  const area = String(req.params.area || '');
+  if (!areas.rowOf(p.id, area)) { res.status(404).json({ ok: false, code: 'not_found', error: tr(req, 'plugins.areas.err_not_found', 'No such area') }); return null; }
+  return { p, area, areas };
+}
+
+router.post('/:id/media/areas/:area/scan', async (req, res) => {
+  const x = areaParam(req, res);
+  if (!x) return;
+  const stats = await x.areas.scanArea(x.p.id, x.area);
+  res.json({ ok: true, stats, area: x.areas.info(x.p.id, x.area, { admin: true }) });
+});
+
+router.post('/:id/media/areas/:area/confirm-removals', async (req, res) => {
+  const x = areaParam(req, res);
+  if (!x) return;
+  x.areas.confirmRemovals(x.p.id, x.area);
+  require('../../services/activity').log('plugin_media_area_removals', `Plugin "${x.p.name}": removals in area "${x.area}" confirmed`, {
+    source: 'admin', ipAddress: req.ip, severity: 'warning', details: { plugin: x.p.id, area: x.area },
+  });
+  const stats = await x.areas.scanArea(x.p.id, x.area);
+  res.json({ ok: true, stats, area: x.areas.info(x.p.id, x.area, { admin: true }) });
 });
 
 /** The plugin of an admin frame request: installed, may run, running. */

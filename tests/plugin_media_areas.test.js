@@ -198,7 +198,7 @@ describe('areas on a storage target', () => {
   });
 
   it('the admin moves the (non-empty) area to a target: the worker copies, the area finishes moving', async () => {
-    const r = await agent.put(`${API}/${PID}/media/areas/photos`).set('X-CSRF-Token', csrf).send({ targetId: tA }).expect(200);
+    const r = await agent.put(`${API}/${PID}/media/areas/photos`).set('X-CSRF-Token', csrf).send({ targetId: tA, form: 'blocks' }).expect(200);
     assert.equal(r.body.area.state, 'moving');
     assert.equal(areas.stateOf(rowOf(id)), 'pending');
     await areas.tick();
@@ -311,7 +311,7 @@ describe('areas on a storage target', () => {
   it('moving to another target copies and deletes the old copies; deleting a file deletes its copy', async () => {
     await areas.tick();
     const n = db().prepare("SELECT COUNT(*) AS n FROM plugin_media WHERE plugin = ? AND area = 'photos'").get(PID).n;
-    await agent.put(`${API}/${PID}/media/areas/photos`).set('X-CSRF-Token', csrf).send({ targetId: tB }).expect(200);
+    await agent.put(`${API}/${PID}/media/areas/photos`).set('X-CSRF-Token', csrf).send({ targetId: tB, form: 'blocks' }).expect(200);
     assert.equal(areas.info(PID, 'photos').moving.total, n);
     await areas.tick();
     await areas.tick(); // the deletions queued by the copies
@@ -376,7 +376,7 @@ describe('admin API', () => {
 describe('backup', () => {
   it('exports areas and file metadata (never bytes); a restore brings them back while the bytes are still there', async () => {
     await gc('media.areas.ensure', 'nas', { label: 'NAS' });
-    await agent.put(`${API}/${PID}/media/areas/nas`).set('X-CSRF-Token', csrf).send({ targetId: tA }).expect(200);
+    await agent.put(`${API}/${PID}/media/areas/nas`).set('X-CSRF-Token', csrf).send({ targetId: tA, form: 'blocks' }).expect(200);
     const buf = crypto.randomBytes(70000);
     const id = await addFile(buf, 'nas', 'a/b.bin');
     await areas.tick();

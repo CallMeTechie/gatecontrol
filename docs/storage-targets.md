@@ -151,7 +151,11 @@ copies of files kept on targets — and sets its size (`PUT
 /api/v1/storage-targets/cache { limitBytes | null }`, default 5 GB; `GET
 /api/v1/storage-targets` answers `cache: { cached, pending, limit, default }`).
 `usedBy` of a target lists the areas on it (or moving to it) and plugins that
-still have files there.
+still have files there. Folder, SMB and WebDAV drivers have `files: true`
+(readable files, docs/plugins.md "Readable files") and `list(prefix)` →
+`[{ key, size, mtime }]` (recursive; SMB through `recurse` + `ls`, WebDAV
+through PROPFIND Depth 1 per folder) for the scans; a `move` never overwrites
+an existing object (StorageError `exists`). S3 holds sealed blocks only.
 
 ## Tests
 

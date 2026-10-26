@@ -207,19 +207,12 @@ function cleanName(v) {
 }
 
 /**
- * Encrypt `length` bytes from `source` (an async iterable of Buffers) into a
- * new file of the plugin and add its row (unclaimed). The one writer of
- * store() and storeBuffer(). The quota is checked again after writing
- * (parallel uploads of the same plugin may have filled it meanwhile).
- * `incomplete()` names the code when the source ended early.
- * @returns {{ mediaId, mime, bytes }}
+ * Seal `length` bytes of `source` (an async iterable of Buffers) with `key`
+ * into the new file `tmp` (fresh nonce prefix; removed again on any error).
+ * The core of writeFile; mediaAreas.js seals readable files fetched from a
+ * storage target with it. → { sha } (hex SHA-256 of the plaintext).
  */
-async function writeFile(plugin, { source, length, mime, owner, name, incomplete, digest = null }) {
-  const id = crypto.randomBytes(16).toString('hex');
-  const final = fileOf(plugin.id, id);
-  fs.mkdirSync(path.dirname(final), { recursive: true, mode: 0o700 });
-  const tmp = path.join(pluginDir(plugin.id), `.tmp-${id}`);
-  const key = crypto.randomBytes(32);
+async function sealInto(tmp, key, source, length, incomplete = null) {
   const prefix = crypto.randomBytes(PREFIX_LEN);
   const hash = crypto.createHash('sha256');
   const fd = fs.openSync(tmp, 'wx', 0o600);
@@ -249,7 +242,24 @@ async function writeFile(plugin, { source, length, mime, owner, name, incomplete
     throw new MediaError('aborted', 400, e && e.message);
   }
   fs.closeSync(fd);
-  const sha = hash.digest('hex');
+  return { sha: hash.digest('hex') };
+}
+
+/**
+ * Encrypt `length` bytes from `source` (an async iterable of Buffers) into a
+ * new file of the plugin and add its row (unclaimed). The one writer of
+ * store() and storeBuffer(). The quota is checked again after writing
+ * (parallel uploads of the same plugin may have filled it meanwhile).
+ * `incomplete()` names the code when the source ended early.
+ * @returns {{ mediaId, mime, bytes }}
+ */
+async function writeFile(plugin, { source, length, mime, owner, name, incomplete, digest = null }) {
+  const id = crypto.randomBytes(16).toString('hex');
+  const final = fileOf(plugin.id, id);
+  fs.mkdirSync(path.dirname(final), { recursive: true, mode: 0o700 });
+  const tmp = path.join(pluginDir(plugin.id), `.tmp-${id}`);
+  const key = crypto.randomBytes(32);
+  const { sha } = await sealInto(tmp, key, source, length, incomplete);
   if (digest && digest !== sha) {
     fs.rmSync(tmp, { force: true });
     throw new MediaError('digest_mismatch', 400);
@@ -536,6 +546,8 @@ function info(r) {
     out.area = r.area;
     out.path = r.path == null ? null : r.path;
     out.stored = require('./mediaAreas').stateOf(r);
+    // since 1.205.0: a version kept with gc.media.version (path then null)
+    if (r.version_of != null) { out.versionOf = r.version_of; out.versionAt = r.version_at; }
   }
   return out;
 }
@@ -752,6 +764,20 @@ function remove(pluginId, id) {
   return true;
 }
 
+/**
+ * Drop a file whose copy on a storage target is gone or no longer this file
+ * (changed or deleted on the target — mediaAreas.js scan): row, local copy,
+ * links; nothing is deleted on the target.
+ */
+function forget(pluginId, id) {
+  const r = row(pluginId, id);
+  if (!r) return false;
+  db().prepare('DELETE FROM plugin_media WHERE id = ?').run(r.id);
+  fs.rmSync(fileOf(r.plugin, r.id), { force: true });
+  revokeLinks(pluginId, [r.id]);
+  return true;
+}
+
 /** Every file of a plugin ("Alles löschen", a restore removing the plugin). */
 function removeAll(pluginId) {
   require('./mediaAreas').removeAllOf(pluginId);
@@ -952,9 +978,9 @@ module.exports = {
   mediaRoot, fileOf, declOf, quotaOf, setQuota, usage, baseType, typeAllowed, store, storeBuffer, storePart, upload, uploadStatus, UPLOAD_ID_RE, UPLOAD_TTL_MS,
   cleanName, contentDisposition, row, info, parseRange, readRange, send, mayRead, failure,
   claim, remove, removeAll, handOver, url, resolveToken, cleanup, backupEnabled, setBackupEnabled, exportPlugin, importPlugin, sealedSize,
-  expectedDigest, pluginDir,
+  expectedDigest, pluginDir, forget,
   // the sealed format for mediaAreas.js (remote copies, range reads from a storage target)
   _sealed: { CHUNK, TAG_LEN, HEADER_LEN, MAGIC_LEN: MAGIC.length },
-  _unwrapKey: unwrapKey, _wrapKey: wrapKey, _openChunk: openChunk,
+  _unwrapKey: unwrapKey, _wrapKey: wrapKey, _openChunk: openChunk, _sealInto: sealInto,
   _accessMs: null,
 };

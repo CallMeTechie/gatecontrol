@@ -23,6 +23,7 @@ module.exports = (ctx) => {
       await waitIdle(page);
       step('storage: the page renders with "add"', await visible(page, '#pgx-stg-add'));
       step('storage: empty list says so', await visible(page, '#pgx-stg-empty'));
+      step('storage: the cache card shows the size of the media cache', await visible(page, '#pgx-stg-cache'));
       step('storage: the side navigation marks "Speicher"', (await page.$('a.pgx-sl[data-tab="storage"][aria-current="page"]')) !== null);
       await shot(page, 'storage-empty');
 
