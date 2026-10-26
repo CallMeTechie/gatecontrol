@@ -7007,6 +7007,7 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .pgx-stg-err{margin:4px 0 0; color:var(--pg-crit); font-size:13px}
 .pgx-stg-about{margin:0; padding-left:18px; display:flex; flex-direction:column; gap:6px; font-size:14px}
 .pgx-stg-head{margin:0 0 18px}
+.pgx-stg-pem{height:auto; min-height:96px; padding:10px 14px; font:500 12.5px/1.45 var(--font-mono); resize:vertical}
 .pgx-stg-form{display:flex; flex-direction:column; gap:14px}
 .pgx-stg-f{display:flex; flex-direction:column; gap:6px}
 .pgx-stg-f[hidden]{display:none}

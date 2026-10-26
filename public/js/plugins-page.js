@@ -2214,6 +2214,16 @@
       inputs[name] = s;
       return s;
     }
+    /** The target's own certificate or CA (PEM) — for a NAS with a self-signed certificate. */
+    function caField() {
+      const ta = el('textarea', { class: 'pgx-fld-in pgx-stg-pem', id: 'pgx-stg-tlsCa', name: 'tlsCa', rows: 4, spellcheck: 'false', maxLength: 65536,
+        placeholder: '-----BEGIN CERTIFICATE-----' });
+      ta.value = cfg.tlsCa || '';
+      inputs.tlsCa = ta;
+      const info = existing && existing.tlsCaInfo && existing.tlsCaInfo.length
+        ? existing.tlsCaInfo.map((c) => c.subject + ' · SHA-256 ' + c.fingerprint.slice(0, 16) + '…').join(' / ') : null;
+      return field('tlsCa', t('plugins.stg.f_ca'), ta, info ? t('plugins.stg.f_ca_set', { info }) : t('plugins.stg.f_ca_h'));
+    }
     function secretInput(name) {
       return input(name, { type: 'password', max: 512, placeholder: secretSet[name] ? t('plugins.stg.secret_kept') : '' });
     }
@@ -2255,7 +2265,7 @@
         form.appendChild(field('url', t('plugins.stg.f_url'), input('url', { value: cfg.url, placeholder: 'https://nas.example.de:5006/GateControl' }), t('plugins.stg.f_url_h')));
         form.appendChild(field('username', t('plugins.stg.f_user'), input('username', { value: cfg.username, max: 120 })));
         form.appendChild(field('password', t('plugins.stg.f_password'), secretInput('password')));
-        form.appendChild(field('tlsFingerprint', t('plugins.stg.f_fp'), input('tlsFingerprint', { value: cfg.tlsFingerprint, max: 100 }), t('plugins.stg.f_fp_h')));
+        form.appendChild(caField());
       } else {
         form.appendChild(field('endpoint', t('plugins.stg.f_endpoint'), input('endpoint', { value: cfg.endpoint, placeholder: 'https://fsn1.your-objectstorage.com' })));
         form.appendChild(field('region', t('plugins.stg.f_region'), input('region', { value: cfg.region, placeholder: 'us-east-1', max: 40 })));
@@ -2267,7 +2277,7 @@
         ps.checked = cfg.pathStyle !== false;
         inputs.pathStyle = ps;
         form.appendChild(el('label', { class: 'pgx-check-line', 'data-field': 'pathStyle' }, [ps, t('plugins.stg.f_pathstyle')]));
-        form.appendChild(field('tlsFingerprint', t('plugins.stg.f_fp'), input('tlsFingerprint', { value: cfg.tlsFingerprint, max: 100 }), t('plugins.stg.f_fp_h')));
+        form.appendChild(caField());
         form.appendChild(el('p', { class: 'pgx-note', text: t('plugins.stg.s3_note') }));
       }
       const first = form.querySelector('input,select');
@@ -2290,7 +2300,7 @@
       form.querySelectorAll('[data-invalid]').forEach((n) => n.removeAttribute('data-invalid'));
       if (r.field) {
         const f = form.querySelector('[data-field="' + r.field + '"]');
-        if (f) { f.setAttribute('data-invalid', '1'); const i = f.querySelector('input,select'); if (i) i.focus(); }
+        if (f) { f.setAttribute('data-invalid', '1'); const i = f.querySelector('input,select,textarea'); if (i) i.focus(); }
       }
       err.textContent = r.error || t('plugins.err.generic');
       err.hidden = false;

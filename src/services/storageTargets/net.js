@@ -2,8 +2,11 @@
 
 // Network helpers of the storage targets (docs/storage-targets.md): every
 // connection goes to an address checked once and pinned (no second DNS
-// answer between check and connect), optionally to a TLS certificate pinned
-// by its SHA-256 fingerprint (a NAS with a self-signed certificate).
+// answer between check and connect). TLS is always verified; a target may
+// bring its own trust anchor (`tlsCa`, PEM): the NAS's self-signed
+// certificate or a private CA. Then only that anchor is trusted, and a
+// server presenting exactly a pinned certificate needs no matching host name
+// (a NAS reached by its IP with a certificate for "synology").
 //
 // Allowed: public, private, carrier-grade NAT and loopback addresses — an
 // administrator sets these targets up, a MinIO next to GateControl is fine.
@@ -14,6 +17,7 @@
 const http = require('node:http');
 const https = require('node:https');
 const tls = require('node:tls');
+const crypto = require('node:crypto');
 const netPolicy = require('../plugins/netPolicy');
 
 const ALLOWED_RANGES = new Set(['unicast', 'private', 'loopback', 'carrierGradeNat', 'uniqueLocal']);
@@ -58,33 +62,37 @@ async function resolve(host, port) {
   return { address: first.toString(), family: first.kind() === 'ipv6' ? 6 : 4 };
 }
 
-/** "AB:CD:…", "abcd…" → lower-case hex without separators, or null. */
-function normFingerprint(v) {
-  if (v == null || v === '') return null;
-  const s = String(v).replace(/[\s:]/g, '').toLowerCase();
-  return /^[0-9a-f]{64}$/.test(s) ? s : undefined;
+/**
+ * The certificates of a PEM text → [{ pem, fingerprint (SHA-256 hex), subject, validTo }].
+ * Throws NetError invalid_ca for anything that is not one or more certificates.
+ */
+function parseCa(text) {
+  const blocks = String(text || '').match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || [];
+  if (!blocks.length || blocks.length > 10) throw new NetError('invalid_ca', 'no certificate');
+  return blocks.map((pem) => {
+    let c;
+    try { c = new crypto.X509Certificate(pem); } catch { throw new NetError('invalid_ca', 'not a certificate'); }
+    return { pem, fingerprint: c.fingerprint256.replace(/:/g, '').toLowerCase(), subject: c.subject.replace(/\n/g, ', '), validTo: c.validTo };
+  });
 }
 
-/** A TLS connection whose certificate must have `fingerprint` (SHA-256), chain not checked. */
-function pinnedTls({ address, port, servername, fingerprint }) {
-  return new Promise((resolveP, reject) => {
-    const sock = tls.connect({ host: address, port, servername: netPolicy.isIpLiteral(servername) ? undefined : servername, rejectUnauthorized: false });
-    sock.setTimeout(IDLE_MS, () => sock.destroy(new NetError('timeout', 'no answer')));
-    sock.once('error', reject);
-    sock.once('secureConnect', () => {
-      const cert = sock.getPeerCertificate();
-      const got = cert && cert.fingerprint256 ? cert.fingerprint256.replace(/:/g, '').toLowerCase() : '';
-      if (got !== fingerprint) { sock.destroy(); reject(new NetError('tls_fingerprint', 'the server certificate does not match the fingerprint')); return; }
-      sock.removeListener('error', reject);
-      resolveP(sock);
-    });
-  });
+/** TLS options for a target's own trust anchor: only it is trusted; a pinned leaf needs no matching name. */
+function caOptions(tlsCa) {
+  const certs = parseCa(tlsCa);
+  const pinned = new Set(certs.map((c) => c.fingerprint));
+  return {
+    ca: certs.map((c) => c.pem),
+    checkServerIdentity(host, cert) {
+      const fp = cert && cert.fingerprint256 ? cert.fingerprint256.replace(/:/g, '').toLowerCase() : '';
+      return pinned.has(fp) ? undefined : tls.checkServerIdentity(host, cert);
+    },
+  };
 }
 
 /**
  * One HTTP(S) request to a checked, pinned address.
  * opts: { method, url (string|URL), headers, body (Buffer | Readable | null),
- *         fingerprint (normalised SHA-256 hex or null), idleMs }
+ *         tlsCa (PEM of the target's own trust anchor, or null), idleMs }
  * → { status, headers, stream } — the caller reads or drains `stream`.
  */
 async function request(opts) {
@@ -101,12 +109,8 @@ async function request(opts) {
     headers: Object.assign({ host: u.host }, headers), agent: false,
   };
   if (isHttps) {
-    if (opts.fingerprint) {
-      const sock = await pinnedTls({ address, port, servername: host, fingerprint: opts.fingerprint });
-      ro.createConnection = () => sock;
-    } else {
-      ro.servername = netPolicy.isIpLiteral(host) ? undefined : host;
-    }
+    ro.servername = netPolicy.isIpLiteral(host) ? undefined : host;
+    if (opts.tlsCa) Object.assign(ro, caOptions(opts.tlsCa));
   }
   const lib = isHttps ? https : http;
   return new Promise((resolveP, reject) => {
@@ -115,7 +119,8 @@ async function request(opts) {
       resolveP({ status: res.statusCode, headers: res.headers, stream: res });
     });
     rq.setTimeout(opts.idleMs || IDLE_MS, () => rq.destroy(new NetError('timeout', 'no answer')));
-    rq.on('error', (e) => reject(e instanceof NetError ? e : new NetError('net', e.message)));
+    // keep the system's code (ECONNREFUSED, CERT_HAS_EXPIRED …): errors.js maps it
+    rq.on('error', (e) => reject(e instanceof NetError ? e : new NetError((e && e.code) || 'net', e.message)));
     const body = opts.body;
     if (body == null) rq.end();
     else if (Buffer.isBuffer(body) || typeof body === 'string') rq.end(body);
@@ -144,6 +149,6 @@ async function drain(stream) {
 }
 
 module.exports = {
-  NetError, addressAllowed, resolve, normFingerprint, request, readBody, drain,
+  NetError, addressAllowed, resolve, parseCa, request, readBody, drain,
   _setLookupForTest: (fn) => { lookupImpl = fn; },
 };

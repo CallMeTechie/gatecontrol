@@ -7,7 +7,7 @@
 // it). Objects above PART_SIZE go up as a multipart upload (64 MiB parts,
 // at most 10 000 parts — 640 GiB), aborted when a part fails.
 //
-// config: { endpoint: 'https://…', region, bucket, prefix, pathStyle }
+// config: { endpoint: 'https://…', region, bucket, prefix, pathStyle, accessKeyId, tlsCa }
 // secret: { accessKeyId, secretAccessKey }
 
 const crypto = require('node:crypto');
@@ -82,7 +82,7 @@ function create(cfg, secret) {
   const endpoint = new URL(cfg.endpoint);
   const region = cfg.region || 'us-east-1';
   const prefix = cfg.prefix ? cfg.prefix.replace(/^\/+|\/+$/g, '') + '/' : '';
-  const fingerprint = net.normFingerprint(cfg.tlsFingerprint) || null;
+  const tlsCa = cfg.tlsCa || null;
   const basePath = endpoint.pathname.replace(/\/+$/, '');
 
   /** URL host and path of an object (`key` null: the bucket itself). */
@@ -98,7 +98,7 @@ function create(cfg, secret) {
     const qs = Object.keys(query).sort().map((k) => `${uriEncode(k)}=${uriEncode(query[k])}`).join('&');
     const url = new URL(`${endpoint.protocol}//${w.host}${uriEncode(w.path, true)}${qs ? '?' + qs : ''}`);
     try {
-      return await net.request({ method, url, headers: signed, body, fingerprint, idleMs });
+      return await net.request({ method, url, headers: signed, body, tlsCa, idleMs });
     } catch (e) { throw StorageError.from(e); }
   }
 

@@ -26,6 +26,14 @@ after(() => {
 });
 
 function db() { return require('../src/db/connection').getDb(); }
+
+/** A self-signed certificate (openssl) → { key, cert } PEM. */
+function selfSigned(cn) {
+  const dir = fs.mkdtempSync(path.join(tmp, 'cert-'));
+  require('node:child_process').execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', path.join(dir, 'k.pem'),
+    '-out', path.join(dir, 'c.pem'), '-days', '2', '-subj', '/CN=' + cn], { stdio: 'ignore' });
+  return { key: fs.readFileSync(path.join(dir, 'k.pem'), 'utf8'), cert: fs.readFileSync(path.join(dir, 'c.pem'), 'utf8') };
+}
 const api = (method, p) => agent[method](p).set('X-CSRF-Token', csrf);
 const targets = () => require('../src/services/storageTargets');
 
@@ -143,7 +151,8 @@ describe('secrets and validation', () => {
       [{ kind: 'smb', label: 'x', via: { kind: 'peer', peerId: 999 }, share: 'home' }, 'via'],
       [{ kind: 'webdav', label: 'x', url: 'ftp://nas/dav' }, 'url'],
       [{ kind: 'webdav', label: 'x', url: 'https://user:pw@nas/dav' }, 'url'],
-      [{ kind: 'webdav', label: 'x', url: 'https://nas/dav', tlsFingerprint: 'abc' }, 'tlsFingerprint'],
+      [{ kind: 'webdav', label: 'x', url: 'https://nas/dav', tlsCa: 'abc' }, 'tlsCa'],
+      [{ kind: 'webdav', label: 'x', url: 'https://nas/dav', tlsCa: '-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----' }, 'tlsCa'],
       [{ kind: 's3', label: 'x', endpoint: 'https://s3', bucket: 'UPPER', accessKeyId: 'AKID', secretAccessKey: 's' }, 'bucket'],
     ];
     for (const [body, field] of cases) {
@@ -153,11 +162,32 @@ describe('secrets and validation', () => {
     }
   });
 
-  it('a WebDAV fingerprint is stored normalised', async () => {
-    const fp = 'AB:'.repeat(31) + 'AB';
-    const r = await api('post', '/api/v1/storage-targets').send({ kind: 'webdav', label: 'NC', url: 'https://cloud.example.com/remote.php/dav/files/gc/', username: 'gc', password: 'pw', tlsFingerprint: fp }).expect(201);
-    assert.equal(r.body.target.config.tlsFingerprint, 'ab'.repeat(32));
+  it('the own certificate of a target (PEM) is stored and shown with subject and fingerprint', async () => {
+    const pem = selfSigned('synology').cert;
+    const r = await api('post', '/api/v1/storage-targets').send({ kind: 'webdav', label: 'NC', url: 'https://cloud.example.com/remote.php/dav/files/gc/', username: 'gc', password: 'pw', tlsCa: 'text before\n' + pem }).expect(201);
+    assert.match(r.body.target.config.tlsCa, /^-----BEGIN CERTIFICATE-----/);
+    assert.equal(r.body.target.tlsCaInfo.length, 1);
+    assert.match(r.body.target.tlsCaInfo[0].subject, /synology/);
+    assert.match(r.body.target.tlsCaInfo[0].fingerprint, /^[0-9a-f]{64}$/);
     await api('delete', `/api/v1/storage-targets/${r.body.target.id}`).expect(200);
+  });
+
+  it('TLS is always verified: a self-signed server works only with its certificate stored', async () => {
+    const https = require('node:https');
+    const net = require('../src/services/storageTargets/net');
+    const { StorageError } = require('../src/services/storageTargets/errors');
+    const own = selfSigned('synology');
+    const other = selfSigned('other');
+    const srv = https.createServer({ key: own.key, cert: own.cert }, (q, res) => res.end('ok'));
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const url = `https://127.0.0.1:${srv.address().port}/`;
+    try {
+      await assert.rejects(net.request({ url }), (e) => StorageError.from(e).code === 'tls');
+      const ok = await net.request({ url, tlsCa: own.cert });
+      assert.equal(ok.status, 200);
+      assert.equal((await net.readBody(ok.stream)).toString(), 'ok');
+      await assert.rejects(net.request({ url, tlsCa: other.cert }), (e) => StorageError.from(e).code === 'tls');
+    } finally { srv.close(); }
   });
 
   it('checks unsaved settings without storing anything', async () => {

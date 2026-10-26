@@ -6,7 +6,7 @@
 // folders of a key are created with MKCOL on the way, Range for reads,
 // MOVE for renames, the free space from RFC 4331 quota properties.
 //
-// config: { url: 'https://nas:5006/drive', username, tlsFingerprint }
+// config: { url: 'https://nas:5006/drive', username, tlsCa }
 // secret: { password }
 
 const net = require('../net');
@@ -15,7 +15,7 @@ const { slice } = require('../streams');
 
 function create(cfg, secret) {
   const base = new URL(cfg.url.endsWith('/') ? cfg.url : cfg.url + '/');
-  const fingerprint = net.normFingerprint(cfg.tlsFingerprint) || null;
+  const tlsCa = cfg.tlsCa || null;
   const auth = cfg.username ? 'Basic ' + Buffer.from(`${cfg.username}:${secret.password || ''}`, 'utf8').toString('base64') : null;
   const known = new Set(); // collections created / seen in this process
 
@@ -27,7 +27,7 @@ function create(cfg, secret) {
   async function call(method, url, { headers = {}, body = null, idleMs } = {}) {
     const h = Object.assign({}, headers);
     if (auth) h.authorization = auth;
-    try { return await net.request({ method, url, headers: h, body, fingerprint, idleMs }); } catch (e) { throw StorageError.from(e); }
+    try { return await net.request({ method, url, headers: h, body, tlsCa, idleMs }); } catch (e) { throw StorageError.from(e); }
   }
 
   function failure(status, what) {

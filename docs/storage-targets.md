@@ -17,13 +17,16 @@ Code: `src/services/storageTargets/` (service, `net.js`, `drivers/*.js`),
 |---|---|---|---|---|
 | Folder of this server | `local` | `path` (absolute) | – | another disk or a mounted volume. Never `/` or a system folder (`/etc`, `/usr`, `/proc`, `/root`, `/app` …); inside GateControl's data folder only below `<data>/storage/`. |
 | NAS over SMB | `smb` | `via` (`{ kind: 'host', host, port }`, `{ kind: 'peer', peerId, port }` or `{ kind: 'route', routeId }` — an **L4** route), `share`, `folder`, `username`, `domain` | `password` | through the image's `smbclient` (SMB 2 or newer). |
-| NAS over WebDAV | `webdav` | `url` (http/https, no user info), `username`, `tlsFingerprint` | `password` | Basic authentication; use https. |
-| S3-compatible | `s3` | `endpoint`, `region` (default `us-east-1`), `bucket`, `prefix`, `pathStyle` (default true), `accessKeyId`, `tlsFingerprint` | `secretAccessKey` | AWS, Hetzner, Wasabi, Backblaze B2, MinIO, Synology C2. |
+| NAS over WebDAV | `webdav` | `url` (http/https, no user info), `username`, `tlsCa` | `password` | Basic authentication; use https. |
+| S3-compatible | `s3` | `endpoint`, `region` (default `us-east-1`), `bucket`, `prefix`, `pathStyle` (default true), `accessKeyId`, `tlsCa` | `secretAccessKey` | AWS, Hetzner, Wasabi, Backblaze B2, MinIO, Synology C2. |
 
-`tlsFingerprint`: the SHA-256 fingerprint of the server's certificate (64 hex
-characters, colons allowed) — for a NAS with a self-signed certificate. With
-it, exactly that certificate is accepted and the chain is not checked;
-without it, the certificate must be valid as usual.
+`tlsCa`: the target's own trust anchor in PEM (one or more certificates,
+≤ 64 KiB) — the NAS's self-signed certificate or a private company CA. TLS is
+**always** verified: with `tlsCa`, only these certificates are trusted (not
+the system's CAs); a server presenting exactly one of them needs no matching
+host name (a NAS reached by its IP with a certificate for "synology"),
+anything signed by them is checked against the host name as usual. The admin
+API answers `tlsCaInfo: [{ subject, fingerprint, validTo }]`.
 
 ## Driver interface
 
@@ -43,7 +46,7 @@ d.ranges                                   // false for SMB: a range read fetche
 ```
 
 Errors are `StorageError`s (`errors.js`) with `code`: `not_found`, `auth`,
-`denied`, `unreachable`, `tls_fingerprint`, `blocked_address`, `full`,
+`denied`, `unreachable`, `tls` (certificate not trusted), `blocked_address`, `full`,
 `length_mismatch`, `protocol`, `failed`.
 
 * **S3**: requests signed with AWS Signature V4 (header auth), bodies streamed
@@ -110,7 +113,7 @@ POST   /api/v1/storage-targets/:id/check    → { check, target }
 ```
 
 A view: `{ id, kind, label, config, secretSet: { <field>: boolean }, needsSecret,
-display, encrypted, ranges, check: { at, ok, error, free, total } | null, usedBy:
+display, tlsCaInfo, encrypted, ranges, check: { at, ok, error, free, total } | null, usedBy:
 [{ kind, plugin, area, label }], createdAt, updatedAt }` — never a secret.
 `check`: `{ ok, error, message, free, total, steps: [{ step, ok }] }`.
 

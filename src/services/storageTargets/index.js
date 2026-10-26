@@ -22,12 +22,6 @@ const { StorageError } = require('./errors');
 const net = require('./net');
 
 const KINDS = ['local', 'smb', 'webdav', 's3'];
-const DRIVERS = {
-  local: () => require('./drivers/local'),
-  smb: () => require('./drivers/smb'),
-  webdav: () => require('./drivers/webdav'),
-  s3: () => require('./drivers/s3'),
-};
 const SECRET_FIELDS = { local: [], smb: ['password'], webdav: ['password'], s3: ['secretAccessKey'] };
 const LABEL_MAX = 60;
 const MAX_TARGETS = 50;
@@ -82,10 +76,12 @@ function port(v, dflt) {
   return n;
 }
 
-function fingerprint(v) {
-  const f = net.normFingerprint(v);
-  if (f === undefined) throw invalid('tlsFingerprint');
-  return f;
+/** A target's own trust anchor (PEM, one or more certificates) or null. */
+function tlsCa(v) {
+  const text = str(v);
+  if (!text) return null;
+  if (text.length > 64 * 1024) throw invalid('tlsCa');
+  try { return net.parseCa(text).map((c) => c.pem).join('\n'); } catch { throw invalid('tlsCa'); }
 }
 
 /** SMB: where to connect — host (+ port), a VPN peer or an L4 route. */
@@ -130,7 +126,7 @@ function normalise(kind, input, prev = null) {
   } else if (kind === 'webdav') {
     const u = httpUrl(i.url, 'url');
     if (!USER_RE.test(str(i.username)) || str(i.username).includes(':')) throw invalid('username');
-    config = { url: u.href, username: str(i.username), tlsFingerprint: fingerprint(i.tlsFingerprint) };
+    config = { url: u.href, username: str(i.username), tlsCa: tlsCa(i.tlsCa) };
   } else {
     const u = httpUrl(i.endpoint, 'endpoint');
     const bucket = str(i.bucket);
@@ -140,7 +136,7 @@ function normalise(kind, input, prev = null) {
     const keyId = str(i.accessKeyId);
     if (!/^[A-Za-z0-9+/=_-]{3,128}$/.test(keyId)) throw invalid('accessKeyId');
     config = { endpoint: u.origin + u.pathname.replace(/\/+$/, ''), region, bucket, prefix: folderPath(i.prefix, 'prefix'),
-      pathStyle: i.pathStyle !== false, accessKeyId: keyId, tlsFingerprint: fingerprint(i.tlsFingerprint) };
+      pathStyle: i.pathStyle !== false, accessKeyId: keyId, tlsCa: tlsCa(i.tlsCa) };
   }
   const secret = Object.assign({}, prev || {});
   for (const f of SECRET_FIELDS[kind]) {
@@ -203,6 +199,12 @@ function usedBy(id) {
   return out;
 }
 
+/** The certificates of a target's own trust anchor, for the page. */
+function caInfo(pem) {
+  if (!pem) return null;
+  try { return net.parseCa(pem).map((c) => ({ subject: c.subject, fingerprint: c.fingerprint, validTo: c.validTo })); } catch { return null; }
+}
+
 /** What the admin API answers for a row — never a secret. */
 function view(row) {
   const cfg = configOf(row);
@@ -214,6 +216,7 @@ function view(row) {
     id: row.id, kind: row.kind, label: row.label, config: pub, secretSet,
     needsSecret: !!row.secret_enc && !Object.keys(sec).length,
     display: display(row.kind, cfg),
+    tlsCaInfo: caInfo(cfg.tlsCa),
     encrypted: row.kind === 's3',
     ranges: row.kind !== 'smb',
     check: row.checked_at ? { at: row.checked_at, ok: row.check_ok === 1, error: row.check_error || null,
@@ -294,6 +297,16 @@ function smbDial(v) {
   return { host: r.target_ip, port: Number(r.target_port) };
 }
 
+function driverModule(kind) {
+  switch (kind) {
+    case 'local': return require('./drivers/local');
+    case 'smb': return require('./drivers/smb');
+    case 'webdav': return require('./drivers/webdav');
+    case 's3': return require('./drivers/s3');
+    default: throw new StorageError('invalid', 'unknown kind', { field: 'kind' });
+  }
+}
+
 /** A driver for a stored row or for a { kind, config, secret } not saved yet. */
 async function driverOf(t) {
   const kind = t.kind;
@@ -306,7 +319,7 @@ async function driverOf(t) {
     if (!d.host || !d.port) throw new StorageError('unreachable', 'no address');
     try { c.dial = { address: (await net.resolve(d.host, d.port)).address, port: d.port }; } catch (e) { throw StorageError.from(e); }
   }
-  return DRIVERS[kind]().create(c, sec);
+  return driverModule(kind).create(c, sec);
 }
 
 /** The driver of target `id` (throws not_found). */
