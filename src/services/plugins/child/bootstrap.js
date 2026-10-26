@@ -358,13 +358,18 @@ function makeGc(info) {
     /**
      * permissions.publicLinks (since 1.193.0, only while an administrator allows them):
      * create({ title, note, files: [{ mediaId, name }], expiresAt, maxDownloads, pin, ownerUserId }) → { token, url, expiresAt };
-     * list({ ownerUserId }) → [link]; get(token) → link | null; revoke(token) → boolean
+     * list({ ownerUserId }) → [link]; get(token) → link | null; revoke(token) → boolean.
+     * Since 1.206.0 create also takes kind ('files' | 'folder' | 'upload'), mode ('view' | 'download'),
+     * area + path (folder / upload), expiresAt null (when allowed), maxFiles / maxBytes / types (upload);
+     * events(token, { limit, before }) → the log; uploads(token) → the files that came in
      */
     publicLinks: Object.freeze({
       create: (opts) => hostCall('publicLinks.create', opts && typeof opts === 'object' ? opts : {}),
       list: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('publicLinks.list', { ownerUserId: o.ownerUserId }); },
       get: (token) => hostCall('publicLinks.get', { token }),
       revoke: (token) => hostCall('publicLinks.revoke', { token }),
+      events: (token, opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('publicLinks.events', { token, limit: o.limit, before: o.before }); },
+      uploads: (token) => hostCall('publicLinks.uploads', { token }),
     }),
     /** permissions.devices (since 1.193.0): list({ userId }) → [{ id, name, platform, clientType, appVersion, online, lastSeen, via }] */
     devices: Object.freeze({

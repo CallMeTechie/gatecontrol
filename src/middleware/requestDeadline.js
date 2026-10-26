@@ -17,10 +17,12 @@ const BODY_DEADLINE_MS = 5 * 60 * 1000;
 const UPLOAD_DEADLINE_MS = 2 * 3600 * 1000;
 const UPLOAD_IDLE_MS = 5 * 60 * 1000;
 const UPLOAD_PATH_RE = /^\/api\/v1\/(?:client\/|portal\/)?plugins\/[^/]+\/media$/;
+// files into an upload link (routes/publicLinks.js, since 1.206.0)
+const LINK_UPLOAD_RE = /^\/s\/[A-Za-z0-9_-]{22,64}\/u$/;
 
 /** Is this request a media upload (the route with the long deadline)? */
 function isMediaUpload(req) {
-  return req.method === 'PUT' && UPLOAD_PATH_RE.test(req.path);
+  return req.method === 'PUT' && (UPLOAD_PATH_RE.test(req.path) || LINK_UPLOAD_RE.test(req.path));
 }
 
 function requestDeadline(req, res, next) {

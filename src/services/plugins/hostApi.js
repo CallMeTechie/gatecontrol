@@ -1128,6 +1128,9 @@ async function publicLinksCall(plugin, op, args) {
       case 'list': return links.list(plugin, args);
       case 'get': return links.get(plugin, args);
       case 'revoke': return links.revoke(plugin, args);
+      // since 1.206.0: the log and the files that came in through an upload link
+      case 'events': return links.events(plugin, args);
+      case 'uploads': return links.uploads(plugin, args);
       default: throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
     }
   } catch (e) {
@@ -1640,6 +1643,8 @@ async function handle(plugin, api, args, ctx) {
     case 'publicLinks.list': return publicLinksCall(plugin, 'list', args);
     case 'publicLinks.get': return publicLinksCall(plugin, 'get', args);
     case 'publicLinks.revoke': return publicLinksCall(plugin, 'revoke', args);
+    case 'publicLinks.events': return publicLinksCall(plugin, 'events', args);
+    case 'publicLinks.uploads': return publicLinksCall(plugin, 'uploads', args);
     case 'devices.list': return devicesList(plugin, args);
     // person groups (permissions.groups, groups.js): read; ensure / remove need "manage"
     case 'groups.list': return require('./groups').call(plugin, 'list', args);

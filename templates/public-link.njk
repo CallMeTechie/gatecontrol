@@ -1,5 +1,5 @@
-{#- Public download link of a plugin (routes/publicLinks.js, docs/plugins.md "Public links").
-    No login, no scripts (CSP without script-src); the look of the route-auth login (app.css au-*). -#}
+{#- Public link of a plugin (routes/publicLinks.js, docs/plugins.md "Public links").
+    No login; scripts only on the upload page (its own file from this server). The look of the route-auth login (app.css au-*). -#}
 <!DOCTYPE html>
 <html lang="{{ lang }}" data-theme="dark">
 <head>
@@ -19,13 +19,41 @@
     .pl-file-t b { display: block; font-weight: 600; font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
     .pl-file-t small { color: var(--muted); font-size: 12.5px; }
     .pl-file .btn { flex: 0 0 auto; padding: 7px 12px; font-size: 13px; text-decoration: none; }
+    .pl-acts { display: flex; gap: 6px; flex: 0 0 auto; }
     .pl-zip { display: block; margin-top: 16px; text-align: center; text-decoration: none; }
     .pl-foot { margin-top: 18px; text-align: center; font-size: 12px; color: var(--muted); }
     .pl-pin { letter-spacing: .3em; text-align: center; font-size: 20px; }
+    .pl-wide { max-width: 920px; }
+    .pl-h { margin: 22px 0 0; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    .pl-crumbs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 14px 0 0; font-size: 14px; }
+    .pl-crumbs a { color: var(--accent, #2dd4bf); text-decoration: none; }
+    .pl-crumbs span { color: var(--muted); }
+    .pl-folder { text-decoration: none; }
+    .pl-folder .pl-ic { width: 22px; height: 22px; flex: 0 0 auto; color: var(--accent, #2dd4bf); }
+    .pl-gallery { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .pl-tile { position: relative; margin: 0; border-radius: 10px; overflow: hidden; border: 1px solid var(--border, rgba(127,127,127,.25)); background: rgba(127,127,127,.08); }
+    .pl-tile a.pl-tile-img { display: block; aspect-ratio: 1 / 1; }
+    .pl-tile img, .pl-tile video { display: block; width: 100%; height: 100%; object-fit: cover; aspect-ratio: 1 / 1; background: #000; }
+    .pl-tile figcaption { display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-size: 12px; color: var(--muted); }
+    .pl-tile figcaption span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pl-tile figcaption a { flex: 0 0 auto; color: var(--accent, #2dd4bf); text-decoration: none; font-weight: 600; }
+    .pl-badge { display: inline-block; margin-top: 10px; padding: 3px 9px; border-radius: 999px; font-size: 12px; background: rgba(127,127,127,.15); color: var(--muted); }
+    .pl-up { margin-top: 18px; display: grid; gap: 12px; }
+    .pl-drop { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 22px 14px; border: 2px dashed var(--border, rgba(127,127,127,.35)); border-radius: 12px; text-align: center; cursor: pointer; }
+    .pl-drop[data-over] { border-color: var(--accent, #2dd4bf); }
+    .pl-drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .pl-prog { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+    .pl-prog li { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; font-size: 13px; }
+    .pl-prog li span { overflow-wrap: anywhere; }
+    .pl-prog progress { grid-column: 1 / -1; width: 100%; height: 6px; }
+    .pl-prog [data-state="done"] small { color: var(--success, #22c55e); }
+    .pl-prog [data-state="error"] small { color: var(--danger, #ef4444); }
+    @media (max-width: 520px) { .pl-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   </style>
+  {% if kind == 'upload' %}<script src="/js/public-link-upload.js?v={{ appVersion }}" defer></script>{% endif %}
 </head>
 <body class="au-page">
-  <main class="au-wrap">
+  <main class="au-wrap{% if kind == 'folder' %} pl-wide{% endif %}">
     <div class="au-brand">
       <span class="mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
       <span class="nm">GateControl</span>
@@ -42,9 +70,10 @@
         {% if title %}<p class="pl-meta"><strong>{{ title }}</strong></p>{% endif %}
         <p class="au-info">{{ t('public_link.ended_' + kind + '_text') }}</p>
       {% else %}
-        <div class="page-eyebrow">{% if sender %}{{ t('public_link.shared_by') }} {{ sender }}{% else %}{{ t('public_link.eyebrow') }}{% endif %}</div>
+        <div class="page-eyebrow">{% if sender %}{{ t('public_link.shared_by') }} {{ sender }}{% elif kind == 'folder' %}{{ t('public_link.folder_eyebrow') }}{% elif kind == 'upload' %}{{ t('public_link.upload_eyebrow') }}{% else %}{{ t('public_link.eyebrow') }}{% endif %}</div>
         <h1 class="au-title">{{ title if title else t('public_link.untitled') }}</h1>
-        <p class="pl-meta">{{ t('public_link.expires') }} <strong>{{ expires }}</strong></p>
+        <p class="pl-meta">{% if expires %}{{ t('public_link.expires') }} <strong>{{ expires }}</strong>{% else %}{{ t('public_link.no_expiry') }}{% endif %}</p>
+        {% if viewOnly %}<span class="pl-badge">{{ t('public_link.view_only') }}</span>{% endif %}
 
         {% if kind == 'pin' %}
           <p class="au-info">{{ t('public_link.pin_intro') }}</p>
@@ -58,6 +87,85 @@
             </div>
             <button type="submit" class="btn btn-primary au-submit">{{ t('public_link.pin_submit') }}</button>
           </form>
+
+        {% elif kind == 'folder' %}
+          {% if note %}<p class="pl-note">{{ note }}</p>{% endif %}
+          <nav class="pl-crumbs" aria-label="{{ t('public_link.folders') }}">
+            {% for c in crumbs %}
+              {% if not loop.first %}<span aria-hidden="true">/</span>{% endif %}
+              {% if loop.last %}<strong>{{ c.name if c.name else t('public_link.folder_root') }}</strong>{% else %}<a href="{{ c.href }}">{{ c.name if c.name else t('public_link.folder_root') }}</a>{% endif %}
+            {% endfor %}
+          </nav>
+          {% if empty %}<p class="au-info">{{ t('public_link.folder_empty') }}</p>{% endif %}
+          {% if folders.length %}
+          <h2 class="pl-h">{{ t('public_link.folders') }}</h2>
+          <ul class="pl-files" id="pl-folders">
+            {% for d in folders %}
+            <li><a class="pl-file pl-folder" href="{{ d.href }}"><svg class="pl-ic" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span class="pl-file-t"><b>{{ d.name }}</b></span></a></li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if gallery.length %}
+          <h2 class="pl-h">{{ t('public_link.pictures') }}</h2>
+          <ul class="pl-gallery" id="pl-gallery">
+            {% for g in gallery %}
+            <li><figure class="pl-tile">
+              {% if g.video %}<video src="{{ g.view }}" preload="metadata" controls playsinline></video>
+              {% else %}<a class="pl-tile-img" href="{{ g.view }}"><img src="{{ g.view }}" alt="{{ g.name }}" loading="lazy" decoding="async"></a>{% endif %}
+              <figcaption><span title="{{ g.name }}">{{ g.name }}</span>{% if g.href %}<a href="{{ g.href }}" download aria-label="{{ t('public_link.download') }}: {{ g.name }}">↓</a>{% endif %}</figcaption>
+            </figure></li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if files.length %}
+          <h2 class="pl-h">{{ t('public_link.files') }}</h2>
+          <ul class="pl-files" id="pl-list">
+            {% for f in files %}
+            <li class="pl-file">
+              <span class="pl-file-t"><b>{{ f.name }}</b><small>{{ f.size }}</small></span>
+              <span class="pl-acts">
+                {% if f.view %}<a class="btn" href="{{ f.view }}">{{ t('public_link.view') }}</a>{% endif %}
+                {% if f.href %}<a class="btn btn-primary" href="{{ f.href }}" download>{{ t('public_link.download') }}</a>{% endif %}
+              </span>
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if more %}<p class="pl-meta">{{ t('public_link.folder_more') }}</p>{% endif %}
+          {% if zip %}<a class="btn btn-primary au-submit pl-zip" href="{{ zip }}" download>{{ t('public_link.folder_zip') }}</a>{% endif %}
+
+        {% elif kind == 'upload' %}
+          <p class="au-info">{% if sender %}{{ t('public_link.upload_intro', { sender: sender }) }}{% else %}{{ t('public_link.upload_intro_anon') }}{% endif %}</p>
+          {% if note %}<p class="pl-note">{{ note }}</p>{% endif %}
+          {% if full %}
+          <div class="login-error" role="alert">{{ t('public_link.upload_full') }}</div>
+          {% else %}
+          <p class="pl-meta">{{ t('public_link.upload_limits', { files: filesLeft, bytes: bytesLeft, per: perFile }) }}{% if types %}<br>{{ t('public_link.upload_types', { types: types }) }}{% endif %}</p>
+          <form class="pl-up" id="pl-up" data-token="{{ token }}" data-per-file="{{ perFileRaw }}" data-bytes-left="{{ bytesLeftRaw }}"
+            data-t-done="{{ t('public_link.upload_done') }}" data-t-failed="{{ t('public_link.upload_failed') }}"
+            data-t-type="{{ t('public_link.upload_err_type') }}" data-t-too-large="{{ t('public_link.upload_err_too_large') }}"
+            data-t-limit="{{ t('public_link.upload_err_limit') }}" data-t-full="{{ t('public_link.upload_err_full') }}" data-t-other="{{ t('public_link.upload_err_other') }}">
+            <div class="form-group">
+              <label class="form-label" for="pl-by">{{ t('public_link.upload_name') }}</label>
+              <input class="form-input" type="text" id="pl-by" name="by" maxlength="80" autocomplete="name">
+              <small class="pl-meta">{{ t('public_link.upload_name_hint') }}</small>
+            </div>
+            <label class="pl-drop" id="pl-drop" for="pl-input">
+              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" aria-hidden="true"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <strong>{{ t('public_link.upload_choose') }}</strong>
+              <input type="file" id="pl-input" multiple{% if accept %} accept="{{ accept }}"{% endif %}>
+            </label>
+            <ul class="pl-prog" id="pl-prog" aria-live="polite"></ul>
+            <noscript><p class="login-error">{{ t('public_link.upload_noscript') }}</p></noscript>
+          </form>
+          {% endif %}
+          {% if mine.length %}
+          <h2 class="pl-h">{{ t('public_link.upload_mine') }}</h2>
+          <ul class="pl-files" id="pl-mine">
+            {% for u in mine %}<li class="pl-file"><span class="pl-file-t"><b>{{ u.name }}</b><small>{{ u.size }}</small></span></li>{% endfor %}
+          </ul>
+          {% endif %}
+
         {% else %}
           {% if note %}<p class="pl-note">{{ note }}</p>{% endif %}
           <ul class="pl-files">
@@ -66,6 +174,8 @@
               <span class="pl-file-t"><b>{{ f.name }}</b><small>{{ f.size }}</small></span>
               {% if f.usedUp %}
               <small class="pl-meta">{{ t('public_link.used_up') }}</small>
+              {% elif viewOnly %}
+              {% if f.view %}<a class="btn btn-primary" href="{{ f.view }}">{{ t('public_link.view') }}</a>{% endif %}
               {% else %}
               <a class="btn btn-primary" href="{{ f.href }}" download>{{ t('public_link.download') }}</a>
               {% endif %}

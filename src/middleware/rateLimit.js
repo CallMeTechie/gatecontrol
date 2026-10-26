@@ -641,8 +641,36 @@ const publicLinkUnlockLimiter = rateLimit({
     res.status(429).type('text/plain').send('rate_limited');
   },
 });
+// /s/<token>/m/<id> — the pictures and videos of a folder link's gallery
+// (since 1.206.0): one page loads many of them at once.
+const publicLinkMediaLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 1500,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `public-link-media:${ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(429).type('text/plain').send('rate_limited');
+  },
+});
+// PUT /s/<token>/u — files into an upload link (since 1.206.0), per address
+// (each link also has its own limits for count and size).
+const publicLinkUploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `public-link-upload:${ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(429).json({ ok: false, code: 'rate_limited' });
+  },
+});
 module.exports.publicLinkLimiter = publicLinkLimiter;
 module.exports.publicLinkUnlockLimiter = publicLinkUnlockLimiter;
+module.exports.publicLinkMediaLimiter = publicLinkMediaLimiter;
+module.exports.publicLinkUploadLimiter = publicLinkUploadLimiter;
 
 // Sign-in in the apps (routes/api/client/signin.js, docs/groups.md
 // "Anmeldung in den Apps") — public, keyed by address. The answer is the one

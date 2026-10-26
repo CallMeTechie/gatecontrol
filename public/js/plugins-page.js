@@ -1448,6 +1448,19 @@
         el('span', { class: 'st-hint', text: t('plugins.pl.hint') })]),
       el('div', { class: 'st-row-ctl' }, [psw]),
     ]));
+    // since 1.206.0: links without an end date, only with this second switch (default off)
+    const usw = sw(L.unlimited, t('plugins.pl.unlimited'), async () => {
+      const on = usw.getAttribute('aria-checked') !== 'true';
+      const res = await req('PUT', API + '/' + enc(p.id) + '/public-links', { unlimited: on });
+      if (!res.ok) { toast(res.error, 'error'); return; }
+      usw.setAttribute('aria-checked', on ? 'true' : 'false');
+      toast(t(on ? 'plugins.pl.unlimited_on' : 'plugins.pl.unlimited_off'));
+    }, 'pg-public-links-unl');
+    box.appendChild(el('div', { class: 'st-row' }, [
+      el('div', { class: 'st-row-text' }, [el('label', { class: 'st-label', for: 'pg-public-links-unl', text: t('plugins.pl.unlimited') }),
+        el('span', { class: 'st-hint', text: t('plugins.pl.unlimited_hint') })]),
+      el('div', { class: 'st-row-ctl' }, [usw]),
+    ]));
     if (!L.publicUrl) box.appendChild(el('p', { class: 'pgx-muted', id: 'pg-public-links-nourl', text: t('plugins.pl.no_url') }));
     box.appendChild(el('p', { class: 'pgx-muted pgx-small', text: t('plugins.pl.active', { n: L.active }) }));
     panel.appendChild(box);

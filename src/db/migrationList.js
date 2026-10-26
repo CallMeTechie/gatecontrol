@@ -2842,6 +2842,60 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_plugin_media_changes ON plugin_media_changes(plugin, area, seq);`,
     detect: (db) => hasColumn(db, 'plugin_media', 'missing_since') && tableExists(db, 'plugin_media_changes'),
   },
+  {
+    version: 117,
+    name: 'plugin_public_links_v2',
+    // Links v2 (docs/plugins.md "Public links", publicLinks.js, since 1.206.0):
+    //   plugin_public_links  kind 'files' (as before) | 'folder' (the current
+    //                        content of area / root_path) | 'upload' (people
+    //                        put files into area / root_path); mode 'view'
+    //                        (no download) | 'download'; no_expiry (an
+    //                        administrator allowed links without an end —
+    //                        expires_at then far ahead); upload limits and
+    //                        counters; opens (page views).
+    //   plugin_public_link_events   the log: open, unlock, pin_failed,
+    //                        download, zip, upload, locked — IP shortened
+    //                        (/24, /48), the visitor's random id.
+    //   plugin_public_link_uploads  the files that came in through an
+    //                        upload link, with the name the uploader gave.
+    sql: `
+      ALTER TABLE plugin_public_links ADD COLUMN kind TEXT NOT NULL DEFAULT 'files';
+      ALTER TABLE plugin_public_links ADD COLUMN mode TEXT NOT NULL DEFAULT 'download';
+      ALTER TABLE plugin_public_links ADD COLUMN area TEXT;
+      ALTER TABLE plugin_public_links ADD COLUMN root_path TEXT;
+      ALTER TABLE plugin_public_links ADD COLUMN no_expiry INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE plugin_public_links ADD COLUMN upload_max_files INTEGER;
+      ALTER TABLE plugin_public_links ADD COLUMN upload_max_bytes INTEGER;
+      ALTER TABLE plugin_public_links ADD COLUMN upload_types TEXT;
+      ALTER TABLE plugin_public_links ADD COLUMN uploads INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE plugin_public_links ADD COLUMN upload_bytes INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE plugin_public_links ADD COLUMN opens INTEGER NOT NULL DEFAULT 0;
+      CREATE TABLE IF NOT EXISTS plugin_public_link_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token_hash TEXT NOT NULL REFERENCES plugin_public_links(token_hash) ON DELETE CASCADE,
+        at TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        ip TEXT,
+        visitor TEXT,
+        name TEXT,
+        media_id TEXT,
+        bytes INTEGER,
+        uploader TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_plugin_public_link_events ON plugin_public_link_events(token_hash, id);
+      CREATE TABLE IF NOT EXISTS plugin_public_link_uploads (
+        token_hash TEXT NOT NULL REFERENCES plugin_public_links(token_hash) ON DELETE CASCADE,
+        media_id TEXT NOT NULL,
+        name TEXT,
+        path TEXT,
+        uploader TEXT,
+        visitor TEXT,
+        bytes INTEGER,
+        at TEXT NOT NULL,
+        PRIMARY KEY (token_hash, media_id)
+      );`,
+    detect: (db) => hasColumn(db, 'plugin_public_links', 'opens') && tableExists(db, 'plugin_public_link_uploads'),
+  },
 ];
 
 module.exports = { migrations };

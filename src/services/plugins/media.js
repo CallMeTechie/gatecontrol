@@ -376,6 +376,23 @@ const UPLOAD_TTL_MS = 24 * 3600 * 1000;
 const CONTENT_RANGE_RE = /^bytes (\d{1,15})-(\d{1,15})\/(\d{1,15})$/;
 const busyUploads = new Set();
 
+/**
+ * A file people without an account put into an upload link (publicLinks.js,
+ * since 1.206.0): the request body, `length` bytes of type `mime`, owned by
+ * the link's owner. The plugin's size limit, quota and the room on this
+ * server are checked like for its own uploads. → { mediaId, mime, bytes }
+ * (unclaimed — the link claims it into its folder).
+ */
+async function storeFromLink(plugin, req, { mime, length, owner, name }) {
+  const decl = declOf(plugin);
+  if (!decl || decl.uploads === false) throw new MediaError('uploads_disabled', 403);
+  if (length > decl.maxBytes) throw new MediaError('too_large', 413);
+  if (usage(plugin.id).bytes + length > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
+  capacity(plugin, length);
+  return writeFile(plugin, { source: req, length, mime, owner, name, digest: expectedDigest(req),
+    incomplete: () => (req.aborted || req.destroyed ? 'aborted' : 'length_mismatch') });
+}
+
 function uploadsDir(pluginId) { return path.join(pluginDir(pluginId), '.uploads'); }
 
 /** Files of one upload: the sealed part file and its state (JSON). */
@@ -978,7 +995,7 @@ module.exports = {
   mediaRoot, fileOf, declOf, quotaOf, setQuota, usage, baseType, typeAllowed, store, storeBuffer, storePart, upload, uploadStatus, UPLOAD_ID_RE, UPLOAD_TTL_MS,
   cleanName, contentDisposition, row, info, parseRange, readRange, send, mayRead, failure,
   claim, remove, removeAll, handOver, url, resolveToken, cleanup, backupEnabled, setBackupEnabled, exportPlugin, importPlugin, sealedSize,
-  expectedDigest, pluginDir, forget,
+  expectedDigest, pluginDir, forget, storeFromLink, contentLength, INLINE_RE,
   // the sealed format for mediaAreas.js (remote copies, range reads from a storage target)
   _sealed: { CHUNK, TAG_LEN, HEADER_LEN, MAGIC_LEN: MAGIC.length },
   _unwrapKey: unwrapKey, _wrapKey: wrapKey, _openChunk: openChunk, _sealInto: sealInto,
