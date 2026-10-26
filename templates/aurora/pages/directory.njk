@@ -2,7 +2,9 @@
 
 {#- Benutzer › Verzeichnis (docs/groups.md "Verzeichnis-Abgleich und Anmeldung"):
     the connected directories (Active Directory, Entra ID, LDAP) as cards, the
-    selected one below with settings, options, group selection, the last runs,
+    selected one below with settings, options (interval, full-sync interval and
+    the next full sync), group selection, the last runs (kind: Änderungen /
+    Vollständig),
     a stopped mass change waiting for confirmation and e-mail conflicts.
     public/js/directory.js renders everything from /api/v1/directories; its
     strings come from the #dir-i18n island (routes/index.js

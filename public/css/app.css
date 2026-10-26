@@ -4683,7 +4683,9 @@ body.au-page { display: flex; flex-direction: column; align-items: center; justi
 .db-news{padding:8px 14px; border-radius:14px; background:var(--chip); border:1px solid var(--line)}
 .db-news-row{display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px}
 .db-news-badge{padding:2px 9px; border-radius:999px; font-size:11.5px; font-weight:700; color:var(--db-accent-ink); background:var(--teal-soft); border:1px solid var(--db-accent-bd); white-space:nowrap}
-.db-news-text{flex:1 1 300px; min-width:0; font-size:13.5px}
+.db-news-text{flex:1 1 300px; min-width:0; font-size:13.5px;
+  /* a preview of the first entry: two lines, the whole text sits behind „Alle Neuerungen“ */
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; overflow:hidden}
 .db-news-body{border-top:1px solid var(--line); padding-top:12px}
 
 /* header */
@@ -8656,6 +8658,8 @@ a.up-dev:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 .dir-conflict-text{display:flex; flex-direction:column; gap:2px; min-width:0; flex:1 1 260px; overflow-wrap:anywhere; font-size:13px}
 .dir-conflict .us-btnrow{margin-top:0}
 .dir-run-more{padding:2px 8px; margin-left:6px; font-size:12px; min-height:0}
+.dir-run-mode{font-size:11px; padding:1px 7px; vertical-align:1px}
+.dir-next-full{font-weight:600}
 .dir-run-h{margin:14px 0 6px; font-size:14px; font-weight:800}
 .dir-grid{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px}
 .dir-span-2{grid-column:span 2}

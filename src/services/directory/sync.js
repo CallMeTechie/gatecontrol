@@ -6,7 +6,7 @@
  *
  *   1. fetch   the adapter reads the selected groups with their (transitive)
  *              members. Directory unreachable / refused → the run fails and
- *              NOTHING changes.
+ *              NOTHING changes. Full or only the changes — see "Delta" below.
  *   2. plan    pure diff against the database:
  *              • desired = enabled members of at least one found selected group
  *              • a desired person with a link (directory_links, stable id) is
@@ -38,13 +38,31 @@
  * vanished group is archived (reselecting restores it). A name taken at that
  * level gets the suffix " (<directory name>)".
  *
+ * Delta (migration 112): a full run reads everything; the runs between two
+ * full syncs only fetch the changes (adapter.fetchDelta: Entra delta query,
+ * AD uSNChanged on the same domain controller, LDAP modifyTimestamp) and
+ * apply them to the snapshot of the last applied run (directory_sync_state).
+ * Plan, guard and apply always work on the complete result, exactly like a
+ * full run — the guard counts against all linked accounts, disabled accounts
+ * are disabled at once, administrators are never touched. A run is full
+ * when it is forced ("Vollständig abgleichen"), when there is no state yet,
+ * the settings or the selected groups changed (fingerprint), the adapter has
+ * no delta position (LDAP without modifyTimestamp), the last full sync is
+ * older than full_sync_hours (default 24 h — only full syncs see accounts
+ * deleted in AD / LDAP for sure), or when the adapter answers the delta with
+ * FULL_SYNC_REQUIRED (Graph 410 / resync, another domain controller, a
+ * changed group structure) — then the same run reads everything. The state
+ * is written only after a run was applied: a stopped (guard) or failed run
+ * keeps the old position, so the next run sees the same changes again.
+ *
  * API
- *   async run(directoryId, { trigger = 'manual', actor, confirmRunId }) → run
+ *   async run(directoryId, { trigger = 'manual', actor, confirmRunId, full }) → run
  *   confirm(directoryId, runId, { actor }) → async run with that confirmation
  *   discard(directoryId, runId, { actor }) → run
  *   listRuns(directoryId, { limit }) / getRun(directoryId, runId)
  *   async runDue(now) — scheduler tick: every enabled directory whose interval
- *       has passed (and at least every 24 h)
+ *       has passed (full or delta as above)
+ *   mergeDelta(snapshot, delta, selectedGroups) → data (pure; for tests)
  *   resolveConflict(directoryId, conflictId, 'merge' | 'separate', { actor, ip })
  *   listConflicts(directoryId, { status })
  *   isRunning(directoryId)
@@ -61,7 +79,8 @@ const logger = require('../../utils/logger');
 
 const GUARD_SHARE = 0.10;
 const GUARD_MIN = 3;
-const FULL_SYNC_MS = 24 * 60 * 60 * 1000;
+const FULL_SYNC_MS = 24 * 60 * 60 * 1000; // default of directories.full_sync_hours
+const PROFILE_FIELDS = ['loginName', 'upn', 'dn', 'email', 'displayName', 'enabled'];
 const STALE_RUN_MS = 60 * 60 * 1000;
 const KEEP_RUNS = 50;
 const running = new Set();
@@ -85,6 +104,135 @@ function linksOf(db, dirId) {
   return db.prepare(`SELECT l.*, u.username, u.display_name, u.email AS user_email, u.enabled, u.role,
       u.disabled_reason, u.self_service_enabled
     FROM directory_links l JOIN users u ON u.id = l.user_id WHERE l.directory_id = ?`).all(dirId);
+}
+
+// ─── delta ────────────────────────────────────────────────────────────────
+
+function profileOf(p) {
+  const out = { externalId: String(p.externalId) };
+  for (const k of PROFILE_FIELDS) out[k] = p[k] === undefined ? null : p[k];
+  if (out.enabled == null) out.enabled = true;
+  return out;
+}
+
+/** What a run keeps for the next delta: groups with members, member profiles. */
+function snapshotOf(data) {
+  return {
+    groups: ((data && data.groups) || []).map((g) => ({
+      externalId: String(g.externalId), name: g.name || '', dn: g.dn || null, found: !!g.found,
+      members: [...new Set((g.members || []).map(String))],
+    })),
+    users: ((data && data.users) || []).filter((p) => p && p.externalId).map(profileOf),
+  };
+}
+
+/**
+ * The snapshot of the last applied run plus the changes of a delta fetch →
+ * complete data like adapter.fetch returns it.
+ *   delta.users         changed / new profiles; only the fields present are
+ *                       taken over (Graph sends partial objects)
+ *   delta.removedUsers  deleted in the directory → out of every group
+ *   delta.groups        changed selected groups only: name / dn / found and
+ *                       either members (the complete new list) or add /
+ *                       remove (member ids); a group not listed is unchanged
+ * Members without a profile are dropped, profiles of people in no found
+ * group too (a full fetch only returns members).
+ */
+function mergeDelta(snapshot, delta, selected) {
+  const snap = snapshot || {};
+  const d = delta || {};
+  const profiles = new Map();
+  for (const p of snap.users || []) if (p && p.externalId) profiles.set(String(p.externalId), profileOf(p));
+  for (const u of d.users || []) {
+    if (!u || !u.externalId) continue;
+    const id = String(u.externalId);
+    const next = { ...(profiles.get(id) || profileOf({ externalId: id })) };
+    for (const k of PROFILE_FIELDS) if (u[k] !== undefined) next[k] = u[k];
+    profiles.set(id, next);
+  }
+  const removed = new Set((d.removedUsers || []).map(String));
+  for (const id of removed) profiles.delete(id);
+  const snapGroups = new Map((snap.groups || []).map((g) => [String(g.externalId).toLowerCase(), g]));
+  const changed = new Map((d.groups || []).filter((g) => g && g.externalId).map((g) => [String(g.externalId).toLowerCase(), g]));
+  const groups = [];
+  for (const sel of selected || []) {
+    const key = String(sel.externalId).toLowerCase();
+    const base = snapGroups.get(key) || { externalId: sel.externalId, name: sel.name, dn: sel.dn || null, found: false, members: [] };
+    const g = { externalId: String(base.externalId), name: base.name, dn: base.dn || null, found: !!base.found, members: (base.members || []).map(String) };
+    const ch = changed.get(key);
+    if (ch) {
+      if (ch.found !== undefined) g.found = !!ch.found;
+      if (ch.name) g.name = ch.name;
+      if (ch.dn !== undefined) g.dn = ch.dn || null;
+      if (Array.isArray(ch.members)) {
+        g.members = ch.members.map(String);
+      } else {
+        const drop = new Set((ch.remove || []).map(String));
+        g.members = g.members.filter((m) => !drop.has(m)).concat((ch.add || []).map(String));
+      }
+    }
+    if (!g.found) { g.name = sel.name || g.name; g.members = []; }
+    g.members = [...new Set(g.members)].filter((m) => !removed.has(m) && profiles.has(m));
+    groups.push(g);
+  }
+  const used = new Set();
+  for (const g of groups) if (g.found) for (const m of g.members) used.add(m);
+  return { groups, users: [...profiles.values()].filter((p) => used.has(p.externalId)) };
+}
+
+function stateOf(db, dirId) {
+  const r = db.prepare('SELECT * FROM directory_sync_state WHERE directory_id = ?').get(dirId);
+  if (!r) return null;
+  return { fingerprint: r.fingerprint, cursor: parseJson(r.cursor_json, null), snapshot: parseJson(r.snapshot_json, null) };
+}
+
+function saveState(db, dir, cursor, data) {
+  db.prepare(`INSERT INTO directory_sync_state (directory_id, fingerprint, cursor_json, snapshot_json, updated_at)
+      VALUES (?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(directory_id) DO UPDATE SET fingerprint = excluded.fingerprint, cursor_json = excluded.cursor_json,
+      snapshot_json = excluded.snapshot_json, updated_at = excluded.updated_at`)
+    .run(dir.id, store.fingerprint(dir), cursor == null ? null : JSON.stringify(cursor), JSON.stringify(snapshotOf(data)));
+}
+
+/** Full or delta for this run, and why a full one. */
+function chooseMode(db, dir, adapter, { full = false, reason = 'forced', now = Date.now() } = {}) {
+  if (typeof adapter.fetchDelta !== 'function') return { mode: 'full', reason: 'no_delta' };
+  if (full) return { mode: 'full', reason };
+  const st = stateOf(db, dir.id);
+  if (!st || !st.snapshot || !dir.last_full_sync_at) return { mode: 'full', reason: 'first' };
+  if (st.fingerprint !== store.fingerprint(dir)) return { mode: 'full', reason: 'settings_changed' };
+  if (st.cursor == null) return { mode: 'full', reason: 'unsupported' };
+  const hours = Math.max(store.FULL_HOURS_MIN, Math.min(store.FULL_HOURS_MAX, dir.full_sync_hours || store.FULL_HOURS_DEFAULT));
+  const lastFull = Date.parse(dir.last_full_sync_at);
+  if (!Number.isFinite(lastFull) || now - lastFull >= hours * 3600000) return { mode: 'full', reason: 'due' };
+  return { mode: 'delta', cursor: st.cursor, snapshot: st.snapshot };
+}
+
+/**
+ * Reads the directory: the changes when possible, else everything.
+ * → { data, mode, fullReason, cursor, changes }. Throws when the directory
+ * cannot be read.
+ */
+async function fetchData(db, dir, { full = false, reason } = {}) {
+  const adapter = adapters.adapterFor(dir);
+  const choice = chooseMode(db, dir, adapter, { full, reason });
+  let fullReason = choice.reason || null;
+  if (choice.mode === 'delta') {
+    try {
+      const delta = await adapter.fetchDelta(dir.selectedGroups, { cursor: choice.cursor, snapshot: choice.snapshot });
+      const changes = {
+        users: (delta.users || []).length, removed: (delta.removedUsers || []).length, groups: (delta.groups || []).length,
+      };
+      return { data: mergeDelta(choice.snapshot, delta, dir.selectedGroups), mode: 'delta', fullReason: null, cursor: delta.cursor == null ? null : delta.cursor, changes };
+    } catch (err) {
+      if (!err || err.code !== 'FULL_SYNC_REQUIRED') throw err;
+      fullReason = err.reason || 'resync';
+      logger.info({ directoryId: dir.id, reason: fullReason }, 'directory sync: delta not possible, reading everything');
+    }
+  }
+  const withDelta = typeof adapter.fetchDelta === 'function';
+  const data = await adapter.fetch(dir.selectedGroups, withDelta ? { cursor: true } : undefined);
+  return { data, mode: 'full', fullReason, cursor: withDelta && data && data.cursor != null ? data.cursor : null, changes: null, withDelta };
 }
 
 // ─── plan ─────────────────────────────────────────────────────────────────
@@ -487,6 +635,7 @@ function shapeRun(r) {
     id: r.id,
     directoryId: r.directory_id,
     trigger: r.trigger,
+    mode: r.mode || 'full',
     status: r.status,
     startedAt: r.started_at,
     finishedAt: r.finished_at,
@@ -515,7 +664,7 @@ function isRunning(id) { return running.has(Number(id)); }
  * One sync run of a directory. Never throws for directory problems (the
  * run is stored with status 'error'); throws NOT_FOUND / RUNNING / DISABLED.
  */
-async function run(directoryId, { trigger = 'manual', actor = null, confirmRunId = null } = {}) {
+async function run(directoryId, { trigger = 'manual', actor = null, confirmRunId = null, full = false } = {}) {
   const db = getDb();
   const dir = store.load(directoryId);
   if (!dir) throw codedError('NOT_FOUND', 'directory not found');
@@ -530,14 +679,14 @@ async function run(directoryId, { trigger = 'manual', actor = null, confirmRunId
     if (confirmRunId) {
       const c = db.prepare("SELECT * FROM directory_runs WHERE id = ? AND directory_id = ? AND status = 'pending'").get(confirmRunId, dir.id);
       if (!c) throw codedError('RUN_NOT_PENDING', 'this run is not waiting for a confirmation');
-      confirmed = { id: c.id, plan: parseJson(c.plan_json, {}) };
+      confirmed = { id: c.id, plan: parseJson(c.plan_json, {}), mode: c.mode };
     }
 
-    // 1. fetch — any failure: nothing changes.
-    let data;
+    // 1. fetch — any failure: nothing changes. A confirmation reads the same
+    // way the stopped run did (a stopped full run is confirmed by a full one).
+    let fetched;
     try {
-      const adapter = adapters.adapterFor(dir);
-      data = await adapter.fetch(dir.selectedGroups);
+      fetched = await fetchData(db, dir, full ? { full: true, reason: 'forced' } : { full: !!(confirmed && confirmed.mode === 'full'), reason: 'confirm' });
     } catch (err) {
       const message = String(err && err.message ? err.message : err).slice(0, 500);
       finishRun(db, runId, { status: 'error', error: message, summary_json: JSON.stringify({}) });
@@ -549,9 +698,13 @@ async function run(directoryId, { trigger = 'manual', actor = null, confirmRunId
       return shapeRun(db.prepare('SELECT * FROM directory_runs WHERE id = ?').get(runId));
     }
 
-    // 2. plan, 3. guard
+    const { data, mode } = fetched;
+    db.prepare('UPDATE directory_runs SET mode = ? WHERE id = ?').run(mode, runId);
+
+    // 2. plan, 3. guard (on the complete data, delta or not)
     const plan = computePlan(db, dir, data);
-    const summary = summaryOf(plan);
+    const summary = { ...summaryOf(plan), mode, fullReason: fetched.fullReason || null };
+    if (fetched.changes) summary.changes = fetched.changes;
     const reasons = guardReasons(db, dir, plan);
     if (reasons.length) {
       const okIds = new Set(((confirmed && confirmed.plan.disable) || []).map(Number));
@@ -580,8 +733,13 @@ async function run(directoryId, { trigger = 'manual', actor = null, confirmRunId
     const counts = { ...summary, ...countsOf(details) };
     finishRun(db, runId, { status: 'ok', summary_json: JSON.stringify(counts), details_json: JSON.stringify(details) });
     const nowIso = new Date().toISOString();
-    db.prepare(`UPDATE directories SET last_status = ?, last_error = NULL, last_sync_at = ?, last_full_sync_at = ?, updated_at = datetime('now') WHERE id = ?`)
-      .run(details.errors.length ? 'warning' : 'ok', nowIso, nowIso, dir.id);
+    db.prepare(`UPDATE directories SET last_status = ?, last_error = NULL, last_sync_at = ?,
+        last_full_sync_at = CASE WHEN ? = 'full' THEN ? ELSE last_full_sync_at END, updated_at = datetime('now') WHERE id = ?`)
+      .run(details.errors.length ? 'warning' : 'ok', nowIso, mode, nowIso, dir.id);
+    // The next delta starts here. Errors of single changes (a failed member
+    // add) are retried anyway: every run plans the complete data against the
+    // database, not against the last run.
+    if (mode === 'delta' || fetched.withDelta) saveState(db, dir, fetched.cursor, data);
     if (confirmed) db.prepare("UPDATE directory_runs SET status = 'confirmed' WHERE id = ?").run(confirmed.id);
     db.prepare("UPDATE directory_runs SET status = 'superseded' WHERE directory_id = ? AND status = 'pending'").run(dir.id);
     if (counts.created || counts.disabled || counts.enabled || counts.conflicts || counts.groupChanges) {
@@ -660,9 +818,9 @@ async function runDueInner(now) {
     // The last attempt (ok, error or pending) counts for the interval.
     const last = db.prepare('SELECT started_at FROM directory_runs WHERE directory_id = ? ORDER BY id DESC LIMIT 1').get(r.id);
     const lastAt = last ? Date.parse(last.started_at) : 0;
-    // Every run is a full sync and the interval is at most 1440 minutes, so
-    // a full sync happens at least every 24 h. While a mass change waits for
-    // an admin, the schedule pauses (no repeated warnings; "Jetzt abgleichen"
+    // Whether the run is full or only fetches the changes is decided by
+    // run() (full_sync_hours, delta state). While a mass change waits for an
+    // admin, the schedule pauses (no repeated warnings; "Jetzt abgleichen"
     // still works).
     if (r.last_status === 'pending') continue;
     const intervalMs = Math.max(5, Math.min(1440, r.interval_min || 15)) * 60000;
@@ -737,6 +895,6 @@ function resolveConflict(directoryId, conflictId, action, { actor = null, ip = n
 
 module.exports = {
   run, confirm, discard, listRuns, getRun, runDue, isRunning, listConflicts, resolveConflict,
-  computePlan, guardReasons, freeUsername, freeGroupName,
+  computePlan, guardReasons, freeUsername, freeGroupName, mergeDelta, snapshotOf, chooseMode,
   GUARD_SHARE, GUARD_MIN, FULL_SYNC_MS,
 };

@@ -15,7 +15,8 @@
  *   DELETE /api/v1/directories/:id?confirm=<name>     remove (groups archived, accounts stay)
  *   POST   /api/v1/directories/:id/test               connection test with the stored settings
  *   GET    /api/v1/directories/:id/groups?q=          search groups in the directory
- *   POST   /api/v1/directories/:id/sync               start a run now (202, runs in the background)
+ *   POST   /api/v1/directories/:id/sync               start a run now (202, runs in the background);
+ *                                                      { full: true } reads everything ("Vollständig abgleichen")
  *   GET    /api/v1/directories/:id/runs               last runs
  *   GET    /api/v1/directories/:id/runs/:runId        one run with details
  *   POST   /api/v1/directories/:id/runs/:runId/confirm  confirm a stopped mass change
@@ -54,6 +55,7 @@ const ERRORS = {
   INVALID_SECRET: [400, 'error.directory.invalid_secret'],
   INVALID_CA: [400, 'error.directory.invalid_ca'],
   INVALID_INTERVAL: [400, 'error.directory.invalid_interval'],
+  INVALID_FULL_INTERVAL: [400, 'error.directory.invalid_full_interval'],
   INVALID_PARENT: [400, 'error.directory.invalid_parent'],
   INVALID: [400, 'error.directory.invalid'],
   CONFIRM_MISMATCH: [400, 'error.directory.confirm_mismatch'],
@@ -174,10 +176,11 @@ router.post('/:id/sync', (req, res) => {
   if (!d) return undefined;
   if (sync.isRunning(d.id)) return fail(req, res, Object.assign(new Error('running'), { code: 'RUNNING' }));
   // In the background: a large directory can take longer than a request.
-  sync.run(d.id, { trigger: 'manual', actor: req.session.userId }).catch((err) => {
+  const full = !!(req.body && (req.body.full === true || req.body.full === 'true' || req.body.full === 1));
+  sync.run(d.id, { trigger: 'manual', actor: req.session.userId, full }).catch((err) => {
     logger.warn({ directoryId: d.id, err: err.message }, 'manual directory sync failed');
   });
-  return res.status(202).json({ ok: true, started: true });
+  return res.status(202).json({ ok: true, started: true, full });
 });
 
 router.get('/:id/runs', (req, res) => {

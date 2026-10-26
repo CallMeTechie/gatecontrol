@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Verzeichnis-Abgleich holt zwischen zwei vollständigen Abgleichen nur noch die Änderungen (docs/groups.md „Delta sync“): Entra ID über Microsoft-Graph-Delta-Abfragen (`/users/delta`, `/groups/delta` mit Mitgliedern; deltaLink je Verzeichnis, Seiten über nextLink, gelöschte Konten und Gruppen über `@removed`, hinzugefügte und entfernte Mitglieder direkt, Änderungen in verschachtelten Gruppen lesen die Gruppe neu), Active Directory über `uSNChanged` seit dem letzten `highestCommittedUSN` desselben Domänencontrollers (antwortet ein anderer DC, ist der Abgleich vollständig) und LDAP (OpenLDAP, Synology, 389 DS/FreeIPA) über `modifyTimestamp`, wo der Server es kann – sonst bleibt jeder Abgleich vollständig. Im Verzeichnis deaktivierte Konten werden auch im Änderungs-Abgleich sofort gesperrt (Sitzungen, Tokens, VPN-Geräte wie bisher), die Sperre bei Massenänderungen (ab 3 Konten und über 10 %) gilt gegen alle verknüpften Konten, Admins bleiben unberührt. Ein vollständiger Abgleich läuft mindestens alle 24 Stunden (neue Einstellung „Vollständiger Abgleich“, 1–168 Stunden) – nur er bemerkt im AD oder LDAP gelöschte Konten sicher –, außerdem beim ersten Mal, nach geänderten Einstellungen oder Gruppen, wenn Graph einen Neuabgleich verlangt (410) und mit dem neuen Knopf „Vollständig abgleichen“. Die Seite „Benutzer › Verzeichnis“ zeigt je Verzeichnis, ob der letzte Abgleich „Änderungen“ oder „Vollständig“ war, und wann der nächste vollständige fällig ist; das Protokoll nennt die Art je Abgleich und den Grund. Ein angehaltener oder fehlgeschlagener Abgleich behält die alte Position, der nächste sieht dieselben Änderungen noch einmal. Migration 112 (`directories.full_sync_hours`, `directory_runs.mode`, Tabelle `directory_sync_state`); die Sicherung enthält die Einstellung, nicht die Position – nach dem Wiederherstellen ist der erste Abgleich vollständig. API: `fullSyncHours`, `POST /api/v1/directories/:id/sync` mit `{ full: true }`.
+
+### Fixes
+- Dashboard: Der Streifen „Neu in GateControl …“ zeigt vom ersten Eintrag nur noch zwei Zeilen (der ganze Text steht hinter „Alle Neuerungen“). Ein langer Eintrag wie der zur Gruppenverwaltung schob vorher das Verkehrsdiagramm und den Rest der Seite aus dem Bild.
+
+---
+
 ## [1.200.0] — 2026-10-26
 
 ### Features

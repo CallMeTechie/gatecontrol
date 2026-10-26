@@ -2675,6 +2675,46 @@ const migrations = [
     },
     detect: (db) => hasColumn(db, 'routes', 'acl_people'),
   },
+  {
+    version: 112,
+    name: 'directory_delta_sync',
+    // Incremental directory sync (docs/groups.md "Verzeichnis-Abgleich und
+    // Anmeldung" › Schedule, services/directory/sync.js):
+    //   directories.full_sync_hours   a full sync at least every N hours
+    //                      (1–168, default 24); runs in between only fetch
+    //                      the changes (Entra delta query, AD uSNChanged,
+    //                      LDAP modifyTimestamp). Only full syncs see
+    //                      accounts deleted in AD / LDAP for sure.
+    //   directory_runs.mode 'full' | 'delta' (the run history shows it;
+    //                      older runs were all full).
+    //   directory_sync_state one row per directory: fingerprint (kind,
+    //                      settings and selected groups the state belongs
+    //                      to — another value forces a full sync),
+    //                      cursor_json (the adapter's delta position: Graph
+    //                      deltaLinks, the domain controller and its
+    //                      highestCommittedUSN, the LDAP modifyTimestamp
+    //                      watermark; NULL = this directory cannot do
+    //                      delta, every run is full) and snapshot_json (the
+    //                      directory data the last applied run used: groups
+    //                      with members and the member profiles — a delta
+    //                      run applies the changes to it and plans against
+    //                      the complete result like a full run).
+    //                      Written only after a run was applied; a stopped
+    //                      or failed run keeps the old position. Not part of
+    //                      the backup: after a restore the first run is full.
+    // The reserved directories.cursor of migration 110 stays unused.
+    sql: `
+      ALTER TABLE directories ADD COLUMN full_sync_hours INTEGER NOT NULL DEFAULT 24;
+      ALTER TABLE directory_runs ADD COLUMN mode TEXT NOT NULL DEFAULT 'full';
+      CREATE TABLE IF NOT EXISTS directory_sync_state (
+        directory_id INTEGER PRIMARY KEY REFERENCES directories(id) ON DELETE CASCADE,
+        fingerprint TEXT NOT NULL,
+        cursor_json TEXT,
+        snapshot_json TEXT NOT NULL DEFAULT '{}',
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );`,
+    detect: (db) => tableExists(db, 'directory_sync_state') && hasColumn(db, 'directories', 'full_sync_hours') && hasColumn(db, 'directory_runs', 'mode'),
+  },
 ];
 
 module.exports = { migrations };
