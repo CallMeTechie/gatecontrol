@@ -671,6 +671,7 @@ function validateEncryptedFields(data) {
     if (p && p.license && p.license.key_encrypted) enc.push(['licence key', p.license.key_encrypted]);
     if (p && p.secret_settings && typeof p.secret_settings === 'object') for (const [k, v] of Object.entries(p.secret_settings)) enc.push([`setting ${k}`, v]);
     if (p && Array.isArray(p.media)) p.media.forEach((f, i) => { if (f && f.key) enc.push([`media #${i + 1}`, f.key]); });
+    if (p && p.media_areas && Array.isArray(p.media_areas.files)) p.media_areas.files.forEach((f, i) => { if (f && f.key) enc.push([`media area file #${i + 1}`, f.key]); });
     for (const [what, v] of enc) {
       try { decrypt(String(v)); } catch { errors.push(`plugin "${p.id}" ${what}: cannot decrypt`); }
     }

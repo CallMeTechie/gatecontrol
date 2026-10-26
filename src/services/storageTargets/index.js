@@ -186,13 +186,15 @@ function display(kind, cfg) {
   return `smb://${host}${v.kind !== 'route' && v.port && v.port !== 445 ? ':' + v.port : ''}/${cfg.share}${cfg.folder ? '/' + cfg.folder : ''}`;
 }
 
-// what keeps a target in use (media.js registers the areas assigned to it)
+// what keeps a target in use (plugins/mediaAreas.js registers the areas assigned to it)
 const usageProviders = [];
 function registerUsage(fn) { usageProviders.push(fn); }
 
 /** [{ kind: 'area', plugin, area, label }] — what uses target `id`. */
 function usedBy(id) {
   const out = [];
+  // the media areas register themselves when loaded — make sure they are
+  try { require('../plugins/mediaAreas'); } catch (e) { logger.warn({ err: e.message }, 'media areas not loaded'); }
   for (const fn of usageProviders) {
     try { out.push(...(fn(Number(id)) || [])); } catch (e) { logger.warn({ err: e.message }, 'storage target usage lookup failed'); }
   }

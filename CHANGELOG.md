@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Bereiche im Medienspeicher (docs/plugins.md „Media areas“, zweiter Teil des Server-Kerns für GateControl Drive): Plugins mit `media.areas` legen ihre Dateien in selbst benannten Bereichen ab (`gc.media.areas.ensure/info/list/remove`, `gc.media.claim(id, { area, path })`), und der Admin bestimmt in den Plugin-Einstellungen unter **„Speicherorte“** je Bereich, ob die Dateien auf diesem Server oder auf einem Speicherziel liegen (Ordner, NAS über SMB/WebDAV, S3). Jede Datei kommt zuerst hier an und wird im Hintergrund verschlüsselt übertragen – das Ziel sieht nur verschlüsselte 64-KiB-Blöcke unter einem neutralen Schlüssel, keine Namen oder Pfade. Lokale Kopien bleiben als Zwischenspeicher (Größe auf der Seite „Speicher“ einstellbar, Standard 5 GB, die am längsten nicht gelesenen gehen zuerst; noch nicht übertragene Dateien werden nie verdrängt). Dateien ohne lokale Kopie werden bei Ordnern, WebDAV und S3 blockweise gelesen (nur der angefragte Bereich, Vorspulen in Videos geht), bei SMB einmal ganz in den Zwischenspeicher geholt. Ein Bereich lässt sich auf ein anderes Ziel oder zurück auf den Server verschieben – im Hintergrund, mit Fortschritt, die Dateien bleiben lesbar. Gelöschte Dateien verschwinden auch auf dem Ziel (mit Wiederholung, wenn es gerade nicht erreichbar ist). Ein Ziel, das ausfällt, wird mit wachsender Pause neu versucht; nach 15 Minuten gibt es die neue Benachrichtigung „Speicherziel nicht erreichbar / wieder da“. Mit `media.areas` darf eine Datei bis 100 GB groß sein, das Kontingent bis 1 PB, und `types: ["*/*"]` erlaubt jeden Dateityp (Typen, die ein Browser ausführen würde, werden immer als Download ausgeliefert). Uploads können neu die SHA-256-Prüfsumme in `Repr-Digest`/`Content-Digest`/`Digest` mitschicken; passt die Datei nicht, wird sie abgelehnt. Die Sicherung enthält Bereiche und die Angaben ihrer Dateien (nie die Dateien selbst). Migration 115 (`plugin_media_areas`, neue Spalten in `plugin_media`, `plugin_media_gone`).
+
+---
+
 ## [1.203.0] — 2026-10-26
 
 ### Features

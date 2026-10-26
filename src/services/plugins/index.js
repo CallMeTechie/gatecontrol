@@ -138,7 +138,7 @@ function permissionSummary(m, lang) {
     portalTab: m.ui.portal && m.ui.portal.label ? loc(m.ui.portal.label, lang) : null,
     portalSections: m.ui.portal && m.ui.portal.sections ? m.ui.portal.sections.map((s) => ({ tab: s.tab, title: loc(s.title, lang) })) : [],
     // messenger foundations (docs/plugins.md "Media", "Realtime events", "Chat notifications", "Services")
-    media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false } : null,
+    media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false, ...(m.media.areas ? { areas: true } : {}) } : null,
     events: !!p.events,
     // delivers notifications into chats (docs/plugins.md "Notifications in chats")
     notifySink: !!p.notifySink,
@@ -635,7 +635,7 @@ function view(p, lang) {
     pickPrincipals: require('./frame').pickPrincipalsOf(m),
     // the <iframe allow="…"> of the plugin's frames (frame.allowAttr)
     allow: require('./frame').allowAttr({ media: !!m.media, geolocation: !!(m.ui && m.ui.geolocation), camera: !!(m.ui && m.ui.camera) }),
-    media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false } : null,
+    media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false, ...(m.media.areas ? { areas: true } : {}) } : null,
     events: !!(m.permissions && m.permissions.events),
     settingsCount: m.ui && m.ui.settings ? m.ui.settings.length : 0,
     installedAt: p.installedAt,
@@ -808,6 +808,8 @@ function start() {
   for (const t of timers) t.unref();
   // update check every 6 hours, nightly automatic update (updates.js)
   require('./updates').start();
+  // media areas: copies to storage targets, the cache, deletions (mediaAreas.js)
+  require('./mediaAreas').start();
   // person groups: groupsChanged / groupUsage / groupDeleting of plugins with permissions.groups
   try { require('./groups').init(); } catch (e) { logger.warn({ err: e.message }, 'plugin group hooks not wired'); }
 }
@@ -816,6 +818,7 @@ async function stop() {
   for (const t of timers) clearInterval(t);
   timers = [];
   require('./updates').stop();
+  require('./mediaAreas').stop();
   try { require('./groups').shutdown(); } catch { /* best-effort */ }
   try { require('./hostApi').flushChatSummary(); } catch { /* best-effort */ }
   require('./events').closeStreams();

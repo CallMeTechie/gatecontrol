@@ -840,12 +840,45 @@ async function mediaFetch(plugin, args) {
   }
 }
 
+// errors of media areas (mediaAreas.js AreaError codes) → host API codes
+const AREA_ERRORS = { invalid: 'ERR_INVALID', not_found: 'ERR_INVALID', not_empty: 'ERR_INVALID', limit: 'ERR_RATE_LIMIT', quota: 'ERR_MEDIA_QUOTA', no_areas: 'ERR_MEDIA_DENIED' };
+
+function areaCall(fn) {
+  try { return fn(); } catch (e) {
+    const AreaError = require('./mediaAreas').AreaError;
+    if (e instanceof AreaError) throw new HostApiError(AREA_ERRORS[e.code] || 'ERR_INVALID', e.message);
+    throw e;
+  }
+}
+
+/**
+ * gc.media.areas.ensure(area, { label, quota }) / info(area) / list() /
+ * remove(area) (media.areas, since 1.204.0, docs/plugins.md "Media areas").
+ */
+function mediaAreasCall(plugin, op, args) {
+  needMedia(plugin);
+  const areas = require('./mediaAreas');
+  need(areas.declared(plugin), 'ERR_MEDIA_DENIED', 'plugin.json declares no media.areas');
+  const a = args || {};
+  return areaCall(() => {
+    switch (op) {
+      case 'ensure': return areas.ensure(plugin, a.area, a.opts && typeof a.opts === 'object' ? a.opts : {});
+      case 'info': return areas.info(plugin.id, String(a.area || ''));
+      case 'list': return areas.list(plugin.id);
+      case 'remove': return areas.remove(plugin, String(a.area || ''));
+      default: throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
+    }
+  });
+}
+
 function mediaCall(plugin, op, args) {
   const media = needMedia(plugin);
   switch (op) {
     case 'info': return media.info(media.row(plugin.id, mediaId(args)));
     case 'claim': {
-      const out = media.claim(plugin.id, mediaId(args));
+      const o = args && args.opts != null ? args.opts : null;
+      need(o === null || (typeof o === 'object' && !Array.isArray(o)), 'ERR_INVALID', 'invalid options');
+      const out = areaCall(() => media.claim(plugin.id, mediaId(args), o && o.area != null ? { area: o.area, path: o.path } : null));
       need(out, 'ERR_INVALID', 'unknown media id');
       return out;
     }
@@ -853,7 +886,7 @@ function mediaCall(plugin, op, args) {
     case 'usage': {
       const decl = media.declOf(plugin);
       return { ...media.usage(plugin.id), quota: media.quotaOf(plugin), maxBytes: decl.maxBytes, types: decl.types, uploads: decl.uploads !== false,
-        resumable: decl.resumable === true, handOverMaxBytes: decl.handOverMaxBytes || decl.maxBytes };
+        resumable: decl.resumable === true, handOverMaxBytes: decl.handOverMaxBytes || decl.maxBytes, areas: decl.areas === true };
     }
     case 'url': {
       const id = mediaId(args);
@@ -1564,6 +1597,10 @@ async function handle(plugin, api, args, ctx) {
     case 'notify.routes.set': return notifyRoutes(plugin, 'set', args);
     case 'media.info': return mediaCall(plugin, 'info', args);
     case 'media.claim': return mediaCall(plugin, 'claim', args);
+    case 'media.areas.ensure': return mediaAreasCall(plugin, 'ensure', args);
+    case 'media.areas.info': return mediaAreasCall(plugin, 'info', args);
+    case 'media.areas.list': return mediaAreasCall(plugin, 'list', args);
+    case 'media.areas.remove': return mediaAreasCall(plugin, 'remove', args);
     case 'media.delete': return mediaCall(plugin, 'delete', args);
     case 'media.usage': return mediaCall(plugin, 'usage', args);
     case 'media.url': return mediaCall(plugin, 'url', args);

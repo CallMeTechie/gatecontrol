@@ -1346,6 +1346,102 @@ it in its own data. Code: `src/services/plugins/media.js`.
 * `gc.media.usage()` (since 1.193.0) also answers `resumable` and
   `handOverMaxBytes`.
 
+### Media areas (`media.areas`)
+
+Since 1.204.0. For plugins that keep many or large files (GateControl
+Drive): the plugin sorts its files into **areas** it names itself, the
+administrator decides per area where the files live — on this server (the
+plugin media folder, as always) or on a **storage target**
+([storage-targets.md](storage-targets.md): a folder, a NAS over SMB or
+WebDAV, an S3 bucket). Code: `src/services/plugins/mediaAreas.js`.
+
+```json
+"media": { "maxBytes": 107374182400, "types": ["*/*"], "quotaDefault": "1TB", "resumable": true, "areas": true }
+```
+
+* `areas: true` raises the limits: `maxBytes` up to 100 GB, `quotaDefault` up
+  to 1 PB, and `types` may be `["*/*"]` (every type). Types a browser would run
+  (HTML, SVG, JavaScript, XML, JSON …) are still stored but always served as
+  `application/octet-stream` download (`Content-Disposition: attachment`).
+  The install dialog shows "alle Dateitypen" and a row **Speicherorte**.
+* `gc.media.areas.ensure(area, { label, quota })` creates or updates an area
+  → its info. `area`: 1–64 of `a-z 0-9 _ -` (starting with a letter or
+  digit), at most 1000 per plugin; `label` ≤ 80 characters (shown to the
+  administrator, default the id); `quota` in bytes (1 MB … 1 PB, null = none;
+  the administrator can set another one that wins).
+* `gc.media.areas.info(area)` → `{ area, label, target: { id, kind, label },
+  moving: { to, done, total } | null, bytes, count, quota, quotaDefault,
+  pending: { count, bytes }, state, error, encrypted: true, free }` or null.
+  `target.kind` is `server` for this server. `state`: `ok`, `pending` (files
+  still being copied), `moving`, `unreachable` (the target fails; `error` the
+  storage error code). `free`: free bytes where new files go, when known.
+* `gc.media.areas.list()` → the infos; `gc.media.areas.remove(area)` → true
+  (false when unknown); only an empty area (else `ERR_INVALID`).
+* `gc.media.claim(id, { area, path })` puts a file into an area (the area
+  must exist; `path` — the plugin's own "Fotos/Urlaub/a.jpg", normalised,
+  ≤ 1024 characters, no `.`/`..` or control characters — is stored with the
+  file and returned by `gc.media.info`, which since 1.204.0 also answers
+  `area`, `path` and `stored`: `server`, `target` or `pending`). An area's
+  quota is checked here (`ERR_MEDIA_QUOTA`); the plugin's quota covers all its
+  files as before. A claimed file stays in its area.
+* `gc.media.usage()` also answers `areas` (true/false).
+* Errors: `ERR_MEDIA_DENIED` (no `media.areas`), `ERR_INVALID`,
+  `ERR_RATE_LIMIT` (too many areas), `ERR_MEDIA_QUOTA`.
+
+How the files travel:
+
+* Every file arrives on this server first (upload, `gc.media.fetch`,
+  hand-over) and is sealed like all plugin media. For an area on a storage
+  target a background worker (every 15 s, and right after a claim) copies the
+  **sealed** file there under an opaque key
+  `<plugin>/<area>/<id[0..2]>/<id>` — the target only ever sees encrypted
+  64 KiB blocks, never names or paths. Only after the copy is complete and
+  its size checked does the file count as stored there; the local copy stays
+  as **cache**.
+* **Cache**: local copies of files kept on targets, at most the size set on
+  the page *Plugins › Speicher* (setting `plugins.media_cache_bytes`, default
+  5 GB, 256 MB … 100 TB); the least recently read go first. Files still
+  waiting to be copied are never dropped and do not count.
+* **Reading** a file without a local copy: from a target that reads ranges
+  (folder, WebDAV, S3) only the sealed blocks of the requested range are
+  fetched and decrypted (video seeking works); from SMB the whole file comes
+  into the cache first. A target that does not answer gives `503
+  storage_unavailable` before any byte is sent.
+* **Moving** an area (the administrator picks another place): its files are
+  copied in the background, the old copies deleted afterwards; until a file
+  has moved it is read from where it was, new files go to the new place.
+  Activity rows `plugin_media_area_target` (the change) and
+  `plugin_media_area_moved` (done).
+* **Deleting** a file (or "Alles löschen" for the plugin) deletes the copy on
+  the target too; deletions a target cannot do now are retried (table
+  `plugin_media_gone`, with a growing pause).
+* A **failing target** is retried with a growing pause (30 s … 15 min). After
+  15 minutes the administrators get `storage_target_unreachable` (activity
+  log, notification "Speicherziel nicht erreichbar / wieder da"), once, and
+  `storage_target_recovered` when it works again. Files keep arriving on this
+  server meanwhile; when the files waiting for a failing target would exceed
+  the cache, uploads answer `503 storage_unavailable`. Uploads also need free
+  space on this server (`507 server_full`, 512 MB margin).
+* **Upload digest**: an upload (whole or resumable) may name the SHA-256 of
+  the file in `Repr-Digest`, `Content-Digest` (RFC 9530, `sha-256=:…:`) or
+  `Digest` (`sha-256=…`); a file that does not match is refused (`400
+  digest_mismatch`, a malformed header `400 invalid_digest`). For every
+  plugin with `media`, not only with areas.
+* **Admin** (plugin settings, section *Speicherorte*): per area the place
+  (this server or a target), the quota, the state (copied, waiting, moving,
+  unreachable); "Speicherziel hinzufügen" opens the target dialog. API:
+  `GET /api/v1/plugins/<id>/media/areas` (areas, targets, cache) and
+  `PUT /api/v1/plugins/<id>/media/areas/<area>` `{ targetId | null,
+  quotaBytes | null }`. A target that an area uses cannot be deleted.
+* **Backup**: the areas and the metadata of their files (ids, area, path,
+  where they are, each file key encrypted like media keys) are always part of
+  the plugin's backup entry (`media_areas`) — never the bytes: they stay on
+  the storage target. A restore brings back every file whose bytes are still
+  there (on its target, or the local file for an area on this server).
+* Tables (migration 115): `plugin_media_areas`, the columns `area, path,
+  target_id, remote_key, nonce_prefix, local, accessed_at, push_error` of
+  `plugin_media`, `plugin_media_gone`.
+
 ## Public links (`permissions.publicLinks`)
 
 Since 1.193.0. A plugin shares some of its media files with people **without

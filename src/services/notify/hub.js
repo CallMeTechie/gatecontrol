@@ -71,7 +71,7 @@ const NAMED_TYPES = new Set([
   'account_locked', 'waf_ip_banned', 'peer_connected', 'peer_disconnected', 'peer_created', 'peer_deleted',
   'peer_expired', 'gateway_down', 'gateway_alive', 'gateway_offline', 'gateway_recovered', 'route_down',
   'route_up', 'route_created', 'route_deleted', 'resource_alert', 'resource_recovered',
-  'support_bundle_uploaded',
+  'support_bundle_uploaded', 'storage_target_unreachable', 'storage_target_recovered',
 ]);
 const ROUTE_FOR_EVENT = {
   gateway_state: 'gateways', peer_connection: 'vpn', peer_lifecycle: 'vpn', peer_expired: 'vpn',
@@ -88,7 +88,7 @@ function num(v) {
 function coreContext(type, details) {
   const d = details && typeof details === 'object' ? details : {};
   const peerId = num(d.peerId != null ? d.peerId : d.peer_id);
-  let name = d.peer_name || d.domain || d.identifier || d.ip || null;
+  let name = d.peer_name || d.domain || d.identifier || d.ip || d.target_label || null;
   if (!name && peerId) {
     try {
       const row = require('../../db/connection').getDb().prepare('SELECT name FROM peers WHERE id = ?').get(peerId);
@@ -104,6 +104,7 @@ function coreContext(type, details) {
   else if (type === 'waf_ip_banned') collapseKey = 'waf_ban';
   else if ((type === 'peer_connected' || type === 'peer_disconnected') && peerId) collapseKey = `peer:${peerId}`;
   else if (type === 'backup_reminder' || type === 'autobackup_failed') collapseKey = 'backup';
+  else if (type.startsWith('storage_target_') && num(d.targetId)) collapseKey = `storage:${num(d.targetId)}`;
   return { peerId, name: name ? sanitize.line(name, 80) : null, collapseKey };
 }
 
