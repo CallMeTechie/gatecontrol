@@ -226,9 +226,9 @@ async function appTwoFactor(req, res) {
   if (lockout.isLocked(tfId).locked) return end('failed', { userId: p.userId, reason: 'locked' });
   const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
   const recovery = typeof req.body.recovery_code === 'string' ? req.body.recovery_code.trim() : '';
-  let ok = false;
-  if (recovery) ok = await twoFactor.verifyRecoveryCode(user.id, recovery);
-  else if (code) ok = twoFactor.verifyCode(user.id, code);
+  // A recovery code or the six digits — each check refuses an empty or malformed input itself, so
+  // no branch on what was typed decides whether a check runs.
+  const ok = (await twoFactor.verifyRecoveryCode(user.id, recovery)) || twoFactor.verifyCode(user.id, code);
   if (!ok) {
     // The code itself is never logged.
     lockout.recordFailedAttempt(tfId, 'admin_2fa', req.ip);
