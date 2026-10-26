@@ -238,7 +238,7 @@ router.get('/health', async (req, res) => {
 
 // ─── Auth routes (public) ──────────────────────────
 const authRoutes = require('./auth');
-router.get('/login', guestOnly, authRoutes.loginPage);
+router.get('/login', guestOnly, apiLimiter, authRoutes.loginPage);
 router.post('/login', guestOnly, loginLimiter, csrfProtection, authRoutes.login);
 // Second factor: only reachable with a valid req.session.pending2fa (set by
 // POST /login after the password check); requireAuth itself is untouched.
