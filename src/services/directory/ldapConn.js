@@ -134,6 +134,12 @@ async function searchSome(client, base, options, limit = 50) {
   return out;
 }
 
+/** The RootDSE (base '' of the server) with the given attributes, or null. */
+async function rootDse(client, attributes) {
+  const res = await client.search('', { scope: 'base', filter: '(objectClass=*)', attributes });
+  return (res && res.searchEntries && res.searchEntries[0]) || null;
+}
+
 /** True when the error is a wrong-password answer of the server (49). */
 function isInvalidCredentials(err) {
   if (!err) return false;
@@ -145,6 +151,6 @@ function isInvalidCredentials(err) {
 }
 
 module.exports = {
-  checkServer, urlFor, tlsOptionsFor, open, withServiceClient, searchAll, searchSome, isInvalidCredentials,
+  checkServer, urlFor, tlsOptionsFor, open, withServiceClient, searchAll, searchSome, rootDse, isInvalidCredentials,
   _setClientFactory, CONNECT_TIMEOUT_MS, OP_TIMEOUT_MS,
 };

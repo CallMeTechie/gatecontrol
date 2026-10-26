@@ -131,6 +131,11 @@ describe('CRUD, test, groups, sync, runs, conflicts', () => {
     assert.equal(require('../src/services/directory/store').secretOf(require('../src/services/directory/store').load(id)), 'Svc!Secret99', 'empty secret keeps it');
     const bad = await api('patch', `/api/v1/directories/${id}`).send({ intervalMin: 3 });
     assert.equal(bad.body.code, 'INVALID_INTERVAL');
+    const full = await api('patch', `/api/v1/directories/${id}`).send({ fullSyncHours: 12 }).expect(200);
+    assert.equal(full.body.directory.fullSyncHours, 12);
+    const badFull = await api('patch', `/api/v1/directories/${id}`).send({ fullSyncHours: 0 });
+    assert.equal(badFull.status, 400);
+    assert.equal(badFull.body.code, 'INVALID_FULL_INTERVAL');
   });
 
   it('syncs in the background, lists runs with details, shows and resolves conflicts', async () => {
@@ -152,6 +157,13 @@ describe('CRUD, test, groups, sync, runs, conflicts', () => {
     assert.equal(again.status, 409);
     const dir = await api('get', `/api/v1/directories/${id}`).expect(200);
     assert.equal(dir.body.directory.stats.linked, 2);
+    // "Vollständig abgleichen"
+    const forced = await api('post', `/api/v1/directories/${id}/sync`).send({ full: true }).expect(202);
+    assert.equal(forced.body.full, true);
+    const after = await waitIdle(id);
+    assert.equal(after.directory.lastRunMode, 'full');
+    const last = await api('get', `/api/v1/directories/${id}/runs?limit=1`).expect(200);
+    assert.equal(last.body.runs[0].mode, 'full');
   });
 
   it('the user profile API shows the account source', async () => {

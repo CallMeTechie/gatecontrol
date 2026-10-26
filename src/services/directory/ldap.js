@@ -28,6 +28,23 @@
  * groups themselves are resolved recursively (cycle-safe, depth ≤ 10).
  * Password check: service bind, look the person up by the id attribute,
  * then bind as that DN.
+ *
+ * Delta (fetchDelta, sync.js "Delta"): where the server keeps the
+ * operational attribute modifyTimestamp and accepts `>=` on it (OpenLDAP,
+ * Synology Directory Server, 389 DS / FreeIPA). A full read checks that
+ * (no modifyTimestamp or the filter refused → cursor null: every run stays
+ * full) and stores a watermark — the newest modifyTimestamp it saw, at most
+ * the start of the read minus 10 minutes (clock differences, replicas), so
+ * nothing is lost and a change may come twice (harmless). It also remembers
+ * the DNs of the nested groups and the member values it could not resolve
+ * (memberUid of an account created later). A delta run reads the accounts
+ * and groups with modifyTimestamp >= watermark: changed member accounts are
+ * taken over (name, mail, the disabled attribute); a changed selected or
+ * nested group, a member renamed or moved (DN / login name) or a new account
+ * that matches an unresolved member value → that selected group is resolved
+ * again (known accounts from the snapshot, others are looked up one by
+ * one). Deleted accounts are not visible (no modifyTimestamp left); the
+ * periodic full sync catches them.
  */
 
 const conn = require('./ldapConn');
@@ -43,6 +60,26 @@ const DEFAULTS = Object.freeze({
 });
 const ATTR_RE = /^[A-Za-z][A-Za-z0-9-]{0,63}$/;
 const MAX_NESTING = 10;
+const WATERMARK_MARGIN_MS = 10 * 60000;
+const MAX_TRACKED = 1000;
+const GENTIME_RE = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})?(?:[.,]\d+)?(Z|[+-]\d{4})?$/;
+
+/** LDAP GeneralizedTime → ms (NaN when unreadable). */
+function parseGenTime(v) {
+  const m = GENTIME_RE.exec(String(v || '').trim());
+  if (!m) return NaN;
+  let t = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+  if (m[7] && m[7] !== 'Z') {
+    const sign = m[7][0] === '-' ? -1 : 1;
+    t -= sign * ((+m[7].slice(1, 3)) * 60 + (+m[7].slice(3, 5))) * 60000;
+  }
+  return t;
+}
+
+/** ms → GeneralizedTime 'YYYYMMDDHHMMSSZ'. */
+function genTime(ms) {
+  return new Date(ms).toISOString().replace(/[-:T]/g, '').replace(/\.\d+Z$/, 'Z');
+}
 
 function codedError(code, message) {
   const err = new Error(message || code);
@@ -138,6 +175,86 @@ function idFilter(attr, value) {
   return `(${attr}=${u.escapeFilterValue(value)})`;
 }
 
+/**
+ * Member resolution of selected groups, shared by the full and the delta
+ * read. lookup.dn(dn) / lookup.login(value) → the account or null (a DN
+ * that is no account may be a nested group).
+ */
+function resolver(client, s, lookup, seen) {
+  const a = s.attrs;
+  const memberAttr = a.member;
+  const groupAttrList = [a.groupId, a.groupName, memberAttr, ...(seen ? ['modifyTimestamp'] : [])];
+  const groupCache = new Map();
+  async function groupByDn(dn) {
+    const key = u.normDn(dn);
+    if (groupCache.has(key)) return groupCache.get(key);
+    let entry = null;
+    try {
+      const res = await conn.searchSome(client, dn, { scope: 'base', filter: s.groupFilter, attributes: groupAttrList, explicitBufferAttributes: binaryAttrs(s) }, 1);
+      entry = res[0] || null;
+    } catch { entry = null; }
+    if (entry && seen) seen(entry);
+    groupCache.set(key, entry);
+    return entry;
+  }
+  async function collect(entry, out, visited, depth, nested, unresolved) {
+    for (const v of u.all(entry, memberAttr)) {
+      if (memberAttr.toLowerCase() === 'memberuid') {
+        const p = await lookup.login(v);
+        if (p) out.set(p.externalId, p); else unresolved.push(String(v).toLowerCase());
+        continue;
+      }
+      const p = await lookup.dn(v);
+      if (p) { out.set(p.externalId, p); continue; }
+      if (depth >= MAX_NESTING || visited.has(u.normDn(v))) continue;
+      visited.add(u.normDn(v));
+      const sub = await groupByDn(v);
+      if (sub) { nested.push(u.normDn(v)); await collect(sub, out, visited, depth + 1, nested, unresolved); } else unresolved.push(u.normDn(v));
+    }
+  }
+  return {
+    /** One selected group → { externalId, name, dn, found, members }; members' profiles into `users`. */
+    async group(sel, users, tracked) {
+      const key = String(sel.externalId).toLowerCase();
+      const f = idFilter(a.groupId, sel.externalId);
+      const res = f ? await conn.searchSome(client, s.groupBase, {
+        filter: `(&${s.groupFilter}${f})`, attributes: groupAttrList, explicitBufferAttributes: binaryAttrs(s),
+      }, 1) : [];
+      const entry = res[0];
+      if (!entry) {
+        delete tracked.nested[key];
+        delete tracked.unresolved[key];
+        return { externalId: sel.externalId, name: sel.name, dn: sel.dn || null, found: false, members: [] };
+      }
+      if (seen) seen(entry);
+      const out = new Map();
+      const nested = [];
+      const unresolved = [];
+      await collect(entry, out, new Set([u.normDn(entry.dn)]), 0, nested, unresolved);
+      for (const p of out.values()) users.set(p.externalId, p);
+      tracked.nested[key] = [...new Set(nested)].slice(0, MAX_TRACKED);
+      tracked.unresolved[key] = [...new Set(unresolved)].slice(0, MAX_TRACKED);
+      return { externalId: idOf(entry, a.groupId), name: u.first(entry, a.groupName), dn: entry.dn, found: true, members: [...out.keys()] };
+    },
+  };
+}
+
+/**
+ * The delta position after a read: the watermark (newest modifyTimestamp
+ * seen, at most the start minus the margin) — or null when the server gives
+ * no modifyTimestamp or refuses the filter (every run stays full).
+ */
+async function position(client, s, startedAt, newest, tracked) {
+  if (!Number.isFinite(newest)) return null;
+  const watermark = genTime(Math.min(startedAt - WATERMARK_MARGIN_MS, newest));
+  try {
+    await conn.searchSome(client, s.userBase, { filter: `(&${s.userFilter}(modifyTimestamp>=${watermark}))`, attributes: ['modifyTimestamp'] }, 1);
+  } catch {
+    return null;
+  }
+  return { watermark, nested: tracked.nested, unresolved: tracked.unresolved };
+}
+
 function create(directory, { secret } = {}) {
   const cfg = directory.config || {};
   const run = (fn) => conn.withServiceClient(cfg, secret, fn);
@@ -168,65 +285,144 @@ function create(directory, { secret } = {}) {
       });
     },
 
-    async fetch(selected) {
+    async fetch(selected, { cursor = false } = {}) {
       const s = settings(cfg);
-      const a = s.attrs;
-      const memberAttr = a.member;
       return run(async (client) => {
+        const startedAt = Date.now();
         // Every person of the user base once (the member lists name DNs or
         // login names; one search is cheaper than one per member).
-        const userEntries = await conn.searchAll(client, s.userBase, { filter: s.userFilter, attributes: userAttrs(s), explicitBufferAttributes: binaryAttrs(s) });
+        const userEntries = await conn.searchAll(client, s.userBase, {
+          filter: s.userFilter, attributes: cursor ? [...userAttrs(s), 'modifyTimestamp'] : userAttrs(s), explicitBufferAttributes: binaryAttrs(s),
+        });
+        let newest = NaN;
+        const seen = (e) => { const t = parseGenTime(u.first(e, 'modifyTimestamp')); if (Number.isFinite(t) && (!Number.isFinite(newest) || t > newest)) newest = t; };
         const byDn = new Map();
         const byLogin = new Map();
         for (const e of userEntries) {
+          if (cursor) seen(e);
           const p = userFrom(e, s);
           if (!p.externalId) continue;
           if (p.dn) byDn.set(u.normDn(p.dn), p);
           if (p.loginName) byLogin.set(p.loginName.toLowerCase(), p);
         }
-        const groupAttrList = [a.groupId, a.groupName, memberAttr];
-        const groupCache = new Map();
-        async function groupByDn(dn) {
-          const key = u.normDn(dn);
-          if (groupCache.has(key)) return groupCache.get(key);
-          let entry = null;
-          try {
-            const res = await conn.searchSome(client, dn, { scope: 'base', filter: s.groupFilter, attributes: groupAttrList, explicitBufferAttributes: binaryAttrs(s) }, 1);
-            entry = res[0] || null;
-          } catch { entry = null; }
-          groupCache.set(key, entry);
-          return entry;
+        const lookup = { dn: async (dn) => byDn.get(u.normDn(dn)) || null, login: async (v) => byLogin.get(String(v).toLowerCase()) || null };
+        const r = resolver(client, s, lookup, cursor ? seen : null);
+        const users = new Map();
+        const groups = [];
+        const tracked = { nested: {}, unresolved: {} };
+        for (const sel of selected || []) {
+          const g = await r.group(sel, users, tracked);
+          groups.push(g);
         }
-        async function collect(entry, out, seen, depth) {
-          for (const v of u.all(entry, memberAttr)) {
-            if (memberAttr.toLowerCase() === 'memberuid') {
-              const p = byLogin.get(String(v).toLowerCase());
-              if (p) out.set(p.externalId, p);
-              continue;
-            }
-            const p = byDn.get(u.normDn(v));
-            if (p) { out.set(p.externalId, p); continue; }
-            if (depth >= MAX_NESTING || seen.has(u.normDn(v))) continue;
-            seen.add(u.normDn(v));
-            const sub = await groupByDn(v);
-            if (sub) await collect(sub, out, seen, depth + 1);
+        const out = { groups, users: [...users.values()] };
+        if (cursor) out.cursor = await position(client, s, startedAt, newest, tracked);
+        return out;
+      });
+    },
+
+    async fetchDelta(selected, { cursor, snapshot } = {}) {
+      if (!cursor || !Number.isFinite(parseGenTime(cursor.watermark))) throw u.fullSyncRequired('first');
+      const s = settings(cfg);
+      const a = s.attrs;
+      return run(async (client) => {
+        const startedAt = Date.now();
+        // Everything up to the watermark was seen by the last read (it is at
+        // most its start minus the margin): ask from the next second on.
+        const since = `(modifyTimestamp>=${genTime(parseGenTime(cursor.watermark) + 1000)})`;
+        let newest = parseGenTime(cursor.watermark);
+        const seen = (e) => { const t = parseGenTime(u.first(e, 'modifyTimestamp')); if (Number.isFinite(t) && t > newest) newest = t; };
+        const changedUsers = await conn.searchAll(client, s.userBase, {
+          filter: `(&${s.userFilter}${since})`, attributes: [...userAttrs(s), 'modifyTimestamp'], explicitBufferAttributes: binaryAttrs(s),
+        });
+        const changedGroups = await conn.searchAll(client, s.baseDn, {
+          filter: `(&${s.groupFilter}${since})`, attributes: [a.groupId, 'modifyTimestamp'], explicitBufferAttributes: binaryAttrs(s),
+        });
+        // The accounts as the last run knew them, with the changes on top.
+        const known = new Map();
+        for (const p of (snapshot && snapshot.users) || []) known.set(String(p.externalId), p);
+        const byDn = new Map();
+        const byLogin = new Map();
+        const index = (p) => {
+          if (p.dn) byDn.set(u.normDn(p.dn), p);
+          if (p.loginName) byLogin.set(String(p.loginName).toLowerCase(), p);
+        };
+        for (const p of known.values()) index(p);
+        const changed = new Map();
+        const moved = new Set(); // DN or login name changed: member values point elsewhere
+        for (const e of changedUsers) {
+          seen(e);
+          const p = userFrom(e, s);
+          if (!p.externalId) continue;
+          const before = known.get(p.externalId);
+          if (before && (u.normDn(before.dn || '') !== u.normDn(p.dn || '') || String(before.loginName || '').toLowerCase() !== String(p.loginName || '').toLowerCase())) {
+            moved.add(p.externalId);
+            if (before.dn) byDn.delete(u.normDn(before.dn));
+            if (before.loginName) byLogin.delete(String(before.loginName).toLowerCase());
           }
+          changed.set(p.externalId, p);
+          index(p);
         }
+        const changedGroupDns = new Set();
+        const changedGroupIds = new Set();
+        for (const e of changedGroups) {
+          seen(e);
+          changedGroupDns.add(u.normDn(e.dn));
+          const id = idOf(e, a.groupId);
+          if (id) changedGroupIds.add(id.toLowerCase());
+        }
+        // Accounts nobody knew yet are looked up one by one (below the account base only, like a full read).
+        const asked = new Map();
+        const lookup = {
+          async dn(dn) {
+            const key = u.normDn(dn);
+            if (byDn.has(key)) return byDn.get(key);
+            if (!u.isUnder(dn, s.userBase)) return null;
+            if (!asked.has(key)) {
+              let p = null;
+              try {
+                const res = await conn.searchSome(client, dn, { scope: 'base', filter: s.userFilter, attributes: userAttrs(s), explicitBufferAttributes: binaryAttrs(s) }, 1);
+                p = res[0] ? userFrom(res[0], s) : null;
+              } catch { p = null; }
+              asked.set(key, p && p.externalId ? p : null);
+            }
+            return asked.get(key);
+          },
+          async login(v) {
+            const key = 'login:' + String(v).toLowerCase();
+            if (byLogin.has(String(v).toLowerCase())) return byLogin.get(String(v).toLowerCase());
+            if (!asked.has(key)) {
+              const res = await conn.searchSome(client, s.userBase, {
+                filter: `(&${s.userFilter}(${a.login}=${u.escapeFilterValue(v)}))`, attributes: userAttrs(s), explicitBufferAttributes: binaryAttrs(s),
+              }, 1);
+              const p = res[0] ? userFrom(res[0], s) : null;
+              asked.set(key, p && p.externalId ? p : null);
+            }
+            return asked.get(key);
+          },
+        };
+        const r = resolver(client, s, lookup, seen);
+        const snapGroups = new Map(((snapshot && snapshot.groups) || []).map((g) => [String(g.externalId).toLowerCase(), g]));
+        const tracked = { nested: { ...(cursor.nested || {}) }, unresolved: { ...(cursor.unresolved || {}) } };
         const users = new Map();
         const groups = [];
         for (const sel of selected || []) {
-          const f = idFilter(a.groupId, sel.externalId);
-          const res = f ? await conn.searchSome(client, s.groupBase, {
-            filter: `(&${s.groupFilter}${f})`, attributes: groupAttrList, explicitBufferAttributes: binaryAttrs(s),
-          }, 1) : [];
-          const entry = res[0];
-          if (!entry) { groups.push({ externalId: sel.externalId, name: sel.name, dn: sel.dn || null, found: false, members: [] }); continue; }
-          const out = new Map();
-          await collect(entry, out, new Set([u.normDn(entry.dn)]), 0);
-          for (const p of out.values()) users.set(p.externalId, p);
-          groups.push({ externalId: idOf(entry, a.groupId), name: u.first(entry, a.groupName), dn: entry.dn, found: true, members: [...out.keys()] });
+          const key = String(sel.externalId).toLowerCase();
+          const snap = snapGroups.get(key);
+          const members = new Set(((snap && snap.members) || []).map(String));
+          const nestedDns = (tracked.nested[key] || []).map((x) => u.normDn(x));
+          const pending = new Set((tracked.unresolved[key] || []).map((x) => String(x).toLowerCase()));
+          const hitsPending = (p) => pending.size && ((p.dn && pending.has(u.normDn(p.dn))) || (p.loginName && pending.has(String(p.loginName).toLowerCase())));
+          const again = !snap || !snap.found || changedGroupIds.has(key)
+            || (snap.dn && changedGroupDns.has(u.normDn(snap.dn))) || nestedDns.some((dn) => changedGroupDns.has(dn))
+            || [...moved].some((id) => members.has(id))
+            || [...changed.values()].some((p) => !members.has(p.externalId) && hitsPending(p));
+          if (again) {
+            groups.push(await r.group(sel, users, tracked));
+            continue;
+          }
+          for (const p of changed.values()) if (members.has(p.externalId)) users.set(p.externalId, p);
         }
-        return { groups, users: [...users.values()] };
+        return { groups, users: [...users.values()], removedUsers: [], cursor: await position(client, s, startedAt, newest, tracked) };
       });
     },
 
@@ -256,4 +452,4 @@ function create(directory, { secret } = {}) {
   };
 }
 
-module.exports = { create, settings, cleanFilter, attrsOf, DEFAULTS };
+module.exports = { create, settings, cleanFilter, attrsOf, parseGenTime, genTime, DEFAULTS };
