@@ -100,7 +100,7 @@ function coreContext(type, details) {
   if (type.startsWith('gateway_') && peerId) collapseKey = `gateway:${peerId}`;
   else if ((type === 'route_down' || type === 'route_up') && num(d.routeId)) collapseKey = `route:${num(d.routeId)}`;
   else if (type.startsWith('resource_') && d.resource) collapseKey = `resource:${sanitize.line(d.resource, 20)}`;
-  else if (['login_failed', 'login_2fa_failed', 'passkey_login_failed'].includes(type)) collapseKey = 'login_failed';
+  else if (['login_failed', 'login_2fa_failed', 'passkey_login_failed', 'app_signin_failed'].includes(type)) collapseKey = 'login_failed';
   else if (type === 'waf_ip_banned') collapseKey = 'waf_ban';
   else if ((type === 'peer_connected' || type === 'peer_disconnected') && peerId) collapseKey = `peer:${peerId}`;
   else if (type === 'backup_reminder' || type === 'autobackup_failed') collapseKey = 'backup';

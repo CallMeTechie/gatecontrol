@@ -27,14 +27,18 @@
       <h1 class="au-title">{{ t('two_fa.login_title') }}</h1>
       <p class="au-sub tf-intro">{% if useRecovery %}{{ t('two_fa.recovery_intro') }}{% else %}{{ t('two_fa.login_intro') }}{% endif %}</p>
 
-      {% if flash.error %}
+      {#- Also the TOTP step of the sign-in in the apps (routes/oidc.js,
+          formAction /auth/app/2fa, appFlow: no way back to the web login). -#}
+      {% set tfAction = formAction or '/login/2fa' %}
+      {% set tfError = appError or flash.error %}
+      {% if tfError %}
       <div class="login-error" role="alert">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-        <span>{{ flash.error }}</span>
+        <span>{{ tfError }}</span>
       </div>
       {% endif %}
 
-      <form method="POST" action="/login/2fa" id="tf-login-form">
+      <form method="POST" action="{{ tfAction }}" id="tf-login-form">
         <input type="hidden" name="_csrf" value="{{ csrfToken }}">
         {% if useRecovery %}
         <div class="form-group">
@@ -50,8 +54,8 @@
         <button type="submit" class="btn btn-primary au-submit">{{ t('two_fa.submit') }}</button>
       </form>
       <div class="au-links tf-links">
-        {% if useRecovery %}<a href="/login/2fa">{{ t('two_fa.use_code') }}</a>{% else %}<a href="/login/2fa?recovery=1">{{ t('two_fa.use_recovery') }}</a>{% endif %}
-        <a href="/login">{{ t('two_fa.back_to_login') }}</a>
+        {% if useRecovery %}<a href="{{ tfAction }}">{{ t('two_fa.use_code') }}</a>{% else %}<a href="{{ tfAction }}?recovery=1">{{ t('two_fa.use_recovery') }}</a>{% endif %}
+        {% if not appFlow %}<a href="/login">{{ t('two_fa.back_to_login') }}</a>{% endif %}
       </div>
       <div class="au-meta tf-remaining" id="tf-remaining" data-seconds="{{ remainingSeconds }}">{{ remainingText }}</div>
     </div>

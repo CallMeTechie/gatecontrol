@@ -643,3 +643,50 @@ const publicLinkUnlockLimiter = rateLimit({
 });
 module.exports.publicLinkLimiter = publicLinkLimiter;
 module.exports.publicLinkUnlockLimiter = publicLinkUnlockLimiter;
+
+// Sign-in in the apps (routes/api/client/signin.js, docs/groups.md
+// "Anmeldung in den Apps") — public, keyed by address. The answer is the one
+// the apps understand: 429 { ok: false, error: 'rate_limited', retryAfter }.
+function appRateLimited(req, res) {
+  const reset = req.rateLimit && req.rateLimit.resetTime ? new Date(req.rateLimit.resetTime).getTime() : 0;
+  const retryAfter = Math.max(1, Math.ceil((reset - Date.now()) / 1000) || 60);
+  res.set('Retry-After', String(retryAfter));
+  res.status(429).json({ ok: false, error: 'rate_limited', retryAfter });
+}
+
+// GET /api/v1/client/signin — what the setup screen offers. Anti-noise.
+const appSigninInfoLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => Math.max(1, config.auth.rateLimitApi),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `app-signin-info:${ipKeyGenerator(req.ip)}`,
+  handler: appRateLimited,
+});
+
+// POST /api/v1/client/signin/password — a password guess like the login
+// form: the login budget (GC_RATE_LIMIT_LOGIN per 15 minutes) twice, because
+// an account with 2FA needs a second request with the code. Failed attempts
+// count; the lockout per account (services/lockout.js) applies on top.
+const appSigninLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => Math.max(1, config.auth.rateLimitLogin) * 2,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `app-signin:${ipKeyGenerator(req.ip)}`,
+  handler: appRateLimited,
+});
+
+// POST /api/v1/client/signin/handoff — the 256-bit handoff cannot be
+// guessed and dies with the first attempt; this caps noise.
+const appHandoffLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => Math.max(1, config.auth.rateLimitLogin) * 4,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `app-handoff:${ipKeyGenerator(req.ip)}`,
+  handler: appRateLimited,
+});
+module.exports.appSigninInfoLimiter = appSigninInfoLimiter;
+module.exports.appSigninLimiter = appSigninLimiter;
+module.exports.appHandoffLimiter = appHandoffLimiter;

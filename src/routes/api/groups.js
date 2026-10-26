@@ -9,7 +9,8 @@
  *   GET    /api/v1/groups[?tree=1&kind=&archived=1]   list (flat or tree)
  *   POST   /api/v1/groups                             create (always source 'local')
  *   POST   /api/v1/groups/import                      CSV (text/plain body or { csv })
- *   GET    /api/v1/groups/:id                         group + members (incl. inherited) + invites
+ *   GET    /api/v1/groups/:id                         group + members (incl. inherited, with
+ *                                                     avatarUrl / color / colorHex) + invites
  *   PATCH  /api/v1/groups/:id                         name, description, color, kind, endsAt, parentId
  *   DELETE /api/v1/groups/:id?confirm=<name>[&successor=<userId>|none]
  *                                                     delete (name typed to confirm; plugins'
@@ -28,6 +29,7 @@
 const express = require('express');
 const { requireAdminSession } = require('../../middleware/auth');
 const groups = require('../../services/groups');
+const avatars = require('../../services/avatars');
 const logger = require('../../utils/logger');
 
 const router = express.Router();
@@ -111,7 +113,9 @@ router.get('/:id', (req, res) => {
     return res.json({
       ok: true,
       group,
-      members: groups.members(group.id, { nested: true }),
+      // Profile picture and favourite colour like the users page (route layer:
+      // groups.members() also feeds the plugin API, which documents its own fields).
+      members: avatars.withLooks(groups.members(group.id, { nested: true })),
       invites: group.readOnly && !group.source.startsWith('directory:') ? [] : groups.listInvites(group.id),
       roles: groups.rolesFor(group.kind),
     });
@@ -155,7 +159,8 @@ router.get('/:id/usage', async (req, res) => {
     const successor = typeof req.query.successor === 'string' ? req.query.successor : null;
     const usage = (await groups.usage(req.params.id, { successorUserId: successor })).map((u) => (
       u.onDeleteKey && !u.onDelete ? { ...u, onDelete: req.t(u.onDeleteKey) } : u));
-    res.json({ ok: true, usage, defaultSuccessor: groups.defaultSuccessor(req.params.id) });
+    const def = groups.defaultSuccessor(req.params.id);
+    res.json({ ok: true, usage, defaultSuccessor: def ? avatars.withLooks([def])[0] : null });
   } catch (err) { fail(req, res, err); }
 });
 

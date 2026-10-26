@@ -36,7 +36,7 @@ const LEGACY_RECIPIENT_KEYS = ['alerts.email', 'monitoring.alert_email'];
 // email_alerts licence (it had its own unlicensed switch before).
 const CATALOGUE = [
   { id: 'security', events: [
-    { id: 'login_failed', types: ['login_failed', 'login_2fa_failed', 'passkey_login_failed'] },
+    { id: 'login_failed', types: ['login_failed', 'login_2fa_failed', 'passkey_login_failed', 'app_signin_failed'] },
     { id: 'account_locked', types: ['account_locked'] },
     { id: 'password_changed', types: ['password_changed'] },
     { id: 'waf_ip_banned', types: ['waf_ip_banned'] },

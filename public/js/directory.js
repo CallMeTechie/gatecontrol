@@ -104,6 +104,7 @@
     const parts = [T('dir.stats.accounts', { count: s.linked || 0 }), T('dir.stats.groups', { count: s.groups || 0 })];
     if (s.disabled) parts.push(T('dir.stats.disabled', { count: s.disabled }));
     if (d.loginEnabled) parts.push(d.kind === 'entra' ? T('dir.stats.login_microsoft') : T('dir.stats.login_password'));
+    if (d.selfEnroll) parts.push(T('dir.stats.self_enroll'));
     return parts.join(' · ');
   }
   function lastOf(d) {
@@ -310,6 +311,8 @@
       switchRow(T('dir.opt.deprovision'), T('dir.opt.deprovision_help'), d.deprovision, (v) => patch({ deprovision: v }, T('dir.saved'))),
       switchRow(d.kind === 'entra' ? T('dir.opt.login_entra') : (d.kind === 'ad' ? T('dir.opt.login_ad') : T('dir.opt.login_ldap')),
         d.kind === 'entra' ? T('dir.opt.login_entra_help') : T('dir.opt.login_help'), d.loginEnabled, async (v) => { await patch({ loginEnabled: v }, T('dir.saved')); renderDetail(); }),
+      // Own devices for every account of this directory (users.mayEnroll; default off).
+      switchRow(T('dir.opt.self_enroll'), T('dir.opt.self_enroll_help'), d.selfEnroll, (v) => patch({ selfEnroll: v }, T('dir.saved'))),
       switchRow(T('dir.opt.readonly'), T('dir.opt.readonly_help'), true, null, { locked: true }),
       el('div', { class: 'dir-opt-grid' }, [
         el('label', { class: 'us-field' }, [el('span', { class: 'us-label' }, T('dir.opt.interval')), intervalSel, el('span', { class: 'us-hint' }, T('dir.opt.interval_help'))]),

@@ -26,7 +26,7 @@ const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
 
 const CACHE_MS = 30 * 1000;
-const FAILED_LOGIN_TYPES = ['login_failed', 'login_2fa_failed', 'passkey_login_failed'];
+const FAILED_LOGIN_TYPES = ['login_failed', 'login_2fa_failed', 'passkey_login_failed', 'app_signin_failed'];
 const HOUR_MS = 3600 * 1000;
 
 const _cache = new Map(); // key → { at, data, promise }

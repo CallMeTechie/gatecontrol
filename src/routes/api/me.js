@@ -16,7 +16,8 @@
  *     looked up together with the session's user id (anything else is 404,
  *     the same answer as "does not exist");
  *   * device setup codes only with the per-member permission
- *     (users.self_enroll_enabled, admins always), app scopes only, capped
+ *     (users.self_enroll_enabled, admins always, or the account's directory
+ *     allows own devices — users.mayEnroll), app scopes only, capped
  *     by the role like every other token;
  *   * services: names and hosts only — never credentials, never who else
  *     an entry is shared with;
@@ -79,9 +80,10 @@ function me(req) {
   return users.getById(req.meUserId);
 }
 
-function mayEnroll(user) {
-  return !!user && user.enabled === 1 && (user.role === 'admin' || user.self_enroll_enabled === 1);
-}
+// Per-user permission, administrators always, or the account's directory
+// allows own devices (services/users.js mayEnroll — shared with the sign-in
+// in the apps).
+function mayEnroll(user) { return users.mayEnroll(user); }
 
 /** GET /api/v1/me — who am I, who runs this server, what may I do here */
 router.get('/', (req, res) => {

@@ -5,13 +5,17 @@
  * PKCE against Microsoft Entra ID, built on Node's fetch and crypto (no
  * extra library).
  *
- *   begin(directory, { returnTo }) → { txnId, url }
+ *   begin(directory, { returnTo, app }) → { txnId, url }
  *       creates a login transaction { state, nonce, PKCE verifier } (kept
  *       server-side for 10 minutes, single use) and the authorization URL.
+ *       `app` = { redirectUri, state, challenge } for the sign-in in the apps
+ *       (routes/oidc.js ?client=app): kept in the transaction, returned by
+ *       complete() and attached to its errors as err.app once the
+ *       transaction was found (the callback then answers the app).
  *       The transaction id travels in its own SameSite=Lax cookie (the
  *       session cookie is SameSite=Strict and is not sent when Microsoft
  *       redirects back).
- *   async complete(txnId, query, { directoryId }) → { user, directory, returnTo }
+ *   async complete(txnId, query, { directoryId }) → { user, directory, returnTo, app }
  *       checks state, exchanges the code (with the PKCE verifier and the
  *       client secret), verifies the ID token and maps it to the linked
  *       account by its object id (oid) — never by e-mail. Throws err.code.
@@ -37,7 +41,7 @@ const CACHE_MS = 60 * 60 * 1000;
 const JWKS_REFRESH_MIN_MS = 5 * 60 * 1000;
 const CLOCK_SKEW_S = 300;
 
-const txns = new Map(); // txnId → { directoryId, state, nonce, verifier, returnTo, at }
+const txns = new Map(); // txnId → { directoryId, state, nonce, verifier, returnTo, app, at }
 const discoveryCache = new Map(); // tenantId → { at, doc }
 const jwksCache = new Map(); // uri → { at, keys }
 
@@ -147,7 +151,7 @@ function loginButtons() {
   } catch { return []; }
 }
 
-async function begin(directoryId, { returnTo = '' } = {}) {
+async function begin(directoryId, { returnTo = '', app = null } = {}) {
   const dir = loginDirectory(directoryId);
   const { tenantId, clientId } = entra.checkConfig(dir.config);
   const doc = await discovery(tenantId);
@@ -156,7 +160,7 @@ async function begin(directoryId, { returnTo = '' } = {}) {
   const state = randomToken(32);
   const nonce = randomToken(32);
   const verifier = randomToken(48);
-  txns.set(txnId, { directoryId: dir.id, state, nonce, verifier, returnTo: returnTo || '', at: Date.now() });
+  txns.set(txnId, { directoryId: dir.id, state, nonce, verifier, returnTo: returnTo || '', app: app || null, at: Date.now() });
   const url = new URL(doc.authorization_endpoint);
   url.search = new URLSearchParams({
     client_id: clientId,
@@ -177,6 +181,15 @@ async function complete(txnId, query, { directoryId, now = Date.now() } = {}) {
   const txn = typeof txnId === 'string' ? txns.get(txnId) : null;
   if (txn) txns.delete(txnId); // single use, successful or not
   if (!txn || txn.directoryId !== Number(directoryId)) throw codedError('STATE_MISMATCH', 'no login in progress');
+  try {
+    return await finish(txn, query, { directoryId, now });
+  } catch (err) {
+    if (txn.app && err && typeof err === 'object') err.app = txn.app;
+    throw err;
+  }
+}
+
+async function finish(txn, query, { directoryId, now }) {
   if (now - txn.at > TXN_TTL_MS) throw codedError('TXN_EXPIRED', 'the login took too long');
   const q = query || {};
   if (!safeEqual(q.state, txn.state)) throw codedError('STATE_MISMATCH', 'state does not match');
@@ -213,7 +226,7 @@ async function complete(txnId, query, { directoryId, now = Date.now() } = {}) {
   if (!user || user.role !== 'user') throw codedError('NOT_LINKED', 'this account signs in locally');
   if (user.enabled !== 1) throw codedError('ACCOUNT_DISABLED', 'the account is disabled');
   db.prepare('UPDATE directory_links SET last_seen_at = ? WHERE user_id = ?').run(new Date(now).toISOString(), user.id);
-  return { user, directory: dir, returnTo: txn.returnTo, claims };
+  return { user, directory: dir, returnTo: txn.returnTo, app: txn.app || null, claims };
 }
 
 function _reset() { txns.clear(); discoveryCache.clear(); jwksCache.clear(); }

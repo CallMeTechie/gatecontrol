@@ -214,7 +214,7 @@
   // ─── Activity ────────────────────────────────────────────────────────────
   // Same table as src/services/activityCategories.js (tests keep them equal).
   const ACTIVITY_CATEGORIES = {
-    login: ['login', 'logout', 'passkey_login', 'account_'],
+    login: ['login', 'logout', 'passkey_login', 'account_', 'app_signin'],
     peer: ['peer_', 'gateway_', 'client_', 'pool_', 'wg_'],
     route: ['route_', 'routes_', 'host_', 'service_bundle_', 'domain_', 'rdp_route_', 'share_', 'circuit_breaker_'],
     security: ['waf_', 'tls_', 'security_', 'passkey_added', 'passkey_removed', 'password_changed',

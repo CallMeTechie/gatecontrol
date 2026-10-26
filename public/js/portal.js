@@ -1338,6 +1338,13 @@
     var parts = String(name || '?').trim().split(/\s+/);
     return ((Array.from(parts[0] || '?')[0] || '?') + (parts.length > 1 ? (Array.from(parts[parts.length - 1])[0] || '') : '')).toUpperCase();
   }
+  // A person's avatar: profile picture, else the initials on the favourite
+  // colour (window.GCAvatar from avatar-edit.js, docs/feature-avatars.md).
+  function grpAvatar(p) {
+    var n = el('span', { class: 'pt-avatar pt-grp-av', 'aria-hidden': 'true' }, initials(p && p.name));
+    if (window.GCAvatar && p) window.GCAvatar.paint(n, { avatarUrl: p.avatarUrl, color: p.color, initials: initials(p.name) });
+    return n;
+  }
   function grpError(res) { return (res && res.body && res.body.error) || T('portal.groups.failed'); }
   // A small form dialog: fields (nodes), OK runs onOk() → Promise<boolean> (true closes).
   function grpDialog(o) {
@@ -1405,7 +1412,7 @@
   function leadersCard(d) {
     var leads = d.leaders.filter(function (l) { return l.role !== 'deputy'; });
     var deps = d.leaders.filter(function (l) { return l.role === 'deputy'; });
-    var row = function (l) { return el('li', { class: 'pt-grp-lrow' }, [el('span', { class: 'pt-avatar pt-grp-av', 'aria-hidden': 'true' }, initials(l.name)), el('b', null, l.name || '–'), el('span', { class: 'pt-small pt-muted' }, roleText(l.role))]); };
+    var row = function (l) { return el('li', { class: 'pt-grp-lrow' }, [grpAvatar(l), el('b', null, l.name || '–'), el('span', { class: 'pt-small pt-muted' }, roleText(l.role))]); };
     var card = el('section', { class: 'pt-card pt-pad pt-grp-card', 'aria-labelledby': 'pt-grp-h-lead' }, [
       el('h2', { class: 'pt-h2', id: 'pt-grp-h-lead' }, T('portal.groups.leaders')),
       leads.length ? el('ul', { class: 'pt-grp-llist' }, leads.map(row)) : el('p', { class: 'pt-small pt-muted' }, d.direct && (d.role === 'lead' || d.role === 'parent') ? T('portal.groups.you_lead') : T('portal.groups.leaders_none')),
@@ -1439,7 +1446,7 @@
       roleNode = el('span', { class: 'pt-grp-role' + (m.role === 'lead' || m.role === 'parent' ? ' is-lead' : '') }, roleText(m.role));
     }
     return el('li', { class: 'pt-grp-member' + (m.direct ? '' : ' is-inherited'), 'data-id': String(m.userId) }, [
-      el('span', { class: 'pt-avatar pt-grp-av', 'aria-hidden': 'true' }, initials(m.name)),
+      grpAvatar(m),
       el('div', { class: 'pt-grow' }, [
         el('div', null, [el('b', null, m.name), m.self ? el('span', { class: 'pt-small pt-muted' }, ' (' + T('portal.groups.you') + ')') : null]),
         meta.length ? el('div', { class: 'pt-small pt-muted pt-grp-meta' }, meta.join(' · ')) : null,
