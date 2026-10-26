@@ -7,6 +7,7 @@
 //   GET /settings/plugins/updates         Plugins · Katalog (+ one plugin) · Updates ·
 //   GET /settings/plugins/licenses        Lizenzen · Sicherheit & Upload · Protokoll ·
 //   GET /settings/plugins/security        one installed plugin (manage/:id) — one
+//   GET /settings/plugins/storage         storage targets (docs/storage-targets.md)
 //   GET /settings/plugins/log             aurora page, the views are built by
 //   GET /settings/plugins/manage/:id      public/js/plugins-page.js (admins only)
 //   GET /plugins[/catalog[/:id]|/updates|/licenses|/security|/manage/:id]
@@ -194,7 +195,7 @@ const catalog = require('../services/plugins/catalog');
 // strings plugins-page.js reads (the island's data-prefixes list the same ones)
 const AREA_I18N_PREFIXES = ['plugins.', 'common.'];
 const AREA_BASE = '/settings/plugins';
-const AREA_VIEWS = { '': 'installed', catalog: 'catalog', updates: 'updates', licenses: 'licenses', security: 'security', log: 'log' };
+const AREA_VIEWS = { '': 'installed', catalog: 'catalog', updates: 'updates', licenses: 'licenses', security: 'security', storage: 'storage', log: 'log' };
 
 function areaPage(req, res, view, extra = {}) {
   if (!isAdmin(res)) return res.redirect('/profile');

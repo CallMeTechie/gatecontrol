@@ -2,7 +2,7 @@
 
 {#- The plugin area under Einstellungen › Plugins (docs/plugins.md "Plugin
     area", mockup "Plugins – UI & UX Konzept"): Meine Plugins, Katalog (one
-    page per plugin too), Updates, Lizenzen, Sicherheit & Upload, Protokoll
+    page per plugin too), Updates, Lizenzen, Sicherheit & Upload, Speicher, Protokoll
     and one installed plugin (manage/<id>). One page for all views: the side
     navigation is static (the catalogue swaps it for its filters, the pages of
     one plugin have none), the view is built by public/js/plugins-page.js from
@@ -15,10 +15,11 @@
   updates: 'M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5',
   licenses: 'M8 19a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM11 12l9-9M16 7l3 3',
   security: 'M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z',
+  storage: 'M4 5h16v6H4zM4 13h16v6H4zM8 8h.01M8 16h.01',
   log: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01'
 } %}
 {%- set navPlugins = [['installed', B, 'plugins.area.mine'], ['catalog', B + '/catalog', 'plugins.area.catalog'], ['updates', B + '/updates', 'plugins.area.updates'], ['licenses', B + '/licenses', 'plugins.area.licenses']] %}
-{%- set navAdmin = [['security', B + '/security', 'plugins.area.security'], ['log', B + '/log', 'plugins.area.log']] %}
+{%- set navAdmin = [['security', B + '/security', 'plugins.area.security'], ['storage', B + '/storage', 'plugins.area.storage'], ['log', B + '/log', 'plugins.area.log']] %}
 {%- set current = 'catalog' if pgView == 'catalogItem' else ('installed' if pgView == 'manage' else pgView) %}
 {%- set full = pgView in ['manage', 'catalogItem'] %}
 

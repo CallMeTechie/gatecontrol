@@ -2727,6 +2727,33 @@ const migrations = [
     sql: `ALTER TABLE directories ADD COLUMN self_enroll INTEGER NOT NULL DEFAULT 0;`,
     detect: (db) => hasColumn(db, 'directories', 'self_enroll'),
   },
+  {
+    version: 114,
+    name: 'storage_targets',
+    // Storage targets (docs/storage-targets.md): a folder of this server, a
+    // NAS over SMB / WebDAV or an S3 bucket where the plugin media store keeps
+    // the files of a plugin's areas (plugin.json media.areas). config_json:
+    // where and as whom (never a password); secret_enc: the password / secret
+    // key as JSON, encrypted with GC_ENCRYPTION_KEY (utils/crypto, like
+    // directories.secret_enc). The last check (write, read, delete a test file,
+    // free space) is kept on the row for the admin page.
+    sql: `
+      CREATE TABLE IF NOT EXISTS storage_targets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('local', 'smb', 'webdav', 's3')),
+        label TEXT NOT NULL,
+        config_json TEXT NOT NULL DEFAULT '{}',
+        secret_enc TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        checked_at TEXT,
+        check_ok INTEGER,
+        check_error TEXT,
+        free_bytes INTEGER,
+        total_bytes INTEGER
+      );`,
+    detect: (db) => tableExists(db, 'storage_targets'),
+  },
 ];
 
 module.exports = { migrations };

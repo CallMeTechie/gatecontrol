@@ -164,6 +164,13 @@ function createBackup() {
   // exported.
   const directoryData = exportDirectories(db, peerNameById);
 
+  // ── storage targets (docs/storage-targets.md) ──
+  // With their id (plugin media areas name it) and the secret exactly as
+  // stored; an SMB target through a peer / L4 route names it by peer name /
+  // route domain (both get new ids on restore). The files on a target are
+  // never part of the backup.
+  const storageTargets = exportStorageTargets(db, peerNameById);
+
   // ── api_tokens (resolve peer_id/user_id via names) ──────────
   let apiTokens = [];
   try {
@@ -248,6 +255,7 @@ function createBackup() {
       directories: directoryData.directories,
       directory_links: directoryData.links,
       directory_conflicts: directoryData.conflicts,
+      storage_targets: storageTargets,
       api_tokens: apiTokens,
       tags,
       gateway_meta: gatewayMeta,
@@ -381,6 +389,50 @@ function exportDirectories(db, peerNameById) {
     });
   } catch (err) { logger.warn({ err: err.message }, 'backup export: directories skipped'); }
   return out;
+}
+
+function exportStorageTargets(db, peerNameById) {
+  try {
+    if (!columnsOf(db, 'storage_targets').length) return [];
+    const routeDomain = new Map(db.prepare('SELECT id, domain FROM routes').all().map(r => [r.id, r.domain]));
+    return db.prepare('SELECT * FROM storage_targets ORDER BY id').all().map(t => {
+      let config = {};
+      try { config = JSON.parse(t.config_json || '{}'); } catch { config = {}; }
+      if (config.via && config.via.kind === 'peer') config.via = { kind: 'peer', peer_name: peerNameById.get(config.via.peerId) || null, port: config.via.port || null };
+      else if (config.via && config.via.kind === 'route') config.via = { kind: 'route', route_domain: routeDomain.get(config.via.routeId) || null };
+      return { target_ref: t.id, kind: t.kind, label: t.label, config, secret_enc: t.secret_enc || null, created_at: t.created_at, updated_at: t.updated_at };
+    });
+  } catch (err) {
+    logger.warn({ err: err.message }, 'backup export: storage targets skipped');
+    return [];
+  }
+}
+
+/**
+ * Restore the storage targets (inside the restore transaction, after peers
+ * and routes): ids as they were (plugin media areas name them), peer / route
+ * of an SMB target found again by name / domain (missing → the target stays,
+ * unreachable until edited). A secret from another GC_ENCRYPTION_KEY is kept
+ * as it is: the target shows "Passwort neu eingeben". Returns the count.
+ */
+function restoreStorageTargets(db, rows, { peerIdMap, routeIdByDomain }) {
+  if (!columnsOf(db, 'storage_targets').length) return 0;
+  try { db.prepare('DELETE FROM storage_targets').run(); } catch (err) { logger.warn({ err: err.message }, 'backup restore: clearing storage targets failed'); return 0; }
+  const ins = db.prepare(`INSERT INTO storage_targets (id, kind, label, config_json, secret_enc, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))`);
+  let n = 0;
+  for (const t of rows || []) {
+    if (!t || !Number.isSafeInteger(t.target_ref) || t.target_ref < 1 || !['local', 'smb', 'webdav', 's3'].includes(t.kind) || typeof t.label !== 'string') continue;
+    const config = t.config && typeof t.config === 'object' ? { ...t.config } : {};
+    if (config.via && config.via.kind === 'peer') config.via = { kind: 'peer', peerId: (config.via.peer_name && peerIdMap.get(config.via.peer_name)) || 0, port: config.via.port || 445 };
+    else if (config.via && config.via.kind === 'route') config.via = { kind: 'route', routeId: (config.via.route_domain && routeIdByDomain.get(config.via.route_domain)) || 0 };
+    try {
+      ins.run(t.target_ref, t.kind, t.label.slice(0, 60), JSON.stringify(config), typeof t.secret_enc === 'string' ? t.secret_enc : null,
+        t.created_at || null, t.updated_at || null);
+      n++;
+    } catch (err) { logger.warn({ err: err.message }, 'storage target restore skipped'); }
+  }
+  return n;
 }
 
 /**
@@ -577,6 +629,7 @@ function getBackupSummary(backup) {
     groups: (d.groups || []).length,
     group_members: (d.group_members || []).length,
     directories: (d.directories || []).length,
+    storage_targets: (d.storage_targets || []).length,
     api_tokens: (d.api_tokens || []).length,
     tags: (d.tags || []).length,
     gateway_meta: (d.gateway_meta || []).length,
@@ -678,6 +731,7 @@ async function restoreBackup(backup) {
     directories: directoryRows,
     directory_links: directoryLinks = [],
     directory_conflicts: directoryConflicts = [],
+    storage_targets: storageTargetRows,
     api_tokens: apiTokens = [],
     tags = [],
     gateway_meta: gatewayMeta = [],
@@ -708,6 +762,7 @@ async function restoreBackup(backup) {
 
   let builtinRows = 0;
   let directoryResult = { count: 0, secretReentry: [] };
+  let storageTargetCount = 0;
   const restore = db.transaction(() => {
     // Clear existing data in dependency order
     db.prepare('DELETE FROM route_peer_acl').run();
@@ -878,6 +933,10 @@ async function restoreBackup(backup) {
       }
     }
 
+    // Storage targets — replaced only when the backup has them (older
+    // backups: the targets stay).
+    if (Array.isArray(storageTargetRows)) storageTargetCount = restoreStorageTargets(db, storageTargetRows, { peerIdMap, routeIdByDomain });
+
     // Restore rdp_routes (re-map gateway_peer_id)
     for (const rr of rdpRoutes) {
       try {
@@ -1039,6 +1098,7 @@ async function restoreBackup(backup) {
     group_members: Array.isArray(groupRows) ? groupMembers.length : 0,
     directories: directoryResult.count,
     directories_secret_reentry: directoryResult.secretReentry,
+    storage_targets: storageTargetCount,
     api_tokens: apiTokens.length,
     tags: tags.length,
     gateway_meta: gatewayMeta.length,
