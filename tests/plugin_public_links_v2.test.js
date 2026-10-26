@@ -44,6 +44,16 @@ const pub = () => supertest(app);
 const tokenOf = (url) => url.split('/s/')[1];
 const db = () => H.db();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** the hook's events once `ok(list)` holds (the host calls the hook in the background) */
+async function hookEvents(ok) {
+  let list = [];
+  for (let i = 0; i < 50; i++) {
+    list = (await kvGet('public-link-events')) || [];
+    if (ok(list)) break;
+    await sleep(100);
+  }
+  return list;
+}
 const setLinks = (body) => agent.put(`${API}/${PID}/public-links`).set('X-CSRF-Token', csrf).send(body).expect(200);
 /** "name=value" of a Set-Cookie header of `res` (Secure cookies are not sent back over http by supertest's agent) */
 const cookieOf = (res, name) => (res.headers['set-cookie'] || []).map((c) => c.split(';')[0]).find((c) => c.startsWith(name + '='));
@@ -240,7 +250,7 @@ describe('folder links', () => {
     const got = (await gc('publicLinks.get', token)).result;
     assert.deepEqual([got.kind, got.mode, got.area, got.path, got.downloads, got.state], ['folder', 'download', 'docs', 'Fotos', 3, 'active']);
     assert.equal(got.opens, 4);
-    const hook = await kvGet('public-link-events');
+    const hook = await hookEvents((l) => l.length >= 3);
     assert.deepEqual(hook.map((h) => [h.event, h.zip, h.path]), [['download', false, 'Fotos/c.pdf'], ['download', true, 'Fotos'], ['download', true, 'Fotos/Urlaub']]);
   });
 
@@ -382,7 +392,7 @@ describe('upload links', () => {
     const ev = (await gc('publicLinks.events', t)).result.filter((x) => x.kind === 'upload');
     assert.equal(ev.length, 3);
     assert.ok(ev.every((x) => x.visitor === visitor.split('=')[1]));
-    const hook = await kvGet('public-link-events');
+    const hook = await hookEvents((l) => l.filter((h) => h.event === 'upload').length >= 3);
     assert.deepEqual(hook.filter((h) => h.event === 'upload').map((h) => h.path).sort(), ['Eingang/Rechnung.pdf', 'Eingang/bild (2).jpg', 'Eingang/bild.jpg']);
     const got = (await gc('publicLinks.get', t)).result;
     assert.deepEqual([got.upload.files, got.upload.bytes], [3, 4600]);
