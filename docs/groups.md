@@ -425,13 +425,87 @@ directory is down.
   page).
 - Applies to web sessions of members ("Mein Bereich") and the portal.
   Administrators are never directory accounts and keep signing in locally.
-- **Apps:** the apps are set up with setup codes and open the portal with
-  their login link; there is no username/password flow in the apps today.
-  A directory member signs in on the web with the company account and — when
-  an admin allowed *eigene Geräte einrichten* — creates the setup code there.
-  A native "Mit Firmenkonto anmelden" button in the Android / Windows setup
-  (browser sign-in that hands the token to the app) and the kiosk pairing are
-  a follow-up.
+- **Apps:** the Android and Windows apps can be set up with the account
+  itself — see "Anmeldung in den Apps" below. The kiosk pairing is a
+  follow-up.
+
+### Anmeldung in den Apps
+
+In the setup screen of the Android and Windows app, **„Mit Firmenkonto
+anmelden“** sets the app up without a setup code from an administrator: the
+person signs in with the local GateControl password, a directory account with
+the Windows / LDAP password, or **„Mit Microsoft anmelden“**. The server
+answers with an ordinary one-shot setup code, which the app redeems through
+the unchanged `POST /api/v1/client/enroll` — tokens, peer, WireGuard
+configuration and machine binding work exactly as with a code from the admin.
+
+**Who gets a code** — the rule of the portal's "Meine Geräte"
+(`users.mayEnroll`): an enabled account that is an administrator, or a member
+with **Eigene Geräte einrichten erlauben** on the users page, or an account of
+a directory with **Geräte selbst einrichten erlauben** on (directory page,
+off by default; the users page says when the directory allows it). Scopes
+are the app scopes (`clientEnrollment.DEFAULT_SCOPES`, capped by the role);
+when the licence has no room for another device the answer is
+`limit_reached`.
+
+**Password** (`POST /api/v1/client/signin/password`) uses the checks of the
+web login: lockout per typed name and per account, LDAP bind for directory
+accounts (never stored, an empty password is refused before the directory is
+asked), argon2 against a dummy hash for unknown names, GateControl's TOTP
+(`totp_required` → the app asks for the 6 digits and sends again with
+`totp`). An unknown account, a wrong password and a passkey-only account get
+the same `invalid_credentials`; the state of the account (disabled, no own
+devices, 2FA) is only named after the password was right. While two-factor
+login is required for admins (Einstellungen › Sicherheit), an admin without
+2FA gets `enroll_not_allowed` — like on the web, the password alone is not
+enough.
+
+**Microsoft** runs in the system browser (Android Custom Tab, Windows default
+browser) with PKCE between app and server:
+
+1. The app creates `verifier` (43–128 characters `[A-Za-z0-9-._~]`),
+   `challenge = base64url(sha256(verifier))` and a random `state`, and opens
+   `GET /auth/oidc/<id>/start?client=app&redirect_uri=<uri>&state=<state>&challenge=<challenge>`.
+   `redirect_uri` must be exactly `gatecontrol://signin`,
+   `http://127.0.0.1:<port>/signin` or `http://localhost:<port>/signin`
+   (RFC 8252 loopback); anything else, a bad `state` or `challenge` is a 400
+   page and nothing goes to Microsoft. The app's values stay in the
+   server-side OIDC transaction; Microsoft only sees GateControl's own PKCE.
+   A web session in that browser is neither needed nor touched.
+2. After Microsoft (and GateControl's TOTP in the browser when the account
+   has 2FA — `/auth/app/2fa`, pending step behind the cookie `gc.app2fa`,
+   5 minutes) the server mints a **handoff**: single use, 2 minutes, only its
+   SHA-256 is kept, bound to the challenge. The page goes back to the app
+   with `<redirect_uri>?handoff=…&state=…` (meta refresh plus the button
+   **„Zurück zur App“** — a custom scheme needs a page). On failure:
+   `<redirect_uri>?error=<code>&state=…` with `access_denied`, `not_linked`,
+   `enroll_not_allowed`, `user_disabled` or `failed`.
+3. The app checks `state` and sends `POST /api/v1/client/signin/handoff
+   { handoff, verifier }`; the server checks `sha256(verifier)` against the
+   challenge. A wrong verifier spends the handoff like a use.
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/v1/client/signin` | `{ ok, version: 1, password: { enabled, hint }, microsoft: [{ id, label }] }` — `hint` names the AD/LDAP directories with sign-in on (else `null`), `microsoft` every Entra directory with „Mit Microsoft anmelden“ |
+| POST | `/api/v1/client/signin/password` | `{ username, password, totp?, hostname?, platform? }` → `{ ok, code, expiresAt }` |
+| POST | `/api/v1/client/signin/handoff` | `{ handoff, verifier }` → `{ ok, code, expiresAt }` |
+
+Errors: `invalid_credentials`, `totp_required`, `totp_invalid` (401);
+`enroll_not_allowed`, `user_disabled`, `limit_reached` (403);
+`invalid_or_expired` (400, handoff unknown, used, expired or wrong verifier);
+`rate_limited` / `locked` (429, with `retryAfter` in seconds and a
+`Retry-After` header). Two answers go beyond the first app contract and are
+shown as a generic error by older apps: `password_change_required` (403, an
+administrator set a temporary password — sign in once in the browser) and
+`directory_unavailable` (503, the domain controller cannot be reached; not
+counted as a wrong password). All endpoints are public (no token, mounted
+before the API's authentication), answer JSON with `Cache-Control: no-store`
+and have their own limit per address: the methods `GC_RATE_LIMIT_API`, the
+password `2 × GC_RATE_LIMIT_LOGIN` and the handoff `4 × GC_RATE_LIMIT_LOGIN`
+per 15 minutes. The activity log gets `app_signin` (with method, how the
+account may set up devices and the platform) and `app_signin_failed` (in the
+notification row "Fehlgeschlagene Anmeldung"); passwords, TOTP codes, setup
+codes and handoffs are never logged.
 
 ### Setting up
 
@@ -516,7 +590,7 @@ the session's CSRF token.
 | Method | Path | |
 |---|---|---|
 | GET | `/api/v1/directories` | list with state, counts, last run, waiting run |
-| POST | `/api/v1/directories` | `{ kind: 'ad'\|'entra'\|'ldap', name, config, secret, enabled, loginEnabled, provision, deprovision, intervalMin, parentGroupId, selectedGroups }` |
+| POST | `/api/v1/directories` | `{ kind: 'ad'\|'entra'\|'ldap', name, config, secret, enabled, loginEnabled, provision, deprovision, intervalMin, parentGroupId, selectedGroups, selfEnroll }` (`selfEnroll`: „Geräte selbst einrichten erlauben“, default `false`) |
 | POST | `/api/v1/directories/test` | test unsaved settings `{ kind, config, secret[, id] }` (stored secret used when `id` is given and `secret` is empty) |
 | GET / PATCH / DELETE | `/api/v1/directories/:id` | read / change (`secret` empty or absent = keep) / remove (`?confirm=<name>`) |
 | POST | `/api/v1/directories/:id/test` | connection test with the stored settings → `{ ok, result }` or `{ ok: false, code, error, detail }` |
@@ -534,10 +608,13 @@ groupName, member, disabled }`; Entra: `tenantId, clientId` (GUIDs). Errors
 carry a `code` (`NOT_FOUND`, `INVALID_*`, `CONFIRM_MISMATCH`, `RUNNING`,
 `RUN_NOT_PENDING`, `CONFLICT_RESOLVED`, `ALREADY_LINKED`,
 `ADMIN_NOT_MERGEABLE`, …). The user detail (`GET /api/v1/users/:id`) carries
-`directory: { id, name, kind, loginName, state, lastSeenAt } | null`.
+`directory: { id, name, kind, loginName, state, lastSeenAt, selfEnroll } | null`
+(`selfEnroll`: the directory lets its accounts set up own devices).
 
 Sign-in: `GET /auth/oidc/:directoryId/start[?returnTo=/portal…]` and
-`GET /auth/oidc/:directoryId/callback`.
+`GET /auth/oidc/:directoryId/callback`; for the apps
+`GET /auth/oidc/:directoryId/start?client=app&…` and `GET|POST /auth/app/2fa`
+(see "Anmeldung in den Apps").
 
 For developers: `src/services/directory/` — `store.js` (connections, secrets),
 `sync.js` (plan → guard → apply, runs, conflicts, scheduler tick
@@ -546,7 +623,10 @@ interface: `test`, `searchGroups`, `fetch`, `authenticate`; tests install
 fakes), `ad.js` / `ldap.js` (ldapts, `ldapConn.js`, `ldapUtil.js`),
 `entra.js` (Graph), `auth.js` (password form), `oidc.js` (code flow, ID-token
 verification with Node's `crypto`). Tables: `directories`, `directory_links`,
-`directory_conflicts`, `directory_runs` (migration 110).
+`directory_conflicts`, `directory_runs` (migration 110), `directories.self_enroll`
+(migration 112). The sign-in in the apps: `src/services/appSignin.js`,
+`src/routes/api/client/signin.js`, the `client=app` branch of
+`src/routes/oidc.js`.
 
 ## Admin API
 

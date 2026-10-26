@@ -10,7 +10,7 @@
 // the two identical.
 
 const CATEGORIES = Object.freeze({
-  login: Object.freeze(['login', 'logout', 'passkey_login', 'account_']),
+  login: Object.freeze(['login', 'logout', 'passkey_login', 'account_', 'app_signin']),
   peer: Object.freeze(['peer_', 'gateway_', 'client_', 'pool_', 'wg_']),
   route: Object.freeze(['route_', 'routes_', 'host_', 'service_bundle_', 'domain_', 'rdp_route_', 'share_', 'circuit_breaker_']),
   security: Object.freeze(['waf_', 'tls_', 'security_', 'passkey_added', 'passkey_removed', 'password_changed',

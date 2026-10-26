@@ -252,8 +252,14 @@ router.post('/logout', requireAuth, csrfProtection, authRoutes.logout);
 // Anmeldung"): OpenID Connect code flow with PKCE against Entra ID. GET only
 // (the redirect back from Microsoft carries state, not a CSRF token).
 const oidcRoutes = require('./oidc');
-router.get('/auth/oidc/:directoryId/start', guestOnly, loginLimiter, oidcRoutes.start);
+// ?client=app (sign-in in the apps): no guestOnly — the system browser may
+// hold a web session; the result goes to the app, never into this session.
+router.get('/auth/oidc/:directoryId/start', loginLimiter, oidcRoutes.guestOrApp(guestOnly), oidcRoutes.start);
 router.get('/auth/oidc/:directoryId/callback', loginLimiter, oidcRoutes.callback);
+// The GateControl TOTP step of the app flow (pending state in the session,
+// set by the callback); ends with the redirect back to the app.
+router.get('/auth/app/2fa', apiLimiter, oidcRoutes.appTwoFactorPage);
+router.post('/auth/app/2fa', loginLimiter, csrfProtection, oidcRoutes.appTwoFactor);
 // Own password after an administrator set one with "change on next login":
 // only reachable with req.session.pendingPwChange (set by the login steps).
 router.get('/login/change-password', guestOnly, apiLimiter, authRoutes.changePasswordPage);
@@ -648,6 +654,12 @@ router.use('/api/v1/client/update', apiLimiter, clientRoutes.updateRouter || Rou
 // yet, the one-shot code is the credential. Must stay before requireAuth.
 const { clientEnrollLimiter } = require('../middleware/rateLimit');
 router.use('/api/v1/client/enroll', clientEnrollLimiter, require('./api/client/enroll'));
+
+// Sign-in in the apps with the own account (docs/groups.md "Anmeldung in den
+// Apps") — public like the redeem: password or the handoff after "Mit
+// Microsoft anmelden" in the browser → an ordinary setup code. Each endpoint
+// has its own limiter per address (middleware/rateLimit.js appSignin*).
+router.use('/api/v1/client/signin', require('./api/client/signin'));
 
 // ─── Gateway API (uses own Bearer-token auth, not admin/session auth) ──
 // No apiLimiter here: it is keyed by IP and would make gateways behind the

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="{{ language }}" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  {#- Sign-in in the apps with "Mit Microsoft anmelden" (routes/oidc.js,
+      docs/groups.md "Anmeldung in den Apps"). mode 'done' / 'error': back to
+      the app — `target` is the app's checked redirect_uri (gatecontrol://signin
+      or http://127.0.0.1|localhost:<port>/signin) with ?handoff=… or ?error=…
+      and the app's state; a custom scheme needs a page with a link, a 302
+      is not followed everywhere. mode 'invalid': the app sent a request we
+      do not answer (400), no link. -#}
+  {% if target %}<meta http-equiv="refresh" content="0;url={{ target }}">{% endif %}
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#f2f0eb">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title>{{ t('app_signin.title') }} — {{ appName }}</title>
+  <script nonce="{{ cspNonce }}">
+(function(){try{var s=localStorage.getItem('gc-theme-mode');var t=s||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
+</script>
+  <link rel="stylesheet" href="/css/app.css?v={{ appVersion }}">
+</head>
+<body class="au-page">
+  <main class="au-wrap">
+    <div class="au-brand">
+      <span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m8.5 12 2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="nm">{{ appName }}</span>
+    </div>
+    <div class="card au-card au-center" data-app-signin="{{ mode }}">
+      {% if mode == 'done' %}
+      <div class="au-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6"/></svg></div>
+      <h1 class="au-title">{{ t('app_signin.done_title') }}</h1>
+      {% else %}
+      <div class="au-icon au-icon-danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></div>
+      <h1 class="au-title">{{ t('app_signin.invalid_title') if mode == 'invalid' else t('app_signin.error_title') }}</h1>
+      {% endif %}
+      <p class="au-sub">{{ message }}</p>
+      {% if target %}<a class="btn btn-primary au-submit" href="{{ target }}" data-app-return>{{ t('app_signin.back') }}</a>{% endif %}
+    </div>
+    <div class="au-foot">{{ appName }}</div>
+  </main>
+</body>
+</html>
