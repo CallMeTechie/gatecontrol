@@ -164,6 +164,10 @@
     <form class="modal-body us-modal-body us-form" id="grp-del-form" novalidate>
       <p class="us-del-intro" id="grp-del-intro"></p>
       <ul class="us-effects" id="grp-del-effects"></ul>
+      <label class="us-field" id="grp-del-successor-field"><span class="us-label">{{ t('grp.del.successor_label') }}</span>
+        <select class="form-select" id="grp-del-successor"></select>
+        <span class="us-hint" id="grp-del-successor-hint">{{ t('grp.del.successor_hint') }}</span>
+      </label>
       <label class="us-field"><span class="us-label">{{ t('grp.del.confirm_label') }}</span><input type="text" class="form-input" id="grp-del-confirm" autocomplete="off" spellcheck="false"></label>
       <div class="us-error" id="grp-del-error" role="alert" hidden></div>
     </form>

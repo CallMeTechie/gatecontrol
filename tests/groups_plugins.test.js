@@ -50,8 +50,9 @@ module.exports = {
     const prev = (await gc.storage.get('changes')) || [];
     await gc.storage.set('changes', prev.concat(changes));
   },
-  async groupUsage({ groupId }, gc) {
+  async groupUsage({ groupId, successorUserId }, gc) {
     const mode = await gc.storage.get('usage-mode');
+    if (mode === 'successor') return [{ kind: 'Drive', label: 'Ordner ' + groupId, onDelete: 'geht an ' + successorUserId }];
     if (mode === 'throw') throw new Error('broken on purpose');
     if (mode === 'garbage') return 'nope';
     if (mode === 'slow') { await wait(8000); return [{ label: 'too late' }]; }
@@ -372,6 +373,33 @@ describe('hooks', () => {
     assert.equal(await call('grp-manage', 'remove', { key: 'gone' }), true);
     assert.deepEqual(await kvGet('grp-read', 'deleting'), [{ groupId: own.id, successorUserId: null }]);
     assert.equal(await kvGet('grp-manage', 'deleting'), null);
+  });
+
+  it('groupUsage hears the successor (default lead, the admin\'s choice, none); successor=none deletes without one', async () => {
+    const g = groups.create({ kind: 'team', name: 'GP Successor' });
+    groups.setMember(g.id, ben, 'lead');
+    await kv('grp-read', 'usage-mode', 'successor');
+    try {
+      const text = (body) => body.usage.find((u) => u.label === 'Ordner ' + g.id).onDelete;
+      let r = await agent.get(`/api/v1/groups/${g.id}/usage`).expect(200);
+      assert.equal(text(r.body), 'geht an ' + ben);
+      assert.equal(r.body.defaultSuccessor.userId, ben);
+      assert.equal(r.body.defaultSuccessor.role, 'lead');
+      assert.equal(r.body.defaultSuccessor.inherited, false);
+      r = await agent.get(`/api/v1/groups/${g.id}/usage`).query({ successor: String(carla) }).expect(200);
+      assert.equal(text(r.body), 'geht an ' + carla);
+      assert.equal(r.body.defaultSuccessor.userId, ben, 'the default stays the lead');
+      r = await agent.get(`/api/v1/groups/${g.id}/usage`).query({ successor: 'none' }).expect(200);
+      assert.equal(text(r.body), 'geht an null');
+      await agent.get(`/api/v1/groups/${g.id}/usage`).query({ successor: '999999' }).expect(404);
+    } finally { await kv('grp-read', 'usage-mode', null); }
+    // a disabled account cannot take over
+    const off2 = H.makeUser('gp-off-succ', { enabled: 0 });
+    await agent.delete(`/api/v1/groups/${g.id}`).query({ confirm: 'GP Successor', successor: String(off2) }).set('X-CSRF-Token', csrf).expect(400);
+    assert.ok(groups.get(g.id), 'refused, the group stays');
+    await kv('grp-read', 'deleting', null);
+    await agent.delete(`/api/v1/groups/${g.id}`).query({ confirm: 'GP Successor', successor: 'none' }).set('X-CSRF-Token', csrf).expect(200);
+    assert.deepEqual(await kvGet('grp-read', 'deleting'), [{ groupId: g.id, successorUserId: null }]);
   });
 
   it('groupDeleting has a budget: a slow plugin does not stop the deletion', async () => {

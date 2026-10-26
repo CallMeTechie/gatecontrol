@@ -405,5 +405,11 @@ describe('admin API: preview, principals, routes', () => {
     access().setRouteGroups(id, [sub.id]);
     const u = await agent.get(`/api/v1/groups/${sub.id}/usage`).expect(200);
     assert.ok(u.body.usage.some((x) => x.kind === 'route' && x.id === id));
+    // the only restriction of the route: it stays locked — key plus the text in the caller's language
+    const e = u.body.usage.find((x) => x.kind === 'route' && x.id === id);
+    assert.equal(e.onDeleteKey, 'grp.usage.route_locked');
+    const texts = ['de', 'en'].map((l) => require(`../src/i18n/${l}.json`)['grp.usage.route_locked']);
+    assert.ok(texts.includes(e.onDelete), e.onDelete);
+    assert.ok('defaultSuccessor' in u.body);
   });
 });

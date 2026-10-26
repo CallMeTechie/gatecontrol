@@ -11,11 +11,13 @@
  *   POST   /api/v1/groups/import                      CSV (text/plain body or { csv })
  *   GET    /api/v1/groups/:id                         group + members (incl. inherited) + invites
  *   PATCH  /api/v1/groups/:id                         name, description, color, kind, endsAt, parentId
- *   DELETE /api/v1/groups/:id?confirm=<name>[&successor=<userId>]
+ *   DELETE /api/v1/groups/:id?confirm=<name>[&successor=<userId>|none]
  *                                                     delete (name typed to confirm; plugins'
  *                                                     groupDeleting hooks run first, ≤ 30 s)
  *   POST   /api/v1/groups/:id/archive | /unarchive
- *   GET    /api/v1/groups/:id/usage                   "Wird genutzt von" (core + providers)
+ *   GET    /api/v1/groups/:id/usage[?successor=<userId>|none]
+ *                                                     "Wird genutzt von" (core + providers) and
+ *                                                     defaultSuccessor (delete dialog)
  *   PUT    /api/v1/groups/:id/members/:userId { role }
  *   DELETE /api/v1/groups/:id/members/:userId
  *   GET    /api/v1/groups/:id/invites
@@ -148,8 +150,12 @@ router.post('/:id/unarchive', (req, res) => {
 
 router.get('/:id/usage', async (req, res) => {
   try {
-    const usage = await groups.usage(req.params.id);
-    res.json({ ok: true, usage });
+    // ?successor=<userId>|none: what the plugins would say for that successor
+    // (delete dialog); default the group's lead / deputy (defaultSuccessor).
+    const successor = typeof req.query.successor === 'string' ? req.query.successor : null;
+    const usage = (await groups.usage(req.params.id, { successorUserId: successor })).map((u) => (
+      u.onDeleteKey && !u.onDelete ? { ...u, onDelete: req.t(u.onDeleteKey) } : u));
+    res.json({ ok: true, usage, defaultSuccessor: groups.defaultSuccessor(req.params.id) });
   } catch (err) { fail(req, res, err); }
 });
 

@@ -57,7 +57,9 @@ function parseRecipients(raw) {
   let r = {};
   try { r = typeof raw === 'string' ? JSON.parse(raw) : (raw || {}); } catch { r = {}; }
   const ids = (v) => (Array.isArray(v) ? [...new Set(v.map(Number).filter((n) => Number.isSafeInteger(n) && n > 0))] : []);
-  return { admins: !!r.admins, owner: !!r.owner, subscribers: !!r.subscribers, users: ids(r.users), groups: ids(r.groups) };
+  // groups = peer (device) groups; person_groups = person groups (services/groups.js),
+  // resolved to their effective members when a notification goes out
+  return { admins: !!r.admins, owner: !!r.owner, subscribers: !!r.subscribers, users: ids(r.users), groups: ids(r.groups), person_groups: ids(r.person_groups) };
 }
 
 function rowToRule(row) {
@@ -206,7 +208,7 @@ function validatePatch(eventId, body) {
         const v = asBool(r[k]);
         if (v === undefined) errors.recipients = 'invalid'; else out[k] = v;
       }
-      for (const k of ['users', 'groups']) {
+      for (const k of ['users', 'groups', 'person_groups']) {
         if (r[k] === undefined) { out[k] = []; continue; }
         const ids = asIdList(r[k]);
         if (!ids) { errors.recipients = 'invalid'; continue; }
@@ -219,6 +221,10 @@ function validatePatch(eventId, body) {
       if (!errors.recipients && out.groups.length) {
         const known = new Set(db.prepare(`SELECT id FROM peer_groups WHERE id IN (${out.groups.map(() => '?').join(',')})`).all(...out.groups).map((x) => x.id));
         if (out.groups.some((id) => !known.has(id))) errors.recipients = 'unknown_group';
+      }
+      if (!errors.recipients && out.person_groups.length) {
+        const known = new Set(db.prepare(`SELECT id FROM groups WHERE id IN (${out.person_groups.map(() => '?').join(',')})`).all(...out.person_groups).map((x) => x.id));
+        if (out.person_groups.some((id) => !known.has(id))) errors.recipients = 'unknown_group';
       }
       if (!errors.recipients) values.recipients = out;
     }

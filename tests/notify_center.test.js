@@ -60,7 +60,7 @@ describe('rules', () => {
     assert.equal(by.update.priority, 'info');
     assert.equal(by.resources.priority, 'high');
     assert.equal(by.backup_problem.priority, 'high');
-    assert.deepEqual(by.gateway_state.recipients, { admins: true, owner: false, subscribers: false, users: [], groups: [] });
+    assert.deepEqual(by.gateway_state.recipients, { admins: true, owner: false, subscribers: false, users: [], groups: [], person_groups: [] });
     assert.equal(by.gateway_state.ch_app, true);
     assert.equal(by.gateway_state.ch_webhook, true);
     assert.equal(by.gateway_state.email_fallback_s, 600);
@@ -150,6 +150,33 @@ describe('router: recipients and filters', () => {
     assert.deepEqual(out, []);
     out = router.resolve({ recipients: { groups: [g], users: [anna] }, topic: 'devices', priority: 'normal', licensed: true });
     assert.deepEqual(tokensOf(out), [annaDev.tokenId, carlaDev.tokenId].sort((a, b) => a - b));
+  });
+
+  it('person_groups recipients: the effective members at send time (subgroups, not disabled / archived), only with the licence', () => {
+    const groups = require('../src/services/groups');
+    const top = groups.create({ kind: 'department', name: H.uniq('Leitstelle') });
+    const sub = groups.create({ kind: 'team', name: 'Schicht', parentId: top.id });
+    const eva = H.makeUser('eva');
+    const fred = H.makeUser('fred', { enabled: 0 });
+    const evaDev = H.makeDevice(eva);
+    const fredDev = H.makeDevice(fred);
+    groups.setMember(sub.id, eva);
+    groups.setMember(top.id, fred);
+    let out = router.resolve({ recipients: { person_groups: [top.id] }, topic: 'system', priority: 'normal', licensed: false });
+    assert.deepEqual(out, []);
+    out = router.resolve({ recipients: { person_groups: [top.id] }, topic: 'system', priority: 'normal', licensed: true });
+    assert.deepEqual(tokensOf(out), [evaDev.tokenId], 'member of the subgroup counts; a disabled account does not; admin-only topic reaches the named people');
+    assert.ok(!tokensOf(out).includes(fredDev.tokenId));
+    // resolved at send time: a new member is reached without touching the rule
+    groups.setMember(top.id, anna);
+    out = router.resolve({ recipients: { person_groups: [top.id] }, topic: 'devices', priority: 'normal', licensed: true });
+    assert.ok(tokensOf(out).includes(annaDev.tokenId));
+    groups.archive(top.id);
+    out = router.resolve({ recipients: { person_groups: [top.id] }, topic: 'devices', priority: 'normal', licensed: true });
+    assert.deepEqual(out, [], 'archived groups reach nobody');
+    // validation: unknown person groups are refused, parsed lists are clean
+    assert.equal(rules.validatePatch('gateway_state', { recipients: { person_groups: [987654] } }).errors.recipients, 'unknown_group');
+    assert.deepEqual(rules.validatePatch('gateway_state', { recipients: { person_groups: [top.id] } }).values.recipients.person_groups, [top.id]);
   });
 
   it('device prefs: switched off or topic muted → skipped (critical ignores the mute)', () => {

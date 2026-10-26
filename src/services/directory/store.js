@@ -7,7 +7,8 @@
  *
  *   KINDS = ['ad', 'entra', 'ldap']
  *   list() / get(id) → public shape (never the secret; `hasSecret` and a
- *       mask instead)
+ *       mask instead; `needsSecret` when none is stored — a backup restored
+ *       on a server with another GC_ENCRYPTION_KEY drops it)
  *   load(id) → internal { ...row, config, selectedGroups } | null
  *   secretOf(row) → decrypted secret or ''
  *   create(input, { actor, ip }) / update(id, patch, { actor, ip })
@@ -196,6 +197,9 @@ function shape(row) {
     parentGroupId: row.parent_group_id,
     config,
     hasSecret: !!row.secret_enc,
+    // no secret stored (e.g. restored from a backup made with another
+    // GC_ENCRYPTION_KEY): enter it again; the schedule skips the directory
+    needsSecret: !row.secret_enc,
     secret: row.secret_enc ? MASK : '',
     selectedGroups: row.selectedGroups,
     lastSyncAt: row.last_sync_at,

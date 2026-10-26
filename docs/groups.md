@@ -80,8 +80,16 @@ Every group has a source:
   von** — the routes and RDP entries released for the group plus what plugins
   report (Drive folders, chats, …).
 - **Gruppe anlegen**: parent, kind, name and, for projects, the end date.
-- **Löschen** lists everything that depends on the group, asks for the name
-  to be typed and offers **Stattdessen archivieren**. A group with subgroups
+- **Löschen** lists everything that depends on the group — for each route
+  and RDP entry what happens: "Route bleibt gesperrt (niemand mehr
+  freigegeben)" when the group was its only restriction (no other group, no
+  person, no device with the peer ACL), otherwise "Freigabe über diese Gruppe
+  entfällt" — and what plugins report. **Wer übernimmt?** chooses who takes
+  over what plugins keep for the group (team folders, …): preselected is the
+  group's lead, else its deputy (walking up to the groups above); any other
+  enabled person or **Niemand** can be chosen, and the plugins' texts in the
+  list follow the choice. It asks for the name to be typed and offers
+  **Stattdessen archivieren**. A group with subgroups
   cannot be deleted (delete or move them first); the accounts themselves
   always stay. An RDP entry that was released only for this group (and for no
   person) stays hidden rather than becoming visible for everyone.
@@ -187,6 +195,16 @@ The overview of a user (**Benutzer** → the user) shows the person's groups
 with role; groups the person only belongs to through a subgroup are marked
 "über Untergruppe".
 
+## Notifications
+
+In **Benachrichtigungen › Regeln** a rule can name groups as recipients
+("Gruppen (Personen)" in the recipient picker, next to people and the device
+groups, which are now called "Gerätegruppen"). The recipients are the
+group's effective members including subgroups — disabled accounts and
+archived groups do not count — resolved when the notification goes out, with
+all their app devices. Like single persons this needs the `email_alerts`
+licence. Stored as `recipients.person_groups` (docs/feature-notification-center.md).
+
 ## Zugriff per Gruppe
 
 HTTP routes and RDP entries can be released for groups, persons and — HTTP
@@ -248,7 +266,9 @@ hashes only — the links keep working) and per route `group_refs`. Users are
 restored with their original ids (`user_ref`), so `user_ids` lists, group
 members and plugin data still name the same person; an id the backup does not
 know becomes `0` (nobody). A backup without the groups section leaves the
-groups as they are.
+groups as they are. It also carries the directory connections (see
+"Verzeichnis-Abgleich und Anmeldung" › Secrets) with their links and
+conflicts.
 
 ## Verzeichnis-Abgleich und Anmeldung
 
@@ -435,9 +455,20 @@ Zuordnung*) defaults to OpenLDAP / Synology:
 **Secrets.** The bind password and the Entra client secret are stored
 encrypted with the server key (`GC_ENCRYPTION_KEY`, like licence keys) and are
 never returned by the API or shown in the UI (only a mask); leaving the field
-empty keeps the stored value. The directory settings are not part of the
-server backup yet — after a restore, connect the directory again (the accounts
-are matched again by e-mail → conflicts to merge).
+empty keeps the stored value.
+
+**Backup.** The server backup carries `directories` (ids kept, so the groups'
+source `directory:<id>` still matches; the secret exactly as stored, i.e.
+encrypted), `directory_links` (by `user_ref` — users keep their ids — else
+by username; the peers the sync disabled by name) and `directory_conflicts`;
+the run log (`directory_runs`) is not saved, and a run that waited for
+confirmation is dropped. Restored on a server with a **different
+`GC_ENCRYPTION_KEY`**, the secret cannot be read: the connection, its groups
+and links are restored anyway, the secret is left empty and the directory
+page asks for it again ("Das Passwort des Dienstkontos fehlt …", API field
+`needsSecret: true`); until it is entered, the schedule skips the directory
+(the restore result lists it in `directories_secret_reentry`). A backup
+without the directory section leaves the connections as they are.
 
 ### Directory API
 
@@ -489,10 +520,10 @@ Admin session only (like `/api/v1/users`); API tokens get 403.
 | POST | `/api/v1/groups` | `{ parentId, kind, name, description, color, endsAt }` (always local) |
 | GET | `/api/v1/groups/:id` | group, members (incl. inherited), invitation links, roles |
 | PATCH | `/api/v1/groups/:id` | `name, description, color, kind, endsAt, parentId` |
-| DELETE | `/api/v1/groups/:id?confirm=<name>[&successor=<userId>]` | delete — plugins' `groupDeleting` runs first (≤ 30 s); `successor` defaults to the group's lead |
+| DELETE | `/api/v1/groups/:id?confirm=<name>[&successor=<userId>\|none]` | delete — plugins' `groupDeleting` runs first (≤ 30 s); `successor` defaults to the group's lead, else deputy (walking up); `none` = nobody; a disabled account is refused (`USER_DISABLED`) |
 | GET | `/api/v1/principals` | groups and enabled people for `GC.pickPrincipals` on admin pages |
 | POST | `/api/v1/groups/:id/archive`, `/unarchive` | archive / restore |
-| GET | `/api/v1/groups/:id/usage` | "Wird genutzt von" |
+| GET | `/api/v1/groups/:id/usage[?successor=<userId>\|none]` | "Wird genutzt von": `usage` (core entries with `onDeleteKey` `grp.usage.route_locked` / `route_dropped` / `rdp_locked` / `rdp_dropped` and `onDelete` in the caller's language; plugins hear `successor`) and `defaultSuccessor` `{ userId, name, role, groupId, inherited } \| null` |
 | PUT | `/api/v1/groups/:id/members/:userId` | `{ role }` — add or change role |
 | DELETE | `/api/v1/groups/:id/members/:userId` | remove |
 | GET / POST | `/api/v1/groups/:id/invites` | list / create `{ role, expiresInDays, maxUses }` |
@@ -514,7 +545,8 @@ Errors carry a `code`: `NOT_FOUND`, `NAME_TAKEN`, `DEPTH_EXCEEDED`, `CYCLE`,
 `src/services/groups.js` is the single source of truth; its header documents
 every function (`list`, `get`, `members`, `groupsOfUser`, `isMember`,
 `leadersOf`, `effectiveUserIds`, invitations, `importCsv`, `usage` /
-`registerUsageProvider`, `removeWithHooks` / `registerRemoveHook`) and the change events (`events` emits `'change'`
+`registerUsageProvider`, `removeWithHooks` / `registerRemoveHook`,
+`defaultSuccessor` / `resolveSuccessor`) and the change events (`events` emits `'change'`
 with a batch of `{ type, groupId, userId?, role? }` at most once per second).
 Activity entries use the event types `group_*` (and `route_groups_changed`).
 

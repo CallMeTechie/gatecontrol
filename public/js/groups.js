@@ -4,8 +4,8 @@
 // colour, source badge, members incl. subgroups, search, archived on/off),
 // the selected group on the right: path, kind, source, members with role
 // (direct ones editable, inherited ones from subgroups read-only), invitation
-// links, "Wird genutzt von", archive / restore, delete (usage listed, name
-// typed). Directory groups: name, structure and their own members are
+// links, "Wird genutzt von", archive / restore, delete (usage listed,
+// successor for what plugins keep, name typed). Directory groups: name, structure and their own members are
 // read-only, GateControl roles and extra local members are allowed; plugin
 // groups are read-only. Dialogs: create, edit, add member, invitation link,
 // delete, CSV import. Strings: #grp-i18n (grp.*, error.groups.*, common.*).
@@ -369,7 +369,8 @@
   }
 
   function usageKind(u) { return u.core ? T('grp.usage.' + u.kind) : u.kind; }
-  function usageThen(u) { return u.core ? T('grp.usage.' + u.kind + '_del') : (u.onDelete || ''); }
+  // Core entries carry an i18n key (grp.usage.route_locked, …), plugins their own text.
+  function usageThen(u) { return u.onDeleteKey ? T(u.onDeleteKey) : (u.onDelete || ''); }
 
   function renderUsage(g) {
     const grid = el('div', { class: 'grp-usage' }, el('p', { class: 'us-muted' }, T('common.loading')));
@@ -607,7 +608,58 @@
     else { $('grp-invite-link').select(); }
   });
 
-  // Delete (Loeschen.dc.html): usage listed, name typed, archive instead.
+  // Delete (Loeschen.dc.html): usage listed, successor, name typed, archive
+  // instead. The successor takes over what plugins keep for the group
+  // (groupDeleting); preselected is the group's lead / deputy (walking up).
+  let delSeq = 0;
+  let people = null;
+  async function loadPeople() {
+    if (people) return people;
+    try { people = ((await call('GET', '/api/v1/principals')).users || []).filter((u) => u && u.id); } catch (_) { people = []; }
+    return people;
+  }
+  function fillSuccessor(def, list) {
+    const sel = clear($('grp-del-successor'));
+    if (def) {
+      sel.appendChild(el('option', { value: String(def.userId) },
+        T(def.inherited ? 'grp.del.successor_default_up' : 'grp.del.successor_default', { name: def.name, role: roleLabel(def.role) })));
+    }
+    sel.appendChild(el('option', { value: 'none' }, T('grp.del.successor_none')));
+    const others = el('optgroup', null);
+    others.label = T('grp.del.successor_others');
+    list.forEach((u) => {
+      if (def && Number(u.id) === Number(def.userId)) return;
+      others.appendChild(el('option', { value: String(u.id) }, u.sub ? u.label + ' (' + u.sub + ')' : u.label));
+    });
+    if (others.children.length) sel.appendChild(others);
+    sel.value = def ? String(def.userId) : 'none';
+  }
+  // A plugin text that continues the label ("wird in … verschoben") reads as
+  // one sentence after it; a full sentence (core keys) gets its own line.
+  function effectText(u) {
+    const then = usageThen(u);
+    if (then && !u.onDeleteKey && /^\p{Ll}/u.test(then)) return el('span', null, [el('b', null, u.label), ' ' + then]);
+    return el('span', null, [el('b', null, u.label), then ? el('span', { class: 'us-effect-text' }, then) : null]);
+  }
+  async function loadEffects(g, successor) {
+    const seq = ++delSeq;
+    const list = $('grp-del-effects');
+    try {
+      const res = await call('GET', '/api/v1/groups/' + g.id + '/usage' + (successor ? '?successor=' + encodeURIComponent(successor) : ''));
+      if (seq !== delSeq) return null;
+      clear(list);
+      const usage = res.usage || [];
+      if (!usage.length) list.appendChild(el('li', { class: 'us-effect' }, el('span', null, T('grp.usage.none'))));
+      usage.forEach((u) => list.appendChild(el('li', { class: 'us-effect grp-effect' }, [
+        el('span', { class: 'grp-effect-kind' }, usageKind(u)),
+        effectText(u),
+      ])));
+      return res;
+    } catch (err) {
+      if (seq === delSeq) clear(list).appendChild(el('li', { class: 'us-error' }, errMsg(err)));
+      return null;
+    }
+  }
   async function openDelete() {
     const d = state.detail;
     const g = d.group;
@@ -616,21 +668,21 @@
     $('grp-del-intro').textContent = direct ? P('grp.del.intro', direct) : T('grp.del.intro_none');
     const list = clear($('grp-del-effects'));
     list.appendChild(el('li', { class: 'us-muted' }, T('common.loading')));
+    clear($('grp-del-successor'));
+    $('grp-del-successor').disabled = true;
     $('grp-del-confirm').value = '';
     $('grp-del-ok').disabled = true;
     setError('grp-del-error', g.childIds && g.childIds.length ? T('error.groups.has_children') : '');
     openDlg('grp-dlg-delete');
-    try {
-      const res = await call('GET', '/api/v1/groups/' + g.id + '/usage');
-      clear(list);
-      const usage = res.usage || [];
-      if (!usage.length) list.appendChild(el('li', { class: 'us-effect' }, el('span', null, T('grp.usage.none'))));
-      usage.forEach((u) => list.appendChild(el('li', { class: 'us-effect grp-effect' }, [
-        el('span', { class: 'grp-effect-kind' }, usageKind(u)),
-        el('span', null, [el('b', null, u.label), usageThen(u) ? el('span', { class: 'us-effect-text' }, usageThen(u)) : null]),
-      ])));
-    } catch (err) { clear(list).appendChild(el('li', { class: 'us-error' }, errMsg(err))); }
+    const [res, list2] = await Promise.all([loadEffects(g, null), loadPeople()]);
+    if (!res) return; // no picker: the server's default (lead / deputy) applies
+    fillSuccessor(res ? res.defaultSuccessor : null, list2);
+    $('grp-del-successor').disabled = false;
   }
+  $('grp-del-successor').addEventListener('change', () => {
+    const g = state.detail && state.detail.group;
+    if (g) loadEffects(g, $('grp-del-successor').value);
+  });
   $('grp-del-confirm').addEventListener('input', () => {
     const g = state.detail && state.detail.group;
     $('grp-del-ok').disabled = !g || $('grp-del-confirm').value.trim() !== g.name || (g.childIds && g.childIds.length > 0);
@@ -640,7 +692,9 @@
     const g = state.detail.group;
     if ($('grp-del-confirm').value.trim() !== g.name) return;
     try {
-      await call('DELETE', '/api/v1/groups/' + g.id + '?confirm=' + encodeURIComponent($('grp-del-confirm').value.trim()));
+      const successor = $('grp-del-successor').value;
+      await call('DELETE', '/api/v1/groups/' + g.id + '?confirm=' + encodeURIComponent($('grp-del-confirm').value.trim())
+        + (successor ? '&successor=' + encodeURIComponent(successor) : ''));
       closeDlg('grp-dlg-delete');
       toast(T('grp.toast.deleted'));
       state.sel = g.parentId || null;

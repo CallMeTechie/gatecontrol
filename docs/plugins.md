@@ -668,7 +668,7 @@ module.exports = {
   async publicLinkEvent({ token, event, file, zip, downloads }, gc) {  // optional (`publicLinks`, since 1.193.0):
   },                                        // 'download' | 'locked' | 'expired' of one of its links (see "Public links")
   async groupsChanged({ changes }, gc) {},  // optional (`groups`): batched group changes (see "Groups")
-  async groupUsage({ groupId }, gc) {       // optional (`groups`): what the plugin keeps for a group
+  async groupUsage({ groupId, successorUserId }, gc) {  // optional (`groups`): what the plugin keeps for a group
     return [{ kind: 'Drive', label: 'Team-Ordner Buchhaltung', onDelete: 'wird in Meine Dateien von Thomas Berg verschoben' }];
   },
   async groupDeleting({ groupId, successorUserId }, gc) {},  // optional (`groups`): clean up before a group goes (≤ 30 s)
@@ -1575,7 +1575,7 @@ async groupsChanged({ changes }, gc) {
   //   'group_archived'|'group_unarchived'|'group_deleted', groupId, userId?, role?, reason? }]
   // batched, at most once per second; reason e.g. 'user_disabled', 'user_deleted', 'group_deleted'
 }
-async groupUsage({ groupId }, gc) {      // "Wird genutzt von" and the delete dialog
+async groupUsage({ groupId, successorUserId }, gc) {   // "Wird genutzt von" and the delete dialog
   return [{ kind: 'Drive', label: 'Team-Ordner Buchhaltung', onDelete: 'wird in Meine Dateien von Thomas Berg verschoben' }];
 }
 async groupDeleting({ groupId, successorUserId }, gc) { /* clean up */ }
@@ -1588,14 +1588,19 @@ async groupDeleting({ groupId, successorUserId }, gc) { /* clean up */ }
 * `groupUsage`: 4.5 s; an error, a timeout or anything but a list is
   ignored; at most 50 entries, `label` required (≤ 200), `kind` (≤ 60,
   default the plugin's name), `onDelete` (≤ 300) what happens to it when the
-  group is deleted.
+  group is deleted. `successorUserId`: who would take over (the person chosen
+  in the delete dialog, else the group's lead or deputy, else `null`) — name
+  that person in `onDelete`; the dialog asks again when the choice changes.
+  A text starting in lower case continues the label as one sentence
+  ("Team-Ordner Buchhaltung wird in Meine Dateien von Thomas Berg
+  verschoben").
 * `groupDeleting`: before the group is deleted (admin page, admin API,
   another plugin's `remove`) — all plugins in parallel, **30 s in total**;
   failures and timeouts are logged and the deletion goes on. The plugin that
   removes its own group is not asked. `successorUserId`: who takes over what
   the plugin keeps for the group (the administrator's choice
   `DELETE /api/v1/groups/:id?successor=<userId>`, else the group's lead or
-  deputy, else `null`). A refused deletion (wrong name, subgroups) asks
+  deputy, else `null`; `successor=none` = `null`). A refused deletion (wrong name, subgroups) asks
   nobody.
 
 ### Notifications to groups

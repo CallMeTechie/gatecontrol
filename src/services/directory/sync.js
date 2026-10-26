@@ -651,7 +651,9 @@ async function runDueInner(now) {
   // A run that never finished (process restart) is closed.
   db.prepare("UPDATE directory_runs SET status = 'error', error = 'interrupted', finished_at = ? WHERE status = 'running' AND started_at < ?")
     .run(new Date(now).toISOString(), new Date(now - STALE_RUN_MS).toISOString());
-  const rows = db.prepare('SELECT id, interval_min, last_sync_at, last_full_sync_at, last_status FROM directories WHERE enabled = 1').all();
+  // Without a stored secret (restored from a backup of a server with another
+  // key) every run would fail: the schedule waits until an admin enters it.
+  const rows = db.prepare("SELECT id, interval_min, last_sync_at, last_full_sync_at, last_status FROM directories WHERE enabled = 1 AND secret_enc IS NOT NULL AND secret_enc <> ''").all();
   let started = 0;
   for (const r of rows) {
     if (running.has(r.id)) continue;

@@ -87,7 +87,7 @@ Gerät sie bestätigt oder sie abläuft.
 CREATE TABLE IF NOT EXISTS notify_rules (
   event_id        TEXT PRIMARY KEY,          -- CATALOGUE-Zeile, z. B. 'gateway_state', oder 'plugin:<id>:<topic>'
   priority        TEXT NOT NULL DEFAULT 'normal',  -- info|normal|high|critical
-  recipients      TEXT NOT NULL DEFAULT '{"admins":true}', -- JSON: admins, owner, subscribers, users[], groups[]
+  recipients      TEXT NOT NULL DEFAULT '{"admins":true}', -- JSON: admins, owner, subscribers, users[], groups[], person_groups[]
   ch_app          INTEGER NOT NULL DEFAULT 1,
   ch_email        INTEGER NOT NULL DEFAULT 0,
   ch_webhook      INTEGER NOT NULL DEFAULT 1,
@@ -246,9 +246,10 @@ Alle Antworten tragen zusätzlich `"ok": true`.
   hub:{enabled, endpoint, keepalive_s, retention_h, max_queue, allow_direct},
   sources:[{id: security|devices|services|system|plugins, count}] (7 Tage)}`
 * `GET /api/v1/notify/rules` → `{rules:[{event_id, group, label, priority,
-  recipients:{admins, owner, subscribers, users[], groups[]}, ch_app, ch_email,
+  recipients:{admins, owner, subscribers, users[], groups[], person_groups[]}, ch_app, ch_email,
   ch_webhook, email_fallback_s, delay_s, bundle_s, recovery, enabled,
-  plugin_id}], users:[{id,name}], groups:[{id,name}], webhooks_count, pro}`;
+  plugin_id}], users:[{id,name}], groups:[{id,name}], person_groups:[{id,name (Pfad)}],
+  webhooks_count, pro}`;
   `PUT /api/v1/notify/rules/:eventId` (teilweise) → `{ok, rule}`, Fehler 400
   `{fields:{feld: code}}`.
 * `GET /api/v1/notify/devices` → `{devices:[{token_id, name, user:{id,name,role},
@@ -278,7 +279,16 @@ Alle Antworten tragen zusätzlich `"ok": true`.
 
 **Gruppen als Empfänger** sind die vorhandenen Peer-Gruppen (`peer_groups`).
 Gemeint sind die **Geräte in der Gruppe** (Tokens, deren Peer in der Gruppe
-ist), nicht alle Geräte der Personen, denen dort ein Gerät gehört.
+ist), nicht alle Geräte der Personen, denen dort ein Gerät gehört. In der
+Regel-Ansicht heißen sie „Gerätegruppen“.
+
+**Personengruppen als Empfänger** (`person_groups`, docs/groups.md) sind die
+Gruppen aus „Benutzer › Gruppen“. Gemeint sind ihre Mitglieder samt
+Untergruppen (`groups.effectiveUserIds`, ohne gesperrte Konten und
+archivierte Gruppen) und damit alle App-Geräte dieser Personen – ermittelt
+beim Versand, ein neues Mitglied wird also ohne Änderung der Regel erreicht.
+Wie Personen nur mit der Lizenz `email_alerts`; eine unbekannte Gruppe wird
+mit `unknown_group` abgelehnt.
 
 ## Server: Regeln, Ruhezeiten, Bündeln
 
@@ -301,7 +311,7 @@ ist), nicht alle Geräte der Personen, denen dort ein Gerät gehört.
   * `admins`: alle Benutzer mit Rolle admin.
   * `owner`: Eigentümer des betroffenen Geräts, aufgelöst über `peers.user_id` bzw. `portalDevices.usageForPeer`.
   * `subscribers`: wer das Thema abonniert hat.
-  * Dazu einzelne Personen und Gruppen.
+  * Dazu einzelne Personen, Gerätegruppen und Personengruppen (`person_groups`).
   * Sicherheits-Themen sind nur für Admins abonnierbar.
 * **Ruhezeiten:** pro Person, gelten für alle ihre Geräte.
   * In der Ruhezeit wird still zugestellt: kein Ton, die Nachricht steht im Posteingang.

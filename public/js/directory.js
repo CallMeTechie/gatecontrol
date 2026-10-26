@@ -247,6 +247,9 @@
         el('button', { type: 'button', class: 'btn btn-ghost btn-danger', on: { click: openDelete } }, T('common.delete')),
       ]),
     ]));
+    if (d.needsSecret) {
+      box.appendChild(el('div', { class: 'grp-note grp-note-warn' }, T(d.kind === 'entra' ? 'dir.needs_secret_entra' : 'dir.needs_secret')));
+    }
     if (d.lastStatus === 'error' && d.lastError) {
       box.appendChild(el('div', { class: 'grp-note grp-note-warn' }, T('dir.last_error', { error: d.lastError })));
     }

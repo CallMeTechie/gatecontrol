@@ -157,6 +157,13 @@ function createBackup() {
   // username; invitations as their SHA-256 hashes only.
   const groupsData = exportGroups(db);
 
+  // ── directory sync (docs/groups.md "Verzeichnis-Abgleich") ──
+  // Connections with their id (groups' source 'directory:<id>' names it)
+  // and the secret exactly as stored (encrypted with GC_ENCRYPTION_KEY);
+  // links and conflicts with user_ref + username. The run log is not
+  // exported.
+  const directoryData = exportDirectories(db, peerNameById);
+
   // ── api_tokens (resolve peer_id/user_id via names) ──────────
   let apiTokens = [];
   try {
@@ -238,6 +245,9 @@ function createBackup() {
       groups: groupsData.groups,
       group_members: groupsData.members,
       group_invites: groupsData.invites,
+      directories: directoryData.directories,
+      directory_links: directoryData.links,
+      directory_conflicts: directoryData.conflicts,
       api_tokens: apiTokens,
       tags,
       gateway_meta: gatewayMeta,
@@ -327,6 +337,125 @@ function restoreGroups(db, { groups, members, invites }, userIdByName) {
     } catch (e) { logger.warn({ err: e.message }, 'group invite restore skipped'); }
   }
   return restored;
+}
+
+function exportDirectories(db, peerNameById) {
+  const out = { directories: [], links: [], conflicts: [] };
+  try {
+    if (!columnsOf(db, 'directories').length) return out;
+    const userName = new Map(db.prepare('SELECT id, username FROM users').all().map(u => [u.id, u.username]));
+    const dCols = columnsOf(db, 'directories');
+    out.directories = db.prepare('SELECT * FROM directories ORDER BY id').all().map(d => {
+      const e = pickColumns(d, dCols);
+      e.directory_ref = d.id;
+      delete e.id;
+      return e;
+    });
+    const lCols = columnsOf(db, 'directory_links');
+    out.links = db.prepare('SELECT * FROM directory_links ORDER BY user_id').all().map(l => {
+      const e = pickColumns(l, lCols);
+      e.user_ref = l.user_id;
+      e.user_name = userName.get(l.user_id) || null;
+      e.directory_ref = l.directory_id;
+      // the peers the sync disabled, by name (peers get new ids on restore)
+      let peerIds = [];
+      try { peerIds = JSON.parse(l.disabled_peer_ids || '[]'); } catch { peerIds = []; }
+      e.disabled_peer_names = Array.isArray(peerIds) ? peerIds.map(id => peerNameById.get(Number(id))).filter(Boolean) : [];
+      delete e.user_id;
+      delete e.directory_id;
+      delete e.disabled_peer_ids;
+      return e;
+    }).filter(l => l.user_name);
+    const cCols = columnsOf(db, 'directory_conflicts');
+    out.conflicts = db.prepare('SELECT * FROM directory_conflicts ORDER BY id').all().map(c => {
+      const e = pickColumns(c, cCols);
+      e.directory_ref = c.directory_id;
+      e.user_ref = c.user_id == null ? null : c.user_id;
+      e.user_name = c.user_id == null ? null : (userName.get(c.user_id) || null);
+      e.resolved_by_name = c.resolved_by == null ? null : (userName.get(c.resolved_by) || null);
+      delete e.id;
+      delete e.directory_id;
+      delete e.user_id;
+      delete e.resolved_by;
+      return e;
+    });
+  } catch (err) { logger.warn({ err: err.message }, 'backup export: directories skipped'); }
+  return out;
+}
+
+/**
+ * Restore the directory connections (inside the restore transaction, after
+ * users and groups): ids as they were, the secret as stored. A secret this
+ * server cannot decrypt (backup from a server with another GC_ENCRYPTION_KEY)
+ * is dropped — the connection stays, is marked as needing the secret again
+ * (`needsSecret`) and does not sync until an admin enters it. Links and
+ * conflicts find their account by the restored id (user_ref), else by
+ * username. Returns { count, secretReentry: [name] }.
+ */
+function restoreDirectories(db, { directories, links, conflicts }, { userIdMap, userIdByName, peerIdMap }) {
+  const result = { count: 0, secretReentry: [] };
+  const dCols = columnsOf(db, 'directories');
+  if (!dCols.length) return result;
+  try {
+    db.prepare('DELETE FROM directory_runs').run();
+    db.prepare('DELETE FROM directory_conflicts').run();
+    db.prepare('DELETE FROM directory_links').run();
+    db.prepare('DELETE FROM directories').run();
+  } catch (err) { logger.warn({ err: err.message }, 'backup restore: clearing directories failed'); return result; }
+  const userExists = db.prepare('SELECT 1 FROM users WHERE id = ?');
+  const userOf = (ref, name) => {
+    const byRef = Number.isSafeInteger(ref) && userIdMap.has(ref) ? userIdMap.get(ref) : null;
+    const id = byRef || (name ? userIdByName.get(name) : null) || null;
+    return id && userExists.get(id) ? id : null;
+  };
+  const groupExists = db.prepare('SELECT 1 FROM groups WHERE id = ?');
+  const restored = new Set();
+  const cols = dCols.filter(c => c !== 'id');
+  const ins = db.prepare(`INSERT INTO directories (id, ${cols.join(', ')}) VALUES (?, ${cols.map(() => '?').join(', ')})`);
+  for (const d of directories || []) {
+    if (!d || !Number.isSafeInteger(d.directory_ref) || d.directory_ref < 1 || !d.kind || !d.name) continue;
+    const row = { ...d };
+    if (row.secret_enc) {
+      try { decrypt(String(row.secret_enc)); } catch {
+        row.secret_enc = null;
+        result.secretReentry.push(d.name);
+      }
+    }
+    if (row.parent_group_id != null && !groupExists.get(row.parent_group_id)) row.parent_group_id = null;
+    // a stopped run waits in directory_runs, which is not restored
+    if (row.last_status === 'pending') row.last_status = null;
+    try {
+      ins.run(d.directory_ref, ...cols.map(c => (row[c] === undefined ? null : row[c])));
+      restored.add(d.directory_ref);
+      result.count++;
+    } catch (e) { logger.warn({ err: e.message, directory: d.name }, 'directory restore skipped'); }
+  }
+  const lCols = columnsOf(db, 'directory_links').filter(c => !['user_id', 'directory_id', 'disabled_peer_ids'].includes(c));
+  const insLink = db.prepare(`INSERT OR IGNORE INTO directory_links (user_id, directory_id, disabled_peer_ids, ${lCols.join(', ')})
+    VALUES (?, ?, ?, ${lCols.map(() => '?').join(', ')})`);
+  for (const l of links || []) {
+    if (!l || !restored.has(l.directory_ref) || !l.external_id) continue;
+    const uid = userOf(l.user_ref, l.user_name);
+    if (!uid) continue;
+    const peers = Array.isArray(l.disabled_peer_names) ? l.disabled_peer_names.map(n => peerIdMap.get(n)).filter(Boolean) : [];
+    try {
+      insLink.run(uid, l.directory_ref, peers.length ? JSON.stringify(peers.map(Number)) : null, ...lCols.map(c => (l[c] === undefined ? null : l[c])));
+    } catch (e) { logger.warn({ err: e.message }, 'directory link restore skipped'); }
+  }
+  const cCols = columnsOf(db, 'directory_conflicts').filter(c => !['id', 'directory_id', 'user_id', 'resolved_by'].includes(c));
+  const insConflict = db.prepare(`INSERT OR IGNORE INTO directory_conflicts (directory_id, user_id, resolved_by, ${cCols.join(', ')})
+    VALUES (?, ?, ?, ${cCols.map(() => '?').join(', ')})`);
+  for (const c of conflicts || []) {
+    if (!c || !restored.has(c.directory_ref) || !c.external_id) continue;
+    const uid = c.user_ref == null && !c.user_name ? null : userOf(c.user_ref, c.user_name);
+    // an open conflict about an account that is not there is moot
+    if (!uid && c.status === 'open') continue;
+    try {
+      insConflict.run(c.directory_ref, uid, c.resolved_by_name ? (userIdByName.get(c.resolved_by_name) || null) : null,
+        ...cCols.map(k => (c[k] === undefined ? null : c[k])));
+    } catch (e) { logger.warn({ err: e.message }, 'directory conflict restore skipped'); }
+  }
+  return result;
 }
 
 // user_ids / group_ids JSON of a restored row, re-mapped. Ids the map does
@@ -444,6 +573,7 @@ function getBackupSummary(backup) {
     user_avatars: (d.user_avatars || []).length,
     groups: (d.groups || []).length,
     group_members: (d.group_members || []).length,
+    directories: (d.directories || []).length,
     api_tokens: (d.api_tokens || []).length,
     tags: (d.tags || []).length,
     gateway_meta: (d.gateway_meta || []).length,
@@ -542,6 +672,9 @@ async function restoreBackup(backup) {
     groups: groupRows,
     group_members: groupMembers = [],
     group_invites: groupInvites = [],
+    directories: directoryRows,
+    directory_links: directoryLinks = [],
+    directory_conflicts: directoryConflicts = [],
     api_tokens: apiTokens = [],
     tags = [],
     gateway_meta: gatewayMeta = [],
@@ -571,6 +704,7 @@ async function restoreBackup(backup) {
   }
 
   let builtinRows = 0;
+  let directoryResult = { count: 0, secretReentry: [] };
   const restore = db.transaction(() => {
     // Clear existing data in dependency order
     db.prepare('DELETE FROM route_peer_acl').run();
@@ -656,6 +790,14 @@ async function restoreBackup(backup) {
       restoreGroups(db, { groups: groupRows, members: groupMembers, invites: groupInvites }, userIdByName);
     }
     const remapUsers = userRefs ? userIdMap : null;
+
+    // Directory connections, links and conflicts — replaced only when the
+    // backup has them (older backups: the connections stay).
+    if (Array.isArray(directoryRows)) {
+      directoryResult = restoreDirectories(db,
+        { directories: directoryRows, links: directoryLinks, conflicts: directoryConflicts },
+        { userIdMap, userIdByName, peerIdMap });
+    }
 
     // Restore profile pictures — only together with the users they belong
     // to (the user rows were replaced, their old pictures went with them).
@@ -833,6 +975,8 @@ async function restoreBackup(backup) {
     service_bundles: serviceBundles.length,
     users: users.length,
     groups: Array.isArray(groupRows) ? groupRows.length : 0,
+    directories: directoryResult.count,
+    directories_secret_reentry: directoryResult.secretReentry.length,
     api_tokens: apiTokens.length,
     tags: tags.length,
     gateway_meta: gatewayMeta.length,
@@ -840,6 +984,9 @@ async function restoreBackup(backup) {
     webhooks: webhooks.length,
     builtin_integrations: builtinRows,
   }, 'Backup restored');
+  if (directoryResult.secretReentry.length) {
+    logger.warn({ directories: directoryResult.secretReentry }, 'backup restore: directory secrets from another GC_ENCRYPTION_KEY — enter them again');
+  }
 
   await peersService.rewriteWgConfig();
 
@@ -881,6 +1028,8 @@ async function restoreBackup(backup) {
     users: users.length,
     groups: Array.isArray(groupRows) ? groupRows.length : 0,
     group_members: Array.isArray(groupRows) ? groupMembers.length : 0,
+    directories: directoryResult.count,
+    directories_secret_reentry: directoryResult.secretReentry,
     api_tokens: apiTokens.length,
     tags: tags.length,
     gateway_meta: gatewayMeta.length,

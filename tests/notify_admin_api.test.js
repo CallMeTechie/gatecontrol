@@ -94,14 +94,14 @@ describe('GET /overview', () => {
 describe('rules', () => {
   it('GET /rules: rules with labels, users, groups, webhooks_count, pro', async () => {
     const r = await get('/rules').set('Accept-Language', 'de').expect(200);
-    assert.deepEqual(keys(r.body), ['groups', 'ok', 'pro', 'rules', 'users', 'webhooks_count']);
+    assert.deepEqual(keys(r.body), ['groups', 'ok', 'person_groups', 'pro', 'rules', 'users', 'webhooks_count']);
     const gw = r.body.rules.find((x) => x.event_id === 'gateway_state');
     assert.deepEqual(keys(gw), ['bundle_s', 'ch_app', 'ch_email', 'ch_webhook', 'delay_s', 'email_fallback_s', 'enabled', 'event_id', 'group', 'label', 'plugin_id', 'priority', 'recipients', 'recovery']);
     assert.equal(gw.group, 'peers');
     assert.equal(gw.plugin_id, null);
     assert.equal(typeof gw.label, 'string');
     assert.ok(gw.label.length > 0 && gw.label !== 'st.event.gateway_state');
-    assert.deepEqual(gw.recipients, { admins: true, owner: false, subscribers: false, users: [], groups: [] });
+    assert.deepEqual(gw.recipients, { admins: true, owner: false, subscribers: false, users: [], groups: [], person_groups: [] });
     assert.ok(r.body.users.some((u) => u.id === anna && u.name === 'Anna'));
     assert.ok(r.body.groups.some((g) => g.id === group));
     assert.equal(r.body.pro, true);
@@ -112,7 +112,7 @@ describe('rules', () => {
     const r = await put('/rules/gateway_state').send({ delay_s: 120, recipients: { admins: true, owner: true, users: [anna], groups: [group] } }).expect(200);
     assert.equal(r.body.ok, true);
     assert.equal(r.body.rule.delay_s, 120);
-    assert.deepEqual(r.body.rule.recipients, { admins: true, owner: true, subscribers: false, users: [anna], groups: [group] });
+    assert.deepEqual(r.body.rule.recipients, { admins: true, owner: true, subscribers: false, users: [anna], groups: [group], person_groups: [] });
     assert.equal(r.body.rule.priority, 'critical', 'untouched fields stay');
     const bad = await put('/rules/gateway_state').send({ priority: 'loud', bundle_s: 'x' }).expect(400);
     assert.deepEqual(keys(bad.body.fields), ['bundle_s', 'priority']);
@@ -122,11 +122,28 @@ describe('rules', () => {
     await put('/rules/gateway_state').send({ delay_s: 0, recipients: { admins: true } }).expect(200);
   });
 
+  it('person groups as recipients: offered by path, saved, named in the recipients label', async () => {
+    const groups = require('../src/services/groups');
+    const top = groups.create({ kind: 'department', name: H.uniq('Technik') });
+    const sub = groups.create({ kind: 'team', name: 'Bereitschaft', parentId: top.id });
+    const list = (await get('/rules').expect(200)).body.person_groups;
+    assert.ok(list.some((g) => g.id === sub.id && g.name === `${top.name} › Bereitschaft`));
+    const r = await put('/rules/gateway_state').send({ recipients: { admins: true, person_groups: [sub.id] } }).expect(200);
+    assert.deepEqual(r.body.rule.recipients.person_groups, [sub.id]);
+    const bad = await put('/rules/gateway_state').send({ recipients: { person_groups: [987654] } }).expect(400);
+    assert.equal(bad.body.fields.recipients, 'unknown_group');
+    const label = require('../src/services/notify/admin').recipientsLabel({ target: JSON.stringify({ recipients: { person_groups: [sub.id] } }) }, (k) => k);
+    assert.equal(label, `${top.name} › Bereitschaft`);
+    await put('/rules/gateway_state').send({ recipients: { admins: true } }).expect(200);
+  });
+
   it('without email_alerts: users/groups recipients, non-free e-mail and plugin rules are 403; pro=false', withoutLicence(async () => {
     const r = await put('/rules/gateway_state').send({ recipients: { admins: true, users: [anna] } }).expect(403);
     assert.equal(r.body.feature, 'email_alerts');
     assert.ok(r.body.upgrade_url);
     await put('/rules/gateway_state').send({ recipients: { admins: true, groups: [group] } }).expect(403);
+    const pg = require('../src/services/groups').create({ kind: 'team', name: H.uniq('Lizenzlos') });
+    await put('/rules/gateway_state').send({ recipients: { admins: true, person_groups: [pg.id] } }).expect(403);
     await put('/rules/gateway_state').send({ ch_email: true }).expect(403);
     await put('/rules/route_state').send({ ch_email: true }).expect(200);
     await put('/rules/route_state').send({ ch_email: false }).expect(200);

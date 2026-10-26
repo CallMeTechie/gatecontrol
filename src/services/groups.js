@@ -56,8 +56,13 @@
  *   async removeWithHooks(id, { confirmName, successorUserId, actor, ip, owner })
  *       → true — remove() after the pre-remove hooks (registerRemoveHook):
  *       same checks first, then every hook in parallel within 30 s in total
- *       (failures logged, the deletion proceeds). successorUserId defaults to
- *       the group's leader (leadersOf) or null.
+ *       (failures logged, the deletion proceeds). successorUserId: absent /
+ *       null / '' = defaultSuccessor(); 'none' or 0 = nobody (null); else an
+ *       existing, enabled account (USER_NOT_FOUND / USER_DISABLED).
+ *   defaultSuccessor(id) → { userId, name, username, role, groupId,
+ *       inherited } | null — the group's lead, else deputy, walking up
+ *       (leadersOf); inherited = the leader comes from a group above.
+ *   resolveSuccessor(id, value) → userId | null — the rule above.
  *   registerRemoveHook(fn) → unregister()   fn({ groupId, name, path,
  *       successorUserId, owner }) — plugins' groupDeleting hook.
  *
@@ -90,11 +95,19 @@
  *       unchanged, errors: [{ line, code, message }] }
  *       lines 'pfad;email;rolle[;art]', path segments split by '›' or '/'.
  *
- *   async usage(groupId) → [{ kind, label, onDelete, core?, id? }]
+ *   async usage(groupId, { successorUserId } = {}) → [{ kind, label,
+ *       onDelete, onDeleteKey?, core?, id? }]
  *       core kinds 'route' (route_group_acl) and 'rdp' (rdp_routes.group_ids)
- *       plus whatever the registered providers return.
- *   registerUsageProvider(fn) → unregister()   fn(groupId) → Promise<[{ kind,
- *       label, onDelete }]>, 5 s timeout, errors ignored.
+ *       plus whatever the registered providers return. Core entries carry no
+ *       text but an i18n key in onDeleteKey (the caller renders it):
+ *       grp.usage.route_locked (the group is the route's only restriction —
+ *       it stays closed, nobody is released any more), grp.usage.route_dropped
+ *       (access through this group ends, other persons / groups / devices
+ *       stay), grp.usage.rdp_locked, grp.usage.rdp_dropped. successorUserId
+ *       is resolved like for removeWithHooks and handed to the providers, so
+ *       a plugin can say who takes over.
+ *   registerUsageProvider(fn) → unregister()   fn(groupId, { successorUserId })
+ *       → Promise<[{ kind, label, onDelete }]>, 5 s timeout, errors ignored.
  *
  *   events  EventEmitter: 'change' with a batched array of { type, groupId,
  *       userId?, role?, reason? } — type member_added | member_removed |
@@ -671,20 +684,14 @@ function registerRemoveHook(fn) {
  * remove() with the pre-remove hooks first. Checks like remove() before the
  * hooks run (a refused deletion asks nobody) and again afterwards.
  * opts.successorUserId: who takes over what hangs on the group (e.g. a team
- * folder); default the group's leader (lead, else deputy — walking up), or null.
+ * folder); default the group's leader (lead, else deputy — walking up), or
+ * null; 'none' / 0 = nobody (resolveSuccessor).
  */
 async function removeWithHooks(id, opts = {}) {
   const db = getDb();
   const row = removable(db, id, opts);
+  const successor = resolveSuccessor(row.id, opts.successorUserId);
   if (removeHooks.size) {
-    let successor = null;
-    if (opts.successorUserId != null && opts.successorUserId !== '') {
-      successor = toId(opts.successorUserId);
-      if (!successor || !db.prepare('SELECT 1 FROM users WHERE id = ?').get(successor)) throw codedError('USER_NOT_FOUND', 'successor not found');
-    } else {
-      const l = leadersOf(0, { groupId: row.id });
-      successor = l.length ? l[0].userId : null;
-    }
     const info = { groupId: row.id, name: row.name, path: pathOf(loadAll(db), row.id), successorUserId: successor, owner: opts.owner || null };
     const budget = Math.max(1, Number(module.exports._removeHooksMs) || REMOVE_HOOKS_MS);
     let timer = null;
@@ -700,6 +707,33 @@ async function removeWithHooks(id, opts = {}) {
     if (outcome === 'timeout') logger.warn({ groupId: row.id, budgetMs: budget }, 'groups: pre-remove hooks took too long — deleting anyway');
   }
   return remove(row.id, opts);
+}
+
+// ─── successor (who takes over when a group is deleted) ──────────────────
+
+/** The group's lead, else deputy (walking up like leadersOf) with name, or null. */
+function defaultSuccessor(groupId) {
+  const db = getDb();
+  const g = rowOrThrow(db, groupId);
+  const l = leadersOf(0, { groupId: g.id });
+  if (!l.length) return null;
+  const u = db.prepare('SELECT id, username, display_name FROM users WHERE id = ?').get(l[0].userId);
+  if (!u) return null;
+  return { userId: u.id, name: u.display_name || u.username, username: u.username, role: l[0].role, groupId: l[0].groupId, inherited: l[0].groupId !== g.id };
+}
+
+/**
+ * The successor for a deletion: absent / null / '' → defaultSuccessor();
+ * 'none' / 0 → nobody (null); otherwise an existing, enabled account.
+ */
+function resolveSuccessor(groupId, value) {
+  if (value == null || value === '') { const d = defaultSuccessor(groupId); return d ? d.userId : null; }
+  if (value === 'none' || value === 0 || value === '0') return null;
+  const uid = toId(value);
+  const u = uid && getDb().prepare('SELECT id, enabled FROM users WHERE id = ?').get(uid);
+  if (!u) throw codedError('USER_NOT_FOUND', 'successor not found');
+  if (u.enabled !== 1) throw codedError('USER_DISABLED', 'the successor account is disabled');
+  return u.id;
 }
 
 // ─── members ──────────────────────────────────────────────────────────────
@@ -1170,29 +1204,45 @@ function registerUsageProvider(fn) {
 
 function clip(v, n) { return typeof v === 'string' ? v.slice(0, n) : (v == null ? null : String(v).slice(0, n)); }
 
+/** Real person ids of a user_ids JSON list (the NOBODY marker 0 does not count). */
+function personIds(json) {
+  const ids = parseIdList(json);
+  return ids ? ids.filter((x) => x > 0) : [];
+}
+
+// What deleting the group does to the routes / RDP entries released for it
+// (the same rule as remove()): the group was the only restriction (no other
+// group, no person, for HTTP routes no device with the peer ACL) → the entry
+// stays closed; otherwise only the release through this group ends.
 function coreUsage(db, gid) {
   const out = [];
-  for (const r of db.prepare(`SELECT r.id, COALESCE(NULLIF(r.label, ''), r.domain) AS name FROM route_group_acl a
-      JOIN routes r ON r.id = a.route_id WHERE a.group_id = ? ORDER BY name`).all(gid)) {
-    out.push({ kind: 'route', label: r.name || `#${r.id}`, onDelete: null, core: true, id: r.id });
+  for (const r of db.prepare(`SELECT r.id, COALESCE(NULLIF(r.label, ''), r.domain) AS name, r.user_ids, r.acl_enabled,
+        (SELECT COUNT(*) FROM route_group_acl b WHERE b.route_id = r.id AND b.group_id <> a.group_id) AS other_groups,
+        (SELECT COUNT(*) FROM route_peer_acl p WHERE p.route_id = r.id) AS devices
+      FROM route_group_acl a JOIN routes r ON r.id = a.route_id WHERE a.group_id = ? ORDER BY name`).all(gid)) {
+    const solo = !r.other_groups && !personIds(r.user_ids).length && !(r.acl_enabled && r.devices);
+    out.push({ kind: 'route', label: r.name || `#${r.id}`, onDelete: null, onDeleteKey: solo ? 'grp.usage.route_locked' : 'grp.usage.route_dropped', core: true, id: r.id });
   }
   let rdp = [];
-  try { rdp = db.prepare("SELECT id, name, group_ids FROM rdp_routes WHERE group_ids IS NOT NULL AND group_ids <> ''").all(); } catch { rdp = []; }
+  try { rdp = db.prepare("SELECT id, name, user_ids, group_ids FROM rdp_routes WHERE group_ids IS NOT NULL AND group_ids <> ''").all(); } catch { rdp = []; }
   for (const r of rdp) {
     const ids = parseIdList(r.group_ids);
-    if (ids && ids.includes(gid)) out.push({ kind: 'rdp', label: r.name, onDelete: null, core: true, id: r.id });
+    if (!ids || !ids.includes(gid)) continue;
+    const solo = !ids.some((x) => x !== gid) && !personIds(r.user_ids).length;
+    out.push({ kind: 'rdp', label: r.name, onDelete: null, onDeleteKey: solo ? 'grp.usage.rdp_locked' : 'grp.usage.rdp_dropped', core: true, id: r.id });
   }
   return out;
 }
 
-async function usage(groupId) {
+async function usage(groupId, opts = {}) {
   const db = getDb();
   const g = rowOrThrow(db, groupId);
+  const successorUserId = resolveSuccessor(g.id, opts.successorUserId);
   const out = coreUsage(db, g.id);
   const calls = [...providers].map((fn) => new Promise((resolve) => {
     const t = setTimeout(() => resolve([]), PROVIDER_TIMEOUT_MS);
     if (typeof t.unref === 'function') t.unref();
-    Promise.resolve().then(() => fn(g.id)).then((v) => { clearTimeout(t); resolve(v); }, (err) => {
+    Promise.resolve().then(() => fn(g.id, { successorUserId })).then((v) => { clearTimeout(t); resolve(v); }, (err) => {
       clearTimeout(t);
       logger.warn({ err: err && err.message }, 'groups: a usage provider failed');
       resolve([]);
@@ -1229,6 +1279,7 @@ module.exports = {
   KINDS, ROLES, FAMILY_ROLES, MAX_DEPTH, SEP, BATCH_MS,
   rolesFor,
   list, get, create, update, move, archive, unarchive, remove, removeWithHooks, registerRemoveHook,
+  defaultSuccessor, resolveSuccessor,
   setMember, removeMember, members, groupsOfUser, isMember, leadersOf, effectiveUserIds, membershipsOfUser,
   createInvite, lookupInvite, acceptInvite, listInvites, revokeInvite, purgeInvites,
   importCsv,

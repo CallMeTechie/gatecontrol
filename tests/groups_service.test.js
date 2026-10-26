@@ -323,6 +323,59 @@ describe('usage, archive, delete', () => {
     assert.equal(db().prepare('SELECT group_ids FROM rdp_routes WHERE id = ?').get(rdp.lastInsertRowid).group_ids, null);
   });
 
+  it('usage says what deleting does: the only restriction → stays locked, else only this release ends', async () => {
+    const g = groups.create({ kind: 'team', name: uniq('Wirkung') });
+    const other = groups.create({ kind: 'team', name: uniq('Andere') });
+    const p = user('wirkung');
+    const route = (label, userIds) => {
+      const id = Number(db().prepare("INSERT INTO routes (domain, target_ip, target_port, label, user_ids) VALUES (?, '10.0.0.5', 80, ?, ?)")
+        .run(`${label.toLowerCase()}${seq}.example.com`, label, userIds == null ? null : JSON.stringify(userIds)).lastInsertRowid);
+      db().prepare('INSERT INTO route_group_acl (route_id, group_id) VALUES (?, ?)').run(id, g.id);
+      return id;
+    };
+    route('Solo');
+    route('Marker', [0]); // the NOBODY marker is not a person
+    route('Person', [p]);
+    const both = route('Zwei');
+    db().prepare('INSERT INTO route_group_acl (route_id, group_id) VALUES (?, ?)').run(both, other.id);
+    db().prepare("INSERT INTO rdp_routes (name, host, group_ids) VALUES ('RDP Solo', '10.0.0.9', ?)").run(JSON.stringify([g.id]));
+    db().prepare("INSERT INTO rdp_routes (name, host, group_ids, user_ids) VALUES ('RDP Person', '10.0.0.9', ?, ?)").run(JSON.stringify([g.id]), JSON.stringify([p]));
+    db().prepare("INSERT INTO rdp_routes (name, host, group_ids) VALUES ('RDP Zwei', '10.0.0.9', ?)").run(JSON.stringify([g.id, other.id]));
+    const u = await groups.usage(g.id);
+    const key = (label) => u.find((x) => x.label === label).onDeleteKey;
+    assert.equal(key('Solo'), 'grp.usage.route_locked');
+    assert.equal(key('Marker'), 'grp.usage.route_locked');
+    assert.equal(key('Person'), 'grp.usage.route_dropped');
+    assert.equal(key('Zwei'), 'grp.usage.route_dropped');
+    assert.equal(key('RDP Solo'), 'grp.usage.rdp_locked');
+    assert.equal(key('RDP Person'), 'grp.usage.rdp_dropped');
+    assert.equal(key('RDP Zwei'), 'grp.usage.rdp_dropped');
+    assert.ok(u.every((x) => x.core && x.onDelete === null), 'core entries carry a key, no text');
+  });
+
+  it('defaultSuccessor / resolveSuccessor: lead, else deputy, walking up; none; enabled accounts only', () => {
+    const top = groups.create({ kind: 'department', name: uniq('Oben') });
+    const sub = groups.create({ kind: 'team', name: 'Unten', parentId: top.id });
+    assert.equal(groups.defaultSuccessor(sub.id), null);
+    assert.equal(groups.resolveSuccessor(sub.id, null), null);
+    const boss = user('boss');
+    const dep = user('dep');
+    groups.setMember(top.id, boss, 'lead');
+    let d = groups.defaultSuccessor(sub.id);
+    assert.equal(d.userId, boss);
+    assert.equal(d.groupId, top.id);
+    assert.equal(d.inherited, true);
+    groups.setMember(sub.id, dep, 'deputy');
+    d = groups.defaultSuccessor(sub.id);
+    assert.deepEqual([d.userId, d.role, d.inherited], [dep, 'deputy', false]);
+    assert.equal(groups.resolveSuccessor(sub.id, ''), dep);
+    assert.equal(groups.resolveSuccessor(sub.id, 'none'), null);
+    assert.equal(groups.resolveSuccessor(sub.id, 0), null);
+    assert.equal(groups.resolveSuccessor(sub.id, String(boss)), boss);
+    code(() => groups.resolveSuccessor(sub.id, 987654), 'USER_NOT_FOUND');
+    code(() => groups.resolveSuccessor(sub.id, user('aus', { enabled: 0 })), 'USER_DISABLED');
+  });
+
   it('a list that only named the group stays when the entry names nobody else', () => {
     const g = groups.create({ kind: 'team', name: uniq('Allein') });
     const rdp = db().prepare("INSERT INTO rdp_routes (name, host, group_ids) VALUES ('PC 3', '10.0.0.10', ?)").run(JSON.stringify([g.id]));

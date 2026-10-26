@@ -136,3 +136,103 @@ describe('backup round trip with groups', () => {
     assert.equal(rdp.user_ids, JSON.stringify([anna, 0]));
   });
 });
+
+describe('backup round trip with directory connections', () => {
+  let anna, ben, peerId, dirId, parent, dirGroup;
+  const store = () => require('../src/services/directory/store');
+  const { encrypt } = require('../src/utils/crypto');
+
+  // A secret encrypted like utils/crypto does, but with another server key.
+  function foreignSecret(text) {
+    const key = crypto.randomBytes(32);
+    const iv = crypto.randomBytes(12);
+    const c = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const enc = c.update(text, 'utf8', 'hex') + c.final('hex');
+    return `${iv.toString('hex')}:${c.getAuthTag().toString('hex')}:${enc}`;
+  }
+
+  before(() => {
+    const uid = (name) => db().prepare('SELECT id FROM users WHERE username = ?').get(name).id;
+    anna = uid('bk-anna');
+    ben = uid('bk-ben');
+    peerId = Number(db().prepare("INSERT INTO peers (name, public_key, allowed_ips, enabled) VALUES ('bk-dir-peer', 'BKDIRPEER=', '10.8.0.77/32', 0)").run().lastInsertRowid);
+    parent = groups().list().find((g) => g.name === 'Verwaltung');
+    dirId = Number(db().prepare(`INSERT INTO directories (kind, name, config_json, secret_enc, selected_groups, parent_group_id, last_status)
+      VALUES ('ad', 'Firma AD', ?, ?, ?, ?, 'pending')`).run(JSON.stringify({ host: 'dc.corp.local', port: 636, security: 'ldaps', baseDn: 'DC=corp,DC=local', bindDn: 'CN=svc,DC=corp,DC=local' }),
+      encrypt('geheim'), JSON.stringify([{ externalId: 'g-1', name: 'Vertrieb' }]), parent.id).lastInsertRowid);
+    dirGroup = groups().create({ kind: 'team', name: 'Vertrieb', parentId: parent.id, source: `directory:${dirId}`, externalId: 'g-1' });
+    groups().setMember(dirGroup.id, anna, 'member', { source: `directory:${dirId}`, owner: `directory:${dirId}` });
+    db().prepare(`INSERT INTO directory_links (user_id, directory_id, external_id, login_name, upn, email, state, disabled_peer_ids)
+      VALUES (?, ?, 'u-anna', 'anna', 'anna@corp.local', 'anna@corp.local', 'disabled', ?)`).run(anna, dirId, JSON.stringify([peerId]));
+    db().prepare(`INSERT INTO directory_conflicts (directory_id, external_id, user_id, email, display_name, login_name, status)
+      VALUES (?, 'u-ben', ?, 'ben@corp.local', 'Ben', 'ben', 'open')`).run(dirId, ben);
+    db().prepare("INSERT INTO directory_runs (directory_id, trigger, status, started_at) VALUES (?, 'manual', 'pending', datetime('now'))").run(dirId);
+  });
+
+  it('exports connections (secret as stored), links and conflicts with user refs — not the runs', () => {
+    const b = backup().createBackup();
+    const d = b.data.directories.find((x) => x.name === 'Firma AD');
+    assert.equal(d.directory_ref, dirId);
+    assert.equal(d.secret_enc, db().prepare('SELECT secret_enc FROM directories WHERE id = ?').get(dirId).secret_enc, 'encrypted exactly as stored');
+    assert.ok(!JSON.stringify(b).includes('geheim'), 'never the plain secret');
+    const l = b.data.directory_links.find((x) => x.external_id === 'u-anna');
+    assert.deepEqual([l.user_ref, l.user_name, l.directory_ref], [anna, 'bk-anna', dirId]);
+    assert.deepEqual(l.disabled_peer_names, ['bk-dir-peer']);
+    const c = b.data.directory_conflicts.find((x) => x.external_id === 'u-ben');
+    assert.deepEqual([c.user_ref, c.user_name, c.status], [ben, 'bk-ben', 'open']);
+    assert.ok(!('directory_runs' in b.data));
+    assert.equal(backup().getBackupSummary(b).directories, 1);
+  });
+
+  it('restores ids, secret, links (same user ids, peers by name) and conflicts; a waiting run is dropped', async () => {
+    const b = JSON.parse(JSON.stringify(backup().createBackup()));
+    db().prepare("UPDATE directories SET name = 'Umbenannt' WHERE id = ?").run(dirId);
+    db().prepare('DELETE FROM directory_links').run();
+    const result = await backup().restoreBackup(b);
+    assert.equal(result.directories, 1);
+    assert.deepEqual(result.directories_secret_reentry, []);
+    const row = store().load(dirId);
+    assert.equal(row.name, 'Firma AD');
+    assert.equal(row.parent_group_id, parent.id);
+    assert.equal(store().secretOf(row), 'geheim');
+    assert.equal(row.last_status, null, 'the stopped run is not in the backup');
+    assert.equal(store().get(dirId).needsSecret, false);
+    assert.equal(groups().get(dirGroup.id).source, `directory:${dirId}`);
+    const newPeer = db().prepare("SELECT id FROM peers WHERE name = 'bk-dir-peer'").get().id;
+    const link = db().prepare("SELECT * FROM directory_links WHERE external_id = 'u-anna'").get();
+    assert.equal(link.user_id, anna);
+    assert.equal(link.directory_id, dirId);
+    assert.equal(link.state, 'disabled');
+    assert.equal(link.disabled_peer_ids, JSON.stringify([newPeer]));
+    const conflict = db().prepare("SELECT * FROM directory_conflicts WHERE external_id = 'u-ben'").get();
+    assert.equal(conflict.user_id, ben);
+    assert.equal(db().prepare('SELECT COUNT(*) AS c FROM directory_runs').get().c, 0);
+    assert.equal(store().get(dirId).stats.linked, 1);
+  });
+
+  it('a secret from a server with another key is dropped and marked for re-entry, the restore goes on', async () => {
+    const b = JSON.parse(JSON.stringify(backup().createBackup()));
+    b.data.directories.find((x) => x.directory_ref === dirId).secret_enc = foreignSecret('fremd');
+    const result = await backup().restoreBackup(b);
+    assert.deepEqual(result.directories_secret_reentry, ['Firma AD']);
+    const row = store().load(dirId);
+    assert.equal(row.secret_enc, null);
+    const shape = store().get(dirId);
+    assert.equal(shape.needsSecret, true);
+    assert.equal(shape.hasSecret, false);
+    assert.equal(db().prepare("SELECT user_id FROM directory_links WHERE external_id = 'u-anna'").get().user_id, anna, 'links still restored');
+    // the schedule waits until the secret is entered again
+    await require('../src/services/directory/sync').runDue(Date.now());
+    assert.equal(db().prepare('SELECT COUNT(*) AS c FROM directory_runs WHERE directory_id = ?').get(dirId).c, 0);
+    store().update(dirId, { secret: 'neu' });
+    assert.equal(store().get(dirId).needsSecret, false);
+  });
+
+  it('a backup without the directory section leaves the connections alone', async () => {
+    const old = JSON.parse(JSON.stringify(backup().createBackup()));
+    delete old.data.directories; delete old.data.directory_links; delete old.data.directory_conflicts;
+    db().prepare("UPDATE directories SET name = 'Nach der Sicherung' WHERE id = ?").run(dirId);
+    await backup().restoreBackup(old);
+    assert.equal(store().load(dirId).name, 'Nach der Sicherung');
+  });
+});

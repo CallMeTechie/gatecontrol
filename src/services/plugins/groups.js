@@ -328,11 +328,16 @@ function text(v, max) {
   return s ? s.slice(0, max) : null;
 }
 
-/** The usage provider (groups.usage): what the plugins keep for a group. */
-async function usage(groupId) {
+/**
+ * The usage provider (groups.usage): what the plugins keep for a group.
+ * successorUserId: who would take over (the admin's choice in the delete
+ * dialog, else the default) — so a plugin can name that person in onDelete.
+ */
+async function usage(groupId, { successorUserId = null } = {}) {
+  const payload = { groupId, successorUserId: successorUserId == null ? null : successorUserId };
   const lists = await Promise.all(groupPlugins().map(async (p) => {
     let out;
-    try { out = await runtime.call(p.id, 'groupUsage', { groupId }, module.exports._usageMs || USAGE_MS); } catch { return []; }
+    try { out = await runtime.call(p.id, 'groupUsage', payload, module.exports._usageMs || USAGE_MS); } catch { return []; }
     if (!Array.isArray(out)) return [];
     const name = loc(p.manifest.name, 'de') || p.name || p.id;
     return out.slice(0, 50).filter((e) => e && typeof e === 'object' && text(e.label, 200))

@@ -12,6 +12,9 @@
 // Groups: the existing peer groups (peer_groups, peers.group_id). A group
 // recipient means the app devices IN that group (tokens bound to a peer of
 // the group) — not every device of the people who own a device there.
+// Person groups (services/groups.js) are a separate recipient,
+// `person_groups`: the people in them (incl. subgroups), i.e. all their app
+// devices — resolved when the notification goes out.
 //
 // Topics and subscriptions (one switch per person and topic,
 // notify_subscriptions): a missing row means the topic default (core topics
@@ -156,7 +159,9 @@ function quietOf(userId) {
 
 /**
  * → [{ tokenId, userId, silent }] for one notification.
- *   input.recipients  rule recipients ({ admins, owner, subscribers, users, groups })
+ *   input.recipients  rule recipients ({ admins, owner, subscribers, users, groups,
+ *                     person_groups }) — person_groups: person groups → their
+ *                     effective members (groups.effectiveUserIds) at send time
  *   input.users       explicit people (plugin `users`, manual send) — replaces recipients
  *   input.groups / input.tokenIds / input.all   manual send targets
  *   input.peerId      the device an event is about (owner)
@@ -184,6 +189,11 @@ function resolve(input) {
       if (r.owner) { const o = ownerOf(input.peerId); if (o != null) people.add(o); }
       if (r.subscribers) for (const id of subscriberIds(topic)) people.add(id);
       if (input.licensed && Array.isArray(r.users) && r.users.length) for (const id of enabledUserIds(r.users)) people.add(id);
+      // person groups: their effective members at send time (subgroups count,
+      // archived groups and disabled accounts do not)
+      if (input.licensed && Array.isArray(r.person_groups) && r.person_groups.length) {
+        for (const id of require('../groups').effectiveUserIds(r.person_groups)) people.add(id);
+      }
     }
     devices = devicesOfUsers([...people]);
     const groups = Array.isArray(input.groups) ? input.groups : (input.licensed && Array.isArray(r.groups) ? r.groups : []);
