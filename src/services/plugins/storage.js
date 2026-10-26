@@ -20,9 +20,19 @@ const { dbDir, LIMITS, TIMEOUTS } = require('./constants');
 const IDLE_MS = 5 * 60 * 1000;
 const instances = new Map();
 
+/** The largest size of a plugin's database: plugin.json storage.maxMB (since 1.206.0), else LIMITS.dbMaxBytes. */
+function maxBytesOf(id) {
+  try {
+    const p = require('./registry').get(id);
+    const v = p && p.manifest && p.manifest.storage && p.manifest.storage.maxBytes;
+    return Number.isSafeInteger(v) && v > 0 ? v : LIMITS.dbMaxBytes;
+  } catch { return LIMITS.dbMaxBytes; }
+}
+
 class PluginDb {
   constructor(id) {
     this.id = id;
+    this.maxBytes = null; // set by setLimit (install / update), else maxBytesOf(id)
     this.worker = null;
     this.seq = 0;
     this.pending = new Map();
@@ -34,7 +44,7 @@ class PluginDb {
     const dir = dbDir(this.id);
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     const w = new Worker(path.join(__dirname, 'dbWorker.js'), {
-      workerData: { file: path.join(dir, 'plugin.db'), maxBytes: LIMITS.dbMaxBytes },
+      workerData: { file: path.join(dir, 'plugin.db'), maxBytes: this.maxBytes || maxBytesOf(this.id) },
       resourceLimits: { maxOldGenerationSizeMb: 128 },
       env: {},
     });
@@ -103,6 +113,18 @@ async function close(id) {
   if (db) await db.close();
 }
 
+/**
+ * The size limit of a plugin's database (install / update with plugin.json
+ * storage.maxMB): an open connection with another limit closes, the next
+ * call opens it with the new one (SQLite never shrinks below what is used).
+ */
+async function setLimit(id, maxBytes) {
+  const db = forPlugin(id);
+  if (db.maxBytes === maxBytes) return;
+  db.maxBytes = maxBytes;
+  await db.close();
+}
+
 async function closeAll() {
   await Promise.all([...instances.keys()].map(close));
 }
@@ -124,4 +146,4 @@ function usage(dir) {
   return total;
 }
 
-module.exports = { forPlugin, close, closeAll, usage };
+module.exports = { forPlugin, close, closeAll, usage, setLimit, maxBytesOf };

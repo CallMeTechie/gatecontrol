@@ -68,7 +68,7 @@ Store metadata (optional, from `catalog-meta.json` of the plugins repository;
 an unknown or malformed value is dropped, never the catalogue): per plugin
 `category` (`family` | `home` | `mobility` | `infrastructure` | `other`),
 `icon` (`family` `chat` `calendar` `door` `bulb` `snowflake` `car` `server`
-`nas` `puzzle`), `summary` `{de, en}`, `audience` (`all` | `admins`),
+`nas` `puzzle`, since 1.206.0 `cloud`), `summary` `{de, en}`, `audience` (`all` | `admins`),
 `keywords`, `related` (plugin ids) and `highlight` `{version, title, text,
 tags}` (`tags`: up to 4 texts or `{icon, text}` for the hero); for the
 plugin's catalogue page `adds` and `permissions` (up to 8 / 10
@@ -78,7 +78,7 @@ caption, value?}` — the wireframes of "So sieht es bei dir aus"), `needs`
 (what it needs besides GateControl, e.g. an API token) and `languages`
 (`de`, `en`); symbols: `page app portal widget tile action bell clock data
 network chat key location users door calendar camera car bulb server shield
-link`. Per version `notes` (its CHANGELOG section, Markdown). Without them a
+link cloud` (`cloud` since 1.206.0). Per version `notes` (its CHANGELOG section, Markdown). Without them a
 plugin is listed under "Weitere" with the default icon, its page shows only
 what the catalogue knows.
 
@@ -719,6 +719,8 @@ module.exports = {
 | `gc.services.call({ plugin, service, userId, payload })` | another plugin's service → its answer (`permissions.services`, ≤ 60/h) — see "Services" |
 | `gc.services.available(plugin, service)` | `true`/`false`: would `call()` reach that provider now (listed, installed, running, provided) — the provider is not run, not counted (since 1.178.0) |
 | `gc.license.status()` | `{ required, licensed, state, expiresAt }` |
+| `gc.license.info()` | `{ required, valid, state, expiresAt, source, tier, seats }` — tier and people of the licence (since 1.206.0) — see "Licences" |
+| `gc.license.refresh()` | fetch the licence now, e.g. after "Personen hinzubuchen" → `{ refreshed, …info() }` (at most once a minute; since 1.206.0) — see "Licences" |
 
 Requests reach the plugin only after GateControl's own authentication, CSRF
 check and rate limit, as plain objects; actions run with the requesting
@@ -2003,11 +2005,31 @@ Each plugin gets **its own SQLite file** (`<data>/plugin-data/<id>/db/plugin.db`
 opened by the host in a worker thread — chosen over prefixed tables in the
 main database: no SQL parsing is needed to keep a plugin away from
 GateControl's tables (the main database is simply not open there), "Alles
-löschen" is deleting one folder, the file has a size cap (256 MB) and a
+löschen" is deleting one folder, the file has a size cap (256 MB, more with
+`storage.maxMB`, see below) and a
 runaway query blocks only that worker (terminated after 5 s). Statements with
 `ATTACH`, `DETACH`, `VACUUM`, `PRAGMA`, `load_extension` or the host's `_gc_*`
 tables are refused. The plugin process can write only the sibling `files/`
 folder, never the database file.
+
+**A larger database** (since 1.206.0) — for plugins that keep many records
+(GateControl Drive: hundreds of thousands of files with their versions):
+
+```json
+"permissions": { "storage": true },
+"storage": { "maxMB": 4096 }
+```
+
+`storage.maxMB` 256 … 4096 (default 256), only together with
+`permissions.storage` (`storage: needs permissions.storage` otherwise). The
+limit applies from the install or update of that version on, its migrations
+included; an open connection with another limit is reopened (SQLite never
+shrinks below what is used — a smaller limit only stops further growth). The
+plugin's overview shows the size of its data and "Datenbank bis …"
+(`GET /api/v1/plugins/<id>` → `storageBytes`, `storageDbMaxBytes`). A database
+larger than the plugins' share of a GateControl backup (see "Backup") is left
+out of it and logged — such a plugin keeps its own copy (Drive: its external
+backup).
 
 Migrations (`migrations/NNN_name.sql`) run on install and update in a single
 transaction, in order, recorded in the plugin's database; a failing migration
@@ -3029,6 +3051,52 @@ pages, portal tab and sections). Only for those plugins' frames
   hardware fingerprint, and different per licence server). Checked on entry
   and daily; when the server cannot be reached the last good answer counts for
   14 days.
+
+### Tier and people (`gc.license.info`, since 1.206.0)
+
+A licence may be for a number of people — GateControl Drive: Familie,
+Business or both ("Kombi"), 5 people included, more bookable per kind. The
+signed plugin token of the GateControl licence server then carries
+
+```json
+{ "tier": "family" | "business" | "combo", "seats": { "included": 5, "family": 2, "business": 0 } }
+```
+
+(`seats.family` / `seats.business`: the people booked on top of the included
+ones). Only the **signed** token counts — `tier` / `seats` next to it in the
+answer are ignored; an unknown tier is none, a missing or invalid count is 0.
+`license.getPluginEntitlements()` hands them on, the licence tab shows "Stufe"
+and "Personen" (e.g. "7 Personen (5 inklusive, 2 hinzugebucht)").
+
+```js
+await gc.license.info();
+// → { required: true, valid: true, state: 'valid', expiresAt: null, source: 'license', tier: 'family',
+//     seats: { total: 7, family: 7, business: 0, included: 5, extra: { family: 2, business: 0 } } }
+```
+
+`seats` are the most people the plugin may switch on:
+
+| tier | `family` | `business` | `total` |
+|---|---|---|---|
+| `family` | included + extra family | 0 | = family |
+| `business` | 0 | included + extra business | = business |
+| `combo` | included + extra family | included + extra business | included + both extras (the included people are shared) |
+
+The plugin counts its people itself (who it switched on — wall tablets and
+accounts without access do not count) and refuses a further one at the
+limit; people already switched on keep working when the licence gets smaller
+(the plugin shows a note). `tier` and `seats` are `null` when the licence
+names none: a third-party licence, a lifetime or plan entitlement, an older
+licence server, an invalid licence or a plugin that needs none — the plugin
+decides what that means for it.
+
+`gc.license.refresh()` — after the customer booked more people
+("Personen hinzubuchen" opens their account on callmetechie.de) the plugin
+fetches the licence at once instead of at the next daily validation:
+first-party → the GateControl licence is revalidated (only with a licence key)
+and the plugins reconciled; third-party → its licence server is asked. At most
+once a minute for all plugins together (else `refreshed: false` with the
+current state, nothing is fetched). → `{ refreshed, …info() }`.
 
 States: gültig · läuft bald ab (≤ 14 days) · Lizenzserver nicht erreichbar
 (still running) · fehlt · abgelaufen · ungültig · auf einem anderen Server

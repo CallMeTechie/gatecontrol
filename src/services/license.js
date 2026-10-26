@@ -87,6 +87,17 @@ let tokenFeatureKeys = null;
 // Plugin entitlements of the last applied v2 validation (empty without v2).
 let pluginEntitlements = [];
 const PLUGIN_SOURCES = new Set(['license', 'lifetime', 'plan']);
+// Tier and seats of a plugin licence (since 1.206.0, GateControl Drive): only
+// from the signed plugin token, never from the unsigned fields of the answer.
+const PLUGIN_TIERS = new Set(['family', 'business', 'combo']);
+const SEATS_MAX = 100000;
+
+/** { included, family, business } of a token's `seats` (missing / invalid counts → 0). */
+function seatsOf(s) {
+  const n = (v) => (Number.isSafeInteger(v) && v >= 0 && v <= SEATS_MAX ? v : 0);
+  const o = s && typeof s === 'object' && !Array.isArray(s) ? s : {};
+  return { included: n(o.included), family: n(o.family), business: n(o.business) };
+}
 
 // Offline grace for v2: when the licence server cannot be reached, the last
 // verified token keeps working until its own `exp` or until GRACE_MS after the
@@ -250,6 +261,8 @@ async function verifyPlugins(plugins, fingerprint, { allowExpired }) {
       error: typeof p.error === 'string' ? p.error : null,
       expires_at: p.expires_at || null,
       updates_until: p.updates_until || null,
+      tier: null,
+      seats: null,
     };
     if (p.valid === true) {
       const r = await v2.verifyToken(p.token, { fingerprint, kind: 'plugin', allowExpired });
@@ -262,6 +275,10 @@ async function verifyPlugins(plugins, fingerprint, { allowExpired }) {
         entry.error = null;
         entry.expires_at = isoFromUnix(r.payload.lat);
         entry.updates_until = isoFromUnix(r.payload.upd);
+        if (PLUGIN_TIERS.has(r.payload.tier)) {
+          entry.tier = r.payload.tier;
+          entry.seats = seatsOf(r.payload.seats);
+        }
       }
     }
     out.push(entry);
@@ -792,11 +809,12 @@ async function deactivateLicense(key) {
 
 /**
  * Plugin entitlements of the last v2 validation, without tokens.
- * @returns {{slug:string,name:string,source:'license'|'lifetime'|'plan',key_masked:string|null,valid:boolean,error:string|null,expires_at:string|null,updates_until:string|null}[]}
+ * `tier` / `seats` (since 1.206.0): from the signed plugin token of a valid entry, else null.
+ * @returns {{slug:string,name:string,source:'license'|'lifetime'|'plan',key_masked:string|null,valid:boolean,error:string|null,expires_at:string|null,updates_until:string|null,tier:'family'|'business'|'combo'|null,seats:{included:number,family:number,business:number}|null}[]}
  */
 function getPluginEntitlements() {
-  return pluginEntitlements.map(({ slug, name, source, key_masked, valid, error, expires_at, updates_until }) => (
-    { slug, name, source, key_masked: key_masked || null, valid, error, expires_at, updates_until }
+  return pluginEntitlements.map(({ slug, name, source, key_masked, valid, error, expires_at, updates_until, tier, seats }) => (
+    { slug, name, source, key_masked: key_masked || null, valid, error, expires_at, updates_until, tier: tier || null, seats: seats ? { ...seats } : null }
   ));
 }
 

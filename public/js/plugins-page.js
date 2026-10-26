@@ -1397,7 +1397,12 @@
     }
     const r = await req('GET', API + '/' + enc(p.id));
     const s = $('pg-storage');
-    if (s && r.ok) s.textContent = P.fmtBytes(r.plugin.storageBytes);
+    if (s && r.ok) {
+      s.textContent = P.fmtBytes(r.plugin.storageBytes);
+      // the database may grow up to this (plugin.json storage.maxMB, since 1.206.0)
+      const sub = s.parentNode && s.parentNode.querySelector('small');
+      if (sub && r.plugin.storageDbMaxBytes) sub.textContent = t('plugins.x.data_db_max', { max: P.fmtBytes(r.plugin.storageDbMaxBytes) });
+    }
     if (p.media) await renderMedia(p, panel);
     if (p.media && p.media.areas) await renderAreas(p, panel);
   }
@@ -1855,6 +1860,13 @@
     row(t('plugins.lic.key'), L.keyMasked || (L.source === 'plan' ? t('plugins.lic.no_key_needed') : ''));
     row(t('plugins.lic.valid_until'), L.expiresAt ? P.fmtDate(L.expiresAt, lang) : (L.state === 'valid' ? t('plugins.lic.unlimited') : ''));
     if (L.updatesUntil) row(t('plugins.lic.updates_until'), P.fmtDate(L.updatesUntil, lang));
+    // tier and people of the licence (since 1.206.0, e.g. GateControl Drive)
+    if (L.tier) {
+      row(t('plugins.lic.tier'), t('plugins.lic.tier_' + L.tier));
+      const S = L.seats || { included: 0, family: 0, business: 0 };
+      const extra = L.tier === 'family' ? S.family : (L.tier === 'business' ? S.business : S.family + S.business);
+      row(t('plugins.lic.seats'), extra ? t('plugins.lic.seats_extra', { n: S.included + extra, included: S.included, extra }) : t('plugins.lic.seats_n', { n: S.included }));
+    }
     row(t('plugins.lic.source'), L.kind === 'first_party' ? t('plugins.lic.source_gc') : (L.server || ''));
     const input = el('input', { type: 'text', class: 'st-input st-mono', id: 'pg-lic-key', placeholder: t('plugins.lic.placeholder'), maxLength: 200, autocomplete: 'off', spellcheck: 'false' });
     const msg = el('p', { class: 'pgx-muted', id: 'pg-lic-msg', role: 'status' });

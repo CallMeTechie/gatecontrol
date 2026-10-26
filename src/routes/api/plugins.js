@@ -182,7 +182,7 @@ router.post('/install', async (req, res) => {
 router.get('/:id', (req, res) => {
   const p = pluginParam(req, res);
   if (!p) return;
-  res.json({ ok: true, plugin: { ...plugins.view(p, lang(req)), storageBytes: plugins.storageBytes(p.id) } });
+  res.json({ ok: true, plugin: { ...plugins.view(p, lang(req)), storageBytes: plugins.storageBytes(p.id), storageDbMaxBytes: require('../../services/plugins/storage').maxBytesOf(p.id) } });
 });
 
 router.get('/:id/logs', (req, res) => {

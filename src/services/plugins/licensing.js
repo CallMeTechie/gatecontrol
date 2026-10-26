@@ -104,7 +104,8 @@ function firstPartyStatus(plugin, now) {
     let state = expiryState(ent.expires_at, now);
     const offline = (license.getLicenseInfo() || {}).verification === 'signed_offline';
     if (state !== 'expired' && offline) state = 'unreachable';
-    return { ...base, state, expiresAt: ent.expires_at || null, updatesUntil: ent.updates_until || null, source: ent.source };
+    return { ...base, state, expiresAt: ent.expires_at || null, updatesUntil: ent.updates_until || null, source: ent.source,
+      ...(ent.tier ? { tier: ent.tier, seats: ent.seats || null } : {}) };
   }
   const err = String(ent.error || '');
   let state = 'invalid';
@@ -265,10 +266,80 @@ function revalidateIfMissing(plugin, now = Date.now()) {
     .then(() => status(plugin));
 }
 
+// ─── Tier and seats (gc.license.info, since 1.206.0) ────
+//
+// A first-party licence token may name a tier — 'family', 'business' or
+// 'combo' (both) — and seats: { included, family, business } (the people in
+// the base price and the people booked on top, per kind). info() turns them
+// into the most people of each kind the plugin may switch on:
+//   family    family = included + extra family; business 0
+//   business  business = included + extra business; family 0
+//   combo     total = included + both extras; family ≤ included + extra family,
+//             business ≤ included + extra business (the included ones are shared)
+// The plugin counts its people itself; GateControl only says how many it may.
+
+/** { total, family, business, included, extra: { family, business } } of a tier and its seats. */
+function seatLimits(tier, seats) {
+  const inc = seats ? seats.included : 0;
+  const f = seats ? seats.family : 0;
+  const b = seats ? seats.business : 0;
+  if (tier === 'family') return { total: inc + f, family: inc + f, business: 0, included: inc, extra: { family: f, business: 0 } };
+  if (tier === 'business') return { total: inc + b, family: 0, business: inc + b, included: inc, extra: { family: 0, business: b } };
+  return { total: inc + f + b, family: inc + f, business: inc + b, included: inc, extra: { family: f, business: b } };
+}
+
+/**
+ * gc.license.info() → { required, valid, state, expiresAt, source, tier, seats }.
+ * tier / seats null: the licence names none (third-party, a plan or lifetime
+ * entitlement, an older licence server, no licence needed) — the plugin
+ * decides what that means for it.
+ */
+function info(plugin, now = Date.now()) {
+  const s = status(plugin, now);
+  const tier = s.licensed && s.tier ? s.tier : null;
+  return {
+    required: s.required, valid: s.licensed, state: s.state, expiresAt: s.expiresAt || null, source: s.source || null,
+    tier, seats: tier ? seatLimits(tier, s.seats) : null,
+  };
+}
+
+// gc.license.refresh(): after a purchase ("Personen hinzubuchen") the plugin
+// asks for the new licence at once instead of at the next daily validation —
+// at most once a minute (all plugins together), only with a GateControl
+// licence key (first-party) or a stored key (third-party).
+const REFRESH_GAP_MS = 60 * 1000;
+let lastRefresh = 0;
+
+/** → { refreshed: boolean, ...info() } */
+async function refresh(plugin, { now = Date.now(), timeoutMs = 20000 } = {}) {
+  const m = plugin && plugin.manifest;
+  const needed = !!(m && m.license && m.license.required);
+  if (!needed || (lastRefresh && now - lastRefresh < REFRESH_GAP_MS)) return { refreshed: false, ...info(plugin) };
+  if (kindOf(plugin) === 'first_party') {
+    const license = require('../license');
+    if (!license.hasLicenseKey()) return { refreshed: false, ...info(plugin) };
+    lastRefresh = now;
+    let done = false;
+    await Promise.race([
+      Promise.resolve().then(() => (refreshFn || license.refreshLicenseInBackground)()).then(() => { done = true; }, () => {}),
+      new Promise((r) => { const t = setTimeout(r, timeoutMs); t.unref(); }),
+    ]);
+    // entitlements may have changed: start / stop plugins now, not at the next reconcile
+    if (done) { try { await require('./index').reconcile(); } catch { /* plugins keep their state */ } }
+    return { refreshed: done, ...info(plugin) };
+  }
+  const rec = registry.getLicense(plugin.id);
+  if (!rec || !rec.keyEncrypted) return { refreshed: false, ...info(plugin) };
+  lastRefresh = now;
+  await checkThirdParty(plugin);
+  return { refreshed: true, ...info(plugin) };
+}
+
 function _setRefreshForTest(fn) {
   if (process.env.NODE_ENV !== 'test') return;
   refreshFn = fn;
   lastAutoRefresh = 0;
+  lastRefresh = 0;
 }
 
 function _setTransportForTest(fn) {
@@ -276,6 +347,6 @@ function _setTransportForTest(fn) {
 }
 
 module.exports = {
-  status, checkThirdParty, setKey, revalidateIfMissing, serverId, kindOf, mask, maskMatches, validKey, GRACE_MS, LICENSED_STATES, AUTO_REFRESH_GAP_MS,
+  status, info, refresh, seatLimits, checkThirdParty, setKey, revalidateIfMissing, serverId, REFRESH_GAP_MS, kindOf, mask, maskMatches, validKey, GRACE_MS, LICENSED_STATES, AUTO_REFRESH_GAP_MS,
   _setTransportForTest, _setRefreshForTest,
 };
