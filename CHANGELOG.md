@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.202.0] — 2026-10-26
+
+### Features
+- Anmeldung in den Apps mit dem Firmenkonto + Profilbilder auf den Gruppenseiten (#358)
+
+---
+
 ## [1.201.0] — 2026-10-26
 
 ### Features
