@@ -450,6 +450,9 @@ function notifyCard(plugin, raw) {
  *                                      push on a topic declared in
  *                                      plugin.json notifyTopics (+ activity row,
  *                                      never with the image)
+ * `groups: [id]` (permissions.groups, any topic): the groups' enabled
+ * members (subgroups included) at send time, merged with `users` — groups
+ * without anybody send nothing ({ pushed: false, recipients: 0 }).
  * Push needs the email_alerts licence; priority is capped at `high`, except
  * on a topic declared with `allowCritical` (critical bypasses quiet hours
  * like the core's critical events). Budget: permissions.notify — true = 30
@@ -486,6 +489,9 @@ function notify(plugin, args) {
       need(Array.isArray(n.users) && n.users.length <= 100 && n.users.every((u) => Number.isSafeInteger(u) && u > 0), 'ERR_INVALID', 'invalid users');
       users = [...new Set(n.users)];
     }
+    // groups (permissions.groups): their enabled members, subgroups included, resolved now and merged with users
+    const byGroups = n.groups != null;
+    if (byGroups) users = require('./groups').recipients(plugin, n.groups, users);
     let devices = null;
     if (n.devices != null) {
       need(Array.isArray(n.devices) && n.devices.length >= 1 && n.devices.length <= 100, 'ERR_INVALID', 'invalid devices');
@@ -529,16 +535,21 @@ function notify(plugin, args) {
         ? { ...a, type: 'open_portal', target: `/portal#plg-${plugin.id}` }
         : a));
     }
+    // groups without anybody (empty, archived, only disabled accounts): nobody to tell — never the topic's
+    // subscribers, which an empty list would mean
+    if (byGroups && !users.length) return { pushed: false, id: null, recipients: 0 };
+    const extra = byGroups ? { recipients: users.length } : {};
     if (silent) {
       // own budget, no activity row: data pushes are machine traffic (e.g. "device X: fetch transfer Y")
       dataBudget(plugin);
       const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, devices, silent: true, collapseKey, ttl, data: d.data, allowCritical: false, image: null, card: null });
-      return { pushed: r.pushed, id: r.id || null };
+      return { pushed: r.pushed, id: r.id || null, ...extra };
     }
     notifyBudget(plugin);
-    require('../activity').log('plugin_notice', `${plugin.name}: ${title}`, { source: 'plugin', severity: 'info', details: { plugin: plugin.id, topic } });
+    require('../activity').log('plugin_notice', `${plugin.name}: ${title}`, { source: 'plugin', severity: 'info',
+      details: { plugin: plugin.id, topic, ...(byGroups ? { groups: [...new Set(n.groups)], recipients: users.length } : {}) } });
     const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, devices, collapseKey, ttl, data: d.data, allowCritical, image, card });
-    return { pushed: r.pushed, id: r.id || null };
+    return { pushed: r.pushed, id: r.id || null, ...extra };
   }
   const msg = String((args && args.message) || '').replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, 300);
   need(msg, 'ERR_INVALID', 'empty message');
@@ -699,7 +710,12 @@ function notifyChat(plugin, topic, n) {
   let priority = n.priority == null ? 'normal' : n.priority;
   need(NOTIFY_PRIORITIES.includes(priority), 'ERR_INVALID', 'invalid priority');
   if (priority === 'critical') priority = 'high';
-  need(Array.isArray(n.users) && n.users.length >= 1 && n.users.length <= 100 && n.users.every((u) => Number.isSafeInteger(u) && u > 0), 'ERR_INVALID', 'users (1…100 ids) required on a chat topic');
+  // users (1…100 ids) and/or groups (permissions.groups: their enabled members, resolved now)
+  const byGroups = n.groups != null;
+  if (!byGroups || n.users != null) {
+    need(Array.isArray(n.users) && n.users.length >= (byGroups ? 0 : 1) && n.users.length <= 100 && n.users.every((u) => Number.isSafeInteger(u) && u > 0), 'ERR_INVALID', 'users (1…100 ids) required on a chat topic');
+  }
+  const wanted = byGroups ? require('./groups').recipients(plugin, n.groups, n.users || []) : n.users;
   const { conversation, sender } = chatParts(n, plugin);
   let collapseKey = sanitize.collapseKey(`chat:${conversation.id}`);
   if (n.collapseKey != null) {
@@ -721,13 +737,14 @@ function notifyChat(plugin, topic, n) {
   }
   const d = sanitize.data({ route: `plg-${plugin.id}`, ...(n.data || {}), conversation, sender }, { plugin: plugin.id, chat: true });
   need(d.ok, 'ERR_INVALID', 'data too large (max 4 KB)');
+  if (!wanted.length) return { pushed: false, id: null, skipped: [], recipients: 0 };
   // budgets: the plugin's (refused when used up), each recipient's (skipped)
   const now = Date.now();
   const w = recent(chatWindow, plugin.id, now);
   need(w.length < CHAT_PER_HOUR, 'ERR_RATE_LIMIT', `too many chat notifications (${CHAT_PER_HOUR} per hour)`);
   const users = [];
   const skipped = [];
-  for (const u of [...new Set(n.users)]) {
+  for (const u of [...new Set(wanted)]) {
     if (recent(chatUserWindow, `${plugin.id}:${u}`, now).length >= CHAT_PER_USER_HOUR) skipped.push(u); else users.push(u);
   }
   need(users.length, 'ERR_RATE_LIMIT', `too many chat notifications for these recipients (${CHAT_PER_USER_HOUR} per hour each)`);
@@ -735,7 +752,7 @@ function notifyChat(plugin, topic, n) {
   for (const u of users) chatUserWindow.get(`${plugin.id}:${u}`).push(now);
   chatCounts.set(plugin.id, (chatCounts.get(plugin.id) || 0) + 1);
   const r = hub.emitPlugin(plugin.id, { topic, title, body, priority, users, collapseKey, ttl, data: d.data, allowCritical: false, image, chat: true });
-  return { pushed: r.pushed, id: r.id || null, skipped };
+  return { pushed: r.pushed, id: r.id || null, skipped, ...(byGroups ? { recipients: wanted.length } : {}) };
 }
 
 /**
@@ -1202,6 +1219,8 @@ function callTimeout(api, args) {
     return Math.max(1000, Math.min(UPLOAD_TIMEOUT_MAX_MS, t)) + 5000;
   }
   if (api === 'media.handOver') return HANDOVER_TIMEOUT_MS;
+  // the other plugins' groupDeleting hooks run first (≤ 30 s in total)
+  if (api === 'groups.remove') return 45000;
   return TIMEOUTS.hostCall;
 }
 
@@ -1555,6 +1574,14 @@ async function handle(plugin, api, args, ctx) {
     case 'publicLinks.get': return publicLinksCall(plugin, 'get', args);
     case 'publicLinks.revoke': return publicLinksCall(plugin, 'revoke', args);
     case 'devices.list': return devicesList(plugin, args);
+    // person groups (permissions.groups, groups.js): read; ensure / remove need "manage"
+    case 'groups.list': return require('./groups').call(plugin, 'list', args);
+    case 'groups.get': return require('./groups').call(plugin, 'get', args);
+    case 'groups.members': return require('./groups').call(plugin, 'members', args);
+    case 'groups.isMember': return require('./groups').call(plugin, 'isMember', args);
+    case 'groups.leadersOf': return require('./groups').call(plugin, 'leadersOf', args);
+    case 'groups.ensure': return require('./groups').call(plugin, 'ensure', args);
+    case 'groups.remove': return require('./groups').call(plugin, 'remove', args);
     case 'events.emit': return eventsEmit(plugin, args);
     case 'services.call': return servicesCall(plugin, args);
     case 'services.available': return servicesAvailable(plugin, args);

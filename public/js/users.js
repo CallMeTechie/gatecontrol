@@ -383,7 +383,7 @@
   }
   function roleChips(u) {
     return [el('span', { class: 'us-chip us-chip-' + roleTone(u.role) }, roleLabel(u.role)),
-      u.enabled === 1 ? null : el('span', { class: 'us-chip us-chip-crit' }, T('us.disabled'))];
+      u.enabled === 1 ? null : el('span', { class: 'us-chip us-chip-crit', title: u.disabled_reason === 'directory' ? T('up.disabled_directory') : null }, T('us.disabled'))];
   }
   function subLine(u) { return '@' + u.username + (u.email ? ' · ' + u.email : ''); }
 
@@ -800,8 +800,17 @@
 
     // Access, security, location sharing
     const v = state.vis;
+    // Source of the account and why it is disabled (docs/groups.md "Verzeichnis-Abgleich").
+    const dirInfo = d.directory;
+    const sourceText = dirInfo
+      ? T('up.acc.source_directory', { name: dirInfo.name }) + (dirInfo.loginName ? ' · ' + dirInfo.loginName : '')
+      : T('up.acc.source_local');
+    const disabledText = u.enabled === 1 ? null
+      : (u.disabled_reason === 'directory' ? T('up.disabled_directory') : T('up.acc.disabled_admin'));
     const access = upCard(T('up.access'), [tabLink(T('up.details'), 'see')], [facts([
       [T('up.acc.role'), roleLabel(u.role)],
+      [T('up.acc.source'), dirInfo ? el('a', { href: '/directory?id=' + dirInfo.id }, sourceText) : sourceText],
+      disabledText ? [T('up.acc.disabled'), disabledText] : null,
       v ? [T('up.acc.services'), String(v.services && v.services.visible ? v.services.visible.length : 0)] : null,
       v && (CTX.rdp || (v.rdp && v.rdp.total)) ? [T('up.acc.rdp'), String(v.rdp && v.rdp.visible ? v.rdp.visible.length : 0)] : null,
       v ? [T('up.acc.web'), T('up.acc.web_' + (v.web === 'all' || v.web === 'self_service' ? v.web : 'none'))] : null,
@@ -828,7 +837,23 @@
       el('p', { class: 'up-muted' }, loc.allowed ? T('up.loc.allowed_text', { days: loc.retention_days, keep: loc.keep }) : T('up.loc.denied_text')),
       el('div', { class: 'up-switchrow' }, [el('span', { class: 'up-switchrow-label' }, T('up.loc.allow')), sw]),
     ]);
-    panel.appendChild(el('div', { class: 'up-grid' }, [main, el('div', { class: 'up-side' }, [lookCard(d), access, security, locCard])]));
+    panel.appendChild(el('div', { class: 'up-grid' }, [main, el('div', { class: 'up-side' }, [lookCard(d), access, groupsCard(d), security, locCard])]));
+  }
+
+  // "Gruppen" (docs/groups.md): the person's groups with role; a group the
+  // person only belongs to through a subgroup is marked as inherited.
+  function groupsCard(d) {
+    const list = d.groups || [];
+    const body = el('ul', { class: 'up-groups' });
+    if (!list.length) body.appendChild(el('li', { class: 'up-muted' }, T('up.groups.empty')));
+    list.forEach((g) => {
+      body.appendChild(el('li', null, [
+        el('span', { class: 'grp-dot grp-kind-' + g.kind, 'aria-hidden': 'true' }),
+        el('a', { href: '/groups?id=' + g.id, title: g.path }, g.path),
+        el('span', { class: 'us-chip' + (g.direct ? ' us-chip-member' : ' us-chip-dashed') }, g.direct ? T('up.groups.role.' + g.role) : T('up.groups.inherited')),
+      ]));
+    });
+    return upCard(T('up.groups.title'), [el('a', { class: 'up-link', href: '/groups' }, T('up.groups.manage'))], [body]);
   }
 
   // "Profilbild & Farbe" (docs/feature-avatars.md): picture (cropped and
@@ -1126,6 +1151,7 @@
   function reasonOf(e, user) {
     if (e.reason === 'all') return { why: 'all', reason: T('us.see.why_all') };
     if (e.reason === 'token') return { why: 'pick', reason: T('us.see.why_token') };
+    if (e.reason === 'group') return { why: 'pick', reason: T('us.see.why_group', { groups: (e.groups || []).join(', ') }) };
     const names = (e.names || []).length ? e.names.join(', ') : firstName(user);
     return { why: 'pick', reason: T('us.see.why_picked', { names }) };
   }

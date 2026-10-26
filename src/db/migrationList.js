@@ -2470,6 +2470,211 @@ const migrations = [
       );
       CREATE INDEX IF NOT EXISTS idx_plugin_public_link_files_media ON plugin_public_link_files(media_id);`,
   },
+  {
+    version: 109,
+    name: 'person_groups',
+    // Person groups ("Gruppenverwaltung", docs/groups.md, services/groups.js):
+    // teams, departments, projects, sites and the family — one set for access,
+    // plugins and chats. Admin rights never come from a group.
+    //   groups            one group: parent_id (NULL = top level, at most 3
+    //                     levels, no cycles — services/groups.js), kind
+    //                     'department' | 'team' | 'project' | 'site' |
+    //                     'family', name unique per parent (case-insensitive,
+    //                     idx_groups_parent_name), color '#rrggbb' or NULL,
+    //                     source 'local' | 'directory:<id>' | 'plugin:<id>'
+    //                     (non-local groups are read-only in the admin UI),
+    //                     external_id (directory object id or the plugin's
+    //                     key, unique per source), ends_at 'YYYY-MM-DD'
+    //                     (projects: archived after that day), archived_at
+    //                     ISO UTC (access ends, data kept).
+    //   group_members     direct memberships: role member | lead | deputy |
+    //                     admin (family: parent | child), source 'local' or
+    //                     the group's own source (members that came with the
+    //                     directory / plugin), added_by, added_at. Goes with
+    //                     the group and with the account.
+    //   group_invites     invitation links: token_hash = SHA-256 of the token
+    //                     (the token itself is only shown once), role,
+    //                     created_at / expires_at ISO UTC, max_uses / uses.
+    //   route_group_acl   HTTP routes released for a group (access layer).
+    //   rdp_routes.group_ids  JSON array of group ids, like user_ids.
+    //   users.disabled_reason 'directory' | 'admin' | NULL — why an account
+    //                     is disabled (directory sync).
+    sql: `
+      CREATE TABLE IF NOT EXISTS groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_id INTEGER REFERENCES groups(id) ON DELETE RESTRICT,
+        kind TEXT NOT NULL CHECK (kind IN ('department', 'team', 'project', 'site', 'family')),
+        name TEXT NOT NULL,
+        description TEXT,
+        color TEXT,
+        source TEXT NOT NULL DEFAULT 'local',
+        external_id TEXT,
+        ends_at TEXT,
+        archived_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_parent_name ON groups(COALESCE(parent_id, 0), lower(name));
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_external ON groups(source, external_id) WHERE external_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_groups_parent ON groups(parent_id);
+      CREATE TABLE IF NOT EXISTS group_members (
+        group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member', 'lead', 'deputy', 'admin', 'parent', 'child')),
+        source TEXT NOT NULL DEFAULT 'local',
+        added_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        added_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (group_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
+      CREATE TABLE IF NOT EXISTS group_invites (
+        token_hash TEXT PRIMARY KEY,
+        group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        role TEXT NOT NULL DEFAULT 'member',
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        max_uses INTEGER,
+        uses INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_group_invites_group ON group_invites(group_id);
+      CREATE TABLE IF NOT EXISTS route_group_acl (
+        route_id INTEGER NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+        group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        PRIMARY KEY (route_id, group_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_route_group_acl_group ON route_group_acl(group_id);
+      ALTER TABLE rdp_routes ADD COLUMN group_ids TEXT;
+      ALTER TABLE users ADD COLUMN disabled_reason TEXT;`,
+    detect: (db) => tableExists(db, 'groups') && hasColumn(db, 'rdp_routes', 'group_ids') && hasColumn(db, 'users', 'disabled_reason'),
+  },
+  {
+    version: 110,
+    name: 'directory_sync',
+    // Directory sync and sign-in with the company account (docs/groups.md
+    // "Verzeichnis-Abgleich und Anmeldung", services/directory/).
+    //   directories        one connection: kind 'ad' | 'entra' | 'ldap', name,
+    //                      config_json (non-secret settings: server, base DNs,
+    //                      attribute mapping, tenant/client id, custom CA PEM),
+    //                      secret_enc (bind password / Entra client secret,
+    //                      utils/crypto encrypt — never returned by the API),
+    //                      selected_groups (JSON [{ externalId, name, dn }]),
+    //                      parent_group_id (optional local group the imported
+    //                      groups are placed below), the switches enabled,
+    //                      login_enabled, provision (create accounts),
+    //                      deprovision (disable accounts), interval_min
+    //                      (5–1440), state of the last run (last_sync_at,
+    //                      last_full_sync_at, last_status, last_error) and
+    //                      cursor (reserved for delta queries).
+    //   directory_links    an account that belongs to a directory: the stable
+    //                      external id (objectGUID / Entra object id /
+    //                      entryUUID), login names (login_name, upn), the
+    //                      current DN, e-mail, state 'active' | 'disabled'
+    //                      and disabled_peer_ids (JSON: the VPN peers the sync
+    //                      disabled — exactly these are enabled again).
+    //                      One directory per account (user_id primary key).
+    //   directory_conflicts a directory person whose e-mail address belongs to
+    //                      an existing account that is not linked: status
+    //                      'open' | 'merged' | 'separate' (the admin decides).
+    //   directory_runs     one sync run: trigger, status 'running' | 'ok' |
+    //                      'error' | 'pending' (mass-change guard stopped it,
+    //                      the admin confirms or discards) | 'confirmed' |
+    //                      'discarded', summary_json (counts), details_json
+    //                      (names per change), plan_json (pending: the user
+    //                      ids the run would disable), guard_reason, error.
+    sql: `
+      CREATE TABLE IF NOT EXISTS directories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('ad', 'entra', 'ldap')),
+        name TEXT NOT NULL,
+        config_json TEXT NOT NULL DEFAULT '{}',
+        secret_enc TEXT,
+        selected_groups TEXT NOT NULL DEFAULT '[]',
+        parent_group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        login_enabled INTEGER NOT NULL DEFAULT 0,
+        provision INTEGER NOT NULL DEFAULT 1,
+        deprovision INTEGER NOT NULL DEFAULT 1,
+        interval_min INTEGER NOT NULL DEFAULT 15,
+        last_sync_at TEXT,
+        last_full_sync_at TEXT,
+        last_status TEXT,
+        last_error TEXT,
+        cursor TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS directory_links (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        directory_id INTEGER NOT NULL REFERENCES directories(id) ON DELETE CASCADE,
+        external_id TEXT NOT NULL,
+        login_name TEXT,
+        upn TEXT,
+        dn TEXT,
+        email TEXT,
+        state TEXT NOT NULL DEFAULT 'active',
+        disabled_peer_ids TEXT,
+        linked_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_seen_at TEXT,
+        UNIQUE (directory_id, external_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_directory_links_login ON directory_links(lower(login_name));
+      CREATE INDEX IF NOT EXISTS idx_directory_links_upn ON directory_links(lower(upn));
+      CREATE TABLE IF NOT EXISTS directory_conflicts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        directory_id INTEGER NOT NULL REFERENCES directories(id) ON DELETE CASCADE,
+        external_id TEXT NOT NULL,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        email TEXT,
+        display_name TEXT,
+        login_name TEXT,
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        resolved_at TEXT,
+        resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        UNIQUE (directory_id, external_id)
+      );
+      CREATE TABLE IF NOT EXISTS directory_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        directory_id INTEGER NOT NULL REFERENCES directories(id) ON DELETE CASCADE,
+        trigger TEXT NOT NULL DEFAULT 'schedule',
+        status TEXT NOT NULL DEFAULT 'running',
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        summary_json TEXT,
+        details_json TEXT,
+        plan_json TEXT,
+        guard_reason TEXT,
+        error TEXT,
+        actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_directory_runs_dir ON directory_runs(directory_id, id);`,
+  },
+  {
+    version: 111,
+    name: 'route_acl_people',
+    // Device ACL and persons/groups (docs/groups.md "Zugriff per Gruppe",
+    // services/groupAccess.js): routes.acl_people = 1 lets the Caddy peer ACL
+    // of an acl_enabled route also pass the devices of the route's persons
+    // (user_ids) and of the effective members of its groups; 0 = only the
+    // listed devices (route_peer_acl) pass, persons and groups only control
+    // visibility — the behaviour before person groups. Existing routes with
+    // the ACL on AND at least one person keep that behaviour (acl_people = 0,
+    // otherwise the update would silently widen their access); everything
+    // else — routes without the ACL, ACL routes without persons, new routes —
+    // gets 1. user_ids is parsed in JS like groupAccess.parseIdList (NULL, '',
+    // '[]' and malformed JSON hold no id) by `run`, which the migration
+    // runner executes after `sql` in the same transaction.
+    sql: `ALTER TABLE routes ADD COLUMN acl_people INTEGER NOT NULL DEFAULT 1;`,
+    run: (db) => {
+      const { legacyAclPeople } = require('../services/groupAccess');
+      const off = db.prepare('UPDATE routes SET acl_people = 0 WHERE id = ?');
+      for (const r of db.prepare('SELECT id, acl_enabled, user_ids FROM routes').all()) {
+        if (legacyAclPeople(r) === 0) off.run(r.id);
+      }
+    },
+    detect: (db) => hasColumn(db, 'routes', 'acl_people'),
+  },
 ];
 
 module.exports = { migrations };

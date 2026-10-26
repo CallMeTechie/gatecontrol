@@ -6,7 +6,8 @@
  * refused), CSRF like every admin API (routes/api/index.js).
  *
  *   GET  /overview                kpis, recent (8), hub, sources (7 days)
- *   GET  /rules                   rules, users, groups, webhooks_count, pro
+ *   GET  /rules                   rules, users, groups (peer groups), person_groups,
+ *                                 webhooks_count, pro
  *   PUT  /rules/:eventId          partial update → { ok, rule }
  *   GET  /devices                 devices with live presence
  *   POST /send                    manual message (licence email_alerts)
@@ -17,7 +18,7 @@
  *   POST /history/:id/resend      → { ok }
  *   GET  /settings, PUT /settings
  *
- * Licence: users/groups recipients in rules, /send and plugin topics need the
+ * Licence: users/groups/person_groups recipients in rules, /send and plugin topics need the
  * existing feature `email_alerts` (403 with the usual licence shape).
  * Live updates: eventBus `notify` ({ id }) and `push_presence`
  * ({ token_id, state, via }) reach the admin SSE stream (/api/v1/events).
@@ -107,6 +108,8 @@ router.get('/rules', (req, res) => {
       users: db.prepare('SELECT id, username, display_name FROM users WHERE enabled = 1 ORDER BY COALESCE(display_name, username) COLLATE NOCASE')
         .all().map((u) => ({ id: u.id, name: u.display_name || u.username })),
       groups: db.prepare('SELECT id, name FROM peer_groups ORDER BY name COLLATE NOCASE').all().map((g) => ({ id: g.id, name: g.name })),
+      // person groups (not archived), labelled with their path
+      person_groups: require('../../services/groups').list({}).map((g) => ({ id: g.id, name: g.path })),
       webhooks_count: db.prepare('SELECT COUNT(*) AS n FROM webhooks WHERE enabled = 1').get().n,
       pro: hasFeature(FEATURE),
     });
@@ -128,7 +131,7 @@ router.put('/rules/:eventId', (req, res) => {
   if (!licensed) {
     if (plugin) return licenseError(req, res);
     const r = values.recipients;
-    if (r && (r.users.length || r.groups.length)) return licenseError(req, res);
+    if (r && (r.users.length || r.groups.length || r.person_groups.length)) return licenseError(req, res);
     const core = rules.coreEvent(eventId);
     if (values.ch_email !== undefined && core && !core.free && values.ch_email !== notifications.eventEmailOn(core.id)) {
       return licenseError(req, res);

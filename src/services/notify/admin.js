@@ -45,6 +45,12 @@ function groupNames(ids) {
   return new Map(getDb().prepare(`SELECT id, name FROM peer_groups WHERE id IN (${placeholders(ids)})`).all(...ids).map((g) => [g.id, g.name]));
 }
 
+function personGroupNames(ids) {
+  if (!ids.length) return new Map();
+  const groups = require('../groups');
+  return new Map(ids.map((id) => { const g = groups.get(id); return [id, g ? g.path : null]; }).filter((e) => e[1]));
+}
+
 function namesList(map, ids) {
   const names = ids.map((id) => map.get(id)).filter(Boolean);
   return names.length > 3 ? `${names.slice(0, 3).join(', ')} +${names.length - 3}` : names.join(', ');
@@ -65,6 +71,7 @@ function recipientsLabel(n, t) {
   if (r.subscribers) parts.push(t('push.recipients.subscribers'));
   if (Array.isArray(r.users) && r.users.length) parts.push(namesList(userNames(r.users), r.users));
   if (Array.isArray(r.groups) && r.groups.length) parts.push(namesList(groupNames(r.groups), r.groups));
+  if (Array.isArray(r.person_groups) && r.person_groups.length) parts.push(namesList(personGroupNames(r.person_groups), r.person_groups));
   return parts.filter(Boolean).join(', ') || '—';
 }
 

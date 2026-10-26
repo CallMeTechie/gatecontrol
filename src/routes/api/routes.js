@@ -100,6 +100,28 @@ const httpRouteCountFn = () => getDb().prepare("SELECT COUNT(*) as count FROM ro
 const l4RouteCountFn = () => getDb().prepare("SELECT COUNT(*) as count FROM routes WHERE route_type = 'l4'").get().count;
 
 const stripRoute = (r) => stripFields(r, ['basic_auth_password_hash', 'tls']);
+
+// Persons (user_ids) and groups (group_ids) of a route — docs/groups.md
+// "Zugriff per Gruppe". Absent = keep; groups must exist and not be archived
+// unless the route already carries them. → { fields } or { error, code }.
+function accessInput(req, currentGroupIds) {
+  const groupAccess = require('../../services/groupAccess');
+  const out = {};
+  try {
+    if (req.body.user_ids !== undefined) out.user_ids = groupAccess.validateUserIds(req.body.user_ids);
+    if (req.body.group_ids !== undefined) out.group_ids = groupAccess.validateGroupIds(req.body.group_ids, { current: currentGroupIds || [] });
+  } catch (err) {
+    const key = { GROUP_NOT_FOUND: 'error.access.group_not_found', GROUP_ARCHIVED: 'error.access.group_archived' }[err.code] || 'error.access.invalid';
+    return { code: err.code, error: req.t(key) };
+  }
+  return { fields: out };
+}
+// acl_people ("Geräte der Personen und Gruppen durchlassen", docs/groups.md
+// "Zugriff per Gruppe"): a boolean (0/1 accepted); absent/null = default on
+// create, keep on update.
+function validAclPeople(v) {
+  return v === undefined || v === null || typeof v === 'boolean' || v === 0 || v === 1;
+}
 // TLS guard verdict attached by routes.create/update → top-level `tls` in the answer.
 const tlsOf = (r) => (r && r.tls ? { tls: r.tls } : {});
 
@@ -429,6 +451,7 @@ router.post('/',
     return requireLimit('http_routes', httpRouteCountFn)(req, res, next);
   },
   requireFeatureField('acl_enabled', 'peer_acl'),
+  requireFeatureField('acl_people', 'peer_acl'),
   requireFeatureField('ip_filter_enabled', 'ip_access_control'),
   requireFeatureField('rate_limit_enabled', 'rate_limiting'),
   requireFeatureField('compress_enabled', 'compression'),
@@ -453,7 +476,7 @@ router.post('/',
       route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
-      acl_enabled, acl_peers, compress_enabled, custom_headers,
+      acl_enabled, acl_peers, acl_people, compress_enabled, custom_headers,
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
@@ -494,6 +517,7 @@ router.post('/',
       const bgErr = validateCssBg(branding_bg);
       if (bgErr) fields.branding_bg = req.t('error.routes.branding_bg_invalid') || bgErr;
     }
+    if (!validAclPeople(acl_people)) fields.acl_people = req.t('error.routes.acl_people_invalid');
     if (Object.keys(fields).length > 0) {
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
     }
@@ -554,7 +578,11 @@ router.post('/',
     const ebErr = validateExternalBlock(req.body, req.body.domain, null);
     if (ebErr) return res.status(400).json({ ok: false, error: ebErr });
 
+    const access = accessInput(req, []);
+    if (access.error) return res.status(400).json({ ok: false, error: access.error, code: access.code });
+
     const route = await routes.create({
+      ...access.fields,
       domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled,
       basic_auth_user, basic_auth_password,
@@ -565,7 +593,7 @@ router.post('/',
       l4_conn_window_s: req.body.l4_conn_window_s,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
-      acl_enabled, acl_peers, compress_enabled, custom_headers,
+      acl_enabled, acl_peers, acl_people, compress_enabled, custom_headers,
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
@@ -610,6 +638,7 @@ router.post('/',
  */
 router.put('/:id',
   requireFeatureField('acl_enabled', 'peer_acl'),
+  requireFeatureField('acl_people', 'peer_acl'),
   requireFeatureField('ip_filter_enabled', 'ip_access_control'),
   requireFeatureField('rate_limit_enabled', 'rate_limiting'),
   requireFeatureField('compress_enabled', 'compression'),
@@ -634,7 +663,7 @@ router.put('/:id',
       route_type, l4_protocol, l4_listen_port, l4_tls_mode, monitoring_enabled,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
-      acl_enabled, acl_peers, compress_enabled, custom_headers,
+      acl_enabled, acl_peers, acl_people, compress_enabled, custom_headers,
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,
@@ -693,6 +722,7 @@ router.put('/:id',
       const bgErr = validateCssBg(branding_bg);
       if (bgErr) fields.branding_bg = req.t('error.routes.branding_bg_invalid') || bgErr;
     }
+    if (!validAclPeople(acl_people)) fields.acl_people = req.t('error.routes.acl_people_invalid');
     if (Object.keys(fields).length > 0) {
       return res.status(400).json({ ok: false, error: Object.values(fields)[0], fields });
     }
@@ -757,7 +787,11 @@ router.put('/:id',
     const ebErrU = validateExternalBlock(req.body, req.body.domain || existingRoute.domain, existingRoute);
     if (ebErrU) return res.status(400).json({ ok: false, error: ebErrU });
 
+    const accessU = accessInput(req, existingRoute.group_ids);
+    if (accessU.error) return res.status(400).json({ ok: false, error: accessU.error, code: accessU.code });
+
     const route = await routes.update(req.params.id, {
+      ...accessU.fields,
       domain, target_ip, target_port, description, peer_id,
       https_enabled, backend_https, basic_auth_enabled,
       basic_auth_user, basic_auth_password, enabled,
@@ -768,7 +802,7 @@ router.put('/:id',
       l4_conn_window_s: req.body.l4_conn_window_s,
       ip_filter_enabled, ip_filter_mode, ip_filter_rules,
       branding_title, branding_text, branding_color, branding_bg,
-      acl_enabled, acl_peers, compress_enabled, custom_headers,
+      acl_enabled, acl_peers, acl_people, compress_enabled, custom_headers,
       rate_limit_enabled, rate_limit_requests, rate_limit_window,
       retry_enabled, retry_count, retry_match_status,
       backends, sticky_enabled, sticky_cookie_name, sticky_cookie_ttl,

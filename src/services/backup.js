@@ -78,6 +78,10 @@ function createBackup() {
       WHERE rpa.route_id = ?
     `).all(r.id);
     entry.acl_peer_names = aclPeerRows.map(p => p.name);
+    // Groups released for the route (route_group_acl); group ids are kept.
+    try {
+      entry.group_refs = db.prepare('SELECT group_id FROM route_group_acl WHERE route_id = ? ORDER BY group_id').all(r.id).map(g => g.group_id);
+    } catch { entry.group_refs = []; }
     delete entry.id;
     delete entry.peer_id;
     delete entry.target_peer_id;
@@ -129,6 +133,9 @@ function createBackup() {
     const rawUsers = db.prepare('SELECT * FROM users').all();
     users = rawUsers.map(u => {
       const entry = pickColumns(u, userCols);
+      // user_ref: the id is restored as it was, so user ids stored elsewhere
+      // (routes/rdp_routes.user_ids, plugin data) keep pointing at the person.
+      entry.user_ref = u.id;
       delete entry.id;
       return entry;
     });
@@ -143,6 +150,19 @@ function createBackup() {
       FROM user_avatars a JOIN users u ON u.id = a.user_id ORDER BY a.user_id`).all()
       .map(a => ({ user_name: a.user_name, avatar_id: a.avatar_id, mime: a.mime, data: Buffer.from(a.data).toString('base64'), updated_at: a.updated_at }));
   } catch (err) { logger.warn({ err: err.message }, 'backup export: user_avatars skipped'); }
+
+  // ── person groups (docs/groups.md) ──────────────────────────
+  // Group ids are kept (group_ref) — rdp_routes.group_ids, route group_refs
+  // and plugin data refer to them. Members and invitation creators by
+  // username; invitations as their SHA-256 hashes only.
+  const groupsData = exportGroups(db);
+
+  // ── directory sync (docs/groups.md "Verzeichnis-Abgleich") ──
+  // Connections with their id (groups' source 'directory:<id>' names it)
+  // and the secret exactly as stored (encrypted with GC_ENCRYPTION_KEY);
+  // links and conflicts with user_ref + username. The run log is not
+  // exported.
+  const directoryData = exportDirectories(db, peerNameById);
 
   // ── api_tokens (resolve peer_id/user_id via names) ──────────
   let apiTokens = [];
@@ -222,6 +242,12 @@ function createBackup() {
       service_bundles: serviceBundles,
       users,
       user_avatars: userAvatars,
+      groups: groupsData.groups,
+      group_members: groupsData.members,
+      group_invites: groupsData.invites,
+      directories: directoryData.directories,
+      directory_links: directoryData.links,
+      directory_conflicts: directoryData.conflicts,
       api_tokens: apiTokens,
       tags,
       gateway_meta: gatewayMeta,
@@ -232,6 +258,216 @@ function createBackup() {
       builtin_integrations: exportBuiltin(db),
     },
   };
+}
+
+function exportGroups(db) {
+  const out = { groups: [], members: [], invites: [] };
+  try {
+    const userName = new Map(db.prepare('SELECT id, username FROM users').all().map(u => [u.id, u.username]));
+    const gCols = columnsOf(db, 'groups');
+    out.groups = db.prepare('SELECT * FROM groups ORDER BY id').all().map(g => {
+      const e = pickColumns(g, gCols);
+      e.group_ref = g.id;
+      e.parent_ref = g.parent_id == null ? null : g.parent_id;
+      delete e.id;
+      delete e.parent_id;
+      return e;
+    });
+    out.members = db.prepare('SELECT * FROM group_members ORDER BY group_id, user_id').all().map(m => ({
+      group_ref: m.group_id, user_name: userName.get(m.user_id) || null, role: m.role, source: m.source,
+      added_by_name: m.added_by != null ? (userName.get(m.added_by) || null) : null, added_at: m.added_at,
+    })).filter(m => m.user_name);
+    out.invites = db.prepare('SELECT * FROM group_invites ORDER BY created_at').all().map(i => ({
+      token_hash: i.token_hash, group_ref: i.group_id, role: i.role,
+      created_by_name: i.created_by != null ? (userName.get(i.created_by) || null) : null,
+      created_at: i.created_at, expires_at: i.expires_at, max_uses: i.max_uses, uses: i.uses,
+    }));
+  } catch (err) { logger.warn({ err: err.message }, 'backup export: groups skipped'); }
+  return out;
+}
+
+/**
+ * Restore person groups (inside the restore transaction): group ids as they
+ * were, parents before children; members / invitation creators by username.
+ * Returns the set of restored group ids.
+ */
+function restoreGroups(db, { groups, members, invites }, userIdByName) {
+  // Leaves first (parent_id is ON DELETE RESTRICT); members, invitations and
+  // route_group_acl go with their group (FK cascade).
+  try {
+    const delLeaves = db.prepare('DELETE FROM groups WHERE id NOT IN (SELECT parent_id FROM groups WHERE parent_id IS NOT NULL)');
+    for (let i = 0; i < 10 && delLeaves.run().changes > 0; i++) { /* next level */ }
+  } catch (err) { logger.warn({ err: err.message }, 'backup restore: clearing groups failed'); return new Set(); }
+  const restored = new Set();
+  const pending = (groups || []).filter(g => g && Number.isSafeInteger(g.group_ref) && g.group_ref > 0 && g.name && g.kind);
+  let progress = true;
+  while (pending.length && progress) {
+    progress = false;
+    for (let i = 0; i < pending.length; i++) {
+      const g = pending[i];
+      const parent = g.parent_ref == null ? null : g.parent_ref;
+      if (parent != null && !restored.has(parent) && pending.some(p => p.group_ref === parent)) continue;
+      pending.splice(i--, 1);
+      progress = true;
+      try {
+        const row = { ...g, parent_id: parent != null && restored.has(parent) ? parent : null };
+        const cols = columnsOf(db, 'groups').filter(c => c !== 'id');
+        db.prepare(`INSERT INTO groups (id, ${cols.join(', ')}) VALUES (?, ${cols.map(() => '?').join(', ')})`)
+          .run(g.group_ref, ...cols.map(c => (row[c] === undefined ? null : row[c])));
+        restored.add(g.group_ref);
+      } catch (e) { logger.warn({ err: e.message, group: g.name }, 'group restore skipped'); }
+    }
+  }
+  const insMember = db.prepare('INSERT OR IGNORE INTO group_members (group_id, user_id, role, source, added_by, added_at) VALUES (?, ?, ?, ?, ?, COALESCE(?, datetime(\'now\')))');
+  for (const m of members || []) {
+    const uid = m && userIdByName.get(m.user_name);
+    if (!uid || !restored.has(m.group_ref)) continue;
+    try {
+      insMember.run(m.group_ref, uid, m.role || 'member', m.source || 'local',
+        m.added_by_name ? (userIdByName.get(m.added_by_name) || null) : null, m.added_at || null);
+    } catch (e) { logger.warn({ err: e.message }, 'group member restore skipped'); }
+  }
+  const insInvite = db.prepare(`INSERT OR IGNORE INTO group_invites (token_hash, group_id, role, created_by, created_at, expires_at, max_uses, uses)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+  for (const i of invites || []) {
+    if (!i || typeof i.token_hash !== 'string' || !/^[0-9a-f]{64}$/.test(i.token_hash) || !restored.has(i.group_ref)) continue;
+    try {
+      insInvite.run(i.token_hash, i.group_ref, i.role || 'member', i.created_by_name ? (userIdByName.get(i.created_by_name) || null) : null,
+        i.created_at || new Date().toISOString(), i.expires_at || new Date().toISOString(), i.max_uses == null ? null : i.max_uses, i.uses || 0);
+    } catch (e) { logger.warn({ err: e.message }, 'group invite restore skipped'); }
+  }
+  return restored;
+}
+
+function exportDirectories(db, peerNameById) {
+  const out = { directories: [], links: [], conflicts: [] };
+  try {
+    if (!columnsOf(db, 'directories').length) return out;
+    const userName = new Map(db.prepare('SELECT id, username FROM users').all().map(u => [u.id, u.username]));
+    const dCols = columnsOf(db, 'directories');
+    out.directories = db.prepare('SELECT * FROM directories ORDER BY id').all().map(d => {
+      const e = pickColumns(d, dCols);
+      e.directory_ref = d.id;
+      delete e.id;
+      return e;
+    });
+    const lCols = columnsOf(db, 'directory_links');
+    out.links = db.prepare('SELECT * FROM directory_links ORDER BY user_id').all().map(l => {
+      const e = pickColumns(l, lCols);
+      e.user_ref = l.user_id;
+      e.user_name = userName.get(l.user_id) || null;
+      e.directory_ref = l.directory_id;
+      // the peers the sync disabled, by name (peers get new ids on restore)
+      let peerIds = [];
+      try { peerIds = JSON.parse(l.disabled_peer_ids || '[]'); } catch { peerIds = []; }
+      e.disabled_peer_names = Array.isArray(peerIds) ? peerIds.map(id => peerNameById.get(Number(id))).filter(Boolean) : [];
+      delete e.user_id;
+      delete e.directory_id;
+      delete e.disabled_peer_ids;
+      return e;
+    }).filter(l => l.user_name);
+    const cCols = columnsOf(db, 'directory_conflicts');
+    out.conflicts = db.prepare('SELECT * FROM directory_conflicts ORDER BY id').all().map(c => {
+      const e = pickColumns(c, cCols);
+      e.directory_ref = c.directory_id;
+      e.user_ref = c.user_id == null ? null : c.user_id;
+      e.user_name = c.user_id == null ? null : (userName.get(c.user_id) || null);
+      e.resolved_by_name = c.resolved_by == null ? null : (userName.get(c.resolved_by) || null);
+      delete e.id;
+      delete e.directory_id;
+      delete e.user_id;
+      delete e.resolved_by;
+      return e;
+    });
+  } catch (err) { logger.warn({ err: err.message }, 'backup export: directories skipped'); }
+  return out;
+}
+
+/**
+ * Restore the directory connections (inside the restore transaction, after
+ * users and groups): ids as they were, the secret as stored. A secret this
+ * server cannot decrypt (backup from a server with another GC_ENCRYPTION_KEY)
+ * is dropped — the connection stays, is marked as needing the secret again
+ * (`needsSecret`) and does not sync until an admin enters it. Links and
+ * conflicts find their account by the restored id (user_ref), else by
+ * username. Returns { count, secretReentry: [name] }.
+ */
+function restoreDirectories(db, { directories, links, conflicts }, { userIdMap, userIdByName, peerIdMap }) {
+  const result = { count: 0, secretReentry: [] };
+  const dCols = columnsOf(db, 'directories');
+  if (!dCols.length) return result;
+  try {
+    db.prepare('DELETE FROM directory_runs').run();
+    db.prepare('DELETE FROM directory_conflicts').run();
+    db.prepare('DELETE FROM directory_links').run();
+    db.prepare('DELETE FROM directories').run();
+  } catch (err) { logger.warn({ err: err.message }, 'backup restore: clearing directories failed'); return result; }
+  const userExists = db.prepare('SELECT 1 FROM users WHERE id = ?');
+  const userOf = (ref, name) => {
+    const byRef = Number.isSafeInteger(ref) && userIdMap.has(ref) ? userIdMap.get(ref) : null;
+    const id = byRef || (name ? userIdByName.get(name) : null) || null;
+    return id && userExists.get(id) ? id : null;
+  };
+  const groupExists = db.prepare('SELECT 1 FROM groups WHERE id = ?');
+  const restored = new Set();
+  const cols = dCols.filter(c => c !== 'id');
+  const ins = db.prepare(`INSERT INTO directories (id, ${cols.join(', ')}) VALUES (?, ${cols.map(() => '?').join(', ')})`);
+  for (const d of directories || []) {
+    if (!d || !Number.isSafeInteger(d.directory_ref) || d.directory_ref < 1 || !d.kind || !d.name) continue;
+    const row = { ...d };
+    if (row.secret_enc) {
+      try { decrypt(String(row.secret_enc)); } catch {
+        row.secret_enc = null;
+        result.secretReentry.push(d.name);
+      }
+    }
+    if (row.parent_group_id != null && !groupExists.get(row.parent_group_id)) row.parent_group_id = null;
+    // a stopped run waits in directory_runs, which is not restored
+    if (row.last_status === 'pending') row.last_status = null;
+    try {
+      ins.run(d.directory_ref, ...cols.map(c => (row[c] === undefined ? null : row[c])));
+      restored.add(d.directory_ref);
+      result.count++;
+    } catch (e) { logger.warn({ err: e.message, directory: d.name }, 'directory restore skipped'); }
+  }
+  const lCols = columnsOf(db, 'directory_links').filter(c => !['user_id', 'directory_id', 'disabled_peer_ids'].includes(c));
+  const insLink = db.prepare(`INSERT OR IGNORE INTO directory_links (user_id, directory_id, disabled_peer_ids, ${lCols.join(', ')})
+    VALUES (?, ?, ?, ${lCols.map(() => '?').join(', ')})`);
+  for (const l of links || []) {
+    if (!l || !restored.has(l.directory_ref) || !l.external_id) continue;
+    const uid = userOf(l.user_ref, l.user_name);
+    if (!uid) continue;
+    const peers = Array.isArray(l.disabled_peer_names) ? l.disabled_peer_names.map(n => peerIdMap.get(n)).filter(Boolean) : [];
+    try {
+      insLink.run(uid, l.directory_ref, peers.length ? JSON.stringify(peers.map(Number)) : null, ...lCols.map(c => (l[c] === undefined ? null : l[c])));
+    } catch (e) { logger.warn({ err: e.message }, 'directory link restore skipped'); }
+  }
+  const cCols = columnsOf(db, 'directory_conflicts').filter(c => !['id', 'directory_id', 'user_id', 'resolved_by'].includes(c));
+  const insConflict = db.prepare(`INSERT OR IGNORE INTO directory_conflicts (directory_id, user_id, resolved_by, ${cCols.join(', ')})
+    VALUES (?, ?, ?, ${cCols.map(() => '?').join(', ')})`);
+  for (const c of conflicts || []) {
+    if (!c || !restored.has(c.directory_ref) || !c.external_id) continue;
+    const uid = c.user_ref == null && !c.user_name ? null : userOf(c.user_ref, c.user_name);
+    // an open conflict about an account that is not there is moot
+    if (!uid && c.status === 'open') continue;
+    try {
+      insConflict.run(c.directory_ref, uid, c.resolved_by_name ? (userIdByName.get(c.resolved_by_name) || null) : null,
+        ...cCols.map(k => (c[k] === undefined ? null : c[k])));
+    } catch (e) { logger.warn({ err: e.message }, 'directory conflict restore skipped'); }
+  }
+  return result;
+}
+
+// user_ids / group_ids JSON of a restored row, re-mapped. Ids the map does
+// not know become 0 (NOBODY) so the entry stays closed and never names a
+// different person (services/groupAccess.js).
+function remapIdList(json, map) {
+  if (!map || json == null || json === '') return json;
+  let v;
+  try { v = JSON.parse(json); } catch { return json; }
+  if (!Array.isArray(v) || !v.length) return json;
+  const out = [...new Set(v.map(x => (map.has(Number(x)) ? map.get(Number(x)) : 0)))];
+  return JSON.stringify(out);
 }
 
 function exportBuiltin(db) {
@@ -335,6 +571,9 @@ function getBackupSummary(backup) {
     service_bundles: (d.service_bundles || []).length,
     users: (d.users || []).length,
     user_avatars: (d.user_avatars || []).length,
+    groups: (d.groups || []).length,
+    group_members: (d.group_members || []).length,
+    directories: (d.directories || []).length,
     api_tokens: (d.api_tokens || []).length,
     tags: (d.tags || []).length,
     gateway_meta: (d.gateway_meta || []).length,
@@ -430,6 +669,12 @@ async function restoreBackup(backup) {
     service_bundles: serviceBundles = [],
     users = [],
     user_avatars: userAvatars = [],
+    groups: groupRows,
+    group_members: groupMembers = [],
+    group_invites: groupInvites = [],
+    directories: directoryRows,
+    directory_links: directoryLinks = [],
+    directory_conflicts: directoryConflicts = [],
     api_tokens: apiTokens = [],
     tags = [],
     gateway_meta: gatewayMeta = [],
@@ -459,6 +704,7 @@ async function restoreBackup(backup) {
   }
 
   let builtinRows = 0;
+  let directoryResult = { count: 0, secretReentry: [] };
   const restore = db.transaction(() => {
     // Clear existing data in dependency order
     db.prepare('DELETE FROM route_peer_acl').run();
@@ -508,11 +754,26 @@ async function restoreBackup(backup) {
       peerIdMap.set(p.name, result.lastInsertRowid);
     }
 
-    // Restore users
+    // Restore users — with their original id when the backup has it
+    // (user_ref), so user ids stored in routes, RDP entries, groups and
+    // plugin data still name the same person. userIdMap: old id → new id.
+    const userIdMap = new Map();
+    let userRefs = false;
     if (Array.isArray(users) && users.length > 0) {
       for (const u of users) {
         if (!u.username || !u.password_hash) continue;
-        dynamicInsert(db, 'users', [], u);
+        const ref = Number.isSafeInteger(u.user_ref) && u.user_ref > 0 ? u.user_ref : null;
+        let result;
+        if (ref) {
+          userRefs = true;
+          const cols = columnsOf(db, 'users').filter(c => c !== 'id');
+          try {
+            result = db.prepare(`INSERT INTO users (id, ${cols.join(', ')}) VALUES (?, ${cols.map(() => '?').join(', ')})`)
+              .run(ref, ...cols.map(c => (u[c] === undefined ? null : u[c])));
+          } catch { result = null; }
+        }
+        if (!result) result = dynamicInsert(db, 'users', [], u);
+        if (ref) userIdMap.set(ref, Number(result.lastInsertRowid));
       }
     }
     const userIdByName = new Map(
@@ -521,6 +782,22 @@ async function restoreBackup(backup) {
         catch { return []; }
       })()
     );
+
+    // Person groups (docs/groups.md) — replaced only when the backup has them
+    // (older backups: the groups stay; memberships of replaced accounts went
+    // with them).
+    if (Array.isArray(groupRows)) {
+      restoreGroups(db, { groups: groupRows, members: groupMembers, invites: groupInvites }, userIdByName);
+    }
+    const remapUsers = userRefs ? userIdMap : null;
+
+    // Directory connections, links and conflicts — replaced only when the
+    // backup has them (older backups: the connections stay).
+    if (Array.isArray(directoryRows)) {
+      directoryResult = restoreDirectories(db,
+        { directories: directoryRows, links: directoryLinks, conflicts: directoryConflicts },
+        { userIdMap, userIdByName, peerIdMap });
+    }
 
     // Restore profile pictures — only together with the users they belong
     // to (the user rows were replaced, their old pictures went with them).
@@ -568,8 +845,27 @@ async function restoreBackup(backup) {
       if (row.bundle_id != null) row.bundle_id = bundleIdMap.get(row.bundle_id) || null;
       if (row.enabled === undefined) row.enabled = 1;
       row.circuit_breaker_status = 'closed';
-      const excluded = ['peer_name', 'target_peer_name', 'acl_peer_names'];
+      // acl_people (docs/groups.md "Zugriff per Gruppe"): a backup from before
+      // the switch gets the rule of migration 111 (ACL on + persons → 0, only
+      // the listed devices pass), so restoring it never widens access.
+      row.acl_people = r.acl_people === undefined || r.acl_people === null
+        ? require('./groupAccess').legacyAclPeople(r)
+        : (r.acl_people === 0 || r.acl_people === false || r.acl_people === '0' ? 0 : 1);
+      row.user_ids = remapIdList(row.user_ids, remapUsers);
+      const excluded = ['peer_name', 'target_peer_name', 'acl_peer_names', 'group_refs'];
       const result = dynamicInsert(db, 'routes', excluded, row);
+      if (Array.isArray(r.group_refs) && r.group_refs.length) {
+        const insGroupAcl = db.prepare('INSERT OR IGNORE INTO route_group_acl (route_id, group_id) VALUES (?, ?)');
+        const groupExists = db.prepare('SELECT 1 FROM groups WHERE id = ?');
+        let kept = 0;
+        for (const gid of r.group_refs) {
+          if (Number.isSafeInteger(gid) && groupExists.get(gid)) { insGroupAcl.run(result.lastInsertRowid, gid); kept++; }
+        }
+        // Released for groups that are not there: closed, not open for all.
+        if (!kept && !(row.user_ids && row.user_ids !== '[]' && row.user_ids !== 'null')) {
+          db.prepare("UPDATE routes SET user_ids = '[0]' WHERE id = ?").run(result.lastInsertRowid);
+        }
+      }
       if (r.domain) routeIdByDomain.set(r.domain, result.lastInsertRowid);
       if (Array.isArray(r.acl_peer_names)) {
         for (const peerName of r.acl_peer_names) {
@@ -584,6 +880,7 @@ async function restoreBackup(backup) {
       try {
         const row = { ...rr };
         row.gateway_peer_id = rr.gateway_peer_name ? (peerIdMap.get(rr.gateway_peer_name) || null) : null;
+        row.user_ids = remapIdList(row.user_ids, remapUsers);
         dynamicInsert(db, 'rdp_routes', ['gateway_peer_name'], row);
       } catch (e) {
         logger.warn({ err: e.message, name: rr.name }, 'rdp_route restore skipped');
@@ -683,6 +980,9 @@ async function restoreBackup(backup) {
     rdp_routes: rdpRoutes.length,
     service_bundles: serviceBundles.length,
     users: users.length,
+    groups: Array.isArray(groupRows) ? groupRows.length : 0,
+    directories: directoryResult.count,
+    directories_secret_reentry: directoryResult.secretReentry.length,
     api_tokens: apiTokens.length,
     tags: tags.length,
     gateway_meta: gatewayMeta.length,
@@ -690,6 +990,9 @@ async function restoreBackup(backup) {
     webhooks: webhooks.length,
     builtin_integrations: builtinRows,
   }, 'Backup restored');
+  if (directoryResult.secretReentry.length) {
+    logger.warn({ directories: directoryResult.secretReentry }, 'backup restore: directory secrets from another GC_ENCRYPTION_KEY — enter them again');
+  }
 
   await peersService.rewriteWgConfig();
 
@@ -729,6 +1032,10 @@ async function restoreBackup(backup) {
     rdp_routes: rdpRoutes.length,
     service_bundles: serviceBundles.length,
     users: users.length,
+    groups: Array.isArray(groupRows) ? groupRows.length : 0,
+    group_members: Array.isArray(groupRows) ? groupMembers.length : 0,
+    directories: directoryResult.count,
+    directories_secret_reentry: directoryResult.secretReentry,
     api_tokens: apiTokens.length,
     tags: tags.length,
     gateway_meta: gatewayMeta.length,

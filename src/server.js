@@ -292,6 +292,26 @@ async function start() {
     setInterval(retryKioskCleanup, 60 * 60 * 1000);
     retryKioskCleanup();
 
+    // Person groups (docs/groups.md): projects whose end date has passed are
+    // archived (access ends, data stays); ended invitation links are purged.
+    // Hourly, and once at start.
+    const retryGroupsArchive = withRetry('groups-archive', async () => require('./services/groups').archiveExpired());
+    setInterval(retryGroupsArchive, 60 * 60 * 1000);
+    retryGroupsArchive();
+
+    // Directory sync (docs/groups.md "Verzeichnis-Abgleich und Anmeldung"):
+    // every minute the directories whose interval (5–1440 min, default 15)
+    // has passed are synchronised (a full sync each time, so at least every
+    // 24 h). A directory that cannot be read changes nothing.
+    const retryDirectorySync = withRetry('directory-sync', async () => require('./services/directory/sync').runDue());
+    setInterval(retryDirectorySync, 60 * 1000);
+
+    // Zugriff per Gruppe (docs/groups.md): routes with the device ACL allow
+    // the devices of released persons and group members — membership, device
+    // and account changes rebuild the Caddy config, at most once per 5 s.
+    try { require('./services/groupAccess').startCaddySync(); }
+    catch (err) { logger.warn({ err: err.message }, 'group access: Caddy sync not started'); }
+
     // Periodic alert checks (every hour): backup reminder, CPU / RAM / disk
     // thresholds, de-duplicated (services/alertChecks.js).
     const retryAlertChecks = withRetry('alert-checks', () => require('./services/alertChecks').run());
@@ -347,6 +367,7 @@ const shutdown = createShutdownHandler({
     () => require('./services/gatewayHealth').stopWatchdog(),
     () => require('./services/caddyReconciler').stopReconciler(),
     () => require('./services/accessReconciler').stop(),
+    () => require('./services/groupAccess').stopCaddySync(),
     () => require('./services/tlsGuard').stop(),
     () => require('./services/botBlockerCounter').stop(),
     () => require('./services/waf').stop(),

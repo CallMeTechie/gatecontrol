@@ -115,7 +115,14 @@ function tabsFor(req, plg) {
     devices: !!req.portalLoggedIn && !isKiosk(req),
     // Notification center: bell, inbox, own settings (signed in, push on).
     notify: !!req.portalLoggedIn && !isKiosk(req) && notifyEnabled(),
+    // "Meine Gruppen" (docs/groups.md "Portal"): signed in, no kiosk, member of at least one group.
+    groups: !!req.portalLoggedIn && !isKiosk(req) && hasGroups(req.portalOwnerId),
   };
+}
+
+function hasGroups(userId) {
+  if (userId == null) return false;
+  try { return require('../services/groups').groupsOfUser(userId, { includeInherited: true }).length > 0; } catch { return false; }
 }
 
 /** True when the viewer is a kiosk device (portalOwner source 'kiosk'). */
@@ -207,7 +214,7 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, a
   const lang = req.language || res.locals.language;
   const island = (obj) => JSON.stringify(obj).replace(/</g, '\\u003c');
   res.render('portal/portal.njk', {
-    portalI18n: island(stringsWithPrefix(lang, ['portal.', 'avatar.'])),
+    portalI18n: island(stringsWithPrefix(lang, ['portal.', 'avatar.', 'grp.role.', 'grp.kind.'])),
     portalCtx: island({
       csrf: res.locals.csrfToken || '',
       lang,

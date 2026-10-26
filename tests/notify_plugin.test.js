@@ -233,7 +233,7 @@ describe('hostApi notify', () => {
     fakePlugin('car-eight');
     const list = rules.list().filter((r) => r.plugin_id === 'car-eight');
     assert.deepEqual(list.map((r) => r.event_id), ['plugin:car-eight:default', 'plugin:car-eight:charging', 'plugin:car-eight:service']);
-    assert.deepEqual(list[1].recipients, { admins: false, owner: false, subscribers: true, users: [], groups: [] });
+    assert.deepEqual(list[1].recipients, { admins: false, owner: false, subscribers: true, users: [], groups: [], person_groups: [] });
     const topics = require('../src/services/notify/hub').topicsForUser(anna, 'de');
     assert.ok(topics.some((t) => t.id === 'plugin:car-eight:charging' && t.label === 'Fahrzeug · Laden abgeschlossen'));
   });

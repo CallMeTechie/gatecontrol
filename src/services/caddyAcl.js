@@ -23,4 +23,13 @@ function setAclPeers(routeId, peerIds) {
   }
 }
 
-module.exports = { getAclPeers, setAclPeers };
+/**
+ * Source ranges of an acl_enabled route: listed peers ∪ devices of the
+ * released persons and group members → { configured, ranges } (rules:
+ * services/groupAccess.js aclRanges).
+ */
+function aclRanges(route) {
+  return require('./groupAccess').aclRanges(route);
+}
+
+module.exports = { getAclPeers, setAclPeers, aclRanges };

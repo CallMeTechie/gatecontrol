@@ -13,6 +13,7 @@ const usersService = require('../services/users');
 const argon2Options = require('../utils/argon2Options');
 const twoFactor = require('../services/adminTwoFactor');
 const passkeys = require('../services/adminPasskeys');
+const directoryAuth = require('../services/directory/auth');
 
 // A password-verified login that still awaits the second factor lives in
 // req.session.pending2fa = { userId, at, returnTo } for at most this long.
@@ -186,6 +187,9 @@ const authRoutes = {
       // page script additionally hides it when the browser is on another
       // origin (the RP ID is pinned to GC_BASE_URL).
       passkeyOrigin: (passkeys.getRelyingParty() || {}).origin || '',
+      // Company account (docs/groups.md): "Mit Microsoft anmelden" buttons and
+      // whether the Windows / LDAP password works in the form below.
+      directoryLogin: directoryAuth.loginPageInfo(),
     });
   },
 
@@ -211,14 +215,52 @@ const authRoutes = {
         return res.redirect('/login');
       }
 
-      const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+      let user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+      // Company account (docs/groups.md "Verzeichnis-Abgleich und
+      // Anmeldung"): a directory account may also be found by its Windows
+      // login name, DOMAIN\name, UPN or e-mail address.
+      if (!user && typeof username === 'string') {
+        try { user = directoryAuth.resolveLogin(username) || undefined; } catch (err) {
+          logger.warn({ err: err.message }, 'directory login lookup failed');
+        }
+      }
+      // The lockout also counts per account when the name was typed
+      // differently (e-mail instead of login name).
+      if (user && user.username !== username) {
+        const accountLock = lockout.isLocked(user.username);
+        if (accountLock.locked) {
+          setFlash(req, 'error', res.locals.t('auth.error_locked').replace('{{minutes}}', String(Math.ceil(accountLock.remainingSeconds / 60))));
+          return res.redirect('/login');
+        }
+      }
+      // Directory accounts (role 'user', directory with sign-in on): the
+      // password is checked by an LDAP bind and never stored. Administrators
+      // always use their local password, even when the directory is down.
+      let route = null;
+      // A disabled account (or one without web login) never reaches the
+      // directory; it is refused below like a wrong password.
+      try { route = user && user.enabled === 1 && usersService.canWebLogin(user) ? directoryAuth.loginRoute(user) : null; } catch (err) {
+        logger.warn({ err: err.message }, 'directory login route failed');
+        route = null;
+      }
 
-      // Constant-time path: always run argon2.verify, even when the
-      // username doesn't exist, so the short-circuit timing no longer
-      // leaks "this user exists".
-      const hashToCheck = user ? user.password_hash : DUMMY_PASSWORD_HASH;
       let passwordOk = false;
-      try { passwordOk = await argon2.verify(hashToCheck, password); } catch { passwordOk = false; }
+      if (route) {
+        const outcome = await directoryAuth.verifyPassword(user, password);
+        if (outcome === 'unavailable') {
+          setFlash(req, 'error', res.locals.t('auth.error_directory_unavailable'));
+          return res.redirect('/login');
+        }
+        passwordOk = outcome === 'ok';
+        // The directory owns the password: no local password change step.
+        if (passwordOk) user = { ...user, must_change_password: 0 };
+      } else {
+        // Constant-time path: always run argon2.verify, even when the
+        // username doesn't exist, so the short-circuit timing no longer
+        // leaks "this user exists".
+        const hashToCheck = user ? user.password_hash : DUMMY_PASSWORD_HASH;
+        try { passwordOk = await argon2.verify(hashToCheck, password); } catch { passwordOk = false; }
+      }
       // A disabled account is refused exactly like a wrong password (same
       // flash, same lockout accounting, argon2 already ran) so the response
       // does not reveal whether the account exists or is disabled.
@@ -229,6 +271,7 @@ const authRoutes = {
 
         // Record failed attempt for lockout
         lockout.recordFailedAttempt(username, 'admin', req.ip);
+        if (user && user.username !== username) lockout.recordFailedAttempt(user.username, 'admin', req.ip);
 
         // Log failed attempt — through activity.log, so the notification
         // settings (mail, webhooks) see it like every other event.
@@ -524,3 +567,7 @@ const authRoutes = {
 module.exports = authRoutes;
 module.exports.PENDING_2FA_TTL_MS = PENDING_2FA_TTL_MS;
 module.exports.PENDING_PW_TTL_MS = PENDING_PW_TTL_MS;
+// Shared with the company-account sign-in (routes/oidc.js): the same session
+// creation and landing page as every other login.
+module.exports.establishSession = establishSession;
+module.exports.postLoginTarget = postLoginTarget;

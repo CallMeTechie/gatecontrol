@@ -313,7 +313,7 @@ describe('notifications.js: pure helpers', () => {
     d.priority = 'high';
     d.recipients.groups.push(7);
     d.bundle_s = 900;
-    assert.deepEqual(N.ruleDiff(r, d), { priority: 'high', recipients: { admins: true, owner: false, subscribers: false, users: [1, 3], groups: [7] }, bundle_s: 900 });
+    assert.deepEqual(N.ruleDiff(r, d), { priority: 'high', recipients: { admins: true, owner: false, subscribers: false, users: [1, 3], groups: [7], person_groups: [] }, bundle_s: 900 });
     assert.deepEqual(r.recipients.groups, [], 'copyRule does not share arrays');
     assert.equal(N.normRule({ event_id: 'x', priority: 'bogus', group: 'bogus' }).priority, 'normal');
   });
@@ -341,6 +341,15 @@ describe('notifications.js: pure helpers', () => {
     ]);
     assert.equal(N.hasRecipient({}), false);
     assert.equal(N.hasRecipient({ subscribers: true }), true);
+    // person groups are their own kind
+    assert.deepEqual(N.recipientParts({ person_groups: [5, 6] }, [], [], [{ id: 5, name: 'Verwaltung › IT' }]),
+      [{ kind: 'pgroup', id: 5, name: 'Verwaltung › IT' }, { kind: 'pgroup', id: 6, name: '#6' }]);
+    assert.equal(N.hasRecipient({ person_groups: [5] }), true);
+    const r = N.normRule({ event_id: 'x', recipients: { person_groups: [5] } });
+    const d = N.copyRule(r);
+    d.recipients.person_groups.push(6);
+    assert.deepEqual(N.ruleDiff(r, d).recipients.person_groups, [5, 6]);
+    assert.deepEqual(r.recipients.person_groups, [5], 'copyRule does not share arrays');
   });
 
   it('statusOf / histStatusOf', () => {

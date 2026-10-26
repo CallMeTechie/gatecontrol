@@ -101,6 +101,9 @@ function runMigrations() {
     );
     const apply = db.transaction(() => {
       runSql(migration.sql);
+      // Optional data step in JS (e.g. parsing JSON columns the way the
+      // services do), same transaction — a throw rolls the whole step back.
+      if (typeof migration.run === 'function') migration.run(db);
       insert.run(
         migration.version,
         migration.name,

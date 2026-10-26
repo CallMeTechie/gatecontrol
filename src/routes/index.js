@@ -238,7 +238,7 @@ router.get('/health', async (req, res) => {
 
 // ─── Auth routes (public) ──────────────────────────
 const authRoutes = require('./auth');
-router.get('/login', guestOnly, authRoutes.loginPage);
+router.get('/login', guestOnly, apiLimiter, authRoutes.loginPage);
 router.post('/login', guestOnly, loginLimiter, csrfProtection, authRoutes.login);
 // Second factor: only reachable with a valid req.session.pending2fa (set by
 // POST /login after the password check); requireAuth itself is untouched.
@@ -248,6 +248,12 @@ router.post('/login/2fa', guestOnly, loginLimiter, csrfProtection, authRoutes.tw
 router.post('/login/passkey/options', guestOnly, passkeyLoginLimiter, csrfProtection, authRoutes.passkeyOptions);
 router.post('/login/passkey', guestOnly, passkeyLoginLimiter, csrfProtection, authRoutes.passkeyLogin);
 router.post('/logout', requireAuth, csrfProtection, authRoutes.logout);
+// "Mit Microsoft anmelden" (docs/groups.md "Verzeichnis-Abgleich und
+// Anmeldung"): OpenID Connect code flow with PKCE against Entra ID. GET only
+// (the redirect back from Microsoft carries state, not a CSRF token).
+const oidcRoutes = require('./oidc');
+router.get('/auth/oidc/:directoryId/start', guestOnly, loginLimiter, oidcRoutes.start);
+router.get('/auth/oidc/:directoryId/callback', loginLimiter, oidcRoutes.callback);
 // Own password after an administrator set one with "change on next login":
 // only reachable with req.session.pendingPwChange (set by the login steps).
 router.get('/login/change-password', guestOnly, apiLimiter, authRoutes.changePasswordPage);
@@ -295,7 +301,7 @@ function profileLocals(req, res) {
   const user = res.locals.user || {};
   return {
     profileInitials: profileInitials(user.display_name || user.username),
-    sessionAuthMethod: ['password', 'totp', 'passkey'].includes(session.authMethod) ? session.authMethod : null,
+    sessionAuthMethod: ['password', 'totp', 'passkey', 'oidc'].includes(session.authMethod) ? session.authMethod : null,
     sessionAuthAt: Number(session.authAt) || null,
   };
 }
@@ -328,6 +334,10 @@ const pages = [
   { path: '/settings', template: 'settings', titleKey: 'nav.settings' },
   { path: '/rdp', template: 'rdp', titleKey: 'nav.rdp' },
   { path: '/users', template: 'users', titleKey: 'nav.users' },
+  // Person groups (docs/groups.md): tree + detail, data from /api/v1/groups.
+  { path: '/groups', template: 'groups', titleKey: 'nav.groups' },
+  // Directory sync (docs/groups.md "Verzeichnis-Abgleich und Anmeldung"): data from /api/v1/directories.
+  { path: '/directory', template: 'directory', titleKey: 'nav.directory' },
   { path: '/dns', template: 'dns', titleKey: 'nav.dns' },
   { path: '/pihole', template: 'pihole', titleKey: 'pihole.title' },
   { path: '/gateway-pools', template: 'gateway-pools', titleKey: 'gateway_pools.title' },
@@ -362,6 +372,12 @@ const SB_I18N_PREFIXES = ['support_bundles.', 'common.'];
 // Strings the users list and the user profile hand to users.js (one JSON
 // island on both pages, like the settings page; up.* for the profile).
 const USERS_I18N_PREFIXES = ['us.', 'users.mb.', 'error.users.', 'error.tokens.', 'error.enrollment.', 'enrollment.', 'common.', 'passkey.error_not_found', 'up.', 'avatar.'];
+
+// Strings of the groups page (groups.js).
+const GROUPS_I18N_PREFIXES = ['grp.', 'error.groups.', 'common.'];
+
+// Strings of the directory page (directory.js).
+const DIRECTORY_I18N_PREFIXES = ['dir.', 'error.directory.', 'common.'];
 
 // Tabs of the user profile (/users/:id?tab=…). The users list had the same
 // five in its side panel; old links /users?user=ID&tab=X lead to the profile.
@@ -420,6 +436,13 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
         .replace(/</g, '\\u003c');
     }
 
+    // "Wer darf zugreifen?" picker of the route editor and the RDP dialog
+    // (access-picker.js, partials/access-i18n.njk).
+    if (template === 'zones' || template === 'rdp') {
+      extraLocals.accessI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, ['acc.']))
+        .replace(/</g, '\\u003c');
+    }
+
     if (template === 'zones') {
       try {
         extraLocals.gatewayPools = require('../services/gatewayPool').listPools();
@@ -450,6 +473,18 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
         return res.redirect(`/users/${legacyId}${tab === 'overview' ? '' : `?tab=${tab}`}`);
       }
       extraLocals.usersI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, USERS_I18N_PREFIXES))
+        .replace(/</g, '\\u003c');
+    }
+
+    // Groups page (public/js/groups.js): its strings as one JSON island
+    // (groups.njk data-prefixes must list the same ones).
+    if (template === 'directory') {
+      extraLocals.directoryI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, DIRECTORY_I18N_PREFIXES))
+        .replace(/</g, '\\u003c');
+    }
+
+    if (template === 'groups') {
+      extraLocals.groupsI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, GROUPS_I18N_PREFIXES))
         .replace(/</g, '\\u003c');
     }
 
@@ -645,6 +680,14 @@ const portalIdentity = require('../middleware/portalIdentity');
 const portalOwner = require('../middleware/portalOwner');
 const { portalApiLimiter } = require('../middleware/rateLimit');
 router.use('/api/v1/portal', portalIdentity, portalApiLimiter, portalOwner, require('./api/portal'));
+
+// ─── Joining a person group with an invitation link (docs/groups.md) ──
+// Signed-in people only (web or portal session); not behind the portal's
+// "enabled" switch, so the link also works on the web UI host.
+const groupJoin = require('./groupJoin');
+const { portalPageLimiter } = require('../middleware/rateLimit');
+router.get('/portal/groups/join/:token', portalPageLimiter, portalIdentity, portalOwner, groupJoin.page);
+router.post('/portal/groups/join/:token', portalPageLimiter, csrfProtection, portalIdentity, portalOwner, groupJoin.accept);
 
 // ─── Portal pages: /portal, /auto (login link of the apps), "Wer bist du?" ──
 router.use(require('./portal'));

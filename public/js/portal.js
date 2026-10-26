@@ -1,12 +1,12 @@
 // public/js/portal.js — GateControl portal (redesign "variant A": tabs).
 //
-// Start · Dienste · Zuhause · Fahrzeug · Netzwerk · Meine Geräte. The tabs
-// are URL-addressable (#start, #dienste, #zuhause, #fahrzeug, #netzwerk,
-// #geraete) and a WAI-ARIA tablist (arrow keys, Home/End). Every area that
+// Start · Dienste · Zuhause · Fahrzeug · Netzwerk · Meine Geräte · Gruppen.
+// The tabs are URL-addressable (#start, #dienste, #zuhause, #fahrzeug,
+// #netzwerk, #geraete, #gruppen) and a WAI-ARIA tablist (arrow keys, Home/End). Every area that
 // is unlicensed or has no data is hidden (tab, panel and start card).
 //
 // Data: /api/v1/portal/* (device, traffic, services, pihole + owner/household,
-// me/devices, me/enrollment, plugins/start + search). "Zuhause" and
+// me/devices, me/enrollment, plugins/start + search, groups). "Zuhause" and
 // "Fahrzeug" hold plugin sections only (sandboxed frames, docs/plugins.md
 // "Portal"). Managing devices needs a portal or web session (ctx.loggedIn);
 // the server checks again. "Gerät sperren" asks first.
@@ -1325,6 +1325,269 @@
     if (!panelOpen('mitteilungen') && !panelOpen('benachrichtigungen')) poll();
     startPolling();
   }
+
+  // ═══ Meine Gruppen (docs/groups.md "Portal") ═════════════════════════════
+  // Own groups as chips; the chosen one in detail. A lead or group admin
+  // (family: a parent) of exactly that group also sees its members (role
+  // select, remove), adds people by their exact user name or e-mail address
+  // and keeps invitation links. The server decides who may do what (manage,
+  // canEditRole, canRemove); the page only shows it. Data: /api/v1/portal/groups.
+  var grp = { list: null, current: null, detail: null, loading: false };
+  function roleText(role) { return T('grp.role.' + role); }
+  function initials(name) {
+    var parts = String(name || '?').trim().split(/\s+/);
+    return ((Array.from(parts[0] || '?')[0] || '?') + (parts.length > 1 ? (Array.from(parts[parts.length - 1])[0] || '') : '')).toUpperCase();
+  }
+  function grpError(res) { return (res && res.body && res.body.error) || T('portal.groups.failed'); }
+  // A small form dialog: fields (nodes), OK runs onOk() → Promise<boolean> (true closes).
+  function grpDialog(o) {
+    var prev = doc.activeElement;
+    var titleId = 'pt-grp-dlg-' + Date.now();
+    var err = el('div', { class: 'pt-alert', role: 'alert', hidden: true });
+    var cancel = el('button', { type: 'button', class: 'pt-btn' }, o.cancelLabel || T('portal.cancel'));
+    var ok = o.okLabel ? el('button', { type: 'button', class: 'pt-btn pt-btn-primary' }, o.okLabel) : null;
+    var box = el('div', { class: 'pt-dialog pt-grp-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId }, [
+      el('h2', { class: 'pt-h2', id: titleId }, o.title),
+      o.text ? el('p', { class: 'pt-dialog-text' }, o.text) : null,
+    ].concat(o.fields || []).concat([err, el('div', { class: 'pt-dialog-foot' }, [cancel, ok])]));
+    var overlay = el('div', { class: 'pt-overlay' }, box);
+    var done = false;
+    function close() {
+      if (done) return;
+      done = true;
+      doc.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+      if (prev && prev.focus && doc.contains(prev)) { try { prev.focus(); } catch (_) { /* cosmetic */ } }
+    }
+    function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } }
+    cancel.addEventListener('click', close);
+    if (ok) {
+      ok.addEventListener('click', function () {
+        ok.disabled = true;
+        err.hidden = true;
+        Promise.resolve(o.onOk()).then(function (r) {
+          ok.disabled = false;
+          if (r === true) close();
+          else if (typeof r === 'string') { err.textContent = r; err.hidden = false; }
+        }, function () { ok.disabled = false; err.textContent = T('portal.groups.failed'); err.hidden = false; });
+      });
+    }
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+    doc.addEventListener('keydown', onKey, true);
+    doc.body.appendChild(overlay);
+    var first = box.querySelector('input, select');
+    (first || ok || cancel).focus();
+    return { close: close, box: box };
+  }
+  function roleSelect(roles, value, label) {
+    var s = el('select', { class: 'pt-grp-select', 'aria-label': label });
+    roles.forEach(function (r) { s.appendChild(el('option', { value: r, selected: r === value }, roleText(r))); });
+    return s;
+  }
+  function renderGroupChips() {
+    var host = $('pt-grp-chips');
+    if (!host) return;
+    clear(host);
+    if (!grp.list || !grp.list.length) { host.appendChild(empty(T('portal.groups.none'))); show($('pt-grp-layout'), false); return; }
+    grp.list.forEach(function (g) {
+      var on = grp.current === g.id;
+      host.appendChild(el('button', { type: 'button', class: 'pt-grp-chip' + (on ? ' is-on' : '') + (g.manage ? ' is-manage' : ''), 'aria-pressed': on ? 'true' : 'false',
+        'data-id': String(g.id), on: { click: function () { openGroup(g.id); } } },
+      g.path + (g.direct ? ' · ' + roleText(g.role) : '')));
+    });
+  }
+  function sourceLine(d) {
+    var parts = [d.direct ? T('portal.groups.you_are', { role: roleText(d.role) }) : T('portal.groups.via_sub')];
+    parts.push(T('portal.groups.src.' + (d.group.sourceKind || 'local')));
+    if (d.group.endsAt) parts.push(T('portal.groups.ends', { date: fmtDate(d.group.endsAt) }));
+    return parts.join(' · ');
+  }
+  function leadersCard(d) {
+    var leads = d.leaders.filter(function (l) { return l.role !== 'deputy'; });
+    var deps = d.leaders.filter(function (l) { return l.role === 'deputy'; });
+    var row = function (l) { return el('li', { class: 'pt-grp-lrow' }, [el('span', { class: 'pt-avatar pt-grp-av', 'aria-hidden': 'true' }, initials(l.name)), el('b', null, l.name || '–'), el('span', { class: 'pt-small pt-muted' }, roleText(l.role))]); };
+    var card = el('section', { class: 'pt-card pt-pad pt-grp-card', 'aria-labelledby': 'pt-grp-h-lead' }, [
+      el('h2', { class: 'pt-h2', id: 'pt-grp-h-lead' }, T('portal.groups.leaders')),
+      leads.length ? el('ul', { class: 'pt-grp-llist' }, leads.map(row)) : el('p', { class: 'pt-small pt-muted' }, d.direct && (d.role === 'lead' || d.role === 'parent') ? T('portal.groups.you_lead') : T('portal.groups.leaders_none')),
+      el('h3', { class: 'pt-grp-h3' }, T('portal.groups.deputy')),
+      deps.length ? el('ul', { class: 'pt-grp-llist' }, deps.map(row)) : el('p', { class: 'pt-small pt-muted' }, T('portal.groups.deputy_none')),
+      el('p', { class: 'pt-foot' }, T('portal.groups.deputy_text') + (d.manage && d.group.kind !== 'family' ? ' ' + T('portal.groups.deputy_hint') : '')),
+    ]);
+    return card;
+  }
+  function memberRow(d, m) {
+    var meta = [];
+    if (m.email) meta.push(m.email);
+    if (!m.direct) meta.push(T('portal.groups.from_sub'));
+    if (m.source === 'directory') meta.push(T('portal.groups.from_directory'));
+    if (!m.enabled) meta.push(T('portal.groups.disabled'));
+    var roleNode;
+    if (m.canEditRole) {
+      roleNode = roleSelect(d.roles, m.role, T('portal.groups.role_of', { name: m.name }));
+      if (d.roles.indexOf(m.role) < 0) roleNode.insertBefore(el('option', { value: m.role, selected: true, disabled: true }, roleText(m.role)), roleNode.firstChild);
+      roleNode.addEventListener('change', function () {
+        var sel = roleNode;
+        sel.disabled = true;
+        send('PUT', '/api/v1/portal/groups/' + Number(d.group.id) + '/members/' + Number(m.userId), { role: sel.value }).then(function (res) {
+          sel.disabled = false;
+          if (res.body && res.body.ok) { toast(T('portal.groups.role_saved')); openGroup(d.group.id, true); return; }
+          toast(grpError(res), 'error');
+          sel.value = m.role;
+        }).catch(function () { sel.disabled = false; sel.value = m.role; toast(T('portal.groups.failed'), 'error'); });
+      });
+    } else {
+      roleNode = el('span', { class: 'pt-grp-role' + (m.role === 'lead' || m.role === 'parent' ? ' is-lead' : '') }, roleText(m.role));
+    }
+    return el('li', { class: 'pt-grp-member' + (m.direct ? '' : ' is-inherited'), 'data-id': String(m.userId) }, [
+      el('span', { class: 'pt-avatar pt-grp-av', 'aria-hidden': 'true' }, initials(m.name)),
+      el('div', { class: 'pt-grow' }, [
+        el('div', null, [el('b', null, m.name), m.self ? el('span', { class: 'pt-small pt-muted' }, ' (' + T('portal.groups.you') + ')') : null]),
+        meta.length ? el('div', { class: 'pt-small pt-muted pt-grp-meta' }, meta.join(' · ')) : null,
+      ]),
+      roleNode,
+      m.canRemove ? el('button', { type: 'button', class: 'pt-btn pt-btn-sm pt-btn-danger', 'data-act': 'remove', on: { click: function () { removeMember(d, m); } } }, T('portal.groups.remove')) : null,
+    ]);
+  }
+  function removeMember(d, m) {
+    portalConfirm({ title: T('portal.groups.remove_title', { name: m.name }), message: T('portal.groups.remove_text'), okLabel: T('portal.groups.remove'), danger: true })
+      .then(function (yes) {
+        if (!yes) return;
+        send('DELETE', '/api/v1/portal/groups/' + Number(d.group.id) + '/members/' + Number(m.userId)).then(function (res) {
+          if (res.body && res.body.ok) { toast(T('portal.groups.removed', { name: m.name })); openGroup(d.group.id, true); return; }
+          toast(grpError(res), 'error');
+        }).catch(function () { toast(T('portal.groups.failed'), 'error'); });
+      });
+  }
+  function addMember(d) {
+    var login = el('input', { type: 'text', class: 'pt-grp-input', id: 'pt-grp-login', autocomplete: 'off', maxlength: '200' });
+    var role = roleSelect(d.roles, d.roles[0], T('portal.groups.role'));
+    grpDialog({
+      title: T('portal.groups.add_title'), text: T('portal.groups.add_text'), okLabel: T('portal.groups.add_ok'),
+      fields: [
+        el('label', { class: 'pt-field-label', for: 'pt-grp-login' }, T('portal.groups.add_login')), login,
+        el('label', { class: 'pt-field-label pt-grp-gap' }, [T('portal.groups.role'), role]),
+      ],
+      onOk: function () {
+        var v = login.value.trim();
+        if (!v) return T('portal.groups.add_login');
+        return send('POST', '/api/v1/portal/groups/' + Number(d.group.id) + '/members', { login: v, role: role.value }).then(function (res) {
+          if (res.status === 201 && res.body && res.body.ok) {
+            toast(T('portal.groups.added', { name: (res.body.member && res.body.member.name) || v }));
+            openGroup(d.group.id, true);
+            return true;
+          }
+          return grpError(res);
+        });
+      },
+    });
+  }
+  function newInvite(d) {
+    var role = roleSelect(d.roles, d.roles[0], T('portal.groups.role'));
+    var days = el('input', { type: 'number', class: 'pt-grp-input', min: '1', max: '30', step: '1', value: '7' });
+    var uses = el('input', { type: 'number', class: 'pt-grp-input', min: '1', max: '500', step: '1', value: '1' });
+    var dlg = grpDialog({
+      title: T('portal.groups.invite_new'), text: T('portal.groups.invite_text'), okLabel: T('portal.groups.invite_create'),
+      fields: [el('div', { class: 'pt-grp-fields' }, [
+        el('label', { class: 'pt-field-label' }, [T('portal.groups.role'), role]),
+        el('label', { class: 'pt-field-label' }, [T('portal.groups.invite_days'), days]),
+        el('label', { class: 'pt-field-label' }, [T('portal.groups.invite_uses'), uses]),
+      ])],
+      onOk: function () {
+        return send('POST', '/api/v1/portal/groups/' + Number(d.group.id) + '/invites', { role: role.value, expiresInDays: Number(days.value), maxUses: Number(uses.value) }).then(function (res) {
+          if (!(res.status === 201 && res.body && res.body.ok && res.body.invite)) return grpError(res);
+          dlg.close();
+          var url = String(res.body.invite.url || '');
+          var copyBtn = el('button', { type: 'button', class: 'pt-btn pt-btn-primary' }, T('portal.groups.copy'));
+          copyBtn.addEventListener('click', function () { copyText(url, copyBtn); });
+          grpDialog({ title: T('portal.groups.invite_new'), text: T('portal.groups.invite_once'), cancelLabel: T('portal.close'),
+            fields: [el('div', { class: 'pt-code pt-grp-link' }, [el('code', { class: 'pt-grp-url' }, url), copyBtn])] });
+          openGroup(d.group.id, true);
+          return false;
+        });
+      },
+    });
+  }
+  function revokeInvite(d, inv) {
+    send('DELETE', '/api/v1/portal/groups/' + Number(d.group.id) + '/invites/' + encodeURIComponent(inv.id)).then(function (res) {
+      if (res.body && res.body.ok) { toast(T('portal.groups.revoked')); openGroup(d.group.id, true); return; }
+      toast(grpError(res), 'error');
+    }).catch(function () { toast(T('portal.groups.failed'), 'error'); });
+  }
+  function renderGroup() {
+    var d = grp.detail;
+    var main = $('pt-grp-main');
+    var side = $('pt-grp-side');
+    if (!main || !side || !d) return;
+    clear(main);
+    clear(side);
+    show($('pt-grp-layout'), true);
+    var head = el('div', { class: 'pt-grp-head' }, [
+      el('div', { class: 'pt-grow' }, [el('h2', { class: 'pt-h2' }, d.group.path), el('p', { class: 'pt-small pt-muted pt-grp-sub' }, sourceLine(d))]),
+      d.manage ? el('button', { type: 'button', class: 'pt-btn pt-btn-primary', id: 'pt-grp-add', on: { click: function () { addMember(d); } } }, T('portal.groups.add')) : null,
+    ]);
+    main.appendChild(head);
+    if (d.manage) {
+      var direct = d.members.filter(function (m) { return m.direct; });
+      var inherited = d.members.filter(function (m) { return !m.direct; });
+      var ul = el('ul', { class: 'pt-grp-members', id: 'pt-grp-members' }, direct.map(function (m) { return memberRow(d, m); }));
+      main.appendChild(el('h3', { class: 'pt-grp-h3' }, T('portal.groups.members') + ' · ' + plural('portal.groups.people', direct.length)));
+      main.appendChild(ul);
+      if (inherited.length) {
+        main.appendChild(el('h3', { class: 'pt-grp-h3' }, T('portal.groups.from_sub_title', { count: inherited.length })));
+        main.appendChild(el('ul', { class: 'pt-grp-members' }, inherited.map(function (m) { return memberRow(d, m); })));
+      }
+      if (d.group.sourceKind === 'directory') main.appendChild(el('p', { class: 'pt-foot' }, T('portal.groups.readonly_dir')));
+      main.appendChild(el('p', { class: 'pt-foot' }, T('portal.groups.lead_admin_only')));
+      // invitation links
+      var inv = el('div', { class: 'pt-grp-invites', id: 'pt-grp-invites' }, [
+        el('div', { class: 'pt-card-row pt-row-tight' }, [
+          el('h3', { class: 'pt-grp-h3' }, T('portal.groups.invites')),
+          el('button', { type: 'button', class: 'pt-btn pt-btn-sm pt-push', id: 'pt-grp-invite', on: { click: function () { newInvite(d); } } }, T('portal.groups.invite_new')),
+        ]),
+      ]);
+      if (!d.invites.length) inv.appendChild(el('p', { class: 'pt-small pt-muted' }, T('portal.groups.invites_none')));
+      d.invites.forEach(function (i) {
+        inv.appendChild(el('div', { class: 'pt-grp-invite', 'data-id': i.id }, [
+          el('span', { class: 'pt-grow pt-small' }, T('portal.groups.invite_row', { role: roleText(i.role), date: fmtDate(i.expiresAt), uses: i.uses, max: i.maxUses == null ? '∞' : i.maxUses })),
+          el('button', { type: 'button', class: 'pt-btn pt-btn-sm', on: { click: function () { revokeInvite(d, i); } } }, T('portal.groups.revoke')),
+        ]));
+      });
+      main.appendChild(inv);
+    } else {
+      main.appendChild(el('p', { class: 'pt-small pt-muted' }, d.group.sourceKind === 'plugin' ? T('portal.groups.readonly_plugin') : plural('portal.groups.people', d.group.memberCount || 0)));
+    }
+    side.appendChild(leadersCard(d));
+  }
+  function openGroup(id, force) {
+    if (!force && grp.current === id && grp.detail) return;
+    grp.current = id;
+    renderGroupChips();
+    getJson('/api/v1/portal/groups/' + Number(id)).then(function (res) {
+      if (grp.current !== id) return;
+      if (!res.body || !res.body.ok) { toast(grpError(res), 'error'); return; }
+      grp.detail = res.body;
+      grp.detail.leaders = Array.isArray(res.body.leaders) ? res.body.leaders : [];
+      grp.detail.members = Array.isArray(res.body.members) ? res.body.members : [];
+      grp.detail.invites = Array.isArray(res.body.invites) ? res.body.invites : [];
+      grp.detail.roles = Array.isArray(res.body.roles) ? res.body.roles : [];
+      renderGroup();
+    }).catch(function () { toast(T('portal.groups.failed'), 'error'); });
+  }
+  function loadGroups() {
+    if (!TABS.groups || grp.loading) return;
+    grp.loading = true;
+    getJson('/api/v1/portal/groups').then(function (res) {
+      grp.loading = false;
+      if (!res.body || !res.body.ok || !Array.isArray(res.body.groups)) { var h = $('pt-grp-chips'); if (h) clear(h).appendChild(empty(T('portal.groups.load_failed'))); return; }
+      grp.list = res.body.groups;
+      // the first group the viewer maintains, else the first one
+      var still = grp.list.some(function (g) { return g.id === grp.current; });
+      var first = grp.list.filter(function (g) { return g.manage; })[0] || grp.list[0];
+      renderGroupChips();
+      if (first) openGroup(still ? grp.current : first.id, true);
+    }).catch(function () { grp.loading = false; var h = $('pt-grp-chips'); if (h) clear(h).appendChild(empty(T('portal.groups.load_failed'))); });
+  }
+  onPanel(function (id) { if (id === 'gruppen') loadGroups(); });
 
   // Kiosk device (docs/feature-kiosk-devices.md): "Abmelden" unpairs the
   // tablet for good — ask first (a tap on a wall tablet is easy).

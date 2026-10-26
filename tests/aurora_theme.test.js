@@ -24,7 +24,7 @@ after(() => teardown());
 // dns/pihole are feature-gated (not unlocked in setup) → verified manually.
 const PAGES = [
   '/dashboard', '/peers', '/routes', '/gateways', '/gateway-pools',
-  '/rdp', '/certificates', '/users', '/logs', '/settings', '/profile',
+  '/rdp', '/certificates', '/users', '/groups', '/directory', '/logs', '/settings', '/profile',
 ];
 
 describe('aurora theme — every page renders', () => {
@@ -914,7 +914,7 @@ describe('aurora theme — rdp layout (Task P2-10)', () => {
     assert.match(res.text, /id="rdp-port"/, '#rdp-port present');
     assert.match(res.text, /id="rdp-access-mode"/, '#rdp-access-mode present');
     assert.match(res.text, /id="rdp-credential-mode"/, '#rdp-credential-mode present');
-    assert.match(res.text, /id="rdp-user-ids"/, '#rdp-user-ids present');
+    assert.match(res.text, /id="rdp-access-picker"/, '#rdp-access-picker present ("Wer darf zugreifen?")');
     // Step dots must have data-step-key (needed by wizard JS logic)
     assert.match(res.text, /data-step-key="connection"/, 'connection step-key present');
     assert.match(res.text, /data-step-key="auth"/, 'auth step-key present');

@@ -314,7 +314,8 @@ unsigned build of the same id.
     "events": true,
     "services": ["gatecontrol-messenger:send_message"],
     "publicLinks": true,
-    "devices": true
+    "devices": true,
+    "groups": "read"
   },
   "media": { "maxBytes": 26214400, "types": ["image/jpeg", "image/webp", "audio/ogg", "application/pdf"], "quotaDefault": "10GB" },
   "services": { "provides": { "scene": { "label": { "de": "Szene schalten", "en": "Switch a scene" } } } },
@@ -500,6 +501,13 @@ unsigned build of the same id.
   devices and silent data notifications (`gc.notify` `devices` / `silent`).
   The install dialog shows "Geräte: sieht die GateControl-Apps …". Errors
   `permissions.devices: invalid`. See "Devices".
+* `permissions.groups` (`"read"` or `"manage"`): the person groups of
+  GateControl (`gc.groups.*`, the hooks `groupsChanged` / `groupUsage` /
+  `groupDeleting`, `gc.notify({ groups })`, `GC.pickPrincipals`); `"manage"`
+  also creates and maintains the plugin's own groups (`gc.groups.ensure` /
+  `remove`). The install dialog shows "Gruppen: Gruppen und Mitglieder lesen"
+  or "Gruppen: Gruppen und Mitglieder lesen und eigene Gruppen verwalten",
+  marked as sensitive. Errors `permissions.groups: invalid`. See "Groups".
 * `services` (optional, since 1.177.0): `{ "provides": { "<name>": { "label" } } }`
   — services other plugins may call (`<name>` `[a-z][a-z0-9_]{0,31}`, ≤ 32,
   label text ≤ 60, no other keys; errors `services: invalid`,
@@ -659,6 +667,11 @@ module.exports = {
   },                                        // this plugin's pushes was pressed — once per push and button (see "Callback buttons")
   async publicLinkEvent({ token, event, file, zip, downloads }, gc) {  // optional (`publicLinks`, since 1.193.0):
   },                                        // 'download' | 'locked' | 'expired' of one of its links (see "Public links")
+  async groupsChanged({ changes }, gc) {},  // optional (`groups`): batched group changes (see "Groups")
+  async groupUsage({ groupId, successorUserId }, gc) {  // optional (`groups`): what the plugin keeps for a group
+    return [{ kind: 'Drive', label: 'Team-Ordner Buchhaltung', onDelete: 'wird in Meine Dateien von Thomas Berg verschoben' }];
+  },
+  async groupDeleting({ groupId, successorUserId }, gc) {},  // optional (`groups`): clean up before a group goes (≤ 30 s)
 };
 ```
 
@@ -699,6 +712,9 @@ module.exports = {
 | `gc.publicLinks.create/list/get/revoke` | since 1.193.0: download links without login for some of the plugin's media (`publicLinks`, only while an administrator allows them) — see "Public links" |
 | `gc.devices.list({ userId })` | since 1.193.0: the person's GateControl apps `[{ id, name, platform, clientType, appVersion, online, lastSeen, via }]` (`devices`) — see "Devices" |
 | `gc.notify({ …, users, devices, silent, data })` | since 1.193.0: only to these devices of `users`; `silent: true` a data notification without display (`devices`) — see "Devices" |
+| `gc.groups.list/get/members/isMember/leadersOf(…)` | the person groups of GateControl (`groups`) — see "Groups" |
+| `gc.groups.ensure({ key, name, kind, parentKey, members })` / `gc.groups.remove(key)` | the plugin's own groups (`groups: "manage"`) — see "Groups" |
+| `gc.notify({ …, groups: [id] })` | to the groups' enabled members, subgroups included, resolved at send time (`groups`) — see "Groups" |
 | `gc.events.emit({ users, type, data })` | realtime event to the listed people's apps and frames → `{ delivered }` (`events`, ≤ 600/min) — see "Realtime events" |
 | `gc.services.call({ plugin, service, userId, payload })` | another plugin's service → its answer (`permissions.services`, ≤ 60/h) — see "Services" |
 | `gc.services.available(plugin, service)` | `true`/`false`: would `call()` reach that provider now (listed, installed, running, provided) — the provider is not run, not counted (since 1.178.0) |
@@ -1477,6 +1493,167 @@ single device. Code: `src/services/plugins/devices.js`.
 * `devices` and `silent` need `permissions.devices` (`ERR_DEVICES_DENIED`);
   on a chat topic they are `ERR_INVALID`.
 
+## Groups (`permissions.groups`)
+
+GateControl keeps the person groups centrally — teams, departments,
+projects, sites and the family (docs/groups.md). Plugins use the same groups
+instead of keeping member lists of their own. Code:
+`src/services/plugins/groups.js` (host side), `src/services/groups.js`.
+
+```json
+"permissions": { "groups": "read" }      // or "manage": also its own groups
+```
+
+### Reading (`"read"` and `"manage"`)
+
+```js
+await gc.groups.list();                                  // every non-archived group
+await gc.groups.list({ kind: 'team' });                  // all teams
+await gc.groups.list({ userId: 12, includeInherited: true });
+// → [{ id, name, path: 'Verwaltung › Buchhaltung', kind, role, direct, source, archived }]
+await gc.groups.get(7);
+// → { id, name, path, kind, parentId, childIds, depth, source, own, key, endsAt, archived,
+//     memberCount, totalMemberCount } | null
+await gc.groups.members(7, { nested: true, roles: ['lead', 'member'] });
+// → [{ userId, name, role, direct, source, groupId, enabled }]
+await gc.groups.isMember(12, 7, { nested: true });       // → true
+await gc.groups.leadersOf(12, { groupId: 7 });
+// → [{ userId, name, role: 'lead', groupId: 7 }, { userId, name, role: 'deputy', groupId: 7 }]
+```
+
+* `list({ userId, kind, includeInherited, includeArchived })`: without
+  `userId` every group (as `get` answers it), with `userId` that person's
+  groups with their role (`direct: false` = only through a subgroup, role
+  `member`). `kind` one of `department`, `team`, `project`, `site`,
+  `family`.
+* `members(id, { nested, roles })`: direct members, with `nested: true` also
+  the members of the subgroups (`direct: false`, role `member`, `groupId` =
+  the subgroup). Disabled accounts are listed with `enabled: false` — they
+  rest (no access, no leadership) until enabled again.
+* `isMember(userId, groupId, { nested })`: archived groups and disabled
+  accounts answer `false`.
+* `leadersOf(userId, { groupId })`: lead (family: parent) before deputy;
+  nobody is their own leader; a group without lead or deputy is led by the
+  nearest group above. Without `groupId`: the leaders of all the person's
+  groups.
+* Answers are plain JSON: ids, names, paths, kinds, roles, sources. **Never
+  e-mail addresses or user names** — `gc.users` (`permissions.users`) does not
+  hand them out either; use `gc.users.get(id)` for the picture and colour.
+* `source` is `local`, `directory:<id>` or `plugin:<pluginId>`; `own: true`
+  and `key` mark the plugin's own groups.
+
+### The plugin's own groups (`"manage"`)
+
+```js
+const g = await gc.groups.ensure({ key: 'family', name: 'Familie Backes', kind: 'family',
+  members: [{ userId: 12, role: 'parent' }, { userId: 15, role: 'child' }] });
+// → the group as get() answers it + { created, added, removed, changed }
+await gc.groups.ensure({ key: 'team-a', name: 'Team A', kind: 'team', parentKey: 'org', members: [] });
+await gc.groups.remove('team-a');                        // → true (false: no such group of the plugin)
+```
+
+* `ensure` creates the group with source `plugin:<pluginId>` and the key as
+  its external id, or updates it (name, kind, parent) and sets its members
+  **exactly** (missing ones are removed). `key` 1–100 characters `A-Z a-z
+  0-9 _ . : -`, unique per plugin; `parentKey` another of its own groups
+  (at most 3 levels; families stay at the top level); a member without `role`
+  is `member` (family: `child`). An archived group of the plugin is restored.
+  Idempotent: call it in `start` and whenever the plugin's own data changes.
+* `remove(key)` deletes the group after the other plugins' `groupDeleting`
+  (a group with subgroups: remove those first, `ERR_INVALID`). A group id
+  instead of a key must name one of the plugin's own groups.
+* Every write goes through the groups service with the plugin as owner: a
+  plugin never changes a group it does not own (`ERR_READ_ONLY`), and its
+  groups are read-only for administrators (only the colour) and in the portal.
+  Invitation links do not exist for plugin groups.
+
+### Hooks
+
+```js
+async groupsChanged({ changes }, gc) {
+  // [{ type: 'member_added'|'member_removed'|'role_changed'|'group_created'|'group_renamed'|'group_moved'|
+  //   'group_archived'|'group_unarchived'|'group_deleted', groupId, userId?, role?, reason? }]
+  // batched, at most once per second; reason e.g. 'user_disabled', 'user_deleted', 'group_deleted'
+}
+async groupUsage({ groupId, successorUserId }, gc) {   // "Wird genutzt von" and the delete dialog
+  return [{ kind: 'Drive', label: 'Team-Ordner Buchhaltung', onDelete: 'wird in Meine Dateien von Thomas Berg verschoben' }];
+}
+async groupDeleting({ groupId, successorUserId }, gc) { /* clean up */ }
+```
+
+* Every running plugin with `permissions.groups` that exports the hook gets
+  it; best-effort like the other hooks.
+* `groupsChanged`: 10 s per call, never awaited, failures land in the
+  plugin's log. After a restart fetch the current state yourself (no replay).
+* `groupUsage`: 4.5 s; an error, a timeout or anything but a list is
+  ignored; at most 50 entries, `label` required (≤ 200), `kind` (≤ 60,
+  default the plugin's name), `onDelete` (≤ 300) what happens to it when the
+  group is deleted. `successorUserId`: who would take over (the person chosen
+  in the delete dialog, else the group's lead or deputy, else `null`) — name
+  that person in `onDelete`; the dialog asks again when the choice changes.
+  A text starting in lower case continues the label as one sentence
+  ("Team-Ordner Buchhaltung wird in Meine Dateien von Thomas Berg
+  verschoben").
+* `groupDeleting`: before the group is deleted (admin page, admin API,
+  another plugin's `remove`) — all plugins in parallel, **30 s in total**;
+  failures and timeouts are logged and the deletion goes on. The plugin that
+  removes its own group is not asked. `successorUserId`: who takes over what
+  the plugin keeps for the group (the administrator's choice
+  `DELETE /api/v1/groups/:id?successor=<userId>`, else the group's lead or
+  deputy, else `null`; `successor=none` = `null`). A refused deletion (wrong name, subgroups) asks
+  nobody.
+
+### Notifications to groups
+
+```js
+await gc.notify({ topic: 'news', title: 'Teamtreffen', body: 'Morgen 9 Uhr', groups: [7], users: [12] });
+// → { pushed, id, recipients: 6 }
+```
+
+`groups` (1…50 group ids, each must exist — else `ERR_INVALID`; needs
+`permissions.groups`, else `ERR_GROUPS_DENIED`) on any topic, chat topics too:
+the enabled members of the groups and their subgroups at send time (archived
+groups count as empty), merged with `users`; at most 1000 people. Groups
+without anybody send nothing (`{ pushed: false, id: null, recipients: 0 }`)
+— never the topic's subscribers. Budgets, topic rules, quiet hours, a
+person's switches and `devices` work as for `users`. The activity row names
+the groups and the count, never the people.
+
+### Picker for groups and people (`GC.pickPrincipals`)
+
+```js
+const picked = await GC.pickPrincipals({ groups: true, users: true, multiple: true, title: 'Freigeben für' });
+// → [{ type: 'group', id: 7, label: 'Verwaltung › Buchhaltung' }, { type: 'user', id: 12, label: 'Thomas Berg' }]
+//   or null (cancelled)
+```
+
+Frames of plugins with `permissions.groups` (admin pages, settings page,
+portal tab and sections) have `window.GC.pickPrincipals`; the parent page
+opens GateControl's own dialog (search, chips; `multiple: false` → one click
+picks) and answers only what was chosen. Plugins no longer build person
+pickers of their own. What is offered depends on the **viewer**:
+
+* admin pages: every non-archived group (label = path) and every enabled
+  account (display name) — `GET /api/v1/principals` (admin session);
+* portal: every non-archived group by name (no member lists) and the viewer
+  ("ich") — portal viewers cannot list other people
+  (`GET /api/v1/portal/groups/principals`, signed-in people only; device
+  trust and kiosk devices get no list, the dialog says so).
+
+`groups` defaults to `true`, `users` to `false`; `title` ≤ 120 characters.
+The promise never rejects. The `<iframe>` carries `data-plugin-groups` (set
+by the server, the frame cannot add it); one picker at a time; a new document
+in the frame closes its picker. An older GateControl has no
+`GC.pickPrincipals` — feature-detect it.
+
+### Errors
+
+`ERR_GROUPS_DENIED` (no permission, or `ensure`/`remove` without `"manage"`),
+`ERR_NOT_FOUND` (unknown group for `members`/`isMember`/`leadersOf`, unknown
+`parentKey`), `ERR_READ_ONLY` (not the plugin's group), `ERR_INVALID` (bad
+arguments; the groups service's code is the message prefix, e.g.
+`NAME_TAKEN: …`, `DEPTH_EXCEEDED: …`, `HAS_CHILDREN: …`).
+
 ## Realtime events (`permissions.events`)
 
 Since 1.177.0. `gc.events.emit({ users, type, data })` sends an ephemeral
@@ -1842,6 +2019,9 @@ disable/uninstall and when the server shuts down.
   * One scan at a time on the page, only while the page and the frame are
     visible. Check `typeof GC.scanQr === 'function'` and keep another way for
     older hosts (a picture upload decoded in the frame, manual entry).
+* **Groups and people** (`permissions.groups`): `const list = await
+  GC.pickPrincipals({ groups: true, users: true, multiple: true, title })` —
+  GateControl's own picker (search, chips) on the parent page; see "Groups".
 * **Viewport** (since 1.199.0): a frame grows with its content; to fill the
   screen instead (a dashboard, the Familie wall tablet), it can take the
   height it has without the page scrolling — the window's height minus what

@@ -1,0 +1,202 @@
+{% extends theme + "/layout.njk" %}
+
+{#- Benutzer › Gruppen (docs/groups.md): tree on the left (kind colour, source,
+    members incl. subgroups), the selected group on the right (path, kind,
+    source, members with role, invitation links, "Wird genutzt von",
+    archive / delete). Directory and plugin groups are read-only for name,
+    structure and their own members. public/js/groups.js renders everything
+    from /api/v1/groups; its strings come from the #grp-i18n island
+    (routes/index.js GROUPS_I18N_PREFIXES). -#}
+
+{% macro closeBtn(label) %}<button type="button" class="modal-close" data-close-modal aria-label="{{ label }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>{% endmacro %}
+
+{% block content %}
+<div class="grp-page" id="grp-page">
+
+  <div class="page-header grp-header">
+    <p class="grp-intro">{{ t('grp.intro') }}</p>
+    <div class="page-actions">
+      <button type="button" class="btn btn-ghost" id="grp-btn-import">{{ t('grp.import.button') }}</button>
+      <button type="button" class="btn btn-primary" id="grp-btn-add">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        {{ t('grp.add') }}
+      </button>
+    </div>
+  </div>
+
+  <div class="grp-layout">
+    <section class="grp-tree-card" aria-label="{{ t('grp.tree_label') }}">
+      <div class="grp-tree-tools">
+        <label class="us-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input type="search" id="grp-search" aria-label="{{ t('grp.search_label') }}" placeholder="{{ t('grp.search_ph') }}" autocomplete="off">
+        </label>
+        <label class="grp-archived-toggle"><input type="checkbox" id="grp-show-archived"> {{ t('grp.show_archived') }}</label>
+      </div>
+      <ul class="grp-tree" id="grp-tree" aria-label="{{ t('grp.tree_label') }}">
+        <li class="us-muted grp-tree-empty">{{ t('common.loading') }}</li>
+      </ul>
+    </section>
+
+    <section class="grp-detail" id="grp-detail" aria-live="polite">
+      <div class="grp-empty" id="grp-empty">
+        <p class="us-muted">{{ t('grp.pick') }}</p>
+      </div>
+    </section>
+  </div>
+</div>
+
+{# ── Create group ──────────────────────────────────────────────────── #}
+<div class="modal-overlay us-dlg" id="grp-dlg-create" style="display:none" data-grp-dialog>
+  <div class="modal us-modal us-modal-sm" role="dialog" aria-modal="true" aria-labelledby="grp-create-title">
+    <div class="modal-head"><h2 class="modal-title" id="grp-create-title">{{ t('grp.create.title') }}</h2>{{ closeBtn(t('common.close')) }}</div>
+    <form class="modal-body us-modal-body us-form" id="grp-create-form" autocomplete="off" novalidate>
+      <label class="us-field"><span class="us-label">{{ t('grp.f.parent') }}</span>
+        <select class="form-input" id="grp-create-parent"></select>
+      </label>
+      <label class="us-field"><span class="us-label">{{ t('grp.f.kind') }}</span>
+        <select class="form-input" id="grp-create-kind">
+          {% for k in ['department', 'team', 'project', 'site', 'family'] %}<option value="{{ k }}"{{ ' selected' if k == 'team' }}>{{ t('grp.kind.' + k) }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="us-field"><span class="us-label">{{ t('grp.f.name') }}</span>
+        <input type="text" class="form-input" id="grp-create-name" maxlength="100" required data-autofocus>
+      </label>
+      <label class="us-field" id="grp-create-ends-field" hidden><span class="us-label">{{ t('grp.f.ends') }}</span>
+        <input type="date" class="form-input" id="grp-create-ends">
+        <span class="us-hint">{{ t('grp.f.ends_hint') }}</span>
+      </label>
+      <label class="us-field"><span class="us-label">{{ t('grp.f.description') }} <span class="us-muted">{{ t('grp.f.optional') }}</span></span>
+        <input type="text" class="form-input" id="grp-create-desc" maxlength="500">
+      </label>
+      <div class="us-error" id="grp-create-error" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close-modal>{{ t('common.cancel') }}</button><button type="submit" form="grp-create-form" class="btn btn-primary" id="grp-create-ok">{{ t('grp.create.ok') }}</button></div>
+  </div>
+</div>
+
+{# ── Edit group ────────────────────────────────────────────────────── #}
+<div class="modal-overlay us-dlg" id="grp-dlg-edit" style="display:none" data-grp-dialog>
+  <div class="modal us-modal us-modal-sm" role="dialog" aria-modal="true" aria-labelledby="grp-edit-title">
+    <div class="modal-head"><h2 class="modal-title" id="grp-edit-title">{{ t('grp.edit.title') }}</h2>{{ closeBtn(t('common.close')) }}</div>
+    <form class="modal-body us-modal-body us-form" id="grp-edit-form" autocomplete="off" novalidate>
+      <label class="us-field"><span class="us-label">{{ t('grp.f.name') }}</span>
+        <input type="text" class="form-input" id="grp-edit-name" maxlength="100" required>
+      </label>
+      <label class="us-field"><span class="us-label">{{ t('grp.f.parent') }}</span>
+        <select class="form-input" id="grp-edit-parent"></select>
+      </label>
+      <label class="us-field"><span class="us-label">{{ t('grp.f.kind') }}</span>
+        <select class="form-input" id="grp-edit-kind">
+          {% for k in ['department', 'team', 'project', 'site', 'family'] %}<option value="{{ k }}">{{ t('grp.kind.' + k) }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="us-field" id="grp-edit-ends-field" hidden><span class="us-label">{{ t('grp.f.ends') }}</span>
+        <input type="date" class="form-input" id="grp-edit-ends">
+        <span class="us-hint">{{ t('grp.f.ends_hint') }}</span>
+      </label>
+      <label class="us-field"><span class="us-label">{{ t('grp.f.description') }} <span class="us-muted">{{ t('grp.f.optional') }}</span></span>
+        <input type="text" class="form-input" id="grp-edit-desc" maxlength="500">
+      </label>
+      <label class="us-field"><span class="us-label">{{ t('grp.f.color') }}</span>
+        <span class="grp-color-row"><input type="color" class="grp-color" id="grp-edit-color"><button type="button" class="btn btn-sm btn-ghost" id="grp-edit-color-reset">{{ t('grp.f.color_default') }}</button></span>
+      </label>
+      <div class="us-error" id="grp-edit-error" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close-modal>{{ t('common.cancel') }}</button><button type="submit" form="grp-edit-form" class="btn btn-primary">{{ t('common.save') }}</button></div>
+  </div>
+</div>
+
+{# ── Add member ────────────────────────────────────────────────────── #}
+<div class="modal-overlay us-dlg" id="grp-dlg-member" style="display:none" data-grp-dialog>
+  <div class="modal us-modal us-modal-sm" role="dialog" aria-modal="true" aria-labelledby="grp-member-title">
+    <div class="modal-head"><h2 class="modal-title" id="grp-member-title">{{ t('grp.member.title') }}</h2>{{ closeBtn(t('common.close')) }}</div>
+    <form class="modal-body us-modal-body us-form" id="grp-member-form" autocomplete="off" novalidate>
+      <p class="us-muted" id="grp-member-note" hidden>{{ t('grp.member.local_note') }}</p>
+      <label class="us-field"><span class="us-label">{{ t('grp.member.person') }}</span>
+        <input type="search" class="form-input" id="grp-member-filter" placeholder="{{ t('grp.member.filter_ph') }}" aria-label="{{ t('grp.member.filter_ph') }}" data-autofocus>
+      </label>
+      <select class="form-input grp-user-pick" id="grp-member-user" size="6" aria-label="{{ t('grp.member.person') }}"></select>
+      <label class="us-field"><span class="us-label">{{ t('grp.col.role') }}</span>
+        <select class="form-input" id="grp-member-role"></select>
+      </label>
+      <div class="us-error" id="grp-member-error" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close-modal>{{ t('common.cancel') }}</button><button type="submit" form="grp-member-form" class="btn btn-primary">{{ t('grp.member.ok') }}</button></div>
+  </div>
+</div>
+
+{# ── Invitation link ───────────────────────────────────────────────── #}
+<div class="modal-overlay us-dlg" id="grp-dlg-invite" style="display:none" data-grp-dialog>
+  <div class="modal us-modal us-modal-sm" role="dialog" aria-modal="true" aria-labelledby="grp-invite-title">
+    <div class="modal-head"><h2 class="modal-title" id="grp-invite-title">{{ t('grp.inv.title') }}</h2>{{ closeBtn(t('common.close')) }}</div>
+    <form class="modal-body us-modal-body us-form" id="grp-invite-form" novalidate>
+      <p class="us-muted">{{ t('grp.inv.text') }}</p>
+      <div class="grp-inv-grid" id="grp-invite-opts">
+        <label class="us-field"><span class="us-label">{{ t('grp.col.role') }}</span><select class="form-input" id="grp-invite-role"></select></label>
+        <label class="us-field"><span class="us-label">{{ t('grp.inv.valid') }}</span>
+          <select class="form-input" id="grp-invite-days">
+            {% for d in [1, 3, 7, 14, 30] %}<option value="{{ d }}"{{ ' selected' if d == 7 }}>{{ t('grp.inv.days_one') if d == 1 else t('grp.inv.days_other', { count: d }) }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="us-field"><span class="us-label">{{ t('grp.inv.uses') }}</span>
+          <select class="form-input" id="grp-invite-uses">
+            {% for n in [1, 5, 10, 25, 100] %}<option value="{{ n }}">{{ n }}</option>{% endfor %}
+          </select>
+        </label>
+      </div>
+      <div id="grp-invite-result" hidden>
+        <label class="us-field"><span class="us-label">{{ t('grp.inv.link') }}</span>
+          <span class="us-pwrow"><input type="text" class="form-input us-mono" id="grp-invite-link" readonly><button type="button" class="btn btn-sm btn-primary" id="grp-invite-copy">{{ t('common.copy') }}</button></span>
+        </label>
+        <p class="us-hint" id="grp-invite-valid"></p>
+      </div>
+      <div class="us-error" id="grp-invite-error" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close-modal id="grp-invite-close">{{ t('common.cancel') }}</button><button type="submit" form="grp-invite-form" class="btn btn-primary" id="grp-invite-ok">{{ t('grp.inv.create') }}</button></div>
+  </div>
+</div>
+
+{# ── Delete group (Loeschen.dc.html) ───────────────────────────────── #}
+<div class="modal-overlay us-dlg" id="grp-dlg-delete" style="display:none" data-grp-dialog>
+  <div class="modal us-modal us-modal-sm" role="alertdialog" aria-modal="true" aria-labelledby="grp-del-title">
+    <div class="modal-head"><span class="mi danger" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></span><h2 class="modal-title" id="grp-del-title"></h2>{{ closeBtn(t('common.close')) }}</div>
+    <form class="modal-body us-modal-body us-form" id="grp-del-form" novalidate>
+      <p class="us-del-intro" id="grp-del-intro"></p>
+      <ul class="us-effects" id="grp-del-effects"></ul>
+      <label class="us-field" id="grp-del-successor-field"><span class="us-label">{{ t('grp.del.successor_label') }}</span>
+        <select class="form-select" id="grp-del-successor"></select>
+        <span class="us-hint" id="grp-del-successor-hint">{{ t('grp.del.successor_hint') }}</span>
+      </label>
+      <label class="us-field"><span class="us-label">{{ t('grp.del.confirm_label') }}</span><input type="text" class="form-input" id="grp-del-confirm" autocomplete="off" spellcheck="false"></label>
+      <div class="us-error" id="grp-del-error" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" id="grp-del-archive">{{ t('grp.del.archive_instead') }}</button><button type="submit" form="grp-del-form" class="btn btn-danger solid" id="grp-del-ok" disabled>{{ t('grp.del.ok') }}</button></div>
+  </div>
+</div>
+
+{# ── CSV import ────────────────────────────────────────────────────── #}
+<div class="modal-overlay us-dlg" id="grp-dlg-import" style="display:none" data-grp-dialog>
+  <div class="modal us-modal us-modal-md" role="dialog" aria-modal="true" aria-labelledby="grp-import-title">
+    <div class="modal-head"><h2 class="modal-title" id="grp-import-title">{{ t('grp.import.title') }}</h2>{{ closeBtn(t('common.close')) }}</div>
+    <form class="modal-body us-modal-body us-form" id="grp-import-form" novalidate>
+      <p class="us-muted">{{ t('grp.import.text') }}</p>
+      <pre class="grp-csv-sample">pfad;email;rolle
+Verwaltung › Buchhaltung;s.wolf@firma.de;leitung
+Verwaltung/Einkauf;j.keller@firma.de;mitglied</pre>
+      <label class="us-field"><span class="us-label">{{ t('grp.import.file') }}</span><input type="file" class="form-input" id="grp-import-file" accept=".csv,text/csv,text/plain"></label>
+      <label class="us-field"><span class="us-label">{{ t('grp.import.paste') }}</span><textarea class="form-input us-mono grp-csv-text" id="grp-import-text" rows="8" spellcheck="false"></textarea></label>
+      <div id="grp-import-result" hidden></div>
+      <div class="us-error" id="grp-import-error" role="alert" hidden></div>
+    </form>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close-modal>{{ t('common.close') }}</button><button type="submit" form="grp-import-form" class="btn btn-primary" id="grp-import-ok">{{ t('grp.import.ok') }}</button></div>
+  </div>
+</div>
+
+<script type="application/json" id="grp-i18n" data-prefixes="grp. error.groups. common." nonce="{{ cspNonce }}">{{ groupsI18n | default('{}') | safe }}</script>
+<script type="application/json" id="grp-ctx" nonce="{{ cspNonce }}">{"self": {{ (user.id if user else 0) | dump | safe }}, "lang": {{ language | dump | safe }}}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="/js/groups.js?v={{ appVersion }}"></script>
+{% endblock %}

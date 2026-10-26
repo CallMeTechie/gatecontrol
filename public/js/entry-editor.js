@@ -197,83 +197,70 @@
     }
   }
 
-  // ─── User visibility checkboxes ──────────────────────────
-  function renderUserCheckboxes(containerId, selectedIds, cbClass, users) {
-    var container = byId(containerId);
-    if (!container) return;
-    var list = users || [];
-    container.textContent = '';
-    list.forEach(function (u) {
-      var label = document.createElement('label');
-      label.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:12px;padding:4px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer';
-      var cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.value = u.id;
-      cb.className = cbClass || 'route-user-cb';
-      cb.checked = (selectedIds || []).includes(u.id);
-      cb.style.cssText = 'accent-color:var(--accent)';
-      label.appendChild(cb);
-      label.appendChild(document.createTextNode(u.display_name || u.username));
-      container.appendChild(label);
+  // ─── "Wer darf zugreifen?" (access-picker.js) ────────────
+  // Groups, persons and devices in one field (docs/groups.md "Zugriff per
+  // Gruppe"): persons → user_ids, groups → group_ids, devices → acl_peers
+  // (Caddy enforces devices only with the ACL toggle on).
+  var accessPicker = null;
+  function picker() {
+    if (accessPicker) return accessPicker;
+    var host = byId('route-access-picker');
+    if (!host || !window.GCAccessPicker) return null;
+    accessPicker = window.GCAccessPicker.mount(host, {
+      devices: host.dataset.devices === '1',
+      onChange: function () { updateAclHint('edit'); onFormChange(); },
     });
-    if (!list.length) {
-      container.textContent = T('users.no_users', 'No users available');
-      container.style.cssText = 'font-size:12px;color:var(--text-3)';
-    }
+    return accessPicker;
+  }
+  function accessValue() {
+    var p = picker();
+    return p ? p.getValue() : { userIds: [], groupIds: [], peerIds: [] };
   }
 
   // ─── ACL helpers ─────────────────────────────────────────
-  function renderAclPeerChecklist(prefix, selectedPeerIds, peers) {
-    var list = byId(prefix + '-acl-peers-list');
-    if (!list) return;
-    list.textContent = '';
-    var selected = new Set((selectedPeerIds || []).map(Number));
-    (peers || []).forEach(function (p) {
-      var label = document.createElement('label');
-      label.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 6px;cursor:pointer;font-size:12px;border-radius:var(--radius-xs)';
-      label.onmouseenter = function () { this.style.background = 'var(--bg-panel)'; };
-      label.onmouseleave = function () { this.style.background = ''; };
-      var cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.value = p.id;
-      cb.checked = selected.has(p.id);
-      cb.dataset.aclPeer = prefix;
-      cb.addEventListener('change', function () { updateAclHint(prefix); });
-      label.appendChild(cb);
-      var text = document.createElement('span');
-      var status = p.isOnline ? ' (online)' : p.enabled ? '' : ' (disabled)';
-      text.textContent = p.name + ' — ' + (p.ip || '?') + status;
-      text.style.cssText = 'font-family:var(--font-mono)';
-      label.appendChild(text);
-      list.appendChild(label);
-    });
-    updateAclHint(prefix);
+  function getSelectedAclPeers() {
+    return accessValue().peerIds;
   }
 
-  function getSelectedAclPeers(prefix) {
-    var list = byId(prefix + '-acl-peers-list');
-    if (!list) return [];
-    var cbs = list.querySelectorAll('input[type="checkbox"]:checked');
-    var ids = [];
-    for (var i = 0; i < cbs.length; i++) ids.push(Number(cbs[i].value));
-    return ids;
+  // "Geräte der Personen und Gruppen durchlassen" (routes.acl_people): off →
+  // only the ticked devices pass the ACL, persons and groups only control
+  // who sees the route. No switch in the page (no licence) counts as on.
+  function aclPeopleOn(prefix) {
+    var t = byId(prefix + '-route-acl-people');
+    return !t || t.classList.contains('on');
+  }
+  function syncAclPeopleHints(prefix) {
+    var on = aclPeopleOn(prefix);
+    showIf(prefix + '-acl-from-people', on);
+    showIf(prefix + '-acl-from-listed', !on);
   }
 
   function updateAclHint(prefix) {
     var hint = byId(prefix + '-acl-hint');
     if (!hint) return;
-    var count = getSelectedAclPeers(prefix).length;
-    if (count === 0) {
+    var v = accessValue();
+    syncAclPeopleHints(prefix);
+    if (!aclPeopleOn(prefix) && !v.peerIds.length && (v.userIds.length || v.groupIds.length)) {
+      // Persons/groups only steer visibility here: without a ticked device the
+      // ACL restricts nothing (no peer matcher, as before person groups).
+      hint.style.display = '';
+      hint.textContent = T('acl.people_off_no_devices', 'No device ticked: device access control restricts nothing this way — people and groups only control who sees the route.');
+      hint.style.color = warnColor();
+    } else if (!v.peerIds.length && !v.userIds.length && !v.groupIds.length) {
+      // Nothing in "Wer darf zugreifen?": the ACL has no device to allow.
+      hint.style.display = '';
       hint.textContent = T('acl.no_peers_selected', 'No peers selected');
       hint.style.color = warnColor();
-    } else {
-      hint.textContent = T('acl.peers_selected', '{{count}} peer(s) allowed').replace('{{count}}', count);
+    } else if (v.peerIds.length) {
+      hint.style.display = '';
+      hint.textContent = T('acl.peers_selected', '{{count}} peer(s) allowed').replace('{{count}}', v.peerIds.length);
       hint.style.color = 'var(--green, #4ade80)';
+    } else {
+      hint.style.display = 'none';
     }
   }
 
-  // getPeers: () => peers[] — read at click time so late peer loads are seen.
-  function setupAclToggle(prefix, getPeers) {
+  function setupAclToggle(prefix) {
     var toggle = byId(prefix + '-route-acl');
     var fields = byId(prefix + '-acl-fields');
     if (!toggle) return;
@@ -286,10 +273,28 @@
       var isOn = toggle.classList.contains('on');
       toggle.setAttribute('aria-checked', isOn ? 'true' : 'false');
       if (fields) fields.style.display = isOn ? '' : 'none';
-      if (isOn) renderAclPeerChecklist(prefix, [], getPeers ? getPeers() : []);
+      var p = picker();
+      if (p) p.setAclEnabled(isOn);
+      updateAclHint(prefix);
     });
     toggle.addEventListener('keydown', function (e) {
       if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle.click(); }
+    });
+    var people = byId(prefix + '-route-acl-people');
+    if (!people) return;
+    people.setAttribute('role', 'switch');
+    people.setAttribute('tabindex', '0');
+    people.setAttribute('aria-checked', people.classList.contains('on') ? 'true' : 'false');
+    people.addEventListener('click', function () {
+      people.classList.toggle('on');
+      var on = people.classList.contains('on');
+      people.setAttribute('aria-checked', on ? 'true' : 'false');
+      var p = picker();
+      if (p && p.setAclPeople) p.setAclPeople(on);
+      updateAclHint(prefix);
+    });
+    people.addEventListener('keydown', function (e) {
+      if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); people.click(); }
     });
   }
 
@@ -568,7 +573,6 @@
     section: 'target',
     snapshot: null,     // form values right after open (change summary)
     peers: [],          // GET /api/routes/peers
-    users: null,        // GET /api/v1/users (cached per page)
     seq: 0,             // open() generation — stale async work checks it
   };
   var pendingTotpSecret = null;
@@ -598,15 +602,6 @@
       console.error('GCEntryEditor: failed to load peers:', err);
     }
     return state.peers;
-  }
-
-  async function loadUsers() {
-    if (state.users) return state.users;
-    try {
-      var data = await window.api.get('/api/v1/users');
-      state.users = data.users || [];
-    } catch (_) { return []; }
-    return state.users;
   }
 
   function renderEditPeerOptions(select, selectedId) {
@@ -1417,7 +1412,7 @@
   }
 
   function setupFeatureControls() {
-    setupAclToggle('edit', function () { return state.peers; });
+    setupAclToggle('edit');
     setupIpFilter('edit', editIpFilterRules);
     // L4 protection block (docs/feature-next-package.md §S1.4). Same prefix
     // convention as the HTTP block, same rules array — only one of the two is
@@ -1617,6 +1612,11 @@
       aclToggle.classList.toggle('on', !!route.acl_enabled);
       showIf('edit-acl-fields', route.acl_enabled);
     }
+    // "Geräte der Personen und Gruppen durchlassen" (acl_people; 0 for routes
+    // that kept the behaviour from before person groups).
+    var aclPeopleVal = detail && detail.acl_people != null ? detail.acl_people : route.acl_people;
+    var aclPeople = aclPeopleVal == null ? true : Number(aclPeopleVal) !== 0;
+    setToggle('edit-route-acl-people', aclPeople);
 
     // Rate limit
     setToggle('edit-route-rate-limit', route.rate_limit_enabled);
@@ -1728,14 +1728,19 @@
     if (bgCurrent) bgCurrent.textContent = route.branding_bg_image || '';
     showIf('edit-branding-bg-remove', route.branding_bg_image);
 
-    // User visibility
+    // "Wer darf zugreifen?": persons, groups, devices (detail = GET /api/routes/:id)
     var userIds = parseJson(route.user_ids || '[]', []);
-    var users = await loadUsers();
-    if (seq !== state.seq) return;
-    renderUserCheckboxes('route-user-ids', Array.isArray(userIds) ? userIds : [], 'route-user-cb', users);
-
-    // ACL peer checklist
-    renderAclPeerChecklist('edit', (detail && detail.acl_peers) || [], state.peers);
+    var p = picker();
+    if (p) {
+      p.setValue({
+        userIds: Array.isArray(userIds) ? userIds : [],
+        groupIds: (detail && detail.group_ids) || route.group_ids || [],
+        peerIds: (detail && detail.acl_peers) || [],
+      });
+      p.setAclEnabled(!!route.acl_enabled);
+      if (p.setAclPeople) p.setAclPeople(aclPeopleOn('edit'));
+    }
+    updateAclHint('edit');
   }
 
   // ═══ HSTS (docs/feature-hsts.md, Tab Sicherheit) ═══════════════════════════
@@ -2688,7 +2693,7 @@
   // toggle of the modal by id, plus the list-shaped state.
   // Share links and access windows save through their own API calls, so
   // their form fields are not part of "Speichern" (and they load later).
-  var SNAPSHOT_SKIP = '#share-links-section, #access-windows-section';
+  var SNAPSHOT_SKIP = '#share-links-section, #access-windows-section, #route-access-picker';
   function formSnapshot() {
     var modal = byId(MODAL_ID);
     var out = {};
@@ -2702,10 +2707,10 @@
     out['#ipfilter'] = JSON.stringify(editIpFilterRules);
     out['#backends'] = JSON.stringify(editBackendsList);
     out['#mirror'] = JSON.stringify(editMirrorTargets);
-    out['#acl'] = JSON.stringify(getSelectedAclPeers('edit'));
-    var users = [];
-    document.querySelectorAll('#route-user-ids .route-user-cb:checked').forEach(function (cb) { users.push(cb.value); });
-    out['#users'] = users.join(',');
+    var access = accessValue();
+    out['#acl'] = JSON.stringify(access.peerIds);
+    out['#users'] = access.userIds.join(',');
+    out['#groups'] = access.groupIds.join(',');
     return out;
   }
   // Fields filled asynchronously after open() take their loaded value as the
@@ -2806,6 +2811,9 @@
     var overlay = byId(MODAL_ID);
     if (!overlay || !isOpen() || topOverlay() !== overlay) return;
     if (e.key === 'Escape') {
+      // An open suggestion list ("Wer darf zugreifen?") closes first.
+      var tgt = e.target;
+      if (tgt && tgt.getAttribute && tgt.getAttribute('role') === 'combobox' && tgt.getAttribute('aria-expanded') === 'true') return;
       e.stopPropagation();
       e.preventDefault();
       requestClose();
@@ -3418,7 +3426,12 @@
         branding_color: val('edit-branding-color', ''),
         branding_bg: val('edit-branding-bg', ''),
         acl_enabled: aclEnabled,
-        acl_peers: aclEnabled ? getSelectedAclPeers('edit') : [],
+        // Devices stay stored with the ACL off (chips in "Wer darf zugreifen?");
+        // Caddy only enforces them while the ACL is on.
+        acl_peers: getSelectedAclPeers(),
+        // Only with the ACL on (the switch is part of it; licence-gated like
+        // acl_enabled): absent = the stored value stays.
+        acl_people: aclEnabled && byId('edit-route-acl-people') ? isOn('edit-route-acl-people') : undefined,
         rate_limit_enabled: rateLimitEnabled,
         rate_limit_requests: rateLimitEnabled ? parseInt(val('edit-rate-limit-requests', '100'), 10) : 100,
         rate_limit_window: rateLimitEnabled ? val('edit-rate-limit-window', '1m') : '1m',
@@ -3447,12 +3460,10 @@
       payload.external_block_action = blockAction;
       if (blockAction === 'custom') payload.external_block_body = val('edit-route-block-body', '');
       if (blockAction === 'redirect') payload.external_block_redirect_url = val('edit-route-block-redirect', '');
-      // User visibility
-      var selectedUserIds = [];
-      document.querySelectorAll('#route-user-ids .route-user-cb:checked').forEach(function (cb) {
-        selectedUserIds.push(parseInt(cb.value, 10));
-      });
-      payload.user_ids = selectedUserIds.length > 0 ? selectedUserIds : null;
+      // "Wer darf zugreifen?" — persons and groups (devices: acl_peers above)
+      var access = accessValue();
+      payload.user_ids = access.userIds.length > 0 ? access.userIds : null;
+      payload.group_ids = access.groupIds;
       // Custom headers (empty rows dropped; '-Name' removes a header)
       var hasCustomHeaders = headers.request.length > 0 || headers.response.length > 0;
       payload.custom_headers = hasCustomHeaders ? { request: headers.request, response: headers.response } : null;

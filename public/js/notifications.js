@@ -98,16 +98,18 @@
   }
   function normRecipients(r) {
     const o = isObj(r) ? r : {};
-    return { admins: bool(o.admins), owner: bool(o.owner), subscribers: bool(o.subscribers), users: idList(o.users), groups: idList(o.groups) };
+    // groups = device (peer) groups, person_groups = person groups (Benutzer › Gruppen)
+    return { admins: bool(o.admins), owner: bool(o.owner), subscribers: bool(o.subscribers), users: idList(o.users), groups: idList(o.groups), person_groups: idList(o.person_groups) };
   }
   function sameRecipients(a, b) {
     const x = normRecipients(a);
     const y = normRecipients(b);
-    return x.admins === y.admins && x.owner === y.owner && x.subscribers === y.subscribers && sameIds(x.users, y.users) && sameIds(x.groups, y.groups);
+    return x.admins === y.admins && x.owner === y.owner && x.subscribers === y.subscribers && sameIds(x.users, y.users) && sameIds(x.groups, y.groups)
+      && sameIds(x.person_groups, y.person_groups);
   }
   function hasRecipient(r) {
     const x = normRecipients(r);
-    return x.admins || x.owner || x.subscribers || x.users.length > 0 || x.groups.length > 0;
+    return x.admins || x.owner || x.subscribers || x.users.length > 0 || x.groups.length > 0 || x.person_groups.length > 0;
   }
 
   function normRule(r) {
@@ -131,7 +133,8 @@
   }
   function copyRule(r) {
     const c = Object.assign({}, r);
-    c.recipients = Object.assign({}, r.recipients, { users: r.recipients.users.slice(), groups: r.recipients.groups.slice() });
+    c.recipients = Object.assign({}, r.recipients, { users: r.recipients.users.slice(), groups: r.recipients.groups.slice(),
+      person_groups: (r.recipients.person_groups || []).slice() });
     return c;
   }
   /** The fields of `draft` that differ from `orig` — the body of PUT /rules/:id. */
@@ -141,7 +144,8 @@
       if (f === 'recipients') {
         if (!sameRecipients(orig.recipients, draft.recipients)) {
           const r = normRecipients(draft.recipients);
-          out.recipients = { admins: r.admins, owner: r.owner, subscribers: r.subscribers, users: r.users.slice(), groups: r.groups.slice() };
+          out.recipients = { admins: r.admins, owner: r.owner, subscribers: r.subscribers, users: r.users.slice(), groups: r.groups.slice(),
+            person_groups: r.person_groups.slice() };
         }
       } else if (orig[f] !== draft[f]) out[f] = draft[f];
     });
@@ -171,7 +175,7 @@
   let FREE_EVENTS = [];
 
   /** Recipients as display parts: [{kind:'admins'}|{kind:'user',id,name}|…]. */
-  function recipientParts(rcpt, users, groups) {
+  function recipientParts(rcpt, users, groups, personGroups) {
     const r = normRecipients(rcpt);
     const nameIn = (list, id) => {
       const hit = (Array.isArray(list) ? list : []).find((x) => isObj(x) && String(x.id) === String(id));
@@ -183,6 +187,7 @@
     if (r.subscribers) out.push({ kind: 'subscribers' });
     r.users.forEach((id) => out.push({ kind: 'user', id, name: nameIn(users, id) }));
     r.groups.forEach((id) => out.push({ kind: 'group', id, name: nameIn(groups, id) }));
+    r.person_groups.forEach((id) => out.push({ kind: 'pgroup', id, name: nameIn(personGroups, id) }));
     return out;
   }
 
@@ -544,7 +549,7 @@
     tab: 'overview',
     pro: !!CTX.pro,
     ov: null, ovErr: null, ovLoaded: false,
-    rules: null, users: [], groups: [], webhooks: 0, rulesErr: null, rulesLoading: null,
+    rules: null, users: [], groups: [], personGroups: [], webhooks: 0, rulesErr: null, rulesLoading: null,
     sel: null, orig: null, draft: null,
     devices: null, devErr: null, devLoading: null,
     hist: { filter: 'all', days: 7, items: [], next: null, loaded: false, err: null, sel: null, detail: null, seq: 0, dseq: 0 },
@@ -783,6 +788,7 @@
         state.rules = (Array.isArray(res.rules) ? res.rules : []).filter(isObj).map(normRule).filter((r) => r.event_id);
         state.users = (Array.isArray(res.users) ? res.users : []).filter(isObj);
         state.groups = (Array.isArray(res.groups) ? res.groups : []).filter(isObj);
+        state.personGroups = (Array.isArray(res.person_groups) ? res.person_groups : []).filter(isObj);
         state.webhooks = count(res.webhooks_count);
         if (typeof res.pro === 'boolean') setPro(res.pro);
         state.rulesErr = null;
@@ -800,7 +806,7 @@
     return p;
   }
   function recipientText(rule) {
-    const parts = recipientParts(rule.recipients, state.users, state.groups).map(partLabel);
+    const parts = recipientParts(rule.recipients, state.users, state.groups, state.personGroups).map(partLabel);
     let s = parts.length ? parts.join(' + ') : T('notify.rcpt.none');
     if (rule.bundle_s) s += ' · ' + T('notify.rcpt.bundled');
     return s;
@@ -808,6 +814,7 @@
   function partLabel(p) {
     if (p.kind === 'user') return p.name;
     if (p.kind === 'group') return T('notify.rcpt.group', { name: p.name });
+    if (p.kind === 'pgroup') return T('notify.rcpt.person_group', { name: p.name });
     return T('notify.rcpt.' + p.kind);
   }
   function dot(on, what) {
@@ -970,7 +977,7 @@
     const warn = el('p', { class: 'nc-hint nc-warn', id: 'nc-ed-rcpt-warn', text: T('notify.ed.no_recipient') });
     function renderChips() {
       clear(chips);
-      recipientParts(d.recipients, state.users, state.groups).forEach((p) => {
+      recipientParts(d.recipients, state.users, state.groups, state.personGroups).forEach((p) => {
         const name = partLabel(p);
         chips.appendChild(el('li', { class: 'nc-chip', 'data-kind': p.kind }, [
           el('span', { text: name }),
@@ -993,6 +1000,14 @@
         people.appendChild(el('option', { value: 'user:' + u.id, disabled: !state.pro, text: state.pro ? str(u.name) : T('notify.rcpt.pro_suffix', { name: str(u.name) }) }));
       });
       if (people.children.length) add.appendChild(people);
+      // person groups: everyone in the group (incl. subgroups) at send time
+      const pgrps = el('optgroup', {});
+      pgrps.label = T('notify.rcpt.person_groups');
+      state.personGroups.forEach((g) => {
+        if (d.recipients.person_groups.some((x) => String(x) === String(g.id))) return;
+        pgrps.appendChild(el('option', { value: 'pgroup:' + g.id, disabled: !state.pro, text: state.pro ? str(g.name) : T('notify.rcpt.pro_suffix', { name: str(g.name) }) }));
+      });
+      if (pgrps.children.length) add.appendChild(pgrps);
       const grps = el('optgroup', {});
       grps.label = T('notify.rcpt.groups');
       state.groups.forEach((g) => {
@@ -1011,6 +1026,7 @@
       if (kind === 'role') d.recipients[id] = true;
       else if (kind === 'user') { const u = state.users.find((x) => String(x.id) === id); if (u) d.recipients.users.push(u.id); }
       else if (kind === 'group') { const g = state.groups.find((x) => String(x.id) === id); if (g) d.recipients.groups.push(g.id); }
+      else if (kind === 'pgroup') { const g = state.personGroups.find((x) => String(x.id) === id); if (g) d.recipients.person_groups.push(g.id); }
       renderChips();
       updateEditorState();
       add.focus();
@@ -1094,6 +1110,7 @@
   function removeRecipient(r, p) {
     if (p.kind === 'user') r.users = r.users.filter((x) => String(x) !== String(p.id));
     else if (p.kind === 'group') r.groups = r.groups.filter((x) => String(x) !== String(p.id));
+    else if (p.kind === 'pgroup') r.person_groups = r.person_groups.filter((x) => String(x) !== String(p.id));
     else r[p.kind] = false;
   }
   function updateEditorState() {

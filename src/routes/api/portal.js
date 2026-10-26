@@ -3,7 +3,6 @@
 const { Router } = require('express');
 const peers = require('../../services/peers');
 const routesSvc = require('../../services/routes');
-const caddyAcl = require('../../services/caddyAcl');
 const { getDb } = require('../../db/connection');
 const logger = require('../../utils/logger');
 const portalConfig = require('../../services/portalConfig');
@@ -33,6 +32,10 @@ router.use((req, res, next) => {
 // "Meine Geräte": own devices, lock a device, set up a new one — only with a
 // portal or web session (never via device trust), always the session's user.
 router.use('/me', createMeRouter((req) => (req.portalLoggedIn ? req.portalOwnerId : null)));
+
+// "Meine Gruppen" (docs/groups.md "Portal"): own groups; leads and group admins maintain theirs.
+// Signed-in people only (never device trust, never a kiosk device).
+router.use('/groups', require('./portalGroups'));
 
 // Plugin portal tabs (docs/plugins.md): requests forwarded to the plugin.
 router.use('/plugins', require('./pluginsPortal'));
@@ -142,24 +145,27 @@ function parseIdList(json) {
 }
 
 // Services the device reaches AND the viewer may see: an entry restricted
-// to users ("Sichtbar für Benutzer") only for those users; without a known
-// person (anonymous mode, shared device before the pick) only the entries
-// for everybody. Names and hosts only — never credentials or other users.
+// to persons and/or groups ("Wer darf zugreifen?", docs/groups.md) only for
+// those persons and the effective group members; without a known person
+// (anonymous mode, shared device before the pick) only the entries for
+// everybody. An HTTP route with the device ACL on only when this device may
+// reach it (listed, or a device of a released person/group member). Names and
+// hosts only — never credentials or other users.
 router.get('/services', (req, res) => {
   try {
     if (!portalConfig().widgets.services) return res.status(404).json({ ok: false });
     if (req.portalPeerId == null) return unidentified(res);
     const owner = req.portalOwnerId;
-    const userOk = (json) => {
-      const ids = parseIdList(json);
-      return !ids || (owner != null && ids.includes(owner));
-    };
+    const groupAccess = require('../../services/groupAccess');
+    const routeGroups = groupAccess.routeGroupMap();
+    let ownerGroups = null;
+    const groupsOf = () => (ownerGroups || (ownerGroups = owner != null ? groupAccess.userGroupSet(owner) : new Set()));
     const all = routesSvc.getAll().filter(r => r.enabled && r.route_type === 'http');
     const visible = all.filter(r => {
-      if (!userOk(r.user_ids)) return false;
+      const listed = routeGroups.get(r.id) || [];
+      if (!groupAccess.canSeeRoute(r, owner, { routeGroups, userGroups: listed.length ? groupsOf() : new Set() })) return false;
       if (!r.acl_enabled) return true; // open route — always reachable
-      const aclPeers = caddyAcl.getAclPeers(r.id) || [];
-      return aclPeers.some(p => p.peer_id === req.portalPeerId);
+      return groupAccess.aclPeers(r).some(p => p.peerId === req.portalPeerId);
     }).map(r => ({
       id: r.id,
       name: r.description || r.domain,
@@ -170,9 +176,9 @@ router.get('/services', (req, res) => {
     try {
       const db = getDb();
       const deviceTokens = db.prepare('SELECT id FROM api_tokens WHERE peer_id = ?').all(req.portalPeerId).map((t) => t.id);
-      rdp = db.prepare('SELECT id, name, host, port, user_ids, token_ids FROM rdp_routes WHERE enabled = 1 ORDER BY name').all()
-        .filter((r) => (parseIdList(r.user_ids)
-          ? canAccessRoute(r, null, owner)
+      rdp = db.prepare('SELECT id, name, host, port, user_ids, group_ids, token_ids FROM rdp_routes WHERE enabled = 1 ORDER BY name').all()
+        .filter((r) => ((parseIdList(r.user_ids) || parseIdList(r.group_ids))
+          ? canAccessRoute(r, null, owner, { groupsOf })
           : (parseIdList(r.token_ids) ? deviceTokens.some((tid) => canAccessRoute(r, tid, owner)) : true)))
         .map((r) => ({ id: r.id, name: r.name, host: r.host + (r.port ? ':' + r.port : ''), kind: 'rdp' }));
     } catch (err) { logger.debug({ err: err.message }, 'portal /services: rdp entries unavailable'); rdp = []; }
