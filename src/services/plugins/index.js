@@ -255,6 +255,8 @@ async function install(token, opts = {}) {
     }
     extract(files, tmpDir);
     fs.mkdirSync(dataDir(m.id), { recursive: true, mode: 0o700 });
+    // the database limit of this version (plugin.json storage.maxMB) — also for its migrations
+    await storage.setLimit(m.id, m.storage ? m.storage.maxBytes : LIMITS.dbMaxBytes);
     if (a.migrations.length) {
       await storage.forPlugin(m.id).call('migrate', { list: a.migrations.map(({ version, name, sql }) => ({ version, name, sql })) }, TIMEOUTS.db * 6);
     }

@@ -238,7 +238,37 @@ describe('v2 validation flow', () => {
     assert.equal(by['gatecontrol-bar'].valid, false);
     assert.equal(by['gatecontrol-bar'].error, 'token_invalid');
     for (const e of ents) assert.equal('token' in e, false, 'tokens never leave the service');
-    assert.deepEqual(Object.keys(by['gatecontrol-skoda']).sort(), ['error', 'expires_at', 'key_masked', 'name', 'slug', 'source', 'updates_until', 'valid']);
+    assert.deepEqual(Object.keys(by['gatecontrol-skoda']).sort(), ['error', 'expires_at', 'key_masked', 'name', 'seats', 'slug', 'source', 'tier', 'updates_until', 'valid']);
+    assert.deepEqual([by['gatecontrol-skoda'].tier, by['gatecontrol-skoda'].seats], [null, null], 'a token without a tier');
+  });
+
+  it('tier and seats only from the signed plugin token (since 1.206.0)', async () => {
+    server.v2 = () => okResponse({
+      plugins: [
+        // signed: family with 2 people booked on top
+        { slug: 'gatecontrol-drive', name: 'Drive', source: 'license', key_masked: 'GCDR-****', valid: true, tier: 'business', seats: { included: 99 },
+          token: signEd(pluginClaims({ tier: 'family', seats: { included: 5, family: 2, business: 0 } })) },
+        // unsigned fields of the answer are never taken
+        { slug: 'gatecontrol-a', name: 'A', source: 'license', valid: true, tier: 'combo', seats: { included: 50 }, token: signEd(pluginClaims()) },
+        // an unknown tier is none; bad counts become 0
+        { slug: 'gatecontrol-b', name: 'B', source: 'license', valid: true, token: signEd(pluginClaims({ tier: 'enterprise', seats: { included: 5 } })) },
+        { slug: 'gatecontrol-c', name: 'C', source: 'license', valid: true, token: signEd(pluginClaims({ tier: 'combo', seats: { included: 5, family: -1, business: 2.5 } })) },
+        { slug: 'gatecontrol-d', name: 'D', source: 'license', valid: true, token: signEd(pluginClaims({ tier: 'business', seats: 'many' })) },
+        // a token that does not verify carries nothing
+        { slug: 'gatecontrol-e', name: 'E', source: 'license', valid: true, token: signEd(pluginClaims({ tier: 'family', seats: { included: 5 }, fp: 'other' })) },
+      ],
+    });
+    await license.validateLicense();
+    const by = Object.fromEntries(license.getPluginEntitlements().map((e) => [e.slug, e]));
+    assert.deepEqual([by['gatecontrol-drive'].tier, by['gatecontrol-drive'].seats], ['family', { included: 5, family: 2, business: 0 }]);
+    assert.deepEqual([by['gatecontrol-a'].tier, by['gatecontrol-a'].seats], [null, null]);
+    assert.deepEqual([by['gatecontrol-b'].tier, by['gatecontrol-b'].seats], [null, null]);
+    assert.deepEqual(by['gatecontrol-c'].seats, { included: 5, family: 0, business: 0 });
+    assert.deepEqual([by['gatecontrol-d'].tier, by['gatecontrol-d'].seats], ['business', { included: 0, family: 0, business: 0 }]);
+    assert.deepEqual([by['gatecontrol-e'].valid, by['gatecontrol-e'].tier], [false, null]);
+    // the copy handed out cannot change the stored entitlement
+    by['gatecontrol-drive'].seats.family = 100;
+    assert.equal(license.getPluginEntitlements().find((e) => e.slug === 'gatecontrol-drive').seats.family, 2);
   });
 
   it('a 403 license_invalid drops the cached licence immediately', async () => {

@@ -6,7 +6,7 @@
 
 const semver = require('./semver');
 const netPolicy = require('./netPolicy');
-const { ID_RE } = require('./constants');
+const { ID_RE, LIMITS } = require('./constants');
 
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const KEY_RE = /^[a-z][a-z0-9_.-]{0,63}$/;
@@ -51,6 +51,9 @@ const QUOTA_UNIT = { KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 };
 const SERVICE_NAME_RE = /^[a-z][a-z0-9_]{0,31}$/;
 const SERVICE_REF_RE = /^([a-z0-9]+(?:-[a-z0-9]+)*):([a-z][a-z0-9_]{0,31})$/;
 const SERVICES_MAX = 32;
+// storage.maxMB (since 1.206.0): the database of a plugin may grow up to 4 GB
+const DB_MAX_MB_MIN = 256;
+const DB_MAX_MB_MAX = 4096;
 
 /** "x" or { de, en } → { de, en } (both filled); null when invalid. */
 function locText(v, max) {
@@ -490,6 +493,17 @@ function validate(raw, opts = {}) {
   }
   m.ui = ui;
 
+  // storage (since 1.206.0): { maxMB } — the largest size of the plugin's database (256 … 4096 MB,
+  // default 256), only with permissions.storage; for plugins that keep many records (GateControl Drive)
+  m.storage = { maxBytes: LIMITS.dbMaxBytes };
+  if (raw.storage != null) {
+    const st = raw.storage;
+    if (!st || typeof st !== 'object' || Array.isArray(st) || Object.keys(st).some((k) => k !== 'maxMB')
+      || !Number.isSafeInteger(st.maxMB) || st.maxMB < DB_MAX_MB_MIN || st.maxMB > DB_MAX_MB_MAX) err('storage: invalid');
+    else if (!m.permissions || !m.permissions.storage) err('storage: needs permissions.storage');
+    else m.storage = { maxBytes: st.maxMB * 1024 * 1024 };
+  }
+
   // media: { maxBytes, types, quotaDefault, uploads, resumable, handOverMaxBytes } — files through GateControl (gc.media)
   m.media = raw.media == null ? null : validateMedia(raw.media, err);
 
@@ -551,5 +565,5 @@ function migrationsOf(manifest, files) {
 
 module.exports = {
   validate, loc, locText, migrationsOf, isFile, quotaBytes, PORTAL_SECTION_TABS, NOTIFY_PER_HOUR_DEFAULT, NOTIFY_PER_HOUR_MAX, BACKGROUND_MIN_S,
-  MEDIA_MAX_BYTES, MEDIA_MAX_BYTES_AREAS, MEDIA_QUOTA_DEFAULT, MEDIA_QUOTA_MIN, MEDIA_QUOTA_MAX, MEDIA_QUOTA_MAX_AREAS, MIME_DENY_RE, SERVICE_REF_RE, SERVICE_NAME_RE, typeAllowed,
+  DB_MAX_MB_MIN, DB_MAX_MB_MAX, MEDIA_MAX_BYTES, MEDIA_MAX_BYTES_AREAS, MEDIA_QUOTA_DEFAULT, MEDIA_QUOTA_MIN, MEDIA_QUOTA_MAX, MEDIA_QUOTA_MAX_AREAS, MIME_DENY_RE, SERVICE_REF_RE, SERVICE_NAME_RE, typeAllowed,
 };

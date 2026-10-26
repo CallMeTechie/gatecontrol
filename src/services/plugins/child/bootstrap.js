@@ -314,7 +314,14 @@ function makeGc(info) {
         set: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('notify.routes.set', { userId: o.userId, topic: o.topic, dest: o.dest }); },
       }),
     })),
-    license: Object.freeze({ status: () => hostCall('license.status', {}) }),
+    // status() → { required, licensed, state, expiresAt }; since 1.206.0 info() → { required, valid, state,
+    // expiresAt, source, tier, seats: { total, family, business, included, extra } | null } and refresh()
+    // (fetch the licence now, e.g. after "Personen hinzubuchen"; at most once a minute) → { refreshed, …info }
+    license: Object.freeze({
+      status: () => hostCall('license.status', {}),
+      info: () => hostCall('license.info', {}),
+      refresh: () => hostCall('license.refresh', {}),
+    }),
     /**
      * plugin.json `media`: files the users uploaded (PUT …/plugins/<id>/media, GC.upload) or the
      * plugin fetched — info(id) → { mediaId, mime, bytes, sha256, owner, createdAt, claimed, name } | null;

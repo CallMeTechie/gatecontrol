@@ -1283,6 +1283,8 @@ function callTimeout(api, args) {
   if (api === 'media.handOver') return HANDOVER_TIMEOUT_MS;
   // the other plugins' groupDeleting hooks run first (≤ 30 s in total)
   if (api === 'groups.remove') return 45000;
+  // the licence server answers within 20 s (licensing.refresh), then the plugins are reconciled
+  if (api === 'license.refresh') return 45000;
   return TIMEOUTS.hostCall;
 }
 
@@ -1661,6 +1663,9 @@ async function handle(plugin, api, args, ctx) {
       const s = licensing.status(plugin);
       return { required: s.required, licensed: s.licensed, state: s.state, expiresAt: s.expiresAt || null };
     }
+    // since 1.206.0: tier and seats of the licence; a refresh right after a purchase
+    case 'license.info': return licensing.info(plugin);
+    case 'license.refresh': return licensing.refresh(plugin);
     default:
       throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
   }

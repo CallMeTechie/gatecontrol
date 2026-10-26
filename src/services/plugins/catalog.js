@@ -228,10 +228,10 @@ function entry(e, id, where, hosts) {
 // catalogue (older GateControls ignore these fields altogether).
 
 const CATEGORIES = new Set(['family', 'home', 'work', 'mobility', 'infrastructure', 'other']);
-const ICONS = new Set(['family', 'chat', 'calendar', 'door', 'bulb', 'snowflake', 'car', 'server', 'nas', 'puzzle']);
+const ICONS = new Set(['family', 'chat', 'calendar', 'door', 'bulb', 'snowflake', 'car', 'server', 'nas', 'puzzle', 'cloud']);
 // symbols of the detail page's lists ("Was … hinzufügt", "Das darf das Plugin")
 const DETAIL_ICONS = new Set(['page', 'app', 'portal', 'widget', 'tile', 'action', 'bell', 'clock', 'data', 'network', 'chat', 'key',
-  'location', 'users', 'door', 'calendar', 'camera', 'car', 'bulb', 'server', 'shield', 'link']);
+  'location', 'users', 'door', 'calendar', 'camera', 'car', 'bulb', 'server', 'shield', 'link', 'cloud']);
 // wireframes of "So sieht es bei dir aus"
 const SHOW_KINDS = new Set(['tile', 'list', 'widget']);
 const LANGS = new Set(['de', 'en']);
