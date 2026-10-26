@@ -16,6 +16,8 @@ module.exports = (ctx) => {
     async storage(page) {
       const dir = path.join(process.env.GC_DATA_DIR || '/data', 'storage', 'e2e-disk');
       fs.mkdirSync(dir, { recursive: true });
+      // an earlier scenario may leave a session (another account, too): sign in as the admin
+      await page.context().clearCookies();
       await ctx.login(page);
       await page.goto(BASE + '/settings/plugins/storage');
       await waitIdle(page);
