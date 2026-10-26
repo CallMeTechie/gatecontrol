@@ -177,7 +177,7 @@ function idFilter(attr, value) {
 
 /**
  * Member resolution of selected groups, shared by the full and the delta
- * read. lookup.dn(dn) / lookup.login(value) → the account or null (a DN
+ * read. lookup.dn(dn) / lookup.byUid(value) → the account or null (a DN
  * that is no account may be a nested group).
  */
 function resolver(client, s, lookup, seen) {
@@ -200,7 +200,7 @@ function resolver(client, s, lookup, seen) {
   async function collect(entry, out, visited, depth, nested, unresolved) {
     for (const v of u.all(entry, memberAttr)) {
       if (memberAttr.toLowerCase() === 'memberuid') {
-        const p = await lookup.login(v);
+        const p = await lookup.byUid(v);
         if (p) out.set(p.externalId, p); else unresolved.push(String(v).toLowerCase());
         continue;
       }
@@ -305,7 +305,7 @@ function create(directory, { secret } = {}) {
           if (p.dn) byDn.set(u.normDn(p.dn), p);
           if (p.loginName) byLogin.set(p.loginName.toLowerCase(), p);
         }
-        const lookup = { dn: async (dn) => byDn.get(u.normDn(dn)) || null, login: async (v) => byLogin.get(String(v).toLowerCase()) || null };
+        const lookup = { dn: async (dn) => byDn.get(u.normDn(dn)) || null, byUid: async (v) => byLogin.get(String(v).toLowerCase()) || null };
         const r = resolver(client, s, lookup, cursor ? seen : null);
         const users = new Map();
         const groups = [];
@@ -387,7 +387,7 @@ function create(directory, { secret } = {}) {
             }
             return asked.get(key);
           },
-          async login(v) {
+          async byUid(v) {
             const key = 'login:' + String(v).toLowerCase();
             if (byLogin.has(String(v).toLowerCase())) return byLogin.get(String(v).toLowerCase());
             if (!asked.has(key)) {
