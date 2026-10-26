@@ -334,7 +334,8 @@ function makeGc(info) {
       info: (id) => hostCall('media.info', { id }),
       // since 1.204.0: claim(id, { area, path }) for plugins with media.areas
       claim: (id, opts) => hostCall('media.claim', opts == null ? { id } : { id, opts }),
-      // since 1.204.1 (media.areas): move(id, { path, area }) → info; version(id) keeps the file as a version of its path → info
+      // since 1.204.1 (media.areas): move(id, { path, area }) → info; version(id) keeps the file as a version of its path → info;
+      // since 1.207.0 move(versionId, { path }) restores a version, move(id, { path: null }) takes a file off its path
       move: (id, opts) => hostCall('media.move', { id, opts: opts == null ? {} : opts }),
       version: (id) => hostCall('media.version', { id }),
       areas: Object.freeze({

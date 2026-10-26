@@ -167,8 +167,37 @@ describe('readable files on the NAS', () => {
     assert.match(v.remote_key, new RegExp(`^${PID}/docs/\\.gcdrive/versions/Archiv/Brief 1 \\(\\d{4}-\\d\\d-\\d\\d \\d{6} ${id.slice(0, 6)}\\)\\.bin$`));
     assert.ok(fs.readFileSync(path.join(nas, v.remote_key)).equals(plain));
     assert.ok((await get(id).expect(200)).body.equals(plain), 'the version stays readable');
-    assert.equal((await gc('media.move', id, { path: 'y' })).code, 'ERR_INVALID', 'a version does not move');
+    assert.equal((await gc('media.move', id, {})).code, 'ERR_INVALID', 'a version moves only to a path');
+    assert.equal((await gc('media.move', id, { path: 'Archiv/Brief 1.bin' })).code, 'ERR_CONFLICT', 'the path is taken by the new file');
     assert.ok(next);
+  });
+
+  it('a version comes back to a path (restore, since 1.207.0): the current file there again, on the NAS too', async () => {
+    const cur = (await gc('media.info', id)).result;
+    assert.equal(cur.versionOf, 'Archiv/Brief 1.bin');
+    const newer = db().prepare("SELECT id FROM plugin_media WHERE plugin = ? AND path = 'Archiv/Brief 1.bin'").get(PID).id;
+    assert.equal((await gc('media.version', newer)).ok, true);
+    const r = await gc('media.move', id, { path: 'Archiv/Brief 1.bin' });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual([r.result.path, r.result.versionOf || null], ['Archiv/Brief 1.bin', null]);
+    await settle();
+    assert.ok(fs.readFileSync(onNas('docs', 'Archiv', 'Brief 1.bin')).equals(plain), 'the old bytes are the file again');
+    assert.equal(rowOf(id).remote_key, `${PID}/docs/Archiv/Brief 1.bin`);
+    assert.equal((await gc('media.info', newer)).result.versionOf, 'Archiv/Brief 1.bin', 'the newer one is a version now');
+  });
+
+  it('a file without a path (e.g. in a trash) and back', async () => {
+    const t = await addFile(Buffer.from('weg und wieder'), 'docs', 'Papierkorb-Test.txt');
+    await settle();
+    let r = await gc('media.move', t, { path: null });
+    assert.deepEqual([r.ok, r.result.path], [true, null]);
+    await settle();
+    assert.equal(fs.existsSync(onNas('docs', 'Papierkorb-Test.txt')), false, 'gone from its place on the NAS');
+    assert.equal(rowOf(t).remote_key, `${PID}/docs/.gcdrive/files/${t.slice(0, 2)}/${t}`);
+    r = await gc('media.move', t, { path: 'Papierkorb-Test.txt' });
+    assert.equal(r.result.path, 'Papierkorb-Test.txt');
+    await settle();
+    assert.equal(fs.readFileSync(onNas('docs', 'Papierkorb-Test.txt'), 'utf8'), 'weg und wieder');
   });
 
   it('a name the NAS cannot hold is kept below .gcdrive/files', async () => {
