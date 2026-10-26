@@ -1,7 +1,7 @@
 'use strict';
 
 // Public links of plugins (docs/plugins.md "Public links",
-// services/plugins/publicLinks.js, since 1.193.0; Links v2 since 1.206.0) —
+// services/plugins/publicLinks.js, since 1.193.0; Links v2 since 1.205.0) —
 // no login; mounted in routes/index.js before every authenticated route:
 //
 //   GET  /s/<token>            the page (templates/public-link.njk, de/en by

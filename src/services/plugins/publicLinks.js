@@ -1,7 +1,7 @@
 'use strict';
 
 // Public links of plugins (permissions.publicLinks, docs/plugins.md "Public
-// links", since 1.193.0; Links v2 since 1.206.0): a plugin shares media files
+// links", since 1.193.0; Links v2 since 1.205.0): a plugin shares media files
 // with people without a GateControl account — GateDrop's "Link für Externe",
 // Drive's folder and upload links.
 //
@@ -12,7 +12,7 @@
 //     ERR_PUBLIC_LINKS_DISABLED; the URL is built on the configured public
 //     server URL (GC_BASE_URL, https and a public host name) — none →
 //     ERR_NO_PUBLIC_URL;
-//   * kinds: 'files' (up to 20 files, as before), 'folder' (since 1.206.0:
+//   * kinds: 'files' (up to 20 files, as before), 'folder' (since 1.205.0:
 //     the current content of a folder of a media area — area + path, with
 //     its sub folders; plugins with media.areas) and 'upload' (people put
 //     files into a folder of an area; limits for count, total size, types;

@@ -327,7 +327,7 @@ function makeGc(info) {
       info: (id) => hostCall('media.info', { id }),
       // since 1.204.0: claim(id, { area, path }) for plugins with media.areas
       claim: (id, opts) => hostCall('media.claim', opts == null ? { id } : { id, opts }),
-      // since 1.205.0 (media.areas): move(id, { path, area }) → info; version(id) keeps the file as a version of its path → info
+      // since 1.204.1 (media.areas): move(id, { path, area }) → info; version(id) keeps the file as a version of its path → info
       move: (id, opts) => hostCall('media.move', { id, opts: opts == null ? {} : opts }),
       version: (id) => hostCall('media.version', { id }),
       areas: Object.freeze({
@@ -335,7 +335,7 @@ function makeGc(info) {
         info: (area) => hostCall('media.areas.info', { area }),
         list: () => hostCall('media.areas.list', {}),
         remove: (area) => hostCall('media.areas.remove', { area }),
-        // since 1.205.0: scan(area) looks for changes made on the target now; changes(area, { since, limit }) reads the journal
+        // since 1.204.1: scan(area) looks for changes made on the target now; changes(area, { since, limit }) reads the journal
         scan: (area) => hostCall('media.areas.scan', { area }),
         changes: (area, opts) => hostCall('media.areas.changes', { area, opts: opts == null ? {} : opts }),
       }),
@@ -359,7 +359,7 @@ function makeGc(info) {
      * permissions.publicLinks (since 1.193.0, only while an administrator allows them):
      * create({ title, note, files: [{ mediaId, name }], expiresAt, maxDownloads, pin, ownerUserId }) → { token, url, expiresAt };
      * list({ ownerUserId }) → [link]; get(token) → link | null; revoke(token) → boolean.
-     * Since 1.206.0 create also takes kind ('files' | 'folder' | 'upload'), mode ('view' | 'download'),
+     * Since 1.205.0 create also takes kind ('files' | 'folder' | 'upload'), mode ('view' | 'download'),
      * area + path (folder / upload), expiresAt null (when allowed), maxFiles / maxBytes / types (upload);
      * events(token, { limit, before }) → the log; uploads(token) → the files that came in
      */
@@ -494,7 +494,7 @@ async function handleCall(method, payload) {
       if (typeof plugin.publicLinkEvent === 'function') await plugin.publicLinkEvent(payload, gc);
       return {};
     case 'mediaChanged':
-      // optional (media.areas, since 1.205.0): files changed on a storage target were taken in —
+      // optional (media.areas, since 1.204.1): files changed on a storage target were taken in —
       // { area, seq, count }; read them with gc.media.areas.changes(area, { since }). Answer ignored
       if (typeof plugin.mediaChanged === 'function') await plugin.mediaChanged(payload, gc);
       return {};

@@ -642,7 +642,7 @@ const publicLinkUnlockLimiter = rateLimit({
   },
 });
 // /s/<token>/m/<id> — the pictures and videos of a folder link's gallery
-// (since 1.206.0): one page loads many of them at once.
+// (since 1.205.0): one page loads many of them at once.
 const publicLinkMediaLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 1500,
@@ -654,7 +654,7 @@ const publicLinkMediaLimiter = rateLimit({
     res.status(429).type('text/plain').send('rate_limited');
   },
 });
-// PUT /s/<token>/u — files into an upload link (since 1.206.0), per address
+// PUT /s/<token>/u — files into an upload link (since 1.205.0), per address
 // (each link also has its own limits for count and size).
 const publicLinkUploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,

@@ -2845,7 +2845,7 @@ const migrations = [
   {
     version: 117,
     name: 'plugin_public_links_v2',
-    // Links v2 (docs/plugins.md "Public links", publicLinks.js, since 1.206.0):
+    // Links v2 (docs/plugins.md "Public links", publicLinks.js, since 1.205.0):
     //   plugin_public_links  kind 'files' (as before) | 'folder' (the current
     //                        content of area / root_path) | 'upload' (people
     //                        put files into area / root_path); mode 'view'

@@ -1388,7 +1388,7 @@ WebDAV, an S3 bucket). Code: `src/services/plugins/mediaAreas.js`.
 * Errors: `ERR_MEDIA_DENIED` (no `media.areas`), `ERR_INVALID`,
   `ERR_RATE_LIMIT` (too many areas), `ERR_MEDIA_QUOTA`.
 
-### Readable files, moves and versions (since 1.205.0)
+### Readable files, moves and versions (since 1.204.1)
 
 On a folder or a NAS (SMB, WebDAV) an area has a **form**, chosen by the
 administrator next to its place:
@@ -1605,7 +1605,7 @@ GET  /s/<token>/zip         all files as one ZIP (stored, streamed, Content-Leng
   `plugin_public_link` when a link is created (count of files, no names) and
   when one is locked.
 
-### Folder links, upload links, view only, the log (since 1.206.0)
+### Folder links, upload links, view only, the log (since 1.205.0)
 
 A link has a **kind** and a **mode**:
 

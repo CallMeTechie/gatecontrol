@@ -1,6 +1,6 @@
 'use strict';
 
-// Links v2 (docs/plugins.md "Public links", since 1.206.0): folder links
+// Links v2 (docs/plugins.md "Public links", since 1.205.0): folder links
 // (an area + path, always its current content: sub folders, gallery, view
 // inline, download, ZIP of a folder), upload links (limits reserved
 // atomically, types, the visitor's own uploads, conflict names, the hook),

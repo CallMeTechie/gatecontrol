@@ -855,7 +855,7 @@ function areaCall(fn) {
 /**
  * gc.media.areas.ensure(area, { label, quota }) / info(area) / list() /
  * remove(area) (media.areas, since 1.204.0, docs/plugins.md "Media areas");
- * since 1.205.0 scan(area) (look for changes on the target now → stats) and
+ * since 1.204.1 scan(area) (look for changes on the target now → stats) and
  * changes(area, { since, limit }) (the journal of changes found there).
  */
 async function mediaAreasCall(plugin, op, args) {
@@ -894,7 +894,7 @@ function mediaCall(plugin, op, args) {
       return out;
     }
     case 'delete': return media.remove(plugin.id, mediaId(args));
-    // since 1.205.0 (media.areas): a new path / area, keep as a version
+    // since 1.204.1 (media.areas): a new path / area, keep as a version
     case 'move': {
       const o = args && args.opts != null ? args.opts : null;
       need(o !== null && typeof o === 'object' && !Array.isArray(o), 'ERR_INVALID', 'invalid options');
@@ -1128,7 +1128,7 @@ async function publicLinksCall(plugin, op, args) {
       case 'list': return links.list(plugin, args);
       case 'get': return links.get(plugin, args);
       case 'revoke': return links.revoke(plugin, args);
-      // since 1.206.0: the log and the files that came in through an upload link
+      // since 1.205.0: the log and the files that came in through an upload link
       case 'events': return links.events(plugin, args);
       case 'uploads': return links.uploads(plugin, args);
       default: throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');

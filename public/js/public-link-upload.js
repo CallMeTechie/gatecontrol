@@ -1,7 +1,7 @@
 'use strict';
 
 // The upload page of a public upload link (templates/public-link.njk, routes/
-// publicLinks.js PUT /s/<token>/u, since 1.206.0): chosen or dropped files go
+// publicLinks.js PUT /s/<token>/u, since 1.205.0): chosen or dropped files go
 // up one after another, each with its progress; the body is the file itself
 // (application/octet-stream — the type travels in ?type=), the name the
 // visitor gave in ?by=. When all are done the page reloads (the visitor's own

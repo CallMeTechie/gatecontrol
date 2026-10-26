@@ -1448,7 +1448,7 @@
         el('span', { class: 'st-hint', text: t('plugins.pl.hint') })]),
       el('div', { class: 'st-row-ctl' }, [psw]),
     ]));
-    // since 1.206.0: links without an end date, only with this second switch (default off)
+    // since 1.205.0: links without an end date, only with this second switch (default off)
     const usw = sw(L.unlimited, t('plugins.pl.unlimited'), async () => {
       const on = usw.getAttribute('aria-checked') !== 'true';
       const res = await req('PUT', API + '/' + enc(p.id) + '/public-links', { unlimited: on });
@@ -1616,7 +1616,7 @@
         value: a.quota == null ? '' : String(Math.round((a.quota / GB) * 1000) / 1000), placeholder: t('plugins.areas.quota_none') });
       const used = t('plugins.areas.usage', { size: P.fmtBytes(a.bytes), count: a.count }) + (a.quota != null ? ' · ' + t('plugins.areas.of_quota', { quota: P.fmtBytes(a.quota) }) : '')
         + (a.free != null ? ' · ' + t('plugins.areas.free', { free: P.fmtBytes(a.free) }) : '');
-      // the form (since 1.205.0): readable files or sealed blocks — only on a folder / NAS
+      // the form (since 1.204.1): readable files or sealed blocks — only on a folder / NAS
       const curTarget = r.targets.find((tg) => tg.id === cur);
       const form = el('select', { class: 'st-select', 'aria-label': t('plugins.areas.form_l', { name: a.label }), 'data-form': a.area, hidden: !(curTarget && curTarget.files) },
         ['files', 'blocks'].map((f) => el('option', { value: f, text: t('plugins.areas.form_' + f) })));

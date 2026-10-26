@@ -378,7 +378,7 @@ const busyUploads = new Set();
 
 /**
  * A file people without an account put into an upload link (publicLinks.js,
- * since 1.206.0): the request body, `length` bytes of type `mime`, owned by
+ * since 1.205.0): the request body, `length` bytes of type `mime`, owned by
  * the link's owner. The plugin's size limit, quota and the room on this
  * server are checked like for its own uploads. → { mediaId, mime, bytes }
  * (unclaimed — the link claims it into its folder).
@@ -563,7 +563,7 @@ function info(r) {
     out.area = r.area;
     out.path = r.path == null ? null : r.path;
     out.stored = require('./mediaAreas').stateOf(r);
-    // since 1.205.0: a version kept with gc.media.version (path then null)
+    // since 1.204.1: a version kept with gc.media.version (path then null)
     if (r.version_of != null) { out.versionOf = r.version_of; out.versionAt = r.version_at; }
   }
   return out;

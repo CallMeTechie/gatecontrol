@@ -339,7 +339,7 @@ router.put('/:id/public-links', (req, res) => {
   const p = pluginParam(req, res);
   if (!p) return;
   const b = req.body && typeof req.body === 'object' ? req.body : {};
-  // since 1.206.0 also { unlimited }: links without an end (switched off, such links end)
+  // since 1.205.0 also { unlimited }: links without an end (switched off, such links end)
   if (!publicLinks.declared(p) || (typeof b.allowed !== 'boolean' && typeof b.unlimited !== 'boolean')
     || (b.allowed !== undefined && typeof b.allowed !== 'boolean') || (b.unlimited !== undefined && typeof b.unlimited !== 'boolean')) {
     return res.status(400).json({ ok: false, code: 'invalid', error: tr(req, 'plugins.err.invalid', 'Invalid request') });
