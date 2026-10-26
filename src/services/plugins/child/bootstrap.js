@@ -325,7 +325,14 @@ function makeGc(info) {
      */
     media: Object.freeze({
       info: (id) => hostCall('media.info', { id }),
-      claim: (id) => hostCall('media.claim', { id }),
+      // since 1.204.0: claim(id, { area, path }) for plugins with media.areas
+      claim: (id, opts) => hostCall('media.claim', opts == null ? { id } : { id, opts }),
+      areas: Object.freeze({
+        ensure: (area, opts) => hostCall('media.areas.ensure', { area, opts: opts == null ? {} : opts }),
+        info: (area) => hostCall('media.areas.info', { area }),
+        list: () => hostCall('media.areas.list', {}),
+        remove: (area) => hostCall('media.areas.remove', { area }),
+      }),
       delete: (id) => hostCall('media.delete', { id }),
       usage: () => hostCall('media.usage', {}),
       url: (id, opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('media.url', { id, user: o.user, ttlS: o.ttlS }); },

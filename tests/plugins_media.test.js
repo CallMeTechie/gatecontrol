@@ -334,7 +334,8 @@ describe('gc.media through the plugin process', () => {
     await gcMedia('hello-media', { op: 'claim', id }).expect(200);
     assert.equal(db().prepare('SELECT ref_count FROM plugin_media WHERE id = ?').get(id).ref_count, 1);
     r = await gcMedia('hello-media', { op: 'usage' }).expect(200);
-    assert.deepEqual(Object.keys(r.body.result).sort(), ['bytes', 'count', 'handOverMaxBytes', 'maxBytes', 'quota', 'resumable', 'types', 'uploads']);
+    assert.deepEqual(Object.keys(r.body.result).sort(), ['areas', 'bytes', 'count', 'handOverMaxBytes', 'maxBytes', 'quota', 'resumable', 'types', 'uploads']);
+    assert.equal(r.body.result.areas, false);
     assert.equal(r.body.result.uploads, true);
     assert.equal(r.body.result.maxBytes, 512 * 1024);
     assert.equal(r.body.result.count, media.usage('hello-media').count);

@@ -57,6 +57,9 @@ const CATALOGUE = [
     { id: 'backup_problem', types: ['backup_reminder', 'autobackup_failed'] },
     { id: 'update', types: ['update_installed', 'update_rolled_back', 'update_failed'], free: true },
     { id: 'resources', types: ['resource_alert', 'resource_recovered'] },
+    // A storage target (docs/storage-targets.md) has failed for 15 minutes —
+    // plugin media wait on this server — and works again.
+    { id: 'storage_problem', types: ['storage_target_unreachable', 'storage_target_recovered'] },
     // A device sent a support bundle (docs/feature-support-bundle.md); the
     // inbox is System › Support-Pakete. System topic: admins only.
     { id: 'support_bundle', types: ['support_bundle_uploaded'] },

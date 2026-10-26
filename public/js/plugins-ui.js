@@ -66,12 +66,14 @@
   function mediaTypes(list) {
     const out = [];
     (list || []).forEach((m) => {
+      // "*/*" (media.areas, since 1.204.0): every type
+      if (String(m) === '*/*') { if (out.indexOf('*') < 0) out.push('*'); return; }
       const sub = String(m).split('/')[1] || String(m);
       // a whole family ("video/*", since 1.193.0) is named as such
       const name = sub === '*' ? String(m) : sub.replace(/^(?:x-|vnd\.)/, '').split(/[.+;-]/)[0].toUpperCase();
       if (name && out.indexOf(name) < 0) out.push(name);
     });
-    return out.join(', ');
+    return out.indexOf('*') >= 0 ? '*' : out.join(', ');
   }
 
   function permRows(perm, t) {
@@ -121,8 +123,11 @@
     if (perm.media) {
       // media.uploads false (since 1.190.0): no uploads, only files the plugin fetches itself (gc.media.fetch)
       rows.push({ label: t('plugins.perm.media'), value: t(perm.media.uploads === false ? 'plugins.perm.media_fetch_v' : 'plugins.perm.media_v', {
-        max: fmtBytes(perm.media.maxBytes), quota: fmtBytes(perm.media.quotaDefault), types: mediaTypes(perm.media.types),
+        max: fmtBytes(perm.media.maxBytes), quota: fmtBytes(perm.media.quotaDefault),
+        types: mediaTypes(perm.media.types) === '*' ? t('plugins.perm.media_all_types') : mediaTypes(perm.media.types),
       }) });
+      // media areas (since 1.204.0): the administrator decides per area where the files live
+      if (perm.media.areas) rows.push({ label: t('plugins.perm.media_areas'), value: t('plugins.perm.media_areas_on') });
     }
     if (perm.events) rows.push({ label: t('plugins.perm.events'), value: t('plugins.perm.events_on') });
     // since 1.193.0 (GateDrop): public download links (an administrator still has to allow them), the people's devices

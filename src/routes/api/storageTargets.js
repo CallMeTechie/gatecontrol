@@ -7,7 +7,8 @@
  * /api/v1 router. Secrets (password, secret key) are write-only: answers
  * carry `secretSet` per field.
  *
- *   GET    /api/v1/storage-targets              list (with the last check and what uses each)
+ *   GET    /api/v1/storage-targets              list (with the last check and what uses each) and the media cache
+ *   PUT    /api/v1/storage-targets/cache        { limitBytes } the cache of plugin media kept on targets (null = default)
  *   POST   /api/v1/storage-targets              create { kind, label, …settings, …secrets }
  *   POST   /api/v1/storage-targets/check        check unsaved settings { kind, …[, id] } (nothing stored)
  *   GET    /api/v1/storage-targets/choices      peers and L4 routes for an SMB target
@@ -51,7 +52,22 @@ function log(req, event, message, details) {
 }
 
 router.get('/', (req, res) => {
-  res.json({ ok: true, targets: targets.list() });
+  res.json({ ok: true, targets: targets.list(), cache: require('../../services/plugins/mediaAreas').cacheStats() });
+});
+
+// the local cache of plugin media areas kept on targets (services/plugins/mediaAreas.js)
+router.put('/cache', (req, res) => {
+  const areas = require('../../services/plugins/mediaAreas');
+  const b = body(req);
+  const v = b.limitBytes == null ? null : b.limitBytes;
+  try {
+    areas.setCacheLimit(v);
+  } catch (e) {
+    return res.status(400).json({ ok: false, code: 'invalid', field: 'limitBytes', error: tr(req, 'plugins.stg.err.field_cache', 'Invalid cache size') });
+  }
+  const cache = areas.cacheStats();
+  log(req, 'storage_cache_changed', `Media cache limit set to ${v == null ? 'default' : v + ' bytes'}`, { limitBytes: v });
+  res.json({ ok: true, cache });
 });
 
 router.get('/choices', (req, res) => {

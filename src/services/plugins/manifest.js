@@ -29,6 +29,13 @@ const MEDIA_QUOTA_DEFAULT = 1024 * 1024 * 1024;     // quotaDefault when none is
 const MEDIA_QUOTA_MIN = 1024 * 1024;
 const MEDIA_QUOTA_MAX = 1024 * 1024 * 1024 * 1024;  // 1 TB
 const MEDIA_TYPES_MAX = 32;
+// media.areas (since 1.204.0, docs/plugins.md "Media areas"): files kept on
+// storage targets — up to 100 GB each, a plugin quota up to 1 PB, and the
+// type "*/*" (any type; those of MIME_DENY_RE are stored but only ever
+// served as application/octet-stream downloads).
+const MEDIA_MAX_BYTES_AREAS = 100 * 1024 * 1024 * 1024;
+const MEDIA_QUOTA_MAX_AREAS = 1024 * 1024 * 1024 * 1024 * 1024;
+const MIME_ANY_RE = /^[a-z][a-z0-9-]{0,30}\/[a-z0-9][a-z0-9.+_-]{0,99}$/;
 const MIME_RE = /^(?:image|audio|video|application|text)\/[a-z0-9][a-z0-9.+-]{0,99}$/;
 // Since 1.193.0 a type may also be a whole family: "image/*", "video/*",
 // "audio/*", "application/*" (never "text/*") — every concrete type of it
@@ -178,11 +185,12 @@ function quotaBytes(v) {
  */
 function typeAllowed(types, mime) {
   const m = String(mime || '');
+  if (Array.isArray(types) && types.includes('*/*')) return MIME_ANY_RE.test(m);
   if (!MIME_RE.test(m) || MIME_DENY_RE.test(m) || !Array.isArray(types)) return false;
   return types.includes(m) || types.includes(m.split('/')[0] + '/*');
 }
 
-const MEDIA_KEYS = ['maxBytes', 'types', 'quotaDefault', 'uploads', 'resumable', 'handOverMaxBytes'];
+const MEDIA_KEYS = ['maxBytes', 'types', 'quotaDefault', 'uploads', 'resumable', 'handOverMaxBytes', 'areas'];
 
 /**
  * media → { maxBytes, types, quotaDefault, uploads, resumable, handOverMaxBytes } (null when invalid).
@@ -194,19 +202,26 @@ const MEDIA_KEYS = ['maxBytes', 'types', 'quotaDefault', 'uploads', 'resumable',
  * handOverMaxBytes (default maxBytes): the largest file another plugin may
  * hand over to this one (gc.media.handOver) — e.g. a messenger keeping
  * 25 MB for its own uploads but taking 2 GB files from GateDrop.
+ * Since 1.204.0: areas (default false) — the plugin keeps files in areas on
+ * storage targets (mediaAreas.js); then maxBytes / handOverMaxBytes up to
+ * 100 GB, quotaDefault up to 1 PB and the type "*" + "/*" (any type).
  */
 function validateMedia(v, err) {
   if (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).some((k) => !MEDIA_KEYS.includes(k))) { err('media: invalid'); return null; }
   if (v.uploads !== undefined && typeof v.uploads !== 'boolean') { err('media.uploads: invalid'); return null; }
   if (v.resumable !== undefined && typeof v.resumable !== 'boolean') { err('media.resumable: invalid'); return null; }
-  if (!Number.isSafeInteger(v.maxBytes) || v.maxBytes < 1024 || v.maxBytes > MEDIA_MAX_BYTES) { err('media.maxBytes: invalid'); return null; }
+  if (v.areas !== undefined && typeof v.areas !== 'boolean') { err('media.areas: invalid'); return null; }
+  const areas = v.areas === true;
+  const maxBytes = areas ? MEDIA_MAX_BYTES_AREAS : MEDIA_MAX_BYTES;
+  if (!Number.isSafeInteger(v.maxBytes) || v.maxBytes < 1024 || v.maxBytes > maxBytes) { err('media.maxBytes: invalid'); return null; }
   const types = Array.isArray(v.types) ? [...new Set(v.types.map((x) => (typeof x === 'string' ? x.trim().toLowerCase() : '')))] : null;
-  if (!types || !types.length || types.length > MEDIA_TYPES_MAX || !types.every((x) => MIME_WILDCARD_RE.test(x) || (MIME_RE.test(x) && !MIME_DENY_RE.test(x)))) { err('media.types: invalid'); return null; }
+  if (!types || !types.length || types.length > MEDIA_TYPES_MAX
+    || !types.every((x) => (areas && x === '*/*') || MIME_WILDCARD_RE.test(x) || (MIME_RE.test(x) && !MIME_DENY_RE.test(x)))) { err('media.types: invalid'); return null; }
   const quota = v.quotaDefault == null ? MEDIA_QUOTA_DEFAULT : quotaBytes(v.quotaDefault);
-  if (quota == null || quota < MEDIA_QUOTA_MIN || quota > MEDIA_QUOTA_MAX || quota < v.maxBytes) { err('media.quotaDefault: invalid'); return null; }
+  if (quota == null || quota < MEDIA_QUOTA_MIN || quota > (areas ? MEDIA_QUOTA_MAX_AREAS : MEDIA_QUOTA_MAX) || quota < v.maxBytes) { err('media.quotaDefault: invalid'); return null; }
   const handOver = v.handOverMaxBytes == null ? v.maxBytes : v.handOverMaxBytes;
-  if (!Number.isSafeInteger(handOver) || handOver < 1024 || handOver > MEDIA_MAX_BYTES || handOver > quota) { err('media.handOverMaxBytes: invalid'); return null; }
-  return { maxBytes: v.maxBytes, types, quotaDefault: quota, uploads: v.uploads !== false, resumable: v.resumable === true, handOverMaxBytes: handOver };
+  if (!Number.isSafeInteger(handOver) || handOver < 1024 || handOver > maxBytes || handOver > quota) { err('media.handOverMaxBytes: invalid'); return null; }
+  return { maxBytes: v.maxBytes, types, quotaDefault: quota, uploads: v.uploads !== false, resumable: v.resumable === true, handOverMaxBytes: handOver, ...(areas ? { areas: true } : {}) };
 }
 
 function isFile(p) {
@@ -536,5 +551,5 @@ function migrationsOf(manifest, files) {
 
 module.exports = {
   validate, loc, locText, migrationsOf, isFile, quotaBytes, PORTAL_SECTION_TABS, NOTIFY_PER_HOUR_DEFAULT, NOTIFY_PER_HOUR_MAX, BACKGROUND_MIN_S,
-  MEDIA_MAX_BYTES, MEDIA_QUOTA_DEFAULT, MEDIA_QUOTA_MIN, MEDIA_QUOTA_MAX, MIME_DENY_RE, SERVICE_REF_RE, SERVICE_NAME_RE, typeAllowed,
+  MEDIA_MAX_BYTES, MEDIA_MAX_BYTES_AREAS, MEDIA_QUOTA_DEFAULT, MEDIA_QUOTA_MIN, MEDIA_QUOTA_MAX, MEDIA_QUOTA_MAX_AREAS, MIME_DENY_RE, SERVICE_REF_RE, SERVICE_NAME_RE, typeAllowed,
 };

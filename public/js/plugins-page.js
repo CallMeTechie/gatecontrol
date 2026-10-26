@@ -1399,6 +1399,7 @@
     const s = $('pg-storage');
     if (s && r.ok) s.textContent = P.fmtBytes(r.plugin.storageBytes);
     if (p.media) await renderMedia(p, panel);
+    if (p.media && p.media.areas) await renderAreas(p, panel);
   }
 
   function logList(entries) {
@@ -1510,7 +1511,7 @@
     box.appendChild(h2(t('plugins.media.title'), 'pg-media-title'));
     box.appendChild(el('p', { class: 'pgx-muted', id: 'pg-media-usage', text: t('plugins.media.usage', { used: P.fmtBytes(m.usage.bytes), quota: P.fmtBytes(m.quota), count: m.usage.count }) }));
     box.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.media.limits', { max: P.fmtBytes(m.maxBytes), types: P.mediaTypes(m.types) }) }));
-    const gb = el('input', { type: 'number', class: 'st-input st-input-num', id: 'pg-media-quota', min: 0.001, max: 1024, step: 'any',
+    const gb = el('input', { type: 'number', class: 'st-input st-input-num', id: 'pg-media-quota', min: 0.001, max: m.areas ? 1048576 : 1024, step: 'any',
       value: String(Math.round((m.quota / (1024 * 1024 * 1024)) * 1000) / 1000) });
     const save = async (quotaBytes) => {
       const res = await req('PUT', API + '/' + enc(p.id) + '/media/settings', { quotaBytes });
@@ -1524,6 +1525,74 @@
       el('button', { type: 'button', class: 'st-btn st-btn-sm', text: t('plugins.media.reset', { quota: P.fmtBytes(m.quotaDefault) }), on: { click: () => save(null) } }),
     ]));
     panel.appendChild(box);
+  }
+
+  // ── Speicherorte (plugin.json media.areas): where each area of the plugin keeps its files ──
+  const GB = 1024 * 1024 * 1024;
+  function areaState(a) {
+    if (a.state === 'unreachable') return pill(t('plugins.areas.st_unreachable'), 'crit', true);
+    if (a.state === 'moving') return pill(t('plugins.areas.st_moving', { done: a.moving.done, total: a.moving.total }), 'blue', true);
+    if (a.state === 'pending') return pill(t('plugins.areas.st_pending', { count: a.pending.count }), 'warn', true);
+    return pill(t(a.target.id == null ? 'plugins.areas.st_server' : 'plugins.areas.st_ok'), 'good', true);
+  }
+
+  async function renderAreas(p, panel) {
+    const r = await req('GET', API + '/' + enc(p.id) + '/media/areas');
+    if (!r.ok) return;
+    const old = $('pg-areas');
+    const box = el('section', { class: 'pgx-card pgx-pad pgx-stack-card', id: 'pg-areas', 'aria-labelledby': 'pg-areas-title' });
+    box.appendChild(h2(t('plugins.areas.title'), 'pg-areas-title'));
+    box.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.areas.intro') }));
+    const rerender = () => renderAreas(p, panel);
+    const put = async (area, body, okText) => {
+      const res = await req('PUT', API + '/' + enc(p.id) + '/media/areas/' + enc(area), body);
+      if (!res.ok) { toast(res.error, 'error'); return; }
+      toast(okText);
+      await rerender();
+    };
+    if (!r.areas.length) box.appendChild(el('p', { class: 'pgx-muted', id: 'pg-areas-empty', text: t('plugins.areas.empty') }));
+    const list = el('div', { class: 'pgx-area-list', id: 'pg-areas-list' });
+    for (const a of r.areas) {
+      const cur = a.moving ? a.moving.to.id : a.target.id;
+      const sel = el('select', { class: 'st-select', 'aria-label': t('plugins.areas.where_l', { name: a.label }), 'data-area': a.area },
+        [el('option', { value: '', text: t('plugins.areas.server') })].concat(r.targets.map((tg) => el('option', { value: String(tg.id), text: tg.label + ' · ' + t('plugins.stg.kind_' + tg.kind) }))));
+      sel.value = cur == null ? '' : String(cur);
+      sel.addEventListener('change', async () => {
+        const targetId = sel.value === '' ? null : Number(sel.value);
+        if (a.count && !(await D.confirm({ title: t('plugins.areas.move_title', { name: a.label }), message: t('plugins.areas.move_text', { count: a.count, size: P.fmtBytes(a.bytes) }), okLabel: t('plugins.areas.move_ok') }))) {
+          sel.value = cur == null ? '' : String(cur);
+          return;
+        }
+        await put(a.area, { targetId }, t(a.count ? 'plugins.areas.moving_started' : 'plugins.areas.saved'));
+      });
+      const quota = el('input', { type: 'number', class: 'st-input st-input-num', min: 0.001, max: 1048576, step: 'any', 'aria-label': t('plugins.areas.quota_l', { name: a.label }),
+        value: a.quota == null ? '' : String(Math.round((a.quota / GB) * 1000) / 1000), placeholder: t('plugins.areas.quota_none') });
+      const used = t('plugins.areas.usage', { size: P.fmtBytes(a.bytes), count: a.count }) + (a.quota != null ? ' · ' + t('plugins.areas.of_quota', { quota: P.fmtBytes(a.quota) }) : '')
+        + (a.free != null ? ' · ' + t('plugins.areas.free', { free: P.fmtBytes(a.free) }) : '');
+      list.appendChild(el('div', { class: 'pgx-area', 'data-area': a.area, 'data-state': a.state }, [
+        el('div', { class: 'pgx-area-head' }, [
+          el('span', { class: 'pgx-t pgx-grow' }, [el('b', { text: a.label }), el('small', { class: 'pgx-muted', text: used })]),
+          el('span', { class: 'pgx-stg-state' }, [areaState(a), pill(t('plugins.stg.encrypted'), 'blue')]),
+        ]),
+        a.state === 'unreachable' && a.error ? el('p', { class: 'pgx-stg-err', text: stgErrorText(a.error) }) : null,
+        el('div', { class: 'pgx-inline pgx-area-ctl' }, [
+          el('label', { class: 'st-label', text: t('plugins.areas.where') }), sel,
+          el('label', { class: 'st-label', text: t('plugins.areas.quota') }), quota,
+          btn(t('plugins.media.save'), { small: true, primary: true, action: 'quota', onClick: () => {
+            const v = quota.value.trim();
+            put(a.area, { quotaBytes: v === '' ? null : Math.round(Number(v) * GB) }, t('plugins.areas.quota_saved'));
+          } }),
+        ]),
+      ]));
+    }
+    if (r.areas.length) box.appendChild(list);
+    const c = r.cache;
+    box.appendChild(el('p', { class: 'pgx-hint', id: 'pg-areas-cache', text: t('plugins.areas.cache', { cached: P.fmtBytes(c.cached), limit: P.fmtBytes(c.limit), pending: P.fmtBytes(c.pending) }) }));
+    box.appendChild(el('div', { class: 'pgx-inline' }, [
+      btn(t('plugins.stg.add'), { small: true, icon: I.plus, id: 'pg-areas-add', onClick: async () => { if (await targetDialog(null)) await rerender(); } }),
+      btn(t('plugins.areas.manage'), { small: true, ghost: true, href: U.storage }),
+    ]));
+    if (old) old.replaceWith(box); else panel.appendChild(box);
   }
 
   // ── Zugriffsziele (home-network targets the plugin declared) ──
@@ -2093,6 +2162,7 @@
     const r = await req('GET', ST_API);
     if (!r.ok) { showError(r.error); return false; }
     stg.targets = r.targets || [];
+    stg.cache = r.cache || null;
     return true;
   }
 
@@ -2154,10 +2224,33 @@
     main.appendChild(card([el('div', { class: 'pgx-card-h' }, [h2(t('plugins.stg.list'), 'pgx-stg-h')]),
       rows.length ? el('div', { class: 'pgx-stg-list', id: 'pgx-stg-list' }, rows) : el('p', { class: 'pgx-muted pgx-in-pad', id: 'pgx-stg-empty', text: t('plugins.stg.empty') })],
     { 'aria-labelledby': 'pgx-stg-h' }, 'pgx-flush pgx-list'));
+    if (stg.cache) main.appendChild(cacheCard(stg.cache));
     main.appendChild(card([h2(t('plugins.stg.about'), 'pgx-stg-about-h'),
       el('ul', { class: 'pgx-stg-about' }, ['server', 'local', 'smb', 'webdav', 's3'].map((k) => el('li', null, [el('b', { text: t('plugins.stg.about_' + k + '_t') }), ' ', t('plugins.stg.about_' + k)]))),
       el('p', { class: 'pgx-hint', text: t('plugins.stg.about_backup') }),
     ], { 'aria-labelledby': 'pgx-stg-about-h' }, 'pgx-pad pgx-stack-card'));
+  }
+
+  /** The local cache of plugin media kept on storage targets (mediaAreas.js): usage and its size. */
+  function cacheCard(c) {
+    const gb = el('input', { type: 'number', class: 'pgx-fld-in pgx-stg-cache-in', id: 'pgx-stg-cache', min: 0.25, max: 102400, step: 'any',
+      value: String(Math.round((c.limit / (1024 * 1024 * 1024)) * 100) / 100), 'aria-label': t('plugins.stg.cache_size') });
+    const save = async (limitBytes) => {
+      const r = await req('PUT', ST_API + '/cache', { limitBytes });
+      if (!r.ok) { toast(r.error, 'error'); return; }
+      toast(t('plugins.stg.cache_saved'));
+      stg.cache = r.cache;
+      renderStorage();
+    };
+    return card([h2(t('plugins.stg.cache'), 'pgx-stg-cache-h'),
+      el('p', { class: 'pgx-muted', id: 'pgx-stg-cache-use', text: t('plugins.stg.cache_use', { cached: P.fmtBytes(c.cached), limit: P.fmtBytes(c.limit), pending: P.fmtBytes(c.pending) }) }),
+      el('p', { class: 'pgx-hint', text: t('plugins.stg.cache_hint') }),
+      el('div', { class: 'pgx-inline' }, [
+        el('label', { class: 'st-label', for: 'pgx-stg-cache', text: t('plugins.stg.cache_size') }), gb,
+        btn(t('plugins.media.save'), { small: true, primary: true, id: 'pgx-stg-cache-save', onClick: () => save(Math.round(Number(gb.value) * 1024 * 1024 * 1024)) }),
+        btn(t('plugins.media.reset', { quota: P.fmtBytes(c.default) }), { small: true, onClick: () => save(null) }),
+      ]),
+    ], { 'aria-labelledby': 'pgx-stg-cache-h' }, 'pgx-pad pgx-stack-card');
   }
 
   /** An error code of a check → a sentence for people. */

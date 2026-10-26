@@ -20,6 +20,10 @@
 //     of their own (MAX_MEDIA_BYTES for all plugins): the claimed files as
 //     stored (encrypted) plus each file key as a backup secret; a plugin's
 //     media that do not fit are left out (`skipped: ['media']`).
+//   * media areas (plugin.json `media.areas`, mediaAreas.js) always: the
+//     areas with their storage target and the metadata of the area files
+//     (each file key as a backup secret) — never the bytes, they stay on the
+//     storage target (or in the plugin media folder of this server).
 //
 // Restore (async, after the main restore): processes are stopped, the
 // signature is verified again (a changed package is not restored; an
@@ -149,6 +153,12 @@ function exportAll() {
         entry.skipped.push('media');
       }
     }
+    if (media.declOf(p) && media.declOf(p).areas) {
+      try { entry.media_areas = require('./mediaAreas').exportAreas(p.id); } catch (e) {
+        logger.warn({ plugin: p.id, err: e.message }, 'backup: media areas skipped');
+        entry.skipped.push('media_areas');
+      }
+    }
     out.push(entry);
   }
   return out;
@@ -163,6 +173,8 @@ function validate(list) {
     if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !ID_RE.test(e.id)) errors.push(`Plugin #${i + 1}: invalid id`);
     else if (e.files != null && (typeof e.files !== 'object' || Array.isArray(e.files))) errors.push(`Plugin "${e.id}": invalid files`);
     else if (e.media != null && !Array.isArray(e.media)) errors.push(`Plugin "${e.id}": invalid media`);
+    else if (e.media_areas != null && (typeof e.media_areas !== 'object' || Array.isArray(e.media_areas)
+      || !Array.isArray(e.media_areas.areas) || !Array.isArray(e.media_areas.files))) errors.push(`Plugin "${e.id}": invalid media areas`);
   });
   return errors;
 }
@@ -275,7 +287,9 @@ async function restoreAll(list, { removeOthers = false } = {}) {
       for (const [k, v] of Object.entries(secrets)) if (typeof v === 'string' && /^[a-z][a-z0-9_.-]{0,63}$/.test(k)) values.set(k, { enc: v });
       if (values.size && snapshot) await storage.forPlugin(id).call('settings.set', { values: Object.fromEntries(values) });
       // plugin media of the backup (only when it was made with "Plugin-Medien im Backup")
-      const mediaRestored = Array.isArray(e.media) ? require('./media').importPlugin(id, e.media) : 0;
+      let mediaRestored = Array.isArray(e.media) ? require('./media').importPlugin(id, e.media) : 0;
+      // media areas: areas and file metadata — the bytes stayed on the storage targets
+      if (e.media_areas && typeof e.media_areas === 'object') mediaRestored += require('./mediaAreas').importAreas(id, e.media_areas);
       registry.addLog(id, 'info', `restored from a backup (v${m.version}, signature: ${sig.status}${mediaRestored ? `, ${mediaRestored} media files` : ''})`);
       result.restored++;
     } catch (err) {

@@ -32,6 +32,11 @@
 //   * handOver() (gc.media.handOver, since 1.193.0): a file of one plugin
 //     becomes an unclaimed file of another — a hard link of the same sealed
 //     file (a copy on another file system), its key wrapped for the new id;
+//   * areas (media.areas, since 1.204.0, mediaAreas.js): a claimed file can
+//     belong to an area kept on a storage target; then the sealed file is
+//     copied there in the background and the local one may be dropped (cache)
+//     — readRange() reads such a file from the target. An upload may carry
+//     its SHA-256 (Digest / Repr-Digest / Content-Digest); a mismatch drops it;
 //   * frames (no session, opaque origin) load a file through a signed
 //     capability URL /plugin-media/<token> (gc.media.url), like the tile
 //     relay: `<id>.<exp>.<uid>.<sig>`, sig = HMAC-SHA256 over
@@ -152,8 +157,9 @@ function quotaOf(plugin) {
 
 /** Administrator: set the quota (bytes) or go back to the declared default (null). */
 function setQuota(plugin, bytes) {
-  const { MEDIA_QUOTA_MIN, MEDIA_QUOTA_MAX } = require('./manifest');
-  if (bytes !== null && (!Number.isSafeInteger(bytes) || bytes < MEDIA_QUOTA_MIN || bytes > MEDIA_QUOTA_MAX)) throw new MediaError('invalid', 400);
+  const { MEDIA_QUOTA_MIN, MEDIA_QUOTA_MAX, MEDIA_QUOTA_MAX_AREAS } = require('./manifest');
+  const max = declOf(plugin) && declOf(plugin).areas ? MEDIA_QUOTA_MAX_AREAS : MEDIA_QUOTA_MAX;
+  if (bytes !== null && (!Number.isSafeInteger(bytes) || bytes < MEDIA_QUOTA_MIN || bytes > max)) throw new MediaError('invalid', 400);
   settings().set(QUOTA_SETTING + plugin.id, bytes === null ? '' : String(bytes));
   return quotaOf(plugin);
 }
@@ -208,7 +214,7 @@ function cleanName(v) {
  * `incomplete()` names the code when the source ended early.
  * @returns {{ mediaId, mime, bytes }}
  */
-async function writeFile(plugin, { source, length, mime, owner, name, incomplete }) {
+async function writeFile(plugin, { source, length, mime, owner, name, incomplete, digest = null }) {
   const id = crypto.randomBytes(16).toString('hex');
   const final = fileOf(plugin.id, id);
   fs.mkdirSync(path.dirname(final), { recursive: true, mode: 0o700 });
@@ -243,15 +249,46 @@ async function writeFile(plugin, { source, length, mime, owner, name, incomplete
     throw new MediaError('aborted', 400, e && e.message);
   }
   fs.closeSync(fd);
+  const sha = hash.digest('hex');
+  if (digest && digest !== sha) {
+    fs.rmSync(tmp, { force: true });
+    throw new MediaError('digest_mismatch', 400);
+  }
   if (usage(plugin.id).bytes + length > quotaOf(plugin)) {
     fs.rmSync(tmp, { force: true });
     throw new MediaError('quota_exceeded', 507);
   }
   fs.renameSync(tmp, final);
   db().prepare(`INSERT INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc, name)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)`).run(id, plugin.id, owner == null ? null : owner, mime, length, hash.digest('hex'),
+    VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)`).run(id, plugin.id, owner == null ? null : owner, mime, length, sha,
     new Date().toISOString(), wrapKey(key, id), name == null ? null : name);
   return { mediaId: id, mime, bytes: length };
+}
+
+/**
+ * The SHA-256 an upload announces (hex), from `Repr-Digest` / `Content-Digest`
+ * (RFC 9530: sha-256=:<base64>:) or `Digest` (RFC 3230: SHA-256=<base64>);
+ * null when none. A malformed value → MediaError invalid_digest.
+ */
+function expectedDigest(req) {
+  const h = req.headers || {};
+  for (const name of ['repr-digest', 'content-digest', 'digest']) {
+    if (h[name] == null) continue;
+    const m = /(?:^|,)\s*sha-256=:?([A-Za-z0-9+/=]{43,44}):?\s*(?:,|$)/i.exec(String(h[name]));
+    if (!m) throw new MediaError('invalid_digest', 400);
+    const buf = Buffer.from(m[1], 'base64');
+    if (buf.length !== 32) throw new MediaError('invalid_digest', 400);
+    return buf.toString('hex');
+  }
+  return null;
+}
+
+/** Room on this server and the areas' cache before an upload of `length` bytes (plugins with media.areas). */
+function capacity(plugin, length) {
+  try { require('./mediaAreas').capacityCheck(plugin, length); } catch (e) {
+    if (e && e.code && e.status) throw new MediaError(e.code, e.status);
+    throw e;
+  }
 }
 
 /** Content-Length of an upload (1 … 12 digits, no chunked body) or MediaError length_required. */
@@ -282,7 +319,9 @@ async function store(plugin, ownerUserId, req) {
   const length = contentLength(req);
   if (length > decl.maxBytes) throw new MediaError('too_large', 413);
   if (usage(plugin.id).bytes + length > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
-  return writeFile(plugin, { source: req, length, mime, owner: ownerUserId, name: null,
+  const digest = expectedDigest(req);
+  capacity(plugin, length);
+  return writeFile(plugin, { source: req, length, mime, owner: ownerUserId, name: null, digest,
     incomplete: () => (req.aborted || req.destroyed ? 'aborted' : 'length_mismatch') });
 }
 
@@ -301,6 +340,7 @@ async function storeBuffer(plugin, buf, { mime, name = null, owner = null } = {}
   if (!Buffer.isBuffer(buf) || buf.length < 1) throw new MediaError('empty', 400);
   if (buf.length > decl.maxBytes) throw new MediaError('too_large', 413);
   if (usage(plugin.id).bytes + buf.length > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
+  capacity(plugin, buf.length);
   const clean = cleanName(name);
   const out = await writeFile(plugin, { source: [buf], length: buf.length, mime: type, owner, name: clean });
   return { ...out, name: clean };
@@ -402,13 +442,16 @@ async function storePart(plugin, ownerUserId, req) {
     fs.mkdirSync(uploadsDir(plugin.id), { recursive: true, mode: 0o700 });
     let st = readUploadState(f);
     if (st && uploadExpired(st)) { dropUpload(f); st = null; }
-    if (st && (st.mime !== mime || st.total !== total)) throw mediaError('upload_mismatch', 409, { offset: committedOf(st) });
+    const digest = expectedDigest(req);
+    if (st && (st.mime !== mime || st.total !== total || (digest && st.digest && digest !== st.digest))) throw mediaError('upload_mismatch', 409, { offset: committedOf(st) });
+    if (st && digest && !st.digest) { st.digest = digest; writeUploadState(f, st); }
     if (!st) {
       if (start !== 0) throw mediaError('offset_mismatch', 409, { offset: 0 });
       if (usage(plugin.id).bytes + total > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
+      capacity(plugin, total);
       const id = crypto.randomBytes(16).toString('hex');
       const prefix = crypto.randomBytes(PREFIX_LEN);
-      st = { v: 1, mediaId: id, mime, total, chunks: 0, prefix: prefix.toString('base64'),
+      st = { v: 1, mediaId: id, mime, total, chunks: 0, prefix: prefix.toString('base64'), digest: digest || null,
         keyEnc: wrapKey(crypto.randomBytes(32), id), createdAt: Date.now() };
       fs.writeFileSync(f.part, Buffer.concat([MAGIC, prefix]), { mode: 0o600 });
       writeUploadState(f, st);
@@ -455,13 +498,15 @@ async function storePart(plugin, ownerUserId, req) {
     const r = { id: st.mediaId, plugin: plugin.id, bytes: total, key_enc: st.keyEnc };
     const hash = crypto.createHash('sha256');
     for await (const part of readRange(r, 0, total - 1, f.part)) hash.update(part);
+    const sha = hash.digest('hex');
+    if (st.digest && st.digest !== sha) { dropUpload(f); throw new MediaError('digest_mismatch', 400); }
     const final = fileOf(plugin.id, st.mediaId);
     fs.mkdirSync(path.dirname(final), { recursive: true, mode: 0o700 });
     fs.renameSync(f.part, final);
     fs.rmSync(f.state, { force: true });
     db().prepare(`INSERT INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc, name)
       VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, NULL)`).run(st.mediaId, plugin.id, ownerUserId == null ? null : ownerUserId, mime, total,
-      hash.digest('hex'), new Date().toISOString(), st.keyEnc);
+      sha, new Date().toISOString(), st.keyEnc);
     return { complete: true, mediaId: st.mediaId, mime, bytes: total };
   } finally {
     busyUploads.delete(f.key);
@@ -484,8 +529,15 @@ function row(pluginId, id) {
 /** What gc.media.info answers. */
 function info(r) {
   if (!r) return null;
-  return { mediaId: r.id, mime: r.mime, bytes: r.bytes, sha256: r.sha256, owner: r.owner_user_id == null ? null : r.owner_user_id,
+  const out = { mediaId: r.id, mime: r.mime, bytes: r.bytes, sha256: r.sha256, owner: r.owner_user_id == null ? null : r.owner_user_id,
     createdAt: r.created_at, claimed: r.ref_count > 0, name: r.name == null ? null : r.name };
+  if (r.area != null) {
+    // since 1.204.0 (media.areas): the area, the plugin's path, where the bytes are
+    out.area = r.area;
+    out.path = r.path == null ? null : r.path;
+    out.stored = require('./mediaAreas').stateOf(r);
+  }
+  return out;
 }
 
 /**
@@ -519,8 +571,25 @@ function parseRange(header, size) {
  * @returns {AsyncGenerator<Buffer>}
  */
 async function* readRange(r, start, end, file = null) {
+  if (!file && r.local === 0 && r.target_id != null) {
+    // an area file kept on a storage target, no local copy (mediaAreas.js)
+    yield* require('./mediaAreas').readRemote(r, start, end);
+    return;
+  }
+  let fh;
+  try {
+    fh = await fs.promises.open(file || fileOf(r.plugin, r.id), 'r');
+  } catch (e) {
+    // the cache dropped the local copy meanwhile: read it from its target
+    if (!file && e.code === 'ENOENT' && r.target_id != null) {
+      db().prepare('UPDATE plugin_media SET local = 0 WHERE id = ? AND target_id IS NOT NULL').run(r.id);
+      yield* require('./mediaAreas').readRemote({ ...r, local: 0 }, start, end);
+      return;
+    }
+    throw e;
+  }
+  if (!file && r.target_id != null) require('./mediaAreas').touch(r);
   const key = unwrapKey(r.key_enc, r.id);
-  const fh = await fs.promises.open(file || fileOf(r.plugin, r.id), 'r');
   try {
     const head = Buffer.alloc(HEADER_LEN);
     await fh.read(head, 0, HEADER_LEN, 0);
@@ -576,18 +645,45 @@ async function send(req, res, r, cache, opts = {}) {
     return res.status(416).end();
   }
   const { start, end } = range || { start: 0, end: r.bytes - 1 };
-  res.setHeader('Content-Type', r.mime);
+  // a file of an area kept on a storage target: the first part is read before
+  // the headers go out, so an unreachable target answers 503, not a cut stream
+  let parts = null;
+  let first = null;
+  if (req.method !== 'HEAD' && r.local === 0 && r.target_id != null) {
+    parts = readRange(r, start, end);
+    try { first = await parts.next(); } catch (e) {
+      logger.warn({ plugin: r.plugin, media: r.id, err: e.message }, 'plugin media: storage target not readable');
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(503).json({ ok: false, code: 'storage_unavailable' });
+    }
+  }
+  // types a browser would run (only areas with "*/*" store them) always as a plain download
+  const unsafe = require('./manifest').MIME_DENY_RE.test(r.mime);
+  res.setHeader('Content-Type', unsafe ? 'application/octet-stream' : r.mime);
   res.setHeader('Cache-Control', cache);
-  const disposition = contentDisposition(!opts.attachment && INLINE_RE.test(r.mime) ? 'inline' : 'attachment', opts.name || r.name, r.id);
+  const disposition = contentDisposition(!unsafe && !opts.attachment && INLINE_RE.test(r.mime) ? 'inline' : 'attachment', opts.name || r.name || (unsafe ? r.id : null), r.id);
   if (disposition) res.setHeader('Content-Disposition', disposition);
   res.setHeader('Content-Length', String(end - start + 1));
   if (range) res.setHeader('Content-Range', `bytes ${start}-${end}/${r.bytes}`);
   res.status(range ? 206 : 200);
   if (req.method === 'HEAD') return res.end();
   try {
+    const write = async (part) => {
+      if (!res.write(part)) await new Promise((resolve) => { res.once('drain', resolve); res.once('close', resolve); });
+    };
+    if (parts) {
+      if (!first.done) await write(first.value);
+      for (;;) {
+        if (res.destroyed) { await parts.return(); return undefined; }
+        const n = await parts.next();
+        if (n.done) break;
+        await write(n.value);
+      }
+      return res.end();
+    }
     for await (const part of readRange(r, start, end)) {
       if (res.destroyed) return undefined;
-      if (!res.write(part)) await new Promise((resolve) => { res.once('drain', resolve); res.once('close', resolve); });
+      await write(part);
     }
     return res.end();
   } catch (e) {
@@ -622,10 +718,18 @@ function failure(res, e) {
 
 // ─── Plugin API (gc.media) ──────────────────────
 
-/** gc.media.claim: the plugin keeps the file (no clean-up after 24 h). Idempotent. */
-function claim(pluginId, id) {
+/**
+ * gc.media.claim(id[, { area, path }]): the plugin keeps the file (no
+ * clean-up after 24 h). Idempotent. With `area` (media.areas, since 1.204.0)
+ * the file joins that area (mediaAreas.claimInto: area must exist, its quota).
+ */
+function claim(pluginId, id, opts = null) {
   const r = row(pluginId, id);
   if (!r) return null;
+  if (opts && opts.area != null) {
+    const plugin = require('./registry').get(pluginId);
+    require('./mediaAreas').claimInto(plugin, r, opts);
+  }
   if (r.ref_count < 1) db().prepare('UPDATE plugin_media SET ref_count = 1, claimed_at = ? WHERE id = ?').run(new Date().toISOString(), r.id);
   return info(row(pluginId, id));
 }
@@ -643,12 +747,14 @@ function remove(pluginId, id) {
   if (!r) return false;
   db().prepare('DELETE FROM plugin_media WHERE id = ?').run(r.id);
   fs.rmSync(fileOf(r.plugin, r.id), { force: true });
+  if (r.target_id != null) require('./mediaAreas').gone(r.target_id, r.remote_key);
   revokeLinks(pluginId, [r.id]);
   return true;
 }
 
 /** Every file of a plugin ("Alles löschen", a restore removing the plugin). */
 function removeAll(pluginId) {
+  require('./mediaAreas').removeAllOf(pluginId);
   db().prepare('DELETE FROM plugin_media WHERE plugin = ?').run(pluginId);
   fs.rmSync(pluginDir(pluginId), { recursive: true, force: true });
   revokeLinks(pluginId, null);
@@ -667,7 +773,8 @@ function removeAll(pluginId) {
  * @throws {MediaError} not_found, no_media, unsupported_type, too_large, quota_exceeded
  */
 async function handOver(from, id, to, { owner = null } = {}) {
-  const r = row(from.id, id);
+  let r = row(from.id, id);
+  if (r && r.local === 0) r = await require('./mediaAreas').ensureLocal(r);
   if (!r) throw new MediaError('not_found', 404);
   const decl = declOf(to);
   if (!decl) throw new MediaError('no_media', 404);
@@ -798,7 +905,8 @@ function setBackupEnabled(on) { settings().set(BACKUP_SETTING, on ? '1' : '0'); 
  */
 function exportPlugin(pluginId, budget) {
   const { encrypt } = require('../../utils/crypto');
-  const rows = db().prepare('SELECT * FROM plugin_media WHERE plugin = ? AND ref_count > 0 ORDER BY created_at').all(pluginId);
+  // files of areas never (their storage targets keep them; mediaAreas.exportAreas has their metadata)
+  const rows = db().prepare('SELECT * FROM plugin_media WHERE plugin = ? AND ref_count > 0 AND area IS NULL ORDER BY created_at').all(pluginId);
   const out = [];
   for (const r of rows) {
     const size = sealedSize(r.bytes);
@@ -844,5 +952,9 @@ module.exports = {
   mediaRoot, fileOf, declOf, quotaOf, setQuota, usage, baseType, typeAllowed, store, storeBuffer, storePart, upload, uploadStatus, UPLOAD_ID_RE, UPLOAD_TTL_MS,
   cleanName, contentDisposition, row, info, parseRange, readRange, send, mayRead, failure,
   claim, remove, removeAll, handOver, url, resolveToken, cleanup, backupEnabled, setBackupEnabled, exportPlugin, importPlugin, sealedSize,
+  expectedDigest, pluginDir,
+  // the sealed format for mediaAreas.js (remote copies, range reads from a storage target)
+  _sealed: { CHUNK, TAG_LEN, HEADER_LEN, MAGIC_LEN: MAGIC.length },
+  _unwrapKey: unwrapKey, _wrapKey: wrapKey, _openChunk: openChunk,
   _accessMs: null,
 };

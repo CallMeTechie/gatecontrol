@@ -8719,3 +8719,12 @@ a.up-dev:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 .au-sso + form, .au-sso{margin-top:4px}
 .au-sso .au-divider{margin:16px 0 8px}
 .au-hint{margin:-4px 0 12px; font-size:12.5px; color:var(--muted); line-height:1.45}
+/* Speicherorte: media areas of a plugin (plugins-page.js renderAreas) */
+.pgx-area-list{display:flex; flex-direction:column; gap:10px; margin:6px 0 10px}
+.pgx-area{border:1px solid var(--pg-line2); border-radius:14px; padding:12px 14px; display:flex; flex-direction:column; gap:8px}
+.pgx-area[data-state="unreachable"]{border-color:var(--pg-crit-bd)}
+.pgx-area-head{display:flex; flex-wrap:wrap; gap:8px; align-items:flex-start}
+.pgx-area-head .pgx-t{display:flex; flex-direction:column; gap:2px; min-width:0}
+.pgx-area-ctl{flex-wrap:wrap}
+.pgx-area-ctl .st-select{max-width:100%}
+.pgx-stg-cache-in{width:120px}

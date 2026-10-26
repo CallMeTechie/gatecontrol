@@ -136,11 +136,22 @@ server with another key) makes the target show "Passwort neu eingeben"
 ## Backup
 
 The GateControl backup contains the targets (`storage_targets`) with their id
-— plugin media areas will name it — and the secret exactly as stored. An SMB
+— plugin media areas name it — and the secret exactly as stored. An SMB
 target through a peer or an L4 route names it by peer name / route domain; a
 restore maps them to the restored ids (a missing one leaves the target
 unreachable until it is edited). Files on a target are **never** part of the
 GateControl backup.
+
+## Media areas
+
+Plugins with `media.areas` (docs/plugins.md "Media areas") keep files on
+targets; the administrator picks the target per area in the plugin's
+settings. The page *Plugins › Speicher* also shows the **cache** — local
+copies of files kept on targets — and sets its size (`PUT
+/api/v1/storage-targets/cache { limitBytes | null }`, default 5 GB; `GET
+/api/v1/storage-targets` answers `cache: { cached, pending, limit, default }`).
+`usedBy` of a target lists the areas on it (or moving to it) and plugins that
+still have files there.
 
 ## Tests
 

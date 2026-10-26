@@ -2754,6 +2754,52 @@ const migrations = [
       );`,
     detect: (db) => tableExists(db, 'storage_targets'),
   },
+  {
+    version: 115,
+    name: 'plugin_media_areas',
+    // Areas of the plugin media store (docs/plugins.md "Media areas",
+    // plugin.json media.areas): a plugin's files grouped by area, each area
+    // kept on a storage target (target_id; NULL = this server). Moving an area
+    // (moving = 1, moving_to) copies its files in the background. Per file:
+    // area / path (the plugin's own name for it), target_id + remote_key (where
+    // its durable copy is; NULL = the local file), nonce_prefix (header of the
+    // sealed file, for range reads straight from the target), local (a local
+    // copy exists — the cache of a remote file, or the file itself),
+    // accessed_at (the cache's LRU), push_error. plugin_media_gone: objects
+    // left on a target that still have to be deleted there.
+    sql: `
+      CREATE TABLE IF NOT EXISTS plugin_media_areas (
+        plugin TEXT NOT NULL,
+        area TEXT NOT NULL,
+        label TEXT NOT NULL,
+        target_id INTEGER,
+        moving INTEGER NOT NULL DEFAULT 0,
+        moving_to INTEGER,
+        quota_bytes INTEGER,
+        admin_quota_bytes INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (plugin, area)
+      );
+      ALTER TABLE plugin_media ADD COLUMN area TEXT;
+      ALTER TABLE plugin_media ADD COLUMN path TEXT;
+      ALTER TABLE plugin_media ADD COLUMN target_id INTEGER;
+      ALTER TABLE plugin_media ADD COLUMN remote_key TEXT;
+      ALTER TABLE plugin_media ADD COLUMN nonce_prefix TEXT;
+      ALTER TABLE plugin_media ADD COLUMN local INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE plugin_media ADD COLUMN accessed_at TEXT;
+      ALTER TABLE plugin_media ADD COLUMN push_error TEXT;
+      CREATE INDEX IF NOT EXISTS idx_plugin_media_area ON plugin_media(plugin, area);
+      CREATE TABLE IF NOT EXISTS plugin_media_gone (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        target_id INTEGER NOT NULL,
+        remote_key TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_at TEXT NOT NULL DEFAULT (datetime('now')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );`,
+    detect: (db) => tableExists(db, 'plugin_media_areas') && hasColumn(db, 'plugin_media', 'push_error') && tableExists(db, 'plugin_media_gone'),
+  },
 ];
 
 module.exports = { migrations };
