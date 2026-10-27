@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.208.0] — 2026-10-27
 
 ### Features
 - Vorschaubilder für Plugin-Medien (docs/plugins.md „Previews“, für GateControl Drive): Plugins mit `media.previews` im plugin.json bekommen kleine Vorschaubilder ihrer Dateien – die Apps, das Portal und Windows zeigen Fotos in Listen, ohne die ganze Datei zu laden. Der Server macht sie selbst aus JPEG, PNG, WebP, GIF (erstes Bild) und AVIF (bis 64 MB und 50 Megapixel): `small` (320 px) und `large` (1280 px), JPEG, nach der EXIF-Drehung aufgerichtet, ohne Metadaten (kein GPS). Eins nach dem anderen für den ganzen Server, im Hintergrund gleich nach dem Übernehmen einer Datei (solange sie noch auf dem Server liegt) und sonst bei der ersten Anfrage – Uploads werden nie aufgehalten. Für HEIC-Fotos und Videos schickt das hochladende Gerät ein eigenes Vorschaubild mit (`PUT /api/v1/client/plugins/<id>/media/<mediaId>/preview`, JPEG/WebP/PNG bis 512 KB, nur der Uploader; es wird geprüft und neu kodiert). Abrufen mit denselben Rechten wie die Datei: Apps über `GET /api/v1/client/plugins/<id>/media/<mediaId>/preview[?size=large]` (eigenes Limit von 1200 pro Minute und Token, dauerhaft im Cache), Plugin-Seiten über `/plugin-media/<token>/preview`. Neu für Plugins: `gc.media.previews(ids, { user, ttlS })` sagt je Datei, ob es ein Vorschaubild gibt, und liefert beide Adressen. Die Vorschaubilder liegen verschlüsselt neben der Datei und verschwinden mit ihr. Neue Abhängigkeit `sharp` (vorkompiliert, auch für Alpine/musl).
