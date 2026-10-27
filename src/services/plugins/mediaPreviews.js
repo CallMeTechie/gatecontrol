@@ -48,6 +48,7 @@ const CLIENT_MAX_PIXELS = 4096 * 4096;
 
 const WAIT_MS = 20000; // a request waits this long for its picture, then 503 preview_pending
 const QUEUE_MAX = { now: 500, background: 10000 };
+const CLIENT_PENDING_MAX = 32; // device previews held in memory while they wait (≤ 512 KB each)
 const MAGIC = Buffer.from('GCP1', 'latin1');
 const IV_LEN = 12;
 const TAG_LEN = 16;
@@ -203,6 +204,7 @@ async function render(input, { formats, maxPixels }) {
 const queues = { now: [], background: [] };
 const jobs = new Map(); // key → job
 let running = false;
+let clientPending = 0;
 
 function enqueue(key, run, priority) {
   const have = jobs.get(key);
@@ -379,15 +381,22 @@ async function putClient(plugin, r, userId, req) {
   if (!CLIENT_TYPES.has(mime)) throw new PreviewError('unsupported_type', 415);
   let length;
   try { length = media().contentLength(req); } catch { throw new PreviewError('length_required', 411); }
-  const input = await readBody(req, length, CLIENT_MAX_BYTES);
-  const job = enqueue(`${r.plugin}:${r.id}:client:${crypto.randomBytes(6).toString('hex')}`, async () => {
-    const pics = await render(input, { formats: CLIENT_FORMATS, maxPixels: CLIENT_MAX_PIXELS });
-    const cur = media().row(r.plugin, r.id);
-    if (!cur) throw new PreviewError('not_found', 404);
-    store(cur, pics, true);
-    if (!media().row(r.plugin, r.id)) { drop(r.plugin, r.id); throw new PreviewError('not_found', 404); }
-    return true;
-  }, 'now');
+  if (length > CLIENT_MAX_BYTES) throw new PreviewError('too_large', 413);
+  if (clientPending >= CLIENT_PENDING_MAX) throw new PreviewError('busy', 503);
+  clientPending++;
+  let job;
+  try {
+    const input = await readBody(req, length, CLIENT_MAX_BYTES);
+    job = enqueue(`${r.plugin}:${r.id}:client:${crypto.randomBytes(6).toString('hex')}`, async () => {
+      const pics = await render(input, { formats: CLIENT_FORMATS, maxPixels: CLIENT_MAX_PIXELS });
+      const cur = media().row(r.plugin, r.id);
+      if (!cur) throw new PreviewError('not_found', 404);
+      store(cur, pics, true);
+      if (!media().row(r.plugin, r.id)) { drop(r.plugin, r.id); throw new PreviewError('not_found', 404); }
+      return true;
+    }, 'now');
+  } catch (e) { clientPending--; throw e; }
+  job.then(() => { clientPending--; }, () => { clientPending--; });
   await within(job, module.exports._waitMs || WAIT_MS);
   return { ready: true, source: 'client' };
 }
