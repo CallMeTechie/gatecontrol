@@ -49,9 +49,14 @@ RUN for attempt in 1 2 3; do \
 # and picks one at require time: it has no install step anymore and is NOT
 # rebuilt here — `npm rebuild better-sqlite3` would force node-gyp (its
 # binding.gyp), which needs Python and a compiler the alpine image lacks.
-# argon2's install step (node-gyp-build) only selects its musl prebuild. The
-# last line loads both bindings, so a missing or broken prebuild fails the
-# build here instead of shipping a broken image.
+# argon2's install step (node-gyp-build) only selects its musl prebuild.
+# sharp (plugin media previews, src/services/plugins/mediaPreviews.js) has no
+# install step either: npm puts its prebuilt libvips for this platform
+# (@img/sharp-linuxmusl-x64 / -arm64, optional dependencies) in place; the
+# glibc builds npm adds as well (the lockfile records no libc) are removed.
+# The last line loads all three bindings — sharp makes a tiny JPEG — so a
+# missing or broken prebuild fails the build here instead of shipping a
+# broken image.
 FROM node:24-alpine AS builder
 WORKDIR /app
 ARG NODE_AUTH_TOKEN
@@ -59,7 +64,8 @@ COPY package*.json .npmrc ./
 RUN npm ci --omit=dev --ignore-scripts && \
     npm rebuild argon2 && \
     rm -f .npmrc && \
-    node -e "new (require('better-sqlite3'))(':memory:').close(); require('argon2')"
+    rm -rf node_modules/@img/sharp-linux-* node_modules/@img/sharp-libvips-linux-* && \
+    node -e "new (require('better-sqlite3'))(':memory:').close(); require('argon2'); require('sharp')({ create: { width: 8, height: 8, channels: 3, background: '#fff' } }).jpeg().toBuffer().then((b) => { if (b[0] !== 0xff) process.exit(1); }, (e) => { console.error(e); process.exit(1); })"
 
 # Stage 3: Runtime — same Node major as the builder (native ABI must match).
 #

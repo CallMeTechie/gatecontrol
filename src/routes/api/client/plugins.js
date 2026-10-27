@@ -30,6 +30,15 @@
  *   GET|HEAD /api/v1/client/plugins/:id/media/:mediaId
  *     the file (Range → 206, unsatisfiable → 416) when the plugin's hook
  *     mediaAccess allows the token's owner (no hook: the uploader only), else 404
+ *   GET|HEAD /api/v1/client/plugins/:id/media/:mediaId/preview?size=small|large
+ *     (media.previews, since 1.208.0, docs/plugins.md "Previews") the file's preview,
+ *     image/jpeg, same access as the file, cached for good (immutable); 404 none,
+ *     503 preview_pending (Retry-After) while it is being made — own rate budget
+ *     (clientPluginPreviewLimiter, 1200 per minute and token)
+ *   PUT /api/v1/client/plugins/:id/media/:mediaId/preview   raw image/jpeg|webp|png ≤ 512 KB:
+ *     the uploader's preview of a file the server cannot read (HEIC, video)
+ *     200 { ok: true, ready: true, source: 'client' } · 404 not_found (not the uploader's) ·
+ *     409 preview_by_server · 411 · 413 too_large · 415 unsupported_type · 400 invalid_image
  *
  * Token only (scope `client` or `full-access`), machine binding — the guard
  * of the quick actions (helpers.requireClientToken). The plugin sees the
@@ -43,7 +52,7 @@
 const { Router } = require('express');
 const appPlugins = require('../../../services/plugins/app');
 const { forwarder } = require('../plugins');
-const { clientPluginApiLimiter } = require('../../../middleware/rateLimit');
+const { clientPluginApiLimiter, clientPluginPreviewLimiter } = require('../../../middleware/rateLimit');
 const { requireClientToken, tokenViewer, viewerLang } = require('./helpers');
 const logger = require('../../../utils/logger');
 
@@ -52,7 +61,10 @@ const logger = require('../../../utils/logger');
 const MAX_BODY_BYTES = 64 * 1024;
 
 const router = Router();
-router.use(clientPluginApiLimiter);
+// previews (GET|HEAD …/media/<mediaId>/preview) have a budget of their own
+const PREVIEW_PATH_RE = /^\/[^/]+\/media\/[^/]+\/preview\/?$/;
+router.use((req, res, next) => ((req.method === 'GET' || req.method === 'HEAD') && PREVIEW_PATH_RE.test(req.path)
+  ? clientPluginPreviewLimiter(req, res, next) : clientPluginApiLimiter(req, res, next)));
 
 router.get('/', async (req, res) => {
   if (!requireClientToken(req, res)) return;
@@ -122,6 +134,25 @@ async function mediaGet(req, res) {
   return media.send(req, res, r, 'private, max-age=86400, immutable');
 }
 router.get('/:id/media/:mediaId', mediaGet); // HEAD too (Express answers it with the GET route)
+
+// ─── Previews (media.previews, services/plugins/mediaPreviews.js) ─────
+const previews = require('../../../services/plugins/mediaPreviews');
+
+router.get('/:id/media/:mediaId/preview', async (req, res) => {
+  const g = mediaGuard(req, res);
+  if (!g) return undefined;
+  const r = previews.declared(g.p) ? media.row(g.p.id, String(req.params.mediaId || '')) : null;
+  if (!r || !(await media.mayRead(g.p.id, g.v.user, r))) return res.status(404).json({ ok: false, code: 'not_found' });
+  return previews.send(req, res, g.p, r, 'private, max-age=31536000, immutable');
+});
+
+router.put('/:id/media/:mediaId/preview', async (req, res) => {
+  const g = mediaGuard(req, res);
+  if (!g) return undefined;
+  try {
+    return res.json({ ok: true, ...(await previews.putClient(g.p, media.row(g.p.id, String(req.params.mediaId || '')), g.v.user.id, req)) });
+  } catch (e) { return previews.failure(res, e); }
+});
 
 router.all('/:id/api/*', (req, res, next) => {
   if (!requireClientToken(req, res)) return undefined;

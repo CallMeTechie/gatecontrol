@@ -37,6 +37,8 @@
 //     copied there in the background and the local one may be dropped (cache)
 //     — readRange() reads such a file from the target. An upload may carry
 //     its SHA-256 (Digest / Repr-Digest / Content-Digest); a mismatch drops it;
+//   * previews (media.previews, since 1.208.0, mediaPreviews.js): small
+//     pictures of a file next to it (<file>.ps / .pl); they go with the file;
 //   * frames (no session, opaque origin) load a file through a signed
 //     capability URL /plugin-media/<token> (gc.media.url), like the tile
 //     relay: `<id>.<exp>.<uid>.<sig>`, sig = HMAC-SHA256 over
@@ -755,11 +757,13 @@ function failure(res, e) {
 function claim(pluginId, id, opts = null) {
   const r = row(pluginId, id);
   if (!r) return null;
-  if (opts && opts.area != null) {
-    const plugin = require('./registry').get(pluginId);
-    require('./mediaAreas').claimInto(plugin, r, opts);
+  const plugin = opts && opts.area != null ? require('./registry').get(pluginId) : null;
+  if (plugin) require('./mediaAreas').claimInto(plugin, r, opts);
+  if (r.ref_count < 1) {
+    db().prepare('UPDATE plugin_media SET ref_count = 1, claimed_at = ? WHERE id = ?').run(new Date().toISOString(), r.id);
+    // media.previews: the server's preview now, while the file is still on this server
+    require('./mediaPreviews').warm(plugin || require('./registry').get(pluginId), r);
   }
-  if (r.ref_count < 1) db().prepare('UPDATE plugin_media SET ref_count = 1, claimed_at = ? WHERE id = ?').run(new Date().toISOString(), r.id);
   return info(row(pluginId, id));
 }
 
@@ -776,6 +780,7 @@ function remove(pluginId, id) {
   if (!r) return false;
   db().prepare('DELETE FROM plugin_media WHERE id = ?').run(r.id);
   fs.rmSync(fileOf(r.plugin, r.id), { force: true });
+  require('./mediaPreviews').drop(r.plugin, r.id);
   if (r.target_id != null) require('./mediaAreas').gone(r.target_id, r.remote_key);
   revokeLinks(pluginId, [r.id]);
   return true;
@@ -791,6 +796,7 @@ function forget(pluginId, id) {
   if (!r) return false;
   db().prepare('DELETE FROM plugin_media WHERE id = ?').run(r.id);
   fs.rmSync(fileOf(r.plugin, r.id), { force: true });
+  require('./mediaPreviews').drop(r.plugin, r.id);
   revokeLinks(pluginId, [r.id]);
   return true;
 }
@@ -832,6 +838,8 @@ async function handOver(from, id, to, { owner = null } = {}) {
     try { await fs.promises.link(fileOf(from.id, r.id), tmp); } catch { await fs.promises.copyFile(fileOf(from.id, r.id), tmp); }
     if (usage(to.id).bytes + r.bytes > quotaOf(to)) throw new MediaError('quota_exceeded', 507);
     fs.renameSync(tmp, final);
+    // previews (media.previews) are sealed under the file's key, which the new id keeps
+    await require('./mediaPreviews').linkTo(from.id, r.id, to.id, newId);
   } catch (e) {
     fs.rmSync(tmp, { force: true });
     if (e instanceof MediaError) throw e;
@@ -892,6 +900,7 @@ function cleanup(now = Date.now()) {
   for (const r of old) {
     db().prepare('DELETE FROM plugin_media WHERE id = ? AND ref_count = 0').run(r.id);
     try { fs.rmSync(fileOf(r.plugin, r.id), { force: true }); } catch { /* gone */ }
+    require('./mediaPreviews').drop(r.plugin, r.id);
     revokeLinks(r.plugin, [r.id]);
     n++;
   }

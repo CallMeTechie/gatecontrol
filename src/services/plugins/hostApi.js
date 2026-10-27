@@ -912,7 +912,7 @@ function mediaCall(plugin, op, args) {
     case 'usage': {
       const decl = media.declOf(plugin);
       return { ...media.usage(plugin.id), quota: media.quotaOf(plugin), maxBytes: decl.maxBytes, types: decl.types, uploads: decl.uploads !== false,
-        resumable: decl.resumable === true, handOverMaxBytes: decl.handOverMaxBytes || decl.maxBytes, areas: decl.areas === true };
+        resumable: decl.resumable === true, handOverMaxBytes: decl.handOverMaxBytes || decl.maxBytes, areas: decl.areas === true, previews: decl.previews === true };
     }
     case 'url': {
       const id = mediaId(args);
@@ -923,8 +923,38 @@ function mediaCall(plugin, op, args) {
       need(ttlS === null || (Number.isSafeInteger(ttlS) && ttlS >= media.URL_TTL_MIN_S && ttlS <= media.URL_TTL_MAX_S), 'ERR_INVALID', 'ttlS must be 60…86400');
       return media.url(plugin.id, id, { user, ttlS });
     }
+    case 'previews': return mediaPreviews(plugin, media, args);
     default: throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
   }
+}
+
+const PREVIEWS_MAX_IDS = 1000;
+
+/**
+ * gc.media.previews(ids, { user, ttlS }) (media.previews, since 1.208.0,
+ * mediaPreviews.js) → { <id>: null | { ready, source, url, appUrl } } for up
+ * to PREVIEWS_MAX_IDS of the plugin's files: null — no preview and none
+ * possible (unknown id too); `url` — /plugin-media/<token>/preview for frames
+ * (signed like gc.media.url); `appUrl` — the apps' endpoint with the device
+ * token (mediaAccess decides). Both take ?size=large.
+ */
+function mediaPreviews(plugin, media, args) {
+  const previews = require('./mediaPreviews');
+  need(previews.declared(plugin), 'ERR_MEDIA_DENIED', 'plugin.json declares no media.previews');
+  const ids = args && args.ids;
+  need(Array.isArray(ids) && ids.length <= PREVIEWS_MAX_IDS && ids.every((id) => typeof id === 'string' && /^[0-9a-f]{32}$/.test(id)),
+    'ERR_INVALID', `ids must be up to ${PREVIEWS_MAX_IDS} media ids`);
+  const user = args.user == null ? null : args.user;
+  need(user === null || (Number.isSafeInteger(user) && user > 0), 'ERR_INVALID', 'invalid user id');
+  const ttlS = args.ttlS == null ? null : args.ttlS;
+  need(ttlS === null || (Number.isSafeInteger(ttlS) && ttlS >= media.URL_TTL_MIN_S && ttlS <= media.URL_TTL_MAX_S), 'ERR_INVALID', 'ttlS must be 60…86400');
+  const out = {};
+  for (const id of ids) {
+    if (Object.prototype.hasOwnProperty.call(out, id)) continue;
+    const st = previews.state(plugin, media.row(plugin.id, id));
+    out[id] = st ? { ...st, url: `${media.url(plugin.id, id, { user, ttlS })}/preview`, appUrl: `/api/v1/client/plugins/${plugin.id}/media/${id}/preview` } : null;
+  }
+  return out;
 }
 
 // ─── Realtime events (permissions.events, services/plugins/events.js) ────
@@ -1639,6 +1669,7 @@ async function handle(plugin, api, args, ctx) {
     case 'media.delete': return mediaCall(plugin, 'delete', args);
     case 'media.usage': return mediaCall(plugin, 'usage', args);
     case 'media.url': return mediaCall(plugin, 'url', args);
+    case 'media.previews': return mediaCall(plugin, 'previews', args);
     case 'media.fetch': return mediaFetch(plugin, args);
     case 'media.handOver': return mediaHandOver(plugin, args);
     case 'publicLinks.create': return publicLinksCall(plugin, 'create', args);

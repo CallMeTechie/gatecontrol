@@ -480,6 +480,11 @@ unsigned build of the same id.
   from GateDrop. Errors `media.resumable: invalid`, `media.handOverMaxBytes:
   invalid`. An older GateControl refuses the new keys (`media: invalid`) —
   declare `"gatecontrol": ">=1.193.0"`.
+  Since 1.208.0: `previews` (boolean, default `false`): GateControl makes
+  small previews of the plugin's pictures and takes the previews the apps send
+  for photos and videos it cannot read — see "Previews". Error
+  `media.previews: invalid`; an older GateControl refuses the key (`media:
+  invalid`) — declare `"gatecontrol": ">=1.208.0"`.
 * `permissions.events` (boolean, since 1.177.0): realtime events to the
   plugin's users (`gc.events.emit`) — see "Realtime events". The install
   dialog shows "Live-Ereignisse: darf Live-Ereignisse an die Apps und
@@ -1310,9 +1315,10 @@ it in its own data. Code: `src/services/plugins/media.js`.
   plugin's overview (Plugins › the plugin › Übersicht → Medien; API `GET/PUT
   /api/v1/plugins/<id>/media/settings` `{ quotaBytes }`, `null` = the default;
   activity `plugin_media_quota`). Unclaimed files count.
-* No conversion: the apps scale pictures before the upload (long side 2048
-  px, WebP/JPEG) and may upload a small preview (≤ 64 KB) as a file of its
-  own. GateControl has no image or audio processing.
+* No conversion of the files themselves: the apps scale pictures before the
+  upload (long side 2048 px, WebP/JPEG) where the plugin wants that.
+  GateControl only makes small **previews** for plugins that ask for them
+  (`media.previews`, since 1.208.0, see "Previews"); no audio processing.
 * Uninstall "Daten behalten" keeps the files, "Alles löschen" deletes them.
 * **Hand-over** (since 1.193.0): `gc.media.handOver(id, { toPlugin, user })`
   → `{ mediaId, mime, bytes, name }` — the file becomes a new file of plugin
@@ -1346,7 +1352,94 @@ it in its own data. Code: `src/services/plugins/media.js`.
   `ERR_NET_DENIED`, `ERR_NET`, `ERR_TIMEOUT`. A plugin only ever sees its own
   files.
 * `gc.media.usage()` (since 1.193.0) also answers `resumable` and
-  `handOverMaxBytes`.
+  `handOverMaxBytes`; since 1.208.0 `previews`.
+
+### Previews (`media.previews`)
+
+Since 1.208.0. Lists of files in the apps, the portal and Windows show small
+pictures instead of a generic icon — without a phone downloading the whole
+photo. GateControl makes them; for what it cannot read (HEIC photos, videos)
+the device that uploaded the file sends one along. Code:
+`src/services/plugins/mediaPreviews.js` (sharp / libvips).
+
+```json
+"media": { "maxBytes": 107374182400, "types": ["*/*"], "quotaDefault": "100TB", "resumable": true, "areas": true, "previews": true }
+```
+
+* **Sizes**: `small` (the default; fits 320 × 320 px) and `large` (fits
+  1280 × 1280 px), always `image/jpeg`, never enlarged, upright by the EXIF
+  orientation, transparency on white, without any metadata (no GPS, no
+  camera data).
+* **Made by the server** from files stored as `image/jpeg`, `image/png`,
+  `image/webp`, `image/gif` (the first frame) and `image/avif`, up to 64 MB
+  and 50 megapixels. The decoder checks the bytes themselves: a file stored
+  as `image/png` that is really an SVG, a TIFF or anything else gets no
+  preview (marked, never tried again). One picture at a time for the whole
+  server (`sharp.concurrency(1)`, no libvips cache): the previews never slow
+  down uploads. A preview is made **in the background** right after the
+  plugin claims a file (`gc.media.claim` — while the file is still on this
+  server, before it may go to a storage target) and otherwise **on the first
+  request**; requests go before background work.
+* **From the device** (HEIC, videos, any other file the server does not read):
+  the uploader sends a preview of the file, e.g. right after its upload (or
+  after the plugin's commit — the media id stays the same):
+
+  ```
+  PUT /api/v1/client/plugins/<id>/media/<mediaId>/preview      (device token of the uploader)
+    Content-Type: image/jpeg | image/webp | image/png   Content-Length: ≤ 524288 (512 KB)
+    <the picture, e.g. 640 px long side>
+    → 200 { ok: true, ready: true, source: 'client' }
+    404 not_found          unknown file, not the token owner's upload, no media.previews
+    409 preview_by_server  the server makes this file's preview itself (JPEG, PNG, WebP, GIF, AVIF it can read)
+    411 length_required · 413 too_large · 415 unsupported_type
+    400 invalid_image      not a JPEG / WebP / PNG, or over 4096 × 4096 px
+    503 preview_pending    more than 32 device previews wait at once, or not done within 20 s (Retry-After)
+  ```
+
+  The picture is decoded and encoded again into both sizes (nothing of the
+  upload is kept as it came); sending again replaces it. Only the uploader
+  (`owner`) may — also after the plugin claimed the file.
+* **Reading** — the same rules as the file itself:
+  * apps: `GET /api/v1/client/plugins/<id>/media/<mediaId>/preview[?size=large]`
+    (and `HEAD`) with the device token; the hook `mediaAccess` decides like
+    for the file (no hook: the uploader only). Own rate budget **1200 per
+    minute and token** (a folder of photos is a few hundred requests), not
+    counted against the plugin API's 240.
+  * frames: `/plugin-media/<token>/preview[?size=large]` — the capability
+    URL of `gc.media.url` with `/preview` appended (same token, same expiry);
+    `gc.media.previews` hands them out ready to use.
+  * `200 image/jpeg`, `Cache-Control: private, max-age=31536000, immutable`
+    (apps; a media id's preview does not change — a new version of a file is
+    a new media id) or until the token expires (frames), `ETag`, `nosniff`,
+    the sandboxing CSP, `Cross-Origin-Resource-Policy: cross-origin`.
+    `404 not_found`: no preview and none possible (not a picture the server
+    reads, no device preview, unreadable picture, no access). `400
+    invalid_size`: `size` other than `small` / `large`. `503
+    preview_pending` with `Retry-After: 3` while the picture waits longer
+    than 20 s for its turn (it is made anyway — ask again), `503
+    preview_unavailable` when the file cannot be read right now (storage
+    target unreachable). Errors are `no-store`.
+* **`gc.media.previews(ids, { user, ttlS })`** → `{ <mediaId>: null | {
+  ready, source, url, appUrl } }` for up to 1000 of the plugin's media ids
+  (unknown ids → `null`): `null` — no preview and none possible; `ready` —
+  made already (`false`: the server makes it on the first request);
+  `source` — `server` or `client`; `url` — `/plugin-media/<token>/preview`
+  for frames (signed for `user` and `ttlS` like `gc.media.url`); `appUrl` —
+  `/api/v1/client/plugins/<id>/media/<mediaId>/preview` for the apps. Both
+  take `?size=large`. `ERR_MEDIA_DENIED` without `media.previews`,
+  `ERR_INVALID` for bad ids, `user`, `ttlS`.
+* **At rest** next to the file: `<file>.ps` (small) and `<file>.pl`
+  (large), AES-256-GCM under a key derived (HKDF) from the file's own key;
+  `<file>.pc` marks a device preview, `<file>.px` a file the server could not
+  read. They go with the file (delete, clean-up of unclaimed files, "Alles
+  löschen"); a hand-over (`gc.media.handOver`) links them to the new file.
+  They do not count against the quota, stay on this server when an area's
+  files go to a storage target (the area cache never drops them) and are not
+  in backups — the server makes them again, a device preview is gone after a
+  restore.
+* The install dialog shows **Vorschaubilder**: "GateControl macht kleine
+  Vorschaubilder der Bilder … und nimmt die Vorschaubilder der Apps für Fotos
+  und Videos an, die der Server nicht lesen kann".
 
 ### Media areas (`media.areas`)
 
@@ -2916,7 +3009,9 @@ like every `/api/v1/client/*` route (a browser session gets 403
 `token_required`, another scope 403 `scope_required`), `Cache-Control:
 no-store`. Mounted before the general API limiter; own limit **240 requests
 per minute and token** for both routes (failed requests count) → 429
-`{ ok: false, code: 'rate_limited' }`.
+`{ ok: false, code: 'rate_limited' }`. Media previews (`GET …/media/<mediaId>/preview`,
+since 1.208.0, see "Previews") have a budget of their own: 1200 per minute
+and token.
 
 ```
 GET /api/v1/client/plugins
