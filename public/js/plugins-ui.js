@@ -128,6 +128,8 @@
       }) });
       // media areas (since 1.204.0): the administrator decides per area where the files live
       if (perm.media.areas) rows.push({ label: t('plugins.perm.media_areas'), value: t('plugins.perm.media_areas_on') });
+      // previews (since 1.208.0): GateControl makes small pictures of the files
+      if (perm.media.previews) rows.push({ label: t('plugins.perm.media_previews'), value: t('plugins.perm.media_previews_on') });
     }
     if (perm.events) rows.push({ label: t('plugins.perm.events'), value: t('plugins.perm.events_on') });
     // since 1.193.0 (GateDrop): public download links (an administrator still has to allow them), the people's devices

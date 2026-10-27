@@ -5309,6 +5309,8 @@
   "plugins.perm.media_all_types": "every file type",
   "plugins.perm.media_areas": "Storage places",
   "plugins.perm.media_areas_on": "keeps files in areas – you decide per area whether they live on this server, on a NAS or in cloud storage (storage targets)",
+  "plugins.perm.media_previews": "Previews",
+  "plugins.perm.media_previews_on": "GateControl makes small previews of pictures (one at a time) and takes the apps' previews of photos and videos the server cannot read",
   "plugins.perm.events": "Live events",
   "plugins.perm.events_on": "may send live events to the apps and plugin pages of its users",
   "plugins.perm.notify_sink": "Deliver notifications in chats",

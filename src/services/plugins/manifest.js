@@ -193,7 +193,7 @@ function typeAllowed(types, mime) {
   return types.includes(m) || types.includes(m.split('/')[0] + '/*');
 }
 
-const MEDIA_KEYS = ['maxBytes', 'types', 'quotaDefault', 'uploads', 'resumable', 'handOverMaxBytes', 'areas'];
+const MEDIA_KEYS = ['maxBytes', 'types', 'quotaDefault', 'uploads', 'resumable', 'handOverMaxBytes', 'areas', 'previews'];
 
 /**
  * media → { maxBytes, types, quotaDefault, uploads, resumable, handOverMaxBytes } (null when invalid).
@@ -208,12 +208,15 @@ const MEDIA_KEYS = ['maxBytes', 'types', 'quotaDefault', 'uploads', 'resumable',
  * Since 1.204.0: areas (default false) — the plugin keeps files in areas on
  * storage targets (mediaAreas.js); then maxBytes / handOverMaxBytes up to
  * 100 GB, quotaDefault up to 1 PB and the type "*" + "/*" (any type).
+ * Since 1.208.0: previews (default false) — GateControl makes small pictures
+ * of the files and takes those of the uploaders' devices (mediaPreviews.js).
  */
 function validateMedia(v, err) {
   if (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).some((k) => !MEDIA_KEYS.includes(k))) { err('media: invalid'); return null; }
   if (v.uploads !== undefined && typeof v.uploads !== 'boolean') { err('media.uploads: invalid'); return null; }
   if (v.resumable !== undefined && typeof v.resumable !== 'boolean') { err('media.resumable: invalid'); return null; }
   if (v.areas !== undefined && typeof v.areas !== 'boolean') { err('media.areas: invalid'); return null; }
+  if (v.previews !== undefined && typeof v.previews !== 'boolean') { err('media.previews: invalid'); return null; }
   const areas = v.areas === true;
   const maxBytes = areas ? MEDIA_MAX_BYTES_AREAS : MEDIA_MAX_BYTES;
   if (!Number.isSafeInteger(v.maxBytes) || v.maxBytes < 1024 || v.maxBytes > maxBytes) { err('media.maxBytes: invalid'); return null; }
@@ -224,7 +227,8 @@ function validateMedia(v, err) {
   if (quota == null || quota < MEDIA_QUOTA_MIN || quota > (areas ? MEDIA_QUOTA_MAX_AREAS : MEDIA_QUOTA_MAX) || quota < v.maxBytes) { err('media.quotaDefault: invalid'); return null; }
   const handOver = v.handOverMaxBytes == null ? v.maxBytes : v.handOverMaxBytes;
   if (!Number.isSafeInteger(handOver) || handOver < 1024 || handOver > maxBytes || handOver > quota) { err('media.handOverMaxBytes: invalid'); return null; }
-  return { maxBytes: v.maxBytes, types, quotaDefault: quota, uploads: v.uploads !== false, resumable: v.resumable === true, handOverMaxBytes: handOver, ...(areas ? { areas: true } : {}) };
+  return { maxBytes: v.maxBytes, types, quotaDefault: quota, uploads: v.uploads !== false, resumable: v.resumable === true, handOverMaxBytes: handOver, ...(areas ? { areas: true } : {}),
+    ...(v.previews === true ? { previews: true } : {}) };
 }
 
 function isFile(p) {

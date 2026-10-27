@@ -26,6 +26,8 @@
 //                                     OpenStreetMap tiles for those frames (tiles.js)
 //   GET /plugin-media/<token>         a plugin's media file for its frames (signed
 //                                     capability URL of gc.media.url, media.js)
+//   GET /plugin-media/<token>/preview its preview (?size=small|large; media.previews,
+//                                     gc.media.previews, mediaPreviews.js)
 //
 // Admin pages are for administrators like every other admin page (members
 // are sent to /profile). The frame is rendered by the plugin process for the
@@ -143,6 +145,16 @@ router.get('/plugin-media/:token', pluginMediaLimiter, async (req, res) => {
   if (!hit || !p || !media.declOf(p)) return tileError(res, 404, 'not found');
   const left = Math.max(0, hit.exp - Math.floor(Date.now() / 1000));
   return media.send(req, res, hit.row, `private, max-age=${left}, immutable`);
+});
+
+// the file's preview (media.previews, since 1.208.0): the same token, the same rules
+router.get('/plugin-media/:token/preview', pluginMediaLimiter, async (req, res) => {
+  const previews = require('../services/plugins/mediaPreviews');
+  const hit = media.resolveToken(req.params.token);
+  const p = hit ? plugins.get(hit.row.plugin) : null;
+  if (!hit || !p || !previews.declared(p)) return tileError(res, 404, 'not found');
+  const left = Math.max(0, hit.exp - Math.floor(Date.now() / 1000));
+  return previews.send(req, res, p, hit.row, `private, max-age=${left}, immutable`);
 });
 
 function mapsOf(p) { return !!(p && p.manifest && p.manifest.ui && p.manifest.ui.maps); }

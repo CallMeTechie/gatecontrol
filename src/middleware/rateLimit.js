@@ -460,6 +460,22 @@ const clientPluginApiLimiter = rateLimit({
 });
 module.exports.clientPluginApiLimiter = clientPluginApiLimiter;
 
+// GET|HEAD /api/v1/client/plugins/<id>/media/<mediaId>/preview (media.previews,
+// docs/plugins.md "Previews"): a folder of photos opened in an app loads a
+// few hundred small pictures at once — own, larger budget per token, so the
+// previews never eat the plugin API's 240 per minute.
+const clientPluginPreviewLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 1200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.tokenAuth && req.tokenId != null ? `client-plugin-previews:${req.tokenId}` : `client-plugin-previews-ip:${ipKeyGenerator(req.ip)}`),
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, code: 'rate_limited', error: req.t ? req.t('error.rate_limit.api') : 'rate_limited' });
+  },
+});
+module.exports.clientPluginPreviewLimiter = clientPluginPreviewLimiter;
+
 // /plugins/_shared/leaflet/* — the vendored Leaflet for map frames of ui.maps
 // plugins (docs/plugins.md "Maps"). Public static files (a sandboxed frame
 // sends no cookies), so per address and generous: one map frame loads up to
