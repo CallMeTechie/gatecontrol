@@ -1393,6 +1393,7 @@ the device that uploaded the file sends one along. Code:
     409 preview_by_server  the server makes this file's preview itself (JPEG, PNG, WebP, GIF, AVIF it can read)
     411 length_required · 413 too_large · 415 unsupported_type
     400 invalid_image      not a JPEG / WebP / PNG, or over 4096 × 4096 px
+    503 preview_pending    more than 32 device previews wait at once, or not done within 20 s (Retry-After)
   ```
 
   The picture is decoded and encoded again into both sizes (nothing of the
