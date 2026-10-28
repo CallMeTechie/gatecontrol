@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.210.0] — 2026-10-28
+
+### Features
+- Vorschau-Adressen nur für das Vorschaubild – gc.media.previews { previewOnly } (#369)
+
+---
+
 ## [1.209.0] — 2026-10-28
 
 ### Features
