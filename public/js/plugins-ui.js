@@ -134,6 +134,8 @@
     if (perm.events) rows.push({ label: t('plugins.perm.events'), value: t('plugins.perm.events_on') });
     // since 1.193.0 (GateDrop): public download links (an administrator still has to allow them), the people's devices
     if (perm.publicLinks) rows.push({ label: t('plugins.perm.public_links'), value: t('plugins.perm.public_links_on') });
+    // since 1.211.0: requests without sign-in, each with a token of the plugin (e.g. an office server)
+    if (perm.publicEndpoints) rows.push({ label: t('plugins.perm.public_endpoints'), value: t('plugins.perm.public_endpoints_on') });
     if (perm.devices) rows.push({ label: t('plugins.perm.devices'), value: t('plugins.perm.devices_on') });
     // person groups (docs/plugins.md "Groups"): read, or read and manage its own groups
     if (perm.groups === 'read' || perm.groups === 'manage') rows.push({ label: t('plugins.perm.groups'), value: t(perm.groups === 'manage' ? 'plugins.perm.groups_manage' : 'plugins.perm.groups_read') });
@@ -429,6 +431,7 @@
     if (perm.users) out.push('plugins.perm.users');
     if (perm.kiosk) out.push('plugins.perm.kiosk');
     if (perm.publicLinks) out.push('plugins.perm.public_links');
+    if (perm.publicEndpoints) out.push('plugins.perm.public_endpoints');
     if (perm.groups) out.push('plugins.perm.groups');
     return out;
   }

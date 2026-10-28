@@ -5331,6 +5331,8 @@
   "plugins.perm.inbox_on": "sieht im Portal, wie viele Mitteilungen der angemeldeten Person ungelesen sind, und den Titel der neuesten (nur die eigenen, ohne Text) und darf das Postfach öffnen",
   "plugins.perm.public_links": "Öffentliche Links",
   "plugins.perm.public_links_on": "Öffentliche Download-Links ohne Anmeldung – nur wenn ein Administrator sie für dieses Plugin erlaubt",
+  "plugins.perm.public_endpoints": "Öffentliche Endpunkte",
+  "plugins.perm.public_endpoints_on": "Anfragen ohne Anmeldung unter /plugin-public/ – nur mit einem kurzlebigen Schlüssel, den das Plugin für eine Person und einen Pfad ausstellt (z. B. für einen Office-Server)",
   "plugins.perm.devices": "Geräte",
   "plugins.perm.devices_on": "sieht die GateControl-Apps (Android, Windows) der Personen und darf Mitteilungen an einzelne Geräte schicken, auch stille Daten-Mitteilungen",
   "plugins.perm.groups": "Gruppen",

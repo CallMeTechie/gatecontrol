@@ -385,6 +385,15 @@ function makeGc(info) {
       events: (token, opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('publicLinks.events', { token, limit: o.limit, before: o.before }); },
       uploads: (token) => hostCall('publicLinks.uploads', { token }),
     }),
+    /**
+     * permissions.publicEndpoints (since 1.211.0): requests without a session under /plugin-public/<id>/…, each with
+     * a token of token({ user, path, ttlS, data }) → { token, url, expiresAt }; base() → { url } of the prefix
+     * (null without GC_BASE_URL). The hook publicRequest answers them.
+     */
+    publicEndpoints: Object.freeze({
+      token: (opts) => hostCall('publicEndpoints.token', opts && typeof opts === 'object' ? opts : {}),
+      base: () => hostCall('publicEndpoints.base', {}),
+    }),
     /** permissions.devices (since 1.193.0): list({ userId }) → [{ id, name, platform, clientType, appVersion, online, lastSeen, via }] */
     devices: Object.freeze({
       list: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('devices.list', { userId: o.userId }); },
@@ -507,6 +516,11 @@ async function handleCall(method, payload) {
       // optional (permissions.publicLinks, since 1.193.0): { token, event: 'download'|'locked'|'expired', … }; the answer is ignored
       if (typeof plugin.publicLinkEvent === 'function') await plugin.publicLinkEvent(payload, gc);
       return {};
+    case 'publicRequest':
+      // optional (permissions.publicEndpoints, since 1.211.0): a request with one of the plugin's tokens —
+      // { method, path, query, headers, user, token, body, url, originalUrl } → { status, headers, json | text | media | form }
+      if (typeof plugin.publicRequest !== 'function') return { status: 404, text: 'not found' };
+      return plugin.publicRequest(payload, gc);
     case 'mediaChanged':
       // optional (media.areas, since 1.204.1): files changed on a storage target were taken in —
       // { area, seq, count }; read them with gc.media.areas.changes(area, { since }). Answer ignored

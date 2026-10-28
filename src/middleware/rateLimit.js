@@ -734,3 +734,34 @@ const appHandoffLimiter = rateLimit({
 module.exports.appSigninInfoLimiter = appSigninInfoLimiter;
 module.exports.appSigninLimiter = appSigninLimiter;
 module.exports.appHandoffLimiter = appHandoffLimiter;
+
+// /plugin-public/<id>/* — public endpoints of plugins (docs/plugins.md "Public endpoints", since 1.211.0): no
+// session, a token of the plugin per request. Per address: an office server calls from one address for every person
+// editing (WOPI: file info, content, locks, saves), so 1200 per minute; requests without a valid token (401) or to
+// an unknown plugin (404) count again in a small bucket of their own — 60 per 10 minutes, then the address waits.
+const pluginPublicLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 1200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `plugin-public:${ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.status(429).type('text/plain').send('rate_limited');
+  },
+});
+const pluginPublicFailLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 60,
+  standardHeaders: false,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  requestWasSuccessful: (req, res) => res.statusCode !== 401 && res.statusCode !== 404,
+  keyGenerator: (req) => `plugin-public-fail:${ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.status(429).type('text/plain').send('rate_limited');
+  },
+});
+module.exports.pluginPublicLimiter = pluginPublicLimiter;
+module.exports.pluginPublicFailLimiter = pluginPublicFailLimiter;

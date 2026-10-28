@@ -5331,6 +5331,8 @@
   "plugins.perm.inbox_on": "sees in the portal how many of the signed-in person's notifications are unread and the newest one's title (only their own, no text) and may open the inbox",
   "plugins.perm.public_links": "Public links",
   "plugins.perm.public_links_on": "Public download links without sign-in – only when an administrator allows them for this plugin",
+  "plugins.perm.public_endpoints": "Public endpoints",
+  "plugins.perm.public_endpoints_on": "Requests without sign-in under /plugin-public/ – only with a short-lived token the plugin issues for one person and one path (e.g. for an office server)",
   "plugins.perm.devices": "Devices",
   "plugins.perm.devices_on": "sees people's GateControl apps (Android, Windows) and may send notifications to single devices, silent data notifications too",
   "plugins.perm.groups": "Groups",
