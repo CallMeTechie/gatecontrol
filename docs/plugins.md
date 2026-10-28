@@ -2227,6 +2227,35 @@ disable/uninstall and when the server shuts down.
   `status` 400 (type, size) or 429 (too fast). A plugin answer is JSON of at
   most 1 MB — return a file as text or base64 and build the Blob in the frame
   (`new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type })`).
+* **Keys** (since 1.211.0): `GC.keys.put(name, key)`, `GC.keys.get(name)`,
+  `GC.keys.remove(name)` — the frame's opaque origin has no storage, so the
+  parent page keeps **WebCrypto keys** for it in its own IndexedDB
+  (`gc-plugin-keys`, per plugin and name `[A-Za-z0-9._-]{1,64}`, ≤ 32 per
+  plugin), e.g. the device key of an end-to-end encryption. Only `CryptoKey`
+  objects travel (or `{ publicKey, privateKey }` of a pair); a secret or private
+  key only when it was made **not extractable** — neither the page nor the frame
+  can ever read its bytes, the key can only be used. `get` → the key, the pair
+  or `null`; `put` → `true` (400 for anything else, 429 over the limit);
+  `remove` → whether there was one. They live in this browser profile for the
+  GateControl origin, not per person: a plugin that keeps one per person puts
+  the person into the name (`device-<userId>`).
+* **Media bytes** (since 1.211.0): `await GC.mediaBytes(url, { start, end })`
+  → `{ data: ArrayBuffer, start, end, total }` — the parent page fetches one of
+  the plugin's media URLs (`/plugin-media/<token>` of `gc.media.url`, this
+  origin, nothing else) without cookies and hands the bytes over (the frame's
+  `connect-src 'none'` keeps it from fetching itself), e.g. to decrypt a file
+  in the frame. The page sends `X-GC-Plugin: <the frame's plugin id>`;
+  `/plugin-media/<token>` (and `…/preview`) answers 404 when that header names
+  another plugin than the file's — a frame never reads another plugin's bytes,
+  even with a valid URL of it. A range (`end` inclusive) of at most 16 MiB a call, a whole file
+  only up to that size; four at a time per frame (429 busy); 400 for any other
+  URL.
+* **Tabs** (since 1.211.0): `await GC.openTab(url)` → `{ ok: true }` | `{ ok:
+  false, code: 'invalid' | 'no_gesture' }` — the sandbox allows no popups, so
+  the parent page opens one of the plugin's **public endpoints**
+  (`/plugin-public/<plugin id>/…` of this origin, see "Public endpoints") in a
+  new tab (`noopener`), and only during a click in the frame (the click's
+  activation reaches the page).
 * **Page title**: GateControl shows a page's title once, in its header (the
   topbar: the plugin's `ui.nav.label`, else its name) — the page's only
   `<h1>`. The host adds no heading of its own above the frame; above it there

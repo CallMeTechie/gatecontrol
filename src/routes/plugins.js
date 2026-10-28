@@ -139,10 +139,17 @@ router.get('/plugins/_shared/tiles/:token/:z/:x/:y.png', pluginTileLimiter, asyn
 const media = require('../services/plugins/media');
 const { pluginMediaLimiter } = require('../middleware/rateLimit');
 
+// X-GC-Plugin (since 1.211.0): the parent page fetching for a frame (GC.mediaBytes, plugin-bridge.js) names the frame's
+// plugin — a URL of another plugin's file then answers 404, so a frame reads only its own plugin's bytes.
+function otherPlugin(req, hit) {
+  const want = req.get('x-gc-plugin');
+  return want != null && want !== hit.row.plugin;
+}
+
 router.get('/plugin-media/:token', pluginMediaLimiter, async (req, res) => {
   const hit = media.resolveToken(req.params.token);
   const p = hit ? plugins.get(hit.row.plugin) : null;
-  if (!hit || !p || !media.declOf(p)) return tileError(res, 404, 'not found');
+  if (!hit || !p || !media.declOf(p) || otherPlugin(req, hit)) return tileError(res, 404, 'not found');
   const left = Math.max(0, hit.exp - Math.floor(Date.now() / 1000));
   return media.send(req, res, hit.row, `private, max-age=${left}, immutable`);
 });
@@ -153,7 +160,7 @@ router.get('/plugin-media/:token/preview', pluginMediaLimiter, async (req, res) 
   const previews = require('../services/plugins/mediaPreviews');
   const hit = media.resolveToken(req.params.token, Date.now(), { preview: true });
   const p = hit ? plugins.get(hit.row.plugin) : null;
-  if (!hit || !p || !previews.declared(p)) return tileError(res, 404, 'not found');
+  if (!hit || !p || !previews.declared(p) || otherPlugin(req, hit)) return tileError(res, 404, 'not found');
   const left = Math.max(0, hit.exp - Math.floor(Date.now() / 1000));
   return previews.send(req, res, p, hit.row, `private, max-age=${left}, immutable`);
 });

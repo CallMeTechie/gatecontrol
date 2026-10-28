@@ -83,6 +83,22 @@
 // (pickPrincipalsOf), and the parent only takes the request from an
 // <iframe data-plugin-groups> — an attribute the server renders.
 //
+// Keys (since 1.211.0): window.GC.keys.get / put / remove — WebCrypto keys the
+// parent page keeps in its own IndexedDB (the frame's opaque origin has no
+// storage), per plugin and name, e.g. an end-to-end encryption's device key.
+// Only CryptoKey objects (or { publicKey, privateKey } of them) travel; a
+// secret or private key only when not extractable, so neither the parent nor
+// the frame can ever read its bytes.
+//
+// Media bytes (since 1.211.0): window.GC.mediaBytes(url, { start, end }) — the
+// parent fetches one of the plugin's own /plugin-media/<token> URLs (a range,
+// ≤ 16 MiB a call) and hands the bytes over (connect-src 'none' keeps the frame
+// from fetching), e.g. to decrypt a file in the frame.
+//
+// Tabs (since 1.211.0): window.GC.openTab(url) — the parent opens one of the
+// plugin's public endpoints (/plugin-public/<id>/…, publicEndpoints.js) in a
+// new tab, only during a click (the sandbox allows no popups).
+//
 // Inbox (plugin.json `ui.inbox`, portal frames only): window.GC.inbox.on(fn)
 // gets { available, unread, latest: { title, createdAt, priority } | null }
 // of the viewer's own notification inbox — the portal page's own state
@@ -283,6 +299,44 @@ const BRIDGE_CLIENT = `(function(){
         title: o.title == null ? '' : String(o.title).slice(0, 120) });
     });
   }
+  // since 1.211.0: keys of WebCrypto (CryptoKey, or { publicKey, privateKey }) kept by the parent page in its own
+  // IndexedDB, per plugin and name — the frame has no storage of its own. Secret and private keys only when not
+  // extractable. get(name) → the key | null; put(name, key) → true; remove(name) → boolean
+  function keyOp(op, name, value) {
+    return new Promise(function (resolve, reject) {
+      var id = ++seq;
+      pending[id] = { resolve: resolve, reject: reject };
+      pending[id].timer = setTimeout(function () { if (pending[id]) { delete pending[id]; reject(new Error('timeout')); } }, 30000);
+      post({ type: 'gc-keys', id: id, op: op, name: String(name == null ? '' : name), value: value === undefined ? null : value });
+    });
+  }
+  var keys = Object.freeze({
+    get: function (name) { return keyOp('get', name); },
+    put: function (name, key) { return keyOp('put', name, key); },
+    remove: function (name) { return keyOp('remove', name); }
+  });
+  // since 1.211.0: the bytes of one of the plugin's media URLs (/plugin-media/<token>, gc.media.url), fetched by the
+  // parent page — opts { start, end } (a range, ≤ 16 MiB) → { data: ArrayBuffer, start, end, total }
+  function mediaBytes(url, opts) {
+    return new Promise(function (resolve, reject) {
+      var o = opts && typeof opts === 'object' ? opts : {};
+      var id = ++seq;
+      pending[id] = { resolve: resolve, reject: reject };
+      pending[id].timer = setTimeout(function () { if (pending[id]) { delete pending[id]; reject(new Error('timeout')); } }, 5 * 60000);
+      post({ type: 'gc-media-bytes', id: id, url: String(url || ''), start: o.start == null ? null : Number(o.start), end: o.end == null ? null : Number(o.end) });
+    });
+  }
+  // since 1.211.0: open one of the plugin's public endpoints (/plugin-public/<id>/…) in a new tab — call it in a click
+  // → { ok: true } | { ok: false, code: 'no_gesture' | 'invalid' }
+  function openTab(url) {
+    return new Promise(function (resolve) {
+      var id = ++seq;
+      var done = function (d) { resolve(d && typeof d === 'object' ? d : { ok: false, code: 'failed' }); };
+      pending[id] = { resolve: done, reject: function (e) { done({ ok: false, code: (e && e.data && e.data.code) || 'failed' }); } };
+      pending[id].timer = setTimeout(function () { if (pending[id]) { delete pending[id]; done({ ok: false, code: 'timeout' }); } }, 30000);
+      post({ type: 'gc-open-tab', id: id, url: String(url || '') });
+    });
+  }
   // permissions.events: realtime events of the plugin ({ plugin, type, data })
   function on(name, fn) {
     if (name !== 'event' || typeof fn !== 'function') return;
@@ -354,6 +408,9 @@ const BRIDGE_CLIENT = `(function(){
     openSettings: function () { post({ type: 'gc-settings' }); },
     upload: upload,
     saveFile: saveFile,
+    keys: keys,
+    mediaBytes: mediaBytes,
+    openTab: openTab,
     on: on,
     off: off,
     inbox: inbox,

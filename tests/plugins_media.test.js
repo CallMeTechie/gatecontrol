@@ -380,6 +380,11 @@ describe('gc.media through the plugin process', () => {
     const forged = media.url('hello-plain', id, { ttlS: 600 });
     await supertest(app).get(forged).expect(404);
     await supertest(app).get('/plugin-media/garbage').expect(404);
+    // GC.mediaBytes (since 1.211.0): the parent names the frame's plugin — another plugin's file is refused
+    await supertest(app).get(url).set('X-GC-Plugin', 'hello-media').set('Range', 'bytes=0-9').expect(206);
+    await supertest(app).get(url).set('X-GC-Plugin', 'hello-plain').expect(404);
+    await supertest(app).get(url + '/preview').set('X-GC-Plugin', 'hello-plain').expect(404);
+    await supertest(app).get(url).set('X-GC-Plugin', '').expect(404);
   });
 
   it('delete removes row and file', async () => {
