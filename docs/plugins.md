@@ -775,6 +775,14 @@ page, the read-only portal widgets, the plugin frames and the plugin API
 (`/api/v1/portal/plugins/…`) — never "Meine Geräte", notification settings,
 account pages or the admin UI.
 
+A plugin needs no `permissions.kiosk` to show something on a kiosk device:
+its sections in the tab "Zuhause" (`ui.portal.sections`, `tab: 'home'`) are
+shown there whenever `portalVisible({ user, section })` says yes for the
+kiosk viewer — and its API decides what such a viewer may call (answer
+`user.kiosk` with as little as the section needs). Pictures for such a
+section: `gc.media.previews(ids, { user, previewOnly: true })` (since
+1.210.0, see "Previews") — the preview in display size, never the file.
+
 ## Notifications
 
 `gc.notify` reaches the GateControl apps through the notification center
@@ -1407,7 +1415,8 @@ the device that uploaded the file sends one along. Code:
     counted against the plugin API's 240.
   * frames: `/plugin-media/<token>/preview[?size=large]` — the capability
     URL of `gc.media.url` with `/preview` appended (same token, same expiry);
-    `gc.media.previews` hands them out ready to use.
+    `gc.media.previews` hands them out ready to use (since 1.210.0 also as
+    preview-only URLs, see below).
   * `200 image/jpeg`, `Cache-Control: private, max-age=31536000, immutable`
     (apps; a media id's preview does not change — a new version of a file is
     a new media id) or until the token expires (frames), `ETag`, `nosniff`,
@@ -1427,7 +1436,16 @@ the device that uploaded the file sends one along. Code:
   for frames (signed for `user` and `ttlS` like `gc.media.url`); `appUrl` —
   `/api/v1/client/plugins/<id>/media/<mediaId>/preview` for the apps. Both
   take `?size=large`. `ERR_MEDIA_DENIED` without `media.previews`,
-  `ERR_INVALID` for bad ids, `user`, `ttlS`.
+  `ERR_INVALID` for bad ids, `user`, `ttlS`, `previewOnly`.
+  * **Preview-only URLs** (since 1.210.0): `{ previewOnly: true }` signs `url`
+    with a token of its own that opens `/plugin-media/<token>/preview`
+    (`?size=large` too) and nothing else — `/plugin-media/<token>` (the file
+    itself) answers `404` with it; every state then has `previewOnly: true`.
+    For a viewer who may see a picture in display size but not have the
+    original (full resolution, EXIF with the place it was taken) — e.g. the
+    photo frame of GateControl Drive on a kiosk device. An older GateControl
+    drops the option (states without `previewOnly`, the ordinary URL): a
+    plugin that relies on it checks `previewOnly === true`.
 * **At rest** next to the file: `<file>.ps` (small) and `<file>.pl`
   (large), AES-256-GCM under a key derived (HKDF) from the file's own key;
   `<file>.pc` marks a device preview, `<file>.px` a file the server could not

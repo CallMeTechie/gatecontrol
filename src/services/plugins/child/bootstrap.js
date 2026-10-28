@@ -350,10 +350,11 @@ function makeGc(info) {
       delete: (id) => hostCall('media.delete', { id }),
       usage: () => hostCall('media.usage', {}),
       url: (id, opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('media.url', { id, user: o.user, ttlS: o.ttlS }); },
-      // since 1.208.0 (media.previews): previews(ids, { user, ttlS }) → { <id>: null | { ready, source, url, appUrl } }
+      // since 1.208.0 (media.previews): previews(ids, { user, ttlS }) → { <id>: null | { ready, source, url, appUrl } };
+      // since 1.210.0 { previewOnly: true }: URLs that open the preview only, never the file
       previews: (ids, opts) => {
         const o = opts && typeof opts === 'object' ? opts : {};
-        return hostCall('media.previews', { ids: Array.isArray(ids) ? ids : [], user: o.user, ttlS: o.ttlS });
+        return hostCall('media.previews', { ids: Array.isArray(ids) ? ids : [], user: o.user, ttlS: o.ttlS, previewOnly: o.previewOnly });
       },
       fetch: (url, opts) => {
         const o = opts && typeof opts === 'object' ? opts : {};
