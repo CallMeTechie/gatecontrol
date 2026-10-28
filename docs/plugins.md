@@ -2251,7 +2251,12 @@ disable/uninstall and when the server shuts down.
   (see "plugin.json").
 * **Portal** (`src/services/plugins/portal.js`), for identified viewers only:
   * **own tab**: `ui.portal.label`/`icon` → a tab `plg-<id>` with the plugin's
-    frame (`/portal/plugins/<id>/frame`).
+    frame (`/portal/plugins/<id>/frame`). A direct link
+    `/portal?<key>=<value>#plg-<id>` hands its query on to that frame
+    (`/portal/plugins/<id>/frame?<key>=<value>`, read from the frame's own
+    `location.search`): keys `[a-z][a-z0-9_]{0,31}` except `section`, values
+    ≤ 200 characters, ≤ 8 of them; the portal's address bar keeps just the
+    hash.
   * **sections in GateControl tabs**: `ui.portal.sections: [{ id, tab, title,
     order }]` (≤ 8; `tab` = `home` ("Zuhause") or `car` ("Fahrzeug"); `order`
     0–1000, default 100) → each section is its own sandboxed frame
