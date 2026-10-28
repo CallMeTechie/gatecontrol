@@ -1,6 +1,6 @@
 {% extends theme + "/layout.njk" %}
 
-{#- Settings (docs: PR "redesigned settings"). One page, 22 sections in eight
+{#- Settings (docs: PR "redesigned settings"). One page, 23 sections in eight
     groups, left section nav (a select at ≤ 900 px), one save model: every
     field with data-st-field belongs to its section; changes collect in the
     sticky save bar and are saved per section (public/js/settings.js).
@@ -124,7 +124,8 @@
     ['geoip', 'M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11zM12 10v.5', ''],
     ['portal', 'M3 9l9-6 9 6v11H3zM9 20v-6h6v6', ''] ] },
   { id: 'extensions', items: [
-    ['plugins', 'M14 4h-4v3H7v4h3v3h4v-3h3V7h-3zM5 20h14', ''] ] },
+    ['plugins', 'M14 4h-4v3H7v4h3v3h4v-3h3V7h-3zM5 20h14', ''],
+    ['ki', 'M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8zM18.5 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z', ''] ] },
   { id: 'maintenance', items: [
     ['backup', 'M12 3v12M7 10l5 5 5-5M4 21h16', ''],
     ['updates', 'M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5', ''],
@@ -554,6 +555,11 @@
 {% include "aurora/partials/settings-plugins.njk" %}
 </section>
 
+{# ══ Erweiterungen · KI-Anbieter ══════════════════════════════════════ #}
+<section class="st-section" data-section="ki" aria-labelledby="st-h-ki" data-st-keywords="{{ t('st.kw.ki') }}" hidden>
+{% include "aurora/partials/settings-ai.njk" %}
+</section>
+
 {# ══ Wartung · Backups ════════════════════════════════════════════════ #}
 <section class="st-section" data-section="backup" aria-labelledby="st-h-backup" data-st-keywords="{{ t('st.kw.backup') }}" hidden>
   <div class="st-sec-head"><h2 class="st-sec-title" id="st-h-backup" tabindex="-1">{{ t('st.nav.backup') }}</h2><p class="st-sec-desc">{{ t('st.desc.backup') }}</p></div>
@@ -894,6 +900,18 @@ chmod +x update.sh</pre>
 </div>
 {% endif %}
 
+{# ── Dialog: the log of AI requests (metadata only) ─────────────────── #}
+<div class="modal-overlay st-modal" id="ai-log-modal" style="display:none">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ai-log-title">
+    <div class="modal-head"><span class="modal-title" id="ai-log-title">{{ t('ai.log.title') }}</span><button type="button" class="modal-close" data-close-modal aria-label="{{ t('common.close') }}">&times;</button></div>
+    <div class="modal-body st-dlg">
+      <p class="st-hint">{{ t('ai.log.hint') }}</p>
+      <ul class="st-list" id="ai-log-list" aria-labelledby="ai-log-title"></ul>
+    </div>
+    <div class="modal-foot"><button type="button" class="st-btn" data-close-modal>{{ t('common.close') }}</button></div>
+  </div>
+</div>
+
 {# ── Dialog: stop WireGuard (admin password) ─────────────────────── #}
 <div class="modal-overlay st-modal" id="st-wgstop-modal" style="display:none">
   <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="st-wgstop-title" aria-describedby="st-wgstop-text">
@@ -908,7 +926,7 @@ chmod +x update.sh</pre>
 
 <script type="application/json" id="st-catalogue" nonce="{{ cspNonce }}">{{ notifyCatalogue | default('[]') | safe }}</script>
 {# All st.* strings plus the prefixes the helper scripts read (src/routes/index.js, stringsWithPrefix). #}
-<script type="application/json" id="st-i18n" data-prefixes="st. settings. offsite. premig. autoupdate. autobackup. updatesh. client_policy. client_updates. pihole.cfg. tags. peer_groups. license. common. security.lockout. error.settings. error.webhooks. error.peer_groups. error.client_policy. error.client_updates. error.wireguard. plugins." nonce="{{ cspNonce }}">{{ settingsI18n | default('{}') | safe }}</script>
+<script type="application/json" id="st-i18n" data-prefixes="st. settings. offsite. premig. autoupdate. autobackup. updatesh. client_policy. client_updates. pihole.cfg. tags. peer_groups. license. common. security.lockout. error.settings. error.webhooks. error.peer_groups. error.client_policy. error.client_updates. error.wireguard. plugins. ai." nonce="{{ cspNonce }}">{{ settingsI18n | default('{}') | safe }}</script>
 {% endblock %}
 
 {% block scripts %}
@@ -916,6 +934,7 @@ chmod +x update.sh</pre>
 <script src="/js/ops-ui.js?v={{ appVersion }}"></script>
 <script src="/js/client-policy-form.js?v={{ appVersion }}"></script>
 <script src="/js/settings-ui.js?v={{ appVersion }}"></script>
+<script src="/js/settings-ai.js?v={{ appVersion }}"></script>
 <script src="/js/settings-plugins.js?v={{ appVersion }}"></script>
 <script src="/js/settings.js?v={{ appVersion }}"></script>
 {% endblock %}

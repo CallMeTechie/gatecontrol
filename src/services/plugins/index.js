@@ -150,6 +150,8 @@ function permissionSummary(m, lang) {
     // person groups (docs/plugins.md "Groups"): 'read' | 'manage' | null
     groups: p.groups === 'read' || p.groups === 'manage' ? p.groups : null,
     servicesProvided: m.services && m.services.provides ? Object.values(m.services.provides).map((x) => loc(x.label, lang)) : [],
+    // since 1.211.0: requests to the AI provider set up in GateControl (gc.ai, docs/plugins.md "AI requests")
+    ai: p.ai ? { purpose: loc(p.ai.purpose, lang), capabilities: p.ai.capabilities.slice() } : null,
   };
 }
 
@@ -281,6 +283,8 @@ async function install(token, opts = {}) {
   });
   if (existing && existing.version !== m.version) rmrf(codeDir(m.id, existing.version));
   staging.delete(token);
+  // permissions.ai: the administrator agreed with the install (or the update that added it)
+  try { require('../ai').onInstalled(m, existing ? existing.manifest : null); } catch (e) { logger.warn({ plugin: m.id, err: e.message }, 'ai policy not written'); }
 
   const verb = existing ? 'updated' : 'installed';
   const auto = opts.by === 'auto';
@@ -430,6 +434,8 @@ async function removeInstalled(p, mode) {
   require('./events').closeStreams(id);
   // its public links end with the plugin, whatever happens to its data
   require('./publicLinks').removeAll(id);
+  // and the consent to AI requests (a new install asks again)
+  require('../ai').forgetPlugin(id);
   rmrf(path.join(pluginsRoot(), id));
   registry.remove(id);
   if (mode === 'wipe') {

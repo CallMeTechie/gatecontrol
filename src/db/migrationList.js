@@ -2896,6 +2896,64 @@ const migrations = [
       );`,
     detect: (db) => hasColumn(db, 'plugin_public_links', 'opens') && tableExists(db, 'plugin_public_link_uploads'),
   },
+  {
+    version: 118,
+    name: 'ai_service',
+    // The AI service gc.ai (docs/plugins.md "AI requests", services/ai/):
+    //   ai_providers      one row per provider ('openai' | 'anthropic' |
+    //                     'gemini' | 'openrouter'): the API key encrypted
+    //                     with the server key (utils/crypto, never read
+    //                     back), its last four characters, the chosen
+    //                     models, the capabilities found by the last test,
+    //                     model_info: what the model list said of the chosen
+    //                     model (OpenRouter: structured outputs, price).
+    //   ai_plugin_policy  per plugin with permissions.ai: allowed (1 after
+    //                     the administrator agreed in the install dialog),
+    //                     provider (NULL = the default one).
+    //   ai_requests       the log, metadata only (no input, no answer),
+    //                     kept 90 days; cost in millionths of a cent (EUR),
+    //                     estimated = 1 when no price was known.
+    sql: `
+      CREATE TABLE IF NOT EXISTS ai_providers (
+        id            TEXT PRIMARY KEY,
+        enabled       INTEGER NOT NULL DEFAULT 0,
+        key_encrypted TEXT,
+        key_hint      TEXT,
+        model_text    TEXT,
+        model_audio   TEXT,
+        capabilities  TEXT,
+        model_info    TEXT,
+        checked_at    INTEGER,
+        check_error   TEXT
+      );
+      CREATE TABLE IF NOT EXISTS ai_plugin_policy (
+        plugin_id     TEXT PRIMARY KEY,
+        allowed       INTEGER NOT NULL DEFAULT 0,
+        provider      TEXT
+      );
+      CREATE TABLE IF NOT EXISTS ai_requests (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        at              INTEGER NOT NULL,
+        plugin_id       TEXT NOT NULL,
+        user_id         INTEGER,
+        task            TEXT,
+        provider        TEXT,
+        model           TEXT,
+        kind            TEXT NOT NULL,
+        input_tokens    INTEGER NOT NULL DEFAULT 0,
+        output_tokens   INTEGER NOT NULL DEFAULT 0,
+        audio_seconds   INTEGER NOT NULL DEFAULT 0,
+        media_count     INTEGER NOT NULL DEFAULT 0,
+        cost_microcents INTEGER NOT NULL DEFAULT 0,
+        duration_ms     INTEGER NOT NULL DEFAULT 0,
+        outcome         TEXT NOT NULL,
+        fallback        INTEGER NOT NULL DEFAULT 0,
+        estimated       INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_ai_requests_at ON ai_requests(at);
+      CREATE INDEX IF NOT EXISTS idx_ai_requests_plugin ON ai_requests(plugin_id, at);`,
+    detect: (db) => tableExists(db, 'ai_providers') && tableExists(db, 'ai_plugin_policy') && tableExists(db, 'ai_requests'),
+  },
 ];
 
 module.exports = { migrations };

@@ -119,6 +119,24 @@ module.exports = (ctx) => {
         await theme(page, 'light');
         await shot(page, 'settings-' + name + '-light');
       }
+      // ── KI-Anbieter (settings-ai.js): four provider cards, the general settings, no key on the page ──
+      await page.click('.st-nav-item[data-section="ki"]');
+      await idle(page);
+      const cards = await page.$$eval('#ai-providers .ai-prov', (ns) => ns.map((n) => n.dataset.provider));
+      step('KI-Anbieter: four provider cards', cards.join() === 'openai,anthropic,gemini,openrouter', cards.join());
+      step('KI-Anbieter: plugin list and budget are filled', await page.isVisible('#ai-plugins li') && (await page.inputValue('#ai-budget')) !== '');
+      await shot(page, 'settings-ai-light');
+      await theme(page, 'dark');
+      await shot(page, 'settings-ai-dark');
+      await page.setViewportSize({ width: 390, height: 860 });
+      await page.goto(BASE + '/settings#ki');
+      await ready(page);
+      await idle(page);
+      const aiOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      step('KI-Anbieter: no horizontal overflow at 390 px', aiOverflow <= 1, `overflow ${aiOverflow}px`);
+      await shot(page, 'settings-ai-phone');
+      await page.setViewportSize({ width: 1440, height: 1000 });
+
       await theme(page, 'dark');
       await page.setViewportSize({ width: 390, height: 860 });
       await page.goto(BASE + '/settings#anmeldung');

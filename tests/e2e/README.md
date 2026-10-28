@@ -22,7 +22,8 @@ scenarios/05-dashboard.js /dashboard: Kacheln, Traffic-Diagramm (x-Achse,
 scenarios/06-settings.js /settings: Bereiche (#bereich, alte Tab-Namen, ?tab=),
                         Suche, Speicherleiste (ändern, speichern, neu laden,
                         verwerfen, 400 mit Feldfehler, Rückfrage beim Wechsel),
-                        Webhook-Dialog mit Ereignisauswahl, hell/dunkel, 390 px
+                        Webhook-Dialog mit Ereignisauswahl, KI-Anbieter
+                        (Anbieter-Karten, Einstellungen), hell/dunkel, 390 px
 scenarios/07-users.js   /users: Liste + Filter, Zeile → Profil /users/:id, alter
                         Link ?user=&tab= landet im Profil, Tabs per Tastatur
                         und in der Adresse, Kopf-Aktionen (Bearbeiten, Gerät

@@ -120,6 +120,12 @@ function hostCall(api, args, timeoutMs = HOST_TIMEOUT_MS) {
   });
 }
 
+// gc.ai.extract / generate: the host allows twice the request's time limit (+ 15 s), so does the child
+function aiTimeout(opts) {
+  const t = opts && Number.isFinite(opts.timeoutMs) ? Math.max(1000, Math.min(180000, opts.timeoutMs)) : 60000;
+  return 2 * t + 20000;
+}
+
 function fmt(args) {
   return args.map((a) => {
     if (a instanceof Error) return a.stack || a.message;
@@ -384,6 +390,19 @@ function makeGc(info) {
       revoke: (token) => hostCall('publicLinks.revoke', { token }),
       events: (token, opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('publicLinks.events', { token, limit: o.limit, before: o.before }); },
       uploads: (token) => hostCall('publicLinks.uploads', { token }),
+    }),
+    /**
+     * permissions.ai (since 1.211.0, docs/plugins.md "AI requests"): the AI provider set up in GateControl.
+     * available({ capability }) → boolean (asks no provider); status() → { available, mediaAllowed, capabilities, budgetLeftCents };
+     * extract({ task, user, instructions, input: [{ type: 'text', label, text } | { type: 'media', mediaId }], schema,
+     * maxOutputTokens, timeoutMs }) → { ok, data, provider, model, usage: { inputTokens, outputTokens, costCents }, fallback };
+     * generate({ task, user, instructions, input, maxOutputTokens, timeoutMs }) → { ok, text, provider, model, usage, fallback }
+     */
+    ai: Object.freeze({
+      available: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('ai.available', { capability: o.capability }); },
+      status: () => hostCall('ai.status', {}),
+      extract: (opts) => hostCall('ai.extract', opts && typeof opts === 'object' ? opts : {}, aiTimeout(opts)),
+      generate: (opts) => hostCall('ai.generate', opts && typeof opts === 'object' ? opts : {}, aiTimeout(opts)),
     }),
     /** permissions.devices (since 1.193.0): list({ userId }) → [{ id, name, platform, clientType, appVersion, online, lastSeen, via }] */
     devices: Object.freeze({

@@ -2,7 +2,7 @@
 
 // Settings page (templates/aurora/pages/settings.njk).
 //
-// Structure: 22 sections (<section data-section>), one visible at a time,
+// Structure: 23 sections (<section data-section>), one visible at a time,
 // chosen in the grouped nav (a select at ≤ 900 px) and kept in the address:
 // /settings#<section>; old tab names, old element ids and ?tab= still work
 // (GCSettingsUI.resolveLocation).

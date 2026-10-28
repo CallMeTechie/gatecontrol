@@ -1307,6 +1307,25 @@ async function targetUpload(plugin, args) {
   return fetchResult(res, u.o);
 }
 
+// ─── AI requests (permissions.ai, services/ai/, since 1.211.0) ────
+//
+// gc.ai.available / status / extract / generate — docs/plugins.md "AI
+// requests". The plugin names pictures by media id; the AI service reads
+// them itself. No key and no picture byte ever reaches the plugin process.
+
+function aiCallTimeout(args) {
+  const { LIMITS: AI } = require('../ai');
+  const t = args && Number.isFinite(args.timeoutMs) ? Math.max(AI.timeoutMinMs, Math.min(AI.timeoutMaxMs, args.timeoutMs)) : AI.timeoutDefaultMs;
+  return 2 * t + 15000;
+}
+
+async function aiCall(plugin, op, args) {
+  const ai = require('../ai');
+  if (op === 'available') return ai.available(plugin, args);
+  if (op === 'status') return ai.status(plugin);
+  return ai.request(plugin, op, args);
+}
+
 /**
  * How long the host waits for one call (runtime.js): TIMEOUTS.hostCall,
  * longer for the calls moving big files (since 1.193.0).
@@ -1322,6 +1341,8 @@ function callTimeout(api, args) {
   if (api === 'groups.remove') return 45000;
   // the licence server answers within 20 s (licensing.refresh), then the plugins are reconciled
   if (api === 'license.refresh') return 45000;
+  // gc.ai: a provider call (+ correction round or fallback) within twice the request's time limit
+  if (api === 'ai.extract' || api === 'ai.generate') return aiCallTimeout(args);
   return TIMEOUTS.hostCall;
 }
 
@@ -1697,6 +1718,10 @@ async function handle(plugin, api, args, ctx) {
     case 'events.emit': return eventsEmit(plugin, args);
     case 'services.call': return servicesCall(plugin, args);
     case 'services.available': return servicesAvailable(plugin, args);
+    case 'ai.available': return aiCall(plugin, 'available', args);
+    case 'ai.status': return aiCall(plugin, 'status', args);
+    case 'ai.extract': return aiCall(plugin, 'extract', args);
+    case 'ai.generate': return aiCall(plugin, 'generate', args);
     case 'license.status': {
       const s = licensing.status(plugin);
       return { required: s.required, licensed: s.licensed, state: s.state, expiresAt: s.expiresAt || null };
@@ -1711,6 +1736,6 @@ async function handle(plugin, api, args, ctx) {
 
 module.exports = {
   handle, closeSockets, HostApiError, ACTIONS_PER_MINUTE, CHAT_PER_HOUR, CHAT_PER_USER_HOUR, SERVICES_PER_HOUR, SERVICE_JSON_MAX, SERVICE_PAYLOAD_MAX,
-  DATA_PER_HOUR, HANDOVER_PER_HOUR, callTimeout, handOverAllowed,
+  DATA_PER_HOUR, HANDOVER_PER_HOUR, callTimeout, aiCallTimeout, handOverAllowed,
   flushChatSummary, _resetActionsBudgetForTest, _resetBudgetsForTest, _lookup: null, _udpTargets: null, _serviceTimeoutMs: null,
 };

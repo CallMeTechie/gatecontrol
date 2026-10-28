@@ -78,7 +78,7 @@ caption, value?}` — the wireframes of "So sieht es bei dir aus"), `needs`
 (what it needs besides GateControl, e.g. an API token) and `languages`
 (`de`, `en`); symbols: `page app portal widget tile action bell clock data
 network chat key location users door calendar camera car bulb server shield
-link cloud` (`cloud` since 1.206.0). Per version `notes` (its CHANGELOG section, Markdown). Without them a
+link cloud ai` (`cloud` since 1.206.0, `ai` — AI requests, `permissions.ai` — since 1.211.0). Per version `notes` (its CHANGELOG section, Markdown). Without them a
 plugin is listed under "Weitere" with the default icon, its page shows only
 what the catalogue knows.
 
@@ -315,7 +315,8 @@ unsigned build of the same id.
     "services": ["gatecontrol-messenger:send_message"],
     "publicLinks": true,
     "devices": true,
-    "groups": "read"
+    "groups": "read",
+    "ai": { "purpose": { "de": "Dokumente erkennen", "en": "Recognise documents" }, "capabilities": ["text", "vision"] }
   },
   "media": { "maxBytes": 26214400, "types": ["image/jpeg", "image/webp", "audio/ogg", "application/pdf"], "quotaDefault": "10GB" },
   "services": { "provides": { "scene": { "label": { "de": "Szene schalten", "en": "Switch a scene" } } } },
@@ -513,6 +514,13 @@ unsigned build of the same id.
   `remove`). The install dialog shows "Gruppen: Gruppen und Mitglieder lesen"
   or "Gruppen: Gruppen und Mitglieder lesen und eigene Gruppen verwalten",
   marked as sensitive. Errors `permissions.groups: invalid`. See "Groups".
+* `permissions.ai` (since 1.211.0): `{ "purpose": {de, en}, "capabilities":
+  ["text", "vision", "audio", "video"] }` — requests to the AI provider set up
+  in GateControl (`gc.ai.*`). The install dialog shows "KI-Anfragen: <purpose>
+  (Text, Bilder) über den in GateControl eingerichteten KI-Anbieter …",
+  marked as sensitive; the administrator can block the plugin later. Errors
+  `permissions.ai: invalid`, `permissions.ai.capabilities: needs "text"`. See
+  "AI requests".
 * `services` (optional, since 1.177.0): `{ "provides": { "<name>": { "label" } } }`
   — services other plugins may call (`<name>` `[a-z][a-z0-9_]{0,31}`, ≤ 32,
   label text ≤ 60, no other keys; errors `services: invalid`,
@@ -717,6 +725,8 @@ module.exports = {
 | `gc.publicLinks.create/list/get/revoke` | since 1.193.0: download links without login for some of the plugin's media (`publicLinks`, only while an administrator allows them) — see "Public links" |
 | `gc.devices.list({ userId })` | since 1.193.0: the person's GateControl apps `[{ id, name, platform, clientType, appVersion, online, lastSeen, via }]` (`devices`) — see "Devices" |
 | `gc.notify({ …, users, devices, silent, data })` | since 1.193.0: only to these devices of `users`; `silent: true` a data notification without display (`devices`) — see "Devices" |
+| `gc.ai.available({ capability })` / `gc.ai.status()` | since 1.211.0: is AI usable for the plugin (asks no provider) / `{ available, mediaAllowed, capabilities, budgetLeftCents }` (`ai`) — see "AI requests" |
+| `gc.ai.extract({ task, user, instructions, input, schema, maxOutputTokens, timeoutMs })` / `gc.ai.generate({ … })` | since 1.211.0: structured data checked against a schema / free text from the AI provider set up in GateControl → `{ ok, data \| text, provider, model, usage, fallback }` (`ai`) — see "AI requests" |
 | `gc.groups.list/get/members/isMember/leadersOf(…)` | the person groups of GateControl (`groups`) — see "Groups" |
 | `gc.groups.ensure({ key, name, kind, parentKey, members })` / `gc.groups.remove(key)` | the plugin's own groups (`groups: "manage"`) — see "Groups" |
 | `gc.notify({ …, groups: [id] })` | to the groups' enabled members, subgroups included, resolved at send time (`groups`) — see "Groups" |
@@ -1865,6 +1875,212 @@ single device. Code: `src/services/plugins/devices.js`.
   transfer Y".
 * `devices` and `silent` need `permissions.devices` (`ERR_DEVICES_DENIED`);
   on a chat topic they are `ERR_INVALID`.
+
+## AI requests (`permissions.ai`)
+
+Since 1.211.0. GateControl has one AI service for every plugin: the
+administrator sets up the providers once (**Einstellungen › KI-Anbieter**),
+plugins ask GateControl through `gc.ai` — never the provider. No key reaches
+a plugin process, an app or a browser; a plugin names pictures by media id and
+never has their bytes in hand. Without a provider set up the service is simply
+off: `gc.ai.available()` is `false` and the plugin hides its AI features.
+Code: `src/services/ai/` (service, `schema.js`, `providers/*.js`), admin API
+`src/routes/api/ai.js`, page `templates/aurora/partials/settings-ai.njk` +
+`public/js/settings-ai.js`.
+
+### Permission
+
+```json
+"permissions": {
+  "ai": {
+    "purpose": { "de": "Dokumente erkennen und einordnen", "en": "Recognise and file documents" },
+    "capabilities": ["text", "vision"]
+  }
+}
+```
+
+* `purpose` (text or `{de, en}`, ≤ 200 characters) — shown in the install
+  dialog: "KI-Anfragen: Dokumente erkennen und einordnen (Text, Bilder) über
+  den in GateControl eingerichteten KI-Anbieter – die Inhalte gehen an diesen
+  Anbieter, dessen Bedingungen gelten", marked as sensitive.
+* `capabilities`: `text` (required), `vision` (pictures), `audio`, `video`
+  — what the plugin may ask for. `audio` and `video` may be declared already;
+  this version answers neither (`gc.ai.available({ capability: 'audio' })` is
+  `false`, a sound or video file as input is `ERR_AI_CAPABILITY`).
+* Errors: `permissions.ai: invalid`, `permissions.ai.capabilities: needs "text"`.
+* With the consent of the install dialog the plugin is allowed
+  (`ai_plugin_policy.allowed = 1`). An update that adds `permissions.ai` (or
+  changes purpose or capabilities) asks for other permissions: it is never
+  installed automatically and needs the administrator's consent like every
+  new permission. An update with the same permission keeps what the
+  administrator set; uninstalling forgets the consent.
+* The administrator can block a plugin or fix it to one provider on the
+  settings page ("Welche Plugins dürfen KI nutzen?").
+
+Catalogue metadata (`catalog-meta.json` of the plugins repository) names it
+in "Das darf das Plugin" with the symbol `ai` and the sensitive tag, e.g.
+`{ "icon": "ai", "title": { "de": "KI-Anfragen", "en": "AI requests" }, "text":
+{ "de": "Erkennt … über den in GateControl eingerichteten KI-Anbieter (eigener
+API-Schlüssel)", "en": "…" }, "tag": { "de": "sensibel", "en": "sensitive" } }`.
+
+### Host API `gc.ai`
+
+A plugin that also runs on older versions checks `typeof gc.ai?.extract === 'function'` first.
+
+```js
+// Is AI usable for this plugin? Asks no provider, costs nothing.
+await gc.ai.available();                          // → true | false (capability 'text')
+await gc.ai.available({ capability: 'vision' });  // a provider with pictures, and "Bilder an KI senden" on
+
+await gc.ai.status();
+// → { available: true, mediaAllowed: false, capabilities: ['text'], budgetLeftCents: 812.5 }
+//   (not available: { available: false, mediaAllowed, capabilities: [], budgetLeftCents: null })
+
+// Structured extraction: the answer is checked against the schema
+const r = await gc.ai.extract({
+  task: 'doc_insight',                 // [A-Za-z][A-Za-z0-9_.-]{0,39}, in the log
+  user: req.user.id,                   // optional, for the log (an enabled person)
+  instructions: PROMPT,                // system instruction (≤ the text limit below)
+  input: [
+    { type: 'text', label: 'Dateiname', text: name },
+    { type: 'text', label: 'Text', text: ocrText },
+    { type: 'media', mediaId },        // a picture of the plugin's own media (only while pictures are allowed)
+  ],
+  schema: SCHEMA,                      // JSON Schema subset, below
+  maxOutputTokens: 2000,               // 1 … 32000, default 4000
+  timeoutMs: 60000,                    // 1000 … 180000, default 60000
+});
+// → { ok: true, data: { … }, provider: 'anthropic', model: '…',
+//     usage: { inputTokens, outputTokens, costCents }, fallback: false }
+
+// Free text (summaries, translations): the same, without schema
+const g = await gc.ai.generate({ task, user, instructions, input, maxOutputTokens, timeoutMs });
+// → { ok: true, text: '…', provider, model, usage, fallback }
+```
+
+* `provider` is `openai` | `anthropic` | `gemini` | `openrouter`, `model` the
+  model the administrator chose there; `fallback: true` when the answer came
+  from the fallback provider. `costCents` (euro cents, 4 decimals at most)
+  includes a correction round and a failed first try.
+* Limits: instructions and every text together ≤ 200,000 characters, ≤ 64
+  inputs, labels ≤ 100 characters, ≤ 8 pictures (JPEG, PNG, WebP, GIF, each
+  ≤ 10 MB; the host turns them upright, scales them to at most 2048 px a side
+  and sends JPEG), answer ≤ 64 KB (`data` as JSON / `text`). The plugin
+  must declare `media`; the files may still be unclaimed.
+* Time: `timeoutMs` per provider call; the whole request (with a correction
+  round or the fallback) takes at most twice that.
+* 120 requests per hour and plugin (setting "Anfragen pro Stunde und
+  Plugin"), against a faulty plugin; no limit per person.
+
+**Errors** are thrown like those of the other host APIs (`e.code`):
+
+| Code | Meaning | The plugin should |
+|---|---|---|
+| `ERR_INVALID` | invalid arguments, unknown `mediaId`, a schema outside the subset | fix the call |
+| `ERR_AI_DENIED` | no `permissions.ai`, blocked by the administrator, capability not declared | hide the function |
+| `ERR_AI_NOT_CONFIGURED` | no provider set up (or the plugin's fixed one is not), or `GC_AI=off` | fall back to manual entry |
+| `ERR_AI_MEDIA_DISABLED` | pictures sent while "Bilder & Videos an KI senden" is off — before any provider sees anything | ask again with the text alone |
+| `ERR_AI_CAPABILITY` | no allowed provider can do it (or the plugin's fixed one cannot); sound or video input | tell the person |
+| `ERR_AI_BUDGET` | the monthly budget of the server is used up | show "limit reached" |
+| `ERR_RATE_LIMIT` | requests per hour exceeded | try later |
+| `ERR_AI_PROVIDER` | the provider (and the fallback) answered with an error — the message never carries a key | show "failed", retry |
+| `ERR_AI_INVALID_OUTPUT` | the answer did not match the schema even after one correction round, or was larger than 64 KB | as above |
+| `ERR_TIMEOUT` | the provider did not answer in time (and the fallback neither) | as above |
+
+**Schema subset** (`src/services/ai/schema.js`): `type` (`object`, `array`,
+`string`, `number`, `integer`, `boolean`), `properties`, `required`, `items`,
+`enum` (strings, on a string), `minimum` / `maximum`, `maxLength`,
+`maxItems`, `nullable`, `description`. The root is an object; at most 8
+levels, 100 properties per object, 32 KB. Any other keyword is `ERR_INVALID`,
+so a schema works with all four providers. The answer is checked by
+GateControl, not by the provider: unknown properties are dropped, an optional
+property sent as `null` is dropped; a mismatch gets one correction round with
+the list of errors, then `ERR_AI_INVALID_OUTPUT`.
+
+### A request
+
+permission + consent + capability → `GC_AI` → picture switch → rate limit →
+provider → budget (reserved) → pictures read by the host → call → schema
+check → cost booked, log row.
+
+* **Provider**: the plugin's fixed provider (no routing, no fallback;
+  `ERR_AI_CAPABILITY` when it cannot do it), else the default provider when
+  it can do it, else the next one set up that can (for pictures: one with
+  `vision`). "Set up" = switched on, key readable, model chosen.
+* **Fallback**: on a timeout, 429, 5xx or no connection exactly one try at the
+  fallback provider (set up, able, not the plugin's fixed one). 400/401/403
+  never fall back — that is a problem of the content or the key.
+* **Budget**: the estimate (characters ÷ 4 + ~1600 tokens per picture as
+  input, plus `maxOutputTokens`, at the dearer of the two providers) is
+  reserved against what is left of the server's monthly budget; not enough is
+  `ERR_AI_BUDGET`. After the answer the real cost is booked. At 80 % and at
+  100 % the administrators get `ai_budget_warning` / `ai_budget_reached`
+  (activity log, notification center row "KI-Budget"), each once a month.
+  The month starts on the 1st at 00:00 in the server's time zone.
+* **Prices**: OpenRouter sends the cost of each request (and its model list
+  the prices). For OpenAI, Anthropic and Gemini the administrator enters the
+  prices of the chosen models (US dollars per million tokens, "Preise je
+  Modell"); without one a deliberately high default price of the provider is
+  used and the row is marked "geschätzt" (`estimated`). Shown in euros, the
+  rate is a setting (default 0.92 €/$), no rate service is asked.
+
+### Administration
+
+**Einstellungen › KI-Anbieter**: one card per provider (key — shown only as
+its last four characters, *Testen*, model choice from the provider's list,
+switch, status), "Welche Plugins dürfen KI nutzen?" (switch and provider per
+plugin), "Verbrauch diesen Monat" against the limit (by plugin and provider),
+"Standard & Ausweich" (default and fallback provider, "Bilder & Videos an KI
+senden" — default **off** —, monthly limit — default 10 € —, requests per
+hour, exchange rate, prices) and the request log.
+
+* *Testen* fetches the provider's model list: it checks the key at no cost
+  and fills the model choice (kept an hour). Model names are never built in.
+* Keys are stored encrypted with the server key (`utils/crypto`), never read
+  back; a new key replaces the old one, `key: ''` deletes it. They go into the
+  backup encrypted; after a restore on a server with another key the provider
+  reads "Schlüssel neu eingeben".
+* Never in a log: the logger redacts `authorization`, `x-api-key`,
+  `x-goog-api-key` (and cookies) wherever headers are logged; provider error
+  messages are cleaned of the key before they are stored or passed on.
+* Activity log: `ai_provider_key_set` / `ai_provider_key_removed`,
+  `ai_plugin_allowed` / `ai_plugin_blocked`, `ai_settings_changed`,
+  `ai_budget_warning` / `ai_budget_reached`.
+* Log `ai_requests`: metadata only (time, plugin, person, task, provider,
+  model, kind, tokens, pictures, cost, duration, outcome — `ok` or the error
+  code —, fallback, estimated), kept 90 days. No input, no answer.
+
+API (admin session + CSRF; an API token gets 403):
+
+* `GET /api/v1/ai` → `{ enabled, providers: [{ id, name, enabled, configured, keySet, keyState: none|ok|invalid, keyHint, modelText, modelAudio, capabilities, checkedAt, checkError, models }], defaults: { provider, fallback }, mediaAllowed, perHour, eurPerUsd, priceOverrides, budget: { cents, usedCents, month } }`
+* `PUT /api/v1/ai/providers/:id` `{ key?, enabled?, modelText?, modelAudio? }` (`key: ''` deletes it; a new key switches the provider on)
+* `POST /api/v1/ai/providers/:id/test` → `{ ok, models: [{ id, name, capabilities }] }` or `{ ok: false, code: auth|provider|no_key|key_unreadable|test_mode|ai_disabled, message }`
+* `PUT /api/v1/ai/settings` `{ defaultProvider, fallbackProvider, mediaAllowed, budgetCents, eurPerUsd, perHour, priceOverrides }` (`priceOverrides`: `{ <provider>: { <model>: { input, output } } }`)
+* `GET /api/v1/ai/plugins` → `{ plugins: [{ id, name, purpose, capabilities, allowed, provider, enabled }] }`; `PUT /api/v1/ai/plugins/:id` `{ allowed, provider }` (`provider: null` = the default one)
+* `GET /api/v1/ai/usage?month=2026-10` → `{ usage: { month, requests, costCents, estimated, budgetCents, byPlugin, byProvider, byDay } }`
+* `GET /api/v1/ai/requests?plugin=&limit=` → `{ requests: [{ id, at, plugin, userId, task, provider, model, kind, inputTokens, outputTokens, mediaCount, costCents, durationMs, outcome, fallback, estimated }] }`
+
+| Environment | |
+|---|---|
+| `GC_AI=off` | the AI service is switched off completely: `available()` false, every request `ERR_AI_NOT_CONFIGURED`, no provider is contacted, the page says so |
+
+A test run (`NODE_ENV=test`) never reaches a provider: the adapters only call
+a local stub a test set (`services/ai/providers/http.js` `testBase`), any other
+call ends as `ERR_AI_PROVIDER` before a connection is made.
+
+**Providers** (`src/services/ai/providers/`, no npm dependency — the HTTP APIs
+directly, over GateControl's own outgoing way to these fixed hosts, never the
+plugin network permission):
+
+| Provider | Host | Structured answer | Pictures |
+|---|---|---|---|
+| OpenAI | api.openai.com | JSON schema response format (strict) | yes |
+| Anthropic | api.anthropic.com | a forced tool whose input schema is the schema | yes |
+| Google Gemini | generativelanguage.googleapis.com | response schema with JSON output | yes |
+| OpenRouter | openrouter.ai | OpenAI-compatible strict JSON schema for models that support it, otherwise the schema in the instructions | per model (from its model list) |
+
+Not yet (later, with the recipes plugin): `gc.ai.transcribe`, video input,
+`gc.web.readPage`, storing contents 24 hours for debugging.
 
 ## Groups (`permissions.groups`)
 

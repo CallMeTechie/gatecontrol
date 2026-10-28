@@ -256,6 +256,8 @@ function createBackup() {
       directory_links: directoryData.links,
       directory_conflicts: directoryData.conflicts,
       storage_targets: storageTargets,
+      // AI service (services/ai/): providers with their keys encrypted as stored, the plugin policy
+      ai: require('./ai').exportBackup(),
       api_tokens: apiTokens,
       tags,
       gateway_meta: gatewayMeta,
@@ -733,6 +735,7 @@ async function restoreBackup(backup) {
     directory_links: directoryLinks = [],
     directory_conflicts: directoryConflicts = [],
     storage_targets: storageTargetRows,
+    ai: aiData,
     api_tokens: apiTokens = [],
     tags = [],
     gateway_meta: gatewayMeta = [],
@@ -937,6 +940,13 @@ async function restoreBackup(backup) {
     // Storage targets — replaced only when the backup has them (older
     // backups: the targets stay).
     if (Array.isArray(storageTargetRows)) storageTargetCount = restoreStorageTargets(db, storageTargetRows, { peerIdMap, routeIdByDomain });
+
+    // AI providers and plugin policy — replaced only when the backup has
+    // them. A key from another GC_ENCRYPTION_KEY stays as it is: the
+    // provider shows "Schlüssel neu eingeben".
+    if (aiData && typeof aiData === 'object') {
+      try { require('./ai').restoreBackup(aiData); } catch (err) { logger.warn({ err: err.message }, 'backup restore: AI settings skipped'); }
+    }
 
     // Restore rdp_routes (re-map gateway_peer_id)
     for (const rr of rdpRoutes) {
