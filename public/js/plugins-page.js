@@ -18,7 +18,8 @@
 //                updates, recently updated
 //   licenses     licence key without naming the plugin, all licences
 //   security     upload with preview, the rules, catalogue source
-//   storage      storage targets: folder, NAS (SMB, WebDAV), S3 — add, check, edit
+//   storage      storage targets: folder, NAS (SMB, WebDAV), S3, Google Drive, OneDrive — add, check, edit
+//   cloud        Cloud-Konten: the OAuth apps for Google and Microsoft, the people's connections
 //   log          installs, updates and uninstalls
 //
 // Installing and updating — from the catalogue or an uploaded file — is one
@@ -41,7 +42,7 @@
   const SHOP_URL = 'https://callmetechie.de/products/gatecontrol/pricing';
   const enc = encodeURIComponent;
   const U = {
-    mine: B, catalog: B + '/catalog', updates: B + '/updates', licenses: B + '/licenses', security: B + '/security', storage: B + '/storage', log: B + '/log',
+    mine: B, catalog: B + '/catalog', updates: B + '/updates', licenses: B + '/licenses', security: B + '/security', storage: B + '/storage', cloud: B + '/cloud', log: B + '/log',
     item: (id, q) => B + '/catalog/' + enc(id) + (q ? '?' + q : ''),
     manage: (id, tab) => B + '/manage/' + enc(id) + (tab ? '?tab=' + enc(tab) : ''),
     cat: (c) => B + '/catalog?cat=' + enc(c),
@@ -2215,20 +2216,47 @@
   // plugins that keep files in areas (plugin.json media.areas) store them
   // ════════════════════════════════════════════════════════════
   const ST_API = '/api/v1/storage-targets';
-  const ST_KINDS = ['local', 'smb', 'webdav', 's3'];
+  const CL_API = '/api/v1/cloud-accounts';
+  const ST_KINDS = ['local', 'smb', 'webdav', 's3', 'gdrive', 'onedrive'];
+  // Google Drive / OneDrive: the account is connected with OAuth (Cloud-Konten), not typed in
+  const ST_CLOUD = { gdrive: 'google', onedrive: 'microsoft' };
   const ST_ICON = {
     local: 'M4 5h16v6H4zM4 13h16v6H4zM8 8h.01M8 16h.01',
     smb: 'M3 6h18v9H3zM8 19h8M12 15v4M7 10.5h.01M11 10.5h.01',
     webdav: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3.6 9h16.8M3.6 15h16.8M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18',
     s3: 'M7 18a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 9.5a4.5 4.5 0 0 1-.5 8.5z',
+    gdrive: 'M8 3h8l6 11-3 6H5l-3-6zM8 3l6 11H2M16 3l-8 17',
+    onedrive: 'M5 18h13a3.5 3.5 0 0 0 .6-6.95A6 6 0 0 0 7.2 9.1 4.5 4.5 0 0 0 5 18z',
   };
-  let stg = { targets: [], choices: null };
+  let stg = { targets: [], choices: null, cloud: null };
 
   async function viewStorage() {
     await loadInstalled();
     await loadTargets();
+    await loadCloud();
     renderStorage();
     done();
+    // back from Google / Microsoft (routes/cloudOAuth.js): the dialog with the connected account, or the error
+    const draftId = query.get('cloudDraft');
+    const cloudErr = query.get('cloud') === 'error' ? query.get('cloudError') : null;
+    if (draftId || cloudErr) { try { history.replaceState(null, '', U.storage); } catch (_) { /* keep the address */ } }
+    if (cloudErr) toast(cloudErrorText(cloudErr), 'error');
+    if (draftId) {
+      const r = await req('GET', CL_API + '/drafts/' + enc(draftId));
+      if (!r.ok) { toast(r.error, 'error'); return; }
+      const existing = r.draft.targetId ? stg.targets.find((x) => x.id === r.draft.targetId) || null : null;
+      targetDialog(existing, { draft: r.draft });
+    }
+  }
+
+  async function loadCloud() {
+    const r = await req('GET', CL_API);
+    stg.cloud = r.ok ? r : null;
+  }
+  function cloudReady(kind) { return !!(stg.cloud && stg.cloud.apps && stg.cloud.apps[ST_CLOUD[kind]] && stg.cloud.apps[ST_CLOUD[kind]].configured); }
+  function cloudErrorText(code) {
+    const s = t('plugins.cloud.err_' + code);
+    return s === 'plugins.cloud.err_' + code ? t('plugins.cloud.err_failed') : s;
   }
 
   async function loadTargets() {
@@ -2246,7 +2274,7 @@
 
   function checkPill(tg) {
     const c = tg.check;
-    if (tg.needsSecret) return pill(t('plugins.stg.needs_secret'), 'warn', true);
+    if (tg.needsSecret) return pill(t(ST_CLOUD[tg.kind] ? 'plugins.stg.needs_reconnect' : 'plugins.stg.needs_secret'), 'warn', true);
     if (!c) return pill(t('plugins.stg.unchecked'), 'mute', true);
     return c.ok ? pill(t('plugins.stg.ok_at', { at: fmtDateTime(c.at) }), 'good', true) : pill(t('plugins.stg.failed_at', { at: fmtDateTime(c.at) }), 'crit', true);
   }
@@ -2299,7 +2327,7 @@
     { 'aria-labelledby': 'pgx-stg-h' }, 'pgx-flush pgx-list'));
     if (stg.cache) main.appendChild(cacheCard(stg.cache));
     main.appendChild(card([h2(t('plugins.stg.about'), 'pgx-stg-about-h'),
-      el('ul', { class: 'pgx-stg-about' }, ['server', 'local', 'smb', 'webdav', 's3'].map((k) => el('li', null, [el('b', { text: t('plugins.stg.about_' + k + '_t') }), ' ', t('plugins.stg.about_' + k)]))),
+      el('ul', { class: 'pgx-stg-about' }, ['server', 'local', 'smb', 'webdav', 's3', 'cloud'].map((k) => el('li', null, [el('b', { text: t('plugins.stg.about_' + k + '_t') }), ' ', t('plugins.stg.about_' + k)]))),
       el('p', { class: 'pgx-hint', text: t('plugins.stg.about_backup') }),
     ], { 'aria-labelledby': 'pgx-stg-about-h' }, 'pgx-pad pgx-stack-card'));
   }
@@ -2345,12 +2373,17 @@
    * its fields, Prüfen (checks the settings without saving), Speichern
    * (saves, then checks the stored target). → the saved target or null.
    */
-  async function targetDialog(existing) {
+  async function targetDialog(existing, opts) {
+    const o = opts || {};
     const choices = await stgChoices();
     const title = existing ? t('plugins.stg.dlg_edit', { name: existing.label }) : t('plugins.stg.dlg_add');
     const d = dlg(title, 'md');
-    let kind = existing ? existing.kind : 'smb';
+    // a freshly connected Google / Microsoft account (?cloudDraft=…): its kind, for a new or this target
+    const draft = o.draft || null;
+    let kind = existing ? existing.kind : (draft ? draft.kind : 'smb');
     const cfg = existing ? existing.config : {};
+    // the folder chosen in Google Drive / OneDrive
+    let sel = existing && ST_CLOUD[existing.kind] ? { folderId: cfg.folderId, folderPath: cfg.folderPath, driveId: cfg.driveId || null } : null;
     const secretSet = existing ? existing.secretSet : {};
     const form = el('div', { class: 'pgx-stg-form', id: 'pgx-stg-form' });
     const result = el('div', { id: 'pgx-stg-result', 'aria-live': 'polite' });
@@ -2394,6 +2427,84 @@
       return input(name, { type: 'password', max: 512, placeholder: secretSet[name] ? t('plugins.stg.secret_kept') : '' });
     }
 
+    /** "Mit Google verbinden": the administrator's own account, back here with ?cloudDraft=… */
+    async function connect(e) {
+      const b = e.currentTarget;
+      b.disabled = true;
+      const r = await req('POST', CL_API + '/connect', { provider: ST_CLOUD[kind], targetId: existing ? existing.id : null });
+      if (!r.ok) { b.disabled = false; showFail(r); return; }
+      location.href = r.url;
+    }
+
+    /** Google Drive / OneDrive: the connected account and the folder (browse, choose, create). */
+    function cloudFields() {
+      const prov = ST_CLOUD[kind];
+      if (!cloudReady(kind)) {
+        form.appendChild(el('p', { class: 'pgx-note pgx-note-warn', id: 'pgx-stg-cloud-missing' }, [icon(I.alert, 16),
+          el('span', null, [t('plugins.stg.cloud_missing', { provider: t('plugins.cloud.p_' + prov) }), ' ', link(t('plugins.stg.cloud_setup'), U.cloud)])]));
+        return;
+      }
+      // the draft only counts for its own kind (the kind can still be switched above)
+      const dr = draft && draft.kind === kind ? draft : null;
+      if (!dr && !existing) sel = null;
+      form.appendChild(field('label', t('plugins.stg.f_label'), input('label', { max: 60, value: existing ? existing.label : (dr ? t('plugins.stg.kind_' + kind) : '') })));
+      const account = dr ? dr.account : (existing ? cfg.account : null);
+      form.appendChild(el('div', { class: 'pgx-stg-f', 'data-field': 'draft' }, [lbl(t('plugins.stg.f_account')),
+        el('div', { class: 'pgx-inline' }, [
+          account ? el('b', { id: 'pgx-stg-account', text: account }) : el('span', { class: 'pgx-muted', text: t('plugins.stg.not_connected') }),
+          btn(account ? t('plugins.stg.reconnect') : t('plugins.stg.connect_' + prov), { small: true, primary: !account, id: 'pgx-stg-connect', onClick: connect }),
+        ]),
+        dr ? el('small', { class: 'pgx-hint', text: t('plugins.stg.connected_new') }) : null]));
+      if (!account) { form.appendChild(el('p', { class: 'pgx-hint', text: t('plugins.stg.connect_h_' + prov) })); return; }
+      const src = dr ? 'draft=' + enc(dr.id) : 'target=' + enc(existing.id);
+      const chosen = el('b', { id: 'pgx-stg-folder', text: sel ? sel.folderPath : t('plugins.stg.no_folder') });
+      const crumbs = el('div', { class: 'pgx-crumb pgx-stg-crumbs' });
+      const list = el('div', { class: 'pgx-stg-browse', id: 'pgx-stg-browse', role: 'list' });
+      const nameIn = el('input', { type: 'text', class: 'pgx-fld-in', id: 'pgx-stg-newfolder', maxLength: 120, placeholder: t('plugins.stg.new_folder_ph'), 'aria-label': t('plugins.stg.new_folder') });
+      const stack = [{ id: 'root', name: t('plugins.stg.root_' + prov) }];
+      let driveId = sel ? sel.driveId : null;
+      const pathOf = () => '/' + stack.slice(1).map((x) => x.name).join('/');
+      async function load() {
+        clear(list);
+        clear(crumbs);
+        stack.forEach((n, i) => {
+          if (i) crumbs.appendChild(el('span', { 'aria-hidden': 'true', text: '›' }));
+          crumbs.appendChild(i === stack.length - 1 ? el('span', { 'aria-current': 'location', text: n.name })
+            : linkBtn(n.name, () => { stack.length = i + 1; load(); }));
+        });
+        list.appendChild(el('p', { class: 'pgx-muted', text: t('plugins.area.loading') }));
+        const r = await req('GET', CL_API + '/folders?' + src + '&parent=' + enc(stack[stack.length - 1].id));
+        clear(list);
+        if (!r.ok) { list.appendChild(el('p', { class: 'pgx-stg-err', text: r.error })); return; }
+        if (r.driveId) driveId = r.driveId;
+        if (!r.folders.length) list.appendChild(el('p', { class: 'pgx-muted', text: t(prov === 'google' ? 'plugins.stg.no_subfolders_google' : 'plugins.stg.no_subfolders') }));
+        r.folders.forEach((f) => list.appendChild(el('button', { type: 'button', class: 'pgx-stg-dir', role: 'listitem', 'data-folder': f.id,
+          on: { click: () => { stack.push({ id: f.id, name: f.name }); load(); } } }, [icon('M3 6h6l2 2h10v11H3z', 17), f.name])));
+      }
+      const use = btn(t('plugins.stg.use_folder'), { small: true, primary: true, id: 'pgx-stg-use', onClick: () => {
+        const top = stack[stack.length - 1];
+        sel = { folderId: top.id, folderPath: pathOf(), driveId };
+        chosen.textContent = sel.folderPath;
+      } });
+      const mk = btn(t('plugins.stg.new_folder'), { small: true, icon: I.plus, id: 'pgx-stg-mkdir', onClick: async () => {
+        const name = nameIn.value.trim();
+        if (!name) { nameIn.focus(); return; }
+        const body = { parent: stack[stack.length - 1].id, name };
+        if (dr) body.draft = dr.id; else body.target = existing.id;
+        const r = await req('POST', CL_API + '/folders', body);
+        if (!r.ok) { toast(r.error, 'error'); return; }
+        nameIn.value = '';
+        stack.push({ id: r.folder.id, name: r.folder.name });
+        await load();
+      } });
+      form.appendChild(el('div', { class: 'pgx-stg-f', 'data-field': 'folderId' }, [lbl(t('plugins.stg.f_cloud_folder')),
+        el('div', { class: 'pgx-inline' }, [t('plugins.stg.folder_chosen'), chosen]),
+        el('div', { class: 'pgx-stg-picker' }, [crumbs, list, el('div', { class: 'pgx-inline' }, [use, nameIn, mk])]),
+        el('small', { class: 'pgx-hint', text: t('plugins.stg.f_cloud_folder_h_' + prov) })]));
+      form.appendChild(el('p', { class: 'pgx-note', text: t('plugins.stg.cloud_note') }));
+      load();
+    }
+
     function render() {
       clear(form);
       clear(headIc);
@@ -2406,6 +2517,10 @@
           type: 'button', class: 'pgx-opt pgx-stg-kind', role: 'radio', 'aria-checked': k === kind ? 'true' : 'false', 'data-kind': k,
           on: { click: () => { kind = k; render(); } },
         }, [icon(ST_ICON[k], 20), el('span', { class: 'pgx-t' }, [el('b', { text: t('plugins.stg.kind_' + k) }), el('small', { text: t('plugins.stg.kind_' + k + '_d') })])]))));
+      }
+      if (ST_CLOUD[kind]) {
+        cloudFields();
+        return;
       }
       form.appendChild(field('label', t('plugins.stg.f_label'), input('label', { max: 60, value: existing ? existing.label : '' })));
       if (kind === 'local') {
@@ -2453,6 +2568,11 @@
     function values() {
       const v = { kind };
       Object.keys(inputs).forEach((k) => { v[k] = inputs[k].type === 'checkbox' ? inputs[k].checked : inputs[k].value; });
+      if (ST_CLOUD[kind]) {
+        if (draft && draft.kind === kind) v.draft = draft.id;
+        if (sel) { v.folderId = sel.folderId; v.folderPath = sel.folderPath; if (sel.driveId) v.driveId = sel.driveId; }
+        if (existing && !(draft && draft.kind === kind)) v.account = cfg.account;
+      }
       if (kind === 'smb') {
         const how = v.via;
         v.via = how === 'peer' ? { kind: 'peer', peerId: Number(v.peerId) } : how === 'route' ? { kind: 'route', routeId: Number(v.routeId) } : { kind: 'host' };
@@ -2533,6 +2653,118 @@
   }
 
   // ════════════════════════════════════════════════════════════
+  // Cloud-Konten (docs/cloud-accounts.md): the OAuth apps for Google and
+  // Microsoft — for the storage targets "Google Drive" / "OneDrive" and the
+  // people's import (gc.cloud) — and the people's connections
+  // ════════════════════════════════════════════════════════════
+  const CL_PROVIDERS = ['google', 'microsoft'];
+  const CL_CONSOLE = { google: 'https://console.cloud.google.com/apis/credentials', microsoft: 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade' };
+
+  async function viewCloud() {
+    await loadInstalled();
+    await loadCloud();
+    if (!stg.cloud) showError(t('plugins.err.generic'));
+    else renderCloud();
+    done();
+  }
+
+  function copyText(v) {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(() => toast(t('plugins.cloud.copied')), () => {});
+  }
+
+  function appState(a) {
+    if (a.needsSecret) return pill(t('plugins.cloud.needs_secret'), 'warn', true);
+    return a.configured ? pill(t('plugins.cloud.ready'), 'good', true) : pill(t('plugins.cloud.not_ready'), 'mute', true);
+  }
+
+  function renderCloud() {
+    const C = stg.cloud;
+    clear(main);
+    main.appendChild(pageHead(t('plugins.cloud.title'), t('plugins.cloud.sub')));
+    // the redirect URI to register at Google and Microsoft
+    const uri = el('code', { class: 'pgx-mono pgx-cl-uri', id: 'pgx-cl-uri', text: C.redirectUri });
+    main.appendChild(card([h2(t('plugins.cloud.redirect'), 'pgx-cl-redirect-h'),
+      el('p', { class: 'pgx-muted', text: t('plugins.cloud.redirect_h') }),
+      el('div', { class: 'pgx-inline' }, [uri, btn(t('plugins.cloud.copy'), { small: true, id: 'pgx-cl-copy', onClick: () => copyText(C.redirectUri) })]),
+      C.https ? null : el('p', { class: 'pgx-note pgx-note-warn', id: 'pgx-cl-nohttps' }, [icon(I.alert, 16), el('span', { text: t('plugins.cloud.no_https') })]),
+    ], { 'aria-labelledby': 'pgx-cl-redirect-h' }, 'pgx-pad pgx-stack-card'));
+    CL_PROVIDERS.forEach((p) => main.appendChild(appCard(p, C.apps[p])));
+    main.appendChild(connectionsCard(C.connections || []));
+    main.appendChild(card([h2(t('plugins.cloud.about'), 'pgx-cl-about-h'),
+      el('ul', { class: 'pgx-stg-about' }, ['target', 'import', 'secrets', 'hosts'].map((k) => el('li', null, [el('b', { text: t('plugins.cloud.about_' + k + '_t') }), ' ',
+        t('plugins.cloud.about_' + k, { hosts: (C.hosts || []).join(', '), targets: String((C.targets || []).length) })]))),
+      btn(t('plugins.cloud.to_storage'), { small: true, ghost: true, href: U.storage }),
+    ], { 'aria-labelledby': 'pgx-cl-about-h' }, 'pgx-pad pgx-stack-card'));
+  }
+
+  /** One OAuth app: client id, secret (write-only), tenant (Microsoft), the scopes, the console. */
+  function appCard(p, a) {
+    const id = (n) => 'pgx-cl-' + p + '-' + n;
+    const fld = (name, label, control, hint) => el('div', { class: 'pgx-stg-f', 'data-field': name }, [el('label', { class: 'pgx-lbl', for: id(name), text: label }), control,
+      hint ? el('small', { class: 'pgx-hint', text: hint }) : null]);
+    const clientId = el('input', { type: 'text', class: 'pgx-fld-in', id: id('clientId'), autocomplete: 'off', spellcheck: 'false', maxLength: 200, value: a.clientId || '' });
+    const secret = el('input', { type: 'password', class: 'pgx-fld-in', id: id('clientSecret'), autocomplete: 'new-password', maxLength: 512,
+      placeholder: a.secretSet ? t('plugins.stg.secret_kept') : '' });
+    const tenant = p === 'microsoft' ? el('input', { type: 'text', class: 'pgx-fld-in', id: id('tenant'), autocomplete: 'off', spellcheck: 'false', maxLength: 200, value: a.tenant || 'common' }) : null;
+    const err = el('p', { class: 'st-err-block', role: 'alert', hidden: true });
+    const save = btn(t('plugins.cloud.save'), { small: true, primary: true, id: id('save'), onClick: async () => {
+      err.hidden = true;
+      const body = { clientId: clientId.value, clientSecret: secret.value };
+      if (tenant) body.tenant = tenant.value;
+      const r = await req('PUT', CL_API + '/apps/' + p, body);
+      if (!r.ok) { err.textContent = r.error; err.hidden = false; return; }
+      toast(t('plugins.cloud.saved'));
+      await loadCloud();
+      renderCloud();
+    } });
+    const remove = a.clientId ? btn(t('plugins.cloud.remove'), { small: true, ghost: true, id: id('remove'), onClick: async () => {
+      if (!(await D.confirm({ title: t('plugins.cloud.remove_title', { provider: t('plugins.cloud.p_' + p) }), message: t('plugins.cloud.remove_text'), okLabel: t('plugins.cloud.remove'), danger: true }))) return;
+      const r = await req('DELETE', CL_API + '/apps/' + p);
+      if (!r.ok) { toast(r.error, 'error'); return; }
+      toast(t('plugins.cloud.removed'));
+      await loadCloud();
+      renderCloud();
+    } }) : null;
+    const scopes = a.scopes || {};
+    return card([
+      el('div', { class: 'pgx-card-h' }, [el('span', { class: 'pgx-ic', 'data-size': 'md', 'data-cat': 'system', 'aria-hidden': 'true' }, [icon(ST_ICON[p === 'google' ? 'gdrive' : 'onedrive'], 22)]),
+        h2(t('plugins.cloud.app_' + p), id('h')), appState(a)]),
+      el('div', { class: 'pgx-stg-form pgx-in-pad' }, [
+        el('p', { class: 'pgx-muted' }, [t('plugins.cloud.app_' + p + '_h'), ' ', el('a', { class: 'pgx-a', href: CL_CONSOLE[p], target: '_blank', rel: 'noopener noreferrer', text: t('plugins.cloud.console_' + p) })]),
+        fld('clientId', t('plugins.cloud.f_client_id'), clientId),
+        fld('clientSecret', t('plugins.cloud.f_client_secret'), secret, a.needsSecret ? t('plugins.cloud.needs_secret_h') : null),
+        tenant ? fld('tenant', t('plugins.cloud.f_tenant'), tenant, t('plugins.cloud.f_tenant_h')) : null,
+        kv([[t('plugins.cloud.scope_import'), scopes.import, true], [t('plugins.cloud.scope_target'), scopes.target, true]]),
+        err,
+        el('div', { class: 'pgx-inline' }, [save, remove]),
+      ]),
+    ], { 'aria-labelledby': id('h'), 'data-provider': p, id: id('card') }, 'pgx-flush');
+  }
+
+  /** The people's connections (gc.cloud): who, which plugin, which account; "Trennen". */
+  function connectionsCard(list) {
+    const rows = list.map((c) => el('div', { class: 'pgx-row pgx-stg-row', 'data-connection': c.id }, [
+      el('span', { class: 'pgx-ic', 'data-size': 'md', 'data-cat': 'system', 'aria-hidden': 'true' }, [icon(ST_ICON[c.provider === 'google' ? 'gdrive' : 'onedrive'], 22)]),
+      el('span', { class: 'pgx-t pgx-grow' }, [
+        el('b', { text: c.user.name + ' · ' + (c.account || t('plugins.cloud.p_' + c.provider)) }),
+        el('small', { class: 'pgx-muted', text: [t('plugins.cloud.p_' + c.provider), c.pluginName, t('plugins.cloud.since', { at: fmtDateTime(c.connectedAt) })].filter(Boolean).join(' · ') }),
+        c.error ? el('p', { class: 'pgx-stg-err', text: t('plugins.cloud.conn_auth') }) : null,
+      ]),
+      el('span', { class: 'pgx-acts' }, [btn(t('plugins.cloud.disconnect'), { small: true, ghost: true, action: 'disconnect', onClick: async () => {
+        if (!(await D.confirm({ title: t('plugins.cloud.disconnect_title'), message: t('plugins.cloud.disconnect_text', { name: c.user.name }), okLabel: t('plugins.cloud.disconnect'), danger: true }))) return;
+        const r = await req('DELETE', CL_API + '/connections/' + enc(c.id));
+        if (!r.ok) { toast(r.error, 'error'); return; }
+        toast(t('plugins.cloud.disconnected'));
+        await loadCloud();
+        renderCloud();
+      } })]),
+    ]));
+    return card([el('div', { class: 'pgx-card-h' }, [h2(t('plugins.cloud.connections'), 'pgx-cl-conn-h')]),
+      rows.length ? el('div', { class: 'pgx-stg-list', id: 'pgx-cl-conns' }, rows) : el('p', { class: 'pgx-muted pgx-in-pad', id: 'pgx-cl-empty', text: t('plugins.cloud.connections_empty') })],
+    { 'aria-labelledby': 'pgx-cl-conn-h' }, 'pgx-flush pgx-list');
+  }
+
+  // ════════════════════════════════════════════════════════════
   // Protokoll
   // ════════════════════════════════════════════════════════════
   let logFilter = 'all';
@@ -2567,7 +2799,7 @@
   });
 
   const VIEWS = new Map([['installed', viewInstalled], ['catalog', viewCatalog], ['catalogItem', viewCatalogItem], ['manage', viewManage], ['updates', viewUpdates],
-    ['licenses', viewLicenses], ['security', viewSecurity], ['storage', viewStorage], ['log', viewLog]]);
+    ['licenses', viewLicenses], ['security', viewSecurity], ['storage', viewStorage], ['cloud', viewCloud], ['log', viewLog]]);
   const start = VIEWS.get(VIEW) || viewInstalled;
   start().catch(() => { showError(t('plugins.err.generic')); busy.setAttribute('aria-busy', 'false'); });
 }());

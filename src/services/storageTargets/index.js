@@ -2,7 +2,9 @@
 
 // Storage targets (docs/storage-targets.md): places outside GateControl's
 // own data folder where it can keep files — a folder of this server (another
-// disk), a NAS over SMB or WebDAV, an S3-compatible bucket. The plugin media
+// disk), a NAS over SMB or WebDAV, an S3-compatible bucket, a folder in Google
+// Drive or OneDrive (an account the administrator connects with OAuth,
+// services/cloudAccounts/ — its token is the target's secret). The plugin media
 // store moves the files of a plugin's areas there (media.js, plugin.json
 // `media.areas`); nothing else uses them yet.
 //
@@ -21,8 +23,13 @@ const logger = require('../../utils/logger');
 const { StorageError } = require('./errors');
 const net = require('./net');
 
-const KINDS = ['local', 'smb', 'webdav', 's3'];
-const SECRET_FIELDS = { local: [], smb: ['password'], webdav: ['password'], s3: ['secretAccessKey'] };
+const KINDS = ['local', 'smb', 'webdav', 's3', 'gdrive', 'onedrive'];
+const SECRET_FIELDS = { local: [], smb: ['password'], webdav: ['password'], s3: ['secretAccessKey'], gdrive: [], onedrive: [] };
+// kinds that hold sealed blocks only (no readable files): remote object stores and cloud drives
+const BLOCKS_ONLY = new Set(['s3', 'gdrive', 'onedrive']);
+// cloud drives: the account is connected with OAuth (cloudAccounts), the token is the secret
+const CLOUD = { gdrive: 'google', onedrive: 'microsoft' };
+const CLOUD_ID_RE = { gdrive: /^[A-Za-z0-9_-]{1,200}$/, onedrive: /^[A-Za-z0-9!._-]{1,200}$/ };
 const LABEL_MAX = 60;
 const MAX_TARGETS = 50;
 const CHECK_BYTES = 64 * 1024 + 17; // more than one media chunk, not a multiple of it
@@ -116,6 +123,7 @@ function normalise(kind, input, prev = null) {
   const label = str(i.label);
   if (!label || label.length > LABEL_MAX || /[\u0000-\u001f]/.test(label)) throw invalid('label');
   let config;
+  if (CLOUD[kind]) return normaliseCloud(kind, i, label, prev);
   if (kind === 'local') config = { path: localPath(i.path) };
   else if (kind === 'smb') {
     const share = str(i.share);
@@ -152,6 +160,34 @@ function normalise(kind, input, prev = null) {
   return { label, config, secret };
 }
 
+/**
+ * Google Drive / OneDrive: { draft (a freshly connected account, cloudAccounts.draft),
+ * folderId, folderPath, driveId (OneDrive) } — a new target needs a draft, an
+ * existing one keeps its token (`prev`) unless a draft connects it again.
+ */
+function normaliseCloud(kind, i, label, prev) {
+  const cloud = require('../cloudAccounts');
+  let secret = prev && prev.refresh ? Object.assign({}, prev) : null;
+  let account = str(i.account) || null;
+  if (i.draft != null && i.draft !== '') {
+    const d = cloud.draft(String(i.draft));
+    if (!d || d.provider !== CLOUD[kind]) throw invalid('draft', 'connect the account again');
+    secret = Object.assign({}, d.token);
+    account = d.account;
+  }
+  if (!secret) throw invalid('draft', 'connect the account first');
+  const folderId = str(i.folderId);
+  if (!CLOUD_ID_RE[kind].test(folderId)) throw invalid('folderId');
+  const folderPath = str(i.folderPath).slice(0, 400).replace(/[\u0000-\u001f]/g, '') || '/';
+  const config = { account: (account || '').slice(0, 200), folderId, folderPath };
+  if (kind === 'onedrive') {
+    const driveId = str(i.driveId);
+    if (driveId && !CLOUD_ID_RE.onedrive.test(driveId)) throw invalid('folderId');
+    config.driveId = driveId || null;
+  }
+  return { label, config, secret };
+}
+
 // ─── Rows ───────────────────────────────────────
 
 function rowOf(id) {
@@ -174,6 +210,7 @@ function display(kind, cfg) {
   if (kind === 'local') return cfg.path;
   if (kind === 'webdav') return cfg.url;
   if (kind === 's3') return `${cfg.endpoint.replace(/^https?:\/\//, '')}/${cfg.bucket}${cfg.prefix ? '/' + cfg.prefix : ''}`;
+  if (CLOUD[kind]) return `${kind === 'gdrive' ? 'Google Drive' : 'OneDrive'} · ${cfg.account || '?'} · ${cfg.folderPath || '/'}`;
   const v = cfg.via || {};
   let host = v.host;
   if (v.kind === 'peer') {
@@ -219,7 +256,7 @@ function view(row) {
     needsSecret: !!row.secret_enc && !Object.keys(sec).length,
     display: display(row.kind, cfg),
     tlsCaInfo: caInfo(cfg.tlsCa),
-    encrypted: row.kind === 's3',
+    encrypted: BLOCKS_ONLY.has(row.kind),
     ranges: row.kind !== 'smb',
     check: row.checked_at ? { at: row.checked_at, ok: row.check_ok === 1, error: row.check_error || null,
       free: row.free_bytes == null ? null : row.free_bytes, total: row.total_bytes == null ? null : row.total_bytes } : null,
@@ -268,6 +305,7 @@ function placeOf(kind, cfg) {
   if (kind === 'local') return [cfg.path];
   if (kind === 'smb') return [cfg.via, cfg.share, cfg.folder];
   if (kind === 'webdav') return [cfg.url];
+  if (CLOUD[kind]) return [cfg.account, cfg.driveId || null, cfg.folderId];
   return [cfg.endpoint, cfg.bucket, cfg.prefix, cfg.pathStyle];
 }
 
@@ -305,6 +343,8 @@ function driverModule(kind) {
     case 'smb': return require('./drivers/smb');
     case 'webdav': return require('./drivers/webdav');
     case 's3': return require('./drivers/s3');
+    case 'gdrive': return require('./drivers/gdrive');
+    case 'onedrive': return require('./drivers/onedrive');
     default: throw new StorageError('invalid', 'unknown kind', { field: 'kind' });
   }
 }
@@ -320,6 +360,15 @@ async function driverOf(t) {
     const d = smbDial(cfg.via);
     if (!d.host || !d.port) throw new StorageError('unreachable', 'no address');
     try { c.dial = { address: (await net.resolve(d.host, d.port)).address, port: d.port }; } catch (e) { throw StorageError.from(e); }
+  }
+  if (CLOUD[kind]) {
+    if (!sec.refresh) throw new StorageError('auth', 'the account has to be connected again');
+    // a refreshed token is kept: on the row of a stored target, else in the settings being checked
+    const id = t.id;
+    c.saveToken = (tok) => {
+      if (id) getDb().prepare('UPDATE storage_targets SET secret_enc = ? WHERE id = ?').run(encrypt(JSON.stringify(tok)), id);
+      else if (t.secret) Object.assign(t.secret, tok);
+    };
   }
   return driverModule(kind).create(c, sec);
 }
@@ -401,6 +450,6 @@ async function checkInput(kind, input, id = null) {
 }
 
 module.exports = {
-  KINDS, SECRET_FIELDS, StorageError, normalise, list, get, create, update, remove, check, checkInput, open, driverOf,
-  registerUsage, usedBy, display, bufferSource, rowOf, configOf,
+  KINDS, SECRET_FIELDS, BLOCKS_ONLY, CLOUD, StorageError, normalise, list, get, create, update, remove, check, checkInput, open, driverOf,
+  registerUsage, usedBy, display, bufferSource, rowOf, configOf, secretOf,
 };

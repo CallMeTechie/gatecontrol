@@ -2,7 +2,8 @@
 
 Since 1.203.0. Places **outside GateControl's own data folder** where it can
 keep files: a folder of this server, a NAS over SMB or WebDAV, an
-S3-compatible bucket. They are the first part of the server core for
+S3-compatible bucket, a folder in Google Drive or OneDrive
+(docs/cloud-accounts.md). They are the first part of the server core for
 GateControl Drive: the plugin media store will move the files of a plugin's
 *areas* (plugin.json `media.areas`) there. In this version nothing uses them
 yet — administrators can set them up and check them.
@@ -19,6 +20,8 @@ Code: `src/services/storageTargets/` (service, `net.js`, `drivers/*.js`),
 | NAS over SMB | `smb` | `via` (`{ kind: 'host', host, port }`, `{ kind: 'peer', peerId, port }` or `{ kind: 'route', routeId }` — an **L4** route), `share`, `folder`, `username`, `domain` | `password` | through the image's `smbclient` (SMB 2 or newer). |
 | NAS over WebDAV | `webdav` | `url` (http/https, no user info), `username`, `tlsCa` | `password` | Basic authentication; use https. |
 | S3-compatible | `s3` | `endpoint`, `region` (default `us-east-1`), `bucket`, `prefix`, `pathStyle` (default true), `accessKeyId`, `tlsCa` | `secretAccessKey` | AWS, Hetzner, Wasabi, Backblaze B2, MinIO, Synology C2. |
+| Google Drive | `gdrive` | `account`, `folderId`, `folderPath` | the OAuth token | the administrator's own account, scope `drive.file` (GateControl sees only what it created); connected with *Mit Google verbinden* (docs/cloud-accounts.md). |
+| OneDrive | `onedrive` | `account`, `driveId`, `folderId`, `folderPath` | the OAuth token | personal or work/school, `Files.ReadWrite`; connected with *Mit Microsoft verbinden*. |
 
 `tlsCa`: the target's own trust anchor in PEM (one or more certificates,
 ≤ 64 KiB) — the NAS's self-signed certificate or a private company CA. TLS is
@@ -44,6 +47,15 @@ await d.move(from, to);                    // local, SMB, WebDAV (S3 keys are ne
 await d.space();                           // → { free, total } in bytes, null where unknown (S3)
 d.ranges                                   // false for SMB: a range read fetches the whole file and cuts it
 ```
+
+* **Google Drive** / **OneDrive** (`drivers/gdrive.js`, `drivers/onedrive.js`,
+  docs/cloud-accounts.md): a key's folders are created below the chosen
+  folder (one at a time, ids remembered); Drive: resumable upload sessions in
+  64 MiB parts, `Range` on `alt=media`; OneDrive: up to 4 MiB in one PUT,
+  larger through an upload session in 60 MiB fragments, downloads through
+  Graph's redirect to its storage host (never with the token). The token is
+  refreshed when needed and written back into the target's secret. A refused
+  refresh is `auth` ("Konto neu verbinden"). Sealed blocks only, no `move`.
 
 Errors are `StorageError`s (`errors.js`) with `code`: `not_found`, `auth`,
 `denied`, `unreachable`, `tls` (certificate not trusted), `blocked_address`, `full`,
@@ -155,7 +167,8 @@ still have files there. Folder, SMB and WebDAV drivers have `files: true`
 (readable files, docs/plugins.md "Readable files") and `list(prefix)` →
 `[{ key, size, mtime }]` (recursive; SMB through `recurse` + `ls`, WebDAV
 through PROPFIND Depth 1 per folder) for the scans; a `move` never overwrites
-an existing object (StorageError `exists`). S3 holds sealed blocks only.
+an existing object (StorageError `exists`). S3, Google Drive and OneDrive hold
+sealed blocks only.
 
 ## Tests
 

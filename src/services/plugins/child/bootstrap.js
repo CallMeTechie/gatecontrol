@@ -390,6 +390,27 @@ function makeGc(info) {
       list: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('devices.list', { userId: o.userId }); },
     }),
     /**
+     * permissions.cloudImport: Google Drive / OneDrive of a person (docs/plugins.md "Cloud import") —
+     * available() → { google, microsoft }; connectUrl({ user, provider, returnTo }) → { url };
+     * connections({ user }) → [{ id, provider, account, connectedAt }]; disconnect({ user, connection }) → boolean;
+     * list({ user, connection, folderId, cursor }) → { items: [{ id, name, isDir, size, mime, modifiedAt }], next };
+     * import({ user, connection, fileId }) → { mediaId, name, size, mime, modifiedAt } (unclaimed, like gc.media.fetch)
+     */
+    cloud: Object.freeze({
+      available: () => hostCall('cloud.available', {}),
+      connectUrl: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('cloud.connectUrl', { user: o.user, provider: o.provider, returnTo: o.returnTo }); },
+      connections: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('cloud.connections', { user: o.user }); },
+      disconnect: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('cloud.disconnect', { user: o.user, connection: o.connection }); },
+      list: (opts) => {
+        const o = opts && typeof opts === 'object' ? opts : {};
+        return hostCall('cloud.list', { user: o.user, connection: o.connection, folderId: o.folderId, cursor: o.cursor });
+      },
+      import: (opts) => {
+        const o = opts && typeof opts === 'object' ? opts : {};
+        return hostCall('cloud.import', { user: o.user, connection: o.connection, fileId: o.fileId }, 32 * 60 * 1000);
+      },
+    }),
+    /**
      * permissions.groups ("read" | "manage"): person groups of GateControl —
      * list({ userId, kind, includeInherited, includeArchived }) → [{ id, name, path, kind, role?, direct?, source, archived, … }];
      * get(id) → group | null; members(id, { nested, roles }) → [{ userId, name, role, direct, source, groupId, enabled }];

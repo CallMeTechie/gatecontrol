@@ -149,6 +149,8 @@ function permissionSummary(m, lang) {
     devices: !!p.devices,
     // person groups (docs/plugins.md "Groups"): 'read' | 'manage' | null
     groups: p.groups === 'read' || p.groups === 'manage' ? p.groups : null,
+    // Google Drive / OneDrive of a person (gc.cloud) and what for
+    cloudImport: p.cloudImport ? { purpose: loc(p.cloudImport.purpose, lang) } : null,
     servicesProvided: m.services && m.services.provides ? Object.values(m.services.provides).map((x) => loc(x.label, lang)) : [],
   };
 }
@@ -430,6 +432,7 @@ async function removeInstalled(p, mode) {
   require('./events').closeStreams(id);
   // its public links end with the plugin, whatever happens to its data
   require('./publicLinks').removeAll(id);
+  require('../cloudAccounts').removePlugin(id);
   rmrf(path.join(pluginsRoot(), id));
   registry.remove(id);
   if (mode === 'wipe') {

@@ -47,6 +47,21 @@ function fail(req, res, e) {
 
 function body(req) { return req.body && typeof req.body === 'object' ? req.body : {}; }
 
+/**
+ * Google Drive / OneDrive: `draft` names an account this administrator just
+ * connected (services/cloudAccounts) — another one's or an expired draft is
+ * refused; a used draft is dropped.
+ */
+function ownDraft(req, b) {
+  if (b.draft == null || b.draft === '') return true;
+  const d = require('../../services/cloudAccounts').draft(String(b.draft));
+  return !!d && d.userId === req.session.userId;
+}
+function dropDraft(b) { if (b.draft) require('../../services/cloudAccounts').dropDraft(String(b.draft)); }
+function draftGone(req, res) {
+  return res.status(400).json({ ok: false, code: 'invalid', field: 'draft', error: tr(req, 'plugins.stg.err.field_draft', 'Connect the account again') });
+}
+
 function log(req, event, message, details) {
   activity.log(event, message, { source: 'admin', ipAddress: req.ip, severity: 'info', details });
 }
@@ -82,8 +97,10 @@ router.get('/choices', (req, res) => {
 
 router.post('/', (req, res) => {
   const b = body(req);
+  if (!ownDraft(req, b)) return draftGone(req, res);
   try {
     const t = targets.create(String(b.kind || ''), b);
+    dropDraft(b);
     log(req, 'storage_target_created', `Storage target "${t.label}" (${t.kind}) created`, { id: t.id, kind: t.kind });
     res.status(201).json({ ok: true, target: t });
   } catch (e) { fail(req, res, e); }
@@ -91,6 +108,7 @@ router.post('/', (req, res) => {
 
 router.post('/check', async (req, res) => {
   const b = body(req);
+  if (!ownDraft(req, b)) return draftGone(req, res);
   try {
     const id = b.id == null ? null : Number(b.id);
     const r = await targets.checkInput(String(b.kind || ''), b, id);
@@ -105,8 +123,11 @@ router.get('/:id', (req, res) => {
 });
 
 router.patch('/:id', (req, res) => {
+  const b = body(req);
+  if (!ownDraft(req, b)) return draftGone(req, res);
   try {
-    const t = targets.update(req.params.id, body(req));
+    const t = targets.update(req.params.id, b);
+    dropDraft(b);
     log(req, 'storage_target_changed', `Storage target "${t.label}" changed`, { id: t.id, kind: t.kind });
     res.json({ ok: true, target: t });
   } catch (e) { fail(req, res, e); }

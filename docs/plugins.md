@@ -315,7 +315,8 @@ unsigned build of the same id.
     "services": ["gatecontrol-messenger:send_message"],
     "publicLinks": true,
     "devices": true,
-    "groups": "read"
+    "groups": "read",
+    "cloudImport": { "purpose": { "de": "Dateien aus Google Drive und OneDrive übernehmen", "en": "Take files from Google Drive and OneDrive" } }
   },
   "media": { "maxBytes": 26214400, "types": ["image/jpeg", "image/webp", "audio/ogg", "application/pdf"], "quotaDefault": "10GB" },
   "services": { "provides": { "scene": { "label": { "de": "Szene schalten", "en": "Switch a scene" } } } },
@@ -720,6 +721,7 @@ module.exports = {
 | `gc.groups.list/get/members/isMember/leadersOf(…)` | the person groups of GateControl (`groups`) — see "Groups" |
 | `gc.groups.ensure({ key, name, kind, parentKey, members })` / `gc.groups.remove(key)` | the plugin's own groups (`groups: "manage"`) — see "Groups" |
 | `gc.notify({ …, groups: [id] })` | to the groups' enabled members, subgroups included, resolved at send time (`groups`) — see "Groups" |
+| `gc.cloud.available/connectUrl/connections/disconnect/list/import(…)` | Google Drive / OneDrive of a person (`cloudImport`) — see "Cloud import" |
 | `gc.events.emit({ users, type, data })` | realtime event to the listed people's apps and frames → `{ delivered }` (`events`, ≤ 600/min) — see "Realtime events" |
 | `gc.services.call({ plugin, service, userId, payload })` | another plugin's service → its answer (`permissions.services`, ≤ 60/h) — see "Services" |
 | `gc.services.available(plugin, service)` | `true`/`false`: would `call()` reach that provider now (listed, installed, running, provided) — the provider is not run, not counted (since 1.178.0) |
@@ -1865,6 +1867,71 @@ single device. Code: `src/services/plugins/devices.js`.
   transfer Y".
 * `devices` and `silent` need `permissions.devices` (`ERR_DEVICES_DENIED`);
   on a chat topic they are `ERR_INVALID`.
+
+## Cloud import (`permissions.cloudImport`)
+
+A person connects their own Google Drive or OneDrive in the plugin, browses it
+and takes files into the plugin's media (GateControl Drive: portal page
+"Importieren"). The administrator enters the OAuth apps under *Einstellungen ›
+Plugins › Cloud-Konten* (docs/cloud-accounts.md); without them `available()`
+says `false`. Code: `src/services/plugins/cloud.js`, `src/services/cloudAccounts/`.
+Check for it with `typeof gc.cloud?.list === 'function'`.
+
+```json
+"permissions": { "cloudImport": { "purpose": { "de": "Dateien aus Google Drive und OneDrive übernehmen", "en": "…" } } },
+"media": { "maxBytes": 2147483648, "types": ["*/*"] }
+```
+
+`purpose` (≤ 200 characters) is shown in the install dialog and the catalogue
+next to "Import aus Google Drive und OneDrive"; the permission is marked
+sensitive. `import` also needs `media`.
+
+```js
+await gc.cloud.available();          // → { google: true, microsoft: false } — an OAuth app is entered
+const { url } = await gc.cloud.connectUrl({ user: req.user.id, provider: 'google', returnTo: '/portal?view=import#plg-gatecontrol-drive' });
+// open `url` in the browser (a new tab / top-level, not inside the frame): a page on GC_BASE_URL names the
+// person and the plugin, then Google / Microsoft, then back to returnTo with ?cloud=connected
+// (or ?cloud=error&cloudError=<code>)
+await gc.cloud.connections({ user });   // → [{ id, provider: 'google'|'microsoft', account, connectedAt, error? }]
+await gc.cloud.disconnect({ user, connection });   // → true | false
+await gc.cloud.list({ user, connection, folderId, cursor });
+// → { items: [{ id, name, isDir, size, mime, modifiedAt }], next }   (folderId omitted: the root; next: cursor | null)
+await gc.cloud.import({ user, connection, fileId });
+// → { mediaId, name, size, mime, modifiedAt } — unclaimed (gc.media.claim within 24 h), owner = the person
+```
+
+* **One person, one plugin**: every call names the person (`user`, an enabled
+  account — `ERR_INVALID` otherwise); a connection belongs to that person and
+  this plugin only — another person's or plugin's id is `ERR_CLOUD_NOT_FOUND`.
+  At most 10 connections per person; the same account again keeps its id.
+* **`returnTo`**: a portal path (`/portal…`, the portal host is put in front)
+  or an app address (`gatecontrol://…`), nothing else (`ERR_INVALID`). The
+  link is single use, valid for 10 minutes and bound to the browser that
+  opens it.
+* **`list`**: 100 items per page, folders first. `size` and `mime` are `null`
+  for folders. Google Docs, Sheets and Slides appear as `.docx` / `.xlsx` /
+  `.pptx` with that type and `size: null`, Drawings as `.pdf`; Forms, Sites,
+  maps and shortcuts are left out, so are OneNote notebooks and items of other
+  people's drives (OneDrive "Shared").
+* **`import`**: streams the file into the media store under the plugin's
+  `media.types` (`ERR_MEDIA_TYPE`), `maxBytes` (`ERR_CLOUD_TOO_LARGE`) and
+  quota (`ERR_MEDIA_QUOTA`) — checked before a byte is fetched where the
+  provider names the size. A missing or generic type
+  (`application/octet-stream`) is taken from the file name. Google documents
+  are exported (Google: at most 10 MB). A folder is `ERR_INVALID` — list it
+  and import its files (the plugin keeps the structure). `modifiedAt` is the
+  original change time (e.g. for `mtime`).
+* **Limits**: `list` 120 per minute, `import` 3000 per hour (per person and
+  plugin), 4 imports at a time per plugin, 8 on the server, 30 minutes per
+  file; `connectUrl` 30 per hour — then `ERR_RATE_LIMIT`.
+* **Errors**: `ERR_CLOUD_DENIED` (no permission), `ERR_CLOUD_NOT_CONFIGURED`
+  (no or a refused OAuth app), `ERR_CLOUD_AUTH` (connect again — the
+  connection then carries `error: 'auth'`), `ERR_CLOUD_NOT_FOUND`,
+  `ERR_CLOUD_TOO_LARGE`, `ERR_CLOUD_PROVIDER`, `ERR_RATE_LIMIT` (ours or the
+  provider's), `ERR_TIMEOUT`, `ERR_INVALID`, the media codes above,
+  `ERR_MEDIA_DENIED` (no `media`).
+* Tokens never reach the plugin. Uninstalling the plugin removes its
+  connections; deleting a person removes theirs.
 
 ## Groups (`permissions.groups`)
 
