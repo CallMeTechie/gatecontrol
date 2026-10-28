@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.214.1] — 2026-10-28
+
+### Fixes
+- Direktlinks reichen auch camelCase-Schlüssel an den Plugin-Frame weiter (cloudError) (#374)
+
+---
+
 ## [1.214.0] — 2026-10-28
 
 ### Features
