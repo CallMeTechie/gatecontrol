@@ -45,11 +45,12 @@ async function install(buf) {
 const gc = async (plugin, fn, ...args) => (await agent.post(`${API}/${plugin}/api/gc`).set('X-CSRF-Token', csrf).send({ fn, args })).body;
 const api = (method, p) => agent[method](p).set('X-CSRF-Token', csrf);
 const db = () => require('../src/db/connection').getDb();
-const unesc = (s) => s.replace(/&amp;/g, '&').replace(/&#x2F;/g, '/').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+// HTML entities of an attribute value back to text — &amp; last, so nothing is unescaped twice
+const unesc = (s) => s.replace(/&#x2F;/g, '/').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&');
 const refreshOf = (target) => (target.match(/content="1;url=([^"]+)"/) || [])[1];
 
 /** A person connects `provider` for `pid` the way a browser does: start page, Weiter, provider, callback. */
-async function connect(pid, uid, provider, returnTo = `/portal?view=import#plg-${pid}`) {
+async function connect(pid, uid, provider, returnTo = `/portal?drive=import#plg-${pid}`) {
   const r = await gc(pid, 'cloud.connectUrl', { user: uid, provider, returnTo });
   assert.equal(r.ok, true, JSON.stringify(r));
   const u = new URL(r.result.url);
@@ -173,6 +174,13 @@ describe('plugin.json permissions.cloudImport', () => {
     }
     assert.equal(manifest().validate(clone(helloManifest)).manifest.permissions.cloudImport, null);
   });
+  it('its frames may open the connect address (GC.openUrl, data-plugin-cloud), others not', async () => {
+    const page = await agent.get(`/plugins/${PID}`).expect(200);
+    assert.match(page.text, /data-plugin-cloud="[^"]+"/);
+    assert.doesNotMatch((await agent.get(`/plugins/${PLAIN}`).expect(200)).text, /data-plugin-cloud/);
+    assert.match((await agent.get(`/plugins/${PID}/frame/main`).expect(200)).text, /if \(true\) api\.openUrl = openUrl/);
+    assert.match((await agent.get(`/plugins/${PLAIN}/frame/main`).expect(200)).text, /if \(false\) api\.openUrl = openUrl/);
+  });
   it('gc.cloud is refused without it', async () => {
     for (const fn of ['cloud.available', 'cloud.connections', 'cloud.list']) assert.equal((await gc(PLAIN, fn, { user: anna })).code, 'ERR_CLOUD_DENIED', fn);
   });
@@ -187,6 +195,8 @@ describe('connecting (Google)', () => {
     assert.equal((await gc(PID, 'cloud.connectUrl', { user: 999999, provider: 'google', returnTo: '/portal' })).code, 'ERR_INVALID');
     assert.equal((await gc(PID, 'cloud.connectUrl', { user: anna, provider: 'dropbox', returnTo: '/portal' })).code, 'ERR_INVALID');
     assert.equal((await gc(PID, 'cloud.connectUrl', { user: anna, provider: 'google', returnTo: 'gatecontrol://drive/import?x=1' })).ok, true);
+    // GateControl Drive's import page: a portal path with query and hash
+    assert.equal((await gc(PID, 'cloud.connectUrl', { user: anna, provider: 'google', returnTo: '/portal?drive=import#plg-gatecontrol-drive' })).ok, true);
   });
 
   it('start page, PKCE, state, binding; the connection belongs to the person and the plugin', async () => {
@@ -205,7 +215,7 @@ describe('connecting (Google)', () => {
     assert.match(String(c.go.headers['set-cookie']), /gc\.cloud=.*Path=\/oauth\/cloud.*HttpOnly.*SameSite=Lax/i);
     assert.match(c.cb.text, /data-cloud-connect="done"/);
     const target = unesc(refreshOf(c.cb.text));
-    assert.match(target, /^https:\/\/home\.[^/]+\/portal\?view=import&cloud=connected#plg-hello-cloud$/);
+    assert.match(target, /^https:\/\/home\.[^/]+\/portal\?drive=import&cloud=connected#plg-hello-cloud$/);
     const list = (await gc(PID, 'cloud.connections', { user: anna })).result;
     assert.equal(list.length, 1);
     assert.deepEqual(Object.keys(list[0]).sort(), ['account', 'connectedAt', 'id', 'provider']);
@@ -260,6 +270,7 @@ describe('connecting (Google)', () => {
       fake.gAdd({ id: 'big1', name: 'Scan.tif', mimeType: 'image/tiff', size: 5 * 1024 * 1024 * 1024 });
       fake.gAdd({ id: 'zip1', name: 'Archiv.zip', mimeType: 'application/zip', data: Buffer.from('PK') });
       fake.gAdd({ id: 'txt1', name: 'notiz', mimeType: 'application/octet-stream', data: Buffer.from('hallo') });
+      fake.gAdd({ id: 'empty1', name: 'leer.txt', mimeType: 'text/plain', data: Buffer.alloc(0) });
       fake.gAdd({ id: 'sub1', name: 'Bild.png', mimeType: 'image/png', parents: ['fold1'], data: Buffer.from('png') });
     });
 
@@ -317,6 +328,7 @@ describe('connecting (Google)', () => {
       const before = fake.calls.filter((c) => /alt=media/.test(c.url)).length;
       assert.equal((await gc(PID, 'cloud.import', { user: anna, connection: conn, fileId: 'big1' })).code, 'ERR_CLOUD_TOO_LARGE');
       assert.equal((await gc(PID, 'cloud.import', { user: anna, connection: conn, fileId: 'zip1' })).code, 'ERR_MEDIA_TYPE');
+      assert.equal((await gc(PID, 'cloud.import', { user: anna, connection: conn, fileId: 'empty1' })).code, 'ERR_MEDIA_EMPTY');
       assert.equal((await gc(PID, 'cloud.import', { user: anna, connection: conn, fileId: 'fold1' })).code, 'ERR_INVALID');
       assert.equal((await gc(PID, 'cloud.import', { user: anna, connection: conn, fileId: 'form1' })).code, 'ERR_CLOUD_NOT_FOUND');
       assert.equal((await gc(PID, 'cloud.import', { user: anna, connection: conn, fileId: 'nope' })).code, 'ERR_CLOUD_NOT_FOUND');

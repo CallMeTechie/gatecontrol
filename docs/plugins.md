@@ -1889,7 +1889,7 @@ sensitive. `import` also needs `media`.
 ```js
 await gc.cloud.available();          // → { google: true, microsoft: false } — an OAuth app is entered
 const { url } = await gc.cloud.connectUrl({ user: req.user.id, provider: 'google', returnTo: '/portal?view=import#plg-gatecontrol-drive' });
-// open `url` in the browser (a new tab / top-level, not inside the frame): a page on GC_BASE_URL names the
+// the frame hands `url` to the page: await GC.openUrl(url) (below) — a page on GC_BASE_URL names the
 // person and the plugin, then Google / Microsoft, then back to returnTo with ?cloud=connected
 // (or ?cloud=error&cloudError=<code>)
 await gc.cloud.connections({ user });   // → [{ id, provider: 'google'|'microsoft', account, connectedAt, error? }]
@@ -1932,6 +1932,20 @@ await gc.cloud.import({ user, connection, fileId });
   `ERR_MEDIA_DENIED` (no `media`).
 * Tokens never reach the plugin. Uninstalling the plugin removes its
   connections; deleting a person removes theirs.
+* **`GC.openUrl(url)`** in the plugin's frames (only with
+  `permissions.cloudImport`; check `typeof GC.openUrl === 'function'`): the
+  sandboxed frame may neither open a popup nor navigate the page, so it hands
+  the address of `connectUrl` to the page (admin page or portal,
+  `public/js/plugin-bridge.js`), which opens it **in the same tab** — the
+  provider sends the browser back to `returnTo`. Only
+  `<GC_BASE_URL>/oauth/cloud/start?flow=<id>` is taken (absolute, or
+  relative to GC_BASE_URL); anything else, and more than one call per 1.5 s,
+  rejects with `not allowed`. → `Promise<{ ok: true }>`.
+
+  ```js
+  const { url } = await GC.post('import/connect', { provider: 'google' });   // the plugin calls gc.cloud.connectUrl
+  await GC.openUrl(url);
+  ```
 
 ## Groups (`permissions.groups`)
 

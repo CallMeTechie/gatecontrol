@@ -638,6 +638,8 @@ function view(p, lang) {
     scanQr: require('./frame').scanQrOf(m),
     // GC.pickPrincipals in the plugin's frames (permissions.groups): the <iframe data-plugin-groups>
     pickPrincipals: require('./frame').pickPrincipalsOf(m),
+    // GC.openUrl in the plugin's frames (permissions.cloudImport): the <iframe data-plugin-cloud>
+    cloud: require('./frame').openUrlOf(m),
     // the <iframe allow="…"> of the plugin's frames (frame.allowAttr)
     allow: require('./frame').allowAttr({ media: !!m.media, geolocation: !!(m.ui && m.ui.geolocation), camera: !!(m.ui && m.ui.camera) }),
     media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false, ...(m.media.areas ? { areas: true } : {}), ...(m.media.previews ? { previews: true } : {}) } : null,
