@@ -35,6 +35,11 @@ test('the query of a direct link reaches the frame of the plugin tab named by th
   assert.deepEqual(r.replaced, ['/portal#plg-gatecontrol-drive']);
 });
 
+test('camelCase keys pass (the cloud accounts\' return: cloud=error&cloudError=<code>)', () => {
+  const r = run('?drive=import&cloud=error&cloudError=ERR_CLOUD_AUTH', '#plg-gatecontrol-drive');
+  assert.equal(r.src, '/portal/plugins/gatecontrol-drive/frame?drive=import&cloud=error&cloudError=ERR_CLOUD_AUTH');
+});
+
 test('only simple keys and short values; never section; nothing without a plugin tab or a query', () => {
   const r = run('?drive=7&Bad=1&section=x&x=' + 'a'.repeat(201) + '&n=a%20b', '#plg-gatecontrol-drive');
   assert.equal(r.src, '/portal/plugins/gatecontrol-drive/frame?drive=7&n=a%20b');
