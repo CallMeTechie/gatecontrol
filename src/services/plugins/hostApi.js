@@ -1176,6 +1176,23 @@ async function publicLinksCall(plugin, op, args) {
   }
 }
 
+// ─── Public endpoints (permissions.publicEndpoints, publicEndpoints.js, since 1.211.0) ────
+
+function publicEndpointsCall(plugin, op, args) {
+  const pe = require('./publicEndpoints');
+  need(pe.declOf(plugin), 'ERR_PUBLIC_ENDPOINTS_DENIED', 'this plugin has no publicEndpoints permission');
+  if (op === 'base') return { url: pe.baseOf(plugin.id) };
+  const uid = args && args.user;
+  need(Number.isSafeInteger(uid) && uid > 0, 'ERR_INVALID', 'invalid user');
+  need(db().prepare('SELECT 1 FROM users WHERE id = ? AND enabled = 1').get(uid), 'ERR_INVALID', 'unknown or disabled user');
+  try {
+    return pe.mint(plugin.id, { user: uid, path: args.path, ttlS: args.ttlS, data: args.data });
+  } catch (e) {
+    if (e instanceof pe.EndpointError) throw new HostApiError(e.code, e.message);
+    throw e;
+  }
+}
+
 // ─── Devices (permissions.devices, devices.js, since 1.193.0) ────
 
 function devicesList(plugin, args) {
@@ -1685,6 +1702,8 @@ async function handle(plugin, api, args, ctx) {
     case 'publicLinks.revoke': return publicLinksCall(plugin, 'revoke', args);
     case 'publicLinks.events': return publicLinksCall(plugin, 'events', args);
     case 'publicLinks.uploads': return publicLinksCall(plugin, 'uploads', args);
+    case 'publicEndpoints.token': return publicEndpointsCall(plugin, 'token', args);
+    case 'publicEndpoints.base': return publicEndpointsCall(plugin, 'base', args);
     case 'devices.list': return devicesList(plugin, args);
     // person groups (permissions.groups, groups.js): read; ensure / remove need "manage"
     case 'groups.list': return require('./groups').call(plugin, 'list', args);

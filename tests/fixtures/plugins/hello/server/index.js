@@ -391,6 +391,17 @@ module.exports = {
     return linkEvents;
   },
 
+  // public endpoints (tests/plugin_public_endpoints.test.js): every request is kept in kv "public-last"; a body is
+  // claimed when kv "public-claim" is true; kv "public-answer" is the answer ('throw': an error), else an echo
+  async publicRequest(req, gc) {
+    await gc.storage.set('public-last', req);
+    if (req.body && await gc.storage.get('public-claim')) await gc.media.claim(req.body.mediaId);
+    const a = await gc.storage.get('public-answer');
+    if (a === 'throw') throw new Error('broken on purpose');
+    if (a) return a;
+    return { status: 200, headers: { 'X-WOPI-ItemVersion': 'v1', 'X-Frame-Options': 'ALLOWALL' }, json: { ok: true, path: req.path, user: req.user.id, data: req.token.data } };
+  },
+
   // built-in data handed over by the host (tests/plugins_legacy.test.js)
   async legacyImport(snapshot, gc) {
     if (await gc.storage.get('legacy-refuse')) return { ok: false };
