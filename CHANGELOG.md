@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.212.0] — 2026-10-28
+
+### Features
+- öffentliche Plugin-Endpunkte mit Token – permissions.publicEndpoints (#370)
+
+---
+
 ## [1.211.0] — 2026-10-28
 
 ### Features
