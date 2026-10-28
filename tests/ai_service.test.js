@@ -28,6 +28,8 @@ const CLIENT = '/api/v1/client/plugins';
 const PID = 'hello-ai';
 const PLAIN = 'hello-noai';
 const TEXTONLY = 'hello-ai-text';
+const AREAS = 'hello-ai-areas';
+const PROVIDER_IDS = ['openai', 'anthropic', 'gemini', 'openrouter'];
 const KEYS = { openai: 'sk-test-openai-0001-SECRET', anthropic: 'sk-ant-test-0002-SECRET', gemini: 'AIza-test-0003-SECRET', openrouter: 'sk-or-test-0004-SECRET' };
 const helloManifest = JSON.parse(fs.readFileSync(path.join(HELLO, 'plugin.json'), 'utf8'));
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -63,6 +65,7 @@ function startStub() {
       { id: 'vendor/model-t', name: 'Model T', architecture: { input_modalities: ['text'], output_modalities: ['text'] }, supported_parameters: [], pricing: { prompt: '0.000001', completion: '0.000002' } },
     ] } : { choices: [{ message: { content: JSON.stringify(s.answer) }, finish_reason: 'stop' }], usage: { prompt_tokens: 80, completion_tokens: 15, cost: 0.0012 } }),
   };
+  const handlers = new Map(Object.entries(defaults));
   s.server = http.createServer((req, res) => {
     const parts = [];
     req.on('data', (c) => parts.push(c));
@@ -72,19 +75,22 @@ function startStub() {
       let body = null;
       try { body = raw ? JSON.parse(raw) : null; } catch { body = raw; }
       s.calls.push({ provider, method: req.method, path: '/' + rest.join('/'), headers: req.headers, body });
-      const q = s.queue[provider];
-      if (!q) return reply(res, 404, { error: 'no such provider' });
+      // only the four known providers (an allowlist), never a name from the address
+      const known = PROVIDER_IDS.find((x) => x === provider);
+      if (!known) return reply(res, 404, { error: 'no such provider' });
+      const handler = handlers.get(known);
+      const q = s.queue[known];
       const next = q.shift();
       const send = () => {
         if (next && next.status) return reply(res, next.status, next.body || { error: { message: 'stub error' } });
         if (next && next.answer !== undefined) {
           const saved = s.answer;
           s.answer = next.answer;
-          const out = defaults[provider](req.method, req.url);
+          const out = handler(req.method, req.url);
           s.answer = saved;
           return reply(res, 200, out);
         }
-        return reply(res, 200, defaults[provider](req.method, req.url));
+        return reply(res, 200, handler(req.method, req.url));
       };
       if (next && next.delayMs) setTimeout(send, next.delayMs); else send();
     });
@@ -112,7 +118,8 @@ async function install(buf) {
 }
 const pkg = (id, extra = {}) => {
   const perms = { ...clone(helloManifest.permissions), app: true, ...(extra.permissions || {}) };
-  return helloPackage({ overrides: { id, name: { de: id, en: id }, version: extra.version || '1.0.0', permissions: perms, media: { maxBytes: 20 * 1024 * 1024, types: ['image/*', 'audio/ogg'] } } });
+  return helloPackage({ overrides: { id, name: { de: id, en: id }, version: extra.version || '1.0.0', permissions: perms,
+    media: extra.media || { maxBytes: 20 * 1024 * 1024, types: ['image/*', 'audio/ogg'] } } });
 };
 const gc = async (plugin, fn, ...args) => (await agent.post(`${API}/${plugin}/api/gc`).set('X-CSRF-Token', csrf).send({ fn, args })).body;
 const put = (url, body) => agent.put(url).set('X-CSRF-Token', csrf).send(body);
@@ -141,7 +148,9 @@ before(async () => {
   assert.deepEqual(inspected.plugin.permissions.ai, { purpose: 'Recognise documents', capabilities: ['text', 'vision'] }, 'the install dialog names the AI permission');
   await install(pkg(PLAIN));
   await install(pkg(TEXTONLY, { permissions: { ai: { purpose: 'Texte zusammenfassen', capabilities: ['text'] } } }));
-  for (const id of [PID, PLAIN, TEXTONLY]) assert.equal(await runtime.waitRunning(id), true, id);
+  // like GateControl Drive: files in media areas (media store v2)
+  await install(pkg(AREAS, { permissions: { ai: AI_PERM }, media: { maxBytes: 50 * 1024 * 1024, types: ['*/*'], areas: true, quotaDefault: '10GB' } }));
+  for (const id of [PID, PLAIN, TEXTONLY, AREAS]) assert.equal(await runtime.waitRunning(id), true, id);
 });
 after(async () => {
   noStub();
@@ -214,7 +223,7 @@ describe('install dialog and policy', () => {
     assert.deepEqual(ai.policyOf(PID), { allowed: true, provider: null });
     assert.deepEqual(ai.policyOf(PLAIN), { allowed: false, provider: null });
     const r = await agent.get(`${AI}/plugins`).expect(200);
-    assert.deepEqual(r.body.plugins.map((p) => p.id).sort(), [PID, TEXTONLY].sort());
+    assert.deepEqual(r.body.plugins.map((p) => p.id).sort(), [PID, TEXTONLY, AREAS].sort());
     const p = r.body.plugins.find((x) => x.id === PID);
     assert.equal(p.purpose, 'Recognise documents');
     assert.deepEqual(p.capabilities, ['text', 'vision']);
@@ -307,6 +316,12 @@ describe('admin API', () => {
   });
   it('settings: validation, fallback ≠ default, activity log', async () => {
     await put(`${AI}/settings`, { defaultProvider: 'openai', fallbackProvider: 'openai' }).expect(400);
+    // no property name from the input: only the four providers, never __proto__ / constructor / prototype
+    for (const bad of ['{"__proto__": {"x": {"input": 1, "output": 1}}}', '{"openai": {"__proto__": {"input": 1, "output": 1}}}',
+      '{"openai": {"constructor": {"input": 1, "output": 1}}}', '{"grok": {"m": {"input": 1, "output": 1}}}']) {
+      await agent.put(`${AI}/settings`).set('X-CSRF-Token', csrf).set('Content-Type', 'application/json').send(`{"priceOverrides": ${bad}}`).expect(400);
+    }
+    assert.equal({}.input, undefined, 'Object.prototype untouched');
     await put(`${AI}/settings`, { budgetCents: 0 }).expect(400);
     await put(`${AI}/settings`, { priceOverrides: { openai: { 'model-a': { input: 'x' } } } }).expect(400);
     const r = await put(`${AI}/settings`, { defaultProvider: 'openai', budgetCents: 2000, eurPerUsd: 0.9, perHour: 120, priceOverrides: { openai: { 'model-a': { input: 1, output: 2 } } } }).expect(200);
@@ -595,6 +610,66 @@ describe('gc.ai: providers, routing and fallback', () => {
     assert.ok(r.body.usage.byPlugin.some((x) => x.plugin === PID));
     assert.ok(r.body.usage.byProvider.some((x) => x.provider === 'anthropic'));
     assert.ok(r.body.usage.byDay.length >= 1);
+  });
+});
+
+describe('gc.ai as GateControl Drive uses it', () => {
+  let fileId, otherId;
+  before(async () => {
+    useStub();
+    await put(`${AI}/settings`, { defaultProvider: 'openai', fallbackProvider: null, mediaAllowed: true, perHour: 120, budgetCents: 2000 }).expect(200);
+    const png = await sharp({ create: { width: 900, height: 600, channels: 3, background: { r: 240, g: 240, b: 230 } } }).png().toBuffer();
+    assert.equal((await gc(AREAS, 'media.areas.ensure', 'docs', { label: 'Dokumente' })).ok, true);
+    fileId = (await supertest(app).put(`${CLIENT}/${AREAS}/media`).set('X-API-Token', annaDev.raw).set('Content-Type', 'image/png').send(png).expect(200)).body.mediaId;
+    const claimed = await gc(AREAS, 'media.claim', fileId, { area: 'docs', path: 'Scans/rechnung.png' });
+    assert.equal(claimed.ok, true, JSON.stringify(claimed));
+    otherId = (await supertest(app).put(`${CLIENT}/${PID}/media`).set('X-API-Token', annaDev.raw).set('Content-Type', 'image/png').send(png).expect(200)).body.mediaId;
+  });
+  after(async () => { await put(`${AI}/settings`, { mediaAllowed: false }).expect(200); });
+
+  it('available() without argument is a boolean and never throws — with or without the permission', async () => {
+    for (const id of [AREAS, PLAIN]) {
+      const r = await gc(id, 'ai.available');
+      assert.equal(r.ok, true, JSON.stringify(r));
+      assert.equal(typeof r.result, 'boolean');
+    }
+    const s = (await gc(AREAS, 'ai.status')).result;
+    for (const k of ['available', 'mediaAllowed', 'capabilities', 'budgetLeftCents']) assert.ok(k in s, k);
+  });
+
+  it('extract with a claimed file of a media area: the host reads it', async () => {
+    const r = await gc(AREAS, 'ai.extract', { task: 'drive_document', user: anna, instructions: 'Classify the document.',
+      input: [{ type: 'text', label: 'Text', text: 'Rechnung' }, { type: 'media', mediaId: fileId }], schema: SCHEMA, maxOutputTokens: 800, timeoutMs: 45000 });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual(r.result.data, GOOD);
+    const img = chatCalls()[0].body.messages[1].content[1];
+    assert.match(img.image_url.url, /^data:image\/jpeg;base64,/);
+    const meta = await sharp(Buffer.from(img.image_url.url.split(',')[1], 'base64')).metadata();
+    assert.deepEqual([meta.width, meta.height], [900, 600]);
+  });
+
+  it('only its own media: a file of another plugin is an unknown mediaId', async () => {
+    stub.calls.length = 0;
+    let r = await gc(AREAS, 'ai.extract', { task: 'drive_document', input: [{ type: 'media', mediaId: otherId }], schema: SCHEMA });
+    assert.equal(r.code, 'ERR_INVALID');
+    r = await gc(PID, 'ai.extract', { task: 'drive_document', input: [{ type: 'media', mediaId: fileId }], schema: SCHEMA });
+    assert.equal(r.code, 'ERR_INVALID');
+    assert.equal(chatCalls().length, 0);
+  });
+
+  it('the error codes Drive relies on are named exactly so', async () => {
+    assert.equal((await gc(PLAIN, 'ai.extract', { task: 'drive_document', input: [{ type: 'text', text: 'x' }], schema: SCHEMA })).code, 'ERR_AI_DENIED');
+    await put(`${AI}/settings`, { perHour: 1 }).expect(200);
+    const ask = () => gc(AREAS, 'ai.extract', { task: 'drive_document', input: [{ type: 'text', text: 'x' }], schema: SCHEMA });
+    assert.equal((await ask()).ok, true);
+    assert.equal((await ask()).code, 'ERR_RATE_LIMIT');
+    await put(`${AI}/settings`, { perHour: 120 }).expect(200);
+    ai._resetForTest();
+    await put(`${AI}/plugins/${AREAS}`, { provider: 'gemini' }).expect(200);
+    await put(`${AI}/providers/gemini`, { enabled: false }).expect(200);
+    assert.equal((await ask()).code, 'ERR_AI_NOT_CONFIGURED');
+    await put(`${AI}/providers/gemini`, { enabled: true }).expect(200);
+    await put(`${AI}/plugins/${AREAS}`, { provider: null }).expect(200);
   });
 });
 

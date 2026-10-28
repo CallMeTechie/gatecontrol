@@ -107,22 +107,27 @@ function config() {
   };
 }
 
+// never a property name taken from input
+const RESERVED_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
+
 /** Price overrides: { <provider>: { <model>: { input, output } } } in US dollars per million tokens. */
 function cleanOverrides(v) {
-  if (v == null) return {};
+  if (v == null) return Object.create(null);
   if (!isObj(v)) fail('ERR_INVALID', 'priceOverrides');
-  const out = {};
+  const out = Object.create(null);
   for (const [p, models] of Object.entries(v)) {
-    if (!providers.IDS.includes(p) || !isObj(models)) fail('ERR_INVALID', 'priceOverrides');
-    const m = {};
+    // only the four provider ids (an allowlist) become keys
+    const provider = providers.IDS.find((id) => id === p);
+    if (!provider || !isObj(models)) fail('ERR_INVALID', 'priceOverrides');
+    const m = Object.create(null);
     for (const [model, price] of Object.entries(models)) {
-      const ok = MODEL_RE.test(model) && isObj(price) && Object.keys(price).every((k) => k === 'input' || k === 'output')
+      const ok = MODEL_RE.test(model) && !RESERVED_NAMES.has(model) && isObj(price) && Object.keys(price).every((k) => k === 'input' || k === 'output')
         && [price.input, price.output].every((x) => typeof x === 'number' && Number.isFinite(x) && x >= 0 && x <= 100000);
       if (!ok) fail('ERR_INVALID', 'priceOverrides');
       m[model] = { input: price.input, output: price.output };
     }
     if (Object.keys(m).length > 200) fail('ERR_INVALID', 'priceOverrides');
-    if (Object.keys(m).length) out[p] = m;
+    if (Object.keys(m).length) out[provider] = m;
   }
   return out;
 }
@@ -481,7 +486,8 @@ function reservedMicro() {
 /** US dollars per million tokens of a provider's chosen model: { input, output, estimated }. */
 function priceOf(id, row, cfg) {
   const model = row.model_text;
-  const o = cfg.priceOverrides[id] && cfg.priceOverrides[id][model];
+  const own = (o, k) => isObj(o) && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : null;
+  const o = own(own(cfg.priceOverrides, id), model);
   if (o) return { input: o.input, output: o.output, estimated: false };
   // OpenRouter lists the prices of its models
   const listed = storedInfo(row).price;
