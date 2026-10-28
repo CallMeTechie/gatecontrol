@@ -121,6 +121,9 @@ module.exports = (ctx) => {
       }
       // ── KI-Anbieter (settings-ai.js): four provider cards, the general settings, no key on the page ──
       await page.click('.st-nav-item[data-section="ki"]');
+      // networkidle was reached long before: it does not wait for the section's own requests
+      const aiCards = (pg) => pg.waitForSelector('#ai-providers .ai-prov', { timeout: 10000 }).catch(() => null);
+      await aiCards(page);
       await idle(page);
       const cards = await page.$$eval('#ai-providers .ai-prov', (ns) => ns.map((n) => n.dataset.provider));
       step('KI-Anbieter: four provider cards', cards.join() === 'openai,anthropic,gemini,openrouter', cards.join());
@@ -131,6 +134,7 @@ module.exports = (ctx) => {
       await page.setViewportSize({ width: 390, height: 860 });
       await page.goto(BASE + '/settings#ki');
       await ready(page);
+      await aiCards(page);
       await idle(page);
       const aiOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       step('KI-Anbieter: no horizontal overflow at 390 px', aiOverflow <= 1, `overflow ${aiOverflow}px`);
