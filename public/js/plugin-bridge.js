@@ -304,7 +304,8 @@
         (e) => fail(e && e.status ? e.status : 500, (e && e.message) || 'storage unavailable'));
     }
 
-    // GC.mediaBytes (since 1.211.0): one of the plugin's media URLs, fetched here, the bytes handed over
+    // GC.mediaBytes (since 1.211.0): one of the plugin's media URLs, fetched here, the bytes handed over — the server
+    // checks that the file is this frame's plugin's (X-GC-Plugin)
     let mediaBusy = 0;
     async function mediaBytes(m) {
       const fail = (status, error) => reply({ type: 'gc-result', id: m.id, ok: false, status, error });
@@ -321,7 +322,10 @@
       if (mediaBusy >= 4) { fail(429, 'busy'); return; }
       mediaBusy++;
       try {
-        const res = await fetch(u.pathname, { credentials: 'omit', cache: 'no-store', headers: ranged ? { Range: 'bytes=' + start + '-' + end } : {} });
+        // X-GC-Plugin: the server answers 404 for a file of another plugin (routes/plugins.js) — a frame reads only its own
+        const headers = { 'X-GC-Plugin': pluginId };
+        if (ranged) headers.Range = 'bytes=' + start + '-' + end;
+        const res = await fetch(u.pathname, { credentials: 'omit', cache: 'no-store', headers });
         if (!res.ok) { fail(res.status, 'HTTP ' + res.status); return; }
         const len = Number(res.headers.get('content-length'));
         if (Number.isFinite(len) && len > MAX_MEDIA_BYTES) { fail(413, 'too large'); return; }

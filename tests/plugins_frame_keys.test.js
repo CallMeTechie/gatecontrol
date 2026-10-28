@@ -140,6 +140,7 @@ describe('the parent page (plugin-bridge.js)', () => {
     assert.equal(b.transfers.length, 1, 'the buffer is transferred');
     assert.equal(b.fetched[0].o.credentials, 'omit');
     assert.equal(b.fetched[0].o.headers.Range, 'bytes=10-13');
+    assert.equal(b.fetched[0].o.headers['X-GC-Plugin'], 'hello', 'the server refuses another plugin\'s file (tests/plugins_media.test.js)');
     for (const [id, u, s, e] of [[2, '/api/v1/portal/plugins/hello/api/me', null, null], [3, 'https://evil.example' + url, null, null], [4, url, 0, 17 * 1024 * 1024], [5, url + '?x=1', null, null], [6, url, 5, 1]]) {
       b.send({ type: 'gc-media-bytes', id, url: u, start: s, end: e });
     }

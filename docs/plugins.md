@@ -2244,7 +2244,10 @@ disable/uninstall and when the server shuts down.
   the plugin's media URLs (`/plugin-media/<token>` of `gc.media.url`, this
   origin, nothing else) without cookies and hands the bytes over (the frame's
   `connect-src 'none'` keeps it from fetching itself), e.g. to decrypt a file
-  in the frame. A range (`end` inclusive) of at most 16 MiB a call, a whole file
+  in the frame. The page sends `X-GC-Plugin: <the frame's plugin id>`;
+  `/plugin-media/<token>` (and `…/preview`) answers 404 when that header names
+  another plugin than the file's — a frame never reads another plugin's bytes,
+  even with a valid URL of it. A range (`end` inclusive) of at most 16 MiB a call, a whole file
   only up to that size; four at a time per frame (429 busy); 400 for any other
   URL.
 * **Tabs** (since 1.211.0): `await GC.openTab(url)` → `{ ok: true }` | `{ ok:
