@@ -147,10 +147,11 @@ router.get('/plugin-media/:token', pluginMediaLimiter, async (req, res) => {
   return media.send(req, res, hit.row, `private, max-age=${left}, immutable`);
 });
 
-// the file's preview (media.previews, since 1.208.0): the same token, the same rules
+// the file's preview (media.previews, since 1.208.0): the same token, the same rules — or (since 1.210.0) a
+// preview-only token of gc.media.previews { previewOnly }, which the route above refuses
 router.get('/plugin-media/:token/preview', pluginMediaLimiter, async (req, res) => {
   const previews = require('../services/plugins/mediaPreviews');
-  const hit = media.resolveToken(req.params.token);
+  const hit = media.resolveToken(req.params.token, Date.now(), { preview: true });
   const p = hit ? plugins.get(hit.row.plugin) : null;
   if (!hit || !p || !previews.declared(p)) return tileError(res, 404, 'not found');
   const left = Math.max(0, hit.exp - Math.floor(Date.now() / 1000));

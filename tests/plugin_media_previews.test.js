@@ -272,6 +272,34 @@ describe('gc.media.previews and the frames', () => {
     }
   });
 
+  it('preview-only URLs (previewOnly): the preview opens, the file itself never; an ordinary token still opens both', async () => {
+    const photo = await upload(annaDev, await picture(400, 300), 'image/jpeg');
+    const r = await gc(PID, 'media.previews', [photo], { user: anna, ttlS: 600, previewOnly: true });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const p = r.result[photo];
+    assert.equal(p.previewOnly, true);
+    assert.match(p.url, new RegExp(`^/plugin-media/${photo}\\.\\d+\\.${anna}\\.[A-Za-z0-9_-]{22}/preview$`));
+    const big = await binary(supertest(app).get(p.url + '?size=large')).expect(200);
+    assert.equal(big.headers['content-type'], 'image/jpeg');
+    assert.equal((await sharp(big.body).metadata()).width, 400);
+    await binary(supertest(app).get(p.url)).expect(200);
+    // the same token without /preview: the file stays closed
+    await supertest(app).get(p.url.replace(/\/preview$/, '')).expect(404);
+    // an ordinary URL is another token and still opens both
+    const plain = (await gc(PID, 'media.previews', [photo], { user: anna, ttlS: 600 })).result[photo];
+    assert.equal(plain.previewOnly, undefined);
+    assert.notEqual(plain.url, p.url);
+    await supertest(app).get(plain.url.replace(/\/preview$/, '')).expect(200);
+    await binary(supertest(app).get(plain.url)).expect(200);
+    // tampered or of another file: 404
+    const other = await upload(annaDev, await picture(50, 50), 'image/jpeg');
+    const sig = p.url.split('.').pop().replace(/\/preview$/, '');
+    await supertest(app).get(`/plugin-media/${other}.${p.url.split('.')[1]}.${anna}.${sig}/preview`).expect(404);
+    assert.equal((await gc(PID, 'media.previews', [photo], { previewOnly: 'yes' })).code, 'ERR_INVALID');
+    assert.equal(media.resolveToken(p.url.split('/')[2]), null, 'not for the file');
+    assert.equal(media.resolveToken(p.url.split('/')[2], Date.now(), { preview: true }).previewOnly, true);
+  });
+
   it('previews go with their file: delete, the clean-up of unclaimed files, a hand-over links them', async () => {
     const id = await upload(annaDev, await picture(100, 100), 'image/jpeg');
     await preview(annaDev, id).expect(200);

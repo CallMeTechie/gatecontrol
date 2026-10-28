@@ -854,25 +854,33 @@ async function handOver(from, id, to, { owner = null } = {}) {
 
 // ─── Capability URLs for frames ─────────────────
 
-function sign(id, plugin, exp, uid) {
-  return crypto.createHmac('sha256', String(config.app.secret)).update(`plugin-media:${id}:${plugin}:${exp}:${uid}`).digest('base64url').slice(0, SIG_LEN);
+// A token of the preview only (gc.media.previews { previewOnly }, since 1.210.0) is signed under its own prefix: it
+// opens /plugin-media/<token>/preview, never the file itself — e.g. for a kiosk device that may show a picture in
+// display size but not have the original (full resolution, EXIF with the place it was taken).
+function sign(id, plugin, exp, uid, previewOnly = false) {
+  const prefix = previewOnly ? 'plugin-media-preview' : 'plugin-media';
+  return crypto.createHmac('sha256', String(config.app.secret)).update(`${prefix}:${id}:${plugin}:${exp}:${uid}`).digest('base64url').slice(0, SIG_LEN);
 }
 
 /**
  * gc.media.url(id, { user, ttlS }) → '/plugin-media/<token>' for `ttlS`
  * seconds (60…86400, default 3600), rounded up to the next 5 minutes so a
  * frame rendered twice gets the same URL (browser cache). `user` (a user
- * id) is bound into the token for the record; 0 = none.
+ * id) is bound into the token for the record; 0 = none. `previewOnly`
+ * (gc.media.previews, since 1.210.0): a token that opens only `…/preview`.
  */
-function url(pluginId, id, { user = null, ttlS = null, now = Date.now() } = {}) {
+function url(pluginId, id, { user = null, ttlS = null, now = Date.now(), previewOnly = false } = {}) {
   const ttl = ttlS == null ? URL_TTL_DEFAULT_S : ttlS;
   const exp = Math.ceil((Math.floor(now / 1000) + ttl) / URL_ROUND_S) * URL_ROUND_S;
   const uid = user == null ? 0 : user;
-  return `${URL_PREFIX}${id}.${exp}.${uid}.${sign(id, pluginId, exp, uid)}`;
+  return `${URL_PREFIX}${id}.${exp}.${uid}.${sign(id, pluginId, exp, uid, previewOnly === true)}`;
 }
 
-/** A token of /plugin-media/<token> → the row it names (still stored, same plugin) or null. */
-function resolveToken(token, now = Date.now()) {
+/**
+ * A token of /plugin-media/<token> → the row it names (still stored, same plugin) or null. `preview`: the request is
+ * for the preview — a preview-only token counts too (→ previewOnly: true).
+ */
+function resolveToken(token, now = Date.now(), { preview = false } = {}) {
   const m = TOKEN_RE.exec(String(token || ''));
   if (!m) return null;
   const exp = Number(m[2]);
@@ -880,8 +888,10 @@ function resolveToken(token, now = Date.now()) {
   if (!(s < exp && exp <= s + URL_TTL_MAX_S + URL_ROUND_S)) return null;
   const r = db().prepare('SELECT * FROM plugin_media WHERE id = ?').get(m[1]);
   if (!r) return null;
-  if (!crypto.timingSafeEqual(Buffer.from(m[4]), Buffer.from(sign(r.id, r.plugin, exp, Number(m[3]))))) return null;
-  return { row: r, exp };
+  const got = Buffer.from(m[4]);
+  if (crypto.timingSafeEqual(got, Buffer.from(sign(r.id, r.plugin, exp, Number(m[3]))))) return { row: r, exp, previewOnly: false };
+  if (preview && crypto.timingSafeEqual(got, Buffer.from(sign(r.id, r.plugin, exp, Number(m[3]), true)))) return { row: r, exp, previewOnly: true };
+  return null;
 }
 
 // ─── Clean-up ───────────────────────────────────
