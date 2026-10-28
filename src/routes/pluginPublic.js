@@ -9,9 +9,11 @@
 // prefix of it), still valid, for an enabled account — else 404 (unknown plugin) / 401 (no or a wrong token), and
 // both count in a small bucket per address (pluginPublicFailLimiter). A body (POST / PUT) goes to the media store
 // as an unclaimed file of the token's person, up to the plugin's maxBodyBytes (Content-Length required); the hook
-// publicRequest gets { method, path, query, headers, user, token, body, url, originalUrl } and answers JSON, text,
-// one of its media files (Range works) or a form page (posted to an http(s) address, e.g. an office editor). An
-// upload the plugin did not keep (an error, status ≥ 400, not claimed) is deleted at once.
+// publicRequest gets { method, path, query, headers, user, token, body, url, originalUrl, proofUrl } and answers JSON,
+// text, one of its media files (Range works) or a form page (posted to an http(s) address, e.g. an office editor —
+// never to GateControl's own host). An upload the plugin did not keep (an error, status ≥ 400, not claimed) is
+// deleted at once. The token never reaches a log of this server: url / originalUrl go to the plugin without it
+// (proofUrl, with it, only for a request signed with X-WOPI-Proof); nothing here logs a URL.
 
 const { Router } = require('express');
 const plugins = require('../services/plugins');
@@ -103,12 +105,16 @@ router.all('/plugin-public/:id/*', pluginPublicFailLimiter, pluginPublicLimiter,
 
   let ans;
   const base = pe.origin();
+  const plainUrl = pe.redactUrl(req.originalUrl);
+  // WOPI proof keys sign the URL as called, token included: only then, in a field of its own
+  const signed = typeof req.headers['x-wopi-proof'] === 'string' || typeof req.headers['x-wopi-proofold'] === 'string';
   try {
     const out = await plugins.publicRequest(p.id, {
       method: req.method, path: '/' + path, query: queryOf(req.query), headers: pe.requestHeaders(req.headers),
       user: { id: user.id, name: user.display_name || user.username, role: user.role },
       token: { scope: tok.scope, data: tok.data, expiresAt: tok.expiresAt },
-      body: upload, url: base ? base + req.originalUrl : null, originalUrl: req.originalUrl,
+      body: upload, url: base ? base + plainUrl : null, originalUrl: plainUrl,
+      proofUrl: signed && base ? base + req.originalUrl : null,
       lang: /^en\b/i.test(String(req.headers['accept-language'] || '')) ? 'en' : 'de',
     });
     ans = pe.answerOf(out);
@@ -117,6 +123,8 @@ router.all('/plugin-public/:id/*', pluginPublicFailLimiter, pluginPublicLimiter,
     const code = e && e.code;
     return plain(res, code === 'ERR_NOT_RUNNING' ? 503 : (code === 'ERR_TIMEOUT' ? 504 : 502), 'plugin unavailable');
   }
+  // a form never posts to GateControl itself (its public host, or the host this request came to)
+  if (ans && ans.kind === 'form' && !pe.formTargetAllowed(ans.form.action, req.get('host'))) ans = null;
   if (!ans) {
     dropUnclaimed(p.id, upload);
     return plain(res, 502, 'invalid plugin answer');

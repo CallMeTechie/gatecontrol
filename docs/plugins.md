@@ -680,7 +680,7 @@ module.exports = {
   },                                        // this plugin's pushes was pressed — once per push and button (see "Callback buttons")
   async publicLinkEvent({ token, event, file, zip, downloads }, gc) {  // optional (`publicLinks`, since 1.193.0):
   },                                        // 'download' | 'locked' | 'expired' of one of its links (see "Public links")
-  async publicRequest({ method, path, query, headers, user, token, body, url, originalUrl }, gc) {  // optional
+  async publicRequest({ method, path, query, headers, user, token, body, url, originalUrl, proofUrl }, gc) {  // optional
     return { status: 200, json: {} };       // (`publicEndpoints`, since 1.211.0) — see "Public endpoints"
   },
   async groupsChanged({ changes }, gc) {},  // optional (`groups`): batched group changes (see "Groups")
@@ -1873,12 +1873,17 @@ GET | HEAD | POST | PUT  /plugin-public/<id>/<path>?access_token=<token>
   not claimed it (`gc.media.claim`), the file is deleted at once.
 * **Hook** `publicRequest({ method, path ('/wopi/files/42'), query (without
   access_token), headers, user: { id, name, role }, token: { scope, data,
-  expiresAt }, body, url, originalUrl, lang })`, within the request timeout
-  (30 s). `headers`: `x-…` (not `x-forwarded-*`, `x-real-ip`, `x-api-token`,
-  `x-csrf-token`), `content-type`, `content-length` — never cookies or
-  `authorization`. `url` is `<GC_BASE_URL origin><originalUrl>`; a plugin
-  checking a signature over the URL (WOPI proof keys) builds it from the
-  address it handed out and `originalUrl`.
+  expiresAt }, body, url, originalUrl, proofUrl, lang })`, within the request
+  timeout (30 s). `headers`: `x-…` (not `x-forwarded-*`, `x-real-ip`,
+  `x-api-token`, `x-csrf-token`), `content-type`, `content-length` — never
+  cookies or `authorization`. `originalUrl` (path and query) and `url`
+  (`<GC_BASE_URL origin><originalUrl>`) come **without** `access_token`.
+  `proofUrl` — the URL exactly as called, the token included — only for a
+  request that carries `X-WOPI-Proof` / `X-WOPI-ProofOld` (WOPI proof keys sign
+  token and URL), else `null`; use it for that check only, never log it.
+* **Logs:** GateControl logs no URL of these routes (the error handler only
+  the path). A reverse proxy in front of it may log query strings — the reason
+  to keep `ttlS` short.
 * **Answer** — `{ status, headers, … }`, status 200–299 or 400–599 (no
   redirects), `headers` only `x-…` names (never `x-frame-options`,
   `x-content-type-options` and the like), single-line values ≤ 1024 characters:
@@ -1888,7 +1893,10 @@ GET | HEAD | POST | PUT  /plugin-public/<id>/<path>?access_token=<token>
     (`Range` works, `Content-Disposition: attachment`);
   * `form: { action, fields }` — a small page of **this server** that posts
     `fields` (≤ 10, names `[A-Za-z0-9_.-]`, values ≤ 8 KB) to `action` (an
-    absolute http(s) URL) at once — e.g. an office editor's URL with the WOPI
+    absolute http(s) URL — never GateControl's own host: neither the host of
+    `GC_BASE_URL` nor the one the request came to, whatever scheme or port;
+    such a page could post to GateControl's routes with the person's cookies →
+    502) at once — e.g. an office editor's URL with the WOPI
     `access_token`; CSP `form-action <that origin>`, a nonce script, no
     framing. A plugin's own HTML never reaches GateControl's origin;
   * none of these: an empty body.

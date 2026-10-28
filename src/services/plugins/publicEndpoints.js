@@ -10,10 +10,12 @@
 //     below it, 60 s … 24 h; gc.publicEndpoints.base() → { url } of the plugin's prefix (GC_BASE_URL);
 //   * the route (routes/pluginPublic.js) checks the token (query `access_token` or `Authorization: Bearer`),
 //     the person (an enabled account), stores a body as an unclaimed media file of that person (≤ maxBodyBytes)
-//     and calls the hook publicRequest({ method, path, query, headers, user, token, body, url, originalUrl });
+//     and calls the hook publicRequest({ method, path, query, headers, user, token, body, url, originalUrl, proofUrl })
+//     — url and originalUrl without the access_token; proofUrl (the URL as called, token included) only when the request
+//     carries X-WOPI-Proof, for checking that signature;
 //   * the answer: { status, headers (x-… only), json | text | media (a media id of the plugin) | form } — a form
-//     is a small page of this server that posts the fields to an http(s) address (the office editor), with a CSP
-//     that allows exactly that address as form-action.
+//     is a small page of this server that posts the fields to an http(s) address (the office editor — never
+//     GateControl's own host), with a CSP that allows exactly that address as form-action.
 //
 // Nothing of a plugin's own HTML ever reaches GateControl's origin; the answers carry nosniff, no-store and a
 // sandboxing CSP.
@@ -139,6 +141,29 @@ function requestHeaders(headers) {
   return out;
 }
 
+/** `path?query` without the access_token parameter (what the plugin and every log may see). */
+function redactUrl(u) {
+  const s = String(u || '');
+  const q = s.indexOf('?');
+  if (q < 0) return s;
+  const kept = s.slice(q + 1).split('&').filter((x) => x && !/^access_token(?:=|$)/i.test(x));
+  return s.slice(0, q) + (kept.length ? '?' + kept.join('&') : '');
+}
+
+/**
+ * May a form post to `action`? Never to GateControl itself: not its public origin (GC_BASE_URL) and not the host the
+ * request came to (any scheme or port) — a plugin's page on GateControl's origin must not post to its own routes
+ * (same origin, with the person's cookies).
+ */
+function formTargetAllowed(action, requestHost, base = origin()) {
+  const host = (h) => String(h || '').toLowerCase().replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
+  const target = host(action.hostname);
+  if (!target) return false;
+  if (base) { try { if (host(new URL(base).hostname) === target) return false; } catch { /* no base */ } }
+  if (requestHost && host(requestHost) === target) return false;
+  return true;
+}
+
 /** The plugin's answer headers that may go out: x-… names (not the browser's), single-line values. */
 function answerHeaders(h) {
   const out = {};
@@ -213,5 +238,5 @@ function formPage(form, lang) {
 
 module.exports = {
   PREFIX, TTL_MIN_S, TTL_MAX_S, TTL_DEFAULT_S, EndpointError,
-  declOf, origin, baseOf, mint, tokenOf, verify, requestHeaders, answerHeaders, answerOf, formPage,
+  declOf, origin, baseOf, mint, tokenOf, verify, requestHeaders, answerHeaders, answerOf, formPage, redactUrl, formTargetAllowed,
 };

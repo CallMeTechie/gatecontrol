@@ -142,7 +142,23 @@ describe('tokens', () => {
     assert.equal(last.headers.cookie, undefined);
     assert.equal(last.user.id, anna);
     assert.equal(last.body, null);
-    assert.match(last.url, /^https:\/\/gc\.home-test\.net\/plugin-public\/pl-office\/wopi\/files\/7\?access_token=/);
+    // the token is in no URL the plugin gets — only in proofUrl of a request signed with X-WOPI-Proof
+    assert.equal(last.url, 'https://gc.home-test.net/plugin-public/pl-office/wopi/files/7?a=1');
+    assert.equal(last.originalUrl, '/plugin-public/pl-office/wopi/files/7?a=1');
+    assert.equal(last.proofUrl, `https://gc.home-test.net/plugin-public/pl-office/wopi/files/7?access_token=${encodeURIComponent(tk)}&a=1`);
+    await pub().get(`${P}/wopi/files/7`).query({ access_token: tk, b: '2' }).expect(200);
+    const unsigned = await kvGet('public-last');
+    assert.equal(unsigned.proofUrl, null);
+    assert.equal(unsigned.originalUrl, '/plugin-public/pl-office/wopi/files/7?b=2');
+    assert.equal(JSON.stringify(unsigned).includes(tk), false, 'the token appears nowhere in the hook\'s request');
+  });
+
+  it('redacts access_token from a URL, the other parameters kept', () => {
+    const pe = require('../src/services/plugins/publicEndpoints');
+    assert.equal(pe.redactUrl('/x/y?access_token=abc&b=2'), '/x/y?b=2');
+    assert.equal(pe.redactUrl('/x/y?b=2&ACCESS_TOKEN=abc&access_token'), '/x/y?b=2');
+    assert.equal(pe.redactUrl('/x/y?access_token=abc'), '/x/y');
+    assert.equal(pe.redactUrl('/x/y'), '/x/y');
   });
 
   it('end when the person is disabled', async () => {
@@ -222,7 +238,11 @@ describe('answers', () => {
     assert.ok(r.text.includes('value="tok&quot;&lt;&gt;"'));
     assert.ok(r.text.includes('name="access_token_ttl" value="123"'));
     assert.ok(r.text.includes('action="https://office.example.net/browser/x/cool.html?WOPISrc=a%22b"'));
-    for (const bad of [{ form: { action: 'javascript:alert(1)', fields: {} } }, { form: { action: 'https://a.example/', fields: { 'a b': 'x' } } },
+    // never a form to GateControl itself: its public host (any port, any scheme), the host the request came to
+    const host = (await pub().get(`${P}/office/open/7`).query({ access_token: tk })).req.getHeader('host');
+    for (const bad of [{ form: { action: 'https://gc.home-test.net/api/v1/settings', fields: {} } }, { form: { action: 'http://GC.home-test.net:8443/x', fields: {} } },
+      { form: { action: `http://${host}/api/v1/plugins/x`, fields: {} } }, { form: { action: `https://${host.replace(/:\d+$/, '')}/x`, fields: {} } },
+      { form: { action: 'javascript:alert(1)', fields: {} } }, { form: { action: 'https://a.example/', fields: { 'a b': 'x' } } },
       { status: 302, headers: { Location: 'https://evil.example/' } }, { text: 5 }, { media: '../x' }]) {
       await kv('public-answer', bad);
       await pub().get(`${P}/office/open/7`).query({ access_token: tk }).expect(502);
