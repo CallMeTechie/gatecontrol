@@ -2692,7 +2692,7 @@ disable/uninstall and when the server shuts down.
     frame (`/portal/plugins/<id>/frame`). A direct link
     `/portal?<key>=<value>#plg-<id>` hands its query on to that frame
     (`/portal/plugins/<id>/frame?<key>=<value>`, read from the frame's own
-    `location.search`): keys `[a-z][a-z0-9_]{0,31}` except `section`, values
+    `location.search`): keys `[a-z][A-Za-z0-9_]{0,31}` (e.g. `cloudError`) except `section`, values
     ≤ 200 characters, ≤ 8 of them; the portal's address bar keeps just the
     hash.
   * **sections in GateControl tabs**: `ui.portal.sections: [{ id, tab, title,

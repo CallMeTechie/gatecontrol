@@ -1624,7 +1624,7 @@
     var q = [];
     try {
       new URLSearchParams(location.search).forEach(function (v, k) {
-        if (q.length < 8 && k !== 'section' && /^[a-z][a-z0-9_]{0,31}$/.test(k) && v.length <= 200) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
+        if (q.length < 8 && k !== 'section' && /^[a-z][A-Za-z0-9_]{0,31}$/.test(k) && v.length <= 200) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
       });
     } catch (_) { return; }
     var src = f.getAttribute('src') || '';
