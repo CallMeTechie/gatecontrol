@@ -1610,6 +1610,28 @@
     });
   })();
 
+  // ─── Direct links into a plugin tab ────────────────────────────────────
+  // "/portal?<key>=<value>#plg-<id>" (a plugin's own direct link, e.g. a file
+  // in Drive): the query reaches that tab's frame ("/portal/plugins/<id>/
+  // frame?<key>=<value>"), which reads it from its own location. Simple keys
+  // and short values only; afterwards the address bar keeps just the hash.
+  (function () {
+    var tab = location.hash.slice(1);
+    if (!location.search || !/^plg-[a-z0-9]+(-[a-z0-9]+)*$/.test(tab)) return;
+    var panel = doc.getElementById('panel-' + tab);
+    var f = panel && panel.querySelector('iframe[data-plugin-frame]');
+    if (!f) return;
+    var q = [];
+    try {
+      new URLSearchParams(location.search).forEach(function (v, k) {
+        if (q.length < 8 && k !== 'section' && /^[a-z][a-z0-9_]{0,31}$/.test(k) && v.length <= 200) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
+      });
+    } catch (_) { return; }
+    var src = f.getAttribute('src') || '';
+    if (q.length && src) f.setAttribute('src', src + (src.indexOf('?') < 0 ? '?' : '&') + q.join('&'));
+    try { history.replaceState(null, '', location.pathname + location.hash); } catch (_) { /* keeps the query */ }
+  })();
+
   // ─── Boot ───────────────────────────────────────────────────────────────
   activate(location.hash.slice(1) || 'start');
   loadDevice();
