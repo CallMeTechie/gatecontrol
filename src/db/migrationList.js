@@ -2898,6 +2898,52 @@ const migrations = [
   },
   {
     version: 118,
+    name: 'cloud_accounts',
+    // Cloud accounts (docs/cloud-accounts.md, services/cloudAccounts/):
+    //   storage_targets  the kinds 'gdrive' (Google Drive) and 'onedrive' join
+    //                    the CHECK — the table is copied over (SQLite cannot
+    //                    change a CHECK); the token of such a target lives in
+    //                    its secret_enc like a password.
+    //   cloud_connections  Google Drive / OneDrive of a person for one plugin
+    //                    (gc.cloud, permissions.cloudImport): the token as JSON
+    //                    encrypted with GC_ENCRYPTION_KEY, the account's name
+    //                    and id; gone with the person (and with the plugin).
+    sql: `
+      CREATE TABLE storage_targets_v2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('local', 'smb', 'webdav', 's3', 'gdrive', 'onedrive')),
+        label TEXT NOT NULL,
+        config_json TEXT NOT NULL DEFAULT '{}',
+        secret_enc TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        checked_at TEXT,
+        check_ok INTEGER,
+        check_error TEXT,
+        free_bytes INTEGER,
+        total_bytes INTEGER
+      );
+      INSERT INTO storage_targets_v2 (id, kind, label, config_json, secret_enc, created_at, updated_at, checked_at, check_ok, check_error, free_bytes, total_bytes)
+        SELECT id, kind, label, config_json, secret_enc, created_at, updated_at, checked_at, check_ok, check_error, free_bytes, total_bytes FROM storage_targets;
+      DROP TABLE storage_targets;
+      ALTER TABLE storage_targets_v2 RENAME TO storage_targets;
+      CREATE TABLE IF NOT EXISTS cloud_connections (
+        id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL CHECK (provider IN ('google', 'microsoft')),
+        plugin TEXT NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        account TEXT,
+        account_id TEXT,
+        token_enc TEXT NOT NULL,
+        connected_at TEXT NOT NULL DEFAULT (datetime('now')),
+        used_at TEXT,
+        error TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_cloud_connections_owner ON cloud_connections(plugin, user_id);`,
+    detect: (db) => tableExists(db, 'cloud_connections'),
+  },
+  {
+    version: 119,
     name: 'ai_service',
     // The AI service gc.ai (docs/plugins.md "AI requests", services/ai/):
     //   ai_providers      one row per provider ('openai' | 'anthropic' |

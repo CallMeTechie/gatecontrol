@@ -8,6 +8,7 @@
 //   GET /settings/plugins/licenses        Lizenzen · Sicherheit & Upload · Protokoll ·
 //   GET /settings/plugins/security        one installed plugin (manage/:id) — one
 //   GET /settings/plugins/storage         storage targets (docs/storage-targets.md)
+//   GET /settings/plugins/cloud           Cloud-Konten: OAuth apps for Google Drive / OneDrive (docs/cloud-accounts.md)
 //   GET /settings/plugins/log             aurora page, the views are built by
 //   GET /settings/plugins/manage/:id      public/js/plugins-page.js (admins only)
 //   GET /plugins[/catalog[/:id]|/updates|/licenses|/security|/manage/:id]
@@ -139,10 +140,17 @@ router.get('/plugins/_shared/tiles/:token/:z/:x/:y.png', pluginTileLimiter, asyn
 const media = require('../services/plugins/media');
 const { pluginMediaLimiter } = require('../middleware/rateLimit');
 
+// X-GC-Plugin (since 1.211.0): the parent page fetching for a frame (GC.mediaBytes, plugin-bridge.js) names the frame's
+// plugin — a URL of another plugin's file then answers 404, so a frame reads only its own plugin's bytes.
+function otherPlugin(req, hit) {
+  const want = req.get('x-gc-plugin');
+  return want != null && want !== hit.row.plugin;
+}
+
 router.get('/plugin-media/:token', pluginMediaLimiter, async (req, res) => {
   const hit = media.resolveToken(req.params.token);
   const p = hit ? plugins.get(hit.row.plugin) : null;
-  if (!hit || !p || !media.declOf(p)) return tileError(res, 404, 'not found');
+  if (!hit || !p || !media.declOf(p) || otherPlugin(req, hit)) return tileError(res, 404, 'not found');
   const left = Math.max(0, hit.exp - Math.floor(Date.now() / 1000));
   return media.send(req, res, hit.row, `private, max-age=${left}, immutable`);
 });
@@ -153,7 +161,7 @@ router.get('/plugin-media/:token/preview', pluginMediaLimiter, async (req, res) 
   const previews = require('../services/plugins/mediaPreviews');
   const hit = media.resolveToken(req.params.token, Date.now(), { preview: true });
   const p = hit ? plugins.get(hit.row.plugin) : null;
-  if (!hit || !p || !previews.declared(p)) return tileError(res, 404, 'not found');
+  if (!hit || !p || !previews.declared(p) || otherPlugin(req, hit)) return tileError(res, 404, 'not found');
   const left = Math.max(0, hit.exp - Math.floor(Date.now() / 1000));
   return previews.send(req, res, p, hit.row, `private, max-age=${left}, immutable`);
 });
@@ -168,13 +176,14 @@ function mapsOf(p) { return !!(p && p.manifest && p.manifest.ui && p.manifest.ui
  * template for window.GC.tiles) for a maps frame with a known origin — the
  * CSP allows the relay only then; `scanQr` (ui.scanQr / ui.camera) for
  * window.GC.scanQr; `pickPrincipals` (permissions.groups) for
- * window.GC.pickPrincipals.
+ * window.GC.pickPrincipals; `openUrl` (permissions.cloudImport) for window.GC.openUrl.
  */
 function frameHeaders(req, res, p) {
   const maps = mapsOf(p);
   const origin = frame.originOf(req);
   frame.headers(res, { maps, avatars: true, origin, media: !!media.declOf(p) });
-  return { maps, tiles: maps && origin ? tiles.template() : null, scanQr: frame.scanQrOf(p && p.manifest), pickPrincipals: frame.pickPrincipalsOf(p && p.manifest) };
+  return { maps, tiles: maps && origin ? tiles.template() : null, scanQr: frame.scanQrOf(p && p.manifest), pickPrincipals: frame.pickPrincipalsOf(p && p.manifest),
+    openUrl: frame.openUrlOf(p && p.manifest) };
 }
 
 function lang(req, res) { return (req.language || res.locals.language) === 'en' ? 'en' : 'de'; }
@@ -208,7 +217,7 @@ const catalog = require('../services/plugins/catalog');
 // strings plugins-page.js reads (the island's data-prefixes list the same ones)
 const AREA_I18N_PREFIXES = ['plugins.', 'common.'];
 const AREA_BASE = '/settings/plugins';
-const AREA_VIEWS = { '': 'installed', catalog: 'catalog', updates: 'updates', licenses: 'licenses', security: 'security', storage: 'storage', log: 'log' };
+const AREA_VIEWS = { '': 'installed', catalog: 'catalog', updates: 'updates', licenses: 'licenses', security: 'security', storage: 'storage', cloud: 'cloud', log: 'log' };
 
 function areaPage(req, res, view, extra = {}) {
   if (!isAdmin(res)) return res.redirect('/profile');

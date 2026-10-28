@@ -358,6 +358,27 @@ async function storeBuffer(plugin, buf, { mime, name = null, owner = null } = {}
   return { ...out, name: clean };
 }
 
+/**
+ * Store `length` bytes the host streams from elsewhere (gc.cloud.import —
+ * services/plugins/cloud.js): the same checks and writer as storeBuffer(),
+ * the bytes never held in memory. `owner` is the person who asked.
+ * @returns {Promise<{ mediaId, mime, bytes, name }>}
+ * @throws {MediaError} no_media, unsupported_type, empty, too_large, quota_exceeded, length_mismatch / aborted
+ */
+async function storeStream(plugin, source, { length, mime, name = null, owner = null } = {}) {
+  const decl = declOf(plugin);
+  if (!decl) throw new MediaError('no_media', 404);
+  const type = baseType(mime);
+  if (!typeAllowed(decl, type)) throw new MediaError('unsupported_type', 415);
+  if (!Number.isSafeInteger(length) || length < 1) throw new MediaError('empty', 400);
+  if (length > decl.maxBytes) throw new MediaError('too_large', 413);
+  if (usage(plugin.id).bytes + length > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
+  capacity(plugin, length);
+  const clean = cleanName(name);
+  const out = await writeFile(plugin, { source, length, mime: type, owner, name: clean });
+  return { ...out, name: clean };
+}
+
 // ─── Resumable uploads (media.resumable, since 1.193.0) ─────
 //
 // PUT …/media?uploadId=<id>&offset=<n> with `Content-Range: bytes
@@ -1011,7 +1032,7 @@ function importPlugin(pluginId, list) {
 
 module.exports = {
   MediaError, ID_RE, CHUNK, URL_PREFIX, URL_TTL_MIN_S, URL_TTL_MAX_S, UNCLAIMED_TTL_MS, QUOTA_SETTING, BACKUP_SETTING,
-  mediaRoot, fileOf, declOf, quotaOf, setQuota, usage, baseType, typeAllowed, store, storeBuffer, storePart, upload, uploadStatus, UPLOAD_ID_RE, UPLOAD_TTL_MS,
+  mediaRoot, fileOf, declOf, quotaOf, setQuota, usage, baseType, typeAllowed, store, storeBuffer, storeStream, storePart, upload, uploadStatus, UPLOAD_ID_RE, UPLOAD_TTL_MS,
   cleanName, contentDisposition, row, info, parseRange, readRange, send, mayRead, failure,
   claim, remove, removeAll, handOver, url, resolveToken, cleanup, backupEnabled, setBackupEnabled, exportPlugin, importPlugin, sealedSize,
   expectedDigest, pluginDir, forget, storeFromLink, contentLength, INLINE_RE,

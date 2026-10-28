@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="{{ language }}" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  {#- Connecting Google Drive / OneDrive (routes/cloudOAuth.js, docs/cloud-accounts.md).
+      mode 'confirm': who connects which provider for which plugin, a warning to go on only
+      as that person, "Weiter" starts it (never automatically);
+      'foreign': the link belongs to another person than this browser's session;
+      'done' / 'error': back to `target` (the portal, the app or the storage page —
+      always checked by the server) with a link and a meta refresh;
+      'invalid': the link is used up, expired or not for this browser. -#}
+  {% if target %}<meta http-equiv="refresh" content="1;url={{ target }}">{% endif %}
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#f2f0eb">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title>{{ t('cloud.connect.title') }} — {{ appName }}</title>
+  <script nonce="{{ cspNonce }}">
+(function(){try{var s=localStorage.getItem('gc-theme-mode');var t=s||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
+</script>
+  <link rel="stylesheet" href="/css/app.css?v={{ appVersion }}">
+</head>
+<body class="au-page">
+  <main class="au-wrap">
+    <div class="au-brand">
+      <span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M7 18a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 9.5a4.5 4.5 0 0 1-.5 8.5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></span>
+      <span class="nm">{{ appName }}</span>
+    </div>
+    <div class="card au-card au-center" data-cloud-connect="{{ mode }}">
+      {% if mode == 'done' %}
+      <div class="au-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6"/></svg></div>
+      <h1 class="au-title">{{ t('cloud.connect.done_title') }}</h1>
+      {% elif mode == 'confirm' %}
+      <div class="au-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 9.5a4.5 4.5 0 0 1-.5 8.5z"/></svg></div>
+      <h1 class="au-title">{{ t('cloud.connect.confirm_title', { provider: providerName }) }}</h1>
+      {% elif mode == 'foreign' %}
+      <div class="au-icon au-icon-danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></div>
+      <h1 class="au-title">{{ t('cloud.connect.foreign_title') }}</h1>
+      {% else %}
+      <div class="au-icon au-icon-danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></div>
+      <h1 class="au-title">{{ t('cloud.connect.invalid_title') if mode == 'invalid' else t('cloud.connect.error_title') }}</h1>
+      {% endif %}
+      <p class="au-sub">{{ message }}</p>
+      {% if mode == 'confirm' %}
+      <p class="au-sub" data-cloud-warn><strong>{{ warning }}</strong></p>
+      <p class="au-sub">{{ t('cloud.connect.confirm_hint') }}</p>
+      <a class="btn btn-primary au-submit" href="{{ next }}" data-cloud-go>{{ t('cloud.connect.continue') }}</a>
+      {% elif target %}
+      <a class="btn btn-primary au-submit" href="{{ target }}" data-cloud-return>{{ t('cloud.connect.back') }}</a>
+      {% endif %}
+    </div>
+    <div class="au-foot">{{ appName }}</div>
+  </main>
+</body>
+</html>

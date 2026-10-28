@@ -83,6 +83,11 @@ router.get('/notify-media/:file', notifyMediaLimiter, (req, res) => {
 // served before every authenticated route, own limiters per address.
 router.use(require('./publicLinks'));
 
+// ─── Public endpoints of plugins (no session, docs/plugins.md "Public endpoints") ──
+// /plugin-public/<id>/<path> (routes/pluginPublic.js, since 1.211.0): a token the
+// plugin minted is the permission — e.g. an office server calling a WOPI host.
+router.use(require('./pluginPublic'));
+
 // ─── Prometheus metrics (token auth or session) ────
 // Per-identity rate limit so a stolen `read-only`/`system` token can't
 // loop-scrape the endpoint at kilohertz speeds. 60/min/identity is well
@@ -260,6 +265,11 @@ router.get('/auth/oidc/:directoryId/callback', loginLimiter, oidcRoutes.callback
 // set by the callback); ends with the redirect back to the app.
 router.get('/auth/app/2fa', apiLimiter, oidcRoutes.appTwoFactorPage);
 router.post('/auth/app/2fa', loginLimiter, csrfProtection, oidcRoutes.appTwoFactor);
+// Cloud accounts (docs/cloud-accounts.md): connecting Google Drive / OneDrive —
+// OAuth code flow with state and PKCE; the callback is the redirect URI of the OAuth apps.
+const cloudOAuth = require('./cloudOAuth');
+router.get('/oauth/cloud/start', apiLimiter, cloudOAuth.start);
+router.get('/oauth/cloud/callback', apiLimiter, cloudOAuth.callback);
 // Own password after an administrator set one with "change on next login":
 // only reachable with req.session.pendingPwChange (set by the login steps).
 router.get('/login/change-password', guestOnly, apiLimiter, authRoutes.changePasswordPage);

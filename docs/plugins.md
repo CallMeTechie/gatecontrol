@@ -78,7 +78,7 @@ caption, value?}` — the wireframes of "So sieht es bei dir aus"), `needs`
 (what it needs besides GateControl, e.g. an API token) and `languages`
 (`de`, `en`); symbols: `page app portal widget tile action bell clock data
 network chat key location users door calendar camera car bulb server shield
-link cloud ai` (`cloud` since 1.206.0, `ai` — AI requests, `permissions.ai` — since 1.211.0). Per version `notes` (its CHANGELOG section, Markdown). Without them a
+link cloud ai` (`cloud` since 1.206.0, `ai` — AI requests, `permissions.ai` — since 1.214.0). Per version `notes` (its CHANGELOG section, Markdown). Without them a
 plugin is listed under "Weitere" with the default icon, its page shows only
 what the catalogue knows.
 
@@ -316,7 +316,8 @@ unsigned build of the same id.
     "publicLinks": true,
     "devices": true,
     "groups": "read",
-    "ai": { "purpose": { "de": "Dokumente erkennen", "en": "Recognise documents" }, "capabilities": ["text", "vision"] }
+    "ai": { "purpose": { "de": "Dokumente erkennen", "en": "Recognise documents" }, "capabilities": ["text", "vision"] },
+    "cloudImport": { "purpose": { "de": "Dateien aus Google Drive und OneDrive übernehmen", "en": "Take files from Google Drive and OneDrive" } }
   },
   "media": { "maxBytes": 26214400, "types": ["image/jpeg", "image/webp", "audio/ogg", "application/pdf"], "quotaDefault": "10GB" },
   "services": { "provides": { "scene": { "label": { "de": "Szene schalten", "en": "Switch a scene" } } } },
@@ -501,6 +502,14 @@ unsigned build of the same id.
   dialog shows "Öffentliche Links: Öffentliche Download-Links ohne Anmeldung
   …", marked as sensitive. Errors `permissions.publicLinks: invalid`. See
   "Public links".
+* `permissions.publicEndpoints` (since 1.211.0): `true` or `{ "maxBodyBytes": n }`
+  — requests **without a session** under `/plugin-public/<id>/…`, each with a
+  token the plugin mints (`gc.publicEndpoints.token`), answered by the hook
+  `publicRequest`; with `maxBodyBytes` (≤ `media.maxBytes`, needs `media`) a
+  request body up to that size is stored as an unclaimed media file. Shown at
+  install as "Öffentliche Endpunkte …", marked as sensitive. Errors
+  `permissions.publicEndpoints: invalid`, `permissions.publicEndpoints.maxBodyBytes:
+  needs media`. See "Public endpoints".
 * `permissions.devices` (boolean, since 1.193.0): the plugin sees the
   GateControl apps of a person (`gc.devices.list`), gets the asking device
   with every app request (`user.device`) and may send notifications to single
@@ -514,7 +523,7 @@ unsigned build of the same id.
   `remove`). The install dialog shows "Gruppen: Gruppen und Mitglieder lesen"
   or "Gruppen: Gruppen und Mitglieder lesen und eigene Gruppen verwalten",
   marked as sensitive. Errors `permissions.groups: invalid`. See "Groups".
-* `permissions.ai` (since 1.211.0): `{ "purpose": {de, en}, "capabilities":
+* `permissions.ai` (since 1.214.0): `{ "purpose": {de, en}, "capabilities":
   ["text", "vision", "audio", "video"] }` — requests to the AI provider set up
   in GateControl (`gc.ai.*`). The install dialog shows "KI-Anfragen: <purpose>
   (Text, Bilder) über den in GateControl eingerichteten KI-Anbieter …",
@@ -680,6 +689,9 @@ module.exports = {
   },                                        // this plugin's pushes was pressed — once per push and button (see "Callback buttons")
   async publicLinkEvent({ token, event, file, zip, downloads }, gc) {  // optional (`publicLinks`, since 1.193.0):
   },                                        // 'download' | 'locked' | 'expired' of one of its links (see "Public links")
+  async publicRequest({ method, path, query, headers, user, token, body, url, originalUrl, proofUrl }, gc) {  // optional
+    return { status: 200, json: {} };       // (`publicEndpoints`, since 1.211.0) — see "Public endpoints"
+  },
   async groupsChanged({ changes }, gc) {},  // optional (`groups`): batched group changes (see "Groups")
   async groupUsage({ groupId, successorUserId }, gc) {  // optional (`groups`): what the plugin keeps for a group
     return [{ kind: 'Drive', label: 'Team-Ordner Buchhaltung', onDelete: 'wird in Meine Dateien von Thomas Berg verschoben' }];
@@ -723,13 +735,15 @@ module.exports = {
 | `gc.media.handOver(id, { toPlugin, user })` | since 1.193.0: the file becomes a new, unclaimed file of another plugin → `{ mediaId, mime, bytes, name }` there (the caller lists one of that plugin's services) — see "Hand-over" |
 | `gc.net.uploadTarget(id, path, { form: { fields, file }, mediaFrom, query, headers, timeoutMs })` | since 1.193.0: a media file as `multipart/form-data` to an assigned home target, streamed → like `fetchTarget` — see "Network" |
 | `gc.publicLinks.create/list/get/revoke` | since 1.193.0: download links without login for some of the plugin's media (`publicLinks`, only while an administrator allows them) — see "Public links" |
+| `gc.publicEndpoints.token({ user, path, ttlS, data })` / `gc.publicEndpoints.base()` | since 1.211.0: tokens for requests without a session under `/plugin-public/<id>/…` (`publicEndpoints`) — see "Public endpoints" |
 | `gc.devices.list({ userId })` | since 1.193.0: the person's GateControl apps `[{ id, name, platform, clientType, appVersion, online, lastSeen, via }]` (`devices`) — see "Devices" |
 | `gc.notify({ …, users, devices, silent, data })` | since 1.193.0: only to these devices of `users`; `silent: true` a data notification without display (`devices`) — see "Devices" |
-| `gc.ai.available({ capability })` / `gc.ai.status()` | since 1.211.0: is AI usable for the plugin (asks no provider) / `{ available, mediaAllowed, capabilities, budgetLeftCents }` (`ai`) — see "AI requests" |
-| `gc.ai.extract({ task, user, instructions, input, schema, maxOutputTokens, timeoutMs })` / `gc.ai.generate({ … })` | since 1.211.0: structured data checked against a schema / free text from the AI provider set up in GateControl → `{ ok, data \| text, provider, model, usage, fallback }` (`ai`) — see "AI requests" |
+| `gc.ai.available({ capability })` / `gc.ai.status()` | since 1.214.0: is AI usable for the plugin (asks no provider) / `{ available, mediaAllowed, capabilities, budgetLeftCents }` (`ai`) — see "AI requests" |
+| `gc.ai.extract({ task, user, instructions, input, schema, maxOutputTokens, timeoutMs })` / `gc.ai.generate({ … })` | since 1.214.0: structured data checked against a schema / free text from the AI provider set up in GateControl → `{ ok, data \| text, provider, model, usage, fallback }` (`ai`) — see "AI requests" |
 | `gc.groups.list/get/members/isMember/leadersOf(…)` | the person groups of GateControl (`groups`) — see "Groups" |
 | `gc.groups.ensure({ key, name, kind, parentKey, members })` / `gc.groups.remove(key)` | the plugin's own groups (`groups: "manage"`) — see "Groups" |
 | `gc.notify({ …, groups: [id] })` | to the groups' enabled members, subgroups included, resolved at send time (`groups`) — see "Groups" |
+| `gc.cloud.available/connectUrl/connections/disconnect/list/import(…)` | Google Drive / OneDrive of a person (`cloudImport`) — see "Cloud import" |
 | `gc.events.emit({ users, type, data })` | realtime event to the listed people's apps and frames → `{ delivered }` (`events`, ≤ 600/min) — see "Realtime events" |
 | `gc.services.call({ plugin, service, userId, payload })` | another plugin's service → its answer (`permissions.services`, ≤ 60/h) — see "Services" |
 | `gc.services.available(plugin, service)` | `true`/`false`: would `call()` reach that provider now (listed, installed, running, provided) — the provider is not run, not counted (since 1.178.0) |
@@ -1828,6 +1842,86 @@ PUT  /s/<token>/u?name=<file>&type=<MIME>&by=<name>
   loads many) 1500 per minute; uploads 1000 per hour. An upload body has the
   long deadline of media uploads.
 
+## Public endpoints (`permissions.publicEndpoints`)
+
+Since 1.211.0. Some services must call a plugin **without** a GateControl
+session — an office server (Collabora Online, OnlyOffice) calling the WOPI
+host of GateControl Drive to read and save a document a person edits in the
+browser. No cookies, no CSRF, no login: each request carries a token the plugin
+minted for **one person** and **one path prefix**, valid for a short time.
+Code: `src/services/plugins/publicEndpoints.js`, `src/routes/pluginPublic.js`.
+
+```js
+const { token, url, expiresAt } = await gc.publicEndpoints.token({
+  user: 12,                 // required: an enabled account — the hook gets it as `user`
+  path: 'wopi/files/42',    // required: the prefix the token opens (segments of [A-Za-z0-9._~-], ≤ 200)
+  ttlS: 4 * 3600,           // optional: 60 … 86400 s, default 3600
+  data: 'write',            // optional: a string ≤ 256 the hook gets back (`token.data`), e.g. the rights
+});
+// url: '<GC_BASE_URL origin>/plugin-public/<id>/wopi/files/42' (null without GC_BASE_URL)
+await gc.publicEndpoints.base();   // → { url: '<origin>/plugin-public/<id>/' } | { url: null }
+```
+
+The token is an HMAC-SHA256 (server secret) over the plugin id, the person,
+the path, the expiry and `data`; the server keeps no list of them, so a token
+cannot be revoked — keep `ttlS` short and check the person's rights in the hook
+on every request. It travels as `?access_token=<token>` (WOPI) or
+`Authorization: Bearer <token>`.
+
+```
+GET | HEAD | POST | PUT  /plugin-public/<id>/<path>?access_token=<token>
+```
+
+* **404** — unknown plugin, or one without `permissions.publicEndpoints`;
+  **401** — no token, a forged or expired one, one of another plugin, another
+  path (the path must be the token's or below it: `wopi/files/42/contents`),
+  or the person is disabled now; **405** — another method.
+* **Body** (POST / PUT with `Content-Length` > 0): only with `maxBodyBytes`,
+  `Content-Length` required (411), larger → 413, a JSON or form body (parsed by
+  the server) → 415. It is streamed into the media store like an upload link's
+  file (`application/octet-stream`, the plugin's quota, the room on the server)
+  as an **unclaimed** file of the token's person; the hook gets `body: {
+  mediaId, bytes, sha256, mime }`. When the hook fails or answers ≥ 400 and has
+  not claimed it (`gc.media.claim`), the file is deleted at once.
+* **Hook** `publicRequest({ method, path ('/wopi/files/42'), query (without
+  access_token), headers, user: { id, name, role }, token: { scope, data,
+  expiresAt }, body, url, originalUrl, proofUrl, lang })`, within the request
+  timeout (30 s). `headers`: `x-…` (not `x-forwarded-*`, `x-real-ip`,
+  `x-api-token`, `x-csrf-token`), `content-type`, `content-length` — never
+  cookies or `authorization`. `originalUrl` (path and query) and `url`
+  (`<GC_BASE_URL origin><originalUrl>`) come **without** `access_token`.
+  `proofUrl` — the URL exactly as called, the token included — only for a
+  request that carries `X-WOPI-Proof` / `X-WOPI-ProofOld` (WOPI proof keys sign
+  token and URL), else `null`; use it for that check only, never log it.
+* **Logs:** GateControl logs no URL of these routes (the error handler only
+  the path). A reverse proxy in front of it may log query strings — the reason
+  to keep `ttlS` short.
+* **Answer** — `{ status, headers, … }`, status 200–299 or 400–599 (no
+  redirects), `headers` only `x-…` names (never `x-frame-options`,
+  `x-content-type-options` and the like), single-line values ≤ 1024 characters:
+  * `json: <value>` — JSON (≤ the plugin answer limit);
+  * `text: '…'` — `text/plain`, ≤ 64 KB;
+  * `media: '<media id>'` — one of the plugin's files as a download
+    (`Range` works, `Content-Disposition: attachment`);
+  * `form: { action, fields }` — a small page of **this server** that posts
+    `fields` (≤ 10, names `[A-Za-z0-9_.-]`, values ≤ 8 KB) to `action` (an
+    absolute http(s) URL — never GateControl's own host: neither the host of
+    `GC_BASE_URL` nor the one the request came to, whatever scheme or port;
+    such a page could post to GateControl's routes with the person's cookies →
+    502) at once — e.g. an office editor's URL with the WOPI
+    `access_token`; CSP `form-action <that origin>`, a nonce script, no
+    framing. A plugin's own HTML never reaches GateControl's origin;
+  * none of these: an empty body.
+  Anything else → 502; the hook failing → 502, not running → 503, timeout → 504.
+* Every answer: `Cache-Control: no-store`, `nosniff`, `Referrer-Policy:
+  no-referrer`, `X-Robots-Tag: noindex`, `Content-Security-Policy: default-src
+  'none'; sandbox` (the form page: its own); no cookie is ever set or read.
+* **Rate limits** per address: 1200 requests per minute (an office server calls
+  from one address for everyone editing); requests answered 401 or 404 also
+  count in a bucket of 60 per 10 minutes — after that the address gets 429.
+* Errors of `gc.publicEndpoints.*`: `ERR_PUBLIC_ENDPOINTS_DENIED` (no
+  permission), `ERR_INVALID` (person, path, `ttlS`, `data`).
+
 ## Devices (`permissions.devices`)
 
 Since 1.193.0. A plugin that works with a person's own devices — GateDrop's
@@ -1878,7 +1972,7 @@ single device. Code: `src/services/plugins/devices.js`.
 
 ## AI requests (`permissions.ai`)
 
-Since 1.211.0. GateControl has one AI service for every plugin: the
+Since 1.214.0. GateControl has one AI service for every plugin: the
 administrator sets up the providers once (**Einstellungen › KI-Anbieter**),
 plugins ask GateControl through `gc.ai` — never the provider. No key reaches
 a plugin process, an app or a browser; a plugin names pictures by media id and
@@ -2081,6 +2175,87 @@ plugin network permission):
 
 Not yet (later, with the recipes plugin): `gc.ai.transcribe`, video input,
 `gc.web.readPage`, storing contents 24 hours for debugging.
+
+## Cloud import (`permissions.cloudImport`)
+
+A person connects their own Google Drive or OneDrive in the plugin, browses it
+and takes files into the plugin's media (GateControl Drive: portal page
+"Importieren"). The administrator enters the OAuth apps under *Einstellungen ›
+Plugins › Cloud-Konten* (docs/cloud-accounts.md); without them `available()`
+says `false`. Code: `src/services/plugins/cloud.js`, `src/services/cloudAccounts/`.
+Check for it with `typeof gc.cloud?.list === 'function'`.
+
+```json
+"permissions": { "cloudImport": { "purpose": { "de": "Dateien aus Google Drive und OneDrive übernehmen", "en": "…" } } },
+"media": { "maxBytes": 2147483648, "types": ["*/*"] }
+```
+
+`purpose` (≤ 200 characters) is shown in the install dialog and the catalogue
+next to "Import aus Google Drive und OneDrive"; the permission is marked
+sensitive. `import` also needs `media`.
+
+```js
+await gc.cloud.available();          // → { google: true, microsoft: false } — an OAuth app is entered
+const { url } = await gc.cloud.connectUrl({ user: req.user.id, provider: 'google', returnTo: '/portal?view=import#plg-gatecontrol-drive' });
+// the frame hands `url` to the page: await GC.openUrl(url) (below) — a page on GC_BASE_URL names the
+// person and the plugin, then Google / Microsoft, then back to returnTo with ?cloud=connected
+// (or ?cloud=error&cloudError=<code>)
+await gc.cloud.connections({ user });   // → [{ id, provider: 'google'|'microsoft', account, connectedAt, error? }]
+await gc.cloud.disconnect({ user, connection });   // → true | false
+await gc.cloud.list({ user, connection, folderId, cursor });
+// → { items: [{ id, name, isDir, size, mime, modifiedAt }], next }   (folderId omitted: the root; next: cursor | null)
+await gc.cloud.import({ user, connection, fileId });
+// → { mediaId, name, size, mime, modifiedAt } — unclaimed (gc.media.claim within 24 h), owner = the person
+```
+
+* **One person, one plugin**: every call names the person (`user`, an enabled
+  account — `ERR_INVALID` otherwise); a connection belongs to that person and
+  this plugin only — another person's or plugin's id is `ERR_CLOUD_NOT_FOUND`.
+  At most 10 connections per person; the same account again keeps its id.
+* **`returnTo`**: a portal path (`/portal…`, the portal host is put in front)
+  or an app address (`gatecontrol://…`), nothing else (`ERR_INVALID`). The
+  link is single use, valid for 10 minutes and bound to the browser that
+  opens it. Give it only to that person: the start page warns with their
+  name, and a browser signed in as another GateControl account is refused
+  (docs/cloud-accounts.md "The limit of this check").
+* **`list`**: 100 items per page, folders first. `size` and `mime` are `null`
+  for folders. Google Docs, Sheets and Slides appear as `.docx` / `.xlsx` /
+  `.pptx` with that type and `size: null`, Drawings as `.pdf`; Forms, Sites,
+  maps and shortcuts are left out, so are OneNote notebooks and items of other
+  people's drives (OneDrive "Shared").
+* **`import`**: streams the file into the media store under the plugin's
+  `media.types` (`ERR_MEDIA_TYPE`), `maxBytes` (`ERR_CLOUD_TOO_LARGE`) and
+  quota (`ERR_MEDIA_QUOTA`) — checked before a byte is fetched where the
+  provider names the size. A missing or generic type
+  (`application/octet-stream`) is taken from the file name. Google documents
+  are exported (Google: at most 10 MB). A folder is `ERR_INVALID` — list it
+  and import its files (the plugin keeps the structure). `modifiedAt` is the
+  original change time (e.g. for `mtime`).
+* **Limits**: `list` 120 per minute, `import` 3000 per hour (per person and
+  plugin), 4 imports at a time per plugin, 8 on the server, 30 minutes per
+  file; `connectUrl` 30 per hour — then `ERR_RATE_LIMIT`.
+* **Errors**: `ERR_CLOUD_DENIED` (no permission), `ERR_CLOUD_NOT_CONFIGURED`
+  (no or a refused OAuth app), `ERR_CLOUD_AUTH` (connect again — the
+  connection then carries `error: 'auth'`), `ERR_CLOUD_NOT_FOUND`,
+  `ERR_CLOUD_TOO_LARGE`, `ERR_CLOUD_PROVIDER`, `ERR_RATE_LIMIT` (ours or the
+  provider's), `ERR_TIMEOUT`, `ERR_INVALID`, the media codes above,
+  `ERR_MEDIA_DENIED` (no `media`).
+* Tokens never reach the plugin. Uninstalling the plugin removes its
+  connections; deleting a person removes theirs.
+* **`GC.openUrl(url)`** in the plugin's frames (only with
+  `permissions.cloudImport`; check `typeof GC.openUrl === 'function'`): the
+  sandboxed frame may neither open a popup nor navigate the page, so it hands
+  the address of `connectUrl` to the page (admin page or portal,
+  `public/js/plugin-bridge.js`), which opens it **in the same tab** — the
+  provider sends the browser back to `returnTo`. Only
+  `<GC_BASE_URL>/oauth/cloud/start?flow=<id>` is taken (absolute, or
+  relative to GC_BASE_URL); anything else, and more than one call per 1.5 s,
+  rejects with `not allowed`. → `Promise<{ ok: true }>`.
+
+  ```js
+  const { url } = await GC.post('import/connect', { provider: 'google' });   // the plugin calls gc.cloud.connectUrl
+  await GC.openUrl(url);
+  ```
 
 ## Groups (`permissions.groups`)
 
@@ -2443,6 +2618,35 @@ disable/uninstall and when the server shuts down.
   `status` 400 (type, size) or 429 (too fast). A plugin answer is JSON of at
   most 1 MB — return a file as text or base64 and build the Blob in the frame
   (`new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type })`).
+* **Keys** (since 1.211.0): `GC.keys.put(name, key)`, `GC.keys.get(name)`,
+  `GC.keys.remove(name)` — the frame's opaque origin has no storage, so the
+  parent page keeps **WebCrypto keys** for it in its own IndexedDB
+  (`gc-plugin-keys`, per plugin and name `[A-Za-z0-9._-]{1,64}`, ≤ 32 per
+  plugin), e.g. the device key of an end-to-end encryption. Only `CryptoKey`
+  objects travel (or `{ publicKey, privateKey }` of a pair); a secret or private
+  key only when it was made **not extractable** — neither the page nor the frame
+  can ever read its bytes, the key can only be used. `get` → the key, the pair
+  or `null`; `put` → `true` (400 for anything else, 429 over the limit);
+  `remove` → whether there was one. They live in this browser profile for the
+  GateControl origin, not per person: a plugin that keeps one per person puts
+  the person into the name (`device-<userId>`).
+* **Media bytes** (since 1.211.0): `await GC.mediaBytes(url, { start, end })`
+  → `{ data: ArrayBuffer, start, end, total }` — the parent page fetches one of
+  the plugin's media URLs (`/plugin-media/<token>` of `gc.media.url`, this
+  origin, nothing else) without cookies and hands the bytes over (the frame's
+  `connect-src 'none'` keeps it from fetching itself), e.g. to decrypt a file
+  in the frame. The page sends `X-GC-Plugin: <the frame's plugin id>`;
+  `/plugin-media/<token>` (and `…/preview`) answers 404 when that header names
+  another plugin than the file's — a frame never reads another plugin's bytes,
+  even with a valid URL of it. A range (`end` inclusive) of at most 16 MiB a call, a whole file
+  only up to that size; four at a time per frame (429 busy); 400 for any other
+  URL.
+* **Tabs** (since 1.211.0): `await GC.openTab(url)` → `{ ok: true }` | `{ ok:
+  false, code: 'invalid' | 'no_gesture' }` — the sandbox allows no popups, so
+  the parent page opens one of the plugin's **public endpoints**
+  (`/plugin-public/<plugin id>/…` of this origin, see "Public endpoints") in a
+  new tab (`noopener`), and only during a click in the frame (the click's
+  activation reaches the page).
 * **Page title**: GateControl shows a page's title once, in its header (the
   topbar: the plugin's `ui.nav.label`, else its name) — the page's only
   `<h1>`. The host adds no heading of its own above the frame; above it there

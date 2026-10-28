@@ -146,11 +146,15 @@ function permissionSummary(m, lang) {
     services: Array.isArray(p.services) ? p.services : [],
     // since 1.193.0: download links without sign-in (only while an administrator allows them), the people's devices
     publicLinks: !!p.publicLinks,
+    // since 1.211.0: requests without a session under /plugin-public/<id>/ with the plugin's tokens (e.g. an office server)
+    publicEndpoints: !!p.publicEndpoints,
     devices: !!p.devices,
     // person groups (docs/plugins.md "Groups"): 'read' | 'manage' | null
     groups: p.groups === 'read' || p.groups === 'manage' ? p.groups : null,
+    // Google Drive / OneDrive of a person (gc.cloud) and what for
+    cloudImport: p.cloudImport ? { purpose: loc(p.cloudImport.purpose, lang) } : null,
     servicesProvided: m.services && m.services.provides ? Object.values(m.services.provides).map((x) => loc(x.label, lang)) : [],
-    // since 1.211.0: requests to the AI provider set up in GateControl (gc.ai, docs/plugins.md "AI requests")
+    // since 1.214.0: requests to the AI provider set up in GateControl (gc.ai, docs/plugins.md "AI requests")
     ai: p.ai ? { purpose: loc(p.ai.purpose, lang), capabilities: p.ai.capabilities.slice() } : null,
   };
 }
@@ -436,6 +440,7 @@ async function removeInstalled(p, mode) {
   require('./publicLinks').removeAll(id);
   // and the consent to AI requests (a new install asks again)
   require('../ai').forgetPlugin(id);
+  require('../cloudAccounts').removePlugin(id);
   rmrf(path.join(pluginsRoot(), id));
   registry.remove(id);
   if (mode === 'wipe') {
@@ -641,6 +646,8 @@ function view(p, lang) {
     scanQr: require('./frame').scanQrOf(m),
     // GC.pickPrincipals in the plugin's frames (permissions.groups): the <iframe data-plugin-groups>
     pickPrincipals: require('./frame').pickPrincipalsOf(m),
+    // GC.openUrl in the plugin's frames (permissions.cloudImport): the <iframe data-plugin-cloud>
+    cloud: require('./frame').openUrlOf(m),
     // the <iframe allow="…"> of the plugin's frames (frame.allowAttr)
     allow: require('./frame').allowAttr({ media: !!m.media, geolocation: !!(m.ui && m.ui.geolocation), camera: !!(m.ui && m.ui.camera) }),
     media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false, ...(m.media.areas ? { areas: true } : {}), ...(m.media.previews ? { previews: true } : {}) } : null,
@@ -742,6 +749,17 @@ async function request(id, req) {
   return { status, json: body.value };
 }
 
+/**
+ * A request of a public endpoint (routes/pluginPublic.js, publicEndpoints.js, since 1.211.0) → the hook
+ * publicRequest's raw answer (checked by the route); the answer's size like request().
+ */
+async function publicRequest(id, req) {
+  const out = await runtime.call(id, 'publicRequest', req, TIMEOUTS.request);
+  const body = boundJson(out === undefined ? null : out);
+  if (!body.ok) throw new PluginError('response_too_large', 'plugin answer too large');
+  return body.value;
+}
+
 /** Render a page/portal fragment: { html } (untrusted — served sandboxed only). */
 async function render(id, viewReq) {
   const out = await runtime.call(id, 'render', viewReq, TIMEOUTS.request);
@@ -836,7 +854,7 @@ async function stop() {
 
 module.exports = {
   PluginError, inspect, install, evaluate, reconcile, setEnabled, restart, uninstall, setAllowUnsigned, allowUnsigned,
-  setLicenseKey, assignLicenseKey, checkLicense, attentionCount, list, view, get, navEntries, history, addHistory, autoUpdateMode, setAutoUpdate, catalogCheck, setCatalogCheck, portalTabs, portalTabsFor, request, render, settingsChanged, settingsStatus, storageBytes,
+  setLicenseKey, assignLicenseKey, checkLicense, attentionCount, list, view, get, navEntries, history, addHistory, autoUpdateMode, setAutoUpdate, catalogCheck, setCatalogCheck, portalTabs, portalTabsFor, request, publicRequest, render, settingsChanged, settingsStatus, storageBytes,
   serverVersion, start, stop, extract, readManifest, removeNotIn,
   _staging: staging,
 };

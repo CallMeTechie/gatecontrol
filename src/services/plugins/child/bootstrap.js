@@ -392,7 +392,7 @@ function makeGc(info) {
       uploads: (token) => hostCall('publicLinks.uploads', { token }),
     }),
     /**
-     * permissions.ai (since 1.211.0, docs/plugins.md "AI requests"): the AI provider set up in GateControl.
+     * permissions.ai (since 1.214.0, docs/plugins.md "AI requests"): the AI provider set up in GateControl.
      * available({ capability }) → boolean (asks no provider); status() → { available, mediaAllowed, capabilities, budgetLeftCents };
      * extract({ task, user, instructions, input: [{ type: 'text', label, text } | { type: 'media', mediaId }], schema,
      * maxOutputTokens, timeoutMs }) → { ok, data, provider, model, usage: { inputTokens, outputTokens, costCents }, fallback };
@@ -404,9 +404,39 @@ function makeGc(info) {
       extract: (opts) => hostCall('ai.extract', opts && typeof opts === 'object' ? opts : {}, aiTimeout(opts)),
       generate: (opts) => hostCall('ai.generate', opts && typeof opts === 'object' ? opts : {}, aiTimeout(opts)),
     }),
+    /**
+     * permissions.publicEndpoints (since 1.211.0): requests without a session under /plugin-public/<id>/…, each with
+     * a token of token({ user, path, ttlS, data }) → { token, url, expiresAt }; base() → { url } of the prefix
+     * (null without GC_BASE_URL). The hook publicRequest answers them.
+     */
+    publicEndpoints: Object.freeze({
+      token: (opts) => hostCall('publicEndpoints.token', opts && typeof opts === 'object' ? opts : {}),
+      base: () => hostCall('publicEndpoints.base', {}),
+    }),
     /** permissions.devices (since 1.193.0): list({ userId }) → [{ id, name, platform, clientType, appVersion, online, lastSeen, via }] */
     devices: Object.freeze({
       list: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('devices.list', { userId: o.userId }); },
+    }),
+    /**
+     * permissions.cloudImport: Google Drive / OneDrive of a person (docs/plugins.md "Cloud import") —
+     * available() → { google, microsoft }; connectUrl({ user, provider, returnTo }) → { url };
+     * connections({ user }) → [{ id, provider, account, connectedAt }]; disconnect({ user, connection }) → boolean;
+     * list({ user, connection, folderId, cursor }) → { items: [{ id, name, isDir, size, mime, modifiedAt }], next };
+     * import({ user, connection, fileId }) → { mediaId, name, size, mime, modifiedAt } (unclaimed, like gc.media.fetch)
+     */
+    cloud: Object.freeze({
+      available: () => hostCall('cloud.available', {}),
+      connectUrl: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('cloud.connectUrl', { user: o.user, provider: o.provider, returnTo: o.returnTo }); },
+      connections: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('cloud.connections', { user: o.user }); },
+      disconnect: (opts) => { const o = opts && typeof opts === 'object' ? opts : {}; return hostCall('cloud.disconnect', { user: o.user, connection: o.connection }); },
+      list: (opts) => {
+        const o = opts && typeof opts === 'object' ? opts : {};
+        return hostCall('cloud.list', { user: o.user, connection: o.connection, folderId: o.folderId, cursor: o.cursor });
+      },
+      import: (opts) => {
+        const o = opts && typeof opts === 'object' ? opts : {};
+        return hostCall('cloud.import', { user: o.user, connection: o.connection, fileId: o.fileId }, 32 * 60 * 1000);
+      },
     }),
     /**
      * permissions.groups ("read" | "manage"): person groups of GateControl —
@@ -526,6 +556,11 @@ async function handleCall(method, payload) {
       // optional (permissions.publicLinks, since 1.193.0): { token, event: 'download'|'locked'|'expired', … }; the answer is ignored
       if (typeof plugin.publicLinkEvent === 'function') await plugin.publicLinkEvent(payload, gc);
       return {};
+    case 'publicRequest':
+      // optional (permissions.publicEndpoints, since 1.211.0): a request with one of the plugin's tokens —
+      // { method, path, query, headers, user, token, body, url, originalUrl } → { status, headers, json | text | media | form }
+      if (typeof plugin.publicRequest !== 'function') return { status: 404, text: 'not found' };
+      return plugin.publicRequest(payload, gc);
     case 'mediaChanged':
       // optional (media.areas, since 1.204.1): files changed on a storage target were taken in —
       // { area, seq, count }; read them with gc.media.areas.changes(area, { since }). Answer ignored

@@ -274,7 +274,7 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, ai: null };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, ai: null, cloudImport: null, publicEndpoints: null };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
@@ -329,7 +329,7 @@ function validate(raw, opts = {}) {
       else if (m.id && list.some((x) => SERVICE_REF_RE.exec(x)[1] === m.id)) err('permissions.services: own service');
       else perms.services = [...new Set(list)];
     }
-    // ai (since 1.211.0): { purpose: {de, en}, capabilities: ['text', 'vision', 'audio', 'video'] } — requests to the
+    // ai (since 1.214.0): { purpose: {de, en}, capabilities: ['text', 'vision', 'audio', 'video'] } — requests to the
     // AI provider set up in GateControl (gc.ai, services/ai/); the administrator agrees in the install dialog
     if (p.ai != null) {
       const a = p.ai;
@@ -340,11 +340,31 @@ function validate(raw, opts = {}) {
       else if (!caps.includes('text')) err('permissions.ai.capabilities: needs "text"');
       else perms.ai = { purpose, capabilities: AI_CAPABILITIES.filter((c) => caps.includes(c)) };
     }
+    // publicEndpoints (since 1.211.0): requests without a session under /plugin-public/<id>/…, each with a token
+    // the plugin minted (gc.publicEndpoints.token) — e.g. a WOPI host for an office server. true, or
+    // { maxBodyBytes } — request bodies up to that size become an unclaimed media file (needs `media`,
+    // checked below); without it a body is refused (publicEndpoints.js)
+    if (p.publicEndpoints != null && p.publicEndpoints !== false) {
+      const pe = p.publicEndpoints;
+      if (pe === true) perms.publicEndpoints = { maxBodyBytes: 0 };
+      else if (pe && typeof pe === 'object' && !Array.isArray(pe) && Object.keys(pe).every((k) => k === 'maxBodyBytes')
+        && (pe.maxBodyBytes == null || (Number.isSafeInteger(pe.maxBodyBytes) && pe.maxBodyBytes >= 0 && pe.maxBodyBytes <= MEDIA_MAX_BYTES_AREAS))) {
+        perms.publicEndpoints = { maxBodyBytes: pe.maxBodyBytes || 0 };
+      } else err('permissions.publicEndpoints: invalid');
+    }
     // background: { intervalSeconds: 5…86400 } — one tick at a time (runtime.js)
     if (p.background != null) {
       const iv = p.background && Number(p.background.intervalSeconds);
       if (!Number.isInteger(iv) || iv < BACKGROUND_MIN_S || iv > 86400) err('permissions.background.intervalSeconds: invalid');
       else perms.background = { intervalSeconds: iv };
+    }
+    // cloudImport: { purpose: { de, en } } — Google Drive / OneDrive of a person (gc.cloud, docs/plugins.md
+    // "Cloud import"); the purpose is shown when the administrator installs the plugin
+    if (p.cloudImport != null) {
+      const c = p.cloudImport;
+      const purpose = c && typeof c === 'object' && !Array.isArray(c) && Object.keys(c).every((k) => k === 'purpose') ? locText(c.purpose, 200) : null;
+      if (!purpose) err('permissions.cloudImport: invalid (needs a purpose)');
+      else perms.cloudImport = { purpose };
     }
   }
   m.permissions = perms;
@@ -524,6 +544,9 @@ function validate(raw, opts = {}) {
 
   // media: { maxBytes, types, quotaDefault, uploads, resumable, handOverMaxBytes } — files through GateControl (gc.media)
   m.media = raw.media == null ? null : validateMedia(raw.media, err);
+  // a body of a public endpoint is stored as media: within the plugin's own maxBytes
+  const pe = m.permissions && m.permissions.publicEndpoints;
+  if (pe && pe.maxBodyBytes > 0 && (!m.media || pe.maxBodyBytes > m.media.maxBytes)) err('permissions.publicEndpoints.maxBodyBytes: needs media');
 
   // services: { provides: { <name>: { label } } } — offered to other plugins (gc.services.call)
   m.services = { provides: {} };
