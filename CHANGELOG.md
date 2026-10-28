@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.213.0] — 2026-10-28
 
 ### Features
 - Cloud-Konten: Google Drive und OneDrive (docs/cloud-accounts.md). Neue Seite *Einstellungen › Plugins › Cloud-Konten*: je Anbieter eine OAuth-App (Client-ID, Secret verschlüsselt mit dem Server-Schlüssel, bei Microsoft der Tenant), die Weiterleitungs-URI `<GC_BASE_URL>/oauth/cloud/callback` zum Kopieren und die Verbindungen der Personen. Verbunden wird mit dem Code-Flow mit `state`, PKCE (S256) und einem Cookie, das den Link an den Browser bindet; Tokens werden rechtzeitig erneuert und liegen nur verschlüsselt vor. Neue Speicherziele „Google Drive“ (`drive.file`) und „OneDrive“ (`Files.ReadWrite`): eigenes Konto verbinden, Ordner wählen oder anlegen, Prüfen wie bei den anderen Zielen; Medienbereiche liegen dort immer verschlüsselt. Neue Plugin-Berechtigung `permissions.cloudImport: { purpose }` mit `gc.cloud.available/connectUrl/connections/disconnect/list/import`: Personen verbinden ihr eigenes Google Drive oder OneDrive, das Plugin listet Ordner und übernimmt Dateien in seinen Medienspeicher (unbestätigt, 24 h, mit `media.types`, `maxBytes` und Kontingent); Google-Dokumente kommen als docx/xlsx/pptx, Zeichnungen als pdf. Nur feste Hosts (www.googleapis.com, oauth2.googleapis.com, accounts.google.com, graph.microsoft.com, login.microsoftonline.com; für OneDrive-Downloads und große Uploads die Speicher-Server von Microsoft ohne Token), Grenzen für Anzahl, Größe und Dauer. Anleitung für die OAuth-Apps bei Google und Microsoft in docs/cloud-accounts.md.
