@@ -271,7 +271,7 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, publicEndpoints: null };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, cloudImport: null, publicEndpoints: null };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
@@ -343,6 +343,14 @@ function validate(raw, opts = {}) {
       const iv = p.background && Number(p.background.intervalSeconds);
       if (!Number.isInteger(iv) || iv < BACKGROUND_MIN_S || iv > 86400) err('permissions.background.intervalSeconds: invalid');
       else perms.background = { intervalSeconds: iv };
+    }
+    // cloudImport: { purpose: { de, en } } — Google Drive / OneDrive of a person (gc.cloud, docs/plugins.md
+    // "Cloud import"); the purpose is shown when the administrator installs the plugin
+    if (p.cloudImport != null) {
+      const c = p.cloudImport;
+      const purpose = c && typeof c === 'object' && !Array.isArray(c) && Object.keys(c).every((k) => k === 'purpose') ? locText(c.purpose, 200) : null;
+      if (!purpose) err('permissions.cloudImport: invalid (needs a purpose)');
+      else perms.cloudImport = { purpose };
     }
   }
   m.permissions = perms;

@@ -52,6 +52,14 @@
 // [{ type: 'group'|'user', id, label }], or null when cancelled. One picker
 // at a time on the page; a new document in the frame (gc-hello) closes its own.
 //
+// Cloud connections (GC.openUrl, frames with data-plugin-cloud = plugin.json
+// `permissions.cloudImport`, the attribute holds GC_BASE_URL): the sandboxed
+// frame may neither open a popup nor navigate the page. It hands this page the
+// address of gc.cloud.connectUrl, and this page opens it in the same tab —
+// only <GC_BASE_URL>/oauth/cloud/start?flow=<id>, nothing else (refused with
+// `not allowed`); at most one per 1.5 s per frame. The provider sends the
+// browser back to the plugin's returnTo afterwards.
+//
 // Viewport (since 1.199.0): every frame learns the height it can take
 // without the page scrolling — the window's height minus what stands above
 // the frame and below it on the page (gc-viewport { height, width }; in the
@@ -391,6 +399,22 @@
     function endScan() { if (myScan) myScan.cancel('cancelled'); }
 
     // GC.pickPrincipals: the page's picker for groups and people, the frame gets the chosen entries only
+    // GC.openUrl: only gc.cloud.connectUrl's address on GC_BASE_URL (docs/cloud-accounts.md)
+    const cloudAttr = frame.getAttribute('data-plugin-cloud');
+    let cloudOrigin = null;
+    if (cloudAttr != null) { try { cloudOrigin = new URL(cloudAttr || window.location.href).origin; } catch (_) { cloudOrigin = null; } }
+    let lastOpen = 0;
+    function openUrl(m) {
+      let u = null;
+      try { u = new URL(String(m.url || ''), cloudOrigin || window.location.href); } catch (_) { u = null; }
+      const ok = !!cloudOrigin && !!u && u.origin === cloudOrigin && !u.username && !u.password && u.pathname === '/oauth/cloud/start'
+        && /^\?flow=[A-Za-z0-9_-]{16,64}$/.test(u.search) && !u.hash && Date.now() - lastOpen >= 1500;
+      if (!ok) { reply({ type: 'gc-result', id: m.id, ok: false, status: 400, error: 'not allowed' }); return; }
+      lastOpen = Date.now();
+      reply({ type: 'gc-result', id: m.id, ok: true, status: 200, data: { ok: true } });
+      window.location.assign(u.href);
+    }
+
     const pickOn = frame.getAttribute('data-plugin-groups') != null;
     let myPick = null;
     function pick(m) {
@@ -531,6 +555,7 @@
       else if (m.type === 'gc-save' && Number.isInteger(m.id)) save(m);
       else if (m.type === 'gc-scan' && Number.isInteger(m.id)) scan(m);
       else if (m.type === 'gc-pick' && Number.isInteger(m.id)) pick(m);
+      else if (m.type === 'gc-open' && Number.isInteger(m.id)) openUrl(m);
       else if (m.type === 'gc-keys' && Number.isInteger(m.id)) keys(m);
       else if (m.type === 'gc-media-bytes' && Number.isInteger(m.id)) mediaBytes(m);
       else if (m.type === 'gc-open-tab' && Number.isInteger(m.id)) openTab(m);

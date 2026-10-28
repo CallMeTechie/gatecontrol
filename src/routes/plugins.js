@@ -8,6 +8,7 @@
 //   GET /settings/plugins/licenses        Lizenzen · Sicherheit & Upload · Protokoll ·
 //   GET /settings/plugins/security        one installed plugin (manage/:id) — one
 //   GET /settings/plugins/storage         storage targets (docs/storage-targets.md)
+//   GET /settings/plugins/cloud           Cloud-Konten: OAuth apps for Google Drive / OneDrive (docs/cloud-accounts.md)
 //   GET /settings/plugins/log             aurora page, the views are built by
 //   GET /settings/plugins/manage/:id      public/js/plugins-page.js (admins only)
 //   GET /plugins[/catalog[/:id]|/updates|/licenses|/security|/manage/:id]
@@ -175,13 +176,14 @@ function mapsOf(p) { return !!(p && p.manifest && p.manifest.ui && p.manifest.ui
  * template for window.GC.tiles) for a maps frame with a known origin — the
  * CSP allows the relay only then; `scanQr` (ui.scanQr / ui.camera) for
  * window.GC.scanQr; `pickPrincipals` (permissions.groups) for
- * window.GC.pickPrincipals.
+ * window.GC.pickPrincipals; `openUrl` (permissions.cloudImport) for window.GC.openUrl.
  */
 function frameHeaders(req, res, p) {
   const maps = mapsOf(p);
   const origin = frame.originOf(req);
   frame.headers(res, { maps, avatars: true, origin, media: !!media.declOf(p) });
-  return { maps, tiles: maps && origin ? tiles.template() : null, scanQr: frame.scanQrOf(p && p.manifest), pickPrincipals: frame.pickPrincipalsOf(p && p.manifest) };
+  return { maps, tiles: maps && origin ? tiles.template() : null, scanQr: frame.scanQrOf(p && p.manifest), pickPrincipals: frame.pickPrincipalsOf(p && p.manifest),
+    openUrl: frame.openUrlOf(p && p.manifest) };
 }
 
 function lang(req, res) { return (req.language || res.locals.language) === 'en' ? 'en' : 'de'; }
@@ -215,7 +217,7 @@ const catalog = require('../services/plugins/catalog');
 // strings plugins-page.js reads (the island's data-prefixes list the same ones)
 const AREA_I18N_PREFIXES = ['plugins.', 'common.'];
 const AREA_BASE = '/settings/plugins';
-const AREA_VIEWS = { '': 'installed', catalog: 'catalog', updates: 'updates', licenses: 'licenses', security: 'security', storage: 'storage', log: 'log' };
+const AREA_VIEWS = { '': 'installed', catalog: 'catalog', updates: 'updates', licenses: 'licenses', security: 'security', storage: 'storage', cloud: 'cloud', log: 'log' };
 
 function areaPage(req, res, view, extra = {}) {
   if (!isAdmin(res)) return res.redirect('/profile');

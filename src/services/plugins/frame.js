@@ -177,6 +177,11 @@ function allowAttr({ media = false, geolocation = false, camera = false } = {}) 
   return [media && 'microphone *', geolocation && 'geolocation *', camera && 'camera *'].filter(Boolean).join('; ');
 }
 
+/** May the plugin's frames open a cloud connection in the page (GC.openUrl)? permissions.cloudImport. */
+function openUrlOf(manifest) {
+  return !!(manifest && manifest.permissions && manifest.permissions.cloudImport);
+}
+
 /** May the plugin's frames read QR codes through the page (GC.scanQr)? `ui.scanQr`, or the older `ui.camera`. */
 function scanQrOf(manifest) {
   const ui = manifest && manifest.ui;
@@ -297,6 +302,16 @@ const BRIDGE_CLIENT = `(function(){
       pending[id].timer = setTimeout(function () { if (pending[id]) { delete pending[id]; done(null); } }, 30 * 60000);
       post({ type: 'gc-pick', id: id, groups: o.groups !== false, users: o.users === true, multiple: o.multiple === true,
         title: o.title == null ? '' : String(o.title).slice(0, 120) });
+    });
+  }
+  // permissions.cloudImport: open the address of gc.cloud.connectUrl in this tab (the page checks it:
+  // <GC_BASE_URL>/oauth/cloud/start?flow=… only) → { ok: true }; rejects anything else
+  function openUrl(url) {
+    return new Promise(function (resolve, reject) {
+      var id = ++seq;
+      pending[id] = { resolve: resolve, reject: reject };
+      pending[id].timer = setTimeout(function () { if (pending[id]) { delete pending[id]; reject(new Error('timeout')); } }, 10000);
+      post({ type: 'gc-open', id: id, url: String(url == null ? '' : url) });
     });
   }
   // since 1.211.0: keys of WebCrypto (CryptoKey, or { publicKey, privateKey }) kept by the parent page in its own
@@ -421,6 +436,7 @@ const BRIDGE_CLIENT = `(function(){
   };
   if (/*GC_SCANQR*/false) api.scanQr = scanQr;
   if (/*GC_PICK*/false) api.pickPrincipals = pickPrincipals;
+  if (/*GC_OPENURL*/false) api.openUrl = openUrl;
   window.GC = Object.freeze(api);
   if (window.ResizeObserver) new ResizeObserver(size).observe(document.documentElement);
   // a dialog shown or hidden changes no document size: watch the DOM as well
@@ -445,13 +461,14 @@ const TILES_RE = /^\/plugins\/_shared\/tiles\/[A-Za-z0-9._-]+\/\{z\}\/\{x\}\/\{y
  * The full frame document around a plugin fragment. `tiles` (maps frames
  * only) becomes window.GC.tiles, otherwise GC.tiles is null; `scanQr`
  * (scanQrOf the plugin) gives the frame window.GC.scanQr, `pickPrincipals`
- * (pickPrincipalsOf) window.GC.pickPrincipals.
+ * (pickPrincipalsOf) window.GC.pickPrincipals, `openUrl` (permissions.cloudImport,
+ * openUrlOf) window.GC.openUrl.
  */
-function document({ html, lang, maps = false, tiles = null, scanQr = false, pickPrincipals = false }) {
+function document({ html, lang, maps = false, tiles = null, scanQr = false, pickPrincipals = false, openUrl = false }) {
   const l = lang === 'en' ? 'en' : 'de';
   const t = maps && typeof tiles === 'string' && TILES_RE.test(tiles) ? JSON.stringify(tiles) : 'null';
   const client = BRIDGE_CLIENT.replace('/*GC_TILES*/null', () => t).replace('/*GC_SCANQR*/false', scanQr === true ? 'true' : 'false')
-    .replace('/*GC_PICK*/false', pickPrincipals === true ? 'true' : 'false');
+    .replace('/*GC_PICK*/false', pickPrincipals === true ? 'true' : 'false').replace('/*GC_OPENURL*/false', openUrl === true ? 'true' : 'false');
   return '<!doctype html>\n<html lang="' + escAttr(l) + '" data-theme="dark"><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="' + (maps ? REFERRER_MAPS : REFERRER) + '">'
     + '<style>' + BASE_CSS + '</style><script>' + client + '</script></head><body>'
@@ -473,4 +490,4 @@ function headers(res, opts = {}) {
   res.type('html');
 }
 
-module.exports = { CSP, cspFor, originOf, sandboxAttr, allowAttr, scanQrOf, pickPrincipalsOf, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA };
+module.exports = { CSP, cspFor, originOf, sandboxAttr, allowAttr, scanQrOf, pickPrincipalsOf, openUrlOf, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA };

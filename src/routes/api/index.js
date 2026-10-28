@@ -68,6 +68,8 @@ router.use('/groups', require('./groups'));
 router.use('/directories', require('./directories'));
 // Storage targets (docs/storage-targets.md): admin session only
 router.use('/storage-targets', require('./storageTargets'));
+// Cloud accounts (docs/cloud-accounts.md): OAuth apps, connections, folders — admin session only
+router.use('/cloud-accounts', require('./cloudAccounts'));
 // "Wer darf zugreifen?": principals + preview for the route/RDP dialogs (admin session)
 router.use('/access', require('./access'));
 // Picker for groups and people of plugin frames (GC.pickPrincipals): admin session only

@@ -151,6 +151,8 @@ function permissionSummary(m, lang) {
     devices: !!p.devices,
     // person groups (docs/plugins.md "Groups"): 'read' | 'manage' | null
     groups: p.groups === 'read' || p.groups === 'manage' ? p.groups : null,
+    // Google Drive / OneDrive of a person (gc.cloud) and what for
+    cloudImport: p.cloudImport ? { purpose: loc(p.cloudImport.purpose, lang) } : null,
     servicesProvided: m.services && m.services.provides ? Object.values(m.services.provides).map((x) => loc(x.label, lang)) : [],
   };
 }
@@ -432,6 +434,7 @@ async function removeInstalled(p, mode) {
   require('./events').closeStreams(id);
   // its public links end with the plugin, whatever happens to its data
   require('./publicLinks').removeAll(id);
+  require('../cloudAccounts').removePlugin(id);
   rmrf(path.join(pluginsRoot(), id));
   registry.remove(id);
   if (mode === 'wipe') {
@@ -637,6 +640,8 @@ function view(p, lang) {
     scanQr: require('./frame').scanQrOf(m),
     // GC.pickPrincipals in the plugin's frames (permissions.groups): the <iframe data-plugin-groups>
     pickPrincipals: require('./frame').pickPrincipalsOf(m),
+    // GC.openUrl in the plugin's frames (permissions.cloudImport): the <iframe data-plugin-cloud>
+    cloud: require('./frame').openUrlOf(m),
     // the <iframe allow="…"> of the plugin's frames (frame.allowAttr)
     allow: require('./frame').allowAttr({ media: !!m.media, geolocation: !!(m.ui && m.ui.geolocation), camera: !!(m.ui && m.ui.camera) }),
     media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false, ...(m.media.areas ? { areas: true } : {}), ...(m.media.previews ? { previews: true } : {}) } : null,

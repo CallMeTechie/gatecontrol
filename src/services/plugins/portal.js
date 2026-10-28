@@ -91,6 +91,8 @@ async function contributions(user, lang) {
       ...(frame.scanQrOf(p.manifest) ? { scanQr: true, name: loc(p.manifest.name, l) } : {}),
       // groups: GC.pickPrincipals (permissions.groups), the page's picker names the plugin (name)
       ...(frame.pickPrincipalsOf(p.manifest) ? { groups: true, name: loc(p.manifest.name, l) } : {}),
+      // cloud: GC.openUrl may open gc.cloud.connectUrl's address (permissions.cloudImport)
+      ...(frame.openUrlOf(p.manifest) ? { cloud: true } : {}),
       allow: frame.allowAttr({ media: !!p.manifest.media, geolocation: !!p.manifest.ui.geolocation, camera: !!p.manifest.ui.camera }) };
     if (ui.label) items.push({ kind: 'tab', plugin: p.id, key: 'plg-' + p.id, label: loc(ui.label, l), icon: ui.icon, section: null, maps, ...extra });
     for (const s of ui.sections || []) {
@@ -110,7 +112,7 @@ async function contributions(user, lang) {
     tabs: visible.filter((x) => x.kind === 'tab').map((x) => ({ id: x.plugin, key: x.key, label: x.label, icon: x.icon, maps: x.maps,
       ...(x.media ? { media: true } : {}), ...(x.events ? { events: true } : {}),
       ...(x.geolocation ? { geolocation: true } : {}), ...(x.camera ? { camera: true } : {}), ...(x.inbox ? { inbox: true } : {}),
-      ...(x.scanQr ? { scanQr: true, name: x.name } : {}), ...(x.groups ? { groups: true, name: x.name } : {}), allow: x.allow })),
+      ...(x.scanQr ? { scanQr: true, name: x.name } : {}), ...(x.groups ? { groups: true, name: x.name } : {}), ...(x.cloud ? { cloud: true } : {}), allow: x.allow })),
     sections,
   };
 }

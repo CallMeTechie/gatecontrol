@@ -139,6 +139,8 @@
     if (perm.devices) rows.push({ label: t('plugins.perm.devices'), value: t('plugins.perm.devices_on') });
     // person groups (docs/plugins.md "Groups"): read, or read and manage its own groups
     if (perm.groups === 'read' || perm.groups === 'manage') rows.push({ label: t('plugins.perm.groups'), value: t(perm.groups === 'manage' ? 'plugins.perm.groups_manage' : 'plugins.perm.groups_read') });
+    // Google Drive / OneDrive of a person (gc.cloud), with the plugin's purpose
+    if (perm.cloudImport) rows.push({ label: t('plugins.perm.cloud_import'), value: t('plugins.perm.cloud_import_on', { purpose: perm.cloudImport.purpose || '' }) });
     if (perm.notifySink) rows.push({ label: t('plugins.perm.notify_sink'), value: t('plugins.perm.notify_sink_on') });
     if (perm.services && perm.services.length) {
       rows.push({ label: t('plugins.perm.services'), value: t('plugins.perm.services_v', { services: perm.services.map((x) => x.replace(':', ': ')).join(', ') }) });
@@ -433,6 +435,7 @@
     if (perm.publicLinks) out.push('plugins.perm.public_links');
     if (perm.publicEndpoints) out.push('plugins.perm.public_endpoints');
     if (perm.groups) out.push('plugins.perm.groups');
+    if (perm.cloudImport) out.push('plugins.perm.cloud_import');
     return out;
   }
 

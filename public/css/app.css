@@ -7017,6 +7017,16 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .pgx-stg-kind .pgx-t{display:flex; flex-direction:column; gap:2px}
 .pgx-stg-kind small{color:var(--pg-muted); font-size:12.5px}
 .pgx-stg-checks{margin-top:14px}
+/* Google Drive / OneDrive: the folder picker of the dialog, the redirect URI of Cloud-Konten */
+.pgx-stg-picker{display:flex; flex-direction:column; gap:10px; padding:12px; border:1px solid var(--pg-line); border-radius:12px; background:var(--pg-chip)}
+.pgx-stg-picker .pgx-fld-in{flex:1 1 160px; width:auto; height:36px}
+.pgx-stg-browse{display:flex; flex-direction:column; gap:2px; max-height:220px; overflow:auto}
+.pgx-stg-browse .pgx-muted,.pgx-stg-browse .pgx-stg-err{margin:0; font-size:13px}
+.pgx-stg-dir{display:flex; align-items:center; gap:8px; min-height:36px; padding:0 10px; border:0; border-radius:8px; background:transparent; color:var(--pg-text); font:500 14px var(--font-body); text-align:left; cursor:pointer}
+.pgx-stg-dir:hover,.pgx-stg-dir:focus-visible{background:var(--pg-input)}
+.pgx-stg-dir svg{flex:none; color:var(--pg-muted)}
+.pgx-stg-crumbs{font-size:13px}
+.pgx-cl-uri{padding:6px 10px; border-radius:8px; background:var(--pg-chip); border:1px solid var(--pg-line); overflow-wrap:anywhere}
 #pgx-stg-result .pgx-note{margin:12px 0 0}
 @media (max-width:560px){.pgx-stg-kinds{grid-template-columns:minmax(0,1fr)}}
 /* phone (mockups "Mobil"): tabs on top, compact lists, no side column */

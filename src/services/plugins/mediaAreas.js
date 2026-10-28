@@ -189,11 +189,11 @@ function targetView(id, admin) {
   return v;
 }
 
-/** Can target `id` hold readable files (a folder, SMB, WebDAV — not S3, not this server)? */
+/** Can target `id` hold readable files (a folder, SMB, WebDAV — not S3 or a cloud drive, not this server)? */
 function filesCapable(id) {
   if (id == null) return false;
   const t = targets().rowOf(id);
-  return !!t && t.kind !== 's3';
+  return !!t && !targets().BLOCKS_ONLY.has(t.kind);
 }
 
 /** Free bytes where an area's new files go (null when unknown). */

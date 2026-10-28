@@ -1339,6 +1339,8 @@ function callTimeout(api, args) {
   if (api === 'groups.remove') return 45000;
   // the licence server answers within 20 s (licensing.refresh), then the plugins are reconciled
   if (api === 'license.refresh') return 45000;
+  // a file from Google Drive / OneDrive into the media store (cloud.js ends it within its own limit first)
+  if (api === 'cloud.import') return require('./cloud').CALL_TIMEOUT_MS;
   return TIMEOUTS.hostCall;
 }
 
@@ -1723,6 +1725,9 @@ async function handle(plugin, api, args, ctx) {
     // since 1.206.0: tier and seats of the licence; a refresh right after a purchase
     case 'license.info': return licensing.info(plugin);
     case 'license.refresh': return licensing.refresh(plugin);
+    // permissions.cloudImport: Google Drive / OneDrive of a person (cloud.js, docs/plugins.md "Cloud import")
+    case 'cloud.available': case 'cloud.connectUrl': case 'cloud.connections': case 'cloud.disconnect': case 'cloud.list': case 'cloud.import':
+      return require('./cloud').call(plugin, api.slice('cloud.'.length), args);
     default:
       throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
   }

@@ -3,8 +3,10 @@
 // Einstellungen › Plugins › Speicher (docs/storage-targets.md): ein
 // Speicherziel „Ordner auf dem Server“ anlegen, vor dem Speichern prüfen,
 // speichern (die Liste zeigt „Erreichbar“), eine falsche Eingabe markiert
-// ihr Feld, umbenennen, löschen. Der Ordner liegt unter <data>/storage — die
-// einzige Stelle im Datenordner, die ein Speicherziel sein darf.
+// ihr Feld, umbenennen, löschen; Google Drive / OneDrive verweisen ohne
+// OAuth-App auf die Seite Cloud-Konten, die die Weiterleitungs-URI zeigt. Der
+// Ordner liegt unter <data>/storage — die einzige Stelle im Datenordner, die
+// ein Speicherziel sein darf.
 
 const fs = require('fs');
 const path = require('path');
@@ -30,7 +32,14 @@ module.exports = (ctx) => {
       // ── anlegen: prüfen ohne speichern, dann speichern ──
       await page.click('#pgx-stg-add');
       await page.waitForSelector('.pgx-stg-kind', { timeout: 6000 }).catch(() => {});
-      step('storage: the dialog offers four kinds', (await page.$$('.pgx-stg-kind')).length === 4);
+      const kinds = await page.$$eval('.pgx-stg-kind', (l) => l.map((b) => b.getAttribute('data-kind')));
+      step('storage: the dialog offers six kinds (folder, SMB, WebDAV, S3, Google Drive, OneDrive)', kinds.join(',') === 'local,smb,webdav,s3,gdrive,onedrive', kinds.join(','));
+      // Google Drive / OneDrive need an OAuth app first (docs/cloud-accounts.md): the dialog says where
+      await page.click('.pgx-stg-kind[data-kind="gdrive"]');
+      step('storage: Google Drive without an OAuth app points to Cloud-Konten', await visible(page, '#pgx-stg-cloud-missing a[href="/settings/plugins/cloud"]'));
+      await page.click('.pgx-stg-kind[data-kind="onedrive"]');
+      step('storage: OneDrive without an OAuth app points to Cloud-Konten', await visible(page, '#pgx-stg-cloud-missing a[href="/settings/plugins/cloud"]'));
+      await shot(page, 'storage-dialog-cloud', false);
       await page.click('.pgx-stg-kind[data-kind="local"]');
       await page.fill('#pgx-stg-label', 'E2E-Platte');
       await page.fill('#pgx-stg-path', dir);
@@ -79,6 +88,15 @@ module.exports = (ctx) => {
       await page.click('.pgx-stg-row [data-action="delete"]');
       await page.click('.gcd-ok');
       step('storage: deleted → the list is empty again', await visible(page, '#pgx-stg-empty'));
+
+      // ── Cloud-Konten: Weiterleitungs-URI und je Anbieter eine OAuth-App ──
+      await page.goto(BASE + '/settings/plugins/cloud');
+      await waitIdle(page);
+      step('cloud accounts: the side navigation marks "Cloud-Konten"', (await page.$('a.pgx-sl[data-tab="cloud"][aria-current="page"]')) !== null);
+      step('cloud accounts: the page shows the redirect URI', /\/oauth\/cloud\/callback$/.test((await ctx.text(page, '#pgx-cl-uri')).trim()));
+      step('cloud accounts: one card per provider', (await page.$$('section[data-provider]')).length === 2);
+      step('cloud accounts: nobody connected yet', await visible(page, '#pgx-cl-empty'));
+      await shot(page, 'cloud-accounts');
     },
   };
 };

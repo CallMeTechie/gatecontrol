@@ -422,7 +422,7 @@ function restoreStorageTargets(db, rows, { peerIdMap, routeIdByDomain }) {
     VALUES (?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))`);
   let n = 0;
   for (const t of rows || []) {
-    if (!t || !Number.isSafeInteger(t.target_ref) || t.target_ref < 1 || !['local', 'smb', 'webdav', 's3'].includes(t.kind) || typeof t.label !== 'string') continue;
+    if (!t || !Number.isSafeInteger(t.target_ref) || t.target_ref < 1 || !['local', 'smb', 'webdav', 's3', 'gdrive', 'onedrive'].includes(t.kind) || typeof t.label !== 'string') continue;
     const config = t.config && typeof t.config === 'object' ? { ...t.config } : {};
     if (config.via && config.via.kind === 'peer') config.via = { kind: 'peer', peerId: (config.via.peer_name && peerIdMap.get(config.via.peer_name)) || 0, port: config.via.port || 445 };
     else if (config.via && config.via.kind === 'route') config.via = { kind: 'route', routeId: (config.via.route_domain && routeIdByDomain.get(config.via.route_domain)) || 0 };
@@ -649,6 +649,9 @@ function getBackupSummary(backup) {
 const ENCRYPTED_SETTINGS_KEYS = new Set([
   'smtp_password_encrypted',
   'license_signing_key_encrypted',
+  // OAuth apps of the cloud accounts (docs/cloud-accounts.md)
+  'cloud.google.client_secret_encrypted',
+  'cloud.microsoft.client_secret_encrypted',
 ]);
 
 function validateEncryptedFields(data) {
