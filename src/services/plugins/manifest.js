@@ -54,6 +54,9 @@ const SERVICES_MAX = 32;
 // storage.maxMB (since 1.206.0): the database of a plugin may grow up to 4 GB
 const DB_MAX_MB_MIN = 256;
 const DB_MAX_MB_MAX = 4096;
+// permissions.ai (docs/plugins.md "AI requests"): what the plugin may ask the AI provider for
+const AI_CAPABILITIES = Object.freeze(['text', 'vision', 'audio', 'video']);
+const AI_PURPOSE_MAX = 200;
 
 /** "x" or { de, en } → { de, en } (both filled); null when invalid. */
 function locText(v, max) {
@@ -271,7 +274,7 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, cloudImport: null, publicEndpoints: null };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, ai: null, cloudImport: null, publicEndpoints: null };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
@@ -325,6 +328,17 @@ function validate(raw, opts = {}) {
       if (!Array.isArray(list) || list.length > SERVICES_MAX || !list.every((x) => typeof x === 'string' && SERVICE_REF_RE.test(x))) err('permissions.services: invalid');
       else if (m.id && list.some((x) => SERVICE_REF_RE.exec(x)[1] === m.id)) err('permissions.services: own service');
       else perms.services = [...new Set(list)];
+    }
+    // ai (since 1.214.0): { purpose: {de, en}, capabilities: ['text', 'vision', 'audio', 'video'] } — requests to the
+    // AI provider set up in GateControl (gc.ai, services/ai/); the administrator agrees in the install dialog
+    if (p.ai != null) {
+      const a = p.ai;
+      const purpose = a && typeof a === 'object' && !Array.isArray(a) ? locText(a.purpose, AI_PURPOSE_MAX) : null;
+      const caps = a && Array.isArray(a.capabilities) ? a.capabilities : null;
+      if (!purpose || !caps || !caps.length || caps.length > AI_CAPABILITIES.length || !caps.every((c) => AI_CAPABILITIES.includes(c))
+        || new Set(caps).size !== caps.length || Object.keys(a).some((k) => k !== 'purpose' && k !== 'capabilities')) err('permissions.ai: invalid');
+      else if (!caps.includes('text')) err('permissions.ai.capabilities: needs "text"');
+      else perms.ai = { purpose, capabilities: AI_CAPABILITIES.filter((c) => caps.includes(c)) };
     }
     // publicEndpoints (since 1.211.0): requests without a session under /plugin-public/<id>/…, each with a token
     // the plugin minted (gc.publicEndpoints.token) — e.g. a WOPI host for an office server. true, or
@@ -592,5 +606,5 @@ function migrationsOf(manifest, files) {
 
 module.exports = {
   validate, loc, locText, migrationsOf, isFile, quotaBytes, PORTAL_SECTION_TABS, NOTIFY_PER_HOUR_DEFAULT, NOTIFY_PER_HOUR_MAX, BACKGROUND_MIN_S,
-  DB_MAX_MB_MIN, DB_MAX_MB_MAX, MEDIA_MAX_BYTES, MEDIA_MAX_BYTES_AREAS, MEDIA_QUOTA_DEFAULT, MEDIA_QUOTA_MIN, MEDIA_QUOTA_MAX, MEDIA_QUOTA_MAX_AREAS, MIME_DENY_RE, SERVICE_REF_RE, SERVICE_NAME_RE, typeAllowed,
+  DB_MAX_MB_MIN, DB_MAX_MB_MAX, AI_CAPABILITIES, MEDIA_MAX_BYTES, MEDIA_MAX_BYTES_AREAS, MEDIA_QUOTA_DEFAULT, MEDIA_QUOTA_MIN, MEDIA_QUOTA_MAX, MEDIA_QUOTA_MAX_AREAS, MIME_DENY_RE, SERVICE_REF_RE, SERVICE_NAME_RE, typeAllowed,
 };

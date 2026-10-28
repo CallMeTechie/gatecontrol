@@ -145,6 +145,11 @@
     if (perm.services && perm.services.length) {
       rows.push({ label: t('plugins.perm.services'), value: t('plugins.perm.services_v', { services: perm.services.map((x) => x.replace(':', ': ')).join(', ') }) });
     }
+    // since 1.214.0: requests to the AI provider set up in GateControl (permissions.ai)
+    if (perm.ai) {
+      const caps = (perm.ai.capabilities || []).map((c) => t('plugins.perm.ai_cap.' + c)).join(', ');
+      rows.push({ label: t('plugins.perm.ai'), value: t('plugins.perm.ai_v', { purpose: perm.ai.purpose, caps }) });
+    }
     if (perm.servicesProvided && perm.servicesProvided.length) {
       rows.push({ label: t('plugins.perm.services_provided'), value: t('plugins.perm.services_provided_v', { services: perm.servicesProvided.join(', ') }) });
     }
@@ -257,6 +262,8 @@
     shield: 'M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z',
     link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
     cloud: 'M7 19h10.5a4.5 4.5 0 0 0 .6-8.96A6.5 6.5 0 0 0 5.6 9.3 4.9 4.9 0 0 0 7 19z',
+    // since 1.214.0: AI requests (permissions.ai)
+    ai: 'M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8zM18.5 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z',
   };
 
   /**
@@ -435,6 +442,7 @@
     if (perm.publicLinks) out.push('plugins.perm.public_links');
     if (perm.publicEndpoints) out.push('plugins.perm.public_endpoints');
     if (perm.groups) out.push('plugins.perm.groups');
+    if (perm.ai) out.push('plugins.perm.ai');
     if (perm.cloudImport) out.push('plugins.perm.cloud_import');
     return out;
   }

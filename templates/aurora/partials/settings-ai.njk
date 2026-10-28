@@ -1,0 +1,75 @@
+{# ══ Erweiterungen · KI-Anbieter (docs/plugins.md "AI requests") ═══════════
+   One key per provider for every plugin: plugins ask GateControl (gc.ai),
+   never the provider. Provider cards, which plugins may ask, the month's
+   usage against the budget, default & fallback provider, the picture switch
+   and the log. Built by public/js/settings-ai.js (immediate actions, no save
+   bar); keys are write-only, the page only ever sees their last four characters. #}
+  <div class="st-sec-head">
+    <div><h2 class="st-sec-title" id="st-h-ki" tabindex="-1">{{ t('st.nav.ki') }}</h2><p class="st-sec-desc">{{ t('st.desc.ki') }}</p></div>
+  </div>
+  <div class="st-note st-note-warn" id="ai-off" hidden>{{ t('ai.off') }}</div>
+
+  <section class="st-card" aria-labelledby="ai-c-providers">
+    <div class="st-card-head"><div class="st-card-headtext"><h3 class="st-card-title" id="ai-c-providers">{{ t('ai.providers.title') }}</h3><p class="st-card-desc">{{ t('ai.providers.desc') }}</p></div></div>
+    <div class="st-tiles ai-providers" id="ai-providers"><p class="st-empty">{{ t('common.loading') }}</p></div>
+  </section>
+
+  <div class="ai-cols">
+    <section class="st-card" aria-labelledby="ai-c-plugins">
+      <div class="st-card-head"><div class="st-card-headtext"><h3 class="st-card-title" id="ai-c-plugins">{{ t('ai.plugins.title') }}</h3><p class="st-card-desc">{{ t('ai.plugins.desc') }}</p></div></div>
+      <ul class="st-list st-list-top" id="ai-plugins" aria-labelledby="ai-c-plugins"><li class="st-empty">{{ t('common.loading') }}</li></ul>
+    </section>
+
+    <div class="ai-col">
+      <section class="st-card" aria-labelledby="ai-c-usage">
+        <div class="st-card-head"><div class="st-card-headtext"><h3 class="st-card-title" id="ai-c-usage">{{ t('ai.usage.title') }}</h3></div></div>
+        <div class="st-card-pad ai-usage">
+          <div class="ai-usage-sum"><span class="ai-usage-amount" id="ai-usage-amount">–</span><span class="st-hint" id="ai-usage-of"></span></div>
+          <span class="st-bar-track" aria-hidden="true"><span class="st-bar-fill" id="ai-usage-bar" style="width:0%"></span></span>
+          <p class="st-hint" id="ai-usage-note">{{ t('ai.usage.note') }}</p>
+          <ul class="st-bars" id="ai-usage-list" aria-label="{{ t('ai.usage.by') }}"></ul>
+        </div>
+      </section>
+
+      <section class="st-card" aria-labelledby="ai-c-defaults">
+        <div class="st-card-head"><div class="st-card-headtext"><h3 class="st-card-title" id="ai-c-defaults">{{ t('ai.defaults.title') }}</h3></div></div>
+        <div class="st-row">
+          <div class="st-row-text"><label class="st-label" for="ai-default">{{ t('ai.defaults.default') }}</label></div>
+          <div class="st-row-ctl"><select class="st-select" id="ai-default"></select></div>
+        </div>
+        <div class="st-row">
+          <div class="st-row-text"><label class="st-label" for="ai-fallback">{{ t('ai.defaults.fallback') }}</label><span class="st-hint" id="ai-fallback-hint">{{ t('ai.defaults.fallback_hint') }}</span></div>
+          <div class="st-row-ctl"><select class="st-select" id="ai-fallback" aria-describedby="ai-fallback-hint"></select></div>
+        </div>
+        <div class="st-row">
+          <div class="st-row-text"><label class="st-label" for="ai-media">{{ t('ai.defaults.media') }}</label><span class="st-hint" id="ai-media-hint">{{ t('ai.defaults.media_hint') }}</span></div>
+          <div class="st-row-ctl"><button type="button" class="st-switch" role="switch" aria-checked="false" id="ai-media" aria-describedby="ai-media-hint"><span class="st-knob" aria-hidden="true"></span></button></div>
+        </div>
+        <div class="st-row">
+          <div class="st-row-text"><label class="st-label" for="ai-budget">{{ t('ai.defaults.budget') }}</label><span class="st-hint" id="ai-budget-hint">{{ t('ai.defaults.budget_hint') }}</span></div>
+          <div class="st-row-ctl"><input type="number" class="st-input st-input-num" id="ai-budget" min="0.01" max="1000000" step="0.01" inputmode="decimal" aria-describedby="ai-budget-hint"><span class="st-unit">€</span></div>
+        </div>
+        <div class="st-row">
+          <div class="st-row-text"><label class="st-label" for="ai-perhour">{{ t('ai.defaults.per_hour') }}</label><span class="st-hint" id="ai-perhour-hint">{{ t('ai.defaults.per_hour_hint') }}</span></div>
+          <div class="st-row-ctl"><input type="number" class="st-input st-input-num" id="ai-perhour" min="1" max="10000" step="1" inputmode="numeric" aria-describedby="ai-perhour-hint"></div>
+        </div>
+        <div class="st-row">
+          <div class="st-row-text"><label class="st-label" for="ai-rate">{{ t('ai.defaults.rate') }}</label><span class="st-hint" id="ai-rate-hint">{{ t('ai.defaults.rate_hint') }}</span></div>
+          <div class="st-row-ctl"><input type="number" class="st-input st-input-num" id="ai-rate" min="0.01" max="99" step="0.0001" inputmode="decimal" aria-describedby="ai-rate-hint"><span class="st-unit">€ / $</span></div>
+        </div>
+        <details class="ai-prices">
+          <summary class="st-label">{{ t('ai.prices.title') }}</summary>
+          <p class="st-hint" id="ai-prices-hint">{{ t('ai.prices.hint') }}</p>
+          <label class="st-sr" for="ai-prices">{{ t('ai.prices.title') }}</label>
+          <textarea class="st-textarea ai-prices-text" id="ai-prices" rows="5" spellcheck="false" aria-describedby="ai-prices-hint" placeholder='{"openrouter": {"vendor/model": {"input": 3, "output": 15}}}'></textarea>
+        </details>
+        <span class="st-err st-err-block" id="ai-defaults-err" role="alert" hidden></span>
+        <div class="st-card-foot">
+          <button type="button" class="st-btn st-btn-ghost" id="ai-log-open">{{ t('ai.log.open') }}</button>
+          <button type="button" class="st-btn st-btn-primary" id="ai-defaults-save">{{ t('common.save') }}</button>
+        </div>
+      </section>
+    </div>
+  </div>
+  <p class="st-hint ai-privacy">{{ t('ai.privacy') }}</p>
+

@@ -66,6 +66,9 @@ const CATALOGUE = [
     // Plugin updates (docs/plugins.md "Updates"): new versions in the official
     // catalogue, nightly automatic updates, an update waiting for approval.
     { id: 'plugin_updates', types: ['plugin_update_available', 'plugin_auto_updated', 'plugin_update_needs_approval'] },
+    // The monthly AI budget (docs/plugins.md "AI requests") at 80 % and used
+    // up — each once a month.
+    { id: 'ai_budget', types: ['ai_budget_warning', 'ai_budget_reached'] },
   ] },
 ];
 

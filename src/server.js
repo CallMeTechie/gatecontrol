@@ -172,6 +172,10 @@ async function start() {
     try { require('./services/plugins').start(); }
     catch (err) { logger.warn({ err: err.message }, 'plugins not started'); }     // RDP health check monitor
 
+    // AI service (docs/plugins.md "AI requests"): log retention. Best-effort.
+    try { require('./services/ai').start(); }
+    catch (err) { logger.warn({ err: err.message }, 'ai service not started'); }
+
     // Pi-hole sync — best-effort; a missing dnsmasq.conf or misconfigured
     // instance must never block server boot.
     try { require('./services/pihole').start(); }

@@ -87,6 +87,8 @@ router.use('/pihole', require('./pihole'));
 router.use('/plugins', require('./plugins'));
 // Official plugin catalogue (gatecontrol-plugins releases): list, install/update
 router.use('/plugin-catalog', require('./pluginCatalog'));
+// AI service gc.ai (docs/plugins.md "AI requests"): providers, budget, plugins, log (admin session only)
+router.use('/ai', require('./ai'));
 // Former built-in integrations, now first-party plugins (their API lives
 // under /plugins/<id>/api): 410 with the plugin that provides the feature.
 for (const [path, plugin] of [['/smarthome', 'gatecontrol-smarthome'], ['/midea', 'gatecontrol-midea'], ['/skoda', 'gatecontrol-skoda']]) {

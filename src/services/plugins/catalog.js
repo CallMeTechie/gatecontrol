@@ -231,7 +231,7 @@ const CATEGORIES = new Set(['family', 'home', 'work', 'mobility', 'infrastructur
 const ICONS = new Set(['family', 'chat', 'calendar', 'door', 'bulb', 'snowflake', 'car', 'server', 'nas', 'puzzle', 'cloud']);
 // symbols of the detail page's lists ("Was … hinzufügt", "Das darf das Plugin")
 const DETAIL_ICONS = new Set(['page', 'app', 'portal', 'widget', 'tile', 'action', 'bell', 'clock', 'data', 'network', 'chat', 'key',
-  'location', 'users', 'door', 'calendar', 'camera', 'car', 'bulb', 'server', 'shield', 'link', 'cloud']);
+  'location', 'users', 'door', 'calendar', 'camera', 'car', 'bulb', 'server', 'shield', 'link', 'cloud', 'ai']);
 // wireframes of "So sieht es bei dir aus"
 const SHOW_KINDS = new Set(['tile', 'list', 'widget']);
 const LANGS = new Set(['de', 'en']);
