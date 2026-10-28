@@ -83,6 +83,11 @@ router.get('/notify-media/:file', notifyMediaLimiter, (req, res) => {
 // served before every authenticated route, own limiters per address.
 router.use(require('./publicLinks'));
 
+// ─── Public endpoints of plugins (no session, docs/plugins.md "Public endpoints") ──
+// /plugin-public/<id>/<path> (routes/pluginPublic.js, since 1.211.0): a token the
+// plugin minted is the permission — e.g. an office server calling a WOPI host.
+router.use(require('./pluginPublic'));
+
 // ─── Prometheus metrics (token auth or session) ────
 // Per-identity rate limit so a stolen `read-only`/`system` token can't
 // loop-scrape the endpoint at kilohertz speeds. 60/min/identity is well

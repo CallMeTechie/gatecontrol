@@ -271,7 +271,7 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, cloudImport: null };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, cloudImport: null, publicEndpoints: null };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
@@ -325,6 +325,18 @@ function validate(raw, opts = {}) {
       if (!Array.isArray(list) || list.length > SERVICES_MAX || !list.every((x) => typeof x === 'string' && SERVICE_REF_RE.test(x))) err('permissions.services: invalid');
       else if (m.id && list.some((x) => SERVICE_REF_RE.exec(x)[1] === m.id)) err('permissions.services: own service');
       else perms.services = [...new Set(list)];
+    }
+    // publicEndpoints (since 1.211.0): requests without a session under /plugin-public/<id>/…, each with a token
+    // the plugin minted (gc.publicEndpoints.token) — e.g. a WOPI host for an office server. true, or
+    // { maxBodyBytes } — request bodies up to that size become an unclaimed media file (needs `media`,
+    // checked below); without it a body is refused (publicEndpoints.js)
+    if (p.publicEndpoints != null && p.publicEndpoints !== false) {
+      const pe = p.publicEndpoints;
+      if (pe === true) perms.publicEndpoints = { maxBodyBytes: 0 };
+      else if (pe && typeof pe === 'object' && !Array.isArray(pe) && Object.keys(pe).every((k) => k === 'maxBodyBytes')
+        && (pe.maxBodyBytes == null || (Number.isSafeInteger(pe.maxBodyBytes) && pe.maxBodyBytes >= 0 && pe.maxBodyBytes <= MEDIA_MAX_BYTES_AREAS))) {
+        perms.publicEndpoints = { maxBodyBytes: pe.maxBodyBytes || 0 };
+      } else err('permissions.publicEndpoints: invalid');
     }
     // background: { intervalSeconds: 5…86400 } — one tick at a time (runtime.js)
     if (p.background != null) {
@@ -518,6 +530,9 @@ function validate(raw, opts = {}) {
 
   // media: { maxBytes, types, quotaDefault, uploads, resumable, handOverMaxBytes } — files through GateControl (gc.media)
   m.media = raw.media == null ? null : validateMedia(raw.media, err);
+  // a body of a public endpoint is stored as media: within the plugin's own maxBytes
+  const pe = m.permissions && m.permissions.publicEndpoints;
+  if (pe && pe.maxBodyBytes > 0 && (!m.media || pe.maxBodyBytes > m.media.maxBytes)) err('permissions.publicEndpoints.maxBodyBytes: needs media');
 
   // services: { provides: { <name>: { label } } } — offered to other plugins (gc.services.call)
   m.services = { provides: {} };

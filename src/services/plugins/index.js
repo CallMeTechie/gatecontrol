@@ -146,6 +146,8 @@ function permissionSummary(m, lang) {
     services: Array.isArray(p.services) ? p.services : [],
     // since 1.193.0: download links without sign-in (only while an administrator allows them), the people's devices
     publicLinks: !!p.publicLinks,
+    // since 1.211.0: requests without a session under /plugin-public/<id>/ with the plugin's tokens (e.g. an office server)
+    publicEndpoints: !!p.publicEndpoints,
     devices: !!p.devices,
     // person groups (docs/plugins.md "Groups"): 'read' | 'manage' | null
     groups: p.groups === 'read' || p.groups === 'manage' ? p.groups : null,
@@ -741,6 +743,17 @@ async function request(id, req) {
   return { status, json: body.value };
 }
 
+/**
+ * A request of a public endpoint (routes/pluginPublic.js, publicEndpoints.js, since 1.211.0) → the hook
+ * publicRequest's raw answer (checked by the route); the answer's size like request().
+ */
+async function publicRequest(id, req) {
+  const out = await runtime.call(id, 'publicRequest', req, TIMEOUTS.request);
+  const body = boundJson(out === undefined ? null : out);
+  if (!body.ok) throw new PluginError('response_too_large', 'plugin answer too large');
+  return body.value;
+}
+
 /** Render a page/portal fragment: { html } (untrusted — served sandboxed only). */
 async function render(id, viewReq) {
   const out = await runtime.call(id, 'render', viewReq, TIMEOUTS.request);
@@ -835,7 +848,7 @@ async function stop() {
 
 module.exports = {
   PluginError, inspect, install, evaluate, reconcile, setEnabled, restart, uninstall, setAllowUnsigned, allowUnsigned,
-  setLicenseKey, assignLicenseKey, checkLicense, attentionCount, list, view, get, navEntries, history, addHistory, autoUpdateMode, setAutoUpdate, catalogCheck, setCatalogCheck, portalTabs, portalTabsFor, request, render, settingsChanged, settingsStatus, storageBytes,
+  setLicenseKey, assignLicenseKey, checkLicense, attentionCount, list, view, get, navEntries, history, addHistory, autoUpdateMode, setAutoUpdate, catalogCheck, setCatalogCheck, portalTabs, portalTabsFor, request, publicRequest, render, settingsChanged, settingsStatus, storageBytes,
   serverVersion, start, stop, extract, readManifest, removeNotIn,
   _staging: staging,
 };

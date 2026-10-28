@@ -7,6 +7,20 @@
 
 ---
 
+## [1.212.0] — 2026-10-28
+
+### Features
+- öffentliche Plugin-Endpunkte mit Token – permissions.publicEndpoints (#370)
+
+---
+
+## [1.211.0] — 2026-10-28
+
+### Features
+- Schlüsselablage, Mediendaten und Tabs für Plugin-Frames – GC.keys, GC.mediaBytes, GC.openTab (#371)
+
+---
+
 ## [1.210.0] — 2026-10-28
 
 ### Features
