@@ -79,6 +79,55 @@
     if (!n.toLowerCase().endsWith('.' + ext)) n = n.replace(/\.[A-Za-z0-9]{1,5}$/, '') + '.' + ext;
     return n;
   }
+  // GC.keys (since 1.211.0): WebCrypto keys of the frames in this page's IndexedDB "gc-plugin-keys" (store "keys",
+  // key "<plugin id>/<name>"), ≤ KEYS_MAX per plugin. Only CryptoKey objects travel — a secret or private key only
+  // when it is not extractable — so nobody can read the key's bytes, neither this page nor the frame.
+  const KEY_NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
+  const KEYS_MAX = 32;
+  const isKey = (k) => typeof CryptoKey !== 'undefined' && k instanceof CryptoKey && (k.type === 'public' || k.extractable === false);
+  function storableKey(v) {
+    if (isKey(v)) return true;
+    return !!v && typeof v === 'object' && Object.keys(v).length === 2 && isKey(v.publicKey) && isKey(v.privateKey)
+      && v.publicKey.type === 'public' && v.privateKey.type === 'private';
+  }
+  let keyDb = null;
+  function openKeyDb() {
+    if (keyDb) return keyDb;
+    keyDb = new Promise((resolve, reject) => {
+      let req;
+      try { req = indexedDB.open('gc-plugin-keys', 1); } catch (e) { reject(e); return; }
+      req.onupgradeneeded = () => { req.result.createObjectStore('keys'); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error('storage unavailable'));
+    });
+    keyDb.catch(() => { keyDb = null; });
+    return keyDb;
+  }
+  async function keyStore(op, key, value) {
+    const db = await openKeyDb();
+    const run = (mode, fn) => new Promise((resolve, reject) => {
+      const tx = db.transaction('keys', mode);
+      const r = fn(tx.objectStore('keys'));
+      tx.oncomplete = () => resolve(r ? r.result : undefined);
+      tx.onerror = () => reject(tx.error || new Error('storage unavailable'));
+      tx.onabort = () => reject(tx.error || new Error('storage unavailable'));
+    });
+    if (op === 'get') { const v = await run('readonly', (s) => s.get(key)); return v === undefined ? null : v; }
+    if (op === 'remove') {
+      const had = await run('readonly', (s) => s.count(key));
+      await run('readwrite', (s) => s.delete(key));
+      return had > 0;
+    }
+    const prefix = key.slice(0, key.indexOf('/') + 1);
+    const count = await run('readonly', (s) => s.count(IDBKeyRange.bound(prefix, prefix + '\uffff')));
+    const exists = await run('readonly', (s) => s.count(key));
+    if (!exists && count >= KEYS_MAX) throw Object.assign(new Error('too many keys'), { status: 429 });
+    await run('readwrite', (s) => s.put(value, key));
+    return true;
+  }
+  // GC.mediaBytes (since 1.211.0): the plugin's own media URLs, ≤ 16 MiB a call
+  const MEDIA_PATH_RE = /^\/plugin-media\/[0-9a-f]{32}\.\d{1,12}\.\d{1,12}\.[A-Za-z0-9_-]{22}$/;
+  const MAX_MEDIA_BYTES = 16 * 1024 * 1024;
   // GC.scanQr: one start per 1.5 s per frame; without a click, one per 10 s
   const SCAN_GAP_MS = 1500;
   const SCAN_NO_GESTURE_GAP_MS = 10000;
@@ -242,6 +291,61 @@
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
       reply({ type: 'gc-result', id: m.id, ok: true, status: 200, data: { ok: true, name: a.download } });
+    }
+
+    // GC.keys (since 1.211.0): WebCrypto keys of the frame in this page's IndexedDB, per plugin and name
+    function keys(m) {
+      const fail = (status, error) => reply({ type: 'gc-result', id: m.id, ok: false, status, error });
+      const name = typeof m.name === 'string' ? m.name : '';
+      if (!KEY_NAME_RE.test(name) || ['get', 'put', 'remove'].indexOf(m.op) < 0) { fail(400, 'invalid request'); return; }
+      if (m.op === 'put' && !storableKey(m.value)) { fail(400, 'invalid key'); return; }
+      keyStore(m.op, pluginId + '/' + name, m.value).then(
+        (data) => reply({ type: 'gc-result', id: m.id, ok: true, status: 200, data }),
+        (e) => fail(e && e.status ? e.status : 500, (e && e.message) || 'storage unavailable'));
+    }
+
+    // GC.mediaBytes (since 1.211.0): one of the plugin's media URLs, fetched here, the bytes handed over
+    let mediaBusy = 0;
+    async function mediaBytes(m) {
+      const fail = (status, error) => reply({ type: 'gc-result', id: m.id, ok: false, status, error });
+      let u = null;
+      try { u = new URL(String(m.url || ''), window.location.href); } catch (_) { u = null; }
+      const start = m.start == null ? null : m.start;
+      const end = m.end == null ? null : m.end;
+      const ranged = start != null || end != null;
+      if (!u || u.origin !== window.location.origin || !MEDIA_PATH_RE.test(u.pathname) || u.search || u.hash
+        || (ranged && !(Number.isSafeInteger(start) && Number.isSafeInteger(end) && start >= 0 && end >= start && end - start < MAX_MEDIA_BYTES))) {
+        fail(400, 'invalid request');
+        return;
+      }
+      if (mediaBusy >= 4) { fail(429, 'busy'); return; }
+      mediaBusy++;
+      try {
+        const res = await fetch(u.pathname, { credentials: 'omit', cache: 'no-store', headers: ranged ? { Range: 'bytes=' + start + '-' + end } : {} });
+        if (!res.ok) { fail(res.status, 'HTTP ' + res.status); return; }
+        const len = Number(res.headers.get('content-length'));
+        if (Number.isFinite(len) && len > MAX_MEDIA_BYTES) { fail(413, 'too large'); return; }
+        const data = await res.arrayBuffer();
+        if (data.byteLength > MAX_MEDIA_BYTES) { fail(413, 'too large'); return; }
+        const cr = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(res.headers.get('content-range') || '');
+        const out = cr ? { data, start: Number(cr[1]), end: Number(cr[2]), total: Number(cr[3]) } : { data, start: 0, end: data.byteLength - 1, total: data.byteLength };
+        if (frame.contentWindow) frame.contentWindow.postMessage({ type: 'gc-result', id: m.id, ok: true, status: res.status, data: out }, '*', [data]);
+      } catch (_) {
+        fail(0, 'network error');
+      } finally { mediaBusy--; }
+    }
+
+    // GC.openTab (since 1.211.0): one of the plugin's public endpoints in a new tab, during a click only
+    function openTab(m) {
+      const answer = (data) => reply({ type: 'gc-result', id: m.id, ok: true, status: 200, data });
+      let u = null;
+      try { u = new URL(String(m.url || ''), window.location.href); } catch (_) { u = null; }
+      if (!u || u.origin !== window.location.origin || u.pathname.indexOf('/plugin-public/' + pluginId + '/') !== 0 || u.username || u.password) { answer({ ok: false, code: 'invalid' }); return; }
+      const ua = navigator.userActivation;
+      if (ua && ua.isActive !== true) { answer({ ok: false, code: 'no_gesture' }); return; }
+      // with noopener the browser answers null even when it opened the tab: no way to tell a blocked one
+      window.open(u.href, '_blank', 'noopener,noreferrer');
+      answer({ ok: true });
     }
 
     // GC.scanQr: the page's own camera dialog, the frame gets the text only
@@ -423,6 +527,9 @@
       else if (m.type === 'gc-save' && Number.isInteger(m.id)) save(m);
       else if (m.type === 'gc-scan' && Number.isInteger(m.id)) scan(m);
       else if (m.type === 'gc-pick' && Number.isInteger(m.id)) pick(m);
+      else if (m.type === 'gc-keys' && Number.isInteger(m.id)) keys(m);
+      else if (m.type === 'gc-media-bytes' && Number.isInteger(m.id)) mediaBytes(m);
+      else if (m.type === 'gc-open-tab' && Number.isInteger(m.id)) openTab(m);
       else if (m.type === 'gc-subscribe') setSubscribed(true);
       else if (m.type === 'gc-unsubscribe') setSubscribed(false);
       else if (m.type === 'gc-inbox-subscribe') setInbox(true);
