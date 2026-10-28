@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.209.0] — 2026-10-28
+
+### Features
+- Direktlinks in Plugin-Tabs reichen ihre Parameter an den Frame weiter (#368)
+
+---
+
 ## [1.208.0] — 2026-10-27
 
 ### Features
