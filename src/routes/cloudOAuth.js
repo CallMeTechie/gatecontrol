@@ -7,8 +7,14 @@
  *
  *   GET /oauth/cloud/start?flow=<id>
  *       a person's connection (gc.cloud.connectUrl): a page that says who
- *       connects which provider for which plugin, with "Weiter"; the link is
- *       single use and valid for 10 minutes. A storage target's connection
+ *       connects which provider for which plugin and warns to go on only as
+ *       that person, with "Weiter" (never automatic); the link is single use
+ *       and valid for 10 minutes. A browser with a GateControl session of
+ *       ANOTHER account (web or portal session on this host) is refused with
+ *       its own page ("Dieser Link gehört zu einer anderen Person") — also for
+ *       &go=1 — and the flow stays unused: somebody who sends their own link
+ *       to another person cannot get that person's Drive attached to their
+ *       account. A session of the person itself is noted in the flow. A storage target's connection
  *       (the administrator's own) goes on at once — only for the
  *       administrator who started it.
  *   GET /oauth/cloud/start?flow=<id>&go=1
@@ -65,6 +71,14 @@ function pluginName(id, lang) {
   } catch { return id; }
 }
 
+/** The GateControl account of this browser's session on this host (web or portal session), or null. */
+function sessionUser(req) {
+  const s = req.session || {};
+  if (Number.isSafeInteger(s.userId) && s.userId > 0) return s.userId;
+  if (s.portalOnly && Number.isSafeInteger(s.portalUserId) && s.portalUserId > 0) return s.portalUserId;
+  return null;
+}
+
 function isSessionAdmin(req, uid) {
   if (!req.session || req.session.userId !== uid) return false;
   try { return require('../middleware/auth').isAdminSession(req); } catch { return false; }
@@ -75,14 +89,25 @@ function start(req, res) {
   const f = cloud.pendingFlow(typeof q.flow === 'string' ? q.flow : '');
   if (!f) return invalid(res);
   if (f.purpose === 'target' && !isSessionAdmin(req, f.userId)) return invalid(res);
-  if (f.purpose === 'import' && q.go !== '1') {
-    const lang = res.locals.language === 'en' ? 'en' : 'de';
-    return page(res, 200, {
-      mode: 'confirm', provider: f.provider,
-      message: res.locals.t('cloud.connect.confirm_text', { provider: NAMES[f.provider], person: personName(f.userId), plugin: pluginName(f.pluginId, lang) }),
-      next: `/oauth/cloud/start?flow=${encodeURIComponent(f.id)}&go=1`,
-      providerName: NAMES[f.provider],
-    });
+  if (f.purpose === 'import') {
+    const viewer = sessionUser(req);
+    if (viewer != null && viewer !== f.userId) {
+      // somebody else's link in a browser signed in as another person: refused, the flow stays for its owner
+      logger.warn({ provider: f.provider, plugin: f.pluginId }, 'cloud connection link opened by another account — refused');
+      return page(res, 403, { mode: 'foreign', message: res.locals.t('cloud.connect.foreign_text') });
+    }
+    if (viewer === f.userId) f.sessionChecked = true;
+    if (q.go !== '1') {
+      const lang = res.locals.language === 'en' ? 'en' : 'de';
+      const person = personName(f.userId);
+      return page(res, 200, {
+        mode: 'confirm', provider: f.provider,
+        message: res.locals.t('cloud.connect.confirm_text', { provider: NAMES[f.provider], person, plugin: pluginName(f.pluginId, lang) }),
+        warning: res.locals.t('cloud.connect.confirm_warn', { person }),
+        next: `/oauth/cloud/start?flow=${encodeURIComponent(f.id)}&go=1`,
+        providerName: NAMES[f.provider],
+      });
+    }
   }
   let b;
   try { b = cloud.begin(f.id); } catch (e) {
@@ -108,7 +133,7 @@ async function callback(req, res) {
     }
     try {
       activity.log('cloud_connected', `${NAMES[f.provider]} connected for ${f.pluginId}`, { source: 'system', ipAddress: req.ip, severity: 'info',
-        details: { provider: f.provider, plugin: f.pluginId, userId: f.userId } });
+        details: { provider: f.provider, plugin: f.pluginId, userId: f.userId, sessionChecked: !!f.sessionChecked } });
     } catch { /* logging must not break the answer */ }
     return page(res, 200, { mode: 'done', message: res.locals.t('cloud.connect.done_text', { provider: NAMES[f.provider] }), target: cloud.returnUrl(f.returnTo, { ok: true }) });
   } catch (e) {
@@ -124,4 +149,4 @@ async function callback(req, res) {
   }
 }
 
-module.exports = { start, callback, COOKIE, COOKIE_PATH };
+module.exports = { start, callback, sessionUser, COOKIE, COOKIE_PATH };

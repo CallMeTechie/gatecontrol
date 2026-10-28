@@ -205,6 +205,8 @@ describe('connecting (Google)', () => {
     assert.match(c.page.text, /data-cloud-connect="confirm"/);
     assert.match(c.page.text, /cloud-anna/, 'names the person');
     assert.match(c.page.text, /Hallo Cloud|Hello cloud/, 'names the plugin');
+    assert.match(c.page.text, /data-cloud-warn><strong>[^<]*cloud-anna[^<]*<\/strong>/, 'warns to go on only as that person');
+    assert.doesNotMatch(c.page.text, /http-equiv="refresh"/, 'never moves on by itself');
     const a = new URL(c.auth);
     assert.equal(a.origin + a.pathname, 'https://accounts.google.com/o/oauth2/v2/auth');
     assert.equal(a.searchParams.get('scope'), 'https://www.googleapis.com/auth/drive.readonly');
@@ -232,6 +234,49 @@ describe('connecting (Google)', () => {
     // the same account again: same connection, new tokens
     await connect(PID, anna, 'google');
     assert.deepEqual((await gc(PID, 'cloud.connections', { user: anna })).result.map((x) => x.id), [conn]);
+  });
+
+  it('a link opened by another signed-in account is refused (also with go=1) and stays usable for its owner', async () => {
+    const r = await gc(PID, 'cloud.connectUrl', { user: anna, provider: 'google', returnTo: '/portal' });
+    const u = new URL(r.result.url);
+    // `agent` holds the administrator's session: another account than anna
+    for (const q of ['', '&go=1']) {
+      const p = await agent.get(u.pathname + u.search + q).expect(403);
+      assert.match(p.text, /data-cloud-connect="foreign"/);
+      assert.doesNotMatch(p.text, /http-equiv="refresh"/);
+      assert.equal(String(p.headers['set-cookie'] || '').includes('gc.cloud='), false, 'not started');
+    }
+    const browser = supertest.agent(app);
+    const go = await browser.get(u.pathname + u.search + '&go=1').expect(302);
+    assert.match(go.headers.location, /^https:\/\/accounts\.google\.com\//);
+  });
+
+  it('the session of the person itself is fine and noted in the flow', async () => {
+    const argon2 = require('argon2');
+    db().prepare('UPDATE users SET password_hash = ?, self_service_enabled = 1 WHERE id = ?').run(await argon2.hash('Plain!Pass1234', require('../src/utils/argon2Options')), anna);
+    const username = db().prepare('SELECT username FROM users WHERE id = ?').get(anna).username;
+    const browser = supertest.agent(app);
+    const login = await browser.get('/login');
+    const c = login.text.match(/name="_csrf"\s+value="([^"]+)"/)[1];
+    await browser.post('/login').type('form').send({ username, password: 'Plain!Pass1234', _csrf: c }).expect(302);
+    const r = await gc(PID, 'cloud.connectUrl', { user: anna, provider: 'google', returnTo: '/portal' });
+    const u = new URL(r.result.url);
+    await browser.get(u.pathname + u.search).expect(200);
+    const go = await browser.get(u.pathname + u.search + '&go=1').expect(302);
+    const a = new URL(go.headers.location);
+    const code = fake.issueCode('google', go.headers.location);
+    await browser.get(`/oauth/cloud/callback?state=${enc(a.searchParams.get('state'))}&code=${enc(code)}`).expect(200);
+    const row = db().prepare("SELECT details FROM activity_log WHERE event_type = 'cloud_connected' ORDER BY id DESC LIMIT 1").get();
+    assert.equal(JSON.parse(row.details).sessionChecked, true);
+  });
+
+  it('a web or a portal session counts as the browser\'s account', () => {
+    const { sessionUser } = require('../src/routes/cloudOAuth');
+    assert.equal(sessionUser({ session: { userId: 7 } }), 7);
+    assert.equal(sessionUser({ session: { portalOnly: true, portalUserId: 9 } }), 9);
+    assert.equal(sessionUser({ session: { portalUserId: 9 } }), null);
+    assert.equal(sessionUser({ session: {} }), null);
+    assert.equal(sessionUser({}), null);
   });
 
   it('a link is single use, bound to the browser and the state', async () => {

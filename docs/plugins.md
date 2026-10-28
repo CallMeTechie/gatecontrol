@@ -1907,7 +1907,9 @@ await gc.cloud.import({ user, connection, fileId });
 * **`returnTo`**: a portal path (`/portal…`, the portal host is put in front)
   or an app address (`gatecontrol://…`), nothing else (`ERR_INVALID`). The
   link is single use, valid for 10 minutes and bound to the browser that
-  opens it.
+  opens it. Give it only to that person: the start page warns with their
+  name, and a browser signed in as another GateControl account is refused
+  (docs/cloud-accounts.md "The limit of this check").
 * **`list`**: 100 items per page, folders first. `size` and `mime` are `null`
   for folders. Google Docs, Sheets and Slides appear as `.docx` / `.xlsx` /
   `.pptx` with that type and `size: null`, Drawings as `.pdf`; Forms, Sites,
