@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.214.0] — 2026-10-28
+
+### Features
+- KI-Dienst gc.ai – Anbieter, Einstellungsseite, Plugin-Berechtigung (#372)
+
+---
+
 ## [1.213.0] — 2026-10-28
 
 ### Features
