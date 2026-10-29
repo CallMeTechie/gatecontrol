@@ -12,7 +12,9 @@
 //     ERR_PUBLIC_LINKS_DISABLED; the URL is built on the configured public
 //     server URL (GC_BASE_URL, https and a public host name) — none →
 //     ERR_NO_PUBLIC_URL;
-//   * kinds: 'files' (up to 20 files, as before), 'folder' (since 1.205.0:
+//   * kinds: 'files' (up to 20 files; since 1.215.0 up to 5000, 1 TB together,
+//     each with an optional sub folder `path` for the page and the ZIP — a
+//     free choice of files and folders as one link), 'folder' (since 1.205.0:
 //     the current content of a folder of a media area — area + path, with
 //     its sub folders; plugins with media.areas) and 'upload' (people put
 //     files into a folder of an area; limits for count, total size, types;
@@ -50,7 +52,9 @@ const TOKEN_BYTES = 18;
 const TOKEN_RE = /^[A-Za-z0-9_-]{22,64}$/;
 const KINDS = ['files', 'folder', 'upload'];
 const MODES = ['view', 'download'];
-const FILES_MAX = 20;
+const FILES_MAX = 5000;
+const FILES_BYTES_MAX = 1024 ** 4;
+const FILE_PATH_MAX = 1024;
 const TITLE_MAX = 120;
 const NOTE_MAX = 500;
 const TTL_MAX_MS = 30 * 24 * 3600 * 1000;
@@ -203,7 +207,7 @@ function rowByToken(token) {
 }
 
 function filesOf(tokenHash) {
-  return db().prepare(`SELECT f.idx, f.media_id, f.name, f.downloads, f.last_download_at, m.mime, m.bytes, m.name AS media_name
+  return db().prepare(`SELECT f.idx, f.media_id, f.name, f.path, f.downloads, f.last_download_at, m.mime, m.bytes, m.name AS media_name
     FROM plugin_public_link_files f LEFT JOIN plugin_media m ON m.id = f.media_id
     WHERE f.token_hash = ? ORDER BY f.idx`).all(tokenHash);
 }
@@ -248,8 +252,8 @@ function view(link, base = publicBase()) {
     opens: link.opens || 0,
     downloads: link.kind === 'files' ? files.reduce((n, f) => n + f.downloads, 0)
       : db().prepare("SELECT COUNT(*) AS n FROM plugin_public_link_events WHERE token_hash = ? AND kind IN ('download', 'zip')").get(link.token_hash).n,
-    files: files.map((f) => ({ id: String(f.idx), mediaId: f.media_id, name: f.name, mime: f.mime || null, bytes: f.bytes == null ? null : f.bytes,
-      downloads: f.downloads, lastDownloadAt: f.last_download_at })),
+    files: files.map((f) => ({ id: String(f.idx), mediaId: f.media_id, name: f.name, path: f.path == null ? null : f.path, mime: f.mime || null,
+      bytes: f.bytes == null ? null : f.bytes, downloads: f.downloads, lastDownloadAt: f.last_download_at })),
   };
   if (link.kind === 'folder' || link.kind === 'upload') { out.area = link.area; out.path = link.root_path || ''; }
   if (link.kind === 'upload') {
@@ -272,6 +276,18 @@ function folderArg(plugin, a) {
   let p;
   try { p = areas().cleanPath(a.path == null ? null : String(a.path)); } catch { throw new LinkError('ERR_INVALID', 'invalid path'); }
   return { area: a.area, path: p || '' };
+}
+
+/**
+ * The sub folder of a file of a 'files' link (since 1.215.0) — where it lies
+ * in the page and the ZIP: relative ("Urlaub/2026"), normalised like a path
+ * of an area (no "." / "..", no control characters, ≤ 1024 characters), no
+ * leading "/", no backslash. '' / null → null (the top).
+ */
+function filePath(v) {
+  if (v == null || v === '') return null;
+  need(typeof v === 'string' && v.length <= FILE_PATH_MAX && !v.startsWith('/') && !v.includes('\\'), 'ERR_INVALID', 'invalid path');
+  try { return areas().cleanPath(v); } catch { throw new LinkError('ERR_INVALID', 'invalid path'); }
 }
 
 /** Upload limits of an upload link → { maxFiles, maxBytes, types }. */
@@ -319,14 +335,18 @@ async function create(plugin, args, now = Date.now()) {
   let upload = null;
   if (kind === 'files') {
     need(Array.isArray(a.files) && a.files.length >= 1 && a.files.length <= FILES_MAX, 'ERR_INVALID', `files: 1 … ${FILES_MAX}`);
+    let bytes = 0;
     for (const f of a.files) {
       need(f && typeof f === 'object' && typeof f.mediaId === 'string' && media().ID_RE.test(f.mediaId), 'ERR_INVALID', 'invalid media id');
       need(f.name == null || (typeof f.name === 'string' && f.name.length <= 4096), 'ERR_INVALID', 'invalid name');
+      // only the plugin's own files: another plugin's id is unknown here
       const r = media().row(plugin.id, f.mediaId);
       need(r, 'ERR_INVALID', 'unknown media id');
       need(r.ref_count > 0, 'ERR_INVALID', 'the media file must be claimed (gc.media.claim) first');
-      files.push({ mediaId: r.id, name: media().cleanName(f.name) || r.name || null });
+      bytes += r.bytes;
+      files.push({ mediaId: r.id, name: media().cleanName(f.name) || r.name || null, path: filePath(f.path) });
     }
+    need(bytes <= FILES_BYTES_MAX, 'ERR_INVALID', 'files: at most 1 TB together');
   } else {
     need(a.files == null, 'ERR_INVALID', 'files belong to kind "files"');
     folder = folderArg(plugin, a);
@@ -349,14 +369,14 @@ async function create(plugin, args, now = Date.now()) {
       line(a.title, TITLE_MAX), note(a.note), iso(now), noExpiry ? NO_EXPIRY_AT : iso(a.expiresAt), a.maxDownloads == null ? null : a.maxDownloads, pinHash,
       kind, kind === 'upload' ? 'download' : mode, folder ? folder.area : null, folder ? folder.path : null, noExpiry ? 1 : 0,
       upload ? upload.maxFiles : null, upload ? upload.maxBytes : null, upload && upload.types ? JSON.stringify(upload.types) : null);
-    const ins = conn.prepare('INSERT INTO plugin_public_link_files (token_hash, idx, media_id, name) VALUES (?, ?, ?, ?)');
-    files.forEach((f, i) => ins.run(h, i + 1, f.mediaId, f.name));
+    const ins = conn.prepare('INSERT INTO plugin_public_link_files (token_hash, idx, media_id, name, path) VALUES (?, ?, ?, ?, ?)');
+    files.forEach((f, i) => ins.run(h, i + 1, f.mediaId, f.name, f.path));
   })();
   try {
     const what = kind === 'files' ? `${files.length} file${files.length === 1 ? '' : 's'}` : `${kind} ${folder.area}/${folder.path}`;
     require('../activity').log('plugin_public_link', `Plugin "${plugin.name}": public link created (${what}${mode === 'view' ? ', view only' : ''})`, {
       source: 'plugin', severity: kind === 'upload' || noExpiry ? 'warning' : 'info',
-      details: { plugin: plugin.id, userId: owner, kind, mode, files: files.length, pin: !!pinHash, expiresAt: noExpiry ? null : iso(a.expiresAt) },
+      details: { plugin: plugin.id, userId: owner, kind, mode, files: files.length, folders: files.some((f) => f.path != null), pin: !!pinHash, expiresAt: noExpiry ? null : iso(a.expiresAt) },
     });
   } catch { /* the link exists; the log is best-effort */ }
   return { token, url: urlOf(token, base), expiresAt: noExpiry ? null : a.expiresAt };
@@ -845,9 +865,9 @@ function activeCount(pluginId, now = Date.now()) {
 }
 
 module.exports = {
-  LinkError, TOKEN_RE, KINDS, MODES, FILES_MAX, TITLE_MAX, NOTE_MAX, TTL_MAX_MS, PIN_FAILURES_MAX, UNLOCK_COOKIE, RESUME_COOKIE, VISITOR_COOKIE,
+  LinkError, TOKEN_RE, KINDS, MODES, FILES_MAX, FILES_BYTES_MAX, TITLE_MAX, NOTE_MAX, TTL_MAX_MS, PIN_FAILURES_MAX, UNLOCK_COOKIE, RESUME_COOKIE, VISITOR_COOKIE,
   RESUME_WINDOW_MS, SETTING, SETTING_UNLIMITED, FOLDER_ZIP_FILES_MAX,
-  declared, allowed, setAllowed, unlimitedAllowed, setUnlimitedAllowed, enabled, publicBase, hashToken,
+  declared, allowed, setAllowed, unlimitedAllowed, setUnlimitedAllowed, enabled, publicBase, hashToken, filePath,
   create, list, get, revoke, events, uploads, revokeForMedia, removeAll,
   resolve, senderName, unlockCookie, unlocked, visitor, shortIp, noteOpen, tryPin, resumeCookie, mayResume, countDownload, noteFolderDownload, fileUsedUp,
   folderPath, listFolder, filesBelow, folderFile, upload, uploadTypeAllowed, visitorUploads,

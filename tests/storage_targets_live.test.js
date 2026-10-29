@@ -84,6 +84,44 @@ for (const kind of ['s3', 'webdav', 'smb']) {
       await d.remove(`${base}/Unter Ordner/zwei ä.bin`);
     });
 
+    // since 1.215.0 (gc.media.copy): a copy on the target itself — S3 CopyObject / UploadPartCopy, WebDAV COPY; SMB has none
+    it('copies on the target; never over an existing object (WebDAV); a missing source fails', { skip: kind === 'smb' ? 'SMB copies through GateControl' : false }, async () => {
+      assert.equal(typeof d.copy, 'function');
+      const data = crypto.randomBytes(200 * 1024 + 3);
+      const from = kind === 's3' ? 'cp/src-1' : 'Kopien/Quelle ä.bin';
+      const to = kind === 's3' ? 'cp/dst-1' : 'Kopien/Unter Ordner/Kopie ä.bin';
+      await d.put(from, source(data));
+      await d.copy(from, to);
+      assert.ok((await collect(await d.get(to))).equals(data));
+      assert.ok((await collect(await d.get(from))).equals(data), 'the source stays');
+      if (kind !== 's3') {
+        const other = crypto.randomBytes(10);
+        await d.put('Kopien/belegt.bin', source(other));
+        await assert.rejects(d.copy(from, 'Kopien/belegt.bin'), (e) => e.code === 'exists');
+        assert.ok((await collect(await d.get('Kopien/belegt.bin'))).equals(other), 'untouched');
+        await d.remove('Kopien/belegt.bin');
+      }
+      await assert.rejects(d.copy('cp/missing', kind === 's3' ? 'cp/dst-2' : 'Kopien/x.bin'), (e) => e.code === 'not_found');
+      await d.remove(from);
+      await d.remove(to);
+    });
+
+    it('S3: an object above the CopyObject limit is copied as UploadPartCopy parts', { skip: kind !== 's3' ? 'S3 only' : false, timeout: 120000 }, async () => {
+      const lim = require('../src/services/storageTargets/drivers/s3')._copyLimitsForTest;
+      const saved = { ...lim };
+      Object.assign(lim, { max: 1024 * 1024, part: 5 * 1024 * 1024 });
+      try {
+        const data = crypto.randomBytes(11 * 1024 * 1024 + 7); // three parts, the last one short
+        await d.put('cp/big-src', source(data));
+        await d.copy('cp/big-src', 'cp/big-dst');
+        assert.equal((await d.head('cp/big-dst')).size, data.length);
+        const back = await collect(await d.get('cp/big-dst'));
+        assert.equal(crypto.createHash('sha256').update(back).digest('hex'), crypto.createHash('sha256').update(data).digest('hex'));
+        await d.remove('cp/big-src');
+        await d.remove('cp/big-dst');
+      } finally { Object.assign(lim, saved); }
+    });
+
     it('a missing object: head null, get not_found', async () => {
       assert.equal(await d.head('nope/missing'), null);
       await assert.rejects(async () => collect(await d.get('nope/missing')), (e) => e.code === 'not_found');

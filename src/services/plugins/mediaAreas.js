@@ -441,8 +441,10 @@ function copyPlan(plugin, areaId, p) {
 
 /** The destination of a copy has room for `bytes` more and its path is still free (checked before and right before the row goes in). */
 function copyCheck(plugin, plan, bytes) {
-  if (plan.path != null && pathTaken(plugin.id, plan.a.area, plan.path, '')) throw new AreaError('exists', 'another file has this path', 409);
-  const q = effectiveQuota(rowOf(plugin.id, plan.a.area) || plan.a);
+  const a = rowOf(plugin.id, plan.a.area);
+  if (!a) throw new AreaError('invalid', 'unknown area');
+  if (plan.path != null && pathTaken(plugin.id, a.area, plan.path, '')) throw new AreaError('exists', 'another file has this path', 409);
+  const q = effectiveQuota(a);
   if (q != null && usageOf(plugin.id, plan.a.area).bytes + bytes > q) throw new AreaError('quota', 'the area is full', 507);
 }
 
@@ -463,7 +465,8 @@ async function copyOnTarget(r, a, n) {
   if (typeof d.copy !== 'function' || (a.form === 'files' && !d.files)) return null;
   const key = wantKeyOf(n, a);
   // never where another file lives or a deletion is still due
-  if (db().prepare('SELECT 1 FROM plugin_media WHERE target_id = ? AND (remote_key = ? OR want_key = ?) LIMIT 1').get(want, key, key)) return null;
+  if (db().prepare('SELECT 1 FROM plugin_media WHERE target_id = ? AND remote_key = ? LIMIT 1').get(want, key)
+    || db().prepare('SELECT 1 FROM plugin_media WHERE plugin = ? AND area = ? AND want_key = ? LIMIT 1').get(n.plugin, a.area, key)) return null;
   if (db().prepare('SELECT 1 FROM plugin_media_gone WHERE target_id = ? AND remote_key = ? LIMIT 1').get(want, key)) return null;
   const size = r.stored_form === 'files' ? r.bytes : media().sealedSize(r.bytes);
   try {

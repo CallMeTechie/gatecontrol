@@ -168,7 +168,24 @@
 
         {% else %}
           {% if note %}<p class="pl-note">{{ note }}</p>{% endif %}
-          <ul class="pl-files">
+          {% if crumbs %}
+          <nav class="pl-crumbs" aria-label="{{ t('public_link.folders') }}">
+            {% for c in crumbs %}
+              {% if not loop.first %}<span aria-hidden="true">/</span>{% endif %}
+              {% if loop.last %}<strong>{{ c.name if c.name else t('public_link.folder_root') }}</strong>{% else %}<a href="{{ c.href }}">{{ c.name if c.name else t('public_link.folder_root') }}</a>{% endif %}
+            {% endfor %}
+          </nav>
+          {% if folders.length %}
+          <h2 class="pl-h">{{ t('public_link.folders') }}</h2>
+          <ul class="pl-files" id="pl-folders">
+            {% for d in folders %}
+            <li><a class="pl-file pl-folder" href="{{ d.href }}"><svg class="pl-ic" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span class="pl-file-t"><b>{{ d.name }}</b></span></a></li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if files.length %}<h2 class="pl-h">{{ t('public_link.files') }}</h2>{% endif %}
+          {% endif %}
+          <ul class="pl-files" id="pl-list">
             {% for f in files %}
             <li class="pl-file">
               <span class="pl-file-t"><b>{{ f.name }}</b><small>{{ f.size }}</small></span>
@@ -182,6 +199,7 @@
             </li>
             {% endfor %}
           </ul>
+          {% if more %}<p class="pl-meta">{{ t('public_link.folder_more') }}</p>{% endif %}
           {% if zip %}
           <a class="btn btn-primary au-submit pl-zip" href="{{ zip }}" download>{{ t('public_link.download_zip') }} ({{ total }})</a>
           {% endif %}

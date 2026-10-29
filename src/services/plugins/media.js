@@ -933,7 +933,6 @@ async function copy(plugin, id, { area, path: p = null, claim: keep = false, own
   room();
   const newId = crypto.randomBytes(16).toString('hex');
   const fresh = { id: newId, plugin: plugin.id, path: plan ? plan.path : null, version_of: null };
-  const wantKey = plan ? A.wantKeyOf(fresh, plan.a) : null;
   let remote = null;
   let method;
   let tmp = null;
@@ -977,6 +976,8 @@ async function copy(plugin, id, { area, path: p = null, claim: keep = false, own
     if (tmp) fs.renameSync(tmp, fileOf(plugin.id, newId));
     tmp = null;
     const now = new Date().toISOString();
+    // where the area wants it now (its form may have changed during a long copy: the worker then moves it)
+    const wantKey = plan ? A.wantKeyOf(fresh, A.rowOf(plugin.id, plan.a.area) || plan.a) : null;
     try {
       db().prepare(`INSERT INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc, name,
         area, path, target_id, remote_key, want_key, stored_form, nonce_prefix, remote_size, remote_mtime, local)

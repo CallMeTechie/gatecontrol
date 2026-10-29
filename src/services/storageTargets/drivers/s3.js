@@ -22,6 +22,8 @@ const MAX_PARTS = 10000;
 const UNSIGNED = 'UNSIGNED-PAYLOAD';
 const COPY_MAX = 5 * 1024 * 1024 * 1024;    // the largest object one CopyObject copies
 const COPY_PART_SIZE = 512 * 1024 * 1024;  // UploadPartCopy parts above that
+// the live tests lower both (a 5 GiB object is too big for a test)
+const copyLimits = { max: COPY_MAX, part: COPY_PART_SIZE };
 
 function hmac(key, s) { return crypto.createHmac('sha256', key).update(s, 'utf8').digest(); }
 function sha256hex(s) { return crypto.createHash('sha256').update(s, 'utf8').digest('hex'); }
@@ -168,12 +170,12 @@ function create(cfg, secret) {
     const h = await head(from);
     if (!h) throw new StorageError('not_found', 'no such object');
     const src = copySource(from);
-    if (h.size <= COPY_MAX) {
+    if (h.size <= copyLimits.max) {
       const res = await call('PUT', to, { headers: { 'content-length': '0', 'x-amz-copy-source': src }, idleMs: 10 * 60 * 1000 });
       await copyAnswer(res, 'copy');
       return;
     }
-    const partSize = Math.max(COPY_PART_SIZE, Math.ceil(h.size / MAX_PARTS));
+    const partSize = Math.max(copyLimits.part, Math.ceil(h.size / MAX_PARTS));
     const init = await call('POST', to, { query: { uploads: '' }, headers: { 'content-type': 'application/octet-stream' } });
     if (init.status !== 200) throw await failure(init, 'copy start');
     const uploadId = xmlValue((await net.readBody(init.stream)).toString('utf8'), 'UploadId');
@@ -233,4 +235,4 @@ function create(cfg, secret) {
   return { kind: 's3', ranges: true, files: false, put, get, head, remove, copy, space, prepare };
 }
 
-module.exports = { create, sign, uriEncode, PART_SIZE, COPY_MAX };
+module.exports = { create, sign, uriEncode, PART_SIZE, COPY_MAX, _copyLimitsForTest: copyLimits };

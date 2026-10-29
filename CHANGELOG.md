@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Plugin-Host-API `gc.media.copy(id, { area, path, claim, user })` (für Drive 1.12): kopiert eine Mediendatei des Plugins auf dem Server zu einer zweiten, unabhängigen Datei desselben Plugins – auch während die App geschlossen ist. Liegt die Quelle schon auf dem Speicherziel des Zielbereichs, kopiert das Ziel selbst (S3 CopyObject bzw. UploadPartCopy über 5 GiB, WebDAV COPY, Ordner copyFile/Reflink), sonst ein Hardlink der versiegelten Datei hier (bei Bedarf erst in den Cache geholt); der Worker schiebt die Kopie danach aufs Ziel. Der Dateischlüssel wird für die neue id neu verpackt, Vorschaubilder kommen mit, jede id hat ihre eigene Datei bzw. ihr eigenes Objekt. Quota des Plugins und des Bereichs, Pfad eindeutig, nur eigene Dateien; nichts Halbes bleibt liegen (Temp-Dateien, Grabstein für Zielobjekte), höchstens 4 Kopien je Plugin gleichzeitig, 30 min je Kopie. Speicherziel-Treiber haben dafür `copy(from, to)` (Ordner, WebDAV, S3).
+- Öffentliche Links der Art `files` für eine freie Auswahl: bis 5000 Dateien (vorher 20, zusammen höchstens 1 TB), jede mit optionalem Unterordner `path` (relativ, normalisiert, kein `..`, nichts Absolutes). Die Seite zeigt Ordner für Ordner (`?p=`), das ZIP behält die Ordner. ZIP-Namen werden für jeden Entpacker abgesichert (auch bei Ordner-Links), gleiche Namen und Dateien mit Ordnernamen bekommen „ (2)“; Dateien ab 4 GiB bekommen ZIP64-Größen (Ordner-ZIPs lehnten sie vorher mit 413 ab). Bestehende Links bleiben unverändert gültig. Migration 120 (`plugin_public_link_files.path`).
+
 ## [1.214.1] — 2026-10-28
 
 ### Fixes

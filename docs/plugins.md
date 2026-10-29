@@ -733,6 +733,7 @@ module.exports = {
 | `gc.media.url(id, { user, ttlS })` | `/plugin-media/<token>` — a signed URL a frame can show (`<img>`, `<audio>`) for `ttlS` seconds (60 … 86400, default 3600) |
 | `gc.media.fetch(url, { headers, timeoutMs, mime, name, maxBytes })` | since 1.190.0: download a file from the internet straight into the plugin's media (checked like `gc.http.fetch`) → `{ mediaId, mime, bytes, name }`, unclaimed, no owner — see "Media" |
 | `gc.media.handOver(id, { toPlugin, user })` | since 1.193.0: the file becomes a new, unclaimed file of another plugin → `{ mediaId, mime, bytes, name }` there (the caller lists one of that plugin's services) — see "Hand-over" |
+| `gc.media.copy(id, { area, path, claim, user })` | since 1.215.0: a second, independent file of the plugin with the same bytes, copied on the server (on the storage target itself where it can) → `{ id, mediaId, size, bytes, sha256, mime, name, area, path, claimed, method }` — see "Copies" |
 | `gc.net.uploadTarget(id, path, { form: { fields, file }, mediaFrom, query, headers, timeoutMs })` | since 1.193.0: a media file as `multipart/form-data` to an assigned home target, streamed → like `fetchTarget` — see "Network" |
 | `gc.publicLinks.create/list/get/revoke` | since 1.193.0: download links without login for some of the plugin's media (`publicLinks`, only while an administrator allows them) — see "Public links" |
 | `gc.publicEndpoints.token({ user, path, ttlS, data })` / `gc.publicEndpoints.base()` | since 1.211.0: tokens for requests without a session under `/plugin-public/<id>/…` (`publicEndpoints`) — see "Public endpoints" |
@@ -1385,6 +1386,8 @@ it in its own data. Code: `src/services/plugins/media.js`.
   files.
 * `gc.media.usage()` (since 1.193.0) also answers `resumable` and
   `handOverMaxBytes`; since 1.208.0 `previews`.
+* **Copies** (since 1.215.0): `gc.media.copy(id, opts)` — see "Copies (`gc.media.copy`)"
+  below the media areas.
 
 ### Previews (`media.previews`)
 
@@ -1650,6 +1653,76 @@ How the files travel:
   target_id, remote_key, nonce_prefix, local, accessed_at, push_error` of
   `plugin_media`, `plugin_media_gone`.
 
+### Copies (`gc.media.copy`)
+
+Since 1.215.0. A file of the plugin becomes a **second, independent file of
+the same plugin** with the same bytes — Drive's "Kopieren", done on the server
+(it goes on while the app is closed; no device downloads and uploads the
+bytes again). Feature check: `typeof gc.media.copy === 'function'`. Code:
+`copy` in `src/services/plugins/media.js`, `copyOnTarget` in `mediaAreas.js`.
+
+```js
+const c = await gc.media.copy(mediaId, { area: 'family', path: 'Fotos/Kopie von a.jpg', claim: true, user: 12 });
+// → { id, mediaId, size, bytes, sha256, mime, name, area, path, claimed, method }
+```
+
+* Only the plugin's **own** files: an id of another plugin is "unknown"
+  (`ERR_INVALID`), exactly like an id that does not exist. The copy belongs
+  to the same plugin; there is no way to copy into another plugin (that is
+  `gc.media.handOver`, with its permission).
+* `opts` (all optional, other keys → `ERR_INVALID`):
+  * `area` — the destination area (`media.areas`, it must exist; without
+    `media.areas` → `ERR_MEDIA_DENIED`). Default: the source's area; `null`:
+    no area.
+  * `path` — the path in the destination area, as for `gc.media.claim`
+    (normalised, unique in the area → `ERR_CONFLICT`; without an area →
+    `ERR_INVALID`). Default: none.
+  * `claim` — `false` (default): the copy is **unclaimed** like every new file
+    and goes after 24 h unless the plugin keeps it with `gc.media.claim(id)`
+    (without options it keeps the area and the path of the copy). `true`: kept
+    at once.
+  * `user` — the owner (an enabled account). Default: the source's owner.
+* The answer: `id` (= `mediaId`) the new media id, `size` (= `bytes`),
+  `sha256` and `mime` as the source's, `name` the source's display name,
+  `area`, `path`, `claimed`, and `method` — `'target'` (copied on the storage
+  target itself), `'link'` (a hard link of the sealed file here) or `'copy'`.
+* **Where the bytes go**:
+  * the source lies on the storage target of the destination area in that
+    area's form → copied **on the target**: S3 `CopyObject` (above 5 GiB a
+    multipart upload of `UploadPartCopy` parts), WebDAV `COPY` with
+    `Overwrite: F`, a folder of this server `copyFile` (a reflink where the
+    file system can). No byte travels through GateControl. A readable file
+    that changed on the NAS since it was stored, a name already taken on the
+    NAS (never overwritten) or a target without a server-side copy (SMB,
+    Google Drive, OneDrive) take the next way;
+  * else the sealed file **here** (fetched from the target into the cache
+    first when only the target has it) → a hard link, else a copy; an area on
+    a storage target gets it from the background worker once the copy is
+    claimed (`gc.media.info(id).stored`: `pending` → `target`).
+* **Encryption at rest**: the file key of the source is wrapped again for the
+  new id (its own `key_enc`, bound to the new id); previews (`media.previews`)
+  are linked along. Each id has its own directory entry or its own object on
+  the target — deleting one never touches the other.
+* **Quotas**: the plugin's quota and the destination area's quota count the
+  copy (`ERR_MEDIA_QUOTA`, checked before and again right before the file is
+  added, so parallel copies cannot pass them). A copy made here also needs
+  free space on this server (`ERR_MEDIA_QUOTA`, `server_full`); a source that
+  must come from a failing target → `ERR_BUSY` (later again). `maxBytes` and
+  `types` are not checked again — the file is in the plugin already.
+* **Nothing half-done**: the file only appears once its bytes are complete
+  and checked; on an error the temporary file goes at once, an object copied
+  on a target is deleted by the worker (it is covered by an entry in
+  `plugin_media_gone` from before the copy, due after 2 hours — so even a
+  server that stops in the middle leaves nothing behind).
+* At most **4 copies per plugin** run at once, further calls wait their turn;
+  each ends within **30 minutes** (`ERR_TIMEOUT`, nothing left behind — a
+  source still being fetched into the cache finishes there, so a new attempt
+  is quick).
+* Errors: `ERR_MEDIA_DENIED`, `ERR_INVALID`, `ERR_CONFLICT`,
+  `ERR_MEDIA_QUOTA`, `ERR_BUSY`, `ERR_TIMEOUT`.
+* Storage target drivers (docs/storage-targets.md) have an optional
+  `copy(from, to)` since 1.215.0 (folder, WebDAV, S3).
+
 ## Public links (`permissions.publicLinks`)
 
 Since 1.193.0. A plugin shares some of its media files with people **without
@@ -1676,7 +1749,7 @@ const { token, url, expiresAt } = await gc.publicLinks.create({
   ownerUserId: 12,                 // required: the person who shares (an enabled account; the page shows the name)
   title: 'Urlaubsfotos',           // optional, ≤ 120 characters
   note: 'Viel Spaß!',              // optional, ≤ 500 characters (newlines kept)
-  files: [{ mediaId, name: 'Strand.jpg' }],   // 1 … 20 CLAIMED files of the plugin; name optional (default: the media's)
+  files: [{ mediaId, name: 'Strand.jpg' }],   // 1 … 5000 (before 1.215.0: 20) CLAIMED files of the plugin; name optional (default: the media's); path since 1.215.0
   expiresAt: Date.now() + 86400000,           // ms, 1 minute … 30 days ahead
   maxDownloads: 1,                 // optional, 1 … 1000 downloads per file (none: unlimited)
   pin: '4711',                     // optional, 4 … 8 digits as a string — stored only as an scrypt hash
@@ -1706,7 +1779,7 @@ POST /s/<token>/unlock      { pin } as a form → 303 back to the page + cookie 
                             application/json) → { ok: true }; wrong → 403 (page with the attempts left /
                             { ok: false, code: 'wrong_pin', left }); the 5th wrong PIN locks the link → 410
 GET  /s/<token>/f/<n>       file n (1 …): Content-Disposition attachment with the UTF-8 name, Range (206/416)
-GET  /s/<token>/zip         all files as one ZIP (stored, streamed, Content-Length known, ZIP64 beyond 4 GiB)
+GET  /s/<token>/zip         all files as one ZIP (stored, streamed, Content-Length known, ZIP64 beyond 4 GiB and for files of 4 GiB or more)
 ```
 
 * Unknown token → 404 (the same page for every miss); ended (expired,
@@ -1748,6 +1821,40 @@ GET  /s/<token>/zip         all files as one ZIP (stored, streamed, Content-Leng
   other plugin's media), `ERR_RATE_LIMIT` (5000 links per plugin). Activity
   `plugin_public_link` when a link is created (count of files, no names) and
   when one is locked.
+
+### A free choice of files and folders (since 1.215.0)
+
+A link of kind `files` can carry a whole selection — files and folders,
+resolved by the plugin into files with their sub folder — as one link and one
+ZIP:
+
+```js
+await gc.publicLinks.create({ ownerUserId: 12, title: 'Auswahl', expiresAt: Date.now() + 7 * 86400000, files: [
+  { mediaId: a, name: 'Strand.jpg', path: 'Urlaub/2026' },   // Urlaub/2026/Strand.jpg in the ZIP
+  { mediaId: b, name: 'Notizen.pdf' },                       // at the top
+] });
+```
+
+* Up to **5000** files (before: 20), together at most **1 TB**
+  (`ERR_INVALID`).
+* `path` (optional): the sub folder of the file on the page and in the ZIP —
+  relative and normalised like a path of an area (`a//b/` → `a/b`); a leading
+  `/`, a backslash, `.` / `..` segments, control characters or more than 1024
+  characters → `ERR_INVALID`. `''` / `null`: the top.
+* The page shows one folder at a time (`?p=<sub folder>`, breadcrumbs, its
+  folders and files, at most 2000 of each per folder — the ZIP has all of
+  them). Without any `path` it looks as before. Files `/s/<token>/f/<n>` with
+  n = 1 … 5000.
+* The ZIP keeps the folders (`path/name`). Every ZIP name — of folder links
+  too — is made safe for any extractor: no `..` or `.` segments, nothing
+  absolute, a backslash and `:` become `_`, no control characters. Equal names
+  (case-insensitive) get " (2)", " (3)", …, and so does a file named like a
+  folder. A file of 4 GiB or more carries ZIP64 sizes (before, folder ZIPs
+  refused it with 413).
+* `list` / `get`: every file also has `path` (or `null`). Downloads,
+  `maxDownloads`, the ZIP counting each file once, and "the link ends when one
+  of its files is deleted" are as before. Links created before keep working
+  unchanged. Migration 120 (`plugin_public_link_files.path`).
 
 ### Folder links, upload links, view only, the log (since 1.205.0)
 

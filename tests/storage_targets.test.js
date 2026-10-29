@@ -105,6 +105,25 @@ describe('a folder of this server', () => {
     await api('patch', `/api/v1/storage-targets/${id}`).send({ label: 'Neuer Name', path: path.join(tmp, 'disk1') }).expect(200);
     assert.equal((await api('delete', `/api/v1/storage-targets/${id}`)).status, 409);
   });
+
+  it('copies on the folder (since 1.215.0, gc.media.copy): never over an existing file, never outside the folder', async () => {
+    const dir = path.join(tmp, 'copy1');
+    fs.mkdirSync(dir);
+    const d = await targets().driverOf({ kind: 'local', config: { path: dir }, secret: {} });
+    const { Readable } = require('node:stream');
+    const data = Buffer.from('Inhalt der Quelle');
+    await d.put('a/quelle.txt', { length: data.length, open: (s, e) => Readable.from([data.subarray(s, e + 1)]) });
+    await d.copy('a/quelle.txt', 'b/c/kopie.txt');
+    assert.equal(fs.readFileSync(path.join(dir, 'b/c/kopie.txt'), 'utf8'), 'Inhalt der Quelle');
+    assert.notEqual(fs.statSync(path.join(dir, 'b/c/kopie.txt')).ino, fs.statSync(path.join(dir, 'a/quelle.txt')).ino, 'a file of its own');
+    fs.writeFileSync(path.join(dir, 'b/belegt.txt'), 'bleibt');
+    await assert.rejects(d.copy('a/quelle.txt', 'b/belegt.txt'), (e) => e.code === 'exists');
+    assert.equal(fs.readFileSync(path.join(dir, 'b/belegt.txt'), 'utf8'), 'bleibt');
+    await assert.rejects(d.copy('a/fehlt.txt', 'b/x.txt'), (e) => e.code === 'not_found');
+    await assert.rejects(d.copy('a/quelle.txt', '../draussen.txt'), (e) => e.code === 'failed');
+    assert.equal(fs.existsSync(path.join(tmp, 'draussen.txt')), false);
+    assert.equal(fs.readdirSync(path.join(dir, 'b')).filter((n) => n.startsWith('.gc-upload-')).length, 0, 'no temporary file left');
+  });
 });
 
 describe('secrets and validation', () => {
