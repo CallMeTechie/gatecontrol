@@ -417,6 +417,96 @@ function version(plugin, r) {
   kick();
 }
 
+// ─── Copies (gc.media.copy, since 1.215.0, media.js copy) ────
+
+// an object copied on a target before its row exists: deleted by the worker after this
+// time unless the row came (the server stopped in between) — longer than any copy runs
+const ORPHAN_GRACE_MS = 2 * 3600 * 1000;
+
+/**
+ * Where a copy goes: area `areaId` of the plugin (null = none) with path `p`
+ * → { a, path } or null. The area must exist, the path be valid and free, the
+ * area have room for `bytes` (copyCheck).
+ */
+function copyPlan(plugin, areaId, p) {
+  if (areaId == null) {
+    if (p != null && p !== '') throw new AreaError('invalid', 'a path needs an area');
+    return null;
+  }
+  if (!declared(plugin)) throw new AreaError('no_areas', 'plugin.json declares no media.areas', 403);
+  const a = rowOf(plugin.id, areaId);
+  if (!a) throw new AreaError('invalid', 'unknown area');
+  return { a, path: cleanPath(p) };
+}
+
+/** The destination of a copy has room for `bytes` more and its path is still free (checked before and right before the row goes in). */
+function copyCheck(plugin, plan, bytes) {
+  const a = rowOf(plugin.id, plan.a.area);
+  if (!a) throw new AreaError('invalid', 'unknown area');
+  if (plan.path != null && pathTaken(plugin.id, a.area, plan.path, '')) throw new AreaError('exists', 'another file has this path', 409);
+  const q = effectiveQuota(a);
+  if (q != null && usageOf(plugin.id, plan.a.area).bytes + bytes > q) throw new AreaError('quota', 'the area is full', 507);
+}
+
+/**
+ * Copy file `r` on the storage target of area `a` for the new file `n`
+ * ({ id, plugin, path, version_of }) — when `r` lies there in the area's form
+ * and the target's driver copies (S3, WebDAV, a folder). → { target_id,
+ * remote_key, stored_form, nonce_prefix, remote_size, tomb } for the new row,
+ * or null when the bytes have to come another way (no error: the caller copies
+ * the local file). A tombstone (plugin_media_gone, due in ORPHAN_GRACE_MS)
+ * covers the copy until keepCopy(); dropCopy() makes it due at once.
+ */
+async function copyOnTarget(r, a, n) {
+  const want = effectiveTarget(a);
+  if (want == null || r.target_id == null || r.target_id !== want || !r.remote_key || r.stored_form !== a.form || !healthy(want)) return null;
+  let d;
+  try { d = await driverFor(want); } catch { return null; }
+  if (typeof d.copy !== 'function' || (a.form === 'files' && !d.files)) return null;
+  const key = wantKeyOf(n, a);
+  // never where another file lives or a deletion is still due
+  if (db().prepare('SELECT 1 FROM plugin_media WHERE target_id = ? AND remote_key = ? LIMIT 1').get(want, key)
+    || db().prepare('SELECT 1 FROM plugin_media WHERE plugin = ? AND area = ? AND want_key = ? LIMIT 1').get(n.plugin, a.area, key)) return null;
+  if (db().prepare('SELECT 1 FROM plugin_media_gone WHERE target_id = ? AND remote_key = ? LIMIT 1').get(want, key)) return null;
+  const size = r.stored_form === 'files' ? r.bytes : media().sealedSize(r.bytes);
+  try {
+    // a readable file must still be the one that was stored (changed on the NAS: the local way checks it)
+    const h = await d.head(r.remote_key);
+    if (!h || h.size !== size || (r.stored_form === 'files' && r.remote_mtime != null && h.mtime != null && Math.abs(h.mtime - r.remote_mtime) > MTIME_SLACK_MS)) {
+      if (r.stored_form === 'files') requestScan(r.plugin, r.area);
+      return null;
+    }
+  } catch (e) {
+    if (isTargetError(e)) noteFailure(want, e);
+    return null;
+  }
+  const tomb = db().prepare('INSERT INTO plugin_media_gone (target_id, remote_key, next_at) VALUES (?, ?, ?)')
+    .run(want, key, new Date(Date.now() + ORPHAN_GRACE_MS).toISOString()).lastInsertRowid;
+  try {
+    await d.copy(r.remote_key, key);
+    const h = await d.head(key);
+    if (!h || h.size !== size) throw storageError('length_mismatch', 'the copy on the target has the wrong size');
+  } catch (e) {
+    // a file of that name on the NAS is not ours: never deleted; anything else goes
+    if (e && e.code === 'exists') db().prepare('DELETE FROM plugin_media_gone WHERE id = ?').run(tomb);
+    else dropCopy({ tomb });
+    if (isTargetError(e)) noteFailure(want, e);
+    else logger.warn({ plugin: r.plugin, media: r.id, err: e && e.message }, 'plugin media areas: copy on the target failed');
+    return null;
+  }
+  noteSuccess(want);
+  return { target_id: want, remote_key: key, stored_form: a.form, nonce_prefix: a.form === 'blocks' ? r.nonce_prefix : null, remote_size: size, tomb };
+}
+
+/** The row of a copy on a target is in: its tombstone goes. */
+function keepCopy(c) { db().prepare('DELETE FROM plugin_media_gone WHERE id = ?').run(c.tomb); }
+
+/** A copy on a target whose row did not come: the worker deletes it now. */
+function dropCopy(c) {
+  db().prepare('UPDATE plugin_media_gone SET next_at = ? WHERE id = ?').run(nowIso(), c.tomb);
+  kick();
+}
+
 /** gc.media.info: where the file is — 'server', 'target' or 'pending' (still being copied / moved). */
 function stateOf(r) {
   if (r.area == null) return null;
@@ -1225,7 +1315,7 @@ function importAreas(pluginId, data) {
 module.exports = {
   AreaError, AREA_RE, FORMS, CACHE_SETTING, CACHE_DEFAULT, CACHE_MIN, CACHE_MAX, ALERT_AFTER_MS, SCAN_SETTLE_MS, MASS_MIN,
   declared, rowOf, rows, ensure, remove, info, list, setTarget, setAdminQuota, confirmRemovals, effectiveTarget, cleanPath, claimInto, move, version, stateOf,
-  wantKeyOf, versionName, conflictPath, mimeOf,
+  wantKeyOf, versionName, conflictPath, mimeOf, copyPlan, copyCheck, copyOnTarget, keepCopy, dropCopy, ORPHAN_GRACE_MS,
   ensureLocal, readRemote, touch, gone, kick, tick, start, stop, transfer, evict, cacheLimit, setCacheLimit, cacheStats, capacityCheck,
   scanArea, changes, requestScan, scansDue,
   removeAllOf, usageProvider, exportAreas, importAreas, healthy, noteFailure, noteSuccess,

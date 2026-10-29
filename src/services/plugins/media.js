@@ -873,6 +873,140 @@ async function handOver(from, id, to, { owner = null } = {}) {
   return { mediaId: newId, mime: r.mime, bytes: r.bytes, name: r.name == null ? null : r.name };
 }
 
+// ─── Copies (gc.media.copy, since 1.215.0) ──────
+//
+// A file of a plugin becomes a second, independent file of the same plugin —
+// same bytes, its own id (Drive's "Kopieren", running on the server while the
+// app is closed). The plugin's quota and the area's quota count the copy. Where
+// the bytes go:
+//   * the source lies on the storage target of the destination area in that
+//     area's form → copied on the target itself (S3 CopyObject, WebDAV COPY, a
+//     folder's copyFile — mediaAreas.copyOnTarget), no byte travels here;
+//   * else the sealed file here (fetched into the cache first when only the
+//     target has it) → a hard link, else a copy (a reflink where the file
+//     system can); an area on a target gets it from the worker once claimed.
+// The file key is wrapped again for the new id (previews, sealed under it, are
+// linked along). Each id has its own directory entry / its own object on the
+// target, so deleting one never touches the other; nothing in the media store
+// writes into an existing sealed file (always a new file renamed into place).
+// The row is only added once the bytes are complete: an aborted copy leaves
+// nothing behind (temporary files go at once, or with the hourly clean-up).
+
+const COPY_TIMEOUT_MS = 30 * 60 * 1000;
+
+function copyTimedOut(deadline) {
+  if (deadline != null && Date.now() > deadline) throw new MediaError('timeout', 504);
+}
+
+/** A local sealed copy of `r` (fetched from its target into the cache when needed) → the row to read it from. */
+async function localSource(plugin, r) {
+  const A = require('./mediaAreas');
+  if (r.local === 1 && fs.existsSync(fileOf(r.plugin, r.id))) return r;
+  if (r.target_id == null) throw new MediaError('not_found', 404, 'the stored file is missing');
+  // the cache dropped the local copy meanwhile (like readRange)
+  if (r.local !== 0) db().prepare('UPDATE plugin_media SET local = 0 WHERE id = ? AND target_id IS NOT NULL').run(r.id);
+  capacity(plugin, r.bytes);
+  return A.ensureLocal({ ...r, local: 0 });
+}
+
+/**
+ * gc.media.copy(id, { area, path, claim, owner }) of plugin `plugin` (see
+ * above). `area` undefined: the source's area. `owner` undefined: the source's.
+ * @returns {Promise<{ id, mediaId, size, bytes, sha256, mime, name, area, path, claimed, method }>}
+ *   method: 'target' (copied on the storage target) | 'link' | 'copy'
+ * @throws {MediaError} no_media, not_found, quota_exceeded, timeout (504); AreaError of
+ *   mediaAreas.copyPlan (no_areas, invalid, exists, quota) / capacityCheck (server_full,
+ *   storage_unavailable); StorageError when the source cannot be fetched from its target
+ */
+async function copy(plugin, id, { area, path: p = null, claim: keep = false, owner, timeoutMs = COPY_TIMEOUT_MS } = {}) {
+  if (!declOf(plugin)) throw new MediaError('no_media', 404);
+  const deadline = Date.now() + timeoutMs;
+  const A = require('./mediaAreas');
+  const r = row(plugin.id, id);
+  if (!r) throw new MediaError('not_found', 404);
+  const areaId = area === undefined ? r.area : area;
+  const plan = A.copyPlan(plugin, areaId == null ? null : areaId, p);
+  const room = () => {
+    if (usage(plugin.id).bytes + r.bytes > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
+    if (plan) A.copyCheck(plugin, plan, r.bytes);
+  };
+  room();
+  const newId = crypto.randomBytes(16).toString('hex');
+  const fresh = { id: newId, plugin: plugin.id, path: plan ? plan.path : null, version_of: null };
+  let remote = null;
+  let method;
+  let tmp = null;
+  try {
+    // 1. on the storage target itself
+    if (plan) remote = await A.copyOnTarget(r, plan.a, fresh);
+    if (remote) {
+      method = 'target';
+    } else {
+      // 2. the sealed file here: a hard link, else a copy
+      const final = fileOf(plugin.id, newId);
+      await fs.promises.mkdir(path.dirname(final), { recursive: true, mode: 0o700 });
+      tmp = path.join(pluginDir(plugin.id), `.tmp-${newId}`);
+      for (let attempt = 0; ; attempt++) {
+        const src = await localSource(plugin, attempt ? { ...r, local: 0 } : r);
+        copyTimedOut(deadline);
+        try {
+          try {
+            await fs.promises.link(fileOf(src.plugin, src.id), tmp);
+            method = 'link';
+          } catch (e) {
+            if (e && e.code === 'ENOENT') throw e;
+            capacity(plugin, r.bytes);
+            await fs.promises.copyFile(fileOf(src.plugin, src.id), tmp, fs.constants.COPYFILE_EXCL | fs.constants.COPYFILE_FICLONE);
+            method = 'copy';
+          }
+          break;
+        } catch (e) {
+          await fs.promises.rm(tmp, { force: true });
+          // evicted from the cache between the look and the link: fetch it once more
+          if (e && e.code === 'ENOENT' && r.target_id != null && attempt === 0) continue;
+          if (e instanceof MediaError || (e && e.status && e.code)) throw e;
+          throw new MediaError('not_found', 404, e && e.message);
+        }
+      }
+      if ((await fs.promises.stat(tmp)).size !== sealedSize(r.bytes)) throw new MediaError('corrupt', 500);
+    }
+    copyTimedOut(deadline);
+    // 3. the quotas once more (parallel copies, uploads), then the row — synchronous from here on
+    room();
+    if (tmp) fs.renameSync(tmp, fileOf(plugin.id, newId));
+    tmp = null;
+    const now = new Date().toISOString();
+    // where the area wants it now (its form may have changed during a long copy: the worker then moves it)
+    const wantKey = plan ? A.wantKeyOf(fresh, A.rowOf(plugin.id, plan.a.area) || plan.a) : null;
+    try {
+      db().prepare(`INSERT INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc, name,
+        area, path, target_id, remote_key, want_key, stored_form, nonce_prefix, remote_size, remote_mtime, local)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`).run(newId, plugin.id,
+        owner === undefined ? r.owner_user_id : owner, r.mime, r.bytes, r.sha256, now, keep ? 1 : 0, keep ? now : null,
+        wrapKey(unwrapKey(r.key_enc, r.id), newId), r.name == null ? null : r.name,
+        plan ? plan.a.area : null, plan ? plan.path : null, remote ? remote.target_id : null, remote ? remote.remote_key : null, wantKey,
+        remote ? remote.stored_form : null, remote ? remote.nonce_prefix : null, remote ? remote.remote_size : null, remote ? 0 : 1);
+    } catch (e) {
+      fs.rmSync(fileOf(plugin.id, newId), { force: true });
+      throw e;
+    }
+    if (remote) { A.keepCopy(remote); remote = null; }
+  } catch (e) {
+    if (tmp) await fs.promises.rm(tmp, { force: true });
+    if (remote) A.dropCopy(remote);
+    throw e;
+  }
+  // previews (media.previews) are sealed under the file's key, which the copy keeps
+  await require('./mediaPreviews').linkTo(plugin.id, r.id, plugin.id, newId);
+  const out = row(plugin.id, newId);
+  if (keep) {
+    require('./mediaPreviews').warm(plugin, out);
+    A.kick();
+  }
+  return { id: newId, mediaId: newId, size: out.bytes, bytes: out.bytes, sha256: out.sha256, mime: out.mime, name: out.name == null ? null : out.name,
+    area: out.area == null ? null : out.area, path: out.path == null ? null : out.path, claimed: out.ref_count > 0, method };
+}
+
 // ─── Capability URLs for frames ─────────────────
 
 // A token of the preview only (gc.media.previews { previewOnly }, since 1.210.0) is signed under its own prefix: it
@@ -927,10 +1061,12 @@ function resolveToken(token, now = Date.now(), { preview = false } = {}) {
 function cleanup(now = Date.now()) {
   let n = 0;
   const cutoff = new Date(now - UNCLAIMED_TTL_MS).toISOString();
-  const old = db().prepare('SELECT id, plugin FROM plugin_media WHERE ref_count = 0 AND created_at <= ?').all(cutoff);
+  const old = db().prepare('SELECT id, plugin, target_id, remote_key FROM plugin_media WHERE ref_count = 0 AND created_at <= ?').all(cutoff);
   for (const r of old) {
-    db().prepare('DELETE FROM plugin_media WHERE id = ? AND ref_count = 0').run(r.id);
+    if (!db().prepare('DELETE FROM plugin_media WHERE id = ? AND ref_count = 0').run(r.id).changes) continue;
     try { fs.rmSync(fileOf(r.plugin, r.id), { force: true }); } catch { /* gone */ }
+    // an unclaimed copy made on a storage target (gc.media.copy) has its object there
+    if (r.target_id != null) require('./mediaAreas').gone(r.target_id, r.remote_key);
     require('./mediaPreviews').drop(r.plugin, r.id);
     revokeLinks(r.plugin, [r.id]);
     n++;
@@ -1002,6 +1138,32 @@ function exportPlugin(pluginId, budget) {
   return out;
 }
 
+/**
+ * The sealed file of a backup entry, opened and sealed again here: every chunk
+ * of `data` must open with `key` (AES-GCM — an altered or cut file fails) and
+ * the plaintext hash to `sha`; the file written is a fresh sealing of that
+ * plaintext (new nonce prefix) — never the uploaded bytes themselves.
+ * → the new sealed file, or null when `data` does not match.
+ */
+function resealBackup(data, key, bytes, sha) {
+  if (data.length !== sealedSize(bytes) || !data.subarray(0, MAGIC.length).equals(MAGIC)) return null;
+  const oldPrefix = data.subarray(MAGIC.length, HEADER_LEN);
+  const prefix = crypto.randomBytes(PREFIX_LEN);
+  const lastIndex = Math.max(0, Math.ceil(bytes / CHUNK) - 1);
+  const hash = crypto.createHash('sha256');
+  const out = [MAGIC, prefix];
+  try {
+    for (let i = 0, at = HEADER_LEN; i <= lastIndex; i++) {
+      const len = (i === lastIndex ? bytes - i * CHUNK : CHUNK) + TAG_LEN;
+      const plain = openChunk(key, oldPrefix, i, i === lastIndex, data.subarray(at, at + len));
+      hash.update(plain);
+      out.push(sealChunk(key, prefix, i, i === lastIndex, plain));
+      at += len;
+    }
+  } catch { return null; }
+  return hash.digest('hex') === sha ? Buffer.concat(out) : null;
+}
+
 /** Restore the files of a backup entry (exportPlugin's list). → number restored. */
 function importPlugin(pluginId, list) {
   if (!Array.isArray(list)) return 0;
@@ -1013,11 +1175,22 @@ function importPlugin(pluginId, list) {
         || !Number.isSafeInteger(e.bytes) || e.bytes < 1 || !/^[0-9a-f]{64}$/.test(String(e.sha256))) continue;
       const key = Buffer.from(decrypt(e.key), 'hex');
       if (key.length !== 32) continue;
-      const data = Buffer.from(e.data, 'base64');
-      if (data.length !== sealedSize(e.bytes) || !data.subarray(0, MAGIC.length).equals(MAGIC)) continue;
+      // the backup (an administrator's upload) carries the sealed file: only what its own key
+      // authenticates and what hashes to its SHA-256 comes back — sealed again here
+      const sealed = resealBackup(Buffer.from(e.data, 'base64'), key, e.bytes, e.sha256);
+      if (!sealed) {
+        logger.warn({ plugin: pluginId, media: e.id }, 'plugin media: a file of the backup does not match its key or hash — skipped');
+        continue;
+      }
+      // the place comes from the plugin id and the checked media id (32 hex) only, below the plugin's media folder
+      const dir = pluginDir(pluginId);
       const file = fileOf(pluginId, e.id);
+      if (path.relative(dir, file).startsWith('..')) continue;
       fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-      fs.writeFileSync(file, data, { mode: 0o600 });
+      // a new file renamed into place — never written through an existing one (a hard link of a copy)
+      const tmp = path.join(dir, `.tmp-${e.id}-r`);
+      fs.writeFileSync(tmp, sealed, { mode: 0o600 });
+      fs.renameSync(tmp, file);
       db().prepare(`INSERT OR REPLACE INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc, name)
         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`).run(e.id, pluginId, Number.isSafeInteger(e.owner_user_id) ? e.owner_user_id : null, baseType(e.mime),
         e.bytes, e.sha256, typeof e.created_at === 'string' ? e.created_at : new Date().toISOString(),
@@ -1034,7 +1207,7 @@ module.exports = {
   MediaError, ID_RE, CHUNK, URL_PREFIX, URL_TTL_MIN_S, URL_TTL_MAX_S, UNCLAIMED_TTL_MS, QUOTA_SETTING, BACKUP_SETTING,
   mediaRoot, fileOf, declOf, quotaOf, setQuota, usage, baseType, typeAllowed, store, storeBuffer, storeStream, storePart, upload, uploadStatus, UPLOAD_ID_RE, UPLOAD_TTL_MS,
   cleanName, contentDisposition, row, info, parseRange, readRange, send, mayRead, failure,
-  claim, remove, removeAll, handOver, url, resolveToken, cleanup, backupEnabled, setBackupEnabled, exportPlugin, importPlugin, sealedSize,
+  claim, remove, removeAll, handOver, copy, COPY_TIMEOUT_MS, url, resolveToken, cleanup, backupEnabled, setBackupEnabled, exportPlugin, importPlugin, sealedSize,
   expectedDigest, pluginDir, forget, storeFromLink, contentLength, INLINE_RE,
   // the sealed format for mediaAreas.js (remote copies, range reads from a storage target)
   _sealed: { CHUNK, TAG_LEN, HEADER_LEN, MAGIC_LEN: MAGIC.length },

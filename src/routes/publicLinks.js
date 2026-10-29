@@ -10,7 +10,9 @@
 //                              Kind 'files': the note, the files with their
 //                              sizes, a download button each and "Alle als ZIP"
 //                              (mode 'view': "Ansehen" for pictures, videos and
-//                              sound, no download). Kind 'folder' (?p=<sub
+//                              sound, no download); files with a sub folder
+//                              (since 1.215.0): one folder at a time (?p=<sub
+//                              folder>, breadcrumbs). Kind 'folder' (?p=<sub
 //                              folder>): breadcrumbs, its sub folders, a
 //                              gallery of pictures and videos, the other files,
 //                              "Ordner als ZIP". Kind 'upload': name field,
@@ -32,7 +34,7 @@
 //   GET  /s/<token>/m/<id>     a file of a 'folder' link (below its folder, a
 //                              current file): download (logged), ?view=1 inline
 //                              for pictures / videos / sound (mode 'view': only that)
-//   GET  /s/<token>/zip        every file of a 'files' link, or of the folder
+//   GET  /s/<token>/zip        every file of a 'files' link (in its sub folder), or of the folder
 //                              ?p= of a 'folder' link with its sub folders, as one
 //                              ZIP (stored, streamed, Content-Length known)
 //   PUT  /s/<token>/u          ?name=<file name>&by=<name>&type=<MIME> — one file
@@ -54,10 +56,9 @@ const { publicLinkLimiter, publicLinkUnlockLimiter, publicLinkMediaLimiter, publ
 const logger = require('../utils/logger');
 
 const router = Router();
-const FILE_RE = /^[1-9]\d?$/;
+const FILE_RE = /^[1-9]\d{0,3}$/; // file 1 … 5000 of a 'files' link
 const ID_RE = /^[0-9a-f]{32}$/;
 const MIME_RE = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/;
-const ZIP_ENTRY_MAX = 0xfffffffe;
 
 function baseHeaders(res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -132,16 +133,45 @@ function sameOrigin(req) {
 
 // ─── The page ───────────────────────────────────
 
-function filesView(r, t) {
+const FILES_LIST_MAX = 2000; // files and folders shown per level of a 'files' link with sub folders
+
+function filesView(r, t, req) {
   const viewOnly = r.link.mode === 'view';
-  const files = r.files.map((f) => ({
+  const item = (f) => ({
     href: `/s/${t}/f/${f.idx}`, view: previewable(f.mime) ? `/s/${t}/f/${f.idx}?view=1` : null, name: f.name || f.media_name || `file-${f.idx}`,
     size: fmtBytes(f.bytes), usedUp: links.fileUsedUp(r.link, f),
-  }));
-  return {
-    kind: 'files', viewOnly, files, note: r.link.note,
+  });
+  const base = {
+    kind: 'files', viewOnly, note: r.link.note,
     total: fmtBytes(r.files.reduce((n, f) => n + f.bytes, 0)),
-    zip: !viewOnly && r.files.length > 1 && !files.some((f) => f.usedUp) ? `/s/${t}/zip` : null,
+    zip: !viewOnly && r.files.length > 1 && !r.files.some((f) => links.fileUsedUp(r.link, f)) ? `/s/${t}/zip` : null,
+  };
+  if (!r.files.some((f) => f.path)) return { ...base, files: r.files.map(item) };
+  // since 1.215.0: files in sub folders — one folder at a time (?p=), like a folder link
+  const sub = typeof req.query.p === 'string' ? req.query.p : '';
+  let here = '';
+  if (sub) {
+    try { here = require('../services/plugins/mediaAreas').cleanPath(sub) || ''; } catch { return null; }
+  }
+  const prefix = here ? `${here}/` : '';
+  const folders = new Set();
+  const files = [];
+  for (const f of r.files) {
+    const p = f.path || '';
+    if (p === here) files.push(f);
+    else if (!here || p.startsWith(prefix)) folders.add(p.slice(prefix.length).split('/')[0]);
+  }
+  if (here && !folders.size && !files.length) return null;
+  const q = (p) => (p ? `/s/${t}?p=${encodeURIComponent(p)}` : `/s/${t}`);
+  const segs = here ? here.split('/') : [];
+  const crumbs = [{ name: null, href: q('') }];
+  segs.forEach((x, i) => crumbs.push({ name: x, href: q(segs.slice(0, i + 1).join('/')) }));
+  const fl = [...folders].sort((x, y) => x.localeCompare(y));
+  return {
+    ...base, crumbs,
+    folders: fl.slice(0, FILES_LIST_MAX).map((n) => ({ name: n, href: q(prefix + n) })),
+    files: files.slice(0, FILES_LIST_MAX).map(item),
+    more: fl.length > FILES_LIST_MAX || files.length > FILES_LIST_MAX,
   };
 }
 
@@ -199,7 +229,7 @@ router.get('/s/:token', publicLinkLimiter, (req, res) => {
   let v;
   if (r.link.kind === 'folder') v = folderView(r, t, req);
   else if (r.link.kind === 'upload') v = uploadView(r, t, vid);
-  else v = filesView(r, t);
+  else v = filesView(r, t, req);
   if (!v) return page(req, res, 404, { kind: 'missing' });
   links.noteOpen(r.link, req, vid);
   return page(req, res, 200, { token: t, ...head(r, req), ...v });
@@ -327,7 +357,6 @@ router.get('/s/:token/zip', publicLinkLimiter, async (req, res) => {
     const list = full == null ? null : links.filesBelow(r.link, full);
     if (!list) return res.status(full == null ? 404 : 413).type('text/plain').send(full == null ? 'not found' : 'too many files');
     if (!list.length) return res.status(404).type('text/plain').send('empty');
-    if (list.some((x) => x.row.bytes > ZIP_ENTRY_MAX)) return res.status(413).type('text/plain').send('a file is too large for a ZIP');
     const entries = list.map(({ row, rel }) => ({ name: rel, size: row.bytes, read: () => media.readRange(row, 0, row.bytes - 1) }));
     const base = full ? full.slice(full.lastIndexOf('/') + 1) : (r.link.title || 'download');
     if (req.method === 'GET') links.noteFolderDownload(r.link, { zip: true, req, visitorId: vid, bytes: list.reduce((n, x) => n + x.row.bytes, 0), path: full });
@@ -336,9 +365,11 @@ router.get('/s/:token/zip', publicLinkLimiter, async (req, res) => {
   const rows = r.files.map((f) => ({ f, row: media.row(r.link.plugin, f.media_id) }));
   if (!rows.length || rows.some((x) => !x.row)) return res.status(404).type('text/plain').send('not found');
   if (r.files.some((f) => links.fileUsedUp(r.link, f))) return res.status(410).type('text/plain').send('used');
-  const entries = rows.map(({ f, row }) => ({
-    name: f.name || row.name || `file-${f.idx}`, size: row.bytes, read: () => media.readRange(row, 0, row.bytes - 1),
-  }));
+  // since 1.215.0 in its sub folder (zipStream makes every name safe: no "..", nothing absolute)
+  const entries = rows.map(({ f, row }) => {
+    const name = f.name || row.name || `file-${f.idx}`;
+    return { name: f.path ? `${f.path}/${name}` : name, size: row.bytes, read: () => media.readRange(row, 0, row.bytes - 1) };
+  });
   // counted before the first byte (atomic: a parallel download of a last file loses here)
   if (req.method === 'GET' && !links.countDownload(r.link, r.files, { zip: true, req, visitorId: vid })) return res.status(410).type('text/plain').send('used');
   return sendZip(req, res, entries, `${media.cleanName(r.link.title) || 'download'}.zip`, new Date(r.link.created_at), r.link.plugin);

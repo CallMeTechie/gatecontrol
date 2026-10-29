@@ -3,7 +3,8 @@
 // Storage target "Ordner auf dem Server" (kind 'local'): a folder of this
 // server — another disk or a mounted volume. Keys are relative paths below
 // it; a key that would leave the folder is refused. `files`: readable files
-// (media areas in the form 'files') can live here; `list` finds what changed.
+// (media areas in the form 'files') can live here; `list` finds what changed;
+// `copy` (since 1.215.0, gc.media.copy) copies on the folder itself.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -63,6 +64,27 @@ function create(cfg) {
     try { await fs.promises.rename(full(from), dest); } catch (e) { throw StorageError.from(e); }
   }
 
+  /**
+   * Copy an object on the folder (a reflink where the file system can, else a
+   * copy through a temporary file); never over an existing object (`exists`).
+   */
+  async function copy(from, to) {
+    const src = full(from);
+    const dest = full(to);
+    const taken = () => fs.promises.lstat(dest).then(() => true, () => false);
+    await fs.promises.mkdir(path.dirname(dest), { recursive: true });
+    if (await taken()) throw new StorageError('exists', 'the destination exists');
+    const tmp = path.join(path.dirname(dest), `.gc-upload-${crypto.randomBytes(6).toString('hex')}`);
+    try {
+      await fs.promises.copyFile(src, tmp, fs.constants.COPYFILE_EXCL | fs.constants.COPYFILE_FICLONE);
+      if (await taken()) throw new StorageError('exists', 'the destination exists');
+      await fs.promises.rename(tmp, dest);
+    } catch (e) {
+      await fs.promises.rm(tmp, { force: true });
+      throw StorageError.from(e);
+    }
+  }
+
   /** Every file below `prefix` (recursive) → [{ key, size, mtime }]; [] when the folder is missing. */
   async function list(prefix) {
     const out = [];
@@ -98,7 +120,7 @@ function create(cfg) {
     if (!st.isDirectory()) throw new StorageError('not_found', 'not a folder');
   }
 
-  return { kind: 'local', ranges: true, files: true, put, get, head, remove, move, list, space, prepare };
+  return { kind: 'local', ranges: true, files: true, put, get, head, remove, move, copy, list, space, prepare };
 }
 
 module.exports = { create };

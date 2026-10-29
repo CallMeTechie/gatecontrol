@@ -5,7 +5,9 @@
 // AWS Signature V4; bodies are streamed with x-amz-content-sha256:
 // UNSIGNED-PAYLOAD (the transport is TLS; MinIO and the providers accept
 // it). Objects above PART_SIZE go up as a multipart upload (64 MiB parts,
-// at most 10 000 parts — 640 GiB), aborted when a part fails.
+// at most 10 000 parts — 640 GiB), aborted when a part fails. `copy` (since
+// 1.215.0, gc.media.copy): CopyObject on the bucket, above 5 GiB a multipart
+// upload of UploadPartCopy parts — no byte travels through GateControl.
 //
 // config: { endpoint: 'https://…', region, bucket, prefix, pathStyle, accessKeyId, tlsCa }
 // secret: { accessKeyId, secretAccessKey }
@@ -18,6 +20,10 @@ const { slice } = require('../streams');
 const PART_SIZE = 64 * 1024 * 1024;
 const MAX_PARTS = 10000;
 const UNSIGNED = 'UNSIGNED-PAYLOAD';
+const COPY_MAX = 5 * 1024 * 1024 * 1024;    // the largest object one CopyObject copies
+const COPY_PART_SIZE = 512 * 1024 * 1024;  // UploadPartCopy parts above that
+// the live tests lower both (a 5 GiB object is too big for a test)
+const copyLimits = { max: COPY_MAX, part: COPY_PART_SIZE };
 
 function hmac(key, s) { return crypto.createHmac('sha256', key).update(s, 'utf8').digest(); }
 function sha256hex(s) { return crypto.createHash('sha256').update(s, 'utf8').digest('hex'); }
@@ -142,6 +148,57 @@ function create(cfg, secret) {
     return putMultipart(key, source);
   }
 
+  /** x-amz-copy-source of an object of this bucket ("/<bucket>/<prefix><key>", URL-encoded). */
+  function copySource(key) { return '/' + uriEncode(`${cfg.bucket}/${prefix}${key}`, true); }
+
+  /** The body of a copy answer — S3 may answer 200 with an <Error> body when a copy fails late. */
+  async function copyAnswer(res, what) {
+    if (res.status !== 200) throw await failure(res, what);
+    const text = (await net.readBody(res.stream)).toString('utf8');
+    if (/<Error>/.test(text)) {
+      const code = xmlValue(text, 'Code') || 'error';
+      throw new StorageError(code === 'NoSuchKey' ? 'not_found' : 'failed', `${what}: ${code}`);
+    }
+    return text;
+  }
+
+  /**
+   * Copy an object on the bucket. S3 cannot refuse an existing destination
+   * atomically: the media store copies only to fresh keys (its own ids).
+   */
+  async function copy(from, to) {
+    const h = await head(from);
+    if (!h) throw new StorageError('not_found', 'no such object');
+    const src = copySource(from);
+    if (h.size <= copyLimits.max) {
+      const res = await call('PUT', to, { headers: { 'content-length': '0', 'x-amz-copy-source': src }, idleMs: 10 * 60 * 1000 });
+      await copyAnswer(res, 'copy');
+      return;
+    }
+    const partSize = Math.max(copyLimits.part, Math.ceil(h.size / MAX_PARTS));
+    const init = await call('POST', to, { query: { uploads: '' }, headers: { 'content-type': 'application/octet-stream' } });
+    if (init.status !== 200) throw await failure(init, 'copy start');
+    const uploadId = xmlValue((await net.readBody(init.stream)).toString('utf8'), 'UploadId');
+    if (!uploadId) throw new StorageError('protocol', 'no UploadId in the answer');
+    const parts = [];
+    try {
+      for (let n = 1, start = 0; start < h.size; n++, start += partSize) {
+        const end = Math.min(h.size, start + partSize) - 1;
+        const res = await call('PUT', to, { query: { partNumber: String(n), uploadId },
+          headers: { 'content-length': '0', 'x-amz-copy-source': src, 'x-amz-copy-source-range': `bytes=${start}-${end}` }, idleMs: 10 * 60 * 1000 });
+        const etag = xmlValue(await copyAnswer(res, `copy part ${n}`), 'ETag');
+        if (!etag) throw new StorageError('protocol', 'no ETag for a part');
+        parts.push({ n, etag });
+      }
+      const xml = `<CompleteMultipartUpload>${parts.map((p) => `<Part><PartNumber>${p.n}</PartNumber><ETag>${xmlEscape(p.etag)}</ETag></Part>`).join('')}</CompleteMultipartUpload>`;
+      const done = await call('POST', to, { query: { uploadId }, headers: { 'content-type': 'application/xml' }, body: Buffer.from(xml), idleMs: 10 * 60 * 1000 });
+      await copyAnswer(done, 'copy complete');
+    } catch (e) {
+      try { const ab = await call('DELETE', to, { query: { uploadId } }); await net.drain(ab.stream); } catch { /* best effort */ }
+      throw StorageError.from(e);
+    }
+  }
+
   async function get(key, range) {
     const res = await call('GET', key, { headers: range ? { range: `bytes=${range.start}-${range.end}` } : {} });
     if (res.status !== 200 && res.status !== 206) throw await failure(res, 'download');
@@ -175,7 +232,7 @@ function create(cfg, secret) {
   async function space() { return { free: null, total: null }; }
 
   // files: false — on S3 media areas always keep sealed blocks under opaque keys
-  return { kind: 's3', ranges: true, files: false, put, get, head, remove, space, prepare };
+  return { kind: 's3', ranges: true, files: false, put, get, head, remove, copy, space, prepare };
 }
 
-module.exports = { create, sign, uriEncode, PART_SIZE };
+module.exports = { create, sign, uriEncode, PART_SIZE, COPY_MAX, _copyLimitsForTest: copyLimits };

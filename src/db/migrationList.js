@@ -3000,6 +3000,16 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_ai_requests_plugin ON ai_requests(plugin_id, at);`,
     detect: (db) => tableExists(db, 'ai_providers') && tableExists(db, 'ai_plugin_policy') && tableExists(db, 'ai_requests'),
   },
+  {
+    version: 120,
+    name: 'plugin_public_link_file_paths',
+    // Public links of kind 'files' for a free choice of files and folders
+    // (docs/plugins.md "Public links", publicLinks.js, since 1.215.0): up to
+    // 5000 files, each with the sub folder it lies in on the page and in the
+    // ZIP (relative, normalised; NULL = the top — every link before).
+    sql: 'ALTER TABLE plugin_public_link_files ADD COLUMN path TEXT;',
+    detect: (db) => hasColumn(db, 'plugin_public_link_files', 'path'),
+  },
 ];
 
 module.exports = { migrations };

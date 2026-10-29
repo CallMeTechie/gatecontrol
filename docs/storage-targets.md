@@ -44,6 +44,7 @@ const stream = await d.get(key, { start, end } | null);   // plaintext bytes; a 
 await d.head(key);                         // → { size, mtime } | null
 await d.remove(key);                       // → true | false (S3 cannot tell: true unless 404)
 await d.move(from, to);                    // local, SMB, WebDAV (S3 keys are never renamed)
+await d.copy(from, to);                    // since 1.215.0 (gc.media.copy): local, WebDAV, S3 — a copy on the target itself; never over an existing object (local, WebDAV: exists)
 await d.space();                           // → { free, total } in bytes, null where unknown (S3)
 d.ranges                                   // false for SMB: a range read fetches the whole file and cuts it
 ```
@@ -65,9 +66,14 @@ Errors are `StorageError`s (`errors.js`) with `code`: `not_found`, `auth`,
   as `UNSIGNED-PAYLOAD` over the connection; objects above 64 MiB go up as a
   multipart upload (64 MiB parts, larger parts when a file would need more than
   10 000), aborted when a part fails. Range reads with `Range`; a server that
-  answers a range with 200 is cut to the range.
+  answers a range with 200 is cut to the range. `copy`: `CopyObject`
+  (`x-amz-copy-source`, a 200 with an `<Error>` body counts as failed), above
+  5 GiB a multipart upload of `UploadPartCopy` parts (512 MiB), aborted when a
+  part fails — S3 cannot refuse an existing destination, the media store only
+  copies to fresh keys there.
 * **WebDAV**: `MKCOL` for every folder of a key (remembered per process),
-  `PUT` with `Content-Length`, `GET` with `Range`, `MOVE` with `Overwrite: F`,
+  `PUT` with `Content-Length`, `GET` with `Range`, `MOVE` and (since 1.215.0)
+  `COPY` with `Overwrite: F`,
   free space from the RFC 4331 properties `quota-available-bytes` /
   `quota-used-bytes` of the base folder.
 * **SMB**: one `smbclient` process per operation. Its commands go in on stdin,
@@ -80,7 +86,9 @@ Errors are `StorageError`s (`errors.js`) with `code`: `not_found`, `auth`,
   A reader that stops early (a range) closes the FIFO, which ends smbclient.
   Answers are judged by their `NT_STATUS_…` codes.
 * **Folder**: writes go to a temporary file in the same folder and are renamed
-  into place; a key that would leave the folder is refused.
+  into place; a key that would leave the folder is refused. `copy` (since
+  1.215.0) uses `copyFile` with a reflink where the file system can, through a
+  temporary file, never over an existing file.
 
 ## Addresses
 

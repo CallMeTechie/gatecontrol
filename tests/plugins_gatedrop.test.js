@@ -339,7 +339,7 @@ describe('public links', () => {
     assert.equal(await code({ pin: 1234 }), 'ERR_INVALID');
     assert.equal(await code({ maxDownloads: 0 }), 'ERR_INVALID');
     assert.equal(await code({ files: [] }), 'ERR_INVALID');
-    assert.equal(await code({ files: new Array(21).fill({ mediaId: a }) }), 'ERR_INVALID');
+    assert.equal(await code({ files: new Array(5001).fill({ mediaId: a }) }), 'ERR_INVALID');
     const unclaimed = (await put(annaDev, 'gd-drop', crypto.randomBytes(100)).expect(200)).body.mediaId;
     let r = await create({ files: [{ mediaId: unclaimed }] }).expect(400);
     assert.match(r.body.error, /claimed/);

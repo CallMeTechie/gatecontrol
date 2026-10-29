@@ -481,9 +481,17 @@ describe('clean-up, frames, backup, uninstall', () => {
     const before0 = fs.readFileSync(media.fileOf('hello-media', id));
     const sha = media.row('hello-media', id).sha256;
     media.remove('hello-media', id);
-    assert.equal(media.importPlugin('hello-media', [f, { id: 'bad' }, { ...f, id: 'e'.repeat(32), data: 'AAAA' }]), 1);
+    // only bytes the backup's key authenticates and that hash to its SHA-256 are written (since 1.215.0)
+    const flipped = Buffer.from(f.data, 'base64');
+    flipped[flipped.length - 100] ^= 1;
+    const tampered = [{ ...f, id: 'd'.repeat(32), data: flipped.toString('base64') }, { ...f, id: 'c'.repeat(32), sha256: '0'.repeat(64) }];
+    assert.equal(media.importPlugin('hello-media', [f, { id: 'bad' }, { ...f, id: 'e'.repeat(32), data: 'AAAA' }, ...tampered]), 1);
+    for (const t of tampered) assert.equal(fs.existsSync(media.fileOf('hello-media', t.id)), false, 'nothing written for ' + t.id);
     assert.equal(media.row('hello-media', id).sha256, sha);
-    assert.equal(Buffer.compare(fs.readFileSync(media.fileOf('hello-media', id)), before0), 0);
+    // sealed again on restore (a fresh nonce prefix, never the uploaded bytes themselves); the content below is the same
+    const restored = fs.readFileSync(media.fileOf('hello-media', id));
+    assert.equal(restored.length, before0.length);
+    assert.notEqual(Buffer.compare(restored.subarray(0, 12), before0.subarray(0, 12)), 0);
     await kv('hello-media', 'media-access', true);
     const back = await get(annaDev, 'hello-media', id).buffer(true).parse((res, cb) => { const c = []; res.on('data', (d) => c.push(d)); res.on('end', () => cb(null, Buffer.concat(c))); }).expect(200);
     assert.equal(crypto.createHash('sha256').update(back.body).digest('hex'), sha);

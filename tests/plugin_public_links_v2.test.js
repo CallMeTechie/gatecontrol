@@ -165,6 +165,60 @@ describe('creating v2 links', () => {
   });
 });
 
+describe('files links for a free choice, with sub folders (since 1.215.0)', () => {
+  it('paths are relative and normalised; up to 5000 files, 1 TB together; only claimed files of the plugin', async () => {
+    for (const bad of ['../x', 'a/../../x', '/abs', '/', 'a\\b', '..\\..\\x', 'a/./b', 'x\u0000y', 'a'.repeat(1025), 7]) {
+      assert.equal(await createCode({ files: [{ mediaId: files.aId, path: bad }] }), 'ERR_INVALID', JSON.stringify(bad));
+    }
+    const l = await create({ files: [{ mediaId: files.aId, path: 'Auswahl//Fotos/' }, { mediaId: files.cId, path: '' }, { mediaId: files.rId, path: null }] });
+    const got = (await gc('publicLinks.get', l.token)).result;
+    assert.deepEqual(got.files.map((f) => [f.mediaId, f.path]), [[files.aId, 'Auswahl/Fotos'], [files.cId, null], [files.rId, null]]);
+    assert.equal(await createCode({ files: new Array(5001).fill({ mediaId: files.aId }) }), 'ERR_INVALID');
+    const many = await create({ files: Array.from({ length: 25 }, (_, i) => ({ mediaId: files.cId, name: `c${i + 1}.pdf`, path: i % 2 ? 'odd' : null })) });
+    assert.equal((await gc('publicLinks.get', many.token)).result.files.length, 25);
+    const r = await pub().get(`/s/${tokenOf(many.url)}/f/24`).buffer(true).parse(binary).expect(200);
+    assert.ok(r.body.equals(files.c), 'file 24 of 25');
+    assert.match(r.headers['content-disposition'], /c24\.pdf/);
+    await pub().get(`/s/${tokenOf(many.url)}/f/26`).expect(404);
+    const unclaimed = (await supertest(app).put(`${CLIENT}/${PID}/media`).set('X-API-Token', dev.raw).set('Content-Type', 'text/plain').send(Buffer.from('u')).expect(200)).body.mediaId;
+    assert.equal(await createCode({ files: [{ mediaId: unclaimed, path: 'x' }] }), 'ERR_INVALID');
+    db().prepare('UPDATE plugin_media SET bytes = ? WHERE id = ?').run(1024 ** 4, files.rId);
+    try {
+      assert.equal(await createCode({ files: [{ mediaId: files.rId }, { mediaId: files.cId }] }), 'ERR_INVALID', 'more than 1 TB');
+    } finally { db().prepare('UPDATE plugin_media SET bytes = ? WHERE id = ?').run(files.r.length, files.rId); }
+  });
+
+  it('the page shows one folder at a time; the ZIP keeps the folders, names made unique and safe', async () => {
+    const l = await create({ title: 'Auswahl', files: [
+      { mediaId: files.aId, name: 'a.jpg', path: 'Urlaub' },
+      { mediaId: files.bId, name: 'b.png', path: 'Urlaub/Strand' },
+      { mediaId: files.cId, name: 'Urlaub' }, // a file named like a folder
+      { mediaId: files.rId, name: 'r.pdf' },
+      { mediaId: files.rId, name: 'R.PDF' }, // the same name (case-insensitive)
+      { mediaId: files.cId, name: 'c.pdf', path: 'Doku: Teil 1' },
+    ] });
+    const t = tokenOf(l.url);
+    const top = await pub().get(`/s/${t}`).expect(200);
+    assert.ok(top.text.includes(`/s/${t}?p=Urlaub"`) && top.text.includes(`/s/${t}?p=Doku%3A%20Teil%201"`), 'the folders');
+    assert.ok(top.text.includes(`/s/${t}/f/4"`) && top.text.includes(`/s/${t}/f/3"`), 'the files of the top');
+    assert.ok(!top.text.includes(`/s/${t}/f/1"`), 'not the files of a sub folder');
+    assert.ok(top.text.includes(`/s/${t}/zip`));
+    const sub = await pub().get(`/s/${t}`).query({ p: 'Urlaub' }).expect(200);
+    assert.ok(sub.text.includes(`/s/${t}/f/1"`) && sub.text.includes(`/s/${t}?p=Urlaub%2FStrand"`));
+    assert.ok(!sub.text.includes(`/s/${t}/f/4"`));
+    await pub().get(`/s/${t}`).query({ p: '../x' }).expect(404);
+    await pub().get(`/s/${t}`).query({ p: 'Nirgends' }).expect(404);
+    const z = await pub().get(`/s/${t}/zip`).buffer(true).parse(binary).expect(200);
+    const entries = unzip(z.body);
+    assert.deepEqual(entries.map((e) => e.name), ['Urlaub/a.jpg', 'Urlaub/Strand/b.png', 'Urlaub (2)', 'r.pdf', 'R (2).PDF', 'Doku_ Teil 1/c.pdf']);
+    assert.ok(entries[1].data.equals(files.b));
+    // a link without folders looks as before
+    const flat = await create({ files: [{ mediaId: files.aId }, { mediaId: files.cId }] });
+    const page = await pub().get(`/s/${tokenOf(flat.url)}`).expect(200);
+    assert.ok(!page.text.includes('class="pl-crumbs"') && !page.text.includes('?p='));
+  });
+});
+
 describe('folder links', () => {
   let token, link;
   before(async () => {

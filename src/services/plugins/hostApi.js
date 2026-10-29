@@ -1155,6 +1155,66 @@ async function mediaHandOver(plugin, args) {
   return out;
 }
 
+// ─── Copies (gc.media.copy, since 1.215.0, media.js copy) ────
+//
+// gc.media.copy(mediaId, { area, path, claim, user }) → { id, mediaId, size,
+// bytes, sha256, mime, name, area, path, claimed, method }: a new, independent
+// file of the same plugin with the same bytes — only ever of the calling
+// plugin's own files (another plugin's id is unknown). At most COPY_PARALLEL
+// copies per plugin at a time, the others wait their turn; each ends within
+// media.COPY_TIMEOUT_MS (ERR_TIMEOUT, nothing left behind).
+
+const COPY_PARALLEL = 4;
+const COPY_OPTS = ['area', 'path', 'claim', 'user'];
+const copySlots = new Map(); // plugin id → { running, waiting: [resolve] }
+// media / area / storage error codes of a copy → host API codes
+const COPY_ERRORS = { ...MEDIA_HOST_ERRORS, timeout: 'ERR_TIMEOUT', corrupt: 'ERR_INVALID', server_full: 'ERR_MEDIA_QUOTA', storage_unavailable: 'ERR_BUSY',
+  changed: 'ERR_INVALID' };
+
+/** Wait for one of the plugin's copy slots → release(). */
+async function copySlot(pluginId) {
+  let s = copySlots.get(pluginId);
+  if (!s) { s = { running: 0, waiting: [] }; copySlots.set(pluginId, s); }
+  if (s.running >= COPY_PARALLEL) await new Promise((resolve) => s.waiting.push(resolve));
+  else s.running++;
+  return () => {
+    const next = s.waiting.shift();
+    if (next) next();
+    else if (--s.running === 0) copySlots.delete(pluginId);
+  };
+}
+
+async function mediaCopy(plugin, args) {
+  const media = needMedia(plugin);
+  const id = mediaId(args);
+  const o = args && args.opts != null ? args.opts : {};
+  need(typeof o === 'object' && !Array.isArray(o) && Object.keys(o).every((k) => COPY_OPTS.includes(k)), 'ERR_INVALID', `invalid options (${COPY_OPTS.join(', ')})`);
+  need(o.area == null || typeof o.area === 'string', 'ERR_INVALID', 'invalid area');
+  need(o.path == null || typeof o.path === 'string', 'ERR_INVALID', 'invalid path');
+  need(o.claim == null || typeof o.claim === 'boolean', 'ERR_INVALID', 'claim must be a boolean');
+  let owner;
+  if (o.user != null) {
+    need(Number.isSafeInteger(o.user) && o.user > 0, 'ERR_INVALID', 'invalid user id');
+    need(db().prepare('SELECT 1 FROM users WHERE id = ? AND enabled = 1').get(o.user), 'ERR_INVALID', 'unknown or disabled user');
+    owner = o.user;
+  }
+  need(media.row(plugin.id, id), 'ERR_INVALID', 'unknown media id');
+  const release = await copySlot(plugin.id);
+  try {
+    return await media.copy(plugin, id, { area: Object.prototype.hasOwnProperty.call(o, 'area') ? o.area : undefined, path: o.path, claim: o.claim === true, owner });
+  } catch (e) {
+    const { AreaError } = require('./mediaAreas');
+    const { StorageError } = require('../storageTargets/errors');
+    if (e instanceof AreaError) throw new HostApiError(COPY_ERRORS[e.code] || AREA_ERRORS[e.code] || 'ERR_INVALID', e.message);
+    if (e instanceof media.MediaError) throw new HostApiError(COPY_ERRORS[e.code] || 'ERR_INVALID', e.code);
+    // the source could not be fetched from its storage target: later again (changed there: the scan takes it in)
+    if (e instanceof StorageError) throw new HostApiError(e.code === 'changed' ? 'ERR_INVALID' : 'ERR_BUSY', e.code === 'changed' ? 'changed' : 'storage_unavailable');
+    throw e;
+  } finally {
+    release();
+  }
+}
+
 // ─── Public links (permissions.publicLinks, publicLinks.js, since 1.193.0) ────
 
 async function publicLinksCall(plugin, op, args) {
@@ -1354,6 +1414,8 @@ function callTimeout(api, args) {
     return Math.max(1000, Math.min(UPLOAD_TIMEOUT_MAX_MS, t)) + 5000;
   }
   if (api === 'media.handOver') return HANDOVER_TIMEOUT_MS;
+  // gc.media.copy ends within media.COPY_TIMEOUT_MS itself (and may wait for a free copy slot first)
+  if (api === 'media.copy') return require('./media').COPY_TIMEOUT_MS + 60 * 1000;
   // the other plugins' groupDeleting hooks run first (≤ 30 s in total)
   if (api === 'groups.remove') return 45000;
   // the licence server answers within 20 s (licensing.refresh), then the plugins are reconciled
@@ -1374,6 +1436,7 @@ function _resetBudgetsForTest() {
   notifyWindow.clear();
   dataWindow.clear();
   handOverWindow.clear();
+  copySlots.clear();
 }
 
 // ─── Plugin-to-plugin actions (permissions.actions) ────
@@ -1719,6 +1782,7 @@ async function handle(plugin, api, args, ctx) {
     case 'media.previews': return mediaCall(plugin, 'previews', args);
     case 'media.fetch': return mediaFetch(plugin, args);
     case 'media.handOver': return mediaHandOver(plugin, args);
+    case 'media.copy': return mediaCopy(plugin, args);
     case 'publicLinks.create': return publicLinksCall(plugin, 'create', args);
     case 'publicLinks.list': return publicLinksCall(plugin, 'list', args);
     case 'publicLinks.get': return publicLinksCall(plugin, 'get', args);

@@ -9,10 +9,18 @@
 //     flag bit 3), names are UTF-8 (bit 11);
 //   * the sizes are known in advance (plugin_media.bytes), so the whole
 //     archive's length is too (zipLength) — the download shows its progress;
-//   * one entry is at most 2 GB (media.maxBytes), but 20 of them pass 4 GiB:
-//     an entry whose local header lies beyond 4 GiB gets a ZIP64 extra field
-//     in the central directory, and the archive a ZIP64 end record when the
-//     directory lies beyond 4 GiB (APPNOTE 4.3.14 / 4.5.3).
+//   * ZIP64 where needed (APPNOTE 4.3.9.2 / 4.3.14 / 4.5.3): an entry whose
+//     local header lies beyond 4 GiB gets a ZIP64 extra field in the central
+//     directory, the archive a ZIP64 end record when the directory lies beyond
+//     4 GiB or has 65 535 entries or more; since 1.215.0 an entry of 4 GiB or
+//     more (areas allow 100 GB per file) carries its sizes as ZIP64 too: a
+//     ZIP64 extra field in its local header (sizes 0, they follow), a data
+//     descriptor with 8-byte sizes and the sizes in its central extra field;
+//   * names (since 1.215.0, public links with sub folders): "a/b/c.txt" paths
+//     made safe for every extractor — no "..", "." or empty segments, no
+//     leading "/", backslash and ":" (drive letters, NTFS streams) as "_", no control
+//     characters; a duplicate (case-insensitive) or a file named like a folder
+//     of another entry gets " (2)", " (3)", …
 
 const zlib = require('node:zlib');
 
@@ -25,12 +33,13 @@ const SIG_LOCATOR64 = 0x07064b50;
 const FLAGS = 0x0008 | 0x0800; // data descriptor, UTF-8 names
 const MAX32 = 0xffffffff;
 const MAX16 = 0xffff;
-const ENTRY_MAX = MAX32 - 1;    // one entry's size must fit the 32-bit fields
 
 const LOCAL_LEN = 30;
 const DESCRIPTOR_LEN = 16;
 const CENTRAL_LEN = 46;
 const ZIP64_EXTRA_LEN = 12;     // tag, size, 8-byte local header offset
+const ZIP64_LOCAL_EXTRA_LEN = 20; // tag, size, 8-byte sizes (0: they follow in the descriptor)
+const DESCRIPTOR64_LEN = 24;
 const END_LEN = 22;
 const END64_LEN = 56;
 const LOCATOR64_LEN = 20;
@@ -61,18 +70,46 @@ function dosDateTime(d) {
   };
 }
 
-/** The entries' names as unique UTF-8 buffers ("a.pdf", "a (2).pdf", …). */
+// control characters (C0, DEL, C1) and the bidi controls that could disguise a name
+const NAME_STRIP_RE = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+/** An entry name any extractor keeps inside its folder: relative, no "." / "..", no backslash or ":" ("a/../b" → "a/b"). */
+function safeName(raw) {
+  const segs = String(raw == null ? '' : raw).replace(NAME_STRIP_RE, '').split('/')
+    .map((x) => x.replace(/[\\:]/g, '_')).filter((x) => x !== '' && x !== '.' && x !== '..');
+  return segs.join('/') || 'file';
+}
+
+let zip64Min = MAX32;
+/** Does an entry of `size` bytes need ZIP64 sizes? */
+function bigEntry(size) { return size >= zip64Min; }
+
+/** The entries' names as unique UTF-8 buffers ("a.pdf", "a (2).pdf", …; a file never named like a folder of another entry). */
 function names(entries) {
+  const safe = entries.map((e) => safeName(e.name || 'file'));
+  const dirs = new Set();
+  for (const n of safe) {
+    const segs = n.split('/');
+    for (let i = 1; i < segs.length; i++) dirs.add(segs.slice(0, i).join('/').toLowerCase());
+  }
   const seen = new Set();
-  return entries.map((e) => {
-    const raw = String(e.name || 'file');
-    const dot = raw.lastIndexOf('.');
-    const [stem, ext] = dot > 0 ? [raw.slice(0, dot), raw.slice(dot)] : [raw, ''];
+  return safe.map((raw) => {
+    const slash = raw.lastIndexOf('/');
+    const dir = slash >= 0 ? raw.slice(0, slash + 1) : '';
+    const base = raw.slice(slash + 1);
+    const dot = base.lastIndexOf('.');
+    const [stem, ext] = dot > 0 ? [base.slice(0, dot), base.slice(dot)] : [base, ''];
     let name = raw;
-    for (let n = 2; seen.has(name.toLowerCase()); n++) name = `${stem} (${n})${ext}`;
+    for (let n = 2; seen.has(name.toLowerCase()) || dirs.has(name.toLowerCase()); n++) name = `${dir}${stem} (${n})${ext}`;
     seen.add(name.toLowerCase());
     return Buffer.from(name, 'utf8');
   });
+}
+
+/** Length of the central extra field of an entry (ZIP64: sizes, offset). */
+function centralExtraLen(size, offset) {
+  const fields = (bigEntry(size) ? 16 : 0) + (offset >= MAX32 ? 8 : 0);
+  return fields ? 4 + fields : 0;
 }
 
 /** Offsets of every local header, the central directory's offset and size. */
@@ -81,13 +118,14 @@ function layout(entries) {
   let offset = 0;
   const offsets = [];
   entries.forEach((e, i) => {
-    if (!Number.isSafeInteger(e.size) || e.size < 0 || e.size > ENTRY_MAX) throw new Error('zip entry too large');
+    if (!Number.isSafeInteger(e.size) || e.size < 0) throw new Error('invalid zip entry size');
+    const big = bigEntry(e.size);
     offsets.push(offset);
-    offset += LOCAL_LEN + nameBufs[i].length + e.size + DESCRIPTOR_LEN;
+    offset += LOCAL_LEN + nameBufs[i].length + (big ? ZIP64_LOCAL_EXTRA_LEN : 0) + e.size + (big ? DESCRIPTOR64_LEN : DESCRIPTOR_LEN);
   });
   const cdOffset = offset;
   let cdSize = 0;
-  nameBufs.forEach((n, i) => { cdSize += CENTRAL_LEN + n.length + (offsets[i] >= MAX32 ? ZIP64_EXTRA_LEN : 0); });
+  nameBufs.forEach((n, i) => { cdSize += CENTRAL_LEN + n.length + centralExtraLen(entries[i].size, offsets[i]); });
   const zip64 = entries.length >= MAX16 || cdOffset >= MAX32 || cdSize >= MAX32;
   return { nameBufs, offsets, cdOffset, cdSize, zip64 };
 }
@@ -98,21 +136,34 @@ function zipLength(entries) {
   return l.cdOffset + l.cdSize + (l.zip64 ? END64_LEN + LOCATOR64_LEN : 0) + END_LEN;
 }
 
-function localHeader(name, t) {
+function localHeader(name, t, big) {
   const b = Buffer.alloc(LOCAL_LEN);
   b.writeUInt32LE(SIG_LOCAL, 0);
-  b.writeUInt16LE(20, 4);            // version needed: 2.0
+  b.writeUInt16LE(big ? 45 : 20, 4); // version needed: 2.0, 4.5 with ZIP64
   b.writeUInt16LE(FLAGS, 6);
   b.writeUInt16LE(0, 8);             // stored
   b.writeUInt16LE(t.time, 10);
   b.writeUInt16LE(t.date, 12);
-  // crc and sizes 0: they follow in the data descriptor
+  // crc and sizes 0: they follow in the data descriptor (ZIP64: 0xffffffff, the sizes 0 in the extra field)
+  if (big) { b.writeUInt32LE(MAX32, 18); b.writeUInt32LE(MAX32, 22); }
   b.writeUInt16LE(name.length, 26);
-  b.writeUInt16LE(0, 28);
-  return Buffer.concat([b, name]);
+  b.writeUInt16LE(big ? ZIP64_LOCAL_EXTRA_LEN : 0, 28);
+  if (!big) return Buffer.concat([b, name]);
+  const x = Buffer.alloc(ZIP64_LOCAL_EXTRA_LEN);
+  x.writeUInt16LE(0x0001, 0);
+  x.writeUInt16LE(16, 2);
+  return Buffer.concat([b, name, x]);
 }
 
-function descriptor(crc, size) {
+function descriptor(crc, size, big) {
+  if (big) {
+    const b = Buffer.alloc(DESCRIPTOR64_LEN);
+    b.writeUInt32LE(SIG_DESCRIPTOR, 0);
+    b.writeUInt32LE(crc >>> 0, 4);
+    b.writeBigUInt64LE(BigInt(size), 8);
+    b.writeBigUInt64LE(BigInt(size), 16);
+    return b;
+  }
   const b = Buffer.alloc(DESCRIPTOR_LEN);
   b.writeUInt32LE(SIG_DESCRIPTOR, 0);
   b.writeUInt32LE(crc >>> 0, 4);
@@ -122,26 +173,32 @@ function descriptor(crc, size) {
 }
 
 function centralHeader(name, t, crc, size, offset) {
-  const big = offset >= MAX32;
+  const bigSize = bigEntry(size);
+  const bigOffset = offset >= MAX32;
+  const v = bigSize || bigOffset ? 45 : 20;
+  const xlen = centralExtraLen(size, offset);
   const b = Buffer.alloc(CENTRAL_LEN);
   b.writeUInt32LE(SIG_CENTRAL, 0);
-  b.writeUInt16LE(big ? 45 : 20, 4); // version made by (MS-DOS host)
-  b.writeUInt16LE(big ? 45 : 20, 6); // version needed (4.5: ZIP64)
+  b.writeUInt16LE(v, 4); // version made by (MS-DOS host)
+  b.writeUInt16LE(v, 6); // version needed (4.5: ZIP64)
   b.writeUInt16LE(FLAGS, 8);
   b.writeUInt16LE(0, 10);
   b.writeUInt16LE(t.time, 12);
   b.writeUInt16LE(t.date, 14);
   b.writeUInt32LE(crc >>> 0, 16);
-  b.writeUInt32LE(size, 20);
-  b.writeUInt32LE(size, 24);
+  b.writeUInt32LE(bigSize ? MAX32 : size, 20);
+  b.writeUInt32LE(bigSize ? MAX32 : size, 24);
   b.writeUInt16LE(name.length, 28);
-  b.writeUInt16LE(big ? ZIP64_EXTRA_LEN : 0, 30);
-  b.writeUInt32LE(big ? MAX32 : offset, 42);
-  if (!big) return Buffer.concat([b, name]);
-  const x = Buffer.alloc(ZIP64_EXTRA_LEN);
+  b.writeUInt16LE(xlen, 30);
+  b.writeUInt32LE(bigOffset ? MAX32 : offset, 42);
+  if (!xlen) return Buffer.concat([b, name]);
+  // the ZIP64 fields in APPNOTE order: original size, compressed size, local header offset
+  const x = Buffer.alloc(xlen);
   x.writeUInt16LE(0x0001, 0);
-  x.writeUInt16LE(8, 2);
-  x.writeBigUInt64LE(BigInt(offset), 4);
+  x.writeUInt16LE(xlen - 4, 2);
+  let p = 4;
+  if (bigSize) { x.writeBigUInt64LE(BigInt(size), p); x.writeBigUInt64LE(BigInt(size), p + 8); p += 16; }
+  if (bigOffset) x.writeBigUInt64LE(BigInt(offset), p);
   return Buffer.concat([b, name, x]);
 }
 
@@ -184,7 +241,8 @@ async function* zipStream(entries, when = new Date()) {
   const t = dosDateTime(when);
   const crcs = [];
   for (let i = 0; i < entries.length; i++) {
-    yield localHeader(l.nameBufs[i], t);
+    const big = bigEntry(entries[i].size);
+    yield localHeader(l.nameBufs[i], t, big);
     let crc = 0;
     let size = 0;
     for await (const part of entries[i].read()) {
@@ -195,11 +253,15 @@ async function* zipStream(entries, when = new Date()) {
     }
     if (size !== entries[i].size) throw new Error('zip entry shorter than declared');
     crcs.push(crc);
-    yield descriptor(crc, size);
+    yield descriptor(crc, size, big);
   }
   const central = entries.map((e, i) => centralHeader(l.nameBufs[i], t, crcs[i], e.size, l.offsets[i]));
   yield Buffer.concat(central);
   yield endRecords(entries.length, l.cdOffset, l.cdSize, l.zip64);
 }
 
-module.exports = { zipStream, zipLength, crc32, names };
+module.exports = {
+  zipStream, zipLength, crc32, names, safeName,
+  // tests: ZIP64 sizes from this entry size on (a 4 GiB entry is too big for a test)
+  _setZip64MinForTest: (n) => { zip64Min = n == null ? MAX32 : n; },
+};
