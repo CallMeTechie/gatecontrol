@@ -1139,23 +1139,29 @@ function exportPlugin(pluginId, budget) {
 }
 
 /**
- * Is `data` the sealed file of `bytes` plaintext bytes with SHA-256 `sha` under
- * `key`? Every chunk is opened (AES-GCM: an altered or cut file fails) and the
- * plaintext hashed — a restore writes only what the backup's key authenticates.
+ * The sealed file of a backup entry, opened and sealed again here: every chunk
+ * of `data` must open with `key` (AES-GCM — an altered or cut file fails) and
+ * the plaintext hash to `sha`; the file written is a fresh sealing of that
+ * plaintext (new nonce prefix) — never the uploaded bytes themselves.
+ * → the new sealed file, or null when `data` does not match.
  */
-function sealedMatches(data, key, bytes, sha) {
-  if (data.length !== sealedSize(bytes) || !data.subarray(0, MAGIC.length).equals(MAGIC)) return false;
-  const prefix = data.subarray(MAGIC.length, HEADER_LEN);
+function resealBackup(data, key, bytes, sha) {
+  if (data.length !== sealedSize(bytes) || !data.subarray(0, MAGIC.length).equals(MAGIC)) return null;
+  const oldPrefix = data.subarray(MAGIC.length, HEADER_LEN);
+  const prefix = crypto.randomBytes(PREFIX_LEN);
   const lastIndex = Math.max(0, Math.ceil(bytes / CHUNK) - 1);
   const hash = crypto.createHash('sha256');
+  const out = [MAGIC, prefix];
   try {
     for (let i = 0, at = HEADER_LEN; i <= lastIndex; i++) {
       const len = (i === lastIndex ? bytes - i * CHUNK : CHUNK) + TAG_LEN;
-      hash.update(openChunk(key, prefix, i, i === lastIndex, data.subarray(at, at + len)));
+      const plain = openChunk(key, oldPrefix, i, i === lastIndex, data.subarray(at, at + len));
+      hash.update(plain);
+      out.push(sealChunk(key, prefix, i, i === lastIndex, plain));
       at += len;
     }
-  } catch { return false; }
-  return hash.digest('hex') === sha;
+  } catch { return null; }
+  return hash.digest('hex') === sha ? Buffer.concat(out) : null;
 }
 
 /** Restore the files of a backup entry (exportPlugin's list). → number restored. */
@@ -1169,10 +1175,10 @@ function importPlugin(pluginId, list) {
         || !Number.isSafeInteger(e.bytes) || e.bytes < 1 || !/^[0-9a-f]{64}$/.test(String(e.sha256))) continue;
       const key = Buffer.from(decrypt(e.key), 'hex');
       if (key.length !== 32) continue;
-      // the backup (an administrator's upload) carries the sealed file: only bytes its own key
-      // authenticates and that hash to its SHA-256 are written
-      const sealed = Buffer.from(e.data, 'base64');
-      if (!sealedMatches(sealed, key, e.bytes, e.sha256)) {
+      // the backup (an administrator's upload) carries the sealed file: only what its own key
+      // authenticates and what hashes to its SHA-256 comes back — sealed again here
+      const sealed = resealBackup(Buffer.from(e.data, 'base64'), key, e.bytes, e.sha256);
+      if (!sealed) {
         logger.warn({ plugin: pluginId, media: e.id }, 'plugin media: a file of the backup does not match its key or hash — skipped');
         continue;
       }
