@@ -1138,6 +1138,26 @@ function exportPlugin(pluginId, budget) {
   return out;
 }
 
+/**
+ * Is `data` the sealed file of `bytes` plaintext bytes with SHA-256 `sha` under
+ * `key`? Every chunk is opened (AES-GCM: an altered or cut file fails) and the
+ * plaintext hashed — a restore writes only what the backup's key authenticates.
+ */
+function sealedMatches(data, key, bytes, sha) {
+  if (data.length !== sealedSize(bytes) || !data.subarray(0, MAGIC.length).equals(MAGIC)) return false;
+  const prefix = data.subarray(MAGIC.length, HEADER_LEN);
+  const lastIndex = Math.max(0, Math.ceil(bytes / CHUNK) - 1);
+  const hash = crypto.createHash('sha256');
+  try {
+    for (let i = 0, at = HEADER_LEN; i <= lastIndex; i++) {
+      const len = (i === lastIndex ? bytes - i * CHUNK : CHUNK) + TAG_LEN;
+      hash.update(openChunk(key, prefix, i, i === lastIndex, data.subarray(at, at + len)));
+      at += len;
+    }
+  } catch { return false; }
+  return hash.digest('hex') === sha;
+}
+
 /** Restore the files of a backup entry (exportPlugin's list). → number restored. */
 function importPlugin(pluginId, list) {
   if (!Array.isArray(list)) return 0;
@@ -1149,13 +1169,21 @@ function importPlugin(pluginId, list) {
         || !Number.isSafeInteger(e.bytes) || e.bytes < 1 || !/^[0-9a-f]{64}$/.test(String(e.sha256))) continue;
       const key = Buffer.from(decrypt(e.key), 'hex');
       if (key.length !== 32) continue;
-      const data = Buffer.from(e.data, 'base64');
-      if (data.length !== sealedSize(e.bytes) || !data.subarray(0, MAGIC.length).equals(MAGIC)) continue;
+      // the backup (an administrator's upload) carries the sealed file: only bytes its own key
+      // authenticates and that hash to its SHA-256 are written
+      const sealed = Buffer.from(e.data, 'base64');
+      if (!sealedMatches(sealed, key, e.bytes, e.sha256)) {
+        logger.warn({ plugin: pluginId, media: e.id }, 'plugin media: a file of the backup does not match its key or hash — skipped');
+        continue;
+      }
+      // the place comes from the plugin id and the checked media id (32 hex) only, below the plugin's media folder
+      const dir = pluginDir(pluginId);
       const file = fileOf(pluginId, e.id);
+      if (path.relative(dir, file).startsWith('..')) continue;
       fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
       // a new file renamed into place — never written through an existing one (a hard link of a copy)
-      const tmp = path.join(pluginDir(pluginId), `.tmp-${e.id}-r`);
-      fs.writeFileSync(tmp, data, { mode: 0o600 });
+      const tmp = path.join(dir, `.tmp-${e.id}-r`);
+      fs.writeFileSync(tmp, sealed, { mode: 0o600 });
       fs.renameSync(tmp, file);
       db().prepare(`INSERT OR REPLACE INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc, name)
         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`).run(e.id, pluginId, Number.isSafeInteger(e.owner_user_id) ? e.owner_user_id : null, baseType(e.mime),
