@@ -4,7 +4,8 @@
 // Synology WebDAV Server, any RFC 4918 server. Basic authentication (use
 // https — over http the password travels readable, the UI says so), the
 // folders of a key are created with MKCOL on the way, Range for reads,
-// MOVE for renames, the free space from RFC 4331 quota properties.
+// MOVE for renames, COPY for copies on the server (since 1.215.0), the free
+// space from RFC 4331 quota properties.
 //
 // config: { url: 'https://nas:5006/drive', username, tlsCa }
 // secret: { password }
@@ -90,6 +91,14 @@ function create(cfg, secret) {
     if (res.status !== 201 && res.status !== 204) throw failure(res.status, 'move');
   }
 
+  /** Copy on the server (COPY, Depth 0); never over an existing object (Overwrite: F → `exists`). */
+  async function copy(from, to) {
+    await ensureDirs(to);
+    const res = await call('COPY', urlOf(from), { headers: { destination: urlOf(to).href, overwrite: 'F', depth: '0' }, idleMs: 10 * 60 * 1000 });
+    await net.drain(res.stream);
+    if (res.status !== 201 && res.status !== 204) throw failure(res.status, 'copy');
+  }
+
   const PROPS = Buffer.from('<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getcontentlength/><d:getlastmodified/></d:prop></d:propfind>');
   const tag = (name) => new RegExp(`<(?:[A-Za-z0-9]+:)?${name}\\b[^>]*>([\\s\\S]*?)</(?:[A-Za-z0-9]+:)?${name}>`);
   const RESPONSE_RE = /<(?:[A-Za-z0-9]+:)?response\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z0-9]+:)?response>/g;
@@ -161,7 +170,7 @@ function create(cfg, secret) {
     if (st !== 207) throw failure(st, 'folder');
   }
 
-  return { kind: 'webdav', ranges: true, files: true, put, get, head, remove, move, list, space, prepare };
+  return { kind: 'webdav', ranges: true, files: true, put, get, head, remove, move, copy, list, space, prepare };
 }
 
 module.exports = { create };

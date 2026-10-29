@@ -374,6 +374,12 @@ function makeGc(info) {
         const o = opts && typeof opts === 'object' ? opts : {};
         return hostCall('media.handOver', { id, toPlugin: o.toPlugin, user: o.user }, 11 * 60 * 1000);
       },
+      /**
+       * copy(id, { area, path, claim, user }) → { id, mediaId, size, bytes, sha256, mime, name, area, path, claimed, method } —
+       * since 1.215.0: a new, independent file of this plugin with the same bytes, copied on the server (on the storage
+       * target itself where it can); unclaimed unless claim: true
+       */
+      copy: (id, opts) => hostCall('media.copy', { id, opts: opts == null ? {} : opts }, 32 * 60 * 1000),
     }),
     /**
      * permissions.publicLinks (since 1.193.0, only while an administrator allows them):
