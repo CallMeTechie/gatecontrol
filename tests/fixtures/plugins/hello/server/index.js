@@ -172,7 +172,8 @@ module.exports = {
         const b = req.body || {};
         try {
           if (b.op === 'has') {
-            return { json: { ok: true, mail: typeof gc.mail, connect: typeof (gc.mail && gc.mail.imap && gc.mail.imap.connect), fetchImage: typeof gc.http.fetchImage } };
+            return { json: { ok: true, mail: typeof gc.mail, connect: typeof (gc.mail && gc.mail.imap && gc.mail.imap.connect), fetchImage: typeof gc.http.fetchImage,
+              verify: typeof (gc.mail && gc.mail.smtp && gc.mail.smtp.verify), mediaBase64: gc.http.MEDIA_BASE64 === undefined ? null : gc.http.MEDIA_BASE64 } };
           }
           if (b.op === 'connect') {
             const s = await gc.mail.imap.connect(b.opts);

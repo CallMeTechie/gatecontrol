@@ -603,6 +603,60 @@ that 3xx). The result has `status`, `headers` (lower case; `set-cookie` as a
 list), `body` or `bodyBase64`, `url`, `redirects`. Response bodies are capped
 at 5 MB.
 
+`http.fetch(url, { bodyMedia })` (since 1.217.0) sends one of the plugin's
+**own media files** as the request body — the host streams it from the media
+store (decrypted on the way, never through the plugin process). Made for
+Microsoft Graph attachments (Mail): small files base64 in the JSON body,
+large ones raw in byte ranges to an upload session. Same checks as
+`http.fetch` (internet hosts of `plugin.json`, public addresses only,
+pinned); `method` `POST` (default), `PUT` or `PATCH`; a streamed body never
+follows a redirect (the 3xx comes back). Feature test:
+`typeof gc.http.MEDIA_BASE64 === 'string'` (older hosts ignore `bodyMedia`
+and would send no body).
+
+```js
+// raw: the file (or the byte range start…end, inclusive) as it is
+await gc.http.fetch(session.uploadUrl, {
+  method: 'PUT',
+  bodyMedia: { mediaId, start: 0, end: 2949119 },  // without start/end: the whole file
+  timeoutMs: 5 * 60 * 1000,                          // 1 s … 30 min, default 10 min with bodyMedia
+});
+// → Content-Length: 2949120, Content-Range: bytes 0-2949119/<size of the file> (only with start/end),
+//   Content-Type: the plugin's header, else the media's type
+
+// base64 into JSON: exactly one string value of `json` is gc.http.MEDIA_BASE64
+await gc.http.fetch(`https://graph.microsoft.com/v1.0/me/messages/${id}/attachments`, {
+  method: 'POST',
+  headers: { authorization: `Bearer ${token}` },
+  json: { '@odata.type': '#microsoft.graph.fileAttachment', name: 'Rechnung.pdf', contentType: 'application/pdf',
+    contentBytes: gc.http.MEDIA_BASE64 },          // '{{gc:media:base64}}' — replaced by the whole file in base64
+  bodyMedia: { mediaId },
+});
+// base64 alone: bodyMedia: { mediaId, encoding: 'base64' } → the body is the file in base64 (Content-Type text/plain
+// unless the plugin sets one), e.g. a MIME message for Graph's sendMail
+```
+
+* Raw: at most **64 MB** per request (`ERR_MEDIA_TOO_LARGE`) — larger files
+  go in ranges. `Content-Length` and `Content-Range` are always the host's;
+  the plugin's own are dropped. `0 ≤ start ≤ end < size`, else `ERR_INVALID`.
+* Base64 (`encoding: 'base64'` or `json`): the whole file, at most **4 MB**
+  of file (`ERR_MEDIA_TOO_LARGE`), no range. The placeholder must be a whole
+  string value, exactly once (`ERR_INVALID` otherwise; a string that merely
+  contains it stays as it is, keys never count); the rest of `json` ≤ 1 MB.
+  `Content-Type: application/json` unless the plugin sets one.
+* `bodyMedia` replaces `body`, `form` and `bodyBase64` (`ERR_INVALID` with
+  them). Only the plugin's own files (`media` in `plugin.json`, else
+  `ERR_MEDIA_DENIED`; an id of another plugin → `ERR_INVALID`), claimed or
+  not. Errors otherwise like `http.fetch` (`ERR_NET_DENIED`, `ERR_NET`) and
+  `ERR_TIMEOUT`; the host call waits as long as `timeoutMs`.
+
+Why an option of `http.fetch` and not an API of its own: the request is an
+ordinary request of the plugin to its own internet hosts — headers, answer
+and checks stay exactly those of `http.fetch`; only where the body comes
+from changes. The placeholder keeps the JSON in the plugin's hands while the
+bytes stay in the host, and needs no template language: one value, replaced
+once, after `JSON.stringify` (base64 needs no escaping).
+
 `gc.net.uploadTarget(id, path, opts)` (since 1.193.0, host API
 `target.upload`) sends one media file to an assigned home target as
 `multipart/form-data` — e.g. GateDrop's "Ablegen" on a NAS through the
@@ -760,11 +814,12 @@ module.exports = {
 |---|---|
 | `gc.plugin` | `{ id, version, filesDir }` — `filesDir` is the only folder the plugin may write |
 | `gc.log.debug/info/warn/error(...)` | the plugin's log (*Protokoll* tab); `console.*` goes there too |
-| `gc.http.fetch(url, opts)` | internet hosts |
+| `gc.http.fetch(url, opts)` | internet hosts; since 1.217.0 `opts.bodyMedia: { mediaId, start, end, encoding }` sends a media file of the plugin as the body, streamed by the host (`gc.http.MEDIA_BASE64` as the one `json` value → the file in base64) — see "Network" |
 | `gc.http.websocket(url, opts)` | WebSocket to an internet host (events `message`, `close`, `error`; `send`, `close`; since 1.184.0) |
 | `gc.http.fetchImage(url, { maxBytes, timeoutMs })` | since 1.216.0 (`network.images`): a picture of any public host → `{ status, mime, bytes }` — see "Network" |
 | `gc.mail.imap.connect({ host, port, security, auth, timeoutMs })` | since 1.216.0 (`mail`): an IMAP session held by the host → session (`list`, `status`, `open`, `fetch`, `message`, `download`, `search`, `flags`, `move`, `copy`, `expunge`, `append`, `idle`, `noop`, `close`; events `exists`, `expunge`, `flags`, `close`, `error`) — see "Mail" |
 | `gc.mail.smtp.send({ host, port, security, auth, message, appendCopy })` | since 1.216.0 (`mail`): send a mail → `{ messageId, accepted, rejected, raw }` — see "Mail" |
+| `gc.mail.smtp.verify({ host, port, security, auth, timeoutMs })` | since 1.217.0 (`mail`): log in to an SMTP server without sending → `{ ok: true }`, errors like `smtp.send` — see "Mail" |
 | `gc.mail.compose(message)` / `gc.mail.parse(mediaId, opts)` | since 1.216.0 (`mail`): RFC 822 as media ↔ the parsed message — see "Mail" |
 | `gc.mail.sanitize(html, { images: 'placeholder' })` | since 1.216.0 (`mail`): mail HTML made harmless → `{ html, images, trackers }` — see "Mail" |
 | `gc.mail.autoconfig(email)` | since 1.216.0 (`mail`): IMAP/SMTP servers of an address → `{ imap, smtp, source }` — see "Mail" |
@@ -2499,7 +2554,21 @@ const parsed = await gc.mail.parse(mediaId, { attachments: 'meta' });   // like 
   `Bcc` never appears in the mail, only in the envelope.
 * `accepted` / `rejected`: per recipient; when the server refuses every
   recipient or the mail → `ERR_MAIL_REJECTED` with `serverText`.
-* 4 sends per plugin at a time (more wait).
+* 4 SMTP operations (sends and `verify`) per plugin at a time (more wait).
+
+```js
+await gc.mail.smtp.verify({ host: 'mail.gmx.net', port: 587, security: 'starttls', auth: { user: 'ada@gmx.de', pass: '…' }, timeoutMs: 30000 });
+// { ok: true } — connected, STARTTLS, logged in, QUIT; nothing sent
+```
+
+`gc.mail.smtp.verify` (since 1.217.0) checks an SMTP server and its login
+before an account is saved: the same network and TLS rules as `smtp.send`
+(public addresses, ports 465/587, certificate always verified, STARTTLS
+required), the same errors (`ERR_MAIL_AUTH` with `serverText`,
+`ERR_MAIL_NET`, `ERR_MAIL_PROTOCOL`, `ERR_NETWORK_DENIED`, `ERR_INVALID`),
+`auth` with `pass` or `accessToken` (XOAUTH2), `timeoutMs` ≤ 60000 for the
+connection. It counts towards the 4 SMTP operations at a time. Feature
+test: `typeof gc.mail.smtp?.verify === 'function'`.
 
 ### HTML (`gc.mail.sanitize`)
 

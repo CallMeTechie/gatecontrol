@@ -261,6 +261,12 @@ function makeMail() {
     smtp: Object.freeze({
       /** send({ host, port, security, auth, message, appendCopy, timeoutMs }) → { messageId, accepted, rejected, raw } */
       send: (opts) => hostCall('mail.smtp.send', opts && typeof opts === 'object' ? opts : {}, MAIL_LONG_MS),
+      /** verify({ host, port, security, auth, timeoutMs }) → { ok: true } — log in without sending (since 1.217.0) */
+      verify: (opts) => {
+        const o = opts && typeof opts === 'object' ? opts : {};
+        const t = Number.isFinite(o.timeoutMs) ? Math.min(60000, o.timeoutMs) : 30000;
+        return hostCall('mail.smtp.verify', { host: o.host, port: o.port, security: o.security, auth: o.auth, timeoutMs: o.timeoutMs }, t + 4 * 60 * 1000);
+      },
     }),
     /** compose(message) → { mediaId, bytes, messageId } (RFC 822, unclaimed media) */
     compose: (message) => hostCall('mail.compose', { message }, 3 * 60 * 1000),
@@ -294,8 +300,16 @@ function makeGc(info) {
       /**
        * fetch(url, { method, headers, body | json | form | bodyBase64, binary, timeoutMs, redirect: 'manual'|'follow' })
        *   → { status, headers (set-cookie as a list), body | bodyBase64, url, redirects }
+       * since 1.217.0 also bodyMedia: { mediaId, start, end, encoding: 'base64' } — a media file of the plugin as
+       *   the body, streamed by the host (base64 into the one `json` value MEDIA_BASE64); waits up to timeoutMs (≤ 30 min)
        */
-      fetch: (url, opts) => hostCall('http.fetch', { url: String(url), opts: opts || {} }),
+      fetch: (url, opts) => {
+        const o = opts || {};
+        const long = o.bodyMedia != null ? (Number.isFinite(o.timeoutMs) ? Math.max(1000, Math.min(30 * 60 * 1000, o.timeoutMs)) : 10 * 60 * 1000) + 15000 : undefined;
+        return hostCall('http.fetch', { url: String(url), opts: o }, long);
+      },
+      /** the `json` value http.fetch replaces with the bodyMedia file in base64 (since 1.217.0; the feature test) */
+      MEDIA_BASE64: '{{gc:media:base64}}',
       /**
        * websocket(url, { headers, protocols, timeoutMs }) → an open WebSocket to an internet host of
        * plugin.json (EventEmitter: message (string | Buffer), close (code, reason), error; send, close)

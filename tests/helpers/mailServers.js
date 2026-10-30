@@ -306,9 +306,13 @@ function imapServer(opts) {
 
 /** opts: { secure, starttls, cert, users: { name: pass }, rejectRcpt: RegExp } */
 function smtpServer(opts) {
-  const state = { commands: [], mails: [], sockets: new Set() };
+  // open / maxOpen: connections at the same time (the host's SMTP limit); greetingDelayMs: a slow server
+  const state = { commands: [], mails: [], sockets: new Set(), open: 0, maxOpen: 0 };
   function handle(sock, secureNow) {
     state.sockets.add(sock);
+    state.open++;
+    state.maxOpen = Math.max(state.maxOpen, state.open);
+    sock.once('close', () => { state.open--; });
     let current = sock;
     let buf = '';
     let data = null;
@@ -382,7 +386,8 @@ function smtpServer(opts) {
     }
     current.on('data', onData);
     current.on('error', () => {});
-    send('220 smtp.test.example ESMTP test');
+    if (opts.greetingDelayMs) setTimeout(() => send('220 smtp.test.example ESMTP test'), opts.greetingDelayMs);
+    else send('220 smtp.test.example ESMTP test');
   }
   const server = opts.secure
     ? tls.createServer({ key: opts.cert.key, cert: opts.cert.cert }, (s) => handle(s, true))
