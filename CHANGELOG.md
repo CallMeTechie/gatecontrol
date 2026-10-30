@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.217.0] — 2026-10-30
 
 ### Features
 - Plugin-Host-API `gc.mail.smtp.verify({ host, port, security, auth, timeoutMs })` (für GateControl Mail 1.1): meldet sich am SMTP-Server an und beendet die Verbindung wieder, ohne zu senden → `{ ok: true }`. Gleiche Netz- und TLS-Regeln wie `smtp.send` (nur öffentliche Adressen, Ports 465/587, Zertifikat immer geprüft, STARTTLS Pflicht), gleiche Fehlercodes (`ERR_MAIL_AUTH` mit `serverText` ohne Zugangsdaten, `ERR_MAIL_NET`, `ERR_MAIL_PROTOCOL`, `ERR_NETWORK_DENIED`, `ERR_INVALID`); zählt zu den 4 gleichzeitigen SMTP-Vorgängen je Plugin. So prüft Mail beim Anlegen eines IMAP-Kontos auch den Versand.
