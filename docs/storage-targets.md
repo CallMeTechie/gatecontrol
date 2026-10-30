@@ -18,7 +18,7 @@ Code: `src/services/storageTargets/` (service, `net.js`, `drivers/*.js`),
 |---|---|---|---|---|
 | Folder of this server | `local` | `path` (absolute) | – | another disk or a mounted volume. Never `/` or a system folder (`/etc`, `/usr`, `/proc`, `/root`, `/app` …); inside GateControl's data folder only below `<data>/storage/`. |
 | NAS over SMB | `smb` | `via` (`{ kind: 'host', host, port }`, `{ kind: 'peer', peerId, port }` or `{ kind: 'route', routeId }` — an **L4** route), `share`, `folder`, `username`, `domain` | `password` | through the image's `smbclient` (SMB 2 or newer). |
-| NAS over WebDAV | `webdav` | `url` (http/https, no user info), `username`, `tlsCa` | `password` | Basic authentication; use https. |
+| NAS over WebDAV | `webdav` | `url` (http/https, no user info), `via` (since 1.218.0: `{ kind: 'host' }` — the default, `{ kind: 'route', routeId }` or `{ kind: 'peer', peerId, port }`, see "Addresses"), `username`, `tlsCa` | `password` | Basic authentication; use https. |
 | S3-compatible | `s3` | `endpoint`, `region` (default `us-east-1`), `bucket`, `prefix`, `pathStyle` (default true), `accessKeyId`, `tlsCa` | `secretAccessKey` | AWS, Hetzner, Wasabi, Backblaze B2, MinIO, Synology C2. |
 | Google Drive | `gdrive` | `account`, `folderId`, `folderPath` | the OAuth token | the administrator's own account, scope `drive.file` (GateControl sees only what it created); connected with *Mit Google verbinden* (docs/cloud-accounts.md). |
 | OneDrive | `onedrive` | `account`, `driveId`, `folderId`, `folderPath` | the OAuth token | personal or work/school, `Files.ReadWrite`; connected with *Mit Microsoft verbinden*. |
@@ -104,6 +104,57 @@ An SMB target through a **peer** connects to the peer's VPN address (port
 gateway's listener for a gateway route, else the peer or target address and
 port).
 
+### WebDAV through a route or a peer
+
+Since 1.218.0 a WebDAV target has `via` like SMB, so GateControl in a data
+centre can use a NAS behind a gateway in a home network — without opening
+the route to the outside. `url` still decides the scheme, the path, the
+`Host` header and, for https, the name for SNI and the certificate check;
+only the connection goes elsewhere (`net.request({ dial })`, the address
+checked and pinned as always):
+
+| `via` | connects to |
+|---|---|
+| `{ kind: 'host' }` (default; rows from before 1.218.0 have no `via`) | the URL's host and port, as before |
+| `{ kind: 'peer', peerId, port }` | the peer's VPN address, `port` (default: the URL's port, else 443 / 80) |
+| `{ kind: 'route', routeId }`, **L4 route** (TCP) | what Caddy dials for it: the gateway's listener (gateway VPN address, listen port) for a gateway route, else the peer or target address with the target port |
+| `{ kind: 'route', routeId }`, **HTTP route through a gateway** | the gateway's companion proxy (`http://<gateway VPN address>:<proxy port>` with `X-Gateway-Target-Domain: <route domain>`, `routes.resolveCompanionUrl`) — **http URLs only**, and only when the route speaks http to the NAS |
+| `{ kind: 'route', routeId }`, other **HTTP route** | its backend (peer VPN address or target address, target port) — only when the backend speaks the URL's scheme |
+
+Never through Caddy and the route's public domain: an internal-only route
+(docs/route-external-exposure.md) stays internal, its outside block does not
+apply to GateControl itself. The route or peer is read again for every
+connection (a gateway failover moves a route), a missing or switched-off one
+is `unreachable` at the "connect" step; the address rules above apply to what
+is dialled (never GateControl's app port or the Caddy admin port on this
+server's addresses → `blocked_address`).
+
+Why these route kinds: an **L4 route** passes the bytes untouched, so TLS
+runs from GateControl to the NAS itself — the certificate is checked against
+the URL's name with `tlsCa` or the system CAs exactly as without a route, and
+Range, COPY, MOVE, MKCOL and the quota properties need nothing from the
+route. This is the route for https. An **HTTP route through a gateway**
+ends at the companion's HTTP proxy, which makes its own connection to the
+NAS: for an https NAS that TLS connection is the companion's (unchecked
+unless the route pins a fingerprint), GateControl's `tlsCa` could not apply —
+so only plain http goes this way (GateControl → gateway inside WireGuard, the
+last hop in the home network as the URL says). A route that cannot carry the
+URL (UDP, an HTTP route through a gateway with an https URL or an https
+backend, an HTTP route whose backend speaks the other scheme) is refused with
+`400 invalid`, `field: 'routeId'`.
+
+A self-signed NAS certificate for another name ("synology") works through a
+route like without one: store exactly that certificate as `tlsCa`.
+
+Example — GateControl in a data centre, a Synology NAS (192.168.178.20, WebDAV
+Server with https on 5006) behind the gateway "Heim": an L4 route, TCP,
+target the gateway "Heim" with LAN target `192.168.178.20:5006`, any free
+listen port (e.g. 15006), "Von extern erreichbar" off. The storage target:
+WebDAV, *Über eine Weiterleitung* → that route, URL
+`https://<the NAS's certificate name>:5006/GateControl` (with the DSM default
+certificate: any name, e.g. `https://synology:5006/GateControl`, and that
+certificate — exported from DSM — as `tlsCa`).
+
 ## Check
 
 `check()` (button "Prüfen") runs five steps and stops at the first that fails:
@@ -125,7 +176,7 @@ Admin session only (API tokens and members: 403), CSRF and the API limiter of
 GET    /api/v1/storage-targets              → { targets: [view] }
 POST   /api/v1/storage-targets              { kind, label, …settings, …secrets } → 201 { target }
 POST   /api/v1/storage-targets/check        { kind, …[, id] } → { check }   (nothing stored; with id the stored secret fills empty fields)
-GET    /api/v1/storage-targets/choices      → { peers: [{ id, label, ip }], routes: [{ id, label }] }   (for SMB "via")
+GET    /api/v1/storage-targets/choices      → { peers: [{ id, label, ip }], routes: [{ id, label, type: 'l4' | 'http', gateway, https?, internal }] }   (for "via": SMB takes L4 routes, WebDAV both; UDP routes are left out)
 GET    /api/v1/storage-targets/:id          → { target }
 PATCH  /api/v1/storage-targets/:id          { label, …settings, …secrets }   (a secret left empty keeps the stored one)
 DELETE /api/v1/storage-targets/:id
@@ -139,7 +190,8 @@ display, tlsCaInfo, encrypted, ranges, check: { at, ok, error, free, total } | n
 
 Errors: `400 invalid` with `field` (the input field to fix), `404 not_found`,
 `409 in_use` (delete, or changing *where* a used target points — path, host,
-peer, route, share, folder, URL, endpoint, bucket, prefix), `409 limit` (50
+peer, route, share, folder, URL, WebDAV `via`, endpoint, bucket, prefix; a
+WebDAV PATCH without `via` keeps the stored one), `409 limit` (50
 targets). Activity: `storage_target_created`, `storage_target_changed`,
 `storage_target_deleted` (never a secret).
 
@@ -156,8 +208,8 @@ server with another key) makes the target show "Passwort neu eingeben"
 ## Backup
 
 The GateControl backup contains the targets (`storage_targets`) with their id
-— plugin media areas name it — and the secret exactly as stored. An SMB
-target through a peer or an L4 route names it by peer name / route domain; a
+— plugin media areas name it — and the secret exactly as stored. An SMB or
+WebDAV target through a peer or a route names it by peer name / route domain; a
 restore maps them to the restored ids (a missing one leaves the target
 unreachable until it is edited). Files on a target are **never** part of the
 GateControl backup.
@@ -182,7 +234,11 @@ sealed blocks only.
 
 `tests/storage_targets.test.js` (API, validation, secrets, the check against a
 folder, "in use", SigV4 against AWS's documented example, addresses, backup)
-runs with every `npm test`. `tests/storage_targets_live.test.js` runs the
+and `tests/storage_targets_via.test.js` (WebDAV through stand-in L4, gateway
+and HTTP routes and a peer to a WebDAV server of the test: http and https
+with an own CA or a pinned self-signed certificate, the check, Range, COPY,
+MOVE, quota, validation, "in use", blocked ports, backup) run with every
+`npm test`. `tests/storage_targets_live.test.js` runs the
 drivers against real servers when they are named in the environment
 (`GC_TEST_S3_*`, `GC_TEST_WEBDAV_*`, `GC_TEST_SMB_*`, see the file); the CI job
 "storage targets (S3, WebDAV, SMB)" starts moto, wsgidav and Samba for it.

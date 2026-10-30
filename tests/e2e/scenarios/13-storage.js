@@ -74,6 +74,15 @@ module.exports = (ctx) => {
       await page.selectOption('#pgx-stg-via', 'peer');
       step('storage: SMB switches between address and VPN device', hostShown && !(await page.isVisible('.pgx-stg-f[data-field="host"]')) && await page.isVisible('.pgx-stg-f[data-field="peerId"]'));
       await shot(page, 'storage-dialog-smb', false);
+      // WebDAV (since 1.218.0): directly, through a route or a VPN device — the URL stays
+      await page.click('.pgx-stg-kind[data-kind="webdav"]');
+      const directOnly = !(await page.isVisible('.pgx-stg-f[data-field="routeId"]')) && !(await page.isVisible('#pgx-stg-url-via'));
+      await page.selectOption('#pgx-stg-via', 'route');
+      const routeShown = await page.isVisible('.pgx-stg-f[data-field="routeId"]') && await page.isVisible('.pgx-stg-f[data-field="url"]')
+        && await page.isVisible('#pgx-stg-url-via') && !(await page.isVisible('.pgx-stg-f[data-field="peerId"]'));
+      await page.selectOption('#pgx-stg-via', 'peer');
+      const peerShown = await page.isVisible('.pgx-stg-f[data-field="peerId"]') && await page.isVisible('.pgx-stg-f[data-field="port"]');
+      step('storage: WebDAV switches between address, route and VPN device', directOnly && routeShown && peerShown, `${directOnly}/${routeShown}/${peerShown}`);
       await page.keyboard.press('Escape');
 
       // ── umbenennen ──

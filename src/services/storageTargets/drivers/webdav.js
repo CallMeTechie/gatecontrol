@@ -7,7 +7,13 @@
 // MOVE for renames, COPY for copies on the server (since 1.215.0), the free
 // space from RFC 4331 quota properties.
 //
-// config: { url: 'https://nas:5006/drive', username, tlsCa }
+// Since 1.218.0: through a GateControl route or a VPN peer (`via`, index.js
+// webdavDial): `cfg.dial()` names where each connection goes (asked again
+// for every request — a gateway failover moves a route); the URL still gives
+// the scheme, the path, the Host header and the name the certificate is
+// checked against.
+//
+// config: { url: 'https://nas:5006/drive', username, tlsCa } + dial (index.js, optional)
 // secret: { password }
 
 const net = require('../net');
@@ -17,6 +23,7 @@ const { slice } = require('../streams');
 function create(cfg, secret) {
   const base = new URL(cfg.url.endsWith('/') ? cfg.url : cfg.url + '/');
   const tlsCa = cfg.tlsCa || null;
+  const dialOf = typeof cfg.dial === 'function' ? cfg.dial : null;
   const auth = cfg.username ? 'Basic ' + Buffer.from(`${cfg.username}:${secret.password || ''}`, 'utf8').toString('base64') : null;
   const known = new Set(); // collections created / seen in this process
 
@@ -28,7 +35,10 @@ function create(cfg, secret) {
   async function call(method, url, { headers = {}, body = null, idleMs } = {}) {
     const h = Object.assign({}, headers);
     if (auth) h.authorization = auth;
-    try { return await net.request({ method, url, headers: h, body, tlsCa, idleMs }); } catch (e) { throw StorageError.from(e); }
+    try {
+      const dial = dialOf ? await dialOf() : null;
+      return await net.request({ method, url, headers: h, body, tlsCa, idleMs, dial });
+    } catch (e) { throw StorageError.from(e); }
   }
 
   function failure(status, what) {

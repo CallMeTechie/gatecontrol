@@ -11,7 +11,7 @@
  *   PUT    /api/v1/storage-targets/cache        { limitBytes } the cache of plugin media kept on targets (null = default)
  *   POST   /api/v1/storage-targets              create { kind, label, …settings, …secrets }
  *   POST   /api/v1/storage-targets/check        check unsaved settings { kind, …[, id] } (nothing stored)
- *   GET    /api/v1/storage-targets/choices      peers and L4 routes for an SMB target
+ *   GET    /api/v1/storage-targets/choices      peers and routes for "via" (SMB: L4 routes; WebDAV: L4 and HTTP)
  *   GET    /api/v1/storage-targets/:id
  *   PATCH  /api/v1/storage-targets/:id          change (a secret left empty keeps the stored one)
  *   DELETE /api/v1/storage-targets/:id          remove (409 while an area uses it)
@@ -90,8 +90,13 @@ router.get('/choices', (req, res) => {
   const db = getDb();
   const peers = db.prepare('SELECT id, name, allowed_ips FROM peers WHERE enabled = 1 ORDER BY name').all()
     .map((p) => ({ id: p.id, label: p.name, ip: String(p.allowed_ips || '').split(',')[0].split('/')[0] }));
-  const routes = db.prepare("SELECT id, domain, l4_listen_port FROM routes WHERE route_type = 'l4' AND enabled = 1 ORDER BY domain").all()
-    .map((r) => ({ id: r.id, label: `${r.domain || 'L4'}:${r.l4_listen_port}` }));
+  // type: 'l4' (TCP only — UDP carries neither SMB nor WebDAV) or 'http'; gateway: through a
+  // gateway's companion; https: the backend speaks https; internal: not reachable from outside
+  const routes = db.prepare(`SELECT id, domain, route_type, l4_listen_port, l4_protocol, target_kind, backend_https, external_enabled
+    FROM routes WHERE enabled = 1 AND (route_type IS NULL OR route_type != 'l4' OR l4_protocol IS NULL OR l4_protocol != 'udp') ORDER BY domain`).all()
+    .map((r) => (r.route_type === 'l4'
+      ? { id: r.id, label: `${r.domain || 'L4'}:${r.l4_listen_port}`, type: 'l4', gateway: r.target_kind === 'gateway', internal: !r.external_enabled }
+      : { id: r.id, label: r.domain, type: 'http', gateway: r.target_kind === 'gateway', https: !!r.backend_https, internal: !r.external_enabled }));
   res.json({ ok: true, peers, routes });
 });
 
