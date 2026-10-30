@@ -309,7 +309,7 @@ describe('gc.mail.imap through the plugin process', () => {
     assert.equal(meta.listId, 'news.example.com');
     assert.equal(meta.precedence, 'bulk');
     assert.deepEqual(meta.listUnsubscribe, { url: 'https://example.com/unsub?u=1', mail: 'unsub@example.com' });
-    assert.match(meta.html, /<script>/, 'html as the mail has it — gc.mail.sanitize cleans it');
+    assert.ok(meta.html.includes('<script>alert(1)</script>'), 'html as the mail has it — gc.mail.sanitize cleans it');
     assert.equal(meta.attachments.length, 2);
     const pdf = meta.attachments[0];
     assert.equal(pdf.filename, 'rechnung.pdf');
@@ -604,7 +604,7 @@ describe('gc.mail.sanitize: strict allowlist', () => {
     assert.match(r, /^<style>\.a\{color:red;font-family:"Helvetica Neue",Arial\} @media \(max-width:600px\)\{\.b\{width:100%\}\}<\/style>/);
     assert.match(r, /<td bgcolor="#fff" colspan="2" style="padding:4px">y<\/td>/);
     assert.doesNotMatch(r, /font-face|url\(/);
-    assert.equal(S()('<style>p{color:red}</style></style><script>x</script>').html.includes('<script'), false);
+    assert.equal(S()('<style>p{color:red}</style></style><script>x</script>').html.toLowerCase().includes('<script'), false);
   });
 
   it('through the plugin process: gc.mail.sanitize(html, { images: "placeholder" })', async () => {

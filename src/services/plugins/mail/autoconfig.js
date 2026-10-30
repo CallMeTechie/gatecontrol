@@ -24,8 +24,11 @@ const EMAIL_RE = /^[^\s@<>()",;:\\[\]]{1,64}@([^\s@<>()",;:\\[\]]{1,253})$/;
 
 const SOCKET = { SSL: 'tls', TLS: 'tls', STARTTLS: 'starttls' };
 
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+
+/** XML entities in one pass (never decoded twice: "&amp;lt;" stays "&lt;"). */
 function entityDecode(s) {
-  return String(s).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").trim();
+  return String(s).replace(/&(amp|lt|gt|quot|apos);/g, (_m, n) => ENTITIES[n]).trim();
 }
 
 function tag(block, name) {

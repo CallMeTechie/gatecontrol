@@ -37,8 +37,12 @@ function q(s) {
 
 function headerOf(raw, name) {
   const head = raw.split(/\r?\n\r?\n/)[0].replace(/\r?\n[ \t]+/g, ' ');
-  const m = new RegExp(`^${name}:\\s*(.*)$`, 'im').exec(head);
-  return m ? m[1].trim() : null;
+  const want = String(name).toLowerCase();
+  for (const line of head.split(/\r?\n/)) {
+    const i = line.indexOf(':');
+    if (i > 0 && line.slice(0, i).trim().toLowerCase() === want) return line.slice(i + 1).trim();
+  }
+  return null;
 }
 
 function addrList(v) {
