@@ -92,17 +92,24 @@ function caOptions(tlsCa) {
 /**
  * One HTTP(S) request to a checked, pinned address.
  * opts: { method, url (string|URL), headers, body (Buffer | Readable | null),
- *         tlsCa (PEM of the target's own trust anchor, or null), idleMs }
+ *         tlsCa (PEM of the target's own trust anchor, or null), idleMs,
+ *         dial ({ host, port, headers } or null) }
+ * `dial`: connect there instead of to the URL's host and port (a WebDAV
+ * target through a route or a VPN peer) — checked and pinned the same way;
+ * the URL still gives the scheme, the path, the Host header and, for https,
+ * the name for SNI and the certificate check. `dial.headers` are added.
  * → { status, headers, stream } — the caller reads or drains `stream`.
  */
 async function request(opts) {
   const u = opts.url instanceof URL ? opts.url : new URL(opts.url);
   if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new NetError('invalid_url', 'only http and https');
   const isHttps = u.protocol === 'https:';
-  const port = Number(u.port) || (isHttps ? 443 : 80);
   const host = u.hostname.replace(/^\[|\]$/g, '');
-  const { address, family } = await resolve(host, port);
-  const headers = Object.assign({}, opts.headers || {});
+  const dial = opts.dial || null;
+  const port = dial ? Number(dial.port) : (Number(u.port) || (isHttps ? 443 : 80));
+  if (!Number.isInteger(port) || port < 1 || port > 65535 || (dial && !dial.host)) throw new NetError('net', 'no address to connect to');
+  const { address, family } = await resolve(dial ? dial.host : host, port);
+  const headers = Object.assign({}, opts.headers || {}, dial && dial.headers ? dial.headers : {});
   if (Buffer.isBuffer(opts.body)) headers['content-length'] = String(opts.body.length);
   const ro = {
     method: opts.method || 'GET', host: address, family, port, path: u.pathname + u.search,
@@ -110,7 +117,11 @@ async function request(opts) {
   };
   if (isHttps) {
     ro.servername = netPolicy.isIpLiteral(host) ? undefined : host;
-    if (opts.tlsCa) Object.assign(ro, caOptions(opts.tlsCa));
+    const ca = opts.tlsCa ? caOptions(opts.tlsCa) : null;
+    if (ca) Object.assign(ro, ca);
+    // the certificate is checked against the URL's host, never against the address dialled
+    const checkIdentity = ca ? ca.checkServerIdentity : tls.checkServerIdentity;
+    ro.checkServerIdentity = (_dialled, cert) => checkIdentity(host, cert);
   }
   const lib = isHttps ? https : http;
   return new Promise((resolveP, reject) => {

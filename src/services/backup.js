@@ -413,7 +413,7 @@ function exportStorageTargets(db, peerNameById) {
 /**
  * Restore the storage targets (inside the restore transaction, after peers
  * and routes): ids as they were (plugin media areas name them), peer / route
- * of an SMB target found again by name / domain (missing → the target stays,
+ * of an SMB / WebDAV target found again by name / domain (missing → the target stays,
  * unreachable until edited). A secret from another GC_ENCRYPTION_KEY is kept
  * as it is: the target shows "Passwort neu eingeben". Returns the count.
  */

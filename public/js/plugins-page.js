@@ -2531,7 +2531,7 @@
         form.appendChild(field('via', t('plugins.stg.f_via'), how));
         const hostF = field('host', t('plugins.stg.f_host'), input('host', { value: v.kind === 'host' ? v.host : '', placeholder: 'nas.fritz.box' }));
         const peerF = field('peerId', t('plugins.stg.f_peer'), select('peerId', choices.peers.map((p) => [p.id, p.label + ' (' + p.ip + ')']), v.peerId));
-        const routeF = field('routeId', t('plugins.stg.f_route'), select('routeId', choices.routes.map((r) => [r.id, r.label]), v.routeId), t('plugins.stg.f_route_h'));
+        const routeF = field('routeId', t('plugins.stg.f_route'), select('routeId', choices.routes.filter((r) => r.type === 'l4').map((r) => [r.id, r.label]), v.routeId), t('plugins.stg.f_route_h'));
         const portF = field('port', t('plugins.stg.f_port'), input('port', { type: 'number', value: v.port && v.port !== 445 ? v.port : '', placeholder: '445', max: 5 }));
         const sync = () => { hostF.hidden = how.value !== 'host'; peerF.hidden = how.value !== 'peer'; routeF.hidden = how.value !== 'route'; portF.hidden = how.value === 'route'; };
         how.addEventListener('change', sync);
@@ -2543,7 +2543,21 @@
         form.appendChild(field('password', t('plugins.stg.f_password'), secretInput('password')));
         form.appendChild(field('domain', t('plugins.stg.f_domain'), input('domain', { value: cfg.domain, max: 120 }), t('plugins.stg.f_domain_h')));
       } else if (kind === 'webdav') {
-        form.appendChild(field('url', t('plugins.stg.f_url'), input('url', { value: cfg.url, placeholder: 'https://nas.example.de:5006/GateControl' }), t('plugins.stg.f_url_h')));
+        // since 1.218.0: through a route or a VPN peer like SMB — the URL still names the NAS (scheme, path, certificate)
+        const v = cfg.via || { kind: 'host' };
+        const how = select('via', [['host', t('plugins.stg.via_url')], ['route', t('plugins.stg.via_route_any')], ['peer', t('plugins.stg.via_peer')]], v.kind);
+        form.appendChild(field('via', t('plugins.stg.f_via'), how));
+        const routeF = field('routeId', t('plugins.stg.f_route_any'), select('routeId', choices.routes.map((r) => [r.id, r.label + ' · ' + (r.type === 'l4' ? 'L4' : 'HTTP') + (r.gateway ? ' · Gateway' : '')]), v.routeId),
+          t('plugins.stg.f_route_webdav_h'));
+        const peerF = field('peerId', t('plugins.stg.f_peer'), select('peerId', choices.peers.map((p) => [p.id, p.label + ' (' + p.ip + ')']), v.peerId));
+        const portF = field('port', t('plugins.stg.f_port'), input('port', { type: 'number', value: v.kind === 'peer' && v.port ? v.port : '', placeholder: '443', max: 5 }), t('plugins.stg.f_port_webdav_h'));
+        const urlF = field('url', t('plugins.stg.f_url'), input('url', { value: cfg.url, placeholder: 'https://nas.example.de:5006/GateControl' }), t('plugins.stg.f_url_h'));
+        const urlViaH = el('small', { class: 'pgx-hint', id: 'pgx-stg-url-via', text: t('plugins.stg.f_url_via_h') });
+        urlF.appendChild(urlViaH);
+        const sync = () => { routeF.hidden = how.value !== 'route'; peerF.hidden = how.value !== 'peer'; portF.hidden = how.value !== 'peer'; urlViaH.hidden = how.value === 'host'; };
+        how.addEventListener('change', sync);
+        [routeF, peerF, portF, urlF].forEach((f) => form.appendChild(f));
+        sync();
         form.appendChild(field('username', t('plugins.stg.f_user'), input('username', { value: cfg.username, max: 120 })));
         form.appendChild(field('password', t('plugins.stg.f_password'), secretInput('password')));
         form.appendChild(caField());
@@ -2573,11 +2587,12 @@
         if (sel) { v.folderId = sel.folderId; v.folderPath = sel.folderPath; if (sel.driveId) v.driveId = sel.driveId; }
         if (existing && !(draft && draft.kind === kind)) v.account = cfg.account;
       }
-      if (kind === 'smb') {
+      if (kind === 'smb' || kind === 'webdav') {
         const how = v.via;
         v.via = how === 'peer' ? { kind: 'peer', peerId: Number(v.peerId) } : how === 'route' ? { kind: 'route', routeId: Number(v.routeId) } : { kind: 'host' };
         delete v.peerId;
         delete v.routeId;
+        if (kind === 'webdav' && how !== 'peer') delete v.port;
       }
       return v;
     }
