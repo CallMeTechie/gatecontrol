@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.218.0] — 2026-10-30
 
 ### Features
 - Speicherziele „NAS über WebDAV“ lassen sich wie SMB über eine Weiterleitung oder ein VPN-Gerät erreichen (`via`: `{ kind: 'host' }` wie bisher, `{ kind: 'route', routeId }`, `{ kind: 'peer', peerId, port }`). Die URL bestimmt weiter Schema, Pfad, Host-Header und bei https den Namen für SNI und Zertifikatsprüfung; verbunden wird mit dem Ziel, das GateControl für die Weiterleitung wählt – bei einer L4-Weiterleitung (TCP) der Listener des Gateways bzw. Gerät/Ziel und Port, bei einer HTTP-Weiterleitung über ein Gateway dessen Companion-Proxy (nur http), bei einer anderen HTTP-Weiterleitung ihr Backend – nie über Caddy und die öffentliche Domain, die Weiterleitung darf „nur intern“ bleiben. TLS bleibt geprüft (`tlsCa`), Range, COPY, MOVE, MKCOL und Quota wie bisher; „Prüfen“ läuft genauso durch. Adressregeln wie bei SMB, eine Änderung von `via` an einem benutzten Ziel → 409 `in_use`. Dialog mit „Verbindung: Direkt zur Adresse / Über eine Weiterleitung / Über ein VPN-Gerät“ (DE/EN); `GET /api/v1/storage-targets/choices` liefert dafür auch HTTP-Weiterleitungen mit `type`, `gateway`, `internal`.
