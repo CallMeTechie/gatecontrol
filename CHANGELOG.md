@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.216.0] — 2026-10-30
 
 ### Features
 - Plugin-Berechtigung `permissions.mail { purpose, maxConnections }` mit Host-API `gc.mail` (für GateControl Mail): IMAP-Sitzungen, die der Host für den Plugin-Prozess hält (`gc.mail.imap.connect` → Sitzung mit `list`, `status`, `open`, `fetch` (≤ 500 je Aufruf), `message`, `download`, `search`, `flags`, `move`, `copy`, `expunge`, `append`, `idle`, `noop`, `close` und den Ereignissen `exists`, `expunge`, `flags`, `close`, `error` über die IPC), `gc.mail.smtp.send` (mit Kopie fürs Ablegen in „Gesendet“), `gc.mail.compose`/`parse` (RFC 822 ↔ Objekt, mailparser), `gc.mail.sanitize` (strenges Allowlisting mit sanitize-html und postcss, externe Bilder als `gc-img:<n>`, Zählpixel entfernt und gezählt) und `gc.mail.autoconfig` (ISPDB, autoconfig.<domain>, SRV, MX). Netz: beliebiger Host, aber nur öffentliche Adressen wie bei `gc.http.fetch`, DNS gepinnt, nur IMAP 993/143 und SMTP 465/587, TLS immer geprüft (min. TLS 1.2), STARTTLS Pflicht – nie unverschlüsselt. Anhänge und Roh-Mails landen gestreamt als unbestätigte Mediendateien des Plugins (24 h). Sitzungen enden mit dem Plugin-Prozess, höchstens `maxConnections` gleichzeitig, ungenutzte ohne IDLE nach 30 min. Fehlercodes `ERR_MAIL_AUTH` (mit gekürztem `serverText` ohne Zugangsdaten), `ERR_MAIL_NET`, `ERR_MAIL_PROTOCOL`, `ERR_MAIL_REJECTED`, `ERR_MAIL_LIMIT`, `ERR_NETWORK_DENIED`, `ERR_INVALID`. Zustimmungstext in Installationsdialog und Plugin-Karte (DE/EN). Neue Abhängigkeiten: imapflow, mailparser, sanitize-html, postcss.
