@@ -57,6 +57,12 @@ const DB_MAX_MB_MAX = 4096;
 // permissions.ai (docs/plugins.md "AI requests"): what the plugin may ask the AI provider for
 const AI_CAPABILITIES = Object.freeze(['text', 'vision', 'audio', 'video']);
 const AI_PURPOSE_MAX = 200;
+// permissions.mail (since 1.216.0, docs/plugins.md "Mail"): open IMAP sessions of a plugin at the same time
+const MAIL_CONNECTIONS_DEFAULT = 50;
+const MAIL_CONNECTIONS_MAX = 200;
+// services.provides.<name>.maxPerHour (since 1.216.0): the provider's own budget per calling plugin and hour
+const SERVICE_PER_HOUR_MIN = 60;
+const SERVICE_PER_HOUR_MAX = 3600;
 
 /** "x" or { de, en } → { de, en } (both filled); null when invalid. */
 function locText(v, max) {
@@ -92,11 +98,16 @@ const TARGET_ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
  * protocols: "http", "tcp:<ports>", "udp:<ports>".
  */
 function validateNetwork(n, err) {
-  const out = { internet: [], homeTargets: [], localDiscovery: null };
+  const out = { internet: [], homeTargets: [], localDiscovery: null, images: false };
   if (n == null) return out;
   const obj = Array.isArray(n) ? { internet: n } : n;
   if (!obj || typeof obj !== 'object') { err('permissions.network: invalid'); return null; }
-  for (const k of Object.keys(obj)) if (!['internet', 'homeTargets', 'localDiscovery'].includes(k)) { err('permissions.network: unknown key ' + k); return null; }
+  for (const k of Object.keys(obj)) if (!['internet', 'homeTargets', 'localDiscovery', 'images'].includes(k)) { err('permissions.network: unknown key ' + k); return null; }
+  // images (since 1.216.0): pictures of any public host through the host (gc.http.fetchImage), e.g. those of mails
+  if (obj.images != null) {
+    if (typeof obj.images !== 'boolean') err('permissions.network.images: invalid');
+    else out.images = obj.images;
+  }
   try {
     const entries = netPolicy.parseList(obj.internet);
     if (entries.some((e) => e.type === 'cidr' && netPolicy.classify(e.net[0].toString()) !== 'public')) throw new Error('private');
@@ -274,7 +285,7 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, ai: null, cloudImport: null, publicEndpoints: null };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null, images: false }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, ai: null, cloudImport: null, publicEndpoints: null, mail: null };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
@@ -365,6 +376,18 @@ function validate(raw, opts = {}) {
       const purpose = c && typeof c === 'object' && !Array.isArray(c) && Object.keys(c).every((k) => k === 'purpose') ? locText(c.purpose, 200) : null;
       if (!purpose) err('permissions.cloudImport: invalid (needs a purpose)');
       else perms.cloudImport = { purpose };
+    }
+    // mail (since 1.216.0): { purpose: { de, en }, maxConnections: 1…200 (default 50) } — IMAP and SMTP to the
+    // mail servers people enter (gc.mail, docs/plugins.md "Mail"), encrypted only, public addresses only
+    if (p.mail != null) {
+      const ml = p.mail;
+      const ok = ml && typeof ml === 'object' && !Array.isArray(ml) && Object.keys(ml).every((k) => k === 'purpose' || k === 'maxConnections');
+      const purpose = ok ? locText(ml.purpose, 200) : null;
+      const max = ok && ml.maxConnections != null ? ml.maxConnections : MAIL_CONNECTIONS_DEFAULT;
+      if (!ok) err('permissions.mail: invalid');
+      else if (!purpose) err('permissions.mail: invalid (needs a purpose)');
+      else if (!Number.isInteger(max) || max < 1 || max > MAIL_CONNECTIONS_MAX) err('permissions.mail.maxConnections: invalid');
+      else perms.mail = { purpose, maxConnections: max };
     }
   }
   m.permissions = perms;
@@ -548,7 +571,8 @@ function validate(raw, opts = {}) {
   const pe = m.permissions && m.permissions.publicEndpoints;
   if (pe && pe.maxBodyBytes > 0 && (!m.media || pe.maxBodyBytes > m.media.maxBytes)) err('permissions.publicEndpoints.maxBodyBytes: needs media');
 
-  // services: { provides: { <name>: { label } } } — offered to other plugins (gc.services.call)
+  // services: { provides: { <name>: { label, maxPerHour? } } } — offered to other plugins (gc.services.call);
+  // maxPerHour (since 1.216.0, 60…3600): calls per calling plugin and hour of this service instead of the shared 60
   m.services = { provides: {} };
   if (raw.services != null) {
     const sv = raw.services;
@@ -558,8 +582,11 @@ function validate(raw, opts = {}) {
       const out = new Map();
       for (const [name, def] of Object.entries(prov)) {
         const label = locText(def && def.label, 60);
-        if (!SERVICE_NAME_RE.test(name) || !label || Object.keys(def).some((k) => k !== 'label')) { err('services.provides: invalid'); break; }
-        out.set(name, { label });
+        if (!SERVICE_NAME_RE.test(name) || !label || Object.keys(def).some((k) => k !== 'label' && k !== 'maxPerHour')) { err('services.provides: invalid'); break; }
+        if (def.maxPerHour != null && (!Number.isInteger(def.maxPerHour) || def.maxPerHour < SERVICE_PER_HOUR_MIN || def.maxPerHour > SERVICE_PER_HOUR_MAX)) {
+          err('services.provides.maxPerHour: invalid'); break;
+        }
+        out.set(name, def.maxPerHour != null ? { label, maxPerHour: def.maxPerHour } : { label });
       }
       m.services = { provides: Object.fromEntries(out) };
     }
@@ -606,5 +633,5 @@ function migrationsOf(manifest, files) {
 
 module.exports = {
   validate, loc, locText, migrationsOf, isFile, quotaBytes, PORTAL_SECTION_TABS, NOTIFY_PER_HOUR_DEFAULT, NOTIFY_PER_HOUR_MAX, BACKGROUND_MIN_S,
-  DB_MAX_MB_MIN, DB_MAX_MB_MAX, AI_CAPABILITIES, MEDIA_MAX_BYTES, MEDIA_MAX_BYTES_AREAS, MEDIA_QUOTA_DEFAULT, MEDIA_QUOTA_MIN, MEDIA_QUOTA_MAX, MEDIA_QUOTA_MAX_AREAS, MIME_DENY_RE, SERVICE_REF_RE, SERVICE_NAME_RE, typeAllowed,
+  DB_MAX_MB_MIN, DB_MAX_MB_MAX, AI_CAPABILITIES, MAIL_CONNECTIONS_DEFAULT, MAIL_CONNECTIONS_MAX, SERVICE_PER_HOUR_MIN, SERVICE_PER_HOUR_MAX, MEDIA_MAX_BYTES, MEDIA_MAX_BYTES_AREAS, MEDIA_QUOTA_DEFAULT, MEDIA_QUOTA_MIN, MEDIA_QUOTA_MAX, MEDIA_QUOTA_MAX_AREAS, MIME_DENY_RE, SERVICE_REF_RE, SERVICE_NAME_RE, typeAllowed,
 };

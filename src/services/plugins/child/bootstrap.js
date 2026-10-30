@@ -190,9 +190,104 @@ function onWebSocketEvent(m) {
   else if (m.ev === 'close') { w.closed = true; websockets.delete(m.id); w.emit('close', m.code, m.reason || ''); }
 }
 
+// IMAP sessions of gc.mail (since 1.216.0): the host holds the connection,
+// this is its proxy. Every method is one host call; events of the session
+// (exists, expunge, flags, close, error) arrive as { t: 'mail', id, ev, data }.
+const mailSessions = new Map();
+const MAIL_LONG_MS = 11 * 60 * 1000;
+
+class MailSession extends EventEmitter {
+  constructor(r) {
+    super();
+    this.id = r.id;
+    this.capabilities = Array.isArray(r.capabilities) ? r.capabilities.slice() : [];
+    this.serverInfo = r.serverInfo || null;
+    this.closed = false;
+  }
+  _call(op, args, long) { return hostCall('mail.imap.call', { id: this.id, op, args }, long ? MAIL_LONG_MS : 3 * 60 * 1000); }
+  list() { return this._call('list', []); }
+  status(path, query) { return this._call('status', [path, query == null ? null : query]); }
+  open(path, opts) { return this._call('open', [path, opts == null ? {} : opts]); }
+  fetch(range, query) { return this._call('fetch', [range, query == null ? {} : query], true); }
+  message(uid, opts) { return this._call('message', [uid, opts == null ? {} : opts], true); }
+  download(uid, partId, opts) { return this._call('download', [uid, partId, opts == null ? {} : opts], true); }
+  search(query) { return this._call('search', [query], true); }
+  flags(range, opts) { return this._call('flags', [range, opts == null ? {} : opts]); }
+  move(range, path) { return this._call('move', [range, path], true); }
+  copy(range, path) { return this._call('copy', [range, path], true); }
+  expunge(range) { return this._call('expunge', [range], true); }
+  append(path, mediaId, opts) { return this._call('append', [path, mediaId, opts == null ? {} : opts], true); }
+  idle() { return this._call('idle', []); }
+  noop() { return this._call('noop', []); }
+  close() {
+    if (this.closed) return Promise.resolve(null);
+    this.closed = true;
+    mailSessions.delete(this.id);
+    return hostCall('mail.imap.close', { id: this.id }).catch(() => null);
+  }
+}
+
+function onMailEvent(m) {
+  const s = mailSessions.get(m.id);
+  if (!s) return;
+  if (m.ev === 'close') { s.closed = true; mailSessions.delete(m.id); s.emit('close'); return; }
+  if (m.ev === 'error') {
+    const d = m.data || {};
+    // without a listener an 'error' event would end the plugin process
+    if (s.listenerCount('error')) s.emit('error', Object.assign(new Error(d.message || 'mail session error'), { code: d.code || 'ERR_MAIL_PROTOCOL' }));
+    return;
+  }
+  if (m.ev === 'exists' || m.ev === 'expunge' || m.ev === 'flags') s.emit(m.ev, m.data || {});
+}
+
+/** gc.mail — only for plugins with permissions.mail (else undefined). */
+function makeMail() {
+  return Object.freeze({
+    imap: Object.freeze({
+      /**
+       * connect({ host, port, security: 'tls' | 'starttls', auth: { user, pass } | { user, accessToken }, timeoutMs })
+       *   → session (EventEmitter: exists, expunge, flags, close, error; list, status, open, fetch, message, download,
+       *   search, flags, move, copy, expunge, append, idle, noop, close)
+       */
+      connect: async (opts) => {
+        const o = opts && typeof opts === 'object' ? opts : {};
+        const t = Number.isFinite(o.timeoutMs) ? Math.min(60000, o.timeoutMs) : 30000;
+        const r = await hostCall('mail.imap.connect', { host: o.host, port: o.port, security: o.security, auth: o.auth, timeoutMs: o.timeoutMs }, t + 15000);
+        const s = new MailSession(r);
+        mailSessions.set(r.id, s);
+        return s;
+      },
+    }),
+    smtp: Object.freeze({
+      /** send({ host, port, security, auth, message, appendCopy, timeoutMs }) → { messageId, accepted, rejected, raw } */
+      send: (opts) => hostCall('mail.smtp.send', opts && typeof opts === 'object' ? opts : {}, MAIL_LONG_MS),
+    }),
+    /** compose(message) → { mediaId, bytes, messageId } (RFC 822, unclaimed media) */
+    compose: (message) => hostCall('mail.compose', { message }, 3 * 60 * 1000),
+    /** parse(mediaId, { attachments: 'meta' | 'media', maxBytes }) → like session.message */
+    parse: (mediaId, opts) => hostCall('mail.parse', { mediaId, opts: opts == null ? {} : opts }, 3 * 60 * 1000),
+    /** sanitize(html, { images: 'placeholder' }) → { html, images: [url], trackers } */
+    sanitize: (html, opts) => hostCall('mail.sanitize', { html, opts: opts == null ? {} : opts }, 3 * 60 * 1000),
+    /** autoconfig(email) → { imap, smtp, source } */
+    autoconfig: (email) => hostCall('mail.autoconfig', { email }, 45000),
+  });
+}
+
 function makeGc(info) {
   const log = (level) => (...a) => send({ t: 'log', level, message: fmt(a) });
+  const features = info.features && typeof info.features === 'object' ? info.features : {};
+  /**
+   * fetchImage(url, { maxBytes (≤ 5 MB, default 2 MB), timeoutMs (≤ 15000) }) → { status, mime, bytes (Buffer) } —
+   * since 1.216.0, permissions.network.images: a picture of any public host, loaded by the host
+   */
+  const fetchImage = async (url, opts) => {
+    const o = opts && typeof opts === 'object' ? opts : {};
+    const r = await hostCall('http.fetchImage', { url: String(url), opts: { maxBytes: o.maxBytes, timeoutMs: o.timeoutMs } }, 30000);
+    return { status: r.status, mime: r.mime, bytes: Buffer.from(String(r.bytesBase64 || ''), 'base64') };
+  };
   return Object.freeze({
+    // permissions.mail (since 1.216.0, docs/plugins.md "Mail"): IMAP sessions, SMTP, MIME, HTML cleaning, autoconfig
+    ...(features.mail ? { mail: makeMail() } : {}),
     plugin: Object.freeze({ id: info.id, version: info.version, filesDir: info.filesDir }), // filesDir: the one writable folder
     log: Object.freeze({ debug: log('debug'), info: log('info'), warn: log('warn'), error: log('error') }),
     http: Object.freeze({
@@ -212,6 +307,7 @@ function makeGc(info) {
         websockets.set(r.id, w);
         return w;
       },
+      ...(features.images ? { fetchImage } : {}),
     }),
     net: Object.freeze({
       /** Home-network targets an administrator assigned: [{ id, protocols, assigned: [{ index, label }] }] */
@@ -631,7 +727,10 @@ process.on('message', (msg) => {
     pending.delete(msg.id);
     clearTimeout(p.timer);
     if (msg.ok) p.resolve(msg.value);
-    else p.reject(Object.assign(new Error(msg.error || 'host call failed'), { code: msg.code || undefined }, Number.isInteger(msg.status) ? { status: msg.status } : {}));
+    else {
+      p.reject(Object.assign(new Error(msg.error || 'host call failed'), { code: msg.code || undefined }, Number.isInteger(msg.status) ? { status: msg.status } : {},
+        typeof msg.serverText === 'string' ? { serverText: msg.serverText } : {}));
+    }
     return;
   }
   if (msg.t === 'call') {
@@ -643,6 +742,7 @@ process.on('message', (msg) => {
   }
   if (msg.t === 'sock') { onSocketEvent(msg); return; }
   if (msg.t === 'ws') { onWebSocketEvent(msg); return; }
+  if (msg.t === 'mail') { onMailEvent(msg); return; }
   if (msg.t === 'ping') { send({ t: 'pong', id: msg.id }); return; }
   if (msg.t === 'stop') {
     Promise.resolve()

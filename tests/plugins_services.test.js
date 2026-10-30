@@ -177,6 +177,38 @@ describe('gc.services.call', () => {
   });
 });
 
+describe('services.provides.<name>.maxPerHour (since 1.216.0)', () => {
+  before(async () => {
+    await install(helloPackage({ overrides: { id: 'hello-prov2', name: 'Anbieter 2',
+      services: { provides: { fast: { label: 'Schnell', maxPerHour: 90 }, slow: { label: 'Langsam' } } } } }));
+    await install(helloPackage({ overrides: { id: 'hello-call2', name: 'Aufrufer 2',
+      permissions: { ...clone(helloManifest.permissions), services: ['hello-prov2:fast', 'hello-prov2:slow'] } } }));
+    for (const id of ['hello-prov2', 'hello-call2']) assert.equal(await runtime.waitRunning(id), true, id);
+  });
+
+  it('an integer 60 … 3600 next to the label; anything else → services.provides.maxPerHour: invalid', () => {
+    const m = clone(helloManifest);
+    m.services = { provides: { fast: { label: 'x', maxPerHour: 600 }, plain: { label: 'y' } } };
+    assert.deepEqual(manifest.validate(m).manifest.services.provides, { fast: { label: { de: 'x', en: 'x' }, maxPerHour: 600 }, plain: { label: { de: 'y', en: 'y' } } });
+    for (const bad of [59, 3601, 1.5, '600', 0, -1]) {
+      const x = clone(helloManifest);
+      x.services = { provides: { fast: { label: 'x', maxPerHour: bad } } };
+      assert.deepEqual(manifest.validate(x).errors, ['services.provides.maxPerHour: invalid'], String(bad));
+    }
+  });
+
+  it('a service with maxPerHour has that budget per calling plugin, the others keep the shared 60', async () => {
+    const caller = registry.get('hello-call2');
+    for (let i = 0; i < hostApi.SERVICES_PER_HOUR; i++) await hostApi.handle(caller, 'services.call', { plugin: 'hello-prov2', service: 'slow', payload: i });
+    await assert.rejects(() => hostApi.handle(caller, 'services.call', { plugin: 'hello-prov2', service: 'slow' }), (e) => e.code === 'ERR_RATE_LIMIT');
+    // the shared budget is used up — the service with its own budget still answers, 90 times
+    for (let i = 0; i < 90; i++) await hostApi.handle(caller, 'services.call', { plugin: 'hello-prov2', service: 'fast', payload: i });
+    await assert.rejects(() => hostApi.handle(caller, 'services.call', { plugin: 'hello-prov2', service: 'fast' }), (e) => e.code === 'ERR_RATE_LIMIT' && /90 per hour/.test(e.message));
+    // per calling plugin: another caller is not affected (hello-call lists none of them, but its own budget is untouched)
+    await hostApi.handle(registry.get('hello-call'), 'services.call', { plugin: 'hello-prov', service: 'send_message' });
+  });
+});
+
 describe('gc.services.available', () => {
   const avail = (id, body) => agent.post(`${API}/${id}/api/service-available`).set('X-CSRF-Token', csrf).send(body);
   const serviceRows = () => H.db().prepare("SELECT COUNT(*) AS n FROM activity_log WHERE event_type = 'plugin_service'").get().n;

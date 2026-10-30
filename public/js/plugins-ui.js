@@ -90,6 +90,8 @@
         : t('plugins.perm.none'),
     });
     if (n.discovery) rows.push({ label: t('plugins.perm.discovery'), value: t('plugins.perm.discovery_v', { ports: n.discovery.udp.join(', ') }) });
+    // since 1.216.0: pictures in mails, loaded by GateControl on behalf of the plugin (gc.http.fetchImage)
+    if (n.images) rows.push({ label: t('plugins.perm.images'), value: t('plugins.perm.images_on') });
     rows.push({ label: t('plugins.perm.data'), value: t(perm.storage ? 'plugins.perm.storage_on' : 'plugins.perm.storage_off') });
     const ui = [];
     if (perm.pages && perm.pages.length) ui.push(t('plugins.perm.ui_pages', { pages: perm.pages.join(', ') }));
@@ -150,6 +152,8 @@
       const caps = (perm.ai.capabilities || []).map((c) => t('plugins.perm.ai_cap.' + c)).join(', ');
       rows.push({ label: t('plugins.perm.ai'), value: t('plugins.perm.ai_v', { purpose: perm.ai.purpose, caps }) });
     }
+    // since 1.216.0: IMAP and SMTP to mail servers on the internet, encrypted only (permissions.mail)
+    if (perm.mail) rows.push({ label: t('plugins.perm.mail'), value: t('plugins.perm.mail_v', { purpose: perm.mail.purpose || '', n: perm.mail.maxConnections }) });
     if (perm.servicesProvided && perm.servicesProvided.length) {
       rows.push({ label: t('plugins.perm.services_provided'), value: t('plugins.perm.services_provided_v', { services: perm.servicesProvided.join(', ') }) });
     }
@@ -235,6 +239,8 @@
     nas: 'M7.5 3h9A2.5 2.5 0 0 1 19 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 18.5v-13A2.5 2.5 0 0 1 7.5 3zM9 7h6M9 10.5h6M12 17h.01',
     puzzle: 'M14 4h-4v3H7v4h3v3h4v-3h3V7h-3zM5 20h14',
     cloud: 'M7 19h10.5a4.5 4.5 0 0 0 .6-8.96A6.5 6.5 0 0 0 5.6 9.3 4.9 4.9 0 0 0 7 19z',
+    // since 1.216.0: GateControl Mail (catalogue symbol and "Das darf das Plugin")
+    mail: 'M4 5.5h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1zM3.5 7l8.5 6 8.5-6',
   };
 
   // Symbols of the detail lists (catalog.js DETAIL_ICONS): 24×24 stroke paths.
@@ -262,6 +268,8 @@
     shield: 'M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z',
     link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
     cloud: 'M7 19h10.5a4.5 4.5 0 0 0 .6-8.96A6.5 6.5 0 0 0 5.6 9.3 4.9 4.9 0 0 0 7 19z',
+    // since 1.216.0: GateControl Mail (catalogue symbol and "Das darf das Plugin")
+    mail: 'M4 5.5h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1zM3.5 7l8.5 6 8.5-6',
     // since 1.214.0: AI requests (permissions.ai)
     ai: 'M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8zM18.5 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z',
   };
@@ -444,6 +452,8 @@
     if (perm.groups) out.push('plugins.perm.groups');
     if (perm.ai) out.push('plugins.perm.ai');
     if (perm.cloudImport) out.push('plugins.perm.cloud_import');
+    if (perm.mail) out.push('plugins.perm.mail');
+    if (n.images) out.push('plugins.perm.images');
     return out;
   }
 
