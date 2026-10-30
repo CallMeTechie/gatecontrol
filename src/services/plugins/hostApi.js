@@ -133,8 +133,9 @@ function socketsOf(id) {
   return m;
 }
 
-/** Close every socket and WebSocket of a plugin (process ended, stopped, uninstalled). */
+/** Close every socket, WebSocket and mail session of a plugin (process ended, stopped, uninstalled). */
 function closeSockets(id) {
+  require('./mail').closeAll(id);
   const m = sockets.get(id);
   if (m) {
     for (const s of m.values()) s.destroy();
@@ -995,6 +996,8 @@ function eventsEmit(plugin, args) {
 // budget, no activity row. Malformed ids/names → ERR_INVALID like call().
 
 const SERVICES_PER_HOUR = 60;
+// services.provides.<name>.maxPerHour (since 1.216.0): the provider's own budget per calling plugin and hour
+const serviceWindows = new Map(); // `${caller}|${provider}:${service}` → [timestamps]
 const SERVICE_JSON_MAX = 16 * 1024;
 // Payloads may carry a small image (e.g. a doorbell snapshot as base64).
 const SERVICE_PAYLOAD_MAX = 512 * 1024;
@@ -1034,6 +1037,15 @@ function serviceProvided(a) {
     && require('./runtime').info(provider.id).state === 'running';
 }
 
+/** The provider's maxPerHour of a service (60…3600), or null for the shared budget of SERVICES_PER_HOUR. */
+function servicePerHour(a) {
+  let provider = null;
+  try { provider = require('./registry').resolve(a.plugin); } catch { provider = null; }
+  const def = provider && provider.manifest && provider.manifest.services && provider.manifest.services.provides
+    && Object.prototype.hasOwnProperty.call(provider.manifest.services.provides, a.service) ? provider.manifest.services.provides[a.service] : null;
+  return def && Number.isInteger(def.maxPerHour) ? def.maxPerHour : null;
+}
+
 /** gc.services.available(plugin, service) → boolean (see above). */
 function servicesAvailable(plugin, args) {
   const a = serviceRef(args);
@@ -1056,8 +1068,11 @@ async function servicesCall(plugin, args) {
   need(serviceProvided(a), 'ERR_SERVICE_UNAVAILABLE', 'the providing plugin or service is not available');
   need(require('./registry').resolve(a.plugin).id !== plugin.id, 'ERR_INVALID', 'a plugin cannot call its own services');
   const now = Date.now();
-  const w = recent(servicesWindow, plugin.id, now);
-  need(w.length < SERVICES_PER_HOUR, 'ERR_RATE_LIMIT', `too many service calls (${SERVICES_PER_HOUR} per hour)`);
+  // a service with maxPerHour counts on its own (per calling plugin), all others share SERVICES_PER_HOUR
+  const perHour = servicePerHour(a);
+  const w = perHour ? recent(serviceWindows, `${plugin.id}|${a.plugin}:${a.service}`, now) : recent(servicesWindow, plugin.id, now);
+  const limit = perHour || SERVICES_PER_HOUR;
+  need(w.length < limit, 'ERR_RATE_LIMIT', `too many service calls (${limit} per hour)`);
   w.push(now);
   let out;
   let error = null;
@@ -1384,6 +1399,45 @@ async function targetUpload(plugin, args) {
   return fetchResult(res, u.o);
 }
 
+// ─── Mail (permissions.mail, services/plugins/mail/, since 1.216.0) ────
+//
+// gc.mail.imap.connect / session commands / smtp.send / compose / parse /
+// sanitize / autoconfig — docs/plugins.md "Mail". The host holds the IMAP
+// sessions; their events go to the plugin process as { t: 'mail', id, ev, data }.
+
+async function mailCall(plugin, api, args, ctx) {
+  const mail = require('./mail');
+  const o = netOpts();
+  try {
+    switch (api) {
+      case 'mail.imap.connect': return await mail.imapConnect(plugin, args, ctx, o);
+      case 'mail.imap.call': return await mail.imapCall(plugin, args);
+      case 'mail.imap.close': return mail.imapClose(plugin, args);
+      case 'mail.smtp.send': return await mail.smtpSend(plugin, args, o);
+      case 'mail.compose': return await mail.compose(plugin, args);
+      case 'mail.parse': return await mail.parse(plugin, args);
+      case 'mail.sanitize': return mail.sanitize(plugin, args);
+      case 'mail.autoconfig': return await mail.autoconfig(plugin, args, o);
+      default: throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
+    }
+  } catch (e) {
+    if (e instanceof HostApiError) throw e;
+    if (e instanceof mail.MailError) {
+      throw Object.assign(new HostApiError(e.code, String(e.message).slice(0, 300)), typeof e.serverText === 'string' ? { serverText: e.serverText } : {});
+    }
+    throw e;
+  }
+}
+
+/** gc.http.fetchImage(url, { maxBytes, timeoutMs }) — permissions.network.images (fetchImage.js). */
+async function fetchImageCall(plugin, args) {
+  const fi = require('./fetchImage');
+  try { return await fi.fetchImage(plugin, args, netOpts()); } catch (e) {
+    if (e instanceof fi.ImageError) throw Object.assign(new HostApiError(e.code, e.message), Number.isInteger(e.status) ? { status: e.status } : {});
+    throw e;
+  }
+}
+
 // ─── AI requests (permissions.ai, services/ai/, since 1.214.0) ────
 //
 // gc.ai.available / status / extract / generate — docs/plugins.md "AI
@@ -1424,6 +1478,9 @@ function callTimeout(api, args) {
   if (api === 'ai.extract' || api === 'ai.generate') return aiCallTimeout(args);
   // a file from Google Drive / OneDrive into the media store (cloud.js ends it within its own limit first)
   if (api === 'cloud.import') return require('./cloud').CALL_TIMEOUT_MS;
+  // gc.mail: a connect within its timeoutMs, big messages and SMTP sends longer (mail/index.js)
+  if (api.startsWith('mail.')) return require('./mail').callTimeout(api, args);
+  if (api === 'http.fetchImage') return 20000;
   return TIMEOUTS.hostCall;
 }
 
@@ -1433,6 +1490,7 @@ function _resetBudgetsForTest() {
   chatUserWindow.clear();
   chatCounts.clear();
   servicesWindow.clear();
+  serviceWindows.clear();
   notifyWindow.clear();
   dataWindow.clear();
   handOverWindow.clear();
@@ -1695,6 +1753,10 @@ function _resetActionsBudgetForTest() {
 async function handle(plugin, api, args, ctx) {
   switch (api) {
     case 'http.fetch': return httpFetch(plugin, args);
+    case 'http.fetchImage': return fetchImageCall(plugin, args);
+    case 'mail.imap.connect': case 'mail.imap.call': case 'mail.imap.close': case 'mail.smtp.send':
+    case 'mail.compose': case 'mail.parse': case 'mail.sanitize': case 'mail.autoconfig':
+      return mailCall(plugin, api, args, ctx);
     case 'ws.connect': return wsConnect(plugin, args, ctx);
     case 'ws.send': return wsSend(plugin, args);
     case 'ws.close': return wsClose(plugin, args);

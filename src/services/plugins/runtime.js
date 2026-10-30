@@ -127,7 +127,10 @@ class PluginProcess {
     }, TIMEOUTS.start);
     readyTimer.unref();
     this.readyTimer = readyTimer;
-    child.send({ t: 'init', plugin: { id: p.id, version: p.version, entry, filesDir: files } });
+    // features: host APIs the plugin process only gets with their permission (gc.mail, gc.http.fetchImage — since 1.216.0)
+    const perms = p.manifest.permissions || {};
+    const features = { mail: !!perms.mail, images: !!(perms.network && perms.network.images === true) };
+    child.send({ t: 'init', plugin: { id: p.id, version: p.version, entry, filesDir: files, features } });
   }
 
   onMessage(m) {
@@ -180,7 +183,9 @@ class PluginProcess {
     Promise.race([hostApi.handle(this.plugin, String(m.api || ''), m.args || {}, ctx), timeout])
       .then((value) => reply({ t: 'hostResult', id: m.id, ok: true, value: value === undefined ? null : value }),
         (e) => reply({ t: 'hostResult', id: m.id, ok: false, error: String((e && e.message) || e).slice(0, 300), code: (e && e.code) || null,
-          ...(e && Number.isInteger(e.status) && e.code === 'ERR_HTTP' ? { status: e.status } : {}) }))
+          ...(e && Number.isInteger(e.status) && e.code === 'ERR_HTTP' ? { status: e.status } : {}),
+          // gc.mail (since 1.216.0): what the mail server answered (≤ 200 characters, without the credentials)
+          ...(e && typeof e.serverText === 'string' ? { serverText: e.serverText.slice(0, 200) } : {}) }))
       .finally(() => { this.hostCalls--; });
   }
 

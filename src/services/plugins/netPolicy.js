@@ -210,7 +210,8 @@ async function checkInternet(policy, host, port, opts = {}) {
   if (!h || h.length > 253) return { ok: false, reason: 'invalid_host' };
   if (!Number.isInteger(port) || port < 1 || port > 65535) return { ok: false, reason: 'invalid_port' };
   const literal = isIpLiteral(h);
-  const hit = policy.entries.some((e) => portOk(e, port) && (
+  // anyPublic (gc.mail, gc.http.fetchImage, since 1.216.0): any host name, only these ports — the address check stays the same
+  const hit = policy.anyPublic ? inRanges(policy.anyPublic.ports, port) : policy.entries.some((e) => portOk(e, port) && (
     (e.type === 'host' && e.host === h)
     || (e.type === 'wildcard' && h.endsWith('.' + e.host))
     || (e.type === 'cidr' && literal && cidrContains(e, h))));
@@ -231,6 +232,16 @@ async function checkInternet(policy, host, port, opts = {}) {
   }
   const first = toAddr(addrs[0].address);
   return { ok: true, address: first.toString(), family: first.kind() === 'ipv6' ? 6 : 4 };
+}
+
+/**
+ * A policy for any host name on `ports` ([[from, to], …]): no allowlist, but
+ * every resolved address still has to be public (checkInternet) — the mail
+ * servers people enter themselves (gc.mail) and pictures in mails
+ * (gc.http.fetchImage), since 1.216.0.
+ */
+function anyPublic(ports) {
+  return { entries: [], anyPublic: { ports } };
 }
 
 function cidrContains(entry, ip) {
@@ -346,7 +357,7 @@ function pinnedRequest({ target, method = 'GET', headers, body, bodyStream = nul
  * location (e.g. an OAuth app scheme) and returns that 3xx.
  * @returns {Promise<{status, headers, body: Buffer, url: string, redirects: string[]}>}
  */
-async function fetchWithPolicy(policy, url, { method = 'GET', headers, body, bodyStream = null, timeoutMs, maxBytes, redirect = 'manual', lookup, reserved, check, deadline } = {}) {
+async function fetchWithPolicy(policy, url, { method = 'GET', headers, body, bodyStream = null, timeoutMs, maxBytes, redirect = 'manual', lookup, reserved, check, deadline, maxRedirects = 9 } = {}) {
   let current = String(url);
   let m = method;
   let b = body;
@@ -368,7 +379,7 @@ async function fetchWithPolicy(policy, url, { method = 'GET', headers, body, bod
     let next;
     try { next = new URL(loc, current); } catch { return { ...res, url: current, redirects }; }
     if (next.protocol !== 'http:' && next.protocol !== 'https:') return { ...res, url: current, redirects };
-    if (hop >= 9) throw Object.assign(new Error('too many redirects'), { code: 'ERR_NET' });
+    if (hop >= maxRedirects) throw Object.assign(new Error('too many redirects'), { code: 'ERR_NET' });
     const sameOrigin = next.origin === new URL(current).origin;
     redirects.push(next.href);
     if (res.status === 303 || ((res.status === 301 || res.status === 302) && m === 'POST')) { m = 'GET'; b = null; delete h['content-type']; }
@@ -514,6 +525,8 @@ function describe(perms, lang) {
     internet,
     homeTargets: (n.homeTargets || []).map((t) => ({ id: t.id, label: loc(t.label), protocols: t.protocols, multiple: !!t.multiple })),
     discovery: n.localDiscovery ? { udp: n.localDiscovery.udp } : null,
+    // since 1.216.0: pictures of any public host through the host (gc.http.fetchImage) — only when declared
+    ...(!Array.isArray(n) && n.images === true ? { images: true } : {}),
   };
 }
 
@@ -529,7 +542,7 @@ function _setReservedForTest(nets) {
 }
 
 module.exports = {
-  parseEntry, parseList, parsePorts, compile, classify, isHostReserved, checkInternet, checkTarget, inRanges, toAddr, isIpLiteral,
+  parseEntry, parseList, parsePorts, compile, anyPublic, classify, isHostReserved, checkInternet, checkTarget, inRanges, toAddr, isIpLiteral,
   pinnedRequest, fetchWithPolicy, tcpConnect, checkWebSocket, wsConnect, udpExchange, lanBroadcasts, hostReserved, describe, cleanHeaders, lookupAll,
   _setReservedForTest, _setTestPrivateForTest,
 };

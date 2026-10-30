@@ -19,6 +19,9 @@ async function misbehave(gc) {
   return null;
 }
 
+// gc.mail sessions of tests/plugins_mail.test.js: id → { s, events }
+const mailSessions = new Map();
+
 // the appends of publicLinkEvent, one after another
 let linkEvents = Promise.resolve();
 
@@ -160,7 +163,40 @@ module.exports = {
         const fn = owner && Object.prototype.hasOwnProperty.call(owner, parts[parts.length - 1]) ? owner[parts[parts.length - 1]] : null;
         if (typeof fn !== 'function') return { status: 404, json: { ok: false, error: 'no such function' } };
         try { return { json: { ok: true, result: await fn(...(Array.isArray(b.args) ? b.args : [])) } }; } catch (e) {
-          return { status: 400, json: { ok: false, code: e.code || null, error: e.message, ...(e.status ? { status: e.status } : {}) } };
+          return { status: 400, json: { ok: false, code: e.code || null, error: e.message, ...(e.status ? { status: e.status } : {}),
+            ...(e.serverText !== undefined ? { serverText: e.serverText } : {}) } };
+        }
+      }
+      case '/mail': {
+        // gc.mail sessions and gc.http.fetchImage (tests/plugins_mail.test.js): body { op, … }
+        const b = req.body || {};
+        try {
+          if (b.op === 'has') {
+            return { json: { ok: true, mail: typeof gc.mail, connect: typeof (gc.mail && gc.mail.imap && gc.mail.imap.connect), fetchImage: typeof gc.http.fetchImage } };
+          }
+          if (b.op === 'connect') {
+            const s = await gc.mail.imap.connect(b.opts);
+            const events = [];
+            for (const ev of ['exists', 'expunge', 'flags', 'close', 'error']) s.on(ev, (d) => events.push({ ev, data: d instanceof Error ? { code: d.code } : (d || null) }));
+            mailSessions.set(s.id, { s, events });
+            return { json: { ok: true, id: s.id, capabilities: s.capabilities, serverInfo: s.serverInfo } };
+          }
+          if (b.op === 'call') {
+            const e = mailSessions.get(b.id);
+            if (!e) return { status: 404, json: { ok: false, error: 'no session' } };
+            return { json: { ok: true, result: await e.s[b.method](...(Array.isArray(b.args) ? b.args : [])) } };
+          }
+          if (b.op === 'events') {
+            const e = mailSessions.get(b.id);
+            return { json: { ok: true, events: e ? e.events : null, closed: e ? e.s.closed : null } };
+          }
+          if (b.op === 'fetchImage') {
+            const r = await gc.http.fetchImage(b.url, b.opts);
+            return { json: { ok: true, status: r.status, mime: r.mime, isBuffer: Buffer.isBuffer(r.bytes), length: r.bytes.length, head: r.bytes.subarray(0, 16).toString('base64') } };
+          }
+          return { status: 400, json: { ok: false, error: 'unknown op' } };
+        } catch (e) {
+          return { status: 400, json: { ok: false, code: e.code || null, error: e.message, ...(e.serverText !== undefined ? { serverText: e.serverText } : {}), ...(e.status ? { status: e.status } : {}) } };
         }
       }
       case '/events':

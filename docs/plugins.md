@@ -523,6 +523,22 @@ unsigned build of the same id.
   `remove`). The install dialog shows "Gruppen: Gruppen und Mitglieder lesen"
   or "Gruppen: Gruppen und Mitglieder lesen und eigene Gruppen verwalten",
   marked as sensitive. Errors `permissions.groups: invalid`. See "Groups".
+* `permissions.mail` (since 1.216.0): `{ "purpose": {de, en}, "maxConnections": n }`
+  — IMAP and SMTP to the mail servers people enter (`gc.mail`), encrypted
+  only, public addresses only; `maxConnections` 1 … 200 (default 50) open
+  IMAP sessions at a time. The install dialog shows "Mail: darf sich mit
+  Mail-Servern im Internet verbinden (IMAP und SMTP, nur verschlüsselt) und in
+  deinem Namen Mails senden – höchstens n Verbindungen gleichzeitig. Zweck:
+  <purpose>", marked as sensitive. Errors `permissions.mail: invalid`,
+  `permissions.mail: invalid (needs a purpose)`,
+  `permissions.mail.maxConnections: invalid`. See "Mail".
+* `permissions.network.images` (boolean, since 1.216.0): pictures of any
+  public host loaded by GateControl on behalf of the plugin
+  (`gc.http.fetchImage`, see "Network"). The install dialog shows "Bilder aus
+  Mails: lädt Bilder aus Mails stellvertretend aus dem Internet (nur
+  öffentliche Adressen, nur Bilder)", marked as sensitive. Error
+  `permissions.network.images: invalid`; an older GateControl refuses the key
+  (`permissions.network: unknown key images`).
 * `permissions.ai` (since 1.214.0): `{ "purpose": {de, en}, "capabilities":
   ["text", "vision", "audio", "video"] }` — requests to the AI provider set up
   in GateControl (`gc.ai.*`). The install dialog shows "KI-Anfragen: <purpose>
@@ -533,7 +549,12 @@ unsigned build of the same id.
 * `services` (optional, since 1.177.0): `{ "provides": { "<name>": { "label" } } }`
   — services other plugins may call (`<name>` `[a-z][a-z0-9_]{0,31}`, ≤ 32,
   label text ≤ 60, no other keys; errors `services: invalid`,
-  `services.provides: invalid`). `permissions.services`: `["<plugin>:<service>"]`
+  `services.provides: invalid`). Since 1.216.0 also `"maxPerHour": n`
+  (integer 60 … 3600) next to the label: calls of that service per calling
+  plugin and hour instead of the shared 60 (error
+  `services.provides.maxPerHour: invalid`; an older GateControl refuses the
+  key with `services.provides: invalid` — declare `"gatecontrol": ">=1.216.0"`).
+  `permissions.services`: `["<plugin>:<service>"]`
   (≤ 32) — the services of other plugins this plugin may call
   (`permissions.services: invalid`; one of its own: `permissions.services:
   own service`). See "Services".
@@ -614,6 +635,39 @@ filename="<name>"` (UTF-8, `"` / CR / LF percent-encoded like browsers do) and
 `ERR_NET`, `ERR_INVALID` for a path leaving the target or bad arguments),
 `ERR_TIMEOUT`, `ERR_MEDIA_DENIED` (no `media`, or `mediaFrom` of a plugin that
 may not hand over to this one), `ERR_INVALID` for an unknown media id.
+
+`http.fetchImage(url, opts)` (since 1.216.0, `permissions.network.images:
+true`) loads one picture from **any public host** — the pictures of a mail,
+so the sender sees GateControl, never the reader. Not in the plugin process
+without the permission (`typeof gc.http.fetchImage === 'function'` is the
+feature test):
+
+```js
+const { status, mime, bytes } = await gc.http.fetchImage('https://news.example/logo.png', {
+  maxBytes: 2 * 1024 * 1024,   // default 2 MB, at most 5 MB
+  timeoutMs: 10000,            // default 10 s, at most 15 s (all hops together)
+});
+// bytes: a Buffer; mime: the picture format found in the bytes
+```
+
+* GET only, `http:`/`https:` on ports 80, 443, 8080 and 8443; every resolved
+  address must be public — the same check as `http.fetch` (no allowlist, but
+  private, loopback, link-local, CGNAT, ULA, multicast, reserved, WireGuard,
+  Docker and own addresses are refused), pinned to the checked address.
+* At most 5 redirects, every hop checked again (a redirect to a private
+  address → `ERR_NETWORK_DENIED`).
+* No cookies, no `Referer`, a neutral `User-Agent`
+  (`Mozilla/5.0 (compatible; ImageProxy)`), `Accept: image/*`.
+* The answer must be a picture: `Content-Type: image/*` (never
+  `image/svg+xml`) **and** the bytes of a known format (JPEG, PNG, GIF, WebP,
+  BMP, ICO, AVIF/HEIC, TIFF) — else `ERR_INVALID`; `mime` is the format the
+  bytes have.
+* 8 pictures per plugin at a time (more wait).
+* Errors: `ERR_NETWORK_DENIED` (no permission, address or port refused),
+  `ERR_INVALID` (arguments, not a picture), `ERR_MEDIA_TOO_LARGE` (more than
+  `maxBytes`), `ERR_HTTP` (not 2xx, with `status`), `ERR_TIMEOUT`, `ERR_NET`
+  (unreachable, too many redirects). Note: `gc.http.fetch` keeps its
+  `ERR_NET_DENIED`.
 
 `http.websocket(url, opts)` (since 1.184.0) opens a WebSocket to an
 **internet** host: a `ws:`/`wss:` URL checked exactly like `http.fetch` (its
@@ -708,6 +762,12 @@ module.exports = {
 | `gc.log.debug/info/warn/error(...)` | the plugin's log (*Protokoll* tab); `console.*` goes there too |
 | `gc.http.fetch(url, opts)` | internet hosts |
 | `gc.http.websocket(url, opts)` | WebSocket to an internet host (events `message`, `close`, `error`; `send`, `close`; since 1.184.0) |
+| `gc.http.fetchImage(url, { maxBytes, timeoutMs })` | since 1.216.0 (`network.images`): a picture of any public host → `{ status, mime, bytes }` — see "Network" |
+| `gc.mail.imap.connect({ host, port, security, auth, timeoutMs })` | since 1.216.0 (`mail`): an IMAP session held by the host → session (`list`, `status`, `open`, `fetch`, `message`, `download`, `search`, `flags`, `move`, `copy`, `expunge`, `append`, `idle`, `noop`, `close`; events `exists`, `expunge`, `flags`, `close`, `error`) — see "Mail" |
+| `gc.mail.smtp.send({ host, port, security, auth, message, appendCopy })` | since 1.216.0 (`mail`): send a mail → `{ messageId, accepted, rejected, raw }` — see "Mail" |
+| `gc.mail.compose(message)` / `gc.mail.parse(mediaId, opts)` | since 1.216.0 (`mail`): RFC 822 as media ↔ the parsed message — see "Mail" |
+| `gc.mail.sanitize(html, { images: 'placeholder' })` | since 1.216.0 (`mail`): mail HTML made harmless → `{ html, images, trackers }` — see "Mail" |
+| `gc.mail.autoconfig(email)` | since 1.216.0 (`mail`): IMAP/SMTP servers of an address → `{ imap, smtp, source }` — see "Mail" |
 | `gc.net.targets()` | the assigned home targets |
 | `gc.net.fetchTarget(id, path, opts)` | HTTP to an assigned target |
 | `gc.net.tcpTarget(id, { index, port })` | TCP socket (events `data`, `close`, `error`, `timeout`; `write`, `end`, `destroy`, `setTimeout`) |
@@ -2283,6 +2343,227 @@ plugin network permission):
 Not yet (later, with the recipes plugin): `gc.ai.transcribe`, video input,
 `gc.web.readPage`, storing contents 24 hours for debugging.
 
+## Mail (`permissions.mail`)
+
+Since 1.216.0. A plugin reads mailboxes over IMAP and sends over SMTP — the
+servers people enter themselves (GMX, Web.de, T-Online, Gmail with an app
+password, Microsoft with a token, any provider). The **host** holds every
+connection; the plugin process gets a proxy of the session and plain
+objects, never a socket. Code: `src/services/plugins/mail/` (`index.js`
+sessions and API, `net.js` checks and errors, `mime.js` reading and writing,
+`sanitize.js`, `autoconfig.js`), libraries `imapflow` (IMAP), `nodemailer`
+(SMTP, MIME writing), `mailparser` (MIME reading), `sanitize-html` and
+`postcss` (HTML / CSS).
+
+```json
+"permissions": {
+  "mail": { "purpose": { "de": "Deine Postfächer lesen und Mails senden", "en": "Read your mailboxes and send mails" }, "maxConnections": 100 },
+  "network": { "internet": ["graph.microsoft.com:443"], "images": true }
+},
+"media": { "maxBytes": 26214400, "types": ["application/*", "image/*"], "quotaDefault": "10GB" }
+```
+
+* `purpose` (text or `{de, en}`, ≤ 200, required) and `maxConnections`
+  (1 … 200, default 50: open IMAP sessions of the plugin at the same time;
+  SMTP does not count) — see "plugin.json". The install dialog and the plugin
+  card show "Mail: darf sich mit Mail-Servern im Internet verbinden (IMAP und
+  SMTP, nur verschlüsselt) und in deinem Namen Mails senden – höchstens n
+  Verbindungen gleichzeitig. Zweck: …" / "may connect to mail servers on the
+  internet (IMAP and SMTP, encrypted only) and send mails on your behalf …",
+  marked as sensitive. Catalogue metadata may use the symbol `mail`.
+* Without the permission `gc.mail` is `undefined` in the plugin process (the
+  host refuses the calls with `ERR_MAIL_DENIED`). Feature test:
+  `typeof gc.mail === 'object' && typeof gc.mail.imap?.connect === 'function'`.
+* Attachments, raw mails and composed messages land in the plugin's media
+  (plugin.json `media` needed for those calls, else `ERR_MEDIA_DENIED`) as
+  **unclaimed** files without owner — removed after 24 h unless the plugin
+  claims them (`gc.media.claim`). They keep the mail's own type, also one
+  `media.types` does not list (`message/rfc822`, `text/calendar` …); types a
+  browser would run are only ever served as downloads. `media.maxBytes` and
+  the quota apply.
+
+### Network
+
+* Any host name, but every resolved address must be **public** — exactly the
+  check of `gc.http.fetch` (private, loopback, link-local, CGNAT, ULA,
+  multicast, reserved ranges, the WireGuard network, Docker networks and the
+  server's own addresses → `ERR_NETWORK_DENIED`). The connection goes to the
+  checked address (no DNS rebinding); TLS names the host (SNI) and checks the
+  certificate against it.
+* Ports: IMAP **993** (`security: 'tls'`) and **143** (`'starttls'`), SMTP
+  **465** (`'tls'`) and **587** (`'starttls'`). Any other port →
+  `ERR_NETWORK_DENIED`; a security that does not fit the port →
+  `ERR_INVALID` (without `security` the port decides).
+* Never in plain text: with `starttls` the host stops (`ERR_MAIL_NET`) when
+  the server cannot do STARTTLS — the login never leaves unencrypted.
+* TLS: the certificate is always verified, at least TLS 1.2. There is no
+  switch to turn that off.
+
+### IMAP sessions (`gc.mail.imap.connect`)
+
+```js
+const s = await gc.mail.imap.connect({
+  host: 'imap.gmx.net', port: 993, security: 'tls',
+  auth: { user: 'ada@gmx.de', pass: '…' },        // or { user, accessToken } (XOAUTH2)
+  timeoutMs: 30000,                                // ≤ 60000
+});
+s.id; s.capabilities; s.serverInfo;                 // string[], { name, vendor } | null
+s.on('exists', ({ path, count, prevCount }) => {}); // new mail (IDLE)
+s.on('expunge', ({ path, seq, uid, vanished }) => {});
+s.on('flags', ({ path, seq, uid, modseq, flags }) => {});
+s.on('close', () => {});                            // the server, the host or the network ended it
+s.on('error', (e) => {});                           // e.code like the commands' errors
+
+await s.list();        // [{ path, name, delimiter, parent, specialUse, flags, subscribed }]
+await s.status('INBOX', { messages: true, unseen: true, uidNext: true, uidValidity: true, highestModseq: true });
+await s.open('INBOX', { readOnly: false });          // { path, uidValidity, uidNext, exists, highestModseq | null }
+await s.fetch('1:*', { envelope: true, flags: true, size: true, internalDate: true, bodyStructure: true,
+  headers: ['list-id', 'precedence'] /* or true */, changedSince: 12345 });
+await s.message(4711, { maxBytes: 25 * 1024 * 1024, attachments: 'meta' /* | 'media' */ });
+await s.download(4711, '2', { name: 'Rechnung.pdf', maxBytes: 25 * 1024 * 1024 }); // { mediaId, bytes, mime, name }
+await s.search({ seen: false, since: Date.now() - 86400000, or: [{ from: 'a@b.c' }, { subject: 'Rechnung' }] }); // uid[]
+await s.flags([4711], { add: ['\\Seen'], remove: ['\\Flagged'] });
+await s.move('4711,4712', 'Archiv');                 // { uidMap: { '4711': 31, … } | null }
+await s.copy([4711], 'Archiv');                      // { uidMap }
+await s.expunge([4711]);                             // marks \Deleted and expunges exactly these
+await s.append('Sent', mediaId, { flags: ['\\Seen'], date: Date.now() }); // { uid | null }
+await s.idle();                                      // IDLE on the open mailbox
+await s.noop();
+await s.close();
+```
+
+* Every method answers a Promise; errors carry `code` (below). Ranges are
+  always **UIDs**: `'1:*'`, `'5,7,9'`, `'3:9'` or an array of numbers.
+* One open mailbox per session (`open` replaces it); one command at a time
+  per session (the next waits).
+* `fetch` answers at most **500** messages per call — a range with more →
+  `ERR_INVALID` before anything is fetched. Entry: `{ uid, flags[], size,
+  internalDate (ms), envelope: { date (ms), subject, from[], sender[],
+  replyTo[], to[], cc[], bcc[], inReplyTo, messageId }, headers: { name: value
+  } (lower-case names, the first of each, unfolded and decoded),
+  bodyStructure, modseq? }` — addresses `{ name, address }`. Only the asked
+  fields are there. `changedSince` needs CONDSTORE on the server.
+* `message` reads the whole message (≤ `maxBytes`, default 25 MB, at most
+  50 MB; larger → `ERR_MAIL_LIMIT`) with mailparser: `{ messageId, inReplyTo,
+  references[], date, subject, from, to[], cc[], bcc[], replyTo[], html | null,
+  text | null, listUnsubscribe: { url?, mail? } | null, autoSubmitted,
+  precedence, listId, attachments: [{ partId, filename, contentType, size,
+  contentId, inline, checksum (sha256 hex), mediaId | null }] }`. `html` is
+  the mail's own HTML — show it only after `gc.mail.sanitize`.
+  `attachments: 'media'` streams every attachment into the plugin's media
+  (unclaimed, 24 h); one that does not fit (quota, size) keeps `mediaId: null`
+  and names `mediaError`. An unknown UID → `ERR_INVALID`.
+* `download` streams one body part (`partId` as in `attachments` /
+  `bodyStructure`) into the media, decoded.
+* `search` takes imapflow's query object (`seen`, `unseen`, `flagged`,
+  `answered`, `deleted`, `draft`, `from`, `to`, `cc`, `bcc`, `subject`,
+  `body`, `text`, `since`, `before`, `on`, `sentSince`, `sentBefore`,
+  `sentOn` (ms or ISO), `larger`, `smaller`, `header: { name: value }`,
+  `or: [ … ]`, `not: { … }`, `uid`, `keyword`, `unKeyword`, `modseq`,
+  `emailId`, `threadId`, `gmraw`); other keys → `ERR_INVALID`, ≤ 16 KB.
+* `idle()` starts IDLE on the open mailbox. Every other command breaks it;
+  the host starts it again after the command for as long as the plugin
+  wants it (until `close`), renews it every 10 minutes and tries again 30 s
+  after a failure. New mail arrives as `exists`.
+* The host holds the session for the plugin **process**: all of them end
+  when the process ends (restart, crash, disable, update, uninstall), and the
+  host closes a session that had neither IDLE nor a command for 30 minutes
+  (`close` event). After a restart the plugin connects again.
+
+### SMTP and MIME
+
+```js
+const sent = await gc.mail.smtp.send({
+  host: 'mail.gmx.net', port: 587, security: 'starttls', auth: { user: 'ada@gmx.de', pass: '…' },
+  appendCopy: true,                                  // the sent mail as media, to append it to "Gesendet"
+  message: {
+    from: { name: 'Ada', address: 'ada@gmx.de' }, to: [{ name: 'Bo', address: 'bo@web.de' }], cc: [], bcc: ['me@gmx.de'],
+    replyTo: 'ada@gmx.de', subject: 'Termin', html: '<p>Hallo</p>', text: 'Hallo',
+    inReplyTo: '<m1@web.de>', references: ['<m0@web.de>', '<m1@web.de>'],
+    headers: { 'X-GC-Mail': '1', 'List-Unsubscribe': '<mailto:u@example.com>' },
+    attachments: [{ mediaId, filename: 'Rechnung.pdf', contentType: 'application/pdf' }, { mediaId: logoId, filename: 'logo.png', cid: 'logo@ada' }],
+    date: Date.now(),
+  },
+});
+// { messageId: '<…@gmx.de>', accepted: ['bo@web.de', 'me@gmx.de'], rejected: [], raw: { mediaId, bytes } | null }
+
+const draft = await gc.mail.compose(message);       // { mediaId, bytes, messageId } — RFC 822 (drafts, Graph MIME)
+const parsed = await gc.mail.parse(mediaId, { attachments: 'meta' });   // like s.message (e.g. Graph $value)
+```
+
+* Addresses: `{ name, address }` or a plain address; ≤ 500 recipients.
+  `headers` only `X-…` and `List-Unsubscribe` (≤ 20), anything else →
+  `ERR_INVALID`; no line breaks anywhere. Attachments are the plugin's own
+  media files (≤ 100), read by the host (never a path or a URL); `cid` makes
+  an inline part. The written mail is at most **50 MB** (`ERR_MAIL_LIMIT`).
+  `Bcc` never appears in the mail, only in the envelope.
+* `accepted` / `rejected`: per recipient; when the server refuses every
+  recipient or the mail → `ERR_MAIL_REJECTED` with `serverText`.
+* 4 sends per plugin at a time (more wait).
+
+### HTML (`gc.mail.sanitize`)
+
+```js
+const { html, images, trackers } = await gc.mail.sanitize(parsed.html, { images: 'placeholder' });
+// html: '<p>Hallo<img src="gc-img:0" /></p>', images: ['https://news.example/logo.png'], trackers: 2
+```
+
+* Strict allowlist (sanitize-html): text formatting, lists, tables,
+  pictures, links. Gone: `script`, `iframe`, `object`, `embed`, `form`/inputs, `svg`, `math`, `meta`, `base`,
+  `link`, every event attribute (`on…`), `javascript:`/`vbscript:`/`data:`
+  links, `srcset`.
+* Links keep `http(s)`, `mailto`, `tel` and `#anchor`; others lose their
+  address. External links get `target="_blank" rel="noopener noreferrer"`.
+* CSS: `style` attributes and `<style>` blocks keep an allowlist of
+  properties (colours, fonts, spacing, borders, sizes, alignment, display …)
+  without `url()`, `expression`, escapes or `@import`; `<style>` keeps
+  `@media` rules only (no `@font-face`, `@import`, `@keyframes`).
+  `position`, `z-index` and the like never pass (no overlays).
+* External pictures become `src="gc-img:<n>"` — `n` is the index in
+  `images` (the same address once). The plugin shows them only when the
+  person wants (e.g. through `gc.http.fetchImage`). `cid:` pictures stay
+  `cid:`, small `data:image/(png|jpeg|gif|webp)` pictures stay. A mail's own
+  `gc-img:` is dropped.
+* Known tracking pixels are removed and counted in `trackers`: pictures of
+  1×1 pixels or less, hidden ones, known tracker hosts (Mailchimp, SendGrid,
+  HubSpot, Mailtrack, …) and paths (`/track/open`, `/wf/open`, `open.gif` …).
+* Input ≤ 10 MB (`ERR_INVALID`), at most 500 pictures.
+
+### Autoconfig (`gc.mail.autoconfig`)
+
+```js
+await gc.mail.autoconfig('ada@gmx.de');
+// { imap: { host: 'imap.gmx.net', port: 993, security: 'tls' }, smtp: { host: 'mail.gmx.net', port: 587, security: 'starttls' }, source: 'ispdb' }
+```
+
+In this order: Mozilla's ISPDB (`https://autoconfig.thunderbird.net/v1.1/<domain>`,
+`source: 'ispdb'`), the provider's own file
+(`https://autoconfig.<domain>/mail/config-v1.1.xml`,
+`https://<domain>/.well-known/autoconfig/mail/config-v1.1.xml`, `'autoconfig'`),
+DNS SRV (`_imaps._tcp` / `_imap._tcp`, `_submissions._tcp` /
+`_submission._tcp`, `'srv'`) and the ISPDB entry of the MX host's domain
+(`'mx'`). Only servers `gc.mail` may use count (the four ports, never plain
+text; TLS before STARTTLS). Every HTTP request is https on 443 and checked
+like `gc.http.fetch` (public addresses only, each redirect again); within
+25 s. Nothing found → `{ imap: null, smtp: null, source: null }`. A malformed
+address → `ERR_INVALID`; 120 lookups per plugin and hour (`ERR_RATE_LIMIT`).
+
+### Errors
+
+| code | when |
+|---|---|
+| `ERR_MAIL_AUTH` | the server refused the login; `serverText` (≤ 200 characters, user, password and token removed) |
+| `ERR_MAIL_NET` | not reachable, not found, timeout, TLS (certificate, no STARTTLS), the session is closed |
+| `ERR_MAIL_PROTOCOL` | anything else the server answered (`serverText` where there is one) |
+| `ERR_MAIL_REJECTED` | SMTP refused the mail or every recipient; `serverText` |
+| `ERR_MAIL_LIMIT` | `maxConnections` reached, a message over `maxBytes` / 50 MB |
+| `ERR_NETWORK_DENIED` | a port other than the four, an address that is not public |
+| `ERR_INVALID` | arguments, unknown session / UID / media id, more than 500 messages in a fetch |
+| `ERR_MAIL_DENIED` | no `permissions.mail` |
+| `ERR_MEDIA_DENIED` / `ERR_MEDIA_QUOTA` / `ERR_MEDIA_TOO_LARGE` | media needed but not declared / quota full / file too large |
+
+`serverText` comes as a property of the error (`e.serverText`).
+
 ## Cloud import (`permissions.cloudImport`)
 
 A person connects their own Google Drive or OneDrive in the plugin, browses it
@@ -2608,6 +2889,14 @@ provider documents its own.
   base64 image); the answer: JSON ≤ 16 KB; 15 s; **60 calls per hour**
   and calling plugin; an activity row `plugin_service` per call (ids and ok
   only, never the payload).
+* `maxPerHour` (since 1.216.0): a provider may give one of its services its
+  own budget — `"services": { "provides": { "suggest_folder": { "label": …,
+  "maxPerHour": 600 } } }` (60 … 3600). Calls of that service then count per
+  calling plugin against that number and no longer against the shared 60;
+  calls of the provider's other services keep the shared budget.
+  `ERR_RATE_LIMIT` names the limit. Older GateControls refuse the key
+  (`services.provides: invalid`), so a provider declaring it needs
+  `"gatecontrol": ">=1.216.0"`.
 * Errors of `call()`: `ERR_SERVICES_DENIED` (not listed), `ERR_SERVICE_UNAVAILABLE`
   (provider not installed / not running / no such service), `ERR_INVALID`
   (bad ids, user, payload over 512 KB, the caller's own plugin),
@@ -2684,7 +2973,9 @@ they are allowed.
 
 A crashed process is restarted with backoff (1 s … 5 min), a process that
 stops answering pings is killed and restarted, every process is stopped on
-disable/uninstall and when the server shuts down.
+disable/uninstall and when the server shuts down. What the host holds for a
+process — TCP sockets, WebSockets and, since 1.216.0, IMAP sessions
+(`gc.mail`) — ends with that process; a new process connects again.
 
 ## User interface
 

@@ -156,6 +156,8 @@ function permissionSummary(m, lang) {
     servicesProvided: m.services && m.services.provides ? Object.values(m.services.provides).map((x) => loc(x.label, lang)) : [],
     // since 1.214.0: requests to the AI provider set up in GateControl (gc.ai, docs/plugins.md "AI requests")
     ai: p.ai ? { purpose: loc(p.ai.purpose, lang), capabilities: p.ai.capabilities.slice() } : null,
+    // since 1.216.0: IMAP / SMTP to the mail servers people enter (gc.mail, docs/plugins.md "Mail") and what for
+    mail: p.mail ? { purpose: loc(p.mail.purpose, lang), maxConnections: p.mail.maxConnections } : null,
   };
 }
 

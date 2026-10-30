@@ -214,7 +214,7 @@ function cleanName(v) {
  * The core of writeFile; mediaAreas.js seals readable files fetched from a
  * storage target with it. → { sha } (hex SHA-256 of the plaintext).
  */
-async function sealInto(tmp, key, source, length, incomplete = null) {
+async function sealInto(tmp, key, source, length, incomplete = null, max = null) {
   const prefix = crypto.randomBytes(PREFIX_LEN);
   const hash = crypto.createHash('sha256');
   const fd = fs.openSync(tmp, 'wx', 0o600);
@@ -225,7 +225,9 @@ async function sealInto(tmp, key, source, length, incomplete = null) {
     fs.writeSync(fd, Buffer.concat([MAGIC, prefix]));
     for await (const chunk of source) {
       received += chunk.length;
-      if (received > length) throw new MediaError('length_mismatch', 400);
+      // length null (since 1.216.0, storeHostStream): the length is what arrives, at most `max`
+      if (length === null && received > max) throw new MediaError('too_large', 413);
+      if (length !== null && received > length) throw new MediaError('length_mismatch', 400);
       hash.update(chunk);
       pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
       // keep the last full chunk back: only the end of the stream tells it is the last
@@ -234,7 +236,8 @@ async function sealInto(tmp, key, source, length, incomplete = null) {
         pending = pending.subarray(CHUNK);
       }
     }
-    if (received !== length) throw new MediaError(incomplete ? incomplete() : 'length_mismatch', 400);
+    if (length === null && received < 1) throw new MediaError('empty', 400);
+    if (length !== null && received !== length) throw new MediaError(incomplete ? incomplete() : 'length_mismatch', 400);
     fs.writeSync(fd, sealChunk(key, prefix, index, true, pending));
     fs.fsyncSync(fd);
   } catch (e) {
@@ -244,7 +247,7 @@ async function sealInto(tmp, key, source, length, incomplete = null) {
     throw new MediaError('aborted', 400, e && e.message);
   }
   fs.closeSync(fd);
-  return { sha: hash.digest('hex') };
+  return { sha: hash.digest('hex'), bytes: received };
 }
 
 /**
@@ -255,13 +258,13 @@ async function sealInto(tmp, key, source, length, incomplete = null) {
  * `incomplete()` names the code when the source ended early.
  * @returns {{ mediaId, mime, bytes }}
  */
-async function writeFile(plugin, { source, length, mime, owner, name, incomplete, digest = null }) {
+async function writeFile(plugin, { source, length: declared, mime, owner, name, incomplete, digest = null, max = null }) {
   const id = crypto.randomBytes(16).toString('hex');
   const final = fileOf(plugin.id, id);
   fs.mkdirSync(path.dirname(final), { recursive: true, mode: 0o700 });
   const tmp = path.join(pluginDir(plugin.id), `.tmp-${id}`);
   const key = crypto.randomBytes(32);
-  const { sha } = await sealInto(tmp, key, source, length, incomplete);
+  const { sha, bytes: length } = await sealInto(tmp, key, source, declared, incomplete, max);
   if (digest && digest !== sha) {
     fs.rmSync(tmp, { force: true });
     throw new MediaError('digest_mismatch', 400);
@@ -377,6 +380,30 @@ async function storeStream(plugin, source, { length, mime, name = null, owner = 
   const clean = cleanName(name);
   const out = await writeFile(plugin, { source, length, mime: type, owner, name: clean });
   return { ...out, name: clean };
+}
+
+/**
+ * A file the host itself makes for the plugin from a stream of unknown length
+ * (gc.mail, since 1.216.0: attachments, raw mails, composed messages): no
+ * owner, unclaimed (24 h), at most min(`max`, media.maxBytes) bytes, the
+ * plugin's quota and the room on this server like storeStream(). The type is
+ * the one of the mail, not checked against media.types (a mail brings what it
+ * brings): kept when it looks like a MIME type, else application/octet-stream;
+ * types a browser runs are only ever served as downloads (send()).
+ * @returns {Promise<{ mediaId, mime, bytes, name, sha256 }>}
+ * @throws {MediaError} no_media, empty, too_large, quota_exceeded, aborted
+ */
+async function storeHostStream(plugin, source, { mime, name = null, max = null } = {}) {
+  const decl = declOf(plugin);
+  if (!decl) throw new MediaError('no_media', 404);
+  const limit = Math.min(Number.isSafeInteger(max) && max > 0 ? max : decl.maxBytes, decl.maxBytes);
+  if (usage(plugin.id).bytes >= quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
+  capacity(plugin, 1);
+  const type = baseType(mime);
+  const kept = /^[a-z][a-z0-9-]{0,30}\/[a-z0-9][a-z0-9.+_-]{0,99}$/.test(type) ? type : 'application/octet-stream';
+  const clean = cleanName(name);
+  const out = await writeFile(plugin, { source, length: null, max: limit, mime: kept, owner: null, name: clean });
+  return { ...out, name: clean, sha256: db().prepare('SELECT sha256 FROM plugin_media WHERE id = ?').get(out.mediaId).sha256 };
 }
 
 // ─── Resumable uploads (media.resumable, since 1.193.0) ─────
@@ -1205,7 +1232,7 @@ function importPlugin(pluginId, list) {
 
 module.exports = {
   MediaError, ID_RE, CHUNK, URL_PREFIX, URL_TTL_MIN_S, URL_TTL_MAX_S, UNCLAIMED_TTL_MS, QUOTA_SETTING, BACKUP_SETTING,
-  mediaRoot, fileOf, declOf, quotaOf, setQuota, usage, baseType, typeAllowed, store, storeBuffer, storeStream, storePart, upload, uploadStatus, UPLOAD_ID_RE, UPLOAD_TTL_MS,
+  mediaRoot, fileOf, declOf, quotaOf, setQuota, usage, baseType, typeAllowed, store, storeBuffer, storeStream, storeHostStream, storePart, upload, uploadStatus, UPLOAD_ID_RE, UPLOAD_TTL_MS,
   cleanName, contentDisposition, row, info, parseRange, readRange, send, mayRead, failure,
   claim, remove, removeAll, handOver, copy, COPY_TIMEOUT_MS, url, resolveToken, cleanup, backupEnabled, setBackupEnabled, exportPlugin, importPlugin, sealedSize,
   expectedDigest, pluginDir, forget, storeFromLink, contentLength, INLINE_RE,
