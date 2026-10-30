@@ -23,7 +23,7 @@ const de = require('../src/i18n/de.json');
 const en = require('../src/i18n/en.json');
 
 let agent, csrf, runtime, plugins, hostApi, netPolicy, mail, manifest, registry, fetchImage;
-let cert, imapTls, imapStarttls, imapPlain, imapBig, smtpTls, smtpStarttls, smtpPlain, web, webPort;
+let cert, imapTls, imapStarttls, imapPlain, imapBig, smtpTls, smtpStarttls, smtpPlain, smtpSlow, web, webPort;
 const API = '/api/v1/plugins';
 const PID = 'mail-test';
 const NONE = 'mail-none';
@@ -32,6 +32,7 @@ const clone = (v) => JSON.parse(JSON.stringify(v));
 const HOST = 'mail.test.example';
 const MAIL_PERM = { purpose: { de: 'Deine Postfächer lesen und Mails senden', en: 'Read your mailboxes and send mails' }, maxConnections: 2 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const BLOB = Buffer.concat([Buffer.from('%PDF-1.4\n'), crypto.randomBytes(1024 * 1024 - 2)]); // 1 MB + 7: not a multiple of 3
 
 const RAW = [
   'From: Ann Example <ann@example.com>',
@@ -94,9 +95,24 @@ before(async () => {
   smtpTls = smtpServer({ secure: true, cert, users, rejectRcpt: /reject/ });
   smtpStarttls = smtpServer({ starttls: true, cert, users });
   smtpPlain = smtpServer({ starttls: false, cert, users });
-  for (const s of [imapTls, imapStarttls, imapPlain, imapBig, smtpTls, smtpStarttls, smtpPlain]) s.port = await s.start();
+  smtpSlow = smtpServer({ secure: true, cert, users, greetingDelayMs: 400 });
+  for (const s of [imapTls, imapStarttls, imapPlain, imapBig, smtpTls, smtpStarttls, smtpPlain, smtpSlow]) s.port = await s.start();
   web = http.createServer((req, res) => {
     web.seen.push({ url: req.url, headers: req.headers });
+    if (req.url.startsWith('/up')) {
+      // gc.http.fetch with bodyMedia: what arrived, byte for byte
+      const chunks = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        web.uploads.push({ url: req.url, method: req.method, headers: req.headers, body: Buffer.concat(chunks) });
+        if (req.url === '/up-redirect') { res.writeHead(307, { location: '/up' }); res.end(); return; }
+        res.writeHead(201, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ got: Buffer.concat(chunks).length }));
+      });
+      return;
+    }
+    if (req.url === '/blob.pdf') { res.writeHead(200, { 'content-type': 'application/pdf' }); res.end(BLOB); return; }
+    if (req.url === '/big.pdf') { res.writeHead(200, { 'content-type': 'application/pdf' }); res.end(Buffer.alloc(4 * 1024 * 1024 + 1, 7)); return; }
     const png = Buffer.concat([Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'), Buffer.alloc(40, 1)]);
     if (req.url === '/pic.png') { res.writeHead(200, { 'content-type': 'image/png' }); res.end(png); return; }
     if (req.url === '/big.png') { res.writeHead(200, { 'content-type': 'image/png' }); res.end(Buffer.concat([png, Buffer.alloc(3 * 1024 * 1024)])); return; }
@@ -111,6 +127,7 @@ before(async () => {
     res.writeHead(404); res.end();
   });
   web.seen = [];
+  web.uploads = [];
   await new Promise((r) => web.listen(0, '127.0.0.1', r));
   webPort = web.address().port;
 
@@ -127,8 +144,8 @@ before(async () => {
   netPolicy._setTestPrivateForTest({ '127.0.0.1': 'public' });
   netPolicy._setReservedForTest(['10.8.0.0/24']);
   hostApi._lookup = async (h) => {
-    if (h === HOST || h === 'other.test.example' || h === 'img.test.example') return [{ address: '127.0.0.1', family: 4 }];
-    if (h === 'intranet.test.example') return [{ address: '192.168.1.10', family: 4 }];
+    if (h === HOST || h === 'other.test.example' || h === 'img.test.example' || h === 'up.cloud.example') return [{ address: '127.0.0.1', family: 4 }];
+    if (h === 'intranet.test.example' || h === 'lan.cloud.example') return [{ address: '192.168.1.10', family: 4 }];
     if (h === 'cgnat.test.example') return [{ address: '100.64.1.2', family: 4 }];
     if (h === 'mixed.test.example') return [{ address: '127.0.0.1', family: 4 }, { address: '10.0.0.3', family: 4 }];
     if (h === 'wg.test.example') return [{ address: '10.8.0.5', family: 4 }];
@@ -150,7 +167,7 @@ after(async () => {
   fetchImage._setPortsForTest(null);
   await plugins.stop();
   teardown();
-  for (const s of [imapTls, imapStarttls, imapPlain, imapBig, smtpTls, smtpStarttls, smtpPlain]) await s.stop();
+  for (const s of [imapTls, imapStarttls, imapPlain, imapBig, smtpTls, smtpStarttls, smtpPlain, smtpSlow]) await s.stop();
   await new Promise((r) => web.close(r));
 });
 
@@ -208,8 +225,8 @@ describe('plugin.json: permissions.mail, network.images, consent', () => {
   });
 
   it('without the permissions there is no gc.mail and no gc.http.fetchImage in the plugin process', async () => {
-    assert.deepEqual(await mailOp(NONE, { op: 'has' }), { ok: true, mail: 'undefined', connect: 'undefined', fetchImage: 'undefined' });
-    assert.deepEqual(await mailOp(PID, { op: 'has' }), { ok: true, mail: 'object', connect: 'function', fetchImage: 'function' });
+    assert.deepEqual(await mailOp(NONE, { op: 'has' }), { ok: true, mail: 'undefined', connect: 'undefined', fetchImage: 'undefined', verify: 'undefined', mediaBase64: '{{gc:media:base64}}' });
+    assert.deepEqual(await mailOp(PID, { op: 'has' }), { ok: true, mail: 'object', connect: 'function', fetchImage: 'function', verify: 'function', mediaBase64: '{{gc:media:base64}}' });
     // and the host refuses the calls themselves
     const none = registry.get(NONE);
     await assert.rejects(() => hostApi.handle(none, 'mail.imap.connect', { ...server(993), auth }, { emit() {} }), (e) => e.code === 'ERR_MAIL_DENIED');
@@ -498,6 +515,151 @@ describe('gc.mail.smtp.send', () => {
   it('XOAUTH2 with an access token', async () => {
     const r = await send({ auth: { user: 'bob@example.com', accessToken: 'good-token' }, message: { ...message, to: ['ann@example.com'] } });
     assert.equal(r.ok, true, JSON.stringify(r));
+  });
+});
+
+describe('gc.mail.smtp.verify (since 1.217.0)', () => {
+  const verify = (o) => gcOf(PID, 'mail.smtp.verify', { ...server(465), auth, ...o });
+
+  it('logs in over TLS and STARTTLS and leaves without sending', async () => {
+    const before = smtpTls.state.mails.length;
+    const n = smtpTls.state.commands.length;
+    const r = await verify({});
+    assert.deepEqual(r, { ok: true, result: { ok: true } });
+    const cmds = smtpTls.state.commands.slice(n).map((x) => x.cmd);
+    assert.ok(cmds.includes('AUTH') && cmds.includes('QUIT'), cmds.join(' '));
+    assert.equal(cmds.includes('MAIL'), false);
+    assert.equal(smtpTls.state.mails.length, before, 'nothing sent');
+    const m = smtpStarttls.state.commands.length;
+    assert.equal((await verify({ ...server(587) })).ok, true);
+    const tlsCmds = smtpStarttls.state.commands.slice(m);
+    assert.deepEqual(tlsCmds.filter((x) => !x.secure).map((x) => x.cmd), ['EHLO', 'STARTTLS'], 'AUTH only after STARTTLS');
+    assert.equal((await verify({ auth: { user: 'bob@example.com', accessToken: 'good-token' } })).ok, true, 'XOAUTH2');
+  });
+
+  it('the error codes of smtp.send: ERR_MAIL_AUTH (serverText without the password), ERR_MAIL_NET, ERR_NETWORK_DENIED, ERR_INVALID', async () => {
+    const a = await verify({ auth: { user: 'bob', pass: 'nope-nope' } });
+    assert.equal(a.code, 'ERR_MAIL_AUTH');
+    assert.match(a.serverText, /535/);
+    assert.doesNotMatch(a.serverText, /nope-nope/);
+    assert.equal((await verify({ auth: { user: 'bob@example.com', accessToken: 'bad-token' } })).code, 'ERR_MAIL_AUTH');
+    mail._setSeams({ net: { ports: { 587: smtpPlain.port }, ca: cert.cert } });
+    const n = await verify({ ...server(587) });
+    assert.equal(n.code, 'ERR_MAIL_NET', 'no STARTTLS → never in plain text');
+    assert.equal(smtpPlain.state.commands.some((x) => x.cmd === 'AUTH'), false);
+    mail._setSeams({ net: { ports: { 465: smtpTls.port }, ca: null } });
+    assert.equal((await verify({})).code, 'ERR_MAIL_NET', 'an unknown certificate');
+    assert.equal((await verify({ port: 25 })).code, 'ERR_NETWORK_DENIED');
+    assert.equal((await verify({ port: 993 })).code, 'ERR_NETWORK_DENIED', 'an IMAP port');
+    assert.equal((await verify({ host: 'intranet.test.example' })).code, 'ERR_NETWORK_DENIED');
+    assert.equal((await verify({ host: 'cgnat.test.example' })).code, 'ERR_NETWORK_DENIED');
+    assert.equal((await verify({ port: 465, security: 'starttls' })).code, 'ERR_INVALID');
+    assert.equal((await verify({ auth: { user: 'bob' } })).code, 'ERR_INVALID');
+    const none = registry.get(NONE);
+    await assert.rejects(() => hostApi.handle(none, 'mail.smtp.verify', { ...server(465), auth }), (e) => e.code === 'ERR_MAIL_DENIED');
+  });
+
+  it('counts towards the SMTP operations a plugin may run at the same time (4)', async () => {
+    mail._setSeams({ net: { ports: { 465: smtpSlow.port }, ca: cert.cert } });
+    smtpSlow.state.maxOpen = 0;
+    const all = await Promise.all(Array.from({ length: 6 }, () => verify({})));
+    assert.ok(all.every((r) => r.ok), JSON.stringify(all));
+    assert.ok(smtpSlow.state.maxOpen <= 4 && smtpSlow.state.maxOpen >= 2, `at most 4 at a time, saw ${smtpSlow.state.maxOpen}`);
+    assert.ok(mail.callTimeout('mail.smtp.verify', { timeoutMs: 30000 }) > 60000);
+  });
+});
+
+describe('gc.http.fetch with bodyMedia (since 1.217.0)', () => {
+  const URL_UP = () => `http://up.cloud.example:${webPort}/up`;
+  const fetch = (url, opts) => gcOf(PID, 'http.fetch', url, opts);
+  let blobId, bigId;
+
+  before(async () => {
+    const b = await gcOf(PID, 'media.fetch', `http://up.cloud.example:${webPort}/blob.pdf`, {});
+    assert.equal(b.ok, true, JSON.stringify(b));
+    blobId = b.result.mediaId;
+    const g = await gcOf(PID, 'media.fetch', `http://up.cloud.example:${webPort}/big.pdf`, {});
+    assert.equal(g.ok, true, JSON.stringify(g));
+    bigId = g.result.mediaId;
+  });
+
+  const last = () => web.uploads[web.uploads.length - 1];
+
+  it('raw: the whole file, streamed, Content-Length and the media type', async () => {
+    const r = await fetch(URL_UP(), { method: 'PUT', headers: { 'X-Test': '1', 'Content-Length': '5' }, bodyMedia: { mediaId: blobId } });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.result.status, 201);
+    assert.deepEqual(JSON.parse(r.result.body), { got: BLOB.length });
+    const u = last();
+    assert.equal(u.method, 'PUT');
+    assert.ok(u.body.equals(BLOB));
+    assert.equal(u.headers['content-length'], String(BLOB.length));
+    assert.equal(u.headers['content-type'], 'application/pdf');
+    assert.equal(u.headers['x-test'], '1');
+    assert.equal(u.headers['content-range'], undefined);
+  });
+
+  it('raw ranges: Content-Range by the host (the plugin\'s own is dropped), the pieces make the file', async () => {
+    const size = BLOB.length;
+    const step = 327680;
+    const parts = [];
+    for (let start = 0; start < size; start += step) {
+      const end = Math.min(size, start + step) - 1;
+      const r = await fetch(URL_UP(), { method: 'PUT', headers: { 'content-range': 'bytes 0-0/1', 'content-type': 'application/octet-stream' }, bodyMedia: { mediaId: blobId, start, end } });
+      assert.equal(r.ok, true, JSON.stringify(r));
+      const u = last();
+      assert.equal(u.headers['content-range'], `bytes ${start}-${end}/${size}`);
+      assert.equal(u.headers['content-length'], String(end - start + 1));
+      assert.equal(u.headers['content-type'], 'application/octet-stream');
+      parts.push(u.body);
+    }
+    assert.ok(Buffer.concat(parts).equals(BLOB));
+    const tail = await fetch(URL_UP(), { method: 'PUT', bodyMedia: { mediaId: blobId, start: size - 3 } });
+    assert.equal(last().headers['content-range'], `bytes ${size - 3}-${size - 1}/${size}`, JSON.stringify(tail));
+    assert.ok(last().body.equals(BLOB.subarray(size - 3)));
+  });
+
+  it('base64 into the one json value gc.http.MEDIA_BASE64 (Graph contentBytes), or alone as text/plain', async () => {
+    const json = { '@odata.type': '#microsoft.graph.fileAttachment', name: 'a "b" {{gc:media:base64}}.pdf', contentType: 'application/pdf', contentBytes: '{{gc:media:base64}}', list: [1, null, true] };
+    const r = await fetch(URL_UP(), { method: 'POST', headers: { authorization: 'Bearer t' }, json, bodyMedia: { mediaId: blobId } });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const u = last();
+    assert.equal(u.headers['content-type'], 'application/json');
+    assert.equal(u.headers['content-length'], String(u.body.length));
+    const got = JSON.parse(u.body.toString('utf8'));
+    assert.equal(got.name, json.name, 'a string merely containing the placeholder stays');
+    assert.deepEqual(got.list, [1, null, true]);
+    assert.ok(Buffer.from(got.contentBytes, 'base64').equals(BLOB));
+    const plain = await fetch(URL_UP(), { method: 'POST', bodyMedia: { mediaId: blobId, encoding: 'base64' } });
+    assert.equal(plain.ok, true, JSON.stringify(plain));
+    assert.equal(last().headers['content-type'], 'text/plain');
+    assert.equal(last().body.toString('latin1'), BLOB.toString('base64'));
+  });
+
+  it('checks: like http.fetch, own media only, the sizes, exactly one placeholder, no redirect', async () => {
+    const code = async (url, opts) => (await fetch(url, opts)).code;
+    const bm = { mediaId: blobId };
+    assert.equal(await code(`http://lan.cloud.example:${webPort}/up`, { method: 'PUT', bodyMedia: bm }), 'ERR_NET_DENIED', 'a private address');
+    assert.equal(await code(`http://up.elsewhere.example:${webPort}/up`, { method: 'PUT', bodyMedia: bm }), 'ERR_NET_DENIED', 'not in plugin.json');
+    assert.equal(await code(URL_UP(), { method: 'GET', bodyMedia: bm }), 'ERR_INVALID');
+    assert.equal(await code(URL_UP(), { method: 'PUT', body: 'x', bodyMedia: bm }), 'ERR_INVALID');
+    assert.equal(await code(URL_UP(), { method: 'PUT', bodyMedia: { mediaId: 'f'.repeat(32) } }), 'ERR_INVALID', 'unknown media');
+    assert.equal(await code(URL_UP(), { method: 'PUT', bodyMedia: { mediaId: blobId, start: 5, end: BLOB.length } }), 'ERR_INVALID', 'beyond the end');
+    assert.equal(await code(URL_UP(), { method: 'PUT', bodyMedia: { mediaId: blobId, start: 9, end: 3 } }), 'ERR_INVALID');
+    assert.equal(await code(URL_UP(), { method: 'PUT', bodyMedia: { mediaId: blobId, encoding: 'hex' } }), 'ERR_INVALID');
+    assert.equal(await code(URL_UP(), { method: 'POST', json: { a: 1 }, bodyMedia: bm }), 'ERR_INVALID', 'no placeholder');
+    assert.equal(await code(URL_UP(), { method: 'POST', json: { a: '{{gc:media:base64}}', b: ['{{gc:media:base64}}'] }, bodyMedia: bm }), 'ERR_INVALID', 'two placeholders');
+    assert.equal(await code(URL_UP(), { method: 'POST', json: { a: '{{gc:media:base64}}' }, bodyMedia: { mediaId: blobId, start: 0, end: 9 } }), 'ERR_INVALID', 'ranges raw only');
+    assert.equal(await code(URL_UP(), { method: 'POST', json: { a: '{{gc:media:base64}}' }, bodyMedia: { mediaId: bigId } }), 'ERR_MEDIA_TOO_LARGE', 'base64 ≤ 4 MB');
+    const big = await fetch(URL_UP(), { method: 'PUT', bodyMedia: { mediaId: bigId } });
+    assert.equal(big.ok, true, 'raw larger files are fine');
+    const n = web.uploads.length;
+    const red = await fetch(`http://up.cloud.example:${webPort}/up-redirect`, { method: 'PUT', redirect: 'follow', bodyMedia: bm });
+    assert.equal(red.result.status, 307, 'a streamed body never follows a redirect');
+    assert.equal(web.uploads.length, n + 1);
+    await assert.rejects(() => hostApi.handle(registry.get(NONE), 'http.fetch', { url: URL_UP(), opts: { method: 'PUT', bodyMedia: bm } }), (e) => e.code === 'ERR_MEDIA_DENIED');
+    assert.ok(hostApi.callTimeout('http.fetch', { opts: { bodyMedia: bm } }) >= 10 * 60 * 1000);
+    assert.ok(hostApi.callTimeout('http.fetch', { opts: {} }) < 10 * 60 * 1000);
   });
 });
 

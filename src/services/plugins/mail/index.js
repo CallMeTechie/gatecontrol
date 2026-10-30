@@ -31,7 +31,8 @@ const FETCH_MAX = 500;
 const IDLE_UNUSED_MS = 30 * 60 * 1000;    // a session without IDLE and without commands this long is closed
 const IDLE_RESTART_MS = 10 * 60 * 1000;   // IDLE is renewed this often (servers drop it after ~30 min)
 const IDLE_RETRY_MS = 30 * 1000;          // after a failed IDLE
-const SMTP_PARALLEL = 4;                  // sends per plugin at the same time (more wait)
+const SMTP_PARALLEL = 4;                  // sends and verifies per plugin at the same time (more wait)
+const SMTP_VERIFY_SOCKET_MS = 60 * 1000;  // smtp.verify: the server's answers after connecting
 const AUTOCONFIG_PER_HOUR = 120;
 const SEARCH_KEYS = new Set(['all', 'seen', 'unseen', 'flagged', 'unflagged', 'answered', 'unanswered', 'deleted', 'undeleted', 'draft',
   'undraft', 'new', 'old', 'recent', 'from', 'to', 'cc', 'bcc', 'subject', 'body', 'text', 'since', 'before', 'on', 'sentSince',
@@ -563,6 +564,27 @@ async function smtpSlot(pluginId) {
   return () => { st.running--; const next = st.waiting.shift(); if (next) next(); };
 }
 
+/** A nodemailer transport to the checked SMTP server: TLS verified, STARTTLS required on 587, no files or URLs. */
+function smtpTransport(ep, auth, timeoutMs, socketTimeoutMs) {
+  const nodemailer = require('nodemailer');
+  return nodemailer.createTransport({
+    host: ep.address,
+    port: ep.connectPort,
+    secure: ep.security === 'tls',
+    requireTLS: ep.security === 'starttls',
+    ...(require('../netPolicy').isIpLiteral(ep.host) ? {} : { servername: ep.host }),
+    tls: net.tlsOptions(ep.host),
+    auth: auth.pass != null ? { user: auth.user, pass: auth.pass } : { type: 'OAuth2', user: auth.user, accessToken: auth.accessToken },
+    connectionTimeout: timeoutMs,
+    greetingTimeout: Math.min(timeoutMs, 30000),
+    socketTimeout: socketTimeoutMs,
+    logger: false,
+    debug: false,
+    disableFileAccess: true,
+    disableUrlAccess: true,
+  });
+}
+
 /**
  * gc.mail.smtp.send({ host, port, security, auth, message, appendCopy, timeoutMs })
  * → { messageId, accepted, rejected, raw: { mediaId, bytes } | null }
@@ -578,23 +600,7 @@ async function smtpSend(plugin, args, opts = {}) {
   const { raw, messageId, envelope } = await mime.compose(plugin, a.message);
   need(envelope.to.length, 'ERR_INVALID', 'the message has no recipient');
   const release = await smtpSlot(plugin.id);
-  const nodemailer = require('nodemailer');
-  const transport = nodemailer.createTransport({
-    host: ep.address,
-    port: ep.connectPort,
-    secure: ep.security === 'tls',
-    requireTLS: ep.security === 'starttls',
-    ...(require('../netPolicy').isIpLiteral(ep.host) ? {} : { servername: ep.host }),
-    tls: net.tlsOptions(ep.host),
-    auth: auth.pass != null ? { user: auth.user, pass: auth.pass } : { type: 'OAuth2', user: auth.user, accessToken: auth.accessToken },
-    connectionTimeout: timeoutMs,
-    greetingTimeout: Math.min(timeoutMs, 30000),
-    socketTimeout: 5 * 60 * 1000,
-    logger: false,
-    debug: false,
-    disableFileAccess: true,
-    disableUrlAccess: true,
-  });
+  const transport = smtpTransport(ep, auth, timeoutMs, 5 * 60 * 1000);
   let info;
   try {
     info = await transport.sendMail({ envelope, raw });
@@ -615,6 +621,30 @@ async function smtpSend(plugin, args, opts = {}) {
     } catch (e) { throw mediaError(e) || e; }
   }
   return { messageId, accepted, rejected, raw: copy };
+}
+
+/**
+ * gc.mail.smtp.verify({ host, port, security, auth, timeoutMs }) → { ok: true } (since 1.217.0):
+ * connect, (STARTTLS,) log in and QUIT without sending — the same checks, errors and parallel
+ * limit as smtp.send, e.g. before an account is saved.
+ */
+async function smtpVerify(plugin, args, opts = {}) {
+  needMail(plugin);
+  const a = args && typeof args === 'object' ? args : {};
+  const auth = authOf(a.auth);
+  const timeoutMs = timeoutOf(a.timeoutMs, CONNECT_TIMEOUT_DEFAULT_MS, CONNECT_TIMEOUT_MAX_MS);
+  const ep = await net.endpoint('smtp', a, opts);
+  const release = await smtpSlot(plugin.id);
+  const transport = smtpTransport(ep, auth, timeoutMs, SMTP_VERIFY_SOCKET_MS);
+  try {
+    await transport.verify();
+  } catch (e) {
+    throw net.mapError(e, secretsOf(auth));
+  } finally {
+    try { transport.close(); } catch { /* closed */ }
+    release();
+  }
+  return { ok: true };
 }
 
 /** gc.mail.compose(message) → { mediaId, bytes, messageId } — RFC 822 as an unclaimed media file. */
@@ -668,6 +698,8 @@ function callTimeout(api, args) {
   const t = args && Number.isFinite(args.timeoutMs) ? Math.min(CONNECT_TIMEOUT_MAX_MS, args.timeoutMs) : CONNECT_TIMEOUT_DEFAULT_MS;
   if (api === 'mail.imap.connect') return t + 10000;
   if (api === 'mail.smtp.send') return 10 * 60 * 1000;
+  // connect (≤ timeoutMs), greeting, STARTTLS, AUTH, QUIT (≤ 60 s each) — and maybe a wait for a free SMTP slot
+  if (api === 'mail.smtp.verify') return t + 3 * 60 * 1000;
   if (api === 'mail.imap.call') return ['message', 'download', 'append', 'fetch', 'search', 'move', 'copy', 'expunge'].includes(args && args.op) ? 10 * 60 * 1000 : 2 * 60 * 1000;
   if (api === 'mail.autoconfig') return 40000;
   return 2 * 60 * 1000;
@@ -693,6 +725,6 @@ function _resetForTest() {
 }
 
 module.exports = {
-  imapConnect, imapCall, imapClose, smtpSend, compose, parse, sanitize: sanitizeCall, autoconfig: autoconfigCall, closeAll, callTimeout, stats,
+  imapConnect, imapCall, imapClose, smtpSend, smtpVerify, compose, parse, sanitize: sanitizeCall, autoconfig: autoconfigCall, closeAll, callTimeout, stats,
   permOf, MailError, FETCH_MAX, MESSAGE_MAX, IDLE_UNUSED_MS, _setSeams, _resetForTest, _sweep: sweep,
 };

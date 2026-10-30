@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Plugin-Host-API `gc.mail.smtp.verify({ host, port, security, auth, timeoutMs })` (für GateControl Mail 1.1): meldet sich am SMTP-Server an und beendet die Verbindung wieder, ohne zu senden → `{ ok: true }`. Gleiche Netz- und TLS-Regeln wie `smtp.send` (nur öffentliche Adressen, Ports 465/587, Zertifikat immer geprüft, STARTTLS Pflicht), gleiche Fehlercodes (`ERR_MAIL_AUTH` mit `serverText` ohne Zugangsdaten, `ERR_MAIL_NET`, `ERR_MAIL_PROTOCOL`, `ERR_NETWORK_DENIED`, `ERR_INVALID`); zählt zu den 4 gleichzeitigen SMTP-Vorgängen je Plugin. So prüft Mail beim Anlegen eines IMAP-Kontos auch den Versand.
+- `gc.http.fetch(url, { bodyMedia: { mediaId, start, end, encoding } })`: eine eigene Mediendatei des Plugins als Anfrage-Körper, vom Host aus dem Media-Speicher gestreamt (entschlüsselt unterwegs, nie durch den Plugin-Prozess). Roh bis 64 MB je Anfrage, mit `start`/`end` als Byte-Bereich samt `Content-Range` vom Host (Upload-Sitzungen in Stücken); base64 bis 4 MB – allein (`encoding: 'base64'`) oder an der Stelle des einen `json`-Werts `gc.http.MEDIA_BASE64` (z. B. `contentBytes` kleiner Graph-Anhänge). Prüfungen wie `gc.http.fetch` (Internet-Hosts aus plugin.json, nur öffentliche Adressen, gepinnt), keine Weiterleitungen, Zeitlimit bis 30 min. Damit sendet Mail mit Microsoft-Konten Dateien vom Gerät und aus anderen Mails.
+
+### Fixes
+- Plugin-Uploads mit gestreamtem Körper (`gc.net.uploadTarget`, `bodyMedia`) häuften beim Warten auf `drain` Listener an (MaxListenersExceededWarning bei großen Dateien); sie werden jetzt wieder entfernt.
+
 ## [1.216.0] — 2026-10-30
 
 ### Features

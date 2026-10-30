@@ -340,7 +340,14 @@ function pinnedRequest({ target, method = 'GET', headers, body, bodyStream = nul
       (async () => {
         for await (const part of bodyStream.read()) {
           if (req.destroyed) return;
-          if (!req.write(part)) await new Promise((r) => { req.once('drain', r); req.once('close', r); });
+          if (!req.write(part)) {
+            // wait for drain (or the end); drop both listeners again — a big body would pile them up
+            await new Promise((r) => {
+              const done = () => { req.off('drain', done); req.off('close', done); r(); };
+              req.once('drain', done);
+              req.once('close', done);
+            });
+          }
         }
         req.end();
       })().catch((e) => req.destroy(e));

@@ -79,10 +79,139 @@ async function httpFetch(plugin, args) {
   const url = args && args.url;
   need(typeof url === 'string' && url.length <= 8192, 'ERR_INVALID', 'invalid url');
   const o = (args && args.opts) || {};
+  if (o.bodyMedia != null) return httpFetchMedia(plugin, url, o);
   let res;
   try {
     res = await netPolicy.fetchWithPolicy(policyOf(plugin), url, { ...fetchOptions(o), ...netOpts() });
   } catch (e) { throw netError(e); }
+  return fetchResult(res, o);
+}
+
+// ─── gc.http.fetch with `bodyMedia` (since 1.217.0) ────
+//
+// A media file of the plugin as the request body, streamed by the host from
+// the media store (decrypted on the way, never through the plugin process) —
+// e.g. attachments for Microsoft Graph: small ones base64 inside the JSON
+// body (`contentBytes`), large ones raw in byte ranges to an upload session.
+// Same checks as http.fetch (internet hosts of plugin.json, public addresses,
+// pinned); a streamed body never follows a redirect.
+
+const BODY_MEDIA_PLACEHOLDER = '{{gc:media:base64}}';
+const BODY_MEDIA_MAX = 64 * 1024 * 1024;        // raw bytes in one request (the file or its range)
+const BODY_MEDIA_BASE64_MAX = 4 * 1024 * 1024;  // file bytes sent base64 (alone or inside `json`)
+const BODY_MEDIA_METHODS = new Set(['POST', 'PUT', 'PATCH']);
+
+/** The one string value of `v` equal to the placeholder, swapped for `sentinel` (a copy); count of them in `found`. */
+function swapPlaceholder(v, sentinel, found, depth = 0) {
+  need(depth <= 32, 'ERR_INVALID', 'json too deep');
+  if (typeof v === 'string') {
+    if (v !== BODY_MEDIA_PLACEHOLDER) return v;
+    found.n++;
+    return sentinel;
+  }
+  if (Array.isArray(v)) return v.map((x) => swapPlaceholder(x, sentinel, found, depth + 1));
+  if (v && typeof v === 'object') {
+    const out = {};
+    for (const [k, x] of Object.entries(v)) out[k] = swapPlaceholder(x, sentinel, found, depth + 1);
+    return out;
+  }
+  return v;
+}
+
+/** Base64 of a byte stream, chunk by chunk (3-byte groups; the rest waits for the next chunk). */
+async function* base64Stream(parts) {
+  let rest = Buffer.alloc(0);
+  for await (const p of parts) {
+    const b = rest.length ? Buffer.concat([rest, p]) : p;
+    const cut = b.length - (b.length % 3);
+    if (cut) yield Buffer.from(b.subarray(0, cut).toString('base64'), 'latin1');
+    rest = b.subarray(cut);
+  }
+  if (rest.length) yield Buffer.from(rest.toString('base64'), 'latin1');
+}
+
+/**
+ * The checked `bodyMedia` of http.fetch → { method, headers, bodyStream, timeoutMs }.
+ *   bodyMedia: { mediaId, start?, end?, encoding?: 'base64' }
+ *   - raw (default): the file's bytes; with start/end that byte range (inclusive) and
+ *     Content-Range: bytes start-end/size — ≤ 64 MB per request
+ *   - encoding 'base64', or `json` with exactly one string value gc.http.MEDIA_BASE64:
+ *     the whole file base64 (alone, text/plain, or in place of that value) — ≤ 4 MB of file
+ */
+function mediaBodyOptions(plugin, o) {
+  const bm = o.bodyMedia;
+  need(bm && typeof bm === 'object' && !Array.isArray(bm), 'ERR_INVALID', 'invalid bodyMedia');
+  const media = needMedia(plugin);
+  need(typeof bm.mediaId === 'string' && media.ID_RE.test(bm.mediaId), 'ERR_INVALID', 'invalid bodyMedia.mediaId');
+  need(o.body == null && o.form == null && o.bodyBase64 == null, 'ERR_INVALID', 'bodyMedia replaces body, form and bodyBase64');
+  need(bm.encoding == null || bm.encoding === 'base64', 'ERR_INVALID', "bodyMedia.encoding must be 'base64'");
+  const method = String(o.method || 'POST').toUpperCase();
+  need(BODY_MEDIA_METHODS.has(method), 'ERR_INVALID', 'bodyMedia needs POST, PUT or PATCH');
+  need(o.headers == null || (typeof o.headers === 'object' && !Array.isArray(o.headers)), 'ERR_INVALID', 'invalid headers');
+  need(o.timeoutMs == null || Number.isFinite(o.timeoutMs), 'ERR_INVALID', 'invalid timeoutMs');
+  const row = media.row(plugin.id, bm.mediaId);
+  need(row, 'ERR_INVALID', 'unknown media id');
+  const headers = {};
+  for (const [k, v] of Object.entries(o.headers || {})) if (!['content-range', 'content-length'].includes(k.toLowerCase())) headers[k] = v;
+  const hasType = Object.keys(headers).some((k) => k.toLowerCase() === 'content-type');
+  const ranged = bm.start != null || bm.end != null;
+  const base64 = bm.encoding === 'base64' || o.json !== undefined;
+  let bodyStream;
+  if (!base64) {
+    let start = 0;
+    let end = row.bytes - 1;
+    if (ranged) {
+      start = bm.start == null ? 0 : bm.start;
+      end = bm.end == null ? row.bytes - 1 : bm.end;
+      need(Number.isSafeInteger(start) && Number.isSafeInteger(end) && start >= 0 && start <= end && end < row.bytes, 'ERR_INVALID', 'invalid bodyMedia range');
+      headers['content-range'] = `bytes ${start}-${end}/${row.bytes}`;
+    }
+    const length = Math.max(0, end - start + 1);
+    need(length <= BODY_MEDIA_MAX, 'ERR_MEDIA_TOO_LARGE', `at most ${BODY_MEDIA_MAX} bytes per request — send the file in ranges`);
+    if (!hasType) headers['content-type'] = row.mime || 'application/octet-stream';
+    bodyStream = { length, read: () => (length ? media.readRange(row, start, end) : (async function* none() { /* empty file */ })()) };
+  } else {
+    need(!ranged, 'ERR_INVALID', 'a bodyMedia range is sent raw only (no encoding, no json)');
+    need(row.bytes <= BODY_MEDIA_BASE64_MAX, 'ERR_MEDIA_TOO_LARGE', `at most ${BODY_MEDIA_BASE64_MAX} bytes base64 — send larger files raw`);
+    const encodedLength = 4 * Math.ceil(row.bytes / 3);
+    const encoded = () => (row.bytes ? base64Stream(media.readRange(row, 0, row.bytes - 1)) : (async function* none() { /* empty file */ })());
+    let head = Buffer.alloc(0);
+    let tail = Buffer.alloc(0);
+    if (o.json !== undefined) {
+      const sentinel = `gc-media-${require('node:crypto').randomBytes(16).toString('hex')}`;
+      const found = { n: 0 };
+      const swapped = swapPlaceholder(o.json, sentinel, found);
+      need(found.n === 1, 'ERR_INVALID', `json needs exactly one value gc.http.MEDIA_BASE64 (${BODY_MEDIA_PLACEHOLDER})`);
+      const text = JSON.stringify(swapped);
+      need(Buffer.byteLength(text) <= LIMITS.fetchRequestBytes, 'ERR_INVALID', 'request body too large');
+      const at = text.indexOf(`"${sentinel}"`);
+      head = Buffer.from(text.slice(0, at + 1), 'utf8');
+      tail = Buffer.from(text.slice(at + 1 + sentinel.length), 'utf8');
+      if (!hasType) headers['content-type'] = 'application/json';
+    } else if (!hasType) headers['content-type'] = 'text/plain';
+    async function* body() {
+      if (head.length) yield head;
+      yield* encoded();
+      if (tail.length) yield tail;
+    }
+    bodyStream = { length: head.length + encodedLength + tail.length, read: body };
+  }
+  const timeoutMs = Math.max(1000, Math.min(UPLOAD_TIMEOUT_MAX_MS, o.timeoutMs == null ? UPLOAD_TIMEOUT_DEFAULT_MS : o.timeoutMs));
+  return { method, headers, bodyStream, timeoutMs };
+}
+
+async function httpFetchMedia(plugin, url, o) {
+  const m = mediaBodyOptions(plugin, o);
+  let res;
+  try {
+    res = await netPolicy.fetchWithPolicy(policyOf(plugin), url, {
+      method: m.method, headers: m.headers, bodyStream: m.bodyStream, timeoutMs: m.timeoutMs,
+      maxBytes: LIMITS.fetchResponseBytes, redirect: 'manual', ...netOpts(),
+    });
+  } catch (e) {
+    if (String((e && e.message) || e) === 'timeout') throw new HostApiError('ERR_TIMEOUT', 'the request did not finish in time');
+    throw netError(e);
+  }
   return fetchResult(res, o);
 }
 
@@ -1401,7 +1530,7 @@ async function targetUpload(plugin, args) {
 
 // ─── Mail (permissions.mail, services/plugins/mail/, since 1.216.0) ────
 //
-// gc.mail.imap.connect / session commands / smtp.send / compose / parse /
+// gc.mail.imap.connect / session commands / smtp.send / smtp.verify / compose / parse /
 // sanitize / autoconfig — docs/plugins.md "Mail". The host holds the IMAP
 // sessions; their events go to the plugin process as { t: 'mail', id, ev, data }.
 
@@ -1414,6 +1543,7 @@ async function mailCall(plugin, api, args, ctx) {
       case 'mail.imap.call': return await mail.imapCall(plugin, args);
       case 'mail.imap.close': return mail.imapClose(plugin, args);
       case 'mail.smtp.send': return await mail.smtpSend(plugin, args, o);
+      case 'mail.smtp.verify': return await mail.smtpVerify(plugin, args, o);
       case 'mail.compose': return await mail.compose(plugin, args);
       case 'mail.parse': return await mail.parse(plugin, args);
       case 'mail.sanitize': return mail.sanitize(plugin, args);
@@ -1462,7 +1592,8 @@ async function aiCall(plugin, op, args) {
  * longer for the calls moving big files (since 1.193.0).
  */
 function callTimeout(api, args) {
-  if (api === 'target.upload') {
+  // gc.http.fetch with bodyMedia (since 1.217.0): a file streamed out, like target.upload
+  if (api === 'target.upload' || (api === 'http.fetch' && args && args.opts && args.opts.bodyMedia != null)) {
     const o = args && args.opts;
     const t = o && Number.isFinite(o.timeoutMs) ? o.timeoutMs : UPLOAD_TIMEOUT_DEFAULT_MS;
     return Math.max(1000, Math.min(UPLOAD_TIMEOUT_MAX_MS, t)) + 5000;
@@ -1754,7 +1885,7 @@ async function handle(plugin, api, args, ctx) {
   switch (api) {
     case 'http.fetch': return httpFetch(plugin, args);
     case 'http.fetchImage': return fetchImageCall(plugin, args);
-    case 'mail.imap.connect': case 'mail.imap.call': case 'mail.imap.close': case 'mail.smtp.send':
+    case 'mail.imap.connect': case 'mail.imap.call': case 'mail.imap.close': case 'mail.smtp.send': case 'mail.smtp.verify':
     case 'mail.compose': case 'mail.parse': case 'mail.sanitize': case 'mail.autoconfig':
       return mailCall(plugin, api, args, ctx);
     case 'ws.connect': return wsConnect(plugin, args, ctx);
