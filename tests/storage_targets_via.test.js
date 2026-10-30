@@ -307,7 +307,7 @@ describe('validation, choices, in use, backup', () => {
     const web = r.body.routes.find((x) => x.label === 'nas-web.example.com');
     assert.equal(web.type, 'http');
     assert.equal(web.gateway, true);
-    assert.equal(r.body.routes.some((x) => x.label.startsWith('udp.example.com')), false);
+    assert.equal(r.body.routes.some((x) => x.label === 'udp.example.com:15009'), false);
   });
 
   it('changing `via` of a used target is refused (409 in_use); label and password may change; stored via kept without one', async () => {
@@ -315,7 +315,7 @@ describe('validation, choices, in use, backup', () => {
     const r2 = route({ route_type: 'l4', l4_protocol: 'tcp', domain: 'use2.example.com', l4_listen_port: '15011', target_ip: '127.0.0.1', target_port: plain.port });
     const t = await api('post', '/api/v1/storage-targets').send({ kind: 'webdav', label: 'Genutzt', url: `http://${NAS}/dav/use`, via: { kind: 'route', routeId: r1 }, username: 'gc', password: 'pw' }).expect(201);
     const id = t.body.target.id;
-    assert.match(t.body.target.display, /use1\.example\.com:15010/);
+    assert.equal(t.body.target.display, `http://${NAS}/dav/use · use1.example.com:15010`);
     targets().registerUsage((tid) => (tid === id ? [{ kind: 'area', plugin: 'gatecontrol-drive', area: 'family', label: 'Familie' }] : []));
     const url = `http://${NAS}/dav/use`;
     assert.equal((await api('patch', `/api/v1/storage-targets/${id}`).send({ label: 'G', url, via: { kind: 'route', routeId: r2 } })).status, 409);
