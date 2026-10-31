@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.219.1] — 2026-10-31
 
 ### Fixes
 - Speicherziele (WebDAV, S3): Ein in „Eigenes Zertifikat“ hinterlegtes Server-Zertifikat, das nicht selbst signiert ist, wurde abgelehnt („Zertifikat wird nicht anerkannt“, `UNABLE_TO_VERIFY_LEAF_SIGNATURE` bzw. mit mitgesendeter CA `SELF_SIGNED_CERT_IN_CHAIN`) – etwa `cert.pem` des DSM-Standardzertifikats einer Synology, das „Synology Inc. CA“ ausstellt. OpenSSL verlangte die Kette bis zu einer Wurzel; jetzt ist jedes hinterlegte Zertifikat ein Vertrauensanker (`allowPartialTrustChain`, nur wenn `tlsCa` gesetzt ist – die System-CAs gelten dann ohnehin nicht). Ein exakt hinterlegtes Zertifikat gilt weiter unter jedem Namen und jeder IP; was eine hinterlegte CA (auch eine Zwischen-CA) ausgestellt hat, muss zum Namen der URL passen. Abgelaufene oder noch nicht gültige Zertifikate werden auch gepinnt abgelehnt. `engines.node` ist jetzt `>=22.9`.
