@@ -696,6 +696,14 @@ chmod +x update.sh</pre>
         {%- if license.verification %}
         <div class="st-plan-meta st-lic-verify" id="st-lic-verify" data-verification="{{ license.verification }}">{{ t('st.lic.verify_' + license.verification) }}</div>
         {%- endif %}
+        {%- if license.verification == 'signed_offline' and license.lastCheck and not license.lastCheck.ok %}
+        {#- times in UTC here; settings.js shows them in the browser's local time #}
+        {%- set lcAt = (license.lastCheck.at | string).replace('T', ' ').slice(0, 16) + ' UTC' %}
+        {%- set lcNext = ((license.nextCheckAt | string).replace('T', ' ').slice(0, 16) + ' UTC') if license.nextCheckAt else '' %}
+        <div class="st-plan-meta st-lic-lastcheck" id="st-lic-lastcheck" data-reason="{{ license.lastCheck.reason }}" data-at="{{ license.lastCheck.at }}" data-next="{{ license.nextCheckAt or '' }}">
+          {{- t('st.lic.last_check_failed', { reason: license.lastCheck.reason, at: lcAt }) }}{% if lcNext %} {{ t('st.lic.next_check', { at: lcNext }) }}{% endif -%}
+        </div>
+        {%- endif %}
       </div>
       {%- if license.license_key_masked %}<button type="button" class="st-btn" id="st-lic-refresh">{{ t('st.lic.refresh') }}</button>{% endif %}
     </div>

@@ -17,7 +17,10 @@
 //              licence server, so two vendors cannot correlate installs).
 //              Checked on entry and daily; a server that cannot be reached
 //              keeps the last good answer for GRACE_MS (14 days, as the
-//              GateControl licence itself).
+//              GateControl licence itself). A check that failed for a
+//              network error, timeout, 5xx or 429 is retried after 5 min,
+//              15 min, 1 h, then hourly until it succeeds (utils/checkBackoff.js,
+//              as the GateControl licence); a 4xx waits for the daily check.
 //
 // The GateControl licence (and with it the first-party entitlements) is
 // validated once a day. A first-party plugin released after the last
@@ -29,6 +32,8 @@
 const crypto = require('node:crypto');
 const registry = require('./registry');
 const netPolicy = require('./netPolicy');
+const logger = require('../../utils/logger');
+const { backoffDelay, parseRetryAfter, retryableStatus, networkReason } = require('../../utils/checkBackoff');
 
 const DAY = 24 * 60 * 60 * 1000;
 const GRACE_MS = 14 * DAY;
@@ -43,6 +48,9 @@ const LICENSED_STATES = new Set(['valid', 'expiring', 'unreachable', 'not_requir
 const AUTO_REFRESH_GAP_MS = 10 * 60 * 1000;
 
 let transport = null; // test seam
+// third-party retries after a failed check: plugin id → { timer, at }
+const retries = new Map();
+let retriesOn = false; // startRetries() ran (plugins/index.js start)
 let refreshFn = null; // test seam
 let lastAutoRefresh = 0;
 
@@ -102,10 +110,14 @@ function firstPartyStatus(plugin, now) {
   if (!ent) return { ...base, state: 'missing' };
   if (ent.valid) {
     let state = expiryState(ent.expires_at, now);
-    const offline = (license.getLicenseInfo() || {}).verification === 'signed_offline';
+    const info = license.getLicenseInfo() || {};
+    const offline = info.verification === 'signed_offline';
     if (state !== 'expired' && offline) state = 'unreachable';
+    // why the licence server counts as unreachable, and when it is asked again
+    const check = state === 'unreachable' && info.lastCheck && !info.lastCheck.ok
+      ? { lastCheck: { ...info.lastCheck }, nextCheckAt: info.nextCheckAt || null } : {};
     return { ...base, state, expiresAt: ent.expires_at || null, updatesUntil: ent.updates_until || null, source: ent.source,
-      ...(ent.tier ? { tier: ent.tier, seats: ent.seats || null } : {}) };
+      ...(ent.tier ? { tier: ent.tier, seats: ent.seats || null } : {}), ...check };
   }
   const err = String(ent.error || '');
   let state = 'invalid';
@@ -125,6 +137,11 @@ function thirdPartyStatus(plugin, now) {
   try { keyMasked = mask(require('../../utils/crypto').decrypt(rec.keyEncrypted)); } catch { keyMasked = '••••'; }
   const st = rec.state || {};
   const out = { ...base, keyMasked, checkedAt: st.checked_at || null, lastOkAt: st.last_ok_at || null, expiresAt: st.expires_at || null };
+  if (st.error === 'unreachable') {
+    const r = retries.get(plugin.id);
+    out.lastCheck = { at: st.checked_at || null, ok: false, reason: st.reason || null };
+    out.nextCheckAt = r ? new Date(r.at).toISOString() : null;
+  }
   if (st.valid !== true) {
     if (st.error === 'invalid') return { ...out, state: 'invalid' };
     if (st.error === 'unreachable') return { ...out, state: 'unreachable_new' };
@@ -161,7 +178,7 @@ async function defaultTransport(url, body) {
   });
   let json = null;
   try { json = JSON.parse(res.body.toString('utf8')); } catch { json = null; }
-  return { status: res.status, json };
+  return { status: res.status, json, headers: res.headers || {} };
 }
 
 /**
@@ -177,8 +194,13 @@ async function checkThirdParty(plugin, now = Date.now()) {
   const prev = rec.state || {};
   const nowIso = new Date(now).toISOString();
   let next;
+  // a failed check: short reason (no URL, key or body), retry soon or not
+  let fail = null;
   try {
-    if (new URL(server).protocol !== 'https:') throw new Error('license server must use https');
+    if (new URL(server).protocol !== 'https:') {
+      fail = { reason: 'https required', retry: false };
+      throw new Error('license server must use https');
+    }
     const res = await (transport || defaultTransport)(server, { license_key: key, plugin_id: plugin.id, server_id: serverId(server) });
     const j = res && res.json;
     if (res && res.status === 200 && j && typeof j.valid === 'boolean') {
@@ -189,13 +211,55 @@ async function checkThirdParty(plugin, now = Date.now()) {
     } else if (res && res.status >= 400 && res.status < 500 && j && j.valid === false) {
       next = { valid: false, expires_at: null, checked_at: nowIso, last_ok_at: prev.last_ok_at || null, error: 'invalid' };
     } else {
+      const code = res && Number.isInteger(res.status) ? res.status : null;
+      fail = code === null || code === 200
+        ? { reason: 'malformed response', retry: true }
+        : { reason: `HTTP ${code}`, retry: retryableStatus(code), retryAfterMs: parseRetryAfter(res.headers && res.headers['retry-after'], now) };
       throw new Error('unexpected answer');
     }
-  } catch {
-    next = { valid: prev.valid === true, expires_at: prev.expires_at || null, checked_at: nowIso, last_ok_at: prev.last_ok_at || null, error: 'unreachable' };
+  } catch (err) {
+    if (!fail) {
+      fail = /address refused/.test(String(err && err.message))
+        ? { reason: 'address refused', retry: true }
+        : { reason: networkReason(err), retry: true };
+    }
+    next = { valid: prev.valid === true, expires_at: prev.expires_at || null, checked_at: nowIso, last_ok_at: prev.last_ok_at || null, error: 'unreachable',
+      reason: fail.reason, fails: (prev.error === 'unreachable' ? Number(prev.fails) || 0 : 0) + 1 };
   }
   registry.setLicense(plugin.id, { state: next });
+  // one warning per outage, one info when the server answers again
+  if (next.error === 'unreachable' && prev.error !== 'unreachable') {
+    logger.warn({ plugin: plugin.id, reason: next.reason }, 'plugin licence server unreachable');
+  } else if (next.error !== 'unreachable' && prev.error === 'unreachable') {
+    logger.info({ plugin: plugin.id }, 'plugin licence server reachable again');
+  }
+  planRetry(plugin.id, next.error === 'unreachable' && fail.retry ? backoffDelay(next.fails, fail.retryAfterMs) : null, now);
   return status(plugin, now);
+}
+
+/** (Re)plan the retry of a third-party check — `delay` null drops it. Never two timers for one plugin. */
+function planRetry(id, delay, now = Date.now()) {
+  const cur = retries.get(id);
+  if (cur) { clearTimeout(cur.timer); retries.delete(id); }
+  if (delay == null || !retriesOn) return;
+  const timer = setTimeout(() => {
+    retries.delete(id);
+    const p = registry.get(id);
+    if (!p) return; // uninstalled meanwhile
+    checkThirdParty(p)
+      .then(() => require('./index').reconcile())
+      .catch(() => { /* recorded as unreachable */ });
+  }, delay);
+  if (typeof timer.unref === 'function') timer.unref();
+  retries.set(id, { timer, at: now + delay });
+}
+
+/** Retries of third-party checks on (plugins/index.js start) / off (stop). */
+function startRetries() { retriesOn = true; }
+function stopRetries() {
+  retriesOn = false;
+  for (const r of retries.values()) clearTimeout(r.timer);
+  retries.clear();
 }
 
 /**
@@ -348,5 +412,6 @@ function _setTransportForTest(fn) {
 
 module.exports = {
   status, info, refresh, seatLimits, checkThirdParty, setKey, revalidateIfMissing, serverId, REFRESH_GAP_MS, kindOf, mask, maskMatches, validKey, GRACE_MS, LICENSED_STATES, AUTO_REFRESH_GAP_MS,
+  startRetries, stopRetries,
   _setTransportForTest, _setRefreshForTest,
 };

@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixes
+- Lizenz: Scheiterte die tägliche Online-Prüfung an einer kurzen Störung des Lizenzservers, blieb GateControl bis zur nächsten Prüfung 24 Stunden lang in der Offline-Kulanz („Lizenzserver nicht erreichbar, Offline-Kulanz aktiv“), und alle Plugins zeigten „Lizenzserver nicht erreichbar – läuft weiter“, obwohl der Server längst wieder lief. Jetzt wird eine Prüfung, die an Netzwerkfehler, Zeitüberschreitung, 5xx oder 429 scheiterte, nach 5 min, 15 min und 1 h wiederholt, danach stündlich bis zum Erfolg; danach gilt wieder der tägliche Takt. Eine Antwort mit 4xx (etwa eine Ablehnung) wird nicht früher wiederholt, `Retry-After` bei 429 wird beachtet. Es gibt nur einen Timer (mit `unref`); jede Prüfung – auch „Lizenz aktualisieren“ oder ein eingegebener Plugin-Schlüssel – plant ihn neu. Dasselbe gilt für die eigene tägliche Prüfung der Lizenzen von Drittanbieter-Plugins.
+- `GET /api/v1/license` liefert `lastCheck { at, ok, reason }` (kurzer Grund wie `HTTP 500`, `timeout`, `ENOTFOUND` – ohne Schlüssel und Antwortinhalt) und `nextCheckAt`. Die Lizenzseite zeigt in der Offline-Kulanz „Letzte Prüfung fehlgeschlagen: {Grund} – {Zeit}. Nächster Versuch {Zeit}.“ (DE/EN), die Plugin-Lizenz in „Lizenzserver nicht erreichbar“ denselben Grund. Das Log warnt einmal je Störung statt bei jedem Versuch und meldet einmal, wenn der Server wieder erreichbar ist.
+
 ## [1.219.2] — 2026-10-31
 
 ### Fixes

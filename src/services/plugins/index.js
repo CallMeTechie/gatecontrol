@@ -832,6 +832,8 @@ function start() {
   // licence states change in the background (daily licence refresh, expiry): look every 5 minutes
   timers.push(setInterval(() => reconcile().catch(() => {}), 5 * 60 * 1000));
   timers.push(setInterval(() => checkThirdPartyLicences().catch(() => {}), 24 * 60 * 60 * 1000));
+  // a third-party check that failed for a network error / 5xx / 429 is retried early (licensing.js)
+  licensing.startRetries();
   // hourly: unclaimed plugin media older than 24 h, the neutral line of chat notifications sent
   timers.push(setInterval(hourly, 60 * 60 * 1000));
   setTimeout(() => checkThirdPartyLicences().catch(() => {}), 60 * 1000).unref();
@@ -847,6 +849,7 @@ function start() {
 async function stop() {
   for (const t of timers) clearInterval(t);
   timers = [];
+  licensing.stopRetries();
   require('./updates').stop();
   require('./mediaAreas').stop();
   try { require('./groups').shutdown(); } catch { /* best-effort */ }
