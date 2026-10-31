@@ -5354,6 +5354,8 @@
   "plugins.perm.cloud_import_on": "Personen können ihr Google Drive oder OneDrive verbinden; das Plugin liest dann ihre Dateien und übernimmt die, die sie auswählen. Zweck: {{purpose}}",
   "plugins.perm.mail": "Mail",
   "plugins.perm.mail_v": "darf sich mit Mail-Servern im Internet verbinden (IMAP und SMTP, nur verschlüsselt) und in deinem Namen Mails senden – höchstens {{n}} Verbindungen gleichzeitig. Zweck: {{purpose}}",
+  "plugins.perm.mail_dav": "Kalender und Kontakte",
+  "plugins.perm.mail_dav_v": "darf außerdem Kalender und Adressbücher auf Servern im Internet lesen und ändern (CalDAV/CardDAV, nur verschlüsselt). Zweck: {{purpose}}",
   "plugins.perm.images": "Bilder aus Mails",
   "plugins.perm.images_on": "lädt Bilder aus Mails stellvertretend aus dem Internet (nur öffentliche Adressen, nur Bilder)",
   "plugins.pl.title": "Öffentliche Links",

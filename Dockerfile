@@ -57,7 +57,7 @@ RUN for attempt in 1 2 3; do \
 # The last line loads all three bindings — sharp makes a tiny JPEG — so a
 # missing or broken prebuild fails the build here instead of shipping a
 # broken image. It also loads the pure-JavaScript mail libraries of gc.mail
-# (imapflow, mailparser, sanitize-html, postcss; no install step).
+# (imapflow, mailparser, sanitize-html, postcss, saxes; no install step).
 FROM node:24-alpine AS builder
 WORKDIR /app
 ARG NODE_AUTH_TOKEN
@@ -66,7 +66,7 @@ RUN npm ci --omit=dev --ignore-scripts && \
     npm rebuild argon2 && \
     rm -f .npmrc && \
     rm -rf node_modules/@img/sharp-linux-* node_modules/@img/sharp-libvips-linux-* && \
-    node -e "new (require('better-sqlite3'))(':memory:').close(); require('argon2'); ['imapflow', 'mailparser', 'sanitize-html', 'postcss'].forEach((m) => require(m)); require('sharp')({ create: { width: 8, height: 8, channels: 3, background: '#fff' } }).jpeg().toBuffer().then((b) => { if (b[0] !== 0xff) process.exit(1); }, (e) => { console.error(e); process.exit(1); })"
+    node -e "new (require('better-sqlite3'))(':memory:').close(); require('argon2'); ['imapflow', 'mailparser', 'sanitize-html', 'postcss', 'saxes'].forEach((m) => require(m)); require('sharp')({ create: { width: 8, height: 8, channels: 3, background: '#fff' } }).jpeg().toBuffer().then((b) => { if (b[0] !== 0xff) process.exit(1); }, (e) => { console.error(e); process.exit(1); })"
 
 # Stage 3: Runtime — same Node major as the builder (native ABI must match).
 #

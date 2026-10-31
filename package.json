@@ -38,6 +38,7 @@
     "qrcode": "^1.5.4",
     "qrcode-generator": "^2.0.4",
     "sanitize-html": "2.18.1",
+    "saxes": "6.0.0",
     "sharp": "^0.35.5",
     "ws": "^8.22.0"
   },
