@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Stage 1: Caddy with L4 + ratelimit + mirror + WAF plugins
 #
 # WAF (docs/feature-waf.md): coraza-caddy registers http.handlers.waf and pulls
@@ -58,11 +59,19 @@ RUN for attempt in 1 2 3; do \
 # missing or broken prebuild fails the build here instead of shipping a
 # broken image. It also loads the pure-JavaScript mail libraries of gc.mail
 # (imapflow, mailparser, sanitize-html, postcss, saxes; no install step).
+#
+# The GitHub Packages token for @callmetechie/gatecontrol-config-hash (.npmrc
+# reads ${NODE_AUTH_TOKEN}) comes in as a BuildKit secret, never as ARG/ENV:
+# it is only set for this one RUN and ends up in no layer, no image history
+# and no build metadata. Build with
+#   docker build --secret id=npm_token,env=NODE_AUTH_TOKEN .
+# (`env=` on a secret mount needs the dockerfile frontend >= 1.10, hence the
+# syntax line at the top.)
 FROM node:24-alpine AS builder
 WORKDIR /app
-ARG NODE_AUTH_TOKEN
 COPY package*.json .npmrc ./
-RUN npm ci --omit=dev --ignore-scripts && \
+RUN --mount=type=secret,id=npm_token,env=NODE_AUTH_TOKEN,required=true \
+    npm ci --omit=dev --ignore-scripts && \
     npm rebuild argon2 && \
     rm -f .npmrc && \
     rm -rf node_modules/@img/sharp-linux-* node_modules/@img/sharp-libvips-linux-* && \

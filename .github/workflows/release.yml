@@ -204,8 +204,10 @@ jobs:
         with:
           context: .
           push: true
-          build-args: |
-            NODE_AUTH_TOKEN=${{ secrets.GH_PACKAGES_TOKEN }}
+          # BuildKit secret for `npm ci` (Dockerfile: RUN --mount=type=secret),
+          # not a build arg: it stays out of the image and the build metadata.
+          secrets: |
+            npm_token=${{ secrets.GH_PACKAGES_TOKEN }}
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.bump.outputs.new }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           # update.sh reads this label to name a rolled-back release in the dashboard.
           labels: org.opencontainers.image.version=${{ steps.bump.outputs.new }}
@@ -214,8 +216,9 @@ jobs:
       - name: Build image for offline package
         if: steps.check_tag.outputs.exists == 'false'
         env:
+          DOCKER_BUILDKIT: '1'
           NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
-        run: docker build --build-arg "NODE_AUTH_TOKEN=$NODE_AUTH_TOKEN" -t gatecontrol:latest .
+        run: docker build --secret id=npm_token,env=NODE_AUTH_TOKEN -t gatecontrol:latest .
 
       - name: Export image
         if: steps.check_tag.outputs.exists == 'false'

@@ -96,6 +96,23 @@ zwar komplett, nicht nur für dieses eine Paket.
 Ein GitHub-Token mit `read:packages` genügt. Die CI benutzt dafür das Secret
 `GH_PACKAGES_TOKEN`.
 
+### Docker-Image lokal bauen
+
+Auch das Image braucht das Token für `npm ci`. Es geht als BuildKit-Secret
+`npm_token` in den Build, nicht als `--build-arg` – so steht es in keiner
+Schicht, nicht in `docker history` und nicht in den Build-Metadaten:
+
+```bash
+export NODE_AUTH_TOKEN=…   # GitHub-Token mit read:packages
+docker build --secret id=npm_token,env=NODE_AUTH_TOKEN -t gatecontrol:dev .
+```
+
+Statt aus einer Umgebungsvariable liest BuildKit das Secret auch aus einer
+Datei: `--secret id=npm_token,src=$HOME/.gh-packages-token`. Nötig ist
+BuildKit (Standard ab Docker 23, sonst `DOCKER_BUILDKIT=1`); die
+Dockerfile-Syntax ≥ 1.10 holt die `# syntax=`-Zeile im Dockerfile selbst.
+`docker build --check .` prüft das Dockerfile ohne Build.
+
 ### Ohne Zugriff
 
 ```bash
