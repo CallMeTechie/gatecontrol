@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.219.0] — 2026-10-31
 
 ### Features
 - Plugin-Berechtigung `permissions.mail.dav { purpose }` mit Host-API `gc.mail.dav.request({ url, method, headers, body, auth, timeoutMs, maxBytes, parse })` (für Kalender und Kontakte in GateControl Mail): eine CalDAV/CardDAV-Anfrage an die Server, die Personen selbst eintragen (GMX, Web.de, eigene Domain, Nextcloud) → `{ status, url, headers, body, multistatus }`. Nur `https` auf 443/8443, jede Adresse öffentlich wie bei `gc.mail` (DNS gepinnt, Zertifikat immer gegen den Hostnamen geprüft, min. TLS 1.2), Methoden GET/HEAD/OPTIONS/PROPFIND/REPORT/PUT/DELETE, nur erlaubte Header (`depth`, `content-type`, `if-match`, `if-none-match`, `prefer`, `brief`, `accept`, `if-modified-since`), Zugangsdaten nur als `auth` (Basic oder Bearer, vom Host gebaut, nie in URL, Logs oder Fehlern), keine Cookies. Weiterleitungen folgt der Host nur innerhalb derselben Herkunft (höchstens 5, jede neu geprüft); eine fremde Herkunft kommt als 3xx mit `headers.location` zurück, ohne dass dort Zugangsdaten ankommen. Antwort ≤ `maxBytes` (Standard 5 MB, höchstens 20 MB, auch nach dem Entpacken), Körper ≤ 2 MB, alles in `timeoutMs` (≤ 60 s), 8 Anfragen je Plugin gleichzeitig. 207-Antworten liest der Host namespace-genau mit `saxes` (ohne DTD und eigene Entities, Tiefe ≤ 64, ≤ 10 000 Antworten; sonst `ERR_DAV_XML`); HTTP-Status wie 401/412 kommen als `status`, nicht als Fehler. Zustimmungstext „Kalender und Kontakte“ in Installationsdialog und Plugin-Karte (DE/EN, als heikel markiert). Neue Abhängigkeit: saxes.
