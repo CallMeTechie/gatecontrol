@@ -28,6 +28,9 @@ function injectLicense(req, res, next) {
     expires_at: info.expires_at || null,
     updates_until: info.updates_until || null,
     verification: info.verification || null,
+    // last online check (settings licence card: why the offline grace is on)
+    lastCheck: info.lastCheck || null,
+    nextCheckAt: info.nextCheckAt || null,
     activations: info.activations || null,
     max_activations: info.max_activations || null,
     hasFeature,

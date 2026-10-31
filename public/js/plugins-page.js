@@ -1849,6 +1849,13 @@
     box.appendChild(form);
   }
 
+  /** "Fehlgeschlagen: HTTP 500 – 31.10., 14:05. Nächster Versuch 31.10., 14:10." of a failed licence check. */
+  function lastCheckText(L) {
+    const c = L.lastCheck || {};
+    return t('plugins.lic.last_check_failed', { reason: c.reason || '—', at: fmtDateTime(c.at) || '—' })
+      + (L.nextCheckAt ? ' ' + t('plugins.lic.next_check', { at: fmtDateTime(L.nextCheckAt) }) : '');
+  }
+
   function panelLicense(p, panel) {
     const L = p.license || {};
     const box = card([h2(t('plugins.tab.license'), 'pgx-lic-h')], { 'aria-labelledby': 'pgx-lic-h' }, 'pgx-pad pgx-stack-card');
@@ -1857,6 +1864,8 @@
     const dl = el('dl', { class: 'pg-dl' });
     const row = (k, v, tone) => { dl.appendChild(el('dt', { text: k })); dl.appendChild(el('dd', { 'data-state': tone || null, text: v || '—' })); };
     row(t('plugins.lic.status'), t('plugins.lic.state.' + L.state), P.licenseTone(L.state));
+    // licence server unreachable: why, and when GateControl asks again
+    if (L.lastCheck && !L.lastCheck.ok) row(t('plugins.lic.last_check'), lastCheckText(L), 'warn');
     if (L.source === 'plan' || L.source === 'lifetime') row(t('plugins.lic.kind'), t('plugins.lic.source_' + L.source), 'good');
     row(t('plugins.lic.key'), L.keyMasked || (L.source === 'plan' ? t('plugins.lic.no_key_needed') : ''));
     row(t('plugins.lic.valid_until'), L.expiresAt ? P.fmtDate(L.expiresAt, lang) : (L.state === 'valid' ? t('plugins.lic.unlimited') : ''));
@@ -2079,7 +2088,7 @@
         return el('tr', { 'data-plugin': p.id, 'data-tone': warn ? (L.licensed ? 'warn' : 'crit') : null }, [
           el('td', null, [el('a', { class: 'pgx-tnm', href: U.manage(p.id, 'license') }, [plugIcon(p.id, p, 'sm'), el('b', { text: p.name })])]),
           el('td', null, [kind, sub ? el('small', { text: sub }) : null]),
-          el('td', null, [pill(stateText, P.licenseTone(L.state), true)]),
+          el('td', { title: L.lastCheck && !L.lastCheck.ok ? lastCheckText(L) : null }, [pill(stateText, P.licenseTone(L.state), true)]),
           el('td', { class: 'pgx-mono pgx-muted', text: L.keyMasked || '—' }),
           el('td', { class: 'pgx-right' }, [L.state === 'expiring' || L.state === 'expired' ? btn(t('plugins.x.renew_short'), { href: SHOP_URL, external: true, small: true, primary: true })
             : btn(t('plugins.x.manage_short'), { href: U.manage(p.id, 'license'), small: true })]),

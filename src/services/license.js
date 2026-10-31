@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
 const v2 = require('./licenseV2');
+const { backoffDelay, retryableStatus, networkReason, parseRetryAfter } = require('../utils/checkBackoff');
 
 const PRODUCT_SLUG = 'gatecontrol';
 
@@ -77,7 +78,8 @@ let cachedPlan = 'community';
 let cachedFeatures = { ...COMMUNITY_FALLBACK };
 let cachedLicenseInfo = null;
 let previousPlan = null;
-let refreshInterval = null;
+let refreshTimer = null;   // the one scheduled background check (daily, or a retry)
+let refreshActive = false; // startLicenseRefresh() ran
 let enforcingLimits = false;
 let unlicensed = true; // true wenn ohne Lizenzschlüssel gestartet
 // Feature keys the applied licence token actually carried (null = no token
@@ -205,7 +207,9 @@ async function validateOnline(fingerprint) {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    throw Object.assign(new Error(err.error || `HTTP ${res.status}`), {
+      http: res.status, retryAfterMs: parseRetryAfter(res.headers.get('retry-after')),
+    });
   }
 
   const data = await res.json();
@@ -218,7 +222,7 @@ async function validateOnline(fingerprint) {
   // 2026-04-26 (3 peers + 3 routes auto-disabled with COMMUNITY_FALLBACK
   // limits 3/1/0 even though the lifetime JWT was intact).
   if (!data || !data.license || typeof data.license.plan !== 'string' || !data.license.features || typeof data.license.features !== 'object') {
-    throw new Error('License server returned malformed response');
+    throw Object.assign(new Error('License server returned malformed response'), { malformed: true });
   }
 
   saveToken(data.token);
@@ -356,27 +360,39 @@ async function validateV2(fingerprint, { useCache }) {
       v2.markActive();
       const plugins = await verifyPlugins(res.data.plugins, fingerprint, { allowExpired: false });
       applyV2(r.payload, rec, plugins);
+      noteCheck({ ok: true });
       logger.info(`License valid (online, signed) — Plan: ${r.payload.plan}`);
       return 'applied';
     }
-    logger.warn(`License server returned a token that does not verify (${r.reason}) — ignored`);
+    if (failStreak === 0) logger.warn(`License server returned a token that does not verify (${r.reason}) — ignored`);
+    res.reason = `token ${r.reason}`;
   } else if (res.status === 'invalid') {
+    noteCheck({ ok: false, reason: 'HTTP 403', retry: false });
     dropV2License(res.message);
     return 'community';
   }
 
   // unavailable / transient / unverifiable token
-  if (!v2.isActive()) return 'v1';
+  if (!v2.isActive()) return 'v1'; // the v1 path records the check
 
+  // no HTTP status: network error, timeout, malformed body or a token that does not verify
+  const first = noteCheck({
+    ok: false,
+    reason: res.reason || res.status,
+    retry: !Number.isInteger(res.http) || retryableStatus(res.http),
+    retryAfterMs: res.retryAfterMs,
+  });
   const grace = await loadV2Token(fingerprint, { grace: true });
   if (grace) {
     const plugins = await verifyPlugins(grace.rec.plugins, fingerprint, { allowExpired: true });
+    const wasOffline = cachedLicenseInfo?.verification === 'signed_offline';
     applyV2(grace.payload, grace.rec, plugins, { offline: true });
-    logger.warn(`License server unreachable (${res.reason || res.status}), using cached signed token — Plan: ${grace.payload.plan}`);
+    // once per outage, not on every retry
+    if (first || !wasOffline) logger.warn(`License server unreachable (${res.reason || res.status}), using cached signed token — Plan: ${grace.payload.plan}`);
     return 'applied';
   }
+  if (first || cachedPlan !== 'community') logger.warn(`License server unreachable (${res.reason || res.status}) and offline grace exhausted — running in Community mode`);
   pluginEntitlements = [];
-  logger.warn(`License server unreachable (${res.reason || res.status}) and offline grace exhausted — running in Community mode`);
   return 'community';
 }
 
@@ -452,9 +468,11 @@ async function validateLicenseV1(fingerprint) {
   try {
     const result = await validateOnline(fingerprint);
     applyLicense(result);
+    noteCheck({ ok: true });
     logger.info(`License valid (online) — Plan: ${result.plan}`);
     return getLicenseInfo();
   } catch (err) {
+    noteCheck(v1Failure(err));
     // Fallback to expired token
     const fallback = loadCachedToken(fingerprint, true);
     if (fallback) {
@@ -535,7 +553,14 @@ async function refreshLicenseInBackground(fingerprint) {
     if (outcome === 'community') {
       setCommunityMode();
     } else if (outcome === 'v1') {
-      const result = await validateOnline(fp);
+      let result;
+      try {
+        result = await validateOnline(fp);
+      } catch (err) {
+        noteCheck(v1Failure(err));
+        throw err;
+      }
+      noteCheck({ ok: true });
       applyLicense(result);
     }
     if (previousPlan && previousPlan !== cachedPlan) {
@@ -548,19 +573,83 @@ async function refreshLicenseInBackground(fingerprint) {
 
 // Daily: a revoked licence is noticed within a day, and the offline grace
 // is re-evaluated even while the licence server stays unreachable.
+// A check that failed because the server could not be reached (network,
+// timeout, 5xx, 429) is retried after 5 min, 15 min, 1 h, then hourly
+// (utils/checkBackoff.js) — a short outage must not leave the install in
+// offline grace ("Lizenzserver nicht erreichbar") for a whole day. A 4xx is
+// the server's answer and waits for the next daily check. Every check — the
+// timer's, a manual refresh, a plugin key — reschedules the one timer.
 const ONE_DAY = 24 * 60 * 60 * 1000;
 
+let lastCheck = null;    // { at, ok, reason } of the last online check
+let failStreak = 0;      // retryable failures in a row
+let nextDelay = ONE_DAY; // delay the last check asked for
+let nextCheckAt = null;  // ms of the scheduled check (null: none scheduled)
+
+/** "HTTP 500" / "timeout" / "ENOTFOUND" of a failed v1 request — nothing from the body. */
+function v1Failure(err) {
+  if (err && Number.isInteger(err.http)) {
+    return { ok: false, reason: `HTTP ${err.http}`, retry: retryableStatus(err.http), retryAfterMs: err.retryAfterMs };
+  }
+  if (err && err.malformed) return { ok: false, reason: 'malformed response', retry: true };
+  return { ok: false, reason: networkReason(err), retry: true };
+}
+
+/**
+ * Record the result of an online check and plan the next one.
+ * @param {{ok:boolean, reason?:string, retry?:boolean, retryAfterMs?:number|null}} r
+ * @returns {boolean} true when a failure starts a new outage (log it), false otherwise
+ */
+function noteCheck(r) {
+  const was = failStreak;
+  lastCheck = { at: new Date().toISOString(), ok: !!r.ok, reason: r.ok ? null : String(r.reason || 'error').slice(0, 60) };
+  if (r.ok || !r.retry) {
+    if (r.ok && was > 0) logger.info(`License server reachable again after ${was} failed check(s)`);
+    failStreak = 0;
+    nextDelay = ONE_DAY;
+  } else {
+    failStreak += 1;
+    nextDelay = backoffDelay(failStreak, r.retryAfterMs);
+  }
+  if (refreshActive) scheduleRefresh(nextDelay);
+  return !r.ok && was === 0;
+}
+
+function scheduleRefresh(delay) {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  nextCheckAt = Date.now() + delay;
+  refreshTimer = setTimeout(runScheduledRefresh, delay);
+  if (typeof refreshTimer.unref === 'function') refreshTimer.unref();
+}
+
+async function runScheduledRefresh() {
+  refreshTimer = null;
+  nextCheckAt = null;
+  await refreshLicenseInBackground();
+  // a check that recorded nothing (no key any more, unexpected error) keeps the rhythm
+  if (refreshActive && !refreshTimer) scheduleRefresh(nextDelay);
+}
+
 function startLicenseRefresh() {
-  if (!config.license.key || refreshInterval) return;
-  refreshInterval = setInterval(() => refreshLicenseInBackground(), ONE_DAY);
-  if (typeof refreshInterval.unref === 'function') refreshInterval.unref();
+  if (!config.license.key || refreshActive) return;
+  refreshActive = true;
+  // a failed check at boot (before this ran) already asked for a retry
+  scheduleRefresh(nextDelay);
 }
 
 function stopLicenseRefresh() {
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
-    refreshInterval = null;
+  refreshActive = false;
+  nextCheckAt = null;
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
   }
+}
+
+function resetChecks() {
+  lastCheck = null;
+  failStreak = 0;
+  nextDelay = ONE_DAY;
 }
 
 // ─── Enforce Limits (Soft-Lock) ─────────────────
@@ -779,6 +868,10 @@ function getLicenseInfo() {
     activations: cachedLicenseInfo?.activations || null,
     max_activations: cachedLicenseInfo?.max_activations || null,
     license_key_masked: masked,
+    // last online check { at, ok, reason } — reason short ("HTTP 500",
+    // "timeout", "ENOTFOUND"), never a key or response content
+    lastCheck: lastCheck ? { ...lastCheck } : null,
+    nextCheckAt: nextCheckAt ? new Date(nextCheckAt).toISOString() : null,
     locked: lockedFeatures(),
     source: featureSources(),
   };
@@ -824,6 +917,7 @@ async function removeLicense() {
   v2.clearState();
   deleteToken();
   stopLicenseRefresh();
+  resetChecks();
   setCommunityMode();
   unlicensed = true;
 
@@ -875,7 +969,7 @@ module.exports = {
   _getHardwareFingerprint: getHardwareFingerprint,
   _overrideForTest,
   _applyLicenseForTest,
-  _resetV2ForTest: () => { v2._resetForTest(); pluginEntitlements = []; },
+  _resetV2ForTest: () => { v2._resetForTest(); pluginEntitlements = []; stopLicenseRefresh(); resetChecks(); },
   // Test seam: plugin entitlements as a verified v2 validation would leave them.
   _setPluginEntitlementsForTest: (list) => { if (process.env.NODE_ENV === 'test') pluginEntitlements = Array.isArray(list) ? list : []; },
   deactivateLicense,

@@ -4158,7 +4158,13 @@ pages, portal tab and sections). Only for those plugins' frames
   that the key is not needed. A key entered for the plugin is added to the plugin keys
   of the GateControl licence (`setPluginKeys`) and a licence refresh runs. The
   14-day offline grace of the GateControl licence applies.
-  The entitlements are those of the last validation, which runs once a day. A
+  The entitlements are those of the last validation, which runs once a day; a
+  validation that failed because the licence server could not be reached
+  (network error, timeout, 5xx, 429) is retried after 5 min, 15 min, 1 h, then
+  hourly until it succeeds (a 4xx waits for the next day, `Retry-After` of a
+  429 is honoured). In state `unreachable` the status carries `lastCheck
+  { at, ok, reason }` (reason short: `HTTP 500`, `timeout`, `ENOTFOUND`) and
+  `nextCheckAt`, as `GET /api/v1/license` does. A
   plugin released after it (a lifetime licence covers every new plugin, a plan
   its included ones) would be "fehlt" until the next day, so **installing or
   updating** a first-party plugin that needs a licence and has no entitlement
@@ -4181,7 +4187,10 @@ pages, portal tab and sections). Only for those plugins' frames
   server (HMAC of a random install secret and the server origin — not the
   hardware fingerprint, and different per licence server). Checked on entry
   and daily; when the server cannot be reached the last good answer counts for
-  14 days.
+  14 days. A check that failed for a network error, timeout, 5xx or 429 is
+  retried like the GateControl licence (5 min, 15 min, 1 h, then hourly;
+  `Retry-After` honoured); a 4xx without a licence answer waits for the daily
+  check. `lastCheck` / `nextCheckAt` as above.
 
 ### Tier and people (`gc.license.info`, since 1.206.0)
 

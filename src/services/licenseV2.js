@@ -15,6 +15,7 @@
 const crypto = require('crypto');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
+const { networkReason, parseRetryAfter } = require('../utils/checkBackoff');
 
 const ISSUER = 'callmetechie.de';
 const JWKS_REFETCH_MS = 60 * 60 * 1000;      // unknown kid → refetch at most hourly
@@ -275,11 +276,12 @@ function deviceName() {
  * POST /api/v2/licenses/validate.
  * @returns {Promise<{status:'ok', data:object}
  *   | {status:'invalid', message:string}
- *   | {status:'unavailable', http:number}
- *   | {status:'transient', reason:string}>}
+ *   | {status:'unavailable', http:number, reason:string, retryAfterMs:number|null}
+ *   | {status:'transient', reason:string, http?:number, retryAfterMs?:number|null}>}
  *   invalid     403 license_invalid — the server rejects the app licence
  *   unavailable 404/503 — v2 not deployed (or no signing key yet)
  *   transient   network error, 429, other 4xx/5xx, malformed body
+ *   `reason` is short ("HTTP 500", "timeout", "ENOTFOUND") — no URL, key or body.
  */
 async function validate({ licenseKey, fingerprint, pluginKeys, productSlug }) {
   let res;
@@ -297,7 +299,7 @@ async function validate({ licenseKey, fingerprint, pluginKeys, productSlug }) {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (err) {
-    return { status: 'transient', reason: 'network: ' + (err && err.message) };
+    return { status: 'transient', reason: networkReason(err) };
   }
 
   const body = await res.json().catch(() => null);
@@ -310,8 +312,9 @@ async function validate({ licenseKey, fingerprint, pluginKeys, productSlug }) {
   if (res.status === 403 && body && body.error === 'license_invalid') {
     return { status: 'invalid', message: typeof body.message === 'string' ? body.message : 'license_invalid' };
   }
-  if (res.status === 404 || res.status === 503) return { status: 'unavailable', http: res.status };
-  return { status: 'transient', reason: `HTTP ${res.status}` };
+  const retryAfterMs = parseRetryAfter(res.headers && res.headers.get ? res.headers.get('retry-after') : null);
+  if (res.status === 404 || res.status === 503) return { status: 'unavailable', http: res.status, reason: `HTTP ${res.status}`, retryAfterMs };
+  return { status: 'transient', reason: `HTTP ${res.status}`, http: res.status, retryAfterMs };
 }
 
 /**

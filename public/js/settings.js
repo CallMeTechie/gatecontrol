@@ -1988,6 +1988,13 @@
     busy(b, false);
     if (r.ok) { toast(t('license.activated')); setTimeout(() => location.reload(), 900); } else { msg.textContent = errText(r); msg.dataset.state = 'crit'; }
   });
+  // last failed online check (offline grace): the times in local time
+  const licLast = $('st-lic-lastcheck');
+  if (licLast) {
+    const d = licLast.dataset;
+    licLast.textContent = t('st.lic.last_check_failed', { reason: d.reason || '', at: O.fmtDateTime(d.at, lang) })
+      + (d.next ? ' ' + t('st.lic.next_check', { at: O.fmtDateTime(d.next, lang) }) : '');
+  }
   const licRefresh = $('st-lic-refresh');
   if (licRefresh) licRefresh.addEventListener('click', async () => {
     busy(licRefresh, true);
