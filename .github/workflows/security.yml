@@ -107,10 +107,37 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The npm token is a BuildKit secret (Dockerfile: RUN --mount=type=secret),
+      # never a build arg. --check fails the job on any Dockerfile lint warning
+      # (e.g. SecretsUsedInArgOrEnv) before the actual build.
+      - name: Check Dockerfile
+        run: docker build --check .
+        env:
+          DOCKER_BUILDKIT: '1'
+
       - name: Build Docker image
-        run: docker build --build-arg NODE_AUTH_TOKEN="$NODE_AUTH_TOKEN" -t gatecontrol:security-scan .
+        run: docker build --secret id=npm_token,env=NODE_AUTH_TOKEN -t gatecontrol:security-scan .
+        env:
+          DOCKER_BUILDKIT: '1'
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+
+      # The token must not end up in the image: neither in its history nor in
+      # its config (env, labels, ...). grep -q prints nothing, so the token is
+      # never written to the log.
+      - name: Verify the npm token is not in the image
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::GH_PACKAGES_TOKEN is not available to this job"
+            exit 1
+          fi
+          if docker history --no-trunc --format '{{.CreatedBy}}' gatecontrol:security-scan | grep -qF -- "$NODE_AUTH_TOKEN" ||
+             docker image inspect gatecontrol:security-scan | grep -qF -- "$NODE_AUTH_TOKEN"; then
+            echo "::error::The npm token was found in the image history or config"
+            exit 1
+          fi
+          echo "npm token found neither in the image history nor in its config"
 
       # WAF (docs/feature-waf.md): the image must ship Caddy with Coraza —
       # without http.handlers.waf the generator silently omits every WAF handler.

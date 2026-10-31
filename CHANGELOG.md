@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixes
+- Docker-Build: Das Token für das private Paket `@callmetechie/gatecontrol-config-hash` (GitHub Packages) kommt als BuildKit-Secret statt als `ARG NODE_AUTH_TOKEN` in den Build (`RUN --mount=type=secret,id=npm_token,env=NODE_AUTH_TOKEN` nur für `npm ci`). Es landet damit in keiner Schicht, nicht in der Image-Historie und nicht in Build-Metadaten wie Build-Records oder Provenance; der Build-Check meldet kein `SecretsUsedInArgOrEnv` mehr. Release- und Security-Workflow übergeben das Token per `secrets:` bzw. `--secret`; der Trivy-Job prüft zusätzlich mit `docker build --check` und sucht das Token in Historie und Konfiguration des Images. Lokal bauen: `NODE_AUTH_TOKEN=… docker build --secret id=npm_token,env=NODE_AUTH_TOKEN .` (siehe docs/testing-local.md).
+
 ## [1.219.1] — 2026-10-31
 
 ### Fixes
