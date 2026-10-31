@@ -31,6 +31,67 @@ host name (a NAS reached by its IP with a certificate for "synology"),
 anything signed by them is checked against the host name as usual. The admin
 API answers `tlsCaInfo: [{ subject, fingerprint, validTo }]`.
 
+### Certificates
+
+Every certificate in `tlsCa` is a trust anchor of its own, not only a
+self-signed root (`allowPartialTrustChain`, OpenSSL's
+`X509_V_FLAG_PARTIAL_CHAIN`, Node ≥ 22.9; since 1.219.1). So a leaf issued by
+a CA works pinned on its own: DSM's default certificate is issued by
+"Synology Inc. CA", and `cert.pem` of its export is enough — whether DSM sends
+the CA along or not. An intermediate CA works as the only anchor, too. Before
+1.219.1 such a leaf was refused (`UNABLE_TO_VERIFY_LEAF_SIGNATURE`, or
+`SELF_SIGNED_CERT_IN_CHAIN` with the CA in the chain): OpenSSL wanted the
+chain up to a self-signed root. Never paste `privkey.pem` — `tlsCa` takes
+certificates only.
+
+| Stored in `tlsCa` | Server presents | Result |
+|---|---|---|
+| the leaf (`cert.pem`) | exactly that leaf (with or without its CA) | trusted under any name or IP |
+| the leaf | another leaf of the same CA | `tls` (the CA is not trusted through the leaf) |
+| a CA (root or intermediate) | a leaf it issued for the URL's name | trusted |
+| a CA | a leaf it issued for another name, or reached by IP | `tls` (`ERR_TLS_CERT_ALTNAME_INVALID`) |
+| anything | a certificate not stored and not issued by a stored one | `tls` |
+| the leaf or its CA | the leaf, expired / not valid yet | `tls` (`CERT_HAS_EXPIRED` / `CERT_NOT_YET_VALID`) |
+
+The dates are checked for a pinned leaf as well — deliberately: a pinned
+certificate is no lifetime pass; when the NAS renews it (Let's Encrypt every
+60–90 days), the new one has to be stored (or its CA / the intermediate
+instead of the leaf).
+
+**Diagnosis.** A check that fails with `tls`, `not_tls` or `tls_handshake` (WebDAV, S3) reads the
+certificate the server presents (`net.inspectTls`): a second handshake to the
+same checked, pinned address — same `dial` (route, peer), same SNI, same
+trust (the target's `tlsCa` or the system CAs), verified as always (no
+`rejectUnauthorized: false`): the certificate is read when the handshake is
+done, before Node's verdict closes the socket (or it is closed right after a
+trusted one) — not one application byte, no credentials. `check.tls`:
+
+```
+{ reason, code, host, cert, chain: [cert …], hints: [...], trust: { leaf, chain } }
+cert: { subject, issuer, names (SAN), validFrom, validTo (ISO), fingerprint (SHA-256 hex), ca, selfSigned, pem }
+```
+
+`reason`: `name` (the certificate's names do not include the URL's host),
+`expired`, `not_yet_valid`, `self_signed`, `missing_intermediate` (the server
+sent its leaf only and its issuer is unknown — DSM without the
+intermediate; Node does not fetch it through AIA), `untrusted_ca` (a CA
+nobody trusts, also a self-signed one sent along), `not_stored` (a `tlsCa` is
+set and this certificate is neither one of them nor issued by one),
+`untrusted` (any other OpenSSL code, in `code`), `not_tls` / `handshake`
+(the probe got no certificate: no TLS on that port, or the handshake was
+aborted — `cert` null, `chain` empty, `code` the system's), `null` (trusted now).
+`chain`: the leaf first, then the certificates the server sent along (with
+the issuers the trust store knows). `hints`: `intermediate`
+(with `missing_intermediate`), `route_decrypts` (a certificate of Caddy's
+internal CA "Caddy Local Authority", or the WebDAV target's L4 route
+terminates TLS: GateControl answers instead of the NAS — set the route's TLS
+mode to pass through). `trust.leaf`: the page offers "Diesem Zertifikat
+vertrauen" (not for a date, not with `route_decrypts`); `trust.chain`:
+"Mitgelieferte Kette übernehmen" — the CA certificates the server sent (not
+for `name`). Both ask first in the dialog with names and fingerprints, then
+put the PEM into the field and check again; it is kept only when the
+administrator saves.
+
 ## Driver interface
 
 Every driver (`drivers/<kind>.js`, `create(config, secret)`) offers the same
@@ -59,7 +120,12 @@ d.ranges                                   // false for SMB: a range read fetche
   refresh is `auth` ("Konto neu verbinden"). Sealed blocks only, no `move`.
 
 Errors are `StorageError`s (`errors.js`) with `code`: `not_found`, `auth`,
-`denied`, `unreachable`, `tls` (certificate not trusted), `blocked_address`, `full`,
+`denied`, `unreachable`, `tls` (certificate not trusted), `not_tls` (the other side
+speaks no TLS: OpenSSL's "wrong version number", "packet length too long" … —
+an http port such as Synology's 5000/5005, HTTPS off in the WebDAV server),
+`tls_handshake` (a handshake aborted for another reason: an alert, no common
+protocol; both keep the system's code in `sys`, since 1.219.1 — before, every
+`ERR_SSL_*` counted as `tls`), `blocked_address`, `full`,
 `length_mismatch`, `protocol`, `failed`.
 
 * **S3**: requests signed with AWS Signature V4 (header auth), bodies streamed
@@ -144,7 +210,10 @@ backend, an HTTP route whose backend speaks the other scheme) is refused with
 `400 invalid`, `field: 'routeId'`.
 
 A self-signed NAS certificate for another name ("synology") works through a
-route like without one: store exactly that certificate as `tlsCa`.
+route like without one: store exactly that certificate as `tlsCa` — also DSM's
+default certificate, which is issued by "Synology Inc. CA" (its `cert.pem`).
+The route has to pass TLS through (TLS mode "Keiner" or "Durchleitung"); one
+that terminates TLS answers with Caddy's certificate (the check says so).
 
 Example — GateControl in a data centre, a Synology NAS (192.168.178.20, WebDAV
 Server with https on 5006) behind the gateway "Heim": an L4 route, TCP,
@@ -186,7 +255,9 @@ POST   /api/v1/storage-targets/:id/check    → { check, target }
 A view: `{ id, kind, label, config, secretSet: { <field>: boolean }, needsSecret,
 display, tlsCaInfo, encrypted, ranges, check: { at, ok, error, free, total } | null, usedBy:
 [{ kind, plugin, area, label }], createdAt, updatedAt }` — never a secret.
-`check`: `{ ok, error, message, free, total, steps: [{ step, ok }] }`.
+`check`: `{ ok, error, message, free, total, steps: [{ step, ok }] }`, after a `tls`,
+`not_tls` or `tls_handshake` failure also `tls` (see "Certificates") and, for the
+latter two, `sys` (e.g. `ERR_SSL_WRONG_VERSION_NUMBER`).
 
 Errors: `400 invalid` with `field` (the input field to fix), `404 not_found`,
 `409 in_use` (delete, or changing *where* a used target points — path, host,
@@ -237,7 +308,13 @@ folder, "in use", SigV4 against AWS's documented example, addresses, backup)
 and `tests/storage_targets_via.test.js` (WebDAV through stand-in L4, gateway
 and HTTP routes and a peer to a WebDAV server of the test: http and https
 with an own CA or a pinned self-signed certificate, the check, Range, COPY,
-MOVE, quota, validation, "in use", blocked ports, backup) run with every
+MOVE, quota, validation, "in use", blocked ports, backup, DSM's default
+certificate, the TLS diagnosis through a route) and
+`tests/storage_targets_tls.test.js` (`tlsCa`: a pinned leaf issued by a CA,
+by IP and any name, a CA with the right and the wrong name, an intermediate
+as anchor, certificates not stored, expired and not yet valid; `inspectTls`:
+every reason, no application byte, the address rules; no TLS on the port, a
+handshake aborted by an alert, the error mapping) run with every
 `npm test`. `tests/storage_targets_live.test.js` runs the
 drivers against real servers when they are named in the environment
 (`GC_TEST_S3_*`, `GC_TEST_WEBDAV_*`, `GC_TEST_SMB_*`, see the file); the CI job

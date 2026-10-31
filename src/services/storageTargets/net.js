@@ -6,7 +6,9 @@
 // bring its own trust anchor (`tlsCa`, PEM): the NAS's self-signed
 // certificate or a private CA. Then only that anchor is trusted, and a
 // server presenting exactly a pinned certificate needs no matching host name
-// (a NAS reached by its IP with a certificate for "synology").
+// (a NAS reached by its IP with a certificate for "synology"). Every stored
+// certificate is an anchor, also a leaf issued by a CA (DSM's default
+// certificate). inspectTls reads what a server presents when that fails.
 //
 // Allowed: public, private, carrier-grade NAT and loopback addresses — an
 // administrator sets these targets up, a MinIO next to GateControl is fine.
@@ -19,6 +21,7 @@ const https = require('node:https');
 const tls = require('node:tls');
 const crypto = require('node:crypto');
 const netPolicy = require('../plugins/netPolicy');
+const { handshakeError } = require('./errors');
 
 const ALLOWED_RANGES = new Set(['unicast', 'private', 'loopback', 'carrierGradeNat', 'uniqueLocal']);
 const IDLE_MS = 60 * 1000;
@@ -76,12 +79,23 @@ function parseCa(text) {
   });
 }
 
-/** TLS options for a target's own trust anchor: only it is trusted; a pinned leaf needs no matching name. */
+/**
+ * TLS options for a target's own trust anchor: only it is trusted; a pinned
+ * leaf needs no matching name. `allowPartialTrustChain` (OpenSSL
+ * X509_V_FLAG_PARTIAL_CHAIN): every stored certificate is an anchor, not
+ * only a self-signed root — the leaf of a Synology (issued by "Synology Inc.
+ * CA") or an intermediate CA. Without it OpenSSL wants the chain up to a
+ * root and refuses such a leaf (UNABLE_TO_VERIFY_LEAF_SIGNATURE,
+ * SELF_SIGNED_CERT_IN_CHAIN). Safe here: the system CAs are not in this
+ * context, the dates are still checked, and a leaf signed by a stored
+ * certificate still has to match the URL's name.
+ */
 function caOptions(tlsCa) {
   const certs = parseCa(tlsCa);
   const pinned = new Set(certs.map((c) => c.fingerprint));
   return {
     ca: certs.map((c) => c.pem),
+    allowPartialTrustChain: true,
     checkServerIdentity(host, cert) {
       const fp = cert && cert.fingerprint256 ? cert.fingerprint256.replace(/:/g, '').toLowerCase() : '';
       return pinned.has(fp) ? undefined : tls.checkServerIdentity(host, cert);
@@ -142,6 +156,101 @@ async function request(opts) {
   });
 }
 
+/** A certificate (DER) → what the check shows of it, with its PEM. */
+function certInfo(raw) {
+  const c = new crypto.X509Certificate(raw);
+  const names = String(c.subjectAltName || '').split(/,\s*/).filter(Boolean)
+    .map((n) => n.replace(/^DNS:/, '').replace(/^IP Address:/, '')).filter((n) => !/:/.test(n) || /^[0-9a-f:.]+$/i.test(n));
+  return {
+    subject: c.subject.replace(/\n/g, ', '), issuer: c.issuer.replace(/\n/g, ', '), names,
+    validFrom: new Date(c.validFrom).toISOString(), validTo: new Date(c.validTo).toISOString(), fingerprint: c.fingerprint256.replace(/:/g, '').toLowerCase(),
+    ca: !!c.ca, selfSigned: c.checkIssued(c) && c.verify(c.publicKey), pem: c.toString(),
+  };
+}
+
+// OpenSSL's verdict on the chain → why it is not trusted (docs/storage-targets.md "Certificates")
+const TLS_REASON = {
+  CERT_HAS_EXPIRED: 'expired', CERT_NOT_YET_VALID: 'not_yet_valid',
+  DEPTH_ZERO_SELF_SIGNED_CERT: 'self_signed', SELF_SIGNED_CERT_IN_CHAIN: 'untrusted_ca',
+  UNABLE_TO_GET_ISSUER_CERT: 'untrusted_ca', UNABLE_TO_GET_ISSUER_CERT_LOCALLY: 'untrusted_ca',
+  UNABLE_TO_VERIFY_LEAF_SIGNATURE: 'missing_intermediate',
+};
+
+/**
+ * The certificate a server presents and why it is not trusted — the
+ * diagnosis after a check failed with `tls`. Same address rules, dial and
+ * name (SNI) as request(), the same trust (the target's own anchor or the
+ * system CAs, verified): the certificate is read when the handshake is done,
+ * the socket closed right after — not one application byte, no credentials.
+ * opts: { url, dial ({ host, port } or null), tlsCa, timeoutMs }
+ * → { reason, code, host, cert, chain: [cert …] (the server's certificates
+ *     with the issuers found, leaf first) }
+ *   reason: null (trusted) | 'name' | 'expired' | 'not_yet_valid' | 'self_signed'
+ *           | 'missing_intermediate' | 'untrusted_ca' | 'not_stored' | 'untrusted'
+ *           | 'not_tls' (no TLS on that port) | 'handshake' (refused before a
+ *           certificate: an alert, no common protocol) — then cert null, chain []
+ */
+async function inspectTls(opts) {
+  const u = opts.url instanceof URL ? opts.url : new URL(opts.url);
+  if (u.protocol !== 'https:') throw new NetError('invalid_url', 'only https');
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  const dial = opts.dial || null;
+  const port = dial ? Number(dial.port) : (Number(u.port) || 443);
+  if (!Number.isInteger(port) || port < 1 || port > 65535 || (dial && !dial.host)) throw new NetError('net', 'no address to connect to');
+  const { address, family } = await resolve(dial ? dial.host : host, port);
+  const ca = opts.tlsCa ? caOptions(opts.tlsCa) : null;
+  // verified like request() (rejectUnauthorized stays on); only the name is
+  // checked below, to tell `name` from the rest
+  const o = { host: address, family, port, servername: netPolicy.isIpLiteral(host) ? undefined : host, checkServerIdentity: () => undefined };
+  if (ca) { o.ca = ca.ca; o.allowPartialTrustChain = true; }
+  const seen = await new Promise((resolveP, reject) => {
+    const s = tls.connect(o);
+    let peer = null;
+    // 'secure': the handshake is done, Node's verdict on the chain comes next
+    // ('secureConnect', or an error and the socket destroyed) — read the
+    // certificate before that; nothing is ever written to this socket
+    s.prependListener('secure', () => {
+      try { peer = s.getPeerCertificate(true); } catch { /* none */ }
+    });
+    const fail = (e) => {
+      s.destroy();
+      const hs = handshakeError(e);
+      // the chain refused: Node's code is the finding
+      if (peer && peer.raw && !hs && e && e.code) resolveP({ peer, code: String(e.code) });
+      // no TLS at all, or a handshake aborted before any certificate
+      else if (hs) resolveP({ peer: null, code: hs.sys, kind: hs.code === 'not_tls' ? 'not_tls' : 'handshake' });
+      else reject(e instanceof NetError ? e : new NetError((e && e.code) || 'net', e && e.message));
+    };
+    s.setTimeout(opts.timeoutMs || 15000, () => fail(new NetError('timeout', 'no answer')));
+    s.once('error', fail);
+    s.once('secureConnect', () => {
+      const p = peer || s.getPeerCertificate(true);
+      s.destroy();
+      resolveP({ peer: p, code: null });
+    });
+  });
+  if (seen.kind) return { reason: seen.kind, code: seen.code, host, cert: null, chain: [] };
+  if (!seen.peer || !seen.peer.raw) throw new NetError('tls', 'the server presented no certificate');
+  const chain = [];
+  const fps = new Set();
+  for (let c = seen.peer; c && c.raw && chain.length < 10; c = c.issuerCertificate) {
+    const info = certInfo(c.raw);
+    if (fps.has(info.fingerprint)) break;
+    fps.add(info.fingerprint);
+    chain.push(info);
+  }
+  let reason = null;
+  if (seen.code) {
+    reason = TLS_REASON[seen.code] || 'untrusted';
+    if (reason === 'untrusted_ca' && chain.length === 1 && !chain[0].selfSigned) reason = 'missing_intermediate';
+    if (ca && reason !== 'expired' && reason !== 'not_yet_valid') reason = 'not_stored';
+  } else {
+    const checkIdentity = ca ? ca.checkServerIdentity : tls.checkServerIdentity;
+    if (checkIdentity(host, seen.peer)) reason = 'name';
+  }
+  return { reason, code: seen.code, host, cert: chain[0], chain };
+}
+
 /** Read a whole (small) answer body → Buffer, at most `max` bytes. */
 async function readBody(stream, max = 4 * 1024 * 1024) {
   const parts = [];
@@ -160,6 +269,6 @@ async function drain(stream) {
 }
 
 module.exports = {
-  NetError, addressAllowed, resolve, parseCa, request, readBody, drain,
+  NetError, addressAllowed, resolve, parseCa, request, inspectTls, readBody, drain,
   _setLookupForTest: (fn) => { lookupImpl = fn; },
 };

@@ -502,9 +502,46 @@ async function collect(stream) {
 }
 
 /**
+ * A check that failed with `tls`, `not_tls` or `tls_handshake` (WebDAV, S3):
+ * the certificate the server presents and why it is not trusted
+ * (net.inspectTls — handshake only, the same way as the driver's
+ * connections), what helps, what the page may offer to store as the
+ * target's own certificate. → null when nothing can be read.
+ *   hints  'route_decrypts'  a certificate of Caddy's internal CA, or the L4
+ *                            route terminates TLS: GateControl decrypts itself
+ *          'intermediate'    the server sends its leaf without the intermediate
+ *   trust  { leaf, chain }   offer to pin the leaf / the CA certificates the server sent
+ */
+async function tlsDiagnosis(t, d) {
+  if (!d || typeof d.inspectTls !== 'function') return null;
+  let r;
+  try { r = await d.inspectTls(); } catch (e) {
+    logger.debug({ err: e.message }, 'storage target certificate not readable');
+    return null;
+  }
+  if (!r) return null;
+  let decrypts = r.chain.some((c) => /Caddy Local Authority/i.test(c.issuer) || /Caddy Local Authority/i.test(c.subject));
+  const cfg = t.config || configOf(t);
+  if (t.kind === 'webdav' && webdavViaOf(cfg).kind === 'route') {
+    try {
+      const route = routeOf(webdavViaOf(cfg).routeId);
+      if (route.route_type === 'l4' && route.l4_tls_mode === 'terminate') decrypts = true;
+    } catch { /* the check said why */ }
+  }
+  const hints = [];
+  if (decrypts) hints.push('route_decrypts');
+  if (r.reason === 'missing_intermediate') hints.push('intermediate');
+  // pinning does not help against a date, nor when GateControl answers instead of the NAS
+  const pinnable = !!r.reason && !!r.cert && !decrypts && r.reason !== 'expired' && r.reason !== 'not_yet_valid';
+  const sentCas = r.chain.slice(1).filter((c) => c.ca);
+  return Object.assign(r, { hints, trust: { leaf: pinnable, chain: pinnable && r.reason !== 'name' && sentCas.length > 0 } });
+}
+
+/**
  * Check a target: reach it, write a test file, read it back whole and as a
  * range, delete it, ask for the free space.
- * → { ok, error: code|null, message, free, total, steps: [{ step, ok }] }
+ * → { ok, error: code|null, message, free, total, steps: [{ step, ok }],
+ *     sys (not_tls, tls_handshake: the system's code), tls (after a TLS failure: tlsDiagnosis) }
  */
 async function runCheck(t) {
   const steps = [];
@@ -536,7 +573,10 @@ async function runCheck(t) {
   } catch (e) {
     if (written && d) { try { await d.remove(key); } catch { /* best effort */ } }
     const err = StorageError.from(e);
-    return { ok: false, error: err.code, message: err.message, free: null, total: null, steps };
+    const out = { ok: false, error: err.code, message: err.message, free: null, total: null, steps };
+    if (err.sys) out.sys = err.sys;
+    if (['tls', 'not_tls', 'tls_handshake'].includes(err.code)) out.tls = await tlsDiagnosis(t, d);
+    return out;
   }
 }
 

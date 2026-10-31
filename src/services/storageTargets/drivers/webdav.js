@@ -180,7 +180,13 @@ function create(cfg, secret) {
     if (st !== 207) throw failure(st, 'folder');
   }
 
-  return { kind: 'webdav', ranges: true, files: true, put, get, head, remove, move, copy, list, space, prepare };
+  /** After a `tls` failure: the certificate the server presents, the same way (net.inspectTls). */
+  async function inspectTls() {
+    if (base.protocol !== 'https:') return null;
+    return net.inspectTls({ url: base, tlsCa, dial: dialOf ? await dialOf() : null });
+  }
+
+  return { kind: 'webdav', ranges: true, files: true, put, get, head, remove, move, copy, list, space, prepare, inspectTls };
 }
 
 module.exports = { create };

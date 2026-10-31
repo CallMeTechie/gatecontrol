@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixes
+- Speicherziele (WebDAV, S3): Ein in „Eigenes Zertifikat“ hinterlegtes Server-Zertifikat, das nicht selbst signiert ist, wurde abgelehnt („Zertifikat wird nicht anerkannt“, `UNABLE_TO_VERIFY_LEAF_SIGNATURE` bzw. mit mitgesendeter CA `SELF_SIGNED_CERT_IN_CHAIN`) – etwa `cert.pem` des DSM-Standardzertifikats einer Synology, das „Synology Inc. CA“ ausstellt. OpenSSL verlangte die Kette bis zu einer Wurzel; jetzt ist jedes hinterlegte Zertifikat ein Vertrauensanker (`allowPartialTrustChain`, nur wenn `tlsCa` gesetzt ist – die System-CAs gelten dann ohnehin nicht). Ein exakt hinterlegtes Zertifikat gilt weiter unter jedem Namen und jeder IP; was eine hinterlegte CA (auch eine Zwischen-CA) ausgestellt hat, muss zum Namen der URL passen. Abgelaufene oder noch nicht gültige Zertifikate werden auch gepinnt abgelehnt. `engines.node` ist jetzt `>=22.9`.
+- „Prüfen“ sagt bei einem TLS-Fehler, warum: Name passt nicht (mit den Namen aus dem Zertifikat), Zwischenzertifikat fehlt, selbst signiert, abgelaufen bzw. noch nicht gültig, CA unbekannt, nicht das hinterlegte Zertifikat – und zeigt das Zertifikat des Servers (Inhaber, SAN-Namen, Aussteller, Gültigkeit, SHA-256-Fingerprint, mitgelieferte Kette). Dafür liest GateControl das Zertifikat in einem eigenen Handshake auf demselben Weg (Adressregeln, Route, VPN-Gerät, SNI), ohne ein Byte Anwendungsdaten oder Zugangsdaten zu senden. Nach Bestätigung mit Namen und Fingerprint übernimmt „Diesem Zertifikat vertrauen“ das Zertifikat bzw. „Mitgelieferte Kette übernehmen“ die mitgesendeten CA-Zertifikate in „Eigenes Zertifikat“. Hinweise bei fehlendem Zwischenzertifikat (Synology: DSM liefert es nicht mit) und bei einem Zertifikat von Caddy bzw. einer L4-Route, die TLS selbst terminiert („TLS-Modus auf Durchreichen stellen“). `check.tls` in der API; Hilfetexte DE/EN mit dem Hinweis, niemals `privkey.pem` einzufügen.
+- Speicherziele: Spricht die Gegenstelle gar kein TLS (https auf einen http-Port wie 5000/5005 der Synology, HTTPS im WebDAV-Server aus, falscher Port am Ziel einer Weiterleitung), hieß es bisher „Zertifikat wird nicht anerkannt“ – jeder `ERR_SSL_*`-Fehler galt als Zertifikatsfehler. Jetzt eigener Fehler `not_tls` („Die Gegenstelle spricht kein HTTPS – Port prüfen …“); andere abgebrochene Handshakes (Alert, kein gemeinsames Protokoll) sind `tls_handshake` mit dem Originalcode (`check.sys`). Auch die Probe-Verbindung der Diagnose erkennt beides.
+
 ## [1.219.0] — 2026-10-31
 
 ### Features

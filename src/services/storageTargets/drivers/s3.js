@@ -232,7 +232,13 @@ function create(cfg, secret) {
   async function space() { return { free: null, total: null }; }
 
   // files: false — on S3 media areas always keep sealed blocks under opaque keys
-  return { kind: 's3', ranges: true, files: false, put, get, head, remove, copy, space, prepare };
+  /** After a `tls` failure: the certificate the endpoint presents for the bucket's host (net.inspectTls). */
+  async function inspectTls() {
+    if (endpoint.protocol !== 'https:') return null;
+    return net.inspectTls({ url: `https://${where(null).host}/`, tlsCa });
+  }
+
+  return { kind: 's3', ranges: true, files: false, put, get, head, remove, copy, space, prepare, inspectTls };
 }
 
 module.exports = { create, sign, uriEncode, PART_SIZE, COPY_MAX, _copyLimitsForTest: copyLimits };
