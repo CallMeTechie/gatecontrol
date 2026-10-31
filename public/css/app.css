@@ -7059,6 +7059,14 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .pgx-stg-crumbs{font-size:13px}
 .pgx-cl-uri{padding:6px 10px; border-radius:8px; background:var(--pg-chip); border:1px solid var(--pg-line); overflow-wrap:anywhere}
 #pgx-stg-result .pgx-note{margin:12px 0 0}
+/* a failed TLS check: the certificate the server presents, why, "Diesem Zertifikat vertrauen" */
+.pgx-stg-tls{margin-top:14px; padding:12px; border:1px solid var(--pg-line); border-radius:12px}
+.pgx-stg-tls-h{margin:0; font-size:14px; font-weight:600}
+.pgx-stg-tls-acts{margin-top:12px}
+.pgx-stg-tls .pgx-kv > span:last-child{max-width:100%}
+.pgx-stg-trust-ask{display:flex; flex-direction:column; gap:8px; margin-top:12px; padding:12px; border-radius:12px; background:var(--pg-chip); border:1px solid var(--pg-line)}
+.pgx-stg-trust-ask[hidden]{display:none}
+.pgx-stg-trust-ask .pgx-hint{margin:0}
 @media (max-width:560px){.pgx-stg-kinds{grid-template-columns:minmax(0,1fr)}}
 /* phone (mockups "Mobil"): tabs on top, compact lists, no side column */
 @media (max-width:760px){

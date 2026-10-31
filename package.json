@@ -43,7 +43,7 @@
     "ws": "^8.22.0"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.9"
   },
   "overrides": {
     "picomatch": ">=4.0.4",

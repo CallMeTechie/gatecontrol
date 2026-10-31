@@ -2306,7 +2306,7 @@
             const r = await req('POST', ST_API + '/' + tg.id + '/check', {});
             b.disabled = false;
             if (!r.ok) { toast(r.error, 'error'); return; }
-            toast(r.check.ok ? t('plugins.stg.check_ok') : stgErrorText(r.check.error), r.check.ok ? 'success' : 'error');
+            toast(r.check.ok ? t('plugins.stg.check_ok') : stgErrorText(r.check.error, r.check.message), r.check.ok ? 'success' : 'error');
             await loadTargets();
             renderStorage();
           } }),
@@ -2354,10 +2354,16 @@
     ], { 'aria-labelledby': 'pgx-stg-cache-h' }, 'pgx-pad pgx-stack-card');
   }
 
-  /** An error code of a check → a sentence for people. */
-  function stgErrorText(code) {
-    const c = String(code || '').split(':')[0];
-    const s = t('plugins.stg.err_' + c);
+  /**
+   * An error code of a check → a sentence for people. `code` alone may be the
+   * stored "code: message"; a TLS handshake error names the system's code
+   * (the message starts with it).
+   */
+  function stgErrorText(code, message) {
+    const full = String(code || '');
+    const c = full.split(':')[0];
+    const m = /^\s*([A-Z][A-Z0-9_]+)\b/.exec(message != null ? String(message) : full.slice(c.length + 1));
+    const s = t('plugins.stg.err_' + c, { code: m ? m[1] : '?' });
     return s === 'plugins.stg.err_' + c ? t('plugins.stg.err_failed') : s;
   }
 
@@ -2615,10 +2621,66 @@
         const state = !s ? 'wait' : (s.ok ? 'ok' : 'fail');
         return el('li', { 'data-state': state === 'wait' ? 'warn' : state, 'data-step': n }, [
           el('span', { class: 'pgx-check-ic', 'aria-hidden': 'true', text: state === 'ok' ? '✓' : (state === 'fail' ? '✕' : '–') }),
-          el('span', null, [el('b', { text: t('plugins.stg.step_' + n) }), state === 'fail' ? el('small', { text: stgErrorText(c.error) }) : null]),
+          el('span', null, [el('b', { text: t('plugins.stg.step_' + n) }), state === 'fail' ? el('small', { text: stgErrorText(c.error, c.message) }) : null]),
         ]);
       })));
       if (c.ok) result.appendChild(el('p', { class: 'pgx-note pgx-note-good', id: 'pgx-stg-ok', text: [t('plugins.stg.check_ok'), fmtFree(c)].filter(Boolean).join(' · ') }));
+      if (!c.ok && c.tls) result.appendChild(tlsBox(c.tls));
+    }
+
+    /**
+     * After a TLS failure (docs/storage-targets.md "Certificates"): the
+     * certificate the server presents, why it is not trusted, what helps —
+     * and, after a confirmation with fingerprint and names, its leaf or the
+     * CA certificates it sent as the target's own certificate.
+     */
+    function tlsBox(x) {
+      const c = x.cert || { names: [], subject: '', issuer: '' };
+      const fp = (f) => f.toUpperCase().match(/../g).join(':');
+      const cn = (dn) => { const m = /(?:^|, )CN=([^,]+)/.exec(dn || ''); return m ? m[1] : dn; };
+      const names = (z) => (z.names && z.names.length ? z.names.join(', ') : cn(z.subject));
+      const day = (iso) => P.fmtDate(iso, lang);
+      const kids = [el('h4', { class: 'pgx-stg-tls-h', text: t('plugins.stg.tls_title') })];
+      if (x.reason) {
+        kids.push(el('p', { class: 'pgx-note pgx-note-warn', id: 'pgx-stg-tls-why', 'data-reason': x.reason }, [icon(I.alert, 16), el('span', {
+          text: t('plugins.stg.tls_' + x.reason, { host: x.host, names: names(c), issuer: cn(c.issuer), from: day(c.validFrom), to: day(c.validTo), code: x.code || '' }) })]));
+      }
+      (x.hints || []).forEach((h) => kids.push(el('p', { class: 'pgx-note', 'data-hint': h }, [icon(I.alert, 16), el('span', { text: t('plugins.stg.tls_hint_' + h) })])));
+      // no TLS / a handshake refused: no certificate to show
+      if (!x.cert) return el('div', { class: 'pgx-stg-tls', id: 'pgx-stg-tls' }, kids);
+      kids.push(kv([
+        [t('plugins.stg.tls_subject'), c.subject, true],
+        [t('plugins.stg.tls_names'), c.names.join(', '), true],
+        [t('plugins.stg.tls_issuer'), c.issuer, true],
+        [t('plugins.stg.tls_valid'), day(c.validFrom) + ' – ' + day(c.validTo)],
+        [t('plugins.stg.tls_fp'), fp(c.fingerprint), true],
+        x.chain.length > 1 ? [t('plugins.stg.tls_chain'), x.chain.slice(1).map((z) => cn(z.subject)).join(' → ')] : null,
+      ]));
+      const cas = x.chain.slice(1).filter((z) => z.ca);
+      // the confirmation stays in this dialog (a second one on top would close both on Escape)
+      const ask = el('div', { class: 'pgx-stg-trust-ask', id: 'pgx-stg-trust-ask', role: 'group', hidden: true });
+      const take = (certs, which) => {
+        clear(ask);
+        ask.setAttribute('data-which', which);
+        ask.appendChild(el('b', { text: t('plugins.stg.tls_' + which + '_title') }));
+        ask.appendChild(el('p', { class: 'pgx-hint', text: t('plugins.stg.tls_' + which + '_text') }));
+        certs.forEach((z) => ask.appendChild(kv([[t('plugins.stg.tls_names'), names(z), true], [t('plugins.stg.tls_fp'), fp(z.fingerprint), true]])));
+        ask.appendChild(el('div', { class: 'st-btnrow' }, [
+          btn(t('common.cancel'), { small: true, ghost: true, onClick: () => { ask.hidden = true; } }),
+          btn(t('plugins.stg.tls_trust_ok'), { small: true, primary: true, id: 'pgx-stg-trust-ok', onClick: () => {
+            inputs.tlsCa.value = certs.map((z) => z.pem.trim()).join('\n') + '\n';
+            ask.hidden = true;
+            toast(t('plugins.stg.tls_taken'));
+            checkBtn.click();
+          } }),
+        ]));
+        ask.hidden = false;
+      };
+      const acts = [];
+      if (inputs.tlsCa && x.trust && x.trust.leaf) acts.push(btn(t('plugins.stg.tls_trust'), { small: true, icon: I.shieldOk, id: 'pgx-stg-trust', onClick: () => take([c], 'trust') }));
+      if (inputs.tlsCa && x.trust && x.trust.chain && cas.length) acts.push(btn(t('plugins.stg.tls_chain_take'), { small: true, id: 'pgx-stg-trust-chain', onClick: () => take(cas, 'chain') }));
+      if (acts.length) kids.push(el('div', { class: 'st-btnrow pgx-stg-tls-acts' }, acts), ask);
+      return el('div', { class: 'pgx-stg-tls', id: 'pgx-stg-tls' }, kids);
     }
 
     const cancel = el('button', { type: 'button', class: 'pgx-btn', text: t('common.cancel'), on: { click: () => d.close(null) } });
