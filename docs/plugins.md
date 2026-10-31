@@ -367,7 +367,8 @@ unsigned build of the same id.
   the host gave up on after its timeout and that still runs in the plugin
   process) is never started twice — the next one is skipped.
 * `permissions.notify`: `true` (≤ 30 pushes per hour) or `{ "perHour": n }`
-  with an integer 1 ≤ n ≤ 120 (no other key); anything else is
+  with an integer 1 ≤ n ≤ 1000 (since 1.219.0; before 1 ≤ n ≤ 120; no other
+  key); anything else is
   `permissions.notify: invalid`. See "Notifications".
 * `permissions.app` (boolean): the plugin answers requests of the GateControl
   apps (device tokens). `ui.app` `{ label, icon }` (optional, needs
@@ -531,7 +532,14 @@ unsigned build of the same id.
   deinem Namen Mails senden – höchstens n Verbindungen gleichzeitig. Zweck:
   <purpose>", marked as sensitive. Errors `permissions.mail: invalid`,
   `permissions.mail: invalid (needs a purpose)`,
-  `permissions.mail.maxConnections: invalid`. See "Mail".
+  `permissions.mail.maxConnections: invalid`. Since 1.219.0 the optional
+  `"dav": { "purpose": {de, en} }` adds CalDAV/CardDAV to those servers
+  (`gc.mail.dav`); the install dialog shows a row of its own "Kalender und
+  Kontakte: darf außerdem Kalender und Adressbücher auf Servern im Internet
+  lesen und ändern (CalDAV/CardDAV, nur verschlüsselt). Zweck: <purpose>",
+  marked as sensitive. Error `permissions.mail.dav: invalid (needs a
+  purpose)`; an older GateControl refuses the key (`"gatecontrol":
+  ">=1.219.0"`). See "Mail".
 * `permissions.network.images` (boolean, since 1.216.0): pictures of any
   public host loaded by GateControl on behalf of the plugin
   (`gc.http.fetchImage`, see "Network"). The install dialog shows "Bilder aus
@@ -820,9 +828,10 @@ module.exports = {
 | `gc.mail.imap.connect({ host, port, security, auth, timeoutMs })` | since 1.216.0 (`mail`): an IMAP session held by the host → session (`list`, `status`, `open`, `fetch`, `message`, `download`, `search`, `flags`, `move`, `copy`, `expunge`, `append`, `idle`, `noop`, `close`; events `exists`, `expunge`, `flags`, `close`, `error`) — see "Mail" |
 | `gc.mail.smtp.send({ host, port, security, auth, message, appendCopy })` | since 1.216.0 (`mail`): send a mail → `{ messageId, accepted, rejected, raw }` — see "Mail" |
 | `gc.mail.smtp.verify({ host, port, security, auth, timeoutMs })` | since 1.217.0 (`mail`): log in to an SMTP server without sending → `{ ok: true }`, errors like `smtp.send` — see "Mail" |
-| `gc.mail.compose(message)` / `gc.mail.parse(mediaId, opts)` | since 1.216.0 (`mail`): RFC 822 as media ↔ the parsed message — see "Mail" |
+| `gc.mail.compose(message)` / `gc.mail.parse(mediaId, opts)` | since 1.216.0 (`mail`): RFC 822 as media ↔ the parsed message; since 1.219.0 with `message.icalEvent` and `calendar` (invitations, iMIP) — see "Mail" |
 | `gc.mail.sanitize(html, { images: 'placeholder' })` | since 1.216.0 (`mail`): mail HTML made harmless → `{ html, images, trackers }` — see "Mail" |
-| `gc.mail.autoconfig(email)` | since 1.216.0 (`mail`): IMAP/SMTP servers of an address → `{ imap, smtp, source }` — see "Mail" |
+| `gc.mail.autoconfig(email)` | since 1.216.0 (`mail`): IMAP/SMTP servers of an address → `{ imap, smtp, source }`; since 1.219.0 also `caldav`, `carddav` — see "Mail" |
+| `gc.mail.dav.request({ url, method, headers, body, auth, timeoutMs, maxBytes, parse })` | since 1.219.0 (`mail.dav`): one CalDAV/CardDAV request to a server people enter → `{ status, url, headers, body, multistatus }` — see "Mail" |
 | `gc.net.targets()` | the assigned home targets |
 | `gc.net.fetchTarget(id, path, opts)` | HTTP to an assigned target |
 | `gc.net.tcpTarget(id, { index, port })` | TCP socket (events `data`, `close`, `error`, `timeout`; `write`, `end`, `destroy`, `setTimeout`) |
@@ -929,8 +938,9 @@ section: `gc.media.previews(ids, { user, previewOnly: true })` (since
 (docs/feature-notification-center.md) — pushed by GateControl itself, no
 third-party service. Both forms need `permissions.notify` and share the limit
 of **30 per hour and plugin** — or `n` with `"notify": { "perHour": n }`
-(1 ≤ n ≤ 120; the install dialog shows "bis zu n Push-Mitteilungen pro
-Stunde"); every call also writes the `plugin_notice` activity entry (and its
+(1 ≤ n ≤ 1000 since 1.219.0, before 120 — e.g. the event reminders of
+everybody through one plugin; the install dialog shows "bis zu n
+Push-Mitteilungen pro Stunde"); every call also writes the `plugin_notice` activity entry (and its
 webhooks) as before. Chat topics (`notifyTopics[].chat`) have their own budget
 and rules — see "Chat notifications" below.
 
@@ -2406,13 +2416,15 @@ password, Microsoft with a token, any provider). The **host** holds every
 connection; the plugin process gets a proxy of the session and plain
 objects, never a socket. Code: `src/services/plugins/mail/` (`index.js`
 sessions and API, `net.js` checks and errors, `mime.js` reading and writing,
-`sanitize.js`, `autoconfig.js`), libraries `imapflow` (IMAP), `nodemailer`
-(SMTP, MIME writing), `mailparser` (MIME reading), `sanitize-html` and
-`postcss` (HTML / CSS).
+`sanitize.js`, `autoconfig.js`, since 1.219.0 `dav.js` CalDAV/CardDAV),
+libraries `imapflow` (IMAP), `nodemailer` (SMTP, MIME writing), `mailparser`
+(MIME reading), `sanitize-html` and `postcss` (HTML / CSS), `saxes` (XML of
+CalDAV/CardDAV).
 
 ```json
 "permissions": {
-  "mail": { "purpose": { "de": "Deine Postfächer lesen und Mails senden", "en": "Read your mailboxes and send mails" }, "maxConnections": 100 },
+  "mail": { "purpose": { "de": "Deine Postfächer lesen und Mails senden", "en": "Read your mailboxes and send mails" }, "maxConnections": 100,
+    "dav": { "purpose": { "de": "Deine Kalender und Adressbücher bei GMX, Web.de oder deinem eigenen Server abgleichen", "en": "Sync your calendars and address books at GMX, Web.de or your own server" } } },
   "network": { "internet": ["graph.microsoft.com:443"], "images": true }
 },
 "media": { "maxBytes": 26214400, "types": ["application/*", "image/*"], "quotaDefault": "10GB" }
@@ -2429,6 +2441,10 @@ sessions and API, `net.js` checks and errors, `mime.js` reading and writing,
 * Without the permission `gc.mail` is `undefined` in the plugin process (the
   host refuses the calls with `ERR_MAIL_DENIED`). Feature test:
   `typeof gc.mail === 'object' && typeof gc.mail.imap?.connect === 'function'`.
+* `dav` (optional, since 1.219.0; `purpose` ≤ 200, required): CalDAV/CardDAV
+  through `gc.mail.dav.request` (see "CalDAV/CardDAV"). Without it
+  `gc.mail.dav` is `undefined` and the host refuses with `ERR_MAIL_DENIED`.
+  Feature test: `typeof gc.mail?.dav?.request === 'function'`.
 * Attachments, raw mails and composed messages land in the plugin's media
   (plugin.json `media` needed for those calls, else `ERR_MEDIA_DENIED`) as
   **unclaimed** files without owner — removed after 24 h unless the plugin
@@ -2503,8 +2519,10 @@ await s.close();
   references[], date, subject, from, to[], cc[], bcc[], replyTo[], html | null,
   text | null, listUnsubscribe: { url?, mail? } | null, autoSubmitted,
   precedence, listId, attachments: [{ partId, filename, contentType, size,
-  contentId, inline, checksum (sha256 hex), mediaId | null }] }`. `html` is
-  the mail's own HTML — show it only after `gc.mail.sanitize`.
+  contentId, inline, checksum (sha256 hex), mediaId | null }], calendar:
+  [{ partId, method, text }] }` (`calendar` since 1.219.0, see "Invitations
+  (iMIP)"). `html` is the mail's own HTML — show it only after
+  `gc.mail.sanitize`.
   `attachments: 'media'` streams every attachment into the plugin's media
   (unclaimed, 24 h); one that does not fit (quota, size) keeps `mediaId: null`
   and names `mediaError`. An unknown UID → `ERR_INVALID`.
@@ -2555,6 +2573,8 @@ const parsed = await gc.mail.parse(mediaId, { attachments: 'meta' });   // like 
 * `accepted` / `rejected`: per recipient; when the server refuses every
   recipient or the mail → `ERR_MAIL_REJECTED` with `serverText`.
 * 4 SMTP operations (sends and `verify`) per plugin at a time (more wait).
+* `icalEvent` (since 1.219.0): an invitation or answer — see "Invitations
+  (iMIP)".
 
 ```js
 await gc.mail.smtp.verify({ host: 'mail.gmx.net', port: 587, security: 'starttls', auth: { user: 'ada@gmx.de', pass: '…' }, timeoutMs: 30000 });
@@ -2602,7 +2622,8 @@ const { html, images, trackers } = await gc.mail.sanitize(parsed.html, { images:
 
 ```js
 await gc.mail.autoconfig('ada@gmx.de');
-// { imap: { host: 'imap.gmx.net', port: 993, security: 'tls' }, smtp: { host: 'mail.gmx.net', port: 587, security: 'starttls' }, source: 'ispdb' }
+// { imap: { host: 'imap.gmx.net', port: 993, security: 'tls' }, smtp: { host: 'mail.gmx.net', port: 587, security: 'starttls' }, source: 'ispdb',
+//   caldav: { url: 'https://caldav.gmx.net/' } | null, carddav: { url: 'https://carddav.gmx.net/' } | null }   // since 1.219.0
 ```
 
 In this order: Mozilla's ISPDB (`https://autoconfig.thunderbird.net/v1.1/<domain>`,
@@ -2617,18 +2638,116 @@ like `gc.http.fetch` (public addresses only, each redirect again); within
 25 s. Nothing found → `{ imap: null, smtp: null, source: null }`. A malformed
 address → `ERR_INVALID`; 120 lookups per plugin and hour (`ERR_RATE_LIMIT`).
 
+Since 1.219.0 also the calendar and address book server: `caldav` / `carddav`
+from `<calendar type="caldav">` / `<addressBook type="carddav">`
+(`serverURL`, placeholders like the mail servers; only plain logins, no
+OAuth) of the same files (ISPDB first), else DNS SRV `_caldavs._tcp.<domain>`
+/ `_carddavs._tcp.<domain>` with TXT `path=` (without one
+`/.well-known/caldav` / `carddav`), else `null`. Only `https` on 443 or 8443
+counts. The older fields are unchanged.
+
+### CalDAV/CardDAV (`gc.mail.dav`)
+
+Since 1.219.0, with `permissions.mail.dav`. One request function for the
+calendar and address book servers people enter themselves (GMX, Web.de, their
+own domain, Nextcloud) — with the network rules of `gc.mail` and a
+Multi-Status parser in the host. The protocol (discovery, sync, conflicts)
+stays in the plugin. Code: `src/services/plugins/mail/dav.js`, XML with
+`saxes`.
+
+```js
+const r = await gc.mail.dav.request({
+  url: 'https://caldav.gmx.net/begenda/dav/users/a@gmx.de/calendar/',
+  method: 'REPORT',               // GET HEAD OPTIONS PROPFIND REPORT PUT DELETE
+  headers: { depth: '1', 'content-type': 'application/xml; charset=utf-8' },
+  body: '<?xml version="1.0"?><d:sync-collection xmlns:d="DAV:">…</d:sync-collection>',   // string ≤ 2 MB
+  auth: { user: 'a@gmx.de', pass: '…' },   // or { bearer: '…' }; without: anonymous
+  timeoutMs: 30000,               // 1000 … 60000
+  maxBytes: 5 * 1024 * 1024,      // the answer, at most 20 MB
+  parse: 'auto',                  // 'auto' (207 + XML → multistatus) | 'none'
+});
+// { status, url (the last address), headers: { etag?, 'content-type'?, location?, dav?, allow?, 'retry-after'?, 'last-modified'?, 'content-length'? },
+//   body: string | null (UTF-8; null when parsed), multistatus: { responses: [Response], syncToken: string | null } | null }
+// Response = { href (absolute), status: 200 | 404 | … | null, propstat: [{ status, props: { '{ns}name': Node } }], error: Node | null }
+// Node     = { text: string | null, attrs?: { name: value }, children?: [{ name: '{ns}local', text, attrs?, children? }] }
+r.multistatus.responses[0].propstat[0].props['{DAV:}getetag'].text;                               // '"a1b2"'
+r.multistatus.responses[0].propstat[0].props['{urn:ietf:params:xml:ns:caldav}calendar-data'].text; // the iCalendar file
+```
+
+* **Network:** `https` only, ports **443** and **8443** (else
+  `ERR_NETWORK_DENIED`). Every resolved address must be public — exactly
+  the check of `gc.mail`; the connection goes to the checked address (DNS
+  pinned), SNI = host, the certificate is always verified, at least TLS 1.2.
+  No switch.
+* **Redirects:** within the same origin (scheme, host, port) the host follows
+  them itself — at most 5, each checked again, with `auth` (303 turns into
+  GET without a body, the others keep method and body). A redirect to
+  **another** origin is never followed: the 3xx comes back with
+  `headers.location` (absolute) and the plugin decides whether that host
+  gets its credentials. Never to `http:`.
+* **Headers:** only `depth`, `content-type`, `if-match`, `if-none-match`,
+  `prefer`, `brief`, `accept`, `if-modified-since` (printable ASCII);
+  `authorization` and anything else → `ERR_INVALID`. The host sets
+  `User-Agent: GateControl-Mail` and `Accept-Encoding: identity`; no cookies
+  (none sent, `Set-Cookie` dropped), no Referer.
+* **Credentials:** only as `auth` — Basic from `user`/`pass` (no `:` in the
+  user) or `Bearer`; never in the URL (`ERR_INVALID`), never in logs or error
+  texts. No Digest.
+* **XML:** namespace-exact, the prefixes do not matter; names
+  `{namespace}local`. A DTD — and with it any entity of its own — is an
+  error (`ERR_DAV_XML`), nothing is ever expanded or loaded. Depth ≤ 64,
+  ≤ 10 000 `response` elements (else `ERR_DAV_XML`). Text is kept as it is
+  (not trimmed; XML turns CR LF into LF). `parse: 'auto'` parses a 207 with
+  an XML type (or none); the root must be `DAV:multistatus`. A `response`
+  with several `href`s comes once per `href`.
+* **Limits:** 8 requests per plugin at a time (more wait — at most 100, at
+  most 2 minutes, else `ERR_MAIL_LIMIT`); request body ≤ 2 MB and the answer
+  ≤ `maxBytes`, counted after unpacking should a server compress anyway
+  (`ERR_MAIL_LIMIT`); the whole request with its redirects within
+  `timeoutMs` (`ERR_MAIL_NET`). The requests end with the plugin process.
+* **HTTP status codes are no errors:** 401, 403, 404, 409, 412, 5xx … come
+  back as `status`.
+
+### Invitations (iMIP)
+
+Since 1.219.0. `s.message(uid, …)` and `gc.mail.parse(mediaId, …)` also
+answer `calendar: [{ partId, method, text }]` — every `text/calendar` part of
+the mail (also an `.ics` attachment, `application/ics`) that is an iCalendar
+file, decoded to text (its charset, else UTF-8), at most 512 KB each (larger
+ones are missing), the first 3. `method`: `'REQUEST'`, `'REPLY'`,
+`'CANCEL'`, `'COUNTER'`, `'DECLINECOUNTER'`, `'PUBLISH'` from the file's
+`METHOD` (else the `method=` of its Content-Type) or `null`. Without such
+parts `[]`. The parts stay in `attachments` as before.
+
+```js
+await gc.mail.smtp.send({ host, port, security, auth, message: {
+  from: 'bob@example.com', to: ['anna@firma.example'], subject: 'Zugesagt: Planung', text: 'Bis dann',
+  icalEvent: { method: 'REPLY', content: 'BEGIN:VCALENDAR\r\nMETHOD:REPLY\r\n…END:VCALENDAR\r\n', filename: 'invite.ics' },
+} });
+```
+
+`message.icalEvent` (`gc.mail.smtp.send`, `gc.mail.compose`): `method`
+`'REQUEST'` | `'REPLY'` | `'CANCEL'` | `'COUNTER'` | `'DECLINECOUNTER'`,
+`content` ≤ 512 KB beginning with `BEGIN:VCALENDAR` and with exactly one
+`METHOD:` equal to `method`, `filename` optional (`*.ics`, default
+`invite.ics`); anything else → `ERR_INVALID`. The host writes a
+`multipart/alternative` with `text/calendar; charset=utf-8; method=…` plus the
+same file as `.ics` attachment (nodemailer `icalEvent`) — only from
+`content`, never a path or a URL.
+
 ### Errors
 
 | code | when |
 |---|---|
 | `ERR_MAIL_AUTH` | the server refused the login; `serverText` (≤ 200 characters, user, password and token removed) |
-| `ERR_MAIL_NET` | not reachable, not found, timeout, TLS (certificate, no STARTTLS), the session is closed |
+| `ERR_MAIL_NET` | not reachable, not found, timeout, TLS (certificate, no STARTTLS), the session is closed; `dav.request`: more than 5 redirects |
 | `ERR_MAIL_PROTOCOL` | anything else the server answered (`serverText` where there is one) |
 | `ERR_MAIL_REJECTED` | SMTP refused the mail or every recipient; `serverText` |
-| `ERR_MAIL_LIMIT` | `maxConnections` reached, a message over `maxBytes` / 50 MB |
-| `ERR_NETWORK_DENIED` | a port other than the four, an address that is not public |
+| `ERR_MAIL_LIMIT` | `maxConnections` reached, a message over `maxBytes` / 50 MB; `dav.request`: an answer over `maxBytes`, a body over 2 MB, too many requests waiting |
+| `ERR_NETWORK_DENIED` | a port other than the four (`dav.request`: not `https` on 443 / 8443), an address that is not public |
+| `ERR_DAV_XML` | `dav.request`: broken XML, a DTD or entity, too deep, too many responses, not `DAV:multistatus` (since 1.219.0) |
 | `ERR_INVALID` | arguments, unknown session / UID / media id, more than 500 messages in a fetch |
-| `ERR_MAIL_DENIED` | no `permissions.mail` |
+| `ERR_MAIL_DENIED` | no `permissions.mail` (`dav.request`: no `permissions.mail.dav`) |
 | `ERR_MEDIA_DENIED` / `ERR_MEDIA_QUOTA` / `ERR_MEDIA_TOO_LARGE` | media needed but not declared / quota full / file too large |
 
 `serverText` comes as a property of the error (`e.serverText`).

@@ -157,14 +157,15 @@ describe('hostApi notify', () => {
     await assert.rejects(() => call(p, { message: 'one too many' }), (e) => e.code === 'ERR_RATE_LIMIT');
   });
 
-  it('permissions.notify { perHour: n }: validated (1…120), the budget per hour of that plugin', async () => {
+  it('permissions.notify { perHour: n }: validated (1…1000, since 1.219.0), the budget per hour of that plugin', async () => {
     const base = { id: 'x-rate', name: 'X', version: '1.0.0', publisher: 'T', gatecontrol: '>=1.0.0', entry: 'server/index.js' };
     const v = (notify) => manifest.validate({ ...base, permissions: { notify } });
     assert.deepEqual([v(true).manifest.permissions.notify, v(true).manifest.permissions.notifyPerHour], [true, 30]);
     assert.deepEqual([v(false).manifest.permissions.notify, v(false).manifest.permissions.notifyPerHour], [false, null]);
     assert.deepEqual([v({ perHour: 120 }).manifest.permissions.notify, v({ perHour: 120 }).manifest.permissions.notifyPerHour], [true, 120]);
     assert.equal(v({ perHour: 1 }).manifest.permissions.notifyPerHour, 1);
-    for (const bad of [{ perHour: 0 }, { perHour: 121 }, { perHour: 1.5 }, { perHour: '10' }, {}, { perHour: 10, burst: 2 }, [], 'yes', 1]) {
+    assert.equal(v({ perHour: 1000 }).manifest.permissions.notifyPerHour, 1000);
+    for (const bad of [{ perHour: 0 }, { perHour: 1001 }, { perHour: 1.5 }, { perHour: '10' }, {}, { perHour: 10, burst: 2 }, [], 'yes', 1]) {
       assert.deepEqual(v(bad).errors, ['permissions.notify: invalid'], JSON.stringify(bad));
     }
     assert.equal(manifest.validate({ ...base, permissions: { notify: { perHour: 5 } }, notifyTopics: TOPICS }).ok, true, 'topics with the object form');

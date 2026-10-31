@@ -154,6 +154,8 @@
     }
     // since 1.216.0: IMAP and SMTP to mail servers on the internet, encrypted only (permissions.mail)
     if (perm.mail) rows.push({ label: t('plugins.perm.mail'), value: t('plugins.perm.mail_v', { purpose: perm.mail.purpose || '', n: perm.mail.maxConnections }) });
+    // since 1.219.0: also calendars and address books on those servers (CalDAV/CardDAV, permissions.mail.dav)
+    if (perm.mail && perm.mail.dav) rows.push({ label: t('plugins.perm.mail_dav'), value: t('plugins.perm.mail_dav_v', { purpose: perm.mail.dav.purpose || '' }) });
     if (perm.servicesProvided && perm.servicesProvided.length) {
       rows.push({ label: t('plugins.perm.services_provided'), value: t('plugins.perm.services_provided_v', { services: perm.servicesProvided.join(', ') }) });
     }
@@ -453,6 +455,7 @@
     if (perm.ai) out.push('plugins.perm.ai');
     if (perm.cloudImport) out.push('plugins.perm.cloud_import');
     if (perm.mail) out.push('plugins.perm.mail');
+    if (perm.mail && perm.mail.dav) out.push('plugins.perm.mail_dav');
     if (n.images) out.push('plugins.perm.images');
     return out;
   }

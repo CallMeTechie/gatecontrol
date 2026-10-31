@@ -16,6 +16,8 @@
 // command and started again after it, as long as the plugin wants it.
 // Attachments and raw mails go straight into the plugin's media (unclaimed,
 // removed after 24 h unless claimed — media.js).
+// Since 1.219.0 also CalDAV/CardDAV requests (`permissions.mail.dav`,
+// gc.mail.dav.request — dav.js) and the calendar parts of mails (iMIP, mime.js).
 
 const crypto = require('node:crypto');
 const net = require('./net');
@@ -58,6 +60,13 @@ function permOf(plugin) {
 function needMail(plugin) {
   const p = permOf(plugin);
   need(p, 'ERR_MAIL_DENIED', 'this plugin has no mail permission');
+  return p;
+}
+
+/** permissions.mail.dav (since 1.219.0): CalDAV/CardDAV through gc.mail.dav.request. */
+function needDav(plugin) {
+  const p = needMail(plugin);
+  need(p.dav && typeof p.dav === 'object', 'ERR_MAIL_DENIED', 'this plugin has no mail.dav permission');
   return p;
 }
 
@@ -306,6 +315,7 @@ function closeAll(pluginId) {
   plugins.delete(pluginId);
   if (b) for (const s of b.sessions.values()) closeSession(s, false);
   smtpSlots.delete(pluginId);
+  require('./dav').closeAll(pluginId);
 }
 
 function maybeIdle(s) {
@@ -693,6 +703,15 @@ async function autoconfigCall(plugin, args, opts = {}) {
   return require('./autoconfig').autoconfig(args && args.email, { lookup: opts.lookup, reserved: opts.reserved, resolver: seams.resolver, fetchXml: seams.fetchXml });
 }
 
+/**
+ * gc.mail.dav.request({ url, method, headers, body, auth, timeoutMs, maxBytes, parse }) (since 1.219.0)
+ * → { status, url, headers, body, multistatus } — dav.js
+ */
+async function davRequest(plugin, args, opts = {}) {
+  needDav(plugin);
+  return require('./dav').request(plugin, args, { lookup: opts.lookup, reserved: opts.reserved });
+}
+
 /** How long the host waits for one gc.mail call (hostApi.callTimeout). */
 function callTimeout(api, args) {
   const t = args && Number.isFinite(args.timeoutMs) ? Math.min(CONNECT_TIMEOUT_MAX_MS, args.timeoutMs) : CONNECT_TIMEOUT_DEFAULT_MS;
@@ -702,6 +721,7 @@ function callTimeout(api, args) {
   if (api === 'mail.smtp.verify') return t + 3 * 60 * 1000;
   if (api === 'mail.imap.call') return ['message', 'download', 'append', 'fetch', 'search', 'move', 'copy', 'expunge'].includes(args && args.op) ? 10 * 60 * 1000 : 2 * 60 * 1000;
   if (api === 'mail.autoconfig') return 40000;
+  if (api === 'mail.dav.request') return require('./dav').callTimeout(args);
   return 2 * 60 * 1000;
 }
 
@@ -722,9 +742,10 @@ function _resetForTest() {
   for (const id of [...plugins.keys()]) closeAll(id);
   autoconfigWindow.clear();
   smtpSlots.clear();
+  require('./dav')._resetForTest();
 }
 
 module.exports = {
-  imapConnect, imapCall, imapClose, smtpSend, smtpVerify, compose, parse, sanitize: sanitizeCall, autoconfig: autoconfigCall, closeAll, callTimeout, stats,
+  imapConnect, imapCall, imapClose, smtpSend, smtpVerify, compose, parse, sanitize: sanitizeCall, autoconfig: autoconfigCall, davRequest, closeAll, callTimeout, stats,
   permOf, MailError, FETCH_MAX, MESSAGE_MAX, IDLE_UNUSED_MS, _setSeams, _resetForTest, _sweep: sweep,
 };

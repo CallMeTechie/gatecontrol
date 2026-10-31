@@ -460,7 +460,7 @@ function userView(u, look) {
 const NOTIFY_PRIORITIES = ['info', 'normal', 'high', 'critical'];
 const SEVERITY_PRIORITY = { info: 'info', success: 'info', warning: 'normal', error: 'normal' };
 
-/** The plugin's budget per hour: permissions.notify { perHour } (1…120), else 30. */
+/** The plugin's budget per hour: permissions.notify { perHour } (1…1000), else 30. */
 function notifyPerHour(plugin) {
   const n = plugin.manifest.permissions && plugin.manifest.permissions.notifyPerHour;
   return Number.isInteger(n) && n >= 1 && n <= NOTIFY_PER_HOUR_MAX ? n : NOTIFY_PER_HOUR_DEFAULT;
@@ -1531,7 +1531,7 @@ async function targetUpload(plugin, args) {
 // ─── Mail (permissions.mail, services/plugins/mail/, since 1.216.0) ────
 //
 // gc.mail.imap.connect / session commands / smtp.send / smtp.verify / compose / parse /
-// sanitize / autoconfig — docs/plugins.md "Mail". The host holds the IMAP
+// sanitize / autoconfig, dav.request (since 1.219.0, permissions.mail.dav) — docs/plugins.md "Mail". The host holds the IMAP
 // sessions; their events go to the plugin process as { t: 'mail', id, ev, data }.
 
 async function mailCall(plugin, api, args, ctx) {
@@ -1548,6 +1548,7 @@ async function mailCall(plugin, api, args, ctx) {
       case 'mail.parse': return await mail.parse(plugin, args);
       case 'mail.sanitize': return mail.sanitize(plugin, args);
       case 'mail.autoconfig': return await mail.autoconfig(plugin, args, o);
+      case 'mail.dav.request': return await mail.davRequest(plugin, args, o);
       default: throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
     }
   } catch (e) {
@@ -1886,7 +1887,7 @@ async function handle(plugin, api, args, ctx) {
     case 'http.fetch': return httpFetch(plugin, args);
     case 'http.fetchImage': return fetchImageCall(plugin, args);
     case 'mail.imap.connect': case 'mail.imap.call': case 'mail.imap.close': case 'mail.smtp.send': case 'mail.smtp.verify':
-    case 'mail.compose': case 'mail.parse': case 'mail.sanitize': case 'mail.autoconfig':
+    case 'mail.compose': case 'mail.parse': case 'mail.sanitize': case 'mail.autoconfig': case 'mail.dav.request':
       return mailCall(plugin, api, args, ctx);
     case 'ws.connect': return wsConnect(plugin, args, ctx);
     case 'ws.send': return wsSend(plugin, args);

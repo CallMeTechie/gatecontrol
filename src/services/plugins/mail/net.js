@@ -79,8 +79,12 @@ async function endpoint(kind, o, opts = {}) {
     if (r.reason === 'invalid_host' || r.reason === 'invalid_port') fail('ERR_INVALID', 'invalid server');
     fail('ERR_NETWORK_DENIED', `connection refused by the mail policy: ${r.reason}`);
   }
-  const mapped = testSeams.ports && testSeams.ports[port];
-  return { host, port, security, address: r.address, family: r.family, connectPort: mapped || port };
+  return { host, port, security, address: r.address, family: r.family, connectPort: connectPort(port) };
+}
+
+/** The port a connection really goes to: `port`, or in tests the tests' own server listening for it. */
+function connectPort(port) {
+  return (testSeams.ports && testSeams.ports[port]) || port;
 }
 
 /** Server text for the plugin: one line, ≤ 200 characters, without the credentials used. */
@@ -125,4 +129,4 @@ function mapError(e, secrets) {
   return new MailError('ERR_MAIL_PROTOCOL', serverText((e && e.message) || 'mail server error', secrets) || 'mail server error', text ? { serverText: text } : null);
 }
 
-module.exports = { PORTS, MailError, fail, need, endpoint, tlsOptions, serverText, mapError, _setTestSeams, MIN_TLS };
+module.exports = { PORTS, MailError, fail, need, endpoint, connectPort, tlsOptions, serverText, mapError, isTlsError, _setTestSeams, MIN_TLS };

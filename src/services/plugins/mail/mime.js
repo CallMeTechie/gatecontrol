@@ -5,6 +5,9 @@
 // streamed into the plugin's media as unclaimed files ('media'), and writing
 // one (nodemailer's MailComposer) from the plugin's message object.
 // Attachments never pass through the plugin process.
+// Since 1.219.0 invitations (iMIP): the text/calendar parts of a mail come
+// along as `calendar` (also as attachments, as before), and a message can
+// carry an `icalEvent` the host writes as text/calendar plus .ics.
 
 const { PassThrough, Readable } = require('node:stream');
 const { finished } = require('node:stream/promises');
@@ -22,6 +25,13 @@ const CID_RE = /^[A-Za-z0-9._@$%+=-]{1,200}$/;
 const MIME_RE = /^[a-z][a-z0-9-]{0,30}\/[a-z0-9][a-z0-9.+_-]{0,99}$/;
 const CTRL_RE = /[\u0000-\u001f\u007f]/g;
 const HAS_CTRL_RE = /[\u0000-\u001f\u007f]/;
+// iMIP (since 1.219.0): the calendar parts of a mail and the invitation a mail carries
+const CAL_MAX = 512 * 1024;                   // one calendar part / icalEvent.content
+const CAL_PARTS_MAX = 3;                      // calendar parts per mail (the first ones)
+const CAL_CANDIDATES_MAX = 10;                // parts read to find them
+const CAL_TYPES = new Set(['text/calendar', 'application/ics', 'text/x-vcalendar']);
+const CAL_METHODS = new Set(['REQUEST', 'REPLY', 'CANCEL', 'COUNTER', 'DECLINECOUNTER', 'PUBLISH']);
+const ICAL_SEND_METHODS = new Set(['REQUEST', 'REPLY', 'CANCEL', 'COUNTER', 'DECLINECOUNTER']);
 
 function media() { return require('../media'); }
 
@@ -67,6 +77,36 @@ function unsubscribe(list) {
 
 const MEDIA_CODES = { quota_exceeded: 'ERR_MEDIA_QUOTA', too_large: 'ERR_MEDIA_TOO_LARGE', no_media: 'ERR_MEDIA_DENIED', empty: 'ERR_MEDIA_EMPTY' };
 
+/** iCalendar text with its folded lines joined (RFC 5545 3.1). */
+function unfold(text) {
+  return String(text).replace(/\r?\n[ \t]/g, '');
+}
+
+/** The METHOD properties of an iCalendar text, upper-case. */
+function methodsOf(text) {
+  return [...unfold(text).matchAll(/^METHOD(?:;[^:\r\n]*)?:([^\r\n]*)$/gim)].map((m) => m[1].trim().toUpperCase());
+}
+
+/** Is this part of a mail a calendar (text/calendar, also as an .ics attachment)? */
+function isCalendarPart(entry) {
+  return CAL_TYPES.has(entry.contentType) || (!!entry.filename && /\.ics$/i.test(entry.filename));
+}
+
+/**
+ * A collected calendar part → { partId, method, text } or null (too large, not
+ * an iCalendar file). Decoded from its charset (UTF-8 when it names none);
+ * the method from its METHOD property, else from the Content-Type parameter.
+ */
+function calendarEntry(c) {
+  if (!c.parts) return null;
+  const raw = Buffer.concat(c.parts);
+  let text;
+  try { text = new TextDecoder(c.charset || 'utf-8').decode(raw); } catch { text = new TextDecoder('utf-8').decode(raw); }
+  if (!/^\s*BEGIN:VCALENDAR/i.test(text)) return null;
+  const m = methodsOf(text)[0] || (c.method ? String(c.method).trim().toUpperCase() : null);
+  return { partId: c.partId, method: m && CAL_METHODS.has(m) ? m : null, text };
+}
+
 /**
  * Parse one RFC 822 message from `source` (a Readable). mode 'meta': the
  * attachments are described only; 'media': each becomes an unclaimed media
@@ -83,6 +123,7 @@ function parse(source, { plugin, mode = 'meta', maxAttachment = null } = {}) {
     let html = null;
     let text = null;
     const attachments = [];
+    const calendars = []; // candidates for `calendar`, in the order of the mail
     const work = [];
     let failed = false;
     const fail2 = (e) => { if (failed) return; failed = true; try { source.destroy(); } catch { /* gone */ } reject(e); };
@@ -106,6 +147,20 @@ function parse(source, { plugin, mode = 'meta', maxAttachment = null } = {}) {
         mediaId: null,
       };
       attachments.push(entry);
+      if (isCalendarPart(entry) && calendars.length < CAL_CANDIDATES_MAX) {
+        // read along (≤ 512 KB) while the part goes its usual way (media or skipped)
+        const ct = a.headers && typeof a.headers.get === 'function' ? a.headers.get('content-type') : null;
+        const params = ct && typeof ct === 'object' && ct.params ? ct.params : {};
+        const c = { partId: entry.partId, charset: typeof params.charset === 'string' ? params.charset : null,
+          method: typeof params.method === 'string' ? params.method : null, parts: [], size: 0 };
+        calendars.push(c);
+        a.content.on('data', (chunk) => {
+          if (!c.parts) return;
+          c.size += chunk.length;
+          if (c.size > CAL_MAX) c.parts = null;
+          else c.parts.push(chunk);
+        });
+      }
       work.push((async () => {
         const ended = finished(a.content).catch(() => null);
         if (mode === 'media') {
@@ -155,6 +210,8 @@ function parse(source, { plugin, mode = 'meta', maxAttachment = null } = {}) {
           precedence: headerText(headers.get('precedence')),
           listId: typeof id === 'string' && id ? id.replace(/^<|>$/g, '') : null,
           attachments,
+          // since 1.219.0: the calendar parts (invitations), ≤ 512 KB each, the first 3
+          calendar: calendars.map(calendarEntry).filter(Boolean).slice(0, CAL_PARTS_MAX),
         });
       }, fail2);
     });
@@ -209,6 +266,28 @@ function messageIdOf(v, what) {
 }
 
 /**
+ * message.icalEvent (since 1.219.0): { method, content, filename? } → nodemailer's
+ * icalEvent (a text/calendar alternative with that method and the same file as
+ * .ics attachment). Only content of the plugin — never a path or a URL.
+ */
+function icalEventOf(v) {
+  need(v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).every((k) => k === 'method' || k === 'content' || k === 'filename'),
+    'ERR_INVALID', 'invalid icalEvent');
+  const method = typeof v.method === 'string' ? v.method.trim().toUpperCase() : '';
+  need(ICAL_SEND_METHODS.has(method), 'ERR_INVALID', `icalEvent.method must be one of ${[...ICAL_SEND_METHODS].join(', ')}`);
+  need(typeof v.content === 'string' && Buffer.byteLength(v.content) <= CAL_MAX, 'ERR_INVALID', 'icalEvent.content must be a string of at most 512 KB');
+  need(/^BEGIN:VCALENDAR\r?\n/i.test(v.content), 'ERR_INVALID', 'icalEvent.content must begin with BEGIN:VCALENDAR');
+  const methods = methodsOf(v.content);
+  need(methods.length === 1 && methods[0] === method, 'ERR_INVALID', `icalEvent.content needs METHOD:${method}`);
+  let filename = 'invite.ics';
+  if (v.filename != null) {
+    filename = line(v.filename, 255, 'icalEvent.filename');
+    need(/^[^/\\]{1,251}\.ics$/i.test(filename), 'ERR_INVALID', 'icalEvent.filename must end with .ics');
+  }
+  return { method, content: v.content, filename };
+}
+
+/**
  * The plugin's message → MailComposer options (checked). Attachments name
  * the plugin's own media files; the host reads them itself.
  */
@@ -247,6 +326,7 @@ function composerOptions(plugin, m) {
     need(!Number.isNaN(d.getTime()), 'ERR_INVALID', 'invalid date');
     o.date = d;
   }
+  if (m.icalEvent != null) o.icalEvent = icalEventOf(m.icalEvent);
   if (m.attachments != null) {
     need(Array.isArray(m.attachments) && m.attachments.length <= ATTACHMENTS_MAX, 'ERR_INVALID', 'invalid attachments');
     o.attachments = m.attachments.map((a) => {
@@ -298,4 +378,4 @@ async function compose(plugin, message) {
   return { raw, messageId, envelope: { from: o.from.address, to: [...new Set(rcpt)] } };
 }
 
-module.exports = { parse, compose, mediaReadable, ownMedia, COMPOSE_MAX_BYTES };
+module.exports = { parse, compose, mediaReadable, ownMedia, COMPOSE_MAX_BYTES, CAL_MAX, CAL_PARTS_MAX };

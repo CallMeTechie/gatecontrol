@@ -240,8 +240,8 @@ function onMailEvent(m) {
   if (m.ev === 'exists' || m.ev === 'expunge' || m.ev === 'flags') s.emit(m.ev, m.data || {});
 }
 
-/** gc.mail — only for plugins with permissions.mail (else undefined). */
-function makeMail() {
+/** gc.mail — only for plugins with permissions.mail (else undefined); gc.mail.dav only with permissions.mail.dav. */
+function makeMail(features) {
   return Object.freeze({
     imap: Object.freeze({
       /**
@@ -274,8 +274,23 @@ function makeMail() {
     parse: (mediaId, opts) => hostCall('mail.parse', { mediaId, opts: opts == null ? {} : opts }, 3 * 60 * 1000),
     /** sanitize(html, { images: 'placeholder' }) → { html, images: [url], trackers } */
     sanitize: (html, opts) => hostCall('mail.sanitize', { html, opts: opts == null ? {} : opts }, 3 * 60 * 1000),
-    /** autoconfig(email) → { imap, smtp, source } */
+    /** autoconfig(email) → { imap, smtp, caldav, carddav, source } */
     autoconfig: (email) => hostCall('mail.autoconfig', { email }, 45000),
+    // since 1.219.0 (permissions.mail.dav): CalDAV/CardDAV to the servers people enter
+    ...(features.dav ? {
+      dav: Object.freeze({
+        /**
+         * request({ url, method, headers, body, auth: { user, pass } | { bearer }, timeoutMs, maxBytes, parse: 'auto' | 'none' })
+         *   → { status, url, headers, body, multistatus: { responses, syncToken } | null }
+         */
+        request: (opts) => {
+          const o = opts && typeof opts === 'object' ? opts : {};
+          const t = Number.isFinite(o.timeoutMs) ? Math.min(60000, o.timeoutMs) : 30000;
+          return hostCall('mail.dav.request', { url: o.url, method: o.method, headers: o.headers, body: o.body, auth: o.auth, timeoutMs: o.timeoutMs,
+            maxBytes: o.maxBytes, parse: o.parse }, t + 3 * 60 * 1000);
+        },
+      }),
+    } : {}),
   });
 }
 
@@ -293,7 +308,7 @@ function makeGc(info) {
   };
   return Object.freeze({
     // permissions.mail (since 1.216.0, docs/plugins.md "Mail"): IMAP sessions, SMTP, MIME, HTML cleaning, autoconfig
-    ...(features.mail ? { mail: makeMail() } : {}),
+    ...(features.mail ? { mail: makeMail(features) } : {}),
     plugin: Object.freeze({ id: info.id, version: info.version, filesDir: info.filesDir }), // filesDir: the one writable folder
     log: Object.freeze({ debug: log('debug'), info: log('info'), warn: log('warn'), error: log('error') }),
     http: Object.freeze({

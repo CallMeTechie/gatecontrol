@@ -15,9 +15,9 @@ const FILE_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)
 const ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,600}$/;
 const SETTING_TYPES = new Set(['text', 'number', 'boolean', 'select', 'secret']);
 const NOTIFY_TOPIC_RE = /^[a-z][a-z0-9_-]{0,31}$/;
-// Push budget of a plugin per hour: permissions.notify true → 30, { perHour } → 1…120.
+// Push budget of a plugin per hour: permissions.notify true → 30, { perHour } → 1…1000 (until 1.218.0: 120).
 const NOTIFY_PER_HOUR_DEFAULT = 30;
-const NOTIFY_PER_HOUR_MAX = 120;
+const NOTIFY_PER_HOUR_MAX = 1000;
 // permissions.background.intervalSeconds: shortest interval of the background tick
 const BACKGROUND_MIN_S = 5;
 
@@ -314,7 +314,7 @@ function validate(raw, opts = {}) {
         perms.actionsInteractive = a.interactive;
       } else err('permissions.actions: invalid');
     }
-    // notify: true (NOTIFY_PER_HOUR_DEFAULT pushes per hour) or { perHour: 1…120 }
+    // notify: true (NOTIFY_PER_HOUR_DEFAULT pushes per hour) or { perHour: 1…NOTIFY_PER_HOUR_MAX }
     if (p.notify != null) {
       const n = p.notify;
       if (typeof n === 'boolean') {
@@ -378,16 +378,20 @@ function validate(raw, opts = {}) {
       else perms.cloudImport = { purpose };
     }
     // mail (since 1.216.0): { purpose: { de, en }, maxConnections: 1…200 (default 50) } — IMAP and SMTP to the
-    // mail servers people enter (gc.mail, docs/plugins.md "Mail"), encrypted only, public addresses only
+    // mail servers people enter (gc.mail, docs/plugins.md "Mail"), encrypted only, public addresses only.
+    // dav (since 1.219.0, optional): { purpose: { de, en } } — CalDAV/CardDAV to those servers (gc.mail.dav)
     if (p.mail != null) {
       const ml = p.mail;
-      const ok = ml && typeof ml === 'object' && !Array.isArray(ml) && Object.keys(ml).every((k) => k === 'purpose' || k === 'maxConnections');
+      const ok = ml && typeof ml === 'object' && !Array.isArray(ml) && Object.keys(ml).every((k) => k === 'purpose' || k === 'maxConnections' || k === 'dav');
       const purpose = ok ? locText(ml.purpose, 200) : null;
       const max = ok && ml.maxConnections != null ? ml.maxConnections : MAIL_CONNECTIONS_DEFAULT;
+      const d = ok ? ml.dav : null;
+      const davPurpose = d != null && typeof d === 'object' && !Array.isArray(d) && Object.keys(d).every((k) => k === 'purpose') ? locText(d.purpose, 200) : null;
       if (!ok) err('permissions.mail: invalid');
       else if (!purpose) err('permissions.mail: invalid (needs a purpose)');
       else if (!Number.isInteger(max) || max < 1 || max > MAIL_CONNECTIONS_MAX) err('permissions.mail.maxConnections: invalid');
-      else perms.mail = { purpose, maxConnections: max };
+      else if (d != null && !davPurpose) err('permissions.mail.dav: invalid (needs a purpose)');
+      else perms.mail = { purpose, maxConnections: max, ...(davPurpose ? { dav: { purpose: davPurpose } } : {}) };
     }
   }
   m.permissions = perms;

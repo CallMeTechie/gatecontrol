@@ -791,14 +791,14 @@ describe('gc.mail.autoconfig', () => {
         ? XML(IN('pop.gmx.net', 995, 'SSL') + IN('imap.gmx.net', 143, 'STARTTLS') + IN('imap.gmx.net', 993, 'SSL') + IN('plain.gmx.net', 143, 'plain'), OUT('mail.gmx.net', 25, 'plain') + OUT('mail.gmx.net', 587, 'STARTTLS'))
         : null;
     } });
-    assert.deepEqual(r, { imap: { host: 'imap.gmx.net', port: 993, security: 'tls' }, smtp: { host: 'mail.gmx.net', port: 587, security: 'starttls' }, source: 'ispdb' });
+    assert.deepEqual(r, { imap: { host: 'imap.gmx.net', port: 993, security: 'tls' }, smtp: { host: 'mail.gmx.net', port: 587, security: 'starttls' }, source: 'ispdb', caldav: null, carddav: null });
     assert.equal(asked.length, 1);
   });
 
   it('then autoconfig.<domain>, the well-known address, SRV, MX', async () => {
     const xml = XML(IN('imap.%EMAILDOMAIN%', 993, 'SSL'), OUT('smtp.%EMAILDOMAIN%', 465, 'SSL'));
     let r = await ac().autoconfig('a@firma.example', { resolver: noDns, fetchXml: async (u) => (u.startsWith('https://autoconfig.firma.example/') ? xml : null) });
-    assert.deepEqual(r, { imap: { host: 'imap.firma.example', port: 993, security: 'tls' }, smtp: { host: 'smtp.firma.example', port: 465, security: 'tls' }, source: 'autoconfig' });
+    assert.deepEqual(r, { imap: { host: 'imap.firma.example', port: 993, security: 'tls' }, smtp: { host: 'smtp.firma.example', port: 465, security: 'tls' }, source: 'autoconfig', caldav: null, carddav: null });
     r = await ac().autoconfig('a@firma.example', { resolver: noDns, fetchXml: async (u) => (u.startsWith('https://firma.example/.well-known/') ? xml : null) });
     assert.equal(r.source, 'autoconfig');
     const srv = { resolveMx: async () => [], resolveSrv: async (n) => ({
@@ -806,18 +806,18 @@ describe('gc.mail.autoconfig', () => {
       '_submission._tcp.firma.example': [{ name: 'out.firma.example', port: 587, priority: 0, weight: 0 }],
     })[n] || [] };
     r = await ac().autoconfig('a@firma.example', { resolver: srv, fetchXml: async () => null });
-    assert.deepEqual(r, { imap: { host: 'mx.firma.example', port: 993, security: 'tls' }, smtp: { host: 'out.firma.example', port: 587, security: 'starttls' }, source: 'srv' });
+    assert.deepEqual(r, { imap: { host: 'mx.firma.example', port: 993, security: 'tls' }, smtp: { host: 'out.firma.example', port: 587, security: 'starttls' }, source: 'srv', caldav: null, carddav: null });
     const mx = { resolveSrv: async () => [], resolveMx: async () => [{ exchange: 'mx01.mail.provider.example', priority: 10 }] };
     r = await ac().autoconfig('a@kunde.example', { resolver: mx, fetchXml: async (u) => (u === 'https://autoconfig.thunderbird.net/v1.1/provider.example' ? XML(IN('imap.provider.example', 993, 'SSL'), OUT('smtp.provider.example', 465, 'SSL')) : null) });
     assert.equal(r.source, 'mx');
     assert.equal(r.imap.host, 'imap.provider.example');
     r = await ac().autoconfig('a@nothing.example', { resolver: noDns, fetchXml: async () => null });
-    assert.deepEqual(r, { imap: null, smtp: null, source: null });
+    assert.deepEqual(r, { imap: null, smtp: null, source: null, caldav: null, carddav: null });
   });
 
   it('the HTTP requests are checked like gc.http.fetch (a private address is never asked); bad addresses → ERR_INVALID', async () => {
     const r = await ac().autoconfig('a@intranet.test.example', { resolver: noDns, lookup: hostApi._lookup });
-    assert.deepEqual(r, { imap: null, smtp: null, source: null });
+    assert.deepEqual(r, { imap: null, smtp: null, source: null, caldav: null, carddav: null });
     const p = registry.get(PID);
     await assert.rejects(() => hostApi.handle(p, 'mail.autoconfig', { email: 'not an address' }), (e) => e.code === 'ERR_INVALID');
   });
