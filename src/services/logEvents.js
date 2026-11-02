@@ -137,6 +137,7 @@ function fromPlugin(row) {
   const p = pluginNames().get(row.plugin_id);
   const level = LEVELS.includes(row.level) ? row.level : 'info';
   const msg = String(row.message || '');
+  const version = row.plugin_version || null;
   return {
     id: `p.${row.id}`,
     source: 'plugins',
@@ -145,12 +146,14 @@ function fromPlugin(row) {
     level,
     levelName: level,
     msg,
-    ctx: p && p.version ? `${p.name} ${p.version}` : (p ? p.name : row.plugin_id),
+    // the version that wrote the entry (plugin_logs.plugin_version, migration 122) — never the one installed now;
+    // older entries have none
+    ctx: [p ? p.name : row.plugin_id, version].filter(Boolean).join(' '),
     plugin: row.plugin_id,
     pluginName: p ? p.name : row.plugin_id,
     code: codeOf(msg, null),
-    fields: { plugin: row.plugin_id, version: p ? p.version : null },
-    raw: { id: row.id, plugin: row.plugin_id, level: row.level, message: row.message, created_at: row.created_at },
+    fields: { plugin: row.plugin_id, version },
+    raw: { id: row.id, plugin: row.plugin_id, version, level: row.level, message: row.message, created_at: row.created_at },
   };
 }
 
@@ -284,7 +287,7 @@ async function* iterSql({ sql, args, tsCol, idCol = 'id', map, from, to, desc, t
 
 function iterPlugins(o) {
   const args = [];
-  let sql = 'SELECT id, plugin_id, level, message, created_at FROM plugin_logs';
+  let sql = 'SELECT id, plugin_id, level, message, created_at, plugin_version FROM plugin_logs';
   if (o.plugins && o.plugins.length) {
     sql += ` WHERE plugin_id IN (${o.plugins.map(() => '?').join(',')})`;
     args.push(...o.plugins);
@@ -589,7 +592,7 @@ async function get(id, allowed = SOURCES) {
     const rowId = Number(m[5]);
     const db = getDb();
     if (source === 'plugins') {
-      const r = db.prepare('SELECT id, plugin_id, level, message, created_at FROM plugin_logs WHERE id = ?').get(rowId);
+      const r = db.prepare('SELECT id, plugin_id, level, message, created_at, plugin_version FROM plugin_logs WHERE id = ?').get(rowId);
       return r ? fromPlugin(r) : null;
     }
     if (source === 'activity') {

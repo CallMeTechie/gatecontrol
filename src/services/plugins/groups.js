@@ -317,7 +317,8 @@ function onChange(batch) {
   const changes = batch.map((c) => ({ ...c }));
   for (const p of groupPlugins()) {
     runtime.call(p.id, 'groupsChanged', { changes }, module.exports._changedMs || CHANGED_MS).catch((e) => {
-      pluginLog(p.id, 'warn', 'groupsChanged failed: ' + String((e && e.message) || e).slice(0, 200));
+      // e.stopped: the host stopped the plugin meanwhile (runtime.js) — not a warning
+      pluginLog(p.id, e && e.stopped ? 'debug' : 'warn', 'groupsChanged failed: ' + String((e && e.message) || e).slice(0, 200));
     });
   }
 }

@@ -156,6 +156,18 @@ describe('logger: stdout and the file carry the same redacted lines', () => {
     assert.ok(!r.stdout.includes('gc_secret') && !fs.readFileSync(path.join(dir, 'server.log'), 'utf8').includes('gc_secret'));
   });
 
+  it('stdout keeps the order of the lines before a fatal exit', () => {
+    // an asynchronous stdout still had "hello" in flight when exit wrote
+    // "bye" synchronously (about every third run) — repeated to catch it
+    for (let i = 0; i < 10; i++) {
+      const dir = tmp('logger-order');
+      const r = run({ GC_SERVER_LOG_DIR: dir, GC_SERVER_LOG: 'on' },
+        "const l=require('./src/utils/logger');l.info('one');l.info('two');l.fatal('three');process.exit(3)");
+      assert.equal(r.status, 3, r.stderr);
+      assert.deepEqual(r.stdout.trim().split('\n').map((l) => JSON.parse(l).msg), ['one', 'two', 'three'], `run ${i + 1}`);
+    }
+  });
+
   it('GC_SERVER_LOG=off writes no file', () => {
     const dir = tmp('logger-off');
     const r = run({ GC_SERVER_LOG_DIR: dir, GC_SERVER_LOG: 'off' }, "require('./src/utils/logger').info('x')");

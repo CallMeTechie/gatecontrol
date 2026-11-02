@@ -38,7 +38,10 @@ if (fileOptions.enabled) {
     onError: (err) => logger.warn({ err: err.message, code: err.code, file: fileOptions.file },
       'server log file not writable — logging to stdout only until it is'),
   });
-  const stdout = prettyTransport ? pino.transport(prettyTransport) : pino.destination(process.stdout.fd || 1);
+  // stdout synchronous: an asynchronous destination still had a line in
+  // flight when logger.fatal + exit wrote the rest synchronously — stdout
+  // then showed the fatal line before the ones logged earlier.
+  const stdout = prettyTransport ? pino.transport(prettyTransport) : pino.destination({ dest: process.stdout.fd || 1, sync: true });
   // Both streams take every line the logger lets through (its level decides).
   logger = pino(options, pino.multistream([
     { level: 'trace', stream: stdout },
