@@ -201,6 +201,10 @@ jobs:
 
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         if: steps.check_tag.outputs.exists == 'false'
+        env:
+          # no build record (*.dockerbuild) as an Actions artifact: it only
+          # fills the Actions storage, the job summary stays
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
         with:
           context: .
           push: true

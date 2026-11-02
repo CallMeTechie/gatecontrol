@@ -52,13 +52,16 @@ jobs:
         env:
           NODE_ENV: test
 
+      # Only lcov.info of one Node version: the whole coverage/ folder holds
+      # c8's raw V8 data (~100 MB per run) and filled the Actions storage.
       - name: Upload coverage report
-        if: always()
+        if: always() && matrix.node == 22
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-report-node${{ matrix.node }}
-          path: coverage/
+          path: coverage/lcov.info
           retention-days: 3
+          if-no-files-found: ignore
 
   # Storage targets (docs/storage-targets.md) against real servers: S3
   # (moto), WebDAV (wsgidav) and SMB (Samba with smbclient, as in the image).
@@ -280,8 +283,9 @@ jobs:
         if: failure()
         run: cat /tmp/gc-e2e-app.log
 
+      # screenshots only when a scenario failed (~30 MB per run otherwise)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: failure()
         with:
           name: browser-screenshots
           path: /tmp/gc-e2e/shots/
