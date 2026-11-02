@@ -69,6 +69,9 @@ const CATALOGUE = [
     // The monthly AI budget (docs/plugins.md "AI requests") at 80 % and used
     // up — each once a month.
     { id: 'ai_budget', types: ['ai_budget_warning', 'ai_budget_reached'] },
+    // Logs & Monitoring: a problem marked resolved with "Benachrichtigen,
+    // wenn es wieder auftritt" occurred again (services/logProblems.js).
+    { id: 'log_problem', types: ['log_problem_returned'] },
   ] },
 ];
 

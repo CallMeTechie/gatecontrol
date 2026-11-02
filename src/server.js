@@ -171,6 +171,10 @@ async function start() {
     // A blocked main thread shows in the log with its length (plugin storage / call timeouts of the same moment)
     require('./utils/loopStall').start();
 
+    // Logs & Monitoring: resolved problems that occur again (notify_on_return). Best-effort.
+    try { require('./services/logProblems').start(); }
+    catch (err) { logger.warn({ err: err.message }, 'log problem check not started'); }
+
     // Plugins (docs/plugins.md): start every plugin that may run. Best-effort.
     try { require('./services/plugins').start(); }
     catch (err) { logger.warn({ err: err.message }, 'plugins not started'); }     // RDP health check monitor
@@ -370,6 +374,7 @@ const shutdown = createShutdownHandler({
     () => stopRdpMonitor(),
     () => stopAutoBackup(),
     () => require('./utils/loopStall').stop(),
+    () => require('./services/logProblems').stop(),
     () => stopLicenseRefresh(),
     () => require('./services/gatewayProbe').stopProbe(),
     () => require('./services/gatewayHealth').stopWatchdog(),

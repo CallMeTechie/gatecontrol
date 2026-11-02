@@ -1,7 +1,7 @@
 # Browser-Tests (tests/e2e)
 
 Der Satz, der in der CI läuft: Anmeldung inklusive zweitem Faktor, Zonen-Seite,
-Sicherheitsseite, Passkeys, Dashboard, Einstellungen, Benutzer, Portal, Benachrichtigungen und Support-Pakete. Gegen eine echte App mit einer frisch aufgebauten
+Sicherheitsseite, Passkeys, Dashboard, Einstellungen, Benutzer, Portal, Benachrichtigungen, Support-Pakete und Logs & Monitoring. Gegen eine echte App mit einer frisch aufgebauten
 Test-Datenbank, ohne Caddy und ohne WireGuard.
 
 ```
@@ -54,6 +54,10 @@ scenarios/10-support-bundles.js /support-bundles: Support-Pakete aus dem Seed
                         (inkl. Problembeschreibung + Diagnose des Diagnose-Assistenten),
                         Log-Filter + Suche, „angesehen“ (Badge), Löschen,
                         hell/dunkel, 400 px
+scenarios/14-logs.js    /logs: Kennzahlen, Verlauf, Facetten mit Zählungen, Filter
+                        in der Adresse, Eintrag mit „Zur selben Zeit“, Probleme,
+                        Zugriffe, Export-Dialog mit Vorschau, Filter als
+                        Bottom-Sheet, hell/dunkel, 390 px (GC_SERVER_LOG=on)
 scenarios/11-portal-start.js Portal-Start ohne Server: echtes portal.js auf einer
                         Minimalseite, Kacheln per page.route gezählt, Uhr von
                         Playwright: neue Kachel binnen einer Minute ohne Neuladen,
@@ -83,7 +87,7 @@ export GC_SECRET=$(openssl rand -hex 32) GC_ENCRYPTION_KEY=$(openssl rand -hex 3
 
 node tests/e2e/seed.js
 node src/server.js &
-node tests/e2e/run.js all          # oder: login zones security passkey dashboard settings users portal notifications support
+node tests/e2e/run.js all          # oder: login zones security passkey dashboard settings users portal notifications support logs
 ```
 
 `run.js` braucht `playwright` im Modulpfad. Das Projekt hängt **nicht** davon

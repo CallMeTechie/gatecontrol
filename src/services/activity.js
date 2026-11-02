@@ -224,7 +224,114 @@ function getAll() {
   }));
 }
 
+// ─── Filtered reads (Logs & Monitoring) ──────────────────────────────────────
+// Optional filters of GET /api/v1/logs/activity and its export. Without any
+// of them the reads above are unchanged.
+
+const SEVERITIES = ['info', 'success', 'warning', 'error'];
+const EVENT_TYPE_RE = /^[A-Za-z0-9_:.-]{1,64}$/;
+
+/** epoch ms → the format of created_at ('YYYY-MM-DD HH:MM:SS', UTC). */
+function sqlTime(ms) {
+  return new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
+}
+
+/**
+ * Filter → { sql, args } for a WHERE clause ('' when no filter).
+ *   severities ['error', …]  category  (activityCategories name)
+ *   eventTypes ['peer_created', …] exact  q  text in message/event_type/source
+ *   from/to    epoch ms (inclusive)
+ * `skip` leaves out one part (counts per severity ignore the severity filter).
+ */
+function filterSql(f = {}, { skip = null } = {}) {
+  const parts = [];
+  const args = [];
+  if (skip !== 'severity' && f.severities && f.severities.length) {
+    parts.push(`severity IN (${f.severities.map(() => '?').join(',')})`);
+    args.push(...f.severities);
+  }
+  if (f.category) {
+    const c = require('./activityCategories').sqlFilter(f.category);
+    parts.push(c.sql);
+    args.push(...c.args);
+  }
+  if (f.eventTypes && f.eventTypes.length) {
+    parts.push(`event_type IN (${f.eventTypes.map(() => '?').join(',')})`);
+    args.push(...f.eventTypes);
+  }
+  if (f.q) {
+    const like = '%' + String(f.q).replace(/[\\%_]/g, (c) => '\\' + c) + '%';
+    parts.push("(message LIKE ? ESCAPE '\\' OR event_type LIKE ? ESCAPE '\\' OR source LIKE ? ESCAPE '\\')");
+    args.push(like, like, like);
+  }
+  if (f.from != null) { parts.push('created_at >= ?'); args.push(sqlTime(f.from)); }
+  if (f.to != null) { parts.push('created_at <= ?'); args.push(sqlTime(f.to)); }
+  return { sql: parts.length ? 'WHERE ' + parts.join(' AND ') : '', args };
+}
+
+function mapRow(row) {
+  let details = null;
+  if (row.details) { try { details = JSON.parse(row.details); } catch { details = null; } }
+  return { ...row, details, color: SEVERITY_COLORS[row.severity] || 'blue' };
+}
+
+/** Page of filtered entries, newest first (same shape as getPaginated). */
+function getFiltered(filter, page = 1, limit = 50) {
+  const db = getDb();
+  const w = filterSql(filter);
+  const offset = (page - 1) * limit;
+  const rows = db.prepare(`SELECT * FROM activity_log ${w.sql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
+    .all(...w.args, limit, offset);
+  const total = db.prepare(`SELECT COUNT(*) AS c FROM activity_log ${w.sql}`).get(...w.args).c;
+  return { entries: rows.map(mapRow), total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
+/** Every filtered entry, newest first (export). */
+function getAllFiltered(filter) {
+  const w = filterSql(filter);
+  return getDb().prepare(`SELECT * FROM activity_log ${w.sql} ORDER BY created_at DESC, id DESC`).all(...w.args).map(mapRow);
+}
+
+/**
+ * Counts for filter chips and a histogram: per severity (without the
+ * severity filter), the event types (top 100) and, with bucketMs, per time
+ * bucket and severity.
+ */
+function getCounts(filter, { bucketMs = null } = {}) {
+  const db = getDb();
+  const w = filterSql(filter, { skip: 'severity' });
+  const counts = { info: 0, success: 0, warning: 0, error: 0, total: 0 };
+  for (const r of db.prepare(`SELECT severity, COUNT(*) AS c FROM activity_log ${w.sql} GROUP BY severity`).all(...w.args)) {
+    if (Object.prototype.hasOwnProperty.call(counts, r.severity)) counts[r.severity] += r.c;
+    counts.total += r.c;
+  }
+  const all = filterSql(filter);
+  const events = db.prepare(`SELECT event_type, COUNT(*) AS count FROM activity_log ${all.sql}
+    GROUP BY event_type ORDER BY count DESC, event_type LIMIT 100`).all(...all.args);
+  const out = { counts, events };
+  if (bucketMs) {
+    const sec = Math.max(1, Math.round(bucketMs / 1000));
+    const rows = db.prepare(`SELECT (CAST(strftime('%s', created_at) AS INTEGER) / ${sec}) * ${sec} AS b, severity, COUNT(*) AS c
+      FROM activity_log ${w.sql} GROUP BY b, severity ORDER BY b LIMIT 5000`).all(...w.args);
+    const map = new Map();
+    for (const r of rows) {
+      const t = r.b * 1000;
+      let row = map.get(t);
+      if (!row) { row = { t, time: new Date(t).toISOString(), info: 0, success: 0, warning: 0, error: 0 }; map.set(t, row); }
+      if (Object.prototype.hasOwnProperty.call(row, r.severity)) row[r.severity] += r.c;
+    }
+    out.histogram = { bucketMs: sec * 1000, buckets: [...map.values()] };
+  }
+  return out;
+}
+
 module.exports = {
+  SEVERITIES,
+  EVENT_TYPE_RE,
+  filterSql,
+  getFiltered,
+  getAllFiltered,
+  getCounts,
   log,
   getRecent,
   getForUser,

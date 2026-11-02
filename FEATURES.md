@@ -22,6 +22,8 @@ Detailed documentation for all features. For the complete feature overview, see 
 - [Peer Access Control (ACL)](#peer-access-control-acl)
 - [Automatic Backups](#automatic-backups)
 - [Log Export](#log-export)
+- [Server Log](#server-log)
+- [Logs & Monitoring](#logs--monitoring)
 - [API Tokens](#api-tokens)
 - [Gzip/Zstd Compression](#gzipzstd-compression)
 - [Custom Request/Response Headers](#custom-requestresponse-headers)
@@ -912,6 +914,152 @@ curl -H "Authorization: Bearer gc_your_token" \
 ### Token Scope
 
 Log export endpoints require the `logs` token scope.
+
+### Filters (optional)
+
+Both list endpoints and their exports take additional filters; without them
+they answer exactly as before. Invalid values are a `400` (`code: INVALID_QUERY`, `param`).
+
+| Endpoint | Filters |
+|---|---|
+| `/api/v1/logs/activity`, `…/activity/export` | `severity` (comma list of `info,success,warning,error`), `category` (`login`, `peer`, `route`, `security`), `event` (comma list of exact event types, ≤ 20), `q` (text in message, event type or source), `from`/`to` (epoch ms or ISO) |
+| `/api/v1/logs/access`, `…/access/export` | `domain`, `status` (one code or a comma list — each selects its class, `404` → 4xx), `method`, `q` (host, path, client IP, user agent), `from`/`to` |
+
+`counts=1` adds the numbers for filter chips and a histogram:
+
+- activity: `counts` per severity (ignoring the severity filter), `events` (event types with count, top 100), `histogram`
+- access: `counts` per status class (ignoring the status filter), `histogram`
+
+`bucket` = `1m`, `5m`, `15m`, `1h`, `6h`, `1d` or `auto` (≤ 120 buckets for `from`…`to`, `1h` without `from`).
+
+---
+
+## Server Log
+
+GateControl writes its own log (pino JSON lines, secrets redacted) to stdout
+**and** to a rotating file in the data directory: `/data/logs/server.log`,
+rotated by size (5 MB × 5 files: `server.log`, `server.log.1` … `server.log.4`),
+directory `0700`, files `0600`. Writing is asynchronous and batched (no fsync
+per line); a full disk or missing permissions never disturb the host — lines are
+dropped, the next successful write notes how many, and stdout carries one
+warning per failure streak.
+
+| Variable | Default | |
+|---|---|---|
+| `GC_SERVER_LOG` | on (off under `NODE_ENV=test`) | `off` keeps the log on stdout only |
+| `GC_SERVER_LOG_DIR` | `<GC_DATA_DIR>/logs` | directory of `server.log` |
+| `GC_SERVER_LOG_MAX_MB` | `5` | size per file (1–100) |
+| `GC_SERVER_LOG_FILES` | `5` | files kept incl. the current one (1–20) |
+
+### API (administrators only)
+
+The server log holds internal details (plugin ids and errors, paths, stack
+traces). Both endpoints answer only an **admin session** — API tokens are
+refused (`403`) even with the `logs` scope, like the support bundles. The export
+is part of diagnosis and support and is **not** behind the `log_export` licence.
+
+```
+GET /api/v1/logs/server?level=&q=&from=&to=&plugin=&module=&msg=&field=&before=&limit=&counts=&bucket=
+GET /api/v1/logs/server/export?format=log|json|csv + the same filters
+```
+
+- `level` — comma list of `error` (incl. fatal), `warn`, `info`, `debug` (incl. trace); empty = all
+- `q` — text in the message or any field, case-insensitive (≤ 200 characters)
+- `from`/`to` — epoch ms or ISO, inclusive
+- `plugin`, `module` — exact value of that field; `field=key:value` (repeatable, ≤ 5) for any other top-level field, e.g. `field=op:run`
+- `msg` — text in the message only
+- `limit` — 1–500 (default 200); newest first. `next` of the answer goes into `before` for the next, older page (`more: false` at the end)
+- `counts=1` — `counts` per level group for the filter without its level, `histogram { bucketMs, buckets[{ t, time, error, warn, info, debug }] }` (`bucket` as above)
+
+Entries: `{ ts, time, level, levelName, msg, fields }` (`fields` = everything but
+level/time/msg/pid/hostname; lines over 32 KB come with `fields: { truncated, bytes }`).
+The answer also carries `enabled`, `files [{ name, size, mtime }]` and
+`retention { maxBytes, files }`.
+
+Export (oldest first, streamed, at most 200 000 lines), file name
+`gatecontrol-server-YYYYMMDD-HHMM.<format>`:
+
+- `log` — `2026-11-02T08:22:38.286Z WARN  event loop was blocked {"blockedMs":2300}`
+- `json` — array of the pino objects as written
+- `csv` — `time,level,msg,plugin,module,details`
+
+
+---
+
+## Logs & Monitoring
+
+The page **System › Logs & Monitoring** (`/logs`) shows every log source of the
+host in one place: the server log (above), plugin logs (`gc.log`), the activity
+log, Caddy's access log and remote desktop sessions.
+
+- **Ereignisse** — all sources as one list, newest first: time range (1 h, 24 h,
+  7 days, 30 days, custom), live updates (every 15 s), KPI tiles (errors with
+  the change against the period before, warnings with the most frequent code,
+  "Server blockiert" = `event loop was blocked`, HTTP 5xx of all requests,
+  plugins with errors — a click sets the filter), a timeline per level (drag =
+  range, click = that slot), facets for level, source and plugin with counts,
+  search with syntax (`plugin:mail`, `source:server`, `code:storage_timeout`,
+  `-debug`, `"exact text"`, `-word`), chips, "Gleiche zusammenfassen", time
+  clusters (≥ 3 warnings/errors from ≥ 2 sources within 2 s), multi-select
+  (export, copy as text, "Zur selben Zeit zeigen") and endless loading. The
+  filter lives in the address (`/logs#events?level=error&source=server`).
+- **Entry** (`/logs#e/<id>`) — "Was bedeutet das?" for known codes (storage
+  timeout, storage worker restarted, event loop blocked, plugin did not start
+  in time, `no_right`, `lock_unreachable`, failed sign-in), the problem it
+  belongs to, fields with "use as filter", raw JSON, copy, link, export with
+  surroundings, and "Zur selben Zeit" (±10 s / ±1 min / ±5 min, all sources and levels).
+- **Probleme** — errors and warnings grouped across sources: by code (also
+  `ERR_*`, `E*` system codes, the event type of the activity log), otherwise by
+  the normalised message; HTTP 5xx per status and host. Status open / watch /
+  resolved / muted 7 days (stored in `log_problems`), "returned" when a
+  resolved problem occurs again, sparkline, affected sources and plugins,
+  correlation "Fällt zusammen mit …" (another problem within ±2 s at at least
+  half of the occurrences). With "Benachrichtigen, wenn es nach „Erledigt“
+  wieder auftritt" a returned problem is logged once as `log_problem_returned`
+  (warning) — rules of the notification centre (event "Log-Problem wieder
+  aufgetreten"), webhooks and alert e-mails pick it up.
+- **Zugriffe** (access log with status classes and counts), **Sitzungen** (RDP
+  history) and **Gespeicherte Filter** (saved filters and export templates,
+  shared by all administrators, table `log_saved_views`).
+- **Export** — current view, selection, one problem, time window around an
+  entry, or the **Fehlerbericht** (ZIP: README with versions, `problems.json`,
+  per problem up to 10 examples with all entries ±10 s, `versions.json`);
+  CSV, JSON, NDJSON or text; columns; privacy (shorten IPs, mask e-mail
+  addresses, user names → `user-<id>`); local time zone or UTC; preview with
+  count and size; templates; optional note in the activity log. Exports are
+  streamed while downloading.
+
+### Rights and licence
+
+| | admin session | token with `logs` |
+|---|---|---|
+| activity, access, sessions | ✓ | ✓ |
+| server log, plugin logs | ✓ | — (403 when asked for) |
+| problems, saved views, error report | ✓ | — |
+
+Exports of activity and access keep needing the licence feature `log_export`
+(the dialog shows them locked); server, plugins and sessions export freely.
+
+### API
+
+```
+GET /api/v1/logs/meta
+GET /api/v1/logs/events?from=&to=&level=&source=&plugin=&q=&problem=&before=&limit=
+GET /api/v1/logs/events/stats?…&bucket=auto|1m|5m|15m|1h|6h|1d
+GET /api/v1/logs/events/item?id=
+GET /api/v1/logs/events/export?scope=view|selection|problem|window|report&format=csv|json|ndjson|log
+    &columns=time,level,source,message,fields,raw&mask_ip=1&mask_email=1&pseudonymize=1&tz=utc|<IANA>&note=1
+    (+ ids= for selection, problem= for problem, around=<id>&window=10|60|300 for window)
+GET /api/v1/logs/events/export/preview?…   (first rows, count, bytes, file name)
+GET /api/v1/logs/problems?status=open|watch|resolved|muted&sort=last|count|severity&from=&to=
+GET /api/v1/logs/problems/item?key=
+PUT /api/v1/logs/problems/state   { key, status?, notifyOnReturn?, title? }
+GET|POST /api/v1/logs/saved, DELETE /api/v1/logs/saved/:id
+```
+
+Entries: `{ id, source, ts, time, level, levelName, msg, ctx, plugin, pluginName, code }`
+(`fields`, `raw` for one entry). Ids: `s.<ts>.<hash>` (server), `p.<id>` (plugins),
+`a.<id>` (activity), `h.<ts>.<hash>` (access), `r.<id>` (sessions).
 
 ---
 

@@ -3010,6 +3010,35 @@ const migrations = [
     sql: 'ALTER TABLE plugin_public_link_files ADD COLUMN path TEXT;',
     detect: (db) => hasColumn(db, 'plugin_public_link_files', 'path'),
   },
+  {
+    version: 121,
+    name: 'log_problems_saved_views',
+    // Logs & Monitoring (FEATURES.md "Logs & Monitoring"): the state of a
+    // problem (same errors grouped, services/logProblems.js) — open, watch,
+    // resolved, muted until — and the saved filters / export templates.
+    sql: `
+      CREATE TABLE IF NOT EXISTS log_problems (
+        key              TEXT PRIMARY KEY,
+        status           TEXT NOT NULL DEFAULT 'open',
+        muted_until      INTEGER,
+        resolved_at      INTEGER,
+        notify_on_return INTEGER NOT NULL DEFAULT 0,
+        notified_at      INTEGER,
+        title            TEXT,
+        updated_at       INTEGER NOT NULL,
+        updated_by       INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS log_saved_views (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind       TEXT NOT NULL,
+        name       TEXT NOT NULL,
+        data       TEXT NOT NULL,
+        created_by INTEGER,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_log_saved_views_kind ON log_saved_views(kind, name);`,
+    detect: (db) => tableExists(db, 'log_problems') && tableExists(db, 'log_saved_views'),
+  },
 ];
 
 module.exports = { migrations };

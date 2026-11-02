@@ -381,6 +381,10 @@ for (const [path, pluginId, sub] of MOVED_PAGES) {
 // (notifications.njk island data-prefixes must list the same ones).
 const NOTIFY_I18N_PREFIXES = ['notify.', 'common.'];
 
+// Logs & Monitoring (logs.js): its strings as one JSON island (logs.njk
+// data-prefixes must list the same ones).
+const LOGS_I18N_PREFIXES = ['lg.', 'common.'];
+
 // Support-Pakete page (support-inbox.js): its strings as one JSON island
 // (support-bundles.njk data-prefixes must list the same ones).
 const SB_I18N_PREFIXES = ['support_bundles.', 'common.'];
@@ -446,6 +450,11 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
         days: config.supportBundles.maxAgeDays,
         keep: config.supportBundles.keepPerPeer,
       };
+    }
+    if (template === 'logs') {
+      extraLocals.logsI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, LOGS_I18N_PREFIXES))
+        .replace(/</g, '\\u003c');
+      try { extraLocals.logsLicenceExport = require('../services/license').hasFeature('log_export'); } catch { extraLocals.logsLicenceExport = false; }
     }
     if (template === 'support-bundles') {
       extraLocals.sbI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, SB_I18N_PREFIXES))

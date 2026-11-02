@@ -121,3 +121,27 @@ describe('accessLog.getRecent', () => {
     fs.writeFileSync(testLogFile, original);
   });
 });
+
+describe('accessLog: optional filters and counts (Logs & Monitoring)', () => {
+  it('status as a list of classes, time range and text', async () => {
+    const r = await accessLog.getRecent(50, { status: '400,500' });
+    assert.deepEqual(r.entries.map((e) => e.status), [502, 404]);
+    const range = await accessLog.getRecent(50, { from: 1710000010 * 1000, to: 1710000030 * 1000 });
+    assert.deepEqual(range.entries.map((e) => e.status), [404, 200, 201]);
+    const q = await accessLog.getRecent(50, { q: 'mozilla' });
+    assert.equal(q.total, 1);
+    const ip = await accessLog.getRecent(50, { q: '9.9.9.9' });
+    assert.equal(ip.entries[0].uri, '/missing');
+  });
+
+  it('counts per status class ignore the status filter, histogram per bucket', async () => {
+    const r = await accessLog.getRecent(50, { status: '500' }, { counts: true, bucketMs: 20000 });
+    assert.equal(r.total, 1);
+    assert.deepEqual(r.counts, { '1xx': 0, '2xx': 3, '3xx': 0, '4xx': 1, '5xx': 1, total: 5 });
+    assert.equal(r.histogram.bucketMs, 20000);
+    assert.equal(r.histogram.buckets.reduce((n, b) => n + b['2xx'] + b['4xx'] + b['5xx'], 0), 5);
+    assert.ok(r.histogram.buckets.every((b, i, a) => i === 0 || a[i - 1].t < b.t));
+    const plain = await accessLog.getRecent(50, {});
+    assert.equal(plain.counts, undefined, 'no counts unless asked');
+  });
+});

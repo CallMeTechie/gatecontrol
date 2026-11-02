@@ -207,6 +207,9 @@ jobs:
       GC_ADMIN_PASSWORD: 'E2eTest!Pass123'
       GC_DEFAULT_LANGUAGE: en
       GC_LOG_LEVEL: warn
+      # Logs & Monitoring (scenario logs): the server log file is off under
+      # NODE_ENV=test unless switched on.
+      GC_SERVER_LOG: 'on'
       GC_RATE_LIMIT_LOGIN: '100000'
       GC_RATE_LIMIT_API: '100000'
       GC_RATE_LIMIT_GATEWAY: '100000'
@@ -271,7 +274,7 @@ jobs:
       - name: Browser scenarios
         env:
           NODE_PATH: /tmp/pw/node_modules
-        run: node tests/e2e/run.js ${{ github.event_name == 'workflow_dispatch' && inputs.browser_scenarios || 'login zones security passkey dashboard settings users portal portalstart pluginviewport notifications support storage' }}
+        run: node tests/e2e/run.js ${{ github.event_name == 'workflow_dispatch' && inputs.browser_scenarios || 'login zones security passkey dashboard settings users portal portalstart pluginviewport notifications support storage logs' }}
 
       - name: App log
         if: failure()

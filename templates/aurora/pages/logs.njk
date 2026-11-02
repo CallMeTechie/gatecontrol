@@ -1,102 +1,204 @@
 {% extends theme + "/layout.njk" %}
 
+{#- Logs & Monitoring (FEATURES.md "Logs & Monitoring"): every log source of
+    the host in one place — Ereignisse (server, plugins, activity, access,
+    sessions as one list with KPI tiles, timeline, facets, search syntax,
+    clusters, selection, endless loading, entry detail with "Zur selben
+    Zeit"), Probleme (grouped errors with status, correlation), Zugriffe,
+    Sitzungen (RDP history) and Gespeicherte Filter, plus the export dialog.
+    Static shell only; every value comes from /api/v1/logs/* at runtime
+    (public/js/logs.js, el() only — no innerHTML). Address: /logs#events,
+    #e/<id>, #problems, #problems/<key>, #access, #sessions, #saved; the
+    filter is kept in the address (#events?…). Strings: the #lg-i18n island
+    (routes/index.js LOGS_I18N_PREFIXES). Styles: §13 of public/css/app.css. -#}
+
+{% set tabs = [['events', 'lg.tab_events'], ['problems', 'lg.tab_problems'], ['access', 'lg.tab_access'], ['sessions', 'lg.tab_sessions'], ['saved', 'lg.tab_saved']] %}
+
 {% block content %}
-<div class="page-header">
-  <div class="page-actions">
-    <button class="btn btn-ghost btn-sm" id="activity-export-csv">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      {{ t('logs.export_csv') }}
-    </button>
-  </div>
-</div>
+<div class="lg-page" id="lg-page" data-licence-export="{{ '1' if logsLicenceExport else '0' }}">
 
-{# ─── Type tabs — outside page-header in Aurora ─── #}
-<div class="tabs" id="log-type-tabs">
-  <div class="tab active" data-type="activity">{{ t('logs.activity') }}</div>
-  <div class="tab" data-type="access">{{ t('logs.access') }}</div>
-  <div class="tab" data-type="history">{{ t('rdp.history') }}</div>
-</div>
-
-{# ─── Activity Log Panel ─── #}
-<div id="activity-panel">
-  <div class="toolbar">
-    <div class="search-box">
-      <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="m20 20-3-3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      <input placeholder="{{ t('logs.search_placeholder') }}" id="log-search">
-    </div>
-    <span class="toggle-group" id="log-severity-filter">
-      <button class="tab active" data-severity="all">{{ t('logs.all') }}</button>
-      <button class="tab" data-severity="success">{{ t('logs.success') }}</button>
-      <button class="tab" data-severity="info">Info</button>
-      <button class="tab" data-severity="warning">{{ t('logs.warning') }}</button>
-      <button class="tab" data-severity="error">{{ t('logs.error') }}</button>
-    </span>
-    <span id="logs-count" style="font-size:12px;color:var(--muted)"></span>
-    <button class="btn btn-ghost btn-sm" id="activity-export-json" style="margin-left:auto">{{ t('logs.export_json') }}</button>
-  </div>
-  <div class="grid">
-    <div class="card span12" id="full-activity-log">
-      <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
+  <div class="lg-head">
+    <p class="lg-sub" id="lg-sub">{{ t('lg.subtitle') }}</p>
+    <div class="lg-head-actions">
+      <div class="lg-seg" role="group" aria-label="{{ t('lg.range') }}" id="lg-range">
+        {%- for r in ['1h', '24h', '7d', '30d', 'custom'] %}
+        <button type="button" class="lg-seg-btn" data-range="{{ r }}" aria-pressed="false">{{ t('lg.range_' + r) }}</button>
+        {%- endfor %}
+      </div>
+      <button type="button" class="btn lg-live" id="lg-live" aria-pressed="false" title="{{ t('lg.live_off') }}"><span class="lg-live-dot" aria-hidden="true"></span>{{ t('lg.live') }}</button>
+      <button type="button" class="btn btn-primary lg-export-btn" id="lg-export-open" aria-label="{{ t('lg.export') }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg>
+        <span class="lg-export-label">{{ t('lg.export') }}</span>
+      </button>
     </div>
   </div>
-  <div id="activity-pagination" style="margin-top:12px"></div>
-</div>
 
-{# ─── Access Log Panel ─── #}
-<div id="access-panel" style="display:none">
-  <div class="toolbar">
-    <span class="toggle-group" id="access-status-filter">
-      <button class="tab active" data-status="">{{ t('logs.all') }}</button>
-      <button class="tab" data-status="200">2xx</button>
-      <button class="tab" data-status="300">3xx</button>
-      <button class="tab" data-status="400">4xx</button>
-      <button class="tab" data-status="500">5xx</button>
-    </span>
-    <span id="access-count" style="font-size:12px;color:var(--muted)"></span>
-    <div style="margin-left:auto;display:flex;gap:6px">
-      <button class="btn btn-ghost btn-sm" id="access-export-csv">{{ t('logs.export_csv') }}</button>
-      <button class="btn btn-ghost btn-sm" id="access-export-json">{{ t('logs.export_json') }}</button>
-    </div>
-  </div>
-  <div class="grid">
-    <div class="card span12" id="access-log-container">
-      <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
-    </div>
-  </div>
-  <div id="access-pagination" style="margin-top:12px"></div>
-</div>
+  <form class="lg-card lg-custom" id="lg-custom" hidden>
+    <label class="lg-field"><span>{{ t('lg.custom_from') }}</span><input type="datetime-local" id="lg-custom-from" required></label>
+    <label class="lg-field"><span>{{ t('lg.custom_to') }}</span><input type="datetime-local" id="lg-custom-to"></label>
+    <button type="submit" class="btn btn-primary btn-sm">{{ t('lg.custom_apply') }}</button>
+    <button type="button" class="btn btn-ghost btn-sm" id="lg-custom-cancel">{{ t('common.cancel') }}</button>
+  </form>
 
-{# ─── Connection History Panel ─── #}
-<div id="history-panel" style="display:none">
-  <div class="grid">
-    <div class="card span12">
-      <div class="card-title">
-        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
-        {{ t('rdp.history') }}
-        <select class="filter-select" id="rdp-history-status" style="font-size:11px;padding:4px 8px">
+  <div class="tabs lg-tabs" role="tablist" id="lg-tabs" aria-label="{{ t('nav.logs') }}">
+    {%- for tab in tabs %}
+    <button type="button" class="tab" role="tab" id="lg-tab-{{ tab[0] }}" data-tab="{{ tab[0] }}" aria-controls="lg-panel-{{ tab[0] }}" aria-selected="false" tabindex="-1">{{ t(tab[1]) }}{% if tab[0] == 'problems' %}<span class="lg-tab-badge" id="lg-problems-badge" hidden></span>{% endif %}</button>
+    {%- endfor %}
+  </div>
+
+  <p class="lg-note" id="lg-server-off" hidden>{{ t('lg.server_off') }}</p>
+
+  {# ─── Ereignisse ─── #}
+  <section class="lg-panel" id="lg-panel-events" role="tabpanel" aria-labelledby="lg-tab-events" hidden>
+    <div id="lg-events-main">
+      <div class="lg-kpis" id="lg-kpis"></div>
+
+      <section class="lg-card lg-hist" aria-labelledby="lg-hist-title">
+        <div class="lg-hist-head">
+          <h2 class="lg-h" id="lg-hist-title">{{ t('lg.hist_title') }}</h2>
+          <span class="lg-legend"><i class="lg-sw lg-sw-error"></i>{{ t('lg.level_error') }}</span>
+          <span class="lg-legend"><i class="lg-sw lg-sw-warn"></i>{{ t('lg.level_warn') }}</span>
+          <span class="lg-legend"><i class="lg-sw lg-sw-info"></i>{{ t('lg.level_info') }}</span>
+          <span class="lg-legend"><i class="lg-sw lg-sw-debug"></i>{{ t('lg.level_debug') }}</span>
+          <span class="lg-hist-hint">{{ t('lg.hist_hint') }}</span>
+        </div>
+        <div class="lg-hist-plot" id="lg-hist"><div class="lg-hist-brush" id="lg-hist-brush" hidden></div></div>
+        <div class="lg-hist-axis" id="lg-hist-axis" aria-hidden="true"></div>
+      </section>
+
+      <div class="lg-mobile-bar">
+        <label class="lg-search lg-search-m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input type="search" id="lg-search-m" aria-label="{{ t('lg.f_search') }}" placeholder="{{ t('common.search') }}" autocomplete="off"></label>
+        <button type="button" class="btn lg-filter-btn" id="lg-filter-open" aria-haspopup="dialog" aria-controls="lg-sheet">{{ t('lg.filters') }} <span class="lg-count-dot" id="lg-filter-count" hidden></span></button>
+      </div>
+      <p class="lg-mobile-summary" id="lg-mobile-summary"></p>
+
+      <div class="lg-body">
+        <aside class="lg-card lg-filters" id="lg-filters" aria-label="{{ t('lg.filters') }}">
+          <label class="lg-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="search" id="lg-search" aria-label="{{ t('lg.f_search') }}" aria-describedby="lg-search-hint" placeholder="{{ t('lg.f_search_ph') }}" autocomplete="off"></label>
+          <span class="lg-search-hint" id="lg-search-hint">{{ t('lg.f_search_hint') }} <code>plugin:mail</code> · <code>-debug</code> · <code>"…"</code></span>
+          <fieldset class="lg-facet"><legend class="lg-fh">{{ t('lg.f_level') }}</legend><div id="lg-f-levels"></div></fieldset>
+          <fieldset class="lg-facet"><legend class="lg-fh">{{ t('lg.f_source') }}</legend><div id="lg-f-sources"></div></fieldset>
+          <fieldset class="lg-facet" id="lg-f-plugins-box"><legend class="lg-fh">{{ t('lg.f_plugin') }}</legend><div id="lg-f-plugins"></div></fieldset>
+          <div class="lg-facet"><h3 class="lg-fh">{{ t('lg.f_saved') }}</h3><div id="lg-f-saved"></div>
+            <button type="button" class="btn btn-block lg-save-filter" id="lg-save-filter">{{ t('lg.f_save') }}</button></div>
+          <button type="button" class="btn btn-primary btn-block lg-sheet-done" id="lg-sheet-done">{{ t('lg.filters_close') }}</button>
+        </aside>
+
+        <section class="lg-main" aria-label="{{ t('lg.tab_events') }}">
+          <div class="lg-chips-row">
+            <div class="lg-chips" id="lg-chips"></div>
+            <div class="lg-chips-side">
+              <span id="lg-count" aria-live="polite"></span>
+              <label class="lg-switch"><input type="checkbox" id="lg-collapse" checked><span class="lg-switch-ui" aria-hidden="true"></span>{{ t('lg.collapse') }}</label>
+            </div>
+          </div>
+          <div class="lg-card lg-list" id="lg-list">
+            <div class="lg-row lg-row-head">
+              <input type="checkbox" id="lg-select-all" aria-label="{{ t('lg.select_all') }}">
+              <span>{{ t('lg.col_time') }}</span><span>{{ t('lg.col_level') }}</span><span>{{ t('lg.col_source') }}</span><span>{{ t('lg.col_msg') }}</span><span class="lg-r">{{ t('lg.col_n') }}</span>
+            </div>
+            <div id="lg-rows" aria-busy="false"></div>
+          </div>
+          <div class="lg-more" id="lg-more-box"><span id="lg-sentinel" aria-hidden="true"></span>
+            <button type="button" class="btn btn-sm" id="lg-more" hidden>{{ t('lg.more') }}</button>
+            <span class="lg-faint" id="lg-more-text"></span></div>
+          <div class="lg-selbar" id="lg-selbar" role="region" aria-label="{{ t('lg.sel_export') }}" hidden>
+            <span class="lg-selbar-n" id="lg-sel-n" aria-live="polite"></span>
+            <button type="button" class="btn btn-sm" id="lg-sel-export">{{ t('lg.sel_export') }}</button>
+            <button type="button" class="btn btn-sm" id="lg-sel-copy">{{ t('lg.sel_copy') }}</button>
+            <button type="button" class="btn btn-sm" id="lg-sel-same">{{ t('lg.sel_same') }}</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="lg-sel-clear">{{ t('lg.sel_clear') }}</button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="lg-detail" id="lg-detail" hidden></div>
+  </section>
+
+  {# ─── Probleme ─── #}
+  <section class="lg-panel" id="lg-panel-problems" role="tabpanel" aria-labelledby="lg-tab-problems" hidden>
+    <div class="lg-body lg-body-problems">
+      <section class="lg-main" aria-label="{{ t('lg.tab_problems') }}">
+        <div class="lg-toolbar">
+          <div class="lg-seg" role="group" aria-label="{{ t('lg.p_status') }}" id="lg-p-status">
+            {%- for s in ['open', 'watch', 'resolved', 'muted'] %}
+            <button type="button" class="lg-seg-btn" data-status="{{ s }}" aria-pressed="{{ 'true' if s == 'open' else 'false' }}">{{ t('lg.p_' + s) }} · <span data-count="{{ s }}">0</span></button>
+            {%- endfor %}
+          </div>
+          <label class="lg-field lg-sort"><span>{{ t('lg.p_sort') }}</span>
+            <select id="lg-p-sort">
+              <option value="last">{{ t('lg.p_sort_last') }}</option>
+              <option value="count">{{ t('lg.p_sort_count') }}</option>
+              <option value="severity">{{ t('lg.p_sort_severity') }}</option>
+            </select></label>
+        </div>
+        <div class="lg-card lg-plist" id="lg-plist"></div>
+      </section>
+      <aside class="lg-card lg-pdetail" id="lg-pdetail" aria-live="polite" aria-label="{{ t('lg.tab_problems') }}"></aside>
+    </div>
+  </section>
+
+  {# ─── Zugriffe ─── #}
+  <section class="lg-panel" id="lg-panel-access" role="tabpanel" aria-labelledby="lg-tab-access" hidden>
+    <div class="lg-toolbar">
+      <label class="lg-search lg-search-wide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="search" id="lg-a-search" aria-label="{{ t('lg.a_search') }}" placeholder="{{ t('lg.a_search') }}" autocomplete="off"></label>
+      <div class="lg-seg" role="group" aria-label="{{ t('lg.a_status') }}" id="lg-a-status"></div>
+      <span class="lg-faint" id="lg-a-count" aria-live="polite"></span>
+      <span class="lg-toolbar-end">
+        <button type="button" class="btn btn-sm" id="lg-a-csv">{{ t('logs.export_csv') }}</button>
+        <button type="button" class="btn btn-sm" id="lg-a-json">{{ t('logs.export_json') }}</button>
+      </span>
+    </div>
+    <p class="lg-note" id="lg-a-locked" hidden>{{ t('lg.a_locked') }}</p>
+    <div class="lg-card lg-table-wrap"><table class="data-table lg-atable">
+      <thead><tr><th scope="col">{{ t('lg.col_time') }}</th><th scope="col">{{ t('lg.a_col_status') }}</th><th scope="col">{{ t('lg.a_col_method') }}</th><th scope="col">{{ t('lg.a_col_path') }}</th><th scope="col">{{ t('lg.a_col_ip') }}</th><th scope="col" class="lg-r">{{ t('lg.a_col_duration') }}</th></tr></thead>
+      <tbody id="lg-a-rows"></tbody></table></div>
+    <div class="lg-more"><button type="button" class="btn btn-sm" id="lg-a-more" hidden>{{ t('lg.more') }}</button></div>
+  </section>
+
+  {# ─── Sitzungen (RDP history, rdp-history.js) ─── #}
+  <section class="lg-panel" id="lg-panel-sessions" role="tabpanel" aria-labelledby="lg-tab-sessions" hidden>
+    <div class="lg-card lg-pad">
+      <div class="lg-toolbar">
+        <h2 class="lg-h">{{ t('lg.s_title') }}</h2>
+        <select class="filter-select" id="rdp-history-status" aria-label="{{ t('rdp.status') }}">
           <option value="">{{ t('common.all') }}</option>
           <option value="active">{{ t('rdp.status_active') }}</option>
           <option value="ended">{{ t('rdp.status_ended') }}</option>
         </select>
-        <select class="filter-select" id="rdp-history-period" style="font-size:11px;padding:4px 8px">
+        <select class="filter-select" id="rdp-history-period" aria-label="{{ t('lg.range') }}">
           <option value="24h">{{ t('logs.last_24h') }}</option>
           <option value="7d">{{ t('logs.last_7d') }}</option>
           <option value="30d">{{ t('logs.last_30d') }}</option>
         </select>
-        <div style="margin-left:auto;display:flex;gap:8px">
-          <button class="btn btn-ghost btn-sm" id="rdp-history-export-csv">CSV</button>
-          <button class="btn btn-ghost btn-sm" id="rdp-history-export-json">JSON</button>
-        </div>
+        <span class="lg-toolbar-end">
+          <button type="button" class="btn btn-sm" id="rdp-history-export-csv">CSV</button>
+          <button type="button" class="btn btn-sm" id="rdp-history-export-json">JSON</button>
+        </span>
       </div>
-      <div id="rdp-history-list">
-        <div style="font-size:13px;color:var(--text-3);padding:20px 0;text-align:center">{{ t('common.loading') }}</div>
-      </div>
+      <div id="rdp-history-list"><div class="lg-faint lg-pad">{{ t('common.loading') }}</div></div>
     </div>
-  </div>
+  </section>
+
+  {# ─── Gespeicherte Filter ─── #}
+  <section class="lg-panel" id="lg-panel-saved" role="tabpanel" aria-labelledby="lg-tab-saved" hidden>
+    <div class="lg-saved-grid">
+      <section class="lg-card lg-pad"><h2 class="lg-h">{{ t('lg.sv_filters') }}</h2><ul class="lg-saved-list" id="lg-sv-filters"></ul></section>
+      <section class="lg-card lg-pad"><h2 class="lg-h">{{ t('lg.sv_templates') }}</h2><ul class="lg-saved-list" id="lg-sv-templates"></ul></section>
+    </div>
+  </section>
+
+  {# Bottom sheet for the filters on narrow screens (the aside moves in) #}
+  <div class="lg-sheet" id="lg-sheet" role="dialog" aria-modal="true" aria-label="{{ t('lg.filters') }}" hidden><div class="lg-sheet-box" id="lg-sheet-box"></div></div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<script type="application/json" id="lg-i18n" data-prefixes="lg. common." nonce="{{ cspNonce }}">{{ logsI18n | default('{}') | safe }}</script>
 <script src="/js/logs.js?v={{ appVersion }}"></script>
 <script src="/js/rdp-history.js?v={{ appVersion }}" nonce="{{ nonce }}"></script>
 {% endblock %}
