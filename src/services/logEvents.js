@@ -235,8 +235,8 @@ function fromSession(row) {
 // Range: from/to inclusive (epoch ms, null = open). Each yields entries.
 
 async function* iterServer({ from, to, desc }) {
-  const files = await serverLog.listFiles();
-  const handles = await serverLog.openAll(desc ? files : files.slice().reverse());
+  const opened = await serverLog.openRotation();
+  const handles = desc ? opened : opened.reverse();
   try {
     for (const h of handles) {
       const lines = desc ? serverLog.linesBackward(h.fh, h.size) : serverLog.linesForward(h.fh, h.size);

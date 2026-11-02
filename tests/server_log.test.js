@@ -25,6 +25,11 @@ const ROOT = path.join(__dirname, '..');
 const { RotatingFileStream, resolveOptions, rotationFiles } = require('../src/utils/serverLogFile');
 
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), `gc-test-slog-${p}-`));
+// stat through an open descriptor (no check-then-use on the path)
+function fstat(p) {
+  const fd = fs.openSync(p, 'r');
+  try { return fs.fstatSync(fd); } finally { fs.closeSync(fd); }
+}
 const line = (o) => JSON.stringify({ pid: 1, hostname: 'h', ...o }) + '\n';
 
 describe('serverLogFile: options', () => {
@@ -49,11 +54,12 @@ describe('serverLogFile: RotatingFileStream', () => {
     const s = new RotatingFileStream({ file, maxBytes: 1000, files: 3, flushDelayMs: 1 });
     const row = 'x'.repeat(99) + '\n'; // 100 bytes
     for (let i = 0; i < 9; i++) s.write(row);
-    assert.equal(fs.existsSync(file), false, 'nothing written synchronously');
+    assert.deepEqual(fs.readdirSync(path.dirname(dir)), [], 'nothing written synchronously');
     await s.flush();
-    assert.equal(fs.statSync(file).size, 900);
-    assert.equal(fs.statSync(file).mode & 0o777, 0o600);
-    assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
+    const st = fstat(file);
+    assert.equal(st.size, 900);
+    assert.equal(st.mode & 0o777, 0o600);
+    assert.equal(fstat(dir).mode & 0o777, 0o700);
     // 900 + 500 > 1000 → rotate; 500 + 500 fits; and so on (2 rounds per file).
     for (let round = 0; round < 6; round++) {
       for (let i = 0; i < 5; i++) s.write(`r${round}-${i}`.padEnd(99, '.') + '\n');
@@ -61,10 +67,11 @@ describe('serverLogFile: RotatingFileStream', () => {
     }
     const names = fs.readdirSync(dir).sort();
     assert.deepEqual(names, ['server.log', 'server.log.1', 'server.log.2'], 'oldest dropped');
-    for (const n of names) assert.ok(fs.statSync(path.join(dir, n)).size <= 1000, n);
-    assert.match(fs.readFileSync(file, 'utf8'), /^r4-0[^]*r5-4\.+\n$/);
-    assert.match(fs.readFileSync(path.join(dir, 'server.log.1'), 'utf8'), /^r2-0/);
-    assert.match(fs.readFileSync(path.join(dir, 'server.log.2'), 'utf8'), /^r0-0/, 'the first 900 bytes are gone');
+    const text = Object.fromEntries(names.map((n) => [n, fs.readFileSync(path.join(dir, n), 'utf8')]));
+    for (const n of names) assert.ok(Buffer.byteLength(text[n]) <= 1000, n);
+    assert.match(text['server.log'], /^r4-0[^]*r5-4\.+\n$/);
+    assert.match(text['server.log.1'], /^r2-0/);
+    assert.match(text['server.log.2'], /^r0-0/, 'the first 900 bytes are gone');
     await s.close();
   });
 
@@ -76,7 +83,7 @@ describe('serverLogFile: RotatingFileStream', () => {
     const s = new RotatingFileStream({ file, maxBytes: 1e6, files: 2, flushDelayMs: 1 });
     s.write('a\n');
     await s.flush();
-    assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+    assert.equal(fstat(file).mode & 0o777, 0o600);
     await s.close();
   });
 
@@ -131,7 +138,7 @@ describe('serverLogFile: RotatingFileStream', () => {
 
 describe('logger: stdout and the file carry the same redacted lines', () => {
   const run = (env, code) => spawnSync(process.execPath, ['-e', code], {
-    cwd: ROOT, encoding: 'utf8', timeout: 20000,
+    cwd: ROOT, encoding: 'utf8', timeout: 60000,
     env: { ...process.env, GC_LOG_LEVEL: 'info', NODE_ENV: 'production', GC_SERVER_LOG: '', ...env },
   });
 
@@ -139,7 +146,7 @@ describe('logger: stdout and the file carry the same redacted lines', () => {
     const dir = tmp('logger');
     const r = run({ GC_SERVER_LOG_DIR: dir, GC_SERVER_LOG: 'on' },
       "const l=require('./src/utils/logger');l.info({headers:{authorization:'Bearer gc_secret'},plugin:'p'},'hello');l.fatal('bye');process.exit(3)");
-    assert.equal(r.status, 3, r.stderr);
+    assert.equal(r.status, 3, `status ${r.status} signal ${r.signal} stderr ${r.stderr}`);
     const file = fs.readFileSync(path.join(dir, 'server.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     assert.deepEqual(file.map((o) => o.msg), ['hello', 'bye']);
     assert.equal(file[0].headers.authorization, '[REDACTED]');

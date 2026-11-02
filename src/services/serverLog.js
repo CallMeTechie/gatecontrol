@@ -108,28 +108,32 @@ function options() {
   return serverLogFile.resolveOptions();
 }
 
-/** Files of the rotation that exist, newest first: [{ name, path, size, mtime }]. */
-async function listFiles(opts = options()) {
+/**
+ * The files of the rotation, opened, newest first: [{ fh, name, size, mtime }].
+ * Opened first and measured through the handle — a rotation in between
+ * neither loses nor repeats lines, and no path is checked before it is used.
+ */
+async function openRotation(opts = options()) {
   const out = [];
   for (const p of serverLogFile.rotationFiles(opts.file, opts.files)) {
+    let fh = null;
     try {
-      const st = await fsp.stat(p);
-      if (st.isFile()) out.push({ name: path.basename(p), path: p, size: st.size, mtime: st.mtime.toISOString() });
-    } catch { /* not there (yet) */ }
+      fh = await fsp.open(p, 'r');
+      const st = await fh.stat();
+      if (!st.isFile()) { await fh.close(); continue; }
+      out.push({ fh, name: path.basename(p), size: st.size, mtime: st.mtime.toISOString() });
+    } catch {
+      if (fh) await fh.close().catch(() => {});
+    }
   }
   return out;
 }
 
-async function openAll(files) {
-  const handles = [];
-  for (const f of files) {
-    try {
-      const fh = await fsp.open(f.path, 'r');
-      const st = await fh.stat();
-      handles.push({ fh, size: st.size });
-    } catch { /* rotated away meanwhile */ }
-  }
-  return handles;
+/** Files of the rotation that exist, newest first: [{ name, size, mtime }]. */
+async function listFiles(opts) {
+  const handles = await openRotation(opts);
+  await closeAll(handles);
+  return handles.map(({ name, size, mtime }) => ({ name, size, mtime }));
 }
 
 async function closeAll(handles) {
@@ -270,8 +274,8 @@ function toEntry(obj, rawLength) {
  *          (with counts: true), histogram the same per time bucket
  */
 async function query(filter, { before = null, limit = DEFAULT_LIMIT, counts = false, bucketMs = null } = {}) {
-  const files = await listFiles();
-  const handles = await openAll(files);
+  const handles = await openRotation();
+  const files = handles.map(({ name, size, mtime }) => ({ name, size, mtime }));
   const entries = [];
   const tally = counts ? { error: 0, warn: 0, info: 0, debug: 0, total: 0 } : null;
   const buckets = counts && bucketMs ? new Map() : null;
@@ -355,8 +359,7 @@ async function query(filter, { before = null, limit = DEFAULT_LIMIT, counts = fa
  * when onLine returns false. → { lines, capped }
  */
 async function each(filter, onLine, { max = MAX_EXPORT_LINES } = {}) {
-  const files = (await listFiles()).reverse();
-  const handles = await openAll(files);
+  const handles = (await openRotation()).reverse();
   let lines = 0;
   let capped = false;
   const parse = needsParse(filter);
@@ -420,7 +423,7 @@ module.exports = {
   restOf,
   linesBackward,
   linesForward,
-  openAll,
+  openRotation,
   closeAll,
   head,
   parseLine,

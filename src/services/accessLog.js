@@ -193,12 +193,13 @@ function parseInto(text, out) {
 
 /** Every entry of access.log, oldest first (normalised, cached). */
 async function entries() {
-  let st;
-  try { st = await fs.promises.stat(LOG_FILE); } catch { cache = { ino: null, size: 0, entries: [], partial: '' }; return []; }
-  if (cache.ino !== st.ino || st.size < cache.size) cache = { ino: st.ino, size: 0, entries: [], partial: '' };
-  if (st.size > cache.size) {
-    const fh = await fs.promises.open(LOG_FILE, 'r');
-    try {
+  // Open first, then stat the open file: what is read is what was measured.
+  let fh;
+  try { fh = await fs.promises.open(LOG_FILE, 'r'); } catch { cache = { ino: null, size: 0, entries: [], partial: '' }; return []; }
+  try {
+    const st = await fh.stat();
+    if (cache.ino !== st.ino || st.size < cache.size) cache = { ino: st.ino, size: 0, entries: [], partial: '' };
+    if (st.size > cache.size) {
       const len = st.size - cache.size;
       const buf = Buffer.alloc(len);
       const { bytesRead } = await fh.read(buf, 0, len, cache.size);
@@ -209,9 +210,9 @@ async function entries() {
       const next = cache.entries.slice();
       parseInto(text, next);
       cache = { ino: st.ino, size: cache.size + bytesRead, entries: next, partial };
-    } finally {
-      await fh.close().catch(() => {});
     }
+  } finally {
+    await fh.close().catch(() => {});
   }
   return cache.entries;
 }
