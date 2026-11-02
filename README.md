@@ -385,6 +385,7 @@ All configuration is done through environment variables in the `.env` file.
 | `GC_SECRET` | auto-generated | Session secret (auto-generated if empty) |
 | `GC_DB_PATH` | `/data/gatecontrol.db` | SQLite database path |
 | `GC_LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
+| `GC_SERVER_LOG` | on | Server log file `/data/logs/server.log` (5 MB × 5, Logs & Monitoring); `off` = stdout only |
 
 ### Authentication
 

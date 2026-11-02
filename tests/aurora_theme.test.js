@@ -680,59 +680,32 @@ describe('aurora theme — logs page (Task 8)', () => {
     assert.match(res.text, /class="app"/, 'Aurora .app shell used');
   });
 
-  it('/logs Aurora has .toolbar and .toggle-group for severity filter', async () => {
+  // The page was redesigned (Logs & Monitoring, FEATURES.md): the old
+  // activity/access/history panels became tabs of public/js/logs.js; the
+  // RDP history keeps its own ids (rdp-history.js). Details: logs_hub.test.js.
+  it('/logs Aurora renders the Logs & Monitoring shell', async () => {
     selectAurora();
     const res = await agent.get('/logs').expect(200);
-    assert.match(res.text, /class="toolbar"/, '.toolbar present');
-    assert.match(res.text, /class="toggle-group"/, '.toggle-group present');
+    for (const id of ['lg-page', 'lg-tabs', 'lg-kpis', 'lg-hist', 'lg-filters', 'lg-rows', 'lg-panel-problems', 'lg-panel-access',
+      'lg-panel-sessions', 'lg-panel-saved', 'lg-export-open']) {
+      assert.ok(res.text.includes(`id="${id}"`), `#${id} present`);
+    }
+    assert.match(res.text, /class="tabs lg-tabs" role="tablist"/, 'tabs as a tablist');
   });
 
-  it('/logs Aurora uses .card.span12 grid layout for log container', async () => {
+  it('/logs Aurora keeps the RDP history contract ids', async () => {
     selectAurora();
     const res = await agent.get('/logs').expect(200);
-    assert.match(res.text, /card span12/, '.card.span12 grid layout present');
+    for (const id of ['rdp-history-list', 'rdp-history-period', 'rdp-history-status', 'rdp-history-export-csv', 'rdp-history-export-json']) {
+      assert.ok(res.text.includes(`id="${id}"`), `#${id} present`);
+    }
   });
 
-  it('/logs Aurora preserves all phase-0 JS-contract IDs', async () => {
-    selectAurora();
-    const res = await agent.get('/logs').expect(200);
-    assert.match(res.text, /id="log-type-tabs"/, '#log-type-tabs present');
-    assert.match(res.text, /id="activity-panel"/, '#activity-panel present');
-    assert.match(res.text, /id="access-panel"/, '#access-panel present');
-    assert.match(res.text, /id="history-panel"/, '#history-panel present');
-    assert.match(res.text, /id="full-activity-log"/, '#full-activity-log present');
-    assert.match(res.text, /id="logs-count"/, '#logs-count present');
-    assert.match(res.text, /id="log-severity-filter"/, '#log-severity-filter present');
-    assert.match(res.text, /id="access-log-container"/, '#access-log-container present');
-    assert.match(res.text, /id="access-count"/, '#access-count present');
-    assert.match(res.text, /id="access-status-filter"/, '#access-status-filter present');
-    assert.match(res.text, /id="activity-export-csv"/, '#activity-export-csv present');
-    assert.match(res.text, /id="activity-export-json"/, '#activity-export-json present');
-    assert.match(res.text, /id="access-export-csv"/, '#access-export-csv present');
-    assert.match(res.text, /id="access-export-json"/, '#access-export-json present');
-    assert.match(res.text, /id="rdp-history-list"/, '#rdp-history-list present');
-    assert.match(res.text, /id="rdp-history-period"/, '#rdp-history-period present');
-    assert.match(res.text, /id="rdp-history-status"/, '#rdp-history-status present');
-    assert.match(res.text, /id="rdp-history-export-csv"/, '#rdp-history-export-csv present');
-    assert.match(res.text, /id="rdp-history-export-json"/, '#rdp-history-export-json present');
-  });
-
-  it('/logs Aurora has data-type and data-severity dataset attrs for JS reads', async () => {
-    selectAurora();
-    const res = await agent.get('/logs').expect(200);
-    assert.match(res.text, /data-type="activity"/, 'data-type="activity" present');
-    assert.match(res.text, /data-type="access"/, 'data-type="access" present');
-    assert.match(res.text, /data-type="history"/, 'data-type="history" present');
-    assert.match(res.text, /data-severity="all"/, 'data-severity="all" present');
-    assert.match(res.text, /data-severity="error"/, 'data-severity="error" present');
-    assert.match(res.text, /data-status=""/, 'data-status="" present for access filter');
-  });
-
-  it('logs.js renders Aurora log rows without a theme branch', () => {
+  it('logs.js has no theme branch and builds the DOM without innerHTML', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'logs.js'), 'utf8');
     assert.doesNotMatch(js, /isAurora/, 'no theme branch left in logs.js (Aurora is the only theme)');
-    assert.match(js, /function renderLogs\(/, 'renderLogs() present');
-    assert.match(js, /function renderAccessLogs\(/, 'renderAccessLogs() present');
+    assert.match(js, /function rowNode\(/, 'rowNode() present');
+    assert.match(js, /function loadAccess\(/, 'loadAccess() present');
   });
 
   it('app.css has .log-row, .sev, .ts, .msg, .src, .toggle-group rules', () => {
