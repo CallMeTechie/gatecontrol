@@ -241,12 +241,14 @@ describe('ops UI: behaviour wiring', () => {
     assert.match(d, /window\.api\.post\('\/api\/system\/whats-new\/seen', body\)/);
     assert.match(d, /if \(!all && !d\.unseen\) \{ strip\.hidden = true; return; \}/);
   });
-  it('settings.js: /settings#<section>, old tabs and element ids select the section; the hash follows', () => {
+  it('settings.js: /settings/<section>, old #section / tab names / element ids select the section; the address follows', () => {
     const js = stripComments(SETTINGS_JS);
-    assert.match(js, /history\.replaceState\(null, '', location\.pathname \+ hash\)/);
-    assert.match(js, /window\.addEventListener\('hashchange', \(\) => \{/);
-    assert.match(js, /U\.resolveLocation\(\{ hash: location\.hash, search: location\.search \}, \{ known, sectionOfElement \}\)/);
-    assert.ok(SETTINGS_TPL.includes('<section class="st-section" data-section="backup"'));
+    assert.match(js, /history\.pushState\(\{ section: id \}, '', want\)/);
+    assert.match(js, /history\.replaceState\(\{ section: id \}, '', want\)/);
+    assert.match(js, /window\.addEventListener\('popstate', followLocation\)/);
+    assert.match(js, /window\.addEventListener\('hashchange', followLocation\)/);
+    assert.match(js, /U\.resolveLocation\(\{ hash: location\.hash, search: '' \}, \{ known: known\.concat\(\['plugins'\]\), sectionOfElement \}\)/);
+    assert.ok(SETTINGS_TPL.includes("<section class=\"st-section\"{{ secAttrs('backup') }}>"));
   });
   it('dashboard.js: #auto-update highlights the Server card\'s update block and opens the setup guide when not set up', () => {
     const d = stripComments(DASH_JS);

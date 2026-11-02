@@ -203,7 +203,7 @@
       }
       if (a === 'enter') {
         // On the settings page itself the hash change switches the section.
-        return el('a', { class: 'btn btn-sm lh-enter', href: '/settings#lizenz', text: t('license_hint.enter') });
+        return el('a', { class: 'btn btn-sm lh-enter', href: '/settings/lizenz', text: t('license_hint.enter') });
       }
       if (a === 'upgrade') return el('a', { class: 'lh-link lh-upgrade', href: PRICING_URL, target: '_blank', rel: 'noopener noreferrer', text: t('license_hint.upgrade') });
       if (a === 'reload') return el('button', { type: 'button', class: 'btn btn-sm lh-reload', text: t('license_hint.reload'), on: { click: () => win.location.reload() } });

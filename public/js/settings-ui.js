@@ -5,6 +5,8 @@
 //
 //   resolveLocation   /settings#<section>, the old tab names (#backup,
 //                     ?tab=general …) and element ids → { section, anchor }
+//   sectionPath / sectionFromPath   /settings/<section> (the start page is
+//                     /settings, the plugin area /settings/plugins)
 //   norm / matches    the settings search (case- and accent-insensitive)
 //   valueKey / dirtyFields / savePlan   the save model
 //   checkNumber, semverOk, cidrOk, recipientsOk   client-side checks
@@ -17,14 +19,17 @@
   else root.GCSettingsUI = api;
 })(typeof self !== 'undefined' ? self : this, function () {
 
-  const SECTIONS = ['uebersicht', 'domains', 'netzwerk', 'daten', 'anmeldung', 'geraete', 'gruppen', 'richtlinien',
+  // 'start' is /settings itself (the former section "Übersicht" lives on
+  // there); every other section has its own address /settings/<section>.
+  const SECTIONS = ['start', 'domains', 'netzwerk', 'daten', 'anmeldung', 'geraete', 'gruppen', 'richtlinien',
     'splittunnel', 'clientupdates', 'email', 'benachrichtigungen', 'webhooks', 'monitoring', 'pihole', 'geoip',
     'portal', 'plugins', 'ki', 'backup', 'updates', 'lizenz', 'gefahr'];
 
   // The twelve tabs of the old page (links: /settings#backup from the
   // security check and the dashboard, ?tab=general, the quick search).
   const LEGACY_TABS = {
-    general: 'uebersicht',
+    general: 'start',
+    uebersicht: 'start',
     security: 'anmeldung',
     backup: 'backup',
     email: 'email',
@@ -56,6 +61,26 @@
   };
 
   const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+  /** The address of a section: /settings, /settings/<section>. */
+  function sectionPath(id) {
+    if (!id || id === 'start') return '/settings';
+    return '/settings/' + id;
+  }
+  /**
+   * The section of a path under /settings: '/settings' → 'start',
+   * '/settings/email' → 'email'; old names (/settings/general) map like the
+   * old tabs. null for anything else (the plugin area has its own pages).
+   */
+  function sectionFromPath(pathname, known) {
+    const m = /^\/settings\/?(?:([A-Za-z0-9_-]{1,64})\/?)?$/.exec(String(pathname || ''));
+    if (!m) return null;
+    if (!m[1]) return 'start';
+    const k = new Set(known || SECTIONS);
+    if (k.has(m[1])) return m[1];
+    const legacy = LEGACY_TABS[m[1]];
+    return legacy && k.has(legacy) ? legacy : null;
+  }
 
   /**
    * Where to go: hash first (#<section>, #<old tab>, #<element id>), then
@@ -140,6 +165,14 @@
   function checkNumber(value, min, max) {
     const s = String(value == null ? '' : value).trim();
     if (!/^-?\d+$/.test(s)) return { min, max };
+    const n = Number(s);
+    if (n < min || n > max) return { min, max };
+    return null;
+  }
+  /** Like checkNumber, for amounts with decimals (budget, exchange rate). */
+  function checkDecimal(value, min, max) {
+    const s = String(value == null ? '' : value).trim().replace(',', '.');
+    if (!/^-?\d+(\.\d+)?$/.test(s)) return { min, max };
     const n = Number(s);
     if (n < min || n > max) return { min, max };
     return null;
@@ -238,10 +271,10 @@
   }
 
   return {
-    SECTIONS, LEGACY_TABS, LEGACY_ANCHORS, resolveLocation,
+    SECTIONS, LEGACY_TABS, LEGACY_ANCHORS, resolveLocation, sectionPath, sectionFromPath,
     norm, tokens, matches,
     valueKey, dirtyFields, savePlan, pickDirty,
-    checkNumber, semverOk, cidrOk, recipientsOk,
+    checkNumber, checkDecimal, semverOk, cidrOk, recipientsOk,
     allRows, parseTypes, eventRows, typesOfRows, hooksForRow, webhookSummary,
     portalHost, nextBackupAt, minutesOf, windowSegments, minutesToWindow, fmt,
   };

@@ -324,7 +324,7 @@ function backupProblems(db) {
       id: 'backup:' + t.id,
       kind: 'backup_failed',
       severity: 'warning',
-      href: '/settings#backup',
+      href: '/settings/backup',
       since: isoOf(t.last_run_at),
       backup: { target_id: t.id, name: t.name, status: String(t.last_status) },
     }));

@@ -69,8 +69,8 @@ test('community mode shows no automatic marker', async () => {
 test('a paid plan does not claim community mode and shows the expiry date', async () => {
   license._applyLicenseForTest({ plan: 'pro', features: { webhooks: true }, expires_at: '2027-03-31T00:00:00.000Z' });
   const html = withoutScripts((await agent.get('/settings').expect(200)).text);
-  const a = html.indexOf('class="st-plan-meta"');
-  const meta = html.slice(a, html.indexOf('</div>', a));
+  const a = html.indexOf('id="st-status-lizenz"');
+  const meta = html.slice(a, html.indexOf('</p>', a));
   assert.doesNotMatch(meta, /Community/i);
   assert.ok(meta.includes('31.03.2027') || meta.includes('2027-03-31'), meta);
 });

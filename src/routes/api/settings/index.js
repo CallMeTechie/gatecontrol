@@ -42,6 +42,9 @@ const TOKEN_FORBIDDEN = [
   // Wo die Anordnung der App-Tabs gilt (pro Gerät / Konto / global): nur eine
   // Admin-Session darf das festlegen.
   /^\/client-layout$/,
+  // Start page of the settings: backup, licence and update state in one
+  // answer — for the admin's browser, not for scripts.
+  /^\/overview$/,
 ];
 router.use((req, res, next) => {
   if (!req.tokenAuth) return next();
@@ -73,5 +76,7 @@ router.use('/', require('./clientUpdates'));
 router.use('/', require('./clientPolicy'));
 // Order of the apps' Start / Familie tabs: per device, per account or global
 router.use('/', require('./clientLayout'));
+// Start page of the settings: tiles, attention rows, state per section
+router.use('/', require('./overview'));
 
 module.exports = router;

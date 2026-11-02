@@ -76,7 +76,7 @@ describe('update.sh version hint (Updates section)', () => {
     for (const id of ['st-ush-state', 'st-ush-show', 'st-ush-cmds', 'st-ush-cmd']) {
       assert.ok(SETTINGS_TPL.includes('id="' + id + '"'), id);
     }
-    const updates = SETTINGS_TPL.slice(SETTINGS_TPL.indexOf('data-section="updates"'), SETTINGS_TPL.indexOf('data-section="lizenz"'));
+    const updates = SETTINGS_TPL.slice(SETTINGS_TPL.indexOf("secAttrs('updates')"), SETTINGS_TPL.indexOf("secAttrs('lizenz')"));
     assert.ok(updates.includes('id="st-ush-state"') && updates.includes('id="st-ush-cmds"'));
     // Strand S3 owns the dashboard — the hint must not be put there.
     assert.doesNotMatch(read('templates/aurora/pages/dashboard.njk'), /au-updatesh|st-ush/);

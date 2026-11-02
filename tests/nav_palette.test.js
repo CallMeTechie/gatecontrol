@@ -233,7 +233,9 @@ describe('command palette: pure core', () => {
     assert.deepEqual(P.SETTINGS.map((s) => s.tab), ui.SECTIONS, 'all 23 sections in nav order');
     const layout = read('templates/aurora/layout.njk');
     for (const s of P.SETTINGS) {
-      assert.ok(njk.includes(`<section class="st-section" data-section="${s.tab}"`), s.tab);
+      // a page of the settings (start = /settings) — or the plugin area, a link in the menu
+      if (s.tab === 'plugins') assert.ok(njk.includes("['plugins', '']"), s.tab);
+      else assert.ok(njk.includes(`secAttrs('${s.tab}')`), s.tab);
       assert.ok(layout.includes(`'st.nav.${s.tab}':`) && layout.includes(`'st.kw.${s.tab}':`), 'whitelist ' + s.tab);
       assert.equal(s.key, 'st.nav.' + s.tab);
     }

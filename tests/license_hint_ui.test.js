@@ -77,7 +77,7 @@ describe('license-hint.js browser part', () => {
     assert.match(src, /win\.location\.reload\(\)/);
     assert.match(src, /querySelectorAll\('\[data-license-hint\]'\)/);
     // "Enter licence" links straight to the licence section of the settings page.
-    assert.match(src, /href: '\/settings#lizenz'/);
+    assert.match(src, /href: '\/settings\/lizenz'/);
   });
 
   it('every license_hint.* key it uses exists in de/en and is whitelisted in the layout', () => {

@@ -2071,7 +2071,7 @@
     let hint = null;
     if (!licensed) { hint = el('div', { class: 'mb-hint mb-hint-lock' }, [mbLockIcon(), mbT('locked')]); }
     else if (mode === 'global') hint = el('div', { class: 'mb-hint' }, mbT('hint_global'));
-    else if (mode === 'off') hint = el('div', { class: 'mb-hint' }, [mbT('hint_off') + ' ', el('a', { class: 'mb-link', href: '/settings#geraete' }, mbT('settings_link'))]);
+    else if (mode === 'off') hint = el('div', { class: 'mb-hint' }, [mbT('hint_off') + ' ', el('a', { class: 'mb-link', href: '/settings/geraete' }, mbT('settings_link'))]);
     if (hint) { hint.id = 'mb-hint-' + tk.id; sw.setAttribute('aria-describedby', hint.id); box.appendChild(hint); }
     return box;
   }

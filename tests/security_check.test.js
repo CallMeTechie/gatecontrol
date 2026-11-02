@@ -197,7 +197,7 @@ test('public_unprotected, tls_min, backup_offsite, auto_update', async () => {
   assert.equal(c.tls_min.status, 'fail');
   assert.deepEqual(c.tls_min.items, [{ kind: 'zone', id: zoneId, label: 'shop.example' }]);
   assert.equal(c.backup_offsite.status, 'fail', 'no off-site target');
-  assert.deepEqual(c.backup_offsite.fix, { type: 'link', href: '/settings#backup' });
+  assert.deepEqual(c.backup_offsite.fix, { type: 'link', href: '/settings/backup' });
   assert.equal(c.auto_update.status, 'na', 'update.sh not set up in the test env');
 
   license._overrideForTest({ scheduled_backups: false });

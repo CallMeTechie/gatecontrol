@@ -14,10 +14,26 @@ const N = require('../src/services/notifications');
 const TPL = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'), 'utf8');
 
 describe('sections and the address', () => {
-  it('the 23 sections are the ones the template renders, in nav order', () => {
-    const inTpl = [...TPL.matchAll(/<section class="st-section" data-section="([a-z]+)"/g)].map((m) => m[1]);
-    assert.deepEqual(inTpl, U.SECTIONS);
+  it('the 23 sections: the start page, 21 pages of the template and the plugin area, in menu order', () => {
+    const inTpl = [...TPL.matchAll(/<section class="st-section(?: [a-z-]+)?"\{\{ secAttrs\('([a-z]+)'\) \}\}>/g)].map((m) => m[1]);
+    assert.deepEqual(inTpl, U.SECTIONS.filter((s) => s !== 'plugins'));
     assert.equal(U.SECTIONS.length, 23);
+    assert.equal(U.SECTIONS[0], 'start');
+  });
+  it('one address per section: sectionPath / sectionFromPath', () => {
+    assert.equal(U.sectionPath('start'), '/settings');
+    assert.equal(U.sectionPath('email'), '/settings/email');
+    assert.equal(U.sectionPath('plugins'), '/settings/plugins');
+    assert.equal(U.sectionFromPath('/settings'), 'start');
+    assert.equal(U.sectionFromPath('/settings/'), 'start');
+    assert.equal(U.sectionFromPath('/settings/backup'), 'backup');
+    assert.equal(U.sectionFromPath('/settings/general'), 'start', 'old tab name');
+    assert.equal(U.sectionFromPath('/settings/security'), 'anmeldung', 'old tab name');
+    assert.equal(U.sectionFromPath('/settings/uebersicht'), 'start', 'the former section');
+    assert.equal(U.sectionFromPath('/settings/nope'), null);
+    assert.equal(U.sectionFromPath('/settings/plugins/catalog'), null, 'the plugin area has its own pages');
+    assert.equal(U.sectionFromPath('/dashboard'), null);
+    assert.equal(U.sectionFromPath('/settings/pihole', ['start', 'email']), null, 'only known sections');
   });
   it('#<section> and ?tab=<section>', () => {
     assert.deepEqual(U.resolveLocation({ hash: '#daten' }), { section: 'daten', anchor: null });
@@ -25,7 +41,7 @@ describe('sections and the address', () => {
   });
   it('every old tab name maps to its new section (hash and ?tab=)', () => {
     const expected = {
-      general: 'uebersicht', security: 'anmeldung', backup: 'backup', email: 'email', monitoring: 'monitoring',
+      general: 'start', uebersicht: 'start', security: 'anmeldung', backup: 'backup', email: 'email', monitoring: 'monitoring',
       advanced: 'updates', license: 'lizenz', 'split-tunnel': 'splittunnel', 'client-updates': 'clientupdates',
       'client-policy': 'richtlinien', pihole: 'pihole', portal: 'portal',
     };

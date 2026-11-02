@@ -287,7 +287,7 @@ function checkPublicUnprotected(routes) {
 
 function checkBackupOffsite(db) {
   if (!license.hasFeature('scheduled_backups')) return check('backup_offsite', 'warning', 'na');
-  const fix = { type: 'link', href: '/settings#backup' };
+  const fix = { type: 'link', href: '/settings/backup' };
   const hasVerify = tableExists(db, 'backup_targets') && columnExists(db, 'backup_targets', 'last_verify_at');
   const targets = tableExists(db, 'backup_targets')
     ? db.prepare(`SELECT id, name, enabled, last_run_at, last_status${hasVerify ? ', last_verify_at, last_verify_status' : ''} FROM backup_targets WHERE enabled = 1 ORDER BY id`).all()

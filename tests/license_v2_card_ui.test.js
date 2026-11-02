@@ -1,6 +1,6 @@
 'use strict';
 
-// Settings → Lizenz card: plan expiry, "updates until" and whether the
+// Settings → Lizenz (page head, tiles, check line): plan expiry, "updates until" and whether the
 // licence was verified via the signed v2 path or the legacy v1 path.
 
 const crypto = require('node:crypto');
@@ -22,8 +22,8 @@ before(async () => {
 after(() => { license._applyLicenseForTest(null); teardown(); });
 
 function card(html) {
-  const a = html.indexOf('class="st-plan-text"');
-  return html.slice(a, html.indexOf('</section>', a));
+  const a = html.indexOf('data-section="lizenz"');
+  return html.slice(a, html.indexOf('aria-labelledby="st-c-features"', a));
 }
 
 test('a signed v2 licence shows expiry, updates-until and the signed line', async () => {
