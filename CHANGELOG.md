@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.221.0] — 2026-11-02
+
+### Features
+- Einstellungen nach dem Muster der Plugin-Seiten (#390)
+
+---
+
 ## [1.220.1] — 2026-11-02
 
 ### Fixes
