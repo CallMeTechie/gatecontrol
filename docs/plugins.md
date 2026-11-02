@@ -3100,7 +3100,9 @@ main database: no SQL parsing is needed to keep a plugin away from
 GateControl's tables (the main database is simply not open there), "Alles
 löschen" is deleting one folder, the file has a size cap (256 MB, more with
 `storage.maxMB`, see below) and a
-runaway query blocks only that worker (terminated after 5 s). Statements with
+runaway query blocks only that worker (terminated when one statement runs
+longer than 15 s in it — measured in the worker, so a busy host does not
+count; opening the file has 30 s). Statements with
 `ATTACH`, `DETACH`, `VACUUM`, `PRAGMA`, `load_extension` or the host's `_gc_*`
 tables are refused. The plugin process can write only the sibling `files/`
 folder, never the database file.

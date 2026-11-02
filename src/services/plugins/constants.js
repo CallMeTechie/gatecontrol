@@ -41,7 +41,10 @@ const TIMEOUTS = Object.freeze({
   tick: 120000,     // one background tick
   stop: 3000,       // grace before SIGKILL
   hostCall: 30000,  // http.fetch etc. performed for a plugin
-  db: 5000,         // one storage statement (worker is terminated after this)
+  db: 15000,        // one storage statement, measured in its worker (the worker is terminated after this)
+  dbOpen: 30000,    // a storage worker starting and opening its file (cold start, before any statement)
+  startPerPeer: 5000, // more start time per other plugin starting at the same moment (host start) …
+  startMax: 60000,  // … up to this
 });
 
 // Restart delays after a crash; the last one repeats.

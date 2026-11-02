@@ -217,12 +217,14 @@ function cleanName(v) {
 async function sealInto(tmp, key, source, length, incomplete = null, max = null) {
   const prefix = crypto.randomBytes(PREFIX_LEN);
   const hash = crypto.createHash('sha256');
-  const fd = fs.openSync(tmp, 'wx', 0o600);
+  // asynchronous writes and fsync: a photo backup stores thousands of files, and a
+  // synchronous fsync under such load blocks the host's main thread for seconds
+  const fh = await fs.promises.open(tmp, 'wx', 0o600);
   let received = 0;
   let index = 0;
   let pending = Buffer.alloc(0);
   try {
-    fs.writeSync(fd, Buffer.concat([MAGIC, prefix]));
+    await fh.write(Buffer.concat([MAGIC, prefix]));
     for await (const chunk of source) {
       received += chunk.length;
       // length null (since 1.216.0, storeHostStream): the length is what arrives, at most `max`
@@ -232,21 +234,21 @@ async function sealInto(tmp, key, source, length, incomplete = null, max = null)
       pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
       // keep the last full chunk back: only the end of the stream tells it is the last
       while (pending.length > CHUNK) {
-        fs.writeSync(fd, sealChunk(key, prefix, index++, false, pending.subarray(0, CHUNK)));
+        await fh.write(sealChunk(key, prefix, index++, false, pending.subarray(0, CHUNK)));
         pending = pending.subarray(CHUNK);
       }
     }
     if (length === null && received < 1) throw new MediaError('empty', 400);
     if (length !== null && received !== length) throw new MediaError(incomplete ? incomplete() : 'length_mismatch', 400);
-    fs.writeSync(fd, sealChunk(key, prefix, index, true, pending));
-    fs.fsyncSync(fd);
+    await fh.write(sealChunk(key, prefix, index, true, pending));
+    await fh.sync();
   } catch (e) {
-    try { fs.closeSync(fd); } catch { /* closed */ }
+    await fh.close().catch(() => {});
     fs.rmSync(tmp, { force: true });
     if (e instanceof MediaError) throw e;
     throw new MediaError('aborted', 400, e && e.message);
   }
-  fs.closeSync(fd);
+  await fh.close();
   return { sha: hash.digest('hex'), bytes: received };
 }
 
@@ -538,7 +540,7 @@ async function storePart(plugin, ownerUserId, req) {
     const key = unwrapKey(st.keyEnc, st.mediaId);
     const prefix = Buffer.from(st.prefix, 'base64');
     const lastIndex = Math.ceil(total / CHUNK) - 1;
-    const fd = fs.openSync(f.part, 'r+');
+    const fh = await fs.promises.open(f.part, 'r+');
     let index = st.chunks;
     let pending = Buffer.alloc(0);
     let received = 0;
@@ -552,7 +554,7 @@ async function storePart(plugin, ownerUserId, req) {
           const plainLen = index === lastIndex ? total - index * CHUNK : CHUNK;
           if (pending.length < plainLen) break;
           const sealed = sealChunk(key, prefix, index, index === lastIndex, pending.subarray(0, plainLen));
-          fs.writeSync(fd, sealed, 0, sealed.length, HEADER_LEN + index * (CHUNK + TAG_LEN));
+          await fh.write(sealed, 0, sealed.length, HEADER_LEN + index * (CHUNK + TAG_LEN));
           pending = pending.subarray(plainLen);
           index++;
         }
@@ -562,9 +564,9 @@ async function storePart(plugin, ownerUserId, req) {
     }
     if (!failure && received !== length) failure = new MediaError(req.aborted || req.destroyed ? 'aborted' : 'length_mismatch', 400);
     try {
-      fs.ftruncateSync(fd, index > lastIndex ? sealedSize(total) : HEADER_LEN + index * (CHUNK + TAG_LEN));
-      fs.fsyncSync(fd);
-    } finally { fs.closeSync(fd); }
+      await fh.truncate(index > lastIndex ? sealedSize(total) : HEADER_LEN + index * (CHUNK + TAG_LEN));
+      await fh.sync();
+    } finally { await fh.close(); }
     st.chunks = index;
     writeUploadState(f, st);
     const offset = committedOf(st);
