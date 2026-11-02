@@ -124,7 +124,7 @@
     if (item.kind === 'route') return routeHref(id, idx);
     if (item.kind === 'zone') return id != null && /^\d+$/.test(String(id)) ? '/routes?domain=' + encodeURIComponent(id) : '/routes';
     if (item.kind === 'user') return '/users';
-    if (item.kind === 'target') return '/settings#backup';
+    if (item.kind === 'target') return '/settings/backup';
     return null;
   }
 

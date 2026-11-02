@@ -240,7 +240,7 @@ describe('lastCheck in the API and the settings card', () => {
 
   it('the licence card names the failed check and the next attempt (offline grace)', async () => {
     const html = withoutScripts((await agent.get('/settings').expect(200)).text);
-    const m = html.match(/<div class="st-plan-meta st-lic-lastcheck"[^>]*>([^<]*)<\/div>/);
+    const m = html.match(/<span class="st-lic-lastcheck"[^>]*>([^<]*)<\/span>/);
     assert.ok(m, 'last-check line present');
     assert.match(m[0], /data-reason="HTTP 502"/);
     assert.match(m[1], /HTTP 502/);

@@ -28,26 +28,17 @@ before(async () => {
 });
 after(async () => { await plugins.stop(); teardown(); });
 
-function section(html, id) {
-  const a = html.indexOf(`<section class="st-section" data-section="${id}"`);
-  return html.slice(a, html.indexOf('<section class="st-section"', a + 10));
-}
-
 describe('the plugin area', () => {
-  it('Settings → Plugins points to the plugin area; old links are forwarded', async () => {
-    const html = (await agent.get('/settings').expect(200)).text;
-    const s = section(withoutScripts(html), 'plugins');
-    assert.match(s, /id="pg-moved-card"/);
-    assert.match(s, /<a class="st-btn st-btn-primary" href="\/settings\/plugins" id="pg-to-area">/);
-    assert.doesNotMatch(s, /\b(plugins|st)\.[a-z_]+\.[a-z_.]+/, 'no raw i18n keys');
-    assert.match(withoutScripts(html), /class="st-nav-item" data-section="plugins"/);
-    assert.match(html, /<script src="\/js\/settings-plugins\.js[^"]*"><\/script>\s*<script src="\/js\/settings\.js/);
-    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'settings-plugins.js'), 'utf8');
-    assert.match(js, /location\.hash === '#plugins'/);
-    assert.match(js, /BASE = '\/settings\/plugins'/);
-    assert.match(js, /BASE \+ '\/manage\/' \+ encodeURIComponent\(plugin\)/);
-    assert.match(js, /BASE \+ '\/catalog\/' \+ encodeURIComponent\(install\)/);
-    assert.match(js, /\.st-nav-item\[data-section="plugins"\]/, 'the settings entry opens the plugin page');
+  it('Settings → Plugins is a link to the plugin area; old links are forwarded', async () => {
+    const html = withoutScripts((await agent.get('/settings').expect(200)).text);
+    assert.match(html, /<a class="pgx-sl stx-sl" href="\/settings\/plugins" data-section="plugins" data-ext="1"/);
+    assert.doesNotMatch(html, /id="pg-moved-card"|data-section="plugins" aria-labelledby/, 'no section of its own any more');
+    // old addresses: ?plugin=<id>, ?install=<id> (server), #plugins (settings.js)
+    assert.equal((await agent.get('/settings?plugin=hello').expect(302)).headers.location, '/settings/plugins/manage/hello');
+    assert.equal((await agent.get('/settings?install=gatecontrol-familie').expect(302)).headers.location, '/settings/plugins/catalog/gatecontrol-familie');
+    assert.equal((await agent.get('/settings?tab=plugins').expect(302)).headers.location, '/settings/plugins');
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'settings.js'), 'utf8');
+    assert.match(js, /r\.section === 'plugins'\) \{ location\.replace\(U\.sectionPath\('plugins'\)\)/);
   });
   const B = '/settings/plugins';
   for (const [url, view, tab] of [[B, 'installed', 'installed'], [B + '/catalog', 'catalog', 'catalog'], [B + '/updates', 'updates', 'updates'],
@@ -79,7 +70,7 @@ describe('the plugin area', () => {
     await agent.get('/plugins/manage/..%2Fx').expect(404);
   });
   it('the page scripts build the DOM without innerHTML', () => {
-    const src = ['settings-plugins.js', 'plugins-page.js', 'plugin-bridge.js'].map((f) => fs.readFileSync(path.join(__dirname, '..', 'public', 'js', f), 'utf8')).join('\n');
+    const src = ['settings.js', 'plugins-page.js', 'plugin-bridge.js'].map((f) => fs.readFileSync(path.join(__dirname, '..', 'public', 'js', f), 'utf8')).join('\n');
     assert.doesNotMatch(src, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
   });
   it('every string the page script asks for exists in both languages', () => {

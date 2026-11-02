@@ -347,7 +347,10 @@ const pages = [
   // Admin-Oberfläche"): five tabs, all data from /api/v1/notify/* at runtime.
   { path: '/notifications', template: 'notifications', titleKey: 'nav.notifications' },
   { path: '/profile', template: 'profile', titleKey: 'profile.title', member: true },
-  { path: '/settings', template: 'settings', titleKey: 'nav.settings' },
+  // Settings: the start page /settings and one address per section
+  // (/settings/<section>, settingsTarget below); the plugin area
+  // /settings/plugins is routes/plugins.js.
+  { path: ['/settings', '/settings/:section'], template: 'settings', titleKey: 'nav.settings' },
   { path: '/rdp', template: 'rdp', titleKey: 'nav.rdp' },
   { path: '/users', template: 'users', titleKey: 'nav.users' },
   // Person groups (docs/groups.md): tree + detail, data from /api/v1/groups.
@@ -404,6 +407,41 @@ const DIRECTORY_I18N_PREFIXES = ['dir.', 'error.directory.', 'common.'];
 const PROFILE_TABS = ['overview', 'access', 'see', 'security', 'activity'];
 function profileTab(v) { return PROFILE_TABS.includes(v) ? v : 'overview'; }
 
+// Settings addresses (public/js/settings-ui.js has the same rules for the
+// browser: sectionPath, sectionFromPath, resolveLocation).
+const settingsUI = require('../../public/js/settings-ui');
+const PLUGIN_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/**
+ * Which settings page a request asks for → { section } to render,
+ * { redirect } for old addresses (?tab=…, ?plugin=…, /settings/uebersicht,
+ * /settings/<old tab name>) or { notFound }.
+ */
+function settingsTarget(req, opts) {
+  const piholeOn = !!(opts && opts.piholeOn);
+  const known = settingsUI.SECTIONS.filter((x) => x !== 'pihole' || piholeOn);
+  const q = req.query || {};
+  const param = req.params && req.params.section;
+  if (!param) {
+    // ?install=<id> / ?plugin=<id> (dashboard notices, old links) → the plugin area
+    const install = typeof q.install === 'string' && PLUGIN_ID_RE.test(q.install) ? q.install : null;
+    const plugin = typeof q.plugin === 'string' && PLUGIN_ID_RE.test(q.plugin) ? q.plugin : null;
+    if (install) return { redirect: `/settings/plugins/catalog/${install}` };
+    if (plugin) return { redirect: `/settings/plugins/manage/${plugin}` };
+    if (typeof q.tab === 'string') {
+      const r = settingsUI.resolveLocation({ hash: '', search: `?tab=${encodeURIComponent(q.tab)}` }, { known });
+      return { redirect: r ? settingsUI.sectionPath(r.section) : '/settings' };
+    }
+    return { section: 'start' };
+  }
+  const id = String(param);
+  if (id === 'start') return { redirect: '/settings' };
+  if (known.includes(id) && id !== 'plugins') return { section: id };
+  const section = settingsUI.sectionFromPath(`/settings/${id}`, known);
+  if (section) return { redirect: settingsUI.sectionPath(section) };
+  if (id === 'pihole') return { redirect: '/settings' };
+  return { notFound: true };
+}
+
 /** The portal link of the member navigation (null when the portal is off). */
 function portalLink() {
   try {
@@ -425,6 +463,17 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
     // the portal). The role comes from injectLocals (res.locals.user).
     if (!member && !isAdmin) {
       return res.redirect('/profile');
+    }
+    if (template === 'settings') {
+      let piholeOn = false;
+      try { piholeOn = hasFeature('pihole_integration'); } catch { piholeOn = false; }
+      const target = settingsTarget(req, { piholeOn });
+      if (target.redirect) return res.redirect(302, target.redirect);
+      if (target.notFound) return res.status(404).render(`${res.locals.theme}/pages/404.njk`, { title: '404' });
+      extraLocals.stSection = target.section;
+      if (target.section !== 'start') {
+        extraLocals.title = `${res.locals.t('nav.settings')} / ${res.locals.t('st.nav.' + target.section)}`;
+      }
     }
     // Upgrade notice (dashboard, Settings → Plugins): built-in data of a
     // former integration whose plugin is not installed yet.

@@ -189,7 +189,7 @@ describe('Settings → Benachrichtigungen', () => {
     const at = res.text.indexOf('<section class="st-section" data-section="benachrichtigungen"');
     assert.ok(at > 0);
     const sec = res.text.slice(at, res.text.indexOf('<section class="st-section" data-section="webhooks"', at));
-    assert.match(sec, /<a class="st-btn st-btn-primary" href="\/notifications#rules" id="st-notify-link">/);
+    assert.match(sec, /<a class="pgx-btn" href="\/notifications#rules" id="st-notify-link">/);
     assert.doesNotMatch(sec, /st-matrix|st-al-events/, 'the matrix is gone');
     assert.match(sec, /id="st-al-email"/, 'recipient stays');
     assert.match(sec, /id="st-al-backup"/, 'monitoring checks stay');

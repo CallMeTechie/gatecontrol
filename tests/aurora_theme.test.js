@@ -937,31 +937,43 @@ describe('aurora theme — rdp layout (Task P2-10)', () => {
   });
 });
 
-// ── Task P2-11: Settings page — Aurora mockup fidelity ───────────────────────
-describe('aurora theme — settings layout (grouped sections, one save model)', () => {
-  const SECTIONS = ['uebersicht', 'domains', 'netzwerk', 'daten', 'anmeldung', 'geraete', 'gruppen', 'richtlinien', 'splittunnel',
-    'clientupdates', 'email', 'benachrichtigungen', 'webhooks', 'monitoring', 'geoip', 'portal', 'backup', 'updates', 'lizenz', 'gefahr'];
+// ── Task P2-11: Settings page — one pattern after the plugin area ────────────
+describe('aurora theme — settings layout (menu with addresses, one page pattern, one save model)', () => {
+  const SECTIONS = ['domains', 'netzwerk', 'daten', 'anmeldung', 'geraete', 'gruppen', 'richtlinien', 'splittunnel',
+    'clientupdates', 'email', 'benachrichtigungen', 'webhooks', 'monitoring', 'geoip', 'portal', 'ki', 'backup', 'updates', 'lizenz', 'gefahr'];
 
-  it('renders /settings under aurora: shell, section nav, compact select, save bar', async () => {
+  it('renders /settings under aurora: shell, the menu like the plugin area, search in the menu, save bar', async () => {
     selectAurora();
     const res = await agent.get('/settings').expect(200);
     assert.match(res.text, /\/css\/app\.css/, 'the single stylesheet is linked');
     assert.match(res.text, /<div class="app">[\s\S]*class="app-brand"/, 'aurora theme shell present');
-    assert.match(res.text, /<nav class="st-nav" id="st-nav" aria-label="[^"]+"/, 'section nav with a label');
-    assert.match(res.text, /<select id="st-select"/, 'select for narrow screens');
-    assert.match(res.text, /id="st-savebar" role="region"/, 'save bar region');
+    assert.match(res.text, /<div class="pgx stx" id="st-page" data-section="start"/, 'the plugin area building blocks, the start page');
+    assert.match(res.text, /<nav class="pgx-side stx-side" id="st-nav" aria-label="[^"]+">\s*<label class="stx-search">/, 'menu with the search on top');
     assert.match(res.text, /<input type="search" id="st-search" aria-label="[^"]+"/, 'labelled search');
+    assert.match(res.text, /<a class="pgx-sl stx-sl stx-sl-start" href="\/settings" data-section="start" aria-current="page">/, '"Übersicht" is current');
+    assert.doesNotMatch(res.text, /id="st-select"|class="st-nav-item"/, 'no select, no buttons as menu entries');
+    assert.match(res.text, /id="st-savebar" role="region"/, 'save bar region');
     assert.doesNotMatch(res.text, /settings-tabs|data-settings-tab|data-settings-panel/, 'no old tab markup');
   });
 
-  it('renders every section with a nav button and a heading', async () => {
+  it('every section: a menu link with its own address and a page head with title and status line', async () => {
     selectAurora();
     const res = await agent.get('/settings').expect(200);
     for (const s of SECTIONS) {
-      assert.match(res.text, new RegExp(`class="st-nav-item" data-section="${s}" aria-current="false"`), `nav ${s}`);
-      assert.match(res.text, new RegExp(`<section class="st-section" data-section="${s}" aria-labelledby="st-h-${s}"`), `section ${s}`);
-      assert.match(res.text, new RegExp(`<option value="${s}">`), `select option ${s}`);
+      assert.match(res.text, new RegExp(`<a class="pgx-sl stx-sl" href="/settings/${s}" data-section="${s}"`), `menu ${s}`);
+      assert.match(res.text, new RegExp(`<section class="st-section"\\s*data-section="${s}" aria-labelledby="st-h-${s}"`), `section ${s}`);
+      assert.match(res.text, new RegExp(`<h2 class="pgx-h1" id="st-h-${s}" tabindex="-1">`), `title ${s}`);
+      assert.match(res.text, new RegExp(`<p class="pgx-sub stx-status" id="st-status-${s}">`), `status line ${s}`);
     }
+    assert.match(res.text, /<a class="pgx-sl stx-sl" href="\/settings\/plugins" data-section="plugins" data-ext="1"/, 'Plugins leads to the plugin area');
+  });
+
+  it('a card action sits in the card head, never in a foot; no dashed add buttons', async () => {
+    selectAurora();
+    const res = await agent.get('/settings').expect(200);
+    assert.doesNotMatch(res.text, /st-card-foot|st-btn-dashed|class="st-card"/);
+    assert.match(res.text, /<div class="stx-cha">\s*<button type="button" class="pgx-btn pgx-btn-sm" id="st-off-add"/, 'add target: card head');
+    assert.match(res.text, /<div class="pgx-ph-a">\s*<button type="button" class="pgx-btn" id="st-smtp-test">/, 'test mail: page action');
   });
 
   it('toggles are role=switch buttons with labels; numbers carry min/max', async () => {
@@ -981,21 +993,26 @@ describe('aurora theme — settings layout (grouped sections, one save model)', 
   it('renders the dialogs as modal-overlay pattern', async () => {
     selectAurora();
     const res = await agent.get('/settings').expect(200);
-    for (const id of ['st-wh-modal', 'st-ot-modal', 'st-wgstop-modal']) {
+    for (const id of ['st-wh-modal', 'st-ot-modal', 'st-wgstop-modal', 'ai-prov-modal', 'ai-log-modal']) {
       assert.match(res.text, new RegExp(`<div class="modal-overlay st-modal" id="${id}" style="display:none">`), id);
     }
     assert.match(res.text, /id="st-wgstop-pw"[^>]*autocomplete="current-password"/);
   });
 
-  it('no inline <style> block in settings.njk; the st- rules live in the Aurora section of app.css', () => {
+  it('no inline <style> block in settings.njk; the controls in §2, the layout next to the plugin area (pgx-)', () => {
     const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'), 'utf8');
     assert.doesNotMatch(njk, /<style/, 'no <style> block');
     const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
-    const aurora = css.slice(css.indexOf('\n * \u00a72 '), css.indexOf('\n * \u00a73 '));
-    for (const sel of ['.st-page', '.st-nav-item', '.st-switch', '.st-seg', '.st-savebar', '.st-matrix', '.st-typecard']) {
+    const aurora = css.slice(css.indexOf('\n * §2 '), css.indexOf('\n * §3 '));
+    for (const sel of ['.st-switch', '.st-seg', '.st-savebar', '.st-matrix', '.st-typecard']) {
       assert.ok(aurora.includes(sel), sel + ' in §2');
     }
-    assert.match(aurora, /@media \(max-width:900px\)\{\s*\.st-layout/, 'the nav becomes a select at ≤ 900 px');
+    for (const sel of ['.stx .st-btn,.pgx-btn{', '.stx .st-pill,.pgx-pill{', '.stx .st-switch,.cpf-sw,.pgx-sw{', '.stx .st-seg,.cpf-seg,.pgx-seg{']) {
+      assert.ok(css.includes(sel), sel + ': one rule for both areas');
+    }
+    assert.match(css, /\.stx \.st-row-ctl\{flex:0 1 380px; width:380px/, 'the control column');
+    assert.match(css, /@media \(max-width:900px\)\{\s*\.stx \.stx-wrap/, 'the phone layout from 900 px');
+    assert.doesNotMatch(css, /\.st-page\{|\.st-nav-item\{|\.st-layout\{/, 'the old settings layout is gone');
   });
 });
 

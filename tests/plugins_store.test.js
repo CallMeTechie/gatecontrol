@@ -166,7 +166,7 @@ describe('updates, history, restart', () => {
     assert.match(html, /id="nav-settings">[\s\S]*?<span class="nav-badge amber" id="pg-nav-badge"[^>]*>1<\/span>/);
     assert.doesNotMatch(html, /id="nav-plugins"/, 'no entry of its own in the sidebar');
     // Settings › Plugins marks it too
-    assert.match(withoutScripts((await agent.get('/settings').expect(200)).text), /data-section="plugins"[\s\S]*?<span class="st-nav-dot" data-dot>/);
+    assert.match(withoutScripts((await agent.get('/settings').expect(200)).text), /data-section="plugins"[\s\S]*?<span class="stx-dot" data-dot>/);
   });
 
   it('regular check: reported once per new version', async () => {

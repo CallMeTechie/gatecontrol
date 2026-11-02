@@ -28,10 +28,11 @@
   const KIND_GROUP = { page: 'pages', action: 'actions', setting: 'settings', host: 'hosts', entry: 'entries', peer: 'peers', gateway: 'gateways' };
   const KIND_BOOST = { page: 6, setting: 3, action: 2, host: 4, gateway: 2, peer: 1, entry: 0 };
 
-  // Settings sections (settings.njk data-section, /settings#<section>).
+  // Settings sections (settings.njk data-section, /settings/<section>; the
+  // start page is /settings, the plugin area /settings/plugins).
   // `pihole` only when the sidebar shows Pi-hole (same licence flag).
   const SETTINGS = [
-    'uebersicht', 'domains', 'netzwerk', 'daten', 'anmeldung', 'geraete', 'gruppen', 'richtlinien', 'splittunnel',
+    'start', 'domains', 'netzwerk', 'daten', 'anmeldung', 'geraete', 'gruppen', 'richtlinien', 'splittunnel',
     'clientupdates', 'email', 'benachrichtigungen', 'webhooks', 'monitoring', 'pihole', 'geoip', 'portal', 'plugins', 'ki', 'backup',
     'updates', 'lizenz', 'gefahr',
   ].map((tab) => ({ tab, key: 'st.nav.' + tab, needsPath: tab === 'pihole' ? '/pihole' : undefined }));
@@ -289,7 +290,7 @@
       if (!isAdmin) return [];
       const hasPath = (p) => pages.some((x) => x.href === p);
       return SETTINGS.filter((s) => !s.needsPath || hasPath(s.needsPath)).map((s) => ({
-        key: 'setting:' + s.tab, kind: 'setting', label: t(s.key), sub: t('nav.settings'), keywords: [s.tab, t('st.kw.' + s.tab)], tab: s.tab, href: '/settings#' + s.tab,
+        key: 'setting:' + s.tab, kind: 'setting', label: t(s.key), sub: t('nav.settings'), keywords: [s.tab, t('st.kw.' + s.tab)], tab: s.tab, href: s.tab === 'start' ? '/settings' : '/settings/' + s.tab,
       }));
     }
     function actionItems() {
@@ -480,7 +481,9 @@
       const here = win.location.pathname;
       if (item.run) { item.run(); return; }
       if (item.kind === 'setting') {
-        if (here === '/settings') win.location.hash = item.tab; else win.location.href = item.href;
+        // on the settings page: switch without a reload (unsaved changes ask first)
+        if (/^\/settings(\/[a-z]+)?$/.test(here) && item.tab !== 'plugins' && win.GCSettings && win.GCSettings.go) win.GCSettings.go(item.tab);
+        else win.location.href = item.href;
         return;
       }
       if (item.kind === 'host' || item.kind === 'entry') {

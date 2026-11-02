@@ -216,7 +216,7 @@ describe('security.js pure helpers', () => {
     assert.equal(S.itemHref({ kind: 'zone', id: 7 }, idx), '/routes?domain=7');
     assert.equal(S.itemHref({ kind: 'zone', id: 'x"><' }, idx), '/routes');
     assert.equal(S.itemHref({ kind: 'user', id: 1 }), '/users');
-    assert.equal(S.itemHref({ kind: 'target', id: 1 }), '/settings#backup');
+    assert.equal(S.itemHref({ kind: 'target', id: 1 }), '/settings/backup');
     assert.equal(S.itemHref({ kind: 'other' }), null);
   });
 

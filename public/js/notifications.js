@@ -1057,7 +1057,7 @@
     const hookHint = el('span', { class: 'nc-hint', id: 'nc-ed-ch_webhook-hint' }, [
       state.webhooks ? P('notify.ed.webhook_n', state.webhooks) : T('notify.ed.webhook_none'),
     ]);
-    if (!state.webhooks) { hookHint.append(' · '); hookHint.appendChild(el('a', { href: '/settings#webhooks', class: 'nc-link', text: T('notify.ed.webhook_setup') })); }
+    if (!state.webhooks) { hookHint.append(' · '); hookHint.appendChild(el('a', { href: '/settings/webhooks', class: 'nc-link', text: T('notify.ed.webhook_setup') })); }
     emailHint.id = 'nc-ed-ch_email-hint';
     fs.appendChild(el('div', { class: 'nc-ed-block' }, [
       el('span', { class: 'nc-label', text: T('notify.ed.channels') }),

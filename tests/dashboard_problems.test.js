@@ -214,7 +214,7 @@ test('certificates, off-site backups and the auto-update marker become rows', as
   const backup = res.problems.find((p) => p.kind === 'backup_failed');
   assert.ok(backup);
   assert.equal(backup.backup.name, 'NAS');
-  assert.equal(backup.href, '/settings#backup');
+  assert.equal(backup.href, '/settings/backup');
 
   db.prepare('DELETE FROM routes WHERE id = ?').run(tlsRouteId);
   db.prepare("DELETE FROM tls_status WHERE host = 'paused.example'").run();

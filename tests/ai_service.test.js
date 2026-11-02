@@ -717,7 +717,8 @@ describe('settings page KI-Anbieter', () => {
   const en = JSON.parse(read('src', 'i18n', 'en.json'));
   it('a section of the settings page with its own script, strings in both languages', () => {
     const tpl = read('templates', 'aurora', 'pages', 'settings.njk');
-    assert.match(tpl, /<section class="st-section" data-section="ki"/);
+    assert.match(tpl, /<section class="st-section"\{\{ secAttrs\('ki'\) \}\}>\s*\{% include "aurora\/partials\/settings-ai\.njk" %\}/);
+    assert.doesNotMatch(read('public', 'js', 'settings-ai.js'), /ai-defaults-save/, 'the general settings go through the save bar');
     assert.match(tpl, /settings-ai\.js/);
     assert.match(tpl, /data-prefixes="[^"]*\bai\."/);
     const js = read('public', 'js', 'settings-ai.js');
@@ -727,7 +728,7 @@ describe('settings page KI-Anbieter', () => {
     for (const c of ['text', 'vision', 'audio', 'video']) { keys.add('ai.cap.' + c); keys.add('plugins.perm.ai_cap.' + c); }
     for (const k of ['ai.usage.requests_one', 'ai.usage.requests_other', 'plugins.perm.ai', 'plugins.perm.ai_v', 'st.event.ai_budget', 'push.type.ai_budget_warning', 'push.type.ai_budget_reached']) keys.add(k);
     assert.ok(keys.size > 60, String(keys.size));
-    for (const k of keys) if (!k.endsWith('.')) assert.ok(de[k] && en[k], k);
+    for (const k of keys) if (!k.endsWith('.')) assert.ok((de[k] && en[k]) || (de[k + '_one'] && en[k + '_other']), k);
     assert.equal(/innerHTML\s*=|insertAdjacentHTML/.test(js), false, 'DOM only through GCDialog.el / textContent');
   });
   it('the page never gets a key back (API view)', async () => {

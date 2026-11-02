@@ -2,21 +2,26 @@
 
 // Settings page (templates/aurora/pages/settings.njk).
 //
-// Structure: 23 sections (<section data-section>), one visible at a time,
-// chosen in the grouped nav (a select at ≤ 900 px) and kept in the address:
-// /settings#<section>; old tab names, old element ids and ?tab= still work
-// (GCSettingsUI.resolveLocation).
+// Structure: the start page and 22 sections (<section data-section>), one
+// visible at a time, each with its own address: /settings (start),
+// /settings/<section>. The menu entries are links; the page switches between
+// sections without a reload (history.pushState) and the server renders the
+// same page for each address. Old addresses still work: #<section>, old tab
+// names and old element ids (GCSettingsUI.resolveLocation) here, ?tab= and
+// /settings/<old tab> on the server (routes/index.js settingsTarget).
 //
 // Save model: every input with data-st-field belongs to its section. Each
 // section has a load() that fills the fields and records their saved values,
 // and save groups — { fields, save(values, dirty) } — that talk to the
 // existing endpoints. A change shows the sticky save bar ("N ungespeicherte
-// Änderungen · Verwerfen · Speichern"); Speichern runs the groups with dirty
-// fields, field errors (400 { fields }) appear next to the inputs. Leaving a
-// section or the page with unsaved changes asks first. Immediate actions
-// (test, restart, upload, list items, dialogs) stay buttons.
+// Änderungen · Verwerfen · Speichern"), changed rows are marked; Speichern
+// runs the groups with dirty fields, field errors (400 { fields }) appear next
+// to the inputs. Leaving a section or the page with unsaved changes asks
+// first. Immediate actions (test, restart, upload, list items, dialogs) stay
+// buttons. Every section writes its current state into the status line of
+// its page head (setStatus).
 //
-// DOM is built with GCDialog.el / textContent only — never innerHTML.
+// DOM is built with GCDialog.el / textContent only — never from HTML strings.
 (function () {
   const page = document.getElementById('st-page');
   if (!page) return;
@@ -224,8 +229,21 @@
   const savedLine = $('st-saved');
   let lastSaved = null;
   let saving = false;
+  try { page.style.setProperty('--stx-chg', JSON.stringify(' · ' + t('st.save.changed'))); } catch (_) { /* cosmetic */ }
+  function markChanged(dirty) {
+    const root = current && sectionEl(current);
+    if (!root) return;
+    const d = new Set(dirty);
+    root.querySelectorAll('[data-st-field]').forEach((n) => {
+      const row = n.closest('.st-row');
+      if (!row || row.querySelector('[data-st-field] [data-st-field]')) return;
+      if (d.has(n.dataset.stField)) row.setAttribute('data-changed', ''); else row.removeAttribute('data-changed');
+    });
+  }
   function updateBar() {
-    const n = current ? dirtyOf(current).length : 0;
+    const dirty = current ? dirtyOf(current) : [];
+    const n = dirty.length;
+    markChanged(dirty);
     bar.hidden = n === 0;
     if (n) barText.textContent = tp('st.save.count', n);
     savedLine.textContent = !n && lastSaved ? t('st.save.saved_at', { time: fmtTime(lastSaved) }) : '';
@@ -250,9 +268,13 @@
     let ok = true;
     for (const name of dirty) {
       const node = fieldEl(id, name);
-      if (!node || (node.type !== 'number' && node.type !== 'range')) continue;
-      const bad = U.checkNumber(node.value, Number(node.min), Number(node.max));
-      if (bad) { showFieldError(id, name, t('st.err.range', bad)); ok = false; }
+      if (!node) continue;
+      const decimal = node.dataset && node.dataset.stDecimal;
+      if (!decimal && node.type !== 'number' && node.type !== 'range') continue;
+      const lo = Number(node.getAttribute('min'));
+      const hi = Number(node.getAttribute('max'));
+      const bad = decimal ? U.checkDecimal(node.value, lo, hi) : U.checkNumber(node.value, lo, hi);
+      if (bad) { showFieldError(id, name, t(decimal ? 'st.err.range_decimal' : 'st.err.range', bad)); ok = false; }
     }
     const s = SECTIONS[id];
     const loose = [];
@@ -330,24 +352,34 @@
 
   // ══ Navigation ════════════════════════════════════════════════════════
   const SECTIONS = {};
-  // Sections with their own script (loaded before this one), e.g. Plugins
-  // (settings-plugins.js): { load() }.
+  // Sections with their own script (loaded before this one), e.g. KI-Anbieter
+  // (settings-ai.js): { load(), fills?, groups?, validate? }.
   Object.assign(SECTIONS, window.GCSettingsExt || {});
-  const navItems = Array.from(document.querySelectorAll('.st-nav-item'));
-  const select = $('st-select');
-  const known = navItems.map((b) => b.dataset.section);
+  const nav = $('st-nav');
+  const navItems = Array.from(nav.querySelectorAll('a[data-section]'));
+  const known = Array.from(document.querySelectorAll('.st-section[data-section]')).map((n) => n.dataset.section);
+  const crumb = document.querySelector('.page-crumb');
+  const baseTitle = crumb ? crumb.textContent.split(' / ')[0] : '';
+  const appTitle = (document.title.split(' — ')[1] || '').trim();
   let current = null;
   const loaded = {};
+  let loading = Promise.resolve(); // the load of the section shown last (GCSettings.whenLoaded)
 
   function sectionOfElement(elId) {
     const node = document.getElementById(elId);
     const sec = node && node.closest && node.closest('.st-section');
     return sec ? sec.dataset.section : null;
   }
+  function addressOf(id, anchor) { return U.sectionPath(id) + (anchor ? '#' + anchor : ''); }
 
+  /**
+   * Show a section. opts: push (new history entry), anchor (element id to
+   * scroll to), focus (move focus to the heading), force (no unsaved-changes
+   * question), keep (do not reload an already loaded section).
+   */
   async function show(id, opts) {
     const o = opts || {};
-    if (!known.includes(id)) id = known[0];
+    if (!known.includes(id)) id = 'start';
     if (current && id !== current && dirtyOf(current).length && !o.force) {
       const n = dirtyOf(current).length;
       const ok = await D.confirm({
@@ -358,27 +390,39 @@
       });
       if (!ok) {
         syncNav();
-        try { history.replaceState(null, '', location.pathname + '#' + current); } catch (_) { /* cosmetic */ }
+        try { history.replaceState(null, '', addressOf(current)); } catch (_) { /* cosmetic */ }
         return false;
       }
       discard();
     }
-    if (current !== id) {
+    const changedSection = current !== id;
+    if (changedSection) {
       document.querySelectorAll('.st-section').forEach((s) => { s.hidden = s.dataset.section !== id; });
       current = id;
+      page.dataset.section = id;
       barErr.hidden = true;
-      try { localStorage.setItem('gc-settings-section', id); } catch (_) { /* optional */ }
       applySearchToSection();
+      if (crumb) crumb.textContent = id === 'start' ? baseTitle : baseTitle + ' / ' + navLabel(id);
+      if (appTitle) document.title = (crumb ? crumb.textContent : navLabel(id)) + ' — ' + appTitle;
     }
     syncNav();
     const target = o.anchor ? document.getElementById(o.anchor) : null;
-    const hash = '#' + (o.anchor || id);
-    if (location.hash !== hash || /[?&]tab=/.test(location.search)) {
-      try { history.replaceState(null, '', location.pathname + hash); } catch (_) { /* cosmetic */ }
+    const want = addressOf(id, target ? o.anchor : null);
+    if (location.pathname + location.hash !== want || location.search) {
+      try {
+        if (o.push && changedSection) history.pushState({ section: id }, '', want);
+        else history.replaceState({ section: id }, '', want);
+      } catch (_) { /* cosmetic */ }
     }
     const s = SECTIONS[id];
     if (s && s.load && !(o.keep && loaded[id])) {
-      try { await s.load(); } catch (err) { console.warn('[settings] loading', id, err); }
+      loading = (async () => {
+        try {
+          const vals = await s.load();
+          if (s.fills && vals && typeof vals === 'object') fill(id, vals);
+        } catch (err) { console.warn('[settings] loading', id, err); }
+      })();
+      await loading;
       loaded[id] = true;
       applyShows(id);
     }
@@ -389,22 +433,79 @@
   }
   function navLabel(id) {
     const b = navItems.find((x) => x.dataset.section === id);
-    return b ? b.querySelector('.st-nav-label').textContent : id;
+    const l = b && b.querySelector('.stx-sl-l');
+    return l ? l.textContent : id;
   }
   function syncNav() {
-    navItems.forEach((b) => b.setAttribute('aria-current', b.dataset.section === current ? 'page' : 'false'));
-    if (select) select.value = current;
+    navItems.forEach((b) => {
+      if (b.dataset.section === current) b.setAttribute('aria-current', 'page');
+      else b.removeAttribute('aria-current');
+    });
   }
-  navItems.forEach((b) => b.addEventListener('click', () => show(b.dataset.section, { focus: true })));
-  if (select) select.addEventListener('change', () => show(select.value, { focus: true }));
-  window.addEventListener('hashchange', () => {
-    const r = U.resolveLocation({ hash: location.hash, search: '' }, { known, sectionOfElement });
-    if (r) show(r.section, { anchor: r.anchor, keep: r.section === current });
+  // Links to a section (menu, start page, hints) switch without a reload;
+  // a modified click (new tab) and the plugin area stay normal links.
+  document.addEventListener('click', (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest && e.target.closest('a[href]');
+    if (!a || a.target === '_blank' || a.hasAttribute('download') || a.dataset.ext) return;
+    let url;
+    try { url = new URL(a.getAttribute('href'), location.href); } catch (_) { return; }
+    if (url.origin !== location.origin) return;
+    const id = U.sectionFromPath(url.pathname, known);
+    if (!id) return;
+    e.preventDefault();
+    const anchor = url.hash ? url.hash.slice(1) : null;
+    show(id, { push: true, focus: !anchor, anchor, keep: id === current });
   });
+  // Back / forward and a changed hash (also old addresses like #backup typed
+  // into the address bar): the path names the section, an old hash wins.
+  function followLocation() {
+    const r = location.hash ? U.resolveLocation({ hash: location.hash, search: '' }, { known: known.concat(['plugins']), sectionOfElement }) : null;
+    if (r && r.section === 'plugins') { location.assign(U.sectionPath('plugins')); return; }
+    const id = r ? r.section : U.sectionFromPath(location.pathname, known);
+    if (id) show(id, { keep: id === current, anchor: r ? r.anchor : null });
+  }
+  window.addEventListener('popstate', followLocation);
+  window.addEventListener('hashchange', followLocation);
   function setDot(id, on) {
     const b = navItems.find((x) => x.dataset.section === id);
     const dot = b && b.querySelector('[data-dot]');
     if (dot) dot.hidden = !on;
+  }
+  /** The status line of a section's page head (its current state). */
+  function setStatus(id, text) {
+    const n = $('st-status-' + id);
+    if (n && text) n.textContent = text;
+  }
+  /** The short state of an area in the menu (phone) and on the start page. */
+  function setState(id, text) {
+    document.querySelectorAll('[data-state-of="' + id + '"]').forEach((n) => { n.textContent = text || ''; });
+  }
+
+  // "Hinzufügen" panels: the page or card action opens the form above the list.
+  function addPanel(btnId, panelId) {
+    const btn = $(btnId);
+    const panel = $(panelId);
+    if (!btn || !panel) return null;
+    const close = (back) => {
+      panel.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+      panel.querySelectorAll('.st-err').forEach((x) => { x.hidden = true; });
+      if (back) btn.focus();
+    };
+    btn.addEventListener('click', () => {
+      if (!panel.hidden) { close(false); return; }
+      panel.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+      const f = panel.querySelector('input:not([type="color"]):not([disabled])');
+      if (f) f.focus();
+    });
+    panel.querySelectorAll('[data-add-cancel]').forEach((b) => b.addEventListener('click', () => {
+      panel.querySelectorAll('input:not([type="color"])').forEach((i) => { i.value = ''; });
+      close(true);
+    }));
+    panel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); close(true); } });
+    return { close };
   }
 
   // ── Search ──
@@ -413,38 +514,42 @@
   let query = '';
   function sectionText(id) {
     const sec = sectionEl(id);
-    return [navLabel(id), sec ? sec.dataset.stKeywords : '', sec ? sec.textContent : ''].join(' ');
+    const link = navItems.find((x) => x.dataset.section === id);
+    return [navLabel(id), sec ? sec.dataset.stKeywords : (link && link.dataset.stKeywords) || '', sec ? sec.textContent : ''].join(' ');
   }
   function runSearch() {
     query = search.value;
     let shown = 0;
     navItems.forEach((b) => {
+      if (b.dataset.section === 'start') return;
       const hit = U.matches(sectionText(b.dataset.section), query);
       b.parentElement.hidden = !hit;
       if (hit) shown++;
     });
-    document.querySelectorAll('.st-nav-group').forEach((g) => {
+    nav.querySelectorAll('.stx-grp').forEach((g) => {
       g.hidden = !g.querySelector('li:not([hidden])');
     });
-    if (select) Array.from(select.options).forEach((o) => { o.hidden = !U.matches(sectionText(o.value), query); });
     $('st-nav-empty').hidden = shown > 0;
+    nav.classList.toggle('stx-searching', !!query.trim());
     searchCount.textContent = query.trim() ? tp('st.search_count', shown) : '';
     applySearchToSection();
   }
   function applySearchToSection() {
     const sec = current && sectionEl(current);
     if (!sec) return;
-    const head = [navLabel(current), sec.dataset.stKeywords, (sec.querySelector('.st-sec-head') || {}).textContent].join(' ');
-    const whole = !query.trim() || U.matches(head, query);
-    sec.querySelectorAll(':scope > .st-card').forEach((c) => { c.classList.toggle('st-search-miss', !whole && !U.matches(c.textContent, query)); });
+    const head = [navLabel(current), sec.dataset.stKeywords, (sec.querySelector('.stx-ph') || {}).textContent].join(' ');
+    const whole = !query.trim() || current === 'start' || U.matches(head, query);
+    sec.querySelectorAll('.stx-card').forEach((c) => { c.classList.toggle('st-search-miss', !whole && !U.matches(c.textContent, query)); });
   }
   search.addEventListener('input', runSearch);
   search.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { search.value = ''; runSearch(); }
     else if (e.key === 'Enter') {
       e.preventDefault();
-      const first = navItems.find((b) => !b.parentElement.hidden);
-      if (first) show(first.dataset.section, { focus: true });
+      const first = navItems.find((b) => b.dataset.section !== 'start' && !b.parentElement.hidden);
+      if (!first) return;
+      if (first.dataset.ext) location.assign(first.getAttribute('href'));
+      else show(first.dataset.section, { push: true, focus: true });
     }
   });
 
@@ -471,12 +576,101 @@
   const del = (url) => call(api.del(url));
   const int = (v) => parseInt(v, 10);
 
-  // ── Übersicht ──
-  SECTIONS.uebersicht = {
+  // ── Start (/settings): tiles, "Braucht deine Aufmerksamkeit", every area's
+  // state (GET /api/v1/settings/overview), the services (WireGuard, Caddy).
+  const ICONS = {
+    updates: 'M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5', backup: 'M12 3v12M7 10l5 5 5-5M4 21h16',
+    domains: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3a14 14 0 0 1 0 18', plugins: 'M14 4h-4v3H7v4h3v3h4v-3h3V7h-3zM5 20h14',
+    lizenz: 'M15 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM12 10v11M12 14h3M12 18h2', email: 'M3 5h18v14H3zM3 6l9 7 9-7',
+    service: 'M5 12h14M12 5v14M7 7l10 10',
+  };
+  const start = { overview: null, services: {}, svcDone: 0 };
+  function svcName(id) { return id === 'wg' ? 'WireGuard' : 'Caddy'; }
+  function attentionRows() {
+    const rows = ((start.overview && start.overview.attention) || []).slice();
+    ['wg', 'caddy'].forEach((k) => {
+      if (start.services[k] === 'crit') rows.unshift({ id: k + '_down', kind: k + '_down', tone: 'crit', section: 'start', href: '#st-c-services', params: {} });
+    });
+    return rows;
+  }
+  function attText(r, part) {
+    const p = Object.assign({}, r.params || {});
+    if (p.at) p.at = O.fmtAgo(p.at, lang) || O.fmtDateTime(p.at, lang);
+    return t('st.att.' + r.kind + '.' + part, p);
+  }
+  function renderAttention() {
+    const rows = attentionRows();
+    const box = $('st-att-list');
+    clear(box);
+    if (!rows.length) box.appendChild(el('li', { class: 'st-empty', text: t('st.att.none') }));
+    rows.forEach((r) => {
+      const tone = r.tone === 'crit' ? 'crit' : 'warn';
+      const a = el('a', { class: 'pgx-btn pgx-btn-sm', href: r.href, text: attText(r, 'action') });
+      box.appendChild(el('li', { class: 'stx-row stx-att', 'data-tone': tone, 'data-kind': r.kind }, [
+        el('span', { class: 'pgx-ic', 'data-size': 'sm' }, [icon(ICONS[r.section] || ICONS.service, 18)]),
+        el('span', { class: 'stx-nm' }, [el('b', { text: attText(r, 'title') }), el('small', { text: attText(r, 'sub') })]),
+        el('span', { class: 'pgx-pill', 'data-tone': tone, text: attText(r, 'pill') }),
+        a,
+      ]));
+    });
+    const n = rows.length;
+    $('st-att-n').textContent = String(n);
+    const cnt = $('st-att-count');
+    cnt.textContent = String(n);
+    cnt.hidden = n === 0;
+    cnt.setAttribute('aria-label', tp('st.att.count', n));
+    const ov = start.overview;
+    setStatus('start', (ov && ov.version ? t('st.start.status', { version: ov.version }) : $('st-status-start').textContent.split(' · ')[0])
+      + (n ? ' · ' + tp('st.start.points', n) : ' · ' + t('st.start.all_good')));
+    // dots in the menu: every area with an open point
+    const by = {};
+    rows.forEach((r) => { by[r.section] = true; });
+    navItems.forEach((b) => { if (b.dataset.section !== 'start') setDot(b.dataset.section, !!by[b.dataset.section]); });
+  }
+  function renderOverview() {
+    const ov = start.overview;
+    if (!ov) return;
+    Object.entries(ov.states || {}).forEach(([id, st]) => {
+      const p = Object.assign({}, st.params || {});
+      if (p.at) p.at = O.fmtAgo(p.at, lang) || O.fmtDateTime(p.at, lang);
+      if (p.plan) p.plan = t('license.plan_' + p.plan) !== 'license.plan_' + p.plan ? t('license.plan_' + p.plan) : p.plan;
+      setState(id, p.n != null ? tp(st.key, p.n, p) : t(st.key, p));
+    });
+    const d = ov.tiles && ov.tiles.domains;
+    if (d) {
+      $('st-tile-domains-v').textContent = String(d.total);
+      $('st-tile-domains-s').textContent = d.failed ? tp('st.tile.domains_failed', d.failed) : d.pending ? tp('st.tile.domains_pending', d.pending) : (d.total ? t('st.tile.domains_ok') : t('st.domains.none'));
+      $('st-tile-domains').dataset.tone = d.failed ? 'crit' : d.pending ? 'warn' : 'good';
+    }
+    const b = ov.tiles && ov.tiles.backup;
+    if (b) {
+      $('st-tile-backup-v').textContent = b.last ? fmtTime(b.last.at) : '–';
+      const sub = [];
+      if (b.last) sub.push(O.fmtAgo(b.last.at, lang) || O.fmtDateTime(b.last.at, lang));
+      if (b.last && b.last.size) sub.push(O.fmtBytes(b.last.size));
+      sub.push(b.offsite ? tp('st.tile.backup_targets', b.offsite) : t('st.tile.backup_local'));
+      $('st-tile-backup-s').textContent = b.last ? sub.join(' · ') : t('st.bk.never');
+      $('st-tile-backup').dataset.tone = b.failing ? 'crit' : 'blue';
+    }
+    const upd = $('st-start-update');
+    upd.hidden = !(ov.updates && ov.updates.lastAction === 'waiting_window');
+  }
+  function renderServices() {
+    const s = start.services;
+    const known2 = ['wg', 'caddy'].filter((k) => s[k]);
+    if (known2.length < 2) return;
+    const ok = known2.filter((k) => s[k] === 'good').length;
+    $('st-tile-services-v').textContent = ok + ' / 2';
+    const bad = known2.filter((k) => s[k] === 'crit').map(svcName);
+    $('st-tile-services-s').textContent = bad.length ? t('st.tile.services_bad', { names: bad.join(', ') }) : (ok === 2 ? t('st.tile.services_ok') : t('st.services.unknown'));
+    $('st-tile-services').dataset.tone = bad.length ? 'crit' : ok === 2 ? 'good' : 'warn';
+  }
+  SECTIONS.start = {
     async load() {
       const wgDetail = $('st-svc-wg-detail');
       if (!wgDetail.dataset.base) wgDetail.dataset.base = wgDetail.textContent;
-      const [wg, caddy] = await Promise.all([get('/api/v1/wg/status'), get('/api/v1/caddy/status')]);
+      const [ov, wg, caddy] = await Promise.all([get('/api/v1/settings/overview'), get('/api/v1/wg/status'), get('/api/v1/caddy/status')]);
+      if (ov.ok) start.overview = ov.data;
       const wgOk = !!(wg && wg.running);
       setService('st-svc-wg', wg && wg.ok !== false ? (wgOk ? 'good' : 'crit') : 'warn');
       const online = wg && Array.isArray(wg.peers) ? wg.peers.filter((p) => p.isOnline).length : null;
@@ -486,13 +680,17 @@
       $('st-svc-caddy-detail').textContent = cOk
         ? t('st.services.caddy_detail', { http: caddy.httpRoutes || 0, l4: caddy.l4Routes || 0 })
         : '';
+      renderServices();
+      renderOverview();
+      renderAttention();
     },
   };
   function setService(id, state) {
-    const tile = $(id);
-    tile.dataset.state = state;
+    const row = $(id);
+    row.dataset.state = state;
     $(id + '-state').dataset.state = state;
     $(id + '-state').textContent = t(state === 'good' ? 'st.services.running' : state === 'crit' ? 'st.services.stopped' : 'st.services.unknown');
+    start.services[id === 'st-svc-wg' ? 'wg' : 'caddy'] = state;
   }
   $('st-wg-restart').addEventListener('click', async (e) => {
     const b = e.currentTarget;
@@ -500,18 +698,27 @@
     busy(b, true);
     const r = await post('/api/v1/wg/restart');
     busy(b, false);
-    if (r.ok && r.success) { toast(t('st.services.wg_restarted')); SECTIONS.uebersicht.load(); } else toast(r.ok ? t('settings.svc.wg_restart_failed') : errText(r), 'error');
+    if (r.ok && r.success) { toast(t('st.services.wg_restarted')); SECTIONS.start.load(); } else toast(r.ok ? t('settings.svc.wg_restart_failed') : errText(r), 'error');
   });
   $('st-caddy-reload').addEventListener('click', async (e) => {
     const b = e.currentTarget;
     busy(b, true);
     const r = await post('/api/v1/caddy/reload');
     busy(b, false);
-    if (r.ok && r.success) { toast(t('st.services.caddy_reloaded')); SECTIONS.uebersicht.load(); } else toast(errText(r), 'error');
+    if (r.ok && r.success) { toast(t('st.services.caddy_reloaded')); SECTIONS.start.load(); } else toast(errText(r), 'error');
+  });
+  const startBackup = $('st-start-backup');
+  if (startBackup) startBackup.addEventListener('click', async () => {
+    busy(startBackup, true);
+    const r = await post('/api/v1/settings/autobackup/run');
+    busy(startBackup, false);
+    if (r.ok) { toast(t('st.bk.run_ok', { file: r.filename })); SECTIONS.start.load(); } else toast(errText(r), 'error');
   });
 
   // ── Domains & Zertifikate ──
   const domList = $('st-dom-list');
+  let domFilter = 'all';
+  let domItems = [];
   function domainRow(d) {
     const state = d.status === 'verified' ? 'good' : d.status === 'failed' ? 'crit' : 'warn';
     const label = t(d.status === 'verified' ? 'st.domains.verified' : d.status === 'failed' ? 'st.domains.failed' : 'st.domains.pending');
@@ -535,7 +742,7 @@
       const caa = TG.caaEl ? TG.caaEl(check, { compact: true }) : null;
       if (caa) info.appendChild(caa);
     }
-    const verify = el('button', { type: 'button', class: 'st-btn st-btn-sm', text: t('st.domains.recheck') });
+    const verify = el('button', { type: 'button', class: 'pgx-btn pgx-btn-sm', text: t('st.domains.recheck') });
     verify.addEventListener('click', async () => {
       busy(verify, true);
       const r = await post('/api/v1/settings/domains/' + d.id + '/verify');
@@ -548,24 +755,53 @@
       const r = await del('/api/v1/settings/domains/' + d.id);
       if (r.ok) SECTIONS.domains.loadList(); else toast(errText(r), 'error');
     });
-    return el('li', { class: 'st-li', 'data-domain': d.domain }, [info, pill(state, label), el('div', { class: 'st-li-actions' }, [verify, remove])]);
+    return el('li', { class: 'st-li', 'data-domain': d.domain, 'data-state': state }, [
+      el('span', { class: 'pgx-ic', 'data-size': 'sm' }, [icon(ICONS.domains, 18)]),
+      info, pill(state, label), el('div', { class: 'st-li-actions' }, [verify, remove]),
+    ]);
   }
+  function renderDomains() {
+    clear(domList);
+    const list = domItems.filter((d) => domFilter === 'all' || (domFilter === 'verified' ? d.status === 'verified' : d.status !== 'verified'));
+    if (!domItems.length) domList.appendChild(empty(t('st.domains.none')));
+    else if (!list.length) domList.appendChild(empty(t('st.domains.none_filtered')));
+    list.forEach((d) => domList.appendChild(domainRow(d)));
+  }
+  $('st-dom-filter').addEventListener('change', () => { domFilter = $('st-dom-filter').dataset.value || 'all'; renderDomains(); });
   SECTIONS.domains = {
     async loadList() {
       const r = await get('/api/v1/settings/domains');
       if (!r.ok) { clear(domList); domList.appendChild(empty(errText(r))); return r; }
-      const list = r.data.domains || [];
-      clear(domList);
-      if (!list.length) domList.appendChild(empty(t('st.domains.none')));
-      list.forEach((d) => domList.appendChild(domainRow(d)));
+      domItems = r.data.domains || [];
+      renderDomains();
+      const ok = domItems.filter((d) => d.status === 'verified').length;
+      const open = domItems.filter((d) => d.status !== 'verified');
+      $('st-dom-f-all').textContent = String(domItems.length);
+      $('st-dom-f-verified').textContent = String(ok);
+      $('st-dom-f-open').textContent = String(open.length);
+      $('st-dom-t-ok').textContent = ok + ' / ' + domItems.length;
+      $('st-dom-t-pending').textContent = String(open.length);
+      $('st-dom-t-pending-s').textContent = open.length ? open.slice(0, 2).map((d) => d.domain).join(', ') + (open.length > 2 ? ' …' : '') : t('st.domains.tile_pending_none');
+      $('st-dom-t-ip').textContent = r.data.serverIp || '—';
+      $('st-dom-t-ip-s').textContent = r.data.serverIpOverride ? t('st.domains.tile_ip_fixed') : t('st.domains.tile_ip_auto');
       $('st-r-ip4').textContent = r.data.serverIp || '—';
       $('st-r-ip6').textContent = r.data.serverIpv6 || '—';
       $('st-dom-ipwarn').hidden = !r.data.serverIpWarning;
-      setDot('domains', list.some((d) => d.status === 'failed') || !!r.data.serverIpWarning);
+      setDot('domains', domItems.some((d) => d.status !== 'verified') || !!r.data.serverIpWarning);
+      setStatus('domains', [tp('st.domains.status_n', domItems.length), open.length ? tp('st.domains.status_open', open.length) : t('st.domains.status_all_ok')].join(' · '));
       return r;
     },
+    async loadCerts() {
+      const r = await get('/api/v1/tls/status');
+      if (!r.ok) return;
+      const issued = (r.hosts || []).filter((h) => h.state === 'issued' && h.days_left != null);
+      const failed = (r.hosts || []).filter((h) => h.state === 'failed' || h.state === 'paused').length;
+      const min = issued.length ? Math.min(...issued.map((h) => h.days_left)) : null;
+      $('st-dom-t-certs').textContent = min == null ? '–' : tp('st.domains.tile_days', min);
+      $('st-dom-t-certs-s').textContent = failed ? tp('st.domains.tile_certs_failed', failed) : (min == null ? t('st.domains.tile_certs_none') : t('st.domains.tile_certs_sub'));
+    },
     async load() {
-      const [r, acme, tls] = await Promise.all([this.loadList(), get('/api/v1/settings/acme-email'), get('/api/v1/settings/tls')]);
+      const [r, acme, tls] = await Promise.all([this.loadList(), get('/api/v1/settings/acme-email'), get('/api/v1/settings/tls'), this.loadCerts()]);
       const vals = {};
       if (r.ok) { vals['srv-ip'] = r.data.serverIpOverride || ''; vals['srv-ip6'] = r.data.serverIpv6Override || ''; }
       if (acme.ok) {
@@ -586,6 +822,7 @@
         save: (v) => api.put('/api/v1/settings/tls', { max_attempts: int(v['tls-attempts']) }) },
     ],
   };
+  const domAdd = addPanel('st-dom-addbtn', 'st-dom-add');
   $('st-dom-add').addEventListener('submit', async (e) => {
     e.preventDefault();
     const input = $('st-dom-input');
@@ -597,7 +834,7 @@
     busy(b, true);
     const r = await post('/api/v1/settings/domains', { domain });
     busy(b, false);
-    if (r.ok) { input.value = ''; SECTIONS.domains.loadList(); } else { err.textContent = errText(r); err.hidden = false; input.focus(); }
+    if (r.ok) { input.value = ''; if (domAdd) domAdd.close(true); SECTIONS.domains.loadList(); } else { err.textContent = errText(r); err.hidden = false; input.focus(); }
   });
 
   // ── VPN & Netzwerk ──
@@ -632,9 +869,17 @@
   SECTIONS.daten = {
     async load() {
       const r = await get('/api/v1/settings/data');
-      if (r.ok) fill('daten', { 'ret-traffic': r.data.retention_traffic_days, 'ret-activity': r.data.retention_activity_days, 'ret-waf': r.data.retention_waf_days });
+      if (r.ok) {
+        fill('daten', { 'ret-traffic': r.data.retention_traffic_days, 'ret-activity': r.data.retention_activity_days, 'ret-waf': r.data.retention_waf_days });
+        this.status();
+      }
     },
-    groups: [{ fields: Object.values(DATA_MAP), map: DATA_MAP, save: (v, d) => api.put('/api/v1/settings/data', U.pickDirty(DATA_MAP, v, d)) }],
+    status() {
+      const b = baseline.daten || {};
+      setStatus('daten', t('st.daten.status', { traffic: b['ret-traffic'], activity: b['ret-activity'] }));
+    },
+    groups: [{ fields: Object.values(DATA_MAP), map: DATA_MAP, save: (v, d) => api.put('/api/v1/settings/data', U.pickDirty(DATA_MAP, v, d)),
+      after: () => SECTIONS.daten.status() }],
   };
 
   // ── Anmeldung & Konten ──
@@ -650,10 +895,17 @@
           req2fa: !!r.data.require_2fa, 'lock-on': !!lo.enabled, 'lock-attempts': lo.max_attempts, 'lock-minutes': lo.duration,
           'pw-on': !!pw.complexity_enabled, 'pw-len': pw.min_length, 'pw-upper': !!pw.require_uppercase, 'pw-number': !!pw.require_number, 'pw-special': !!pw.require_special,
         });
+        this.status();
       }
       await this.loadLocked();
       clearInterval(this.timer);
       this.timer = setInterval(() => { if (current === 'anmeldung') this.loadLocked(); }, 30000);
+    },
+    status() {
+      const b = baseline.anmeldung || {};
+      setStatus('anmeldung', [t(b.req2fa ? 'st.anm.twofa_on' : 'st.anm.twofa_off'),
+        b['lock-on'] ? tp('st.anm.lock', b['lock-attempts']) : t('st.anm.lock_off'),
+        t(b['pw-on'] ? 'st.anm.pw_on' : 'st.anm.pw_off')].join(' · '));
     },
     async loadLocked() {
       const box = $('st-locked');
@@ -670,7 +922,10 @@
         });
         const meta = [t('st.lockout.remaining', { n: Math.max(1, Math.ceil(acc.remainingSeconds / 60)) }), tp('st.lockout.attempts_n', acc.attempts)];
         if (acc.lastIp) meta.push(t('st.lockout.from', { ip: acc.lastIp }));
-        box.appendChild(el('li', { class: 'st-chiprow' }, [el('span', { class: 'st-mono st-strong', text: acc.identifier }), el('span', { class: 'st-li-sub', text: meta.join(' · ') }), btn]));
+        box.appendChild(el('li', { class: 'st-li' }, [
+          el('div', { class: 'st-li-main' }, [el('div', { class: 'st-li-title st-mono', text: acc.identifier }), el('div', { class: 'st-li-sub', text: meta.join(' · ') })]),
+          pill('warn', t('st.lockout.locked_pill')), btn,
+        ]));
       });
     },
     groups: [{
@@ -694,6 +949,7 @@
         if (d.includes('req2fa')) body.require_2fa = v.req2fa;
         return api.put('/api/v1/settings/security', body);
       },
+      after: () => SECTIONS.anmeldung.status(),
     }],
   };
 
@@ -701,12 +957,14 @@
   SECTIONS.geraete = {
     async load() {
       const r = await get('/api/v1/settings/machine-binding');
-      if (r.ok) fill('geraete', { 'mb-mode': r.data.mode || 'off' });
+      if (r.ok) { fill('geraete', { 'mb-mode': r.data.mode || 'off' }); this.status(); }
     },
+    status() { setStatus('geraete', t('st.mb.status', { mode: t('security.machine_binding.mode_' + ((baseline.geraete || {})['mb-mode'] || 'off')) })); },
     groups: [{
       fields: ['mb-mode'], errorField: 'mb-mode',
       confirm: (v) => ({ title: t('st.confirm.title'), message: t('st.confirm.mb_' + v['mb-mode']), okLabel: t('st.confirm.save_anyway'), danger: true }),
       save: (v) => api.put('/api/v1/settings/machine-binding', { mode: v['mb-mode'] }),
+      after: () => SECTIONS.geraete.status(),
     }],
   };
 
@@ -716,13 +974,16 @@
     editing: null,
     groups: [],
     policies: {},
+    tags: 0,
     async load() { await Promise.all([this.loadGroups(), this.loadTags()]); },
+    status() { setStatus('gruppen', [tp('st.groups.status_groups', this.groups.length), tp('st.groups.status_tags', this.tags)].join(' · ')); },
     async loadGroups() {
       const [r, cp] = await Promise.all([get('/api/v1/peer-groups'), get('/api/v1/settings/client-policy')]);
       this.groups = (r.ok && r.groups) || [];
       this.policies = {};
       if (cp.ok) (cp.data.groups || []).forEach((g) => { this.policies[g.id] = Object.keys(g.policy || {}).length > 0; });
       this.render();
+      this.status();
     },
     render() {
       const box = $('st-groups');
@@ -776,6 +1037,8 @@
       const r = await get('/api/v1/tags');
       clear(box);
       const list = (r.ok && r.tags) || [];
+      this.tags = list.length;
+      this.status();
       if (!list.length) { box.appendChild(empty(t('tags.no_tags'))); return; }
       list.forEach((tag) => {
         const x = el('button', { type: 'button', class: 'st-tag-x', 'aria-label': t('st.tags.remove_label', { name: tag.name }), title: t('st.tags.remove_label', { name: tag.name }), text: '×' });
@@ -792,6 +1055,8 @@
       });
     },
   };
+  const groupAdd = addPanel('st-group-addbtn', 'st-group-add');
+  const tagAdd = addPanel('st-tag-addbtn', 'st-tag-add');
   $('st-group-add').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = $('st-g-name');
@@ -802,7 +1067,7 @@
     busy(b, true);
     const r = await post('/api/v1/peer-groups', { name: name.value.trim(), description: $('st-g-desc').value.trim(), color: $('st-g-color').value });
     busy(b, false);
-    if (r.ok) { name.value = ''; $('st-g-desc').value = ''; $('st-g-color').value = '#6b7280'; SECTIONS.gruppen.loadGroups(); } else { err.textContent = errText(r); err.hidden = false; }
+    if (r.ok) { name.value = ''; $('st-g-desc').value = ''; $('st-g-color').value = '#6b7280'; if (groupAdd) groupAdd.close(true); SECTIONS.gruppen.loadGroups(); } else { err.textContent = errText(r); err.hidden = false; }
   });
   $('st-tag-add').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -814,13 +1079,13 @@
     busy(b, true);
     const r = await post('/api/v1/tags', { name: input.value.trim() });
     busy(b, false);
-    if (r.ok) { input.value = ''; SECTIONS.gruppen.loadTags(); } else { err.textContent = errText(r); err.hidden = false; }
+    if (r.ok) { input.value = ''; if (tagAdd) tagAdd.close(true); SECTIONS.gruppen.loadTags(); } else { err.textContent = errText(r); err.hidden = false; }
   });
 
   // ── Client-Richtlinien ──
   const CPF = window.ClientPolicyForm;
-  const cpGlobal = CPF ? CPF.create($('st-cp-global'), { mode: 'global', idPrefix: 'stcp-global' }) : null;
-  const cpGroup = CPF ? CPF.create($('st-cp-groupform'), { mode: 'override', idPrefix: 'stcp-group' }) : null;
+  const cpGlobal = CPF ? CPF.create($('st-cp-global'), { mode: 'global', idPrefix: 'stcp-global', layout: 'rows' }) : null;
+  const cpGroup = CPF ? CPF.create($('st-cp-groupform'), { mode: 'override', idPrefix: 'stcp-group', layout: 'rows' }) : null;
   const cpSel = $('st-cp-group');
   if (cpGlobal) CUSTOM['cp-global'] = { get: () => cpGlobal.getValue(), set: (v) => cpGlobal.setValue(v) };
   if (cpGroup) CUSTOM['cp-group'] = { get: () => cpGroup.getValue(), set: (v) => cpGroup.setValue(v) };
@@ -847,6 +1112,9 @@
       const has = data.groups.length > 0;
       $('st-cp-nogroups').hidden = has;
       $('st-cp-groupbody').hidden = !has;
+      $('st-cp-inherit').hidden = !has;
+      const own = data.groups.filter((x) => Object.keys(x.policy || {}).length).length;
+      setStatus('richtlinien', [t('st.cp.status_global'), tp('st.cp.status_groups', own)].join(' · '));
       if (cpGroupId && data.groups.some((g) => String(g.id) === cpGroupId)) cpSel.value = cpGroupId;
       cpGroupId = cpSel.value;
       if (cpGroup) cpGroup.setInherited(data.global, null);
@@ -907,9 +1175,10 @@
         $('st-st-networks').dispatchEvent(new Event('change', { bubbles: true }));
         toast(t('st.st.removed_hint'));
       });
-      box.appendChild(el('li', { class: 'st-chiprow' }, [el('span', { class: 'st-strong', text: n.label || '—' }), el('span', { class: 'st-mono st-li-sub', text: n.cidr }), x]));
+      box.appendChild(el('li', { class: 'st-li' }, [el('div', { class: 'st-li-main' }, [el('div', { class: 'st-li-title', text: n.label || '—' }), el('div', { class: 'st-mono st-li-sub', text: n.cidr })]), x]));
     });
   }
+  addPanel('st-st-addopen', 'st-st-add');
   $('st-st-addbtn').addEventListener('click', () => {
     const label = $('st-st-label');
     const cidr = $('st-st-cidr');
@@ -936,6 +1205,14 @@
       const ll = nets.some((n) => n.cidr === LINK_LOCAL.cidr);
       const custom = nets.filter((n) => !((priv && PRIVATE_CIDRS.some((p) => p.cidr === n.cidr)) || (ll && n.cidr === LINK_LOCAL.cidr)));
       fill('splittunnel', { 'st-mode': r.mode || 'off', 'st-private': priv, 'st-linklocal': ll, 'st-lock': !!r.locked, 'st-networks': custom });
+      this.status();
+    },
+    status() {
+      const b = baseline.splittunnel || {};
+      const parts = [t('st.st.status_' + (b['st-mode'] || 'off'))];
+      if (b['st-mode'] && b['st-mode'] !== 'off') parts.push(tp('st.st.status_nets', (b['st-networks'] || []).length));
+      if (b['st-lock']) parts.push(t('st.st.status_locked'));
+      setStatus('splittunnel', parts.join(' · '));
     },
     groups: [{
       fields: ['st-mode', 'st-private', 'st-linklocal', 'st-lock', 'st-networks'],
@@ -946,22 +1223,41 @@
         if (v['st-linklocal']) networks.push(LINK_LOCAL);
         return api.put('/api/v1/settings/split-tunnel', { mode: v['st-mode'], networks, locked: v['st-lock'] });
       },
+      after: () => SECTIONS.splittunnel.status(),
     }],
   };
 
   // ── Client-Updates ──
   const PRODUCT_KEYS = { pro: 'client_updates.product_pro', community: 'client_updates.product_community', android: 'client_updates.product_android', unknown: 'client_updates.product_unknown' };
+  const PRODUCT_TONES = { pro: 'violet', community: 'blue', android: 'good', unknown: '' };
   function renderVersions(ov) {
-    const box = $('st-cu-overview');
+    const tiles = $('st-cu-overview');
+    const box = $('st-cu-versions');
+    clear(tiles);
     clear(box);
     const products = (ov && ov.products) || [];
-    $('st-cu-unreported').textContent = ov && ov.unreported > 0 ? t('client_updates.overview_unreported', { count: ov.unreported }) : '';
-    if (!products.length) { box.appendChild(el('p', { class: 'st-empty', text: t('client_updates.overview_empty') })); return; }
+    const unrep = $('st-cu-unreported');
+    unrep.textContent = ov && ov.unreported > 0 ? t('client_updates.overview_unreported', { count: ov.unreported }) : '';
+    unrep.hidden = !unrep.textContent;
+    const total = products.reduce((n, p) => n + (p.total || 0), 0);
+    const below = products.reduce((n, p) => n + p.versions.filter((v) => v.below_min).reduce((m, v) => m + v.count, 0), 0);
+    setStatus('clientupdates', [t('st.cu.status_channel', { channel: t('client_updates.channel_' + ((baseline.clientupdates || {})['cu-channel'] || 'stable')) }), tp('st.cu.devices', total)]
+      .concat(below ? [tp('st.cu.status_below', below)] : []).join(' · '));
+    if (!products.length) {
+      tiles.hidden = true;
+      box.appendChild(el('p', { class: 'st-empty', text: t('client_updates.overview_empty') }));
+      return;
+    }
+    tiles.hidden = false;
     products.forEach((p) => {
+      tiles.appendChild(el('div', { class: 'pgx-card pgx-stat stx-tile', 'data-tone': PRODUCT_TONES[p.product] || null }, [
+        el('span', { class: 'pgx-lbl', text: t(PRODUCT_KEYS[p.product] || PRODUCT_KEYS.unknown) }),
+        el('b', { text: String(p.total) }),
+        el('span', { class: 'pgx-stat-d', text: p.min_version ? t('client_updates.overview_min', { version: p.min_version }) : t('st.cu.no_min') }),
+      ]));
       const max = Math.max(1, ...p.versions.map((v) => v.count));
-      box.appendChild(el('div', { class: 'st-tile' }, [
-        el('div', { class: 'st-tile-head' }, [el('span', { class: 'st-tile-name', text: t(PRODUCT_KEYS[p.product] || PRODUCT_KEYS.unknown) }), el('span', { class: 'st-li-sub st-push', text: tp('st.cu.devices', p.total) })]),
-        el('div', { class: 'st-li-sub', text: p.min_version ? t('client_updates.overview_min', { version: p.min_version }) : t('st.cu.no_min') }),
+      box.appendChild(el('div', { class: 'stx-vgroup' }, [
+        el('div', { class: 'stx-vhead' }, [el('b', { text: t(PRODUCT_KEYS[p.product] || PRODUCT_KEYS.unknown) }), el('span', { class: 'st-li-sub', text: tp('st.cu.devices', p.total) })]),
         el('ul', { class: 'st-bars' }, p.versions.map((v) => {
           const fillEl = el('span', { class: 'st-bar-fill' + (v.below_min ? ' st-bar-warn' : '') });
           fillEl.style.width = Math.round((v.count / max) * 100) + '%';
@@ -1007,6 +1303,12 @@
       $('st-smtp-pw').placeholder = d.hasPassword ? t('st.secret_set') : '';
       $('st-smtp-pw-clear').hidden = !d.hasPassword;
       fill('email', { 'smtp-host': d.host || '', 'smtp-port': d.port || '', 'smtp-tls': d.secure ? 'tls' : 'starttls', 'smtp-user': d.user || '', 'smtp-password': '', 'smtp-from': d.from || '' });
+      const configured = !!(d.host && d.port);
+      setStatus('email', configured ? t('st.smtp.status_ok', { host: d.host }) : t('st.smtp.status_none'));
+      const st = $('st-smtp-state');
+      st.hidden = false;
+      st.dataset.state = configured ? 'good' : 'warn';
+      st.textContent = t(configured ? 'st.smtp.pill_ok' : 'st.smtp.pill_none');
     },
     groups: [{
       fields: ['smtp-host', 'smtp-port', 'smtp-tls', 'smtp-user', 'smtp-password', 'smtp-from'],
@@ -1030,7 +1332,7 @@
   $('st-smtp-test').addEventListener('click', async (e) => {
     const b = e.currentTarget;
     const msg = $('st-smtp-test-msg');
-    if (dirtyOf('email').length) { msg.textContent = t('st.smtp.test_save_first'); msg.dataset.state = 'warn'; return; }
+    if (dirtyOf('email').length) { msg.textContent = t('st.smtp.test_save_first'); msg.dataset.tone = 'warn'; msg.hidden = false; return; }
     const rec = await get('/api/v1/settings/alerts');
     const first = rec.ok ? String(rec.data.email || '').split(',')[0].trim() : '';
     const to = await D.prompt({
@@ -1040,10 +1342,12 @@
     if (!to) return;
     busy(b, true);
     msg.textContent = '';
+    msg.hidden = true;
     const r = await post('/api/v1/smtp/test', { email: to });
     busy(b, false);
     msg.textContent = r.ok ? t('settings.smtp_test_sent', { email: to }) : errText(r);
-    msg.dataset.state = r.ok ? 'good' : 'crit';
+    msg.dataset.tone = r.ok ? 'good' : 'crit';
+    msg.hidden = false;
   });
 
   // ── Benachrichtigungen ──
@@ -1062,18 +1366,25 @@
       if (d.smtp && d.smtp.configured) note.appendChild(document.createTextNode(t('st.notify.smtp_ok', { host: d.smtp.host })));
       else {
         note.appendChild(document.createTextNode(t('st.notify.smtp_missing') + ' '));
-        note.appendChild(el('a', { href: '#email', class: 'st-link', text: t('st.nav.email') }));
+        note.appendChild(el('a', { href: '/settings/email', class: 'st-link', text: t('st.nav.email') }));
       }
       note.classList.toggle('st-note-warn', !(d.smtp && d.smtp.configured));
       fill('benachrichtigungen', {
         'al-email': d.email || '', 'al-backup': d.backup_reminder_days,
         'al-cpu': d.resource_cpu_threshold, 'al-ram': d.resource_ram_threshold, 'al-disk': d.resource_disk_threshold,
       });
+      this.status();
+    },
+    status() {
+      const b = baseline.benachrichtigungen || {};
+      const n = String(b['al-email'] || '').split(',').map((x) => x.trim()).filter(Boolean).length;
+      setStatus('benachrichtigungen', n ? tp('st.notify.status', n, { first: String(b['al-email']).split(',')[0].trim() }) : t('st.notify.status_none'));
     },
     validate(v, d) { return d.includes('al-email') && !U.recipientsOk(v['al-email']) ? { 'al-email': t('error.settings.recipient_invalid') } : {}; },
     groups: [{
       fields: Object.values(ALERT_MAP), map: ALERT_MAP,
       save: (v, d) => api.put('/api/v1/settings/alerts', U.pickDirty(ALERT_MAP, v, d, (val, f) => (f === 'al-email' ? String(val).trim() : val))),
+      after: () => SECTIONS.benachrichtigungen.status(),
     }],
   };
 
@@ -1119,6 +1430,7 @@
       if (!r.ok) { whList.appendChild(empty(errText(r))); return; }
       if (!whItems.length) whList.appendChild(empty(t('settings.webhooks_empty')));
       whItems.forEach((h) => whList.appendChild(hookRow(h)));
+      setStatus('webhooks', whItems.length ? tp('st.wh.status', whItems.length, { active: whItems.filter((h) => h.enabled).length }) : t('st.wh.status_none'));
     },
   };
   // Dialog
@@ -1204,11 +1516,16 @@
       if (gw.ok) vals['gw-down'] = gw.data.gateway_down_threshold_s;
       if (me.ok) vals.prom = !!me.data.enabled;
       fill('monitoring', vals);
+      this.status();
+    },
+    status() {
+      const b = baseline.monitoring || {};
+      setStatus('monitoring', [t('st.mon.status', { n: b['mon-interval'] }), t('st.mon.status_gw', { n: b['gw-down'] }), t(b.prom ? 'st.mon.prom_on' : 'st.mon.prom_off')].join(' · '));
     },
     groups: [
       { fields: ['mon-interval'], map: { interval: 'mon-interval' }, errorField: 'mon-interval', save: (v) => api.put('/api/v1/settings/monitoring', { interval: v['mon-interval'] }) },
       { fields: ['gw-down'], map: { gateway_down_threshold_s: 'gw-down' }, errorField: 'gw-down', save: (v) => api.put('/api/v1/settings/gateway-failover', { gateway_down_threshold_s: int(v['gw-down']) }) },
-      { fields: ['prom'], errorField: 'prom', save: (v) => api.put('/api/v1/settings/metrics', { enabled: v.prom }) },
+      { fields: ['prom'], errorField: 'prom', save: (v) => api.put('/api/v1/settings/metrics', { enabled: v.prom }), after: () => SECTIONS.monitoring.status() },
     ],
   };
 
@@ -1228,6 +1545,7 @@
     });
     const renderPh = () => {
       clear(phList);
+      setStatus('pihole', tp('st.ph.status', phInstances.length));
       if (!phInstances.length) { phList.appendChild(empty(t('pihole.cfg.no_instances'))); return; }
       phInstances.forEach((inst, idx) => {
         const test = el('button', { type: 'button', class: 'st-btn st-btn-sm', text: t('pihole.cfg.test_connection') });
@@ -1358,6 +1676,7 @@
       $('st-geo-clear').hidden = !has;
       const state = $('st-geo-state');
       if (!state.dataset.tested) state.textContent = has ? t('st.geo.key_set') : t('st.geo.no_key');
+      setStatus('geoip', has ? t('st.geo.status_set') : t('st.geo.status_none'));
       fill('geoip', { 'geo-key': '' });
     },
     groups: [{ fields: ['geo-key'], errorField: 'geo-key', save: (v) => api.put('/api/v1/settings/ip2location', { api_key: v['geo-key'] }),
@@ -1408,6 +1727,10 @@
       if (d.base_domain && !verified.some((x) => x.domain === d.base_domain)) sel.appendChild(el('option', { value: d.base_domain, text: d.base_domain }));
       $('st-po-nodomains').hidden = verified.length > 0;
       portalSaved = { host: d.effectiveHost || '', internal: d.internalHost || '' };
+      setStatus('portal', d.enabled ? t('st.portal.status_on', { host: d.effectiveHost || '' }) : t('st.portal.status_off'));
+      const open = $('st-po-open');
+      open.hidden = !(d.enabled && d.effectiveHost);
+      if (d.effectiveHost) open.href = 'https://' + d.effectiveHost;
       const w = d.widgets || {};
       fill('portal', {
         'po-on': !!d.enabled, 'po-auto': d.autoappear !== false, 'po-trust': !!d.trustOwnerMapping,
@@ -1425,7 +1748,8 @@
           const widgets = U.pickDirty(WIDGET_MAP, v, d);
           if (Object.keys(widgets).length) body.widgets = widgets;
           return api.put('/api/v1/settings/portal', body);
-        } },
+        },
+        after: () => setStatus('portal', (baseline.portal || {})['po-on'] ? t('st.portal.status_on', { host: portalSaved.host }) : t('st.portal.status_off')) },
       { fields: ['po-domain', 'po-prefix'], errorField: 'po-prefix',
         confirm: (v) => ({ title: t('settings.portal.switch_title'), message: t('st.confirm.portal', { host: 'https://' + U.portalHost(v['po-domain'], v['po-prefix'], portalSaved.internal) }), okLabel: t('st.confirm.switch') }),
         save: (v) => api.put('/api/v1/settings/portal', { base_domain: v['po-domain'], prefix: v['po-prefix'].trim() }),
@@ -1472,8 +1796,12 @@
     const failing = enabled.filter((x) => x.last_status === 'failed' || x.last_verify_status === 'failed');
     $('st-bk-off').textContent = enabled.length ? t('st.bk.off_ok', { ok: enabled.length - failing.length, n: enabled.length }) : t('st.bk.off_none');
     $('st-bk-off-sub').textContent = failing.length ? t('st.bk.off_failing', { names: failing.map((x) => x.name).join(', ') }) : '';
-    $('st-bk-off-stat').dataset.state = failing.length ? 'crit' : enabled.length ? 'good' : '';
-    setDot('backup', failing.length > 0);
+    $('st-bk-off-stat').dataset.tone = failing.length ? 'crit' : enabled.length ? 'good' : 'warn';
+    setDot('backup', failing.length > 0 || (FEATURES.scheduled_backups && !enabled.length));
+    const parts = [last ? t('st.bk.status_last', { when: O.fmtAgo(last, lang) || O.fmtDateTime(last, lang) }) : t('st.bk.never_long')];
+    parts.push(a && a.enabled ? t('st.bk.status_auto', { schedule: t('autobackup.schedule_' + a.schedule) }) : t('st.bk.auto_off'));
+    parts.push(enabled.length ? tp('st.bk.status_targets', enabled.length) : t('st.bk.status_local'));
+    setStatus('backup', parts.join(' · '));
   }
   async function loadTargets() {
     const r = await get(BK + '/targets');
@@ -1505,7 +1833,7 @@
     return el('div', { class: 'st-tfiles', id: 'st-tfiles-' + tg.id }, [el('div', { class: 'st-sub-title', text: t('offsite.files_title') }), body, el('p', { class: 'st-hint', text: t('offsite.files_note') })]);
   }
   function tbtn(tg, name, label, fn, extra) {
-    const b = el('button', Object.assign({ type: 'button', class: 'st-btn st-btn-sm' + (name === 'delete' ? ' st-btn-danger' : ''), 'data-action': name, text: label, disabled: !FEATURES.scheduled_backups || !!bk.busy[tg.id] }, extra || {}));
+    const b = el('button', Object.assign({ type: 'button', class: 'pgx-btn pgx-btn-sm' + (name === 'delete' ? ' pgx-btn-danger' : ''), 'data-action': name, text: label, disabled: !FEATURES.scheduled_backups || !!bk.busy[tg.id] }, extra || {}));
     if (bk.busy[tg.id] === name) b.classList.add('is-loading');
     b.addEventListener('click', () => fn(tg));
     return b;
@@ -1797,7 +2125,8 @@
     busy(b, false);
     const msg = $('st-bk-msg');
     msg.textContent = r.ok ? t('st.bk.run_ok', { file: r.filename }) : errText(r);
-    msg.dataset.state = r.ok ? 'good' : 'crit';
+    msg.dataset.tone = r.ok ? 'good' : 'crit';
+    msg.hidden = false;
     if (r.ok) { const a = await get('/api/v1/settings/autobackup'); if (a.ok) bk.auto = a.data; await loadFiles(); bkHero(); }
   });
   $('st-bk-download').addEventListener('click', async (e) => {
@@ -1919,7 +2248,15 @@
     state.classList.toggle('st-warn-text', mismatch);
     const waiting = !!(auSaved && auSaved.last_action === 'waiting_window');
     $('st-au-waiting').hidden = !waiting;
+    $('st-au-trigger').hidden = !waiting;
     setDot('updates', mismatch || waiting);
+    if (auSaved) {
+      const parts = [t('st.au.status_version', { version: auSaved.running_version || '' }), t(auSaved.mode === 'manual' ? 'st.au.status_manual' : 'st.au.status_auto')];
+      const w = auSaved.window || {};
+      if (w.enabled) parts.push(t('st.au.status_window', { from: w.start, to: w.end }));
+      if (waiting) parts.push(t('st.au.status_waiting'));
+      setStatus('updates', parts.join(' · '));
+    }
   }
   async function loadAutoUpdate() {
     const d = await get('/api/v1/system/auto-update');
@@ -1953,7 +2290,7 @@
       return p ? { 'au-from': p === 'same' ? t('autoupdate.window_same') : O.errorText({ code: 'INVALID_WINDOW' }) } : {};
     },
     groups: [
-      { fields: ['au-mode'], errorField: 'au-mode', save: (v) => api.put('/api/v1/system/auto-update', { mode: v['au-mode'] }) },
+      { fields: ['au-mode'], errorField: 'au-mode', save: (v) => api.put('/api/v1/system/auto-update', { mode: v['au-mode'] }), after: (r) => { auSaved = r; renderUpdateSh(); } },
       { fields: ['au-win', 'au-from', 'au-to', 'au-tz'], errorField: 'au-from',
         save: (v) => api.put('/api/v1/system/auto-update', { window: { enabled: v['au-win'], start: v['au-from'], end: v['au-to'], tz: v['au-tz'] } }),
         after: (r) => { auSaved = r; renderUpdateSh(); } },
@@ -1986,7 +2323,7 @@
     busy(b, true);
     const r = await post('/api/v1/license/activate', { license_key: $('st-lic-key').value.trim(), signing_key: $('st-lic-sig').value.trim() });
     busy(b, false);
-    if (r.ok) { toast(t('license.activated')); setTimeout(() => location.reload(), 900); } else { msg.textContent = errText(r); msg.dataset.state = 'crit'; }
+    if (r.ok) { toast(t('license.activated')); setTimeout(() => location.reload(), 900); } else { msg.textContent = errText(r); msg.dataset.tone = 'crit'; }
   });
   // last failed online check (offline grace): the times in local time
   const licLast = $('st-lic-lastcheck');
@@ -2031,18 +2368,36 @@
   });
 
   // ══ Start ═════════════════════════════════════════════════════════════
-  // Attention dots that matter before their section is opened.
-  (async function dots() {
-    const [tg, au] = await Promise.all([get(BK + '/targets'), loadAutoUpdate()]);
-    if (tg.ok) { bk.targets = tg.targets || []; setDot('backup', bk.targets.some((x) => x.enabled && (x.last_status === 'failed' || x.last_verify_status === 'failed'))); }
-    if (au) renderUpdateSh();
-  })();
-
-  const start = U.resolveLocation({ hash: location.hash, search: location.search }, { known, sectionOfElement });
-  let first = start ? start.section : null;
-  if (!first) { try { const s = localStorage.getItem('gc-settings-section'); if (known.includes(s)) first = s; } catch (_) { /* optional */ } }
-  show(first || known[0], { anchor: start && start.anchor, force: true });
+  // The section the server rendered (/settings/<section>); on /settings an old
+  // address (#backup, #security, #smtp-host …) still leads to its section.
+  let first = page.dataset.section;
+  let anchor = null;
+  if (location.hash) {
+    const r = U.resolveLocation({ hash: location.hash, search: '' }, { known: known.concat(['plugins']), sectionOfElement });
+    if (r && r.section === 'plugins') { location.replace(U.sectionPath('plugins')); return; }
+    if (r && first === 'start') { first = r.section; anchor = r.anchor; }
+    else if (r && r.anchor && sectionOfElement(r.anchor) === first) anchor = r.anchor;
+  }
+  show(known.includes(first) ? first : 'start', { anchor, force: true });
+  // Open points, dots and the areas' states also on the other pages (menu,
+  // phone list); the start page loads them itself.
+  if (first !== 'start') {
+    (async function points() {
+      const [ov, wg, caddy] = await Promise.all([get('/api/v1/settings/overview'), get('/api/v1/wg/status'), get('/api/v1/caddy/status')]);
+      if (!ov.ok) return;
+      start.overview = ov.data;
+      if (wg && wg.ok !== false) start.services.wg = wg.running ? 'good' : 'crit';
+      if (caddy && caddy.ok !== false) start.services.caddy = caddy.running ? 'good' : 'crit';
+      renderOverview();
+      renderAttention();
+    })();
+  }
 
   // For tests and the quick search on this page.
-  window.GCSettings = { show, save, discard, dirty: () => (current ? dirtyOf(current) : []), current: () => current };
+  window.GCSettings = {
+    show, go: (id) => show(id, { push: true, focus: true }), save, discard,
+    dirty: () => (current ? dirtyOf(current) : []), current: () => current,
+    // resolves once the shown section has its saved values (tests: act only after that)
+    whenLoaded: () => loading.then(() => current),
+  };
 })();
