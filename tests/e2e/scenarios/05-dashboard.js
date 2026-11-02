@@ -82,8 +82,9 @@ module.exports = (ctx) => {
       step('y axis carries ticks', yTicks >= 2, `${yTicks} ticks`);
 
       // Tooltip: mouse …
-      const box = await page.locator('#db-chart-plot').boundingBox();
-      await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+      // hover() waits until the plot is attached and stable – a poll may
+      // re-render the chart right now (boundingBox() then returned null).
+      await page.locator('#db-chart-plot').hover();
       await page.waitForTimeout(100);
       const tip = await ctx.text(page, '#db-chart-plot .db-tip');
       step('hover shows the tooltip', await page.locator('#db-chart-plot .db-tip').isVisible() && tip.length > 0, tip);
