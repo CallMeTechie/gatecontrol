@@ -4,10 +4,18 @@
 // Runs in the HOST process, but off the main thread: a runaway query of a
 // plugin blocks this worker only; the host terminates it after a timeout
 // (storage.js). Every plugin statement passes sqlGuard first.
+//
+// Calls and answers go over workerData.port. workerData.state (shared memory)
+// tells the host what runs since when — the host measures a statement's time
+// with it, not with the arrival of the answer (storage.js check()).
 
-const { parentPort, workerData } = require('node:worker_threads');
+const { workerData } = require('node:worker_threads');
 const Database = require('better-sqlite3');
 const { checkSql } = require('./sqlGuard');
+
+const port = workerData.port;
+const state = new Int32Array(workerData.state, 0, 2); // [open, id of the running call]
+const since = new Float64Array(workerData.state, 8, 1); // when state last changed
 
 const MAX_ROWS = 5000;
 const MAX_VALUE = 1024 * 1024;
@@ -22,6 +30,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS _gc_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS _gc_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT (datetime('now')));
 `);
+since[0] = Date.now();
+Atomics.store(state, 0, 1);
 
 function inParams(p) {
   const conv = (v) => {
@@ -128,14 +138,24 @@ const ops = {
   size: () => ({ bytes: db.pragma('page_count', { simple: true }) * db.pragma('page_size', { simple: true }) }),
 };
 
-parentPort.on('message', (msg) => {
+function mark(id) {
+  since[0] = Date.now();
+  Atomics.store(state, 1, id);
+}
+
+port.on('message', (msg) => {
   if (!msg || typeof msg !== 'object') return;
   if (msg.op === 'close') { try { db.close(); } catch { /* ignore */ } process.exit(0); }
   const fn = Object.prototype.hasOwnProperty.call(ops, msg.op) ? ops[msg.op] : null;
+  mark(Number.isSafeInteger(msg.id) && msg.id > 0 ? msg.id : 0);
+  let answer;
   try {
     if (!fn) throw new Error('unknown operation');
-    parentPort.postMessage({ id: msg.id, ok: true, value: fn(msg.args || {}) });
+    answer = { id: msg.id, ok: true, value: fn(msg.args || {}) };
   } catch (e) {
-    parentPort.postMessage({ id: msg.id, ok: false, error: String((e && e.message) || e).slice(0, 500) });
+    answer = { id: msg.id, ok: false, error: String((e && e.message) || e).slice(0, 500) };
   }
+  // done before the answer is posted: an answer the host can take is never "running"
+  mark(0);
+  port.postMessage(answer);
 });

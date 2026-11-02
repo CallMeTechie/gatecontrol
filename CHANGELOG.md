@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixes
+- Plugins: „storage timeout“ trat mehrmals täglich in mehreren Plugins gleichzeitig auf (Tür & Kamera, Alltag, Mail, Schule …), obwohl die Datenbank längst geantwortet hatte. Die 5-s-Grenze lief auf dem Haupt-Thread des Hosts: War der kurz blockiert, feuerte der Timer vor der Antwort des Speicher-Workers, und der Worker wurde unnötig beendet. Jetzt gilt die Grenze der Laufzeit des Statements im Worker (gemeinsamer Speicher sagt, was seit wann läuft; Antworten, die schon da sind, werden vor einem Abbruch abgeholt). Ein Aufruf, der hinter einem anderen wartet, bekommt dessen Zeit nicht angerechnet; Starten und Öffnen der Datenbank (Kaltstart nach 5 min Leerlauf) hat eine eigene Grenze von 30 s. Ein Statement darf jetzt 15 s statt 5 s laufen (fsync unter starker Plattenlast); Statements, die wirklich hängen, beenden den Worker weiterhin – samt den Aufrufen, die dahinter warten.
+- Plugin-Media: Uploads (auch fortsetzbare Teile) schreiben und synchronisieren (`fsync`) ihre Dateien asynchron statt synchron auf dem Haupt-Thread – eine große Foto-Sicherung blockierte den Host sonst bei jeder Datei.
+- Plugins: Beim gleichzeitigen Start aller Plugins (Host-Start, Update) bekommt jedes Plugin je anderem gerade startenden Plugin 5 s mehr Zeit für „ready“ (höchstens 60 s statt fest 15 s); die Entscheidung „did not start in time“ fällt erst, nachdem schon eingetroffene Nachrichten gelesen sind.
+- Log: Ein blockierter Haupt-Thread (≥ 2 s) erscheint als Warnung „event loop was blocked“ mit seiner Dauer; ein echter Speicher-Timeout als „plugin storage timed out — worker restarted“ mit Plugin, Operation und Phase.
+
 ## [1.219.3] — 2026-10-31
 
 ### Fixes

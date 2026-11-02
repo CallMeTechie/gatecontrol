@@ -45,6 +45,11 @@ function execArgvFor(plugin) {
   ];
 }
 
+/** Time for a plugin process to answer "ready" while `peers` other plugin processes are starting too. */
+function startTimeout(peers) {
+  return Math.min(TIMEOUTS.startMax, TIMEOUTS.start + Math.max(0, peers) * TIMEOUTS.startPerPeer);
+}
+
 class PluginProcess {
   constructor(plugin) {
     this.plugin = plugin;
@@ -118,15 +123,23 @@ class PluginProcess {
     child.on('message', (m) => this.onMessage(m));
     child.on('error', (e) => { this.lastError = e.message; });
     child.on('exit', (code2, sig) => this.onExit(code2, sig, null, child));
-    const readyTimer = setTimeout(() => {
-      if (this.child === child && this.state === 'starting') {
+    // more time while other plugins start too (host start: all at once, sharing the CPU) — counted when this one
+    // starts and again when its time is up; the decision waits for the poll phase, so a "ready" that came while the
+    // host's main thread was busy counts
+    const starting = () => [...procs.values()].filter((o) => o !== this && o.state === 'starting').length;
+    const peersAtSpawn = starting();
+    const arm = (ms) => {
+      this.readyTimer = setTimeout(() => setImmediate(() => {
+        if (this.child !== child || this.state !== 'starting') return;
+        const left = this.startedAt + startTimeout(Math.max(peersAtSpawn, starting())) - Date.now();
+        if (left > 0) { arm(left); return; }
         this.lastError = 'start timeout';
         this.log('error', 'plugin did not start in time');
         child.kill('SIGKILL');
-      }
-    }, TIMEOUTS.start);
-    readyTimer.unref();
-    this.readyTimer = readyTimer;
+      }), ms);
+      this.readyTimer.unref();
+    };
+    arm(startTimeout(peersAtSpawn));
     // features: host APIs the plugin process only gets with their permission (gc.mail, gc.http.fetchImage — since 1.216.0;
     // gc.mail.dav — since 1.219.0)
     const perms = p.manifest.permissions || {};
@@ -345,4 +358,4 @@ function _setBackoffForTest(list) {
   if (process.env.NODE_ENV === 'test') backoff = Array.isArray(list) && list.length ? list : RESTART_BACKOFF_MS;
 }
 
-module.exports = { ensureRunning, ensureStopped, stopAll, get, info, call, waitRunning, execArgvFor, events, BOOTSTRAP, _setBackoffForTest };
+module.exports = { ensureRunning, ensureStopped, stopAll, get, info, call, waitRunning, execArgvFor, startTimeout, events, BOOTSTRAP, _setBackoffForTest };
