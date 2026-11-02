@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.219.4] — 2026-11-02
 
 ### Fixes
 - Plugins: „storage timeout“ trat mehrmals täglich in mehreren Plugins gleichzeitig auf (Tür & Kamera, Alltag, Mail, Schule …), obwohl die Datenbank längst geantwortet hatte. Die 5-s-Grenze lief auf dem Haupt-Thread des Hosts: War der kurz blockiert, feuerte der Timer vor der Antwort des Speicher-Workers, und der Worker wurde unnötig beendet. Jetzt gilt die Grenze der Laufzeit des Statements im Worker (gemeinsamer Speicher sagt, was seit wann läuft; Antworten, die schon da sind, werden vor einem Abbruch abgeholt). Ein Aufruf, der hinter einem anderen wartet, bekommt dessen Zeit nicht angerechnet; Starten und Öffnen der Datenbank (Kaltstart nach 5 min Leerlauf) hat eine eigene Grenze von 30 s. Ein Statement darf jetzt 15 s statt 5 s laufen (fsync unter starker Plattenlast); Statements, die wirklich hängen, beenden den Worker weiterhin – samt den Aufrufen, die dahinter warten.
