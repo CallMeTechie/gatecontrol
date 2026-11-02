@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.220.0] — 2026-11-02
 
 ### Features
 - Logs & Monitoring neu gestaltet: alle Quellen – Server-Log, Plugin-Logs, Aktivität, Zugriffe, Remote-Desktop-Sitzungen – in einer Liste („Ereignisse“) mit Zeitraum (1 Std. bis 30 Tage, eigener), Live-Aktualisierung, Kennzahlen (Fehler im Vergleich zum Zeitraum davor, Warnungen, „Server blockiert“, HTTP 5xx, Plugins mit Fehlern – Klick setzt den Filter), Verlauf je Stufe (Bereich ziehen, Balken klicken), Filterspalte mit Zählungen je Stufe, Quelle und Plugin, Suche mit Syntax (`plugin:mail`, `-debug`, `"genauer Text"`), Filter-Chips, „Gleiche zusammenfassen“, Zeit-Clustern (≥ 3 Meldungen aus ≥ 2 Quellen in 2 s), Mehrfachauswahl (exportieren, als Text kopieren, „Zur selben Zeit zeigen“), endlosem Nachladen und gespeicherten Filtern. Der Filter steht in der Adresse. Ein Eintrag zeigt „Was bedeutet das?“ für bekannte Codes, Felder „als Filter übernehmen“, Rohdaten, Link und „Zur selben Zeit“ (±10 s/±1 Min./±5 Min. über alle Quellen). Auf dem Handy einspaltig, Kennzahlen wischbar, Filter im Bottom-Sheet; hell und dunkel, per Tastatur und Screenreader bedienbar.
