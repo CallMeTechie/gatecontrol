@@ -102,11 +102,18 @@ function removeLicense(id) {
 
 const LEVELS = new Set(['debug', 'info', 'warn', 'error']);
 
-function addLog(id, level, message) {
+/**
+ * One line of the plugin's log. `version`: the plugin version that wrote it
+ * (the running process passes its own — during an update the registry may
+ * already hold the next one); by default the installed version.
+ */
+function addLog(id, level, message, version) {
   const db = getDb();
   const lvl = LEVELS.has(level) ? level : 'info';
   const msg = String(message == null ? '' : message).replace(/[\0-\x08\x0b-\x1f\x7f]/g, ' ').slice(0, 1000);
-  db.prepare('INSERT INTO plugin_logs (plugin_id, level, message, created_at) VALUES (?, ?, ?, ?)').run(id, lvl, msg, Date.now());
+  const ver = typeof version === 'string' && version ? version.slice(0, 64) : null;
+  db.prepare(`INSERT INTO plugin_logs (plugin_id, level, message, created_at, plugin_version)
+    VALUES (?, ?, ?, ?, COALESCE(?, (SELECT version FROM plugins WHERE id = ?)))`).run(id, lvl, msg, Date.now(), ver, id);
   // keep the newest N per plugin
   db.prepare(`DELETE FROM plugin_logs WHERE plugin_id = ? AND id <= (
       SELECT id FROM plugin_logs WHERE plugin_id = ? ORDER BY id DESC LIMIT 1 OFFSET ?)`).run(id, id, LIMITS.logEntriesPerPlugin);

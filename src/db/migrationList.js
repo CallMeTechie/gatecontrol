@@ -3039,6 +3039,16 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_log_saved_views_kind ON log_saved_views(kind, name);`,
     detect: (db) => tableExists(db, 'log_problems') && tableExists(db, 'log_saved_views'),
   },
+  {
+    version: 122,
+    name: 'plugin_logs_version',
+    // Logs & Monitoring (services/logEvents.js): the plugin version an entry
+    // of the plugin's log was written with — list, detail, problems and
+    // export show it instead of the version installed now. NULL = written
+    // before (no version shown).
+    sql: 'ALTER TABLE plugin_logs ADD COLUMN plugin_version TEXT;',
+    detect: (db) => hasColumn(db, 'plugin_logs', 'plugin_version'),
+  },
 ];
 
 module.exports = { migrations };

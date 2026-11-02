@@ -77,7 +77,7 @@ class PluginProcess {
     const now = Date.now();
     if (now - this.logWindow.start > 60000) this.logWindow = { start: now, n: 0 };
     if (++this.logWindow.n > LOG_LINES_PER_MIN) return;
-    try { registry.addLog(this.id, level, message); } catch { /* db closed */ }
+    try { registry.addLog(this.id, level, message, this.plugin.version); } catch { /* db closed */ }
   }
 
   spawn() {

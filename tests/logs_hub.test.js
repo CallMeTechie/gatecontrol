@@ -186,6 +186,47 @@ describe('GET /api/v1/logs/events', () => {
   });
 });
 
+describe('plugin entries: the version that wrote them', () => {
+  // A plugin updated since: an entry shows the version it was written with
+  // (plugin_logs.plugin_version, migration 122), never the one installed now;
+  // entries from before have none.
+  const E = () => require('../src/services/logEvents');
+  const registry = () => require('../src/services/plugins/registry');
+  before(() => {
+    db.prepare(`INSERT INTO plugins (id, name, version, publisher, manifest, signature, enabled)
+      VALUES ('lghub-ver', 'Mail', '1.7.1', 'T', ?, 'trusted', 0)`).run(JSON.stringify({ id: 'lghub-ver', name: { de: 'Mail', en: 'Mail' }, version: '1.7.1' }));
+    E().resetCaches();
+  });
+  after(() => { db.prepare("DELETE FROM plugins WHERE id = 'lghub-ver'").run(); registry().remove('lghub-ver'); E().resetCaches(); });
+
+  it('addLog stores the given version, else the installed one', () => {
+    registry().addLog('lghub-ver', 'warn', 'written by the old process', '1.7.0');
+    registry().addLog('lghub-ver', 'info', 'written by the host');
+    const rows = db.prepare("SELECT message, plugin_version FROM plugin_logs WHERE plugin_id = 'lghub-ver' ORDER BY id").all();
+    assert.deepEqual(rows.map((r) => r.plugin_version), ['1.7.0', '1.7.1']);
+  });
+
+  it('list, detail and export: stored version or none — not the installed one', async () => {
+    const ins = db.prepare('INSERT INTO plugin_logs (plugin_id, level, message, created_at, plugin_version) VALUES (?, ?, ?, ?, ?)');
+    const oldId = ins.run('lghub-ver', 'warn', 'lghub-ver entry of 1.7.0', T0 + 20000, '1.7.0').lastInsertRowid;
+    const legacyId = ins.run('lghub-ver', 'warn', 'lghub-ver entry before the column', T0 + 21000, null).lastInsertRowid;
+    const list = (await getAgent().get(`/api/v1/logs/events?${range}&plugin=lghub-ver&q=entry`).expect(200)).body.entries;
+    const byId = Object.fromEntries(list.map((e) => [e.id, e]));
+    assert.equal(byId[`p.${oldId}`].ctx, 'Mail 1.7.0');
+    assert.equal(byId[`p.${legacyId}`].ctx, 'Mail');
+    let item = (await getAgent().get(`/api/v1/logs/events/item?id=p.${oldId}`).expect(200)).body.entry;
+    assert.equal(item.fields.version, '1.7.0');
+    item = (await getAgent().get(`/api/v1/logs/events/item?id=p.${legacyId}`).expect(200)).body.entry;
+    assert.equal(item.fields.version, null);
+    assert.equal(item.ctx, 'Mail');
+    const nd = (await getAgent().get(`/api/v1/logs/events/export?format=ndjson&${range}&plugin=lghub-ver&q=entry`)
+      .buffer(true).parse((res, cb) => { const c = []; res.on('data', (d) => c.push(d)); res.on('end', () => cb(null, Buffer.concat(c))); })
+      .expect(200)).body.toString();
+    assert.ok(!nd.includes('1.7.1'), nd);
+    assert.match(nd, /1\.7\.0/);
+  });
+});
+
 describe('rights', () => {
   it('a token with the logs right reads activity, access and sessions only', async () => {
     const t = token(['logs']);

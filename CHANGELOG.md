@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixes
+- Logs & Monitoring: Einträge aus den Plugin-Logs zeigten in Liste, Detail, Problemen und Export die gerade installierte Plugin-Version statt der, die den Eintrag geschrieben hat (ein Eintrag vom 01.11. stand als „Mail 1.7.1“ da, obwohl damals 1.7.0 lief). Jeder Eintrag merkt sich jetzt seine Version (`plugin_logs.plugin_version`, Migration 122); der Plugin-Prozess trägt seine eigene ein, Meldungen des Hosts die installierte. Ältere Einträge haben keine Version und zeigen keine.
+
 ## [1.220.0] — 2026-11-02
 
 ### Features
