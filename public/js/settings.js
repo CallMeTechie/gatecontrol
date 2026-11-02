@@ -363,6 +363,7 @@
   const appTitle = (document.title.split(' — ')[1] || '').trim();
   let current = null;
   const loaded = {};
+  let loading = Promise.resolve(); // the load of the section shown last (GCSettings.whenLoaded)
 
   function sectionOfElement(elId) {
     const node = document.getElementById(elId);
@@ -415,10 +416,13 @@
     }
     const s = SECTIONS[id];
     if (s && s.load && !(o.keep && loaded[id])) {
-      try {
-        const vals = await s.load();
-        if (s.fills && vals && typeof vals === 'object') fill(id, vals);
-      } catch (err) { console.warn('[settings] loading', id, err); }
+      loading = (async () => {
+        try {
+          const vals = await s.load();
+          if (s.fills && vals && typeof vals === 'object') fill(id, vals);
+        } catch (err) { console.warn('[settings] loading', id, err); }
+      })();
+      await loading;
       loaded[id] = true;
       applyShows(id);
     }
@@ -2390,5 +2394,10 @@
   }
 
   // For tests and the quick search on this page.
-  window.GCSettings = { show, go: (id) => show(id, { push: true, focus: true }), save, discard, dirty: () => (current ? dirtyOf(current) : []), current: () => current };
+  window.GCSettings = {
+    show, go: (id) => show(id, { push: true, focus: true }), save, discard,
+    dirty: () => (current ? dirtyOf(current) : []), current: () => current,
+    // resolves once the shown section has its saved values (tests: act only after that)
+    whenLoaded: () => loading.then(() => current),
+  };
 })();

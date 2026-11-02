@@ -12,7 +12,12 @@
 
 module.exports = (ctx) => {
   const { BASE, FIXTURES, step, shot, api } = ctx;
-  const idle = (page) => page.waitForLoadState('networkidle', { timeout: 4000 }).catch(() => {});
+  // networkidle covers a page load; a section switch without a reload only
+  // ends when the section's own requests are done (GCSettings.whenLoaded)
+  const idle = async (page) => {
+    await page.waitForLoadState('networkidle', { timeout: 4000 }).catch(() => {});
+    await page.evaluate(() => window.GCSettings && window.GCSettings.whenLoaded()).catch(() => {});
+  };
   const current = (page) => page.evaluate(() => window.GCSettings && window.GCSettings.current());
   const visibleSection = (page) => page.$eval('.st-section:not([hidden])', (n) => n.dataset.section).catch(() => null);
   const ready = (page) => page.waitForFunction(() => window.GCSettings && window.GCSettings.current(), null, { timeout: 10000 }).catch(() => {});
@@ -127,8 +132,10 @@ module.exports = (ctx) => {
       // ── One save bar on every page with fields (also KI-Anbieter) ──
       for (const [sec, sel, kind] of [['email', '#st-smtp-host', 'fill'], ['monitoring', '#st-mon-interval', 'fill'], ['portal', '#st-po-auto', 'click'], ['richtlinien', '#stcp-global-lock-settings', 'click'], ['ki', '#ai-budget', 'fill']]) {
         await page.click('#st-nav a[data-section="' + sec + '"]');
-        await idle(page);
-        await page.waitForTimeout(300);
+        // networkidle of the page is long reached: wait for the section's own load
+        // (its saved values), otherwise the change lands before the baseline
+        await page.waitForFunction((x) => window.GCSettings.current() === x, sec);
+        await page.evaluate(() => window.GCSettings.whenLoaded());
         if (kind === 'fill') await page.fill(sel, sec === 'ki' ? '12.50' : (sec === 'monitoring' ? '61' : 'smtp.changed.example'));
         else await page.click(sel);
         const dirty = await page.evaluate(() => window.GCSettings.dirty());
