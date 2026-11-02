@@ -197,7 +197,7 @@ describe('settings, background runs, crash and restart', () => {
       await Promise.all([p.runTick(), p.runTick()]);
       assert.equal((await call('hello', '/ticks').expect(200)).body.ticks, before + 1);
       // child side: a tick the host gave up on (timeout) still runs — the next one is skipped
-      await assert.rejects(() => p.call('tick', {}, 100), (e) => e.code === 'ERR_TIMEOUT');
+      await assert.rejects(() => p.call('tick', {}, 100), (e) => e.code === 'ERR_TIMEOUT' && !e.stopped, 'a plain timeout is not marked as stopped');
       assert.deepEqual(await p.call('tick', {}, 3000), { skipped: true });
       await new Promise((r) => setTimeout(r, 800));
       assert.equal((await call('hello', '/ticks').expect(200)).body.ticks, before + 2);
@@ -231,6 +231,78 @@ describe('enable / disable', () => {
     await agent.post(API + '/hello/enable').set('X-CSRF-Token', csrf).send({}).expect(200);
     assert.equal(await runtime.waitRunning('hello'), true);
     assert.equal((await call('hello', '/greetings').expect(200)).body.rows.length, 2);
+  });
+});
+
+describe('a background run cut off by the host is no warning', () => {
+  // The host ends plugin processes on purpose (shutdown, update, disable,
+  // restart by an administrator): a background run cut off by that is logged
+  // as debug. A process that dies on its own stays a warning.
+  const registry = () => require('../src/services/plugins/registry');
+  const tickLogs = (sinceId) => require('../src/db/connection').getDb()
+    .prepare("SELECT level, message FROM plugin_logs WHERE plugin_id = 'hello' AND id > ? AND message LIKE 'background run failed%'").all(sinceId);
+  const lastId = () => require('../src/db/connection').getDb().prepare('SELECT COALESCE(MAX(id), 0) AS n FROM plugin_logs').get().n;
+  const slowTick = async (ms) => call('hello', '/kv', 'post', { key: 'tick-slow-ms', value: ms }).expect(200);
+  const started = async () => {
+    // the tick reads its delay from the plugin's storage first: wait until it sleeps
+    await new Promise((r) => setTimeout(r, 300));
+  };
+
+  it('stopped by the host (disable, restart, shutdown): debug, not warn', async () => {
+    for (const stop of [
+      () => agent.post(API + '/hello/disable').set('X-CSRF-Token', csrf).send({}).expect(200),
+      () => agent.post(API + '/hello/restart').set('X-CSRF-Token', csrf).send({}).expect(200),
+      () => runtime.stopAll(),
+    ]) {
+      if (runtime.info('hello').state !== 'running') {
+        await agent.post(API + '/hello/enable').set('X-CSRF-Token', csrf).send({}).expect(200);
+        await plugins.reconcile();
+        assert.equal(await runtime.waitRunning('hello'), true);
+      }
+      await slowTick(10000);
+      const since = lastId();
+      const tick = runtime.get('hello').runTick();
+      await started();
+      await stop();
+      await tick;
+      const logs = tickLogs(since);
+      assert.deepEqual(logs.map((l) => l.level), ['debug'], JSON.stringify(logs));
+      assert.match(logs[0].message, /plugin process ended/);
+    }
+    await plugins.reconcile();
+    assert.equal(await runtime.waitRunning('hello'), true);
+    await slowTick(null);
+  });
+
+  it('a timeout while the host stops the process: marked as stopped', async () => {
+    const p = runtime.get('hello');
+    await slowTick(1000);
+    try {
+      const pending = p.call('tick', {}, 100);
+      p.wanted = false; // the host decided to stop it (stop() sets this before the process ends)
+      await assert.rejects(pending, (e) => e.code === 'ERR_TIMEOUT' && e.stopped === true);
+    } finally {
+      p.wanted = true;
+      await new Promise((r) => setTimeout(r, 1200));
+      await slowTick(null);
+    }
+  });
+
+  it('a process that dies on its own: still a warning', async () => {
+    await slowTick(10000);
+    const since = lastId();
+    const tick = runtime.get('hello').runTick();
+    await started();
+    await call('hello', '/crash', 'post', {}).expect(200);
+    await tick;
+    const logs = tickLogs(since);
+    assert.deepEqual(logs.map((l) => l.level), ['warn'], JSON.stringify(logs));
+    assert.equal(await runtime.waitRunning('hello', 8000), true);
+    await slowTick(null);
+    // plugin log entries carry the version of the process that wrote them (migration 122)
+    assert.ok(registry().logs('hello', 5).length > 0);
+    const v = require('../src/db/connection').getDb().prepare("SELECT plugin_version FROM plugin_logs WHERE plugin_id = 'hello' ORDER BY id DESC LIMIT 1").get();
+    assert.equal(v.plugin_version, '1.0.0');
   });
 });
 

@@ -80,6 +80,13 @@ class PluginProcess {
     try { registry.addLog(this.id, level, message, this.plugin.version); } catch { /* db closed */ }
   }
 
+  /**
+   * The host ends this process on purpose (shutdown, update, disable,
+   * uninstall, restart by an administrator — stop()): calls cut off by it
+   * are no fault of the plugin. A crash keeps `wanted`.
+   */
+  get stopping() { return !this.wanted; }
+
   spawn() {
     if (this.child) return;
     const p = this.plugin;
@@ -236,7 +243,12 @@ class PluginProcess {
   async runTick() {
     if (this.tickBusy || this.state !== 'running') return;
     this.tickBusy = true;
-    try { await this.call('tick', {}, TIMEOUTS.tick); } catch (e) { this.log('warn', 'background run failed: ' + e.message); } finally { this.tickBusy = false; }
+    try {
+      await this.call('tick', {}, TIMEOUTS.tick);
+    } catch (e) {
+      // cut off because the host stops the process (e.g. on its own shutdown) → not a warning
+      this.log(e && e.stopped ? 'debug' : 'warn', 'background run failed: ' + e.message);
+    } finally { this.tickBusy = false; }
   }
 
   onExit(code, sig, err, child) {
@@ -244,7 +256,12 @@ class PluginProcess {
     this.child = null;
     this.clearTimers();
     hostApi.closeSockets(this.id);
-    for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(Object.assign(new Error('plugin process ended'), { code: 'ERR_NOT_RUNNING' })); }
+    // stopped: the host ended the process on purpose (stop()) — callers log that quietly
+    const stopped = this.stopping;
+    for (const p of this.pending.values()) {
+      clearTimeout(p.timer);
+      p.reject(Object.assign(new Error('plugin process ended'), { code: 'ERR_NOT_RUNNING' }, stopped ? { stopped: true } : {}));
+    }
     this.pending.clear();
     if (this.stopResolve) { const r = this.stopResolve; this.stopResolve = null; r(); }
     if (!this.wanted) { this.state = 'stopped'; events.emit('state', this.id, 'stopped'); return; }
@@ -295,7 +312,7 @@ class PluginProcess {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(Object.assign(new Error('plugin did not answer in time'), { code: 'ERR_TIMEOUT' }));
+        reject(Object.assign(new Error('plugin did not answer in time'), { code: 'ERR_TIMEOUT' }, this.stopping ? { stopped: true } : {}));
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       try { this.child.send({ t: 'call', id, method, payload }); } catch (e) { clearTimeout(timer); this.pending.delete(id); reject(e); }

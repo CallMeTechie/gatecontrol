@@ -4,6 +4,7 @@
 
 ### Fixes
 - Logs & Monitoring: Einträge aus den Plugin-Logs zeigten in Liste, Detail, Problemen und Export die gerade installierte Plugin-Version statt der, die den Eintrag geschrieben hat (ein Eintrag vom 01.11. stand als „Mail 1.7.1“ da, obwohl damals 1.7.0 lief). Jeder Eintrag merkt sich jetzt seine Version (`plugin_logs.plugin_version`, Migration 122); der Plugin-Prozess trägt seine eigene ein, Meldungen des Hosts die installierte. Ältere Einträge haben keine Version und zeigen keine.
+- Plugins: Beim Neustart oder Update des Hosts stand für jedes Plugin mit Hintergrundlauf die Warnung „background run failed: plugin process ended“ im Log. Beendet der Host einen Plugin-Prozess absichtlich (Herunterfahren, Update, Plugin-Update, Deaktivieren, Deinstallieren, Neustart durch einen Administrator), sind dadurch abgebrochene Hintergrundläufe und `groupsChanged`-Aufrufe – auch „plugin did not answer in time“ während des Stopps – nur noch `debug`. Stirbt ein Prozess unerwartet, bleibt es eine Warnung.
 
 ## [1.220.0] — 2026-11-02
 
