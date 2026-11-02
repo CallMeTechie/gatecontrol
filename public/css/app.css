@@ -7169,7 +7169,12 @@ a.stx-tile:hover{border-color:var(--pg-acc-bd)}
 .stx .st-hint{font-size:13px; line-height:1.45; color:var(--pg-muted); max-width:70ch}
 .stx .st-err{color:var(--pg-crit)}
 .stx .st-row-ctl{flex:0 1 380px; width:380px; max-width:100%; display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-start; gap:8px; margin-left:auto}
-.stx .st-row-ctl > .st-input:not(.st-input-num),.stx .st-row-ctl > .st-select,.stx .st-row-ctl > .st-seg,.stx .st-row-ctl > .cpf-seg{flex:1 1 auto; max-width:100%}
+/* every control starts at the left edge of the column: fields and selects fill it,
+   segments and switches keep their own width; a segment never wraps (a choice
+   that does not fit is a select — segRow in settings.njk, fitsSegment in
+   client-policy-form.js) */
+.stx .st-row-ctl > .st-input:not(.st-input-num),.stx .st-row-ctl > .st-select{flex:1 1 auto; max-width:100%}
+.stx .st-row-ctl > .st-seg,.stx .st-row-ctl > .cpf-seg{flex:0 1 auto; max-width:100%; flex-wrap:nowrap}
 .stx .st-row-ctl > .st-input.st-w-xs{flex:0 0 140px}
 .stx .st-row-ctl > .st-input.st-w-sm{flex:0 0 180px}
 .stx .st-row-ctl-stack{flex-direction:column; align-items:stretch}
@@ -7184,13 +7189,19 @@ a.stx-tile:hover{border-color:var(--pg-acc-bd)}
 .stx .st-input:focus,.stx .st-select:focus,.stx .st-textarea:focus{border-color:var(--pg-acc-bd); box-shadow:0 0 0 3px var(--pg-acc-soft); outline:0}
 .stx .st-input:disabled,.stx .st-select:disabled{background:transparent; border-style:dashed; color:var(--pg-muted)}
 .stx .st-unit{min-width:0; font-size:13px; color:var(--pg-muted)}
-.stx .st-seg-btn,.cpf-seg-btn{height:auto; min-height:34px; flex:1 1 auto; justify-content:center}
+.stx .st-seg-btn,.cpf-seg-btn{height:auto; min-height:34px; flex:0 0 auto; justify-content:center; white-space:nowrap}
 .stx .st-switch .st-knob{transform:none !important}
 .stx .st-row[data-changed]{background:color-mix(in srgb, var(--pg-acc) 6%, transparent)}
 .stx .st-row[data-changed] .st-label::after{content:var(--stx-chg, ''); font-size:12px; font-weight:600; color:var(--pg-acc)}
 .stx .st-row[data-changed] .st-input,.stx .st-row[data-changed] .st-select{border-color:var(--pg-acc)}
-/* a narrow card (side by side with a column, phone): label above the control */
+/* a narrower card (small desktop window): the control column shrinks to 330 px
+   (the widest segment, see segRow) and stays beside the label … */
 @container (max-width:700px){
+  .stx .st-row-text{flex-basis:160px}
+  .stx .st-row-ctl{flex-basis:330px; width:330px}
+}
+/* … only a card narrower than that (phone) puts the label above the control */
+@container (max-width:560px){
   .stx .st-row{flex-direction:column; align-items:stretch; gap:8px}
   .stx .st-row-text{flex:0 0 auto}
   .stx .st-row-ctl{width:auto; flex:0 0 auto; margin-left:0}

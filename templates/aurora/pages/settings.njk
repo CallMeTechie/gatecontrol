@@ -61,14 +61,28 @@
 </div>
 {%- endmacro -%}
 
+{#- A choice of a few options. A segment never wraps: when its options do not
+    fit on one line in the control column (in either language, phone width
+    included), it becomes a select. Width estimate: 6.6 px per character of
+    the 13 px labels, 24 px padding per option, 6 px frame — over 330 px
+    (the narrowest control column, 390 px phone) → select. client-policy-form.js
+    uses the same rule (fitsSegment). -#}
 {%- macro segRow(id, field, label, options, hint='', chip='', disabled=false) -%}
+{%- set segW = (options | join('', 1) | length) * 6.6 + options.length * 24 + 6 %}
+{%- set asSelect = segW > 330 %}
 <div class="st-row" data-st-row="{{ field }}">
-  {{ rowText(id, label, hint, chip, false) }}
+  {{ rowText(id, label, hint, chip, asSelect) }}
   <div class="st-row-ctl">
+    {%- if asSelect %}
+    <select class="st-select" id="{{ id }}" data-st-field="{{ field }}" aria-describedby="{% if hint %}{{ id }}-hint {% endif %}{{ id }}-err"{% if disabled %} disabled{% endif %}>
+      {%- for o in options %}<option value="{{ o[0] }}">{{ o[1] }}</option>{% endfor -%}
+    </select>
+    {%- else %}
     <div class="st-seg" role="group" id="{{ id }}" data-st-field="{{ field }}" aria-labelledby="{{ id }}-label"
       aria-describedby="{% if hint %}{{ id }}-hint {% endif %}{{ id }}-err">
       {%- for o in options %}<button type="button" class="st-seg-btn" data-value="{{ o[0] }}" aria-pressed="false"{% if disabled %} disabled{% endif %}>{{ o[1] }}</button>{% endfor -%}
     </div>
+    {%- endif %}
   </div>
 </div>
 {%- endmacro -%}

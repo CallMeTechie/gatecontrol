@@ -113,6 +113,23 @@ describe('one save bar, the same page pattern everywhere', () => {
     assert.doesNotMatch(tpl, /st-card-foot|st-btn-dashed|\+ \{\{/, 'no foot actions, no dashed "+ add" buttons');
   });
 
+  it('a segment never wraps: a choice that does not fit one line in the control column is a select', async () => {
+    const html = withoutScripts((await agent.get('/settings').expect(200)).text);
+    // short choices stay segments, long ones (machine binding, split-tunnel mode) are selects
+    for (const id of ['st-smtp-tls', 'st-cu-channel', 'st-au-mode', 'st-cl-scope']) assert.match(html, new RegExp(`<div class="st-seg" role="group" id="${id}"`), id);
+    for (const id of ['st-mb-mode', 'st-st-mode']) assert.match(html, new RegExp(`<select class="st-select" id="${id}" data-st-field=`), id);
+    assert.match(html, /<label class="st-label" for="st-mb-mode" id="st-mb-mode-label">/, 'the select keeps its label');
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
+    assert.match(css, /\.stx \.st-row-ctl > \.st-seg,\.stx \.st-row-ctl > \.cpf-seg\{flex:0 1 auto; max-width:100%; flex-wrap:nowrap\}/, 'segments start left and keep one line');
+    assert.match(css, /\.stx \.st-seg-btn,\.cpf-seg-btn\{[^}]*white-space:nowrap/);
+    // the client policy rows use the same rule
+    global.window = global.window || {};
+    require('../public/js/client-policy-form.js');
+    const fits = global.window.ClientPolicyForm.fitsSegment;
+    assert.equal(fits(['Benutzer entscheidet', 'Erzwungen (immer an)']), true);
+    assert.equal(fits(['Benutzer entscheidet', 'Erzwungen', 'Immer verbunden (Trennen gesperrt)']), false);
+  });
+
   it('the danger actions live in the Gefahrenzone only', async () => {
     const html = withoutScripts((await agent.get('/settings').expect(200)).text);
     const sec = (id) => { const a = html.indexOf(`data-section="${id}" aria-labelledby`); return html.slice(a, html.indexOf('<section class="st-section', a + 10)); };

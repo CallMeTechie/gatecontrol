@@ -207,6 +207,13 @@
     return { getValue: getValue, setValue: setValue, setInherited: setInherited, isValid: isValid, elements: elements };
   }
 
+  // A segment fits on one line in the narrowest control column (330 px):
+  // 6.6 px per character of the 13 px labels, 24 px padding per option.
+  function fitsSegment(labels) {
+    var chars = labels.reduce(function (n, l) { return n + String(l).length; }, 0);
+    return chars * 6.6 + labels.length * 24 + 6 <= 330;
+  }
+
   // ── Rows layout (settings page) ──────────────────────────────────────
   function createRows(container, opts) {
     var override = opts.mode === 'override';
@@ -233,14 +240,19 @@
       container.appendChild(r);
       return { row: r, hint: h };
     }
-    // segmented control: [[value, label], …] → { node, get(), set(v) }
+    // A choice: a segment while its options fit on one line, else a select
+    // (segments never wrap; same rule as segRow in settings.njk).
+    // [[value, label], …] → { node, btns, get(), set(v), on(fn) }
     function seg(id, options) {
+      if (!fitsSegment(options.map(function (o) { return o[1]; }))) return pick(id, options);
       var g = el('div', { class: 'cpf-seg', role: 'group', id: id, 'aria-labelledby': id + '-label', 'aria-describedby': id + '-hint' });
+      var listeners = [];
       var btns = options.map(function (o) {
         var b = el('button', { type: 'button', class: 'cpf-seg-btn', 'data-value': o[0], 'aria-pressed': 'false' }, o[1]);
         b.addEventListener('click', function () {
           if (b.disabled || g.dataset.value === o[0]) return;
           set(o[0]);
+          listeners.forEach(function (fn) { fn(); });
           changed();
         });
         g.appendChild(b);
@@ -250,7 +262,14 @@
         g.dataset.value = v;
         btns.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-value') === v ? 'true' : 'false'); });
       }
-      return { node: g, btns: btns, get: function () { return g.dataset.value || ''; }, set: set };
+      return { node: g, btns: btns, get: function () { return g.dataset.value || ''; }, set: set, on: function (fn) { listeners.push(fn); } };
+    }
+    function pick(id, options) {
+      var sel = el('select', { class: 'st-select cpf-select', id: id, 'aria-labelledby': id + '-label', 'aria-describedby': id + '-hint' });
+      options.forEach(function (o) { sel.appendChild(el('option', { value: o[0] }, o[1])); });
+      var listeners = [];
+      sel.addEventListener('change', function () { listeners.forEach(function (fn) { fn(); }); });
+      return { node: sel, btns: [sel], get: function () { return sel.value; }, set: function (v) { sel.value = v; }, on: function (fn) { listeners.push(fn); } };
     }
     // switch: { node, get(), set(v) }
     function sw(id) {
@@ -305,14 +324,12 @@
         subs.forEach(function (r) { r.hidden = !custom; });
       }
       if (mode) {
-        mode.btns.forEach(function (b) {
-          b.addEventListener('click', function () {
-            if (mode.get() === 'custom' && inherited) {
-              SPLIT_MODES.forEach(function (m) { checks[m].set(inherited.split_tunnel_modes.indexOf(m) !== -1); });
-            }
-            sync();
-            changed();
-          });
+        mode.on(function () {
+          if (mode.get() === 'custom' && inherited) {
+            SPLIT_MODES.forEach(function (m) { checks[m].set(inherited.split_tunnel_modes.indexOf(m) !== -1); });
+          }
+          sync();
+          changed();
         });
         hints[field] = head.hint;
       }
@@ -401,5 +418,5 @@
     return { getValue: getValue, setValue: setValue, setInherited: setInherited, isValid: isValid, elements: elements };
   }
 
-  window.ClientPolicyForm = { create: create, valueLabel: valueLabel, SPLIT_MODES: SPLIT_MODES };
+  window.ClientPolicyForm = { create: create, valueLabel: valueLabel, fitsSegment: fitsSegment, SPLIT_MODES: SPLIT_MODES };
 })();
