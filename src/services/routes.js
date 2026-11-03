@@ -368,6 +368,17 @@ async function create(data, opts = {}) {
 
   validateBotBlockerConfig(data);
 
+  // Defaults for new routes (Einstellungen › Sicherheit › Routenschutz,
+  // services/routeGuard.js): only for the fields this creation leaves open;
+  // a WAF default of the domain comes first.
+  if (!opts.noDefaults) {
+    const wafInput = hasWafInput(data);
+    data = require('./routeGuard').applyDefaults({ ...data }, {
+      routeType, hasWafInput: wafInput,
+      zoneWaf: !wafInput && routeType === 'http' && !!domain && !!zoneWafDefault(db, domain),
+    });
+  }
+
   // IP filter + connection rate (docs/feature-next-package.md §S1.2/§S1.3).
   validateIpFilter(data, { routeType });
   validateL4ConnRate(data, { routeType });

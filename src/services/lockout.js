@@ -34,6 +34,19 @@ function recordFailedAttempt(identifier, type, ip) {
     VALUES (?, ?, ?)
   `).run(identifier, type, ip || null);
 
+  // IP block over every entry point (services/ipBlock.js): the same failure
+  // counts for the address — for a route login with the route's host (its
+  // identifier is "<e-mail>:<route id>"), else with the account name.
+  try {
+    let what = String(identifier || '');
+    if (type === 'route_auth') {
+      const rid = Number(what.split(':').pop());
+      const r = Number.isSafeInteger(rid) ? db.prepare('SELECT domain FROM routes WHERE id = ?').get(rid) : null;
+      what = r && r.domain ? r.domain : '';
+    }
+    require('./ipBlock').noteFailure(ip, type === 'route_auth' ? 'route_auth' : 'login', what || null);
+  } catch { /* best-effort */ }
+
   // The attempt that locks an admin account is an event of its own
   // (notifications: account_locked). Exactly once per lock: only when this
   // attempt brings the count in the window to the limit.

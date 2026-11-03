@@ -243,8 +243,12 @@ function isVerified(domain) { const r = row(domain); return !!r && r.status === 
 function upsert(domain, v) {
   const db = getDb();
   // RETURNING * hands back the written row directly — no second SELECT round-trip.
-  return db.prepare(`INSERT INTO domains (domain, status, resolved_ip, last_error, verified_at, last_checked_at, check_json)
-    VALUES (@domain, @status, @resolved_ip, @last_error, @verified_at, datetime('now'), @check_json)
+  // A new domain starts with the access default for new routes
+  // (Routenschutz, services/routeGuard.js); an existing one keeps its own.
+  let ext = 0;
+  try { ext = require('./routeGuard').getDefaults().access === 'internet' ? 1 : 0; } catch { ext = 0; }
+  return db.prepare(`INSERT INTO domains (domain, status, resolved_ip, last_error, verified_at, last_checked_at, check_json, default_external_enabled)
+    VALUES (@domain, @status, @resolved_ip, @last_error, @verified_at, datetime('now'), @check_json, @ext)
     ON CONFLICT(domain) DO UPDATE SET status=excluded.status, resolved_ip=excluded.resolved_ip,
       last_error=excluded.last_error, verified_at=excluded.verified_at, last_checked_at=excluded.last_checked_at,
       check_json=excluded.check_json
@@ -253,6 +257,7 @@ function upsert(domain, v) {
       domain: normalizeHost(domain), status: v.status, resolved_ip: v.resolvedIp || null,
       last_error: v.error || null, verified_at: v.status === 'verified' ? new Date().toISOString() : null,
       check_json: v.check ? JSON.stringify(v.check) : null,
+      ext,
     });
 }
 

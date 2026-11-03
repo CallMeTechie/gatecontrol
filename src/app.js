@@ -26,6 +26,9 @@ function createApp() {
     next();
   });
 
+  // ─── IP block (services/ipBlock.js): a blocked address reaches nothing ──
+  app.use(require('./services/ipBlock').middleware);
+
   // ─── Security headers ────────────────────────────
   app.use(helmet({
     contentSecurityPolicy: {

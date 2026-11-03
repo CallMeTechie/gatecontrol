@@ -266,8 +266,26 @@ function createBackup() {
       route_auth: routeAuth,
       plugins: exportPlugins(),
       builtin_integrations: exportBuiltin(db),
+      // Einstellungen › Sicherheit: bans set by hand (the automatic ones are
+      // short-lived) and the "Ist Absicht" confirmations of routes; the
+      // settings of these pages are settings rows above.
+      security: exportSecurity(),
     },
   };
+}
+
+function exportSecurity() {
+  const out = {};
+  try { out.ip_blocks_manual = require('./ipBlock').exportBackup(); } catch (err) { logger.warn({ err: err.message }, 'backup export: ip blocks skipped'); }
+  try { out.route_guard_acks = require('./routeGuard').exportBackup(); } catch (err) { logger.warn({ err: err.message }, 'backup export: route confirmations skipped'); }
+  return out;
+}
+
+/** Restore what exportSecurity() wrote (after the routes: confirmations map by domain). */
+function restoreSecurity(sec) {
+  if (!sec || typeof sec !== 'object') return;
+  try { require('./ipBlock').restoreBackup(sec.ip_blocks_manual); } catch (err) { logger.warn({ err: err.message }, 'backup restore: ip blocks skipped'); }
+  try { require('./routeGuard').restoreBackup(sec.route_guard_acks); } catch (err) { logger.warn({ err: err.message }, 'backup restore: route confirmations skipped'); }
 }
 
 function exportGroups(db) {
@@ -1048,6 +1066,7 @@ async function restoreBackup(backup) {
   });
 
   restore();
+  restoreSecurity(backup.data.security);
 
   logger.info({
     peer_groups: (peerGroups || []).length,

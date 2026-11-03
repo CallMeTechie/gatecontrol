@@ -148,6 +148,25 @@ function emailInfo() {
   return { configured: !!email.isSmtpConfigured(), host: smtp.host || '', recipient };
 }
 
+// Sicherheit: IP-Sperre (bans, lists that fail, matcher missing in Caddy)
+function ipBlockInfo() {
+  const ipBlock = require('./ipBlock');
+  const cfg = ipBlock.getConfig();
+  const st = ipBlock.stats();
+  return {
+    enabled: cfg.enabled,
+    blocked: st.blocked,
+    failingLists: st.lists.filter((l) => l.on && l.licensed && l.error).map((l) => l.id),
+    engineMissing: cfg.enabled && process.env.NODE_ENV !== 'test' && !ipBlock.engineAvailable(),
+  };
+}
+
+// Sicherheit: Routenschutz (routes open to the internet without a login)
+function routeGuardInfo() {
+  const ov = require('./routeGuard').overview();
+  return { attention: ov.attention, total: ov.stats.total };
+}
+
 function aiInfo() {
   const v = require('./ai').view();
   const providers = v.providers || [];
@@ -189,6 +208,11 @@ function sectionStates(src) {
   });
   tryRead('geoip', () => st('geoip', settings.get('ip2location.api_key', '') ? 'key_set' : 'no_key'));
   tryRead('portal', () => st('portal', require('./portalConfig')().enabled ? 'on' : 'off'));
+  if (src.ipBlock) st('ipsperre', src.ipBlock.enabled ? 'blocked_now' : 'off', src.ipBlock.enabled ? { n: src.ipBlock.blocked } : {});
+  if (src.routeGuard) {
+    const open = src.routeGuard.attention.length;
+    st('routenschutz', open ? 'routes_open' : 'routes_ok', open ? { n: open } : { n: src.routeGuard.total });
+  }
   if (src.plugins) st('plugins', 'installed', { n: src.plugins.installed });
   if (src.ai) st('ki', src.ai.enabled ? 'providers' : 'ai_off', src.ai.enabled ? { n: src.ai.active } : {});
   if (src.backup) st('backup', src.backup.last ? 'last_backup' : 'no_backup', src.backup.last ? { at: src.backup.last.at } : {});
@@ -233,6 +257,20 @@ function attention(src) {
     if (tls.failed.length > MAX_ROWS) add('tls_failed_more', 'crit', 'domains', '/certificates', { n: tls.failed.length - MAX_ROWS });
   }
 
+  const rg = src.routeGuard;
+  if (rg) {
+    const high = rg.attention.filter((a) => a.risk === 'high');
+    high.slice(0, MAX_ROWS).forEach((a) => add('route_open_high', 'crit', 'routenschutz', '/settings/routenschutz', { host: a.host }, 'route_open_high:' + a.id));
+    if (high.length > MAX_ROWS) add('route_open_high_more', 'crit', 'routenschutz', '/settings/routenschutz', { n: high.length - MAX_ROWS });
+    const check = rg.attention.length - high.length;
+    if (check > 0) add('route_open_check', 'warn', 'routenschutz', '/settings/routenschutz', { n: check });
+  }
+  const ib = src.ipBlock;
+  if (ib) {
+    if (ib.failingLists.length) add('ipblock_list_failed', 'warn', 'ipsperre', '/settings/ipsperre', { n: ib.failingLists.length });
+    if (ib.engineMissing) add('ipblock_engine', 'warn', 'ipsperre', '/settings/ipsperre');
+  }
+
   const p = src.plugins;
   if (p) {
     p.problems.forEach((x) => add('plugin_' + (x.reason === 'license' ? 'license' : x.reason === 'crashed' ? 'crashed' : 'blocked'),
@@ -266,6 +304,8 @@ function build({ lang = 'de', now = Date.now() } = {}) {
     plugins: tryRead('plugins', () => pluginsInfo(lang === 'en' ? 'en' : 'de')),
     email: tryRead('email', emailInfo),
     ai: tryRead('ai', aiInfo),
+    ipBlock: tryRead('ipBlock', ipBlockInfo),
+    routeGuard: tryRead('routeGuard', routeGuardInfo),
   };
   const att = attention(src);
   const bySection = {};

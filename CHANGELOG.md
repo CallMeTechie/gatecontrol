@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Einstellungen › Sicherheit › **IP-Sperre**: Fehlversuche über alle Eingänge zählen zusammen – Anmeldung an GateControl (Administration, Portal, App, zweiter Faktor), Route-Login, PIN-Raten an Freigabe-Links von Plugins, WAF-Treffer, Durchsuchen unbekannter Adressen (typische Suchpfade sofort, sonst zehn 404 als ein Versuch) und optional Ratenlimit-Überschreitungen. Ab der Schwelle (Standard 10 in 10 Minuten) wird die Adresse gesperrt, bei Wiederholung innerhalb von 7 Tagen länger (10 Min. › 1 Std. › 1 Tag). Sperren von Hand (IP oder CIDR, auch dauerhaft), Entsperren, „Nie sperren“ (VPN-Netz immer, eigene Netze, die eigenen Adressen der WAF); private Adressen werden nie gesperrt. Sperrlisten (Lizenzfunktion `ip_blocklists`): Spamhaus DROP, blocklist.de (Angriffe der letzten 48 Std.), Tor-Ausgänge (aus), täglich und mit „Jetzt aktualisieren“, Anzahl und Stand je Liste. Kacheln, „Gerade gesperrt“, Benachrichtigung bei Tagessperren und vielen Sperren auf einmal (neue Zeile der Benachrichtigungszentrale), Einträge in Logs & Monitoring. API `/api/v1/settings/ip-block` (nur Admin-Sitzung), Migration 123.
+- Durchsetzung der IP-Sperre in Caddy als erste Route vor Weiterleitung, WAF, Routen, Portal und Login: neuer Matcher `http.matchers.gc_ipblock` (caddy-plugins/mirror/ipblock.go) liest die Sperrdatei und lädt sie bei Änderungen selbst nach – eine Sperre wirkt in Sekunden, ohne Caddy neu zu laden. GateControl prüft dieselbe Liste zusätzlich selbst; TCP/UDP-Weiterleitungen bekommen die Sperren über die Bann-Route ihrer Listener.
+- Einstellungen › Sicherheit › **Routenschutz**: alle Routen mit Zugang (Internet / nur VPN / bestimmte Geräte), Anmeldung, Ländern/IP, Ratenlimit, WAF und Risikostufe (Verwaltungsoberfläche ohne Anmeldung aus dem Internet = hoch, nachvollziehbar in FEATURES.md), Filter, Link zur Route. „Braucht deine Aufmerksamkeit“ mit „Nur über VPN“, „Anmeldung einschalten“ und „Ist Absicht“ (gilt, bis sich Zugang, Anmeldung oder Ziel ändern). Vorgabe für neue Routen (Zugang, WAF, Länder, Ratenlimit). VPN-Missbrauch erkennen: derselbe Schlüssel wechselt ständig zwischen Internet-Adressen (warnen oder Peer sperren), Peer aus einem neuen Land (warnen) – über die Benachrichtigungen. API `/api/v1/settings/route-guard`.
+- Einstellungen-Start: „Braucht deine Aufmerksamkeit“ nennt offene Routen mit hohem Risiko, zu prüfende Routen, nicht aktualisierte Sperrlisten und einen Caddy ohne Sperr-Baustein; Menü und Bereichsliste zeigen den Stand beider Seiten. Backups enthalten die Einstellungen, die Sperren von Hand und die Bestätigungen „Ist Absicht“.
+
 ## [1.221.0] — 2026-11-02
 
 ### Features

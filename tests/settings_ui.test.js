@@ -14,10 +14,10 @@ const N = require('../src/services/notifications');
 const TPL = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'), 'utf8');
 
 describe('sections and the address', () => {
-  it('the 23 sections: the start page, 21 pages of the template and the plugin area, in menu order', () => {
+  it('the 25 sections: the start page, 23 pages of the template and the plugin area, in menu order', () => {
     const inTpl = [...TPL.matchAll(/<section class="st-section(?: [a-z-]+)?"\{\{ secAttrs\('([a-z]+)'\) \}\}>/g)].map((m) => m[1]);
     assert.deepEqual(inTpl, U.SECTIONS.filter((s) => s !== 'plugins'));
-    assert.equal(U.SECTIONS.length, 23);
+    assert.equal(U.SECTIONS.length, 25);
     assert.equal(U.SECTIONS[0], 'start');
   });
   it('one address per section: sectionPath / sectionFromPath', () => {

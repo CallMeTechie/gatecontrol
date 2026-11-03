@@ -585,6 +585,20 @@ function ingestLines(lines) {
   // Scanner ban (docs/feature-release-b.md §3): count the stored hits per
   // client IP; never throws.
   if (n > 0) require('./wafBans').onIngested(rows);
+  // IP block (services/ipBlock.js): every blocked request is one failure of its address
+  if (n > 0) {
+    try {
+      const ipBlock = require('./ipBlock');
+      const seen = new Set();
+      for (const r of rows) {
+        if (!r.client_ip || r.action !== 'blocked') continue;
+        const k = `${r.client_ip}|${r.tx_id || r.id}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        ipBlock.noteFailure(r.client_ip, 'waf', r.host || null);
+      }
+    } catch (err) { logger.debug({ err: err.message }, 'waf: ip block not told'); }
+  }
   return n;
 }
 

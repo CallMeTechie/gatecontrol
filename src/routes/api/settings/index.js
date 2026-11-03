@@ -45,6 +45,10 @@ const TOKEN_FORBIDDEN = [
   // Start page of the settings: backup, licence and update state in one
   // answer — for the admin's browser, not for scripts.
   /^\/overview$/,
+  // Einstellungen › Sicherheit: who is blocked, which routes are open and
+  // how VPN keys are watched — admin session only.
+  /^\/ip-block(\/|$)/,
+  /^\/route-guard(\/|$)/,
 ];
 router.use((req, res, next) => {
   if (!req.tokenAuth) return next();
@@ -78,5 +82,7 @@ router.use('/', require('./clientPolicy'));
 router.use('/', require('./clientLayout'));
 // Start page of the settings: tiles, attention rows, state per section
 router.use('/', require('./overview'));
+// Sicherheit: IP-Sperre and Routenschutz (services/ipBlock.js, routeGuard.js, vpnGuard.js)
+router.use('/', require('./securityGuards'));
 
 module.exports = router;

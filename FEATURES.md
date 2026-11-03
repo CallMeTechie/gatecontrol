@@ -16,6 +16,8 @@ Detailed documentation for all features. For the complete feature overview, see 
 - [Email Alert System](#email-alert-system)
 - [Per-Peer Traffic Graphs](#per-peer-traffic-graphs)
 - [Account Lockout](#account-lockout)
+- [IP Block (IP-Sperre)](#ip-block-ip-sperre)
+- [Route Protection (Routenschutz)](#route-protection-routenschutz)
 - [Password Complexity Enforcement](#password-complexity-enforcement)
 - [Configurable Operational Timeouts](#configurable-operational-timeouts)
 - [Peer Expiry](#peer-expiry)
@@ -543,6 +545,99 @@ curl -X POST "https://gate.example.com/api/v1/settings/unlock-route-auth?email=u
 - Counter resets after successful login
 - Auto-unlock after duration expires (`locked_until` timestamp)
 - Lockout triggers email alert (if configured)
+
+---
+
+## IP Block (IP-Sperre)
+
+Settings › Security › IP-Sperre (`/settings/ipsperre`). The account lockout protects one account; the IP block stops one **address** that tries many accounts, links or routes. Failures of every entry point count together.
+
+### What counts as a failure
+
+| Source | Where it is counted |
+|--------|--------------------|
+| `login` | GateControl login, portal, app sign-in, second factor (`lockout.recordFailedAttempt`) |
+| `route_auth` | Route login (same hook, type `route_auth`) |
+| `share_link` | Wrong PIN of a public link of a plugin (Drive, GateDrop — `/s/<token>/unlock`) |
+| `waf` | Every request the WAF blocked (audit log ingest) |
+| `scan` | 404s from the access log: a probe path (`/.env`, `/wp-admin`, `/.git/` …) counts at once, any other ten 404s once |
+| `rate_limit` | 429 answers (off by default — own apps can hit it) |
+
+Every source can be switched off. Default: 10 failures within 10 minutes (10 or 60 min, threshold 3 … 1000).
+
+### Bans
+
+- Automatic bans grow when they repeat within 7 days: 10 min › 1 h › 1 day (level 1 … 3). The third one is reported (`ip_blocked_day`), as are 20 bans within 10 minutes (`ip_block_mass`, at most hourly) — notification centre row "IP für einen Tag gesperrt / viele Sperren", logs in Logs & Monitoring (warnings appear under "Probleme").
+- By hand: IP or CIDR (not wider than /16 resp. /32), 1 h, 1 day, 7 days, 30 days or permanent, with a note.
+- Never banned: private, loopback and link-local addresses, the VPN subnet, the "Nie sperren" list (up to 50 entries) and the WAF's own addresses. Adding an exception lifts the bans inside it.
+- The client address is the one Caddy determines (`trusted_proxies`: X-Forwarded-For only from private ranges) — behind a load balancer in the own network the visitor counts, never the proxy.
+
+### Block lists (licence feature `ip_blocklists`)
+
+| List | Source | Terms |
+|------|--------|-------|
+| Botnets / spam networks | Spamhaus DROP (`drop_v4.json`, `drop_v6.json`) | free to use with attribution; the © line stays with the stored file; at most one download per hour |
+| Known attackers | blocklist.de `all.txt` (attacks of the last 48 h) | free, as is |
+| Tor exit nodes | check.torproject.org `torbulkexitlist` | public; off by default |
+
+Fetched once a day (and with "Jetzt aktualisieren"), 30 s timeout, at most 8 MB / 200 000 entries per list, only public ranges kept. A failed download keeps the previous list. Nothing is sent to these services.
+
+### Enforcement
+
+GateControl writes one file, `<caddy data>/ipblock.list` (exceptions first with `!`, then bans and lists). The Caddy matcher `http.matchers.gc_ipblock` (`caddy-plugins/mirror/ipblock.go`) in the **first** route of `srv0` reads it and re-reads it when it changes (every 2 s, lock-free swap) — before the HTTP→HTTPS redirect, the WAF, every route, the portal and the login; only the ACME challenge stays open. Answer: 403. A ban therefore works within seconds **without reloading Caddy** (a reload re-provisions every app, the WAF rule sets included — expensive with many bans). GateControl itself checks the same set as its first middleware (covers a Caddy without the module). Layer-4 listeners get the bans (not the lists) through the ban route of their listeners (coalesced sync, at most once a minute). Without the module in Caddy the page says so.
+
+### API (admin session only)
+
+```
+GET    /api/v1/settings/ip-block
+PUT    /api/v1/settings/ip-block              { enabled, threshold, window_min, notify, sources: {…}, lists: {…} }
+POST   /api/v1/settings/ip-block/bans         { ip, hours: 1|24|168|720|null, note }
+DELETE /api/v1/settings/ip-block/bans/:ip     (URL-encoded, also CIDR)
+POST   /api/v1/settings/ip-block/never        { ip, label }
+DELETE /api/v1/settings/ip-block/never/:ip
+POST   /api/v1/settings/ip-block/lists/refresh
+```
+
+Settings: `ipblock.config`, `ipblock.never`, `ipblock.lists_state`; tables `ip_blocks`, `ip_block_failures`, `ip_block_strikes` (migration 123). Backups carry the settings and the bans set by hand.
+
+---
+
+## Route Protection (Routenschutz)
+
+Settings › Security › Routenschutz (`/settings/routenschutz`): every route with what protects it — access (Internet / only VPN = `external_enabled = 0` / chosen devices = active peer ACL), login (Basic Auth, Route Auth with 2FA, client certificate), countries / IP filter, rate limit, WAF — plus a risk. Nothing here adds a protection of its own; it reads and changes the existing route fields.
+
+### Risk (heuristic)
+
+| Level | When |
+|-------|------|
+| low | route off, only VPN / chosen devices, or a login |
+| high | from the internet without a login **and** an administration interface: typical admin port of the target (Proxmox 8006/8007, Synology 5000/5001, Portainer 9000/9443, Cockpit 9090, Webmin 10000, UniFi 8443, Docker API 2375/2376, Caddy admin 2019 …) or a name such as proxmox, router, fritz, nas, portainer, opnsense, unifi, admin in host, label or description; an L4 forward of a remote-access or database port (22, 23, 139, 445, 3389, 5900, 3306, 5432, 6379, 27017, 9200 …) |
+| check | from the internet without a login otherwise |
+
+"Braucht deine Aufmerksamkeit" lists high and check routes with **Nur über VPN** (sets `external_enabled = 0` through the bulk update, Caddy synced, rolled back on failure), **Anmeldung einschalten** (opens the route) and **Ist Absicht** (confirmed; stays confirmed as long as access, login and target are the same — a change asks again). The start page `/settings` shows the same points.
+
+### Defaults for new routes
+
+Access (Internet / only VPN), WAF (licence `waf`), countries (all, Germany, DACH, Germany + EU — licence `ip_access_control` and an ip2location.io key, otherwise a country allow list would turn every visitor away), rate limit per minute (licence `rate_limiting`). Applied by `routes.create()` to every field the creation leaves open; a WAF default of the domain comes first, and a newly added domain starts with the access default.
+
+### VPN misuse
+
+From the peer poller (`wg show dump` every 30 s):
+
+- **Key in two places**: the endpoint of one peer keeps switching between at most three internet addresses (≥ 6 switches within 15 min, back and forth) → warn (`vpn_key_shared`) or block the peer (switched off like on the peer page).
+- **New country**: a peer connects from a country it never came from (endpoint countries via ip2location.io, only with a key; the first country is learnt) → warn (`vpn_new_country`).
+
+Each at most once per peer and 6 h; notification centre row "VPN-Schlüssel an zwei Orten / neues Land".
+
+### API (admin session only)
+
+```
+GET    /api/v1/settings/route-guard
+PUT    /api/v1/settings/route-guard            { defaults: { access, waf, countries, rate_limit }, vpn: { two_places, new_country } }
+POST   /api/v1/settings/route-guard/routes/:id/vpn-only
+POST   /api/v1/settings/route-guard/routes/:id/ack
+DELETE /api/v1/settings/route-guard/routes/:id/ack
+```
 
 ---
 
