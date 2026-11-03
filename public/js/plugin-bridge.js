@@ -266,6 +266,10 @@
         try { data = JSON.parse(xhr.responseText); } catch (_) { data = null; }
         const ok = xhr.status >= 200 && xhr.status < 300 && !!data && data.ok === true;
         const out = ok ? { mediaId: data.mediaId, mime: data.mime, bytes: data.bytes } : data;
+        // virus scan (1.223.0): the state of the stored file, as the media upload answered it
+        if (ok && data.scan && typeof data.scan === 'object') {
+          out.scan = { state: String(data.scan.state || ''), blocked: !!data.scan.blocked, finding: data.scan.finding ? String(data.scan.finding) : null };
+        }
         reply({ type: 'gc-result', id: m.id, ok, status: xhr.status, data: out, error: ok ? null : ((data && (data.code || data.error)) || ('HTTP ' + xhr.status)) });
       };
       xhr.onerror = () => reply({ type: 'gc-result', id: m.id, ok: false, status: 0, error: 'network error' });

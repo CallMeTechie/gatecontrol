@@ -137,8 +137,10 @@
       rows.push({ tone: 'crit', title: tp('st.scan.att_q', q.length), sub: q.slice(0, 2).map((f) => `${f.name || f.mediaId} (${findingText(f)})`).join(' · '),
         pill: t('st.scan.att_q_pill'), action: t('st.scan.att_q_action'), go: () => showTab('quarantine', true) });
     }
-    if (data.down) rows.push({ tone: 'crit', title: t('st.scan.att_down'), sub: t('st.scan.att_down_sub', { since: when(data.down.since) }), pill: t('st.scan.att_down_pill') });
     const s = data.scanner;
+    const local = localRow(s);
+    if (local) rows.push(local);
+    else if (data.down) rows.push({ tone: 'crit', title: t('st.scan.att_down'), sub: t('st.scan.att_down_sub', { since: when(data.down.since) }), pill: t('st.scan.att_down_pill') });
     if (s.updateAvailable && s.latest) {
       rows.push({ tone: 'warn', title: t('st.scan.att_update', { v: s.version, latest: s.latest.engine }),
         sub: data.config.engine === 'clamav_local' ? t('st.scan.att_update_local') : t('st.scan.att_update_net', { where: data.config.address }), pill: t('st.scan.att_update_pill') });
@@ -146,6 +148,18 @@
     if (s.signaturesOld) rows.push({ tone: 'warn', title: t('st.scan.att_old'), sub: t('st.scan.att_old_sub', { when: when(s.dailyAt) }), pill: t('st.scan.att_old_pill') });
     if (data.hashlist.keySet && data.hashlist.error) rows.push({ tone: 'warn', title: t('st.scan.att_list'), sub: data.hashlist.error, pill: t('st.scan.att_list_pill') });
     return rows;
+  }
+  // "ClamAV auf diesem Server" chosen but not answering yet: what the host's
+  // update.sh did about it (data.local, from .clamav-state.json)
+  function localRow(s) {
+    const l = data.local;
+    if (!l || data.config.engine !== 'clamav_local' || s.engine !== 'clamav_local' || s.reachable !== false) return null;
+    const row = (tone, key, sub) => ({ tone, title: t('st.scan.' + key), sub: sub || t('st.scan.' + key + '_sub'), pill: tone === 'crit' ? t('st.scan.att_down_pill') : t('st.scan.local_pill') });
+    if (l.state === 'failed') return l.error === 'low_memory' ? row('crit', 'local_low_memory') : row('crit', 'local_failed');
+    if (l.state === 'starting' || l.state === 'running') return row('warn', 'local_setup');
+    if (l.cron !== 'active') return row('warn', 'local_manual');
+    if (l.script && (l.script.host === null || l.script.host < l.script.needed)) return row('warn', 'local_next_update');
+    return row('warn', 'local_setup', t('st.scan.local_next_run'));
   }
   function renderAttention() {
     const box = $('scan-att');

@@ -147,6 +147,8 @@ function setConfig(input) {
   if (['clamav_net', 'icap'].includes(next.engine) && !next.address) bad('address', 'the address of the scanner is missing');
   if (b.abusech_key !== undefined) hashlist.setKey(b.abusech_key);
   settings.set(K_CONFIG, JSON.stringify(next));
+  // "ClamAV auf diesem Server": the host's update.sh starts / stops the container
+  if (next.engine !== cur.engine) { try { require('../autoUpdate').syncConfigFile(); } catch { /* best-effort */ } }
   if (b.abusech_key) setImmediate(() => { hashlist.refresh({ force: true }).catch(() => {}); });
   _state.down = null;
   return getConfig();
@@ -496,7 +498,10 @@ function expire(now = Date.now()) {
   const old = db().prepare("SELECT * FROM scan_findings WHERE state = 'quarantined' AND expires_at IS NOT NULL AND expires_at <= ?").all(now);
   for (const f of old) {
     const row = f.media_id ? freshRow(f.media_id) : null;
-    if (row && row.scan_blocked) { try { media().remove(row.plugin, row.id); } catch { /* gone */ } }
+    if (row && row.scan_blocked) {
+      try { media().remove(row.plugin, row.id); } catch { /* gone */ }
+      tellPlugin(row, 'deleted'); // contract: "Quarantäne abgelaufen" → mediaScanned state 'deleted'
+    }
     db().prepare("UPDATE scan_findings SET state = 'deleted', resolved_at = ? WHERE id = ?").run(now, f.id);
   }
   db().prepare('DELETE FROM scan_findings WHERE created_at < ? AND state <> \'quarantined\'').run(now - 365 * 86400e3);
@@ -608,6 +613,36 @@ async function testConnection(input) {
   }
 }
 
+// ─── ClamAV on this server ─────────────────────────────
+
+const CLAMAV_STATES = ['running', 'starting', 'failed', 'stopped'];
+const CLAMAV_ERRORS = ['low_memory', 'start_failed'];
+const CLAMAV_SCRIPT = 3; // update.sh marker that starts the container itself
+
+/**
+ * What the host did about "ClamAV auf diesem Server" (update.sh writes
+ * .clamav-state.json on the /data volume, every 5 minutes while it is chosen).
+ * → { state, error, checkedAt, script: { host, needed }, cron }
+ */
+function localStatus() {
+  const au = require('../autoUpdate');
+  const path = require('node:path');
+  let file = null;
+  try { file = JSON.parse(require('node:fs').readFileSync(path.join(au.DATA_DIR, '.clamav-state.json'), 'utf8')); } catch { file = null; }
+  let cron = 'not_configured';
+  let host = null;
+  try { const st = au.getStatus(); cron = st.status; host = st.update_sh ? st.update_sh.host_version : null; } catch { /* unknown */ }
+  const ok = file && typeof file === 'object';
+  const checkedAt = ok && typeof file.checked_at === 'string' && !Number.isNaN(Date.parse(file.checked_at)) ? new Date(file.checked_at).toISOString() : null;
+  return {
+    state: ok && CLAMAV_STATES.includes(file.state) ? file.state : null,
+    error: ok && CLAMAV_ERRORS.includes(file.error) ? file.error : null,
+    checkedAt,
+    script: { host, needed: CLAMAV_SCRIPT },
+    cron,
+  };
+}
+
 // ─── Page ──────────────────────────────────────────────
 
 function stats(now = Date.now()) {
@@ -641,6 +676,7 @@ async function view({ ask = true } = {}) {
     lastRescan: st.last_rescan ? new Date(st.last_rescan).toISOString() : null,
     refreshedAt: st.refreshed_at ? new Date(st.refreshed_at).toISOString() : null,
     localAddress: LOCAL_ADDRESS,
+    local: cfg.engine === 'clamav_local' ? localStatus() : null,
   };
 }
 
@@ -702,7 +738,7 @@ module.exports = {
   getConfig, setConfig, engineOf, sourceOf, isExternal,
   afterStore, check, gate, infoOf, rescanOne, retryPending, nightly, nightlyDue,
   quarantine, history, recheck, deleteFinding, release, expire,
-  scannerInfo, refreshSignatures, signatureCheck, eicarTest, testConnection, stats, view,
+  scannerInfo, localStatus, refreshSignatures, signatureCheck, eicarTest, testConnection, stats, view,
   start, stop, exportBackup, restoreBackup, hashOf: (b) => crypto.createHash('sha256').update(b).digest('hex'),
   _state, _resetForTest,
 };

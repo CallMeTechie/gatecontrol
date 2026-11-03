@@ -621,6 +621,9 @@
       {% endcall %}
       {% if not scanOn %}{{ lockNote('malware_scanning') }}{% endif %}
       {{ selectRow('scan-engine', 'scan-engine', t('st.scan.engine'), [['none', t('st.scan.e_none')], ['clamav_local', t('st.scan.e_local')], ['clamav_net', t('st.scan.e_net')], ['icap', t('st.scan.e_icap')]], t('st.scan.engine_hint'), disabled=not scanOn) }}
+      <div data-st-show="scan-engine=clamav_local">
+        <div class="st-note" id="scan-local-auto">{{ t('st.scan.local_auto') }}</div>
+      </div>
       <div data-st-show="scan-engine!=none">
         {{ textRow('scan-address', 'scan-address', t('st.scan.address'), t('st.scan.address_hint'), placeholder='nas.home.lan:3310', mono=true, maxlength=300, disabled=not scanOn) }}
       </div>
