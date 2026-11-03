@@ -56,6 +56,7 @@ const { publicLinkLimiter, publicLinkUnlockLimiter, publicLinkMediaLimiter, publ
 const logger = require('../utils/logger');
 
 const router = Router();
+const scanGate = (row) => require('../services/scan').gate(row);
 const FILE_RE = /^[1-9]\d{0,3}$/; // file 1 … 5000 of a 'files' link
 const ID_RE = /^[0-9a-f]{32}$/;
 const MIME_RE = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/;
@@ -356,7 +357,9 @@ router.get('/s/:token/zip', publicLinkLimiter, async (req, res) => {
   if (r.link.kind === 'folder') {
     const sub = typeof req.query.p === 'string' ? req.query.p : '';
     const full = links.folderPath(r.link, sub);
-    const list = full == null ? null : links.filesBelow(r.link, full);
+    // a file the virus scan holds back is left out of the ZIP (services/scan)
+    const list = full == null ? null : (links.filesBelow(r.link, full) || null);
+    if (list) for (let i = list.length - 1; i >= 0; i--) if (scanGate(list[i].row)) list.splice(i, 1);
     if (!list) return res.status(full == null ? 404 : 413).type('text/plain').send(full == null ? 'not found' : 'too many files');
     if (!list.length) return res.status(404).type('text/plain').send('empty');
     const entries = list.map(({ row, rel }) => ({ name: rel, size: row.bytes, read: () => media.readRange(row, 0, row.bytes - 1) }));
@@ -366,6 +369,7 @@ router.get('/s/:token/zip', publicLinkLimiter, async (req, res) => {
   }
   const rows = r.files.map((f) => ({ f, row: media.row(r.link.plugin, f.media_id) }));
   if (!rows.length || rows.some((x) => !x.row)) return res.status(404).type('text/plain').send('not found');
+  if (rows.some((x) => scanGate(x.row))) return res.status(423).type('text/plain').send('a file is held back by the virus scan');
   if (r.files.some((f) => links.fileUsedUp(r.link, f))) return res.status(410).type('text/plain').send('used');
   // since 1.215.0 in its sub folder (zipStream makes every name safe: no "..", nothing absolute)
   const entries = rows.map(({ f, row }) => {

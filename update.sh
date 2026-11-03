@@ -28,7 +28,7 @@
 # is never executed in the same run — it applies from the next cron run.
 # The marker line below is the version both sides compare; bump it whenever
 # this file changes in a way the host should pick up.
-# gc-update-sh: 1
+# gc-update-sh: 2
 #
 # Exit: 0 ok/no-op/skipped, 1 update failed (rolled back if possible),
 #       2 no compose file, 3 wrong project dir, 4 update AND rollback failed.
@@ -175,6 +175,19 @@ ensure_guacd() {
   )
 }
 
+ensure_clamav() {
+  # The optional ClamAV sidecar of the virus scan (profile "clamav", see
+  # docker-compose.yml). Only when it runs: pull its pinned tag (the image
+  # line follows the 1.4 LTS series — engine fixes arrive here) and let
+  # compose recreate it when the image changed. Signatures are freshclam's
+  # job inside the container, not this script's.
+  [ "$(docker inspect -f '{{.State.Running}}' clamav 2>/dev/null || true)" = "true" ] || return 0
+  ( cd "$COMPOSE_DIR" || exit 1
+    docker pull clamav/clamav:1.4 >>"$LOG" 2>&1 || true
+    docker compose --profile clamav up -d clamav >>"$LOG" 2>&1 || true
+  )
+}
+
 prune_images() {
   # Reclaim disk after a successful update: each :latest pull leaves the previous
   # image dangling. Without pruning the host fills up over time (incident
@@ -265,7 +278,7 @@ deploy() { # $1=mode — recreate onto :latest; on health failure roll back. Exi
 
   if recreate; then
     rm -f "$BAD_FILE" 2>/dev/null || true
-    ensure_guacd || true; prune_images || true; self_update || true; write_state updated "$mode"; exit 0
+    ensure_guacd || true; ensure_clamav || true; prune_images || true; self_update || true; write_state updated "$mode"; exit 0
   fi
   new_ver="$(image_version "$new_id")"
   log "recreate/health failed — image $new_id ${new_ver:+(v$new_ver)}"

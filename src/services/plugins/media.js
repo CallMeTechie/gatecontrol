@@ -260,7 +260,7 @@ async function sealInto(tmp, key, source, length, incomplete = null, max = null)
  * `incomplete()` names the code when the source ended early.
  * @returns {{ mediaId, mime, bytes }}
  */
-async function writeFile(plugin, { source, length: declared, mime, owner, name, incomplete, digest = null, max = null }) {
+async function writeFile(plugin, { source, length: declared, mime, owner, name, incomplete, digest = null, max = null, scan = null }) {
   const id = crypto.randomBytes(16).toString('hex');
   const final = fileOf(plugin.id, id);
   fs.mkdirSync(path.dirname(final), { recursive: true, mode: 0o700 });
@@ -279,7 +279,24 @@ async function writeFile(plugin, { source, length: declared, mime, owner, name, 
   db().prepare(`INSERT INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc, name)
     VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)`).run(id, plugin.id, owner == null ? null : owner, mime, length, sha,
     new Date().toISOString(), wrapKey(key, id), name == null ? null : name);
-  return { mediaId: id, mime, bytes: length };
+  return { mediaId: id, mime, bytes: length, scan: await scanStored(plugin, id, scan) };
+}
+
+/**
+ * The virus scan of a file just stored (services/scan, since 1.222.0): waits
+ * for the result up to its budget. A file deleted for a finding → MediaError
+ * infected (422); "Uploads anhalten" with the scanner away → the file goes,
+ * MediaError scan_unavailable (503). → { state, blocked, finding }
+ */
+async function scanStored(plugin, id, ctx) {
+  let out;
+  try { out = await require('../scan').afterStore(id, ctx || {}); } catch (e) {
+    logger.warn({ plugin: plugin.id, media: id, err: e && e.message }, 'plugin media: scan failed');
+    return { state: 'unchecked', blocked: false, finding: null };
+  }
+  if (out.hold) { remove(plugin.id, id); throw new MediaError('scan_unavailable', 503); }
+  if (out.deleted) throw Object.assign(new MediaError('infected', 422), { finding: out.finding || null });
+  return { state: out.state, blocked: out.blocked, finding: out.finding || null };
 }
 
 /**
@@ -338,7 +355,7 @@ async function store(plugin, ownerUserId, req) {
   if (usage(plugin.id).bytes + length > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
   const digest = expectedDigest(req);
   capacity(plugin, length);
-  return writeFile(plugin, { source: req, length, mime, owner: ownerUserId, name: null, digest,
+  return writeFile(plugin, { source: req, length, mime, owner: ownerUserId, name: null, digest, scan: { kind: 'upload' },
     incomplete: () => (req.aborted || req.destroyed ? 'aborted' : 'length_mismatch') });
 }
 
@@ -359,7 +376,7 @@ async function storeBuffer(plugin, buf, { mime, name = null, owner = null } = {}
   if (usage(plugin.id).bytes + buf.length > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
   capacity(plugin, buf.length);
   const clean = cleanName(name);
-  const out = await writeFile(plugin, { source: [buf], length: buf.length, mime: type, owner, name: clean });
+  const out = await writeFile(plugin, { source: [buf], length: buf.length, mime: type, owner, name: clean, scan: { kind: 'fetch' } });
   return { ...out, name: clean };
 }
 
@@ -380,7 +397,7 @@ async function storeStream(plugin, source, { length, mime, name = null, owner = 
   if (usage(plugin.id).bytes + length > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
   capacity(plugin, length);
   const clean = cleanName(name);
-  const out = await writeFile(plugin, { source, length, mime: type, owner, name: clean });
+  const out = await writeFile(plugin, { source, length, mime: type, owner, name: clean, scan: { kind: 'cloud' } });
   return { ...out, name: clean };
 }
 
@@ -395,7 +412,7 @@ async function storeStream(plugin, source, { length, mime, name = null, owner = 
  * @returns {Promise<{ mediaId, mime, bytes, name, sha256 }>}
  * @throws {MediaError} no_media, empty, too_large, quota_exceeded, aborted
  */
-async function storeHostStream(plugin, source, { mime, name = null, max = null } = {}) {
+async function storeHostStream(plugin, source, { mime, name = null, max = null, sender = null } = {}) {
   const decl = declOf(plugin);
   if (!decl) throw new MediaError('no_media', 404);
   const limit = Math.min(Number.isSafeInteger(max) && max > 0 ? max : decl.maxBytes, decl.maxBytes);
@@ -404,7 +421,7 @@ async function storeHostStream(plugin, source, { mime, name = null, max = null }
   const type = baseType(mime);
   const kept = /^[a-z][a-z0-9-]{0,30}\/[a-z0-9][a-z0-9.+_-]{0,99}$/.test(type) ? type : 'application/octet-stream';
   const clean = cleanName(name);
-  const out = await writeFile(plugin, { source, length: null, max: limit, mime: kept, owner: null, name: clean });
+  const out = await writeFile(plugin, { source, length: null, max: limit, mime: kept, owner: null, name: clean, scan: { kind: 'host', sender } });
   return { ...out, name: clean, sha256: db().prepare('SELECT sha256 FROM plugin_media WHERE id = ?').get(out.mediaId).sha256 };
 }
 
@@ -441,7 +458,7 @@ async function storeFromLink(plugin, req, { mime, length, owner, name }) {
   if (length > decl.maxBytes) throw new MediaError('too_large', 413);
   if (usage(plugin.id).bytes + length > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
   capacity(plugin, length);
-  return writeFile(plugin, { source: req, length, mime, owner, name, digest: expectedDigest(req),
+  return writeFile(plugin, { source: req, length, mime, owner, name, digest: expectedDigest(req), scan: { kind: 'link' },
     incomplete: () => (req.aborted || req.destroyed ? 'aborted' : 'length_mismatch') });
 }
 
@@ -586,7 +603,7 @@ async function storePart(plugin, ownerUserId, req) {
     db().prepare(`INSERT INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc, name)
       VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, NULL)`).run(st.mediaId, plugin.id, ownerUserId == null ? null : ownerUserId, mime, total,
       sha, new Date().toISOString(), st.keyEnc);
-    return { complete: true, mediaId: st.mediaId, mime, bytes: total };
+    return { complete: true, mediaId: st.mediaId, mime, bytes: total, scan: await scanStored(plugin, st.mediaId, { kind: 'upload' }) };
   } finally {
     busyUploads.delete(f.key);
   }
@@ -609,7 +626,9 @@ function row(pluginId, id) {
 function info(r) {
   if (!r) return null;
   const out = { mediaId: r.id, mime: r.mime, bytes: r.bytes, sha256: r.sha256, owner: r.owner_user_id == null ? null : r.owner_user_id,
-    createdAt: r.created_at, claimed: r.ref_count > 0, name: r.name == null ? null : r.name };
+    createdAt: r.created_at, claimed: r.ref_count > 0, name: r.name == null ? null : r.name,
+    // since 1.222.0: the virus scan (pending | clean | infected | unscannable | unchecked)
+    scan: require('../scan').infoOf(r) };
   if (r.area != null) {
     // since 1.204.0 (media.areas): the area, the plugin's path, where the bytes are
     out.area = r.area;
@@ -652,6 +671,17 @@ function parseRange(header, size) {
  * @returns {AsyncGenerator<Buffer>}
  */
 async function* readRange(r, start, end, file = null) {
+  // virus scan (services/scan): a file in quarantine, still being checked or
+  // blocked as not scannable is read by nobody
+  if (!file) {
+    const g = require('../scan').gate(r);
+    if (g) throw new MediaError(g.code, g.status);
+  }
+  yield* readRangeRaw(r, start, end, file);
+}
+
+/** readRange without the scan gate — the scanner, backups, the areas worker. */
+async function* readRangeRaw(r, start, end, file = null) {
   if (!file && r.local === 0 && r.target_id != null) {
     // an area file kept on a storage target, no local copy (mediaAreas.js)
     yield* require('./mediaAreas').readRemote(r, start, end);
@@ -714,6 +744,12 @@ function contentDisposition(type, name, id) {
  * `name` — the download name instead of the stored one.
  */
 async function send(req, res, r, cache, opts = {}) {
+  const blocked = require('../scan').gate(r);
+  if (blocked) {
+    res.setHeader('Cache-Control', 'no-store');
+    if (blocked.code === 'scan_pending') res.setHeader('Retry-After', '5');
+    return res.status(blocked.status).json({ ok: false, code: blocked.code, ...(r.scan_finding && blocked.code === 'quarantined' ? { finding: r.scan_finding } : {}) });
+  }
   const range = parseRange(req.headers.range, r.bytes);
   res.setHeader('Accept-Ranges', 'bytes');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -792,7 +828,7 @@ async function mayRead(pluginId, user, r) {
 
 /** Status and code of a failed store() for the routes. */
 function failure(res, e) {
-  if (e instanceof MediaError) return res.status(e.status).json({ ok: false, code: e.code, ...(Number.isSafeInteger(e.offset) ? { offset: e.offset } : {}) });
+  if (e instanceof MediaError) return res.status(e.status).json({ ok: false, code: e.code, ...(Number.isSafeInteger(e.offset) ? { offset: e.offset } : {}), ...(e.finding ? { finding: e.finding } : {}) });
   logger.warn({ err: e && e.message }, 'plugin media: upload failed');
   return res.status(500).json({ ok: false, code: 'internal' });
 }
@@ -875,6 +911,8 @@ async function handOver(from, id, to, { owner = null } = {}) {
   let r = row(from.id, id);
   if (r && r.local === 0) r = await require('./mediaAreas').ensureLocal(r);
   if (!r) throw new MediaError('not_found', 404);
+  const blocked = require('../scan').gate(r);
+  if (blocked) throw new MediaError(blocked.code, blocked.status);
   const decl = declOf(to);
   if (!decl) throw new MediaError('no_media', 404);
   if (!typeAllowed(decl, r.mime)) throw new MediaError('unsupported_type', 415);
@@ -899,6 +937,7 @@ async function handOver(from, id, to, { owner = null } = {}) {
   db().prepare(`INSERT INTO plugin_media (id, plugin, owner_user_id, mime, bytes, sha256, created_at, ref_count, claimed_at, key_enc, name)
     VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)`).run(newId, to.id, owner == null ? null : owner, r.mime, r.bytes, r.sha256,
     new Date().toISOString(), wrapKey(key, newId), r.name == null ? null : r.name);
+  copyScan(r.id, newId);
   return { mediaId: newId, mime: r.mime, bytes: r.bytes, name: r.name == null ? null : r.name };
 }
 
@@ -922,6 +961,12 @@ async function handOver(from, id, to, { owner = null } = {}) {
 // nothing behind (temporary files go at once, or with the hourly clean-up).
 
 const COPY_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** The same bytes keep the result of their check (hand-over, copy). */
+function copyScan(fromId, toId) {
+  db().prepare(`UPDATE plugin_media SET (scan_state, scan_blocked, scan_source, scan_at, scan_finding, scan_engine) =
+    (SELECT scan_state, scan_blocked, scan_source, scan_at, scan_finding, scan_engine FROM plugin_media WHERE id = ?) WHERE id = ?`).run(fromId, toId);
+}
 
 function copyTimedOut(deadline) {
   if (deadline != null && Date.now() > deadline) throw new MediaError('timeout', 504);
@@ -1019,6 +1064,7 @@ async function copy(plugin, id, { area, path: p = null, claim: keep = false, own
       fs.rmSync(fileOf(plugin.id, newId), { force: true });
       throw e;
     }
+    copyScan(r.id, newId);
     if (remote) { A.keepCopy(remote); remote = null; }
   } catch (e) {
     if (tmp) await fs.promises.rm(tmp, { force: true });
@@ -1090,7 +1136,8 @@ function resolveToken(token, now = Date.now(), { preview = false } = {}) {
 function cleanup(now = Date.now()) {
   let n = 0;
   const cutoff = new Date(now - UNCLAIMED_TTL_MS).toISOString();
-  const old = db().prepare('SELECT id, plugin, target_id, remote_key FROM plugin_media WHERE ref_count = 0 AND created_at <= ?').all(cutoff);
+  // a file in quarantine stays its 30 days even when no plugin claimed it (services/scan expire())
+  const old = db().prepare("SELECT id, plugin, target_id, remote_key FROM plugin_media WHERE ref_count = 0 AND created_at <= ? AND NOT (scan_state = 'infected' AND scan_blocked = 1)").all(cutoff);
   for (const r of old) {
     if (!db().prepare('DELETE FROM plugin_media WHERE id = ? AND ref_count = 0').run(r.id).changes) continue;
     try { fs.rmSync(fileOf(r.plugin, r.id), { force: true }); } catch { /* gone */ }
@@ -1233,6 +1280,7 @@ function importPlugin(pluginId, list) {
 }
 
 module.exports = {
+  readRangeRaw,
   MediaError, ID_RE, CHUNK, URL_PREFIX, URL_TTL_MIN_S, URL_TTL_MAX_S, UNCLAIMED_TTL_MS, QUOTA_SETTING, BACKUP_SETTING,
   mediaRoot, fileOf, declOf, quotaOf, setQuota, usage, baseType, typeAllowed, store, storeBuffer, storeStream, storeHostStream, storePart, upload, uploadStatus, UPLOAD_ID_RE, UPLOAD_TTL_MS,
   cleanName, contentDisposition, row, info, parseRange, readRange, send, mayRead, failure,

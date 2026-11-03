@@ -3104,6 +3104,60 @@ const migrations = [
     detect: (db) => tableExists(db, 'ip_blocks') && tableExists(db, 'ip_block_failures') && tableExists(db, 'ip_block_strikes')
       && tableExists(db, 'route_guard_acks') && tableExists(db, 'peer_endpoints_seen'),
   },
+  {
+    version: 124,
+    name: 'malware_scan',
+    // Einstellungen › Sicherheit › Virenscan (services/scan/): the state of
+    // every plugin file (NULL = from before, "unchecked"), whether it may be
+    // served, what was found and by whom; the findings with their history
+    // (quarantine 30 days, released, deleted, not scannable), the checksums
+    // released by an administrator and the local list of known malware
+    // (SHA-256, MalwareBazaar).
+    sql: `
+      ALTER TABLE plugin_media ADD COLUMN scan_state TEXT;
+      ALTER TABLE plugin_media ADD COLUMN scan_blocked INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE plugin_media ADD COLUMN scan_source TEXT;
+      ALTER TABLE plugin_media ADD COLUMN scan_at INTEGER;
+      ALTER TABLE plugin_media ADD COLUMN scan_finding TEXT;
+      ALTER TABLE plugin_media ADD COLUMN scan_engine TEXT;
+      CREATE INDEX IF NOT EXISTS idx_plugin_media_scan ON plugin_media(scan_state);
+      CREATE TABLE IF NOT EXISTS scan_findings (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        media_id       TEXT,
+        plugin         TEXT,
+        source         TEXT,
+        name           TEXT,
+        mime           TEXT,
+        bytes          INTEGER,
+        sha256         TEXT,
+        owner_user_id  INTEGER,
+        sender         TEXT,
+        finding        TEXT,
+        engine         TEXT,
+        detail         TEXT,
+        state          TEXT NOT NULL,
+        created_at     INTEGER NOT NULL,
+        expires_at     INTEGER,
+        resolved_at    INTEGER,
+        resolved_by    INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_scan_findings_state ON scan_findings(state, created_at);
+      CREATE INDEX IF NOT EXISTS idx_scan_findings_media ON scan_findings(media_id);
+      CREATE TABLE IF NOT EXISTS scan_exceptions (
+        sha256      TEXT PRIMARY KEY,
+        finding     TEXT,
+        name        TEXT,
+        created_at  INTEGER NOT NULL,
+        created_by  INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS scan_hashes (
+        sha256      TEXT PRIMARY KEY,
+        signature   TEXT,
+        first_seen  INTEGER NOT NULL
+      ) WITHOUT ROWID;`,
+    detect: (db) => hasColumn(db, 'plugin_media', 'scan_state') && tableExists(db, 'scan_findings')
+      && tableExists(db, 'scan_exceptions') && tableExists(db, 'scan_hashes'),
+  },
 ];
 
 module.exports = { migrations };

@@ -49,6 +49,7 @@ const TOKEN_FORBIDDEN = [
   // how VPN keys are watched — admin session only.
   /^\/ip-block(\/|$)/,
   /^\/route-guard(\/|$)/,
+  /^\/scan(\/|$)/,
 ];
 router.use((req, res, next) => {
   if (!req.tokenAuth) return next();
@@ -84,5 +85,7 @@ router.use('/', require('./clientLayout'));
 router.use('/', require('./overview'));
 // Sicherheit: IP-Sperre and Routenschutz (services/ipBlock.js, routeGuard.js, vpnGuard.js)
 router.use('/', require('./securityGuards'));
+// Sicherheit: Virenscan (services/scan)
+router.use('/', require('./scan'));
 
 module.exports = router;

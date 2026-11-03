@@ -93,6 +93,7 @@ GateControl is a self-hosted, containerized management platform that combines Wi
 - **Manual unlock** — view and unlock locked accounts directly from the Settings page
 - **IP block over every entry point** — failures at login, route login, share-link passwords, WAF hits and 404 probing block the address for 10 min › 1 h › 1 day; bans by hand, "never block", optional block lists (Spamhaus DROP, blocklist.de, Tor). Enforced in Caddy before every route, without a reload
 - **Route protection** — every route with access, login, countries, rate limit, WAF and a risk; "VPN only" in one click, defaults for new routes, warnings for a VPN key used in two places or from a new country
+- **Malware scan** — every file of the plugins (Drive, GateDrop, mail attachments, messenger) is checked before anyone can open it: file-type rules and a local list of known malware always, ClamAV (optional container or in the network) or an own ICAP scanner; quarantine, nightly rescan, signature state and updates
 - **Password complexity enforcement** — configurable rules for minimum length, uppercase letters, numbers, and special characters
 - All security settings manageable through the web UI (Settings > Security)
 
@@ -298,6 +299,7 @@ Caddy automatically provisions and renews TLS certificates via **Let's Encrypt**
 | **Account Lockout** | Configurable max attempts + lock duration for admin and route-auth login. Manual unlock via UI |
 | **IP Block** | Failures of every entry point (login, route login, share-link PINs, WAF hits, 404 probing) block the address for 10 min › 1 h › 1 day; bans by hand, exceptions, optional block lists (Spamhaus DROP, blocklist.de, Tor). Enforced in Caddy before every route without a reload |
 | **Route Protection** | Every route with access, login, countries, rate limit, WAF and a risk; "only VPN" in one click, defaults for new routes, warnings for a VPN key used in two places or from a new country |
+| **Malware Scan** | Plugin files checked before they can be opened (file-type rules, MalwareBazaar checksums, ClamAV or ICAP); quarantine with release/delete, 423 for held-back files |
 | **Password Complexity** | Configurable enforcement of min length, uppercase, numbers, special characters |
 | **CSRF Protection** | Synchronizer token pattern via csrf-sync; domain-bound HMAC-signed tokens for route-auth with timing-safe comparison |
 | **Rate Limiting** | 5 login attempts / 15 min, 100 API requests / 15 min per IP (configurable) |

@@ -789,6 +789,8 @@ module.exports = {
   async mediaAccess({ user, mediaId, owner, mime }, gc) {  // optional (`media`): may this viewer read the file?
     return false;                           // true only; no hook → the uploader only (see "Media")
   },
+  async mediaScanned({ mediaId, state, blocked, finding }, gc) {  // optional (`media`, since 1.222.0): the virus scan changed a file
+  },                                        // (see "Virus scan" under "Media")
   async service({ name, caller, user, payload }, gc) {     // optional (`services.provides`): called by another plugin
     return { ok: true };                    // JSON ≤ 16 KB (see "Services")
   },
@@ -1610,6 +1612,18 @@ the device that uploaded the file sends one along. Code:
 * The install dialog shows **Vorschaubilder**: "GateControl macht kleine
   Vorschaubilder der Bilder … und nimmt die Vorschaubilder der Apps für Fotos
   und Videos an, die der Server nicht lesen kann".
+
+### Virus scan (since 1.222.0)
+
+Every stored file is checked right after it is stored (Einstellungen ›
+Sicherheit › Virenscan): `scan: { state, blocked, finding }` in upload
+answers and `gc.media.info`, `423` (`scan_pending` / `quarantined` /
+`scan_blocked`) for files the scan holds back, `422 infected` / `503
+scan_unavailable` on uploads, the hook `mediaScanned` and the host API codes
+`ERR_MEDIA_QUARANTINED`, `ERR_MEDIA_SCAN_PENDING`, `ERR_MEDIA_BLOCKED`,
+`ERR_MEDIA_INFECTED`. The full contract — states, codes, sources and what
+Drive, GateDrop, Mail and Messenger show — is
+[feature-malware-scan-contract.md](feature-malware-scan-contract.md).
 
 ### Media areas (`media.areas`)
 

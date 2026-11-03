@@ -230,7 +230,7 @@ describe('command palette: pure core', () => {
   it('settings entries: every section of the settings page, labels + keywords whitelisted', () => {
     const njk = read('templates/aurora/pages/settings.njk');
     const ui = require('../public/js/settings-ui.js');
-    assert.deepEqual(P.SETTINGS.map((s) => s.tab), ui.SECTIONS, 'all 25 sections in nav order');
+    assert.deepEqual(P.SETTINGS.map((s) => s.tab), ui.SECTIONS, 'all 26 sections in nav order');
     const layout = read('templates/aurora/layout.njk');
     for (const s of P.SETTINGS) {
       // a page of the settings (start = /settings) — or the plugin area, a link in the menu

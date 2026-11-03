@@ -326,7 +326,8 @@ describe('gc.media through the plugin process', () => {
 
   it('info, claim (idempotent), usage', async () => {
     let r = await gcMedia('hello-media', { op: 'info', id }).expect(200);
-    assert.deepEqual(Object.keys(r.body.result).sort(), ['bytes', 'claimed', 'createdAt', 'mediaId', 'mime', 'name', 'owner', 'sha256']);
+    assert.deepEqual(Object.keys(r.body.result).sort(), ['bytes', 'claimed', 'createdAt', 'mediaId', 'mime', 'name', 'owner', 'scan', 'sha256']);
+    assert.equal(r.body.result.scan.state, 'unchecked', 'virus scan (since 1.222.0): other plugins are not checked by default');
     assert.equal(r.body.result.name, null, 'uploads have no name');
     assert.deepEqual([r.body.result.mediaId, r.body.result.bytes, r.body.result.owner, r.body.result.claimed], [id, 3000, anna, false]);
     r = await gcMedia('hello-media', { op: 'claim', id }).expect(200);
@@ -602,7 +603,8 @@ describe('gc.media.fetch, file names, media.uploads (since 1.190.0)', () => {
     const f = r.body.result;
     assert.match(f.mediaId, /^[0-9a-f]{32}$/);
     assert.deepEqual([f.mime, f.bytes, f.name], ['application/pdf', PDF.length, 'Elternbrief "Mai" ä.pdf']);
-    assert.deepEqual(Object.keys(f).sort(), ['bytes', 'mediaId', 'mime', 'name']);
+    assert.deepEqual(Object.keys(f).sort(), ['bytes', 'mediaId', 'mime', 'name', 'scan']);
+    assert.deepEqual(f.scan, { state: 'unchecked', blocked: false, finding: null }, 'other plugins are not checked by default');
     assert.deepEqual(hits.at(-1), { url: '/doc.pdf', method: 'GET', authorization: 'Bearer t0k' });
     const row = db().prepare('SELECT * FROM plugin_media WHERE id = ?').get(f.mediaId);
     assert.deepEqual([row.plugin, row.owner_user_id, row.ref_count, row.mime, row.bytes, row.name], ['hello-fetch', null, 0, 'application/pdf', PDF.length, 'Elternbrief "Mai" ä.pdf']);

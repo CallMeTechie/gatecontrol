@@ -161,6 +161,11 @@ async function start() {
     try { require('./services/ipBlock').start(); }
     catch (err) { logger.warn({ err: err.message }, 'ip block start failed'); }
 
+    // Virus scan (services/scan): later checks, nightly rescan, signature
+    // state, quarantine expiry.
+    try { require('./services/scan').start(); }
+    catch (err) { logger.warn({ err: err.message }, 'virus scan start failed'); }
+
     // Start background tasks
     startCollector(config.intervals.trafficCollector);
     startPoller(config.intervals.peerPoller);
@@ -391,6 +396,7 @@ const shutdown = createShutdownHandler({
     () => require('./services/waf').stop(),
     () => require('./services/l4ConnGuard').stop(),
     () => require('./services/ipBlock').stop(),
+    () => require('./services/scan').stop(),
     () => require('./services/updateNotify').stop(),
     () => require('./services/notify').stop(),
     () => { require('./services/plugins').stop().catch(() => {}); },

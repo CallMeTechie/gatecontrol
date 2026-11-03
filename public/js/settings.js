@@ -2,7 +2,7 @@
 
 // Settings page (templates/aurora/pages/settings.njk).
 //
-// Structure: the start page and 24 sections (<section data-section>), one
+// Structure: the start page and 25 sections (<section data-section>), one
 // visible at a time, each with its own address: /settings (start),
 // /settings/<section>. The menu entries are links; the page switches between
 // sections without a reload (history.pushState) and the server renders the
