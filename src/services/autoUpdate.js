@@ -79,10 +79,22 @@ function isInWindow(w, now = new Date()) {
   if (s === e) return true;
   return s < e ? (cur >= s && cur < e) : (cur >= s || cur < e);
 }
+// "ClamAV auf diesem Server" (Einstellungen → Virenscan): update.sh (marker 3)
+// starts the clamav container while "clamav":"on" is in the file and stops it
+// again (only one it started) once the field is gone. Never throws.
+function wantsLocalClamav() {
+  try { return require('./scan').engineOf() === 'clamav_local'; } catch { return false; }
+}
 function writeConfigFile(mode, win = getWindow()) {
   const cfg = { mode };
   if (win.enabled) cfg.window = { start: win.start, end: win.end, tz: win.tz };
+  if (wantsLocalClamav()) cfg.clamav = 'on';
   writeAtomic(CONFIG_FILE, JSON.stringify(cfg) + '\n');
+}
+/** Re-project the settings onto the host file (scan engine changed). Never throws. */
+function syncConfigFile() {
+  try { writeConfigFile(getMode()); return true; }
+  catch (err) { logger.warn({ err: err.message }, 'auto-update: could not write config file'); return false; }
 }
 function setWindow(input) {
   const err = validateWindow(input);
@@ -195,5 +207,5 @@ function syncConfigFileOnBoot() {
 module.exports = {
   getStatus, getMode, setMode, requestUpdate, syncConfigFileOnBoot,
   getWindow, setWindow, validateWindow, isInWindow, getNotifyEmail, setNotifyEmail,
-  readMarker, updateShInfo, STATE_FILE, CONFIG_FILE,
+  readMarker, updateShInfo, syncConfigFile, STATE_FILE, CONFIG_FILE, DATA_DIR,
 };

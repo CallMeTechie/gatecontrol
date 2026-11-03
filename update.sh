@@ -26,9 +26,15 @@
 # atomically (temp + mv, mode 755, old version kept as update.sh.bak). Only on
 # a real difference; GC_UPDATE_SH_SELFUPDATE=0 switches it off. The new version
 # is never executed in the same run — it applies from the next cron run.
+# ClamAV (marker 3): "ClamAV auf diesem Server" in Einstellungen → Virenscan
+# makes the server write "clamav":"on" into the config file; every run then
+# starts the clamav container when it is not running (docker compose profile
+# "clamav" when docker-compose.yml has it, else a plain docker run with the
+# same settings) and stops it again — only when this script started it — once
+# another scanner is chosen. Result: $DATA_DIR/.clamav-state.json.
 # The marker line below is the version both sides compare; bump it whenever
 # this file changes in a way the host should pick up.
-# gc-update-sh: 2
+# gc-update-sh: 3
 #
 # Exit: 0 ok/no-op/skipped, 1 update failed (rolled back if possible),
 #       2 no compose file, 3 wrong project dir, 4 update AND rollback failed.
@@ -175,17 +181,107 @@ ensure_guacd() {
   )
 }
 
+CLAMAV_IMAGE="${GC_CLAMAV_IMAGE:-clamav/clamav:1.4}"
+CLAMAV_STATE="$DATA_DIR/.clamav-state.json"
+# Kept next to docker-compose.yml (root's), not on the /data volume: GateControl
+# can write /data, and clamd.conf decides what clamd listens on.
+CLAMAV_DIR="$COMPOSE_DIR/clamav"
+CLAMAV_MANAGED="$CLAMAV_DIR/.managed"
+CLAMAV_MIN_MEM_MB="${GC_CLAMAV_MIN_MEM_MB:-3000}"
+
+clamav_wanted() { [ -f "$CONFIG_FILE" ] && grep -q '"clamav"[[:space:]]*:[[:space:]]*"on"' "$CONFIG_FILE" 2>/dev/null; }
+clamav_exists() { docker inspect clamav >/dev/null 2>&1; }
+clamav_running() { [ "$(docker inspect -f '{{.State.Running}}' clamav 2>/dev/null || true)" = "true" ]; }
+clamav_state() { # $1=state (running|starting|failed|stopped) [$2=error code]
+  printf '{"checked_at":"%s","state":"%s","error":"%s","update_sh":%s}\n' \
+    "$(date -Iseconds)" "$(safe "$1")" "$(safe "${2:-}")" "$SELF_VERSION" | write_atomic "$CLAMAV_STATE"
+}
+clamav_in_compose() { ( cd "$COMPOSE_DIR" && docker compose --profile clamav config --services 2>/dev/null ) | grep -qx clamav; }
+
+run_clamav() {
+  # Same settings as the clamav service of docker-compose.yml, for a compose
+  # file from before it: clamd only on 127.0.0.1:3310 (host network), freshclam
+  # 12x a day, signatures in the volume clamav-db, at most 2 GB.
+  mkdir -p "$CLAMAV_DIR" || return 1
+  cat >"$CLAMAV_DIR/clamd.conf" <<'CONF' || return 1
+Foreground yes
+LogTime yes
+LocalSocket /tmp/clamd.sock
+TCPSocket 3310
+TCPAddr 127.0.0.1
+DatabaseDirectory /var/lib/clamav
+ConcurrentDatabaseReload no
+SelfCheck 3600
+StreamMaxLength 200M
+MaxFileSize 200M
+MaxScanSize 400M
+MaxRecursion 5
+MaxThreads 4
+CONF
+  chmod 644 "$CLAMAV_DIR/clamd.conf" 2>/dev/null || true
+  docker run -d --name clamav --network host --restart unless-stopped --memory 2g \
+    --log-driver json-file --log-opt max-size=10m --log-opt max-file=3 \
+    -e FRESHCLAM_CHECKS=12 -v clamav-db:/var/lib/clamav \
+    -v "$CLAMAV_DIR/clamd.conf:/etc/clamav/clamd.conf:ro" \
+    --label gatecontrol.clamav=managed "$CLAMAV_IMAGE" >>"$LOG" 2>&1
+}
+
+start_clamav() {
+  docker pull "$CLAMAV_IMAGE" >>"$LOG" 2>&1 || [ -n "$(image_id "$CLAMAV_IMAGE")" ] || return 1
+  if clamav_exists; then
+    docker start clamav >>"$LOG" 2>&1 && return 0
+    docker rm -f clamav >>"$LOG" 2>&1 || true
+  fi
+  if clamav_in_compose; then
+    ( cd "$COMPOSE_DIR" && docker compose --profile clamav up -d clamav ) >>"$LOG" 2>&1
+  else
+    run_clamav
+  fi
+}
+
+sync_clamav() {
+  # Every run: bring ClamAV in line with the choice in Einstellungen → Virenscan.
+  if clamav_wanted; then
+    if clamav_running; then clamav_state running; return 0; fi
+    # a failed start is retried every 30 minutes, not every run
+    if [ -n "$(find "$CLAMAV_STATE" -mmin -30 2>/dev/null)" ] && grep -q '"state":"failed"' "$CLAMAV_STATE" 2>/dev/null; then return 0; fi
+    local mem_kb
+    mem_kb="$(sed -n 's/^MemTotal:[[:space:]]*\([0-9][0-9]*\) kB$/\1/p' /proc/meminfo 2>/dev/null | head -n1)"
+    if [ -n "$mem_kb" ] && [ "$((mem_kb / 1024))" -lt "$CLAMAV_MIN_MEM_MB" ]; then
+      log "clamav: not started — $((mem_kb / 1024)) MB RAM, needs $CLAMAV_MIN_MEM_MB (GC_CLAMAV_MIN_MEM_MB)"
+      clamav_state failed low_memory; return 0
+    fi
+    log "clamav: starting (ClamAV auf diesem Server)"
+    if start_clamav; then
+      mkdir -p "$CLAMAV_DIR" 2>/dev/null && : >"$CLAMAV_MANAGED" 2>/dev/null || true
+      clamav_state starting
+    else
+      log "clamav: start failed"
+      clamav_state failed start_failed
+    fi
+  elif [ -f "$CLAMAV_MANAGED" ]; then
+    # only a container this script started; one started by hand stays
+    log "clamav: another scanner chosen — stopping the clamav container"
+    docker rm -f clamav >>"$LOG" 2>&1 || true
+    rm -f "$CLAMAV_MANAGED"
+    clamav_state stopped
+  fi
+}
+
 ensure_clamav() {
-  # The optional ClamAV sidecar of the virus scan (profile "clamav", see
-  # docker-compose.yml). Only when it runs: pull its pinned tag (the image
-  # line follows the 1.4 LTS series — engine fixes arrive here) and let
-  # compose recreate it when the image changed. Signatures are freshclam's
-  # job inside the container, not this script's.
-  [ "$(docker inspect -f '{{.State.Running}}' clamav 2>/dev/null || true)" = "true" ] || return 0
-  ( cd "$COMPOSE_DIR" || exit 1
-    docker pull clamav/clamav:1.4 >>"$LOG" 2>&1 || true
-    docker compose --profile clamav up -d clamav >>"$LOG" 2>&1 || true
-  )
+  # After a GateControl update: pull the pinned tag of the clamav container
+  # (the 1.4 LTS series — engine fixes arrive here) and recreate it when the
+  # image changed. Signatures are freshclam's job inside the container.
+  clamav_running || return 0
+  docker pull "$CLAMAV_IMAGE" >>"$LOG" 2>&1 || return 0
+  [ "$(docker inspect -f '{{.Image}}' clamav 2>/dev/null || true)" = "$(image_id "$CLAMAV_IMAGE")" ] && return 0
+  log "clamav: new image — recreating"
+  if [ -n "$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' clamav 2>/dev/null || true)" ]; then
+    ( cd "$COMPOSE_DIR" && docker compose --profile clamav up -d clamav ) >>"$LOG" 2>&1 || true
+  else
+    docker rm -f clamav >>"$LOG" 2>&1 || true
+    run_clamav || log "clamav: recreate failed"
+  fi
 }
 
 prune_images() {
@@ -305,6 +401,8 @@ deploy() { # $1=mode — recreate onto :latest; on health failure roll back. Exi
   log "ERROR: rollback to $prev failed too — manual intervention required (docker compose ps / logs)"
   write_state failed "$mode" "$new_id" "$new_ver"; exit 4
 }
+
+sync_clamav || true
 
 if [ "$MODE" = "manual" ]; then
   if [ ! -f "$FLAG_FILE" ]; then

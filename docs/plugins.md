@@ -789,7 +789,7 @@ module.exports = {
   async mediaAccess({ user, mediaId, owner, mime }, gc) {  // optional (`media`): may this viewer read the file?
     return false;                           // true only; no hook → the uploader only (see "Media")
   },
-  async mediaScanned({ mediaId, state, blocked, finding }, gc) {  // optional (`media`, since 1.222.0): the virus scan changed a file
+  async mediaScanned({ mediaId, state, blocked, finding }, gc) {  // optional (`media`, since 1.223.0): the virus scan changed a file
   },                                        // (see "Virus scan" under "Media")
   async service({ name, caller, user, payload }, gc) {     // optional (`services.provides`): called by another plugin
     return { ok: true };                    // JSON ≤ 16 KB (see "Services")
@@ -1613,7 +1613,7 @@ the device that uploaded the file sends one along. Code:
   Vorschaubilder der Bilder … und nimmt die Vorschaubilder der Apps für Fotos
   und Videos an, die der Server nicht lesen kann".
 
-### Virus scan (since 1.222.0)
+### Virus scan (since 1.223.0)
 
 Every stored file is checked right after it is stored (Einstellungen ›
 Sicherheit › Virenscan): `scan: { state, blocked, finding }` in upload

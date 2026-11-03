@@ -676,7 +676,9 @@ Photos, videos and audio of the own Drive uploads only get the Grundschutz. File
 
 ### ClamAV on this server
 
-`docker compose --profile clamav up -d` (or `COMPOSE_PROFILES=clamav` in `.env`) starts the optional `clamav` service of `docker-compose.yml`: host network, clamd on `127.0.0.1:3310` only, `freshclam` 12× a day, signatures in the volume `clamav-db`, `mem_limit: 2g`. `ConcurrentDatabaseReload no` keeps the peak at about 1.5 GB during a signature reload (instead of ~3 GB; scans wait for the reload). Then choose "ClamAV auf diesem Server".
+Choosing "ClamAV auf diesem Server" is enough when the host runs `update.sh` (marker 3) every 5 minutes: the server writes `"clamav":"on"` into `data/.auto-update-config.json`, and every run of `update.sh` starts the container `clamav` when it is not running — the compose profile `clamav` when `docker-compose.yml` has the service, otherwise `docker run` with the same settings and a `clamd.conf` in `<deploy dir>/clamav/` (not on the `/data` volume GateControl can write). Another scanner chosen → the container is removed again, but only one `update.sh` started (marker `<deploy dir>/clamav/.managed`); the signatures volume stays. Below 3000 MB RAM it is not started (`GC_CLAMAV_MIN_MEM_MB`); a failed start is retried every 30 minutes. `update.sh` reports to `data/.clamav-state.json` (`running|starting|failed|stopped`, `low_memory|start_failed`); the Virenscan page shows it while the scanner does not answer.
+
+By hand (no `update.sh` cron): `docker compose --profile clamav up -d` (or `COMPOSE_PROFILES=clamav` in `.env`) starts the optional `clamav` service of `docker-compose.yml`: host network, clamd on `127.0.0.1:3310` only, `freshclam` 12× a day, signatures in the volume `clamav-db`, `mem_limit: 2g`. `ConcurrentDatabaseReload no` keeps the peak at about 1.5 GB during a signature reload (instead of ~3 GB; scans wait for the reload). Then choose "ClamAV auf diesem Server".
 
 ### Security
 

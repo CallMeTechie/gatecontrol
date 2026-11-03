@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Virenscan: „ClamAV auf diesem Server“ startet ClamAV jetzt selbst. Der Server schreibt die Wahl in `data/.auto-update-config.json` (`"clamav":"on"`); `update.sh` (Version 3, lädt sich mit dem nächsten Update selbst neu) startet bei jedem Lauf den Container `clamav`, wenn er nicht läuft – über das Compose-Profil `clamav`, sonst per `docker run` mit denselben Einstellungen (clamd nur auf 127.0.0.1:3310, `clamd.conf` im Deploy-Ordner, nicht auf dem Daten-Volume) – und entfernt ihn wieder, sobald ein anderer Scanner gewählt ist (nur einen selbst gestarteten). Unter 3 GB RAM startet er nicht (`GC_CLAMAV_MIN_MEM_MB`), ein Fehlstart wird alle 30 Minuten wiederholt. Die Virenscan-Seite zeigt den Stand („wird eingerichtet“, „startet nach dem nächsten Update“, „zu wenig Arbeitsspeicher“, ohne Update-Skript den Befehl zum Starten von Hand).
+
+### Fixes
+- Virenscan: Läuft die Quarantäne einer Datei ab, erfährt das Plugin es über `mediaScanned` (`state: 'deleted'`); `GC.upload` gibt den Prüfzustand (`scan`) an Frames weiter; Plugin-Vertrag und `docs/plugins.md` nennen die richtige Version 1.223.0.
+
 ## [1.223.0] — 2026-11-03
 
 ### Features
