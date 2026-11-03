@@ -68,7 +68,7 @@ function remember(key, entry) {
 // ─── Core events ────────────────────────────────────────────────────────
 
 const NAMED_TYPES = new Set([
-  'account_locked', 'waf_ip_banned', 'peer_connected', 'peer_disconnected', 'peer_created', 'peer_deleted',
+  'account_locked', 'waf_ip_banned', 'ip_blocked_day', 'vpn_key_shared', 'vpn_new_country', 'peer_connected', 'peer_disconnected', 'peer_created', 'peer_deleted',
   'peer_expired', 'gateway_down', 'gateway_alive', 'gateway_offline', 'gateway_recovered', 'route_down',
   'route_up', 'route_created', 'route_deleted', 'resource_alert', 'resource_recovered',
   'support_bundle_uploaded', 'storage_target_unreachable', 'storage_target_recovered',
@@ -102,6 +102,8 @@ function coreContext(type, details) {
   else if (type.startsWith('resource_') && d.resource) collapseKey = `resource:${sanitize.line(d.resource, 20)}`;
   else if (['login_failed', 'login_2fa_failed', 'passkey_login_failed', 'app_signin_failed'].includes(type)) collapseKey = 'login_failed';
   else if (type === 'waf_ip_banned') collapseKey = 'waf_ban';
+  else if (type === 'ip_blocked_day' || type === 'ip_block_mass') collapseKey = 'ip_block';
+  else if ((type === 'vpn_key_shared' || type === 'vpn_new_country') && peerId) collapseKey = `vpn_misuse:${peerId}`;
   else if ((type === 'peer_connected' || type === 'peer_disconnected') && peerId) collapseKey = `peer:${peerId}`;
   else if (type === 'backup_reminder' || type === 'autobackup_failed') collapseKey = 'backup';
   else if (type.startsWith('storage_target_') && num(d.targetId)) collapseKey = `storage:${num(d.targetId)}`;
@@ -186,6 +188,15 @@ function coreFacts(lang, type, details, ctx) {
         f('duration', num(d.duration_h) ? text.t(lang, 'push.fact.hours', { count: String(num(d.duration_h)) }) : null),
       ].filter(Boolean);
     }
+    if (type === 'ip_blocked_day') {
+      return [
+        f('ip', d.ip),
+        f('hits', num(d.hits)),
+        f('duration', num(d.duration_min) ? text.t(lang, 'push.fact.hours', { count: String(Math.round(num(d.duration_min) / 60)) }) : null),
+      ].filter(Boolean);
+    }
+    if (type === 'vpn_key_shared') return [f('ip', Array.isArray(d.ips) ? d.ips.slice(0, 3).join(', ') : null)].filter(Boolean);
+    if (type === 'vpn_new_country') return [f('ip', d.ip), f('country', d.country || null)].filter(Boolean);
     if (type === 'route_down') {
       const ms = Number(d.responseTime);
       return [f('domain', d.domain), f('response_time', Number.isFinite(ms) && ms >= 0 ? `${Math.round(ms)} ms` : null)].filter(Boolean);

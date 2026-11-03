@@ -3049,6 +3049,61 @@ const migrations = [
     sql: 'ALTER TABLE plugin_logs ADD COLUMN plugin_version TEXT;',
     detect: (db) => hasColumn(db, 'plugin_logs', 'plugin_version'),
   },
+  {
+    version: 123,
+    name: 'ip_block_route_guard',
+    // Einstellungen › Sicherheit (services/ipBlock.js, routeGuard.js,
+    // vpnGuard.js): the IP block over every entry point — bans with their
+    // level (1st/2nd/3rd, 0 = by hand), the failures counted per address, the
+    // number of bans per address (the next one lasts longer); the routes an
+    // admin marked "Ist Absicht"; the endpoints and countries a VPN peer has
+    // connected from.
+    sql: `
+      CREATE TABLE IF NOT EXISTS ip_blocks (
+        ip          TEXT PRIMARY KEY,
+        manual      INTEGER NOT NULL DEFAULT 0,
+        level       INTEGER NOT NULL DEFAULT 1,
+        reason      TEXT NOT NULL,
+        detail      TEXT,
+        hits        INTEGER,
+        created_at  INTEGER NOT NULL,
+        expires_at  INTEGER,
+        created_by  INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_ip_blocks_expires ON ip_blocks(expires_at);
+      CREATE TABLE IF NOT EXISTS ip_block_failures (
+        id      INTEGER PRIMARY KEY AUTOINCREMENT,
+        ip      TEXT NOT NULL,
+        source  TEXT NOT NULL,
+        detail  TEXT,
+        at      INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ip_block_failures_ip ON ip_block_failures(ip, at);
+      CREATE INDEX IF NOT EXISTS idx_ip_block_failures_at ON ip_block_failures(at);
+      CREATE TABLE IF NOT EXISTS ip_block_strikes (
+        ip           TEXT PRIMARY KEY,
+        strikes      INTEGER NOT NULL DEFAULT 0,
+        last_ban_at  INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS route_guard_acks (
+        route_id  INTEGER PRIMARY KEY,
+        kind      TEXT NOT NULL,
+        at        INTEGER NOT NULL,
+        by_user   INTEGER,
+        FOREIGN KEY (route_id) REFERENCES routes(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS peer_endpoints_seen (
+        peer_id     INTEGER NOT NULL,
+        ip          TEXT NOT NULL,
+        country     TEXT,
+        first_seen  INTEGER NOT NULL,
+        last_seen   INTEGER NOT NULL,
+        PRIMARY KEY (peer_id, ip),
+        FOREIGN KEY (peer_id) REFERENCES peers(id) ON DELETE CASCADE
+      );`,
+    detect: (db) => tableExists(db, 'ip_blocks') && tableExists(db, 'ip_block_failures') && tableExists(db, 'ip_block_strikes')
+      && tableExists(db, 'route_guard_acks') && tableExists(db, 'peer_endpoints_seen'),
+  },
 ];
 
 module.exports = { migrations };

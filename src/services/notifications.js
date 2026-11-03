@@ -40,6 +40,11 @@ const CATALOGUE = [
     { id: 'account_locked', types: ['account_locked'] },
     { id: 'password_changed', types: ['password_changed'] },
     { id: 'waf_ip_banned', types: ['waf_ip_banned'] },
+    // IP block over every entry point (services/ipBlock.js): a ban of one
+    // day (third ban in a row) and many bans at once.
+    { id: 'ip_block', types: ['ip_blocked_day', 'ip_block_mass'] },
+    // VPN misuse (services/vpnGuard.js): one key at two places, a new country.
+    { id: 'vpn_misuse', types: ['vpn_key_shared', 'vpn_new_country'] },
   ] },
   { id: 'peers', events: [
     { id: 'peer_connection', types: ['peer_connected', 'peer_disconnected'] },

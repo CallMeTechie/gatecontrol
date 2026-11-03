@@ -155,6 +155,8 @@
   daten: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6',
   anmeldung: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
   geraete: 'M4 5h16v11H4zM2 20h20',
+  ipsperre: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM5.6 5.6l12.8 12.8',
+  routenschutz: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4M12 15v2',
   gruppen: 'M16 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0zM4 21c0-4 4-6 8-6s8 2 8 6',
   richtlinien: 'M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9',
   splittunnel: 'M6 3v12a6 6 0 0 0 6 6M18 3v6a6 6 0 0 1-6 6',
@@ -182,7 +184,7 @@
 } %}
 {% set navGroups = [
   { id: 'system', items: [['domains', ''], ['netzwerk', ''], ['daten', '']] },
-  { id: 'security', items: [['anmeldung', ''], ['geraete', 'machine_binding']] },
+  { id: 'security', items: [['anmeldung', ''], ['geraete', 'machine_binding'], ['ipsperre', ''], ['routenschutz', '']] },
   { id: 'clients', items: [['gruppen', ''], ['richtlinien', ''], ['splittunnel', 'split_tunnel_preset'], ['clientupdates', '']] },
   { id: 'notify', items: [['email', ''], ['benachrichtigungen', ''], ['webhooks', 'webhooks']] },
   { id: 'observe', items: [['monitoring', '']] },
@@ -429,6 +431,148 @@
       <li>{{ t('st.mb.clients') }}</li>
     </ul>
   </div>
+</section>
+
+{# ══ Sicherheit · IP-Sperre (services/ipBlock.js, public/js/settings-security.js) ═══ #}
+<section class="st-section"{{ secAttrs('ipsperre') }}>
+  {% set listsOn = has('ip_blocklists') %}
+  {% call pageHead('ipsperre', t('st.nav.ipsperre'), t('st.desc.ipsperre')) %}
+    <button type="button" class="pgx-btn" id="ipb-ban-open" aria-expanded="false" aria-controls="ipb-ban-add">{{ t('st.ipb.ban_by_hand') }}</button>
+  {% endcall %}
+  <div class="stx-box" data-tone="warn" id="ipb-engine" hidden>{{ t('st.ipb.engine_missing') }}</div>
+  <div class="pgx-stats stx-tiles" id="ipb-tiles">
+    <div class="pgx-card pgx-stat stx-tile" data-tone="crit"><span class="pgx-lbl">{{ t('st.ipb.tile_now') }}</span><b id="ipb-t-now">–</b><span class="pgx-stat-d" id="ipb-t-now-s"></span></div>
+    <div class="pgx-card pgx-stat stx-tile" data-tone="warn"><span class="pgx-lbl">{{ t('st.ipb.tile_failures') }}</span><b id="ipb-t-fail">–</b><span class="pgx-stat-d" id="ipb-t-fail-s"></span></div>
+    <div class="pgx-card pgx-stat stx-tile" data-tone="blue"><span class="pgx-lbl">{{ t('st.ipb.tile_lists') }}</span><b id="ipb-t-lists">–</b><span class="pgx-stat-d" id="ipb-t-lists-s">{{ t('st.ipb.tile_lists_sub') }}</span></div>
+    <div class="pgx-card pgx-stat stx-tile" data-tone="good"><span class="pgx-lbl">{{ t('st.ipb.tile_exceptions') }}</span><b id="ipb-t-ex">–</b><span class="pgx-stat-d" id="ipb-t-ex-s"></span></div>
+  </div>
+
+  <div class="pgx-cols stx-cols">
+    <div class="pgx-colm">
+    <section class="pgx-card stx-card" aria-labelledby="ipb-c-now">
+      {% call cardHead('ipb-c-now', t('st.ipb.now_title'), t('st.ipb.now_desc')) %}
+        <a class="pgx-a" href="/logs#events?range=7d&amp;level=error,warn,info&amp;source=activity&amp;q=ip_blocked">{{ t('st.ipb.in_logs') }}</a>
+      {% endcall %}
+      <form class="stx-add stx-add-grid" id="ipb-ban-add" novalidate hidden>
+        <div class="st-fl st-fl-2"><label class="st-fl-label" for="ipb-ban-ip">{{ t('st.ipb.ban_ip') }}</label><input type="text" class="st-input st-mono" id="ipb-ban-ip" maxlength="64" placeholder="203.0.113.7 · 198.51.100.0/24" autocomplete="off" spellcheck="false" aria-describedby="ipb-ban-err"></div>
+        <div class="st-fl"><label class="st-fl-label" for="ipb-ban-hours">{{ t('st.ipb.ban_for') }}</label>
+          <select class="st-select" id="ipb-ban-hours"><option value="1">{{ t('st.ipb.h1') }}</option><option value="24" selected>{{ t('st.ipb.h24') }}</option><option value="168">{{ t('st.ipb.h168') }}</option><option value="720">{{ t('st.ipb.h720') }}</option><option value="">{{ t('st.ipb.permanent') }}</option></select></div>
+        <div class="st-fl st-fl-2"><label class="st-fl-label" for="ipb-ban-note">{{ t('st.ipb.ban_note') }}</label><input type="text" class="st-input" id="ipb-ban-note" maxlength="120" placeholder="{{ t('st.optional') }}" autocomplete="off"></div>
+        <div class="stx-add-acts"><button type="button" class="pgx-btn" data-add-cancel>{{ t('common.cancel') }}</button><button type="submit" class="pgx-btn pgx-btn-pri">{{ t('st.ipb.ban_do') }}</button></div>
+        <span class="st-err st-err-block" id="ipb-ban-err" role="alert" hidden></span>
+      </form>
+      <ul class="stx-rows" id="ipb-bans" aria-labelledby="ipb-c-now" aria-live="polite"><li class="st-empty">{{ t('common.loading') }}</li></ul>
+    </section>
+    </div>
+    <aside class="pgx-aside stx-aside" aria-label="{{ t('st.ipb.never_title') }}">
+      <section class="pgx-card stx-card" aria-labelledby="ipb-c-never">
+        {% call cardHead('ipb-c-never', t('st.ipb.never_title')) %}
+          <button type="button" class="pgx-btn pgx-btn-sm" id="ipb-never-open" aria-expanded="false" aria-controls="ipb-never-add">{{ ic(IC.plus, 14) }}{{ t('st.add') }}</button>
+        {% endcall %}
+        <form class="stx-add" id="ipb-never-add" novalidate hidden>
+          <label class="st-sr" for="ipb-never-ip">{{ t('st.ipb.never_ip') }}</label>
+          <input type="text" class="st-input st-mono st-grow" id="ipb-never-ip" maxlength="64" placeholder="192.168.178.0/24" autocomplete="off" spellcheck="false" aria-describedby="ipb-never-err">
+          <label class="st-sr" for="ipb-never-label">{{ t('st.ipb.never_label') }}</label>
+          <input type="text" class="st-input st-grow" id="ipb-never-label" maxlength="60" placeholder="{{ t('st.ipb.never_label') }}" autocomplete="off">
+          <div class="stx-add-acts"><button type="button" class="pgx-btn" data-add-cancel>{{ t('common.cancel') }}</button><button type="submit" class="pgx-btn pgx-btn-pri">{{ t('st.add') }}</button></div>
+          <span class="st-err st-err-block" id="ipb-never-err" role="alert" hidden></span>
+        </form>
+        <ul class="stx-rows" id="ipb-never" aria-labelledby="ipb-c-never"></ul>
+      </section>
+      <p class="stx-box" data-tone="info"><b>{{ t('st.ipb.proxy_title') }}</b> {{ t('st.ipb.proxy') }}</p>
+    </aside>
+  </div>
+
+  <section class="pgx-card stx-card" aria-labelledby="ipb-c-when">
+    {% call cardHead('ipb-c-when', t('st.ipb.when_title'), t('st.ipb.when_desc')) %}{% endcall %}
+    {{ switchRow('ipb-enabled', 'ipb-enabled', t('st.ipb.enabled'), t('st.ipb.enabled_hint')) }}
+    <div class="st-row" data-st-row="ipb-threshold">
+      {{ rowText('ipb-threshold', t('st.ipb.threshold'), t('st.ipb.threshold_hint'), '', true) }}
+      <div class="st-row-ctl">
+        <input type="number" class="st-input st-input-num" id="ipb-threshold" data-st-field="ipb-threshold" min="3" max="1000" step="1" inputmode="numeric" autocomplete="off" aria-describedby="ipb-threshold-hint ipb-threshold-err">
+        <span class="st-unit">{{ t('st.ipb.within') }}</span>
+        <select class="st-select ipb-window" id="ipb-window" data-st-field="ipb-window" aria-label="{{ t('st.ipb.window') }}"><option value="10">{{ t('st.ipb.min10') }}</option><option value="60">{{ t('st.ipb.min60') }}</option></select>
+      </div>
+    </div>
+    <div class="st-row st-row-read">
+      <div class="st-row-text"><span class="st-label" id="ipb-dur-label">{{ t('st.ipb.duration') }}</span><span class="st-hint">{{ t('st.ipb.duration_hint') }}</span></div>
+      <div class="st-row-ctl" role="group" aria-labelledby="ipb-dur-label"><span class="ipb-chip">{{ t('st.ipb.d10') }}</span><span class="st-unit" aria-hidden="true">›</span><span class="ipb-chip">{{ t('st.ipb.d60') }}</span><span class="st-unit" aria-hidden="true">›</span><span class="ipb-chip">{{ t('st.ipb.d1440') }}</span></div>
+    </div>
+    {{ switchRow('ipb-notify', 'ipb-notify', t('st.ipb.notify'), t('st.ipb.notify_hint')) }}
+  </section>
+
+  <section class="pgx-card stx-card" aria-labelledby="ipb-c-count">
+    {% call cardHead('ipb-c-count', t('st.ipb.count_title'), t('st.ipb.count_desc')) %}{% endcall %}
+    {% for src in ['login', 'route_auth', 'share_link', 'waf', 'scan', 'rate_limit'] %}
+    {{ switchRow('ipb-src-' + src, 'ipb-src-' + src, t('st.ipb.src.' + src), t('st.ipb.src.' + src + '_hint')) }}
+    {% endfor %}
+  </section>
+
+  <section class="pgx-card stx-card" aria-labelledby="ipb-c-lists" id="ipb-lists-card">
+    {% call cardHead('ipb-c-lists', t('st.ipb.lists_title'), t('st.ipb.lists_desc'), PRO) %}
+      <button type="button" class="pgx-btn pgx-btn-sm" id="ipb-refresh"{% if not listsOn %} disabled{% endif %}>{{ t('st.ipb.refresh') }}</button>
+    {% endcall %}
+    {% if not listsOn %}{{ lockNote('ip_blocklists') }}{% endif %}
+    {% for l in ['drop', 'attackers', 'tor'] %}
+    <div class="st-row" data-st-row="ipb-list-{{ l }}">
+      {{ rowText('ipb-list-' + l, t('st.ipb.list.' + l), t('st.ipb.list.' + l + '_hint'), '', true) }}
+      <div class="st-row-ctl">
+        <button type="button" class="st-switch" role="switch" aria-checked="false" id="ipb-list-{{ l }}" data-st-field="ipb-list-{{ l }}" aria-describedby="ipb-list-{{ l }}-hint ipb-list-{{ l }}-meta ipb-list-{{ l }}-err"{% if not listsOn %} disabled{% endif %}><span class="st-knob" aria-hidden="true"></span></button>
+        <span class="st-unit st-mono ipb-list-meta" id="ipb-list-{{ l }}-meta">–</span>
+      </div>
+    </div>
+    {% endfor %}
+    <p class="stx-msg" id="ipb-lists-msg" role="status"></p>
+    <p class="stx-msg">{{ t('st.ipb.lists_sources') }}</p>
+  </section>
+</section>
+
+{# ══ Sicherheit · Routenschutz (services/routeGuard.js, vpnGuard.js) ═══ #}
+<section class="st-section"{{ secAttrs('routenschutz') }}>
+  {% call pageHead('routenschutz', t('st.nav.routenschutz'), t('st.desc.routenschutz')) %}
+    <a class="pgx-btn" href="/routes">{{ t('st.rg.to_routes') }}</a>
+  {% endcall %}
+  <div class="pgx-stats stx-tiles" id="rg-tiles">
+    <div class="pgx-card pgx-stat stx-tile" data-tone="good"><span class="pgx-lbl">{{ t('st.rg.tile_vpn') }}</span><b id="rg-t-vpn">–</b><span class="pgx-stat-d">{{ t('st.rg.tile_vpn_sub') }}</span></div>
+    <div class="pgx-card pgx-stat stx-tile" data-tone="blue"><span class="pgx-lbl">{{ t('st.rg.tile_login') }}</span><b id="rg-t-login">–</b><span class="pgx-stat-d">{{ t('st.rg.tile_login_sub') }}</span></div>
+    <div class="pgx-card pgx-stat stx-tile" data-tone="warn" id="rg-t-open-tile"><span class="pgx-lbl">{{ t('st.rg.tile_open') }}</span><b id="rg-t-open">–</b><span class="pgx-stat-d">{{ t('st.rg.tile_open_sub') }}</span></div>
+    <div class="pgx-card pgx-stat stx-tile" data-tone="violet"><span class="pgx-lbl">{{ t('st.rg.tile_waf') }}</span><b id="rg-t-waf">–</b><span class="pgx-stat-d" id="rg-t-waf-s"></span></div>
+  </div>
+
+  <section class="pgx-card stx-card stx-att-card" aria-labelledby="rg-c-att" id="rg-att-card">
+    {% call cardHead('rg-c-att', t('st.att.title')) %}<span class="stx-count" id="rg-att-n">0</span>{% endcall %}
+    <ul class="stx-rows" id="rg-att" aria-labelledby="rg-c-att" aria-live="polite"><li class="st-empty">{{ t('common.loading') }}</li></ul>
+  </section>
+
+  <section class="pgx-card stx-card" aria-labelledby="rg-c-all">
+    {% call cardHead('rg-c-all', t('st.rg.all_title'), t('st.rg.all_desc')) %}
+      <div class="st-seg stx-filter" role="group" aria-label="{{ t('st.rg.filter') }}" id="rg-filter">
+        <button type="button" class="st-seg-btn" data-value="all" aria-pressed="true">{{ t('st.rg.f_all') }} <em id="rg-f-all"></em></button>
+        <button type="button" class="st-seg-btn" data-value="open" aria-pressed="false">{{ t('st.rg.f_open') }} <em id="rg-f-open"></em></button>
+        <button type="button" class="st-seg-btn" data-value="nowaf" aria-pressed="false">{{ t('st.rg.f_nowaf') }} <em id="rg-f-nowaf"></em></button>
+      </div>
+    {% endcall %}
+    <div class="pgx-table-wrap rg-wrap" tabindex="0" role="region" aria-labelledby="rg-c-all">
+      <table class="pgx-table rg-table">
+        <thead><tr><th scope="col">{{ t('st.rg.col_route') }}</th><th scope="col">{{ t('st.rg.col_access') }}</th><th scope="col">{{ t('st.rg.col_login') }}</th><th scope="col">{{ t('st.rg.col_geo') }}</th><th scope="col">{{ t('st.rg.col_rate') }}</th><th scope="col">{{ t('st.rg.col_waf') }}</th><th scope="col"><span class="st-sr">{{ t('st.rg.col_risk') }}</span></th></tr></thead>
+        <tbody id="rg-rows"><tr><td colspan="7" class="st-empty">{{ t('common.loading') }}</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="pgx-card stx-card" aria-labelledby="rg-c-def">
+    {% call cardHead('rg-c-def', t('st.rg.def_title'), t('st.rg.def_desc')) %}{% endcall %}
+    {{ segRow('rg-access', 'rg-access', t('st.rg.access'), [['internet', t('st.rg.internet')], ['vpn', t('st.rg.vpn_only')]], t('st.rg.access_hint')) }}
+    {{ switchRow('rg-waf', 'rg-waf', t('st.rg.waf'), t('st.rg.waf_hint'), PRO, not has('waf')) }}
+    {{ selectRow('rg-countries', 'rg-countries', t('st.rg.countries'), [['all', t('st.rg.c_all')], ['de', t('st.rg.c_de')], ['dach', t('st.rg.c_dach')], ['de_eu', t('st.rg.c_de_eu')]], t('st.rg.countries_hint'), PRO, not has('ip_access_control')) }}
+    {{ numRow('rg-rate', 'rg-rate', t('st.rg.rate'), t('st.rg.rate_hint'), t('st.rg.per_minute'), 0, 100000, PRO, not has('rate_limiting')) }}
+  </section>
+  <section class="pgx-card stx-card" aria-labelledby="rg-c-vpn">
+    {% call cardHead('rg-c-vpn', t('st.rg.vpn_title'), t('st.rg.vpn_desc')) %}{% endcall %}
+    {{ selectRow('rg-two', 'rg-two', t('st.rg.two_places'), [['warn', t('st.rg.warn')], ['block', t('st.rg.block_peer')], ['off', t('st.rg.off')]], t('st.rg.two_places_hint')) }}
+    {{ selectRow('rg-country', 'rg-country', t('st.rg.new_country'), [['warn', t('st.rg.warn')], ['off', t('st.rg.off')]], t('st.rg.new_country_hint')) }}
+    <p class="stx-msg" id="rg-geo-hint" hidden>{{ t('st.rg.geo_needed') }} <a href="/settings/geoip" data-section-link="geoip">{{ t('st.nav.geoip') }}</a></p>
+  </section>
 </section>
 
 {# ══ Clients · Peer-Gruppen & Tags ════════════════════════════════════ #}
@@ -1079,5 +1223,6 @@ chmod +x update.sh</pre>
 <script src="/js/client-policy-form.js?v={{ appVersion }}"></script>
 <script src="/js/settings-ui.js?v={{ appVersion }}"></script>
 <script src="/js/settings-ai.js?v={{ appVersion }}"></script>
+<script src="/js/settings-security.js?v={{ appVersion }}"></script>
 <script src="/js/settings.js?v={{ appVersion }}"></script>
 {% endblock %}

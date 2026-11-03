@@ -1139,6 +1139,13 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   let wafBanRoute = null;
   try { wafBanRoute = require('./wafBans').banRoute({ gcHost }); } catch (err) { logger.warn({ err: err.message }, 'waf: ban route unavailable'); }
   if (wafBanRoute) serverRoutes.splice((redirectRoute ? 1 : 0) + mtlsGuards.length, 0, wafBanRoute);
+  // IP block (services/ipBlock.js): the very first route — before the
+  // redirect, the WAF, every host, the portal and the login. The matcher
+  // reads the block file itself (no reload per ban); null when the block is
+  // off or the Caddy binary has no gc_ipblock matcher.
+  let ipBlockRoute = null;
+  try { ipBlockRoute = require('./ipBlock').caddyRoute(); } catch (err) { logger.warn({ err: err.message }, 'ip block: route unavailable'); }
+  if (ipBlockRoute) serverRoutes.unshift(ipBlockRoute);
 
   if (serverRoutes.length > 0) {
     // Ownership marker — LAST route, impossible host match (never served).
@@ -1247,6 +1254,9 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
       let l4BanRanges = [];
       try { l4BanRanges = require('./wafBans').banRanges(); }
       catch (err) { logger.warn({ err: err.message }, 'waf: L4 ban list unavailable'); }
+      // …and the bans of the IP block (services/ipBlock.js; not its lists)
+      try { for (const r of require('./ipBlock').l4Ranges()) if (!l4BanRanges.includes(r)) l4BanRanges.push(r); }
+      catch (err) { logger.warn({ err: err.message }, 'ip block: L4 ranges unavailable'); }
       caddyConfig.apps.layer4 = {
         servers: buildL4Servers(activeL4Routes, INTERNAL_ONLY_RANGES, { banRanges: l4BanRanges }),
       };

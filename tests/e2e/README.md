@@ -58,6 +58,9 @@ scenarios/14-logs.js    /logs: Kennzahlen, Verlauf, Facetten mit Zählungen, Fil
                         in der Adresse, Eintrag mit „Zur selben Zeit“, Probleme,
                         Zugriffe, Export-Dialog mit Vorschau, Filter als
                         Bottom-Sheet, hell/dunkel, 390 px (GC_SERVER_LOG=on)
+scenarios/15-security-settings.js /settings/ipsperre + /settings/routenschutz: Menü,
+                        Speicherleiste mit Feldfehler, Sperren von Hand + Entsperren,
+                        „Nie sperren“, Routen-Tabelle, „Ist Absicht“, Vorgabe, hell/dunkel, 390 px
 scenarios/11-portal-start.js Portal-Start ohne Server: echtes portal.js auf einer
                         Minimalseite, Kacheln per page.route gezählt, Uhr von
                         Playwright: neue Kachel binnen einer Minute ohne Neuladen,

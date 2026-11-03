@@ -18,12 +18,14 @@ async function pollPeerStatus() {
     if (!status.running) return;
 
     const db = getDb();
+    const byKey = new Map();
 
     for (const wgPeer of status.peers) {
       const peer = db.prepare('SELECT id, name, public_key FROM peers WHERE public_key = ?')
         .get(wgPeer.publicKey);
 
       if (!peer) continue;
+      byKey.set(wgPeer.publicKey, peer);
 
       // Update transfer stats in DB
       db.prepare(`
@@ -55,6 +57,9 @@ async function pollPeerStatus() {
 
       previousState.set(wgPeer.publicKey, wgPeer.isOnline);
     }
+
+    // VPN misuse (services/vpnGuard.js): one key at two places, a new country.
+    await require('./vpnGuard').observe(status.peers, byKey);
   } catch (err) {
     logger.error({ error: err.message }, 'Peer status poll failed');
   }

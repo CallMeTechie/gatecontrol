@@ -263,6 +263,8 @@ router.post('/s/:token/unlock', publicLinkUnlockLimiter, async (req, res) => {
     res.append('Set-Cookie', links.unlockCookie(r.link, t));
     return json ? res.json({ ok: true }) : res.redirect(303, `/s/${t}`);
   }
+  // IP block (services/ipBlock.js): a wrong PIN is a failure of the address
+  try { require('../services/ipBlock').noteFailure(req.ip, 'share_link', `${r.link.plugin}: ${r.link.title || ''}`); } catch { /* best-effort */ }
   if (out.locked) return json ? res.status(410).json({ ok: false, code: 'locked' }) : page(req, res, 410, { kind: 'locked', ...head(r, req) });
   return json ? res.status(403).json({ ok: false, code: 'wrong_pin', left: out.left })
     : page(req, res, 403, { kind: 'pin', token: t, ...head(r, req), count: r.files.length, wrong: true, left: out.left });

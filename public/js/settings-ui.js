@@ -21,7 +21,7 @@
 
   // 'start' is /settings itself (the former section "Übersicht" lives on
   // there); every other section has its own address /settings/<section>.
-  const SECTIONS = ['start', 'domains', 'netzwerk', 'daten', 'anmeldung', 'geraete', 'gruppen', 'richtlinien',
+  const SECTIONS = ['start', 'domains', 'netzwerk', 'daten', 'anmeldung', 'geraete', 'ipsperre', 'routenschutz', 'gruppen', 'richtlinien',
     'splittunnel', 'clientupdates', 'email', 'benachrichtigungen', 'webhooks', 'monitoring', 'pihole', 'geoip',
     'portal', 'plugins', 'ki', 'backup', 'updates', 'lizenz', 'gefahr'];
 

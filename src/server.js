@@ -156,6 +156,11 @@ async function start() {
     try { require('./services/l4ConnGuard').start(); }
     catch (err) { logger.warn({ err: err.message }, 'layer4 connection guard start failed'); }
 
+    // IP block over every entry point (services/ipBlock.js): block file for
+    // Caddy, expiry sweep, access-log tail (404 scans, 429), daily block lists.
+    try { require('./services/ipBlock').start(); }
+    catch (err) { logger.warn({ err: err.message }, 'ip block start failed'); }
+
     // Start background tasks
     startCollector(config.intervals.trafficCollector);
     startPoller(config.intervals.peerPoller);
@@ -385,6 +390,7 @@ const shutdown = createShutdownHandler({
     () => require('./services/botBlockerCounter').stop(),
     () => require('./services/waf').stop(),
     () => require('./services/l4ConnGuard').stop(),
+    () => require('./services/ipBlock').stop(),
     () => require('./services/updateNotify').stop(),
     () => require('./services/notify').stop(),
     () => { require('./services/plugins').stop().catch(() => {}); },
