@@ -128,10 +128,13 @@ function setConfig(input) {
   if (b.unreachable !== undefined) { if (!['later', 'hold'].includes(b.unreachable)) bad('unreachable', 'later or hold'); next.unreachable = b.unreachable; }
   if (b.sources !== undefined) {
     if (!b.sources || typeof b.sources !== 'object') bad('sources', 'sources must be an object');
-    for (const [k, v] of Object.entries(b.sources)) {
-      if (!SOURCES.includes(k)) bad('sources', 'unknown source');
+    // only the known sources are written (keys from the request never become property names)
+    if (Object.keys(b.sources).some((k) => !SOURCES.includes(k))) bad('sources', 'unknown source');
+    for (const src of SOURCES) {
+      if (!Object.prototype.hasOwnProperty.call(b.sources, src)) continue;
+      const v = b.sources[src];
       if (typeof v !== 'boolean') bad('sources', 'true or false');
-      next.sources[k] = v;
+      next.sources[src] = v;
     }
   }
   if (b.action !== undefined) { if (!ACTIONS.includes(b.action)) bad('action', 'quarantine, mark or delete'); next.action = b.action; }

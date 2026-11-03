@@ -219,19 +219,22 @@ function setConfig(input, { licensed = listsLicensed() } = {}) {
   }
   if (b.sources !== undefined) {
     if (!b.sources || typeof b.sources !== 'object') throw new IpBlockError('invalid', 'sources must be an object', 400, 'sources');
-    for (const [k, v] of Object.entries(b.sources)) {
-      if (!SOURCES.includes(k)) throw new IpBlockError('invalid', `unknown source ${String(k).slice(0, 32)}`, 400, 'sources');
-      next.sources[k] = bool(v, `sources.${k}`);
+    const unknown = Object.keys(b.sources).find((k) => !SOURCES.includes(k));
+    if (unknown !== undefined) throw new IpBlockError('invalid', `unknown source ${String(unknown).slice(0, 32)}`, 400, 'sources');
+    for (const src of SOURCES) {
+      if (Object.prototype.hasOwnProperty.call(b.sources, src)) next.sources[src] = bool(b.sources[src], `sources.${src}`);
     }
   }
   const listsBefore = { ...next.lists };
   if (b.lists !== undefined) {
     if (!b.lists || typeof b.lists !== 'object') throw new IpBlockError('invalid', 'lists must be an object', 400, 'lists');
-    for (const [k, v] of Object.entries(b.lists)) {
-      if (!LISTS.includes(k)) throw new IpBlockError('invalid', `unknown list ${String(k).slice(0, 32)}`, 400, 'lists');
-      const on = bool(v, `lists.${k}`);
-      if (on && !listsBefore[k] && !licensed) throw Object.assign(new IpBlockError('license', 'block lists need a licence with ip_blocklists', 403, 'lists'), { feature: 'ip_blocklists' });
-      next.lists[k] = on;
+    const unknownList = Object.keys(b.lists).find((k) => !LISTS.includes(k));
+    if (unknownList !== undefined) throw new IpBlockError('invalid', `unknown list ${String(unknownList).slice(0, 32)}`, 400, 'lists');
+    for (const id of LISTS) {
+      if (!Object.prototype.hasOwnProperty.call(b.lists, id)) continue;
+      const on = bool(b.lists[id], `lists.${id}`);
+      if (on && !listsBefore[id] && !licensed) throw Object.assign(new IpBlockError('license', 'block lists need a licence with ip_blocklists', 403, 'lists'), { feature: 'ip_blocklists' });
+      next.lists[id] = on;
     }
   }
   settings.set(K_CONFIG, JSON.stringify(next));
