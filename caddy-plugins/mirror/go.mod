@@ -8,9 +8,9 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.6 // indirect; CVE-2026-116587
 	github.com/smallstep/certificates v0.30.2 // indirect
 	go.uber.org/zap v1.28.0
-	golang.org/x/crypto v0.57.0 // indirect; CVE-2026-56854
-	golang.org/x/net v0.60.0 // indirect; CVE-2026-46600, CVE-2026-78669
-	golang.org/x/text v0.42.0 // indirect; CVE-2026-56852
+	golang.org/x/crypto v0.58.0 // indirect; CVE-2026-56854
+	golang.org/x/net v0.62.0 // indirect; CVE-2026-46600, CVE-2026-78669, GO-2026-6860, GO-2026-6866
+	golang.org/x/text v0.43.0 // indirect; CVE-2026-56852
 	// Mindestversionen erzwingen Fixes, die der Plugin-Graph sonst nicht
 	// hereinzieht (Trivy HIGH im Caddy-Binary). MVS übernimmt sie in den
 	// xcaddy-Build.
@@ -143,9 +143,9 @@ require (
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20260929172509-b39ff6d641ec // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/term v0.46.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	google.golang.org/api v0.298.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260921155816-b14227669459 // indirect

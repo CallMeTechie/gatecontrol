@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Security
+- Caddy-Baustein (`caddy-plugins/mirror/go.mod`): `golang.org/x/net` 0.60.0 → 0.62.0 (GO-2026-6860, GO-2026-6866: HTML-Parser), dazu `x/crypto` 0.58.0, `x/text` 0.43.0, `x/sys` 0.49.0, `x/term` 0.47.0, `x/sync` 0.24.0. Die Warnung zu `x/crypto/openpgp` (GO-2026-5932, Paket ohne Wartung) betrifft GateControl nicht – es wird nicht verwendet, eine Release-Version mit dem Hinweis gibt es noch nicht.
+- npm: Override `minimatch` auf `>=11.0.1` (GHSA-g3hv-75wg-m249, über `@stryker-mutator/core`, nur Entwicklung); `npm audit` meldet 0 Lücken.
+
 ## [1.224.0] — 2026-11-03
 
 ### Features
