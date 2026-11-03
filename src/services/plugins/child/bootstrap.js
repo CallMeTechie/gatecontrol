@@ -692,6 +692,11 @@ async function handleCall(method, payload) {
       // { method, path, query, headers, user, token, body, url, originalUrl } → { status, headers, json | text | media | form }
       if (typeof plugin.publicRequest !== 'function') return { status: 404, text: 'not found' };
       return plugin.publicRequest(payload, gc);
+    case 'mediaScanned':
+      // optional (media, since 1.222.0): the virus scan changed a file after its upload answered —
+      // { mediaId, state, blocked, finding } (docs/feature-malware-scan-contract.md). Answer ignored
+      if (typeof plugin.mediaScanned === 'function') await plugin.mediaScanned(payload, gc);
+      return {};
     case 'mediaChanged':
       // optional (media.areas, since 1.204.1): files changed on a storage target were taken in —
       // { area, seq, count }; read them with gc.media.areas.changes(area, { since }). Answer ignored

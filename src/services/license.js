@@ -73,6 +73,7 @@ const COMMUNITY_FALLBACK = {
   gateway_scan_egress: false,        // Pro: LAN→Tunnel-Egress (Scan-to-Folder) + VIP-Failover
   waf: false,                        // Pro: Web Application Firewall (Coraza + OWASP CRS) per HTTP route
   ip_blocklists: false,              // Pro: IP-Sperre — Sperrlisten (Spamhaus DROP, blocklist.de, Tor-Ausgänge)
+  malware_scanning: false,           // Pro: Virenscan mit ClamAV oder eigenem Scanner (ICAP), nächtliche Nachprüfung
 };
 
 let cachedPlan = 'community';

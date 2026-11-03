@@ -68,7 +68,7 @@ function remember(key, entry) {
 // ─── Core events ────────────────────────────────────────────────────────
 
 const NAMED_TYPES = new Set([
-  'account_locked', 'waf_ip_banned', 'ip_blocked_day', 'vpn_key_shared', 'vpn_new_country', 'peer_connected', 'peer_disconnected', 'peer_created', 'peer_deleted',
+  'account_locked', 'waf_ip_banned', 'ip_blocked_day', 'vpn_key_shared', 'vpn_new_country', 'malware_found', 'peer_connected', 'peer_disconnected', 'peer_created', 'peer_deleted',
   'peer_expired', 'gateway_down', 'gateway_alive', 'gateway_offline', 'gateway_recovered', 'route_down',
   'route_up', 'route_created', 'route_deleted', 'resource_alert', 'resource_recovered',
   'support_bundle_uploaded', 'storage_target_unreachable', 'storage_target_recovered',
@@ -88,7 +88,7 @@ function num(v) {
 function coreContext(type, details) {
   const d = details && typeof details === 'object' ? details : {};
   const peerId = num(d.peerId != null ? d.peerId : d.peer_id);
-  let name = d.peer_name || d.domain || d.identifier || d.ip || d.target_label || null;
+  let name = d.peer_name || d.domain || d.identifier || d.ip || d.target_label || (type === 'malware_found' ? d.name : null) || null;
   if (!name && peerId) {
     try {
       const row = require('../../db/connection').getDb().prepare('SELECT name FROM peers WHERE id = ?').get(peerId);
@@ -197,6 +197,7 @@ function coreFacts(lang, type, details, ctx) {
     }
     if (type === 'vpn_key_shared') return [f('ip', Array.isArray(d.ips) ? d.ips.slice(0, 3).join(', ') : null)].filter(Boolean);
     if (type === 'vpn_new_country') return [f('ip', d.ip), f('country', d.country || null)].filter(Boolean);
+    if (type === 'malware_found') return [f('finding', d.finding), f('source', d.source ? text.t(lang, 'push.fact.scan_source.' + d.source) : null), f('person', d.user)].filter(Boolean);
     if (type === 'route_down') {
       const ms = Number(d.responseTime);
       return [f('domain', d.domain), f('response_time', Number.isFinite(ms) && ms >= 0 ? `${Math.round(ms)} ms` : null)].filter(Boolean);

@@ -174,7 +174,8 @@ async function list(plugin, a) {
 // ─── import ─────────────────────────────────────
 
 const MEDIA_ERRORS = { unsupported_type: 'ERR_MEDIA_TYPE', too_large: 'ERR_CLOUD_TOO_LARGE', quota_exceeded: 'ERR_MEDIA_QUOTA', empty: 'ERR_MEDIA_EMPTY',
-  server_full: 'ERR_MEDIA_QUOTA', storage_unavailable: 'ERR_BUSY', length_mismatch: 'ERR_CLOUD_PROVIDER', aborted: 'ERR_CLOUD_PROVIDER' };
+  server_full: 'ERR_MEDIA_QUOTA', storage_unavailable: 'ERR_BUSY', length_mismatch: 'ERR_CLOUD_PROVIDER', aborted: 'ERR_CLOUD_PROVIDER',
+  infected: 'ERR_MEDIA_INFECTED', scan_unavailable: 'ERR_BUSY' };
 
 function mediaFailure(media, e, timedOut) {
   if (timedOut) return new CloudError('ERR_TIMEOUT', 'the download did not finish in time');

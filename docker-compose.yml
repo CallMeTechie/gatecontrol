@@ -38,5 +38,52 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Virenscan (Einstellungen › Sicherheit › Virenscan, "ClamAV auf diesem
+  # Server"): optional, off by default — it needs about 1.5 GB RAM. Start it
+  # with `docker compose --profile clamav up -d` (or COMPOSE_PROFILES=clamav in
+  # .env); update.sh keeps it updated with GateControl. clamd listens on
+  # 127.0.0.1:3310 only (host network); freshclam inside the container fetches
+  # the signatures FRESHCLAM_CHECKS times a day (12 = every 2 hours), and
+  # GateControl asks clamd to load them (RELOAD). ConcurrentDatabaseReload no:
+  # during a signature reload clamd holds one database instead of two — the
+  # peak stays at ~1.5 GB instead of ~3 GB (scans wait for the reload).
+  clamav:
+    image: clamav/clamav:1.4
+    container_name: clamav
+    profiles: ["clamav"]
+    network_mode: host
+    environment:
+      FRESHCLAM_CHECKS: "12"
+    configs:
+      - source: clamd_conf
+        target: /etc/clamav/clamd.conf
+    volumes:
+      - clamav-db:/var/lib/clamav
+    restart: unless-stopped
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+configs:
+  clamd_conf:
+    content: |
+      Foreground yes
+      LogTime yes
+      LocalSocket /tmp/clamd.sock
+      TCPSocket 3310
+      TCPAddr 127.0.0.1
+      DatabaseDirectory /var/lib/clamav
+      ConcurrentDatabaseReload no
+      SelfCheck 3600
+      StreamMaxLength 200M
+      MaxFileSize 200M
+      MaxScanSize 400M
+      MaxRecursion 5
+      MaxThreads 4
+
 volumes:
   gatecontrol-data:
+  clamav-db:

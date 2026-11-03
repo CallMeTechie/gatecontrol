@@ -23,6 +23,7 @@ const CORE_DEFAULTS = {
   waf_ip_banned: { priority: 'high', bundle_s: 300 },
   ip_block: { priority: 'high', bundle_s: 300 },
   vpn_misuse: { priority: 'critical' },
+  malware: { priority: 'high' },
   // Every device connect/disconnect would ping every admin's phone: listed
   // in the inbox only, app push off until an admin turns it on.
   peer_connection: { priority: 'info', app: false },

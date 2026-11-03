@@ -7316,6 +7316,29 @@ button.rg-ack{border:0; cursor:pointer}
   .ipb-ip,.ipb-until{flex-basis:auto}
   .rg-acts{width:100%}
 }
+/* Sicherheit: Virenscan (settings-scan.js) */
+.scan-tabs{margin-top:-6px}
+.scan-panel{display:flex; flex-direction:column; gap:22px; min-width:0}
+.scan-panel[hidden]{display:none !important}
+.scan-tabcount{font:700 12px var(--font-mono); padding:1px 8px; border-radius:99px; background:var(--pg-crit-bg); color:var(--pg-crit)}
+.scan-ic{width:40px; height:40px; border-radius:12px; display:grid; place-items:center; flex:none; background:var(--pg-crit-bg); color:var(--pg-crit); font-weight:800}
+.stx-nm .scan-sig,.scan-detail .scan-sig{font:500 13px var(--font-mono); color:var(--pg-crit); overflow-wrap:anywhere}
+.scan-qrow[data-picked]{background:var(--pg-acc-soft)}
+.scan-qfilter{margin:0 20px 12px}
+.scan-detail{gap:12px}
+.scan-detail > .pgx-pill{align-self:flex-start}
+.scan-detail .stx-ct:focus{outline:none}
+.scan-acts{display:flex; flex-wrap:wrap; gap:8px}
+.scan-release{border-top:1px solid var(--pg-line); padding-top:10px}
+.scan-release > summary{min-height:40px; display:flex; align-items:center; cursor:pointer; font-weight:600; color:var(--pg-muted)}
+.scan-release .pgx-btn{margin-top:4px}
+.scan-copy{width:28px; height:28px; flex:none}
+.scan-detail .pgx-kv > span:last-child{display:inline-flex; align-items:center; justify-content:flex-end; gap:6px}
+button.stx-tile{border:1px solid var(--pg-line); cursor:pointer}
+@media (max-width:900px){
+  .scan-tabs{overflow-x:auto; flex-wrap:nowrap}
+  .scan-qrow .pgx-pill{display:none}
+}
 /* save bar */
 .stx .st-savebar{background:var(--pg-surface3); border:1px solid var(--pg-acc-bd); border-radius:16px; box-shadow:var(--pg-dlg-shadow)}
 .stx .st-savebar-dot{background:var(--pg-acc)}

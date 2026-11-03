@@ -167,6 +167,19 @@ function routeGuardInfo() {
   return { attention: ov.attention, total: ov.stats.total };
 }
 
+// Sicherheit: Virenscan (quarantine, scanner state; asked without network — the cached state)
+function scanInfo() {
+  const scan = require('./scan');
+  const st = scan.stats();
+  const cfg = scan.getConfig();
+  const last = scan._state.lastSig ? scan._state.lastSig.info : null;
+  return {
+    engine: scan.engineOf(cfg), quarantined: st.quarantined, pending: st.pending,
+    down: !!scan._state.down, updateAvailable: !!(last && last.updateAvailable), version: last ? last.version : null,
+    latest: last && last.latest ? last.latest.engine : null, local: cfg.engine === 'clamav_local', signaturesOld: !!(last && last.signaturesOld),
+  };
+}
+
 function aiInfo() {
   const v = require('./ai').view();
   const providers = v.providers || [];
@@ -212,6 +225,10 @@ function sectionStates(src) {
   if (src.routeGuard) {
     const open = src.routeGuard.attention.length;
     st('routenschutz', open ? 'routes_open' : 'routes_ok', open ? { n: open } : { n: src.routeGuard.total });
+  }
+  if (src.scan) {
+    if (src.scan.quarantined) st('virenscan', 'quarantined', { n: src.scan.quarantined });
+    else st('virenscan', src.scan.engine === 'none' ? 'scan_basic' : 'scan_engine_' + (src.scan.engine === 'icap' ? 'icap' : 'clamav'));
   }
   if (src.plugins) st('plugins', 'installed', { n: src.plugins.installed });
   if (src.ai) st('ki', src.ai.enabled ? 'providers' : 'ai_off', src.ai.enabled ? { n: src.ai.active } : {});
@@ -271,6 +288,14 @@ function attention(src) {
     if (ib.engineMissing) add('ipblock_engine', 'warn', 'ipsperre', '/settings/ipsperre');
   }
 
+  const sc = src.scan;
+  if (sc) {
+    if (sc.quarantined) add('scan_quarantine', 'crit', 'virenscan', '/settings/virenscan', { n: sc.quarantined });
+    if (sc.down) add('scan_down', 'crit', 'virenscan', '/settings/virenscan');
+    if (sc.signaturesOld) add('scan_signatures_old', 'warn', 'virenscan', '/settings/virenscan');
+    if (sc.updateAvailable) add(sc.local ? 'scan_update_local' : 'scan_update', 'warn', 'virenscan', '/settings/virenscan', { version: sc.version || '', latest: sc.latest || '' });
+  }
+
   const p = src.plugins;
   if (p) {
     p.problems.forEach((x) => add('plugin_' + (x.reason === 'license' ? 'license' : x.reason === 'crashed' ? 'crashed' : 'blocked'),
@@ -306,6 +331,7 @@ function build({ lang = 'de', now = Date.now() } = {}) {
     ai: tryRead('ai', aiInfo),
     ipBlock: tryRead('ipBlock', ipBlockInfo),
     routeGuard: tryRead('routeGuard', routeGuardInfo),
+    scan: tryRead('scan', scanInfo),
   };
   const att = attention(src);
   const bySection = {};

@@ -45,6 +45,8 @@ const CATALOGUE = [
     { id: 'ip_block', types: ['ip_blocked_day', 'ip_block_mass'] },
     // VPN misuse (services/vpnGuard.js): one key at two places, a new country.
     { id: 'vpn_misuse', types: ['vpn_key_shared', 'vpn_new_country'] },
+    // Virus scan (services/scan): a finding, the scanner not reachable, old signatures.
+    { id: 'malware', types: ['malware_found', 'malware_scanner_unreachable', 'malware_signatures_old'] },
   ] },
   { id: 'peers', events: [
     { id: 'peer_connection', types: ['peer_connected', 'peer_disconnected'] },

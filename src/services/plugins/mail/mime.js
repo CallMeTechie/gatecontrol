@@ -75,7 +75,8 @@ function unsubscribe(list) {
   return Object.keys(out).length ? out : null;
 }
 
-const MEDIA_CODES = { quota_exceeded: 'ERR_MEDIA_QUOTA', too_large: 'ERR_MEDIA_TOO_LARGE', no_media: 'ERR_MEDIA_DENIED', empty: 'ERR_MEDIA_EMPTY' };
+const MEDIA_CODES = { quota_exceeded: 'ERR_MEDIA_QUOTA', too_large: 'ERR_MEDIA_TOO_LARGE', no_media: 'ERR_MEDIA_DENIED', empty: 'ERR_MEDIA_EMPTY',
+  infected: 'ERR_MEDIA_INFECTED', scan_unavailable: 'ERR_BUSY' };
 
 /** iCalendar text with its folded lines joined (RFC 5545 3.1). */
 function unfold(text) {
@@ -167,7 +168,9 @@ function parse(source, { plugin, mode = 'meta', maxAttachment = null } = {}) {
           const pass = new PassThrough();
           a.content.pipe(pass);
           try {
-            const r = await media().storeHostStream(plugin, pass, { mime: entry.contentType, name: entry.filename, max: maxAttachment });
+            // the sender travels along for the virus scan's quarantine (services/scan)
+            const sender = (addresses(headers.get('from'))[0] || {}).address || null;
+            const r = await media().storeHostStream(plugin, pass, { mime: entry.contentType, name: entry.filename, max: maxAttachment, sender });
             entry.mediaId = r.mediaId;
           } catch (e) {
             a.content.unpipe(pass);

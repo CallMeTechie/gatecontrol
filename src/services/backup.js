@@ -278,6 +278,7 @@ function exportSecurity() {
   const out = {};
   try { out.ip_blocks_manual = require('./ipBlock').exportBackup(); } catch (err) { logger.warn({ err: err.message }, 'backup export: ip blocks skipped'); }
   try { out.route_guard_acks = require('./routeGuard').exportBackup(); } catch (err) { logger.warn({ err: err.message }, 'backup export: route confirmations skipped'); }
+  try { out.scan_exceptions = require('./scan').exportBackup(); } catch (err) { logger.warn({ err: err.message }, 'backup export: scan exceptions skipped'); }
   return out;
 }
 
@@ -286,6 +287,7 @@ function restoreSecurity(sec) {
   if (!sec || typeof sec !== 'object') return;
   try { require('./ipBlock').restoreBackup(sec.ip_blocks_manual); } catch (err) { logger.warn({ err: err.message }, 'backup restore: ip blocks skipped'); }
   try { require('./routeGuard').restoreBackup(sec.route_guard_acks); } catch (err) { logger.warn({ err: err.message }, 'backup restore: route confirmations skipped'); }
+  try { require('./scan').restoreBackup(sec.scan_exceptions); } catch (err) { logger.warn({ err: err.message }, 'backup restore: scan exceptions skipped'); }
 }
 
 function exportGroups(db) {
@@ -668,6 +670,8 @@ function getBackupSummary(backup) {
 // that only surface when SMTP/TOTP/RDP actually gets exercised.
 const ENCRYPTED_SETTINGS_KEYS = new Set([
   'smtp_password_encrypted',
+  // Virenscan: the abuse.ch Auth-Key of the malware list (services/scan/hashlist.js)
+  'scan.abusech_key_encrypted',
   'license_signing_key_encrypted',
   // OAuth apps of the cloud accounts (docs/cloud-accounts.md)
   'cloud.google.client_secret_encrypted',

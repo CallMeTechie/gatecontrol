@@ -669,7 +669,7 @@ async function* readRemote(r, start, end) {
   }
   if (!d.ranges || !r.nonce_prefix) {
     const local = await ensureLocal(r);
-    yield* M.readRange(local, start, end);
+    yield* M.readRangeRaw(local, start, end);
     return;
   }
   const C = M._sealed;
@@ -760,7 +760,7 @@ function sealedSource(r) {
 function plainSource(r) {
   const M = media();
   const local = { ...r, local: 1 };
-  return { length: r.bytes, open: (s, e) => Readable.from(M.readRange(local, s, e)) };
+  return { length: r.bytes, open: (s, e) => Readable.from(M.readRangeRaw(local, s, e)) };
 }
 
 /**
@@ -830,6 +830,8 @@ async function processTransfers(deadline) {
     if (Date.now() > deadline) return;
     const want = r.want == null ? null : r.want;
     if (want != null && !healthy(want)) continue;
+    // a readable copy on a target (form 'files') only of a file the virus scan let through
+    if (want != null && r.want_form === 'files' && (r.scan_blocked || r.scan_state === 'pending')) continue;
     if (r.local === 0 && r.target_id != null && !healthy(r.target_id)) continue;
     try {
       await transfer(r, want, want == null ? 'blocks' : r.want_form);

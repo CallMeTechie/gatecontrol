@@ -90,7 +90,8 @@ function ms(d) {
 }
 
 function mediaError(e) {
-  const map = { quota_exceeded: 'ERR_MEDIA_QUOTA', too_large: 'ERR_MEDIA_TOO_LARGE', no_media: 'ERR_MEDIA_DENIED', empty: 'ERR_MEDIA_EMPTY' };
+  const map = { quota_exceeded: 'ERR_MEDIA_QUOTA', too_large: 'ERR_MEDIA_TOO_LARGE', no_media: 'ERR_MEDIA_DENIED', empty: 'ERR_MEDIA_EMPTY',
+    infected: 'ERR_MEDIA_INFECTED', scan_unavailable: 'ERR_BUSY' };
   const M = require('../media');
   if (e instanceof M.MediaError) return new MailError(map[e.code] || 'ERR_INVALID', e.code);
   return null;

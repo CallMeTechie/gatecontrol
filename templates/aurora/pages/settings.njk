@@ -157,6 +157,7 @@
   geraete: 'M4 5h16v11H4zM2 20h20',
   ipsperre: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM5.6 5.6l12.8 12.8',
   routenschutz: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4M12 15v2',
+  virenscan: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM12 8v5M12 16v.5',
   gruppen: 'M16 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0zM4 21c0-4 4-6 8-6s8 2 8 6',
   richtlinien: 'M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9',
   splittunnel: 'M6 3v12a6 6 0 0 0 6 6M18 3v6a6 6 0 0 1-6 6',
@@ -184,7 +185,7 @@
 } %}
 {% set navGroups = [
   { id: 'system', items: [['domains', ''], ['netzwerk', ''], ['daten', '']] },
-  { id: 'security', items: [['anmeldung', ''], ['geraete', 'machine_binding'], ['ipsperre', ''], ['routenschutz', '']] },
+  { id: 'security', items: [['anmeldung', ''], ['geraete', 'machine_binding'], ['ipsperre', ''], ['routenschutz', ''], ['virenscan', '']] },
   { id: 'clients', items: [['gruppen', ''], ['richtlinien', ''], ['splittunnel', 'split_tunnel_preset'], ['clientupdates', '']] },
   { id: 'notify', items: [['email', ''], ['benachrichtigungen', ''], ['webhooks', 'webhooks']] },
   { id: 'observe', items: [['monitoring', '']] },
@@ -573,6 +574,121 @@
     {{ selectRow('rg-country', 'rg-country', t('st.rg.new_country'), [['warn', t('st.rg.warn')], ['off', t('st.rg.off')]], t('st.rg.new_country_hint')) }}
     <p class="stx-msg" id="rg-geo-hint" hidden>{{ t('st.rg.geo_needed') }} <a href="/settings/geoip" data-section-link="geoip">{{ t('st.nav.geoip') }}</a></p>
   </section>
+</section>
+
+{# ══ Sicherheit · Virenscan (services/scan, public/js/settings-scan.js) ═══ #}
+<section class="st-section"{{ secAttrs('virenscan') }}>
+  {% set scanOn = has('malware_scanning') %}
+  {% call pageHead('virenscan', t('st.nav.virenscan'), t('st.desc.virenscan')) %}
+    <button type="button" class="pgx-btn" id="scan-eicar">{{ t('st.scan.eicar') }}</button>
+    <button type="button" class="pgx-btn pgx-btn-pri" id="scan-refresh">{{ ic(IC.updates) }}{{ t('st.scan.refresh') }}</button>
+  {% endcall %}
+  <p class="stx-box" id="scan-msg" role="status" hidden></p>
+  <div class="pgx-tabs scan-tabs" role="tablist" aria-label="{{ t('st.nav.virenscan') }}">
+    <button type="button" class="pgx-tab" role="tab" id="scan-t-settings" aria-controls="scan-p-settings" aria-selected="true">{{ t('st.scan.tab_settings') }}</button>
+    <button type="button" class="pgx-tab" role="tab" id="scan-t-quarantine" aria-controls="scan-p-quarantine" aria-selected="false" tabindex="-1">{{ t('st.scan.tab_quarantine') }} <span class="scan-tabcount" id="scan-qcount" hidden></span></button>
+    <button type="button" class="pgx-tab" role="tab" id="scan-t-history" aria-controls="scan-p-history" aria-selected="false" tabindex="-1">{{ t('st.scan.tab_history') }}</button>
+  </div>
+
+  <div class="scan-panel" role="tabpanel" id="scan-p-settings" aria-labelledby="scan-t-settings">
+    <div class="pgx-stats stx-tiles" id="scan-tiles">
+      <div class="pgx-card pgx-stat stx-tile" data-tone="good"><span class="pgx-lbl">{{ t('st.scan.tile_checked') }}</span><b id="scan-t-checked">–</b><span class="pgx-stat-d" id="scan-t-checked-s"></span></div>
+      <button type="button" class="pgx-card pgx-stat stx-tile" data-tone="crit" id="scan-t-found-tile"><span class="pgx-lbl">{{ t('st.scan.tile_found') }}</span><b id="scan-t-found">–</b><span class="pgx-stat-d" id="scan-t-found-s"></span></button>
+      <div class="pgx-card pgx-stat stx-tile" data-tone="warn"><span class="pgx-lbl">{{ t('st.scan.tile_unscannable') }}</span><b id="scan-t-unsc">–</b><span class="pgx-stat-d" id="scan-t-unsc-s"></span></div>
+      <div class="pgx-card pgx-stat stx-tile" data-tone="blue"><span class="pgx-lbl">{{ t('st.scan.tile_signatures') }}</span><b id="scan-t-sig">–</b><span class="pgx-stat-d" id="scan-t-sig-s"></span></div>
+    </div>
+
+    <div class="pgx-cols stx-cols">
+      <div class="pgx-colm">
+        <section class="pgx-card stx-card stx-att-card" aria-labelledby="scan-c-att">
+          {% call cardHead('scan-c-att', t('st.att.title')) %}<span class="stx-count" id="scan-att-n">0</span>{% endcall %}
+          <ul class="stx-rows" id="scan-att" aria-labelledby="scan-c-att"><li class="st-empty">{{ t('common.loading') }}</li></ul>
+        </section>
+      </div>
+      <aside class="pgx-aside stx-aside" aria-label="{{ t('st.scan.updates') }}">
+        <section class="pgx-card pgx-pad stx-side-card" aria-labelledby="scan-c-upd">
+          <h3 class="stx-ct stx-ct-sm" id="scan-c-upd">{{ t('st.scan.updates') }}</h3>
+          <p class="pgx-hint">{{ t('st.scan.updates_desc') }}</p>
+          <div class="pgx-kvs" id="scan-upd"></div>
+          <p class="pgx-hint" id="scan-upd-note"></p>
+        </section>
+      </aside>
+    </div>
+
+    <section class="pgx-card stx-card" aria-labelledby="scan-c-engine">
+      {% call cardHead('scan-c-engine', t('st.scan.engine_title'), t('st.scan.engine_desc'), PRO) %}
+        <button type="button" class="pgx-btn pgx-btn-sm" id="scan-test"{% if not scanOn %} disabled{% endif %}>{{ t('st.scan.test') }}</button>
+      {% endcall %}
+      {% if not scanOn %}{{ lockNote('malware_scanning') }}{% endif %}
+      {{ selectRow('scan-engine', 'scan-engine', t('st.scan.engine'), [['none', t('st.scan.e_none')], ['clamav_local', t('st.scan.e_local')], ['clamav_net', t('st.scan.e_net')], ['icap', t('st.scan.e_icap')]], t('st.scan.engine_hint'), disabled=not scanOn) }}
+      <div data-st-show="scan-engine!=none">
+        {{ textRow('scan-address', 'scan-address', t('st.scan.address'), t('st.scan.address_hint'), placeholder='nas.home.lan:3310', mono=true, maxlength=300, disabled=not scanOn) }}
+      </div>
+      <div data-st-show="scan-engine=icap">
+        {{ textRow('scan-service', 'scan-service', t('st.scan.service'), t('st.scan.service_hint'), placeholder='avscan', mono=true, width='sm', maxlength=100, disabled=not scanOn) }}
+      </div>
+      <div data-st-show="scan-engine!=none">
+        {{ segRow('scan-unreachable', 'scan-unreachable', t('st.scan.unreachable'), [['later', t('st.scan.later')], ['hold', t('st.scan.hold')]], t('st.scan.unreachable_hint'), disabled=not scanOn) }}
+      </div>
+      <p class="stx-msg" id="scan-test-msg" role="status"></p>
+    </section>
+
+    <section class="pgx-card stx-card" aria-labelledby="scan-c-src">
+      {% call cardHead('scan-c-src', t('st.scan.src_title'), t('st.scan.src_desc')) %}{% endcall %}
+      {% for src in ['drive_link', 'drive_own', 'gatedrop', 'mail', 'messenger', 'other'] %}
+      {{ switchRow('scan-src-' + src, 'scan-src-' + src, t('st.scan.src.' + src), t('st.scan.src.' + src + '_hint')) }}
+      {% endfor %}
+      <p class="stx-msg">{{ t('st.scan.vault_note') }}</p>
+    </section>
+
+    <section class="pgx-card stx-card" aria-labelledby="scan-c-found">
+      {% call cardHead('scan-c-found', t('st.scan.found_title'), t('st.scan.found_desc')) %}{% endcall %}
+      {{ selectRow('scan-action', 'scan-action', t('st.scan.action'), [['quarantine', t('st.scan.a_quarantine')], ['mark', t('st.scan.a_mark')], ['delete', t('st.scan.a_delete')]], t('st.scan.action_hint')) }}
+      {{ segRow('scan-unscannable', 'scan-unscannable', t('st.scan.unscannable'), [['mark', t('st.scan.u_mark')], ['block', t('st.scan.u_block')]], t('st.scan.unscannable_hint')) }}
+      {{ switchRow('scan-notify', 'scan-notify', t('st.scan.notify'), t('st.scan.notify_hint')) }}
+    </section>
+
+    <section class="pgx-card stx-card" aria-labelledby="scan-c-limits">
+      {% call cardHead('scan-c-limits', t('st.scan.limits_title'), t('st.scan.limits_desc')) %}{% endcall %}
+      {{ numRow('scan-max', 'scan-max', t('st.scan.max'), t('st.scan.max_hint'), 'MB', 1, 4096) }}
+      {{ numRow('scan-depth', 'scan-depth', t('st.scan.depth'), t('st.scan.depth_hint'), t('st.scan.levels'), 1, 10) }}
+      {{ selectRow('scan-rescan', 'scan-rescan', t('st.scan.rescan'), [['nightly', t('st.scan.r_nightly')], ['weekly', t('st.scan.r_weekly')], ['off', t('st.scan.r_off')]], t('st.scan.rescan_hint'), PRO, not scanOn) }}
+      {{ selectRow('scan-sigcheck', 'scan-sigcheck', t('st.scan.sigcheck'), [['2', t('st.scan.h2')], ['6', t('st.scan.h6')], ['24', t('st.scan.h24')]], t('st.scan.sigcheck_hint')) }}
+      <div class="st-row" data-st-row="scan-key">
+        {{ rowText('scan-key', t('st.scan.key'), t('st.scan.key_hint'), '', true) }}
+        <div class="st-row-ctl">
+          <input type="password" class="st-input st-mono" id="scan-key" data-st-field="scan-key" maxlength="200" autocomplete="new-password" spellcheck="false" aria-describedby="scan-key-hint scan-key-err">
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="scan-panel" role="tabpanel" id="scan-p-quarantine" aria-labelledby="scan-t-quarantine" hidden>
+    <div class="pgx-cols stx-cols">
+      <div class="pgx-colm">
+        <section class="pgx-card stx-card" aria-labelledby="scan-c-q">
+          {% call cardHead('scan-c-q', t('st.scan.q_title'), t('st.scan.q_desc')) %}
+            <button type="button" class="pgx-btn pgx-btn-sm" id="scan-recheck-all">{{ t('st.scan.recheck_all') }}</button>
+          {% endcall %}
+          <div class="st-seg stx-filter scan-qfilter" role="group" aria-label="{{ t('st.scan.filter') }}" id="scan-qfilter"></div>
+          <ul class="stx-rows" id="scan-q" aria-labelledby="scan-c-q"><li class="st-empty">{{ t('common.loading') }}</li></ul>
+          <p class="stx-msg">{{ t('st.scan.q_more') }}</p>
+        </section>
+      </div>
+      <aside class="pgx-aside stx-aside" aria-label="{{ t('st.scan.detail') }}">
+        <section class="pgx-card pgx-pad stx-side-card scan-detail" id="scan-detail" aria-live="polite">
+          <p class="pgx-hint">{{ t('st.scan.pick') }}</p>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <div class="scan-panel" role="tabpanel" id="scan-p-history" aria-labelledby="scan-t-history" hidden>
+    <section class="pgx-card stx-card" aria-labelledby="scan-c-h">
+      {% call cardHead('scan-c-h', t('st.scan.h_title'), t('st.scan.h_desc')) %}{% endcall %}
+      <ul class="stx-rows" id="scan-history" aria-labelledby="scan-c-h"><li class="st-empty">{{ t('common.loading') }}</li></ul>
+    </section>
+  </div>
 </section>
 
 {# ══ Clients · Peer-Gruppen & Tags ════════════════════════════════════ #}
@@ -1224,5 +1340,6 @@ chmod +x update.sh</pre>
 <script src="/js/settings-ui.js?v={{ appVersion }}"></script>
 <script src="/js/settings-ai.js?v={{ appVersion }}"></script>
 <script src="/js/settings-security.js?v={{ appVersion }}"></script>
+<script src="/js/settings-scan.js?v={{ appVersion }}"></script>
 <script src="/js/settings.js?v={{ appVersion }}"></script>
 {% endblock %}

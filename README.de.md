@@ -93,6 +93,7 @@ GateControl ist eine selbstgehostete, containerisierte Verwaltungsplattform, die
 - **Manuelles Entsperren** — Gesperrte Konten direkt auf der Einstellungsseite anzeigen und entsperren
 - **IP-Sperre über alle Eingänge** — Fehlversuche bei Anmeldung, Route-Login, Passwörtern von Freigabe-Links, WAF-Treffern und 404-Suchen sperren die Adresse für 10 Min. › 1 Std. › 1 Tag; Sperren von Hand, „Nie sperren“, optionale Sperrlisten (Spamhaus DROP, blocklist.de, Tor). Durchgesetzt in Caddy vor jeder Route, ohne Neuladen
 - **Routenschutz** — Jede Route mit Zugang, Anmeldung, Ländern, Ratenlimit, WAF und Risiko; „Nur über VPN“ mit einem Klick, Vorgabe für neue Routen, Warnung bei einem VPN-Schlüssel an zwei Orten oder aus einem neuen Land
+- **Virenscan** — Jede Datei der Plugins (Drive, GateDrop, Mail-Anhänge, Messenger) wird geprüft, bevor jemand sie öffnen kann: Dateityp-Regeln und eine lokale Liste bekannter Schadsoftware immer, ClamAV (optionaler Container oder im Netz) oder ein eigener ICAP-Scanner; Quarantäne, nächtliche Nachprüfung, Stand und Updates der Signaturen
 - **Passwort-Komplexität erzwingen** — Konfigurierbare Regeln für Mindestlänge, Großbuchstaben, Zahlen und Sonderzeichen
 - Alle Sicherheitseinstellungen über die Weboberfläche verwaltbar (Einstellungen > Sicherheit)
 
@@ -298,6 +299,7 @@ Caddy provisioniert und erneuert TLS-Zertifikate automatisch über **Let's Encry
 | **Account-Lockout** | Konfigurierbarer Max-Versuche + Sperrdauer für Admin- und Route-Auth-Login. Manuelles Entsperren via UI |
 | **IP-Sperre** | Fehlversuche aller Eingänge sperren die Adresse (10 Min. › 1 Std. › 1 Tag), Sperrlisten optional; in Caddy vor jeder Route |
 | **Routenschutz** | Risiko je Route, „Nur über VPN“, Vorgabe für neue Routen, Erkennung von VPN-Missbrauch |
+| **Virenscan** | Plugin-Dateien vor dem Öffnen geprüft (Dateityp-Regeln, MalwareBazaar-Prüfsummen, ClamAV oder ICAP); Quarantäne mit Freigeben/Löschen, 423 für zurückgehaltene Dateien |
 | **Passwort-Komplexität** | Konfigurierbarer Erzwingung von Mindestlänge, Großbuchstaben, Zahlen, Sonderzeichen |
 | **CSRF-Schutz** | Synchronizer-Token-Pattern via csrf-sync; domain-gebundene HMAC-signierte Tokens für Route-Auth mit Timing-Safe-Vergleich |
 | **Rate Limiting** | 5 Login-Versuche / 15 Min, 100 API-Requests / 15 Min pro IP (konfigurierbar) |

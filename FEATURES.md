@@ -18,6 +18,7 @@ Detailed documentation for all features. For the complete feature overview, see 
 - [Account Lockout](#account-lockout)
 - [IP Block (IP-Sperre)](#ip-block-ip-sperre)
 - [Route Protection (Routenschutz)](#route-protection-routenschutz)
+- [Malware Scan (Virenscan)](#malware-scan-virenscan)
 - [Password Complexity Enforcement](#password-complexity-enforcement)
 - [Configurable Operational Timeouts](#configurable-operational-timeouts)
 - [Peer Expiry](#peer-expiry)
@@ -638,6 +639,69 @@ POST   /api/v1/settings/route-guard/routes/:id/vpn-only
 POST   /api/v1/settings/route-guard/routes/:id/ack
 DELETE /api/v1/settings/route-guard/routes/:id/ack
 ```
+
+---
+
+## Malware Scan (Virenscan)
+
+Settings › Security › Virenscan (`/settings/virenscan`, tabs Einstellungen | Quarantäne | Verlauf). Every file a plugin stores through GateControl's media store is checked **right after it is stored, before anyone can open it**: uploads of the apps, the portal and plugin frames (also resumable — Drive's photo backup), public upload links (Drive, GateDrop), mail attachments (`gc.mail`), `gc.media.fetch`, cloud imports. Hand-overs and copies keep the result of their source.
+
+### Checks
+
+| Check | Needs | What |
+|-------|-------|------|
+| Grundschutz | nothing (always on, no extra memory) | file-type rules: programs (MZ/ELF/Mach-O, scripts) disguised as another type or with a double extension ("Rechnung.pdf.exe"); from outside (links, mail, GateDrop, messenger) also plain programs and Office documents with macros (OOXML `vbaProject.bin`, OLE2 `_VBA_PROJECT`); ZIP archives by their entries, ZIP in ZIP up to the configured depth; encrypted entries or deeper nesting → not scannable; the EICAR test file |
+| Malware list | free abuse.ch Auth-Key (optional) | SHA-256 of known malware (MalwareBazaar export of recent additions, daily, kept 365 days in `scan_hashes`), compared **locally** with the checksum every file gets while it is stored — no file and no checksum leaves the server |
+| ClamAV | licence `malware_scanning` | clamd over TCP (`INSTREAM`), on this server (optional container, see below) or in the network (e.g. `nas.home.lan:3310`) |
+| Own scanner | licence `malware_scanning` | ICAP (RFC 3507, `RESPMOD` with `Allow: 204`; `X-Infection-Found`, `X-Virus-ID`, `X-Violations-Found`) — ESET, Sophos, Kaspersky, c-icap … |
+
+Photos, videos and audio of the own Drive uploads only get the Grundschutz. Files above the size limit (default 200 MB) only get the Grundschutz and count as not scannable. The Vault is end-to-end encrypted and never seen by GateControl — it is not checked.
+
+### States and enforcement
+
+`plugin_media.scan_state`: `pending` → `clean` | `infected` | `unscannable`; `unchecked` (source switched off, files from before); `scan_blocked = 1` → the file is not served: `423` with `scan_pending` (check running, `Retry-After`), `quarantined` or `scan_blocked` on every download (apps, portal, frames, capability URLs, public links — ZIPs leave such files out), and the host API refuses to send it anywhere (`ERR_MEDIA_QUARANTINED` …, hand-over). The upload waits up to 15 s for the result; a larger file stays pending and is finished in the background (plugin hook `mediaScanned`).
+
+- **On a finding** (all sources): quarantine (30 days, nobody can open it, then deleted), only mark, or delete at once (`422 infected`). Notification `malware_found` (also into the inbox of the person whose file it was), Logs & Monitoring.
+- **Not scannable** (encrypted ZIP, too large, too deep): mark or block.
+- **Scanner not reachable**: "Später prüfen" (default) — the file is accepted after the Grundschutz, served, and checked again every 5 minutes; "Uploads anhalten" — the upload is refused (`503 scan_unavailable`). Notification once per outage.
+- **Quarantine**: finding, source, sender (mail), person, size, SHA-256, "auch bekannt bei MalwareBazaar"; **Erneut prüfen**, **Löschen**, **Trotzdem freigeben** (logged in the activity log as a warning; the checksum goes on the exception list `scan_exceptions` and is never reported again; part of backups). **Verlauf**: found, not scannable, deleted, released (12 months).
+- **Nightly rescan** (licence): Drive files of the last 30 days with the newest signatures at 03:30 (nightly or Sundays).
+- Every source can be switched off: Drive – shared-link uploads, Drive – own uploads and photo backup, GateDrop, Mail – attachments, Messenger – files, other plugins (off by default).
+
+### Signatures and updates
+
+- `VERSION` of clamd gives engine, daily version and its date; the DNS TXT record `current.cvd.clamav.net` (what freshclam asks — no HTTP, no new dependency) gives the latest published engine, main, daily and bytecode versions → "Update verfügbar" and "Signaturen älter als 2 Tage" (warning once a day).
+- Signatures are fetched by freshclam inside the scanner; GateControl checks the state every 2 / 6 / 24 hours and sends `RELOAD` when a newer daily is published, so clamd picks up what freshclam downloaded. "Signaturen jetzt aktualisieren" sends `RELOAD` and fetches the malware list.
+- Engine updates: ClamAV on this server follows the `clamav/clamav:1.4` (LTS) tag — `update.sh` pulls it and recreates the container after every GateControl update; ClamAV in the network is updated there (GateControl only shows that a newer version exists).
+
+### ClamAV on this server
+
+`docker compose --profile clamav up -d` (or `COMPOSE_PROFILES=clamav` in `.env`) starts the optional `clamav` service of `docker-compose.yml`: host network, clamd on `127.0.0.1:3310` only, `freshclam` 12× a day, signatures in the volume `clamav-db`, `mem_limit: 2g`. `ConcurrentDatabaseReload no` keeps the peak at about 1.5 GB during a signature reload (instead of ~3 GB; scans wait for the reload). Then choose "ClamAV auf diesem Server".
+
+### Security
+
+- Scanner addresses must resolve to own networks only (loopback, RFC 1918, CGNAT, ULA, link-local; never 169.254.169.254); the connection goes to the checked address. `GC_SCAN_ALLOW_PUBLIC=1` allows a scanner elsewhere.
+- The file is streamed in 64 KB chunks from the sealed file to the scanner (never buffered); time limit 60 s + 1 s per MB; at most two checks at a time; the main thread only decrypts chunks; inner ZIPs are inflated asynchronously (≤ 50 MB).
+- The abuse.ch key is stored encrypted (`scan.abusech_key_encrypted`) and never shown again.
+
+### API (admin session only)
+
+```
+GET    /api/v1/settings/scan
+PUT    /api/v1/settings/scan                  { engine: none|clamav_local|clamav_net|icap, address, icap_service, unreachable: later|hold,
+                                                sources: {…}, action: quarantine|mark|delete, unscannable: mark|block, notify,
+                                                max_mb, archive_depth, rescan: nightly|weekly|off, sig_check_h: 2|6|24, abusech_key }
+POST   /api/v1/settings/scan/test             "Verbindung testen"
+POST   /api/v1/settings/scan/eicar            "Mit Testdatei prüfen" (nothing stored)
+POST   /api/v1/settings/scan/refresh          "Signaturen jetzt aktualisieren"
+POST   /api/v1/settings/scan/recheck-all
+GET    /api/v1/settings/scan/history
+POST   /api/v1/settings/scan/findings/:id/recheck
+POST   /api/v1/settings/scan/findings/:id/release
+DELETE /api/v1/settings/scan/findings/:id
+```
+
+Plugins and apps: [docs/feature-malware-scan-contract.md](docs/feature-malware-scan-contract.md). Migration 124.
 
 ---
 

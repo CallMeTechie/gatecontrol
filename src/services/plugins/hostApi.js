@@ -151,6 +151,7 @@ function mediaBodyOptions(plugin, o) {
   need(o.timeoutMs == null || Number.isFinite(o.timeoutMs), 'ERR_INVALID', 'invalid timeoutMs');
   const row = media.row(plugin.id, bm.mediaId);
   need(row, 'ERR_INVALID', 'unknown media id');
+  needServable(row);
   const headers = {};
   for (const [k, v] of Object.entries(o.headers || {})) if (!['content-range', 'content-length'].includes(k.toLowerCase())) headers[k] = v;
   const hasType = Object.keys(headers).some((k) => k.toLowerCase() === 'content-type');
@@ -921,7 +922,15 @@ function mediaId(args) {
 }
 
 const MEDIA_FETCH_TIMEOUT_DEFAULT = 30000;
-const MEDIA_ERRORS = { unsupported_type: 'ERR_MEDIA_TYPE', too_large: 'ERR_MEDIA_TOO_LARGE', quota_exceeded: 'ERR_MEDIA_QUOTA', empty: 'ERR_MEDIA_EMPTY' };
+const MEDIA_ERRORS = { unsupported_type: 'ERR_MEDIA_TYPE', too_large: 'ERR_MEDIA_TOO_LARGE', quota_exceeded: 'ERR_MEDIA_QUOTA', empty: 'ERR_MEDIA_EMPTY',
+  // virus scan (services/scan, since 1.222.0; docs/feature-malware-scan-contract.md)
+  infected: 'ERR_MEDIA_INFECTED', scan_unavailable: 'ERR_BUSY', quarantined: 'ERR_MEDIA_QUARANTINED', scan_pending: 'ERR_MEDIA_SCAN_PENDING', scan_blocked: 'ERR_MEDIA_BLOCKED' };
+
+/** A file the virus scan holds back (quarantine, check running, not scannable + blocked) is never sent anywhere. */
+function needServable(row) {
+  const g = require('../scan').gate(row);
+  if (g) throw new HostApiError(MEDIA_ERRORS[g.code], g.code);
+}
 
 /**
  * gc.media.fetch(url, { headers, timeoutMs, mime, name, maxBytes }) → { mediaId, mime, bytes, name }:
@@ -1472,6 +1481,7 @@ function uploadOptions(plugin, args) {
     row = media.row(plugin.id, file.mediaId);
   }
   need(row, 'ERR_INVALID', 'unknown media id');
+  needServable(row);
   const timeoutMs = Math.max(1000, Math.min(UPLOAD_TIMEOUT_MAX_MS, o.timeoutMs == null ? UPLOAD_TIMEOUT_DEFAULT_MS : o.timeoutMs));
   return {
     o, fields, row, timeoutMs, method: o.method || 'POST',

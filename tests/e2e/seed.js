@@ -279,6 +279,19 @@ async function main() {
   db.prepare("UPDATE support_bundles SET created_at = datetime('now', '-2 days'), viewed_at = datetime('now', '-1 days'), viewed_by = ? WHERE id = ?").run(adminRow.id, pcBundle.id);
   db.prepare("UPDATE peers SET support_bundle_requested_at = datetime('now', '-30 minutes') WHERE id = ?").run(annaLaptop);
 
+  // Virenscan (scenario virenscan): two files in quarantine — the EICAR test
+  // string as a mail attachment (with sender) and a macro document from a
+  // Drive upload link — stored through the real media store, so the scan
+  // runs as in production (Grundschutz; no scanner, no licence needed).
+  const media = require('../../src/services/plugins/media');
+  const mediaPlugin = (id) => ({ id, manifest: { media: { maxBytes: 10 * 1024 * 1024, types: ['*/*'], quotaDefault: '1GB' } } });
+  const eicar = 'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*';
+  // quietly: no activity entries / pushes that other scenarios would count
+  require('../../src/services/settings').set('scan.config', JSON.stringify({ notify: false }));
+  const q1 = await media.storeHostStream(mediaPlugin('gatecontrol-mail'), [Buffer.from(eicar)], { mime: 'application/zip', name: 'Rechnung_0311.zip', sender: 'billing@paypa1-service.com' });
+  const q2 = await media.storeBuffer(mediaPlugin('gatecontrol-gatedrop'), Buffer.from('placeholder'), { mime: 'application/vnd.ms-word.document.macroEnabled.12', name: 'invoice.docm' });
+  require('../../src/services/settings').set('scan.config', '{}');
+
   const fixtures = {
     admin: ADMIN,
     member: { ...MEMBER, id: memberId },
@@ -294,6 +307,7 @@ async function main() {
     portal: { token: portalApp, ip: '10.8.0.16', sharedIp: '10.8.0.40', pin: '1234' },
     notify: { pixel: pixelToken, laptop: laptopToken, ids: notifyIds, unread: 2 },
     support: { pixel: annaPixel, pixelBundle: pixelBundle.id, pc: livingPc, pcBundle: pcBundle.id, laptop: annaLaptop },
+    scan: { quarantined: [q1.mediaId, q2.mediaId] },
   };
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, JSON.stringify(fixtures, null, 2));
