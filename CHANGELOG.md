@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.222.0] — 2026-11-03
 
 ### Features
 - Einstellungen › Sicherheit › **IP-Sperre**: Fehlversuche über alle Eingänge zählen zusammen – Anmeldung an GateControl (Administration, Portal, App, zweiter Faktor), Route-Login, PIN-Raten an Freigabe-Links von Plugins, WAF-Treffer, Durchsuchen unbekannter Adressen (typische Suchpfade sofort, sonst zehn 404 als ein Versuch) und optional Ratenlimit-Überschreitungen. Ab der Schwelle (Standard 10 in 10 Minuten) wird die Adresse gesperrt, bei Wiederholung innerhalb von 7 Tagen länger (10 Min. › 1 Std. › 1 Tag). Sperren von Hand (IP oder CIDR, auch dauerhaft), Entsperren, „Nie sperren“ (VPN-Netz immer, eigene Netze, die eigenen Adressen der WAF); private Adressen werden nie gesperrt. Sperrlisten (Lizenzfunktion `ip_blocklists`): Spamhaus DROP, blocklist.de (Angriffe der letzten 48 Std.), Tor-Ausgänge (aus), täglich und mit „Jetzt aktualisieren“, Anzahl und Stand je Liste. Kacheln, „Gerade gesperrt“, Benachrichtigung bei Tagessperren und vielen Sperren auf einmal (neue Zeile der Benachrichtigungszentrale), Einträge in Logs & Monitoring. API `/api/v1/settings/ip-block` (nur Admin-Sitzung), Migration 123.
