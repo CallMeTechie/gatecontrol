@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.225.0] — 2026-11-04
 
 ### Features
 - Plugins: Die Verwaltung eines Plugins kann eigene Reiter unter Einstellungen › Plugins › <Plugin> bekommen. Neuer Schlüssel `ui.settingsPages` (bis zu 4 Seiten aus `ui.pages`, nicht die erste und nicht `ui.settingsPage`): Jede Seite erscheint als Reiter direkt nach „Einstellungen“ (z. B. Übersicht · Einstellungen · Ressourcen · Geteilte Postfächer · Berechtigungen · Lizenz · Protokoll) mit dem sandboxed Frame der Plugin-Seite über die volle Breite – nur für laufende Plugins und Administratoren –, mit `?tab=<Seite>`, und nicht mehr als Reiter auf der Plugin-Seite unter Integrationen; `/plugins/<id>/<Seite>` führt auf den Reiter, `GC.navigate('<Seite>')` und `GC.openSettings()` wechseln den Reiter ohne Neuladen. Fehler `ui.settingsPages: invalid` / `reserved`. Ältere GateControl-Versionen ignorieren den Schlüssel und zeigen die Seiten weiter als Reiter der Plugin-Seite.
