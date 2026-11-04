@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.225.3] — 2026-11-04
+
+### Fixes
+- Sicherung blockiert die Event-Loop nicht mehr (#400)
+
+---
+
 ## [1.225.2] — 2026-11-04
 
 ### Fixes
