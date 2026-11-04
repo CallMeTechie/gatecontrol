@@ -205,6 +205,15 @@ var DT = function (k, p) { return D.t(k, p); };
     if (copyEnvBtn)     copyEnvBtn.onclick     = function() { copyToClipboard(envEl.value); };
     if (dlEnvBtn)       dlEnvBtn.onclick       = function() { downloadAsFile(envEl.value, 'gateway.env'); };
 
+    // ── Raspberry Pi tab — fertiges Image; gateway.env kommt auf die SD-Karte
+    // (bootfs/gatecontrol/). Image- und Imager-Links stehen im Template und
+    // zeigen auf releases/latest des Gateway-Repos.
+    var rpiEnvBtn   = document.getElementById('gateway-rpi-download-env');
+    var rpiCopyBtn  = document.getElementById('gateway-rpi-copy-imager-url');
+    var rpiUrlEl    = document.getElementById('gateway-rpi-imager-url');
+    if (rpiEnvBtn)  rpiEnvBtn.onclick  = function() { downloadAsFile(envEl.value, 'gateway.env'); };
+    if (rpiCopyBtn && rpiUrlEl) rpiCopyBtn.onclick = function() { copyToClipboard(rpiUrlEl.value); };
+
     // ── Tabs ──────────────────────────────────────────────
     var tabs = document.querySelectorAll('.gw-tab');
     var panes = document.querySelectorAll('.gw-tab-pane');
