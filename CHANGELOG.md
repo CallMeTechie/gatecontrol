@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.227.0] — 2026-11-04
 
 ### Features
 - Gateways: Assistent **„Gateway hinzufügen“** auf der Gateway-Seite – Name, Standort und Plattform (Raspberry Pi, Synology NAS, Proxmox, anderer Linux-Rechner), beim Raspberry Pi Modell, LAN/WLAN, Zigbee und optional Gerätename, Zeitzone und SSH-Schlüssel. Angelegt wird über den bestehenden Peer-Endpunkt (gleiche Rechte und Lizenzprüfungen), danach Anleitung je Plattform: Pi-Image des neuesten Releases und die Einrichtungsdatei `gatecontrol-setup.zip`, die im Browser entsteht (WLAN-Passwort und SSH-Schlüssel gehen nicht an den Server); für Synology das Paket `gatecontrol-gateway-nas.zip` (Compose, gateway.env, update.sh) mit Aufgabenplaner-Befehl; für Proxmox der Einzeiler mit Kopplungscode; für Linux Compose und gateway.env. Schritt 4 zeigt live, wann sich das Gateway meldet, welche Hardware es hat (ab Gateway 1.17.0) und ob ein Zigbee-Funkmodul mit deCONZ läuft; „Im Smart Home einbinden“ legt eine interne Route zu deCONZ an und weist sie dem Smart-Home-Plugin zu. Gateways, die sich noch nie gemeldet haben, erscheinen als „wartet auf ersten Start“ mit „Einrichtung fortsetzen“. Auf der Peers-Seite ersetzt ein Hinweis den Gateway-Haken; bestehende Gateways behalten ihren Token-Dialog und bekommen „Einrichtung erneut anzeigen“. Migration 126 (`gateway_meta.platform`, `first_seen_at`). Texte DE/EN, docs/feature-gateway-wizard.md.
