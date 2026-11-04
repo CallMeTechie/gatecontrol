@@ -82,8 +82,13 @@ function isInWindow(w, now = new Date()) {
 // "ClamAV auf diesem Server" (Einstellungen → Virenscan): update.sh (marker 3)
 // starts the clamav container while "clamav":"on" is in the file and stops it
 // again (only one it started) once the field is gone. Never throws.
+// The configured scanner, not the licensed one: this file is also written at
+// boot, before the licence is loaded (Community until validateLicense), and
+// during an offline grace; reading the licence here made update.sh remove a
+// running ClamAV after every restart. Without the licence the scan simply does
+// not use it (scan.engineOf); choosing another scanner removes the container.
 function wantsLocalClamav() {
-  try { return require('./scan').engineOf() === 'clamav_local'; } catch { return false; }
+  try { return require('./scan').getConfig().engine === 'clamav_local'; } catch { return false; }
 }
 function writeConfigFile(mode, win = getWindow()) {
   const cfg = { mode };
