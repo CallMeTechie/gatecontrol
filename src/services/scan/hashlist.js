@@ -19,6 +19,11 @@ const MAX_BYTES = 32 * 1024 * 1024;
 const KEEP_DAYS = 365;
 const MIN_GAP_MS = 3600e3;
 const K_STATE = 'scan.hashlist_state';
+// parse and insert in slices, with a turn of the event loop in between: an
+// export of up to MAX_BYTES has ~ 100 000 lines — in one go a second or more
+// of a blocked main thread (plugin calls, uploads and the watchdog wait)
+const SLICE = 2000;
+const yieldLoop = () => new Promise((resolve) => setImmediate(resolve));
 const K_KEY = 'scan.abusech_key_encrypted';
 
 let _fetch = null;
@@ -47,7 +52,23 @@ function setState(patch) { settings.set(K_STATE, JSON.stringify({ ...state(), ..
 /** Pure: MalwareBazaar CSV → [{ sha256, signature, firstSeen }]. */
 function parseCsv(text) {
   const out = [];
-  for (const raw of String(text).split('\n')) {
+  parseLines(String(text).split('\n'), out);
+  return out;
+}
+
+/** parseCsv() in slices with turns of the event loop in between. */
+async function parseCsvAsync(text) {
+  const lines = String(text).split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length; i += SLICE) {
+    if (i) await yieldLoop();
+    parseLines(lines.slice(i, i + SLICE), out);
+  }
+  return out;
+}
+
+function parseLines(lines, out) {
+  for (const raw of lines) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
     const cols = [];
@@ -63,7 +84,22 @@ function parseCsv(text) {
     const t = Date.parse((cols[0] || '').replace(' ', 'T') + 'Z');
     out.push({ sha256: sha.toLowerCase(), signature: sig.slice(0, 120) || null, firstSeen: Number.isFinite(t) ? t : Date.now() });
   }
-  return out;
+}
+
+/** INSERT OR IGNORE the rows, one transaction per SLICE rows. → rows added. */
+async function insertRows(rows) {
+  const ins = db().prepare('INSERT OR IGNORE INTO scan_hashes (sha256, signature, first_seen) VALUES (?, ?, ?)');
+  const batch = db().transaction((part) => {
+    let n = 0;
+    for (const r of part) n += ins.run(r.sha256, r.signature, r.firstSeen).changes;
+    return n;
+  });
+  let added = 0;
+  for (let i = 0; i < rows.length; i += SLICE) {
+    if (i) await yieldLoop();
+    added += batch(rows.slice(i, i + SLICE));
+  }
+  return added;
 }
 
 async function download(url) {
@@ -85,18 +121,20 @@ async function download(url) {
 }
 
 /** Download the recent additions and merge them. → { ok, added?, total?, error?, skipped? } */
-async function refresh({ force = false } = {}) {
+function refresh(opts) {
+  return require('../../utils/loopStall').withTask('scan.hashlist', () => refreshNow(opts));
+}
+
+async function refreshNow({ force = false } = {}) {
   const key = getKey();
   if (!key) return { ok: false, error: 'no_key' };
   const st = state();
   if (!force && st.tried_at && Date.now() - st.tried_at < MIN_GAP_MS) return { ok: true, skipped: true, total: count() };
   setState({ tried_at: Date.now() });
   try {
-    const rows = parseCsv(await download(EXPORT_URL(key)));
+    const rows = await parseCsvAsync(await download(EXPORT_URL(key)));
     if (!rows.length) throw new Error('empty export');
-    const ins = db().prepare('INSERT OR IGNORE INTO scan_hashes (sha256, signature, first_seen) VALUES (?, ?, ?)');
-    let added = 0;
-    db().transaction(() => { for (const r of rows) added += ins.run(r.sha256, r.signature, r.firstSeen).changes; })();
+    const added = await insertRows(rows);
     db().prepare('DELETE FROM scan_hashes WHERE first_seen < ?').run(Date.now() - KEEP_DAYS * 86400e3);
     setState({ updated_at: Date.now(), error: null });
     return { ok: true, added, total: count() };
@@ -126,4 +164,4 @@ function info() {
 
 function _setFetchForTest(f) { _fetch = f; }
 
-module.exports = { parseCsv, refresh, lookup, info, setKey, getKey, count, EXPORT_URL, K_KEY, _setFetchForTest };
+module.exports = { parseCsv, parseCsvAsync, insertRows, refresh, lookup, info, setKey, getKey, count, EXPORT_URL, K_KEY, _setFetchForTest };

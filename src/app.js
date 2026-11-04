@@ -189,9 +189,10 @@ function createApp() {
 
   // ─── Error handler ───────────────────────────────
   app.use((err, req, res, _next) => {
-    logger.error({ err, path: req.path }, 'Unhandled error');
-
     if (err.code === 'EBADCSRFTOKEN') {
+      // a form left open past its session (the login page of yesterday): an
+      // expected answer, not a fault of the server — a short warning, no stack
+      logger.warn({ path: req.path, method: req.method }, 'invalid csrf token');
       if (req.path.startsWith('/api/')) {
         return res.status(403).json({ error: 'Invalid CSRF token' });
       }
@@ -200,6 +201,8 @@ function createApp() {
         message: 'Invalid security token. Please refresh and try again.',
       });
     }
+
+    logger.error({ err, path: req.path }, 'Unhandled error');
 
     // Body parser rejections are client errors, not server errors.
     if (err.type === 'entity.parse.failed' && req.path.startsWith('/api/')) {

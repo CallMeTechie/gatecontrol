@@ -184,10 +184,19 @@ function normalise(e, raw) {
   };
 }
 
-function parseInto(text, out) {
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    try { out.push(normalise(JSON.parse(line), line)); } catch { /* skip malformed lines */ }
+/**
+ * Lines of access.log into `out`, in slices with a turn of the event loop in
+ * between: the first read after a start takes the whole file (up to the roll
+ * size, 10 MB — tens of thousands of lines).
+ */
+async function parseIntoAsync(text, out, slice = 2000) {
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i += slice) {
+    if (i) await new Promise((resolve) => setImmediate(resolve));
+    for (const line of lines.slice(i, i + slice)) {
+      if (!line.trim()) continue;
+      try { out.push(normalise(JSON.parse(line), line)); } catch { /* skip malformed lines */ }
+    }
   }
 }
 
@@ -208,7 +217,7 @@ async function entries() {
       const partial = cut === -1 ? text : text.slice(cut + 1);
       text = cut === -1 ? '' : text.slice(0, cut);
       const next = cache.entries.slice();
-      parseInto(text, next);
+      await parseIntoAsync(text, next);
       cache = { ino: st.ino, size: cache.size + bytesRead, entries: next, partial };
     }
   } finally {

@@ -237,7 +237,7 @@ describe('targets CRUD + validation', () => {
       // Upload after an automatic backup (keep = 2) → the two oldest own archives go.
       const autobackup = require('../src/services/autobackup');
       await new Promise((r) => setTimeout(r, 1100)); // distinct timestamp in the file name
-      const filename = autobackup.runBackup({ offsite: false });
+      const filename = await autobackup.runBackup({ offsite: false });
       const r2 = await require('../src/services/offsite').uploadAfterBackup(path.join(autobackup.BACKUP_DIR, filename));
       assert.deepEqual(r2, { uploaded: 1, failed: 0, skipped: null });
       res = await getAgent().get(`${API}/targets/${davId}/files`);
@@ -250,7 +250,7 @@ describe('targets CRUD + validation', () => {
     it('runBackup() triggers the upload hook by itself', async () => {
       const before = dav.files.size;
       await new Promise((r) => setTimeout(r, 1100));
-      require('../src/services/autobackup').runBackup();
+      await require('../src/services/autobackup').runBackup();
       for (let i = 0; i < 50 && events.filter((e) => e.status === 'ok').length < 3; i++) await new Promise((r) => setTimeout(r, 100));
       assert.ok(events.filter((e) => e.target_id === davId && e.status === 'ok').length >= 3);
       assert.ok(dav.files.size >= before);

@@ -196,6 +196,68 @@ test('block lists: parse, licence gate, fake download, kept on failure', async (
   license._overrideForTest({ ip_blocklists: false });
 });
 
+test('block lists: a ban does not rebuild the list sets (seconds per ban with a large list)', async () => {
+  license._overrideForTest({ ip_blocklists: true });
+  const many = Array.from({ length: 6000 }, (_, i) => `45.${150 + (i >> 16)}.${(i >> 8) & 255}.${i & 255}`);
+  const fetch = fakeFetch({
+    'https://www.spamhaus.org/drop/drop_v4.json': '{"cidr":"1.10.16.0/20"}\n',
+    'https://www.spamhaus.org/drop/drop_v6.json': '{"cidr":"2a06:e480::/29"}\n',
+    'https://lists.blocklist.de/lists/all.txt': many.join('\n') + '\n2a0b:4140::7\n',
+  });
+  ipBlock._resetForTest({ fetch, blockFile: ipBlock.blockFile(), dataDir: path.join(tmp, 'lists'), engine: true });
+  try {
+    await listsAndBans(many);
+  } finally { license._overrideForTest({ ip_blocklists: false }); }
+});
+
+async function listsAndBans(many) {
+  ipBlock.setConfig({ lists: { drop: true, attackers: true }, threshold: 3 });
+  // parsed in slices: the same entries as in one go
+  const text = many.join('\n');
+  assert.deepEqual(await ipBlock.parseListAsync('lines', text), ipBlock.parseList('lines', text));
+  await ipBlock.refreshLists({ force: true });
+  const sets = new Map(ipBlock._state.listed);
+  assert.deepEqual(ipBlock.check('45.150.23.100'), { by: 'attackers' });
+  assert.deepEqual(ipBlock.check('2a0b:4140::7'), { by: 'attackers' });
+  assert.deepEqual(ipBlock.check('1.10.31.255'), { by: 'drop' });
+  assert.equal(ipBlock.check('1.10.32.0'), null);
+  for (let i = 1; i <= 3; i++) {
+    ipBlock.noteFailure(`91.200.12.${i}`, 'login', 'x');
+    ipBlock.noteFailure(`91.200.12.${i}`, 'login', 'x');
+    assert.equal(ipBlock.noteFailure(`91.200.12.${i}`, 'login', 'x'), true);
+  }
+  ipBlock.sweep(Date.now() + 86400e3);
+  for (const [id, set] of sets) assert.equal(ipBlock._state.listed.get(id), set, `${id}: the same set after bans and expiries`);
+  // a restart reads the list files again (fast path for IPv4 CIDR texts) — same answers
+  ipBlock._state.listEntries.clear();
+  ipBlock._state.listSets.clear();
+  ipBlock.rebuild();
+  assert.notEqual(ipBlock._state.listed.get('attackers'), sets.get('attackers'));
+  assert.deepEqual(ipBlock.check('45.150.23.100'), { by: 'attackers' });
+  assert.deepEqual(ipBlock.check('2a0b:4140::7'), { by: 'attackers' });
+  assert.deepEqual(ipBlock.check('1.10.16.1'), { by: 'drop' });
+  assert.equal(ipBlock.check('45.151.0.1'), null);
+  // the block file still carries every list entry
+  ipBlock.writeNow();
+  const file = fs.readFileSync(ipBlock.blockFile(), 'utf8');
+  assert.ok(file.includes('\n45.150.23.100/32\n') && file.includes('1.10.16.0/20') && file.includes('2a0b:4140::7/128'));
+}
+
+test('PrefixSet.addText: the IPv4 fast path matches the full parser', () => {
+  const a = new ipBlock.PrefixSet();
+  const b = new ipBlock.PrefixSet();
+  // leading zeros are no canonical text: they take the full parser, like everything that is not a.b.c.d/n
+  for (const t of ['1.10.16.0/20', '45.155.205.99/32', '8.8.8.8/32', '2a06:e480::/29', '0.0.0.0/0', '010.1.1.1/32']) {
+    assert.equal(a.addText(t), true);
+    b.add(require('../src/services/wafBans').parseAddress(t));
+  }
+  assert.equal(a.addText('bad'), false);
+  assert.equal(a.size, b.size);
+  assert.deepEqual([...a.v4.keys()].sort(), [...b.v4.keys()].sort());
+  for (const [bits, set] of b.v4) assert.deepEqual([...a.v4.get(bits)].sort(), [...set].sort());
+  assert.deepEqual([...a.v6.keys()], [...b.v6.keys()]);
+});
+
 test('access log: probe paths, other 404s in tens, 429 only when switched on, blocked hits counted', () => {
   ipBlock.setConfig({ threshold: 3 });
   const line = (ip, status, uri, extra = {}) => JSON.stringify({ status, request: { client_ip: ip, host: 'a.example.de', uri }, ...extra });

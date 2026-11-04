@@ -127,16 +127,37 @@ class PrefixSet {
   add(p) {
     if (!p) return;
     if (p.kind === 'ipv4') {
-      const bits = p.prefix;
-      const n = v4num(p.addr) & mask32(bits);
-      if (!this.v4.has(bits)) this.v4.set(bits, new Set());
-      this.v4.get(bits).add(n >>> 0);
+      this.addV4(v4num(p.addr), p.prefix);
     } else {
       const bits = p.prefix;
       if (!this.v6.has(bits)) this.v6.set(bits, new Set());
       this.v6.get(bits).add(v6key(p.addr, bits));
     }
     this.size++;
+  }
+
+  /** IPv4 network as number + prefix length (the fast path of the block lists). */
+  addV4(num, bits) {
+    if (!this.v4.has(bits)) this.v4.set(bits, new Set());
+    this.v4.get(bits).add((num & mask32(bits)) >>> 0);
+  }
+
+  /** One entry of a block list (canonical CIDR text as written by parseList). → added? */
+  addText(text) {
+    const m = V4_CIDR_RE.exec(text);
+    if (m) {
+      const o = [m[1], m[2], m[3], m[4]].map(Number);
+      const bits = Number(m[5]);
+      if (o.every((x) => x <= 255) && bits <= 32) {
+        this.addV4(((o[0] << 24) | (o[1] << 16) | (o[2] << 8) | o[3]) >>> 0, bits);
+        this.size++;
+        return true;
+      }
+    }
+    const p = parseAddress(text);
+    if (!p) return false;
+    this.add(p);
+    return true;
   }
 
   has(addr) {
@@ -150,6 +171,12 @@ class PrefixSet {
     return false;
   }
 }
+
+const V4_CIDR_RE = /^(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\/(\d{1,2})$/;
+// block lists are parsed and built in slices of this many lines, with a turn
+// of the event loop in between (a list has up to LIST_MAX_ENTRIES lines)
+const SLICE = 2000;
+const yieldLoop = () => new Promise((resolve) => setImmediate(resolve));
 
 function v4num(a) { const b = a.octets; return ((b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3]) >>> 0; }
 function mask32(bits) { return bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0; }
@@ -317,6 +344,10 @@ const _state = {
   banned: new PrefixSet(),
   listed: new Map(), // list id → PrefixSet
   listEntries: new Map(), // list id → [cidr text]
+  listSets: new Map(), // list id → { entries, set } — the set built from exactly that array
+  listText: new Map(), // list id → { entries, text } — its lines for the block file
+  writing: false,
+  writeAgain: false,
   writeTimer: null,
   sweepTimer: null,
   tailTimer: null,
@@ -342,22 +373,49 @@ function activeBans(at = now()) {
   return db().prepare('SELECT * FROM ip_blocks WHERE expires_at IS NULL OR expires_at > ? ORDER BY created_at DESC').all(at);
 }
 
-/** Rebuild the in-memory sets and (debounced) the file Caddy reads. */
-function rebuild() {
-  try {
-    const cfg = getConfig();
-    _state.exempt = buildSet(exceptions().map((e) => parseAddress(e.ip)).filter(Boolean));
-    _state.banned = cfg.enabled ? buildSet(activeBans().map((b) => parseAddress(b.ip)).filter(Boolean)) : new PrefixSet();
-    const licensed = listsLicensed();
-    for (const id of LISTS) {
-      if (!(cfg.enabled && licensed && cfg.lists[id])) { _state.listed.delete(id); continue; }
-      if (!_state.listEntries.has(id)) loadListFile(id);
-      const entries = _state.listEntries.get(id) || [];
-      _state.listed.set(id, buildSet(entries.map(parseAddress).filter(Boolean)));
-    }
-  } catch (err) {
-    logger.warn({ err: err.message }, 'ip block: rebuild failed');
+/** The set of a block list's entries — built once per list content (a ban never rebuilds it). */
+function listSet(id) {
+  const entries = _state.listEntries.get(id) || [];
+  const c = _state.listSets.get(id);
+  if (c && c.entries === entries) return c.set;
+  const set = new PrefixSet();
+  for (const e of entries) set.addText(e);
+  _state.listSets.set(id, { entries, set });
+  return set;
+}
+
+/** listSet() in slices with turns of the event loop in between (after a download). */
+async function buildListSet(entries) {
+  const set = new PrefixSet();
+  for (let i = 0; i < entries.length; i += SLICE) {
+    if (i) await yieldLoop();
+    for (const e of entries.slice(i, i + SLICE)) set.addText(e);
   }
+  return { entries, set };
+}
+
+/**
+ * Rebuild the in-memory sets and (debounced) the file Caddy reads. Bans and
+ * exceptions are read again; the block lists keep their sets until their
+ * content changes (a list has up to 200 000 entries — rebuilding them on
+ * every ban blocked the server for seconds per ban).
+ */
+function rebuild() {
+  require('../utils/loopStall').withTask('ipblock.rebuild', () => {
+    try {
+      const cfg = getConfig();
+      _state.exempt = buildSet(exceptions().map((e) => parseAddress(e.ip)).filter(Boolean));
+      _state.banned = cfg.enabled ? buildSet(activeBans().map((b) => parseAddress(b.ip)).filter(Boolean)) : new PrefixSet();
+      const licensed = listsLicensed();
+      for (const id of LISTS) {
+        if (!(cfg.enabled && licensed && cfg.lists[id])) { _state.listed.delete(id); continue; }
+        if (!_state.listEntries.has(id)) loadListFile(id);
+        _state.listed.set(id, listSet(id));
+      }
+    } catch (err) {
+      logger.warn({ err: err.message }, 'ip block: rebuild failed');
+    }
+  });
   scheduleWrite();
 }
 
@@ -395,10 +453,21 @@ function fileContent() {
     for (const id of LISTS) {
       if (!licensed || !cfg.lists[id]) continue;
       lines.push(`# list ${id}`);
-      for (const c of _state.listEntries.get(id) || []) lines.push(c);
+      const text = listText(id);
+      if (text) lines.push(text);
     }
   }
   return lines.join('\n') + '\n';
+}
+
+/** The lines of a block list for the file, joined once per list content. */
+function listText(id) {
+  const entries = _state.listEntries.get(id) || [];
+  const c = _state.listText.get(id);
+  if (c && c.entries === entries) return c.text;
+  const text = entries.join('\n');
+  _state.listText.set(id, { entries, text });
+  return text;
 }
 
 function writeNow() {
@@ -413,9 +482,30 @@ function writeNow() {
   }
 }
 
+/** writeNow() without synchronous file I/O (the debounced writes after a change); one at a time. */
+async function writeLater() {
+  if (_state.writing) { _state.writeAgain = true; return; }
+  _state.writing = true;
+  const file = blockFile();
+  try {
+    do {
+      _state.writeAgain = false;
+      const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
+      try {
+        await fs.promises.mkdir(path.dirname(file), { recursive: true });
+        await fs.promises.writeFile(tmp, fileContent(), { mode: 0o644 });
+        await fs.promises.rename(tmp, file);
+      } catch (err) {
+        fs.promises.rm(tmp, { force: true }).catch(() => {});
+        logger.warn({ err: err.message, file }, 'ip block: cannot write the block file');
+      }
+    } while (_state.writeAgain);
+  } finally { _state.writing = false; }
+}
+
 function scheduleWrite() {
   if (_state.writeTimer) return;
-  _state.writeTimer = setTimeout(() => { _state.writeTimer = null; writeNow(); }, _state.testMode ? 0 : 500);
+  _state.writeTimer = setTimeout(() => { _state.writeTimer = null; writeLater(); }, _state.testMode ? 0 : 500);
   if (_state.writeTimer.unref) _state.writeTimer.unref();
 }
 
@@ -691,16 +781,15 @@ function setListState(id, patch) {
   settings.set(K_LISTS, JSON.stringify(s));
 }
 
-/** Entries of one downloaded text → canonical CIDR texts (public ranges only, no duplicates). */
-function parseList(format, text) {
-  const out = new Set();
+/** Lines of a downloaded list into `out` (Set of canonical CIDR texts; public ranges only). */
+function parseLines(format, lines, out) {
   const add = (v) => {
     const p = parseAddress(v);
     if (!p || p.addr.range() !== 'unicast') return;
     if (!p.single && p.prefix < (p.kind === 'ipv4' ? 8 : 16)) return;
     if (out.size < LIST_MAX_ENTRIES) out.add(cidrText(p));
   };
-  for (const raw of String(text).split('\n')) {
+  for (const raw of lines) {
     const line = raw.trim();
     if (!line || line.startsWith('#') || line.startsWith(';')) continue;
     if (format === 'drop-json') {
@@ -710,6 +799,23 @@ function parseList(format, text) {
     } else {
       add(line.split(/[\s;,#]/)[0]);
     }
+  }
+}
+
+/** Entries of one downloaded text → canonical CIDR texts (public ranges only, no duplicates). */
+function parseList(format, text) {
+  const out = new Set();
+  parseLines(format, String(text).split('\n'), out);
+  return [...out];
+}
+
+/** parseList() in slices with turns of the event loop in between (a list has up to 8 MB). */
+async function parseListAsync(format, text) {
+  const lines = String(text).split('\n');
+  const out = new Set();
+  for (let i = 0; i < lines.length; i += SLICE) {
+    if (i) await yieldLoop();
+    parseLines(format, lines.slice(i, i + SLICE), out);
   }
   return [...out];
 }
@@ -752,13 +858,15 @@ async function refreshLists({ only = null, force = false } = {}) {
       const src = LIST_SOURCES[id];
       const texts = [];
       for (const u of src.urls) texts.push(await download(u));
-      const entries = parseList(src.format, texts.join('\n'));
+      const entries = await parseListAsync(src.format, texts.join('\n'));
       if (entries.length === 0) throw new Error('empty list');
-      fs.mkdirSync(dataDir(), { recursive: true });
+      await fs.promises.mkdir(dataDir(), { recursive: true });
       const tmp = listFile(id) + '.tmp';
       const head = id === 'drop' ? '# Spamhaus DROP — (c) The Spamhaus Project, https://www.spamhaus.org/drop/\n' : `# ${src.urls.join(' ')}\n`;
-      fs.writeFileSync(tmp, head + `# fetched ${new Date().toISOString()}\n` + entries.join('\n') + '\n');
-      fs.renameSync(tmp, listFile(id));
+      await fs.promises.writeFile(tmp, head + `# fetched ${new Date().toISOString()}\n` + entries.join('\n') + '\n');
+      await fs.promises.rename(tmp, listFile(id));
+      // the set is built here in slices; rebuild() below only takes it
+      _state.listSets.set(id, await buildListSet(entries));
       _state.listEntries.set(id, entries);
       setListState(id, { count: entries.length, updated_at: now(), error: null });
       out[id] = { ok: true, count: entries.length };
@@ -832,7 +940,7 @@ async function tailTick() {
   }
   try {
     const lines = await _state.tail.readNewLines();
-    if (lines.length) noteAccessLines(lines);
+    if (lines.length) require('../utils/loopStall').withTask('ipblock.accessLog', () => noteAccessLines(lines));
   } catch (err) { logger.debug({ err: err.message }, 'ip block: access log not read'); }
 }
 
@@ -919,7 +1027,7 @@ function start() {
   writeNow();
   setImmediate(() => { try { engineAvailable(); } catch { /* logged */ } });
   if (!_state.sweepTimer) {
-    _state.sweepTimer = setInterval(() => sweep(), SWEEP_MS);
+    _state.sweepTimer = setInterval(() => require('../utils/loopStall').withTask('ipblock.sweep', () => sweep()), SWEEP_MS);
     if (_state.sweepTimer.unref) _state.sweepTimer.unref();
   }
   if (!_state.tailTimer) {
@@ -931,7 +1039,7 @@ function start() {
       const ls = listsState();
       const cfg = getConfig();
       const stale = LISTS.filter((id) => cfg.lists[id] && (!ls[id] || !ls[id].updated_at || now() - ls[id].updated_at > LIST_REFRESH_MS));
-      if (stale.length) refreshLists({ only: stale }).catch(() => {});
+      if (stale.length) require('../utils/loopStall').withTask('ipblock.lists', () => refreshLists({ only: stale })).catch(() => {});
     };
     _state.listTimer = setInterval(due, 3600e3);
     if (_state.listTimer.unref) _state.listTimer.unref();
@@ -951,6 +1059,8 @@ function _resetForTest({ fetch = null, blockFile: bf = null, dataDir: dd = null,
   _state.dataDir = dd;
   _state.engine = engine;
   _state.listEntries.clear();
+  _state.listSets.clear();
+  _state.listText.clear();
   _state.listed.clear();
   _state.scan404.clear();
   _state.massNotified = 0;
@@ -962,7 +1072,7 @@ module.exports = {
   SOURCES, LISTS, DURATIONS_MIN, MANUAL_HOURS, LIST_SOURCES, PROBE_RE, IpBlockError,
   getConfig, setConfig, getNever, addNever, removeNever, exceptions,
   noteFailure, banManual, unban, listBans, check, isExempt, exportBackup, restoreBackup,
-  refreshLists, parseList, noteAccessLines, sweep, stats, view,
+  refreshLists, parseList, parseListAsync, noteAccessLines, sweep, stats, view,
   caddyRoute, l4Ranges, blockFile, fileContent, writeNow, engineAvailable,
   middleware, start, stop, rebuild, PrefixSet, _resetForTest, _state,
 };
