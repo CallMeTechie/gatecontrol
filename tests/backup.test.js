@@ -44,7 +44,7 @@ describe('backup service', () => {
     db.prepare('DELETE FROM webhooks').run();
   }
 
-  it('creates a backup with correct structure', () => {
+  it('creates a backup with correct structure', async () => {
     clearData();
     const db = getDb();
     db.prepare("INSERT INTO peers (name, public_key, private_key_encrypted, preshared_key_encrypted, allowed_ips, enabled) VALUES (?, ?, ?, ?, ?, 1)")
@@ -53,7 +53,7 @@ describe('backup service', () => {
     db.prepare("INSERT INTO webhooks (url, events, description, enabled) VALUES (?, ?, ?, 1)")
       .run('https://example.com/hook', '*', 'Test hook');
 
-    const result = backup.createBackup();
+    const result = await backup.createBackup();
 
     assert.equal(result.version, 5);
     assert.ok(result.created_at);
@@ -131,7 +131,7 @@ describe('backup service', () => {
       .run('https://hooks.example.com', '*', 'My hook');
 
     // Create backup
-    const backupData = backup.createBackup();
+    const backupData = await backup.createBackup();
 
     // Clear everything
     clearData();
@@ -186,7 +186,7 @@ describe('backup service', () => {
       "VALUES (NULL, '10.8.0.5', 22, 'l4', 'tcp', '2022', 'none', ?, 1)"
     ).run(bundleId);
 
-    const data = backup.createBackup();
+    const data = await backup.createBackup();
     assert.equal(data.data.service_bundles.length, 1);
     assert.equal(data.data.service_bundles[0].bundle_ref, bundleId);
 
@@ -202,7 +202,7 @@ describe('backup service', () => {
     clearData();
     const db = getDb();
     db.prepare('DELETE FROM service_bundles').run();
-    const data = backup.createBackup();
+    const data = await backup.createBackup();
     delete data.data.service_bundles;
     await backup.restoreBackup(data);
     assert.equal(db.prepare('SELECT COUNT(*) c FROM service_bundles').get().c, 0);
@@ -227,7 +227,7 @@ describe('backup service', () => {
     db.prepare("INSERT INTO skoda_vehicles (id, account_id, vin, image) VALUES (7, 1, 'TMB1', ?)").run(png);
     db.prepare('INSERT INTO skoda_vehicle_owners (skoda_vehicle_id, user_id) VALUES (7, ?)').run(ada);
 
-    const data = backup.createBackup();
+    const data = await backup.createBackup();
     const b = data.data.builtin_integrations;
     assert.deepEqual(Object.keys(b).sort(), ['midea_device_owners', 'midea_devices', 'skoda_accounts', 'skoda_vehicle_owners', 'skoda_vehicles',
       'smarthome_gateways', 'smarthome_resource_owners', 'smarthome_resources', 'smarthome_rules']);
@@ -256,11 +256,11 @@ describe('backup service', () => {
   it('a backup without the built-in part leaves those tables untouched; unknown tables are refused', async () => {
     const db = getDb();
     const before = db.prepare('SELECT COUNT(*) c FROM smarthome_resources').get().c;
-    const data = backup.createBackup();
+    const data = await backup.createBackup();
     delete data.data.builtin_integrations;
     await backup.restoreBackup(data);
     assert.equal(db.prepare('SELECT COUNT(*) c FROM smarthome_resources').get().c, before);
-    const bad = backup.createBackup();
+    const bad = await backup.createBackup();
     bad.data.builtin_integrations = { users: [] };
     assert.ok(backup.validateBackup(bad).some((e) => /builtin_integrations\.users is unknown/.test(e)));
     bad.data.builtin_integrations = { skoda_vehicles: 'x' };

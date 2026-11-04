@@ -78,4 +78,45 @@ async function atomicWriteAsync(targetPath, content, opts = {}) {
   }
 }
 
-module.exports = { atomicWrite, atomicWriteAsync };
+/**
+ * atomicWriteAsync() for contents produced piece by piece: `produce(write)`
+ * calls `write(chunk)` (string or Buffer, awaited) as often as it likes —
+ * the whole content never has to exist in memory. Fresh tmp file (O_EXCL,
+ * `mode`), fsync, rename; the tmp file is removed when anything fails.
+ *
+ * @param {string} targetPath Absolute path to the destination file
+ * @param {(write: (chunk: string|Buffer) => Promise<void>) => Promise<void>} produce
+ * @param {object} [opts]
+ * @param {number} [opts.mode=0o644] File mode for the target
+ * @returns {Promise<void>}
+ */
+async function atomicWriteStreamAsync(targetPath, produce, opts = {}) {
+  const mode = opts.mode ?? 0o644;
+  const dir = path.dirname(targetPath);
+  const base = path.basename(targetPath);
+  const suffix = crypto.randomBytes(6).toString('hex');
+  const tmpPath = path.join(dir, `.${base}.${suffix}.tmp`);
+
+  const fh = await fs.promises.open(tmpPath, 'wx', mode);
+  try {
+    try {
+      await produce(async (chunk) => {
+        const buf = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk;
+        let at = 0;
+        while (at < buf.length) {
+          const { bytesWritten } = await fh.write(buf, at, buf.length - at);
+          at += bytesWritten;
+        }
+      });
+      await fh.sync();
+    } finally {
+      await fh.close();
+    }
+    await fs.promises.rename(tmpPath, targetPath);
+  } catch (err) {
+    try { await fs.promises.unlink(tmpPath); } catch { /* best effort */ }
+    throw err;
+  }
+}
+
+module.exports = { atomicWrite, atomicWriteAsync, atomicWriteStreamAsync };

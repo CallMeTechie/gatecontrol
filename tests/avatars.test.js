@@ -562,7 +562,7 @@ describe('backup', () => {
     const url = avatars.set(eve, buf).avatarUrl;
     avatars.setColor(eve, 'yellow');
     const username = H.db().prepare('SELECT username FROM users WHERE id = ?').get(eve).username;
-    const data = JSON.parse(JSON.stringify(backup.createBackup()));
+    const data = JSON.parse(JSON.stringify(await backup.createBackup()));
     const entry = data.data.user_avatars.find((a) => a.user_name === username);
     assert.equal(entry.mime, 'image/jpeg');
     assert.equal(Buffer.from(entry.data, 'base64').compare(buf), 0);

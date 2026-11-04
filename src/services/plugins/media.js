@@ -1192,24 +1192,28 @@ function setBackupEnabled(on) { settings().set(BACKUP_SETTING, on ? '1' : '0'); 
 /**
  * The claimed files of a plugin for a backup, within `budget.left` bytes
  * (decremented): [{ id, owner_user_id, mime, bytes, sha256, created_at,
- * claimed_at, key, data }] — `data` the file as stored (encrypted, base64),
+ * claimed_at, key, data }] (async) — `data` the file as stored (encrypted;
+ * a jsonStream Base64Value, i.e. base64 in the backup file),
  * `key` its file key encrypted with GC_ENCRYPTION_KEY (utils/crypto, the
  * form every backup secret has: the off-site re-key converts it, a restore
  * on another server unwraps it). Throws code 'too_large' when the files do
  * not fit.
  */
-function exportPlugin(pluginId, budget) {
+async function exportPlugin(pluginId, budget) {
   const { encrypt } = require('../../utils/crypto');
+  const { Base64Value } = require('../../utils/jsonStream');
   // files of areas never (their storage targets keep them; mediaAreas.exportAreas has their metadata)
   const rows = db().prepare('SELECT * FROM plugin_media WHERE plugin = ? AND ref_count > 0 AND area IS NULL ORDER BY created_at').all(pluginId);
   const out = [];
   for (const r of rows) {
     const size = sealedSize(r.bytes);
     if (size > budget.left) throw Object.assign(new Error('too large'), { code: 'too_large' });
-    const data = fs.readFileSync(fileOf(r.plugin, r.id));
+    // read asynchronously (up to MAX_MEDIA_BYTES per backup); `data` holds the
+    // raw bytes, written as base64 by utils/jsonStream (toJSON() → the string)
+    const data = await fs.promises.readFile(fileOf(r.plugin, r.id));
     budget.left -= data.length;
     out.push({ id: r.id, owner_user_id: r.owner_user_id, mime: r.mime, bytes: r.bytes, sha256: r.sha256, created_at: r.created_at,
-      claimed_at: r.claimed_at, name: r.name == null ? null : r.name, key: encrypt(unwrapKey(r.key_enc, r.id).toString('hex')), data: data.toString('base64') });
+      claimed_at: r.claimed_at, name: r.name == null ? null : r.name, key: encrypt(unwrapKey(r.key_enc, r.id).toString('hex')), data: new Base64Value(data) });
   }
   return out;
 }

@@ -9,6 +9,7 @@ const { rotateCsrfToken } = require('../../../middleware/csrf');
 const activity = require('../../../services/activity');
 const backup = require('../../../services/backup');
 const logger = require('../../../utils/logger');
+const { withTask } = require('../../../utils/loopStall');
 const { requireFeature } = require('../../../middleware/license');
 const { checkRanges, hasErrors, sendFieldErrors } = require('../../../utils/settingsValidate');
 const { uploadLimiter } = require('../../../middleware/rateLimit');
@@ -40,25 +41,55 @@ router.post('/clear-logs', async (req, res) => {
 });
 
 /**
- * GET /api/settings/backup — Download backup as JSON
+ * Chunks to an HTTP response with backpressure; rejects when the client went
+ * away (a 'drain' would never come).
  */
-router.get('/backup', (req, res) => {
-  try {
-    const data = backup.createBackup();
-    const filename = `gatecontrol-backup-${new Date().toISOString().slice(0, 10)}.json`;
-
-    activity.log('backup_created', 'Backup downloaded', {
-      source: 'admin',
-      ipAddress: req.ip,
-      severity: 'info',
+function responseSink(res) {
+  return (chunk) => {
+    if (res.destroyed || res.writableEnded) return Promise.reject(new Error('client closed the connection'));
+    if (res.write(chunk)) return undefined;
+    return new Promise((resolve, reject) => {
+      const done = (err) => { res.off('drain', onDrain); res.off('close', onClose); if (err) reject(err); else resolve(); };
+      const onDrain = () => done();
+      const onClose = () => done(new Error('client closed the connection'));
+      res.on('drain', onDrain);
+      res.on('close', onClose);
     });
+  };
+}
 
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Type', 'application/json');
-    res.json(data);
+/**
+ * GET /api/settings/backup — Download backup as JSON
+ *
+ * Collected asynchronously and streamed (compact JSON, as res.json sent it):
+ * with plugin data a backup has up to a few hundred MB — building and
+ * stringifying it in one go blocked the event loop for many seconds.
+ */
+router.get('/backup', async (req, res) => {
+  let data;
+  try {
+    data = await withTask('backup.download', () => backup.collectBackup());
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to create backup');
-    res.status(500).json({ ok: false, error: req.t('error.backup.create') });
+    return res.status(500).json({ ok: false, error: req.t('error.backup.create') });
+  }
+  const filename = `gatecontrol-backup-${new Date().toISOString().slice(0, 10)}.json`;
+
+  activity.log('backup_created', 'Backup downloaded', {
+    source: 'admin',
+    ipAddress: req.ip,
+    severity: 'info',
+  });
+
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  try {
+    await withTask('backup.download', () => backup.writeBackup(responseSink(res), data));
+    res.end();
+  } catch (err) {
+    // headers are out: a half-sent body can only be cut off (the client sees an incomplete download)
+    logger.error({ error: err.message }, 'Failed to send backup');
+    res.destroy();
   }
 });
 

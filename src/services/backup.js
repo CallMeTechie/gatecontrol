@@ -7,6 +7,8 @@ const routesService = require('./routes');
 const { validatePeerName, validateDomain, validatePort, validateIp } = require('../utils/validate');
 const { validateWebhookUrl } = require('./webhook');
 const logger = require('../utils/logger');
+const { writeJson, materialize } = require('../utils/jsonStream');
+const { atomicWriteStreamAsync } = require('../utils/fs');
 
 // 5: + data.plugins (docs/plugins.md "Backup") and data.builtin_integrations
 // (tables of the former built-in Smart Home / Klimaanlage / Fahrzeuge,
@@ -37,10 +39,50 @@ function pickColumns(row, cols) {
 }
 
 /**
- * Create a full backup as JSON object
+ * Collect a full backup (async). The binary plugin parts (code, database,
+ * files, media) are jsonStream Base64Value objects — raw bytes that
+ * writeBackup() writes as base64 piece by piece and whose toJSON() gives the
+ * same string, so JSON.stringify of the result is the backup file as before.
+ * Used for the backup file (writeBackupFile) and the download (writeBackup):
+ * neither builds the whole text in memory nor blocks the event loop with it.
  */
-function createBackup() {
-  const db = getDb();
+async function collectBackup() {
+  const backup = exportTables(getDb());
+  // filled in place: the key keeps its position in the file
+  backup.data.plugins = await exportPluginsRaw();
+  return backup;
+}
+
+/**
+ * Create a full backup as a plain JSON object (every binary part as its
+ * base64 string) — what JSON.parse of a backup file gives. Async: the plugin
+ * files and databases are read without blocking the event loop.
+ */
+async function createBackup() {
+  return materialize(await collectBackup());
+}
+
+/**
+ * Write a backup (createBackup/collectBackup result) as JSON to `out(chunk)`
+ * (may return a promise; awaited), in pieces, with the event loop running in
+ * between. Byte-identical to JSON.stringify(backup, null, indent).
+ */
+function writeBackup(out, backup, { indent = 0 } = {}) {
+  return writeJson(out, backup, { indent });
+}
+
+/**
+ * Create a backup and write it to `filepath` (fresh tmp file + fsync +
+ * rename, mode `mode`; JSON indented by 2 like the backup files always
+ * were). Nothing of it runs as one long synchronous piece.
+ */
+async function writeBackupFile(filepath, { mode = 0o600 } = {}) {
+  const backup = await collectBackup();
+  await atomicWriteStreamAsync(filepath, (write) => writeBackup(write, backup, { indent: 2 }), { mode });
+}
+
+// All tables of the host database (sync, small); `data.plugins` is filled by collectBackup().
+function exportTables(db) {
 
   // ── peer_groups ─────────────────────────────────────────────
   const rawPeerGroups = db.prepare('SELECT * FROM peer_groups').all();
@@ -264,7 +306,7 @@ function createBackup() {
       settings,
       webhooks,
       route_auth: routeAuth,
-      plugins: exportPlugins(),
+      plugins: null, // collectBackup()
       builtin_integrations: exportBuiltin(db),
       // Einstellungen › Sicherheit: bans set by hand (the automatic ones are
       // short-lived) and the "Ist Absicht" confirmations of routes; the
@@ -554,8 +596,8 @@ function exportBuiltin(db) {
   }
 }
 
-function exportPlugins() {
-  try { return require('./plugins/backup').exportAll(); } catch (err) {
+async function exportPluginsRaw() {
+  try { return await require('./plugins/backup').exportAllRaw(); } catch (err) {
     logger.warn({ err: err.message }, 'backup export: plugins skipped');
     return [];
   }
@@ -1149,6 +1191,9 @@ async function restoreBackup(backup) {
 
 module.exports = {
   createBackup,
+  collectBackup,
+  writeBackup,
+  writeBackupFile,
   validateBackup,
   getBackupSummary,
   restoreBackup,

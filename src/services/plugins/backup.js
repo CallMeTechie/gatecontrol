@@ -2,12 +2,13 @@
 
 // Plugins in GateControl backups (docs/plugins.md "Backup").
 //
-// Backup (sync, part of services/backup.createBackup): per installed plugin
+// Backup (async, part of services/backup.createBackup — no synchronous file
+// or database copy on the main thread): per installed plugin
 //   * the installed package files incl. its `signature` (so a fresh server
 //     gets the plugin back without a new upload — and can re-check it),
-//   * a consistent snapshot of its SQLite file (sqlite3_serialize on a
-//     read-only connection: a read transaction, never a raw copy of a live
-//     file), its files/ folder,
+//   * a consistent snapshot of its SQLite file (the SQLite backup API in
+//     steps on a read-only connection, never a raw copy of a live file),
+//     its files/ folder,
 //   * the registry state (enabled), the third-party licence row and the
 //     access targets (routes/peers by domain/name — ids change on restore),
 //   * the plugin's `secret` settings once more as plain backup fields, so the
@@ -35,6 +36,8 @@
 // them alone.
 
 const fs = require('node:fs');
+const fsp = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 const Database = require('better-sqlite3');
 const pkg = require('./package');
@@ -42,6 +45,7 @@ const signature = require('./signature');
 const registry = require('./registry');
 const { ID_RE, LIMITS, codeDir, dataDir, dbDir, filesDir, pluginsRoot } = require('./constants');
 const logger = require('../../utils/logger');
+const { Base64Value, materialize } = require('../../utils/jsonStream');
 
 const MAX_PLUGIN_BYTES = 48 * 1024 * 1024; // raw bytes of all plugins in one backup
 const MAX_MEDIA_BYTES = 128 * 1024 * 1024; // plugin media (option, off by default) of all plugins in one backup
@@ -49,47 +53,91 @@ const SQLITE_MAGIC = Buffer.from('SQLite format 3\0', 'latin1');
 
 function db() { return require('../../db/connection').getDb(); }
 
-/** Regular files below `root` → Map(relative path → Buffer). Symlinks and odd names are skipped. */
-function readTree(root, budget) {
+/**
+ * Regular files below `root` → Map(relative path → Buffer). Symlinks and odd
+ * names are skipped. Read with fs.promises: a backup must not hold the main
+ * thread (up to MAX_PLUGIN_BYTES of files).
+ */
+async function readTree(root, budget) {
   const out = new Map();
   let bytes = 0;
-  const walk = (dir, rel, depth) => {
+  const walk = async (dir, rel, depth) => {
     if (depth > LIMITS.pathDepth) return;
     let ents;
-    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    try { ents = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
     for (const e of ents) {
       const r = rel ? rel + '/' + e.name : e.name;
       try { pkg.checkPath(r); } catch { continue; }
       const abs = path.join(dir, e.name);
-      if (e.isDirectory()) walk(abs, r, depth + 1);
+      if (e.isDirectory()) await walk(abs, r, depth + 1);
       else if (e.isFile()) {
-        const buf = fs.readFileSync(abs);
+        const buf = await fsp.readFile(abs);
         bytes += buf.length;
         if (bytes > budget.left || out.size >= LIMITS.fileCount) throw Object.assign(new Error('too large'), { code: 'too_large' });
         out.set(r, buf);
       }
     }
   };
-  walk(root, '', 0);
+  await walk(root, '', 0);
   budget.left -= bytes;
   return out;
 }
 
-function snapshotDb(id, budget) {
+// pages per step of the SQLite backup API (the event loop runs between steps)
+const SNAPSHOT_STEP_PAGES = 256;
+// a plugin that writes all the time restarts the backup API; after this many
+// restarts the rest is copied in one step (what sqlite3_serialize did before)
+const SNAPSHOT_MAX_RESTARTS = 3;
+
+/**
+ * A consistent snapshot of the plugin database → { buf, secrets } or null.
+ * The SQLite backup API copies it in steps into a private temp file (the
+ * event loop runs between steps; sqlite3_serialize did it in one synchronous
+ * piece), the file is then read with fs.promises. `secrets` are the secret
+ * settings of the snapshot (secretSettings).
+ */
+async function snapshotDb(id, budget) {
   const file = path.join(dbDir(id), 'plugin.db');
-  if (!fs.existsSync(file)) return null;
+  try { await fsp.access(file); } catch { return null; }
   const conn = new Database(file, { readonly: true, fileMustExist: true, timeout: 5000 });
+  const tooLarge = () => Object.assign(new Error('too large'), { code: 'too_large' });
+  let tmpDir = null;
   try {
-    const buf = conn.serialize();
-    if (buf.length > budget.left) throw Object.assign(new Error('too large'), { code: 'too_large' });
-    budget.left -= buf.length;
-    return buf;
-  } finally { conn.close(); }
+    const est = conn.pragma('page_count', { simple: true }) * conn.pragma('page_size', { simple: true });
+    if (est > budget.left) throw tooLarge();
+    let snap;
+    try {
+      tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'gc-plugin-snap-')); // 0700
+      const tmp = path.join(tmpDir, 'plugin.db');
+      let restarts = 0;
+      let lastRemaining = Infinity;
+      await conn.backup(tmp, {
+        progress({ remainingPages }) {
+          if (remainingPages > lastRemaining) restarts++;
+          lastRemaining = remainingPages;
+          return restarts >= SNAPSHOT_MAX_RESTARTS ? 0x7fffffff : SNAPSHOT_STEP_PAGES;
+        },
+      });
+      snap = { buf: await fsp.readFile(tmp), source: tmp };
+    } catch (err) {
+      // no usable temp folder or the like: one synchronous copy, as before
+      logger.warn({ plugin: id, err: err.message }, 'backup: step-wise database snapshot failed, copying it in one piece');
+      const buf = conn.serialize();
+      snap = { buf, source: buf };
+    }
+    if (snap.buf.length > budget.left) throw tooLarge();
+    budget.left -= snap.buf.length;
+    return { buf: snap.buf, secrets: secretSettings(snap.source) };
+  } finally {
+    conn.close();
+    if (tmpDir) await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
-function secretSettings(dbBuf) {
-  if (!dbBuf) return {};
-  const conn = new Database(dbBuf, { readonly: true });
+/** The secret settings (`{ enc }` values of _gc_settings) of a database snapshot (file path or serialized Buffer). */
+function secretSettings(snapshot) {
+  let conn;
+  try { conn = Buffer.isBuffer(snapshot) ? new Database(snapshot, { readonly: true }) : new Database(snapshot, { readonly: true, fileMustExist: true }); } catch { return {}; }
   try {
     const out = {};
     for (const r of conn.prepare('SELECT key, value FROM _gc_settings').all()) {
@@ -99,7 +147,8 @@ function secretSettings(dbBuf) {
   } catch { return {}; } finally { conn.close(); }
 }
 
-const toB64 = (m) => Object.fromEntries([...m].map(([k, v]) => [k, v.toString('base64')]));
+// raw bytes, written as base64 by utils/jsonStream (piece by piece) — toJSON() gives the string
+const toB64 = (m) => Object.fromEntries([...m].map(([k, v]) => [k, new Base64Value(v)]));
 
 function exportTargets(id) {
   return db().prepare('SELECT target_id, idx, assignment FROM plugin_targets WHERE plugin_id = ? ORDER BY target_id, idx').all(id).map((r) => {
@@ -117,8 +166,13 @@ function exportTargets(id) {
   });
 }
 
-/** Everything of the installed plugins for createBackup(). */
-function exportAll() {
+/**
+ * Everything of the installed plugins for createBackup(), the large parts
+ * (code, database, files, media) as Base64Value (raw bytes; written as
+ * base64 by utils/jsonStream, toJSON() gives the string). All file and
+ * database reads are asynchronous.
+ */
+async function exportAllRaw() {
   let rows;
   try { rows = registry.list(); } catch { return []; }
   const budget = { left: MAX_PLUGIN_BYTES };
@@ -127,19 +181,19 @@ function exportAll() {
   const out = [];
   for (const p of rows) {
     const entry = { id: p.id, version: p.version, enabled: p.enabled, installed_at: p.installedAt, updated_at: p.updatedAt, skipped: [] };
-    try { entry.files = toB64(readTree(codeDir(p.id, p.version), budget)); } catch (e) {
+    try { entry.files = toB64(await readTree(codeDir(p.id, p.version), budget)); } catch (e) {
       logger.warn({ plugin: p.id, err: e.message }, 'backup: plugin code skipped');
       entry.files = null;
       entry.skipped.push('code');
     }
-    let dbBuf = null;
-    try { dbBuf = snapshotDb(p.id, budget); } catch (e) {
+    let snap = null;
+    try { snap = await snapshotDb(p.id, budget); } catch (e) {
       logger.warn({ plugin: p.id, err: e.message }, 'backup: plugin database skipped');
       entry.skipped.push('database');
     }
-    entry.db = dbBuf ? dbBuf.toString('base64') : null;
-    entry.secret_settings = secretSettings(dbBuf);
-    try { entry.data_files = toB64(readTree(filesDir(p.id), budget)); } catch (e) {
+    entry.db = snap ? new Base64Value(snap.buf) : null;
+    entry.secret_settings = snap ? snap.secrets : {};
+    try { entry.data_files = toB64(await readTree(filesDir(p.id), budget)); } catch (e) {
       logger.warn({ plugin: p.id, err: e.message }, 'backup: plugin files skipped');
       entry.data_files = null;
       entry.skipped.push('files');
@@ -148,7 +202,7 @@ function exportAll() {
     entry.license = lic ? { key_encrypted: lic.keyEncrypted, state: lic.state } : null;
     entry.targets = exportTargets(p.id);
     if (mediaBudget && media.declOf(p)) {
-      try { entry.media = media.exportPlugin(p.id, mediaBudget); } catch (e) {
+      try { entry.media = await media.exportPlugin(p.id, mediaBudget); } catch (e) {
         logger.warn({ plugin: p.id, err: e.message }, 'backup: plugin media skipped');
         entry.skipped.push('media');
       }
@@ -162,6 +216,11 @@ function exportAll() {
     out.push(entry);
   }
   return out;
+}
+
+/** exportAllRaw() with every binary part as its base64 string (the form a backup file holds). */
+async function exportAll() {
+  return materialize(await exportAllRaw());
 }
 
 /** Structural checks for validateBackup(). */
@@ -301,4 +360,4 @@ async function restoreAll(list, { removeOthers = false } = {}) {
   return result;
 }
 
-module.exports = { exportAll, restoreAll, validate, MAX_PLUGIN_BYTES, MAX_MEDIA_BYTES };
+module.exports = { exportAll, exportAllRaw, restoreAll, validate, MAX_PLUGIN_BYTES, MAX_MEDIA_BYTES };

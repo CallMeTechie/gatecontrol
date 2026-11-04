@@ -48,8 +48,8 @@ describe('backup round trip with groups', () => {
     };
   });
 
-  it('exports groups, members (by username), invitation hashes and route group refs', () => {
-    const b = backup().createBackup();
+  it('exports groups, members (by username), invitation hashes and route group refs', async () => {
+    const b = await backup().createBackup();
     assert.ok(Array.isArray(b.data.groups));
     const t = b.data.groups.find((g) => g.name === 'Buchhaltung');
     assert.equal(t.group_ref, team.id);
@@ -67,7 +67,7 @@ describe('backup round trip with groups', () => {
   });
 
   it('restores ids, nesting, memberships, invitations and access consistently', async () => {
-    const b = JSON.parse(JSON.stringify(backup().createBackup()));
+    const b = JSON.parse(JSON.stringify(await backup().createBackup()));
     // Wreck the current state: the restore must replace it.
     groups().removeMember(team.id, anna);
     const extra = groups().create({ kind: 'team', name: 'Nach der Sicherung' });
@@ -110,7 +110,7 @@ describe('backup round trip with groups', () => {
   });
 
   it('a route released for a group missing from the backup stays closed; old backups keep the groups', async () => {
-    const b = JSON.parse(JSON.stringify(backup().createBackup()));
+    const b = JSON.parse(JSON.stringify(await backup().createBackup()));
     b.data.routes.find((r) => r.domain === 'bk.ga.test').group_refs = [987654];
     b.data.routes.find((r) => r.domain === 'bk.ga.test').user_ids = null;
     await backup().restoreBackup(b);
@@ -119,7 +119,7 @@ describe('backup round trip with groups', () => {
     assert.ok(!require('../src/services/routes').getForUser(anna).some((x) => x.domain === 'bk.ga.test'));
 
     // A backup without the groups section (older format) leaves the groups alone.
-    const old = JSON.parse(JSON.stringify(backup().createBackup()));
+    const old = JSON.parse(JSON.stringify(await backup().createBackup()));
     delete old.data.groups; delete old.data.group_members; delete old.data.group_invites;
     old.data.users = [];
     await backup().restoreBackup(old);
@@ -128,7 +128,7 @@ describe('backup round trip with groups', () => {
   });
 
   it('user ids a backup does not know become NOBODY (0), never another person', async () => {
-    const b = JSON.parse(JSON.stringify(backup().createBackup()));
+    const b = JSON.parse(JSON.stringify(await backup().createBackup()));
     // user 555555 does not exist in the backup's user list → NOBODY
     b.data.rdp_routes.find((x) => x.name === 'bk-rdp').user_ids = JSON.stringify([anna, 555555]);
     await backup().restoreBackup(b);
@@ -169,8 +169,8 @@ describe('backup round trip with directory connections', () => {
     db().prepare("INSERT INTO directory_runs (directory_id, trigger, status, started_at) VALUES (?, 'manual', 'pending', datetime('now'))").run(dirId);
   });
 
-  it('exports connections (secret as stored), links and conflicts with user refs — not the runs', () => {
-    const b = backup().createBackup();
+  it('exports connections (secret as stored), links and conflicts with user refs — not the runs', async () => {
+    const b = await backup().createBackup();
     const d = b.data.directories.find((x) => x.name === 'Firma AD');
     assert.equal(d.directory_ref, dirId);
     assert.equal(d.secret_enc, db().prepare('SELECT secret_enc FROM directories WHERE id = ?').get(dirId).secret_enc, 'encrypted exactly as stored');
@@ -187,7 +187,7 @@ describe('backup round trip with directory connections', () => {
   it('restores ids, secret, links (same user ids, peers by name) and conflicts; a waiting run is dropped', async () => {
     db().prepare('UPDATE directories SET full_sync_hours = 6 WHERE id = ?').run(dirId);
     db().prepare("INSERT INTO directory_sync_state (directory_id, fingerprint, cursor_json, snapshot_json) VALUES (?, 'fp', '{\"usn\":\"9\"}', '{}')").run(dirId);
-    const b = JSON.parse(JSON.stringify(backup().createBackup()));
+    const b = JSON.parse(JSON.stringify(await backup().createBackup()));
     assert.ok(!('directory_sync_state' in b.data), 'the delta position is not saved');
     db().prepare("UPDATE directories SET name = 'Umbenannt' WHERE id = ?").run(dirId);
     db().prepare('DELETE FROM directory_links').run();
@@ -218,7 +218,7 @@ describe('backup round trip with directory connections', () => {
   });
 
   it('a secret from a server with another key is dropped and marked for re-entry, the restore goes on', async () => {
-    const b = JSON.parse(JSON.stringify(backup().createBackup()));
+    const b = JSON.parse(JSON.stringify(await backup().createBackup()));
     b.data.directories.find((x) => x.directory_ref === dirId).secret_enc = foreignSecret('fremd');
     const result = await backup().restoreBackup(b);
     assert.deepEqual(result.directories_secret_reentry, ['Firma AD']);
@@ -236,7 +236,7 @@ describe('backup round trip with directory connections', () => {
   });
 
   it('a backup without the directory section leaves the connections alone', async () => {
-    const old = JSON.parse(JSON.stringify(backup().createBackup()));
+    const old = JSON.parse(JSON.stringify(await backup().createBackup()));
     delete old.data.directories; delete old.data.directory_links; delete old.data.directory_conflicts;
     db().prepare("UPDATE directories SET name = 'Nach der Sicherung' WHERE id = ?").run(dirId);
     await backup().restoreBackup(old);

@@ -185,7 +185,7 @@ describe('restore accepts .gcbk', () => {
     const settings = require('../src/services/settings');
     const { encrypt } = require('../src/utils/crypto');
     settings.set('smtp_password_encrypted', encrypt('smtp-secret-123'));
-    let data = backupSvc.createBackup();
+    let data = await backupSvc.createBackup();
     let embedded = config.encryption.key;
     if (foreignKey) {
       // Simulate a backup from ANOTHER installation: its secrets are under foreignKey.

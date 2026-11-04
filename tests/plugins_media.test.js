@@ -461,7 +461,7 @@ describe('clean-up, frames, backup, uninstall', () => {
 
   it('backup: off by default (no media); on → the claimed files travel encrypted with their key as a backup secret; restore brings them back', async () => {
     const pbackup = require('../src/services/plugins/backup');
-    let entry = pbackup.exportAll().find((e) => e.id === 'hello-media');
+    let entry = (await pbackup.exportAll()).find((e) => e.id === 'hello-media');
     assert.equal(entry.media, undefined, 'option off');
     let r = await agent.get(API).expect(200);
     assert.equal(r.body.backupMedia, false);
@@ -472,7 +472,7 @@ describe('clean-up, frames, backup, uninstall', () => {
     assert.ok(db().prepare("SELECT 1 FROM activity_log WHERE event_type = 'plugin_media_backup'").get());
     const id = (await put(annaDev, 'hello-media', randomBytes(70000)).expect(200)).body.mediaId;
     await gcMedia('hello-media', { op: 'claim', id }).expect(200);
-    entry = pbackup.exportAll().find((e) => e.id === 'hello-media');
+    entry = (await pbackup.exportAll()).find((e) => e.id === 'hello-media');
     const f = entry.media.find((x) => x.id === id);
     assert.ok(f && /^[0-9a-f]{24}:[0-9a-f]{32}:[0-9a-f]+$/.test(f.key), 'the key in the backup secret form');
     assert.equal(Buffer.from(f.data, 'base64').length, media.sealedSize(70000));
@@ -498,7 +498,7 @@ describe('clean-up, frames, backup, uninstall', () => {
     assert.equal(crypto.createHash('sha256').update(back.body).digest('hex'), sha);
     // the restore's decrypt check knows the media keys
     const bk = require('../src/services/backup');
-    const full = bk.createBackup();
+    const full = await bk.createBackup();
     assert.ok(full.data.plugins.find((e) => e.id === 'hello-media').media.length >= 1);
     assert.deepEqual(bk.validateBackup(full), []);
     full.data.plugins.find((e) => e.id === 'hello-media').media[0].key = '00'.repeat(12) + ':' + '00'.repeat(16) + ':abcd';

@@ -83,7 +83,7 @@ const remoteNames = () => [...dav.files.keys()].sort();
 
 /** A GCBK1 archive of the live test database. */
 async function archive(opts = {}) {
-  return gcbk.encryptBackup(opts.backup || backup.createBackup(), {
+  return gcbk.encryptBackup(opts.backup || (await backup.createBackup()), {
     passphrase: opts.passphrase || PASS,
     encryptionKey: opts.encryptionKey,
     gcVersion: opts.gcVersion === undefined ? require('../package.json').version : opts.gcVersion,

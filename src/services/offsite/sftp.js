@@ -11,7 +11,7 @@
 // Uploads go to "<name>.part" and are renamed afterwards, so an interrupted
 // upload never counts as a backup for the retention.
 
-const { run, writeTemp, rmQuiet, workDir } = require('./proc');
+const { run, writeTemp, writeTempAsync, rmQuiet, workDir } = require('./proc');
 const path = require('node:path');
 
 const TIMEOUT_MS = 180 * 1000;
@@ -109,7 +109,7 @@ function parseLs(out) {
 }
 
 async function upload(cfg, name, buf, ctx) {
-  const local = writeTemp('upload', buf);
+  const local = await writeTempAsync('upload', buf);
   try {
     await batch(cfg, ctx, [
       ...cdScript(cfg.path),
@@ -132,7 +132,7 @@ async function download(cfg, name, ctx) {
   const local = writeTemp('download', '');
   try {
     await batch(cfg, ctx, [...cdScript(cfg.path), `get ${q(name)} ${q(local)}`]);
-    return require('node:fs').readFileSync(local);
+    return await require('node:fs').promises.readFile(local);
   } finally {
     rmQuiet(local);
   }

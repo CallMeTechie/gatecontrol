@@ -267,7 +267,7 @@ describe('backup', () => {
   it('exports targets with their id and the secret as stored; a restore brings them back', async () => {
     const backup = require('../src/services/backup');
     const created = targets().create('webdav', { label: 'Synology', url: 'https://nas:5006/drive', username: 'gc', password: 'Geheim!' });
-    const b = JSON.parse(JSON.stringify(backup.createBackup()));
+    const b = JSON.parse(JSON.stringify(await backup.createBackup()));
     const e = b.data.storage_targets.find((x) => x.target_ref === created.id);
     assert.ok(e);
     assert.equal(e.kind, 'webdav');

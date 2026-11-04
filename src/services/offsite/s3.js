@@ -129,11 +129,24 @@ function decodeXml(s) {
   return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 }
 
+// the SHA-256 of an upload body (an archive of up to a few hundred MB) in
+// pieces, with the event loop running in between
+const HASH_PIECE = 4 * 1024 * 1024;
+async function sha256hexAsync(data) {
+  if (data.length <= HASH_PIECE) return sha256hex(data);
+  const h = crypto.createHash('sha256');
+  for (let at = 0; at < data.length; at += HASH_PIECE) {
+    h.update(data.subarray(at, at + HASH_PIECE));
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  return h.digest('hex');
+}
+
 async function request(cfg, method, key, { query, body, headers = {}, timeoutMs = TIMEOUT_MS } = {}) {
   const url = objectUrl(cfg, key, query);
   const payload = body || Buffer.alloc(0);
   const signed = signRequest({
-    method, url, headers, payloadHash: sha256hex(payload),
+    method, url, headers, payloadHash: await sha256hexAsync(payload),
     region: cfg.region || 'us-east-1', accessKeyId: cfg.access_key_id, secretAccessKey: cfg.secret_access_key,
   });
   delete signed.host; // fetch sets Host from the URL (identical value)
