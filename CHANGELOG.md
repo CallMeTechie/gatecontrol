@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.226.0] — 2026-11-04
 
 ### Features
 - Gateways: Der Einrichtungsdialog eines Home Gateways hat einen neuen Reiter **„Raspberry Pi“** für das fertige SD-Karten-Image des Gateways (Raspberry Pi OS Lite 64 bit, für Pi 3 B+/4/5/Zero 2 W, optional deCONZ für RaspBee II): Link auf das Image des neuesten Gateway-Releases (`releases/latest`, keine Version im Code), die Repository-URL für den Raspberry Pi Imager zum Kopieren (nur damit lassen sich Benutzer, WLAN und SSH im Imager einstellen), `gateway.env` zum Herunterladen und eine Kurzanleitung „gateway.env in den Ordner gatecontrol der SD-Karte kopieren, Pi starten“. Texte DE/EN.
