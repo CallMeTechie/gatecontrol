@@ -593,7 +593,7 @@ describe('storage targets "Google Drive" and "OneDrive"', () => {
   it('backup: the targets come back with their token as stored', async () => {
     const backup = require('../src/services/backup');
     const before = targets().list().filter((x) => x.kind === 'gdrive' || x.kind === 'onedrive');
-    const b = JSON.parse(JSON.stringify(backup.createBackup()));
+    const b = JSON.parse(JSON.stringify(await backup.createBackup()));
     assert.equal(b.data.settings.some((s) => s.key === 'cloud.google.client_secret_encrypted'), true);
     const n = b.data.storage_targets.filter((x) => x.kind === 'gdrive' || x.kind === 'onedrive').length;
     assert.equal(n, before.length);

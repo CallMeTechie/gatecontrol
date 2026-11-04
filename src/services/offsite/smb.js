@@ -8,7 +8,7 @@
 // deleted afterwards) — never on the command line, where every process on
 // the host could read them from /proc.
 
-const { run, writeTemp, rmQuiet } = require('./proc');
+const { run, writeTemp, writeTempAsync, rmQuiet } = require('./proc');
 
 const TIMEOUT_MS = 180 * 1000;
 
@@ -97,7 +97,7 @@ function parseLs(out) {
 }
 
 async function upload(cfg, name, buf) {
-  const local = writeTemp('upload', buf);
+  const local = await writeTempAsync('upload', buf);
   try {
     await ensurePath(cfg);
     await smb(cfg, [...cd(cfg), `put ${q(local)} ${q(name + '.part')}`, `rename ${q(name + '.part')} ${q(name)}`]);
@@ -116,7 +116,7 @@ async function download(cfg, name) {
   const local = writeTemp('download', '');
   try {
     await smb(cfg, [...cd(cfg), `get ${q(name)} ${q(local)}`]);
-    return require('node:fs').readFileSync(local);
+    return await require('node:fs').promises.readFile(local);
   } finally {
     rmQuiet(local);
   }

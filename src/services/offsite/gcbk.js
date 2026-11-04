@@ -22,12 +22,14 @@
 // hardware: services/offsite/rekey.js re-encrypts every secret in the backup
 // from the archived key to the key of the restoring installation.
 //
-// No dependencies beyond node:crypto / node:zlib — also used by the stand-alone
+// No dependencies beyond Node core modules — also used by the stand-alone
 // CLI src/bin/offsite-decrypt.js, which must work without a configured app.
 
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 const zlib = require('node:zlib');
 const { promisify } = require('node:util');
+const { pipeline } = require('node:stream/promises');
 
 // gzip in the thread pool: a backup with plugin data has up to a few hundred
 // MB — gzipSync blocked the main thread for many seconds
@@ -101,6 +103,71 @@ async function encryptBackup(backup, { passphrase, encryptionKey, gcVersion = nu
   return Buffer.concat([aad, ct, cipher.getAuthTag()]);
 }
 
+/**
+ * encryptBackup() for a backup FILE (services/autobackup writes them), as a
+ * stream: the file is read in chunks and spliced into the payload text as it
+ * is — never parsed, never stringified again — then gzip (thread pool) and
+ * AES-GCM run chunk by chunk. JSON.parse + JSON.stringify + one cipher pass
+ * over a few hundred MB blocked the event loop for seconds before. The
+ * payload is the same as encryptBackup() makes (the backup part keeps the
+ * whitespace of the file — gzip makes that free, JSON.parse ignores it).
+ *
+ * @param {string} file          path of a JSON backup file
+ * @param {object} opts          as encryptBackup()
+ * @returns {Promise<Buffer>}
+ */
+async function encryptBackupFile(file, { passphrase, encryptionKey, gcVersion = null, kdf = DEFAULT_KDF } = {}) {
+  if (typeof passphrase !== 'string' || passphrase.length < MIN_PASSPHRASE) {
+    throw new GcbkError('PASSPHRASE_TOO_SHORT', `passphrase must have at least ${MIN_PASSPHRASE} characters`);
+  }
+  await checkJsonObjectFile(file);
+  const createdAt = new Date().toISOString();
+  // the keys in the order of encryptBackup()'s payload object
+  const head = Buffer.from(JSON.stringify({ format: FORMAT, version: 1, created_at: createdAt, gc_version: gcVersion }).slice(0, -1) + ',"backup":', 'utf8');
+  const tail = Buffer.from((encryptionKey ? ',"encryption_key":' + JSON.stringify(encryptionKey) : '') + '}', 'utf8');
+
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const header = Buffer.from(JSON.stringify({
+    kdf: 'scrypt', N: kdf.N, r: kdf.r, p: kdf.p,
+    salt: salt.toString('base64'), iv: iv.toString('base64'),
+    cipher: 'aes-256-gcm', compression: 'gzip',
+    created_at: createdAt, gc_version: gcVersion, include_key: !!encryptionKey,
+  }), 'utf8');
+  const len = Buffer.alloc(2);
+  len.writeUInt16BE(header.length);
+  const aad = Buffer.concat([MAGIC, len, header]);
+
+  const key = await deriveKey(passphrase, salt, kdf);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  cipher.setAAD(aad);
+  const parts = [aad];
+  async function* payload() {
+    yield head;
+    for await (const chunk of fs.createReadStream(file, { highWaterMark: 256 * 1024 })) yield chunk;
+    yield tail;
+  }
+  await pipeline(payload, zlib.createGzip(), cipher, async (source) => { for await (const c of source) parts.push(c); });
+  parts.push(cipher.getAuthTag());
+  return Buffer.concat(parts);
+}
+
+/** The file must hold a JSON object (first/last non-blank byte) — a cheap check instead of parsing it. */
+async function checkJsonObjectFile(file) {
+  const fh = await fs.promises.open(file, 'r');
+  try {
+    const { size } = await fh.stat();
+    const n = Math.min(size, 4096);
+    const start = Buffer.alloc(n);
+    const end = Buffer.alloc(n);
+    await fh.read(start, 0, n, 0);
+    await fh.read(end, 0, n, size - n);
+    const first = start.toString('latin1').trimStart()[0];
+    const last = end.toString('latin1').trimEnd().slice(-1);
+    if (first !== '{' || last !== '}') throw new GcbkError('CORRUPT', 'the backup file is not a JSON object');
+  } finally { await fh.close(); }
+}
+
 /** Parse + sanity-check the header without the passphrase. */
 function readHeader(buf) {
   if (!isGcbk(buf)) throw new GcbkError('NOT_GCBK', 'not a GCBK1 file');
@@ -165,5 +232,6 @@ module.exports = {
   isGcbk,
   readHeader,
   encryptBackup,
+  encryptBackupFile,
   decryptBackup,
 };

@@ -325,7 +325,7 @@ describe('backup / restore: acl_people', () => {
   });
 
   it('a new backup carries acl_people and restores it as stored', async () => {
-    const b = JSON.parse(JSON.stringify(backup().createBackup()));
+    const b = JSON.parse(JSON.stringify(await backup().createBackup()));
     assert.equal(b.data.routes.find((r) => r.domain === 'bk-off.ap.test').acl_people, 0);
     assert.equal(b.data.routes.find((r) => r.domain === 'bk-on.ap.test').acl_people, 1);
     await backup().restoreBackup(b);
@@ -335,7 +335,7 @@ describe('backup / restore: acl_people', () => {
   });
 
   it('an old backup without acl_people gets the migration rule (never wider access)', async () => {
-    const b = JSON.parse(JSON.stringify(backup().createBackup()));
+    const b = JSON.parse(JSON.stringify(await backup().createBackup()));
     for (const r of b.data.routes) delete r.acl_people;
     const extra = { ...b.data.routes.find((r) => r.domain === 'bk-on.ap.test'), domain: 'bk-bad.ap.test', user_ids: '[1,' };
     b.data.routes.push(extra);

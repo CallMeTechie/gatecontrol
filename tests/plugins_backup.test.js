@@ -67,8 +67,8 @@ describe('backup', () => {
     await install(helloPackage({ sign: false, overrides: { id: 'hello-u', name: 'Hallo U' } }));
     assert.equal(await runtime.waitRunning('hello-u'), true);
   });
-  it('the backup (format 5) carries code with signature, a database snapshot, files, state, targets, secrets', () => {
-    snapshot = backup.createBackup();
+  it('the backup (format 5) carries code with signature, a database snapshot, files, state, targets, secrets', async () => {
+    snapshot = await backup.createBackup();
     assert.equal(snapshot.version, 5);
     const p = Object.fromEntries(snapshot.data.plugins.map((x) => [x.id, x]));
     assert.deepEqual(Object.keys(p).sort(), ['hello', 'hello-off', 'hello-u']);

@@ -44,6 +44,22 @@ function writeTemp(prefix, content) {
   return p;
 }
 
+/**
+ * writeTemp() without blocking the main thread — for an archive to upload
+ * (up to a few hundred MB; writeFileSync of it stalled the event loop).
+ */
+async function writeTempAsync(prefix, content) {
+  const p = path.join(workDir(), `${prefix}-${crypto.randomBytes(8).toString('hex')}`);
+  const fh = await fs.promises.open(p, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, PRIVATE_FILE_MODE);
+  try { await fh.writeFile(content); } catch (err) {
+    await fh.close().catch(() => {});
+    rmQuiet(p);
+    throw err;
+  }
+  await fh.close();
+  return p;
+}
+
 function rmQuiet(p) { if (p) { try { fs.unlinkSync(p); } catch { /* gone */ } } }
 
 /**
@@ -94,4 +110,4 @@ function run(cmd, args, { input, timeoutMs = 120000 } = {}) {
   });
 }
 
-module.exports = { run, writeTemp, rmQuiet, workDir, dataDir };
+module.exports = { run, writeTemp, writeTempAsync, rmQuiet, workDir, dataDir };

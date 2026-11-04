@@ -437,7 +437,7 @@ describe('validation, choices, in use, backup', () => {
     const pid = peer('nas-bk', '127.0.0.4');
     const a = targets().create('webdav', { label: 'BK Route', url: `https://${NAS}/dav`, via: { kind: 'route', routeId: rid }, password: 'pw' });
     const b = targets().create('webdav', { label: 'BK Peer', url: `https://${NAS}/dav`, via: { kind: 'peer', peerId: pid }, port: 5006, password: 'pw' });
-    const dump = JSON.parse(JSON.stringify(backup.createBackup()));
+    const dump = JSON.parse(JSON.stringify(await backup.createBackup()));
     const ea = dump.data.storage_targets.find((x) => x.target_ref === a.id);
     const eb = dump.data.storage_targets.find((x) => x.target_ref === b.id);
     assert.deepEqual(ea.config.via, { kind: 'route', route_domain: 'bk.example.com' });

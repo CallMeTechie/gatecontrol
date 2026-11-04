@@ -15,7 +15,6 @@
 // passphrase (backup.offsite.passphrase_enc) is write-only. Nothing secret is
 // ever logged or put into last_error.
 
-const fs = require('node:fs');
 const path = require('node:path');
 const { getDb } = require('../../db/connection');
 const { encrypt, decrypt } = require('../../utils/crypto');
@@ -560,10 +559,10 @@ function remoteNameFor(localFile) {
 async function buildArchive(localFile) {
   const passphrase = getPassphrase();
   if (!passphrase) throw new OffsiteError('PASSPHRASE_NOT_SET', 'set the off-site passphrase first', 409);
-  const backup = JSON.parse(await fs.promises.readFile(localFile, 'utf8'));
   const { include_key: includeKey } = getOffsiteSettings();
   const config = require('../../../config/default');
-  return gcbk.encryptBackup(backup, {
+  // streamed from the file (no JSON.parse/stringify of a few hundred MB on the main thread)
+  return gcbk.encryptBackupFile(localFile, {
     passphrase,
     encryptionKey: includeKey ? config.encryption.key : undefined,
     gcVersion: require('../../../package.json').version,
@@ -605,7 +604,11 @@ async function uploadAfterBackup(localFile) {
  * POST /targets/:id/run — upload the newest local backup now (a fresh one is
  * created when none exists yet).
  */
-async function runTarget(id) {
+function runTarget(id) {
+  return require('../../utils/loopStall').withTask('offsite.run', () => runTargetNow(id));
+}
+
+async function runTargetNow(id) {
   const row = getRow(id);
   if (!row) throw new OffsiteError('NOT_FOUND', 'target not found', 404);
   const autobackup = require('../autobackup');

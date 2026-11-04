@@ -6,7 +6,6 @@ const logger = require('../utils/logger');
 const settings = require('./settings');
 const backup = require('./backup');
 const activity = require('./activity');
-const { atomicWriteAsync } = require('../utils/fs');
 const { withTask } = require('../utils/loopStall');
 const { ensurePrivateDir, PRIVATE_FILE_MODE } = require('../utils/fileModes');
 
@@ -97,7 +96,6 @@ function runBackup(opts) {
 async function runBackupNow({ offsite = true } = {}) {
   ensureDir();
 
-  const data = backup.createBackup();
   const timestamp = formatTimestamp(new Date());
   const filename = `gatecontrol-${timestamp}.json`;
   const filepath = path.join(BACKUP_DIR, filename);
@@ -105,8 +103,10 @@ async function runBackupNow({ offsite = true } = {}) {
   // Fresh tmp file + rename: the 0600 mode always applies (a plain
   // writeFileSync would keep the mode of an existing file) and a crash
   // mid-write never leaves a truncated backup under a valid name.
-  // written without synchronous file I/O (a backup with plugin data has up to a few hundred MB)
-  await atomicWriteAsync(filepath, JSON.stringify(data, null, 2), { mode: PRIVATE_FILE_MODE });
+  // Collected and written piece by piece (services/backup.writeBackupFile):
+  // a backup with plugin data has up to a few hundred MB — building it with
+  // JSON.stringify in one go blocked the event loop for 25+ s on a NAS.
+  await backup.writeBackupFile(filepath, { mode: PRIVATE_FILE_MODE });
 
   // Update last run time
   settings.set('autobackup_last_run', new Date().toISOString());
@@ -122,7 +122,8 @@ async function runBackupNow({ offsite = true } = {}) {
 
   if (offsite) {
     setImmediate(() => {
-      require('./offsite').uploadAfterBackup(filepath)
+      // marked: a stall during the upload names it (loopStall)
+      withTask('backup.offsite', () => require('./offsite').uploadAfterBackup(filepath))
         .catch((err) => logger.warn({ err: err.message }, 'Off-site upload hook failed'));
     });
   }
