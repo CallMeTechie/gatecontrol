@@ -73,7 +73,14 @@ function generateTokens() {
  *
  * ASYNC because peers.create() generates WireGuard keys asynchronously.
  */
-async function createGateway({ name, apiPort = DEFAULT_API_PORT, proxyPort = 8080 }) {
+// Where a gateway runs (gateway assistant, docs/feature-gateway-wizard.md);
+// NULL for gateways created before it.
+const PLATFORMS = ['rpi', 'synology', 'proxmox', 'linux'];
+function normalizePlatform(v) {
+  return PLATFORMS.includes(v) ? v : null;
+}
+
+async function createGateway({ name, apiPort = DEFAULT_API_PORT, proxyPort = 8080, platform = null, groupId = null }) {
   const db = getDb();
 
   const limit = license.getFeatureLimit('gateway_peers');
@@ -83,16 +90,16 @@ async function createGateway({ name, apiPort = DEFAULT_API_PORT, proxyPort = 808
   }
 
   // peers.create() is the existing async factory — we extend its param list to accept peerType
-  const peer = await peers.create({ name, peerType: 'gateway' });
+  const peer = await peers.create({ name, peerType: 'gateway', ...(groupId ? { groupId } : {}) });
 
   const { apiToken, apiTokenHash, pushToken, pushTokenEncrypted } = generateTokens();
 
   db.prepare(`
-    INSERT INTO gateway_meta (peer_id, api_port, proxy_port, api_token_hash, push_token_encrypted, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(peer.id, apiPort, proxyPort, apiTokenHash, pushTokenEncrypted, Date.now());
+    INSERT INTO gateway_meta (peer_id, api_port, proxy_port, api_token_hash, push_token_encrypted, created_at, platform)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(peer.id, apiPort, proxyPort, apiTokenHash, pushTokenEncrypted, Date.now(), normalizePlatform(platform));
 
-  logger.info({ peerId: peer.id, peerName: name, apiPort, proxyPort }, 'Gateway created');
+  logger.info({ peerId: peer.id, peerName: name, apiPort, proxyPort, platform: normalizePlatform(platform) }, 'Gateway created');
 
   return { peer, apiToken, pushToken };
 }
@@ -252,9 +259,9 @@ function handleHeartbeat(peerId, health) {
   const now = Date.now();
   db.prepare(`
     UPDATE gateway_meta
-    SET last_seen_at = ?, last_health = ?
+    SET last_seen_at = ?, last_health = ?, first_seen_at = COALESCE(first_seen_at, ?)
     WHERE peer_id = ?
-  `).run(now, JSON.stringify(health || {}), peerId);
+  `).run(now, JSON.stringify(health || {}), now, peerId);
 
   const sm = _getSm(peerId);
   const prevStatus = sm.status;
@@ -341,6 +348,14 @@ function _onStatusTransition(peerId, from, to, health) {
       }
     } catch (err) { logger.warn({ err: err.message, peerId }, 'gateway recovered webhook failed'); }
   }
+}
+
+/** Store where a gateway runs (assistant: a gateway created before it gets one on "Einrichtung fortsetzen"). */
+function setPlatform(peerId, platform) {
+  const p = normalizePlatform(platform);
+  if (!p) throw new Error('invalid_platform');
+  const r = getDb().prepare('UPDATE gateway_meta SET platform = ? WHERE peer_id = ?').run(p, peerId);
+  return r.changes > 0;
 }
 
 function getHealthStatus(peerId) {
@@ -934,6 +949,9 @@ async function refreshHealth(peerId) {
 
 module.exports = {
   DEFAULT_API_PORT,
+  PLATFORMS,
+  normalizePlatform,
+  setPlatform,
   createGateway,
   getGatewayConfig,
   computeConfigHash,

@@ -36,7 +36,8 @@ router.get('/', (req, res) => {
     const rows = db.prepare(`
       SELECT p.id, p.name, p.hostname, p.allowed_ips, p.latest_handshake,
              gm.api_port, gm.last_seen_at, gm.last_health,
-             gm.update_request_id, gm.update_requested_at, gm.update_target_version
+             gm.update_request_id, gm.update_requested_at, gm.update_target_version,
+             gm.platform, gm.created_at, gm.first_seen_at
       FROM peers p
       JOIN gateway_meta gm ON gm.peer_id = p.id
       WHERE p.peer_type = 'gateway' AND p.enabled = 1
@@ -88,6 +89,12 @@ router.get('/', (req, res) => {
         update_state: _ust.state,
         update_target_version: row.update_target_version || null,
         update_requested_at: row.update_requested_at || null,
+        // Gateway assistant: platform + "wartet auf ersten Start" until the
+        // first heartbeat / WireGuard handshake.
+        platform: row.platform || null,
+        created_at: row.created_at || null,
+        first_seen_at: row.first_seen_at || row.last_seen_at || null,
+        never_connected: !(row.first_seen_at || row.last_seen_at || Number(row.latest_handshake) > 0),
       };
     });
 
@@ -258,6 +265,99 @@ router.get('/:id/discovered', require('../../middleware/license').requireFeature
   if (!_gatewayTelemetry(id)) return res.status(404).json({ ok: false, error: 'not_found' });
   const snap = require('../../services/discoveryCache').get(id);
   res.json({ ok: true, devices: snap ? snap.devices : [], in_flight: snap ? snap.in_flight : false, done: snap ? snap.done : false, timed_out: snap ? snap.timed_out : false, updated_at: snap ? snap.updated_at : null });
+});
+
+// ─── Gateway assistant "Gateway hinzufügen" (docs/feature-gateway-wizard.md) ──
+// Creation itself is POST /api/v1/peers { is_gateway, platform } (same rights,
+// CSRF and licence checks as before); these endpoints serve the steps after it.
+
+/** Static facts for the assistant: Pi image of the latest release, Imager list, Smart Home plugin. */
+router.get('/setup-info', (req, res) => {
+  const kit = require('../../../public/js/gateway-kit');
+  const rel = require('../../services/gatewayRelease');
+  const wizard = require('../../services/gatewayWizard');
+  let plugin = null;
+  try { plugin = require('../../services/plugins/registry').get(wizard.SMARTHOME_PLUGIN); } catch { plugin = null; }
+  const config = require('../../../config/default');
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    ok: true,
+    latest_version: rel.getLatestVersion() || null,
+    rpi_image: rel.getRpiImage(),
+    releases_url: kit.RELEASES_URL,
+    imager_repo_url: kit.IMAGER_REPO_URL,
+    dns_domain: (config.dns && config.dns.domain) || null,
+    smarthome: { installed: !!plugin, plugin_url: plugin ? `/plugins/${wizard.SMARTHOME_PLUGIN}` : null },
+  });
+});
+
+function _gatewayIdOr404(req, res) {
+  const id = Number(req.params.id);
+  const row = Number.isInteger(id) ? require('../../services/gatewayWizard').gatewayRow(id) : null;
+  if (!row || row.enabled !== 1) { res.status(404).json({ ok: false, error: 'not_found' }); return null; }
+  return row;
+}
+
+/** Live status of step 4 (polled with back-off and on gc:gateway events). */
+router.get('/:id/setup-status', (req, res) => {
+  const row = _gatewayIdOr404(req, res);
+  if (!row) return;
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true, gateway: require('../../services/gatewayWizard').setupStatus(row.id) });
+});
+
+/** Platform of a gateway created before the assistant ("Einrichtung fortsetzen"). */
+router.put('/:id/platform', (req, res) => {
+  const row = _gatewayIdOr404(req, res);
+  if (!row) return;
+  const gateways = require('../../services/gateways');
+  const platform = req.body && req.body.platform;
+  if (!gateways.normalizePlatform(platform)) {
+    return res.status(400).json({ ok: false, error: req.t('error.peers.gateway_platform_invalid') });
+  }
+  gateways.setPlatform(row.id, platform);
+  res.json({ ok: true, platform });
+});
+
+/**
+ * Synology set-up package gatecontrol-gateway-nas.zip (compose, config/gateway.env,
+ * update.sh). The env needs plaintext tokens, which the server only has at
+ * creation — so this rotates them, like "gateway.env herunterladen"
+ * (POST: no prefetch can invalidate tokens; the client asks first when the
+ * gateway has ever connected). Session only: a script has no use for it.
+ */
+router.post('/:id/setup-bundle', (req, res) => {
+  if (req.tokenAuth) return res.status(403).json({ ok: false, error: 'session_required' });
+  const row = _gatewayIdOr404(req, res);
+  if (!row) return;
+  const gatewaySvc = require('../../services/gateways');
+  const { envContent } = gatewaySvc.rotateGatewayTokens(row.id);
+  const zip = gatewaySetup.buildNasBundle(envContent);
+  res.set('Content-Type', 'application/zip');
+  res.set('Content-Disposition', `attachment; filename="${gatewaySetup.NAS_BUNDLE_NAME}"`);
+  res.set('Cache-Control', 'no-store');
+  res.send(zip);
+});
+
+/** "Im Smart Home einbinden": internal route 127.0.0.1:8090 + Smart Home access target (idempotent). */
+router.post('/:id/smarthome', async (req, res) => {
+  if (req.tokenAuth) return res.status(403).json({ ok: false, error: 'session_required' });
+  const row = _gatewayIdOr404(req, res);
+  if (!row) return;
+  const wizard = require('../../services/gatewayWizard');
+  try {
+    const domain = req.body && typeof req.body.domain === 'string' ? req.body.domain : undefined;
+    const out = await wizard.connectSmarthome(row.id, { domain, ip: req.ip });
+    res.json({ ok: true, ...out });
+  } catch (err) {
+    if (err instanceof wizard.WizardError) {
+      const key = 'gwiz.err.' + err.code;
+      const msg = req.t(key);
+      return res.status(err.status).json({ ok: false, code: err.code, error: msg && msg !== key ? msg : req.t('common.error'), ...(err.feature ? { feature: err.feature } : {}) });
+    }
+    logger.error({ error: err.message, peerId: row.id }, 'Smart Home link of gateway failed');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
 });
 
 function _setupGatewayOr4xx(req, res) {

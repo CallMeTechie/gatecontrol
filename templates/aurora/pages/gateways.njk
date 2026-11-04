@@ -2,6 +2,17 @@
 {% block content %}
 <div class="gw-fleet">
   <div id="fleet-view">
+    {#- The page title is the topbar's; this row carries the intro and the
+        page's action (docs/feature-gateway-wizard.md). -#}
+    <div class="page-header">
+      <p class="page-meta">{{ t('gwiz.page_intro') }}</p>
+      <div class="page-actions">
+        <button type="button" class="btn btn-primary" id="btn-add-gateway">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          <span>{{ t('gwiz.add') }}</span>
+        </button>
+      </div>
+    </div>
     <div id="fleet-kpis" class="kpis"></div>
     <div id="version-warning" class="note" hidden>{{ t('gateways.version_check_unavailable') }}</div>
     <div id="fleet-grid" class="grid"></div>
@@ -30,5 +41,338 @@
     <div class="modal-body" id="gw-setup-modal-body"></div>
   </div>
 </div>
+
+{# ─── Assistant "Gateway hinzufügen" (gateway-wizard.js) ────────────────────
+   Four steps: 1 name/location/platform → 2 Raspberry-Pi settings (Pi only)
+   → "Gateway anlegen" (POST /api/v1/peers, is_gateway) → 3 instructions per
+   platform → 4 live status. Opened by #add, resumed by #setup/<id>. #}
+<div class="modal-overlay gwz-overlay" id="gwz-overlay" style="display:none">
+  <div class="modal gwz" role="dialog" aria-modal="true" aria-labelledby="gwz-title">
+    <div class="modal-head">
+      <h2 class="modal-title gwz-title" id="gwz-title" tabindex="-1">{{ t('gwiz.add') }}</h2>
+      <span class="gwz-stepno" id="gwz-stepno"></span>
+      <button type="button" class="modal-close" data-gwz-close aria-label="{{ t('gwiz.close') }}">&times;</button>
+      <div class="gwz-bar" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+    </div>
+    <div class="modal-body gwz-body">
+      <div class="gwz-error" id="gwz-error" role="alert" hidden></div>
+
+      {# ── Step 1: name, location, platform ── #}
+      <section class="gwz-step" data-step="1" hidden>
+        <div class="gwz-note gwz-info" id="gwz-created-note" hidden>{{ t('gwiz.s1.created_note') }}</div>
+        <div class="gwz-grid2">
+          <div class="gwz-field">
+            <label for="gwz-name">{{ t('gwiz.s1.name') }}</label>
+            <input type="text" id="gwz-name" maxlength="63" autocomplete="off" aria-describedby="gwz-name-err" required>
+            <span class="gwz-ferr" id="gwz-name-err" hidden></span>
+          </div>
+          <div class="gwz-field">
+            <label for="gwz-group">{{ t('gwiz.s1.location') }}</label>
+            <select id="gwz-group"><option value="">{{ t('gwiz.s1.location_none') }}</option></select>
+          </div>
+        </div>
+        <fieldset class="gwz-fieldset">
+          <legend>{{ t('gwiz.s1.platform') }}</legend>
+          <div class="gwz-plats">
+            <label class="gwz-plat">
+              <input type="radio" name="gwz-platform" value="rpi">
+              <span class="gwz-ic gwz-ic-teal" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h3v3H8z"/><path d="M15 9h1M15 12h1M8 16h8"/></svg></span>
+              <span class="gwz-plat-t"><strong>{{ t('gwiz.platform.rpi') }}</strong><span>{{ t('gwiz.platform.rpi_desc') }}</span></span>
+            </label>
+            <label class="gwz-plat">
+              <input type="radio" name="gwz-platform" value="synology">
+              <span class="gwz-ic gwz-ic-blue" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8"/><circle cx="12" cy="17" r="1"/></svg></span>
+              <span class="gwz-plat-t"><strong>{{ t('gwiz.platform.synology') }}</strong><span>{{ t('gwiz.platform.synology_desc') }}</span></span>
+            </label>
+            <label class="gwz-plat">
+              <input type="radio" name="gwz-platform" value="proxmox">
+              <span class="gwz-ic gwz-ic-amber" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/></svg></span>
+              <span class="gwz-plat-t"><strong>{{ t('gwiz.platform.proxmox') }}</strong><span>{{ t('gwiz.platform.proxmox_desc') }}</span></span>
+            </label>
+            <label class="gwz-plat">
+              <input type="radio" name="gwz-platform" value="linux">
+              <span class="gwz-ic gwz-ic-grey" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-5-6-5"/><path d="M12 19h8"/></svg></span>
+              <span class="gwz-plat-t"><strong>{{ t('gwiz.platform.linux') }}</strong><span>{{ t('gwiz.platform.linux_desc') }}</span></span>
+            </label>
+          </div>
+          <span class="gwz-ferr" id="gwz-platform-err" hidden></span>
+        </fieldset>
+        <div class="gwz-note gwz-info">{{ t('gwiz.s1.lan_hint') }}</div>
+      </section>
+
+      {# ── Step 2: Raspberry Pi settings ── #}
+      <section class="gwz-step" data-step="2" hidden>
+        <fieldset class="gwz-fieldset">
+          <legend>{{ t('gwiz.s2.model') }}</legend>
+          <div class="gwz-seg">
+            <label><input type="radio" name="gwz-model" value="pi5"><span>Pi 5</span></label>
+            <label><input type="radio" name="gwz-model" value="pi4"><span>Pi 4</span></label>
+            <label><input type="radio" name="gwz-model" value="pi3bplus"><span>Pi 3 B+</span></label>
+            <label><input type="radio" name="gwz-model" value="pizero2w"><span>Pi Zero 2 W</span></label>
+          </div>
+          <p class="gwz-d" id="gwz-model-hint" aria-live="polite"></p>
+        </fieldset>
+
+        <fieldset class="gwz-fieldset">
+          <legend>{{ t('gwiz.s2.network') }}</legend>
+          <div class="gwz-seg">
+            <label><input type="radio" name="gwz-net" value="lan"><span>{{ t('gwiz.s2.net_lan') }}</span></label>
+            <label><input type="radio" name="gwz-net" value="wifi"><span>{{ t('gwiz.s2.net_wifi') }}</span></label>
+          </div>
+          <div class="gwz-wifi" id="gwz-wifi" hidden>
+            <div class="gwz-grid2">
+              <div class="gwz-field">
+                <label for="gwz-ssid">{{ t('gwiz.s2.ssid') }}</label>
+                <input type="text" id="gwz-ssid" autocomplete="off" spellcheck="false" aria-describedby="gwz-ssid-err">
+                <span class="gwz-ferr" id="gwz-ssid-err" hidden></span>
+              </div>
+              <div class="gwz-field">
+                <label for="gwz-psk">{{ t('gwiz.s2.psk') }}</label>
+                <input type="password" id="gwz-psk" autocomplete="new-password" spellcheck="false" aria-describedby="gwz-psk-err">
+                <span class="gwz-ferr" id="gwz-psk-err" hidden></span>
+              </div>
+            </div>
+            <label class="gwz-check"><input type="checkbox" id="gwz-hidden"> {{ t('gwiz.s2.hidden') }}</label>
+            <p class="gwz-d">{{ t('gwiz.s2.wifi_hint') }}</p>
+            <p class="gwz-d">{{ t('gwiz.s2.wifi_wpa') }}</p>
+          </div>
+        </fieldset>
+
+        <fieldset class="gwz-fieldset">
+          <legend>{{ t('gwiz.s2.zigbee') }}</legend>
+          <div class="gwz-seg">
+            <label><input type="radio" name="gwz-zigbee" value="auto"><span>{{ t('gwiz.s2.zigbee_auto') }}</span></label>
+            <label><input type="radio" name="gwz-zigbee" value="off"><span>{{ t('gwiz.s2.zigbee_off') }}</span></label>
+          </div>
+          <p class="gwz-d">{{ t('gwiz.s2.zigbee_hint') }}</p>
+        </fieldset>
+
+        <details class="gwz-details" id="gwz-advanced">
+          <summary>{{ t('gwiz.s2.advanced') }}</summary>
+          <div class="gwz-grid2">
+            <div class="gwz-field">
+              <label for="gwz-hostname">{{ t('gwiz.s2.hostname') }}</label>
+              <input type="text" id="gwz-hostname" maxlength="63" autocomplete="off" spellcheck="false" aria-describedby="gwz-hostname-err">
+              <span class="gwz-ferr" id="gwz-hostname-err" hidden></span>
+            </div>
+            <div class="gwz-field">
+              <label for="gwz-tz">{{ t('gwiz.s2.timezone') }}</label>
+              <select id="gwz-tz" aria-describedby="gwz-tz-err"></select>
+              <span class="gwz-ferr" id="gwz-tz-err" hidden></span>
+            </div>
+            <div class="gwz-field">
+              <label for="gwz-country">{{ t('gwiz.s2.country') }}</label>
+              <input type="text" id="gwz-country" maxlength="2" autocomplete="off" spellcheck="false" aria-describedby="gwz-country-err">
+              <span class="gwz-ferr" id="gwz-country-err" hidden></span>
+            </div>
+            <div class="gwz-field gwz-span2">
+              <label for="gwz-ssh">{{ t('gwiz.s2.ssh') }}</label>
+              <textarea id="gwz-ssh" rows="2" spellcheck="false" placeholder="{{ t('gwiz.s2.ssh_ph') }}" aria-describedby="gwz-ssh-err"></textarea>
+              <span class="gwz-ferr" id="gwz-ssh-err" hidden></span>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      {# ── Step 3: Raspberry Pi ── #}
+      <section class="gwz-step" data-step="3" data-platform="rpi" hidden>
+        <p class="gwz-lead" id="gwz-pi-need"></p>
+        <ol class="gwz-st">
+          <li>
+            <h3>{{ t('gwiz.pi.dl_title') }}</h3>
+            <div class="gwz-row">
+              <a class="btn btn-primary" id="gwz-pi-image" target="_blank" rel="noopener noreferrer" href="#">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+                <span id="gwz-pi-image-label">{{ t('gwiz.pi.dl_image') }}</span>
+              </a>
+              <button type="button" class="btn btn-secondary" id="gwz-pi-setup">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+                <span>{{ t('gwiz.pi.dl_setup') }}</span>
+              </button>
+            </div>
+            <p>{{ t('gwiz.pi.dl_hint') }}</p>
+            <p class="gwz-d" id="gwz-pi-summary">{{ t('gwiz.pi.summary') }} <span id="gwz-pi-summary-text"></span> · <button type="button" class="gwz-link" id="gwz-pi-edit">{{ t('gwiz.pi.summary_edit') }}</button></p>
+            <p class="gwz-d gwz-rotate-note" hidden>{{ t('gwiz.rotate_note') }}</p>
+          </li>
+          <li>
+            <h3>{{ t('gwiz.pi.imager_title') }}</h3>
+            <ol class="gwz-sub">
+              <li><a href="https://www.raspberrypi.com/software/" target="_blank" rel="noopener noreferrer">Raspberry Pi Imager</a> {{ t('gwiz.pi.imager_1_post') }}</li>
+              <li><span class="gwz-k">{{ t('gwiz.pi.imager_device') }}</span> → <strong id="gwz-pi-imager-device">Raspberry Pi</strong></li>
+              <li>{{ t('gwiz.pi.imager_3') }}</li>
+              <li><span class="gwz-k">{{ t('gwiz.pi.imager_storage') }}</span> → {{ t('gwiz.pi.imager_4') }}</li>
+              <li>{{ t('gwiz.pi.imager_5') }}</li>
+              <li>{{ t('gwiz.pi.imager_6') }}</li>
+            </ol>
+          </li>
+          <li>
+            <h3>{{ t('gwiz.pi.copy_title') }}</h3>
+            <p>{{ t('gwiz.pi.copy_text') }}</p>
+            <pre class="gwz-tree">bootfs/
+└─ gatecontrol/
+   ├─ gateway.env
+   └─ settings.txt</pre>
+          </li>
+          <li>
+            <h3>{{ t('gwiz.pi.start_title') }}</h3>
+            <p>{{ t('gwiz.pi.start_text') }}</p>
+          </li>
+        </ol>
+        <details class="gwz-details">
+          <summary>{{ t('gwiz.pi.alt_title') }}</summary>
+          <p>{{ t('gwiz.pi.alt_text') }}</p>
+          <div class="gwz-row">
+            <code class="gwz-code" id="gwz-imager-url"></code>
+            <button type="button" class="btn btn-ghost btn-sm" data-gwz-copy="gwz-imager-url">{{ t('gwiz.copy') }}</button>
+          </div>
+          <p>{{ t('gwiz.pi.alt_note') }}</p>
+        </details>
+      </section>
+
+      {# ── Step 3: Synology NAS ── #}
+      <section class="gwz-step" data-step="3" data-platform="synology" hidden>
+        <p class="gwz-lead">{{ t('gwiz.nas.need') }}</p>
+        <ol class="gwz-st">
+          <li>
+            <h3>{{ t('gwiz.nas.dl_title') }}</h3>
+            <div class="gwz-row">
+              <button type="button" class="btn btn-primary" id="gwz-nas-bundle">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+                <span>gatecontrol-gateway-nas.zip</span>
+              </button>
+            </div>
+            <p>{{ t('gwiz.nas.dl_text') }}</p>
+            <p class="gwz-d">{{ t('gwiz.nas.dl_rotate') }}</p>
+          </li>
+          <li>
+            <h3>{{ t('gwiz.nas.folder_title') }}</h3>
+            <p>{{ t('gwiz.nas.folder_text') }}</p>
+            <pre class="gwz-tree">docker/gatecontrol-gateway/
+├─ docker-compose.yml
+├─ update.sh
+├─ gateway-state/
+└─ config/
+   └─ gateway.env</pre>
+          </li>
+          <li>
+            <h3>{{ t('gwiz.nas.project_title') }}</h3>
+            <ol class="gwz-sub">
+              <li><span class="gwz-k">Container Manager</span> → <span class="gwz-k">{{ t('gwiz.nas.project') }}</span> → <span class="gwz-k">{{ t('gwiz.nas.create') }}</span></li>
+              <li>{{ t('gwiz.nas.project_2') }}</li>
+              <li>{{ t('gwiz.nas.project_3') }}</li>
+            </ol>
+          </li>
+          <li>
+            <h3>{{ t('gwiz.nas.update_title') }}</h3>
+            <p>{{ t('gwiz.nas.update_text') }}</p>
+            <div class="gwz-row">
+              <code class="gwz-code" id="gwz-nas-cmd"></code>
+              <button type="button" class="btn btn-ghost btn-sm" data-gwz-copy="gwz-nas-cmd">{{ t('gwiz.copy') }}</button>
+            </div>
+            <p class="gwz-d">{{ t('gwiz.nas.volume_hint') }}</p>
+          </li>
+        </ol>
+      </section>
+
+      {# ── Step 3: Proxmox (LXC) ── #}
+      <section class="gwz-step" data-step="3" data-platform="proxmox" hidden>
+        <p class="gwz-lead">{{ t('gwiz.pve.need') }}</p>
+        <ol class="gwz-st">
+          <li>
+            <h3>{{ t('gwiz.pve.cmd_title') }}</h3>
+            <p>{{ t('gwiz.pve.cmd_text') }}</p>
+            <div class="gwz-row gwz-row-top">
+              <pre class="gwz-code gwz-pre" id="gwz-pve-cmd"></pre>
+              <button type="button" class="btn btn-ghost btn-sm" data-gwz-copy="gwz-pve-cmd">{{ t('gwiz.copy') }}</button>
+            </div>
+            <p class="gwz-d"><span id="gwz-pve-countdown" aria-live="polite"></span>
+              <button type="button" class="btn btn-ghost btn-sm" id="gwz-pve-regen">{{ t('gwiz.pve.regen') }}</button></p>
+          </li>
+          <li>
+            <h3>{{ t('gwiz.pve.run_title') }}</h3>
+            <p>{{ t('gwiz.pve.run_text') }}</p>
+          </li>
+        </ol>
+      </section>
+
+      {# ── Step 3: other Linux (Docker Compose) ── #}
+      <section class="gwz-step" data-step="3" data-platform="linux" hidden>
+        <p class="gwz-lead">{{ t('gwiz.linux.need') }}</p>
+        <ol class="gwz-st">
+          <li>
+            <h3>{{ t('gwiz.linux.files_title') }}</h3>
+            <fieldset class="gwz-fieldset">
+              <legend>{{ t('gwiz.linux.net') }}</legend>
+              <div class="gwz-seg">
+                <label><input type="radio" name="gwz-linux-net" value="host" checked><span>{{ t('gwiz.linux.net_host') }}</span></label>
+                <label><input type="radio" name="gwz-linux-net" value="bridge"><span>{{ t('gwiz.linux.net_bridge') }}</span></label>
+              </div>
+              <p class="gwz-d" id="gwz-linux-net-hint"></p>
+            </fieldset>
+            <div class="gwz-row">
+              <button type="button" class="btn btn-primary" id="gwz-linux-compose">docker-compose.yml</button>
+              <button type="button" class="btn btn-secondary" id="gwz-linux-env">gateway.env</button>
+              <a class="btn btn-ghost" id="gwz-linux-update" href="#">update.sh</a>
+            </div>
+            <p class="gwz-d gwz-rotate-note" hidden>{{ t('gwiz.rotate_note') }}</p>
+            <details class="gwz-details">
+              <summary>{{ t('gwiz.linux.compose_preview') }}</summary>
+              <pre class="gwz-code gwz-pre" id="gwz-linux-compose-text"></pre>
+            </details>
+            <pre class="gwz-tree">gatecontrol-gateway/
+├─ docker-compose.yml
+├─ update.sh
+└─ config/
+   └─ gateway.env</pre>
+          </li>
+          <li>
+            <h3>{{ t('gwiz.linux.start_title') }}</h3>
+            <div class="gwz-row">
+              <code class="gwz-code" id="gwz-linux-up">docker compose up -d</code>
+              <button type="button" class="btn btn-ghost btn-sm" data-gwz-copy="gwz-linux-up">{{ t('gwiz.copy') }}</button>
+            </div>
+          </li>
+          <li>
+            <h3>{{ t('gwiz.linux.update_title') }}</h3>
+            <p>{{ t('gwiz.linux.update_text') }}</p>
+            <div class="gwz-row">
+              <code class="gwz-code" id="gwz-linux-cron">* * * * * PATH=/usr/local/bin:$PATH GATEWAY_STATE_DIR=/opt/gatecontrol-gateway/gateway-state GC_GW_COMPOSE_DIR=/opt/gatecontrol-gateway bash /opt/gatecontrol-gateway/update.sh</code>
+              <button type="button" class="btn btn-ghost btn-sm" data-gwz-copy="gwz-linux-cron">{{ t('gwiz.copy') }}</button>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      {# ── Step 4: live status ── #}
+      <section class="gwz-step" data-step="4" hidden>
+        <ul class="gwz-checks" id="gwz-checks" aria-live="polite">
+          <li data-check="created"><span class="gwz-dot" aria-hidden="true"></span><span class="gwz-ct"><strong>{{ t('gwiz.s4.created') }}</strong><span class="gwz-d" data-sub></span></span></li>
+          <li data-check="contact"><span class="gwz-dot" aria-hidden="true"></span><span class="gwz-ct"><strong data-title></strong><span class="gwz-d" data-sub></span></span></li>
+          <li data-check="hardware"><span class="gwz-dot" aria-hidden="true"></span><span class="gwz-ct"><strong>{{ t('gwiz.s4.hardware') }}</strong><span class="gwz-d" data-sub></span></span></li>
+          <li data-check="zigbee" hidden><span class="gwz-dot" aria-hidden="true"></span><span class="gwz-ct"><strong data-title></strong><span class="gwz-d" data-sub></span>
+            <span class="gwz-row">
+              <a class="btn btn-ghost btn-sm" id="gwz-phoscon" target="_blank" rel="noopener noreferrer" href="#" hidden>{{ t('gwiz.s4.phoscon_open') }}</a>
+              <button type="button" class="btn btn-ghost btn-sm" id="gwz-smarthome" hidden>{{ t('gwiz.s4.smarthome') }}</button>
+              <a class="btn btn-ghost btn-sm" id="gwz-smarthome-open" href="#" hidden>{{ t('gwiz.s4.smarthome_open') }}</a>
+            </span>
+            <span class="gwz-d" id="gwz-phoscon-lan" hidden></span>
+            <span class="gwz-d" id="gwz-smarthome-msg" role="status" hidden></span>
+          </span></li>
+        </ul>
+        <div class="gwz-note gwz-warn" id="gwz-help" hidden>
+          <strong>{{ t('gwiz.s4.help_title') }}</strong> <span id="gwz-help-text"></span>
+        </div>
+      </section>
+    </div>
+    <div class="modal-foot gwz-foot">
+      <button type="button" class="btn btn-ghost" id="gwz-back"></button>
+      <span class="gwz-foot-gap"></span>
+      <button type="button" class="btn btn-primary" id="gwz-next"></button>
+    </div>
+  </div>
+</div>
+<script type="application/json" id="gwiz-i18n" data-prefixes="gwiz. common." nonce="{{ cspNonce }}">{{ gwizI18n | default('{}') | safe }}</script>
 {% endblock %}
-{% block scripts %}<script src="/js/gateways.js?v={{ appVersion }}"></script>{% endblock %}
+{% block scripts %}<script src="/js/gateway-kit.js?v={{ appVersion }}"></script>
+<script src="/js/gateway-wizard.js?v={{ appVersion }}"></script>
+<script src="/js/gateways.js?v={{ appVersion }}"></script>{% endblock %}

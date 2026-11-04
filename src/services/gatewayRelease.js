@@ -12,17 +12,42 @@ const MAX_BODY = 200 * 1024;
 const PERSIST_FILE = process.env.GC_GATEWAY_LATEST_CACHE
   || path.join(path.dirname(process.env.GC_DB_PATH || path.join(__dirname, '..', '..', 'data', 'gatecontrol.db')), 'gateway-latest-version.json');
 
-function _loadPersisted() {
-  try { const v = JSON.parse(fs.readFileSync(PERSIST_FILE, 'utf8')).version; if (v && typeof v === 'string') return v; } catch (_e) { /* none */ }
-  return null;
+// The Raspberry-Pi image of a release (gateway assistant, docs/feature-gateway-wizard.md):
+// gatecontrol-gateway-<version>-rpi-arm64.img.xz — its name carries the version,
+// so the download link needs the asset name from the release, not releases/latest.
+const RPI_ASSET_RE = /^gatecontrol-gateway-[0-9A-Za-z.+-]{1,40}-rpi-arm64\.img\.xz$/;
+
+function _rpiImageOf(release) {
+  const assets = release && Array.isArray(release.assets) ? release.assets : [];
+  const a = assets.find((x) => x && typeof x.name === 'string' && RPI_ASSET_RE.test(x.name));
+  return a ? _validRpiImage({ name: a.name, size: a.size, url: a.browser_download_url }) : null;
 }
 
-function _persist(v) {
-  try { fs.writeFileSync(PERSIST_FILE, JSON.stringify({ version: v, savedAt: Date.now() })); }
+/** Only an asset of this repo's release downloads, with a sane size — else null. */
+function _validRpiImage(img) {
+  if (!img || typeof img.name !== 'string' || !RPI_ASSET_RE.test(img.name)) return null;
+  const prefix = `https://github.com/${REPO}/releases/download/`;
+  if (typeof img.url !== 'string' || !img.url.startsWith(prefix) || !img.url.endsWith('/' + img.name)
+    || /[\s"'<>\\]/.test(img.url) || img.url.length > 400) return null;
+  const size = Number.isSafeInteger(img.size) && img.size > 0 ? img.size : null;
+  return { name: img.name, size, url: img.url };
+}
+
+function _readPersisted() {
+  try { return JSON.parse(fs.readFileSync(PERSIST_FILE, 'utf8')) || {}; } catch (_e) { return {}; }
+}
+
+function _loadPersisted() {
+  const v = _readPersisted().version;
+  return v && typeof v === 'string' ? v : null;
+}
+
+function _persist(v, rpiImage) {
+  try { fs.writeFileSync(PERSIST_FILE, JSON.stringify({ version: v, rpiImage: rpiImage || null, savedAt: Date.now() })); }
   catch (err) { logger.warn({ err: err.message }, 'gateway release persist failed'); }
 }
 
-let cache = { version: _loadPersisted(), fetchedAt: 0 };
+let cache = { version: _loadPersisted(), rpiImage: _validRpiImage(_readPersisted().rpiImage), fetchedAt: 0 };
 let inFlight = false;
 let fetchCalls = 0;
 
@@ -41,8 +66,13 @@ function _fetchLatest() {
     res.on('end', () => {
       inFlight = false;
       try {
-        const v = _normalizeTag(JSON.parse(body).tag_name);
-        if (v) { cache = { version: v, fetchedAt: Date.now() }; _persist(v); }
+        const rel = JSON.parse(body);
+        const v = _normalizeTag(rel.tag_name);
+        if (v) {
+          const rpiImage = _rpiImageOf(rel);
+          cache = { version: v, rpiImage, fetchedAt: Date.now() };
+          _persist(v, rpiImage);
+        }
       }
       catch (err) { logger.warn({ err: err.message }, 'gateway release parse failed'); }
     });
@@ -56,6 +86,12 @@ function _fetchLatest() {
 function getLatestVersion() {
   if (Date.now() - cache.fetchedAt > CACHE_TTL) _fetchLatest();
   return cache.version;
+}
+
+/** { name, size, url } of the latest release's Pi image, or null (not known yet / no image in it). */
+function getRpiImage() {
+  if (Date.now() - cache.fetchedAt > CACHE_TTL) _fetchLatest();
+  return cache.rpiImage || null;
 }
 
 // Warm-start: fetch immediately, then retry a few times on a delay if the
@@ -77,9 +113,11 @@ function init(retriesLeft = INIT_MAX_RETRIES) {
 
 module.exports = {
   getLatestVersion,
+  getRpiImage,
   _normalizeTag,
   _fetchLatest,
-  _setCache: (v) => { cache = { version: v, fetchedAt: Date.now() }; _persist(v); },
+  _rpiImageOf,
+  _setCache: (v, rpiImage = null) => { cache = { version: v, rpiImage: _validRpiImage(rpiImage), fetchedAt: Date.now() }; _persist(v, cache.rpiImage); },
   init,
   _loadPersisted,
   _persist,

@@ -89,76 +89,10 @@ var DT = function (k, p) { return D.t(k, p); };
     //   network: host|bridge  → host gives full feature set (L4 routes,
     //     Wake-on-LAN). Bridge isolates but loses both because Docker
     //     bridge can't add ports after start and filters multicast.
+    // The onboarding compose lives in gateway-kit.js (shared with the gateway
+    // assistant and the server's Synology package).
     function buildCompose(opts) {
-      var lines = [];
-      var headerNotes = [];
-
-      if (opts.network === 'bridge') {
-        headerNotes.push(
-          '# Bridge mode: HTTP routes only. L4-Routes (raw TCP) and Wake-on-LAN',
-          '# require host-network mode and will NOT work with this compose.');
-      }
-      if (opts.platform === 'synology') {
-        headerNotes.push(
-          '# Userspace WireGuard (wireguard-go) — for Synology DSM and any host',
-          '# without the WireGuard kernel module. ~2-3x slower than kernel WG',
-          '# but reliable and needs no kernel modifications.');
-      } else {
-        headerNotes.push(
-          '# Linux kernel WireGuard — full performance via netlink, no TUN',
-          '# device required. Requires the wireguard kernel module loaded',
-          '# on the host (default on Debian 11+ / Ubuntu 22.04+ / kernel ≥5.6).');
-      }
-
-      lines.push(
-        'services:',
-        '  gateway:',
-        '    image: ghcr.io/callmetechie/gatecontrol-gateway:latest',
-        '    restart: unless-stopped'
-      );
-      if (opts.network === 'host') {
-        lines.push('    network_mode: host');
-      }
-      lines.push(
-        '    cap_drop:',
-        '      - ALL',
-        '    cap_add:',
-        '      - NET_ADMIN'
-      );
-      // NET_BIND_SERVICE is only meaningful in host mode (binding low
-      // ports for L4 routes). Bridge always maps to high ports.
-      if (opts.network === 'host') {
-        lines.push('      - NET_BIND_SERVICE');
-      }
-      // /dev/net/tun only needed for the wireguard-go userspace path.
-      if (opts.platform === 'synology') {
-        lines.push(
-          '    devices:',
-          '      - /dev/net/tun:/dev/net/tun'
-        );
-      }
-      if (opts.network === 'bridge') {
-        lines.push(
-          '    ports:',
-          '      - "8080:8080"   # HTTP proxy (Caddy upstream)',
-          '      - "9876:9876"   # Management API (do NOT expose to internet)'
-        );
-      }
-      lines.push(
-        '    read_only: true',
-        '    tmpfs:',
-        '      - /tmp',
-        '      - /run',
-        '      - /etc/wireguard',
-        '    volumes:',
-        '      - ./config:/config:ro',
-        '      - ./gateway-state:/state   # rw: auto-update state (self-update flag + last-pull)',
-        '    environment:',
-        '      - LOG_LEVEL=info',
-        '      - GATEWAY_ENV_PATH=/config/gateway.env'
-      );
-      var header = headerNotes.length > 0 ? headerNotes.join('\n') + '\n' : '';
-      return header + lines.join('\n') + '\n';
+      return window.GCGatewayKit.buildCompose(opts);
     }
 
     var dockerComposeEl = document.getElementById('gateway-docker-compose');
@@ -733,14 +667,9 @@ var DT = function (k, p) { return D.t(k, p); };
   if (peersMobile) peersMobile.addEventListener('click', handlePeerAction);
 
   // ─── Add peer ────────────────────────────────────────────
-  // Toggle gateway-fields visibility on checkbox change
-  var isGatewayCb = document.getElementById('add-peer-is-gateway');
-  if (isGatewayCb) {
-    isGatewayCb.addEventListener('change', function() {
-      var fields = document.getElementById('add-peer-gateway-fields');
-      if (fields) fields.style.display = this.checked ? 'block' : 'none';
-    });
-  }
+  // Gateways are no longer added here: the dialog points to the assistant on
+  // /gateways (docs/feature-gateway-wizard.md). Existing gateway peers keep
+  // their token dialog (edit → "gateway.env herunterladen").
 
   document.getElementById('btn-add-peer').addEventListener('click', function() {
     document.getElementById('add-peer-name').value = '';
@@ -754,11 +683,6 @@ var DT = function (k, p) { return D.t(k, p); };
     document.getElementById('add-peer-expires-date').style.display = 'none';
     var addHostnameEl = document.getElementById('add-peer-hostname');
     if (addHostnameEl) addHostnameEl.value = '';
-    if (isGatewayCb) {
-      isGatewayCb.checked = false;
-      var gwFields = document.getElementById('add-peer-gateway-fields');
-      if (gwFields) gwFields.style.display = 'none';
-    }
     hideError('add-peer-error');
     clearFieldErrors();
     renderGroupDropdowns();
@@ -782,20 +706,9 @@ var DT = function (k, p) { return D.t(k, p); };
     try {
       var dns = document.getElementById('add-peer-dns') ? document.getElementById('add-peer-dns').value.trim() : undefined;
       var expires_at = computeExpiresAt('add-peer-expires', 'add-peer-expires-date');
-      var isGatewayEl = document.getElementById('add-peer-is-gateway');
-      var apiPortEl = document.getElementById('add-peer-api-port');
-      var proxyPortEl = document.getElementById('add-peer-proxy-port');
-      var isGateway = !!(isGatewayEl && isGatewayEl.checked);
-      var apiPort = apiPortEl ? parseInt(apiPortEl.value, 10) || 9876 : 9876;
-      var proxyPort = proxyPortEl ? parseInt(proxyPortEl.value, 10) || 8080 : 8080;
       var addOwnerEl = document.getElementById('add-peer-owner');
       var payload = { name: name, description: description, tags: tags, expires_at: expires_at, group_id: group_id, dns: dns || undefined,
         user_id: addOwnerEl ? (addOwnerEl.value === '' ? null : Number(addOwnerEl.value)) : null };
-      if (isGateway) {
-        payload.is_gateway = true;
-        payload.api_port = apiPort;
-        payload.proxy_port = proxyPort;
-      }
       var data = await api.post('/api/peers', payload);
       if (data.ok) {
         clearFieldErrors();
@@ -823,12 +736,7 @@ var DT = function (k, p) { return D.t(k, p); };
         }
 
         closeModal('modal-add-peer');
-        if (data.gateway && data.gateway.apiToken && data.gateway.pushToken) {
-          // Gateway peer created — show tokens + env-file in dedicated modal
-          openGatewayTokensModal(data.peer, data.gateway);
-        } else {
-          showQrModal(data.peer.id);
-        }
+        showQrModal(data.peer.id);
         loadPeers();
         loadGroups();
       } else if (data.fields) {
@@ -1125,6 +1033,9 @@ var DT = function (k, p) { return D.t(k, p); };
     if (gwInfo) {
       if (peer.peer_type === 'gateway') {
         gwInfo.style.display = '';
+        // "Einrichtung erneut anzeigen" → the assistant on /gateways at step 3.
+        var setupLink = document.getElementById('edit-peer-gateway-setup');
+        if (setupLink) setupLink.href = '/gateways#setup/' + encodeURIComponent(peer.id);
         var portDisplay = document.getElementById('edit-peer-api-port-display');
         if (portDisplay) portDisplay.textContent = peer.api_port || '9876';
 

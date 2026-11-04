@@ -167,7 +167,7 @@ router.get('/:id', (req, res) => {
  */
 router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
   try {
-    const { name, description, tags, expires_at, group_id, dns, is_gateway, api_port, proxy_port, user_id } = req.body;
+    const { name, description, tags, expires_at, group_id, dns, is_gateway, api_port, proxy_port, user_id, platform } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -195,11 +195,41 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
       if (!Number.isInteger(parsedProxyPort) || parsedProxyPort < 1 || parsedProxyPort > 65535) {
         return res.status(400).json({ ok: false, error: 'proxy_port must be 1..65535' });
       }
-      const result = await gateways.createGateway({
-        name,
-        apiPort: parsedApiPort,
-        proxyPort: parsedProxyPort,
-      });
+      // Gateway assistant (docs/feature-gateway-wizard.md): where it runs
+      // (rpi | synology | proxmox | linux, optional) and its location = a
+      // peer group (optional).
+      if (platform != null && platform !== '' && !gateways.normalizePlatform(platform)) {
+        return res.status(400).json({ ok: false, error: req.t('error.peers.gateway_platform_invalid'), fields: { platform: req.t('error.peers.gateway_platform_invalid') } });
+      }
+      let groupId = null;
+      if (group_id != null && group_id !== '') {
+        groupId = Number(group_id);
+        if (!Number.isInteger(groupId) || !getDb().prepare('SELECT 1 FROM peer_groups WHERE id = ?').get(groupId)) {
+          return res.status(400).json({ ok: false, error: req.t('error.peers.group_invalid'), fields: { group_id: req.t('error.peers.group_invalid') } });
+        }
+      }
+      let result;
+      try {
+        result = await gateways.createGateway({
+          name,
+          apiPort: parsedApiPort,
+          proxyPort: parsedProxyPort,
+          platform: platform || null,
+          groupId,
+        });
+      } catch (err) {
+        if (/^License limit reached: gateway_peers/.test(err.message || '')) {
+          const license = require('../../services/license');
+          return res.status(403).json({
+            ok: false,
+            error: req.t('error.license.limit_reached'),
+            feature: 'gateway_peers',
+            limit: license.getFeatureLimit('gateway_peers'),
+            upgrade_url: 'https://callmetechie.de/products/gatecontrol/pricing',
+          });
+        }
+        throw err;
+      }
       const envContent = gateways.buildEnvForPeer(result.peer.id, result.apiToken, result.pushToken);
       return res.status(201).json({
         ok: true,
