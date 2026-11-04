@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.225.2] — 2026-11-04
+
+### Fixes
+- „Update fehlgeschlagen“ erst nach drei Fehlversuchen in Folge (#399)
+
+---
+
 ## [1.225.1] — 2026-11-04
 
 ### Fixes
