@@ -392,6 +392,9 @@ const LOGS_I18N_PREFIXES = ['lg.', 'common.'];
 // (support-bundles.njk data-prefixes must list the same ones).
 const SB_I18N_PREFIXES = ['support_bundles.', 'common.'];
 
+// Gateway page + assistant "Gateway hinzufügen" (gateway-wizard.js).
+const GWIZ_I18N_PREFIXES = ['gwiz.', 'common.'];
+
 // Strings the users list and the user profile hand to users.js (one JSON
 // island on both pages, like the settings page; up.* for the profile).
 const USERS_I18N_PREFIXES = ['us.', 'users.mb.', 'error.users.', 'error.tokens.', 'error.enrollment.', 'enrollment.', 'common.', 'passkey.error_not_found', 'up.', 'avatar.'];
@@ -504,6 +507,12 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
       extraLocals.logsI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, LOGS_I18N_PREFIXES))
         .replace(/</g, '\\u003c');
       try { extraLocals.logsLicenceExport = require('../services/license').hasFeature('log_export'); } catch { extraLocals.logsLicenceExport = false; }
+    }
+    // Gateway assistant (gateway-wizard.js, docs/feature-gateway-wizard.md):
+    // gateways.njk island data-prefixes must list the same ones.
+    if (template === 'gateways') {
+      extraLocals.gwizI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, GWIZ_I18N_PREFIXES))
+        .replace(/</g, '\\u003c');
     }
     if (template === 'support-bundles') {
       extraLocals.sbI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, SB_I18N_PREFIXES))

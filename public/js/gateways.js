@@ -2,7 +2,10 @@
   'use strict';
   var GCt = (window.GC && GC.t) || {};
   var csrf = (window.GC && GC.csrfToken) || '';
-  function T(k, d) { return GCt[k] || d; }
+  // Strings of the gateway assistant (gwiz.*) come in the page's JSON island.
+  var GW = {};
+  try { GW = JSON.parse((document.getElementById('gwiz-i18n') || {}).textContent || '{}') || {}; } catch (e) { GW = {}; }
+  function T(k, d) { return GCt[k] || GW[k] || d; }
   // In-app dialogs instead of confirm()/alert() (docs/feature-wave2.md §W1.2).
   var D = window.GCDialog;
   var grid = document.getElementById('fleet-grid');
@@ -59,7 +62,56 @@
     fill.style.width = Math.max(0, Math.min(100, pctVal)) + '%';
     if (isHot) fill.className = 'hot'; rb.appendChild(fill); parent.appendChild(rb);
   }
+  // A gateway that never reported yet: "wartet auf ersten Start" + "Einrichtung fortsetzen"
+  // (opens the assistant at step 3 for its platform — docs/feature-gateway-wizard.md).
+  function agoLong(ms) {
+    if (!ms) return '—';
+    var m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    if (m < 60) return T('gwiz.card.min', '{{n}} Min.').replace('{{n}}', m);
+    var h = Math.round(m / 60);
+    if (h < 48) return T('gwiz.card.hours', '{{n}} Std.').replace('{{n}}', h);
+    return T('gwiz.card.days', '{{n}} Tagen').replace('{{n}}', Math.round(h / 24));
+  }
+  function platformLabel(p) { return p ? T('gwiz.platform.' + p, p) : ''; }
+  function waitIcon() {
+    var s = document.createElementNS(SVG_NS, 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none');
+    s.setAttribute('aria-hidden', 'true');
+    var c = document.createElementNS(SVG_NS, 'circle'); c.setAttribute('cx', '12'); c.setAttribute('cy', '12'); c.setAttribute('r', '9');
+    var p = document.createElementNS(SVG_NS, 'path'); p.setAttribute('d', 'M12 7v5l3 2');
+    [c, p].forEach(function (n) { n.setAttribute('stroke', 'currentColor'); n.setAttribute('stroke-width', '2'); n.setAttribute('stroke-linecap', 'round'); s.appendChild(n); });
+    return s;
+  }
+  function waitingCard(g) {
+    var wrap = el('div', 'gw unit gw-waiting'); wrap.dataset.id = g.peer_id;
+    var uh = el('div', 'uh');
+    var uav = el('span', 'uav gw-waiting-ic'); uav.appendChild(waitIcon());
+    uh.appendChild(uav);
+    var nameWrap = el('div'); nameWrap.style.cssText = 'flex:1;min-width:0;overflow:hidden';
+    var unEl = el('div', 'un', g.name); unEl.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    nameWrap.appendChild(unEl);
+    var sub = [platformLabel(g.platform), T('gwiz.card.created_ago', 'angelegt vor {{x}}').replace('{{x}}', agoLong(g.created_at))].filter(Boolean).join(' · ');
+    nameWrap.appendChild(el('div', 'ud', sub));
+    uh.appendChild(nameWrap);
+    var tag = el('span', 'tag tag-amber tag-dot', T('gwiz.card.waiting', 'wartet auf ersten Start'));
+    tag.style.cssText = 'margin-left:auto;flex-shrink:0';
+    uh.appendChild(tag);
+    wrap.appendChild(uh);
+    wrap.appendChild(el('p', 'gw-waiting-text', T('gwiz.card.never_connected', 'Noch nie verbunden. Die Einrichtung kannst du jederzeit fortsetzen.')));
+    var btn = el('button', 'btn btn-ghost btn-sm gw-resume', T('gwiz.card.resume', 'Einrichtung fortsetzen'));
+    btn.type = 'button'; btn.dataset.id = g.peer_id;
+    wrap.appendChild(btn);
+    return wrap;
+  }
+  function zigbeeRadio(t) {
+    var hw = t && t.hardware;
+    var r = hw && Array.isArray(hw.radios) ? hw.radios.find(function (x) { return x && x.kind === 'zigbee' && (x.detected || x.enabled); }) : null;
+    if (!r) return null;
+    var onGpio = /ttyAMA|serial0|ttyS/.test(r.device || '');
+    var names = { 'raspbee2-conbee2': onGpio ? 'RaspBee II' : 'ConBee II', conbee3: 'ConBee III', 'raspbee-conbee-1': onGpio ? 'RaspBee' : 'ConBee', 'conbee-usb': 'ConBee' };
+    return (names[r.type] || T('gwiz.s4.zigbee_radio', 'Funkmodul')) + ' · Zigbee';
+  }
   function card(g) {
+    if (g.never_connected) return waitingCard(g);
     var t = (g.health && g.health.telemetry) || {};
     var st = status(g);
     var wrap = el('div', 'gw unit'); wrap.dataset.id = g.peer_id;
@@ -71,7 +123,8 @@
     var nameWrap = el('div'); nameWrap.style.cssText = 'flex:1;min-width:0;overflow:hidden';
     var unEl = el('div', 'un', g.name); unEl.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     nameWrap.appendChild(unEl);
-    nameWrap.appendChild(el('div', 'ud', (t.gateway_version || '—') + (g.hostname ? ' · ' + g.hostname : '')));
+    var hwModel = t.hardware && t.hardware.model ? String(t.hardware.model) : platformLabel(g.platform);
+    nameWrap.appendChild(el('div', 'ud', [hwModel, t.gateway_version || '—', g.hostname].filter(Boolean).join(' · ')));
     uh.appendChild(nameWrap);
     var tagCls = 'tag ' + (st === 'online' ? 'tag-green' : st === 'degraded' ? 'tag-amber' : 'tag-grey') + ' tag-dot';
     var stTag = el('span', tagCls, T('gateways.' + st, st));
@@ -98,6 +151,8 @@
       if (t.mem_total) { var mp = pct(t.mem_used, t.mem_total); resRow(wrap, 'RAM', mp + '%', mp, mp > 90); }
       if (t.disk && t.disk.total) { var dp = pct(t.disk.used, t.disk.total); resRow(wrap, T('gateways.lbl_disk', 'Disk'), dp + '%', dp, dp > 85); }
     }
+    var zr = zigbeeRadio(t);
+    if (zr) { var zt = el('span', 'tag tag-blue gw-radio', zr); wrap.appendChild(zt); }
     // (Update-check moved to the header icon button above.)
     return wrap;
   }
@@ -961,9 +1016,11 @@
   }
 
   // ── View routing ──────────────────────────────────────────────────────────
+  var pendingDetail = null; // #gw/<id> of a gateway the list does not have yet (just created)
   function showDetail(id) {
     var g = last.find(function (x) { return String(x.peer_id) === String(id); });
-    if (!g) { showFleet(); return; }
+    if (!g) { showFleet(); if (pendingDetail !== String(id)) { pendingDetail = String(id); load(); } return; }
+    pendingDetail = null;
     openId = String(id);
     renderDetail(g);
     fleetView.hidden = true; detailView.hidden = false;
@@ -977,8 +1034,16 @@
     showFleet();
   }
   function route() {
-    var m = (location.hash || '').match(/^#gw\/(.+)$/);
-    if (m) showDetail(decodeURIComponent(m[1])); else showFleet();
+    var h = location.hash || '';
+    var m = h.match(/^#gw\/(.+)$/);
+    if (m) { showDetail(decodeURIComponent(m[1])); return; }
+    showFleet();
+    // Assistant: #add = new gateway, #setup/<id> = continue the set-up.
+    var W = window.GCGatewayWizard;
+    if (!W) return;
+    if (h === '#add') { if (!W.isOpen()) W.open({ mode: 'add' }); return; }
+    var s = h.match(/^#setup\/(\d+)$/);
+    if (s && !W.isOpen()) W.open({ mode: 'resume', id: Number(s[1]) });
   }
 
   // ── Gateway update toast ────────────────────────────────────────────────
@@ -1066,13 +1131,27 @@
       kpi('bad', off, T('gateways.offline', 'Offline')),
       kpi('warn', upd, T('gateways.kpi_update', 'Update')));
     grid.replaceChildren.apply(grid, last.map(card));
+    if (!last.length) grid.appendChild(emptyFleet());
+    if (pendingDetail && last.some(function (x) { return String(x.peer_id) === pendingDetail; })) { showDetail(pendingDetail); return; }
     if (!routed) { routed = true; route(); }
     else if (openId) { var g = last.find(function (x) { return String(x.peer_id) === openId; }); if (g) renderDetail(g); else goFleet(); }
   }
   function load() { fetch('/api/v1/gateways', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(render).catch(function (err) { console.warn('[gateways] loading gateways failed', err); }); }
   function probe(id) { fetch('/api/v1/gateways/' + encodeURIComponent(id) + '/probe', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } }).then(function () { load(); }).catch(function (err) { console.warn('[gateways] probe failed', err); }); }
 
+  function emptyFleet() {
+    var d = el('div', 'gw-empty-fleet');
+    d.appendChild(el('p', null, T('gwiz.card.empty', 'Noch kein Gateway. Mit „Gateway hinzufügen“ richtest du das erste ein.')));
+    return d;
+  }
+  var addBtn = document.getElementById('btn-add-gateway');
+  if (addBtn) addBtn.addEventListener('click', function () {
+    if (location.hash === '#add' && window.GCGatewayWizard) window.GCGatewayWizard.open({ mode: 'add' });
+    else location.hash = '#add';
+  });
   grid.addEventListener('click', function (e) {
+    var rs = e.target.closest('.gw-resume');
+    if (rs) { e.stopPropagation(); location.hash = '#setup/' + encodeURIComponent(rs.dataset.id); return; }
     var rc = e.target.closest('.recheck'); if (rc) { e.stopPropagation(); probe(rc.dataset.id); return; }
     var c = e.target.closest('.gw'); if (!c) return;
     location.hash = '#gw/' + encodeURIComponent(c.dataset.id);
@@ -1107,6 +1186,7 @@
 
   var deb = null; function refresh() { clearTimeout(deb); deb = setTimeout(load, 1000); }
   document.addEventListener('gc:gateway', refresh);
+  document.addEventListener('gc:gateway-wizard', refresh);
   document.addEventListener('gc:reconnected', refresh);
   setInterval(load, 30000);
   load();

@@ -73,6 +73,12 @@ scenarios/12-plugin-viewport.js Plugin-Fenster ohne Server: echtes Frame-Dokumen
                         (frame.js) + plugin-bridge.js, Kopf darüber, Fuß darunter:
                         GC.viewport / --gc-viewport-height = Platz ohne Scrollen,
                         neu bei Größenänderung, Banner darüber, Tab-Wechsel
+scenarios/17-gateway-wizard.js /gateways: „Gateway hinzufügen“ – Wartekarten,
+                        Assistent Pi (Feldprüfungen, Lizenzgrenze der echten API,
+                        Anlage per page.route, gatecontrol-setup.zip im Browser gebaut
+                        und entpackt), Live-Status, „Einrichtung fortsetzen“ →
+                        Synology-Paket vom Server (entpackt), Peers-Hinweis,
+                        Escape, hell/dunkel, 390 px
 ```
 
 ## Ablauf

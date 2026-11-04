@@ -3175,6 +3175,22 @@ const migrations = [
       );`,
     detect: (db) => tableExists(db, 'notify_email_subscriptions'),
   },
+  {
+    version: 126,
+    name: 'gateway_meta_platform',
+    // Gateway assistant (docs/feature-gateway-wizard.md): where a gateway
+    // runs — 'rpi' | 'synology' | 'proxmox' | 'linux', NULL for gateways
+    // created before the assistant — so "Einrichtung fortsetzen" opens the
+    // right instructions; first_seen_at = epoch ms of the first heartbeat
+    // ("wartet auf ersten Start" until then, "Erster Kontakt" in the live
+    // status). Gateways that already reported keep their last heartbeat as
+    // the first one.
+    sql: `
+      ALTER TABLE gateway_meta ADD COLUMN platform TEXT;
+      ALTER TABLE gateway_meta ADD COLUMN first_seen_at INTEGER;
+      UPDATE gateway_meta SET first_seen_at = last_seen_at WHERE first_seen_at IS NULL AND last_seen_at IS NOT NULL;`,
+    detect: (db) => hasColumn(db, 'gateway_meta', 'platform') && hasColumn(db, 'gateway_meta', 'first_seen_at'),
+  },
 ];
 
 module.exports = { migrations };
