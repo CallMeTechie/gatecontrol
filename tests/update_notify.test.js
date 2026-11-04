@@ -132,12 +132,53 @@ describe('rollback / failure e-mail', () => {
     marker({ checked_at: '2026-09-14T03:00:00Z', action: 'failed', bad_image: 'sha256:bad', bad_version: '1.2.3' });
     await notify.checkState();
     assert.equal(sent[0].subject, '[GateControl] Update and rollback failed — action required');
-    marker({ checked_at: '2026-09-14T04:00:00Z', action: 'failed' });
+    marker({ checked_at: '2026-09-14T04:00:00Z', action: 'failed', mode: 'manual' });
     await notify.checkState();
     assert.equal(sent[1].subject, '[GateControl] Automatic update failed');
     marker({ checked_at: '2026-09-14T04:05:00Z', action: 'failed' });
     assert.equal(await notify.checkState(), 'repeat');
     assert.equal(sent.length, 2);
+  });
+
+  it('plain failed automatic runs: reported only after three in a row, once per streak', async () => {
+    assert.equal(notify.FAILED_STREAK, 3);
+    marker({ checked_at: '2026-09-14T09:20:00Z', action: 'failed' });
+    assert.equal(await notify.checkState(), 'waiting');
+    marker({ checked_at: '2026-09-14T09:25:00Z', action: 'failed' });
+    assert.equal(await notify.checkState(), 'waiting');
+    assert.equal(sent.length, 0);
+    assert.equal(hooks.length, 0, 'no webhook either');
+    marker({ checked_at: '2026-09-14T09:30:00Z', action: 'failed' });
+    assert.equal(await notify.checkState(), 'sent');
+    assert.equal(sent[0].subject, '[GateControl] Automatic update failed');
+    marker({ checked_at: '2026-09-14T09:35:00Z', action: 'failed' });
+    assert.equal(await notify.checkState(), 'repeat');
+    assert.equal(sent.length, 1);
+  });
+
+  it('a single passing failure (e.g. DNS) followed by a success → nothing', async () => {
+    marker({ checked_at: '2026-09-14T09:20:00Z', action: 'failed' });
+    assert.equal(await notify.checkState(), 'waiting');
+    marker({ checked_at: '2026-09-14T09:25:00Z', action: 'noop', ok: true });
+    assert.equal(await notify.checkState(), 'none');
+    marker({ checked_at: '2026-09-14T09:30:00Z', action: 'failed' });
+    assert.equal(await notify.checkState(), 'waiting', 'the streak starts again');
+    marker({ checked_at: '2026-09-14T09:35:00Z', action: 'failed' });
+    assert.equal(await notify.checkState(), 'waiting');
+    assert.equal(sent.length, 0);
+  });
+
+  it('a failed manual run ("Update now") is reported at once', async () => {
+    marker({ checked_at: '2026-09-14T09:20:00Z', action: 'failed', mode: 'manual' });
+    assert.equal(await notify.checkState(), 'sent');
+    assert.equal(sent.length, 1);
+  });
+
+  it('a failure state stored before the streak counter is not mailed again', async () => {
+    settings.set('notify.update_state_last', JSON.stringify({ action: 'failed', bad_image: '', checked_at: '2026-09-14T09:15:00Z' }));
+    marker({ checked_at: '2026-09-14T09:20:00Z', action: 'failed' });
+    assert.equal(await notify.checkState(), 'repeat');
+    assert.equal(sent.length, 0);
   });
 
   it('noop / waiting_window / missing marker → nothing', async () => {

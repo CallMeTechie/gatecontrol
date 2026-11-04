@@ -20,6 +20,11 @@
 //     rolled_back until a newer :latest appears), so one mail per failure
 //     streak: the same action + bad image in consecutive observations is not
 //     mailed again, a failure after a success is.
+//     A plain failed automatic run (no bad image: pull or digest lookup
+//     failed, mostly a passing DNS / registry outage) is only reported after
+//     FAILED_STREAK failed runs in a row; the next success ends the streak
+//     silently. A manual run ("Update now") and a failed rollback are
+//     reported at once.
 
 const settings = require('./settings');
 const logger = require('../utils/logger');
@@ -29,6 +34,8 @@ const VERSION_DELAY_MS = 90 * 1000;
 const STATE_FIRST_DELAY_MS = 15 * 1000;
 const STATE_INTERVAL_MS = 5 * 60 * 1000;
 const MAX_MAIL_ITEMS = 40;
+// Failed automatic runs in a row (update.sh every 5 min) before "Update failed" is sent.
+const FAILED_STREAK = 3;
 
 const K_LAST_VERSION = 'notify.last_version';
 const K_STATE_LAST = 'notify.update_state_last';
@@ -160,7 +167,7 @@ function readMarker() {
 function safeRef(v) { return typeof v === 'string' && /^[A-Za-z0-9._:+-]{1,128}$/.test(v) ? v : ''; }
 
 /**
- * Returns 'none' | 'repeat' | 'sent' | 'skipped'.
+ * Returns 'none' | 'waiting' (failure streak below FAILED_STREAK) | 'repeat' | 'sent' | 'skipped'.
  */
 async function checkState() {
   const marker = readMarker();
@@ -169,9 +176,23 @@ async function checkState() {
   let prev = null;
   try { prev = JSON.parse(settings.get(K_STATE_LAST, 'null')); } catch { prev = null; }
   if (prev && prev.checked_at === cur.checked_at && prev.action === cur.action) return 'none';
+  const plain = (s) => !!s && s.action === 'failed' && !s.bad_image;
+  if (plain(cur)) {
+    // Failed runs in a row as seen here. A state from before the streak
+    // counter (no `streak`) was mailed by the old rule already.
+    const legacy = plain(prev) && prev.streak === undefined;
+    cur.streak = plain(prev) ? (legacy ? FAILED_STREAK : prev.streak) + 1 : 1;
+    cur.mailed = plain(prev) && (legacy || !!prev.mailed);
+    const now = marker.mode === 'manual' || cur.streak >= FAILED_STREAK;
+    if (cur.mailed || !now) {
+      settings.set(K_STATE_LAST, JSON.stringify(cur));
+      return cur.mailed ? 'repeat' : 'waiting';
+    }
+    cur.mailed = true; // dedupe first: never twice, even if SMTP throws
+  }
   settings.set(K_STATE_LAST, JSON.stringify(cur));
   if (cur.action !== 'rolled_back' && cur.action !== 'failed') return 'none';
-  if (prev && prev.action === cur.action && prev.bad_image === cur.bad_image) return 'repeat';
+  if (!plain(cur) && prev && prev.action === cur.action && prev.bad_image === cur.bad_image) return 'repeat';
 
   const t = TEXT[lang()];
   const ver = safeRef(marker.bad_version);
@@ -205,4 +226,4 @@ function stop() {
   timers = [];
 }
 
-module.exports = { start, stop, checkVersion, checkState, K_LAST_VERSION, K_STATE_LAST };
+module.exports = { start, stop, checkVersion, checkState, K_LAST_VERSION, K_STATE_LAST, FAILED_STREAK };
