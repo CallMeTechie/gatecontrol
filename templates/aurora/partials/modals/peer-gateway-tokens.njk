@@ -30,6 +30,12 @@
   .gw-instructions ol { font-size: 13px; line-height: 1.6; margin: 10px 0 0 0; padding-left: 20px; }
   .gw-instructions code { background: #e5e7eb; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
 
+  /* Raspberry-Pi-Tab: Aktionszeile + URL-Feld. */
+  .gw-rpi-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .gw-rpi-url-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .gw-rpi-url-row input { font-family: var(--font-mono, monospace); font-size: 12px; flex: 1; min-width: 240px; }
+  .gw-instructions .gw-rpi-docs { display: inline-block; margin-top: 8px; font-size: 13px; }
+
   @media (max-width: 640px) {
     #modal-gateway-tokens .modal { max-width: 100vw; max-height: 100vh; border-radius: 0; }
     .gw-textarea-row { flex-direction: column; }
@@ -58,6 +64,9 @@
         </button>
         <button type="button" class="gw-tab" data-gw-tab="docker" role="tab">
           {{ t('gateway_deploy_tab_docker') }}
+        </button>
+        <button type="button" class="gw-tab" data-gw-tab="rpi" role="tab">
+          {{ t('gateway_deploy_tab_rpi') }}
         </button>
         <button type="button" class="gw-tab" data-gw-tab="manual" role="tab">
           {{ t('gateway_deploy_tab_manual') }}
@@ -195,6 +204,50 @@
             <li>{{ t('gateway_deploy_docker_linux_step5') }}</li>
             <li>{{ t('gateway_deploy_docker_linux_step6') }}</li>
           </ol>
+        </details>
+      </div>
+
+      {# ─── Raspberry Pi tab (fertiges SD-Karten-Image) ─────────── #}
+      {# Links zeigen auf releases/latest des Gateway-Repos — keine Version
+         hart codiert; die Imager-Liste hat einen festen Asset-Namen. #}
+      <div class="gw-tab-pane" data-gw-pane="rpi" style="display:none">
+        <div class="gw-notice">
+          {{ t('gateway_deploy_rpi_intro') }}
+        </div>
+
+        <div class="form-group gw-rpi-actions">
+          <a class="btn btn-secondary btn-sm" id="gateway-rpi-image-link" target="_blank" rel="noopener noreferrer"
+             href="https://github.com/CallMeTechie/gatecontrol-gateway/releases/latest">
+            {{ t('gateway_deploy_rpi_download_image') }}
+          </a>
+          <button type="button" class="btn btn-primary btn-sm" id="gateway-rpi-download-env">
+            {{ t('gateway_deploy_rpi_download_env') }}
+          </button>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ t('gateway_deploy_rpi_imager_label') }}</label>
+          <div class="gw-rpi-url-row">
+            <input type="text" class="form-input" id="gateway-rpi-imager-url" readonly
+                   value="https://github.com/CallMeTechie/gatecontrol-gateway/releases/latest/download/gatecontrol-rpi-imager.json">
+            <button type="button" class="btn btn-ghost btn-sm" id="gateway-rpi-copy-imager-url">
+              {{ t('common.copy') }}
+            </button>
+          </div>
+          <small class="form-hint">{{ t('gateway_deploy_rpi_imager_hint') }}</small>
+        </div>
+
+        <details class="gw-instructions" open>
+          <summary>{{ t('gateway_deploy_rpi_steps_title') }}</summary>
+          <ol>
+            <li>{{ t('gateway_deploy_rpi_step1') }}</li>
+            <li>{{ t('gateway_deploy_rpi_step2') }}</li>
+            <li>{{ t('gateway_deploy_rpi_step3') }}</li>
+            <li>{{ t('gateway_deploy_rpi_step4') }}</li>
+            <li>{{ t('gateway_deploy_rpi_step5') }}</li>
+          </ol>
+          <a href="https://github.com/CallMeTechie/gatecontrol-gateway/blob/main/docs/deployment/raspberry-pi.md"
+             class="gw-rpi-docs" target="_blank" rel="noopener noreferrer">{{ t('gateway_deploy_rpi_docs') }} ↗</a>
         </details>
       </div>
 
