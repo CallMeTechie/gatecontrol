@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.224.2] — 2026-11-04
 
 ### Fixes
 - Virenscan: „ClamAV auf diesem Server“ wurde nach jedem Neustart von GateControl wieder entfernt. Beim Start schreibt der Server `data/.auto-update-config.json`, bevor die Lizenz geladen ist – ohne geladene Lizenzfunktion `malware_scanning` fehlte `"clamav":"on"`, und `update.sh` entfernte den Container beim nächsten Lauf. Maßgeblich ist jetzt der gewählte Scanner, nicht der Lizenzstand (auch eine Offline-Schonfrist entfernt ClamAV nicht mehr); ohne Lizenz nutzt der Scan ClamAV weiterhin nicht. Nach dem Update startet `update.sh` den Container binnen 5 Minuten wieder.
