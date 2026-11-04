@@ -19,12 +19,13 @@ const MAX_BYTES = 32 * 1024 * 1024;
 const KEEP_DAYS = 365;
 const MIN_GAP_MS = 3600e3;
 const K_STATE = 'scan.hashlist_state';
+const K_KEY = 'scan.abusech_key_encrypted';
 // parse and insert in slices, with a turn of the event loop in between: an
-// export of up to MAX_BYTES has ~ 100 000 lines — in one go a second or more
-// of a blocked main thread (plugin calls, uploads and the watchdog wait)
+// export of up to MAX_BYTES has tens of thousands of lines — in one go a
+// second or more of a blocked main thread (plugin calls, uploads and the
+// plugin watchdog wait)
 const SLICE = 2000;
 const yieldLoop = () => new Promise((resolve) => setImmediate(resolve));
-const K_KEY = 'scan.abusech_key_encrypted';
 
 let _fetch = null;
 
