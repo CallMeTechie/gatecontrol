@@ -231,10 +231,10 @@ router.put('/autobackup', requireFeature('scheduled_backups'), (req, res) => {
 /**
  * POST /api/settings/autobackup/run — Trigger immediate backup
  */
-router.post('/autobackup/run', requireFeature('scheduled_backups'), (req, res) => {
+router.post('/autobackup/run', requireFeature('scheduled_backups'), async (req, res) => {
   try {
     const autobackup = require('../../../services/autobackup');
-    const filename = autobackup.runBackup();
+    const filename = await autobackup.runBackup();
     res.json({ ok: true, filename });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to run auto-backup');

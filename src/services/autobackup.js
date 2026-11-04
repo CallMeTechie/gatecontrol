@@ -6,7 +6,8 @@ const logger = require('../utils/logger');
 const settings = require('./settings');
 const backup = require('./backup');
 const activity = require('./activity');
-const { atomicWrite } = require('../utils/fs');
+const { atomicWriteAsync } = require('../utils/fs');
+const { withTask } = require('../utils/loopStall');
 const { ensurePrivateDir, PRIVATE_FILE_MODE } = require('../utils/fileModes');
 
 // Backups carry the full DB content (users with password hashes, API-token
@@ -89,7 +90,11 @@ function formatTimestamp(date) {
  * caller never waits for or fails with an upload. { offsite: false } skips
  * that (POST /targets/:id/run uploads to one target itself).
  */
-function runBackup({ offsite = true } = {}) {
+function runBackup(opts) {
+  return withTask('backup.auto', () => runBackupNow(opts));
+}
+
+async function runBackupNow({ offsite = true } = {}) {
   ensureDir();
 
   const data = backup.createBackup();
@@ -100,7 +105,8 @@ function runBackup({ offsite = true } = {}) {
   // Fresh tmp file + rename: the 0600 mode always applies (a plain
   // writeFileSync would keep the mode of an existing file) and a crash
   // mid-write never leaves a truncated backup under a valid name.
-  atomicWrite(filepath, JSON.stringify(data, null, 2), { mode: PRIVATE_FILE_MODE });
+  // written without synchronous file I/O (a backup with plugin data has up to a few hundred MB)
+  await atomicWriteAsync(filepath, JSON.stringify(data, null, 2), { mode: PRIVATE_FILE_MODE });
 
   // Update last run time
   settings.set('autobackup_last_run', new Date().toISOString());
@@ -227,14 +233,12 @@ function startScheduler() {
     const lastRunIso = settings.get('autobackup_last_run', null);
     const lastRun = lastRunIso ? Date.parse(lastRunIso) : 0;
     if (!lastRun || Date.now() - lastRun >= intervalMs) {
-      setImmediate(() => { try { runBackup(); } catch (err) { logger.warn({ err: err.message }, 'catch-up autobackup failed'); } });
+      setImmediate(() => { runBackup().catch((err) => logger.warn({ err: err.message }, 'catch-up autobackup failed')); });
     }
   } catch (err) { logger.warn({ err: err.message }, 'autobackup catch-up check failed'); }
 
   timer = setInterval(() => {
-    try {
-      runBackup();
-    } catch (err) {
+    runBackup().catch((err) => {
       logger.error({ error: err.message }, 'Automatic backup failed');
       // The mail (if the backup_problem row of the notification events is
       // on) and the webhooks come from activity.log — services/notifications.js.
@@ -242,7 +246,7 @@ function startScheduler() {
         source: 'system',
         severity: 'error',
       });
-    }
+    });
   }, intervalMs);
 
   logger.info({ schedule: cfg.schedule, intervalMs }, 'Auto-backup scheduler started');

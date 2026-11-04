@@ -254,7 +254,7 @@ let timer = null;
 function start() {
   if (timer) return;
   timer = setInterval(() => {
-    checkReturns().catch((err) => logger.warn({ err: err.message }, 'log problem check failed'));
+    require('../utils/loopStall').withTask('logs.problems', checkReturns).catch((err) => logger.warn({ err: err.message }, 'log problem check failed'));
   }, CHECK_MS);
   if (typeof timer.unref === 'function') timer.unref();
 }

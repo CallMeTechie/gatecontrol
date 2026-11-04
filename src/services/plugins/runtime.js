@@ -19,6 +19,8 @@ const MAX_HOST_CALLS = 32;
 const LOG_LINES_PER_MIN = 120;
 const PING_EVERY_MS = 30000;
 const PING_DEAD_MS = 75000;
+// the ping timer itself fired this much later than due: the host was blocked
+const HOST_LATE_MS = 1000;
 
 let backoff = RESTART_BACKOFF_MS;
 const procs = new Map();
@@ -68,6 +70,8 @@ class PluginProcess {
     this.tickBusy = false;
     this.pingTimer = null;
     this.lastPong = 0;
+    this.lastPingTick = 0;
+    this.hostLateMs = 0;
     this.startedAt = 0;
     this.lastError = null;
     this.logWindow = { start: 0, n: 0 };
@@ -174,6 +178,7 @@ class PluginProcess {
         break;
       case 'pong':
         this.lastPong = Date.now();
+        this.hostLateMs = 0;
         break;
       case 'result': {
         const p = this.pending.get(m.id);
@@ -216,16 +221,34 @@ class PluginProcess {
       this.tickTimer = setInterval(() => this.runTick(), bg.intervalSeconds * 1000);
       this.tickTimer.unref();
     }
-    this.pingTimer = setInterval(() => {
-      if (!this.child || this.state !== 'running') return;
-      if (Date.now() - this.lastPong > PING_DEAD_MS) {
+    this.lastPingTick = Date.now();
+    this.hostLateMs = 0;
+    this.pingTimer = setInterval(() => this.pingTick(), PING_EVERY_MS);
+    this.pingTimer.unref();
+  }
+
+  // Watchdog: a plugin is silent only for the time the host itself ran. While
+  // the main thread is blocked, the pongs wait unread in the pipe and this
+  // timer fires late — after a host stall of a minute every plugin would look
+  // dead at once. The blocked time (loopStall.blockedSince, and how late this
+  // timer fired) does not count; a plugin that really hangs is still ended
+  // once it was silent for PING_DEAD_MS of the time the host ran.
+  pingTick(now = Date.now()) {
+    if (!this.child || this.state !== 'running') return;
+    const late = now - this.lastPingTick - PING_EVERY_MS;
+    this.lastPingTick = now;
+    if (late >= HOST_LATE_MS) this.hostLateMs += late;
+    const silent = now - this.lastPong;
+    if (silent > PING_DEAD_MS) {
+      const hostBlocked = Math.max(this.hostLateMs, require('../../utils/loopStall').blockedSince(this.lastPong, now));
+      if (silent - hostBlocked > PING_DEAD_MS) {
         this.log('error', 'plugin stopped answering — restarting');
         this.child.kill('SIGKILL');
         return;
       }
-      try { this.child.send({ t: 'ping', id: ++this.seq }); } catch { /* exit follows */ }
-    }, PING_EVERY_MS);
-    this.pingTimer.unref();
+      logger.debug({ plugin: this.id, silentMs: silent, hostBlockedMs: hostBlocked }, 'plugin watchdog: the host was blocked — no restart');
+    }
+    try { this.child.send({ t: 'ping', id: ++this.seq }); } catch { /* exit follows */ }
   }
 
   clearTimers() {
@@ -375,4 +398,5 @@ function _setBackoffForTest(list) {
   if (process.env.NODE_ENV === 'test') backoff = Array.isArray(list) && list.length ? list : RESTART_BACKOFF_MS;
 }
 
-module.exports = { ensureRunning, ensureStopped, stopAll, get, info, call, waitRunning, execArgvFor, startTimeout, events, BOOTSTRAP, _setBackoffForTest };
+module.exports = { ensureRunning, ensureStopped, stopAll, get, info, call, waitRunning, execArgvFor, startTimeout, events, BOOTSTRAP, _setBackoffForTest,
+  PING_EVERY_MS, PING_DEAD_MS, _PluginProcess: PluginProcess };

@@ -695,11 +695,12 @@ function start() {
   if (_state.timers.length) return;
   // files a restart caught in the middle of their check are checked again
   // (retryPending below picks up every pending row)
-  const every = (ms, fn) => { const t = setInterval(() => { Promise.resolve().then(fn).catch(() => {}); }, ms); if (t.unref) t.unref(); _state.timers.push(t); };
-  every(RETRY_MS, retryPending);
-  every(10 * 60e3, () => { if (nightlyDue()) return nightly(); return null; });
-  every(15 * 60e3, signatureCheck);
-  every(3600e3, () => expire());
+  const { withTask } = require('../../utils/loopStall');
+  const every = (ms, name, fn) => { const t = setInterval(() => { Promise.resolve().then(() => withTask(name, fn)).catch(() => {}); }, ms); if (t.unref) t.unref(); _state.timers.push(t); };
+  every(RETRY_MS, 'scan.retry', retryPending);
+  every(10 * 60e3, 'scan.nightly', () => { if (nightlyDue()) return nightly(); return null; });
+  every(15 * 60e3, 'scan.signatures', signatureCheck);
+  every(3600e3, 'scan.expire', () => expire());
   const t = setTimeout(() => { retryPending(); signatureCheck().catch(() => {}); expire(); }, 30e3);
   if (t.unref) t.unref();
 }

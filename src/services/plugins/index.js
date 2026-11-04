@@ -846,7 +846,7 @@ function start() {
   // a third-party check that failed for a network error / 5xx / 429 is retried early (licensing.js)
   licensing.startRetries();
   // hourly: unclaimed plugin media older than 24 h, the neutral line of chat notifications sent
-  timers.push(setInterval(hourly, 60 * 60 * 1000));
+  timers.push(setInterval(() => require('../../utils/loopStall').withTask('plugins.hourly', hourly), 60 * 60 * 1000));
   setTimeout(() => checkThirdPartyLicences().catch(() => {}), 60 * 1000).unref();
   for (const t of timers) t.unref();
   // update check every 6 hours, nightly automatic update (updates.js)

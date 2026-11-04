@@ -1176,7 +1176,7 @@ function startScans() {
   if (!due.length) return;
   scanRun = (async () => {
     for (const a of due) {
-      try { await scanArea(a.plugin, a.area); } catch (e) { logger.warn({ plugin: a.plugin, area: a.area, err: e.message }, 'plugin media areas: scan failed'); }
+      try { await require('../../utils/loopStall').withTask('plugins.mediaAreas.scan', () => scanArea(a.plugin, a.area)); } catch (e) { logger.warn({ plugin: a.plugin, area: a.area, err: e.message }, 'plugin media areas: scan failed'); }
     }
   })().finally(() => { scanRun = null; });
 }
@@ -1200,7 +1200,9 @@ async function tick() {
 
 function start() {
   if (timer) return;
-  timer = setInterval(() => { tick().catch((e) => logger.warn({ err: e.message }, 'plugin media areas: worker failed')); }, TICK_MS);
+  timer = setInterval(() => {
+    require('../../utils/loopStall').withTask('plugins.mediaAreas', tick).catch((e) => logger.warn({ err: e.message }, 'plugin media areas: worker failed'));
+  }, TICK_MS);
   if (timer.unref) timer.unref();
 }
 

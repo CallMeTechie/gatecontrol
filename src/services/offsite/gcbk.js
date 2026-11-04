@@ -27,6 +27,12 @@
 
 const crypto = require('node:crypto');
 const zlib = require('node:zlib');
+const { promisify } = require('node:util');
+
+// gzip in the thread pool: a backup with plugin data has up to a few hundred
+// MB — gzipSync blocked the main thread for many seconds
+const gzip = promisify(zlib.gzip);
+const gunzip = promisify(zlib.gunzip);
 
 const MAGIC = Buffer.from('GCBK1', 'ascii');
 const FORMAT = 'gatecontrol-offsite';
@@ -74,7 +80,7 @@ async function encryptBackup(backup, { passphrase, encryptionKey, gcVersion = nu
   const createdAt = new Date().toISOString();
   const payload = { format: FORMAT, version: 1, created_at: createdAt, gc_version: gcVersion, backup };
   if (encryptionKey) payload.encryption_key = encryptionKey;
-  const plain = zlib.gzipSync(Buffer.from(JSON.stringify(payload), 'utf8'));
+  const plain = await gzip(Buffer.from(JSON.stringify(payload), 'utf8'));
 
   const salt = crypto.randomBytes(16);
   const iv = crypto.randomBytes(12);
@@ -137,7 +143,7 @@ async function decryptBackup(buf, passphrase) {
   }
   let payload;
   try {
-    payload = JSON.parse(zlib.gunzipSync(plain, { maxOutputLength: 512 * 1024 * 1024 }).toString('utf8'));
+    payload = JSON.parse((await gunzip(plain, { maxOutputLength: 512 * 1024 * 1024 })).toString('utf8'));
   } catch {
     throw new GcbkError('CORRUPT', 'decrypted content is not a GateControl backup');
   }

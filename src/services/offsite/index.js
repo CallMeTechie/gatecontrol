@@ -560,7 +560,7 @@ function remoteNameFor(localFile) {
 async function buildArchive(localFile) {
   const passphrase = getPassphrase();
   if (!passphrase) throw new OffsiteError('PASSPHRASE_NOT_SET', 'set the off-site passphrase first', 409);
-  const backup = JSON.parse(fs.readFileSync(localFile, 'utf8'));
+  const backup = JSON.parse(await fs.promises.readFile(localFile, 'utf8'));
   const { include_key: includeKey } = getOffsiteSettings();
   const config = require('../../../config/default');
   return gcbk.encryptBackup(backup, {
@@ -611,7 +611,7 @@ async function runTarget(id) {
   const autobackup = require('../autobackup');
   let files = autobackup.listBackupFiles();
   if (files.length === 0) {
-    autobackup.runBackup({ offsite: false });
+    await autobackup.runBackup({ offsite: false });
     files = autobackup.listBackupFiles();
   }
   if (files.length === 0) throw new OffsiteError('NO_LOCAL_BACKUP', 'no local backup available', 409);

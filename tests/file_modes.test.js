@@ -213,9 +213,9 @@ describe('autobackup — backups are 0600 in a 0700 dir', () => {
     assert.equal(autobackup.BACKUP_DIR, backupDir);
   });
 
-  it('runBackup creates the dir 0700 and the file 0600, no tmp leftovers', () => {
+  it('runBackup creates the dir 0700 and the file 0600, no tmp leftovers', async () => {
     assert.equal(fs.existsSync(backupDir), false);
-    const filename = autobackup.runBackup();
+    const filename = await autobackup.runBackup();
     assertMode(backupDir, 0o700);
     assertMode(path.join(backupDir, filename), 0o600);
     assert.deepEqual(fs.readdirSync(backupDir), [filename]);
