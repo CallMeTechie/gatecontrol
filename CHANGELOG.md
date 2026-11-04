@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+- Plugins: Die Verwaltung eines Plugins kann eigene Reiter unter Einstellungen › Plugins › <Plugin> bekommen. Neuer Schlüssel `ui.settingsPages` (bis zu 4 Seiten aus `ui.pages`, nicht die erste und nicht `ui.settingsPage`): Jede Seite erscheint als Reiter direkt nach „Einstellungen“ (z. B. Übersicht · Einstellungen · Ressourcen · Geteilte Postfächer · Berechtigungen · Lizenz · Protokoll) mit dem sandboxed Frame der Plugin-Seite über die volle Breite – nur für laufende Plugins und Administratoren –, mit `?tab=<Seite>`, und nicht mehr als Reiter auf der Plugin-Seite unter Integrationen; `/plugins/<id>/<Seite>` führt auf den Reiter, `GC.navigate('<Seite>')` und `GC.openSettings()` wechseln den Reiter ohne Neuladen. Fehler `ui.settingsPages: invalid` / `reserved`. Ältere GateControl-Versionen ignorieren den Schlüssel und zeigen die Seiten weiter als Reiter der Plugin-Seite.
+- Benachrichtigungen: Push-Themen von Plugins können auch per E-Mail ankommen – über den SMTP-Server von GateControl an die Kontoadresse der Personen, die die Mitteilung erreicht (nie an eine Adresse, die ein Plugin nennt). Je Person und Thema schaltbar im Portal („Auch per E-Mail an …“ unter dem Thema) und in den Apps (`/api/v1/client/push/prefs` `email_topics`); standardmäßig an, wenn das Plugin das Thema mit `"email": true` in `notifyTopics` erklärt, sonst aus. Nie für Chat-Themen, stille Datenpushes und Pushes an einzelne Geräte; höchstens 200 Mails je Plugin und Stunde. Der Installationsdialog nennt Themen, die standardmäßig per E-Mail gehen. Migration 125.
+
 ## [1.224.2] — 2026-11-04
 
 ### Fixes

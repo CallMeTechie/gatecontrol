@@ -67,6 +67,7 @@ describe('takeover on install', () => {
     db.prepare("INSERT INTO plugin_targets (plugin_id, target_id, idx, assignment) VALUES ('hello', 'gateway', 0, '{}')").run();
     topicOld = 'plugin:hello:alarm';
     db.prepare('INSERT OR REPLACE INTO notify_subscriptions (user_id, topic, enabled) VALUES (1, ?, 1)').run(topicOld);
+    db.prepare('INSERT OR REPLACE INTO notify_email_subscriptions (user_id, topic, enabled) VALUES (1, ?, 0)').run(topicOld);
     db.prepare("INSERT OR REPLACE INTO notify_rules (event_id) VALUES (?)").run(topicOld);
     db.prepare("INSERT OR REPLACE INTO client_layouts (key, user_id, layout, updated_at) VALUES ('t-replace', NULL, ?, datetime('now'))")
       .run(JSON.stringify({ tiles: [{ plugin: 'hello', id: 'x' }, { plugin: 'hello-world', id: 'y' }] }));
@@ -108,6 +109,8 @@ describe('takeover on install', () => {
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM plugin_targets WHERE plugin_id = 'hello-neu'").get().n, 1);
     assert.ok(db.prepare('SELECT 1 FROM notify_subscriptions WHERE topic = ?').get('plugin:hello-neu:alarm'));
     assert.equal(db.prepare('SELECT 1 FROM notify_subscriptions WHERE topic = ?').get(topicOld), undefined);
+    // the person's e-mail choice of the topic (since 1.225.0) moves along
+    assert.deepEqual(db.prepare('SELECT topic, enabled FROM notify_email_subscriptions WHERE user_id = 1').all(), [{ topic: 'plugin:hello-neu:alarm', enabled: 0 }]);
     assert.ok(db.prepare('SELECT 1 FROM notify_rules WHERE event_id = ?').get('plugin:hello-neu:alarm'));
     const layout = JSON.parse(db.prepare("SELECT layout FROM client_layouts WHERE key = 't-replace'").get().layout);
     assert.deepEqual(layout.tiles.map((x) => x.plugin), ['hello-neu', 'hello-world'], 'only the whole id is swapped');

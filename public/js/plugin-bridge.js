@@ -60,6 +60,13 @@
 // `not allowed`); at most one per 1.5 s per frame. The provider sends the
 // browser back to the plugin's returnTo afterwards.
 //
+// Navigation (GC.navigate, GC.openSettings): admin frames only. A page of
+// data-plugin-pages opens /plugins/<id>/<page>; a page of
+// data-plugin-settings-pages (plugin.json `ui.settingsPages`, since 1.225.0)
+// and GC.openSettings open their tab under Einstellungen › Plugins › <plugin>.
+// The plugin area (plugins-page.js) switches to that tab itself when it shows
+// this plugin already (`gc:plugin-tab` DOM event, detail.handled) — no reload.
+//
 // Viewport (since 1.199.0): every frame learns the height it can take
 // without the page scrolling — the window's height minus what stands above
 // the frame and below it on the page (gc-viewport { height, width }; in the
@@ -210,6 +217,19 @@
     return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
   }
 
+  /**
+   * A tab of the plugin under Einstellungen › Plugins › <plugin> ('settings' or a page of
+   * ui.settingsPages): the plugin area switches itself when it shows that plugin, else the page loads.
+   */
+  function openPluginTab(pluginId, tab) {
+    if (typeof CustomEvent === 'function' && document.dispatchEvent) {
+      const ev = new CustomEvent('gc:plugin-tab', { detail: { plugin: pluginId, tab, handled: false } });
+      document.dispatchEvent(ev);
+      if (ev.detail && ev.detail.handled === true) return;
+    }
+    window.location.assign('/settings/plugins/manage/' + encodeURIComponent(pluginId) + '?tab=' + encodeURIComponent(tab));
+  }
+
   function attach(frame) {
     if (!frame || frame.__gcBridge) return;
     frame.__gcBridge = true;
@@ -217,6 +237,10 @@
     const pluginId = frame.getAttribute('data-plugin-id') || '';
     let pages = [];
     try { pages = JSON.parse(frame.getAttribute('data-plugin-pages') || '[]'); } catch (_) { pages = []; }
+    let settingsPages = [];
+    try { settingsPages = JSON.parse(frame.getAttribute('data-plugin-settings-pages') || '[]'); } catch (_) { settingsPages = []; }
+    if (!Array.isArray(pages)) pages = [];
+    if (!Array.isArray(settingsPages)) settingsPages = [];
     if (!/^\/api\/v1\/(portal\/)?plugins\/[a-z0-9-]+\/api\/$/.test(base)) return;
 
     function reply(msg) {
@@ -583,11 +607,14 @@
         sendViewport(true);
       }
       else if (m.type === 'gc-settings') {
-        if (pluginId && !base.includes('/portal/')) window.location.assign('/settings/plugins/manage/' + encodeURIComponent(pluginId) + '?tab=settings');
+        if (pluginId && !base.includes('/portal/')) openPluginTab(pluginId, 'settings');
       }
       else if (m.type === 'gc-nav') {
-        const target = pages.find((p) => p === m.page);
-        if (target && pluginId && !base.includes('/portal/')) window.location.assign('/plugins/' + encodeURIComponent(pluginId) + '/' + encodeURIComponent(target));
+        const tab = settingsPages.find((p) => typeof p === 'string' && p === m.page);
+        const target = pages.find((p) => typeof p === 'string' && p === m.page);
+        if (!pluginId || base.includes('/portal/')) { /* admin frames only */ }
+        else if (tab) openPluginTab(pluginId, tab);
+        else if (target) window.location.assign('/plugins/' + encodeURIComponent(pluginId) + '/' + encodeURIComponent(target));
       }
     });
     frame.addEventListener('load', () => { setModal(false); sendTheme(); sendViewport(true); });

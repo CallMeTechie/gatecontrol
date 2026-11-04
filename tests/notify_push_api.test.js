@@ -395,7 +395,8 @@ describe('PUT /api/v1/client/push/prefs', () => {
 
   it('GET returns what the device stored plus the quiet hours of its person', async () => {
     let r = await api('get', '/api/v1/client/push/prefs', benPhone).expect(200);
-    assert.deepEqual(r.body, { ok: true, enabled: true, mode: null, muted_topics: [], restricted: false, quiet: null });
+    // since 1.225.0 also the person's e-mail channel of plugin topics (none here, no address, SMTP not set up)
+    assert.deepEqual(r.body, { ok: true, enabled: true, mode: null, muted_topics: [], restricted: false, quiet: null, email_topics: [], email_to: null, email_ready: false });
     assert.equal(r.headers['cache-control'], 'no-store');
     await api('put', '/api/v1/client/push/prefs', benPhone).send({ mode: 'always', muted_topics: ['services'], restricted: true }).expect(200);
     H.db().prepare("INSERT INTO notify_user_prefs (user_id, quiet_from, quiet_to, tz, critical_bypass) VALUES (?, '22:00', '07:00', 'Europe/Berlin', 0)").run(ben);
@@ -403,7 +404,7 @@ describe('PUT /api/v1/client/push/prefs', () => {
       r = await api('get', '/api/v1/client/push/prefs', benPhone).expect(200);
       assert.deepEqual(r.body, {
         ok: true, enabled: true, mode: 'always', muted_topics: ['services'], restricted: true,
-        quiet: { from: '22:00', to: '07:00', tz: 'Europe/Berlin', critical_bypass: false },
+        quiet: { from: '22:00', to: '07:00', tz: 'Europe/Berlin', critical_bypass: false }, email_topics: [], email_to: null, email_ready: false,
       });
       // the same quiet hours arrive in `hello`
       const s = await H.openStream(port, benPhone.raw);

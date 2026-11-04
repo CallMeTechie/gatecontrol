@@ -348,9 +348,9 @@ describe('/api/v1/me/notify (own settings)', () => {
   it('prefs: topics with lock, quiet hours, devices; PUT validates and stores', async () => {
     const m = await loginAs('nc-anna');
     let r = await m.a.get('/api/v1/me/notify/prefs').expect(200);
-    assert.deepEqual(keys(r.body), ['critical_bypass', 'devices', 'ok', 'quiet_from', 'quiet_to', 'topics', 'tz']);
+    assert.deepEqual(keys(r.body), ['critical_bypass', 'devices', 'email_ready', 'email_to', 'ok', 'quiet_from', 'quiet_to', 'topics', 'tz']);
     assert.ok(!r.body.topics.some((t) => t.id === 'security'), 'security is admin-only');
-    assert.deepEqual(r.body.topics.find((t) => t.id === 'admin_notice'), { id: 'admin_notice', label: 'Hinweise vom Admin', enabled: true, locked: true });
+    assert.deepEqual(r.body.topics.find((t) => t.id === 'admin_notice'), { id: 'admin_notice', label: 'Hinweise vom Admin', enabled: true, locked: true, email: null });
     assert.ok(r.body.devices.some((d) => d.token_id === annaPhone.tokenId && d.state === 'offline'));
     assert.ok(r.body.devices.every((d) => keys(d).join() === 'name,queued,state,token_id'));
     await m.a.put('/api/v1/me/notify/prefs').set('X-CSRF-Token', m.csrf).send({ quiet_from: '25:00' }).expect(400);

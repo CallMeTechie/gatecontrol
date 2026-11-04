@@ -6,9 +6,14 @@
  * /api/v1/me/notify (web session) and /api/v1/portal/me/notify (portal
  * session), always scoped to req.meUserId:
  *
- *   GET  /prefs   { topics:[{id,label,enabled,locked}], quiet_from, quiet_to,
- *                   tz, critical_bypass, devices:[{token_id,name,state,queued}] }
- *   PUT  /prefs   { topics:[{id,enabled}], quiet_from, quiet_to, tz, critical_bypass }
+ *   GET  /prefs   { topics:[{id,label,enabled,locked,email}], quiet_from, quiet_to,
+ *                   tz, critical_bypass, devices:[{token_id,name,state,queued}],
+ *                   email_to, email_ready }
+ *   PUT  /prefs   { topics:[{id,enabled?,email?}], quiet_from, quiet_to, tz, critical_bypass }
+ *                 (email, since 1.225.0: the topic's e-mail channel — plugin topics
+ *                 only, `email` null in the GET for every other topic;
+ *                 services/notify/personMail.js; email_to the account address or
+ *                 null, email_ready whether the server's SMTP is set up)
  *   GET  /inbox   ?limit&before=<id> → { items, unread }
  *   POST /read    { ids:[…] } | { all:true } → { ok, updated }
  *   POST /test    { token_id? } → { ok, devices }   (token_id: one own app device)
@@ -30,6 +35,7 @@ const store = require('../../services/notify/store');
 const config = require('../../services/notify/config');
 const admin = require('../../services/notify/admin');
 const chatRoutes = require('../../services/notify/chatRoutes');
+const personMail = require('../../services/notify/personMail');
 const { LOCKED_TOPICS } = require('../../services/notify/constants');
 const logger = require('../../utils/logger');
 
@@ -39,6 +45,7 @@ function prefsView(userId, lang) {
     label: t.label,
     enabled: router_.topicOn(userId, t.id),
     locked: LOCKED_TOPICS.has(t.id),
+    email: personMail.mailTopic(t.id) ? personMail.emailOn(userId, t.id) : null,
   }));
   const p = router_.userPrefs(userId) || {};
   const devices = admin.devices().filter((d) => d.user && d.user.id === userId)
@@ -50,6 +57,8 @@ function prefsView(userId, lang) {
     tz: p.tz || router_.serverTz(),
     critical_bypass: p.critical_bypass !== 0,
     devices,
+    email_to: personMail.addressOf(userId) || null,
+    email_ready: personMail.smtpReady(),
   };
 }
 
@@ -79,12 +88,19 @@ function createRouter() {
     const fields = {};
     const allowed = new Map(hub.topicsForUser(uid, req.language).map((t) => [t.id, t]));
     const subs = [];
+    const mails = [];
     if (b.topics !== undefined) {
       if (!Array.isArray(b.topics) || b.topics.length > 200) fields.topics = 'invalid';
       else {
         for (const t of b.topics) {
-          if (!t || typeof t.id !== 'string' || typeof t.enabled !== 'boolean' || !allowed.has(t.id)) { fields.topics = 'invalid'; break; }
-          if (LOCKED_TOPICS.has(t.id)) continue;
+          if (!t || typeof t.id !== 'string' || !allowed.has(t.id) || (t.enabled === undefined && t.email === undefined)
+            || (t.enabled !== undefined && typeof t.enabled !== 'boolean') || (t.email !== undefined && typeof t.email !== 'boolean')) { fields.topics = 'invalid'; break; }
+          // e-mail: plugin topics with an e-mail channel only (personMail.js)
+          if (t.email !== undefined) {
+            if (!personMail.mailTopic(t.id)) { fields.topics = 'invalid'; break; }
+            mails.push(t);
+          }
+          if (t.enabled === undefined || LOCKED_TOPICS.has(t.id)) continue;
           subs.push(t);
         }
       }
@@ -113,6 +129,7 @@ function createRouter() {
         const up = db.prepare(`INSERT INTO notify_subscriptions (user_id, topic, enabled) VALUES (?, ?, ?)
           ON CONFLICT(user_id, topic) DO UPDATE SET enabled = excluded.enabled`);
         for (const t of subs) up.run(uid, t.id, t.enabled ? 1 : 0);
+        for (const t of mails) personMail.setEmail(uid, t.id, t.email);
         db.prepare(`INSERT INTO notify_user_prefs (user_id, quiet_from, quiet_to, tz, critical_bypass) VALUES (?, ?, ?, ?, ?)
           ON CONFLICT(user_id) DO UPDATE SET quiet_from = excluded.quiet_from, quiet_to = excluded.quiet_to,
             tz = excluded.tz, critical_bypass = excluded.critical_bypass`)

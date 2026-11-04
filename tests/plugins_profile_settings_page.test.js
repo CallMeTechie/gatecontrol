@@ -120,7 +120,8 @@ describe('the settings page and the camera', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'plugins-page.js'), 'utf8');
     assert.match(js, /function settingsFrame\(p\)/);
     assert.match(js, /if \(p\.settingsPage && p\.status === 'running'\) panel\.appendChild\(settingsFrame\(p\)\);/);
-    assert.match(js, /'\/plugins\/' \+ enc\(p\.id\) \+ '\/frame\/' \+ enc\(p\.settingsPage\.id\)/);
+    assert.match(js, /'\/plugins\/' \+ enc\(p\.id\) \+ '\/frame\/' \+ enc\(page\.id\)/);
+    assert.match(js, /function settingsFrame\(p\) \{ return pageFrame\(p, p\.settingsPage, 'pg-settings-frame', 'pgx-set-frame'\); \}/);
   });
 
   it('the install dialog names the camera (sensitive), in German and English', () => {

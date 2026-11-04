@@ -949,8 +949,9 @@
 
   // ═══ Notifications: bell, Mitteilungen, Meine Benachrichtigungen ════════
   // docs/feature-notification-center.md "Portal". Data: /api/v1/portal/me/notify/*
-  //   GET prefs → { topics:[{id,label,enabled,locked}], quiet_from, quiet_to, tz,
-  //                 critical_bypass, devices:[{token_id,name,state,queued}] }
+  //   GET prefs → { topics:[{id,label,enabled,locked,email}], quiet_from, quiet_to, tz,
+  //                 critical_bypass, devices:[{token_id,name,state,queued}], email_to, email_ready }
+  //                 (email: the e-mail channel of a plugin topic, null for the others — 1.225.0)
   //   PUT prefs (partial), GET inbox?limit&before → { items, unread },
   //   POST read { ids } | { all:true }, POST test { token_id? }.
   // Live: the bell polls the inbox every POLL_MS while the page is visible
@@ -1173,11 +1174,32 @@
         if (!ok) input.checked = !want;
       });
     });
+    var mail = typeof t.email === 'boolean';
+    var lab = el('label', { class: (mail ? '' : 'pt-grow ') + 'pt-topic-text', for: id }, [el('b', null, String(t.label || t.id)), el('span', { class: 'pt-small pt-muted pt-block', id: id + '-d' }, desc)]);
     return el('li', { class: 'pt-topic' + (t.locked ? ' is-locked' : ''), 'data-topic': String(t.id) }, [
       el('span', { class: 'pt-topic-ic', 'aria-hidden': 'true' }, icon(TOPIC_ICON[plugin ? 'plugin' : t.id] || TOPIC_ICON.plugin, 18)),
-      el('label', { class: 'pt-grow pt-topic-text', for: id }, [el('b', null, String(t.label || t.id)), el('span', { class: 'pt-small pt-muted pt-block', id: id + '-d' }, desc)]),
+      mail ? el('div', { class: 'pt-grow' }, [lab, topicMail(t, i)]) : lab,
       input,
     ]);
+  }
+  // The e-mail channel of a plugin topic (since 1.225.0): the pushes also by e-mail to the account
+  // address, through the server's SMTP — the person's choice, independent of the switch on the right.
+  function topicMail(t, i) {
+    var id = 'pt-np-mail-' + i;
+    var to = nf.prefs && nf.prefs.email_to ? String(nf.prefs.email_to) : '';
+    var ready = !!(nf.prefs && nf.prefs.email_ready);
+    var box = el('input', { type: 'checkbox', id: id, checked: !!t.email, disabled: !to || !ready });
+    box.addEventListener('change', function () {
+      var want = box.checked;
+      box.disabled = true;
+      savePrefs({ topics: [{ id: t.id, email: want }] }).then(function (ok) {
+        box.disabled = false;
+        if (!ok) box.checked = !want;
+      });
+    });
+    var label = to ? T('portal.notify.email_to', { address: to }) : T('portal.notify.email');
+    var note = !ready ? T('portal.notify.email_no_smtp') : (!to ? T('portal.notify.email_no_address') : '');
+    return el('label', { class: 'pt-check pt-topic-mail', for: id, 'data-mail': String(t.id) }, [box, el('span', null, label + (note ? ' · ' + note : ''))]);
   }
   function renderTopics() {
     var list = $('pt-np-topics');

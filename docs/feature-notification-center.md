@@ -496,7 +496,8 @@ In der `plugin.json` kommt ein neuer, optionaler Block hinzu:
       (`data.facts`), „Ältere laden“ (`before`), Leerzustand.
     * `#benachrichtigungen` (Verweis in „Meine Geräte“ und im Posteingang):
       Themen als Schalter (gesperrte grau mit Grund, Plugin-Themen mit ihrem
-      Label), „Empfangen auf“ mit Zustand, wartenden Nachrichten und „Test“
+      Label; ab 1.225.0 bei Plugin-Themen darunter „Auch per E-Mail an …“,
+      `PUT prefs` `topics:[{id,email}]` — docs/plugins.md „Notifications by e-mail“), „Empfangen auf“ mit Zustand, wartenden Nachrichten und „Test“
       je Gerät (`token_id`), Ruhezeiten (an/aus, von/bis, Zeitzone aus dem
       Browser, „Kritisches trotzdem melden“), „Zuletzt“ (5 Einträge).
     * Jede Änderung speichert sofort (`PUT prefs` mit nur dem geänderten Feld).
@@ -1040,12 +1041,21 @@ GET /api/v1/client/plugins/<plugin>/media/<mediaId>     (auch HEAD)
   `critical_bypass:true` heißt: Kritisches kommt trotzdem mit Ton. Die
   Ruhezeit wendet der Server an (`silent:true`); die Apps zeigen sie nur an.
 * Liest nur, schreibt nichts (kein Eintrag als Push-Gerät).
+* Ab 1.225.0 zusätzlich der E-Mail-Kanal der Person für Plugin-Themen
+  (docs/plugins.md „Notifications by e-mail“): `"email_topics":[{"id":"plugin:mail:booking","label":"Mail · Buchungsanfragen","enabled":true}]`
+  (alle Plugin-Themen außer Chat-Themen; `enabled` ohne eigene Wahl laut
+  `notifyTopics[].email`), `"email_to"` (Adresse des Kontos oder `null`),
+  `"email_ready"` (SMTP eingerichtet). Ohne Person am Token `[]`/`null`.
 
 ### `PUT /api/v1/client/push/prefs`
 
 * Body: `{"enabled":true,"mode":"always"|"vpn_only","muted_topics":["plugin:skoda:charging"],"restricted":false}`.
 * Antwort: `{"ok":true}`.
 * `restricted` meldet Android, wenn die Akkuoptimierung aktiv ist.
+* Ab 1.225.0 optional `"email_topics":[{"id":"plugin:mail:booking","enabled":false}]`:
+  der E-Mail-Kanal dieser Themen für die Person des Tokens (gilt wie im
+  Portal für alle ihre Geräte). Unbekanntes oder Thema ohne E-Mail-Kanal →
+  400 `invalid_email_topics`, Token ohne Person → 403 `no_user`.
 
 ### `POST /api/v1/client/push/test`
 

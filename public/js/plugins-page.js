@@ -1206,8 +1206,9 @@
   // ════════════════════════════════════════════════════════════
   // One installed plugin (manage/<id>)
   // ════════════════════════════════════════════════════════════
-  const TABS = ['overview', 'settings', 'perms', 'license', 'log', 'versions'];
-  let mtab = TABS.indexOf(query.get('tab')) >= 0 ? query.get('tab') : 'overview';
+  // the tab asked for (?tab=): one of P.MANAGE_TABS or a page of the plugin's ui.settingsPages —
+  // renderManage shows it when the plugin has it (P.manageTabs / P.manageTab), else the overview
+  let mtab = query.get('tab') || 'overview';
 
   async function viewManage() {
     await Promise.all([loadInstalled(), loadCatalog(false)]);
@@ -1221,9 +1222,21 @@
 
   function setTab(id) {
     mtab = id;
-    try { history.replaceState(null, '', location.pathname + (id === 'overview' ? '' : '?tab=' + id)); } catch (_) { /* ignore */ }
+    try { history.replaceState(null, '', location.pathname + (id === 'overview' ? '' : '?tab=' + enc(id))); } catch (_) { /* ignore */ }
     renderManage();
   }
+
+  // GC.openSettings / GC.navigate('<page of ui.settingsPages>') from a frame of this plugin
+  // (public/js/plugin-bridge.js): switch the tab here instead of loading the page again
+  document.addEventListener('gc:plugin-tab', (e) => {
+    const d = e && e.detail;
+    if (VIEW !== 'manage' || !d || d.plugin !== TARGET) return;
+    const p = installedOf(TARGET);
+    if (!p || !P.manageTabs(p, !!catItem(p.id)).some((x) => x.id === d.tab)) return;
+    d.handled = true;
+    // after the frame's message is handled: the tab switch removes that frame
+    setTimeout(() => setTab(d.tab), 0);
+  });
 
   function sinceText(p) {
     const proc = p.process || {};
@@ -1289,19 +1302,32 @@
     main.appendChild(legacySlot);
     renderLegacy(p, legacySlot);
 
+    // the area's tabs and, after "Einstellungen", the plugin's own (ui.settingsPages) while it runs
+    const tabs = P.manageTabs(p, !!c);
+    const cur = P.manageTab(tabs, mtab);
     const tl = el('div', { class: 'pgx-tabs', role: 'tablist', 'aria-label': t('plugins.detail.tabs') });
-    TABS.forEach((id) => {
-      if (id === 'versions' && !c) return;
+    tabs.forEach((tb) => {
+      const id = tb.id;
       const n = id === 'perms' ? P.permRows(p.permissions, t).length : null;
-      tl.appendChild(el('button', { type: 'button', class: 'pgx-tab', role: 'tab', id: 'pg-tab-' + id, 'aria-selected': String(mtab === id), 'aria-controls': 'pg-panel', 'data-tab': id,
-        on: { click: () => setTab(id) } }, [id === 'versions' ? t('plugins.x.tab_versions') : t('plugins.tab.' + id), n ? el('em', { text: String(n) }) : null]));
+      let label = id === 'versions' ? t('plugins.x.tab_versions') : t('plugins.tab.' + id);
+      if (tb.page) label = tb.page.title || id;
+      tl.appendChild(el('button', { type: 'button', class: 'pgx-tab', role: 'tab', id: 'pg-tab-' + id, 'aria-selected': String(cur === id), 'aria-controls': 'pg-panel', 'data-tab': id,
+        ...(tb.page ? { 'data-page': id } : {}), on: { click: () => setTab(id) } }, [label, n ? el('em', { text: String(n) }) : null]));
     });
     main.appendChild(tl);
-    const panel = el('div', { class: 'pgx-colm pgx-panel', id: 'pg-panel', role: 'tabpanel', 'aria-labelledby': 'pg-tab-' + mtab });
+    const page = (tabs.find((x) => x.id === cur) || {}).page;
+    if (page) {
+      // a page of the plugin: its frame over the whole width, no side column
+      const panel = el('div', { class: 'pgx-panel pgx-page-panel', id: 'pg-panel', role: 'tabpanel', 'aria-labelledby': 'pg-tab-' + cur });
+      panel.appendChild(pageFrame(p, page, 'pg-page-frame', 'pgx-page-frame'));
+      main.appendChild(panel);
+      return;
+    }
+    const panel = el('div', { class: 'pgx-colm pgx-panel', id: 'pg-panel', role: 'tabpanel', 'aria-labelledby': 'pg-tab-' + cur });
     const aside = el('aside', { class: 'pgx-aside', 'aria-label': t('plugins.x.details') });
     main.appendChild(el('div', { class: 'pgx-cols' }, [panel, aside]));
     const PANELS = new Map([['overview', panelOverview], ['settings', panelSettings], ['license', panelLicense], ['perms', panelPerms], ['log', panelLog], ['versions', panelVersions]]);
-    const render = PANELS.get(mtab);
+    const render = PANELS.get(cur);
     if (typeof render === 'function') render(p, panel, c);
     manageAside(p, c, aside);
   }
@@ -1725,18 +1751,21 @@
   }
 
   /**
-   * The plugin's own settings page (plugin.json ui.settingsPage, since 1.188.0): its sandboxed
-   * frame like on the plugin's page (public/js/plugin-bridge.js forwards its API calls), above
-   * the declared settings — only while the plugin runs.
+   * A page of the plugin in this area — its sandboxed frame like on the plugin's page (the same
+   * frame route /plugins/<id>/frame/<page>, admins only; public/js/plugin-bridge.js forwards its
+   * API calls): the settings page (ui.settingsPage, since 1.188.0) above the declared settings,
+   * a settings tab page (ui.settingsPages, since 1.225.0) as its tab — only while the plugin runs.
    */
-  function settingsFrame(p) {
+  function pageFrame(p, page, frameId, cls) {
     const f = document.createElement('iframe');
     const attrs = {
-      class: 'pg-frame pgx-set-frame', id: 'pg-settings-frame', title: p.settingsPage.title || p.name,
-      src: '/plugins/' + enc(p.id) + '/frame/' + enc(p.settingsPage.id),
+      class: 'pg-frame ' + cls, id: frameId, title: page.title || p.name,
+      src: '/plugins/' + enc(p.id) + '/frame/' + enc(page.id),
       sandbox: 'allow-scripts allow-forms' + (p.maps ? ' allow-popups allow-popups-to-escape-sandbox' : '') + (p.media ? ' allow-downloads' : ''),
       referrerpolicy: 'no-referrer', 'data-plugin-frame': '', 'data-plugin-id': p.id, 'data-plugin-api': '/api/v1/plugins/' + p.id + '/api/',
       'data-plugin-pages': JSON.stringify((p.pages || []).map((x) => x.id)),
+      // GC.navigate('<page>') to a settings tab page switches to its tab
+      'data-plugin-settings-pages': JSON.stringify((p.settingsPages || []).map((x) => x.id)),
     };
     if (p.allow) attrs.allow = p.allow;
     if (p.events) attrs['data-plugin-events'] = '';
@@ -1745,8 +1774,10 @@
     if (p.pickPrincipals) { attrs['data-plugin-groups'] = ''; attrs['data-plugin-name'] = p.name || p.id; }
     Object.keys(attrs).forEach((k) => f.setAttribute(k, attrs[k]));
     if (window.GCPluginBridge && typeof window.GCPluginBridge.attach === 'function') window.GCPluginBridge.attach(f);
-    return card([f], { 'aria-label': p.settingsPage.title || p.name }, 'pgx-set-frame-card');
+    return card([f], { 'aria-label': page.title || p.name }, 'pgx-set-frame-card');
   }
+
+  function settingsFrame(p) { return pageFrame(p, p.settingsPage, 'pg-settings-frame', 'pgx-set-frame'); }
 
   async function panelSettings(p, panel) {
     await renderTargets(p, panel);

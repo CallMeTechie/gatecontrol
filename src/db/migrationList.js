@@ -3158,6 +3158,23 @@ const migrations = [
     detect: (db) => hasColumn(db, 'plugin_media', 'scan_state') && tableExists(db, 'scan_findings')
       && tableExists(db, 'scan_exceptions') && tableExists(db, 'scan_hashes'),
   },
+  {
+    version: 125,
+    name: 'notify_email_subscriptions',
+    // E-mail channel of plugin topics (services/notify/personMail.js,
+    // docs/plugins.md "Notifications by e-mail"): one person's choice per
+    // topic whether its pushes also come by e-mail to the account address.
+    // No row = the topic's default (plugin.json notifyTopics[].email). Goes
+    // with the account; rows of a removed plugin stay harmless.
+    sql: `
+      CREATE TABLE IF NOT EXISTS notify_email_subscriptions (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        topic TEXT NOT NULL,
+        enabled INTEGER NOT NULL,
+        PRIMARY KEY (user_id, topic)
+      );`,
+    detect: (db) => tableExists(db, 'notify_email_subscriptions'),
+  },
 ];
 
 module.exports = { migrations };

@@ -105,6 +105,7 @@ function moveRecords(oldId, newId) {
     const like = oldPrefix.replace(/[%_\\]/g, '\\$&') + '%';
     d.prepare(`UPDATE OR REPLACE notify_rules SET event_id = ? || substr(event_id, ?) WHERE event_id LIKE ? ESCAPE '\\'`).run(newPrefix, oldPrefix.length + 1, like);
     d.prepare(`UPDATE OR REPLACE notify_subscriptions SET topic = ? || substr(topic, ?) WHERE topic LIKE ? ESCAPE '\\'`).run(newPrefix, oldPrefix.length + 1, like);
+    d.prepare(`UPDATE OR REPLACE notify_email_subscriptions SET topic = ? || substr(topic, ?) WHERE topic LIKE ? ESCAPE '\\'`).run(newPrefix, oldPrefix.length + 1, like);
     for (const r of d.prepare("SELECT token_id, topics FROM notify_device_prefs WHERE topics LIKE '%' || ? || '%'").all(oldPrefix)) {
       let topics;
       try { topics = JSON.parse(r.topics); } catch { continue; }
