@@ -323,7 +323,11 @@ unsigned build of the same id.
   "services": { "provides": { "scene": { "label": { "de": "Szene schalten", "en": "Switch a scene" } } } },
   "ui": {
     "nav": { "label": { "de": "Smart Home", "en": "Smart Home" }, "icon": "<svg path d>" },
-    "pages": [{ "id": "main", "title": { "de": "Smart Home", "en": "Smart Home" } }],
+    "pages": [
+      { "id": "main", "title": { "de": "Smart Home", "en": "Smart Home" } },
+      { "id": "rooms", "title": { "de": "Räume", "en": "Rooms" } }
+    ],
+    "settingsPages": ["rooms"],
     "settingsGroups": [
       { "id": "account", "label": { "de": "Konto", "en": "Account" }, "help": { "de": "Zugang zum Dienst", "en": "Access to the service" } }
     ],
@@ -345,7 +349,7 @@ unsigned build of the same id.
   "migrations": "migrations",
   "notifyTopics": [
     { "id": "charging", "label": { "de": "Laden abgeschlossen", "en": "Charging complete" }, "default": true },
-    { "id": "alarm", "label": { "de": "Alarm", "en": "Alarm" }, "allowCritical": true },
+    { "id": "alarm", "label": { "de": "Alarm", "en": "Alarm" }, "allowCritical": true, "email": true },
     { "id": "message", "label": { "de": "Nachrichten", "en": "Messages" }, "chat": true }
   ]
 }
@@ -416,6 +420,33 @@ unsigned build of the same id.
   cannot hold — several accounts, a QR code scanned with the camera, a list
   of people to map. Errors `ui.settingsPage: invalid`. An older GateControl
   ignores the key and shows the page as a page tab.
+* `ui.settingsPages` (since 1.225.0): ids of up to **4** more of `ui.pages`
+  (never the first one, never the `ui.settingsPage`, no id twice) — the
+  plugin's administration that is more than settings (e.g. Mail ›
+  Ressourcen, Geteilte Postfächer). Each becomes a **tab of its own** under
+  Einstellungen › Plugins › the plugin, right after "Einstellungen" and in
+  this order (Übersicht · Einstellungen · Ressourcen · Geteilte Postfächer ·
+  Berechtigungen · Lizenz · Protokoll), labelled with the page's `title`,
+  and no longer a page tab on the plugin's own page (Integrationen › the
+  plugin). The tab shows the page's sandboxed frame over the whole width —
+  the same frame as on the plugin's page (`/plugins/<id>/frame/<page>`,
+  `render` gets `view: 'page'` and that `page`, the admin API,
+  administrators only, the same sandbox and CSP) — and only while the plugin
+  runs (otherwise the tab is missing and the overview explains why).
+  `?tab=<page>` opens it directly (`/settings/plugins/manage/<id>?tab=resources`),
+  `/plugins/<id>/<page>` leads there (302), and `window.GC.navigate('<page>')`
+  from any of the plugin's admin frames switches to it (on the plugin area
+  without loading the page again). Errors `ui.settingsPages: invalid`
+  (not a list, more than 4, an unknown page, the first page, the settings
+  page, an id twice) and `ui.settingsPages: reserved` (an id of the area's
+  own tabs: `overview`, `settings`, `perms`, `license`, `log`, `versions`).
+  **Older GateControl** (before 1.225.0) ignores the key — `validate` drops
+  unknown keys of `ui` without an error, so the plugin installs there and
+  shows these pages as page tabs on its own page (`GC.navigate` opens them
+  there). A plugin that must not run without the tabs declares
+  `"gatecontrol": ">=1.225.0"`. The key is read at install: a plugin
+  installed before the server update gets its tabs with its next update or
+  reinstall.
 * `ui.inbox` (boolean, since 1.179.0, needs `ui.portal` — else `ui.inbox:
   needs ui.portal`): the plugin's portal frames may show the viewer's own
   notification inbox as an entry (`window.GC.inbox`, see "User interface"):
@@ -455,7 +486,11 @@ unsigned build of the same id.
   See "Notifications" below. `chat` (boolean, default `false`, since 1.177.0):
   a topic for messages between people — see "Chat notifications"; never
   together with `allowCritical`, never on `default` (else `notifyTopics: chat
-  topic cannot be critical or default`).
+  topic cannot be critical or default`). `email` (boolean, default `false`,
+  since 1.225.0): the topic's pushes also go **by e-mail** to the people they
+  reach unless a person switches that off — see "Notifications by e-mail";
+  never on a chat topic (`notifyTopics: chat topic cannot be mailed`). An
+  older GateControl ignores the key (no e-mail channel there).
 * `media` (optional, since 1.177.0): `{ maxBytes, types, quotaDefault }` —
   files the plugin's users upload through GateControl (pictures, voice
   messages, documents). `maxBytes` an integer 1024 … 2147483648 (2 GB; 100 MB before 1.193.0) per
@@ -1014,6 +1049,53 @@ const { pushed, id } = await gc.notify({
   await gc.notify({ topic: 'messages', title: 'Elternbrief', body: 'Liebe Eltern, …', users: [12],
     card: { text: fullText, link: { label: 'Ganze Nachricht lesen', route: 'plg-gatecontrol-schule' } } });
   ```
+
+### Notifications by e-mail (since 1.225.0)
+
+Plugins have no mail sender of their own and get none: there is **no API to
+mail an address**. Instead a push can also reach its people by e-mail —
+through GateControl's own SMTP server (Einstellungen › E-Mail) to each
+person's **account address** (Benutzer › the person › E-Mail). The people
+are the push's own recipients (`users`, `groups`, or the topic's rule —
+default its subscribers), so a plugin can only ever reach GateControl
+people, never anybody else.
+
+* **Per person and topic** a switch "Auch per E-Mail an …" in the portal
+  (Benachrichtigungen, under the topic's own switch) and in the apps
+  (`GET/PUT /api/v1/client/push/prefs` `email_topics`), next to the topic
+  switch, quiet hours and chat routes. Default: **on** for a topic declared
+  with `"email": true` in `notifyTopics[]`, **off** for every other plugin
+  topic (incl. `default`) — a person can switch it on there. Core topics and
+  chat topics have no e-mail channel.
+* Who gets the mail: the push's people who did not switch the topic off
+  (`critical` reaches them anyway, like the push), have the e-mail switch on,
+  and have a valid address. Each person gets an own mail (no shared `To:`)
+  in their language: subject `[GateControl] <title>`, text = title, body and
+  a footer naming the plugin, the topic and where to unsubscribe (with a link
+  to the portal when `GC_BASE_URL` is set). No HTML, no pictures, no buttons.
+* Never mailed: chat topics, silent data pushes (`silent: true`), pushes to
+  single `devices`. Nothing goes out without SMTP, without the licence
+  feature `email_alerts`, with the notification center off or the topic's
+  rule off (System › Benachrichtigungen).
+* At most **200 mails per plugin and hour** (every recipient counts); more
+  are dropped and logged. The push budget (`permissions.notify`) applies as
+  before; the e-mail does not count against it.
+* `gc.notify` answers as before (`{ pushed, id }`) — the plugin learns
+  nothing about addresses or who got a mail.
+* The install dialog names topics mailed by default ("Meldungen per E-Mail:
+  schickt Mitteilungen zu <topics> standardmäßig auch per E-Mail an die
+  Empfänger …"); an update that adds one shows it as a new permission.
+* Independent of the rule's own "E-Mail" channel (System ›
+  Benachrichtigungen › the topic), which still sends one mail to the
+  administrators' notification address.
+* **Older GateControl** (before 1.225.0) ignores `email` — the push goes out
+  as before, without e-mail.
+
+```json
+"notifyTopics": [
+  { "id": "booking", "label": { "de": "Buchungsanfragen", "en": "Booking requests" }, "email": true }
+]
+```
 
 ### Pictures (`image`)
 
@@ -3204,7 +3286,8 @@ process — TCP sockets, WebSockets and, since 1.216.0, IMAP sessions
   `window.GC.navigate(pageId)` opens another of the plugin's pages and (since
   1.185.0) `window.GC.openSettings()` its settings tab (Einstellungen ›
   Plugins › the plugin › Einstellungen) — both on admin pages only, never
-  from the portal.
+  from the portal. Since 1.225.0 a page of `ui.settingsPages` is a tab of
+  its own there: `GC.navigate('<page>')` opens that tab (see "plugin.json").
 * **Downloads** (since 1.186.0): `await GC.saveFile(blob, 'Fahrtenbuch
   2026-10.csv')` hands a `Blob` the frame built (e.g. from an answer of
   `GC.call`) to the parent page, which offers it as a download from its own

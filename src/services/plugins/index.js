@@ -143,6 +143,8 @@ function permissionSummary(m, lang) {
     // delivers notifications into chats (docs/plugins.md "Notifications in chats")
     notifySink: !!p.notifySink,
     chatTopics: p.notify ? (m.notifyTopics || []).filter((t) => t.chat === true).map((t) => loc(t.label, lang)) : [],
+    // since 1.225.0: topics mailed by default to the people they reach (notifyTopics[].email, notify/personMail.js)
+    emailTopics: p.notify ? (m.notifyTopics || []).filter((t) => t.email === true).map((t) => loc(t.label, lang)) : [],
     services: Array.isArray(p.services) ? p.services : [],
     // since 1.193.0: download links without sign-in (only while an administrator allows them), the people's devices
     publicLinks: !!p.publicLinks,
@@ -615,6 +617,12 @@ function statusOf(p, ev, proc) {
   return ev.reason === 'disabled' ? 'disabled' : 'blocked';
 }
 
+/** Ids of the pages shown under Einstellungen › Plugins instead of as page tabs (ui.settingsPage, ui.settingsPages). */
+function settingsPageIds(m) {
+  const ui = (m && m.ui) || {};
+  return new Set([ui.settingsPage, ...(Array.isArray(ui.settingsPages) ? ui.settingsPages : [])].filter(Boolean));
+}
+
 function view(p, lang) {
   const m = p.manifest || { name: { de: p.name, en: p.name }, description: {}, permissions: {}, ui: { pages: [], settings: [] }, license: {} };
   const ev = evaluate(p);
@@ -637,9 +645,12 @@ function view(p, lang) {
     compatible: !!m.gatecontrol && semver.satisfies(serverVersion(), m.gatecontrol),
     permissions: m.permissions ? permissionSummary(m, lang) : null,
     nav: m.ui && m.ui.nav ? { label: loc(m.ui.nav.label, lang), icon: m.ui.nav.icon } : null,
-    // the settings page (ui.settingsPage) is shown in the settings tab, not as a page tab
-    pages: (m.ui && m.ui.pages ? m.ui.pages : []).filter((x) => !(m.ui.settingsPage && x.id === m.ui.settingsPage)).map((x) => ({ id: x.id, title: loc(x.title, lang) })),
+    // the settings page (ui.settingsPage) is shown in the settings tab and the settings tab pages
+    // (ui.settingsPages, since 1.225.0) as tabs of their own under Einstellungen › Plugins — not as page tabs
+    pages: (m.ui && m.ui.pages ? m.ui.pages : []).filter((x) => !settingsPageIds(m).has(x.id)).map((x) => ({ id: x.id, title: loc(x.title, lang) })),
     settingsPage: m.ui && m.ui.settingsPage ? { id: m.ui.settingsPage, title: loc((m.ui.pages.find((x) => x.id === m.ui.settingsPage) || {}).title, lang) } : null,
+    settingsPages: (m.ui && Array.isArray(m.ui.settingsPages) ? m.ui.settingsPages : [])
+      .map((id) => m.ui.pages.find((x) => x.id === id)).filter(Boolean).map((x) => ({ id: x.id, title: loc(x.title, lang) })),
     portal: m.ui && m.ui.portal ? { label: m.ui.portal.label ? loc(m.ui.portal.label, lang) : null,
       sections: (m.ui.portal.sections || []).map((s) => ({ tab: s.tab, title: loc(s.title, lang) })) } : null,
     app: m.ui && m.ui.app ? { label: loc(m.ui.app.label, lang), icon: m.ui.app.icon } : null,
@@ -861,7 +872,7 @@ async function stop() {
 
 module.exports = {
   PluginError, inspect, install, evaluate, reconcile, setEnabled, restart, uninstall, setAllowUnsigned, allowUnsigned,
-  setLicenseKey, assignLicenseKey, checkLicense, attentionCount, list, view, get, navEntries, history, addHistory, autoUpdateMode, setAutoUpdate, catalogCheck, setCatalogCheck, portalTabs, portalTabsFor, request, publicRequest, render, settingsChanged, settingsStatus, storageBytes,
+  setLicenseKey, assignLicenseKey, checkLicense, attentionCount, list, view, settingsPageIds, get, navEntries, history, addHistory, autoUpdateMode, setAutoUpdate, catalogCheck, setCatalogCheck, portalTabs, portalTabsFor, request, publicRequest, render, settingsChanged, settingsStatus, storageBytes,
   serverVersion, start, stop, extract, readManifest, removeNotIn,
   _staging: staging,
 };

@@ -28,6 +28,30 @@
 
   function licenseTone(state) { return LICENSE_TONE[state] || 'off'; }
 
+  // Tabs of one installed plugin (Einstellungen › Plugins › <plugin>, public/js/plugins-page.js):
+  // the area's own tabs; right after "settings" the plugin's settings tab pages (plugin.json
+  // ui.settingsPages, since 1.225.0: [{ id, title }] of the plugin view) — only while it runs,
+  // they are its sandboxed frames —; "versions" only for a plugin of the catalogue.
+  const MANAGE_TABS = ['overview', 'settings', 'perms', 'license', 'log', 'versions'];
+
+  /** → [{ id, page? }] in the order shown; `page` ({ id, title }) for a plugin page. */
+  function manageTabs(p, inCatalog) {
+    const pages = p && p.status === 'running' && Array.isArray(p.settingsPages)
+      ? p.settingsPages.filter((x) => x && typeof x.id === 'string' && MANAGE_TABS.indexOf(x.id) < 0) : [];
+    const out = [];
+    MANAGE_TABS.forEach((id) => {
+      if (id === 'versions' && !inCatalog) return;
+      out.push({ id });
+      if (id === 'settings') pages.forEach((x) => { if (!out.some((o) => o.id === x.id)) out.push({ id: x.id, page: x }); });
+    });
+    return out;
+  }
+
+  /** The tab to show: the one asked for (?tab=) when the plugin has it, else "overview". */
+  function manageTab(tabs, want) {
+    return (tabs || []).some((x) => x.id === want) ? want : 'overview';
+  }
+
   function checkSymbol(status) { return status === 'ok' ? '✓' : (status === 'warn' ? '!' : '✕'); }
 
   /** i18n keys of one install check. */
@@ -119,6 +143,10 @@
       }
       if (perm.chatTopics && perm.chatTopics.length) {
         rows.push({ label: t('plugins.perm.chat'), value: t('plugins.perm.chat_v', { topics: perm.chatTopics.join(', ') }) });
+      }
+      // since 1.225.0: topics that go to their people by e-mail as well unless they unsubscribe
+      if (perm.emailTopics && perm.emailTopics.length) {
+        rows.push({ label: t('plugins.perm.notify_email'), value: t('plugins.perm.notify_email_v', { topics: perm.emailTopics.join(', ') }) });
       }
     }
     // messenger foundations (docs/plugins.md "Media", "Realtime events", "Services")
@@ -460,6 +488,6 @@
     return out;
   }
 
-  return { MAX_PACKAGE_BYTES, protoText, statusChip, licenseTone, checkSymbol, checkKeys, fmtBytes, fmtDate, mediaTypes, permRows, permDiff, catalogChip, catalogAction, addsOf, wipeConfirmed,
+  return { MAX_PACKAGE_BYTES, MANAGE_TABS, manageTabs, manageTab, protoText, statusChip, licenseTone, checkSymbol, checkKeys, fmtBytes, fmtDate, mediaTypes, permRows, permDiff, catalogChip, catalogAction, addsOf, wipeConfirmed,
     CATEGORIES, ICON_PATHS, DETAIL_ICON_PATHS, addRows, addChips, daysUntil, categoryOf, iconPath, isProblem, licenseExpiring, attention, matches, filterInstalled, groupByCategory, sortCatalog, updateKind, noteLines, sensitivePerms };
 });

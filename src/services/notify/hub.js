@@ -39,6 +39,7 @@ const config = require('./config');
 const text = require('./text');
 const sanitize = require('./sanitize');
 const chatRoutes = require('./chatRoutes');
+const personMail = require('./personMail');
 const { PRIORITY_RANK, CORE_TOPICS, ADMIN_ONLY_TOPICS } = require('./constants');
 const eventBus = require('../eventBus');
 const logger = require('../../utils/logger');
@@ -541,6 +542,9 @@ function tick() {
  * bundle/delay do not apply; quiet hours still make it silent), never mailed.
  * `card` (hostApi notifyCard): how the message looks in a chat when a person
  * routes the topic there (chatRoutes.js); never on a chat topic.
+ * Since 1.225.0 the push may also go to its people by e-mail (personMail.js:
+ * their choice per topic, server SMTP, account address) — not for chat
+ * topics, silent pushes or pushes to single `devices`; → `mailed`.
  */
 function emitPlugin(pluginId, n) {
   if (!config.value('enabled')) return { pushed: false, reason: 'disabled' };
@@ -579,7 +583,15 @@ function emitPlugin(pluginId, n) {
     const mail = { subject: `[GateControl] ${n.title}`, text: [n.title, '', n.body || '', '', '— GateControl'].join('\n') };
     if (!r || !claimMail(eventId, mail)) sendMailNow(mail).catch((err) => logger.warn({ err: err.message, pluginId }, 'plugin notification mail failed'));
   }
-  return { pushed: !!r, id: r ? r.id : null };
+  // since 1.225.0: the people the push reaches, by e-mail to their account address — each
+  // person's choice per topic, on by default for a topic declared with `email: true` (personMail.js)
+  let mailed = 0;
+  try {
+    let prio = n.priority || rule.priority;
+    if (PRIORITY_RANK[prio] > PRIORITY_RANK.high && n.allowCritical !== true) prio = 'high';
+    mailed = personMail.send(pluginId, { ...n, topic: eventId, priority: prio }, rule);
+  } catch (err) { logger.warn({ err: err.message, pluginId }, 'plugin notification e-mails failed'); }
+  return { pushed: !!r, id: r ? r.id : null, mailed };
 }
 
 // ─── Manual messages and tests ──────────────────────────────────────────

@@ -16,7 +16,9 @@
 //                                       links; these path segments stay reserved ids)
 //   GET /plugins/:id[/:page]          aurora page: header + sandboxed iframe
 //                                     (or "derzeit deaktiviert" for a plugin
-//                                     that is installed but not running)
+//                                     that is installed but not running); a page
+//                                     of ui.settingsPages → its tab under
+//                                     /settings/plugins/manage/:id?tab=<page>
 //   GET /plugins/:id/frame/:page      the frame document (plugin HTML, sandboxed)
 //   GET /portal/plugins/:id/frame     the frame of a plugin's portal tab
 //                                     (?section=<id>: one of its sections in Zuhause/Fahrzeug
@@ -298,6 +300,9 @@ router.get('/plugins/:id/:page?', pluginPageLimiter, requireAuth, (req, res) => 
   if (!p || (req.params.page && !page)) {
     return res.status(404).render(`${res.locals.theme}/pages/404.njk`, { title: '404' });
   }
+  // a page of ui.settingsPages (since 1.225.0) is a tab under Einstellungen › Plugins › <plugin>
+  const tabs = p.manifest.ui && Array.isArray(p.manifest.ui.settingsPages) ? p.manifest.ui.settingsPages : [];
+  if (page && tabs.includes(page.id)) return res.redirect(302, `${AREA_BASE}/manage/${encodeURIComponent(p.id)}?tab=${encodeURIComponent(page.id)}`);
   const view = plugins.view(p, l);
   const ev = plugins.evaluate(p);
   const running = ev.run && runtime.info(p.id).state === 'running';
@@ -310,6 +315,7 @@ router.get('/plugins/:id/:page?', pluginPageLimiter, requireAuth, (req, res) => 
     running: running && !!page,
     reason: REASON_KEYS.has(reason) ? reason : 'disabled',
     pagesJson: JSON.stringify(view.pages.map((x) => x.id)),
+    settingsPagesJson: JSON.stringify(view.settingsPages.map((x) => x.id)),
   });
 });
 

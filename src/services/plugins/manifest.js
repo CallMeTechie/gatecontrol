@@ -15,6 +15,11 @@ const FILE_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)
 const ICON_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9 .,-]{1,600}$/;
 const SETTING_TYPES = new Set(['text', 'number', 'boolean', 'select', 'secret']);
 const NOTIFY_TOPIC_RE = /^[a-z][a-z0-9_-]{0,31}$/;
+// ui.settingsPages (since 1.225.0): at most this many pages as tabs of their own under
+// Einstellungen › Plugins › <plugin>; their ids must not be one of the plugin area's own tabs
+// (?tab=<id>, public/js/plugins-page.js TABS)
+const SETTINGS_PAGES_MAX = 4;
+const SETTINGS_TAB_IDS = new Set(['overview', 'settings', 'perms', 'license', 'log', 'versions']);
 // Push budget of a plugin per hour: permissions.notify true → 30, { perHour } → 1…1000 (until 1.218.0: 120).
 const NOTIFY_PER_HOUR_DEFAULT = 30;
 const NOTIFY_PER_HOUR_MAX = 1000;
@@ -406,15 +411,21 @@ function validate(raw, opts = {}) {
       for (const t of list) {
         const label = locText(t && t.label, 60);
         if (!t || typeof t.id !== 'string' || !NOTIFY_TOPIC_RE.test(t.id) || !label || (t.default != null && typeof t.default !== 'boolean')
-          || (t.allowCritical != null && typeof t.allowCritical !== 'boolean') || (t.chat != null && typeof t.chat !== 'boolean')) {
+          || (t.allowCritical != null && typeof t.allowCritical !== 'boolean') || (t.chat != null && typeof t.chat !== 'boolean')
+          || (t.email != null && typeof t.email !== 'boolean')) {
           err('notifyTopics: invalid'); break;
         }
         if (topics.some((x) => x.id === t.id)) { err('notifyTopics: duplicate'); break; }
         // a chat topic is for messages between people: never critical, never the 'default' topic
         if (t.chat === true && (t.allowCritical === true || t.id === 'default')) { err('notifyTopics: chat topic cannot be critical or default'); break; }
+        // chat messages stay in the chat: never by e-mail
+        if (t.chat === true && t.email === true) { err('notifyTopics: chat topic cannot be mailed'); break; }
         // allowCritical: priority 'critical' is kept for this topic (bypasses quiet hours like core critical events)
         // chat: chat notifications (conversation, sender, reply / mark_read — docs/plugins.md "Chat notifications")
-        topics.push({ id: t.id, label, default: t.default !== false, ...(t.allowCritical === true ? { allowCritical: true } : {}), ...(t.chat === true ? { chat: true } : {}) });
+        // email (since 1.225.0): the e-mail channel of the topic is on by default for every person it
+        // reaches (server SMTP, the person's account address, services/notify/personMail.js)
+        topics.push({ id: t.id, label, default: t.default !== false, ...(t.allowCritical === true ? { allowCritical: true } : {}), ...(t.chat === true ? { chat: true } : {}),
+          ...(t.email === true ? { email: true } : {}) });
       }
       m.notifyTopics = topics;
     }
@@ -422,7 +433,7 @@ function validate(raw, opts = {}) {
 
   // ui
   const u = raw.ui == null ? {} : raw.ui;
-  const ui = { nav: null, pages: [], settings: [], settingsGroups: [], settingsPage: null, portal: null, app: null, maps: false, geolocation: false, camera: false, scanQr: false, inbox: false };
+  const ui = { nav: null, pages: [], settings: [], settingsGroups: [], settingsPage: null, settingsPages: [], portal: null, app: null, maps: false, geolocation: false, camera: false, scanQr: false, inbox: false };
   if (!u || typeof u !== 'object' || Array.isArray(u)) err('ui: invalid');
   else {
     if (u.nav != null) {
@@ -449,6 +460,16 @@ function validate(raw, opts = {}) {
       const i = typeof u.settingsPage === 'string' ? ui.pages.findIndex((x) => x.id === u.settingsPage) : -1;
       if (i < 1) err('ui.settingsPage: invalid');
       else ui.settingsPage = u.settingsPage;
+    }
+    // ui.settingsPages (since 1.225.0): more of the pages (never the first, never ui.settingsPage),
+    // each a tab of its own under Einstellungen › Plugins › <plugin> after "Einstellungen"
+    // (administration of the plugin: resources, shared mailboxes …) instead of a page tab
+    if (u.settingsPages != null) {
+      const sp = u.settingsPages;
+      if (!Array.isArray(sp) || sp.length > SETTINGS_PAGES_MAX || new Set(sp).size !== sp.length
+        || !sp.every((id) => typeof id === 'string' && ui.pages.findIndex((x) => x.id === id) >= 1 && id !== ui.settingsPage)) err('ui.settingsPages: invalid');
+      else if (sp.some((id) => SETTINGS_TAB_IDS.has(id))) err('ui.settingsPages: reserved');
+      else ui.settingsPages = sp.slice();
     }
     // ui.settingsGroups (since 1.185.0): headings of the settings form, in this order
     if (u.settingsGroups != null) {
@@ -636,6 +657,6 @@ function migrationsOf(manifest, files) {
 }
 
 module.exports = {
-  validate, loc, locText, migrationsOf, isFile, quotaBytes, PORTAL_SECTION_TABS, NOTIFY_PER_HOUR_DEFAULT, NOTIFY_PER_HOUR_MAX, BACKGROUND_MIN_S,
+  validate, loc, locText, migrationsOf, isFile, quotaBytes, PORTAL_SECTION_TABS, SETTINGS_PAGES_MAX, SETTINGS_TAB_IDS, NOTIFY_PER_HOUR_DEFAULT, NOTIFY_PER_HOUR_MAX, BACKGROUND_MIN_S,
   DB_MAX_MB_MIN, DB_MAX_MB_MAX, AI_CAPABILITIES, MAIL_CONNECTIONS_DEFAULT, MAIL_CONNECTIONS_MAX, SERVICE_PER_HOUR_MIN, SERVICE_PER_HOUR_MAX, MEDIA_MAX_BYTES, MEDIA_MAX_BYTES_AREAS, MEDIA_QUOTA_DEFAULT, MEDIA_QUOTA_MIN, MEDIA_QUOTA_MAX, MEDIA_QUOTA_MAX_AREAS, MIME_DENY_RE, SERVICE_REF_RE, SERVICE_NAME_RE, typeAllowed,
 };

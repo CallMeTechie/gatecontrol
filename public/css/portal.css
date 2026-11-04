@@ -434,6 +434,10 @@ button, input, select { font: inherit; color: inherit; }
 .pt-topic { display: flex; align-items: center; gap: 12px; padding: 12px 2px; border-top: 1px solid var(--line); }
 .pt-topic-text { cursor: pointer; }
 .pt-topic.is-locked .pt-topic-text { cursor: default; }
+/* E-mail channel of a plugin topic (1.225.0): below the topic's text */
+.pt-topic > .pt-grow > .pt-topic-text { display: block; }
+.pt-topic-mail { display: flex; margin-top: 6px; color: var(--muted); }
+.pt-topic-mail input:disabled + span { opacity: .75; }
 .pt-recv { display: flex; flex-direction: column; gap: 8px; }
 .pt-recv-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--chip); border: 1px solid var(--line); }
 .pt-recv-name { display: block; overflow-wrap: anywhere; }

@@ -123,7 +123,8 @@ function ensurePluginRule(eventId) {
 
 /**
  * Topics of the installed plugins with the notify permission:
- * [{ topic, plugin_id, plugin_name, id, label:{de,en}, default, enabled, chat }].
+ * [{ topic, plugin_id, plugin_name, id, label:{de,en}, default, enabled, chat, email }]
+ * (email: the topic's e-mail channel is on by default, personMail.js).
  * Every such plugin has 'default' (gc.notify(message)) plus its notifyTopics.
  */
 function pluginTopics() {
@@ -136,11 +137,12 @@ function pluginTopics() {
     const name = m.name || { de: p.name, en: p.name };
     const declared = Array.isArray(m.notifyTopics) ? m.notifyTopics : [];
     if (!declared.some((t) => t && t.id === 'default')) {
-      out.push({ topic: `plugin:${p.id}:default`, plugin_id: p.id, plugin_name: name, id: 'default', label: name, default: true, enabled: p.enabled, chat: false });
+      out.push({ topic: `plugin:${p.id}:default`, plugin_id: p.id, plugin_name: name, id: 'default', label: name, default: true, enabled: p.enabled, chat: false, email: false });
     }
     for (const t of declared) {
       if (!t || !PLUGIN_TOPIC_ID_RE.test(String(t.id))) continue;
-      out.push({ topic: `plugin:${p.id}:${t.id}`, plugin_id: p.id, plugin_name: name, id: t.id, label: t.label || { de: t.id, en: t.id }, default: t.default !== false, enabled: p.enabled, chat: t.chat === true });
+      out.push({ topic: `plugin:${p.id}:${t.id}`, plugin_id: p.id, plugin_name: name, id: t.id, label: t.label || { de: t.id, en: t.id }, default: t.default !== false, enabled: p.enabled, chat: t.chat === true,
+        email: t.email === true && t.chat !== true });
     }
   }
   return out;

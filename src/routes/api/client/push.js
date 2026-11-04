@@ -13,8 +13,13 @@
  *                                     notifyAction hook (services/plugins/notifyActions.js)
  *   GET  /api/v1/client/push/inbox    ?limit&before → { items, unread }
  *   GET  /api/v1/client/push/prefs    → { ok, enabled, mode, muted_topics, restricted,
- *                                         quiet: { from, to, tz, critical_bypass } | null }
- *   PUT  /api/v1/client/push/prefs    { enabled, mode, muted_topics, restricted } → { ok }
+ *                                         quiet: { from, to, tz, critical_bypass } | null,
+ *                                         email_topics: [{ id, label, enabled }], email_to, email_ready }
+ *   PUT  /api/v1/client/push/prefs    { enabled, mode, muted_topics, restricted, email_topics } → { ok }
+ *                                     email_topics (since 1.225.0): [{ id, enabled }] — the token
+ *                                     owner's e-mail channel of plugin topics (per person, like the
+ *                                     portal; services/notify/personMail.js); 400 invalid_email_topics,
+ *                                     token without an owner → 403 no_user
  *   POST /api/v1/client/push/test     → { ok, seq }   (≤ 5/min)
  *   GET  /api/v1/client/push/routes   where the token owner's notifications appear —
  *   PUT  /api/v1/client/push/routes   same shapes as /api/v1/me/notify/routes
@@ -40,6 +45,7 @@ const vpnPresence = require('../../../services/notify/vpnPresence');
 const pushRouter = require('../../../services/notify/router');
 const text = require('../../../services/notify/text');
 const chatRoutes = require('../../../services/notify/chatRoutes');
+const personMail = require('../../../services/notify/personMail');
 const { ACK_STATES, TOPIC_RE, LIMITS } = require('../../../services/notify/constants');
 const eventBus = require('../../../services/eventBus');
 const logger = require('../../../utils/logger');
@@ -267,8 +273,20 @@ router.get('/push/prefs', (req, res) => {
     muted_topics: (cur && Array.isArray(cur.muted_topics)) ? cur.muted_topics : [],
     restricted: !!cur && cur.restricted === 1,
     quiet: pushRouter.quietOf(req.tokenUserId == null ? null : req.tokenUserId),
+    ...emailPrefs(req.tokenUserId == null ? null : req.tokenUserId),
   });
 });
+
+/** The token owner's e-mail channel of plugin topics (personMail.js); none without an owner. */
+function emailPrefs(userId) {
+  if (userId == null) return { email_topics: [], email_to: null, email_ready: personMail.smtpReady() };
+  const topics = hub.topicsForUser(userId, text.userLang(userId)).filter((t) => personMail.mailTopic(t.id));
+  return {
+    email_topics: topics.map((t) => ({ id: t.id, label: t.label, enabled: personMail.emailOn(userId, t.id) })),
+    email_to: personMail.addressOf(userId) || null,
+    email_ready: personMail.smtpReady(),
+  };
+}
 
 // ─── PUT /api/v1/client/push/prefs ──────────────────────────────────────
 
@@ -296,8 +314,21 @@ router.put('/push/prefs', (req, res) => {
     if (typeof b.restricted !== 'boolean') return res.status(400).json({ ok: false, error: 'invalid_restricted' });
     next.restricted = b.restricted;
   }
+  let mails = [];
+  if (b.email_topics !== undefined) {
+    if (req.tokenUserId == null) return res.status(403).json({ ok: false, error: 'no_user' });
+    const uid = req.tokenUserId;
+    const m = b.email_topics;
+    const allowed = new Set(hub.topicsForUser(uid, text.userLang(uid)).map((t) => t.id));
+    if (!Array.isArray(m) || m.length > LIMITS.mutedTopics
+      || !m.every((t) => t && typeof t.id === 'string' && typeof t.enabled === 'boolean' && allowed.has(t.id) && personMail.mailTopic(t.id))) {
+      return res.status(400).json({ ok: false, error: 'invalid_email_topics' });
+    }
+    mails = m;
+  }
   recordApp(req, viaOf(req.ip));
   store.setDevicePrefs(req.tokenId, next);
+  for (const t of mails) personMail.setEmail(req.tokenUserId, t.id, t.enabled);
   const conn = stream.get(req.tokenId);
   eventBus.publish('push_presence', {
     token_id: req.tokenId,
