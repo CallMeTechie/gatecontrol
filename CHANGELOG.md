@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.225.1] — 2026-11-04
 
 ### Fixes
 - Server: Lange Blockaden des Haupt-Threads behoben. Hauptursache war die IP-Sperre mit Sperrlisten: Jede automatische Sperre und jede ablaufende Sperre baute die Mengen ALLER Sperrlisten neu auf (jede Adresse einzeln geparst) – bei einer Liste mit 40 000 Einträgen rund 0,8 s je Sperre, bei 200 000 Einträgen 3,8 s (gemessen auf einem Xeon mit 2,1 GHz, auf schwächerer Hardware ein Vielfaches); eine Welle von 20 Sperren in einem Durchlauf des Access-Logs hielt den Server 16 s an. Die Listenmengen werden jetzt nur noch gebaut, wenn sich eine Liste ändert (20 Sperren: 16 s → 0,04 s), nach dem Download in Häppchen mit Pausen für die Ereignisschleife, und beim Start über einen schnellen Weg für IPv4-Netze (200 000 Einträge: 3,8 s → 0,24 s). Die Sperrdatei für Caddy wird nach Änderungen ohne synchrones Schreiben erzeugt.
