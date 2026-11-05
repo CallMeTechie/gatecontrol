@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.229.0] — 2026-11-05
+
+### Features
+- Reiter „Edge-Plugins“ und „MQTT“ in der Gateway-Ansicht (#405)
+
+---
+
 ## [1.228.1] — 2026-11-05
 
 ### Fixes
