@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.228.0] — 2026-11-05
+
+### Features
+- Edge-Teile von Plugins auf Gateways und lokaler MQTT-Broker (Server) (#403)
+
+---
+
 ## [1.227.0] — 2026-11-04
 
 ### Features
