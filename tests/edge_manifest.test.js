@@ -87,8 +87,7 @@ describe('edge section', () => {
     assert.match(errorsOf({ ...goodEdge, capabilities: { mdns: { services: ['shelly'] } } }).join(), /mdns: invalid/);
     assert.match(errorsOf({ ...goodEdge, capabilities: { tcp: { lan: 'yes' } } }).join(), /tcp: invalid/);
     assert.match(errorsOf({ ...goodEdge, capabilities: { http: { internet: true } } }).join(), /http: invalid/);
-    assert.match(errorsOf({ ...goodEdge, capabilities: { http: { lan: false, selfSigned: true } } }).join(), /http\.selfSigned: needs lan/);
-    assert.match(errorsOf({ ...goodEdge, capabilities: { http: { lan: true, selfSigned: 'yes' } } }).join(), /http: invalid/);
+    assert.match(errorsOf({ ...goodEdge, capabilities: { http: { lan: true, insecure: true } } }).join(), /http: invalid/);
     assert.match(errorsOf({ ...goodEdge, capabilities: { serial: ['/dev/ttyUSB0'] } }).join(), /serial: invalid/);
     // lan: false is no capability at all
     assert.deepEqual(check({ entry: 'edge/index.js', capabilities: { tcp: { lan: false } } }).manifest.edge.capabilities, {});
@@ -118,12 +117,24 @@ describe('capability keys', () => {
     assert.equal(edgeManifest.describe(goodEdge.capabilities, 'en').find((x) => x.key === 'serial:zigbee').text, 'Serial device "zigbee"');
   });
 
-  it('http.selfSigned: an own key, confirmed with a warning', () => {
-    const r = check({ entry: 'edge/index.js', capabilities: { http: { lan: true, selfSigned: true } } });
-    assert.deepEqual(r.manifest.edge.capabilities, { http: { lan: true, selfSigned: true } });
-    assert.deepEqual(edgeManifest.capabilityList(r.manifest.edge.capabilities), ['http.lan', 'http.selfSigned']);
-    assert.equal(edgeManifest.describe(r.manifest.edge.capabilities, 'de').find((x) => x.key === 'http.selfSigned').warning, true);
-    assert.deepEqual(edgeManifest.newCapabilities(r.manifest.edge.capabilities, ['http.lan']), ['http.selfSigned']);
+  it('http.selfSigned is gone: refused at install with a clear message, never in a state', () => {
+    for (const v of [true, false, 'yes']) {
+      for (const lan of [true, false]) {
+        const errs = errorsOf({ ...goodEdge, capabilities: { http: { lan, selfSigned: v } } }).join();
+        assert.match(errs, /edge\.capabilities\.http\.selfSigned: no longer supported/, `${lan} ${v}`);
+        assert.match(errs, /pinSha256/);
+      }
+    }
+    // an install or approval snapshot from before (stored manifest JSON) → only http.lan reaches the gateway
+    const old = { http: { lan: true, selfSigned: true }, tcp: { lan: true }, udp: { ports: [5683], multicast: [] } };
+    assert.deepEqual(edgeManifest.forState(old), { http: { lan: true }, tcp: { lan: true }, udp: { ports: [5683], multicast: [] } });
+    assert.deepEqual(edgeManifest.forState({ http: { lan: false, selfSigned: true } }), {});
+    assert.deepEqual(edgeManifest.forState(null), {});
+    assert.deepEqual(edgeManifest.forState(goodEdge.capabilities), check(goodEdge).manifest.edge.capabilities);
+    // no key, no text, no warning for it any more; an old approval listing it changes nothing
+    assert.deepEqual(edgeManifest.capabilityList(old), ['http.lan', 'tcp.lan', 'udp.port:5683']);
+    assert.ok(edgeManifest.describe(old, 'de').every((x) => x.key !== 'http.selfSigned' && !x.warning));
+    assert.deepEqual(edgeManifest.newCapabilities({ http: { lan: true } }, ['http.lan', 'http.selfSigned']), []);
   });
 
   it('newCapabilities: only what is not approved yet', () => {

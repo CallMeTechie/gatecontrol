@@ -69,7 +69,8 @@ function compute(peerId) {
       if (!pk) continue;
       const on = v.reason === null;
       // switched on: what the installed version declares (⊆ what was approved); otherwise the approved snapshot
-      const caps = on ? (v.edge.capabilities || {}) : (a.caps || {});
+      // forState: never a removed capability from an older install or approval (http.selfSigned)
+      const caps = edgeManifest.forState(on ? v.edge.capabilities : a.caps);
       list.push({
         id: v.plugin.id, version: v.plugin.version, sha256: pk.sha256, caps, memoryMb: v.edge.memoryMb, enabled: on,
         ...(on ? {} : { reason: v.reason }),

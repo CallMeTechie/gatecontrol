@@ -250,6 +250,30 @@ describe('state, switches and the admin API', () => {
     assert.deepEqual(JSON.parse(activities('gateway_edge_plugin_enabled')[0].details).capabilities, CAPS);
   });
 
+  it('an install or approval from before with http.selfSigned: the state never carries it', () => {
+    const before = db.prepare('SELECT manifest FROM plugins WHERE id = ?').get(P).manifest;
+    const beforeCaps = db.prepare('SELECT caps FROM edge_assignments WHERE plugin_id = ? AND peer_id = ?').get(P, gwA.peer.id).caps;
+    try {
+      const m = JSON.parse(before);
+      m.edge.capabilities.http = { lan: true, selfSigned: true };
+      db.prepare('UPDATE plugins SET manifest = ? WHERE id = ?').run(JSON.stringify(m), P);
+      const c = JSON.parse(beforeCaps);
+      c.http = { lan: true, selfSigned: true };
+      db.prepare('UPDATE edge_assignments SET caps = ? WHERE plugin_id = ? AND peer_id = ?').run(JSON.stringify(c), P, gwA.peer.id);
+      const state = require('../src/services/edge/state');
+      const on = state.compute(gwA.peer.id).plugins.find((x) => x.id === P);
+      assert.equal(on.enabled, true, 'still runs — the capability list did not grow');
+      assert.deepEqual(on.caps.http, { lan: true });
+      db.prepare('UPDATE edge_assignments SET enabled = 0 WHERE plugin_id = ? AND peer_id = ?').run(P, gwA.peer.id);
+      const off = state.compute(gwA.peer.id).plugins.find((x) => x.id === P);
+      assert.equal(off.reason, 'disabled');
+      assert.deepEqual(off.caps.http, { lan: true }, 'the approval snapshot is cleaned too');
+    } finally {
+      db.prepare('UPDATE plugins SET manifest = ? WHERE id = ?').run(before, P);
+      db.prepare('UPDATE edge_assignments SET caps = ?, enabled = 1 WHERE plugin_id = ? AND peer_id = ?').run(beforeCaps, P, gwA.peer.id);
+    }
+  });
+
   it('a plugin unknown or without an edge part cannot be enabled', async () => {
     assert.equal((await post(`/gateways/${gwA.peer.id}/plugins/nope/enable`, { capabilities: [] })).status, 404);
     assert.equal((await post('/gateways/999999/plugins/' + P + '/enable', { capabilities: CAPS })).status, 404);
