@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.231.0] — 2026-11-05
+
+### Features
+- DNS-Filter, Zwischenspeicher und Ortszeit für Heim-Gateways (Server, Phase 3b) (#407)
+
+---
+
 ## [1.230.0] — 2026-11-05
 
 ### Features
