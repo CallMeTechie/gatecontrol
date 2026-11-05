@@ -70,12 +70,12 @@
   /** The cache's limits are GiB values (1024³): their label in whole GB. */
   function gibLabel(bytes) { return Math.round(Number(bytes) / (1024 * 1024 * 1024)) + ' GB'; }
 
-  /** Memory of the DNS filter (MB) for the lists of every profile (guide: 25 MB + 70 bytes per entry). */
+  /** Memory of the DNS filter (MB) for the lists of every profile (guide: 25 MB + 8 bytes per entry, gateway side 1). */
   function dnsMemMb(profiles, lists) {
     const used = {};
     (profiles || []).forEach((p) => (p.lists || []).forEach((l) => { used[l] = true; }));
     const entries = (lists || []).filter((l) => used[l.id]).reduce((a, l) => a + (l.entries || 0), 0);
-    return 25 + Math.round((entries * 70) / 1048576);
+    return 25 + Math.round((entries * 8) / 1048576);
   }
 
   /**
@@ -103,15 +103,10 @@
     return l.find((x) => /^f[cd]/i.test(x)) || l[0] || null;
   }
 
-  /** Cache path suggestion text: only an absolute folder. */
-  function validPath(p) {
-    return typeof p === 'string' && (p === '' || (/^\/[A-Za-z0-9._\-/ ]{0,199}$/.test(p) && p !== '/' && p.split('/').every((s) => s !== '..' && s !== '.')));
-  }
-
   /** Percent (one decimal at most), null when unknown. */
   function pct(v) {
     return v == null || !Number.isFinite(Number(v)) ? null : Math.round(Number(v) * 10) / 10;
   }
 
-  return { DAYS, CATEGORIES, ROUTERS, KINDS, daysLabel, scheduleTitle, overnight, parsePatterns, bytesParts, gibLabel, dnsMemMb, routerCheck, pickV6, validPath, pct };
+  return { DAYS, CATEGORIES, ROUTERS, KINDS, daysLabel, scheduleTitle, overnight, parsePatterns, bytesParts, gibLabel, dnsMemMb, routerCheck, pickV6, pct };
 });

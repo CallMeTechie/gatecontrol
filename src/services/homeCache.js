@@ -7,9 +7,12 @@
 // short-lived signature the server gave to that client (lanHint).
 //
 //   settings (gateway_cache, migration 129)
-//     enabled, path ('' = the gateway's default), maxBytes,
-//     kinds { drive, photos, updates, vault } and a secret per gateway
-//     (encrypted at rest, only in the config pull, never in the UI)
+//     enabled, maxBytes, kinds { drive, photos, updates, vault } and a
+//     secret per gateway
+//     (encrypted at rest, only in the config pull, never in the UI). The
+//     folder is always the gateway's volume /cache (gateway side 14): where
+//     it lies on the host is set at the gateway (Docker GC_CACHE_DIR, Pi
+//     settings.txt CACHE_DIR=) — the tab only explains it
 //   the stock ("Vorrat", home_cache_blobs): content-addressed (sha256) —
 //     app updates the server delivers (Android app, Windows clients: kept in
 //     <data>/home-cache/updates, refreshUpdates) and files plugins offer
@@ -45,9 +48,11 @@ const BLOB_PARALLEL = 2;
 const HINT_TTL_S = 600;
 const UPDATE_MAX_BYTES = 1024 * 1024 * 1024;
 const UPDATE_KEEP_MS = 7 * 24 * 3600 * 1000;
-const PATH_RE = /^\/[A-Za-z0-9._\-/ ]{0,199}$/;
+// the folder inside the gateway container (its volume; anything else: state path_not_allowed)
+const CACHE_PATH = '/cache';
+const STATES = ['running', 'starting', 'port_busy', 'no_address', 'path_unwritable', 'path_not_allowed', 'no_secret', 'error', 'off'];
 
-const DEFAULTS = Object.freeze({ enabled: false, path: '', maxBytes: 20 * GB, kinds: Object.freeze({ drive: true, photos: true, updates: true, vault: false }) });
+const DEFAULTS = Object.freeze({ enabled: false, maxBytes: 20 * GB, kinds: Object.freeze({ drive: true, photos: true, updates: true, vault: false }) });
 
 class CacheError extends Error {
   constructor(code, message) { super(message || code); this.code = code; }
@@ -58,19 +63,13 @@ function json(s) { try { return s ? JSON.parse(s) : null; } catch { return null;
 function bool(v, d) { return typeof v === 'boolean' ? v : d; }
 function iso(ms) { return Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : null; }
 
-function validPath(p) {
-  return typeof p === 'string' && (p === '' || (PATH_RE.test(p) && p !== '/' && !p.split('/').some((s) => s === '..' || s === '.')));
-}
-
 /** Stored settings (any shape) → the complete, valid settings. */
 function normalize(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
   const k = r.kinds && typeof r.kinds === 'object' ? r.kinds : {};
-  const p = typeof r.path === 'string' ? r.path.trim().replace(/\/+$/, '') : '';
   const max = Number.isSafeInteger(r.maxBytes) && r.maxBytes >= MIN_BYTES && r.maxBytes <= MAX_BYTES ? r.maxBytes : DEFAULTS.maxBytes;
   return {
     enabled: bool(r.enabled, false),
-    path: validPath(p) ? p : '',
     maxBytes: max,
     kinds: { drive: bool(k.drive, true), photos: bool(k.photos, true), updates: bool(k.updates, true), vault: bool(k.vault, false) },
   };
@@ -104,7 +103,7 @@ function secretOf(peerId, create = true) {
   return s;
 }
 
-/** PUT …/cache { enabled?, path?, maxBytes?, kinds? } → settings */
+/** PUT …/cache { enabled?, maxBytes?, kinds? } → settings */
 function set(peerId, patch, { ip, user } = {}) {
   const g = needGateway(peerId);
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
@@ -117,10 +116,6 @@ function set(peerId, patch, { ip, user } = {}) {
     if (k === 'enabled') {
       if (typeof v !== 'boolean') throw new CacheError('invalid', 'enabled must be true or false');
       out.enabled = v;
-    } else if (k === 'path') {
-      const s = typeof v === 'string' ? v.trim().replace(/\/+$/, '') : null;
-      if (s === null || !validPath(s)) throw new CacheError('invalid_path', 'path: an absolute folder like /volume1/docker/gatecontrol-gateway/cache');
-      out.path = s;
     } else if (k === 'maxBytes') {
       if (!Number.isSafeInteger(v) || v < MIN_BYTES || v > MAX_BYTES) throw new CacheError('invalid', 'maxBytes: 1 GB … 4 TB');
       out.maxBytes = v;
@@ -139,7 +134,7 @@ function set(peerId, patch, { ip, user } = {}) {
   db().prepare(`INSERT INTO gateway_cache (peer_id, settings, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(peer_id) DO UPDATE SET settings = excluded.settings, updated_at = excluded.updated_at`).run(g.id, JSON.stringify(after), Date.now());
   if (after.enabled) secretOf(g.id, true);
-  const changed = ['enabled', 'path', 'maxBytes', 'kinds'].filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+  const changed = ['enabled', 'maxBytes', 'kinds'].filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
   try {
     require('./activity').log('gateway_cache_changed', `Home cache settings changed on "${g.name}" (${changed.join(', ')})`, {
       source: 'admin', ipAddress: ip, severity: 'info', details: { peer_id: g.id, ...(user ? { user } : {}), changed, settings: after },
@@ -155,7 +150,7 @@ function set(peerId, patch, { ip, user } = {}) {
 function configPayload(peerId) {
   const s = get(peerId);
   if (!s.enabled) return { enabled: false };
-  return { enabled: true, path: s.path, maxBytes: s.maxBytes, kinds: { ...s.kinds }, secret: secretOf(peerId, true) };
+  return { enabled: true, path: CACHE_PATH, maxBytes: s.maxBytes, kinds: { ...s.kinds }, secret: secretOf(peerId, true) };
 }
 
 // ─── The stock ─────────────────────────────────────────────────────────
@@ -307,23 +302,31 @@ function report(peerId, body) {
 /** The cache part of the telemetry (contract server side 5) — or null. */
 function telemetryCache(tel) {
   const t = tel && typeof tel === 'object' ? tel : {};
-  const c = (t.features && t.features.cache && typeof t.features.cache === 'object' ? t.features.cache : null)
-    || (t.cache && typeof t.cache === 'object' && !Array.isArray(t.cache) ? t.cache : null);
-  if (!c) return null;
+  const f = t.features && t.features.cache && typeof t.features.cache === 'object' ? t.features.cache : null;
+  const x = t.cache && typeof t.cache === 'object' && !Array.isArray(t.cache) ? t.cache : null;
+  if (!f && !x) return null;
+  const c = { ...(x || {}), ...(f || {}) };
+  const pick = (k) => (f && f[k] != null ? f[k] : (x ? x[k] : undefined));
   const fp = typeof c.tlsSha256 === 'string' ? c.tlsSha256.replace(/:/g, '').toLowerCase() : null;
   const port = Number.isInteger(c.port) && c.port > 0 && c.port < 65536 ? c.port : 8443;
+  const { isPrivateIpv4 } = require('../utils/validate');
   let url = null;
-  if (typeof c.url === 'string') {
+  const cands = [pick('url'), ...(Array.isArray(pick('urls')) ? pick('urls') : [])].filter((v) => typeof v === 'string');
+  for (const cand of cands) {
     try {
-      const u = new URL(c.url);
-      if (u.protocol === 'https:' && require('../utils/validate').isPrivateIpv4(u.hostname) && !u.username) url = `https://${u.hostname}:${u.port || 443}`;
-    } catch { url = null; }
+      const u = new URL(cand);
+      if (u.protocol === 'https:' && isPrivateIpv4(u.hostname) && !u.username) { url = `https://${u.hostname}:${u.port || 443}`; break; }
+    } catch { /* next */ }
   }
-  if (!url && typeof t.lan_ip === 'string' && require('../utils/validate').isPrivateIpv4(t.lan_ip)) url = `https://${t.lan_ip}:${port}`;
+  if (!url && cands.length === 0 && typeof t.lan_ip === 'string' && isPrivateIpv4(t.lan_ip)) url = `https://${t.lan_ip}:${port}`;
+  const state = STATES.includes(c.state) ? c.state : (c.running === true ? 'running' : null);
+  const errOf = (e) => (typeof e === 'string' ? e : (e && typeof e === 'object' ? (typeof e.message === 'string' ? e.message : (typeof e.code === 'string' ? e.code : null)) : null));
+  const err = errOf(c.error) || errOf(c.lastError);
   return {
-    running: c.running === true, port, url, tlsSha256: fp && SHA_RE.test(fp) ? fp : null,
+    state, running: state === 'running' || (state == null && c.running === true), port, url, tlsSha256: fp && SHA_RE.test(fp) ? fp : null,
     usedBytes: Number.isFinite(c.usedBytes) ? c.usedBytes : null,
-    error: typeof c.error === 'string' ? c.error.slice(0, 160) : (c.lastError && typeof c.lastError.message === 'string' ? c.lastError.message.slice(0, 160) : null),
+    freeBytes: Number.isFinite(c.freeBytes) ? c.freeBytes : null,
+    error: err ? String(err).slice(0, 160) : null,
   };
 }
 
@@ -352,7 +355,7 @@ function hintFor(peerId, sha256, { userId = null, now = Date.now() } = {}) {
   const g = require('./gatewayFeatures').gatewayPeer(peerId);
   if (!g) return null;
   const tc = telemetryCache(require('./gatewayFeatures').telemetryOf(g));
-  if (!tc || !tc.url || !tc.tlsSha256) return null;
+  if (!tc || !tc.running || !tc.url || !tc.tlsSha256) return null;
   const secret = secretOf(peerId, false);
   if (!secret) return null;
   const exp = Math.floor(now / 1000) + HINT_TTL_S;
@@ -591,16 +594,24 @@ function storageOf(tel) {
   return list.filter((x) => x && typeof x === 'object' && typeof x.mount === 'string' && x.mount.startsWith('/')).slice(0, 12).map((x) => ({
     mount: x.mount.slice(0, 200), fs: typeof x.fs === 'string' ? x.fs.slice(0, 24) : null,
     sizeBytes: Number.isFinite(x.sizeBytes) ? x.sizeBytes : null, freeBytes: Number.isFinite(x.freeBytes) ? x.freeBytes : null, removable: x.removable === true,
+    // gateway side 19: 'container' = a mount the gateway container sees (e.g. /cache), 'host' = a drive of the host (Pi)
+    origin: x.origin === 'container' || x.origin === 'host' ? x.origin : null,
   }));
 }
 
+/**
+ * Where the cache folder could lie on the host (the gateway only ever uses
+ * its volume /cache): the drive with the most free space — on a Pi only a
+ * removable one (USB) — and the setting to put it there: Pi settings.txt
+ * CACHE_DIR=, Docker/NAS the Compose variable GC_CACHE_DIR.
+ */
 function suggestion(storage, board) {
   const pi = /^pi/.test(board || '');
-  const usable = storage.filter((x) => x.freeBytes != null && x.freeBytes > MIN_BYTES);
+  const usable = storage.filter((x) => x.origin !== 'container' && x.mount !== CACHE_PATH && x.freeBytes != null && x.freeBytes > MIN_BYTES);
   const pickFrom = pi ? usable.filter((x) => x.removable) : usable;
   const best = pickFrom.sort((a, b) => b.freeBytes - a.freeBytes)[0] || null;
   if (!best) return null;
-  return { mount: best.mount, path: best.mount.replace(/\/+$/, '') + '/gatecontrol-cache', freeBytes: best.freeBytes, removable: best.removable };
+  return { mount: best.mount, hostDir: best.mount.replace(/\/+$/, '') + '/gatecontrol-cache', freeBytes: best.freeBytes, removable: best.removable, setting: pi ? 'CACHE_DIR' : 'GC_CACHE_DIR' };
 }
 
 function sumSince(peerId, fromDay) {
@@ -638,14 +649,14 @@ function view(peerId, now = Date.now()) {
     const lan = lim && lim.mbps ? lim.mbps : (board === 'pi_zero' ? null : 940);
     if (st && st.down_mbps > 0 && lan) speedup = Math.max(1, Math.round((lan / st.down_mbps) * 10) / 10);
   } catch { speedup = null; }
-  // the drive of the folder: the longest mount point it lies under
-  const lanFree = s.path ? storage.filter((x) => s.path === x.mount || s.path.startsWith(x.mount.replace(/\/+$/, '') + '/'))
-    .sort((a, b) => b.mount.length - a.mount.length)[0] : null;
+  // free space of the cache volume: the gateway's own number, else its /cache mount
+  const vol = storage.find((x) => x.mount === CACHE_PATH);
+  const free = tc && tc.freeBytes != null ? tc.freeBytes : (vol ? vol.freeBytes : null);
   return {
     gateway: { id: g.id, name: g.name, support: gf.support(tel), board, model: typeof hw.model === 'string' ? hw.model : null, platform: typeof hw.platform === 'string' ? hw.platform : null },
     settings: s,
     sizes: SIZES_GB.map((x) => x * GB),
-    state: tc ? { running: tc.running, port: tc.port, reachable: !!tc.url, pinned: !!tc.tlsSha256, error: tc.error } : null,
+    state: tc ? { state: tc.state, running: tc.running, port: tc.port, reachable: !!tc.url, pinned: !!tc.tlsSha256, error: tc.error } : null,
     usage: { usedBytes: r.used_bytes != null ? r.used_bytes : (tc ? tc.usedBytes : null), maxBytes: s.maxBytes, reportAt: iso(r.report_at) },
     today: { hits: today.hits, misses: today.misses, hitPct: today.hits + today.misses ? Math.round((today.hits / (today.hits + today.misses)) * 1000) / 10 : null, bytesServed: today.served, bytesFetched: today.fetched },
     month: { bytesServed: month.served },
@@ -654,8 +665,10 @@ function view(peerId, now = Date.now()) {
     stock: { items: stock.length, have: stock.filter((b) => have.has(b.sha256)).length },
     storage,
     suggestion: suggestion(storage, board),
-    freeBytes: lanFree ? lanFree.freeBytes : (hw.storage && Number(hw.storage.free)) || null,
+    freeBytes: free,
     pi: /^pi/.test(board),
+    // where the folder lies on the host is set at the gateway (gateway side 14)
+    hostSetting: /^pi/.test(board) ? 'CACHE_DIR' : 'GC_CACHE_DIR',
   };
 }
 
@@ -684,7 +697,7 @@ function retention(now = Date.now()) {
 function _resetForTest() { inflight.clear(); refreshing = null; }
 
 module.exports = {
-  CacheError, KINDS, DEFAULTS, GB, SIZES_GB, HINT_TTL_S, MIN_BYTES, MAX_BYTES,
+  CacheError, KINDS, DEFAULTS, CACHE_PATH, STATES, GB, SIZES_GB, HINT_TTL_S, MIN_BYTES, MAX_BYTES,
   normalize, get, set, secretOf, configPayload, want, stockOf, sendBlob, report, telemetryCache, signature, hintFor, lanFor, localOf,
   offer, withdraw, dropStaleOffers, refreshUpdates, lanForUpdate, view, clear, retention, updatesDir, _resetForTest,
 };

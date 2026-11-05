@@ -113,10 +113,11 @@ module.exports = (ctx) => {
           hardware: { model: 'Raspberry Pi 4 Model B Rev 1.4', cpu_cores: 4, mem_total: 4 * 1024 ** 3, storage: { total: 30e9, free: 22e9 }, radios: [] },
           lan_ip: '192.168.1.23', default_gateway_ip: '192.168.1.1', state_dir_writable: true,
           capabilities: ['netwatch', 'inetq', 'presence', 'ups', 'dns', 'cache'],
-          storage: [{ mount: '/', fs: 'ext4', sizeBytes: 32e9, freeBytes: 21e9, removable: false }, { mount: '/media/usb-cache', fs: 'ext4', sizeBytes: 500e9, freeBytes: 412e9, removable: true }],
+          storage: [{ mount: '/', fs: 'ext4', sizeBytes: 32e9, freeBytes: 21e9, removable: false, origin: 'host' }, { mount: '/media/usb-cache', fs: 'ext4', sizeBytes: 500e9, freeBytes: 412e9, removable: true, origin: 'host' },
+            { mount: '/cache', fs: 'ext4', sizeBytes: 32e9, freeBytes: 21e9, removable: false, origin: 'container' }],
           features: {
             dns: { enabled: true, running: true, state: 'running', listen: ['192.168.1.23', 'fe80::ba27:ebff:fe12:3456', 'fd00::ba27:ebff:fe12:3456'], lastError: null },
-            cache: { enabled: true, running: true, port: 8443, tlsSha256: 'AB:'.repeat(31) + 'AB', usedBytes: 18.4e9 },
+            cache: { enabled: true, running: true, state: 'running', port: 8443, urls: ['https://192.168.1.23:8443'], tlsSha256: 'AB:'.repeat(31) + 'AB', usedBytes: 18.4e9, freeBytes: 21e9 },
           },
         } });
         step('home: heartbeat with DNS filter, home cache and a USB drive (gateway API)', hb === 200);
@@ -188,7 +189,7 @@ module.exports = (ctx) => {
         const kids = cfg1.features && cfg1.features.dns && cfg1.features.dns.profiles.find((p) => p.name === 'Kinder');
         step('home: the gateway pulls the profile with the person\'s MACs, list, safe search, time, exception',
           !!kids && kids.macs.join() === [TIM, TIM_TAB].sort().join() && kids.lists.includes('adult') && kids.safeSearch === true
-          && kids.schedules.length === 1 && kids.schedules[0].from === '21:00' && kids.allow.includes('anton.app'), JSON.stringify(kids));
+          && kids.schedules.length === 1 && kids.schedules[0].from === '21:00' && kids.allow.some((x) => x === 'anton.app'), JSON.stringify(kids));
         step('home: features.timezone in the pull', typeof cfg1.features.timezone === 'string' && cfg1.features.timezone.length > 1);
 
         // a wrong domain in the profile → message from the server
@@ -226,7 +227,7 @@ module.exports = (ctx) => {
         await page.click('.gwh-allowdlg .gcd-foot .btn-primary');
         await until(page, () => !document.querySelector('.gwh-allowdlg'));
         const cfg2 = await pullCfg();
-        step('home: an exception for all from the top list → in every profile\'s allow', cfg2.features.dns.profiles.every((p) => p.allow.includes('doubleclick.net')));
+        step('home: an exception for all from the top list → in every profile\'s allow', cfg2.features.dns.profiles.every((p) => p.allow.some((x) => x === 'doubleclick.net')));
 
         // forwarding: custom over http → message; Cloudflare → saved
         await page.click('[data-fk="gwh-up"]');
@@ -254,13 +255,17 @@ module.exports = (ctx) => {
         step('home: tab Zwischenspeicher opens', await goTab(page, GW, 'cache'));
         step('home: switched off → button; the Pi note names the USB drive', await until(page, () => document.querySelector('#gwe-tabpanel .gwe-big button.btn-primary') && /usb-cache/.test(document.getElementById('gwe-tabpanel').textContent)));
         await page.click('#gwe-tabpanel .gwe-big button.btn-primary');
-        step('home: switched on with the USB folder (real PUT)', await until(page, () => { const s = document.querySelector('[data-fk="gwh-cache-sw"]'); return s && s.getAttribute('aria-checked') === 'true'; }));
+        step('home: switched on (real PUT)', await until(page, () => { const s = document.querySelector('[data-fk="gwh-cache-sw"]'); return s && s.getAttribute('aria-checked') === 'true'; }));
         step('home: four kinds with switches, vault off', await page.evaluate(() => {
           const rows = [...document.querySelectorAll('#gwe-tabpanel [data-kind]')];
           return rows.length === 4 && rows.find((r) => r.dataset.kind === 'vault').querySelector('[role="switch"]').getAttribute('aria-checked') === 'false';
         }));
         const cc = await pullCfg();
-        step('home: the gateway pulls the cache with the USB path and a secret', cc.features.cache.enabled === true && cc.features.cache.path === '/media/usb-cache/gatecontrol-cache' && /^[0-9a-f]{64}$/.test(cc.features.cache.secret));
+        step('home: the gateway pulls the cache with its volume /cache and a secret', cc.features.cache.enabled === true && cc.features.cache.path === '/cache' && /^[0-9a-f]{64}$/.test(cc.features.cache.secret));
+        step('home: the storage card explains CACHE_DIR in settings.txt with the USB suggestion to copy', await page.evaluate(() => {
+          const t = (document.querySelector('#gwe-tabpanel .gwh-folder') || {}).textContent || '';
+          return /CACHE_DIR/.test(t) && /CACHE_DIR=\/media\/usb-cache\/gatecontrol-cache/.test(document.getElementById('gwe-tabpanel').textContent);
+        }));
         step('home: the secret is never in the admin page', await page.evaluate((s) => !document.documentElement.outerHTML.includes(s), cc.features.cache.secret));
         step('home: the gateway reports what it holds and served', await gw('/cache', { have: [UPD_SHA], usedBytes: 18.4e9, hits: 18, misses: 7, bytesServed: 3.4e9, bytesFetched: 0.7e9 }) === 200);
         await fresh(page);

@@ -558,14 +558,16 @@ function telemetryDns(tel) {
   const d = (t.features && typeof t.features === 'object' && t.features.dns && typeof t.features.dns === 'object' ? t.features.dns : null)
     || (t.dns && typeof t.dns === 'object' && !Array.isArray(t.dns) ? t.dns : null);
   if (!d) return null;
-  const states = ['running', 'starting', 'port_busy', 'error', 'off'];
+  const states = ['running', 'starting', 'port_busy', 'no_address', 'error', 'off'];
   const listen = Array.isArray(d.listen) ? d.listen.filter((x) => typeof x === 'string' && /^[0-9a-f.:]{2,45}$/i.test(x)).slice(0, 16) : [];
-  const err = d.lastError && typeof d.lastError === 'object' && typeof d.lastError.message === 'string' ? { at: d.lastError.at || null, message: d.lastError.message.slice(0, 200) } : null;
+  const le = d.lastError && typeof d.lastError === 'object' ? (typeof d.lastError.message === 'string' ? d.lastError.message : (typeof d.lastError.code === 'string' ? d.lastError.code : null)) : null;
+  const err = le ? { at: d.lastError.at || null, message: le.slice(0, 200) } : null;
   const lists = {};
   if (d.lists && typeof d.lists === 'object') {
     for (const [k, v] of Object.entries(d.lists).slice(0, 20)) {
       if (!ID_RE.test(k) || !v || typeof v !== 'object') continue;
-      lists[k] = { entries: Number.isFinite(v.entries) ? v.entries : null, updatedAt: v.updatedAt || null, error: typeof v.error === 'string' ? v.error.slice(0, 120) : null };
+      const e = typeof v.error === 'string' ? v.error : (v.error && typeof v.error === 'object' && typeof v.error.code === 'string' ? v.error.code : null);
+      lists[k] = { entries: Number.isFinite(v.entries) ? v.entries : null, updatedAt: v.updatedAt || null, error: e ? e.slice(0, 120) : null };
     }
   }
   return { state: states.includes(d.state) ? d.state : (d.running ? 'running' : 'off'), running: d.running === true || d.state === 'running', listen, lastError: err, lists };
@@ -679,7 +681,10 @@ async function test(peerId, body) {
   const pid = typeof r.body.profileId === 'string' && ID_RE.test(r.body.profileId) ? r.body.profileId : null;
   const p = pid ? s.profiles.find((x) => x.id === pid) : null;
   const reason = typeof r.body.reason === 'string' ? r.body.reason.replace(/[^\w .:/*()+,-]/g, '').slice(0, 120) : null;
-  return { domain, action, profileId: pid, profileName: p ? p.name : null, reason };
+  // gateway side 13: the list / category that blocked it (ids of the catalogue; anything else is dropped)
+  const list = typeof r.body.list === 'string' && ID_RE.test(r.body.list) ? r.body.list : null;
+  const category = typeof r.body.category === 'string' && ID_RE.test(r.body.category) ? r.body.category : null;
+  return { domain, action, profileId: pid, profileName: p ? p.name : null, reason, list, category };
 }
 
 // ─── "DNS-Filter ausgefallen" ──────────────────────────────────────────

@@ -46,7 +46,8 @@ before(async () => {
   db.prepare('UPDATE gateway_meta SET last_health = ?, last_seen_at = ? WHERE peer_id = ?').run(JSON.stringify({
     telemetry: { gateway_version: '1.22.0', lan_ip: '192.168.1.23',
       hardware: { model: 'Synology DS920+', platform: 'synology', mem_total: 8 * 1024 ** 3 },
-      storage: [{ mount: '/volume1', fs: 'btrfs', sizeBytes: 4e12, freeBytes: 1.2e12, removable: false }],
+      storage: [{ mount: '/volume1', fs: 'btrfs', sizeBytes: 4e12, freeBytes: 1.2e12, removable: false, origin: 'host' },
+        { mount: '/cache', fs: 'btrfs', sizeBytes: 4e12, freeBytes: 0.9e12, removable: false, origin: 'container' }],
       features: { cache: { enabled: true, running: true, port: 8443, tlsSha256: FP, usedBytes: 0 } } },
   }), Date.now(), gw.peer.id);
   // a client that runs the Android app (the stock takes the installers in use)
@@ -64,14 +65,14 @@ describe('settings and features.cache', () => {
     assert.deepEqual(r.body.features.cache, { enabled: false });
   });
 
-  it('on: path, size, kinds and a secret per gateway — never in the admin view', async () => {
+  it('on: the volume /cache, size, kinds and a secret per gateway — never in the admin view', async () => {
     pushed.length = 0;
-    await admin('put', '/cache').send({ enabled: true, path: '/volume1/docker/gatecontrol-gateway/cache', maxBytes: 50 * hc.GB }).expect(200);
+    await admin('put', '/cache').send({ enabled: true, maxBytes: 50 * hc.GB }).expect(200);
     assert.deepEqual(pushed, [gw.peer.id]);
     const c = (await gwReq('get', '/config').expect(200)).body;
     const f = c.features.cache;
     assert.equal(f.enabled, true);
-    assert.equal(f.path, '/volume1/docker/gatecontrol-gateway/cache');
+    assert.equal(f.path, '/cache', 'gateway side 14: always its volume');
     assert.equal(f.maxBytes, 50 * hc.GB);
     assert.deepEqual(f.kinds, { drive: true, photos: true, updates: true, vault: false });
     assert.match(f.secret, /^[0-9a-f]{64}$/);
@@ -81,32 +82,34 @@ describe('settings and features.cache', () => {
     assert.ok(!db.prepare('SELECT secret_enc FROM gateway_cache WHERE peer_id = ?').get(gw.peer.id).secret_enc.includes(f.secret));
     const v = (await admin('get', '/cache').expect(200)).body;
     assert.ok(!JSON.stringify(v).includes(f.secret));
-    assert.equal(v.settings.path, '/volume1/docker/gatecontrol-gateway/cache');
+    assert.equal(v.settings.path, undefined);
+    assert.equal(v.hostSetting, 'GC_CACHE_DIR');
     assert.equal(v.state.running, true);
     assert.equal(v.state.pinned, true);
-    assert.equal(v.freeBytes, 1.2e12);
+    assert.equal(v.freeBytes, 0.9e12, 'the free space of the volume /cache');
     // a second gateway has its own secret
     await admin('put', '/cache', gw2).send({ enabled: true }).expect(200);
     assert.notEqual((await gwReq('get', '/config', gw2)).body.features.cache.secret, f.secret);
   });
 
-  it('wrong values: relative or ".." paths, sizes, unknown kinds', async () => {
-    assert.equal((await admin('put', '/cache').send({ path: 'cache' })).body.code, 'invalid_path');
-    assert.equal((await admin('put', '/cache').send({ path: '/volume1/../etc' })).body.code, 'invalid_path');
+  it('wrong values: a folder (set at the gateway), sizes, unknown kinds', async () => {
+    assert.equal((await admin('put', '/cache').send({ path: '/volume1/cache' })).status, 400);
     assert.equal((await admin('put', '/cache').send({ maxBytes: 100 })).status, 400);
     assert.equal((await admin('put', '/cache').send({ kinds: { music: true } })).status, 400);
     assert.equal((await admin('put', '/cache').send({})).status, 400);
   });
 
-  it('the storage suggestion: on a Pi only a removable drive', () => {
+  it('the host folder suggestion: on a Pi only a removable drive, never the container\'s own mounts', () => {
     const v = hc.view(gw.peer.id);
-    assert.deepEqual(v.suggestion, { mount: '/volume1', path: '/volume1/gatecontrol-cache', freeBytes: 1.2e12, removable: false });
+    assert.deepEqual(v.suggestion, { mount: '/volume1', hostDir: '/volume1/gatecontrol-cache', freeBytes: 1.2e12, removable: false, setting: 'GC_CACHE_DIR' });
     db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify({ telemetry: { gateway_version: '1.22.0',
       hardware: { model: 'Raspberry Pi 4 Model B Rev 1.4' },
       storage: [{ mount: '/', fs: 'ext4', sizeBytes: 32e9, freeBytes: 20e9, removable: false }, { mount: '/media/usb0', fs: 'ext4', sizeBytes: 1e12, freeBytes: 9e11, removable: true }] } }), gw2.peer.id);
     const v2 = hc.view(gw2.peer.id);
     assert.equal(v2.pi, true);
-    assert.equal(v2.suggestion.path, '/media/usb0/gatecontrol-cache');
+    assert.equal(v2.suggestion.hostDir, '/media/usb0/gatecontrol-cache');
+    assert.equal(v2.suggestion.setting, 'CACHE_DIR');
+    assert.equal(v2.hostSetting, 'CACHE_DIR');
   });
 });
 
@@ -233,6 +236,20 @@ describe('reports and the lan hint', () => {
     } finally { hn.check = orig; upd._resetCache(); }
   });
 
+  it('the telemetry of the gateway (side 18): urls[0], states; no hint unless running', () => {
+    const tc = hc.telemetryCache({ lan_ip: '192.168.1.23', cache: { state: 'running', urls: ['https://192.168.1.24:8443', 'https://[fd00::1]:8443'], tlsSha256: 'ab'.repeat(32), freeBytes: 5 } });
+    assert.deepEqual([tc.state, tc.running, tc.url, tc.freeBytes], ['running', true, 'https://192.168.1.24:8443', 5]);
+    const bad = hc.telemetryCache({ features: { cache: { enabled: true, running: false, state: 'path_unwritable', error: { at: 1, code: 'EACCES' } } } });
+    assert.deepEqual([bad.state, bad.running, bad.error], ['path_unwritable', false, 'EACCES']);
+    const h = JSON.parse(db.prepare('SELECT last_health FROM gateway_meta WHERE peer_id = ?').get(gw.peer.id).last_health);
+    h.telemetry.features.cache.state = 'no_secret';
+    db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify(h), gw.peer.id);
+    assert.equal(hc.hintFor(gw.peer.id, APK_SHA), null);
+    assert.equal(hc.view(gw.peer.id).state.state, 'no_secret');
+    h.telemetry.features.cache.state = 'running';
+    db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify(h), gw.peer.id);
+  });
+
   it('"Zwischenspeicher leeren": the gateway is asked, the server forgets what it held', async () => {
     const orig = gateways.mgmtCall;
     const calls = [];
@@ -249,7 +266,7 @@ describe('reports and the lan hint', () => {
   it('the card "Funktionen" counts the cache in the memory estimate', async () => {
     const g = (await admin('get', '/features').expect(200)).body.gateway;
     assert.equal(g.cache.enabled, true);
-    assert.ok(g.memory.parts.some((p) => p.key === 'cache' && p.mb === 20));
+    assert.ok(g.memory.parts.some((p) => p.key === 'cache' && p.mb === 10));
     assert.equal(g.support.cache, true);
   });
 });

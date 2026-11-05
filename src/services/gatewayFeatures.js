@@ -42,9 +42,10 @@ const DEFAULTS = Object.freeze({
 });
 
 // Memory of the parts (MB), contract §6 — guide values for the hint only.
-const MEM_MB = { gateway: 80, netwatch: 15, inetq: 10, edge: 50, deconz: 150, mosquitto: 10, dns: 25, cache: 20 };
-// the DNS filter keeps its lists in memory: about this many bytes per entry (phase 3b)
-const DNS_BYTES_PER_ENTRY = 70;
+const MEM_MB = { gateway: 80, netwatch: 15, inetq: 10, edge: 50, deconz: 150, mosquitto: 10, dns: 25, cache: 10 };
+// the DNS filter keeps its lists in memory as sorted 53-bit hashes: 8 bytes per entry
+// (gateway side 1: 25 MB guide value with typical lists, measured +3 … 20 MB)
+const DNS_BYTES_PER_ENTRY = 8;
 
 class FeatureError extends Error {
   constructor(code, message) { super(message || code); this.code = code; }

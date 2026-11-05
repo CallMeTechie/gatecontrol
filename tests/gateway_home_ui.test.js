@@ -44,7 +44,7 @@ describe('gateway-home-kit', () => {
     assert.deepEqual(K.bytesParts(700e6), { value: 700, unit: 'MB', digits: 0 });
     assert.equal(K.bytesParts(-1), null);
     assert.equal(K.gibLabel(50 * 1024 ** 3), '50 GB');
-    assert.equal(K.dnsMemMb([{ lists: ['ads'] }, { lists: ['ads', 'malware'] }], [{ id: 'ads', entries: 78000 }, { id: 'malware', entries: 195000 }, { id: 'adult', entries: 92000 }]), 25 + Math.round((273000 * 70) / 1048576));
+    assert.equal(K.dnsMemMb([{ lists: ['ads'] }, { lists: ['ads', 'malware'] }], [{ id: 'ads', entries: 78000 }, { id: 'malware', entries: 195000 }, { id: 'adult', entries: 92000 }]), 25 + Math.round((273000 * 8) / 1048576));
     assert.deepEqual(K.routerCheck({ gateway: { telemetry: { state: 'running' } }, router: { asking: 23, missing: [{ name: 'TV' }], missingCount: 4 } }),
       { answers: 'ok', asking: 23, missing: [{ name: 'TV' }], missingCount: 4, ok: false });
     assert.equal(K.routerCheck({ gateway: { telemetry: { state: 'running' } }, router: { asking: 3, missing: [], missingCount: 0 } }).ok, true);
@@ -53,11 +53,6 @@ describe('gateway-home-kit', () => {
     assert.equal(K.pickV6(['fe80::1', '2a02:810::5', 'fd00::ba27:ebff:fe12:3456']), 'fd00::ba27:ebff:fe12:3456');
     assert.equal(K.pickV6(['fe80::1', '2a02:810::5']), '2a02:810::5');
     assert.equal(K.pickV6(['fe80::1']), null);
-    assert.equal(K.validPath(''), true);
-    assert.equal(K.validPath('/volume1/docker/cache'), true);
-    assert.equal(K.validPath('volume1'), false);
-    assert.equal(K.validPath('/a/../b'), false);
-    assert.equal(K.validPath('/'), false);
   });
 });
 
@@ -66,7 +61,8 @@ describe('texts (German and English)', () => {
 
   it('every literal gwh./gwn./gwe. key of the module exists in both languages', () => {
     const keys = new Set();
-    for (const m of src.matchAll(/'((?:gwh|gwn|gwe)\.[a-z0-9_.]+[a-z0-9_])'/g)) keys.add(m[1]);
+    // (a literal followed by `+` is the start of a key family: checked below)
+    for (const m of src.matchAll(/'((?:gwh|gwn|gwe)\.[a-z0-9_.]+[a-z0-9_])'(?!\s*\+)/g)) keys.add(m[1]);
     assert.ok(keys.size > 150, String(keys.size));
     const missing = [...keys].filter((k) => !both(k));
     assert.deepEqual(missing, []);
@@ -84,7 +80,10 @@ describe('texts (German and English)', () => {
       assert.ok(steps.length >= 3, r);
       for (const s of steps) assert.ok(both(s), s);
     }
-    for (const s of ['running', 'running_n', 'waiting', 'port_busy', 'error', 'starting', 'off', 'down']) assert.ok(both('gwh.state.' + s), s);
+    for (const s of ['running', 'running_n', 'waiting', 'port_busy', 'no_address', 'error', 'starting', 'off', 'down']) assert.ok(both('gwh.state.' + s), s);
+    // the home cache's states of the gateway (gateway side 18) and the reasons of "Domain prüfen" (gateway side 13)
+    for (const s of ['port_busy', 'no_address', 'path_unwritable', 'path_not_allowed', 'no_secret']) assert.ok(both('gwh.cstate.' + s) && both('gwh.cache.st_' + s), s);
+    for (const r of ['local', 'always_allow', 'profile_allow', 'paused', 'no_profile', 'profile_deny', 'schedule', 'schedule_category', 'list', 'canary', 'default']) assert.ok(both('gwh.reason.' + r), r);
     for (const tab of ['dns', 'cache']) assert.ok(both('gwe.tabs.' + tab), tab);
     for (const e of ['not_found', 'invalid', 'invalid_domain', 'invalid_url', 'invalid_name', 'invalid_schedule', 'invalid_member', 'invalid_path', 'name_taken', 'too_many', 'default_profile']) assert.ok(both('gwh.err.' + e), e);
     for (const p of ['home_internet', 'home_internet_on', 'home_cache', 'home_cache_on']) assert.ok(both('plugins.perm.' + p), p);

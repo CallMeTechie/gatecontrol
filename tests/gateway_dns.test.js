@@ -106,7 +106,7 @@ describe('features.timezone and features.dns in the config pull', () => {
     assert.ok(d.lists.ads.url.startsWith('https://'));
     assert.equal(d.lists.ads.sha256, null);
     assert.deepEqual(Object.keys(d.categories), ['social', 'games', 'video']);
-    assert.ok(d.categories.social.includes('tiktok.com'));
+    assert.ok(d.categories.social.some((x) => x === 'tiktok.com'));
     assert.equal(d.defaultProfile, 'default');
     assert.equal(d.profiles.length, 1);
     assert.deepEqual(d.profiles[0].macs, []);
@@ -306,9 +306,9 @@ describe('admin API: session, CSRF, "Test: Domain prüfen"', () => {
     assert.equal(g.support.dns, true);
     assert.equal(g.timezone.tz, require('../src/services/notify/router').serverTz());
     const part = g.memory.parts.find((p) => p.key === 'dns');
-    // ads 78 000 + malware 195 000 + adult 92 000 entries × 70 bytes + 25 MB
+    // ads 78 000 + malware 195 000 + adult 92 000 entries × 8 bytes (hashes, gateway side 1) + 25 MB
     assert.equal(part.entries, 365000);
-    assert.equal(part.mb, 25 + Math.round((365000 * 70) / 1048576));
+    assert.equal(part.mb, 25 + Math.round((365000 * 8) / 1048576));
   });
 });
 

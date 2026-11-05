@@ -214,6 +214,7 @@
     if (!tel) return U.tag('grey', t('gwh.state.waiting'), true);
     if (tel.state === 'running') return U.tag('green', d.today.clients ? t('gwh.state.running_n', { n: d.today.clients }) : t('gwh.state.running'), true);
     if (tel.state === 'port_busy') return U.tag('red', t('gwh.state.port_busy'), true);
+    if (tel.state === 'no_address') return U.tag('red', t('gwh.state.no_address'), true);
     if (tel.state === 'error') return U.tag('red', t('gwh.state.error'), true);
     if (tel.state === 'starting') return U.tag('grey', t('gwh.state.starting'), true);
     return U.tag('grey', t('gwh.state.off'), true);
@@ -244,6 +245,7 @@
     const tel = d.gateway.telemetry;
     if (d.outage && d.outage.reason === 'offline') c.body.appendChild(U.note('crit', [t('gwh.dns.down_offline', { since: clock(d.outage.since) })], 'warn'));
     if ((tel && tel.state === 'port_busy') || (d.outage && d.outage.reason === 'port_busy')) c.body.appendChild(U.note('crit', [h('strong', { text: t('gwh.dns.port_busy_b') }), ' ', t('gwh.dns.port_busy')], 'warn'));
+    else if (tel && tel.state === 'no_address') c.body.appendChild(U.note('crit', [t('gwh.dns.no_address')], 'warn'));
     else if (tel && tel.state === 'error' && tel.lastError) c.body.appendChild(U.note('warn', [t('gwh.dns.error', { error: tel.lastError.message })]));
     if (!tel && (d.gateway.support || {}).dns !== false) c.body.appendChild(U.note('info', [t('gwh.dns.waiting')]));
     if (d.paused && d.paused.length) {
@@ -664,6 +666,13 @@
     ta.focus();
   }
 
+  // gateway side 13: why the gateway decided so (unknown codes as they come)
+  function reasonText(r) {
+    const key = 'gwh.reason.' + r.reason;
+    if (!has(key)) return r.reason;
+    return t(key, { list: r.list ? listName(r.list) : '—', category: r.category ? (has('gwh.cat.' + r.category) ? t('gwh.cat.' + r.category) : r.category) : '—' });
+  }
+
   function testDialog(g, d) {
     const dlg = U.openDialog({ title: t('gwh.test.title'), wide: false, cls: 'gwh-testdlg', returnFk: 'gwh-test', onEnter: () => run() });
     const dom = h('input', { type: 'text', id: 'gwh-t-dom', class: 'form-input gwe-mono', autocomplete: 'off', spellcheck: 'false', placeholder: 'tiktok.com', inputmode: 'url' });
@@ -685,7 +694,7 @@
         const r = j.result;
         result.replaceChildren(U.note(r.action === 'block' ? 'warn' : 'info', [
           h('strong', { text: t(r.action === 'block' ? 'gwh.test.blocked' : 'gwh.test.allowed', { domain: r.domain }) }), ' ',
-          r.profileName ? t('gwh.test.profile', { name: r.profileName }) : '', r.reason ? ' ' + t('gwh.test.reason', { reason: r.reason }) : '',
+          r.profileName ? t('gwh.test.profile', { name: r.profileName }) : '', r.reason ? ' ' + t('gwh.test.reason', { reason: reasonText(r) }) : '',
         ], r.action === 'block' ? 'shield' : 'check'));
       }).catch((e) => { result.replaceChildren(); U.showErr(err, errText(e)); }).finally(() => { ok.disabled = false; });
     }
@@ -741,7 +750,7 @@
     if (sup.cache === false) out.push(tooOld(sup));
     if (!s.enabled) {
       out.push(U.bigNote('grey', 'power', t('gwh.cache.off_title'), t('gwh.cache.off_text'),
-        [enableBtn(t('gwh.cache.enable'), 'gwh-cache-on', () => putCache(g.peer_id, { enabled: true, ...(d.suggestion && !s.path ? { path: d.suggestion.path } : {}) }, t('gwh.cache.on_done')))]));
+        [enableBtn(t('gwh.cache.enable'), 'gwh-cache-on', () => putCache(g.peer_id, { enabled: true }, t('gwh.cache.on_done')))]));
       if (d.pi) out.push(piNote(d));
       return out;
     }
@@ -755,22 +764,26 @@
   function piNote(d) {
     const s = d.suggestion;
     return h('div', { class: 'gwh-foot-note' }, U.note('info', [h('strong', { text: t('gwh.cache.pi_b') }), ' ', t('gwh.cache.pi'),
-      s && s.removable ? ' ' + t('gwh.cache.pi_found', { mount: s.mount, free: bytes(s.freeBytes) }) : ' ' + t('gwh.cache.pi_none')]));
+      s && s.removable ? ' ' + t('gwh.cache.pi_found', { mount: s.mount, free: bytes(s.freeBytes), dir: s.hostDir }) : ' ' + t('gwh.cache.pi_none')]));
   }
 
   function cacheStatus(g, d) {
     const id = g.peer_id;
     const st = d.state;
+    // gateway side 18: running | starting | port_busy | no_address | path_unwritable | path_not_allowed | no_secret | error
+    const bad = st && st.state && st.state !== 'running' && st.state !== 'starting' && st.state !== 'off';
     const pill = !st ? U.tag('grey', t('gwh.cstate.waiting'), true)
-      : st.error ? U.tag('red', t('gwh.cstate.error'), true)
-        : st.running ? U.tag('green', t('gwh.cstate.running'), true) : U.tag('grey', t('gwh.cstate.starting'), true);
+      : bad ? U.tag('red', has('gwh.cstate.' + st.state) ? t('gwh.cstate.' + st.state) : t('gwh.cstate.error'), true)
+        : st.error ? U.tag('red', t('gwh.cstate.error'), true)
+          : st.running ? U.tag('green', t('gwh.cstate.running'), true) : U.tag('grey', t('gwh.cstate.starting'), true);
     const sw = U.switchBtn(true, t('gwh.cache.title'), 'gwh-cache-sw', async () => {
       if (!await D.confirm({ title: t('gwh.cache.off_q'), message: t('gwh.cache.off_msg'), okLabel: t('gwh.cache.off_ok') })) return;
       toggle(sw, (v) => putCache(id, { enabled: v }, t('gwh.cache.off_done')));
     });
     const c = U.card(t('gwh.cache.title'), h('div', { class: 'gwh-head-r' }, [pill, sw]), { id: 'cache-status', full: true });
     c.body.appendChild(h('p', { class: 'gwe-d gwh-lead', text: t('gwh.cache.lead') }));
-    if (st && st.error) c.body.appendChild(U.note('warn', [t('gwh.cache.error', { error: st.error })]));
+    if (bad && has('gwh.cache.st_' + st.state)) c.body.appendChild(U.note('crit', [t('gwh.cache.st_' + st.state, { setting: d.hostSetting })], 'warn'));
+    else if (st && st.error) c.body.appendChild(U.note('warn', [t('gwh.cache.error', { error: st.error })]));
     else if (!st && (d.gateway.support || {}).cache !== false) c.body.appendChild(U.note('info', [t('gwh.cache.waiting')]));
     else if (st && st.running && (!st.pinned || !st.reachable)) c.body.appendChild(U.note('info', [t('gwh.cache.no_pin')]));
     return c.card;
@@ -805,18 +818,17 @@
     const id = g.peer_id;
     const s = d.settings;
     const c = U.card(t('gwh.store.title'), null, { id: 'cache-store' });
+    // the folder is the gateway's volume /cache; where it lies on the host is set at the gateway (gateway side 14)
     const nas = d.gateway.platform && /synology|qnap|docker|nas/i.test(d.gateway.platform);
-    const path = h('input', { type: 'text', id: 'gwh-c-path', class: 'form-input gwe-mono', autocomplete: 'off', spellcheck: 'false', value: s.path || '',
-      placeholder: d.suggestion ? d.suggestion.path : t('gwh.store.path_ph'), 'aria-describedby': 'gwh-c-path-hint' });
-    const save = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-fk': 'gwh-c-path-save', text: t('gwh.store.apply') });
-    const err = U.errorBox();
-    save.addEventListener('click', () => {
-      const v = path.value.trim().replace(/\/+$/, '');
-      if (!K.validPath(v)) { U.showErr(err, t('gwh.err.invalid_path')); path.setAttribute('aria-invalid', 'true'); path.focus(); return; }
-      save.disabled = true;
-      U.showErr(err, '');
-      putCache(id, { path: v }, t('gwn.feat.saved')).catch((e) => { save.disabled = false; U.showErr(err, errText(e)); });
-    });
+    c.body.appendChild(h('div', { class: 'gwh-folder' }, [
+      h('span', { class: 'form-label', text: t(nas ? 'gwh.store.folder_nas' : 'gwh.store.folder') }),
+      h('p', { class: 'gwe-d', text: t(d.hostSetting === 'CACHE_DIR' ? 'gwh.store.folder_pi' : 'gwh.store.folder_docker') }),
+    ]));
+    if (d.suggestion) {
+      const line = d.suggestion.setting + '=' + d.suggestion.hostDir;
+      c.body.appendChild(U.note('info', [t(d.suggestion.removable ? 'gwh.store.sugg_usb' : 'gwh.store.sugg', { free: bytes(d.suggestion.freeBytes) }), ' ',
+        h('span', { class: 'gwh-addr' }, [h('span', { class: 'gwe-mono gwh-ip', text: line }), copyBtn(line, d.suggestion.setting)])]));
+    }
     const max = h('select', { id: 'gwh-c-max', class: 'form-select' }, d.sizes.map((b) => h('option', { value: String(b), text: K.gibLabel(b) })));
     if (d.sizes.indexOf(s.maxBytes) < 0) max.appendChild(h('option', { value: String(s.maxBytes), text: K.gibLabel(s.maxBytes) }));
     max.value = String(s.maxBytes);
@@ -824,17 +836,8 @@
       max.disabled = true;
       putCache(id, { maxBytes: Number(max.value) }, t('gwn.feat.saved')).catch((e) => { max.disabled = false; D.alert({ message: errText(e), danger: true }); });
     });
-    c.body.append(
-      h('div', { class: 'gwe-field' }, [h('label', { class: 'form-label', for: 'gwh-c-path', text: t(nas ? 'gwh.store.path_nas' : 'gwh.store.path') }),
-        h('div', { class: 'gwh-inline' }, [path, save]), h('span', { class: 'form-hint', id: 'gwh-c-path-hint', text: t('gwh.store.path_hint') })]),
-      err,
-      field('gwh-c-max', t('gwh.store.max'), max),
+    c.body.append(field('gwh-c-max', t('gwh.store.max'), max),
       h('p', { class: 'gwe-d', text: t('gwh.store.lru') + (d.freeBytes ? ' ' + t('gwh.store.free', { free: bytes(d.freeBytes) }) : '') }));
-    if (d.suggestion && d.suggestion.path !== s.path) {
-      const use = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-fk': 'gwh-c-sugg', text: t('gwh.store.use') });
-      use.addEventListener('click', () => { use.disabled = true; putCache(id, { path: d.suggestion.path }, t('gwn.feat.saved')).catch((e) => { use.disabled = false; D.alert({ message: errText(e), danger: true }); }); });
-      c.body.appendChild(U.note('info', [t(d.suggestion.removable ? 'gwh.store.sugg_usb' : 'gwh.store.sugg', { path: d.suggestion.path, free: bytes(d.suggestion.freeBytes) }), ' ', use]));
-    }
     const clear = h('button', { type: 'button', class: 'btn btn-ghost btn-sm gwn-forget', 'data-fk': 'gwh-c-clear', text: t('gwh.store.clear') });
     clear.addEventListener('click', async () => {
       if (!await D.confirm({ title: t('gwh.store.clear_q'), message: t('gwh.store.clear_msg'), okLabel: t('gwh.store.clear'), danger: true })) return;
