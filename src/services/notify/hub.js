@@ -73,12 +73,14 @@ const NAMED_TYPES = new Set([
   'peer_expired', 'gateway_down', 'gateway_alive', 'gateway_offline', 'gateway_recovered', 'route_down',
   'route_up', 'route_created', 'route_deleted', 'resource_alert', 'resource_recovered',
   'support_bundle_uploaded', 'storage_target_unreachable', 'storage_target_recovered',
+  'netwatch_new_device', 'inet_outage', 'ups_on_battery', 'ups_on_line',
 ]);
 const ROUTE_FOR_EVENT = {
   gateway_state: 'gateways', peer_connection: 'vpn', peer_lifecycle: 'vpn', peer_expired: 'vpn',
   route_state: 'services', route_lifecycle: 'services',
+  netwatch_new_device: 'gateways', inet_outage: 'gateways', ups_state: 'gateways',
 };
-const ALARM_EVENTS = new Set(['gateway_state', 'route_state', 'resources']);
+const ALARM_EVENTS = new Set(['gateway_state', 'route_state', 'resources', 'ups_state']);
 
 function num(v) {
   const n = Number(v);
@@ -108,6 +110,8 @@ function coreContext(type, details) {
   else if ((type === 'peer_connected' || type === 'peer_disconnected') && peerId) collapseKey = `peer:${peerId}`;
   else if (type === 'backup_reminder' || type === 'autobackup_failed') collapseKey = 'backup';
   else if (type.startsWith('storage_target_') && num(d.targetId)) collapseKey = `storage:${num(d.targetId)}`;
+  else if (type === 'netwatch_new_device' && peerId) collapseKey = `netwatch:${peerId}`;
+  else if ((type === 'ups_on_battery' || type === 'ups_on_line') && peerId) collapseKey = `ups:${peerId}`;
   return { peerId, name: name ? sanitize.line(name, 80) : null, collapseKey };
 }
 
@@ -204,6 +208,17 @@ function coreFacts(lang, type, details, ctx) {
       return [f('domain', d.domain), f('response_time', Number.isFinite(ms) && ms >= 0 ? `${Math.round(ms)} ms` : null)].filter(Boolean);
     }
     if (type === 'support_bundle_uploaded') return supportBundleFacts(lang, d, f);
+    // phase 3a (topic network)
+    if (type === 'netwatch_new_device') return [f('devices', num(d.count))].filter(Boolean);
+    if (type === 'inet_outage') {
+      return [f('outage_duration', num(d.minutes) ? text.t(lang, 'push.fact.minutes', { count: String(num(d.minutes)) }) : null),
+        f('cause', ['router', 'isp', 'unknown'].includes(d.cause) ? text.t(lang, 'push.inet.cause_' + d.cause) : null)].filter(Boolean);
+    }
+    if (type === 'ups_on_battery') {
+      const c = Number(d.charge);
+      return [f('charge', Number.isFinite(c) ? `${Math.round(c)} %` : null),
+        f('runtime', Number.isFinite(Number(d.runtime_min)) && d.runtime_min !== null ? text.t(lang, 'push.fact.minutes', { count: String(Math.round(Number(d.runtime_min))) }) : null)].filter(Boolean);
+    }
     if (type === 'cert_expiring' || type === 'tls_expiring') {
       const days = Number(d.days_left != null ? d.days_left : d.days);
       return [f('domain', d.domain || d.host), f('days_left', Number.isFinite(days) ? String(Math.max(0, Math.floor(days))) : null)].filter(Boolean);

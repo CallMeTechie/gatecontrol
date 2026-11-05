@@ -37,6 +37,8 @@ router.use('/peers/:id/support-bundles', require('./supportBundles'));
 router.use('/support-bundles', require('./supportBundlesAll'));
 router.use('/peers', require('./peers'));
 router.use('/peer-groups', require('./peerGroups'));
+// phase 3a: features, network watch, internet quality of a gateway (admin session only, routes/api/gatewayNet.js)
+router.use('/gateways', require('./gatewayNet'));
 router.use('/gateways', require('./gateways'));
 router.use('/gateway-pools', require('./gatewayPools'));
 // edge parts of plugins on gateways + the gateways' MQTT brokers (session only, routes/api/edge.js)

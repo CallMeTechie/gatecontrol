@@ -316,6 +316,7 @@ unsigned build of the same id.
     "services": ["gatecontrol-messenger:send_message"],
     "publicLinks": true,
     "devices": true,
+    "homePresence": true,
     "groups": "read",
     "ai": { "purpose": { "de": "Dokumente erkennen", "en": "Recognise documents" }, "capabilities": ["text", "vision"] },
     "cloudImport": { "purpose": { "de": "Dateien aus Google Drive und OneDrive übernehmen", "en": "Take files from Google Drive and OneDrive" } }
@@ -903,6 +904,7 @@ module.exports = {
 | `gc.publicEndpoints.token({ user, path, ttlS, data })` / `gc.publicEndpoints.base()` | since 1.211.0: tokens for requests without a session under `/plugin-public/<id>/…` (`publicEndpoints`) — see "Public endpoints" |
 | `gc.devices.list({ userId })` | since 1.193.0: the person's GateControl apps `[{ id, name, platform, clientType, appVersion, online, lastSeen, via }]` (`devices`) — see "Devices" |
 | `gc.notify({ …, users, devices, silent, data })` | since 1.193.0: only to these devices of `users`; `silent: true` a data notification without display (`devices`) — see "Devices" |
+| `gc.homeNetwork.presence.list()` / `.on(handler)` / `.consent(userId)` / `.setConsent(userId, on)` / `.devices(userId)` / `.setCounts(userId, deviceId, on)` | since 1.230.0: who is at home by their phone in the home network — only people who agreed themselves, never MAC/IP addresses (`homePresence`) — see "Presence over the home network" |
 | `gc.ai.available({ capability })` / `gc.ai.status()` | since 1.214.0: is AI usable for the plugin (asks no provider) / `{ available, mediaAllowed, capabilities, budgetLeftCents }` (`ai`) — see "AI requests" |
 | `gc.ai.extract({ task, user, instructions, input, schema, maxOutputTokens, timeoutMs })` / `gc.ai.generate({ … })` | since 1.214.0: structured data checked against a schema / free text from the AI provider set up in GateControl → `{ ok, data \| text, provider, model, usage, fallback }` (`ai`) — see "AI requests" |
 | `gc.groups.list/get/members/isMember/leadersOf(…)` | the person groups of GateControl (`groups`) — see "Groups" |
@@ -2300,6 +2302,69 @@ single device. Code: `src/services/plugins/devices.js`.
   transfer Y".
 * `devices` and `silent` need `permissions.devices` (`ERR_DEVICES_DENIED`);
   on a chat topic they are `ERR_INVALID`.
+
+## Presence over the home network (`permissions.homePresence`)
+
+Since 1.230.0 (gateways phase 3a). A home gateway with the **network watch**
+(Gateways › Netzwerk) sees the devices in the home network. An administrator
+assigns a device to a person and marks it "zählt für Anwesenheit"; once that
+**person themselves** agrees, the gateway watches the device and reports
+"in the Wi-Fi" / "gone" (gone only after 10 minutes without a sign — the
+gateway's hysteresis). A plugin with the permission — the family plugin's
+"Wer ist zu Hause?" — gets **only** "at home" / "away" per person. It never
+gets MAC or IP addresses, never which device, never anything about people who
+did not agree. Code: `src/services/homePresence.js`, host API in
+`src/services/plugins/hostApi.js` (`presenceCall`), the person check in
+`src/services/plugins/personContext.js`.
+
+```json
+"permissions": { "homePresence": true }
+```
+
+The install dialog shows it as "Anwesenheit im Heimnetz". Without it,
+`gc.homeNetwork` does not exist in the plugin process and the host answers
+`ERR_HOME_PRESENCE_DENIED`.
+
+| Call | Answer / rule |
+|---|---|
+| `gc.homeNetwork.presence.list()` | `[{ userId, home: true \| false, since: ISO, source: 'wifi' }]` — every enabled person who agreed and has a known state (at least one counting device reported) |
+| `gc.homeNetwork.presence.on(handler)` → `off()` | `handler({ userId, home, since, source: 'wifi' })` on every change of a person's state; `home: null` = no longer known (consent withdrawn, last counting device removed). Delivered to every running plugin with the permission (hook `homePresence`, best-effort, not repeated) |
+| `gc.homeNetwork.presence.consent(userId)` | `{ consent: boolean, since: ISO \| null }` — whether the person agreed (not which devices) |
+| `gc.homeNetwork.presence.setConsent(userId, enabled)` | `{ consent }` — **only inside a changing request (POST/PUT/PATCH/DELETE) of that very person** to this plugin (portal signed in, the app, or the plugin's admin page of that person); never in `tick`, a hook, a GET, for somebody else or on a kiosk device → `ERR_NOT_PERSON`. Call it only from the person's own explicit switch ("Über mein Handy im WLAN") |
+| `gc.homeNetwork.presence.devices(userId)` | the person's own devices `[{ id, name, lastSeen: ISO \| null, counts: boolean, gateway: '<gateway name>' }]` — only inside a request of that person (`ERR_NOT_PERSON` otherwise). No address, no vendor |
+| `gc.homeNetwork.presence.setCounts(userId, deviceId, counts)` | `{ counts }` — the person decides which of their devices count (an iPad that stays at home: no); only a device of that person (`ERR_NOT_FOUND`), only in their changing request (`ERR_NOT_PERSON`) |
+
+Errors: `ERR_INVALID` (unknown or disabled person, wrong types),
+`ERR_NOT_PERSON`, `ERR_NOT_FOUND`, `ERR_HOME_PRESENCE_DENIED`.
+
+What the gateway gets: `features.presence.macs` in its config pull holds only
+the MACs of devices that count, belong to an enabled person who agreed, and
+only while the network watch and "Anwesenheit" are switched on for that
+gateway. Withdrawing the consent removes them at once (the gateway is told to
+pull its config) and the plugins hear `home: null`.
+
+Combining with the app as a second source (family plugin): "at home" as soon
+as one switched-on source says so, "away" when all say so; `since` is the time
+of the change the gateway saw.
+
+Example (server part of a plugin with a portal tab):
+
+```js
+module.exports = {
+  async start(gc) {
+    gc.homeNetwork.presence.on(({ userId, home, since }) => { /* update the family's view */ });
+  },
+  async request(req, gc) {
+    const me = req.user;              // the person in this request
+    if (req.method === 'PUT' && req.path === '/presence/wifi') {
+      return { json: await gc.homeNetwork.presence.setConsent(me.id, req.body.enabled === true) };
+    }
+    if (req.path === '/presence/devices') return { json: await gc.homeNetwork.presence.devices(me.id) };
+    if (req.path === '/presence') return { json: await gc.homeNetwork.presence.list() };
+    return { status: 404, json: {} };
+  },
+};
+```
 
 ## AI requests (`permissions.ai`)
 

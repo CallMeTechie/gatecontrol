@@ -121,7 +121,7 @@
           <label class="nc-sr" for="nc-rule-group">{{ t('notify.rules.source') }}</label>
           <select class="form-select nc-select" id="nc-rule-group">
             <option value="">{{ t('notify.rules.all_sources') }}</option>
-            {%- for g in ['security', 'peers', 'routes', 'system', 'plugins'] %}
+            {%- for g in ['security', 'peers', 'routes', 'system', 'network', 'plugins'] %}
             <option value="{{ g }}">{{ t('notify.group.' + g) }}</option>
             {%- endfor %}
           </select>

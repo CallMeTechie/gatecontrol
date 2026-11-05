@@ -1416,6 +1416,55 @@ function devicesList(plugin, args) {
   return require('./devices').list(uid);
 }
 
+// ─── Presence over the home network (permissions.homePresence, phase 3a) ────
+//
+// gc.homeNetwork.presence.list() / consent(userId) / setConsent(userId, on) /
+// devices(userId) / setCounts(userId, deviceId, on) and the hook homePresence
+// (gc.homeNetwork.presence.on) — services/homePresence.js. Only "at home" /
+// "away" of people who agreed; never MAC or IP addresses. setConsent and
+// setCounts only inside a changing request of that very person to this
+// plugin, devices only inside a request of that person (personContext.js):
+// the person decides, not the plugin and not an administrator.
+
+function needHomePresence(plugin) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.homePresence === true, 'ERR_HOME_PRESENCE_DENIED', 'this plugin has no homePresence permission');
+}
+
+function presenceUser(args) {
+  const uid = args && args.userId;
+  need(Number.isSafeInteger(uid) && uid > 0, 'ERR_INVALID', 'invalid user id');
+  return uid;
+}
+
+function presenceCall(plugin, op, args) {
+  needHomePresence(plugin);
+  const hp = require('../homePresence');
+  const ctx = require('./personContext');
+  try {
+    if (op === 'list') return hp.list();
+    const uid = presenceUser(args);
+    if (op === 'consent') return hp.consentInfo(uid);
+    if (op === 'devices') {
+      need(ctx.has(plugin.id, uid), 'ERR_NOT_PERSON', 'only in a request of that person');
+      return hp.devices(uid);
+    }
+    need(ctx.has(plugin.id, uid, { write: true }), 'ERR_NOT_PERSON', 'only in a changing request (POST/PUT/PATCH/DELETE) of that person');
+    if (op === 'setConsent') {
+      need(typeof (args && args.enabled) === 'boolean', 'ERR_INVALID', 'enabled must be true or false');
+      return hp.setConsent(uid, args.enabled, { pluginId: plugin.id });
+    }
+    if (op === 'setCounts') {
+      need(Number.isSafeInteger(args && args.deviceId) && args.deviceId > 0, 'ERR_INVALID', 'invalid device id');
+      need(typeof args.counts === 'boolean', 'ERR_INVALID', 'counts must be true or false');
+      return hp.setCounts(uid, args.deviceId, args.counts);
+    }
+  } catch (e) {
+    if (e && (e.code === 'ERR_INVALID' || e.code === 'ERR_NOT_FOUND')) throw new HostApiError(e.code, e.message);
+    throw e;
+  }
+  throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
+}
+
 // ─── Uploads to a home target (gc.net.uploadTarget → target.upload, since 1.193.0) ────
 //
 // gc.net.uploadTarget(id, path, { index, method, query, headers, form: {
@@ -2001,6 +2050,12 @@ async function handle(plugin, api, args, ctx) {
     case 'publicEndpoints.token': return publicEndpointsCall(plugin, 'token', args);
     case 'publicEndpoints.base': return publicEndpointsCall(plugin, 'base', args);
     case 'devices.list': return devicesList(plugin, args);
+    // presence over the home network (permissions.homePresence, homePresence.js — phase 3a)
+    case 'homeNetwork.presence.list': return presenceCall(plugin, 'list', args);
+    case 'homeNetwork.presence.consent': return presenceCall(plugin, 'consent', args);
+    case 'homeNetwork.presence.setConsent': return presenceCall(plugin, 'setConsent', args);
+    case 'homeNetwork.presence.devices': return presenceCall(plugin, 'devices', args);
+    case 'homeNetwork.presence.setCounts': return presenceCall(plugin, 'setCounts', args);
     // person groups (permissions.groups, groups.js): read; ensure / remove need "manage"
     case 'groups.list': return require('./groups').call(plugin, 'list', args);
     case 'groups.get': return require('./groups').call(plugin, 'get', args);
