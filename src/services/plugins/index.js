@@ -158,6 +158,8 @@ function permissionSummary(m, lang) {
     servicesProvided: m.services && m.services.provides ? Object.values(m.services.provides).map((x) => loc(x.label, lang)) : [],
     // since 1.214.0: requests to the AI provider set up in GateControl (gc.ai, docs/plugins.md "AI requests")
     ai: p.ai ? { purpose: loc(p.ai.purpose, lang), capabilities: p.ai.capabilities.slice() } : null,
+    // plugin.json `edge`: a part that runs on home gateways — switched on per gateway with these capabilities (services/edge)
+    edge: m.edge ? { memoryMb: m.edge.memoryMb, minGateway: m.edge.minGateway, capabilities: require('../edge/manifest').describe(m.edge.capabilities, lang) } : null,
     // since 1.216.0: IMAP / SMTP to the mail servers people enter (gc.mail, docs/plugins.md "Mail") and what for
     mail: p.mail ? { purpose: loc(p.mail.purpose, lang), maxConnections: p.mail.maxConnections,
       // since 1.219.0: also CalDAV/CardDAV (gc.mail.dav) and what for — only when declared, so older mail plugins keep their summary
@@ -274,6 +276,10 @@ async function install(token, opts = {}) {
     }
     if (fs.existsSync(finalDir)) rmrf(finalDir);
     fs.renameSync(tmpDir, finalDir);
+    // the signed package as uploaded: what gateways download for the edge part (services/edge/packages.js)
+    if (m.edge) {
+      try { require('../edge/packages').save(m.id, m.version, st.buf); } catch (e) { logger.warn({ plugin: m.id, err: e.message }, 'edge package not kept (rebuilt on demand)'); }
+    }
   } catch (e) {
     rmrf(tmpDir);
     if (undoMove) { await storage.close(m.id); undoMove(); }
@@ -321,6 +327,8 @@ async function install(token, opts = {}) {
     try { await licensing.setKey(plugin, opts.licenseKey); } catch (e) { licenseError = e.code || 'license_failed'; }
   }
   await reconcile();
+  // edge parts on gateways: a version that needs new capabilities stays off there until confirmed (update_pending)
+  require('../edge').onPluginInstalled(m);
   if (!opts.licenseKey) await revalidateAfterInstall(plugin, existing ? 'update' : 'install');
   return { plugin: registry.get(m.id), licenseError };
 }
@@ -385,6 +393,8 @@ function reconcile() {
     }
     // Kiosk eligibility depends on which plugins may run (docs/feature-kiosk-devices.md).
     try { require('../kiosk').invalidate(); } catch { /* not loaded */ }
+    // gateways get their new target state (a plugin switched off on the server stops on the gateways too)
+    try { require('../edge/hub').refreshSoon(); } catch { /* not loaded */ }
   };
   reconciling = reconciling.then(run, run);
   return reconciling;
@@ -449,6 +459,7 @@ async function removeInstalled(p, mode) {
   require('../cloudAccounts').removePlugin(id);
   rmrf(path.join(pluginsRoot(), id));
   registry.remove(id);
+  require('../edge').onPluginRemoved(id, mode);
   if (mode === 'wipe') {
     rmrf(dataDir(id));
     require('./media').removeAll(id);

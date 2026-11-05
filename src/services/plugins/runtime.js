@@ -154,7 +154,10 @@ class PluginProcess {
     // features: host APIs the plugin process only gets with their permission (gc.mail, gc.http.fetchImage — since 1.216.0;
     // gc.mail.dav — since 1.219.0)
     const perms = p.manifest.permissions || {};
-    const features = { mail: !!perms.mail, dav: !!(perms.mail && perms.mail.dav), images: !!(perms.network && perms.network.images === true) };
+    const edge = p.manifest.edge || null;
+    const features = { mail: !!perms.mail, dav: !!(perms.mail && perms.mail.dav), images: !!(perms.network && perms.network.images === true),
+      // gc.edge / gc.mqtt.accounts: plugins with an edge part (and MQTT topics) only
+      edge: !!edge, mqtt: !!(edge && edge.capabilities && edge.capabilities.mqtt) };
     child.send({ t: 'init', plugin: { id: p.id, version: p.version, entry, filesDir: files, features } });
   }
 

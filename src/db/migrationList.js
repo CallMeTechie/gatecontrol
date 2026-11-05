@@ -3191,6 +3191,73 @@ const migrations = [
       UPDATE gateway_meta SET first_seen_at = last_seen_at WHERE first_seen_at IS NULL AND last_seen_at IS NOT NULL;`,
     detect: (db) => hasColumn(db, 'gateway_meta', 'platform') && hasColumn(db, 'gateway_meta', 'first_seen_at'),
   },
+  {
+    version: 127,
+    name: 'gateway_edge',
+    // Edge parts of plugins on home gateways + the local MQTT broker
+    // (services/edge/, docs/plugins.md "Edge part"):
+    //   gateway_edge     per gateway: the switches (edge, MQTT, MQTT TLS, unsigned
+    //                    edge parts), the last hello and MQTT status of the gateway
+    //   edge_assignments plugin × gateway: switched on (enabled), the capabilities an
+    //                    administrator approved (snapshot: caps_list, caps_version),
+    //                    the last status the gateway reported for it
+    //   edge_logs        ring buffer of log lines / events / system notes per
+    //                    gateway × plugin (services/edge/store.js keeps the newest N)
+    //   mqtt_accounts    device accounts of the gateway's broker: only the
+    //                    mosquitto hash ($7$, PBKDF2-SHA512) is kept, never the password
+    sql: `
+      CREATE TABLE IF NOT EXISTS gateway_edge (
+        peer_id             INTEGER PRIMARY KEY REFERENCES peers(id) ON DELETE CASCADE,
+        edge_enabled        INTEGER NOT NULL DEFAULT 0,
+        mqtt_enabled        INTEGER NOT NULL DEFAULT 0,
+        mqtt_tls            INTEGER NOT NULL DEFAULT 0,
+        allow_unsigned_edge INTEGER NOT NULL DEFAULT 0,
+        hello               TEXT,
+        hello_at            INTEGER,
+        mqtt_status         TEXT,
+        status_at           INTEGER,
+        updated_at          INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS edge_assignments (
+        plugin_id     TEXT NOT NULL,
+        peer_id       INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        enabled       INTEGER NOT NULL DEFAULT 0,
+        caps          TEXT,
+        caps_list     TEXT,
+        caps_version  TEXT,
+        approved_at   INTEGER,
+        approved_by   TEXT,
+        status        TEXT,
+        status_at     INTEGER,
+        created_at    INTEGER NOT NULL,
+        PRIMARY KEY (plugin_id, peer_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_edge_assignments_peer ON edge_assignments(peer_id);
+      CREATE TABLE IF NOT EXISTS edge_logs (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        peer_id     INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        plugin_id   TEXT,
+        kind        TEXT NOT NULL,
+        level       TEXT NOT NULL,
+        message     TEXT NOT NULL,
+        created_at  INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_edge_logs_peer_plugin ON edge_logs(peer_id, plugin_id, id);
+      CREATE TABLE IF NOT EXISTS mqtt_accounts (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        peer_id       INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        username      TEXT NOT NULL,
+        hash          TEXT NOT NULL,
+        label         TEXT,
+        acl           TEXT NOT NULL,
+        plugin_id     TEXT,
+        locked        INTEGER NOT NULL DEFAULT 0,
+        created_at    INTEGER NOT NULL,
+        created_by    TEXT,
+        UNIQUE (peer_id, username)
+      );`,
+    detect: (db) => tableExists(db, 'gateway_edge') && tableExists(db, 'edge_assignments') && tableExists(db, 'edge_logs') && tableExists(db, 'mqtt_accounts'),
+  },
 ];
 
 module.exports = { migrations };

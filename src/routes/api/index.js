@@ -39,6 +39,8 @@ router.use('/peers', require('./peers'));
 router.use('/peer-groups', require('./peerGroups'));
 router.use('/gateways', require('./gateways'));
 router.use('/gateway-pools', require('./gatewayPools'));
+// edge parts of plugins on gateways + the gateways' MQTT brokers (session only, routes/api/edge.js)
+router.use('/edge', require('./edge'));
 router.use('/egress-routes', require('./egressRoutes'));
 router.use('/tags', require('./tags'));
 router.use('/routes/:id/auth', require('./routeAuth'));

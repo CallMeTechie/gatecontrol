@@ -178,4 +178,32 @@ router.post('/discovery', express.json({ limit: '512kb' }), (req, res) => {
   res.status(200).json({ ok: true });
 });
 
+/**
+ * GET /api/v1/gateway/edge/packages/:id/:version — the signed package of a
+ * plugin's edge part, byte for byte as installed (its sha256 is in the
+ * `state` of the edge channel). Only for a gateway this plugin is switched on
+ * for (docs/plugins.md "Edge part"); the gateway verifies the signature itself.
+ */
+router.get('/edge/packages/:id/:version', (req, res) => {
+  const peerId = req.gateway.peer_id;
+  const id = String(req.params.id || '');
+  const version = String(req.params.version || '');
+  const { ID_RE } = require('../../services/plugins/constants');
+  if (!ID_RE.test(id) || id.length > 64 || !/^[0-9A-Za-z.+-]{1,64}$/.test(version)) return res.status(404).json({ error: 'not_found' });
+  const eff = require('../../services/edge/state').effective(id, peerId);
+  if (!eff.ok) return res.status(403).json({ error: 'not_enabled', reason: eff.reason });
+  if (eff.plugin.version !== version) return res.status(404).json({ error: 'version_not_installed', installed: eff.plugin.version });
+  const pk = require('../../services/edge/packages').info(id, version);
+  if (!pk) return res.status(404).json({ error: 'not_found' });
+  res.set({
+    'Content-Type': 'application/octet-stream',
+    'Content-Length': String(pk.size),
+    'Content-Disposition': `attachment; filename="${id}-${version}.gcplugin"`,
+    'X-Content-SHA256': pk.sha256,
+    ETag: `"${pk.sha256}"`,
+    'Cache-Control': 'no-store',
+  });
+  require('node:fs').createReadStream(pk.file).on('error', () => res.destroy()).pipe(res);
+});
+
 module.exports = router;

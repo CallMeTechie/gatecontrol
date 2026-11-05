@@ -294,6 +294,47 @@ function makeMail(features) {
   });
 }
 
+// gc.edge (plugin.json `edge`, docs/plugins.md "Edge part"): the plugin's edge part on home gateways.
+// Handlers of gc.edge.on get the gateway's events ({ gatewayId, data, at, seq }); the host acknowledges
+// an event to the gateway only after they ran. Built-in names: $online, $offline (the gateway's
+// connection), $started (the edge part runs on that gateway — hand it its configuration again).
+const edgeHandlers = new Map(); // event name ('*' = every event) → [handler]
+const EDGE_NAME_RE = /^(?:\*|\$?[A-Za-z0-9_.:-]{1,64})$/;
+
+function makeEdge() {
+  return Object.freeze({
+    /** gateways() → [{ id, name, state, online, version }] — the gateways this plugin is set up for */
+    gateways: () => hostCall('edge.gateways', {}),
+    /** call(gatewayId, method, params, { timeoutMs ≤ 30000 }) → what the edge part's gc.handle(method) returned */
+    call: (gatewayId, method, params, opts) => {
+      const o = opts && typeof opts === 'object' ? opts : {};
+      return hostCall('edge.call', { gatewayId, method: String(method), params: params === undefined ? null : params, timeoutMs: o.timeoutMs }, 45000);
+    },
+    /** on(name, handler({ gatewayId, name, data, at, seq })) → off() */
+    on: (name, handler) => {
+      if (typeof name !== 'string' || !EDGE_NAME_RE.test(name) || typeof handler !== 'function') throw new TypeError('gc.edge.on(name, handler)');
+      const list = edgeHandlers.get(name) || [];
+      list.push(handler);
+      edgeHandlers.set(name, list);
+      return () => { const l = edgeHandlers.get(name) || []; const i = l.indexOf(handler); if (i >= 0) l.splice(i, 1); };
+    },
+    /** configure(gatewayId, data) — held in the edge part's memory only (never written to disk); ≤ 48 KB */
+    configure: (gatewayId, data) => hostCall('edge.configure', { gatewayId, data: data === undefined ? null : data }),
+  });
+}
+
+async function deliverEdgeEvent(ev) {
+  const e = ev && typeof ev === 'object' ? ev : {};
+  const list = [...(edgeHandlers.get(e.name) || []), ...(String(e.name).startsWith('$') ? [] : (edgeHandlers.get('*') || []))];
+  const arg = Object.freeze({ gatewayId: e.gatewayId, name: e.name, data: e.data === undefined ? null : e.data, at: e.at, seq: e.seq == null ? null : e.seq });
+  for (const fn of list) {
+    try { await fn(arg); } catch (err) {
+      send({ t: 'log', level: 'error', message: `gc.edge.on(${e.name}) handler failed: ` + String((err && (err.stack || err.message)) || err).slice(0, 900) });
+    }
+  }
+  return { handled: list.length };
+}
+
 function makeGc(info) {
   const log = (level) => (...a) => send({ t: 'log', level, message: fmt(a) });
   const features = info.features && typeof info.features === 'object' ? info.features : {};
@@ -309,6 +350,18 @@ function makeGc(info) {
   return Object.freeze({
     // permissions.mail (since 1.216.0, docs/plugins.md "Mail"): IMAP sessions, SMTP, MIME, HTML cleaning, autoconfig
     ...(features.mail ? { mail: makeMail(features) } : {}),
+    ...(features.edge ? { edge: makeEdge() } : {}),
+    // device accounts of a gateway's MQTT broker (plugin.json edge.capabilities.mqtt): create(gatewayId,
+    // { label, topics, name }) → { username, password (once), acl, label }; list(gatewayId); remove(gatewayId, username)
+    ...(features.mqtt ? {
+      mqtt: Object.freeze({
+        accounts: Object.freeze({
+          create: (gatewayId, opts) => hostCall('mqtt.accounts.create', { gatewayId, opts: opts && typeof opts === 'object' ? opts : {} }),
+          list: (gatewayId) => hostCall('mqtt.accounts.list', { gatewayId }),
+          remove: (gatewayId, username) => hostCall('mqtt.accounts.remove', { gatewayId, username }),
+        }),
+      }),
+    } : {}),
     plugin: Object.freeze({ id: info.id, version: info.version, filesDir: info.filesDir }), // filesDir: the one writable folder
     log: Object.freeze({ debug: log('debug'), info: log('info'), warn: log('warn'), error: log('error') }),
     http: Object.freeze({
@@ -717,6 +770,9 @@ async function handleCall(method, payload) {
       // a service of services.provides called by another plugin (gc.services.call): { name, caller, user, payload }
       if (typeof plugin.service !== 'function') throw new Error('this plugin offers no services');
       return { result: await plugin.service(payload, gc) };
+    case 'edgeEvent':
+      // an event of the plugin's edge part on a gateway (gc.edge.on) — answered after the handlers ran
+      return deliverEdgeEvent(payload);
     case 'legacyImport':
       // built-in data handed over once by the host (first-party plugins only, src/services/plugins/legacy.js)
       if (typeof plugin.legacyImport !== 'function') throw new Error('this plugin cannot import built-in data');

@@ -1,0 +1,19 @@
+{
+  "id": "edge-demo",
+  "name": { "de": "Edge-Demo", "en": "Edge demo" },
+  "version": "1.0.0",
+  "publisher": "GateControl Tests",
+  "description": { "de": "Plugin mit Edge-Teil (Tests).", "en": "Plugin with an edge part (tests)." },
+  "gatecontrol": ">=1.0.0",
+  "entry": "server/index.js",
+  "edge": {
+    "entry": "edge/index.js",
+    "minGateway": "1.20.0",
+    "memoryMb": 48,
+    "capabilities": {
+      "udp": { "ports": [5683], "multicast": ["224.0.1.187"] },
+      "http": { "lan": true },
+      "mqtt": { "topics": ["shellies/#"] }
+    }
+  }
+}
