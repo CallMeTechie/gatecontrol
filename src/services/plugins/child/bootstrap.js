@@ -323,6 +323,44 @@ function makeEdge() {
   });
 }
 
+// gc.homeNetwork (permissions.homePresence, phase 3a, docs/plugins.md "Presence over the home network"):
+// at home / away of people who agreed themselves, by their phone in the home network. Never MAC/IP addresses.
+const presenceHandlers = [];
+
+function makeHomeNetwork() {
+  return Object.freeze({
+    presence: Object.freeze({
+      /** list() → [{ userId, home, since, source: 'wifi' }] — people who agreed and have a known state */
+      list: () => hostCall('homeNetwork.presence.list', {}),
+      /** on(handler({ userId, home (true|false|null = no longer known), since, source })) → off() */
+      on: (handler) => {
+        if (typeof handler !== 'function') throw new TypeError('gc.homeNetwork.presence.on(handler)');
+        presenceHandlers.push(handler);
+        return () => { const i = presenceHandlers.indexOf(handler); if (i >= 0) presenceHandlers.splice(i, 1); };
+      },
+      /** consent(userId) → { consent, since } */
+      consent: (userId) => hostCall('homeNetwork.presence.consent', { userId }),
+      /** setConsent(userId, enabled) — only inside a changing request (POST/PUT/PATCH/DELETE) of that very person */
+      setConsent: (userId, enabled) => hostCall('homeNetwork.presence.setConsent', { userId, enabled }),
+      /** devices(userId) → [{ id, name, lastSeen, counts, gateway }] — only inside a request of that person */
+      devices: (userId) => hostCall('homeNetwork.presence.devices', { userId }),
+      /** setCounts(userId, deviceId, counts) — only inside a changing request of that person */
+      setCounts: (userId, deviceId, counts) => hostCall('homeNetwork.presence.setCounts', { userId, deviceId, counts }),
+    }),
+  });
+}
+
+async function deliverPresence(ev) {
+  const e = ev && typeof ev === 'object' ? ev : {};
+  const arg = Object.freeze({ userId: e.userId, home: e.home === true ? true : (e.home === false ? false : null), since: e.since || null, source: e.source || 'wifi' });
+  for (const fn of presenceHandlers.slice()) {
+    try { await fn(arg); } catch (err) {
+      send({ t: 'log', level: 'error', message: 'gc.homeNetwork.presence.on handler failed: ' + String((err && (err.stack || err.message)) || err).slice(0, 900) });
+    }
+  }
+  return { handled: presenceHandlers.length };
+}
+
 async function deliverEdgeEvent(ev) {
   const e = ev && typeof ev === 'object' ? ev : {};
   const list = [...(edgeHandlers.get(e.name) || []), ...(String(e.name).startsWith('$') ? [] : (edgeHandlers.get('*') || []))];
@@ -351,6 +389,7 @@ function makeGc(info) {
     // permissions.mail (since 1.216.0, docs/plugins.md "Mail"): IMAP sessions, SMTP, MIME, HTML cleaning, autoconfig
     ...(features.mail ? { mail: makeMail(features) } : {}),
     ...(features.edge ? { edge: makeEdge() } : {}),
+    ...(features.homePresence ? { homeNetwork: makeHomeNetwork() } : {}),
     // device accounts of a gateway's MQTT broker (plugin.json edge.capabilities.mqtt): create(gatewayId,
     // { label, topics, name }) → { username, password (once), acl, label }; list(gatewayId); remove(gatewayId, username)
     ...(features.mqtt ? {
@@ -770,6 +809,9 @@ async function handleCall(method, payload) {
       // a service of services.provides called by another plugin (gc.services.call): { name, caller, user, payload }
       if (typeof plugin.service !== 'function') throw new Error('this plugin offers no services');
       return { result: await plugin.service(payload, gc) };
+    case 'homePresence':
+      // a person's presence over the home network changed (gc.homeNetwork.presence.on) — answer ignored
+      return deliverPresence(payload);
     case 'edgeEvent':
       // an event of the plugin's edge part on a gateway (gc.edge.on) — answered after the handlers ran
       return deliverEdgeEvent(payload);

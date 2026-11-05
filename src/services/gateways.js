@@ -208,6 +208,9 @@ function getGatewayConfig(peerId) {
       };
     }).filter(Boolean),
     egress_routes: require('./egressRoutes').resolveForPeer(peerId, db),
+    // Phase 3a: network watch, internet quality, presence, UPS (services/gatewayFeatures.js).
+    // Not part of the shared config-hash schema — computeConfigHash adds it to the hash itself.
+    features: require('./gatewayFeatures').configPayload(peerId),
   };
 }
 
@@ -216,8 +219,28 @@ function getGatewayConfig(peerId) {
  * shared library for byte-identical results with the Gateway side.
  */
 function computeConfigHash(peerId) {
-  const cfg = getGatewayConfig(peerId);
-  return libComputeConfigHash(cfg);
+  return hashOfConfig(getGatewayConfig(peerId));
+}
+
+/** JSON with object keys sorted at every level, no whitespace (arrays keep their order). */
+function stableJson(v) {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v === undefined ? null : v);
+  if (Array.isArray(v)) return '[' + v.map(stableJson).join(',') + ']';
+  return '{' + Object.keys(v).sort().filter((k) => v[k] !== undefined).map((k) => JSON.stringify(k) + ':' + stableJson(v[k])).join(',') + '}';
+}
+
+/**
+ * Hash of a config payload. The shared library strips keys its schema does
+ * not know, so `features` (phase 3a) would not change the hash: it is folded
+ * in here — sha256(libHash + "\n" + stableJson(features)). Without
+ * `features` the hash is exactly the library's (older gateways and configs
+ * without the key stay byte-identical). The gateway computes the same.
+ */
+function hashOfConfig(cfg) {
+  const { features, ...rest } = cfg || {};
+  const base = libComputeConfigHash(rest);
+  if (features === undefined || features === null) return base;
+  return 'sha256:' + crypto.createHash('sha256').update(base + '\n' + stableJson(features), 'utf8').digest('hex');
 }
 
 /**
@@ -502,6 +525,40 @@ async function notifyLanScan(peerId, { request_id, subnets, category_mode, categ
     req.on('error', (err) => { logger.warn({ err: err.message, peerId }, 'Gateway lan-scan trigger failed'); resolve(null); });
     req.on('timeout', () => { req.destroy(); resolve(null); });
     req.end(payload);
+  });
+}
+
+/**
+ * POST a management call to a gateway over the tunnel (phase 3a: "Jetzt
+ * scannen" → /api/netwatch/scan, "Jetzt messen" → /api/inetq/speedtest),
+ * X-Gateway-Token like the other calls. → { status, body } or null when the
+ * gateway cannot be reached (no token, network error, timeout).
+ */
+async function mgmtCall(peerId, path, payload = {}, timeoutMs = 7000) {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT p.allowed_ips, gm.api_port, gm.push_token_encrypted
+    FROM gateway_meta gm JOIN peers p ON p.id = gm.peer_id
+    WHERE gm.peer_id = ?
+  `).get(peerId);
+  if (!row) return null;
+  const pushToken = _decryptPushToken(row.push_token_encrypted, peerId);
+  if (!pushToken) return null;
+  const ip = _peerIp(row.allowed_ips);
+  const data = JSON.stringify(payload || {});
+  return new Promise((resolve) => {
+    const req = http.request({
+      host: ip, port: row.api_port, path, method: 'POST', timeout: timeoutMs,
+      headers: { 'X-Gateway-Token': pushToken, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+    }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { if (body.length < 16384) body += c; });
+      res.on('end', () => { let j = null; try { j = JSON.parse(body); } catch { j = null; } resolve({ status: res.statusCode, body: j }); });
+    });
+    req.on('error', (err) => { logger.warn({ err: err.message, peerId, path }, 'Gateway management call failed'); resolve(null); });
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.end(data);
   });
 }
 
@@ -955,6 +1012,8 @@ module.exports = {
   createGateway,
   getGatewayConfig,
   computeConfigHash,
+  hashOfConfig,
+  stableJson,
   handleHeartbeat,
   recordProbeResult,
   _isHeartbeatHealthy, // exported for tests
@@ -962,6 +1021,7 @@ module.exports = {
   notifyConfigChanged,
   notifyWol,
   notifyLanScan,
+  mgmtCall,
   probeGatewayTarget,
   getDiscoverySettings,
   setDiscoverySettings,

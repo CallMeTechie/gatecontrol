@@ -8,19 +8,21 @@ const PRIORITY_RANK = { info: 0, normal: 1, high: 2, critical: 3 };
 // System topics. `system` is admin-only like `security` (server restarts,
 // backups, updates, resources); `admin_notice` (manual messages, tests) is
 // always delivered and cannot be unsubscribed.
-const CORE_TOPICS = ['security', 'devices', 'services', 'system', 'admin_notice'];
-const ADMIN_ONLY_TOPICS = new Set(['security', 'system']);
+// `network` (phase 3a): the home network behind the gateways — new devices,
+// internet outages, the UPS — admin-only as well.
+const CORE_TOPICS = ['security', 'devices', 'services', 'system', 'network', 'admin_notice'];
+const ADMIN_ONLY_TOPICS = new Set(['security', 'system', 'network']);
 const LOCKED_TOPICS = new Set(['admin_notice']);
 // Topics that always go to the GateControl inbox — never into a chat
 // (chatRoutes.js, docs/plugins.md "Notifications in chats").
 const ROUTE_LOCKED_TOPICS = new Set(['security', 'admin_notice']);
 
 // CATALOGUE group → topic.
-const GROUP_TOPIC = { security: 'security', peers: 'devices', routes: 'services', system: 'system' };
+const GROUP_TOPIC = { security: 'security', peers: 'devices', routes: 'services', system: 'system', network: 'network' };
 
 // Plugin topic ids (plugin.json notifyTopics[].id) and the full topic name.
 const PLUGIN_TOPIC_ID_RE = /^[a-z][a-z0-9_-]{0,31}$/;
-const TOPIC_RE = /^(?:security|devices|services|system|admin_notice|plugin:[a-z0-9]+(?:-[a-z0-9]+)*:[a-z][a-z0-9_-]{0,31})$/;
+const TOPIC_RE = /^(?:security|devices|services|system|network|admin_notice|plugin:[a-z0-9]+(?:-[a-z0-9]+)*:[a-z][a-z0-9_-]{0,31})$/;
 
 const DELIVERY_STATES = ['queued', 'sent', 'delivered', 'read', 'dismissed', 'expired', 'suppressed'];
 const ACK_STATES = ['delivered', 'read', 'dismissed'];

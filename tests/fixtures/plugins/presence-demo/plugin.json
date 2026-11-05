@@ -1,0 +1,10 @@
+{
+  "id": "presence-demo",
+  "name": { "de": "Anwesenheit-Demo", "en": "Presence demo" },
+  "version": "1.0.0",
+  "publisher": "GateControl Tests",
+  "description": { "de": "Plugin mit gc.homeNetwork (Tests).", "en": "Plugin with gc.homeNetwork (tests)." },
+  "gatecontrol": ">=1.0.0",
+  "entry": "server/index.js",
+  "permissions": { "homePresence": true }
+}

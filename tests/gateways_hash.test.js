@@ -31,11 +31,51 @@ describe('gateways.computeConfigHash', () => {
     gwPeerId = gw.peer.id;
   });
 
-  it('hash matches library computation (byte-identical)', () => {
+  it('hash matches library computation (byte-identical) for a config without features', () => {
+    const { features, ...cfg } = gateways.getGatewayConfig(gwPeerId);
+    assert.ok(features, 'the config pull carries features (phase 3a)');
+    assert.equal(gateways.hashOfConfig(cfg), libHash(cfg));
+  });
+
+  it('features go into the hash: sha256(libHash + "\\n" + stableJson(features))', () => {
     const cfg = gateways.getGatewayConfig(gwPeerId);
-    const ourHash = gateways.computeConfigHash(gwPeerId);
-    const libComputed = libHash(cfg);
-    assert.equal(ourHash, libComputed);
+    const { features, ...rest } = cfg;
+    const expected = 'sha256:' + crypto.createHash('sha256').update(libHash(rest) + '\n' + gateways.stableJson(features), 'utf8').digest('hex');
+    assert.equal(gateways.computeConfigHash(gwPeerId), expected);
+    // the library alone would ignore them (schema strip)
+    assert.equal(libHash(cfg), libHash(rest));
+    // a switch changes the hash
+    const before = gateways.computeConfigHash(gwPeerId);
+    require('../src/services/gatewayFeatures').set(gwPeerId, { inetq: { speedtest: 'hourly' } });
+    assert.notEqual(gateways.computeConfigHash(gwPeerId), before);
+  });
+
+  it('the gateway computes the same hash (gatecontrol-gateway src/features/config.js, 92e1468)', () => {
+    // a copy of the gateway's own code — if the gateway changes it, this test is the reminder
+    function gwStableJson(v) {
+      if (v === null || typeof v !== 'object') return JSON.stringify(v);
+      if (Array.isArray(v)) return '[' + v.map((x) => (x === undefined ? 'null' : gwStableJson(x))).join(',') + ']';
+      const parts = [];
+      for (const k of Object.keys(v).sort()) {
+        if (v[k] === undefined) continue;
+        parts.push(JSON.stringify(k) + ':' + gwStableJson(v[k]));
+      }
+      return '{' + parts.join(',') + '}';
+    }
+    function gwConfigHash(cfgBody, libComputeHash) {
+      const { features, ...rest } = cfgBody || {};
+      const lib = libComputeHash(rest);
+      if (features === undefined) return lib;
+      return 'sha256:' + crypto.createHash('sha256').update(lib + '\n' + gwStableJson(features), 'utf8').digest('hex');
+    }
+    // what the gateway does with the pull: the body without config_hash, through JSON
+    require('../src/services/gatewayFeatures').set(gwPeerId, { ups: { enabled: true, host: '192.168.1.10', name: 'ups' }, inetq: { targets: ['9.9.9.9', '1.1.1.1'] } });
+    const { config_hash: _h, ...pulled } = JSON.parse(JSON.stringify({ ...gateways.getGatewayConfig(gwPeerId), config_hash: 'x' }));
+    assert.equal(gwConfigHash(pulled, libHash), gateways.computeConfigHash(gwPeerId));
+  });
+
+  it('stableJson sorts keys at every level and keeps array order', () => {
+    assert.equal(gateways.stableJson({ b: 1, a: { d: [2, 1], c: null } }), '{"a":{"c":null,"d":[2,1]},"b":1}');
   });
 
   it('hash stable across repeated calls', () => {

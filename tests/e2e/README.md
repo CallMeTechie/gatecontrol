@@ -88,6 +88,14 @@ scenarios/18-gateway-edge.js /gateways: Reiter „Edge-Plugins“ und „MQTT“
                         caps_mismatch, Freigabe unsignierter Teile mit Bestätigungswort,
                         Protokoll (Filter, „Ältere laden“), TLS „Zertifikat fehlt“,
                         Kontentabelle, „Gateway zu alt“ mit Update-Knopf, hell/dunkel, 390 px
+scenarios/19-gateway-net.js /gateways: Karte „Funktionen dieses Gateways“ und Reiter
+                        „Netzwerk“/„Internet“ ohne Mocks – das Seed-Gateway bekommt in der
+                        Test-DB ein bekanntes Token und meldet über die Gateway-API
+                        (Heartbeat mit Hardware/USV, Netzwerk-Wächter, Internetqualität);
+                        Schalter, USV-Dialog (falsche Adresse), Badge „2 neu“, Suche/Filter,
+                        „Neues Gerät“ → „Ist meins“, Gerät bearbeiten (Anwesenheit nur mit
+                        Besitzer), Verlauf 24 Std./7 Tage, Tabelle, Messplan → Config-Pull,
+                        „Jetzt scannen“ ohne Gateway (502 erwartet), hell/dunkel, 390 px
 ```
 
 ## Ablauf

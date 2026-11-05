@@ -364,7 +364,7 @@ describe('API', () => {
     assert.equal(body.canFamily, true);
     assert.equal(body.groups[0].source, 'core');
     assert.equal(body.groups[0].label, 'GateControl');
-    assert.deepEqual(body.groups[0].topics.map((t) => t.id), ['security', 'devices', 'services', 'system', 'admin_notice']);
+    assert.deepEqual(body.groups[0].topics.map((t) => t.id), ['security', 'devices', 'services', 'system', 'network', 'admin_notice']);
     // labels in the session's language (the admin agent: English)
     assert.deepEqual(topicOf(body, 'security'), { id: 'security', label: text.topicLabel('security', 'en'), dest: 'inbox', locked: true, familySetBy: null });
     const g = body.groups.find((x) => x.source === 'plugin:rt-school');

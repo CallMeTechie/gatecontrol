@@ -256,6 +256,9 @@
     const e = entry(id);
     const d = e.data;
     root.querySelectorAll('[data-gwe-badge]').forEach((b) => {
+      // tabs "Netzwerk" / "Internet": their own data (gateway-net.js)
+      const which = b.getAttribute('data-gwe-badge');
+      if (which === 'net' || which === 'inet') { if (window.GCGatewayNet) window.GCGatewayNet.badge(b, id, which); return; }
       b.replaceChildren();
       b.className = 'gwe-tab-badge';
       if (!d) return;
@@ -264,7 +267,7 @@
         const s = K.summary(d.plugins, d.settings);
         if (s.attention) { b.className = 'gwe-tab-badge tag tag-amber'; b.textContent = t('gwe.tabs.attention', { n: s.attention }); }
         else if (s.running) { b.className = 'gwe-tab-badge tag tag-green'; b.textContent = t('gwe.tabs.running', { n: s.running }); }
-      } else {
+      } else if (b.getAttribute('data-gwe-badge') === 'mqtt') {
         const st = d.mqtt && d.mqtt.status;
         if (d.settings.mqttEnabled && d.settings.edgeEnabled && st && st.running) {
           b.className = 'gwe-tab-badge tag tag-green';
@@ -880,6 +883,14 @@
 
   // ─── Public ───────────────────────────────────────────────────────────
   function mount(box, g, tab, ctx) {
+    // tabs "Netzwerk" and "Internet" (phase 3a) live in gateway-net.js
+    if ((tab === 'net' || tab === 'inet') && window.GCGatewayNet) {
+      cur = null;
+      window.GCGatewayNet.mount(box, g, tab, ctx || {});
+      load(g.peer_id, false).then(() => fillBadges(document, g.peer_id), () => {});
+      return;
+    }
+    if (window.GCGatewayNet) window.GCGatewayNet.unmount();
     cur = { box, g, tab, ctx: ctx || {} };
     box.classList.add('gwe-panel');
     draw();
@@ -887,8 +898,12 @@
   }
   function prefetch(g) {
     load(g.peer_id, false).then(() => fillBadges(document, g.peer_id), () => {});
+    if (window.GCGatewayNet) window.GCGatewayNet.prefetch(g);
   }
-  function unmount() { cur = null; }
+  function unmount() { cur = null; if (window.GCGatewayNet) window.GCGatewayNet.unmount(); }
 
-  window.GCGatewayEdge = { tabs, mount, prefetch, unmount, _cache: cache };
+  // Building blocks shared with the tabs "Netzwerk" / "Internet" (gateway-net.js)
+  const ui = { t, api, errText, icon, tag, card, note, chip, switchBtn, fmtTime, fmtDate, openDialog, errorBox, showErr, bigNote, restoreFocus, focusKey, toast, LANG };
+
+  window.GCGatewayEdge = { tabs, mount, prefetch, unmount, fillBadges, ui, _cache: cache };
 })();

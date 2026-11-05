@@ -351,6 +351,11 @@ async function start() {
     try { require('./services/notify').start(); }
     catch (err) { logger.warn({ err: err.message }, 'notification center not started'); }
 
+    // Gateways phase 3a: due notices about new devices, retention of the
+    // internet quality values (services/gatewayOps.js).
+    try { require('./services/gatewayOps').start(); }
+    catch (err) { logger.warn({ err: err.message }, 'gateway network jobs not started'); }
+
     // ─── Bot blocker counter (every 60s) ──────────────
     // Liest access.log inkrementell und asynchron (services/botBlockerCounter).
     require('./services/botBlockerCounter').start();
@@ -407,6 +412,7 @@ const shutdown = createShutdownHandler({
     () => require('./services/scan').stop(),
     () => require('./services/updateNotify').stop(),
     () => require('./services/notify').stop(),
+    () => require('./services/gatewayOps').stop(),
     () => require('./services/edge/hub').closeAll(),
     () => { require('./services/plugins').stop().catch(() => {}); },
   ],

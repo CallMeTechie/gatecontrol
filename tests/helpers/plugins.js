@@ -11,6 +11,8 @@ const signature = require('../../src/services/plugins/signature');
 const HELLO = path.join(__dirname, '..', 'fixtures', 'plugins', 'hello');
 // a plugin with an edge part (plugin.json `edge`, tests/edge_*.test.js)
 const EDGE_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'edge-demo');
+// a plugin with permissions.homePresence (gc.homeNetwork, tests/gateway_presence.test.js)
+const PRESENCE_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'presence-demo');
 
 const trusted = signature.generateKeyPair();
 const stranger = signature.generateKeyPair();
@@ -31,4 +33,10 @@ function edgePackage(o = {}) {
   return packDir(EDGE_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
 }
 
-module.exports = { HELLO, EDGE_DEMO, helloPackage, edgePackage, trusted, stranger };
+/** The presence test plugin, like helloPackage. */
+function presencePackage(o = {}) {
+  const key = o.sign === undefined || o.sign === 'trusted' ? trusted.privateSeed : (o.sign === 'stranger' ? stranger.privateSeed : '');
+  return packDir(PRESENCE_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
+}
+
+module.exports = { HELLO, EDGE_DEMO, PRESENCE_DEMO, helloPackage, edgePackage, presencePackage, trusted, stranger };

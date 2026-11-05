@@ -290,7 +290,7 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null, images: false }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, ai: null, cloudImport: null, publicEndpoints: null, mail: null };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null, images: false }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, ai: null, cloudImport: null, publicEndpoints: null, mail: null, homePresence: false };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
@@ -304,7 +304,9 @@ function validate(raw, opts = {}) {
     // only while an administrator allows them — publicLinks.js)
     // devices (since 1.193.0): a person's app installations (gc.devices.list,
     // gc.notify devices / silent, user.device on app requests)
-    for (const k of ['storage', 'portal', 'users', 'app', 'kiosk', 'events', 'notifySink', 'publicLinks', 'devices']) {
+    // homePresence (phase 3a): whether people are at home by their phone in the home network
+    // (gc.homeNetwork.presence — only people who agreed, never MAC/IP addresses)
+    for (const k of ['storage', 'portal', 'users', 'app', 'kiosk', 'events', 'notifySink', 'publicLinks', 'devices', 'homePresence']) {
       if (p[k] == null) continue;
       if (typeof p[k] !== 'boolean') err(`permissions.${k}: invalid`);
       else perms[k] = p[k];

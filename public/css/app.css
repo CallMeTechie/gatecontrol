@@ -9578,3 +9578,118 @@ a.lg-ev-msg:hover{color:var(--teal)}
   .lg-same{max-width:none}
   .lg-tabs{gap:14px}
 }
+
+/* Gateway detail › tabs "Netzwerk" / "Internet" and the card "Funktionen dieses Gateways"
+   (public/js/gateway-net.js, phase 3a). Aurora tokens only — light and dark come from [data-theme]. */
+.gw-tabpanel > .gwn-features{margin-bottom:14px}
+.gwn-kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr)); gap:12px}
+.gwn-kpi{background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px 16px;
+  display:flex; flex-direction:column; gap:6px; min-width:0}
+.gwn-kpi-l{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:700}
+.gwn-kpi-v{display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; font:800 22px/1.15 var(--font-display); color:var(--text)}
+.gwn-kpi-s{font:600 13px var(--font-body); color:var(--muted)}
+.gwn-kpi-amber .gwn-kpi-v{color:var(--amber)}
+.gwn-kpi-red .gwn-kpi-v{color:var(--red)}
+.gwn-kpi-small .gwn-kpi-v{font-size:18px}
+.gw-fleet .gw.gwn-newcard{border-color:var(--amber-bd)}
+.gwn-newrow{display:flex; flex-wrap:wrap; gap:10px 12px; align-items:center; padding:10px 12px; border-radius:var(--r-sm);
+  background:var(--bg); border:1px solid var(--line)}
+.gwn-newrow-t{flex:1 1 260px; min-width:0; display:flex; flex-direction:column; gap:2px; overflow-wrap:anywhere}
+.gwn-newrow-t strong{font-size:14px}
+.gwn-listhead{display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:flex-end; flex:1 1 320px; min-width:0}
+.gwn-search{width:220px; max-width:100%; min-height:40px; flex:1 1 160px}
+.gwn-filter{width:auto; max-width:100%; min-height:40px}
+.gwn-count{margin:0}
+.gwn-count:empty{display:none}
+.gwn-scroll{max-height:520px; overflow:auto}
+.gwn-table{min-width:820px}
+.gwn-table thead th, .gwn-htable thead th{position:sticky; top:0; z-index:1; background:var(--bg-card)}
+.gwn-table td strong{font-weight:700}
+.gwn-newtag{margin-left:8px; font-size:11px; padding:1px 7px; vertical-align:1px}
+.gwn-ports{display:flex; flex-wrap:wrap; gap:3px}
+.gwn-port{display:inline-flex; padding:1px 7px; border-radius:6px; font:11.5px var(--font-mono); background:var(--chip); border:1px solid var(--line); white-space:nowrap}
+.gwn-port-risk{color:var(--red); border-color:var(--red-bd); background:var(--red-bg)}
+.gwn-risks{display:flex; flex-direction:column; gap:8px}
+.gwn-risks:empty{display:none}
+.gwn-pad{padding:14px}
+.gwn-pad-t{padding-top:10px}
+.gwn-pad-b{padding-bottom:10px}
+/* dialog new / edit device */
+.gwn-facts{display:grid; grid-template-columns:minmax(110px,max-content) minmax(0,1fr); gap:6px 14px; margin:0; font-size:13px}
+.gwn-facts dt{color:var(--muted)}
+.gwn-facts dd{margin:0; overflow-wrap:anywhere}
+.gwn-dlg .modal-foot.gwn-foot-split{justify-content:space-between; flex-wrap:wrap; gap:8px}
+.gwn-foot-r{display:flex; flex-wrap:wrap; gap:8px; margin-left:auto}
+.gwn-check strong{font-weight:600}
+.gwn-check input:disabled + span{opacity:.75}
+/* Internet */
+.gwn-grid3{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr)); gap:16px}
+.gwn-grid2-wide{grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr))}
+.gwn-bigs{display:grid; gap:10px}
+.gwn-bigs-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.gwn-bigs-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.gwn-big{min-width:0}
+.gwn-big-v{font:800 26px/1.15 var(--font-display); color:var(--text); overflow-wrap:anywhere}
+.gwn-unit{font:600 14px var(--font-body); color:var(--muted)}
+.gwn-histhead{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+.gwn-chart{display:grid; grid-template-columns:auto minmax(0,1fr); gap:8px}
+.gwn-chart-y{position:relative; width:48px; height:160px}
+.gwn-ytick{position:absolute; right:0; transform:translateY(-50%); font-size:11px; color:var(--muted); white-space:nowrap}
+.gwn-chart-plot{min-width:0}
+.gwn-chart-svg{display:block; width:100%; height:160px}
+.gwn-grid{stroke:var(--line); stroke-width:1}
+.gwn-grid-dash{stroke-dasharray:4 6}
+.gwn-band{fill:var(--red); fill-opacity:.2}
+.gwn-line{stroke:var(--teal); stroke-width:2; stroke-linejoin:round; stroke-linecap:round}
+.gwn-chart-x{display:flex; justify-content:space-between; gap:8px; font-size:11px; color:var(--muted); margin-top:4px}
+.gwn-legend{display:flex; flex-wrap:wrap; gap:14px; font-size:12.5px; color:var(--muted)}
+.gwn-legend > span{display:inline-flex; align-items:center; gap:6px}
+.gwn-key{display:inline-block}
+.gwn-key-line{width:14px; height:3px; border-radius:2px; background:var(--teal)}
+.gwn-key-band{width:12px; height:12px; border-radius:3px; background:var(--red); opacity:.3}
+.gwn-summary{margin:0}
+.gwn-htable{min-width:0}
+.gw-fleet .gw.gwn-rows .body{gap:0}
+.gwn-row{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; padding:10px 0; border-top:1px solid var(--line); font-size:13.5px}
+.gwn-row:first-child{border-top:0}
+.gwn-row-m{flex:1 1 200px; min-width:0}
+.gwn-plan{width:auto; max-width:100%; min-height:40px}
+/* card "Funktionen dieses Gateways" */
+.gw-fleet .gw.gwn-features .body{gap:0}
+.gwn-fr{display:flex; gap:12px; align-items:flex-start; padding:12px 0; border-top:1px solid var(--line)}
+.gwn-fr:first-child{border-top:0}
+.gwn-fr-t{flex:1; min-width:0; display:flex; flex-direction:column; gap:3px}
+.gwn-fr-t strong{font-size:14px}
+.gwn-fr > .gwe-switch, .gwn-fr > .tag{margin-top:2px}
+.gwn-hint{display:inline-flex; align-items:flex-start; gap:6px; font-size:12.5px; font-weight:600; color:var(--amber)}
+.gwn-hint svg{flex:none; margin-top:2px}
+.gwn-link, .gwn-linkbtn{align-self:flex-start; display:inline-flex; align-items:center; min-height:28px; font-size:12.5px; font-weight:700; color:var(--teal)}
+.gwn-linkbtn{background:none; border:0; padding:0; cursor:pointer; text-decoration:underline; font-family:inherit}
+.gwn-link:focus-visible, .gwn-linkbtn:focus-visible{outline:2px solid var(--teal); outline-offset:2px; border-radius:4px}
+.gwn-sub{display:inline-flex; align-items:center; gap:8px; min-height:32px; font-size:12.5px; color:var(--text); cursor:pointer}
+.gwn-sub input{width:16px; height:16px; margin:0; accent-color:var(--teal)}
+.gwn-mem{padding-top:10px}
+/* narrow screens: the device table becomes one card per device (labels from data-label) */
+@media (max-width:640px){
+  .gwn-table{min-width:0}
+  .gwn-table thead{display:none}
+  .gwn-table, .gwn-table tbody, .gwn-table tr, .gwn-table td{display:block}
+  .gwn-table tr{position:relative; padding:10px 12px; border-bottom:1px solid var(--line)}
+  .gwn-table tr:last-child{border-bottom:0}
+  .gwn-table td{border:0; padding:3px 0}
+  .gwn-table td.gwn-td-dev{padding-right:48px}
+  .gwn-table td[data-label]{display:grid; grid-template-columns:96px minmax(0,1fr); gap:8px; align-items:start}
+  .gwn-table td[data-label]::before{content:attr(data-label); font:600 11px var(--font-body); text-transform:uppercase; letter-spacing:.04em; color:var(--faint); padding-top:2px}
+  .gwn-table td.gwn-td-act{position:absolute; top:8px; right:10px; width:auto; padding:0}
+  .gwn-scroll{max-height:70vh}
+}
+@media (max-width:560px){
+  .gwn-kpi-v{font-size:20px}
+  .gwn-big-v{font-size:22px}
+  .gwn-bigs-3{grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px}
+  .gwn-listhead{justify-content:flex-start}
+  .gwn-search{width:100%}
+  .gwn-facts{grid-template-columns:minmax(0,1fr)}
+  .gwn-facts dd{margin-bottom:6px}
+  .gwn-chart-y{width:40px}
+}

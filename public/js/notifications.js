@@ -27,7 +27,7 @@
 })(typeof self !== 'undefined' ? self : this, function (win) {
   const TABS = ['overview', 'rules', 'devices', 'history', 'settings'];
   const PRIORITIES = ['info', 'normal', 'high', 'critical'];
-  const GROUPS = ['security', 'peers', 'routes', 'system', 'plugins'];
+  const GROUPS = ['security', 'peers', 'routes', 'system', 'network', 'plugins'];
   const SOURCES = ['security', 'devices', 'services', 'system', 'plugins'];
   const FILTERS = ['all', 'important', 'undelivered', 'plugins', 'manual'];
   const DEVICE_STATES = ['connected', 'restricted', 'offline', 'push_off', 'unsupported'];

@@ -167,6 +167,8 @@
     // since 1.211.0: requests without sign-in, each with a token of the plugin (e.g. an office server)
     if (perm.publicEndpoints) rows.push({ label: t('plugins.perm.public_endpoints'), value: t('plugins.perm.public_endpoints_on') });
     if (perm.devices) rows.push({ label: t('plugins.perm.devices'), value: t('plugins.perm.devices_on') });
+    // phase 3a: at home / away by the phone in the home network — only people who agreed themselves
+    if (perm.homePresence) rows.push({ label: t('plugins.perm.home_presence'), value: t('plugins.perm.home_presence_on') });
     // person groups (docs/plugins.md "Groups"): read, or read and manage its own groups
     if (perm.groups === 'read' || perm.groups === 'manage') rows.push({ label: t('plugins.perm.groups'), value: t(perm.groups === 'manage' ? 'plugins.perm.groups_manage' : 'plugins.perm.groups_read') });
     // Google Drive / OneDrive of a person (gc.cloud), with the plugin's purpose

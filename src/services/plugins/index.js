@@ -151,6 +151,8 @@ function permissionSummary(m, lang) {
     // since 1.211.0: requests without a session under /plugin-public/<id>/ with the plugin's tokens (e.g. an office server)
     publicEndpoints: !!p.publicEndpoints,
     devices: !!p.devices,
+    // phase 3a: at home / away of people who agreed, by their phone in the home network (gc.homeNetwork)
+    homePresence: !!p.homePresence,
     // person groups (docs/plugins.md "Groups"): 'read' | 'manage' | null
     groups: p.groups === 'read' || p.groups === 'manage' ? p.groups : null,
     // Google Drive / OneDrive of a person (gc.cloud) and what for

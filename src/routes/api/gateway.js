@@ -143,6 +143,11 @@ router.post('/heartbeat', express.json({ limit: '16kb' }), (req, res) => {
 
   gateways.handleHeartbeat(peerId, body);
 
+  // UPS status in the telemetry (phase 3a): a change to battery / back is a notice
+  try { require('../../services/inetq').onHeartbeat(peerId, body); } catch (err) {
+    logger.warn({ err: err.message, peerId }, 'UPS status not processed');
+  }
+
   // Persist companion-reported config_hash so the pool-mutation
   // confirm-loop in gatewayPoolSync can detect when companions have
   // applied a new config. Companion sends config_hash in heartbeat
@@ -177,6 +182,46 @@ router.post('/discovery', express.json({ limit: '512kb' }), (req, res) => {
   });
   res.status(200).json({ ok: true });
 });
+
+// ─── Phase 3a: network watch, internet quality, presence, speed test ───────
+// (contract "Phase 3a", services/netwatch.js, inetq.js, homePresence.js).
+// Bodies are checked by the services; a wrong shape → 400 { error }.
+
+function phase3a(fn) {
+  return (req, res) => {
+    try {
+      res.json({ ok: true, ...fn(req.gateway.peer_id, req.body || {}) });
+    } catch (err) {
+      if (err && (err.code === 'invalid' || err.code === 'ERR_INVALID')) return res.status(400).json({ ok: false, error: err.message });
+      logger.error({ err: err && err.message, peerId: req.gateway.peer_id }, 'gateway phase 3a report failed');
+      return res.status(500).json({ ok: false, error: 'internal' });
+    }
+  };
+}
+
+/** POST /api/v1/gateway/netwatch — { scanAt, full, devices: [...] } */
+router.post('/netwatch', express.json({ limit: '1mb' }), phase3a((peerId, body) => {
+  const r = require('../../services/netwatch').ingest(peerId, body);
+  return { devices: r.devices };
+}));
+
+/** POST /api/v1/gateway/inetq — { samples, outages, speedtests } */
+router.post('/inetq', express.json({ limit: '512kb' }), phase3a((peerId, body) => {
+  require('../../services/inetq').ingest(peerId, body);
+  return {};
+}));
+
+/** POST /api/v1/gateway/presence — { events: [{ mac, online, at }] } */
+router.post('/presence', express.json({ limit: '64kb' }), phase3a((peerId, body) => {
+  require('../../services/homePresence').ingest(peerId, body);
+  return {};
+}));
+
+/** GET /api/v1/gateway/speedtest/down?bytes=N — random bytes (≤ 100 MB), streamed */
+router.get('/speedtest/down', (req, res) => require('../../services/inetq').speedDown(req, res));
+
+/** POST /api/v1/gateway/speedtest/up — counted and discarded (≤ 100 MB) */
+router.post('/speedtest/up', (req, res) => require('../../services/inetq').speedUp(req, res));
 
 /**
  * GET /api/v1/gateway/edge/packages/:id/:version — the signed package of a

@@ -3258,6 +3258,114 @@ const migrations = [
       );`,
     detect: (db) => tableExists(db, 'gateway_edge') && tableExists(db, 'edge_assignments') && tableExists(db, 'edge_logs') && tableExists(db, 'mqtt_accounts'),
   },
+  {
+    version: 128,
+    name: 'gateway_netwatch_inetq',
+    // Phase 3a of the gateways (services/gatewayFeatures.js, netwatch.js,
+    // inetq.js, homePresence.js):
+    //   gateway_features   per gateway: the feature switches sent in the config
+    //                      pull (JSON, normalised on read) + notification switches,
+    //                      the last UPS status (for the on-battery notice)
+    //   netwatch_devices   gateway × MAC: what the network watch saw (address,
+    //                      vendor, name in the network, ports) and what an
+    //                      administrator made of it (name, owner, status
+    //                      new|known|watch, counts for presence)
+    //   inetq_samples      5-minute values of the internet quality (30 days)
+    //   inetq_hourly       hourly averages after 30 days (1 year)
+    //   inetq_outages      outages with cause (1 year)
+    //   inetq_speedtests   speed measurements (1 year)
+    //   presence_consent   people who switched on "my phone in the Wi-Fi"
+    //                      themselves (through a plugin, gc.homeNetwork)
+    //   presence_state     home / away of such a person (source wifi)
+    sql: `
+      CREATE TABLE IF NOT EXISTS gateway_features (
+        peer_id        INTEGER PRIMARY KEY REFERENCES peers(id) ON DELETE CASCADE,
+        settings       TEXT NOT NULL DEFAULT '{}',
+        ups_status     TEXT,
+        ups_status_at  INTEGER,
+        netwatch_scan_at  INTEGER,
+        netwatch_full_at  INTEGER,
+        inetq_report_at   INTEGER,
+        updated_at     INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS netwatch_devices (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        peer_id        INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        mac            TEXT NOT NULL,
+        ip             TEXT,
+        vendor         TEXT,
+        hostname       TEXT,
+        random_mac     INTEGER NOT NULL DEFAULT 0,
+        online         INTEGER NOT NULL DEFAULT 0,
+        first_seen     INTEGER NOT NULL,
+        last_seen      INTEGER NOT NULL,
+        ports          TEXT,
+        ports_at       INTEGER,
+        name           TEXT,
+        owner_user_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        status         TEXT NOT NULL DEFAULT 'new',
+        presence       INTEGER NOT NULL DEFAULT 0,
+        presence_online INTEGER,
+        presence_at    INTEGER,
+        notified_at    INTEGER,
+        created_at     INTEGER NOT NULL,
+        updated_at     INTEGER,
+        UNIQUE (peer_id, mac)
+      );
+      CREATE INDEX IF NOT EXISTS idx_netwatch_devices_owner ON netwatch_devices(owner_user_id);
+      CREATE TABLE IF NOT EXISTS inetq_samples (
+        peer_id        INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        t              INTEGER NOT NULL,
+        rtt_router_ms  REAL,
+        rtt_inet_ms    REAL,
+        loss_inet_pct  REAL,
+        rtt_server_ms  REAL,
+        PRIMARY KEY (peer_id, t)
+      );
+      CREATE TABLE IF NOT EXISTS inetq_hourly (
+        peer_id        INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        t              INTEGER NOT NULL,
+        rtt_router_ms  REAL,
+        rtt_inet_ms    REAL,
+        rtt_inet_max   REAL,
+        loss_inet_pct  REAL,
+        rtt_server_ms  REAL,
+        n              INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (peer_id, t)
+      );
+      CREATE TABLE IF NOT EXISTS inetq_outages (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        peer_id        INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        start_at       INTEGER NOT NULL,
+        end_at         INTEGER,
+        cause          TEXT NOT NULL DEFAULT 'unknown',
+        notified       INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (peer_id, start_at)
+      );
+      CREATE TABLE IF NOT EXISTS inetq_speedtests (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        peer_id        INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        at             INTEGER NOT NULL,
+        down_mbps      REAL,
+        up_mbps        REAL,
+        bytes          INTEGER,
+        UNIQUE (peer_id, at)
+      );
+      CREATE TABLE IF NOT EXISTS presence_consent (
+        user_id        INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        enabled        INTEGER NOT NULL DEFAULT 0,
+        plugin_id      TEXT,
+        updated_at     INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS presence_state (
+        user_id        INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        home           INTEGER NOT NULL,
+        since          INTEGER NOT NULL,
+        updated_at     INTEGER NOT NULL
+      );`,
+    detect: (db) => ['gateway_features', 'netwatch_devices', 'inetq_samples', 'inetq_hourly', 'inetq_outages', 'inetq_speedtests', 'presence_consent', 'presence_state']
+      .every((t) => tableExists(db, t)),
+  },
 ];
 
 module.exports = { migrations };

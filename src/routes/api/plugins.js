@@ -84,6 +84,7 @@ function currentUser(req) {
 }
 
 const media = require('../../services/plugins/media');
+const personContext = require('../../services/plugins/personContext');
 
 function policy() {
   return { allowUnsigned: plugins.allowUnsigned(), backupMedia: media.backupEnabled(), autoUpdate: plugins.autoUpdateMode(), catalogCheck: plugins.catalogCheck() };
@@ -569,7 +570,11 @@ function forwarder(userOf, idOf = (req) => req.params.id, opts = {}) {
     if (!user) return res.status(403).json({ ok: false, code: 'login_required', error: tr(req, 'plugins.err.login_required', 'Sign in first') });
     const body = req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body) ? req.body : null;
     try {
-      const out = await plugins.request(p.id, { method: req.method, path, query: plainQuery(req.query), body, user, lang: langOf(req) });
+      // the person themselves is in this request (signed in, no kiosk device, no automation):
+      // host APIs that only act for that person check it (plugins/personContext.js, gc.homeNetwork)
+      const person = user.loggedIn !== false && !user.kiosk && !user.automation && Number.isSafeInteger(user.id);
+      const call = () => plugins.request(p.id, { method: req.method, path, query: plainQuery(req.query), body, user, lang: langOf(req) });
+      const out = person ? await personContext.run(p.id, user.id, req.method !== 'GET' && req.method !== 'HEAD', call) : await call();
       res.set('Cache-Control', 'no-store');
       return res.status(out.status).json(out.json);
     } catch (e) {

@@ -80,6 +80,15 @@ const CATALOGUE = [
     // wenn es wieder auftritt" occurred again (services/logProblems.js).
     { id: 'log_problem', types: ['log_problem_returned'] },
   ] },
+  // Home network behind the gateways (phase 3a): a new device in the home
+  // network (network watch, collected per gateway at most every 10 minutes),
+  // an internet outage longer than 5 minutes (after it ended, with duration
+  // and cause), the UPS on battery / back on mains. Topic "network": admins only.
+  { id: 'network', events: [
+    { id: 'netwatch_new_device', types: ['netwatch_new_device'] },
+    { id: 'inet_outage', types: ['inet_outage'] },
+    { id: 'ups_state', types: ['ups_on_battery', 'ups_on_line'] },
+  ] },
 ];
 
 const EVENTS = [];
