@@ -79,6 +79,15 @@ scenarios/17-gateway-wizard.js /gateways: „Gateway hinzufügen“ – Wartekar
                         und entpackt), Live-Status, „Einrichtung fortsetzen“ →
                         Synology-Paket vom Server (entpackt), Peers-Hinweis,
                         Escape, hell/dunkel, 390 px
+scenarios/18-gateway-edge.js /gateways: Reiter „Edge-Plugins“ und „MQTT“ der
+                        Gateway-Ansicht – echte API: Reiter in der Adresse (Neuladen,
+                        Pfeiltasten), Edge einschalten, MQTT-Konto mit Gerätevorlage
+                        anlegen → Passwort genau einmal (danach nicht mehr im DOM),
+                        sperren, neues Passwort, löschen; gemockte Flotte (page.route):
+                        alle Zustände, RAM-Hinweis, Fähigkeiten-Dialog mit 409
+                        caps_mismatch, Freigabe unsignierter Teile mit Bestätigungswort,
+                        Protokoll (Filter, „Ältere laden“), TLS „Zertifikat fehlt“,
+                        Kontentabelle, „Gateway zu alt“ mit Update-Knopf, hell/dunkel, 390 px
 ```
 
 ## Ablauf
