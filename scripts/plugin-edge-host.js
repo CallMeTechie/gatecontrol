@@ -36,6 +36,7 @@ const NO_REPLY = Symbol('no reply');
 const METHOD_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const PLUGIN_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const CALL_MAX_MS = 30000;
+const CALL_STEPS_MS = Object.freeze([100, 200, 300, 500, 1000, 2000, 3000, 5000, 10000, 15000, 20000, 30000]);
 
 function wsUrl(serverUrl) {
   const u = new URL(PATH, serverUrl);
@@ -150,9 +151,9 @@ class EdgeHost {
     const ctx = { plugin, method, emit: (name, data) => this.emit(plugin, name, data), config: () => this.configOf(plugin) };
     let timer;
     // the call's limit, bounded like the server bounds it (100 ms … 30 s; missing or not a number → 30 s)
-    let limitMs = typeof m.timeoutMs === 'number' ? m.timeoutMs : CALL_MAX_MS;
-    if (!(limitMs >= 100)) limitMs = CALL_MAX_MS; // also NaN
-    if (limitMs > CALL_MAX_MS) limitMs = CALL_MAX_MS;
+    // the call's limit as one of fixed steps (100 ms … 30 s): the smallest step ≥ the asked one; missing / NaN → 30 s
+    const asked = typeof m.timeoutMs === 'number' && m.timeoutMs >= 0 ? m.timeoutMs : CALL_MAX_MS;
+    const limitMs = CALL_STEPS_MS.find((step) => step >= asked) || CALL_MAX_MS;
     const limit = new Promise((resolve) => { timer = setTimeout(() => resolve({ timeout: true }), limitMs); });
     try {
       const r = await Promise.race([Promise.resolve().then(() => fn(m.params, ctx)).then((v) => ({ v })), limit]);
