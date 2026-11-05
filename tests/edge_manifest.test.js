@@ -87,6 +87,8 @@ describe('edge section', () => {
     assert.match(errorsOf({ ...goodEdge, capabilities: { mdns: { services: ['shelly'] } } }).join(), /mdns: invalid/);
     assert.match(errorsOf({ ...goodEdge, capabilities: { tcp: { lan: 'yes' } } }).join(), /tcp: invalid/);
     assert.match(errorsOf({ ...goodEdge, capabilities: { http: { internet: true } } }).join(), /http: invalid/);
+    assert.match(errorsOf({ ...goodEdge, capabilities: { http: { lan: false, selfSigned: true } } }).join(), /http\.selfSigned: needs lan/);
+    assert.match(errorsOf({ ...goodEdge, capabilities: { http: { lan: true, selfSigned: 'yes' } } }).join(), /http: invalid/);
     assert.match(errorsOf({ ...goodEdge, capabilities: { serial: ['/dev/ttyUSB0'] } }).join(), /serial: invalid/);
     // lan: false is no capability at all
     assert.deepEqual(check({ entry: 'edge/index.js', capabilities: { tcp: { lan: false } } }).manifest.edge.capabilities, {});
@@ -114,6 +116,14 @@ describe('capability keys', () => {
     const de = edgeManifest.describe(goodEdge.capabilities, 'de');
     assert.equal(de.find((x) => x.key === 'udp.port:5683').text, 'UDP-Port 5683 im Heimnetz (senden/empfangen)');
     assert.equal(edgeManifest.describe(goodEdge.capabilities, 'en').find((x) => x.key === 'serial:zigbee').text, 'Serial device "zigbee"');
+  });
+
+  it('http.selfSigned: an own key, confirmed with a warning', () => {
+    const r = check({ entry: 'edge/index.js', capabilities: { http: { lan: true, selfSigned: true } } });
+    assert.deepEqual(r.manifest.edge.capabilities, { http: { lan: true, selfSigned: true } });
+    assert.deepEqual(edgeManifest.capabilityList(r.manifest.edge.capabilities), ['http.lan', 'http.selfSigned']);
+    assert.equal(edgeManifest.describe(r.manifest.edge.capabilities, 'de').find((x) => x.key === 'http.selfSigned').warning, true);
+    assert.deepEqual(edgeManifest.newCapabilities(r.manifest.edge.capabilities, ['http.lan']), ['http.selfSigned']);
   });
 
   it('newCapabilities: only what is not approved yet', () => {

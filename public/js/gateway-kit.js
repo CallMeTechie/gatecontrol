@@ -30,6 +30,66 @@
   const NAS_DIR = '/volume1/docker/gatecontrol-gateway';
   const DECONZ_PORT = 8090;
 
+  // Edge container of the gateway (gatecontrol-gateway, contract gc-edge.v1 "Änderung Gateway-Seite" 1):
+  // the gateway image with another command, no privileges, user 61001 — idle until the server
+  // switches edge parts on for this gateway. Kept in step with the gateway's docker-compose.example.yml.
+  const EDGE_SERVICE = [
+    '',
+    '  # Edge parts of plugins in the home network (switched on per gateway in GateControl).',
+    '  # Same image as the gateway, another command, no privileges; idle until switched on.',
+    '  # Leave this service and the edge-* volumes out if you do not want edge parts.',
+    '  edge:',
+    '    image: ghcr.io/callmetechie/gatecontrol-gateway:latest',
+    '    entrypoint: ["/sbin/tini", "--", "node", "src/edge/main.js"]',
+    '    restart: unless-stopped',
+    '    network_mode: host',
+    '    user: "61001:61001"   # fixed UID: the network fence of the gateway matches on it',
+    '    cap_drop:',
+    '      - ALL',
+    '    security_opt:',
+    '      - no-new-privileges:true',
+    '    read_only: true',
+    '    tmpfs:',
+    '      - /tmp:size=16m',
+    '    mem_limit: 512m',
+    '    pids_limit: 256',
+    '    volumes:',
+    '      - type: volume',
+    '        source: edge-run',
+    '        target: /run/gc-edge',
+    '        read_only: true',
+    '        volume: { nocopy: true }',
+    '      - type: volume',
+    '        source: edge-status',
+    '        target: /run/gc-edge-status',
+    '        volume: { nocopy: true }',
+    '      - edge-state:/state-edge',
+    '    environment:',
+    '      - LOG_LEVEL=info',
+    '    healthcheck:',
+    '      test: ["CMD", "node", "src/edge/healthcheck.js"]',
+    '      interval: 60s',
+    '      timeout: 5s',
+    '      retries: 3',
+    '      start_period: 60s',
+    '',
+    'volumes:',
+    '  # tmpfs shared with the gateway (root writes, group 61001 may read)',
+    '  edge-run:',
+    '    driver_opts:',
+    '      type: tmpfs',
+    '      device: tmpfs',
+    '      o: "size=1m,uid=0,gid=61001,mode=2750"',
+    '  # tmpfs: the edge host writes its summary, the gateway reads it',
+    '  edge-status:',
+    '    driver_opts:',
+    '      type: tmpfs',
+    '      device: tmpfs',
+    '      o: "size=1m,uid=61001,gid=61001,mode=0755"',
+    '  # packages of the edge parts + their gc.store',
+    '  edge-state:',
+  ];
+
   // ─── docker-compose.yml (onboarding) ──────────────────────────────────
   // platform: synology → wireguard-go userspace (needs /dev/net/tun; DSM and
   // other hosts without the WireGuard kernel module), linux → kernel WG.
@@ -44,8 +104,8 @@
 
     if (network === 'bridge') {
       headerNotes.push(
-        '# Bridge mode: HTTP routes only. L4-Routes (raw TCP) and Wake-on-LAN',
-        '# require host-network mode and will NOT work with this compose.');
+        '# Bridge mode: HTTP routes only. L4-Routes (raw TCP), Wake-on-LAN and',
+        '# edge parts of plugins require host-network mode and will NOT work with this compose.');
     }
     if (platform === 'synology') {
       headerNotes.push(
@@ -96,11 +156,30 @@
       '      - /etc/wireguard',
       '    volumes:',
       '      - ./config:/config:ro',
-      '      - ./gateway-state:/state   # rw: auto-update state (self-update flag + last-pull)',
+      '      - ./gateway-state:/state   # rw: auto-update state (self-update flag + last-pull)'
+    );
+    // edge parts of plugins (docs/plugins.md "Edge part"): host network only — the edge container
+    // needs the LAN (UDP, multicast, mDNS) and the gateway's network fence; credentials go over edge-run
+    if (network === 'host') {
+      lines.push(
+        '      # edge container: credentials + fence marker there, its summary back',
+        '      - type: volume',
+        '        source: edge-run',
+        '        target: /run/gc-edge',
+        '        volume: { nocopy: true }',
+        '      - type: volume',
+        '        source: edge-status',
+        '        target: /run/gc-edge-status',
+        '        read_only: true',
+        '        volume: { nocopy: true }'
+      );
+    }
+    lines.push(
       '    environment:',
       '      - LOG_LEVEL=info',
       '      - GATEWAY_ENV_PATH=/config/gateway.env'
     );
+    if (network === 'host') lines.push(...EDGE_SERVICE);
     const header = headerNotes.length > 0 ? headerNotes.join('\n') + '\n' : '';
     return header + lines.join('\n') + '\n';
   }

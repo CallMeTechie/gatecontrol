@@ -14,9 +14,11 @@
 //
 // Events of an edge part reach the plugin process (gc.edge.on) one after
 // another per gateway × plugin; the `ack` goes back only after the plugin
-// process took the event (its handlers ran). A delivery that fails stalls that
-// queue: later events are neither delivered nor acknowledged until the gateway
-// sends the unacknowledged ones again (it keeps them, contract §2).
+// process took the event (its handlers ran). A delivery that fails is tried
+// again with back-off, nothing after it is acknowledged first; the queue holds
+// up to 1000 events, newer ones are dropped unacknowledged (the gateway keeps
+// them and sends them again after a reconnect). `seq` is only compared (>):
+// it ascends per plugin but has gaps.
 
 const crypto = require('node:crypto');
 const url = require('node:url');
@@ -34,9 +36,11 @@ const LIMITS = Object.freeze({
   helloMs: 10000,
   callTimeoutMs: 30000,         // longest call (and the default)
   openCallsPerPlugin: 32,
-  eventsPerSecond: 50,          // per gateway × plugin; more are dropped (`throttled`)
+  queueMax: 1000,               // events waiting per gateway × plugin; more are dropped unacknowledged (`throttled`)
+  retryMs: 1000,                // a failed delivery is tried again after 1 s, 2 s, 4 s … up to
+  retryMaxMs: 30000,
   logsPerSecond: 20,            // per gateway × plugin
-  framesPerSecond: 1000,        // per connection, all frames together; more closes it (1008)
+  framesPerSecond: 3000,        // per connection, all frames together (a reconnect resends up to 1000 events per plugin); more closes it (1008)
   deliverTimeoutMs: 15000,      // the plugin process takes one event
   statusPlugins: 64,
   statusAccounts: 500,
@@ -47,6 +51,7 @@ const AUTH_WINDOW_MS = 5 * 60 * 1000;
 const NOTE_EVERY_MS = 10 * 60 * 1000;
 const NAME_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const PLUGIN_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const PASS_CODES = new Set(['denied', 'not_enabled', 'timeout', 'busy', 'too_large']);
 const STATES = new Set(['starting', 'running', 'crashed', 'stopped', 'denied', 'update_pending']);
 
 class EdgeError extends Error {
@@ -111,7 +116,6 @@ class Conn {
     this.lastState = null;
     this.pending = new Map();   // call id → { resolve, reject, timer, pluginId }
     this.queues = new Map();    // pluginId → { items, busy, acked, stalled, stalledAt }
-    this.eventRate = new Map();
     this.logRate = new Map();
     this.frameRate = { start: 0, n: 0 };
     this.prevStatus = new Map(); // pluginId → last status of this connection
@@ -187,7 +191,7 @@ class Conn {
     const first = !this.ready;
     this.ready = true;
     this.lastState = null;
-    for (const q of this.queues.values()) { q.stalled = false; q.acked = -1; }
+    for (const q of this.queues.values()) q.acked = -1;
     this.pushState();
     if (first) {
       store.addLog(this.peerId, null, 'system', 'info', `connected (gateway ${hello.version}${hello.edgeHost ? ', edge host ' + hello.edgeHost : ''})`);
@@ -234,12 +238,13 @@ class Conn {
         restarts: Number.isSafeInteger(p.restarts) && p.restarts >= 0 ? p.restarts : 0,
         lastError: str(p.lastError, 300),
         throttled: p.throttled === true || (Number.isFinite(p.throttled) && p.throttled > 0),
+        buffered: Number.isSafeInteger(p.buffered) && p.buffered >= 0 ? p.buffered : null,
         at: new Date().toISOString(),
       };
       const prev = this.prevStatus.has(p.id) ? this.prevStatus.get(p.id) : a.status;
       this.prevStatus.set(p.id, st);
       const changed = !prev || prev.state !== st.state || prev.restarts !== st.restarts || prev.lastError !== st.lastError
-        || prev.throttled !== st.throttled || prev.version !== st.version || prev.rssMb !== st.rssMb;
+        || prev.throttled !== st.throttled || prev.version !== st.version || prev.rssMb !== st.rssMb || prev.buffered !== st.buffered;
       if (changed) store.setAssignmentStatus(p.id, this.peerId, st);
       const crashed = (st.state === 'crashed' && (!prev || prev.state !== 'crashed')) || (prev && st.restarts > prev.restarts);
       if (crashed) this.crashed(p.id, st);
@@ -271,7 +276,7 @@ class Conn {
 
   throttled(pluginId, by) {
     if (!notable('throttle', this.peerId, pluginId)) return;
-    store.addLog(this.peerId, pluginId, 'system', 'warn', by === 'gateway' ? 'throttled on the gateway' : `throttled: more than ${limits.eventsPerSecond} events/s — dropped`);
+    store.addLog(this.peerId, pluginId, 'system', 'warn', by === 'gateway' ? 'throttled on the gateway' : `throttled: more than ${limits.queueMax} events waiting — the newest dropped`);
     try {
       activity().log('gateway_edge_plugin_throttled', `Edge part of plugin "${pluginId}" on gateway "${gatewayName(this.peerId)}" was throttled`, {
         source: 'system', severity: 'warning', details: { peer_id: this.peerId, plugin: pluginId, by },
@@ -287,13 +292,17 @@ class Conn {
     p.done();
     if (m.ok === true) { p.resolve(m.result === undefined ? null : m.result); return; }
     const e = m.error && typeof m.error === 'object' ? m.error : {};
-    const code = ['denied', 'not_enabled', 'timeout'].includes(e.code) ? e.code : 'edge_error';
-    p.reject(new EdgeError(code, str(e.message, 300) || code));
+    const gwCode = typeof e.code === 'string' ? e.code.slice(0, 32) : '';
+    const text = str(e.message, 300) || '';
+    // the gateway's codes the plugin gets as they are; everything else (not_running, unknown_method,
+    // bad_request, the edge part's own codes …) is edge_error with the original code in front of the message
+    if (PASS_CODES.has(gwCode)) { p.reject(new EdgeError(gwCode, text || gwCode)); return; }
+    p.reject(new EdgeError('edge_error', gwCode && gwCode !== 'edge_error' ? `${gwCode}: ${text}`.slice(0, 340) : (text || 'edge_error')));
   }
 
   queueOf(pluginId) {
     let q = this.queues.get(pluginId);
-    if (!q) { q = { items: [], busy: false, acked: -1, stalled: false, stalledAt: null }; this.queues.set(pluginId, q); }
+    if (!q) { q = { items: [], busy: false, acked: -1, timer: null, failures: 0 }; this.queues.set(pluginId, q); }
     return q;
   }
 
@@ -303,33 +312,37 @@ class Conn {
     if (!stateLib.effective(pluginId, this.peerId).ok) return; // not switched on here: never handed to the plugin
     const q = this.queueOf(pluginId);
     if (m.seq <= q.acked) { this.send({ t: 'ack', plugin: pluginId, seq: q.acked }); return; } // delivered before
-    if (q.stalled) {
-      if (m.seq > q.stalledAt) return; // waits for the gateway to send the unacknowledged ones again
-      q.stalled = false;
-      q.stalledAt = null;
-    }
-    if (!windowCount(this.eventRate, pluginId, limits.eventsPerSecond)) { this.throttled(pluginId, 'server'); return; }
-    if (q.items.length && q.items[q.items.length - 1].seq >= m.seq) return; // out of order duplicate
+    if (q.items.length && q.items[q.items.length - 1].seq >= m.seq) return; // queued already (sent again by the gateway)
+    // a full queue drops the newest: not acknowledged, so the gateway keeps them and sends them again
+    if (q.items.length >= limits.queueMax) { this.throttled(pluginId, 'server'); return; }
     q.items.push({ name: m.name, data: m.data === undefined ? null : m.data, at: str(m.at, 40) || new Date().toISOString(), seq: m.seq });
     this.pump(pluginId, q);
   }
 
+  /**
+   * Hand the queued events to the plugin process one after another; ack each after its handlers ran.
+   * A failed delivery (plugin process not running, timeout) keeps the event first in the queue and
+   * tries again with back-off (retryMs … retryMaxMs) — nothing after it is acknowledged before it.
+   */
   async pump(pluginId, q) {
-    if (q.busy) return;
+    if (q.busy || q.timer) return;
     q.busy = true;
     try {
       while (q.items.length && this.ws.readyState === WebSocket.OPEN) {
-        const ev = q.items.shift();
-        if (ev.seq <= q.acked) continue;
+        const ev = q.items[0];
+        if (ev.seq <= q.acked) { q.items.shift(); continue; }
         try {
           await deliver(pluginId, { gatewayId: this.peerId, name: ev.name, data: ev.data, at: ev.at, seq: ev.seq });
         } catch (e) {
-          q.stalled = true;
-          q.stalledAt = ev.seq;
-          q.items = [];
-          store.addLog(this.peerId, pluginId, 'system', 'warn', `event ${ev.name} #${ev.seq} not delivered (${e && e.code ? e.code : 'error'}) — waits for the gateway`);
-          break;
+          q.failures++;
+          if (q.failures === 1) store.addLog(this.peerId, pluginId, 'system', 'warn', `event ${ev.name} #${ev.seq} not delivered (${e && e.code ? e.code : 'error'}) — trying again`);
+          const delay = Math.min(limits.retryMaxMs, limits.retryMs * 2 ** Math.min(10, q.failures - 1));
+          q.timer = setTimeout(() => { q.timer = null; this.pump(pluginId, q); }, delay);
+          q.timer.unref();
+          return;
         }
+        q.items.shift();
+        q.failures = 0;
         q.acked = ev.seq;
         this.send({ t: 'ack', plugin: pluginId, seq: ev.seq });
         store.addLog(this.peerId, pluginId, 'event', 'info', `${ev.name} #${ev.seq}`);
@@ -379,6 +392,7 @@ class Conn {
 
   onClose() {
     clearTimeout(this.helloTimer);
+    for (const q of this.queues.values()) if (q.timer) { clearTimeout(q.timer); q.timer = null; }
     clearInterval(this.pingTimer);
     for (const p of this.pending.values()) {
       clearTimeout(p.timer);

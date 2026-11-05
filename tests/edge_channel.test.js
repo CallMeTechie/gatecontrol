@@ -329,7 +329,7 @@ describe('gc.edge in the plugin process', () => {
   it('call(): errors of the edge part → edge_error, denied stays denied', async () => {
     const f = await pluginApi('/call', { gatewayId: gwA.peer.id, method: 'fail' });
     assert.equal(f.code, 'edge_error');
-    assert.equal(f.error, 'device unreachable');
+    assert.equal(f.error, 'EHOSTUNREACH: device unreachable', 'the edge part\'s own code in front');
     assert.equal((await pluginApi('/call', { gatewayId: gwA.peer.id, method: 'deny' })).code, 'denied');
     assert.equal((await pluginApi('/call', { gatewayId: gwA.peer.id, method: 'unknown' })).code, 'edge_error');
   });
@@ -384,33 +384,43 @@ describe('gc.edge in the plugin process', () => {
     assert.equal(ev.length, 1);
   });
 
-  it('events: a failed delivery stalls the queue until the gateway sends the unacknowledged ones again', async () => {
-    hub._setForTest({ deliver: () => Promise.reject(Object.assign(new Error('not running'), { code: 'ERR_NOT_RUNNING' })) });
-    const a = h.emit(P, 'stall', { n: 1 });
-    await sleep(150);
-    hub._setForTest({ deliver: null });
-    const b = h.emit(P, 'stall', { n: 2 });
-    await sleep(200);
-    assert.ok((h.acks.get(P) ?? -1) < a, 'nothing acknowledged');
-    assert.equal((await pluginApi('/events')).events.filter((e) => e.name === 'stall').length, 0);
-    h.resend(P);
-    await h.waitForAck(P, b);
-    assert.deepEqual((await pluginApi('/events')).events.filter((e) => e.name === 'stall').map((e) => e.data.n), [1, 2]);
-    const logs = (await agent.get(`${API}/gateways/${gwA.peer.id}/logs?plugin=${P}&kind=system`).expect(200)).body.entries;
-    assert.ok(logs.some((l) => /stall #\d+ not delivered \(ERR_NOT_RUNNING\)/.test(l.message)));
+  it('events: a failed delivery is tried again; nothing after it is acknowledged first', async () => {
+    hub._setForTest({ limits: { retryMs: 100, retryMaxMs: 200 }, deliver: () => Promise.reject(Object.assign(new Error('not running'), { code: 'ERR_NOT_RUNNING' })) });
+    try {
+      const a = h.emit(P, 'retry', { n: 1 });
+      h.emit(P, 'retry', { n: 2 });
+      await sleep(350);
+      assert.ok((h.acks.get(P) ?? -1) < a, 'nothing acknowledged while the plugin cannot take it');
+      hub._setForTest({ deliver: null });
+      await h.waitForAck(P, h.seqs.get(P), 3000);
+      assert.deepEqual((await pluginApi('/events')).events.filter((e) => e.name === 'retry').map((e) => e.data.n), [1, 2]);
+      const logs = (await agent.get(`${API}/gateways/${gwA.peer.id}/logs?plugin=${P}&kind=system`).expect(200)).body.entries;
+      assert.ok(logs.some((l) => /retry #\d+ not delivered \(ERR_NOT_RUNNING\) — trying again/.test(l.message)));
+    } finally { hub._setForTest({ limits: null, deliver: null }); }
   });
 
-  it('events above 50/s are dropped and noted as throttled', async () => {
-    hub._setForTest({ limits: { eventsPerSecond: 3 } });
-    await sleep(1100); // a fresh one-second window
+  it('events: a full queue drops the newest unacknowledged (throttled); sent again they arrive', async () => {
+    hub._setForTest({ limits: { queueMax: 3 } });
     try {
-      let last = 0;
-      for (let i = 0; i < 8; i++) last = h.emit(P, 'burst', { i });
-      await sleep(400);
-      const got = (await pluginApi('/events')).events.filter((e) => e.name === 'burst');
-      assert.equal(got.length, 3);
-      assert.ok(last > 0);
+      const slow = h.emit(P, 'slow', {}); // blocks the queue in the plugin's handler
+      await sleep(200);
+      const seqs = [];
+      for (let i = 0; i < 6; i++) seqs.push(h.emit(P, 'burst', { i }));
+      await sleep(200);
       assert.equal(activities('gateway_edge_plugin_throttled').length, 1);
+      await pluginApi('/release');
+      // the queue held the event being delivered and two more
+      await h.waitForAck(P, seqs[1]);
+      await sleep(200);
+      assert.ok((h.acks.get(P) ?? -1) < seqs[2], 'the dropped ones are not acknowledged');
+      assert.deepEqual((await pluginApi('/events')).events.filter((e) => e.name === 'burst').map((e) => e.data.i), [0, 1]);
+      assert.ok(slow < seqs[0]);
+      // sent again (a gateway does that after a reconnect): three fit, the fourth comes with the next round
+      h.resend(P);
+      await h.waitForAck(P, seqs[4]);
+      h.resend(P);
+      await h.waitForAck(P, seqs[5]);
+      assert.deepEqual((await pluginApi('/events')).events.filter((e) => e.name === 'burst').map((e) => e.data.i), [0, 1, 2, 3, 4, 5]);
     } finally { hub._setForTest({ limits: null }); }
   });
 

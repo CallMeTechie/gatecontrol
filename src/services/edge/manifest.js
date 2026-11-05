@@ -115,11 +115,19 @@ function validateCaps(raw, err) {
     else if (new Set(list).size !== list.length) bad('edge.capabilities.mdns: duplicate');
     else caps.mdns = { services: list.slice() };
   }
-  for (const k of ['tcp', 'http']) {
-    if (raw[k] == null) continue;
-    const v = raw[k];
-    if (!plainObject(v) || !onlyKeys(v, ['lan']) || typeof v.lan !== 'boolean') bad(`edge.capabilities.${k}: invalid`);
-    else if (v.lan) caps[k] = { lan: true };
+  if (raw.tcp != null) {
+    const v = raw.tcp;
+    if (!plainObject(v) || !onlyKeys(v, ['lan']) || typeof v.lan !== 'boolean') bad('edge.capabilities.tcp: invalid');
+    else if (v.lan) caps.tcp = { lan: true };
+  }
+  // http: { lan, selfSigned? } — selfSigned: HTTPS to devices without certificate checks (gc.lan.http.request
+  // insecure: true); needs lan, shown with a warning when an administrator confirms it
+  if (raw.http != null) {
+    const v = raw.http;
+    if (!plainObject(v) || !onlyKeys(v, ['lan', 'selfSigned']) || typeof v.lan !== 'boolean'
+      || (v.selfSigned != null && typeof v.selfSigned !== 'boolean')) bad('edge.capabilities.http: invalid');
+    else if (v.selfSigned && !v.lan) bad('edge.capabilities.http.selfSigned: needs lan');
+    else if (v.lan) caps.http = v.selfSigned ? { lan: true, selfSigned: true } : { lan: true };
   }
   if (raw.mqtt != null) {
     const m = raw.mqtt;
@@ -184,6 +192,7 @@ function capabilityList(caps) {
   if (c.mdns) for (const s of c.mdns.services) out.push('mdns:' + s);
   if (c.tcp && c.tcp.lan) out.push('tcp.lan');
   if (c.http && c.http.lan) out.push('http.lan');
+  if (c.http && c.http.lan && c.http.selfSigned) out.push('http.selfSigned');
   if (c.mqtt) for (const t of c.mqtt.topics) out.push('mqtt.topic:' + t);
   if (c.serial) for (const s of c.serial) out.push('serial:' + s);
   return out.sort();
@@ -201,11 +210,16 @@ const TEXT = {
   mdns: { de: 'Geräte suchen per mDNS: {v}', en: 'Find devices via mDNS: {v}' },
   'tcp.lan': { de: 'TCP-Verbindungen zu Geräten im Heimnetz', en: 'TCP connections to devices in the home network' },
   'http.lan': { de: 'HTTP-Anfragen an Geräte im Heimnetz', en: 'HTTP requests to devices in the home network' },
+  'http.selfSigned': { de: 'HTTPS zu Geräten im Heimnetz ohne Zertifikatsprüfung (selbstsignierte Zertifikate) – nur bei vertrauenswürdigen Geräten erlauben',
+    en: 'HTTPS to devices in the home network without certificate checks (self-signed certificates) – allow only for trusted devices' },
   'mqtt.topic': { de: 'MQTT-Themen {v} am lokalen Broker', en: 'MQTT topics {v} on the local broker' },
   serial: { de: 'Serielles Gerät „{v}“', en: 'Serial device "{v}"' },
 };
 
-/** [{ key, text }] — one line per capability key (install dialog, confirmation, gateway page). */
+// keys an administrator confirms with an explicit warning
+const WARN = new Set(['http.selfSigned']);
+
+/** [{ key, text, warning? }] — one line per capability key (install dialog, confirmation, gateway page). */
 function describe(caps, lang) {
   const l = lang === 'en' ? 'en' : 'de';
   return capabilityList(caps).map((key) => {
@@ -213,7 +227,7 @@ function describe(caps, lang) {
     const kind = i < 0 ? key : key.slice(0, i);
     const v = i < 0 ? '' : key.slice(i + 1);
     const t = TEXT[kind] ? TEXT[kind][l] : key;
-    return { key, text: t.replace('{v}', v) };
+    return { key, text: t.replace('{v}', v), ...(WARN.has(key) ? { warning: true } : {}) };
   });
 }
 

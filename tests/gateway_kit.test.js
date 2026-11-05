@@ -176,6 +176,27 @@ describe('compose and commands', () => {
     assert.doesNotMatch(c, /network_mode: host/);
     assert.doesNotMatch(c, /\/dev\/net\/tun/);
     assert.match(c, /"8080:8080"/);
+    assert.doesNotMatch(c, /\n  edge:|edge-run/, 'edge parts need host network');
+  });
+  it('host network: the edge service of the gateway contract (same image, user 61001, no privileges) + shared volumes', () => {
+    for (const platform of ['synology', 'linux']) {
+      const c = kit.buildCompose({ platform, network: 'host' });
+      const edge = c.slice(c.indexOf('\n  edge:\n'), c.indexOf('\nvolumes:\n'));
+      assert.match(edge, /image: ghcr\.io\/callmetechie\/gatecontrol-gateway:latest/);
+      assert.match(edge, /entrypoint: \["\/sbin\/tini", "--", "node", "src\/edge\/main\.js"\]/);
+      assert.match(edge, /user: "61001:61001"/);
+      assert.match(edge, /cap_drop:\n {6}- ALL/);
+      assert.match(edge, /no-new-privileges:true/);
+      assert.match(edge, /read_only: true/);
+      assert.match(edge, /network_mode: host/);
+      assert.match(edge, /source: edge-run\n {8}target: \/run\/gc-edge\n {8}read_only: true/);
+      assert.match(edge, /edge-state:\/state-edge/);
+      assert.doesNotMatch(edge, /cap_add|privileged|devices/);
+      const gw = c.slice(0, c.indexOf('\n  edge:\n'));
+      assert.match(gw, /source: edge-run\n {8}target: \/run\/gc-edge\n {8}volume: \{ nocopy: true \}/);
+      assert.match(gw, /source: edge-status\n {8}target: \/run\/gc-edge-status\n {8}read_only: true/);
+      assert.match(c, /\nvolumes:\n {2}# [^\n]*\n {2}edge-run:\n[\s\S]*o: "size=1m,uid=0,gid=61001,mode=2750"[\s\S]*edge-status:[\s\S]*edge-state:\n$/);
+    }
   });
   it('DSM task: update.sh with docker in PATH, the host side of /state and the project folder', () => {
     assert.equal(kit.nasTaskCommand('/volume1/docker/gatecontrol-gateway'),

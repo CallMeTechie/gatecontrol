@@ -4517,7 +4517,11 @@ example `tests/fixtures/plugins/edge-demo/`.
     the mDNS group 224.0.0.251), ≤ 16;
   * `mdns.services` like `_shelly._tcp` (≤ 16);
   * `tcp.lan` / `http.lan` — connections to addresses in the gateway's LAN
-    subnets (never the tunnel, never this server);
+    subnets (never the tunnel, never this server); HTTPS is checked fully
+    (or against a pinned certificate hash). `http.selfSigned: true` (needs
+    `lan`) also allows HTTPS without certificate checks for devices with
+    self-signed certificates — its own key `http.selfSigned`, shown with a
+    warning when an administrator confirms the list;
   * `mqtt.topics` — topic filters on the gateway's broker: no leading `#`/`+`,
     nothing starting with `$` (`$SYS`), `#` only as the last level, ≤ 16;
   * `serial` — named devices (`zigbee`); the gateway maps the name to the
@@ -4560,9 +4564,13 @@ Only in plugins with an `edge` section:
   seq })` for the edge part's `gc.emit(name, data)`; `'*'` gets every event.
   The gateway gets its `ack` only **after the handlers ran** (a handler that
   throws counts as delivered — the error goes to the plugin's log), events of
-  one gateway arrive one after another. Delivery is at least once: a `seq`
-  seen before is not delivered again within one connection, but after a
-  reconnect an event whose ack was lost can come twice. Built-in names (no
+  one gateway arrive one after another. If the plugin process cannot take an
+  event (not running, its handlers time out after 15 s), the server tries
+  again after 1 s, 2 s, 4 s … 30 s and acknowledges nothing after it first.
+  Delivery is at least once: a `seq` seen before is not delivered again
+  within one connection, but after a reconnect an event whose ack was lost
+  can come twice. `seq` ascends per plugin but has gaps (the gateway starts
+  from the time in ms). Built-in names (no
   `seq`, no ack): `$online` / `$offline` (the gateway's channel), `$started`
   (the edge part is running there — hand it its configuration again).
 * `gc.edge.configure(gatewayId, data)` → `{ sent: true }` — JSON ≤ 48 KB, held
@@ -4571,9 +4579,11 @@ Only in plugins with an `edge` section:
 
 Errors (`e.code`): `gateway_offline` (no channel, or it closed during the
 call), `not_enabled` (not switched on / not allowed on that gateway now),
-`timeout`, `edge_error` (the edge part failed; `e.message` is its message),
-`denied` (no `edge` section, or the gateway refused a capability), `busy` (32
-open calls), `ERR_INVALID` (arguments).
+`timeout`, `edge_error` (the edge part failed: `e.message` is
+`"<the gateway's or edge part's code>: <message>"`, e.g. `unknown_method: …`,
+`not_running: …`, `EHOSTUNREACH: …`), `denied` (no `edge` section, or the
+gateway refused a capability), `busy` (32 open calls), `too_large` (call or
+result over 64 KB), `ERR_INVALID` (arguments).
 
 `gc.mqtt.accounts` (plugins whose `edge.capabilities.mqtt` lists topics):
 `create(gatewayId, { name?, label?, topics })` → `{ username, password, acl,
@@ -4609,10 +4619,11 @@ The first frame must be `hello` within 10 s (else 1008).
 
 Gateway → server: `hello { v: 1, gw: { version, edgeHost, mqtt: { available },
 fence: { active, backend }, hardware } }` · `status { plugins: [{ id, version, state, rssMb, restarts,
-lastError, throttled? }], mqtt: { running, clients, accounts: [{ user,
+lastError, throttled (dropped events since the last status), buffered }], mqtt: { running, clients, accounts: [{ user,
 connected, lastSeen }] } }` (on change and every 30 s) · `result { id, ok,
 result | error: { code, message } }` · `event { plugin, name, data, at, seq }`
-(`seq` ascending per plugin) · `log { plugin, level, line }`.
+(`seq` ascending per plugin, with gaps; after the first `state` of a channel
+the gateway sends every unacknowledged event again) · `log { plugin, level, line }`.
 
 Server → gateway: `state` after `hello` and on every change — the complete
 target state: `{ edgeEnabled, allowUnsigned, plugins: [{ id, version, sha256,
@@ -4623,11 +4634,19 @@ hash, acl: [{ access, topic }] }], pluginTopics: { <id>: [topics] } } }`
 approved snapshot) · `ack { plugin, seq }` · `call { id, plugin, method,
 params, timeoutMs }` · `configure { plugin, data }`.
 
-Limits on the server: 50 events/s and 20 log lines/s per gateway × plugin
-(more are dropped — events noted as throttled), log lines ≤ 2 KB, 1000 frames/s
-per channel (more: close 1008). A failed delivery to the plugin process stalls
-that plugin's events: later ones are neither delivered nor acknowledged until
-the gateway sends the unacknowledged ones again.
+Limits on the server: up to 1000 events waiting per gateway × plugin (more
+are dropped unacknowledged — the gateway keeps them and sends them again —
+and noted as throttled; the gateway itself sends at most 50/s), 20 log
+lines/s (more are dropped), log lines ≤ 2 KB, 3000 frames/s per channel
+(more: close 1008).
+
+Compose (the gateway's set-up in GateControl: Synology package, Linux
+compose, token dialog — host network only): the service `edge` of the
+gateway contract — the gateway image with `node src/edge/main.js`, user
+61001, `cap_drop: ALL`, `no-new-privileges`, read-only, `mem_limit 512m` —
+and the volumes `edge-run` / `edge-status` (tmpfs shared with the gateway)
+and `edge-state`. It stays idle until the server switches edge parts on for
+the gateway.
 
 Packages: `GET /api/v1/gateway/edge/packages/<id>/<version>` (Bearer apiToken)
 returns the signed `.gcplugin` byte for byte as installed (`X-Content-SHA256`

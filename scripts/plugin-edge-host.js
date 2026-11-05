@@ -120,8 +120,11 @@ class EdgeHost {
     this.frames.push(m);
     if (this.o.onFrame) { try { this.o.onFrame(m); } catch { /* a test's callback */ } }
     if (m.t === 'state') {
+      const first = !this.state;
       this.state = m;
       if (this.o.autoStatus) this.reportStatus();
+      // like the gateway: after the first state of a connection, every unacknowledged event again
+      if (first) for (const id of this.unacked.keys()) this.resend(id);
     } else if (m.t === 'ack') {
       const prev = this.acks.get(m.plugin);
       if (prev === undefined || m.seq > prev) this.acks.set(m.plugin, m.seq);
@@ -179,7 +182,8 @@ class EdgeHost {
 
   /** Send an event of `pluginId` → its seq. Kept until acknowledged (resend() sends them again). */
   emit(pluginId, name, data, { at = new Date().toISOString(), seq } = {}) {
-    const s = seq != null ? seq : (this.seqs.get(pluginId) || 0) + 1;
+    // like the gateway: ascending, with gaps (max(last + 1, now in ms)) — the server only compares
+    const s = seq != null ? seq : Math.max((this.seqs.get(pluginId) || 0) + 1, Date.now());
     this.seqs.set(pluginId, Math.max(s, this.seqs.get(pluginId) || 0));
     const frame = { t: 'event', plugin: pluginId, name, data: data === undefined ? null : data, at, seq: s };
     const list = this.unacked.get(pluginId) || [];
