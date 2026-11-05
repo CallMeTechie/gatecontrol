@@ -23,7 +23,8 @@ const USER_RE = /^[a-z0-9][a-z0-9_.-]{1,47}$/;
 const ACCESS = new Set(['readwrite', 'read', 'write']);
 const ACL_MAX = 16;
 const LABEL_MAX = 80;
-const ACCOUNTS_PER_GATEWAY = 500;
+// the gateway's broker takes at most 256 accounts (contract, gateway side 15)
+const ACCOUNTS_PER_GATEWAY = 256;
 const ACCOUNTS_PER_PLUGIN = 200;
 // user names the edge host keeps for itself (its internal account)
 const RESERVED_USERS = new Set(['gc-edge', 'gatecontrol', 'edge', 'admin', 'root']);

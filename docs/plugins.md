@@ -4640,13 +4640,21 @@ and noted as throttled; the gateway itself sends at most 50/s), 20 log
 lines/s (more are dropped), log lines ≤ 2 KB, 3000 frames/s per channel
 (more: close 1008).
 
+Gateways run edge parts from **gatecontrol-gateway 1.19.0** on
+(`EDGE_MIN_GATEWAY`; the admin API reports `support: { gatewayVersion,
+edgeSupported, edgeMinGateway }` from the hello or the last heartbeat).
 Compose (the gateway's set-up in GateControl: Synology package, Linux
-compose, token dialog — host network only): the service `edge` of the
-gateway contract — the gateway image with `node src/edge/main.js`, user
-61001, `cap_drop: ALL`, `no-new-privileges`, read-only, `mem_limit 512m` —
-and the volumes `edge-run` / `edge-status` (tmpfs shared with the gateway)
-and `edge-state`. It stays idle until the server switches edge parts on for
-the gateway.
+compose, token dialog — host network only) carries the services of the
+gateway's `docker-compose.example.yml`: `edge` — the gateway image with
+`node src/edge/main.js`, user 61001, `cap_drop: ALL`, `no-new-privileges`,
+read-only, `mem_limit 512m`, `pids_limit 256` — and `mqtt` — mosquitto
+(`eclipse-mosquitto:2.1.2-alpine`, pinned by digest) behind a small watcher
+that starts it once the edge host has written its configuration, user 61001,
+no privileges, read-only, `mem_limit 128m`, `pids_limit 32` — with the
+volumes `edge-run` / `edge-status` (tmpfs shared with the gateway),
+`edge-state` and `edge-mqtt`. Both stay idle until the server switches edge
+parts (and MQTT) on for the gateway. `update.sh` (vendored from the gateway
+release) also recreates `edge` with the new gateway image.
 
 Packages: `GET /api/v1/gateway/edge/packages/<id>/<version>` (Bearer apiToken)
 returns the signed `.gcplugin` byte for byte as installed (`X-Content-SHA256`
@@ -4665,7 +4673,8 @@ the gateway on its LAN addresses (TLS optional), no anonymous access. Device acc
 `$7$101$<base64 salt, 12 bytes>$<base64 PBKDF2-HMAC-SHA512, 64 bytes>` (the
 format of `mosquitto_passwd`), never in the admin API, the activity log or
 the ring buffer. ACL: the topics given (`readwrite`, `read` or `write`; same
-rules as plugin topics, ≤ 16), by default `devices/<user>/#`; a
+rules as plugin topics, ≤ 16), by default `devices/<user>/#`; at most 256
+accounts per gateway (the broker's limit); a
 `vendorPrefix` adds `<prefix>/<user>/#`. Locked accounts are left out of the
 state. The edge host's own account (access to the `pluginTopics` only) is the
 gateway's business; the user names `gc-edge`, `gatecontrol`, `edge`, `admin`
@@ -4677,7 +4686,7 @@ Admin API (session, CSRF, admin role — API tokens are refused), under `/api/v1
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /gateways` | every gateway: switches, channel, gateway version, counts (assigned, on, needing attention), MQTT |
+| `GET /gateways` | every gateway: switches, channel, gateway version and edge support (`support`), counts (assigned, on, needing attention), MQTT |
 | `GET /gateways/:id` | one gateway: switches, channel, hello (versions, hardware), every plugin with an edge part (capabilities, assignment, state, new capabilities, last status), MQTT status and accounts |
 | `PUT /gateways/:id/settings` | `{ edgeEnabled, mqttEnabled, mqttTls, allowUnsignedEdge, confirm }` |
 | `POST /gateways/:id/plugins/:pluginId/enable` | `{ capabilities: [keys] }` — exactly the current list, else `409 caps_mismatch` with it; unsigned without `allowUnsignedEdge` → `409 unsigned_blocked` |

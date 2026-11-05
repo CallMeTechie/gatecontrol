@@ -256,6 +256,7 @@ class Conn {
       const accounts = Array.isArray(m.mqtt.accounts) ? m.mqtt.accounts.slice(0, limits.statusAccounts) : [];
       store.setMqttStatus(this.peerId, {
         running: m.mqtt.running === true,
+        tls: ['off', 'on', 'missing_cert'].includes(m.mqtt.tls) ? m.mqtt.tls : null,
         clients: Number.isSafeInteger(m.mqtt.clients) && m.mqtt.clients >= 0 ? m.mqtt.clients : 0,
         accounts: accounts.filter((x) => x && typeof x.user === 'string').map((x) => ({
           user: str(x.user, 64), connected: x.connected === true, lastSeen: str(x.lastSeen, 40),

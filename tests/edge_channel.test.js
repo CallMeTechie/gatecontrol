@@ -214,8 +214,14 @@ describe('state, switches and the admin API', () => {
     const p = r.body.gateway.plugins.find((x) => x.id === P);
     assert.deepEqual(p.edge.capabilities.map((x) => x.key), CAPS);
     assert.equal(p.assignment, null);
+    assert.deepEqual(r.body.gateway.support, { gatewayVersion: '1.20.0', edgeSupported: true, edgeMinGateway: '1.19.0' });
     const list = await agent.get(`${API}/gateways`).expect(200);
     assert.deepEqual(list.body.gateways.map((g) => g.name), ['gw-a', 'gw-b']);
+    // gw-b never connected: its version comes from the heartbeat — older than the first release with edge
+    db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify({ telemetry: { gateway_version: '1.18.0' } }), gwB.peer.id);
+    db.prepare('DELETE FROM gateway_edge WHERE peer_id = ?').run(gwB.peer.id);
+    const b = (await agent.get(`${API}/gateways`).expect(200)).body.gateways.find((g) => g.id === gwB.peer.id);
+    assert.deepEqual(b.support, { gatewayVersion: '1.18.0', edgeSupported: false, edgeMinGateway: '1.19.0' });
   });
 
   it('edge on → new state; enabling needs exactly the shown capability list', async () => {
@@ -634,7 +640,7 @@ describe('MQTT accounts', () => {
     h.reportStatus({ plugins: [], mqtt: { running: true, clients: 2, accounts: [{ user: 'a', connected: true, lastSeen: '2026-11-05T10:00:00Z' }] } });
     await sleep(150);
     const r = await agent.get(`${API}/gateways/${gwA.peer.id}`).expect(200);
-    assert.deepEqual(r.body.gateway.mqtt.status, { running: true, clients: 2, accounts: [{ user: 'a', connected: true, lastSeen: '2026-11-05T10:00:00Z' }] });
+    assert.deepEqual(r.body.gateway.mqtt.status, { running: true, tls: null, clients: 2, accounts: [{ user: 'a', connected: true, lastSeen: '2026-11-05T10:00:00Z' }] });
   });
 });
 

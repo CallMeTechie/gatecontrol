@@ -84,6 +84,26 @@ function helloView(s) {
     fence: s.hello.fence || null, hardware: s.hello.hardware || null, at: s.helloAt ? new Date(s.helloAt).toISOString() : null } : null;
 }
 
+// the first gateway release with the edge container and the MQTT broker (gatecontrol-gateway, compose
+// services edge + mqtt): older gateways never open the edge channel — the UI offers an update instead
+const EDGE_MIN_GATEWAY = '1.19.0';
+
+/** Version and edge support of a gateway from its last heartbeat (telemetry.gateway_version). */
+function supportView(peerId, s) {
+  let version = s.hello && s.hello.version ? s.hello.version : null;
+  if (!version) {
+    try {
+      const row = require('../../db/connection').getDb().prepare('SELECT last_health FROM gateway_meta WHERE peer_id = ?').get(peerId);
+      const h = row && row.last_health ? JSON.parse(row.last_health) : null;
+      const v = h && h.telemetry && h.telemetry.gateway_version;
+      version = typeof v === 'string' && v ? v.slice(0, 32) : null;
+    } catch { version = null; }
+  }
+  const semver = require('../plugins/semver');
+  const supported = s.hello ? true : (version && semver.valid(version) ? semver.compare(version, EDGE_MIN_GATEWAY) >= 0 : null);
+  return { gatewayVersion: version, edgeSupported: supported, edgeMinGateway: EDGE_MIN_GATEWAY };
+}
+
 function settingsView(s) {
   return { edgeEnabled: s.edgeEnabled, mqttEnabled: s.mqttEnabled, mqttTls: s.mqttTls, allowUnsignedEdge: s.allowUnsignedEdge };
 }
@@ -95,7 +115,7 @@ function gateways() {
     const list = store.assignmentsOfGateway(g.id);
     const conn = hub.connectionInfo(g.id);
     return {
-      id: g.id, name: g.name, ...settingsView(s), connection: conn, gateway: helloView(s),
+      id: g.id, name: g.name, ...settingsView(s), connection: conn, gateway: helloView(s), support: supportView(g.id, s),
       plugins: { assigned: list.length, enabled: list.filter((a) => a.enabled).length,
         attention: list.filter((a) => { const st = stateOf(a, s, conn.online); return ['update_pending', 'crashed', 'denied', 'unsigned', 'gateway_too_old'].includes(st); }).length },
       mqtt: { accounts: mqtt.list(g.id).length, status: s.mqttStatus },
@@ -114,7 +134,7 @@ function overview(peerId, lang) {
     return { ...pluginEdgeView(p, lang), assignment: a ? assignmentView(a, s, conn.online, lang) : null };
   });
   return {
-    id: g.id, name: g.name, settings: settingsView(s), connection: conn, gateway: helloView(s), plugins: pluginsList,
+    id: g.id, name: g.name, settings: settingsView(s), connection: conn, gateway: helloView(s), support: supportView(g.id, s), plugins: pluginsList,
     mqtt: { status: s.mqttStatus, accounts: mqtt.list(g.id) },
   };
 }
@@ -432,5 +452,5 @@ module.exports = {
   gateways, overview, pluginOverview, setSettings, enablePlugin, disablePlugin, logs,
   mqttAccounts, mqttCreate, mqttSetLocked, mqttResetPassword, mqttRemove,
   onPluginInstalled, onPluginRemoved, hostGateways, hostCall, hostConfigure, hostMqtt, stateOf,
-  EdgeAdminError, CONFIRM_WORDS,
+  EdgeAdminError, CONFIRM_WORDS, EDGE_MIN_GATEWAY,
 };
