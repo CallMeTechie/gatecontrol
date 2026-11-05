@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.228.1] — 2026-11-05
+
+### Fixes
+- Fähigkeit http.selfSigned entfernt, selbstsignierte Geräte nur per Zertifikats-Pinning (#404)
+
+---
+
 ## [1.228.0] — 2026-11-05
 
 ### Features
