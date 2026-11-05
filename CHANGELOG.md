@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.230.0] — 2026-11-05
+
+### Features
+- Netzwerk-Wächter, Internetqualität, Anwesenheit und USV (Server, Phase 3a) (#406)
+
+---
+
 ## [1.229.0] — 2026-11-05
 
 ### Features
