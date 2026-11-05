@@ -186,8 +186,10 @@ router.post('/discovery', express.json({ limit: '512kb' }), (req, res) => {
  */
 router.get('/edge/packages/:id/:version', (req, res) => {
   const peerId = req.gateway.peer_id;
-  const id = String(req.params.id || '');
-  const version = String(req.params.version || '');
+  // path parameters (never req.query): plain strings only
+  if (typeof req.params.id !== 'string' || typeof req.params.version !== 'string') return res.status(400).json({ error: 'invalid_request' });
+  const id = req.params.id;
+  const version = req.params.version;
   const { ID_RE } = require('../../services/plugins/constants');
   if (!ID_RE.test(id) || id.length > 64 || !/^[0-9A-Za-z.+-]{1,64}$/.test(version)) return res.status(404).json({ error: 'not_found' });
   const eff = require('../../services/edge/state').effective(id, peerId);

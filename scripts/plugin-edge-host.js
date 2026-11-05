@@ -144,14 +144,15 @@ class EdgeHost {
     // only handlers registered with handle() (a Map, never an object property); names as the server allows them
     const method = typeof m.method === 'string' && METHOD_RE.test(m.method) ? m.method : null;
     const plugin = typeof m.plugin === 'string' && PLUGIN_RE.test(m.plugin) ? m.plugin : null;
-    let fn = method && plugin ? (this.handlers.get(`${plugin}|${method}`) || this.handlers.get(`${plugin}|*`)) : null;
+    let fn = method && plugin ? (this.handlerFor(`${plugin}|${method}`) || this.handlerFor(`${plugin}|*`)) : null;
     if (!fn && method && plugin && this.o.echo !== false && !this.handlers.size) fn = (params) => ({ echo: params });
     if (typeof fn !== 'function') { reply({ ok: false, error: { code: 'unknown_method', message: 'no handler for this method' } }); return; }
     const ctx = { plugin, method, emit: (name, data) => this.emit(plugin, name, data), config: () => this.configOf(plugin) };
     let timer;
     // the call's limit, bounded like the server bounds it (100 ms … 30 s; missing or not a number → 30 s)
-    const t = Number(m.timeoutMs);
-    const limitMs = Math.min(CALL_MAX_MS, Math.max(100, Number.isFinite(t) ? t : CALL_MAX_MS));
+    let limitMs = typeof m.timeoutMs === 'number' ? m.timeoutMs : CALL_MAX_MS;
+    if (!(limitMs >= 100)) limitMs = CALL_MAX_MS; // also NaN
+    if (limitMs > CALL_MAX_MS) limitMs = CALL_MAX_MS;
     const limit = new Promise((resolve) => { timer = setTimeout(() => resolve({ timeout: true }), limitMs); });
     try {
       const r = await Promise.race([Promise.resolve().then(() => fn(m.params, ctx)).then((v) => ({ v })), limit]);
@@ -160,6 +161,12 @@ class EdgeHost {
     } catch (e) {
       reply({ ok: false, error: { code: e && e.code ? String(e.code) : 'error', message: String((e && e.message) || e) } });
     } finally { clearTimeout(timer); }
+  }
+
+  /** The registered handler whose key equals `key` (compared, never looked up by a name from a frame). */
+  handlerFor(key) {
+    for (const [k, h] of this.handlers) if (k === key && typeof h === 'function') return h;
+    return null;
   }
 
   /** A handler of `method` for `pluginId` ('*': every method) — like gc.handle in the edge part. */

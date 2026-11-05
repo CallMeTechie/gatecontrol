@@ -28,6 +28,7 @@ const cache = new Map(); // `${id}@${version}` → { sha256, size, mtimeMs, ino 
 
 /** <data>/plugins/<id>/<version>/<name> — refused unless it stays inside the plugin's folder. */
 function pathOf(id, version, name) {
+  if (typeof id !== 'string' || typeof version !== 'string' || typeof name !== 'string') throw new Error('invalid package path');
   assertId(id);
   if (typeof version !== 'string' || !VERSION_RE.test(version) || version.includes('..')) throw new Error('invalid version');
   const base = path.resolve(pluginsRoot(), id);
@@ -45,20 +46,24 @@ function pathOf(id, version, name) {
  * its sha256, then renamed.
  */
 function save(id, version, buf) {
-  if (!Buffer.isBuffer(buf) || buf.length > LIMITS.packageBytes) throw new Error('package too large');
-  const files = pkg.decode(buf);
+  if (typeof id !== 'string' || typeof version !== 'string') throw new Error('invalid package id or version');
+  if (!Buffer.isBuffer(buf)) throw new Error('not a package');
+  // a copy of exactly the bytes checked here (never an array or string-like value standing in for them)
+  const data = Buffer.from(buf);
+  if (data.byteLength > LIMITS.packageBytes) throw new Error('package too large');
+  const files = pkg.decode(data);
   let m = null;
   try { m = JSON.parse(files.get('plugin.json').toString('utf8')); } catch { m = null; }
   if (!m || m.id !== id || m.version !== version) throw new Error('package does not match the installed plugin');
-  const want = crypto.createHash('sha256').update(buf).digest('hex');
+  const want = crypto.createHash('sha256').update(data).digest('hex');
   const tmp = pathOf(id, version, TMP);
   const f = pathOf(id, version, FILE);
   try { fs.unlinkSync(tmp); } catch { /* none left over */ }
   const fd = fs.openSync(tmp, fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_EXCL | NOFOLLOW, 0o644);
   try {
-    fs.writeSync(fd, buf, 0, buf.length, 0);
+    fs.writeSync(fd, data, 0, data.byteLength, 0);
     fs.fsyncSync(fd);
-    const back = Buffer.alloc(buf.length);
+    const back = Buffer.alloc(data.byteLength);
     fs.readSync(fd, back, 0, back.length, 0);
     if (crypto.createHash('sha256').update(back).digest('hex') !== want) throw new Error('package written incompletely');
   } catch (e) {
@@ -97,6 +102,7 @@ function openFile(f) {
  * null when the version is not installed.
  */
 function open(id, version) {
+  if (typeof id !== 'string' || typeof version !== 'string') return null;
   const f = pathOf(id, version, FILE);
   let fd;
   try { fd = openFile(f); } catch (e) {
