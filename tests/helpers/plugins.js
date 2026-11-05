@@ -13,6 +13,8 @@ const HELLO = path.join(__dirname, '..', 'fixtures', 'plugins', 'hello');
 const EDGE_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'edge-demo');
 // a plugin with permissions.homePresence (gc.homeNetwork, tests/gateway_presence.test.js)
 const PRESENCE_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'presence-demo');
+// a plugin with permissions.homeInternet + homeCache (tests/gateway_home_plugins.test.js)
+const HOME_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'home-demo');
 
 const trusted = signature.generateKeyPair();
 const stranger = signature.generateKeyPair();
@@ -39,4 +41,10 @@ function presencePackage(o = {}) {
   return packDir(PRESENCE_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
 }
 
-module.exports = { HELLO, EDGE_DEMO, PRESENCE_DEMO, helloPackage, edgePackage, presencePackage, trusted, stranger };
+/** The home network test plugin (DNS pause, home cache), like helloPackage. */
+function homePackage(o = {}) {
+  const key = o.sign === undefined || o.sign === 'trusted' ? trusted.privateSeed : (o.sign === 'stranger' ? stranger.privateSeed : '');
+  return packDir(HOME_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
+}
+
+module.exports = { HELLO, EDGE_DEMO, PRESENCE_DEMO, HOME_DEMO, helloPackage, edgePackage, presencePackage, homePackage, trusted, stranger };

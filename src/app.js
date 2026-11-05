@@ -68,7 +68,9 @@ function createApp() {
     // buffer (≤ 48 h), presence events; the speed test upload streams and checks
     // its own limit (services/inetq.js speedUp — never parsed, never buffered)
     if (req.path === '/api/v1/gateway/speedtest/up') return next();
-    const GATEWAY_BODY_MAX = { '/api/v1/gateway/discovery': 512 * 1024, '/api/v1/gateway/netwatch': 1024 * 1024, '/api/v1/gateway/inetq': 512 * 1024, '/api/v1/gateway/presence': 64 * 1024 };
+    // phase 3b: the DNS filter statistics (5 minutes), the home cache report (≤ 5000 sha256 per list)
+    const GATEWAY_BODY_MAX = { '/api/v1/gateway/discovery': 512 * 1024, '/api/v1/gateway/netwatch': 1024 * 1024, '/api/v1/gateway/inetq': 512 * 1024, '/api/v1/gateway/presence': 64 * 1024,
+      '/api/v1/gateway/dns': 256 * 1024, '/api/v1/gateway/cache': 1024 * 1024 };
     const MAX_GATEWAY_BODY = GATEWAY_BODY_MAX[req.path] || 16 * 1024;
     if (len > MAX_GATEWAY_BODY) {
       return res.status(413).json({ ok: false, error: 'Payload too large' });

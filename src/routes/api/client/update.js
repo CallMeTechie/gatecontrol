@@ -279,7 +279,7 @@ const updateRouter = Router();
  * GET /api/v1/client/update/check
  * Query: ?version=1.2.1&platform=windows&client=pro|community
  * Returns: { ok, available, version?, downloadUrl?, releaseNotes?,
- *            manifest?, signature?, channel, minVersion, mandatory }
+ *            manifest?, signature?, channel, minVersion, mandatory, lan? }
  *
  * channel / minVersion / mandatory are unsigned UX hints (older clients
  * ignore them). mandatory = an update is available and the client is below
@@ -354,6 +354,16 @@ updateRouter.get('/check', async (req, res) => {
       body.manifest = signed.manifest;
       body.signature = signed.signature;
     }
+    // Home cache (gateways phase 3b): the same installer from the gateway of
+    // the home network the client is in, when that gateway holds it —
+    // lan { url, sha256, tlsSha256, exp }. The client loads it there with
+    // certificate pinning (tlsSha256), checks sha256 and falls back to
+    // downloadUrl otherwise. Needs the device's LAN address (?local= or
+    // X-GC-Local) for the gateway-site rule (services/homeNetwork.js).
+    try {
+      const lan = await require('../../../services/homeCache').lanForUpdate(req, clientType, installerAsset, peer);
+      if (lan) body.lan = lan;
+    } catch (err) { logger.debug({ err: err.message }, 'Update check: no home cache hint'); }
     res.json(body);
   } catch (err) {
     logger.error({ error: err.message }, 'Update check failed');
@@ -435,6 +445,10 @@ function isNewerVersion(latest, current) {
 
 module.exports = updateRouter;
 module.exports._pickBetaRelease = pickBetaRelease;
+// The home cache (services/homeCache.js refreshUpdates) keeps the installers the clients get here.
+module.exports._internals = { fetchLatestRelease, fetchSignedManifest, pickInstallerAsset, resolveClientType };
+// Test hook: a release as if GitHub had answered it (cached like a real one).
+module.exports._setReleaseForTest = (clientType, channel, data) => { releaseCache[`${clientType}:${channel}`] = { data, fetchedAt: Date.now() }; };
 // Test hook: drop cached releases/manifests.
 module.exports._resetCache = () => {
   for (const k of Object.keys(releaseCache)) delete releaseCache[k];

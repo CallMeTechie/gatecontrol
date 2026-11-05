@@ -167,11 +167,11 @@ module.exports = (ctx) => {
       await theme(page, 'dark');
       step('edge: #gw/<id>/edge opens the detail on the tab "Edge-Plugins"',
         await until(page, () => document.getElementById('gwe-tab-edge') && document.getElementById('gwe-tab-edge').getAttribute('aria-selected') === 'true'));
-      step('edge: tab bar is a tablist with five tabs, the panel is labelled by the selected one', await page.evaluate(() => {
+      step('edge: tab bar is a tablist with seven tabs, the panel is labelled by the selected one', await page.evaluate(() => {
         const tl = document.querySelector('.gwe-tabs[role="tablist"]');
         const tabs = tl ? [...tl.querySelectorAll('[role="tab"]')] : [];
         const p = document.getElementById('gwe-tabpanel');
-        return tabs.length === 5 && p && p.getAttribute('role') === 'tabpanel' && p.getAttribute('aria-labelledby') === 'gwe-tab-edge'
+        return tabs.length === 7 && p && p.getAttribute('role') === 'tabpanel' && p.getAttribute('aria-labelledby') === 'gwe-tab-edge'
           && tabs.filter((t) => t.tabIndex === 0).length === 1;
       }));
       step('edge: switched off → "Edge ist aus" with a button to switch it on', await visible(page, '#gwe-tabpanel .gwe-big button.btn-primary'));

@@ -192,7 +192,7 @@ function phase3a(fn) {
     try {
       res.json({ ok: true, ...fn(req.gateway.peer_id, req.body || {}) });
     } catch (err) {
-      if (err && (err.code === 'invalid' || err.code === 'ERR_INVALID')) return res.status(400).json({ ok: false, error: err.message });
+      if (err && (err.code === 'invalid' || err.code === 'ERR_INVALID' || err.code === 'invalid_domain')) return res.status(400).json({ ok: false, error: err.message });
       logger.error({ err: err && err.message, peerId: req.gateway.peer_id }, 'gateway phase 3a report failed');
       return res.status(500).json({ ok: false, error: 'internal' });
     }
@@ -222,6 +222,43 @@ router.get('/speedtest/down', (req, res) => require('../../services/inetq').spee
 
 /** POST /api/v1/gateway/speedtest/up — counted and discarded (≤ 100 MB) */
 router.post('/speedtest/up', (req, res) => require('../../services/inetq').speedUp(req, res));
+
+// ─── Phase 3b: DNS filter statistics, home cache ──────────────────────────
+// (contract "Phase 3b", services/homeDns.js, homeCache.js)
+
+/** POST /api/v1/gateway/dns — { period: { from, to }, queries, blocked, cached, avgMs, topBlocked, byProfile, clientsSeen } */
+router.post('/dns', express.json({ limit: '256kb' }), phase3a((peerId, body) => {
+  require('../../services/homeDns').ingest(peerId, body);
+  return {};
+}));
+
+/** GET /api/v1/gateway/cache/want — the stock this gateway should keep (ETag) */
+router.get('/cache/want', (req, res) => {
+  try {
+    const w = require('../../services/homeCache').want(req.gateway.peer_id);
+    res.set('ETag', w.etag);
+    res.set('Cache-Control', 'no-cache');
+    if (req.headers['if-none-match'] === w.etag) return res.status(304).end();
+    return res.json({ ok: true, maxBytes: w.maxBytes, items: w.items });
+  } catch (err) {
+    logger.error({ err: err && err.message, peerId: req.gateway.peer_id }, 'home cache want failed');
+    return res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+/** GET /api/v1/gateway/cache/blob/<sha256> — one blob of its stock, streamed (Range) */
+router.get('/cache/blob/:sha', (req, res) => {
+  try { require('../../services/homeCache').sendBlob(req.gateway.peer_id, req.params.sha, req, res); } catch (err) {
+    logger.error({ err: err && err.message, peerId: req.gateway.peer_id }, 'home cache blob failed');
+    if (!res.headersSent) res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+/** POST /api/v1/gateway/cache — { have, gone?, full?, usedBytes, hits, misses, bytesServed, bytesFetched } */
+router.post('/cache', express.json({ limit: '1mb' }), phase3a((peerId, body) => {
+  require('../../services/homeCache').report(peerId, body);
+  return {};
+}));
 
 /**
  * GET /api/v1/gateway/edge/packages/:id/:version — the signed package of a

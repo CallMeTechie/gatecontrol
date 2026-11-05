@@ -67,6 +67,10 @@ describe('features in the config pull', () => {
       inetq: { enabled: true, speedtest: '4x' },
       presence: { enabled: true, macs: [] },
       ups: { enabled: false, host: '', port: 3493, name: null },
+      // phase 3b (tests/gateway_dns.test.js, gateway_cache.test.js)
+      timezone: require('../src/services/notify/router').serverTz(),
+      dns: { enabled: false },
+      cache: { enabled: false },
     });
     const gateways = require('../src/services/gateways');
     assert.equal(r.body.config_hash, gateways.computeConfigHash(gw.peer.id));
@@ -131,7 +135,7 @@ describe('admin API: features', () => {
 
   it('capabilities in the telemetry win over the version', () => {
     const f = require('../src/services/gatewayFeatures');
-    assert.deepEqual(f.support({ gateway_version: '1.20.0', capabilities: ['netwatch'] }), { netwatch: true, inetq: false, presence: false, ups: false, version: '1.20.0', minGateway: '1.21.0' });
+    assert.deepEqual(f.support({ gateway_version: '1.20.0', capabilities: ['netwatch'] }), { netwatch: true, inetq: false, presence: false, ups: false, dns: false, cache: false, version: '1.20.0', minGateway: '1.21.0', minGateway3b: '1.22.0' });
     assert.equal(f.support({ gateway_version: '1.21.0' }).inetq, true);
     assert.equal(f.support({}).ups, false);
   });
@@ -535,7 +539,8 @@ describe('notification catalogue', () => {
   it('a group "network" with its own admin-only topic', () => {
     const notifications = require('../src/services/notifications');
     const g = notifications.CATALOGUE.find((x) => x.id === 'network');
-    assert.deepEqual(g.events.map((e) => e.id), ['netwatch_new_device', 'inet_outage', 'ups_state']);
+    // phase 3b adds dns_filter (tests/gateway_dns.test.js)
+    assert.deepEqual(g.events.map((e) => e.id), ['netwatch_new_device', 'inet_outage', 'ups_state', 'dns_filter']);
     const c = require('../src/services/notify/constants');
     assert.ok(c.CORE_TOPICS.includes('network'));
     assert.ok(c.ADMIN_ONLY_TOPICS.has('network'));

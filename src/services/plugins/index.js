@@ -153,6 +153,9 @@ function permissionSummary(m, lang) {
     devices: !!p.devices,
     // phase 3a: at home / away of people who agreed, by their phone in the home network (gc.homeNetwork)
     homePresence: !!p.homePresence,
+    // phase 3b: internet of a person at home (pause, extra time) / files in the gateways' home caches
+    homeInternet: !!p.homeInternet,
+    homeCache: !!p.homeCache,
     // person groups (docs/plugins.md "Groups"): 'read' | 'manage' | null
     groups: p.groups === 'read' || p.groups === 'manage' ? p.groups : null,
     // Google Drive / OneDrive of a person (gc.cloud) and what for

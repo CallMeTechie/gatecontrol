@@ -51,6 +51,18 @@ function has(pluginId, userId, { write = false } = {}) {
   return write ? e.write > 0 : (e.read + e.write) > 0;
 }
 
+/**
+ * The people with a changing request (POST/PUT/PATCH/DELETE) to `pluginId`
+ * in flight right now, by id (phase 3b: gc.homeNetwork.internet acts on
+ * behalf of such a person — the actor — for somebody else, e.g. a parent
+ * pausing a child's internet).
+ */
+function writers(pluginId) {
+  const m = active.get(pluginId);
+  if (!m) return [];
+  return [...m.entries()].filter(([, e]) => e.write > 0).map(([uid]) => uid).sort((a, b) => a - b);
+}
+
 function _resetForTest() { active.clear(); }
 
-module.exports = { run, has, _resetForTest };
+module.exports = { run, has, writers, _resetForTest };

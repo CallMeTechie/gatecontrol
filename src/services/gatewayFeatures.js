@@ -12,6 +12,11 @@
 //     inetq    { enabled, speedtest: 'off'|'4x'|'hourly', targets? }
 //     presence { enabled, macs }          macs: only of people who agreed themselves
 //     ups      { enabled, host, port, name }
+//     timezone 'Europe/Berlin'         phase 3b: the server's time zone (local
+//                                       times of the gateway: port scan, speed
+//                                       test, the DNS profiles' times)
+//     dns      { enabled, … }          phase 3b: DNS filter (services/homeDns.js)
+//     cache    { enabled, … }          phase 3b: home cache (services/homeCache.js)
 //
 // What a gateway can do is read from its telemetry: `capabilities` (array)
 // or, for a gateway that does not report it, its version (≥ MIN_GATEWAY).
@@ -21,6 +26,8 @@ const { isPrivateIpv4 } = require('../utils/validate');
 const logger = require('../utils/logger');
 
 const MIN_GATEWAY = '1.21.0';
+// phase 3b (DNS filter, home cache): the gateway release after 1.21.0
+const MIN_GATEWAY_3B = '1.22.0';
 const FEATURE_KEYS = ['netwatch', 'inetq', 'presence', 'ups'];
 const SPEEDTEST_PLANS = ['off', '4x', 'hourly'];
 const UPS_NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
@@ -35,7 +42,10 @@ const DEFAULTS = Object.freeze({
 });
 
 // Memory of the parts (MB), contract §6 — guide values for the hint only.
-const MEM_MB = { gateway: 80, netwatch: 15, inetq: 10, edge: 50, deconz: 150, mosquitto: 10 };
+const MEM_MB = { gateway: 80, netwatch: 15, inetq: 10, edge: 50, deconz: 150, mosquitto: 10, dns: 25, cache: 10 };
+// the DNS filter keeps its lists in memory as sorted 53-bit hashes: 8 bytes per entry
+// (gateway side 1: 25 MB guide value with typical lists, measured +3 … 20 MB)
+const DNS_BYTES_PER_ENTRY = 8;
 
 class FeatureError extends Error {
   constructor(code, message) { super(message || code); this.code = code; }
@@ -191,7 +201,23 @@ function configPayload(peerId) {
     inetq: { enabled: s.inetq.enabled, speedtest: s.inetq.speedtest, ...(s.inetq.targets.length ? { targets: s.inetq.targets.slice() } : {}) },
     presence: { enabled: s.netwatch.enabled && s.presence.enabled, macs },
     ups: { enabled: s.ups.enabled, host: s.ups.host, port: s.ups.port, name: s.ups.name },
+    // phase 3b (contract server side 1–3)
+    timezone: timezone(),
+    dns: part(peerId, 'dns', () => require('./homeDns').configPayload(peerId)),
+    cache: part(peerId, 'cache', () => require('./homeCache').configPayload(peerId)),
   };
+}
+
+/** The server's IANA time zone (TZ of the server process), 'UTC' when unknown. */
+function timezone() {
+  try { return require('./notify/router').serverTz() || 'UTC'; } catch { return 'UTC'; }
+}
+
+function part(peerId, name, fn) {
+  try { return fn(); } catch (e) {
+    logger.error({ err: e.message, peerId }, `features.${name} not built — sent as switched off`);
+    return { enabled: false };
+  }
 }
 
 // ─── What the gateway supports ─────────────────────────────────────────
@@ -209,7 +235,13 @@ function support(tel) {
   const caps = Array.isArray(t.capabilities) ? t.capabilities.filter((x) => typeof x === 'string') : null;
   const byVersion = versionAtLeast(t.gateway_version, MIN_GATEWAY);
   const has = (k) => (caps ? caps.includes(k) : byVersion);
-  return { netwatch: has('netwatch'), inetq: has('inetq'), presence: has('presence'), ups: has('ups'), version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY };
+  // phase 3b: DNS filter and home cache from MIN_GATEWAY_3B on (or named in the capabilities)
+  const by3b = versionAtLeast(t.gateway_version, MIN_GATEWAY_3B);
+  const has3b = (k) => (caps && caps.includes(k)) || by3b;
+  return {
+    netwatch: has('netwatch'), inetq: has('inetq'), presence: has('presence'), ups: has('ups'), dns: has3b('dns'), cache: has3b('cache'),
+    version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY, minGateway3b: MIN_GATEWAY_3B,
+  };
 }
 
 // ─── Hardware hints (contract §6) ──────────────────────────────────────
@@ -270,6 +302,17 @@ function memoryEstimate(peerId, s, tel) {
   if (e.edge && e.mqtt) parts.push({ key: 'mosquitto', mb: MEM_MB.mosquitto });
   const z = zigbeeOf(tel);
   if (z && (z.enabled || z.detected)) parts.push({ key: 'deconz', mb: MEM_MB.deconz });
+  // phase 3b: the DNS filter with the entries of the lists its profiles use, the home cache
+  try {
+    const dns = require('./homeDns').get(peerId);
+    if (dns.enabled) {
+      const cat = require('./homeDnsCatalog');
+      const used = new Set(dns.profiles.flatMap((p) => p.lists));
+      const entries = cat.LISTS.filter((l) => used.has(l.id)).reduce((a, l) => a + l.entries, 0);
+      parts.push({ key: 'dns', mb: MEM_MB.dns + Math.round((entries * DNS_BYTES_PER_ENTRY) / 1048576), entries });
+    }
+    if (require('./homeCache').get(peerId).enabled) parts.push({ key: 'cache', mb: MEM_MB.cache });
+  } catch (e) { logger.debug({ err: e.message }, 'phase 3b memory parts unavailable'); }
   const usedMb = parts.reduce((a, p) => a + p.mb, 0);
   const total = Number((tel.hardware && tel.hardware.mem_total) || tel.mem_total);
   const totalMb = Number.isFinite(total) && total > 0 ? Math.round(total / (1024 * 1024)) : null;
@@ -297,6 +340,17 @@ function overview(peerId) {
   let edge = null;
   try { const es = require('./edge/store').settings(g.id); edge = { enabled: es.edgeEnabled, mqtt: es.mqttEnabled }; } catch { edge = null; }
   const z = zigbeeOf(tel);
+  let dns = null;
+  let cache = null;
+  try {
+    const hd = require('./homeDns');
+    const d = hd.get(g.id);
+    const t = hd.telemetryDns(tel);
+    dns = { enabled: d.enabled, profiles: d.profiles.length, state: t ? t.state : null, outage: hd.outageOf(g.id) };
+    const c = require('./homeCache').get(g.id);
+    cache = { enabled: c.enabled, maxBytes: c.maxBytes, path: c.path };
+  } catch (e) { logger.debug({ err: e.message }, 'phase 3b overview parts unavailable'); }
+  const tz = timezone();
   return {
     id: g.id,
     name: g.name,
@@ -314,11 +368,14 @@ function overview(peerId) {
     lanDiscovery: lan,
     edge,
     zigbee: z,
+    dns,
+    cache,
+    timezone: { tz, utc: tz === 'UTC' || tz === 'Etc/UTC' },
   };
 }
 
 module.exports = {
-  DEFAULTS, MIN_GATEWAY, SPEEDTEST_PLANS, MEM_MB, FeatureError,
+  DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
   normalize, get, set, applyPatch, configPayload, support, overview, memoryEstimate, boardOf, speedLimit, zigbeeOf,
   needGateway, telemetryOf, gatewayPeer, notifyGateway, publicIpv4,
 };

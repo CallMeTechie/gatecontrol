@@ -124,7 +124,7 @@ module.exports = (ctx) => {
         await page.goto(`${BASE}/gateways#gw/${GW}`);
         await theme(page, 'dark');
         step('net: the overview shows the card "Funktionen dieses Gateways"', await until(page, () => document.querySelector('.gwn-features [data-feature="netwatch"] [role="switch"]')));
-        step('net: five tabs, Netzwerk and Internet after Übersicht', await page.evaluate(() => [...document.querySelectorAll('.gwe-tabs [role="tab"]')].map((b) => b.dataset.tab).join(',') === 'overview,net,inet,edge,mqtt'));
+        step('net: seven tabs, Netzwerk and Internet after Übersicht (DNS-Filter, Zwischenspeicher: phase 3b)', await page.evaluate(() => [...document.querySelectorAll('.gwe-tabs [role="tab"]')].map((b) => b.dataset.tab).join(',') === 'overview,net,inet,dns,cache,edge,mqtt'));
         step('net: switches for watch, internet, presence, UPS, edge; Zigbee and LAN discovery from what exists', await page.evaluate(() => {
           const f = (k) => document.querySelector(`.gwn-features [data-feature="${k}"]`);
           return ['netwatch', 'inetq', 'presence', 'ups', 'edge', 'lan'].every((k) => f(k) && f(k).querySelector('[role="switch"]'))

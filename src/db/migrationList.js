@@ -3366,6 +3366,108 @@ const migrations = [
     detect: (db) => ['gateway_features', 'netwatch_devices', 'inetq_samples', 'inetq_hourly', 'inetq_outages', 'inetq_speedtests', 'presence_consent', 'presence_state']
       .every((t) => tableExists(db, t)),
   },
+  {
+    version: 129,
+    name: 'gateway_dns_cache',
+    // Phase 3b of the gateways (services/homeDns.js, homeInternet.js,
+    // homeCache.js):
+    //   gateway_dns          per gateway: the DNS filter (profiles, lists,
+    //                        exceptions, forwarding — JSON, normalised on read)
+    //                        and the state of the "filter down" notice
+    //   dns_reports          periods a gateway already reported (idempotence, 2 days)
+    //   dns_stats_day        daily values per gateway (server time zone, 1 year):
+    //                        queries, blocked, cached, response time, the devices
+    //                        that asked, the most blocked domains, per profile
+    //   home_internet        per person: "Internet aus bis" / "Zeiten ausgesetzt
+    //                        bis" set by a plugin (gc.homeNetwork.internet)
+    //   gateway_cache        per gateway: the home cache (path, size, kinds),
+    //                        its secret (encrypted), the last report
+    //   home_cache_blobs     what the server offers to the caches: app updates
+    //                        (files kept by the server) and plugin media
+    //                        (gc.homeCache.offer), content-addressed (sha256)
+    //   home_cache_have      which blobs a gateway holds (its reports)
+    //   cache_stats_day      daily counters of a cache (hits, misses, bytes)
+    sql: `
+      CREATE TABLE IF NOT EXISTS gateway_dns (
+        peer_id        INTEGER PRIMARY KEY REFERENCES peers(id) ON DELETE CASCADE,
+        settings       TEXT NOT NULL DEFAULT '{}',
+        down_since     INTEGER,
+        down_reason    TEXT,
+        down_notified  INTEGER NOT NULL DEFAULT 0,
+        report_at      INTEGER,
+        updated_at     INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS dns_reports (
+        peer_id        INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        from_at        INTEGER NOT NULL,
+        at             INTEGER NOT NULL,
+        PRIMARY KEY (peer_id, from_at)
+      );
+      CREATE TABLE IF NOT EXISTS dns_stats_day (
+        peer_id        INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        day            TEXT NOT NULL,
+        queries        INTEGER NOT NULL DEFAULT 0,
+        blocked        INTEGER NOT NULL DEFAULT 0,
+        cached         INTEGER NOT NULL DEFAULT 0,
+        ms_sum         REAL NOT NULL DEFAULT 0,
+        ms_n           INTEGER NOT NULL DEFAULT 0,
+        clients        TEXT,
+        top            TEXT,
+        by_profile     TEXT,
+        updated_at     INTEGER,
+        PRIMARY KEY (peer_id, day)
+      );
+      CREATE TABLE IF NOT EXISTS home_internet (
+        user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind           TEXT NOT NULL,
+        until_at       INTEGER NOT NULL,
+        actor_user_id  INTEGER,
+        plugin_id      TEXT,
+        created_at     INTEGER NOT NULL,
+        PRIMARY KEY (user_id, kind)
+      );
+      CREATE TABLE IF NOT EXISTS gateway_cache (
+        peer_id        INTEGER PRIMARY KEY REFERENCES peers(id) ON DELETE CASCADE,
+        settings       TEXT NOT NULL DEFAULT '{}',
+        secret_enc     TEXT,
+        used_bytes     INTEGER,
+        report_at      INTEGER,
+        updated_at     INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS home_cache_blobs (
+        sha256         TEXT PRIMARY KEY,
+        size           INTEGER NOT NULL,
+        kind           TEXT NOT NULL,
+        source         TEXT NOT NULL,
+        ref            TEXT,
+        plugin_id      TEXT,
+        media_id       TEXT,
+        file           TEXT,
+        user_ids       TEXT,
+        priority       INTEGER NOT NULL DEFAULT 50,
+        label          TEXT,
+        created_at     INTEGER NOT NULL,
+        updated_at     INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_home_cache_blobs_source ON home_cache_blobs(source, ref);
+      CREATE TABLE IF NOT EXISTS home_cache_have (
+        peer_id        INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        sha256         TEXT NOT NULL,
+        at             INTEGER NOT NULL,
+        PRIMARY KEY (peer_id, sha256)
+      );
+      CREATE TABLE IF NOT EXISTS cache_stats_day (
+        peer_id        INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        day            TEXT NOT NULL,
+        hits           INTEGER NOT NULL DEFAULT 0,
+        misses         INTEGER NOT NULL DEFAULT 0,
+        bytes_served   INTEGER NOT NULL DEFAULT 0,
+        bytes_fetched  INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (peer_id, day)
+      );`,
+    detect: (db) => ['gateway_dns', 'dns_reports', 'dns_stats_day', 'home_internet', 'gateway_cache', 'home_cache_blobs', 'home_cache_have', 'cache_stats_day']
+      .every((t) => tableExists(db, t)),
+  },
 ];
 
 module.exports = { migrations };

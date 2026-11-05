@@ -108,16 +108,16 @@ describe('gateway-net.js', () => {
 
   it('the page loads the scripts in order and hands over the gwn.* strings', () => {
     const tpl = read('templates/aurora/pages/gateways.njk');
-    const order = ['gateway-edge-kit.js', 'gateway-edge.js', 'gateway-net-kit.js', 'gateway-net.js', 'gateways.js'].map((f) => tpl.indexOf('/js/' + f));
+    const order = ['gateway-edge-kit.js', 'gateway-edge.js', 'gateway-net-kit.js', 'gateway-net.js', 'gateway-home-kit.js', 'gateway-home.js', 'gateways.js'].map((f) => tpl.indexOf('/js/' + f));
     assert.ok(order.every((i) => i > 0));
     assert.deepEqual(order.slice().sort((a, b) => a - b), order);
-    assert.match(tpl, /data-prefixes="gwiz\. gwe\. gwn\. common\."/);
-    assert.match(read('src/routes/index.js'), /GWIZ_I18N_PREFIXES = \['gwiz\.', 'gwe\.', 'gwn\.', 'common\.'\]/);
+    assert.match(tpl, /data-prefixes="gwiz\. gwe\. gwn\. gwh\. common\."/);
+    assert.match(read('src/routes/index.js'), /GWIZ_I18N_PREFIXES = \['gwiz\.', 'gwe\.', 'gwn\.', 'gwh\.', 'common\.'\]/);
   });
 
-  it('the tabs: Übersicht, Netzwerk, Internet, Edge-Plugins, MQTT', () => {
+  it('the tabs: Übersicht, Netzwerk, Internet, DNS-Filter, Zwischenspeicher, Edge-Plugins, MQTT', () => {
     const EK = require('../public/js/gateway-edge-kit');
-    assert.deepEqual(EK.TABS, ['overview', 'net', 'inet', 'edge', 'mqtt']);
+    assert.deepEqual(EK.TABS, ['overview', 'net', 'inet', 'dns', 'cache', 'edge', 'mqtt']);
     assert.equal(EK.hashFor(7, 'net'), '#gw/7/net');
     assert.deepEqual(EK.parseHash('#gw/7/inet'), { id: '7', tab: 'inet' });
   });

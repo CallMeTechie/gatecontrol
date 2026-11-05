@@ -798,6 +798,8 @@
       body.appendChild(featRow(t('gwn.feat.lan'), t('gwn.feat.lan_d'), swLan,
         d.lanDiscovery.licensed ? [] : [h('span', { class: 'gwe-d gwe-muted', text: t('gwn.feat.lan_license') })], 'lan'));
     }
+    // DNS filter, home cache, local time (phase 3b, gateway-home.js)
+    if (window.GCGatewayHome) window.GCGatewayHome.featureRows(id, d, (gid) => load('feat', gid, true).then(() => refreshFeatures(gid), () => refreshFeatures(gid))).forEach((r) => body.appendChild(r));
     // memory
     const m = d.memory || {};
     if (m.totalMb) {
@@ -834,5 +836,8 @@
   }
   function unmount() { cur = null; }
 
-  window.GCGatewayNet = { mount, unmount, prefetch, featuresCard, badge, _cache: cache, _view: view };
+  // the card again after a change elsewhere (tabs "DNS-Filter" / "Zwischenspeicher", gateway-home.js)
+  function reloadFeatures(id) { return load('feat', id, true).then(() => refreshFeatures(id), () => refreshFeatures(id)); }
+
+  window.GCGatewayNet = { mount, unmount, prefetch, featuresCard, badge, reloadFeatures, _cache: cache, _view: view };
 })();

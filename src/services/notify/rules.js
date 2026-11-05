@@ -42,10 +42,12 @@ const CORE_DEFAULTS = {
   netwatch_new_device: { priority: 'high' },
   inet_outage: { priority: 'normal' },
   ups_state: { priority: 'high' },
+  // phase 3b
+  dns_filter: { priority: 'high' },
 };
 
 // Event types that end an alarm of their row (same collapse key).
-const RECOVERY_TYPES = new Set(['gateway_alive', 'gateway_recovered', 'route_up', 'resource_recovered', 'ups_on_line']);
+const RECOVERY_TYPES = new Set(['gateway_alive', 'gateway_recovered', 'route_up', 'resource_recovered', 'ups_on_line', 'dns_filter_up']);
 
 const BY_TYPE = new Map();
 for (const ev of notifications.EVENTS) for (const t of ev.types) BY_TYPE.set(t, ev);

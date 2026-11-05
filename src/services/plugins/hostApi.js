@@ -1465,6 +1465,73 @@ function presenceCall(plugin, op, args) {
   throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
 }
 
+// ─── Internet at home (permissions.homeInternet, phase 3b) ──────────────
+//
+// gc.homeNetwork.internet.status(userId) / pause(userId, until | minutes) /
+// resume(userId) / extend(userId, minutes) — services/homeInternet.js. The
+// DNS filter of the gateways pauses a person's devices or suspends the times
+// of their profile. Changes only inside a changing request (POST/PUT/PATCH/
+// DELETE) of a signed-in person to this plugin — that person is the actor
+// (activity log); never in a tick, a hook, a GET or on a kiosk device. The
+// plugin decides itself who may (the family plugin: parents). No MACs.
+
+function internetCall(plugin, op, args) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.homeInternet === true, 'ERR_HOME_INTERNET_DENIED', 'this plugin has no homeInternet permission');
+  const hi = require('../homeInternet');
+  const uid = args && args.userId;
+  need(Number.isSafeInteger(uid) && uid > 0, 'ERR_INVALID', 'invalid user id');
+  try {
+    if (op === 'status') return hi.status(uid);
+    const actors = require('./personContext').writers(plugin.id);
+    need(actors.length > 0, 'ERR_NOT_PERSON', 'only inside a changing request (POST/PUT/PATCH/DELETE) of a signed-in person');
+    const ctx = { pluginId: plugin.id, actors };
+    if (op === 'pause') return hi.pause(uid, args.until, ctx);
+    if (op === 'resume') return hi.resume(uid, ctx);
+    if (op === 'extend') return hi.extend(uid, args.minutes, ctx);
+  } catch (e) {
+    if (e && (e.code === 'ERR_INVALID' || e.code === 'ERR_NOT_FOUND')) throw new HostApiError(e.code, e.message);
+    throw e;
+  }
+  throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
+}
+
+// ─── Home cache (permissions.homeCache, phase 3b) ──────────────────────
+//
+// gc.homeCache.offer({ mediaId, kind, userIds?, priority? }) / withdraw(mediaId)
+// / lanHint(sha256 | { mediaId }, req) — services/homeCache.js. A plugin offers
+// its own media (sha256 and size come from the stored file); a lan hint only
+// for the request it answers right now (req.homeRef, requestRefs.js), only
+// when that client is in the home network of a gateway holding the file.
+
+async function homeCacheCall(plugin, op, args) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.homeCache === true, 'ERR_HOME_CACHE_DENIED', 'this plugin has no homeCache permission');
+  const hc = require('../homeCache');
+  const a = args && typeof args === 'object' ? args : {};
+  try {
+    if (op === 'offer') return hc.offer(plugin.id, a);
+    if (op === 'withdraw') return hc.withdraw(plugin.id, a.mediaId);
+    if (op === 'lanHint') {
+      const ctx = require('./requestRefs').get(plugin.id, a.ref);
+      need(ctx, 'ERR_NOT_IN_REQUEST', 'lanHint(sha256, req) only while answering that request (req.homeRef)');
+      let sha = typeof a.sha256 === 'string' ? a.sha256.toLowerCase() : null;
+      if (!sha && typeof a.mediaId === 'string') {
+        const r = require('./media').row(plugin.id, a.mediaId);
+        need(r, 'ERR_NOT_FOUND', 'no such media of this plugin');
+        sha = String(r.sha256 || '').toLowerCase();
+      }
+      need(typeof sha === 'string' && /^[0-9a-f]{64}$/.test(sha), 'ERR_INVALID', 'sha256: 64 hex characters');
+      // only files this plugin offered (never another plugin's or an app update by guessing its sha256)
+      const own = db().prepare("SELECT 1 FROM home_cache_blobs WHERE sha256 = ? AND source = 'plugin' AND plugin_id = ?").get(sha, plugin.id);
+      if (!own) return null;
+      return await hc.lanFor(ctx, sha);
+    }
+  } catch (e) {
+    if (e && (e.code === 'ERR_INVALID' || e.code === 'ERR_NOT_FOUND')) throw new HostApiError(e.code, e.message);
+    throw e;
+  }
+  throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
+}
+
 // ─── Uploads to a home target (gc.net.uploadTarget → target.upload, since 1.193.0) ────
 //
 // gc.net.uploadTarget(id, path, { index, method, query, headers, form: {
@@ -2056,6 +2123,15 @@ async function handle(plugin, api, args, ctx) {
     case 'homeNetwork.presence.setConsent': return presenceCall(plugin, 'setConsent', args);
     case 'homeNetwork.presence.devices': return presenceCall(plugin, 'devices', args);
     case 'homeNetwork.presence.setCounts': return presenceCall(plugin, 'setCounts', args);
+    // internet at home (permissions.homeInternet, homeInternet.js — phase 3b)
+    case 'homeNetwork.internet.status': return internetCall(plugin, 'status', args);
+    case 'homeNetwork.internet.pause': return internetCall(plugin, 'pause', args);
+    case 'homeNetwork.internet.resume': return internetCall(plugin, 'resume', args);
+    case 'homeNetwork.internet.extend': return internetCall(plugin, 'extend', args);
+    // home cache (permissions.homeCache, homeCache.js — phase 3b)
+    case 'homeCache.offer': return homeCacheCall(plugin, 'offer', args);
+    case 'homeCache.withdraw': return homeCacheCall(plugin, 'withdraw', args);
+    case 'homeCache.lanHint': return homeCacheCall(plugin, 'lanHint', args);
     // person groups (permissions.groups, groups.js): read; ensure / remove need "manage"
     case 'groups.list': return require('./groups').call(plugin, 'list', args);
     case 'groups.get': return require('./groups').call(plugin, 'get', args);

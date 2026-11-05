@@ -73,14 +73,14 @@ const NAMED_TYPES = new Set([
   'peer_expired', 'gateway_down', 'gateway_alive', 'gateway_offline', 'gateway_recovered', 'route_down',
   'route_up', 'route_created', 'route_deleted', 'resource_alert', 'resource_recovered',
   'support_bundle_uploaded', 'storage_target_unreachable', 'storage_target_recovered',
-  'netwatch_new_device', 'inet_outage', 'ups_on_battery', 'ups_on_line',
+  'netwatch_new_device', 'inet_outage', 'ups_on_battery', 'ups_on_line', 'dns_filter_down', 'dns_filter_up',
 ]);
 const ROUTE_FOR_EVENT = {
   gateway_state: 'gateways', peer_connection: 'vpn', peer_lifecycle: 'vpn', peer_expired: 'vpn',
   route_state: 'services', route_lifecycle: 'services',
-  netwatch_new_device: 'gateways', inet_outage: 'gateways', ups_state: 'gateways',
+  netwatch_new_device: 'gateways', inet_outage: 'gateways', ups_state: 'gateways', dns_filter: 'gateways',
 };
-const ALARM_EVENTS = new Set(['gateway_state', 'route_state', 'resources', 'ups_state']);
+const ALARM_EVENTS = new Set(['gateway_state', 'route_state', 'resources', 'ups_state', 'dns_filter']);
 
 function num(v) {
   const n = Number(v);
@@ -112,6 +112,7 @@ function coreContext(type, details) {
   else if (type.startsWith('storage_target_') && num(d.targetId)) collapseKey = `storage:${num(d.targetId)}`;
   else if (type === 'netwatch_new_device' && peerId) collapseKey = `netwatch:${peerId}`;
   else if ((type === 'ups_on_battery' || type === 'ups_on_line') && peerId) collapseKey = `ups:${peerId}`;
+  else if ((type === 'dns_filter_down' || type === 'dns_filter_up') && peerId) collapseKey = `dns:${peerId}`;
   return { peerId, name: name ? sanitize.line(name, 80) : null, collapseKey };
 }
 
@@ -214,6 +215,8 @@ function coreFacts(lang, type, details, ctx) {
       return [f('outage_duration', num(d.minutes) ? text.t(lang, 'push.fact.minutes', { count: String(num(d.minutes)) }) : null),
         f('cause', ['router', 'isp', 'unknown'].includes(d.cause) ? text.t(lang, 'push.inet.cause_' + d.cause) : null)].filter(Boolean);
     }
+    if (type === 'dns_filter_down') return [f('reason', ['offline', 'port_busy'].includes(d.reason) ? text.t(lang, 'push.dns.reason_' + d.reason) : null)].filter(Boolean);
+    if (type === 'dns_filter_up') return [f('outage_duration', num(d.minutes) ? text.t(lang, 'push.fact.minutes', { count: String(num(d.minutes)) }) : null)].filter(Boolean);
     if (type === 'ups_on_battery') {
       const c = Number(d.charge);
       return [f('charge', Number.isFinite(c) ? `${Math.round(c)} %` : null),
