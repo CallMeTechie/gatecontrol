@@ -281,14 +281,21 @@ describe('package endpoint', () => {
     assert.equal((await anon.get(pkgUrl())).status, 401);
     assert.equal((await anon.get('/api/v1/gateway/edge/packages/hello/1.0.0').set('Authorization', 'Bearer ' + gwA.apiToken)).status, 403);
   });
+  it('package files: paths stay inside the plugin folder, only the matching package is kept', () => {
+    const packages = require('../src/services/edge/packages');
+    for (const v of ['..', '../hello', '1.0.0/../../x', '', '.hidden']) assert.throws(() => packages.pathOf(P, v, packages.FILE), /invalid version|outside/, v);
+    assert.throws(() => packages.pathOf('../x', '1.0.0', packages.FILE));
+    assert.throws(() => packages.save(P, '1.0.0', edgePackage({ overrides: { version: '9.9.9' } })), /does not match/);
+    assert.throws(() => packages.save(P, '1.0.0', Buffer.from('not a package')));
+  });
   it('a package missing on disk (older install, restore) is rebuilt with the same signature', async () => {
     const packages = require('../src/services/edge/packages');
     const fs = require('node:fs');
-    const before = packages.info(P, '1.0.0');
-    fs.unlinkSync(before.file);
+    const file = packages.pathOf(P, '1.0.0', packages.FILE);
+    fs.unlinkSync(file);
     packages._clearCacheForTest();
-    const after = packages.info(P, '1.0.0');
-    const files = require('../src/services/plugins/package').decode(fs.readFileSync(after.file));
+    assert.match(packages.info(P, '1.0.0').sha256, /^[0-9a-f]{64}$/);
+    const files = require('../src/services/plugins/package').decode(fs.readFileSync(file));
     assert.equal(require('../src/services/plugins/signature').verify(files).status, 'trusted');
   });
 });

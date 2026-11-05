@@ -33,6 +33,9 @@ const PROTOCOL = 'gc-edge.v1';
 const PATH = '/api/v1/gateway/edge/ws';
 // a handler returning this leaves the call unanswered (a gateway that hangs)
 const NO_REPLY = Symbol('no reply');
+const METHOD_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
+const PLUGIN_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const CALL_MAX_MS = 30000;
 
 function wsUrl(serverUrl) {
   const u = new URL(PATH, serverUrl);
@@ -138,12 +141,18 @@ class EdgeHost {
   async onCall(m) {
     const reply = (r) => this.send({ t: 'result', id: m.id, ...r });
     if (!this.enabled(m.plugin)) { reply({ ok: false, error: { code: 'not_enabled', message: 'not running on this gateway' } }); return; }
-    const fn = this.handlers.get(`${m.plugin}|${m.method}`) || this.handlers.get(`${m.plugin}|*`)
-      || (this.o.echo !== false && !this.handlers.size ? (params) => ({ echo: params }) : null);
-    if (!fn) { reply({ ok: false, error: { code: 'unknown_method', message: 'no handler for ' + m.method } }); return; }
-    const ctx = { plugin: m.plugin, method: m.method, emit: (name, data) => this.emit(m.plugin, name, data), config: () => this.configOf(m.plugin) };
+    // only handlers registered with handle() (a Map, never an object property); names as the server allows them
+    const method = typeof m.method === 'string' && METHOD_RE.test(m.method) ? m.method : null;
+    const plugin = typeof m.plugin === 'string' && PLUGIN_RE.test(m.plugin) ? m.plugin : null;
+    let fn = method && plugin ? (this.handlers.get(`${plugin}|${method}`) || this.handlers.get(`${plugin}|*`)) : null;
+    if (!fn && method && plugin && this.o.echo !== false && !this.handlers.size) fn = (params) => ({ echo: params });
+    if (typeof fn !== 'function') { reply({ ok: false, error: { code: 'unknown_method', message: 'no handler for this method' } }); return; }
+    const ctx = { plugin, method, emit: (name, data) => this.emit(plugin, name, data), config: () => this.configOf(plugin) };
     let timer;
-    const limit = new Promise((resolve) => { timer = setTimeout(() => resolve({ timeout: true }), Math.min(30000, m.timeoutMs || 30000)); });
+    // the call's limit, bounded like the server bounds it (100 ms … 30 s; missing or not a number → 30 s)
+    const t = Number(m.timeoutMs);
+    const limitMs = Math.min(CALL_MAX_MS, Math.max(100, Number.isFinite(t) ? t : CALL_MAX_MS));
+    const limit = new Promise((resolve) => { timer = setTimeout(() => resolve({ timeout: true }), limitMs); });
     try {
       const r = await Promise.race([Promise.resolve().then(() => fn(m.params, ctx)).then((v) => ({ v })), limit]);
       if (r.timeout) reply({ ok: false, error: { code: 'timeout', message: 'the edge part did not answer in time' } });
@@ -154,7 +163,11 @@ class EdgeHost {
   }
 
   /** A handler of `method` for `pluginId` ('*': every method) — like gc.handle in the edge part. */
-  handle(pluginId, method, fn) { this.handlers.set(`${pluginId}|${method}`, fn); return this; }
+  handle(pluginId, method, fn) {
+    if (typeof fn !== 'function') throw new TypeError('handle(pluginId, method, fn)');
+    this.handlers.set(`${pluginId}|${method}`, fn);
+    return this;
+  }
 
   /** Send an event of `pluginId` → its seq. Kept until acknowledged (resend() sends them again). */
   emit(pluginId, name, data, { at = new Date().toISOString(), seq } = {}) {

@@ -193,7 +193,11 @@ router.get('/edge/packages/:id/:version', (req, res) => {
   const eff = require('../../services/edge/state').effective(id, peerId);
   if (!eff.ok) return res.status(403).json({ error: 'not_enabled', reason: eff.reason });
   if (eff.plugin.version !== version) return res.status(404).json({ error: 'version_not_installed', installed: eff.plugin.version });
-  const pk = require('../../services/edge/packages').info(id, version);
+  let pk;
+  try { pk = require('../../services/edge/packages').open(id, version); } catch (e) {
+    logger.warn({ plugin: id, err: e.message }, 'edge package not readable');
+    return res.status(500).json({ error: 'package_unavailable' });
+  }
   if (!pk) return res.status(404).json({ error: 'not_found' });
   res.set({
     'Content-Type': 'application/octet-stream',
@@ -203,7 +207,9 @@ router.get('/edge/packages/:id/:version', (req, res) => {
     ETag: `"${pk.sha256}"`,
     'Cache-Control': 'no-store',
   });
-  require('node:fs').createReadStream(pk.file).on('error', () => res.destroy()).pipe(res);
+  // streamed from the descriptor that was measured and hashed (closed at the end)
+  require('node:fs').createReadStream(null, { fd: pk.fd, start: 0, end: Math.max(0, pk.size - 1), autoClose: true })
+    .on('error', () => res.destroy()).pipe(res);
 });
 
 module.exports = router;
