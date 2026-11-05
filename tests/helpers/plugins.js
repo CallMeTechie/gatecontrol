@@ -9,6 +9,8 @@ const { packDir } = require('../../scripts/plugin-pack');
 const signature = require('../../src/services/plugins/signature');
 
 const HELLO = path.join(__dirname, '..', 'fixtures', 'plugins', 'hello');
+// a plugin with an edge part (plugin.json `edge`, tests/edge_*.test.js)
+const EDGE_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'edge-demo');
 
 const trusted = signature.generateKeyPair();
 const stranger = signature.generateKeyPair();
@@ -23,4 +25,10 @@ function helloPackage(o = {}) {
   return packDir(HELLO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
 }
 
-module.exports = { HELLO, helloPackage, trusted, stranger };
+/** The edge test plugin, like helloPackage (overrides replace top-level plugin.json keys). */
+function edgePackage(o = {}) {
+  const key = o.sign === undefined || o.sign === 'trusted' ? trusted.privateSeed : (o.sign === 'stranger' ? stranger.privateSeed : '');
+  return packDir(EDGE_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
+}
+
+module.exports = { HELLO, EDGE_DEMO, helloPackage, edgePackage, trusted, stranger };

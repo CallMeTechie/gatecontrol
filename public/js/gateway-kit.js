@@ -30,6 +30,130 @@
   const NAS_DIR = '/volume1/docker/gatecontrol-gateway';
   const DECONZ_PORT = 8090;
 
+  // Edge container and local MQTT broker of the gateway — exactly as in docker-compose.example.yml
+  // of gatecontrol-gateway (since v1.19.0; contract gc-edge.v1 "Änderung Gateway-Seite" 1 and the
+  // mqtt service): edge = the gateway image with another command, no privileges, user 61001, idle
+  // until the server switches edge parts on; mqtt = mosquitto (digest-pinned) behind a small watcher,
+  // idle until the server switches MQTT on (the edge host writes its files to the edge-mqtt volume).
+  // `$$` is compose's escape for a literal `$` in the watcher script.
+  const EDGE_SERVICES = [
+    '',
+    '  # Edge parts of plugins in the home network (switched on per gateway in GateControl).',
+    '  # Same image as the gateway, another command; runs without privileges as user 61001',
+    '  # and stays idle until GateControl switches edge parts on for this gateway.',
+    '  # Leave out the services edge and mqtt (and the edge-* volumes) if you do not want edge parts.',
+    '  edge:',
+    '    image: ghcr.io/callmetechie/gatecontrol-gateway:latest',
+    '    entrypoint: ["/sbin/tini", "--", "node", "src/edge/main.js"]',
+    '    restart: unless-stopped',
+    '    network_mode: host        # LAN devices (UDP/multicast/mDNS) like the gateway',
+    '    user: "61001:61001"       # fixed UID: the network fence (owner match) depends on it',
+    '    cap_drop:',
+    '      - ALL',
+    '    security_opt:',
+    '      - no-new-privileges:true',
+    '    read_only: true',
+    '    tmpfs:',
+    '      - /tmp:size=16m',
+    '    mem_limit: 512m',
+    '    pids_limit: 256',
+    '    volumes:',
+    '      - type: volume',
+    '        source: edge-run',
+    '        target: /run/gc-edge',
+    '        read_only: true',
+    '        volume: { nocopy: true }',
+    '      - type: volume',
+    '        source: edge-status',
+    '        target: /run/gc-edge-status',
+    '        volume: { nocopy: true }',
+    '      - edge-state:/state-edge',
+    '      - edge-mqtt:/gc-mqtt   # broker files (owner 61001 from the image)',
+    '    environment:',
+    '      - LOG_LEVEL=info',
+    '    healthcheck:',
+    '      test: ["CMD", "node", "src/edge/healthcheck.js"]',
+    '      interval: 60s',
+    '      timeout: 5s',
+    '      retries: 3',
+    '      start_period: 60s',
+    '    logging:',
+    '      driver: json-file',
+    '      options:',
+    '        max-size: "10m"',
+    '        max-file: "3"',
+    '',
+    '  # Local MQTT broker. Idle (only a small watcher) until GateControl switches MQTT on;',
+    '  # the edge host then writes mosquitto.conf/passwd/acl to /gc-mqtt. Port 1883 only on',
+    '  # LAN addresses, no anonymous access. The watcher restarts Mosquitto when the',
+    '  # configuration changes and sends SIGHUP when the accounts change.',
+    '  mqtt:',
+    '    image: eclipse-mosquitto:2.1.2-alpine@sha256:860aeb5d63ce509508f6dcfb2bc8a1c1dd2bc60555b562b45ce90e52d8dabb0f',
+    '    entrypoint:',
+    '      - /bin/sh',
+    '      - -c',
+    '      - |',
+    '        C=/gc-mqtt; p=""; s=""; r=""',
+    '        halt() { if [ -n "$$p" ]; then kill "$$p" 2>/dev/null; wait "$$p" 2>/dev/null; fi; p=""; }',
+    '        trap \'halt; exit 0\' TERM INT',
+    '        while :; do',
+    '          if [ -f "$$C/enabled" ] && [ -f "$$C/mosquitto.conf" ]; then',
+    '            n="$$(cksum < "$$C/mosquitto.conf")"',
+    '            if [ -n "$$p" ] && ! kill -0 "$$p" 2>/dev/null; then p=""; fi',
+    '            if [ -z "$$p" ] || [ "$$n" != "$$s" ]; then',
+    '              halt; mosquitto -c "$$C/mosquitto.conf" & p=$$!',
+    '              s="$$n"; r="$$(cat "$$C/reload" 2>/dev/null)"',
+    '            elif [ "$$(cat "$$C/reload" 2>/dev/null)" != "$$r" ]; then',
+    '              r="$$(cat "$$C/reload" 2>/dev/null)"; kill -HUP "$$p"',
+    '            fi',
+    '          else',
+    '            halt; s=""',
+    '          fi',
+    '          sleep 2 & wait $$!',
+    '        done',
+    '    restart: unless-stopped',
+    '    network_mode: host',
+    '    user: "61001:61001"       # like the edge host: reads its files (0600)',
+    '    cap_drop:',
+    '      - ALL',
+    '    security_opt:',
+    '      - no-new-privileges:true',
+    '    read_only: true',
+    '    mem_limit: 128m',
+    '    pids_limit: 32',
+    '    depends_on:',
+    '      - edge                  # creates the volume with owner 61001',
+    '    volumes:',
+    '      - type: volume',
+    '        source: edge-mqtt',
+    '        target: /gc-mqtt',
+    '        volume: { nocopy: true }',
+    '    logging:',
+    '      driver: json-file',
+    '      options:',
+    '        max-size: "10m"',
+    '        max-file: "3"',
+    '',
+    'volumes:',
+    '  # tmpfs shared with the gateway: the gateway (root) writes, the setgid bit gives every',
+    '  # file group 61001 → the edge container can read, not change',
+    '  edge-run:',
+    '    driver_opts:',
+    '      type: tmpfs',
+    '      device: tmpfs',
+    '      o: "size=1m,uid=0,gid=61001,mode=2750"',
+    '  # tmpfs shared: the edge host writes its summary, the gateway reads it',
+    '  edge-status:',
+    '    driver_opts:',
+    '      type: tmpfs',
+    '      device: tmpfs',
+    '      o: "size=1m,uid=61001,gid=61001,mode=0755"',
+    '  # packages of the edge parts + gc.store (owner 61001 from the image)',
+    '  edge-state:',
+    '  # broker files from the edge host + Mosquitto data (data/)',
+    '  edge-mqtt:',
+  ];
+
   // ─── docker-compose.yml (onboarding) ──────────────────────────────────
   // platform: synology → wireguard-go userspace (needs /dev/net/tun; DSM and
   // other hosts without the WireGuard kernel module), linux → kernel WG.
@@ -44,8 +168,8 @@
 
     if (network === 'bridge') {
       headerNotes.push(
-        '# Bridge mode: HTTP routes only. L4-Routes (raw TCP) and Wake-on-LAN',
-        '# require host-network mode and will NOT work with this compose.');
+        '# Bridge mode: HTTP routes only. L4-Routes (raw TCP), Wake-on-LAN and',
+        '# edge parts of plugins require host-network mode and will NOT work with this compose.');
     }
     if (platform === 'synology') {
       headerNotes.push(
@@ -96,11 +220,30 @@
       '      - /etc/wireguard',
       '    volumes:',
       '      - ./config:/config:ro',
-      '      - ./gateway-state:/state   # rw: auto-update state (self-update flag + last-pull)',
+      '      - ./gateway-state:/state   # rw: auto-update state (self-update flag + last-pull)'
+    );
+    // edge parts of plugins (docs/plugins.md "Edge part"): host network only — the edge container
+    // needs the LAN (UDP, multicast, mDNS) and the gateway's network fence; credentials go over edge-run
+    if (network === 'host') {
+      lines.push(
+        '      # edge container: credentials + fence marker there, its summary back',
+        '      - type: volume',
+        '        source: edge-run',
+        '        target: /run/gc-edge',
+        '        volume: { nocopy: true }',
+        '      - type: volume',
+        '        source: edge-status',
+        '        target: /run/gc-edge-status',
+        '        read_only: true',
+        '        volume: { nocopy: true }'
+      );
+    }
+    lines.push(
       '    environment:',
       '      - LOG_LEVEL=info',
       '      - GATEWAY_ENV_PATH=/config/gateway.env'
     );
+    if (network === 'host') lines.push(...EDGE_SERVICES);
     const header = headerNotes.length > 0 ? headerNotes.join('\n') + '\n' : '';
     return header + lines.join('\n') + '\n';
   }

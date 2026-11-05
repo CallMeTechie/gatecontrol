@@ -634,6 +634,10 @@ function validate(raw, opts = {}) {
   if (raw.migrations != null && !isFile(raw.migrations)) err('migrations: invalid');
   else m.migrations = raw.migrations || 'migrations';
 
+  // edge: the part that runs on home gateways (services/edge/manifest.js, docs/plugins.md "Edge part");
+  // an invalid section refuses the package like every other field
+  m.edge = raw.edge == null ? null : require('../edge/manifest').validate(raw.edge, err, { files: opts.files });
+
   return errors.length ? { ok: false, errors } : { ok: true, manifest: m, errors: [] };
 }
 

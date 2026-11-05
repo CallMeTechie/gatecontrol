@@ -15,7 +15,8 @@ change compared with the installed version (*neu* / *geändert* / *entfällt*).
 Code: `src/services/plugins/` · admin API `src/routes/api/plugins.js` · pages
 `src/routes/plugins.js` · UI `templates/aurora/partials/settings-plugins.njk`,
 `public/js/settings-plugins.js`, `public/js/plugins-ui.js`,
-`public/js/plugin-bridge.js` · example plugin `tests/fixtures/plugins/hello/`.
+`public/js/plugin-bridge.js` · example plugin `tests/fixtures/plugins/hello/` ·
+edge parts on home gateways `src/services/edge/` ("Edge part").
 
 ## Package format (`.gcplugin`)
 
@@ -364,6 +365,8 @@ unsigned build of the same id.
   (`options: [{ value, label }]`), `secret` (stored encrypted, never sent to
   the browser).
 * `permissions.network` may also be an array — short for `{ internet: [...] }`.
+* `edge` (optional): a part that runs on home gateways, with its capabilities —
+  see "Edge part".
 * `permissions.background`: `{ "intervalSeconds": n }` with an integer
   5 ≤ n ≤ 86400 (else `permissions.background.intervalSeconds: invalid`) —
   the host calls the `tick` hook every n seconds; the install dialog shows
@@ -4469,6 +4472,279 @@ are in backups (see "Backup") and are brought into the plugin once. Code:
   `skoda_integration` stay — they are how a plan includes the plugins
   (entitlement source `plan`, see "Licences"); they show no UI themselves.
 
+## Edge part (`edge`, Edge-Teil)
+
+A plugin can bring a second part that runs **on a home gateway**, next to the
+devices: UDP and multicast discovery, mDNS, TCP/HTTP to devices in the home
+network, a local MQTT broker, a Zigbee stick. It runs in the gateway's own
+container `gatecontrol-edge` (no privileges, its own user, a firewall that
+lets it reach only the gateway's LAN subnets, the local broker and this
+server) and talks to the plugin's server part over one WebSocket per gateway.
+Nothing runs on a gateway until an administrator switches the plugin on **for
+that gateway** and confirms the list of capabilities.
+
+Code: `src/services/edge/` (manifest, state, channel `hub.js`, MQTT accounts,
+packages) · admin API `src/routes/api/edge.js` · gateway endpoints
+`src/routes/api/gateway.js` · test edge host `scripts/plugin-edge-host.js` ·
+example `tests/fixtures/plugins/edge-demo/`.
+
+### plugin.json
+
+```json
+"edge": {
+  "entry": "edge/index.js",
+  "minGateway": "1.20.0",
+  "memoryMb": 48,
+  "capabilities": {
+    "udp":    { "ports": [5683], "multicast": ["224.0.1.187"] },
+    "mdns":   { "services": ["_shelly._tcp"] },
+    "tcp":    { "lan": true },
+    "http":   { "lan": true },
+    "mqtt":   { "topics": ["shellies/#"] },
+    "serial": ["zigbee"]
+  }
+}
+```
+
+* `entry` — a `.js` file **inside a folder** of the package (the gateway
+  unpacks only that folder and `plugin.json`).
+* `minGateway` (optional) — older gateways keep the edge part off (`gateway_too_old`).
+* `memoryMb` 16 … 256 (default 48) — the heap of the edge process
+  (`--max-old-space-size`).
+* `capabilities` — each optional; unknown keys refuse the package:
+  * `udp.ports` 1024 … 65535, never 5353 (mDNS only through `mdns`), ≤ 16;
+    `udp.multicast` IPv4 groups in 224.0.0.0/4 without 224.0.0.0/24 (except
+    the mDNS group 224.0.0.251), ≤ 16;
+  * `mdns.services` like `_shelly._tcp` (≤ 16);
+  * `tcp.lan` / `http.lan` — connections to addresses in the gateway's LAN
+    subnets (never the tunnel, never this server); HTTPS is checked fully
+    (or against a pinned certificate hash). `http.selfSigned: true` (needs
+    `lan`) also allows HTTPS without certificate checks for devices with
+    self-signed certificates — its own key `http.selfSigned`, shown with a
+    warning when an administrator confirms the list;
+  * `mqtt.topics` — topic filters on the gateway's broker: no leading `#`/`+`,
+    nothing starting with `$` (`$SYS`), `#` only as the last level, ≤ 16;
+  * `serial` — named devices (`zigbee`); the gateway maps the name to the
+    device its hardware detection found.
+
+A broken `edge` section refuses the install like any other manifest error
+(check *manifest*, e.g. `edge.memoryMb: invalid (16…256)`). The install dialog
+shows the section as `permissions.edge` `{ memoryMb, minGateway, capabilities:
+[{ key, text }] }`. Plugins without `edge` are unchanged.
+
+### Capabilities and approval
+
+Capabilities become flat keys — `udp.port:5683`, `udp.multicast:224.0.1.187`,
+`mdns:_shelly._tcp`, `tcp.lan`, `http.lan`, `mqtt.topic:shellies/#`,
+`serial:zigbee` — and switching a plugin on for a gateway stores the confirmed
+list (snapshot with the plugin version). An **update** that needs a key not
+in that snapshot leaves the plugin off on that gateway (state
+`update_pending`, activity `gateway_edge_update_pending`) until an
+administrator confirms the new list; fewer capabilities need no
+confirmation. **Unsigned** (or untrusted) plugins run on a gateway only while
+*Unsignierte Edge-Teile erlauben* is on for it (`allowUnsignedEdge`, confirmed
+with `ERLAUBEN`/`ALLOW`) — independent of the server-wide policy, which only
+lets them be installed. A plugin that does not run on the server (disabled,
+licence, …) is off on every gateway too (`plugin_off`).
+
+### Server part: `gc.edge`
+
+Only in plugins with an `edge` section:
+
+* `gc.edge.gateways()` → `[{ id, name, state, online, version }]` — the
+  gateways the plugin is set up for. `state`: `running`, `starting`,
+  `crashed`, `stopped`, `denied` (what the gateway reports), `pending` (no
+  report yet), `offline`, `disabled`, `update_pending`, `unsigned`,
+  `plugin_off`, `gateway_too_old`, `edge_off`.
+* `gc.edge.call(gatewayId, method, params, { timeoutMs })` → what the edge
+  part's `gc.handle(method)` returned. `timeoutMs` ≤ 30000 (default 30000),
+  `method` `[A-Za-z0-9_.:-]{1,64}`, the whole call ≤ 64 KB, ≤ 32 open calls per
+  plugin.
+* `gc.edge.on(name, handler)` → `off()`. `handler({ gatewayId, name, data, at,
+  seq })` for the edge part's `gc.emit(name, data)`; `'*'` gets every event.
+  The gateway gets its `ack` only **after the handlers ran** (a handler that
+  throws counts as delivered — the error goes to the plugin's log), events of
+  one gateway arrive one after another. If the plugin process cannot take an
+  event (not running, its handlers time out after 15 s), the server tries
+  again after 1 s, 2 s, 4 s … 30 s and acknowledges nothing after it first.
+  Delivery is at least once: a `seq` seen before is not delivered again
+  within one connection, but after a reconnect an event whose ack was lost
+  can come twice. `seq` ascends per plugin but has gaps (the gateway starts
+  from the time in ms). Built-in names (no
+  `seq`, no ack): `$online` / `$offline` (the gateway's channel), `$started`
+  (the edge part is running there — hand it its configuration again).
+* `gc.edge.configure(gatewayId, data)` → `{ sent: true }` — JSON ≤ 48 KB, held
+  **only in the edge part's memory**; never stored by the server or the
+  gateway. Send it again on `$started` / `$online`.
+
+Errors (`e.code`): `gateway_offline` (no channel, or it closed during the
+call), `not_enabled` (not switched on / not allowed on that gateway now),
+`timeout`, `edge_error` (the edge part failed: `e.message` is
+`"<the gateway's or edge part's code>: <message>"`, e.g. `unknown_method: …`,
+`not_running: …`, `EHOSTUNREACH: …`), `denied` (no `edge` section, or the
+gateway refused a capability), `busy` (32 open calls), `too_large` (call or
+result over 64 KB), `ERR_INVALID` (arguments).
+
+`gc.mqtt.accounts` (plugins whose `edge.capabilities.mqtt` lists topics):
+`create(gatewayId, { name?, label?, topics })` → `{ username, password, acl,
+label }` — an account for one of its devices, user name `<plugin id>-<name or
+random>`, every topic below one of the plugin's `mqtt.topics` (else `denied`),
+the password **only in this answer**; `list(gatewayId)`, `remove(gatewayId,
+username)` — its own accounts only. At most 200 per plugin and gateway.
+
+### Edge part: the process on the gateway
+
+`module.exports = (gc) => { … }` (or an object with `start(gc)`) in
+`edge.entry`. The gateway side documents the API in detail; in short:
+`gc.handle(method, fn)`, `gc.emit(name, data)`, `gc.config()`,
+`gc.onConfig(fn)`, `gc.store.get/set/delete` (≤ 1 MB, a file in its own
+folder), `gc.log.info/warn/error`, `gc.lan.udp.bind(port, opts, onMessage)` /
+`.send(host, port, buf)`, `gc.lan.mdns.browse(service, onFound)`,
+`gc.lan.tcp.connect(host, port)`, `gc.lan.http.request({ method, url,
+headers, body, timeoutMs })`, `gc.mqtt.subscribe(topic, fn)` /
+`.publish(topic, payload, { retain, qos })`, `gc.serial.open(name, {
+baudRate })`. Each checks the approved capabilities; addresses only in the
+gateway's LAN subnets.
+
+### Protocol (gc-edge.v1)
+
+The gateway's edge container opens `GET /api/v1/gateway/edge/ws` with
+`Authorization: Bearer <apiToken of the gateway>` and subprotocol
+`gc-edge.v1` (anything else: `401`/`403`/`400` before the upgrade; 30 failed
+attempts per IP in 5 minutes → `429`). JSON text frames ≤ 64 KB (larger:
+close 1009, binary 1003, invalid JSON 1007); the server pings every 20 s and
+drops a channel silent for 60 s; a newer channel of the same gateway replaces
+the older one (4000); a disabled gateway or a rotated token ends it (4001).
+The first frame must be `hello` within 10 s (else 1008).
+
+Gateway → server: `hello { v: 1, gw: { version, edgeHost, mqtt: { available },
+fence: { active, backend }, hardware } }` · `status { plugins: [{ id, version, state, rssMb, restarts,
+lastError, throttled (dropped events since the last status), buffered }], mqtt: { running, clients, accounts: [{ user,
+connected, lastSeen }] } }` (on change and every 30 s) · `result { id, ok,
+result | error: { code, message } }` · `event { plugin, name, data, at, seq }`
+(`seq` ascending per plugin, with gaps; after the first `state` of a channel
+the gateway sends every unacknowledged event again) · `log { plugin, level, line }`.
+
+Server → gateway: `state` after `hello` and on every change — the complete
+target state: `{ edgeEnabled, allowUnsigned, plugins: [{ id, version, sha256,
+caps, memoryMb, enabled, reason? }], mqtt: { enabled, tls, accounts: [{ user,
+hash, acl: [{ access, topic }] }], pluginTopics: { <id>: [topics] } } }`
+(`reason` for `enabled: false`: `disabled`, `update_pending`, `unsigned`,
+`plugin_off`, `gateway_too_old`; `caps` of a switched-off entry is the
+approved snapshot) · `ack { plugin, seq }` · `call { id, plugin, method,
+params, timeoutMs }` · `configure { plugin, data }`.
+
+Limits on the server: up to 1000 events waiting per gateway × plugin (more
+are dropped unacknowledged — the gateway keeps them and sends them again —
+and noted as throttled; the gateway itself sends at most 50/s), 20 log
+lines/s (more are dropped), log lines ≤ 2 KB, 3000 frames/s per channel
+(more: close 1008).
+
+Gateways run edge parts from **gatecontrol-gateway 1.19.0** on
+(`EDGE_MIN_GATEWAY`; the admin API reports `support: { gatewayVersion,
+edgeSupported, edgeMinGateway }` from the hello or the last heartbeat).
+Compose (the gateway's set-up in GateControl: Synology package, Linux
+compose, token dialog — host network only) carries the services of the
+gateway's `docker-compose.example.yml`: `edge` — the gateway image with
+`node src/edge/main.js`, user 61001, `cap_drop: ALL`, `no-new-privileges`,
+read-only, `mem_limit 512m`, `pids_limit 256` — and `mqtt` — mosquitto
+(`eclipse-mosquitto:2.1.2-alpine`, pinned by digest) behind a small watcher
+that starts it once the edge host has written its configuration, user 61001,
+no privileges, read-only, `mem_limit 128m`, `pids_limit 32` — with the
+volumes `edge-run` / `edge-status` (tmpfs shared with the gateway),
+`edge-state` and `edge-mqtt`. Both stay idle until the server switches edge
+parts (and MQTT) on for the gateway. `update.sh` (vendored from the gateway
+release) also recreates `edge` with the new gateway image.
+
+Packages: `GET /api/v1/gateway/edge/packages/<id>/<version>` (Bearer apiToken)
+returns the signed `.gcplugin` byte for byte as installed (`X-Content-SHA256`
+= `sha256` of the state) — only to a gateway the plugin is switched on for
+(`403 { error: 'not_enabled', reason }`), only the installed version (`404`).
+The gateway verifies the signature itself (format "Signature") with the
+trusted publisher keys in its image.
+
+### MQTT broker
+
+Per gateway *MQTT-Broker* (`mqttEnabled`, optional `mqttTls`; effective only
+while the gateway's edge switch is on too — the edge host manages the broker): mosquitto on
+the gateway on its LAN addresses (TLS optional), no anonymous access. Device accounts are made in the admin API or by plugins
+(`gc.mqtt.accounts`). The password is generated by the server and shown
+**once**; stored and sent to the gateway is only the mosquitto hash
+`$7$101$<base64 salt, 12 bytes>$<base64 PBKDF2-HMAC-SHA512, 64 bytes>` (the
+format of `mosquitto_passwd`), never in the admin API, the activity log or
+the ring buffer. ACL: the topics given (`readwrite`, `read` or `write`; same
+rules as plugin topics, ≤ 16), by default `devices/<user>/#`; at most 256
+accounts per gateway (the broker's limit); a
+`vendorPrefix` adds `<prefix>/<user>/#`. Locked accounts are left out of the
+state. The edge host's own account (access to the `pluginTopics` only) is the
+gateway's business; the user names `gc-edge`, `gatecontrol`, `edge`, `admin`
+and `root` are reserved.
+
+### Administration
+
+Admin API (session, CSRF, admin role — API tokens are refused), under `/api/v1/edge`:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /gateways` | every gateway: switches, channel, gateway version and edge support (`support`), counts (assigned, on, needing attention), MQTT |
+| `GET /gateways/:id` | one gateway: switches, channel, hello (versions, hardware), every plugin with an edge part (capabilities, assignment, state, new capabilities, last status), MQTT status and accounts |
+| `PUT /gateways/:id/settings` | `{ edgeEnabled, mqttEnabled, mqttTls, allowUnsignedEdge, confirm }` |
+| `POST /gateways/:id/plugins/:pluginId/enable` | `{ capabilities: [keys] }` — exactly the current list, else `409 caps_mismatch` with it; unsigned without `allowUnsignedEdge` → `409 unsigned_blocked` |
+| `POST /gateways/:id/plugins/:pluginId/disable` | switch off |
+| `GET /gateways/:id/logs?plugin=&kind=&limit=&before=` | ring buffer, newest first (`kind` `log`, `event`, `system`; `plugin=` empty: the gateway's own notes); 500 entries per gateway × plugin |
+| `GET /gateways/:id/mqtt/accounts` | accounts (no password, no hash) |
+| `POST /gateways/:id/mqtt/accounts` | `{ username, label, topics, vendorPrefix }` → `201 { account, password }` |
+| `PUT /gateways/:id/mqtt/accounts/:accountId` | `{ locked }` |
+| `POST /gateways/:id/mqtt/accounts/:accountId/password` | a new password, once |
+| `DELETE /gateways/:id/mqtt/accounts/:accountId` | delete |
+| `GET /plugins/:pluginId` | a plugin's edge part on every gateway |
+
+Activity log (category *Peers & Gateways*): `gateway_edge_enabled` /
+`gateway_edge_disabled`, `gateway_edge_unsigned_allowed` /
+`gateway_edge_unsigned_blocked`, `gateway_edge_plugin_enabled` /
+`gateway_edge_plugin_disabled`, `gateway_edge_caps_approved` (the newly
+approved keys), `gateway_edge_update_pending`, `gateway_edge_plugin_crashed`
+and `gateway_edge_plugin_throttled` (at most once per 10 minutes per gateway ×
+plugin), `gateway_mqtt_enabled` / `gateway_mqtt_disabled`,
+`gateway_mqtt_account_created` / `_locked` / `_unlocked` / `_password` /
+`_deleted`.
+
+Uninstall *Alles löschen* forgets the plugin's approvals, its ring buffer and
+the MQTT accounts it created; *Daten behalten* keeps them for a reinstall.
+
+### Testing
+
+`scripts/plugin-edge-host.js` is a fake gateway edge container that speaks
+gc-edge.v1 — for the server's tests and for plugin authors trying their
+server part without a gateway:
+
+```js
+const { createEdgeHost } = require('<gatecontrol>/scripts/plugin-edge-host');
+const host = await createEdgeHost({ serverUrl: 'http://127.0.0.1:3000', apiToken: 'gc_gw_…' });
+host.handle('my-plugin', 'devices.list', async (params, ctx) => [{ id: 'lamp' }]);
+await host.waitForState((s) => s.plugins.some((p) => p.id === 'my-plugin' && p.enabled));
+const seq = host.emit('my-plugin', 'device.found', { id: 'lamp' });
+await host.waitForAck('my-plugin', seq);      // after the plugin's gc.edge.on handlers ran
+host.configOf('my-plugin');                    // the last gc.edge.configure data
+host.reportStatus({ plugins: [{ id: 'my-plugin', version: '1.0.0', state: 'crashed', restarts: 1 }] });
+await host.close();
+```
+
+It answers calls with the registered handlers (`ctx.emit`, `ctx.config`),
+refuses calls for plugins the state does not switch on (`not_enabled`),
+reports switched-on plugins as `running` after each state (`autoStatus`),
+keeps unacknowledged events (`resend(pluginId)`), and records every frame
+(`frames`, `state`, `acks`, `configs`). From the command line, against a
+development server and the gateway's apiToken (from its `gateway.env`):
+
+```
+node scripts/plugin-edge-host.js --server http://localhost:3000 --token gc_gw_… [--handlers ./edge-fake.js]
+```
+
+`--handlers` exports `{ '<plugin id>': { '<method>': async (params, ctx) => result } }`;
+without it every call answers `{ echo: params }`. The frames are printed
+(MQTT hashes left out). The server's own tests: `tests/edge_*.test.js`.
+
 ## Lifecycle and activity log
 
 install (`plugin_installed`) · update (`plugin_updated`) · enable/disable
@@ -4482,7 +4758,8 @@ kiosk users marked/unmarked (`kiosk_user_allowed`/`kiosk_user_disallowed`,
 only when something changed) · services called by another plugin
 (`plugin_service`) · media quota changed (`plugin_media_quota`) · "Plugin-Medien
 im Backup" switched (`plugin_media_backup`) · chat notifications: one neutral
-`plugin_notice` line per hour with the count.
+`plugin_notice` line per hour with the count. Edge parts on gateways: see
+"Edge part" › "Administration".
 
 Uninstall *Daten behalten* removes code and registry entry and keeps data,
 licence and access targets for a reinstall; *Alles löschen* (typed plugin name)

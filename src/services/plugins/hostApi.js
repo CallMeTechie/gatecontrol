@@ -1623,6 +1623,11 @@ function callTimeout(api, args) {
   // gc.mail: a connect within its timeoutMs, big messages and SMTP sends longer (mail/index.js)
   if (api.startsWith('mail.')) return require('./mail').callTimeout(api, args);
   if (api === 'http.fetchImage') return 20000;
+  // gc.edge.call: the call's own limit (≤ 30 s) and the way to the gateway and back
+  if (api === 'edge.call') {
+    const t = args && Number.isFinite(args.timeoutMs) ? Math.max(100, Math.min(30000, args.timeoutMs)) : 30000;
+    return t + 5000;
+  }
   return TIMEOUTS.hostCall;
 }
 
@@ -2021,6 +2026,15 @@ async function handle(plugin, api, args, ctx) {
     // permissions.cloudImport: Google Drive / OneDrive of a person (cloud.js, docs/plugins.md "Cloud import")
     case 'cloud.available': case 'cloud.connectUrl': case 'cloud.connections': case 'cloud.disconnect': case 'cloud.list': case 'cloud.import':
       return require('./cloud').call(plugin, api.slice('cloud.'.length), args);
+    // plugin.json `edge`: the plugin's edge part on home gateways (services/edge, docs/plugins.md "Edge part") —
+    // errors carry the codes gateway_offline, not_enabled, timeout, edge_error, denied, busy
+    case 'edge.gateways': return require('../edge').hostGateways(plugin);
+    case 'edge.call': return require('../edge').hostCall(plugin, args);
+    case 'edge.configure': return require('../edge').hostConfigure(plugin, args);
+    // device accounts of the gateway's MQTT broker, only below the plugin's edge mqtt topics
+    case 'mqtt.accounts.create': return require('../edge').hostMqtt(plugin, 'create', args);
+    case 'mqtt.accounts.list': return require('../edge').hostMqtt(plugin, 'list', args);
+    case 'mqtt.accounts.remove': return require('../edge').hostMqtt(plugin, 'remove', args);
     default:
       throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
   }

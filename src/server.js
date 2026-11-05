@@ -89,6 +89,14 @@ async function start() {
       logger.warn({ err: err.message }, 'guac tunnel attach skipped');
     }
 
+    // Edge channel of the gateways (WebSocket /api/v1/gateway/edge/ws, services/edge/hub.js):
+    // edge parts of plugins and the local MQTT broker on home gateways.
+    try {
+      require('./services/edge/hub').attach(server);
+    } catch (err) {
+      logger.warn({ err: err.message }, 'edge channel attach skipped');
+    }
+
     // Sync WireGuard config from DB on startup (ensures peers survive manual config edits)
     setTimeout(async () => {
       try {
@@ -399,6 +407,7 @@ const shutdown = createShutdownHandler({
     () => require('./services/scan').stop(),
     () => require('./services/updateNotify').stop(),
     () => require('./services/notify').stop(),
+    () => require('./services/edge/hub').closeAll(),
     () => { require('./services/plugins').stop().catch(() => {}); },
   ],
   closeDb: () => { require('./db/connection').closeDb(); },

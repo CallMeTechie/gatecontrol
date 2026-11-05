@@ -45,6 +45,10 @@ OLD_DIGEST=""
 [ -n "$CID" ] && OLD_DIGEST="$(repo_digest "$CID")"
 log "container=$CID old_digest=${OLD_DIGEST:-none}"
 
+# Edge-Container im Stack? (gleiches Image, wird nach dem Gateway mitgezogen)
+EDGE=""
+if dc config --services 2>/dev/null | grep -qx "${GC_GW_EDGE_SERVICE:-edge}"; then EDGE="${GC_GW_EDGE_SERVICE:-edge}"; fi
+
 dc pull "$SERVICE" >>"$LOG" 2>&1 || log "pull reported error (continuing)"
 # Guard against set -e: if recreate fails we must still reach the rollback +
 # last-pull steps below (don't let a non-zero exit abort the script).
@@ -75,12 +79,20 @@ services:
   $SERVICE:
     image: $OLD_DIGEST
 YAML
-    docker compose -f "$COMPOSE_DIR/docker-compose.yml" -f "$OVERRIDE" up -d --force-recreate "$SERVICE" >>"$LOG" 2>&1 || log "rollback up failed"
+    # Edge-Container nutzt dasselbe Image → auf denselben Stand zurück
+    if [ -n "$EDGE" ]; then
+      printf '  %s:\n    image: %s\n' "$EDGE" "$OLD_DIGEST" >>"$OVERRIDE"
+    fi
+    docker compose -f "$COMPOSE_DIR/docker-compose.yml" -f "$OVERRIDE" up -d --force-recreate "$SERVICE" $EDGE >>"$LOG" 2>&1 || log "rollback up failed"
   else
     log "no old digest captured — cannot roll back (locally-built image?)"
   fi
 else
   rm -f "$OVERRIDE"   # clear any stale rollback pin after a good update
+  # Edge-Container (gleiches Image, docs/edge.md) auf das neue Image heben
+  if [ -n "$EDGE" ]; then
+    dc up -d --no-deps "$EDGE" >>"$LOG" 2>&1 || log "edge recreate failed"
+  fi
 fi
 
 RUN_DIGEST="$(repo_digest "$(running_cid)")"
