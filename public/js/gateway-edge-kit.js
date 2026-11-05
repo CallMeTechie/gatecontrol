@@ -11,7 +11,8 @@
   else root.GCGatewayEdgeKit = api;
 })(typeof self !== 'undefined' ? self : this, function () {
   // 'net' / 'inet' (phase 3a): tabs "Netzwerk" and "Internet" (public/js/gateway-net.js)
-  const TABS = ['overview', 'net', 'inet', 'edge', 'mqtt'];
+  // 'dns' / 'cache' (phase 3b): tabs "DNS-Filter" and "Zwischenspeicher" (public/js/gateway-home.js)
+  const TABS = ['overview', 'net', 'inet', 'dns', 'cache', 'edge', 'mqtt'];
 
   /**
    * #gw/<id>[/<tab>] → { id, tab } (tab 'overview' when absent or unknown); null for any other hash.

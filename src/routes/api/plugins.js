@@ -85,6 +85,7 @@ function currentUser(req) {
 
 const media = require('../../services/plugins/media');
 const personContext = require('../../services/plugins/personContext');
+const requestRefs = require('../../services/plugins/requestRefs');
 
 function policy() {
   return { allowUnsigned: plugins.allowUnsigned(), backupMedia: media.backupEnabled(), autoUpdate: plugins.autoUpdateMode(), catalogCheck: plugins.catalogCheck() };
@@ -573,7 +574,13 @@ function forwarder(userOf, idOf = (req) => req.params.id, opts = {}) {
       // the person themselves is in this request (signed in, no kiosk device, no automation):
       // host APIs that only act for that person check it (plugins/personContext.js, gc.homeNetwork)
       const person = user.loggedIn !== false && !user.kiosk && !user.automation && Number.isSafeInteger(user.id);
-      const call = () => plugins.request(p.id, { method: req.method, path, query: plainQuery(req.query), body, user, lang: langOf(req) });
+      // gc.homeCache.lanHint (phase 3b): an opaque req.homeRef stands for where this request comes from
+      // (address, token peer, the device's LAN addresses — plugins/requestRefs.js); only with permissions.homeCache
+      const homeCache = !!(p.manifest && p.manifest.permissions && p.manifest.permissions.homeCache === true);
+      const send = (homeRef) => plugins.request(p.id, { method: req.method, path, query: plainQuery(req.query), body, user, lang: langOf(req), ...(homeRef ? { homeRef } : {}) });
+      const call = () => (homeCache
+        ? requestRefs.run(p.id, { ip: req.ip, peerId: req.tokenPeerId == null ? null : req.tokenPeerId, local: require('../../services/homeCache').localOf(req), userId: Number.isSafeInteger(user.id) ? user.id : null }, send)
+        : send(null));
       const out = person ? await personContext.run(p.id, user.id, req.method !== 'GET' && req.method !== 'HEAD', call) : await call();
       res.set('Cache-Control', 'no-store');
       return res.status(out.status).json(out.json);

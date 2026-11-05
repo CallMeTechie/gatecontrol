@@ -327,25 +327,60 @@ function makeEdge() {
 // at home / away of people who agreed themselves, by their phone in the home network. Never MAC/IP addresses.
 const presenceHandlers = [];
 
-function makeHomeNetwork() {
+function makeHomeNetwork(features) {
   return Object.freeze({
-    presence: Object.freeze({
-      /** list() → [{ userId, home, since, source: 'wifi' }] — people who agreed and have a known state */
-      list: () => hostCall('homeNetwork.presence.list', {}),
-      /** on(handler({ userId, home (true|false|null = no longer known), since, source })) → off() */
-      on: (handler) => {
-        if (typeof handler !== 'function') throw new TypeError('gc.homeNetwork.presence.on(handler)');
-        presenceHandlers.push(handler);
-        return () => { const i = presenceHandlers.indexOf(handler); if (i >= 0) presenceHandlers.splice(i, 1); };
-      },
-      /** consent(userId) → { consent, since } */
-      consent: (userId) => hostCall('homeNetwork.presence.consent', { userId }),
-      /** setConsent(userId, enabled) — only inside a changing request (POST/PUT/PATCH/DELETE) of that very person */
-      setConsent: (userId, enabled) => hostCall('homeNetwork.presence.setConsent', { userId, enabled }),
-      /** devices(userId) → [{ id, name, lastSeen, counts, gateway }] — only inside a request of that person */
-      devices: (userId) => hostCall('homeNetwork.presence.devices', { userId }),
-      /** setCounts(userId, deviceId, counts) — only inside a changing request of that person */
-      setCounts: (userId, deviceId, counts) => hostCall('homeNetwork.presence.setCounts', { userId, deviceId, counts }),
+    ...(features.homePresence ? { presence: makePresence() } : {}),
+    // gc.homeNetwork.internet (permissions.homeInternet, phase 3b, docs/plugins.md "Internet at home"): the DNS
+    // filter's pause / extra time for a person's devices at home. Changes only inside a changing request of a
+    // signed-in person (the actor, logged); the plugin checks itself that this person may decide (a parent).
+    ...(features.homeInternet ? {
+      internet: Object.freeze({
+        /** status(userId) → { userId, profile: { id, name, gateway } | null, paused, extended, nextSchedule, devices, filtered } */
+        status: (userId) => hostCall('homeNetwork.internet.status', { userId }),
+        /** pause(userId, untilISO | minutes) — internet off (≤ 7 days) → status */
+        pause: (userId, until) => hostCall('homeNetwork.internet.pause', { userId, until }),
+        /** resume(userId) — end the pause → status */
+        resume: (userId) => hostCall('homeNetwork.internet.resume', { userId }),
+        /** extend(userId, minutes) — the profile's times suspended for `minutes` more (0 ends it, ≤ 24 h) → status */
+        extend: (userId, minutes) => hostCall('homeNetwork.internet.extend', { userId, minutes }),
+      }),
+    } : {}),
+  });
+}
+
+function makePresence() {
+  return Object.freeze({
+    /** list() → [{ userId, home, since, source: 'wifi' }] — people who agreed and have a known state */
+    list: () => hostCall('homeNetwork.presence.list', {}),
+    /** on(handler({ userId, home (true|false|null = no longer known), since, source })) → off() */
+    on: (handler) => {
+      if (typeof handler !== 'function') throw new TypeError('gc.homeNetwork.presence.on(handler)');
+      presenceHandlers.push(handler);
+      return () => { const i = presenceHandlers.indexOf(handler); if (i >= 0) presenceHandlers.splice(i, 1); };
+    },
+    /** consent(userId) → { consent, since } */
+    consent: (userId) => hostCall('homeNetwork.presence.consent', { userId }),
+    /** setConsent(userId, enabled) — only inside a changing request (POST/PUT/PATCH/DELETE) of that very person */
+    setConsent: (userId, enabled) => hostCall('homeNetwork.presence.setConsent', { userId, enabled }),
+    /** devices(userId) → [{ id, name, lastSeen, counts, gateway }] — only inside a request of that person */
+    devices: (userId) => hostCall('homeNetwork.presence.devices', { userId }),
+    /** setCounts(userId, deviceId, counts) — only inside a changing request of that person */
+    setCounts: (userId, deviceId, counts) => hostCall('homeNetwork.presence.setCounts', { userId, deviceId, counts }),
+  });
+}
+
+// gc.homeCache (permissions.homeCache, phase 3b, docs/plugins.md "Home cache"): files of the plugin (media) kept
+// on the gateways' home caches; lan hints for an app in the home network.
+function makeHomeCache() {
+  return Object.freeze({
+    /** offer({ mediaId, kind: 'drive'|'photos'|'vault', userIds?, priority? }) → { sha256, size, offered } */
+    offer: (opts) => hostCall('homeCache.offer', opts && typeof opts === 'object' ? opts : {}),
+    /** withdraw(mediaId) → { removed } */
+    withdraw: (mediaId) => hostCall('homeCache.withdraw', { mediaId }),
+    /** lanHint(sha256 | { mediaId }, req) → { url, sha256, tlsSha256, exp } | null — req: the request the plugin answers */
+    lanHint: (what, req) => hostCall('homeCache.lanHint', {
+      ...(what && typeof what === 'object' ? { mediaId: what.mediaId } : { sha256: what }),
+      ref: req && typeof req === 'object' && typeof req.homeRef === 'string' ? req.homeRef : null,
     }),
   });
 }
@@ -389,7 +424,8 @@ function makeGc(info) {
     // permissions.mail (since 1.216.0, docs/plugins.md "Mail"): IMAP sessions, SMTP, MIME, HTML cleaning, autoconfig
     ...(features.mail ? { mail: makeMail(features) } : {}),
     ...(features.edge ? { edge: makeEdge() } : {}),
-    ...(features.homePresence ? { homeNetwork: makeHomeNetwork() } : {}),
+    ...(features.homePresence || features.homeInternet ? { homeNetwork: makeHomeNetwork(features) } : {}),
+    ...(features.homeCache ? { homeCache: makeHomeCache() } : {}),
     // device accounts of a gateway's MQTT broker (plugin.json edge.capabilities.mqtt): create(gatewayId,
     // { label, topics, name }) → { username, password (once), acl, label }; list(gatewayId); remove(gatewayId, username)
     ...(features.mqtt ? {

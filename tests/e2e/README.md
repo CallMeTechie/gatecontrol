@@ -96,6 +96,14 @@ scenarios/19-gateway-net.js /gateways: Karte „Funktionen dieses Gateways“ un
                         „Neues Gerät“ → „Ist meins“, Gerät bearbeiten (Anwesenheit nur mit
                         Besitzer), Verlauf 24 Std./7 Tage, Tabelle, Messplan → Config-Pull,
                         „Jetzt scannen“ ohne Gateway (502 erwartet), hell/dunkel, 390 px
+scenarios/20-gateway-home.js /gateways: Reiter „DNS-Filter“ und „Zwischenspeicher“ und ihre
+                        Zeilen in der Karte „Funktionen“ ohne Mocks – Heartbeat mit DNS-Filter,
+                        Zwischenspeicher und USB-Datenträger, Netzwerk-Wächter, DNS-Statistik;
+                        Filter einschalten, Profil „Kinder“ (Person aus der Auswahl, Liste,
+                        Sichere Suche, Zeit Mo–Fr 21–07, Ausnahme) → Config-Pull mit den MACs,
+                        „Router einstellen“ (FRITZ!Box/Speedport, Prüfung), Ausnahmen,
+                        Weiterleitung (nur https), „Domain prüfen“ und „Leeren“ ohne Gateway
+                        (502 erwartet), Zwischenspeicher mit USB-Vorschlag, hell/dunkel, 390 px
 ```
 
 ## Ablauf

@@ -317,6 +317,8 @@ unsigned build of the same id.
     "publicLinks": true,
     "devices": true,
     "homePresence": true,
+    "homeInternet": true,
+    "homeCache": true,
     "groups": "read",
     "ai": { "purpose": { "de": "Dokumente erkennen", "en": "Recognise documents" }, "capabilities": ["text", "vision"] },
     "cloudImport": { "purpose": { "de": "Dateien aus Google Drive und OneDrive übernehmen", "en": "Take files from Google Drive and OneDrive" } }
@@ -905,6 +907,8 @@ module.exports = {
 | `gc.devices.list({ userId })` | since 1.193.0: the person's GateControl apps `[{ id, name, platform, clientType, appVersion, online, lastSeen, via }]` (`devices`) — see "Devices" |
 | `gc.notify({ …, users, devices, silent, data })` | since 1.193.0: only to these devices of `users`; `silent: true` a data notification without display (`devices`) — see "Devices" |
 | `gc.homeNetwork.presence.list()` / `.on(handler)` / `.consent(userId)` / `.setConsent(userId, on)` / `.devices(userId)` / `.setCounts(userId, deviceId, on)` | since 1.230.0: who is at home by their phone in the home network — only people who agreed themselves, never MAC/IP addresses (`homePresence`) — see "Presence over the home network" |
+| `gc.homeNetwork.internet.status(userId)` / `.pause(userId, untilISO \| minutes)` / `.resume(userId)` / `.extend(userId, minutes)` | since 1.231.0: the home DNS filter of a person — pause the internet, suspend the profile's times; changes only on behalf of a signed-in person (`homeInternet`) — see "Internet at home" |
+| `gc.homeCache.offer({ mediaId, kind, userIds, priority })` / `.withdraw(mediaId)` / `.lanHint(sha256 \| { mediaId }, req)` | since 1.231.0: keep the plugin's files on the gateways' home caches and send an app in the home network there (`homeCache`) — see "Home cache" |
 | `gc.ai.available({ capability })` / `gc.ai.status()` | since 1.214.0: is AI usable for the plugin (asks no provider) / `{ available, mediaAllowed, capabilities, budgetLeftCents }` (`ai`) — see "AI requests" |
 | `gc.ai.extract({ task, user, instructions, input, schema, maxOutputTokens, timeoutMs })` / `gc.ai.generate({ … })` | since 1.214.0: structured data checked against a schema / free text from the AI provider set up in GateControl → `{ ok, data \| text, provider, model, usage, fallback }` (`ai`) — see "AI requests" |
 | `gc.groups.list/get/members/isMember/leadersOf(…)` | the person groups of GateControl (`groups`) — see "Groups" |
@@ -2364,6 +2368,113 @@ module.exports = {
     return { status: 404, json: {} };
   },
 };
+```
+
+## Internet at home (`permissions.homeInternet`)
+
+Since 1.231.0 (gateways phase 3b). A home gateway with the **DNS filter**
+(Gateways › DNS-Filter) answers the name lookups of the home network and
+filters per profile — the devices of a person (network watch: owner = the
+person) follow the person's profile, with times ("Mo–Fr 21:00 – 07:00:
+social networks, games and videos blocked"). A plugin with the permission —
+the family plugin's screen time — pauses the internet of a person's devices
+or suspends the times for a while. The gateway gets the person's MAC
+addresses (`features.dns.pauses` / `extensions` of every gateway with the
+filter on where the person has devices) and is told to pull its config at
+once; the plugin **never** gets a MAC or IP address. Code:
+`src/services/homeInternet.js`, host API `internetCall` in
+`src/services/plugins/hostApi.js`.
+
+```json
+"permissions": { "homeInternet": true }
+```
+
+The install dialog shows it as "Internet zu Hause". Without it,
+`gc.homeNetwork.internet` does not exist and the host answers
+`ERR_HOME_INTERNET_DENIED`.
+
+| Call | Answer / rule |
+|---|---|
+| `gc.homeNetwork.internet.status(userId)` | `{ userId, profile: { id, name, gateway } \| null, paused: ISO \| null, extended: ISO \| null, nextSchedule: { from, to (ISO), block: 'all' \| 'categories', categories: ['social' \| 'games' \| 'video'], active } \| null, devices: n, filtered: boolean }` — `filtered` = a gateway with the DNS filter on knows devices of the person (otherwise a pause changes nothing yet); `profile` / `nextSchedule` from the first such gateway. Any time (also in `tick`) |
+| `gc.homeNetwork.internet.pause(userId, until)` | `until` = ISO time or minutes (whole number); at most 7 days ahead. Internet off for the person's devices except the always-allowed domains (GateControl itself) and the profile's own "Immer erlaubt" → `status` |
+| `gc.homeNetwork.internet.resume(userId)` | ends a pause (an extension stays) → `status` |
+| `gc.homeNetwork.internet.extend(userId, minutes)` | suspends the times of the person's profile: until the end of a running extension (else now) + `minutes`, at most 24 hours ahead; `0` ends it → `status`. The lists ("Immer sperren") keep filtering |
+
+`pause`, `resume` and `extend` only work **inside a changing request
+(POST/PUT/PATCH/DELETE) of a signed-in person** to this plugin (portal
+signed in, the app, or the plugin's admin page) — never in `tick`, a hook,
+a GET, on a kiosk device or a moment after the answer (`ERR_NOT_PERSON`).
+That person is the **actor**: the activity log says "Internet paused for
+"Tim" until 18:30 (by Marc, plugin familie)". GateControl does not check
+who may decide for whom — **the plugin checks that the person in the
+request may** (the family plugin: a parent of that child). Errors:
+`ERR_INVALID` (unknown or disabled person, wrong times), `ERR_NOT_PERSON`,
+`ERR_HOME_INTERNET_DENIED`.
+
+Example (family plugin, a parent's button "30 Minuten mehr"):
+
+```js
+async request(req, gc) {
+  if (req.method === 'POST' && req.path === '/screen/extend') {
+    if (!isParentOf(req.user.id, req.body.childId)) return { status: 403, json: { ok: false } };
+    return { json: await gc.homeNetwork.internet.extend(req.body.childId, 30) };
+  }
+  if (req.path === '/screen/status') return { json: await gc.homeNetwork.internet.status(Number(req.query.childId)) };
+  return { status: 404, json: {} };
+}
+```
+
+## Home cache (`permissions.homeCache`)
+
+Since 1.231.0 (gateways phase 3b). A home gateway with the **home cache**
+(Gateways › Zwischenspeicher) keeps files in the home network; apps that are
+at home load them from the gateway at LAN speed. The server still decides:
+the gateway hands out a file only against a signature the server gave that
+client for ten minutes. GateControl itself puts the app updates there (the
+update check answers with a `lan` hint, see below); a plugin with the
+permission offers **its own media** (plugin.json `media`, "Media") — the
+Drive plugin its recently used and pinned files, photos. Code:
+`src/services/homeCache.js`, host API `homeCacheCall` in
+`src/services/plugins/hostApi.js`, the request reference in
+`src/services/plugins/requestRefs.js`.
+
+```json
+"permissions": { "homeCache": true }
+```
+
+The install dialog shows it as "Zwischenspeicher im Heimnetz". Without it,
+`gc.homeCache` does not exist and the host answers `ERR_HOME_CACHE_DENIED`.
+
+| Call | Answer / rule |
+|---|---|
+| `gc.homeCache.offer({ mediaId, kind, userIds, priority, sha256 })` | `{ sha256, size, offered }` — `mediaId` a media id of this plugin; `kind` `'drive'` \| `'photos'` \| `'vault'` (an administrator switches each kind per gateway; vault — only encrypted files — is off by default); `userIds` (optional, ≤ 256) the people who use the file: only gateways where one of them has devices keep it (none = every gateway with the cache on); `priority` 0…100 (default 50; the stock is filled by priority up to the gateway's limit); `sha256` / `size` optional, checked against the stored file. Offering the same content again updates it; `offered: false` when the same content is in the stock already (an app update, another plugin) |
+| `gc.homeCache.withdraw(mediaId)` | `{ removed }` — the gateways drop it at their next sync. A deleted media file leaves the stock by itself (hourly) |
+| `gc.homeCache.lanHint(sha256 \| { mediaId }, req)` | `{ url, sha256, tlsSha256, exp } \| null` — `req` is the request the plugin is answering right now (its `req.homeRef`, only plugins with the permission get one). `null` unless the client is at the site of a gateway (same public address and one of its LAN addresses — the app sends them as `?local=` or header `X-GC-Local`, see the home-network check), the file is one this plugin offered, that gateway holds it (last report) and, with `userIds`, the person in the request is one of them. Outside such a request: `ERR_NOT_IN_REQUEST` |
+
+The app loads `url` (HTTPS on the gateway's LAN address, self-signed
+certificate) **pinning** `tlsSha256` (SHA-256 of the certificate, hex),
+checks the SHA-256 of the bytes against `sha256` and falls back to the
+normal download on any error. `exp` = Unix seconds, ≤ 10 minutes; the
+signature in the URL is `HMAC-SHA256(secret of the gateway, sha256 + "\n" + exp)`.
+
+The same hint comes with the update check of the apps
+(`GET /api/v1/client/update/check`): `lan: { url, sha256, tlsSha256, exp }`
+next to `downloadUrl`, when the installer is in the home cache of the
+gateway the device is at.
+
+Example (Drive plugin):
+
+```js
+// a file got pinned "offline verfügbar" by Anna
+await gc.homeCache.offer({ mediaId: file.mediaId, kind: 'drive', userIds: [anna.id], priority: 80 });
+
+// the app asks for a download link
+async request(req, gc) {
+  if (req.path === '/files/link') {
+    const f = findFile(req.query.id, req.user);
+    return { json: { url: gc.media.url(f.mediaId, { user: req.user.id }), lan: await gc.homeCache.lanHint({ mediaId: f.mediaId }, req) } };
+  }
+}
 ```
 
 ## AI requests (`permissions.ai`)

@@ -39,7 +39,7 @@ describe('gateway-edge-kit: address and states', () => {
   it('gateways.js keeps #add / #setup/<id> and routes the tabs', () => {
     const src = read('public/js/gateways.js');
     assert.match(src, /h\.match\(\/\^#gw\\\/\(\[\^\/\]\+\)\(\?:\\\/\(\[a-z\]\+\)\)\?\$\/\)/);
-    assert.match(src, /\['net', 'inet', 'edge', 'mqtt'\]\.indexOf\(m\[2\]\) >= 0/);
+    assert.match(src, /\['net', 'inet', 'dns', 'cache', 'edge', 'mqtt'\]\.indexOf\(m\[2\]\) >= 0/);
     assert.match(src, /if \(h === '#add'\)/);
     assert.match(src, /h\.match\(\/\^#setup\\\/\(\\d\+\)\$\/\)/);
   });

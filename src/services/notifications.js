@@ -88,6 +88,9 @@ const CATALOGUE = [
     { id: 'netwatch_new_device', types: ['netwatch_new_device'] },
     { id: 'inet_outage', types: ['inet_outage'] },
     { id: 'ups_state', types: ['ups_on_battery', 'ups_on_line'] },
+    // phase 3b: the DNS filter of a gateway stopped answering (gateway offline
+    // longer than 5 minutes, port 53 taken) — and its return
+    { id: 'dns_filter', types: ['dns_filter_down', 'dns_filter_up'] },
   ] },
 ];
 

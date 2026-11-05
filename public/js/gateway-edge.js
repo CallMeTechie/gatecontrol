@@ -259,6 +259,8 @@
       // tabs "Netzwerk" / "Internet": their own data (gateway-net.js)
       const which = b.getAttribute('data-gwe-badge');
       if (which === 'net' || which === 'inet') { if (window.GCGatewayNet) window.GCGatewayNet.badge(b, id, which); return; }
+      // tabs "DNS-Filter" / "Zwischenspeicher" (phase 3b, gateway-home.js)
+      if (which === 'dns' || which === 'cache') { if (window.GCGatewayHome) window.GCGatewayHome.badge(b, id, which); return; }
       b.replaceChildren();
       b.className = 'gwe-tab-badge';
       if (!d) return;
@@ -886,11 +888,21 @@
     // tabs "Netzwerk" and "Internet" (phase 3a) live in gateway-net.js
     if ((tab === 'net' || tab === 'inet') && window.GCGatewayNet) {
       cur = null;
+      if (window.GCGatewayHome) window.GCGatewayHome.unmount();
       window.GCGatewayNet.mount(box, g, tab, ctx || {});
       load(g.peer_id, false).then(() => fillBadges(document, g.peer_id), () => {});
       return;
     }
+    // tabs "DNS-Filter" and "Zwischenspeicher" (phase 3b) live in gateway-home.js
+    if ((tab === 'dns' || tab === 'cache') && window.GCGatewayHome) {
+      cur = null;
+      if (window.GCGatewayNet) window.GCGatewayNet.unmount();
+      window.GCGatewayHome.mount(box, g, tab, ctx || {});
+      load(g.peer_id, false).then(() => fillBadges(document, g.peer_id), () => {});
+      return;
+    }
     if (window.GCGatewayNet) window.GCGatewayNet.unmount();
+    if (window.GCGatewayHome) window.GCGatewayHome.unmount();
     cur = { box, g, tab, ctx: ctx || {} };
     box.classList.add('gwe-panel');
     draw();
@@ -899,8 +911,9 @@
   function prefetch(g) {
     load(g.peer_id, false).then(() => fillBadges(document, g.peer_id), () => {});
     if (window.GCGatewayNet) window.GCGatewayNet.prefetch(g);
+    if (window.GCGatewayHome) window.GCGatewayHome.prefetch(g);
   }
-  function unmount() { cur = null; if (window.GCGatewayNet) window.GCGatewayNet.unmount(); }
+  function unmount() { cur = null; if (window.GCGatewayNet) window.GCGatewayNet.unmount(); if (window.GCGatewayHome) window.GCGatewayHome.unmount(); }
 
   // Building blocks shared with the tabs "Netzwerk" / "Internet" (gateway-net.js)
   const ui = { t, api, errText, icon, tag, card, note, chip, switchBtn, fmtTime, fmtDate, openDialog, errorBox, showErr, bigNote, restoreFocus, focusKey, toast, LANG };

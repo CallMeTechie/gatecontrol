@@ -187,8 +187,9 @@
     return c;
   }
   // Tabs of the detail view: "Übersicht" (the cards below), "Netzwerk" and
-  // "Internet" (gateway-net.js), "Edge-Plugins" and "MQTT" (gateway-edge.js).
-  // The tab is part of the address: #gw/<id>[/net|/inet|/edge|/mqtt].
+  // "Internet" (gateway-net.js), "DNS-Filter" and "Zwischenspeicher"
+  // (gateway-home.js), "Edge-Plugins" and "MQTT" (gateway-edge.js).
+  // The tab is part of the address: #gw/<id>[/net|/inet|/dns|/cache|/edge|/mqtt].
   var openTab = 'overview';
   function renderDetail(g) {
     // The view is rebuilt on every poll: keep the focus on the same control.
@@ -1070,10 +1071,10 @@
   }
   function route() {
     var h = location.hash || '';
-    // #gw/<id>, #gw/<id>/net, …/inet, …/edge, …/mqtt (an unknown tab shows the overview)
+    // #gw/<id>, #gw/<id>/net, …/inet, …/dns, …/cache, …/edge, …/mqtt (an unknown tab shows the overview)
     var m = h.match(/^#gw\/([^/]+)(?:\/([a-z]+))?$/);
     if (m) {
-      var tabName = ['net', 'inet', 'edge', 'mqtt'].indexOf(m[2]) >= 0 ? m[2] : 'overview';
+      var tabName = ['net', 'inet', 'dns', 'cache', 'edge', 'mqtt'].indexOf(m[2]) >= 0 ? m[2] : 'overview';
       var gid; try { gid = decodeURIComponent(m[1]); } catch (e) { gid = null; }
       if (gid !== null) { showDetail(gid, tabName); return; }
     }

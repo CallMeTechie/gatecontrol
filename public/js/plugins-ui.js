@@ -169,6 +169,9 @@
     if (perm.devices) rows.push({ label: t('plugins.perm.devices'), value: t('plugins.perm.devices_on') });
     // phase 3a: at home / away by the phone in the home network — only people who agreed themselves
     if (perm.homePresence) rows.push({ label: t('plugins.perm.home_presence'), value: t('plugins.perm.home_presence_on') });
+    // phase 3b: pause / extra time for the internet of a person at home (DNS filter), files in the home caches
+    if (perm.homeInternet) rows.push({ label: t('plugins.perm.home_internet'), value: t('plugins.perm.home_internet_on') });
+    if (perm.homeCache) rows.push({ label: t('plugins.perm.home_cache'), value: t('plugins.perm.home_cache_on') });
     // person groups (docs/plugins.md "Groups"): read, or read and manage its own groups
     if (perm.groups === 'read' || perm.groups === 'manage') rows.push({ label: t('plugins.perm.groups'), value: t(perm.groups === 'manage' ? 'plugins.perm.groups_manage' : 'plugins.perm.groups_read') });
     // Google Drive / OneDrive of a person (gc.cloud), with the plugin's purpose
