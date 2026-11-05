@@ -120,14 +120,14 @@ function validateCaps(raw, err) {
     if (!plainObject(v) || !onlyKeys(v, ['lan']) || typeof v.lan !== 'boolean') bad('edge.capabilities.tcp: invalid');
     else if (v.lan) caps.tcp = { lan: true };
   }
-  // http: { lan, selfSigned? } — selfSigned: HTTPS to devices without certificate checks (gc.lan.http.request
-  // insecure: true); needs lan, shown with a warning when an administrator confirms it
+  // http: { lan } — HTTPS is always checked on the gateway: fully, or against a pinned certificate
+  // (gc.lan.http.request pinSha256, gc.lan.tlsFingerprint). There is no capability to switch the check off.
   if (raw.http != null) {
     const v = raw.http;
-    if (!plainObject(v) || !onlyKeys(v, ['lan', 'selfSigned']) || typeof v.lan !== 'boolean'
-      || (v.selfSigned != null && typeof v.selfSigned !== 'boolean')) bad('edge.capabilities.http: invalid');
-    else if (v.selfSigned && !v.lan) bad('edge.capabilities.http.selfSigned: needs lan');
-    else if (v.lan) caps.http = v.selfSigned ? { lan: true, selfSigned: true } : { lan: true };
+    if (plainObject(v) && Object.prototype.hasOwnProperty.call(v, 'selfSigned')) {
+      bad('edge.capabilities.http.selfSigned: no longer supported — HTTPS to self-signed devices only with a pinned certificate (pinSha256, gc.lan.tlsFingerprint)');
+    } else if (!plainObject(v) || !onlyKeys(v, ['lan']) || typeof v.lan !== 'boolean') bad('edge.capabilities.http: invalid');
+    else if (v.lan) caps.http = { lan: true };
   }
   if (raw.mqtt != null) {
     const m = raw.mqtt;
@@ -192,7 +192,6 @@ function capabilityList(caps) {
   if (c.mdns) for (const s of c.mdns.services) out.push('mdns:' + s);
   if (c.tcp && c.tcp.lan) out.push('tcp.lan');
   if (c.http && c.http.lan) out.push('http.lan');
-  if (c.http && c.http.lan && c.http.selfSigned) out.push('http.selfSigned');
   if (c.mqtt) for (const t of c.mqtt.topics) out.push('mqtt.topic:' + t);
   if (c.serial) for (const s of c.serial) out.push('serial:' + s);
   return out.sort();
@@ -210,14 +209,13 @@ const TEXT = {
   mdns: { de: 'Geräte suchen per mDNS: {v}', en: 'Find devices via mDNS: {v}' },
   'tcp.lan': { de: 'TCP-Verbindungen zu Geräten im Heimnetz', en: 'TCP connections to devices in the home network' },
   'http.lan': { de: 'HTTP-Anfragen an Geräte im Heimnetz', en: 'HTTP requests to devices in the home network' },
-  'http.selfSigned': { de: 'HTTPS zu Geräten im Heimnetz ohne Zertifikatsprüfung (selbstsignierte Zertifikate) – nur bei vertrauenswürdigen Geräten erlauben',
-    en: 'HTTPS to devices in the home network without certificate checks (self-signed certificates) – allow only for trusted devices' },
   'mqtt.topic': { de: 'MQTT-Themen {v} am lokalen Broker', en: 'MQTT topics {v} on the local broker' },
   serial: { de: 'Serielles Gerät „{v}“', en: 'Serial device "{v}"' },
 };
 
-// keys an administrator confirms with an explicit warning
-const WARN = new Set(['http.selfSigned']);
+// keys an administrator confirms with an explicit warning (none at the moment; the former
+// http.selfSigned — HTTPS without certificate checks — is gone, see forState)
+const WARN = new Set();
 
 /** [{ key, text, warning? }] — one line per capability key (install dialog, confirmation, gateway page). */
 function describe(caps, lang) {
@@ -231,7 +229,23 @@ function describe(caps, lang) {
   });
 }
 
+/**
+ * Capabilities as they go to a gateway in `state.plugins[].caps`: only what the gateway knows, from a
+ * stored manifest or approval snapshot that may predate a change. Drops `http.selfSigned` (removed —
+ * the gateway refuses it; an older install or approval must never switch certificate checks off).
+ */
+function forState(caps) {
+  const c = plainObject(caps) ? caps : {};
+  const out = {};
+  for (const [k, v] of Object.entries(c)) {
+    if (k === 'http') {
+      if (plainObject(v) && v.lan === true) out.http = { lan: true };
+    } else out[k] = v;
+  }
+  return out;
+}
+
 module.exports = {
-  validate, capabilityList, newCapabilities, describe, topicFilterOk, filterCovers, multicastOk,
+  validate, capabilityList, forState, newCapabilities, describe, topicFilterOk, filterCovers, multicastOk,
   MEMORY_MIN, MEMORY_MAX, MEMORY_DEFAULT, SERIAL_NAMES, MQTT_TOPICS_MAX,
 };

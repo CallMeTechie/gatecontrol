@@ -4517,11 +4517,13 @@ example `tests/fixtures/plugins/edge-demo/`.
     the mDNS group 224.0.0.251), ≤ 16;
   * `mdns.services` like `_shelly._tcp` (≤ 16);
   * `tcp.lan` / `http.lan` — connections to addresses in the gateway's LAN
-    subnets (never the tunnel, never this server); HTTPS is checked fully
-    (or against a pinned certificate hash). `http.selfSigned: true` (needs
-    `lan`) also allows HTTPS without certificate checks for devices with
-    self-signed certificates — its own key `http.selfSigned`, shown with a
-    warning when an administrator confirms the list;
+    subnets (never the tunnel, never this server); HTTPS is always checked —
+    fully, or against a pinned certificate for self-signed devices (see
+    [Self-signed devices](#self-signed-devices-certificate-pinning)). `http`
+    has only the key `lan`; the former `http.selfSigned` (HTTPS without
+    certificate checks) is gone: a manifest with it is refused at install
+    (`edge.capabilities.http.selfSigned: no longer supported — …`), and an
+    older install or approval never passes it to a gateway;
   * `mqtt.topics` — topic filters on the gateway's broker: no leading `#`/`+`,
     nothing starting with `$` (`$SYS`), `#` only as the last level, ≤ 16;
   * `serial` — named devices (`zigbee`); the gateway maps the name to the
@@ -4601,10 +4603,78 @@ username)` — its own accounts only. At most 200 per plugin and gateway.
 folder), `gc.log.info/warn/error`, `gc.lan.udp.bind(port, opts, onMessage)` /
 `.send(host, port, buf)`, `gc.lan.mdns.browse(service, onFound)`,
 `gc.lan.tcp.connect(host, port)`, `gc.lan.http.request({ method, url,
-headers, body, timeoutMs })`, `gc.mqtt.subscribe(topic, fn)` /
+headers, body, timeoutMs, pinSha256 })`, `gc.lan.tlsFingerprint({ host, port,
+timeoutMs })`, `gc.mqtt.subscribe(topic, fn)` /
 `.publish(topic, payload, { retain, qos })`, `gc.serial.open(name, {
 baudRate })`. Each checks the approved capabilities; addresses only in the
 gateway's LAN subnets.
+
+#### Self-signed devices: certificate pinning
+
+HTTPS from an edge part is **always** verified — there is no option to switch
+the check off. Without anything extra the gateway checks the chain and the
+name/IP like a browser, so a device with a self-signed certificate (NAS,
+router, camera, hub) fails with `tls_error`. Such devices are reached only
+with a **pinned certificate**: `pinSha256` is the SHA-256 of the device's leaf
+certificate (64 hex characters; colons, upper case or a `sha256:` prefix are
+accepted). The pin replaces the chain check, and the request gets its
+connection only once the certificate matches — on a mismatch not a byte of it
+(no header, no password) leaves the gateway.
+
+* **First contact (trust on first use):** `gc.lan.tlsFingerprint({ host,
+  port = 443, timeoutMs = 10000 })` → `{ sha256, subject, issuer, validTo,
+  selfSigned }` of the device's leaf certificate. It does the TLS handshake
+  only (no request, no data) and needs `http.lan` or `tcp.lan`; same targets
+  as `gc.lan.*` (IPv4 in the gateway's private LAN subnets), timeout 1–30 s.
+  `sha256` is 64 lower-case hex characters — use it as `pinSha256` as it is;
+  `subject`/`issuer` are one line (`CN=…, O=…`), `validTo` ISO 8601.
+* **Ask the administrator** before trusting it: hand the values to the server
+  part (a call's result or an event), show them on the plugin's own settings
+  page ("Device 192.168.1.20 presents certificate CN=…, SHA-256 …, valid
+  until … — trust it?") and store the confirmed `sha256` (the edge part keeps
+  it in `gc.store`, or the server part sends it with `gc.edge.configure`).
+  Never trust a fingerprint automatically.
+* **Certificate changed (`tls_pin_mismatch`):** a pinned request to a device
+  whose certificate no longer matches fails with `e.code ===
+  'tls_pin_mismatch'`; the error carries `e.sha256` (what the device presents
+  now), `e.expectedSha256` (the pin) and `e.certificate` (`{ sha256, subject,
+  issuer, validTo, selfSigned }` or `null`). The device may have renewed its
+  certificate — or something else answers on its address. Ask the
+  administrator again the same way; keep the old pin until they confirm.
+  Through `gc.edge.call` only `e.code`/`e.message` reach the server part
+  (`edge_error`, `"tls_pin_mismatch: …"`), so return the new values from the
+  handler instead of throwing.
+
+```js
+// edge/index.js
+module.exports = (gc) => {
+  const DEVICE = { host: '192.168.1.20', port: 8443 };
+
+  gc.handle('certificate', () => gc.lan.tlsFingerprint(DEVICE));          // first contact
+  gc.handle('trust', async ({ sha256 }) => { await gc.store.set('pin', sha256); return {}; });
+
+  gc.handle('status', async () => {
+    const pin = await gc.store.get('pin');
+    if (!pin) return { trust: 'needed', certificate: await gc.lan.tlsFingerprint(DEVICE) };
+    try {
+      const r = await gc.lan.http.request({ url: `https://${DEVICE.host}:${DEVICE.port}/api/status`, pinSha256: pin });
+      return { trust: 'ok', status: r.json() };
+    } catch (e) {
+      if (e.code !== 'tls_pin_mismatch') throw e;
+      return { trust: 'changed', pinned: e.expectedSha256, certificate: e.certificate || { sha256: e.sha256 } };
+    }
+  });
+};
+
+// server part: the settings page asks the administrator
+const s = await gc.edge.call(gatewayId, 'status');
+if (s.trust !== 'ok') { /* show s.certificate (and s.pinned) and a "Trust" button */ }
+// on "Trust": await gc.edge.call(gatewayId, 'trust', { sha256: s.certificate.sha256 });
+```
+
+Needs a gateway with `gc.lan.tlsFingerprint` (set `edge.minGateway`
+accordingly). A call with the removed option `insecure: true` is refused with
+`denied`.
 
 ### Protocol (gc-edge.v1)
 
