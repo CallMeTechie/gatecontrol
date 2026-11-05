@@ -371,8 +371,10 @@
     </div>
   </div>
 </div>
-<script type="application/json" id="gwiz-i18n" data-prefixes="gwiz. common." nonce="{{ cspNonce }}">{{ gwizI18n | default('{}') | safe }}</script>
+<script type="application/json" id="gwiz-i18n" data-prefixes="gwiz. gwe. common." nonce="{{ cspNonce }}">{{ gwizI18n | default('{}') | safe }}</script>
 {% endblock %}
 {% block scripts %}<script src="/js/gateway-kit.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-wizard.js?v={{ appVersion }}"></script>
+<script src="/js/gateway-edge-kit.js?v={{ appVersion }}"></script>
+<script src="/js/gateway-edge.js?v={{ appVersion }}"></script>
 <script src="/js/gateways.js?v={{ appVersion }}"></script>{% endblock %}

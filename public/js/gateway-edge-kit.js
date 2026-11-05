@@ -1,0 +1,248 @@
+'use strict';
+
+// Pure helpers of the gateway tabs "Edge-Plugins" and "MQTT" (no DOM) —
+// public/js/gateway-edge.js uses them in the browser, tests/gateway_edge_ui.test.js
+// in node. The rules they mirror live on the server (src/services/edge/*):
+// user names and topic filters as mqtt.js / manifest.js check them, the
+// states of an edge assignment as index.js / state.js report them.
+(function (root, factory) {
+  const api = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.GCGatewayEdgeKit = api;
+})(typeof self !== 'undefined' ? self : this, function () {
+  const TABS = ['overview', 'edge', 'mqtt'];
+
+  /**
+   * #gw/<id>[/<tab>] → { id, tab } (tab 'overview' when absent or unknown); null for any other hash.
+   * The id is the URL-encoded peer id as gateways.js writes it.
+   */
+  function parseHash(hash) {
+    const m = /^#gw\/([^/]+)(?:\/([a-z]+))?$/.exec(String(hash || ''));
+    if (!m) return null;
+    let id;
+    try { id = decodeURIComponent(m[1]); } catch (e) { return null; }
+    return { id, tab: TABS.indexOf(m[2]) > 0 ? m[2] : 'overview' };
+  }
+
+  function hashFor(id, tab) {
+    return '#gw/' + encodeURIComponent(String(id)) + (tab && tab !== 'overview' && TABS.indexOf(tab) > 0 ? '/' + tab : '');
+  }
+
+  // State of one plugin's edge part on the gateway → tone + i18n key (gwe.state.<state>).
+  // 'not_set_up': installed with an edge part, never switched on here.
+  const STATE_TONE = {
+    running: 'green', starting: 'blue', pending: 'blue', crashed: 'red', denied: 'red', stopped: 'grey',
+    offline: 'grey', disabled: 'grey', update_pending: 'amber', unsigned: 'grey', plugin_off: 'grey',
+    gateway_too_old: 'amber', edge_off: 'grey', not_set_up: 'grey', no_edge: 'grey',
+  };
+  const STATES = Object.keys(STATE_TONE);
+
+  /** What a plugin row shows: { state, tone, key }. */
+  function pluginState(p, settings) {
+    const s = settings || {};
+    const a = p && p.assignment;
+    let state;
+    if (a && a.state) state = a.state;
+    else if (!s.edgeEnabled) state = 'edge_off';
+    else if (p && !p.verified && !s.allowUnsignedEdge) state = 'unsigned';
+    else state = 'not_set_up';
+    if (!STATE_TONE[state]) state = 'stopped';
+    return { state, tone: STATE_TONE[state], key: 'gwe.state.' + state };
+  }
+
+  /**
+   * The control a plugin row offers:
+   *   'review'  → button "Prüfen und einschalten" (capabilities dialog)
+   *   'switch'  → on/off switch (switching on opens the capabilities dialog)
+   *   'blocked' → a switch that cannot be used (unsigned and not allowed)
+   */
+  function pluginControl(p, settings) {
+    const st = pluginState(p, settings).state;
+    if (st === 'update_pending') return 'review';
+    if (st === 'unsigned' && !(p.assignment && p.assignment.enabled)) return 'blocked';
+    return 'switch';
+  }
+
+  /** Counts for the list head and the tab badge. */
+  function summary(plugins, settings) {
+    const out = { installed: 0, running: 0, attention: 0, enabled: 0 };
+    (plugins || []).forEach((p) => {
+      out.installed++;
+      const st = pluginState(p, settings).state;
+      if (st === 'running') out.running++;
+      if (['update_pending', 'crashed', 'denied', 'gateway_too_old'].indexOf(st) >= 0) out.attention++;
+      if (p.assignment && p.assignment.enabled) out.enabled++;
+    });
+    return out;
+  }
+
+  /**
+   * Capabilities for the confirmation dialog: every capability of the
+   * installed version, `mark` 'new' for those not approved yet (an update),
+   * 'prior' for those approved before; no marks on a first approval.
+   */
+  function capabilityRows(p) {
+    const caps = (p && p.edge && Array.isArray(p.edge.capabilities)) ? p.edge.capabilities : [];
+    const a = p && p.assignment;
+    const approved = a && a.approved && Array.isArray(a.approved.capabilities) ? a.approved.capabilities : [];
+    const fresh = new Set((a && Array.isArray(a.newCapabilities) ? a.newCapabilities : []).map((c) => c.key));
+    const marks = approved.length > 0;
+    return caps.map((c) => ({
+      key: c.key, text: c.text, warning: c.warning === true,
+      mark: !marks ? null : (fresh.has(c.key) || approved.indexOf(c.key) < 0 ? 'new' : 'prior'),
+    }));
+  }
+
+  /** The keys the enable request confirms — exactly the list shown. */
+  function capabilityKeys(p) { return capabilityRows(p).map((c) => c.key); }
+
+  // Edge needs about 50 MB, each plugin 30–50 MB more (docs/plugins.md "Edge part").
+  // A hint, never a ban: up to a quarter of the RAM counts as comfortable.
+  const EDGE_BASE_MB = 50;
+  const PER_PLUGIN_MB = 50;
+
+  /** → null (RAM unknown) | { memMb, plugins, max, tight } */
+  function memoryHint(memTotalBytes, plugins) {
+    const total = Number(memTotalBytes);
+    if (!Number.isFinite(total) || total <= 0) return null;
+    const memMb = Math.round(total / (1024 * 1024));
+    const budget = memMb / 4;
+    const max = Math.max(0, Math.floor((budget - EDGE_BASE_MB) / PER_PLUGIN_MB));
+    const n = Math.max(0, Number(plugins) || 0);
+    return { memMb, plugins: n, max, tight: n > max };
+  }
+
+  /** "1 GB" / "512 MB" — RAM as people name it. */
+  function ramLabel(memMb) {
+    if (memMb >= 900) return Math.round(memMb / 1024 * 2) / 2 + ' GB';
+    return memMb + ' MB';
+  }
+
+  // ─── MQTT ───────────────────────────────────────────────
+
+  const ACCOUNTS_MAX = 256;
+  const TOPICS_MAX = 16;
+  const USER_RE = /^[a-z0-9][a-z0-9_.-]{1,47}$/;
+  const RESERVED_USERS = ['gc-edge', 'gatecontrol', 'edge', 'admin', 'root'];
+  const ACCESS = ['readwrite', 'read', 'write'];
+
+  // Device templates of "Konto anlegen": the vendor topic the device puts its
+  // own name under (server: vendorPrefix → <prefix>/<user>/#). Every account
+  // also gets devices/<user>/#.
+  const TEMPLATES = [
+    { id: 'shelly', vendorPrefix: 'shellies' },
+    { id: 'tasmota', vendorPrefix: 'tasmota' },
+    { id: 'esphome', vendorPrefix: 'esphome' },
+    { id: 'homeassistant', vendorPrefix: 'homeassistant' },
+    { id: 'custom', vendorPrefix: null },
+  ];
+  function template(id) { return TEMPLATES.find((t) => t.id === id) || TEMPLATES[TEMPLATES.length - 1]; }
+
+  /** null when fine, else the i18n key of the problem. */
+  function usernameProblem(v) {
+    const s = String(v == null ? '' : v);
+    if (!s) return 'gwe.mqtt.new.user_required';
+    if (!USER_RE.test(s)) return 'gwe.mqtt.new.user_invalid';
+    if (RESERVED_USERS.indexOf(s) >= 0) return 'gwe.mqtt.new.user_reserved';
+    return null;
+  }
+
+  /** A topic filter as the server allows it (manifest.topicFilterOk). */
+  function topicOk(t) {
+    if (typeof t !== 'string' || !t || t.length > 128 || /[\0-\x1f\x7f]/.test(t)) return false;
+    if (t[0] === '$' || t[0] === '#' || t[0] === '+') return false;
+    const levels = t.split('/');
+    for (let i = 0; i < levels.length; i++) {
+      const l = levels[i];
+      if (!l) return false;
+      if (l.indexOf('#') >= 0 && (l !== '#' || i !== levels.length - 1)) return false;
+      if (l.indexOf('+') >= 0 && l !== '+') return false;
+    }
+    return true;
+  }
+
+  /** Topics the account will get (shown in the dialog before it is created). */
+  function plannedTopics(templateId, username, extra) {
+    const u = username || '…';
+    const tp = template(templateId);
+    const out = [];
+    if (tp.vendorPrefix) out.push({ topic: tp.vendorPrefix + '/' + u + '/#', access: 'readwrite', source: 'template' });
+    out.push({ topic: 'devices/' + u + '/#', access: 'readwrite', source: 'always' });
+    (extra || []).forEach((x) => { if (!out.some((o) => o.topic === x.topic)) out.push({ topic: x.topic, access: x.access, source: 'extra' }); });
+    return out;
+  }
+
+  /** The POST body of a new account. */
+  function accountBody(templateId, username, label, extra) {
+    const tp = template(templateId);
+    const topics = [{ topic: 'devices/' + username + '/#', access: 'readwrite' }];
+    (extra || []).forEach((x) => { if (!topics.some((o) => o.topic === x.topic)) topics.push({ topic: x.topic, access: ACCESS.indexOf(x.access) >= 0 ? x.access : 'readwrite' }); });
+    const body = { username, label: label || '', topics };
+    if (tp.vendorPrefix) body.vendorPrefix = tp.vendorPrefix;
+    return body;
+  }
+
+  /** "Topic-Präfix" the device is set up with: the vendor topic of the account, else devices/<user>. */
+  function topicPrefix(account) {
+    const acl = (account && account.acl) || [];
+    const user = account ? account.username : '';
+    const own = acl.find((x) => x.topic !== 'devices/' + user + '/#' && /\/#$/.test(x.topic) && x.topic.slice(0, -2).split('/').pop() === user);
+    const t = own ? own.topic : 'devices/' + user + '/#';
+    return t.replace(/\/#$/, '');
+  }
+
+  /** broker address "<lan ip>:<port>" or null. */
+  function brokerAddress(lanIp, tls) {
+    if (typeof lanIp !== 'string' || !lanIp) return null;
+    return lanIp + ':' + (tls ? 8883 : 1883);
+  }
+
+  /** Status line of the broker: { key, tone } (gwe.mqtt.status.<key>). */
+  function brokerStatus(settings, status, online) {
+    const s = settings || {};
+    if (!s.mqttEnabled) return { key: 'off', tone: 'grey' };
+    if (!s.edgeEnabled) return { key: 'waits_edge', tone: 'amber' };
+    if (!online) return { key: 'offline', tone: 'grey' };
+    if (!status) return { key: 'pending', tone: 'blue' };
+    return status.running ? { key: 'running', tone: 'green' } : { key: 'stopped', tone: 'red' };
+  }
+
+  /** Account status: { key, tone } (gwe.mqtt.acc.<key>). */
+  function accountStatus(account, status) {
+    if (account.locked) return { key: 'locked', tone: 'grey' };
+    const list = status && Array.isArray(status.accounts) ? status.accounts : [];
+    const s = list.find((x) => x.user === account.username);
+    if (s && s.connected) return { key: 'connected', tone: 'green' };
+    return { key: 'idle', tone: 'grey' };
+  }
+
+  // ─── Errors and the log ─────────────────────────────────
+
+  const ERROR_CODES = ['not_found', 'plugin_not_found', 'account_not_found', 'not_assigned', 'no_edge', 'caps_mismatch',
+    'unsigned_blocked', 'exists', 'limit', 'confirm_mismatch', 'invalid', 'session_required', 'forbidden', 'network'];
+
+  /** API error → i18n key (gwe.err.<code>). */
+  function errorKey(code, status) {
+    if (ERROR_CODES.indexOf(code) >= 0) return 'gwe.err.' + code;
+    if (status === 403) return 'gwe.err.forbidden';
+    return 'gwe.err.internal';
+  }
+
+  const LOG_FILTERS = [
+    { id: 'all', kind: null }, { id: 'log', kind: 'log' }, { id: 'event', kind: 'event' }, { id: 'system', kind: 'system' },
+  ];
+
+  /** The label of a log line: kind, or the level for messages (Fehler/Warnung/Info). */
+  function logLabel(entry) {
+    if (entry.kind === 'event') return 'gwe.log.k.event';
+    if (entry.kind === 'system') return entry.level === 'error' ? 'gwe.log.k.system_error' : 'gwe.log.k.system';
+    return 'gwe.log.k.' + (entry.level === 'error' ? 'error' : entry.level === 'warn' ? 'warn' : 'info');
+  }
+
+  return {
+    TABS, STATES, parseHash, hashFor, pluginState, pluginControl, summary, capabilityRows, capabilityKeys,
+    memoryHint, ramLabel, EDGE_BASE_MB, PER_PLUGIN_MB,
+    ACCOUNTS_MAX, TOPICS_MAX, USER_RE, ACCESS, TEMPLATES, template, usernameProblem, topicOk, plannedTopics, accountBody,
+    topicPrefix, brokerAddress, brokerStatus, accountStatus, errorKey, LOG_FILTERS, logLabel,
+  };
+});

@@ -186,11 +186,32 @@
     c.appendChild(body);
     return c;
   }
+  // Tabs of the detail view: "Übersicht" (the cards below), "Edge-Plugins" and
+  // "MQTT" (gateway-edge.js). The tab is part of the address: #gw/<id>[/edge|/mqtt].
+  var openTab = 'overview';
   function renderDetail(g) {
+    // The view is rebuilt on every poll: keep the focus on the same control.
+    var act = document.activeElement, fkNode = act && detailView.contains(act) && act.closest ? act.closest('[data-fk]') : null;
+    var fk = fkNode ? fkNode.getAttribute('data-fk') : null;
     var root = el('div', 'gw-detail');
     var back = el('button', 'gw-back', '← ' + T('gateways.back_to_fleet', 'Back to fleet')); back.dataset.act = 'back';
     root.appendChild(back);
     root.appendChild(detailHead(g));
+    var E = window.GCGatewayEdge;
+    var tab = E ? openTab : 'overview';
+    var panel = el('div', 'gw-tabpanel');
+    if (E) {
+      root.appendChild(E.tabs(g, tab));
+      panel.id = 'gwe-tabpanel'; panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', 'gwe-tab-' + tab);
+    }
+    root.appendChild(panel);
+    if (tab !== 'overview') {
+      E.mount(panel, g, tab, { latest: latest });
+      detailView.replaceChildren(root);
+      restoreFk(fk);
+      return;
+    }
+    if (E) { E.unmount(); E.prefetch(g); }
     // Issue 11: 3-column detail grid (1/3 width per card); versionsCard for Issue 10
     var grid2 = el('div', 'gw-detail-grid');
     grid2.appendChild(versionsCard(g));
@@ -202,8 +223,14 @@
     halfRow.appendChild(discoveredDevicesCard(g));
     if (telE.scan_egress === true) halfRow.appendChild(egressCard(g));
     grid2.appendChild(halfRow);
-    root.appendChild(grid2);
+    panel.appendChild(grid2);
     detailView.replaceChildren(root);
+    restoreFk(fk);
+  }
+  function restoreFk(fk) {
+    if (!fk) return;
+    var n = detailView.querySelector('[data-fk="' + (window.CSS && CSS.escape ? CSS.escape(fk) : fk) + '"]');
+    if (n && !n.disabled) n.focus({ preventScroll: true });
   }
 
   function kpi(cls, n, label) { var k = el('div', 'kpi' + (cls ? ' ' + cls : '')); k.appendChild(el('div', 'n', n)); k.appendChild(el('div', 'l', label)); return k; }
@@ -1017,17 +1044,22 @@
 
   // ── View routing ──────────────────────────────────────────────────────────
   var pendingDetail = null; // #gw/<id> of a gateway the list does not have yet (just created)
-  function showDetail(id) {
+  var pendingTab = 'overview';
+  function showDetail(id, tab) {
     var g = last.find(function (x) { return String(x.peer_id) === String(id); });
-    if (!g) { showFleet(); if (pendingDetail !== String(id)) { pendingDetail = String(id); load(); } return; }
+    if (!g) { showFleet(); if (pendingDetail !== String(id)) { pendingDetail = String(id); pendingTab = tab || 'overview'; load(); } return; }
     pendingDetail = null;
+    var same = openId === String(id) && !detailView.hidden;
     openId = String(id);
+    openTab = tab || 'overview';
     renderDetail(g);
     fleetView.hidden = true; detailView.hidden = false;
-    window.scrollTo(0, 0);
+    // switching tabs keeps the scroll position; a new gateway starts at the top
+    if (!same) window.scrollTo(0, 0);
   }
   function showFleet() {
     openId = null; detailView.hidden = true; fleetView.hidden = false; detailView.replaceChildren();
+    if (window.GCGatewayEdge) window.GCGatewayEdge.unmount();
   }
   function goFleet() {
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
@@ -1035,8 +1067,13 @@
   }
   function route() {
     var h = location.hash || '';
-    var m = h.match(/^#gw\/(.+)$/);
-    if (m) { showDetail(decodeURIComponent(m[1])); return; }
+    // #gw/<id>, #gw/<id>/edge, #gw/<id>/mqtt (an unknown tab shows the overview)
+    var m = h.match(/^#gw\/([^/]+)(?:\/([a-z]+))?$/);
+    if (m) {
+      var tabName = m[2] === 'edge' || m[2] === 'mqtt' ? m[2] : 'overview';
+      var gid; try { gid = decodeURIComponent(m[1]); } catch (e) { gid = null; }
+      if (gid !== null) { showDetail(gid, tabName); return; }
+    }
     showFleet();
     // Assistant: #add = new gateway, #setup/<id> = continue the set-up.
     var W = window.GCGatewayWizard;
@@ -1132,7 +1169,7 @@
       kpi('warn', upd, T('gateways.kpi_update', 'Update')));
     grid.replaceChildren.apply(grid, last.map(card));
     if (!last.length) grid.appendChild(emptyFleet());
-    if (pendingDetail && last.some(function (x) { return String(x.peer_id) === pendingDetail; })) { showDetail(pendingDetail); return; }
+    if (pendingDetail && last.some(function (x) { return String(x.peer_id) === pendingDetail; })) { showDetail(pendingDetail, pendingTab); return; }
     if (!routed) { routed = true; route(); }
     else if (openId) { var g = last.find(function (x) { return String(x.peer_id) === openId; }); if (g) renderDetail(g); else goFleet(); }
   }
