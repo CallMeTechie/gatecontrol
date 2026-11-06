@@ -425,8 +425,100 @@ async function check(ip, peerId, opts = {}) {
   return out;
 }
 
+// ─── Heimnetz of gateways ────────────────────────────────────────────────
+//
+// Gateways that stand in the same home LAN form ONE "Heimnetz" for the
+// network watch and everything built on it (presence, DNS filter, "Internet
+// zu Hause", home cache): a MAC that both see is one device, what an
+// administrator decides about it applies on every gateway of the Heimnetz,
+// and a DNS pause must hold on the failover gateway as well.
+//
+// Two gateways belong to the same Heimnetz when
+//  1. they are members of the same gateway pool (failover or load balancing):
+//     an administrator declared them interchangeable for the same targets —
+//     the failover gateway is the typical case; or
+//  2. they report overlapping private LAN subnets (siteSubnet(): RFC 1918,
+//     not the WireGuard subnet) AND the network watch of both saw the same
+//     router: the device at the reported default gateway address
+//     (telemetry.default_gateway_ip) has the same, not randomised MAC on
+//     both. The subnet alone is not enough — 192.168.178.0/24 is the subnet
+//     of every FRITZ!Box household, and merging two households would hand
+//     one family's device assignments and DNS profiles to the other.
+// The relation is transitive (A–B and B–C → one Heimnetz A, B, C). Every
+// gateway is in exactly one Heimnetz, alone when nothing links it.
+
+function overlaps(a, b) {
+  return a.some(([na, ba]) => b.some(([nb, bb]) => na.match(nb, bb) || nb.match(na, ba)));
+}
+
+/** The MAC of the router a gateway reports (default_gateway_ip → its network watch), else null. */
+function routerMacOf(db, peerId, lastHealth) {
+  let ip;
+  try { ip = JSON.parse(lastHealth || '{}').telemetry.default_gateway_ip; } catch { return null; }
+  const v4 = toV4(ip);
+  if (!v4 || v4.range() !== 'private') return null;
+  const r = db.prepare('SELECT mac, random_mac FROM netwatch_devices WHERE peer_id = ? AND ip = ? ORDER BY last_seen DESC, id DESC LIMIT 1').get(peerId, v4.toString());
+  return r && r.random_mac !== 1 ? r.mac : null;
+}
+
+/**
+ * Every Heimnetz of gateways: an array of sorted arrays of peer ids (every
+ * gateway peer exactly once, enabled or not; singletons included), ordered by
+ * their smallest id.
+ */
+function gatewayHomes() {
+  const { getDb } = require('../db/connection');
+  const db = getDb();
+  const gws = db.prepare(`SELECT p.id, gm.last_health FROM peers p LEFT JOIN gateway_meta gm ON gm.peer_id = p.id
+    WHERE p.peer_type = 'gateway' ORDER BY p.id`).all();
+  const parent = new Map(gws.map((g) => [g.id, g.id]));
+  const find = (x) => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
+  const union = (a, b) => { const ra = find(a); const rb = find(b); if (ra !== rb) parent.set(Math.max(ra, rb), Math.min(ra, rb)); };
+  // 1. the same gateway pool
+  const byPool = new Map();
+  for (const m of db.prepare('SELECT pool_id, peer_id FROM gateway_pool_members ORDER BY pool_id, peer_id').all()) {
+    if (!parent.has(m.peer_id)) continue;
+    if (byPool.has(m.pool_id)) union(byPool.get(m.pool_id), m.peer_id);
+    else byPool.set(m.pool_id, m.peer_id);
+  }
+  // 2. overlapping private LAN subnet and the same router
+  const info = gws.map((g) => ({ id: g.id, subnets: gatewaySubnets(g.last_health), health: g.last_health, router: undefined }));
+  const routerOf = (x) => { if (x.router === undefined) x.router = routerMacOf(db, x.id, x.health); return x.router; };
+  for (let i = 0; i < info.length; i++) {
+    for (let j = i + 1; j < info.length; j++) {
+      const a = info[i];
+      const b = info[j];
+      if (find(a.id) === find(b.id) || !a.subnets.length || !b.subnets.length || !overlaps(a.subnets, b.subnets)) continue;
+      const ra = routerOf(a);
+      if (ra && ra === routerOf(b)) union(a.id, b.id);
+    }
+  }
+  const groups = new Map();
+  for (const g of gws) {
+    const r = find(g.id);
+    if (!groups.has(r)) groups.set(r, []);
+    groups.get(r).push(g.id);
+  }
+  return [...groups.values()].map((ids) => ids.sort((a, b) => a - b)).sort((a, b) => a[0] - b[0]);
+}
+
+/** The peer ids of the Heimnetz of gateway `peerId` (sorted, itself included; [peerId] when unknown). */
+function homeOf(peerId) {
+  const id = Number(peerId);
+  for (const ids of gatewayHomes()) if (ids.includes(id)) return ids;
+  return [id];
+}
+
+/** Map peer id → its Heimnetz (sorted ids) for every gateway — for loops over many gateways. */
+function homeMap() {
+  const out = new Map();
+  for (const ids of gatewayHomes()) for (const id of ids) out.set(id, ids);
+  return out;
+}
+
 module.exports = {
   check, viaOf, lanEntries, defaultGateways, parseLocal, publicAddr, samePublic, siteSubnet,
+  gatewayHomes, homeOf, homeMap,
   EXCLUDED_IFACE_PREFIXES, MAX_LAN, MAX_LOCAL, SITE_HANDSHAKE_MAX_AGE_S,
   _setInterfacesForTest, _setRouteTableForTest,
 };

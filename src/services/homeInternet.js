@@ -17,6 +17,12 @@
 // extensions with their MAC addresses (homeDns.configPayload) — and those
 // gateways are told to pull their config at once. Plugins never see a MAC
 // address: status() answers with the profile, the times and a count.
+//
+// Home network (homeNetwork.gatewayHomes(): a failover pool, or the same LAN
+// and router): a person's devices on ANY gateway of the home network go into
+// the pause of EVERY gateway of it — a failover gateway that has not scanned
+// the child's tablet yet still blocks it, otherwise switching over would get
+// round the pause. Devices are counted once per home network.
 
 const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
@@ -51,30 +57,46 @@ function current(userId, now = Date.now()) {
   return out;
 }
 
-/** MAC addresses of a person's devices on one gateway (network watch, owner). */
+function homeOf(peerId) {
+  try { return require('./homeNetwork').homeOf(peerId); } catch { return [Number(peerId)]; }
+}
+
+function macsIn(ids, userId) {
+  return db().prepare(`SELECT DISTINCT mac FROM netwatch_devices WHERE owner_user_id = ? AND peer_id IN (${ids.map(() => '?').join(',')}) ORDER BY mac`)
+    .all(userId, ...ids).map((r) => r.mac);
+}
+
+/** MAC addresses of a person's devices in the home network of a gateway (network watch, owner; every gateway of it). */
 function macsOf(peerId, userId) {
-  return db().prepare('SELECT mac FROM netwatch_devices WHERE peer_id = ? AND owner_user_id = ? ORDER BY mac').all(peerId, userId).map((r) => r.mac);
+  return macsIn(homeOf(peerId), userId);
 }
 
 /**
  * features.dns.pauses / .extensions of a gateway: one entry per person with a
- * running pause (extension) and devices on this gateway — `{ macs, until }`,
- * ordered by the first MAC (stable for the config hash).
+ * running pause (extension) and devices in this gateway's home network —
+ * `{ macs, until }`, ordered by the first MAC (stable for the config hash).
  */
 function entriesFor(peerId, kind, now = Date.now()) {
   const rows = db().prepare('SELECT user_id, until_at FROM home_internet WHERE kind = ? AND until_at > ? ORDER BY user_id').all(kind, now);
+  if (!rows.length) return [];
+  const ids = homeOf(peerId);
   const out = [];
   for (const r of rows) {
-    const macs = macsOf(peerId, r.user_id);
+    const macs = macsIn(ids, r.user_id);
     if (macs.length) out.push({ macs, until: iso(r.until_at) });
   }
   return out.sort((a, b) => (a.macs[0] < b.macs[0] ? -1 : a.macs[0] > b.macs[0] ? 1 : 0));
 }
 
-/** Gateways with the DNS filter on where the person has devices (by id). */
+/** Gateways with the DNS filter on in a home network where the person has devices (by id). */
 function gatewaysOf(userId) {
-  const ids = db().prepare(`SELECT DISTINCT d.peer_id FROM netwatch_devices d JOIN peers p ON p.id = d.peer_id
-    WHERE d.owner_user_id = ? AND p.peer_type = 'gateway' AND p.enabled = 1 ORDER BY d.peer_id`).all(userId).map((r) => r.peer_id);
+  const seenOn = db().prepare('SELECT DISTINCT peer_id FROM netwatch_devices WHERE owner_user_id = ?').all(userId).map((r) => r.peer_id);
+  if (!seenOn.length) return [];
+  let homes;
+  try { homes = require('./homeNetwork').homeMap(); } catch { homes = new Map(); }
+  const all = [...new Set(seenOn.flatMap((id) => homes.get(id) || [id]))];
+  const ids = db().prepare(`SELECT id FROM peers WHERE peer_type = 'gateway' AND enabled = 1 AND id IN (${all.map(() => '?').join(',')}) ORDER BY id`)
+    .all(...all).map((r) => r.id);
   const dns = require('./homeDns');
   return ids.filter((id) => dns.get(id).enabled);
 }
@@ -118,8 +140,10 @@ function status(userId, now = Date.now()) {
   const dns = require('./homeDns');
   let profile = null;
   let next = null;
-  let devices = 0;
-  for (const peerId of gws) devices += macsOf(peerId, u.id).length;
+  // a device of a home network once, not once per gateway
+  const macs = new Set();
+  for (const peerId of gws) for (const m of macsOf(peerId, u.id)) macs.add(m);
+  const devices = macs.size;
   if (gws.length) {
     const p = dns.profileOfUser(gws[0], u.id);
     if (p) {
