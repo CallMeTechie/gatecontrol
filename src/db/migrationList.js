@@ -3626,6 +3626,17 @@ const migrations = [
     detect: (db) => tableExists(db, 'gateway_ble_sensors'),
   },
   {
+    version: 134,
+    name: 'ai_requests_route',
+    // Lokale KI (phase 3c, step 3 — services/ai/local.js): why a request went
+    // where it went — 'local' (mode "Für alles"), 'private' (Drive/Mail in the
+    // mode "Nur für private Inhalte"), 'budget' (the cloud budget was used up),
+    // 'local_only' (no cloud provider), 'cloud', 'fixed' (the plugin's own
+    // provider), 'test' (the test button). NULL for every row before.
+    sql: 'ALTER TABLE ai_requests ADD COLUMN route TEXT;',
+    detect: (db) => hasColumn(db, 'ai_requests', 'route'),
+  },
+  {
     version: 135,
     name: 'gateway_live_state',
     // Live state of a gateway (services/gatewayLiveState.js): the notice a

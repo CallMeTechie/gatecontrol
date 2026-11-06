@@ -267,7 +267,9 @@ describe('admin API', () => {
   it('nothing set up: available false, ERR_AI_NOT_CONFIGURED', async () => {
     const r = await agent.get(AI).expect(200);
     assert.equal(r.body.enabled, true);
-    assert.deepEqual(r.body.providers.map((p) => p.id), ['openai', 'anthropic', 'gemini', 'openrouter']);
+    assert.deepEqual(r.body.providers.map((p) => p.id), ['local', 'openai', 'anthropic', 'gemini', 'openrouter']);
+    assert.equal(r.body.providers[0].configured, false, 'the local AI is not set up');
+    assert.equal(r.body.localUse, 'all');
     assert.equal(r.body.mediaAllowed, false, 'pictures are off by default');
     assert.equal(r.body.budget.cents, 1000, '10 € by default');
     assert.equal((await gc(PID, 'ai.available')).result, false);

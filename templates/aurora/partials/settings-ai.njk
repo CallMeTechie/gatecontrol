@@ -23,6 +23,18 @@
       <ul class="stx-rows" id="ai-providers" aria-labelledby="ai-c-providers"><li class="st-empty">{{ t('common.loading') }}</li></ul>
     </section>
 
+    {#- the local AI (phase 3c, step 3 — services/ai/local.js): where it runs, which model, the download;
+        built by public/js/settings-ai.js (renderLocal) -#}
+    <section class="pgx-card stx-card ai-local" aria-labelledby="ai-c-local" id="ai-local">
+      <div class="stx-ch"><div class="stx-cht"><h3 class="stx-ct" id="ai-c-local">{{ t('ai.local.title') }}</h3><p class="stx-cd">{{ t('ai.local.desc') }}</p></div></div>
+      <div class="ai-local-body" id="ai-local-body"><p class="st-empty">{{ t('common.loading') }}</p></div>
+    </section>
+
+    <section class="pgx-card stx-card ai-use" aria-labelledby="ai-c-use" id="ai-use">
+      <div class="stx-ch"><div class="stx-cht"><h3 class="stx-ct" id="ai-c-use">{{ t('ai.use.title') }}</h3></div></div>
+      <div class="ai-use-body" id="ai-use-body"></div>
+    </section>
+
     <section class="pgx-card stx-card" aria-labelledby="ai-c-plugins">
       <div class="stx-ch"><div class="stx-cht"><h3 class="stx-ct" id="ai-c-plugins">{{ t('ai.plugins.title') }}</h3><p class="stx-cd">{{ t('ai.plugins.desc') }}</p></div></div>
       <ul class="stx-rows" id="ai-plugins" aria-labelledby="ai-c-plugins"><li class="st-empty">{{ t('common.loading') }}</li></ul>

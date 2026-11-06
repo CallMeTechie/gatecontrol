@@ -767,11 +767,167 @@
         ? t('gwn.feat.print_found', { list: list.slice(0, 4).join(', ') + (list.length > 4 ? ' …' : '') })
         : t('gwn.feat.print_none')));
       if ((p.devices || []).some((x) => x.problem === 'cert_changed')) extra.push(h('span', { class: 'gwn-hint' }, [U.icon('warn', 14), t('gwn.feat.print_cert')]));
+      // the last search (how many answers, what was dropped and why) — an older gateway reports none
+      if (p.search) extra.push(h('span', { class: 'gwe-d', 'data-print-search': '' }, printSearchText(p.search)));
+      else if (p.searchKnown) extra.push(h('span', { class: 'gwe-d', 'data-print-search': 'pending', text: t('gwn.feat.print_search_pending') }));
+      else extra.push(h('span', { class: 'gwn-hint', 'data-print-nosearch': '' }, [U.icon('info', 14), t('gwn.feat.print_nosearch', { version: sup.version || '—' })]));
+      const errs = (p.search && p.search.errors) || [];
+      if (errs.length) extra.push(h('span', { class: 'gwn-hint', 'data-print-err': errs.join(' ') }, [U.icon('warn', 14), errs.map((e) => t('gwn.feat.print_err_' + e)).join(' ')]));
+      const again = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-print-again', text: t('gwn.feat.print_again') });
+      again.addEventListener('click', () => printDiscover(id, again));
+      const add = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-print-manual', 'aria-haspopup': 'dialog',
+        text: (p.manual || []).length ? t('gwn.feat.print_manual_list', { list: p.manual.join(', ') }) : t('gwn.feat.print_manual_add') });
+      add.addEventListener('click', () => printManualDialog(id, p));
+      extra.push(h('span', { class: 'gwn-print-acts' }, [again, add]));
     }
     const plug = p.plugin || {};
     if (plug.installed) extra.push(h('a', { href: '/plugins/gatecontrol-print', class: 'gwn-link', 'data-print-link': 'plugin', text: t('gwn.feat.print_to_plugin') }));
     else extra.push(h('a', { href: '/settings/plugins/catalog/gatecontrol-print', class: 'gwn-link', 'data-print-link': 'catalog', text: t('gwn.feat.print_install') }));
     return featRow(t('gwn.feat.print'), t('gwn.feat.print_d'), sw, extra, 'print');
+  }
+
+  /** "Letzte Suche 12:03: 14 mDNS-Antworten, 2 Druck-/Scandienste, 1 Gerät · verworfen: 1 × anderes Subnetz (192.168.20.5)" */
+  function printSearchText(s) {
+    const at = s.at ? when(new Date(s.at).toISOString()) : '—';
+    let text = s.interfaces === 0 ? t('gwn.feat.print_search_nolan', { when: at })
+      : t('gwn.feat.print_search', { when: at, responses: nf(s.responses), services: nf(s.services), devices: nf(s.devices) });
+    const dropped = Object.keys(s.dropped || {}).map((r) => {
+      const ips = (s.hosts || []).filter((x) => x.reason === r).map((x) => x.ip);
+      return t('gwn.feat.print_drop', { n: s.dropped[r], reason: t('gwn.feat.print_drop_' + r) }) + (ips.length ? ' (' + ips.join(', ') + ')' : '');
+    });
+    if (dropped.length) text += ' · ' + t('gwn.feat.print_dropped', { list: dropped.join(', ') });
+    return text;
+  }
+
+  /** "Neu suchen": the gateway searches at once; the result shows up with its report (some seconds). */
+  function printDiscover(id, btn) {
+    btn.disabled = true;
+    U.api('POST', url(id, '/print/discover'), {}).then((r) => {
+      U.toast(t(r && r.busy ? 'gwn.feat.print_again_busy' : 'gwn.feat.print_again_done'));
+      [8000, 20000].forEach((ms2) => setTimeout(() => { if (cur && String(cur.g.peer_id) === String(id)) reloadFeatures(id); }, ms2));
+    }).catch((e) => D.alert({ message: errText(e), danger: true })).finally(() => { btn.disabled = false; });
+  }
+
+  const RFC1918 = /^(10\.\d{1,3}|172\.(1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}$/;
+  const isRfc1918 = (v) => RFC1918.test(v) && v.split('.').every((o) => Number(o) <= 255 && String(Number(o)) === o);
+
+  /**
+   * "Drucker nicht gefunden? Per IP-Adresse hinzufügen": the addresses the gateway asks directly
+   * (features.print.manual — private IPv4 only, at most 16; checked again by the server).
+   */
+  function printManualDialog(id, p) {
+    const max = p.manualMax || 16;
+    const list = (p.manual || []).slice();
+    const status = new Map(((p.search && p.search.manual) || []).map((m) => [m.ip, m]));
+    const named = new Map((p.devices || []).map((d) => [d.ip, d]));
+    const dlg = U.openDialog({ title: t('gwn.print.dlg_title'), wide: false, cls: 'gwn-printdlg' });
+    const rows = h('div', { class: 'gwn-rows', 'data-print-manual-list': '' });
+    const input = h('input', { type: 'text', id: 'gwn-p-ip', class: 'form-input gwe-mono', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false', placeholder: '192.168.1.70', 'aria-describedby': 'gwn-p-ip-hint' });
+    const addBtn = h('button', { type: 'button', class: 'btn btn-ghost', 'data-fk': 'gwn-p-add', text: t('gwn.print.add') });
+    const err = U.errorBox();
+    const stateOf = (ip) => {
+      const m = status.get(ip);
+      if (!m) return h('span', { class: 'gwe-d', text: t('gwn.print.st_pending') });
+      if (m.found) {
+        const d = named.get(ip);
+        return h('span', { class: 'gwe-d' }, [U.tag('green', t('gwn.print.st_found'), true), ' ', d ? d.name : '', m.via === 'mdns' ? ' · ' + t('gwn.print.st_via_mdns') : '']);
+      }
+      return h('span', { class: 'gwe-d' }, [U.tag('red', t(m.error === 'no_service' ? 'gwn.print.st_no_service' : 'gwn.print.st_unreachable'), true)]);
+    };
+    const draw = () => {
+      rows.textContent = '';
+      if (!list.length) rows.appendChild(h('p', { class: 'gwe-empty', text: t('gwn.print.none') }));
+      list.forEach((ip, i) => {
+        const rm = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-fk': 'gwn-p-rm:' + ip, 'aria-label': t('gwn.print.remove_aria', { ip }), text: t('gwn.print.remove') });
+        rm.addEventListener('click', () => { list.splice(i, 1); draw(); input.focus(); });
+        rows.appendChild(h('div', { class: 'gwn-row', 'data-print-ip': ip }, [h('span', { class: 'gwn-row-m' }, [h('strong', { class: 'gwe-mono', text: ip }), ' ', stateOf(ip)]), rm]));
+      });
+      addBtn.disabled = list.length >= max;
+      input.disabled = list.length >= max;
+    };
+    const add = (raw) => {
+      const ip = String(raw || '').trim();
+      U.showErr(err, '');
+      input.removeAttribute('aria-invalid');
+      if (!isRfc1918(ip)) { U.showErr(err, t('gwn.err.invalid_host')); input.setAttribute('aria-invalid', 'true'); input.focus(); return; }
+      if (list.includes(ip)) { U.showErr(err, t('gwn.print.dup', { ip })); input.focus(); return; }
+      if (list.length >= max) { U.showErr(err, t('gwn.print.max', { n: max })); return; }
+      list.push(ip);
+      input.value = '';
+      draw();
+      input.focus();
+    };
+    addBtn.addEventListener('click', () => add(input.value));
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(input.value); } });
+    // what the search saw in another private subnet: one click to allow it
+    const sugg = ((p.search && p.search.hosts) || []).filter((x) => x.private && x.reason === 'other_subnet');
+    dlg.body.append(
+      h('p', { class: 'gwe-intro', text: t('gwn.print.dlg_intro') }),
+      rows,
+      h('div', { class: 'gwe-field' }, [h('label', { class: 'form-label', for: 'gwn-p-ip', text: t('gwn.print.ip') }),
+        h('div', { class: 'gwn-print-add' }, [input, addBtn]),
+        h('span', { class: 'form-hint', id: 'gwn-p-ip-hint', text: t('gwn.print.ip_hint', { n: max }) })]),
+      sugg.length ? h('div', { class: 'gwe-field', 'data-print-sugg': '' }, [h('span', { class: 'form-label', text: t('gwn.print.sugg') }),
+        ...sugg.map((x) => {
+          const b = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-p-sugg:' + x.ip, text: t('gwn.print.sugg_add', { ip: x.ip, name: x.name || '—' }) });
+          b.addEventListener('click', () => add(x.ip));
+          return b;
+        })]) : null,
+      err);
+    draw();
+    const cancel = h('button', { type: 'button', class: 'btn btn-ghost', text: t('common.cancel'), on: { click: () => dlg.close(null) } });
+    const ok = h('button', { type: 'button', class: 'btn btn-primary', 'data-fk': 'gwn-p-save', text: t('gwn.print.save') });
+    dlg.foot.append(cancel, ok);
+    ok.addEventListener('click', () => {
+      // a typed but not added address counts as well
+      if (input.value.trim()) { add(input.value); if (input.value.trim()) return; }
+      ok.disabled = true;
+      putFeatures(id, { print: { manual: list } }, t('gwn.print.saved'))
+        .then(() => {
+          dlg.close(true);
+          // the gateway pulls its config and asks the addresses at once
+          [10000, 25000].forEach((ms2) => setTimeout(() => { if (cur && String(cur.g.peer_id) === String(id)) reloadFeatures(id); }, ms2));
+        })
+        .catch((e) => { ok.disabled = false; U.showErr(err, errText(e)); });
+    });
+    input.focus();
+  }
+
+  /**
+   * The row "Lokale KI" (phase 3c, step 3): the switch (features.ai), the model of this gateway when it serves
+   * the local AI, the way to Einstellungen › KI-Anbieter; hints instead of bans (too little memory, the compose
+   * file without the service ki, "Gateway zu alt").
+   */
+  function aiRow(id, g, d) {
+    const a = d.ai;
+    const sup = d.support || {};
+    const old = a.supported === false;
+    const sw = U.switchBtn(!!a.enabled, t('gwn.feat.ai'), 'gwn-f-ai', () => toggle(sw, id, (v) => ({ ai: { enabled: v } }), (v) => t(v ? 'gwn.feat.on_done' : 'gwn.feat.off_done', { name: t('gwn.feat.ai') })), old && !a.enabled);
+    const extra = [];
+    if (old) extra.push(h('span', { class: 'gwn-hint', 'data-ai-old': '' }, [U.icon('info', 14), t('gwn.feat.ai_old', { min: a.minGateway || sup.minGatewayAi || '1.26.0', version: sup.version || '—' })]));
+    let text = t('gwn.feat.ai_d');
+    if (a.enabled && a.chosen && a.model) {
+      const mem = a.model.ramMb ? t('gwn.feat.ai_model_mem', { dl: nf(a.model.downloadMb / 1000, 1), ram: nf(a.model.ramMb / 1000, 1) }) : '';
+      text = a.source === 'lan' ? t('gwn.feat.ai_on_lan', { url: a.lanUrl || '' }) : t('gwn.feat.ai_on');
+      extra.push(h('span', { class: 'gwe-d', 'data-ai-model': a.model.id }, [t('gwn.feat.ai_model'), ' ', h('strong', { text: a.model.name }), mem ? ' ' + mem : '']));
+    } else if (a.enabled && !a.chosen) {
+      extra.push(h('span', { class: 'gwn-hint' }, [U.icon('info', 14), t('gwn.feat.ai_not_chosen')]));
+    }
+    const st = a.state || {};
+    if (a.enabled && st.pull && st.pull.state === 'pulling') {
+      extra.push(h('span', { class: 'gwe-d', role: 'status' }, t('gwn.feat.ai_pulling', { done: nf((st.pull.completed || 0) / 1e9, 1), total: nf((st.pull.total || 0) / 1e9, 1) })));
+    }
+    if (a.hint === 'memory' && !old) extra.push(h('span', { class: 'gwn-hint', 'data-ai-hint': 'memory' }, [U.icon('warn', 14), t('gwn.feat.ai_memory')]));
+    if (a.compose === 'compose' && window.GCGatewayCompose) {
+      const dl = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-ai-compose', text: t('gwn.feat.ai_compose_btn') });
+      dl.addEventListener('click', () => window.GCGatewayCompose.open(g, 'gwn-ai-compose'));
+      extra.push(h('span', { class: 'gwn-hint', 'data-ai-compose': '' }, [U.icon('info', 14), t('gwn.feat.ai_compose'), ' ', dl]));
+    } else if (a.compose === 'image') {
+      extra.push(h('span', { class: 'gwn-hint', 'data-ai-compose': 'image' }, [U.icon('info', 14), t('gwn.feat.ai_old_image'), ' ',
+        h('a', { href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwn.feat.ai_releases') })]));
+    }
+    extra.push(h('a', { href: '/settings/ki', class: 'gwn-link', 'data-ai-link': '', text: t('gwn.feat.ai_to_settings') }));
+    return featRow(t('gwn.feat.ai'), text, sw, extra, 'ai');
   }
 
   /** Every switch row of the gateway by its data-feature key (same API and behaviour as before: putFeatures). */
@@ -839,6 +995,8 @@
     }
     // Drucken & Scannen (phase 3c): the switch here, everything else in the plugin "Drucken & Scannen"
     if (d.print) rows.set('print', printRow(id, d));
+    // Lokale KI (phase 3c, step 3): the switch here, the setup in Einstellungen › KI-Anbieter
+    if (d.ai) rows.set('ai', aiRow(id, g, d));
     // DNS filter, home cache, local time (phase 3b, gateway-home.js)
     if (window.GCGatewayHome) {
       window.GCGatewayHome.featureRows(id, d, (gid) => reloadFeatures(gid)).forEach((r) => rows.set(r.getAttribute('data-feature'), r));
@@ -848,9 +1006,13 @@
 
   // "≈ 40 MB" next to the switch — only for a part the memory estimate names (switched on)
   function memTag(row, d) {
-    const mb = PK.memoryOf(d, row.getAttribute('data-feature'));
+    const key = row.getAttribute('data-feature');
+    const mb = PK.memoryOf(d, key);
     if (mb == null) return;
-    const tagNode = h('span', { class: 'tag tag-grey gwn-fr-mem', text: t('gwp.feat.mem_row', { mb: nf(mb) }) });
+    // the local AI in GB and blue, like its part of the memory bar
+    const tagNode = key === 'ai'
+      ? h('span', { class: 'tag tag-blue gwn-fr-mem', text: t('gwp.feat.mem_row_gb', { gb: nf(mb / 1000, 1) }) })
+      : h('span', { class: 'tag tag-grey gwn-fr-mem', text: t('gwp.feat.mem_row', { mb: nf(mb) }) });
     const control = row.children.length > 1 ? row.lastElementChild : null;
     if (control) row.insertBefore(tagNode, control); else row.appendChild(tagNode);
   }
@@ -862,12 +1024,21 @@
     const pct = Math.max(1, Math.min(100, Math.round((m.usedMb / m.totalMb) * 100)));
     const tone = m.level === 'too_much' ? 'red' : m.level === 'tight' ? 'amber' : 'green';
     const head = t('gwp.feat.mem_head', { used: K.ramLabel(m.usedMb), total: K.ramLabel(m.totalMb) });
+    // phase 3c, step 3: the model of the local AI as its own (blue) part of the bar
+    const aiMb = (m.parts || []).filter((x) => x && x.kind === 'ai').reduce((a, x) => a + (x.mb > 0 ? x.mb : 0), 0);
     const fill = h('span', { class: 'gwn-membar-fill gwn-membar-' + (m.level || 'ok') });
-    fill.style.width = pct + '%';
+    const bar = h('span', { class: 'gwn-membar-bar' + (aiMb ? ' gwn-membar-split' : ''), role: 'img', 'aria-label': pct + ' %' }, fill);
+    if (aiMb) {
+      const aiPct = Math.max(1, Math.min(pct, Math.round((aiMb / m.totalMb) * 100)));
+      fill.style.width = Math.max(0, pct - aiPct) + '%';
+      const ai = h('span', { class: 'gwn-membar-ai', 'data-membar': 'ai' });
+      ai.style.width = aiPct + '%';
+      bar.appendChild(ai);
+    } else fill.style.width = pct + '%';
     return h('section', { class: 'gw gwe-card gwn-membar', 'aria-label': t('gwp.feat.mem_label') }, h('div', { class: 'body gwe-body' }, [
       h('div', { class: 'gwn-membar-row' }, [
-        h('div', { class: 'gwn-membar-t' }, [h('strong', { text: head }),
-          h('span', { class: 'gwn-membar-bar', role: 'img', 'aria-label': pct + ' %' }, fill)]),
+        h('div', { class: 'gwn-membar-t' }, [h('strong', { text: head }), bar,
+          aiMb ? h('span', { class: 'gwe-d gwn-membar-legend', text: t('gwp.feat.mem_legend_ai') }) : null]),
         m.level ? U.tag(tone, t('gwp.feat.level_' + m.level), true) : null,
       ]),
       hw ? h('p', { class: 'gwe-d gwn-hwline', text: hw }) : null,
@@ -906,6 +1077,13 @@
       list.forEach((r) => c.body.appendChild(r));
       out.push(c.card);
     });
+    // "Ein Schalter genügt" and "Hinweise statt Verbote" (phase 3c) — once the gateway offers the local AI
+    if (d.ai) {
+      out.push(h('div', { class: 'gwn-fhints' }, [
+        U.note('info', [h('strong', { text: t('gwn.feat.hint_switch_t') }), ' ', t('gwn.feat.hint_switch')]),
+        U.note('warn', [h('strong', { text: t('gwn.feat.hint_hints_t') }), ' ', t('gwn.feat.hint_hints')]),
+      ]));
+    }
     return out;
   }
 

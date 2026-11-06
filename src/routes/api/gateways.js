@@ -382,9 +382,11 @@ router.post('/:id/compose', (req, res) => {
   // the deconz service (phase 3c, step 2) when the gateway reports a deCONZ stick or Zigbee is switched on;
   // { zigbee: true|false } decides by hand
   const zigbee = typeof b.zigbee === 'boolean' ? b.zigbee : require('../../services/homeRadio').composeWantsZigbee(row.id);
-  const text = gatewaySetup.buildCompose(platform, network, { zigbee });
+  // the service ki (phase 3c, step 3) when the local AI runs on this gateway; { ai: true|false } decides by hand
+  const ai = typeof b.ai === 'boolean' ? b.ai : require('../../services/ai/local').composeWantsAi(row.id);
+  const text = gatewaySetup.buildCompose(platform, network, { zigbee, ai });
   if (!text) return res.status(400).json({ ok: false, error: 'invalid_option' });
-  logger.info({ peerId: row.id, platform, network, zigbee }, 'Gateway docker-compose.yml downloaded');
+  logger.info({ peerId: row.id, platform, network, zigbee, ai }, 'Gateway docker-compose.yml downloaded');
   res.set('Content-Type', 'application/yaml; charset=utf-8');
   res.set('Content-Disposition', 'attachment; filename="docker-compose.yml"');
   res.set('Cache-Control', 'no-store');

@@ -24,7 +24,7 @@ Allgemeine Voraussetzungen:
 
 - Netzwerk-Wächter, Internetqualität, Anwesenheit und USV brauchen
   Gateway-Version **1.21.0** oder neuer, DNS-Filter und Zwischenspeicher **1.22.0**,
-  Drucken & Scannen **1.24.0**, Funk **1.25.0**.
+  Drucken & Scannen **1.24.0**, Funk **1.25.0**, Lokale KI **1.26.0**.
   Ist das Gateway älter, steht das im Reiter; aktualisiere es dann ([Kapitel 6](06-gateway-aktualisieren.md)).
 - Das Gateway steht im Heimnetz im **Host-Netzwerkmodus** (Standard beim Pi,
   beim Synology-Paket und bei Linux mit „Host (empfohlen)“).
@@ -143,6 +143,30 @@ Meldet ein Gerät „Zertifikat geändert“, hat sich sein Sicherheitszertifika
 geändert (z. B. nach einem Firmware-Update) – im Plugin bestätigen, dann geht
 es weiter.
 
+### Drucker wird nicht gefunden
+
+Unter dem Schalter steht, was die letzte Suche gesehen hat („Letzte Suche
+heute 12:03: mDNS-Antworten 14, Druck-/Scandienste 3, Geräte 1“); „Neu
+suchen“ sucht sofort.
+
+- **„Dieses Gateway meldet noch nicht …“:** Das Gateway ist älter als die
+  verbesserte Suche – zuerst aktualisieren ([Kapitel 6](06-gateway-aktualisieren.md)).
+  Ältere Versionen übersehen neben avahi/Bonjour des Hosts (Synology, QNAP)
+  viele Drucker.
+- **„mDNS-Antworten 0“:** Die Suche kommt nicht beim Gateway an – etwa wenn der
+  Container nicht im Host-Netz läuft, das WLAN Multicast filtert oder der
+  Drucker im Gäste-WLAN bzw. einem anderen VLAN steht.
+- **„verworfen: anderes Subnetz“:** Der Drucker hat eine Adresse außerhalb des
+  Heimnetzes des Gateways. Von sich aus spricht das Gateway nur mit Geräten im
+  eigenen LAN – trag die Adresse ein (nächster Punkt).
+- **Per IP-Adresse hinzufügen:** „Drucker nicht gefunden? Per IP-Adresse
+  hinzufügen“ → Adresse eintragen (steht im Netzwerk-Menü am Drucker oder in
+  der Geräteliste des Routers) → „Hinzufügen“ → „Speichern“. Das Gateway fragt
+  das Gerät dann direkt (IPP auf Port 631 bzw. 443, eSCL auf 80 bzw. 443).
+  Nur private Adressen (10.x, 172.16–31.x, 192.168.x), höchstens 16; die
+  Adresse im Router am besten fest vergeben. Im Fenster steht je Adresse, ob
+  das Gateway sie erreicht hat.
+
 ## Funk (Zigbee, Bluetooth, Thread)
 
 **Wofür:** Zigbee-Lampen, -Steckdosen und -Sensoren (IKEA, Philips Hue, Aqara …)
@@ -190,6 +214,74 @@ Schritt ein. Matter-Geräte im WLAN gehen schon jetzt über Smart Home.
 **Wenn etwas hakt:** „Freigabe nötig“ heißt: deCONZ hat ein Phoscon-Passwort und lässt
 GateControl nicht hinein – einmal in Phoscon (Port 8090 des Gateways) Gateway ›
 Erweitert › „App authentifizieren“, dann „Erneut versuchen“.
+
+## Lokale KI
+
+**Wofür:** Ein KI-Modell im Heimnetz statt in der Cloud. Drive und Mail fassen
+Dokumente und Mails damit zusammen, sortieren und schlagen Antworten vor – die
+Inhalte verlassen das Haus nicht, und es kostet nichts. Dafür antwortet ein
+Modell ohne Grafikkarte langsamer (Sekunden bis Minuten) und kann weniger als
+die großen Cloud-Modelle; Bilder versteht es nicht (die gehen weiter an die
+Cloud, wenn „Bilder senden“ an ist).
+
+**Zwei Wege:**
+
+- **Auf einem Gateway:** GateControl lädt das Modell auf das Gateway und startet
+  es dort (Dienst „ki“ mit Ollama). Sinnvoll ab etwa 4 GB RAM; eine NAS mit 8–16 GB
+  ist gut. Auf einem Raspberry Pi 3 B+ (1 GB) zeigt GateControl „zu wenig Speicher“ –
+  einschalten bleibt möglich, besser ist dann der zweite Weg.
+- **Vorhandener KI-Server im Heimnetz:** Läuft schon Ollama oder LM Studio auf einem
+  PC, leitet ein Gateway im selben Heimnetz die Fragen nur weiter – an genau diese
+  eine Adresse (private IPv4-Adresse und Port). Am PC muss der Server im Netz
+  lauschen: Ollama mit `OLLAMA_HOST=0.0.0.0`, LM Studio mit „Serve on Local Network“.
+
+**Voraussetzungen:**
+
+- Gateway 1.26.0+. Ist es älter, steht in der Zeile „Gateway zu alt – ab 1.26.0“.
+- **Synology/Linux** (nur „Auf einem Gateway“): einmal die aktuelle Compose-Datei mit
+  dem Dienst „ki“. Fehlt er, zeigen die Zeile „Lokale KI“ und die Einrichtung den Knopf
+  „docker-compose.yml herunterladen“ – herunterladen, Projekt neu erstellen
+  ([Kapitel 6](06-gateway-aktualisieren.md)). Das Ollama-Image ist ≈ 3 GB, jedes Modell
+  1–6 GB.
+- **Raspberry-Pi-Image:** nichts zu tun – das Image legt den Dienst selbst an, sobald
+  du die lokale KI einschaltest.
+
+**Einrichten:** Einstellungen › Erweiterungen › KI-Anbieter › „Lokale KI einrichten“:
+
+1. „Auf einem Gateway“ oder „Vorhandener KI-Server im Heimnetz“ wählen.
+2. Das Gateway wählen. Daneben stehen RAM, Kerne und ob eine Grafikkarte da ist.
+3. Ein Modell wählen. GateControl sagt je Gateway „empfohlen“, „passt“ oder „nicht
+   empfohlen“ (zu wenig Speicher oder ohne Grafikkarte zu langsam) – wählen geht
+   immer. Für den Anfang: **Llama 3.2 3B** (2 GB, schnell, gut für Zusammenfassen und
+   Sortieren); auf schwacher Hardware **Llama 3.2 1B**; mit viel Speicher **Qwen 2.5 7B**
+   (bessere Antworten, deutlich langsamer ohne Grafikkarte).
+   Beim KI-Server im Heimnetz: Adresse eintragen (z. B. `http://192.168.1.20:11434`),
+   „Verbinden“, dann eines seiner Modelle wählen.
+4. „Speichern“. Auf einem Gateway lädt GateControl das Modell herunter
+   („Modell wird geladen: 1,3 von 2,0 GB“, „Abbrechen“ geht jederzeit; ein späteres
+   „Laden“ setzt fort).
+
+**Wofür die lokale KI?**
+
+| Einstellung | Was passiert |
+|---|---|
+| Für alles | Alle Anfragen gehen zuerst an die lokale KI. Die Cloud antwortet nur, wenn die lokale KI nicht erreichbar ist (Gateway offline, besetzt, zu langsam, Modell fehlt) oder ein Bild verstehen muss. |
+| Nur für private Inhalte | Drive-Dokumente und Mails (Plugins Drive und Mail) gehen an die lokale KI – und **nie** in die Cloud, auch wenn die lokale KI ausfällt. Alles andere wie bisher. |
+| Nur als Ausweich | Alles wie bisher über die Cloud; die lokale KI springt ein, wenn das Monatsbudget aufgebraucht ist. |
+
+„Testen: „Fasse diese Mail zusammen““ schickt eine erfundene Mail an die lokale KI und
+zeigt die Antwort und wie lange sie gedauert hat. Die lokale KI kostet 0 € und zählt
+nicht ins Budget; im Protokoll der KI-Anfragen steht sie trotzdem (mit „lokal“).
+
+**Im Reiter „Funktionen“:** Die Zeile „Lokale KI“ im Bereich „Geräte im Heimnetz“
+schaltet die KI auf diesem Gateway ein und aus und zeigt das Modell. Der Balken oben
+zeigt den Speicher: grün die Heimnetz-Funktionen, blau das Modell im Speicher; „knapp“
+heißt, für weitere Funktionen bleibt wenig.
+
+**Wenn etwas hakt:** „Dienst „ki“ fehlt“ → Compose-Datei herunterladen (siehe oben).
+„nicht erreichbar“ beim KI-Server im Heimnetz → läuft der PC, lauscht der Server im
+Netz, stimmt der Port? Das Aktivitätsprotokoll meldet „Lokale KI antwortet nicht“
+höchstens einmal pro Stunde.
 
 ## Zwischenspeicher
 

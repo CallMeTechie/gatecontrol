@@ -1749,10 +1749,9 @@ async function fetchImageCall(plugin, args) {
 // requests". The plugin names pictures by media id; the AI service reads
 // them itself. No key and no picture byte ever reaches the plugin process.
 
+// twice the request's time limit (+ 15 s) — at least 5 minutes for the local AI on a CPU (services/ai/local.js)
 function aiCallTimeout(args) {
-  const { LIMITS: AI } = require('../ai');
-  const t = args && Number.isFinite(args.timeoutMs) ? Math.max(AI.timeoutMinMs, Math.min(AI.timeoutMaxMs, args.timeoutMs)) : AI.timeoutDefaultMs;
-  return 2 * t + 15000;
+  return require('../ai').callLimitMs(args);
 }
 
 async function aiCall(plugin, op, args) {
