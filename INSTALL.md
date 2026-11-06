@@ -1,5 +1,7 @@
 # Installation Guide
 
+> **New here?** The [user guide](docs/guide/README.md) explains setting up the server and gateways step by step, also for non-professionals – with an FAQ. This document is the detailed technical reference behind it.
+
 This is the complete step-by-step install guide for GateControl. It assumes a fresh Linux host with root access and no previous GateControl setup. Existing installations that want to move to the recommended directory layout should read **[§12 Migration from older setups](#12-migration-from-older-setups)** at the end.
 
 For a one-line summary see the Quick Start in the [README](README.md). This document covers the full flow from DNS to first login.
@@ -83,6 +85,8 @@ Create a dedicated deploy directory — **separate from any cloned source reposi
 └── data/                 # created on first start — holds DB, certs, keys, WG config
 ```
 
+> **Note:** The shipped `docker-compose.yml` mounts `/data` as a **named Docker volume** (`gatecontrol-data:/data`) – then no `data/` folder appears, and `update.sh` (reads `./data`) as well as the one-line backup below miss the data. For the layout described here, change that line to `./data:/data` **before the first start** (see [§3](#3-download-the-setup-files)). Do not simply switch an existing installation; move it as described in [§12](#12-migration-from-older-setups).
+
 Why separate from the source repository:
 
 - Cleaner mental model: "code" and "config" never get mixed.
@@ -109,8 +113,13 @@ cd /opt/gatecontrol
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/setup.sh
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/docker-compose.yml
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/.env.example
+curl -fsSLO https://raw.githubusercontent.com/CallMeTechie/gatecontrol/master/update.sh
+chmod +x update.sh
+sed -i 's#gatecontrol-data:/data#./data:/data#' docker-compose.yml   # data in ./data (see §2)
 bash setup.sh
 ```
+
+`setup.sh` does not download `update.sh` itself – hence the extra download. It does not ask for the time zone either: add `TZ=Europe/Berlin` (your zone) to `.env` afterwards (see [§4](#4-configure-env)) and run `docker compose up -d`.
 
 Skip straight to [§6 First login](#6-first-login) — setup.sh does the rest.
 
@@ -122,6 +131,7 @@ curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/.env.example
 curl -fsSLO https://raw.githubusercontent.com/CallMeTechie/gatecontrol/master/update.sh
 chmod +x update.sh
+sed -i 's#gatecontrol-data:/data#./data:/data#' docker-compose.yml   # data in ./data (see §2)
 cp .env.example .env
 ```
 
@@ -158,6 +168,7 @@ Edit `/opt/gatecontrol/.env`. Three values are **required**; everything else has
 | Variable | Why | Example |
 |---|---|---|
 | `GC_CADDY_EMAIL` | Lets Encrypt contacts you for expiry warnings and certificate issues. Without it, certs still work but you get no recovery channel. | `admin@example.com` |
+| `TZ` | The server's time zone. The gateways take it over (port scan, speed test plan, DNS filter times); without `TZ` server and gateways use UTC. Not in `.env.example` – add it yourself. After changes run `docker compose up -d`, not `docker restart`. | `Europe/Berlin` |
 
 ### Optional — left empty for auto-generation
 
@@ -221,10 +232,10 @@ You do **not** need to create a reverse-proxy route for the admin UI itself. Gat
 
 ### Recommended first actions
 
-1. **Change the admin password** — Settings → Profile → Change Password. From this point `GC_ADMIN_PASSWORD` in `.env` is irrelevant; the hash lives in the DB.
-2. **Configure SMTP** (optional but useful) — Settings → SMTP. Required for route authentication that uses email OTP, for email alerts, and for the test email feature.
-3. **Configure email alerts** (optional) — Settings → Email Alerts. Pick which event groups should trigger notifications.
-4. **Review security settings** — Settings → Security. The defaults (password complexity, account lockout after failed logins) are reasonable; adjust to your policy.
+1. **Change the admin password** — user menu at the top right → Profile → Change Password. From this point `GC_ADMIN_PASSWORD` in `.env` is irrelevant; the hash lives in the DB.
+2. **Configure SMTP** (optional but useful) — Settings → Sending e-mail. Required for route authentication that uses email OTP, for email alerts, and for the test email feature.
+3. **Configure email alerts** (optional) — Settings → Notifications. Pick which event groups should trigger notifications.
+4. **Review security settings** — Settings → Sign-in & accounts (Account lockout). The defaults (password complexity, account lockout after failed logins) are reasonable; adjust to your policy.
 
 ---
 
@@ -409,13 +420,13 @@ The resulting archive is self-contained and can restore the entire installation.
 
 ### In-UI backup
 
-Settings → Backup → **Download full backup**. This produces a portable JSON file with peers, routes, route auth configs, ACL rules, settings, webhooks, and encrypted keys. Restore via **Upload backup** on the same page — works across GateControl instances as long as the encryption key is the same (or you are restoring onto the same instance).
+Settings → Backups → **Download configuration**. This produces a portable JSON file with peers, routes, route auth configs, ACL rules, settings, webhooks, and encrypted keys. Restore under Settings → **Danger zone** — works across GateControl instances as long as the encryption key is the same (or you are restoring onto the same instance).
 
 The in-UI backup does **not** include Caddy certificates — those are re-issued automatically after restore.
 
 ### Off-site backups (Pro, "scheduled backups")
 
-After every automatic backup GateControl can upload an encrypted copy to SFTP (key authentication with a key GateControl generates — add its public key to `~/.ssh/authorized_keys` on the target), SMB, S3-compatible storage or WebDAV (Settings → Backup). The files are called `gatecontrol-YYYYMMDD-HHmmss.gcbk`; per target only the newest *n* of these are kept, other files are never touched. They are encrypted with your off-site passphrase (scrypt + AES-256-GCM) and — unless you switch it off — contain the encryption key, so **passphrase + file are enough to restore on new hardware**: upload the `.gcbk` under Settings → Backup → Restore and enter the passphrase. Without GateControl: `node src/bin/offsite-decrypt.js <file.gcbk> -o backup.json [-k encryption_key]` (inside the container: `docker exec -it gatecontrol node /app/src/bin/offsite-decrypt.js …`). Keep the passphrase outside the server — it cannot be recovered. A NAS in the LAN behind a gateway is reached through an internal L4 route (SSH or SMB port): enter the server's VPN address (`10.8.0.1` by default) and the route's listen port as target.
+After every automatic backup GateControl can upload an encrypted copy to SFTP (key authentication with a key GateControl generates — add its public key to `~/.ssh/authorized_keys` on the target), SMB, S3-compatible storage or WebDAV (Settings → Backups). The files are called `gatecontrol-YYYYMMDD-HHmmss.gcbk`; per target only the newest *n* of these are kept, other files are never touched. They are encrypted with your off-site passphrase (scrypt + AES-256-GCM) and — unless you switch it off — contain the encryption key, so **passphrase + file are enough to restore on new hardware**: upload the `.gcbk` under Settings → Danger zone (restore) and enter the passphrase. Without GateControl: `node src/bin/offsite-decrypt.js <file.gcbk> -o backup.json [-k encryption_key]` (inside the container: `docker exec -it gatecontrol node /app/src/bin/offsite-decrypt.js …`). Keep the passphrase outside the server — it cannot be recovered. A NAS in the LAN behind a gateway is reached through an internal L4 route (SSH or SMB port): enter the server's VPN address (`10.8.0.1` by default) and the route's listen port as target.
 
 ---
 
@@ -453,16 +464,16 @@ Add a host cron job (as root, pointing at the **deployment** directory):
 
 #### Mode (Automatic / Manual)
 
-The update **mode** is chosen in the server's **Settings → Auto-Update** card. The same `*/5` cron runs in both modes — only what it *does* per run differs:
+The update **mode** is chosen in the server's **Settings → Updates** card. The same `*/5` cron runs in both modes — only what it *does* per run differs:
 
 - **Automatic** — every cron run compares digests and **deploys** whenever `:latest` differs from the running container. The server tracks each release within minutes, fully unattended.
 - **Manual** — every cron run only **polls** the `pending-update` flag written by the **"Update now"** button in the dashboard. No flag → it does nothing (no recreate, no churn). When you click "Update now", the flag is set and the next cron run (within 5 minutes) performs the deploy. This is why `*/5` is mandatory even in Manual mode: a slower interval delays your manual trigger by the full cron period.
 
 **Automatic rollback:** before each recreate, `update.sh` tags the running image as `ghcr.io/callmetechie/gatecontrol:rollback`. If the new image does not become healthy within `GC_WAIT_TIMEOUT`, it points `:latest` locally back at that image and recreates the container from it without pulling (`docker-compose.yml` stays unchanged). The dashboard then shows "Update … failed — previous version restored", and the script exits 1. The failed image ID is stored in `data/.auto-update-bad-image`; in Automatic mode that image is skipped until a newer `:latest` is published, so a broken release is not redeployed every 5 minutes. In Manual mode, "Update now" deliberately tries it again. If the rollback fails as well, the script exits 4, the dashboard shows "Update and rollback failed", and you have to step in (`docker compose ps`, `docker compose logs gatecontrol`). The `:rollback` tag keeps exactly one previous image on disk; the dangling-only prune never removes it.
 
-**Maintenance window (Automatic mode):** in Settings → Auto-Update you can restrict automatic deploys to a time window, e.g. 03:00–05:00 in `Europe/Berlin` (a window may span midnight, e.g. 23:00–02:00). The server writes it into `data/.auto-update-config.json`; outside the window `update.sh` still pulls the new image, logs `outside maintenance window` and reports the state `waiting_window` — the deploy happens on the first cron run inside the window. "Update now" deploys immediately regardless of the window. The time zone is read from the host's tzdata (`/usr/share/zoneinfo`); without it `date` falls back to UTC and the script logs a warning. The window needs the `update.sh` of GateControl 1.126 or newer — an older script ignores it and keeps deploying at any time.
+**Maintenance window (Automatic mode):** in Settings → Updates you can restrict automatic deploys to a time window, e.g. 03:00–05:00 in `Europe/Berlin` (a window may span midnight, e.g. 23:00–02:00). The server writes it into `data/.auto-update-config.json`; outside the window `update.sh` still pulls the new image, logs `outside maintenance window` and reports the state `waiting_window` — the deploy happens on the first cron run inside the window. "Update now" deploys immediately regardless of the window. The time zone is read from the host's tzdata (`/usr/share/zoneinfo`); without it `date` falls back to UTC and the script logs a warning. The window needs the `update.sh` of GateControl 1.126 or newer — an older script ignores it and keeps deploying at any time.
 
-**Database snapshot before migrations:** when a new version has to migrate the database, GateControl first copies it to `data/backups/pre-migration/gatecontrol-v<from>-v<to>-<timestamp>.db` (owner-only, the last 3 are kept; download under Settings → Backup). If that copy fails (disk full, permissions), the container does not start and `update.sh` rolls back to the previous image. Emergency exit: `GC_SKIP_PRE_MIGRATION_BACKUP=1` in `.env`.
+**Database snapshot before migrations:** when a new version has to migrate the database, GateControl first copies it to `data/backups/pre-migration/gatecontrol-v<from>-v<to>-<timestamp>.db` (owner-only, the last 3 are kept; download under Settings → Backups). If that copy fails (disk full, permissions), the container does not start and `update.sh` rolls back to the previous image. Emergency exit: `GC_SKIP_PRE_MIGRATION_BACKUP=1` in `.env`.
 
 Tunables (environment variables): `GC_IMAGE`, `GC_CONTAINER`, `GC_WAIT_TIMEOUT` (default 150 s), `GC_UPDATE_LOG`, `COMPOSE_DIR`.
 

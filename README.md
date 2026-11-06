@@ -4,6 +4,8 @@
 
 **Unified WireGuard VPN + Caddy Reverse Proxy Management**
 
+📖 **[User guide](docs/guide/README.md)** – set up the server and your gateways step by step (Synology, Raspberry Pi, Linux/Docker, Proxmox), with FAQ. Also in [German](docs/handbuch/README.md).
+
 GateControl is a self-hosted, containerized management platform that combines WireGuard VPN peer management with Caddy reverse proxy routing in a single, security-focused web interface. It is designed for self-hosters and small teams who want full control over their VPN infrastructure and reverse proxy configuration without juggling multiple tools or editing config files manually.
 
 ---
@@ -332,6 +334,7 @@ For the impatient — a minimal setup in a fresh `/opt/gatecontrol/` directory:
 mkdir -p /opt/gatecontrol && cd /opt/gatecontrol
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/docker-compose.yml
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/.env.example
+sed -i 's#gatecontrol-data:/data#./data:/data#' docker-compose.yml   # keep the data in ./data
 cp .env.example .env
 
 # Edit .env — set at minimum:
@@ -347,6 +350,8 @@ GateControl will be reachable at your configured `GC_BASE_URL` within ~30 second
 ---
 
 ## Installation
+
+Start with the **[user guide](docs/guide/README.md)** – the simplest path, step by step, for the server and the gateways.
 
 See **[INSTALL.md](INSTALL.md)** for the complete installation guide — prerequisites (DNS, firewall ports), recommended directory layout, `.env` configuration, first login, verification, troubleshooting the five most common first-install errors, backup strategy, and migration from older named-volume setups.
 
