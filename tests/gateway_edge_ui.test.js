@@ -63,6 +63,34 @@ describe('gateway-edge-kit: address and states', () => {
     for (const s of reasons) assert.ok(K.STATES.includes(s), s);
   });
 
+  it('offline with a reason (services/edge/reason.js) shows the reason: tone, label and explanation (de + en)', () => {
+    assert.deepEqual(K.REASONS, require('../src/services/edge/reason').REASONS);
+    for (const r of K.REASONS) {
+      const v = K.pluginState(p('offline', { assignment: { state: 'offline', reason: r, enabled: true, approved: { capabilities: [] }, newCapabilities: [] } }), settings);
+      assert.equal(v.state, r);
+      assert.ok(['red', 'amber', 'grey'].includes(v.tone), r);
+      assert.ok(de['gwe.state.' + r] && en['gwe.state.' + r], r);
+      assert.ok(de['gwe.state_d.' + r] && en['gwe.state_d.' + r], r);
+    }
+    // unknown or no reason (older server, older gateway): the plain offline
+    assert.equal(K.pluginState(p('offline'), settings).state, 'offline');
+    const odd = p('offline');
+    odd.assignment.reason = 'something_new';
+    assert.equal(K.pluginState(odd, settings).state, 'offline');
+  });
+
+  it('the guide for a reason: the gateway docs, Synology with its own section', () => {
+    const base = 'https://github.com/CallMeTechie/gatecontrol-gateway/blob/main/docs/';
+    assert.equal(K.reasonDoc('edge_missing', 'synology'), base + 'deployment/synology.md#edge-dienst-plugins-im-heimnetz');
+    assert.equal(K.reasonDoc('edge_missing', 'rpi'), base + 'edge.md#container-und-image');
+    assert.equal(K.reasonDoc('edge_fence', 'synology'), base + 'deployment/synology.md#netzgrenze-auf-der-synology-xt_owner');
+    assert.equal(K.reasonDoc('edge_fence', null), base + 'edge.md#netzgrenze-fail-closed');
+    assert.equal(K.reasonDoc('edge_not_running', 'synology'), base + 'edge.md#fehlersuche');
+    assert.equal(K.reasonDoc('edge_not_connected'), base + 'edge.md#kanal-zum-server');
+    assert.equal(K.reasonDoc('gateway_offline', 'synology'), null);
+    assert.equal(K.reasonDoc('offline'), null);
+  });
+
   it('a plugin not set up here: edge off → edge_off, unsigned and not allowed → unsigned (blocked switch), else not_set_up', () => {
     assert.equal(K.pluginState(p(null), { edgeEnabled: false }).state, 'edge_off');
     assert.equal(K.pluginState(p(null, { verified: false }), settings).state, 'unsigned');
@@ -159,6 +187,9 @@ describe('gateway-edge-kit: MQTT accounts as the server takes them', () => {
     assert.equal(K.brokerStatus({ mqttEnabled: false }).key, 'off');
     assert.equal(K.brokerStatus({ mqttEnabled: true, edgeEnabled: false }).key, 'waits_edge');
     assert.equal(K.brokerStatus({ mqttEnabled: true, edgeEnabled: true }, null, false).key, 'offline');
+    assert.deepEqual(K.brokerStatus({ mqttEnabled: true, edgeEnabled: true }, null, false, 'edge_missing'), { key: 'offline', tone: 'amber', reason: 'edge_missing' });
+    assert.equal(K.brokerStatus({ mqttEnabled: true, edgeEnabled: true }, null, false, 'whatever').reason, undefined);
+    assert.equal(K.brokerStatus({ mqttEnabled: true, edgeEnabled: true }, null, true, 'edge_missing').key, 'pending');
     assert.equal(K.brokerStatus({ mqttEnabled: true, edgeEnabled: true }, null, true).key, 'pending');
     assert.equal(K.brokerStatus({ mqttEnabled: true, edgeEnabled: true }, { running: true }, true).key, 'running');
     assert.equal(K.brokerStatus({ mqttEnabled: true, edgeEnabled: true }, { running: false }, true).key, 'stopped');
@@ -189,7 +220,8 @@ describe('gateway-edge: texts and errors', () => {
     const families = [...K.TABS.map((x) => 'gwe.tabs.' + x), ...K.ACCESS.map((x) => 'gwe.mqtt.access.' + x), ...K.LOG_FILTERS.map((f) => 'gwe.log.f.' + f.id),
       ...['off', 'waits_edge', 'offline', 'pending', 'running', 'stopped'].map((x) => 'gwe.mqtt.status.' + x),
       ...['locked', 'connected', 'idle'].map((x) => 'gwe.mqtt.acc.' + x), 'gwe.mqtt.new.src_template', 'gwe.mqtt.new.src_always',
-      ...['denied', 'unsigned', 'plugin_off', 'offline', 'pending', 'not_set_up', 'disabled', 'stopped'].map((x) => 'gwe.state_d.' + x)];
+      ...['denied', 'unsigned', 'plugin_off', 'offline', 'pending', 'not_set_up', 'disabled', 'stopped'].map((x) => 'gwe.state_d.' + x),
+      ...K.REASONS.map((x) => 'gwe.state.' + x), ...K.REASONS.map((x) => 'gwe.state_d.' + x)];
     families.forEach((k) => used.add(k));
     const ph = (s) => (String(s).match(/\{\{\s*\w+\s*\}\}/g) || []).sort().join();
     for (const k of used) {

@@ -16,6 +16,7 @@ const stateLib = require('./state');
 const hub = require('./hub');
 const mqtt = require('./mqtt');
 const edgeManifest = require('./manifest');
+const channelReason = require('./reason');
 const logger = require('../../utils/logger');
 
 const CONFIRM_WORDS = new Set(['ERLAUBEN', 'ALLOW']);
@@ -48,7 +49,10 @@ function edgePlugin(pluginId) {
   return p;
 }
 
-/** What the assignment amounts to right now (for the UI and gc.edge.gateways). */
+/**
+ * What the assignment amounts to right now (for the UI and gc.edge.gateways).
+ * 'offline': the edge channel is down — channelOf() says why (reason.js).
+ */
 function stateOf(a, settings, connected) {
   if (!settings.edgeEnabled) return 'edge_off';
   const v = stateLib.evaluate(a, settings);
@@ -58,13 +62,16 @@ function stateOf(a, settings, connected) {
   return a.status && a.status.state ? a.status.state : 'pending';
 }
 
-function assignmentView(a, settings, connected, lang) {
+/** chan: channelOf() — `reason` only goes with state 'offline' (why the channel is down; null = unknown). */
+function assignmentView(a, settings, chan, lang) {
   const p = registry().get(a.pluginId);
   const edge = p && p.manifest ? p.manifest.edge : null;
+  const state = stateOf(a, settings, chan.online);
   return {
     pluginId: a.pluginId,
     enabled: a.enabled,
-    state: stateOf(a, settings, connected),
+    state,
+    reason: state === 'offline' ? chan.reason : null,
     approved: { capabilities: a.capsList, version: a.capsVersion, at: a.approvedAt ? new Date(a.approvedAt).toISOString() : null, by: a.approvedBy },
     newCapabilities: edge ? edgeManifest.describe(edge.capabilities, lang).filter((x) => !a.capsList.includes(x.key)) : [],
     status: a.status || null,
@@ -88,16 +95,43 @@ function helloView(s) {
 // services edge + mqtt): older gateways never open the edge channel — the UI offers an update instead
 const EDGE_MIN_GATEWAY = '1.19.0';
 
-/** Version and edge support of a gateway from its last heartbeat (telemetry.gateway_version). */
-function supportView(peerId, s) {
+/** The gateway's last heartbeat: { seenAt, telemetry } (gateway_meta). */
+function heartbeatOf(peerId) {
+  try {
+    const row = require('../../db/connection').getDb().prepare('SELECT last_seen_at, last_health FROM gateway_meta WHERE peer_id = ?').get(peerId);
+    if (!row) return { seenAt: null, telemetry: null };
+    let tel = null;
+    try {
+      const h = row.last_health ? JSON.parse(row.last_health) : null;
+      tel = h && h.telemetry && typeof h.telemetry === 'object' ? h.telemetry : null;
+    } catch { tel = null; }
+    return { seenAt: row.last_seen_at == null ? null : Number(row.last_seen_at), telemetry: tel };
+  } catch { return { seenAt: null, telemetry: null }; }
+}
+
+// the same threshold as the gateway's own online/offline (gatewayHealth.js, Einstellungen › Gateways)
+function downThresholdMs() {
+  let n = NaN;
+  try { n = parseInt(require('../settings').get('gateway_down_threshold_s', '90'), 10); } catch { n = NaN; }
+  return (Number.isFinite(n) && n > 0 ? n : 90) * 1000;
+}
+
+/**
+ * The edge channel of a gateway: hub.connectionInfo() plus, while it is down,
+ * `reason` and `detail` from the heartbeat (reason.js). `hb`: heartbeatOf().
+ */
+function channelOf(peerId, hb) {
+  const conn = hub.connectionInfo(peerId);
+  const d = channelReason.diagnose({ online: conn.online, seenAt: hb.seenAt, thresholdMs: downThresholdMs(), telemetry: hb.telemetry, minGateway: EDGE_MIN_GATEWAY });
+  return { ...conn, reason: d.reason, detail: d.detail };
+}
+
+/** Version and edge support of a gateway from its last heartbeat (telemetry.gateway_version). `hb`: heartbeatOf(). */
+function supportView(s, hb) {
   let version = s.hello && s.hello.version ? s.hello.version : null;
   if (!version) {
-    try {
-      const row = require('../../db/connection').getDb().prepare('SELECT last_health FROM gateway_meta WHERE peer_id = ?').get(peerId);
-      const h = row && row.last_health ? JSON.parse(row.last_health) : null;
-      const v = h && h.telemetry && h.telemetry.gateway_version;
-      version = typeof v === 'string' && v ? v.slice(0, 32) : null;
-    } catch { version = null; }
+    const v = hb.telemetry && hb.telemetry.gateway_version;
+    version = typeof v === 'string' && v ? v.slice(0, 32) : null;
   }
   const semver = require('../plugins/semver');
   const supported = s.hello ? true : (version && semver.valid(version) ? semver.compare(version, EDGE_MIN_GATEWAY) >= 0 : null);
@@ -113,9 +147,10 @@ function gateways() {
   return store.gatewayPeers().map((g) => {
     const s = store.settings(g.id);
     const list = store.assignmentsOfGateway(g.id);
-    const conn = hub.connectionInfo(g.id);
+    const hb = heartbeatOf(g.id);
+    const conn = channelOf(g.id, hb);
     return {
-      id: g.id, name: g.name, ...settingsView(s), connection: conn, gateway: helloView(s), support: supportView(g.id, s),
+      id: g.id, name: g.name, ...settingsView(s), connection: conn, gateway: helloView(s), support: supportView(s, hb),
       plugins: { assigned: list.length, enabled: list.filter((a) => a.enabled).length,
         attention: list.filter((a) => { const st = stateOf(a, s, conn.online); return ['update_pending', 'crashed', 'denied', 'unsigned', 'gateway_too_old'].includes(st); }).length },
       mqtt: { accounts: mqtt.list(g.id).length, status: s.mqttStatus },
@@ -127,14 +162,15 @@ function gateways() {
 function overview(peerId, lang) {
   const g = needGateway(peerId);
   const s = store.settings(g.id);
-  const conn = hub.connectionInfo(g.id);
+  const hb = heartbeatOf(g.id);
+  const conn = channelOf(g.id, hb);
   const byPlugin = new Map(store.assignmentsOfGateway(g.id).map((a) => [a.pluginId, a]));
   const pluginsList = registry().list().filter((p) => p.manifest && p.manifest.edge).map((p) => {
     const a = byPlugin.get(p.id);
-    return { ...pluginEdgeView(p, lang), assignment: a ? assignmentView(a, s, conn.online, lang) : null };
+    return { ...pluginEdgeView(p, lang), assignment: a ? assignmentView(a, s, conn, lang) : null };
   });
   return {
-    id: g.id, name: g.name, settings: settingsView(s), connection: conn, gateway: helloView(s), support: supportView(g.id, s), plugins: pluginsList,
+    id: g.id, name: g.name, settings: settingsView(s), connection: conn, gateway: helloView(s), support: supportView(s, hb), plugins: pluginsList,
     mqtt: { status: s.mqttStatus, accounts: mqtt.list(g.id) },
   };
 }
@@ -147,10 +183,10 @@ function pluginOverview(pluginId, lang) {
     ...pluginEdgeView(p, lang),
     gateways: store.gatewayPeers().map((g) => {
       const s = store.settings(g.id);
-      const conn = hub.connectionInfo(g.id);
+      const conn = channelOf(g.id, heartbeatOf(g.id));
       const a = byPeer.get(g.id);
-      return { id: g.id, name: g.name, edgeEnabled: s.edgeEnabled, allowUnsignedEdge: s.allowUnsignedEdge, online: conn.online,
-        assignment: a ? assignmentView(a, s, conn.online, lang) : null };
+      return { id: g.id, name: g.name, edgeEnabled: s.edgeEnabled, allowUnsignedEdge: s.allowUnsignedEdge, online: conn.online, reason: conn.reason,
+        assignment: a ? assignmentView(a, s, conn, lang) : null };
     }),
   };
 }
@@ -223,7 +259,7 @@ function enablePlugin(peerId, pluginId, { capabilities, ip, user, lang } = {}) {
   }
   store.addLog(g.id, p.id, 'system', 'info', `enabled (v${p.version}; ${current.length} capabilities)`);
   hub.refresh(g.id);
-  return assignmentView(store.assignment(p.id, g.id), store.settings(g.id), hub.online(g.id), lang);
+  return assignmentView(store.assignment(p.id, g.id), store.settings(g.id), channelOf(g.id, heartbeatOf(g.id)), lang);
 }
 
 function disablePlugin(peerId, pluginId, { ip, user, lang } = {}) {
@@ -239,7 +275,7 @@ function disablePlugin(peerId, pluginId, { ip, user, lang } = {}) {
     store.addLog(g.id, a.pluginId, 'system', 'info', 'disabled');
     hub.refresh(g.id);
   }
-  return assignmentView(store.assignment(a.pluginId, g.id), store.settings(g.id), hub.online(g.id), lang);
+  return assignmentView(store.assignment(a.pluginId, g.id), store.settings(g.id), channelOf(g.id, heartbeatOf(g.id)), lang);
 }
 
 function logs(peerId, opts = {}) {
@@ -371,7 +407,10 @@ function needEffective(plugin, peerId) {
   if (!eff.ok) throw hostError('not_enabled', `the edge part is not switched on for this gateway (${eff.reason})`);
 }
 
-/** gc.edge.gateways() → [{ id, name, state, online, version }] — gateways this plugin is set up for */
+/**
+ * gc.edge.gateways() → [{ id, name, state, online, version, reason }] — gateways this plugin is set up for.
+ * `reason` (with state 'offline' only, else null): why the edge channel is down — reason.js REASONS, null = unknown.
+ */
 function hostGateways(plugin) {
   needEdge(plugin);
   return store.assignmentsOfPlugin(plugin.id).map((a) => {
@@ -379,7 +418,9 @@ function hostGateways(plugin) {
     if (!g) return null;
     const s = store.settings(g.id);
     const on = hub.online(g.id);
-    return { id: g.id, name: g.name, state: stateOf(a, s, on), online: on, version: s.hello && s.hello.version ? s.hello.version : null };
+    const state = stateOf(a, s, on);
+    const reason = state === 'offline' ? channelOf(g.id, heartbeatOf(g.id)).reason : null;
+    return { id: g.id, name: g.name, state, online: on, version: s.hello && s.hello.version ? s.hello.version : null, reason };
   }).filter(Boolean);
 }
 
@@ -451,6 +492,6 @@ function hostMqtt(plugin, op, args) {
 module.exports = {
   gateways, overview, pluginOverview, setSettings, enablePlugin, disablePlugin, logs,
   mqttAccounts, mqttCreate, mqttSetLocked, mqttResetPassword, mqttRemove,
-  onPluginInstalled, onPluginRemoved, hostGateways, hostCall, hostConfigure, hostMqtt, stateOf,
+  onPluginInstalled, onPluginRemoved, hostGateways, hostCall, hostConfigure, hostMqtt, stateOf, channelOf, heartbeatOf,
   EdgeAdminError, CONFIRM_WORDS, EDGE_MIN_GATEWAY,
 };

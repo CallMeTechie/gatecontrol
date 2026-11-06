@@ -353,10 +353,16 @@
     else if (hello.fence && hello.fence.active) chips.appendChild(chip('ok', t('gwe.edge.fence_on', { backend: hello.fence.backend || 'nftables' }), 'check'));
     else chips.appendChild(chip('bad', t('gwe.edge.fence_off'), 'warn'));
     const conn = d.connection || {};
+    const why = !conn.online && K.REASONS.indexOf(conn.reason) >= 0 ? conn.reason : null;
     if (conn.online) chips.appendChild(chip('ok', t('gwe.edge.connected_since', { time: fmtTime(conn.connectedAt) }), 'check'));
+    else if (why) chips.appendChild(chip(why === 'gateway_offline' ? '' : 'bad', t('gwe.state.' + why), why === 'gateway_offline' ? 'x' : 'warn'));
     else chips.appendChild(chip('', conn.lastSeen ? t('gwe.edge.offline_since', { time: fmtTime(conn.lastSeen) }) : t('gwe.edge.offline'), 'x'));
     if (hello && hello.edgeHost) chips.appendChild(chip('', t('gwe.edge.host', { version: hello.edgeHost })));
     c.body.appendChild(chips);
+    // why the channel is down — here unless a plugin row below already says it
+    if (why && !(d.plugins || []).some((p) => K.pluginState(p, d.settings).state === why)) {
+      c.body.appendChild(note(why === 'gateway_offline' ? 'info' : 'warn', [h('strong', { text: t('gwe.state.' + why) }), ' '].concat(reasonText(g, d, why))));
+    }
     const tel = (g.health && g.health.telemetry) || {};
     const memTotal = (hello && hello.hardware && hello.hardware.mem_total) || (tel.hardware && tel.hardware.mem_total) || tel.mem_total;
     const mh = K.memoryHint(memTotal, K.summary(d.plugins, d.settings).enabled);
@@ -387,6 +393,16 @@
     });
     c.body.appendChild(b);
     return c.card;
+  }
+
+  // the explanation of a reason (gwe.state_d.<reason>), the guide in the gateway's docs and the gateway's own error text
+  function reasonText(g, d, reason) {
+    const kids = [t('gwe.state_d.' + reason)];
+    const url = K.reasonDoc(reason, g.platform);
+    if (url) kids.push(' ', h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', text: t('gwe.reason.guide') }));
+    const msg = d.connection && d.connection.reason === reason ? d.connection.detail : null;
+    if (msg) kids.push(' · ' + t('gwe.reason.gw_says') + ' ', h('code', { class: 'gwe-mono', text: msg }));
+    return kids;
   }
 
   function pluginsCard(g, d) {
@@ -420,6 +436,8 @@
       detail = h('p', { class: 'gwe-d' }, [t('gwe.pl.update_wants', { version: p.version }), ' ', h('strong', { class: 'gwe-strong', text: fresh }), '. ', t('gwe.pl.update_off')]);
     } else if (st.state === 'gateway_too_old') {
       detail = h('p', { class: 'gwe-d', text: t('gwe.state_d.gateway_too_old', { min: p.edge.minGateway || '—', version: (d.support && d.support.gatewayVersion) || '—' }) });
+    } else if (K.REASONS.indexOf(st.state) >= 0) {
+      detail = h('p', { class: 'gwe-d' }, reasonText(g, d, st.state));
     } else if (['denied', 'unsigned', 'plugin_off', 'offline', 'pending', 'not_set_up', 'disabled', 'stopped'].indexOf(st.state) >= 0) {
       detail = h('p', { class: 'gwe-d', text: t('gwe.state_d.' + st.state) });
     }
@@ -641,8 +659,8 @@
       c.body.appendChild(note('warn', [t('gwe.mqtt.needs_edge'), ' ', on]));
     }
     if (d.gateway && !d.gateway.mqttAvailable) c.body.appendChild(note('warn', [t('gwe.mqtt.not_available')]));
-    const st = K.brokerStatus(s, d.mqtt && d.mqtt.status, d.connection && d.connection.online);
-    const status = [tag(st.tone, t('gwe.mqtt.status.' + st.key), true)];
+    const st = K.brokerStatus(s, d.mqtt && d.mqtt.status, d.connection && d.connection.online, d.connection && d.connection.reason);
+    const status = [tag(st.tone, st.reason ? t('gwe.state.' + st.reason) : t('gwe.mqtt.status.' + st.key), true)];
     if (st.key === 'running') {
       const n = d.mqtt.status.clients || 0;
       status.push(' ', t(n === 1 ? 'gwe.mqtt.client' : 'gwe.mqtt.clients', { n }));
@@ -656,6 +674,7 @@
     const md = mdnsName(g, d);
     if (md) rows.appendChild(kv(t('gwe.mqtt.k_mdns'), [h('code', { class: 'gwe-mono', text: md }), ' ', h('span', { class: 'gwe-muted', text: '(mDNS)' })]));
     c.body.appendChild(rows);
+    if (st.reason) c.body.appendChild(note(st.reason === 'gateway_offline' ? 'info' : 'warn', reasonText(g, d, st.reason)));
     return c.card;
   }
 

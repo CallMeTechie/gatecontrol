@@ -348,7 +348,7 @@ describe('gc.edge in the plugin process', () => {
   it('gateways(): the gateways it is set up for, with state and version', async () => {
     const r = await pluginApi('/gateways');
     assert.equal(r.ok, true);
-    assert.deepEqual(r.result, [{ id: gwA.peer.id, name: 'gw-a', state: 'running', online: true, version: '1.20.0' }]);
+    assert.deepEqual(r.result, [{ id: gwA.peer.id, name: 'gw-a', state: 'running', online: true, version: '1.20.0', reason: null }]);
   });
 
   it('call(): the edge part answers', async () => {
@@ -494,6 +494,41 @@ describe('gc.edge in the plugin process', () => {
     const gws = (await pluginApi('/gateways')).result;
     assert.equal(gws[0].online, false);
     assert.equal(gws[0].state, 'offline');
+  });
+
+  it('offline: the reason comes from the heartbeat (state stays offline for older plugins)', async () => {
+    const meta = db.prepare('SELECT last_seen_at, last_health FROM gateway_meta WHERE peer_id = ?').get(gwA.peer.id);
+    const beat = (edge, seenAt = Date.now()) => db.prepare('UPDATE gateway_meta SET last_seen_at = ?, last_health = ? WHERE peer_id = ?')
+      .run(seenAt, JSON.stringify({ telemetry: { gateway_version: '1.22.0', edge } }), gwA.peer.id);
+    const view = async () => {
+      const g = (await agent.get(`${API}/gateways/${gwA.peer.id}`).expect(200)).body.gateway;
+      const host = (await pluginApi('/gateways')).result.find((x) => x.id === gwA.peer.id);
+      return { g, a: g.plugins.find((x) => x.id === P).assignment, host };
+    };
+    try {
+      beat(null);
+      let v = await view();
+      assert.equal(v.g.connection.online, false);
+      assert.equal(v.g.connection.reason, 'edge_missing');
+      assert.equal(v.a.state, 'offline');
+      assert.equal(v.a.reason, 'edge_missing');
+      assert.equal(v.host.state, 'offline');
+      assert.equal(v.host.reason, 'edge_missing');
+
+      beat({ deployed: true, error: null, fence: { active: false, backend: null, error: 'iptables owner match: no such match' },
+        host: { at: new Date().toISOString(), stale: false, connected: false } });
+      v = await view();
+      assert.equal(v.a.reason, 'edge_fence');
+      assert.equal(v.g.connection.detail, 'iptables owner match: no such match');
+
+      beat(null, Date.now() - 10 * 60 * 1000);
+      v = await view();
+      assert.equal(v.host.reason, 'gateway_offline');
+      const list = (await agent.get(`${API}/gateways`).expect(200)).body.gateways.find((x) => x.id === gwA.peer.id);
+      assert.equal(list.connection.reason, 'gateway_offline');
+    } finally {
+      db.prepare('UPDATE gateway_meta SET last_seen_at = ?, last_health = ? WHERE peer_id = ?').run(meta.last_seen_at, meta.last_health, gwA.peer.id);
+    }
   });
 });
 

@@ -30,21 +30,43 @@
     return '#gw/' + encodeURIComponent(String(id)) + (tab && tab !== 'overview' && TABS.indexOf(tab) > 0 ? '/' + tab : '');
   }
 
+  // Why the edge channel is down (services/edge/reason.js) — the server reports state 'offline'
+  // plus `reason`; a row shows the reason in place of the plain 'offline'.
+  const REASONS = ['gateway_offline', 'edge_missing', 'edge_not_running', 'edge_fence', 'edge_not_connected'];
+
   // State of one plugin's edge part on the gateway → tone + i18n key (gwe.state.<state>).
   // 'not_set_up': installed with an edge part, never switched on here.
   const STATE_TONE = {
     running: 'green', starting: 'blue', pending: 'blue', crashed: 'red', denied: 'red', stopped: 'grey',
     offline: 'grey', disabled: 'grey', update_pending: 'amber', unsigned: 'grey', plugin_off: 'grey',
     gateway_too_old: 'amber', edge_off: 'grey', not_set_up: 'grey', no_edge: 'grey',
+    gateway_offline: 'grey', edge_missing: 'amber', edge_not_running: 'red', edge_fence: 'red', edge_not_connected: 'amber',
   };
   const STATES = Object.keys(STATE_TONE);
+
+  // Where the gateway's documentation explains the next step (gatecontrol-gateway, docs/); Synology has its own section.
+  const GW_DOCS = 'https://github.com/CallMeTechie/gatecontrol-gateway/blob/main/docs/';
+  const REASON_DOCS = {
+    edge_missing: { synology: 'deployment/synology.md#edge-dienst-plugins-im-heimnetz', other: 'edge.md#container-und-image' },
+    edge_not_running: { other: 'edge.md#fehlersuche' },
+    edge_fence: { synology: 'deployment/synology.md#netzgrenze-auf-der-synology-xt_owner', other: 'edge.md#netzgrenze-fail-closed' },
+    edge_not_connected: { other: 'edge.md#kanal-zum-server' },
+  };
+
+  /** The guide for a reason (null: none) — `platform` as the gateway assistant stores it (rpi, synology, …). */
+  function reasonDoc(reason, platform) {
+    const d = REASON_DOCS[reason];
+    if (!d) return null;
+    return GW_DOCS + (platform === 'synology' && d.synology ? d.synology : d.other);
+  }
 
   /** What a plugin row shows: { state, tone, key }. */
   function pluginState(p, settings) {
     const s = settings || {};
     const a = p && p.assignment;
     let state;
-    if (a && a.state) state = a.state;
+    if (a && a.state === 'offline' && REASONS.indexOf(a.reason) >= 0) state = a.reason;
+    else if (a && a.state) state = a.state;
     else if (!s.edgeEnabled) state = 'edge_off';
     else if (p && !p.verified && !s.allowUnsignedEdge) state = 'unsigned';
     else state = 'not_set_up';
@@ -199,12 +221,15 @@
     return lanIp + ':' + (tls ? 8883 : 1883);
   }
 
-  /** Status line of the broker: { key, tone } (gwe.mqtt.status.<key>). */
-  function brokerStatus(settings, status, online) {
+  /**
+   * Status line of the broker: { key, tone } (gwe.mqtt.status.<key>); while the edge channel is down
+   * and the server knows why (connection.reason), also `reason` with the tone of that reason.
+   */
+  function brokerStatus(settings, status, online, reason) {
     const s = settings || {};
     if (!s.mqttEnabled) return { key: 'off', tone: 'grey' };
     if (!s.edgeEnabled) return { key: 'waits_edge', tone: 'amber' };
-    if (!online) return { key: 'offline', tone: 'grey' };
+    if (!online) return REASONS.indexOf(reason) >= 0 ? { key: 'offline', tone: STATE_TONE[reason], reason } : { key: 'offline', tone: 'grey' };
     if (!status) return { key: 'pending', tone: 'blue' };
     return status.running ? { key: 'running', tone: 'green' } : { key: 'stopped', tone: 'red' };
   }
@@ -242,7 +267,7 @@
   }
 
   return {
-    TABS, STATES, parseHash, hashFor, pluginState, pluginControl, summary, capabilityRows, capabilityKeys,
+    TABS, STATES, REASONS, reasonDoc, parseHash, hashFor, pluginState, pluginControl, summary, capabilityRows, capabilityKeys,
     memoryHint, ramLabel, EDGE_BASE_MB, PER_PLUGIN_MB,
     ACCOUNTS_MAX, TOPICS_MAX, USER_RE, ACCESS, TEMPLATES, template, usernameProblem, topicOk, plannedTopics, accountBody,
     topicPrefix, brokerAddress, brokerStatus, accountStatus, errorKey, LOG_FILTERS, logLabel,
