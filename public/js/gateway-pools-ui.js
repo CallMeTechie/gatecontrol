@@ -63,6 +63,8 @@
     return fallback || ('#' + id);
   }
   function memberName(m) { return nameOf(m.peer_id, m.name); }
+  // Countdowns ({{left}} → "m:ss", the failback wait): nodes with data-gw-until
+  // and the template data-gw-tpl, rewritten every second by gateways.js.
   function dur(s) { const d = PK.duration(s); return t(d.key, { n: d.n }); }
   function ago(ms) {
     if (!ms) return '—';
@@ -159,6 +161,10 @@
   // ─── Overview: the card "Pool" ────────────────────────────────────────
   function stateTag(p, m) {
     if (m.state === 'standby' && PK.reserveGap(p, m)) return h('span', { class: 'tag tag-amber', 'data-state': 'standby_partial', text: t('gwp.mstate.standby_partial') });
+    // away on purpose (live state): "Update läuft" / "startet neu" instead of a plain offline
+    if (m.state === 'offline' && (m.live_state === 'updating' || m.live_state === 'restarting')) {
+      return h('span', { class: 'tag tag-blue', 'data-state': m.live_state, text: t('gwp.mstate.' + m.live_state) });
+    }
     const r = PK.roleOf(p, m);
     const key = { active: p.mode === 'load_balancing' ? 'gwp.mstate.lb_active' : 'gwp.mstate.active', standby: 'gwp.mstate.standby', recovering: 'gwp.mstate.recovering', offline: 'gwp.mstate.offline' }[m.state];
     return h('span', { class: 'tag tag-' + (r.tone === 'blue' ? 'green' : r.tone === 'grey' ? 'green' : r.tone), 'data-state': m.state, text: t(key || 'gwp.mstate.offline') });
@@ -191,7 +197,8 @@
     }
     if (self && self.state === 'recovering' && active) {
       const r = PK.roleOf(p, self);
-      return t('gwp.ov.recovering', { active: memberName(active), min: r.params.min || 1 });
+      // {{left}} stays in: poolCard counts it down
+      return t(self.failback_takes_routes === false ? 'gwp.ov.recovering_reserve' : 'gwp.ov.recovering', { active: memberName(active), min: r.params.min || 1, left: r.until ? '{{left}}' : '—' });
     }
     if (active) return t('gwp.ov.offline_self', { active: memberName(active) });
     return t('gwp.ov.down');
@@ -224,7 +231,13 @@
     ps.forEach((p) => {
       const lead = h('p', { class: 'gwe-d' }, [t('gwp.ov.member_a'), ' ', h('strong', { class: 'gwe-strong', text: '„' + p.name + '“' }), ' ', t('gwp.ov.member_b', { mode: t('gwp.mode.' + p.mode) })]);
       const extra = ps.length > 1 ? h('a', { class: 'gwn-link', href: '#pool/' + p.id, text: t('gwp.open_named', { name: p.name }) }) : null;
-      c.body.append(...[lead, memberRows(p, g.peer_id), h('p', { class: 'gwe-d', 'data-outage': String(p.id), text: outageSentence(p, g.peer_id) }), extra].filter(Boolean));
+      const sentence = outageSentence(p, g.peer_id);
+      const selfM = PK.memberOf(p, g.peer_id);
+      const until = selfM && selfM.state === 'recovering' ? PK.roleOf(p, selfM).until : null;
+      const outage = until && sentence.indexOf('{{left}}') >= 0
+        ? h('p', { class: 'gwe-d', 'data-outage': String(p.id), 'data-gw-until': String(until), 'data-gw-tpl': sentence, text: sentence.split('{{left}}').join(PK.clock(until - Date.now())) })
+        : h('p', { class: 'gwe-d', 'data-outage': String(p.id), text: sentence });
+      c.body.append(...[lead, memberRows(p, g.peer_id), outage, extra].filter(Boolean));
     });
     return c.card;
   }
@@ -290,6 +303,7 @@
     let tone = 'ok';
     let lead;
     let rest = '';
+    let restUntil = null; // the failback of the first member, counted down in `rest`
     if (p.status === 'off') { tone = 'grey'; lead = t('gwp.ban.off'); } else if (p.status === 'down') {
       tone = 'bad'; lead = t('gwp.ban.down'); rest = t(p.outage_message ? 'gwp.ban.down_msg' : 'gwp.ban.down_rest', { n });
     } else if (p.mode === 'load_balancing') {
@@ -300,8 +314,12 @@
       tone = 'warn'; lead = t('gwp.ban.single'); rest = t('gwp.ban.single_rest');
     } else if (p.status === 'on_reserve') {
       tone = 'warn'; lead = t('gwp.ban.on_reserve', { active: memberName(active), first: memberName(first) });
-      rest = first.state === 'recovering' ? t('gwp.ban.back_in', { first: memberName(first), min: PK.roleOf(p, first).params.min || 1 })
-        : t('gwp.ban.first_down', { first: memberName(first), ago: ago(first.went_down_at || first.last_seen_at) });
+      const fr = first.state === 'recovering' ? PK.roleOf(p, first) : null;
+      if (fr && fr.until) restUntil = fr.until;
+      rest = fr ? t('gwp.ban.back_in', { first: memberName(first), min: fr.params.min || 1, left: fr.until ? '{{left}}' : '—' })
+        : (first.live_state === 'updating' || first.live_state === 'restarting')
+          ? t('gwp.ban.first_' + first.live_state, { first: memberName(first) })
+          : t('gwp.ban.first_down', { first: memberName(first), ago: ago(first.offline_since || first.went_down_at || first.last_seen_at) });
     } else if (p.status === 'no_reserve') {
       tone = 'warn'; lead = t('gwp.ban.no_reserve', { active: memberName(active) }); rest = t('gwp.ban.no_reserve_rest', { active: memberName(active), n });
     } else if (PK.effectiveStatus(p) === 'partial') {
@@ -314,8 +332,11 @@
       rest = t('gwp.ban.protected_rest', { active: memberName(active), n });
     }
     const ic = tone === 'ok' ? IC.shield : tone === 'bad' ? IC.x : IC.warn;
+    const restNode = restUntil && rest.indexOf('{{left}}') >= 0
+      ? h('span', { 'data-gw-until': String(restUntil), 'data-gw-tpl': ' ' + rest, text: ' ' + rest.split('{{left}}').join(PK.clock(restUntil - Date.now())) })
+      : (rest ? ' ' + rest : '');
     return h('div', { class: 'gwp-banner gwp-banner-' + tone, role: 'status', 'data-status': PK.effectiveStatus(p) }, [svg(ic, 22),
-      h('p', null, [h('strong', { text: lead }), rest ? ' ' + rest : ''])]);
+      h('p', null, [h('strong', { text: lead }), restNode])]);
   }
 
   // Members: order (drag or the arrow buttons), add, remove
@@ -335,7 +356,8 @@
     const parts = [];
     const pl = platformText(m.peer_id);
     if (pl) parts.push(pl);
-    parts.push(t(m.state === 'active' || m.state === 'standby' ? 'gwp.mem.online' : m.state === 'recovering' ? 'gwp.mem.back' : 'gwp.mem.offline'));
+    const away = m.state === 'offline' && (m.live_state === 'updating' || m.live_state === 'restarting') ? m.live_state : null;
+    parts.push(t(m.state === 'active' || m.state === 'standby' ? 'gwp.mem.online' : m.state === 'recovering' ? 'gwp.mem.back' : away ? 'gwp.mem.' + away : 'gwp.mem.offline'));
     if (m.last_seen_at) parts.push(t('gwp.mem.heartbeat', { ago: ago(m.last_seen_at) }));
     const r = m.reserve;
     if (r && m.state !== 'active') parts.push(r.reachable === r.checked ? t('gwp.mem.reaches_all', { n: r.checked }) : t('gwp.mem.reaches', { k: r.reachable, n: r.checked }));

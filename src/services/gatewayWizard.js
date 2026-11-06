@@ -133,8 +133,17 @@ function setupStatus(peerId) {
   const { plugin, decl } = smarthomePlugin();
   const idx = plugin && decl && route ? smarthomeAssignment(plugin.id, route.id) : -1;
 
+  // the live state (services/gatewayLiveState.js): online with the first
+  // heartbeat, not only after the sliding window has seen four of them
   let status = 'unknown';
-  try { status = require('./gateways').getHealthStatus(row.id); } catch { /* unknown */ }
+  let liveStateName = 'unknown';
+  try {
+    const gws = require('./gateways');
+    const liveState = require('./gatewayLiveState');
+    const live = liveState.forPeer(row.id) || liveState.derive({}, {});
+    liveStateName = live.state;
+    status = liveState.legacyStatus(live, gws.getHealthStatus(row.id), gws._isHeartbeatHealthy(health));
+  } catch { /* unknown */ }
 
   return {
     peer_id: row.id,
@@ -147,6 +156,7 @@ function setupStatus(peerId) {
     connected: !!(firstSeen || hsS),
     tunnel_up: hsS > 0 && (Date.now() / 1000 - hsS) < TUNNEL_FRESH_S,
     status,
+    state: liveStateName,
     gateway_version: version,
     hostname: str(health.hostname, 253),
     lan_ip: str(row.lan_ip, 64),

@@ -540,13 +540,22 @@ router.get('/:id/gateway-info', (req, res) => {
     }
 
     const gateways = require('../../services/gateways');
-    const status = gateways.getHealthStatus(peer.id);
+    const liveState = require('../../services/gatewayLiveState');
+    const healthStatus = gateways.getHealthStatus(peer.id);
+    const live = liveState.forPeer(peer.id) || liveState.derive({}, {});
+    const status = liveState.legacyStatus(live, healthStatus, gateways._isHeartbeatHealthy(health));
 
     res.json({
       ok: true,
       gateway: {
         peer_id: peer.id,
         status,
+        state: live.state,
+        reachable: live.reachable,
+        offline_since: live.offline_since,
+        failback_at: live.failback_at,
+        expected_back_by: live.expected_back_by,
+        health_status: healthStatus,
         api_port: meta.api_port,
         proxy_port: meta.proxy_port || 8080,
         last_seen_at: meta.last_seen_at,

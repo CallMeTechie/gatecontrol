@@ -75,14 +75,24 @@ module.exports = (ctx) => {
       const tel = (lan, router, model, extra) => ({ lan_subnets: [{ cidr: lan, primary: true }], default_gateway_ip: router, lan_ip: lan.replace(/0\/24$/, '23'),
         hardware: { model }, gateway_version: '1.23.0', cpu_cores: 4, cpu_load_avg: [0.3, 0.2, 0.2], mem_total: 16e9, mem_used: 5e9, disk: { total: 2e12, used: 1e12 },
         state_dir_writable: true, lan_discovery: false, ...extra });
-      const fake = (id, name, platform, t, routes) => ({ peer_id: id, name, hostname: null, ip: '10.8.0.' + (id - 9200), status: 'online', last_seen_at: now - 12000,
+      // live state of the server (gatewayLiveState): online unless the section "live state" below switches it
+      const live = { on: false, failbackAt: 0, expectedBy: 0 };
+      const liveOf = (id) => {
+        if (!live.on) return {};
+        if (id === FH) return { state: 'updating', status: 'offline', reachable: false, offline_since: Date.now() - 40000, expected_back_by: live.expectedBy, update_state: 'updating' };
+        if (id === PIFH) return { state: 'offline', status: 'offline', reachable: false, offline_since: now - 20 * MIN, last_seen_at: now - 20 * MIN };
+        if (id === NAS) return { state: 'online', reachable: true, alive: false, failback_at: live.failbackAt, failback_takes_routes: false };
+        return {};
+      };
+      const fake = (id, name, platform, t, routes) => ({ peer_id: id, name, hostname: null, ip: '10.8.0.' + (id - 9200), status: 'online', state: 'online', reachable: true, alive: true, last_seen_at: now - 12000,
         health: { telemetry: t, overall_healthy: true, http_proxy_healthy: true, api_healthy: true, dns_resolve_ok: true, config_hash: 'a91f3c00' }, routes,
         platform, never_connected: false, update_available: false, discovery: { enabled: 0 } });
       await page.route(/\/api\/v1\/gateways(\?.*)?$/, async (r) => {
         const res = await r.fetch();
         const j = await res.json();
         const seeded = (j.gateways || []).filter((g) => g.peer_id === HOME || g.peer_id === NAS).map((g) => ({
-          ...g, status: 'online', never_connected: false, last_seen_at: now - 12000, platform: g.peer_id === HOME ? 'synology' : 'rpi',
+          ...g, status: 'online', state: 'online', reachable: true, alive: true, failback_at: null, expected_back_by: null, offline_since: null,
+          never_connected: false, last_seen_at: now - 12000, platform: g.peer_id === HOME ? 'synology' : 'rpi',
           health: { ...(g.health || {}), overall_healthy: true, http_proxy_healthy: true, api_healthy: true, dns_resolve_ok: true, config_hash: 'a91f3c00',
             route_reachability: [{ route_id: 9501, reachable: true, latency_ms: 3 }],
             telemetry: { ...((g.health && g.health.telemetry) || {}), ...tel('192.168.1.0/24', '192.168.1.1', g.peer_id === HOME ? 'Synology DS918+' : 'Raspberry Pi 4 Model B') } },
@@ -91,7 +101,7 @@ module.exports = (ctx) => {
           fake(FH, 'Ferienhaus', 'linux', tel('192.168.178.0/24', '192.168.178.1', 'Linux · Docker'), [{ id: 9401, domain: 'cloud.ferien.example' }, { id: 9402, domain: 'kamera.ferien.example' }]),
           fake(PIFH, 'Pi Ferienhaus', 'rpi', tel('192.168.178.0/24', '192.168.178.1', 'Raspberry Pi 4 Model B'), []),
         ]);
-        r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...j, gateways: fleet }) });
+        r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...j, gateways: fleet.map((g) => ({ ...g, ...liveOf(g.peer_id) })) }) });
       });
       // the licence flag of the page (community in the CI)
       await page.route((u) => u.pathname === '/gateways', async (r) => {
@@ -121,12 +131,16 @@ module.exports = (ctx) => {
       const stateOf = (p) => {
         const ms = p.members.slice().sort((a, b) => a.priority - b.priority);
         const serving = ms.filter((m) => alive[m.peer_id]).slice(0, 1).map((m) => m.peer_id);
-        const members = ms.map((m) => ({ peer_id: m.peer_id, priority: m.priority, name: names[m.peer_id], platform: null, last_seen_at: now - 12000, went_down_at: null, failback_at: null,
-          state: serving.includes(m.peer_id) ? 'active' : (alive[m.peer_id] ? 'standby' : 'offline'),
+        // live state: NAS back online, its routing still in the failback wait (gatewayPoolState 'recovering')
+        const back = (id) => live.on && id === NAS;
+        const members = ms.map((m) => ({ peer_id: m.peer_id, priority: m.priority, name: names[m.peer_id], platform: null, last_seen_at: now - 12000, went_down_at: null,
+          failback_at: back(m.peer_id) ? live.failbackAt : null, live_state: 'online', reachable: true, failback_takes_routes: back(m.peer_id) ? false : null,
+          state: back(m.peer_id) ? 'recovering' : serving.includes(m.peer_id) ? 'active' : (alive[m.peer_id] ? 'standby' : 'offline'),
           reserve: reserveData && !serving.includes(m.peer_id) && m.peer_id === NAS ? { total: p.routes.length, checked: p.routes.length, reachable: p.routes.length - 1, missing: [{ id: p.routes[p.routes.length - 1].id, domain: p.routes[p.routes.length - 1].domain }] } : null }));
         // like an older server: "protected" even when the reserve misses a target — the page
         // must still show "teilweise geschützt" (gateway-pool-kit.js effectiveStatus)
-        const status = members.length < 2 ? 'single' : (members[0].state === 'active' ? (members.filter((m) => m.state !== 'offline').length > 1 ? 'protected' : 'no_reserve') : 'on_reserve');
+        const up = members.filter((m) => m.state === 'active' || m.state === 'standby').length;
+        const status = members.length < 2 ? 'single' : (members[0].state === 'active' ? (up > 1 ? 'protected' : 'no_reserve') : 'on_reserve');
         return { id: p.id, name: p.name, mode: p.mode, lb_policy: p.lb_policy, failback_cooldown_s: p.failback_cooldown_s, outage_message: p.outage_message, enabled: true,
           status, active_peer_ids: serving, members, routes: p.routes, rdp_routes: p.rdp_routes, pinned_routes: p.pinned.map((x) => ({ ...x, peer_name: names[x.peer_id] })),
           history: p.history.map((e) => ({ ...e, from_name: names[e.from_peer_id], to_name: names[e.to_peer_id] })), last_switch_at: p.history.length ? p.history[0].at : null,
@@ -415,6 +429,46 @@ module.exports = (ctx) => {
         await page.click('.gwp-dlg .btn-danger');
         step('dissolve: POST dissolve with pin_to → back to the fleet, the group is gone', await until(page, () => location.hash === '' && !document.getElementById('fleet-view').hidden && !document.querySelector('.gwp-group[data-pool="2"]'))
           && last('POST', '/2/dissolve').body.pin_to === FH);
+        // ── live state (gatewayLiveState): an update under way, offline since, back online in the failback wait ──
+        live.on = true;
+        live.failbackAt = Date.now() + 4 * MIN + 30000;
+        live.expectedBy = Date.now() + 8 * MIN;
+        await page.goto(BASE + '/gateways');
+        await theme(page, 'light');
+        step('live: an update under way is "Update läuft" (blue) with the expected time — not offline', await until(page, (f) => {
+          const c = document.querySelector(`.gw[data-id="${f}"]`);
+          const tag = c && c.querySelector('.tag-blue[data-live="updating"]');
+          return tag && /Update läuft/.test(tag.textContent) && /zurück erwartet bis \d\d:\d\d/.test(c.textContent) && c.dataset.live === 'updating';
+        }, FH));
+        step('live: an offline gateway stays offline (grey)', await page.evaluate((p) => {
+          const c = document.querySelector(`.gw[data-id="${p}"]`);
+          return !!(c && c.querySelector('.tag-grey[data-live="offline"]'));
+        }, PIFH));
+        step('live: KPI "Online" says "1 offline · 1 startet neu"', await page.evaluate(() => [...document.querySelectorAll('#fleet-kpis .kpi')].some((k) => /1 offline · 1 startet neu/.test(k.textContent))));
+        const roleText = () => page.evaluate((n) => { const r = document.querySelector(`.gwp-group[data-pool="1"] .gw[data-id="${n}"] [data-role="recovering"]`); return r ? r.textContent : ''; }, NAS);
+        const r0 = await roleText();
+        step('live: back online in the failback wait — the role tag counts down m:ss', /Reserve in [34]:\d\d/.test(r0), r0);
+        await page.waitForTimeout(2100);
+        const r1 = await roleText();
+        step('live: … and the countdown runs without a reload', r1 !== r0 && /Reserve in [34]:\d\d/.test(r1), r0 + ' → ' + r1);
+        step('live: the card of a gateway in the failback wait is online (green), not offline', await page.evaluate((n) => !!document.querySelector(`.gw[data-id="${n}"] .tag-green[data-live="online"]`), NAS));
+        await view(page, 'gwpool-live-light');
+        await page.evaluate((n) => { location.hash = '#gw/' + n; }, NAS);
+        step('live: detail head — pill "Online" and the line "steht in m:ss wieder als Reserve bereit"', await until(page, () => {
+          const head = document.querySelector('.gw-head');
+          const hint = head && head.querySelector('.gw-live-hint[data-gw-until]');
+          return head && head.querySelector('.pill.online') && hint && /steht in \d+:\d\d wieder als Reserve bereit/.test(hint.textContent);
+        }));
+        step('live: Zustand names the failback wait', await until(page, () => /wieder als Reserve bereit/.test((document.querySelector('.gwo-state') || {}).textContent || '')));
+        await page.evaluate(() => { location.hash = '#pool/1'; });
+        step('live: pool page — the member is "wieder online" and the routes wait', await until(page, (n) => {
+          const li = document.querySelector(`.gwp-mlist > li[data-peer="${n}"]`);
+          return li && /wieder online/.test(li.textContent);
+        }, NAS));
+        await theme(page, 'dark');
+        await view(page, 'gwpool-live-dark');
+        live.on = false;
+        await page.evaluate(() => { location.hash = ''; });
         step('pools: no raw i18n keys on the page', await page.evaluate(() => !/\bgwp\.[a-z_]+\.[a-z_.]+/.test(['fleet-view', 'gw-detail-view', 'gw-pool-view'].map((i) => document.getElementById(i).innerText).join(' '))));
         allow((p) => p.kind === 'http' && p.status === 403 && /\/discovered$/.test(p.url));
         allow((p) => p.kind === 'console' && /403/.test(p.text));

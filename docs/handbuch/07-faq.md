@@ -242,6 +242,9 @@ Das Gateway meldet sich nicht mehr beim Server.
 
 **Prüfen:** Die Karte unter „Gateways“ zeigt das Gateway wieder als online.
 
+„Startet neu“ statt „Offline“: Das Gateway hat sich ordentlich beendet (Neustart
+des Containers oder des Geräts) und wird für zehn Minuten zurück erwartet.
+
 ### „Edge-Dienst fehlt“
 
 In der Compose-Datei des Gateways fehlen die Dienste `edge` und `mqtt`. Bring

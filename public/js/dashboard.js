@@ -647,15 +647,18 @@
     var list = Array.isArray(d.gateways) ? d.gateways : [];
     var host = $('db-gw-list');
     host.replaceChildren.apply(host, list.map(function (g) {
-      var st = g.status === 'offline' ? 'crit' : g.status === 'degraded' ? 'warn' : 'good';
+      // live state (gatewayLiveState): an update / restart under way is 'warn', not an outage
+      var away = g.state === 'updating' || g.state === 'restarting' ? g.state : null;
+      var st = away ? 'warn' : g.status === 'offline' ? 'crit' : g.status === 'degraded' ? 'warn' : 'good';
       var tel = (g.health && g.health.telemetry) || {};
       var version = tel.gateway_version ? 'v' + String(tel.gateway_version).replace(/^v/i, '') : '';
       var routes = Array.isArray(g.routes) ? g.routes.length : 0;
       var parts = [];
-      if (st === 'crit') {
+      if (st === 'crit' || away) {
         if (g.last_seen_at) parts.push(t('dashboard.gw_last_seen', { time: timeOf(g.last_seen_at) }));
         parts.push(t(UI.plural('dashboard.gw_affected', routes), { n: routes }));
       } else {
+        if (g.failback_at && g.failback_at > Date.now()) parts.push(t('dashboard.gw_failback', { time: timeOf(g.failback_at) }));
         if (g.latest_handshake) parts.push(t('dashboard.gw_handshake', { ago: rel(g.latest_handshake) }));
         var load = Array.isArray(tel.cpu_load_avg) ? tel.cpu_load_avg[0] : null;
         if (load != null && Number.isFinite(Number(load))) parts.push(t('dashboard.gw_load', { load: UI.fmtNumber(load, LANG, 1) }));
@@ -676,7 +679,7 @@
         el('div', { class: 'db-gw-head' }, [
           el('span', { class: 'db-dot', 'data-state': st, 'aria-hidden': 'true' }),
           el('a', { class: 'db-gw-name', href: '/gateways#gw/' + encodeURIComponent(g.peer_id), text: g.name }),
-          el('span', { class: 'db-badge', 'data-state': st }, [iconSvg(st, 10, 3.2), t(st === 'crit' ? 'dashboard.gw_offline' : st === 'warn' ? 'dashboard.gw_degraded' : 'dashboard.gw_online')]),
+          el('span', { class: 'db-badge', 'data-state': st }, [iconSvg(st, 10, 3.2), t(away ? 'dashboard.gw_state_' + away : st === 'crit' ? 'dashboard.gw_offline' : st === 'warn' ? 'dashboard.gw_degraded' : 'dashboard.gw_online')]),
           version ? el('span', { class: 'db-gw-version', text: version }) : null,
         ]),
         el('div', { class: 'db-gw-detail', text: parts.join(' · ') }),

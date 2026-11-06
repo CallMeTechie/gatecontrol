@@ -20,6 +20,7 @@ service state-change → eventBus.publish(type, payload)
 | `gc:` event | source | payload |
 |---|---|---|
 | `gc:gateway` | `gatewayHealth.evaluatePeer` | `{ peerId, alive, transition }` |
+| `gc:gateway` | `gatewayLiveState.publishChanges` (heartbeat, going-down notice, update request, 10 s display tick) | `{ peerId, state, reachable, transition: 'live_state' }` |
 | `gc:peer` | `peerStatus` online/offline transition | `{ peerId, name, connected }` |
 | `gc:activity` | `activity.log` (every row) | `{ id, eventType, message, severity, createdAt }` |
 | `gc:monitor` | `monitor.checkRoute` route-status / circuit | `{ routeId, domain, status }` or `{ routeId, domain, circuit }` |

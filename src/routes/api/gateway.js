@@ -164,7 +164,36 @@ router.post('/heartbeat', express.json({ limit: '16kb' }), (req, res) => {
     require('../../utils/logger').warn({ err: err.message, peerId }, 'gatewayHealth.onHeartbeatReceived failed');
   });
 
+  // Live state (online again after an outage, an update or a restart): push
+  // the change to open pages at once instead of waiting for their poll.
+  try { require('../../services/gatewayLiveState').publishChanges([peerId]); } catch (err) {
+    logger.debug({ err: err.message, peerId }, 'gateway live state publish failed');
+  }
+
   res.status(200).json({ ok: true });
+});
+
+/**
+ * POST /api/v1/gateway/going-down — the gateway stops right now (graceful
+ * shutdown: container recreated for an update, docker restart, host reboot).
+ * Body: { reason: 'update' | 'restart' }. The pages show "Update läuft" /
+ * "startet neu" at once instead of "online" until the heartbeat goes stale and
+ * "offline" after that (services/gatewayLiveState.js). The next heartbeat ends
+ * it. Routing is not touched: failover still waits for the down threshold.
+ * Gateways before this endpoint simply never call it.
+ */
+router.post('/going-down', express.json({ limit: '1kb' }), (req, res) => {
+  const peerId = req.gateway.peer_id;
+  const reason = req.body && req.body.reason === 'update' ? 'update' : 'restart';
+  const liveState = require('../../services/gatewayLiveState');
+  const r = liveState.recordGoingDown(peerId, reason);
+  require('../../services/activity').log('gateway_going_down',
+    `Gateway ${req.gateway.peer_name || peerId} is stopping (${r.reason === 'update' ? 'update' : 'restart'})`,
+    { source: 'system', severity: 'info', details: { peerId, reason: r.reason } });
+  try { liveState.publishChanges([peerId]); } catch (err) {
+    logger.debug({ err: err.message, peerId }, 'gateway live state publish failed');
+  }
+  res.status(200).json({ ok: true, reason: r.reason });
 });
 
 /** POST /api/v1/gateway/discovery — LAN-scan results stream from the gateway. */

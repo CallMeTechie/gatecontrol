@@ -112,7 +112,7 @@ function historyOf(db, poolId, meta) {
   return { history: out, last_switch_at: out.length ? out[0].at : null, since };
 }
 
-function poolState(db, pool, meta, maxCooldown) {
+function poolState(db, pool, meta, maxCooldown, live) {
   const members = gatewayPool.listMembers(pool.id);
   const serving = servingIds(pool, members, meta);
   const routes = db.prepare(`
@@ -127,12 +127,21 @@ function poolState(db, pool, meta, maxCooldown) {
     else if (r && r.alive === 1) state = 'standby';
     else if (r && r.recovered_first_hb_at) state = 'recovering';
     const cooldown = maxCooldown(m.peer_id);
+    // live state (services/gatewayLiveState.js): reachable even while the
+    // routing still waits for the failback cooldown; "Update läuft" / "startet
+    // neu" instead of a plain offline for an expected restart
+    const ls = live ? live.get(m.peer_id) : null;
     return {
       peer_id: m.peer_id,
       priority: m.priority,
       name: r ? r.name : null,
       platform: r ? r.platform || null : null,
       state,
+      live_state: ls ? ls.state : null,
+      reachable: ls ? ls.reachable : null,
+      expected_back_by: ls ? ls.expected_back_by : null,
+      offline_since: ls ? ls.offline_since : null,
+      failback_takes_routes: ls && ls.failback_at ? ls.failback_takes_routes : null,
       last_seen_at: r ? r.last_seen_at || null : null,
       went_down_at: r ? r.went_down_at || null : null,
       failback_at: state === 'recovering' ? r.recovered_first_hb_at + cooldown * 1000 : null,
@@ -175,7 +184,9 @@ function state() {
   const meta = metaRows(db);
   const cache = new Map();
   const maxCooldown = (id) => { if (!cache.has(id)) cache.set(id, gatewayPool.getMaxCooldownForPeer(id)); return cache.get(id); };
-  const pools = gatewayPool.listPools().map((p) => poolState(db, p, meta, maxCooldown));
+  let live = null;
+  try { live = require('./gatewayLiveState').all(); } catch (err) { logger.debug({ err: err.message }, 'pool state: live state unavailable'); }
+  const pools = gatewayPool.listPools().map((p) => poolState(db, p, meta, maxCooldown, live));
   const total = db.prepare("SELECT COUNT(*) AS n FROM routes WHERE target_kind = 'gateway' AND enabled = 1").get().n;
   // Protected = the route survives the outage of its gateway: it targets an enabled pool with at
   // least two members, or it is pinned to a member of such a pool (gatewayHealth pivots pinned

@@ -5,6 +5,7 @@ const { Router } = require('express');
 const { getDb } = require('../../db/connection');
 const logger = require('../../utils/logger');
 const gatewaySetup = require('../../services/gatewaySetup');
+const liveState = require('../../services/gatewayLiveState');
 
 const router = Router();
 
@@ -18,7 +19,16 @@ const router = Router();
  * Shape per gateway:
  *   {
  *     peer_id, name, hostname, ip, api_port,
- *     status,                       // "online" | "offline" | "degraded"
+ *     status,                       // "online" | "offline" | "unknown" (from the live state, see below)
+ *     state,                        // live state (services/gatewayLiveState.js):
+ *                                   //   "online" | "updating" | "restarting" | "offline" | "unknown"
+ *     reachable,                    // heartbeat within gateway_down_threshold_s (not the routing flag)
+ *     alive,                        // routing flag of gatewayHealth (false during the failback cooldown)
+ *     offline_since,                // epoch ms, last sign of life when not reachable
+ *     failback_at,                  // epoch ms, reachable again but routes wait for the failback cooldown
+ *     failback_takes_routes,        // it serves routes again after that (else: reserve again)
+ *     expected_back_by,             // epoch ms, end of the expected restart (updating / restarting)
+ *     health_status,                // the sliding window of gateways.js (diagnostics; the old `status`)
  *     last_seen_at,                 // epoch ms
  *     health: { … full last_health body, includes telemetry },
  *     routes: [{ id, domain, route_type, target_lan_host, target_lan_port,
@@ -53,12 +63,15 @@ router.get('/', (req, res) => {
       ORDER BY domain
     `);
 
+    const liveStates = liveState.all();
     const gateways = rows.map((row) => {
       let health = {};
       if (row.last_health) {
         try { health = JSON.parse(row.last_health); } catch (_) { /* ignore */ }
       }
-      const status = gatewaysSvc.getHealthStatus(row.id);
+      const healthStatus = gatewaysSvc.getHealthStatus(row.id);
+      const live = liveStates.get(row.id) || liveState.derive({}, {});
+      const status = liveState.legacyStatus(live, healthStatus, gatewaysSvc._isHeartbeatHealthy(health));
 
       // When the gateway is offline, the last cached `route_reachability`
       // is stale by definition — anything behind a down gateway can't be
@@ -82,6 +95,15 @@ router.get('/', (req, res) => {
         ip: row.allowed_ips ? row.allowed_ips.split('/')[0] : null,
         api_port: row.api_port,
         status,
+        state: live.state,
+        reachable: live.reachable,
+        alive: live.alive,
+        offline_since: live.offline_since,
+        failback_at: live.failback_at,
+        failback_takes_routes: live.failback_takes_routes,
+        expected_back_by: live.expected_back_by,
+        restart_reason: live.restart_reason,
+        health_status: healthStatus,
         last_seen_at: row.last_seen_at,
         latest_handshake: row.latest_handshake || null,
         health,
@@ -162,6 +184,7 @@ router.post('/:id/update', async (req, res) => {
     return res.json({ ok: true, queued: false, reason: 'unreachable' });
   }
   gateways.markUpdateRequested(id, requestId, target);
+  try { liveState.publishChanges([id]); } catch (err) { logger.debug({ err: err.message, peerId: id }, 'live state publish failed'); }
   require('../../services/activity').log('gateway_update_requested',
     `Gateway ${id} update requested (target ${target || 'latest'})`,
     { source: 'admin', severity: 'info', details: { peer_id: id, target, request_id: requestId } });
