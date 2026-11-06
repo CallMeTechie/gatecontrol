@@ -105,14 +105,15 @@ Kommt nach 10 Minuten nichts: Läuft das Projekt („Aktiv“)? Liegt `gateway.e
 im Ordner `config`? Das Protokoll (Container Manager → „Container“ →
 `…-gateway-1` → „Protokoll“) nennt den Grund.
 
-### Edge auf der Synology: Netzgrenze und xt_owner
+### Edge auf der Synology
 
-Für [Edge-Plugins](04-edge-und-smart-home.md) setzt das Gateway eine
-**Netzgrenze**: Firewall-Regeln, die den Edge-Container vom Internet und vom
-Tunnel trennen. Auf der Synology braucht das das Kernel-Modul **`xt_owner`**.
-Fehlt es, zeigt GateControl „Netzgrenze fehlt“. Die Lösung steht in
-[Kapitel 4](04-edge-und-smart-home.md#netzgrenze-fehlt). Für das Gateway
-selbst (Routen, Tunnel) ist das Modul nicht nötig.
+Für [Edge-Plugins](04-edge-und-smart-home.md) ist auf der Synology nichts
+weiter zu tun: Der Container `edge` läuft ohne eigenes Netz, der Container
+`gateway` erledigt seine Verbindungen und prüft sie. Ein Kernel-Modul (früher
+`xt_owner`) oder SSH braucht es nicht. Stammt die Compose-Datei von vor
+Gateway 1.23.0, zeigt GateControl „Compose-Datei veraltet“ – dann die aktuelle
+Datei herunterladen, siehe
+[Kapitel 4](04-edge-und-smart-home.md#compose-datei-veraltet).
 
 ## 3.3 Raspberry Pi
 

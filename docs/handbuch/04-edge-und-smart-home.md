@@ -9,22 +9,26 @@ in deinem Heimnetz läuft. Er findet dort Geräte wie Shelly oder Tasmota und
 spricht mit ihnen. Diesen Teil nennt GateControl **Edge-Teil**.
 
 Edge-Teile laufen auf dem Gateway in einem eigenen, abgeschotteten Container
-namens `edge`. Er erreicht nur dein Heimnetz und GateControl – nicht das
-Internet und nicht den Tunnel. Dazu kommt ein lokaler **MQTT-Broker** im
+namens `edge`. Er hat **kein eigenes Netz**: Was er braucht, erledigt der
+Container `gateway` für ihn und prüft dabei jede Anfrage. So erreicht ein
+Edge-Teil nur Geräte in deinem Heimnetz und GateControl – nicht das Internet
+und nicht den Tunnel. Firewall-Regeln oder Kernel-Module braucht es dafür nicht. Dazu kommt ein lokaler **MQTT-Broker** im
 Container `mqtt`, bei dem sich Geräte direkt im Heimnetz melden, ohne Cloud.
 
 Solange du Edge nicht einschaltest, sind beide Container untätig.
 
 ### Voraussetzungen
 
-- Gateway-Version **1.19.0** oder neuer.
+- Gateway-Version **1.23.0** oder neuer (Edge ohne Netz; ab 1.19.0 geht Edge
+  nur mit Netzgrenze, siehe [Compose-Datei veraltet](#compose-datei-veraltet)).
 - Ein Gateway mit Docker im **Host-Netzwerkmodus**: Synology-Paket aus dem
   Assistenten, Raspberry-Pi-Image oder Linux mit „Host (empfohlen)“.
   Im Bridge-Modus und mit dem Proxmox-Installer gibt es keinen Edge-Container.
-- In der Compose-Datei stehen die Dienste `edge` und `mqtt`. Bei Gateways aus
-  dem aktuellen Assistenten ist das so. Ältere Compose-Dateien bringst du mit
-  [Kapitel 6](06-gateway-aktualisieren.md) auf den Stand.
-- Auf der Synology: das Kernel-Modul `xt_owner` (siehe [Netzgrenze fehlt](#netzgrenze-fehlt)).
+- In der Compose-Datei stehen die Dienste `edge` und `mqtt`, `edge` mit
+  `network_mode: none`. Bei Gateways aus dem aktuellen Assistenten ist das so.
+  Ältere Compose-Dateien ersetzt du über den Knopf „Nur docker-compose.yml
+  herunterladen“ ([Kapitel 6](06-gateway-aktualisieren.md)) – auch auf der
+  Synology ist dafür nichts per SSH nötig.
 
 ## 4.1 Edge einschalten
 
@@ -34,7 +38,8 @@ Solange du Edge nicht einschaltest, sind beide Container untätig.
 4. Klicke „Edge einschalten“.
 5. Schau auf die Zeile oben im Reiter:
    - „Verbunden seit …“ – der Edge-Container hat Verbindung zu GateControl.
-   - „Netzgrenze aktiv (iptables)“ oder „Netzgrenze aktiv (nft)“ – die Abschottung steht.
+   - „Edge ohne Netzwerk (isoliert)“ – die Abschottung steht. Bei einer älteren
+     Compose-Datei steht hier „Netzgrenze aktiv (iptables)“ bzw. „(nft)“.
 6. Unter „Plugins mit Edge-Teil“ schaltest du das Plugin ein. Es öffnet sich
    ein Fenster mit den Fähigkeiten, die der Edge-Teil bekommt. Lies sie und
    klicke „Zustimmen und einschalten“.
@@ -114,39 +119,34 @@ Der Dienst `edge` ist eingerichtet, meldet sich aber nicht.
 
 **Prüfen:** `…-edge-1` läuft und ist nach etwa einer Minute „gesund“.
 
+### Compose-Datei veraltet
+
+Die Compose-Datei stammt von vor Gateway 1.23.0: Der Container `edge` läuft
+dort noch im Netz des Hosts und braucht deshalb eine Netzgrenze aus
+Firewall-Regeln. Die konnte das Gateway nicht setzen – auf der Synology fehlt
+dem Kernel meist das Modul `xt_owner`. Ohne sie startet kein Edge-Teil. Das
+Gateway selbst (Routen, Tunnel) arbeitet normal weiter.
+
+Die Lösung ist die aktuelle Compose-Datei, in der `edge` gar kein Netz hat:
+
+1. Unter der Meldung auf „Nur docker-compose.yml herunterladen“ klicken.
+2. Wie dort angezeigt einsetzen (Synology: Ordner `gateway-cache` anlegen,
+   Projekt stoppen, YAML ersetzen, Projekt neu erstellen). Ausführlich:
+   [Kapitel 6](06-gateway-aktualisieren.md).
+
+Beim **Raspberry-Pi-Image** kommt die Meldung praktisch nicht vor (der Pi kann
+die Netzgrenze setzen). Sonst hilft ein frisch geschriebenes, aktuelles Image.
+
+**Prüfen:** Im Reiter steht „Edge ohne Netzwerk (isoliert)“, die Edge-Teile laufen.
+
 ### Netzgrenze fehlt
 
-Das Gateway konnte die Firewall-Regeln für den Edge-Container nicht setzen.
-Ohne sie startet kein Edge-Teil. Das Gateway selbst (Routen, Tunnel) arbeitet
-normal weiter.
+Dieselbe Lage bei einem Gateway **älter als 1.23.0**: Aktualisiere zuerst das
+Gateway (Auto-Update oder [Kapitel 6](06-gateway-aktualisieren.md)) und hole
+dann wie unter [Compose-Datei veraltet](#compose-datei-veraltet) die aktuelle
+Compose-Datei. Ein Kernel-Modul von Hand zu laden ist nicht mehr nötig.
 
-Meist fehlt dem Kernel der „Owner-Match“. Auf der Synology ist das das Modul `xt_owner`.
-
-1. Öffne das Protokoll des Containers `gateway` und such nach `edge fence`.
-   Steht dort `iptables owner match:`, fehlt `xt_owner`.
-2. Melde dich per SSH an der NAS an und prüfe:
-
-   ```bash
-   lsmod | grep xt_owner
-   ls /lib/modules/xt_owner.ko
-   ```
-
-3. Ist die Datei da, aber das Modul nicht geladen, lade es:
-
-   ```bash
-   sudo insmod /lib/modules/xt_owner.ko
-   ```
-
-4. Damit das einen Neustart übersteht: „Systemsteuerung“ → „Aufgabenplaner“ →
-   „Erstellen“ → „Ausgelöste Aufgabe“ → „Benutzerdefiniertes Skript“, Ereignis
-   „Hochfahren“, Benutzer `root`, Befehl `insmod /lib/modules/xt_owner.ko`.
-5. Nach spätestens 30 Sekunden setzt das Gateway die Regeln.
-
-Bringt DSM das Modul nicht mit, laufen auf dieser NAS keine Edge-Teile. Lass
-Edge für dieses Gateway dann aus.
-
-**Prüfen:** Im Reiter steht „Netzgrenze aktiv (iptables)“; im Protokoll von
-`gateway` steht `edge fence: rules active`.
+**Prüfen:** Im Reiter steht „Edge ohne Netzwerk (isoliert)“.
 
 ### Edge erreicht GateControl nicht
 
@@ -157,7 +157,8 @@ Der Edge-Container läuft, kommt aber nicht zum Server durch.
 2. Steht vor GateControl ein weiterer Reverse Proxy (z. B. nginx, Traefik oder
    ein CDN)? Dann muss er **WebSocket-Verbindungen** zu
    `/api/v1/gateway/edge/ws` durchlassen. Ohne zusätzlichen Proxy ist nichts zu tun.
-3. Hinweise stehen im Protokoll des Containers `edge`.
+3. Der Container `edge` verbindet sich über den Container `gateway`: Hinweise
+   stehen im Protokoll von `gateway` (Stichwort `edge relay`) und von `edge`.
 
 **Prüfen:** „Verbunden seit …“ erscheint.
 

@@ -244,10 +244,15 @@ date with [chapter 6](06-updating-a-gateway.md) – quickest with the button
 `settings.txt` says `EDGE=off` – change it to `EDGE=on` and restart. More:
 [chapter 4](04-edge-and-smart-home.md#edge-service-missing).
 
-### “Network fence missing” / xt_owner
+### “Compose file outdated” / “Network fence missing” / xt_owner
 
-The kernel lacks the owner match, on the Synology the module `xt_owner`. The
-steps are in [chapter 4](04-edge-and-smart-home.md#network-fence-missing).
+The compose file is from before gateway 1.23.0: the edge container still runs
+in the host's network there and needs firewall rules for which the Synology
+kernel would need the module `xt_owner`. Loading a module via SSH is no longer
+needed – download the current file with “Download docker-compose.yml only”
+below the message, in which the edge container has no network at all (for
+“Network fence missing” update the gateway first). More:
+[chapter 4](04-edge-and-smart-home.md#compose-file-outdated).
 
 ### “Edge cannot reach GateControl”
 

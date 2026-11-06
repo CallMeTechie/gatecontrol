@@ -251,10 +251,15 @@ Meldung (keine neuen Schlüssel). Beim
 Raspberry-Pi-Image steht `EDGE=off` in `settings.txt` – auf `EDGE=on` ändern
 und neu starten. Mehr: [Kapitel 4](04-edge-und-smart-home.md#edge-dienst-fehlt).
 
-### „Netzgrenze fehlt“ / xt_owner
+### „Compose-Datei veraltet“ / „Netzgrenze fehlt“ / xt_owner
 
-Dem Kernel fehlt der Owner-Match, auf der Synology das Modul `xt_owner`. Die
-Schritte stehen in [Kapitel 4](04-edge-und-smart-home.md#netzgrenze-fehlt).
+Die Compose-Datei stammt von vor Gateway 1.23.0: Der Edge-Container läuft
+dort noch im Netz des Hosts und braucht Firewall-Regeln, für die der
+Synology-Kernel das Modul `xt_owner` bräuchte. Ein Modul per SSH zu laden ist
+nicht mehr nötig – lade unter der Meldung mit „Nur docker-compose.yml
+herunterladen“ die aktuelle Datei, in der der Edge-Container gar kein Netz hat
+(bei „Netzgrenze fehlt“ vorher das Gateway aktualisieren). Mehr:
+[Kapitel 4](04-edge-und-smart-home.md#compose-datei-veraltet).
 
 ### „Edge erreicht GateControl nicht“
 

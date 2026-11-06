@@ -75,6 +75,31 @@ describe('edge channel: why it is down', () => {
   });
 
   it('every reason is one of REASONS', () => {
-    assert.deepEqual(REASONS, ['gateway_offline', 'edge_missing', 'edge_not_running', 'edge_fence', 'edge_not_connected']);
+    assert.deepEqual(REASONS, ['gateway_offline', 'edge_missing', 'edge_not_running', 'compose_outdated', 'edge_fence', 'edge_not_connected']);
+  });
+
+  it('gateway >= 1.23.0 reports the mode: isolated → no fence verdict; fence without fence → compose_outdated', () => {
+    const noFence = { active: false, backend: null, error: 'iptables owner match: Couldn\'t load match `owner\'' };
+    // edge container without network: the fence does not matter (Synology without xt_owner, new compose)
+    assert.equal(run({ deployed: true, error: null, fence: noFence, mode: 'isolated', host: fresh }).reason, 'edge_not_connected');
+    assert.equal(run({ deployed: true, error: null, fence: noFence, mode: 'isolated', host: { ...fresh, connected: true } }).reason, null);
+    // older compose file (edge in the host network) and no fence → the current compose file is the way out
+    const r = run({ deployed: true, error: null, fence: noFence, mode: 'fence', host: fresh });
+    assert.equal(r.reason, 'compose_outdated');
+    assert.match(r.detail, /owner match/);
+    // fence active with an older compose → fine
+    assert.equal(run({ deployed: true, error: null, fence: fenceOk, mode: 'fence', host: fresh }).reason, 'edge_not_connected');
+    // older gateway (no mode) or an unknown mode → edge_fence as before
+    assert.equal(run({ deployed: true, error: null, fence: noFence, host: fresh }).reason, 'edge_fence');
+    assert.equal(run({ deployed: true, error: null, fence: noFence, mode: 'other', host: fresh }).reason, 'edge_fence');
+  });
+
+  it('modeOf: the mode from telemetry.edge', () => {
+    const { modeOf } = require('../src/services/edge/reason');
+    assert.equal(modeOf({ edge: { mode: 'isolated' } }), 'isolated');
+    assert.equal(modeOf({ edge: { mode: 'fence' } }), 'fence');
+    assert.equal(modeOf({ edge: { mode: 'x' } }), null);
+    assert.equal(modeOf({ edge: null }), null);
+    assert.equal(modeOf(null), null);
   });
 });

@@ -185,7 +185,7 @@ describe('compose and commands', () => {
     assert.match(c, /"8080:8080"/);
     assert.doesNotMatch(c, /\n  edge:|edge-run/, 'edge parts need host network');
   });
-  it('host network: the edge service of the gateway contract (same image, user 61001, no privileges) + shared volumes', () => {
+  it('host network: the edge service of the gateway contract (same image, user 61001, no privileges, no network) + shared volumes', () => {
     for (const platform of ['synology', 'linux']) {
       const c = kit.buildCompose({ platform, network: 'host' });
       const edge = c.slice(c.indexOf('\n  edge:\n'), c.indexOf('\n  mqtt:\n'));
@@ -195,16 +195,19 @@ describe('compose and commands', () => {
       assert.match(edge, /cap_drop:\n {6}- ALL/);
       assert.match(edge, /no-new-privileges:true/);
       assert.match(edge, /read_only: true/);
-      assert.match(edge, /network_mode: host/);
+      // gateway >= 1.23.0: no network at all — everything through the gateway socket, no fence / xt_owner
+      assert.match(edge, /network_mode: none/);
       assert.match(edge, /source: edge-run\n {8}target: \/run\/gc-edge\n {8}read_only: true/);
       assert.match(edge, /edge-state:\/state-edge/);
-      assert.match(edge, /edge-mqtt:\/gc-mqtt/);
+      assert.doesNotMatch(edge, /edge-mqtt/, 'the broker files are out of reach of the edge container');
       assert.match(edge, /mem_limit: 512m\n {4}pids_limit: 256/);
       assert.doesNotMatch(edge, /^ +(?:cap_add|privileged|devices):/m);
       const gw = c.slice(0, c.indexOf('\n  edge:\n'));
       assert.match(gw, /source: edge-run\n {8}target: \/run\/gc-edge\n {8}volume: \{ nocopy: true \}/);
       assert.match(gw, /source: edge-status\n {8}target: \/run\/gc-edge-status\n {8}read_only: true/);
-      assert.match(c, /\nvolumes:\n(?: {2}# [^\n]*\n)+ {2}edge-run:\n[\s\S]*o: "size=1m,uid=0,gid=61001,mode=2750"[\s\S]*edge-status:[\s\S]*edge-state:\n[\s\S]*edge-mqtt:\n$/);
+      assert.match(gw, /source: edge-mqtt-conf\n {8}target: \/gc-mqtt-conf\n {8}volume: \{ nocopy: true \}/);
+      assert.match(gw, /source: edge-mqtt\n {8}target: \/gc-mqtt\n {8}read_only: true/);
+      assert.match(c, /\nvolumes:\n(?: {2}# [^\n]*\n)+ {2}edge-run:\n[\s\S]*o: "size=1m,uid=0,gid=61001,mode=2750"[\s\S]*edge-status:[\s\S]*edge-mqtt-conf:\n[\s\S]*edge-state:\n[\s\S]*edge-mqtt:\n$/);
     }
   });
   it('host network: the mqtt service of the gateway (digest-pinned mosquitto, watcher, user 61001, no privileges)', () => {
@@ -212,15 +215,16 @@ describe('compose and commands', () => {
       const c = kit.buildCompose({ platform, network: 'host' });
       const mqtt = c.slice(c.indexOf('\n  mqtt:\n'), c.indexOf('\nvolumes:\n'));
       assert.match(mqtt, /image: eclipse-mosquitto:2\.1\.2-alpine@sha256:860aeb5d63ce509508f6dcfb2bc8a1c1dd2bc60555b562b45ce90e52d8dabb0f/);
-      assert.match(mqtt, /entrypoint:\n {6}- \/bin\/sh\n {6}- -c\n {6}- \|\n {8}C=\/gc-mqtt;/);
-      // compose escapes: every $ of the script doubled
-      assert.match(mqtt, /halt; mosquitto -c "\$\$C\/mosquitto\.conf" & p=\$\$!/);
+      assert.match(mqtt, /entrypoint:\n {6}- \/bin\/sh\n {6}- -c\n {6}- \|\n {8}G=\/gc-mqtt-conf; C=\/gc-mqtt;/);
+      // compose escapes: every $ of the script doubled; the watcher copies the gateway's files before starting
+      assert.match(mqtt, /if take; then mosquitto -c "\$\$C\/mosquitto\.conf" & p=\$\$!/);
       assert.doesNotMatch(mqtt.replace(/\$\$/g, ''), /\$/);
       assert.match(mqtt, /user: "61001:61001"/);
       assert.match(mqtt, /cap_drop:\n {6}- ALL/);
       assert.match(mqtt, /no-new-privileges:true/);
       assert.match(mqtt, /read_only: true\n {4}mem_limit: 128m\n {4}pids_limit: 32/);
-      assert.match(mqtt, /depends_on:\n {6}- edge/);
+      assert.match(mqtt, /depends_on:\n {6}- gateway/);
+      assert.match(mqtt, /source: edge-mqtt-conf\n {8}target: \/gc-mqtt-conf\n {8}read_only: true/);
       assert.match(mqtt, /source: edge-mqtt\n {8}target: \/gc-mqtt\n {8}volume: \{ nocopy: true \}/);
       assert.doesNotMatch(mqtt, /^ +(?:cap_add|privileged|devices|ports):/m);
     }

@@ -214,14 +214,15 @@ describe('state, switches and the admin API', () => {
     const p = r.body.gateway.plugins.find((x) => x.id === P);
     assert.deepEqual(p.edge.capabilities.map((x) => x.key), CAPS);
     assert.equal(p.assignment, null);
-    assert.deepEqual(r.body.gateway.support, { gatewayVersion: '1.20.0', edgeSupported: true, edgeMinGateway: '1.19.0' });
+    assert.deepEqual(r.body.gateway.support, { gatewayVersion: '1.20.0', edgeSupported: true, edgeMinGateway: '1.19.0', edgeMode: null, isolatedSupported: false, isolatedMinGateway: '1.23.0' });
+    assert.equal(r.body.gateway.gateway.isolation, null, 'older gateway: no isolation in hello');
     const list = await agent.get(`${API}/gateways`).expect(200);
     assert.deepEqual(list.body.gateways.map((g) => g.name), ['gw-a', 'gw-b']);
     // gw-b never connected: its version comes from the heartbeat — older than the first release with edge
     db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify({ telemetry: { gateway_version: '1.18.0' } }), gwB.peer.id);
     db.prepare('DELETE FROM gateway_edge WHERE peer_id = ?').run(gwB.peer.id);
     const b = (await agent.get(`${API}/gateways`).expect(200)).body.gateways.find((g) => g.id === gwB.peer.id);
-    assert.deepEqual(b.support, { gatewayVersion: '1.18.0', edgeSupported: false, edgeMinGateway: '1.19.0' });
+    assert.deepEqual(b.support, { gatewayVersion: '1.18.0', edgeSupported: false, edgeMinGateway: '1.19.0', edgeMode: null, isolatedSupported: false, isolatedMinGateway: '1.23.0' });
   });
 
   it('edge on → new state; enabling needs exactly the shown capability list', async () => {
@@ -520,6 +521,20 @@ describe('gc.edge in the plugin process', () => {
       v = await view();
       assert.equal(v.a.reason, 'edge_fence');
       assert.equal(v.g.connection.detail, 'iptables owner match: no such match');
+
+      // gateway >= 1.23.0: an older compose (edge in the host network) without fence → compose_outdated;
+      // edge without network → the fence does not count; support carries the mode
+      beat({ deployed: true, error: null, mode: 'fence', fence: { active: false, backend: null, error: 'iptables owner match: no such match' },
+        host: { at: new Date().toISOString(), stale: false, connected: false } });
+      v = await view();
+      assert.equal(v.a.reason, 'compose_outdated');
+      assert.equal(v.g.support.edgeMode, 'fence');
+      assert.equal(v.g.support.isolatedMinGateway, '1.23.0');
+      beat({ deployed: true, error: null, mode: 'isolated', fence: { active: false, backend: null, error: 'x' },
+        host: { at: new Date().toISOString(), stale: false, connected: false } });
+      v = await view();
+      assert.equal(v.a.reason, 'edge_not_connected');
+      assert.equal(v.g.support.edgeMode, 'isolated');
 
       beat(null, Date.now() - 10 * 60 * 1000);
       v = await view();

@@ -31,23 +31,27 @@
   const DECONZ_PORT = 8090;
 
   // Edge container and local MQTT broker of the gateway — exactly as in docker-compose.example.yml
-  // of gatecontrol-gateway (since v1.19.0; contract gc-edge.v1 "Änderung Gateway-Seite" 1 and the
-  // mqtt service): edge = the gateway image with another command, no privileges, user 61001, idle
-  // until the server switches edge parts on; mqtt = mosquitto (digest-pinned) behind a small watcher,
-  // idle until the server switches MQTT on (the edge host writes its files to the edge-mqtt volume).
+  // of gatecontrol-gateway (since v1.23.0: the edge container runs WITHOUT network, network_mode: none;
+  // the server, LAN devices and MQTT only through the gateway socket in edge-run, checked by the gateway —
+  // no network fence, no kernel module such as xt_owner): edge = the gateway image with another command,
+  // no privileges, user 61001, idle until the server switches edge parts on; mqtt = mosquitto
+  // (digest-pinned) behind a small watcher, idle until the server switches MQTT on (the gateway writes
+  // the broker files to edge-mqtt-conf, the watcher copies them to edge-mqtt).
   // `$$` is compose's escape for a literal `$` in the watcher script.
   const EDGE_SERVICES = [
     '',
     '  # Edge parts of plugins in the home network (switched on per gateway in GateControl).',
-    '  # Same image as the gateway, another command; runs without privileges as user 61001',
-    '  # and stays idle until GateControl switches edge parts on for this gateway.',
+    '  # Same image as the gateway, another command; runs without privileges and WITHOUT',
+    '  # NETWORK as user 61001: GateControl, LAN devices and MQTT only through the gateway',
+    '  # socket in edge-run (checked by the gateway). No network fence, no kernel module.',
+    '  # Stays idle until GateControl switches edge parts on for this gateway.',
     '  # Leave out the services edge and mqtt (and the edge-* volumes) if you do not want edge parts.',
     '  edge:',
     '    image: ghcr.io/callmetechie/gatecontrol-gateway:latest',
     '    entrypoint: ["/sbin/tini", "--", "node", "src/edge/main.js"]',
     '    restart: unless-stopped',
-    '    network_mode: host        # LAN devices (UDP/multicast/mDNS) like the gateway',
-    '    user: "61001:61001"       # fixed UID: the network fence (owner match) depends on it',
+    '    network_mode: none        # no network: server, LAN and MQTT through the gateway socket',
+    '    user: "61001:61001"       # fixed UID/GID: group 61001 may use the gateway socket',
     '    cap_drop:',
     '      - ALL',
     '    security_opt:',
@@ -68,7 +72,6 @@
     '        target: /run/gc-edge-status',
     '        volume: { nocopy: true }',
     '      - edge-state:/state-edge',
-    '      - edge-mqtt:/gc-mqtt   # broker files (owner 61001 from the image)',
     '    environment:',
     '      - LOG_LEVEL=info',
     '    healthcheck:',
@@ -84,27 +87,30 @@
     '        max-file: "3"',
     '',
     '  # Local MQTT broker. Idle (only a small watcher) until GateControl switches MQTT on;',
-    '  # the edge host then writes mosquitto.conf/passwd/acl to /gc-mqtt. Port 1883 only on',
-    '  # LAN addresses, no anonymous access. The watcher restarts Mosquitto when the',
-    '  # configuration changes and sends SIGHUP when the accounts change.',
+    '  # the gateway then writes mosquitto.conf/passwd/acl to /gc-mqtt-conf (out of reach of',
+    '  # the edge container). The watcher copies them to /gc-mqtt, restarts Mosquitto when the',
+    '  # configuration changes and sends SIGHUP when the accounts change. Port 1883 only on',
+    '  # LAN addresses, no anonymous access.',
     '  mqtt:',
     '    image: eclipse-mosquitto:2.1.2-alpine@sha256:860aeb5d63ce509508f6dcfb2bc8a1c1dd2bc60555b562b45ce90e52d8dabb0f',
     '    entrypoint:',
     '      - /bin/sh',
     '      - -c',
     '      - |',
-    '        C=/gc-mqtt; p=""; s=""; r=""',
+    '        G=/gc-mqtt-conf; C=/gc-mqtt; p=""; s=""; r=""',
     '        halt() { if [ -n "$$p" ]; then kill "$$p" 2>/dev/null; wait "$$p" 2>/dev/null; fi; p=""; }',
+    '        take() { for f in mosquitto.conf passwd acl; do cp "$$G/$$f" "$$C/.$$f" && chmod 600 "$$C/.$$f" && mv -f "$$C/.$$f" "$$C/$$f" || return 1; done; }',
     '        trap \'halt; exit 0\' TERM INT',
+    '        mkdir -p "$$C/data"',
     '        while :; do',
-    '          if [ -f "$$C/enabled" ] && [ -f "$$C/mosquitto.conf" ]; then',
-    '            n="$$(cksum < "$$C/mosquitto.conf")"',
+    '          if [ -f "$$G/enabled" ] && [ -f "$$G/mosquitto.conf" ]; then',
+    '            n="$$(cksum < "$$G/mosquitto.conf")"',
     '            if [ -n "$$p" ] && ! kill -0 "$$p" 2>/dev/null; then p=""; fi',
     '            if [ -z "$$p" ] || [ "$$n" != "$$s" ]; then',
-    '              halt; mosquitto -c "$$C/mosquitto.conf" & p=$$!',
-    '              s="$$n"; r="$$(cat "$$C/reload" 2>/dev/null)"',
-    '            elif [ "$$(cat "$$C/reload" 2>/dev/null)" != "$$r" ]; then',
-    '              r="$$(cat "$$C/reload" 2>/dev/null)"; kill -HUP "$$p"',
+    '              halt; r="$$(cat "$$G/reload" 2>/dev/null)"',
+    '              if take; then mosquitto -c "$$C/mosquitto.conf" & p=$$!; s="$$n"; fi',
+    '            elif [ "$$(cat "$$G/reload" 2>/dev/null)" != "$$r" ]; then',
+    '              r="$$(cat "$$G/reload" 2>/dev/null)"; take && kill -HUP "$$p"',
     '            fi',
     '          else',
     '            halt; s=""',
@@ -113,7 +119,7 @@
     '        done',
     '    restart: unless-stopped',
     '    network_mode: host',
-    '    user: "61001:61001"       # like the edge host: reads its files (0600)',
+    '    user: "61001:61001"       # group 61001: reads the files of the gateway',
     '    cap_drop:',
     '      - ALL',
     '    security_opt:',
@@ -122,9 +128,14 @@
     '    mem_limit: 128m',
     '    pids_limit: 32',
     '    depends_on:',
-    '      - edge                  # creates the volume with owner 61001',
+    '      - gateway               # creates the volumes (edge-mqtt with owner 61001 from the image)',
     '    volumes:',
-    '      - type: volume',
+    '      - type: volume          # broker files from the gateway (read only)',
+    '        source: edge-mqtt-conf',
+    '        target: /gc-mqtt-conf',
+    '        read_only: true',
+    '        volume: { nocopy: true }',
+    '      - type: volume          # copy of the files (0600) + Mosquitto data (data/)',
     '        source: edge-mqtt',
     '        target: /gc-mqtt',
     '        volume: { nocopy: true }',
@@ -135,8 +146,8 @@
     '        max-file: "3"',
     '',
     'volumes:',
-    '  # tmpfs shared with the gateway: the gateway (root) writes, the setgid bit gives every',
-    '  # file group 61001 → the edge container can read, not change',
+    '  # tmpfs shared with the gateway: the gateway (root) creates its socket there, the setgid',
+    '  # bit gives it group 61001 → the edge container can use it, not remove or replace it',
     '  edge-run:',
     '    driver_opts:',
     '      type: tmpfs',
@@ -148,9 +159,15 @@
     '      type: tmpfs',
     '      device: tmpfs',
     '      o: "size=1m,uid=61001,gid=61001,mode=0755"',
+    '  # tmpfs: broker files, written by the gateway, read by the mqtt service',
+    '  edge-mqtt-conf:',
+    '    driver_opts:',
+    '      type: tmpfs',
+    '      device: tmpfs',
+    '      o: "size=1m,uid=0,gid=61001,mode=2750"',
     '  # packages of the edge parts + gc.store (owner 61001 from the image)',
     '  edge-state:',
-    '  # broker files from the edge host + Mosquitto data (data/)',
+    '  # copy of the broker files + Mosquitto data (data/), owner 61001',
     '  edge-mqtt:',
   ];
 
@@ -243,11 +260,12 @@
       // this gateway; GC_CACHE_DIR moves it elsewhere (e.g. a USB disk), as in the gateway's own example
       '      - ${GC_CACHE_DIR:-./gateway-cache}:/cache   # home cache, only used when switched on'
     );
-    // edge parts of plugins (docs/plugins.md "Edge part"): host network only — the edge container
-    // needs the LAN (UDP, multicast, mDNS) and the gateway's network fence; credentials go over edge-run
+    // edge parts of plugins (docs/plugins.md "Edge part"): host network only — the gateway opens the LAN
+    // (UDP, multicast, mDNS) for the network-less edge container through its socket in edge-run and
+    // writes the broker files to edge-mqtt-conf
     if (network === 'host') {
       lines.push(
-        '      # edge container: credentials + fence marker there, its summary back',
+        '      # edge container: the gateway socket there, its summary back, broker files for mqtt',
         '      - type: volume',
         '        source: edge-run',
         '        target: /run/gc-edge',
@@ -256,7 +274,16 @@
         '        source: edge-status',
         '        target: /run/gc-edge-status',
         '        read_only: true',
-        '        volume: { nocopy: true }'
+        '        volume: { nocopy: true }',
+        '      - type: volume',
+        '        source: edge-mqtt-conf',
+        '        target: /gc-mqtt-conf',
+        '        volume: { nocopy: true }',
+        '      # only so that a new volume takes owner 61001 from the image (the gateway cannot read it)',
+        '      - type: volume',
+        '        source: edge-mqtt',
+        '        target: /gc-mqtt',
+        '        read_only: true'
       );
     }
     lines.push(

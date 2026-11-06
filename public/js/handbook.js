@@ -28,6 +28,7 @@
     'edge.gateway_offline': { de: '04-edge-und-smart-home.md#gateway-offline', en: '04-edge-and-smart-home.md#gateway-offline' },
     'edge.edge_missing': { de: '04-edge-und-smart-home.md#edge-dienst-fehlt', en: '04-edge-and-smart-home.md#edge-service-missing' },
     'edge.edge_not_running': { de: '04-edge-und-smart-home.md#edge-container-läuft-nicht', en: '04-edge-and-smart-home.md#edge-container-not-running' },
+    'edge.compose_outdated': { de: '04-edge-und-smart-home.md#compose-datei-veraltet', en: '04-edge-and-smart-home.md#compose-file-outdated' },
     'edge.edge_fence': { de: '04-edge-und-smart-home.md#netzgrenze-fehlt', en: '04-edge-and-smart-home.md#network-fence-missing' },
     'edge.edge_not_connected': { de: '04-edge-und-smart-home.md#edge-erreicht-gatecontrol-nicht', en: '04-edge-and-smart-home.md#edge-cannot-reach-gatecontrol' },
     // chapter 5: features of the home gateways (keys as the card "Funktionen" names its rows)
