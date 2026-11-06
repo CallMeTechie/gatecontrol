@@ -18,6 +18,10 @@
 //   POST /api/v1/gateway/print/scans/:id        scanReport()     scanning | done | failed
 //   management calls to the gateway (gateways.mgmtCall): /api/print/discover,
 //   /api/print/jobs (fetch now), /api/print/scan, /api/print/scan/cancel
+//   the last search of a gateway (`search` of the device report and of
+//   telemetry.features.print — gateway docs/print.md "Suche im LAN"): shown in
+//   the row "Drucken & Scannen" with "Neu suchen" (discoverOne()) and the
+//   addresses an administrator adds by hand (settings.print.manual)
 //
 // The plugins only name device ids — never an address or a URL: the gateway
 // only talks to devices it found itself in its own private LAN (or the
@@ -33,6 +37,7 @@ const pdf = require('./printPdf');
 const MIN_GATEWAY = '1.24.0';
 const MAX_FILE = 50 * 1024 * 1024;
 const MAX_DEVICES = 64;
+const MAX_MANUAL = 16;
 const MAX_PAGES = 100;
 const JOB_TTL_MS = 24 * 3600 * 1000;
 const KEEP_MS = 30 * 24 * 3600 * 1000;
@@ -147,10 +152,72 @@ function cleanDevice(d) {
   };
 }
 
+// ─── The last search of a gateway (its diagnosis) ──────────────────────
+
+const SEARCH_REASONS = ['incomplete', 'no_ipv4', 'other_subnet', 'not_private', 'bad_path', 'too_many'];
+const SEARCH_ERRORS = ['no_lan', 'mdns_port_busy', 'mdns_failed', 'legacy_failed'];
+const IPV4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+const searches = new Map(); // peer id → the search of its newest device report (the heartbeat carries it as well)
+
+const count = (v) => (Number.isInteger(v) && v >= 0 ? Math.min(v, 100000) : 0);
+const ipv4 = (v) => typeof v === 'string' && IPV4_RE.test(v) && v.split('.').every((o) => Number(o) <= 255);
+
+/** `search` of a device report or of telemetry.features.print, checked and cut → the view or null. */
+function cleanSearch(s) {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
+  const dropped = {};
+  const dr = s.dropped && typeof s.dropped === 'object' ? s.dropped : {};
+  for (const r of SEARCH_REASONS) { const n = count(dr[r]); if (n) dropped[r] = n; }
+  return {
+    at: Number.isSafeInteger(s.at) && s.at > 0 ? s.at : null,
+    interfaces: count(s.interfaces), responses: count(s.responses), responders: count(s.responders),
+    services: count(s.services), devices: count(s.devices), dropped,
+    hosts: (Array.isArray(s.hosts) ? s.hosts : []).filter((h) => h && typeof h === 'object' && ipv4(h.ip) && SEARCH_REASONS.includes(h.reason)).slice(0, 8)
+      .map((h) => ({ ip: h.ip, reason: h.reason, name: clean(h.name, 120) || null, private: isRfc1918(h.ip) })),
+    manual: (Array.isArray(s.manual) ? s.manual : []).filter((m) => m && typeof m === 'object' && isRfc1918(m.ip)).slice(0, MAX_MANUAL)
+      .map((m) => (m.found === true ? { ip: m.ip, found: true, via: m.via === 'mdns' ? 'mdns' : 'manual' } : { ip: m.ip, found: false, error: m.error === 'no_service' ? 'no_service' : 'unreachable' })),
+    errors: (Array.isArray(s.errors) ? s.errors : []).filter((e) => SEARCH_ERRORS.includes(e)).slice(0, 8),
+  };
+}
+
+/**
+ * The newest search of the gateway: from its last device report, else from its
+ * heartbeat (also after a restart). `known`: the gateway reports searches at all
+ * (its telemetry names `search`, null before the first one) — an older gateway does not.
+ */
+function searchOf(peerId) {
+  const mem = searches.get(peerId) || null;
+  let tel = null;
+  let known = !!mem;
+  try {
+    const row = db().prepare('SELECT last_health FROM gateway_meta WHERE peer_id = ?').get(peerId);
+    const h = json(row && row.last_health);
+    const p = h && h.telemetry && h.telemetry.features && h.telemetry.features.print;
+    if (p && typeof p === 'object' && Object.prototype.hasOwnProperty.call(p, 'search')) known = true;
+    tel = cleanSearch(p && p.search);
+  } catch (e) { logger.debug({ err: e.message }, 'print search of the heartbeat unavailable'); }
+  const search = mem && (!tel || (mem.at || 0) >= (tel.at || 0)) ? mem : tel;
+  return { search, known };
+}
+
+/** "Neu suchen" of one gateway (the row "Drucken & Scannen") → { busy } */
+async function discoverOne(peerId) {
+  if (!settingsOf(peerId).enabled) throw new PrintError('unavailable', 'Drucken & Scannen is switched off on this gateway');
+  const r = await mgmt(peerId, '/api/print/discover', {}, 5000);
+  if (!r) throw new PrintError('gateway_unreachable', 'gateway not reachable');
+  if (r.status === 409) return { busy: true };
+  if (r.status === 404) throw new PrintError('gateway_unsupported', 'the gateway does not know this command yet');
+  if (r.status === 503) throw new PrintError('unavailable', 'Drucken & Scannen is not running on the gateway yet');
+  if (r.status < 200 || r.status >= 300) throw new PrintError('gateway_error', 'gateway answered ' + r.status);
+  return { busy: false };
+}
+
 /** POST /api/v1/gateway/print/devices — the complete list of the gateway (rows it no longer names go). */
 function ingestDevices(peerId, body, now = Date.now()) {
   const b = body && typeof body === 'object' ? body : {};
   if (!Array.isArray(b.devices)) throw new PrintError('invalid', 'devices must be a list');
+  const search = cleanSearch(b.search);
+  if (search) searches.set(peerId, search);
   const list = b.devices.slice(0, MAX_DEVICES).map(cleanDevice).filter(Boolean);
   const ids = new Set();
   const d = db();
@@ -674,11 +741,19 @@ function overview(peerId) {
     const p = require('./plugins/registry').get('gatecontrol-print');
     plugin = p ? { installed: true, enabled: p.enabled === true } : { installed: false, enabled: false };
   } catch { plugin = null; }
+  const last = searchOf(peerId);
   return {
     enabled: s.enabled,
     manual: s.manual,
-    devices: rows.slice(0, 12).map((d) => ({ name: d.name, printer: !!d.printer, scanner: !!d.scanner, online: !!d.online, problem: d.problem || null })),
+    manualMax: MAX_MANUAL,
+    devices: rows.slice(0, 12).map((d) => ({
+      name: d.name, model: d.model || null, ip: d.ip, source: d.source === 'manual' ? 'manual' : 'mdns',
+      printer: !!d.printer, scanner: !!d.scanner, online: !!d.online, problem: d.problem || null,
+    })),
     count: rows.length,
+    // the last search; searchKnown false: the gateway is too old to report one ("bitte aktualisieren")
+    search: last.search,
+    searchKnown: last.known,
     plugin,
     minGateway: MIN_GATEWAY,
   };
@@ -692,7 +767,7 @@ const HOST_CODES = {
 
 module.exports = {
   MIN_GATEWAY, MAX_FILE, JOB_TTL_MS, PrintError, HOST_CODES,
-  normalizeSettings, configPayload, ingestDevices, cleanDevice, devices, deviceView, discover,
+  normalizeSettings, configPayload, ingestDevices, cleanDevice, cleanSearch, searchOf, devices, deviceView, discover, discoverOne,
   submit, testPage, job, jobs, cancel, pagesOf, printable, housekeeping, sweepFiles,
   queueFor, sendFile, jobReport, scan, scanStatus, cancelScan, storePage, scanReport, makePdf, overview, jobsDir,
 };

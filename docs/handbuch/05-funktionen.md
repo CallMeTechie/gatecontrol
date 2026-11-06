@@ -143,6 +143,30 @@ Meldet ein Gerät „Zertifikat geändert“, hat sich sein Sicherheitszertifika
 geändert (z. B. nach einem Firmware-Update) – im Plugin bestätigen, dann geht
 es weiter.
 
+### Drucker wird nicht gefunden
+
+Unter dem Schalter steht, was die letzte Suche gesehen hat („Letzte Suche
+heute 12:03: mDNS-Antworten 14, Druck-/Scandienste 3, Geräte 1“); „Neu
+suchen“ sucht sofort.
+
+- **„Dieses Gateway meldet noch nicht …“:** Das Gateway ist älter als die
+  verbesserte Suche – zuerst aktualisieren ([Kapitel 6](06-gateway-aktualisieren.md)).
+  Ältere Versionen übersehen neben avahi/Bonjour des Hosts (Synology, QNAP)
+  viele Drucker.
+- **„mDNS-Antworten 0“:** Die Suche kommt nicht beim Gateway an – etwa wenn der
+  Container nicht im Host-Netz läuft, das WLAN Multicast filtert oder der
+  Drucker im Gäste-WLAN bzw. einem anderen VLAN steht.
+- **„verworfen: anderes Subnetz“:** Der Drucker hat eine Adresse außerhalb des
+  Heimnetzes des Gateways. Von sich aus spricht das Gateway nur mit Geräten im
+  eigenen LAN – trag die Adresse ein (nächster Punkt).
+- **Per IP-Adresse hinzufügen:** „Drucker nicht gefunden? Per IP-Adresse
+  hinzufügen“ → Adresse eintragen (steht im Netzwerk-Menü am Drucker oder in
+  der Geräteliste des Routers) → „Hinzufügen“ → „Speichern“. Das Gateway fragt
+  das Gerät dann direkt (IPP auf Port 631 bzw. 443, eSCL auf 80 bzw. 443).
+  Nur private Adressen (10.x, 172.16–31.x, 192.168.x), höchstens 16; die
+  Adresse im Router am besten fest vergeben. Im Fenster steht je Adresse, ob
+  das Gateway sie erreicht hat.
+
 ## Funk (Zigbee, Bluetooth, Thread)
 
 **Wofür:** Zigbee-Lampen, -Steckdosen und -Sensoren (IKEA, Philips Hue, Aqara …)

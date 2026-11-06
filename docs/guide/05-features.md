@@ -137,6 +137,30 @@ printer is off, a job waits up to 24 hours and starts as soon as it is back.
 If a device says “Certificate changed”, its security certificate changed (for
 example after a firmware update) – confirm it in the plugin and it carries on.
 
+### Printer not found
+
+Below the switch the row shows what the last search saw (“Last search today
+12:03: mDNS answers 14, print/scan services 3, devices 1”); “Search again”
+searches at once.
+
+- **“This gateway does not report yet …”:** the gateway is older than the
+  improved search – update it first ([chapter 6](06-updating-a-gateway.md)). Older
+  versions miss many printers next to the host's avahi/Bonjour (Synology,
+  QNAP).
+- **“mDNS answers 0”:** the search does not reach the gateway – for example
+  when the container does not run in the host network, the Wi-Fi filters
+  multicast or the printer is in the guest Wi-Fi or another VLAN.
+- **“dropped: other subnet”:** the printer has an address outside the
+  gateway's home network. On its own the gateway only talks to devices in its
+  own LAN – enter the address (next point).
+- **Add it by IP address:** “Printer not found? Add it by IP address” → enter
+  the address (it is in the printer's network menu or in the router's device
+  list) → “Add” → “Save”. The gateway then asks the device directly (IPP on
+  port 631 or 443, eSCL on 80 or 443). Private addresses only (10.x,
+  172.16–31.x, 192.168.x), at most 16; best make the address a fixed one in
+  the router. The window shows for each address whether the gateway reached
+  it.
+
 ## Radio (Zigbee, Bluetooth, Thread)
 
 **What for:** Zigbee lights, plugs and sensors (IKEA, Philips Hue, Aqara …) through a

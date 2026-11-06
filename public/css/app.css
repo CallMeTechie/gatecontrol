@@ -9576,6 +9576,9 @@ a.lg-ev-msg:hover{color:var(--teal)}
 .gwn-link:focus-visible, .gwn-linkbtn:focus-visible{outline:2px solid var(--teal); outline-offset:2px; border-radius:4px}
 .gwn-sub{display:inline-flex; align-items:center; gap:8px; min-height:32px; font-size:12.5px; color:var(--text); cursor:pointer}
 .gwn-sub input{width:16px; height:16px; margin:0; accent-color:var(--teal)}
+.gwn-print-acts{display:flex; flex-wrap:wrap; gap:2px 16px; align-items:center}
+.gwn-print-add{display:flex; gap:8px; align-items:center}
+.gwn-print-add .form-input{flex:1 1 auto; min-width:0}
 .gwn-mem{padding-top:10px}
 /* narrow screens: the device table becomes one card per device (labels from data-label) */
 @media (max-width:640px){

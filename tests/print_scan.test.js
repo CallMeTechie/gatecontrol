@@ -139,6 +139,82 @@ describe('the gateway reports its devices', () => {
   });
 });
 
+describe('the last search of a gateway, "Neu suchen" and addresses by hand', () => {
+  const search = (extra = {}) => ({
+    at: Date.now(), interfaces: 1, responses: 14, responders: 3, services: 3, devices: 1,
+    dropped: { other_subnet: 1, bogus: 7, no_ipv4: -1 }, hosts: [{ ip: '192.168.20.5', reason: 'other_subnet', name: 'HP OfficeJet Pro 8720 [5A3B2C]' }, { ip: 'x', reason: 'other_subnet' }],
+    manual: [{ ip: '192.168.1.70', found: false, error: 'unreachable' }, { ip: '8.8.8.8', found: true }], errors: ['mdns_port_busy', '<script>'],
+    ...extra,
+  });
+
+  it('an older gateway reports no search: null (the row says "update"); the heartbeat\'s search is used until a report comes', async () => {
+    let v = (await admin('get', '/features').expect(200)).body.gateway;
+    assert.equal(v.print.search, null);
+    assert.equal(v.print.searchKnown, false);
+    assert.equal(v.print.manualMax, 16);
+    const h = JSON.parse(db.prepare('SELECT last_health FROM gateway_meta WHERE peer_id = ?').get(gw.peer.id).last_health);
+    // a newer gateway before its first search: `search: null` → known, nothing to show yet
+    h.telemetry.features = { print: { enabled: true, search: null } };
+    db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify(h), gw.peer.id);
+    v = (await admin('get', '/features').expect(200)).body.gateway;
+    assert.deepEqual([v.print.search, v.print.searchKnown], [null, true]);
+    h.telemetry.features = { print: { enabled: true, search: search({ at: 1000, responses: 2 }) } };
+    db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify(h), gw.peer.id);
+    v = (await admin('get', '/features').expect(200)).body.gateway;
+    assert.equal(v.print.search.responses, 2);
+  });
+
+  it('the device report carries the search: checked and cut, newer than the heartbeat\'s', async () => {
+    await gwReq('post', '/print/devices').send({ scannedAt: Date.now(), devices: [device(), { ...device(), id: BRO, name: 'Brother HL-L2350DW', ip: '192.168.1.61', source: 'manual', scanner: null, printer: { ...device().printer, color: false, formats: ['image/urf', 'image/jpeg'] } }], search: search() }).expect(200);
+    const v = (await admin('get', '/features').expect(200)).body.gateway;
+    const s = v.print.search;
+    assert.equal(s.responses, 14);
+    assert.deepEqual(s.dropped, { other_subnet: 1 });
+    assert.deepEqual(s.hosts, [{ ip: '192.168.20.5', reason: 'other_subnet', name: 'HP OfficeJet Pro 8720 [5A3B2C]', private: true }]);
+    assert.deepEqual(s.manual, [{ ip: '192.168.1.70', found: false, error: 'unreachable' }]);
+    assert.deepEqual(s.errors, ['mdns_port_busy']);
+    // the admin view of the devices: address and how they were found
+    assert.deepEqual(v.print.devices.map((d) => [d.ip, d.source]).sort(), [['192.168.1.57', 'mdns'], ['192.168.1.61', 'manual']]);
+    assert.equal(hp.cleanSearch('x'), null);
+    assert.equal(hp.cleanSearch([]), null);
+  });
+
+  it('addresses by hand: private IPv4 only, at most 16 → features.print.manual in the config pull', async () => {
+    const sixteen = Array.from({ length: 16 }, (_, i) => `10.0.40.${i + 1}`);
+    assert.equal((await admin('put', '/features').send({ print: { manual: [...sixteen, '10.0.40.99'] } })).status, 400);
+    const pub = await admin('put', '/features').send({ print: { manual: ['192.168.1.70', '100.64.0.1'] } });
+    assert.equal(pub.status, 400);
+    assert.equal(pub.body.code, 'invalid_host');
+    assert.equal((await admin('put', '/features').send({ print: { manual: ['192.168.20.5', 'drucker.local'] } })).status, 400);
+    let v = (await admin('put', '/features').send({ print: { manual: [' 192.168.20.5 ', '192.168.20.5', ...sixteen.slice(0, 14)] } }).expect(200)).body.gateway;
+    assert.equal(v.print.manual.length, 15);
+    assert.equal(v.print.manual[0], '192.168.20.5');
+    let c = (await gwReq('get', '/config').expect(200)).body;
+    assert.deepEqual(c.features.print.manual, v.print.manual);
+    v = (await admin('put', '/features').send({ print: { manual: ['192.168.1.70'] } }).expect(200)).body.gateway;
+    c = (await gwReq('get', '/config').expect(200)).body;
+    assert.deepEqual(c.features.print, { enabled: true, manual: ['192.168.1.70'] });
+  });
+
+  it('"Neu suchen": the gateway is asked; switched off, unreachable or too old → clear errors', async () => {
+    mgmt.length = 0;
+    const r = (await admin('post', '/print/discover').send({}).expect(200)).body;
+    assert.deepEqual([r.ok, r.busy], [true, false]);
+    assert.deepEqual(mgmt.map((m) => [m.peerId, m.path]), [[gw.peer.id, '/api/print/discover']]);
+    const orig = gateways.mgmtCall;
+    try {
+      gateways.mgmtCall = async () => ({ status: 409, body: { error: 'search_running' } });
+      assert.equal((await admin('post', '/print/discover').send({}).expect(200)).body.busy, true);
+      gateways.mgmtCall = async () => null;
+      assert.equal((await admin('post', '/print/discover').send({}).expect(502)).body.code, 'gateway_unreachable');
+      gateways.mgmtCall = async () => ({ status: 404, body: null });
+      assert.equal((await admin('post', '/print/discover').send({}).expect(409)).body.code, 'gateway_unsupported');
+    } finally { gateways.mgmtCall = orig; }
+    // the second gateway has the function off
+    assert.equal((await admin('post', '/print/discover', gw2).send({}).expect(409)).body.code, 'unavailable');
+  });
+});
+
 describe('gc.print in a plugin process', () => {
   let pdfMedia;
   let jpgMedia;

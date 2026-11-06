@@ -9,8 +9,14 @@
 // 1.24.0 with it. Switching on is a real PUT; the config pull then carries
 // features.print; the gateway reports its devices (printer + scanner, a
 // black-and-white printer) and the row names them, with the memory share and
-// the way to the plugin (catalogue, not installed here). Light/dark, 390 px
-// without sideways scroll.
+// the way to the plugin (catalogue, not installed here). A 1.24.0 gateway
+// reports no search details → "bitte aktualisieren"; a newer one reports its
+// last search (answers, a printer dropped: other subnet) → the row says so.
+// "Drucker nicht gefunden? Per IP-Adresse hinzufügen": the dialog refuses a
+// public address, takes one typed and the one the search saw in the other
+// subnet (one click), saves (real PUT) → features.print.manual in the config
+// pull. "Neu suchen" against the unreachable seeded gateway → a clear
+// message. Light/dark, 390 px without sideways scroll (row and dialog).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -154,6 +160,88 @@ module.exports = (ctx) => {
             && link.getAttribute('data-print-link') === 'catalog' && /\/settings\/plugins\/catalog\/gatecontrol-print$/.test(link.href);
         }, row));
         step('print: tab badge counts it as on', await page.evaluate(() => /\d/.test((document.querySelector('#gwe-tab-features .gwe-tab-badge') || {}).textContent || '')));
+        step('print: a gateway without search details → "bitte das Gateway aktualisieren"', await page.evaluate((sel) => {
+          const h = document.querySelector(sel + ' [data-print-nosearch]');
+          return !!h && /1\.24\.0/.test(h.textContent) && /aktualisieren/.test(h.textContent) && !document.querySelector(sel + ' [data-print-search]');
+        }, row));
+
+        // ── a newer gateway: its last search, one printer in another subnet ──
+        const search = { at: Date.now(), interfaces: 1, responses: 14, responders: 3, services: 4, devices: 2, dropped: { other_subnet: 1 },
+          hosts: [{ ip: '192.168.20.5', reason: 'other_subnet', name: 'HP OfficeJet Pro 8720 [5A3B2C]' }], manual: [], errors: [] };
+        step('print: the gateway reports its devices with the search', await gw('/print/devices', { scannedAt: Date.now(), devices: devices(Date.now()), search }) === 200);
+        await fresh(page);
+        await page.reload();
+        await goFeatures(page, GW);
+        step('print: the row shows the last search and what was dropped (with the address)', await until(page, (sel) => {
+          const x = document.querySelector(sel + ' [data-print-search]');
+          return !!x && /mDNS-Antworten 14/.test(x.textContent) && /Geräte 2/.test(x.textContent) && /1 × anderes Subnetz \(192\.168\.20\.5\)/.test(x.textContent)
+            && !document.querySelector(sel + ' [data-print-nosearch]');
+        }, row));
+        step('print: "Neu suchen" and "Drucker nicht gefunden? Per IP-Adresse hinzufügen" in the row', await page.evaluate((sel) => {
+          const a = document.querySelector(sel + ' [data-fk="gwn-print-again"]');
+          const m = document.querySelector(sel + ' [data-fk="gwn-print-manual"]');
+          return !!a && /Neu suchen/.test(a.textContent) && !!m && /Drucker nicht gefunden\? Per IP-Adresse hinzufügen/.test(m.textContent);
+        }, row));
+        // "Neu suchen": the seeded gateway is not reachable (no tunnel in the test) → a clear message
+        await page.click(row + ' [data-fk="gwn-print-again"]');
+        step('print: "Neu suchen" → the gateway is asked; unreachable → "nicht erreichbar"', await until(page, () => {
+          const m = document.querySelector('.gcd-dialog .gcd-msg');
+          return !!m && /nicht erreichbar|nicht angenommen/.test(m.textContent);
+        }, null, 15000));
+        await page.click('.gcd-dialog .gcd-ok').catch(() => {});
+        await until(page, () => !document.querySelector('.gcd-dialog'));
+        // the 502 of this unreachable gateway is the expected answer, not a page problem
+        ctx.allow((x) => x.kind === 'http' && x.status === 502 && /\/print\/discover$/.test(x.url),
+          (x) => x.kind === 'console' && /status of 502/.test(x.text));
+
+        // ── "Per IP-Adresse hinzufügen" ──
+        await page.click(row + ' [data-fk="gwn-print-manual"]');
+        step('print: the dialog opens with the address field focused', await until(page, () => document.activeElement && document.activeElement.id === 'gwn-p-ip' && !!document.querySelector('.gwn-printdlg')));
+        await page.fill('#gwn-p-ip', '8.8.8.8');
+        await page.click('.gwn-printdlg [data-fk="gwn-p-add"]');
+        step('print: a public address is refused', await until(page, () => {
+          const e = document.querySelector('.gwn-printdlg .gwe-err');
+          return !!e && !e.hidden && /private IPv4/.test(e.textContent) && document.getElementById('gwn-p-ip').getAttribute('aria-invalid') === 'true';
+        }));
+        await page.fill('#gwn-p-ip', '192.168.1.70');
+        await page.press('#gwn-p-ip', 'Enter');
+        step('print: the suggestion from the search (other subnet) is offered', await until(page, () => {
+          const b = document.querySelector('.gwn-printdlg [data-fk="gwn-p-sugg:192.168.20.5"]');
+          return !!b && /HP OfficeJet Pro 8720/.test(b.textContent);
+        }));
+        await page.click('.gwn-printdlg [data-fk="gwn-p-sugg:192.168.20.5"]');
+        step('print: both addresses listed, waiting for the next search', await until(page, () => {
+          const r = [...document.querySelectorAll('.gwn-printdlg [data-print-ip]')].map((x) => x.getAttribute('data-print-ip'));
+          return r.join(',') === '192.168.1.70,192.168.20.5' && /nächsten Suche/.test(document.querySelector('.gwn-printdlg [data-print-manual-list]').textContent);
+        }));
+        await view(page, 'gwprint-manual-dark', 1000);
+        await page.setViewportSize({ width: 390, height: 900 });
+        await page.waitForTimeout(300);
+        const od = await overflow(page);
+        step('print: 390 px, dialog: no sideways scroll', od <= 0, 'overflow ' + od);
+        await shot(page, 'gwprint-manual-390-dark', false);
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await page.click('.gwn-printdlg [data-fk="gwn-p-save"]');
+        step('print: saved (real PUT), the row names the addresses', await until(page, (sel) => {
+          const m = document.querySelector(sel + ' [data-fk="gwn-print-manual"]');
+          return !document.querySelector('.gwn-printdlg') && !!m && /192\.168\.1\.70, 192\.168\.20\.5/.test(m.textContent);
+        }, row));
+        const cfg2 = await (await page.request.fetch(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token } })).json();
+        step('print: the config pull carries features.print.manual', JSON.stringify(cfg2.features.print.manual) === JSON.stringify(['192.168.1.70', '192.168.20.5']));
+        // the gateway asked them: one found, one not reachable → shown per address
+        search.manual = [{ ip: '192.168.1.70', found: false, error: 'unreachable' }, { ip: '192.168.20.5', found: true, via: 'mdns' }];
+        search.at = Date.now();
+        await gw('/print/devices', { scannedAt: Date.now(), devices: devices(Date.now()), search });
+        await fresh(page);
+        await page.reload();
+        await goFeatures(page, GW);
+        await page.click(row + ' [data-fk="gwn-print-manual"]');
+        step('print: per address: "nicht erreichbar" / "gefunden"', await until(page, () => {
+          const st = (ip) => (document.querySelector(`.gwn-printdlg [data-print-ip="${ip}"]`) || {}).textContent || '';
+          return /nicht erreichbar/.test(st('192.168.1.70')) && /gefunden/.test(st('192.168.20.5'));
+        }));
+        await page.click('.gwn-printdlg .gcd-foot .btn-ghost');
+        await until(page, () => !document.querySelector('.gwn-printdlg'));
         await view(page, 'gwprint-on-dark');
         await theme(page, 'light');
         await view(page, 'gwprint-on-light');

@@ -767,11 +767,130 @@
         ? t('gwn.feat.print_found', { list: list.slice(0, 4).join(', ') + (list.length > 4 ? ' …' : '') })
         : t('gwn.feat.print_none')));
       if ((p.devices || []).some((x) => x.problem === 'cert_changed')) extra.push(h('span', { class: 'gwn-hint' }, [U.icon('warn', 14), t('gwn.feat.print_cert')]));
+      // the last search (how many answers, what was dropped and why) — an older gateway reports none
+      if (p.search) extra.push(h('span', { class: 'gwe-d', 'data-print-search': '' }, printSearchText(p.search)));
+      else if (p.searchKnown) extra.push(h('span', { class: 'gwe-d', 'data-print-search': 'pending', text: t('gwn.feat.print_search_pending') }));
+      else extra.push(h('span', { class: 'gwn-hint', 'data-print-nosearch': '' }, [U.icon('info', 14), t('gwn.feat.print_nosearch', { version: sup.version || '—' })]));
+      const errs = (p.search && p.search.errors) || [];
+      if (errs.length) extra.push(h('span', { class: 'gwn-hint', 'data-print-err': errs.join(' ') }, [U.icon('warn', 14), errs.map((e) => t('gwn.feat.print_err_' + e)).join(' ')]));
+      const again = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-print-again', text: t('gwn.feat.print_again') });
+      again.addEventListener('click', () => printDiscover(id, again));
+      const add = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-print-manual', 'aria-haspopup': 'dialog',
+        text: (p.manual || []).length ? t('gwn.feat.print_manual_list', { list: p.manual.join(', ') }) : t('gwn.feat.print_manual_add') });
+      add.addEventListener('click', () => printManualDialog(id, p));
+      extra.push(h('span', { class: 'gwn-print-acts' }, [again, add]));
     }
     const plug = p.plugin || {};
     if (plug.installed) extra.push(h('a', { href: '/plugins/gatecontrol-print', class: 'gwn-link', 'data-print-link': 'plugin', text: t('gwn.feat.print_to_plugin') }));
     else extra.push(h('a', { href: '/settings/plugins/catalog/gatecontrol-print', class: 'gwn-link', 'data-print-link': 'catalog', text: t('gwn.feat.print_install') }));
     return featRow(t('gwn.feat.print'), t('gwn.feat.print_d'), sw, extra, 'print');
+  }
+
+  /** "Letzte Suche 12:03: 14 mDNS-Antworten, 2 Druck-/Scandienste, 1 Gerät · verworfen: 1 × anderes Subnetz (192.168.20.5)" */
+  function printSearchText(s) {
+    const at = s.at ? when(new Date(s.at).toISOString()) : '—';
+    let text = s.interfaces === 0 ? t('gwn.feat.print_search_nolan', { when: at })
+      : t('gwn.feat.print_search', { when: at, responses: nf(s.responses), services: nf(s.services), devices: nf(s.devices) });
+    const dropped = Object.keys(s.dropped || {}).map((r) => {
+      const ips = (s.hosts || []).filter((x) => x.reason === r).map((x) => x.ip);
+      return t('gwn.feat.print_drop', { n: s.dropped[r], reason: t('gwn.feat.print_drop_' + r) }) + (ips.length ? ' (' + ips.join(', ') + ')' : '');
+    });
+    if (dropped.length) text += ' · ' + t('gwn.feat.print_dropped', { list: dropped.join(', ') });
+    return text;
+  }
+
+  /** "Neu suchen": the gateway searches at once; the result shows up with its report (some seconds). */
+  function printDiscover(id, btn) {
+    btn.disabled = true;
+    U.api('POST', url(id, '/print/discover'), {}).then((r) => {
+      U.toast(t(r && r.busy ? 'gwn.feat.print_again_busy' : 'gwn.feat.print_again_done'));
+      [8000, 20000].forEach((ms2) => setTimeout(() => { if (cur && String(cur.g.peer_id) === String(id)) reloadFeatures(id); }, ms2));
+    }).catch((e) => D.alert({ message: errText(e), danger: true })).finally(() => { btn.disabled = false; });
+  }
+
+  const RFC1918 = /^(10\.\d{1,3}|172\.(1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}$/;
+  const isRfc1918 = (v) => RFC1918.test(v) && v.split('.').every((o) => Number(o) <= 255 && String(Number(o)) === o);
+
+  /**
+   * "Drucker nicht gefunden? Per IP-Adresse hinzufügen": the addresses the gateway asks directly
+   * (features.print.manual — private IPv4 only, at most 16; checked again by the server).
+   */
+  function printManualDialog(id, p) {
+    const max = p.manualMax || 16;
+    const list = (p.manual || []).slice();
+    const status = new Map(((p.search && p.search.manual) || []).map((m) => [m.ip, m]));
+    const named = new Map((p.devices || []).map((d) => [d.ip, d]));
+    const dlg = U.openDialog({ title: t('gwn.print.dlg_title'), wide: false, cls: 'gwn-printdlg' });
+    const rows = h('div', { class: 'gwn-rows', 'data-print-manual-list': '' });
+    const input = h('input', { type: 'text', id: 'gwn-p-ip', class: 'form-input gwe-mono', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false', placeholder: '192.168.1.70', 'aria-describedby': 'gwn-p-ip-hint' });
+    const addBtn = h('button', { type: 'button', class: 'btn btn-ghost', 'data-fk': 'gwn-p-add', text: t('gwn.print.add') });
+    const err = U.errorBox();
+    const stateOf = (ip) => {
+      const m = status.get(ip);
+      if (!m) return h('span', { class: 'gwe-d', text: t('gwn.print.st_pending') });
+      if (m.found) {
+        const d = named.get(ip);
+        return h('span', { class: 'gwe-d' }, [U.tag('green', t('gwn.print.st_found'), true), ' ', d ? d.name : '', m.via === 'mdns' ? ' · ' + t('gwn.print.st_via_mdns') : '']);
+      }
+      return h('span', { class: 'gwe-d' }, [U.tag('red', t(m.error === 'no_service' ? 'gwn.print.st_no_service' : 'gwn.print.st_unreachable'), true)]);
+    };
+    const draw = () => {
+      rows.textContent = '';
+      if (!list.length) rows.appendChild(h('p', { class: 'gwe-empty', text: t('gwn.print.none') }));
+      list.forEach((ip, i) => {
+        const rm = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-fk': 'gwn-p-rm:' + ip, 'aria-label': t('gwn.print.remove_aria', { ip }), text: t('gwn.print.remove') });
+        rm.addEventListener('click', () => { list.splice(i, 1); draw(); input.focus(); });
+        rows.appendChild(h('div', { class: 'gwn-row', 'data-print-ip': ip }, [h('span', { class: 'gwn-row-m' }, [h('strong', { class: 'gwe-mono', text: ip }), ' ', stateOf(ip)]), rm]));
+      });
+      addBtn.disabled = list.length >= max;
+      input.disabled = list.length >= max;
+    };
+    const add = (raw) => {
+      const ip = String(raw || '').trim();
+      U.showErr(err, '');
+      input.removeAttribute('aria-invalid');
+      if (!isRfc1918(ip)) { U.showErr(err, t('gwn.err.invalid_host')); input.setAttribute('aria-invalid', 'true'); input.focus(); return; }
+      if (list.includes(ip)) { U.showErr(err, t('gwn.print.dup', { ip })); input.focus(); return; }
+      if (list.length >= max) { U.showErr(err, t('gwn.print.max', { n: max })); return; }
+      list.push(ip);
+      input.value = '';
+      draw();
+      input.focus();
+    };
+    addBtn.addEventListener('click', () => add(input.value));
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(input.value); } });
+    // what the search saw in another private subnet: one click to allow it
+    const sugg = ((p.search && p.search.hosts) || []).filter((x) => x.private && x.reason === 'other_subnet');
+    dlg.body.append(
+      h('p', { class: 'gwe-intro', text: t('gwn.print.dlg_intro') }),
+      rows,
+      h('div', { class: 'gwe-field' }, [h('label', { class: 'form-label', for: 'gwn-p-ip', text: t('gwn.print.ip') }),
+        h('div', { class: 'gwn-print-add' }, [input, addBtn]),
+        h('span', { class: 'form-hint', id: 'gwn-p-ip-hint', text: t('gwn.print.ip_hint', { n: max }) })]),
+      sugg.length ? h('div', { class: 'gwe-field', 'data-print-sugg': '' }, [h('span', { class: 'form-label', text: t('gwn.print.sugg') }),
+        ...sugg.map((x) => {
+          const b = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-p-sugg:' + x.ip, text: t('gwn.print.sugg_add', { ip: x.ip, name: x.name || '—' }) });
+          b.addEventListener('click', () => add(x.ip));
+          return b;
+        })]) : null,
+      err);
+    draw();
+    const cancel = h('button', { type: 'button', class: 'btn btn-ghost', text: t('common.cancel'), on: { click: () => dlg.close(null) } });
+    const ok = h('button', { type: 'button', class: 'btn btn-primary', 'data-fk': 'gwn-p-save', text: t('gwn.print.save') });
+    dlg.foot.append(cancel, ok);
+    ok.addEventListener('click', () => {
+      // a typed but not added address counts as well
+      if (input.value.trim()) { add(input.value); if (input.value.trim()) return; }
+      ok.disabled = true;
+      putFeatures(id, { print: { manual: list } }, t('gwn.print.saved'))
+        .then(() => {
+          dlg.close(true);
+          // the gateway pulls its config and asks the addresses at once
+          [10000, 25000].forEach((ms2) => setTimeout(() => { if (cur && String(cur.g.peer_id) === String(id)) reloadFeatures(id); }, ms2));
+        })
+        .catch((e) => { ok.disabled = false; U.showErr(err, errText(e)); });
+    });
+    input.focus();
   }
 
   /**
