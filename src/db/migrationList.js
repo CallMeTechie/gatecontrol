@@ -3597,6 +3597,34 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_print_scans_plugin ON print_scans(plugin_id, updated_at);`,
     detect: (db) => ['print_devices', 'print_jobs', 'print_scans'].every((t) => tableExists(db, t)),
   },
+  {
+    version: 133,
+    name: 'radio',
+    // Funk (phase 3c, step 2 — services/homeRadio.js): the Bluetooth sensors a
+    // gateway hears (POST /api/v1/gateway/radio/ble), one row per gateway and
+    // address. `accepted` = taken over by the administrator ("Übernehmen", only
+    // those reach plugins through gc.radio), `label` the name given here,
+    // `adv_name` the one the sensor sends, `data` the last values (JSON).
+    // Not taken over and not heard for a day → gone (homeRadio.housekeeping).
+    sql: `
+      CREATE TABLE IF NOT EXISTS gateway_ble_sensors (
+        peer_id      INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        mac          TEXT NOT NULL,
+        format       TEXT NOT NULL,
+        encrypted    INTEGER NOT NULL DEFAULT 0,
+        accepted     INTEGER NOT NULL DEFAULT 0,
+        label        TEXT,
+        adv_name     TEXT,
+        data         TEXT NOT NULL DEFAULT '{}',
+        rssi         INTEGER,
+        first_seen   INTEGER,
+        seen_at      INTEGER,
+        reported_at  INTEGER NOT NULL,
+        PRIMARY KEY (peer_id, mac)
+      );
+      CREATE INDEX IF NOT EXISTS idx_gateway_ble_sensors_accepted ON gateway_ble_sensors(accepted, peer_id);`,
+    detect: (db) => tableExists(db, 'gateway_ble_sensors'),
+  },
 ];
 
 module.exports = { migrations };

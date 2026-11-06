@@ -52,9 +52,9 @@ function composePlatformOf(platform) {
   return null;
 }
 /** → the compose text, or null when platform/network is not one of the profiles. */
-function buildCompose(platform, network) {
+function buildCompose(platform, network, { zigbee = false } = {}) {
   if (COMPOSE_PLATFORMS.indexOf(platform) < 0 || COMPOSE_NETWORKS.indexOf(network) < 0) return null;
-  return kit.buildCompose({ platform, network });
+  return kit.buildCompose({ platform, network, zigbee: zigbee === true });
 }
 
 module.exports = {

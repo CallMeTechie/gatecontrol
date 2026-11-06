@@ -41,6 +41,8 @@ router.use('/peer-groups', require('./peerGroups'));
 router.use('/gateways', require('./gatewayNet'));
 // phase 3b: DNS filter and home cache of a gateway (admin session only, routes/api/gatewayHome.js)
 router.use('/gateways', require('./gatewayHome'));
+// phase 3c, step 2: the tab "Funk" of a gateway (admin session only, routes/api/gatewayRadio.js)
+router.use('/gateways', require('./gatewayRadio'));
 router.use('/gateways', require('./gateways'));
 router.use('/gateway-pools', require('./gatewayPools'));
 // edge parts of plugins on gateways + the gateways' MQTT brokers (session only, routes/api/edge.js)

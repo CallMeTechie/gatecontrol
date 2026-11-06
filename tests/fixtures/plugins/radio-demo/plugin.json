@@ -1,0 +1,10 @@
+{
+  "id": "radio-demo",
+  "name": { "de": "Funk-Demo", "en": "Radio demo" },
+  "version": "1.0.0",
+  "publisher": "GateControl Tests",
+  "description": { "de": "Plugin mit gc.radio (Tests).", "en": "Plugin with gc.radio (tests)." },
+  "gatecontrol": ">=1.0.0",
+  "entry": "server/index.js",
+  "permissions": { "radio": true }
+}

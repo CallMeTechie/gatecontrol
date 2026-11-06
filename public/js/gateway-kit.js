@@ -144,6 +144,10 @@
     '      options:',
     '        max-size: "10m"',
     '        max-file: "3"',
+  ];
+
+  // Top-level volumes of the host-network compose (edge, mqtt and the radio control of the gateway).
+  const VOLUMES = [
     '',
     'volumes:',
     '  # tmpfs shared with the gateway: the gateway (root) creates its socket there, the setgid',
@@ -169,6 +173,92 @@
     '  edge-state:',
     '  # copy of the broker files + Mosquitto data (data/), owner 61001',
     '  edge-mqtt:',
+    '  # tmpfs shared: the control file of the gateway for the deconz service and its state (radio)',
+    '  radio-ctl:',
+    '    driver_opts:',
+    '      type: tmpfs',
+    '      device: tmpfs',
+    '      o: "size=1m,uid=0,gid=0,mode=0755"',
+  ];
+
+  const DECONZ_SERVICE = [
+    '',
+    '  # Zigbee with deCONZ/Phoscon (gateway >= 1.25.0, docs/radio.md of the gateway) — only with a radio of',
+    '  # dresden elektronik (ConBee II/III, RaspBee). Switched on and off in GateControl: the gateway writes',
+    '  # /gc-radio/zigbee.env (device, major:minor), the small watcher creates exactly that device node and',
+    '  # starts deCONZ — no `devices:` (fails without a stick), no /dev mount; a stick plugged in later works',
+    '  # without a new container. Without zigbee.env only the watcher runs.',
+    '  deconz:',
+    '    image: deconzcommunity/deconz:2.33.2@sha256:3defae1287ecc1a73b68279e12579a5a5e997a83f4ff785fe4bc30f21faf8015',
+    '    entrypoint:',
+    '      - /bin/sh',
+    '      - -c',
+    '      - |',
+    '        C=/gc-radio; p=""; s=""; st=idle; dt=-',
+    '        say() { st="$$1"; dt="$${2:--}"; printf \'%s %s %s\\n\' "$$st" "$$dt" "$$(date +%s)" >"$$C/.deconz.state" && mv -f "$$C/.deconz.state" "$$C/deconz.state"; }',
+    '        halt() { if [ -n "$$p" ]; then kill "$$p" 2>/dev/null; wait "$$p" 2>/dev/null; fi; p=""; }',
+    '        dead() { [ ! -e "/proc/$$1" ] || grep -q \'^State:[[:space:]]*Z\' "/proc/$$1/status" 2>/dev/null; }',
+    '        trap \'halt; say idle; exit 0\' TERM INT',
+    '        while :; do',
+    '          if [ -f "$$C/zigbee.env" ]; then',
+    '            n="$$(cksum <"$$C/zigbee.env")"',
+    '            if [ -n "$$p" ] && dead "$$p"; then wait "$$p"; say exit "$$?"; p=""; sleep 8; fi',
+    '            if [ -z "$$p" ] || [ "$$n" != "$$s" ]; then',
+    '              halt; s="$$n"',
+    '              dv="$$(sed -n \'s/^DEVICE=\\(tty[A-Z]\\{3\\}[0-9]\\{1,3\\}\\)$$/\\1/p\' "$$C/zigbee.env")"',
+    '              mm="$$(sed -n \'s/^DEV=\\([0-9]\\{3\\}\\):\\([0-9]\\{1,7\\}\\)$$/\\1 \\2/p\' "$$C/zigbee.env")"',
+    '              bd="$$(sed -n \'s/^BAUD=\\([0-9]\\{1,6\\}\\)$$/\\1/p\' "$$C/zigbee.env")"',
+    '              case "$$dv:$${mm%% *}" in',
+    '                ttyACM*:166|ttyUSB*:188|ttyAMA*:204)',
+    '                  rm -f "/dev/$$dv"',
+    '                  if mknod "/dev/$$dv" c $$mm && chgrp dialout "/dev/$$dv" && chmod 660 "/dev/$$dv"; then',
+    '                    DECONZ_DEVICE="/dev/$$dv" DECONZ_BAUDRATE="$${bd:-0}" /start.sh & p=$$!; say running "$$dv"',
+    '                  else say wait mknod; fi ;;',
+    '                *) say wait invalid ;;',
+    '              esac',
+    '            else say "$$st" "$$dt"; fi',
+    '          else',
+    '            halt; s=""; say idle',
+    '          fi',
+    '          sleep 2 & wait $$!',
+    '        done',
+    '    restart: unless-stopped',
+    '    network_mode: host',
+    '    # only these device kinds may be created and opened: ttyACM (ConBee II), ttyUSB (ConBee III /',
+    '    # ConBee), ttyAMA (RaspBee on the GPIO header)',
+    '    device_cgroup_rules:',
+    '      - "c 166:* rmw"',
+    '      - "c 188:* rmw"',
+    '      - "c 204:* rmw"',
+    '    volumes:',
+    '      - ./deconz:/opt/deCONZ',
+    '      - type: volume            # control file of the gateway, state back',
+    '        source: radio-ctl',
+    '        target: /gc-radio',
+    '        volume: { nocopy: true }',
+    '    environment:',
+    '      - TZ=${TZ:-Etc/UTC}',
+    '      - DECONZ_WEB_PORT=8090',
+    '      - DECONZ_WS_PORT=8091',
+    '      - DECONZ_VNC_MODE=0',
+    '      - DECONZ_UPNP=1',
+    '      - DEBUG_INFO=1',
+    '      - DEBUG_APS=0',
+    '      - DEBUG_ZCL=0',
+    '      - DEBUG_ZDP=0',
+    '      - DEBUG_OTA=0',
+    '      - DEBUG_HTTP=0',
+    '    healthcheck:',
+    '      test: ["CMD-SHELL", "case \\"$$(cut -d\' \' -f1 /gc-radio/deconz.state 2>/dev/null)\\" in running) curl -fs -m 4 -o /dev/null http://127.0.0.1:8090/api/config ;; *) true ;; esac"]',
+    '      interval: 60s',
+    '      timeout: 10s',
+    '      retries: 3',
+    '      start_period: 120s',
+    '    logging:',
+    '      driver: json-file',
+    '      options:',
+    '        max-size: "10m"',
+    '        max-file: "3"',
   ];
 
   // ─── docker-compose.yml (onboarding) ──────────────────────────────────
@@ -283,7 +373,12 @@
         '      - type: volume',
         '        source: edge-mqtt',
         '        target: /gc-mqtt',
-        '        read_only: true'
+        '        read_only: true',
+        // radio (gateway >= 1.25.0): the control file for the deconz service; harmless without it
+        '      - type: volume            # radio: control file for the deconz service',
+        '        source: radio-ctl',
+        '        target: /gc-radio',
+        '        volume: { nocopy: true }'
       );
     }
     lines.push(
@@ -304,7 +399,13 @@
       '        max-size: "10m"',
       '        max-file: "3"'
     );
-    if (network === 'host') lines.push(...EDGE_SERVICES);
+    if (network === 'host') {
+      lines.push(...EDGE_SERVICES);
+      // Zigbee (phase 3c, step 2): only when wanted — the image is ≈ 350 MB (the gateway's example keeps it in
+      // the profile "zigbee"; here it is wanted, so without the profile)
+      if (o.zigbee === true) lines.push(...DECONZ_SERVICE);
+      lines.push(...VOLUMES);
+    }
     const header = headerNotes.length > 0 ? headerNotes.join('\n') + '\n' : '';
     return header + lines.join('\n') + '\n';
   }

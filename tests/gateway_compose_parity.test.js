@@ -4,7 +4,7 @@
 // buildCompose — also the NAS package and the "only docker-compose.yml"
 // download) against docker-compose.example.yml of gatecontrol-gateway, checked
 // in as tests/fixtures/gateway-compose/docker-compose.example.yml (copy of
-// gatecontrol-gateway feat/edge-isolated, 2026-11-06 / v1.23.0: edge without network). When the gateway
+// gatecontrol-gateway feat/radio, 2026-11-06 / v1.25.0: deconz service in the profile zigbee, volume radio-ctl). When the gateway
 // changes its example, copy it again — this test then shows what buildCompose
 // has to follow.
 //
@@ -71,8 +71,12 @@ const EXPECTED_DIFF = {
 };
 
 describe('gateway compose: assistant vs docker-compose.example.yml of the gateway', () => {
-  it('the fixture is the gateway example (services gateway, edge, mqtt; NET_RAW/SETGID/SETUID)', () => {
-    assert.deepEqual(Object.keys(ex.services), ['gateway', 'edge', 'mqtt']);
+  it('the fixture is the gateway example (services gateway, edge, mqtt, deconz; NET_RAW/SETGID/SETUID)', () => {
+    assert.deepEqual(Object.keys(ex.services), ['gateway', 'edge', 'mqtt', 'deconz']);
+    // gateway >= 1.25.0: deCONZ only in the profile zigbee (nobody pulls the image without a stick), the
+    // gateway mounts the control volume radio-ctl
+    assert.equal(ex.services.deconz.profiles, 'profiles: ["zigbee"]');
+    assert.match(exGw.volumes, /source: radio-ctl/);
     assert.deepEqual(listOf(exGw.cap_add), ['NET_ADMIN', 'NET_BIND_SERVICE', 'NET_RAW', 'SETGID', 'SETUID']);
     // gateway >= 1.23.0: the edge container has no network (no fence, no xt_owner); the gateway writes the broker files
     assert.equal(ex.services.edge.network_mode, 'network_mode: none');
@@ -85,9 +89,18 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
       const got = parse(kit.buildCompose({ platform, network: 'host' }));
       const gw = got.services.gateway;
 
-      it('same services and top-level volumes', () => {
-        assert.deepEqual(Object.keys(got.services), Object.keys(ex.services));
+      it('same services (deconz only with zigbee) and top-level volumes', () => {
+        assert.deepEqual(Object.keys(got.services), Object.keys(ex.services).filter((k) => k !== 'deconz'));
         assert.equal(got.volumes, ex.volumes);
+      });
+      it('zigbee: the deconz service exactly as in the example, without the profile', () => {
+        const z = parse(kit.buildCompose({ platform, network: 'host', zigbee: true }));
+        assert.deepEqual(Object.keys(z.services), Object.keys(ex.services));
+        const { profiles, ...want } = ex.services.deconz;
+        assert.ok(profiles);
+        assert.deepEqual(z.services.deconz, want);
+        assert.equal(z.volumes, ex.volumes);
+        assert.deepEqual(z.services.gateway, got.services.gateway);
       });
       it('edge and mqtt exactly as in the example', () => {
         assert.deepEqual(got.services.edge, ex.services.edge);
@@ -115,8 +128,8 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
   }
 
   for (const platform of ['synology', 'linux']) {
-    it(`${platform} / bridge: HTTP routes only — no host-only capabilities, no edge`, () => {
-      const got = parse(kit.buildCompose({ platform, network: 'bridge' }));
+    it(`${platform} / bridge: HTTP routes only — no host-only capabilities, no edge, no deconz`, () => {
+      const got = parse(kit.buildCompose({ platform, network: 'bridge', zigbee: true }));
       const gw = got.services.gateway;
       assert.deepEqual(Object.keys(got.services), ['gateway']);
       assert.equal(got.volumes, null);

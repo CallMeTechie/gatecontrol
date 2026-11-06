@@ -40,7 +40,7 @@ describe('gateway-edge-kit: address and states', () => {
   it('gateways.js keeps #add / #setup/<id> and routes the tabs', () => {
     const src = read('public/js/gateways.js');
     assert.match(src, /h\.match\(\/\^#gw\\\/\(\[\^\/\]\+\)\(\?:\\\/\(\[a-z\]\+\)\)\?\$\/\)/);
-    assert.match(src, /var TAB_NAMES = \['features', 'net', 'inet', 'dns', 'cache', 'edge', 'mqtt'\];/);
+    assert.match(src, /var TAB_NAMES = \['features', 'net', 'inet', 'dns', 'cache', 'radio', 'edge', 'mqtt'\];/);
     assert.match(src, /TAB_NAMES\.indexOf\(m\[2\]\) >= 0/);
     // the pool page #pool/<id> (gateway-pool-kit.js parsePoolHash)
     assert.match(src, /PK\.parsePoolHash\(h\)/);

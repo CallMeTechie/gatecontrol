@@ -27,7 +27,7 @@
   </div>
 
   {% if running %}
-    <iframe class="pg-frame" id="pg-frame" title="{{ page.title }}" src="/plugins/{{ plugin.id }}/frame/{{ page.id }}"
+    <iframe class="pg-frame" id="pg-frame" title="{{ page.title }}" src="/plugins/{{ plugin.id }}/frame/{{ page.id }}{% if focus %}?focus={{ focus | urlencode }}{% endif %}"
       sandbox="allow-scripts allow-forms{% if plugin.maps %} allow-popups allow-popups-to-escape-sandbox{% endif %}{% if plugin.media %} allow-downloads{% endif %}" referrerpolicy="no-referrer"{% if plugin.allow %} allow="{{ plugin.allow }}"{% endif %}
       data-plugin-frame data-plugin-id="{{ plugin.id }}" data-plugin-api="/api/v1/plugins/{{ plugin.id }}/api/" data-plugin-pages="{{ pagesJson }}" data-plugin-settings-pages="{{ settingsPagesJson }}"{% if plugin.events %} data-plugin-events{% endif %}{% if plugin.scanQr %} data-plugin-scanqr data-plugin-name="{{ plugin.name }}"{% endif %}{% if plugin.pickPrincipals %} data-plugin-groups{% if not plugin.scanQr %} data-plugin-name="{{ plugin.name }}"{% endif %}{% endif %}{% if plugin.cloud %} data-plugin-cloud="{{ baseUrl }}"{% endif %}></iframe>
   {% else %}

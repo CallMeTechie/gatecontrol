@@ -356,9 +356,12 @@ router.post('/:id/compose', (req, res) => {
   const platform = pick(b.platform) || gatewaySetup.composePlatformOf(row.platform);
   const network = pick(b.network) || 'host';
   if (!platform) return res.status(400).json({ ok: false, error: 'platform_required' });
-  const text = gatewaySetup.buildCompose(platform, network);
+  // the deconz service (phase 3c, step 2) when the gateway reports a deCONZ stick or Zigbee is switched on;
+  // { zigbee: true|false } decides by hand
+  const zigbee = typeof b.zigbee === 'boolean' ? b.zigbee : require('../../services/homeRadio').composeWantsZigbee(row.id);
+  const text = gatewaySetup.buildCompose(platform, network, { zigbee });
   if (!text) return res.status(400).json({ ok: false, error: 'invalid_option' });
-  logger.info({ peerId: row.id, platform, network }, 'Gateway docker-compose.yml downloaded');
+  logger.info({ peerId: row.id, platform, network, zigbee }, 'Gateway docker-compose.yml downloaded');
   res.set('Content-Type', 'application/yaml; charset=utf-8');
   res.set('Content-Disposition', 'attachment; filename="docker-compose.yml"');
   res.set('Cache-Control', 'no-store');
@@ -374,7 +377,11 @@ router.post('/:id/smarthome', async (req, res) => {
   try {
     const domain = req.body && typeof req.body.domain === 'string' ? req.body.domain : undefined;
     const out = await wizard.connectSmarthome(row.id, { domain, ip: req.ip });
-    res.json({ ok: true, ...out });
+    // phase 3c, step 2: deCONZ takes new API keys for 60 s, so the Smart Home plugin gets its own
+    // without the link button in Phoscon (a gateway without the function: nothing happens)
+    let unlocked = false;
+    try { unlocked = !!(await require('../../services/homeRadio').unlock(row.id)).accepted; } catch { unlocked = false; }
+    res.json({ ok: true, ...out, unlocked });
   } catch (err) {
     if (err instanceof wizard.WizardError) {
       const key = 'gwiz.err.' + err.code;

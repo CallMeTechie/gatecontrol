@@ -292,6 +292,8 @@ router.get('/plugins/:id/frame/:page', pluginPageLimiter, requireAuth, async (re
   }
 });
 
+const FOCUS_RE = /^[a-z]{2,12}:[A-Za-z0-9:._-]{1,64}$/;
+
 router.get('/plugins/:id/:page?', pluginPageLimiter, requireAuth, (req, res) => {
   if (!isAdmin(res)) return res.redirect('/profile');
   const p = findPlugin(req.params.id);
@@ -314,6 +316,8 @@ router.get('/plugins/:id/:page?', pluginPageLimiter, requireAuth, (req, res) => 
     page: page ? { id: page.id, title: loc(page.title, l) } : null,
     running: running && !!page,
     reason: REASON_KEYS.has(reason) ? reason : 'disabled',
+    // ?focus=<kind>:<value> (docs/plugins.md "Radio sensors"): handed on to the frame, e.g. "In Smart Home benennen"
+    focus: typeof req.query.focus === 'string' && FOCUS_RE.test(req.query.focus) ? req.query.focus : null,
     pagesJson: JSON.stringify(view.pages.map((x) => x.id)),
     settingsPagesJson: JSON.stringify(view.settingsPages.map((x) => x.id)),
   });

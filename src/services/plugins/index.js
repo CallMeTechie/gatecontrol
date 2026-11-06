@@ -158,6 +158,8 @@ function permissionSummary(m, lang) {
     homeCache: !!p.homeCache,
     // phase 3c: printers and scanners at home through the gateways (gc.print)
     print: !!p.print,
+    // phase 3c, step 2: the Bluetooth sensors of the gateways (gc.radio)
+    radio: !!p.radio,
     // person groups (docs/plugins.md "Groups"): 'read' | 'manage' | null
     groups: p.groups === 'read' || p.groups === 'manage' ? p.groups : null,
     // Google Drive / OneDrive of a person (gc.cloud) and what for

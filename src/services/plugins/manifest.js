@@ -290,7 +290,7 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null, images: false }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, ai: null, cloudImport: null, publicEndpoints: null, mail: null, homePresence: false, homeInternet: false, homeCache: false, print: false };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null, images: false }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, ai: null, cloudImport: null, publicEndpoints: null, mail: null, homePresence: false, homeInternet: false, homeCache: false, print: false, radio: false };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
@@ -309,7 +309,8 @@ function validate(raw, opts = {}) {
     // homeInternet (phase 3b): pause / extend the home internet of a person (gc.homeNetwork.internet, never MACs)
     // homeCache (phase 3b): offer files to the gateways' home caches, lan hints (gc.homeCache)
     // print (phase 3c): printers and scanners at home through the gateways (gc.print)
-    for (const k of ['storage', 'portal', 'users', 'app', 'kiosk', 'events', 'notifySink', 'publicLinks', 'devices', 'homePresence', 'homeInternet', 'homeCache', 'print']) {
+    // radio (phase 3c, step 2): the Bluetooth sensors the administrator took over on the gateways (gc.radio)
+    for (const k of ['storage', 'portal', 'users', 'app', 'kiosk', 'events', 'notifySink', 'publicLinks', 'devices', 'homePresence', 'homeInternet', 'homeCache', 'print', 'radio']) {
       if (p[k] == null) continue;
       if (typeof p[k] !== 'boolean') err(`permissions.${k}: invalid`);
       else perms[k] = p[k];

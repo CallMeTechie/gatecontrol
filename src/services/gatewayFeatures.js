@@ -18,6 +18,7 @@
 //     dns      { enabled, … }          phase 3b: DNS filter (services/homeDns.js)
 //     cache    { enabled, … }          phase 3b: home cache (services/homeCache.js)
 //     print    { enabled, manual }      phase 3c: Drucken & Scannen (services/homePrint.js)
+//     radio    { zigbee, ble }          phase 3c, step 2: Funk (services/homeRadio.js; zigbee null = automatic)
 //
 // What a gateway can do is read from its telemetry: `capabilities` (array)
 // or, for a gateway that does not report it, its version (≥ MIN_GATEWAY).
@@ -31,6 +32,8 @@ const MIN_GATEWAY = '1.21.0';
 const MIN_GATEWAY_3B = '1.22.0';
 // phase 3c, step 1 (Drucken & Scannen): only by the capability `print` — the version is the hint
 const MIN_GATEWAY_PRINT = '1.24.0';
+// phase 3c, step 2 (Funk): only by the capability `radio`
+const MIN_GATEWAY_RADIO = '1.25.0';
 const FEATURE_KEYS = ['netwatch', 'inetq', 'presence', 'ups'];
 const SPEEDTEST_PLANS = ['off', '4x', 'hourly'];
 const UPS_NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
@@ -43,10 +46,12 @@ const DEFAULTS = Object.freeze({
   ups: { enabled: false, host: '', port: 3493, name: null },
   notify: { outage: true, ups: true },
   print: { enabled: false, manual: [] },
+  radio: { zigbee: null, ble: false },
 });
 
-// Memory of the parts (MB), contract §6 — guide values for the hint only.
-const MEM_MB = { gateway: 80, netwatch: 15, inetq: 10, edge: 50, deconz: 150, mosquitto: 10, dns: 25, cache: 10, print: 20 };
+// Memory of the parts (MB), contract §6 — guide values for the hint only (deCONZ ≈ 90 MB with a
+// small network, ble: the passive scan in the gateway process)
+const MEM_MB = { gateway: 80, netwatch: 15, inetq: 10, edge: 50, deconz: 90, mosquitto: 10, dns: 25, cache: 10, print: 20, ble: 5 };
 // the DNS filter keeps its lists in memory as sorted 53-bit hashes: 8 bytes per entry
 // (gateway side 1: 25 MB guide value with typical lists, measured +3 … 20 MB)
 const DNS_BYTES_PER_ENTRY = 8;
@@ -87,6 +92,7 @@ function normalize(raw) {
     ups: { enabled: bool(up.enabled, false) && !!host, host, port, name: typeof up.name === 'string' && UPS_NAME_RE.test(up.name) ? up.name : null },
     notify: { outage: bool(no.outage, DEFAULTS.notify.outage), ups: bool(no.ups, DEFAULTS.notify.ups) },
     print: require('./homePrint').normalizeSettings(r.print),
+    radio: require('./homeRadio').normalizeSettings(r.radio),
   };
 }
 
@@ -127,7 +133,7 @@ function applyPatch(current, patch) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
-  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual'] };
+  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual'], radio: ['zigbee', 'ble'] };
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     if (!allowed[k]) continue; // other keys (lanDiscovery, edge) are handled by the route
@@ -135,7 +141,11 @@ function applyPatch(current, patch) {
     for (const [f, val] of Object.entries(v)) {
       if (!allowed[k].includes(f)) throw new FeatureError('invalid', `${k}.${f}: unknown`);
       any = true;
-      if (k === 'print' && f === 'manual') {
+      if (k === 'radio') {
+        // zigbee: true | false | null (= automatic: on when the gateway finds a deCONZ radio)
+        if (f === 'zigbee' ? !(val === null || typeof val === 'boolean') : typeof val !== 'boolean') throw new FeatureError('invalid', `radio.${f}: must be true or false${f === 'zigbee' ? ' (or null)' : ''}`);
+        out.radio[f] = val;
+      } else if (k === 'print' && f === 'manual') {
         if (!Array.isArray(val) || val.length > 16 || !val.every((x) => typeof x === 'string' && isPrivateIpv4(x.trim()))) {
           throw new FeatureError('invalid_host', 'print.manual: up to 16 private IPv4 addresses (RFC 1918)');
         }
@@ -177,7 +187,7 @@ function set(peerId, patch, { ip, user } = {}) {
   db().prepare(`INSERT INTO gateway_features (peer_id, settings, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(peer_id) DO UPDATE SET settings = excluded.settings, updated_at = excluded.updated_at`)
     .run(g.id, JSON.stringify(after), Date.now());
-  const changed = FEATURE_KEYS.concat(['notify', 'print']).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+  const changed = FEATURE_KEYS.concat(['notify', 'print', 'radio']).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
   if (changed.length) {
     try {
       require('./activity').log('gateway_features_changed', `Gateway features changed on "${g.name}" (${changed.join(', ')})`, {
@@ -217,6 +227,8 @@ function configPayload(peerId) {
     cache: part(peerId, 'cache', () => require('./homeCache').configPayload(peerId)),
     // phase 3c: Drucken & Scannen
     print: part(peerId, 'print', () => require('./homePrint').configPayload(peerId)),
+    // phase 3c, step 2: Funk (an older gateway ignores it)
+    radio: part(peerId, 'radio', () => require('./homeRadio').configPayload(peerId)),
   };
 }
 
@@ -276,7 +288,8 @@ function support(tel) {
     netwatch: has('netwatch'), inetq: has('inetq'), presence: has('presence'), ups: has('ups'), dns: has3b('dns'), cache: has3b('cache'),
     // phase 3c: only a gateway that names `print` (every gateway since 1.21.0 reports its capabilities)
     print: !!(caps && caps.includes('print')),
-    version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY, minGateway3b: MIN_GATEWAY_3B, minGatewayPrint: MIN_GATEWAY_PRINT,
+    radio: !!(caps && caps.includes('radio')),
+    version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY, minGateway3b: MIN_GATEWAY_3B, minGatewayPrint: MIN_GATEWAY_PRINT, minGatewayRadio: MIN_GATEWAY_RADIO,
   };
 }
 
@@ -336,8 +349,11 @@ function memoryEstimate(peerId, s, tel) {
   const e = edgeMemory(peerId);
   if (e.edge) parts.push({ key: 'edge', mb: MEM_MB.edge + e.pluginsMb, plugins: e.plugins });
   if (e.edge && e.mqtt) parts.push({ key: 'mosquitto', mb: MEM_MB.mosquitto });
+  // deCONZ: what the gateway reports (phase 3c, step 2), else the radio of the Pi image
+  const rt = require('./homeRadio').telemetryRadio(tel);
   const z = zigbeeOf(tel);
-  if (z && (z.enabled || z.detected)) parts.push({ key: 'deconz', mb: MEM_MB.deconz });
+  if (rt ? ['running', 'starting', 'key_needed', 'error'].includes(rt.zigbee.state) : (z && (z.enabled || z.detected))) parts.push({ key: 'deconz', mb: MEM_MB.deconz });
+  if (s.radio && s.radio.ble) parts.push({ key: 'ble', mb: MEM_MB.ble });
   // phase 3b: the DNS filter with the entries of the lists its profiles use, the home cache
   try {
     const dns = require('./homeDns').get(peerId);
@@ -360,6 +376,10 @@ function memoryEstimate(peerId, s, tel) {
     level = r > 0.75 ? 'too_much' : r > 0.5 ? 'tight' : 'ok';
   }
   return { usedMb, totalMb, level, parts };
+}
+
+function radioPart(peerId) {
+  try { return require('./homeRadio').overview(peerId); } catch (e) { logger.debug({ err: e.message }, 'radio overview unavailable'); return null; }
 }
 
 function printPart(peerId) {
@@ -422,13 +442,14 @@ function overview(peerId) {
     dns,
     cache,
     print: printPart(g.id),
+    radio: radioPart(g.id),
     timezone: { tz, utc: tz === 'UTC' || tz === 'Etc/UTC' },
     home,
   };
 }
 
 module.exports = {
-  DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, MIN_GATEWAY_PRINT, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
+  DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, MIN_GATEWAY_PRINT, MIN_GATEWAY_RADIO, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
   normalize, get, set, applyPatch, configPayload, support, overview, memoryEstimate, boardOf, speedLimit, zigbeeOf,
   needGateway, telemetryOf, gatewayPeer, notifyGateway, publicIpv4,
 };

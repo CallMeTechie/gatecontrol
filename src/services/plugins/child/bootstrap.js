@@ -415,6 +415,15 @@ function makePrint() {
   });
 }
 
+// gc.radio (permissions.radio, phase 3c step 2, docs/plugins.md "Radio"): the Bluetooth sensors the
+// administrator took over on the gateways (Gateway › Funk › "Übernehmen") — values only, read-only
+function makeRadio() {
+  return Object.freeze({
+    /** sensors() → [{ id: 'ble:<mac hex>', gatewayId, gateway, mac, name, model, format, values, battery, online, seenAt }] */
+    sensors: () => hostCall('radio.sensors', {}),
+  });
+}
+
 async function deliverPresence(ev) {
   const e = ev && typeof ev === 'object' ? ev : {};
   const arg = Object.freeze({ userId: e.userId, home: e.home === true ? true : (e.home === false ? false : null), since: e.since || null, source: e.source || 'wifi' });
@@ -457,6 +466,7 @@ function makeGc(info) {
     ...(features.homePresence || features.homeInternet ? { homeNetwork: makeHomeNetwork(features) } : {}),
     ...(features.homeCache ? { homeCache: makeHomeCache() } : {}),
     ...(features.print ? { print: makePrint() } : {}),
+    ...(features.radio ? { radio: makeRadio() } : {}),
     // device accounts of a gateway's MQTT broker (plugin.json edge.capabilities.mqtt): create(gatewayId,
     // { label, topics, name }) → { username, password (once), acl, label }; list(gatewayId); remove(gatewayId, username)
     ...(features.mqtt ? {

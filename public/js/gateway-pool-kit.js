@@ -243,11 +243,11 @@
   // gateway-home.js) they hold.
   const FEATURE_GROUPS = [
     { key: 'home', features: ['netwatch', 'presence', 'lan'] },
-    // phase 3c: printers and scanners (later also cameras and radio devices)
-    { key: 'devices', features: ['print'] },
+    // phase 3c: printers and scanners, radio (Zigbee, Bluetooth, Thread; later also cameras)
+    { key: 'devices', features: ['print', 'radio', 'zigbee'] },
     { key: 'wide', features: ['dns', 'cache'] },
     { key: 'power', features: ['inetq', 'ups'] },
-    { key: 'ext', features: ['edge', 'zigbee'] },
+    { key: 'ext', features: ['edge'] },
     { key: 'system', features: ['timezone'] },
   ];
   function groupOf(feature) {
@@ -272,7 +272,8 @@
     if (d.cache) add('cache', d.cache.enabled);
     if (d.print) add('print', d.print.enabled);
     if (d.edge) { add('edge', d.edge.enabled); add('mqtt', d.edge.enabled && d.edge.mqtt); }
-    if (d.zigbee) add('zigbee', d.zigbee.enabled);
+    if (d.radio) add('radio', d.radio.enabled);
+    else if (d.zigbee) add('zigbee', d.zigbee.enabled);
     add('ups', f.ups && f.ups.enabled);
     if (d.lanDiscovery && d.lanDiscovery.available) add('lan', d.lanDiscovery.enabled);
     if (d.timezone) add('timezone', true);
@@ -289,12 +290,18 @@
     if (tab === 'cache') return !!d.cache && !d.cache.enabled;
     if (tab === 'edge') return !!d.edge && !d.edge.enabled;
     if (tab === 'mqtt') return !!d.edge && !(d.edge.enabled && d.edge.mqtt);
+    if (tab === 'radio') return !!d.radio && !d.radio.enabled;
     return false;
   }
 
   /** The memory estimate of one switched-on part (MB) or null — no number without data. */
   function memoryOf(d, feature) {
     const parts = (d && d.memory && d.memory.parts) || [];
+    // the row "Funk": deCONZ + the Bluetooth scan
+    if (feature === 'radio') {
+      const mb = parts.filter((x) => x && (x.key === 'deconz' || x.key === 'ble')).reduce((a, x) => a + (x.mb > 0 ? x.mb : 0), 0);
+      return mb > 0 ? mb : null;
+    }
     const key = feature === 'zigbee' ? 'deconz' : feature;
     const p = parts.find((x) => x && x.key === key);
     if (!p || !(p.mb > 0)) return null;

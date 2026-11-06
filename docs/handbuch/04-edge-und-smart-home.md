@@ -71,7 +71,10 @@ der Edge-Teil läuft, und hat sein „Protokoll“.
 Hat dein Pi ein RaspBee II oder einen ConBee, bietet der Assistent in Schritt 4
 „Im Smart Home einbinden“ an. GateControl legt dann eine interne Route zu
 deCONZ an (nur über das VPN erreichbar) und gibt sie dem Smart-Home-Plugin.
-Danach im Plugin „Gateway verbinden“ wählen und in Phoscon „Gateway entsperren“.
+Danach im Plugin „Gateway verbinden“ wählen. Mit Gateway 1.25.0+ gibt GateControl
+deCONZ dabei kurz selbst frei – „Gateway entsperren“ in Phoscon ist dann nicht nötig.
+Dasselbe geht im Reiter „Funk“ des Gateways, dort schaltest du Zigbee auch ein und aus
+und lernst Geräte an ([Kapitel 5](05-funktionen.md#funk-zigbee-bluetooth-thread)).
 
 **Prüfen:** Im Smart-Home-Plugin erscheinen die Zigbee-Geräte.
 

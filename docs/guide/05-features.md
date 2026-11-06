@@ -22,7 +22,7 @@ separate page “Gateway Pools” in the menu any more.
 General requirements:
 
 - Network watch, internet quality, presence and UPS need gateway version
-  **1.21.0** or later, DNS filter and home cache **1.22.0**, print & scan **1.24.0**. If the gateway is
+  **1.21.0** or later, DNS filter and home cache **1.22.0**, print & scan **1.24.0**, radio **1.25.0**. If the gateway is
   older, the tab says so; update it then ([chapter 6](06-updating-a-gateway.md)).
 - The gateway is in the home network in **host network mode** (default for the
   Pi, the Synology package and Linux with “Host (recommended)”).
@@ -136,6 +136,52 @@ leads to devices, permissions, history and where scans are filed.
 printer is off, a job waits up to 24 hours and starts as soon as it is back.
 If a device says “Certificate changed”, its security certificate changed (for
 example after a firmware update) – confirm it in the plugin and it carries on.
+
+## Radio (Zigbee, Bluetooth, Thread)
+
+**What for:** Zigbee lights, plugs and sensors (IKEA, Philips Hue, Aqara …) through a
+radio stick on the gateway, Bluetooth thermometers that send their values openly
+(BTHome, Xiaomi with custom firmware, Shelly BLU) and – later – Matter devices over
+Thread. You switch everything in the tab “Radio” – without SSH and without
+`settings.txt`.
+
+**Requirements:**
+
+- Gateway 1.25.0+. If it is older, the row says “Gateway too old – from 1.25.0”.
+- Zigbee: a radio by dresden elektronik – ConBee II/III on USB or RaspBee II on the Pi
+  header. GateControl recognises other Zigbee sticks (ZBT-1, Sonoff), but deCONZ
+  cannot use them.
+- **Synology/Linux:** the deCONZ service comes with the compose file. When a stick is
+  plugged in, the tab shows “Download docker-compose.yml” – download it once and
+  recreate the project ([chapter 6](06-updating-a-gateway.md)). After that everything works here.
+- **Raspberry Pi image:** nothing to do; older images (up to 1.24) still start deCONZ by
+  themselves and only show the switch with a new image.
+- Bluetooth: built in (the Pi from this image on) or a USB Bluetooth stick. A NAS usually
+  has no Bluetooth.
+
+**Switching on:** tab “Features” → “Devices at home” → switch on “Radio (Zigbee,
+Bluetooth, Thread)”, or Zigbee and Bluetooth one by one in the tab “Radio”. Zigbee
+starts as “automatic”: it runs as soon as a ConBee or RaspBee is detected.
+
+**Pairing devices:** in the tab “Radio”, at Zigbee, “Start pairing” – GateControl
+searches for 3 minutes. Put the device into pairing mode (usually hold its button for
+5 s). The new device shows up as “new”; “Name it in Smart Home” opens it in the Smart
+Home plugin. If Smart Home is not connected yet, “Add to Smart Home” creates the route
+and opens deCONZ briefly so the plugin gets its key without Phoscon.
+
+**Bluetooth sensors:** the gateway only listens, it connects to nothing. New sensors
+appear as “unknown” – “Take over” and give them a name (e.g. “Basement”); only sensors
+you take over show up in Smart Home, the neighbours' stay out. Sensors with Xiaomi
+stock firmware send encrypted values – they are recognised, their values come in a
+later step.
+
+**Thread / Matter:** when a Thread-capable stick (ZBT-1, Sonoff ZBDongle-E) is plugged
+in, the tab shows it. GateControl adds the Thread border router in a later step. Matter
+devices on Wi-Fi already work through Smart Home.
+
+**If something is stuck:** “approval needed” means deCONZ has a Phoscon password and does
+not let GateControl in – once in Phoscon (port 8090 of the gateway) Gateway › Advanced ›
+“Authenticate app”, then “Try again”.
 
 ## Home cache
 

@@ -163,7 +163,9 @@ class PluginProcess {
       // gc.homeCache: permissions.homeCache (phase 3b)
       homeCache: perms.homeCache === true,
       // gc.print: permissions.print (phase 3c)
-      print: perms.print === true };
+      print: perms.print === true,
+      // gc.radio: permissions.radio (phase 3c, step 2)
+      radio: perms.radio === true };
     child.send({ t: 'init', plugin: { id: p.id, version: p.version, entry, filesDir: files, features } });
   }
 

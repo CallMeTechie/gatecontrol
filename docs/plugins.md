@@ -2545,6 +2545,35 @@ const h = await gc.media.handOver(doc.mediaId, { toPlugin: 'gatecontrol-drive', 
 await gc.services.call('gatecontrol-drive', 'save_file', { mediaId: h.mediaId, area: 'mine', path: 'Scans/' + doc.name }, { userId: user.id });
 ```
 
+## Radio sensors (`permissions.radio`)
+
+Since GateControl with phase 3c, step 2 ("Funk"). The gateways listen
+passively to Bluetooth sensors (BTHome v2, Xiaomi with ATC/pvvx firmware);
+the administrator takes the ones that belong to the house over in Gateway ›
+Funk › "Übernehmen" and may name them. A plugin with `"permissions": {
+"radio": true }` reads those — never the others, never anything that is not a
+sensor:
+
+```js
+const list = await gc.radio.sensors();
+// [{ id: 'ble:a4c138112233', gatewayId: 7, gateway: 'Pi Keller', mac: 'A4:C1:38:11:22:33',
+//    name: 'Gartenhaus', model: 'Xiaomi LYWSD03MMC', format: 'pvvx',
+//    values: { temperature: 8.9, humidity: 64, battery: 82 }, battery: 82, online: true, seenAt: '…' }]
+```
+
+`values` holds only what the sensor sends (numbers: `temperature` °C,
+`humidity` %, `battery` %, `pressure` hPa, `illuminance` lx, `voltage` V,
+`co2` ppm, …; flags: `window`, `door`, `opening`, `motion`, `occupancy`,
+`moisture_wet`, `smoke`, …). `online` is false after 30 minutes without a
+packet. Only gateways with Bluetooth switched on count. Without the permission
+`gc.radio` does not exist and the host answers `ERR_RADIO_DENIED`; on an older
+GateControl the permission is ignored and `gc.radio` is missing — check for it.
+
+A plugin page can be opened at one thing: `/plugins/<id>[/<page>]?focus=<kind>:<value>`
+hands `focus` (`^[a-z]{2,12}:[A-Za-z0-9:._-]{1,64}$`) on to the page's frame as
+the query `?focus=…` (read it from `location.search` in the frame). GateControl
+uses it for "In Smart Home benennen" (`zigbee:<device MAC>`, `ble:<sensor MAC>`).
+
 ## AI requests (`permissions.ai`)
 
 Since 1.214.0. GateControl has one AI service for every plugin: the

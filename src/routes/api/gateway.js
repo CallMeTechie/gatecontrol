@@ -277,6 +277,17 @@ router.post('/print/devices', express.json({ limit: '256kb' }), (req, res) => {
   try { res.json({ ok: true, ...print().ingestDevices(req.gateway.peer_id, req.body || {}) }); } catch (err) { printFail(res, err, req.gateway.peer_id); }
 });
 
+/** POST /api/v1/gateway/radio/ble — { scannedAt, adapter, sensors: [...] } (phase 3c, step 2: the Bluetooth sensors it hears) */
+router.post('/radio/ble', express.json({ limit: '64kb' }), (req, res) => {
+  try {
+    res.json({ ok: true, ...require('../../services/homeRadio').ingestBle(req.gateway.peer_id, req.body || {}) });
+  } catch (err) {
+    if (err && err.code === 'invalid') return res.status(400).json({ ok: false, error: 'invalid' });
+    logger.error({ err: err && err.message, peerId: req.gateway.peer_id }, 'gateway radio report failed');
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
 /** GET /api/v1/gateway/print/jobs — the open jobs of this gateway (ETag) */
 router.get('/print/jobs', (req, res) => {
   try {

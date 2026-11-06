@@ -73,6 +73,8 @@ describe('features in the config pull', () => {
       cache: { enabled: false },
       // phase 3c (tests/print_scan.test.js)
       print: { enabled: false, manual: [] },
+      // phase 3c, step 2 (tests/gateway_radio.test.js): Zigbee automatic, Bluetooth off
+      radio: { zigbee: null, ble: false },
     });
     const gateways = require('../src/services/gateways');
     assert.equal(r.body.config_hash, gateways.computeConfigHash(gw.peer.id));
@@ -129,15 +131,15 @@ describe('admin API: features', () => {
     assert.equal(g.support.minGateway, '1.21.0');
     assert.ok(g.zigbee && g.zigbee.enabled);
     assert.equal(g.lanDiscovery.available, true);
-    // gateway 80 + netwatch 15 + inetq 10 + deCONZ 150
-    assert.equal(g.memory.usedMb, 255);
+    // gateway 80 + netwatch 15 + inetq 10 + deCONZ 90 (≈ 90 MB with a small network, phase 3c step 2)
+    assert.equal(g.memory.usedMb, 195);
     assert.equal(g.memory.totalMb, 1024);
     assert.equal(g.memory.level, 'ok');
   });
 
   it('capabilities in the telemetry win over the version', () => {
     const f = require('../src/services/gatewayFeatures');
-    assert.deepEqual(f.support({ gateway_version: '1.20.0', capabilities: ['netwatch'] }), { netwatch: true, inetq: false, presence: false, ups: false, dns: false, cache: false, print: false, version: '1.20.0', minGateway: '1.21.0', minGateway3b: '1.22.0', minGatewayPrint: '1.24.0' });
+    assert.deepEqual(f.support({ gateway_version: '1.20.0', capabilities: ['netwatch'] }), { netwatch: true, inetq: false, presence: false, ups: false, dns: false, cache: false, print: false, radio: false, version: '1.20.0', minGateway: '1.21.0', minGateway3b: '1.22.0', minGatewayPrint: '1.24.0', minGatewayRadio: '1.25.0' });
     // phase 3c: only by the capability, never by the version
     assert.equal(f.support({ gateway_version: '1.30.0' }).print, false);
     assert.equal(f.support({ gateway_version: '1.24.0', capabilities: ['print'] }).print, true);
