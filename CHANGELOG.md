@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.237.0] — 2026-11-06
+
+### Features
+- Funk – Zigbee schaltbar, Anlernen, Bluetooth-Sensoren und Thread-Erkennung (Phase 3c, Schritt 2) (#422)
+
+---
+
 ## [1.236.1] — 2026-11-06
 
 ### Fixes
