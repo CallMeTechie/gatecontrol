@@ -360,15 +360,16 @@ module.exports = (ctx) => {
       await fresh(page);
       await goTab(page, PI, 'mqtt');
       await goTab(page, PI, 'edge');
+      // the page runs in the default language of the test server (en) — both texts accepted
       step('mock: offline + reason edge_missing → "Edge-Dienst fehlt" with the guide (no bare "nicht verbunden")', await until(page, () => {
         const r = document.querySelector('.gwe-prow[data-plugin="smarthome"][data-state="edge_missing"]');
         const a = r && r.querySelector('a[href*="gatecontrol-gateway/blob/main/docs/edge.md#container-und-image"]');
-        return !!(r && a && a.target === '_blank' && /noopener/.test(a.rel) && /Edge-Dienst fehlt/.test(r.querySelector('.tag').textContent) && /Compose-Datei/.test(r.textContent));
+        return !!(r && a && a.target === '_blank' && /noopener/.test(a.rel) && /Edge-Dienst fehlt|edge service missing/i.test(r.querySelector('.tag').textContent) && /Compose-Datei|compose file/i.test(r.textContent));
       }));
       await goTab(page, PI, 'mqtt');
       step('mock: MQTT status shows the same reason', await until(page, () => {
         const p = document.getElementById('gwe-tabpanel');
-        return !!p && /Edge-Dienst fehlt/.test(p.textContent) && !!p.querySelector('.gwe-note a[href*="edge.md#container-und-image"]');
+        return !!p && /Edge-Dienst fehlt|edge service missing/i.test(p.textContent) && !!p.querySelector('.gwe-note a[href*="edge.md#container-und-image"]');
       }));
       pi.connection = conn0;
       delete pi.plugins[0].assignment.reason;
