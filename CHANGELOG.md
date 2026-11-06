@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.234.1] — 2026-11-06
+
+### Fixes
+- Edge-Container älter als 1.23.0 – Hinweis „erst Gateway aktualisieren, dann Compose“ mit Download-Knopf (#417)
+
+---
+
 ## [1.234.0] — 2026-11-06
 
 ### Features
