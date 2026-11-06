@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.232.1] — 2026-11-06
+
+### Fixes
+- Server-Daten in ./data statt im Docker-Volume (#413)
+
+---
+
 ## [1.232.0] — 2026-11-06
 
 ### Features
