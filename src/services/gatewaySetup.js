@@ -32,6 +32,9 @@ function buildNasBundle(envContent) {
     { name: 'config/gateway.env', data: envContent, mode: 0o600 },
     // the compose mounts ./gateway-state:/state (auto-update flag, last pull)
     { name: 'gateway-state/' },
+    // and ./gateway-cache:/cache (home cache) — Synology's Container Manager does not create a
+    // missing bind-mount folder ("Bind mount failed: … does not exist"), so the bundle brings it
+    { name: 'gateway-cache/' },
     { name: 'update.sh', data: readUpdateSh(), mode: 0o755 },
   ]);
   return Buffer.from(zip.buffer, zip.byteOffset, zip.byteLength);
