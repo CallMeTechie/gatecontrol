@@ -117,6 +117,9 @@ function validTz(tz) {
 }
 
 function serverTz() {
+  // TZ of the server container first (as features.timezone() for the gateways), then the runtime's zone
+  const env = typeof process.env.TZ === 'string' ? process.env.TZ.trim().replace(/^:/, '') : '';
+  if (validTz(env)) return env;
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
 }
 

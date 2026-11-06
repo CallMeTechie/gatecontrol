@@ -81,7 +81,7 @@ describe('migration 129', () => {
 describe('features.timezone and features.dns in the config pull', () => {
   it('the server time zone always, the filter switched off as { enabled: false }', async () => {
     const r = await gwReq('get', '/config').expect(200);
-    assert.equal(r.body.features.timezone, require('../src/services/notify/router').serverTz());
+    assert.equal(r.body.features.timezone, require('../src/services/gatewayFeatures').timezone());
     assert.deepEqual(r.body.features.dns, { enabled: false });
     assert.equal(r.body.config_hash, gateways.computeConfigHash(gw.peer.id));
   });
@@ -304,7 +304,7 @@ describe('admin API: session, CSRF, "Test: Domain prüfen"', () => {
     assert.equal(g.dns.enabled, true);
     assert.equal(g.dns.state, 'running');
     assert.equal(g.support.dns, true);
-    assert.equal(g.timezone.tz, require('../src/services/notify/router').serverTz());
+    assert.equal(g.timezone.tz, require('../src/services/gatewayFeatures').timezone());
     const part = g.memory.parts.find((p) => p.key === 'dns');
     // ads 78 000 + malware 195 000 + adult 92 000 entries × 8 bytes (hashes, gateway side 1) + 25 MB
     assert.equal(part.entries, 365000);
@@ -386,5 +386,26 @@ describe('pauses and extra time in features.dns', () => {
     db.prepare("INSERT INTO home_internet (user_id, kind, until_at, created_at) VALUES (?, 'pause', ?, ?)").run(annaId, Date.now() - 1000, Date.now() - MIN);
     assert.deepEqual(require('../src/services/homeDns').configPayload(gw.peer.id).pauses, []);
     assert.equal(hi.cleanup(), 1);
+  });
+});
+
+describe('features.timezone() reads TZ of the server first', () => {
+  const tzOf = () => require('../src/services/gatewayFeatures').timezone();
+  let saved;
+  before(() => { saved = process.env.TZ; });
+  after(() => { if (saved === undefined) delete process.env.TZ; else process.env.TZ = saved; });
+
+  it('TZ=Europe/Berlin and TZ=:Europe/Berlin give Europe/Berlin', () => {
+    process.env.TZ = 'Europe/Berlin';
+    assert.equal(tzOf(), 'Europe/Berlin');
+    process.env.TZ = ':Europe/Berlin';
+    assert.equal(tzOf(), 'Europe/Berlin');
+  });
+
+  it('an invalid TZ falls back to the zone of the runtime, never throws', () => {
+    process.env.TZ = 'Mars/Olympus';
+    const tz = tzOf();
+    assert.equal(typeof tz, 'string');
+    assert.notEqual(tz, 'Mars/Olympus');
   });
 });
