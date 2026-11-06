@@ -168,6 +168,15 @@ router.get('/plugin-media/:token/preview', pluginMediaLimiter, async (req, res) 
   return previews.send(req, res, p, hit.row, `private, max-age=${left}, immutable`);
 });
 
+// ─── Kameras im Heimnetz (permissions.cameras, phase 3c step 4) ──────
+// Pictures, live video (HLS / fMP4) and clips for the frames and the apps — no
+// session: the signed token (services/homeCameras.js, ≤ 1 h, bound to the
+// plugin and to the camera or event) is the permission. Everything comes from
+// the camera's gateway over the tunnel; nothing is stored here.
+const { cameraMediaLimiter } = require('../middleware/rateLimit');
+router.get('/camera-media/:token/:file', cameraMediaLimiter, (req, res) => require('../services/homeCameras').mediaRequest(req, res)
+  .catch(() => { if (!res.headersSent) res.status(502).type('text/plain').send('unavailable'); }));
+
 function mapsOf(p) { return !!(p && p.manifest && p.manifest.ui && p.manifest.ui.maps); }
 
 /**
@@ -183,7 +192,8 @@ function mapsOf(p) { return !!(p && p.manifest && p.manifest.ui && p.manifest.ui
 function frameHeaders(req, res, p) {
   const maps = mapsOf(p);
   const origin = frame.originOf(req);
-  frame.headers(res, { maps, avatars: true, origin, media: !!media.declOf(p) });
+  const cameras = !!(p && p.manifest && p.manifest.permissions && p.manifest.permissions.cameras === true);
+  frame.headers(res, { maps, avatars: true, origin, media: !!media.declOf(p), cameras });
   return { maps, tiles: maps && origin ? tiles.template() : null, scanQr: frame.scanQrOf(p && p.manifest), pickPrincipals: frame.pickPrincipalsOf(p && p.manifest),
     openUrl: frame.openUrlOf(p && p.manifest) };
 }

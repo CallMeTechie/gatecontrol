@@ -24,7 +24,7 @@ Allgemeine Voraussetzungen:
 
 - Netzwerk-Wächter, Internetqualität, Anwesenheit und USV brauchen
   Gateway-Version **1.21.0** oder neuer, DNS-Filter und Zwischenspeicher **1.22.0**,
-  Drucken & Scannen **1.24.0**, Funk **1.25.0**, Lokale KI **1.26.0**.
+  Drucken & Scannen **1.24.0**, Funk **1.25.0**, Lokale KI **1.26.0**, Kameras **1.27.0**.
   Ist das Gateway älter, steht das im Reiter; aktualisiere es dann ([Kapitel 6](06-gateway-aktualisieren.md)).
 - Das Gateway steht im Heimnetz im **Host-Netzwerkmodus** (Standard beim Pi,
   beim Synology-Paket und bei Linux mit „Host (empfohlen)“).
@@ -166,6 +166,62 @@ suchen“ sucht sofort.
   Nur private Adressen (10.x, 172.16–31.x, 192.168.x), höchstens 16; die
   Adresse im Router am besten fest vergeben. Im Fenster steht je Adresse, ob
   das Gateway sie erreicht hat.
+
+## Kameras
+
+**Wofür:** Kameras im Heimnetz (z. B. Reolink, Tapo, Hikvision – alles mit ONVIF
+oder RTSP) im Plugin „Tür & Kamera“: Standbilder, Live-Bild über GateControl,
+Clips bei Bewegung. Ohne Hersteller-Cloud – Bilder und Clips bleiben auf dem
+Gateway (bei der Synology auf der NAS).
+
+**Voraussetzungen:**
+
+- Gateway 1.27.0+. Ist es älter, steht in der Zeile „Gateway zu alt – ab 1.27.0“.
+- An der Kamera **ONVIF** bzw. **RTSP** einschalten:
+  - Reolink: App oder Weboberfläche › Einstellungen › Netzwerk › Erweitert ›
+    Server-Einstellungen › ONVIF und RTSP an (Port ONVIF meist 8000).
+  - Tapo: App › Kamera › Einstellungen › Erweitert › **Kamerakonto** anlegen –
+    Benutzer und Passwort dieses Kontos trägst du in GateControl ein (nicht dein
+    TP-Link-Konto). ONVIF-Port 2020.
+  - Andere: im Handbuch der Kamera nach „ONVIF“ oder „RTSP“ suchen.
+- Das Plugin „Tür & Kamera“ (Einstellungen › Plugins › Katalog) ab 1.6.0.
+- Synology/Linux: einmal die aktuelle Compose-Datei mit dem Dienst `kameras`
+  (nur ffmpeg, ≈ 80 MB). Fehlt er, bietet die Zeile „docker-compose.yml
+  herunterladen“ an ([Kapitel 6](06-gateway-aktualisieren.md)). Ohne ihn gehen Suche,
+  Testbild und Bewegungsmeldungen schon, Live-Bild und Clips noch nicht. Das
+  Raspberry-Pi-Image legt den Dienst selbst an.
+
+**Einschalten:** Reiter „Funktionen“ → „Geräte im Heimnetz“ → „Kameras“. Dann
+im Plugin „Tür & Kamera“ › „Kamera hinzufügen“: das Gateway sucht Kameras
+(„Reolink E1 Zoom · 192.168.1.73 · ONVIF – neu gefunden“) oder du gibst eine
+Adresse `rtsp://…` selbst ein, dazu Name, Benutzer und Passwort der Kamera.
+„Verbinden und testen“ zeigt ein Testbild; erst dann ist die Kamera gespeichert.
+Das Passwort liegt verschlüsselt auf dem Server und geht nur an das Gateway.
+
+**Aufnahmen:** je Kamera „bei Bewegung (Personen, Autos, Tiere)“, „bei Bewegung,
+nur wenn niemand zu Hause ist“ (aus der Anwesenheit der Familie – ist sie
+unbekannt, nimmt das Gateway nicht auf) oder „nie – nur Live-Bild“. Ein Clip
+beginnt 5 Sekunden vor der Bewegung und endet 10 Sekunden danach (höchstens
+2 Minuten). Bewegung, Personen und Fahrzeuge erkennt die **Kamera selbst**
+(ONVIF-Ereignisse) – das Gateway rechnet nichts nach. Aufbewahren 7, 14 oder
+30 Tage; unter 1 GB freiem Platz nimmt das Gateway nichts Neues auf. Die Clips
+liegen im Volume `cam-recordings` – auf der Synology mit
+`GC_CAMERA_DIR=/volume1/kameras` in der `.env` in einem Ordner der NAS.
+
+**Live-Bild:** nur, wenn das Handy oder der PC im **VPN** ist (oder im selben
+Netz wie der Server). Unterwegs ohne VPN zeigt die App alle 10 Sekunden ein
+neues Standbild. Push mit Standbild bei Personen kommt höchstens einmal pro
+Kamera alle 5 Minuten.
+
+**Hinweise statt Verbote:** Auf einem Raspberry Pi 3 B+ steht „Kameras: höchstens
+1 Kamera mit Bewegungserkennung“, auf einem Pi 4 „höchstens 4“. Einschalten
+bleibt möglich. Kameras außerhalb des eigenen Heimnetzes (z. B. ein eigenes
+Kamera-VLAN) erreicht das Gateway nur, wenn das Netz in den Einstellungen des
+Gateways steht (`PUT /api/v1/gateways/:id/features { cameras: { subnets } }`).
+
+**Datenschutz:** Ton nimmt das Gateway nur auf, wenn du ihn je Kamera
+einschaltest – Gespräche aufzuzeichnen ist nur mit Einverständnis aller erlaubt.
+Wer welche Kamera sehen darf, legst du im Plugin unter „Berechtigungen“ fest.
 
 ## Funk (Zigbee, Bluetooth, Thread)
 

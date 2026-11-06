@@ -126,6 +126,11 @@ scenarios/24-gateway-ai.js Lokale KI: Einstellungen › KI-Anbieter (Anbieterzei
                         lokale KI?“, Testen ohne Tunnel → „nicht erreichbar“), Gateway ›
                         Funktionen (Zeile „Lokale KI“, ≈ GB blau, Speicherbalken grün/blau,
                         Hinweise, Schalter aus → Config-Pull), hell/dunkel, 390 px
+scenarios/25-gateway-cameras.js Kameras: Gateway › Funktionen › „Geräte im Heimnetz“ ›
+                        „Kameras“ (zu alt – ab 1.27.0, echter PUT → features.cameras im
+                        Config-Pull ohne Passwort, Zugangsdaten-Route, ≈ MB, Pi-3-B+-Hinweis
+                        „höchstens 1 Kamera mit Bewegungserkennung“, Compose-Hinweis ohne
+                        Dienst kameras, Weg ins Plugin „Tür & Kamera“), hell/dunkel, 390 px
 ```
 
 ## Ablauf

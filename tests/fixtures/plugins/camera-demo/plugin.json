@@ -1,0 +1,10 @@
+{
+  "id": "camera-demo",
+  "name": { "de": "Kamera-Demo", "en": "Camera demo" },
+  "version": "1.0.0",
+  "publisher": "GateControl Tests",
+  "description": { "de": "Plugin mit gc.cameras (Tests).", "en": "Plugin with gc.cameras (tests)." },
+  "gatecontrol": ">=1.0.0",
+  "entry": "server/index.js",
+  "permissions": { "cameras": true, "storage": true }
+}

@@ -39,6 +39,7 @@ containers or folders therefore do not arrive by themselves:
 | Edge plugins and MQTT | 1.19.0 | services `edge` and `mqtt`, volumes `edge-run`, `edge-status`, `edge-state`, `edge-mqtt` |
 | Home cache | 1.22.0 | `${GC_CACHE_DIR:-./gateway-cache}:/cache` |
 | Failover pools, scanning via another gateway, ping of the internet quality | – | the capabilities `NET_RAW`, `SETGID` and `SETUID` under `cap_add` |
+| Cameras (live picture, clips) | 1.27.0 | service `kameras`, volumes `cam-ctl` and `${GC_CAMERA_DIR:-cam-recordings}:/recordings` |
 
 You need this chapter if you see one of these:
 
@@ -173,6 +174,11 @@ services:
         source: ai-ctl
         target: /gc-ai
         volume: { nocopy: true }
+      - type: volume            # cameras: control files and picture ring of the service kameras
+        source: cam-ctl
+        target: /gc-cam
+        volume: { nocopy: true }
+      - ${GC_CAMERA_DIR:-cam-recordings}:/recordings   # cameras: clips (GC_CAMERA_DIR=/volume1/kameras for a NAS folder)
     environment:
       - LOG_LEVEL=info
       - GATEWAY_ENV_PATH=/config/gateway.env
@@ -330,6 +336,14 @@ volumes:
       o: "size=1m,uid=0,gid=0,mode=0755"
   # the models of the local AI (1–6 GB each)
   ki-models:
+  # tmpfs shared: the control files of the gateway for the service kameras and the picture ring (cameras)
+  cam-ctl:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=256m,uid=0,gid=0,mode=0700"
+  # clips and thumbnails of the cameras (when GC_CAMERA_DIR is not set)
+  cam-recordings:
 ```
 <!-- /compose -->
 

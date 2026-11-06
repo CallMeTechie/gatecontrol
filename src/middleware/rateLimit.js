@@ -629,6 +629,20 @@ const pluginMediaLimiter = rateLimit({
 });
 module.exports.pluginMediaLimiter = pluginMediaLimiter;
 
+// /camera-media/<token>/… (Kameras, phase 3c step 4): a live picture fetches its HLS list and a
+// segment about once a second per viewer, snapshots every 10 s
+const cameraMediaLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `camera-media:${ipKeyGenerator(req.ip)}`,
+  handler: (req, res) => {
+    res.status(429).type('text/plain').send('rate_limited');
+  },
+});
+module.exports.cameraMediaLimiter = cameraMediaLimiter;
+
 // /s/<token>… — public download links of plugins (docs/plugins.md "Public
 // links", routes/publicLinks.js): no login, per address. The page and its
 // files (a page with 20 files, a resumed download) share one budget; failed

@@ -165,7 +165,9 @@ class PluginProcess {
       // gc.print: permissions.print (phase 3c)
       print: perms.print === true,
       // gc.radio: permissions.radio (phase 3c, step 2)
-      radio: perms.radio === true };
+      radio: perms.radio === true,
+      // gc.cameras: permissions.cameras (phase 3c, step 4)
+      cameras: perms.cameras === true };
     child.send({ t: 'init', plugin: { id: p.id, version: p.version, entry, filesDir: files, features } });
   }
 

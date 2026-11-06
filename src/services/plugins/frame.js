@@ -113,6 +113,7 @@ const SHARED_LEAFLET = '/plugins/_shared/leaflet/';
 const SHARED_TILES = '/plugins/_shared/tiles/';
 const AVATARS = '/avatars/';
 const PLUGIN_MEDIA = '/plugin-media/';
+const CAMERA_MEDIA = '/camera-media/';
 const SANDBOX = 'sandbox allow-scripts allow-forms';
 const SANDBOX_MAPS = SANDBOX + ' allow-popups allow-popups-to-escape-sandbox';
 const SANDBOX_DOWNLOADS = ' allow-downloads';
@@ -154,8 +155,11 @@ function originOf(req) {
  * profile pictures of this origin (`avatars` + a known `origin`), with the
  * plugin media of this origin (`media` + a known `origin`).
  */
-function cspFor({ maps = false, origin = null, avatars = false, media = false } = {}) {
-  const mediaSrc = media && origin ? [origin + PLUGIN_MEDIA] : [];
+function cspFor({ maps = false, origin = null, avatars = false, media = false, cameras = false } = {}) {
+  // Kameras im Heimnetz (permissions.cameras, phase 3c step 4): pictures, live video and clips of
+  // /camera-media/<token>/… of this origin (services/homeCameras.js — the token is the permission)
+  const camSrc = cameras && origin ? [origin + CAMERA_MEDIA] : [];
+  const mediaSrc = [...(media && origin ? [origin + PLUGIN_MEDIA] : []), ...camSrc];
   const pics = [...(avatars && origin ? [origin + AVATARS] : []), ...mediaSrc];
   if (!maps) return pics.length || media ? directives({ img: pics, media: mediaSrc, sandbox: sandboxOf(false, media) }) : CSP;
   const base = origin ? origin + SHARED_LEAFLET : null;
@@ -173,8 +177,9 @@ function cspFor({ maps = false, origin = null, avatars = false, media = false } 
  * `media` plugin, geolocation for `ui.geolocation`, camera for `ui.camera`
  * ('' when none — then the iframe gets no allow attribute).
  */
-function allowAttr({ media = false, geolocation = false, camera = false } = {}) {
-  return [media && 'microphone *', geolocation && 'geolocation *', camera && 'camera *'].filter(Boolean).join('; ');
+function allowAttr({ media = false, geolocation = false, camera = false, fullscreen = false } = {}) {
+  // fullscreen: permissions.cameras (phase 3c step 4) — "Vollbild" of a live picture or clip
+  return [media && 'microphone *', geolocation && 'geolocation *', camera && 'camera *', fullscreen && 'fullscreen *'].filter(Boolean).join('; ');
 }
 
 /** May the plugin's frames open a cloud connection in the page (GC.openUrl)? permissions.cloudImport. */
@@ -490,4 +495,4 @@ function headers(res, opts = {}) {
   res.type('html');
 }
 
-module.exports = { CSP, cspFor, originOf, sandboxAttr, allowAttr, scanQrOf, pickPrincipalsOf, openUrlOf, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA };
+module.exports = { CSP, cspFor, originOf, sandboxAttr, allowAttr, scanQrOf, pickPrincipalsOf, openUrlOf, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA, CAMERA_MEDIA };

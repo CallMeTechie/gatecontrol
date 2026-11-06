@@ -20,6 +20,7 @@
 //     print    { enabled, manual }      phase 3c: Drucken & Scannen (services/homePrint.js)
 //     radio    { zigbee, ble }          phase 3c, step 2: Funk (services/homeRadio.js; zigbee null = automatic)
 //     ai       { enabled, source, lanUrl, lanApi }  phase 3c, step 3: Lokale KI (services/ai/local.js)
+//     cameras  { enabled, nobodyHome, credRev, subnets, cameras }  phase 3c, step 4: Kameras (services/homeCameras.js)
 //
 // What a gateway can do is read from its telemetry: `capabilities` (array)
 // or, for a gateway that does not report it, its version (≥ MIN_GATEWAY).
@@ -37,6 +38,8 @@ const MIN_GATEWAY_PRINT = '1.24.0';
 const MIN_GATEWAY_RADIO = '1.25.0';
 // phase 3c, step 3 (Lokale KI): only by the capability `ai`
 const MIN_GATEWAY_AI = '1.26.0';
+// phase 3c, step 4 (Kameras): only by the capability `cameras`
+const MIN_GATEWAY_CAMERAS = '1.27.0';
 const FEATURE_KEYS = ['netwatch', 'inetq', 'presence', 'ups'];
 const SPEEDTEST_PLANS = ['off', '4x', 'hourly'];
 const UPS_NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
@@ -51,6 +54,7 @@ const DEFAULTS = Object.freeze({
   print: { enabled: false, manual: [] },
   radio: { zigbee: null, ble: false },
   ai: { enabled: false, source: 'service', lanUrl: null, lanApi: 'ollama' },
+  cameras: { enabled: false, subnets: [] },
 });
 
 // Memory of the parts (MB), contract §6 — guide values for the hint only (deCONZ ≈ 90 MB with a
@@ -98,6 +102,7 @@ function normalize(raw) {
     print: require('./homePrint').normalizeSettings(r.print),
     radio: require('./homeRadio').normalizeSettings(r.radio),
     ai: require('./ai/local').normalizeSettings(r.ai),
+    cameras: require('./homeCameras').normalizeSettings(r.cameras),
   };
 }
 
@@ -138,7 +143,7 @@ function applyPatch(current, patch) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
-  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual'], radio: ['zigbee', 'ble'], ai: ['enabled', 'source', 'lanUrl', 'lanApi'] };
+  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual'], radio: ['zigbee', 'ble'], ai: ['enabled', 'source', 'lanUrl', 'lanApi'], cameras: ['enabled', 'subnets'] };
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     if (!allowed[k]) continue; // other keys (lanDiscovery, edge) are handled by the route
@@ -146,7 +151,10 @@ function applyPatch(current, patch) {
     for (const [f, val] of Object.entries(v)) {
       if (!allowed[k].includes(f)) throw new FeatureError('invalid', `${k}.${f}: unknown`);
       any = true;
-      if (k === 'ai') {
+      if (k === 'cameras') {
+        // Kameras: the switch and extra private networks the gateway may reach (services/homeCameras.js)
+        try { out.cameras[f] = require('./homeCameras').patchField(f, val); } catch (e) { throw new FeatureError(e.code === 'invalid_host' ? 'invalid_host' : 'invalid', e.message); }
+      } else if (k === 'ai') {
         // Lokale KI: the LAN server only as a private IPv4 address and a port (services/ai/local.js)
         try { out.ai[f] = require('./ai/local').patchField(f, val); } catch (e) { throw new FeatureError(e.code === 'invalid_host' ? 'invalid_host' : 'invalid', e.message); }
       } else if (k === 'radio') {
@@ -195,7 +203,7 @@ function set(peerId, patch, { ip, user } = {}) {
   db().prepare(`INSERT INTO gateway_features (peer_id, settings, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(peer_id) DO UPDATE SET settings = excluded.settings, updated_at = excluded.updated_at`)
     .run(g.id, JSON.stringify(after), Date.now());
-  const changed = FEATURE_KEYS.concat(['notify', 'print', 'radio', 'ai']).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+  const changed = FEATURE_KEYS.concat(['notify', 'print', 'radio', 'ai', 'cameras']).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
   if (changed.length) {
     try {
       require('./activity').log('gateway_features_changed', `Gateway features changed on "${g.name}" (${changed.join(', ')})`, {
@@ -239,6 +247,8 @@ function configPayload(peerId) {
     radio: part(peerId, 'radio', () => require('./homeRadio').configPayload(peerId)),
     // phase 3c, step 3: Lokale KI (an older gateway ignores it)
     ai: part(peerId, 'ai', () => require('./ai/local').configPayload(peerId)),
+    // phase 3c, step 4: Kameras (an older gateway ignores it; never a password — the gateway fetches those)
+    cameras: part(peerId, 'cameras', () => require('./homeCameras').configPayload(peerId)),
   };
 }
 
@@ -300,7 +310,8 @@ function support(tel) {
     print: !!(caps && caps.includes('print')),
     radio: !!(caps && caps.includes('radio')),
     ai: !!(caps && caps.includes('ai')),
-    version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY, minGateway3b: MIN_GATEWAY_3B, minGatewayPrint: MIN_GATEWAY_PRINT, minGatewayRadio: MIN_GATEWAY_RADIO, minGatewayAi: MIN_GATEWAY_AI,
+    cameras: !!(caps && caps.includes('cameras')),
+    version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY, minGateway3b: MIN_GATEWAY_3B, minGatewayPrint: MIN_GATEWAY_PRINT, minGatewayRadio: MIN_GATEWAY_RADIO, minGatewayAi: MIN_GATEWAY_AI, minGatewayCameras: MIN_GATEWAY_CAMERAS,
   };
 }
 
@@ -378,6 +389,11 @@ function memoryEstimate(peerId, s, tel) {
   } catch (e) { logger.debug({ err: e.message }, 'phase 3b memory parts unavailable'); }
   // phase 3c: Drucken & Scannen (discovery, IPP/eSCL, a page or a job in memory at a time)
   if (s.print && s.print.enabled) parts.push({ key: 'print', mb: MEM_MB.print });
+  // phase 3c, step 4: Kameras (ffmpeg + the picture ring per camera)
+  try {
+    const cam = require('./homeCameras').memoryPart(peerId, s);
+    if (cam) parts.push(cam);
+  } catch (e) { logger.debug({ err: e.message }, 'cameras memory part unavailable'); }
   // phase 3c, step 3: the local AI — the model in memory (or the one it will load), drawn blue in the bar
   try {
     const ai = require('./ai/local').memoryPart(peerId, s, tel);
@@ -400,6 +416,10 @@ function radioPart(peerId) {
 
 function aiPart(peerId) {
   try { return require('./ai/local').overview(peerId); } catch (e) { logger.debug({ err: e.message }, 'local AI overview unavailable'); return null; }
+}
+
+function camerasPart(peerId) {
+  try { return require('./homeCameras').overview(peerId); } catch (e) { logger.debug({ err: e.message }, 'cameras overview unavailable'); return null; }
 }
 
 function printPart(peerId) {
@@ -464,13 +484,14 @@ function overview(peerId) {
     print: printPart(g.id),
     radio: radioPart(g.id),
     ai: aiPart(g.id),
+    cameras: camerasPart(g.id),
     timezone: { tz, utc: tz === 'UTC' || tz === 'Etc/UTC' },
     home,
   };
 }
 
 module.exports = {
-  DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, MIN_GATEWAY_PRINT, MIN_GATEWAY_RADIO, MIN_GATEWAY_AI, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
+  DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, MIN_GATEWAY_PRINT, MIN_GATEWAY_RADIO, MIN_GATEWAY_AI, MIN_GATEWAY_CAMERAS, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
   normalize, get, set, applyPatch, configPayload, support, overview, memoryEstimate, boardOf, speedLimit, zigbeeOf,
   needGateway, telemetryOf, gatewayPeer, notifyGateway, publicIpv4,
 };

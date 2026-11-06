@@ -384,9 +384,11 @@ router.post('/:id/compose', (req, res) => {
   const zigbee = typeof b.zigbee === 'boolean' ? b.zigbee : require('../../services/homeRadio').composeWantsZigbee(row.id);
   // the service ki (phase 3c, step 3) when the local AI runs on this gateway; { ai: true|false } decides by hand
   const ai = typeof b.ai === 'boolean' ? b.ai : require('../../services/ai/local').composeWantsAi(row.id);
-  const text = gatewaySetup.buildCompose(platform, network, { zigbee, ai });
+  // the service kameras (phase 3c, step 4) when cameras are switched on for this gateway; { cameras: true|false } decides by hand
+  const cameras = typeof b.cameras === 'boolean' ? b.cameras : require('../../services/homeCameras').composeWantsCameras(row.id);
+  const text = gatewaySetup.buildCompose(platform, network, { zigbee, ai, cameras });
   if (!text) return res.status(400).json({ ok: false, error: 'invalid_option' });
-  logger.info({ peerId: row.id, platform, network, zigbee, ai }, 'Gateway docker-compose.yml downloaded');
+  logger.info({ peerId: row.id, platform, network, zigbee, ai, cameras }, 'Gateway docker-compose.yml downloaded');
   res.set('Content-Type', 'application/yaml; charset=utf-8');
   res.set('Content-Disposition', 'attachment; filename="docker-compose.yml"');
   res.set('Cache-Control', 'no-store');

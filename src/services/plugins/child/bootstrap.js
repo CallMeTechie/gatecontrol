@@ -425,6 +425,56 @@ function makeRadio() {
   });
 }
 
+// gc.cameras (permissions.cameras, phase 3c step 4, docs/plugins.md "Cameras"): cameras in the home networks
+// of the gateways — snapshots, live video through GateControl (VPN only), events and clips; never a password back
+const cameraHandlers = [];
+
+function makeCameras() {
+  const o = (x) => (x && typeof x === 'object' ? x : {});
+  return Object.freeze({
+    /** available() → { available, gateways: [{ id, name, online, supported, enabled, service, storage, hint }] } */
+    available: () => hostCall('cameras.available', {}),
+    /** list() → [{ id, gatewayId, gateway, name, host, source, model, state, online, codec, events, settings, snapshotAt, lastEventAt }] */
+    list: () => hostCall('cameras.list', {}),
+    /** discover({ gatewayId? }) → { found: [{ gatewayId, gateway, host, port, path, manufacturer, model, name, cameraId }] } */
+    discover: (opts) => hostCall('cameras.discover', { gatewayId: o(opts).gatewayId }, 30000),
+    /** test({ gatewayId, host, onvifPort?, onvifPath?, rtspUrl?, user, password }) → { ok, info, profiles, events, codec, snapshot } */
+    test: (opts) => hostCall('cameras.test', { opts: o(opts) }, 60000),
+    /** add({ gatewayId, name, host | rtspUrl, user, password, profile?, settings? }) → { camera, snapshot } */
+    add: (opts) => hostCall('cameras.add', { opts: o(opts) }, 60000),
+    /** update(id, { name?, user?, password?, profile?, settings? }) → camera */
+    update: (id, patch) => hostCall('cameras.update', { id, patch: o(patch) }),
+    /** remove(id, { deleteClips? }) → { removed } */
+    remove: (id, opts) => hostCall('cameras.remove', { id, opts: o(opts) }, 60000),
+    /** snapshot(id, { maxBytes? }) → { data (base64 JPEG), mime, at } — default ≤ 300 KB (fits gc.notify image) */
+    snapshot: (id, opts) => hostCall('cameras.snapshot', { id, opts: o(opts) }, 30000),
+    /** snapshotUrl(id) → { url, expiresAt, every } — /camera-media/… for an <img> of the frame or an app */
+    snapshotUrl: (id) => hostCall('cameras.snapshotUrl', { id }),
+    /** live(id, req) → { mode: 'live', hls, mp4, snapshot, codec, audio, expiresAt } | { mode: 'snapshot', snapshot, every: 10, reason } */
+    live: (id, req) => hostCall('cameras.live', { id, ref: req && typeof req === 'object' && typeof req.homeRef === 'string' ? req.homeRef : null }, 20000),
+    /** events({ cameraId?, since?, until?, kinds?, limit? }) → [{ id, cameraId, camera, kind, kinds, startedAt, endedAt, nobodyHome, clip, thumbUrl, clipUrl }] */
+    events: (opts) => hostCall('cameras.events', { opts: o(opts) }),
+    /** deleteEvent(id) → { deleted } */
+    deleteEvent: (id) => hostCall('cameras.deleteEvent', { id }, 30000),
+    /** on(handler({ id, cameraId, camera, gatewayId, kind, kinds, phase: start|update|end, at, nobodyHome, clip })) → off() */
+    on: (handler) => {
+      if (typeof handler !== 'function') throw new TypeError('gc.cameras.on(handler)');
+      cameraHandlers.push(handler);
+      return () => { const i = cameraHandlers.indexOf(handler); if (i >= 0) cameraHandlers.splice(i, 1); };
+    },
+  });
+}
+
+async function deliverCameraEvent(ev) {
+  const arg = Object.freeze({ ...(ev && typeof ev === 'object' ? ev : {}) });
+  for (const fn of cameraHandlers.slice()) {
+    try { await fn(arg); } catch (err) {
+      send({ t: 'log', level: 'error', message: 'gc.cameras.on handler failed: ' + String((err && (err.stack || err.message)) || err).slice(0, 900) });
+    }
+  }
+  return { handled: cameraHandlers.length };
+}
+
 async function deliverPresence(ev) {
   const e = ev && typeof ev === 'object' ? ev : {};
   const arg = Object.freeze({ userId: e.userId, home: e.home === true ? true : (e.home === false ? false : null), since: e.since || null, source: e.source || 'wifi' });
@@ -468,6 +518,7 @@ function makeGc(info) {
     ...(features.homeCache ? { homeCache: makeHomeCache() } : {}),
     ...(features.print ? { print: makePrint() } : {}),
     ...(features.radio ? { radio: makeRadio() } : {}),
+    ...(features.cameras ? { cameras: makeCameras() } : {}),
     // device accounts of a gateway's MQTT broker (plugin.json edge.capabilities.mqtt): create(gatewayId,
     // { label, topics, name }) → { username, password (once), acl, label }; list(gatewayId); remove(gatewayId, username)
     ...(features.mqtt ? {
@@ -890,6 +941,9 @@ async function handleCall(method, payload) {
     case 'homePresence':
       // a person's presence over the home network changed (gc.homeNetwork.presence.on) — answer ignored
       return deliverPresence(payload);
+    case 'cameraEvent':
+      // an event of a camera in the home network (gc.cameras.on) — answer ignored
+      return deliverCameraEvent(payload);
     case 'edgeEvent':
       // an event of the plugin's edge part on a gateway (gc.edge.on) — answered after the handlers ran
       return deliverEdgeEvent(payload);

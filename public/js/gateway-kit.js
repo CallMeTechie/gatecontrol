@@ -187,6 +187,14 @@
     '      o: "size=1m,uid=0,gid=0,mode=0755"',
     '  # the models of the local AI (1–6 GB each)',
     '  ki-models:',
+    '  # tmpfs shared: the control files of the gateway for the service kameras and the picture ring (cameras)',
+    '  cam-ctl:',
+    '    driver_opts:',
+    '      type: tmpfs',
+    '      device: tmpfs',
+    '      o: "size=256m,uid=0,gid=0,mode=0700"',
+    '  # clips and thumbnails of the cameras (when GC_CAMERA_DIR is not set)',
+    '  cam-recordings:',
   ];
 
   // The local AI (phase 3c, step 3 — gateway >= 1.26.0, docs/local-ai.md of the gateway): Ollama,
@@ -243,6 +251,58 @@
     '      timeout: 10s',
     '      retries: 3',
     '      start_period: 120s',
+    '    logging:',
+    '      driver: json-file',
+    '      options:',
+    '        max-size: "10m"',
+    '        max-file: "3"',
+  ];
+
+  // Cameras (phase 3c, step 4 — gateway >= 1.27.0, docs/cameras.md of the gateway): ffmpeg only, switched on in
+  // GateControl; the gateway decides per camera what runs (control files in cam-ctl).
+  const KAMERAS_SERVICE = [
+    '',
+    '  # Cameras in the home network (gateway >= 1.27.0, docs/cameras.md of the gateway) — only the ffmpeg of this',
+    '  # image is used (mediamtx itself does not run). The entry waits for /gc-cam/kameras.sh, which the gateway writes,',
+    '  # and runs it: one ffmpeg per camera (stream copy into a picture ring). No port, no capabilities.',
+    '  kameras:',
+    '    image: bluenviron/mediamtx:1.21.3-ffmpeg@sha256:208e9f1740a09a5ee63b6308e77ce0d54fce0456462f640e6bd9acfc62ebb5a2',
+    '    entrypoint:',
+    '      - /bin/sh',
+    '      - -c',
+    '      - |',
+    '        while [ ! -s /gc-cam/kameras.sh ]; do sleep 2; done',
+    '        exec /bin/sh /gc-cam/kameras.sh',
+    '    restart: unless-stopped',
+    '    network_mode: host        # the cameras are in the LAN; no port is opened',
+    '    user: "0:0"               # reads the control files of the gateway (root, 0600) — without any capability',
+    '    cap_drop:',
+    '      - ALL',
+    '    security_opt:',
+    '      - no-new-privileges:true',
+    '    read_only: true',
+    '    tmpfs:',
+    '      - /tmp:size=16m',
+    '    # the gateway goes first: a smaller CPU share, ffmpeg goes first when memory runs out',
+    '    cpu_shares: 512',
+    '    oom_score_adj: 500',
+    '    mem_limit: 768m',
+    '    pids_limit: 64',
+    '    depends_on:',
+    '      - gateway               # creates cam-ctl and writes kameras.sh',
+    '    volumes:',
+    '      - type: volume            # control files of the gateway, the picture ring back',
+    '        source: cam-ctl',
+    '        target: /gc-cam',
+    '        volume: { nocopy: true }',
+    '    environment:',
+    '      - TZ=${TZ:-Etc/UTC}',
+    '    healthcheck:',
+    '      test: ["CMD-SHELL", "[ ! -s /gc-cam/kameras.sh ] || [ $$(( $$(date +%s) - $$(cut -d\' \' -f2 /gc-cam/kameras.state 2>/dev/null || echo 0) )) -lt 60 ]"]',
+    '      interval: 60s',
+    '      timeout: 10s',
+    '      retries: 3',
+    '      start_period: 60s',
     '    logging:',
     '      driver: json-file',
     '      options:',
@@ -452,7 +512,13 @@
         '      - type: volume            # local AI: control file for the service ki',
         '        source: ai-ctl',
         '        target: /gc-ai',
-        '        volume: { nocopy: true }'
+        '        volume: { nocopy: true }',
+        // cameras (gateway >= 1.27.0): control files + picture ring of the service kameras, and the clips; harmless without it
+        '      - type: volume            # cameras: control files and picture ring of the service kameras',
+        '        source: cam-ctl',
+        '        target: /gc-cam',
+        '        volume: { nocopy: true }',
+        '      - ${GC_CAMERA_DIR:-cam-recordings}:/recordings   # cameras: clips (GC_CAMERA_DIR=/volume1/kameras for a NAS folder)'
       );
     }
     lines.push(
@@ -481,6 +547,9 @@
       // the local AI (phase 3c, step 3): only when switched on for this gateway — the image is ≈ 3 GB (the
       // gateway's example keeps it in the profile "ki")
       if (o.ai === true) lines.push(...KI_SERVICE);
+      // cameras (phase 3c, step 4): only when switched on for this gateway (the gateway's example keeps it in the
+      // profile "kameras")
+      if (o.cameras === true) lines.push(...KAMERAS_SERVICE);
       lines.push(...VOLUMES);
     }
     const header = headerNotes.length > 0 ? headerNotes.join('\n') + '\n' : '';

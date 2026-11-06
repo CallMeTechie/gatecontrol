@@ -160,6 +160,8 @@ function permissionSummary(m, lang) {
     print: !!p.print,
     // phase 3c, step 2: the Bluetooth sensors of the gateways (gc.radio)
     radio: !!p.radio,
+    // phase 3c, step 4: the cameras in the home networks of the gateways (gc.cameras)
+    cameras: !!p.cameras,
     // person groups (docs/plugins.md "Groups"): 'read' | 'manage' | null
     groups: p.groups === 'read' || p.groups === 'manage' ? p.groups : null,
     // Google Drive / OneDrive of a person (gc.cloud) and what for
@@ -684,7 +686,7 @@ function view(p, lang) {
     // GC.openUrl in the plugin's frames (permissions.cloudImport): the <iframe data-plugin-cloud>
     cloud: require('./frame').openUrlOf(m),
     // the <iframe allow="…"> of the plugin's frames (frame.allowAttr)
-    allow: require('./frame').allowAttr({ media: !!m.media, geolocation: !!(m.ui && m.ui.geolocation), camera: !!(m.ui && m.ui.camera) }),
+    allow: require('./frame').allowAttr({ media: !!m.media, geolocation: !!(m.ui && m.ui.geolocation), camera: !!(m.ui && m.ui.camera), fullscreen: !!(m.permissions && m.permissions.cameras) }),
     media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false, ...(m.media.areas ? { areas: true } : {}), ...(m.media.previews ? { previews: true } : {}) } : null,
     events: !!(m.permissions && m.permissions.events),
     settingsCount: m.ui && m.ui.settings ? m.ui.settings.length : 0,

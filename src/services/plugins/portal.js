@@ -93,7 +93,7 @@ async function contributions(user, lang) {
       ...(frame.pickPrincipalsOf(p.manifest) ? { groups: true, name: loc(p.manifest.name, l) } : {}),
       // cloud: GC.openUrl may open gc.cloud.connectUrl's address (permissions.cloudImport)
       ...(frame.openUrlOf(p.manifest) ? { cloud: true } : {}),
-      allow: frame.allowAttr({ media: !!p.manifest.media, geolocation: !!p.manifest.ui.geolocation, camera: !!p.manifest.ui.camera }) };
+      allow: frame.allowAttr({ media: !!p.manifest.media, geolocation: !!p.manifest.ui.geolocation, camera: !!p.manifest.ui.camera, fullscreen: !!(p.manifest.permissions && p.manifest.permissions.cameras) }) };
     if (ui.label) items.push({ kind: 'tab', plugin: p.id, key: 'plg-' + p.id, label: loc(ui.label, l), icon: ui.icon, section: null, maps, ...extra });
     for (const s of ui.sections || []) {
       if (s.tab === 'profile' && !profileViewer(user)) continue;
