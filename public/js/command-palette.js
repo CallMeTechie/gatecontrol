@@ -275,7 +275,8 @@
           out.push({ key: 'page:' + n.getAttribute('href'), kind: 'page', label, sub: group, href: n.getAttribute('href'), showEmpty: true, iconNode: svg ? svg.cloneNode(true) : null });
         });
       }
-      doc.querySelectorAll('#topbar-dropdown a.topbar-dropdown-item[href]').forEach((a) => {
+      // external links (the user guide) open in a new tab and stay out of the palette
+      doc.querySelectorAll('#topbar-dropdown a.topbar-dropdown-item[href]:not([target="_blank"])').forEach((a) => {
         const href = a.getAttribute('href');
         if (out.some((p) => p.href === href)) return;
         out.push({ key: 'page:' + href, kind: 'page', label: a.textContent.trim(), sub: '', href, showEmpty: true });

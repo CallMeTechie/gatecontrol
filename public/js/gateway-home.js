@@ -234,7 +234,7 @@
       toggle(sw, (v) => putDns(id, { enabled: v }, t('gwh.dns.off_done')));
     });
     const c = U.card(t('gwh.dns.title'), h('div', { class: 'gwh-head-r' }, [statePill(d), sw]), { id: 'dns-status', full: true, cls: 'gwh-status' });
-    c.body.appendChild(h('p', { class: 'gwe-d gwh-lead', text: t('gwh.dns.lead') }));
+    c.body.appendChild(h('p', { class: 'gwe-d gwh-lead' }, [t('gwh.dns.lead'), ' ', U.guide('feat.dns')]));
     const ip = d.addresses.v4[0] || d.gateway.lanIp;
     const guide = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-fk': 'gwh-router' }, [icon('router', 15), t('gwh.router.open')]);
     guide.addEventListener('click', () => routerDialog(g));
@@ -244,7 +244,7 @@
     ]));
     const tel = d.gateway.telemetry;
     if (d.outage && d.outage.reason === 'offline') c.body.appendChild(U.note('crit', [t('gwh.dns.down_offline', { since: clock(d.outage.since) })], 'warn'));
-    if ((tel && tel.state === 'port_busy') || (d.outage && d.outage.reason === 'port_busy')) c.body.appendChild(U.note('crit', [h('strong', { text: t('gwh.dns.port_busy_b') }), ' ', t('gwh.dns.port_busy')], 'warn'));
+    if ((tel && tel.state === 'port_busy') || (d.outage && d.outage.reason === 'port_busy')) c.body.appendChild(U.note('crit', [h('strong', { text: t('gwh.dns.port_busy_b') }), ' ', t('gwh.dns.port_busy'), ' ', U.guide('faq.dns_port53')], 'warn'));
     else if (tel && tel.state === 'no_address') c.body.appendChild(U.note('crit', [t('gwh.dns.no_address')], 'warn'));
     else if (tel && tel.state === 'error' && tel.lastError) c.body.appendChild(U.note('warn', [t('gwh.dns.error', { error: tel.lastError.message })]));
     if (!tel && (d.gateway.support || {}).dns !== false) c.body.appendChild(U.note('info', [t('gwh.dns.waiting')]));
@@ -357,7 +357,7 @@
     const check = h('div', { class: 'gwh-check', role: 'status', 'aria-live': 'polite' });
     dlg.body.append(field('gwh-r-type', t('gwh.router.yours'), sel), pre, steps,
       h('h4', { class: 'gwh-h4', text: t('gwh.router.check') }), check,
-      h('p', { class: 'gwe-d', text: t('gwh.router.undo') }));
+      h('p', { class: 'gwe-d' }, [t('gwh.router.undo'), ' ', U.guide('feat.dns')]));
     function addrRow(kind, d) {
       const v4 = d.addresses.v4[0] || d.gateway.lanIp;
       const v6 = K.pickV6(d.addresses.v6);
@@ -781,8 +781,8 @@
       toggle(sw, (v) => putCache(id, { enabled: v }, t('gwh.cache.off_done')));
     });
     const c = U.card(t('gwh.cache.title'), h('div', { class: 'gwh-head-r' }, [pill, sw]), { id: 'cache-status', full: true });
-    c.body.appendChild(h('p', { class: 'gwe-d gwh-lead', text: t('gwh.cache.lead') }));
-    if (bad && has('gwh.cache.st_' + st.state)) c.body.appendChild(U.note('crit', [t('gwh.cache.st_' + st.state, { setting: d.hostSetting })], 'warn'));
+    c.body.appendChild(h('p', { class: 'gwe-d gwh-lead' }, [t('gwh.cache.lead'), ' ', U.guide('feat.cache')]));
+    if (bad && has('gwh.cache.st_' + st.state)) c.body.appendChild(U.note('crit', [t('gwh.cache.st_' + st.state, { setting: d.hostSetting }), st.state === 'path_unwritable' ? ' ' : null, st.state === 'path_unwritable' ? U.guide('faq.cache_unwritable') : null], 'warn'));
     else if (st && st.error) c.body.appendChild(U.note('warn', [t('gwh.cache.error', { error: st.error })]));
     else if (!st && (d.gateway.support || {}).cache !== false) c.body.appendChild(U.note('info', [t('gwh.cache.waiting')]));
     else if (st && st.running && (!st.pinned || !st.reachable)) c.body.appendChild(U.note('info', [t('gwh.cache.no_pin')]));
@@ -852,7 +852,7 @@
   // ═══ Card "Funktionen dieses Gateways" ════════════════════════════════
   function featRow(title, text, control, extra, key) {
     return h('div', { class: 'gwn-fr', 'data-feature': key }, [
-      h('div', { class: 'gwn-fr-t' }, [h('strong', { text: title }), h('span', { class: 'gwe-d', text }), ...(extra || [])]),
+      h('div', { class: 'gwn-fr-t' }, [h('strong', { text: title }), h('span', { class: 'gwe-d' }, [text, ' ', U.guide('feat.' + key)]), ...(extra || [])]),
       control || null,
     ]);
   }
@@ -886,7 +886,7 @@
     if (d.timezone) {
       rows.push(featRow(t('gwh.feat.tz'), t('gwh.feat.tz_d', { tz: d.timezone.tz }),
         d.timezone.utc ? U.tag('amber', 'UTC', true) : U.tag('green', d.timezone.tz, true),
-        d.timezone.utc ? [h('span', { class: 'gwn-hint' }, [U.icon('warn', 14), t('gwh.feat.tz_utc')])] : [], 'timezone'));
+        d.timezone.utc ? [h('span', { class: 'gwn-hint' }, [U.icon('warn', 14), h('span', null, [t('gwh.feat.tz_utc'), ' ', U.guide('faq.utc')])])] : [], 'timezone'));
     }
     return rows;
   }

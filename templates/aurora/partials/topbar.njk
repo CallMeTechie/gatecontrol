@@ -39,6 +39,8 @@
       {% if user and user.role == 'admin' %}
       <a href="/profile" class="topbar-dropdown-item"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.profile') }}</a>
       <a href="/settings" class="topbar-dropdown-item"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>{{ t('nav.settings') }}</a>
+      {# The user guide (docs/handbuch, docs/guide; address: public/js/handbook.js) #}
+      {% if handbookUrl %}<a href="{{ handbookUrl('index') }}" class="topbar-dropdown-item" id="topbar-handbook" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('nav.handbook') }}</a>{% endif %}
       {% else %}
       {% if portalUrl %}<a href="{{ portalUrl }}" class="topbar-dropdown-item" rel="noopener"><svg viewBox="0 0 24 24" fill="none"><path d="M3 11.5 12 4l9 7.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 10v10h13V10" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>{{ t('nav.portal') }}</a>{% endif %}
       <a href="/profile" class="topbar-dropdown-item"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.account_security') }}</a>

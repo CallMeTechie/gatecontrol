@@ -724,7 +724,7 @@
 
   function featRow(title, text, control, extra, key) {
     return h('div', { class: 'gwn-fr', 'data-feature': key }, [
-      h('div', { class: 'gwn-fr-t' }, [h('strong', { text: title }), h('span', { class: 'gwe-d', text }), ...(extra || [])]),
+      h('div', { class: 'gwn-fr-t' }, [h('strong', { text: title }), h('span', { class: 'gwe-d' }, [text, ' ', U.guide('feat.' + key)]), ...(extra || [])]),
       control || null,
     ]);
   }
