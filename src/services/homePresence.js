@@ -16,6 +16,13 @@
 // goes to every running plugin with the permission (hook homePresence →
 // gc.homeNetwork.presence.on) — { userId, home, since, source: 'wifi' }.
 // Plugins never get MAC or IP addresses.
+//
+// Gateways in one home network (homeNetwork.gatewayHomes(), e.g. a failover
+// pair) both watch the same phone: its rows carry the same owner / counts
+// (netwatch.js keeps them equal), the state per person takes each MAC once —
+// a gateway that is down (gateway_meta.alive = 0) does not keep a person
+// "home" with its last report while another gateway of the home network
+// still reports — and devices() lists a phone once.
 
 const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
@@ -155,9 +162,19 @@ function recompute(userId, at) {
   const prev = stateRow(userId);
   let next = null;
   if (consentOf(userId)) {
-    const rowsAll = db().prepare(`SELECT presence_online FROM netwatch_devices
-      WHERE owner_user_id = ? AND presence = 1 AND presence_online IS NOT NULL`).all(userId);
-    if (rowsAll.length) next = rowsAll.some((r) => r.presence_online === 1);
+    const rowsAll = db().prepare(`SELECT d.mac, d.presence_online, d.presence_at, COALESCE(gm.alive, 1) AS alive FROM netwatch_devices d
+      LEFT JOIN gateway_meta gm ON gm.peer_id = d.peer_id
+      WHERE d.owner_user_id = ? AND d.presence = 1 AND d.presence_online IS NOT NULL`).all(userId);
+    if (rowsAll.length) {
+      const byMac = new Map();
+      for (const r of rowsAll) { if (!byMac.has(r.mac)) byMac.set(r.mac, []); byMac.get(r.mac).push(r); }
+      next = [...byMac.values()].some((rows) => {
+        // one phone seen by several gateways: the reports of gateways that are up; none up → the latest report
+        const up = rows.filter((r) => r.alive === 1);
+        if (up.length) return up.some((r) => r.presence_online === 1);
+        return rows.reduce((a, b) => ((b.presence_at || 0) > (a.presence_at || 0) ? b : a)).presence_online === 1;
+      });
+    }
   }
   if (next === null) {
     if (prev) {
@@ -221,19 +238,35 @@ function consentInfo(userId) {
   return { consent: r ? r.enabled === 1 : false, since: r ? iso(r.updated_at) : null };
 }
 
-/** gc.homeNetwork.presence.devices(userId) — the person's own devices: names and times, no addresses. */
+function homeMap() {
+  try { return require('./homeNetwork').homeMap(); } catch { return new Map(); }
+}
+
+/**
+ * gc.homeNetwork.presence.devices(userId) — the person's own devices: names
+ * and times, no addresses. A device that several gateways of one home
+ * network see is listed once (gateway: their names, "A / B").
+ */
 function devices(userId) {
   needUser(userId);
-  return db().prepare(`SELECT d.id, d.name, d.hostname, d.vendor, d.last_seen, d.presence, d.presence_online, d.presence_at, p.name AS gateway
+  const homes = homeMap();
+  const out = new Map();
+  const rows = db().prepare(`SELECT d.id, d.peer_id, d.mac, d.name, d.hostname, d.vendor, d.last_seen, d.presence, d.presence_online, d.presence_at, p.name AS gateway
       FROM netwatch_devices d JOIN peers p ON p.id = d.peer_id
-    WHERE d.owner_user_id = ? ORDER BY lower(COALESCE(d.name, d.hostname, d.vendor, '')) , d.id`).all(userId)
-    .map((r) => ({
-      id: r.id,
-      name: r.name || r.hostname || r.vendor || null,
-      lastSeen: iso(Math.max(r.last_seen || 0, r.presence_online === 1 ? (r.presence_at || 0) : 0)),
-      counts: r.presence === 1,
-      gateway: r.gateway,
-    }));
+    WHERE d.owner_user_id = ? ORDER BY lower(COALESCE(d.name, d.hostname, d.vendor, '')) , d.id`).all(userId);
+  for (const r of rows) {
+    const key = (homes.get(r.peer_id) || [r.peer_id])[0] + '|' + r.mac;
+    const seen = Math.max(r.last_seen || 0, r.presence_online === 1 ? (r.presence_at || 0) : 0);
+    const cur = out.get(key);
+    if (cur) {
+      cur.seen = Math.max(cur.seen, seen);
+      cur.counts = cur.counts || r.presence === 1;
+      if (!cur.gateways.includes(r.gateway)) cur.gateways.push(r.gateway);
+      continue;
+    }
+    out.set(key, { id: r.id, name: r.name || r.hostname || r.vendor || null, seen, counts: r.presence === 1, gateways: [r.gateway] });
+  }
+  return [...out.values()].map((d) => ({ id: d.id, name: d.name, lastSeen: iso(d.seen), counts: d.counts, gateway: d.gateways.join(' / ') }));
 }
 
 /** gc.homeNetwork.presence.setCounts(userId, deviceId, counts) — only a device of that person. */
@@ -241,21 +274,28 @@ function setCounts(userId, deviceId, counts) {
   needUser(userId);
   if (!Number.isSafeInteger(deviceId) || deviceId <= 0) throw new PresenceError('ERR_INVALID', 'invalid device id');
   if (typeof counts !== 'boolean') throw new PresenceError('ERR_INVALID', 'counts must be true or false');
-  const d = db().prepare('SELECT id, peer_id, presence FROM netwatch_devices WHERE id = ? AND owner_user_id = ?').get(deviceId, userId);
+  const d = db().prepare('SELECT id, peer_id, mac, presence FROM netwatch_devices WHERE id = ? AND owner_user_id = ?').get(deviceId, userId);
   if (!d) throw new PresenceError('ERR_NOT_FOUND', 'no such device of this person');
-  if ((d.presence === 1) !== counts) {
-    db().prepare('UPDATE netwatch_devices SET presence = ?, presence_online = CASE WHEN ? = 1 THEN presence_online ELSE NULL END, updated_at = ? WHERE id = ?')
-      .run(counts ? 1 : 0, counts ? 1 : 0, Date.now(), d.id);
-    pushConfig([d.peer_id]);
-    recompute(userId, Date.now());
+  // the same phone on every gateway of the home network
+  const ids = (homeMap().get(d.peer_id) || [d.peer_id]);
+  const rows = db().prepare(`SELECT id, peer_id, presence FROM netwatch_devices WHERE mac = ? AND owner_user_id = ? AND peer_id IN (${ids.map(() => '?').join(',')})`)
+    .all(d.mac, userId, ...ids);
+  if (!rows.some((r) => r.id === d.id)) rows.push(d);
+  const change = rows.filter((r) => (r.presence === 1) !== counts);
+  if (change.length) {
+    const now = Date.now();
+    const upd = db().prepare('UPDATE netwatch_devices SET presence = ?, presence_online = CASE WHEN ? = 1 THEN presence_online ELSE NULL END, decided_at = ?, updated_at = ? WHERE id = ?');
+    db().transaction(() => { for (const r of change) upd.run(counts ? 1 : 0, counts ? 1 : 0, now, now, r.id); })();
+    pushConfig(change.map((r) => r.peer_id));
+    recompute(userId, now);
   }
   return { counts };
 }
 
-/** A device's owner or its presence flag changed in the admin UI → state and gateway config. */
-function onDeviceChanged(peerId, userIds) {
-  pushConfig([peerId]);
-  for (const u of new Set(userIds.filter((x) => Number.isSafeInteger(x) && x > 0))) recompute(u, Date.now());
+/** A device's owner or its presence flag changed (admin UI, merge of a home network) → state and gateway config. */
+function onDeviceChanged(peerIds, userIds) {
+  pushConfig(Array.isArray(peerIds) ? peerIds : [peerIds]);
+  for (const u of new Set((userIds || []).filter((x) => Number.isSafeInteger(x) && x > 0))) recompute(u, Date.now());
 }
 
 module.exports = {

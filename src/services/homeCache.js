@@ -155,9 +155,17 @@ function configPayload(peerId) {
 
 // ─── The stock ─────────────────────────────────────────────────────────
 
-/** People with devices on this gateway (network watch owners) — whose files it may keep. */
+/**
+ * People with devices in this gateway's home network (network watch owners on
+ * any gateway of it — homeNetwork.gatewayHomes()) — whose files it may keep.
+ * A failover gateway that has not scanned a person's phone yet keeps their
+ * files as well.
+ */
 function peopleAt(peerId) {
-  return new Set(db().prepare('SELECT DISTINCT owner_user_id FROM netwatch_devices WHERE peer_id = ? AND owner_user_id IS NOT NULL').all(peerId).map((r) => r.owner_user_id));
+  let ids;
+  try { ids = require('./homeNetwork').homeOf(peerId); } catch { ids = [Number(peerId)]; }
+  return new Set(db().prepare(`SELECT DISTINCT owner_user_id FROM netwatch_devices WHERE owner_user_id IS NOT NULL AND peer_id IN (${ids.map(() => '?').join(',')})`)
+    .all(...ids).map((r) => r.owner_user_id));
 }
 
 function blobFits(b, s, people) {

@@ -154,12 +154,20 @@ router.post('/:id/migrate-routes', async (req, res) => {
   res.json({ ok: true, migrated: result.changes });
 });
 
+// The members of a pool form one home network for the network watch and the
+// DNS filter (services/homeNetwork.js gatewayHomes()): merge at once instead
+// of with the next 5-minute run of gatewayOps.
+function homesChanged() {
+  try { require('../../services/gatewayOps').reconcileHomes(); } catch { /* the ticker catches up */ }
+}
+
 router.post('/:id/members', async (req, res) => {
   const poolId = parseInt(req.params.id, 10);
   const { peer_id, priority } = req.body || {};
   if (!Number.isInteger(peer_id)) return res.status(400).json({ error: 'peer_id_required' });
   try {
     gatewayPool.addMember(poolId, peer_id, priority);
+    homesChanged();
     await applyPoolMutationWithSequencing(poolId);
     res.status(201).json({ ok: true });
   } catch (err) {
@@ -172,6 +180,7 @@ router.delete('/:id/members/:peerId', async (req, res) => {
   const peerId = parseInt(req.params.peerId, 10);
   try {
     gatewayPool.removeMember(poolId, peerId);
+    homesChanged();
     await applyPoolMutationWithSequencing(poolId);
     res.status(204).send();
   } catch (err) {
@@ -191,6 +200,7 @@ router.put('/:id/members', async (req, res) => {
   if (!Array.isArray(members)) return res.status(400).json({ error: 'members_array_required' });
   try {
     const updated = gatewayPool.replaceMembers(poolId, members);
+    homesChanged();
     await applyPoolMutationWithSequencing(poolId);
     res.json(updated);
   } catch (err) {
