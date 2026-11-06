@@ -190,6 +190,9 @@ module.exports = (ctx) => {
         }, null, 15000));
         await page.click('.gcd-dialog .gcd-ok').catch(() => {});
         await until(page, () => !document.querySelector('.gcd-dialog'));
+        // the 502 of this unreachable gateway is the expected answer, not a page problem
+        ctx.allow((x) => x.kind === 'http' && x.status === 502 && /\/print\/discover$/.test(x.url),
+          (x) => x.kind === 'console' && /status of 502/.test(x.text));
 
         // ── "Per IP-Adresse hinzufügen" ──
         await page.click(row + ' [data-fk="gwn-print-manual"]');
