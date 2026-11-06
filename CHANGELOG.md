@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.235.0] — 2026-11-06
+
+### Features
+- Gateway-Seite neu – Pools integriert, Reiter „Funktionen“ (#419)
+
+---
+
 ## [1.234.2] — 2026-11-06
 
 ### Fixes
