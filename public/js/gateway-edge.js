@@ -236,7 +236,10 @@
     const stepsBox = h('div', { class: 'gwe-compose-steps' });
     const err = errorBox();
     const value = (name) => { const r = dlg.box.querySelector('input[name="gwe-compose-' + name + '"]:checked'); return r ? r.value : null; };
-    const drawSteps = () => stepsBox.replaceChildren(h('p', { class: 'gwe-label' }, [h('strong', { text: t('gwe.compose.steps') })]), composeSteps(value('platform')));
+    // steps + the matching chapter of the user guide (handbook.js topics update.synology / update.linux)
+    const drawSteps = () => stepsBox.replaceChildren(
+      h('p', { class: 'gwe-label' }, [h('strong', { text: t('gwe.compose.steps') }), ' ', guide('update.' + value('platform'))]),
+      composeSteps(value('platform')));
     dlg.body.append(h('p', { class: 'gwe-intro', text: t('gwe.compose.intro') }), plat, net, stepsBox, err);
     drawSteps();
     plat.addEventListener('change', drawSteps);
@@ -256,7 +259,7 @@
   function composeHelp(g) {
     const b = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-fk': 'gwe-compose', text: t('gwe.compose.button') });
     b.addEventListener('click', () => openComposeDialog(g, 'gwe-compose'));
-    return h('div', { class: 'gwe-compose-help' }, [h('p', { class: 'gwe-d', text: t('gwe.compose.help') }), b]);
+    return h('div', { class: 'gwe-compose-help' }, [h('p', { class: 'gwe-d' }, [t('gwe.compose.help'), ' ', guide('update.' + composePlatform(g))]), b]);
   }
   window.GCGatewayCompose = { open: openComposeDialog, help: composeHelp, platformOf: composePlatform };
 
