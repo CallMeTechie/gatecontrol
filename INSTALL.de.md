@@ -85,7 +85,7 @@ Lege ein dediziertes Deploy-Verzeichnis an — **getrennt von einem eventuell ge
 └── data/                 # entsteht beim ersten Start — hält DB, Certs, Keys, WG-Config
 ```
 
-> **Achtung:** Die ausgelieferte `docker-compose.yml` bindet `/data` als **benanntes Docker-Volume** (`gatecontrol-data:/data`) ein – dann entsteht kein Ordner `data/`, und `update.sh` (liest `./data`) sowie das Ein-Zeilen-Backup unten greifen ins Leere. Für das hier beschriebene Layout die Zeile **vor dem ersten Start** auf `./data:/data` ändern (siehe [§3](#3-setup-dateien-herunterladen)). Eine bestehende Installation nicht einfach umstellen, sondern nach [§12](#12-migration-bestehender-installationen) umziehen.
+> **Achtung:** Die ausgelieferte `docker-compose.yml` bindet `./data:/data`. Installationen mit einer älteren Compose-Datei halten `/data` im **benannten Docker-Volume** `gatecontrol-data` – so eine Installation nicht einfach auf die neue Datei umstellen (sie startet sonst mit leerer Datenbank), sondern nach [§12](#12-migration-bestehender-installationen) umziehen. Bis dahin erkennt `update.sh` das Volume selbst.
 
 Warum getrennt vom Source-Repo:
 
@@ -113,13 +113,10 @@ cd /opt/gatecontrol
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/setup.sh
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/docker-compose.yml
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/.env.example
-curl -fsSLO https://raw.githubusercontent.com/CallMeTechie/gatecontrol/master/update.sh
-chmod +x update.sh
-sed -i 's#gatecontrol-data:/data#./data:/data#' docker-compose.yml   # Daten in ./data (siehe §2)
 bash setup.sh
 ```
 
-`setup.sh` lädt `update.sh` nicht selbst – deshalb der eigene Download. Die Zeitzone fragt es nicht ab: `TZ=Europe/Berlin` danach in die `.env` eintragen (siehe [§4](#4-env-konfigurieren)) und `docker compose up -d` ausführen.
+`setup.sh` fragt auch die Zeitzone ab (`TZ` in der `.env`), legt den Ordner `data/` an, holt `update.sh` aus dem Image und richtet auf Nachfrage den 5-Minuten-Zeitplan für Updates ein (siehe [§11](#11-updates)).
 
 Dann direkt zu [§6 Erster Login](#6-erster-login) — setup.sh erledigt den Rest.
 
@@ -131,7 +128,6 @@ curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/.env.example
 curl -fsSLO https://raw.githubusercontent.com/CallMeTechie/gatecontrol/master/update.sh
 chmod +x update.sh
-sed -i 's#gatecontrol-data:/data#./data:/data#' docker-compose.yml   # Daten in ./data (siehe §2)
 cp .env.example .env
 ```
 
@@ -504,6 +500,8 @@ Der Versions-String muss zum gepullten Tag passen.
 ## 12. Migration bestehender Installationen
 
 Falls du eine ältere GateControl-Installation mit einem **Named Docker Volume** hast (der historische Default), kannst du mit ca. 15 Sekunden Downtime auf das empfohlene Layout in `/opt/gatecontrol/` umziehen. Named Volumes sind vom Host-Dateisystem aus unsichtbar und machen Backups umständlich; Bind-Mounts lösen das.
+
+Liegt die Installation schon im richtigen Ordner und nur `/data` steckt noch im Volume, ist der Umzug an Ort und Stelle einfacher: [Handbuch, FAQ „Server-Daten von einem Docker-Volume nach ./data umziehen“](docs/handbuch/07-faq.md#server-daten-von-einem-docker-volume-nach-data-umziehen). Bis zum Umzug erkennt `update.sh` das Volume selbst und arbeitet damit (Hinweis `NOTE: /data of 'gatecontrol' is the Docker volume …` im Update-Protokoll).
 
 Schritte:
 

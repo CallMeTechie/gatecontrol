@@ -184,11 +184,133 @@ else
 fi
 echo ""
 
+# ─── Datenordner ./data ────────────────────────────────
+# Die docker-compose.yml bindet ./data:/data. Aeltere Installationen hatten
+# ein Docker-Volume (gatecontrol-data). Laeuft so eine noch, wuerde der
+# Container mit der neuen Compose-Datei auf einem leeren ./data starten —
+# leere Datenbank. Dann lieber anhalten; der Umzug steht im Handbuch.
+data_dir_guard() {
+  [ -f data/gatecontrol.db ] && return 0
+  local mount vols
+  mount=$(docker inspect gatecontrol --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}|{{.Name}}{{end}}{{end}}' 2>/dev/null || true)
+  vols=$(docker volume ls -q 2>/dev/null | grep -E '(^|_)gatecontrol-data$' || true)
+  if [ "${mount%%|*}" = "volume" ] || [ -n "$vols" ]; then
+    echo ""
+    echo "  ACHTUNG: Es gibt bereits GateControl-Daten in einem Docker-Volume:"
+    if [ "${mount%%|*}" = "volume" ]; then echo "    ${mount#*|} (vom laufenden Container gatecontrol)"; fi
+    for v in $vols; do echo "    $v"; done
+    echo "  Diese docker-compose.yml nutzt den Ordner $(pwd)/data, und der ist leer."
+    echo "  Ein Start jetzt beginnt mit einer LEEREN Datenbank. Die Daten im Volume"
+    echo "  bleiben erhalten, werden aber nicht benutzt."
+    echo "  Umzug nach ./data: Handbuch, FAQ \"Server-Daten von einem Docker-Volume"
+    echo "  nach ./data umziehen\" (docs/handbuch/07-faq.md)."
+    read -r -p "  Trotzdem mit leerem ./data fortfahren? (j/N): " empty_ok
+    if [ "$empty_ok" != "j" ] && [ "$empty_ok" != "J" ]; then
+      echo "Setup abgebrochen. Es wurde nichts gestartet."
+      exit 1
+    fi
+  fi
+}
+data_dir_guard
+mkdir -p data
+
+# ─── update.sh ─────────────────────────────────────────
+# Das Update-Skript liegt im Image (/app/update.sh) — von dort holen, dann
+# passt es zur geladenen Version und klappt auch offline. Eine vorhandene
+# update.sh bleibt (sie aktualisiert sich nach Updates selbst).
+if [ -f update.sh ]; then
+  echo "update.sh vorhanden."
+else
+  for img in "${GHCR_IMAGE}:latest" gatecontrol:latest; do
+    if docker run --rm --entrypoint sh "$img" -c 'cat /app/update.sh' > update.sh.tmp 2>/dev/null \
+       && [ -s update.sh.tmp ] && bash -n update.sh.tmp 2>/dev/null; then
+      chmod 755 update.sh.tmp && mv -f update.sh.tmp update.sh
+      echo "update.sh aus dem Image uebernommen."
+      break
+    fi
+  done
+  rm -f update.sh.tmp
+  if [ ! -f update.sh ]; then
+    echo "  WARNUNG: update.sh konnte nicht aus dem Image gelesen werden. Bitte laden:"
+    echo "    curl -fsSLO https://raw.githubusercontent.com/CallMeTechie/gatecontrol/master/update.sh && chmod +x update.sh"
+  fi
+fi
+
+# ─── Zeitzone ──────────────────────────────────────────
+# Der Server gibt seine Zeitzone an die Gateways weiter (Portscan, Speedtest-
+# Plan, DNS-Filter-Zeiten). Vorschlag: Zeitzone des Hosts; steht der auf UTC
+# (ueblich bei Cloud-Servern), Europe/Berlin.
+detect_tz() {
+  local tz=""
+  if [ -s /etc/timezone ]; then tz=$(head -n1 /etc/timezone | tr -d ' \t\r')
+  elif command -v timedatectl >/dev/null 2>&1; then tz=$(timedatectl show -p Timezone --value 2>/dev/null || true)
+  fi
+  case "$tz" in ""|UTC|Etc/UTC|Etc/Universal|Universal|Zulu|GMT|Etc/GMT) tz="Europe/Berlin" ;; esac
+  echo "$tz"
+}
+valid_tz() {
+  [[ "$1" =~ ^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+){0,2}$ ]] || return 1
+  [ ! -d /usr/share/zoneinfo ] || [ -e "/usr/share/zoneinfo/$1" ]
+}
+ask_tz() {
+  local suggestion
+  suggestion=$(detect_tz)
+  valid_tz "$suggestion" || suggestion="Europe/Berlin"
+  while true; do
+    read -r -p "Zeitzone [${suggestion}]: " time_zone
+    time_zone="${time_zone:-$suggestion}"
+    valid_tz "$time_zone" && break
+    echo "  Unbekannte Zeitzone '${time_zone}' (Beispiel: Europe/Berlin)."
+  done
+}
+
+# ─── Auto-Update-Zeitplan ──────────────────────────────
+# update.sh muss alle 5 Minuten laufen (Einstellungen > Updates). Nur auf
+# Nachfrage, nur wenn der Container laeuft (sonst wuerde der erste Lauf ihn
+# starten), nur mit /etc/cron.d und ohne vorhandenen Eintrag.
+setup_update_cron() {
+  local cron_file=/etc/cron.d/gatecontrol-update script
+  script="$(pwd)/update.sh"
+  local line="*/5 * * * * root ${script}"
+  echo ""
+  if [ ! -x "$script" ]; then
+    echo "  Auto-Update: update.sh fehlt — Zeitplan nicht eingerichtet."
+    return 0
+  fi
+  if [ -e "$cron_file" ] || grep -qs 'update\.sh' /etc/crontab /var/spool/cron/crontabs/root /var/spool/cron/root; then
+    echo "  Auto-Update: Es gibt schon einen Zeitplan (${cron_file} oder crontab) — unveraendert."
+    return 0
+  fi
+  if [ ! -d /etc/cron.d ] || [[ "$script" =~ [[:space:]] ]]; then
+    echo "  Auto-Update: bitte den Zeitplan selbst anlegen (alle 5 Minuten):"
+    echo "    ${line}"
+    return 0
+  fi
+  read -r -p "Auto-Update-Zeitplan einrichten (update.sh alle 5 Minuten per cron)? (J/n): " want_cron
+  if [ "$want_cron" = "n" ] || [ "$want_cron" = "N" ]; then
+    echo "  Spaeter: echo '${line}' > ${cron_file}"
+    return 0
+  fi
+  printf '%s\n' "$line" > "$cron_file"
+  chmod 644 "$cron_file"
+  echo "  Zeitplan angelegt: ${cron_file}"
+  echo "  Modus (automatisch/manuell) waehlst du unter Einstellungen > Updates."
+  if ! { pgrep -x cron >/dev/null 2>&1 || pgrep -x crond >/dev/null 2>&1; }; then
+    echo "  WARNUNG: Kein laufender cron-Dienst gefunden (Debian/Ubuntu: apt install cron)."
+  fi
+}
+
 # ─── .env pruefen ──────────────────────────────────────
 if [ -f .env ]; then
   echo ".env existiert bereits."
   read -p "Ueberschreiben? (j/N): " overwrite
   if [ "$overwrite" != "j" ] && [ "$overwrite" != "J" ]; then
+    if ! grep -q '^TZ=' .env; then
+      echo "In der .env fehlt die Zeitzone (TZ)."
+      ask_tz
+      set_env TZ "${time_zone}"
+      chmod 600 .env
+    fi
     echo "Starte Container..."
     docker compose up -d
     echo ""
@@ -244,6 +366,9 @@ language="${language:-de}"
 # Caddy email for Let's Encrypt
 read -p "E-Mail fuer Let's Encrypt Zertifikate (optional): " caddy_email
 
+# Time zone (TZ in .env)
+ask_tz
+
 # Network interface (auto-detect default)
 default_iface=$(ip route show default 2>/dev/null | awk '/default/ {print $5; exit}')
 default_iface="${default_iface:-eth0}"
@@ -296,6 +421,8 @@ set_env GC_CADDY_EMAIL "${caddy_email}"
 set_env GC_DEFAULT_LANGUAGE "${language}"
 set_env GC_NET_INTERFACE "${net_interface}"
 set_env GC_ENCRYPTION_KEY "${encryption_key}"
+set_env TZ "${time_zone}"
+chmod 600 .env
 
 # PostUp/PostDown are left empty — entrypoint.sh generates correct rules
 # based on GC_NET_INTERFACE and GC_WG_SUBNET automatically.
@@ -311,6 +438,8 @@ echo "  Base URL:         ${base_url}"
 echo "  WireGuard Host:   ${wg_host}"
 echo "  Admin-User:       ${admin_user}"
 echo "  Sprache:          ${language}"
+echo "  Zeitzone:         ${time_zone}"
+echo "  Daten:            $(pwd)/data"
 echo "  Netzwerk:         ${net_interface} (Host-Networking)"
 echo "  Caddy E-Mail:     ${caddy_email:-nicht gesetzt}"
 echo ""
@@ -342,4 +471,5 @@ else
   echo "    - Automatische Backups, Log-Export (CSV/JSON)"
   echo ""
   echo "  API-Dokumentation: ${base_url}/api/v1/ (Token in Settings > API Tokens)"
+  setup_update_cron
 fi

@@ -334,7 +334,6 @@ For the impatient — a minimal setup in a fresh `/opt/gatecontrol/` directory:
 mkdir -p /opt/gatecontrol && cd /opt/gatecontrol
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/docker-compose.yml
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/.env.example
-sed -i 's#gatecontrol-data:/data#./data:/data#' docker-compose.yml   # keep the data in ./data
 cp .env.example .env
 
 # Edit .env — set at minimum:

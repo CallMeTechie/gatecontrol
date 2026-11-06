@@ -34,7 +34,12 @@
 # another scanner is chosen. Result: $DATA_DIR/.clamav-state.json.
 # The marker line below is the version both sides compare; bump it whenever
 # this file changes in a way the host should pick up.
-# gc-update-sh: 3
+# gc-update-sh: 4
+#
+# Data directory: $COMPOSE_DIR/data (the release compose binds ./data:/data).
+# When the running container mounts /data from somewhere else — the named
+# volume gatecontrol-data of older installs, or another bind path — that
+# mountpoint is used instead (logged; nothing is moved). GC_DATA_DIR overrides.
 #
 # Exit: 0 ok/no-op/skipped, 1 update failed (rolled back if possible),
 #       2 no compose file, 3 wrong project dir, 4 update AND rollback failed.
@@ -48,11 +53,6 @@ CONTAINER="${GC_CONTAINER:-gatecontrol}"
 DATA_DIR="${GC_DATA_DIR:-$COMPOSE_DIR/data}"
 LOG="${GC_UPDATE_LOG:-/var/log/gatecontrol-update.log}"
 WAIT_TIMEOUT="${GC_WAIT_TIMEOUT:-150}"
-
-CONFIG_FILE="$DATA_DIR/.auto-update-config.json"
-STATE_FILE="$DATA_DIR/.auto-update-state.json"
-FLAG_FILE="$DATA_DIR/pending-update"
-BAD_FILE="$DATA_DIR/.auto-update-bad-image"
 
 # Rollback target tag in the same repo as $IMAGE (digest/tag stripped; a
 # registry port like host:5000/ is not a tag).
@@ -117,6 +117,37 @@ if [ -n "$DEPLOYED_DIR" ]; then
     exit 3
   fi
 fi
+
+# Data directory: where the container's /data really lives. The release
+# docker-compose.yml binds ./data; older installs used the named
+# volume gatecontrol-data (Docker prefixes it with the project, e.g.
+# gatecontrol_gatecontrol-data). For those, ./data does not exist and the
+# server's config/state files sit in the volume — use its mountpoint instead
+# of running into nothing. No data is moved; the handbook (FAQ "Server-Daten
+# von einem Docker-Volume nach ./data umziehen") describes the move. An
+# explicit GC_DATA_DIR always wins.
+if [ -z "${GC_DATA_DIR:-}" ]; then
+  DATA_MOUNT="$(docker inspect "$CONTAINER" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}|{{.Name}}|{{.Source}}{{end}}{{end}}' 2>/dev/null || true)"
+  DATA_TYPE="${DATA_MOUNT%%|*}"; DATA_REST="${DATA_MOUNT#*|}"
+  DATA_VOL="${DATA_REST%%|*}"; DATA_SRC="${DATA_REST#*|}"
+  if [ "$DATA_TYPE" = "volume" ] && [ -n "$DATA_SRC" ]; then
+    if [ -d "$DATA_SRC" ]; then
+      log "NOTE: /data of '$CONTAINER' is the Docker volume '$DATA_VOL' ($DATA_SRC), not $COMPOSE_DIR/data — using the volume. Moving to ./data is optional; see the GateControl handbook, FAQ: move the server data from a Docker volume to ./data"
+      DATA_DIR="$DATA_SRC"
+    else
+      log "WARN: /data of '$CONTAINER' is the Docker volume '$DATA_VOL', but its mountpoint $DATA_SRC is not reachable from here — falling back to $DATA_DIR (set GC_DATA_DIR)"
+    fi
+  elif [ "$DATA_TYPE" = "bind" ] && [ -n "$DATA_SRC" ] && [ -d "$DATA_SRC" ] \
+       && [ "$(readlink -f "$DATA_SRC" 2>/dev/null || echo "$DATA_SRC")" != "$(readlink -f "$DATA_DIR" 2>/dev/null || echo "$DATA_DIR")" ]; then
+    log "NOTE: /data of '$CONTAINER' is bound to $DATA_SRC, not $COMPOSE_DIR/data — using $DATA_SRC"
+    DATA_DIR="$DATA_SRC"
+  fi
+fi
+
+CONFIG_FILE="$DATA_DIR/.auto-update-config.json"
+STATE_FILE="$DATA_DIR/.auto-update-state.json"
+FLAG_FILE="$DATA_DIR/pending-update"
+BAD_FILE="$DATA_DIR/.auto-update-bad-image"
 
 # Read mode (default auto on missing/corrupt config).
 MODE="auto"
@@ -320,7 +351,7 @@ self_update() {
     rm -f "$tmp"; return 0
   fi
   new_ver="$(update_sh_version "$tmp")"; [ -n "$new_ver" ] || new_ver=0
-  if command -v bash >/dev/null 2>&1; then checker=bash; else checker=sh; fi
+  if command -v bash >/dev/null 2>&1; then checker="bash"; else checker="sh"; fi
   if ! "$checker" -n "$tmp" 2>>"$LOG"; then
     log "WARN: update.sh from the image has a syntax error ($checker -n failed) — NOT replacing, keeping version $SELF_VERSION"
     rm -f "$tmp"; return 0
