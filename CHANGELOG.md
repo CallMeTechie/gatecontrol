@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.231.2] — 2026-11-06
+
+### Fixes
+- Grund statt „Gateway nicht verbunden“, wenn der Edge-Kanal fehlt (#408)
+
+---
+
 ## [1.231.1] — 2026-11-06
 
 ### Fixes
