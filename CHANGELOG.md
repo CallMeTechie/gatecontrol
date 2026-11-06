@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.238.0] — 2026-11-06
+
+### Features
+- Lokale KI – Modell im Heimnetz statt Cloud, auf einem Gateway oder über einen vorhandenen KI-Server (Phase 3c, Schritt 3) (#423)
+
+---
+
 ## [1.237.0] — 2026-11-06
 
 ### Features
