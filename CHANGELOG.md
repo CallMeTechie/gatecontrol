@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.239.0] — 2026-11-06
+
+### Features
+- Live-Zustand – erreichbar sofort, Rückwechsel als Hinweis, „Update läuft“ ohne Offline-Alarm (#425)
+
+---
+
 ## [1.238.1] — 2026-11-06
 
 ### Fixes
