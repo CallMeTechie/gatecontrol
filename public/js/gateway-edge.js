@@ -550,6 +550,7 @@
       detail = h('p', { class: 'gwe-d', text: t('gwe.state_d.' + st.state) });
     }
     if (detail) main.appendChild(detail);
+    if (K.needsMqtt(p, d.settings)) main.appendChild(mqttOffNote(g, p));
     const caps = (p.edge && p.edge.capabilities) || [];
     if (caps.length && st.state !== 'update_pending') {
       main.appendChild(h('div', { class: 'gwe-chips' }, caps.map((c) => chip(c.warning ? 'bad' : '', c.text, c.warning ? 'warn' : null))));
@@ -682,6 +683,16 @@
     input.focus();
   }
 
+  // the edge part needs MQTT, the broker is off: say so in plain words, with a button that switches it on
+  function mqttOffNote(g, p) {
+    const b = h('button', { type: 'button', class: 'btn btn-primary btn-sm', 'data-fk': 'mqtt-on:' + p.id, text: t('gwe.pl.mqtt_on') });
+    b.addEventListener('click', () => {
+      b.disabled = true;
+      putSettings(g, { mqttEnabled: true }, t('gwe.mqtt.on_done')).catch((e) => { b.disabled = false; D.alert({ message: errText(e), danger: true }); });
+    });
+    return note('warn', [h('strong', { text: t('gwe.pl.mqtt_off') }), ' ', t('gwe.pl.mqtt_off_text', { plugin: p.name }), ' ', b]);
+  }
+
   // ─── Dialog: log of an edge part (or the gateway's own notes) ─────────
   function logDialog(g, d, p) {
     const title = p ? t('gwe.log.title', { plugin: p.name }) : t('gwe.log.title_gw');
@@ -705,6 +716,8 @@
       seg.appendChild(b);
     });
     dlg.body.append(h('p', { class: 'gwe-d gwe-sub', text: t('gwe.log.sub', { gateway: d.name || g.name }) }), seg, err, list, empty, h('div', { class: 'gwe-more' }, more));
+    // the warning in the log ("MQTT broker … is off") explained above it, with the way out
+    if (p && K.needsMqtt(p, d.settings)) dlg.body.insertBefore(mqttOffNote(g, p), seg);
     dlg.foot.append(h('button', { type: 'button', class: 'btn btn-primary', text: t('common.close'), on: { click: () => dlg.close(null) } }));
     function line(x) {
       const tone = x.level === 'error' ? 'bad' : x.level === 'warn' ? 'warn' : '';

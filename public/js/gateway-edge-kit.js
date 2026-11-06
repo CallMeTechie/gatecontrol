@@ -146,6 +146,16 @@
     }));
   }
 
+  /**
+   * An edge part that reads or writes MQTT, is switched on, but the gateway's MQTT broker is off: it cannot get
+   * its device messages — the edge card shows a hint with a button that switches the broker on (a hint, no ban).
+   */
+  function needsMqtt(p, settings) {
+    const caps = (p && p.edge && Array.isArray(p.edge.capabilities)) ? p.edge.capabilities : [];
+    const usesMqtt = caps.some((c) => c && typeof c.key === 'string' && (c.key === 'mqtt' || c.key.indexOf('mqtt:') === 0));
+    return usesMqtt && !!(p.assignment && p.assignment.enabled) && !(settings && settings.mqttEnabled);
+  }
+
   /** The keys the enable request confirms — exactly the list shown. */
   function capabilityKeys(p) { return capabilityRows(p).map((c) => c.key); }
 
@@ -296,7 +306,7 @@
   }
 
   return {
-    TABS, STATES, REASONS, reasonDoc, parseHash, hashFor, pluginState, boundaryState, pluginControl, summary, capabilityRows, capabilityKeys,
+    TABS, STATES, REASONS, reasonDoc, parseHash, hashFor, pluginState, boundaryState, pluginControl, summary, capabilityRows, capabilityKeys, needsMqtt,
     memoryHint, ramLabel, EDGE_BASE_MB, PER_PLUGIN_MB,
     ACCOUNTS_MAX, TOPICS_MAX, USER_RE, ACCESS, TEMPLATES, template, usernameProblem, topicOk, plannedTopics, accountBody,
     topicPrefix, brokerAddress, brokerStatus, accountStatus, errorKey, LOG_FILTERS, logLabel,
