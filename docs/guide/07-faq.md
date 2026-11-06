@@ -1,0 +1,187 @@
+# 7. FAQ and troubleshooting
+
+[← Updating an existing gateway](06-updating-a-gateway.md) · [Contents](README.md)
+
+## General
+
+### Where do I find the logs?
+
+**Server** (on the server as root):
+
+```bash
+cd /opt/gatecontrol
+docker compose logs --tail 200 gatecontrol
+```
+
+The update log is in `/var/log/gatecontrol-update.log`. The interface also has
+“Logs & Monitoring”.
+
+**Gateway on the Synology:** Container Manager → “Container” →
+`gatecontrol-gateway-gateway-1` (or `…-edge-1`, `…-mqtt-1`) → “Log”.
+
+**Gateway on Linux/Docker:**
+
+```bash
+cd /opt/gatecontrol-gateway
+sudo docker compose logs --tail 200 gateway
+sudo docker compose logs --tail 200 edge
+```
+
+**Raspberry Pi image** (via SSH):
+
+```bash
+journalctl -u gatecontrol-gateway -b
+sudo docker compose --project-directory /opt/gatecontrol-gateway logs --tail 200 gateway
+```
+
+Without SSH: put the card into the PC and read `bootfs/gatecontrol/STATUS.txt`.
+
+**In GateControl:** open the gateway → tab “Edge plugins” → “Gateway log”; for a
+single plugin “Log”.
+
+The log of gateway updates is on the device in `gateway-state/update.log`.
+
+### May I share passwords or files in chats or tickets?
+
+No. **Never** share the server's `.env`, a `gateway.env`,
+`gatecontrol-setup.zip` or `gatecontrol-gateway-nas.zip` – not even parts of
+them. They contain passwords, tokens and the tunnel keys. Black out passwords,
+tokens and keys in logs before you share them. If something got out anyway:
+change the admin password and create a new set-up file for the gateway (the old
+one is then no longer valid).
+
+### How do I update a gateway?
+
+Click “Update to …” on the gateway's card in GateControl. This needs auto-update
+to be set up. New features that need more in the compose file (edge, home
+cache) you have to add once by hand. All about it: [chapter 6](06-updating-a-gateway.md).
+
+## Server
+
+### “The server runs in UTC”
+
+This message shows for a gateway in the card “Features of this gateway” under
+“Local time”. The server lacks its time zone.
+
+1. Add it to the server's `.env`:
+
+   ```bash
+   cd /opt/gatecontrol
+   echo 'TZ=Europe/Berlin' >> .env
+   ```
+
+2. Apply it with `docker compose up -d` (not `docker restart`).
+
+**Check:** `docker exec gatecontrol printenv TZ` shows your time zone. The
+gateways take it over the next time they fetch their configuration.
+
+### Why the time zone in `.env` and not in the compose file?
+
+The server's `docker-compose.yml` passes `.env` to the container
+(`env_file: .env`). All settings are in one place this way, and the compose
+file stays as shipped. After a change to `.env` always run `docker compose up -d`
+– `docker restart` does not pick up new values.
+
+You do not set a time zone on the gateway. It gets it from the server (from gateway 1.22.0).
+
+### The container does not start or the certificate does not come
+
+- `GC_ADMIN_PASSWORD is not set or still default`: `.env` still says
+  `changeme`. Enter a real password, `docker compose up -d`.
+- `127.0.0.1:53 is already bound`: another DNS service runs on the server.
+- `unable to fetch certificate`: the A record does not point to the server yet
+  or port 80 is closed. The server retries by itself.
+
+In detail: [INSTALL.md §9](../../INSTALL.md#9-troubleshooting).
+
+## Setting up a gateway
+
+### The assistant is still waiting after 10 minutes
+
+- **Synology:** Is the project running in Container Manager? Is `gateway.env` in the folder `config`? Look at the log of `…-gateway-1`.
+- **Raspberry Pi:** Is the set-up file in `bootfs/gatecontrol/`? Does the Pi have network? Read `STATUS.txt`.
+- **Linux:** `sudo docker compose ps` and `sudo docker compose logs gateway`.
+- **Proxmox:** The pairing code is valid for 10 minutes. Create a new code and run the command again.
+
+Did you download the set-up file several times? Then only the last one is valid. Use exactly that one.
+
+### “Bind mount failed: … does not exist” (Synology)
+
+The compose file mounts a folder that does not exist on the NAS. Synology's
+Container Manager does not create missing folders itself.
+
+1. Read in the message which folder is missing (usually `gateway-cache` or `gateway-state`).
+2. Create it in File Station in `docker/gatecontrol-gateway`.
+3. Start the project again.
+
+The NAS package from the current assistant already brings `config/`,
+`gateway-state/` and `gateway-cache/`.
+
+**Check:** The project starts without a message, all three containers run.
+
+### “Your kernel does not support PIDs limit …” (Synology)
+
+Harmless. The Synology kernel cannot set the process limit (`pids_limit`) of the
+containers `edge` and `mqtt`. Docker leaves it out, everything else runs
+normally. You do not need to do anything.
+
+### “/dev/net/tun” is missing (Synology)
+
+On the Synology the gateway needs the device `/dev/net/tun`. If it is missing,
+the container `gateway` does not start and the message names `/dev/net/tun`.
+Load the module `tun` via SSH with `sudo insmod /lib/modules/tun.ko` – to make
+it survive a restart, add it as a task at “Boot-up”, as for
+[xt_owner](04-edge-and-smart-home.md#network-fence-missing).
+
+## Running gateway
+
+### Gateway offline
+
+The gateway no longer reports to the server.
+
+1. Does the device have power and network? Does it reach the internet?
+2. Is the container `gateway` running? (Logs: [above](#where-do-i-find-the-logs).)
+3. Does the device reach the server at your domain and port 51820/UDP?
+
+**Check:** The card under “Gateways” shows the gateway online again.
+
+### “Edge service missing”
+
+The gateway's compose file lacks the services `edge` and `mqtt`. Bring it up to
+date with [chapter 6](06-updating-a-gateway.md). On the Raspberry Pi image,
+`settings.txt` says `EDGE=off` – change it to `EDGE=on` and restart. More:
+[chapter 4](04-edge-and-smart-home.md#edge-service-missing).
+
+### “Network fence missing” / xt_owner
+
+The kernel lacks the owner match, on the Synology the module `xt_owner`. The
+steps are in [chapter 4](04-edge-and-smart-home.md#network-fence-missing).
+
+### “Edge cannot reach GateControl”
+
+The edge container runs but cannot get to the server. If there is another
+reverse proxy in front of GateControl (nginx, Traefik, CDN), it has to pass
+WebSocket connections to `/api/v1/gateway/edge/ws`. More:
+[chapter 4](04-edge-and-smart-home.md#edge-cannot-reach-gatecontrol).
+
+### Home cache: “folder not writable”
+
+The gateway cannot write to its folder `/cache`.
+
+1. Does the compose file have the line `${GC_CACHE_DIR:-./gateway-cache}:/cache`?
+   If not: [chapter 6](06-updating-a-gateway.md).
+2. Does the folder `gateway-cache` exist next to the compose file (or the folder from `GC_CACHE_DIR`)?
+3. Raspberry Pi: is the USB drive from `CACHE_DIR` mounted at start?
+
+**Check:** The tab “Home cache” shows “on”.
+
+### DNS filter: “Port 53 taken”
+
+Another DNS service already runs on the gateway's device (e.g. the Synology
+“DNS Server” package, Pi-hole or systemd-resolved). Stop it or move it to
+another address. The gateway forces nothing and tries again every minute.
+
+### After switching the DNS filter off the internet no longer works
+
+The router still lists the gateway as DNS server. Clear the field in the router
+and switch the devices' Wi-Fi off and on once.

@@ -1,5 +1,7 @@
 # Installationsanleitung
 
+> **Neu hier?** Das [Handbuch](docs/handbuch/README.md) erklärt Server- und Gateway-Einrichtung Schritt für Schritt, auch für Nicht-Profis – mit FAQ. Dieses Dokument ist die ausführliche technische Referenz dazu.
+
 Dies ist die vollständige, Schritt-für-Schritt-Anleitung zur Installation von GateControl. Sie geht von einem frischen Linux-Host mit Root-Zugang ohne bestehendes GateControl-Setup aus. Bestehende Installationen, die auf das empfohlene Verzeichnislayout umziehen möchten, finden die Anleitung in **[§12 Migration bestehender Installationen](#12-migration-bestehender-installationen)**.
 
 Für eine Einzeiler-Zusammenfassung siehe die Quick-Start-Sektion in der [README.de](README.de.md). Dieses Dokument deckt den kompletten Ablauf von DNS bis zum ersten Login ab.
@@ -83,6 +85,8 @@ Lege ein dediziertes Deploy-Verzeichnis an — **getrennt von einem eventuell ge
 └── data/                 # entsteht beim ersten Start — hält DB, Certs, Keys, WG-Config
 ```
 
+> **Achtung:** Die ausgelieferte `docker-compose.yml` bindet `/data` als **benanntes Docker-Volume** (`gatecontrol-data:/data`) ein – dann entsteht kein Ordner `data/`, und `update.sh` (liest `./data`) sowie das Ein-Zeilen-Backup unten greifen ins Leere. Für das hier beschriebene Layout die Zeile **vor dem ersten Start** auf `./data:/data` ändern (siehe [§3](#3-setup-dateien-herunterladen)). Eine bestehende Installation nicht einfach umstellen, sondern nach [§12](#12-migration-bestehender-installationen) umziehen.
+
 Warum getrennt vom Source-Repo:
 
 - Klares mentales Modell: "Code" und "Config" werden nie vermischt.
@@ -109,8 +113,13 @@ cd /opt/gatecontrol
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/setup.sh
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/docker-compose.yml
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/.env.example
+curl -fsSLO https://raw.githubusercontent.com/CallMeTechie/gatecontrol/master/update.sh
+chmod +x update.sh
+sed -i 's#gatecontrol-data:/data#./data:/data#' docker-compose.yml   # Daten in ./data (siehe §2)
 bash setup.sh
 ```
+
+`setup.sh` lädt `update.sh` nicht selbst – deshalb der eigene Download. Die Zeitzone fragt es nicht ab: `TZ=Europe/Berlin` danach in die `.env` eintragen (siehe [§4](#4-env-konfigurieren)) und `docker compose up -d` ausführen.
 
 Dann direkt zu [§6 Erster Login](#6-erster-login) — setup.sh erledigt den Rest.
 
@@ -122,6 +131,7 @@ curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download
 curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/.env.example
 curl -fsSLO https://raw.githubusercontent.com/CallMeTechie/gatecontrol/master/update.sh
 chmod +x update.sh
+sed -i 's#gatecontrol-data:/data#./data:/data#' docker-compose.yml   # Daten in ./data (siehe §2)
 cp .env.example .env
 ```
 
@@ -158,6 +168,7 @@ Bearbeite `/opt/gatecontrol/.env`. Drei Werte sind **Pflicht**; alle anderen hab
 | Variable | Warum | Beispiel |
 |---|---|---|
 | `GC_CADDY_EMAIL` | Let's Encrypt kontaktiert dich bei Ablauf-Warnungen oder Problemen. Ohne funktioniert, aber du hast keinen Recovery-Kanal. | `admin@example.com` |
+| `TZ` | Zeitzone des Servers. Die Gateways übernehmen sie (Portscan, Speedtest-Plan, Zeiten des DNS-Filters); ohne `TZ` rechnen Server und Gateways in UTC. Steht nicht in der `.env.example` – selbst ergänzen. Nach Änderungen `docker compose up -d`, nicht `docker restart`. | `Europe/Berlin` |
 
 ### Optional — leer lassen für Auto-Generierung
 
@@ -221,10 +232,10 @@ Du musst **keine** Reverse-Proxy-Route für die Admin-UI selbst anlegen. GateCon
 
 ### Empfohlene erste Aktionen
 
-1. **Admin-Passwort ändern** — Einstellungen → Profil → Passwort ändern. Ab hier ist `GC_ADMIN_PASSWORD` in der `.env` irrelevant; der Hash liegt in der DB.
-2. **SMTP konfigurieren** (optional, aber nützlich) — Einstellungen → SMTP. Erforderlich für Route-Authentifizierung mit E-Mail-OTP, für E-Mail-Alerts und die Test-E-Mail-Funktion.
-3. **E-Mail-Alerts konfigurieren** (optional) — Einstellungen → E-Mail-Alerts. Auswählen, welche Event-Gruppen Benachrichtigungen auslösen sollen.
-4. **Security-Einstellungen prüfen** — Einstellungen → Security. Die Defaults (Passwort-Komplexität, Account-Lockout nach Fehlversuchen) sind sinnvoll; anpassen an die eigene Policy.
+1. **Admin-Passwort ändern** — Benutzermenü oben rechts → Profil → Passwort ändern. Ab hier ist `GC_ADMIN_PASSWORD` in der `.env` irrelevant; der Hash liegt in der DB.
+2. **SMTP konfigurieren** (optional, aber nützlich) — Einstellungen → E-Mail-Versand. Erforderlich für Route-Authentifizierung mit E-Mail-OTP, für E-Mail-Alerts und die Test-E-Mail-Funktion.
+3. **E-Mail-Alerts konfigurieren** (optional) — Einstellungen → Benachrichtigungen. Auswählen, welche Event-Gruppen Benachrichtigungen auslösen sollen.
+4. **Security-Einstellungen prüfen** — Einstellungen → Anmeldung & Konten (Kontosperrung). Die Defaults (Passwort-Komplexität, Account-Lockout nach Fehlversuchen) sind sinnvoll; anpassen an die eigene Policy.
 
 ---
 
@@ -409,13 +420,13 @@ Das Archiv ist self-contained und kann die komplette Installation wiederherstell
 
 ### In-UI-Backup
 
-Einstellungen → Backup → **Full backup download**. Liefert eine portable JSON-Datei mit Peers, Routen, Route-Auth-Configs, ACL-Regeln, Settings, Webhooks und verschlüsselten Keys. Wiederherstellen via **Backup hochladen** auf derselben Seite — funktioniert über Instanzen hinweg, solange der Encryption-Key identisch ist (oder dieselbe Instanz ist).
+Einstellungen → Backups → **Konfiguration herunterladen**. Liefert eine portable JSON-Datei mit Peers, Routen, Route-Auth-Configs, ACL-Regeln, Settings, Webhooks und verschlüsselten Keys. Wiederherstellen unter Einstellungen → **Gefahrenzone** — funktioniert über Instanzen hinweg, solange der Encryption-Key identisch ist (oder dieselbe Instanz ist).
 
 Das In-UI-Backup enthält **keine** Caddy-Zertifikate — die werden nach Restore automatisch neu ausgestellt.
 
 ### Backups außer Haus (Pro, „geplante Backups")
 
-Nach jedem automatischen Backup kann GateControl eine verschlüsselte Kopie per SFTP (Schlüssel-Anmeldung mit einem von GateControl erzeugten Schlüssel — dessen öffentlichen Schlüssel auf dem Ziel in `~/.ssh/authorized_keys` eintragen), SMB, S3-kompatiblen Speicher oder WebDAV hochladen (Einstellungen → Backup). Die Dateien heißen `gatecontrol-JJJJMMTT-HHmmss.gcbk`; pro Ziel bleiben nur die neuesten *n* davon, andere Dateien werden nie angefasst. Sie sind mit deiner Passphrase verschlüsselt (scrypt + AES-256-GCM) und enthalten — solange du es nicht abschaltest — den Encryption-Key; **Passphrase + Datei genügen also für eine Wiederherstellung auf neuer Hardware**: die `.gcbk` unter Einstellungen → Backup → Wiederherstellen hochladen und die Passphrase eingeben. Ohne GateControl: `node src/bin/offsite-decrypt.js <datei.gcbk> -o backup.json [-k encryption_key]` (im Container: `docker exec -it gatecontrol node /app/src/bin/offsite-decrypt.js …`). Die Passphrase außerhalb des Servers aufbewahren — sie lässt sich nicht wiederherstellen. Ein NAS im LAN hinter einem Gateway ist über eine interne L4-Route (SSH- oder SMB-Port) erreichbar: als Ziel die VPN-Adresse des Servers (Standard `10.8.0.1`) und den Listen-Port der Route eintragen.
+Nach jedem automatischen Backup kann GateControl eine verschlüsselte Kopie per SFTP (Schlüssel-Anmeldung mit einem von GateControl erzeugten Schlüssel — dessen öffentlichen Schlüssel auf dem Ziel in `~/.ssh/authorized_keys` eintragen), SMB, S3-kompatiblen Speicher oder WebDAV hochladen (Einstellungen → Backups). Die Dateien heißen `gatecontrol-JJJJMMTT-HHmmss.gcbk`; pro Ziel bleiben nur die neuesten *n* davon, andere Dateien werden nie angefasst. Sie sind mit deiner Passphrase verschlüsselt (scrypt + AES-256-GCM) und enthalten — solange du es nicht abschaltest — den Encryption-Key; **Passphrase + Datei genügen also für eine Wiederherstellung auf neuer Hardware**: die `.gcbk` unter Einstellungen → Gefahrenzone (Wiederherstellen) hochladen und die Passphrase eingeben. Ohne GateControl: `node src/bin/offsite-decrypt.js <datei.gcbk> -o backup.json [-k encryption_key]` (im Container: `docker exec -it gatecontrol node /app/src/bin/offsite-decrypt.js …`). Die Passphrase außerhalb des Servers aufbewahren — sie lässt sich nicht wiederherstellen. Ein NAS im LAN hinter einem Gateway ist über eine interne L4-Route (SSH- oder SMB-Port) erreichbar: als Ziel die VPN-Adresse des Servers (Standard `10.8.0.1`) und den Listen-Port der Route eintragen.
 
 ---
 
@@ -453,16 +464,16 @@ Host-Cron-Job (als root, auf das **Deploy**-Verzeichnis zeigend):
 
 #### Modus (Automatisch / Manuell)
 
-Der Update-**Modus** wird in der Server-Karte **Einstellungen → Auto-Update** gewählt. Derselbe `*/5`-Cron läuft in beiden Modi — nur was er pro Lauf *tut*, unterscheidet sich:
+Der Update-**Modus** wird in der Server-Karte **Einstellungen → Updates** gewählt. Derselbe `*/5`-Cron läuft in beiden Modi — nur was er pro Lauf *tut*, unterscheidet sich:
 
 - **Automatisch** — jeder Cron-Lauf vergleicht die Digests und **deployt**, sobald `:latest` vom laufenden Container abweicht. Der Server zieht jeden Release binnen Minuten nach, vollständig unbeaufsichtigt.
 - **Manuell** — jeder Cron-Lauf **pollt** nur das `pending-update`-Flag, das der Button **„Update jetzt"** im Dashboard schreibt. Kein Flag → er tut nichts (kein Recreate, kein Änderungsrauschen). Beim Klick auf „Update jetzt" wird das Flag gesetzt und der nächste Cron-Lauf (binnen 5 Minuten) führt den Deploy aus. Genau deshalb ist `*/5` auch im Manuell-Modus Pflicht: Ein langsameres Intervall verzögert deinen manuellen Trigger um die volle Cron-Periode.
 
 **Automatisches Rollback:** Vor jedem Recreate taggt `update.sh` das laufende Image als `ghcr.io/callmetechie/gatecontrol:rollback`. Wird das neue Image nicht innerhalb von `GC_WAIT_TIMEOUT` gesund, zeigt `:latest` lokal wieder auf dieses Image und der Container wird ohne Pull daraus neu erstellt (`docker-compose.yml` bleibt unverändert). Das Dashboard zeigt dann „Update … fehlgeschlagen — Vorversion wiederhergestellt", das Skript endet mit Exit 1. Die ID des fehlerhaften Images landet in `data/.auto-update-bad-image`; im Automatik-Modus wird dieses Image übersprungen, bis ein neueres `:latest` erscheint — ein kaputtes Release wird also nicht alle 5 Minuten erneut ausgerollt. Im Manuell-Modus versucht „Update jetzt" es bewusst noch einmal. Scheitert auch das Rollback, endet das Skript mit Exit 4, das Dashboard zeigt „Update und Rollback fehlgeschlagen" und du musst eingreifen (`docker compose ps`, `docker compose logs gatecontrol`). Der `:rollback`-Tag hält genau ein Vorgänger-Image auf der Platte; das Prune (nur ungetaggte Images) entfernt es nie.
 
-**Wartungsfenster (Automatik-Modus):** Unter Einstellungen → Auto-Update lassen sich automatische Deploys auf ein Zeitfenster beschränken, z. B. 03:00–05:00 in `Europe/Berlin` (auch über Mitternacht, z. B. 23:00–02:00). Der Server schreibt es in `data/.auto-update-config.json`; außerhalb des Fensters zieht `update.sh` das neue Image zwar schon, protokolliert aber `outside maintenance window` und meldet den Status `waiting_window` — ausgerollt wird beim ersten Cron-Lauf im Fenster. „Update jetzt" rollt sofort aus, unabhängig vom Fenster. Die Zeitzone kommt aus den tzdata des Hosts (`/usr/share/zoneinfo`); fehlen sie, rechnet `date` in UTC und das Skript warnt im Log. Das Fenster braucht die `update.sh` ab GateControl 1.126 — ein älteres Skript ignoriert es und rollt weiter jederzeit aus.
+**Wartungsfenster (Automatik-Modus):** Unter Einstellungen → Updates lassen sich automatische Deploys auf ein Zeitfenster beschränken, z. B. 03:00–05:00 in `Europe/Berlin` (auch über Mitternacht, z. B. 23:00–02:00). Der Server schreibt es in `data/.auto-update-config.json`; außerhalb des Fensters zieht `update.sh` das neue Image zwar schon, protokolliert aber `outside maintenance window` und meldet den Status `waiting_window` — ausgerollt wird beim ersten Cron-Lauf im Fenster. „Update jetzt" rollt sofort aus, unabhängig vom Fenster. Die Zeitzone kommt aus den tzdata des Hosts (`/usr/share/zoneinfo`); fehlen sie, rechnet `date` in UTC und das Skript warnt im Log. Das Fenster braucht die `update.sh` ab GateControl 1.126 — ein älteres Skript ignoriert es und rollt weiter jederzeit aus.
 
-**Datenbank-Sicherung vor Migrationen:** Muss eine neue Version die Datenbank migrieren, kopiert GateControl sie vorher nach `data/backups/pre-migration/gatecontrol-v<von>-v<bis>-<Zeitstempel>.db` (nur für den Besitzer lesbar, die letzten 3 bleiben; Download unter Einstellungen → Backup). Scheitert die Kopie (Platte voll, Rechte), startet der Container nicht und `update.sh` rollt auf das vorherige Image zurück. Notausgang: `GC_SKIP_PRE_MIGRATION_BACKUP=1` in der `.env`.
+**Datenbank-Sicherung vor Migrationen:** Muss eine neue Version die Datenbank migrieren, kopiert GateControl sie vorher nach `data/backups/pre-migration/gatecontrol-v<von>-v<bis>-<Zeitstempel>.db` (nur für den Besitzer lesbar, die letzten 3 bleiben; Download unter Einstellungen → Backups). Scheitert die Kopie (Platte voll, Rechte), startet der Container nicht und `update.sh` rollt auf das vorherige Image zurück. Notausgang: `GC_SKIP_PRE_MIGRATION_BACKUP=1` in der `.env`.
 
 Stellschrauben (Umgebungsvariablen): `GC_IMAGE`, `GC_CONTAINER`, `GC_WAIT_TIMEOUT` (Default 150 s), `GC_UPDATE_LOG`, `COMPOSE_DIR`.
 
