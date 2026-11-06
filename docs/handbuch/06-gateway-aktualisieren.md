@@ -165,6 +165,10 @@ services:
         source: radio-ctl
         target: /gc-radio
         volume: { nocopy: true }
+      - type: volume            # local AI: control file for the service ki
+        source: ai-ctl
+        target: /gc-ai
+        volume: { nocopy: true }
     environment:
       - LOG_LEVEL=info
       - GATEWAY_ENV_PATH=/config/gateway.env
@@ -314,6 +318,14 @@ volumes:
       type: tmpfs
       device: tmpfs
       o: "size=1m,uid=0,gid=0,mode=0755"
+  # tmpfs shared: the control file of the gateway for the service ki and its state (local AI)
+  ai-ctl:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=1m,uid=0,gid=0,mode=0755"
+  # the models of the local AI (1–6 GB each)
+  ki-models:
 ```
 <!-- /compose -->
 

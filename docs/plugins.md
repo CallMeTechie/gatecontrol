@@ -2656,7 +2656,7 @@ const g = await gc.ai.generate({ task, user, instructions, input, maxOutputToken
 // → { ok: true, text: '…', provider, model, usage, fallback }
 ```
 
-* `provider` is `openai` | `anthropic` | `gemini` | `openrouter`, `model` the
+* `provider` is `openai` | `anthropic` | `gemini` | `openrouter` | `local`, `model` the
   model the administrator chose there; `fallback: true` when the answer came
   from the fallback provider. `costCents` (euro cents, 4 decimals at most)
   includes a correction round and a failed first try.
@@ -2666,7 +2666,22 @@ const g = await gc.ai.generate({ task, user, instructions, input, maxOutputToken
   and sends JPEG), answer ≤ 64 KB (`data` as JSON / `text`). The plugin
   must declare `media`; the files may still be unclaimed.
 * Time: `timeoutMs` per provider call; the whole request (with a correction
-  round or the fallback) takes at most twice that.
+  round or the fallback) takes at most twice that — with the local AI at least
+  5 minutes (a model on a CPU is slow; the host waits as long).
+
+**The local AI** (since phase 3c, step 3 — `src/services/ai/local.js`, the
+gateway's `docs/local-ai.md`): provider `local`, a model in the home network on a
+gateway (Ollama) or an existing AI server there, reached through a gateway. Text
+only (`capabilities: ['text']`; a request with pictures goes to a cloud provider),
+0 € (no reservation, nothing counts against the budget; still a row in the log
+with `route`). Nothing changes for a plugin — the administrator decides what it is
+used for: **Für alles** (local first, a cloud provider only when it does not answer
+or a picture must be understood), **Nur für private Inhalte** (text requests of
+`gatecontrol-drive` and `gatecontrol-mail` local and never to the cloud — also not
+as a fallback; everything else as before), **Nur als Ausweich** (local once the
+monthly budget is used up, instead of `ERR_AI_BUDGET`). A plugin may also be fixed
+to `local` (KI-Anbieter › plugin row). Answers of a smaller local model are
+checked against the schema like every other (one correction round).
 * 120 requests per hour and plugin (setting "Anfragen pro Stunde und
   Plugin"), against a faulty plugin; no limit per person.
 

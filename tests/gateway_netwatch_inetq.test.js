@@ -75,6 +75,8 @@ describe('features in the config pull', () => {
       print: { enabled: false, manual: [] },
       // phase 3c, step 2 (tests/gateway_radio.test.js): Zigbee automatic, Bluetooth off
       radio: { zigbee: null, ble: false },
+      // phase 3c, step 3 (tests/ai_local.test.js): the local AI off
+      ai: { enabled: false, source: 'service', lan: null },
     });
     const gateways = require('../src/services/gateways');
     assert.equal(r.body.config_hash, gateways.computeConfigHash(gw.peer.id));
@@ -139,7 +141,7 @@ describe('admin API: features', () => {
 
   it('capabilities in the telemetry win over the version', () => {
     const f = require('../src/services/gatewayFeatures');
-    assert.deepEqual(f.support({ gateway_version: '1.20.0', capabilities: ['netwatch'] }), { netwatch: true, inetq: false, presence: false, ups: false, dns: false, cache: false, print: false, radio: false, version: '1.20.0', minGateway: '1.21.0', minGateway3b: '1.22.0', minGatewayPrint: '1.24.0', minGatewayRadio: '1.25.0' });
+    assert.deepEqual(f.support({ gateway_version: '1.20.0', capabilities: ['netwatch'] }), { netwatch: true, inetq: false, presence: false, ups: false, dns: false, cache: false, print: false, radio: false, ai: false, version: '1.20.0', minGateway: '1.21.0', minGateway3b: '1.22.0', minGatewayPrint: '1.24.0', minGatewayRadio: '1.25.0', minGatewayAi: '1.26.0' });
     // phase 3c: only by the capability, never by the version
     assert.equal(f.support({ gateway_version: '1.30.0' }).print, false);
     assert.equal(f.support({ gateway_version: '1.24.0', capabilities: ['print'] }).print, true);

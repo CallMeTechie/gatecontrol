@@ -16,12 +16,25 @@
 //
 // GC_AI=off switches the service off completely. A test run (NODE_ENV=test)
 // never reaches a provider (providers/http.js).
+//
+// The local AI (phase 3c, step 3 — services/ai/local.js) is a fifth provider
+// ('local'): a model in the home network through a gateway, 0 €, text only.
+// What it is used for (setting ai.local_use):
+//   all       local first; the cloud only when it does not answer (offline,
+//             busy, too slow, model missing) or a picture must be understood
+//   private   text requests of the private plugins (Drive, Mail) local and
+//             never to the cloud; everything else as before
+//   fallback  as before; local only when the monthly budget of the cloud is
+//             used up (or no cloud provider is set up)
+// Local answers are slow on a CPU: they get at least 5 minutes, and cost nothing
+// (no reservation, no budget booking — still a row in the log).
 
 const { getDb } = require('../../db/connection');
 const logger = require('../../utils/logger');
 const schemaLib = require('./schema');
 const providers = require('./providers');
 const http = require('./providers/http');
+const local = require('./local');
 
 const OFF_WORDS = new Set(['off', '0', 'false', 'no', 'disabled']);
 const KINDS = new Set(['extract', 'generate']);
@@ -65,6 +78,9 @@ const K = Object.freeze({
   priceOverrides: 'ai.price_overrides',
   perHour: 'ai.per_hour',
   budgetNotified: 'ai.budget_notified',
+  localUse: local.K.use,
+  localPeer: local.K.peer,
+  localNotified: 'ai.local_notified',
 });
 
 class AiError extends Error {
@@ -104,6 +120,7 @@ function config() {
     eurPerUsd: Number.isFinite(rate) && rate > 0 && rate < 100 ? rate : EUR_PER_USD_DEFAULT,
     priceOverrides: isObj(overrides) ? overrides : {},
     perHour: intSetting(K.perHour, LIMITS.perHourDefault, 1, LIMITS.perHourMax),
+    localUse: local.use(),
   };
 }
 
@@ -358,7 +375,7 @@ function declOf(plugin) {
 
 function policyOf(pluginId) {
   const r = db().prepare('SELECT allowed, provider FROM ai_plugin_policy WHERE plugin_id = ?').get(pluginId);
-  return { allowed: !!(r && r.allowed), provider: r && providers.IDS.includes(r.provider) ? r.provider : null };
+  return { allowed: !!(r && r.allowed), provider: r && (providers.IDS.includes(r.provider) || r.provider === local.ID) ? r.provider : null };
 }
 
 /**
@@ -396,7 +413,7 @@ function setPolicy(pluginId, b, { ip, lang } = {}) {
   if (!isObj(b)) fail('ERR_INVALID', 'body');
   const has = (k) => Object.prototype.hasOwnProperty.call(b, k);
   if (has('allowed') && typeof b.allowed !== 'boolean') fail('ERR_INVALID', 'allowed');
-  if (has('provider') && b.provider !== null && !providers.IDS.includes(b.provider)) fail('ERR_INVALID', 'provider');
+  if (has('provider') && b.provider !== null && !providers.IDS.includes(b.provider) && b.provider !== local.ID) fail('ERR_INVALID', 'provider');
   const before = policyOf(pluginId);
   const allowed = has('allowed') ? b.allowed : before.allowed;
   const provider = has('provider') ? b.provider : before.provider;
@@ -424,26 +441,42 @@ function readyProviders(cfg) {
 }
 
 /**
- * The provider of a request and its fallback.
+ * The provider of a request and its fallback, and why (the log's `route`).
  * Fixed provider of the plugin: that one, no routing, no fallback.
- * Otherwise the default provider when it can do it, else the next one that can.
+ * The local AI by its mode (ai.local_use, see the top of this file); otherwise
+ * the default provider when it can do it, else the next one that can.
+ * → { primary, fallback, route, budgetLocal } — budgetLocal: the local AI when
+ *   it takes over once the cloud budget is used up (request()).
  */
 function route(plugin, need, cfg) {
   const ready = readyProviders(cfg);
+  const loc = local.ready();
   const pol = policyOf(plugin.id);
   const can = (x) => need.every((c) => x.caps.includes(c));
   if (pol.provider) {
-    const fixed = ready.find((x) => x.id === pol.provider);
+    const fixed = pol.provider === local.ID ? loc : ready.find((x) => x.id === pol.provider);
     if (!fixed) fail('ERR_AI_NOT_CONFIGURED', 'the provider of this plugin is not set up');
     if (!can(fixed)) fail('ERR_AI_CAPABILITY', `the provider of this plugin cannot do ${need.join(' + ')}`);
-    return { primary: fixed, fallback: null };
+    return { primary: fixed, fallback: null, route: 'fixed', budgetLocal: null };
   }
-  if (!ready.length) fail('ERR_AI_NOT_CONFIGURED', 'no AI provider is set up');
+  const localCan = !!(loc && can(loc));
   const able = ready.filter(can);
-  if (!able.length) fail('ERR_AI_CAPABILITY', `no provider can do ${need.join(' + ')}`);
+  const cloudFb = (primary) => (cfg.fallbackProvider ? able.find((x) => x.id === cfg.fallbackProvider && x.id !== primary.id) : null) || null;
+  // "Für alles": local first, the cloud (default, else the next able one) only when it does not answer
+  if (localCan && cfg.localUse === 'all') return { primary: loc, fallback: able[0] || null, route: 'local', budgetLocal: null };
+  // "Nur für private Inhalte": Drive and Mail stay at home — no cloud fallback for them
+  if (localCan && cfg.localUse === 'private' && local.isPrivate(plugin.id)) return { primary: loc, fallback: null, route: 'private', budgetLocal: null };
+  if (!ready.length) {
+    if (localCan) return { primary: loc, fallback: null, route: 'local_only', budgetLocal: null };
+    fail('ERR_AI_NOT_CONFIGURED', 'no AI provider is set up');
+  }
+  if (!able.length) {
+    if (localCan) return { primary: loc, fallback: null, route: 'local_only', budgetLocal: null };
+    fail('ERR_AI_CAPABILITY', `no provider can do ${need.join(' + ')}`);
+  }
   const primary = able[0];
-  const fb = cfg.fallbackProvider ? able.find((x) => x.id === cfg.fallbackProvider && x.id !== primary.id) : null;
-  return { primary, fallback: fb || null };
+  // "Nur als Ausweich" (and every other mode): the local AI takes over when the budget is used up
+  return { primary, fallback: cloudFb(primary), route: 'cloud', budgetLocal: localCan ? loc : null };
 }
 
 // ─── Rate limit, budget, prices ─────────────────
@@ -485,6 +518,7 @@ function reservedMicro() {
 
 /** US dollars per million tokens of a provider's chosen model: { input, output, estimated }. */
 function priceOf(id, row, cfg) {
+  if (id === local.ID) return { input: 0, output: 0, estimated: false };
   const model = row.model_text;
   const own = (o, k) => isObj(o) && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : null;
   const o = own(own(cfg.priceOverrides, id), model);
@@ -533,11 +567,12 @@ function budgetNotice(cfg, reachedNow = false) {
 function book(row) {
   try {
     db().prepare(`INSERT INTO ai_requests (at, plugin_id, user_id, task, provider, model, kind, input_tokens, output_tokens, media_count,
-      cost_microcents, duration_ms, outcome, fallback, estimated) VALUES (@at, @plugin, @user, @task, @provider, @model, @kind, @inputTokens,
-      @outputTokens, @mediaCount, @micro, @durationMs, @outcome, @fallback, @estimated)`).run({
+      cost_microcents, duration_ms, outcome, fallback, estimated, route) VALUES (@at, @plugin, @user, @task, @provider, @model, @kind, @inputTokens,
+      @outputTokens, @mediaCount, @micro, @durationMs, @outcome, @fallback, @estimated, @route)`).run({
       at: Date.now(), plugin: row.plugin, user: row.user || null, task: row.task || null, provider: row.provider || null, model: row.model || null,
       kind: row.kind, inputTokens: row.inputTokens || 0, outputTokens: row.outputTokens || 0, mediaCount: row.mediaCount || 0,
       micro: row.micro || 0, durationMs: row.durationMs || 0, outcome: row.outcome, fallback: row.fallback ? 1 : 0, estimated: row.estimated ? 1 : 0,
+      route: row.route || null,
     });
   } catch (e) { logger.warn({ err: e.message }, 'ai: log row not written'); }
 }
@@ -555,7 +590,7 @@ function requestsLog({ plugin, limit } = {}) {
   return rows.map((r) => ({
     id: r.id, at: new Date(r.at).toISOString(), plugin: r.plugin_id, userId: r.user_id, task: r.task, provider: r.provider, model: r.model, kind: r.kind,
     inputTokens: r.input_tokens, outputTokens: r.output_tokens, mediaCount: r.media_count, costCents: centsOf(r.cost_microcents),
-    durationMs: r.duration_ms, outcome: r.outcome, fallback: !!r.fallback, estimated: !!r.estimated,
+    durationMs: r.duration_ms, outcome: r.outcome, fallback: !!r.fallback, estimated: !!r.estimated, route: r.route || null,
   }));
 }
 
@@ -732,18 +767,21 @@ function providerFailure(e) {
  * One provider: the call, for extract the schema check with one correction
  * round. → { text | data, usage, micro, estimated }; throws ProviderError / AiError.
  */
-async function attempt(prov, req, parts, deadline, cfg) {
-  const ad = providers.adapter(prov.id);
-  const key = keyOf(prov.row);
+async function attempt(prov, req, parts, deadline, cfg, { reserveMs = 0 } = {}) {
+  const isLocal = prov.id === local.ID;
+  const ad = isLocal ? local : providers.adapter(prov.id);
+  const key = isLocal ? null : keyOf(prov.row);
   const model = prov.row.model_text;
   const price = priceOf(prov.id, prov.row, cfg);
-  const structured = storedInfo(prov.row).structured !== false;
+  const structured = isLocal || storedInfo(prov.row).structured !== false;
   const acc = { inputTokens: 0, outputTokens: 0, micro: 0, estimated: false };
   const once = async (extraParts) => {
-    const left = deadline - Date.now();
+    const left = deadline - Date.now() - reserveMs;
     if (left <= 0) throw new http.ProviderError('timeout', 'no time left');
+    // the local AI on a CPU: the whole time that is left (minus the time kept for a cloud fallback)
     const r = await ad.complete({ key, model, instructions: req.instructions || 'Follow the input.', parts: extraParts ? parts.concat(extraParts) : parts,
-      schema: req.schema, maxOutputTokens: req.maxOutputTokens, timeoutMs: Math.min(req.timeoutMs, left), structured });
+      schema: req.schema, maxOutputTokens: req.maxOutputTokens, timeoutMs: isLocal ? left : Math.min(req.timeoutMs, left), structured,
+      ...(isLocal ? { peerId: prov.peerId } : {}) });
     acc.inputTokens += r.usage.inputTokens;
     acc.outputTokens += r.usage.outputTokens;
     if (r.costUsd != null) acc.micro += usdToMicro(r.costUsd, cfg.eurPerUsd);
@@ -799,17 +837,25 @@ async function request(plugin, kind, args) {
   try { r = route(plugin, need, cfg); } catch (e) { refuse(e.code, e.message); }
   const parts = [];
   for (const it of req.input) parts.push(it.type === 'media' ? await imagePart(plugin, it.mediaId) : it);
-  // reserve: input ≈ characters ÷ 4 (+ pictures) plus maxOutputTokens, at the dearer of the two providers
+  // reserve: input ≈ characters ÷ 4 (+ pictures) plus maxOutputTokens, at the dearer of the cloud providers
+  // (the local AI costs nothing)
   const tokensIn = Math.ceil(req.chars / 4) + req.images * IMAGE_TOKENS_ESTIMATE;
-  const estimate = Math.max(...[r.primary, r.fallback].filter(Boolean)
+  const estimateOf = (list) => Math.max(0, ...list.filter((p) => p && p.id !== local.ID)
     .map((p) => microOf(tokensIn, req.maxOutputTokens, priceOf(p.id, p.row, cfg), cfg.eurPerUsd)));
-  if (usedMicro() + reservedMicro() + estimate > cfg.budgetCents * 1e6) {
+  let estimate = estimateOf([r.primary, r.fallback]);
+  if (estimate > 0 && usedMicro() + reservedMicro() + estimate > cfg.budgetCents * 1e6) {
     budgetNotice(cfg, true);
-    refuse('ERR_AI_BUDGET', 'the monthly AI budget of this server is used up', { provider: r.primary.id, model: r.primary.row.model_text });
+    if (r.primary.id === local.ID) r = { ...r, fallback: null };                                   // local only, no cloud fallback
+    else if (r.budgetLocal) r = { primary: r.budgetLocal, fallback: null, route: 'budget', budgetLocal: null };
+    else refuse('ERR_AI_BUDGET', 'the monthly AI budget of this server is used up', { provider: r.primary.id, model: r.primary.row.model_text });
+    estimate = estimateOf([r.primary, r.fallback]);
   }
   const rid = ++reservationSeq;
   reservations.set(rid, estimate);
-  const deadline = started + 2 * req.timeoutMs;
+  // a local answer gets at least 5 minutes (CPU); a cloud fallback keeps up to a minute of it
+  const isLocal = r.primary.id === local.ID;
+  const deadline = started + (isLocal ? Math.max(2 * req.timeoutMs, local.LIMITS.minTimeoutMs) : 2 * req.timeoutMs);
+  const reserveMs = isLocal && r.fallback ? Math.min(req.timeoutMs, 60000) : 0;
   let used = r.primary;
   let fallback = false;
   let spent = { inputTokens: 0, outputTokens: 0, micro: 0, estimated: false };
@@ -820,11 +866,12 @@ async function request(plugin, kind, args) {
   try {
     let out;
     try {
-      out = await attempt(r.primary, req, parts, deadline, cfg);
+      out = await attempt(r.primary, req, parts, deadline, cfg, { reserveMs });
     } catch (e) {
       add(e.usage);
       e.usageBooked = true;
       if (!(e instanceof http.ProviderError) || !e.retryable || !r.fallback) throw e;
+      if (isLocal) localTrouble(e);
       used = r.fallback;
       fallback = true;
       out = await attempt(r.fallback, req, parts, deadline, cfg);
@@ -838,17 +885,71 @@ async function request(plugin, kind, args) {
       usage: { inputTokens: spent.inputTokens, outputTokens: spent.outputTokens, costCents: centsOf(spent.micro) },
       fallback,
     };
-    book({ ...base, provider: used.id, model: used.row.model_text, ...spent, outcome: 'ok', fallback, durationMs: Date.now() - started });
+    book({ ...base, provider: used.id, model: used.row.model_text, ...spent, outcome: 'ok', fallback, durationMs: Date.now() - started, route: r.route });
     return result;
   } catch (e) {
     if (!e.usageBooked) add(e.usage);
+    if (used.id === local.ID && !fallback && e instanceof http.ProviderError && e.retryable) localTrouble(e);
     const err = providerFailure(e);
-    book({ ...base, provider: used.id, model: used.row.model_text, ...spent, outcome: err.code, fallback, durationMs: Date.now() - started });
+    book({ ...base, provider: used.id, model: used.row.model_text, ...spent, outcome: err.code, fallback, durationMs: Date.now() - started, route: r.route });
     throw err;
   } finally {
     reservations.delete(rid);
     try { budgetNotice(config()); } catch (e) { logger.warn({ err: e.message }, 'ai: budget notice failed'); }
   }
+}
+
+/** The local AI did not answer: the administrators hear of it once an hour (the cloud may have taken over). */
+let localTroubleAt = 0;
+function localTrouble(e) {
+  const now = Date.now();
+  if (now - localTroubleAt < 3600000) return;
+  localTroubleAt = now;
+  try {
+    activity().log('ai_local_unreachable', `Local AI did not answer (${e.kind}): ${String(e.message || '').slice(0, 160)}`, {
+      source: 'system', severity: 'warning', details: { kind: e.kind, peer_id: local.peerId() },
+    });
+  } catch (err) { logger.warn({ err: err.message }, 'ai: local trouble not logged'); }
+}
+
+// A short German / English mail for "Testen: „Fasse diese Mail zusammen“" (no real data)
+const TEST_MAIL = {
+  de: 'Von: Hausverwaltung Berger\nBetreff: Ablesung der Heizkörper am 14. November\n\nGuten Tag,\nam Donnerstag, 14. November, kommt zwischen 8 und 12 Uhr der Ablesedienst. Bitte sorgen Sie dafür, dass alle Heizkörper zugänglich sind. Wenn Sie an dem Tag nicht zu Hause sind, hinterlegen Sie bitte einen Schlüssel beim Hausmeister oder vereinbaren Sie bis zum 10. November einen anderen Termin unter 030 1234567.\n\nFreundliche Grüße\nIhre Hausverwaltung',
+  en: 'From: Berger property management\nSubject: Radiator reading on 14 November\n\nHello,\nthe meter reading service will come on Thursday, 14 November, between 8 am and 12 noon. Please make sure all radiators can be reached. If you are not at home that day, please leave a key with the caretaker or arrange another date by 10 November on 030 1234567.\n\nKind regards\nYour property management',
+};
+
+/**
+ * "Testen: „Fasse diese Mail zusammen“" (POST /api/v1/ai/local/test): the local
+ * AI summarises a made-up mail — no plugin, no cloud, logged as plugin "gatecontrol".
+ * → { ok, text, model, durationMs, inputTokens, outputTokens } | { ok: false, code, message }
+ */
+async function testLocal({ lang = 'de' } = {}) {
+  if (!enabled()) return { ok: false, code: 'ai_disabled', message: 'GC_AI=off' };
+  const prov = local.ready();
+  if (!prov) return { ok: false, code: 'not_configured', message: 'the local AI is not set up' };
+  const de = lang !== 'en';
+  const started = Date.now();
+  const req = {
+    instructions: de ? 'Fasse die Mail in zwei kurzen Sätzen auf Deutsch zusammen. Nenne Termin und was zu tun ist.' : 'Summarise the mail in two short sentences. Name the date and what to do.',
+    schema: null, maxOutputTokens: 200, timeoutMs: local.LIMITS.minTimeoutMs,
+  };
+  const parts = [{ type: 'text', label: de ? 'Mail' : 'Mail', text: TEST_MAIL[de ? 'de' : 'en'] }];
+  const base = { plugin: 'gatecontrol', task: 'local_test', kind: 'generate', provider: local.ID, model: prov.row.model_text, route: 'test' };
+  try {
+    const out = await attempt(prov, req, parts, started + local.LIMITS.minTimeoutMs, config());
+    book({ ...base, inputTokens: out.inputTokens, outputTokens: out.outputTokens, outcome: 'ok', durationMs: Date.now() - started });
+    return { ok: true, text: out.text, model: prov.row.model_text, durationMs: Date.now() - started, inputTokens: out.inputTokens, outputTokens: out.outputTokens };
+  } catch (e) {
+    const err = providerFailure(e);
+    book({ ...base, outcome: err.code, durationMs: Date.now() - started });
+    return { ok: false, code: e instanceof http.ProviderError ? e.kind : 'provider', message: err.message };
+  }
+}
+
+/** How long the host lets a plugin wait for gc.ai.extract / generate (plugins/hostApi.js): a local answer may take minutes. */
+function callLimitMs(args) {
+  const t = args && Number.isFinite(args.timeoutMs) ? Math.max(LIMITS.timeoutMinMs, Math.min(LIMITS.timeoutMaxMs, args.timeoutMs)) : LIMITS.timeoutDefaultMs;
+  return Math.max(2 * t, local.LIMITS.minTimeoutMs) + 15000;
 }
 
 // ─── Admin view ─────────────────────────────────
@@ -857,8 +958,9 @@ function view() {
   const cfg = config();
   return {
     enabled: enabled(),
-    providers: providers.IDS.map(providerView),
+    providers: [local.providerView()].concat(providers.IDS.map(providerView)),
     defaults: { provider: cfg.defaultProvider, fallback: cfg.fallbackProvider },
+    localUse: cfg.localUse,
     mediaAllowed: cfg.mediaAllowed,
     perHour: cfg.perHour,
     eurPerUsd: cfg.eurPerUsd,
@@ -889,7 +991,7 @@ function restoreBackup(d) {
   const insP = q.prepare(`INSERT INTO ai_providers (id, enabled, key_encrypted, key_hint, model_text, model_audio, capabilities, model_info, checked_at, check_error)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   for (const p of Array.isArray(d.providers) ? d.providers : []) {
-    if (!p || !providers.IDS.includes(p.id)) continue;
+    if (!p || !(providers.IDS.includes(p.id) || p.id === local.ID)) continue;
     const str = (v, max) => (typeof v === 'string' && v.length <= max ? v : null);
     insP.run(p.id, p.enabled ? 1 : 0, str(p.key_encrypted, 2000), str(p.key_hint, 8), str(p.model_text, 200), str(p.model_audio, 200),
       str(p.capabilities, 200), str(p.model_info, 1000), Number.isSafeInteger(p.checked_at) ? p.checked_at : null, str(p.check_error, 300));
@@ -898,7 +1000,7 @@ function restoreBackup(d) {
   const insQ = q.prepare('INSERT INTO ai_plugin_policy (plugin_id, allowed, provider) VALUES (?, ?, ?)');
   for (const p of Array.isArray(d.policy) ? d.policy : []) {
     if (!p || typeof p.plugin_id !== 'string' || p.plugin_id.length > 64) continue;
-    insQ.run(p.plugin_id, p.allowed ? 1 : 0, providers.IDS.includes(p.provider) ? p.provider : null);
+    insQ.run(p.plugin_id, p.allowed ? 1 : 0, providers.IDS.includes(p.provider) || p.provider === local.ID ? p.provider : null);
     n++;
   }
   modelCache.clear();
@@ -929,6 +1031,6 @@ function _resetForTest() {
 
 module.exports = {
   enabled, config, saveSettings, view, providerView, setProvider, testProvider, pluginsList, setPolicy, policyOf, onInstalled, forgetPlugin,
-  available, status, request, usage, requestsLog, prune, start, stop, exportBackup, restoreBackup, monthStart, cleanOverrides,
+  available, status, request, usage, requestsLog, prune, start, stop, exportBackup, restoreBackup, monthStart, cleanOverrides, testLocal, callLimitMs, local,
   AiError, LIMITS, SUPPORTED_CAPS, ALL_CAPS, K, _resetForTest, _testBase: http.testBase,
 };
