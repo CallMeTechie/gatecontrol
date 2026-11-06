@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
+const handbook = require('../../public/js/handbook');
 
 const locales = {};
 
@@ -75,6 +76,8 @@ function i18nMiddleware(req, res, next) {
   res.locals.availableLanguages = config.i18n.availableLanguages;
   req.t = (key, params) => translate(lang, key, params);
   res.locals.t = req.t;
+  // links into the user guide in the language of the page (topics: public/js/handbook.js)
+  res.locals.handbookUrl = (topic) => handbook.url(topic, lang);
   next();
 }
 

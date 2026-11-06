@@ -97,6 +97,11 @@
   function note(tone, children, ic) {
     return h('div', { class: 'gwe-note gwe-note-' + tone }, [icon(ic || (tone === 'warn' || tone === 'crit' ? 'warn' : 'info'), 18), h('div', { class: 'gwe-note-t' }, children)]);
   }
+  // A quiet "Anleitung" link into the user guide (public/js/handbook.js); null for an unknown topic.
+  function guide(topic, cls) {
+    const url = window.GCHandbook ? window.GCHandbook.url(topic, LANG) : null;
+    return url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', class: cls || null, 'data-guide': topic, text: t('gwe.reason.guide') }) : null;
+  }
   function chip(tone, text, ic) { return h('span', { class: 'gwe-chip' + (tone ? ' gwe-chip-' + tone : '') }, [ic ? icon(ic, 14) : null, text]); }
   function switchBtn(on, label, fk, onClick, disabled) {
     return h('button', {
@@ -346,7 +351,7 @@
   function edgeCard(g, d) {
     const sw = switchBtn(true, t('gwe.edge.title'), 'gwe-edge-sw', () => setEdge(g, sw, sw.getAttribute('aria-checked') !== 'true'));
     const c = card(t('gwe.edge.title'), sw, { id: 'edge' });
-    c.body.appendChild(h('p', { class: 'gwe-d', text: t('gwe.edge.text') }));
+    c.body.appendChild(h('p', { class: 'gwe-d' }, [t('gwe.edge.text'), ' ', guide('edge')]));
     const chips = h('div', { class: 'gwe-chips' });
     const hello = d.gateway;
     if (!hello) chips.appendChild(chip('', t('gwe.edge.fence_unknown'), 'shield'));
@@ -395,11 +400,11 @@
     return c.card;
   }
 
-  // the explanation of a reason (gwe.state_d.<reason>), the guide in the gateway's docs and the gateway's own error text
+  // the explanation of a reason (gwe.state_d.<reason>), the user guide (handbook.js) and the gateway's own error text
   function reasonText(g, d, reason) {
     const kids = [t('gwe.state_d.' + reason)];
-    const url = K.reasonDoc(reason, g.platform);
-    if (url) kids.push(' ', h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', text: t('gwe.reason.guide') }));
+    const url = K.reasonDoc(reason, g.platform, LANG);
+    if (url) kids.push(' ', h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', 'data-guide': 'reason', text: t('gwe.reason.guide') }));
     const msg = d.connection && d.connection.reason === reason ? d.connection.detail : null;
     if (msg) kids.push(' · ' + t('gwe.reason.gw_says') + ' ', h('code', { class: 'gwe-mono', text: msg }));
     return kids;
@@ -652,7 +657,7 @@
       toggleSetting(g, sw, 'mqttEnabled', next, t(next ? 'gwe.mqtt.on_done' : 'gwe.mqtt.off_done'));
     });
     const c = card(t('gwe.mqtt.broker'), sw, { id: 'broker' });
-    c.body.appendChild(h('p', { class: 'gwe-d', text: t('gwe.mqtt.text') }));
+    c.body.appendChild(h('p', { class: 'gwe-d' }, [t('gwe.mqtt.text'), ' ', guide('mqtt')]));
     if (s.mqttEnabled && !s.edgeEnabled) {
       const on = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-fk': 'gwe-mqtt-edge', text: t('gwe.off.enable') });
       on.addEventListener('click', () => { on.disabled = true; setEdge(g, null, true).finally(() => { on.disabled = false; }); });
@@ -935,7 +940,7 @@
   function unmount() { cur = null; if (window.GCGatewayNet) window.GCGatewayNet.unmount(); if (window.GCGatewayHome) window.GCGatewayHome.unmount(); }
 
   // Building blocks shared with the tabs "Netzwerk" / "Internet" (gateway-net.js)
-  const ui = { t, api, errText, icon, tag, card, note, chip, switchBtn, fmtTime, fmtDate, openDialog, errorBox, showErr, bigNote, restoreFocus, focusKey, toast, LANG };
+  const ui = { t, api, errText, icon, tag, card, note, guide, chip, switchBtn, fmtTime, fmtDate, openDialog, errorBox, showErr, bigNote, restoreFocus, focusKey, toast, LANG };
 
   window.GCGatewayEdge = { tabs, mount, prefetch, unmount, fillBadges, ui, _cache: cache };
 })();

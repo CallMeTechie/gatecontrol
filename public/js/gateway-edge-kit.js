@@ -6,10 +6,11 @@
 // user names and topic filters as mqtt.js / manifest.js check them, the
 // states of an edge assignment as index.js / state.js report them.
 (function (root, factory) {
-  const api = factory();
-  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  const node = typeof module !== 'undefined' && module.exports;
+  const api = factory(node ? require('./handbook') : root.GCHandbook);
+  if (node) module.exports = api;
   else root.GCGatewayEdgeKit = api;
-})(typeof self !== 'undefined' ? self : this, function () {
+})(typeof self !== 'undefined' ? self : this, function (HB) {
   // 'net' / 'inet' (phase 3a): tabs "Netzwerk" and "Internet" (public/js/gateway-net.js)
   // 'dns' / 'cache' (phase 3b): tabs "DNS-Filter" and "Zwischenspeicher" (public/js/gateway-home.js)
   const TABS = ['overview', 'net', 'inet', 'dns', 'cache', 'edge', 'mqtt'];
@@ -44,20 +45,25 @@
   };
   const STATES = Object.keys(STATE_TONE);
 
-  // Where the gateway's documentation explains the next step (gatecontrol-gateway, docs/); Synology has its own section.
-  const GW_DOCS = 'https://github.com/CallMeTechie/gatecontrol-gateway/blob/main/docs/';
-  const REASON_DOCS = {
-    edge_missing: { synology: 'deployment/synology.md#edge-dienst-plugins-im-heimnetz', other: 'edge.md#container-und-image' },
-    edge_not_running: { other: 'edge.md#fehlersuche' },
-    edge_fence: { synology: 'deployment/synology.md#netzgrenze-auf-der-synology-xt_owner', other: 'edge.md#netzgrenze-fail-closed' },
-    edge_not_connected: { other: 'edge.md#kanal-zum-server' },
+  // Where the user guide explains the next step (public/js/handbook.js): a missing edge service
+  // means an old compose file — chapter 6 per platform; the Pi image only needs EDGE=on (chapter 4);
+  // the Proxmox container runs without Docker and so without edge (chapter 3.5).
+  const REASON_TOPICS = {
+    gateway_offline: { other: 'edge.gateway_offline' },
+    edge_missing: { rpi: 'edge.edge_missing', synology: 'update.synology', linux: 'update.linux', proxmox: 'gw.proxmox', other: 'update' },
+    edge_not_running: { other: 'edge.edge_not_running' },
+    edge_fence: { other: 'edge.edge_fence' },
+    edge_not_connected: { other: 'edge.edge_not_connected' },
   };
 
-  /** The guide for a reason (null: none) — `platform` as the gateway assistant stores it (rpi, synology, …). */
-  function reasonDoc(reason, platform) {
-    const d = REASON_DOCS[reason];
-    if (!d) return null;
-    return GW_DOCS + (platform === 'synology' && d.synology ? d.synology : d.other);
+  /**
+   * The guide for a reason (null: none) — `platform` as the gateway assistant stores it (rpi, synology, …),
+   * `lang` the language of the interface ('de' | 'en').
+   */
+  function reasonDoc(reason, platform, lang) {
+    const d = Object.prototype.hasOwnProperty.call(REASON_TOPICS, reason) ? REASON_TOPICS[reason] : null;
+    if (!d || !HB) return null;
+    return HB.url((platform && d[platform]) || d.other, lang);
   }
 
   /** What a plugin row shows: { state, tone, key }. */
