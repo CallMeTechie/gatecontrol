@@ -3501,6 +3501,34 @@ const migrations = [
     },
     detect: (db) => hasColumn(db, 'netwatch_devices', 'decided_at'),
   },
+  {
+    version: 131,
+    name: 'gateway_pool_events',
+    // Switches of a gateway pool (services/gatewayPoolState.js
+    // recordSwitches()): one row whenever the member that serves the pool's
+    // routes changes — the reserve takes over ('failover'), the first gateway
+    // is back after the failback cooldown ('failback'), no member is left
+    // ('outage') or one is back ('restored'), an administrator changed the
+    // members or the mode ('change'). 'initial' is the baseline the first
+    // record of a pool starts from; the page "Letzte Wechsel" leaves it out.
+    //   to_peer_id    the member serving afterwards (NULL: none; for load
+    //                 balancing the first of the serving members)
+    //   from_peer_id  the member serving before (NULL: none / unknown)
+    //   at            epoch ms
+    // At most 50 rows per pool are kept (the oldest go first). No foreign
+    // key on the peers: the history keeps a removed gateway's switches.
+    sql: `
+      CREATE TABLE IF NOT EXISTS gateway_pool_events (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        pool_id       INTEGER NOT NULL REFERENCES gateway_pools(id) ON DELETE CASCADE,
+        at            INTEGER NOT NULL,
+        kind          TEXT NOT NULL,
+        from_peer_id  INTEGER,
+        to_peer_id    INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_gateway_pool_events_pool ON gateway_pool_events(pool_id, id);`,
+    detect: (db) => tableExists(db, 'gateway_pool_events'),
+  },
 ];
 
 module.exports = { migrations };

@@ -27,6 +27,7 @@ describe('gateway-edge-kit: address and states', () => {
     assert.deepEqual(K.parseHash('#gw/12'), { id: '12', tab: 'overview' });
     assert.deepEqual(K.parseHash('#gw/12/edge'), { id: '12', tab: 'edge' });
     assert.deepEqual(K.parseHash('#gw/12/mqtt'), { id: '12', tab: 'mqtt' });
+    assert.deepEqual(K.parseHash('#gw/12/features'), { id: '12', tab: 'features' });
     assert.deepEqual(K.parseHash('#gw/12/nope'), { id: '12', tab: 'overview' });
     assert.equal(K.parseHash('#add'), null);
     assert.equal(K.parseHash('#setup/3'), null);
@@ -39,7 +40,10 @@ describe('gateway-edge-kit: address and states', () => {
   it('gateways.js keeps #add / #setup/<id> and routes the tabs', () => {
     const src = read('public/js/gateways.js');
     assert.match(src, /h\.match\(\/\^#gw\\\/\(\[\^\/\]\+\)\(\?:\\\/\(\[a-z\]\+\)\)\?\$\/\)/);
-    assert.match(src, /\['net', 'inet', 'dns', 'cache', 'edge', 'mqtt'\]\.indexOf\(m\[2\]\) >= 0/);
+    assert.match(src, /var TAB_NAMES = \['features', 'net', 'inet', 'dns', 'cache', 'edge', 'mqtt'\];/);
+    assert.match(src, /TAB_NAMES\.indexOf\(m\[2\]\) >= 0/);
+    // the pool page #pool/<id> (gateway-pool-kit.js parsePoolHash)
+    assert.match(src, /PK\.parsePoolHash\(h\)/);
     assert.match(src, /if \(h === '#add'\)/);
     assert.match(src, /h\.match\(\/\^#setup\\\/\(\\d\+\)\$\/\)/);
   });

@@ -120,23 +120,32 @@ module.exports = (ctx) => {
           speedtests: [{ at: now - 3 * 60 * MIN, downMbps: 248.3, upMbps: 46.1, bytes: 61e6 }],
         }) === 200);
 
-        // ── overview: the card "Funktionen dieses Gateways" ──
+        // ── overview: the card "Funktionen" (what is on), the switches in the tab "Funktionen" ──
         await page.goto(`${BASE}/gateways#gw/${GW}`);
         await theme(page, 'dark');
-        step('net: the overview shows the card "Funktionen dieses Gateways"', await until(page, () => document.querySelector('.gwn-features [data-feature="netwatch"] [role="switch"]')));
-        step('net: seven tabs, Netzwerk and Internet after Übersicht (DNS-Filter, Zwischenspeicher: phase 3b)', await page.evaluate(() => [...document.querySelectorAll('.gwe-tabs [role="tab"]')].map((b) => b.dataset.tab).join(',') === 'overview,net,inet,dns,cache,edge,mqtt'));
-        step('net: switches for watch, internet, presence, UPS, edge; Zigbee and LAN discovery from what exists', await page.evaluate(() => {
-          const f = (k) => document.querySelector(`.gwn-features [data-feature="${k}"]`);
+        step('net: the overview shows the card "Funktionen" with chips and "Verwalten" → tab', await until(page, () => {
+          const c = document.querySelector('.gwn-fsum');
+          return c && c.querySelector('[data-fon="netwatch"]') && /#gw\/\d+\/features$/.test((c.querySelector('a.btn') || {}).href || '');
+        }));
+        step('net: eight tabs, Funktionen after Übersicht, then Netzwerk and Internet', await page.evaluate(() => [...document.querySelectorAll('.gwe-tabs [role="tab"]')].map((b) => b.dataset.tab).join(',') === 'overview,features,net,inet,dns,cache,edge,mqtt'));
+        step('net: tab Funktionen opens', await goTab(page, GW, 'features'));
+        step('net: switches for watch, internet, presence, UPS, edge; Zigbee and LAN discovery from what exists', await until(page, () => {
+          const f = (k) => document.querySelector(`#gwe-tabpanel .gwn-features [data-feature="${k}"]`);
           return ['netwatch', 'inetq', 'presence', 'ups', 'edge', 'lan'].every((k) => f(k) && f(k).querySelector('[role="switch"]'))
             && f('zigbee') && !f('zigbee').querySelector('[role="switch"]');
         }));
-        step('net: hardware line and the Pi 3 B+ hint (about 300 Mbit/s)', await page.evaluate(() => {
-          const card = document.querySelector('.gwn-features');
-          return /Raspberry Pi 3 Model B Plus/.test(card.querySelector('.gwe-top').textContent) && /300 Mbit\/s/.test(card.textContent) && !/\b90 Mbit/.test(card.textContent);
+        step('net: the rows sit in their groups (Heimnetz im Blick, Internet & Strom, Erweiterungen)', await page.evaluate(() => {
+          const g = (k, f) => !!document.querySelector(`[data-fgroup="${k}"] [data-feature="${f}"]`);
+          return g('home', 'netwatch') && g('home', 'presence') && g('home', 'lan') && g('power', 'inetq') && g('power', 'ups') && g('ext', 'edge') && g('ext', 'zigbee');
         }));
-        step('net: memory estimate as a note', await visible(page, '.gwn-features .gwn-mem .gwe-note'));
-        step('net: badge "2 neu" on the tab Netzwerk', await until(page, () => /2/.test((document.querySelector('[data-gwe-badge="net"]') || {}).textContent || '')));
-        await view(page, 'gwnet-overview-dark');
+        step('net: hardware line and the Pi 3 B+ hint (about 300 Mbit/s)', await page.evaluate(() => {
+          const p = document.getElementById('gwe-tabpanel');
+          return /Raspberry Pi 3 Model B Plus/.test(p.querySelector('.gwn-hwline').textContent) && /300 Mbit\/s/.test(p.textContent) && !/\b90 Mbit/.test(p.textContent);
+        }));
+        step('net: memory summary bar on top of the tab', await visible(page, '#gwe-tabpanel .gwn-membar .gwn-membar-bar'));
+        step('net: badge "2 neu" on the tab Netzwerk, "n an" on Funktionen', await until(page, () => /2/.test((document.querySelector('[data-gwe-badge="net"]') || {}).textContent || '')
+          && /\d/.test((document.querySelector('[data-gwe-badge="features"]') || {}).textContent || '')));
+        await view(page, 'gwnet-features-dark');
 
         // UPS switch without an address → dialog; wrong address → message; right one → on
         await page.click('.gwn-features [data-fk="gwn-f-ups"]');
@@ -244,7 +253,7 @@ module.exports = (ctx) => {
         await view(page, 'gwnet-inet-light');
         await page.setViewportSize({ width: 390, height: 900 });
         await fresh(page);
-        for (const tab of ['overview', 'net', 'inet']) {
+        for (const tab of ['overview', 'features', 'net', 'inet']) {
           await goTab(page, GW, tab);
           await page.waitForTimeout(400);
           const o = await overflow(page);

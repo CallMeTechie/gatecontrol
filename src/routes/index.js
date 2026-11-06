@@ -359,9 +359,13 @@ const pages = [
   { path: '/directory', template: 'directory', titleKey: 'nav.directory' },
   { path: '/dns', template: 'dns', titleKey: 'nav.dns' },
   { path: '/pihole', template: 'pihole', titleKey: 'pihole.title' },
-  { path: '/gateway-pools', template: 'gateway-pools', titleKey: 'gateway_pools.title' },
   { path: '/gateways', template: 'gateways', titleKey: 'nav.gateways' },
 ];
+
+// The gateway pools live on the gateways page (groups in the fleet, the pool
+// page #pool/<id>, public/js/gateway-pools-ui.js): old links to the former
+// page /gateway-pools land there.
+router.get('/gateway-pools', requireAuth, (req, res) => res.redirect('/gateways'));
 
 // Former built-in pages, now first-party plugins (docs/plugins.md "Built-in
 // data import"): old bookmarks lead to the plugin's page when it is
@@ -393,7 +397,7 @@ const LOGS_I18N_PREFIXES = ['lg.', 'common.'];
 const SB_I18N_PREFIXES = ['support_bundles.', 'common.'];
 
 // Gateway page + assistant "Gateway hinzufügen" (gateway-wizard.js).
-const GWIZ_I18N_PREFIXES = ['gwiz.', 'gwe.', 'gwn.', 'gwh.', 'common.'];
+const GWIZ_I18N_PREFIXES = ['gwiz.', 'gwe.', 'gwn.', 'gwh.', 'gwp.', 'gateway_pools.', 'common.'];
 
 // Strings the users list and the user profile hand to users.js (one JSON
 // island on both pages, like the settings page; up.* for the profile).
@@ -582,16 +586,6 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
       Object.assign(extraLocals, profileLocals(req, res));
     }
 
-    if (template === 'gateway-pools') {
-      try {
-        extraLocals.pools = require('../services/gatewayPool').listPools();
-        for (const p of extraLocals.pools) {
-          p.members = require('../services/gatewayPool').listMembers(p.id);
-        }
-        extraLocals.gatewayPeers = require('../db/connection').getDb()
-          .prepare("SELECT id, name FROM peers WHERE peer_type = 'gateway' AND enabled = 1 ORDER BY name").all();
-      } catch { extraLocals.pools = []; extraLocals.gatewayPeers = []; }
-    }
 
     // Settings page: every value comes from the settings APIs (no DB read
     // here). Server-rendered: the notification event catalogue (static, for

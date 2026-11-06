@@ -6,6 +6,22 @@
   var GW = {};
   try { GW = JSON.parse((document.getElementById('gwiz-i18n') || {}).textContent || '{}') || {}; } catch (e) { GW = {}; }
   function T(k, d) { return GCt[k] || GW[k] || d; }
+  // T with {{placeholders}} (the gwp.* strings come in the page's JSON island)
+  function TT(k, params, d) {
+    var s = String(T(k, d == null ? k : d));
+    if (params) Object.keys(params).forEach(function (p) { s = s.split('{{' + p + '}}').join(String(params[p])); });
+    return s;
+  }
+  // "vor 12 s", "vor 3 Min." …
+  function agoT(ms) {
+    if (!ms) return '—';
+    var sec = Math.max(0, Math.round((Date.now() - ms) / 1000));
+    if (sec < 60) return TT('gwp.ago.s', { n: sec });
+    if (sec < 3600) return TT('gwn.ago.min', { n: Math.round(sec / 60) });
+    if (sec < 86400) return TT('gwn.ago.h', { n: Math.round(sec / 3600) });
+    return TT('gwn.ago.d', { n: Math.round(sec / 86400) });
+  }
+  function UI() { return window.GCGatewayEdge && window.GCGatewayEdge.ui; }
   // In-app dialogs instead of confirm()/alert() (docs/feature-wave2.md §W1.2).
   var D = window.GCDialog;
   var grid = document.getElementById('fleet-grid');
@@ -13,8 +29,17 @@
   var warn = document.getElementById('version-warning');
   var fleetView = document.getElementById('fleet-view');
   var detailView = document.getElementById('gw-detail-view');
+  var poolView = document.getElementById('gw-pool-view');
   var GW_RELEASES = 'https://github.com/CallMeTechie/gatecontrol-gateway/releases';
-  var last = [], latest = '', openId = null, routed = false;
+  var last = [], latest = '', openId = null, openPool = null, routed = false;
+  // Pools on this page (gateway-pool-kit.js: pure rules, gateway-pools-ui.js: views and dialogs)
+  var PK = window.GCGatewayPoolKit;
+  var P = window.GCGatewayPools;
+  // UI state of the detail view that must survive the redraw of every poll
+  var menuOpen = false;           // the "Mehr" menu of the head
+  var techOpen = {};              // peer id → <details> "Technische Details" open
+  var routesAll = {};             // peer id → "Alle n Routen anzeigen" expanded
+  var netExtra = null;            // { id, node }: "Erkannte Geräte" + "Scan-Ziele" of the tab "Netzwerk", kept across polls
   var _discoveryListener = null; // replaced on every discoveredDevicesCard build to avoid leak on renderDetail re-runs
 
   function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; }
@@ -110,7 +135,9 @@
     var names = { 'raspbee2-conbee2': onGpio ? 'RaspBee II' : 'ConBee II', conbee3: 'ConBee III', 'raspbee-conbee-1': onGpio ? 'RaspBee' : 'ConBee', 'conbee-usb': 'ConBee' };
     return (names[r.type] || T('gwiz.s4.zigbee_radio', 'Funkmodul')) + ' · Zigbee';
   }
-  function card(g) {
+  // A fleet card. `role` ({ pool, member }) when shown in a pool group: the tag
+  // "1 · arbeitet gerade" / "2 · Reserve, springt ein" / "2 · offline".
+  function card(g, role) {
     if (g.never_connected) return waitingCard(g);
     var t = (g.health && g.health.telemetry) || {};
     var st = status(g);
@@ -121,7 +148,8 @@
     var uav = el('span', 'uav'); uav.style.background = gwAvatarGradient(g); uav.appendChild(gwCardIcon());
     uh.appendChild(uav);
     var nameWrap = el('div'); nameWrap.style.cssText = 'flex:1;min-width:0;overflow:hidden';
-    var unEl = el('div', 'un', g.name); unEl.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    var unEl = el('a', 'un gw-card-link', g.name); unEl.href = '#gw/' + encodeURIComponent(g.peer_id);
+    unEl.style.cssText = 'display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     nameWrap.appendChild(unEl);
     var hwModel = t.hardware && t.hardware.model ? String(t.hardware.model) : platformLabel(g.platform);
     nameWrap.appendChild(el('div', 'ud', [hwModel, t.gateway_version || '—', g.hostname].filter(Boolean).join(' · ')));
@@ -140,6 +168,17 @@
     right.appendChild(rcBtn);
     uh.appendChild(right);
     wrap.appendChild(uh);
+    // Role in the pool group (or the route count of a single gateway)
+    var tags = el('div', 'gw-card-tags');
+    if (role && PK) {
+      var r = PK.roleOf(role.pool, role.member);
+      var rt = el('span', 'tag tag-' + r.tone, TT(r.key, r.params));
+      rt.setAttribute('data-role', role.member.state);
+      tags.appendChild(rt);
+    }
+    var nr = (g.routes || []).length;
+    if (!role && nr) tags.appendChild(el('span', 'tag tag-grey', TT(nr === 1 ? 'gwp.card.routes_one' : 'gwp.card.routes', { n: nr })));
+    if (tags.childNodes.length) wrap.appendChild(tags);
     // Body: resource bars (online/degraded) or empty-state (offline)
     if (st === 'offline') {
       var emptyTxt = T('gateways.sub_heartbeat', 'last heartbeat') + ' ' + ago(g.last_seen_at);
@@ -156,57 +195,142 @@
     // (Update-check moved to the header icon button above.)
     return wrap;
   }
-  // Issue 10: versions card — vertical kv list to prevent overflow
-  function versionsCard(g) {
+  // ── Detail view: head, tabs, the tab "Übersicht" ──────────────────────────
+  function cardFrame(title, right, id, cls) {
+    var U = UI();
+    if (U) return U.card(title, right, { id: id, cls: cls });
+    var c = el('section', 'gw gwe-card' + (cls ? ' ' + cls : '')); var top = el('div', 'top gwe-top'); top.appendChild(el('h3', null, title));
+    if (right) top.appendChild(right); var body = el('div', 'body gwe-body'); c.appendChild(top); c.appendChild(body);
+    return { card: c, top: top, body: body };
+  }
+  function tagEl(tone, text, dot) { return el('span', 'tag tag-' + tone + (dot ? ' tag-dot' : ''), text); }
+  function shortDigest(t) {
+    if (!t.image_digest) return null;
+    var di = String(t.image_digest); var at = di.lastIndexOf('@sha256:'); if (at !== -1) di = di.slice(at + 8);
+    return di.slice(-12);
+  }
+  // "Gerät & Software" (was "Versionen & System"): the everyday facts on top,
+  // the technical rows in <details> "Technische Details" (open state kept per gateway).
+  function deviceCard(g) {
     var t = (g.health && g.health.telemetry) || {}, h = g.health || {};
-    var c = el('div', 'gw');
-    var top = el('div', 'top'); top.appendChild(el('h3', null, T('gateways.sec_versions', 'Versionen & System'))); c.appendChild(top);
-    var body = el('div', 'body');
-    function addKv(k, v, vcls) { body.appendChild(kvRow(k, v, vcls)); }
+    var c = cardFrame(T('gwp.dev.title', 'Gerät & Software'), null, 'dev', 'gwo-dev');
+    var body = c.body;
+    var dev = [t.hardware && t.hardware.model ? String(t.hardware.model) : platformLabel(g.platform), t.arch,
+      t.cpu_cores != null ? TT('gwn.feat.cores', { n: t.cpu_cores }) : null, t.os_platform ? (t.os_platform + (t.os_release ? ' ' + t.os_release : '')) : null].filter(Boolean);
+    body.appendChild(kvRow(T('gwp.dev.device', 'Gerät'), dev.length ? dev.join(' · ') : '—'));
     var gwVal = el('span'); gwVal.appendChild(document.createTextNode((t.gateway_version || '—') + ' '));
     if (g.update_available && latest) gwVal.appendChild(el('span', 'badge drift', '↑ ' + latest));
-    addKv(T('gateways.lbl_gateway', 'Gateway'), gwVal);
-    addKv(T('gateways.lbl_node', 'Node'), t.node_version || '—');
-    addKv(T('gateways.lbl_wgtools', 'wg-tools'), t.wg_tools_version || '—');
-    addKv(T('gateways.lbl_os', 'OS'), (t.os_platform || '—') + (t.os_release ? ' ' + t.os_release : ''));
-    addKv(T('gateways.lbl_arch', 'Arch'), t.arch || '—');
-    addKv(T('gateways.lbl_cores', 'Cores'), t.cpu_cores != null ? String(t.cpu_cores) : '—');
-    addKv(T('gateways.lbl_default_gw', 'Default gateway (LAN)'), t.default_gateway_ip || '—');
-    addKv(T('gateways.lbl_dns_resolvers', 'DNS resolvers'), (t.dns_resolvers && t.dns_resolvers.length) ? t.dns_resolvers.join(', ') : '—');
+    else if (t.gateway_version && latest) gwVal.appendChild(el('span', 'gwe-d', TT('gwp.head.current')));
+    body.appendChild(kvRow(T('gateways.lbl_gateway', 'Gateway'), gwVal));
+    var lan = el('span');
+    if (t.lan_ip) lan.appendChild(el('code', null, t.lan_ip));
+    if (t.default_gateway_ip) { if (t.lan_ip) lan.appendChild(document.createTextNode(' · ')); lan.appendChild(document.createTextNode(TT('gwp.dev.router') + ' ')); lan.appendChild(el('code', null, t.default_gateway_ip)); }
+    body.appendChild(kvRow(T('gwp.dev.lan', 'Heimnetz'), lan.childNodes.length ? lan : '—'));
+    var upd = [t.last_pull_at ? agoT(t.last_pull_at) : T('gateways.last_pull_never', 'never')];
+    var dg = shortDigest(t); if (dg) upd.push(TT('gwp.dev.image', { digest: dg }));
+    body.appendChild(kvRow(T('gwp.dev.updated', 'Letztes Update'), upd.join(' · ')));
+    var d = el('details', 'gwo-tech'); d.open = !!techOpen[g.peer_id];
+    d.addEventListener('toggle', function () { techOpen[g.peer_id] = d.open; });
+    var sum = el('summary', null, T('gwp.dev.tech', 'Technische Details')); sum.dataset.fk = 'gwo-tech'; d.appendChild(sum);
+    var tb = el('div', 'gwo-tech-b');
+    tb.appendChild(kvRow(T('gateways.lbl_node', 'Node'), t.node_version || '—'));
+    tb.appendChild(kvRow(T('gateways.lbl_wgtools', 'wg-tools'), t.wg_tools_version || '—'));
+    tb.appendChild(kvRow(T('gateways.lbl_dns_resolvers', 'DNS resolvers'), (t.dns_resolvers && t.dns_resolvers.length) ? t.dns_resolvers.join(', ') : '—'));
     var cfgVal;
     if (h.config_hash) {
       cfgVal = el('span'); cfgVal.appendChild(document.createTextNode('✓ ' + T('gateways.config_synced', 'synchron') + ' · '));
       cfgVal.appendChild(el('code', null, String(h.config_hash).slice(0, 8)));
     } else { cfgVal = T('gateways.config_unknown', 'unbekannt'); }
-    addKv(T('gateways.lbl_config_hash', 'Config hash'), cfgVal);
-    var shortDigest = '—';
-    if (t.image_digest) { var di = String(t.image_digest); var at = di.lastIndexOf('@sha256:'); if (at !== -1) di = di.slice(at + 8); shortDigest = di.slice(-12); }
-    addKv(T('gateways.lbl_image_digest', 'Image'), shortDigest);
-    addKv(T('gateways.lbl_last_pull', 'Last pull'), t.last_pull_at ? ago(t.last_pull_at) : T('gateways.last_pull_never', 'never'));
-    c.appendChild(body);
-    return c;
+    tb.appendChild(kvRow(T('gateways.lbl_config_hash', 'Config hash'), cfgVal));
+    tb.appendChild(kvRow(T('gateways.lbl_image_digest', 'Image'), dg || '—'));
+    tb.appendChild(kvRow(T('gateways.lbl_default_gw', 'Default gateway (LAN)'), t.default_gateway_ip || '—'));
+    d.appendChild(tb);
+    body.appendChild(d);
+    return c.card;
   }
-  // Tabs of the detail view: "Übersicht" (the cards below), "Netzwerk" and
-  // "Internet" (gateway-net.js), "DNS-Filter" and "Zwischenspeicher"
-  // (gateway-home.js), "Edge-Plugins" and "MQTT" (gateway-edge.js).
-  // The tab is part of the address: #gw/<id>[/net|/inet|/dns|/cache|/edge|/mqtt].
+  // "Zustand": "Alles in Ordnung" or what needs a look first (gateway-pool-kit.js healthChecks)
+  var MARK = { ok: '✓', warn: '!', bad: '✗', info: 'i' };
+  function stateCard(g) {
+    var net = window.GCGatewayNet;
+    var checks = PK.healthChecks(g, { status: status(g), latest: latest, fresh: net && net.fresh ? net.fresh(g.peer_id) : null, agoText: agoT(g.last_seen_at) });
+    var tone = PK.overall(checks);
+    var c = cardFrame(T('gwp.state.title', 'Zustand'), null, 'state', 'gwo-state');
+    var ban = el('div', 'gwo-banner gwo-banner-' + tone); ban.setAttribute('data-tone', tone);
+    var U = UI(); if (U) ban.appendChild(U.icon(tone === 'ok' ? 'check' : 'warn', 20));
+    ban.appendChild(el('strong', null, T('gwp.state.overall_' + tone)));
+    c.body.appendChild(ban);
+    var ul = el('ul', 'gwo-checks');
+    checks.forEach(function (ch) {
+      var li = el('li'); li.setAttribute('data-tone', ch.tone); li.setAttribute('data-check', ch.key.replace('gwp.state.', ''));
+      var mk = el('span', 'tag gwo-mark tag-' + ({ ok: 'green', warn: 'amber', bad: 'red', info: 'blue' }[ch.tone]), MARK[ch.tone]); mk.setAttribute('aria-hidden', 'true');
+      li.appendChild(mk);
+      li.appendChild(el('span', 'sr-only', T('gwp.state.tone_' + ch.tone) + ': '));
+      li.appendChild(el('span', null, TT(ch.key, ch.params)));
+      if (ch.link) { li.appendChild(document.createTextNode(' – ')); var a = el('a', 'gwn-link', T('gwp.state.look')); a.href = '#gw/' + encodeURIComponent(g.peer_id) + '/' + ch.link; li.appendChild(a); }
+      ul.appendChild(li);
+    });
+    c.body.appendChild(ul);
+    return c.card;
+  }
+  // The tab "Übersicht": Zustand · Pool · Funktionen, then Gerät & Software · Auslastung, then the routes.
+  function overview(panel, g) {
+    var top = el('div', 'gwo-top');
+    top.appendChild(stateCard(g));
+    if (P) top.appendChild(P.poolCard(g));
+    if (window.GCGatewayNet) top.appendChild(window.GCGatewayNet.summaryCard(g));
+    panel.appendChild(top);
+    var two = el('div', 'gwo-two');
+    two.appendChild(deviceCard(g));
+    two.appendChild(resourcesCard(g));
+    panel.appendChild(two);
+    panel.appendChild(routesCard(g));
+  }
+  // "Erkannte Geräte" + "Scan-Ziele (Egress)" below the tab "Netzwerk" — independent of the
+  // network watch (shown under its off-note too). Built once per visit: their own loads and the
+  // open add form survive the redraw of every poll.
+  function netExtras(g) {
+    if (netExtra && netExtra.id === String(g.peer_id)) return netExtra.node;
+    var telE = (g.health && g.health.telemetry) || {};
+    var row = el('div', 'gw-half-row gw-net-extras');
+    row.appendChild(discoveredDevicesCard(g));
+    if (telE.scan_egress === true) row.appendChild(egressCard(g));
+    netExtra = { id: String(g.peer_id), node: row };
+    return row;
+  }
+  // Tabs of the detail view: "Übersicht" (below), "Funktionen", "Netzwerk" and "Internet"
+  // (gateway-net.js), "DNS-Filter" and "Zwischenspeicher" (gateway-home.js), "Edge-Plugins"
+  // and "MQTT" (gateway-edge.js). The tab is part of the address:
+  // #gw/<id>[/features|/net|/inet|/dns|/cache|/edge|/mqtt].
   var openTab = 'overview';
   function renderDetail(g) {
+    // typing in the add form of "Scan-Ziele": do not take the field away (next poll draws)
+    if (netExtra && openTab === 'net' && netExtra.node.contains(document.activeElement) && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
     // The view is rebuilt on every poll: keep the focus on the same control.
     var act = document.activeElement, fkNode = act && detailView.contains(act) && act.closest ? act.closest('[data-fk]') : null;
     var fk = fkNode ? fkNode.getAttribute('data-fk') : null;
     var root = el('div', 'gw-detail');
-    var back = el('button', 'gw-back', '← ' + T('gateways.back_to_fleet', 'Back to fleet')); back.dataset.act = 'back';
+    var back = el('button', 'gw-back', '← ' + T('gwp.back', 'Alle Gateways')); back.dataset.act = 'back'; back.type = 'button'; back.dataset.fk = 'gw-back';
     root.appendChild(back);
     root.appendChild(detailHead(g));
     var E = window.GCGatewayEdge;
     var tab = E ? openTab : 'overview';
+    if (tab !== 'net') netExtra = null;
     var panel = el('div', 'gw-tabpanel');
     if (E) {
       root.appendChild(E.tabs(g, tab));
       panel.id = 'gwe-tabpanel'; panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', 'gwe-tab-' + tab);
     }
     root.appendChild(panel);
+    if (tab === 'net') {
+      panel.classList.add('gw-tabpanel-stack');
+      var netBox = el('div');
+      panel.appendChild(netBox);
+      E.mount(netBox, g, tab, { latest: latest });
+      panel.appendChild(netExtras(g));
+      detailView.replaceChildren(root);
+      restoreFk(fk);
+      return;
+    }
     if (tab !== 'overview') {
       E.mount(panel, g, tab, { latest: latest });
       detailView.replaceChildren(root);
@@ -214,20 +338,7 @@
       return;
     }
     if (E) { E.unmount(); E.prefetch(g); }
-    // Card "Funktionen dieses Gateways" (phase 3a, gateway-net.js): switches and hardware hints
-    if (window.GCGatewayNet) panel.appendChild(window.GCGatewayNet.featuresCard(g));
-    // Issue 11: 3-column detail grid (1/3 width per card); versionsCard for Issue 10
-    var grid2 = el('div', 'gw-detail-grid');
-    grid2.appendChild(versionsCard(g));
-    grid2.appendChild(resourcesCard(g));
-    grid2.appendChild(routesCard(g));
-    // Bottom two cards ("Discovered devices" + "Scan targets") at 1/2 width each
-    var telE = (g.health && g.health.telemetry) || {};
-    var halfRow = el('div', 'gw-half-row');
-    halfRow.appendChild(discoveredDevicesCard(g));
-    if (telE.scan_egress === true) halfRow.appendChild(egressCard(g));
-    grid2.appendChild(halfRow);
-    panel.appendChild(grid2);
+    overview(panel, g);
     detailView.replaceChildren(root);
     restoreFk(fk);
   }
@@ -237,122 +348,147 @@
     if (n && !n.disabled) n.focus({ preventScroll: true });
   }
 
-  function kpi(cls, n, label) { var k = el('div', 'kpi' + (cls ? ' ' + cls : '')); k.appendChild(el('div', 'n', n)); k.appendChild(el('div', 'l', label)); return k; }
+  function kpi(cls, n, label, sub) {
+    var k = el('div', 'kpi' + (cls ? ' ' + cls : '')); k.appendChild(el('div', 'n', n)); k.appendChild(el('div', 'l', label));
+    if (sub) k.appendChild(el('div', 's', sub));
+    return k;
+  }
 
-  // ── Detail view (mirrors gateway-detail.html mockup) ──────────────────────
+  // ── Head: name, status, facts, pool chip, "Neu prüfen", "Update auf X", "Mehr" ──
+  var CHEVRON = [{ tag: 'path', attrs: { d: 'm6 9 6 6 6-6' } }];
   function detailHead(g) {
-    var ph = el('div', 'page-h');
-    var left = el('div');
+    var tel0 = (g.health && g.health.telemetry) || {};
+    var ph = el('div', 'page-h gw-head');
+    var left = el('div', 'gw-head-t');
     var hd = el('h2'); hd.appendChild(document.createTextNode(g.name + ' ')); hd.appendChild(statusPill(g));
     left.appendChild(hd);
+    var sub = el('p', 'page-sub');
     var parts = [];
-    if (g.hostname) parts.push(g.hostname);
-    if (g.ip) parts.push(T('gateways.sub_tunnel', 'Tunnel') + ' ' + g.ip);
-    parts.push(T('gateways.sub_heartbeat', 'letzter Heartbeat vor') + ' ' + ago(g.last_seen_at));
-    left.appendChild(el('p', 'page-sub', parts.join(' · ')));
-    ph.appendChild(left);
-    var act = el('div', 'gw-detail-actions');
-    var rc = el('button', 'recheck', '↻ ' + T('gateways.recheck', 'Neu prüfen')); rc.dataset.id = g.peer_id; rc.dataset.act = 'recheck';
-    act.appendChild(rc);
-    var tel0 = (g.health && g.health.telemetry) || {};
-    // Discovery-settings gear, only when the gateway reports the capability flag.
-    if (tel0.lan_discovery === true) {
-      var ds = el('button', 'recheck');
-      ds.appendChild(discGearIcon()); // static DOM-built SVG
-      ds.title = T('gateways.discovery.settings_tooltip', 'Discovery-Einstellungen');
-      ds.setAttribute('aria-label', T('gateways.discovery.settings_tooltip', 'Discovery-Einstellungen'));
-      ds.dataset.id = g.peer_id;
-      ds.dataset.act = 'disc-settings';
-      ds.style.cssText = 'padding:6px 10px;display:inline-flex;align-items:center;justify-content:center';
-      act.appendChild(ds);
+    if (g.hostname) parts.push(document.createTextNode(g.hostname));
+    if (g.ip) { var tn = el('span'); tn.appendChild(document.createTextNode(T('gateways.sub_tunnel', 'Tunnel') + ' ')); tn.appendChild(el('code', null, g.ip)); parts.push(tn); }
+    parts.push(document.createTextNode(TT('gwp.head.heartbeat', { ago: agoT(g.last_seen_at) })));
+    if (tel0.gateway_version) {
+      parts.push(document.createTextNode(TT(g.update_available && latest ? 'gwp.head.version_drift' : (latest ? 'gwp.head.version_current' : 'gwp.head.version'), { v: tel0.gateway_version, latest: latest })));
     }
-    // Auto-update setup, color-coded: green when migrated, amber when pending.
+    parts.forEach(function (n, i) { if (i) sub.appendChild(document.createTextNode(' · ')); sub.appendChild(n); });
+    left.appendChild(sub);
+    // chips: pool membership (→ pool page), auto-update
+    var chips = el('div', 'gw-head-chips');
+    if (P && PK) {
+      PK.poolsOf(P.pools(), g.peer_id).forEach(function (p) {
+        var m = PK.memberOf(p, g.peer_id);
+        var a = el('a', 'tag tag-blue gw-pool-chip', TT('gwp.head.pool_chip', { name: p.name, role: T('gwp.mstate.' + (m && m.state === 'active' && p.mode === 'load_balancing' ? 'lb_active'
+          : (m && m.state === 'standby' && PK.reserveGap(p, m) ? 'standby_partial' : (m ? m.state : 'offline')))) }));
+        a.href = '#pool/' + p.id; a.dataset.fk = 'gw-pool-chip:' + p.id;
+        chips.appendChild(a);
+      });
+    }
     var setupDone = !!tel0.state_dir_writable;
-    var su = el('button', 'recheck');
-    su.appendChild(discPackageIcon());
-    su.title = T(setupDone ? 'gateways.setup.tooltip_done' : 'gateways.setup.tooltip_pending', setupDone ? 'Auto-update is set up' : 'Auto-update needs setup');
-    su.setAttribute('aria-label', su.title);
-    su.dataset.id = g.peer_id;
-    su.dataset.act = 'setup';
-    su.style.cssText = 'padding:6px 10px;display:inline-flex;align-items:center;justify-content:center;color:' + (setupDone ? 'var(--green,#16a34a)' : 'var(--amber,#d97706)');
-    act.appendChild(su);
-    // "Nur docker-compose.yml herunterladen" (gateway-edge.js): the current compose, no new keys —
-    // not for the Pi image, which keeps its compose itself.
-    if (window.GCGatewayCompose && g.platform !== 'rpi') {
-      var cp = el('button', 'recheck');
-      cp.appendChild(composeIcon());
-      cp.title = T('gwe.compose.button', 'Nur docker-compose.yml herunterladen');
-      cp.setAttribute('aria-label', cp.title);
-      cp.dataset.id = g.peer_id;
-      cp.dataset.act = 'compose';
-      cp.dataset.fk = 'gw-compose';
-      cp.style.cssText = 'padding:6px 10px;display:inline-flex;align-items:center;justify-content:center';
-      act.appendChild(cp);
-    }
-    var rel = el('a', 'gw-relnotes', T('gateways.release_notes', 'Release notes'));
-    rel.href = GW_RELEASES; rel.target = '_blank'; rel.rel = 'noopener';
-    act.appendChild(rel);
+    chips.appendChild(tagEl(setupDone ? 'green' : 'amber', T(setupDone ? 'gwp.head.au_on' : 'gwp.head.au_off'), true));
+    left.appendChild(chips);
+    ph.appendChild(left);
+
+    var act = el('div', 'gw-detail-actions gw-head-actions');
+    var rc = el('button', 'btn btn-ghost', T('gateways.recheck', 'Neu prüfen')); rc.type = 'button'; rc.dataset.id = g.peer_id; rc.dataset.act = 'recheck'; rc.dataset.fk = 'gw-recheck';
+    act.appendChild(rc);
     if (g.update_available) {
-      var migrated = !!(g.health && g.health.telemetry && g.health.telemetry.state_dir_writable);
-      var up = el('button', 'gw-update', T('gateways.update_to', 'Update auf') + ' ' + (latest || ''));
-      up.dataset.act = 'update'; up.dataset.id = g.peer_id;
+      var migrated = !!tel0.state_dir_writable;
+      var up = el('button', 'btn btn-primary gw-update', T('gateways.update_to', 'Update auf') + ' ' + (latest || ''));
+      up.type = 'button'; up.dataset.act = 'update'; up.dataset.id = g.peer_id; up.dataset.fk = 'gw-update';
       if (!migrated) { up.disabled = true; up.title = T('gateways.update_not_migrated', 'Gateway not migrated for in-place updates'); }
       if (g.update_state === 'updating') up.disabled = true;
       act.appendChild(up);
     }
+    // "Mehr": the rarer actions as a real menu (keyboard: ↓/↑, Home/End, Escape)
+    var wrap = el('div', 'gw-more');
+    var more = el('button', 'btn btn-ghost gw-more-btn');
+    more.type = 'button'; more.id = 'gw-more-btn'; more.dataset.fk = 'gw-more'; more.dataset.act = 'more';
+    more.setAttribute('aria-haspopup', 'menu'); more.setAttribute('aria-controls', 'gw-more-menu'); more.setAttribute('aria-expanded', menuOpen ? 'true' : 'false');
+    more.appendChild(document.createTextNode(T('gwp.menu.more', 'Mehr') + ' '));
+    more.appendChild(_icon(14, CHEVRON));
+    var menu = el('div', 'gw-menu'); menu.id = 'gw-more-menu'; menu.setAttribute('role', 'menu'); menu.setAttribute('aria-labelledby', 'gw-more-btn');
+    menu.hidden = !menuOpen;
+    function item(action, label, danger) {
+      var b = el('button', 'gw-menu-item' + (danger ? ' gw-menu-danger' : ''), label);
+      b.type = 'button'; b.setAttribute('role', 'menuitem'); b.tabIndex = -1;
+      b.dataset.act = action; b.dataset.id = g.peer_id; b.dataset.fk = 'gw-menu:' + action;
+      menu.appendChild(b);
+      return b;
+    }
+    // "Nur docker-compose.yml herunterladen" (gateway-edge.js): the current compose, no new keys —
+    // not for the Pi image, which keeps its compose itself.
+    if (window.GCGatewayCompose && g.platform !== 'rpi') item('compose', T('gwe.compose.button', 'Nur docker-compose.yml herunterladen'));
+    item('setup', T(setupDone ? 'gwp.menu.setup_done' : 'gwp.menu.setup', 'Auto-Update einrichten'));
+    // Discovery settings, only when the gateway reports the capability flag.
+    if (tel0.lan_discovery === true) item('disc-settings', T('gwp.menu.discovery', 'Geräte-Erkennung einstellen'));
+    var pa = item('pool-add', T('gwp.menu.pool', 'Zu einem Pool hinzufügen …'));
+    if (P && !P.licensed) pa.appendChild(P.lockTag());
+    var rel = el('a', 'gw-menu-item', T('gwp.menu.relnotes', 'Was ist neu (Release-Notes)'));
+    rel.href = GW_RELEASES; rel.target = '_blank'; rel.rel = 'noopener noreferrer'; rel.setAttribute('role', 'menuitem'); rel.tabIndex = -1; rel.dataset.fk = 'gw-menu:relnotes'; rel.dataset.act = 'relnotes';
+    menu.appendChild(rel);
+    wrap.appendChild(more);
+    wrap.appendChild(menu);
+    act.appendChild(wrap);
     ph.appendChild(act);
     // Update progress is surfaced via a global, colour-coded toast (see
     // reconcileUpdateToast, driven from render()) — NOT inline. Inline status
     // text reflowed the action row's buttons/icons on every status change.
     return ph;
   }
+  function menuItems() { var m = detailView.querySelector('#gw-more-menu'); return m ? Array.prototype.filter.call(m.querySelectorAll('[role="menuitem"]'), function (n) { return !n.disabled; }) : []; }
+  function setMenu(open, focus) {
+    menuOpen = !!open;
+    var btn = detailView.querySelector('#gw-more-btn'), menu = detailView.querySelector('#gw-more-menu');
+    if (!btn || !menu) return;
+    menu.hidden = !menuOpen;
+    btn.setAttribute('aria-expanded', menuOpen ? 'true' : 'false');
+    var items = menuItems();
+    if (menuOpen && focus === 'first' && items[0]) items[0].focus();
+    else if (menuOpen && focus === 'last' && items.length) items[items.length - 1].focus();
+    else if (!menuOpen && focus === 'button') btn.focus();
+  }
   function resourcesCard(g) {
     var t = (g.health && g.health.telemetry) || {}, h = g.health || {};
-    var c = el('div', 'gw');
-    var top = el('div', 'top'); top.appendChild(el('h3', null, T('gateways.sec_resources', 'Ressourcen'))); c.appendChild(top);
-    var body = el('div', 'body');
+    var c = cardFrame(T('gwp.load.title', 'Auslastung'), null, 'load', 'gwo-load');
+    var body = c.body;
     var metrics = el('div', 'gw-metrics');
     var cores = t.cpu_cores || 1, la = t.cpu_load_avg || [];
     metricRow(metrics, T('gateways.lbl_cpu_load', 'CPU-Last 1m / 5m / 15m'),
       la.length ? la.map(function (x) { return Number(x).toFixed(2); }).join(' · ') : '—',
       pct(la[0] || 0, cores), (pct(la[0] || 0, cores) > 90 ? 'bad' : null));
     if (t.mem_total) { var mp = pct(t.mem_used, t.mem_total); metricRow(metrics, T('gateways.lbl_ram', 'RAM'), fmtGB(t.mem_used) + ' / ' + fmtGB(t.mem_total) + ' · ' + mp + ' %', mp, (mp > 90 ? 'bad' : null)); }
-    if (t.disk && t.disk.total) { var dp = pct(t.disk.used, t.disk.total); metricRow(metrics, T('gateways.lbl_disk', 'Disk (rootfs)'), fmtGB(t.disk.used) + ' / ' + fmtGB(t.disk.total) + ' · ' + dp + ' %', dp, (dp > 85 ? 'bad' : (dp > 70 ? 'warn' : null))); }
+    if (t.disk && t.disk.total) { var dp = pct(t.disk.used, t.disk.total); metricRow(metrics, T('gwp.load.disk', 'Speicher'), fmtGB(t.disk.used) + ' / ' + fmtGB(t.disk.total) + ' · ' + dp + ' %', dp, (dp > 85 ? 'bad' : (dp > 70 ? 'warn' : null))); }
     body.appendChild(metrics);
-    var r = el('div', 'row3');
-    function chk(label, ok, okWord) {
-      var row = el('div', 'kv'); row.appendChild(el('div', 'k', label));
-      row.appendChild(el('div', 'v ' + (ok ? 'ok' : 'bad'), ok ? '✓ ' + okWord : '✗ ' + T('gateways.chk_fail', 'Fehler')));
-      return row;
-    }
-    r.appendChild(chk(T('gateways.lbl_http_proxy', 'HTTP-Proxy'), !!h.http_proxy_healthy, T('gateways.chk_healthy', 'healthy')));
-    r.appendChild(chk(T('gateways.lbl_mgmt_api', 'Mgmt-API'), !!h.api_healthy, T('gateways.chk_healthy', 'healthy')));
-    r.appendChild(chk(T('gateways.lbl_dns_resolve', 'DNS-Resolve'), !!h.dns_resolve_ok, T('gateways.chk_ok', 'ok')));
-    body.appendChild(r);
-    c.appendChild(body);
-    return c;
+    // the gateway's self-checks in plain words
+    var chips = el('div', 'gwe-chips gwo-selfchecks');
+    [['proxy', !!h.http_proxy_healthy], ['api', !!h.api_healthy], ['dns', !!h.dns_resolve_ok]].forEach(function (x) {
+      var tg = tagEl(x[1] ? 'green' : 'red', T('gwp.load.' + x[0] + (x[1] ? '_ok' : '_bad')), true);
+      tg.setAttribute('data-check', x[0]); chips.appendChild(tg);
+    });
+    body.appendChild(chips);
+    return c.card;
   }
+  var ROUTES_FIRST = 5;
   function routesCard(g) {
     var h = g.health || {};
     var rr = h.route_reachability || [];
     var cfg = g.routes || [];
     var cfgById = {}; cfg.forEach(function (rc) { cfgById[rc.id] = rc; });
     var upN = rr.filter(function (r) { return r.reachable; }).length;
-    var c = el('div', 'gw full');
-    var top = el('div', 'top');
-    top.appendChild(el('h3', null, T('gateways.sec_routes', 'Routen-Erreichbarkeit (LAN)')));
-    var pillCls = (rr.length && upN === rr.length) ? 'online' : (upN === 0 ? 'offline' : 'degraded');
-    top.appendChild(el('span', 'pill ' + pillCls, upN + ' / ' + rr.length));
-    c.appendChild(top);
-    var body = el('div', 'body');
+    var pillCls = (rr.length && upN === rr.length) ? 'green' : (upN === 0 ? 'red' : 'amber');
+    var c = cardFrame(T('gwp.routes.title', 'Routen über dieses Gateway'), rr.length ? tagEl(pillCls, TT('gwp.routes.reach', { up: upN, n: rr.length })) : null, 'routes', 'full gwo-routes');
+    c.card.classList.add('full');
+    var body = c.body;
     if (rr.length) {
+      var all = !!routesAll[g.peer_id];
+      var wrapT = el('div', 'gwe-table-wrap gwo-routes-wrap');
       var tbl = el('table', 'gw-routes');
       var thead = el('thead'), htr = el('tr');
       [T('gateways.col_domain', 'Domain'), T('gateways.col_lan_target', 'LAN-Ziel'), T('gateways.col_status', 'Status'), T('gateways.col_latency', 'Latenz'), T('gateways.col_checked', 'Geprüft')]
-        .forEach(function (htxt) { htr.appendChild(el('th', null, htxt)); });
+        .forEach(function (htxt) { var th = el('th', null, htxt); th.scope = 'col'; htr.appendChild(th); });
       thead.appendChild(htr); tbl.appendChild(thead);
       var tbody = el('tbody');
-      rr.forEach(function (r) {
+      (all ? rr : rr.slice(0, ROUTES_FIRST)).forEach(function (r) {
         var rc = cfgById[r.route_id] || {};
         var tr = el('tr');
         // Prefer the user-configured domain (`rc.domain`) over the gateway's
@@ -367,19 +503,25 @@
         tbody.appendChild(tr);
       });
       tbl.appendChild(tbody);
-      body.appendChild(tbl);
+      wrapT.appendChild(tbl);
+      body.appendChild(wrapT);
+      if (rr.length > ROUTES_FIRST) {
+        var more = el('button', 'gwn-linkbtn gwo-routes-all', all ? T('gwp.less', 'Weniger anzeigen') : TT('gwp.routes.all', { n: rr.length }));
+        more.type = 'button'; more.dataset.fk = 'gwo-routes-all'; more.setAttribute('aria-expanded', all ? 'true' : 'false');
+        more.addEventListener('click', function () { routesAll[g.peer_id] = !all; renderDetail(g); });
+        body.appendChild(more);
+      }
     } else {
       body.appendChild(el('div', 'gw-empty', T('gateways.routes_empty', 'Keine Routen auf dieses Gateway.')));
     }
-    c.appendChild(body);
     var foot = el('div', 'foot');
     var tl = h.tcp_listeners;
     var l4n = (typeof tl === 'number') ? tl : (Array.isArray(tl) ? tl.length : cfg.filter(function (rc) { return rc.l4_listen_port; }).length);
     foot.appendChild(el('span', null, l4n + ' ' + T('gateways.foot_listeners', 'L4-Listener aktiv') + ' · ' + T('gateways.foot_probes', 'TCP-Probes alle 15 s')));
     var wol = cfg.filter(function (rc) { return rc.wol_enabled; }).map(function (rc) { return rc.domain; });
     if (wol.length) foot.appendChild(el('span', null, T('gateways.foot_wol', 'WoL verfügbar für') + ' „' + wol.join(', ') + '"'));
-    c.appendChild(foot);
-    return c;
+    c.card.appendChild(foot);
+    return c.card;
   }
   // Auto-update setup form populated into the modal body (previously the
   // standalone `setupCard` in the right-column grid). Same content, modal frame.
@@ -490,36 +632,15 @@
     });
     return s;
   }
-  function discGearIcon() {
-    return _icon(16, [
-      { tag: 'circle', attrs: { cx: '12', cy: '12', r: '3' } },
-      { tag: 'path', attrs: { d: 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z' } },
-    ]);
-  }
+
   function discScanIcon() {
     return _icon(16, [
       { tag: 'circle', attrs: { cx: '11', cy: '11', r: '8' } },
       { tag: 'path', attrs: { d: 'm21 21-4.3-4.3' } },
     ]);
   }
-  // Lucide "package" — used for the auto-update setup indicator.
-  function discPackageIcon() {
-    return _icon(16, [
-      { tag: 'path', attrs: { d: 'M16.5 9.4 7.5 4.21' } },
-      { tag: 'path', attrs: { d: 'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z' } },
-      { tag: 'polyline', attrs: { points: '3.27 6.96 12 12.01 20.73 6.96' } },
-      { tag: 'line', attrs: { x1: '12', y1: '22.08', x2: '12', y2: '12' } },
-    ]);
-  }
-  // file with a down arrow (lucide "file-down") — the compose download in the detail head
-  function composeIcon() {
-    return _icon(16, [
-      { tag: 'path', attrs: { d: 'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z' } },
-      { tag: 'path', attrs: { d: 'M14 2v4a2 2 0 0 0 2 2h4' } },
-      { tag: 'path', attrs: { d: 'M12 18v-6' } },
-      { tag: 'path', attrs: { d: 'm9 15 3 3 3-3' } },
-    ]);
-  }
+
+
   // The scan-icon spinner (@keyframes gw-spin) and the indeterminate progress
   // bar (.gw-progress) live in the linked stylesheet (pro.css, under aurora.css).
   // A runtime-injected <style> is blocked by our CSP (styleSrcElem requires a
@@ -1076,30 +1197,47 @@
     if (!g) { showFleet(); if (pendingDetail !== String(id)) { pendingDetail = String(id); pendingTab = tab || 'overview'; load(); } return; }
     pendingDetail = null;
     var same = openId === String(id) && !detailView.hidden;
-    openId = String(id);
+    if (!same) menuOpen = false;
+    openId = String(id); openPool = null;
     openTab = tab || 'overview';
     renderDetail(g);
-    fleetView.hidden = true; detailView.hidden = false;
+    fleetView.hidden = true; if (poolView) poolView.hidden = true; detailView.hidden = false;
     // switching tabs keeps the scroll position; a new gateway starts at the top
     if (!same) window.scrollTo(0, 0);
   }
+  function showPool(id) {
+    var same = openPool === String(id) && poolView && !poolView.hidden;
+    openId = null; openPool = String(id); menuOpen = false; netExtra = null;
+    detailView.hidden = true; detailView.replaceChildren(); fleetView.hidden = true;
+    if (window.GCGatewayEdge) window.GCGatewayEdge.unmount();
+    if (!poolView || !P) { showFleet(); return; }
+    poolView.hidden = false;
+    P.renderPool(poolView, id);
+    if (!same) window.scrollTo(0, 0);
+  }
   function showFleet() {
-    openId = null; detailView.hidden = true; fleetView.hidden = false; detailView.replaceChildren();
+    openId = null; openPool = null; menuOpen = false; netExtra = null;
+    detailView.hidden = true; if (poolView) { poolView.hidden = true; poolView.replaceChildren(); }
+    fleetView.hidden = false; detailView.replaceChildren();
     if (window.GCGatewayEdge) window.GCGatewayEdge.unmount();
   }
   function goFleet() {
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
     showFleet();
   }
+  var TAB_NAMES = ['features', 'net', 'inet', 'dns', 'cache', 'edge', 'mqtt'];
   function route() {
     var h = location.hash || '';
-    // #gw/<id>, #gw/<id>/net, …/inet, …/dns, …/cache, …/edge, …/mqtt (an unknown tab shows the overview)
+    // #gw/<id>, #gw/<id>/features, …/net, …/inet, …/dns, …/cache, …/edge, …/mqtt (an unknown tab shows the overview)
     var m = h.match(/^#gw\/([^/]+)(?:\/([a-z]+))?$/);
     if (m) {
-      var tabName = ['net', 'inet', 'dns', 'cache', 'edge', 'mqtt'].indexOf(m[2]) >= 0 ? m[2] : 'overview';
+      var tabName = TAB_NAMES.indexOf(m[2]) >= 0 ? m[2] : 'overview';
       var gid; try { gid = decodeURIComponent(m[1]); } catch (e) { gid = null; }
       if (gid !== null) { showDetail(gid, tabName); return; }
     }
+    // #pool/<id>: the pool page
+    var pm = PK && PK.parsePoolHash(h);
+    if (pm) { showPool(pm.id); return; }
     showFleet();
     // Assistant: #add = new gateway, #setup/<id> = continue the set-up.
     var W = window.GCGatewayWizard;
@@ -1182,24 +1320,86 @@
     showUpdateToast(g.peer_id, st, version);
   }
 
+  // ── Fleet: pools as groups, then "Einzelne Gateways" ──────────────────────
+  var HINT_KEY = 'gc.gw.poolHintHidden';
+  function hintHidden(id) { try { return (localStorage.getItem(HINT_KEY) || '').split(',').indexOf(String(id)) >= 0; } catch (e) { return false; } }
+  function hideHint(id) {
+    try { var l = (localStorage.getItem(HINT_KEY) || '').split(',').filter(Boolean); l.push(String(id)); localStorage.setItem(HINT_KEY, l.join(',')); } catch (e) { /* per viewer only */ }
+  }
+  // The dashed card "X absichern?" — a hint, never a must (dismissable per viewer).
+  function hintCard(singles) {
+    var sg = PK.suggestion(singles);
+    if (!sg || (!sg.partner && !(sg.g.routes || []).length) || hintHidden(sg.g.peer_id)) return null;
+    var d = el('div', 'gwp-hint');
+    d.setAttribute('data-hint', String(sg.g.peer_id));
+    d.appendChild(el('strong', null, TT('gwp.hint.title', { name: sg.g.name })));
+    d.appendChild(el('p', 'gwe-d', sg.partner ? TT('gwp.hint.partner', { partner: sg.partner.name, lan: sg.lan }) : T('gwp.hint.text')));
+    var acts = el('div', 'gwe-actions');
+    var b = el('button', 'btn btn-ghost btn-sm', sg.partner ? TT('gwp.hint.create_two', { name: sg.g.name, partner: sg.partner.name }) : TT('gwp.hint.create', { name: sg.g.name }));
+    b.type = 'button'; b.dataset.act = 'pool-create'; b.dataset.ids = [sg.g.peer_id].concat(sg.partner ? [sg.partner.peer_id] : []).join(',');
+    if (P && !P.licensed) b.appendChild(P.lockTag());
+    acts.appendChild(b);
+    var x = el('button', 'btn btn-ghost btn-sm', T('gwp.hint.hide', 'Ausblenden')); x.type = 'button'; x.dataset.act = 'hint-hide'; x.dataset.id = sg.g.peer_id;
+    acts.appendChild(x);
+    d.appendChild(acts);
+    return d;
+  }
+  function singlesSection(singles) {
+    var sec = el('section', 'gwp-group gwp-singles'); sec.setAttribute('aria-labelledby', 'gwp-singles-h');
+    var head = el('div', 'gwp-group-head');
+    var h2 = el('h2', 'gwp-group-title', T('gwp.singles.title', 'Einzelne Gateways')); h2.id = 'gwp-singles-h';
+    head.appendChild(h2); head.appendChild(el('span', 'gwp-grow')); head.appendChild(el('span', 'gwe-d', T('gwp.singles.sub')));
+    sec.appendChild(head);
+    var g2 = el('div', 'grid gwp-grid');
+    singles.forEach(function (g) { g2.appendChild(card(g)); });
+    var hc = hintCard(singles);
+    if (hc) g2.appendChild(hc);
+    sec.appendChild(g2);
+    return sec;
+  }
+  function fleet() {
+    var nodes = [];
+    var pools = P ? P.pools() : [];
+    var fg = PK ? PK.fleetGroups(last, pools) : { groups: [], singles: last };
+    fg.groups.forEach(function (gr) {
+      var cards = gr.members.map(function (x) { return card(x.g, { pool: gr.pool, member: x.member }); });
+      if (!cards.length) cards = [el('p', 'gwe-empty', T('gwp.group.empty'))];
+      nodes.push(P.groupSection(gr.pool, cards));
+    });
+    if (fg.singles.length) nodes.push(singlesSection(fg.singles));
+    return nodes;
+  }
+
   function render(data) {
     last = data.gateways || []; latest = data.latest_version || ''; warn.hidden = !!data.latest_version;
     last.forEach(function (g) { reconcileUpdateToast(g); });
     var on = 0, off = 0, deg = 0, upd = 0;
     last.forEach(function (g) { var s = status(g); if (s === 'online') on++; else if (s === 'offline') off++; else if (s === 'degraded') deg++; if (g.update_available) upd++; });
-    kpis.replaceChildren(
-      kpi('', last.length, T('gateways.kpi_total', 'Gateways')),
-      kpi('ok', on, T('gateways.online', 'Online')),
-      kpi('warn', deg, T('gateways.degraded', 'Degraded')),
-      kpi('bad', off, T('gateways.offline', 'Offline')),
-      kpi('warn', upd, T('gateways.kpi_update', 'Update')));
-    grid.replaceChildren.apply(grid, last.map(card));
-    if (!last.length) grid.appendChild(emptyFleet());
+    var st = P && P.state();
+    var onSub = [off ? TT('gwp.kpi.offline_n', { n: off }) : null, deg ? TT('gwp.kpi.degraded_n', { n: deg }) : null].filter(Boolean).join(' · ');
+    var tiles = [kpi('', last.length, T('gateways.kpi_total', 'Gateways')),
+      kpi(off ? 'warn' : 'ok', on, T('gateways.online', 'Online'), onSub || null)];
+    if (st) {
+      tiles.push(kpi('', (st.pools || []).length, T('gwp.kpi.pools', 'Pools')));
+      tiles.push(kpi(st.routes_pooled ? 'ok' : '', TT('gwp.kpi.safe_v', { k: st.routes_pooled, n: st.routes_total }), T('gwp.kpi.safe', 'Ausfallsicher'), T('gwp.kpi.safe_sub')));
+    }
+    tiles.push(kpi('warn', upd, T('gateways.kpi_update', 'Update')));
+    kpis.replaceChildren.apply(kpis, tiles);
+    grid.replaceChildren.apply(grid, last.length ? fleet() : [emptyFleet()]);
     if (pendingDetail && last.some(function (x) { return String(x.peer_id) === pendingDetail; })) { showDetail(pendingDetail, pendingTab); return; }
     if (!routed) { routed = true; route(); }
     else if (openId) { var g = last.find(function (x) { return String(x.peer_id) === openId; }); if (g) renderDetail(g); else goFleet(); }
+    else if (openPool && P && !P.busy(poolView)) P.renderPool(poolView, openPool);
   }
-  function load() { fetch('/api/v1/gateways', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(render).catch(function (err) { console.warn('[gateways] loading gateways failed', err); }); }
+  var loading = null;
+  function load(force) {
+    // a change of a pool (force) must not take the answer of a poll that left before it
+    if (loading) return force ? loading.then(function () { return load(true); }) : loading;
+    var pools = P ? P.load().catch(function (err) { console.warn('[gateways] loading pools failed', err); return null; }) : Promise.resolve(null);
+    var gws = fetch('/api/v1/gateways', { credentials: 'same-origin' }).then(function (r) { return r.json(); });
+    loading = Promise.all([gws, pools]).then(function (res) { loading = null; render(res[0]); }, function (err) { loading = null; console.warn('[gateways] loading gateways failed', err); });
+    return loading;
+  }
   function probe(id) { fetch('/api/v1/gateways/' + encodeURIComponent(id) + '/probe', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } }).then(function () { load(); }).catch(function (err) { console.warn('[gateways] probe failed', err); }); }
 
   function emptyFleet() {
@@ -1212,18 +1412,60 @@
     if (location.hash === '#add' && window.GCGatewayWizard) window.GCGatewayWizard.open({ mode: 'add' });
     else location.hash = '#add';
   });
+  var addPoolBtn = document.getElementById('btn-add-pool');
+  if (addPoolBtn && P) addPoolBtn.addEventListener('click', function () { P.openCreate({}); });
+  if (P) P.init({ fleet: function () { return last; }, changed: function () { return load(true); } });
   grid.addEventListener('click', function (e) {
+    var pc = e.target.closest('[data-act="pool-create"]');
+    if (pc) { e.stopPropagation(); if (P) P.openCreate({ preselect: (pc.dataset.ids || '').split(',').filter(Boolean) }); return; }
+    var hh = e.target.closest('[data-act="hint-hide"]');
+    if (hh) { e.stopPropagation(); hideHint(hh.dataset.id); var card0 = hh.closest('.gwp-hint'); if (card0) card0.remove(); return; }
     var rs = e.target.closest('.gw-resume');
     if (rs) { e.stopPropagation(); location.hash = '#setup/' + encodeURIComponent(rs.dataset.id); return; }
     var rc = e.target.closest('.recheck'); if (rc) { e.stopPropagation(); probe(rc.dataset.id); return; }
-    var c = e.target.closest('.gw'); if (!c) return;
+    if (e.target.closest('a[href]')) return; // the card's name link / "Pool öffnen" navigate themselves
+    var c = e.target.closest('.gw[data-id]'); if (!c) return;
     location.hash = '#gw/' + encodeURIComponent(c.dataset.id);
+  });
+  if (poolView) poolView.addEventListener('click', function (e) { if (e.target.closest('[data-act="back"]')) goFleet(); });
+  // "Mehr" menu: keyboard and outside clicks
+  detailView.addEventListener('keydown', function (e) {
+    var btn = e.target.closest && e.target.closest('#gw-more-btn');
+    if (btn && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); setMenu(true, e.key === 'ArrowDown' ? 'first' : 'last'); return; }
+    if (!menuOpen || !(e.target.closest && e.target.closest('#gw-more-menu'))) {
+      if (menuOpen && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMenu(false, 'button'); }
+      return;
+    }
+    var items = menuItems();
+    var i = items.indexOf(document.activeElement);
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMenu(false, 'button'); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
+    else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
+    else if (e.key === 'Tab') setMenu(false);
+  });
+  document.addEventListener('click', function (e) {
+    if (menuOpen && !(e.target.closest && e.target.closest('.gw-more'))) setMenu(false);
   });
   detailView.addEventListener('click', async function (e) {
     if (e.target.closest('[data-act="back"]')) { goFleet(); return; }
+    if (e.target.closest('[data-act="more"]')) { setMenu(!menuOpen, menuOpen ? null : 'first'); return; }
+    var mi = e.target.closest('.gw-menu-item');
+    if (mi) {
+      // the dialog gives the focus back to "Mehr", not to the hidden item
+      setMenu(false, 'button');
+      if (mi.dataset.act === 'relnotes') return;
+    }
     var rc = e.target.closest('[data-act="recheck"]'); if (rc) { probe(rc.dataset.id); return; }
     var ds = e.target.closest('[data-act="disc-settings"]'); if (ds) { openDiscoverySettings(ds.dataset.id); return; }
     var su = e.target.closest('[data-act="setup"]'); if (su) { openSetupModal(su.dataset.id); return; }
+    var pa = e.target.closest('[data-act="pool-add"]');
+    if (pa) {
+      var pg = last.find(function (x) { return String(x.peer_id) === String(pa.dataset.id); });
+      if (pg && P) P.openAddTo(pg);
+      return;
+    }
     var cp = e.target.closest('[data-act="compose"]');
     if (cp) {
       var cg = last.find(function (x) { return String(x.peer_id) === String(cp.dataset.id); });
@@ -1252,11 +1494,18 @@
     }
   });
   window.addEventListener('hashchange', route);
+  // new data of the network watch (gateway-net.js): the overview's "Zustand" counts the new devices
+  document.addEventListener('gc:gwnet', function (e) {
+    if (!openId || openTab !== 'overview' || !e.detail || String(e.detail.id) !== openId) return;
+    var g = last.find(function (x) { return String(x.peer_id) === openId; });
+    var old = detailView.querySelector('.gwo-state');
+    if (g && old && PK) old.replaceWith(stateCard(g));
+  });
 
-  var deb = null; function refresh() { clearTimeout(deb); deb = setTimeout(load, 1000); }
+  var deb = null; function refresh() { clearTimeout(deb); deb = setTimeout(function () { load(); }, 1000); }
   document.addEventListener('gc:gateway', refresh);
   document.addEventListener('gc:gateway-wizard', refresh);
   document.addEventListener('gc:reconnected', refresh);
-  setInterval(load, 30000);
+  setInterval(function () { load(); }, 30000);
   load();
 })();

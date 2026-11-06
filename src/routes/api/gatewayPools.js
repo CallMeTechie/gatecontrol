@@ -40,6 +40,22 @@ router.get('/migration-candidates', (req, res) => {
   res.json({ routes, pools });
 });
 
+// Live state for the gateways page (services/gatewayPoolState.js): who serves
+// each pool now, the other members, the reserve check, routes, last switches.
+router.get('/state', (req, res) => {
+  try {
+    const st = require('../../services/gatewayPoolState').state();
+    res.json({
+      ok: true,
+      ...st,
+      licensed: { failover: license.hasFeature('gateway_pool_failover'), load_balancing: license.hasFeature('gateway_pool_load_balancing') },
+    });
+  } catch (err) {
+    logger.error({ err: err.message }, 'gateway pool state failed');
+    res.status(500).json({ ok: false, error: 'state_failed' });
+  }
+});
+
 router.get('/:id', (req, res) => {
   const id = parseInt(req.params.id, 10);
   const pool = gatewayPool.getPool(id);
@@ -82,6 +98,7 @@ router.put('/:id',
     try {
       const updated = gatewayPool.updatePool(id, req.body || {});
       await applyPoolMutationWithSequencing(id);
+      switched(id);
       updated.members = gatewayPool.listMembers(id);
       res.json(updated);
     } catch (err) {
@@ -161,6 +178,11 @@ function homesChanged() {
   try { require('../../services/gatewayOps').reconcileHomes(); } catch { /* the ticker catches up */ }
 }
 
+// An administrator changed members, order or mode: "Letzte Wechsel" notes who serves now.
+function switched(poolId) {
+  require('../../services/gatewayPoolState').recordSafely({ poolId, cause: 'config' });
+}
+
 router.post('/:id/members', async (req, res) => {
   const poolId = parseInt(req.params.id, 10);
   const { peer_id, priority } = req.body || {};
@@ -169,6 +191,7 @@ router.post('/:id/members', async (req, res) => {
     gatewayPool.addMember(poolId, peer_id, priority);
     homesChanged();
     await applyPoolMutationWithSequencing(poolId);
+    switched(poolId);
     res.status(201).json({ ok: true });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
@@ -182,6 +205,7 @@ router.delete('/:id/members/:peerId', async (req, res) => {
     gatewayPool.removeMember(poolId, peerId);
     homesChanged();
     await applyPoolMutationWithSequencing(poolId);
+    switched(poolId);
     res.status(204).send();
   } catch (err) {
     const status = /last_member_in_use/.test(err.message) ? 409 : 400;
@@ -202,6 +226,7 @@ router.put('/:id/members', async (req, res) => {
     const updated = gatewayPool.replaceMembers(poolId, members);
     homesChanged();
     await applyPoolMutationWithSequencing(poolId);
+    switched(poolId);
     res.json(updated);
   } catch (err) {
     const status = /last_member_in_use/.test(err.message) ? 409
@@ -218,10 +243,38 @@ router.put('/:id/members/:peerId', async (req, res) => {
   try {
     gatewayPool.setMemberPriority(poolId, peerId, priority);
     await applyPoolMutationWithSequencing(poolId);
+    switched(poolId);
     res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
   }
+});
+
+// Dissolve a pool (page "Pool auflösen …"): the routes, RDP routes and domain
+// zones that point at it keep working, pinned to `pin_to` (a gateway; needed
+// when anything points at the pool), then members and history go with it.
+// Plain DELETE /:id stays as it was: refused while routes use the pool.
+router.post('/:id/dissolve', async (req, res) => {
+  const poolId = parseInt(req.params.id, 10);
+  const raw = req.body && req.body.pin_to;
+  const pinTo = raw == null || raw === '' ? null : parseInt(raw, 10);
+  let r;
+  try {
+    r = require('../../services/gatewayPoolState').dissolve(poolId, Number.isInteger(pinTo) ? pinTo : null);
+  } catch (err) {
+    return res.status(err.status || 400).json({ ok: false, error: err.message });
+  }
+  homesChanged();
+  try { await require('../../services/caddyConfig').syncToCaddy(); } catch (err) {
+    logger.error({ err: err.message, poolId }, 'caddy resync after dissolving a pool failed');
+  }
+  const gateways = require('../../services/gateways');
+  for (const id of new Set([...r.members, ...(Number.isInteger(pinTo) ? [pinTo] : [])])) {
+    gateways.notifyConfigChanged(id).catch((err) => logger.debug({ err: err.message, peerId: id }, 'gateway config push failed (gateway re-polls anyway)'));
+  }
+  require('../../services/activity').log('gateway_pool_dissolved', `Gateway pool #${poolId} dissolved`,
+    { source: 'admin', severity: 'info', details: { poolId, pinTo, routes: r.routes, rdp: r.rdp, zones: r.zones } });
+  res.json({ ok: true, pinned: r.routes, rdp: r.rdp, zones: r.zones });
 });
 
 module.exports = router;

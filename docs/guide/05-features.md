@@ -5,16 +5,25 @@
 A gateway can do more than the tunnel. You find all features like this:
 
 1. “Network” → “Gateways” → click your gateway.
-2. Tab “Overview” → card “Features of this gateway”.
+2. Tab “Features” (the number next to it says how many are on).
 
-There you switch each feature on or off. The card also shows roughly how much
-memory the gateway needs with the features that are on.
+There you switch each feature on or off, grouped by area (“Eyes on the home
+network”, “For the whole home network”, “Internet & power”, “Extensions”,
+“System”). At the top it shows roughly how much memory the gateway needs with
+the features that are on. The gateway's overview only shows in the card
+“Features” what is on and what is off; “Manage” leads to the tab. Tabs of a
+feature that is off look faded with “· off” and still open.
+
+Gateway pools (several gateways in the same network that step in for each
+other) are under “Gateways” as well: as a group of their own in the list, with
+“Create pool” at the top right and “Open pool” for the settings. There is no
+separate page “Gateway Pools” in the menu any more.
 
 General requirements:
 
 - Network watch, internet quality, presence and UPS need gateway version
   **1.21.0** or later, DNS filter and home cache **1.22.0**. If the gateway is
-  older, the card says so; update it then ([chapter 6](06-updating-a-gateway.md)).
+  older, the tab says so; update it then ([chapter 6](06-updating-a-gateway.md)).
 - The gateway is in the home network in **host network mode** (default for the
   Pi, the Synology package and Linux with “Host (recommended)”).
 - The **time zone** comes from the server (see [chapter 2.5](02-server-setup.md#25-the-values-in-env-you-really-need)).

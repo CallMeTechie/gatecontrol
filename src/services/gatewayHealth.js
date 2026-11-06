@@ -272,7 +272,8 @@ async function reconcileFailoverState() {
       require('../utils/logger').error({ err: err.message }, 'caddy resync after boot reconcile failed');
     }
     if (affected.size > 0) await _notifyAffected(affected);
-  }
+  }  // baseline / missed switches of the pools (gateway_pool_events) after a restart
+  require('./gatewayPoolState').recordSafely();
 }
 
 async function _onTransition(peerId, transition) {
@@ -377,6 +378,8 @@ async function _onTransition(peerId, transition) {
     if (affectedPeers.size > 0) {
       await _notifyAffected(affectedPeers);
     }
+    // "Letzte Wechsel" of the pools (gateway_pool_events): who serves now
+    if (gatewayPool.isPeerInAnyPool(peerId)) require('./gatewayPoolState').recordSafely();
   }
 }
 

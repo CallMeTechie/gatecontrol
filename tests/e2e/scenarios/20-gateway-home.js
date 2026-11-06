@@ -130,14 +130,19 @@ module.exports = (ctx) => {
         step('home: two devices belong to a person', owner.every((r) => r.status === 200));
         step('home: a speed test (for "schneller als Server")', await gw('/inetq', { samples: [], outages: [], speedtests: [{ at: now - 60 * MIN, downMbps: 100, upMbps: 40, bytes: 3e8 }] }) === 200);
 
-        // ── overview: the rows in the card ──
-        await page.goto(`${BASE}/gateways#gw/${GW}`);
+        // ── tab "Funktionen": the rows of phase 3b ──
+        await page.goto(`${BASE}/gateways#gw/${GW}/features`);
         // only the hash changed: load the page again so it comes in German
         await page.reload();
         await theme(page, 'dark');
-        step('home: seven tabs with DNS-Filter and Zwischenspeicher', await until(page, () => [...document.querySelectorAll('.gwe-tabs [role="tab"]')].map((b) => b.dataset.tab).join(',') === 'overview,net,inet,dns,cache,edge,mqtt'));
-        step('home: the card "Funktionen" has DNS filter, home cache (switches) and the local time', await until(page, () => {
+        step('home: eight tabs with Funktionen, DNS-Filter and Zwischenspeicher', await until(page, () => [...document.querySelectorAll('.gwe-tabs [role="tab"]')].map((b) => b.dataset.tab).join(',') === 'overview,features,net,inet,dns,cache,edge,mqtt'));
+        step('home: switched-off functions: their tabs muted with "· aus"', await until(page, () => {
+          const off = (t) => { const b = document.getElementById('gwe-tab-' + t); return b && b.classList.contains('gwe-tab-is-off') && !b.querySelector('[data-gwe-off]').hidden; };
+          return off('dns') && off('cache');
+        }));
+        step('home: the tab "Funktionen" has DNS filter, home cache (switches, card "Für das ganze Heimnetz") and the local time', await until(page, () => {
           const f = (k) => document.querySelector(`.gwn-features [data-feature="${k}"]`);
+          if (!document.querySelector('[data-fgroup="wide"] [data-feature="dns"]') || !document.querySelector('[data-fgroup="system"] [data-feature="timezone"]')) return false;
           return f('dns') && f('dns').querySelector('[role="switch"]') && f('cache') && f('cache').querySelector('[role="switch"]') && f('timezone') && !f('timezone').querySelector('[role="switch"]');
         }));
         step('home: the rows link to the user guide (chapter 5)', await page.evaluate(() => {
@@ -298,12 +303,17 @@ module.exports = (ctx) => {
         allow((p) => p.kind === 'http' && p.status === 502 && /\/cache\/clear$/.test(p.url));
         allow((p) => p.kind === 'console' && /502/.test(p.text));
 
-        // the overview card counts both in the memory estimate
-        await goTab(page, GW, 'overview');
-        step('home: the card shows both switched on', await until(page, () => {
+        // the tab "Funktionen" shows both switched on, with their memory share; the tabs are no longer muted
+        await goTab(page, GW, 'features');
+        step('home: the tab "Funktionen" shows both switched on (≈ MB next to them)', await until(page, () => {
           const f = (k) => document.querySelector(`.gwn-features [data-feature="${k}"] [role="switch"]`);
-          return f('dns') && f('dns').getAttribute('aria-checked') === 'true' && f('cache') && f('cache').getAttribute('aria-checked') === 'true';
+          const mem = (k) => document.querySelector(`.gwn-features [data-feature="${k}"] .gwn-fr-mem`);
+          return f('dns') && f('dns').getAttribute('aria-checked') === 'true' && f('cache') && f('cache').getAttribute('aria-checked') === 'true' && mem('dns') && mem('cache')
+            && !document.getElementById('gwe-tab-dns').classList.contains('gwe-tab-is-off');
         }));
+        await view(page, 'gwhome-features-dark');
+        await goTab(page, GW, 'overview');
+        step('home: the overview card "Funktionen" lists DNS filter and home cache as on', await until(page, () => !!document.querySelector('.gwn-fsum [data-fon="dns"]') && !!document.querySelector('.gwn-fsum [data-fon="cache"]')));
         await view(page, 'gwhome-overview-dark');
 
         // ── light, 390 px ──
@@ -314,7 +324,7 @@ module.exports = (ctx) => {
         await view(page, 'gwhome-cache-light');
         await page.setViewportSize({ width: 390, height: 900 });
         await fresh(page);
-        for (const tab of ['overview', 'dns', 'cache']) {
+        for (const tab of ['overview', 'features', 'dns', 'cache']) {
           await goTab(page, GW, tab);
           await page.waitForTimeout(400);
           const o = await overflow(page);

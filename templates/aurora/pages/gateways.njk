@@ -1,12 +1,19 @@
 {% extends theme + "/layout.njk" %}
 {% block content %}
 <div class="gw-fleet">
-  <div id="fleet-view">
+  {#- data-pools: licence of the gateway pools (gateway-pools-ui.js) — without it
+      the fleet shows no pool groups and the pool actions open the licence hint. -#}
+  <div id="fleet-view" data-pools="{{ 'on' if license.features.gateway_pools else 'off' }}" data-pools-lb="{{ 'on' if license.features.gateway_pool_load_balancing else 'off' }}">
     {#- The page title is the topbar's; this row carries the intro and the
-        page's action (docs/feature-gateway-wizard.md). -#}
+        page's actions (docs/feature-gateway-wizard.md). -#}
     <div class="page-header">
-      <p class="page-meta">{{ t('gwiz.page_intro') }}</p>
+      <p class="page-meta">{{ t('gwp.page_intro') }}</p>
       <div class="page-actions">
+        <button type="button" class="btn btn-ghost" id="btn-add-pool">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/></svg>
+          <span>{{ t('gwp.create') }}</span>
+          {% if not license.features.gateway_pools %}<span class="feature-lock"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="2"/></svg>{{ t('common.pro') }}</span>{% endif %}
+        </button>
         <button type="button" class="btn btn-primary" id="btn-add-gateway">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
           <span>{{ t('gwiz.add') }}</span>
@@ -15,9 +22,11 @@
     </div>
     <div id="fleet-kpis" class="kpis"></div>
     <div id="version-warning" class="note" hidden>{{ t('gateways.version_check_unavailable') }}</div>
-    <div id="fleet-grid" class="grid"></div>
+    <div id="fleet-grid" class="gwp-fleet"></div>
   </div>
   <div id="gw-detail-view" hidden></div>
+  {#- the pool page #pool/<id> (gateway-pools-ui.js) -#}
+  <div id="gw-pool-view" hidden></div>
 </div>
 
 {# LAN-Discovery settings modal — body is populated by gateways.js when the gear icon is clicked. #}
@@ -375,15 +384,17 @@
     </div>
   </div>
 </div>
-<script type="application/json" id="gwiz-i18n" data-prefixes="gwiz. gwe. gwn. gwh. common." nonce="{{ cspNonce }}">{{ gwizI18n | default('{}') | safe }}</script>
+<script type="application/json" id="gwiz-i18n" data-prefixes="gwiz. gwe. gwn. gwh. gwp. gateway_pools. common." nonce="{{ cspNonce }}">{{ gwizI18n | default('{}') | safe }}</script>
 {% endblock %}
 {% block scripts %}<script src="/js/handbook.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-kit.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-wizard.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-edge-kit.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-edge.js?v={{ appVersion }}"></script>
+<script src="/js/gateway-pool-kit.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-net-kit.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-net.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-home-kit.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-home.js?v={{ appVersion }}"></script>
+<script src="/js/gateway-pools-ui.js?v={{ appVersion }}"></script>
 <script src="/js/gateways.js?v={{ appVersion }}"></script>{% endblock %}

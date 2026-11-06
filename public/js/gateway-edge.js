@@ -328,7 +328,8 @@
       const b = h('button', {
         type: 'button', class: 'gwe-tab', role: 'tab', id: 'gwe-tab-' + id, 'aria-selected': sel ? 'true' : 'false',
         'aria-controls': 'gwe-tabpanel', tabIndex: sel ? 0 : -1, 'data-fk': 'tab:' + id, 'data-tab': id,
-      }, [t('gwe.tabs.' + id), id !== 'overview' ? h('span', { class: 'gwe-tab-badge', 'data-gwe-badge': id }) : null]);
+      }, [t('gwe.tabs.' + id), h('span', { class: 'gwe-tab-off', 'data-gwe-off': id, hidden: true, text: ' · ' + t('gwe.tabs.off') }),
+        id !== 'overview' ? h('span', { class: 'gwe-tab-badge', 'data-gwe-badge': id }) : null]);
       b.addEventListener('click', () => { if (!sel) location.hash = K.hashFor(g.peer_id, id); });
       bar.appendChild(b);
     });
@@ -350,10 +351,17 @@
   function fillBadges(root, id) {
     const e = entry(id);
     const d = e.data;
+    // a tab whose function is switched off: muted, "· aus" (still opens, its off-note inside)
+    root.querySelectorAll('[data-gwe-off]').forEach((n) => {
+      const off = !!(window.GCGatewayNet && window.GCGatewayNet.tabOff(id, n.getAttribute('data-gwe-off')));
+      n.hidden = !off;
+      const tabBtn = n.closest('.gwe-tab');
+      if (tabBtn) tabBtn.classList.toggle('gwe-tab-is-off', off);
+    });
     root.querySelectorAll('[data-gwe-badge]').forEach((b) => {
-      // tabs "Netzwerk" / "Internet": their own data (gateway-net.js)
+      // tabs "Funktionen" / "Netzwerk" / "Internet": their own data (gateway-net.js)
       const which = b.getAttribute('data-gwe-badge');
-      if (which === 'net' || which === 'inet') { if (window.GCGatewayNet) window.GCGatewayNet.badge(b, id, which); return; }
+      if (which === 'net' || which === 'inet' || which === 'features') { if (window.GCGatewayNet) window.GCGatewayNet.badge(b, id, which); return; }
       // tabs "DNS-Filter" / "Zwischenspeicher" (phase 3b, gateway-home.js)
       if (which === 'dns' || which === 'cache') { if (window.GCGatewayHome) window.GCGatewayHome.badge(b, id, which); return; }
       b.replaceChildren();
@@ -1025,8 +1033,8 @@
 
   // ─── Public ───────────────────────────────────────────────────────────
   function mount(box, g, tab, ctx) {
-    // tabs "Netzwerk" and "Internet" (phase 3a) live in gateway-net.js
-    if ((tab === 'net' || tab === 'inet') && window.GCGatewayNet) {
+    // tabs "Funktionen", "Netzwerk" and "Internet" (phase 3a) live in gateway-net.js
+    if ((tab === 'features' || tab === 'net' || tab === 'inet') && window.GCGatewayNet) {
       cur = null;
       if (window.GCGatewayHome) window.GCGatewayHome.unmount();
       window.GCGatewayNet.mount(box, g, tab, ctx || {});
