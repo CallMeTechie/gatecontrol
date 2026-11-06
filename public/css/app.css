@@ -1996,106 +1996,6 @@ table tbody tr:last-child td { border-bottom: none; }
   position: relative;
 }
 
-.pool-form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  align-items: start;
-}
-.pool-form-col {
-  min-width: 0;
-}
-.pool-members-col {
-  border-left: 1px solid var(--border, rgba(0,0,0,0.08));
-  padding-left: 24px;
-}
-@media (max-width: 760px) {
-  .pool-form-grid { grid-template-columns: 1fr; }
-  .pool-members-col { border-left: none; padding-left: 0; border-top: 1px solid var(--border, rgba(0,0,0,0.08)); padding-top: 16px; }
-}
-
-.pool-members-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-height: 80px;
-}
-.pool-members-list:empty::before {
-  content: attr(data-empty-text);
-  display: block;
-  color: var(--text-3);
-  font-size: 12px;
-  padding: 24px 0;
-  text-align: center;
-  border: 1px dashed var(--border, rgba(0,0,0,0.12));
-  border-radius: var(--radius, 6px);
-}
-.pool-member-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  background: var(--bg-2, rgba(0,0,0,0.03));
-  border-radius: var(--radius, 6px);
-  cursor: grab;
-  user-select: none;
-  transition: background 0.12s ease, opacity 0.12s ease;
-}
-.pool-member-row:active { cursor: grabbing; }
-.pool-member-row.dragging { opacity: 0.4; }
-.pool-member-row.drag-over-top { box-shadow: 0 -2px 0 0 var(--accent, #6366f1); }
-.pool-member-row.drag-over-bottom { box-shadow: 0 2px 0 0 var(--accent, #6366f1); }
-.pool-member-handle {
-  font-family: var(--font-mono, monospace);
-  color: var(--text-3);
-  font-size: 14px;
-  line-height: 1;
-  padding: 0 4px;
-}
-.pool-member-position {
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
-  color: var(--text-2);
-  min-width: 24px;
-  text-align: center;
-}
-.pool-member-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pool-mode-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-family: var(--font-mono);
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.pool-mode-failover {
-  background: rgba(99, 102, 241, 0.15);
-  color: var(--accent, #6366f1);
-}
-.pool-mode-load_balancing {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-}
-
-.pool-member-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  background: var(--bg-soft, var(--bg-hover));
-  border-radius: 4px;
-  margin-bottom: 4px;
-  font-size: 13px;
-}
 /* ── Inline-Help Tooltips (gc-tip) ───────────────────────── */
 .gc-tip {
   display: inline-flex; align-items: center; justify-content: center;
@@ -2159,8 +2059,9 @@ table tbody tr:last-child td { border-bottom: none; }
 .gw-fleet .recheck { padding: 4px 10px; font-size: 13px; line-height: 1; background: transparent; border: 1px solid var(--border); color: var(--text-2); border-radius: var(--radius-sm); cursor: pointer; }
 .gw-fleet .recheck:hover { border-color: var(--accent); color: var(--accent); }
 /* ── Gateway detail view (full-page, mirrors gateway-detail.html mockup) ── */
-.gw-fleet #gw-detail-view .gw-back { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--text-3); font-size: 13px; cursor: pointer; padding: 0; margin-bottom: 16px; font-family: inherit; }
-.gw-fleet #gw-detail-view .gw-back:hover { color: var(--accent); }
+.gw-fleet #gw-detail-view .gw-back, .gw-fleet #gw-pool-view .gw-back { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--text-3); font-size: 13px; cursor: pointer; padding: 0; margin-bottom: 16px; font-family: inherit; }
+.gw-fleet #gw-detail-view .gw-back:hover, .gw-fleet #gw-pool-view .gw-back:hover { color: var(--accent); }
+.gw-fleet .gw-back:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; border-radius: 4px; }
 .gw-fleet .gw-detail .page-h h2 { display: inline-flex; align-items: center; gap: 12px; font-size: 22px; margin: 0; }
 .gw-fleet .gw-detail-actions { display: flex; gap: 8px; align-items: center; }
 .gw-fleet .gw-update { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 6px 13px; border-radius: var(--radius-sm); border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; white-space: nowrap; }
@@ -3647,10 +3548,6 @@ input[type=date]:focus, select:focus {
 .fab:hover{box-shadow:0 6px 20px var(--teal-dim)}
 .fab-option-icon{box-shadow:0 2px 8px var(--teal-dim)}
 
-/* Gateway-pool mode badges — replace hardcoded indigo/green with Aurora tokens */
-.pool-mode-failover{background:var(--blue-bg);color:var(--blue)}
-.pool-mode-load_balancing{background:var(--green-bg);color:var(--green)}
-
 /* gw-toast-pulse — replace blue rgba with teal glow */
 @keyframes gw-toast-pulse{
   0%,100%{box-shadow:0 4px 12px rgba(0,0,0,.15),0 0 0 0 var(--teal-soft)}
@@ -3869,25 +3766,6 @@ input[type=date]:focus, select:focus {
   background:var(--amber-lt); border:1px solid var(--amber-bd);
   border-radius:var(--radius-sm); font-size:13px; color:var(--text-1);
 }
-
-/* ── Gateway-Pools page — Aurora mockup fidelity (Task P2-9) ────────────────── */
-
-/* Pool member drag list — override accent/indigo from pro.css with aurora teal token */
-.pool-member-row{
-  background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-sm);
-  transition:background 120ms ease, opacity 120ms ease;
-}
-.pool-member-row.drag-over-top{box-shadow:0 -2px 0 0 var(--teal)}
-.pool-member-row.drag-over-bottom{box-shadow:0 2px 0 0 var(--teal)}
-.pool-member-handle{color:var(--faint); font-size:15px; cursor:grab; padding:0 4px}
-.pool-member-position{color:var(--muted); font-family:var(--font-mono); font-size:11px; min-width:22px; text-align:center}
-.pool-member-name{flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-
-/* Preset-templates card button grid */
-.btn-cooldown-preset{font-size:13px; padding:7px 10px}
-
-/* Pool kv rows: mode badge inside .card-sub stays inline */
-.card-sub .pool-mode-badge{font-size:11px; padding:2px 7px; border-radius:999px; font-family:var(--font-mono)}
 
 /* ── RDP page — Aurora mockup fidelity (Task P2-10) ─────────────────────────── */
 
@@ -9771,3 +9649,180 @@ a.lg-ev-msg:hover{color:var(--teal)}
   .gwh-inline .btn{width:auto}
 }
 .gwh-folder{display:flex; flex-direction:column; gap:4px}
+
+/* Gateways page with pools (public/js/gateways.js, gateway-pools-ui.js, gateway-pool-kit.js):
+   pool groups in the fleet, the detail head with "Mehr", the overview cards, the tab
+   "Funktionen", the pool page #pool/<id> and its dialogs. Aurora tokens only — light and
+   dark come from [data-theme]. */
+.gw-fleet .kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.gw-fleet .kpi .s{color:var(--muted); font-size:12px; margin-top:4px}
+.gwp-fleet{display:flex; flex-direction:column; gap:18px}
+.gwp-group{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:16px; display:flex; flex-direction:column; gap:14px; box-shadow:var(--shadow); min-width:0}
+.gwp-group.gwp-tone-green{border-color:var(--teal-dim)}
+.gwp-group.gwp-tone-amber{border-color:var(--amber-bd)}
+.gwp-group.gwp-tone-red{border-color:var(--red-bd)}
+.gwp-group-head{display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px}
+.gwp-group-ic{display:inline-flex; color:var(--teal)}
+.gwp-group-title{margin:0; font:800 17px/1.25 var(--font-display); color:var(--text)}
+.gwp-grow{flex:1 1 auto}
+.gw-fleet .grid.gwp-grid{grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr))}
+.gw-card-tags{display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 10px}
+.gw-card-link{color:inherit; text-decoration:none}
+.gw-card-link:hover{color:var(--teal)}
+.gw-card-link:focus-visible{outline:2px solid var(--teal); outline-offset:2px; border-radius:4px}
+.gwp-hint{display:flex; flex-direction:column; justify-content:center; gap:8px; padding:16px; border:1px dashed var(--line-2); border-radius:var(--r-sm); background:var(--surface-2); min-width:0}
+.gwp-hint strong{font-size:14px}
+.gwp-hint .gwe-actions{margin-top:2px}
+/* detail head */
+.gw-fleet .gw-head{align-items:flex-start; flex-wrap:wrap; gap:12px 16px; margin-bottom:6px}
+.gw-head-t{flex:1 1 420px; min-width:0; display:flex; flex-direction:column; gap:6px}
+.gw-fleet .gw-head .page-sub{margin:0}
+.gw-head .page-sub code{font-family:var(--font-mono); font-size:12.5px}
+.gw-head-chips{display:flex; flex-wrap:wrap; gap:8px}
+.gw-pool-chip{text-decoration:none}
+.gw-pool-chip:hover{border-color:var(--blue)}
+.gw-pool-chip:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+.gw-head-actions{flex-wrap:wrap}
+.gw-head-actions .btn{min-height:44px}
+.gw-more{position:relative; display:flex}
+.gw-more-btn svg{transition:transform .15s}
+.gw-more-btn[aria-expanded="true"] svg{transform:rotate(180deg)}
+.gw-menu{position:absolute; right:0; top:calc(100% + 6px); z-index:60; min-width:min(300px, calc(100vw - 32px)); padding:6px; display:flex; flex-direction:column; gap:2px;
+  border-radius:14px; background:var(--surface); border:1px solid var(--line-2); box-shadow:var(--modal-shadow, var(--shadow))}
+.gw-menu[hidden]{display:none}
+.gw-menu-item{display:flex; align-items:center; gap:8px; min-height:44px; padding:0 12px; border-radius:9px; border:0; background:transparent; color:var(--text);
+  font:600 14px var(--font-body); text-align:left; text-decoration:none; cursor:pointer}
+.gw-menu-item:hover, .gw-menu-item:focus-visible{background:var(--chip); outline:none}
+.gw-menu-item:focus-visible{box-shadow:inset 0 0 0 2px var(--teal)}
+.gw-menu-item .feature-lock{padding:2px 8px; margin-left:auto}
+.gw-menu-danger{color:var(--red)}
+/* tabs: switched-off functions muted, horizontally scrollable on narrow screens */
+.gwe-tab-off{font-weight:600}
+.gwe-tab.gwe-tab-is-off{color:var(--faint); font-weight:600}
+.gwe-tab.gwe-tab-is-off[aria-selected="true"]{color:var(--text)}
+/* overview */
+.gw-tabpanel-stack{display:flex; flex-direction:column; gap:16px}
+.gwo-top{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr)); gap:16px; margin-bottom:16px}
+.gwo-two{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(460px,100%),1fr)); gap:16px; margin-bottom:16px}
+.gwo-banner{display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:var(--r-sm); background:var(--green-bg); color:var(--text)}
+.gwo-banner svg{color:var(--green); flex:none}
+.gwo-banner-warn{background:var(--amber-bg)} .gwo-banner-warn svg{color:var(--amber)}
+.gwo-banner-bad{background:var(--red-bg)} .gwo-banner-bad svg{color:var(--red)}
+.gwo-checks{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; font-size:13.5px}
+.gwo-checks li{display:flex; align-items:center; flex-wrap:wrap; gap:4px 10px}
+.gwo-mark{min-width:26px; justify-content:center; padding:1px 7px}
+.gwo-tech{border-top:1px solid var(--line); padding-top:8px}
+.gwo-tech summary{cursor:pointer; font-weight:700; font-size:13px; color:var(--muted); min-height:32px; display:flex; align-items:center}
+.gwo-tech summary:focus-visible{outline:2px solid var(--teal); outline-offset:2px; border-radius:4px}
+.gwo-tech-b{display:grid; gap:8px; padding-top:6px}
+.gw-fleet .gw.gwo-dev .body{gap:8px}
+.gw-fleet .gw.gwo-dev .kv{gap:12px; justify-content:flex-start; border-top:1px solid var(--line); padding-top:8px}
+.gw-fleet .gw.gwo-dev .kv .k{flex:0 0 130px}
+.gw-fleet .gw.gwo-dev .kv .v{font-weight:500; font-family:var(--font-body); flex-wrap:wrap; min-width:0; overflow-wrap:anywhere}
+.gwo-dev code{font-family:var(--font-mono); font-size:12.5px}
+.gwo-routes-wrap{overflow-x:auto}
+.gwo-routes-wrap .gw-routes{min-width:620px}
+.gwo-routes-all{margin-top:8px}
+/* card "Pool" of the overview */
+.gwp-mrows{display:flex; flex-direction:column; gap:8px}
+.gwp-mrow{display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:var(--r-sm); border:1px solid var(--line); min-width:0}
+.gwp-mrow-self{border-color:var(--teal-dim); background:var(--teal-soft)}
+.gwp-mrow-n{flex:1; min-width:0; font-size:14px; font-weight:700; overflow-wrap:anywhere}
+a.gwp-mrow-n{color:var(--teal)}
+/* tab "Funktionen" */
+.gwn-ftab .gwn-features{margin:0}
+.gwn-fgroup-d{padding-bottom:4px}
+.gwn-fr-mem{margin-top:2px; flex:none}
+.gw-fleet .gw.gwn-membar .body{gap:6px}
+.gwn-membar-row{display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px}
+.gwn-membar-t{flex:1 1 300px; min-width:0; display:flex; flex-direction:column; gap:8px}
+.gwn-membar-bar{display:block; height:8px; border-radius:999px; background:var(--surface-3); overflow:hidden}
+.gwn-membar-fill{display:block; height:100%; background:var(--teal)}
+.gwn-membar-tight{background:var(--amber)}
+.gwn-membar-too_much{background:var(--red)}
+.gwn-fsum-chips{margin:2px 0}
+/* pool page */
+.gwp-head h2{display:inline-flex; flex-wrap:wrap; align-items:center; gap:10px; font-size:22px; margin:0}
+.gwp-head-t{flex:1 1 420px; min-width:0}
+.gw-fleet .gwp-head{flex-wrap:wrap; align-items:flex-start; margin-bottom:12px}
+.gwp-head .page-sub{margin:6px 0 0}
+.gwp-banner{display:flex; align-items:flex-start; gap:12px; padding:14px 16px; border-radius:var(--r-sm); background:var(--green-bg); border:1px solid var(--green-bd); margin-bottom:16px; font-size:14px; line-height:1.5}
+.gwp-banner p{margin:0}
+.gwp-banner svg{flex:none; color:var(--green)}
+.gwp-banner-warn{background:var(--amber-bg); border-color:var(--amber-bd)} .gwp-banner-warn svg{color:var(--amber)}
+.gwp-banner-bad{background:var(--red-bg); border-color:var(--red-bd)} .gwp-banner-bad svg{color:var(--red)}
+.gwp-banner-grey{background:var(--chip); border-color:var(--line)} .gwp-banner-grey svg{color:var(--muted)}
+.gwp-row{margin-bottom:16px}
+.gwp-card-r{display:inline-flex; align-items:center; gap:8px}
+.gwp-mlist{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px}
+.gwp-mlist[aria-busy="true"]{opacity:.6}
+.gwp-mem{display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; padding:10px 12px; border-radius:var(--r-sm); border:1px solid var(--line); background:var(--surface); min-width:0}
+.gwp-mem-active{border-color:var(--teal-dim); background:var(--teal-soft)}
+.gwp-mem.gwp-dragging{opacity:.45}
+.gwp-mem.gwp-drop-before{box-shadow:0 -3px 0 0 var(--teal)}
+.gwp-mem.gwp-drop-after{box-shadow:0 3px 0 0 var(--teal)}
+.gwp-grip{display:inline-flex; color:var(--faint); cursor:grab}
+.gwp-mem-t{flex:1 1 200px; min-width:0; display:flex; flex-direction:column; gap:2px}
+.gwp-mem-t a{font-weight:700; color:var(--teal); overflow-wrap:anywhere}
+.gwp-mem-a{display:inline-flex; align-items:center; gap:4px; margin-left:auto}
+.gwp-icbtn{display:inline-grid; place-items:center; width:36px; height:36px; border-radius:9px; border:1px solid var(--line); background:transparent; color:var(--muted); cursor:pointer}
+.gwp-icbtn:hover:not(:disabled){color:var(--text); border-color:var(--line-2)}
+.gwp-icbtn:disabled{opacity:.35; cursor:default}
+.gwp-icbtn:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+.gwp-reserve{display:flex; gap:10px; align-items:flex-start; padding:11px 13px; border-radius:var(--r-sm); background:var(--green-bg); font-size:13px; line-height:1.5}
+.gwp-reserve p{margin:0}
+.gwp-reserve svg{flex:none; color:var(--green); margin-top:1px}
+.gwp-reserve-warn{background:var(--amber-bg)} .gwp-reserve-warn svg{color:var(--amber)}
+.gwp-fld{display:flex; flex-direction:column; gap:6px; min-width:0}
+.gw-fleet .gw.gwp-beh .body, .gwp-dlg .gcd-body{gap:16px}
+.gwp-dlg .gcd-body{display:flex; flex-direction:column}
+.gwp-seg{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr)); gap:8px}
+.gwp-seg-b{display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-height:44px; padding:10px 12px; border-radius:var(--r-sm); border:1px solid var(--line-2);
+  background:transparent; color:var(--text); text-align:left; cursor:pointer; font-family:var(--font-body)}
+.gwp-seg-b[aria-pressed="true"]{border-color:var(--teal); background:var(--teal-soft)}
+.gwp-seg-b:disabled{opacity:.6; cursor:not-allowed}
+.gwp-seg-b:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+.gwp-cool-row{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+.gwp-cool{flex:1 1 260px; max-width:100%; min-height:44px}
+.gwp-cool-custom{display:inline-flex; align-items:center; gap:8px}
+.gwp-cool-custom[hidden]{display:none}
+.gwp-cool-s{width:110px; min-height:44px}
+.gwp-msg{display:flex; flex-direction:column; gap:8px}
+.gwp-list{display:flex; flex-direction:column}
+.gwp-li{display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; padding:9px 0; border-top:1px solid var(--line); font-size:13.5px}
+.gwp-list .gwp-li:first-child{border-top:0}
+.gwp-li-m{flex:1 1 220px; min-width:0; overflow-wrap:anywhere}
+.gwp-li code{font-size:12px}
+.gwp-dissolve{display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin-top:8px; padding-top:12px; border-top:1px solid var(--line)}
+.btn.gwp-danger{color:var(--red); border-color:var(--red-bd)}
+.btn.gwp-danger:hover{background:var(--red-bg)}
+/* dialogs */
+.gwp-step-h{display:flex; align-items:center; gap:10px}
+.gwp-num{display:inline-grid; place-items:center; width:24px; height:24px; border-radius:50%; background:var(--teal-soft); color:var(--teal); font:800 12.5px var(--font-body); flex:none}
+.gwp-step-l{font-weight:700; font-size:14px; color:var(--text)}
+.gwp-opts{display:flex; flex-direction:column; gap:8px}
+.gwp-opt{display:flex; align-items:center; gap:10px; min-height:44px; padding:8px 12px; border-radius:var(--r-sm); border:1px solid var(--line); cursor:pointer; min-width:0}
+.gwp-opt-on{border-color:var(--teal-dim); background:var(--teal-soft)}
+.gwp-opt input{width:18px; height:18px; margin:0; accent-color:var(--teal); flex:none}
+.gwp-opt input:disabled + span, .gwp-opt input:disabled ~ .gwp-opt-t{opacity:.6}
+.gwp-opt-t{flex:1; min-width:0; overflow-wrap:anywhere; font-size:13.5px}
+.gwp-opt-gap{display:inline-block; width:26px}
+.gwp-mig{display:flex; flex-direction:column; gap:8px}
+.gwp-mig-head{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:6px}
+.gwp-mig-group{font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--faint); margin-top:8px}
+.gwp-mig-row{display:flex; flex-direction:column; gap:6px}
+.gwp-mig-lan{max-width:280px}
+.gwp-lbhint{margin-top:-6px}
+@media (max-width:640px){
+  .gwe-tabs{flex-wrap:nowrap; overflow-x:auto; scrollbar-width:thin; -webkit-overflow-scrolling:touch}
+  .gw-fleet .gw-head .gw-head-actions{width:100%; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px}
+  .gw-fleet .gw-head .gw-head-actions .gw-update{grid-column:1 / -1; order:3}
+  .gw-fleet .gw-head .gw-head-actions .btn, .gw-more, .gw-more-btn{width:100%; justify-content:center}
+  .gw-menu{left:auto; right:0; min-width:min(300px, calc(100vw - 32px))}
+  .gwo-top, .gwo-two{grid-template-columns:minmax(0,1fr)}
+  .gw-fleet .gw.gwo-dev .kv{flex-direction:column; align-items:flex-start; gap:2px}
+  .gw-fleet .gw.gwo-dev .kv .k{flex:none}
+  .gwp-mem-a{width:100%; justify-content:flex-end}
+  .gw-fleet .page-header .page-actions{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; width:100%}
+  .gw-fleet .page-header .page-actions .btn{justify-content:center; min-height:44px}
+}

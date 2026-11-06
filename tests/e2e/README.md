@@ -104,6 +104,14 @@ scenarios/20-gateway-home.js /gateways: Reiter „DNS-Filter“ und „Zwischens
                         „Router einstellen“ (FRITZ!Box/Speedport, Prüfung), Ausnahmen,
                         Weiterleitung (nur https), „Domain prüfen“ und „Leeren“ ohne Gateway
                         (502 erwartet), Zwischenspeicher mit USB-Vorschlag, hell/dunkel, 390 px
+scenarios/21-gateway-pools.js /gateways mit Pools: /gateway-pools → /gateways, Flotte mit
+                        Pool-Gruppe und „Einzelne Gateways“ samt Hinweiskarte, Gateway-Kopf
+                        mit „Mehr“-Menü (Tastatur, Escape, übersteht den Poll), Übersicht in
+                        neuer Reihenfolge, Reiter „Funktionen“, „Erkannte Geräte“ unter
+                        „Netzwerk“, Pool-Seite (Reihenfolge per Knopf/Tastatur, „In den Pool
+                        nehmen“, Zurückwechseln, Umzugsdialog), „Pool anlegen“ (gleiches Netz,
+                        Vorschlag nach Gerät, Routen), „Pool auflösen“; Lizenz-Flag der Seite,
+                        Flotte und Pool-API gemockt (page.route), hell/dunkel, 390 px
 ```
 
 ## Ablauf

@@ -84,7 +84,7 @@ describe('W1: no browser dialogs in public/js/**', () => {
       ['public/js/portal.js', ['portal.devices.lock_title']],
       ['public/js/rdp.js', ['rdp.confirm_delete', 'rdp.confirm_disconnect_all']],
       ['public/js/peers.js', ['peer_groups.confirm_delete', 'gateway_download_confirm']],
-      ['public/js/gatewayPools.js', ['gateway_pools.confirm_delete']],
+      ['public/js/gateway-pools-ui.js', ['gwp.mem.remove_q']],
       ['public/js/gateways.js', ['egress.delete_confirm']],
     ];
     for (const [file, keys] of DESTRUCTIVE) {

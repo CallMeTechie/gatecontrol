@@ -23,7 +23,7 @@ after(() => teardown());
 // Core pages that are always available with the test license override.
 // dns/pihole are feature-gated (not unlocked in setup) → verified manually.
 const PAGES = [
-  '/dashboard', '/peers', '/routes', '/gateways', '/gateway-pools',
+  '/dashboard', '/peers', '/routes', '/gateways',
   '/rdp', '/certificates', '/users', '/groups', '/directory', '/logs', '/settings', '/profile',
 ];
 
@@ -79,11 +79,11 @@ describe('aurora theme — mobile sidebar scrim contract', () => {
 });
 
 describe('aurora theme — A-global color leak regression (Task 3)', () => {
-  it('app.css has overrides for btn-primary:hover, btn-danger:hover, pool-mode-failover, and non-circular --blue-bd', () => {
+  it('app.css has overrides for btn-primary:hover, btn-danger:hover, the pool mode buttons, and non-circular --blue-bd', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
     assert.match(css, /\.btn-primary:hover\s*\{[^}]*box-shadow/, 'btn-primary:hover has a box-shadow override in app.css');
     assert.match(css, /\.btn-danger:hover/, 'btn-danger:hover has an Aurora override in app.css');
-    assert.match(css, /\.pool-mode-failover/, 'pool-mode-failover has an Aurora override in app.css');
+    assert.match(css, /\.gwp-seg-b\[aria-pressed="true"\]\{[^}]*var\(--teal\)/, 'the pool mode buttons use the Aurora teal token');
     assert.match(css, /--blue-bd:\s*(?!var\(--blue-bd\))/, '--blue-bd is no longer self-referential in app.css');
   });
 });
@@ -124,7 +124,7 @@ describe('aurora theme — gateways ID contract (Task 4 pilot)', () => {
     assert.doesNotMatch(js, /isAurora/, 'no theme branch left in gateways.js (Aurora is the only theme)');
     assert.match(js, /function card\(/, 'card() present');
     assert.match(js, /function renderDetail\(/, 'renderDetail() present');
-    assert.match(js, /function versionsCard\(/, 'versionsCard() present');
+    assert.match(js, /function deviceCard\(/, 'deviceCard() present');
   });
 });
 
@@ -719,106 +719,43 @@ describe('aurora theme — logs page (Task 8)', () => {
   });
 });
 
-// ── Task P2-9: Gateway-Pools page (Aurora mockup fidelity) ───────────────────
-describe('aurora theme — gateway-pools layout (Task P2-9)', () => {
-  it('renders /gateway-pools under aurora (200, aurora shell)', async () => {
+// ── Gateway pools: no page of their own any more, they live on /gateways ─────
+describe('aurora theme — gateway pools on the gateways page', () => {
+  it('/gateway-pools leads to /gateways (old links keep working)', async () => {
     selectAurora();
-    const res = await agent.get('/gateway-pools').expect(200);
-    assert.match(res.text, /class="app"/, 'aurora .app shell present');
-    assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
+    const res = await agent.get('/gateway-pools').expect(302);
+    assert.equal(res.headers.location, '/gateways');
   });
 
-  it('renders Aurora grid structure and signature classes on /gateway-pools', async () => {
+  it('/gateways carries the pool view, "Pool anlegen" and the licence flags', async () => {
     selectAurora();
-    const res = await agent.get('/gateway-pools').expect(200);
-    assert.match(res.text, /class="grid"/, '.grid container present');
-    assert.match(res.text, /class="card-title"/, '.card-title present');
-    assert.match(res.text, /class="page-header"/, '.page-header present');
-    assert.doesNotMatch(res.text, /class="page-(eyebrow|title|sub)"/, 'no in-page title block — the title is the topbar\'s');
-    assert.match(res.text, /class="page-actions"/, '.page-actions present');
+    const res = await agent.get('/gateways').expect(200);
+    assert.match(res.text, /id="gw-pool-view" hidden/, '#gw-pool-view present');
+    assert.match(res.text, /id="btn-add-pool"/, '#btn-add-pool present');
+    assert.match(res.text, /id="fleet-view" data-pools="(on|off)" data-pools-lb="(on|off)"/, 'licence flags on #fleet-view');
+    assert.doesNotMatch(res.text, /href="\/gateway-pools"/, 'no link to the former page');
   });
 
-  it('shows its title once: the topbar h1, no in-page title or subtitle', async () => {
-    selectAurora();
-    const res = await agent.get('/gateway-pools').expect(200);
-    assert.match(res.text, /<h1 class="page-crumb">Gateway[ -]Pools<\/h1>/, 'topbar title is the h1');
-    assert.equal((res.text.match(/<h1\b/g) || []).length, 1, 'exactly one h1');
-    assert.doesNotMatch(res.text, /class="page-(title|sub)"/, 'no in-page title / subtitle');
+  it('gateway-pools-ui.js renders the pool page and dialogs without a theme branch or innerHTML', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateway-pools-ui.js'), 'utf8');
+    assert.doesNotMatch(js, /isAurora/);
+    for (const fn of ['renderPool', 'poolDialog', 'openMigrate', 'dissolveDialog', 'membersCard']) assert.match(js, new RegExp('function ' + fn + '\\('), fn);
+    assert.doesNotMatch(js.replace(/^\s*\/\/.*$/gm, ''), /innerHTML|outerHTML|insertAdjacentHTML/);
   });
 
-  it('renders all phase0 JS-contract IDs on /gateway-pools under aurora', async () => {
-    selectAurora();
-    const res = await agent.get('/gateway-pools').expect(200);
-    // Page action buttons
-    assert.match(res.text, /id="btn-create-pool"/, '#btn-create-pool present');
-    assert.match(res.text, /id="btn-migrate-routes"/, '#btn-migrate-routes present');
-    // Form modal
-    assert.match(res.text, /id="pool-form-modal"/, '#pool-form-modal present');
-    assert.match(res.text, /id="pool-form"/, '#pool-form present');
-    assert.match(res.text, /id="pool-form-title"/, '#pool-form-title present');
-    assert.match(res.text, /id="pool-members"/, '#pool-members present');
-    assert.match(res.text, /id="new-member-peer"/, '#new-member-peer present');
-    assert.match(res.text, /id="btn-add-member"/, '#btn-add-member present');
-    assert.match(res.text, /id="btn-cancel-pool"/, '#btn-cancel-pool present');
-    assert.match(res.text, /id="btn-cancel-pool-footer"/, '#btn-cancel-pool-footer present');
-    assert.match(res.text, /id="cooldown-preset"/, '#cooldown-preset present');
-    // Migrate modal
-    assert.match(res.text, /id="pool-migrate-modal"/, '#pool-migrate-modal present');
-    assert.match(res.text, /id="migrate-routes-list"/, '#migrate-routes-list present');
-    assert.match(res.text, /id="btn-migrate-submit"/, '#btn-migrate-submit present');
-    assert.match(res.text, /id="btn-migrate-cancel"/, '#btn-migrate-cancel present');
-    assert.match(res.text, /id="btn-migrate-cancel-footer"/, '#btn-migrate-cancel-footer present');
-  });
-
-  it('renders Aurora modal shell classes (not default .modal-box/.modal-header)', async () => {
-    selectAurora();
-    const res = await agent.get('/gateway-pools').expect(200);
-    // Aurora modal classes
-    assert.match(res.text, /class="modal modal-wide"/, '.modal.modal-wide present (form modal)');
-    assert.match(res.text, /class="modal-head"/, '.modal-head present (Aurora header)');
-    assert.match(res.text, /class="modal-title"/, '.modal-title present on h2');
-    assert.match(res.text, /class="modal-foot"/, '.modal-foot present (Aurora footer)');
-    // Default modal-box class must NOT appear
-    assert.doesNotMatch(res.text, /class="modal-box/, '.modal-box absent (replaced by .modal)');
-    assert.doesNotMatch(res.text, /class="modal-header"/, '.modal-header absent (replaced by .modal-head)');
-    assert.doesNotMatch(res.text, /class="modal-footer"/, '.modal-footer absent (replaced by .modal-foot)');
-  });
-
-  it('renders preset-templates card with btn-ghost btn-block buttons', async () => {
-    selectAurora();
-    const res = await agent.get('/gateway-pools').expect(200);
-    assert.match(res.text, /btn btn-ghost btn-block/, '.btn.btn-ghost.btn-block present (preset buttons)');
-    assert.match(res.text, /btn-cooldown-preset/, '.btn-cooldown-preset class present');
-  });
-
-  it('gatewayPools.js renders the Aurora pool UI without a theme branch', () => {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gatewayPools.js'), 'utf8');
-    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in gatewayPools.js (Aurora is the only theme)');
-    assert.match(js, /function buildMemberRow\(/, 'buildMemberRow() present');
-    assert.match(js, /function initCooldownPresets\(/, 'initCooldownPresets() present');
-    assert.match(js, /function renderMigrateForm\(/, 'renderMigrateForm() present');
-    assert.match(js, /gateway_pools\.preset_docker/, 'Aurora preset list (incl. Docker)');
-    assert.doesNotMatch(js, /AURORA_COOLDOWN_PRESETS/, 'single preset list');
-  });
-
-  it('app.css carries pool-member-row Aurora overrides', () => {
+  it('app.css carries the pool group, member list and menu rules (Aurora tokens)', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
-    assert.match(css, /\.pool-member-row\b/, '.pool-member-row override in app.css');
-    assert.match(css, /\.pool-member-handle\b/, '.pool-member-handle rule in app.css');
-    assert.match(css, /\.pool-member-name\b/, '.pool-member-name rule in app.css');
+    for (const sel of ['.gwp-group{', '.gwp-mem{', '.gw-menu{', '.gwp-seg-b{', '.gwp-hint{', '.gwo-top{']) assert.ok(css.includes(sel), sel);
+    assert.doesNotMatch(css, /\.pool-member-row|\.pool-mode-badge/, 'the former page\'s rules are gone');
   });
 
-  it('i18n has common.pro, gateway_pools.active_member, gateway_pools.preset_docker', () => {
+  it('i18n keeps common.pro and the gateway_pools.* strings of the migration dialog', () => {
     const en = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'en.json'), 'utf8'));
-    assert.equal(en['common.pro'], 'Pro', 'common.pro = "Pro"');
-    assert.ok(en['gateway_pools.active_member'], 'gateway_pools.active_member present');
-    assert.ok(en['gateway_pools.standby'], 'gateway_pools.standby present');
-    assert.ok(en['gateway_pools.preset_templates'], 'gateway_pools.preset_templates present');
-    assert.ok(en['gateway_pools.preset_docker'], 'gateway_pools.preset_docker present');
     const de = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'de.json'), 'utf8'));
-    assert.equal(de['common.pro'], 'Pro', 'de common.pro = "Pro"');
-    assert.ok(de['gateway_pools.active_member'], 'de gateway_pools.active_member present');
-    assert.ok(de['gateway_pools.preset_docker'], 'de gateway_pools.preset_docker present');
+    for (const l of [en, de]) {
+      assert.equal(l['common.pro'], 'Pro');
+      for (const k of ['gateway_pools.migrate_routes', 'gateway_pools.migrate_mode_relocate', 'gateway_pools.lb_policy_round_robin']) assert.ok(l[k], k);
+    }
   });
 });
 
@@ -1153,17 +1090,20 @@ describe('aurora theme — gateways UX fixes (Issues 8/9/10/11)', () => {
     assert.match(css, /\.tag\.tag-dot::before\s*\{[^}]*content:\s*none/, '.tag.tag-dot::before has content:none (before-dot suppressed)');
   });
 
-  it('Issue 10: versionsCard() present and called from renderDetail()', () => {
+  it('Issue 10 (redesign): "Gerät & Software" — deviceCard() in the overview, technical rows in <details>', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
-    assert.match(js, /function versionsCard\(/, 'versionsCard() present in gateways.js');
-    assert.match(js, /grid2\.appendChild\(versionsCard\(g\)\)/, 'renderDetail() calls versionsCard(g)');
+    assert.match(js, /function deviceCard\(/, 'deviceCard() present in gateways.js');
+    assert.match(js, /two\.appendChild\(deviceCard\(g\)\)/, 'the overview shows deviceCard(g)');
+    assert.match(js, /el\('details', 'gwo-tech'\)/, 'technical rows in <details>');
   });
 
-  it('Issue 11: renderDetail uses gw-detail-grid with exactly 3 columns (1/3 each)', () => {
+  it('Issue 11 (redesign): the overview starts with Zustand · Pool · Funktionen in an auto-fit grid', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
     const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
-    assert.match(js, /el\('div',\s*'gw-detail-grid'\)/, 'renderDetail() uses gw-detail-grid class');
-    assert.match(css, /\.gw-detail-grid\s*\{[^}]*repeat\(3,minmax\(0,1fr\)\)/, 'gw-detail-grid uses exactly 3 columns (1/3 each)');
+    const ov = js.slice(js.indexOf('function overview('), js.indexOf('function netExtras('));
+    assert.ok(ov.indexOf('stateCard(g)') < ov.indexOf('P.poolCard(g)') && ov.indexOf('P.poolCard(g)') < ov.indexOf('summaryCard(g)'), 'Zustand, Pool, Funktionen');
+    assert.ok(ov.indexOf('summaryCard(g)') < ov.indexOf('deviceCard(g)'), 'the features card is no longer above the gateway info — it is one of the top three, the info follows');
+    assert.match(css, /\.gwo-top\{display:grid; grid-template-columns:repeat\(auto-fit,minmax\(min\(340px,100%\),1fr\)\)/);
   });
 });
 

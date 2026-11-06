@@ -55,7 +55,7 @@ describe('sidebar groups (§8)', () => {
     assert.deepEqual(g.map((x) => x.label), ['Übersicht', 'Netzwerk', 'Sicherheit', 'Integrationen', 'System']);
     assert.deepEqual(g.map((x) => x.hrefs), [
       ['/dashboard'],
-      ['/peers', '/routes', '/gateways', '/gateway-pools', '/rdp', '/dns', '/pihole'],
+      ['/peers', '/routes', '/gateways', '/rdp', '/dns', '/pihole'],
       ['/security', '/certificates', '/waf', '/users', '/groups', '/directory'],
       ['/plugins/gatecontrol-midea', '/plugins/gatecontrol-skoda'],
       ['/notifications', '/support-bundles', '/logs', '/settings'],

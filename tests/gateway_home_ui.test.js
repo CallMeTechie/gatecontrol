@@ -110,9 +110,9 @@ describe('page wiring', () => {
     assert.match(njk, /data-prefixes="[^"]*gwh\./);
     assert.ok(read('src/routes/index.js').includes("'gwh.'"));
     const EK = require('../public/js/gateway-edge-kit');
-    assert.deepEqual(EK.TABS, ['overview', 'net', 'inet', 'dns', 'cache', 'edge', 'mqtt']);
+    assert.deepEqual(EK.TABS, ['overview', 'features', 'net', 'inet', 'dns', 'cache', 'edge', 'mqtt']);
     assert.deepEqual(EK.parseHash('#gw/7/dns'), { id: '7', tab: 'dns' });
     assert.equal(EK.hashFor(7, 'cache'), '#gw/7/cache');
-    assert.ok(read('public/js/gateways.js').includes("['net', 'inet', 'dns', 'cache', 'edge', 'mqtt']"));
+    assert.ok(read('public/js/gateways.js').includes("['features', 'net', 'inet', 'dns', 'cache', 'edge', 'mqtt']"));
   });
 });

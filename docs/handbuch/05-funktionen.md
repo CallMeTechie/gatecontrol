@@ -5,16 +5,26 @@
 Ein Gateway kann mehr als nur den Tunnel. Alle Funktionen findest du so:
 
 1. „Netzwerk“ → „Gateways“ → auf dein Gateway klicken.
-2. Reiter „Übersicht“ → Karte „Funktionen dieses Gateways“.
+2. Reiter „Funktionen“ (die Zahl daneben sagt, wie viele an sind).
 
-Dort schaltest du jede Funktion ein oder aus. Die Karte zeigt auch, wie viel
-Speicher das Gateway mit den eingeschalteten Funktionen ungefähr braucht.
+Dort schaltest du jede Funktion ein oder aus, nach Bereichen geordnet
+(„Heimnetz im Blick“, „Für das ganze Heimnetz“, „Internet & Strom“,
+„Erweiterungen“, „System“). Oben steht, wie viel Speicher das Gateway mit
+den eingeschalteten Funktionen ungefähr braucht. Die Übersicht des Gateways
+zeigt in der Karte „Funktionen“ nur, was an und was aus ist; „Verwalten“
+führt in den Reiter. Reiter einer ausgeschalteten Funktion stehen blass mit
+„· aus“ da und lassen sich trotzdem öffnen.
+
+Gateway-Pools (mehrere Gateways im selben Netz, die füreinander einspringen)
+findest du ebenfalls unter „Gateways“: als eigene Gruppe in der Liste, mit
+„Pool anlegen“ oben rechts und „Pool öffnen“ für die Einstellungen. Eine
+eigene Seite „Gateway-Pools“ im Menü gibt es nicht mehr.
 
 Allgemeine Voraussetzungen:
 
 - Netzwerk-Wächter, Internetqualität, Anwesenheit und USV brauchen
   Gateway-Version **1.21.0** oder neuer, DNS-Filter und Zwischenspeicher **1.22.0**.
-  Ist das Gateway älter, steht das in der Karte; aktualisiere es dann ([Kapitel 6](06-gateway-aktualisieren.md)).
+  Ist das Gateway älter, steht das im Reiter; aktualisiere es dann ([Kapitel 6](06-gateway-aktualisieren.md)).
 - Das Gateway steht im Heimnetz im **Host-Netzwerkmodus** (Standard beim Pi,
   beim Synology-Paket und bei Linux mit „Host (empfohlen)“).
 - Die **Zeitzone** kommt vom Server (siehe [Kapitel 2.5](02-server-einrichten.md#25-die-werte-in-der-env-die-du-wirklich-brauchst)).

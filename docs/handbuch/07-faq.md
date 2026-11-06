@@ -61,7 +61,7 @@ Alles dazu: [Kapitel 6](06-gateway-aktualisieren.md).
 
 ### „Der Server läuft in UTC“
 
-Diese Meldung steht beim Gateway in der Karte „Funktionen dieses Gateways“ bei
+Diese Meldung steht beim Gateway im Reiter „Funktionen“ (Karte „System“) bei
 „Ortszeit“. Dem Server fehlt die Zeitzone.
 
 1. Trage sie in die `.env` des Servers ein:

@@ -60,7 +60,7 @@ cache) you have to add once by hand. All about it: [chapter 6](06-updating-a-gat
 
 ### “The server runs in UTC”
 
-This message shows for a gateway in the card “Features of this gateway” under
+This message shows for a gateway in the tab “Features” (card “System”) under
 “Local time”. The server lacks its time zone.
 
 1. Add it to the server's `.env`:

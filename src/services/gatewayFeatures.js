@@ -373,6 +373,15 @@ function overview(peerId) {
     cache = { enabled: c.enabled, maxBytes: c.maxBytes, path: c.path };
   } catch (e) { logger.debug({ err: e.message }, 'phase 3b overview parts unavailable'); }
   const tz = timezone();
+  // the other gateways of the same Heimnetz (pool or same LAN + router): the
+  // DNS filter and the home cache hold for them as well (tab "Funktionen")
+  let home = [];
+  try {
+    const ids = require('./homeNetwork').homeOf(g.id).filter((x) => x !== g.id);
+    if (ids.length) {
+      home = db().prepare(`SELECT id, name FROM peers WHERE id IN (${ids.map(() => '?').join(',')}) AND enabled = 1 ORDER BY name COLLATE NOCASE`).all(...ids);
+    }
+  } catch (e) { logger.debug({ err: e.message }, 'home network of the gateway unavailable'); }
   return {
     id: g.id,
     name: g.name,
@@ -393,6 +402,7 @@ function overview(peerId) {
     dns,
     cache,
     timezone: { tz, utc: tz === 'UTC' || tz === 'Etc/UTC' },
+    home,
   };
 }
 

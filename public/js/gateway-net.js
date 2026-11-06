@@ -1,16 +1,22 @@
 'use strict';
 
-// Gateway detail › tabs "Netzwerk" and "Internet" and the card "Funktionen
-// dieses Gateways" in the tab "Übersicht" (phase 3a: network watch, internet
-// quality, presence over the home network, UPS). gateway-edge.js builds the
-// tab bar and hands the two tabs to this module; gateways.js asks it for the
-// card. Data: the admin API /api/v1/gateways/:id/{features,netwatch,inetq}
-// (session + CSRF, routes/api/gatewayNet.js).
+// Gateway detail › tabs "Funktionen", "Netzwerk" and "Internet" and the card
+// "Funktionen" in the tab "Übersicht" (phase 3a: network watch, internet
+// quality, presence over the home network, UPS; the switches of every
+// function of the gateway). gateway-edge.js builds the tab bar and hands the
+// three tabs to this module; gateways.js asks it for the overview card. Data:
+// the admin API /api/v1/gateways/:id/{features,netwatch,inetq} (session +
+// CSRF, routes/api/gatewayNet.js).
 //
-//   window.GCGatewayNet.mount(box, g, tab, ctx)  → fills `box` with the tab 'net' | 'inet'
-//   window.GCGatewayNet.featuresCard(g)          → the card for the overview (fills itself)
-//   window.GCGatewayNet.badge(node, id, tab)     → the badge of a tab ("2 neu", "Ausfall")
+//   window.GCGatewayNet.mount(box, g, tab, ctx)  → fills `box` with the tab 'features' | 'net' | 'inet'
+//   window.GCGatewayNet.summaryCard(g)           → the card "Funktionen" for the overview (fills itself)
+//   window.GCGatewayNet.badge(node, id, tab)     → the badge of a tab ("7 an", "2 neu", "Ausfall")
+//   window.GCGatewayNet.tabOff(id, tab)          → the tab's function is switched off
+//   window.GCGatewayNet.fresh(id)                → new devices of the network watch (null: unknown / off)
 //   window.GCGatewayNet.prefetch(g) / unmount()
+//
+// After new data of a gateway it fires `gc:gwnet` ({ detail: { id } }) so the
+// overview's card "Zustand" can count the new devices.
 //
 // Pure rules (risky ports, list filter, chart geometry, UPS states) live in
 // gateway-net-kit.js. Dialogs are window.GCDialog frames; nothing here uses
@@ -18,8 +24,9 @@
 (function () {
   const E = window.GCGatewayEdge;
   const K = window.GCGatewayNetKit;
+  const PK = window.GCGatewayPoolKit;
   const D = window.GCDialog;
-  if (!E || !E.ui || !K || !D) return;
+  if (!E || !E.ui || !K || !D || !PK) return;
   const U = E.ui;
   const h = D.el;
   const t = U.t;
@@ -93,6 +100,7 @@
   const view = { q: '', filter: 'all', range: '24h', scroll: 0 };
   let cur = null; // { box, g, tab, ctx }
 
+  function kindOf(tab) { return tab === 'features' ? 'feat' : tab; }
   function entry(kind, id) {
     const k = String(id);
     if (!cache[kind][k]) cache[kind][k] = { data: null, err: null, at: 0, inflight: null, key: null };
@@ -112,6 +120,7 @@
     const p = U.api('GET', url(id, key)).then((j) => {
       if (e.key !== key) return e.data; // a newer request (other range) wins
       e.data = kind === 'feat' ? j.gateway : j; e.err = null; e.at = Date.now(); e.inflight = null;
+      announce(id);
       return e.data;
     }, (err) => { if (e.key === key) { e.err = err; e.inflight = null; } throw err; });
     e.inflight = p;
@@ -127,15 +136,19 @@
   function reload(kind, id) {
     return load(kind, id, true).then(() => { redraw(); updateBadges(id); refreshFeatures(id); }, () => redraw());
   }
+  function announce(id) {
+    try { document.dispatchEvent(new CustomEvent('gc:gwnet', { detail: { id: String(id) } })); } catch (e) { /* old browser */ }
+  }
   function updateBadges(id) { if (E.fillBadges) E.fillBadges(document, id); }
 
   function draw() {
-    const e = entry(cur.tab, cur.g.peer_id);
+    const e = entry(kindOf(cur.tab), cur.g.peer_id);
     const nodes = [];
     if (!e.data) {
-      if (e.err) nodes.push(errorPanel(e.err, cur.tab));
+      if (e.err) nodes.push(errorPanel(e.err, kindOf(cur.tab)));
       else nodes.push(h('p', { class: 'gwe-loading', role: 'status', text: t('gwe.loading') }));
-    } else if (cur.tab === 'net') nodes.push(...netPanel(cur.g, e.data));
+    } else if (cur.tab === 'features') nodes.push(...featuresPanel(cur.g, e.data));
+    else if (cur.tab === 'net') nodes.push(...netPanel(cur.g, e.data));
     else nodes.push(...inetPanel(cur.g, e.data));
     if (e.data && e.err) nodes.unshift(U.note('warn', [errText(e.err)]));
     cur.box.replaceChildren(...nodes);
@@ -161,7 +174,7 @@
       entry('inet', id).at = 0;
       if (okMsg) U.toast(okMsg);
       refreshFeatures(id);
-      if (cur && String(cur.g.peer_id) === String(id)) reload(cur.tab, id);
+      if (cur && String(cur.g.peer_id) === String(id) && cur.tab !== 'features') reload(cur.tab, id);
       return j.gateway;
     });
   }
@@ -709,24 +722,19 @@
     return c.card;
   }
 
-  // ─── Card "Funktionen dieses Gateways" (overview) ─────────────────────
-  const featNodes = new Map(); // gateway id → the card node in the page
+  // ─── Tab "Funktionen" and the card "Funktionen" of the overview ───────
+  const summaryNodes = new Map(); // gateway id → { node, g } of the overview card in the page
 
-  function featuresCard(g) {
-    const node = h('section', { class: 'gw gwe-card gwn-features', 'aria-labelledby': 'gwn-feat-h' });
-    featNodes.set(String(g.peer_id), { node, g });
-    fillFeatures(node, g);
-    const e = entry('feat', g.peer_id);
-    if (!e.data || Date.now() - e.at > 30000) load('feat', g.peer_id, true).then(() => refreshFeatures(g.peer_id), () => refreshFeatures(g.peer_id));
-    return node;
-  }
-
+  /** After new feature data: the overview card, the tab "Funktionen" (when shown) and the tab badges. */
   function refreshFeatures(id) {
-    const f = featNodes.get(String(id));
-    if (!f || !f.node.isConnected) return;
-    const fk = f.node.contains(document.activeElement) ? U.focusKey() : null;
-    fillFeatures(f.node, f.g);
-    U.restoreFocus(f.node, fk);
+    const f = summaryNodes.get(String(id));
+    if (f && f.node.isConnected) {
+      const fk = f.node.contains(document.activeElement) ? U.focusKey() : null;
+      fillSummary(f.node, f.g);
+      U.restoreFocus(f.node, fk);
+    }
+    if (cur && cur.tab === 'features' && String(cur.g.peer_id) === String(id)) redraw();
+    updateBadges(id);
   }
 
   function hwLine(hw) {
@@ -745,20 +753,11 @@
     ]);
   }
 
-  function fillFeatures(node, g) {
-    const e = entry('feat', g.peer_id);
-    const d = e.data;
-    const head = h('div', { class: 'top gwe-top' }, [h('h3', { id: 'gwn-feat-h', text: t('gwn.feat.title') }), d ? h('span', { class: 'gwe-sum', text: hwLine(d.hardware || {}) }) : null]);
-    const body = h('div', { class: 'body gwe-body gwn-feat-body' });
-    node.replaceChildren(head, body);
-    if (!d) {
-      body.appendChild(e.err ? U.note('warn', [t('gwe.load_failed'), ' ', errText(e.err)]) : h('p', { class: 'gwe-loading', role: 'status', text: t('gwe.loading') }));
-      return;
-    }
+  /** Every switch row of the gateway by its data-feature key (same API and behaviour as before: putFeatures). */
+  function featureRows(g, d) {
+    const rows = new Map();
     const f = d.features;
     const id = g.peer_id;
-    const sup = d.support || {};
-    if (sup.netwatch === false || sup.inetq === false) body.appendChild(U.note('warn', [t('gwn.feat.too_old', { min: sup.minGateway, version: sup.version || '—' })]));
     // network watch (+ the nightly port check)
     const swNet = U.switchBtn(f.netwatch.enabled, t('gwn.feat.netwatch'), 'gwn-f-net', () => toggle(swNet, id, (v) => ({ netwatch: { enabled: v } }), (v) => t(v ? 'gwn.feat.on_done' : 'gwn.feat.off_done', { name: t('gwn.feat.netwatch') })));
     const portscan = h('input', { type: 'checkbox', id: 'gwn-f-ports', 'data-fk': 'gwn-f-ports', disabled: !f.netwatch.enabled });
@@ -768,17 +767,17 @@
       putFeatures(id, { netwatch: { portscan: portscan.checked } }, t('gwn.feat.saved')).catch((err) => { portscan.checked = !portscan.checked; portscan.disabled = false; D.alert({ message: errText(err), danger: true }); });
     });
     const netLink = h('a', { href: '#gw/' + encodeURIComponent(String(id)) + '/net', class: 'gwn-link', text: t('gwn.feat.to_net') });
-    body.appendChild(featRow(t('gwn.feat.netwatch'), t('gwn.feat.netwatch_d'), swNet,
+    rows.set('netwatch', featRow(t('gwn.feat.netwatch'), t('gwn.feat.netwatch_d'), swNet,
       [h('label', { class: 'gwn-sub', for: 'gwn-f-ports' }, [portscan, h('span', { text: t('gwn.feat.portscan') })]), netLink], 'netwatch'));
     // internet quality
     const swInet = U.switchBtn(f.inetq.enabled, t('gwn.feat.inetq'), 'gwn-f-inet', () => toggle(swInet, id, (v) => ({ inetq: { enabled: v } }), (v) => t(v ? 'gwn.feat.on_done' : 'gwn.feat.off_done', { name: t('gwn.feat.inetq') })));
     const lim = speedLimitText(d.speedLimit);
-    body.appendChild(featRow(t('gwn.feat.inetq'), t('gwn.feat.inetq_d'), swInet,
+    rows.set('inetq', featRow(t('gwn.feat.inetq'), t('gwn.feat.inetq_d'), swInet,
       [lim ? h('span', { class: 'gwn-hint' }, [U.icon('info', 14), lim]) : null,
         h('a', { href: '#gw/' + encodeURIComponent(String(id)) + '/inet', class: 'gwn-link', text: t('gwn.feat.to_inet') })], 'inetq'));
     // presence (needs the network watch)
     const swPres = U.switchBtn(f.netwatch.enabled && f.presence.enabled, t('gwn.feat.presence'), 'gwn-f-pres', () => toggle(swPres, id, (v) => ({ presence: { enabled: v } }), (v) => t(v ? 'gwn.feat.on_done' : 'gwn.feat.off_done', { name: t('gwn.feat.presence') })), !f.netwatch.enabled);
-    body.appendChild(featRow(t('gwn.feat.presence'), t('gwn.feat.presence_d'), swPres, [], 'presence'));
+    rows.set('presence', featRow(t('gwn.feat.presence'), t('gwn.feat.presence_d'), swPres, [], 'presence'));
     // UPS
     const swUps = U.switchBtn(f.ups.enabled, t('gwn.feat.ups'), 'gwn-f-ups', () => {
       if (!f.ups.enabled && !f.ups.host) { upsDialog(id, f.ups); return; }
@@ -786,7 +785,7 @@
     });
     const upsLink = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-f-ups-set', text: f.ups.host ? t('gwn.feat.ups_change', { host: f.ups.host }) : t('gwn.feat.ups_set') });
     upsLink.addEventListener('click', () => upsDialog(id, f.ups));
-    body.appendChild(featRow(t('gwn.feat.ups'), t('gwn.feat.ups_d'), swUps, [upsLink], 'ups'));
+    rows.set('ups', featRow(t('gwn.feat.ups'), t('gwn.feat.ups_d'), swUps, [upsLink], 'ups'));
     // edge parts & MQTT (the switch of the tab "Edge-Plugins")
     if (d.edge) {
       const swEdge = U.switchBtn(!!d.edge.enabled, t('gwn.feat.edge'), 'gwn-f-edge', async () => {
@@ -799,29 +798,120 @@
           .then(() => refreshFeatures(id))
           .catch((err) => { swEdge.disabled = false; swEdge.setAttribute('aria-checked', next ? 'false' : 'true'); D.alert({ message: errText(err), danger: true }); });
       });
-      body.appendChild(featRow(t('gwn.feat.edge'), t('gwn.feat.edge_d'), swEdge,
+      rows.set('edge', featRow(t('gwn.feat.edge'), t('gwn.feat.edge_d'), swEdge,
         [h('a', { href: '#gw/' + encodeURIComponent(String(id)) + '/edge', class: 'gwn-link', text: t('gwn.feat.to_edge') })], 'edge'));
     }
     // Zigbee (deCONZ): decided on the gateway (image setting ZIGBEE=), shown here
     if (d.zigbee) {
-      body.appendChild(featRow(t('gwn.feat.zigbee'), t(d.zigbee.enabled ? 'gwn.feat.zigbee_on' : 'gwn.feat.zigbee_found'),
+      rows.set('zigbee', featRow(t('gwn.feat.zigbee'), t(d.zigbee.enabled ? 'gwn.feat.zigbee_on' : 'gwn.feat.zigbee_found'),
         U.tag(d.zigbee.enabled ? 'green' : 'grey', t(d.zigbee.enabled ? 'gwn.feat.running' : 'gwn.feat.not_running'), true), [], 'zigbee'));
     }
     // LAN discovery for routes (existing; licence gateway_lan_discovery)
     if (d.lanDiscovery && d.lanDiscovery.available) {
       const swLan = U.switchBtn(!!d.lanDiscovery.enabled, t('gwn.feat.lan'), 'gwn-f-lan', () => toggle(swLan, id, (v) => ({ lanDiscovery: v }), (v) => t(v ? 'gwn.feat.on_done' : 'gwn.feat.off_done', { name: t('gwn.feat.lan') })), !d.lanDiscovery.licensed);
       if (!d.lanDiscovery.licensed) swLan.title = t('gwn.feat.lan_license');
-      body.appendChild(featRow(t('gwn.feat.lan'), t('gwn.feat.lan_d'), swLan,
+      rows.set('lan', featRow(t('gwn.feat.lan'), t('gwn.feat.lan_d'), swLan,
         d.lanDiscovery.licensed ? [] : [h('span', { class: 'gwe-d gwe-muted', text: t('gwn.feat.lan_license') })], 'lan'));
     }
     // DNS filter, home cache, local time (phase 3b, gateway-home.js)
-    if (window.GCGatewayHome) window.GCGatewayHome.featureRows(id, d, (gid) => load('feat', gid, true).then(() => refreshFeatures(gid), () => refreshFeatures(gid))).forEach((r) => body.appendChild(r));
-    // memory
+    if (window.GCGatewayHome) {
+      window.GCGatewayHome.featureRows(id, d, (gid) => reloadFeatures(gid)).forEach((r) => rows.set(r.getAttribute('data-feature'), r));
+    }
+    return rows;
+  }
+
+  // "≈ 40 MB" next to the switch — only for a part the memory estimate names (switched on)
+  function memTag(row, d) {
+    const mb = PK.memoryOf(d, row.getAttribute('data-feature'));
+    if (mb == null) return;
+    const tagNode = h('span', { class: 'tag tag-grey gwn-fr-mem', text: t('gwp.feat.mem_row', { mb: nf(mb) }) });
+    const control = row.children.length > 1 ? row.lastElementChild : null;
+    if (control) row.insertBefore(tagNode, control); else row.appendChild(tagNode);
+  }
+
+  function memBar(d) {
     const m = d.memory || {};
-    if (m.totalMb) {
-      const tone = m.level === 'too_much' ? 'crit' : m.level === 'tight' ? 'warn' : 'info';
-      body.appendChild(h('div', { class: 'gwn-mem' }, U.note(tone, [h('strong', { text: t('gwn.feat.mem_label') }), ' ',
-        t('gwn.feat.mem', { used: K.ramLabel(m.usedMb), total: K.ramLabel(m.totalMb) }), ' ', t('gwn.feat.mem_' + m.level)])));
+    const hw = hwLine(d.hardware || {});
+    if (!m.totalMb) return hw ? h('p', { class: 'gwe-d gwn-hwline', text: hw }) : null;
+    const pct = Math.max(1, Math.min(100, Math.round((m.usedMb / m.totalMb) * 100)));
+    const tone = m.level === 'too_much' ? 'red' : m.level === 'tight' ? 'amber' : 'green';
+    const head = t('gwp.feat.mem_head', { used: K.ramLabel(m.usedMb), total: K.ramLabel(m.totalMb) });
+    const fill = h('span', { class: 'gwn-membar-fill gwn-membar-' + (m.level || 'ok') });
+    fill.style.width = pct + '%';
+    return h('section', { class: 'gw gwe-card gwn-membar', 'aria-label': t('gwp.feat.mem_label') }, h('div', { class: 'body gwe-body' }, [
+      h('div', { class: 'gwn-membar-row' }, [
+        h('div', { class: 'gwn-membar-t' }, [h('strong', { text: head }),
+          h('span', { class: 'gwn-membar-bar', role: 'img', 'aria-label': pct + ' %' }, fill)]),
+        m.level ? U.tag(tone, t('gwp.feat.level_' + m.level), true) : null,
+      ]),
+      hw ? h('p', { class: 'gwe-d gwn-hwline', text: hw }) : null,
+      m.level ? h('p', { class: 'gwe-d', text: t('gwn.feat.mem_' + m.level) }) : null,
+    ]));
+  }
+
+  // the text under a group's title; "Für das ganze Heimnetz" names the other gateways it holds for
+  function groupText(g, d, key) {
+    if (key === 'home') return t('gwp.fgrp.home_d');
+    if (key !== 'wide') return null;
+    const names = (d.home || []).map((x) => x.name).filter(Boolean);
+    if (!names.length) return t('gwp.fgrp.wide_d');
+    const P = window.GCGatewayPools;
+    const pools = P && P.poolsOf ? P.poolsOf(g.peer_id) : [];
+    if (pools.length) return t('gwp.fgrp.wide_pool', { gateways: names.join(', '), pool: pools.map((p) => p.name).join(', ') });
+    return t('gwp.fgrp.wide_home', { gateways: names.join(', ') });
+  }
+
+  function featuresPanel(g, d) {
+    const out = [];
+    const sup = d.support || {};
+    if (sup.netwatch === false || sup.inetq === false) out.push(U.note('warn', [t('gwn.feat.too_old', { min: sup.minGateway, version: sup.version || '—' })]));
+    const mb = memBar(d);
+    if (mb) out.push(mb);
+    const rows = featureRows(g, d);
+    PK.FEATURE_GROUPS.forEach((grp) => {
+      const list = grp.features.map((k) => rows.get(k)).filter(Boolean);
+      if (!list.length) return;
+      list.forEach((r) => memTag(r, d));
+      const c = U.card(t('gwp.fgrp.' + grp.key), null, { id: 'fg-' + grp.key, cls: 'gwn-features gwn-fgroup' });
+      c.card.setAttribute('data-fgroup', grp.key);
+      const text = groupText(g, d, grp.key);
+      if (text) c.body.appendChild(h('p', { class: 'gwe-d gwn-fgroup-d', text }));
+      list.forEach((r) => c.body.appendChild(r));
+      out.push(c.card);
+    });
+    return out;
+  }
+
+  /** The card "Funktionen" of the overview: what is on, what is off, the memory — the switches live in the tab. */
+  function summaryCard(g) {
+    const node = h('section', { class: 'gw gwe-card gwn-fsum', 'aria-labelledby': 'gwn-fsum-h' });
+    summaryNodes.set(String(g.peer_id), { node, g });
+    fillSummary(node, g);
+    const e = entry('feat', g.peer_id);
+    if (!e.data || Date.now() - e.at > 30000) load('feat', g.peer_id, true).then(() => refreshFeatures(g.peer_id), () => refreshFeatures(g.peer_id));
+    return node;
+  }
+
+  function fillSummary(node, g) {
+    const e = entry('feat', g.peer_id);
+    const d = e.data;
+    const manage = h('a', { class: 'btn btn-ghost btn-sm', href: '#gw/' + encodeURIComponent(String(g.peer_id)) + '/features', 'data-fk': 'gwn-fsum-manage', text: t('gwp.fsum.manage') });
+    const head = h('div', { class: 'top gwe-top' }, [h('h3', { id: 'gwn-fsum-h', text: t('gwp.fsum.title') }), manage]);
+    const body = h('div', { class: 'body gwe-body' });
+    node.replaceChildren(head, body);
+    if (!d) {
+      body.appendChild(e.err ? U.note('warn', [t('gwe.load_failed'), ' ', errText(e.err)]) : h('p', { class: 'gwe-loading', role: 'status', text: t('gwe.loading') }));
+      return;
+    }
+    const st = PK.featureStates(d);
+    const on = st.filter((x) => x.on);
+    const off = st.filter((x) => !x.on);
+    body.appendChild(h('p', { class: 'gwe-d', text: t(on.length ? 'gwp.fsum.on' : 'gwp.fsum.none') }));
+    if (on.length) body.appendChild(h('div', { class: 'gwe-chips gwn-fsum-chips' }, on.map((x) => h('span', { class: 'tag tag-green', 'data-fon': x.key, text: t('gwp.fname.' + x.key) }))));
+    if (off.length) body.appendChild(h('p', { class: 'gwe-d gwn-fsum-off', text: t('gwp.fsum.off', { list: off.map((x) => t('gwp.fname.' + x.key)).join(', ') }) }));
+    const m = d.memory || {};
+    if (m.totalMb && m.level) {
+      body.appendChild(h('p', { class: 'gwe-d', text: t('gwp.fsum.mem', { total: K.ramLabel(m.totalMb), used: K.ramLabel(m.usedMb), verdict: t('gwp.feat.level_' + m.level) }) }));
     }
   }
 
@@ -829,9 +919,12 @@
   function badge(node, id, which) {
     node.replaceChildren();
     node.className = 'gwe-tab-badge';
-    const d = entry(which, id).data;
+    const d = entry(kindOf(which), id).data;
     if (!d) return;
-    if (which === 'net') {
+    if (which === 'features') {
+      const n = PK.featureStates(d).filter((x) => x.on).length;
+      if (n) { node.className = 'gwe-tab-badge tag tag-grey'; node.textContent = t('gwp.tab.on', { n }); }
+    } else if (which === 'net') {
       const n = d.kpis && d.kpis.fresh;
       if (n && d.gateway.features.netwatch.enabled) { node.className = 'gwe-tab-badge tag tag-amber'; node.textContent = t('gwn.tabs.new', { n }); }
     } else if (d.now && d.now.state === 'outage') {
@@ -843,17 +936,28 @@
   function mount(box, g, tab, ctx) {
     cur = { box, g, tab, ctx: ctx || {} };
     box.classList.add('gwe-panel', 'gwn-panel');
+    if (tab === 'features') box.classList.add('gwn-ftab');
     draw();
-    load(tab, g.peer_id, false).then(() => { redraw(); updateBadges(g.peer_id); }, () => redraw());
+    load(kindOf(tab), g.peer_id, false).then(() => { redraw(); updateBadges(g.peer_id); }, () => redraw());
   }
   function prefetch(g) {
+    load('feat', g.peer_id, false).then(() => updateBadges(g.peer_id), () => {});
     load('net', g.peer_id, false).then(() => updateBadges(g.peer_id), () => {});
     load('inet', g.peer_id, false).then(() => updateBadges(g.peer_id), () => {});
   }
   function unmount() { cur = null; }
 
+  /** The tab's function is switched off (feature data loaded) — the tab shows "· aus". */
+  function tabOff(id, tab) { return PK.tabOff(entry('feat', id).data, tab); }
+  /** New devices of the network watch (0 when none); null when unknown or switched off. */
+  function fresh(id) {
+    const d = entry('net', id).data;
+    if (!d || !d.gateway || !d.gateway.features || !d.gateway.features.netwatch.enabled) return null;
+    return (d.kpis && d.kpis.fresh) || 0;
+  }
+
   // the card again after a change elsewhere (tabs "DNS-Filter" / "Zwischenspeicher", gateway-home.js)
   function reloadFeatures(id) { return load('feat', id, true).then(() => refreshFeatures(id), () => refreshFeatures(id)); }
 
-  window.GCGatewayNet = { mount, unmount, prefetch, featuresCard, badge, reloadFeatures, _cache: cache, _view: view };
+  window.GCGatewayNet = { mount, unmount, prefetch, summaryCard, badge, tabOff, fresh, reloadFeatures, _cache: cache, _view: view };
 })();
