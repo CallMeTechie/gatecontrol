@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.234.0] — 2026-11-06
+
+### Features
+- Edge ohne Netz – Compose ohne Netzgrenze, Grund „Compose-Datei veraltet“ statt xt_owner-Anleitung (#416)
+
+---
+
 ## [1.233.0] — 2026-11-06
 
 ### Features
