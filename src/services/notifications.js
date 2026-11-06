@@ -76,6 +76,9 @@ const CATALOGUE = [
     // The monthly AI budget (docs/plugins.md "AI requests") at 80 % and used
     // up — each once a month.
     { id: 'ai_budget', types: ['ai_budget_warning', 'ai_budget_reached'] },
+    // The local AI (phase 3c, step 3 — services/ai/local.js) did not answer
+    // (gateway offline, service ki down, too slow) — at most once an hour.
+    { id: 'ai_local', types: ['ai_local_unreachable'] },
     // Logs & Monitoring: a problem marked resolved with "Benachrichtigen,
     // wenn es wieder auftritt" occurred again (services/logProblems.js).
     { id: 'log_problem', types: ['log_problem_returned'] },

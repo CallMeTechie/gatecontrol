@@ -40,6 +40,7 @@
     'feat.cache': { de: '05-funktionen.md#zwischenspeicher', en: '05-features.md#home-cache' },
     'feat.print': { de: '05-funktionen.md#drucken--scannen', en: '05-features.md#print--scan' },
     'feat.radio': { de: '05-funktionen.md#funk-zigbee-bluetooth-thread', en: '05-features.md#radio-zigbee-bluetooth-thread' },
+    'feat.ai': { de: '05-funktionen.md#lokale-ki', en: '05-features.md#local-ai' },
     'feat.edge': { de: '04-edge-und-smart-home.md', en: '04-edge-and-smart-home.md' },
     'feat.zigbee': { de: '04-edge-und-smart-home.md#zigbee-mit-deconz-raspberry-pi', en: '04-edge-and-smart-home.md#zigbee-with-deconz-raspberry-pi' },
     // chapter 6: updating a gateway (the complete compose file)

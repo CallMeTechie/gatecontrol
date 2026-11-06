@@ -774,6 +774,43 @@
     return featRow(t('gwn.feat.print'), t('gwn.feat.print_d'), sw, extra, 'print');
   }
 
+  /**
+   * The row "Lokale KI" (phase 3c, step 3): the switch (features.ai), the model of this gateway when it serves
+   * the local AI, the way to Einstellungen › KI-Anbieter; hints instead of bans (too little memory, the compose
+   * file without the service ki, "Gateway zu alt").
+   */
+  function aiRow(id, g, d) {
+    const a = d.ai;
+    const sup = d.support || {};
+    const old = a.supported === false;
+    const sw = U.switchBtn(!!a.enabled, t('gwn.feat.ai'), 'gwn-f-ai', () => toggle(sw, id, (v) => ({ ai: { enabled: v } }), (v) => t(v ? 'gwn.feat.on_done' : 'gwn.feat.off_done', { name: t('gwn.feat.ai') })), old && !a.enabled);
+    const extra = [];
+    if (old) extra.push(h('span', { class: 'gwn-hint', 'data-ai-old': '' }, [U.icon('info', 14), t('gwn.feat.ai_old', { min: a.minGateway || sup.minGatewayAi || '1.26.0', version: sup.version || '—' })]));
+    let text = t('gwn.feat.ai_d');
+    if (a.enabled && a.chosen && a.model) {
+      const mem = a.model.ramMb ? t('gwn.feat.ai_model_mem', { dl: nf(a.model.downloadMb / 1000, 1), ram: nf(a.model.ramMb / 1000, 1) }) : '';
+      text = a.source === 'lan' ? t('gwn.feat.ai_on_lan', { url: a.lanUrl || '' }) : t('gwn.feat.ai_on');
+      extra.push(h('span', { class: 'gwe-d', 'data-ai-model': a.model.id }, [t('gwn.feat.ai_model'), ' ', h('strong', { text: a.model.name }), mem ? ' ' + mem : '']));
+    } else if (a.enabled && !a.chosen) {
+      extra.push(h('span', { class: 'gwn-hint' }, [U.icon('info', 14), t('gwn.feat.ai_not_chosen')]));
+    }
+    const st = a.state || {};
+    if (a.enabled && st.pull && st.pull.state === 'pulling') {
+      extra.push(h('span', { class: 'gwe-d', role: 'status' }, t('gwn.feat.ai_pulling', { done: nf((st.pull.completed || 0) / 1e9, 1), total: nf((st.pull.total || 0) / 1e9, 1) })));
+    }
+    if (a.hint === 'memory' && !old) extra.push(h('span', { class: 'gwn-hint', 'data-ai-hint': 'memory' }, [U.icon('warn', 14), t('gwn.feat.ai_memory')]));
+    if (a.compose === 'compose' && window.GCGatewayCompose) {
+      const dl = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-ai-compose', text: t('gwn.feat.ai_compose_btn') });
+      dl.addEventListener('click', () => window.GCGatewayCompose.open(g, 'gwn-ai-compose'));
+      extra.push(h('span', { class: 'gwn-hint', 'data-ai-compose': '' }, [U.icon('info', 14), t('gwn.feat.ai_compose'), ' ', dl]));
+    } else if (a.compose === 'image') {
+      extra.push(h('span', { class: 'gwn-hint', 'data-ai-compose': 'image' }, [U.icon('info', 14), t('gwn.feat.ai_old_image'), ' ',
+        h('a', { href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwn.feat.ai_releases') })]));
+    }
+    extra.push(h('a', { href: '/settings/ki', class: 'gwn-link', 'data-ai-link': '', text: t('gwn.feat.ai_to_settings') }));
+    return featRow(t('gwn.feat.ai'), text, sw, extra, 'ai');
+  }
+
   /** Every switch row of the gateway by its data-feature key (same API and behaviour as before: putFeatures). */
   function featureRows(g, d) {
     const rows = new Map();
@@ -839,6 +876,8 @@
     }
     // Drucken & Scannen (phase 3c): the switch here, everything else in the plugin "Drucken & Scannen"
     if (d.print) rows.set('print', printRow(id, d));
+    // Lokale KI (phase 3c, step 3): the switch here, the setup in Einstellungen › KI-Anbieter
+    if (d.ai) rows.set('ai', aiRow(id, g, d));
     // DNS filter, home cache, local time (phase 3b, gateway-home.js)
     if (window.GCGatewayHome) {
       window.GCGatewayHome.featureRows(id, d, (gid) => reloadFeatures(gid)).forEach((r) => rows.set(r.getAttribute('data-feature'), r));
@@ -848,9 +887,13 @@
 
   // "≈ 40 MB" next to the switch — only for a part the memory estimate names (switched on)
   function memTag(row, d) {
-    const mb = PK.memoryOf(d, row.getAttribute('data-feature'));
+    const key = row.getAttribute('data-feature');
+    const mb = PK.memoryOf(d, key);
     if (mb == null) return;
-    const tagNode = h('span', { class: 'tag tag-grey gwn-fr-mem', text: t('gwp.feat.mem_row', { mb: nf(mb) }) });
+    // the local AI in GB and blue, like its part of the memory bar
+    const tagNode = key === 'ai'
+      ? h('span', { class: 'tag tag-blue gwn-fr-mem', text: t('gwp.feat.mem_row_gb', { gb: nf(mb / 1000, 1) }) })
+      : h('span', { class: 'tag tag-grey gwn-fr-mem', text: t('gwp.feat.mem_row', { mb: nf(mb) }) });
     const control = row.children.length > 1 ? row.lastElementChild : null;
     if (control) row.insertBefore(tagNode, control); else row.appendChild(tagNode);
   }
@@ -862,12 +905,21 @@
     const pct = Math.max(1, Math.min(100, Math.round((m.usedMb / m.totalMb) * 100)));
     const tone = m.level === 'too_much' ? 'red' : m.level === 'tight' ? 'amber' : 'green';
     const head = t('gwp.feat.mem_head', { used: K.ramLabel(m.usedMb), total: K.ramLabel(m.totalMb) });
+    // phase 3c, step 3: the model of the local AI as its own (blue) part of the bar
+    const aiMb = (m.parts || []).filter((x) => x && x.kind === 'ai').reduce((a, x) => a + (x.mb > 0 ? x.mb : 0), 0);
     const fill = h('span', { class: 'gwn-membar-fill gwn-membar-' + (m.level || 'ok') });
-    fill.style.width = pct + '%';
+    const bar = h('span', { class: 'gwn-membar-bar' + (aiMb ? ' gwn-membar-split' : ''), role: 'img', 'aria-label': pct + ' %' }, fill);
+    if (aiMb) {
+      const aiPct = Math.max(1, Math.min(pct, Math.round((aiMb / m.totalMb) * 100)));
+      fill.style.width = Math.max(0, pct - aiPct) + '%';
+      const ai = h('span', { class: 'gwn-membar-ai', 'data-membar': 'ai' });
+      ai.style.width = aiPct + '%';
+      bar.appendChild(ai);
+    } else fill.style.width = pct + '%';
     return h('section', { class: 'gw gwe-card gwn-membar', 'aria-label': t('gwp.feat.mem_label') }, h('div', { class: 'body gwe-body' }, [
       h('div', { class: 'gwn-membar-row' }, [
-        h('div', { class: 'gwn-membar-t' }, [h('strong', { text: head }),
-          h('span', { class: 'gwn-membar-bar', role: 'img', 'aria-label': pct + ' %' }, fill)]),
+        h('div', { class: 'gwn-membar-t' }, [h('strong', { text: head }), bar,
+          aiMb ? h('span', { class: 'gwe-d gwn-membar-legend', text: t('gwp.feat.mem_legend_ai') }) : null]),
         m.level ? U.tag(tone, t('gwp.feat.level_' + m.level), true) : null,
       ]),
       hw ? h('p', { class: 'gwe-d gwn-hwline', text: hw }) : null,
@@ -906,6 +958,13 @@
       list.forEach((r) => c.body.appendChild(r));
       out.push(c.card);
     });
+    // "Ein Schalter genügt" and "Hinweise statt Verbote" (phase 3c) — once the gateway offers the local AI
+    if (d.ai) {
+      out.push(h('div', { class: 'gwn-fhints' }, [
+        U.note('info', [h('strong', { text: t('gwn.feat.hint_switch_t') }), ' ', t('gwn.feat.hint_switch')]),
+        U.note('warn', [h('strong', { text: t('gwn.feat.hint_hints_t') }), ' ', t('gwn.feat.hint_hints')]),
+      ]));
+    }
     return out;
   }
 

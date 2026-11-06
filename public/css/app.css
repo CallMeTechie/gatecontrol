@@ -7444,6 +7444,36 @@ a.stx-tile:hover{border-color:var(--pg-acc-bd)}
 .ai-prices > summary{cursor:pointer}
 .ai-prices .st-textarea{width:100%; margin-top:8px}
 .stx .ai-plugin-provider{width:auto; flex:0 1 180px}
+/* KI-Anbieter › Lokale KI (phase 3c, step 3 — settings-ai.js renderLocal / renderUse) */
+.ai-local-body,.ai-use-body{display:flex; flex-direction:column; gap:12px; padding:0 20px 20px}
+@container (max-width: 520px){ .ai-local-body,.ai-use-body{padding:0 16px 16px} }
+.ai-prov-local{border-color:var(--pg-acc-bd)}
+.ai-seg{display:flex; flex-wrap:wrap; gap:6px; padding:4px; border-radius:12px; background:var(--pg-surface3)}
+.ai-seg-b{flex:1 1 200px; min-height:44px; display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:8px 12px; border:0; border-radius:9px;
+  background:none; color:var(--pg-text); font:700 13.5px var(--font-body); text-align:left; cursor:pointer}
+.ai-seg-b small{font-weight:500; font-size:12.5px; color:var(--pg-muted)}
+.ai-seg-b[aria-pressed="true"]{background:var(--pg-surface); box-shadow:0 1px 2px rgba(0,0,0,.18)}
+.ai-seg-b:focus-visible{outline:2px solid var(--pg-acc); outline-offset:2px}
+.ai-mods{display:flex; flex-direction:column; gap:8px}
+.ai-mod{display:flex; flex-wrap:wrap; align-items:center; gap:10px 12px; padding:12px 14px; border-radius:12px; border:1px solid var(--pg-line); font-size:14px; cursor:pointer}
+.ai-mod:has(input:checked){border-color:var(--pg-acc-bd)}
+.ai-mod[data-fit="not_recommended"]{opacity:.85}
+.ai-mod input{accent-color:var(--pg-acc); margin:0}
+.ai-mod-t{flex:1 1 220px; min-width:0}
+.ai-mod-t .pgx-muted{font-size:13px}
+.ai-dl{display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px 14px; border-radius:12px; background:var(--pg-surface3)}
+.ai-dl-t{flex:1 1 300px; display:flex; flex-direction:column; gap:6px; font-size:14px}
+.ai-dl-bar{display:block; height:8px; border-radius:999px; background:var(--pg-line2); overflow:hidden}
+.ai-dl-fill{display:block; height:100%; background:var(--pg-acc)}
+.ai-local-compose{display:flex; flex-wrap:wrap; align-items:center; gap:8px}
+.ai-local .ai-prov-row{flex-wrap:wrap}
+.ai-local .ai-prov-row .st-input{flex:1 1 220px}
+.ai-local-actions{margin-top:2px}
+.ai-uses{display:flex; flex-direction:column; gap:10px}
+.ai-use-o{display:flex; align-items:flex-start; gap:10px; font-size:14px; cursor:pointer}
+.ai-use-o input{margin-top:3px; accent-color:var(--pg-acc)}
+.ai-use-o .pgx-muted{font-size:13px}
+.ai-test-ans p{margin:0 0 6px; white-space:pre-wrap}
 /* Sicherheit: IP-Sperre, Routenschutz (settings-security.js) */
 .stx .st-row-ctl > .ipb-window{flex:0 0 150px}
 .ipb-chip{display:inline-flex; align-items:center; height:30px; padding:0 12px; border-radius:99px; background:var(--pg-chip); border:1px solid var(--pg-line); font:600 13px var(--font-body); color:var(--pg-text)}
@@ -9757,6 +9787,12 @@ a.gwp-mrow-n{color:var(--teal)}
 .gwn-membar-fill{display:block; height:100%; background:var(--teal)}
 .gwn-membar-tight{background:var(--amber)}
 .gwn-membar-too_much{background:var(--red)}
+/* the local AI in the memory bar (phase 3c, step 3): green = home network features, blue = the model in memory */
+.gwn-membar-bar.gwn-membar-split{display:flex}
+.gwn-membar-ai{display:block; height:100%; background:var(--blue)}
+.gwn-membar-legend{font-size:12.5px}
+.gwn-fr-mem.tag-blue{white-space:nowrap}
+.gwn-fhints{display:grid; grid-template-columns:repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap:16px}
 .gwn-fsum-chips{margin:2px 0}
 /* pool page */
 .gwp-head h2{display:inline-flex; flex-wrap:wrap; align-items:center; gap:10px; font-size:22px; margin:0}

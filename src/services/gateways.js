@@ -534,7 +534,8 @@ async function notifyLanScan(peerId, { request_id, subnets, category_mode, categ
  * X-Gateway-Token like the other calls. → { status, body } or null when the
  * gateway cannot be reached (no token, network error, timeout).
  */
-async function mgmtCall(peerId, path, payload = {}, timeoutMs = 7000) {
+/** Management call: POST JSON to the gateway's API (tunnel, X-Gateway-Token) → { status, body } or null. maxBytes: the answer kept (16 KB). */
+async function mgmtCall(peerId, path, payload = {}, timeoutMs = 7000, { maxBytes = 16384 } = {}) {
   const db = getDb();
   const row = db.prepare(`
     SELECT p.allowed_ips, gm.api_port, gm.push_token_encrypted
@@ -553,11 +554,102 @@ async function mgmtCall(peerId, path, payload = {}, timeoutMs = 7000) {
     }, (res) => {
       let body = '';
       res.setEncoding('utf8');
-      res.on('data', (c) => { if (body.length < 16384) body += c; });
+      res.on('data', (c) => { if (body.length < maxBytes) body += c; });
       res.on('end', () => { let j = null; try { j = JSON.parse(body); } catch { j = null; } resolve({ status: res.statusCode, body: j }); });
     });
     req.on('error', (err) => { logger.warn({ err: err.message, peerId, path }, 'Gateway management call failed'); resolve(null); });
     req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.end(data);
+  });
+}
+
+/**
+ * A streamed management call (phase 3c, step 3 — the local AI, the gateway's
+ * docs/local-ai.md): POST JSON, the answer is NDJSON, one object per line to
+ * onLine. Long answers (CPU inference takes minutes) are fine as long as lines
+ * keep coming: idleMs without a line, totalMs overall, connectMs to connect
+ * (a gateway that is offline fails fast). A gateway that answers anything but
+ * 200 gives { status, body } (JSON, ≤ 16 KB). Never follows a redirect, never
+ * leaves the gateway's tunnel address.
+ * → { status, body? }; rejects with code unreachable | timeout | too_large | bad_response | aborted.
+ */
+function mgmtStream(peerId, path, payload, { totalMs = 600000, idleMs = 120000, connectMs = 5000, maxBytes = 2 * 1024 * 1024, onLine, signal } = {}) {
+  const fail = (code, message) => Object.assign(new Error(message || code), { code });
+  const row = getDb().prepare(`
+    SELECT p.allowed_ips, gm.api_port, gm.push_token_encrypted
+    FROM gateway_meta gm JOIN peers p ON p.id = gm.peer_id
+    WHERE gm.peer_id = ?
+  `).get(peerId);
+  if (!row) return Promise.reject(fail('unreachable', 'not a gateway'));
+  const pushToken = _decryptPushToken(row.push_token_encrypted, peerId);
+  if (!pushToken) return Promise.reject(fail('unreachable', 'no gateway token'));
+  const ip = _peerIp(row.allowed_ips);
+  const data = JSON.stringify(payload || {});
+  return new Promise((resolve, reject) => {
+    let done = false;
+    let idle = null;
+    const timers = [];
+    const finish = (fn, v) => {
+      if (done) return;
+      done = true;
+      for (const t of timers) clearTimeout(t);
+      clearTimeout(idle);
+      if (signal) signal.removeEventListener('abort', onAbort);
+      fn(v);
+    };
+    const stop = (code, message) => { req.destroy(); finish(reject, fail(code, message)); };
+    const kick = () => { clearTimeout(idle); idle = setTimeout(() => stop('timeout', 'no progress from the gateway'), idleMs); };
+    const req = http.request({
+      host: ip, port: row.api_port, path, method: 'POST', agent: false,
+      headers: { 'X-Gateway-Token': pushToken, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data), Accept: 'application/x-ndjson' },
+    }, (res) => {
+      if (res.statusCode !== 200) {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => { if (body.length < 16384) body += c; });
+        res.on('end', () => { let j = null; try { j = JSON.parse(body); } catch { j = null; } finish(resolve, { status: res.statusCode, body: j }); });
+        res.on('error', () => finish(reject, fail('unreachable', 'gateway connection lost')));
+        return;
+      }
+      let size = 0;
+      let buf = '';
+      res.setEncoding('utf8');
+      kick();
+      const line = (l) => {
+        const t = l.trim();
+        if (!t) return;
+        let o;
+        try { o = JSON.parse(t); } catch { throw fail('bad_response', 'the gateway sent no JSON line'); }
+        if (o && typeof o === 'object') onLine(o);
+      };
+      res.on('data', (c) => {
+        if (done) return;
+        size += Buffer.byteLength(c);
+        if (size > maxBytes) { stop('too_large', 'answer too large'); return; }
+        kick();
+        buf += c;
+        let i;
+        try {
+          while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); line(l); }
+        } catch (e) { req.destroy(); finish(reject, e.code ? e : fail('bad_response', e.message)); }
+      });
+      res.on('end', () => {
+        if (done) return;
+        try { line(buf); } catch (e) { finish(reject, e.code ? e : fail('bad_response', e.message)); return; }
+        finish(resolve, { status: 200 });
+      });
+      res.on('error', () => finish(reject, fail('unreachable', 'gateway connection lost')));
+    });
+    timers.push(setTimeout(() => stop('timeout', 'the gateway did not answer in time'), totalMs));
+    req.on('socket', (sock) => {
+      if (!sock.connecting) return;
+      const t = setTimeout(() => stop('unreachable', 'the gateway does not answer'), connectMs);
+      timers.push(t);
+      sock.once('connect', () => clearTimeout(t));
+    });
+    const onAbort = () => stop('aborted', 'aborted');
+    if (signal) { if (signal.aborted) { onAbort(); return; } signal.addEventListener('abort', onAbort, { once: true }); }
+    req.on('error', (err) => { logger.debug({ err: err.message, peerId, path }, 'Gateway stream call failed'); finish(reject, fail('unreachable', 'the gateway does not answer')); });
     req.end(data);
   });
 }
@@ -1022,6 +1114,7 @@ module.exports = {
   notifyWol,
   notifyLanScan,
   mgmtCall,
+  mgmtStream,
   probeGatewayTarget,
   getDiscoverySettings,
   setDiscoverySettings,

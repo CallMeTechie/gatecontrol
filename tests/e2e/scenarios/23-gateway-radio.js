@@ -103,11 +103,11 @@ module.exports = (ctx) => {
         await page.reload();
         await theme(page, 'dark');
         await goTab(page, GW, 'features');
-        step('radio: the row "Funk (Zigbee, Bluetooth, Thread)" in "Geräte im Heimnetz", after "Drucken & Scannen"', await until(page, () => {
+        step('radio: the row "Funk (Zigbee, Bluetooth, Thread)" in "Geräte im Heimnetz", after "Drucken & Scannen" and "Lokale KI"', await until(page, () => {
           const g = document.querySelector('[data-fgroup="devices"]');
           if (!g) return false;
           const keys = [...g.querySelectorAll('[data-feature]')].map((x) => x.getAttribute('data-feature'));
-          return keys.indexOf('radio') === keys.indexOf('print') + 1 && /Funk \(Zigbee, Bluetooth, Thread\)/.test(g.textContent)
+          return keys.indexOf('radio') === keys.indexOf('ai') + 1 && keys.indexOf('ai') === keys.indexOf('print') + 1 && /Funk \(Zigbee, Bluetooth, Thread\)/.test(g.textContent)
             && !document.querySelector('[data-fgroup="ext"] [data-feature="zigbee"]');
         }));
         step('radio: too old → "Gateway zu alt – ab 1.25.0", switch disabled', await page.evaluate((sel) => {

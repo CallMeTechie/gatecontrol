@@ -22,7 +22,7 @@ separate page “Gateway Pools” in the menu any more.
 General requirements:
 
 - Network watch, internet quality, presence and UPS need gateway version
-  **1.21.0** or later, DNS filter and home cache **1.22.0**, print & scan **1.24.0**, radio **1.25.0**. If the gateway is
+  **1.21.0** or later, DNS filter and home cache **1.22.0**, print & scan **1.24.0**, radio **1.25.0**, local AI **1.26.0**. If the gateway is
   older, the tab says so; update it then ([chapter 6](06-updating-a-gateway.md)).
 - The gateway is in the home network in **host network mode** (default for the
   Pi, the Synology package and Linux with “Host (recommended)”).
@@ -182,6 +182,73 @@ devices on Wi-Fi already work through Smart Home.
 **If something is stuck:** “approval needed” means deCONZ has a Phoscon password and does
 not let GateControl in – once in Phoscon (port 8090 of the gateway) Gateway › Advanced ›
 “Authenticate app”, then “Try again”.
+
+## Local AI
+
+**What for:** An AI model in the home network instead of the cloud. Drive and Mail
+use it to summarise documents and mails, sort them and suggest replies – the
+content never leaves the house and nothing costs money. In return a model without
+a graphics card answers more slowly (seconds to minutes) and can do less than the
+big cloud models; it does not understand pictures (those still go to the cloud when
+“Send pictures” is on).
+
+**Two ways:**
+
+- **On a gateway:** GateControl downloads the model to the gateway and starts it
+  there (service “ki” with Ollama). Sensible from about 4 GB RAM; a NAS with 8–16 GB
+  is good. On a Raspberry Pi 3 B+ (1 GB) GateControl shows “too little memory” – you
+  can still switch it on, but the second way is better then.
+- **Existing AI server in the home network:** If Ollama or LM Studio already runs on
+  a PC, a gateway in the same home network only forwards the questions – to exactly
+  this one address (private IPv4 address and port). The server on the PC must listen
+  on the network: Ollama with `OLLAMA_HOST=0.0.0.0`, LM Studio with “Serve on Local
+  Network”.
+
+**Requirements:**
+
+- Gateway 1.26.0+. If it is older, the row says “Gateway too old – needs 1.26.0”.
+- **Synology/Linux** (only “On a gateway”): the current compose file with the service
+  “ki”, once. If it is missing, the row “Local AI” and the setup show the button
+  “Download docker-compose.yml” – download it, recreate the project
+  ([chapter 6](06-updating-a-gateway.md)). The Ollama image is ≈ 3 GB, each model 1–6 GB.
+- **Raspberry Pi image:** nothing to do – the image creates the service itself as
+  soon as you switch the local AI on.
+
+**Setup:** Settings › Extensions › AI providers › “Set up the local AI”:
+
+1. Choose “On a gateway” or “Existing AI server in the home network”.
+2. Choose the gateway. Its RAM, cores and whether it has a graphics card are shown.
+3. Choose a model. GateControl says per gateway “recommended”, “fits” or “not
+   recommended” (too little memory, or too slow without a graphics card) – you can
+   always choose. To start with: **Llama 3.2 3B** (2 GB, fast, good for summaries and
+   sorting); on weak hardware **Llama 3.2 1B**; with plenty of memory **Qwen 2.5 7B**
+   (better answers, much slower without a graphics card).
+   For an AI server in the home network: enter its address (e.g.
+   `http://192.168.1.20:11434`), “Connect”, then choose one of its models.
+4. “Save”. On a gateway GateControl downloads the model (“Downloading the model: 1.3
+   of 2.0 GB”, “Cancel” works any time; a later “Download” resumes).
+
+**What is the local AI for?**
+
+| Setting | What happens |
+|---|---|
+| For everything | Every request goes to the local AI first. The cloud only answers when the local AI is not reachable (gateway offline, busy, too slow, model missing) or has to understand a picture. |
+| Only for private content | Drive documents and mails (the Drive and Mail plugins) go to the local AI – and **never** to the cloud, even when the local AI fails. Everything else as before. |
+| Only as a fallback | Everything through the cloud as before; the local AI steps in once the monthly budget is used up. |
+
+“Test: “Summarise this mail”” sends a made-up mail to the local AI and shows the
+answer and how long it took. The local AI costs €0 and does not count against the
+budget; it is still listed in the log of AI requests (marked “local”).
+
+**In the tab “Features”:** the row “Local AI” in “Devices at home” switches the AI on
+this gateway on and off and shows the model. The bar at the top shows the memory:
+green the home network features, blue the model in memory; “tight” means little is
+left for more features.
+
+**If something goes wrong:** “Service “ki” missing” → download the compose file
+(see above). “not reachable” with an AI server in the home network → is the PC on,
+does the server listen on the network, is the port right? The activity log reports
+“Local AI does not answer” at most once an hour.
 
 ## Home cache
 

@@ -179,6 +179,75 @@
     '      type: tmpfs',
     '      device: tmpfs',
     '      o: "size=1m,uid=0,gid=0,mode=0755"',
+    '  # tmpfs shared: the control file of the gateway for the service ki and its state (local AI)',
+    '  ai-ctl:',
+    '    driver_opts:',
+    '      type: tmpfs',
+    '      device: tmpfs',
+    '      o: "size=1m,uid=0,gid=0,mode=0755"',
+    '  # the models of the local AI (1–6 GB each)',
+    '  ki-models:',
+  ];
+
+  // The local AI (phase 3c, step 3 — gateway >= 1.26.0, docs/local-ai.md of the gateway): Ollama,
+  // switched on and off in GateControl: the gateway creates /gc-ai/run, the small watcher starts
+  // `ollama serve` (127.0.0.1:11435 only) or ends it. Without run only the watcher runs.
+  const KI_SERVICE = [
+    '',
+    '  # Local AI with Ollama (gateway >= 1.26.0, docs/local-ai.md of the gateway) — switched on in GateControl:',
+    '  # the gateway creates /gc-ai/run, the small watcher starts `ollama serve` (127.0.0.1:11435 only) or',
+    '  # ends it. The models are downloaded by GateControl (KI-Anbieter › Lokale KI).',
+    '  ki:',
+    '    image: ollama/ollama:0.40.8@sha256:2b8eecdb85aa6ea67c381c8ecffec04b2658496cf2821a8f88b0485bdff198e8',
+    '    entrypoint:',
+    '      - /bin/sh',
+    '      - -c',
+    '      - |',
+    '        C=/gc-ai; p=""',
+    '        say() { printf \'%s %s\\n\' "$$1" "$$(date +%s)" >"$$C/.ki.state" && mv -f "$$C/.ki.state" "$$C/ki.state"; }',
+    '        halt() { if [ -n "$$p" ]; then kill "$$p" 2>/dev/null; wait "$$p" 2>/dev/null; fi; p=""; }',
+    '        dead() { [ ! -e "/proc/$$1" ] || grep -q \'^State:[[:space:]]*Z\' "/proc/$$1/status" 2>/dev/null; }',
+    '        trap \'halt; say idle; exit 0\' TERM INT',
+    '        while :; do',
+    '          if [ -f "$$C/run" ]; then',
+    '            if [ -n "$$p" ] && dead "$$p"; then wait "$$p"; say exit; p=""; sleep 8; fi',
+    '            if [ -z "$$p" ]; then ollama serve & p=$$!; fi',
+    '            say running',
+    '          else',
+    '            halt; say idle',
+    '          fi',
+    '          sleep 2 & wait $$!',
+    '        done',
+    '    restart: unless-stopped',
+    '    network_mode: host',
+    '    # the gateway goes first: a smaller CPU share, and when memory runs out the kernel ends the model,',
+    '    # never the gateway or the tunnel',
+    '    cpu_shares: 256',
+    '    oom_score_adj: 800',
+    '    volumes:',
+    '      - ki-models:/root/.ollama',
+    '      - type: volume            # control file of the gateway, state back',
+    '        source: ai-ctl',
+    '        target: /gc-ai',
+    '        volume: { nocopy: true }',
+    '    environment:',
+    '      - TZ=${TZ:-Etc/UTC}',
+    '      # only local (the gateway forwards), not 11434 — an Ollama already on this host is not disturbed',
+    '      - OLLAMA_HOST=127.0.0.1:11435',
+    '      - OLLAMA_NUM_PARALLEL=1',
+    '      - OLLAMA_MAX_LOADED_MODELS=1',
+    '      - OLLAMA_KEEP_ALIVE=10m',
+    '    healthcheck:',
+    '      test: ["CMD-SHELL", "case \\"$$(cut -d\' \' -f1 /gc-ai/ki.state 2>/dev/null)\\" in running) ollama list >/dev/null ;; *) true ;; esac"]',
+    '      interval: 60s',
+    '      timeout: 10s',
+    '      retries: 3',
+    '      start_period: 120s',
+    '    logging:',
+    '      driver: json-file',
+    '      options:',
+    '        max-size: "10m"',
+    '        max-file: "3"',
   ];
 
   const DECONZ_SERVICE = [
@@ -378,6 +447,11 @@
         '      - type: volume            # radio: control file for the deconz service',
         '        source: radio-ctl',
         '        target: /gc-radio',
+        '        volume: { nocopy: true }',
+        // local AI (gateway >= 1.26.0): the control file for the service ki; harmless without it
+        '      - type: volume            # local AI: control file for the service ki',
+        '        source: ai-ctl',
+        '        target: /gc-ai',
         '        volume: { nocopy: true }'
       );
     }
@@ -404,6 +478,9 @@
       // Zigbee (phase 3c, step 2): only when wanted — the image is ≈ 350 MB (the gateway's example keeps it in
       // the profile "zigbee"; here it is wanted, so without the profile)
       if (o.zigbee === true) lines.push(...DECONZ_SERVICE);
+      // the local AI (phase 3c, step 3): only when switched on for this gateway — the image is ≈ 3 GB (the
+      // gateway's example keeps it in the profile "ki")
+      if (o.ai === true) lines.push(...KI_SERVICE);
       lines.push(...VOLUMES);
     }
     const header = headerNotes.length > 0 ? headerNotes.join('\n') + '\n' : '';
