@@ -42,8 +42,12 @@ describe('gateway-pool-kit: hash, groups, roles, status', () => {
   it('roleOf: rank, serving / reserve / recovering with minutes / offline; load balancing', () => {
     const pool = { mode: 'failover', members: [{ peer_id: 1, priority: 1, state: 'recovering', failback_at: 1000 + 5 * 60000 - 1 }, { peer_id: 2, priority: 2, state: 'active' }, { peer_id: 3, priority: 3, state: 'offline' }] };
     assert.deepEqual(PK.roleOf(pool, pool.members[1], 1000), { tone: 'blue', key: 'gwp.role.active', params: { n: 2 } });
-    assert.deepEqual(PK.roleOf(pool, pool.members[0], 1000), { tone: 'amber', key: 'gwp.role.recovering_in', params: { n: 1, min: 5 } });
+    assert.deepEqual(PK.roleOf(pool, pool.members[0], 1000), { tone: 'amber', key: 'gwp.role.recovering_in', params: { n: 1, min: 5, left: '5:00' }, until: 1000 + 5 * 60000 - 1 });
+    assert.equal(PK.roleOf(pool, { ...pool.members[0], failback_takes_routes: false }, 1000).key, 'gwp.role.recovering_reserve_in');
     assert.equal(PK.roleOf(pool, pool.members[2]).key, 'gwp.role.offline');
+    // away on purpose (live state of the server): an update / a restart under way
+    assert.deepEqual(PK.roleOf(pool, { ...pool.members[2], live_state: 'updating' }), { tone: 'blue', key: 'gwp.role.updating', params: { n: 3 } });
+    assert.equal(PK.roleOf(pool, { ...pool.members[2], live_state: 'restarting' }).key, 'gwp.role.restarting');
     assert.equal(PK.roleOf({ ...pool, mode: 'load_balancing' }, pool.members[1]).key, 'gwp.role.lb_active');
     assert.equal(PK.roleOf(pool, { peer_id: 4, priority: 9, state: 'standby' }).key, 'gwp.role.standby');
     assert.equal(PK.activeMember({ active_peer_ids: [2], members: pool.members }).peer_id, 2);
@@ -145,6 +149,58 @@ describe('gateway-pool-kit: "Zustand" of a gateway', () => {
   });
 });
 
+describe('gateway-pool-kit: live state (gatewayLiveState)', () => {
+  const NOW = 1_000_000_000;
+  it('clock: m:ss, never negative', () => {
+    assert.equal(PK.clock(0), '0:00');
+    assert.equal(PK.clock(-5000), '0:00');
+    assert.equal(PK.clock(61_000), '1:01');
+    assert.equal(PK.clock(14 * 60_000 + 59_500), '15:00');
+  });
+  it('liveOf: online / degraded / failback wait / updating / restarting / offline / pending', () => {
+    assert.deepEqual(PK.liveOf(gw(1, { state: 'online', reachable: true }), NOW), { key: 'online', tone: 'green', hint: null });
+    assert.equal(PK.liveOf(gw(1, { state: 'online', health: { overall_healthy: false } }), NOW).key, 'degraded');
+    // the sliding window's offline for a heartbeat reporting a failure: degraded, not offline
+    assert.equal(PK.liveOf(gw(1, { state: 'online', status: 'offline' }), NOW).key, 'degraded');
+    // reachable again, the routes wait for the failback cooldown: online + countdown hint
+    const back = PK.liveOf(gw(1, { state: 'online', alive: false, failback_at: NOW + 90_000, failback_takes_routes: true }), NOW);
+    assert.deepEqual(back, { key: 'online', tone: 'green', hint: { key: 'gwp.live.failback_in', until: NOW + 90_000 } });
+    assert.equal(PK.liveOf(gw(1, { state: 'online', failback_at: NOW + 1, failback_takes_routes: false }), NOW).hint.key, 'gwp.live.reserve_in');
+    assert.equal(PK.liveOf(gw(1, { state: 'online', failback_at: NOW - 1 }), NOW).hint, null);
+    // the old `status` of an update in progress is 'offline' — the state wins
+    assert.deepEqual(PK.liveOf(gw(1, { state: 'updating', status: 'offline', expected_back_by: NOW + 600_000 }), NOW),
+      { key: 'updating', tone: 'blue', hint: { key: 'gwp.live.expected_by', until: NOW + 600_000 } });
+    assert.equal(PK.liveOf(gw(1, { state: 'restarting', status: 'offline' }), NOW).key, 'restarting');
+    assert.deepEqual(PK.liveOf(gw(1, { state: 'offline', status: 'offline' }), NOW), { key: 'offline', tone: 'grey', hint: null });
+    assert.equal(PK.liveOf(gw(1, { state: 'unknown', status: 'unknown' }), NOW).key, 'pending');
+  });
+  it('liveOf: an older server answer without `state` keeps the old rule', () => {
+    assert.equal(PK.liveOf(gw(1), NOW).key, 'online');
+    assert.equal(PK.liveOf(gw(1, { status: 'offline' }), NOW).key, 'offline');
+    assert.equal(PK.liveOf(gw(1, { status: 'unknown' }), NOW).key, 'pending');
+    assert.equal(PK.liveOf(gw(1, { health: { overall_healthy: false } }), NOW).key, 'degraded');
+  });
+  it('pollDelay: 5 s while a gateway is on its way back or just went away, else 30 s', () => {
+    assert.equal(PK.pollDelay([gw(1, { state: 'online' })], NOW), 30000);
+    assert.equal(PK.pollDelay([gw(1, { state: 'online' }), gw(2, { state: 'updating' })], NOW), 5000);
+    assert.equal(PK.pollDelay([gw(2, { state: 'restarting' })], NOW), 5000);
+    assert.equal(PK.pollDelay([gw(2, { state: 'online', update_state: 'updating' })], NOW), 5000);
+    assert.equal(PK.pollDelay([gw(2, { state: 'online', failback_at: NOW + 1000 })], NOW), 5000);
+    assert.equal(PK.pollDelay([gw(2, { state: 'offline', offline_since: NOW - 60_000 })], NOW), 5000);
+    assert.equal(PK.pollDelay([gw(2, { state: 'offline', offline_since: NOW - 3_600_000 })], NOW), 30000);
+    assert.equal(PK.pollDelay([], NOW), 30000);
+  });
+  it('healthChecks: an update / restart under way is a warning, no claims about routes or sync', () => {
+    const g = gw(1, { health: { config_hash: 'abc', route_reachability: [{ route_id: 1, reachable: true }] } });
+    const c = PK.healthChecks(g, { status: 'updating', agoText: 'vor 40 s', untilText: '14:20' });
+    assert.deepEqual(c.map((x) => [x.tone, x.key]), [['warn', 'gwp.state.updating']]);
+    assert.deepEqual(c[0].params, { ago: 'vor 40 s', time: '14:20' });
+    assert.equal(PK.overall(c), 'warn');
+    const fb = PK.healthChecks(g, { status: 'online', failback: { key: 'gwp.live.failback_in', left: '1:30', until: 5 } });
+    assert.deepEqual(fb.find((x) => x.key === 'gwp.live.failback_in'), { tone: 'info', key: 'gwp.live.failback_in', params: { left: '1:30' }, until: 5 });
+  });
+});
+
 describe('gateway-pool-kit: tab "Funktionen"', () => {
   const d = {
     features: { netwatch: { enabled: true }, inetq: { enabled: false }, presence: { enabled: true }, ups: { enabled: false } },
@@ -210,7 +266,12 @@ describe('the views: texts and safety', () => {
     for (const k of ['ok', 'warn', 'bad', 'info']) keys.add('gwp.state.tone_' + k);
     for (const k of ['protected', 'partial', 'on_reserve', 'no_reserve', 'single', 'down', 'off']) { keys.add('gwp.status.' + k); keys.add('gwp.status_short.' + k); }
     for (const k of ['ok', 'tight', 'too_much']) keys.add('gwp.feat.level_' + k);
-    for (const k of ['active', 'lb_active', 'standby', 'standby_partial', 'recovering', 'offline']) keys.add('gwp.mstate.' + k);
+    for (const k of ['active', 'lb_active', 'standby', 'standby_partial', 'recovering', 'offline', 'updating', 'restarting']) keys.add('gwp.mstate.' + k);
+    // live state: keys built from the state
+    for (const k of ['updating', 'restarting']) {
+      for (const x of ['gwp.live.', 'gwp.role.', 'gwp.state.', 'gwp.mem.', 'gwp.ban.first_']) keys.add(x + k);
+      keys.add('gwp.live.' + k + '_card');
+    }
     assert.ok(keys.size > 250, String(keys.size));
     for (const k of keys) {
       assert.ok(de[k], 'de ' + k);

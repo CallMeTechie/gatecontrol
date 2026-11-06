@@ -94,8 +94,14 @@
     }
     if (member.state === 'recovering') {
       const left = member.failback_at ? Math.max(0, member.failback_at - (now || Date.now())) : null;
-      return { tone: 'amber', key: left == null ? 'gwp.role.recovering' : 'gwp.role.recovering_in', params: { n, min: left == null ? 0 : Math.max(1, Math.ceil(left / 60000)) } };
+      // reachable again; the routes wait for the failback cooldown — it takes
+      // them back (or only stands by again) at failback_at (`until`, counted down as {{left}})
+      const reserve = member.failback_takes_routes === false;
+      if (left == null) return { tone: 'amber', key: reserve ? 'gwp.role.recovering_reserve' : 'gwp.role.recovering', params: { n } };
+      return { tone: 'amber', key: reserve ? 'gwp.role.recovering_reserve_in' : 'gwp.role.recovering_in', params: { n, min: Math.max(1, Math.ceil(left / 60000)), left: clock(left) }, until: member.failback_at };
     }
+    // away on purpose (live state of the server): an update / a restart under way
+    if (member.live_state === 'updating' || member.live_state === 'restarting') return { tone: 'blue', key: 'gwp.role.' + member.live_state, params: { n } };
     return { tone: 'red', key: 'gwp.role.offline', params: { n } };
   }
   /** 1-based place of a member in its pool (by priority). */
@@ -207,26 +213,85 @@
     return { g: ranked[0], partner: null, lan: null };
   }
 
+  // ─── Live state of a gateway (src/services/gatewayLiveState.js) ───────
+  /** ms → "m:ss" (a countdown; 0:00 at the end). */
+  function clock(ms) {
+    const s = Math.max(0, Math.ceil((Number(ms) || 0) / 1000));
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }
+  const LIVE_TONE = { online: 'green', degraded: 'amber', updating: 'blue', restarting: 'blue', offline: 'grey', pending: 'grey' };
+  /**
+   * What the page shows for a gateway: { key, tone, hint }.
+   *   key   'online' | 'degraded' | 'updating' | 'restarting' | 'offline' | 'pending'
+   *         (labels gateways.<key>, gwp.live.updating / gwp.live.restarting)
+   *   tone  green | amber | blue | grey (tag-<tone>)
+   *   hint  null, or { key, until } — reachable again, the routes wait for
+   *         the failback cooldown (gwp.live.failback_in / gwp.live.reserve_in,
+   *         {{left}} counts down to `until`), or the end of an expected restart
+   *         (gwp.live.expected_by, {{time}}).
+   * From the server's live state (GET /api/v1/gateways: state, failback_at,
+   * expected_back_by); an older answer without `state` keeps the old rule.
+   */
+  function liveOf(g, now) {
+    const t = now == null ? Date.now() : now;
+    const mk = (key, hint) => ({ key, tone: LIVE_TONE[key], hint: hint || null });
+    if (!g) return mk('pending');
+    if (!g.state) {
+      if (g.status === 'offline') return mk('offline');
+      if (!g.health || g.status === 'unknown') return mk('pending');
+      return mk(g.health.overall_healthy === false ? 'degraded' : 'online');
+    }
+    if (g.state === 'updating' || g.state === 'restarting') {
+      return mk(g.state, g.expected_back_by ? { key: 'gwp.live.expected_by', until: g.expected_back_by } : null);
+    }
+    if (g.state === 'offline') return mk('offline');
+    if (g.state !== 'online') return mk('pending');
+    // reachable: the sliding window still says offline only for a heartbeat
+    // that reports a failure (listener_failed) — degraded, like overall_healthy false
+    const degraded = (g.health && g.health.overall_healthy === false) || g.status === 'offline';
+    const hint = g.failback_at && g.failback_at > t
+      ? { key: g.failback_takes_routes === false ? 'gwp.live.reserve_in' : 'gwp.live.failback_in', until: g.failback_at } : null;
+    return mk(degraded ? 'degraded' : 'online', hint);
+  }
+  /**
+   * How long the gateways page waits for its next poll: 5 s while a gateway
+   * is on its way back (update, restart, failback wait) or went away in the
+   * last 15 minutes — the SSE events usually come first, this is the safety
+   * net —, otherwise 30 s.
+   */
+  function pollDelay(gateways, now) {
+    const t = now == null ? Date.now() : now;
+    const busy = (gateways || []).some((g) => g && (g.state === 'updating' || g.state === 'restarting' || g.update_state === 'updating'
+      || (g.failback_at && g.failback_at > t)
+      || (g.state === 'offline' && g.offline_since && t - g.offline_since < 15 * 60000)));
+    return busy ? 5000 : 30000;
+  }
+
   // ─── "Zustand" of a gateway (tab "Übersicht") ─────────────────────────
   /**
    * The checks of the card "Zustand" in order of importance:
    * [{ tone: 'ok'|'warn'|'bad'|'info', key, params, link }] (i18n gwp.state.*).
-   * ctx: { status, latest, fresh (new devices of the network watch, or null), agoText }
+   * ctx: { status (liveOf().key), latest, fresh (new devices of the network watch, or null), agoText,
+   *        untilText (end of an expected restart), failback ({ key, left, until }: the failback wait) }
    */
   function healthChecks(g, ctx) {
     const c = ctx || {};
     const h = (g && g.health) || {};
     const out = [];
     if (g.never_connected) return [{ tone: 'bad', key: 'gwp.state.never' }];
+    // away: offline, or on purpose (update / restart) — nothing it reported holds now
+    const away = c.status === 'offline' || c.status === 'updating' || c.status === 'restarting';
     if (c.status === 'offline') out.push({ tone: 'bad', key: 'gwp.state.offline', params: { ago: c.agoText || '—' } });
+    else if (away) out.push({ tone: 'warn', key: 'gwp.state.' + c.status, params: { ago: c.agoText || '—', time: c.untilText || '—' } });
     else out.push({ tone: 'ok', key: 'gwp.state.tunnel', params: { ago: c.agoText || '—' } });
     if (c.status === 'degraded') out.push({ tone: 'warn', key: 'gwp.state.degraded' });
+    if (c.failback) out.push({ tone: 'info', key: c.failback.key, params: { left: c.failback.left || '—' }, until: c.failback.until });
     const rr = Array.isArray(h.route_reachability) ? h.route_reachability : [];
-    if (rr.length && c.status !== 'offline') {
+    if (rr.length && !away) {
       const up = rr.filter((r) => r && r.reachable).length;
       out.push({ tone: up === rr.length ? 'ok' : (up === 0 ? 'bad' : 'warn'), key: 'gwp.state.routes', params: { up, n: rr.length } });
     }
-    if (c.status !== 'offline') out.push(h.config_hash ? { tone: 'ok', key: 'gwp.state.synced' } : { tone: 'warn', key: 'gwp.state.sync_unknown' });
+    if (!away) out.push(h.config_hash ? { tone: 'ok', key: 'gwp.state.synced' } : { tone: 'warn', key: 'gwp.state.sync_unknown' });
     if (c.fresh) out.push({ tone: 'warn', key: c.fresh === 1 ? 'gwp.state.new_one' : 'gwp.state.new', params: { n: c.fresh }, link: 'net' });
     if (g.update_available && c.latest) out.push({ tone: 'info', key: 'gwp.state.update', params: { version: c.latest } });
     const order = { bad: 0, warn: 1, info: 2, ok: 3 };
@@ -315,6 +380,7 @@
     duration, COOLDOWN_PRESETS, proposeCooldown, presetFor,
     cidr, subnetsOf, sameLan, suggestion,
     healthChecks, overall,
+    clock, liveOf, pollDelay,
     FEATURE_GROUPS, groupOf, featureStates, tabOff, memoryOf,
   };
 });

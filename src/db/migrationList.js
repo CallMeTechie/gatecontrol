@@ -3625,6 +3625,24 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_gateway_ble_sensors_accepted ON gateway_ble_sensors(accepted, peer_id);`,
     detect: (db) => tableExists(db, 'gateway_ble_sensors'),
   },
+  {
+    version: 135,
+    name: 'gateway_live_state',
+    // Live state of a gateway (services/gatewayLiveState.js): the notice a
+    // gateway sends right before it stops (POST /api/v1/gateway/going-down,
+    // reason 'update' | 'restart') and the down alarms held back while an
+    // expected restart (an update GateControl asked for) is under way —
+    // gatewayHealth's (down_alarm_held_at) and the legacy sliding window's
+    // (offline_alarm_held_at). A held alarm is sent late when the gateway does
+    // not come back in time and dropped, together with its "back online"
+    // alarm, when it does.
+    sql: `
+      ALTER TABLE gateway_meta ADD COLUMN going_down_at INTEGER;
+      ALTER TABLE gateway_meta ADD COLUMN going_down_reason TEXT;
+      ALTER TABLE gateway_meta ADD COLUMN down_alarm_held_at INTEGER;
+      ALTER TABLE gateway_meta ADD COLUMN offline_alarm_held_at INTEGER;`,
+    detect: (db) => hasColumn(db, 'gateway_meta', 'going_down_at'),
+  },
 ];
 
 module.exports = { migrations };

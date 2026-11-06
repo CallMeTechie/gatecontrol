@@ -19,6 +19,14 @@ Ist es nicht eingerichtet, zeigt die Karte ein Paket-Symbol mit „Auto-Update
 noch nicht eingerichtet“. Ein Klick darauf öffnet „Auto-Update einrichten“ mit
 der Anleitung.
 
+Während das Gateway neu startet, zeigt die Karte „Update läuft“ mit der Zeit,
+bis zu der es zurück erwartet wird – kein „Offline“, und es geht kein
+Offline-Alarm raus. Ist es bis dahin nicht wieder da, gilt es als offline und
+der Alarm kommt dann. Sobald der erste Heartbeat eintrifft, steht es wieder auf
+„Online“. Ist das Gateway in einem Pool, holt es seine Routen erst nach der
+Wartezeit für den Rückwechsel zurück; die Karte zählt diese Zeit herunter
+(„übernimmt seine Routen in 4:30 wieder“).
+
 **Prüfen:** Nach einigen Minuten zeigt die Karte die neue Version.
 
 ## 6.2 Warum die Compose-Datei extra dran ist

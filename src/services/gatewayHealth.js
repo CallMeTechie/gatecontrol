@@ -151,6 +151,17 @@ function serializeStateChange(fn) {
 
 const activity = require('./activity');
 const webhook = require('./webhook');
+const liveState = require('./gatewayLiveState');
+
+/** The offline alarm of the health path (activity gateway_down → notifications, webhook). */
+function sendDownAlarm(peerId, peerLabel, late) {
+  const label = peerLabel || (getDb().prepare('SELECT name FROM peers WHERE id = ?').get(peerId) || {}).name || `peer #${peerId}`;
+  const msg = late ? `Gateway ${label} is offline (did not come back after its update)` : `Gateway ${label} is offline`;
+  activity.log('gateway_down', msg, {
+    source: 'system', severity: 'warn', details: late ? { peerId, after_update: true } : { peerId },
+  });
+  webhook.notify('gateway_state_change', `Gateway ${label} offline`, { peer_id: peerId, alive: false }).catch((err) => { logger.debug({ err: err.message, peerId }, 'gateway_state_change webhook failed'); });
+}
 
 // Pivot routes that target `fromPeerId` over to `toPeerId` (or back to their
 // `original_peer_id` when `toPeerId` is undefined). Returns the set of peers
@@ -285,10 +296,19 @@ async function _onTransition(peerId, transition) {
 
   switch (transition) {
     case 'alive_to_down': {
-      activity.log('gateway_down', `Gateway ${peerLabel} is offline`, {
-        source: 'system', severity: 'warn', details: { peerId },
-      });
-      webhook.notify('gateway_state_change', `Gateway ${peerLabel} offline`, { peer_id: peerId, alive: false }).catch((err) => { logger.debug({ err: err.message, peerId }, 'gateway_state_change webhook failed'); });
+      // An update GateControl asked for is under way: the gateway restarts on
+      // purpose — hold the offline alarm back (gatewayLiveState). It is sent
+      // late by releaseHeldAlarms() when the gateway does not come back in
+      // time. The failover below runs either way.
+      const expected = liveState.restartExpectedFor(peerId);
+      if (expected) {
+        liveState.holdAlarm(peerId, 'health');
+        activity.log('gateway_update_restart', `Gateway ${peerLabel} restarts for an update (offline alarm held back)`, {
+          source: 'system', severity: 'info', details: { peerId, expected_back_by: expected.until },
+        });
+      } else {
+        sendDownAlarm(peerId, peerLabel);
+      }
 
       // Pivot routes pinned to this peer onto the highest-priority alive
       // sibling in each pool the peer belongs to. If multiple pools, each
@@ -334,10 +354,18 @@ async function _onTransition(peerId, transition) {
 
     case 'cooldown_to_alive':
     case 'first_alive': {
-      activity.log('gateway_alive', `Gateway ${peerLabel} is online`, {
-        source: 'system', severity: 'info', details: { peerId },
-      });
-      webhook.notify('gateway_state_change', `Gateway ${peerLabel} online`, { peer_id: peerId, alive: true }).catch((err) => { logger.debug({ err: err.message, peerId }, 'gateway_state_change webhook failed'); });
+      // Back from an expected restart whose offline alarm was held: no
+      // "online again" alarm either — nobody was told it was away.
+      if (liveState.takeHeldAlarm(peerId, 'health') != null) {
+        activity.log('gateway_update_back', `Gateway ${peerLabel} is back after its update`, {
+          source: 'system', severity: 'info', details: { peerId },
+        });
+      } else {
+        activity.log('gateway_alive', `Gateway ${peerLabel} is online`, {
+          source: 'system', severity: 'info', details: { peerId },
+        });
+        webhook.notify('gateway_state_change', `Gateway ${peerLabel} online`, { peer_id: peerId, alive: true }).catch((err) => { logger.debug({ err: err.message, peerId }, 'gateway_state_change webhook failed'); });
+      }
 
       // Restore routes that were pivoted away from this peer while it was
       // down. Idempotent — does nothing if no routes are parked.
@@ -391,6 +419,18 @@ async function watchdogTick() {
       await serializeStateChange(() => _onTransition(p.id, transition));
     }
   }
+  await serializeStateChange(() => releaseHeldAlarms());
+}
+
+/**
+ * Offline alarms held back for an expected restart (gatewayLiveState) whose
+ * gateway did not come back in time: send them now.
+ */
+function releaseHeldAlarms() {
+  return liveState.releaseHeldAlarms((peerId, path) => {
+    if (path === 'legacy') require('./gateways')._releaseLegacyOfflineAlarm(peerId);
+    else if ((getDb().prepare('SELECT alive FROM gateway_meta WHERE peer_id = ?').get(peerId) || {}).alive === 0) sendDownAlarm(peerId, null, true);
+  });
 }
 
 let _watchdogInterval = null;
@@ -425,5 +465,6 @@ module.exports = {
   _onTransition,
   reconcileFailoverState,
   watchdogTick,
+  releaseHeldAlarms,
   startWatchdog, stopWatchdog, onHeartbeatReceived,
 };

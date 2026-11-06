@@ -260,6 +260,10 @@ async function start() {
     // for stale heartbeats and drives the threshold-based state machine.
     const gatewayHealth = require('./services/gatewayHealth');
     gatewayHealth.startWatchdog();
+    // Live state of the gateways (display only, services/gatewayLiveState.js):
+    // a 10 s tick pushes changes (offline at the threshold, end of an
+    // expected restart, end of the failback wait) to open pages over SSE.
+    require('./services/gatewayLiveState').startTicker();
 
     // Scheduled access-windows reconciler — 60s tick that diffs the deny-set
     // and live-disconnects newly-denied peers + re-syncs Caddy/WG. start()'s
@@ -400,6 +404,7 @@ const shutdown = createShutdownHandler({
     () => require('./services/logProblems').stop(),
     () => stopLicenseRefresh(),
     () => require('./services/gatewayProbe').stopProbe(),
+    () => require('./services/gatewayLiveState').stopTicker(),
     () => require('./services/gatewayHealth').stopWatchdog(),
     () => require('./services/caddyReconciler').stopReconciler(),
     () => require('./services/accessReconciler').stop(),

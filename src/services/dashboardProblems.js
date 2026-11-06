@@ -206,13 +206,29 @@ const KIND_RANK = [
   'update_failed', 'update_rolled_back', 'backup_failed', 'waf_engine_missing',
 ];
 
+// Offline = the live state of services/gatewayLiveState.js: not a gateway that
+// answers again and only waits for its pool's failback cooldown (alive = 0
+// until then), and not one restarting for an update GateControl asked for.
+// A gateway whose heartbeat is stale shows here before the watchdog tick.
 function offlineGateways(db) {
   try {
-    return db.prepare(`
-      SELECT gm.peer_id, gm.went_down_at, gm.last_seen_at, p.name
+    const rows = db.prepare(`
+      SELECT gm.peer_id, gm.went_down_at, gm.last_seen_at, gm.alive, p.name
       FROM gateway_meta gm JOIN peers p ON p.id = gm.peer_id
-      WHERE gm.alive = 0 AND p.enabled = 1
+      WHERE p.enabled = 1 AND p.peer_type = 'gateway'
       ORDER BY p.name COLLATE NOCASE`).all();
+    let live = null;
+    try { live = require('./gatewayLiveState').all(); } catch { live = null; }
+    if (!live) return rows.filter((r) => r.alive === 0);
+    return rows.filter((r) => {
+      const ls = live.get(r.peer_id);
+      // never heard of: only when the routing flag says down (as before)
+      if (!ls || ls.state === 'unknown') return r.alive === 0;
+      return ls.state === 'offline';
+    }).map((r) => {
+      const ls = live.get(r.peer_id);
+      return ls && ls.offline_since != null ? { ...r, went_down_at: r.went_down_at || ls.offline_since } : r;
+    });
   } catch (err) {
     logger.warn({ err: err.message }, 'problems: gateway state unavailable');
     return [];

@@ -299,25 +299,34 @@ function loadContext(db) {
   try { timeoutS = parseInt(require('./settings').get('data.peer_online_timeout', '180'), 10) || 180; } catch { /* default */ }
   const peers = new Map(db.prepare('SELECT id, name, allowed_ips, enabled, peer_type, latest_handshake FROM peers').all()
     .map((p) => [p.id, p]));
-  const gwMeta = new Map(db.prepare('SELECT peer_id, alive FROM gateway_meta').all().map((g) => [g.peer_id, g]));
+  const gwMeta = new Map(db.prepare('SELECT peer_id, alive, last_seen_at FROM gateway_meta').all().map((g) => [g.peer_id, g]));
+  let gwThresholdMs = 90_000;
+  try { gwThresholdMs = (parseInt(require('./settings').get('gateway_down_threshold_s', '90'), 10) || 90) * 1000; } catch { /* default */ }
   const pools = db.prepare('SELECT id, name, enabled FROM gateway_pools ORDER BY name COLLATE NOCASE').all();
   const poolMembers = new Map();
   for (const m of db.prepare('SELECT pool_id, peer_id FROM gateway_pool_members').all()) {
     if (!poolMembers.has(m.pool_id)) poolMembers.set(m.pool_id, []);
     poolMembers.get(m.pool_id).push(m.peer_id);
   }
-  return { timeoutS, peers, gwMeta, pools, poolById: new Map(pools.map((p) => [p.id, p])), poolMembers };
+  return { timeoutS, gwThresholdMs, peers, gwMeta, pools, poolById: new Map(pools.map((p) => [p.id, p])), poolMembers };
 }
 
+// A gateway is online when it answers (heartbeat within the down threshold,
+// as services/gatewayLiveState.js) — not only once its pool's failback
+// cooldown is over: a pinned route reaches it again right away. Without any
+// heartbeat yet, the routing flag.
 function gatewayOnline(ctx, peerId) {
   const gm = ctx.gwMeta.get(peerId);
   if (!gm) return null;
-  return gm.alive === 1;
+  if (gm.last_seen_at == null) return gm.alive === 1;
+  return Date.now() - Number(gm.last_seen_at) <= (ctx.gwThresholdMs || 90_000);
 }
 
+// A pool serves while one member does by the routing (gateway_meta.alive):
+// a member still in its failback cooldown serves nothing yet.
 function poolOnline(ctx, poolId) {
   const members = ctx.poolMembers.get(poolId) || [];
-  return members.some((pid) => gatewayOnline(ctx, pid) === true);
+  return members.some((pid) => { const gm = ctx.gwMeta.get(pid); return !!gm && gm.alive === 1; });
 }
 
 function entryHealth(e, ctx) {

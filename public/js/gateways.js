@@ -45,13 +45,38 @@
   function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; }
   function bar(p, lvl) { var b = el('div', 'bar'); var i = el('span', lvl ? 'fill ' + lvl : 'fill'); i.style.width = Math.max(0, Math.min(100, p)) + '%'; b.appendChild(i); return b; }
   function pct(used, total) { return total > 0 ? Math.round((used / total) * 100) : 0; }
+  // The live state of the server (gateway-pool-kit.js liveOf: online | degraded |
+  // updating | restarting | offline | pending) — the same answer on every card,
+  // the head, the KPIs and the pool views.
   function status(g) {
+    if (PK && PK.liveOf) return PK.liveOf(g).key;
     if (g.status === 'offline') return 'offline';
     if (!g.health || g.status === 'unknown') return 'pending';
     if (g.health.overall_healthy === false) return 'degraded';
     return 'online';
   }
-  function statusPill(g) { var st = status(g); return el('span', 'pill ' + st, T('gateways.' + st, st)); }
+  function liveLabel(st) { return st === 'updating' || st === 'restarting' ? T('gwp.live.' + st, st) : T('gateways.' + st, st); }
+  function statusPill(g) { var st = status(g); return el('span', 'pill ' + st, liveLabel(st)); }
+  // "14:20" (the end of an expected restart)
+  function clockTime(ms) {
+    try { return new Date(ms).toLocaleTimeString(document.documentElement.lang || undefined, { hour: '2-digit', minute: '2-digit' }); } catch (e) { return '—'; }
+  }
+  // A text that counts down to `until` ({{left}} → "m:ss"): data-gw-until + the
+  // template data-gw-tpl, rewritten every second by liveTick().
+  function countdownEl(tag, cls, key, params, until) {
+    var tpl = TT(key, Object.assign({}, params || {}, { left: '{{left}}' }));
+    var n = el(tag, cls, tpl.split('{{left}}').join(PK.clock(until - Date.now())));
+    n.dataset.gwUntil = String(until); n.dataset.gwTpl = tpl;
+    return n;
+  }
+  // The line under the status: back online but the routes wait for the
+  // failback cooldown, or until when an update / restart may take.
+  function liveHint(g, cls) {
+    var lv = PK && PK.liveOf ? PK.liveOf(g) : null;
+    if (!lv || !lv.hint) return null;
+    if (lv.hint.key === 'gwp.live.expected_by') return el('div', cls, TT('gwp.live.expected_by', { time: clockTime(lv.hint.until) }));
+    return countdownEl('div', cls, lv.hint.key, {}, lv.hint.until);
+  }
   function ago(ms) { if (!ms) return '—'; var s = Math.round((Date.now() - ms) / 1000); return s < 60 ? s + 's' : Math.round(s / 60) + 'm'; }
   function metricRow(parent, label, value, p, lvl) { var m = el('div', 'metric'); m.appendChild(el('span', null, label)); m.appendChild(el('span', null, value)); parent.appendChild(m); parent.appendChild(bar(p, lvl)); }
   function fmtGB(n) { return n ? (Math.round(n / 1e9 * 10) / 10) + ' GB' : '—'; }
@@ -141,7 +166,7 @@
     if (g.never_connected) return waitingCard(g);
     var t = (g.health && g.health.telemetry) || {};
     var st = status(g);
-    var wrap = el('div', 'gw unit'); wrap.dataset.id = g.peer_id;
+    var wrap = el('div', 'gw unit'); wrap.dataset.id = g.peer_id; wrap.dataset.live = st;
     if (st === 'offline') wrap.style.opacity = '0.7';
     // Header: avatar + name/version + status tag
     var uh = el('div', 'uh');
@@ -154,8 +179,9 @@
     var hwModel = t.hardware && t.hardware.model ? String(t.hardware.model) : platformLabel(g.platform);
     nameWrap.appendChild(el('div', 'ud', [hwModel, t.gateway_version || '—', g.hostname].filter(Boolean).join(' · ')));
     uh.appendChild(nameWrap);
-    var tagCls = 'tag ' + (st === 'online' ? 'tag-green' : st === 'degraded' ? 'tag-amber' : 'tag-grey') + ' tag-dot';
-    var stTag = el('span', tagCls, T('gateways.' + st, st));
+    var tone = PK && PK.liveOf ? PK.liveOf(g).tone : (st === 'online' ? 'green' : st === 'degraded' ? 'amber' : 'grey');
+    var stTag = el('span', 'tag tag-' + tone + ' tag-dot', liveLabel(st));
+    stTag.dataset.live = st;
     // Header right cluster: status badge (left) + update-check icon (right).
     var right = el('span'); right.style.cssText = 'margin-left:auto;display:inline-flex;align-items:center;gap:8px;flex-shrink:0';
     right.appendChild(stTag);
@@ -172,17 +198,23 @@
     var tags = el('div', 'gw-card-tags');
     if (role && PK) {
       var r = PK.roleOf(role.pool, role.member);
-      var rt = el('span', 'tag tag-' + r.tone, TT(r.key, r.params));
+      var rt = r.until ? countdownEl('span', 'tag tag-' + r.tone, r.key, r.params, r.until) : el('span', 'tag tag-' + r.tone, TT(r.key, r.params));
       rt.setAttribute('data-role', role.member.state);
       tags.appendChild(rt);
     }
     var nr = (g.routes || []).length;
     if (!role && nr) tags.appendChild(el('span', 'tag tag-grey', TT(nr === 1 ? 'gwp.card.routes_one' : 'gwp.card.routes', { n: nr })));
     if (tags.childNodes.length) wrap.appendChild(tags);
-    // Body: resource bars (online/degraded) or empty-state (offline)
-    if (st === 'offline') {
-      var emptyTxt = T('gateways.sub_heartbeat', 'last heartbeat') + ' ' + ago(g.last_seen_at);
-      if (g.update_available && latest) emptyTxt += ' · Drift: ' + (t.gateway_version || '—') + ' → ' + latest;
+    // the failback wait (in a pool group the role tag already counts it down);
+    // an update / restart says its expected time in the body below
+    var hint = role || (st !== 'online' && st !== 'degraded') ? null : liveHint(g, 'gw-live-hint');
+    if (hint) wrap.appendChild(hint);
+    // Body: resource bars (online/degraded) or empty-state (offline / updating / restarting)
+    if (st === 'offline' || st === 'updating' || st === 'restarting') {
+      var emptyTxt = st === 'offline' ? T('gateways.sub_heartbeat', 'last heartbeat') + ' ' + ago(g.last_seen_at)
+        : TT('gwp.live.' + st + '_card', { ago: agoT(g.offline_since || g.last_seen_at) });
+      if (st !== 'offline' && g.expected_back_by) emptyTxt += ' · ' + TT('gwp.live.expected_by', { time: clockTime(g.expected_back_by) });
+      if (st === 'offline' && g.update_available && latest) emptyTxt += ' · Drift: ' + (t.gateway_version || '—') + ' → ' + latest;
       wrap.appendChild(el('div', 'empty-state', emptyTxt));
     } else {
       var cores = t.cpu_cores || 1; var load1 = (t.cpu_load_avg && t.cpu_load_avg[0]) || 0; var cpuPct = pct(load1, cores);
@@ -252,7 +284,10 @@
   var MARK = { ok: '✓', warn: '!', bad: '✗', info: 'i' };
   function stateCard(g) {
     var net = window.GCGatewayNet;
-    var checks = PK.healthChecks(g, { status: status(g), latest: latest, fresh: net && net.fresh ? net.fresh(g.peer_id) : null, agoText: agoT(g.last_seen_at) });
+    var lv = PK.liveOf ? PK.liveOf(g) : null;
+    var fb = lv && lv.hint && lv.hint.key !== 'gwp.live.expected_by' ? { key: lv.hint.key, left: PK.clock(lv.hint.until - Date.now()), until: lv.hint.until } : null;
+    var checks = PK.healthChecks(g, { status: status(g), latest: latest, fresh: net && net.fresh ? net.fresh(g.peer_id) : null, agoText: agoT(g.last_seen_at),
+      untilText: g.expected_back_by ? clockTime(g.expected_back_by) : null, failback: fb });
     var tone = PK.overall(checks);
     var c = cardFrame(T('gwp.state.title', 'Zustand'), null, 'state', 'gwo-state');
     var ban = el('div', 'gwo-banner gwo-banner-' + tone); ban.setAttribute('data-tone', tone);
@@ -265,7 +300,7 @@
       var mk = el('span', 'tag gwo-mark tag-' + ({ ok: 'green', warn: 'amber', bad: 'red', info: 'blue' }[ch.tone]), MARK[ch.tone]); mk.setAttribute('aria-hidden', 'true');
       li.appendChild(mk);
       li.appendChild(el('span', 'sr-only', T('gwp.state.tone_' + ch.tone) + ': '));
-      li.appendChild(el('span', null, TT(ch.key, ch.params)));
+      li.appendChild(ch.until ? countdownEl('span', null, ch.key, ch.params, ch.until) : el('span', null, TT(ch.key, ch.params)));
       if (ch.link) { li.appendChild(document.createTextNode(' – ')); var a = el('a', 'gwn-link', T('gwp.state.look')); a.href = '#gw/' + encodeURIComponent(g.peer_id) + '/' + ch.link; li.appendChild(a); }
       ul.appendChild(li);
     });
@@ -372,6 +407,8 @@
     }
     parts.forEach(function (n, i) { if (i) sub.appendChild(document.createTextNode(' · ')); sub.appendChild(n); });
     left.appendChild(sub);
+    var hh = liveHint(g, 'page-sub gw-live-hint');
+    if (hh) left.appendChild(hh);
     // chips: pool membership (→ pool page), auto-update
     var chips = el('div', 'gw-head-chips');
     if (P && PK) {
@@ -1373,10 +1410,16 @@
   function render(data) {
     last = data.gateways || []; latest = data.latest_version || ''; warn.hidden = !!data.latest_version;
     last.forEach(function (g) { reconcileUpdateToast(g); });
-    var on = 0, off = 0, deg = 0, upd = 0;
-    last.forEach(function (g) { var s = status(g); if (s === 'online') on++; else if (s === 'offline') off++; else if (s === 'degraded') deg++; if (g.update_available) upd++; });
+    schedulePoll();
+    var on = 0, off = 0, deg = 0, upd = 0, back = 0;
+    last.forEach(function (g) {
+      var s = status(g);
+      if (s === 'online') on++; else if (s === 'offline') off++; else if (s === 'degraded') deg++; else if (s === 'updating' || s === 'restarting') back++;
+      if (g.update_available) upd++;
+    });
     var st = P && P.state();
-    var onSub = [off ? TT('gwp.kpi.offline_n', { n: off }) : null, deg ? TT('gwp.kpi.degraded_n', { n: deg }) : null].filter(Boolean).join(' · ');
+    var onSub = [off ? TT('gwp.kpi.offline_n', { n: off }) : null, back ? TT('gwp.kpi.restarting_n', { n: back }) : null,
+      deg ? TT('gwp.kpi.degraded_n', { n: deg }) : null].filter(Boolean).join(' · ');
     var tiles = [kpi('', last.length, T('gateways.kpi_total', 'Gateways')),
       kpi(off ? 'warn' : 'ok', on, T('gateways.online', 'Online'), onSub || null)];
     if (st) {
@@ -1397,7 +1440,7 @@
     if (loading) return force ? loading.then(function () { return load(true); }) : loading;
     var pools = P ? P.load().catch(function (err) { console.warn('[gateways] loading pools failed', err); return null; }) : Promise.resolve(null);
     var gws = fetch('/api/v1/gateways', { credentials: 'same-origin' }).then(function (r) { return r.json(); });
-    loading = Promise.all([gws, pools]).then(function (res) { loading = null; render(res[0]); }, function (err) { loading = null; console.warn('[gateways] loading gateways failed', err); });
+    loading = Promise.all([gws, pools]).then(function (res) { loading = null; render(res[0]); }, function (err) { loading = null; schedulePoll(); console.warn('[gateways] loading gateways failed', err); });
     return loading;
   }
   function probe(id) { fetch('/api/v1/gateways/' + encodeURIComponent(id) + '/probe', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } }).then(function () { load(); }).catch(function (err) { console.warn('[gateways] probe failed', err); }); }
@@ -1503,9 +1546,33 @@
   });
 
   var deb = null; function refresh() { clearTimeout(deb); deb = setTimeout(function () { load(); }, 1000); }
+  // a 'gateway' SSE event (gatewayHealth transitions, live state changes of
+  // gatewayLiveState: back online, going down, offline at the threshold)
   document.addEventListener('gc:gateway', refresh);
   document.addEventListener('gc:gateway-wizard', refresh);
   document.addEventListener('gc:reconnected', refresh);
-  setInterval(function () { load(); }, 30000);
+  // The poll: every 30 s, every 5 s while a gateway is on its way back or just
+  // went away (gateway-pool-kit.js pollDelay) — re-armed by every render.
+  var pollTimer = null;
+  function schedulePoll() {
+    clearTimeout(pollTimer);
+    var ms = PK && PK.pollDelay ? PK.pollDelay(last) : 30000;
+    pollTimer = setTimeout(function () { if (document.hidden) { schedulePoll(); return; } load(); }, ms);
+  }
+  // countdowns (data-gw-until / data-gw-tpl, see countdownEl) once a second;
+  // at 0:00 the page asks again (the failback is due)
+  function liveTick() {
+    if (!PK || !PK.clock) return;
+    var due = false;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-gw-until]'), function (n) {
+      var left = Number(n.dataset.gwUntil) - Date.now();
+      var tx = String(n.dataset.gwTpl || '').split('{{left}}').join(PK.clock(left));
+      if (n.textContent !== tx) n.textContent = tx;
+      if (left <= 0 && !n.dataset.gwDue) { n.dataset.gwDue = '1'; due = true; }
+    });
+    if (due) refresh();
+  }
+  setInterval(liveTick, 1000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
   load();
 })();

@@ -250,15 +250,19 @@
     if (!gws || !Array.isArray(gws.gateways)) return null;
     const list = gws.gateways;
     if (!list.length) return { state: 'none', value: '0', sub: ['dashboard.tile_gw_none', {}] };
-    const offline = list.filter((g) => g.status === 'offline');
+    // live state of the server (gatewayLiveState): an update / restart under
+    // way is not an outage (its old `status` says offline)
+    const restarting = list.filter((g) => g.state === 'updating' || g.state === 'restarting');
+    const offline = list.filter((g) => g.status === 'offline' && restarting.indexOf(g) < 0);
     const degraded = list.filter((g) => g.status === 'degraded');
-    const online = list.length - offline.length - degraded.length;
+    const online = list.length - offline.length - degraded.length - restarting.length;
     const value = online + ' / ' + list.length;
     if (offline.length === 1) {
       const g = offline[0];
-      return { state: 'crit', value, sub: ['dashboard.tile_gw_one_offline', { name: g.name, dur: duration(g.last_seen_at, now, t) }] };
+      return { state: 'crit', value, sub: ['dashboard.tile_gw_one_offline', { name: g.name, dur: duration(g.offline_since || g.last_seen_at, now, t) }] };
     }
     if (offline.length > 1) return { state: 'crit', value, sub: ['dashboard.tile_gw_offline', { n: offline.length }] };
+    if (restarting.length) return { state: 'warn', value, sub: ['dashboard.tile_gw_restarting', { n: restarting.length }] };
     if (degraded.length) return { state: 'warn', value, sub: ['dashboard.tile_gw_degraded', { n: degraded.length }] };
     return { state: 'good', value, sub: ['dashboard.tile_gw_ok', {}] };
   }

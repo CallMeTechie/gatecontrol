@@ -338,23 +338,20 @@ function _onStatusTransition(peerId, from, to, health) {
     logger.debug({ err: err.message }, 'caddyConfig patch not available');
   }
 
+  const liveState = require('./gatewayLiveState');
   if (to === 'offline') {
-    activity.log('gateway_offline', `Gateway ${peerName} went offline`, {
-      source: 'system',
-      severity: 'warning',
-      details: { peer_id: peerId, peer_name: peerName, last_health: health },
-    });
-    try {
-      if (typeof email.sendMonitoringAlert === 'function') {
-        email.sendMonitoringAlert({ subject: `Gateway ${peerName} offline`, body: JSON.stringify(health || {}, null, 2) }).catch((err) => { logger.debug({ err: err.message, peerId }, 'gateway offline alert email failed'); });
-      }
-    } catch (err) { logger.warn({ err: err.message, peerId }, 'gateway offline alert email failed'); }
-    try {
-      if (typeof webhook.notify === 'function') {
-        webhook.notify('gateway.offline', { peer_id: peerId, peer_name: peerName, health }).catch((err) => { logger.debug({ err: err.message, peerId }, 'gateway offline webhook failed'); });
-      }
-    } catch (err) { logger.warn({ err: err.message, peerId }, 'gateway offline webhook failed'); }
+    // An update GateControl asked for is under way: hold the alarm back
+    // (gatewayHealth logs the expected restart; gatewayLiveState sends it late
+    // when the gateway does not come back in time). The Caddy patch above runs
+    // either way.
+    if (liveState.restartExpectedFor(peerId)) {
+      liveState.holdAlarm(peerId, 'legacy');
+      return;
+    }
+    _sendLegacyOfflineAlarm(peerId, peerName, health, false);
   } else if (to === 'online') {
+    // back from an expected restart whose alarm was held: no "back online" alarm
+    if (liveState.takeHeldAlarm(peerId, 'legacy') != null) return;
     activity.log('gateway_recovered', `Gateway ${peerName} is back online`, {
       source: 'system',
       severity: 'info',
@@ -371,6 +368,39 @@ function _onStatusTransition(peerId, from, to, health) {
       }
     } catch (err) { logger.warn({ err: err.message, peerId }, 'gateway recovered webhook failed'); }
   }
+}
+
+function _sendLegacyOfflineAlarm(peerId, peerName, health, late) {
+  activity.log('gateway_offline', late ? `Gateway ${peerName} went offline (did not come back after its update)` : `Gateway ${peerName} went offline`, {
+    source: 'system',
+    severity: 'warning',
+    details: { peer_id: peerId, peer_name: peerName, last_health: health, ...(late ? { after_update: true } : {}) },
+  });
+  try {
+    if (typeof email.sendMonitoringAlert === 'function') {
+      email.sendMonitoringAlert({ subject: `Gateway ${peerName} offline`, body: JSON.stringify(health || {}, null, 2) }).catch((err) => { logger.debug({ err: err.message, peerId }, 'gateway offline alert email failed'); });
+    }
+  } catch (err) { logger.warn({ err: err.message, peerId }, 'gateway offline alert email failed'); }
+  try {
+    if (typeof webhook.notify === 'function') {
+      webhook.notify('gateway.offline', { peer_id: peerId, peer_name: peerName, health }).catch((err) => { logger.debug({ err: err.message, peerId }, 'gateway offline webhook failed'); });
+    }
+  } catch (err) { logger.warn({ err: err.message, peerId }, 'gateway offline webhook failed'); }
+}
+
+/**
+ * A legacy offline alarm held for an expected restart that is over without
+ * the gateway coming back (gatewayHealth.releaseHeldAlarms). Sent only when the
+ * sliding window still says offline — after a server restart it starts from
+ * 'unknown' and raises its own alarm when it gets there.
+ */
+function _releaseLegacyOfflineAlarm(peerId) {
+  if (_getSm(peerId).status !== 'offline') return false;
+  const peer = getDb().prepare('SELECT name FROM peers WHERE id=?').get(peerId);
+  const row = getDb().prepare('SELECT last_health FROM gateway_meta WHERE peer_id=?').get(peerId);
+  let health = null; try { health = row && row.last_health ? JSON.parse(row.last_health) : null; } catch { health = null; }
+  _sendLegacyOfflineAlarm(peerId, peer ? peer.name : `peer-${peerId}`, health, true);
+  return true;
 }
 
 /** Store where a gateway runs (assistant: a gateway created before it gets one on "Einrichtung fortsetzen"). */
@@ -1026,6 +1056,7 @@ module.exports = {
   getDiscoverySettings,
   setDiscoverySettings,
   getHealthStatus,
+  _releaseLegacyOfflineAlarm,
   rotateGatewayTokens,
   buildEnvForPeer,
   createPairingCode,

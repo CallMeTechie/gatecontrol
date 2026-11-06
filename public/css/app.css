@@ -2055,6 +2055,11 @@ table tbody tr:last-child td { border-bottom: none; }
 .gw-fleet .pill.degraded { color: var(--amber); background: var(--amber-lt); }
 .gw-fleet .pill.offline { color: var(--red); background: var(--red-lt); }
 .gw-fleet .pill.pending { color: var(--text-3); background: var(--bg-panel); }
+/* live state (gatewayLiveState): an update / restart under way — expected back */
+.gw-fleet .pill.updating, .gw-fleet .pill.restarting { color: var(--blue); background: var(--blue-lt); }
+.gw-fleet .gw-live-hint { font-size: 12px; color: var(--text-2); margin: -4px 0 10px; font-variant-numeric: tabular-nums; }
+.gw-fleet .gw-head .gw-live-hint { margin: 4px 0 0; }
+.gw-fleet [data-gw-until] { font-variant-numeric: tabular-nums; }
 .gw-fleet .badge.drift { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; color: var(--amber); background: var(--amber-lt); }
 .gw-fleet .recheck { padding: 4px 10px; font-size: 13px; line-height: 1; background: transparent; border: 1px solid var(--border); color: var(--text-2); border-radius: var(--radius-sm); cursor: pointer; }
 .gw-fleet .recheck:hover { border-color: var(--accent); color: var(--accent); }
