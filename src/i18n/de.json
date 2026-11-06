@@ -9742,7 +9742,7 @@
   "gwp.rt.title": "Routen über diesen Pool",
   "gwp.rt.migrate": "Routen hierher umziehen",
   "gwp.rt.none": "Noch keine Route läuft über diesen Pool.",
-  "gwp.rt.pinned": "fest an {{name}}, nicht im Pool",
+  "gwp.rt.pinned": "fest an {{name}} – springt bei einem Ausfall mit um",
   "gwp.rt.pinned_help": "Routen, die fest an einem Gateway des Pools hängen, springen bei einem Ausfall mit um. Im Pool prüft die Reserve ihre Ziele vorab, und der Hinweis bei einem Ausfall greift.",
   "gwp.rt.take": "In den Pool nehmen",
   "gwp.rt.taken": "{{domain}} läuft jetzt über den Pool.",

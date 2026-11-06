@@ -177,10 +177,21 @@ function state() {
   const maxCooldown = (id) => { if (!cache.has(id)) cache.set(id, gatewayPool.getMaxCooldownForPeer(id)); return cache.get(id); };
   const pools = gatewayPool.listPools().map((p) => poolState(db, p, meta, maxCooldown));
   const total = db.prepare("SELECT COUNT(*) AS n FROM routes WHERE target_kind = 'gateway' AND enabled = 1").get().n;
+  // Protected = the route survives the outage of its gateway: it targets an enabled pool with at
+  // least two members, or it is pinned to a member of such a pool (gatewayHealth pivots pinned
+  // routes to an alive sibling of the pool, original_peer_id remembers the home gateway).
   const pooled = db.prepare(`
-    SELECT COUNT(*) AS n FROM routes r JOIN gateway_pools p ON p.id = r.target_pool_id
-    WHERE r.target_kind = 'gateway' AND r.enabled = 1 AND p.enabled = 1
-      AND (SELECT COUNT(*) FROM gateway_pool_members m WHERE m.pool_id = p.id) >= 2`).get().n;
+    WITH safe_pools AS (
+      SELECT p.id FROM gateway_pools p
+      WHERE p.enabled = 1 AND (SELECT COUNT(*) FROM gateway_pool_members m WHERE m.pool_id = p.id) >= 2
+    ), safe_peers AS (
+      SELECT DISTINCT m.peer_id FROM gateway_pool_members m WHERE m.pool_id IN (SELECT id FROM safe_pools)
+    )
+    SELECT COUNT(*) AS n FROM routes r
+    WHERE r.target_kind = 'gateway' AND r.enabled = 1
+      AND (r.target_pool_id IN (SELECT id FROM safe_pools)
+        OR (r.target_pool_id IS NULL
+          AND COALESCE(r.original_peer_id, r.target_peer_id) IN (SELECT peer_id FROM safe_peers)))`).get().n;
   return { threshold_s: threshold(), routes_total: total, routes_pooled: pooled, pools };
 }
 

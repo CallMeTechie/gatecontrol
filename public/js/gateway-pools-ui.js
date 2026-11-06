@@ -135,11 +135,14 @@
 
   // ─── Fleet: the group of a pool ───────────────────────────────────────
   function routeCount(p) { return (p.routes || []).length; }
+  // what the pool keeps reachable: its own routes plus the routes pinned to a member (gatewayHealth
+  // pivots those to an alive sibling on an outage) — shown in the group, the banner and the routes card
+  function safeCount(p) { return routeCount(p) + (p.mode === 'load_balancing' ? 0 : (p.pinned_routes || []).length); }
   function groupSection(p, cards) {
     const hid = 'gwp-g-' + p.id;
     const status = PK.effectiveStatus(p);
     const tone = PK.statusTone(status);
-    const meta = [t(routeCount(p) === 1 ? 'gwp.group.routes_one' : 'gwp.group.routes', { n: routeCount(p) })];
+    const meta = [t(safeCount(p) === 1 ? 'gwp.group.routes_one' : 'gwp.group.routes', { n: safeCount(p) })];
     if (p.last_switch_at) meta.push(t('gwp.group.switched', { ago: ago(p.last_switch_at) }));
     const head = h('div', { class: 'gwp-group-head' }, [
       h('span', { class: 'gwp-group-ic' }, svg(IC.pool, 20)),
@@ -263,7 +266,7 @@
   function pageHead(p) {
     const members = p.members || [];
     const sub = [t('gwp.mode.' + p.mode), t(members.length === 1 ? 'gwp.page.n_gw_one' : 'gwp.page.n_gw', { n: members.length }),
-      t(routeCount(p) === 1 ? 'gwp.group.routes_one' : 'gwp.group.routes', { n: routeCount(p) }),
+      t(safeCount(p) === 1 ? 'gwp.group.routes_one' : 'gwp.group.routes', { n: safeCount(p) }),
       t('gwp.page.jumps', { threshold: dur((st && st.threshold_s) || 90) })];
     const status = PK.effectiveStatus(p);
     const tone = PK.statusTone(status);
@@ -283,7 +286,7 @@
     const members = (p.members || []).slice().sort((a, b) => a.priority - b.priority);
     const first = members[0];
     const standby = PK.standbys(p)[0];
-    const n = routeCount(p);
+    const n = safeCount(p);
     let tone = 'ok';
     let lead;
     let rest = '';
@@ -527,7 +530,7 @@
   function target(r) { return r.target_lan_host ? r.target_lan_host + (r.target_lan_port ? ':' + r.target_lan_port : '') : (r.l4_listen_port ? ':' + r.l4_listen_port : '—'); }
   function routesCard(p) {
     const right = h('span', { class: 'gwp-card-r' });
-    right.append(U.tag('grey', String(routeCount(p))));
+    right.append(U.tag('grey', String(safeCount(p))));
     const mig = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-fk': 'gwp-migrate', text: t('gwp.rt.migrate') });
     mig.addEventListener('click', () => openMigrate(p.id));
     right.append(mig);
