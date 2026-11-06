@@ -185,7 +185,7 @@ module.exports = (ctx) => {
       await aiCards(page);
       await idle(page);
       const cards = await page.$$eval('#ai-providers .ai-prov', (ns) => ns.map((n) => n.dataset.provider));
-      step('KI-Anbieter: four provider rows', cards.join() === 'openai,anthropic,gemini,openrouter', cards.join());
+      step('KI-Anbieter: the local AI and the four cloud provider rows', cards.join() === 'local,openai,anthropic,gemini,openrouter', cards.join());
       await page.click('#ai-providers .ai-prov[data-provider="openai"] .pgx-btn');
       step('KI-Anbieter: "Verwalten" opens the key dialog', await ctx.visible(page, '#ai-prov-modal .modal') && await page.isVisible('#ai-key-openai'));
       await page.click('#ai-prov-modal [data-close-modal]');

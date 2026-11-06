@@ -120,10 +120,11 @@ function hostCall(api, args, timeoutMs = HOST_TIMEOUT_MS) {
   });
 }
 
-// gc.ai.extract / generate: the host allows twice the request's time limit (+ 15 s), so does the child
+// gc.ai.extract / generate: the host allows twice the request's time limit (+ 15 s) — at least 5
+// minutes, a local AI on a CPU is slow (services/ai/index.js callLimitMs) — the child a little longer
 function aiTimeout(opts) {
   const t = opts && Number.isFinite(opts.timeoutMs) ? Math.max(1000, Math.min(180000, opts.timeoutMs)) : 60000;
-  return 2 * t + 20000;
+  return Math.max(2 * t, 5 * 60 * 1000) + 20000;
 }
 
 function fmt(args) {

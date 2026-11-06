@@ -244,7 +244,8 @@
   const FEATURE_GROUPS = [
     { key: 'home', features: ['netwatch', 'presence', 'lan'] },
     // phase 3c: printers and scanners, radio (Zigbee, Bluetooth, Thread; later also cameras)
-    { key: 'devices', features: ['print', 'radio', 'zigbee'] },
+    // phase 3c, step 3: the local AI between printing and radio (as in the design)
+    { key: 'devices', features: ['print', 'ai', 'radio', 'zigbee'] },
     { key: 'wide', features: ['dns', 'cache'] },
     { key: 'power', features: ['inetq', 'ups'] },
     { key: 'ext', features: ['edge'] },
@@ -271,6 +272,7 @@
     if (d.dns) add('dns', d.dns.enabled);
     if (d.cache) add('cache', d.cache.enabled);
     if (d.print) add('print', d.print.enabled);
+    if (d.ai) add('ai', d.ai.enabled);
     if (d.edge) { add('edge', d.edge.enabled); add('mqtt', d.edge.enabled && d.edge.mqtt); }
     if (d.radio) add('radio', d.radio.enabled);
     else if (d.zigbee) add('zigbee', d.zigbee.enabled);
@@ -302,7 +304,7 @@
       const mb = parts.filter((x) => x && (x.key === 'deconz' || x.key === 'ble')).reduce((a, x) => a + (x.mb > 0 ? x.mb : 0), 0);
       return mb > 0 ? mb : null;
     }
-    const key = feature === 'zigbee' ? 'deconz' : feature;
+    const key = feature === 'zigbee' ? 'deconz' : feature;   // 'ai': the model of the local AI
     const p = parts.find((x) => x && x.key === key);
     if (!p || !(p.mb > 0)) return null;
     const mosq = feature === 'edge' ? parts.find((x) => x && x.key === 'mosquitto') : null;

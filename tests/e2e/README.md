@@ -118,6 +118,14 @@ scenarios/22-gateway-print.js /gateways › Funktionen › „Geräte im Heimnet
                         (echter PUT → features.print im Config-Pull), Gerätebericht des
                         Gateways → „Gefunden: …“, ≈ MB, Weg ins Plugin (Katalog),
                         Handbuch-Link, hell/dunkel, 390 px
+scenarios/24-gateway-ai.js Lokale KI: Einstellungen › KI-Anbieter (Anbieterzeile
+                        „Lokale KI · <Gateway>“, „Lokale KI einrichten“: Gateway mit RAM/
+                        Kernen/GPU, Modelle mit „empfohlen/passt/nicht empfohlen“, echter
+                        PUT → features.ai im Config-Pull, Download-Fortschritt mit
+                        „Abbrechen“ – Live-Zustand des Gateways per page.route –, „Wofür die
+                        lokale KI?“, Testen ohne Tunnel → „nicht erreichbar“), Gateway ›
+                        Funktionen (Zeile „Lokale KI“, ≈ GB blau, Speicherbalken grün/blau,
+                        Hinweise, Schalter aus → Config-Pull), hell/dunkel, 390 px
 ```
 
 ## Ablauf
