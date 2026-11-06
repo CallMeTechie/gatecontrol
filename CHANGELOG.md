@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.231.1] — 2026-11-06
+
+### Fixes
+- Zeitzone des Servers aus TZ lesen (#409)
+
+---
+
 ## [1.231.0] — 2026-11-05
 
 ### Features
