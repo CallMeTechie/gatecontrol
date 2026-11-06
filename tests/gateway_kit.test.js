@@ -171,6 +171,13 @@ describe('compose and commands', () => {
     assert.match(c, /\.\/gateway-state:\/state/);
     assert.match(c, /GATEWAY_ENV_PATH=\/config\/gateway\.env/);
   });
+  it('home cache: /cache is mounted on every platform (GC_CACHE_DIR, default ./gateway-cache)', () => {
+    for (const [platform, network] of [['synology', 'host'], ['linux', 'host'], ['linux', 'bridge']]) {
+      const c = kit.buildCompose({ platform, network });
+      const gw = c.includes('\n  edge:\n') ? c.slice(0, c.indexOf('\n  edge:\n')) : c;
+      assert.match(gw, /\n {6}- \$\{GC_CACHE_DIR:-\.\/gateway-cache\}:\/cache /, `${platform}/${network}`);
+    }
+  });
   it('Linux bridge: no TUN device, ports published, no host network', () => {
     const c = kit.buildCompose({ platform: 'linux', network: 'bridge' });
     assert.doesNotMatch(c, /network_mode: host/);
