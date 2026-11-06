@@ -40,4 +40,24 @@ function buildNasBundle(envContent) {
   return Buffer.from(zip.buffer, zip.byteOffset, zip.byteLength);
 }
 
-module.exports = { readUpdateSh, buildNasBundle, NAS_BUNDLE_NAME };
+// "Nur docker-compose.yml herunterladen" (gateway page): the assistant's compose for an existing
+// gateway — no gateway.env, no token rotation. Platform as the assistant stored it → compose
+// profile (proxmox runs Docker in a Debian LXC like any Linux host); rpi and unknown → null (the
+// Pi image keeps its own compose, an unknown platform has to be chosen).
+const COMPOSE_PLATFORMS = ['synology', 'linux'];
+const COMPOSE_NETWORKS = ['host', 'bridge'];
+function composePlatformOf(platform) {
+  if (platform === 'synology') return 'synology';
+  if (platform === 'linux' || platform === 'proxmox') return 'linux';
+  return null;
+}
+/** → the compose text, or null when platform/network is not one of the profiles. */
+function buildCompose(platform, network) {
+  if (COMPOSE_PLATFORMS.indexOf(platform) < 0 || COMPOSE_NETWORKS.indexOf(network) < 0) return null;
+  return kit.buildCompose({ platform, network });
+}
+
+module.exports = {
+  readUpdateSh, buildNasBundle, NAS_BUNDLE_NAME,
+  buildCompose, composePlatformOf, COMPOSE_PLATFORMS, COMPOSE_NETWORKS,
+};

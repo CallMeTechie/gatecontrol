@@ -31,6 +31,7 @@ containers or folders therefore do not arrive by themselves:
 | Auto-update | – | `./gateway-state:/state` |
 | Edge plugins and MQTT | 1.19.0 | services `edge` and `mqtt`, volumes `edge-run`, `edge-status`, `edge-state`, `edge-mqtt` |
 | Home cache | 1.22.0 | `${GC_CACHE_DIR:-./gateway-cache}:/cache` |
+| Failover pools, scanning via another gateway, ping of the internet quality | – | the capabilities `NET_RAW`, `SETGID` and `SETUID` under `cap_add` |
 
 You need this chapter if you see one of these:
 
@@ -45,7 +46,11 @@ for **Synology** and **Linux/Docker**.
 
 Do **not** download the NAS package from the assistant again. It creates a new
 access key, and the running gateway loses its connection until it gets the new
-`gateway.env`. Use the example file below instead.
+`gateway.env`. Get only the compose file instead: “Network” → “Gateways” → open
+your gateway → icon “Download docker-compose.yml only” (file with an arrow, top
+right) → “Synology NAS”, “Host” → “Download”. This creates no new keys. If the tab
+“Edge plugins” shows “edge service missing”, the same button is there as well.
+The file is the same as the [example file](#example-file-synology) below.
 
 1. **Update the gateway first.** If the card shows “Update to …”, click it and
    wait until the new version shows. Then the new image is on the NAS, which the
@@ -57,7 +62,7 @@ access key, and the running gateway loses its connection until it gets the new
    does not create missing folders itself.
 4. **Stop the project.** Container Manager → “Project” → `gatecontrol-gateway` → “Stop”.
 5. **Put in the new file.** Open the tab “YAML configuration” of the project,
-   replace the whole content with the [example file](#example-file-synology) and save.
+   replace the whole content with the downloaded file (or the [example file](#example-file-synology)) and save.
 6. **Build and start again.** Rebuild the project and start it.
 
 If you had changes of your own in the old file (for example another folder for
@@ -82,10 +87,10 @@ sudo docker compose up -d
 ## 6.4 Linux/Docker: renewing the compose file
 
 1. Update the gateway first (see [6.1](#61-updating-the-gateway-software)).
-2. Get the current compose file: “Network” → “Peers / Clients” → edit your
-   gateway → “Show set-up again” → “Network mode” “Host (recommended)” →
-   download `docker-compose.yml`. **Only** this file – downloading the
-   `gateway.env` again creates a new access key.
+2. Get the current compose file: “Network” → “Gateways” → open your gateway →
+   icon “Download docker-compose.yml only” → “Linux machine with Docker”, “Host
+   (recommended)” → “Download”. This creates no new keys. Do **not** download
+   the `gateway.env` again – that creates a new access key.
 3. On the Linux machine:
 
    ```bash
@@ -117,11 +122,15 @@ services:
     cap_drop:
       - ALL
     cap_add:
-      - NET_ADMIN
-      - NET_BIND_SERVICE
+      - NET_ADMIN         # wg-quick + WireGuard interface, ip/iptables
+      - NET_BIND_SERVICE  # L4 routes and the DNS filter on ports <1024
+      - NET_RAW           # ping (internet quality), keepalived VRRP + GARP (failover)
+      - SETGID            # keepalived enable_script_security (health-check script)
+      - SETUID            # keepalived enable_script_security (health-check script)
     devices:
       - /dev/net/tun:/dev/net/tun
     read_only: true
+    user: "0:0"                # wg-quick needs root; only the capabilities above
     tmpfs:
       - /tmp
       - /run
@@ -143,6 +152,16 @@ services:
     environment:
       - LOG_LEVEL=info
       - GATEWAY_ENV_PATH=/config/gateway.env
+      - WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go
+    healthcheck:
+      interval: 60s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # Edge parts of plugins in the home network (switched on per gateway in GateControl).
   # Same image as the gateway, another command; runs without privileges as user 61001

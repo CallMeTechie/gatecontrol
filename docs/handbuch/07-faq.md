@@ -152,7 +152,9 @@ Das Gateway meldet sich nicht mehr beim Server.
 ### „Edge-Dienst fehlt“
 
 In der Compose-Datei des Gateways fehlen die Dienste `edge` und `mqtt`. Bring
-sie mit [Kapitel 6](06-gateway-aktualisieren.md) auf den aktuellen Stand. Beim
+sie mit [Kapitel 6](06-gateway-aktualisieren.md) auf den aktuellen Stand – am
+schnellsten mit dem Knopf „Nur docker-compose.yml herunterladen“ unter der
+Meldung (keine neuen Schlüssel). Beim
 Raspberry-Pi-Image steht `EDGE=off` in `settings.txt` – auf `EDGE=on` ändern
 und neu starten. Mehr: [Kapitel 4](04-edge-und-smart-home.md#edge-dienst-fehlt).
 

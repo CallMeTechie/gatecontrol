@@ -168,6 +168,93 @@
   function errorBox() { const n = h('div', { class: 'gwe-err', role: 'alert' }); n.hidden = true; return n; }
   function showErr(box, msg) { box.textContent = msg || ''; box.hidden = !msg; }
 
+  // ─── "Nur docker-compose.yml herunterladen" ───────────────────────────
+  // The assistant's compose for this gateway (POST /api/v1/gateways/:id/compose, gateway-kit.js
+  // buildCompose): no new keys, no gateway.env — the gateway stays connected. Renews an old compose
+  // without edge/mqtt/cache. Opened from the edge card (edge_missing) and the gateway page head
+  // (gateways.js, window.GCGatewayCompose).
+  const COMPOSE_PLATFORM = { synology: 'synology', linux: 'linux', proxmox: 'linux' };
+  function composePlatform(g) {
+    if (COMPOSE_PLATFORM[g.platform]) return COMPOSE_PLATFORM[g.platform];
+    // older gateway without a stored platform: DSM kernels end in "+" (4.4.302+) — only a preselection
+    const rel = String(((g.health && g.health.telemetry) || {}).os_release || '');
+    return /\+$/.test(rel) ? 'synology' : 'linux';
+  }
+  const COMPOSE_LINUX_CMD = 'cd /opt/gatecontrol-gateway\nsudo cp docker-compose.yml docker-compose.yml.bak\n'
+    + 'sudo mv ~/docker-compose.yml .\nsudo mkdir -p gateway-state gateway-cache\nsudo docker compose up -d';
+  function composeSteps(platform) {
+    if (platform === 'synology') {
+      return h('ol', { class: 'gwz-st' }, [1, 2, 3, 4].map((n) => h('li', null, [h('p', { text: t('gwe.compose.syn_' + n) })])));
+    }
+    return h('ol', { class: 'gwz-st' }, [
+      h('li', null, [h('p', { text: t('gwe.compose.lin_1') })]),
+      h('li', null, [h('p', { text: t('gwe.compose.lin_2') }), h('pre', { class: 'gwz-code gwz-pre', text: COMPOSE_LINUX_CMD })]),
+    ]);
+  }
+  function downloadCompose(g, body) {
+    return fetch('/api/v1/gateways/' + encodeURIComponent(String(g.peer_id)) + '/compose', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
+      body: JSON.stringify(body),
+    }).then((r) => {
+      if (r.ok) return r.blob();
+      return r.json().catch(() => ({})).then((j) => {
+        const e = new Error((j && j.error) || ('HTTP ' + r.status));
+        e.status = r.status;
+        e.code = j && j.error === 'session_required' ? 'session_required' : null;
+        throw e;
+      });
+    }, () => { const e = new Error('network'); e.code = 'network'; throw e; }).then((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = h('a', { href: url, download: 'docker-compose.yml', hidden: true });
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  }
+  function openComposeDialog(g, returnFk) {
+    const dlg = openDialog({ title: t('gwe.compose.title'), wide: true, cls: 'gwe-compose', returnFk: returnFk || null });
+    function choice(name, value, label, hint, checked) {
+      const id = 'gwe-compose-' + name + '-' + value;
+      const r = h('input', { type: 'radio', name: 'gwe-compose-' + name, id, value });
+      r.checked = !!checked;
+      return h('label', { class: 'gwe-check', for: id }, [r, h('span', null, [h('strong', { text: label }), hint ? h('span', { class: 'gwe-d', text: ' – ' + hint }) : null])]);
+    }
+    const p0 = composePlatform(g);
+    const plat = h('fieldset', { class: 'gwe-fieldset' }, [h('legend', { text: t('gwe.compose.platform') }),
+      choice('platform', 'synology', t('gwe.compose.p_synology'), null, p0 === 'synology'),
+      choice('platform', 'linux', t('gwe.compose.p_linux'), null, p0 === 'linux')]);
+    const net = h('fieldset', { class: 'gwe-fieldset' }, [h('legend', { text: t('gwe.compose.network') }),
+      choice('network', 'host', t('gwe.compose.n_host'), null, true),
+      choice('network', 'bridge', t('gwe.compose.n_bridge'), t('gwe.compose.n_bridge_d'), false)]);
+    const stepsBox = h('div', { class: 'gwe-compose-steps' });
+    const err = errorBox();
+    const value = (name) => { const r = dlg.box.querySelector('input[name="gwe-compose-' + name + '"]:checked'); return r ? r.value : null; };
+    const drawSteps = () => stepsBox.replaceChildren(h('p', { class: 'gwe-label' }, [h('strong', { text: t('gwe.compose.steps') })]), composeSteps(value('platform')));
+    dlg.body.append(h('p', { class: 'gwe-intro', text: t('gwe.compose.intro') }), plat, net, stepsBox, err);
+    drawSteps();
+    plat.addEventListener('change', drawSteps);
+    const ok = h('button', { type: 'button', class: 'btn btn-primary', 'data-fk': 'gwe-compose-dl', text: t('gwe.compose.download') });
+    dlg.foot.append(h('button', { type: 'button', class: 'btn btn-ghost', text: t('common.close'), on: { click: () => dlg.close(null) } }), ok);
+    ok.addEventListener('click', () => {
+      ok.disabled = true;
+      showErr(err, '');
+      downloadCompose(g, { platform: value('platform'), network: value('network') })
+        .then(() => toast(t('gwe.compose.done')), (e) => showErr(err, errText(e)))
+        .finally(() => { ok.disabled = false; });
+    });
+    ok.focus();
+    return dlg;
+  }
+  // the edge card's way out of edge_missing: the current compose without new keys (not for the Pi image)
+  function composeHelp(g) {
+    const b = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-fk': 'gwe-compose', text: t('gwe.compose.button') });
+    b.addEventListener('click', () => openComposeDialog(g, 'gwe-compose'));
+    return h('div', { class: 'gwe-compose-help' }, [h('p', { class: 'gwe-d', text: t('gwe.compose.help') }), b]);
+  }
+  window.GCGatewayCompose = { open: openComposeDialog, help: composeHelp, platformOf: composePlatform };
+
   // ─── Data cache + drawing ─────────────────────────────────────────────
   const cache = {};   // gateway id → { data, err, at, inflight }
   let cur = null;     // { box, g, tab }
@@ -363,6 +450,7 @@
     if (why && !(d.plugins || []).some((p) => K.pluginState(p, d.settings).state === why)) {
       c.body.appendChild(note(why === 'gateway_offline' ? 'info' : 'warn', [h('strong', { text: t('gwe.state.' + why) }), ' '].concat(reasonText(g, d, why))));
     }
+    if (why === 'edge_missing' && g.platform !== 'rpi') c.body.appendChild(composeHelp(g));
     const tel = (g.health && g.health.telemetry) || {};
     const memTotal = (hello && hello.hardware && hello.hardware.mem_total) || (tel.hardware && tel.hardware.mem_total) || tel.mem_total;
     const mh = K.memoryHint(memTotal, K.summary(d.plugins, d.settings).enabled);

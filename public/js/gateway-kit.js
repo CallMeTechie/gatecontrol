@@ -183,6 +183,11 @@
         '# on the host (default on Debian 11+ / Ubuntu 22.04+ / kernel ≥5.6).');
     }
 
+    // The gateway service as in docker-compose.example.yml of gatecontrol-gateway (tests/fixtures/
+    // gateway-compose/docker-compose.example.yml, compared by tests/gateway_compose_parity.test.js).
+    // Deliberate differences: no TZ line (the gateway takes its time zone from the server since
+    // gateway 1.22.0 — the env value would only be a fallback), /dev/net/tun and the wireguard-go
+    // switch only on synology (linux = kernel WireGuard), bridge mode without the host-only parts.
     lines.push(
       'services:',
       '  gateway:',
@@ -194,10 +199,21 @@
       '    cap_drop:',
       '      - ALL',
       '    cap_add:',
-      '      - NET_ADMIN'
+      '      - NET_ADMIN         # wg-quick + WireGuard interface, ip/iptables'
     );
-    // NET_BIND_SERVICE only matters in host mode (low ports for L4 routes).
-    if (network === 'host') lines.push('      - NET_BIND_SERVICE');
+    // NET_BIND_SERVICE only matters in host mode (low ports for L4 routes, DNS filter on 53).
+    if (network === 'host') lines.push('      - NET_BIND_SERVICE  # L4 routes and the DNS filter on ports <1024');
+    // NET_RAW: ICMP ping of the internet quality (else TCP fallback) and keepalived VRRP + GARP
+    // (failover pools / scan egress, raw socket; NET_ADMIN does not cover it).
+    lines.push('      - NET_RAW           # ping (internet quality), keepalived VRRP + GARP (failover)');
+    // SETGID/SETUID: keepalived enable_script_security drops to script_user for its health check —
+    // keepalived (VIP on the LAN interface) only runs with the host network.
+    if (network === 'host') {
+      lines.push(
+        '      - SETGID            # keepalived enable_script_security (health-check script)',
+        '      - SETUID            # keepalived enable_script_security (health-check script)'
+      );
+    }
     // /dev/net/tun only for the wireguard-go userspace path.
     if (platform === 'synology') {
       lines.push(
@@ -214,6 +230,8 @@
     }
     lines.push(
       '    read_only: true',
+      // wg-quick needs UID 0; the image keeps a non-root user for later — pin root explicitly
+      '    user: "0:0"                # wg-quick needs root; only the capabilities above',
       '    tmpfs:',
       '      - /tmp',
       '      - /run',
@@ -245,6 +263,19 @@
       '    environment:',
       '      - LOG_LEVEL=info',
       '      - GATEWAY_ENV_PATH=/config/gateway.env'
+    );
+    // the image sets it too; kept visible where the userspace path is the point of the profile
+    if (platform === 'synology') lines.push('      - WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go');
+    lines.push(
+      '    healthcheck:',
+      '      interval: 60s',
+      '      timeout: 5s',
+      '      retries: 3',
+      '    logging:',
+      '      driver: json-file',
+      '      options:',
+      '        max-size: "10m"',
+      '        max-file: "3"'
     );
     if (network === 'host') lines.push(...EDGE_SERVICES);
     const header = headerNotes.length > 0 ? headerNotes.join('\n') + '\n' : '';
