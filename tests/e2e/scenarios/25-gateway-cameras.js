@@ -101,7 +101,7 @@ module.exports = (ctx) => {
           const r = document.querySelector(sel);
           const sw = r && r.querySelector('[role="switch"]');
           const hint = r && r.querySelector('[data-cameras-old]');
-          return !!sw && sw.disabled && sw.getAttribute('aria-checked') === 'false' && !!hint && /Gateway zu alt – ab 1\.27\.0/.test(hint.textContent);
+          return !!sw && sw.disabled && sw.getAttribute('aria-checked') === 'false' && !!hint && /Gateway zu alt – ab 1\.28\.0/.test(hint.textContent);
         }, row));
 
         // ── 1.28.0 with `cameras` on a Pi 3 B+, old compose file ──
