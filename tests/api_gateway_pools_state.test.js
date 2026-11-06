@@ -65,7 +65,7 @@ test('state: the first alive member serves, the other stands by; threshold, lice
   const st = await getState();
   assert.equal(st.threshold_s, 90);
   assert.equal(st.routes_total, 2);
-  assert.equal(st.routes_pooled, 1);
+  assert.equal(st.routes_pooled, 2, 'the pool route and the route pinned to a member (it pivots on an outage)');
   assert.equal(st.licensed.failover, true);
   const p = st.pools.find((x) => x.id === id);
   assert.equal(p.status, 'protected');

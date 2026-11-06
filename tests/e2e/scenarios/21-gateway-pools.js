@@ -311,10 +311,10 @@ module.exports = (ctx) => {
         // without reserve-check data the wording stays as before: "geschützt", "alle n Routen"
         reserveData = false;
         await page.evaluate(() => document.dispatchEvent(new CustomEvent('gc:gateway')));
-        step('pool: without reserve-check data → "geschützt" and "bleiben alle 2 Routen erreichbar"', await until(page, () => {
+        step('pool: without reserve-check data → "geschützt" and "bleiben alle 3 Routen erreichbar (2 im Pool + 1 fest an einem Mitglied)"', await until(page, () => {
           const v = document.getElementById('gw-pool-view');
           return v.querySelector('.gwp-head h2 [data-status="protected"]') && v.querySelector('.gwp-banner[data-status="protected"]')
-            && /alle 2 Routen/.test(v.querySelector('.gwp-banner').textContent) && !v.querySelector('.gwp-reserve') && v.querySelector('.gwp-mlist [data-state="standby"]');
+            && /alle 3 Routen/.test(v.querySelector('.gwp-banner').textContent) && !v.querySelector('.gwp-reserve') && v.querySelector('.gwp-mlist [data-state="standby"]');
         }));
         reserveData = true;
         await page.evaluate(() => document.dispatchEvent(new CustomEvent('gc:gateway')));
