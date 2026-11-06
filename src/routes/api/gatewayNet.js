@@ -14,6 +14,7 @@
 //   POST   /:id/netwatch/scan               "Jetzt scannen" (gateway management API)
 //   GET    /:id/inetq?range=24h|7d|30d      now, speed, UPS, history, outages
 //   POST   /:id/inetq/speedtest             "Jetzt messen" (gateway management API)
+//   POST   /:id/print/discover              "Neu suchen" of Drucken & Scannen (gateway management API)
 
 const { Router } = require('express');
 const { requireAdminSession } = require('../../middleware/auth');
@@ -93,6 +94,17 @@ router.post('/:id/netwatch/scan', requireAdminSession, handle(async (req) => {
   const r = await require('../../services/netwatch').scan(g.id);
   try {
     require('../../services/activity').log('netwatch_scan_requested', `Network scan requested on gateway "${g.name}"`, {
+      source: 'admin', ipAddress: req.ip, severity: 'info', details: { peer_id: g.id, user: who(req) },
+    });
+  } catch { /* best-effort */ }
+  return r;
+}));
+
+router.post('/:id/print/discover', requireAdminSession, handle(async (req) => {
+  const g = gw(req);
+  const r = await require('../../services/homePrint').discoverOne(g.id);
+  try {
+    require('../../services/activity').log('print_discover_requested', `Printer search requested on gateway "${g.name}"`, {
       source: 'admin', ipAddress: req.ip, severity: 'info', details: { peer_id: g.id, user: who(req) },
     });
   } catch { /* best-effort */ }
