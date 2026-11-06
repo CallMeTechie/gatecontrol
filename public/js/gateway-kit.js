@@ -220,7 +220,10 @@
       '      - /etc/wireguard',
       '    volumes:',
       '      - ./config:/config:ro',
-      '      - ./gateway-state:/state   # rw: auto-update state (self-update flag + last-pull)'
+      '      - ./gateway-state:/state   # rw: auto-update state (self-update flag + last-pull)',
+      // home cache (gateway >= 1.22.0): always mounted at /cache, used only when switched on for
+      // this gateway; GC_CACHE_DIR moves it elsewhere (e.g. a USB disk), as in the gateway's own example
+      '      - ${GC_CACHE_DIR:-./gateway-cache}:/cache   # home cache, only used when switched on'
     );
     // edge parts of plugins (docs/plugins.md "Edge part"): host network only — the edge container
     // needs the LAN (UDP, multicast, mDNS) and the gateway's network fence; credentials go over edge-run

@@ -143,7 +143,7 @@ describe('Synology package', () => {
     assert.match(r.headers['content-disposition'], /filename="gatecontrol-gateway-nas\.zip"/);
     assert.match(r.headers['cache-control'], /no-store/);
     const entries = unzip(r.body);
-    assert.deepEqual(entries.map((e) => e.name), ['docker-compose.yml', 'config/', 'config/gateway.env', 'gateway-state/', 'update.sh']);
+    assert.deepEqual(entries.map((e) => e.name), ['docker-compose.yml', 'config/', 'config/gateway.env', 'gateway-state/', 'gateway-cache/', 'update.sh']);
     const byName = Object.fromEntries(entries.map((e) => [e.name, e]));
     const compose = byName['docker-compose.yml'].data.toString();
     assert.match(compose, /network_mode: host/);
