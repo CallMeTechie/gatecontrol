@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.234.2] — 2026-11-06
+
+### Fixes
+- Edge-Plugin braucht MQTT, Broker aus – verständlicher Hinweis mit Knopf „MQTT einschalten“ (#418)
+
+---
+
 ## [1.234.1] — 2026-11-06
 
 ### Fixes
