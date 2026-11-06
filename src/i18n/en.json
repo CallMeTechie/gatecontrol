@@ -9746,7 +9746,7 @@
   "gwp.rt.title": "Routes through this pool",
   "gwp.rt.migrate": "Move routes here",
   "gwp.rt.none": "No route runs through this pool yet.",
-  "gwp.rt.pinned": "pinned to {{name}}, not in the pool",
+  "gwp.rt.pinned": "pinned to {{name}} – moves along on an outage",
   "gwp.rt.pinned_help": "Routes pinned to a gateway of the pool switch over with it when it fails. In the pool the reserve checks their targets in advance, and the outage notice applies.",
   "gwp.rt.take": "Move into the pool",
   "gwp.rt.taken": "{{domain}} runs through the pool now.",

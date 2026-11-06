@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.236.1] — 2026-11-06
+
+### Fixes
+- „Ausfallsicher“ zählt auch Routen, die fest an einem Pool-Mitglied hängen (#421)
+
+---
+
+## [1.236.0] — 2026-11-06
+
+### Features
+- Drucken & Scannen – Geräte im Heimnetz, Druckwarteschlange, Scans und gc.print (Phase 3c, Schritt 1) (#420)
+
+---
+
 ## [1.235.0] — 2026-11-06
 
 ### Features
