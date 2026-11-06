@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.238.1] — 2026-11-06
+
+### Fixes
+- Drucker per IP-Adresse hinzufügen, letzte Suche und „Neu suchen“ in der Zeile „Drucken & Scannen“ (#424)
+
+---
+
 ## [1.238.0] — 2026-11-06
 
 ### Features
