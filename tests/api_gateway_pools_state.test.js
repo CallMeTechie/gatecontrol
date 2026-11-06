@@ -90,6 +90,10 @@ test('state: reserve check from the standby\'s own route_reachability; nothing w
   const pi = p.members.find((m) => m.peer_id === 23);
   assert.deepEqual(pi.reserve, { total: 3, checked: 2, reachable: 1, missing: [{ id: 102, domain: 'b.example.com' }] });
   assert.equal(p.members.find((m) => m.peer_id === 24).reserve, null, 'no data → no claim');
+  assert.equal(p.status, 'partial', 'the next reserve misses a target: only partly protected');
+  // it reaches everything again → protected
+  db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = 23').run(JSON.stringify({ route_reachability: [{ route_id: 100, reachable: true }, { route_id: 102, reachable: true }] }));
+  assert.equal((await getState()).pools[0].status, 'protected');
 });
 
 test('state: offline first member → on_reserve; recovering shows the failback time; none alive → down', async () => {

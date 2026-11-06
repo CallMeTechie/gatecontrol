@@ -50,8 +50,30 @@ describe('gateway-pool-kit: hash, groups, roles, status', () => {
     assert.equal(PK.activeMember({ active_peer_ids: [], members: pool.members }), null);
   });
 
+  it('reserve check: a standby that misses targets → "teilweise geschützt", amber member tag; no data keeps today\'s wording', () => {
+    const routes = [{ id: 1 }, { id: 2 }];
+    const pool = (reserve, extra) => ({ mode: 'failover', status: 'protected', routes, active_peer_ids: [1], ...extra,
+      members: [{ peer_id: 1, priority: 1, state: 'active', reserve: null }, { peer_id: 2, priority: 2, state: 'standby', reserve }] });
+    const miss = { total: 2, checked: 2, reachable: 1, missing: [{ id: 2, domain: 'phoscon.example.com' }] };
+    const p = pool(miss);
+    assert.equal(PK.effectiveStatus(p), 'partial');
+    assert.equal(PK.statusTone('partial'), 'amber');
+    assert.deepEqual(PK.reserveGap(p, p.members[1]), { k: 1, n: 2, missing: miss.missing });
+    assert.deepEqual(PK.roleOf(p, p.members[1]), { tone: 'amber', key: 'gwp.role.standby_partial', params: { n: 2 } });
+    assert.equal(PK.nextStandby(p).peer_id, 2);
+    // reaches everything / reports nothing / load balancing / not "protected" anyway: unchanged
+    const ok = pool({ total: 2, checked: 2, reachable: 2, missing: [] });
+    assert.equal(PK.effectiveStatus(ok), 'protected');
+    assert.equal(PK.roleOf(ok, ok.members[1]).key, 'gwp.role.standby');
+    assert.equal(PK.effectiveStatus(pool(null)), 'protected');
+    assert.equal(PK.reserveGap(pool(null), pool(null).members[1]), null);
+    assert.equal(PK.effectiveStatus(pool(miss, { mode: 'load_balancing' })), 'protected');
+    assert.equal(PK.effectiveStatus(pool(miss, { status: 'no_reserve' })), 'no_reserve');
+    assert.equal(PK.effectiveStatus({ ...p, status: 'partial' }), 'partial', 'the server may say it itself');
+  });
+
   it('statusTone covers every server status', () => {
-    for (const s of ['protected', 'on_reserve', 'no_reserve', 'single', 'down', 'off']) assert.ok(['green', 'amber', 'red', 'grey'].includes(PK.statusTone(s)), s);
+    for (const s of ['protected', 'partial', 'on_reserve', 'no_reserve', 'single', 'down', 'off']) assert.ok(['green', 'amber', 'red', 'grey'].includes(PK.statusTone(s)), s);
     assert.equal(PK.statusTone('protected'), 'green');
     assert.equal(PK.statusTone('down'), 'red');
   });
@@ -180,9 +202,9 @@ describe('the views: texts and safety', () => {
     for (const k of ['failover', 'load_balancing']) { keys.add('gwp.mode.' + k); keys.add('gwp.mode.' + k + '_d'); }
     for (const k of ['ok', 'warn', 'bad']) keys.add('gwp.state.overall_' + k);
     for (const k of ['ok', 'warn', 'bad', 'info']) keys.add('gwp.state.tone_' + k);
-    for (const k of ['protected', 'on_reserve', 'no_reserve', 'single', 'down', 'off']) { keys.add('gwp.status.' + k); keys.add('gwp.status_short.' + k); }
+    for (const k of ['protected', 'partial', 'on_reserve', 'no_reserve', 'single', 'down', 'off']) { keys.add('gwp.status.' + k); keys.add('gwp.status_short.' + k); }
     for (const k of ['ok', 'tight', 'too_much']) keys.add('gwp.feat.level_' + k);
-    for (const k of ['active', 'lb_active', 'standby', 'recovering', 'offline']) keys.add('gwp.mstate.' + k);
+    for (const k of ['active', 'lb_active', 'standby', 'standby_partial', 'recovering', 'offline']) keys.add('gwp.mstate.' + k);
     assert.ok(keys.size > 250, String(keys.size));
     for (const k of keys) {
       assert.ok(de[k], 'de ' + k);

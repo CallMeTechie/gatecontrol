@@ -54,15 +54,44 @@
     return { groups, singles };
   }
 
-  const STATUS_TONE = { protected: 'green', on_reserve: 'amber', no_reserve: 'amber', single: 'amber', down: 'red', off: 'grey' };
+  const STATUS_TONE = { protected: 'green', partial: 'amber', on_reserve: 'amber', no_reserve: 'amber', single: 'amber', down: 'red', off: 'grey' };
   function statusTone(status) { return STATUS_TONE[status] || 'grey'; }
+
+  /**
+   * What the reserve check of a member found missing: { k, n, missing } —
+   * k of the pool's n routes keep their target reachable through it — or
+   * null when it reaches every target it reported on or reports nothing
+   * (no data: no claim either way).
+   */
+  function reserveGap(pool, member) {
+    const r = member && member.reserve;
+    if (!r || !(r.checked > 0) || r.reachable >= r.checked) return null;
+    const n = ((pool && pool.routes) || []).length || r.total || r.checked;
+    const missing = r.missing || [];
+    return { k: Math.max(0, n - (missing.length || (r.checked - r.reachable))), n, missing };
+  }
+  /** The member that steps in next (failover: the first standby by priority), or null. */
+  function nextStandby(pool) { return standbys(pool)[0] || null; }
+  /**
+   * The status to show: the server's, except a "protected" failover pool
+   * whose next reserve does not reach every target of the pool's routes —
+   * then 'partial' ("teilweise geschützt"). The server says 'partial' itself
+   * (gatewayPoolState.statusOf); this keeps older answers consistent.
+   */
+  function effectiveStatus(pool) {
+    const st = (pool && pool.status) || 'off';
+    if (st !== 'protected' || pool.mode === 'load_balancing') return st;
+    return reserveGap(pool, nextStandby(pool)) ? 'partial' : st;
+  }
 
   /** Tag of a member in a pool: { tone, key, params } (i18n gwp.role.*). */
   function roleOf(pool, member, now) {
     const n = member.priority_rank || rankOf(pool, member);
     const lb = pool && pool.mode === 'load_balancing';
     if (member.state === 'active') return { tone: 'blue', key: lb ? 'gwp.role.lb_active' : 'gwp.role.active', params: { n } };
-    if (member.state === 'standby') return { tone: 'grey', key: 'gwp.role.standby', params: { n } };
+    if (member.state === 'standby') {
+      return reserveGap(pool, member) ? { tone: 'amber', key: 'gwp.role.standby_partial', params: { n } } : { tone: 'grey', key: 'gwp.role.standby', params: { n } };
+    }
     if (member.state === 'recovering') {
       const left = member.failback_at ? Math.max(0, member.failback_at - (now || Date.now())) : null;
       return { tone: 'amber', key: left == null ? 'gwp.role.recovering' : 'gwp.role.recovering_in', params: { n, min: left == null ? 0 : Math.max(1, Math.ceil(left / 60000)) } };
@@ -272,6 +301,7 @@
 
   return {
     parsePoolHash, poolsOf, memberOf, fleetGroups, statusTone, roleOf, rankOf, activeMember, standbys,
+    reserveGap, nextStandby, effectiveStatus,
     duration, COOLDOWN_PRESETS, proposeCooldown, presetFor,
     cidr, subnetsOf, sameLan, suggestion,
     healthChecks, overall,

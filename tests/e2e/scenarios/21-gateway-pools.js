@@ -114,6 +114,8 @@ module.exports = (ctx) => {
           { at: now - 6 * 24 * 60 * MIN, kind: 'failover', from_peer_id: HOME, to_peer_id: NAS, duration_ms: 22 * MIN },
         ],
       }];
+      // the reserve check of e2e-gw-nas: one target of the pool's routes not reachable (false: no data)
+      let reserveData = true;
       const alive = { [HOME]: true, [NAS]: true, [FH]: true, [PIFH]: true };
       const names = { [HOME]: 'e2e-gw-home', [NAS]: 'e2e-gw-nas', [FH]: 'Ferienhaus', [PIFH]: 'Pi Ferienhaus' };
       const stateOf = (p) => {
@@ -121,7 +123,9 @@ module.exports = (ctx) => {
         const serving = ms.filter((m) => alive[m.peer_id]).slice(0, 1).map((m) => m.peer_id);
         const members = ms.map((m) => ({ peer_id: m.peer_id, priority: m.priority, name: names[m.peer_id], platform: null, last_seen_at: now - 12000, went_down_at: null, failback_at: null,
           state: serving.includes(m.peer_id) ? 'active' : (alive[m.peer_id] ? 'standby' : 'offline'),
-          reserve: !serving.includes(m.peer_id) && m.peer_id === NAS ? { total: p.routes.length, checked: p.routes.length, reachable: p.routes.length - 1, missing: [{ id: p.routes[p.routes.length - 1].id, domain: p.routes[p.routes.length - 1].domain }] } : null }));
+          reserve: reserveData && !serving.includes(m.peer_id) && m.peer_id === NAS ? { total: p.routes.length, checked: p.routes.length, reachable: p.routes.length - 1, missing: [{ id: p.routes[p.routes.length - 1].id, domain: p.routes[p.routes.length - 1].domain }] } : null }));
+        // like an older server: "protected" even when the reserve misses a target — the page
+        // must still show "teilweise geschützt" (gateway-pool-kit.js effectiveStatus)
         const status = members.length < 2 ? 'single' : (members[0].state === 'active' ? (members.filter((m) => m.state !== 'offline').length > 1 ? 'protected' : 'no_reserve') : 'on_reserve');
         return { id: p.id, name: p.name, mode: p.mode, lb_policy: p.lb_policy, failback_cooldown_s: p.failback_cooldown_s, outage_message: p.outage_message, enabled: true,
           status, active_peer_ids: serving, members, routes: p.routes, rdp_routes: p.rdp_routes, pinned_routes: p.pinned.map((x) => ({ ...x, peer_name: names[x.peer_id] })),
@@ -179,10 +183,10 @@ module.exports = (ctx) => {
           const ids = g ? [...g.querySelectorAll('.gw[data-id]')].map((x) => Number(x.dataset.id)) : [];
           return ids.join() === [h, n].join();
         }, [HOME, NAS]));
-        step('fleet: role tags "arbeitet gerade" / "Reserve, springt ein", status "geschützt"', await page.evaluate(([h, n]) => {
+        step('fleet: role tags "arbeitet gerade" / reserve missing a target (amber), status "teilweise geschützt" — not "geschützt"', await page.evaluate(([h, n]) => {
           const g = document.querySelector('.gwp-group[data-pool="1"]');
-          return g.querySelector(`.gw[data-id="${h}"] [data-role="active"]`) && g.querySelector(`.gw[data-id="${n}"] [data-role="standby"]`)
-            && g.querySelector('[data-status="protected"]') && g.querySelector('a[href="#pool/1"]');
+          return g.querySelector(`.gw[data-id="${h}"] [data-role="active"]`) && g.querySelector(`.gw[data-id="${n}"] .tag-amber[data-role="standby"]`)
+            && g.querySelector('.tag-amber[data-status="partial"]') && !g.querySelector('[data-status="protected"]') && g.querySelector('a[href="#pool/1"]');
         }, [HOME, NAS]));
         step('fleet: "Einzelne Gateways" with Ferienhaus and the hint for a pool with Pi Ferienhaus (same LAN)', await page.evaluate(([f, p]) => {
           const s = document.querySelector('.gwp-singles');
@@ -222,6 +226,7 @@ module.exports = (ctx) => {
           const pc = document.querySelector('.gwp-ovcard');
           return st.querySelector('.gwo-banner') && st.querySelectorAll('.gwo-checks li').length >= 2 && pc.querySelectorAll('.gwp-mrow').length === 2
             && pc.querySelector('.gwp-mrow-self') && /90 Sekunden/.test(pc.querySelector('[data-outage]').textContent) && /15 Minuten/.test(pc.querySelector('[data-outage]').textContent)
+            && /1 von 2 Routen/.test(pc.querySelector('[data-outage]').textContent) && pc.querySelector('[data-state="standby_partial"]')
             && pc.querySelector(`a[href="#gw/${n}"]`);
         }, NAS));
         step('detail: technical rows in "Technische Details" (closed), route table with reachability', await page.evaluate(() => {
@@ -280,7 +285,9 @@ module.exports = (ctx) => {
         await page.evaluate(() => { location.hash = '#pool/1'; });
         step('pool: page with name, status, banner and the sentence of what happens', await until(page, () => {
           const v = document.getElementById('gw-pool-view');
-          return !v.hidden && v.querySelector('.gwp-head h2 [data-status="protected"]') && v.querySelector('.gwp-banner[data-status="protected"]') && document.getElementById('fleet-view').hidden;
+          return !v.hidden && v.querySelector('.gwp-head h2 [data-status="partial"]') && v.querySelector('.gwp-banner-warn[data-status="partial"]')
+            && /1 von 2 Routen/.test(v.querySelector('.gwp-banner').textContent) && !/alle 2 Routen/.test(v.querySelector('.gwp-banner').textContent)
+            && v.querySelector('.gwp-mlist [data-state="standby_partial"]') && document.getElementById('fleet-view').hidden;
         }));
         step('pool: members in order with up/down buttons (first "up" disabled), reserve check names the missing target', await page.evaluate(([h, n]) => {
           const li = [...document.querySelectorAll('.gwp-mlist > li')];
@@ -301,6 +308,17 @@ module.exports = (ctx) => {
         await view(page, 'gwpool-page-dark');
         await theme(page, 'light');
         await view(page, 'gwpool-page-light');
+        // without reserve-check data the wording stays as before: "geschützt", "alle n Routen"
+        reserveData = false;
+        await page.evaluate(() => document.dispatchEvent(new CustomEvent('gc:gateway')));
+        step('pool: without reserve-check data → "geschützt" and "bleiben alle 2 Routen erreichbar"', await until(page, () => {
+          const v = document.getElementById('gw-pool-view');
+          return v.querySelector('.gwp-head h2 [data-status="protected"]') && v.querySelector('.gwp-banner[data-status="protected"]')
+            && /alle 2 Routen/.test(v.querySelector('.gwp-banner').textContent) && !v.querySelector('.gwp-reserve') && v.querySelector('.gwp-mlist [data-state="standby"]');
+        }));
+        reserveData = true;
+        await page.evaluate(() => document.dispatchEvent(new CustomEvent('gc:gateway')));
+        await until(page, () => !!document.querySelector('.gwp-banner[data-status="partial"]'));
         // "In den Pool nehmen"
         await page.click('[data-fk="gwp-take:9503"]');
         step('pool: "In den Pool nehmen" uses migrate-routes; the route is in the pool afterwards', await until(page, () => !document.querySelector('.gwp-li-pinned')

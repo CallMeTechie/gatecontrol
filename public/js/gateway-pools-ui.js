@@ -137,14 +137,15 @@
   function routeCount(p) { return (p.routes || []).length; }
   function groupSection(p, cards) {
     const hid = 'gwp-g-' + p.id;
-    const tone = PK.statusTone(p.status);
+    const status = PK.effectiveStatus(p);
+    const tone = PK.statusTone(status);
     const meta = [t(routeCount(p) === 1 ? 'gwp.group.routes_one' : 'gwp.group.routes', { n: routeCount(p) })];
     if (p.last_switch_at) meta.push(t('gwp.group.switched', { ago: ago(p.last_switch_at) }));
     const head = h('div', { class: 'gwp-group-head' }, [
       h('span', { class: 'gwp-group-ic' }, svg(IC.pool, 20)),
       h('h2', { id: hid, class: 'gwp-group-title', text: t('gwp.pool_name', { name: p.name }) }),
       U.tag('grey', t('gwp.mode.' + p.mode)),
-      h('span', { class: 'tag tag-dot tag-' + tone, 'data-status': p.status, text: t('gwp.status.' + p.status) }),
+      h('span', { class: 'tag tag-dot tag-' + tone, 'data-status': status, text: t('gwp.status.' + status) }),
       h('span', { class: 'gwp-grow' }),
       h('span', { class: 'gwe-d', text: meta.join(' · ') }),
       h('a', { class: 'btn btn-ghost btn-sm', href: '#pool/' + p.id, 'data-fk': 'gwp-open:' + p.id, text: t('gwp.open') }),
@@ -154,6 +155,7 @@
 
   // ─── Overview: the card "Pool" ────────────────────────────────────────
   function stateTag(p, m) {
+    if (m.state === 'standby' && PK.reserveGap(p, m)) return h('span', { class: 'tag tag-amber', 'data-state': 'standby_partial', text: t('gwp.mstate.standby_partial') });
     const r = PK.roleOf(p, m);
     const key = { active: p.mode === 'load_balancing' ? 'gwp.mstate.lb_active' : 'gwp.mstate.active', standby: 'gwp.mstate.standby', recovering: 'gwp.mstate.recovering', offline: 'gwp.mstate.offline' }[m.state];
     return h('span', { class: 'tag tag-' + (r.tone === 'blue' ? 'green' : r.tone === 'grey' ? 'green' : r.tone), 'data-state': m.state, text: t(key || 'gwp.mstate.offline') });
@@ -174,9 +176,16 @@
     const next = PK.standbys(p)[0] || null;
     const n = active ? routesOfSelf(p, active.peer_id) : routeCount(p);
     if (active && self && String(active.peer_id) === String(selfId)) {
-      return next ? t('gwp.ov.if_self', { threshold: thr, next: memberName(next), n, back }) : t('gwp.ov.no_reserve_self', { n });
+      if (!next) return t('gwp.ov.no_reserve_self', { n });
+      const gap = PK.reserveGap(p, next);
+      return gap ? t('gwp.ov.if_self_partial', { threshold: thr, next: memberName(next), k: gap.k, n: gap.n, back })
+        : t('gwp.ov.if_self', { threshold: thr, next: memberName(next), n, back });
     }
-    if (self && self.state === 'standby' && active) return t('gwp.ov.if_other', { active: memberName(active), threshold: thr, n, back });
+    if (self && self.state === 'standby' && active) {
+      const gap = PK.reserveGap(p, self);
+      return gap ? t('gwp.ov.if_other_partial', { active: memberName(active), threshold: thr, k: gap.k, n: gap.n, back })
+        : t('gwp.ov.if_other', { active: memberName(active), threshold: thr, n, back });
+    }
     if (self && self.state === 'recovering' && active) {
       const r = PK.roleOf(p, self);
       return t('gwp.ov.recovering', { active: memberName(active), min: r.params.min || 1 });
@@ -256,12 +265,13 @@
     const sub = [t('gwp.mode.' + p.mode), t(members.length === 1 ? 'gwp.page.n_gw_one' : 'gwp.page.n_gw', { n: members.length }),
       t(routeCount(p) === 1 ? 'gwp.group.routes_one' : 'gwp.group.routes', { n: routeCount(p) }),
       t('gwp.page.jumps', { threshold: dur((st && st.threshold_s) || 90) })];
-    const tone = PK.statusTone(p.status);
+    const status = PK.effectiveStatus(p);
+    const tone = PK.statusTone(status);
     const edit = h('button', { type: 'button', class: 'btn btn-ghost', 'data-fk': 'gwp-edit', text: t('gwp.edit') });
     edit.addEventListener('click', () => openEdit(p));
     return h('div', { class: 'page-h gwp-head' }, [
       h('div', { class: 'gwp-head-t' }, [
-        h('h2', null, [t('gwp.pool_name', { name: p.name }), ' ', h('span', { class: 'tag tag-dot tag-' + tone, 'data-status': p.status, text: t('gwp.status_short.' + p.status) })]),
+        h('h2', null, [t('gwp.pool_name', { name: p.name }), ' ', h('span', { class: 'tag tag-dot tag-' + tone, 'data-status': status, text: t('gwp.status_short.' + status) })]),
         h('p', { class: 'page-sub', text: sub.join(' · ') }),
       ]),
       h('div', { class: 'gw-detail-actions' }, [edit]),
@@ -291,12 +301,17 @@
         : t('gwp.ban.first_down', { first: memberName(first), ago: ago(first.went_down_at || first.last_seen_at) });
     } else if (p.status === 'no_reserve') {
       tone = 'warn'; lead = t('gwp.ban.no_reserve', { active: memberName(active) }); rest = t('gwp.ban.no_reserve_rest', { active: memberName(active), n });
+    } else if (PK.effectiveStatus(p) === 'partial') {
+      // the next reserve does not reach every target (reserve check): say how many routes stay
+      const gap = PK.reserveGap(p, standby);
+      tone = 'warn'; lead = t('gwp.ban.partial', { active: memberName(active), standby: memberName(standby) });
+      rest = t('gwp.ban.partial_rest', { active: memberName(active), k: gap ? gap.k : 0, n: gap ? gap.n : n });
     } else {
       lead = t('gwp.ban.protected', { active: memberName(active), standby: memberName(standby) });
       rest = t('gwp.ban.protected_rest', { active: memberName(active), n });
     }
     const ic = tone === 'ok' ? IC.shield : tone === 'bad' ? IC.x : IC.warn;
-    return h('div', { class: 'gwp-banner gwp-banner-' + tone, role: 'status', 'data-status': p.status }, [svg(ic, 22),
+    return h('div', { class: 'gwp-banner gwp-banner-' + tone, role: 'status', 'data-status': PK.effectiveStatus(p) }, [svg(ic, 22),
       h('p', null, [h('strong', { text: lead }), rest ? ' ' + rest : ''])]);
   }
 

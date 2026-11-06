@@ -69,7 +69,9 @@ function reserveOf(row, poolRoutes) {
 /**
  * 'off' (pool disabled), 'down' (no member alive), 'single' (only one member),
  * 'on_reserve' (failover: the first member is not the one serving),
- * 'no_reserve' (serving, but no other member alive), 'protected'.
+ * 'no_reserve' (serving, but no other member alive), 'partial' (failover: the
+ * next reserve reports targets of the pool's routes it does not reach — only
+ * with reserve-check data), 'protected'.
  */
 function statusOf(pool, members, states) {
   if (!pool.enabled) return 'off';
@@ -78,6 +80,10 @@ function statusOf(pool, members, states) {
   if (members.length < 2) return 'single';
   if (pool.mode !== 'load_balancing' && states[0] && states[0].state !== 'active') return 'on_reserve';
   if (alive < 2) return 'no_reserve';
+  if (pool.mode !== 'load_balancing') {
+    const next = states.find((s) => s.state === 'standby');
+    if (next && next.reserve && next.reserve.reachable < next.reserve.checked) return 'partial';
+  }
   return 'protected';
 }
 

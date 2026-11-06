@@ -377,7 +377,8 @@
     if (P && PK) {
       PK.poolsOf(P.pools(), g.peer_id).forEach(function (p) {
         var m = PK.memberOf(p, g.peer_id);
-        var a = el('a', 'tag tag-blue gw-pool-chip', TT('gwp.head.pool_chip', { name: p.name, role: T('gwp.mstate.' + (m && m.state === 'active' && p.mode === 'load_balancing' ? 'lb_active' : (m ? m.state : 'offline'))) }));
+        var a = el('a', 'tag tag-blue gw-pool-chip', TT('gwp.head.pool_chip', { name: p.name, role: T('gwp.mstate.' + (m && m.state === 'active' && p.mode === 'load_balancing' ? 'lb_active'
+          : (m && m.state === 'standby' && PK.reserveGap(p, m) ? 'standby_partial' : (m ? m.state : 'offline')))) }));
         a.href = '#pool/' + p.id; a.dataset.fk = 'gw-pool-chip:' + p.id;
         chips.appendChild(a);
       });
