@@ -89,6 +89,12 @@ describe('gateway-edge-kit: address and states', () => {
       { key: 'gwe.edge.compose_outdated', tone: 'bad', backend: null, composeOutdated: true });
     // older gateway: only the fence
     assert.equal(K.boundaryState({ fence: { active: false } }).key, 'gwe.edge.fence_off');
+    // an edge part with MQTT capability, switched on, broker off → hint with the button
+    const mq = { edge: { capabilities: [{ key: 'mqtt:shellies/#', text: 'x' }] }, assignment: { enabled: true } };
+    assert.equal(K.needsMqtt(mq, { mqttEnabled: false }), true);
+    assert.equal(K.needsMqtt(mq, { mqttEnabled: true }), false);
+    assert.equal(K.needsMqtt({ ...mq, assignment: { enabled: false } }, { mqttEnabled: false }), false);
+    assert.equal(K.needsMqtt({ edge: { capabilities: [{ key: 'http:lan', text: 'x' }] }, assignment: { enabled: true } }, {}), false);
     // without an isolation report the edge container is older than gateway 1.23.0: update first, then compose
     assert.equal(K.boundaryState({ fence: { active: false } }).updateFirst, true);
     assert.equal(K.boundaryState({ isolation: { mode: 'isolated', active: true }, fence: { active: true } }).updateFirst, undefined);
