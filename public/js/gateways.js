@@ -1225,10 +1225,10 @@
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
     showFleet();
   }
-  var TAB_NAMES = ['features', 'net', 'inet', 'dns', 'cache', 'edge', 'mqtt'];
+  var TAB_NAMES = ['features', 'net', 'inet', 'dns', 'cache', 'radio', 'edge', 'mqtt'];
   function route() {
     var h = location.hash || '';
-    // #gw/<id>, #gw/<id>/features, …/net, …/inet, …/dns, …/cache, …/edge, …/mqtt (an unknown tab shows the overview)
+    // #gw/<id>, #gw/<id>/features, …/net, …/inet, …/dns, …/cache, …/radio, …/edge, …/mqtt (an unknown tab shows the overview)
     var m = h.match(/^#gw\/([^/]+)(?:\/([a-z]+))?$/);
     if (m) {
       var tabName = TAB_NAMES.indexOf(m[2]) >= 0 ? m[2] : 'overview';

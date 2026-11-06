@@ -154,12 +154,17 @@ describe('gateway-pool-kit: tab "Funktionen"', () => {
   };
   it('the groups hold every switch row of gateway-net.js / gateway-home.js exactly once', () => {
     const all = PK.FEATURE_GROUPS.flatMap((g) => g.features);
-    assert.deepEqual(all.slice().sort(), ['cache', 'dns', 'edge', 'inetq', 'lan', 'netwatch', 'presence', 'print', 'timezone', 'ups', 'zigbee']);
+    assert.deepEqual(all.slice().sort(), ['cache', 'dns', 'edge', 'inetq', 'lan', 'netwatch', 'presence', 'print', 'radio', 'timezone', 'ups', 'zigbee']);
     assert.equal(new Set(all).size, all.length);
     const net = read('public/js/gateway-net.js');
     const home = read('public/js/gateway-home.js');
     for (const k of ['netwatch', 'inetq', 'presence', 'ups', 'edge', 'zigbee', 'lan', 'print']) assert.match(net, new RegExp("rows\\.set\\('" + k + "'"), k);
     for (const k of ['dns', 'cache', 'timezone']) assert.match(home, new RegExp("'" + k + "'\\)\\);"), k);
+    // phase 3c, step 2: the row "Funk" comes from gateway-radio.js (the old Zigbee row only without it)
+    assert.match(net, /rows\.set\('radio', radioRow\)/);
+    assert.match(read('public/js/gateway-radio.js'), /'data-feature': 'radio'/);
+    assert.equal(PK.groupOf('radio'), 'devices');
+    assert.equal(PK.groupOf('zigbee'), 'devices');
     assert.equal(PK.groupOf('dns'), 'wide');
     assert.equal(PK.groupOf('ups'), 'power');
     assert.equal(PK.groupOf('print'), 'devices');

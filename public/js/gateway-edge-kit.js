@@ -14,7 +14,8 @@
   // 'net' / 'inet' (phase 3a): tabs "Netzwerk" and "Internet" (public/js/gateway-net.js)
   // 'dns' / 'cache' (phase 3b): tabs "DNS-Filter" and "Zwischenspeicher" (public/js/gateway-home.js)
   // 'features': tab "Funktionen" — the switches of the gateway (public/js/gateway-net.js)
-  const TABS = ['overview', 'features', 'net', 'inet', 'dns', 'cache', 'edge', 'mqtt'];
+  // 'radio' (phase 3c, step 2): tab "Funk" (public/js/gateway-radio.js)
+  const TABS = ['overview', 'features', 'net', 'inet', 'dns', 'cache', 'radio', 'edge', 'mqtt'];
 
   /**
    * #gw/<id>[/<tab>] → { id, tab } (tab 'overview' when absent or unknown); null for any other hash.

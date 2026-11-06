@@ -24,7 +24,7 @@ Allgemeine Voraussetzungen:
 
 - Netzwerk-Wächter, Internetqualität, Anwesenheit und USV brauchen
   Gateway-Version **1.21.0** oder neuer, DNS-Filter und Zwischenspeicher **1.22.0**,
-  Drucken & Scannen **1.24.0**.
+  Drucken & Scannen **1.24.0**, Funk **1.25.0**.
   Ist das Gateway älter, steht das im Reiter; aktualisiere es dann ([Kapitel 6](06-gateway-aktualisieren.md)).
 - Das Gateway steht im Heimnetz im **Host-Netzwerkmodus** (Standard beim Pi,
   beim Synology-Paket und bei Linux mit „Host (empfohlen)“).
@@ -142,6 +142,54 @@ wartet ein Auftrag bis zu 24 Stunden und startet, sobald er wieder da ist.
 Meldet ein Gerät „Zertifikat geändert“, hat sich sein Sicherheitszertifikat
 geändert (z. B. nach einem Firmware-Update) – im Plugin bestätigen, dann geht
 es weiter.
+
+## Funk (Zigbee, Bluetooth, Thread)
+
+**Wofür:** Zigbee-Lampen, -Steckdosen und -Sensoren (IKEA, Philips Hue, Aqara …)
+über einen Funkstick am Gateway, Bluetooth-Thermometer, die ihre Werte offen
+senden (BTHome, Xiaomi mit eigener Firmware, Shelly BLU), und – später –
+Matter-Geräte über Thread. Alles schaltest du im Reiter „Funk“ – ohne SSH und
+ohne `settings.txt`.
+
+**Voraussetzungen:**
+
+- Gateway 1.25.0+. Ist es älter, steht in der Zeile „Gateway zu alt – ab 1.25.0“.
+- Zigbee: ein Funkmodul von dresden elektronik – ConBee II/III am USB oder RaspBee II
+  auf der Pi-Leiste. Andere Zigbee-Sticks (ZBT-1, Sonoff) erkennt GateControl,
+  deCONZ kann sie aber nicht ansteuern.
+- **Synology/Linux:** den deCONZ-Dienst bringt die Compose-Datei mit. Steckt ein
+  Stick, zeigt der Reiter „docker-compose.yml herunterladen“ – einmal herunterladen,
+  Projekt neu erstellen ([Kapitel 6](06-gateway-aktualisieren.md)). Danach geht alles hier.
+- **Raspberry-Pi-Image:** nichts zu tun; ältere Images (bis 1.24) starten deCONZ noch
+  selbst und zeigen den Schalter erst mit einem neuen Image.
+- Bluetooth: eingebaut (Pi ab diesem Image) oder ein USB-Bluetooth-Stick. Eine NAS hat
+  meist kein Bluetooth.
+
+**Einschalten:** Reiter „Funktionen“ → „Geräte im Heimnetz“ → „Funk (Zigbee,
+Bluetooth, Thread)“ einschalten, oder im Reiter „Funk“ Zigbee und Bluetooth
+einzeln. Zigbee steht anfangs auf „automatisch“: läuft, sobald ein ConBee oder
+RaspBee erkannt ist.
+
+**Geräte anlernen:** Im Reiter „Funk“ bei Zigbee „Anlernen starten“ – GateControl
+sucht 3 Minuten. Gerät in den Kopplungsmodus bringen (meist Knopf 5 s drücken). Das
+neue Gerät erscheint mit „neu“; „In Smart Home benennen“ öffnet es im Plugin Smart
+Home. Ist Smart Home noch nicht verbunden, steht dort „Im Smart Home einbinden“ –
+GateControl legt die Route an und gibt deCONZ kurz frei, damit das Plugin seinen
+Schlüssel ohne Phoscon bekommt.
+
+**Bluetooth-Sensoren:** Das Gateway hört nur zu, es verbindet sich mit nichts.
+Neue Sensoren stehen als „unbekannt“ da – „Übernehmen“ und einen Namen geben (z. B.
+„Keller“); nur übernommene Sensoren erscheinen in Smart Home, die der Nachbarn
+bleiben draußen. Sensoren mit Xiaomi-Originalfirmware senden verschlüsselt – sie
+werden erkannt, ihre Werte kommen in einem späteren Schritt.
+
+**Thread / Matter:** Steckt ein Thread-fähiger Stick (ZBT-1, Sonoff ZBDongle-E),
+zeigt der Reiter ihn an. Den Thread-Border-Router baut GateControl in einem späteren
+Schritt ein. Matter-Geräte im WLAN gehen schon jetzt über Smart Home.
+
+**Wenn etwas hakt:** „Freigabe nötig“ heißt: deCONZ hat ein Phoscon-Passwort und lässt
+GateControl nicht hinein – einmal in Phoscon (Port 8090 des Gateways) Gateway ›
+Erweitert › „App authentifizieren“, dann „Erneut versuchen“.
 
 ## Zwischenspeicher
 

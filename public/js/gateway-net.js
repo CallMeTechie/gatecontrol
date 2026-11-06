@@ -822,8 +822,11 @@
       rows.set('edge', featRow(t('gwn.feat.edge'), t('gwn.feat.edge_d'), swEdge,
         [h('a', { href: '#gw/' + encodeURIComponent(String(id)) + '/edge', class: 'gwn-link', text: t('gwn.feat.to_edge') })], 'edge'));
     }
-    // Zigbee (deCONZ): decided on the gateway (image setting ZIGBEE=), shown here
-    if (d.zigbee) {
+    // Funk (phase 3c, step 2): Zigbee, Bluetooth, Thread — the row of gateway-radio.js; the old
+    // Zigbee row only for a server answer without it
+    const radioRow = d.radio && window.GCGatewayRadio ? window.GCGatewayRadio.featureRow(id, d, (gid) => reloadFeatures(gid)) : null;
+    if (radioRow) rows.set('radio', radioRow);
+    else if (d.zigbee) {
       rows.set('zigbee', featRow(t('gwn.feat.zigbee'), t(d.zigbee.enabled ? 'gwn.feat.zigbee_on' : 'gwn.feat.zigbee_found'),
         U.tag(d.zigbee.enabled ? 'green' : 'grey', t(d.zigbee.enabled ? 'gwn.feat.running' : 'gwn.feat.not_running'), true), [], 'zigbee'));
     }
@@ -983,5 +986,8 @@
   // the card again after a change elsewhere (tabs "DNS-Filter" / "Zwischenspeicher", gateway-home.js)
   function reloadFeatures(id) { return load('feat', id, true).then(() => refreshFeatures(id), () => refreshFeatures(id)); }
 
-  window.GCGatewayNet = { mount, unmount, prefetch, summaryCard, badge, tabOff, fresh, reloadFeatures, _cache: cache, _view: view };
+  /** The features overview of a gateway as loaded (null before) — the tab "Funk" badge reads it. */
+  function features(id) { return entry('feat', id).data; }
+
+  window.GCGatewayNet = { mount, unmount, prefetch, summaryCard, badge, tabOff, fresh, reloadFeatures, features, _cache: cache, _view: view };
 })();

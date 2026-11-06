@@ -364,6 +364,8 @@
       if (which === 'net' || which === 'inet' || which === 'features') { if (window.GCGatewayNet) window.GCGatewayNet.badge(b, id, which); return; }
       // tabs "DNS-Filter" / "Zwischenspeicher" (phase 3b, gateway-home.js)
       if (which === 'dns' || which === 'cache') { if (window.GCGatewayHome) window.GCGatewayHome.badge(b, id, which); return; }
+      // tab "Funk" (phase 3c, step 2, gateway-radio.js) — from the features overview
+      if (which === 'radio') { if (window.GCGatewayRadio && window.GCGatewayNet) window.GCGatewayRadio.badge(b, id, window.GCGatewayNet.features(id)); return; }
       b.replaceChildren();
       b.className = 'gwe-tab-badge';
       if (!d) return;
@@ -1042,6 +1044,17 @@
       return;
     }
     // tabs "DNS-Filter" and "Zwischenspeicher" (phase 3b) live in gateway-home.js
+    // tab "Funk" (phase 3c, step 2) lives in gateway-radio.js
+    if (tab === 'radio' && window.GCGatewayRadio) {
+      cur = null;
+      if (window.GCGatewayNet) window.GCGatewayNet.unmount();
+      if (window.GCGatewayHome) window.GCGatewayHome.unmount();
+      window.GCGatewayRadio.mount(box, g, tab, ctx || {});
+      if (window.GCGatewayNet) window.GCGatewayNet.prefetch(g);
+      load(g.peer_id, false).then(() => fillBadges(document, g.peer_id), () => {});
+      return;
+    }
+    if (window.GCGatewayRadio) window.GCGatewayRadio.unmount();
     if ((tab === 'dns' || tab === 'cache') && window.GCGatewayHome) {
       cur = null;
       if (window.GCGatewayNet) window.GCGatewayNet.unmount();
@@ -1061,7 +1074,7 @@
     if (window.GCGatewayNet) window.GCGatewayNet.prefetch(g);
     if (window.GCGatewayHome) window.GCGatewayHome.prefetch(g);
   }
-  function unmount() { cur = null; if (window.GCGatewayNet) window.GCGatewayNet.unmount(); if (window.GCGatewayHome) window.GCGatewayHome.unmount(); }
+  function unmount() { cur = null; if (window.GCGatewayNet) window.GCGatewayNet.unmount(); if (window.GCGatewayHome) window.GCGatewayHome.unmount(); if (window.GCGatewayRadio) window.GCGatewayRadio.unmount(); }
 
   // Building blocks shared with the tabs "Netzwerk" / "Internet" (gateway-net.js)
   const ui = { t, api, errText, icon, tag, card, note, guide, chip, switchBtn, fmtTime, fmtDate, openDialog, errorBox, showErr, bigNote, restoreFocus, focusKey, toast, LANG };

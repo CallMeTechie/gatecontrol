@@ -207,8 +207,24 @@ describe('compose and commands', () => {
       assert.match(gw, /source: edge-status\n {8}target: \/run\/gc-edge-status\n {8}read_only: true/);
       assert.match(gw, /source: edge-mqtt-conf\n {8}target: \/gc-mqtt-conf\n {8}volume: \{ nocopy: true \}/);
       assert.match(gw, /source: edge-mqtt\n {8}target: \/gc-mqtt\n {8}read_only: true/);
-      assert.match(c, /\nvolumes:\n(?: {2}# [^\n]*\n)+ {2}edge-run:\n[\s\S]*o: "size=1m,uid=0,gid=61001,mode=2750"[\s\S]*edge-status:[\s\S]*edge-mqtt-conf:\n[\s\S]*edge-state:\n[\s\S]*edge-mqtt:\n$/);
+      assert.match(c, /\nvolumes:\n(?: {2}# [^\n]*\n)+ {2}edge-run:\n[\s\S]*o: "size=1m,uid=0,gid=61001,mode=2750"[\s\S]*edge-status:[\s\S]*edge-mqtt-conf:\n[\s\S]*edge-state:\n[\s\S]*edge-mqtt:\n[\s\S]*radio-ctl:\n[\s\S]*o: "size=1m,uid=0,gid=0,mode=0755"\n$/);
+      assert.match(gw, /source: radio-ctl\n {8}target: \/gc-radio\n {8}volume: \{ nocopy: true \}/);
+      assert.doesNotMatch(c, /\n  deconz:\n/, 'deconz only when wanted');
     }
+  });
+  it('host network + zigbee: the deconz service with its watcher (no devices:, only the tty majors)', () => {
+    for (const platform of ['synology', 'linux']) {
+      const c = kit.buildCompose({ platform, network: 'host', zigbee: true });
+      const dz = c.slice(c.indexOf('\n  deconz:\n'), c.indexOf('\nvolumes:\n'));
+      assert.match(dz, /image: deconzcommunity\/deconz:[0-9.]+@sha256:[0-9a-f]{64}/);
+      assert.match(dz, /device_cgroup_rules:\n {6}- "c 166:\* rmw"\n {6}- "c 188:\* rmw"\n {6}- "c 204:\* rmw"/);
+      assert.doesNotMatch(dz, /^ +(?:devices|privileged|profiles):/m);
+      assert.match(dz, /source: radio-ctl\n {8}target: \/gc-radio/);
+      assert.match(dz, /mknod "\/dev\/\$\$dv" c \$\$mm/);
+      // compose escapes: every $ of the watcher doubled
+      assert.doesNotMatch(dz.split('healthcheck:')[0].replace(/\$\$/g, '').replace(/\$\{TZ:-Etc\/UTC\}/, ''), /\$/);
+    }
+    assert.doesNotMatch(kit.buildCompose({ platform: 'linux', network: 'bridge', zigbee: true }), /deconz/);
   });
   it('host network: the mqtt service of the gateway (digest-pinned mosquitto, watcher, user 61001, no privileges)', () => {
     for (const platform of ['synology', 'linux']) {

@@ -68,7 +68,10 @@ the edge part runs, and has its “Log”.
 If your Pi has a RaspBee II or ConBee, the assistant offers “Add to Smart Home”
 in step 4. GateControl then creates an internal route to deCONZ (only reachable
 over the VPN) and gives it to the Smart Home plugin. Then choose “Connect
-gateway” in the plugin and use “Unlock gateway” in Phoscon.
+gateway” in the plugin. With gateway 1.25.0+ GateControl opens deCONZ briefly by
+itself – “Unlock gateway” in Phoscon is then not needed. The same works in the tab
+“Radio” of the gateway, where you also switch Zigbee on and off and pair devices
+([chapter 5](05-features.md#radio-zigbee-bluetooth-thread)).
 
 **Check:** The Zigbee devices show up in the Smart Home plugin.
 

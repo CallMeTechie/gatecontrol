@@ -20,6 +20,8 @@
 // phase 3c (Drucken & Scannen):
 //   every minute  print jobs past 24 h expire, stale scans fail (homePrint.housekeeping)
 //   every hour    job files without an open job go (homePrint.sweepFiles)
+// phase 3c, step 2 (Funk):
+//   every hour    Bluetooth sensors nobody took over and nobody heard for a day go (homeRadio.housekeeping)
 
 const logger = require('../utils/logger');
 const { withTask } = require('../utils/loopStall');
@@ -64,6 +66,7 @@ function start() {
   every(MINUTE, () => withTask('dns.down', () => { require('./homeDns').checkDown(); require('./homeInternet').cleanup(); }));
   every(MINUTE, () => withTask('print.housekeeping', () => require('./homePrint').housekeeping()));
   every(HOUR, () => withTask('print.files', () => require('./homePrint').sweepFiles()));
+  every(HOUR, () => withTask('radio.sensors', () => require('./homeRadio').housekeeping()));
   every(HOUR, retentionOnce);
   every(HOUR, homeHourly);
   // first run a few minutes after the start (not in the busy start phase)

@@ -108,19 +108,19 @@ describe('gateway-net.js', () => {
 
   it('the page loads the scripts in order and hands over the gwn.* strings', () => {
     const tpl = read('templates/aurora/pages/gateways.njk');
-    const order = ['gateway-edge-kit.js', 'gateway-edge.js', 'gateway-net-kit.js', 'gateway-net.js', 'gateway-home-kit.js', 'gateway-home.js', 'gateways.js'].map((f) => tpl.indexOf('/js/' + f));
+    const order = ['gateway-edge-kit.js', 'gateway-edge.js', 'gateway-net-kit.js', 'gateway-net.js', 'gateway-home-kit.js', 'gateway-home.js', 'gateway-radio-kit.js', 'gateway-radio.js', 'gateways.js'].map((f) => tpl.indexOf('/js/' + f));
     assert.ok(order.every((i) => i > 0));
     assert.deepEqual(order.slice().sort((a, b) => a - b), order);
-    assert.match(tpl, /data-prefixes="gwiz\. gwe\. gwn\. gwh\. gwp\. gateway_pools\. common\."/);
-    assert.match(read('src/routes/index.js'), /GWIZ_I18N_PREFIXES = \['gwiz\.', 'gwe\.', 'gwn\.', 'gwh\.', 'gwp\.', 'gateway_pools\.', 'common\.'\]/);
+    assert.match(tpl, /data-prefixes="gwiz\. gwe\. gwn\. gwh\. gwp\. gwr\. gateway_pools\. common\."/);
+    assert.match(read('src/routes/index.js'), /GWIZ_I18N_PREFIXES = \['gwiz\.', 'gwe\.', 'gwn\.', 'gwh\.', 'gwp\.', 'gwr\.', 'gateway_pools\.', 'common\.'\]/);
     // the pool kit before gateway-net.js (it groups the tab "Funktionen"), the pool views before gateways.js
     assert.ok(tpl.indexOf('/js/gateway-pool-kit.js') > 0 && tpl.indexOf('/js/gateway-pool-kit.js') < tpl.indexOf('/js/gateway-net.js'));
     assert.ok(tpl.indexOf('/js/gateway-pools-ui.js') > tpl.indexOf('/js/gateway-home.js') && tpl.indexOf('/js/gateway-pools-ui.js') < tpl.indexOf('/js/gateways.js?'));
   });
 
-  it('the tabs: Übersicht, Funktionen, Netzwerk, Internet, DNS-Filter, Zwischenspeicher, Edge-Plugins, MQTT', () => {
+  it('the tabs: Übersicht, Funktionen, Netzwerk, Internet, DNS-Filter, Zwischenspeicher, Funk, Edge-Plugins, MQTT', () => {
     const EK = require('../public/js/gateway-edge-kit');
-    assert.deepEqual(EK.TABS, ['overview', 'features', 'net', 'inet', 'dns', 'cache', 'edge', 'mqtt']);
+    assert.deepEqual(EK.TABS, ['overview', 'features', 'net', 'inet', 'dns', 'cache', 'radio', 'edge', 'mqtt']);
     assert.equal(EK.hashFor(7, 'features'), '#gw/7/features');
     assert.equal(EK.hashFor(7, 'net'), '#gw/7/net');
     assert.deepEqual(EK.parseHash('#gw/7/inet'), { id: '7', tab: 'inet' });

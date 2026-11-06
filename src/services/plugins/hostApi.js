@@ -1568,6 +1568,18 @@ async function printCall(plugin, op, args, ctx) {
   throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
 }
 
+// ─── Funk (permissions.radio, phase 3c step 2) ─────────────────────────
+//
+// gc.radio.sensors() — services/homeRadio.js pluginSensors(): only the
+// Bluetooth sensors the administrator took over, of gateways with
+// Bluetooth on; addresses of the sensors, never of anything else.
+
+function radioCall(plugin, op) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.radio === true, 'ERR_RADIO_DENIED', 'this plugin has no radio permission');
+  if (op === 'sensors') return require('../homeRadio').pluginSensors();
+  throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
+}
+
 // ─── Uploads to a home target (gc.net.uploadTarget → target.upload, since 1.193.0) ────
 //
 // gc.net.uploadTarget(id, path, { index, method, query, headers, form: {
@@ -2174,6 +2186,8 @@ async function handle(plugin, api, args, ctx) {
     case 'print.devices': case 'print.discover': case 'print.submit': case 'print.testPage': case 'print.job': case 'print.jobs':
     case 'print.cancel': case 'print.pages': case 'print.scan': case 'print.scanStatus': case 'print.cancelScan': case 'print.pdf':
       return printCall(plugin, api.slice('print.'.length), args, ctx);
+    // Funk (permissions.radio, homeRadio.js — phase 3c, step 2)
+    case 'radio.sensors': return radioCall(plugin, 'sensors');
     // person groups (permissions.groups, groups.js): read; ensure / remove need "manage"
     case 'groups.list': return require('./groups').call(plugin, 'list', args);
     case 'groups.get': return require('./groups').call(plugin, 'get', args);

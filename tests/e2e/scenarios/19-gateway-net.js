@@ -127,16 +127,17 @@ module.exports = (ctx) => {
           const c = document.querySelector('.gwn-fsum');
           return c && c.querySelector('[data-fon="netwatch"]') && /#gw\/\d+\/features$/.test((c.querySelector('a.btn') || {}).href || '');
         }));
-        step('net: eight tabs, Funktionen after Übersicht, then Netzwerk and Internet', await page.evaluate(() => [...document.querySelectorAll('.gwe-tabs [role="tab"]')].map((b) => b.dataset.tab).join(',') === 'overview,features,net,inet,dns,cache,edge,mqtt'));
+        step('net: nine tabs, Funktionen after Übersicht, then Netzwerk and Internet', await page.evaluate(() => [...document.querySelectorAll('.gwe-tabs [role="tab"]')].map((b) => b.dataset.tab).join(',') === 'overview,features,net,inet,dns,cache,radio,edge,mqtt'));
         step('net: tab Funktionen opens', await goTab(page, GW, 'features'));
-        step('net: switches for watch, internet, presence, UPS, edge; Zigbee and LAN discovery from what exists', await until(page, () => {
+        step('net: switches for watch, internet, presence, UPS, edge; Funk (radio) and LAN discovery from what exists', await until(page, () => {
           const f = (k) => document.querySelector(`#gwe-tabpanel .gwn-features [data-feature="${k}"]`);
-          return ['netwatch', 'inetq', 'presence', 'ups', 'edge', 'lan'].every((k) => f(k) && f(k).querySelector('[role="switch"]'))
-            && f('zigbee') && !f('zigbee').querySelector('[role="switch"]');
+          // phase 3c step 2: the row "Funk" replaces the old Zigbee row (this gateway is too old for it: switch disabled)
+          return ['netwatch', 'inetq', 'presence', 'ups', 'edge', 'lan', 'radio'].every((k) => f(k) && f(k).querySelector('[role="switch"]'))
+            && !f('zigbee') && f('radio').querySelector('[role="switch"]').disabled;
         }));
-        step('net: the rows sit in their groups (Heimnetz im Blick, Internet & Strom, Erweiterungen)', await page.evaluate(() => {
+        step('net: the rows sit in their groups (Heimnetz im Blick, Geräte im Heimnetz, Internet & Strom, Erweiterungen)', await page.evaluate(() => {
           const g = (k, f) => !!document.querySelector(`[data-fgroup="${k}"] [data-feature="${f}"]`);
-          return g('home', 'netwatch') && g('home', 'presence') && g('home', 'lan') && g('power', 'inetq') && g('power', 'ups') && g('ext', 'edge') && g('ext', 'zigbee');
+          return g('home', 'netwatch') && g('home', 'presence') && g('home', 'lan') && g('power', 'inetq') && g('power', 'ups') && g('ext', 'edge') && g('devices', 'radio');
         }));
         step('net: hardware line and the Pi 3 B+ hint (about 300 Mbit/s)', await page.evaluate(() => {
           const p = document.getElementById('gwe-tabpanel');

@@ -161,6 +161,10 @@ services:
         source: edge-mqtt
         target: /gc-mqtt
         read_only: true
+      - type: volume            # radio: control file for the deconz service
+        source: radio-ctl
+        target: /gc-radio
+        volume: { nocopy: true }
     environment:
       - LOG_LEVEL=info
       - GATEWAY_ENV_PATH=/config/gateway.env
@@ -304,6 +308,12 @@ volumes:
   edge-state:
   # copy of the broker files + Mosquitto data (data/), owner 61001
   edge-mqtt:
+  # tmpfs shared: the control file of the gateway for the deconz service and its state (radio)
+  radio-ctl:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=1m,uid=0,gid=0,mode=0755"
 ```
 <!-- /compose -->
 

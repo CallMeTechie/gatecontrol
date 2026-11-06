@@ -135,7 +135,7 @@ module.exports = (ctx) => {
         // only the hash changed: load the page again so it comes in German
         await page.reload();
         await theme(page, 'dark');
-        step('home: eight tabs with Funktionen, DNS-Filter and Zwischenspeicher', await until(page, () => [...document.querySelectorAll('.gwe-tabs [role="tab"]')].map((b) => b.dataset.tab).join(',') === 'overview,features,net,inet,dns,cache,edge,mqtt'));
+        step('home: nine tabs with Funktionen, DNS-Filter, Zwischenspeicher and Funk', await until(page, () => [...document.querySelectorAll('.gwe-tabs [role="tab"]')].map((b) => b.dataset.tab).join(',') === 'overview,features,net,inet,dns,cache,radio,edge,mqtt'));
         step('home: switched-off functions: their tabs muted with "· aus"', await until(page, () => {
           const off = (t) => { const b = document.getElementById('gwe-tab-' + t); return b && b.classList.contains('gwe-tab-is-off') && !b.querySelector('[data-gwe-off]').hidden; };
           return off('dns') && off('cache');
