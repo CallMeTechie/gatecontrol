@@ -8,8 +8,8 @@ Ein Gateway kann mehr als nur den Tunnel. Alle Funktionen findest du so:
 2. Reiter „Funktionen“ (die Zahl daneben sagt, wie viele an sind).
 
 Dort schaltest du jede Funktion ein oder aus, nach Bereichen geordnet
-(„Heimnetz im Blick“, „Für das ganze Heimnetz“, „Internet & Strom“,
-„Erweiterungen“, „System“). Oben steht, wie viel Speicher das Gateway mit
+(„Heimnetz im Blick“, „Geräte im Heimnetz“, „Für das ganze Heimnetz“,
+„Internet & Strom“, „Erweiterungen“, „System“). Oben steht, wie viel Speicher das Gateway mit
 den eingeschalteten Funktionen ungefähr braucht. Die Übersicht des Gateways
 zeigt in der Karte „Funktionen“ nur, was an und was aus ist; „Verwalten“
 führt in den Reiter. Reiter einer ausgeschalteten Funktion stehen blass mit
@@ -23,7 +23,8 @@ eigene Seite „Gateway-Pools“ im Menü gibt es nicht mehr.
 Allgemeine Voraussetzungen:
 
 - Netzwerk-Wächter, Internetqualität, Anwesenheit und USV brauchen
-  Gateway-Version **1.21.0** oder neuer, DNS-Filter und Zwischenspeicher **1.22.0**.
+  Gateway-Version **1.21.0** oder neuer, DNS-Filter und Zwischenspeicher **1.22.0**,
+  Drucken & Scannen **1.24.0**.
   Ist das Gateway älter, steht das im Reiter; aktualisiere es dann ([Kapitel 6](06-gateway-aktualisieren.md)).
 - Das Gateway steht im Heimnetz im **Host-Netzwerkmodus** (Standard beim Pi,
   beim Synology-Paket und bei Linux mit „Host (empfohlen)“).
@@ -114,6 +115,33 @@ eigenen DNS-Server. Dann trägst du ihn an den Geräten selbst ein; die Anleitun
 in GateControl erklärt das.
 
 **Prüfen:** In der „Prüfung“ der Anleitung steht „Router zeigt auf das Gateway“.
+
+## Drucken & Scannen
+
+**Wofür:** Von unterwegs zu Hause drucken (die Bordkarte liegt im Ausgabefach,
+wenn du heimkommst) und vom Handy aus scannen – direkt ins Drive. Drucker und
+Scanner bleiben im Heimnetz; GateControl stellt sie nicht ins Internet.
+
+**Voraussetzungen:**
+
+- Gateway 1.24.0+. Ist es älter, steht in der Zeile „Gateway zu alt – ab 1.24.0“.
+- Drucker bzw. Scanner mit AirPrint/AirScan (IPP bzw. eSCL) im selben Heimnetz –
+  das sind fast alle Geräte seit etwa 2015. Ältere erscheinen nicht.
+- Das Plugin „Drucken & Scannen“ (Einstellungen › Plugins › Katalog). Am
+  Gerät und an der Compose-Datei musst du nichts ändern – es läuft im
+  Gateway selbst.
+
+**Einschalten:** Reiter „Funktionen“ → Bereich „Geräte im Heimnetz“ →
+„Drucken & Scannen“ einschalten. Nach etwa einer Minute steht dort, was das
+Gateway gefunden hat („Gefunden: HP OfficeJet 8020 (Drucker + Scanner)“).
+„Einstellungen im Plugin“ führt zu Geräten, Berechtigungen, Verlauf und der
+Ablage der Scans.
+
+**Prüfen:** Im Plugin unter „Geräte“ „Testseite“ drucken. Ist der Drucker aus,
+wartet ein Auftrag bis zu 24 Stunden und startet, sobald er wieder da ist.
+Meldet ein Gerät „Zertifikat geändert“, hat sich sein Sicherheitszertifikat
+geändert (z. B. nach einem Firmware-Update) – im Plugin bestätigen, dann geht
+es weiter.
 
 ## Zwischenspeicher
 

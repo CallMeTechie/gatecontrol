@@ -156,6 +156,8 @@ function permissionSummary(m, lang) {
     // phase 3b: internet of a person at home (pause, extra time) / files in the gateways' home caches
     homeInternet: !!p.homeInternet,
     homeCache: !!p.homeCache,
+    // phase 3c: printers and scanners at home through the gateways (gc.print)
+    print: !!p.print,
     // person groups (docs/plugins.md "Groups"): 'read' | 'manage' | null
     groups: p.groups === 'read' || p.groups === 'manage' ? p.groups : null,
     // Google Drive / OneDrive of a person (gc.cloud) and what for

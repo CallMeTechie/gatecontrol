@@ -8,8 +8,8 @@ A gateway can do more than the tunnel. You find all features like this:
 2. Tab “Features” (the number next to it says how many are on).
 
 There you switch each feature on or off, grouped by area (“Eyes on the home
-network”, “For the whole home network”, “Internet & power”, “Extensions”,
-“System”). At the top it shows roughly how much memory the gateway needs with
+network”, “Devices at home”, “For the whole home network”, “Internet & power”,
+“Extensions”, “System”). At the top it shows roughly how much memory the gateway needs with
 the features that are on. The gateway's overview only shows in the card
 “Features” what is on and what is off; “Manage” leads to the tab. Tabs of a
 feature that is off look faded with “· off” and still open.
@@ -22,7 +22,7 @@ separate page “Gateway Pools” in the menu any more.
 General requirements:
 
 - Network watch, internet quality, presence and UPS need gateway version
-  **1.21.0** or later, DNS filter and home cache **1.22.0**. If the gateway is
+  **1.21.0** or later, DNS filter and home cache **1.22.0**, print & scan **1.24.0**. If the gateway is
   older, the tab says so; update it then ([chapter 6](06-updating-a-gateway.md)).
 - The gateway is in the home network in **host network mode** (default for the
   Pi, the Synology package and Linux with “Host (recommended)”).
@@ -111,6 +111,31 @@ server. Then you enter it on the devices themselves; the guide in GateControl
 explains how.
 
 **Check:** The “Check” in the guide says “Router points to the gateway”.
+
+## Print & scan
+
+**What for:** Print at home while you are out (the boarding pass is in the
+output tray when you get home) and scan from your phone – straight into Drive.
+Printers and scanners stay in the home network; GateControl does not expose
+them to the internet.
+
+**Requirements:**
+
+- Gateway 1.24.0+. If it is older, the row says “Gateway too old – needs 1.24.0”.
+- A printer or scanner with AirPrint/AirScan (IPP or eSCL) in the same home
+  network – nearly all devices since about 2015. Older ones do not show up.
+- The plugin “Print & scan” (Settings › Plugins › Catalogue). Nothing to set up
+  on the device or in the compose file – it runs inside the gateway.
+
+**Switching it on:** Tab “Features” → area “Devices at home” → switch on
+“Print & scan”. After about a minute the row lists what the gateway found
+(“Found: HP OfficeJet 8020 (printer + scanner)”). “Settings in the plugin”
+leads to devices, permissions, history and where scans are filed.
+
+**Checking:** In the plugin under “Devices”, print a “Test page”. If the
+printer is off, a job waits up to 24 hours and starts as soon as it is back.
+If a device says “Certificate changed”, its security certificate changed (for
+example after a firmware update) – confirm it in the plugin and it carries on.
 
 ## Home cache
 

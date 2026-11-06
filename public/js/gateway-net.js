@@ -753,6 +753,27 @@
     ]);
   }
 
+  /** The row "Drucken & Scannen": switch, what this gateway found, the way to the plugin (or "Gateway zu alt"). */
+  function printRow(id, d) {
+    const p = d.print;
+    const sup = d.support || {};
+    const old = sup.print === false;
+    const sw = U.switchBtn(!!p.enabled, t('gwn.feat.print'), 'gwn-f-print', () => toggle(sw, id, (v) => ({ print: { enabled: v } }), (v) => t(v ? 'gwn.feat.on_done' : 'gwn.feat.off_done', { name: t('gwn.feat.print') })), old && !p.enabled);
+    const extra = [];
+    if (old) extra.push(h('span', { class: 'gwn-hint', 'data-print-old': '' }, [U.icon('info', 14), t('gwn.feat.print_old', { min: p.minGateway || sup.minGatewayPrint || '1.24.0', version: sup.version || '—' })]));
+    if (p.enabled && !old) {
+      const list = (p.devices || []).map((x) => x.name + ' (' + t(x.printer && x.scanner ? 'gwn.feat.print_both' : (x.printer ? 'gwn.feat.print_printer' : 'gwn.feat.print_scanner')) + ')');
+      extra.push(h('span', { class: 'gwe-d', 'data-print-found': String(p.count || 0) }, list.length
+        ? t('gwn.feat.print_found', { list: list.slice(0, 4).join(', ') + (list.length > 4 ? ' …' : '') })
+        : t('gwn.feat.print_none')));
+      if ((p.devices || []).some((x) => x.problem === 'cert_changed')) extra.push(h('span', { class: 'gwn-hint' }, [U.icon('warn', 14), t('gwn.feat.print_cert')]));
+    }
+    const plug = p.plugin || {};
+    if (plug.installed) extra.push(h('a', { href: '/plugins/gatecontrol-print', class: 'gwn-link', 'data-print-link': 'plugin', text: t('gwn.feat.print_to_plugin') }));
+    else extra.push(h('a', { href: '/settings/plugins/catalog/gatecontrol-print', class: 'gwn-link', 'data-print-link': 'catalog', text: t('gwn.feat.print_install') }));
+    return featRow(t('gwn.feat.print'), t('gwn.feat.print_d'), sw, extra, 'print');
+  }
+
   /** Every switch row of the gateway by its data-feature key (same API and behaviour as before: putFeatures). */
   function featureRows(g, d) {
     const rows = new Map();
@@ -813,6 +834,8 @@
       rows.set('lan', featRow(t('gwn.feat.lan'), t('gwn.feat.lan_d'), swLan,
         d.lanDiscovery.licensed ? [] : [h('span', { class: 'gwe-d gwe-muted', text: t('gwn.feat.lan_license') })], 'lan'));
     }
+    // Drucken & Scannen (phase 3c): the switch here, everything else in the plugin "Drucken & Scannen"
+    if (d.print) rows.set('print', printRow(id, d));
     // DNS filter, home cache, local time (phase 3b, gateway-home.js)
     if (window.GCGatewayHome) {
       window.GCGatewayHome.featureRows(id, d, (gid) => reloadFeatures(gid)).forEach((r) => rows.set(r.getAttribute('data-feature'), r));
@@ -852,6 +875,7 @@
   // the text under a group's title; "Für das ganze Heimnetz" names the other gateways it holds for
   function groupText(g, d, key) {
     if (key === 'home') return t('gwp.fgrp.home_d');
+    if (key === 'devices') return t('gwp.fgrp.devices_d');
     if (key !== 'wide') return null;
     const names = (d.home || []).map((x) => x.name).filter(Boolean);
     if (!names.length) return t('gwp.fgrp.wide_d');
