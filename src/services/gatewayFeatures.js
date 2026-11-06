@@ -208,9 +208,31 @@ function configPayload(peerId) {
   };
 }
 
-/** The server's IANA time zone (TZ of the server process), 'UTC' when unknown. */
+function validZone(tz) {
+  if (typeof tz !== 'string' || !tz || tz.length > 64) return false;
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; } catch { return false; }
+}
+
+let tzWarned = false;
+
+/**
+ * The server's IANA time zone, 'UTC' when unknown. The TZ variable of the
+ * server container comes first (that is what the admin sets, e.g.
+ * TZ=Europe/Berlin; a leading ':' as in TZ=:Europe/Berlin is allowed), then
+ * the zone the runtime reports. A failure is logged once instead of being
+ * swallowed, so a wrong "UTC" can be traced.
+ */
 function timezone() {
-  try { return require('./notify/router').serverTz() || 'UTC'; } catch { return 'UTC'; }
+  const env = typeof process.env.TZ === 'string' ? process.env.TZ.trim().replace(/^:/, '') : '';
+  if (validZone(env)) return env;
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (validZone(tz)) return tz;
+  } catch (e) {
+    if (!tzWarned) { tzWarned = true; logger.warn({ err: e.message }, 'server time zone could not be read; the gateways get UTC'); }
+  }
+  if (env && !tzWarned) { tzWarned = true; logger.warn({ tz: env }, 'TZ of the server is not a valid IANA time zone; the gateways get UTC'); }
+  return 'UTC';
 }
 
 function part(peerId, name, fn) {
