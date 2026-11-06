@@ -230,15 +230,26 @@
     return x.ports.map((p) => p.port).join(', ');
   }
 
+  // "Auch gesehen von Pi Garage" — the other gateways of the home network that see the device too
+  function alsoSeen(x) {
+    const list = Array.isArray(x.alsoSeenBy) ? x.alsoSeenBy : [];
+    return list.length ? t('gwn.home.also_seen', { gateways: list.map((o) => o.name).join(', ') }) : null;
+  }
+  function homeNames(d) {
+    const list = (d.home && d.home.gateways) || [];
+    return list.length ? list.map((o) => o.name).join(', ') : null;
+  }
+
   function newCard(g, d, list) {
     const c = U.card(t('gwn.new.title'), h('span', { class: 'gwe-sum', text: t('gwn.new.hint') }), { id: 'new', full: true, cls: 'gwn-newcard' });
     list.forEach((x) => {
       const b = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-fk': 'look:' + x.id, 'aria-label': t('gwn.new.look_at', { name: devTitle(x) }), text: t('gwn.new.look') });
-      b.addEventListener('click', () => deviceDialog(g, x, 'new'));
+      b.addEventListener('click', () => deviceDialog(g, x, 'new', d));
       c.body.appendChild(h('div', { class: 'gwn-newrow', 'data-device': x.mac }, [
         h('div', { class: 'gwn-newrow-t' }, [
           h('strong', { text: devTitle(x) + (x.vendor ? ' · ' + x.vendor : '') }),
-          h('span', { class: 'gwe-d' }, [h('span', { class: 'gwe-mono', text: addrLine(x) }), ' · ' + t('gwn.new.first_seen', { when: when(x.firstSeen) }) + ' · ' + t('gwn.new.ports', { ports: portsText(x) })]),
+          h('span', { class: 'gwe-d' }, [h('span', { class: 'gwe-mono', text: addrLine(x) }), ' · ' + t('gwn.new.first_seen', { when: when(x.firstSeen) }) + ' · ' + t('gwn.new.ports', { ports: portsText(x) })
+            + (alsoSeen(x) ? ' · ' + alsoSeen(x) : '')]),
         ]),
         b,
       ]));
@@ -286,6 +297,8 @@
     const status = h('p', { class: 'gwe-d gwn-count', role: 'status' });
     const tableBox = h('div', { class: 'gwe-table-wrap gwn-scroll', tabIndex: 0, role: 'region', 'aria-label': t('gwn.list.title') });
     const risksBox = h('div', { class: 'gwn-risks' });
+    // gateways of one home network (failover pool, same LAN): one device, one decision
+    if (homeNames(d)) c.body.append(h('div', { 'data-fk': 'gwn-home' }, U.note('info', [h('strong', { text: t('gwn.home.title') }), ' ', t('gwn.home.text', { gateways: homeNames(d) })])));
     c.body.append(status, tableBox, risksBox);
     function fill() {
       const shown = K.sortDevices(K.filterDevices(d.devices, view.q, view.filter));
@@ -302,8 +315,8 @@
         ]));
         const tbody = h('tbody', null, shown.map((x) => {
           const edit = h('button', { type: 'button', class: 'icon-action', 'data-fk': 'edit:' + x.id, 'aria-label': t('gwn.dev.edit_of', { name: devTitle(x) }), title: t('gwn.dev.edit') }, icon('edit', 15));
-          edit.addEventListener('click', () => deviceDialog(g, x, x.status === 'new' ? 'new' : 'edit'));
-          const sub = [x.vendor, x.status === 'watch' ? t('gwn.status.watch') : null].filter(Boolean).join(' · ');
+          edit.addEventListener('click', () => deviceDialog(g, x, x.status === 'new' ? 'new' : 'edit', d));
+          const sub = [x.vendor, x.status === 'watch' ? t('gwn.status.watch') : null, alsoSeen(x)].filter(Boolean).join(' · ');
           // data-label: the column name, shown in front of the value when the table becomes cards (narrow screens)
           return h('tr', { 'data-device': x.mac, 'data-status': x.status }, [
             h('td', { class: 'gwn-td-dev' }, [h('strong', { text: devTitle(x) }), x.status === 'new' ? h('span', { class: 'tag tag-amber gwn-newtag', text: t('gwn.status.new') }) : null,
@@ -357,7 +370,7 @@
     return null;
   }
 
-  function deviceDialog(g, x, mode) {
+  function deviceDialog(g, x, mode, d) {
     const isNew = mode === 'new';
     const dlg = U.openDialog({ title: t(isNew ? 'gwn.dlg.new_title' : 'gwn.dlg.edit_title', { name: devTitle(x) }), wide: true, cls: 'gwn-dlg' });
     const hint = vendorHint(x.vendor);
@@ -368,6 +381,7 @@
       ...kv(t('gwn.dlg.hostname'), x.hostname || '—', !!x.hostname),
       ...kv(t('gwn.dlg.first_seen'), t('gwn.dlg.first_seen_v', { when: when(x.firstSeen), gateway: g.name })),
       ...kv(t('gwn.dlg.ports'), Array.isArray(x.ports) ? (x.ports.length ? x.ports.map((p) => p.port + (p.service ? ' ' + p.service : '')).join(', ') : t('gwn.dev.ports_none')) : t('gwn.dev.ports_unknown')),
+      ...(Array.isArray(x.alsoSeenBy) && x.alsoSeenBy.length ? kv(t('gwn.dlg.also_seen'), x.alsoSeenBy.map((o) => o.name).join(', ')) : []),
     ]);
     const name = h('input', { type: 'text', id: 'gwn-d-name', class: 'form-input', maxLength: 80, autocomplete: 'off', value: x.name || '', placeholder: x.hostname || x.vendor || '' });
     const owner = h('select', { id: 'gwn-d-owner', class: 'form-select' }, [h('option', { value: '', text: t('gwn.dlg.owner_none') })]);
@@ -387,6 +401,8 @@
     dlg.body.append(facts, fields);
     if (!isNew) dlg.body.append(field('gwn-d-status', t('gwn.dlg.status'), status));
     dlg.body.append(h('p', { class: 'gwe-d', text: t('gwn.dlg.owner_hint') }));
+    // what is decided here holds on every gateway of the home network
+    if (homeNames(d || {})) dlg.body.append(h('p', { class: 'gwe-d', 'data-fk': 'gwn-d-home', text: t('gwn.dlg.home_hint', { gateways: homeNames(d) }) }));
     if (!isNew) dlg.body.append(countsLabel);
     dlg.body.append(U.note('info', [t('gwn.dlg.unknown_hint')]), err);
     function syncPresence() {

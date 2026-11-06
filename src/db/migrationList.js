@@ -3468,6 +3468,39 @@ const migrations = [
     detect: (db) => ['gateway_dns', 'dns_reports', 'dns_stats_day', 'home_internet', 'gateway_cache', 'home_cache_blobs', 'home_cache_have', 'cache_stats_day']
       .every((t) => tableExists(db, t)),
   },
+  {
+    version: 130,
+    name: 'netwatch_decided_at',
+    // Gateways in one home network (failover pool, or the same LAN and
+    // router — services/homeNetwork.js gatewayHomes()) share what an
+    // administrator decided about a device (services/netwatch.js):
+    //   netwatch_devices.decided_at  when name / owner / status / presence
+    //                      were last set by an administrator (or by the
+    //                      person through setCounts). updated_at changes
+    //                      with every report of the gateway and cannot say
+    //                      that. Merging the rows of one MAC, the row
+    //                      decided last wins.
+    //   idx_netwatch_devices_mac     the rows of one MAC on every gateway.
+    // Backfill: the time of the last "netwatch_device_changed" activity of
+    // the device (the activity log keeps it with details.device_id); rows
+    // without one stay NULL (never decided, or the entry is gone). The merge
+    // of rows that are already doubled runs at the start of the server
+    // (netwatch.reconcileHomes(), gatewayOps) — which gateways form one home
+    // network depends on their reports, not on this migration.
+    sql: `
+      ALTER TABLE netwatch_devices ADD COLUMN decided_at INTEGER;
+      CREATE INDEX IF NOT EXISTS idx_netwatch_devices_mac ON netwatch_devices(mac);`,
+    run: (db) => {
+      const set = db.prepare('UPDATE netwatch_devices SET decided_at = ? WHERE id = ?');
+      const rows = db.prepare(`SELECT CAST(json_extract(details, '$.device_id') AS INTEGER) AS id, MAX(created_at) AS at FROM activity_log
+        WHERE event_type = 'netwatch_device_changed' AND json_valid(details) GROUP BY 1`).all();
+      for (const r of rows) {
+        const at = Date.parse(String(r.at || '').replace(' ', 'T') + 'Z');
+        if (Number.isSafeInteger(r.id) && Number.isFinite(at)) set.run(at, r.id);
+      }
+    },
+    detect: (db) => hasColumn(db, 'netwatch_devices', 'decided_at'),
+  },
 ];
 
 module.exports = { migrations };
