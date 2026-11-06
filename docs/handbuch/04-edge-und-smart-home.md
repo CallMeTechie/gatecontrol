@@ -92,7 +92,11 @@ Das Gateway läuft, aber in seiner Compose-Datei fehlt der Dienst `edge` (oder
 beim Dienst `gateway` das Volume `edge-run`). Das ist typisch für Gateways, die
 vor Edge eingerichtet wurden.
 
-- **Synology / Linux:** Bring die Compose-Datei auf den aktuellen Stand – [Kapitel 6](06-gateway-aktualisieren.md).
+- **Synology / Linux:** Bring die Compose-Datei auf den aktuellen Stand. Unter
+  der Meldung steht der Knopf „Nur docker-compose.yml herunterladen“: Er holt
+  die aktuelle Datei ohne neue Schlüssel und zeigt, wie du sie einsetzt
+  (Synology: Ordner `gateway-cache` anlegen, Projekt stoppen, YAML ersetzen,
+  Projekt neu erstellen). Ausführlich: [Kapitel 6](06-gateway-aktualisieren.md).
 - **Raspberry-Pi-Image:** In `settings.txt` steht `EDGE=off`. Ändere es auf
   `EDGE=on` und starte den Pi neu.
 

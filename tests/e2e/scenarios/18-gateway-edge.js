@@ -380,6 +380,49 @@ module.exports = (ctx) => {
       delete pi.plugins[0].assignment.reason;
       pi.plugins[0].assignment.state = 'running';
 
+      // edge_missing on a Synology gateway: "Nur docker-compose.yml herunterladen" under the edge
+      // card → dialog preselected Synology/Host with the four DSM steps; never on the Pi image
+      const conn1 = pi.connection;
+      const FLEET_RE = /\/api\/v1\/gateways(\?.*)?$/;
+      const synFleet = (r) => {
+        const f = fleet();
+        f.gateways.forEach((x) => { if (x.peer_id === PI) x.platform = 'synology'; });
+        return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(f) });
+      };
+      await page.route(FLEET_RE, synFleet);   // the newest handler wins
+      // gateways.js reloads the fleet on gc:gateway (debounced) — wait for that request
+      const refetch = async () => {
+        const got = page.waitForResponse((r) => FLEET_RE.test(new URL(r.url()).pathname), { timeout: 10000 });
+        await page.evaluate(() => document.dispatchEvent(new Event('gc:gateway')));
+        await got;
+        await page.waitForTimeout(200);
+      };
+      await refetch();
+      pi.plugins[0].assignment.state = 'offline';
+      pi.plugins[0].assignment.reason = 'edge_missing';
+      pi.connection = { online: false, connectedAt: null, lastSeen: null, reason: 'edge_missing', detail: null };
+      await fresh(page);
+      await goTab(page, PI, 'mqtt');
+      await goTab(page, PI, 'edge');
+      step('compose: edge_missing shows "Nur docker-compose.yml herunterladen"', await until(page, () => !!document.querySelector('#gwe-tabpanel [data-fk="gwe-compose"]')));
+      await page.click('#gwe-tabpanel [data-fk="gwe-compose"]');
+      step('compose: dialog preselects Synology + Host and shows the DSM steps', await until(page, () => {
+        const box = document.querySelector('.gwe-compose');
+        return !!box && document.getElementById('gwe-compose-platform-synology').checked && document.getElementById('gwe-compose-network-host').checked
+          && box.querySelectorAll('.gwz-st > li').length === 4 && !!box.querySelector('[data-fk="gwe-compose-dl"]')
+          && !!box.querySelector('a[data-guide="update.synology"][href*="06-"]');
+      }));
+      await page.check('#gwe-compose-platform-linux');
+      step('compose: Linux shows the commands and its guide chapter', await until(page, () => /docker compose up -d/.test((document.querySelector('.gwe-compose pre') || {}).textContent || '')
+        && !!document.querySelector('.gwe-compose a[data-guide="update.linux"]')));
+      await page.keyboard.press('Escape');
+      step('compose: Escape closes the dialog', await until(page, () => !document.querySelector('.gwe-compose')));
+      await page.unroute(FLEET_RE, synFleet);
+      await refetch();
+      pi.connection = conn1;
+      delete pi.plugins[0].assignment.reason;
+      pi.plugins[0].assignment.state = 'running';
+
       // capabilities dialog
       await fresh(page);
       await goTab(page, PI, 'mqtt');

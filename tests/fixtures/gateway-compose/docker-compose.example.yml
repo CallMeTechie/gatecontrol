@@ -1,0 +1,199 @@
+# GateControl Home Gateway — Example docker-compose
+# Copy to docker-compose.yml and adjust to your environment.
+#
+# Requirements:
+#   - gateway.env from GateControl UI (Peer-Detail → Download)
+#   - Gateway must be on same L2 segment as target LAN devices (WoL!)
+#   - Host network mode required for dynamic L4 port binding
+#
+# Ports im LAN (nur wenn in GateControl eingeschaltet, nur LAN-Adressen, nie Tunnel):
+#   53/udp+tcp  DNS-Filter (docs/dns-cache.md) – belegt ein anderer Dienst
+#               (z. B. DSM-Paket „DNS Server“, Pi-hole) Port 53, meldet das
+#               Gateway „port_busy“ und erzwingt nichts.
+#   8443/tcp    Zwischenspeicher (HTTPS, selbstsigniert, signierte Links)
+
+services:
+  gateway:
+    image: ghcr.io/callmetechie/gatecontrol-gateway:latest
+    restart: unless-stopped
+    network_mode: host
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN         # for wg-quick + TUN device
+      - NET_BIND_SERVICE  # for L4 routes on ports <1024 (DNS, HTTP, SSH, HTTPS)
+      - NET_RAW           # keepalived VRRP (raw socket proto-112) + GARP (AF_PACKET); NET_ADMIN does NOT cover this
+      - SETGID            # keepalived enable_script_security: drops to script_user via setgid/setgroups when exec'ing chk_tunnel — fails (script skipped) under cap_drop:ALL without this
+      - SETUID            # keepalived enable_script_security: setuid to script_user for the health-check script
+    # security_opt.no-new-privileges NOT set: incompatible with non-root-user +
+    # cap_add NET_ADMIN on Linux — wg-quick shell-script calls `ip`/`iptables`
+    # that need ambient NET_ADMIN, which no-new-privileges blocks for UID != 0.
+    # Compensating controls: cap_drop:ALL, read_only, USER gateway, seccomp-default.
+    read_only: true
+    # Container runs as root (UID 0) — wg-quick requires it (line 85: exec sudo
+     # if $UID != 0, and sudo is not installed in the image). Security is
+     # enforced via cap_drop: ALL + minimal caps. Root inside this container
+     # has ONLY CAP_NET_ADMIN + CAP_NET_BIND_SERVICE + CAP_NET_RAW + CAP_SETGID + CAP_SETUID.
+    user: "0:0"
+    # TUN device needed by wireguard-go (userspace WG impl).
+    # On some hosts (Synology DSM, minimal VMs, LXC containers) the device must be
+    # explicitly passed through. Requires `modprobe tun` on host if /dev/net/tun missing.
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    tmpfs:
+      - /tmp
+      - /run       # includes /run/keepalived (NearManager mkdir's at runtime)
+      - /etc/wireguard  # wireguard-go writes config here
+    volumes:
+      - ./config:/config:ro      # Place gateway.env here
+      - ./gateway-state:/state          # rw: self-update flag + last-pull marker (#2b)
+      # Zwischenspeicher (docs/dns-cache.md): Blobs für Apps im Heimnetz. Auf der
+      # Synology z. B. GC_CACHE_DIR=/volume1/gatecontrol-cache in .env setzen.
+      - ${GC_CACHE_DIR:-./gateway-cache}:/cache
+      # Edge-Container (docs/edge.md): Zugangsdaten + Netzgrenzen-Marker hin,
+      # Zusammenfassung für die Telemetrie zurück. Ohne Edge-Dienst weglassen.
+      - type: volume
+        source: edge-run
+        target: /run/gc-edge
+        volume: { nocopy: true }
+      - type: volume
+        source: edge-status
+        target: /run/gc-edge-status
+        read_only: true
+        volume: { nocopy: true }
+    environment:
+      - LOG_LEVEL=info
+      - GATEWAY_ENV_PATH=/config/gateway.env
+      # Force wg-quick to use wireguard-go (userspace) instead of kernel module.
+      # Required on Synology DSM, Alpine containers w/o wg-kernel-module, VMs etc.
+      # (Also baked into Dockerfile as ENV — overrideable here.)
+      - WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go
+      # Ortszeit für Portscan-Fenster, Speedtest-Plan und DNS-Zeiten. Schickt
+      # der Server eine Zeitzone (ab GateControl mit Phase 3b), gilt diese;
+      # TZ ist nur der Rückfall (ohne beides: UTC).
+      - TZ=${TZ:-Etc/UTC}
+    healthcheck:
+      interval: 60s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Edge-Container für Plugin-Teile im Heimnetz (docs/edge.md). Dasselbe Image
+  # wie das Gateway, anderer Befehl; läuft ohne Rechte als Benutzer 61001 und
+  # bleibt untätig, bis der Server Edge für dieses Gateway einschaltet.
+  # Wer Edge nicht nutzen will, kann den Dienst (und die Volumes) weglassen.
+  edge:
+    image: ghcr.io/callmetechie/gatecontrol-gateway:latest
+    entrypoint: ["/sbin/tini", "--", "node", "src/edge/main.js"]
+    restart: unless-stopped
+    network_mode: host        # LAN-Geräte (UDP/Multicast/mDNS) wie das Gateway
+    user: "61001:61001"       # feste UID: die Netzgrenze (Owner-Match) hängt daran
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    mem_limit: 512m
+    pids_limit: 256
+    volumes:
+      - type: volume
+        source: edge-run
+        target: /run/gc-edge
+        read_only: true
+        volume: { nocopy: true }
+      - type: volume
+        source: edge-status
+        target: /run/gc-edge-status
+        volume: { nocopy: true }
+      - edge-state:/state-edge
+      - edge-mqtt:/gc-mqtt   # Broker-Dateien (übernimmt Besitzer 61001 aus dem Image)
+    environment:
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "node", "src/edge/healthcheck.js"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Lokaler MQTT-Broker (docs/edge.md "MQTT"). Läuft untätig (nur ein kleiner
+  # Wächter), bis der Server MQTT einschaltet; der Edge-Host schreibt dann
+  # mosquitto.conf/passwd/acl nach /gc-mqtt. Port 1883 nur an LAN-Adressen,
+  # ohne anonyme Anmeldung. Der Wächter startet Mosquitto bei geänderter
+  # Konfiguration neu und schickt bei geänderten Konten SIGHUP.
+  mqtt:
+    image: eclipse-mosquitto:2.1.2-alpine@sha256:860aeb5d63ce509508f6dcfb2bc8a1c1dd2bc60555b562b45ce90e52d8dabb0f
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        C=/gc-mqtt; p=""; s=""; r=""
+        halt() { if [ -n "$$p" ]; then kill "$$p" 2>/dev/null; wait "$$p" 2>/dev/null; fi; p=""; }
+        trap 'halt; exit 0' TERM INT
+        while :; do
+          if [ -f "$$C/enabled" ] && [ -f "$$C/mosquitto.conf" ]; then
+            n="$$(cksum < "$$C/mosquitto.conf")"
+            if [ -n "$$p" ] && ! kill -0 "$$p" 2>/dev/null; then p=""; fi
+            if [ -z "$$p" ] || [ "$$n" != "$$s" ]; then
+              halt; mosquitto -c "$$C/mosquitto.conf" & p=$$!
+              s="$$n"; r="$$(cat "$$C/reload" 2>/dev/null)"
+            elif [ "$$(cat "$$C/reload" 2>/dev/null)" != "$$r" ]; then
+              r="$$(cat "$$C/reload" 2>/dev/null)"; kill -HUP "$$p"
+            fi
+          else
+            halt; s=""
+          fi
+          sleep 2 & wait $$!
+        done
+    restart: unless-stopped
+    network_mode: host
+    user: "61001:61001"       # wie der Edge-Host: liest dessen Dateien (0600)
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    mem_limit: 128m
+    pids_limit: 32
+    depends_on:
+      - edge                  # legt das Volume mit Besitzer 61001 an
+    volumes:
+      - type: volume
+        source: edge-mqtt
+        target: /gc-mqtt
+        volume: { nocopy: true }
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  # tmpfs, geteilt: der Gateway-Container (root) schreibt, das setgid-Bit gibt
+  # jeder Datei die Gruppe 61001 → der Edge-Container kann lesen, nicht ändern.
+  edge-run:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=1m,uid=0,gid=61001,mode=2750"
+  # tmpfs, geteilt: der Edge-Host schreibt seine Zusammenfassung, das Gateway liest.
+  edge-status:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=1m,uid=61001,gid=61001,mode=0755"
+  # Pakete der Edge-Teile + gc.store (übernimmt Besitzer 61001 aus dem Image)
+  edge-state:
+  # Broker-Dateien vom Edge-Host + Mosquitto-Daten (data/)
+  edge-mqtt:

@@ -276,6 +276,19 @@
     su.dataset.act = 'setup';
     su.style.cssText = 'padding:6px 10px;display:inline-flex;align-items:center;justify-content:center;color:' + (setupDone ? 'var(--green,#16a34a)' : 'var(--amber,#d97706)');
     act.appendChild(su);
+    // "Nur docker-compose.yml herunterladen" (gateway-edge.js): the current compose, no new keys —
+    // not for the Pi image, which keeps its compose itself.
+    if (window.GCGatewayCompose && g.platform !== 'rpi') {
+      var cp = el('button', 'recheck');
+      cp.appendChild(composeIcon());
+      cp.title = T('gwe.compose.button', 'Nur docker-compose.yml herunterladen');
+      cp.setAttribute('aria-label', cp.title);
+      cp.dataset.id = g.peer_id;
+      cp.dataset.act = 'compose';
+      cp.dataset.fk = 'gw-compose';
+      cp.style.cssText = 'padding:6px 10px;display:inline-flex;align-items:center;justify-content:center';
+      act.appendChild(cp);
+    }
     var rel = el('a', 'gw-relnotes', T('gateways.release_notes', 'Release notes'));
     rel.href = GW_RELEASES; rel.target = '_blank'; rel.rel = 'noopener';
     act.appendChild(rel);
@@ -496,6 +509,15 @@
       { tag: 'path', attrs: { d: 'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z' } },
       { tag: 'polyline', attrs: { points: '3.27 6.96 12 12.01 20.73 6.96' } },
       { tag: 'line', attrs: { x1: '12', y1: '22.08', x2: '12', y2: '12' } },
+    ]);
+  }
+  // file with a down arrow (lucide "file-down") — the compose download in the detail head
+  function composeIcon() {
+    return _icon(16, [
+      { tag: 'path', attrs: { d: 'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z' } },
+      { tag: 'path', attrs: { d: 'M14 2v4a2 2 0 0 0 2 2h4' } },
+      { tag: 'path', attrs: { d: 'M12 18v-6' } },
+      { tag: 'path', attrs: { d: 'm9 15 3 3 3-3' } },
     ]);
   }
   // The scan-icon spinner (@keyframes gw-spin) and the indeterminate progress
@@ -1202,6 +1224,12 @@
     var rc = e.target.closest('[data-act="recheck"]'); if (rc) { probe(rc.dataset.id); return; }
     var ds = e.target.closest('[data-act="disc-settings"]'); if (ds) { openDiscoverySettings(ds.dataset.id); return; }
     var su = e.target.closest('[data-act="setup"]'); if (su) { openSetupModal(su.dataset.id); return; }
+    var cp = e.target.closest('[data-act="compose"]');
+    if (cp) {
+      var cg = last.find(function (x) { return String(x.peer_id) === String(cp.dataset.id); });
+      if (cg && window.GCGatewayCompose) window.GCGatewayCompose.open(cg);
+      return;
+    }
     var up = e.target.closest('[data-act="update"]');
     if (up) {
       if (!await D.confirm({ message: T('gateways.update_confirm', 'Update dieses Gateway jetzt anstoßen?'), okLabel: T('gateways.update', 'Update') })) return;

@@ -89,7 +89,11 @@ The gateway runs, but its compose file lacks the service `edge` (or the service
 `gateway` lacks the volume `edge-run`). This is typical for gateways set up
 before edge existed.
 
-- **Synology / Linux:** Bring the compose file up to date – [chapter 6](06-updating-a-gateway.md).
+- **Synology / Linux:** Bring the compose file up to date. Below the message is
+  the button “Download docker-compose.yml only”: it fetches the current file
+  without new keys and shows how to put it in place (Synology: create the folder
+  `gateway-cache`, stop the project, replace the YAML, rebuild the project).
+  In detail: [chapter 6](06-updating-a-gateway.md).
 - **Raspberry Pi image:** `settings.txt` says `EDGE=off`. Change it to
   `EDGE=on` and restart the Pi.
 

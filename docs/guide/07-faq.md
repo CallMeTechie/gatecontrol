@@ -239,7 +239,8 @@ The gateway no longer reports to the server.
 ### “Edge service missing”
 
 The gateway's compose file lacks the services `edge` and `mqtt`. Bring it up to
-date with [chapter 6](06-updating-a-gateway.md). On the Raspberry Pi image,
+date with [chapter 6](06-updating-a-gateway.md) – quickest with the button
+“Download docker-compose.yml only” below the message (no new keys). On the Raspberry Pi image,
 `settings.txt` says `EDGE=off` – change it to `EDGE=on` and restart. More:
 [chapter 4](04-edge-and-smart-home.md#edge-service-missing).
 

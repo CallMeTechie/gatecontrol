@@ -339,6 +339,32 @@ router.post('/:id/setup-bundle', (req, res) => {
   res.send(zip);
 });
 
+/**
+ * "Nur docker-compose.yml herunterladen": the current compose of the assistant for this gateway
+ * (gateway-kit.js buildCompose, the same text as the NAS package) — renews an old compose without
+ * edge/mqtt/cache (edge reason edge_missing). No gateway.env and no token rotation, so the running
+ * gateway keeps its connection; nothing is stored. Body { platform: synology|linux (default: the
+ * platform the assistant stored; rpi/unknown must choose), network: host|bridge (default host) }.
+ * Admin (router), POST + CSRF and session only like the NAS package.
+ */
+router.post('/:id/compose', (req, res) => {
+  if (req.tokenAuth) return res.status(403).json({ ok: false, error: 'session_required' });
+  const row = _gatewayIdOr404(req, res);
+  if (!row) return;
+  const b = req.body || {};
+  const pick = (v) => (v === undefined || v === null || v === '' ? null : v); // non-strings fail the check below
+  const platform = pick(b.platform) || gatewaySetup.composePlatformOf(row.platform);
+  const network = pick(b.network) || 'host';
+  if (!platform) return res.status(400).json({ ok: false, error: 'platform_required' });
+  const text = gatewaySetup.buildCompose(platform, network);
+  if (!text) return res.status(400).json({ ok: false, error: 'invalid_option' });
+  logger.info({ peerId: row.id, platform, network }, 'Gateway docker-compose.yml downloaded');
+  res.set('Content-Type', 'application/yaml; charset=utf-8');
+  res.set('Content-Disposition', 'attachment; filename="docker-compose.yml"');
+  res.set('Cache-Control', 'no-store');
+  res.send(text);
+});
+
 /** "Im Smart Home einbinden": internal route 127.0.0.1:8090 + Smart Home access target (idempotent). */
 router.post('/:id/smarthome', async (req, res) => {
   if (req.tokenAuth) return res.status(403).json({ ok: false, error: 'session_required' });
