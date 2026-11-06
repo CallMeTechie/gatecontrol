@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.232.0] — 2026-11-06
+
+### Features
+- Hilfe-Links ins Handbuch (Gateway-Assistent, Gateway-Seite, Profil-Menü) (#415)
+
+---
+
 ## [1.231.4] — 2026-11-06
 
 ### Fixes
