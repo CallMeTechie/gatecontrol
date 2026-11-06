@@ -409,10 +409,12 @@ module.exports = (ctx) => {
       step('compose: dialog preselects Synology + Host and shows the DSM steps', await until(page, () => {
         const box = document.querySelector('.gwe-compose');
         return !!box && document.getElementById('gwe-compose-platform-synology').checked && document.getElementById('gwe-compose-network-host').checked
-          && box.querySelectorAll('.gwz-st > li').length === 4 && !!box.querySelector('[data-fk="gwe-compose-dl"]');
+          && box.querySelectorAll('.gwz-st > li').length === 4 && !!box.querySelector('[data-fk="gwe-compose-dl"]')
+          && !!box.querySelector('a[data-guide="update.synology"][href*="06-"]');
       }));
       await page.check('#gwe-compose-platform-linux');
-      step('compose: Linux shows the commands', await until(page, () => /docker compose up -d/.test((document.querySelector('.gwe-compose pre') || {}).textContent || '')));
+      step('compose: Linux shows the commands and its guide chapter', await until(page, () => /docker compose up -d/.test((document.querySelector('.gwe-compose pre') || {}).textContent || '')
+        && !!document.querySelector('.gwe-compose a[data-guide="update.linux"]')));
       await page.keyboard.press('Escape');
       step('compose: Escape closes the dialog', await until(page, () => !document.querySelector('.gwe-compose')));
       await page.unroute(FLEET_RE, synFleet);
