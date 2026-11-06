@@ -18,6 +18,16 @@
 // (that wins). The gateway only gets MAC addresses (configPayload) — plugins
 // never (homeInternet.js).
 //
+// Home network (homeNetwork.gatewayHomes(): a failover pool, or the same LAN
+// and router): the settings hold for EVERY gateway of it — a change is
+// written to all of them (and each is told to pull), reconcileHomes()
+// (server start, ticker) copies the settings changed last to the others —
+// otherwise switching over to the failover gateway would get round the
+// profile, its times and the pauses. Members are taken from the network watch
+// of the whole home network: a device put into a profile directly (by the id
+// of its row on any of the gateways) is matched by its MAC everywhere.
+// Statistics, outage notice and router check stay per gateway.
+//
 // Statistics: daily values per gateway in the server's time zone, a year.
 // The gateway reports counts only — nothing per device and domain; the
 // devices that asked (clientsSeen) only as a set for the router check
@@ -170,11 +180,21 @@ function get(peerId) {
   return normalize(r ? json(r.settings) : null);
 }
 
-function save(peerId, s) {
+function save(peerId, s, at = Date.now()) {
   db().prepare(`INSERT INTO gateway_dns (peer_id, settings, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(peer_id) DO UPDATE SET settings = excluded.settings, updated_at = excluded.updated_at`)
-    .run(peerId, JSON.stringify(s), Date.now());
+    .run(peerId, JSON.stringify(s), at);
 }
+
+/** The peer ids of the home network of a gateway (itself included). */
+function homeIds(peerId) {
+  try { return require('./homeNetwork').homeOf(peerId); } catch (e) {
+    logger.warn({ err: e.message, peerId }, 'home network of the gateway unknown — DNS settings only for this gateway');
+    return [Number(peerId)];
+  }
+}
+
+function marks(ids) { return ids.map(() => '?').join(','); }
 
 function needGateway(peerId) {
   try { return require('./gatewayFeatures').needGateway(peerId); } catch (e) {
@@ -190,15 +210,68 @@ function gatewayName(peerId) {
 
 function audit(type, g, message, details, { ip, user } = {}) {
   try {
-    require('./activity').log(type, message, { source: 'admin', ipAddress: ip, severity: 'info', details: { peer_id: g.id, ...(user ? { user } : {}), ...details } });
+    const home = homeIds(g.id);
+    require('./activity').log(type, message, {
+      source: 'admin', ipAddress: ip, severity: 'info',
+      details: { peer_id: g.id, ...(home.length > 1 ? { home_peer_ids: home } : {}), ...(user ? { user } : {}), ...details },
+    });
   } catch (e) { logger.debug({ err: e.message }, 'dns activity not written'); }
 }
 
+/**
+ * Store `after` on the gateway and every other gateway of its home network
+ * (those that do not carry it yet) and tell each to pull. → whether the
+ * gateway's own settings changed.
+ */
 function changed(peerId, before, after) {
-  if (JSON.stringify(before) === JSON.stringify(after)) return false;
-  save(peerId, after);
-  require('./gatewayFeatures').notifyGateway(peerId);
-  return true;
+  const id = Number(peerId);
+  const text = JSON.stringify(after);
+  const own = JSON.stringify(before) !== text;
+  const at = Date.now();
+  for (const other of homeIds(id)) {
+    if (other === id ? !own : JSON.stringify(get(other)) === text) continue;
+    save(other, after, at);
+    require('./gatewayFeatures').notifyGateway(other);
+  }
+  return own;
+}
+
+/**
+ * Settings of the gateways of one home network that differ: the settings
+ * changed last (gateway_dns.updated_at) go to the others (keeping that time),
+ * which are told to pull. Gateways never set up (no updated_at) never win.
+ * Idempotent. → number of gateways changed
+ */
+function reconcileHomes() {
+  let homes;
+  try { homes = require('./homeNetwork').gatewayHomes().filter((ids) => ids.length > 1); } catch (e) {
+    logger.warn({ err: e.message }, 'home networks of the gateways unknown — DNS settings not compared');
+    return 0;
+  }
+  let n = 0;
+  for (const ids of homes) {
+    const w = db().prepare(`SELECT peer_id, settings, updated_at FROM gateway_dns WHERE updated_at IS NOT NULL AND peer_id IN (${marks(ids)})
+      ORDER BY updated_at DESC, peer_id LIMIT 1`).get(...ids);
+    if (!w) continue;
+    const s = normalize(json(w.settings));
+    const text = JSON.stringify(s);
+    const synced = [];
+    for (const id of ids) {
+      if (id === w.peer_id || JSON.stringify(get(id)) === text) continue;
+      save(id, s, w.updated_at);
+      require('./gatewayFeatures').notifyGateway(id);
+      synced.push(id);
+    }
+    if (synced.length) {
+      n += synced.length;
+      try {
+        require('./activity').log('gateway_dns_home_synced', `DNS filter settings of "${gatewayName(w.peer_id) || '#' + w.peer_id}" taken over by ${synced.length} other gateway${synced.length === 1 ? '' : 's'} of the home network`, {
+          source: 'system', severity: 'info', details: { peer_id: w.peer_id, peer_ids: synced, home_peer_ids: ids },
+        });
+      } catch { /* best-effort */ }
+    }
+  }
+  return n;
 }
 
 /** PUT …/dns { enabled?, logQueries?, upstream?, allowAll? } → settings */
@@ -280,8 +353,9 @@ function validateProfile(b, s, peerId, current) {
         const ok = new Set(ids.length ? db().prepare(`SELECT id FROM users WHERE enabled = 1 AND id IN (${ids.map(() => '?').join(',')})`).all(...ids).map((r) => r.id) : []);
         if (ids.some((x) => !ok.has(x))) throw new DnsError('invalid_member', 'unknown or disabled person');
       } else {
-        const ok = new Set(ids.length ? db().prepare(`SELECT id FROM netwatch_devices WHERE peer_id = ? AND id IN (${ids.map(() => '?').join(',')})`).all(peerId, ...ids).map((r) => r.id) : []);
-        if (ids.some((x) => !ok.has(x))) throw new DnsError('invalid_member', 'unknown device of this gateway');
+        const home = homeIds(peerId);
+        const ok = new Set(ids.length ? db().prepare(`SELECT id FROM netwatch_devices WHERE peer_id IN (${marks(home)}) AND id IN (${marks(ids)})`).all(...home, ...ids).map((r) => r.id) : []);
+        if (ids.some((x) => !ok.has(x))) throw new DnsError('invalid_member', 'unknown device of this home network');
       }
       out[k] = ids.sort((a, b) => a - b);
     } else throw new DnsError('invalid', `${k}: unknown`);
@@ -333,20 +407,37 @@ function deleteProfile(peerId, pid, actor = {}) {
 
 // ─── Members → MAC addresses ───────────────────────────────────────────
 
+/** The network-watch rows of every gateway in the home network of `peerId` (several per MAC possible). */
 function devicesOf(peerId) {
-  return db().prepare('SELECT id, mac, ip, name, hostname, vendor, owner_user_id, online, last_seen FROM netwatch_devices WHERE peer_id = ? ORDER BY id').all(peerId);
+  const ids = homeIds(peerId);
+  return db().prepare(`SELECT id, peer_id, mac, ip, name, hostname, vendor, owner_user_id, online, last_seen FROM netwatch_devices
+    WHERE peer_id IN (${marks(ids)}) ORDER BY id`).all(...ids);
+}
+
+/** One row per MAC: the gateway's own row first, else the oldest. */
+function onePerMac(rows, peerId) {
+  const out = new Map();
+  for (const r of rows) {
+    const cur = out.get(r.mac);
+    if (!cur || (cur.peer_id !== Number(peerId) && r.peer_id === Number(peerId))) out.set(r.mac, r);
+  }
+  return [...out.values()].sort((a, b) => a.id - b.id);
 }
 
 /**
  * mac → profile id for every device that is not in the default profile:
- * devices put into a profile directly first, then the devices of the
- * profile's people; the earlier profile wins a tie.
+ * devices put into a profile directly first (by the MAC of the row id —
+ * the row may be another gateway's of the home network), then the devices of
+ * the profile's people; the earlier profile wins a tie.
  */
 function assignment(peerId, s, devs) {
-  const byId = new Map(devs.map((d) => [d.id, d]));
+  const ids = [...new Set(s.profiles.slice(1).flatMap((p) => p.devices))];
+  const macOf = new Map(devs.map((d) => [d.id, d.mac]));
+  const missing = ids.filter((id) => !macOf.has(id));
+  if (missing.length) for (const r of db().prepare(`SELECT id, mac FROM netwatch_devices WHERE id IN (${marks(missing)})`).all(...missing)) macOf.set(r.id, r.mac);
   const out = new Map();
   for (const p of s.profiles.slice(1)) {
-    for (const id of p.devices) { const d = byId.get(id); if (d && !out.has(d.mac)) out.set(d.mac, p.id); }
+    for (const id of p.devices) { const mac = macOf.get(id); if (mac && !out.has(mac)) out.set(mac, p.id); }
   }
   for (const p of s.profiles.slice(1)) {
     const users = new Set(p.users);
@@ -600,18 +691,25 @@ function view(peerId, now = Date.now()) {
   const g = needGateway(peerId);
   const tel = gf.telemetryOf(g);
   const s = get(g.id);
-  const devs = devicesOf(g.id);
-  const map = assignment(g.id, s, devs);
+  const rows = devicesOf(g.id);
+  const map = assignment(g.id, s, rows);
+  // every device of the home network once (the members of a profile hold on every gateway of it)
+  const devs = onePerMac(rows, g.id);
+  const shownId = new Map(devs.map((d) => [d.mac, d.id]));
+  const idOf = (id) => { const r = rows.find((x) => x.id === id); return r ? shownId.get(r.mac) : id; };
   const names = userNames([...devs.map((d) => d.owner_user_id), ...s.profiles.flatMap((p) => p.users)]);
   const today = todayOf(g.id, now);
   const seen = new Set(today.clients);
   const routerIp = typeof tel.default_gateway_ip === 'string' ? tel.default_gateway_ip : null;
-  const online = devs.filter((d) => d.online === 1 && d.ip !== routerIp);
+  // the router check: what THIS gateway sees and who asked IT
+  const own = rows.filter((d) => d.peer_id === g.id);
+  const online = own.filter((d) => d.online === 1 && d.ip !== routerIp);
   const missing = online.filter((d) => !seen.has(d.mac));
-  const asking = devs.filter((d) => seen.has(d.mac)).length;
+  const asking = own.filter((d) => seen.has(d.mac)).length;
   const routerState = !today.clients.length ? 'none' : (missing.length ? 'partial' : 'ok');
   const running = require('./homeInternet').runningOn(g.id, now);
-  const profiles = s.profiles.map((p, i) => {
+  const profiles = s.profiles.map((p0, i) => {
+    const p = { ...p0, devices: [...new Set(p0.devices.map(idOf))] };
     const members = devs.filter((d) => (i === 0 ? !map.has(d.mac) : map.get(d.mac) === p.id));
     return {
       ...p,
@@ -624,10 +722,13 @@ function view(peerId, now = Date.now()) {
   });
   const profName = new Map(s.profiles.map((p) => [p.id, p.name]));
   const listen = (telemetryDns(tel) || {}).listen || [];
+  const others = homeIds(g.id).filter((id) => id !== g.id);
   return {
     gateway: {
       id: g.id, name: g.name, support: gf.support(tel), lanIp: typeof tel.lan_ip === 'string' ? tel.lan_ip : null,
       routerIp, telemetry: telemetryDns(tel),
+      // the other gateways of the home network: the settings hold for them as well
+      home: others.map((id) => ({ id, name: gatewayName(id) || '#' + id })),
     },
     settings: s,
     catalog: {
@@ -668,8 +769,9 @@ async function test(peerId, body) {
   if (!s.enabled) throw new DnsError('unavailable', 'the DNS filter is switched off');
   const payload = { domain };
   if (b.deviceId != null) {
-    const d = Number.isSafeInteger(b.deviceId) ? db().prepare('SELECT mac FROM netwatch_devices WHERE id = ? AND peer_id = ?').get(b.deviceId, g.id) : null;
-    if (!d) throw new DnsError('invalid_member', 'unknown device of this gateway');
+    const home = homeIds(g.id);
+    const d = Number.isSafeInteger(b.deviceId) ? db().prepare(`SELECT mac FROM netwatch_devices WHERE id = ? AND peer_id IN (${marks(home)})`).get(b.deviceId, ...home) : null;
+    if (!d) throw new DnsError('invalid_member', 'unknown device of this home network');
     payload.mac = d.mac;
   }
   const r = await require('./gateways').mgmtCall(g.id, '/api/dns/test', payload);
@@ -760,5 +862,5 @@ module.exports = {
   DnsError, LIMITS, DEFAULT_ID, DOWN_AFTER_MS,
   normPattern, normalize, get, setGeneral, createProfile, updateProfile, deleteProfile,
   configPayload, profileOfUser, nextSchedule, dayKey, zoned, ingest, retention, telemetryDns, view, test, checkDown, outageOf,
-  assignment, gatewayName, validDohUrl,
+  assignment, gatewayName, validDohUrl, reconcileHomes,
 };

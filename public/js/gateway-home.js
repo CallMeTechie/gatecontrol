@@ -193,15 +193,25 @@
     if (!s.enabled) {
       out.push(U.bigNote('grey', 'shield', t('gwh.dns.off_title'), t('gwh.dns.off_text'),
         [enableBtn(t('gwh.dns.enable'), 'gwh-dns-on', () => putDns(g.peer_id, { enabled: true }, t('gwh.dns.on_done')))]));
+      if (homeNote(d)) out.push(homeNote(d));
       out.push(reserveNote());
       return out;
     }
+    if (homeNote(d)) out.push(homeNote(d));
     out.push(statusCard(g, d));
     out.push(dnsKpis(d));
     out.push(h('div', { class: 'gwe-grid2 gwh-grid2' }, [profilesCard(g, d), topCard(g, d)]));
     out.push(privacyCard(g, d));
     out.push(reserveNote());
     return out;
+  }
+
+  // the other gateways of the home network (failover pool, same LAN): the settings hold for them as well
+  function homeNote(d) {
+    const home = (d.gateway && d.gateway.home) || [];
+    if (!home.length) return null;
+    return h('div', { class: 'gwh-foot-note', 'data-fk': 'gwh-home' }, U.note('info', [h('strong', { text: t('gwh.dns.home_b') }), ' ',
+      t('gwh.dns.home', { gateways: home.map((x) => x.name).join(', ') })]));
   }
 
   function reserveNote() {

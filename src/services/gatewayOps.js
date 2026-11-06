@@ -2,6 +2,12 @@
 
 // Background jobs of phase 3a (network watch, internet quality):
 //   every minute  notices about new devices that are still due (after a restart)
+//   at the start and every 5 minutes
+//                 gateways of one home network (failover pool, same LAN and
+//                 router — homeNetwork.gatewayHomes()): rows of one MAC get the
+//                 same decisions (netwatch.reconcileHomes), the DNS filter the
+//                 same settings (homeDns.reconcileHomes) — e.g. after a pool
+//                 was created or a gateway reported its LAN for the first time
 //   every hour    retention of the internet quality values (inetq.retention:
 //                 compaction to hourly values after 30 days, deletion after a
 //                 year — in steps, yielding to the event loop between them)
@@ -39,9 +45,18 @@ async function homeHourly() {
   try { await require('./homeCache').refreshUpdates(); } catch (err) { logger.warn({ err: err.message }, 'home cache updates not refreshed'); }
 }
 
+/** Gateways of one home network: the same device decisions and DNS settings everywhere. */
+function reconcileHomes() {
+  try { require('./netwatch').reconcileHomes(); } catch (err) { logger.warn({ err: err.message }, 'network devices of the home networks not merged'); }
+  try { require('./homeDns').reconcileHomes(); } catch (err) { logger.warn({ err: err.message }, 'DNS settings of the home networks not compared'); }
+}
+
 function start() {
   stop();
   const every = (ms, fn) => { const t = setInterval(() => { Promise.resolve().then(fn).catch(() => {}); }, ms); if (t.unref) t.unref(); timers.push(t); };
+  // before the first notice run: a MAC already known on the other gateway of the home network is no "new device"
+  reconcileHomes();
+  every(5 * MINUTE, () => withTask('home.reconcile', reconcileHomes));
   every(MINUTE, () => withTask('netwatch.notices', () => require('./netwatch').flushPending()));
   every(MINUTE, () => withTask('dns.down', () => { require('./homeDns').checkDown(); require('./homeInternet').cleanup(); }));
   every(HOUR, retentionOnce);
@@ -58,4 +73,4 @@ function stop() {
   try { require('./netwatch').stopTimers(); } catch { /* not loaded */ }
 }
 
-module.exports = { start, stop, retentionOnce, homeHourly };
+module.exports = { start, stop, retentionOnce, homeHourly, reconcileHomes };
