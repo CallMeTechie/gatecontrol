@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.233.0] — 2026-11-06
+
+### Features
+- Gateway-Compose aus einer Quelle + „Nur docker-compose.yml herunterladen“ (#414)
+
+---
+
 ## [1.232.1] — 2026-11-06
 
 ### Fixes
