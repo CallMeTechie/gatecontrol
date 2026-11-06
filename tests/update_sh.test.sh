@@ -11,6 +11,7 @@
 #   tz            TZ the script passed to `date +%H:%M` (fake clock, see $FAKE_NOW)
 #   image_sh      content `docker run … cat /app/update.sh` serves (self-update);
 #                 missing → the run fails, as with an image without the file
+#   mounts        "<type>|<volume name>|<source>" of the container's /data mount
 # The script under test is a COPY in the sandbox ($SBX/update.sh): the
 # self-update replaces the file it runs from, which must never be the repo copy.
 # shellcheck disable=SC2015  # `cond && ok .. || no ..`: ok/no always return 0
@@ -50,7 +51,7 @@ case "$1" in
                case "$*" in *Labels*) cat "$S/ver_$id" 2>/dev/null || echo "" ;; *) echo "$id" ;; esac; exit 0 ;;
       *) exit 0 ;;                                    # prune
     esac ;;
-  inspect) case "$*" in *Labels*) cat "$S/label" ;; *Image*) cat "$S/running" 2>/dev/null || true ;; esac; exit 0 ;;
+  inspect) case "$*" in *Labels*) cat "$S/label" ;; *Mounts*) cat "$S/mounts" 2>/dev/null || true ;; *Image*) cat "$S/running" 2>/dev/null || true ;; esac; exit 0 ;;
   compose)
     case "$*" in *--help*) [ -f "$S/pullflag" ] && echo "      --pull string   Pull image before running"; exit 0 ;; esac
     case "$*" in *" down"*) exit 0 ;; *" guacd") exit 0 ;; esac
@@ -333,6 +334,61 @@ printf '#!/bin/bash\n# gc-update-sh: 999\necho new\n' >"$SHIM_ST/image_sh"
 BEFORE="$(cat "$SBX/update.sh")"; echo sha256:bad >"$SHIM_ST/bad"
 run >/dev/null
 [ "$(cat "$SBX/update.sh")" = "$BEFORE" ] && ok "no self-update after a rollback" || no "self-update ran after a rollback"
+rm -rf "$SBX"
+
+# Data directory detection (runs WITHOUT GC_DATA_DIR, like cron on a host).
+runauto(){ env -u GC_DATA_DIR GC_UPDATE_LOG="$SBX/log" COMPOSE_DIR="$SBX" GC_CONTAINER=gatecontrol TMPDIR="$SBX" bash "$SBX/update.sh" >/dev/null 2>&1; echo $?; }
+
+# 27) /data is the old named volume → its mountpoint is used, nothing is moved
+newbox sha256:x sha256:y __SELF__
+mkdir -p "$SBX/vol"; rmdir "$SBX/data"
+echo "volume|gatecontrol_gatecontrol-data|$SBX/vol" >"$SHIM_ST/mounts"
+printf '{"mode":"manual"}\n' >"$SBX/vol/.auto-update-config.json"
+code="$(runauto)"
+{ [ "$code" = 0 ] && grep -q '"action":"noop"' "$SBX/vol/.auto-update-state.json" 2>/dev/null \
+  && grep -q '"mode":"manual"' "$SBX/vol/.auto-update-state.json"; } \
+  && ok "named volume: config read and state written in the volume" || no "named volume (code=$code)"
+grep -q '^pull' "$CALLS" && no "named volume: manual mode from the volume must not pull" || ok "named volume: manual mode honoured"
+grep -q "Docker volume 'gatecontrol_gatecontrol-data'" "$SBX/log" && ok "named volume: log names the volume" || no "no volume log line"
+[ -e "$SBX/data" ] && no "named volume: ./data must not be created" || ok "named volume: no data is moved, ./data untouched"
+rm -rf "$SBX"
+
+# 28) volume mountpoint not reachable (rootless/Desktop) → fallback ./data + warning
+newbox sha256:x sha256:y __SELF__
+echo "volume|gatecontrol-data|$SBX/nowhere" >"$SHIM_ST/mounts"
+printf '{"mode":"manual"}\n' >"$SBX/data/.auto-update-config.json"
+code="$(runauto)"
+{ [ "$code" = 0 ] && grep -q '"mode":"manual"' "$SBX/data/.auto-update-state.json" 2>/dev/null; } \
+  && ok "unreachable volume: falls back to ./data" || no "unreachable volume fallback (code=$code)"
+grep -q 'not reachable from here' "$SBX/log" && ok "unreachable volume: warning logged" || no "no unreachable warning"
+rm -rf "$SBX"
+
+# 29) bind mount elsewhere → that directory is used
+newbox sha256:x sha256:y __SELF__
+mkdir -p "$SBX/elsewhere"
+echo "bind||$SBX/elsewhere" >"$SHIM_ST/mounts"
+printf '{"mode":"manual"}\n' >"$SBX/elsewhere/.auto-update-config.json"
+code="$(runauto)"
+{ [ "$code" = 0 ] && [ -f "$SBX/elsewhere/.auto-update-state.json" ] && [ ! -f "$SBX/data/.auto-update-state.json" ]; } \
+  && ok "bind elsewhere: that directory is used" || no "bind elsewhere (code=$code)"
+rm -rf "$SBX"
+
+# 30) bind to ./data (release compose) → no note, ./data used
+newbox sha256:x sha256:y __SELF__
+echo "bind||$SBX/data" >"$SHIM_ST/mounts"
+printf '{"mode":"manual"}\n' >"$SBX/data/.auto-update-config.json"
+code="$(runauto)"
+{ [ "$code" = 0 ] && [ -f "$SBX/data/.auto-update-state.json" ]; } && ok "bind ./data: used as before" || no "bind ./data (code=$code)"
+grep -q 'NOTE: /data' "$SBX/log" && no "bind ./data must not log a note" || ok "bind ./data: no note"
+rm -rf "$SBX"
+
+# 31) explicit GC_DATA_DIR wins over the detected volume
+newbox sha256:x sha256:y __SELF__
+mkdir -p "$SBX/vol"; echo "volume|gatecontrol-data|$SBX/vol" >"$SHIM_ST/mounts"
+printf '{"mode":"manual"}\n' >"$SBX/data/.auto-update-config.json"
+run >/dev/null
+{ [ -f "$SBX/data/.auto-update-state.json" ] && [ ! -f "$SBX/vol/.auto-update-state.json" ]; } \
+  && ok "GC_DATA_DIR overrides the detected volume" || no "GC_DATA_DIR override"
 rm -rf "$SBX"
 
 echo "update_sh.test.sh: $PASS passed, $FAIL failed"

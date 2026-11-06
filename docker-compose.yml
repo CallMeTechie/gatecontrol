@@ -6,7 +6,13 @@ services:
     cap_add:
       - NET_ADMIN
     volumes:
-      - gatecontrol-data:/data
+      # All data (database, keys, certificates, WireGuard config) lives in the
+      # folder ./data next to this file: update.sh, the dashboard's update
+      # status and a plain `tar` backup of this folder rely on it. Installs
+      # set up with an older compose file used the named volume gatecontrol-data —
+      # do not just switch such an install to this file, move the data first (handbook,
+      # FAQ "move the server data from a Docker volume to ./data").
+      - ./data:/data
     env_file:
       - .env
     restart: unless-stopped
@@ -85,5 +91,4 @@ configs:
       MaxThreads 4
 
 volumes:
-  gatecontrol-data:
   clamav-db:

@@ -3,8 +3,9 @@
 [← Überblick](01-ueberblick.md) · [Inhaltsverzeichnis](README.md) · [Weiter: Gateway einrichten →](03-gateway-einrichten.md)
 
 Der einfachste Weg ist das Installationsskript `setup.sh`. Es installiert
-Docker, wenn es fehlt, fragt dich nach den wichtigsten Werten, erzeugt sichere
-Schlüssel und legt die Einstellungsdatei `.env` an.
+Docker, wenn es fehlt, fragt dich nach den wichtigsten Werten (auch nach der
+Zeitzone), erzeugt sichere Schlüssel, legt die Einstellungsdatei `.env` und den
+Datenordner `data` an und holt das Update-Skript `update.sh`.
 
 Alle Befehle in diesem Kapitel laufen **auf dem Server als root**.
 
@@ -49,27 +50,18 @@ Alle Befehle in diesem Kapitel laufen **auf dem Server als root**.
    curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/setup.sh
    curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/docker-compose.yml
    curl -fsSLO https://github.com/CallMeTechie/gatecontrol/releases/latest/download/.env.example
-   curl -fsSLO https://raw.githubusercontent.com/CallMeTechie/gatecontrol/master/update.sh
-   chmod +x update.sh
    ```
 
-3. Lege die Daten in den Ordner `data` neben der Compose-Datei. Die mitgelieferte
-   `docker-compose.yml` speichert sie sonst in einem Docker-Volume, das du im
-   Dateisystem nicht siehst. Das Update-Skript `update.sh` und die Backups in
-   [INSTALL.de.md](../../INSTALL.de.md#10-backup-und-restore) erwarten den Ordner
-   `/opt/gatecontrol/data`:
+Alle Daten des Servers (Datenbank, Schlüssel, Zertifikate) landen später im
+Ordner `/opt/gatecontrol/data` neben der Compose-Datei.
 
-   ```bash
-   sed -i 's#gatecontrol-data:/data#./data:/data#' docker-compose.yml
-   grep -n ':/data' docker-compose.yml
-   ```
+Läuft dein Server schon länger und seine Daten liegen noch in einem
+Docker-Volume, ersetze die Compose-Datei **nicht** einfach durch die neue –
+sonst startet er mit leerer Datenbank. Den Umzug beschreibt die FAQ:
+[Server-Daten von einem Docker-Volume nach ./data umziehen](07-faq.md#server-daten-von-einem-docker-volume-nach-data-umziehen).
 
-   Läuft dein Server schon länger mit der unveränderten Datei, ändere sie
-   **nicht** einfach – sonst startet er mit leerer Datenbank. Den Umzug
-   beschreibt [INSTALL.de.md §12](../../INSTALL.de.md#12-migration-bestehender-installationen).
-
-**Prüfen:** `ls -a /opt/gatecontrol` zeigt `setup.sh`, `docker-compose.yml`,
-`.env.example` und `update.sh`. Der `grep`-Befehl zeigt die Zeile `- ./data:/data`.
+**Prüfen:** `ls -a /opt/gatecontrol` zeigt `setup.sh`, `docker-compose.yml` und
+`.env.example`.
 
 ## 2.4 Das Installationsskript ausführen
 
@@ -91,14 +83,17 @@ Alle Befehle in diesem Kapitel laufen **auf dem Server als root**.
    | `Admin-Passwort` / `Passwort wiederholen` | ein starkes Passwort (wird nicht angezeigt) |
    | `Sprache (de/en) [de]` | Enter |
    | `E-Mail fuer Let's Encrypt Zertifikate (optional)` | deine E-Mail-Adresse (empfohlen) |
+   | `Zeitzone [...]` | Enter, wenn der Vorschlag stimmt (sonst z. B. `Europe/Vienna`) |
    | `Netzwerk-Interface [...]` | Enter (das Skript erkennt es selbst) |
-   | `Container jetzt starten? (J/n)` | **`n`** – erst stellst du noch die Zeitzone ein |
+   | `Container jetzt starten? (J/n)` | Enter (= Ja) |
+   | `Auto-Update-Zeitplan einrichten …? (J/n)` | Enter (= Ja), siehe [2.9](#29-updates-einrichten) |
 
    Meldet das Skript `Port … ist bereits belegt`, läuft auf dem Server schon ein
    Webserver oder VPN. Brich dann ab und beende diesen Dienst zuerst.
 
-**Prüfen:** Das Skript zeigt die „Zusammenfassung“ und es gibt eine Datei
-`/opt/gatecontrol/.env`.
+**Prüfen:** Das Skript zeigt die „Zusammenfassung“ und es gibt die Datei
+`/opt/gatecontrol/.env`, den Ordner `/opt/gatecontrol/data` und das Skript
+`/opt/gatecontrol/update.sh`.
 
 ## 2.5 Die Werte in der `.env`, die du wirklich brauchst
 
@@ -111,26 +106,9 @@ Alle Befehle in diesem Kapitel laufen **auf dem Server als root**.
 | `GC_ADMIN_USER` / `GC_ADMIN_PASSWORD` | Erster Login. Das Passwort gilt nur beim allerersten Start; danach änderst du es in der Oberfläche. |
 | `GC_CADDY_EMAIL` | Kontakt für Let's Encrypt (Warnungen zu Zertifikaten). |
 | `GC_SECRET`, `GC_ENCRYPTION_KEY` | Geheime Schlüssel, vom Skript erzeugt. **Nie ändern, nie weitergeben.** Ohne den Encryption-Key ist ein Backup der Datenbank wertlos. |
+| `TZ` | Zeitzone, z. B. `Europe/Berlin`. Die Gateways übernehmen sie vom Server. Sie gilt für den nächtlichen Portscan, den Plan der Geschwindigkeitsmessung und die Zeiten des DNS-Filters. Ohne `TZ` läuft der Server in UTC, und die Gateways rechnen dann auch in UTC. |
 
-Eine Zeile fehlt noch: die **Zeitzone**.
-
-1. Trage sie in die `.env` ein:
-
-   ```bash
-   cd /opt/gatecontrol
-   echo 'TZ=Europe/Berlin' >> .env
-   ```
-
-   Warum? Die Gateways übernehmen die Zeitzone vom Server. Sie gilt für den
-   nächtlichen Portscan, den Plan der Geschwindigkeitsmessung und die Zeiten des
-   DNS-Filters. Ohne `TZ` läuft der Server in UTC, und die Gateways rechnen dann
-   auch in UTC.
-
-2. Schütze die Datei, damit nur root sie lesen kann:
-
-   ```bash
-   chmod 600 .env
-   ```
+`setup.sh` schützt die Datei so, dass nur root sie lesen kann (`chmod 600`).
 
 **Sicherheitshinweis:** Die `.env` enthält dein Admin-Passwort und die
 geheimen Schlüssel. Gib sie nie weiter, schick sie nie per Chat oder E-Mail und
@@ -147,11 +125,14 @@ docker compose up -d
 den Container mit den neuen Werten neu. `docker restart` startet ihn mit den
 alten Werten.
 
-**Prüfen:** `grep -c '^TZ=' /opt/gatecontrol/.env` zeigt `1`.
+**Prüfen:** `grep -c '^TZ=' /opt/gatecontrol/.env` zeigt `1`. Zeigt es `0`
+(ältere Installation), trage die Zeile nach – siehe FAQ
+[„Der Server läuft in UTC“](07-faq.md#der-server-läuft-in-utc).
 
 ## 2.6 Server starten
 
-1. Starte GateControl:
+1. Hast du in `setup.sh` „Container jetzt starten“ bejaht, läuft GateControl
+   schon. Sonst starte es:
 
    ```bash
    cd /opt/gatecontrol
@@ -201,7 +182,14 @@ Das Zertifikat holt der Server von selbst.
 
 GateControl aktualisiert sich mit `update.sh`. Das Skript muss alle 5 Minuten laufen.
 
-1. Lege den Zeitplan an:
+1. Den Zeitplan legt `setup.sh` an, wenn du die Frage
+   „Auto-Update-Zeitplan einrichten“ bejaht hast. Prüfe es:
+
+   ```bash
+   cat /etc/cron.d/gatecontrol-update
+   ```
+
+   Fehlt die Datei, lege sie selbst an:
 
    ```bash
    echo '*/5 * * * * root /opt/gatecontrol/update.sh' > /etc/cron.d/gatecontrol-update
@@ -224,7 +212,8 @@ Klappt ein Update nicht, stellt `update.sh` die vorige Version automatisch wiede
 
 **Prüfen:** Nach spätestens 5 Minuten zeigt „Einstellungen“ → „Updates“ einen
 Status (nicht mehr „Auto-Update nicht eingerichtet“). Das Protokoll steht in
-`/var/log/gatecontrol-update.log`.
+`/var/log/gatecontrol-update.log`. Bleibt es bei „nicht eingerichtet“, hilft die
+FAQ [„Auto-Update nicht eingerichtet“, obwohl der Zeitplan läuft](07-faq.md#auto-update-nicht-eingerichtet-obwohl-der-zeitplan-läuft).
 
 ## 2.10 Backup
 

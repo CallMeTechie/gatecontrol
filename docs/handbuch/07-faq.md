@@ -87,6 +87,99 @@ Werte nicht.
 Beim Gateway trägst du keine Zeitzone ein. Es bekommt sie vom Server
 (ab Gateway 1.22.0).
 
+### „Auto-Update nicht eingerichtet“, obwohl der Zeitplan läuft
+
+Meist liegen die Daten des Servers nicht im Ordner `/opt/gatecontrol/data`,
+sondern in einem Docker-Volume (Installationen mit einer älteren
+`docker-compose.yml`). Prüfe es:
+
+```bash
+docker inspect gatecontrol --format '{{range .Mounts}}{{.Type}} {{.Name}} {{.Source}}{{"\n"}}{{end}}'
+```
+
+- `bind … /opt/gatecontrol/data`: Die Daten liegen richtig. Prüfe den Zeitplan
+  (`cat /etc/cron.d/gatecontrol-update`) und das Protokoll
+  `/var/log/gatecontrol-update.log`.
+- `volume gatecontrol_gatecontrol-data …` (oder ähnlich): Ein aktuelles
+  `update.sh` erkennt das Volume selbst und arbeitet damit. Im Protokoll steht
+  dann `NOTE: /data of 'gatecontrol' is the Docker volume …`. Ein altes
+  `update.sh` holst du so: `cd /opt/gatecontrol && curl -fsSLO https://raw.githubusercontent.com/CallMeTechie/gatecontrol/master/update.sh && chmod +x update.sh`.
+  Auf Dauer einfacher ist der Umzug nach `./data` (nächster Abschnitt): Dann
+  sichert auch das `tar`-Backup aus [Kapitel 2.10](02-server-einrichten.md#210-backup) die Daten mit.
+
+### Server-Daten von einem Docker-Volume nach ./data umziehen
+
+Ältere Installationen speichern die Daten im Docker-Volume `gatecontrol-data`
+(Docker hängt den Projektnamen davor, z. B. `gatecontrol_gatecontrol-data`).
+Die aktuelle `docker-compose.yml` nutzt den Ordner `./data`. Der Umzug dauert
+etwa eine Minute; so lange ist der Server nicht erreichbar. Nichts wird
+gelöscht: Das Volume bleibt als Rückfall liegen.
+
+Alle Befehle auf dem Server als root, im Ordner mit der `docker-compose.yml`
+(hier `/opt/gatecontrol`).
+
+1. Den Namen und den Ort des Volumes merken:
+
+   ```bash
+   cd /opt/gatecontrol
+   docker inspect gatecontrol --format '{{range .Mounts}}{{.Type}} {{.Name}} {{.Source}}{{"\n"}}{{end}}'
+   ```
+
+   Die Zeile mit `volume` nennt den Namen (z. B. `gatecontrol_gatecontrol-data`)
+   und den Ort (z. B. `/var/lib/docker/volumes/gatecontrol_gatecontrol-data/_data`).
+   Steht dort `bind … /opt/gatecontrol/data`, ist nichts zu tun.
+
+2. Den Server anhalten:
+
+   ```bash
+   docker compose down
+   ```
+
+3. Die Daten kopieren (Rechte und Zeitstempel bleiben erhalten). Den Ort aus
+   Schritt 1 einsetzen:
+
+   ```bash
+   mkdir -p data
+   cp -a /var/lib/docker/volumes/gatecontrol_gatecontrol-data/_data/. data/
+   ls data
+   ```
+
+   `ls data` zeigt unter anderem `gatecontrol.db` und den Ordner `wireguard`.
+
+4. Die Compose-Datei umstellen. Ersetze sie durch die aktuelle oder ändere die
+   eine Zeile:
+
+   ```bash
+   cp docker-compose.yml docker-compose.yml.bak
+   sed -i 's#- gatecontrol-data:/data#- ./data:/data#' docker-compose.yml
+   grep -n ':/data' docker-compose.yml
+   ```
+
+   `grep` zeigt `- ./data:/data`. Den Eintrag `gatecontrol-data:` unter
+   `volumes:` am Dateiende darfst du stehen lassen.
+
+5. Den Server starten:
+
+   ```bash
+   docker compose up -d
+   ```
+
+6. Prüfen:
+
+   ```bash
+   docker inspect gatecontrol --format '{{range .Mounts}}{{.Type}} {{.Source}}{{"\n"}}{{end}}'
+   docker compose ps
+   ```
+
+   Die erste Zeile zeigt `bind /opt/gatecontrol/data`, `docker compose ps`
+   zeigt `(healthy)`. Melde dich an: Routen, Peers und Gateways sind wie vorher da.
+
+Geht etwas schief: `docker compose down`, `cp docker-compose.yml.bak docker-compose.yml`,
+`docker compose up -d` – dann läuft der Server wieder mit dem Volume.
+
+Erst wenn alles mindestens einen Tag läuft, darfst du das Volume löschen
+(`docker volume rm gatecontrol_gatecontrol-data`, Namen aus Schritt 1).
+
 ### Der Container startet nicht oder das Zertifikat kommt nicht
 
 - `GC_ADMIN_PASSWORD is not set or still default`: In der `.env` steht noch
