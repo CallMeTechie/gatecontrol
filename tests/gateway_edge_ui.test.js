@@ -79,16 +79,22 @@ describe('gateway-edge-kit: address and states', () => {
     assert.equal(K.pluginState(odd, settings).state, 'offline');
   });
 
-  it('the guide for a reason: the gateway docs, Synology with its own section', () => {
-    const base = 'https://github.com/CallMeTechie/gatecontrol-gateway/blob/main/docs/';
-    assert.equal(K.reasonDoc('edge_missing', 'synology'), base + 'deployment/synology.md#edge-dienst-plugins-im-heimnetz');
-    assert.equal(K.reasonDoc('edge_missing', 'rpi'), base + 'edge.md#container-und-image');
-    assert.equal(K.reasonDoc('edge_fence', 'synology'), base + 'deployment/synology.md#netzgrenze-auf-der-synology-xt_owner');
-    assert.equal(K.reasonDoc('edge_fence', null), base + 'edge.md#netzgrenze-fail-closed');
-    assert.equal(K.reasonDoc('edge_not_running', 'synology'), base + 'edge.md#fehlersuche');
-    assert.equal(K.reasonDoc('edge_not_connected'), base + 'edge.md#kanal-zum-server');
-    assert.equal(K.reasonDoc('gateway_offline', 'synology'), null);
+  it('the guide for a reason: the user guide in the language of the page, edge_missing per platform', () => {
+    const de = 'https://github.com/CallMeTechie/gatecontrol/blob/master/docs/handbuch/';
+    const en = 'https://github.com/CallMeTechie/gatecontrol/blob/master/docs/guide/';
+    assert.equal(K.reasonDoc('edge_missing', 'synology', 'de'), de + '06-gateway-aktualisieren.md#63-synology-compose-datei-erneuern');
+    assert.equal(K.reasonDoc('edge_missing', 'synology', 'en'), en + '06-updating-a-gateway.md#63-synology-renewing-the-compose-file');
+    assert.equal(K.reasonDoc('edge_missing', 'linux', 'de'), de + '06-gateway-aktualisieren.md#64-linuxdocker-compose-datei-erneuern');
+    assert.equal(K.reasonDoc('edge_missing', 'proxmox', 'de'), de + '03-gateway-einrichten.md#35-proxmox');
+    assert.equal(K.reasonDoc('edge_missing', 'rpi', 'en'), en + '04-edge-and-smart-home.md#edge-service-missing');
+    assert.equal(K.reasonDoc('edge_missing', null, 'de'), de + '06-gateway-aktualisieren.md#62-warum-die-compose-datei-extra-dran-ist');
+    assert.equal(K.reasonDoc('edge_fence', 'synology', 'de'), de + '04-edge-und-smart-home.md#netzgrenze-fehlt');
+    assert.equal(K.reasonDoc('edge_not_running', 'rpi', 'en'), en + '04-edge-and-smart-home.md#edge-container-not-running');
+    assert.equal(K.reasonDoc('edge_not_connected'), de + '04-edge-und-smart-home.md#edge-erreicht-gatecontrol-nicht');
+    assert.equal(K.reasonDoc('gateway_offline', 'synology', 'en'), en + '04-edge-and-smart-home.md#gateway-offline');
     assert.equal(K.reasonDoc('offline'), null);
+    assert.equal(K.reasonDoc('toString'), null);
+    for (const r of K.REASONS) assert.ok(K.reasonDoc(r, null, 'de') && K.reasonDoc(r, null, 'en'), r);
   });
 
   it('a plugin not set up here: edge off → edge_off, unsigned and not allowed → unsigned (blocked switch), else not_set_up', () => {

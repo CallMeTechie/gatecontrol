@@ -177,6 +177,7 @@
       {# ── Step 3: Raspberry Pi ── #}
       <section class="gwz-step" data-step="3" data-platform="rpi" hidden>
         <p class="gwz-lead" id="gwz-pi-need"></p>
+        {% if handbookUrl %}<p class="gwz-d gwz-guide"><a href="{{ handbookUrl('gw.rpi') }}" target="_blank" rel="noopener noreferrer" data-guide="gw.rpi">{{ t('gwiz.guide') }}</a></p>{% endif %}
         <ol class="gwz-st">
           <li>
             <h3>{{ t('gwiz.pi.dl_title') }}</h3>
@@ -232,6 +233,7 @@
       {# ── Step 3: Synology NAS ── #}
       <section class="gwz-step" data-step="3" data-platform="synology" hidden>
         <p class="gwz-lead">{{ t('gwiz.nas.need') }}</p>
+        {% if handbookUrl %}<p class="gwz-d gwz-guide"><a href="{{ handbookUrl('gw.synology') }}" target="_blank" rel="noopener noreferrer" data-guide="gw.synology">{{ t('gwiz.guide') }}</a></p>{% endif %}
         <ol class="gwz-st">
           <li>
             <h3>{{ t('gwiz.nas.dl_title') }}</h3>
@@ -277,6 +279,7 @@
       {# ── Step 3: Proxmox (LXC) ── #}
       <section class="gwz-step" data-step="3" data-platform="proxmox" hidden>
         <p class="gwz-lead">{{ t('gwiz.pve.need') }}</p>
+        {% if handbookUrl %}<p class="gwz-d gwz-guide"><a href="{{ handbookUrl('gw.proxmox') }}" target="_blank" rel="noopener noreferrer" data-guide="gw.proxmox">{{ t('gwiz.guide') }}</a></p>{% endif %}
         <ol class="gwz-st">
           <li>
             <h3>{{ t('gwiz.pve.cmd_title') }}</h3>
@@ -298,6 +301,7 @@
       {# ── Step 3: other Linux (Docker Compose) ── #}
       <section class="gwz-step" data-step="3" data-platform="linux" hidden>
         <p class="gwz-lead">{{ t('gwiz.linux.need') }}</p>
+        {% if handbookUrl %}<p class="gwz-d gwz-guide"><a href="{{ handbookUrl('gw.linux') }}" target="_blank" rel="noopener noreferrer" data-guide="gw.linux">{{ t('gwiz.guide') }}</a></p>{% endif %}
         <ol class="gwz-st">
           <li>
             <h3>{{ t('gwiz.linux.files_title') }}</h3>
@@ -373,7 +377,8 @@
 </div>
 <script type="application/json" id="gwiz-i18n" data-prefixes="gwiz. gwe. gwn. gwh. common." nonce="{{ cspNonce }}">{{ gwizI18n | default('{}') | safe }}</script>
 {% endblock %}
-{% block scripts %}<script src="/js/gateway-kit.js?v={{ appVersion }}"></script>
+{% block scripts %}<script src="/js/handbook.js?v={{ appVersion }}"></script>
+<script src="/js/gateway-kit.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-wizard.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-edge-kit.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-edge.js?v={{ appVersion }}"></script>
