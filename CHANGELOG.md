@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.231.3] — 2026-11-06
+
+### Fixes
+- Compose-Datei des Assistenten hängt den Zwischenspeicher ein (#410)
+
+---
+
 ## [1.231.2] — 2026-11-06
 
 ### Fixes
