@@ -26,7 +26,7 @@ const ipaddr = require('ipaddr.js');
 const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
 
-const MIN_GATEWAY = '1.27.0';
+const MIN_GATEWAY = '1.28.0';
 const MAX_PER_GATEWAY = 16;
 const KINDS = ['person', 'vehicle', 'animal', 'motion'];
 const RECORD = ['motion', 'away', 'never'];

@@ -22,7 +22,7 @@ separate page “Gateway Pools” in the menu any more.
 General requirements:
 
 - Network watch, internet quality, presence and UPS need gateway version
-  **1.21.0** or later, DNS filter and home cache **1.22.0**, print & scan **1.24.0**, radio **1.25.0**, local AI **1.26.0**, cameras **1.27.0**. If the gateway is
+  **1.21.0** or later, DNS filter and home cache **1.22.0**, print & scan **1.24.0**, radio **1.25.0**, local AI **1.26.0**, cameras **1.28.0**. If the gateway is
   older, the tab says so; update it then ([chapter 6](06-updating-a-gateway.md)).
 - The gateway is in the home network in **host network mode** (default for the
   Pi, the Synology package and Linux with “Host (recommended)”).
@@ -170,7 +170,7 @@ clips stay on the gateway (on a Synology: on the NAS).
 
 **Requirements:**
 
-- Gateway 1.27.0+. If it is older, the row says “Gateway too old – needs 1.27.0”.
+- Gateway 1.28.0+. If it is older, the row says “Gateway too old – needs 1.28.0”.
 - Switch **ONVIF** or **RTSP** on in the camera:
   - Reolink: app or web interface › Settings › Network › Advanced › Server
     settings › ONVIF and RTSP on (ONVIF port usually 8000).

@@ -2576,7 +2576,7 @@ uses it for "In Smart Home benennen" (`zigbee:<device MAC>`, `ble:<sensor MAC>`)
 
 ## Cameras (`permissions.cameras`)
 
-Since GateControl with phase 3c, step 4 ("Kameras", gateway 1.27.0+ with the
+Since GateControl with phase 3c, step 4 ("Kameras", gateway 1.28.0+ with the
 capability `cameras`). A home gateway with **Kameras** switched on (Gateways ›
 Funktionen › „Geräte im Heimnetz“) finds ONVIF/RTSP cameras in its home network,
 takes snapshots, follows the cameras' own motion events (person, vehicle,

@@ -24,7 +24,7 @@ Allgemeine Voraussetzungen:
 
 - Netzwerk-Wächter, Internetqualität, Anwesenheit und USV brauchen
   Gateway-Version **1.21.0** oder neuer, DNS-Filter und Zwischenspeicher **1.22.0**,
-  Drucken & Scannen **1.24.0**, Funk **1.25.0**, Lokale KI **1.26.0**, Kameras **1.27.0**.
+  Drucken & Scannen **1.24.0**, Funk **1.25.0**, Lokale KI **1.26.0**, Kameras **1.28.0**.
   Ist das Gateway älter, steht das im Reiter; aktualisiere es dann ([Kapitel 6](06-gateway-aktualisieren.md)).
 - Das Gateway steht im Heimnetz im **Host-Netzwerkmodus** (Standard beim Pi,
   beim Synology-Paket und bei Linux mit „Host (empfohlen)“).
@@ -176,7 +176,7 @@ Gateway (bei der Synology auf der NAS).
 
 **Voraussetzungen:**
 
-- Gateway 1.27.0+. Ist es älter, steht in der Zeile „Gateway zu alt – ab 1.27.0“.
+- Gateway 1.28.0+. Ist es älter, steht in der Zeile „Gateway zu alt – ab 1.28.0“.
 - An der Kamera **ONVIF** bzw. **RTSP** einschalten:
   - Reolink: App oder Weboberfläche › Einstellungen › Netzwerk › Erweitert ›
     Server-Einstellungen › ONVIF und RTSP an (Port ONVIF meist 8000).

@@ -4,7 +4,7 @@
 // buildCompose — also the NAS package and the "only docker-compose.yml"
 // download) against docker-compose.example.yml of gatecontrol-gateway, checked
 // in as tests/fixtures/gateway-compose/docker-compose.example.yml (copy of
-// gatecontrol-gateway feat/cameras, 2026-11-06 / v1.27.0: service kameras in the profile kameras, volumes cam-ctl and cam-recordings, the gateway mounts /gc-cam and /recordings). When the gateway
+// gatecontrol-gateway feat/cameras, 2026-11-06 / v1.28.0: service kameras in the profile kameras, volumes cam-ctl and cam-recordings, the gateway mounts /gc-cam and /recordings). When the gateway
 // changes its example, copy it again — this test then shows what buildCompose
 // has to follow.
 //
@@ -73,7 +73,7 @@ const EXPECTED_DIFF = {
 describe('gateway compose: assistant vs docker-compose.example.yml of the gateway', () => {
   it('the fixture is the gateway example (services gateway, edge, mqtt, deconz, ki, kameras; NET_RAW/SETGID/SETUID)', () => {
     assert.deepEqual(Object.keys(ex.services), ['gateway', 'edge', 'mqtt', 'deconz', 'ki', 'kameras']);
-    // gateway >= 1.27.0: the cameras (ffmpeg) only in the profile kameras, the gateway mounts cam-ctl and the clips
+    // gateway >= 1.28.0: the cameras (ffmpeg) only in the profile kameras, the gateway mounts cam-ctl and the clips
     assert.equal(ex.services.kameras.profiles, 'profiles: ["kameras"]');
     assert.match(exGw.volumes, /source: cam-ctl/);
     assert.match(exGw.volumes, /\/recordings/);

@@ -39,7 +39,7 @@ containers or folders therefore do not arrive by themselves:
 | Edge plugins and MQTT | 1.19.0 | services `edge` and `mqtt`, volumes `edge-run`, `edge-status`, `edge-state`, `edge-mqtt` |
 | Home cache | 1.22.0 | `${GC_CACHE_DIR:-./gateway-cache}:/cache` |
 | Failover pools, scanning via another gateway, ping of the internet quality | – | the capabilities `NET_RAW`, `SETGID` and `SETUID` under `cap_add` |
-| Cameras (live picture, clips) | 1.27.0 | service `kameras`, volumes `cam-ctl` and `${GC_CAMERA_DIR:-cam-recordings}:/recordings` |
+| Cameras (live picture, clips) | 1.28.0 | service `kameras`, volumes `cam-ctl` and `${GC_CAMERA_DIR:-cam-recordings}:/recordings` |
 
 You need this chapter if you see one of these:
 

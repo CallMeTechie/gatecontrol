@@ -23,7 +23,7 @@ const gwReq = (method, p, g = gw) => supertest(app)[method]('/api/v1/gateway' + 
 const admin = (method, p, g = gw) => agent[method]('/api/v1/gateways/' + g.peer.id + p).set('X-CSRF-Token', csrf);
 const CAPS = ['netwatch', 'inetq', 'presence', 'ups', 'dns', 'cache', 'print', 'radio', 'ai'];
 
-function setTel(g, { caps = CAPS.concat('cameras'), version = '1.27.0', model = 'Raspberry Pi 3 Model B Plus Rev 1.3', cams = { enabled: true, service: 'managed', state: 'running', cameras: 1, recording: 1, storage: { free: 1.2e12, total: 4e12, problem: null } } } = {}) {
+function setTel(g, { caps = CAPS.concat('cameras'), version = '1.28.0', model = 'Raspberry Pi 3 Model B Plus Rev 1.3', cams = { enabled: true, service: 'managed', state: 'running', cameras: 1, recording: 1, storage: { free: 1.2e12, total: 4e12, problem: null } } } = {}) {
   const t = { gateway_version: version, capabilities: caps, hardware: { model, mem_total: 1024 ** 3 }, features: cams ? { cameras: cams } : {} };
   db.prepare('UPDATE gateway_meta SET last_health = ?, alive = 1, last_seen_at = ? WHERE peer_id = ?').run(JSON.stringify({ telemetry: t }), Date.now(), g.peer.id);
 }
@@ -94,7 +94,7 @@ describe('features.cameras and the row "Kameras"', () => {
     assert.equal(c.features.cameras.nobodyHome, null);
     const old = (await admin('get', '/features', gw2).expect(200)).body.gateway;
     assert.equal(old.cameras.supported, false);
-    assert.equal(old.support.minGatewayCameras, '1.27.0');
+    assert.equal(old.support.minGatewayCameras, '1.28.0');
   });
   it('overview: memory part, Pi 3 B+ hint, compose and plugin link', async () => {
     const v = (await admin('get', '/features').expect(200)).body.gateway;

@@ -39,7 +39,7 @@ const MIN_GATEWAY_RADIO = '1.25.0';
 // phase 3c, step 3 (Lokale KI): only by the capability `ai`
 const MIN_GATEWAY_AI = '1.26.0';
 // phase 3c, step 4 (Kameras): only by the capability `cameras`
-const MIN_GATEWAY_CAMERAS = '1.27.0';
+const MIN_GATEWAY_CAMERAS = '1.28.0';
 const FEATURE_KEYS = ['netwatch', 'inetq', 'presence', 'ups'];
 const SPEEDTEST_PLANS = ['off', '4x', 'hourly'];
 const UPS_NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;

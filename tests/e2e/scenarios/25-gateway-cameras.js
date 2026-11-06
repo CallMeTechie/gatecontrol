@@ -5,8 +5,8 @@
 //
 // No mocks: the seeded gateway "e2e-gw-home" gets a known gateway token and
 // reports like a real gateway — first as 1.26.0 without the capability
-// `cameras` ("Gateway zu alt – ab 1.27.0", switch disabled), then as a
-// Raspberry Pi 3 B+ with 1.27.0 and the capability, but without the service
+// `cameras` ("Gateway zu alt – ab 1.28.0", switch disabled), then as a
+// Raspberry Pi 3 B+ with 1.28.0 and the capability, but without the service
 // kameras (old compose file). Switching on is a real PUT; the config pull then
 // carries features.cameras (and never a password); the row shows the memory
 // share, the hint "höchstens 1 Kamera mit Bewegungserkennung", the compose
@@ -97,15 +97,15 @@ module.exports = (ctx) => {
           const keys = [...g.querySelectorAll('[data-feature]')].map((x) => x.getAttribute('data-feature'));
           return keys.indexOf('cameras') === keys.indexOf('print') + 1 && /Kameras/.test(g.textContent);
         }));
-        step('cameras: too old → "Gateway zu alt – ab 1.27.0", switch disabled', await page.evaluate((sel) => {
+        step('cameras: too old → "Gateway zu alt – ab 1.28.0", switch disabled', await page.evaluate((sel) => {
           const r = document.querySelector(sel);
           const sw = r && r.querySelector('[role="switch"]');
           const hint = r && r.querySelector('[data-cameras-old]');
           return !!sw && sw.disabled && sw.getAttribute('aria-checked') === 'false' && !!hint && /Gateway zu alt – ab 1\.27\.0/.test(hint.textContent);
         }, row));
 
-        // ── 1.27.0 with `cameras` on a Pi 3 B+, old compose file ──
-        step('cameras: heartbeat of a 1.27.0 gateway with cameras', await heartbeat('1.27.0', [...CAPS, 'cameras']) === 200);
+        // ── 1.28.0 with `cameras` on a Pi 3 B+, old compose file ──
+        step('cameras: heartbeat of a 1.28.0 gateway with cameras', await heartbeat('1.28.0', [...CAPS, 'cameras']) === 200);
         await fresh(page);
         await page.reload();
         await goFeatures(page, GW);
@@ -153,7 +153,7 @@ module.exports = (ctx) => {
         await view(page, 'gwcameras-on-390-light', 2600);
         await page.setViewportSize({ width: 1440, height: 1000 });
         // the service kameras is there now → no compose hint
-        step('cameras: heartbeat with the service kameras running', await heartbeat('1.27.0', [...CAPS, 'cameras'], 'managed') === 200);
+        step('cameras: heartbeat with the service kameras running', await heartbeat('1.28.0', [...CAPS, 'cameras'], 'managed') === 200);
         await fresh(page);
         await page.reload();
         await goFeatures(page, GW);

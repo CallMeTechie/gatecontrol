@@ -941,7 +941,7 @@
     const old = c.supported === false;
     const sw = U.switchBtn(!!c.enabled, t('gwn.feat.cameras'), 'gwn-f-cameras', () => toggle(sw, id, (v) => ({ cameras: { enabled: v } }), (v) => t(v ? 'gwn.feat.on_done' : 'gwn.feat.off_done', { name: t('gwn.feat.cameras') })), old && !c.enabled);
     const extra = [];
-    if (old) extra.push(h('span', { class: 'gwn-hint', 'data-cameras-old': '' }, [U.icon('info', 14), t('gwn.feat.cameras_old', { min: c.minGateway || sup.minGatewayCameras || '1.27.0', version: sup.version || '—' })]));
+    if (old) extra.push(h('span', { class: 'gwn-hint', 'data-cameras-old': '' }, [U.icon('info', 14), t('gwn.feat.cameras_old', { min: c.minGateway || sup.minGatewayCameras || '1.28.0', version: sup.version || '—' })]));
     const parts = [t('gwn.feat.cameras_d')];
     if (c.enabled || c.count) parts.push(t(c.count === 1 ? 'gwn.feat.cameras_one' : 'gwn.feat.cameras_n', { n: nf(c.count || 0) }));
     const st = c.storage;

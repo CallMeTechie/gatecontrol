@@ -258,11 +258,11 @@
     '        max-file: "3"',
   ];
 
-  // Cameras (phase 3c, step 4 — gateway >= 1.27.0, docs/cameras.md of the gateway): ffmpeg only, switched on in
+  // Cameras (phase 3c, step 4 — gateway >= 1.28.0, docs/cameras.md of the gateway): ffmpeg only, switched on in
   // GateControl; the gateway decides per camera what runs (control files in cam-ctl).
   const KAMERAS_SERVICE = [
     '',
-    '  # Cameras in the home network (gateway >= 1.27.0, docs/cameras.md of the gateway) — only the ffmpeg of this',
+    '  # Cameras in the home network (gateway >= 1.28.0, docs/cameras.md of the gateway) — only the ffmpeg of this',
     '  # image is used (mediamtx itself does not run). The entry waits for /gc-cam/kameras.sh, which the gateway writes,',
     '  # and runs it: one ffmpeg per camera (stream copy into a picture ring). No port, no capabilities.',
     '  kameras:',
@@ -513,7 +513,7 @@
         '        source: ai-ctl',
         '        target: /gc-ai',
         '        volume: { nocopy: true }',
-        // cameras (gateway >= 1.27.0): control files + picture ring of the service kameras, and the clips; harmless without it
+        // cameras (gateway >= 1.28.0): control files + picture ring of the service kameras, and the clips; harmless without it
         '      - type: volume            # cameras: control files and picture ring of the service kameras',
         '        source: cam-ctl',
         '        target: /gc-cam',
