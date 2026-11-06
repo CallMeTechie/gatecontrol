@@ -352,6 +352,28 @@ module.exports = (ctx) => {
       pi.plugins[0].assignment.state = 'running';
       step('mock: every state has its own label', states.every((s) => labels[s] && !/^gwe\./.test(labels[s])) && new Set(Object.values(labels)).size === states.length, JSON.stringify(labels));
 
+      // offline with a reason (services/edge/reason.js): label, next step with the gateway's guide, the MQTT tab too
+      const conn0 = pi.connection;
+      pi.plugins[0].assignment.state = 'offline';
+      pi.plugins[0].assignment.reason = 'edge_missing';
+      pi.connection = { online: false, connectedAt: null, lastSeen: null, reason: 'edge_missing', detail: null };
+      await fresh(page);
+      await goTab(page, PI, 'mqtt');
+      await goTab(page, PI, 'edge');
+      step('mock: offline + reason edge_missing → "Edge-Dienst fehlt" with the guide (no bare "nicht verbunden")', await until(page, () => {
+        const r = document.querySelector('.gwe-prow[data-plugin="smarthome"][data-state="edge_missing"]');
+        const a = r && r.querySelector('a[href*="gatecontrol-gateway/blob/main/docs/edge.md#container-und-image"]');
+        return !!(r && a && a.target === '_blank' && /noopener/.test(a.rel) && /Edge-Dienst fehlt/.test(r.querySelector('.tag').textContent) && /Compose-Datei/.test(r.textContent));
+      }));
+      await goTab(page, PI, 'mqtt');
+      step('mock: MQTT status shows the same reason', await until(page, () => {
+        const p = document.getElementById('gwe-tabpanel');
+        return !!p && /Edge-Dienst fehlt/.test(p.textContent) && !!p.querySelector('.gwe-note a[href*="edge.md#container-und-image"]');
+      }));
+      pi.connection = conn0;
+      delete pi.plugins[0].assignment.reason;
+      pi.plugins[0].assignment.state = 'running';
+
       // capabilities dialog
       await fresh(page);
       await goTab(page, PI, 'mqtt');

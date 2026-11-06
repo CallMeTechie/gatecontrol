@@ -4729,11 +4729,35 @@ licence, …) is off on every gateway too (`plugin_off`).
 
 Only in plugins with an `edge` section:
 
-* `gc.edge.gateways()` → `[{ id, name, state, online, version }]` — the
+* `gc.edge.gateways()` → `[{ id, name, state, online, version, reason }]` — the
   gateways the plugin is set up for. `state`: `running`, `starting`,
   `crashed`, `stopped`, `denied` (what the gateway reports), `pending` (no
   report yet), `offline`, `disabled`, `update_pending`, `unsigned`,
   `plugin_off`, `gateway_too_old`, `edge_off`.
+  `offline` means: the gateway's **edge channel** is down — the WebSocket
+  the gateway's edge container opens, not the gateway's heartbeat. `reason`
+  says why (only with `offline`, else `null`; `null` also when the server
+  cannot tell — older gateways, no edge telemetry yet). The server derives it
+  from the gateway's last heartbeat (`telemetry.edge`,
+  `src/services/edge/reason.js`), first match wins:
+  * `gateway_offline` — no heartbeat within the down threshold (*Einstellungen
+    › Gateways*): the gateway itself is away;
+  * `edge_missing` — `telemetry.edge` is `null`: the gateway's compose file
+    has no `edge` service (or the `gateway` service lacks the `edge-run`
+    volume; Raspberry-Pi image: `EDGE=off`);
+  * `edge_not_running` — no fresh summary of the edge host: the `edge`
+    container is stopped or restarting (or the `gateway` service lacks the
+    `edge-status` volume);
+  * `edge_fence` — the gateway could not set the network fence, so edge
+    parts stay off (fail closed); typically a kernel without the owner match
+    (Synology: `xt_owner`);
+  * `edge_not_connected` — the edge host runs but has no channel to this
+    server (address/DNS, firewall, a reverse proxy that does not pass
+    WebSocket upgrades to `/api/v1/gateway/edge/ws`).
+
+  `state` stays `offline` for all of them, so plugins written against older
+  servers keep working; show `reason` when it is set and fall back to a
+  generic "not connected" otherwise.
 * `gc.edge.call(gatewayId, method, params, { timeoutMs })` → what the edge
   part's `gc.handle(method)` returned. `timeoutMs` ≤ 30000 (default 30000),
   `method` `[A-Za-z0-9_.:-]{1,64}`, the whole call ≤ 64 KB, ≤ 32 open calls per
@@ -4933,7 +4957,7 @@ Admin API (session, CSRF, admin role — API tokens are refused), under `/api/v1
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /gateways` | every gateway: switches, channel, gateway version and edge support (`support`), counts (assigned, on, needing attention), MQTT |
-| `GET /gateways/:id` | one gateway: switches, channel, hello (versions, hardware), every plugin with an edge part (capabilities, assignment, state, new capabilities, last status), MQTT status and accounts |
+| `GET /gateways/:id` | one gateway: switches, channel, hello (versions, hardware), every plugin with an edge part (capabilities, assignment, state and `reason`, new capabilities, last status), MQTT status and accounts |
 | `PUT /gateways/:id/settings` | `{ edgeEnabled, mqttEnabled, mqttTls, allowUnsignedEdge, confirm }` |
 | `POST /gateways/:id/plugins/:pluginId/enable` | `{ capabilities: [keys] }` — exactly the current list, else `409 caps_mismatch` with it; unsigned without `allowUnsignedEdge` → `409 unsigned_blocked` |
 | `POST /gateways/:id/plugins/:pluginId/disable` | switch off |
@@ -4944,6 +4968,14 @@ Admin API (session, CSRF, admin role — API tokens are refused), under `/api/v1
 | `POST /gateways/:id/mqtt/accounts/:accountId/password` | a new password, once |
 | `DELETE /gateways/:id/mqtt/accounts/:accountId` | delete |
 | `GET /plugins/:pluginId` | a plugin's edge part on every gateway |
+
+The channel (`connection`) is `{ online, connectedAt, lastSeen, reason,
+detail }`: while it is down, `reason` as for `gc.edge.gateways()` and `detail`
+the gateway's own error text for `edge_fence` (the fence error) and
+`edge_not_connected` (e.g. `resolve: ENOTFOUND`), else `null`. An assignment
+with state `offline` carries the same `reason`. The tabs *Edge-Plugins* and
+*MQTT* show the reason with a next step and a link to the gateway's guide
+(Synology: its own section) instead of a bare "not connected".
 
 Activity log (category *Peers & Gateways*): `gateway_edge_enabled` /
 `gateway_edge_disabled`, `gateway_edge_unsigned_allowed` /
