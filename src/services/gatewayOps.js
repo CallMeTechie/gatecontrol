@@ -17,6 +17,9 @@
 //   every hour    retention of the DNS and cache day values, offers of
 //                 plugins whose file is gone, the app updates of the home
 //                 caches (homeCache.refreshUpdates: downloads new installers)
+// phase 3c (Drucken & Scannen):
+//   every minute  print jobs past 24 h expire, stale scans fail (homePrint.housekeeping)
+//   every hour    job files without an open job go (homePrint.sweepFiles)
 
 const logger = require('../utils/logger');
 const { withTask } = require('../utils/loopStall');
@@ -59,6 +62,8 @@ function start() {
   every(5 * MINUTE, () => withTask('home.reconcile', reconcileHomes));
   every(MINUTE, () => withTask('netwatch.notices', () => require('./netwatch').flushPending()));
   every(MINUTE, () => withTask('dns.down', () => { require('./homeDns').checkDown(); require('./homeInternet').cleanup(); }));
+  every(MINUTE, () => withTask('print.housekeeping', () => require('./homePrint').housekeeping()));
+  every(HOUR, () => withTask('print.files', () => require('./homePrint').sweepFiles()));
   every(HOUR, retentionOnce);
   every(HOUR, homeHourly);
   // first run a few minutes after the start (not in the busy start phase)

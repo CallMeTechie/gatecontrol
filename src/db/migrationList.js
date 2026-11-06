@@ -3529,6 +3529,74 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_gateway_pool_events_pool ON gateway_pool_events(pool_id, id);`,
     detect: (db) => tableExists(db, 'gateway_pool_events'),
   },
+  {
+    version: 132,
+    name: 'print',
+    // Drucken & Scannen (phase 3c, step 1 — services/homePrint.js, the
+    // contract "Phase 3c"): printers and scanners the gateways find in their
+    // home network, the print queue (24 h) and the scans.
+    //   print_devices  the last report of a gateway (POST /api/v1/gateway/print/devices):
+    //                  one row per device it knows, `data` the checked view
+    //                  (name, model, address, printer/scanner parts, ink)
+    //   print_jobs     a job of a plugin for a person: the file lies in
+    //                  <data>/print-jobs/<id>.bin until the gateway gave it to
+    //                  the printer (or it ended, expired after 24 h); state
+    //                  queued → sending → printing → done | failed, waiting
+    //                  while the printer is off, canceled, expired
+    //   print_scans    a scan of a plugin for a person; `pages` the JSON list
+    //                  of the pages (media of the plugin, unclaimed, a small
+    //                  preview as base64)
+    sql: `
+      CREATE TABLE IF NOT EXISTS print_devices (
+        peer_id      INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        device_id    TEXT NOT NULL,
+        data         TEXT NOT NULL,
+        online       INTEGER NOT NULL DEFAULT 0,
+        seen_at      INTEGER,
+        reported_at  INTEGER NOT NULL,
+        PRIMARY KEY (peer_id, device_id)
+      );
+      CREATE TABLE IF NOT EXISTS print_jobs (
+        id           TEXT PRIMARY KEY,
+        plugin_id    TEXT NOT NULL,
+        user_id      INTEGER NOT NULL,
+        peer_id      INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        device_id    TEXT NOT NULL,
+        name         TEXT NOT NULL,
+        format       TEXT NOT NULL,
+        size         INTEGER NOT NULL,
+        sha256       TEXT NOT NULL,
+        pages        INTEGER NOT NULL DEFAULT 1,
+        copies       INTEGER NOT NULL DEFAULT 1,
+        color        INTEGER NOT NULL DEFAULT 0,
+        duplex       INTEGER NOT NULL DEFAULT 0,
+        state        TEXT NOT NULL,
+        error        TEXT,
+        message      TEXT,
+        ipp_job_id   INTEGER,
+        created_at   INTEGER NOT NULL,
+        updated_at   INTEGER NOT NULL,
+        expires_at   INTEGER NOT NULL,
+        done_at      INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_print_jobs_peer ON print_jobs(peer_id, state);
+      CREATE INDEX IF NOT EXISTS idx_print_jobs_plugin ON print_jobs(plugin_id, updated_at);
+      CREATE TABLE IF NOT EXISTS print_scans (
+        id           TEXT PRIMARY KEY,
+        plugin_id    TEXT NOT NULL,
+        user_id      INTEGER NOT NULL,
+        peer_id      INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        device_id    TEXT NOT NULL,
+        settings     TEXT NOT NULL,
+        state        TEXT NOT NULL,
+        pages        TEXT NOT NULL DEFAULT '[]',
+        error        TEXT,
+        created_at   INTEGER NOT NULL,
+        updated_at   INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_print_scans_plugin ON print_scans(plugin_id, updated_at);`,
+    detect: (db) => ['print_devices', 'print_jobs', 'print_scans'].every((t) => tableExists(db, t)),
+  },
 ];
 
 module.exports = { migrations };

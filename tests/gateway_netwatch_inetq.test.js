@@ -71,6 +71,8 @@ describe('features in the config pull', () => {
       timezone: require('../src/services/notify/router').serverTz(),
       dns: { enabled: false },
       cache: { enabled: false },
+      // phase 3c (tests/print_scan.test.js)
+      print: { enabled: false, manual: [] },
     });
     const gateways = require('../src/services/gateways');
     assert.equal(r.body.config_hash, gateways.computeConfigHash(gw.peer.id));
@@ -135,7 +137,10 @@ describe('admin API: features', () => {
 
   it('capabilities in the telemetry win over the version', () => {
     const f = require('../src/services/gatewayFeatures');
-    assert.deepEqual(f.support({ gateway_version: '1.20.0', capabilities: ['netwatch'] }), { netwatch: true, inetq: false, presence: false, ups: false, dns: false, cache: false, version: '1.20.0', minGateway: '1.21.0', minGateway3b: '1.22.0' });
+    assert.deepEqual(f.support({ gateway_version: '1.20.0', capabilities: ['netwatch'] }), { netwatch: true, inetq: false, presence: false, ups: false, dns: false, cache: false, print: false, version: '1.20.0', minGateway: '1.21.0', minGateway3b: '1.22.0', minGatewayPrint: '1.24.0' });
+    // phase 3c: only by the capability, never by the version
+    assert.equal(f.support({ gateway_version: '1.30.0' }).print, false);
+    assert.equal(f.support({ gateway_version: '1.24.0', capabilities: ['print'] }).print, true);
     assert.equal(f.support({ gateway_version: '1.21.0' }).inetq, true);
     assert.equal(f.support({}).ups, false);
   });

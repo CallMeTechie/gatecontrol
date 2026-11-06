@@ -15,6 +15,8 @@ const EDGE_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'edge-demo')
 const PRESENCE_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'presence-demo');
 // a plugin with permissions.homeInternet + homeCache (tests/gateway_home_plugins.test.js)
 const HOME_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'home-demo');
+// a plugin with permissions.print (gc.print, tests/print_scan.test.js)
+const PRINT_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'print-demo');
 
 const trusted = signature.generateKeyPair();
 const stranger = signature.generateKeyPair();
@@ -47,4 +49,10 @@ function homePackage(o = {}) {
   return packDir(HOME_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
 }
 
-module.exports = { HELLO, EDGE_DEMO, PRESENCE_DEMO, HOME_DEMO, helloPackage, edgePackage, presencePackage, homePackage, trusted, stranger };
+/** The print test plugin, like helloPackage. */
+function printPackage(o = {}) {
+  const key = o.sign === undefined || o.sign === 'trusted' ? trusted.privateSeed : (o.sign === 'stranger' ? stranger.privateSeed : '');
+  return packDir(PRINT_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
+}
+
+module.exports = { HELLO, EDGE_DEMO, PRESENCE_DEMO, HOME_DEMO, PRINT_DEMO, helloPackage, edgePackage, presencePackage, homePackage, printPackage, trusted, stranger };

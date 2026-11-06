@@ -1532,6 +1532,42 @@ async function homeCacheCall(plugin, op, args) {
   throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
 }
 
+// ─── Drucken & Scannen (permissions.print, phase 3c) ───────────────────
+//
+// gc.print.devices() / discover() / submit() / testPage() / job() / jobs() /
+// cancel() / pages() / scan() / scanStatus() / cancelScan() / pdf() —
+// services/homePrint.js, docs/plugins.md "Print & scan". The plugin names
+// device ids only; jobs and scans belong to the plugin that made them, files
+// are its own media. Rights per person are the plugin's to check before
+// each call — the host checks that the person exists and is enabled.
+
+async function printCall(plugin, op, args, ctx) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.print === true, 'ERR_PRINT_DENIED', 'this plugin has no print permission');
+  const hp = require('../homePrint');
+  const a = args && typeof args === 'object' ? args : {};
+  try {
+    switch (op) {
+      case 'devices': return hp.devices().map(hp.deviceView);
+      case 'discover': return await hp.discover({ retrust: typeof a.retrust === 'string' ? a.retrust : null });
+      case 'submit': return await hp.submit(plugin, a);
+      case 'testPage': return await hp.testPage(plugin, a, (a.lang === 'en' || (ctx && ctx.lang === 'en')) ? 'en' : 'de');
+      case 'job': return hp.job(plugin, a.id);
+      case 'jobs': return hp.jobs(plugin, a);
+      case 'cancel': return hp.cancel(plugin, a.id);
+      case 'pages': return await hp.pagesOf(plugin, a);
+      case 'scan': return await hp.scan(plugin, a);
+      case 'scanStatus': return hp.scanStatus(plugin, a.id);
+      case 'cancelScan': return await hp.cancelScan(plugin, a.id);
+      case 'pdf': return await hp.makePdf(plugin, a);
+      default: break;
+    }
+  } catch (e) {
+    if (e instanceof hp.PrintError) throw new HostApiError(hp.HOST_CODES[e.code] || 'ERR_PRINT_FAILED', e.message);
+    throw e;
+  }
+  throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
+}
+
 // ─── Uploads to a home target (gc.net.uploadTarget → target.upload, since 1.193.0) ────
 //
 // gc.net.uploadTarget(id, path, { index, method, query, headers, form: {
@@ -1739,6 +1775,8 @@ function callTimeout(api, args) {
   // gc.mail: a connect within its timeoutMs, big messages and SMTP sends longer (mail/index.js)
   if (api.startsWith('mail.')) return require('./mail').callTimeout(api, args);
   if (api === 'http.fetchImage') return 20000;
+  // gc.print: a file up to 50 MB read, converted (sharp) and written; a PDF of up to 100 pages
+  if (api === 'print.submit' || api === 'print.pdf' || api === 'print.testPage' || api === 'print.pages') return 120000;
   // gc.edge.call: the call's own limit (≤ 30 s) and the way to the gateway and back
   if (api === 'edge.call') {
     const t = args && Number.isFinite(args.timeoutMs) ? Math.max(100, Math.min(30000, args.timeoutMs)) : 30000;
@@ -2132,6 +2170,10 @@ async function handle(plugin, api, args, ctx) {
     case 'homeCache.offer': return homeCacheCall(plugin, 'offer', args);
     case 'homeCache.withdraw': return homeCacheCall(plugin, 'withdraw', args);
     case 'homeCache.lanHint': return homeCacheCall(plugin, 'lanHint', args);
+    // Drucken & Scannen (permissions.print, homePrint.js — phase 3c)
+    case 'print.devices': case 'print.discover': case 'print.submit': case 'print.testPage': case 'print.job': case 'print.jobs':
+    case 'print.cancel': case 'print.pages': case 'print.scan': case 'print.scanStatus': case 'print.cancelScan': case 'print.pdf':
+      return printCall(plugin, api.slice('print.'.length), args, ctx);
     // person groups (permissions.groups, groups.js): read; ensure / remove need "manage"
     case 'groups.list': return require('./groups').call(plugin, 'list', args);
     case 'groups.get': return require('./groups').call(plugin, 'get', args);

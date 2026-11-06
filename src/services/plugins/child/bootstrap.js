@@ -385,6 +385,36 @@ function makeHomeCache() {
   });
 }
 
+// gc.print (permissions.print, phase 3c, docs/plugins.md "Print & scan"): printers and scanners in the home
+// networks of the gateways — device ids only; jobs, scans and pages are the plugin's own
+function makePrint() {
+  const o = (x) => (x && typeof x === 'object' ? x : {});
+  return Object.freeze({
+    /** devices() → [{ id, name, model, location, online, gatewayId, gateway, problem, printer, scanner, seenAt }] */
+    devices: () => hostCall('print.devices', {}),
+    /** discover({ retrust? }) → { asked } — search again (retrust: accept a device's changed certificate) */
+    discover: (opts) => hostCall('print.discover', o(opts)),
+    /** submit({ deviceId, mediaId, user, copies?, color?, duplex?, name? }) → job */
+    submit: (opts) => hostCall('print.submit', o(opts), 120000),
+    /** testPage({ deviceId, user }) → job */
+    testPage: (opts) => hostCall('print.testPage', o(opts), 120000),
+    /** job(id) → job; jobs({ since?, limit?, user? }) → [job] */
+    job: (id) => hostCall('print.job', { id }),
+    jobs: (opts) => hostCall('print.jobs', o(opts)),
+    /** cancel(id) → { canceled, state } (only queued / waiting) */
+    cancel: (id) => hostCall('print.cancel', { id }),
+    /** pages({ mediaId }) → { pages, format } */
+    pages: (opts) => hostCall('print.pages', o(opts), 120000),
+    /** scan({ deviceId, user, source?, mode?, resolution?, duplex? }) → { scanId } */
+    scan: (opts) => hostCall('print.scan', o(opts)),
+    /** scanStatus(id) → { state, pages: [{ n, mediaId, mime, bytes, thumb }], error } */
+    scanStatus: (id) => hostCall('print.scanStatus', { id }),
+    cancelScan: (id) => hostCall('print.cancelScan', { id }),
+    /** pdf({ pages: [mediaId], user, name, dpi? }) → { mediaId, pages, bytes, name } */
+    pdf: (opts) => hostCall('print.pdf', o(opts), 120000),
+  });
+}
+
 async function deliverPresence(ev) {
   const e = ev && typeof ev === 'object' ? ev : {};
   const arg = Object.freeze({ userId: e.userId, home: e.home === true ? true : (e.home === false ? false : null), since: e.since || null, source: e.source || 'wifi' });
@@ -426,6 +456,7 @@ function makeGc(info) {
     ...(features.edge ? { edge: makeEdge() } : {}),
     ...(features.homePresence || features.homeInternet ? { homeNetwork: makeHomeNetwork(features) } : {}),
     ...(features.homeCache ? { homeCache: makeHomeCache() } : {}),
+    ...(features.print ? { print: makePrint() } : {}),
     // device accounts of a gateway's MQTT broker (plugin.json edge.capabilities.mqtt): create(gatewayId,
     // { label, topics, name }) → { username, password (once), acl, label }; list(gatewayId); remove(gatewayId, username)
     ...(features.mqtt ? {

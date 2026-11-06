@@ -2477,6 +2477,74 @@ async request(req, gc) {
 }
 ```
 
+## Print & scan (`permissions.print`)
+
+Since gateways phase 3c (gateway 1.24.0+ with the capability `print`). A home
+gateway with **Drucken & Scannen** switched on (Gateways › Funktionen ›
+„Geräte im Heimnetz“) finds the printers and scanners of its home network
+itself — mDNS `_ipp`/`_ipps`/`_uscan`/`_uscans`, IPP for printing, eSCL for
+scanning — and reports them with their state and ink levels. A plugin with the
+permission prints the files of its people there and scans into its own media.
+The plugin "Drucken & Scannen" (`gatecontrol-print`) is built on it. Code:
+`src/services/homePrint.js` (queue, scans, the gateway routes
+`/api/v1/gateway/print/*`), `src/services/printPdf.js`, host API `printCall`
+in `src/services/plugins/hostApi.js`; gateway side: `docs/print.md` of the
+gateway.
+
+```json
+"permissions": { "print": true },
+"media": { "types": ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic"], "maxBytes": 52428800 }
+```
+
+The install dialog shows it as "Drucken & Scannen". Without it, `gc.print`
+does not exist and the host answers `ERR_PRINT_DENIED`. Printing reads the
+plugin's **own media** (`media` in plugin.json), scanned pages and PDFs become
+its media — `application/pdf` and `image/jpeg` must be among `media.types`.
+
+| Call | Answer / rule |
+|---|---|
+| `gc.print.devices()` | `[{ id, name, model, location, ip, online, gatewayId, gateway, gatewayOnline, problem, printer, scanner, seenAt, reportedAt }]` — each device once (two gateways of one home network see the same printer: the online one wins). `printer: { state: idle\|processing\|stopped\|offline, reasons, color, duplex, formats, copiesMax, markers: [{ name, color: '#RRGGBB', type, level: 0…100\|null, low }] }`, `scanner: { state, platen, feeder, duplex, color: ['bw','gray','color'], resolutions, formats, adf: loaded\|empty\|null }`. `problem: 'cert_changed'`: the device answers with another TLS certificate than at the first contact — nothing goes there until it is confirmed (`discover({ retrust })`) |
+| `gc.print.discover({ retrust? })` | `{ asked }` — every online gateway with the function on searches again; `retrust: <device id>` drops that device's stored certificate fingerprint (an administrator confirmed the new one) |
+| `gc.print.submit({ deviceId, mediaId, user, copies?, color?, duplex?, name? })` | the job (below). `mediaId` a file of this plugin (≤ 50 MB): PDF as it is (the printer must take `application/pdf`), pictures (JPEG, PNG, WebP, HEIC, GIF, TIFF) as JPEG — or as a PDF page for a printer without JPEG. Other files (Office, text): `ERR_PRINT_FORMAT`. `copies` 1 … `copiesMax` (≤ 99), `color`/`duplex` only where the printer can. At most 20 open jobs per plugin and person (`ERR_PRINT_BUSY`) |
+| `gc.print.testPage({ deviceId, user })` | a job with a test page (name of the printer, time, colour bars — grey for a black-and-white printer) |
+| `gc.print.job(id)` / `gc.print.jobs({ since?, limit?, user? })` | `{ id, deviceId, gatewayId, user, name, format, bytes, pages, copies, color, duplex, state, error, message, createdAt, updatedAt, expiresAt, doneAt }` — only this plugin's jobs, newest change first (`limit` ≤ 500) |
+| `gc.print.cancel(id)` | `{ canceled, state }` — only `queued` / `waiting` |
+| `gc.print.pages({ mediaId })` | `{ pages, format }` — before printing, for a page limit (PDF: its pages, a picture: 1) |
+| `gc.print.scan({ deviceId, user, source?, mode?, resolution?, duplex? })` | `{ scanId }` — `source` `platen` \| `feeder` (default: the feeder when paper is in it), `mode` `document` (grey, 300 dpi) \| `photo` (colour) \| `bw`, `resolution` 150 \| 200 \| 300 \| 600. One scan per person at a time (`ERR_PRINT_BUSY`, also when the scanner is busy) |
+| `gc.print.scanStatus(id)` | `{ id, state: scanning\|done\|failed\|canceled, error, pages: [{ n, mediaId, mime, bytes, thumb }], source, mode, resolution }` — pages are JPEG media of this plugin, owned by the person, **unclaimed** (claim or hand them over within 24 h); `thumb` a small JPEG preview as base64 (≤ 48 KB) |
+| `gc.print.cancelScan(id)` | `{ canceled, state }` |
+| `gc.print.pdf({ pages: [mediaId…], user, name, dpi? })` | `{ mediaId, pages, bytes, name }` — JPEG pages (others are converted) into one PDF, page size from `dpi` (default 300, the scan's resolution); unclaimed media of the person, ready for `gc.media.handOver` to Drive (`save_file`) |
+
+Job states: `queued` → `sending` → `printing` → `done`; `waiting` while the
+printer is off or busy (the gateway tries again every 2 minutes), `failed`
+(`error`: `format_unsupported`, `printer_rejected`, `canceled_at_printer`,
+`aborted_at_printer`, …), `canceled`, `expired` (not printed within **24 h**).
+`message: 'unconfirmed'` on `done`: the printer took the file but did not say
+it finished. Scan errors: `scanner_busy`, `feeder_empty`, `no_pages`,
+`timeout` (no word from the gateway for 3 minutes), `cert_changed`,
+`scan_failed`.
+
+Rights are the plugin's: who may print, scan, how many pages a day, only black
+and white — the plugin checks them before each call. The host only checks
+that `user` is an enabled person and that the media belong to the plugin.
+Other host API codes: `ERR_INVALID`, `ERR_NOT_FOUND` (device, job, scan,
+media), `ERR_PRINT_OFFLINE` (the device's gateway is offline),
+`ERR_PRINT_TOO_LARGE`, `ERR_PRINT_CERT_CHANGED`, `ERR_MEDIA_QUOTA`.
+
+```js
+// a person prints a PDF they uploaded in the portal (GC.upload → mediaId)
+const { pages } = await gc.print.pages({ mediaId });
+if (await pagesToday(user.id) + pages > limit) throw tooMany();
+const job = await gc.print.submit({ deviceId, mediaId, user: user.id, copies: 1, color: false });
+
+// scan two pages from the feeder, make a PDF and file it in Drive
+const { scanId } = await gc.print.scan({ deviceId, user: user.id, source: 'feeder', mode: 'document' });
+// … gc.print.scanStatus(scanId) until state 'done' …
+const doc = await gc.print.pdf({ pages: s.pages.map((p) => p.mediaId), user: user.id, name: '2026-11-06 Scan.pdf' });
+const h = await gc.media.handOver(doc.mediaId, { toPlugin: 'gatecontrol-drive', user: user.id });
+await gc.services.call('gatecontrol-drive', 'save_file', { mediaId: h.mediaId, area: 'mine', path: 'Scans/' + doc.name }, { userId: user.id });
+```
+
 ## AI requests (`permissions.ai`)
 
 Since 1.214.0. GateControl has one AI service for every plugin: the

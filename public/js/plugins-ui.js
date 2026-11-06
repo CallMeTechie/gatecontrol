@@ -172,6 +172,8 @@
     // phase 3b: pause / extra time for the internet of a person at home (DNS filter), files in the home caches
     if (perm.homeInternet) rows.push({ label: t('plugins.perm.home_internet'), value: t('plugins.perm.home_internet_on') });
     if (perm.homeCache) rows.push({ label: t('plugins.perm.home_cache'), value: t('plugins.perm.home_cache_on') });
+    // phase 3c: the printers and scanners the gateways find at home
+    if (perm.print) rows.push({ label: t('plugins.perm.print'), value: t('plugins.perm.print_on') });
     // person groups (docs/plugins.md "Groups"): read, or read and manage its own groups
     if (perm.groups === 'read' || perm.groups === 'manage') rows.push({ label: t('plugins.perm.groups'), value: t(perm.groups === 'manage' ? 'plugins.perm.groups_manage' : 'plugins.perm.groups_read') });
     // Google Drive / OneDrive of a person (gc.cloud), with the plugin's purpose

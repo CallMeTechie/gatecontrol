@@ -260,6 +260,57 @@ router.post('/cache', express.json({ limit: '1mb' }), phase3a((peerId, body) => 
   return {};
 }));
 
+// ─── Phase 3c: Drucken & Scannen (contract "Phase 3c", services/homePrint.js) ──
+
+const print = () => require('../../services/homePrint');
+
+function printFail(res, err, peerId) {
+  const code = err && err.code;
+  const status = { invalid: 400, not_found: 404, unsupported_type: 415, length_required: 411, too_large: 413, quota: 507 }[code];
+  if (status) return res.status(status).json({ ok: false, error: code });
+  logger.error({ err: err && err.message, peerId }, 'gateway print report failed');
+  return res.status(500).json({ ok: false, error: 'internal' });
+}
+
+/** POST /api/v1/gateway/print/devices — { scannedAt, devices: [...] } (the complete list) */
+router.post('/print/devices', express.json({ limit: '256kb' }), (req, res) => {
+  try { res.json({ ok: true, ...print().ingestDevices(req.gateway.peer_id, req.body || {}) }); } catch (err) { printFail(res, err, req.gateway.peer_id); }
+});
+
+/** GET /api/v1/gateway/print/jobs — the open jobs of this gateway (ETag) */
+router.get('/print/jobs', (req, res) => {
+  try {
+    const q = print().queueFor(req.gateway.peer_id);
+    res.set('ETag', q.etag);
+    res.set('Cache-Control', 'no-cache');
+    if (req.headers['if-none-match'] === q.etag) return res.status(304).end();
+    return res.json({ ok: true, jobs: q.jobs });
+  } catch (err) { return printFail(res, err, req.gateway.peer_id); }
+});
+
+/** GET /api/v1/gateway/print/jobs/:id/file — the file of an open job of this gateway */
+router.get('/print/jobs/:id/file', (req, res) => {
+  try { print().sendFile(req.gateway.peer_id, req.params.id, res); } catch (err) { if (!res.headersSent) printFail(res, err, req.gateway.peer_id); }
+});
+
+/** POST /api/v1/gateway/print/jobs/:id — { state, error?, message?, ippJobId? } */
+router.post('/print/jobs/:id', express.json({ limit: '4kb' }), (req, res) => {
+  try { res.json({ ok: true, ...print().jobReport(req.gateway.peer_id, req.params.id, req.body || {}) }); } catch (err) { printFail(res, err, req.gateway.peer_id); }
+});
+
+/** PUT /api/v1/gateway/print/scans/:id/pages/:n — one scanned page (raw body, ≤ 50 MB) */
+router.put('/print/scans/:id/pages/:n', async (req, res) => {
+  try { res.json({ ok: true, ...(await print().storePage(req.gateway.peer_id, req.params.id, req.params.n, req)) }); } catch (err) {
+    if (!res.headersSent) printFail(res, err, req.gateway.peer_id);
+    req.resume();
+  }
+});
+
+/** POST /api/v1/gateway/print/scans/:id — { state: scanning | done | failed, pages?, error? } */
+router.post('/print/scans/:id', express.json({ limit: '4kb' }), (req, res) => {
+  try { res.json({ ok: true, ...print().scanReport(req.gateway.peer_id, req.params.id, req.body || {}) }); } catch (err) { printFail(res, err, req.gateway.peer_id); }
+});
+
 /**
  * GET /api/v1/gateway/edge/packages/:id/:version — the signed package of a
  * plugin's edge part, byte for byte as installed (its sha256 is in the

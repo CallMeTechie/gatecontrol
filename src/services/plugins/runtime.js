@@ -161,7 +161,9 @@ class PluginProcess {
       // gc.homeNetwork: permissions.homePresence (phase 3a), .internet: permissions.homeInternet (phase 3b)
       homePresence: perms.homePresence === true, homeInternet: perms.homeInternet === true,
       // gc.homeCache: permissions.homeCache (phase 3b)
-      homeCache: perms.homeCache === true };
+      homeCache: perms.homeCache === true,
+      // gc.print: permissions.print (phase 3c)
+      print: perms.print === true };
     child.send({ t: 'init', plugin: { id: p.id, version: p.version, entry, filesDir: files, features } });
   }
 

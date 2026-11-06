@@ -243,6 +243,8 @@
   // gateway-home.js) they hold.
   const FEATURE_GROUPS = [
     { key: 'home', features: ['netwatch', 'presence', 'lan'] },
+    // phase 3c: printers and scanners (later also cameras and radio devices)
+    { key: 'devices', features: ['print'] },
     { key: 'wide', features: ['dns', 'cache'] },
     { key: 'power', features: ['inetq', 'ups'] },
     { key: 'ext', features: ['edge', 'zigbee'] },
@@ -268,6 +270,7 @@
     add('presence', f.netwatch && f.netwatch.enabled && f.presence && f.presence.enabled);
     if (d.dns) add('dns', d.dns.enabled);
     if (d.cache) add('cache', d.cache.enabled);
+    if (d.print) add('print', d.print.enabled);
     if (d.edge) { add('edge', d.edge.enabled); add('mqtt', d.edge.enabled && d.edge.mqtt); }
     if (d.zigbee) add('zigbee', d.zigbee.enabled);
     add('ups', f.ups && f.ups.enabled);

@@ -1,0 +1,11 @@
+{
+  "id": "print-demo",
+  "name": { "de": "Druck-Demo", "en": "Print demo" },
+  "version": "1.0.0",
+  "publisher": "GateControl Tests",
+  "description": { "de": "Plugin mit gc.print (Tests).", "en": "Plugin with gc.print (tests)." },
+  "gatecontrol": ">=1.0.0",
+  "entry": "server/index.js",
+  "media": { "maxBytes": 52428800, "types": ["application/pdf", "image/jpeg", "image/png", "application/octet-stream"], "quotaDefault": "1GB" },
+  "permissions": { "print": true }
+}

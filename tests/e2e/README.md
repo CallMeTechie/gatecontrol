@@ -112,6 +112,12 @@ scenarios/21-gateway-pools.js /gateways mit Pools: /gateway-pools → /gateways,
                         nehmen“, Zurückwechseln, Umzugsdialog), „Pool anlegen“ (gleiches Netz,
                         Vorschlag nach Gerät, Routen), „Pool auflösen“; Lizenz-Flag der Seite,
                         Flotte und Pool-API gemockt (page.route), hell/dunkel, 390 px
+scenarios/22-gateway-print.js /gateways › Funktionen › „Geräte im Heimnetz“ ›
+                        „Drucken & Scannen“: älteres Gateway ohne `print` („Gateway zu
+                        alt – ab 1.24.0“, Schalter gesperrt), dann 1.24.0: einschalten
+                        (echter PUT → features.print im Config-Pull), Gerätebericht des
+                        Gateways → „Gefunden: …“, ≈ MB, Weg ins Plugin (Katalog),
+                        Handbuch-Link, hell/dunkel, 390 px
 ```
 
 ## Ablauf
