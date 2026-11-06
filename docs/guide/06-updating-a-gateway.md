@@ -18,6 +18,13 @@ For the button to work, auto-update has to be set up on the device:
 If it is not set up, the card shows a package icon with “Auto-update needs
 setup”. A click opens “Set up auto-update” with the instructions.
 
+While the gateway restarts, the card shows “Updating” with the time it is
+expected back by – not “Offline”, and no offline alarm goes out. If it is not
+back by then, it counts as offline and the alarm comes then. With its first
+heartbeat it is “Online” again. In a pool, the gateway takes its routes back
+only after the failback wait; the card counts that time down (“takes its routes
+back in 4:30”).
+
 **Check:** After a few minutes the card shows the new version.
 
 ## 6.2 Why the compose file needs extra care

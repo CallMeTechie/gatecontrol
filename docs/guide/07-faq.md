@@ -236,6 +236,9 @@ The gateway no longer reports to the server.
 
 **Check:** The card under “Gateways” shows the gateway online again.
 
+“Restarting” instead of “Offline”: the gateway stopped properly (restart of the
+container or the device) and is expected back for ten minutes.
+
 ### “Edge service missing”
 
 The gateway's compose file lacks the services `edge` and `mqtt`. Bring it up to
