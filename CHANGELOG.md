@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.231.4] — 2026-11-06
+
+### Fixes
+- Geräte im selben Heimnetz nur einmal erkennen (Failover) (#412)
+
+---
+
 ## [1.231.3] — 2026-11-06
 
 ### Fixes
