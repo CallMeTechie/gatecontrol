@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.236.1] — 2026-11-06
+
+### Fixes
+- „Ausfallsicher“ zählt auch Routen, die fest an einem Pool-Mitglied hängen (#421)
+
+---
+
 ## [1.236.0] — 2026-11-06
 
 ### Features
