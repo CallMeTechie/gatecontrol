@@ -465,6 +465,12 @@
       c.body.appendChild(note('warn', [h('strong', { text: t('gwe.edge.compose_outdated') }), ' ', t('gwe.edge.compose_outdated_text'), ' ', guide('edge.compose_outdated')]));
       if (g.platform !== 'rpi') c.body.appendChild(composeHelp(g));
     }
+    // connected, no fence, and the edge container is older than gateway 1.23.0 (it cannot report the compose file):
+    // update the gateway, then the current compose file — same way out, no kernel module, no SSH
+    if (!why && bound.updateFirst) {
+      c.body.appendChild(note('warn', [h('strong', { text: t('gwe.edge.update_first') }), ' ', t('gwe.edge.update_first_text'), ' ', guide('edge.compose_outdated')]));
+      if (g.platform !== 'rpi') c.body.appendChild(composeHelp(g));
+    }
     const tel = (g.health && g.health.telemetry) || {};
     const memTotal = (hello && hello.hardware && hello.hardware.mem_total) || (tel.hardware && tel.hardware.mem_total) || tel.mem_total;
     const mh = K.memoryHint(memTotal, K.summary(d.plugins, d.settings).enabled);

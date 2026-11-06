@@ -89,6 +89,9 @@ describe('gateway-edge-kit: address and states', () => {
       { key: 'gwe.edge.compose_outdated', tone: 'bad', backend: null, composeOutdated: true });
     // older gateway: only the fence
     assert.equal(K.boundaryState({ fence: { active: false } }).key, 'gwe.edge.fence_off');
+    // without an isolation report the edge container is older than gateway 1.23.0: update first, then compose
+    assert.equal(K.boundaryState({ fence: { active: false } }).updateFirst, true);
+    assert.equal(K.boundaryState({ isolation: { mode: 'isolated', active: true }, fence: { active: true } }).updateFirst, undefined);
     assert.equal(K.boundaryState({ fence: { active: true, backend: 'iptables' } }).backend, 'iptables');
     for (const k of ['gwe.edge.isolated', 'gwe.edge.isolation_off', 'gwe.edge.compose_outdated', 'gwe.edge.compose_outdated_text']) assert.ok(de[k] && en[k], k);
   });

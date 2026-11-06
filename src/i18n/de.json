@@ -8684,6 +8684,8 @@
   "gwe.edge.isolation_off": "Isolation nicht bestätigt – Edge-Teile starten nicht",
   "gwe.edge.compose_outdated": "Compose-Datei veraltet – Edge-Teile starten nicht",
   "gwe.edge.compose_outdated_text": "Der Edge-Container läuft noch im Netz des Hosts (Compose-Datei von vor Gateway 1.23.0), und das Gateway konnte die Netzgrenze nicht setzen. Mit der aktuellen Compose-Datei läuft er ganz ohne Netz – ohne Kernel-Modul, ohne SSH.",
+  "gwe.edge.update_first": "Edge-Container veraltet",
+  "gwe.edge.update_first_text": "Der Edge-Container läuft noch mit einer Gateway-Version vor 1.23.0, und das Gateway konnte die Netzgrenze nicht setzen. So geht es ohne SSH: zuerst das Gateway aktualisieren (Karte unter „Gateways“: „Update auf …“), dann die aktuelle Compose-Datei herunterladen und das Projekt neu erstellen. Danach läuft der Edge-Container ganz ohne Netz.",
   "gwe.edge.connected_since": "Verbunden seit {{time}}",
   "gwe.edge.offline": "Nicht verbunden",
   "gwe.edge.offline_since": "Nicht verbunden · zuletzt {{time}}",

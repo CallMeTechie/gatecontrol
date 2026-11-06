@@ -98,7 +98,9 @@
     }
     if (fence && fence.active) return { key: 'gwe.edge.fence_on', tone: 'ok', backend: fence.backend || 'nftables', composeOutdated: false };
     if (iso && iso.mode === 'fence') return { key: 'gwe.edge.compose_outdated', tone: 'bad', backend: null, composeOutdated: true };
-    return { key: 'gwe.edge.fence_off', tone: 'bad', backend: null, composeOutdated: false };
+    // no isolation report at all: the edge container runs software from before gateway 1.23.0 — update the
+    // gateway first, then the current compose file (updateFirst)
+    return { key: 'gwe.edge.fence_off', tone: 'bad', backend: null, composeOutdated: false, updateFirst: !iso };
   }
 
   /**
