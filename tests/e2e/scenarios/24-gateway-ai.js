@@ -153,11 +153,13 @@ module.exports = (ctx) => {
         await page.goto(`${BASE}/gateways#gw/${GW}/features`);
         await theme(page, 'light');
         await goTab(page, GW, 'features');
-        step('ai: the row "Lokale KI" in "Geräte im Heimnetz", after "Drucken & Scannen"', await until(page, () => {
+        step('ai: the row "Lokale KI" in "Geräte im Heimnetz", after "Drucken & Scannen" (and "Kameras")', await until(page, () => {
           const g = document.querySelector('[data-fgroup="devices"]');
           if (!g) return false;
           const keys = [...g.querySelectorAll('[data-feature]')].map((x) => x.getAttribute('data-feature'));
-          return keys.indexOf('ai') === keys.indexOf('print') + 1 && /Lokale KI/.test(g.textContent);
+          // phase 3c, step 4: the row "Kameras" sits between printing and the local AI
+          const prev = keys.indexOf('cameras') >= 0 ? 'cameras' : 'print';
+          return keys.indexOf('ai') === keys.indexOf(prev) + 1 && /Lokale KI/.test(g.textContent);
         }));
         step('ai: the row: on, the model (2 GB Download, ≈ 2,5 GB im Speicher), ≈ GB in blue, the way to the KI-Anbieter', await page.evaluate(() => {
           const r = document.querySelector('[data-fgroup="devices"] [data-feature="ai"]');

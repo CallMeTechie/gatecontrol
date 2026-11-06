@@ -192,10 +192,14 @@ function rowOf(id) {
   return r;
 }
 
-/** Changes whenever a camera's access data change → the gateway fetches them again. */
+/**
+ * Changes whenever a camera's access data may have changed → the gateway fetches them again. Built from
+ * the cameras and their update times only (every change of user or password sets updated_at) — never
+ * from the password or its ciphertext.
+ */
 function credRev(rows) {
   const h = crypto.createHash('sha256');
-  for (const r of rows) h.update(`${r.id}\n${r.username || ''}\n${r.password_enc || ''}\n`);
+  for (const r of rows) h.update(`${r.id}\n${r.updated_at}\n`);
   return h.digest('hex').slice(0, 16);
 }
 
