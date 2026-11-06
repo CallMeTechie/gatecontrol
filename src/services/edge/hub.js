@@ -185,6 +185,10 @@ class Conn {
       mqtt: { available: !!(gw.mqtt && gw.mqtt.available === true) },
       // the gateway's network fence for edge parts ({ active, backend }) — without it no edge part starts there
       fence: gw.fence && typeof gw.fence === 'object' ? { active: gw.fence.active === true, backend: str(gw.fence.backend, 32) } : null,
+      // gateway >= 1.23.0: 'isolated' = the edge container has no network (compose network_mode: none, all I/O
+      // through the gateway socket) — no fence needed; 'fence' = older compose, edge in the host network
+      isolation: gw.isolation && typeof gw.isolation === 'object' && ['isolated', 'fence'].includes(gw.isolation.mode)
+        ? { mode: gw.isolation.mode, active: gw.isolation.active === true } : null,
       hardware: boundedJson(gw.hardware, 4096),
     };
     store.setHello(this.peerId, hello);

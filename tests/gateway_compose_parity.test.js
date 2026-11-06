@@ -4,7 +4,7 @@
 // buildCompose — also the NAS package and the "only docker-compose.yml"
 // download) against docker-compose.example.yml of gatecontrol-gateway, checked
 // in as tests/fixtures/gateway-compose/docker-compose.example.yml (copy of
-// gatecontrol-gateway main 2330392, 2026-11-05 / v1.22.1). When the gateway
+// gatecontrol-gateway feat/edge-isolated, 2026-11-06 / v1.23.0: edge without network). When the gateway
 // changes its example, copy it again — this test then shows what buildCompose
 // has to follow.
 //
@@ -74,6 +74,10 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
   it('the fixture is the gateway example (services gateway, edge, mqtt; NET_RAW/SETGID/SETUID)', () => {
     assert.deepEqual(Object.keys(ex.services), ['gateway', 'edge', 'mqtt']);
     assert.deepEqual(listOf(exGw.cap_add), ['NET_ADMIN', 'NET_BIND_SERVICE', 'NET_RAW', 'SETGID', 'SETUID']);
+    // gateway >= 1.23.0: the edge container has no network (no fence, no xt_owner); the gateway writes the broker files
+    assert.equal(ex.services.edge.network_mode, 'network_mode: none');
+    assert.ok(!/edge-mqtt/.test(ex.services.edge.volumes), 'the edge container never sees the broker files');
+    assert.match(exGw.volumes, /source: edge-mqtt-conf/);
   });
 
   for (const platform of ['synology', 'linux']) {

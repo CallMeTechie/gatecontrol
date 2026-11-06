@@ -9,22 +9,26 @@ home network. It finds devices such as Shelly or Tasmota there and talks to
 them. GateControl calls this part the **edge part**.
 
 Edge parts run on the gateway in their own isolated container called `edge`.
-It only reaches your home network and GateControl – not the internet and not
-the tunnel. On top comes a local **MQTT broker** in the container `mqtt`, where
+It has **no network of its own**: what it needs, the container `gateway` does
+for it and checks every request. So an edge part only reaches devices in your
+home network and GateControl – not the internet and not the tunnel. No firewall
+rules or kernel modules are needed for that. On top comes a local **MQTT broker** in the container `mqtt`, where
 devices report right in the home network, without a cloud.
 
 As long as you do not switch edge on, both containers are idle.
 
 ### Requirements
 
-- Gateway version **1.19.0** or later.
+- Gateway version **1.23.0** or later (edge without network; from 1.19.0 edge
+  only works with a network fence, see [compose file outdated](#compose-file-outdated)).
 - A gateway with Docker in **host network mode**: the Synology package from the
   assistant, the Raspberry Pi image or Linux with “Host (recommended)”. Bridge
   mode and the Proxmox installer have no edge container.
-- The compose file contains the services `edge` and `mqtt`. Gateways from the
-  current assistant have them. Bring older compose files up to date with
-  [chapter 6](06-updating-a-gateway.md).
-- On the Synology: the kernel module `xt_owner` (see [network fence missing](#network-fence-missing)).
+- The compose file contains the services `edge` and `mqtt`, `edge` with
+  `network_mode: none`. Gateways from the current assistant have them. Replace
+  older compose files with the button “Download docker-compose.yml only”
+  ([chapter 6](06-updating-a-gateway.md)) – on the Synology too, nothing is
+  needed via SSH.
 
 ## 4.1 Switching edge on
 
@@ -34,7 +38,8 @@ As long as you do not switch edge on, both containers are idle.
 4. Click “Switch edge on”.
 5. Look at the line at the top of the tab:
    - “Connected since …” – the edge container is connected to GateControl.
-   - “Network fence active (iptables)” or “Network fence active (nft)” – the isolation is in place.
+   - “Edge without network (isolated)” – the isolation is in place. With an
+     older compose file it says “Network fence active (iptables)” or “(nft)”.
 6. Under “Plugins with an edge part” switch the plugin on. A window shows the
    capabilities the edge part gets. Read them and click “Agree and switch on”.
 
@@ -111,38 +116,34 @@ The service `edge` is set up but does not report.
 
 **Check:** `…-edge-1` runs and is “healthy” after about a minute.
 
+### Compose file outdated
+
+The compose file is from before gateway 1.23.0: the container `edge` still runs
+in the host's network there and therefore needs a network fence made of
+firewall rules. The gateway could not set it – on the Synology the kernel
+usually lacks the module `xt_owner`. Without it no edge part starts. The
+gateway itself (routes, tunnel) keeps working normally.
+
+The way out is the current compose file, in which `edge` has no network at all:
+
+1. Click “Download docker-compose.yml only” below the message.
+2. Put it in place as shown there (Synology: create the folder `gateway-cache`,
+   stop the project, replace the YAML, rebuild the project). In detail:
+   [chapter 6](06-updating-a-gateway.md).
+
+The **Raspberry Pi image** practically never shows this (the Pi can set the
+network fence). Otherwise a freshly written, current image helps.
+
+**Check:** The tab shows “Edge without network (isolated)”, the edge parts run.
+
 ### Network fence missing
 
-The gateway could not set the firewall rules for the edge container. Without
-them no edge part starts. The gateway itself (routes, tunnel) keeps working normally.
+The same situation on a gateway **older than 1.23.0**: update the gateway first
+(auto-update or [chapter 6](06-updating-a-gateway.md)), then get the current
+compose file as under [compose file outdated](#compose-file-outdated). Loading a
+kernel module by hand is no longer needed.
 
-Usually the kernel lacks the “owner match”. On the Synology that is the module `xt_owner`.
-
-1. Open the log of the container `gateway` and search for `edge fence`. If it
-   says `iptables owner match:`, `xt_owner` is missing.
-2. Log in to the NAS via SSH and check:
-
-   ```bash
-   lsmod | grep xt_owner
-   ls /lib/modules/xt_owner.ko
-   ```
-
-3. If the file exists but the module is not loaded, load it:
-
-   ```bash
-   sudo insmod /lib/modules/xt_owner.ko
-   ```
-
-4. So that it survives a restart: “Control Panel” → “Task Scheduler” →
-   “Create” → “Triggered Task” → “User-defined script”, event “Boot-up”, user
-   `root`, command `insmod /lib/modules/xt_owner.ko`.
-5. Within 30 seconds the gateway sets the rules.
-
-If DSM does not ship the module, no edge parts can run on this NAS. Leave edge
-off for this gateway then.
-
-**Check:** The tab shows “Network fence active (iptables)”; the log of
-`gateway` shows `edge fence: rules active`.
+**Check:** The tab shows “Edge without network (isolated)”.
 
 ### Edge cannot reach GateControl
 
@@ -153,7 +154,8 @@ The edge container runs but cannot get through to the server.
 2. Is there another reverse proxy in front of GateControl (e.g. nginx, Traefik
    or a CDN)? Then it has to pass **WebSocket connections** to
    `/api/v1/gateway/edge/ws`. Without an extra proxy there is nothing to do.
-3. The log of the container `edge` has hints.
+3. The container `edge` connects through the container `gateway`: hints are in
+   the log of `gateway` (keyword `edge relay`) and of `edge`.
 
 **Check:** “Connected since …” shows.
 

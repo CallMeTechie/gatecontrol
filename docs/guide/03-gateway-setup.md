@@ -104,14 +104,14 @@ Nothing after 10 minutes? Is the project running? Is `gateway.env` in the folder
 `config`? The log (Container Manager → “Container” → `…-gateway-1` → “Log”)
 names the reason.
 
-### Edge on the Synology: network fence and xt_owner
+### Edge on the Synology
 
-For [edge plugins](04-edge-and-smart-home.md) the gateway sets a **network
-fence**: firewall rules that keep the edge container away from the internet and
-the tunnel. On the Synology this needs the kernel module **`xt_owner`**. If it
-is missing, GateControl shows “network fence missing”. The fix is in
-[chapter 4](04-edge-and-smart-home.md#network-fence-missing). The gateway itself
-(routes, tunnel) does not need the module.
+For [edge plugins](04-edge-and-smart-home.md) there is nothing more to do on
+the Synology: the container `edge` runs without a network of its own, the
+container `gateway` makes its connections and checks them. No kernel module
+(formerly `xt_owner`) and no SSH are needed. If the compose file is from before
+gateway 1.23.0, GateControl shows “Compose file outdated” – then download the
+current file, see [chapter 4](04-edge-and-smart-home.md#compose-file-outdated).
 
 ## 3.3 Raspberry Pi
 

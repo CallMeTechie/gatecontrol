@@ -79,6 +79,20 @@ describe('gateway-edge-kit: address and states', () => {
     assert.equal(K.pluginState(odd, settings).state, 'offline');
   });
 
+  it('isolation chip: isolated (gateway >= 1.23.0), fence, compose outdated, older gateways', () => {
+    assert.deepEqual(K.boundaryState(null), { key: 'gwe.edge.fence_unknown', tone: '', backend: null, composeOutdated: false });
+    assert.equal(K.boundaryState({ isolation: { mode: 'isolated', active: true }, fence: { active: true, backend: 'isolated' } }).key, 'gwe.edge.isolated');
+    assert.equal(K.boundaryState({ isolation: { mode: 'isolated', active: false }, fence: { active: false } }).key, 'gwe.edge.isolation_off');
+    assert.deepEqual(K.boundaryState({ isolation: { mode: 'fence', active: true }, fence: { active: true, backend: 'nft' } }),
+      { key: 'gwe.edge.fence_on', tone: 'ok', backend: 'nft', composeOutdated: false });
+    assert.deepEqual(K.boundaryState({ isolation: { mode: 'fence', active: false }, fence: { active: false, backend: null } }),
+      { key: 'gwe.edge.compose_outdated', tone: 'bad', backend: null, composeOutdated: true });
+    // older gateway: only the fence
+    assert.equal(K.boundaryState({ fence: { active: false } }).key, 'gwe.edge.fence_off');
+    assert.equal(K.boundaryState({ fence: { active: true, backend: 'iptables' } }).backend, 'iptables');
+    for (const k of ['gwe.edge.isolated', 'gwe.edge.isolation_off', 'gwe.edge.compose_outdated', 'gwe.edge.compose_outdated_text']) assert.ok(de[k] && en[k], k);
+  });
+
   it('the guide for a reason: the user guide in the language of the page, edge_missing per platform', () => {
     const de = 'https://github.com/CallMeTechie/gatecontrol/blob/master/docs/handbuch/';
     const en = 'https://github.com/CallMeTechie/gatecontrol/blob/master/docs/guide/';
@@ -89,6 +103,9 @@ describe('gateway-edge-kit: address and states', () => {
     assert.equal(K.reasonDoc('edge_missing', 'rpi', 'en'), en + '04-edge-and-smart-home.md#edge-service-missing');
     assert.equal(K.reasonDoc('edge_missing', null, 'de'), de + '06-gateway-aktualisieren.md#62-warum-die-compose-datei-extra-dran-ist');
     assert.equal(K.reasonDoc('edge_fence', 'synology', 'de'), de + '04-edge-und-smart-home.md#netzgrenze-fehlt');
+    assert.equal(K.reasonDoc('compose_outdated', 'synology', 'de'), de + '06-gateway-aktualisieren.md#63-synology-compose-datei-erneuern');
+    assert.equal(K.reasonDoc('compose_outdated', 'rpi', 'en'), en + '04-edge-and-smart-home.md#compose-file-outdated');
+    assert.equal(K.reasonDoc('compose_outdated', null, 'de'), de + '04-edge-und-smart-home.md#compose-datei-veraltet');
     assert.equal(K.reasonDoc('edge_not_running', 'rpi', 'en'), en + '04-edge-and-smart-home.md#edge-container-not-running');
     assert.equal(K.reasonDoc('edge_not_connected'), de + '04-edge-und-smart-home.md#edge-erreicht-gatecontrol-nicht');
     assert.equal(K.reasonDoc('gateway_offline', 'synology', 'en'), en + '04-edge-and-smart-home.md#gateway-offline');

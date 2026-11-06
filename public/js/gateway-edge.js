@@ -444,9 +444,9 @@
     c.body.appendChild(h('p', { class: 'gwe-d' }, [t('gwe.edge.text'), ' ', guide('edge')]));
     const chips = h('div', { class: 'gwe-chips' });
     const hello = d.gateway;
-    if (!hello) chips.appendChild(chip('', t('gwe.edge.fence_unknown'), 'shield'));
-    else if (hello.fence && hello.fence.active) chips.appendChild(chip('ok', t('gwe.edge.fence_on', { backend: hello.fence.backend || 'nftables' }), 'check'));
-    else chips.appendChild(chip('bad', t('gwe.edge.fence_off'), 'warn'));
+    // isolated (no network, gateway >= 1.23.0) / network fence (older compose) / compose outdated
+    const bound = K.boundaryState(hello);
+    chips.appendChild(chip(bound.tone, t(bound.key, { backend: bound.backend || '' }), bound.tone === 'ok' ? 'check' : bound.tone === 'bad' ? 'warn' : 'shield'));
     const conn = d.connection || {};
     const why = !conn.online && K.REASONS.indexOf(conn.reason) >= 0 ? conn.reason : null;
     if (conn.online) chips.appendChild(chip('ok', t('gwe.edge.connected_since', { time: fmtTime(conn.connectedAt) }), 'check'));
@@ -458,7 +458,13 @@
     if (why && !(d.plugins || []).some((p) => K.pluginState(p, d.settings).state === why)) {
       c.body.appendChild(note(why === 'gateway_offline' ? 'info' : 'warn', [h('strong', { text: t('gwe.state.' + why) }), ' '].concat(reasonText(g, d, why))));
     }
-    if (why === 'edge_missing' && g.platform !== 'rpi') c.body.appendChild(composeHelp(g));
+    if ((why === 'edge_missing' || why === 'compose_outdated') && g.platform !== 'rpi') c.body.appendChild(composeHelp(g));
+    // connected, but the edge container still runs in the host network without a fence: the current compose file
+    // (no network for edge, no kernel module) is the way out — the plugin rows show 'denied' meanwhile
+    if (!why && bound.composeOutdated) {
+      c.body.appendChild(note('warn', [h('strong', { text: t('gwe.edge.compose_outdated') }), ' ', t('gwe.edge.compose_outdated_text'), ' ', guide('edge.compose_outdated')]));
+      if (g.platform !== 'rpi') c.body.appendChild(composeHelp(g));
+    }
     const tel = (g.health && g.health.telemetry) || {};
     const memTotal = (hello && hello.hardware && hello.hardware.mem_total) || (tel.hardware && tel.hardware.mem_total) || tel.mem_total;
     const mh = K.memoryHint(memTotal, K.summary(d.plugins, d.settings).enabled);

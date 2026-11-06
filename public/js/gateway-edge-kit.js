@@ -33,7 +33,7 @@
 
   // Why the edge channel is down (services/edge/reason.js) — the server reports state 'offline'
   // plus `reason`; a row shows the reason in place of the plain 'offline'.
-  const REASONS = ['gateway_offline', 'edge_missing', 'edge_not_running', 'edge_fence', 'edge_not_connected'];
+  const REASONS = ['gateway_offline', 'edge_missing', 'edge_not_running', 'compose_outdated', 'edge_fence', 'edge_not_connected'];
 
   // State of one plugin's edge part on the gateway → tone + i18n key (gwe.state.<state>).
   // 'not_set_up': installed with an edge part, never switched on here.
@@ -41,7 +41,7 @@
     running: 'green', starting: 'blue', pending: 'blue', crashed: 'red', denied: 'red', stopped: 'grey',
     offline: 'grey', disabled: 'grey', update_pending: 'amber', unsigned: 'grey', plugin_off: 'grey',
     gateway_too_old: 'amber', edge_off: 'grey', not_set_up: 'grey', no_edge: 'grey',
-    gateway_offline: 'grey', edge_missing: 'amber', edge_not_running: 'red', edge_fence: 'red', edge_not_connected: 'amber',
+    gateway_offline: 'grey', edge_missing: 'amber', edge_not_running: 'red', compose_outdated: 'amber', edge_fence: 'red', edge_not_connected: 'amber',
   };
   const STATES = Object.keys(STATE_TONE);
 
@@ -52,6 +52,7 @@
     gateway_offline: { other: 'edge.gateway_offline' },
     edge_missing: { rpi: 'edge.edge_missing', synology: 'update.synology', linux: 'update.linux', proxmox: 'gw.proxmox', other: 'update' },
     edge_not_running: { other: 'edge.edge_not_running' },
+    compose_outdated: { rpi: 'edge.compose_outdated', synology: 'update.synology', linux: 'update.linux', other: 'edge.compose_outdated' },
     edge_fence: { other: 'edge.edge_fence' },
     edge_not_connected: { other: 'edge.edge_not_connected' },
   };
@@ -78,6 +79,26 @@
     else state = 'not_set_up';
     if (!STATE_TONE[state]) state = 'stopped';
     return { state, tone: STATE_TONE[state], key: 'gwe.state.' + state };
+  }
+
+  /**
+   * How the edge container is fenced off, from the gateway's hello → { key, tone, backend, composeOutdated }.
+   * Gateway >= 1.23.0 reports isolation.mode: 'isolated' = no network at all (compose network_mode: none,
+   * everything through the gateway socket — no fence needed); 'fence' = an older compose file with the
+   * edge container in the host network, which needs the gateway's network fence — without it the way out
+   * is the current compose file (composeOutdated). Older gateways only report the fence.
+   */
+  function boundaryState(hello) {
+    if (!hello) return { key: 'gwe.edge.fence_unknown', tone: '', backend: null, composeOutdated: false };
+    const iso = hello.isolation && typeof hello.isolation === 'object' ? hello.isolation : null;
+    const fence = hello.fence && typeof hello.fence === 'object' ? hello.fence : null;
+    if (iso && iso.mode === 'isolated') {
+      return iso.active ? { key: 'gwe.edge.isolated', tone: 'ok', backend: null, composeOutdated: false }
+        : { key: 'gwe.edge.isolation_off', tone: 'bad', backend: null, composeOutdated: false };
+    }
+    if (fence && fence.active) return { key: 'gwe.edge.fence_on', tone: 'ok', backend: fence.backend || 'nftables', composeOutdated: false };
+    if (iso && iso.mode === 'fence') return { key: 'gwe.edge.compose_outdated', tone: 'bad', backend: null, composeOutdated: true };
+    return { key: 'gwe.edge.fence_off', tone: 'bad', backend: null, composeOutdated: false };
   }
 
   /**
@@ -273,7 +294,7 @@
   }
 
   return {
-    TABS, STATES, REASONS, reasonDoc, parseHash, hashFor, pluginState, pluginControl, summary, capabilityRows, capabilityKeys,
+    TABS, STATES, REASONS, reasonDoc, parseHash, hashFor, pluginState, boundaryState, pluginControl, summary, capabilityRows, capabilityKeys,
     memoryHint, ramLabel, EDGE_BASE_MB, PER_PLUGIN_MB,
     ACCOUNTS_MAX, TOPICS_MAX, USER_RE, ACCESS, TEMPLATES, template, usernameProblem, topicOk, plannedTopics, accountBody,
     topicPrefix, brokerAddress, brokerStatus, accountStatus, errorKey, LOG_FILTERS, logLabel,

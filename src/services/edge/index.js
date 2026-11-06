@@ -88,12 +88,16 @@ function pluginEdgeView(p, lang) {
 
 function helloView(s) {
   return s.hello ? { version: s.hello.version || null, edgeHost: s.hello.edgeHost || null, mqttAvailable: !!(s.hello.mqtt && s.hello.mqtt.available),
-    fence: s.hello.fence || null, hardware: s.hello.hardware || null, at: s.helloAt ? new Date(s.helloAt).toISOString() : null } : null;
+    fence: s.hello.fence || null, isolation: s.hello.isolation || null, hardware: s.hello.hardware || null, at: s.helloAt ? new Date(s.helloAt).toISOString() : null } : null;
 }
 
 // the first gateway release with the edge container and the MQTT broker (gatecontrol-gateway, compose
 // services edge + mqtt): older gateways never open the edge channel — the UI offers an update instead
 const EDGE_MIN_GATEWAY = '1.19.0';
+// the first gateway release whose edge container runs without network (compose network_mode: none, all I/O
+// through the gateway socket, no network fence / xt_owner): with an older compose file (edge in the host
+// network) and no fence the UI asks for the current compose file (reason compose_outdated)
+const EDGE_ISOLATED_MIN_GATEWAY = '1.23.0';
 
 /** The gateway's last heartbeat: { seenAt, telemetry } (gateway_meta). */
 function heartbeatOf(peerId) {
@@ -135,7 +139,10 @@ function supportView(s, hb) {
   }
   const semver = require('../plugins/semver');
   const supported = s.hello ? true : (version && semver.valid(version) ? semver.compare(version, EDGE_MIN_GATEWAY) >= 0 : null);
-  return { gatewayVersion: version, edgeSupported: supported, edgeMinGateway: EDGE_MIN_GATEWAY };
+  const isolatedSupported = version && semver.valid(version) ? semver.compare(version, EDGE_ISOLATED_MIN_GATEWAY) >= 0 : null;
+  const mode = (s.hello && s.hello.isolation && s.hello.isolation.mode) || channelReason.modeOf(hb.telemetry);
+  return { gatewayVersion: version, edgeSupported: supported, edgeMinGateway: EDGE_MIN_GATEWAY,
+    edgeMode: mode || null, isolatedSupported, isolatedMinGateway: EDGE_ISOLATED_MIN_GATEWAY };
 }
 
 function settingsView(s) {
@@ -493,5 +500,5 @@ module.exports = {
   gateways, overview, pluginOverview, setSettings, enablePlugin, disablePlugin, logs,
   mqttAccounts, mqttCreate, mqttSetLocked, mqttResetPassword, mqttRemove,
   onPluginInstalled, onPluginRemoved, hostGateways, hostCall, hostConfigure, hostMqtt, stateOf, channelOf, heartbeatOf,
-  EdgeAdminError, CONFIRM_WORDS, EDGE_MIN_GATEWAY,
+  EdgeAdminError, CONFIRM_WORDS, EDGE_MIN_GATEWAY, EDGE_ISOLATED_MIN_GATEWAY,
 };

@@ -4748,9 +4748,16 @@ Only in plugins with an `edge` section:
   * `edge_not_running` — no fresh summary of the edge host: the `edge`
     container is stopped or restarting (or the `gateway` service lacks the
     `edge-status` volume);
-  * `edge_fence` — the gateway could not set the network fence, so edge
-    parts stay off (fail closed); typically a kernel without the owner match
-    (Synology: `xt_owner`);
+  * `compose_outdated` — gateway ≥ 1.23.0 whose edge container still runs in
+    the host network (a compose file from before 1.23.0, `telemetry.edge.mode:
+    'fence'`) and the gateway could not set the network fence (Synology: no
+    `xt_owner`), so edge parts stay off (fail closed). The way out is the
+    current compose file (*Nur docker-compose.yml herunterladen*), in which the
+    edge container has no network at all (`network_mode: none`, everything
+    through the gateway socket) — no kernel module;
+  * `edge_fence` — the same on a gateway older than 1.23.0 (no `mode`):
+    update the gateway, then the compose file. With `mode: 'isolated'` the
+    fence never counts;
   * `edge_not_connected` — the edge host runs but has no channel to this
     server (address/DNS, firewall, a reverse proxy that does not pass
     WebSocket upgrades to `/api/v1/gateway/edge/ws`).
@@ -4888,7 +4895,8 @@ the older one (4000); a disabled gateway or a rotated token ends it (4001).
 The first frame must be `hello` within 10 s (else 1008).
 
 Gateway → server: `hello { v: 1, gw: { version, edgeHost, mqtt: { available },
-fence: { active, backend }, hardware } }` · `status { plugins: [{ id, version, state, rssMb, restarts,
+fence: { active, backend }, isolation: { mode: 'isolated'|'fence', active }, hardware } }`
+(`isolation` from gateway 1.23.0; isolated gateways report `fence.backend: 'isolated'`) · `status { plugins: [{ id, version, state, rssMb, restarts,
 lastError, throttled (dropped events since the last status), buffered }], mqtt: { running, clients, accounts: [{ user,
 connected, lastSeen }] } }` (on change and every 30 s) · `result { id, ok,
 result | error: { code, message } }` · `event { plugin, name, data, at, seq }`
@@ -4971,7 +4979,7 @@ Admin API (session, CSRF, admin role — API tokens are refused), under `/api/v1
 
 The channel (`connection`) is `{ online, connectedAt, lastSeen, reason,
 detail }`: while it is down, `reason` as for `gc.edge.gateways()` and `detail`
-the gateway's own error text for `edge_fence` (the fence error) and
+the gateway's own error text for `compose_outdated`/`edge_fence` (the fence error) and
 `edge_not_connected` (e.g. `resolve: ENOTFOUND`), else `null`. An assignment
 with state `offline` carries the same `reason`. The tabs *Edge-Plugins* and
 *MQTT* show the reason with a next step and a link to the gateway's guide
