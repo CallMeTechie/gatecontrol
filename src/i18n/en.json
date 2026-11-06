@@ -8684,6 +8684,8 @@
   "gwe.edge.isolation_off": "Isolation not confirmed – edge parts do not start",
   "gwe.edge.compose_outdated": "Compose file outdated – edge parts do not start",
   "gwe.edge.compose_outdated_text": "The edge container still runs in the host network (compose file from before gateway 1.23.0) and the gateway could not set the network fence. With the current compose file it runs without any network – no kernel module, no SSH.",
+  "gwe.edge.update_first": "Edge container outdated",
+  "gwe.edge.update_first_text": "The edge container still runs a gateway version from before 1.23.0, and the gateway could not set the network fence. The way out needs no SSH: first update the gateway (its card under “Gateways”: “Update to …”), then download the current compose file and recreate the project. After that the edge container runs without any network.",
   "gwe.edge.connected_since": "Connected since {{time}}",
   "gwe.edge.offline": "Not connected",
   "gwe.edge.offline_since": "Not connected · last {{time}}",
