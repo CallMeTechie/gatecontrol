@@ -67,8 +67,9 @@ var DT = function (k, p) { return D.t(k, p); };
       else if (k === 'text') n.textContent = v;
       else attr(n, k, v === true ? '' : String(v));
     });
-    // children: real DOM nodes, anything else only as text
-    (kids || []).forEach(function (c) { if (c != null) n.appendChild(c instanceof Node ? c : document.createTextNode(String(c))); });
+    // children: Element.append() — a node is inserted as it is, any other value
+    // (a label, a search text from the address) only as plain text, never parsed as HTML
+    (kids || []).forEach(function (c) { if (c != null) n.append(c instanceof Node ? c : String(c)); });
     return n;
   }
   // icons: static path data only
