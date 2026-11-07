@@ -286,7 +286,7 @@ module.exports = (ctx) => {
         // ── Texterkennung and Office-Dateien drucken: a 1.30.0 gateway → "ab 1.33.0", no checkboxes ──
         step('print: 1.30.0 → "Texterkennung … ab 1.33.0", no checkboxes for them', await until(page, (sel) => {
           const x = document.querySelector(sel + ' [data-print-extras="old"]');
-          return !!x && /Texterkennung/.test(x.textContent) && /ab 1\.31\.0/.test(x.textContent) && !document.querySelector(sel + ' #gwn-f-print-ocr') && !document.querySelector(sel + ' #gwn-f-print-office');
+          return !!x && /Texterkennung/.test(x.textContent) && /ab 1\.33\.0/.test(x.textContent) && !document.querySelector(sel + ' #gwn-f-print-ocr') && !document.querySelector(sel + ' #gwn-f-print-office');
         }, row));
         const P3C = [...CAPS, 'print', 'print-convert', 'print-ocr', 'print-office', 'print-media'];
         step('print: heartbeat of a 1.33.0 gateway (tesseract there, the service office not yet)', await heartbeat('1.33.0', P3C, { ocr: { enabled: false, available: true, langs: ['deu', 'eng'] }, office: { enabled: false, service: 'absent' } }) === 200);
