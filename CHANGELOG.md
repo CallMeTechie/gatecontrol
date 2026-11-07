@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.240.0] — 2026-11-07
+
+### Features
+- Kameras im Heimnetz – ONVIF/RTSP über die Gateways, Live-Bild über VPN, Clips bei Bewegung und gc.cameras (Phase 3c, Schritt 4) (#426)
+
+---
+
 ## [1.239.0] — 2026-11-06
 
 ### Features
