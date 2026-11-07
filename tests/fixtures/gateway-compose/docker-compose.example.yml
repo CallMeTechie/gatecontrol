@@ -310,6 +310,11 @@ services:
   # Ein- und ausgeschaltet wird in GateControl: das Gateway legt /gc-ai/run an,
   # der kleine Wächter startet `ollama serve` (nur 127.0.0.1:11435) bzw. beendet
   # es. Ohne run läuft nur der Wächter. Modelle lädt GateControl (KI-Anbieter).
+  # Grafikkarte: zusätzlich eine der Dateien docker-compose.ki-nvidia.yml,
+  # docker-compose.ki-amd.yml oder docker-compose.ki-intel.yml (in .env z. B.
+  # COMPOSE_FILE=docker-compose.yml:docker-compose.ki-nvidia.yml). Die Datei aus
+  # GateControl enthält das schon, wenn dort „Grafikkarte nutzen“ gewählt ist.
+  # Der Wächter meldet in /gc-ai/ki.gpu, welche Geräte der Container sieht.
   ki:
     profiles: ["ki"]
     image: ollama/ollama:0.40.8@sha256:2b8eecdb85aa6ea67c381c8ecffec04b2658496cf2821a8f88b0485bdff198e8
@@ -317,12 +322,21 @@ services:
       - /bin/sh
       - -c
       - |
-        C=/gc-ai; p=""
+        C=/gc-ai; p=""; n=0
         say() { printf '%s %s\n' "$$1" "$$(date +%s)" >"$$C/.ki.state" && mv -f "$$C/.ki.state" "$$C/ki.state"; }
         halt() { if [ -n "$$p" ]; then kill "$$p" 2>/dev/null; wait "$$p" 2>/dev/null; fi; p=""; }
         dead() { [ ! -e "/proc/$$1" ] || grep -q '^State:[[:space:]]*Z' "/proc/$$1/status" 2>/dev/null; }
+        gpu() {
+          { echo "mode $${GC_KI_GPU:-none}"; echo "at $$(date +%s)"
+            for d in /dev/nvidia0 /dev/nvidiactl /dev/kfd /dev/dri/renderD*; do [ -e "$$d" ] && echo "dev $${d##*/}"; done
+            if command -v nvidia-smi >/dev/null 2>&1; then
+              timeout 10 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader,nounits 2>/dev/null | head -n 4 | sed 's/^/nv /'
+            fi
+          } >"$$C/.ki.gpu" 2>/dev/null && mv -f "$$C/.ki.gpu" "$$C/ki.gpu"
+        }
         trap 'halt; say idle; exit 0' TERM INT
         while :; do
+          if [ $$((n % 30)) -eq 0 ]; then gpu; fi; n=$$((n + 1))
           if [ -f "$$C/run" ]; then
             if [ -n "$$p" ] && dead "$$p"; then wait "$$p"; say exit; p=""; sleep 8; fi
             if [ -z "$$p" ]; then ollama serve & p=$$!; fi
@@ -351,6 +365,8 @@ services:
       - OLLAMA_NUM_PARALLEL=1
       - OLLAMA_MAX_LOADED_MODELS=1
       - OLLAMA_KEEP_ALIVE=10m
+      # welche Grafikkarte die Compose-Datei gibt (none | nvidia | amd | intel) – der Wächter meldet es
+      - GC_KI_GPU=none
     healthcheck:
       test: ["CMD-SHELL", "case \"$$(cut -d' ' -f1 /gc-ai/ki.state 2>/dev/null)\" in running) ollama list >/dev/null ;; *) true ;; esac"]
       interval: 60s

@@ -1,0 +1,20 @@
+# Lokale KI mit NVIDIA-Grafikkarte (docs/local-ai.md §2.1) – Zusatz zu
+# docker-compose.yml, zusammen mit dem Profil "ki":
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.ki-nvidia.yml
+#   COMPOSE_PROFILES=ki
+# Braucht auf dem Rechner den NVIDIA-Treiber (ab 550) und das NVIDIA Container
+# Toolkit (nvidia-ctk runtime configure --runtime=docker). Fehlt das Toolkit,
+# startet der Container nicht ("could not select device driver nvidia").
+# Die Datei aus GateControl enthält das schon, wenn „Grafikkarte nutzen: NVIDIA“
+# gewählt ist.
+services:
+  ki:
+    environment:
+      - GC_KI_GPU=nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

@@ -392,13 +392,17 @@
   // ── The local AI (phase 3c, step 3 — services/ai/local.js, /api/v1/ai/local) ──
   // Card "Lokale KI einrichten": on a gateway (GateControl downloads and starts
   // the model) or an existing AI server in the home network (Ollama, LM Studio),
-  // the gateway with its memory, the model list with a fit per gateway (hints,
-  // never a ban), the download with "Abbrechen"; card "Wofür die lokale KI?":
-  // the three modes, "Testen" and "Speichern".
+  // the gateway with its memory, "Grafikkarte nutzen" (per gateway, the devices
+  // go into its compose file; hints when a driver or the NVIDIA Container
+  // Toolkit is missing), the model list with a fit per gateway and graphics
+  // memory (hints, never a ban), the download with "Abbrechen"; a LAN server by
+  // address or name with an optional API key and "Verbindung testen"; card
+  // "Wofür die lokale KI?": the three modes, "Testen" and "Speichern".
   const LBASE = BASE + '/local';
   let lview = null;       // GET /api/v1/ai/local
   let lstatus = null;     // GET /api/v1/ai/local/status (live from the gateway)
-  let draft = null;       // { source, peerId, model, lanUrl, lanApi } as chosen on the page
+  let draft = null;       // { source, peerId, model, lanUrl, lanApi, gpu, lanKey, keyRemove } as chosen on the page
+  let lprobe = null;      // the answer of "Verbindung testen" { url, api, reachable, models, … } (nothing saved)
   let useDraft = null;
   let pollTimer = null;
   let testOut = null;     // the answer of "Testen"
@@ -414,22 +418,31 @@
   function localGw(id) { return lview && (lview.gateways || []).find((g) => g.id === id) || null; }
   function catalogueOf(id) {
     const c = lview && (lview.catalogue || []).find((x) => x.peerId === id);
-    return c ? c.models : [];
+    if (!c) return [];
+    // the fit as it would be with the choice of "Grafikkarte nutzen" on the page (an older server: as saved)
+    const gpu = draft && draft.source === 'service' && draft.gpu ? draft.gpu : null;
+    return gpu && c.byGpu && c.byGpu[gpu] ? c.byGpu[gpu] : c.models;
   }
+  function gpuOf(g) { return (g && g.settings && g.settings.gpu) || 'off'; }
   function firstDraft() {
     const cur = lview.current;
-    if (cur) return { source: cur.source, peerId: cur.peerId, model: cur.model, lanUrl: cur.lanUrl || '', lanApi: cur.lanApi || 'ollama' };
+    if (cur) return { source: cur.source, peerId: cur.peerId, model: cur.model, lanUrl: cur.lanUrl || '', lanApi: cur.lanApi || 'ollama', gpu: cur.gpu || 'off', lanKey: '', keyRemove: false };
     const gws = (lview.gateways || []).filter((g) => g.supported);
     const g = gws.find((x) => !x.hint) || gws[0] || null;
+    draft = { source: g && g.hint ? 'lan' : 'service', peerId: g ? g.id : null, model: null, lanUrl: '', lanApi: 'ollama', gpu: gpuOf(g), lanKey: '', keyRemove: false };
     const rec = g ? catalogueOf(g.id).find((m) => m.fit === 'recommended') : null;
-    return { source: g && g.hint ? 'lan' : 'service', peerId: g ? g.id : null, model: rec ? rec.id : null, lanUrl: '', lanApi: 'ollama' };
+    draft.model = rec ? rec.id : null;
+    return draft;
   }
+  const VENDOR = { nvidia: 'NVIDIA', amd: 'AMD', intel: 'Intel' };
   function gwLabel(g) {
     const parts = [g.name];
     const facts = [];
     if (g.memMb) facts.push(t('ai.local.gw_ram', { gb: ramOf(g.memMb) }));
     if (g.cores) facts.push(tp('ai.local.gw_cores', g.cores));
-    facts.push(g.gpu && g.gpu.length ? t('ai.local.gw_gpu', { vendor: g.gpu.map((x) => x.vendor === 'other' ? t('ai.local.gpu_other') : x.vendor.toUpperCase()).join(', ') }) : t('ai.local.gw_no_gpu'));
+    const gv = g.gpuView || null;
+    const used = !!(gv && (gv.state === 'in_use' || gv.state === 'ready'));
+    facts.push(g.gpu && g.gpu.length ? t(used ? 'ai.local.gw_gpu_on' : 'ai.local.gw_gpu', { vendor: g.gpu.map((x) => VENDOR[x.vendor] || t('ai.local.gpu_other')).join(', ') }) : t('ai.local.gw_no_gpu'));
     let text = parts.concat(facts.join(', ')).join(' – ');
     if (!g.supported) text += ' – ' + t('ai.local.gw_old', { min: lview.minGateway });
     else if (g.hint === 'memory') text += ' – ' + t('ai.local.gw_memory');
@@ -490,8 +503,60 @@
         el('span', { class: 'pgx-muted', text: ' · ' + t('ai.local.size_gb', { gb: gbMb(m.downloadMb) }) + ' · ' + t('ai.local.model.' + m.id.replace(/[^a-z0-9]/gi, '_')) }),
       ]),
       modelPresent(m.id) ? pill('blue', t('ai.local.present')) : null,
+      m.vram ? pill(m.vram === 'full' ? 'good' : '', t('ai.local.vram.' + m.vram)) : null,
       pill(tone, t('ai.local.fit.' + m.fit)),
     ]);
+  }
+
+  // ── "Grafikkarte nutzen" (per gateway; gateway >= 1.31.0) ──
+  const GPU_TONE = { available: 'info', experimental: 'info', compose: 'warn', unsupported: 'info', rpi: 'info' };
+  function gpuBlock(g) {
+    if (!g || g.platform === 'rpi') return null;
+    const opts = g.gpuOptions || null;
+    const sup = (g.supports || []).indexOf('gpu') >= 0;
+    const cards = g.gpu || [];
+    if (!sup) {
+      // an older gateway: a hint only when there is a card to use
+      return cards.length ? el('p', { class: 'pgx-hint', 'data-gpu-hint': 'unsupported', text: t('ai.local.gpu_hint.unsupported', { min: lview.minGatewayExt || '1.31.0' }) }) : null;
+    }
+    const sel = el('select', { class: 'st-select', id: 'ai-local-gpu', disabled: off });
+    ['off', 'nvidia', 'amd', 'intel'].forEach((c) => sel.appendChild(el('option', { value: c, text: t('ai.local.gpu_opt.' + c) })));
+    sel.value = draft.gpu || 'off';
+    sel.addEventListener('change', () => {
+      draft.gpu = sel.value;
+      // the recommendation follows the graphics memory, unless a model was saved here
+      const rec = catalogueOf(draft.peerId).find((m) => m.fit === 'recommended');
+      if (rec && !(lview.current && lview.current.peerId === draft.peerId && lview.current.model === draft.model)) draft.model = rec.id;
+      renderLocal();
+    });
+    const gv = opts ? opts[draft.gpu || 'off'] : g.gpuView;
+    const sug = opts && opts.off ? opts.off.suggest : null;
+    const card = gv && gv.card ? gv.card : (sug && opts[sug] ? opts[sug].card : null);
+    const info = [];
+    if (card) {
+      info.push(t('ai.local.gpu_found', { name: card.name || VENDOR[card.vendor] || t('ai.local.gpu_other') }));
+      if (card.vramMb) info.push(t('ai.local.gpu_vram', { gb: ramOf(card.vramMb) }));
+      else if (card.integrated) info.push(t('ai.local.gpu_shared'));
+      if (card.driver) info.push(t('ai.local.gpu_driver', { driver: card.driver }));
+    } else if (cards.length) {
+      info.push(t('ai.local.gpu_found', { name: cards.map((x) => VENDOR[x.vendor] || t('ai.local.gpu_other')).join(', ') }));
+    } else info.push(t('ai.local.gpu_none'));
+    const nodes = [
+      el('label', { class: 'st-fl-label', for: 'ai-local-gpu', text: t('ai.local.gpu') }), sel,
+      el('span', { class: 'st-hint', id: 'ai-local-gpu-info', text: info.join(' · ') }),
+    ];
+    const box = el('div', { class: 'st-fl', 'data-gpu': draft.gpu || 'off' }, nodes);
+    const state = gv && gv.state;
+    const saved = gpuOf(g) === (draft.gpu || 'off');
+    if (saved && state === 'in_use') box.appendChild(el('p', { class: 'stx-box', 'data-tone': 'good', role: 'status', 'data-gpu-state': 'in_use', text: t('ai.local.gpu_state.in_use') }));
+    else if (saved && state === 'ready') box.appendChild(el('p', { class: 'stx-box', 'data-tone': 'good', role: 'status', 'data-gpu-state': 'ready', text: t('ai.local.gpu_state.ready') }));
+    ((gv && gv.hints) || []).forEach((h) => {
+      // "compose": only once the choice is saved (before that, saving is the next step)
+      if (h === 'compose' && !saved) return;
+      box.appendChild(el('p', { class: 'stx-box', 'data-tone': GPU_TONE[h] || 'warn', role: 'status', 'data-gpu-hint': h, text: t('ai.local.gpu_hint.' + h, { name: g.name }) }));
+    });
+    if (!saved && (draft.gpu || 'off') !== 'off') box.appendChild(el('p', { class: 'pgx-hint', text: t('ai.local.gpu_save_note') }));
+    return box;
   }
 
   function progressBox() {
@@ -548,6 +613,13 @@
     if (!s || !g.settings.enabled) return plain;
     if (s.service === 'managed') {
       if (s.state === 'starting') return el('p', { class: 'stx-box', 'data-tone': 'info', role: 'status', text: t('ai.local.starting') });
+      // "Grafikkarte nutzen" saved, but the running service has another GPU kind: the compose file again
+      const gv = g.gpuView;
+      if (g.platform !== 'rpi' && gv && gv.choice === (draft.gpu || 'off') && gv.hints.indexOf('compose') >= 0) {
+        const dl2 = el('button', { type: 'button', class: 'pgx-btn pgx-btn-sm', id: 'ai-local-compose', text: t('ai.local.compose_btn') });
+        dl2.addEventListener('click', () => downloadCompose(g));
+        return el('div', { class: 'stx-box ai-local-compose', 'data-tone': 'warn', role: 'status', 'data-compose': 'gpu' }, [el('span', { text: t('ai.local.compose_gpu') + ' ' }), dl2]);
+      }
       return plain;
     }
     if (g.platform === 'rpi') {
@@ -558,6 +630,46 @@
     return el('div', { class: 'stx-box ai-local-compose', 'data-tone': 'warn', role: 'status' }, [el('span', { text: t('ai.local.compose_missing') + ' ' }), dl]);
   }
 
+  function canProbe(g) { return !!(g && (g.supports || []).indexOf('probe') >= 0); }
+  function keyFields(g) {
+    const cur = lview.current;
+    const has = !!(cur && cur.keySet && cur.source === 'lan') && !draft.keyRemove;
+    const key = el('input', { type: 'password', class: 'st-input st-mono', id: 'ai-local-key', autocomplete: 'new-password', spellcheck: 'false', maxLength: 512,
+      placeholder: has ? t('ai.local.key_set', { hint: cur.keyHint || '' }) : t('ai.local.key_none'), value: draft.lanKey || '', disabled: off });
+    key.addEventListener('input', () => { draft.lanKey = key.value.trim(); if (draft.lanKey) draft.keyRemove = false; });
+    const row = [key];
+    if (has) {
+      const rm = el('button', { type: 'button', class: 'pgx-btn pgx-btn-sm', id: 'ai-local-key-remove', text: t('ai.local.key_remove'), disabled: off });
+      rm.addEventListener('click', () => { draft.keyRemove = true; draft.lanKey = ''; renderLocal(); });
+      row.push(rm);
+    }
+    const hint = (lview.current && lview.current.keySet && draft.keyRemove) ? t('ai.local.key_removing') : t('ai.local.key_hint');
+    const sup = !g || (g.supports || []).indexOf('lanKey') >= 0;
+    return el('div', { class: 'st-fl' }, [el('label', { class: 'st-fl-label', for: 'ai-local-key', text: t('ai.local.key') }),
+      el('div', { class: 'ai-prov-row' }, row), el('span', { class: 'st-hint', id: 'ai-local-key-hint', text: sup ? hint : t('ai.local.key_old', { min: lview.minGatewayExt || '1.31.0' }) })]);
+  }
+  function probeBox() {
+    if (!lprobe) return null;
+    if (lprobe.error && !lprobe.models) return el('p', { class: 'stx-box', 'data-tone': 'crit', role: 'status', 'data-probe': 'error', text: lprobe.error });
+    if (lprobe.reachable) {
+      return el('p', { class: 'stx-box', 'data-tone': 'good', role: 'status', 'data-probe': 'ok',
+        text: t('ai.local.probe_ok', { url: lprobe.url, n: (lprobe.models || []).length }) + (lprobe.version ? ' · Ollama ' + lprobe.version : '') });
+    }
+    const code = (lprobe.error && lprobe.error.code) || 'unreachable';
+    const known = ['unauthorized', 'not_private', 'unreachable', 'timeout', 'redirect'];
+    return el('p', { class: 'stx-box', 'data-tone': 'warn', role: 'status', 'data-probe': code, text: t('ai.local.probe_err.' + (known.indexOf(code) >= 0 ? code : 'other'), { code }) });
+  }
+  async function runProbe(g, btn) {
+    busy(btn, true);
+    try {
+      const body = { peerId: g.id, lanUrl: draft.lanUrl, lanApi: draft.lanApi };
+      if (draft.lanKey) body.lanKey = draft.lanKey;
+      const r = await call(window.api.post(LBASE + '/probe', body));
+      lprobe = r.ok ? r.probe : { error: r.error || t('ai.err.internal') };
+      if (r.ok && lprobe.reachable && lprobe.models.length && !lprobe.models.some((m) => m.name === draft.model)) draft.model = null;
+      renderLocal();
+    } finally { busy(btn, false); }
+  }
   function lanFields(g) {
     const url = el('input', { type: 'text', class: 'st-input st-mono', id: 'ai-local-url', inputmode: 'url', autocomplete: 'off', spellcheck: 'false', maxLength: 200,
       placeholder: 'http://192.168.1.20:11434', value: draft.lanUrl || '', disabled: off });
@@ -567,8 +679,11 @@
     ]);
     apiSel.value = draft.lanApi || 'ollama';
     apiSel.addEventListener('change', () => { draft.lanApi = apiSel.value; });
-    const connect = el('button', { type: 'button', class: 'pgx-btn', id: 'ai-local-connect', text: t('ai.local.connect'), disabled: off || !g || !g.supported });
+    const probing = canProbe(g);
+    const connect = el('button', { type: 'button', class: 'pgx-btn', id: 'ai-local-connect', text: probing ? t('ai.local.probe') : t('ai.local.connect'), disabled: off || !g || !g.supported });
     connect.addEventListener('click', async () => {
+      // gateway >= 1.31.0: ask the server without saving anything
+      if (probing) { await runProbe(g, connect); return; }
       busy(connect, true);
       try {
         const r = await call(window.api.put('/api/v1/gateways/' + encodeURIComponent(String(g.id)) + '/features', { ai: { enabled: true, source: 'lan', lanUrl: draft.lanUrl, lanApi: draft.lanApi } }));
@@ -585,19 +700,27 @@
         renderLocal();
       } finally { busy(connect, false); }
     });
-    const list = (lstatus && lstatus.source === 'lan' && lstatus.models) || [];
+    const fromProbe = lprobe && lprobe.reachable ? lprobe.models : null;
+    const list = fromProbe || (lstatus && lstatus.source === 'lan' && lstatus.models) || [];
     const sel = el('select', { class: 'st-select', id: 'ai-local-lanmodel', disabled: off || !list.length });
-    sel.appendChild(el('option', { value: '', text: list.length ? t('ai.model.choose') : t('ai.local.lan_models_first') }));
+    sel.appendChild(el('option', { value: '', text: list.length ? t('ai.model.choose') : t(probing ? 'ai.local.lan_models_probe' : 'ai.local.lan_models_first') }));
     if (draft.model && !list.some((m) => m.name === draft.model)) sel.appendChild(el('option', { value: draft.model, text: draft.model }));
     list.forEach((m) => sel.appendChild(el('option', { value: m.name, text: m.name + (m.size ? ' (' + t('ai.local.size_gb', { gb: gbOf(m.size) }) + ')' : '') })));
     sel.value = draft.model || '';
     sel.addEventListener('change', () => { draft.model = sel.value || null; });
-    const reach = lstatus && lstatus.source === 'lan'
-      ? el('p', { class: 'stx-box', 'data-tone': lstatus.state === 'running' ? 'good' : 'warn', role: 'status', text: lstatus.state === 'running' ? t('ai.local.lan_ok', { url: (lstatus.lan && lstatus.lan.url) || draft.lanUrl }) : t('ai.local.lan_unreachable') })
-      : null;
+    const lerr = lstatus && lstatus.source === 'lan' && lstatus.error ? lstatus.error.code : null;
+    const reach = lprobe ? probeBox() : (lstatus && lstatus.source === 'lan'
+      ? el('p', { class: 'stx-box', 'data-tone': lstatus.state === 'running' ? 'good' : 'warn', role: 'status',
+        text: lstatus.state === 'running' ? t('ai.local.lan_ok', { url: (lstatus.lan && lstatus.lan.url) || draft.lanUrl })
+          : (lerr === 'unauthorized' || lerr === 'not_private' ? t('ai.local.probe_err.' + lerr) : t('ai.local.lan_unreachable')) })
+      : null);
+    // a key over plain http travels unencrypted through the home network
+    const plainKey = /^http:/i.test(draft.lanUrl || '') && (draft.lanKey || (lview.current && lview.current.keySet && !draft.keyRemove));
     return [
       el('div', { class: 'st-fl' }, [el('label', { class: 'st-fl-label', for: 'ai-local-url', text: t('ai.local.lan_url') }),
         el('div', { class: 'ai-prov-row' }, [url, apiSel, connect]), el('span', { class: 'st-hint', text: t('ai.local.lan_url_hint') })]),
+      keyFields(g),
+      plainKey ? el('p', { class: 'pgx-hint', 'data-key-http': '', text: t('ai.local.key_http') }) : null,
       reach,
       el('div', { class: 'st-fl' }, [el('label', { class: 'st-fl-label', for: 'ai-local-lanmodel', text: t('ai.model.label') }), sel]),
     ];
@@ -614,10 +737,20 @@
     busy(btn, true);
     try {
       const body = { source: draft.source, peerId: draft.peerId, model: draft.model };
-      if (draft.source === 'lan') { body.lanUrl = draft.lanUrl; body.lanApi = draft.lanApi; }
+      if (draft.source === 'lan') {
+        body.lanUrl = draft.lanUrl;
+        body.lanApi = draft.lanApi;
+        // a typed key replaces the stored one, "Schlüssel entfernen" removes it, nothing typed keeps it
+        if (draft.lanKey) body.lanKey = draft.lanKey;
+        else if (draft.keyRemove) body.lanKey = null;
+      }
+      if (draft.source === 'service' && g && (g.supports || []).indexOf('gpu') >= 0 && g.platform !== 'rpi') body.gpu = draft.gpu || 'off';
       const r = await call(window.api.put(LBASE, body));
       if (!r.ok) { toast(r.error || t('ai.err.internal'), 'error'); return; }
       lview = r;
+      draft.lanKey = '';
+      draft.keyRemove = false;
+      lprobe = null;
       toast(t('ai.local.saved'));
       await loadStatus(draft.peerId);
       if (r.startPull && lstatus && lstatus.state === 'running' && !modelPresent(draft.model) && !pulling()) await startPull();
@@ -649,6 +782,8 @@
     sel.value = String(draft.peerId);
     sel.addEventListener('change', async () => {
       draft.peerId = Number(sel.value);
+      draft.gpu = gpuOf(localGw(draft.peerId));
+      lprobe = null;
       const rec = catalogueOf(draft.peerId).find((m) => m.fit === 'recommended');
       if (draft.source === 'service' && rec && !(lview.current && lview.current.peerId === draft.peerId)) draft.model = rec.id;
       await loadStatus(draft.peerId);
@@ -665,6 +800,8 @@
       box.appendChild(el('div', { class: 'stx-box', 'data-tone': 'warn', role: 'status', 'data-local-hint': 'memory' }, [el('span', { text: t('ai.local.hint_memory', { name: g.name, gb: ramOf(g.memMb) }) + ' ' }), toLan]));
     }
     if (draft.source === 'service') {
+      const gb = gpuBlock(g);
+      if (gb) box.appendChild(gb);
       box.appendChild(el('span', { class: 'st-fl-label', id: 'ai-local-models-l', text: t('ai.model.label') }));
       const list = el('div', { class: 'ai-mods', role: 'radiogroup', 'aria-labelledby': 'ai-local-models-l' });
       catalogueOf(draft.peerId).forEach((m) => list.appendChild(modelRow(m)));

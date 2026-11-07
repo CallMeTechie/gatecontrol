@@ -20,7 +20,7 @@
 //     print    { enabled, manual, convert }  phase 3c: Drucken & Scannen (services/homePrint.js);
 //              convert: PDF für Drucker ohne PDF im Gateway umwandeln (Standard an)
 //     radio    { zigbee, ble }          phase 3c, step 2: Funk (services/homeRadio.js; zigbee null = automatic)
-//     ai       { enabled, source, lanUrl, lanApi }  phase 3c, step 3: Lokale KI (services/ai/local.js)
+//     ai       { enabled, source, lanUrl, lanApi, gpu }  phase 3c, step 3: Lokale KI (services/ai/local.js)
 //     cameras  { enabled, nobodyHome, credRev, subnets, cameras }  phase 3c, step 4: Kameras (services/homeCameras.js)
 //
 // What a gateway can do is read from its telemetry: `capabilities` (array)
@@ -56,7 +56,7 @@ const DEFAULTS = Object.freeze({
   notify: { outage: true, ups: true },
   print: { enabled: false, manual: [], convert: true },
   radio: { zigbee: null, ble: false },
-  ai: { enabled: false, source: 'service', lanUrl: null, lanApi: 'ollama' },
+  ai: { enabled: false, source: 'service', lanUrl: null, lanApi: 'ollama', gpu: 'off' },
   cameras: { enabled: false, subnets: [], storagePath: null },
 });
 
@@ -146,7 +146,7 @@ function applyPatch(current, patch) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
-  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert'], radio: ['zigbee', 'ble'], ai: ['enabled', 'source', 'lanUrl', 'lanApi'], cameras: ['enabled', 'subnets', 'storagePath'] };
+  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert'], radio: ['zigbee', 'ble'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'] };
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     if (!allowed[k]) continue; // other keys (lanDiscovery, edge) are handled by the route
@@ -158,7 +158,7 @@ function applyPatch(current, patch) {
         // Kameras: the switch and extra private networks the gateway may reach (services/homeCameras.js)
         try { out.cameras[f] = require('./homeCameras').patchField(f, val); } catch (e) { throw new FeatureError(e.code === 'invalid_host' ? 'invalid_host' : 'invalid', e.message); }
       } else if (k === 'ai') {
-        // Lokale KI: the LAN server only as a private IPv4 address and a port (services/ai/local.js)
+        // Lokale KI: the LAN server only as a private address or a name and a port, the GPU kind (services/ai/local.js)
         try { out.ai[f] = require('./ai/local').patchField(f, val); } catch (e) { throw new FeatureError(e.code === 'invalid_host' ? 'invalid_host' : 'invalid', e.message); }
       } else if (k === 'radio') {
         // zigbee: true | false | null (= automatic: on when the gateway finds a deCONZ radio)

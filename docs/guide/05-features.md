@@ -336,15 +336,17 @@ big cloud models; it does not understand pictures (those still go to the cloud w
   there (service “ki” with Ollama). Sensible from about 4 GB RAM; a NAS with 8–16 GB
   is good. On a Raspberry Pi 3 B+ (1 GB) GateControl shows “too little memory” – you
   can still switch it on, but the second way is better then.
-- **Existing AI server in the home network:** If Ollama or LM Studio already runs on
-  a PC, a gateway in the same home network only forwards the questions – to exactly
-  this one address (private IPv4 address and port). The server on the PC must listen
-  on the network: Ollama with `OLLAMA_HOST=0.0.0.0`, LM Studio with “Serve on Local
-  Network”.
+- **Existing AI server in the home network:** If Ollama, LM Studio, vLLM, a llama.cpp
+  server or LocalAI already runs on a PC, a gateway in the same home network only
+  forwards the questions – to exactly this one address. The server on the PC must
+  listen on the network: Ollama with `OLLAMA_HOST=0.0.0.0`, LM Studio with “Serve on
+  Local Network”.
 
 **Requirements:**
 
 - Gateway 1.26.0+. If it is older, the row says “Gateway too old – needs 1.26.0”.
+  The graphics card, API keys, names/IPv6 and “Test the connection” need gateway
+  **1.31.0**+ (before that a hint says so).
 - **Synology/Linux** (only “On a gateway”): the current compose file with the service
   “ki”, once. If it is missing, the row “Local AI” and the setup show the button
   “Download docker-compose.yml” – download it, recreate the project
@@ -356,15 +358,62 @@ big cloud models; it does not understand pictures (those still go to the cloud w
 
 1. Choose “On a gateway” or “Existing AI server in the home network”.
 2. Choose the gateway. Its RAM, cores and whether it has a graphics card are shown.
+   If it has one, **“Use the graphics card”** appears (see below).
 3. Choose a model. GateControl says per gateway “recommended”, “fits” or “not
    recommended” (too little memory, or too slow without a graphics card) – you can
    always choose. To start with: **Llama 3.2 3B** (2 GB, fast, good for summaries and
    sorting); on weak hardware **Llama 3.2 1B**; with plenty of memory **Qwen 2.5 7B**
    (better answers, much slower without a graphics card).
-   For an AI server in the home network: enter its address (e.g.
-   `http://192.168.1.20:11434`), “Connect”, then choose one of its models.
+   With a graphics card its memory counts: “in graphics memory” means fast; with 12 GB
+   or more **Qwen 2.5 14B** is a good choice, with 24 GB **Qwen 2.5 32B**.
+   For an AI server in the home network: enter its address, choose the kind (Ollama or
+   OpenAI-compatible), the API key if needed, then **“Test the connection”** –
+   GateControl lists the server’s models without saving anything. Choose one.
 4. “Save”. On a gateway GateControl downloads the model (“Downloading the model: 1.3
    of 2.0 GB”, “Cancel” works any time; a later “Download” resumes).
+
+**Address of the AI server:** with a port, for example
+
+| As | Example |
+|---|---|
+| private IPv4 address | `http://192.168.1.20:11434` |
+| name in the home network | `http://ki-pc.local:11434`, `http://pc.fritz.box:1234` |
+| private IPv6 address (fd…/fc…) | `http://[fd00::20]:11434` |
+| with `/v1` (OpenAI-compatible) | `http://192.168.1.20:8000/v1` |
+
+The gateway resolves names itself (`.local` via mDNS, otherwise through the router)
+and connects **only** to addresses in the home network. If a name points to the
+internet, “Test the connection” says “The name does not point into the home
+network”. There is no internet server for the local AI – that is what the cloud
+providers are for.
+
+**API key:** if the server asks for one (Ollama behind a proxy, vLLM with
+`--api-key`, LocalAI, LM Studio or llama.cpp with a key), enter it in “API key”.
+GateControl stores it encrypted, afterwards shows only “saved (…abcd)” and gives it
+only to the gateway that forwards – never in a log, never in the configuration the
+gateways fetch. “Remove the key” deletes it with the next “Save”. With `http://` the
+key travels unencrypted through the home network – `https://` is better if the server
+can do it.
+
+**Use the graphics card** (only “On a gateway”, not on the Raspberry Pi): GateControl
+finds the gateway’s card (NVIDIA, AMD, Intel), its driver and – once the service “ki”
+sees it – its memory. Choose “Use the graphics card”, “Save”, then **download the new
+compose file once** and recreate the project (as above); only then does the service
+“ki” see the card. Afterwards it says “ready” or “The model runs on the graphics card”.
+
+| Choice | What goes into the compose file | What the host needs |
+|---|---|---|
+| NVIDIA | the card for the service “ki” | NVIDIA driver 550 or newer **and** the NVIDIA Container Toolkit |
+| AMD (ROCm) | Ollama’s ROCm image, `/dev/kfd` and `/dev/dri` | amdgpu driver with ROCm (`/dev/kfd`), x86-64 only |
+| Intel (experimental) | `/dev/dri` (Vulkan) | i915 or xe driver |
+
+If something is missing, GateControl says so instead of blocking the choice:
+“NVIDIA driver missing”, “NVIDIA Container Toolkit missing” (the service “ki” does
+not see the card or does not start), “/dev/kfd is missing (ROCm)”, “download the new
+compose file”. Drivers and the toolkit are installed on the host itself (e.g. Linux:
+package `nvidia-container-toolkit`, then `nvidia-ctk runtime configure
+--runtime=docker` and restart Docker) – GateControl cannot do that for you. Most
+Synology models have no usable graphics card.
 
 **What is the local AI for?**
 
@@ -379,13 +428,18 @@ answer and how long it took. The local AI costs €0 and does not count against 
 budget; it is still listed in the log of AI requests (marked “local”).
 
 **In the tab “Features”:** the row “Local AI” in “Devices at home” switches the AI on
-this gateway on and off and shows the model. The bar at the top shows the memory:
+this gateway on and off and shows the model, the graphics card (“Graphics card: NVIDIA
+GeForce RTX 3060 (12 GB) – ready”) and what it lacks; for an AI server in the home
+network the address and whether an API key is set. The bar at the top shows the memory:
 green the home network features, blue the model in memory; “tight” means little is
 left for more features.
 
 **If something goes wrong:** “Service “ki” missing” → download the compose file
 (see above). “not reachable” with an AI server in the home network → is the PC on,
-does the server listen on the network, is the port right? The activity log reports
+does the server listen on the network, is the port right? “asks for a (different) API
+key” → enter or check the key. “The name does not point into the home network” →
+enter the IP address or check the name in the router. Graphics card “waits for the
+new compose file” → download the compose file and recreate the project. The activity log reports
 “Local AI does not answer” at most once an hour.
 
 ## Home cache
