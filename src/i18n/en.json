@@ -1468,6 +1468,8 @@
   "error.rate_limit.route_auth_login": "Too many login attempts. Try again later.",
   "error.rate_limit.route_auth_code": "Too many code requests. Try again later.",
   "error.rate_limit.hostname": "Too many hostname reports. Try again later.",
+  "error.rate_limit.plugin_catalog": "Too many plugin downloads in a short time. Please try again in {{minutes}} minute(s).",
+  "error.rate_limit.plugin_catalog_refresh": "The plugin catalogue was checked too often. Please try again in {{minutes}} minute(s).",
   "error.dns.hostname_required": "Hostname is required",
   "error.dns.hostname_invalid": "Hostname contains invalid characters (only a-z, 0-9, hyphen; max 63 chars)",
   "error.dns.hostname_reserved": "Hostname is reserved and cannot be used",

@@ -486,7 +486,10 @@
     d.body.appendChild(err);
     const cancel = el('button', { type: 'button', class: 'pgx-btn', text: t('common.cancel'), on: { click: () => d.close(null) } });
     const go = el('button', { type: 'button', class: 'pgx-btn pgx-btn-pri', id: 'pgx-ua-go', text: t('plugins.x.prepare'), disabled: true });
+    // failed rows (a refused download, a rate limit) are prepared again — the dialog is no dead end
+    const retry = el('button', { type: 'button', class: 'pgx-btn', id: 'pgx-ua-retry', text: t('plugins.x.retry'), hidden: true });
     d.foot.appendChild(cancel);
+    d.foot.appendChild(retry);
     d.foot.appendChild(go);
     const rows = list.map((it) => ({ it, state: 'wait', info: null, error: null }));
     let phase = 'prepare';
@@ -505,27 +508,43 @@
         ]);
       })));
       if (phase === 'confirm') {
-        rows.filter((r) => r.info && r.info.existing && !samePerm(r.info)).forEach((r) => { box.appendChild(lbl(r.it.name)); box.appendChild(permRowsBox(r.info.plugin.permissions, r.info.existing)); });
+        rows.filter((r) => r.state === 'ready' && r.info.existing && !samePerm(r.info)).forEach((r) => { box.appendChild(lbl(r.it.name)); box.appendChild(permRowsBox(r.info.plugin.permissions, r.info.existing)); });
         go.textContent = t('plugins.x.update_n', { n: rows.filter((r) => r.state === 'ready').length });
         go.disabled = !rows.some((r) => r.state === 'ready');
       }
+      retry.hidden = !(phase === 'confirm' || phase === 'finished') || !rows.some((r) => r.state === 'failed');
+    }
+    async function prepare(todo) {
+      for (const r of todo) {
+        r.state = 'loading';
+        r.info = null;
+        r.error = null;
+        render();
+        const res = await req('POST', CAT_API + '/install', { id: r.it.id, version: r.it.latest.version });
+        if (res.ok && res.canInstall) { r.info = res; r.state = 'ready'; } else { r.state = 'failed'; r.error = res.error || t('plugins.in.blocked'); }
+        render();
+      }
+      phase = 'confirm';
+      cancel.hidden = false;
+      render();
     }
     render();
-    for (const r of rows) {
-      r.state = 'loading';
-      render();
-      const res = await req('POST', CAT_API + '/install', { id: r.it.id, version: r.it.latest.version });
-      if (res.ok && res.canInstall) { r.info = res; r.state = 'ready'; } else { r.state = 'failed'; r.error = res.error || t('plugins.in.blocked'); }
-      render();
-    }
-    phase = 'confirm';
-    render();
+    await prepare(rows);
+    retry.addEventListener('click', async () => {
+      if (phase !== 'confirm' && phase !== 'finished') return;
+      phase = 'prepare';
+      retry.hidden = true;
+      go.disabled = true;
+      go.textContent = t('plugins.x.prepare');
+      await prepare(rows.filter((r) => r.state === 'failed'));
+    });
     go.addEventListener('click', async () => {
       if (phase === 'finished') { d.close(true); return; }
       if (phase !== 'confirm') return;
       phase = 'running';
       go.disabled = true;
       cancel.hidden = true;
+      retry.hidden = true;
       for (const r of rows.filter((x) => x.state === 'ready')) {
         r.state = 'updating';
         render();
@@ -536,6 +555,7 @@
       phase = 'finished';
       go.disabled = false;
       go.textContent = t('plugins.x.close');
+      render();
       toast(t('plugins.x.ua_done', { n: rows.filter((r) => r.state === 'updated').length }));
     });
     await d.promise;
