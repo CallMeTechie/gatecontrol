@@ -9792,7 +9792,7 @@
   "gwh.ckpi.faster_none": "nach dem ersten Speedtest",
   "gwh.kinds.title": "Was zwischengespeichert wird",
   "gwh.kinds.drive": "Drive: zuletzt genutzt und angeheftet",
-  "gwh.kinds.drive_d": "Dateien, die das Drive-Plugin anbietet – zuletzt genutzt und was jemand „offline verfügbar“ macht",
+  "gwh.kinds.drive_d": "Dateien, die das Drive-Plugin anbietet – zuletzt genutzt und was jemand „offline verfügbar“ macht, mit ihren Vorschaubildern",
   "gwh.kinds.photos": "Fotos",
   "gwh.kinds.photos_d": "Vorschaubilder und neue Originale, die das Drive-Plugin anbietet",
   "gwh.kinds.updates": "App-Updates",

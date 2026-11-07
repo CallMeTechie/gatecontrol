@@ -32,8 +32,10 @@ module.exports = {
         return { json: { ok: true } };
       case '/later-result': return { json: { ok: true, result: later } };
       case '/offer': return { json: await attempt(() => C.offer(b)) };
-      case '/withdraw': return { json: await attempt(() => C.withdraw(b.mediaId)) };
-      case '/hint': return { json: await attempt(() => C.lanHint(b.mediaId ? { mediaId: b.mediaId } : (b.sha256 || q.sha256), req)) };
+      case '/withdraw': return { json: await attempt(() => (b.preview ? C.withdraw(b.mediaId, { preview: b.preview }) : C.withdraw(b.mediaId))) };
+      case '/hint': return { json: await attempt(() => C.lanHint(b.mediaId ? { mediaId: b.mediaId, ...(b.preview ? { preview: b.preview } : {}) } : (b.sha256 || q.sha256), req)) };
+      case '/hints': return { json: await attempt(() => C.lanHints(b.items, req)) };
+      case '/previews': return { json: { ok: true, previews: C.previews === true, lanHints: typeof C.lanHints === 'function' } };
       case '/hint-noreq': return { json: await attempt(() => C.lanHint(b.sha256, {})) };
       default: return { status: 404, json: { ok: false } };
     }

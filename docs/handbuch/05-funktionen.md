@@ -579,6 +579,12 @@ höchstens einmal pro Stunde.
 Heimnetz bereit. Apps im Heimnetz laden sie dann in voller LAN-Geschwindigkeit.
 Wer was sehen darf, prüft weiterhin der Server.
 
+Ab GateControl 1.249.0 liegen dort auch die **Vorschaubilder** (Drive 1.24.0+):
+die kleinen Bilder der Foto- und Dateilisten. Zu Hause bauen sich die Listen in
+der App dann sofort auf. Vorschaubilder sind klein (meist unter 40 KB), zählen
+aber zur Höchstgröße. Sie gehören zur Art ihrer Datei (Drive oder Fotos) –
+wer „Fotos“ ausschaltet, schaltet auch deren Vorschaubilder aus.
+
 **Voraussetzungen:**
 
 - Gateway 1.22.0+.

@@ -6,7 +6,9 @@
 // signed-in person (that person is the actor in the activity log), never a
 // MAC address for the plugin — and gc.homeCache: offering the plugin's own
 // media to the gateways' stock (only gateways of the people named), the lan
-// hint only for the request the plugin answers (req.homeRef).
+// hint only for the request the plugin answers (req.homeRef) — and, since
+// 1.249.0, GateControl's previews of that media (offer({ preview }), the
+// plaintext JPEG served to the gateway, lanHint / lanHints for them).
 
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -264,5 +266,120 @@ describe('gc.homeCache', () => {
     });
     assert.equal(refs.get('a-b', seen), null);
     assert.equal(refs.get('a-b', 'x'), null);
+  });
+});
+
+describe('gc.homeCache: previews', () => {
+  let photo;
+  let doc;
+  let smallSha;
+  let small;
+  const hn = require('../src/services/homeNetwork');
+  const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
+  const want = (g = gw) => supertest(app).get('/api/v1/gateway/cache/want').set('Authorization', 'Bearer ' + g.apiToken).expect(200).then((x) => x.body.items);
+  const blob = (h, range) => {
+    let r = supertest(app).get('/api/v1/gateway/cache/blob/' + h).set('Authorization', 'Bearer ' + gw.apiToken);
+    if (range) r = r.set('Range', range);
+    return r.buffer(true).parse((res, cb) => { const c = []; res.on('data', (x) => c.push(x)); res.on('end', () => cb(null, Buffer.concat(c))); });
+  };
+  const atHome = async (fn) => {
+    const orig = hn.check;
+    hn.check = async (ip, peerId, opts) => (opts.local === '192.168.1.60' ? { same_lan: true, site: { type: 'gateway', gatewayId: gw.peer.id, name: 'Pi Keller' } } : { same_lan: false, site: null });
+    try { return await fn(); } finally { hn.check = orig; }
+  };
+
+  before(async () => {
+    const reg = require('../src/services/plugins/registry');
+    const media = require('../src/services/plugins/media');
+    const jpeg = await require('sharp')({ create: { width: 900, height: 600, channels: 3, background: { r: 30, g: 120, b: 200 } } }).jpeg().toBuffer();
+    photo = await media.storeBuffer(reg.get(P), jpeg, { mime: 'image/jpeg', name: 'see.jpg' });
+    doc = await media.storeBuffer(reg.get(P), crypto.randomBytes(2048), { mime: 'application/octet-stream', name: 'daten.bin' });
+  });
+
+  it('gc.homeCache says it takes previews (previews: true, lanHints)', async () => {
+    assert.deepEqual(await api('get', '/previews'), { ok: true, previews: true, lanHints: true });
+  });
+
+  it('offer({ preview }): made first (ERR_PREVIEW_PENDING), then its plaintext JPEG in the stock', async () => {
+    const first = await api('post', '/offer', { mediaId: photo.mediaId, preview: 'small', kind: 'photos', userIds: [timId, 1], priority: 95 });
+    assert.equal(first.code, 'ERR_PREVIEW_PENDING', JSON.stringify(first));
+    await require('../src/services/plugins/mediaPreviews').idle();
+    const r = await api('post', '/offer', { mediaId: photo.mediaId, preview: 'small', kind: 'photos', userIds: [timId, 1], priority: 95 });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.result.offered, true);
+    assert.equal(r.result.preview, 'small');
+    smallSha = r.result.sha256;
+    // the bytes the gateway gets: GateControl's small preview (JPEG, ≤ 320 px), checked against the sha256
+    const got = await blob(smallSha).expect(200);
+    small = got.body;
+    assert.equal(sha(small), smallSha);
+    assert.equal(small.length, r.result.size);
+    const meta = await require('sharp')(small).metadata();
+    assert.equal(meta.format, 'jpeg');
+    assert.ok(meta.width <= 320 && meta.height <= 320, `${meta.width}×${meta.height}`);
+    const part = await blob(smallSha, 'bytes=0-9').expect(206);
+    assert.ok(Buffer.compare(part.body, small.subarray(0, 10)) === 0);
+    // in the stock like a file of its kind, the highest priority first
+    assert.deepEqual((await want()).find((x) => x.sha256 === smallSha), { sha256: smallSha, size: small.length, kind: 'photos', priority: 95 });
+    // the large one is other content
+    const large = await api('post', '/offer', { mediaId: photo.mediaId, preview: 'large', kind: 'photos', userIds: [timId, 1], priority: 45 });
+    assert.equal(large.ok, true, JSON.stringify(large));
+    assert.notEqual(large.result.sha256, smallSha);
+    assert.ok(large.result.size > small.length);
+  });
+
+  it('offer({ preview }) refuses what has none, a vault, wrong sizes', async () => {
+    assert.equal((await api('post', '/offer', { mediaId: doc.mediaId, preview: 'small', kind: 'drive' })).code, 'ERR_NOT_FOUND');
+    assert.equal((await api('post', '/offer', { mediaId: photo.mediaId, preview: 'small', kind: 'vault' })).code, 'ERR_INVALID');
+    assert.equal((await api('post', '/offer', { mediaId: photo.mediaId, preview: 'huge', kind: 'photos' })).code, 'ERR_INVALID');
+    assert.equal((await api('post', '/offer', { mediaId: photo.mediaId, preview: 'small', kind: 'photos', sha256: '0'.repeat(64) })).code, 'ERR_INVALID');
+    assert.equal((await api('post', '/offer', { mediaId: 'f'.repeat(32), preview: 'small', kind: 'photos' })).code, 'ERR_NOT_FOUND');
+    // a plugin without media.previews
+    const hostApi = require('../src/services/plugins/hostApi');
+    const fake = { id: P, manifest: { permissions: { homeCache: true }, media: { maxBytes: 1024, types: ['image/*'] } } };
+    await assert.rejects(hostApi.handle(fake, 'homeCache.offer', { mediaId: photo.mediaId, preview: 'small', kind: 'photos' }), (e) => e.code === 'ERR_MEDIA_DENIED');
+  });
+
+  it('lanHint({ mediaId, preview }) and lanHints: only previews offered and held, the original apart', async () => {
+    await atHome(async () => {
+      assert.equal((await api('post', '/hint?local=192.168.1.60', { mediaId: photo.mediaId, preview: 'small' })).result, null, 'not held yet');
+      await supertest(app).post('/api/v1/gateway/cache').set('Authorization', 'Bearer ' + gw.apiToken).send({ have: [smallSha] }).expect(200);
+      const r = await api('post', '/hint?local=192.168.1.60', { mediaId: photo.mediaId, preview: 'small' });
+      assert.equal(r.ok, true, JSON.stringify(r));
+      assert.equal(r.result.sha256, smallSha);
+      const secret = require('../src/services/homeCache').secretOf(gw.peer.id, false);
+      assert.equal(r.result.url, `https://192.168.1.23:8443/blob/${smallSha}?exp=${r.result.exp}&sig=${crypto.createHmac('sha256', secret).update(smallSha + '\n' + r.result.exp).digest('hex')}`);
+      // the original was never offered: no hint for it
+      assert.equal((await api('post', '/hint?local=192.168.1.60', { mediaId: photo.mediaId })).result, null);
+      // many at once, in order; what is not offered, not held or wrong is null
+      const many = await api('post', '/hints?local=192.168.1.60', { items: [
+        { mediaId: photo.mediaId, preview: 'small' }, { mediaId: photo.mediaId, preview: 'large' }, { mediaId: photo.mediaId },
+        { mediaId: doc.mediaId, preview: 'small' }, smallSha, 'kein-sha', { mediaId: photo.mediaId, preview: 'huge' },
+      ] });
+      assert.equal(many.ok, true, JSON.stringify(many));
+      assert.equal(many.result.length, 7);
+      assert.equal(many.result[0].sha256, smallSha);
+      assert.deepEqual(many.result.slice(1), [null, null, null, many.result[4], null, null]);
+      assert.equal(many.result[4].sha256, smallSha);
+      // away from home: all null
+      assert.deepEqual((await api('post', '/hints?local=10.1.1.1', { items: [{ mediaId: photo.mediaId, preview: 'small' }] })).result, [null]);
+      assert.equal((await api('post', '/hints?local=192.168.1.60', { items: new Array(501).fill(smallSha) })).code, 'ERR_INVALID');
+    });
+  });
+
+  it('withdraw(mediaId, { preview }) takes only that preview; the hourly clean-up drops previews that are gone', async () => {
+    const hc = require('../src/services/homeCache');
+    assert.deepEqual((await api('post', '/withdraw', { mediaId: photo.mediaId })).result, { removed: false }, 'the file itself was not offered');
+    assert.ok((await want()).some((x) => x.sha256 === smallSha), 'its previews stay');
+    assert.deepEqual((await api('post', '/withdraw', { mediaId: photo.mediaId, preview: 'large' })).result, { removed: true });
+    assert.equal((await want()).filter((x) => x.priority === 45).length, 0);
+    assert.ok((await want()).some((x) => x.sha256 === smallSha));
+    // unchanged preview: kept
+    assert.equal(await hc.refreshPreviewOffers(), 0);
+    // its preview files gone (e.g. "Alles löschen" of the previews): out of the stock, the gateway gets 404
+    require('../src/services/plugins/mediaPreviews').drop(P, photo.mediaId);
+    await blob(smallSha).expect(404);
+    assert.equal(await hc.refreshPreviewOffers(), 1);
+    assert.equal((await want()).some((x) => x.sha256 === smallSha), false);
   });
 });

@@ -555,6 +555,12 @@ new compose file” → download the compose file and recreate the project. The 
 home network. Apps in the home network then load them at full LAN speed. The
 server still decides who may see what.
 
+From GateControl 1.249.0 it also keeps the **previews** (Drive 1.24.0+): the
+small pictures of the photo and file lists. At home the lists in the app then
+show up at once. Previews are small (mostly under 40 KB) but count against the
+maximum size. They belong to the kind of their file (Drive or photos) –
+switching “Photos” off switches off their previews as well.
+
 **Requirements:**
 
 - Gateway 1.22.0+.

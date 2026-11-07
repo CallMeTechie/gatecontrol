@@ -1025,7 +1025,7 @@ module.exports = {
 | `gc.notify({ …, users, devices, silent, data })` | since 1.193.0: only to these devices of `users`; `silent: true` a data notification without display (`devices`) — see "Devices" |
 | `gc.homeNetwork.presence.list()` / `.on(handler)` / `.consent(userId)` / `.setConsent(userId, on)` / `.devices(userId)` / `.setCounts(userId, deviceId, on)` | since 1.230.0: who is at home by their phone in the home network — only people who agreed themselves, never MAC/IP addresses (`homePresence`) — see "Presence over the home network" |
 | `gc.homeNetwork.internet.status(userId)` / `.pause(userId, untilISO \| minutes)` / `.resume(userId)` / `.extend(userId, minutes)` | since 1.231.0: the home DNS filter of a person — pause the internet, suspend the profile's times; changes only on behalf of a signed-in person (`homeInternet`) — see "Internet at home" |
-| `gc.homeCache.offer({ mediaId, kind, userIds, priority })` / `.withdraw(mediaId)` / `.lanHint(sha256 \| { mediaId }, req)` | since 1.231.0: keep the plugin's files on the gateways' home caches and send an app in the home network there (`homeCache`) — see "Home cache" |
+| `gc.homeCache.offer({ mediaId, kind, userIds, priority })` / `.withdraw(mediaId)` / `.lanHint(sha256 \| { mediaId }, req)` | since 1.231.0: keep the plugin's files on the gateways' home caches and send an app in the home network there (`homeCache`) — see "Home cache"; since 1.249.0 also GateControl's previews of them (`preview`, `.lanHints([…], req)`) |
 | `gc.ai.available({ capability })` / `gc.ai.status()` | since 1.214.0: is AI usable for the plugin (asks no provider) / `{ available, mediaAllowed, capabilities, budgetLeftCents }` (`ai`) — see "AI requests" |
 | `gc.ai.extract({ task, user, instructions, input, schema, maxOutputTokens, timeoutMs })` / `gc.ai.generate({ … })` | since 1.214.0: structured data checked against a schema / free text from the AI provider set up in GateControl → `{ ok, data \| text, provider, model, usage, fallback }` (`ai`) — see "AI requests" |
 | `gc.groups.list/get/members/isMember/leadersOf(…)` | the person groups of GateControl (`groups`) — see "Groups" |
@@ -1821,6 +1821,10 @@ the device that uploaded the file sends one along. Code:
   files go to a storage target (the area cache never drops them) and are not
   in backups — the server makes them again, a device preview is gone after a
   restore.
+* **Home cache** (since 1.249.0): a plugin with `permissions.homeCache` may
+  offer them to the home gateways (`gc.homeCache.offer({ mediaId, preview:
+  'small' })`, see "Home cache") — the plaintext JPEG goes to the gateway,
+  the apps at home load it from there.
 * The install dialog shows **Vorschaubilder**: "GateControl macht kleine
   Vorschaubilder der Bilder … und nimmt die Vorschaubilder der Apps für Fotos
   und Videos an, die der Server nicht lesen kann".
@@ -2554,7 +2558,9 @@ the gateway hands out a file only against a signature the server gave that
 client for ten minutes. GateControl itself puts the app updates there (the
 update check answers with a `lan` hint, see below); a plugin with the
 permission offers **its own media** (plugin.json `media`, "Media") — the
-Drive plugin its recently used and pinned files, photos. Code:
+Drive plugin its recently used and pinned files, photos — and, since 1.249.0,
+**GateControl's previews** of it (`media.previews`, "Previews"), so the photo
+and file grids of the apps load at home from the gateway as well. Code:
 `src/services/homeCache.js`, host API `homeCacheCall` in
 `src/services/plugins/hostApi.js`, the request reference in
 `src/services/plugins/requestRefs.js`.
@@ -2571,6 +2577,11 @@ The install dialog shows it as "Zwischenspeicher im Heimnetz". Without it,
 | `gc.homeCache.offer({ mediaId, kind, userIds, priority, sha256 })` | `{ sha256, size, offered }` — `mediaId` a media id of this plugin; `kind` `'drive'` \| `'photos'` \| `'vault'` (an administrator switches each kind per gateway; vault — only encrypted files — is off by default); `userIds` (optional, ≤ 256) the people who use the file: only gateways where one of them has devices keep it (none = every gateway with the cache on); `priority` 0…100 (default 50; the stock is filled by priority up to the gateway's limit); `sha256` / `size` optional, checked against the stored file. Offering the same content again updates it; `offered: false` when the same content is in the stock already (an app update, another plugin) |
 | `gc.homeCache.withdraw(mediaId)` | `{ removed }` — the gateways drop it at their next sync. A deleted media file leaves the stock by itself (hourly) |
 | `gc.homeCache.lanHint(sha256 \| { mediaId }, req)` | `{ url, sha256, tlsSha256, exp } \| null` — `req` is the request the plugin is answering right now (its `req.homeRef`, only plugins with the permission get one). `null` unless the client is at the site of a gateway (same public address and one of its LAN addresses — the app sends them as `?local=` or header `X-GC-Local`, see the home-network check), the file is one this plugin offered, that gateway holds it (last report) and, with `userIds`, the person in the request is one of them. Outside such a request: `ERR_NOT_IN_REQUEST` |
+| `gc.homeCache.offer({ mediaId, preview, kind, userIds, priority })` | since 1.249.0 — `preview` `'small'` \| `'large'`: GateControl's preview of the file in that size ("Previews", plugin.json `media.previews`, else `ERR_MEDIA_DENIED`) instead of the file → `{ sha256, size, offered, preview }` (the preview's own SHA-256 and bytes — the plaintext JPEG, never the sealed file). `kind` `'drive'` \| `'photos'` (a vault's file has no preview: `ERR_INVALID`); `sha256` / `size` are not taken. `ERR_NOT_FOUND`: no preview and none possible (a document, a HEIC without the device's preview); `ERR_PREVIEW_PENDING`: not made yet — GateControl makes it now in the background, offer it again at the next run. A preview counts against the gateway's limit like a file; it is a separate offer with its own priority and people: offering the file does not offer its previews and the other way round |
+| `gc.homeCache.withdraw(mediaId, { preview })` | since 1.249.0: only that preview (`withdraw(mediaId)` alone: only the file, its previews stay) |
+| `gc.homeCache.lanHint({ mediaId, preview }, req)` | since 1.249.0: the hint for that preview as it is stored now — the same rules as for a file (offered by this plugin, held, the person one of `userIds`) |
+| `gc.homeCache.lanHints([sha256 \| { mediaId, preview? }, …], req)` | since 1.249.0: up to 500 hints in one call (one home-network check) → `[hint \| null, …]` in the same order; an entry that is wrong or not offered is `null`, more than 500 `ERR_INVALID`. For lists: a page of photos with the hint of each small preview |
+| `gc.homeCache.previews` | since 1.249.0 `true`: this GateControl takes the `preview` key and has `lanHints`. An older one has neither — and its `offer` would ignore `preview` and offer the **file**: check `gc.homeCache.previews === true` first |
 
 The app loads `url` (HTTPS on the gateway's LAN address, self-signed
 certificate) **pinning** `tlsSha256` (SHA-256 of the certificate, hex),
@@ -2583,17 +2594,42 @@ The same hint comes with the update check of the apps
 next to `downloadUrl`, when the installer is in the home cache of the
 gateway the device is at.
 
+**Previews in the cache** (since 1.249.0): a small preview is some 10–40 KB
+(320 px), a large one 100–300 KB (1280 px) — thousands of them fit where a few
+videos would. Offer the small ones with a **high priority** (the grids of the
+apps need them first; Drive: 95) and the large ones only for what is likely
+looked at (Drive: photos of the last 30 days, 45). They count against the
+gateway's limit like any file and go first when the limit is reached only if
+their priority is lower. A gateway lists at most 20 000 entries (files and
+previews together). The gateway fetches the preview's plaintext JPEG from the
+server (checked against its SHA-256 there); a device preview sent again is
+other content — the hourly clean-up puts it in the stock under its new SHA-256
+with the same people and priority, a preview that is gone leaves the stock.
+In its answers the plugin adds the hint of each preview it lists, e.g. Drive's
+`preview: { url, largeUrl, lan, largeLan }`; the app loads `lan` like a
+file's hint (pinned, SHA-256 checked, any error → the normal preview URL) and
+keeps the picture as before (a media id's preview never changes).
+
 Example (Drive plugin):
 
 ```js
 // a file got pinned "offline verfügbar" by Anna
 await gc.homeCache.offer({ mediaId: file.mediaId, kind: 'drive', userIds: [anna.id], priority: 80 });
+// GateControl ≥ 1.249.0: its small preview as well
+if (gc.homeCache.previews === true) {
+  await gc.homeCache.offer({ mediaId: file.mediaId, preview: 'small', kind: 'drive', userIds: [anna.id], priority: 95 });
+}
 
 // the app asks for a download link
 async request(req, gc) {
   if (req.path === '/files/link') {
     const f = findFile(req.query.id, req.user);
     return { json: { url: gc.media.url(f.mediaId, { user: req.user.id }), lan: await gc.homeCache.lanHint({ mediaId: f.mediaId }, req) } };
+  }
+  if (req.path === '/photos') {
+    const page = listPhotos(req.user);
+    const lan = gc.homeCache.previews === true ? await gc.homeCache.lanHints(page.map((p) => ({ mediaId: p.mediaId, preview: 'small' })), req) : [];
+    return { json: { items: page.map((p, i) => ({ ...p, previewLan: lan[i] || null })) } };
   }
 }
 ```
