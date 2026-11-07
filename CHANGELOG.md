@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.251.0] — 2026-11-07
+
+### Features
+- Peers / Clients neu, Gateway-Verwaltung unter „Gateways“, Navigation mit „Wartung“ (#441)
+
+---
+
 ## [1.250.1] — 2026-11-07
 
 ### Fixes
