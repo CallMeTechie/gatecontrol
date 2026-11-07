@@ -62,7 +62,7 @@
     <span class="db-banner-sub">{{ t('gateway_needs_repair_msg') }}</span>
     <ul class="db-banner-list">
       {% for gw in needs_repair_gateways %}
-      <li><code>{{ gw.name }}</code> — <a href="/peers">{{ t('download_new_env') }}</a></li>
+      <li><code>{{ gw.name }}</code> — <a href="/gateways#setup/{{ gw.id }}">{{ t('download_new_env') }}</a></li>
       {% endfor %}
     </ul>
   </div>

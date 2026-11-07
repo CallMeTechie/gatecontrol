@@ -33,7 +33,7 @@ Solange du Edge nicht einschaltest, sind beide Container untätig.
 ## 4.1 Edge einschalten
 
 1. Installiere das Plugin, zum Beispiel „Smart Home“: „Einstellungen“ → „Plugins“.
-2. Öffne „Netzwerk“ → „Gateways“ und klicke auf dein Gateway.
+2. Öffne „Geräte“ → „Gateways“ und klicke auf dein Gateway.
 3. Wechsle in den Reiter „Edge-Plugins“.
 4. Klicke „Edge einschalten“.
 5. Schau auf die Zeile oben im Reiter:
@@ -62,7 +62,7 @@ Nur nötig, wenn Geräte wie Shelly, Tasmota oder ESPHome über MQTT melden soll
 
 ## 4.3 Wo erscheinen meine Geräte?
 
-Die Geräte erscheinen **im Plugin**, also links unter „Integrationen“ →
+Die Geräte erscheinen **im Plugin**, also links unter „Zuhause“ →
 „Smart Home“ – nicht auf der Gateway-Seite. Die Gateway-Seite zeigt nur, ob
 der Edge-Teil läuft, und hat sein „Protokoll“.
 

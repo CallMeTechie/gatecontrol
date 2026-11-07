@@ -4,7 +4,7 @@
 
 A gateway can do more than the tunnel. You find all features like this:
 
-1. “Network” → “Gateways” → click your gateway.
+1. “Devices” → “Gateways” → click your gateway.
 2. Tab “Features” (the number next to it says how many are on).
 
 There you switch each feature on or off, grouped by area (“Eyes on the home

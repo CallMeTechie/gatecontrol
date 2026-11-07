@@ -5,7 +5,7 @@
 ## 6.1 Gateway-Software aktualisieren
 
 Ist eine neue Gateway-Version da, zeigt die Karte des Gateways unter
-„Netzwerk“ → „Gateways“ einen Knopf „Update auf …“. Ein Klick, „Aktualisieren“
+„Geräte“ → „Gateways“ einen Knopf „Update auf …“. Ein Klick, „Aktualisieren“
 bestätigen – das Gateway holt sich das neue Image und startet neu. Klappt das
 nicht, rollt es auf die vorige Version zurück.
 
@@ -59,7 +59,7 @@ gilt für **Synology** und **Linux/Docker**.
 Lade **nicht** das NAS-Paket aus dem Assistenten neu herunter. Es erzeugt einen
 neuen Zugangsschlüssel, und das laufende Gateway verliert die Verbindung, bis
 es die neue `gateway.env` bekommt. Hol dir stattdessen nur die Compose-Datei:
-„Netzwerk“ → „Gateways“ → dein Gateway öffnen → Symbol „Nur docker-compose.yml
+„Geräte“ → „Gateways“ → dein Gateway öffnen → Symbol „Nur docker-compose.yml
 herunterladen“ (Datei mit Pfeil oben rechts) → „Synology NAS“, „Host“ →
 „Herunterladen“. Das erzeugt keine neuen Schlüssel. Zeigt der Reiter
 „Edge-Plugins“ „Edge-Dienst fehlt“, steht derselbe Knopf auch dort. Die
@@ -100,7 +100,7 @@ sudo docker compose up -d
 ## 6.4 Linux/Docker: Compose-Datei erneuern
 
 1. Gateway zuerst aktualisieren (siehe [6.1](#61-gateway-software-aktualisieren)).
-2. Hol dir die aktuelle Compose-Datei: „Netzwerk“ → „Gateways“ → dein Gateway
+2. Hol dir die aktuelle Compose-Datei: „Geräte“ → „Gateways“ → dein Gateway
    öffnen → Symbol „Nur docker-compose.yml herunterladen“ → „Linux-Rechner mit
    Docker“, „Host (empfohlen)“ → „Herunterladen“. Das erzeugt keine neuen
    Schlüssel. Lade **nicht** die `gateway.env` neu herunter – das erzeugt einen

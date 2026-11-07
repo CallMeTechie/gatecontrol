@@ -352,7 +352,7 @@ describe('peer list and pages', () => {
     assert.match(modal, /id="edit-peer-support-count"/);
     const js = read('public/js/support-bundles.js');
     assert.ok(js.includes("'/support-bundles#view/'"));
-    assert.ok(read('public/js/peers.js').includes('getSupportBadge(p)'));
+    assert.ok(read('public/js/peers.js').includes('supportBadge(p)'));
   });
 });
 

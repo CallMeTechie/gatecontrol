@@ -128,11 +128,11 @@ describe('waf.njk renders in every theme', () => {
 
     // Release B §8: the sidebar groups are Übersicht · Netzwerk · Sicherheit ·
     // Integrationen · System — the WAF sits in "Sicherheit".
-    it(`${theme}: sidebar item in the Sicherheit group and window.GC.features.waf with the license`, () => {
+    it(`${theme}: sidebar item in the "Zugriff & Sicherheit" group and window.GC.features.waf with the license`, () => {
       const html = render(theme);
       assert.match(html, /<a href="\/waf" class="nav-item active"/, 'active nav item');
       assert.match(html, /waf: true,/, 'window.GC.features.waf = true');
-      const group = html.indexOf('>' + de['nav.group_security'] + '<', html.indexOf('id="sidebar"'));
+      const group = html.indexOf('>' + de['nav.group_access'].replace('&', '&amp;') + '<', html.indexOf('id="sidebar"'));
       const item = html.indexOf('href="/waf"');
       const next = html.indexOf('class="nav-section-label"', group + 1);
       assert.ok(group > 0 && item > group && item < next, 'inside the Sicherheit group');

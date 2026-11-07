@@ -28,6 +28,8 @@
     <div id="fleet-kpis" class="kpis"></div>
     <div id="version-warning" class="note" hidden>{{ t('gateways.version_check_unavailable') }}</div>
     <div id="fleet-grid" class="gwp-fleet"></div>
+    {#- switched-off gateways (gateway-manage.js): "Aktivieren" / "Entfernen" -#}
+    <div id="gw-disabled" hidden></div>
   </div>
   <div id="gw-detail-view" hidden></div>
   {#- the pool page #pool/<id> (gateway-pools-ui.js) -#}
@@ -422,6 +424,9 @@
     </div>
   </div>
 </div>
+{#- gateway management (gateway-manage.js, docs/feature-peers-page.md) -#}
+{%- set gwmKeys = ['gwm.section', 'gwm.rename', 'gwm.reconnect', 'gwm.proxy_port', 'gwm.disable', 'gwm.enable', 'gwm.delete', 'gwm.rename_title', 'gwm.name', 'gwm.description', 'gwm.group', 'gwm.group_none', 'gwm.group_hint', 'gwm.name_required', 'gwm.saved', 'gwm.proxy_title', 'gwm.proxy_label', 'gwm.proxy_invalid', 'gwm.disable_title', 'gwm.disable_confirm', 'gwm.disable_ok', 'gwm.enabled_toast', 'gwm.disabled_toast', 'gwm.deleted_toast', 'gwm.disabled_title', 'gwm.disabled_hint', 'gwm.disabled_tag', 'peer_gateway_proxy_port_hint', 'gateway_delete_title', 'gateway_delete_warning_title', 'gateway_delete_warning_body', 'gateway_delete_peer_label', 'gateway_delete_affected_routes', 'gateway_delete_routes_hint', 'gateway_delete_no_routes', 'gateway_delete_confirm_ip_label', 'gateway_delete_ip_match', 'gateway_delete_ip_mismatch', 'gateway_delete_button', 'common.save', 'common.cancel', 'common.error'] %}
+<script type="application/json" id="gwm-i18n" nonce="{{ cspNonce }}">{ {% for k in gwmKeys %}{{ k | dump | safe }}: {{ t(k) | dump | safe }}{{ ',' if not loop.last }}{% endfor %} }</script>
 <script type="application/json" id="gwiz-i18n" data-prefixes="gwiz. gwe. gwn. gwh. gwp. gwr. gateway_pools. common." nonce="{{ cspNonce }}">{{ gwizI18n | default('{}') | safe }}</script>
 {% endblock %}
 {% block scripts %}<script src="/js/handbook.js?v={{ appVersion }}"></script>
@@ -439,4 +444,5 @@
 <script src="/js/gateway-radio.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-pools-ui.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-locations.js?v={{ appVersion }}"></script>
+<script src="/js/gateway-manage.js?v={{ appVersion }}"></script>
 <script src="/js/gateways.js?v={{ appVersion }}"></script>{% endblock %}

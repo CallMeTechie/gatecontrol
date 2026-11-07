@@ -33,7 +33,7 @@ As long as you do not switch edge on, both containers are idle.
 ## 4.1 Switching edge on
 
 1. Install the plugin, for example “Smart Home”: “Settings” → “Plugins”.
-2. Open “Network” → “Gateways” and click your gateway.
+2. Open “Devices” → “Gateways” and click your gateway.
 3. Switch to the tab “Edge plugins”.
 4. Click “Switch edge on”.
 5. Look at the line at the top of the tab:
@@ -59,7 +59,7 @@ Only needed if devices such as Shelly, Tasmota or ESPHome should report via MQTT
 
 ## 4.3 Where do my devices show up?
 
-The devices show up **in the plugin**, on the left under “Integrations” →
+The devices show up **in the plugin**, on the left under “Home” →
 “Smart Home” – not on the gateway page. The gateway page only shows whether
 the edge part runs, and has its “Log”.
 

@@ -88,7 +88,7 @@ describe('built-in Smart Home data without the plugin', () => {
     await agent.get('/api/v1/portal/smarthome').expect(404);
     const dash = await agent.get('/dashboard').expect(200);
     assert.doesNotMatch(dash.text, /href="\/smarthome"/);
-    assert.doesNotMatch(dash.text, /nav-section-label">Integrations</, 'no integrations group without a plugin');
+    assert.doesNotMatch(dash.text, /data-nav-fold="(home|apps)"/, 'no plugin group without a plugin');
   });
 
   it('the dashboard and the plugin area say that Smart Home is a plugin now (data kept)', async () => {
@@ -198,14 +198,14 @@ describe('the signed first-party plugin', () => {
     assert.equal((await agent.get(`${API}/${ID}/legacy`)).body.legacy.imported.runs, 2);
   });
 
-  it('the former pages lead to the plugin, which is listed under "Integrationen"; no upgrade notice', async () => {
+  it('the former pages lead to the plugin, which is listed under "Zuhause"; no upgrade notice', async () => {
     const page = await agent.get('/smarthome').expect(302);
     assert.equal(page.headers.location, '/plugins/gatecontrol-smarthome');
     const rules = await agent.get('/smarthome/rules').expect(302);
     assert.equal(rules.headers.location, '/plugins/gatecontrol-smarthome/rules');
     const dash = await agent.get('/plugins/gatecontrol-smarthome').expect(200);
     assert.doesNotMatch(dash.text, /href="\/smarthome"/);
-    assert.match(dash.text, /nav-section-label">Integrations<\/div>\s*<a href="\/plugins\/gatecontrol-smarthome"/);
+    assert.match(dash.text, /data-nav-fold="home"><button[^>]*><span>Home<\/span>[^]*?<\/div>\s*<a href="\/plugins\/gatecontrol-smarthome"/);
     assert.doesNotMatch(dash.text, /nav-section-label">Plugins</);
     assert.doesNotMatch((await agent.get('/dashboard').expect(200)).text, /data-builtin-moved=/);
   });

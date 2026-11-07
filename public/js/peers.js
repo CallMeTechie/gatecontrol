@@ -1,313 +1,129 @@
 'use strict';
 
+// Peers / Clients (docs/feature-peers-page.md): the devices of the VPN —
+// gateways have their own page (/gateways) and are not loaded here
+// (GET /api/peers?type=client).
+//
+//   view     cards or list, remembered per browser (localStorage, try/catch)
+//   filters  search · status · group · device (platform) · owner · tags ·
+//            "needs attention"; sort. They live in the address
+//            (#status=online&group=3…) — #edit/<id> opens a device's dialog,
+//            /peers?q=<text> fills the search (link from Benutzer).
+//   select   checkboxes (list: always, cards: on hover or while selecting) →
+//            the bulk bar (.sh-bulkbar): enable, disable, group, owner, tag,
+//            delete (POST /api/peers/batch, /api/v1/peers/batch-owner).
+//
+// Every value from the server goes in with textContent (h() below) — no
+// innerHTML with data.
+
 // In-app dialogs instead of confirm()/alert() (docs/feature-wave2.md §W1.2).
 var D = window.GCDialog;
 var DT = function (k, p) { return D.t(k, p); };
 
-
 (function () {
-  // ─── Gateway-Tokens Modal (shared helper for create + rotate flows) ──────
-  // Source URL of the install-pve.sh script used in the LXC tab. Hardcoded
-  // — the gateway repo is the canonical home; if it ever moves, both this
-  // and the script's own self-reference need updating in lockstep.
-  var INSTALL_SCRIPT_URL =
-    'https://raw.githubusercontent.com/CallMeTechie/gatecontrol-gateway/main/scripts/install-pve.sh';
-
-  // Track the active pairing-code countdown so we can cancel it on
-  // modal-close / regenerate without leaving timers running.
-  var _pairingCountdownTimer = null;
-  function _stopPairingCountdown() {
-    if (_pairingCountdownTimer) { clearInterval(_pairingCountdownTimer); _pairingCountdownTimer = null; }
+  // ─── Strings (peers.njk island) ──────────────────────────
+  var I = {};
+  try { I = JSON.parse((document.getElementById('pl-i18n') || {}).textContent || '{}') || {}; } catch (e) { I = {}; }
+  function L(key, params) {
+    var str = I[key] != null ? I[key] : ((window.GC && GC.t && GC.t[key]) || key);
+    if (params) Object.keys(params).forEach(function (k) { str = str.split('{{' + k + '}}').join(String(params[k])); });
+    return str;
   }
 
-  function openGatewayTokensModal(peer, tokens) {
-    var apiEl = document.getElementById('gateway-tokens-api-token');
-    var pushEl = document.getElementById('gateway-tokens-push-token');
-    var envEl = document.getElementById('gateway-tokens-env');
-    var feedback = document.getElementById('gateway-tokens-copy-feedback');
-    if (!apiEl) return; // modal template not loaded — shouldn't happen
-
-    apiEl.value = tokens.apiToken || '';
-    pushEl.value = tokens.pushToken || '';
-    envEl.value = tokens.envContent || '';
-    if (feedback) feedback.style.display = 'none';
-
-    function showFeedback() {
-      if (!feedback) return;
-      feedback.style.display = '';
-      setTimeout(function() { feedback.style.display = 'none'; }, 2000);
-    }
-
-    function copyToClipboard(text) {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        return navigator.clipboard.writeText(text).then(showFeedback);
-      }
-      // Fallback for older browsers or non-HTTPS contexts
-      var ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand('copy'); showFeedback(); } catch (e) { /* noop */ }
-      document.body.removeChild(ta);
-    }
-
-    document.getElementById('gateway-tokens-copy-api').onclick = function() {
-      copyToClipboard(apiEl.value);
-    };
-    document.getElementById('gateway-tokens-copy-push').onclick = function() {
-      copyToClipboard(pushEl.value);
-    };
-    document.getElementById('gateway-tokens-copy-all').onclick = function() {
-      copyToClipboard(envEl.value);
-    };
-
-    function downloadAsFile(text, filename) {
-      var blob = new Blob([text], { type: 'text/plain' });
-      var link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(link.href);
-    }
-    document.getElementById('gateway-tokens-download').onclick = function() {
-      downloadAsFile(envEl.value, 'gateway-' + peer.id + '.env');
-    };
-
-    // ── Docker tab — compose builder + downloads ─────────
-    // Two orthogonal choices drive the compose:
-    //   platform: synology|linux  → governs whether /dev/net/tun is
-    //     bind-mounted. Synology / DSM / BSD / Docker Desktop have no
-    //     WireGuard kernel module so wg-quick falls back to the
-    //     wireguard-go userspace daemon, which needs the TUN device
-    //     explicitly mounted (network_mode: host doesn't expose host
-    //     /dev). Linux with kernel WG uses netlink directly and never
-    //     touches /dev/net/tun.
-    //   network: host|bridge  → host gives full feature set (L4 routes,
-    //     Wake-on-LAN). Bridge isolates but loses both because Docker
-    //     bridge can't add ports after start and filters multicast.
-    // The onboarding compose lives in gateway-kit.js (shared with the gateway
-    // assistant and the server's Synology package).
-    function buildCompose(opts) {
-      return window.GCGatewayKit.buildCompose(opts);
-    }
-
-    var dockerComposeEl = document.getElementById('gateway-docker-compose');
-    var dockerNetHintEl = document.getElementById('gw-docker-net-hint');
-    var dockerPlatformHintEl = document.getElementById('gw-docker-platform-hint');
-
-    function renderCompose() {
-      var network = document.querySelector('input[name="gw-docker-net"]:checked').value;
-      var platform = document.querySelector('input[name="gw-docker-platform"]:checked').value;
-      dockerComposeEl.value = buildCompose({ network: network, platform: platform });
-
-      dockerNetHintEl.textContent = (network === 'bridge'
-        ? (GC.t['gateway_deploy_docker_net_hint_bridge'] || 'Bridge mode supports HTTP routes only. L4 / WoL need Host mode.')
-        : (GC.t['gateway_deploy_docker_net_hint_host']   || 'Host mode supports all features (L4 routes, Wake-on-LAN). Recommended.'));
-
-      dockerPlatformHintEl.textContent = (platform === 'linux'
-        ? (GC.t['gateway_deploy_docker_platform_hint_linux']    || 'Linux with kernel WireGuard module — fastest.')
-        : (GC.t['gateway_deploy_docker_platform_hint_synology'] || 'Synology / NAS / Docker Desktop — uses wireguard-go userspace.'));
-
-      // Toggle which intro panel + install-instruction block is visible.
-      // Two of each are rendered server-side; we just swap their display
-      // so the user sees the steps that match their chosen platform.
-      Array.prototype.forEach.call(
-        document.querySelectorAll('.gw-platform-intro, .gw-platform-doc'),
-        function(el) {
-          var which = el.getAttribute('data-platform-intro') || el.getAttribute('data-platform-doc');
-          el.style.display = (which === platform) ? '' : 'none';
-        }
-      );
-    }
-
-    Array.prototype.forEach.call(
-      document.querySelectorAll('input[name="gw-docker-net"], input[name="gw-docker-platform"]'),
-      function(r) { r.onchange = renderCompose; }
-    );
-    renderCompose();
-
-    var copyComposeBtn = document.getElementById('gateway-docker-copy-compose');
-    var dlComposeBtn   = document.getElementById('gateway-docker-download-compose');
-    var copyEnvBtn     = document.getElementById('gateway-docker-copy-env');
-    var dlEnvBtn       = document.getElementById('gateway-docker-download-env');
-    if (copyComposeBtn) copyComposeBtn.onclick = function() { copyToClipboard(dockerComposeEl.value); };
-    if (dlComposeBtn)   dlComposeBtn.onclick   = function() { downloadAsFile(dockerComposeEl.value, 'docker-compose.yml'); };
-    if (copyEnvBtn)     copyEnvBtn.onclick     = function() { copyToClipboard(envEl.value); };
-    if (dlEnvBtn)       dlEnvBtn.onclick       = function() { downloadAsFile(envEl.value, 'gateway.env'); };
-
-    // ── Raspberry Pi tab — fertiges Image; gateway.env kommt auf die SD-Karte
-    // (bootfs/gatecontrol/). Image- und Imager-Links stehen im Template und
-    // zeigen auf releases/latest des Gateway-Repos.
-    var rpiEnvBtn   = document.getElementById('gateway-rpi-download-env');
-    var rpiCopyBtn  = document.getElementById('gateway-rpi-copy-imager-url');
-    var rpiUrlEl    = document.getElementById('gateway-rpi-imager-url');
-    if (rpiEnvBtn)  rpiEnvBtn.onclick  = function() { downloadAsFile(envEl.value, 'gateway.env'); };
-    if (rpiCopyBtn && rpiUrlEl) rpiCopyBtn.onclick = function() { copyToClipboard(rpiUrlEl.value); };
-
-    // ── Tabs ──────────────────────────────────────────────
-    var tabs = document.querySelectorAll('.gw-tab');
-    var panes = document.querySelectorAll('.gw-tab-pane');
-    function activateTab(name) {
-      tabs.forEach(function(b) {
-        var on = b.getAttribute('data-gw-tab') === name;
-        b.style.borderBottomColor = on ? 'var(--accent)' : 'transparent';
-        b.style.color = on ? 'var(--accent)' : 'var(--muted)';
-        b.style.fontWeight = on ? '600' : 'normal';
-      });
-      panes.forEach(function(p) {
-        p.style.display = (p.getAttribute('data-gw-pane') === name) ? '' : 'none';
-      });
-    }
-    tabs.forEach(function(b) {
-      b.onclick = function() { activateTab(b.getAttribute('data-gw-tab')); };
+  // ─── DOM helpers (textContent only) ──────────────────────
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function h(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      var v = attrs[k];
+      if (v == null || v === false) return;
+      if (k === 'class') n.className = v;
+      else if (k === 'text') n.textContent = v;
+      else n.setAttribute(k, v === true ? '' : String(v));
     });
-    activateTab('lxc');
-
-    // ── LXC pairing-code wiring ───────────────────────────
-    var tokenEl = document.getElementById('gateway-pairing-token');
-    var commandEl = document.getElementById('gateway-pairing-command');
-    var countdownEl = document.getElementById('gateway-pairing-countdown');
-    var statusEl = document.getElementById('gateway-pairing-status');
-    var copyTokenBtn = document.getElementById('gateway-pairing-copy-token');
-    var copyCmdBtn = document.getElementById('gateway-pairing-copy-command');
-    var regenBtn = document.getElementById('gateway-pairing-regenerate');
-
-    function buildCommand(token) {
-      // Inline -- separator splits the curl-fetched script's positional
-      // args from bash's own args. The installer uses --token and --yes.
-      return 'bash -c "$(curl -fsSL ' + INSTALL_SCRIPT_URL + ')" -- \\\n' +
-             '  --token "' + token + '" --yes';
-    }
-
-    function startCountdown(expiresAt) {
-      _stopPairingCountdown();
-      function tick() {
-        var ms = expiresAt - Date.now();
-        if (ms <= 0) {
-          countdownEl.textContent = (GC.t['gateway_deploy_lxc_expired'] || 'Expired — click ↻ to regenerate');
-          countdownEl.style.color = 'var(--red)';
-          _stopPairingCountdown();
-          return;
-        }
-        var s = Math.floor(ms / 1000);
-        var m = Math.floor(s / 60);
-        var ss = String(s % 60).padStart(2, '0');
-        countdownEl.textContent = (GC.t['gateway_deploy_lxc_valid_for'] || 'Valid for') + ' ' + m + ':' + ss;
-        countdownEl.style.color = ms < 2 * 60 * 1000 ? 'var(--red)' : 'var(--muted)';
-      }
-      tick();
-      _pairingCountdownTimer = setInterval(tick, 1000);
-    }
-
-    async function loadPairingCode() {
-      tokenEl.value = '';
-      commandEl.value = '';
-      statusEl.textContent = (GC.t['gateway_deploy_lxc_generating'] || 'Generating…');
-      countdownEl.textContent = '';
-      try {
-        // Same CSRF + credentials shape as the existing /gateway-env/rotate
-        // call below — the admin POST endpoints all require both.
-        const resp = await fetch('/api/v1/peers/' + encodeURIComponent(peer.id) + '/gateway-pairing-code', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: {
-            'X-CSRF-Token': (typeof GC !== 'undefined' && GC.csrfToken) ? GC.csrfToken : '',
-            'Content-Type': 'application/json',
-          },
-          body: '{}',
-        });
-        const data = await resp.json();
-        if (!data.ok) throw new Error(data.error || ('HTTP ' + resp.status));
-        tokenEl.value = data.token;
-        commandEl.value = buildCommand(data.token);
-        statusEl.textContent = '';
-        startCountdown(data.expiresAt);
-      } catch (err) {
-        statusEl.textContent = (GC.t['gateway_deploy_lxc_failed'] || 'Failed') + ': ' + err.message;
-        statusEl.style.color = 'var(--red)';
-      }
-    }
-
-    if (copyTokenBtn) copyTokenBtn.onclick = function() { copyToClipboard(tokenEl.value); };
-    if (copyCmdBtn)   copyCmdBtn.onclick   = function() { copyToClipboard(commandEl.value); };
-    if (regenBtn)     regenBtn.onclick     = function() { loadPairingCode(); };
-
-    // Auto-fetch on open. If the user closes the modal without copying,
-    // the code expires harmlessly within 10 minutes — server-side janitor
-    // sweeps eventually.
-    loadPairingCode();
-
-    // Stop the countdown when the modal closes (any [data-close-modal] click).
-    var modal = document.getElementById('modal-gateway-tokens');
-    if (modal) {
-      modal.addEventListener('click', function onClose(e) {
-        if (e.target.closest && e.target.closest('[data-close-modal]')) {
-          _stopPairingCountdown();
-        }
-      });
-    }
-
-    openModal('modal-gateway-tokens');
+    (kids || []).forEach(function (c) { if (c != null) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return n;
+  }
+  // icons: static path data only
+  var IC = {
+    phone: ['M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z', 'M11 18h2'],
+    laptop: ['M5 5h14a1 1 0 0 1 1 1v10H4V6a1 1 0 0 1 1-1z', 'M2 20h20'],
+    wg: ['M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3z', 'M9 12h6'],
+    qr: ['M3 3h7v7H3z', 'M14 3h7v7h-7z', 'M3 14h7v7H3z', 'M14 14h3v3M21 14v7h-7'],
+    edit: ['m14 6 4 4M4 20l1-4L16 5l3 3L8 19l-4 1Z'],
+    more: ['M5 12h.01M12 12h.01M19 12h.01'],
+    chart: ['M4 19V5M4 19h16M8 15l3-4 3 2 4-6'],
+    download: ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3'],
+    power: ['M18.36 6.64a9 9 0 1 1-12.73 0', 'M12 2v10'],
+    trash: ['M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13'],
+    search: ['M11 4a7 7 0 1 1 0 14 7 7 0 0 1 0-14z', 'm20 20-3.5-3.5'],
+    plus: ['M12 5v14M5 12h14'],
+    alert: ['M12 3 2 21h20L12 3z', 'M12 10v5M12 18h.01'],
+    box: ['M21 8v13H3V8', 'M1 3h22v5H1z'],
+    clock: ['M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18z', 'M12 7v5l3 2'],
+    x: ['M6 6l12 12M18 6 6 18'],
+    check: ['m5 12 5 5 9-10'],
+  };
+  function icon(name, size) {
+    var svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', String(size || 16));
+    svg.setAttribute('height', String(size || 16));
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', name === 'more' ? '3' : '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    (IC[name] || []).forEach(function (d) { var p = document.createElementNS(SVGNS, 'path'); p.setAttribute('d', d); svg.appendChild(p); });
+    return svg;
+  }
+  function store(key, val) {
+    try { if (val === undefined) return localStorage.getItem(key); localStorage.setItem(key, val); } catch (e) { /* private mode */ }
+    return null;
   }
 
-  const tbody = document.getElementById('peers-tbody');
-  const searchInput = document.getElementById('peer-search');
-  const statusTags = document.getElementById('peer-status-tags');
-  const tagFilters = document.getElementById('peer-tag-filters');
-  const groupFilter = document.getElementById('peer-group-filter');
-  let allPeers = [];
-  let allGroups = [];
-  let activeTagFilter = null;
-  let activeGroupFilter = ''; // '' = all, 'ungrouped' = no group, number = group id
-  let batchMode = false;
-  let batchSelected = new Set();
+  // ─── State ───────────────────────────────────────────────
+  var VIEW_KEY = 'gc-peers-view';
+  var searchInput = document.getElementById('peer-search');
+  var results = document.getElementById('pl-results');
+  var allPeers = [];
+  var allGroups = [];
+  var allUsers = {};
+  var counts = null;
+  var loaded = false;
+  var updatePolicy = { default_channel: 'stable', min_versions: {} };
+  var F = { status: 'all', group: '', device: '', owner: '', tags: [], hints: [], sort: 'status' };
+  var view = store(VIEW_KEY) === 'list' ? 'list' : 'cards';
+  var selected = new Set();
+  var openMenu = null;
 
-  // ─── Load peer groups ──────────────────────────────────
+  // ─── Load groups / owners ────────────────────────────────
   async function loadGroups() {
     try {
-      const data = await api.get('/api/peer-groups');
+      var data = await api.get('/api/peer-groups');
       if (data.ok) {
-        allGroups = data.groups;
-        renderGroupFilter();
+        allGroups = data.groups || [];
+        renderGroupSelect();
         renderGroupDropdowns();
-        renderGroupsList();
+        if (loaded) render();
       }
     } catch (err) {
       console.error('Failed to load peer groups:', err);
     }
   }
-
   function getGroupById(id) {
-    return allGroups.find(function(g) { return g.id === id; });
+    return allGroups.find(function (g) { return g.id === id; });
   }
-
-  function renderGroupFilter() {
-    if (!groupFilter) return;
-    var val = groupFilter.value;
-    groupFilter.innerHTML = '';
-
-    var optAll = document.createElement('option');
-    optAll.value = '';
-    optAll.textContent = GC.t['peer_groups.all'] || 'All';
-    groupFilter.appendChild(optAll);
-
-    allGroups.forEach(function(g) {
-      var opt = document.createElement('option');
-      opt.value = String(g.id);
-      opt.textContent = g.name + ' (' + g.peer_count + ')';
-      groupFilter.appendChild(opt);
-    });
-
-    var ungOpt = document.createElement('option');
-    ungOpt.value = 'ungrouped';
-    ungOpt.textContent = GC.t['peer_groups.ungrouped'] || 'Ungrouped';
-    groupFilter.appendChild(ungOpt);
-
-    groupFilter.value = val;
+  function renderGroupSelect() {
+    var sel = document.getElementById('pl-group');
+    if (!sel) return;
+    var val = F.group;
+    sel.replaceChildren(new Option(L('pl.f_all'), ''));
+    allGroups.forEach(function (g) { sel.appendChild(new Option(g.name, String(g.id))); });
+    sel.appendChild(new Option(L('pl.f_group_none'), 'none'));
+    sel.value = val;
+    if (sel.value !== val) sel.value = '';
   }
 
   function renderGroupDropdowns() {
@@ -315,7 +131,7 @@ var DT = function (k, p) { return D.t(k, p); };
       var sel = document.getElementById(selectId);
       if (!sel) return;
       var val = sel.value;
-      sel.innerHTML = '';
+      sel.replaceChildren();
 
       var optNone = document.createElement('option');
       optNone.value = '';
@@ -336,53 +152,50 @@ var DT = function (k, p) { return D.t(k, p); };
   function populateOwnerSelects(ids) {
     api.get('/api/v1/users').then(function (r) {
       var users = (r.data || r.users || []);
+      allUsers = {};
+      users.forEach(function (u) { allUsers[u.id] = u; });
       (ids || ['add-peer-owner', 'edit-peer-owner']).forEach(function (id) {
         var sel = document.getElementById(id); if (!sel) return;
-        sel.innerHTML = '';
-        sel.appendChild(new Option((window.GC && GC.t && GC.t['peers.owner.none']) || '(no owner)', ''));
+        sel.replaceChildren(new Option((window.GC && GC.t && GC.t['peers.owner.none']) || '(no owner)', ''));
         users.forEach(function (u) { sel.appendChild(new Option(u.username, String(u.id))); });
       });
+      if (loaded) render();
     }).catch(function (err) { console.warn('[peers] loading users for select failed', err); });
   }
 
-  // ─── Load peers ──────────────────────────────────────────
+  // ─── Load peers (clients only) ───────────────────────────
   async function loadPeers() {
     try {
-      const data = await api.get('/api/peers');
+      var data = await api.get('/api/peers?type=client');
       if (data.ok) {
-        allPeers = data.peers;
+        allPeers = data.peers || [];
+        counts = data.counts || null;
         updatePolicy = data.update_policy || updatePolicy;
-        applyFilters();
-        renderStatusTags(allPeers);
-        renderTagFilters(allPeers);
+        var ids = new Set(allPeers.map(function (p) { return p.id; }));
+        selected.forEach(function (id) { if (!ids.has(id)) selected.delete(id); });
+        loaded = true;
+        if (openMenu) return; // the next refresh draws it; an open menu stays open
+        render();
         openDeepLink();
       }
     } catch (err) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--red);padding:40px">' +
-        escapeHtml(err.message) + '</td></tr>';
+      results.replaceChildren(h('div', { class: 'rt-empty-page pl-error', text: L('pl.loading_error', { err: err.message }) }));
     }
   }
 
-  // /peers#edit/<id> opens that device's edit dialog once (link from the
-  // support bundle viewer, System › Support-Pakete).
+  // /peers#edit/<id> opens that device's dialog once (support bundle viewer,
+  // user device page). A gateway has its page on /gateways.
   var deepLinkHandled = false;
   function openDeepLink() {
     if (deepLinkHandled) return;
     deepLinkHandled = true;
     var m = /^#edit\/(\d{1,9})$/.exec(window.location.hash || '');
-    if (m && allPeers.some(function (p) { return String(p.id) === m[1]; })) showEditModal(m[1]);
+    if (!m) return;
+    if (allPeers.some(function (p) { return String(p.id) === m[1]; })) { showEditModal(m[1]); return; }
+    api.get('/api/peers/' + m[1]).then(function (r) {
+      if (r && r.ok && r.peer && r.peer.peer_type === 'gateway') window.location.replace('/gateways#gw/' + m[1]);
+    }).catch(function () { /* unknown id: stay on the list */ });
   }
-
-  // ─── Render peers table ──────────────────────────────────
-  // Note: All user-controlled values are passed through escapeHtml() for XSS safety,
-  // following the same pattern used throughout the existing codebase.
-  // Note: All innerHTML assignments below use only escapeHtml()-sanitized user values
-  // and static SVG/HTML strings. This follows the existing pattern throughout the codebase.
-  var peersMobile = document.getElementById('peers-mobile');
-
-  // ─── Client version / update channel ─────────────────────
-  // Server-side policy from GET /api/peers (default channel, min versions).
-  var updatePolicy = { default_channel: 'stable', min_versions: {} };
 
   function cuT(key, params) {
     var str = (GC.t && GC.t[key]) || key;
@@ -397,172 +210,666 @@ var DT = function (k, p) { return D.t(k, p); };
     return '';
   }
 
-  // Version cell: "Pro 1.22.3" (+ red tag below the minimum, + beta tag).
-  // Values are client-reported → escapeHtml.
-  function getClientCell(peer) {
-    if (peer.peer_type === 'gateway') return '<span style="color:var(--muted)">—</span>';
-    var parts = [];
-    if (peer.client_version) {
-      var label = (clientProductLabel(peer.client_product) + ' ' + peer.client_version).trim();
-      var title = peer.client_seen_at ? cuT('client_updates.peer_last_seen', { time: peer.client_seen_at + ' UTC' }) : '';
-      parts.push('<span class="mono" title="' + escapeHtml(title) + '">' + escapeHtml(label) + '</span>');
-      if (peer.client_below_min) {
-        parts.push('<span class="tag tag-red" style="font-size:10px;margin-left:4px" title="' + escapeHtml(cuT('client_updates.overview_min', { version: peer.client_min_version || '' })) + '">' +
-          escapeHtml(cuT('client_updates.overview_below_min')) + '</span>');
-      }
-    } else {
-      parts.push('<span style="color:var(--muted)">—</span>');
-    }
-    if (peer.update_channel_effective === 'beta') {
-      parts.push('<span class="tag tag-purple" style="font-size:10px;margin-left:4px">' + escapeHtml(cuT('client_updates.channel_beta')) + '</span>');
-    }
-    return parts.join('');
+  // ─── Peer facts ──────────────────────────────────────────
+  function stateOf(p) { return !p.enabled ? 'disabled' : (p.isOnline ? 'online' : 'offline'); }
+  function platformOf(p) { return p.client_platform === 'android' ? 'android' : p.client_platform === 'windows' ? 'windows' : 'none'; }
+  function ipOf(p) { return p.allowed_ips ? String(p.allowed_ips).split('/')[0] : ''; }
+  function rx(p) { return Number(p.transferRx != null ? p.transferRx : p.transfer_rx) || 0; }
+  function tx(p) { return Number(p.transferTx != null ? p.transferTx : p.transfer_tx) || 0; }
+  function handshakeMs(p) {
+    var v = p.latestHandshake != null ? p.latestHandshake : p.latest_handshake;
+    if (!v) return 0;
+    var ms = typeof v === 'number' ? v * 1000 : new Date(String(v).replace(' ', 'T') + (/Z|[+-]\d\d:?\d\d$/.test(String(v)) ? '' : 'Z')).getTime();
+    return isNaN(ms) ? 0 : ms;
   }
-
-  // ─── Gateway badge ───────────────────────────────────────
-  // Support bundles nobody opened yet → small badge linking to the inbox
-  // filtered to this device. Numbers only; the title is escaped.
-  function getSupportBadge(peer) {
-    var n = Number(peer.support_bundles_unviewed) || 0;
-    if (n <= 0 || !/^\d+$/.test(String(peer.id))) return '';
-    var title = cuT('support_bundles.peer_badge', { count: n });
-    return ' <a class="sb-peer-badge" href="/support-bundles?peer=' + peer.id + '" title="' + escapeHtml(title) + '" aria-label="' + escapeHtml(title) + '">' +
-      '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/></svg>' +
-      n + '</a>';
+  function ago(ms) {
+    if (!ms) return L('pl.ago_never');
+    var s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+    if (s < 60) return L('pl.ago_now');
+    if (s < 3600) return L('pl.ago_min', { n: Math.floor(s / 60) });
+    if (s < 86400) return L('pl.ago_h', { n: Math.floor(s / 3600) });
+    var d = Math.floor(s / 86400);
+    return d === 1 ? L('pl.ago_d_one') : L('pl.ago_d', { n: d });
   }
-
-  function getGatewayBadge(peer) {
-    if (peer.peer_type !== 'gateway') return '';
-    return ' <span style="display:inline-flex;align-items:center;font-size:10px;padding:1px 6px;border-radius:9999px;background:#0ea5e91a;color:#0ea5e9;border:1px solid #0ea5e940;margin-left:4px;font-weight:600;letter-spacing:0.5px">GATEWAY</span>';
+  function appLabel(p) {
+    if (!p.client_version) return L('pl.app_none');
+    if (p.client_product === 'android' || p.client_platform === 'android') return L('pl.app_android', { v: p.client_version });
+    if (p.client_product === 'pro') return L('pl.app_pro', { v: p.client_version });
+    if (p.client_product === 'community') return L('pl.app_community', { v: p.client_version });
+    if (p.client_platform === 'windows') return L('pl.app_windows', { v: p.client_version });
+    return L('pl.app_other', { v: p.client_version });
   }
-
-  // ─── Group badge ─────────────────────────────────────────
-  function getGroupBadge(peer) {
-    if (!peer.group_id) return '';
-    var group = getGroupById(peer.group_id);
-    if (!group) return '';
-    var color = /^#[0-9a-fA-F]{3,8}$/.test(group.color) ? group.color : '#6b7280';
-    return ' <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;padding:1px 6px;border-radius:9999px;background:' + color + '1a;color:' + color + ';border:1px solid ' + color + '40;margin-left:4px">' +
-      '<span style="width:6px;height:6px;border-radius:50%;background:' + color + ';display:inline-block"></span>' +
-      escapeHtml(group.name) + '</span>';
+  function expiryDays(p) {
+    if (!p.expires_at) return null;
+    var t = new Date(p.expires_at).getTime();
+    if (isNaN(t)) return null;
+    return Math.ceil((t - Date.now()) / 86400000);
   }
-
-  // ─── Status tags summary ─────────────────────────────────
-  function renderStatusTags(peers) {
-    var online = peers.filter(function(p) { return p.isOnline; }).length;
-    var offline = peers.filter(function(p) { return !p.isOnline && p.enabled; }).length;
-    var disabled = peers.filter(function(p) { return !p.enabled; }).length;
-
-    var html = '';
-    if (online > 0) html += '<span class="tag tag-green"><span class="tag-dot"></span>' + online + ' ' + escapeHtml(GC.t['peers.online'] || 'Online') + '</span>';
-    if (offline > 0) html += '<span class="tag tag-grey"><span class="tag-dot"></span>' + offline + ' ' + escapeHtml(GC.t['peers.offline'] || 'Offline') + '</span>';
-    if (disabled > 0) html += '<span class="tag tag-amber"><span class="tag-dot"></span>' + disabled + ' ' + escapeHtml(GC.t['peers.disabled'] || 'Disabled') + '</span>';
-    statusTags.innerHTML = html;
+  function ownerName(p) {
+    var u = p.user_id != null ? allUsers[p.user_id] : null;
+    return u ? (u.display_name || u.username) : (p.owner_name || '');
   }
-
-  function getExpiryTag(peer) {
-    if (!peer.expires_at) return '';
-    var expiresAt = new Date(peer.expires_at);
-    var now = new Date();
-    var daysLeft = Math.ceil((expiresAt - now) / 86400000);
-    var dateStr = expiresAt.toLocaleDateString();
-
-    if (daysLeft < 0) {
-      return '<span class="tag tag-red" style="font-size:10px;margin-left:4px">' + escapeHtml(GC.t['peers.expired'] || 'Expired') + '</span>';
-    }
-    if (daysLeft <= 7) {
-      return '<span class="tag tag-amber" style="font-size:10px;margin-left:4px" title="' + escapeHtml(dateStr) + '">' + escapeHtml(GC.t['peers.expires_soon'] || 'Expires soon') + '</span>';
-    }
-    return '<span class="tag tag-grey" style="font-size:10px;margin-left:4px" title="' + escapeHtml(dateStr) + '">' + escapeHtml(dateStr) + '</span>';
-  }
-
-  function getStatusTag(peer) {
-    if (!peer.enabled) return '<span class="tag tag-amber"><span class="tag-dot"></span>' + escapeHtml(GC.t['peers.disabled'] || 'Disabled') + '</span>';
-    if (peer.isOnline) return '<span class="tag tag-green"><span class="tag-dot"></span>' + escapeHtml(GC.t['peers.online'] || 'Online') + '</span>';
-    return '<span class="tag tag-grey"><span class="tag-dot"></span>' + escapeHtml(GC.t['peers.offline'] || 'Offline') + '</span>';
-  }
-
-  function formatLastContact(timestamp) {
-    if (!timestamp) return '\u2014';
-    var ts = typeof timestamp === 'number' ? timestamp * 1000 : new Date(timestamp).getTime();
-    if (isNaN(ts) || ts === 0) return '\u2014';
-    var diff = Math.floor((Date.now() - ts) / 1000);
-    if (diff < 60) return diff + 's ago';
-    if (diff < 3600) return Math.floor(diff / 60) + ' min ago';
-    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
-    return Math.floor(diff / 86400) + 'd ago';
-  }
-
-  // ─── Tag helpers ────────────────────────────────────────
-  function parseTags(tags) {
-    if (!tags) return [];
-    return tags.split(',').map(function(t) { return t.trim(); }).filter(Boolean);
-  }
-
-  function renderTagFilters(peers) {
-    if (!tagFilters) return;
-    var tagSet = new Set();
-    peers.forEach(function(p) { parseTags(p.tags).forEach(function(t) { tagSet.add(t); }); });
-    var tags = Array.from(tagSet).sort();
-
-    tagFilters.textContent = '';
-    if (tags.length === 0) return;
-
-    var allBtn = document.createElement('button');
-    allBtn.className = 'tag ' + (!activeTagFilter ? 'tag-blue' : 'tag-grey');
-    allBtn.style.cssText = 'cursor:pointer;font-size:11px';
-    allBtn.textContent = GC.t['peer_groups.all'] || 'All';
-    allBtn.addEventListener('click', function() { activeTagFilter = null; applyFilters(); renderTagFilters(allPeers); });
-    tagFilters.appendChild(allBtn);
-
-    tags.forEach(function(tag) {
-      var btn = document.createElement('button');
-      btn.className = 'tag ' + (activeTagFilter === tag ? 'tag-blue' : 'tag-grey');
-      btn.style.cssText = 'cursor:pointer;font-size:11px';
-      btn.textContent = tag;
-      btn.addEventListener('click', function() { activeTagFilter = tag; applyFilters(); renderTagFilters(allPeers); });
-      tagFilters.appendChild(btn);
+  function tagsOf(p) {
+    var seen = {};
+    return String(p.tags || '').split(',').map(function (t) { return t.trim(); }).filter(function (t) {
+      var k = t.toLowerCase(); if (!t || seen[k]) return false; seen[k] = true; return true;
     });
   }
+  function needsUpdate(p) { return !!p.client_below_min; }
+  function expiringSoon(p) { var d = expiryDays(p); return d != null && d <= 7; }
+  function hasSupport(p) { return (Number(p.support_bundles_unviewed) || 0) > 0; }
+  function longOffline(p) { var ms = handshakeMs(p); return p.enabled && !p.isOnline && (!ms || Date.now() - ms > 7 * 86400000); }
+  var HINTS = { update: needsUpdate, expiring: expiringSoon, support: hasSupport, stale: longOffline };
 
-  var statusFilter = 'all';
+  // ─── Filters in the address ──────────────────────────────
+  function readHash() {
+    var raw = (window.location.hash || '').replace(/^#/, '');
+    if (!raw || /^edit\//.test(raw)) return;
+    var q = new URLSearchParams(raw);
+    if (['all', 'online', 'offline', 'disabled'].indexOf(q.get('status')) !== -1) F.status = q.get('status');
+    if (/^(\d{1,9}|none)$/.test(q.get('group') || '')) F.group = q.get('group');
+    if (['android', 'windows', 'none'].indexOf(q.get('device')) !== -1) F.device = q.get('device');
+    if (/^(\d{1,9}|none)$/.test(q.get('owner') || '')) F.owner = q.get('owner');
+    if (q.get('tags')) F.tags = q.get('tags').split(',').map(function (t) { return t.trim(); }).filter(Boolean).slice(0, 10);
+    if (q.get('hints')) F.hints = q.get('hints').split(',').filter(function (x) { return HINTS[x]; });
+    if (['status', 'name', 'seen', 'traffic', 'group', 'ip'].indexOf(q.get('sort')) !== -1) F.sort = q.get('sort');
+    if (q.get('q')) searchInput.value = q.get('q').slice(0, 100);
+  }
+  function writeHash() {
+    if (/^#edit\//.test(window.location.hash || '')) return;
+    var q = new URLSearchParams();
+    if (F.status !== 'all') q.set('status', F.status);
+    if (F.group) q.set('group', F.group);
+    if (F.device) q.set('device', F.device);
+    if (F.owner) q.set('owner', F.owner);
+    if (F.tags.length) q.set('tags', F.tags.join(','));
+    if (F.hints.length) q.set('hints', F.hints.join(','));
+    if (F.sort !== 'status') q.set('sort', F.sort);
+    if (searchInput.value.trim()) q.set('q', searchInput.value.trim());
+    var s = q.toString();
+    try { history.replaceState(null, '', window.location.pathname + window.location.search + (s ? '#' + s : '')); } catch (e) { /* ignore */ }
+  }
 
-  function applyFilters() {
-    // Gateway peers live in their own section above the table — exclude
-    // them from the client list so they don't appear twice.
-    var filtered = allPeers.filter(function(p) { return p.peer_type !== 'gateway'; });
-    // Status-toggle filter (All / Online / Offline)
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(function(p) {
-        if (statusFilter === 'online') return p.enabled && p.isOnline;
-        if (statusFilter === 'offline') return !p.isOnline && p.enabled;
-        return true;
-      });
+  function matches(p, skip) {
+    if (skip !== 'status' && F.status !== 'all' && stateOf(p) !== F.status) return false;
+    if (F.group === 'none' ? !!p.group_id : (F.group && String(p.group_id) !== F.group)) return false;
+    if (F.device && platformOf(p) !== F.device) return false;
+    if (F.owner === 'none' ? p.user_id != null : (F.owner && String(p.user_id) !== F.owner)) return false;
+    if (F.tags.length) {
+      var mine = tagsOf(p).map(function (t) { return t.toLowerCase(); });
+      if (!F.tags.every(function (t) { return mine.indexOf(t.toLowerCase()) !== -1; })) return false;
     }
-
-    // Group filter
-    if (activeGroupFilter === 'ungrouped') {
-      filtered = filtered.filter(function(p) { return !p.group_id; });
-    } else if (activeGroupFilter) {
-      var gid = parseInt(activeGroupFilter, 10);
-      filtered = filtered.filter(function(p) { return p.group_id === gid; });
-    }
-
-    if (activeTagFilter) {
-      filtered = filtered.filter(function(p) { return parseTags(p.tags).includes(activeTagFilter); });
-    }
+    if (!F.hints.every(function (k) { return HINTS[k](p); })) return false;
     var q = searchInput.value.toLowerCase().trim();
     if (q) {
-      filtered = filtered.filter(function(p) {
-        return (p.name && p.name.toLowerCase().includes(q)) ||
-          (p.description && p.description.toLowerCase().includes(q)) ||
-          (p.allowed_ips && p.allowed_ips.includes(q)) ||
-          (p.public_key && p.public_key.toLowerCase().includes(q)) ||
-          (p.tags && p.tags.toLowerCase().includes(q));
+      var hay = [p.name, p.description, p.allowed_ips, p.public_key, p.tags, ownerName(p), p.owner_name, p.hostname].join(' ').toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  }
+  var RANK = { online: 0, offline: 1, disabled: 2 };
+  function byName(a, b) { return String(a.name).localeCompare(String(b.name), undefined, { numeric: true, sensitivity: 'base' }); }
+  function ipNum(p) { return ipOf(p).split('.').reduce(function (acc, x) { return acc * 256 + (Number(x) || 0); }, 0); }
+  function sorted(list) {
+    var cmp = {
+      status: function (a, b) { return (RANK[stateOf(a)] - RANK[stateOf(b)]) || byName(a, b); },
+      name: byName,
+      seen: function (a, b) { return (stateOf(a) === 'online' ? -1 : 0) - (stateOf(b) === 'online' ? -1 : 0) || (handshakeMs(b) - handshakeMs(a)) || byName(a, b); },
+      traffic: function (a, b) { return (rx(b) + tx(b)) - (rx(a) + tx(a)) || byName(a, b); },
+      group: function (a, b) {
+        var ga = getGroupById(a.group_id), gb = getGroupById(b.group_id);
+        if (!ga !== !gb) return ga ? -1 : 1;
+        return (ga && gb ? String(ga.name).localeCompare(String(gb.name)) : 0) || byName(a, b);
+      },
+      ip: function (a, b) { return ipNum(a) - ipNum(b); },
+    }[F.sort] || byName;
+    return list.slice().sort(cmp);
+  }
+  function visible() { return sorted(allPeers.filter(function (p) { return matches(p); })); }
+
+  // ─── Render ──────────────────────────────────────────────
+  function render() {
+    if (!loaded) return;
+    closeMenu();
+    var c = { all: 0, online: 0, offline: 0, disabled: 0 };
+    allPeers.forEach(function (p) { if (matches(p, 'status')) { c.all++; c[stateOf(p)]++; } });
+    renderSummary();
+    document.querySelectorAll('#pl-status [data-status]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.status === F.status));
+      var em = b.querySelector('em'); if (em) em.textContent = String(c[b.dataset.status]);
+    });
+    document.querySelectorAll('#pl-view [data-view]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.view === view)); });
+    var gs = document.getElementById('pl-group'); if (gs) gs.value = F.group;
+    var ds = document.getElementById('pl-device'); if (ds) ds.value = F.device;
+    var ss = document.getElementById('pl-sort'); if (ss) ss.value = F.sort;
+    var nMore = F.tags.length + (F.owner ? 1 : 0) + F.hints.length;
+    var mc = document.getElementById('pl-more-count');
+    if (mc) { mc.hidden = !nMore; mc.textContent = String(nMore); }
+    renderActive();
+    renderAttention();
+    var list = visible();
+    if (!allPeers.length) results.replaceChildren(emptyNone());
+    else if (!list.length) results.replaceChildren(emptyNoResult());
+    else results.replaceChildren(view === 'list' ? table(list) : grid(list));
+    renderBulk(list);
+    if (!document.getElementById('pl-more').hidden) renderMorePanel();
+    writeHash();
+  }
+
+  function renderSummary() {
+    var all = allPeers.length;
+    var on = allPeers.filter(function (p) { return stateOf(p) === 'online'; }).length;
+    var off = allPeers.filter(function (p) { return stateOf(p) === 'offline'; }).length;
+    var dis = all - on - off;
+    var sum = document.getElementById('pl-summary');
+    sum.replaceChildren(
+      h('b', { text: all === 1 ? L('pl.summary_one') : L('pl.summary', { n: all }) }), ' · ',
+      h('span', { class: 'pl-sum-on' }, [h('i', { class: 'pl-dot pl-dot-on', 'aria-hidden': 'true' }), L('pl.sum_online', { n: on })]), ' · ',
+      L('pl.sum_offline', { n: off }), ' · ', L('pl.sum_disabled', { n: dis }));
+    var lic = document.getElementById('pl-licence');
+    if (lic && counts) {
+      var limit = Number(lic.dataset.limit) || 0;
+      var kids = [L('pl.licence', { used: counts.total, limit: limit })];
+      if (counts.gateways > 0) {
+        kids.push(' – ', counts.gateways === 1 ? L('pl.licence_gw_one') : L('pl.licence_gw', { n: counts.gateways }), ' ');
+        kids.push(h('a', { href: '/gateways', class: 'pl-link', text: L('pl.licence_gw_link') }));
+      }
+      lic.replaceChildren.apply(lic, kids);
+      lic.classList.toggle('pl-lic-full', limit > 0 && counts.total >= limit);
+      lic.hidden = false;
+    }
+  }
+
+  function chip(label, onRemove) {
+    var b = h('button', { type: 'button', class: 'pl-x', 'aria-label': L('pl.chip_remove', { name: label }) }, [icon('x', 12)]);
+    b.addEventListener('click', onRemove);
+    return h('span', { class: 'tag tag-blue pl-fchip' }, [label, b]);
+  }
+  function renderActive() {
+    var box = document.getElementById('pl-active');
+    var chips = [];
+    var stLabel = { online: L('pl.st_online'), offline: L('pl.st_offline'), disabled: L('pl.st_disabled') };
+    if (F.status !== 'all') chips.push(chip(L('pl.chip_status', { v: stLabel[F.status] }), function () { F.status = 'all'; render(); }));
+    if (F.group) {
+      var g = F.group === 'none' ? null : getGroupById(Number(F.group));
+      chips.push(chip(L('pl.chip_group', { v: g ? g.name : L('pl.f_group_none') }), function () { F.group = ''; render(); }));
+    }
+    if (F.device) chips.push(chip(L('pl.chip_device', { v: L('pl.dev_' + F.device) }), function () { F.device = ''; render(); }));
+    if (F.owner) {
+      var u = allUsers[F.owner];
+      chips.push(chip(L('pl.chip_owner', { v: F.owner === 'none' ? L('pl.f_owner_none') : (u ? (u.display_name || u.username) : '#' + F.owner) }), function () { F.owner = ''; render(); }));
+    }
+    F.tags.forEach(function (t) { chips.push(chip(L('pl.chip_tag', { v: t }), function () { F.tags = F.tags.filter(function (x) { return x !== t; }); render(); })); });
+    F.hints.forEach(function (k) { chips.push(chip(L('pl.h_' + k), function () { F.hints = F.hints.filter(function (x) { return x !== k; }); render(); })); });
+    if (searchInput.value.trim()) chips.push(chip(L('pl.chip_search', { v: searchInput.value.trim() }), function () { searchInput.value = ''; render(); }));
+    if (chips.length) {
+      var reset = h('button', { type: 'button', class: 'pl-link pl-reset', id: 'pl-reset', text: L('pl.reset_all') });
+      reset.addEventListener('click', resetFilters);
+      chips.push(reset);
+    }
+    box.replaceChildren.apply(box, chips);
+    box.hidden = !chips.length;
+  }
+  function resetFilters() {
+    F.status = 'all'; F.group = ''; F.device = ''; F.owner = ''; F.tags = []; F.hints = [];
+    searchInput.value = '';
+    render();
+  }
+
+  // "Needs attention": one click filters the list
+  function renderAttention() {
+    var box = document.getElementById('pl-attn');
+    var defs = [
+      ['update', 'pl-att-red', 'alert', 'pl.attn_update'],
+      ['support', 'pl-att-coral', 'box', 'pl.attn_support'],
+      ['expiring', 'pl-att-amber', 'clock', 'pl.attn_expiring'],
+    ];
+    var items = [];
+    if (F.hints.length === 0) {
+      defs.forEach(function (d) {
+        var n = allPeers.filter(HINTS[d[0]]).length;
+        if (!n) return;
+        var b = h('button', { type: 'button', class: 'pl-att ' + d[1], 'data-hint': d[0] }, [icon(d[2], 14), n === 1 ? L(d[3] + '_one') : L(d[3], { n: n })]);
+        b.addEventListener('click', function () { F.hints = [d[0]]; render(); });
+        items.push(b);
       });
     }
-    renderPeers(filtered);
+    box.replaceChildren.apply(box, items);
+    box.hidden = !items.length;
   }
+
+  // ─── Pieces of a device ──────────────────────────────────
+  function avatar(p, size) {
+    var pf = platformOf(p);
+    return h('span', { class: 'uav pl-av pl-av-' + pf, 'aria-hidden': 'true' }, [icon(pf === 'android' ? 'phone' : pf === 'windows' ? 'laptop' : 'wg', size || 19)]);
+  }
+  function statusTag(p) {
+    var st = stateOf(p);
+    return h('span', { class: 'tag tag-dot ' + (st === 'online' ? 'tag-green' : st === 'offline' ? 'tag-grey' : 'tag-amber'), 'data-state': st, text: L('pl.st_' + st) });
+  }
+  function groupChip(p) {
+    var g = p.group_id ? getGroupById(p.group_id) : null;
+    if (!g) return null;
+    var dot = h('span', { class: 'pl-gdot' });
+    dot.style.background = /^#[0-9a-fA-F]{3,8}$/.test(g.color || '') ? g.color : 'var(--muted)';
+    return h('span', { class: 'pl-chip' }, [dot, g.name]);
+  }
+  function supportBadge(p) {
+    var n = Number(p.support_bundles_unviewed) || 0;
+    if (n <= 0) return null;
+    var title = cuT('support_bundles.peer_badge', { count: n });
+    return h('a', { class: 'sb-peer-badge', href: '/support-bundles?peer=' + encodeURIComponent(p.id), title: title, 'aria-label': title }, [icon('box', 11), String(n)]);
+  }
+  function expiryTag(p) {
+    var d = expiryDays(p);
+    if (d == null) return null;
+    if (d < 0) return h('span', { class: 'tag tag-red pl-mini', text: L('pl.expired') });
+    if (d <= 7) return h('span', { class: 'tag tag-amber pl-mini', text: d <= 0 ? L('pl.expires_today') : L('pl.expires_in', { n: d }) });
+    return h('span', { class: 'tag tag-grey pl-mini', text: L('pl.expires_on', { date: new Date(p.expires_at).toLocaleDateString() }) });
+  }
+  function appExtras(p) {
+    var out = [];
+    if (needsUpdate(p)) out.push(h('span', { class: 'tag tag-red pl-mini', title: p.client_min_version ? L('pl.update_min', { v: p.client_min_version }) : null, text: L('pl.update_needed') }));
+    if (p.update_channel_effective === 'beta') out.push(h('span', { class: 'tag tag-purple pl-mini', text: L('pl.beta') }));
+    return out;
+  }
+  function subLine(p) { return [p.description, ownerName(p)].filter(Boolean).join(' · '); }
+  function nameLink(p) {
+    var a = h('a', { class: 'pl-un', href: '#edit/' + encodeURIComponent(p.id), 'data-action': 'edit', 'data-id': p.id, text: p.name });
+    return a;
+  }
+  function checkbox(p) {
+    var cb = h('input', { type: 'checkbox', class: 'pl-cb batch-checkbox', 'data-batch-id': p.id, 'aria-label': L('pl.select', { name: p.name }) });
+    cb.checked = selected.has(p.id);
+    return cb;
+  }
+  function iconAction(name, action, p, label, extra) {
+    return h('button', { type: 'button', class: 'icon-action' + (extra ? ' ' + extra : ''), 'data-action': action, 'data-id': p.id, title: label, 'aria-label': label }, [icon(name, 15)]);
+  }
+  function actions(p) {
+    return h('span', { class: 'row-actions pl-actions' }, [
+      iconAction('qr', 'qr', p, L('pl.act_qr')),
+      iconAction('edit', 'edit', p, L('pl.act_edit')),
+      h('button', { type: 'button', class: 'icon-action pl-more', 'data-action': 'menu', 'data-id': p.id, title: L('pl.act_more', { name: p.name }), 'aria-label': L('pl.act_more', { name: p.name }), 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, [icon('more', 15)]),
+    ]);
+  }
+  function enableSwitch(p) {
+    var on = !!p.enabled;
+    var label = L(on ? 'pl.toggle_off' : 'pl.toggle_on', { name: p.name });
+    return h('span', { class: 'pl-swl' }, [
+      h('button', { type: 'button', class: 'st-switch pl-sw', role: 'switch', 'aria-checked': String(on), 'aria-label': label, title: label, 'data-action': 'toggle', 'data-id': p.id }, [h('span', { class: 'st-knob', 'aria-hidden': 'true' })]),
+      h('span', { 'aria-hidden': 'true', text: on ? L('pl.active') : L('pl.off') }),
+    ]);
+  }
+
+  // ─── Cards ───────────────────────────────────────────────
+  function grid(list) {
+    return h('div', { class: 'unit-grid pl-grid' + (selected.size ? ' pl-selecting' : ''), id: 'pl-grid' }, list.map(card));
+  }
+  function card(p) {
+    var st = stateOf(p);
+    var on = st === 'online';
+    function row(k, v, mono) { return h('div', { class: 'urow' }, [h('span', { text: k }), h('b', { class: mono ? 'pl-mono' : 'pl-plain', text: v })]); }
+    var chips = [groupChip(p)].concat(appExtras(p), [expiryTag(p)], tagsOf(p).map(function (t) { return h('span', { class: 'pl-tagname', text: '#' + t }); }));
+    return h('div', { class: 'unit pl-card pl-' + st + (selected.has(p.id) ? ' pl-selected' : ''), 'data-peer-id': p.id }, [
+      h('div', { class: 'uh pl-uh' }, [
+        checkbox(p),
+        avatar(p),
+        h('div', { class: 'pl-ttl' }, [h('div', { class: 'pl-name' }, [nameLink(p), supportBadge(p)]), h('div', { class: 'pl-sub', text: subLine(p) || '—' })]),
+        h('span', { class: 'pl-st' }, [statusTag(p)]),
+      ]),
+      h('div', { class: 'pl-chips' }, chips),
+      h('div', { class: 'pl-rows' }, [
+        row(L('pl.row_app'), appLabel(p)),
+        row(on ? L('pl.row_connected') : L('pl.row_seen'), on ? L('pl.handshake', { ago: ago(handshakeMs(p)) }) : ago(handshakeMs(p))),
+        row(L('pl.row_traffic'), '↓ ' + formatBytes(rx(p)) + '   ↑ ' + formatBytes(tx(p)), true),
+        row(L('pl.row_ip'), ipOf(p) || '—', true),
+      ]),
+      h('div', { class: 'pl-foot' }, [enableSwitch(p), actions(p)]),
+    ]);
+  }
+
+  // ─── List ────────────────────────────────────────────────
+  function table(list) {
+    var all = list.every(function (p) { return selected.has(p.id); });
+    var some = list.some(function (p) { return selected.has(p.id); });
+    var head = h('input', { type: 'checkbox', class: 'pl-cb', id: 'pl-select-all', 'aria-label': L('pl.select_all') });
+    head.checked = all; head.indeterminate = some && !all;
+    var thead = h('thead', {}, [h('tr', {}, [
+      h('th', { class: 'pl-c-cb' }, [head]),
+      h('th', { text: L('pl.col_device') }), h('th', { text: L('pl.col_status') }), h('th', { text: L('pl.col_app') }),
+      h('th', { text: L('pl.col_group') }), h('th', { text: L('pl.col_ip') }), h('th', { text: L('pl.col_traffic') }),
+      h('th', { class: 'pl-c-act' }, [h('span', { class: 'rt-sr', text: L('pl.col_actions') })]),
+    ])]);
+    var tbody = h('tbody', { id: 'peers-tbody' }, list.map(function (p) {
+      var st = stateOf(p);
+      return h('tr', { class: 'pl-' + st + (selected.has(p.id) ? ' pl-row-sel' : ''), 'data-peer-id': p.id }, [
+        h('td', { class: 'pl-c-cb' }, [checkbox(p)]),
+        h('td', {}, [h('div', { class: 'pl-dev' }, [avatar(p, 16), h('div', { class: 'pl-ttl' }, [
+          h('div', { class: 'pl-name' }, [nameLink(p), supportBadge(p), expiryTag(p)]),
+          h('div', { class: 'pl-sub', text: subLine(p) }),
+        ])])]),
+        h('td', {}, [h('div', { class: 'pl-stc' }, [statusTag(p), h('span', { class: 'pl-sub', text: ago(handshakeMs(p)) })])]),
+        h('td', { class: 'pl-c-app' }, [h('div', { class: 'pl-stc' }, [h('span', { class: 'pl-app', text: appLabel(p) })].concat(appExtras(p)))]),
+        h('td', { class: 'pl-c-grp' }, [groupChip(p)]),
+        h('td', { class: 'mono pl-c-ip', text: ipOf(p) || '—' }),
+        h('td', { class: 'mono pl-c-traffic', text: '↓ ' + formatBytes(rx(p)) + '  ↑ ' + formatBytes(tx(p)) }),
+        h('td', { class: 'pl-c-act' }, [actions(p)]),
+      ]);
+    }));
+    return h('div', { class: 'card span12 pl-tablecard' }, [h('table', { class: 'data-table pl-table', id: 'pl-table' }, [thead, tbody])]);
+  }
+
+  // ─── Empty states ────────────────────────────────────────
+  function emptyNone() {
+    var add = h('button', { type: 'button', class: 'btn btn-primary', id: 'pl-empty-add' }, [icon('plus', 16), h('span', { text: L('pl.add') })]);
+    add.addEventListener('click', function () { document.getElementById('btn-add-peer').click(); });
+    return h('div', { class: 'card rt-empty-card pl-empty', id: 'pl-empty' }, [
+      h('div', { class: 'rt-empty-icon' }, [icon('phone', 24)]),
+      h('div', { class: 'rt-empty-title', text: L('pl.empty_title') }),
+      h('div', { class: 'rt-empty-text', text: L('pl.empty_text') }),
+      h('div', { class: 'pl-empty-act' }, [add]),
+      h('div', { class: 'pl-empty-hint' }, [L('pl.empty_gw') + ' ', h('a', { href: '/gateways', class: 'pl-link', text: L('pl.empty_gw_link') })]),
+    ]);
+  }
+  function emptyNoResult() {
+    var q = searchInput.value.trim();
+    var kids = [];
+    if (q) {
+      var cs = h('button', { type: 'button', class: 'btn btn-ghost', id: 'pl-clear-search', text: L('pl.clear_search') });
+      cs.addEventListener('click', function () { searchInput.value = ''; render(); searchInput.focus(); });
+      kids.push(cs);
+    }
+    var rf = h('button', { type: 'button', class: 'btn btn-ghost', id: 'pl-noresult-reset', text: L('pl.reset_all') });
+    rf.addEventListener('click', resetFilters);
+    kids.push(rf);
+    return h('div', { class: 'card rt-empty-card pl-empty', id: 'pl-noresult' }, [
+      h('div', { class: 'rt-empty-icon' }, [icon('search', 24)]),
+      h('div', { class: 'rt-empty-title', text: L('pl.nores_title') }),
+      h('div', { class: 'rt-empty-text', text: q ? L('pl.nores_text_q', { q: q }) : L('pl.nores_text') }),
+      h('div', { class: 'pl-empty-act' }, kids),
+    ]);
+  }
+
+  // ─── "Weitere Filter" (popover; a bottom sheet on phones) ─
+  var morePanel = document.getElementById('pl-more');
+  var moreBtn = document.getElementById('pl-more-btn');
+  function fbtn(label, on, fn) {
+    var b = h('button', { type: 'button', class: 'pl-fbtn' + (on ? ' on' : ''), 'aria-pressed': String(!!on) }, [on ? icon('check', 13) : null, label]);
+    b.addEventListener('click', function () { fn(); render(); });
+    return b;
+  }
+  function fsec(title, kids, cls) {
+    return h('div', { class: 'pl-fsec' + (cls ? ' ' + cls : '') }, [h('div', { class: 'pl-fh', text: title }), h('div', { class: 'pl-fwrap' }, kids)]);
+  }
+  function renderMorePanel() {
+    var owners = {};
+    var tags = {};
+    allPeers.forEach(function (p) {
+      if (p.user_id != null) owners[p.user_id] = (owners[p.user_id] || 0) + 1;
+      tagsOf(p).forEach(function (t) { var k = t.toLowerCase(); if (!tags[k]) tags[k] = { name: t, n: 0 }; tags[k].n++; });
+    });
+    var secs = [];
+    // phones: the toolbar's selects move in here
+    var c = { all: allPeers.length };
+    ['online', 'offline', 'disabled'].forEach(function (s) { c[s] = allPeers.filter(function (p) { return stateOf(p) === s; }).length; });
+    secs.push(fsec(L('pl.status_label'), ['all', 'online', 'offline', 'disabled'].map(function (s) {
+      return fbtn(L('pl.st_' + s) + ' ' + c[s], F.status === s, function () { F.status = s; });
+    }), 'pl-narrow'));
+    secs.push(fsec(L('pl.f_group'), [fbtn(L('pl.f_all'), !F.group, function () { F.group = ''; })].concat(allGroups.map(function (g) {
+      return fbtn(g.name, F.group === String(g.id), function () { F.group = String(g.id); });
+    }), [fbtn(L('pl.f_group_none'), F.group === 'none', function () { F.group = 'none'; })]), 'pl-narrow'));
+    secs.push(fsec(L('pl.f_device'), [fbtn(L('pl.f_all'), !F.device, function () { F.device = ''; })].concat(['android', 'windows', 'none'].map(function (d) {
+      return fbtn(L('pl.dev_' + d), F.device === d, function () { F.device = d; });
+    })), 'pl-narrow'));
+    secs.push(fsec(L('pl.f_sort'), ['status', 'name', 'seen', 'traffic', 'group', 'ip'].map(function (s) {
+      return fbtn(L('pl.sort_' + s), F.sort === s, function () { F.sort = s; });
+    }), 'pl-narrow'));
+    secs.push(fsec(L('pl.f_owner'), [fbtn(L('pl.f_all'), !F.owner, function () { F.owner = ''; })].concat(Object.keys(owners).map(function (id) {
+      var u = allUsers[id];
+      var name = u ? (u.display_name || u.username) : ((allPeers.find(function (p) { return String(p.user_id) === id; }) || {}).owner_name || '#' + id);
+      return fbtn(name + ' ' + owners[id], F.owner === id, function () { F.owner = F.owner === id ? '' : id; });
+    }), [fbtn(L('pl.f_owner_none'), F.owner === 'none', function () { F.owner = F.owner === 'none' ? '' : 'none'; })])));
+    var tagKeys = Object.keys(tags).sort();
+    secs.push(fsec(L('pl.f_tags'), tagKeys.length ? tagKeys.map(function (k) {
+      var t = tags[k].name;
+      var on = F.tags.some(function (x) { return x.toLowerCase() === k; });
+      return fbtn('#' + t + ' ' + tags[k].n, on, function () {
+        F.tags = on ? F.tags.filter(function (x) { return x.toLowerCase() !== k; }) : F.tags.concat([t]);
+      });
+    }) : [h('span', { class: 'pl-fnone', text: L('pl.f_tags_none') })]));
+    secs.push(fsec(L('pl.f_attn'), Object.keys(HINTS).map(function (k) {
+      var on = F.hints.indexOf(k) !== -1;
+      return fbtn(L('pl.h_' + k) + ' ' + allPeers.filter(HINTS[k]).length, on, function () {
+        F.hints = on ? F.hints.filter(function (x) { return x !== k; }) : F.hints.concat([k]);
+      });
+    })));
+    var reset = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: L('pl.reset') });
+    reset.addEventListener('click', resetFilters);
+    var n = visible().length;
+    var done = h('button', { type: 'button', class: 'btn btn-primary btn-sm', id: 'pl-more-done' }, [h('span', { class: 'pl-more-l', text: L('pl.done') }), h('span', { class: 'pl-more-s', text: L('pl.show_n', { n: n }) })]);
+    done.addEventListener('click', function () { setMore(false); moreBtn.focus(); });
+    morePanel.replaceChildren.apply(morePanel, [h('div', { class: 'pl-sheet-grip', 'aria-hidden': 'true' }), h('div', { class: 'pl-sheet-title', text: L('pl.filters_title') })]
+      .concat(secs, [h('div', { class: 'pl-ffoot' }, [reset, done])]));
+  }
+  var tbwrap = morePanel.parentNode;
+  var narrow = window.matchMedia ? window.matchMedia('(max-width: 760px)') : { matches: false };
+  function setMore(open) {
+    // phones: a bottom sheet above the bottom navigation — it moves to <body>
+    // (<main> is a stacking context below the navigation); desktop: a popover under the button
+    if (open && narrow.matches) { if (morePanel.parentNode !== document.body) document.body.appendChild(morePanel); morePanel.style.left = ''; }
+    else if (morePanel.parentNode !== tbwrap) tbwrap.appendChild(morePanel);
+    if (open && !narrow.matches) morePanel.style.left = Math.max(0, Math.min(moreBtn.offsetLeft, tbwrap.clientWidth - 400)) + 'px';
+    morePanel.hidden = !open;
+    moreBtn.setAttribute('aria-expanded', String(!!open));
+    document.body.classList.toggle('pl-sheet-open', !!open && narrow.matches);
+    if (open) {
+      renderMorePanel();
+      var first = morePanel.querySelector('button'); if (first) first.focus();
+    }
+  }
+  moreBtn.addEventListener('click', function (e) { e.stopPropagation(); setMore(morePanel.hidden); });
+  document.addEventListener('click', function (e) {
+    if (!morePanel.hidden && !morePanel.contains(e.target) && !moreBtn.contains(e.target)) setMore(false);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (openMenu) { var b = openMenu.btn; closeMenu(); if (b) b.focus(); return; }
+    if (!morePanel.hidden) { setMore(false); moreBtn.focus(); }
+  });
+
+  // ─── Toolbar events ──────────────────────────────────────
+  var searchTimer = null;
+  searchInput.addEventListener('input', function () { clearTimeout(searchTimer); searchTimer = setTimeout(render, 120); });
+  document.getElementById('pl-status').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-status]'); if (!b) return;
+    F.status = b.dataset.status; render();
+  });
+  document.getElementById('pl-view').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-view]'); if (!b) return;
+    view = b.dataset.view === 'list' ? 'list' : 'cards';
+    store(VIEW_KEY, view);
+    render();
+  });
+  document.getElementById('pl-group').addEventListener('change', function () { F.group = this.value; render(); });
+  document.getElementById('pl-device').addEventListener('change', function () { F.device = this.value; render(); });
+  document.getElementById('pl-sort').addEventListener('change', function () { F.sort = this.value; render(); });
+
+  // ─── Row / card actions ──────────────────────────────────
+  function peerById(id) { return allPeers.find(function (p) { return String(p.id) === String(id); }); }
+  results.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-action]');
+    if (!t) return;
+    var id = t.dataset.id;
+    switch (t.dataset.action) {
+      case 'edit': e.preventDefault(); showEditModal(id); break;
+      case 'qr': showQrModal(id); break;
+      case 'toggle': togglePeer(id); break;
+      case 'menu': e.stopPropagation(); toggleMenu(t, id); break;
+    }
+  });
+  results.addEventListener('change', function (e) {
+    if (e.target.id === 'pl-select-all') {
+      var list = visible();
+      list.forEach(function (p) { if (e.target.checked) selected.add(p.id); else selected.delete(p.id); });
+      render();
+      return;
+    }
+    var cb = e.target.closest('.pl-cb[data-batch-id]');
+    if (!cb) return;
+    var id = Number(cb.dataset.batchId);
+    if (cb.checked) selected.add(id); else selected.delete(id);
+    render();
+    var again = results.querySelector('.pl-cb[data-batch-id="' + id + '"]'); if (again) again.focus();
+  });
+
+  // "⋯" menu of a device (download, traffic, enable/disable, delete)
+  function closeMenu() {
+    if (!openMenu) return;
+    openMenu.el.remove();
+    if (openMenu.btn) openMenu.btn.setAttribute('aria-expanded', 'false');
+    openMenu = null;
+  }
+  function toggleMenu(btn, id) {
+    if (openMenu && openMenu.btn === btn) { closeMenu(); return; }
+    closeMenu();
+    var p = peerById(id); if (!p) return;
+    function item(ic, label, fn, danger) {
+      var b = h('button', { type: 'button', class: 'zn-menu-item' + (danger ? ' danger' : ''), role: 'menuitem' }, [h('span', { class: 'zn-ic' }, [icon(ic, 14)]), label]);
+      b.addEventListener('click', function () { closeMenu(); fn(); });
+      return b;
+    }
+    var dl = h('a', { class: 'zn-menu-item', role: 'menuitem', href: '/api/v1/peers/' + encodeURIComponent(p.id) + '/config?download=1', download: p.name + '.conf' }, [h('span', { class: 'zn-ic' }, [icon('download', 14)]), L('pl.act_download')]);
+    var m = h('div', { class: 'zn-menu pl-menu', role: 'menu', id: 'pl-menu', 'aria-label': L('pl.act_more', { name: p.name }) }, [
+      dl,
+      item('chart', L('pl.act_traffic'), function () { showTrafficModal(p.id); }),
+      h('div', { class: 'zn-menu-sep', role: 'separator' }),
+      item('power', p.enabled ? L('pl.act_disable') : L('pl.act_enable'), function () { togglePeer(p.id); }),
+      item('trash', L('pl.act_delete'), function () { showConfirmDelete(p.id, p.name); }, true),
+    ]);
+    document.body.appendChild(m);
+    var r = btn.getBoundingClientRect();
+    var w = m.offsetWidth || 230;
+    m.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + 'px';
+    var top = r.bottom + 6;
+    if (top + m.offsetHeight > window.innerHeight - 8) top = Math.max(8, r.top - m.offsetHeight - 6);
+    m.style.top = top + 'px';
+    btn.setAttribute('aria-expanded', 'true');
+    openMenu = { el: m, btn: btn };
+    var first = m.querySelector('[role="menuitem"]'); if (first) first.focus();
+    m.addEventListener('keydown', function (e) {
+      var items = Array.prototype.slice.call(m.querySelectorAll('[role="menuitem"]'));
+      var i = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+      else if (e.key === 'Tab') closeMenu();
+    });
+  }
+  document.addEventListener('click', function (e) { if (openMenu && !openMenu.el.contains(e.target)) closeMenu(); });
+  window.addEventListener('scroll', closeMenu, true);
+  window.addEventListener('resize', closeMenu);
+
+  // ─── Enable / disable (asks first when the device is connected) ─
+  async function togglePeer(id) {
+    var p = peerById(id);
+    if (p && p.enabled && p.isOnline) {
+      var ok = await D.confirm({ message: L('pl.confirm_disable_online', { name: p.name }), danger: true, okLabel: L('pl.act_disable') });
+      if (!ok) return;
+    }
+    try {
+      var data = await api.put('/api/peers/' + id + '/toggle');
+      if (data && !data.ok) {
+        showToast(data.error || 'Error', 'error');
+        return;
+      }
+      loadPeers();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  // ─── Bulk bar ────────────────────────────────────────────
+  var bulkBar = document.getElementById('pl-bulkbar');
+  function renderBulk(list) {
+    var n = selected.size;
+    bulkBar.hidden = !n;
+    document.body.classList.toggle('sh-bulk-open', !!n);
+    if (!n) return;
+    document.getElementById('pl-bulk-count').textContent = L('pl.bulk_selected', { n: n });
+    var all = document.getElementById('pl-bulk-all');
+    var missing = list.filter(function (p) { return !selected.has(p.id); }).length;
+    all.hidden = !missing;
+    all.textContent = L('pl.bulk_select_visible', { n: list.length });
+  }
+  document.getElementById('pl-bulk-all').addEventListener('click', function () {
+    visible().forEach(function (p) { selected.add(p.id); });
+    render();
+  });
+  function selectedPeers() { return allPeers.filter(function (p) { return selected.has(p.id); }); }
+  function bulkDone(r) {
+    if (!r || r.ok === false) { D.alert({ message: (r && r.error) || DT('common.error'), danger: true }); return; }
+    showToast(L('pl.bulk_done', { n: r.affected != null ? r.affected : selected.size }));
+    selected.clear();
+    loadPeers();
+    loadGroups();
+  }
+  function bulkFail(err) { D.alert({ message: DT('common.error') + ': ' + err.message, danger: true }); }
+  function ids() { return Array.from(selected).map(Number); }
+  function chooseDialog(title, label, options, current) {
+    var d = D.dialog({ title: title });
+    var sel = h('select', { class: 'form-input', id: 'pl-bulk-select', 'aria-label': label });
+    options.forEach(function (o) { sel.appendChild(new Option(o[1], o[0])); });
+    if (current != null) sel.value = current;
+    d.body.appendChild(h('label', { class: 'form-label', for: 'pl-bulk-select', text: label }));
+    d.body.appendChild(sel);
+    var cancel = h('button', { type: 'button', class: 'btn btn-ghost', text: DT('common.cancel') });
+    var ok = h('button', { type: 'button', class: 'btn btn-primary', id: 'pl-bulk-apply', text: L('pl.bulk_apply') });
+    cancel.addEventListener('click', function () { d.close(null); });
+    ok.addEventListener('click', function () { d.close({ value: sel.value }); });
+    d.foot.appendChild(cancel);
+    d.foot.appendChild(ok);
+    sel.focus();
+    return d.promise;
+  }
+  bulkBar.addEventListener('click', async function (e) {
+    var b = e.target.closest('[data-bulk]'); if (!b) return;
+    var act = b.dataset.bulk;
+    var n = selected.size;
+    if (act === 'clear') { selected.clear(); render(); return; }
+    if (!n) return;
+    try {
+      if (act === 'enable') return bulkDone(await api.post('/api/peers/batch', { action: 'enable', ids: ids() }));
+      if (act === 'disable') {
+        var online = selectedPeers().filter(function (p) { return p.enabled && p.isOnline; }).length;
+        if (online && !await D.confirm({ message: L('pl.bulk_confirm_disable_online', { n: online }), danger: true, okLabel: L('pl.bulk_disable') })) return;
+        return bulkDone(await api.post('/api/peers/batch', { action: 'disable', ids: ids() }));
+      }
+      if (act === 'delete') {
+        if (!await D.confirm({ message: L('pl.bulk_confirm_delete', { n: n }), danger: true, okLabel: DT('common.delete') })) return;
+        return bulkDone(await api.post('/api/peers/batch', { action: 'delete', ids: ids() }));
+      }
+      if (act === 'group') {
+        var gr = await chooseDialog(L('pl.bulk_group_title', { n: n }), L('pl.f_group'),
+          [['', L('pl.f_group_none')]].concat(allGroups.map(function (g) { return [String(g.id), g.name]; })));
+        if (!gr) return;
+        return bulkDone(await api.post('/api/peers/batch', { action: 'group', ids: ids(), group_id: gr.value === '' ? null : Number(gr.value) }));
+      }
+      if (act === 'owner') {
+        var users = Object.keys(allUsers).map(function (id) { return allUsers[id]; });
+        var ow = await chooseDialog(L('pl.bulk_owner_title', { n: n }), L('pl.f_owner'),
+          [['', L('pl.owner_none')]].concat(users.map(function (u) { return [String(u.id), u.display_name ? u.display_name + ' (' + u.username + ')' : u.username]; })));
+        if (!ow) return;
+        var r = await api.post('/api/v1/peers/batch-owner', { peer_ids: ids(), user_id: ow.value === '' ? null : Number(ow.value) });
+        return bulkDone(r);
+      }
+      if (act === 'tag') {
+        var tag = await D.prompt({ title: L('pl.bulk_tag_title', { n: n }), label: L('pl.bulk_tag_label'), okLabel: L('pl.bulk_apply'), maxLength: 64,
+          validate: function (v) { return !v || /[,<>"]/.test(v) ? L('pl.tag_invalid') : null; } });
+        if (tag == null) return;
+        return bulkDone(await api.post('/api/peers/batch', { action: 'tag', ids: ids(), tag: tag }));
+      }
+    } catch (err) { bulkFail(err); }
+  });
 
   // ─── Expiry helpers ──────────────────────────────────────
   function computeExpiresAt(selectId, dateInputId) {
@@ -591,85 +898,8 @@ var DT = function (k, p) { return D.t(k, p); };
   setupExpiryToggle('add-peer-expires', 'add-peer-expires-date');
   setupExpiryToggle('edit-peer-expires', 'edit-peer-expires-date');
 
-  // ─── Group filter change ───────────────────────────────
-  if (groupFilter) {
-    groupFilter.addEventListener('change', function() {
-      activeGroupFilter = groupFilter.value;
-      applyFilters();
-    });
-  }
-
-  // ─── Search ──────────────────────────────────────────────
-  searchInput.addEventListener('input', function() { applyFilters(); });
-
-  // ─── Action delegation (desktop table + mobile cards) ────
-  function handlePeerAction(e) {
-    var btn = e.target.closest('[data-action]');
-    if (!btn) return;
-
-    var action = btn.dataset.action;
-    var id = btn.dataset.id;
-
-    switch (action) {
-      case 'traffic': showTrafficModal(id); break;
-      case 'qr': showQrModal(id); break;
-      case 'edit': showEditModal(id); break;
-      case 'toggle': togglePeer(id); break;
-      case 'delete': {
-        // Gateway peers get a richer confirmation flow: pre-flight
-        // shows which routes will be auto-disabled, and the user has
-        // to type the gateway IP to prove they're targeting the right
-        // row. Other peer types keep the simple yes/no flow.
-        var p = allPeers.find(function(x) { return x.id === id; });
-        if (p && p.peer_type === 'gateway') {
-          showGatewayDeleteConfirm(id);
-        } else {
-          showConfirmDelete(id, btn.dataset.name);
-        }
-        break;
-      }
-      case 'gateway-env': downloadGatewayEnv(id); break;
-    }
-  }
-
-  // ─── Gateway env download (rotates tokens on server) ─────
-  async function downloadGatewayEnv(peerId) {
-    if (!await D.confirm({ message: DT('gateway_download_confirm'), danger: true, okLabel: DT('peers.gateway_env_download') })) return;
-    try {
-      var resp = await fetch('/api/v1/peers/' + encodeURIComponent(peerId) + '/gateway-env/rotate', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {
-          'X-CSRF-Token': (typeof GC !== 'undefined' && GC.csrfToken) ? GC.csrfToken : '',
-          'Content-Type': 'application/json',
-        },
-        body: '{}',
-      });
-      if (!resp.ok) {
-        D.alert({ message: DT('peers.download_failed', { status: resp.status }), danger: true });
-        return;
-      }
-      var text = await resp.text();
-      var blob = new Blob([text], { type: 'text/plain' });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = 'gateway-' + peerId + '.env';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      D.alert({ message: DT('peers.download_failed', { status: err.message }), danger: true });
-    }
-  }
-  tbody.addEventListener('click', handlePeerAction);
-  if (peersMobile) peersMobile.addEventListener('click', handlePeerAction);
-
   // ─── Add peer ────────────────────────────────────────────
-  // Gateways are no longer added here: the dialog points to the assistant on
-  // /gateways (docs/feature-gateway-wizard.md). Existing gateway peers keep
-  // their token dialog (edit → "gateway.env herunterladen").
+  // Gateways are added with the assistant on /gateways (docs/feature-gateway-wizard.md).
 
   document.getElementById('btn-add-peer').addEventListener('click', function() {
     document.getElementById('add-peer-name').value = '';
@@ -750,163 +980,6 @@ var DT = function (k, p) { return D.t(k, p); };
       btnReset(btn);
     }
   });
-
-  // ─── Edit peer ───────────────────────────────────────────
-  // ─── Gateway telemetry panel (in edit-peer modal) ──────────────────
-  // Fetches the parsed last_health snapshot from the server and renders a
-  // compact two-column table (key / value). Safe-by-construction: every
-  // value is inserted via textContent; style strings are static literals.
-  function renderRow(parent, key, value, opts) {
-    if (value === undefined || value === null || value === '') return;
-    var row = document.createElement('div');
-    row.style.cssText = 'display:flex;gap:10px;padding:2px 0;align-items:baseline';
-    var k = document.createElement('span');
-    k.style.cssText = 'color:var(--text-3);width:110px;flex-shrink:0;text-transform:uppercase;font-size:10px;letter-spacing:0.05em';
-    k.textContent = key;
-    var v = document.createElement('span');
-    v.style.cssText = 'color:var(--text-1);flex:1;word-break:break-all';
-    if (opts && opts.mute) v.style.color = 'var(--text-2)';
-    v.textContent = value;
-    row.appendChild(k); row.appendChild(v);
-    parent.appendChild(row);
-  }
-
-  function renderSectionHeader(parent, title) {
-    var h = document.createElement('div');
-    h.style.cssText = 'margin-top:8px;margin-bottom:4px;color:var(--accent);font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase';
-    h.textContent = title;
-    parent.appendChild(h);
-  }
-
-  function formatRelTime(ms) {
-    if (!ms) return null;
-    var diffSec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
-    if (diffSec < 60) return diffSec + 's';
-    if (diffSec < 3600) return Math.floor(diffSec / 60) + 'm';
-    if (diffSec < 86400) return Math.floor(diffSec / 3600) + 'h';
-    return Math.floor(diffSec / 86400) + 'd';
-  }
-
-  function formatUptimeSec(s) {
-    if (!s && s !== 0) return null;
-    var d = Math.floor(s / 86400);
-    var h = Math.floor((s % 86400) / 3600);
-    var m = Math.floor((s % 3600) / 60);
-    if (d > 0) return d + 'd ' + h + 'h';
-    if (h > 0) return h + 'h ' + m + 'm';
-    return m + 'm';
-  }
-
-  function formatPercent(used, total) {
-    if (!total) return null;
-    return Math.round((used / total) * 100) + '%';
-  }
-
-  function paintStatusBadge(el, status) {
-    if (!el) return;
-    if (!status) { el.style.display = 'none'; return; }
-    el.textContent = status.toUpperCase();
-    el.style.display = '';
-    if (status === 'online') {
-      el.style.background = 'var(--green-lt)';
-      el.style.color = 'var(--green)';
-      el.style.border = '1px solid var(--green-bd)';
-    } else if (status === 'offline') {
-      el.style.background = 'var(--red-lt)';
-      el.style.color = 'var(--red)';
-      el.style.border = '1px solid var(--red-bd)';
-    } else {
-      el.style.background = 'var(--amber-lt)';
-      el.style.color = 'var(--amber)';
-      el.style.border = '1px solid var(--amber-bd)';
-    }
-  }
-
-  async function loadGatewayTelemetry(peerId) {
-    var wrap = document.getElementById('edit-gw-telemetry');
-    var empty = document.getElementById('edit-gw-telemetry-empty');
-    var statusBadge = document.getElementById('edit-gw-status-badge');
-    if (!wrap) return;
-    while (wrap.firstChild) wrap.removeChild(wrap.firstChild);
-    wrap.style.display = 'none';
-    if (empty) empty.style.display = 'none';
-    paintStatusBadge(statusBadge, null);
-
-    try {
-      var data = await api.get('/api/peers/' + peerId + '/gateway-info');
-      if (!data || !data.ok || !data.gateway) return;
-      var gw = data.gateway;
-      paintStatusBadge(statusBadge, gw.status);
-
-      var health = gw.health || {};
-      var tel = health.telemetry || null;
-
-      // No heartbeat received yet — nothing to render.
-      if (!gw.last_seen_at && !tel) {
-        if (empty) empty.style.display = '';
-        return;
-      }
-
-      renderSectionHeader(wrap, (GC.t && GC.t['gateway_info.section_status']) || 'Status');
-      renderRow(wrap, (GC.t && GC.t['gateway_info.last_seen']) || 'Last seen',
-        gw.last_seen_at ? (formatRelTime(gw.last_seen_at) + ' ago') : '—');
-      if (typeof health.uptime_s === 'number') {
-        renderRow(wrap, (GC.t && GC.t['gateway_info.uptime']) || 'Uptime', formatUptimeSec(health.uptime_s));
-      }
-      if (typeof health.wg_handshake_age_s === 'number') {
-        renderRow(wrap, (GC.t && GC.t['gateway_info.wg_handshake']) || 'WG handshake',
-          health.wg_handshake_age_s + 's ago');
-      }
-      if (health.hostname) {
-        renderRow(wrap, (GC.t && GC.t['gateway_info.hostname']) || 'Hostname', health.hostname);
-      }
-
-      if (tel) {
-        renderSectionHeader(wrap, (GC.t && GC.t['gateway_info.section_version']) || 'Versionen');
-        renderRow(wrap, 'Gateway', tel.gateway_version);
-        renderRow(wrap, 'Node', tel.node_version);
-        renderRow(wrap, 'WG-Tools', tel.wg_tools_version);
-        if (tel.os_platform) {
-          renderRow(wrap, 'OS', tel.os_platform + (tel.os_release ? ' ' + tel.os_release : '') +
-            (tel.arch ? ' · ' + tel.arch : ''));
-        }
-
-        renderSectionHeader(wrap, (GC.t && GC.t['gateway_info.section_resources']) || 'Ressourcen');
-        if (tel.cpu_cores) {
-          var load = Array.isArray(tel.cpu_load_avg) ? tel.cpu_load_avg.map(function(n) { return n.toFixed(2); }).join(' · ') : '';
-          renderRow(wrap, 'CPU', tel.cpu_cores + ' cores' + (load ? ' · load ' + load : ''));
-        }
-        if (tel.mem_total) {
-          var pct = formatPercent(tel.mem_used, tel.mem_total);
-          renderRow(wrap, 'Memory',
-            window.formatBytes(tel.mem_used) + ' / ' + window.formatBytes(tel.mem_total) +
-            (pct ? ' (' + pct + ')' : ''));
-        }
-        if (tel.disk && tel.disk.total) {
-          var diskPct = formatPercent(tel.disk.used, tel.disk.total);
-          renderRow(wrap, 'Disk',
-            window.formatBytes(tel.disk.free) + ' free / ' + window.formatBytes(tel.disk.total) +
-            (diskPct ? ' (' + diskPct + ' used)' : ''));
-        }
-
-        if (tel.default_gateway_ip || (tel.dns_resolvers && tel.dns_resolvers.length)) {
-          renderSectionHeader(wrap, (GC.t && GC.t['gateway_info.section_lan']) || 'LAN');
-          renderRow(wrap, 'Default GW', tel.default_gateway_ip);
-          if (Array.isArray(tel.dns_resolvers) && tel.dns_resolvers.length) {
-            renderRow(wrap, 'DNS', tel.dns_resolvers.join(', '));
-          }
-        }
-      }
-
-      wrap.style.display = '';
-    } catch (err) {
-      console.error('gateway telemetry load failed', err);
-      if (empty) {
-        empty.textContent = err.message || ((GC.t && GC.t['gateway_info.no_data']) || 'Keine Daten');
-        empty.style.display = '';
-      }
-    }
-  }
 
   // ─── Client policy (peer override) ───────────────────────
   var peerPolicyForm = null;
@@ -1024,85 +1097,6 @@ var DT = function (k, p) { return D.t(k, p); };
         } else {
           badge.style.display = 'none';
         }
-      }
-    }
-
-    // Gateway-Info-Block — nur sichtbar wenn peer_type === 'gateway'
-    var gwInfo = document.getElementById('edit-peer-gateway-info');
-    var gwBtn = document.getElementById('btn-edit-peer-download-env');
-    if (gwInfo) {
-      if (peer.peer_type === 'gateway') {
-        gwInfo.style.display = '';
-        // "Einrichtung erneut anzeigen" → the assistant on /gateways at step 3.
-        var setupLink = document.getElementById('edit-peer-gateway-setup');
-        if (setupLink) setupLink.href = '/gateways#setup/' + encodeURIComponent(peer.id);
-        var portDisplay = document.getElementById('edit-peer-api-port-display');
-        if (portDisplay) portDisplay.textContent = peer.api_port || '9876';
-
-        // Proxy-port input: populate with current value, wire save-button.
-        // Fetch fresh value via /gateway-info because the peer object from
-        // the list endpoint may not include proxy_port.
-        var proxyPortInput = document.getElementById('edit-peer-proxy-port');
-        var proxyPortBtn = document.getElementById('btn-edit-peer-save-proxy-port');
-        if (proxyPortInput) {
-          proxyPortInput.value = peer.proxy_port || '8080';
-          fetch('/api/peers/' + peer.id + '/gateway-info')
-            .then(function(r) { return r.json(); })
-            .then(function(data) {
-              if (data && data.ok && data.gateway && data.gateway.proxy_port) {
-                proxyPortInput.value = data.gateway.proxy_port;
-              }
-            })
-            .catch(function() { /* fallback to default already set */ });
-        }
-        if (proxyPortBtn) {
-          proxyPortBtn.onclick = async function() {
-            var port = parseInt(proxyPortInput.value, 10);
-            if (!Number.isInteger(port) || port < 1 || port > 65535) {
-              showError('edit-peer-error', 'Port muss zwischen 1 und 65535 liegen');
-              return;
-            }
-            try {
-              var resp = await fetch('/api/peers/' + peer.id + '/proxy-port', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (typeof GC !== 'undefined' && GC.csrfToken) ? GC.csrfToken : '' },
-                body: JSON.stringify({ proxy_port: port }),
-              });
-              var data = await resp.json();
-              if (data.ok) {
-                proxyPortBtn.textContent = '✓';
-                setTimeout(function() {
-                  proxyPortBtn.textContent = (GC.t && GC.t['common.save']) || 'Speichern';
-                }, 2000);
-              } else {
-                showError('edit-peer-error', data.error || 'Update fehlgeschlagen');
-              }
-            } catch (err) {
-              showError('edit-peer-error', err.message);
-            }
-          };
-        }
-        if (gwBtn) {
-          gwBtn.onclick = async function() {
-            if (!await D.confirm({ message: DT('gateway_download_confirm'), danger: true, okLabel: DT('peers.gateway_env_download') })) return;
-            try {
-              // POST /rotate returns JSON { apiToken, pushToken, envContent }
-              var data = await api.post('/api/peers/' + peer.id + '/gateway-env/rotate', {});
-              if (!data.ok) {
-                showError('edit-peer-error', data.error || 'Rotate failed');
-                return;
-              }
-              closeModal('modal-edit-peer');
-              openGatewayTokensModal(peer, data);
-            } catch (err) {
-              showError('edit-peer-error', err.message);
-            }
-          };
-        }
-        // Fetch + render telemetry snapshot (versions, resources, LAN).
-        loadGatewayTelemetry(peer.id);
-      } else {
-        gwInfo.style.display = 'none';
       }
     }
 
@@ -1238,20 +1232,6 @@ var DT = function (k, p) { return D.t(k, p); };
     }
   });
 
-  // ─── Toggle ──────────────────────────────────────────────
-  async function togglePeer(id) {
-    try {
-      var data = await api.put('/api/peers/' + id + '/toggle');
-      if (data && !data.ok) {
-        showToast(data.error || 'Error', 'error');
-        return;
-      }
-      loadPeers();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  }
-
   // ─── Delete ──────────────────────────────────────────────
   var pendingDeleteId = null;
 
@@ -1274,125 +1254,6 @@ var DT = function (k, p) { return D.t(k, p); };
       loadGroups();
     } catch (err) {
       D.alert({ message: DT('common.error') + ': ' + err.message, danger: true });
-    } finally {
-      btnReset(btn);
-    }
-  });
-
-  // ─── Gateway delete (impact preview + IP-typing safety check) ──────
-  // Wired in via the click-handler above when a gateway peer's trash
-  // icon is clicked. Two-stage flow:
-  //   1. GET /peers/:id/delete-impact — list of routes that will be
-  //      auto-disabled when the peer goes (server already does the
-  //      disable on DELETE; we just show what's about to happen).
-  //   2. User types the gateway's IP. Submit only enables on exact match.
-  // No browser confirm/alert anywhere — failures stay inline in the
-  // modal so the user keeps context.
-
-  var gwDeletePeer = null;
-
-  function _gwClearChildren(el) {
-    while (el.firstChild) el.removeChild(el.firstChild);
-  }
-
-  async function showGatewayDeleteConfirm(peerId) {
-    var statusEl = document.getElementById('gw-delete-confirm-status');
-    var btn = document.getElementById('gw-delete-confirm-btn');
-    var input = document.getElementById('gw-delete-confirm-input');
-    var summaryEl = document.getElementById('gw-delete-peer-summary');
-    var routesSection = document.getElementById('gw-delete-routes-section');
-    var noRoutesSection = document.getElementById('gw-delete-no-routes-section');
-    var routesList = document.getElementById('gw-delete-routes-list');
-    var routesHint = document.getElementById('gw-delete-routes-hint');
-    var requiredIpEl = document.getElementById('gw-delete-required-ip');
-
-    // Reset UI before fetching impact so an old open doesn't bleed through.
-    summaryEl.textContent = (GC.t['common.loading'] || 'Loading') + '…';
-    _gwClearChildren(routesList);
-    routesHint.textContent = '';
-    routesSection.style.display = 'none';
-    noRoutesSection.style.display = 'none';
-    requiredIpEl.textContent = '—';
-    input.value = '';
-    btn.disabled = true;
-    statusEl.textContent = ' ';
-    statusEl.style.color = 'var(--muted)';
-
-    openModal('modal-gateway-delete');
-
-    var impact;
-    try {
-      impact = await api.get('/api/peers/' + encodeURIComponent(peerId) + '/delete-impact');
-    } catch (err) {
-      statusEl.textContent = (GC.t['common.error'] || 'Error') + ': ' + (err && err.message ? err.message : err);
-      statusEl.style.color = 'var(--red)';
-      return;
-    }
-    if (!impact || !impact.ok || !impact.peer) {
-      statusEl.textContent = (impact && impact.error) || (GC.t['common.error'] || 'Error');
-      statusEl.style.color = 'var(--red)';
-      return;
-    }
-
-    gwDeletePeer = impact.peer;
-    summaryEl.textContent = impact.peer.name + '   (' + impact.peer.ip + ')';
-    requiredIpEl.textContent = impact.peer.ip;
-
-    var allRoutes = (impact.httpRoutes || []).concat(
-      (impact.rdpRoutes || []).map(function(r) { return { id: r.id, domain: 'RDP: ' + (r.name || r.host) }; })
-    );
-
-    if (allRoutes.length === 0) {
-      noRoutesSection.style.display = '';
-    } else {
-      routesSection.style.display = '';
-      allRoutes.forEach(function(r) {
-        var li = document.createElement('li');
-        li.textContent = r.domain || ('Route #' + r.id);
-        routesList.appendChild(li);
-      });
-      var tpl = GC.t['gateway_delete_routes_hint'] || 'These {count} routes will be disabled. You can re-enable them later by re-pointing them at a different gateway.';
-      routesHint.textContent = tpl.replace('{count}', allRoutes.length);
-    }
-
-    // Live IP match — enable submit only on exact equality.
-    input.oninput = function() {
-      var v = input.value.trim();
-      if (v === gwDeletePeer.ip) {
-        btn.disabled = false;
-        statusEl.textContent = GC.t['gateway_delete_ip_match'] || '✓ IP matches';
-        statusEl.style.color = 'var(--green)';
-      } else {
-        btn.disabled = true;
-        if (v.length === 0) {
-          statusEl.textContent = ' ';
-          statusEl.style.color = 'var(--muted)';
-        } else {
-          statusEl.textContent = GC.t['gateway_delete_ip_mismatch'] || 'IP does not match';
-          statusEl.style.color = 'var(--red)';
-        }
-      }
-    };
-    setTimeout(function() { input.focus(); }, 50);
-  }
-
-  document.getElementById('gw-delete-confirm-btn').addEventListener('click', async function() {
-    if (!gwDeletePeer) return;
-    var btn = this;
-    var statusEl = document.getElementById('gw-delete-confirm-status');
-    btn.disabled = true;
-    btnLoading(btn);
-    try {
-      var data = await api.del('/api/peers/' + encodeURIComponent(gwDeletePeer.id));
-      if (data && data.ok === false) throw new Error(data.error || 'failed');
-      closeModal('modal-gateway-delete');
-      gwDeletePeer = null;
-      loadPeers();
-      loadGroups();
-    } catch (err) {
-      statusEl.textContent = (GC.t['common.error'] || 'Error') + ': ' + (err && err.message ? err.message : err);
-      statusEl.style.color = 'var(--red)';
-      btn.disabled = false;
     } finally {
       btnReset(btn);
     }
@@ -1433,21 +1294,21 @@ var DT = function (k, p) { return D.t(k, p); };
   // Peer traffic as a bar chart (same .chart/.col/.bar markup as the dashboard).
   function renderTrafficBars(container, dataPoints) {
     if (!dataPoints || dataPoints.length === 0) {
-      container.innerHTML = '<div class="empty-state" style="padding:30px 0;text-align:center;color:var(--faint);font-size:13px">' + escapeHtml(GC.t['dashboard.chart_no_data'] || 'No traffic data') + '</div>';
+      var none = h('div', { class: 'empty-state', text: (GC.t && GC.t['dashboard.chart_no_data']) || 'No traffic data' });
+      none.style.cssText = 'padding:30px 0;text-align:center;color:var(--faint);font-size:13px';
+      container.replaceChildren(none);
       return;
     }
     var maxVal = Math.max(1, Math.max.apply(null, dataPoints.map(function(d) { return Math.max(d.upload || 0, d.download || 0); })));
     var n = dataPoints.length;
-    container.innerHTML = dataPoints.map(function(d, i) {
-      var dnH = Math.max(2, Math.round(((d.download || 0) / maxVal) * 130));
-      var upH = Math.max(2, Math.round(((d.upload || 0) / maxVal) * 130));
+    container.replaceChildren.apply(container, dataPoints.map(function(d, i) {
+      var dn = h('div', { class: 'bar' });
+      dn.style.height = Math.max(2, Math.round(((d.download || 0) / maxVal) * 130)) + 'px';
+      var up = h('div', { class: 'bar up' });
+      up.style.height = Math.max(2, Math.round(((d.upload || 0) / maxVal) * 130)) + 'px';
       var label = (n <= 12 || i % Math.ceil(n / 8) === 0) ? (d.label || '') : '';
-      return '<div class="col">'
-        + '<div class="bar" style="height:' + dnH + 'px"></div>'
-        + '<div class="bar up" style="height:' + upH + 'px"></div>'
-        + '<div class="lab">' + escapeHtml(label) + '</div>'
-        + '</div>';
-    }).join('');
+      return h('div', { class: 'col' }, [dn, up, h('div', { class: 'lab', text: label })]);
+    }));
   }
 
   function renderTrafficChart(dataPoints) {
@@ -1465,564 +1326,26 @@ var DT = function (k, p) { return D.t(k, p); };
     loadTrafficChart();
   });
 
-  // ─── Peer Groups Management ─────────────────────────────
-  var pgList = document.getElementById('peer-groups-list');
-  var editingGroupId = null;
-
-  // Note: Group management uses innerHTML with all user values passed through escapeHtml()
-  // for XSS safety, consistent with the rest of the codebase.
-  function renderGroupsList() {
-    if (!pgList) return;
-    if (!allGroups.length) {
-      pgList.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:8px 0">' + escapeHtml(GC.t['peer_groups.no_groups'] || 'No peer groups configured') + '</div>';
-      return;
-    }
-    pgList.innerHTML = allGroups.map(function(g) {
-      if (editingGroupId === g.id) {
-        return '<div style="display:flex;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)" data-group-id="' + g.id + '">' +
-          '<input type="color" class="pg-edit-color" value="' + escapeHtml(g.color || '#6b7280') + '" style="width:28px;height:28px;padding:1px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">' +
-          '<input type="text" class="pg-edit-name" value="' + escapeHtml(g.name) + '" style="flex:1;padding:4px 8px;font-size:12px" maxlength="100">' +
-          '<input type="text" class="pg-edit-desc" value="' + escapeHtml(g.description || '') + '" placeholder="' + escapeHtml(GC.t['peer_groups.description_placeholder'] || 'Description') + '" style="flex:1;padding:4px 8px;font-size:12px" maxlength="255">' +
-          '<button class="icon-btn" title="' + escapeHtml(GC.t['common.save'] || 'Save') + '" data-pg-action="save" data-pg-id="' + g.id + '" style="color:var(--green)">' +
-            '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
-          '</button>' +
-          '<button class="icon-btn" title="' + escapeHtml(GC.t['common.cancel'] || 'Cancel') + '" data-pg-action="cancel" style="color:var(--text-3)">' +
-            '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
-          '</button>' +
-        '</div>';
-      }
-      return '<div style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)" data-group-id="' + g.id + '">' +
-        '<span style="width:10px;height:10px;border-radius:50%;background:' + (/^#[0-9a-fA-F]{3,8}$/.test(g.color) ? g.color : 'var(--muted)') + ';flex-shrink:0"></span>' +
-        '<span style="font-size:13px;font-weight:500;flex:1">' + escapeHtml(g.name) + '</span>' +
-        (g.description ? '<span style="font-size:11px;color:var(--text-3);flex:1">' + escapeHtml(g.description) + '</span>' : '') +
-        '<span class="tag tag-grey" style="font-size:10px">' + g.peer_count + ' peer(s)</span>' +
-        '<button class="icon-btn" title="' + escapeHtml(GC.t['common.edit'] || 'Edit') + '" data-pg-action="edit" data-pg-id="' + g.id + '">' +
-          '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>' +
-        '</button>' +
-        '<button class="icon-btn" title="' + escapeHtml(GC.t['common.delete'] || 'Delete') + '" data-pg-action="delete" data-pg-id="' + g.id + '">' +
-          '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>' +
-        '</button>' +
-      '</div>';
-    }).join('');
-  }
-
-  // Event delegation for peer groups management
-  document.addEventListener('click', function(e) {
-    var btn = e.target.closest('[data-pg-action]');
-    if (!btn) return;
-    var action = btn.dataset.pgAction;
-    var id = btn.dataset.pgId ? parseInt(btn.dataset.pgId, 10) : null;
-
-    if (action === 'edit') {
-      editingGroupId = id;
-      renderGroupsList();
-    } else if (action === 'cancel') {
-      editingGroupId = null;
-      renderGroupsList();
-    } else if (action === 'save' && id) {
-      var row = btn.closest('[data-group-id]');
-      var nameInput = row.querySelector('.pg-edit-name');
-      var colorInput = row.querySelector('.pg-edit-color');
-      var descInput = row.querySelector('.pg-edit-desc');
-      api.put('/api/peer-groups/' + id, {
-        name: nameInput.value.trim(),
-        color: colorInput.value,
-        description: descInput.value.trim()
-      }).then(function(data) {
-        if (data.ok) {
-          editingGroupId = null;
-          loadGroups();
-        } else {
-          D.alert({ message: data.error || DT('common.error'), danger: true });
-        }
-      }).catch(function(err) { D.alert({ message: err.message, danger: true }); });
-    } else if (action === 'delete' && id) {
-      D.confirm({ message: DT('peer_groups.confirm_delete'), danger: true, okLabel: DT('common.delete') }).then(function (ok) {
-        if (!ok) return;
-        api.del('/api/peer-groups/' + id).then(function(data) {
-          if (data.ok) {
-            loadGroups();
-            loadPeers();
-          } else {
-            D.alert({ message: data.error || DT('common.error'), danger: true });
-          }
-        }).catch(function(err) { D.alert({ message: err.message, danger: true }); });
-      });
-    }
-  });
-
-  // Add peer group button
-  var btnAddGroup = document.getElementById('btn-add-peer-group');
-  if (btnAddGroup) {
-    btnAddGroup.addEventListener('click', async function() {
-      var nameEl = document.getElementById('pg-name');
-      var colorEl = document.getElementById('pg-color');
-      var descEl = document.getElementById('pg-desc');
-      var errorEl = document.getElementById('pg-error');
-      var name = nameEl.value.trim();
-      if (!name) {
-        errorEl.textContent = GC.t['error.peer_groups.name_required'] || 'Group name is required';
-        errorEl.style.display = '';
-        return;
-      }
-      errorEl.style.display = 'none';
-      btnLoading(btnAddGroup);
-      try {
-        var data = await api.post('/api/peer-groups', { name: name, color: colorEl.value, description: descEl.value.trim() });
-        if (data.ok) {
-          nameEl.value = '';
-          colorEl.value = '#6b7280';
-          descEl.value = '';
-          loadGroups();
-        } else {
-          errorEl.textContent = data.error;
-          errorEl.style.display = '';
-        }
-      } catch (err) {
-        errorEl.textContent = err.message;
-        errorEl.style.display = '';
-      } finally {
-        btnReset(btnAddGroup);
-      }
-    });
-  }
-
-  // ─── Batch mode ──────────────────────────────────────────
-  var batchBtn = document.getElementById('btn-batch-peers');
-  var batchBar = document.getElementById('batch-bar-peers');
-  var batchCountEl = document.getElementById('batch-bar-peers-count');
-  var batchSelectAll = document.getElementById('batch-select-all-peers');
-  var batchCols = document.querySelectorAll('.batch-col');
-
-  function enterBatchMode() {
-    batchMode = true;
-    batchSelected.clear();
-    batchBtn.style.display = 'none';
-    batchCols.forEach(function(c) { c.style.display = ''; });
-    applyFilters();
-    updateBatchBar();
-  }
-
-  function exitBatchMode() {
-    batchMode = false;
-    batchSelected.clear();
-    batchBtn.style.display = '';
-    batchBar.style.display = 'none';
-    batchCols.forEach(function(c) { c.style.display = 'none'; });
-    if (batchSelectAll) batchSelectAll.checked = false;
-    applyFilters();
-  }
-
-  function updateBatchBar() {
-    var count = batchSelected.size;
-    if (batchMode) {
-      batchBar.style.display = '';
-      if (count > 0) {
-        batchCountEl.textContent = count + ' ' + (GC.t['batch.selected'] || 'selected');
-        document.getElementById('batch-enable-peers').textContent = (GC.t['batch.enable'] || 'Enable ({{count}})').replace('{{count}}', count);
-        document.getElementById('batch-disable-peers').textContent = (GC.t['batch.disable'] || 'Disable ({{count}})').replace('{{count}}', count);
-        document.getElementById('batch-delete-peers').textContent = (GC.t['batch.delete'] || 'Delete ({{count}})').replace('{{count}}', count);
-        document.getElementById('batch-enable-peers').disabled = false;
-        document.getElementById('batch-disable-peers').disabled = false;
-        document.getElementById('batch-delete-peers').disabled = false;
-      } else {
-        batchCountEl.textContent = GC.t['batch.none_selected'] || 'Select items...';
-        document.getElementById('batch-enable-peers').textContent = (GC.t['batch.enable'] || 'Enable').replace(' ({{count}})', '').replace('({{count}})', '');
-        document.getElementById('batch-disable-peers').textContent = (GC.t['batch.disable'] || 'Disable').replace(' ({{count}})', '').replace('({{count}})', '');
-        document.getElementById('batch-delete-peers').textContent = (GC.t['batch.delete'] || 'Delete').replace(' ({{count}})', '').replace('({{count}})', '');
-        document.getElementById('batch-enable-peers').disabled = true;
-        document.getElementById('batch-disable-peers').disabled = true;
-        document.getElementById('batch-delete-peers').disabled = true;
-      }
-    } else {
-      batchBar.style.display = 'none';
-    }
-  }
-
-  if (batchBtn) batchBtn.addEventListener('click', enterBatchMode);
-  document.getElementById('batch-cancel-peers').addEventListener('click', exitBatchMode);
-
-  // Checkbox delegation (desktop table + mobile cards)
-  function handleBatchCheckbox(e) {
-    var cb = e.target.closest('.batch-checkbox');
-    if (!cb) return;
-    var id = String(cb.dataset.batchId);
-    if (cb.checked) batchSelected.add(id);
-    else batchSelected.delete(id);
-    updateBatchBar();
-  }
-  tbody.addEventListener('change', handleBatchCheckbox);
-  if (peersMobile) peersMobile.addEventListener('change', handleBatchCheckbox);
-
-  if (batchSelectAll) {
-    batchSelectAll.addEventListener('change', function() {
-      var checked = batchSelectAll.checked;
-      var checkboxes = tbody.querySelectorAll('.batch-checkbox');
-      checkboxes.forEach(function(cb) {
-        cb.checked = checked;
-        var id = String(cb.dataset.batchId);
-        if (checked) batchSelected.add(id);
-        else batchSelected.delete(id);
-      });
-      updateBatchBar();
-    });
-  }
-
-  async function executeBatchAction(action) {
-    var ids = Array.from(batchSelected).map(Number);
-    if (ids.length === 0) return;
-    try {
-      var data = await api.post('/api/peers/batch', { action: action, ids: ids });
-      if (data.ok) {
-        exitBatchMode();
-        loadPeers();
-      } else {
-        D.alert({ message: data.error || DT('common.error'), danger: true });
-      }
-    } catch (err) {
-      D.alert({ message: DT('common.error') + ': ' + err.message, danger: true });
-    }
-  }
-
-  document.getElementById('batch-enable-peers').addEventListener('click', function() {
-    executeBatchAction('enable');
-  });
-  document.getElementById('batch-disable-peers').addEventListener('click', function() {
-    executeBatchAction('disable');
-  });
-  document.getElementById('batch-delete-peers').addEventListener('click', async function() {
-    var count = batchSelected.size;
-    var msg = DT('batch.confirm_delete_peers').replace('{{count}}', count);
-    if (await D.confirm({ message: msg, danger: true, okLabel: DT('common.delete') })) {
-      executeBatchAction('delete');
-    }
-  });
-
-  // ─── Home-Gateway cards (above the peer table) ──────────
-  // One /api/gateways call returns each gateway's state, telemetry and
-  // the routes it serves; each gateway renders as a unit card that links
-  // to its detail view on /gateways.
-  var gwContainer = document.getElementById('gateways-container');
-  var gwCountEl = document.getElementById('gw-section-count');
-  var peersCountEl = document.getElementById('peers-section-count');
-  var statGwOnline = document.getElementById('stat-gw-online');
-  var statGwTotal  = document.getElementById('stat-gw-total');
-  var statClOnline = document.getElementById('stat-cl-online');
-  var statClTotal  = document.getElementById('stat-cl-total');
-
-  var allGateways = [];
-
-  function clearEl(el) { while (el && el.firstChild) el.removeChild(el.firstChild); }
-
-  function gwT(key, fallback) {
-    return (window.GC && GC.t && GC.t[key]) || fallback;
-  }
-
-  function formatRelTime(ms) {
-    if (!ms) return null;
-    var sec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
-    if (sec < 60) return sec + 's';
-    if (sec < 3600) return Math.floor(sec / 60) + 'm';
-    if (sec < 86400) return Math.floor(sec / 3600) + 'h';
-    return Math.floor(sec / 86400) + 'd';
-  }
-  function formatUptimeSec(s) {
-    if (s == null) return null;
-    var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
-    if (d > 0) return d + 'd ' + h + 'h';
-    if (h > 0) return h + 'h ' + m + 'm';
-    return m + 'm';
-  }
-  function formatPct(used, total) {
-    if (!total) return null;
-    return Math.round((used / total) * 100) + '%';
-  }
-
-  // ─── SVG helpers (pure DOM, no innerHTML) ───────────────
-  function svgEl(attrs, children) {
-    var ns = 'http://www.w3.org/2000/svg';
-    var svg = document.createElementNS(ns, 'svg');
-    Object.keys(attrs).forEach(function(k) { svg.setAttribute(k, attrs[k]); });
-    (children || []).forEach(function(c) { svg.appendChild(c); });
-    return svg;
-  }
-  function svgShape(tag, attrs) {
-    var ns = 'http://www.w3.org/2000/svg';
-    var el = document.createElementNS(ns, tag);
-    Object.keys(attrs).forEach(function(k) { el.setAttribute(k, attrs[k]); });
-    return el;
-  }
-  function plainSvg(path) {
-    return svgEl(
-      { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', width: '14', height: '14' },
-      [svgShape('path', { d: path })]
-    );
-  }
-
-  function renderGateways() {
-    if (!gwContainer) return;
-    clearEl(gwContainer);
-    if (gwCountEl) {
-      var online = allGateways.filter(function(g) { return g.status === 'online'; }).length;
-      gwCountEl.textContent = online + ' / ' + allGateways.length + ' online';
-    }
-    gwContainer.classList.toggle('multi', allGateways.length > 1);
-    if (!allGateways.length) {
-      var empty = document.createElement('div');
-      empty.className = 'gw-empty';
-      empty.textContent = gwT('peers.gateway.none', 'Kein Gateway konfiguriert. Neuen Gateway-Peer über „Hinzufügen" anlegen.');
-      gwContainer.appendChild(empty);
-      return;
-    }
-    allGateways.forEach(function(gw) { gwContainer.appendChild(renderGatewayCard(gw)); });
-  }
-
-  function updateStats() {
-    var gwOnline = allGateways.filter(function(g) { return g.status === 'online'; }).length;
-    var gwTotal = allGateways.length;
-    var clients = allPeers.filter(function(p) { return p.peer_type !== 'gateway'; });
-    var clientsOnline = clients.filter(function(p) { return p.isOnline; }).length;
-    if (statGwOnline) statGwOnline.textContent = gwOnline;
-    if (statGwTotal)  statGwTotal.textContent = '/ ' + gwTotal;
-    if (statClOnline) statClOnline.textContent = clientsOnline;
-    if (statClTotal)  statClTotal.textContent  = '/ ' + clients.length;
-    if (peersCountEl) peersCountEl.textContent = clients.length + ' total · ' + clientsOnline + ' online';
-  }
-
-  async function loadGateways() {
-    try {
-      var data = await api.get('/api/gateways');
-      if (data && data.ok) {
-        allGateways = Array.isArray(data.gateways) ? data.gateways : [];
-        renderGateways();
-        updateStats();
-      }
-    } catch (err) {
-      console.error('gateways load failed', err);
-    }
-  }
-
-  // ─── Peer table rows, action buttons and gateway unit cards ──────────────
-
-  function actionBtns(p) {
-    // Gateway-env download button (gateway peers only)
-    var gwBtn = p.peer_type === 'gateway'
-      ? '<button class="icon-action" title="' + escapeHtml(GC.t['gateway_download_env'] || 'Download gateway config') + '" data-action="gateway-env" data-id="' + p.id + '">' +
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>'
-      : '';
-    return gwBtn +
-      '<button class="icon-action" title="QR Code" data-action="qr" data-id="' + p.id + '">' +
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v7h-7" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-      '</button>' +
-      '<button class="icon-action" title="Traffic" data-action="traffic" data-id="' + p.id + '">' +
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6"/></svg>' +
-      '</button>' +
-      '<button class="icon-action" title="Edit" data-action="edit" data-id="' + p.id + '">' +
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6 4 4M4 20l1-4L16 5l3 3L8 19l-4 1Z" stroke-linejoin="round"/></svg>' +
-      '</button>' +
-      '<button class="icon-action" title="Toggle" data-action="toggle" data-id="' + p.id + '">' +
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>' +
-      '</button>' +
-      '<button class="icon-action danger" title="Delete" data-action="delete" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '">' +
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>' +
-      '</button>';
-  }
-
-  function renderPeers(peers) {
-    if (!peers.length) {
-      var colSpan = batchMode ? 8 : 7;
-      tbody.innerHTML = '<tr><td colspan="' + colSpan + '" style="text-align:center;color:var(--muted);padding:40px">' + escapeHtml(GC.t['peers.no_peers'] || 'No peers configured') + '</td></tr>';
-      return;
-    }
-    tbody.innerHTML = peers.map(function(p) {
-      var ip = p.allowed_ips ? p.allowed_ips.split('/')[0] : '—';
-      var lastContact = formatLastContact(p.latestHandshake || p.latest_handshake);
-      var rx = formatBytes(p.transferRx || p.transfer_rx || 0);
-      var tx = formatBytes(p.transferTx || p.transfer_tx || 0);
-      var statusTag = getStatusTag(p);
-      var checked = batchSelected.has(String(p.id)) ? ' checked' : '';
-      var batchTd = batchMode ? '<td class="batch-col"><input type="checkbox" class="batch-checkbox" data-batch-id="' + p.id + '"' + checked + '></td>' : '';
-      return '<tr data-peer-id="' + p.id + '">' +
-        batchTd +
-        '<td class="cell-name">' + escapeHtml(p.name) + getExpiryTag(p) + getGroupBadge(p) + getGatewayBadge(p) + getSupportBadge(p) + '</td>' +
-        '<td class="mono">' + escapeHtml(ip) + '</td>' +
-        '<td>' + lastContact + '</td>' +
-        '<td>' + getClientCell(p) + '</td>' +
-        '<td class="mono">↓' + rx + ' ↑' + tx + '</td>' +
-        '<td>' + statusTag + '</td>' +
-        '<td><div class="row-actions">' + actionBtns(p) + '</div></td>' +
-      '</tr>';
-    }).join('');
-  }
-
-  function renderGatewayCard(gw) {
-    // ── Issue 5: badge INSIDE the card header ──────────────────────────────
-    // ── Issue 6: gear button opens edit modal (not card click) ─────────────
-    // ── Issue 7: card click → /gateways#gw/<id> detail page ───────────────
-    var h = gw.health || {};
-    var isOnline = gw.status === 'online';
-    var statusClass = isOnline ? 'tag tag-green tag-dot' : 'tag tag-grey tag-dot';
-    var statusLabel = isOnline
-      ? gwT('peers.gateway.status_online', 'Online')
-      : gwT('peers.gateway.status_offline', 'Offline');
-    // Use h.wg_handshake_age_s directly since formatRelTime expects a past timestamp
-    var handshakeText = (typeof h.wg_handshake_age_s === 'number')
-      ? (h.wg_handshake_age_s < 60 ? h.wg_handshake_age_s + 's' : Math.floor(h.wg_handshake_age_s / 60) + 'm') + ' ago'
-      : '—';
-    var t = h.telemetry || {};
-    var rx = formatBytes(t.wg_rx_bytes || 0);
-    var tx = formatBytes(t.wg_tx_bytes || 0);
-    var trafficText = '↓' + rx + ' ↑' + tx;
-
-    var unit = document.createElement('div');
-    unit.className = 'unit';
-    unit.style.cursor = 'pointer';
-    // data-gw-detail carries the target URL for the card-click nav (Issue 7)
-    unit.dataset.gwDetail = '/gateways#gw/' + gw.peer_id;
-
-    // ── Card header row (.uh) ──────────────────────────────────────────────
-    var uh = document.createElement('div');
-    uh.className = 'uh';
-
-    // Avatar icon
-    var uav = document.createElement('span');
-    uav.className = 'uav';
-    uav.style.background = 'linear-gradient(145deg,var(--teal),var(--teal-dim,#28b3a2))';
-    uav.innerHTML = '<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/></svg>';
-    uh.appendChild(uav);
-
-    // Name + IP moved to dedicated rows below; a flex spacer keeps the status
-    // badge + gear pushed to the right of the header.
-    var spacer = document.createElement('div');
-    spacer.style.cssText = 'flex:1;min-width:0';
-    uh.appendChild(spacer);
-
-    // Right side: status badge + gear button — gap:8px keeps them clearly separated
-    var right = document.createElement('span');
-    right.style.cssText = 'margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0';
-
-    // Issue 5 — badge INSIDE the card, anchored top-right within header row
-    var badge = document.createElement('span');
-    badge.className = statusClass;
-    badge.textContent = statusLabel;
-    right.appendChild(badge);
-
-    // Issue 6 — gear button triggers edit modal; stops propagation so card-click
-    //           doesn't also fire (Issue 7 nav).
-    var gearBtn = document.createElement('button');
-    gearBtn.type = 'button';
-    gearBtn.className = 'icon-action';
-    gearBtn.setAttribute('data-action', 'edit');
-    gearBtn.setAttribute('data-id', String(gw.peer_id));
-    var gearLabel = gwT('peers.gateway.action_edit_gear', 'Edit gateway');
-    gearBtn.setAttribute('aria-label', gearLabel);
-    gearBtn.title = gearLabel;
-    // Gear / cog icon (Lucide settings)
-    gearBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
-    gearBtn.addEventListener('click', function(e) {
-      e.stopPropagation();
-      showEditModal(gw.peer_id);
-    });
-    right.appendChild(gearBtn);
-
-    uh.appendChild(right);
-    unit.appendChild(uh);
-
-    // Name + IP rows (moved out of the .uh title)
-    var nameRow = document.createElement('div');
-    nameRow.className = 'urow';
-    var nrk = document.createElement('span');
-    nrk.textContent = gwT('peers.gateway.name', 'Name');
-    var nrv = document.createElement('b');
-    nrv.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:62%';
-    nrv.textContent = gw.name;
-    nameRow.appendChild(nrk);
-    nameRow.appendChild(nrv);
-    unit.appendChild(nameRow);
-
-    var ipRow = document.createElement('div');
-    ipRow.className = 'urow';
-    var iprk = document.createElement('span');
-    iprk.textContent = gwT('peers.gateway.ip', 'IP');
-    var iprv = document.createElement('b');
-    iprv.textContent = gw.ip || '—';
-    ipRow.appendChild(iprk);
-    ipRow.appendChild(iprv);
-    unit.appendChild(ipRow);
-
-    // Metric rows
-    var row1 = document.createElement('div');
-    row1.className = 'urow';
-    var r1k = document.createElement('span');
-    r1k.textContent = gwT('peers.gateway.wg_handshake', 'WG-Handshake');
-    var r1v = document.createElement('b');
-    r1v.textContent = handshakeText;
-    row1.appendChild(r1k);
-    row1.appendChild(r1v);
-    unit.appendChild(row1);
-
-    var row2 = document.createElement('div');
-    row2.className = 'urow';
-    var r2k = document.createElement('span');
-    r2k.textContent = gwT('peers.traffic', 'Traffic');
-    var r2v = document.createElement('b');
-    r2v.textContent = trafficText;
-    row2.appendChild(r2k);
-    row2.appendChild(r2v);
-    unit.appendChild(row2);
-
-    // Issue 7 — card click navigates to the gateway detail page.
-    //           Gear button and badge stop propagation so they don't also navigate.
-    unit.addEventListener('click', function(e) {
-      if (e.target.closest('button, a')) return;
-      window.location.href = '/gateways#gw/' + gw.peer_id;
-    });
-    return unit;
-  }
-
-  function initStatusToggle() {
-    var toggle = document.getElementById('aurora-status-toggle');
-    if (!toggle) return;
-    toggle.addEventListener('click', function(e) {
-      var btn = e.target.closest('.toggle-btn');
-      if (!btn) return;
-      statusFilter = btn.dataset.status || 'all';
-      toggle.querySelectorAll('.toggle-btn').forEach(function(b) {
-        b.classList.toggle('on', b === btn);
-      });
-      applyFilters();
-    });
-  }
-
-  // Re-run stats when peers finish loading — wraps loadPeers to refresh stats.
-  var _origLoadPeers = loadPeers;
-  loadPeers = async function() {
-    await _origLoadPeers.apply(this, arguments);
-    updateStats();
-  };
-
-  // ─── Auto-refresh ────────────────────────────────────────
+  // ─── Start ───────────────────────────────────────────────
+  readHash();
+  try {
+    var qParam = new URLSearchParams(window.location.search).get('q');
+    if (qParam) searchInput.value = qParam.slice(0, 100);
+  } catch (e) { /* ignore */ }
   loadGroups();
   loadPeers();
-  loadGateways();
-  populateOwnerSelects(['add-peer-owner', 'edit-peer-owner', 'peer-bulk-owner']);
-
-  var applyBtn = document.getElementById('peer-bulk-owner-apply');
-  if (applyBtn) applyBtn.addEventListener('click', function () {
-    var ids = Array.from(batchSelected).map(Number);
-    if (!ids.length) return;
-    var v = document.getElementById('peer-bulk-owner').value;
-    api.post('/api/v1/peers/batch-owner', { peer_ids: ids, user_id: v === '' ? null : Number(v) })
-      .then(function () { batchSelected.clear(); if (batchSelectAll) batchSelectAll.checked = false; updateBatchBar(); loadPeers(); showToast((GC.t && GC.t['peers.owner.bulk_done']) || 'Owners updated'); })
-      .catch(function (e) { showToast(e.message, 'error'); });
-  });
-  initStatusToggle();
+  populateOwnerSelects(['add-peer-owner', 'edit-peer-owner']);
   setInterval(loadPeers, 15000);
   setInterval(loadGroups, 30000);
-  setInterval(loadGateways, 20000);
-
+  // the address changes without a reload (links, back/forward, a pasted #edit/<id>)
+  window.addEventListener('hashchange', function () {
+    if (/^#edit\//.test(window.location.hash || '')) { deepLinkHandled = false; openDeepLink(); return; }
+    F.status = 'all'; F.group = ''; F.device = ''; F.owner = ''; F.tags = []; F.hints = []; F.sort = 'status';
+    searchInput.value = '';
+    readHash();
+    render();
+  });
   document.addEventListener('gc:peer', function () { loadPeers(); });
-  document.addEventListener('gc:gateway', function () { loadPeers(); });
   document.addEventListener('gc:reconnected', function () { loadPeers(); });
 
   // ─── Access windows (scheduled access control) ───────────────────────────

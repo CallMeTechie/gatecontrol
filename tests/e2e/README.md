@@ -147,6 +147,17 @@ scenarios/27-plugin-updates.js Einstellungen › Plugins › Updates: „Alle ak
                         Knopf zählt nur die bereiten, „Erneut versuchen“ bereitet nur die
                         fehlgeschlagenen neu vor, fehlgeschlagene Installation aus dem
                         fertigen Dialog wiederholen, „Schließen“ → alles aktuell, 390 px
+scenarios/29-peers.js   /peers (docs/feature-peers-page.md): nur Geräte (?type=client,
+                        Deep-Link auf ein Gateway → /gateways), Lizenzzeile, Kacheln ↔
+                        Liste (bleibt nach Neuladen), Suche + Leerzustand, Filter in
+                        der Adresse, „Weitere Filter“, Sammelleiste (Tag, Gruppe,
+                        Deaktivieren, Löschen), Schalter „Aktiv“, Dialog ohne
+                        Gateway-Hinweis; Gateway-Detail „Mehr“ › Verwalten (Name,
+                        Proxy-Port, Verbindungsdaten → Assistent, Deaktivieren →
+                        „Deaktivierte Gateways“ → Aktivieren, Entfernen mit IP);
+                        Seitenleiste mit „Wartung“, untere Leiste, 390 px mit
+                        Filter-Sheet. Eigene Geräte + Gateway in der DB, alles
+                        andere für den Lauf aus (Community-Lizenz), danach zurück
 ```
 
 ## Ablauf
