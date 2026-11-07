@@ -599,4 +599,18 @@ App-Updates, Tresor-Dateien), unter „Speicher“ die Höchstgröße.
 **Prüfen:** Der Zustand ist „aktiv“. Steht dort „Ordner nicht beschreibbar“,
 fehlt der Ordner oder die Compose-Zeile ([Kapitel 7](07-faq.md#zwischenspeicher-ordner-nicht-beschreibbar)).
 
+**In der Android-App:**
+
+- **„Offline verfügbar“ (Drive):** Die App behält von markierten Dateien und
+  Ordnern eine Kopie auf dem Handy, die auch ohne Verbindung öffnet. Zu Hause
+  lädt sie die Kopien aus dem Zwischenspeicher, unterwegs über den Server.
+  Ändert sich eine Datei, wird die Kopie erneuert. In den Drive-Einstellungen
+  der App stehen „Speicher für Offline-Dateien“ (Standard 2 GB) und
+  „Offline-Dateien nur im WLAN laden“. Tresor-Dateien bleiben nur im
+  Zwischenspeicher (verschlüsselt), nicht auf dem Handy.
+- **App-Updates:** Die App aus GitHub (nicht die aus Google Play) lädt ein
+  Update zu Hause vom Gateway. Sie prüft Prüfsumme und App-Signatur, bevor
+  Android die Installation anbietet. Ist das Gateway nicht erreichbar, lädt
+  sie es wie bisher aus dem Internet.
+
 Weiter mit [Kapitel 6: Bestehendes Gateway aktualisieren](06-gateway-aktualisieren.md).

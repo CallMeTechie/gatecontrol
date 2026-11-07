@@ -161,6 +161,20 @@ describe('update check: signed manifests', () => {
     assert.ok(!requests.some(r => r.url.includes('update-manifest')));
   });
 
+  it('names the published SHA-256 of the installer (Android: the app checks its own download)', async () => {
+    const sha = 'AB'.repeat(32);
+    const rel = release([{ id: 5, name: 'gatecontrol-1.22.0.apk', size: 50, digest: `sha256:${sha}`, browser_download_url: 'https://github.com/a.apk' }]);
+    githubLatest(rel, 'CallMeTechie/GateControl-Android-Client');
+    const res = await check('version=1.0.0&platform=android');
+    assert.equal(res.body.sha256, sha.toLowerCase());
+    // without a digest (old releases) or with a malformed one: no field
+    updateRouter._resetCache();
+    githubLatest(release([{ id: 5, name: 'gatecontrol-1.22.0.apk', size: 50, digest: 'md5:abc', browser_download_url: 'https://github.com/a.apk' }]), 'CallMeTechie/GateControl-Android-Client');
+    const old = await check('version=1.0.0&platform=android');
+    assert.equal(old.body.available, true);
+    assert.equal(old.body.sha256, undefined);
+  });
+
   it('reports no update when already current', async () => {
     githubLatest(release());
     const res = await check('version=1.22.0&platform=windows&client=pro');

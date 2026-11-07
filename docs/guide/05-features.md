@@ -574,4 +574,17 @@ the maximum size.
 **Check:** The state is “on”. If it says “folder not writable”, the folder or
 the compose line is missing ([chapter 7](07-faq.md#home-cache-folder-not-writable)).
 
+**In the Android app:**
+
+- **“Available offline” (Drive):** The app keeps a copy of marked files and
+  folders on the phone that opens without a connection too. At home it loads
+  the copies from the home cache, on the road through the server. When a file
+  changes, the copy is renewed. The app's Drive settings have “Storage for
+  offline files” (default 2 GB) and “Load offline files on Wi-Fi only”. Vault
+  files stay in the home cache only (encrypted), not on the phone.
+- **App updates:** The app from GitHub (not the one from Google Play) loads an
+  update from the gateway at home. It checks the checksum and the app
+  signature before Android offers to install it. If the gateway cannot be
+  reached, it loads the update from the internet as before.
+
 Continue with [chapter 6: Updating an existing gateway](06-updating-a-gateway.md).

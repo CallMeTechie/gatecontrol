@@ -354,6 +354,12 @@ updateRouter.get('/check', async (req, res) => {
       body.manifest = signed.manifest;
       body.signature = signed.signature;
     }
+    // SHA-256 of the installer as GitHub publishes it (asset.digest
+    // "sha256:<hex>"): a client that downloads it itself (the Android app's
+    // own APK download) checks the bytes against it — on the normal way as on
+    // the home cache's (lan.sha256 is the same value). Absent for old releases.
+    const sha256 = installerAsset ? assetSha256(installerAsset) : null;
+    if (sha256) body.sha256 = sha256;
     // Home cache (gateways phase 3b): the same installer from the gateway of
     // the home network the client is in, when that gateway holds it —
     // lan { url, sha256, tlsSha256, exp }. The client loads it there with
@@ -429,6 +435,12 @@ updateRouter.get('/download', async (req, res) => {
     res.status(500).json({ ok: false, error: 'Download failed' });
   }
 });
+
+/** The published SHA-256 of a release asset (GitHub "digest": "sha256:<hex>") as lower-case hex, or null. */
+function assetSha256(asset) {
+  const d = asset && typeof asset.digest === 'string' ? asset.digest : '';
+  return /^sha256:[0-9a-f]{64}$/i.test(d) ? d.slice(7).toLowerCase() : null;
+}
 
 /**
  * Compare semver: returns true if latest > current
