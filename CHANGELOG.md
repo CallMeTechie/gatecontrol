@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.249.0] — 2026-11-07
+
+### Features
+- Vorschaubilder in den Zwischenspeicher – Plugins dürfen GateControl-Vorschauen anbieten (#436)
+
+---
+
 ## [1.248.0] — 2026-11-07
 
 ### Features
