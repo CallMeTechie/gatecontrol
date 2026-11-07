@@ -19,6 +19,11 @@ other) are under “Gateways” as well: as a group of their own in the list, wi
 “Create pool” at the top right and “Open pool” for the settings. There is no
 separate page “Gateway Pools” in the menu any more.
 
+Where the gateways are (“Home”, “Office” …) you keep with “Locations” at the
+top of the same page. As soon as there is a location, the list is grouped by
+location; “Group by: Locations | Pools” switches to the view by pool. More in
+[chapter 3.6](03-gateway-setup.md#36-locations).
+
 General requirements:
 
 - Network watch, internet quality, presence and UPS need gateway version

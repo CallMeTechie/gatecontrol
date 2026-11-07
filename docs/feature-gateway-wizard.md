@@ -6,12 +6,14 @@ Peer-Dialog. Der Assistent führt in vier Schritten durch Anlage, Einrichtung un
 ## Ablauf
 
 1. **Name, Standort, Plattform:** Raspberry Pi · Synology NAS · Proxmox · anderer Linux-Rechner.
-   Der Standort ist eine Peer-Gruppe (optional).
+   Der Standort ist ein Gateway-Standort (optional, [feature-gateway-locations.md](feature-gateway-locations.md)):
+   ein vorhandener oder „Neuer Standort …“, der direkt vor dem Gateway angelegt wird.
+   Eine Peer-Gruppe setzt der Assistent nicht mehr.
 2. **Nur Raspberry Pi:** Modell (Hinweis zur Leistung; Zero 2 W nur WLAN), LAN oder WLAN
    (SSID, Passwort, verstecktes Netz; WPA2 bzw. WPA2/WPA3-Mischbetrieb), Zigbee automatisch/aus,
    erweitert: Gerätename, Zeitzone, WLAN-Land, SSH-Public-Key.
 3. **„Gateway anlegen“** ruft den bestehenden Endpunkt `POST /api/v1/peers` mit
-   `{ is_gateway: true, platform, group_id }` auf — gleiche Rechte, CSRF- und Lizenzprüfungen
+   `{ is_gateway: true, platform, location_id }` auf — gleiche Rechte, CSRF- und Lizenzprüfungen
    (`gateway_peers` → 403 mit `feature`). Danach steht `#setup/<id>` in der Adresse, ein
    Neuladen setzt die Einrichtung fort statt ein zweites Gateway anzulegen.
 4. **Schritt 3 je Plattform**

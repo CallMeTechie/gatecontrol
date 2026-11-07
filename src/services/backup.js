@@ -238,7 +238,18 @@ function exportTables(db) {
     tags = rawTags.map(t => { const e = pickColumns(t, tagCols); delete e.id; return e; });
   } catch (err) { logger.warn({ err: err.message }, 'backup export: tags skipped'); }
 
-  // ── gateway_meta (resolve peer_id → peer_name) ──────────────
+  // ── gateway_locations (Gateway-Standorte; ids are re-made from the name) ─
+  let gatewayLocations = [];
+  const locationNameById = new Map();
+  try {
+    for (const l of db.prepare('SELECT * FROM gateway_locations ORDER BY id').all()) {
+      locationNameById.set(l.id, l.name);
+      gatewayLocations.push({ name: l.name, street: l.street, postal_code: l.postal_code, city: l.city, country: l.country,
+        created_at: l.created_at, updated_at: l.updated_at });
+    }
+  } catch (err) { logger.warn({ err: err.message }, 'backup export: gateway_locations skipped'); }
+
+  // ── gateway_meta (resolve peer_id → peer_name, location_id → location_name) ─
   let gatewayMeta = [];
   try {
     const gmCols = columnsOf(db, 'gateway_meta');
@@ -247,6 +258,10 @@ function exportTables(db) {
       const entry = pickColumns(g, gmCols);
       entry.peer_name = peerNameById.get(g.peer_id) || null;
       delete entry.peer_id;
+      if ('location_id' in entry) {
+        entry.location_name = g.location_id ? (locationNameById.get(g.location_id) || null) : null;
+        delete entry.location_id;
+      }
       return entry;
     });
   } catch (err) { logger.warn({ err: err.message }, 'backup export: gateway_meta skipped'); }
@@ -302,6 +317,7 @@ function exportTables(db) {
       ai: require('./ai').exportBackup(),
       api_tokens: apiTokens,
       tags,
+      gateway_locations: gatewayLocations,
       gateway_meta: gatewayMeta,
       settings,
       webhooks,
@@ -696,6 +712,7 @@ function getBackupSummary(backup) {
     storage_targets: (d.storage_targets || []).length,
     api_tokens: (d.api_tokens || []).length,
     tags: (d.tags || []).length,
+    gateway_locations: (d.gateway_locations || []).length,
     gateway_meta: (d.gateway_meta || []).length,
     settings: (d.settings || []).length,
     webhooks: (d.webhooks || []).length,
@@ -805,6 +822,7 @@ async function restoreBackup(backup) {
     ai: aiData,
     api_tokens: apiTokens = [],
     tags = [],
+    gateway_locations: gatewayLocations = [],
     gateway_meta: gatewayMeta = [],
     settings,
     webhooks,
@@ -845,6 +863,7 @@ async function restoreBackup(backup) {
     try { db.prepare('DELETE FROM service_bundles').run(); } catch (err) { logger.debug({ err: err.message }, 'backup restore: clearing service_bundles failed (table may be absent)'); }
     try { db.prepare('DELETE FROM api_tokens').run(); } catch (err) { logger.debug({ err: err.message }, 'backup restore: clearing api_tokens failed (table may be absent)'); }
     try { db.prepare('DELETE FROM gateway_meta').run(); } catch (err) { logger.debug({ err: err.message }, 'backup restore: clearing gateway_meta failed (table may be absent)'); }
+    try { db.prepare('DELETE FROM gateway_locations').run(); } catch (err) { logger.debug({ err: err.message }, 'backup restore: clearing gateway_locations failed (table may be absent)'); }
     db.prepare('DELETE FROM routes').run();
     db.prepare('DELETE FROM peers').run();
     db.prepare('DELETE FROM peer_groups').run();
@@ -1039,13 +1058,26 @@ async function restoreBackup(backup) {
       }
     }
 
-    // Restore gateway_meta (re-map peer_id)
+    // Restore gateway_locations (Gateway-Standorte), then gateway_meta (re-map peer_id, location_id)
+    const locationIdByName = new Map();
+    for (const l of (Array.isArray(gatewayLocations) ? gatewayLocations : [])) {
+      try {
+        if (!l || !l.name || locationIdByName.has(l.name)) continue;
+        const now = Date.now();
+        const r = db.prepare(`INSERT INTO gateway_locations (name, street, postal_code, city, country, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`).run(String(l.name), l.street || null, l.postal_code || null, l.city || null, l.country || null,
+          Number(l.created_at) || now, Number(l.updated_at) || now);
+        locationIdByName.set(l.name, Number(r.lastInsertRowid));
+      } catch (e) {
+        logger.warn({ err: e.message, name: l && l.name }, 'gateway_location restore skipped');
+      }
+    }
     for (const gm of gatewayMeta) {
       try {
         const pid = gm.peer_name ? peerIdMap.get(gm.peer_name) : null;
         if (!pid) continue;
-        const row = { ...gm, peer_id: pid };
-        dynamicInsert(db, 'gateway_meta', ['peer_name'], row);
+        const row = { ...gm, peer_id: pid, location_id: gm.location_name ? (locationIdByName.get(gm.location_name) || null) : null };
+        dynamicInsert(db, 'gateway_meta', ['peer_name', 'location_name'], row);
       } catch (e) {
         logger.warn({ err: e.message, peer: gm.peer_name }, 'gateway_meta restore skipped');
       }

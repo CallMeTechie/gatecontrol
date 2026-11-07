@@ -167,7 +167,7 @@ router.get('/:id', (req, res) => {
  */
 router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
   try {
-    const { name, description, tags, expires_at, group_id, dns, is_gateway, api_port, proxy_port, user_id, platform } = req.body;
+    const { name, description, tags, expires_at, group_id, dns, is_gateway, api_port, proxy_port, user_id, platform, location_id } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -196,8 +196,10 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
         return res.status(400).json({ ok: false, error: 'proxy_port must be 1..65535' });
       }
       // Gateway assistant (docs/feature-gateway-wizard.md): where it runs
-      // (rpi | synology | proxmox | linux, optional) and its location = a
-      // peer group (optional).
+      // (rpi | synology | proxmox | linux, optional) and its location
+      // (gateway_locations, optional — docs/feature-gateway-locations.md).
+      // group_id (a peer group) is still taken from API callers; the
+      // assistant no longer sends it.
       if (platform != null && platform !== '' && !gateways.normalizePlatform(platform)) {
         return res.status(400).json({ ok: false, error: req.t('error.peers.gateway_platform_invalid'), fields: { platform: req.t('error.peers.gateway_platform_invalid') } });
       }
@@ -208,6 +210,12 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
           return res.status(400).json({ ok: false, error: req.t('error.peers.group_invalid'), fields: { group_id: req.t('error.peers.group_invalid') } });
         }
       }
+      let locationId = null;
+      try {
+        locationId = require('../../services/gatewayLocations').resolveId(location_id);
+      } catch {
+        return res.status(400).json({ ok: false, error: req.t('error.gateway_locations.not_found'), fields: { location_id: req.t('error.gateway_locations.not_found') } });
+      }
       let result;
       try {
         result = await gateways.createGateway({
@@ -216,6 +224,7 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
           proxyPort: parsedProxyPort,
           platform: platform || null,
           groupId,
+          locationId,
         });
       } catch (err) {
         if (/^License limit reached: gateway_peers/.test(err.message || '')) {
