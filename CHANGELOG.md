@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.248.0] — 2026-11-07
+
+### Features
+- Funksticks von Hand festlegen – Automatisch, Zigbee, Thread oder nicht verwenden (#435)
+
+---
+
 ## [1.247.0] — 2026-11-07
 
 ### Features
