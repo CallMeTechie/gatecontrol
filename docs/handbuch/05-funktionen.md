@@ -25,7 +25,7 @@ Allgemeine Voraussetzungen:
 - Netzwerk-Wächter, Internetqualität, Anwesenheit und USV brauchen
   Gateway-Version **1.21.0** oder neuer, DNS-Filter und Zwischenspeicher **1.22.0**,
   Drucken & Scannen **1.24.0** (PDF an Drucker ohne PDF **1.30.0**, Texterkennung und
-  Office-Dateien **1.32.0**), Funk **1.25.0**, Lokale KI **1.26.0**, Kameras **1.28.0**.
+  Office-Dateien **1.33.0**), Funk **1.25.0**, Lokale KI **1.26.0**, Kameras **1.28.0**.
   Ist das Gateway älter, steht das im Reiter; aktualisiere es dann ([Kapitel 6](06-gateway-aktualisieren.md)).
 - Das Gateway steht im Heimnetz im **Host-Netzwerkmodus** (Standard beim Pi,
   beim Synology-Paket und bei Linux mit „Host (empfohlen)“).
@@ -195,8 +195,8 @@ Gateway vorher ein PDF daraus macht. Das braucht LibreOffice – ein großer
 Zusatzdienst, deshalb nur auf Wunsch je Gateway. Reine Text-Dateien (`.txt`)
 gehen immer, auch ohne ihn.
 
-- **Voraussetzung:** Gateway ab **1.32.0** (sonst „Texterkennung … kann ein
-  Gateway ab 1.32.0“).
+- **Voraussetzung:** Gateway ab **1.33.0** (sonst „Texterkennung … kann ein
+  Gateway ab 1.33.0“).
 - **Einschalten:** In der Zeile „Drucken & Scannen“ „Office-Dateien drucken“
   anhaken. Darunter steht, was es kostet: einmal ≈ 200 MB herunterladen,
   ≈ 700 MB auf dem Datenträger, beim Umwandeln bis ≈ 500 MB Arbeitsspeicher.
@@ -218,7 +218,7 @@ Plugin „Durchsuchbares PDF“ wählen: Das PDF im Drive hat dann unsichtbaren
 Text über dem Bild – Suchen, Markieren, Kopieren gehen, und die Suche im Drive
 findet das Dokument über seinen Inhalt. Erkannt werden Deutsch und Englisch.
 
-- **Voraussetzung:** Gateway ab **1.32.0**; die Texterkennung ist im Image
+- **Voraussetzung:** Gateway ab **1.33.0**; die Texterkennung ist im Image
   (≈ 45 MB), kein Zusatzdienst.
 - **Einschalten:** In der Zeile „Drucken & Scannen“ „Texterkennung für Scans“
   anhaken. Es reicht ein Gateway damit – auch für Scanner an anderen Gateways.
@@ -231,7 +231,7 @@ findet das Dokument über seinen Inhalt. Erkannt werden Deutsch und Englisch.
 
 ### Papier, Fach und Druckstatus
 
-Nennt ein Drucker seine Papierformate und Fächer (Gateway ab 1.32.0), kann man
+Nennt ein Drucker seine Papierformate und Fächer (Gateway ab 1.33.0), kann man
 im Plugin und in der Android-App A4, A5, Letter oder Fotopapier (10 × 15 cm)
 wählen und – im Plugin – das Fach (z. B. „Fotofach“). Was der Drucker nicht
 nennt, wird nicht angeboten; dann druckt er auf seinem Standardpapier.

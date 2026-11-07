@@ -835,13 +835,13 @@
 
   /**
    * „Texterkennung“ (searchable PDFs of scans) and „Office-Dateien drucken“ (the service office with LibreOffice) –
-   * gateway docs/print.md, gateway 1.32.0 or later: the checkboxes, a missing tool, the size of the office service,
+   * gateway docs/print.md, gateway 1.33.0 or later: the checkboxes, a missing tool, the size of the office service,
    * the compose file it needs, hints for weak hardware (never a ban).
    */
   function printExtras(id, g, p, sup) {
     const out = [];
     if (!p.ocrSupported && !p.officeSupported) {
-      if (p.ocrSupported === false) out.push(h('span', { class: 'gwn-hint', 'data-print-extras': 'old' }, [U.icon('info', 14), t('gwn.feat.print_extras_old', { min: p.minGatewayP3c || '1.32.0', version: sup.version || '—' })]));
+      if (p.ocrSupported === false) out.push(h('span', { class: 'gwn-hint', 'data-print-extras': 'old' }, [U.icon('info', 14), t('gwn.feat.print_extras_old', { min: p.minGatewayP3c || '1.33.0', version: sup.version || '—' })]));
       return out;
     }
     if (p.ocrSupported) {

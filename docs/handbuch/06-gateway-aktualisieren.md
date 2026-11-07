@@ -42,7 +42,7 @@ zusätzliche Container oder Ordner brauchen, kommen deshalb nicht von selbst:
 | Zwischenspeicher | 1.22.0 | `${GC_CACHE_DIR:-./gateway-cache}:/cache` |
 | Failover-Pools, Scan über ein anderes Gateway, Ping der Internetqualität | – | unter `cap_add` die Rechte `NET_RAW`, `SETGID` und `SETUID` |
 | Kameras (Live-Bild, Clips) | 1.28.0 | Dienst `kameras`, Volumes `cam-ctl` und `${GC_CAMERA_DIR:-cam-recordings}:/recordings` |
-| Office-Dateien drucken | 1.32.0 | Dienst `office`, Volume `office-ctl` |
+| Office-Dateien drucken | 1.33.0 | Dienst `office`, Volume `office-ctl` |
 
 Du brauchst dieses Kapitel, wenn du eines davon siehst:
 

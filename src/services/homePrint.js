@@ -44,7 +44,7 @@ const office = require('./printOffice');
 
 const MIN_GATEWAY = '1.24.0';
 // text recognition, office files, PCLm, paper and tray (capabilities print-ocr, print-office, print-media — the version is the hint)
-const MIN_GATEWAY_P3C = '1.32.0';
+const MIN_GATEWAY_P3C = '1.33.0';
 const MAX_FILE = 50 * 1024 * 1024;
 const MAX_DEVICES = 64;
 const MAX_MANUAL = 16;
@@ -141,7 +141,7 @@ function composeWantsOffice(peerId) {
 const bool = (v) => v === true;
 const strList = (v, n, len, re) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && (!re || re.test(x))).slice(0, n).map((x) => x.slice(0, len)) : []);
 
-/** printer.media of a report (paper and trays, gateway ≥ 1.32.0) → { sizes, default, sources, sourceDefault, ready } */
+/** printer.media of a report (paper and trays, gateway ≥ 1.33.0) → { sizes, default, sources, sourceDefault, ready } */
 function cleanMedia(m) {
   const o = m && typeof m === 'object' && !Array.isArray(m) ? m : {};
   const sizes = strList(o.sizes, 12, 64, MEDIA_RE);
@@ -184,7 +184,7 @@ function cleanDevice(d) {
       copiesMax: Number.isInteger(p.copiesMax) ? Math.max(1, Math.min(999, p.copiesMax)) : 1,
       // a printer without PDF: the format its gateway converts PDF into (null: it cannot — switched off, too old, no matching format)
       convert: CONVERT_TARGETS.includes(p.convert) ? p.convert : null,
-      // office files printable here: „Office-Dateien drucken“ on, the gateway's service office runs, PDF goes (gateway ≥ 1.32.0)
+      // office files printable here: „Office-Dateien drucken“ on, the gateway's service office runs, PDF goes (gateway ≥ 1.33.0)
       office: bool(p.office),
       media: cleanMedia(p.media),
       markers: (Array.isArray(p.markers) ? p.markers : []).slice(0, 12).filter((m) => m && typeof m === 'object').map((m) => ({
@@ -531,7 +531,7 @@ function options(a, printer) {
   if (!Number.isInteger(copies) || copies < 1 || copies > copiesMax) throw new PrintError('invalid', `copies: 1 … ${copiesMax}`);
   if (a.color != null && typeof a.color !== 'boolean') throw new PrintError('invalid', 'color: true or false');
   if (a.duplex != null && typeof a.duplex !== 'boolean') throw new PrintError('invalid', 'duplex: true or false');
-  // paper and tray: only what the printer names (gateway ≥ 1.32.0 reports printer.media) — null: its own default
+  // paper and tray: only what the printer names (gateway ≥ 1.33.0 reports printer.media) — null: its own default
   const m = printer.media || { sizes: [], sources: [] };
   const media = a.media == null || a.media === '' ? null : a.media;
   const source = a.source == null || a.source === '' ? null : a.source;

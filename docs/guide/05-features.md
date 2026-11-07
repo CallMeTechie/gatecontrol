@@ -22,7 +22,7 @@ separate page “Gateway Pools” in the menu any more.
 General requirements:
 
 - Network watch, internet quality, presence and UPS need gateway version
-  **1.21.0** or later, DNS filter and home cache **1.22.0**, print & scan **1.24.0** (PDF for printers without PDF **1.30.0**, text recognition and office files **1.32.0**), radio **1.25.0**, local AI **1.26.0**, cameras **1.28.0**. If the gateway is
+  **1.21.0** or later, DNS filter and home cache **1.22.0**, print & scan **1.24.0** (PDF for printers without PDF **1.30.0**, text recognition and office files **1.33.0**), radio **1.25.0**, local AI **1.26.0**, cameras **1.28.0**. If the gateway is
   older, the tab says so; update it then ([chapter 6](06-updating-a-gateway.md)).
 - The gateway is in the home network in **host network mode** (default for the
   Pi, the Synology package and Linux with “Host (recommended)”).
@@ -183,7 +183,7 @@ gateway turns them into a PDF first. That needs LibreOffice – a large extra
 service, so it is switched on per gateway. Plain text files (`.txt`) always
 work, also without it.
 
-- **Requirement:** gateway **1.32.0** or later (else “… need a gateway 1.32.0
+- **Requirement:** gateway **1.33.0** or later (else “… need a gateway 1.33.0
   or later”).
 - **Switch on:** in the row “Print & scan”, tick “Print office files”. Below
   it says what it costs: a ≈ 200 MB download once, ≈ 700 MB on disk, up to
@@ -207,7 +207,7 @@ invisible text over the picture – searching, selecting and copying work, and
 Drive's search finds the document by its content. German and English are
 recognised.
 
-- **Requirement:** gateway **1.32.0** or later; the text recognition is in the
+- **Requirement:** gateway **1.33.0** or later; the text recognition is in the
   image (≈ 45 MB), no extra service.
 - **Switch on:** in the row “Print & scan”, tick “Text recognition for scans”.
   One gateway with it is enough – also for scanners at other gateways.
@@ -220,7 +220,7 @@ recognised.
 
 ### Paper, tray and print status
 
-When a printer names its paper sizes and trays (gateway 1.32.0 or later),
+When a printer names its paper sizes and trays (gateway 1.33.0 or later),
 people can choose A4, A5, Letter or photo paper (10 × 15 cm) in the plugin and
 the Android app and – in the plugin – the tray (e.g. “photo tray”). What the
 printer does not name is not offered; it then prints on its default paper.

@@ -395,7 +395,7 @@ function makePrint() {
     devices: () => hostCall('print.devices', {}),
     /** discover({ retrust? }) → { asked } — search again (retrust: accept a device's changed certificate) */
     discover: (opts) => hostCall('print.discover', o(opts)),
-    /** submit({ deviceId, mediaId, user, copies?, color?, duplex?, name?, media?, source? }) → job (office files and text since 1.246.0) */
+    /** submit({ deviceId, mediaId, user, copies?, color?, duplex?, name?, media?, source? }) → job (office files and text since 1.247.0) */
     submit: (opts) => hostCall('print.submit', o(opts), 120000),
     /** testPage({ deviceId, user }) → job */
     testPage: (opts) => hostCall('print.testPage', o(opts), 120000),

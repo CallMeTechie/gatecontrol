@@ -40,7 +40,7 @@ containers or folders therefore do not arrive by themselves:
 | Home cache | 1.22.0 | `${GC_CACHE_DIR:-./gateway-cache}:/cache` |
 | Failover pools, scanning via another gateway, ping of the internet quality | – | the capabilities `NET_RAW`, `SETGID` and `SETUID` under `cap_add` |
 | Cameras (live picture, clips) | 1.28.0 | service `kameras`, volumes `cam-ctl` and `${GC_CAMERA_DIR:-cam-recordings}:/recordings` |
-| Print office files | 1.32.0 | service `office`, volume `office-ctl` |
+| Print office files | 1.33.0 | service `office`, volume `office-ctl` |
 
 You need this chapter if you see one of these:
 

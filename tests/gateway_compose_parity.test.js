@@ -4,7 +4,7 @@
 // buildCompose — also the NAS package and the "only docker-compose.yml"
 // download) against docker-compose.example.yml of gatecontrol-gateway, checked
 // in as tests/fixtures/gateway-compose/docker-compose.example.yml (copy of
-// gatecontrol-gateway feat/print-ocr-office, 2026-11-07 / v1.32.0: service office in the profile office, volume office-ctl, the gateway mounts /gc-office; before: kameras with cam-ctl and cam-recordings). When the gateway
+// gatecontrol-gateway feat/print-ocr-office, 2026-11-07 / v1.33.0: service office in the profile office, volume office-ctl, the gateway mounts /gc-office; before: kameras with cam-ctl and cam-recordings). When the gateway
 // changes its example, copy it again — this test then shows what buildCompose
 // has to follow.
 //
@@ -76,7 +76,7 @@ const EXPECTED_DIFF = {
 describe('gateway compose: assistant vs docker-compose.example.yml of the gateway', () => {
   it('the fixture is the gateway example (services gateway, edge, mqtt, deconz, ki, kameras, office; NET_RAW/SETGID/SETUID)', () => {
     assert.deepEqual(Object.keys(ex.services), ['gateway', 'edge', 'mqtt', 'deconz', 'ki', 'kameras', 'office']);
-    // gateway >= 1.32.0: LibreOffice only in the profile office, no network; the gateway mounts office-ctl
+    // gateway >= 1.33.0: LibreOffice only in the profile office, no network; the gateway mounts office-ctl
     assert.equal(ex.services.office.profiles, 'profiles: ["office"]');
     assert.equal(ex.services.office.network_mode, 'network_mode: none');
     assert.match(exGw.volumes, /source: office-ctl/);

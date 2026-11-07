@@ -367,11 +367,11 @@
     '        max-file: "3"',
   ];
 
-  // Office files (Drucken & Scannen, gateway >= 1.32.0, docs/print.md of the gateway): LibreOffice without a
+  // Office files (Drucken & Scannen, gateway >= 1.33.0, docs/print.md of the gateway): LibreOffice without a
   // screen, only when „Office-Dateien drucken“ is switched on for this gateway (≈ 200 MB download, ≈ 700 MB on disk)
   const OFFICE_SERVICE = [
     '',
-    '  # Office files for printing (gateway >= 1.32.0, docs/print.md of the gateway) — LibreOffice without a screen:',
+    '  # Office files for printing (gateway >= 1.33.0, docs/print.md of the gateway) — LibreOffice without a screen:',
     '  # no network, no capabilities, read-only. The entry waits for /gc-office/office.sh, which the gateway writes,',
     '  # and runs it. Image ≈ 200 MB download, ≈ 700 MB on disk; up to ≈ 500 MB RAM while converting.',
     '  office:',
@@ -631,7 +631,7 @@
         '        source: cam-ctl',
         '        target: /gc-cam',
         '        volume: { nocopy: true }',
-        // print (gateway >= 1.32.0): office files for the service office, the PDF back; harmless without it
+        // print (gateway >= 1.33.0): office files for the service office, the PDF back; harmless without it
         '      - type: volume            # print: office files for the service office, the PDF back',
         '        source: office-ctl',
         '        target: /gc-office',

@@ -43,7 +43,7 @@ function device(printer = {}) {
   };
 }
 const health = (caps, extra = {}) => JSON.stringify({ telemetry: {
-  gateway_version: '1.32.0', capabilities: caps, hardware: { model: 'Synology DS918+', mem_total: 8 * 1024 ** 3 },
+  gateway_version: '1.33.0', capabilities: caps, hardware: { model: 'Synology DS918+', mem_total: 8 * 1024 ** 3 },
   features: { print: { enabled: true, convert: { enabled: true, available: true }, ocr: { enabled: true, available: true, langs: ['deu', 'eng'] }, office: { enabled: true, service: 'managed' }, ...extra } },
 } });
 const ALL = ['print', 'print-convert', 'print-ocr', 'print-office', 'print-media'];
@@ -87,7 +87,7 @@ describe('the switches „Texterkennung“ and „Office-Dateien drucken“', ()
     await admin('put', '/features').send({ print: { ocr: true, office: true } }).expect(200);
     assert.deepEqual((await gwReq('get', '/config').expect(200)).body.features.print, { enabled: true, manual: [], ocr: true, office: true });
     v = (await admin('get', '/features').expect(200)).body.gateway.print;
-    assert.deepEqual([v.ocr, v.office, v.minGatewayP3c], [true, true, '1.32.0']);
+    assert.deepEqual([v.ocr, v.office, v.minGatewayP3c], [true, true, '1.33.0']);
     assert.equal((await admin('put', '/features').send({ print: { office: 'yes' } })).status, 400);
     // the compose file of this gateway has the service office (without a profile)
     const yml = (await admin('post', '/compose').send({ platform: 'linux' }).expect(200)).text;
@@ -99,7 +99,7 @@ describe('the switches „Texterkennung“ and „Office-Dateien drucken“', ()
   });
 
   it('hints: a Raspberry Pi 3 or less than 2 GB RAM (never a ban); a gateway without the capabilities: "Gateway zu alt"', async () => {
-    db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify({ telemetry: { gateway_version: '1.32.0', capabilities: ALL, hardware: { model: 'Raspberry Pi 3 Model B Plus Rev 1.3', mem_total: 1024 ** 3 }, features: { print: { ocr: { available: true }, office: { service: 'absent' } } } } }), gw2.peer.id);
+    db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify({ telemetry: { gateway_version: '1.33.0', capabilities: ALL, hardware: { model: 'Raspberry Pi 3 Model B Plus Rev 1.3', mem_total: 1024 ** 3 }, features: { print: { ocr: { available: true }, office: { service: 'absent' } } } } }), gw2.peer.id);
     await admin('put', '/features', gw2).send({ print: { enabled: true, office: true } }).expect(200);
     let v = (await admin('get', '/features', gw2).expect(200)).body.gateway.print;
     assert.deepEqual([v.ocrHint, v.officeHint, v.officeService], ['slow', 'small', 'absent']);

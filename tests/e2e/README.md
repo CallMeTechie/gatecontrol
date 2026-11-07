@@ -118,7 +118,7 @@ scenarios/22-gateway-print.js /gateways › Funktionen › „Geräte im Heimnet
                         (echter PUT → features.print im Config-Pull), Gerätebericht des
                         Gateways → „Gefunden: …“, ≈ MB, Weg ins Plugin (Katalog),
                         Handbuch-Link; Drucker ohne PDF („ab 1.30.0“, „PDF … umwandeln“);
-                        1.32.0: „Texterkennung“ und „Office-Dateien drucken“ (echte PUTs
+                        1.33.0: „Texterkennung“ und „Office-Dateien drucken“ (echte PUTs
                         → features.print.ocr/office, Größe des Dienstes, Compose-Datei,
                         „Office-Dateien gehen jetzt“), hell/dunkel, 390 px
 scenarios/24-gateway-ai.js Lokale KI: Einstellungen › KI-Anbieter (Anbieterzeile

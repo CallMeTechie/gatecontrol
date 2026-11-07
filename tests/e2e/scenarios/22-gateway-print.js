@@ -17,7 +17,7 @@
 // subnet (one click), saves (real PUT) → features.print.manual in the config
 // pull. "Neu suchen" against the unreachable seeded gateway → a clear
 // message. A printer without PDF: "ab 1.30.0", then the checkbox "PDF … umwandeln".
-// „Texterkennung“ and „Office-Dateien drucken“ (gateway 1.32.0, docs/print.md): first "ab 1.32.0", then the two
+// „Texterkennung“ and „Office-Dateien drucken“ (gateway 1.33.0, docs/print.md): first "ab 1.33.0", then the two
 // checkboxes (real PUTs → features.print.ocr / .office in the config pull), the size of the office service, the
 // compose file it needs, "Office-Dateien gehen jetzt" once the service runs. Light/dark, 390 px without sideways
 // scroll (row and dialog).
@@ -283,13 +283,13 @@ module.exports = (ctx) => {
         }, row) && !('convert' in (await (await page.request.fetch(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token } })).json()).features.print));
         const pull = async () => (await (await page.request.fetch(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token } })).json()).features.print;
 
-        // ── Texterkennung and Office-Dateien drucken: a 1.30.0 gateway → "ab 1.32.0", no checkboxes ──
-        step('print: 1.30.0 → "Texterkennung … ab 1.32.0", no checkboxes for them', await until(page, (sel) => {
+        // ── Texterkennung and Office-Dateien drucken: a 1.30.0 gateway → "ab 1.33.0", no checkboxes ──
+        step('print: 1.30.0 → "Texterkennung … ab 1.33.0", no checkboxes for them', await until(page, (sel) => {
           const x = document.querySelector(sel + ' [data-print-extras="old"]');
           return !!x && /Texterkennung/.test(x.textContent) && /ab 1\.31\.0/.test(x.textContent) && !document.querySelector(sel + ' #gwn-f-print-ocr') && !document.querySelector(sel + ' #gwn-f-print-office');
         }, row));
         const P3C = [...CAPS, 'print', 'print-convert', 'print-ocr', 'print-office', 'print-media'];
-        step('print: heartbeat of a 1.32.0 gateway (tesseract there, the service office not yet)', await heartbeat('1.32.0', P3C, { ocr: { enabled: false, available: true, langs: ['deu', 'eng'] }, office: { enabled: false, service: 'absent' } }) === 200);
+        step('print: heartbeat of a 1.33.0 gateway (tesseract there, the service office not yet)', await heartbeat('1.33.0', P3C, { ocr: { enabled: false, available: true, langs: ['deu', 'eng'] }, office: { enabled: false, service: 'absent' } }) === 200);
         await fresh(page);
         await page.reload();
         await goFeatures(page, GW);
@@ -314,7 +314,7 @@ module.exports = (ctx) => {
         }, row) && (await pull()).office === true);
         await view(page, 'gwprint-office-compose-dark');
         // the service runs (the gateway's next heartbeat): "Office-Dateien gehen jetzt"
-        step('print: heartbeat with the service office running', await heartbeat('1.32.0', P3C, { ocr: { enabled: true, available: true }, office: { enabled: true, service: 'managed' } }) === 200);
+        step('print: heartbeat with the service office running', await heartbeat('1.33.0', P3C, { ocr: { enabled: true, available: true }, office: { enabled: true, service: 'managed' } }) === 200);
         await fresh(page);
         await page.reload();
         await goFeatures(page, GW);
