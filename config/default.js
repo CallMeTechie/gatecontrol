@@ -48,6 +48,12 @@ const config = {
     // gateways behind the admin's NAT don't share the dashboard's bucket).
     // Idle load is ~33 req/15 min per gateway at GC_HEARTBEAT_INTERVAL_S=30.
     rateLimitGateway: envInt('GC_RATE_LIMIT_GATEWAY', 300),
+    // Own per-gateway budgets (15 min) that do not count against the one
+    // above: the home cache (want, one request per blob, stock report – a
+    // first fill of Drive previews is thousands of small blobs) and file
+    // transfers (print/scan/OCR pages, edge packages, speed test, camera events).
+    rateLimitGatewayCache: envInt('GC_RATE_LIMIT_GATEWAY_CACHE', 10000),
+    rateLimitGatewayBulk: envInt('GC_RATE_LIMIT_GATEWAY_BULK', 3000),
     // Public app setup-code redeem (POST /api/v1/client/enroll), per IP / 5 min.
     rateLimitEnroll: envInt('GC_RATE_LIMIT_ENROLL', 10),
   },

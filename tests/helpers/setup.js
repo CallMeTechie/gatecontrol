@@ -44,6 +44,8 @@ testEnv.applyDataDirEnv(tmpDir);
 process.env.GC_RATE_LIMIT_LOGIN = '100000';
 process.env.GC_RATE_LIMIT_API = '100000';
 process.env.GC_RATE_LIMIT_GATEWAY = '100000';
+process.env.GC_RATE_LIMIT_GATEWAY_CACHE = '100000';
+process.env.GC_RATE_LIMIT_GATEWAY_BULK = '100000';
 process.env.GC_RATE_LIMIT_ENROLL = '100000';
 // Now import app modules
 const { runMigrations } = require('../../src/db/migrations');

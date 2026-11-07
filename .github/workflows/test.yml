@@ -216,6 +216,8 @@ jobs:
       GC_RATE_LIMIT_LOGIN: '100000'
       GC_RATE_LIMIT_API: '100000'
       GC_RATE_LIMIT_GATEWAY: '100000'
+      GC_RATE_LIMIT_GATEWAY_CACHE: '100000'
+      GC_RATE_LIMIT_GATEWAY_BULK: '100000'
       BASE: http://127.0.0.1:3000
       E2E_OUT: /tmp/gc-e2e/shots
     steps:
