@@ -3744,6 +3744,41 @@ const migrations = [
       ALTER TABLE home_cameras ADD COLUMN tls_insecure INTEGER NOT NULL DEFAULT 0;`,
     detect: (db) => hasColumn(db, 'home_cameras', 'tls_insecure'),
   },
+  {
+    version: 139,
+    name: 'gateway_radio_keys_zigbee2mqtt',
+    // Funk, follow-ups (services/homeRadio.js, the gateway's docs/radio.md):
+    // gateway_ble_sensors.key_enc — the key of an encrypted Bluetooth sensor
+    // (BTHome v2 / MiBeacon bindkey, 16 bytes), encrypted with the server key
+    // (utils/crypto), never in the config pull or a log; key_state — what the
+    // gateway reports for it (ok | no_key | wrong_key | unsupported).
+    // gateway_zigbee_devices — the devices of a gateway's zigbee2mqtt (its
+    // complete list per report): kind/caps for the Smart Home plugin (gc.radio),
+    // the last values (JSON). Not reported for 30 days → gone (housekeeping).
+    sql: `
+      ALTER TABLE gateway_ble_sensors ADD COLUMN key_enc TEXT;
+      ALTER TABLE gateway_ble_sensors ADD COLUMN key_state TEXT;
+      CREATE TABLE IF NOT EXISTS gateway_zigbee_devices (
+        peer_id      INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        ieee         TEXT NOT NULL,
+        name         TEXT,
+        model        TEXT,
+        vendor       TEXT,
+        description  TEXT,
+        kind         TEXT NOT NULL,
+        caps         TEXT NOT NULL DEFAULT '{}',
+        data         TEXT NOT NULL DEFAULT '{}',
+        dev_type     TEXT,
+        power        TEXT,
+        supported    INTEGER NOT NULL DEFAULT 1,
+        interview    TEXT,
+        available    INTEGER,
+        seen_at      INTEGER,
+        reported_at  INTEGER NOT NULL,
+        PRIMARY KEY (peer_id, ieee)
+      );`,
+    detect: (db) => hasColumn(db, 'gateway_ble_sensors', 'key_enc') && tableExists(db, 'gateway_zigbee_devices'),
+  },
 ];
 
 module.exports = { migrations };

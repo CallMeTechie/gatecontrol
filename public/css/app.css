@@ -9725,6 +9725,11 @@ a.lg-ev-msg:hover{color:var(--teal)}
 .gwr-li-r{display:flex; flex-wrap:wrap; gap:6px; align-items:center}
 .gwr-li-new .gwr-li-t strong{color:var(--muted)}
 .gwr-nas{max-width:860px}
+.gwr-stack{display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center}
+.gwr-h4{margin:6px 0 0; font-size:13.5px; font-weight:700}
+.gwr-sticks-box{max-width:860px; display:flex; flex-direction:column; gap:6px}
+.gwr-sticks{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; font-size:13.5px}
+.gwr-stick{overflow-wrap:anywhere}
 
 .gwh-chk strong{font-weight:600}
 .gwh-lists{gap:6px}

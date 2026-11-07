@@ -58,8 +58,15 @@ const FEATURES = {
     running: (tel) => { const t = require('../ai/local').telemetryAi(tel); return !!t && t.service === 'managed'; },
   },
   radio: {
-    on: (g) => require('../homeRadio').composeWantsZigbee(g.id),
-    running: (tel) => { const t = require('../homeRadio').telemetryRadio(tel); return !!t && (t.zigbee.service === 'managed' || t.zigbee.service === 'image'); },
+    // deCONZ, zigbee2mqtt or the Thread border router — whichever this gateway should run
+    on: (g) => { const hr = require('../homeRadio'); return hr.composeWantsZigbee(g.id) || hr.composeWantsZ2m(g.id) || hr.composeWantsThread(g.id); },
+    running: (tel) => {
+      const hr = require('../homeRadio');
+      const t = hr.telemetryRadio(tel);
+      if (!t) return false;
+      if (t.stack === 'zigbee2mqtt' || (t.thread && t.thread.want)) return !hr.composeHint(t, 'linux');
+      return t.zigbee.service === 'managed' || t.zigbee.service === 'image';
+    },
   },
 };
 FEATURES.zigbee = FEATURES.radio;

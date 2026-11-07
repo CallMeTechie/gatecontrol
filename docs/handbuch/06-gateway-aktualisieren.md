@@ -42,6 +42,7 @@ zusätzliche Container oder Ordner brauchen, kommen deshalb nicht von selbst:
 | Zwischenspeicher | 1.22.0 | `${GC_CACHE_DIR:-./gateway-cache}:/cache` |
 | Failover-Pools, Scan über ein anderes Gateway, Ping der Internetqualität | – | unter `cap_add` die Rechte `NET_RAW`, `SETGID` und `SETUID` |
 | Kameras (Live-Bild, Clips) | 1.28.0 | Dienst `kameras`, Volumes `cam-ctl` und `${GC_CAMERA_DIR:-cam-recordings}:/recordings` |
+| Funk: zigbee2mqtt, Thread Border Router | nach 1.31.0 | Dienste `zigbee2mqtt` und `otbr` (nur wenn gewählt), Volumes `z2m-data` und `otbr-data` |
 
 Du brauchst dieses Kapitel, wenn du eines davon siehst:
 
@@ -326,7 +327,7 @@ volumes:
   edge-state:
   # copy of the broker files + Mosquitto data (data/), owner 61001
   edge-mqtt:
-  # tmpfs shared: the control file of the gateway for the deconz service and its state (radio)
+  # tmpfs shared: the control files of the gateway for deconz, zigbee2mqtt and otbr and their state (radio)
   radio-ctl:
     driver_opts:
       type: tmpfs
@@ -338,6 +339,10 @@ volumes:
       type: tmpfs
       device: tmpfs
       o: "size=1m,uid=0,gid=0,mode=0755"
+  # zigbee2mqtt: configuration.yaml, the Zigbee network and its devices (radio)
+  z2m-data:
+  # Thread border router: the active dataset and network data (radio)
+  otbr-data:
   # the models of the local AI (1–6 GB each)
   ki-models:
   # tmpfs shared: the control files of the gateway for the service kameras and the picture ring (cameras)

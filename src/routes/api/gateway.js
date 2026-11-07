@@ -317,6 +317,26 @@ router.post('/radio/ble', express.json({ limit: '64kb' }), (req, res) => {
   }
 });
 
+/** POST /api/v1/gateway/radio/zigbee — { stack: 'zigbee2mqtt', devices: [...] } (the complete device list of its zigbee2mqtt) */
+router.post('/radio/zigbee', express.json({ limit: '256kb' }), (req, res) => {
+  try {
+    res.json({ ok: true, ...require('../../services/homeRadio').ingestZigbee(req.gateway.peer_id, req.body || {}) });
+  } catch (err) {
+    if (err && err.code === 'invalid') return res.status(400).json({ ok: false, error: 'invalid' });
+    logger.error({ err: err && err.message, peerId: req.gateway.peer_id }, 'gateway zigbee report failed');
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+/** GET /api/v1/gateway/radio/ble/keys — the keys of this gateway's encrypted Bluetooth sensors (never logged, never cached) */
+router.get('/radio/ble/keys', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try { return res.json(require('../../services/homeRadio').keysFor(req.gateway.peer_id)); } catch (err) {
+    logger.error({ err: err && err.message, peerId: req.gateway.peer_id }, 'gateway radio keys failed');
+    return res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
 // ─── Phase 3c, step 4: Kameras (the gateway's docs/cameras.md §2, services/homeCameras.js) ──
 
 const cams = () => require('../../services/homeCameras');

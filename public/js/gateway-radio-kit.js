@@ -13,6 +13,10 @@
 //   badge(d)                   { tone, key, params } of the tab badge, or null (d = the features overview)
 //   rowSticks(sticks)          the names for "Gefunden: …" of the row "Funk"
 //   smarthomeLink(kind, mac)   the deep link "In Smart Home benennen"
+//   stackFor(stick)            'deconz' | 'zigbee2mqtt' | 'thread' | null — what fits a stick best
+//   stickHint(stick, stack)    { key } of "Dieser Stick passt zu zigbee2mqtt" … or null
+//   smallBoard(gateway)        Pi 3 / Zero (≤ 1 GB): hint before zigbee2mqtt / Thread (never a ban)
+//   threadTone(state) / keyTone(keyState) / matterReady(thread) / validKey(text)
 (function (root, factory) {
   const api = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -82,7 +86,7 @@
     const r = d && d.radio;
     if (!r || !r.enabled || !r.state) return null;
     const s = r.state;
-    if (s.zigbee === 'error' || s.ble === 'error' || s.zigbee === 'key_needed') return { tone: 'red', key: 'gwr.tabs.problem', params: {} };
+    if (s.zigbee === 'error' || s.ble === 'error' || s.zigbee === 'key_needed' || s.threadState === 'error') return { tone: 'red', key: 'gwr.tabs.problem', params: {} };
     if (r.sensors && r.sensors.fresh > 0 && r.ble) return { tone: 'amber', key: 'gwr.tabs.new', params: { n: r.sensors.fresh } };
     const n = (s.zigbee === 'running' && Number.isInteger(s.devices) ? s.devices : 0) + (r.ble && r.sensors ? r.sensors.accepted : 0);
     if (n > 0) return { tone: 'grey', key: 'gwr.tabs.count', params: { n } };
@@ -100,5 +104,43 @@
     return '/plugins/' + SMARTHOME + '?focus=' + encodeURIComponent(kind + ':' + String(mac).toLowerCase());
   }
 
-  return { zigbeeTone, zigbeeText, bleTone, valueParts, sensorTags, secondsLeft, sinceMinutes, badge, rowSticks, smarthomeLink, SMARTHOME };
+  /** What fits a stick: deCONZ for dresden elektronik, zigbee2mqtt for other Zigbee sticks, Thread for RCP-only ones. */
+  function stackFor(s) {
+    if (!s || typeof s !== 'object' || s.kind === 'bluetooth') return null;
+    if (s.deconz) return 'deconz';
+    if (s.z2m) return 'zigbee2mqtt';
+    if (s.thread || s.kind === 'thread') return 'thread';
+    return null;
+  }
+
+  /** The hint next to a stick for the chosen Zigbee stack (null when it fits). */
+  function stickHint(s, stack) {
+    const fit = stackFor(s);
+    if (!fit) return null;
+    if (fit === 'thread') return { key: 'gwr.stick.hint.thread_only' };
+    if (stack === 'deconz' && !s.deconz) return { key: s.z2m ? 'gwr.stick.hint.use_z2m' : 'gwr.stick.hint.unsupported' };
+    if (stack === 'zigbee2mqtt' && !s.z2m) return { key: 'gwr.stick.hint.unsupported' };
+    return null;
+  }
+
+  /** A small board (≤ 1 GB, Pi 3 / Zero): zigbee2mqtt and the border router still run, but memory gets tight. */
+  function smallBoard(g) {
+    const mem = g && Number(g.memTotal);
+    if (Number.isFinite(mem) && mem > 0 && mem <= 1.1 * 1024 ** 3) return true;
+    return /raspberry pi (3|zero)/i.test(String((g && g.model) || ''));
+  }
+
+  function threadTone(state) {
+    if (state === 'running') return 'green';
+    if (state === 'starting' || state === 'stick_busy' || state === 'no_network' || state === 'detached' || state === 'service_missing' || state === 'no_lan') return 'amber';
+    if (state === 'error') return 'red';
+    return 'grey';
+  }
+  function keyTone(k) { return k === 'ok' ? 'green' : (k === 'wrong_key' ? 'red' : (k === 'no_key' || k === 'unsupported' ? 'amber' : 'grey')); }
+  /** Ready for Matter over Thread: the network runs and the host forwards IPv6 into the LAN. */
+  function matterReady(th) { return !!(th && th.state === 'running' && th.forwarding === true); }
+  /** 32 hex digits, with or without colons/spaces (BTHome key, Xiaomi bindkey). */
+  function validKey(v) { return /^[0-9a-f]{32}$/.test(String(v || '').toLowerCase().replace(/[\s:-]/g, '')); }
+
+  return { zigbeeTone, zigbeeText, bleTone, valueParts, sensorTags, secondsLeft, sinceMinutes, badge, rowSticks, smarthomeLink, stackFor, stickHint, smallBoard, threadTone, keyTone, matterReady, validKey, SMARTHOME };
 });
