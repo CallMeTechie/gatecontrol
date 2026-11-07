@@ -224,7 +224,9 @@ class PluginProcess {
         (e) => reply({ t: 'hostResult', id: m.id, ok: false, error: String((e && e.message) || e).slice(0, 300), code: (e && e.code) || null,
           ...(e && Number.isInteger(e.status) && e.code === 'ERR_HTTP' ? { status: e.status } : {}),
           // gc.mail (since 1.216.0): what the mail server answered (≤ 200 characters, without the credentials)
-          ...(e && typeof e.serverText === 'string' ? { serverText: e.serverText.slice(0, 200) } : {}) }))
+          ...(e && typeof e.serverText === 'string' ? { serverText: e.serverText.slice(0, 200) } : {}),
+          // a host API error's reason (gc.print ERR_PRINT_FORMAT: why the file cannot be printed)
+          ...(e && e.code && typeof e.reason === 'string' && /^[a-z][a-z0-9_]{0,39}$/.test(e.reason) ? { reason: e.reason } : {}) }))
       .finally(() => { this.hostCalls--; });
   }
 

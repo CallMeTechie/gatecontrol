@@ -242,6 +242,41 @@ module.exports = (ctx) => {
         }));
         await page.click('.gwn-printdlg .gcd-foot .btn-ghost');
         await until(page, () => !document.querySelector('.gwn-printdlg'));
+
+        // ── a printer without PDF (HP OfficeJet Pro 8720): this 1.24.0 gateway cannot convert → "ab 1.30.0" ──
+        const withHp = (convert) => [...devices(Date.now()), { id: 'h:8720872087208720', name: 'HP OfficeJet Pro 8720', model: 'HP OfficeJet Pro 8720', ip: '192.168.1.80', location: 'Büro', source: 'mdns', online: true, seenAt: Date.now(), problem: null,
+          printer: { state: 'idle', reasons: [], color: true, duplex: true, formats: ['application/vnd.hp-pcl', 'image/jpeg', 'application/pclm', 'image/urf', 'image/pwg-raster', 'application/octet-stream'], copiesMax: 99, markers: [], convert }, scanner: null }];
+        await gw('/print/devices', { scannedAt: Date.now(), devices: withHp(null), search });
+        await fresh(page);
+        await page.reload();
+        await goFeatures(page, GW);
+        step('print: a printer without PDF on a gateway that cannot convert → update hint with 1.30.0, no checkbox', await until(page, (sel) => {
+          const x = document.querySelector(sel + ' [data-print-convert="old"]');
+          return !!x && /HP OfficeJet Pro 8720 nimmt kein PDF/.test(x.textContent) && /ab 1\.30\.0/.test(x.textContent) && !document.querySelector(sel + ' #gwn-f-pdfconv');
+        }, row));
+        // ── 1.30.0 with `print-convert`: the checkbox (on), the printer is converted for ──
+        step('print: heartbeat of a 1.30.0 gateway with print-convert', await heartbeat('1.30.0', [...CAPS, 'print', 'print-convert']) === 200);
+        await gw('/print/devices', { scannedAt: Date.now(), devices: withHp('image/pwg-raster'), search });
+        await fresh(page);
+        await page.reload();
+        await goFeatures(page, GW);
+        step('print: "PDF für Drucker ohne PDF umwandeln" checked, the printer named as converted', await until(page, (sel) => {
+          const box = document.querySelector(sel + ' #gwn-f-pdfconv');
+          const on = document.querySelector(sel + ' [data-print-convert="on"]');
+          return !!box && box.checked && /PDF für Drucker ohne PDF umwandeln/.test(box.parentElement.textContent)
+            && !!on && /HP OfficeJet Pro 8720 nimmt kein PDF – dieses Gateway wandelt/.test(on.textContent);
+        }, row));
+        await view(page, 'gwprint-convert-dark');
+        await page.click(row + ' #gwn-f-pdfconv');
+        step('print: unchecked (real PUT) → features.print.convert false in the config pull', await until(page, (sel) => {
+          const box = document.querySelector(sel + ' #gwn-f-pdfconv');
+          return !!box && !box.checked && !!document.querySelector(sel + ' [data-print-convert="off"]');
+        }, row) && (await (await page.request.fetch(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token } })).json()).features.print.convert === false);
+        await page.click(row + ' #gwn-f-pdfconv');
+        step('print: checked again → convert left out of the config pull (default on)', await until(page, (sel) => {
+          const box = document.querySelector(sel + ' #gwn-f-pdfconv');
+          return !!box && box.checked && !document.querySelector(sel + ' [data-print-convert="off"]');
+        }, row) && !('convert' in (await (await page.request.fetch(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token } })).json()).features.print));
         await view(page, 'gwprint-on-dark');
         await theme(page, 'light');
         await view(page, 'gwprint-on-light');

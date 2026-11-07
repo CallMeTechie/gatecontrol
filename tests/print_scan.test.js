@@ -90,7 +90,7 @@ describe('features.print and the card "Funktionen"', () => {
     assert.equal(bad.status, 400);
     v = (await admin('put', '/features').send({ print: { enabled: true, manual: ['192.168.1.70'] } }).expect(200)).body.gateway;
     assert.equal(v.print.enabled, true);
-    assert.deepEqual(v.features.print, { enabled: true, manual: ['192.168.1.70'] });
+    assert.deepEqual(v.features.print, { enabled: true, manual: ['192.168.1.70'], convert: true });
     assert.deepEqual(v.memory.parts.find((p) => p.key === 'print'), { key: 'print', mb: 20 });
     c = (await gwReq('get', '/config').expect(200)).body;
     assert.deepEqual(c.features.print, { enabled: true, manual: ['192.168.1.70'] });
@@ -264,7 +264,9 @@ describe('gc.print in a plugin process', () => {
     const bw = await api('/submit', { deviceId: BRO, mediaId: jpgMedia, user: annaId, color: true });
     assert.equal(bw.ok, true, JSON.stringify(bw));
     assert.deepEqual([bw.result.format, bw.result.color], ['image/jpeg', false]);
-    assert.equal((await api('/submit', { deviceId: BRO, mediaId: pdfMedia, user: annaId })).code, 'ERR_PRINT_FORMAT');
+    // … because its gateway is too old to convert PDF (no capability print-convert): the reason says so
+    const noPdf = await api('/submit', { deviceId: BRO, mediaId: pdfMedia, user: annaId });
+    assert.deepEqual([noPdf.code, noPdf.reason], ['ERR_PRINT_FORMAT', 'gateway_update']);
     assert.equal((await api('/submit', { deviceId: ID, mediaId: pdfMedia, user: annaId, copies: 0 })).code, 'ERR_INVALID');
     assert.equal((await api('/submit', { deviceId: ID, mediaId: pdfMedia, user: 99999 })).code, 'ERR_NOT_FOUND');
     assert.equal((await api('/submit', { deviceId: 'h:ffffffffffffffff', mediaId: pdfMedia, user: annaId })).code, 'ERR_NOT_FOUND');
@@ -275,7 +277,9 @@ describe('gc.print in a plugin process', () => {
     const media = require('../src/services/plugins/media');
     const reg = require('../src/services/plugins/registry');
     const doc = (await media.storeBuffer(reg.get(P), Buffer.from('PK\u0003\u0004 not really a docx'), { mime: 'application/octet-stream', name: 'Hausaufgabe.docx', owner: annaId })).mediaId;
-    assert.equal((await api('/submit', { deviceId: ID, mediaId: doc, user: annaId })).code, 'ERR_PRINT_FORMAT');
+    const office = await api('/submit', { deviceId: ID, mediaId: doc, user: annaId });
+    assert.deepEqual([office.code, office.reason], ['ERR_PRINT_FORMAT', 'file_type']);
+    assert.deepEqual([(await api('/pages', { mediaId: doc })).code, (await api('/pages', { mediaId: doc })).reason], ['ERR_PRINT_FORMAT', 'file_type']);
     const out = await hp.printable(await jpeg(), 'image/jpeg', { formats: ['application/pdf'] });
     assert.equal(out.format, 'application/pdf');
     assert.equal(require('../src/services/printPdf').pdfPages(out.buf), 1);
@@ -368,6 +372,95 @@ describe('gc.print in a plugin process', () => {
     db.prepare('UPDATE gateway_meta SET alive = 0 WHERE peer_id = ?').run(gw.peer.id);
     assert.equal((await api('/submit', { deviceId: ID, mediaId: pdfMedia, user: annaId })).code, 'ERR_PRINT_OFFLINE');
     db.prepare('UPDATE gateway_meta SET alive = 1 WHERE peer_id = ?').run(gw.peer.id);
+  });
+});
+
+describe('a printer without PDF (HP OfficeJet Pro 8720): the gateway converts', () => {
+  const HP = 'h:8720872087208720';
+  const hp8720 = (convert) => ({
+    ...device(), id: HP, name: 'HP OfficeJet Pro 8720', model: 'HP OfficeJet Pro 8720', ip: '192.168.2.40', scanner: null,
+    printer: { ...device().printer, formats: ['application/vnd.hp-pcl', 'image/jpeg', 'application/pclm', 'image/urf', 'image/pwg-raster', 'application/octet-stream'], convert },
+  });
+  const health = (caps, version, model = 'Raspberry Pi 3 Model B Plus Rev 1.3', conv = { enabled: true, available: true }) => JSON.stringify({ telemetry: {
+    gateway_version: version, capabilities: caps, hardware: { model }, features: { print: { enabled: true, convert: conv } },
+  } });
+  let letter;
+  let photo;
+
+  before(async () => {
+    const media = require('../src/services/plugins/media');
+    const reg = require('../src/services/plugins/registry');
+    // the school letter as Android's print dialog hands it over — but stored without a type (octet-stream) and without ".pdf"
+    letter = (await media.storeBuffer(reg.get(P), require('../src/services/printPdf').jpegsToPdf([{ jpeg: await jpeg() }]), { mime: 'application/octet-stream', name: '306ee607-2bbf-458c-880c-ed82755135bf-Digitaler Elternabend', owner: annaId })).mediaId;
+    photo = (await media.storeBuffer(reg.get(P), await jpeg(120, 80), { mime: 'image/jpeg', name: 'foto.jpg', owner: annaId })).mediaId;
+    db.prepare('UPDATE gateway_meta SET last_health = ?, alive = 1 WHERE peer_id = ?').run(health(['print', 'print-convert'], '1.30.0'), gw2.peer.id);
+    await admin('put', '/features', gw2).send({ print: { enabled: true } }).expect(200);
+  });
+
+  it('the type by the content: a PDF without type and name is a PDF; pages counted', async () => {
+    assert.deepEqual((await api('/pages', { mediaId: letter })).result, { pages: 1, format: 'application/pdf' });
+    const pdf = require('../src/services/printPdf');
+    assert.equal(pdf.sniff(Buffer.from('%PDF-1.7')), 'application/pdf');
+    assert.equal(pdf.sniff(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf, 0x0a]), Buffer.from('%PDF-1.4')])), 'application/pdf');
+    assert.equal(pdf.sniff(await jpeg()), 'image/jpeg');
+    assert.equal(pdf.sniff(Buffer.from('\x89PNG\r\n\x1a\n0000', 'latin1')), 'image/png');
+    assert.equal(pdf.sniff(Buffer.from('RIFF0000WEBPVP8 ')), 'image/webp');
+    assert.equal(pdf.sniff(Buffer.from('\0\0\0\x18ftypheic0000', 'latin1')), 'image/heic');
+    assert.equal(pdf.sniff(Buffer.from('PK\u0003\u0004 docx')), null);
+  });
+
+  it('the gateway converts (printer.convert): the PDF is queued as PDF, a picture as a PDF page', async () => {
+    await gwReq('post', '/print/devices', gw2).send({ devices: [hp8720('image/pwg-raster')] }).expect(200);
+    const d = (await api('/devices')).result.find((x) => x.id === HP);
+    assert.equal(d.printer.convert, 'image/pwg-raster');
+    const r = await api('/submit', { deviceId: HP, mediaId: letter, user: annaId });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual([r.result.format, r.result.pages, r.result.name], ['application/pdf', 1, '306ee607-2bbf-458c-880c-ed82755135bf-Digitaler Elternabend']);
+    assert.ok((await gwReq('get', '/print/jobs', gw2).expect(200)).body.jobs.some((x) => x.id === r.result.id && x.format === 'application/pdf'));
+    // the printer names JPEG: a picture goes as JPEG; a test page as PDF (the gateway converts it)
+    assert.equal((await api('/submit', { deviceId: HP, mediaId: photo, user: annaId })).result.format, 'image/jpeg');
+    assert.equal((await api('/test', { deviceId: HP, user: annaId })).result.format, 'application/pdf');
+    const noJpeg = await hp.printable(await jpeg(), 'image/jpeg', { formats: ['image/pwg-raster'], convert: 'image/pwg-raster' });
+    assert.equal(noJpeg.format, 'application/pdf');
+  });
+
+  it('the reasons when it cannot: converting off, the printer names no format for it, the gateway too old', async () => {
+    await gwReq('post', '/print/devices', gw2).send({ devices: [hp8720(null)] }).expect(200);
+    let r = await api('/submit', { deviceId: HP, mediaId: letter, user: annaId });
+    assert.deepEqual([r.code, r.reason], ['ERR_PRINT_FORMAT', 'printer']);
+    assert.match(r.error, /takes no PDF \(it names application\/vnd\.hp-pcl/);
+    await admin('put', '/features', gw2).send({ print: { convert: false } }).expect(200);
+    assert.deepEqual((await gwReq('get', '/config', gw2).expect(200)).body.features.print, { enabled: true, manual: [], convert: false });
+    r = await api('/submit', { deviceId: HP, mediaId: letter, user: annaId });
+    assert.deepEqual([r.code, r.reason], ['ERR_PRINT_FORMAT', 'convert_off']);
+    const bad = await admin('put', '/features', gw2).send({ print: { convert: 'yes' } });
+    assert.equal(bad.status, 400);
+    db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(health(['print'], '1.28.0'), gw2.peer.id);
+    r = await api('/submit', { deviceId: HP, mediaId: letter, user: annaId });
+    assert.deepEqual([r.code, r.reason], ['ERR_PRINT_FORMAT', 'gateway_update']);
+    // a picture still works (JPEG); a broken PDF: damaged
+    assert.equal((await api('/submit', { deviceId: HP, mediaId: photo, user: annaId })).ok, true);
+    const media = require('../src/services/plugins/media');
+    const broken = (await media.storeBuffer(require('../src/services/plugins/registry').get(P), Buffer.from('not a pdf at all'), { mime: 'application/pdf', name: 'kaputt.pdf', owner: annaId })).mediaId;
+    r = await api('/submit', { deviceId: ID, mediaId: broken, user: annaId });
+    assert.deepEqual([r.code, r.reason], ['ERR_PRINT_FORMAT', 'damaged']);
+  });
+
+  it('the row "Drucken & Scannen": the checkbox, printers without PDF, "Gateway zu alt", the tool, the Pi hint', async () => {
+    let v = (await admin('get', '/features', gw2).expect(200)).body.gateway.print;
+    assert.deepEqual([v.convert, v.convertSupported, v.minGatewayConvert], [false, false, '1.30.0']);
+    assert.deepEqual(v.devices.map((x) => [x.name, x.noPdf, x.convert]), [['HP OfficeJet Pro 8720', true, null]]);
+    db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(health(['print', 'print-convert'], '1.30.0', undefined, { enabled: true, available: false }), gw2.peer.id);
+    await admin('put', '/features', gw2).send({ print: { convert: true } }).expect(200);
+    assert.deepEqual((await gwReq('get', '/config', gw2).expect(200)).body.features.print, { enabled: true, manual: [] });
+    await gwReq('post', '/print/devices', gw2).send({ devices: [hp8720('image/urf'), { ...device(), id: 'h:9999999999999999', ip: '192.168.2.41', scanner: null }] }).expect(200);
+    v = (await admin('get', '/features', gw2).expect(200)).body.gateway.print;
+    assert.deepEqual([v.convert, v.convertSupported, v.convertAvailable, v.convertHint], [true, true, false, 'slow']);
+    assert.deepEqual(v.devices.map((x) => [x.noPdf, x.convert]), [[true, 'image/urf'], [false, null]]);
+    // an unknown target from the gateway is not taken
+    await gwReq('post', '/print/devices', gw2).send({ devices: [hp8720('application/pclm')] }).expect(200);
+    assert.equal(hp.devices().find((x) => x.id === HP).printer.convert, null);
+    await admin('put', '/features', gw2).send({ print: { enabled: false } }).expect(200);
   });
 });
 

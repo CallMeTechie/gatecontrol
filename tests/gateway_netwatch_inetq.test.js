@@ -143,10 +143,13 @@ describe('admin API: features', () => {
 
   it('capabilities in the telemetry win over the version', () => {
     const f = require('../src/services/gatewayFeatures');
-    assert.deepEqual(f.support({ gateway_version: '1.20.0', capabilities: ['netwatch'] }), { netwatch: true, inetq: false, presence: false, ups: false, dns: false, cache: false, print: false, radio: false, ai: false, cameras: false, version: '1.20.0', minGateway: '1.21.0', minGateway3b: '1.22.0', minGatewayPrint: '1.24.0', minGatewayRadio: '1.25.0', minGatewayAi: '1.26.0', minGatewayCameras: '1.28.0' });
+    assert.deepEqual(f.support({ gateway_version: '1.20.0', capabilities: ['netwatch'] }), { netwatch: true, inetq: false, presence: false, ups: false, dns: false, cache: false, print: false, radio: false, ai: false, cameras: false, printConvert: false, version: '1.20.0', minGateway: '1.21.0', minGateway3b: '1.22.0', minGatewayPrint: '1.24.0', minGatewayPrintConvert: '1.30.0', minGatewayRadio: '1.25.0', minGatewayAi: '1.26.0', minGatewayCameras: '1.28.0' });
     // phase 3c: only by the capability, never by the version
     assert.equal(f.support({ gateway_version: '1.30.0' }).print, false);
     assert.equal(f.support({ gateway_version: '1.24.0', capabilities: ['print'] }).print, true);
+    // PDF for printers without PDF: only by the capability print-convert (gateway 1.30.0+)
+    assert.equal(f.support({ gateway_version: '1.30.0', capabilities: ['print'] }).printConvert, false);
+    assert.equal(f.support({ gateway_version: '1.30.0', capabilities: ['print', 'print-convert'] }).printConvert, true);
     assert.equal(f.support({ gateway_version: '1.21.0' }).inetq, true);
     assert.equal(f.support({}).ups, false);
   });
