@@ -393,7 +393,7 @@ describe('a printer without PDF (HP OfficeJet Pro 8720): the gateway converts', 
     // the school letter as Android's print dialog hands it over — but stored without a type (octet-stream) and without ".pdf"
     letter = (await media.storeBuffer(reg.get(P), require('../src/services/printPdf').jpegsToPdf([{ jpeg: await jpeg() }]), { mime: 'application/octet-stream', name: '306ee607-2bbf-458c-880c-ed82755135bf-Digitaler Elternabend', owner: annaId })).mediaId;
     photo = (await media.storeBuffer(reg.get(P), await jpeg(120, 80), { mime: 'image/jpeg', name: 'foto.jpg', owner: annaId })).mediaId;
-    db.prepare('UPDATE gateway_meta SET last_health = ?, alive = 1 WHERE peer_id = ?').run(health(['print', 'print-convert'], '1.29.0'), gw2.peer.id);
+    db.prepare('UPDATE gateway_meta SET last_health = ?, alive = 1 WHERE peer_id = ?').run(health(['print', 'print-convert'], '1.30.0'), gw2.peer.id);
     await admin('put', '/features', gw2).send({ print: { enabled: true } }).expect(200);
   });
 
@@ -448,9 +448,9 @@ describe('a printer without PDF (HP OfficeJet Pro 8720): the gateway converts', 
 
   it('the row "Drucken & Scannen": the checkbox, printers without PDF, "Gateway zu alt", the tool, the Pi hint', async () => {
     let v = (await admin('get', '/features', gw2).expect(200)).body.gateway.print;
-    assert.deepEqual([v.convert, v.convertSupported, v.minGatewayConvert], [false, false, '1.29.0']);
+    assert.deepEqual([v.convert, v.convertSupported, v.minGatewayConvert], [false, false, '1.30.0']);
     assert.deepEqual(v.devices.map((x) => [x.name, x.noPdf, x.convert]), [['HP OfficeJet Pro 8720', true, null]]);
-    db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(health(['print', 'print-convert'], '1.29.0', undefined, { enabled: true, available: false }), gw2.peer.id);
+    db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(health(['print', 'print-convert'], '1.30.0', undefined, { enabled: true, available: false }), gw2.peer.id);
     await admin('put', '/features', gw2).send({ print: { convert: true } }).expect(200);
     assert.deepEqual((await gwReq('get', '/config', gw2).expect(200)).body.features.print, { enabled: true, manual: [] });
     await gwReq('post', '/print/devices', gw2).send({ devices: [hp8720('image/urf'), { ...device(), id: 'h:9999999999999999', ip: '192.168.2.41', scanner: null }] }).expect(200);

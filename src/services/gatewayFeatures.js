@@ -36,7 +36,7 @@ const MIN_GATEWAY_3B = '1.22.0';
 // phase 3c, step 1 (Drucken & Scannen): only by the capability `print` — the version is the hint
 const MIN_GATEWAY_PRINT = '1.24.0';
 // PDF an Drucker ohne PDF: das Gateway wandelt um (Capability `print-convert`, die Version ist der Hinweis)
-const MIN_GATEWAY_PRINT_CONVERT = '1.29.0';
+const MIN_GATEWAY_PRINT_CONVERT = '1.30.0';
 // phase 3c, step 2 (Funk): only by the capability `radio`
 const MIN_GATEWAY_RADIO = '1.25.0';
 // phase 3c, step 3 (Lokale KI): only by the capability `ai`
@@ -57,7 +57,7 @@ const DEFAULTS = Object.freeze({
   print: { enabled: false, manual: [], convert: true },
   radio: { zigbee: null, ble: false },
   ai: { enabled: false, source: 'service', lanUrl: null, lanApi: 'ollama' },
-  cameras: { enabled: false, subnets: [] },
+  cameras: { enabled: false, subnets: [], storagePath: null },
 });
 
 // Memory of the parts (MB), contract §6 — guide values for the hint only (deCONZ ≈ 90 MB with a
@@ -146,7 +146,7 @@ function applyPatch(current, patch) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
-  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert'], radio: ['zigbee', 'ble'], ai: ['enabled', 'source', 'lanUrl', 'lanApi'], cameras: ['enabled', 'subnets'] };
+  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert'], radio: ['zigbee', 'ble'], ai: ['enabled', 'source', 'lanUrl', 'lanApi'], cameras: ['enabled', 'subnets', 'storagePath'] };
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     if (!allowed[k]) continue; // other keys (lanDiscovery, edge) are handled by the route
