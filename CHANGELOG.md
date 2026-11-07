@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.241.1] — 2026-11-07
+
+### Fixes
+- „Alle aktualisieren“ scheitert nicht mehr am Upload-Limit (#428)
+
+---
+
 ## [1.241.0] — 2026-11-07
 
 ### Features
