@@ -32,8 +32,32 @@ var DT = function (k, p) { return D.t(k, p); };
 
   // ─── DOM helpers (textContent only) ──────────────────────
   var SVGNS = 'http://www.w3.org/2000/svg';
-  // attributes: a fixed set of names (never on*), links only to this server
-  var ATTR_OK = /^(?:id|type|role|title|for|href|download|placeholder|value|style|aria-[a-z]+|data-[a-z-]+)$/;
+  // attributes: a fixed set, each set under its own constant name (never on*);
+  // links only to this server
+  function attr(n, k, v) {
+    switch (k) {
+      case 'id': n.id = v; break;
+      case 'type': n.setAttribute('type', v); break;
+      case 'role': n.setAttribute('role', v); break;
+      case 'title': n.title = v; break;
+      case 'for': n.htmlFor = v; break;
+      case 'download': n.setAttribute('download', v); break;
+      case 'href': if (/^[#/][^/\\]/.test(v)) n.setAttribute('href', v); break;
+      case 'aria-label': n.setAttribute('aria-label', v); break;
+      case 'aria-hidden': n.setAttribute('aria-hidden', v); break;
+      case 'aria-pressed': n.setAttribute('aria-pressed', v); break;
+      case 'aria-checked': n.setAttribute('aria-checked', v); break;
+      case 'aria-expanded': n.setAttribute('aria-expanded', v); break;
+      case 'aria-haspopup': n.setAttribute('aria-haspopup', v); break;
+      case 'data-id': n.dataset.id = v; break;
+      case 'data-action': n.dataset.action = v; break;
+      case 'data-peer-id': n.dataset.peerId = v; break;
+      case 'data-batch-id': n.dataset.batchId = v; break;
+      case 'data-state': n.dataset.state = v; break;
+      case 'data-hint': n.dataset.hint = v; break;
+      default: break;
+    }
+  }
   function h(tag, attrs, kids) {
     var n = document.createElement(tag);
     Object.keys(attrs || {}).forEach(function (k) {
@@ -41,9 +65,7 @@ var DT = function (k, p) { return D.t(k, p); };
       if (v == null || v === false) return;
       if (k === 'class') n.className = v;
       else if (k === 'text') n.textContent = v;
-      else if (!ATTR_OK.test(k)) return;
-      else if (k === 'href' && !/^[#/][^/\\]/.test(String(v))) return;
-      else n.setAttribute(k, v === true ? '' : String(v));
+      else attr(n, k, v === true ? '' : String(v));
     });
     (kids || []).forEach(function (c) { if (c != null) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
     return n;
