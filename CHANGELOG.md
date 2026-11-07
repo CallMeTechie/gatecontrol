@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.245.0] — 2026-11-07
+
+### Features
+- Lokale KI – Grafikkarte je Gateway, API-Schlüssel und Namen/IPv6 für den KI-Server im Heimnetz (#432)
+
+---
+
 ## [1.244.0] — 2026-11-07
 
 ### Features
