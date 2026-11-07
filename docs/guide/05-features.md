@@ -137,6 +137,22 @@ printer is off, a job waits up to 24 hours and starts as soon as it is back.
 If a device says “Certificate changed”, its security certificate changed (for
 example after a firmware update) – confirm it in the plugin and it carries on.
 
+### Printing from an Android phone
+
+With the Android app 1.84.0 or later you print from any app on the printers at
+home – with and without VPN. The job goes through the server and the gateway at
+home. It needs the plugin “Print & scan” 1.0.1 or later and the right to print.
+
+- **Switch on the print service (once):** Android settings › Connected devices ›
+  Printing › “GateControl”. In an app's print dialog the printers are then called
+  “GateControl – …” (with the printer's name).
+- **Share:** share a PDF or picture › “Print with GateControl” – printer, copies,
+  colour, both sides, “Print at home”.
+- **No printers?** In the app under Settings › Printing › “Print through GateControl”
+  the app says why (plugin not available for the app, no right, no connection).
+
+If the printer is off, the job waits up to 24 hours (“off – prints as soon as it is on”).
+
 ### Printer not found
 
 Below the switch the row shows what the last search saw (“Last search today
@@ -170,6 +186,7 @@ clips stay on the gateway (on a Synology: on the NAS).
 
 **Requirements:**
 
+- GateControl server 1.240.0+ ([updates](02-server-setup.md#29-setting-up-updates)).
 - Gateway 1.28.0+. If it is older, the row says “Gateway too old – needs 1.28.0”.
 - Switch **ONVIF** or **RTSP** on in the camera:
   - Reolink: app or web interface › Settings › Network › Advanced › Server
@@ -179,12 +196,15 @@ clips stay on the gateway (on a Synology: on the NAS).
   - Others: look for “ONVIF” or “RTSP” in the camera's manual.
 - The plugin “Door & Camera” (Settings › Plugins › Catalogue) 1.6.0 or later.
 - Synology/Linux: the current compose file with the service `kameras` once
-  (ffmpeg only, ≈ 80 MB). Without it the row offers “Download docker-compose.yml”
-  ([chapter 6](06-updating-a-gateway.md)); search, test picture and motion events
-  work already, the live picture and clips do not. The Raspberry Pi image adds the
-  service itself.
+  (ffmpeg only, ≈ 80 MB). Without it the row offers “Download docker-compose.yml” –
+  download it and recreate the project
+  ([chapter 6](06-updating-a-gateway.md#63-synology-renewing-the-compose-file)); search,
+  test picture and motion events work already, the live picture and clips do not.
+  Optionally `GC_CAMERA_DIR=/volume1/kameras` in the `.env` puts the clips into that
+  folder of the NAS (see “Recordings”). The Raspberry Pi image adds the service itself;
+  older images (before gateway 1.28.0) need a new image for it.
 
-**Switching on:** tab “Funktionen” → “Geräte im Heimnetz” → “Kameras”. Then in the
+**Switching on:** tab “Features” → “Devices at home” → “Cameras”. Then in the
 plugin “Door & Camera” › “Add camera”: the gateway searches for cameras (“Reolink
 E1 Zoom · 192.168.1.73 · ONVIF – newly found”) or you enter an `rtsp://…` address,
 plus name, user and password of the camera. “Connect and test” shows a test picture;
@@ -201,7 +221,7 @@ are in the volume `cam-recordings` – on a Synology `GC_CAMERA_DIR=/volume1/kam
 the `.env` puts them into a folder of the NAS.
 
 **Live picture:** only when the phone or PC is in the **VPN** (or in the server's own
-network). On the road without VPN the app shows a new snapshot every 10 seconds. A push
+network). On the road without VPN the portal and the app show a new snapshot every 10 seconds. A push
 with a snapshot for people comes at most once per camera every 5 minutes.
 
 **Hints instead of bans:** on a Raspberry Pi 3 B+ the row says “Cameras: at most 1 camera
@@ -211,7 +231,8 @@ network is in the gateway's settings (`PUT /api/v1/gateways/:id/features { camer
 
 **Privacy:** the gateway records sound only when you switch it on per camera – recording
 conversations is only allowed with everybody's consent. Who may see which camera is set in
-the plugin under “Permissions”.
+the plugin under “Permissions” (column “sieht”): only these people see it in the portal and
+in the app, get the push and find the clips.
 
 ## Radio (Zigbee, Bluetooth, Thread)
 

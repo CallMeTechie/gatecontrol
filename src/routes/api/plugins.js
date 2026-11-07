@@ -14,6 +14,9 @@
 //   POST   /install                { token, accept: true, licenseKey? }
 //   GET    /:id                    one plugin (+ storage size)
 //   GET    /:id/logs
+//   GET    /:id/handbook?lang=de  the handbook (plugin.json handbook) → { version, handbookVersion, lang, html, toc[] }
+//   GET    /:id/notices           Einrichtungshinweise (plugin.json setupNotices) with their state
+//   POST   /:id/notices/:notice/ack   "Erledigt"
 //   GET    /:id/settings           declared settings + values (secrets only as set/unset)
 //   PUT    /:id/settings           { values }
 //   POST   /:id/enable | /:id/disable | /:id/restart
@@ -191,6 +194,43 @@ router.get('/:id/logs', (req, res) => {
   const p = pluginParam(req, res);
   if (!p) return;
   res.json({ ok: true, logs: require('../../services/plugins/registry').logs(p.id, 200) });
+});
+
+// the tab "Handbuch": rendered on the server (services/plugins/markdown.js), in the language asked for, else German
+router.get('/:id/handbook', (req, res) => {
+  const p = pluginParam(req, res);
+  if (!p) return;
+  const want = req.query.lang === 'en' || req.query.lang === 'de' ? req.query.lang : lang(req);
+  try {
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, ...require('../../services/plugins/handbook').get(p, want) });
+  } catch (e) {
+    if (e && (e.code === 'no_handbook' || e.code === 'handbook_missing')) {
+      return res.status(404).json({ ok: false, code: e.code, error: tr(req, 'plugins.err.' + e.code, 'No handbook') });
+    }
+    fail(req, res, e);
+  }
+});
+
+router.get('/:id/notices', (req, res) => {
+  const p = pluginParam(req, res);
+  if (!p) return;
+  try { res.json({ ok: true, notices: require('../../services/plugins/setupNotices').all(p, lang(req)) }); } catch (e) { fail(req, res, e); }
+});
+
+router.post('/:id/notices/:notice/ack', (req, res) => {
+  const p = pluginParam(req, res);
+  if (!p) return;
+  const notices = require('../../services/plugins/setupNotices');
+  const id = String(req.params.notice || '');
+  try {
+    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) throw new notices.NoticeError('notice_not_found');
+    notices.ack(p, id, { user: currentUser(req), ip: req.ip });
+    res.json({ ok: true, notices: notices.all(p, lang(req)), plugin: plugins.view(plugins.get(p.id), lang(req)) });
+  } catch (e) {
+    if (e && e.code === 'notice_not_found') return res.status(404).json({ ok: false, code: e.code, error: tr(req, 'plugins.err.notice_not_found', 'Notice not found') });
+    fail(req, res, e);
+  }
 });
 
 router.get('/:id/settings', async (req, res) => {

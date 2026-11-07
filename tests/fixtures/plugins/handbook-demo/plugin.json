@@ -1,0 +1,42 @@
+{
+  "id": "handbook-demo",
+  "name": { "de": "Handbuch-Demo", "en": "Manual demo" },
+  "version": "1.6.0",
+  "publisher": "GateControl Tests",
+  "description": { "de": "Plugin mit Handbuch und Einrichtungshinweisen (Tests).", "en": "Plugin with a manual and setup notices (tests)." },
+  "gatecontrol": ">=1.0.0",
+  "entry": "server/index.js",
+  "permissions": {},
+  "handbook": { "de": "HANDBUCH.md", "en": "HANDBOOK.md" },
+  "setupNotices": [
+    {
+      "id": "cameras-compose",
+      "since": "1.6.0",
+      "title": { "de": "Kameras: Compose-Datei erneuern", "en": "Cameras: renew the compose file" },
+      "text": { "de": "Für Kameras im Heimnetz braucht das Gateway einmalig die neue Compose-Datei mit dem Dienst kameras.", "en": "For cameras at home the gateway needs the new compose file with the service kameras once." },
+      "handbook": { "de": "kameras-einrichten", "en": "setting-up-cameras" },
+      "check": { "type": "gatewayService", "feature": "cameras", "service": "kameras" }
+    },
+    {
+      "id": "camera-settings",
+      "since": "1.5.0",
+      "title": { "de": "Kamera-Einstellungen prüfen", "en": "Check the camera settings" },
+      "text": { "de": "Stell an jeder Kamera ONVIF und einen Benutzer für GateControl ein.", "en": "Switch on ONVIF and a user for GateControl on every camera." },
+      "handbook": "kamera-einstellungen"
+    },
+    {
+      "id": "later-step",
+      "since": "2.0.0",
+      "title": "Erst ab 2.0.0",
+      "text": "Gilt für diese Version noch nicht.",
+      "check": { "type": "manual" }
+    },
+    {
+      "id": "host-new",
+      "since": "1.0.0",
+      "title": "GateControl aktuell",
+      "text": "Braucht GateControl 1.0.0.",
+      "check": { "type": "hostVersion", "min": "1.0.0" }
+    }
+  ]
+}

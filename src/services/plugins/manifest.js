@@ -19,7 +19,7 @@ const NOTIFY_TOPIC_RE = /^[a-z][a-z0-9_-]{0,31}$/;
 // Einstellungen › Plugins › <plugin>; their ids must not be one of the plugin area's own tabs
 // (?tab=<id>, public/js/plugins-page.js TABS)
 const SETTINGS_PAGES_MAX = 4;
-const SETTINGS_TAB_IDS = new Set(['overview', 'settings', 'perms', 'license', 'log', 'versions']);
+const SETTINGS_TAB_IDS = new Set(['overview', 'settings', 'perms', 'license', 'log', 'versions', 'handbook']);
 // Push budget of a plugin per hour: permissions.notify true → 30, { perHour } → 1…1000 (until 1.218.0: 120).
 const NOTIFY_PER_HOUR_DEFAULT = 30;
 const NOTIFY_PER_HOUR_MAX = 1000;
@@ -248,6 +248,83 @@ function validateMedia(v, err) {
   if (!Number.isSafeInteger(handOver) || handOver < 1024 || handOver > maxBytes || handOver > quota) { err('media.handOverMaxBytes: invalid'); return null; }
   return { maxBytes: v.maxBytes, types, quotaDefault: quota, uploads: v.uploads !== false, resumable: v.resumable === true, handOverMaxBytes: handOver, ...(areas ? { areas: true } : {}),
     ...(v.previews === true ? { previews: true } : {}) };
+}
+
+// handbook (since 1.241.0, docs/plugins.md "Handbook"): { de, en } — Markdown files of the package
+// shown under Einstellungen › Plugins › <plugin> › Handbuch (services/plugins/handbook.js)
+const HANDBOOK_MAX_BYTES = 256 * 1024;
+const HANDBOOK_LANGS = ['de', 'en'];
+// setupNotices (since 1.241.0, docs/plugins.md "Setup notices"): steps an administrator has to do by
+// hand after an install or update (services/plugins/setupNotices.js)
+const NOTICES_MAX = 20;
+const NOTICE_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const NOTICE_ANCHOR_RE = /^[a-z0-9][a-z0-9-]{0,99}$/;
+const NOTICE_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/;
+const NOTICE_TITLE_MAX = 120;
+const NOTICE_TEXT_MAX = 1000;
+const NOTICE_CHECK_TYPES = Object.freeze(['manual', 'gatewayService', 'gatewayVersion', 'hostVersion']);
+
+function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+
+function validateHandbook(v, err, opts) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) { err('handbook: invalid'); return null; }
+  const out = {};
+  for (const [k, p] of Object.entries(v)) {
+    if (!HANDBOOK_LANGS.includes(k)) continue; // a later language: ignored by this host
+    if (!isFile(p) || !/\.md$/i.test(p)) { err(`handbook.${k}: invalid`); return null; }
+    if (opts.files && !opts.files.has(p)) { err(`handbook.${k}: missing`); return null; }
+    if (opts.sizes && opts.sizes.has(p) && opts.sizes.get(p) > HANDBOOK_MAX_BYTES) { err(`handbook.${k}: too large`); return null; }
+    out[k] = p;
+  }
+  if (!out.de && !out.en) { err('handbook: invalid'); return null; }
+  return out;
+}
+
+/** One check of a setup notice; an unknown type is a manual one (a newer plugin on an older host). */
+function noticeCheck(c) {
+  if (c == null) return { type: 'manual' };
+  if (!c || typeof c !== 'object' || Array.isArray(c) || typeof c.type !== 'string') return null;
+  if (!NOTICE_CHECK_TYPES.includes(c.type)) return { type: 'manual', declared: c.type.slice(0, 32) };
+  if (c.type === 'manual') return { type: 'manual' };
+  if (c.type === 'gatewayService') {
+    if (!NOTICE_NAME_RE.test(String(c.feature || '')) || !NOTICE_NAME_RE.test(String(c.service || ''))) return null;
+    return { type: 'gatewayService', feature: c.feature, service: c.service };
+  }
+  if (typeof c.min !== 'string' || !semver.valid(c.min)) return null;
+  if (c.type === 'hostVersion') return { type: 'hostVersion', min: c.min.trim() };
+  if (c.feature != null && !NOTICE_NAME_RE.test(String(c.feature))) return null;
+  return { type: 'gatewayVersion', min: c.min.trim(), ...(c.feature != null ? { feature: c.feature } : {}) };
+}
+
+function validateSetupNotices(v, err) {
+  if (!Array.isArray(v) || v.length > NOTICES_MAX) { err('setupNotices: invalid'); return []; }
+  const out = [];
+  const ids = new Set();
+  for (const n of v) {
+    const bad = (what) => { err(`setupNotices${n && typeof n.id === 'string' ? '.' + n.id.slice(0, 64) : ''}: ${what}`); };
+    if (!n || typeof n !== 'object' || Array.isArray(n)) { err('setupNotices: invalid'); return []; }
+    if (typeof n.id !== 'string' || !NOTICE_ID_RE.test(n.id)) { bad('invalid id'); return []; }
+    if (ids.has(n.id)) { bad('duplicate id'); return []; }
+    ids.add(n.id);
+    if (typeof n.since !== 'string' || !semver.valid(n.since)) { bad('invalid since'); return []; }
+    const title = locText(n.title, NOTICE_TITLE_MAX);
+    if (!title) { bad('invalid title'); return []; }
+    const text = locText(n.text, NOTICE_TEXT_MAX);
+    if (!text) { bad('invalid text'); return []; }
+    // handbook: the anchor of a heading — one for both languages or { de, en }
+    let anchor = null;
+    if (n.handbook != null) {
+      const h = n.handbook;
+      const ok = (x) => typeof x === 'string' && NOTICE_ANCHOR_RE.test(x);
+      if (ok(h)) anchor = { de: h, en: h };
+      else if (isObj(h) && (h.de != null || h.en != null) && (h.de == null || ok(h.de)) && (h.en == null || ok(h.en))) anchor = { de: h.de || h.en, en: h.en || h.de };
+      else { bad('invalid handbook'); return []; }
+    }
+    const check = noticeCheck(n.check);
+    if (!check) { bad('invalid check'); return []; }
+    out.push({ id: n.id, since: n.since.trim(), title, text, handbook: anchor, check });
+  }
+  return out;
 }
 
 function isFile(p) {
@@ -645,6 +722,11 @@ function validate(raw, opts = {}) {
   // an invalid section refuses the package like every other field
   m.edge = raw.edge == null ? null : require('../edge/manifest').validate(raw.edge, err, { files: opts.files });
 
+  // handbook / setupNotices (since 1.241.0): older hosts ignore both keys
+  m.handbook = raw.handbook == null ? null : validateHandbook(raw.handbook, err, opts);
+  m.setupNotices = raw.setupNotices == null ? [] : validateSetupNotices(raw.setupNotices, err);
+  if (m.handbook === null) for (const n of m.setupNotices) n.handbook = null; // nothing to open
+
   return errors.length ? { ok: false, errors } : { ok: true, manifest: m, errors: [] };
 }
 
@@ -668,6 +750,6 @@ function migrationsOf(manifest, files) {
 }
 
 module.exports = {
-  validate, loc, locText, migrationsOf, isFile, quotaBytes, PORTAL_SECTION_TABS, SETTINGS_PAGES_MAX, SETTINGS_TAB_IDS, NOTIFY_PER_HOUR_DEFAULT, NOTIFY_PER_HOUR_MAX, BACKGROUND_MIN_S,
+  validate, loc, locText, migrationsOf, isFile, HANDBOOK_MAX_BYTES, NOTICES_MAX, NOTICE_CHECK_TYPES, NOTICE_TEXT_MAX, NOTICE_TITLE_MAX, quotaBytes, PORTAL_SECTION_TABS, SETTINGS_PAGES_MAX, SETTINGS_TAB_IDS, NOTIFY_PER_HOUR_DEFAULT, NOTIFY_PER_HOUR_MAX, BACKGROUND_MIN_S,
   DB_MAX_MB_MIN, DB_MAX_MB_MAX, AI_CAPABILITIES, MAIL_CONNECTIONS_DEFAULT, MAIL_CONNECTIONS_MAX, SERVICE_PER_HOUR_MIN, SERVICE_PER_HOUR_MAX, MEDIA_MAX_BYTES, MEDIA_MAX_BYTES_AREAS, MEDIA_QUOTA_DEFAULT, MEDIA_QUOTA_MIN, MEDIA_QUOTA_MAX, MEDIA_QUOTA_MAX_AREAS, MIME_DENY_RE, SERVICE_REF_RE, SERVICE_NAME_RE, typeAllowed,
 };

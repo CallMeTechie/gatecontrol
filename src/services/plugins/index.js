@@ -54,7 +54,7 @@ function readManifest(files) {
   if (buf.length > LIMITS.manifestBytes) return { ok: false, errors: ['plugin.json: too large'] };
   let raw;
   try { raw = JSON.parse(buf.toString('utf8')); } catch { return { ok: false, errors: ['plugin.json: not valid JSON'] }; }
-  return manifestLib.validate(raw, { files: new Set(files.keys()) });
+  return manifestLib.validate(raw, { files: new Set(files.keys()), sizes: new Map([...files].map(([k, v]) => [k, v.length])) });
 }
 
 /**
@@ -478,6 +478,7 @@ async function removeInstalled(p, mode) {
     require('./targets').removeAll(id);
     require('./legacy').forget(id);
     require('../kiosk').forgetPlugin(id);
+    require('./setupNotices').forget(id);
   }
   // An uninstalled plugin marks nobody as a kiosk user any more.
   require('../kiosk').invalidate();
@@ -698,6 +699,9 @@ function view(p, lang) {
     uses: [...new Set((m.permissions && Array.isArray(m.permissions.services) ? m.permissions.services : [])
       .map((x) => String(x).split(':')[0]).filter((x) => x && x !== p.id))],
     provides: m.services && m.services.provides ? Object.keys(m.services.provides) : [],
+    // the tab "Handbuch" (plugin.json handbook, since 1.241.0) and the open Einrichtungshinweise (setupNotices)
+    handbook: require('./handbook').has(p),
+    notices: require('./setupNotices').open(p, lang),
   };
 }
 

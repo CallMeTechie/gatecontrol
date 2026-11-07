@@ -113,12 +113,20 @@ describe('tabs of the plugin area (plugins-ui.js)', () => {
     assert.deepEqual(PUI.manageTabs(p, true).map((x) => x.id), ['overview', 'settings', 'resources', 'shared', 'perms', 'license', 'log', 'versions']);
     assert.deepEqual(PUI.manageTabs(p, true)[2], { id: 'resources', page: { id: 'resources', title: 'Ressourcen' } });
     assert.deepEqual(PUI.manageTabs(p, false).map((x) => x.id), ['overview', 'settings', 'resources', 'shared', 'perms', 'license', 'log']);
+    const areaTabs = PUI.MANAGE_TABS.filter((x) => x !== 'handbook');
     for (const status of ['starting', 'crashed', 'disabled', 'blocked']) {
-      assert.deepEqual(PUI.manageTabs({ ...p, status }, true).map((x) => x.id), PUI.MANAGE_TABS, status);
+      assert.deepEqual(PUI.manageTabs({ ...p, status }, true).map((x) => x.id), areaTabs, status);
     }
-    assert.deepEqual(PUI.manageTabs({ status: 'running' }, true).map((x) => x.id), PUI.MANAGE_TABS, 'an older view without settingsPages');
+    assert.deepEqual(PUI.manageTabs({ status: 'running' }, true).map((x) => x.id), areaTabs, 'an older view without settingsPages');
     assert.deepEqual(PUI.manageTabs({ status: 'running', settingsPages: [{ id: 'log', title: 'x' }, { id: 'a', title: 'A' }, { id: 'a', title: 'A' }] }, false).map((x) => x.id),
       ['overview', 'settings', 'a', 'perms', 'license', 'log'], 'never an area tab twice');
+  });
+
+  it('"Handbuch" last, only for a plugin with a handbook (plugin.json handbook), whatever its state', () => {
+    assert.deepEqual(PUI.manageTabs({ ...p, handbook: true }, true).map((x) => x.id), ['overview', 'settings', 'resources', 'shared', 'perms', 'license', 'log', 'versions', 'handbook']);
+    assert.deepEqual(PUI.manageTabs({ status: 'crashed', handbook: true }, false).map((x) => x.id), ['overview', 'settings', 'perms', 'license', 'log', 'handbook']);
+    assert.equal(PUI.manageTab(PUI.manageTabs({ ...p, handbook: true }, false), 'handbook'), 'handbook');
+    assert.equal(PUI.manageTab(PUI.manageTabs(p, false), 'handbook'), 'overview', 'no handbook: no tab');
   });
 
   it('?tab=: a tab the plugin has, else the overview', () => {

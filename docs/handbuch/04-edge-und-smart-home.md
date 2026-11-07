@@ -165,4 +165,31 @@ Der Edge-Container läuft, kommt aber nicht zum Server durch.
 
 **Prüfen:** „Verbunden seit …“ erscheint.
 
+## 4.5 Handbuch und Einrichtungshinweise der Plugins
+
+Ab GateControl **1.241.0** bringt jedes Plugin, das eines hat, sein eigenes
+Handbuch mit: Einstellungen → Plugins → *Plugin* → Reiter „Handbuch“. Dort
+steht, was das Plugin kann, was es voraussetzt, wie du es Schritt für Schritt
+einrichtest (auch Schritte außerhalb von GateControl, etwa die Compose-Datei
+oder Einstellungen an einer Kamera), Berechtigungen, häufige Fragen und was in
+der installierten Version neu ist. Links zeigen auf Abschnitte, das
+Inhaltsverzeichnis steht neben dem Text (auf dem Handy darüber). Das Handbuch
+kommt mit jedem Plugin-Update neu.
+
+Braucht ein Plugin nach der Installation oder einem Update **deine Hilfe**,
+zeigt GateControl einen gelben Hinweis:
+
+- oben auf der Plugin-Seite (auf jedem Reiter) mit „Im Handbuch nachlesen“
+  und „Erledigt“,
+- als „Handeln nötig“ am Plugin in der Liste „Meine Plugins“,
+- als „Plugins brauchen deine Hilfe“ auf dem Dashboard.
+
+Manche Hinweise erledigen sich selbst: Fehlt einem Gateway zum Beispiel der
+Dienst `kameras`, nennt der Hinweis das Gateway und bietet „docker-compose.yml
+herunterladen“ an; sobald der Dienst läuft, verschwindet er. Andere klickst du
+nach getaner Arbeit auf „Erledigt“ – das steht mit deinem Namen im
+Aktivitätsprotokoll.
+
+**Prüfen:** Auf dem Dashboard steht kein „Plugins brauchen deine Hilfe“ mehr.
+
 Weiter mit [Kapitel 5: Funktionen der Heim-Gateways](05-funktionen.md).

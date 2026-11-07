@@ -3714,6 +3714,24 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_home_camera_events_time ON home_camera_events(started_at);`,
     detect: (db) => ['home_cameras', 'home_camera_gateways', 'home_camera_events'].every((t) => tableExists(db, t)),
   },
+  {
+    version: 137,
+    name: 'plugin_notice_acks',
+    // Einrichtungshinweise of plugins (plugin.json setupNotices, services/plugins/setupNotices.js):
+    // "Erledigt" of an administrator per plugin and notice id — who and when, and the plugin
+    // version it was confirmed for. Removed with "Alles löschen" of the plugin.
+    sql: `
+      CREATE TABLE IF NOT EXISTS plugin_notice_acks (
+        plugin_id       TEXT NOT NULL,
+        notice_id       TEXT NOT NULL,
+        plugin_version  TEXT,
+        acked_by        TEXT,
+        acked_by_id     INTEGER,
+        acked_at        INTEGER NOT NULL,
+        PRIMARY KEY (plugin_id, notice_id)
+      );`,
+    detect: (db) => tableExists(db, 'plugin_notice_acks'),
+  },
 ];
 
 module.exports = { migrations };
