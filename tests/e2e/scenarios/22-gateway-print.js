@@ -16,7 +16,11 @@
 // public address, takes one typed and the one the search saw in the other
 // subnet (one click), saves (real PUT) → features.print.manual in the config
 // pull. "Neu suchen" against the unreachable seeded gateway → a clear
-// message. Light/dark, 390 px without sideways scroll (row and dialog).
+// message. A printer without PDF: "ab 1.30.0", then the checkbox "PDF … umwandeln".
+// „Texterkennung“ and „Office-Dateien drucken“ (gateway 1.32.0, docs/print.md): first "ab 1.32.0", then the two
+// checkboxes (real PUTs → features.print.ocr / .office in the config pull), the size of the office service, the
+// compose file it needs, "Office-Dateien gehen jetzt" once the service runs. Light/dark, 390 px without sideways
+// scroll (row and dialog).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -92,11 +96,11 @@ module.exports = (ctx) => {
       });
       step('print: seeded gateway prepared with a known token', !!(old && old.api_token_hash));
       const gw = async (p, body) => (await page.request.fetch(BASE + '/api/v1/gateway' + p, { method: 'POST', data: body, headers: { Authorization: 'Bearer ' + token } })).status();
-      const heartbeat = (version, caps) => gw('/heartbeat', { uptime_s: 3600, telemetry: {
+      const heartbeat = (version, caps, printTel = {}) => gw('/heartbeat', { uptime_s: 3600, telemetry: {
         gateway_version: version, node_version: 'v20.19.0', cpu_cores: 4, mem_total: 16 * 1024 ** 3, mem_used: 2 * 1024 ** 3,
         hardware: { model: 'Synology DS918+', cpu_cores: 4, mem_total: 16 * 1024 ** 3, storage: { total: 4e12, free: 1.2e12 }, radios: [] },
         lan_ip: '192.168.1.23', default_gateway_ip: '192.168.1.1', state_dir_writable: true, capabilities: caps,
-        features: caps.includes('print') ? { print: { enabled: false, running: false, devices: 0 } } : {},
+        features: caps.includes('print') ? { print: { enabled: false, running: false, devices: 0, ...printTel } } : {},
       } });
       await page.goto(BASE + '/gateways');
       const lang0 = await page.evaluate(() => document.documentElement.lang || 'en');
@@ -277,6 +281,47 @@ module.exports = (ctx) => {
           const box = document.querySelector(sel + ' #gwn-f-pdfconv');
           return !!box && box.checked && !document.querySelector(sel + ' [data-print-convert="off"]');
         }, row) && !('convert' in (await (await page.request.fetch(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token } })).json()).features.print));
+        const pull = async () => (await (await page.request.fetch(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token } })).json()).features.print;
+
+        // ── Texterkennung and Office-Dateien drucken: a 1.30.0 gateway → "ab 1.32.0", no checkboxes ──
+        step('print: 1.30.0 → "Texterkennung … ab 1.32.0", no checkboxes for them', await until(page, (sel) => {
+          const x = document.querySelector(sel + ' [data-print-extras="old"]');
+          return !!x && /Texterkennung/.test(x.textContent) && /ab 1\.31\.0/.test(x.textContent) && !document.querySelector(sel + ' #gwn-f-print-ocr') && !document.querySelector(sel + ' #gwn-f-print-office');
+        }, row));
+        const P3C = [...CAPS, 'print', 'print-convert', 'print-ocr', 'print-office', 'print-media'];
+        step('print: heartbeat of a 1.32.0 gateway (tesseract there, the service office not yet)', await heartbeat('1.32.0', P3C, { ocr: { enabled: false, available: true, langs: ['deu', 'eng'] }, office: { enabled: false, service: 'absent' } }) === 200);
+        await fresh(page);
+        await page.reload();
+        await goFeatures(page, GW);
+        step('print: both checkboxes off; the size of the office service named before switching on', await until(page, (sel) => {
+          const ocr = document.querySelector(sel + ' #gwn-f-print-ocr');
+          const off = document.querySelector(sel + ' #gwn-f-print-office');
+          const size = document.querySelector(sel + ' [data-print-office="size"]');
+          return !!ocr && !ocr.checked && /Texterkennung für Scans/.test(ocr.parentElement.textContent)
+            && !!off && !off.checked && /Office-Dateien drucken/.test(off.parentElement.textContent)
+            && !!size && /≈ 200 MB/.test(size.textContent) && /700 MB/.test(size.textContent);
+        }, row));
+        await page.click(row + ' #gwn-f-print-ocr');
+        step('print: „Texterkennung“ on (real PUT) → features.print.ocr in the config pull', await until(page, (sel) => {
+          const box = document.querySelector(sel + ' #gwn-f-print-ocr');
+          return !!box && box.checked && !!document.querySelector(sel + ' [data-print-ocr="on"]');
+        }, row) && (await pull()).ocr === true);
+        await page.click(row + ' #gwn-f-print-office');
+        step('print: „Office-Dateien drucken“ on (real PUT) → features.print.office; the compose file is needed', await until(page, (sel) => {
+          const box = document.querySelector(sel + ' #gwn-f-print-office');
+          const c = document.querySelector(sel + ' [data-print-office="compose"]');
+          return !!box && box.checked && !!c && /Compose-Datei/.test(c.textContent) && !!c.querySelector('button');
+        }, row) && (await pull()).office === true);
+        await view(page, 'gwprint-office-compose-dark');
+        // the service runs (the gateway's next heartbeat): "Office-Dateien gehen jetzt"
+        step('print: heartbeat with the service office running', await heartbeat('1.32.0', P3C, { ocr: { enabled: true, available: true }, office: { enabled: true, service: 'managed' } }) === 200);
+        await fresh(page);
+        await page.reload();
+        await goFeatures(page, GW);
+        step('print: "Office-Dateien gehen jetzt"', await until(page, (sel) => {
+          const on = document.querySelector(sel + ' [data-print-office="on"]');
+          return !!on && /Office-Dateien gehen jetzt/.test(on.textContent);
+        }, row));
         await view(page, 'gwprint-on-dark');
         await theme(page, 'light');
         await view(page, 'gwprint-on-light');

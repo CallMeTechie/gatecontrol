@@ -195,6 +195,12 @@
     '      o: "size=256m,uid=0,gid=0,mode=0700"',
     '  # clips and thumbnails of the cameras (when GC_CAMERA_DIR is not set)',
     '  cam-recordings:',
+    '  # tmpfs shared: office files of the gateway for the service office and the PDFs (only while converting)',
+    '  office-ctl:',
+    '    driver_opts:',
+    '      type: tmpfs',
+    '      device: tmpfs',
+    '      o: "size=160m,uid=0,gid=0,mode=0700"',
   ];
 
   // The local AI (phase 3c, step 3 — gateway >= 1.26.0, docs/local-ai.md of the gateway): Ollama,
@@ -299,6 +305,52 @@
     '      - TZ=${TZ:-Etc/UTC}',
     '    healthcheck:',
     '      test: ["CMD-SHELL", "[ ! -s /gc-cam/kameras.sh ] || [ $$(( $$(date +%s) - $$(cut -d\' \' -f2 /gc-cam/kameras.state 2>/dev/null || echo 0) )) -lt 60 ]"]',
+    '      interval: 60s',
+    '      timeout: 10s',
+    '      retries: 3',
+    '      start_period: 60s',
+    '    logging:',
+    '      driver: json-file',
+    '      options:',
+    '        max-size: "10m"',
+    '        max-file: "3"',
+  ];
+
+  // Office files (Drucken & Scannen, gateway >= 1.32.0, docs/print.md of the gateway): LibreOffice without a
+  // screen, only when „Office-Dateien drucken“ is switched on for this gateway (≈ 200 MB download, ≈ 700 MB on disk)
+  const OFFICE_SERVICE = [
+    '',
+    '  # Office files for printing (gateway >= 1.32.0, docs/print.md of the gateway) — LibreOffice without a screen:',
+    '  # no network, no capabilities, read-only. The entry waits for /gc-office/office.sh, which the gateway writes,',
+    '  # and runs it. Image ≈ 200 MB download, ≈ 700 MB on disk; up to ≈ 500 MB RAM while converting.',
+    '  office:',
+    '    image: ghcr.io/callmetechie/gatecontrol-gateway:office',
+    '    restart: unless-stopped',
+    '    network_mode: none        # the documents come through the volume, nothing goes to the network',
+    '    user: "0:0"               # reads the files of the gateway (root, 0600) — without any capability',
+    '    cap_drop:',
+    '      - ALL',
+    '    security_opt:',
+    '      - no-new-privileges:true',
+    '    read_only: true',
+    '    tmpfs:',
+    '      - /tmp:size=256m',
+    '    # the gateway goes first: a smaller CPU share, LibreOffice goes first when memory runs out',
+    '    cpu_shares: 256',
+    '    oom_score_adj: 800',
+    '    mem_limit: 1g',
+    '    pids_limit: 128',
+    '    depends_on:',
+    '      - gateway               # creates office-ctl and writes office.sh',
+    '    volumes:',
+    '      - type: volume            # files of the gateway, the PDF back',
+    '        source: office-ctl',
+    '        target: /gc-office',
+    '        volume: { nocopy: true }',
+    '    environment:',
+    '      - TZ=${TZ:-Etc/UTC}',
+    '    healthcheck:',
+    '      test: ["CMD-SHELL", "[ ! -s /gc-office/office.sh ] || [ $$(( $$(date +%s) - $$(cut -d\' \' -f2 /gc-office/office.state 2>/dev/null || echo 0) )) -lt 60 ]"]',
     '      interval: 60s',
     '      timeout: 10s',
     '      retries: 3',
@@ -528,6 +580,11 @@
         '        source: cam-ctl',
         '        target: /gc-cam',
         '        volume: { nocopy: true }',
+        // print (gateway >= 1.32.0): office files for the service office, the PDF back; harmless without it
+        '      - type: volume            # print: office files for the service office, the PDF back',
+        '        source: office-ctl',
+        '        target: /gc-office',
+        '        volume: { nocopy: true }',
         recordingsLine(o.cameraDir)
       );
     }
@@ -560,6 +617,9 @@
       // cameras (phase 3c, step 4): only when switched on for this gateway (the gateway's example keeps it in the
       // profile "kameras")
       if (o.cameras === true) lines.push(...KAMERAS_SERVICE);
+      // office files (Drucken & Scannen): only when „Office-Dateien drucken“ is on (the gateway's example keeps it
+      // in the profile "office")
+      if (o.office === true) lines.push(...OFFICE_SERVICE);
       lines.push(...VOLUMES);
     }
     const header = headerNotes.length > 0 ? headerNotes.join('\n') + '\n' : '';

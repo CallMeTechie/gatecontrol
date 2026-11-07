@@ -15,7 +15,7 @@ const { NOTIFY_PER_HOUR_DEFAULT, NOTIFY_PER_HOUR_MAX } = require('./manifest');
 const notifyWindow = new Map();
 
 class HostApiError extends Error {
-  /** reason: a short machine word that says why (gc.print ERR_PRINT_FORMAT: file_type | damaged | printer | gateway_update | convert_off) */
+  /** reason: a short machine word that says why (gc.print ERR_PRINT_FORMAT: file_type | damaged | printer | gateway_update | convert_off | office_off | office_missing) */
   constructor(code, message, reason) { super(message || code); this.code = code; if (reason) this.reason = reason; }
 }
 
@@ -1536,7 +1536,8 @@ async function homeCacheCall(plugin, op, args) {
 // ─── Drucken & Scannen (permissions.print, phase 3c) ───────────────────
 //
 // gc.print.devices() / discover() / submit() / testPage() / job() / jobs() /
-// cancel() / pages() / scan() / scanStatus() / cancelScan() / pdf() —
+// cancel() / pages() / scan() / scanStatus() / cancelScan() / pdf() /
+// ocrAvailable() / ocr() / ocrStatus() / cancelOcr() —
 // services/homePrint.js, docs/plugins.md "Print & scan". The plugin names
 // device ids only; jobs and scans belong to the plugin that made them, files
 // are its own media. Rights per person are the plugin's to check before
@@ -1560,6 +1561,10 @@ async function printCall(plugin, op, args, ctx) {
       case 'scanStatus': return hp.scanStatus(plugin, a.id);
       case 'cancelScan': return await hp.cancelScan(plugin, a.id);
       case 'pdf': return await hp.makePdf(plugin, a);
+      case 'ocrAvailable': return hp.ocrAvailable();
+      case 'ocr': return await hp.ocr(plugin, a);
+      case 'ocrStatus': return hp.ocrStatus(plugin, a.id);
+      case 'cancelOcr': return await hp.cancelOcr(plugin, a.id);
       default: break;
     }
   } catch (e) {
@@ -1824,7 +1829,7 @@ function callTimeout(api, args) {
   if (api.startsWith('mail.')) return require('./mail').callTimeout(api, args);
   if (api === 'http.fetchImage') return 20000;
   // gc.print: a file up to 50 MB read, converted (sharp) and written; a PDF of up to 100 pages
-  if (api === 'print.submit' || api === 'print.pdf' || api === 'print.testPage' || api === 'print.pages') return 120000;
+  if (api === 'print.submit' || api === 'print.pdf' || api === 'print.testPage' || api === 'print.pages' || api === 'print.ocr') return 120000;
   // gc.edge.call: the call's own limit (≤ 30 s) and the way to the gateway and back
   if (api === 'edge.call') {
     const t = args && Number.isFinite(args.timeoutMs) ? Math.max(100, Math.min(30000, args.timeoutMs)) : 30000;
@@ -2221,6 +2226,7 @@ async function handle(plugin, api, args, ctx) {
     // Drucken & Scannen (permissions.print, homePrint.js — phase 3c)
     case 'print.devices': case 'print.discover': case 'print.submit': case 'print.testPage': case 'print.job': case 'print.jobs':
     case 'print.cancel': case 'print.pages': case 'print.scan': case 'print.scanStatus': case 'print.cancelScan': case 'print.pdf':
+    case 'print.ocrAvailable': case 'print.ocr': case 'print.ocrStatus': case 'print.cancelOcr':
       return printCall(plugin, api.slice('print.'.length), args, ctx);
     // Funk (permissions.radio, homeRadio.js — phase 3c, step 2)
     case 'radio.sensors': return radioCall(plugin, 'sensors');

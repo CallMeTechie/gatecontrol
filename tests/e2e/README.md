@@ -117,7 +117,10 @@ scenarios/22-gateway-print.js /gateways › Funktionen › „Geräte im Heimnet
                         alt – ab 1.24.0“, Schalter gesperrt), dann 1.24.0: einschalten
                         (echter PUT → features.print im Config-Pull), Gerätebericht des
                         Gateways → „Gefunden: …“, ≈ MB, Weg ins Plugin (Katalog),
-                        Handbuch-Link, hell/dunkel, 390 px
+                        Handbuch-Link; Drucker ohne PDF („ab 1.30.0“, „PDF … umwandeln“);
+                        1.32.0: „Texterkennung“ und „Office-Dateien drucken“ (echte PUTs
+                        → features.print.ocr/office, Größe des Dienstes, Compose-Datei,
+                        „Office-Dateien gehen jetzt“), hell/dunkel, 390 px
 scenarios/24-gateway-ai.js Lokale KI: Einstellungen › KI-Anbieter (Anbieterzeile
                         „Lokale KI · <Gateway>“, „Lokale KI einrichten“: Gateway mit RAM/
                         Kernen/GPU, Modelle mit „empfohlen/passt/nicht empfohlen“, echter

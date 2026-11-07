@@ -16,8 +16,15 @@
 //   POST /api/v1/gateway/print/jobs/:id         jobReport()      sending | printing | waiting | done | failed
 //   PUT  /api/v1/gateway/print/scans/:id/pages/:n  storePage()   one scanned page → media of the plugin
 //   POST /api/v1/gateway/print/scans/:id        scanReport()     scanning | done | failed
+//   GET  /api/v1/gateway/print/ocr/:id/pages/:n  ocrPage()        a page for the text recognition
+//   PUT  /api/v1/gateway/print/ocr/:id/document|text  storeOcr()  its searchable PDF and text
+//   POST /api/v1/gateway/print/ocr/:id          ocrReport()      running | done | failed
 //   management calls to the gateway (gateways.mgmtCall): /api/print/discover,
-//   /api/print/jobs (fetch now), /api/print/scan, /api/print/scan/cancel
+//   /api/print/jobs (fetch now), /api/print/scan, /api/print/scan/cancel,
+//   /api/print/ocr, /api/print/ocr/cancel
+//   switches per gateway beside `enabled`: convert (PDF for printers without
+//   PDF), ocr ("Texterkennung"), office ("Office-Dateien drucken", the
+//   gateway's service office) — gateway docs/print.md
 //   the last search of a gateway (`search` of the device report and of
 //   telemetry.features.print — gateway docs/print.md "Suche im LAN"): shown in
 //   the row "Drucken & Scannen" with "Neu suchen" (discoverOne()) and the
@@ -33,8 +40,11 @@ const path = require('node:path');
 const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
 const pdf = require('./printPdf');
+const office = require('./printOffice');
 
 const MIN_GATEWAY = '1.24.0';
+// text recognition, office files, PCLm, paper and tray (capabilities print-ocr, print-office, print-media — the version is the hint)
+const MIN_GATEWAY_P3C = '1.32.0';
 const MAX_FILE = 50 * 1024 * 1024;
 const MAX_DEVICES = 64;
 const MAX_MANUAL = 16;
@@ -53,14 +63,20 @@ const IMAGE_IN = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/
 const PAGE_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
 const SCAN_MODES = { document: { color: 'gray', resolution: 300 }, photo: { color: 'color', resolution: 300 }, bw: { color: 'bw', resolution: 300 } };
 const RESOLUTIONS = [150, 200, 300, 600];
+const OCR_STALE_MS = 3 * 60 * 1000;
+const OCR_OPEN = ['queued', 'running'];
+const OCR_TEXT_MAX = 1024 * 1024;
+const OCR_PDF_MAX = 100 * 1024 * 1024;
+const MEDIA_RE = /^[a-z0-9]+_[a-z0-9.-]+_[0-9.]+x[0-9.]+(mm|in)$/;
+const SOURCE_RE = /^[a-z][a-z0-9-]{0,39}$/;
 
 class PrintError extends Error {
-  /** reason (only for `format`): why it cannot be printed — file_type | damaged | printer | gateway_update | convert_off */
+  /** reason (only for `format`): why it cannot be printed — file_type | damaged | printer | gateway_update | convert_off | office_off | office_missing */
   constructor(code, message, reason) { super(message || code); this.code = code; if (reason) this.reason = reason; }
 }
 
 // The formats a gateway turns PDF into for a printer without PDF (device report printer.convert, gateway docs/print.md "Umwandeln")
-const CONVERT_TARGETS = ['image/pwg-raster', 'image/urf', 'image/jpeg'];
+const CONVERT_TARGETS = ['image/pwg-raster', 'image/urf', 'application/pclm', 'image/jpeg'];
 
 function db() { return getDb(); }
 function json(s) { try { return s ? JSON.parse(s) : null; } catch { return null; } }
@@ -96,22 +112,51 @@ function dropFile(id) { try { fs.rmSync(jobFile(id), { force: true }); } catch (
 function normalizeSettings(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
   const manual = Array.isArray(r.manual) ? [...new Set(r.manual.filter((x) => typeof x === 'string').map((x) => x.trim()).filter(isRfc1918))].slice(0, 16) : [];
-  // convert: PDF for printers without PDF converted on the gateway — on unless switched off
-  return { enabled: r.enabled === true, manual, convert: r.convert !== false };
+  // convert: PDF for printers without PDF converted on the gateway — on unless switched off;
+  // ocr ("Texterkennung") and office ("Office-Dateien drucken"): off unless switched on
+  return { enabled: r.enabled === true, manual, convert: r.convert !== false, ocr: r.ocr === true, office: r.office === true };
 }
 
 function settingsOf(peerId) { return require('./gatewayFeatures').get(peerId).print; }
 
-/** features.print of the config pull (`convert` only when switched off — the gateway's default is on, the hash of all others stays) */
+/**
+ * features.print of the config pull: `convert` only when switched off, `ocr`/`office` only when switched on —
+ * the gateway's defaults, so the config hash of every gateway that changed nothing stays.
+ */
 function configPayload(peerId) {
   const s = settingsOf(peerId);
-  return { enabled: s.enabled, manual: s.manual.slice(), ...(s.convert === false ? { convert: false } : {}) };
+  return {
+    enabled: s.enabled, manual: s.manual.slice(),
+    ...(s.convert === false ? { convert: false } : {}), ...(s.ocr ? { ocr: true } : {}), ...(s.office ? { office: true } : {}),
+  };
+}
+
+/** "docker-compose.yml herunterladen": the service office when „Office-Dateien drucken“ is on for this gateway. */
+function composeWantsOffice(peerId) {
+  try { const s = settingsOf(peerId); return s.enabled && s.office === true; } catch { return false; }
 }
 
 // ─── Devices (gateway → server) ────────────────────────────────────────
 
 const bool = (v) => v === true;
 const strList = (v, n, len, re) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && (!re || re.test(x))).slice(0, n).map((x) => x.slice(0, len)) : []);
+
+/** printer.media of a report (paper and trays, gateway ≥ 1.32.0) → { sizes, default, sources, sourceDefault, ready } */
+function cleanMedia(m) {
+  const o = m && typeof m === 'object' && !Array.isArray(m) ? m : {};
+  const sizes = strList(o.sizes, 12, 64, MEDIA_RE);
+  const sources = strList(o.sources, 8, 40, SOURCE_RE);
+  return {
+    sizes,
+    default: typeof o.default === 'string' && sizes.includes(o.default) ? o.default : null,
+    sources,
+    sourceDefault: typeof o.sourceDefault === 'string' && sources.includes(o.sourceDefault) ? o.sourceDefault : null,
+    ready: (Array.isArray(o.ready) ? o.ready : []).slice(0, 8).filter((r) => r && typeof r === 'object').map((r) => ({
+      size: typeof r.size === 'string' && sizes.includes(r.size) ? r.size : null,
+      source: typeof r.source === 'string' && sources.includes(r.source) ? r.source : null,
+    })).filter((r) => r.size || r.source),
+  };
+}
 
 /** One device of a report, checked and cut (all input of the gateway) → the stored view or null. */
 function cleanDevice(d) {
@@ -139,6 +184,9 @@ function cleanDevice(d) {
       copiesMax: Number.isInteger(p.copiesMax) ? Math.max(1, Math.min(999, p.copiesMax)) : 1,
       // a printer without PDF: the format its gateway converts PDF into (null: it cannot — switched off, too old, no matching format)
       convert: CONVERT_TARGETS.includes(p.convert) ? p.convert : null,
+      // office files printable here: „Office-Dateien drucken“ on, the gateway's service office runs, PDF goes (gateway ≥ 1.32.0)
+      office: bool(p.office),
+      media: cleanMedia(p.media),
       markers: (Array.isArray(p.markers) ? p.markers : []).slice(0, 12).filter((m) => m && typeof m === 'object').map((m) => ({
         name: clean(m.name, 60),
         color: typeof m.color === 'string' && COLOR_RE.test(m.color.toUpperCase()) ? m.color.toUpperCase() : null,
@@ -317,7 +365,7 @@ function jobView(r) {
   if (!r) return null;
   return {
     id: r.id, deviceId: r.device_id, gatewayId: r.peer_id, user: r.user_id, name: r.name, format: r.format, bytes: r.size,
-    pages: r.pages, copies: r.copies, color: r.color === 1, duplex: r.duplex === 1,
+    pages: r.pages, copies: r.copies, color: r.color === 1, duplex: r.duplex === 1, media: r.media || null, source: r.source || null,
     state: r.state, error: r.error || null, message: r.message || null,
     createdAt: iso(r.created_at), updatedAt: iso(r.updated_at), expiresAt: iso(r.expires_at), doneAt: iso(r.done_at),
   };
@@ -360,26 +408,62 @@ function noPdfReason(device) {
   return 'printer';
 }
 
+/**
+ * Why an office file does not go to this printer: its gateway is too old (no print-office), „Office-Dateien
+ * drucken“ is off there, its service office is not running yet (being set up, missing in the compose file), or
+ * the printer takes no PDF and the gateway cannot convert for it (printer).
+ */
+function officeReason(device) {
+  if (!device || !device.gatewayId) return 'office_off';
+  const tel = telemetryOf(device.gatewayId);
+  const caps = tel && Array.isArray(tel.capabilities) ? tel.capabilities : [];
+  if (!caps.includes('print-office')) return 'gateway_update';
+  if (!settingsOf(device.gatewayId).office) return 'office_off';
+  const o = tel && tel.features && tel.features.print && tel.features.print.office;
+  if (!o || o.service !== 'managed') return 'office_missing';
+  return 'printer';
+}
+
 /** The type of a file by its content (magic bytes), else by the stored type. */
 function typeOf(buf, mime) {
   return pdf.sniff(buf) || String(mime || '').split(';')[0].trim().toLowerCase();
+}
+
+/** Plain text → a PDF (Courier, A4) — no LibreOffice needed. */
+function textPdf(buf) {
+  try { return pdf.textToPdf(office.decodeText(buf)); } catch { throw new PrintError('too_large', 'the text has too many pages'); }
 }
 
 /**
  * The bytes in a form the printer takes: PDF as it is (the printer names
  * application/pdf, or its gateway converts PDF — printer.convert), pictures
  * as JPEG (sharp, turned upright) or — for a printer without JPEG — as a PDF
- * page. The type counts by the content (%PDF, JPEG, PNG …), not by the name
- * or the uploaded type. Office files and the like: format (reason file_type).
+ * page, plain text as a PDF made here, office files (Word, Excel, PowerPoint,
+ * OpenDocument, RTF) as they are when the printer's gateway turns them into a
+ * PDF (printer.office — „Office-Dateien drucken“). The type counts by the
+ * content (%PDF, JPEG, PNG, the parts of a ZIP …), not by the name or the
+ * uploaded type. Anything else: format (reason file_type).
  * device: the printer's device (gatewayId) for the reason when it cannot.
- * → { buf, format, pages }
+ * → { buf, format, pages, estimated? }
  */
-async function printable(buf, mime, printer, device = null) {
+async function printable(buf, mime, printer, device = null, name = null) {
   const fmts = printer.formats || [];
   const takes = (f) => !fmts.length || fmts.includes(f);
   const converts = CONVERT_TARGETS.includes(printer.convert);
-  const type = typeOf(buf, mime);
+  let type = typeOf(buf, mime);
   const named = fmts.length ? fmts.join(', ') : 'nothing';
+  if (type !== 'application/pdf' && !IMAGE_IN.includes(type) && office.isText(buf, mime, name)) {
+    // plain text: a PDF made here, then as any PDF
+    const t = textPdf(buf);
+    buf = t.pdf;
+    type = 'application/pdf';
+  }
+  const off = type === 'application/pdf' || IMAGE_IN.includes(type) ? null : office.officeInfo(buf);
+  if (off) {
+    if (!printer.office) throw new PrintError('format', 'office files are printed when „Office-Dateien drucken“ is on for the gateway of this printer', officeReason(device));
+    // the pages the file names (Word, PowerPoint, OpenDocument text) — else counted as one until the gateway reports them
+    return { buf, format: off.mime, pages: off.pages || 1, estimated: !off.pages };
+  }
   if (type === 'application/pdf') {
     const pages = pdf.pdfPages(buf);
     if (!pages) throw new PrintError('format', 'not a readable PDF file', 'damaged');
@@ -395,10 +479,13 @@ async function printable(buf, mime, printer, device = null) {
     if (takes('application/pdf') || converts) return { buf: pdf.jpegsToPdf([{ jpeg }]), format: 'application/pdf', pages: 1 };
     throw new PrintError('format', `this printer takes neither JPEG nor PDF (it names ${named})`, noPdfReason(device));
   }
-  throw new PrintError('format', 'only PDF files and pictures can be printed', 'file_type');
+  throw new PrintError('format', 'only PDF files, pictures, plain text and office files can be printed', 'file_type');
 }
 
-/** Pages of a file before printing (the plugin's page limit). → { pages, format } */
+/**
+ * Pages of a file before printing (the plugin's page limit). → { pages, format, estimated? }
+ * Office files: the pages the file names, else 1 with estimated: true (the gateway reports the real count).
+ */
 async function pagesOf(plugin, { mediaId }) {
   const { row, buf } = await readMedia(plugin, mediaId);
   const type = typeOf(buf, row.mime);
@@ -408,7 +495,10 @@ async function pagesOf(plugin, { mediaId }) {
     return { pages, format: 'application/pdf' };
   }
   if (IMAGE_IN.includes(type)) return { pages: 1, format: type };
-  throw new PrintError('format', 'only PDF files and pictures can be printed', 'file_type');
+  if (office.isText(buf, row.mime, row.name)) return { pages: textPdf(buf).pages, format: office.TEXT };
+  const off = office.officeInfo(buf);
+  if (off) return { pages: off.pages || 1, format: off.mime, ...(off.pages ? {} : { estimated: true }) };
+  throw new PrintError('format', 'only PDF files, pictures, plain text and office files can be printed', 'file_type');
 }
 
 function openJobs(pluginId, userId) {
@@ -416,16 +506,16 @@ function openJobs(pluginId, userId) {
 }
 
 /** Queue a job and tell the gateway (best effort: it fetches the queue every minute anyway). */
-async function enqueue(plugin, { device, user, buf, format, pages, name, copies, color, duplex }, now = Date.now()) {
+async function enqueue(plugin, { device, user, buf, format, pages, name, copies, color, duplex, media = null, source = null }, now = Date.now()) {
   if (buf.length > MAX_FILE) throw new PrintError('too_large', `at most ${MAX_FILE} bytes`);
   if (openJobs(plugin.id, user.id) >= OPEN_PER_USER) throw new PrintError('busy', `at most ${OPEN_PER_USER} open jobs per person`);
   const id = newId('pj');
   fs.mkdirSync(jobsDir(), { recursive: true, mode: 0o700 });
   fs.writeFileSync(jobFile(id), buf, { mode: 0o600 });
   const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
-  db().prepare(`INSERT INTO print_jobs (id, plugin_id, user_id, peer_id, device_id, name, format, size, sha256, pages, copies, color, duplex, state, created_at, updated_at, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`)
-    .run(id, plugin.id, user.id, device.gatewayId, device.id, name, format, buf.length, sha256, pages, copies, color ? 1 : 0, duplex ? 1 : 0, now, now, now + JOB_TTL_MS);
+  db().prepare(`INSERT INTO print_jobs (id, plugin_id, user_id, peer_id, device_id, name, format, size, sha256, pages, copies, color, duplex, media, source, state, created_at, updated_at, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`)
+    .run(id, plugin.id, user.id, device.gatewayId, device.id, name, format, buf.length, sha256, pages, copies, color ? 1 : 0, duplex ? 1 : 0, media, source, now, now, now + JOB_TTL_MS);
   try {
     require('./activity').log('print_job_created', `Print job "${name}" for "${user.display_name || user.username}" on "${device.name}" (plugin "${plugin.id}")`, {
       source: 'plugin', severity: 'info', details: { plugin: plugin.id, job: id, userId: user.id, device: device.id, gateway: device.gatewayId, pages, copies },
@@ -441,16 +531,22 @@ function options(a, printer) {
   if (!Number.isInteger(copies) || copies < 1 || copies > copiesMax) throw new PrintError('invalid', `copies: 1 … ${copiesMax}`);
   if (a.color != null && typeof a.color !== 'boolean') throw new PrintError('invalid', 'color: true or false');
   if (a.duplex != null && typeof a.duplex !== 'boolean') throw new PrintError('invalid', 'duplex: true or false');
-  return { copies, color: a.color === true && !!printer.color, duplex: a.duplex === true && !!printer.duplex };
+  // paper and tray: only what the printer names (gateway ≥ 1.32.0 reports printer.media) — null: its own default
+  const m = printer.media || { sizes: [], sources: [] };
+  const media = a.media == null || a.media === '' ? null : a.media;
+  const source = a.source == null || a.source === '' ? null : a.source;
+  if (media != null && (typeof media !== 'string' || !(m.sizes || []).includes(media))) throw new PrintError('invalid', `media: one of ${(m.sizes || []).join(', ') || 'none (the printer names no paper)'}`);
+  if (source != null && (typeof source !== 'string' || !(m.sources || []).includes(source))) throw new PrintError('invalid', `source: one of ${(m.sources || []).join(', ') || 'none (the printer names no tray)'}`);
+  return { copies, color: a.color === true && !!printer.color, duplex: a.duplex === true && !!printer.duplex, media, source };
 }
 
-/** gc.print.submit({ deviceId, mediaId, user, copies?, color?, duplex?, name? }) */
+/** gc.print.submit({ deviceId, mediaId, user, copies?, color?, duplex?, name?, media?, source? }) */
 async function submit(plugin, a) {
   const user = needUser(a.user);
   const device = needDevice(a.deviceId, 'printer');
   const opts = options(a, device.printer);
   const { row, buf } = await readMedia(plugin, a.mediaId);
-  const p = await printable(buf, row.mime, device.printer, device);
+  const p = await printable(buf, row.mime, device.printer, device, row.name);
   const name = clean(a.name, 120) || clean(row.name, 120) || 'GateControl';
   return jobView(await enqueue(plugin, { device, user, ...p, name, ...opts }));
 }
@@ -524,6 +620,9 @@ function housekeeping(now = Date.now()) {
     dropFile(r.id);
   }
   d.prepare("UPDATE print_scans SET state = 'failed', error = 'timeout', updated_at = ? WHERE state IN ('requested','scanning') AND updated_at < ?").run(now, now - SCAN_STALE_MS);
+  // a text recognition the gateway stopped reporting on (it sends one every minute) ends; a queued one waits up to 30 min
+  d.prepare("UPDATE print_ocr SET state = 'failed', error = 'timeout', updated_at = ? WHERE (state = 'running' AND updated_at < ?) OR (state = 'queued' AND updated_at < ?)").run(now, now - OCR_STALE_MS, now - 30 * 60 * 1000);
+  d.prepare("DELETE FROM print_ocr WHERE updated_at < ? AND state IN ('done','failed','canceled')").run(now - KEEP_MS);
   d.prepare(`DELETE FROM print_jobs WHERE updated_at < ? AND state IN (${FINAL_STATES.map(() => '?').join(',')})`).run(now - KEEP_MS, ...FINAL_STATES);
   d.prepare("DELETE FROM print_scans WHERE updated_at < ? AND state IN ('done','failed','canceled')").run(now - KEEP_MS);
   return { expired: due.length };
@@ -553,6 +652,7 @@ function queueFor(peerId, now = Date.now()) {
   const list = rows.map((r) => ({
     id: r.id, deviceId: r.device_id, format: r.format, size: r.size, sha256: r.sha256, copies: r.copies, color: r.color === 1, duplex: r.duplex === 1,
     name: r.name, user: clean(r.display_name || r.username || 'GateControl', 60), expiresAt: r.expires_at,
+    media: r.media || null, source: r.source || null,
   }));
   const etag = '"' + crypto.createHash('sha256').update(JSON.stringify(list)).digest('hex').slice(0, 32) + '"';
   return { etag, jobs: list };
@@ -590,9 +690,11 @@ function jobReport(peerId, id, body, now = Date.now()) {
   const error = typeof b.error === 'string' && ERR_RE.test(b.error) ? b.error : null;
   const message = clean(b.message, 200) || null;
   const ipp = Number.isInteger(b.ippJobId) && b.ippJobId > 0 ? b.ippJobId : null;
+  // an office file: the pages of the PDF the gateway made (the count before was an estimate)
+  const pages = office.OFFICE_TYPES.includes(r.format) && Number.isInteger(b.pages) && b.pages >= 1 && b.pages <= 100000 ? b.pages : null;
   const final = next === 'done' || next === 'failed';
-  db().prepare(`UPDATE print_jobs SET state = ?, error = ?, message = ?, ipp_job_id = COALESCE(?, ipp_job_id), updated_at = ?, done_at = ? WHERE id = ?`)
-    .run(next, next === 'done' ? null : error, message, ipp, now, final ? now : null, r.id);
+  db().prepare(`UPDATE print_jobs SET state = ?, error = ?, message = ?, ipp_job_id = COALESCE(?, ipp_job_id), pages = COALESCE(?, pages), updated_at = ?, done_at = ? WHERE id = ?`)
+    .run(next, next === 'done' ? null : error, message, ipp, pages, now, final ? now : null, r.id);
   if (final) dropFile(r.id);
   return { state: next };
 }
@@ -769,6 +871,176 @@ async function makePdf(plugin, a) {
   return { mediaId: stored.mediaId, pages: pages.length, bytes: doc.length, name };
 }
 
+// ─── Text recognition (searchable PDF) ─────────────────────────────────
+
+/** The text recognition of a gateway: capability print-ocr, „Texterkennung“ on, tesseract in its image. */
+function ocrReady(peerId) {
+  if (!settingsOf(peerId).enabled || !settingsOf(peerId).ocr) return false;
+  const tel = telemetryOf(peerId);
+  const caps = tel && Array.isArray(tel.capabilities) ? tel.capabilities : [];
+  const o = tel && tel.features && tel.features.print && tel.features.print.ocr;
+  return caps.includes('print-ocr') && !!(o && o.available === true);
+}
+
+/** The gateways that can recognise text, online — `prefer` (the scanner's gateway) first. */
+function ocrGateways(prefer = null) {
+  const ids = db().prepare(`SELECT p.id FROM peers p JOIN gateway_meta gm ON gm.peer_id = p.id
+    WHERE p.peer_type = 'gateway' AND p.enabled = 1 AND gm.alive = 1`).all().map((r) => r.id).filter(ocrReady);
+  return prefer != null && ids.includes(prefer) ? [prefer, ...ids.filter((x) => x !== prefer)] : ids;
+}
+
+/** gc.print.ocrAvailable() → { available, gateways } — is there a gateway with „Texterkennung“ on? */
+function ocrAvailable() {
+  const list = ocrGateways();
+  return { available: list.length > 0, gateways: list.length };
+}
+
+function ocrView(r) {
+  if (!r) return null;
+  return {
+    id: r.id, user: r.user_id, gatewayId: r.peer_id, state: r.state, page: r.page, pages: (json(r.pages) || []).length,
+    error: r.error || null, mediaId: r.state === 'done' ? r.result_media : null, bytes: r.state === 'done' ? r.result_bytes : null,
+    text: r.state === 'done' ? (r.text || '') : null, name: r.name, createdAt: iso(r.created_at), updatedAt: iso(r.updated_at),
+  };
+}
+
+/**
+ * gc.print.ocr({ pages: [mediaId…], user, name, dpi?, deviceId? }) → { ocrId } — a searchable PDF of pictures (the
+ * pages of a scan) made by a gateway with „Texterkennung“ on (the scanner's own first). The result comes with
+ * gc.print.ocrStatus: the PDF as a media file of the plugin (unclaimed, owned by the person) and the text.
+ */
+async function ocr(plugin, a) {
+  const user = needUser(a.user);
+  if (!Array.isArray(a.pages) || !a.pages.length || a.pages.length > MAX_PAGES) throw new PrintError('invalid', `pages: 1 … ${MAX_PAGES} media ids`);
+  const dpi = a.dpi == null ? 300 : Number(a.dpi);
+  if (!Number.isInteger(dpi) || dpi < 70 || dpi > 1200) throw new PrintError('invalid', 'dpi: 70 … 1200');
+  const media = require('./plugins/media');
+  for (const id of a.pages) {
+    const r = typeof id === 'string' ? media.row(plugin.id, id) : null;
+    if (!r) throw new PrintError('not_found', 'no such media of this plugin');
+    if (!['image/jpeg', 'image/png'].includes(r.mime)) throw new PrintError('format', 'text recognition reads JPEG and PNG pages');
+    if (r.bytes > MAX_FILE) throw new PrintError('too_large', `at most ${MAX_FILE} bytes a page`);
+  }
+  let prefer = null;
+  if (typeof a.deviceId === 'string' && DEVICE_RE.test(a.deviceId)) { const d = devices().find((x) => x.id === a.deviceId); prefer = d ? d.gatewayId : null; }
+  const gws = ocrGateways(prefer);
+  if (!gws.length) throw new PrintError('ocr_unavailable', 'no gateway with „Texterkennung“ is online');
+  const open = db().prepare("SELECT COUNT(*) AS n FROM print_ocr WHERE plugin_id = ? AND user_id = ? AND state IN ('queued','running')").get(plugin.id, user.id).n;
+  if (open >= 3) throw new PrintError('busy', 'at most 3 text recognitions per person at a time');
+  let name = clean(a.name, 120) || 'Scan.pdf';
+  if (!/\.pdf$/i.test(name)) name += '.pdf';
+  const id = newId('po');
+  const now = Date.now();
+  for (const gw of gws) {
+    db().prepare(`INSERT OR REPLACE INTO print_ocr (id, plugin_id, user_id, peer_id, pages, dpi, name, state, page, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?)`).run(id, plugin.id, user.id, gw, JSON.stringify(a.pages), dpi, name, now, now);
+    const r = await mgmt(gw, '/api/print/ocr', { ocrId: id, pages: a.pages.length, dpi }, 7000);
+    if (r && r.status === 202) return { ocrId: id };
+    if (r && r.status === 409 && gws.length === 1) { db().prepare('DELETE FROM print_ocr WHERE id = ?').run(id); throw new PrintError('busy', 'the gateway is still busy with other text recognitions'); }
+  }
+  db().prepare('DELETE FROM print_ocr WHERE id = ?').run(id);
+  throw new PrintError('ocr_unavailable', 'no gateway took the text recognition');
+}
+
+function ownOcr(plugin, id) {
+  if (typeof id !== 'string' || !ID_RE.test(id)) throw new PrintError('invalid', 'invalid ocr id');
+  const r = db().prepare('SELECT * FROM print_ocr WHERE id = ? AND plugin_id = ?').get(id, plugin.id);
+  if (!r) throw new PrintError('not_found', 'no such text recognition');
+  return r;
+}
+
+/** gc.print.ocrStatus(id) → { id, state: queued | running | done | failed | canceled, page, pages, error, mediaId, bytes, text } */
+function ocrStatus(plugin, id) { housekeeping(); return ocrView(ownOcr(plugin, id)); }
+
+/** gc.print.cancelOcr(id) → { canceled } */
+async function cancelOcr(plugin, id) {
+  const r = ownOcr(plugin, id);
+  if (!OCR_OPEN.includes(r.state)) return { canceled: false, state: r.state };
+  await mgmt(r.peer_id, '/api/print/ocr/cancel', { ocrId: r.id }, 4000);
+  db().prepare("UPDATE print_ocr SET state = 'canceled', updated_at = ? WHERE id = ?").run(Date.now(), r.id);
+  return { canceled: true, state: 'canceled' };
+}
+
+function gatewayOcr(peerId, id, states = OCR_OPEN) {
+  if (typeof id !== 'string' || !ID_RE.test(id)) throw new PrintError('not_found');
+  const r = db().prepare(`SELECT * FROM print_ocr WHERE id = ? AND peer_id = ? AND state IN (${states.map(() => '?').join(',')})`).get(id, peerId, ...states);
+  if (!r) throw new PrintError('not_found');
+  return r;
+}
+
+/** GET /api/v1/gateway/print/ocr/:id/pages/:n — one page of an open text recognition of this gateway. */
+async function ocrPage(peerId, id, n, res) {
+  const r = gatewayOcr(peerId, id);
+  const list = json(r.pages) || [];
+  const page = Number(n);
+  if (!Number.isInteger(page) || page < 1 || page > list.length) throw new PrintError('not_found');
+  const plugin = require('./plugins/registry').get(r.plugin_id);
+  if (!plugin) throw new PrintError('not_found');
+  let m;
+  try { m = await readMedia(plugin, list[page - 1]); } catch (e) { throw new PrintError('not_found', e.message); }
+  res.set({ 'Content-Type': m.row.mime === 'image/png' ? 'image/png' : 'image/jpeg', 'Content-Length': String(m.buf.length), 'Cache-Control': 'no-store' });
+  res.end(m.buf);
+}
+
+/**
+ * PUT /api/v1/gateway/print/ocr/:id/document — the searchable PDF (≤ 100 MB) → media of the plugin (unclaimed,
+ * owned by the person); PUT …/text — the recognised text (≤ 1 MB, UTF-8).
+ */
+async function storeOcr(peerId, id, kind, req) {
+  const r = gatewayOcr(peerId, id);
+  if (kind !== 'document' && kind !== 'text') throw new PrintError('not_found');
+  const mime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  if ((kind === 'document' && mime !== 'application/pdf') || (kind === 'text' && mime !== 'text/plain')) throw new PrintError('unsupported_type');
+  const length = Number(req.headers['content-length']);
+  const max = kind === 'document' ? OCR_PDF_MAX : OCR_TEXT_MAX;
+  if (!Number.isSafeInteger(length) || length < 1) throw new PrintError('length_required');
+  if (length > max) throw new PrintError('too_large');
+  const chunks = [];
+  let got = 0;
+  for await (const c of req) {
+    got += c.length;
+    if (got > length) throw new PrintError('too_large');
+    chunks.push(c);
+  }
+  if (got !== length) throw new PrintError('invalid', 'length mismatch');
+  const buf = Buffer.concat(chunks);
+  if (kind === 'text') {
+    // control characters other than line breaks and tabs go (the text is for search and questions, never shown raw)
+    let text = '';
+    for (const ch of buf.toString('utf8').slice(0, OCR_TEXT_MAX)) { const c = ch.codePointAt(0); text += c < 32 && c !== 10 && c !== 9 ? ' ' : (c === 127 ? ' ' : ch); }
+    db().prepare('UPDATE print_ocr SET text = ?, updated_at = ? WHERE id = ?').run(text, Date.now(), r.id);
+    return { stored: 'text' };
+  }
+  if (!pdf.pdfPages(buf)) throw new PrintError('invalid', 'not a readable PDF');
+  const plugin = require('./plugins/registry').get(r.plugin_id);
+  if (!plugin) throw new PrintError('not_found');
+  let stored;
+  try {
+    stored = await require('./plugins/media').storeBuffer(plugin, buf, { mime: 'application/pdf', name: r.name, owner: r.user_id });
+  } catch (e) {
+    if (e && e.code === 'quota_exceeded') throw new PrintError('quota');
+    if (e && (e.code === 'unsupported_type' || e.code === 'no_media')) throw new PrintError('unsupported_type');
+    throw e;
+  }
+  db().prepare('UPDATE print_ocr SET result_media = ?, result_bytes = ?, updated_at = ? WHERE id = ?').run(stored.mediaId, buf.length, Date.now(), r.id);
+  return { mediaId: stored.mediaId };
+}
+
+/** POST /api/v1/gateway/print/ocr/:id — { state: running | done | failed, page?, pages?, error? } */
+function ocrReport(peerId, id, body, now = Date.now()) {
+  const b = body && typeof body === 'object' ? body : {};
+  const r = gatewayOcr(peerId, id, ['queued', 'running', 'done', 'failed', 'canceled']);
+  if (!['running', 'done', 'failed'].includes(b.state)) throw new PrintError('invalid', 'invalid state');
+  if (!OCR_OPEN.includes(r.state)) return { state: r.state, ignored: true };
+  const page = Number.isInteger(b.page) && b.page >= 0 && b.page <= MAX_PAGES ? b.page : r.page;
+  let state = b.state;
+  let error = state === 'failed' ? (typeof b.error === 'string' && ERR_RE.test(b.error) ? b.error : 'ocr_failed') : null;
+  // done without the PDF (an upload that never came): failed
+  if (state === 'done' && !r.result_media) { state = 'failed'; error = 'upload_failed'; }
+  db().prepare('UPDATE print_ocr SET state = ?, page = ?, error = ?, updated_at = ? WHERE id = ?').run(state, page, error, now, r.id);
+  return { state };
+}
+
 // ─── The card "Funktionen" ─────────────────────────────────────────────
 
 /** For gatewayFeatures.overview(): the switch and what this gateway found. */
@@ -809,6 +1081,45 @@ function overview(peerId) {
     convertAvailable: tc && typeof tc.available === 'boolean' ? tc.available : null,
     convertHint: ['pi3bplus', 'pi3', 'pi_zero'].includes(board) ? 'slow' : null,
     minGatewayConvert: gf.MIN_GATEWAY_PRINT_CONVERT,
+    // Texterkennung and Office-Dateien drucken (gateway docs/print.md, gateway ≥ MIN_GATEWAY_P3C): the switches, whether
+    // this gateway can (capabilities), what it reports, a hint for weak hardware (never a ban)
+    ...extrasOf(peerId, s, tel, board),
+  };
+}
+
+/** The service office does not run: what helps (like the cameras' service kameras). */
+function officeCompose(peerId, s, f, tel) {
+  if (!s.office || (f && f.service === 'managed')) return null;
+  let platform = null;
+  try { platform = require('./homeRadio').platformOf(peerId, tel); } catch { platform = null; }
+  const service = f ? f.service : 'missing';
+  if (platform === 'rpi') return service === 'absent' ? null : 'image';
+  return 'compose';
+}
+
+/** The part of overview() for text recognition and office files. */
+function extrasOf(peerId, s, tel, board) {
+  const caps = tel && Array.isArray(tel.capabilities) ? tel.capabilities : [];
+  const fp = (tel && tel.features && tel.features.print) || {};
+  const o = fp.ocr && typeof fp.ocr === 'object' ? fp.ocr : null;
+  const f = fp.office && typeof fp.office === 'object' ? fp.office : null;
+  const mem = tel ? Number((tel.hardware && tel.hardware.mem_total) || tel.mem_total) || null : null;
+  const weak = ['pi3bplus', 'pi3', 'pi_zero'].includes(board);
+  return {
+    ocr: s.ocr === true,
+    ocrSupported: caps.includes('print-ocr'),
+    ocrAvailable: o && typeof o.available === 'boolean' ? o.available : null,
+    ocrHint: weak ? 'slow' : null,
+    office: s.office === true,
+    officeSupported: caps.includes('print-office'),
+    // managed: the service office runs; absent: being set up (the image is loading) or missing in the compose file; missing: no compose support
+    officeService: f && ['managed', 'absent', 'missing'].includes(f.service) ? f.service : null,
+    // ≈ 700 MB on disk, up to ≈ 500 MB RAM while converting: a hint below 2 GB RAM or on a Pi 3/Zero (never a ban)
+    officeHint: weak || (mem != null && mem < 2 * 1024 * 1024 * 1024) ? 'small' : null,
+    // what the row says while the service does not run: compose (a new docker-compose.yml), image (an older Pi image),
+    // null (the Pi image starts it itself — "wird eingerichtet")
+    officeCompose: officeCompose(peerId, s, f, tel),
+    minGatewayP3c: MIN_GATEWAY_P3C,
   };
 }
 
@@ -816,11 +1127,13 @@ function overview(peerId) {
 const HOST_CODES = {
   invalid: 'ERR_INVALID', not_found: 'ERR_NOT_FOUND', offline: 'ERR_PRINT_OFFLINE', format: 'ERR_PRINT_FORMAT', too_large: 'ERR_PRINT_TOO_LARGE',
   busy: 'ERR_PRINT_BUSY', quota: 'ERR_MEDIA_QUOTA', media_unavailable: 'ERR_MEDIA_DENIED', cert_changed: 'ERR_PRINT_CERT_CHANGED',
+  ocr_unavailable: 'ERR_PRINT_OCR_UNAVAILABLE',
 };
 
 module.exports = {
-  MIN_GATEWAY, MAX_FILE, JOB_TTL_MS, PrintError, HOST_CODES,
-  normalizeSettings, configPayload, ingestDevices, cleanDevice, cleanSearch, searchOf, devices, deviceView, discover, discoverOne,
+  MIN_GATEWAY, MIN_GATEWAY_P3C, MAX_FILE, JOB_TTL_MS, PrintError, HOST_CODES,
+  normalizeSettings, configPayload, composeWantsOffice, ingestDevices, cleanDevice, cleanMedia, cleanSearch, searchOf, devices, deviceView, discover, discoverOne,
   submit, testPage, job, jobs, cancel, pagesOf, printable, housekeeping, sweepFiles,
   queueFor, sendFile, jobReport, scan, scanStatus, cancelScan, storePage, scanReport, makePdf, overview, jobsDir,
+  ocr, ocrStatus, cancelOcr, ocrAvailable, ocrReady, ocrPage, storeOcr, ocrReport,
 };

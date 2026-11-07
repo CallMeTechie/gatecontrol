@@ -388,9 +388,11 @@ router.post('/:id/compose', (req, res) => {
   const cameras = typeof b.cameras === 'boolean' ? b.cameras : require('../../services/homeCameras').composeWantsCameras(row.id);
   // the folder for the clips chosen on the gateway page (Funktionen › Kameras), else the Docker volume
   const cameraDir = require('../../services/homeCameras').composeStoragePath(row.id);
-  const text = gatewaySetup.buildCompose(platform, network, { zigbee, ai, cameras, cameraDir });
+  // the service office (Drucken & Scannen) when „Office-Dateien drucken“ is on for this gateway; { office: true|false } by hand
+  const office = typeof b.office === 'boolean' ? b.office : require('../../services/homePrint').composeWantsOffice(row.id);
+  const text = gatewaySetup.buildCompose(platform, network, { zigbee, ai, cameras, cameraDir, office });
   if (!text) return res.status(400).json({ ok: false, error: 'invalid_option' });
-  logger.info({ peerId: row.id, platform, network, zigbee, ai, cameras }, 'Gateway docker-compose.yml downloaded');
+  logger.info({ peerId: row.id, platform, network, zigbee, ai, cameras, office }, 'Gateway docker-compose.yml downloaded');
   res.set('Content-Type', 'application/yaml; charset=utf-8');
   res.set('Content-Disposition', 'attachment; filename="docker-compose.yml"');
   res.set('Cache-Control', 'no-store');
