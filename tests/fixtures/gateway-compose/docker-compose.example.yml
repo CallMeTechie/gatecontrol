@@ -12,6 +12,8 @@
 #               Gateway „port_busy“ und erzwingt nichts.
 #   8443/tcp    Zwischenspeicher (HTTPS, selbstsigniert, signierte Links)
 #   8090/8091   deCONZ/Phoscon (REST + WebSocket, nur mit Zigbee, alle Adressen)
+#   zigbee2mqtt öffnet keinen Port (nur MQTT an 127.0.0.1); der Thread Border
+#   Router nur 127.0.0.1:8081/8089 und mDNS (UDP 5353) im LAN
 # Kameras (docs/cameras.md) öffnen keinen Port; das Gateway sucht sie per
 # WS-Discovery (UDP 3702, Multicast im LAN) und spricht sie selbst an.
 
@@ -75,7 +77,7 @@ services:
         source: edge-mqtt
         target: /gc-mqtt
         read_only: true
-      - type: volume            # Funk (docs/radio.md): Steuerdatei für den deCONZ-Dienst
+      - type: volume            # Funk (docs/radio.md): Steuerdateien für deconz, zigbee2mqtt und otbr
         source: radio-ctl
         target: /gc-radio
         volume: { nocopy: true }
@@ -302,6 +304,179 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Zigbee mit zigbee2mqtt (docs/radio.md „zigbee2mqtt“) – für Sticks, die deCONZ
+  # nicht spricht (Sonoff ZBDongle-E/-P, SkyConnect/ZBT-1, CC2652, EFR32). Profil
+  # "zigbee2mqtt": startet nur mit `docker compose --profile zigbee2mqtt up -d`.
+  # Die Datei aus GateControl enthält den Dienst ohne Profil, sobald für das
+  # Gateway „zigbee2mqtt“ gewählt ist. Ein Stick bedient nur einen Dienst: deCONZ,
+  # zigbee2mqtt und Thread nie auf demselben Stick.
+  # Ein- und ausgeschaltet wird in GateControl: das Gateway schreibt
+  # /gc-radio/z2m.env (Gerät, major:minor, Adapter, Konto am MQTT-Broker des
+  # Gateways; 0600), der kleine Wächter legt genau diesen Geräteknoten an und
+  # startet zigbee2mqtt (ohne Weboberfläche, nur MQTT an 127.0.0.1:1883). Ohne
+  # z2m.env läuft nur der Wächter. Braucht Edge und MQTT (in GateControl an).
+  zigbee2mqtt:
+    profiles: ["zigbee2mqtt"]
+    image: koenkk/zigbee2mqtt:2.14.2@sha256:addbfb08fcef2e4477de1535636118241e10d13e898fbe4d9faba8a4d7396311
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        C=/gc-radio; D=/app/data; p=""; s=""; st=idle; dt=-
+        say() { st="$$1"; dt="$${2:--}"; printf '%s %s %s\n' "$$st" "$$dt" "$$(date +%s)" >"$$C/.z2m.state" && mv -f "$$C/.z2m.state" "$$C/z2m.state"; }
+        halt() { if [ -n "$$p" ]; then kill "$$p" 2>/dev/null; wait "$$p" 2>/dev/null; fi; p=""; }
+        dead() { [ ! -e "/proc/$$1" ] || grep -q '^State:[[:space:]]*Z' "/proc/$$1/status" 2>/dev/null; }
+        val() { sed -n "s/^$$1=\($$2\)$$/\1/p" "$$C/z2m.env"; }
+        trap 'halt; say idle; exit 0' TERM INT
+        while :; do
+          if [ -f "$$C/z2m.env" ]; then
+            n="$$(cksum <"$$C/z2m.env")"
+            if [ -n "$$p" ] && dead "$$p"; then wait "$$p"; say exit "$$?"; p=""; sleep 8; fi
+            if [ -z "$$p" ] || [ "$$n" != "$$s" ]; then
+              halt; s="$$n"
+              dv="$$(val DEVICE 'tty[A-Z]\{3\}[0-9]\{1,3\}')"
+              mm="$$(sed -n 's/^DEV=\([0-9]\{3\}\):\([0-9]\{1,7\}\)$$/\1 \2/p' "$$C/z2m.env")"
+              ad="$$(val ADAPTER 'ember\|zstack\|deconz')"
+              bd="$$(val BAUD '[0-9]\{1,7\}')"
+              mu="$$(val MQTT_USER '[a-z0-9-]\{1,32\}')"
+              mp="$$(val MQTT_PASS '[A-Za-z0-9_-]\{24,64\}')"
+              case "$$dv:$${mm%% *}:$$ad:$$mu:$$mp" in
+                ttyACM*:166:?*:?*:?*|ttyUSB*:188:?*:?*:?*|ttyAMA*:204:?*:?*:?*)
+                  rm -f "/dev/$$dv"
+                  if mknod "/dev/$$dv" c $$mm && chmod 600 "/dev/$$dv"; then
+                    [ -s "$$D/configuration.yaml" ] || printf '%s\n' 'version: 4' 'homeassistant:' '  enabled: false' 'frontend:' '  enabled: false' \
+                      'advanced:' '  network_key: GENERATE' '  pan_id: GENERATE' '  ext_pan_id: GENERATE' '  log_output:' '    - console' >"$$D/configuration.yaml"
+                    if [ "$${bd:-0}" != 0 ]; then export ZIGBEE2MQTT_CONFIG_SERIAL_BAUDRATE="$$bd"; else unset ZIGBEE2MQTT_CONFIG_SERIAL_BAUDRATE; fi
+                    ZIGBEE2MQTT_CONFIG_SERIAL_PORT="/dev/$$dv" ZIGBEE2MQTT_CONFIG_SERIAL_ADAPTER="$$ad" \
+                      ZIGBEE2MQTT_CONFIG_MQTT_SERVER=mqtt://127.0.0.1:1883 ZIGBEE2MQTT_CONFIG_MQTT_BASE_TOPIC=zigbee2mqtt \
+                      ZIGBEE2MQTT_CONFIG_MQTT_USER="$$mu" ZIGBEE2MQTT_CONFIG_MQTT_PASSWORD="$$mp" \
+                      node /app/index.js & p=$$!; say running "$$dv"
+                  else say wait mknod; fi ;;
+                *) say wait invalid ;;
+              esac
+            else say "$$st" "$$dt"; fi
+          else
+            halt; s=""; say idle
+          fi
+          sleep 2 & wait $$!
+        done
+    working_dir: /app
+    restart: unless-stopped
+    network_mode: host        # MQTT des Gateways an 127.0.0.1:1883; kein eigener Port
+    # nur diese Gerätearten darf der Wächter anlegen und zigbee2mqtt öffnen: ttyACM,
+    # ttyUSB (USB-Sticks) und ttyAMA (Funkmodul auf der GPIO-Leiste)
+    device_cgroup_rules:
+      - "c 166:* rmw"
+      - "c 188:* rmw"
+      - "c 204:* rmw"
+    # Vorrang hat das Gateway: weniger CPU-Anteil, bei Speichermangel trifft es zuerst zigbee2mqtt
+    cpu_shares: 512
+    oom_score_adj: 300
+    mem_limit: 384m
+    volumes:
+      - z2m-data:/app/data      # configuration.yaml, Netz und Geräte (database.db)
+      - type: volume            # Steuerdatei vom Gateway, Zustand zurück
+        source: radio-ctl
+        target: /gc-radio
+        volume: { nocopy: true }
+    environment:
+      - TZ=${TZ:-Etc/UTC}
+      - NODE_ENV=production
+      - ZIGBEE2MQTT_DATA=/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "[ $$(( $$(date +%s) - $$(cut -d' ' -f3 /gc-radio/z2m.state 2>/dev/null || echo 0) )) -lt 60 ]"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Thread mit dem OpenThread Border Router (docs/radio.md „Thread“) – für einen
+  # Stick mit RCP-Firmware (SkyConnect/ZBT-1, ZBDongle-E, nRF52840). Profil
+  # "thread": startet nur mit `docker compose --profile thread up -d`. Die Datei
+  # aus GateControl enthält den Dienst ohne Profil, sobald Thread für das Gateway
+  # eingeschaltet ist. Das Gateway schreibt /gc-radio/thread.env (Gerät,
+  # major:minor, Baudrate, LAN-Schnittstelle), der Wächter legt den Geräteknoten
+  # an und startet den Border Router: REST nur an 127.0.0.1:8081, Weboberfläche
+  # nur an 127.0.0.1:8089, mDNS (_meshcop._udp) im LAN für Matter-Controller.
+  # Braucht NET_ADMIN/NET_RAW (Schnittstelle wpan0, Routen, Firewall) und
+  # /dev/net/tun. Die IPv6-Weiterleitung am Host meldet GateControl als Hinweis.
+  otbr:
+    profiles: ["thread"]
+    image: openthread/otbr:latest@sha256:329299a92dd3554adfa324c2a1e5c5ebf8cbc0e47c53f01f7a6dbe16de7548e2
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        C=/gc-radio; p=""; s=""; st=idle; dt=-
+        say() { st="$$1"; dt="$${2:--}"; printf '%s %s %s\n' "$$st" "$$dt" "$$(date +%s)" >"$$C/.otbr.state" && mv -f "$$C/.otbr.state" "$$C/otbr.state"; }
+        halt() { if [ -n "$$p" ]; then kill "$$p" 2>/dev/null; wait "$$p" 2>/dev/null; fi; p=""; }
+        dead() { [ ! -e "/proc/$$1" ] || grep -q '^State:[[:space:]]*Z' "/proc/$$1/status" 2>/dev/null; }
+        val() { sed -n "s/^$$1=\($$2\)$$/\1/p" "$$C/thread.env"; }
+        trap 'halt; say idle; exit 0' TERM INT
+        while :; do
+          if [ -f "$$C/thread.env" ]; then
+            n="$$(cksum <"$$C/thread.env")"
+            if [ -n "$$p" ] && dead "$$p"; then wait "$$p"; say exit "$$?"; p=""; sleep 8; fi
+            if [ -z "$$p" ] || [ "$$n" != "$$s" ]; then
+              halt; s="$$n"
+              dv="$$(val DEVICE 'tty[A-Z]\{3\}[0-9]\{1,3\}')"
+              mm="$$(sed -n 's/^DEV=\([0-9]\{3\}\):\([0-9]\{1,7\}\)$$/\1 \2/p' "$$C/thread.env")"
+              bd="$$(val BAUD '[0-9]\{4,7\}')"
+              ni="$$(val INFRA '[a-zA-Z0-9][a-zA-Z0-9._-]\{0,14\}')"
+              case "$$dv:$${mm%% *}:$$ni" in
+                ttyACM*:166:?*|ttyUSB*:188:?*)
+                  rm -f "/dev/$$dv"
+                  if mknod "/dev/$$dv" c $$mm && chmod 600 "/dev/$$dv"; then
+                    HTTP_HOST=127.0.0.1 HTTP_PORT=8089 REST_HOST=127.0.0.1 /app/etc/docker/test/docker_entrypoint.sh \
+                      --radio-url "spinel+hdlc+uart:///dev/$$dv?uart-baudrate=$${bd:-460800}" -B "$$ni" --debug-level 5 & p=$$!; say running "$$dv"
+                  else say wait mknod; fi ;;
+                *) say wait invalid ;;
+              esac
+            else say "$$st" "$$dt"; fi
+          else
+            halt; s=""; say idle
+          fi
+          sleep 2 & wait $$!
+        done
+    restart: unless-stopped
+    network_mode: host        # wpan0, Routen und mDNS im LAN; REST/Web nur an 127.0.0.1
+    cap_add:
+      - NET_ADMIN             # Schnittstelle wpan0, Routen, ip6tables/ipset des Border Routers
+      - NET_RAW               # Neighbor Discovery / mDNS
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    # nur USB-Sticks (RCP): ttyACM und ttyUSB
+    device_cgroup_rules:
+      - "c 166:* rmw"
+      - "c 188:* rmw"
+    cpu_shares: 512
+    oom_score_adj: 300
+    mem_limit: 256m
+    volumes:
+      - otbr-data:/var/lib/thread   # Netzdaten (aktiver Datensatz) über Neustarts
+      - type: volume            # Steuerdatei vom Gateway, Zustand zurück
+        source: radio-ctl
+        target: /gc-radio
+        volume: { nocopy: true }
+    environment:
+      - TZ=${TZ:-Etc/UTC}
+    healthcheck:
+      test: ["CMD-SHELL", "[ $$(( $$(date +%s) - $$(cut -d' ' -f3 /gc-radio/otbr.state 2>/dev/null || echo 0) )) -lt 60 ]"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # Lokale KI mit Ollama (docs/local-ai.md) – Profil "ki": startet nur mit
   # `docker compose --profile ki up -d` (oder COMPOSE_PROFILES=ki in .env) –
   # ohne den Schalter lädt niemand das ≈ 3-GB-Image. Die Datei aus GateControl
@@ -443,7 +618,7 @@ volumes:
   edge-state:
   # Kopie der Broker-Dateien + Mosquitto-Daten (data/), Besitzer 61001
   edge-mqtt:
-  # tmpfs, geteilt: Steuerdatei des Gateways für den deCONZ-Dienst und dessen Zustand
+  # tmpfs, geteilt: Steuerdateien des Gateways für deconz, zigbee2mqtt und otbr und deren Zustand
   radio-ctl:
     driver_opts:
       type: tmpfs
@@ -455,6 +630,10 @@ volumes:
       type: tmpfs
       device: tmpfs
       o: "size=1m,uid=0,gid=0,mode=0755"
+  # zigbee2mqtt: configuration.yaml, Zigbee-Netz und Geräte
+  z2m-data:
+  # Thread Border Router: aktiver Datensatz und Netzdaten
+  otbr-data:
   # die Modelle der lokalen KI (je Modell 1–6 GB)
   ki-models:
   # tmpfs, geteilt: Steuerdateien des Gateways für den Dienst kameras und der Bild-Ring (≈ 15 MB je Kamera)

@@ -704,7 +704,7 @@ X.Y.Z“ (from the CHANGELOG of the current version).
 | `type` | Done when |
 |---|---|
 | `manual` | an administrator clicks „Erledigt“ |
-| `gatewayService` (`feature`, `service`) | at least one gateway has the feature on and its compose service runs (telemetry). While a gateway has the feature on but the service is missing, the notice stays with the gateway's name and „docker-compose.yml herunterladen“ (not for a Raspberry Pi image). Features with a service of their own: `cameras` (service `kameras`), `ai` (`ki`), `radio` / `zigbee` (`deconz`); any other name: the gateway's switch `<feature>.enabled` and `telemetry.features.<feature>.service === "managed"` |
+| `gatewayService` (`feature`, `service`) | at least one gateway has the feature on and its compose service runs (telemetry). While a gateway has the feature on but the service is missing, the notice stays with the gateway's name and „docker-compose.yml herunterladen“ (not for a Raspberry Pi image). Features with a service of their own: `cameras` (service `kameras`), `ai` (`ki`), `radio` / `zigbee` (`deconz`, or `zigbee2mqtt` / `otbr` when chosen for the gateway); any other name: the gateway's switch `<feature>.enabled` and `telemetry.features.<feature>.service === "managed"` |
 | `gatewayVersion` (`min`, optional `feature`) | every gateway (with that feature on) runs at least `min` |
 | `hostVersion` (`min`) | this GateControl is at least `min` |
 
@@ -2685,9 +2685,42 @@ const list = await gc.radio.sensors();
 `humidity` %, `battery` %, `pressure` hPa, `illuminance` lx, `voltage` V,
 `co2` ppm, …; flags: `window`, `door`, `opening`, `motion`, `occupancy`,
 `moisture_wet`, `smoke`, …). `online` is false after 30 minutes without a
-packet. Only gateways with Bluetooth switched on count. Without the permission
+packet. Encrypted sensors (BTHome v2 with a key, Xiaomi MiBeacon v4/v5 with a
+bindkey) deliver values once the administrator entered their key in Gateway ›
+Funk; the key itself never reaches a plugin. Only gateways with Bluetooth switched on count. Without the permission
 `gc.radio` does not exist and the host answers `ERR_RADIO_DENIED`; on an older
 GateControl the permission is ignored and `gc.radio` is missing — check for it.
+
+**Zigbee devices of zigbee2mqtt** (GateControl with the radio follow-ups, a gateway
+newer than 1.31.0 with “zigbee2mqtt” chosen in Gateway › Funk). The same
+permission reads and switches the devices paired there — every device the
+gateway's zigbee2mqtt knows, set up completely and supported (no
+administrator step like "Übernehmen": pairing is that step):
+
+```js
+const { gateways, devices } = await gc.radio.zigbee();
+// gateways: [{ id: 7, name: 'Pi Keller', reportedAt: '…' }]  — these report their complete list:
+//           a device of such a gateway that is missing in `devices` is gone (removed from the network)
+// devices:  [{ id: 'z2m:001788010b2c3d4e', gatewayId: 7, gateway: 'Pi Keller', ieee: '00:17:88:01:0b:2c:3d:4e',
+//              name: 'Wohnzimmer/Decke', model: '9290012573A', vendor: 'Philips',
+//              kind: 'light', caps: { bri: true, ct: true, color: 'xy' },
+//              values: { on: true, bri: 50, ct: 370, linkquality: 120 }, battery: null, online: true, seenAt: '…' }]
+await gc.radio.command('z2m:001788010b2c3d4e', { on: true, bri: 40 });   // → { accepted: true }
+```
+
+`kind` is `light`, `plug` (also switches/relays), `cover`, `sensor` or `remote`;
+`caps` names what can be set (`bri`, `ct`, `color: 'xy' | 'hs'`, `position`) and
+what is measured (`power`, `battery`). `values` use the names of the Bluetooth
+sensors plus `on`, `bri` (0–100), `ct` (mired), `pos` (0–100), `linkquality`,
+`action` (last button press). `command(id, set)` takes `on`, `bri` 0–100, `ct`
+mired, `xy` `[x, y]`, `hue` 0–65535 / `sat` 0–254 (converted for zigbee2mqtt),
+`cover` `open|close|stop`, `pos` 0–100; anything else is `ERR_INVALID`, an
+unknown id `ERR_NOT_FOUND`, a gateway whose zigbee2mqtt does not run
+`ERR_RADIO_NOT_RUNNING`, one that does not answer `ERR_GATEWAY_UNREACHABLE`. The
+command goes to the gateway, which publishes `zigbee2mqtt/<name>/set`; the new
+state comes with the next report (at most 5 s later). Only gateways with
+“zigbee2mqtt” chosen count; switched back to deCONZ, their devices are gone
+from the list. On an older GateControl `gc.radio.zigbee` is missing — check for it.
 
 A plugin page can be opened at one thing: `/plugins/<id>[/<page>]?focus=<kind>:<value>`
 hands `focus` (`^[a-z]{2,12}:[A-Za-z0-9:._-]{1,64}$`) on to the page's frame as

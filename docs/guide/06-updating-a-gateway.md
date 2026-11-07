@@ -40,6 +40,7 @@ containers or folders therefore do not arrive by themselves:
 | Home cache | 1.22.0 | `${GC_CACHE_DIR:-./gateway-cache}:/cache` |
 | Failover pools, scanning via another gateway, ping of the internet quality | – | the capabilities `NET_RAW`, `SETGID` and `SETUID` under `cap_add` |
 | Cameras (live picture, clips) | 1.28.0 | service `kameras`, volumes `cam-ctl` and `${GC_CAMERA_DIR:-cam-recordings}:/recordings` |
+| Radio: zigbee2mqtt, Thread border router | newer than 1.31.0 | services `zigbee2mqtt` and `otbr` (only when chosen), volumes `z2m-data` and `otbr-data` |
 
 You need this chapter if you see one of these:
 
@@ -322,7 +323,7 @@ volumes:
   edge-state:
   # copy of the broker files + Mosquitto data (data/), owner 61001
   edge-mqtt:
-  # tmpfs shared: the control file of the gateway for the deconz service and its state (radio)
+  # tmpfs shared: the control files of the gateway for deconz, zigbee2mqtt and otbr and their state (radio)
   radio-ctl:
     driver_opts:
       type: tmpfs
@@ -334,6 +335,10 @@ volumes:
       type: tmpfs
       device: tmpfs
       o: "size=1m,uid=0,gid=0,mode=0755"
+  # zigbee2mqtt: configuration.yaml, the Zigbee network and its devices (radio)
+  z2m-data:
+  # Thread border router: the active dataset and network data (radio)
+  otbr-data:
   # the models of the local AI (1–6 GB each)
   ki-models:
   # tmpfs shared: the control files of the gateway for the service kameras and the picture ring (cameras)

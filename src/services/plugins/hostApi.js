@@ -1574,10 +1574,23 @@ async function printCall(plugin, op, args, ctx) {
 // gc.radio.sensors() — services/homeRadio.js pluginSensors(): only the
 // Bluetooth sensors the administrator took over, of gateways with
 // Bluetooth on; addresses of the sensors, never of anything else.
+// gc.radio.zigbee() — pluginZigbee(): the devices of the gateways that run
+// zigbee2mqtt (paired in GateControl, Gateway › Funk) with their values;
+// gc.radio.command({ id, set }) — zigbeeCommand(): switch one of them
+// ({ on, bri, ct, xy, hue, sat, cover, pos }, checked; the gateway sends it).
 
-function radioCall(plugin, op) {
+async function radioCall(plugin, op, args) {
   need(plugin.manifest.permissions && plugin.manifest.permissions.radio === true, 'ERR_RADIO_DENIED', 'this plugin has no radio permission');
-  if (op === 'sensors') return require('../homeRadio').pluginSensors();
+  const hr = require('../homeRadio');
+  const a = args && typeof args === 'object' ? args : {};
+  try {
+    if (op === 'sensors') return hr.pluginSensors();
+    if (op === 'zigbee') return hr.pluginZigbee();
+    if (op === 'command') return await hr.zigbeeCommand(a.id, a.set);
+  } catch (e) {
+    if (e instanceof hr.RadioError) throw new HostApiError(hr.HOST_CODES[e.code] || 'ERR_RADIO_FAILED', e.message);
+    throw e;
+  }
   throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
 }
 
@@ -2224,6 +2237,8 @@ async function handle(plugin, api, args, ctx) {
       return printCall(plugin, api.slice('print.'.length), args, ctx);
     // Funk (permissions.radio, homeRadio.js — phase 3c, step 2)
     case 'radio.sensors': return radioCall(plugin, 'sensors');
+    case 'radio.zigbee': return radioCall(plugin, 'zigbee');
+    case 'radio.command': return radioCall(plugin, 'command', args);
     // Kameras (permissions.cameras, homeCameras.js — phase 3c, step 4)
     case 'cameras.available': case 'cameras.list': case 'cameras.discover': case 'cameras.test': case 'cameras.add': case 'cameras.update':
     case 'cameras.remove': case 'cameras.snapshot': case 'cameras.snapshotUrl': case 'cameras.live': case 'cameras.events': case 'cameras.deleteEvent':
