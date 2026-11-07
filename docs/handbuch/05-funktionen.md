@@ -162,6 +162,30 @@ Hause. Dafür braucht es das Plugin „Drucken & Scannen“ ab 1.0.1 und das Rec
 Ist der Drucker aus, wartet der Auftrag bis zu 24 Stunden („aus – druckt,
 sobald er an ist“).
 
+### Drucker ohne PDF (z. B. HP OfficeJet Pro 8720)
+
+Viele Tintenstrahler nehmen über das Netz kein PDF an, nur ihre eigenen
+Rasterformate (PWG-Raster, Apple-Raster/URF, JPEG). Ein Gateway ab **1.30.0**
+wandelt PDF-Dateien für solche Drucker beim Drucken selbst um – passend zu
+Auflösung, Farbe, Papier und beidseitigem Druck des Druckers. Das gilt für
+alles, was über GateControl druckt: Portal, Android-Druckdienst, Teilen,
+Testseite.
+
+- **Schalter:** In der Zeile „Drucken & Scannen“ „PDF für Drucker ohne PDF
+  umwandeln“ (Standard an). Darunter steht, welche Drucker kein PDF nehmen und
+  ob dieses Gateway für sie umwandelt.
+- **„… nimmt kein PDF. PDF-Dateien … wandelt ein Gateway ab 1.30.0 um“:**
+  Gateway aktualisieren ([Kapitel 6](06-gateway-aktualisieren.md)). Bis dahin
+  drucken dort nur Bilder; eine PDF-Datei lehnt GateControl mit genau diesem
+  Grund ab.
+- **„Diesem Gateway fehlt das Werkzeug …“:** Das Gateway-Image ist älter als
+  seine Version – über „Update auf …“ das aktuelle Image holen.
+- **Raspberry Pi 3 oder Zero:** Das Umwandeln dauert dort länger, bei großen
+  PDF-Dateien ein paar Minuten. Gedruckt wird trotzdem; wer das nicht möchte,
+  schaltet es für dieses Gateway aus.
+- Eine kaputte oder mit Kennwort geschützte PDF-Datei kann das Gateway nicht
+  umwandeln – der Auftrag schlägt dann mit diesem Grund fehl.
+
 ### Drucker wird nicht gefunden
 
 Unter dem Schalter steht, was die letzte Suche gesehen hat („Letzte Suche
@@ -209,9 +233,9 @@ Gateway (bei der Synology auf der NAS).
   (nur ffmpeg, ≈ 80 MB). Fehlt er, bietet die Zeile „docker-compose.yml
   herunterladen“ an – herunterladen, Projekt neu erstellen
   ([Kapitel 6](06-gateway-aktualisieren.md#63-synology-compose-datei-erneuern)). Ohne ihn gehen Suche,
-  Testbild und Bewegungsmeldungen schon, Live-Bild und Clips noch nicht. Optional
-  `GC_CAMERA_DIR=/volume1/kameras` in der `.env`, dann liegen die Clips in diesem
-  Ordner der NAS (siehe „Aufnahmen“). Das Raspberry-Pi-Image legt den Dienst selbst
+  Testbild und Bewegungsmeldungen schon, Live-Bild und Clips noch nicht. Einen
+  Ordner der NAS für die Clips wählst du in der Zeile unter „Speicherort und Netze“
+  (siehe „Aufnahmen“). Das Raspberry-Pi-Image legt den Dienst selbst
   an; ältere Images (vor Gateway 1.28.0) brauchen dafür ein neues Image.
 
 **Einschalten:** Reiter „Funktionen“ → „Geräte im Heimnetz“ → „Kameras“. Dann
@@ -221,6 +245,15 @@ Adresse `rtsp://…` selbst ein, dazu Name, Benutzer und Passwort der Kamera.
 „Verbinden und testen“ zeigt ein Testbild; erst dann ist die Kamera gespeichert.
 Das Passwort liegt verschlüsselt auf dem Server und geht nur an das Gateway.
 
+**Kameras mit HTTPS** (Gateway 1.29.0+, GateControl 1.242.0+, Plugin 1.7.0+):
+Bietet eine Kamera ONVIF nur über HTTPS an, findet das Gateway das selbst (zuletzt
+Port 443) – oder du setzt beim Hinzufügen „HTTPS“. Das Zertifikat wird **immer
+geprüft**. Die meisten Kameras haben ein selbst signiertes Zertifikat; dann
+meldet der Test „Das Zertifikat der Kamera ist nicht vertrauenswürdig“. Nur wenn
+du der Kamera in deinem Heimnetz vertraust, setze dort „Zertifikat nicht prüfen“
+(je Kamera, später unter „Aufnahmen“ wieder abschaltbar). Die Verbindung bleibt
+verschlüsselt und geht weiter nur an die Adresse der Kamera.
+
 **Aufnahmen:** je Kamera „bei Bewegung (Personen, Autos, Tiere)“, „bei Bewegung,
 nur wenn niemand zu Hause ist“ (aus der Anwesenheit der Familie – ist sie
 unbekannt, nimmt das Gateway nicht auf) oder „nie – nur Live-Bild“. Ein Clip
@@ -228,19 +261,31 @@ beginnt 5 Sekunden vor der Bewegung und endet 10 Sekunden danach (höchstens
 2 Minuten). Bewegung, Personen und Fahrzeuge erkennt die **Kamera selbst**
 (ONVIF-Ereignisse) – das Gateway rechnet nichts nach. Aufbewahren 7, 14 oder
 30 Tage; unter 1 GB freiem Platz nimmt das Gateway nichts Neues auf. Die Clips
-liegen im Volume `cam-recordings` – auf der Synology mit
-`GC_CAMERA_DIR=/volume1/kameras` in der `.env` in einem Ordner der NAS.
+liegen im Docker-Volume `cam-recordings`. **Speicherort ändern** (GateControl
+1.242.0+): Zeile „Kameras“ › „Speicherort und Netze“ › „Speicherort für Clips“,
+z. B. `/volume1/kameras` (den Ordner vorher in der File Station anlegen). Danach
+„docker-compose.yml herunterladen“ und das Projekt neu erstellen – kein SSH, keine
+`.env`. Die Zeile zeigt „Clips im Ordner /volume1/kameras“; solange das Gateway
+noch den alten Speicher nutzt (Gateway 1.29.0+ meldet das), steht dort „gilt erst
+mit der neuen Compose-Datei“. Auf dem Raspberry Pi bleiben die Clips auf der
+SD-Karte. Eine schon gesetzte `GC_CAMERA_DIR` in der `.env` geht weiter vor.
 
 **Live-Bild:** nur, wenn das Handy oder der PC im **VPN** ist (oder im selben
 Netz wie der Server). Unterwegs ohne VPN zeigen Portal und App alle 10 Sekunden ein
-neues Standbild. Push mit Standbild bei Personen kommt höchstens einmal pro
-Kamera alle 5 Minuten.
+neues Standbild. Im Portal spielen Safari und Edge/Chrome auf dem Handy das Bild
+selbst; **Firefox** und Chrome/Edge am PC spielen es ab GateControl 1.242.0 über
+den eingebauten Player (Media Source Extensions, ohne externe Bibliothek).
+Kameras mit H.265 laufen in vielen Browsern nicht – dann den Unterstrom (meist
+H.264) wählen. Push mit Standbild bei Personen kommt höchstens einmal pro
+Kamera alle 5 Minuten, mit dem Knopf „Ansehen“; jede Person kann ihn je Kamera
+für sich abschalten (Portal-Tab „Tür“ und Apps, Plugin 1.7.0+).
 
 **Hinweise statt Verbote:** Auf einem Raspberry Pi 3 B+ steht „Kameras: höchstens
 1 Kamera mit Bewegungserkennung“, auf einem Pi 4 „höchstens 4“. Einschalten
 bleibt möglich. Kameras außerhalb des eigenen Heimnetzes (z. B. ein eigenes
-Kamera-VLAN) erreicht das Gateway nur, wenn das Netz in den Einstellungen des
-Gateways steht (`PUT /api/v1/gateways/:id/features { cameras: { subnets } }`).
+Kamera-VLAN) erreicht das Gateway nur, wenn das Netz unter „Speicherort und
+Netze“ › „Weitere Netze für die Kamera-Suche“ steht (private Netze, /16 bis /30,
+höchstens 8; per API `PUT /api/v1/gateways/:id/features { cameras: { subnets } }`).
 
 **Datenschutz:** Ton nimmt das Gateway nur auf, wenn du ihn je Kamera
 einschaltest – Gespräche aufzuzeichnen ist nur mit Einverständnis aller erlaubt.

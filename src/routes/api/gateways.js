@@ -386,7 +386,9 @@ router.post('/:id/compose', (req, res) => {
   const ai = typeof b.ai === 'boolean' ? b.ai : require('../../services/ai/local').composeWantsAi(row.id);
   // the service kameras (phase 3c, step 4) when cameras are switched on for this gateway; { cameras: true|false } decides by hand
   const cameras = typeof b.cameras === 'boolean' ? b.cameras : require('../../services/homeCameras').composeWantsCameras(row.id);
-  const text = gatewaySetup.buildCompose(platform, network, { zigbee, ai, cameras });
+  // the folder for the clips chosen on the gateway page (Funktionen › Kameras), else the Docker volume
+  const cameraDir = require('../../services/homeCameras').composeStoragePath(row.id);
+  const text = gatewaySetup.buildCompose(platform, network, { zigbee, ai, cameras, cameraDir });
   if (!text) return res.status(400).json({ ok: false, error: 'invalid_option' });
   logger.info({ peerId: row.id, platform, network, zigbee, ai, cameras }, 'Gateway docker-compose.yml downloaded');
   res.set('Content-Type', 'application/yaml; charset=utf-8');

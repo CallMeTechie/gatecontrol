@@ -395,6 +395,16 @@
   // other hosts without the WireGuard kernel module), linux → kernel WG.
   // network: host → full feature set (L4 routes, Wake-on-LAN), bridge →
   // HTTP routes only.
+  // The clips of the cameras: the folder chosen in GateControl (Gateway › Funktionen › Kameras, a plain absolute
+  // path — checked again here, nothing else gets into the YAML) as the default of GC_CAMERA_DIR, else the volume.
+  const CAMERA_DIR_RE = /^\/[A-Za-z0-9._@+-]+(?:\/[A-Za-z0-9._@+-]+){0,15}$/;
+  function recordingsLine(dir) {
+    const ok = typeof dir === 'string' && dir.length <= 200 && CAMERA_DIR_RE.test(dir) && dir.split('/').indexOf('..') < 0 && dir.split('/').indexOf('.') < 0;
+    return ok
+      ? '      - ${GC_CAMERA_DIR:-' + dir + '}:/recordings   # cameras: clips in the folder chosen in GateControl (the folder must exist)'
+      : '      - ${GC_CAMERA_DIR:-cam-recordings}:/recordings   # cameras: clips (GC_CAMERA_DIR=/volume1/kameras for a NAS folder)';
+  }
+
   function buildCompose(opts) {
     const o = opts || {};
     const platform = o.platform === 'linux' ? 'linux' : 'synology';
@@ -518,7 +528,7 @@
         '        source: cam-ctl',
         '        target: /gc-cam',
         '        volume: { nocopy: true }',
-        '      - ${GC_CAMERA_DIR:-cam-recordings}:/recordings   # cameras: clips (GC_CAMERA_DIR=/volume1/kameras for a NAS folder)'
+        recordingsLine(o.cameraDir)
       );
     }
     lines.push(

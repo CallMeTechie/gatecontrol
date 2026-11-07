@@ -25,6 +25,8 @@
 //                                     or on the viewer's profile — signed in, no kiosk)
 //   GET /plugins/_shared/leaflet/…    the vendored Leaflet for frames of plugins
 //                                     with ui.maps (leaflet.js, leaflet.css, images/*.png)
+//   GET /plugins/_shared/camera-player/camera-player.js
+//                                     the live player (MSE) for frames with permissions.cameras
 //   GET /plugins/_shared/tiles/<token>/<z>/<x>/<y>.png
 //                                     OpenStreetMap tiles for those frames (tiles.js)
 //   GET /plugin-media/<token>         a plugin's media file for its frames (signed
@@ -107,6 +109,14 @@ router.get('/plugins/_shared/leaflet/images/:file', pluginAssetLimiter, (req, re
   sharedHeaders(res);
   res.type('image/png');
   return res.sendFile(path.join(LEAFLET_DIR, 'images', f));
+});
+
+// The live player of the cameras in the home network for frames with permissions.cameras (MSE for browsers
+// without HLS; public/js/plugin-camera-player.js, docs/plugins.md "Kameras im Heimnetz").
+router.get('/plugins/_shared/camera-player/camera-player.js', pluginAssetLimiter, (req, res) => {
+  sharedHeaders(res);
+  res.type('application/javascript');
+  return res.sendFile(path.join(__dirname, '..', '..', 'public', 'js', 'plugin-camera-player.js'));
 });
 
 // ─── Tile relay for map frames (docs/plugins.md "Maps", tiles.js) ─────

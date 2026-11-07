@@ -779,11 +779,46 @@
         text: (p.manual || []).length ? t('gwn.feat.print_manual_list', { list: p.manual.join(', ') }) : t('gwn.feat.print_manual_add') });
       add.addEventListener('click', () => printManualDialog(id, p));
       extra.push(h('span', { class: 'gwn-print-acts' }, [again, add]));
+      printConvert(id, p, sup).forEach((x) => extra.push(x));
     }
     const plug = p.plugin || {};
     if (plug.installed) extra.push(h('a', { href: '/plugins/gatecontrol-print', class: 'gwn-link', 'data-print-link': 'plugin', text: t('gwn.feat.print_to_plugin') }));
     else extra.push(h('a', { href: '/settings/plugins/catalog/gatecontrol-print', class: 'gwn-link', 'data-print-link': 'catalog', text: t('gwn.feat.print_install') }));
     return featRow(t('gwn.feat.print'), t('gwn.feat.print_d'), sw, extra, 'print');
+  }
+
+  /**
+   * PDF for printers without PDF (features.print.convert, gateway docs/print.md "Umwandeln"): the checkbox (gateway
+   * 1.30.0 or later), which printers take no PDF and whether this gateway converts for them, "Gateway zu alt",
+   * a missing tool, a hint for a Raspberry Pi 3/Zero (never a ban).
+   */
+  function printConvert(id, p, sup) {
+    const out = [];
+    const noPdf = (p.devices || []).filter((x) => x.noPdf);
+    const names = (list) => list.map((x) => x.name).slice(0, 3).join(', ') + (list.length > 3 ? ' …' : '');
+    if (!p.convertSupported) {
+      if (noPdf.length) out.push(h('span', { class: 'gwn-hint', 'data-print-convert': 'old' }, [U.icon('info', 14), t('gwn.feat.print_convert_old', { list: names(noPdf), min: p.minGatewayConvert || '1.30.0', version: sup.version || '—' })]));
+      return out;
+    }
+    const box = h('input', { type: 'checkbox', id: 'gwn-f-pdfconv', 'data-fk': 'gwn-f-pdfconv' });
+    box.checked = p.convert !== false;
+    box.addEventListener('change', () => {
+      box.disabled = true;
+      putFeatures(id, { print: { convert: box.checked } }, t('gwn.feat.saved')).catch((err) => { box.checked = !box.checked; box.disabled = false; D.alert({ message: errText(err), danger: true }); });
+    });
+    out.push(h('label', { class: 'gwn-sub', for: 'gwn-f-pdfconv' }, [box, h('span', { text: t('gwn.feat.print_convert') })]));
+    if (p.convert !== false && p.convertAvailable === false) out.push(h('span', { class: 'gwn-hint', 'data-print-convert': 'tool' }, [U.icon('warn', 14), t('gwn.feat.print_convert_tool')]));
+    if (noPdf.length) {
+      const done = noPdf.filter((x) => x.convert);
+      const none = noPdf.filter((x) => !x.convert);
+      if (p.convert === false) out.push(h('span', { class: 'gwn-hint', 'data-print-convert': 'off' }, [U.icon('info', 14), t('gwn.feat.print_convert_off', { list: names(noPdf) })]));
+      else {
+        if (done.length) out.push(h('span', { class: 'gwe-d', 'data-print-convert': 'on' }, t('gwn.feat.print_convert_on', { list: names(done) })));
+        if (none.length && p.convertAvailable !== false) out.push(h('span', { class: 'gwn-hint', 'data-print-convert': 'none' }, [U.icon('info', 14), t('gwn.feat.print_convert_none', { list: names(none) })]));
+      }
+    }
+    if (p.convert !== false && p.convertHint === 'slow') out.push(h('span', { class: 'gwn-hint', 'data-print-convert': 'slow' }, [U.icon('info', 14), t('gwn.feat.print_convert_slow')]));
+    return out;
   }
 
   /** "Letzte Suche 12:03: 14 mDNS-Antworten, 2 Druck-/Scandienste, 1 Gerät · verworfen: 1 × anderes Subnetz (192.168.20.5)" */
@@ -947,6 +982,22 @@
     const st = c.storage;
     if (c.enabled && st && st.free != null) extra.push(h('span', { class: 'gwe-d', 'data-cameras-storage': '' }, t('gwn.feat.cameras_storage', { free: bytesLabel(st.free) })));
     if (c.enabled && st && st.problem) extra.push(h('span', { class: 'gwn-hint', 'data-cameras-disk': st.problem }, [U.icon('warn', 14), t('gwn.feat.cameras_' + st.problem)]));
+    // where the clips lie (gateway ≥ 1.29.0) and whether the folder chosen here is in use
+    if (c.enabled && !old) {
+      const where = c.storagePath ? t('gwn.feat.cameras_where_folder', { path: c.storagePath }) : t('gwn.feat.cameras_where_volume');
+      extra.push(h('span', { class: 'gwe-d', 'data-cameras-where': c.storagePath ? 'folder' : 'volume' }, where));
+      if ((c.subnets || []).length) extra.push(h('span', { class: 'gwe-d', 'data-cameras-subnets': '' }, t('gwn.feat.cameras_subnets_list', { list: c.subnets.join(', ') })));
+      if (c.storageState === 'compose' && window.GCGatewayCompose) {
+        const dl2 = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-cameras-storage-compose', text: t('gwn.feat.ai_compose_btn') });
+        dl2.addEventListener('click', () => window.GCGatewayCompose.open(g, 'gwn-cameras-storage-compose'));
+        extra.push(h('span', { class: 'gwn-hint', 'data-cameras-storage-state': 'compose' }, [U.icon('info', 14), t('gwn.feat.cameras_storage_compose'), ' ', dl2]));
+      } else if (c.storageState === 'container') {
+        extra.push(h('span', { class: 'gwn-hint', 'data-cameras-storage-state': 'container' }, [U.icon('warn', 14), t('gwn.feat.cameras_storage_container')]));
+      }
+      const set = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-cameras-settings', 'aria-haspopup': 'dialog', text: t('gwn.feat.cameras_settings') });
+      set.addEventListener('click', () => camerasDialog(id, c));
+      extra.push(h('span', { class: 'gwn-print-acts' }, [set]));
+    }
     if (c.hint && !old) {
       extra.push(h('span', { class: 'gwn-hint', 'data-cameras-hint': c.hint.key }, [U.icon(c.hint.over ? 'warn' : 'info', 14), t('gwn.feat.cameras_hint_' + c.hint.key, { max: c.hint.max })]));
     }
@@ -962,6 +1013,88 @@
     if (plug.installed) extra.push(h('a', { href: '/plugins/gatecontrol-door', class: 'gwn-link', 'data-cameras-link': 'plugin', text: t('gwn.feat.cameras_to_plugin') }));
     else extra.push(h('a', { href: '/settings/plugins/catalog/gatecontrol-door', class: 'gwn-link', 'data-cameras-link': 'catalog', text: t('gwn.feat.cameras_install') }));
     return featRow(t('gwn.feat.cameras'), parts.join(' '), sw, extra, 'cameras');
+  }
+
+  // the same check as the server (services/homeCameras.js storagePath): an absolute, plain folder of the host
+  const STORAGE_RE = /^\/[A-Za-z0-9._@+-]+(?:\/[A-Za-z0-9._@+-]+){0,15}\/?$/;
+  const storageOk = (v) => v.length <= 200 && STORAGE_RE.test(v) && v.split('/').every((x) => x !== '.' && x !== '..');
+
+  /**
+   * Gateway › Funktionen › Kameras › "Einstellungen": the folder for the clips (into the compose file the gateway
+   * page downloads — GC_CAMERA_DIR, no SSH) and up to 8 more private networks the gateway may reach (a camera VLAN
+   * behind the router). Both checked again by the server.
+   */
+  function camerasDialog(id, c) {
+    const max = 8;
+    const list = (c.subnets || []).slice();
+    const rpi = c.platform === 'rpi';
+    const dlg = U.openDialog({ title: t('gwn.cam.dlg_title'), wide: false, cls: 'gwn-printdlg' });
+    const err = U.errorBox();
+    // ── the folder for the clips ──
+    const path = h('input', { type: 'text', id: 'gwn-cam-path', class: 'form-input gwe-mono', autocomplete: 'off', spellcheck: 'false', placeholder: '/volume1/kameras', 'aria-describedby': 'gwn-cam-path-hint', disabled: rpi });
+    path.value = c.storagePath || '';
+    // ── more networks ──
+    const rows = h('div', { class: 'gwn-rows', 'data-cameras-subnet-list': '' });
+    const input = h('input', { type: 'text', id: 'gwn-cam-net', class: 'form-input gwe-mono', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false', placeholder: '192.168.20.0/24', 'aria-describedby': 'gwn-cam-net-hint' });
+    const addBtn = h('button', { type: 'button', class: 'btn btn-ghost', 'data-fk': 'gwn-cam-net-add', text: t('gwn.print.add') });
+    const cidrOk = (v) => {
+      const m = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(v);
+      return !!m && isRfc1918(m[1]) && Number(m[2]) >= 16 && Number(m[2]) <= 30;
+    };
+    const draw = () => {
+      rows.textContent = '';
+      if (!list.length) rows.appendChild(h('p', { class: 'gwe-empty', text: t('gwn.cam.nets_none') }));
+      list.forEach((n, i) => {
+        const rm = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-fk': 'gwn-cam-net-rm:' + n, 'aria-label': t('gwn.print.remove_aria', { ip: n }), text: t('gwn.print.remove') });
+        rm.addEventListener('click', () => { list.splice(i, 1); draw(); input.focus(); });
+        rows.appendChild(h('div', { class: 'gwn-row', 'data-cameras-subnet': n }, [h('span', { class: 'gwn-row-m' }, [h('strong', { class: 'gwe-mono', text: n })]), rm]));
+      });
+      addBtn.disabled = list.length >= max;
+      input.disabled = list.length >= max;
+    };
+    const add = (raw) => {
+      const v = String(raw || '').trim();
+      U.showErr(err, '');
+      input.removeAttribute('aria-invalid');
+      if (!cidrOk(v)) { U.showErr(err, t('gwn.cam.net_invalid')); input.setAttribute('aria-invalid', 'true'); input.focus(); return false; }
+      if (list.includes(v)) { U.showErr(err, t('gwn.print.dup', { ip: v })); input.focus(); return false; }
+      if (list.length >= max) { U.showErr(err, t('gwn.print.max', { n: max })); return false; }
+      list.push(v);
+      input.value = '';
+      draw();
+      input.focus();
+      return true;
+    };
+    addBtn.addEventListener('click', () => add(input.value));
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(input.value); } });
+    dlg.body.append(
+      h('p', { class: 'gwe-intro', text: t('gwn.cam.dlg_intro') }),
+      h('div', { class: 'gwe-field' }, [h('label', { class: 'form-label', for: 'gwn-cam-path', text: t('gwn.cam.path') }), path,
+        h('span', { class: 'form-hint', id: 'gwn-cam-path-hint', text: t(rpi ? 'gwn.cam.path_hint_rpi' : 'gwn.cam.path_hint') })]),
+      h('div', { class: 'gwe-field' }, [h('span', { class: 'form-label', text: t('gwn.cam.nets') }), rows,
+        h('label', { class: 'sr-only', for: 'gwn-cam-net', text: t('gwn.cam.net') }),
+        h('div', { class: 'gwn-print-add' }, [input, addBtn]),
+        h('span', { class: 'form-hint', id: 'gwn-cam-net-hint', text: t('gwn.cam.nets_hint', { n: max }) })]),
+      err);
+    draw();
+    const cancel = h('button', { type: 'button', class: 'btn btn-ghost', text: t('common.cancel'), on: { click: () => dlg.close(null) } });
+    const ok = h('button', { type: 'button', class: 'btn btn-primary', 'data-fk': 'gwn-cam-save', text: t('gwn.print.save') });
+    dlg.foot.append(cancel, ok);
+    ok.addEventListener('click', () => {
+      // a typed but not added network counts as well
+      if (input.value.trim() && !add(input.value)) return;
+      const p = path.value.trim();
+      path.removeAttribute('aria-invalid');
+      if (!rpi && p && !storageOk(p)) { U.showErr(err, t('gwn.cam.path_invalid')); path.setAttribute('aria-invalid', 'true'); path.focus(); return; }
+      ok.disabled = true;
+      const patch = { subnets: list };
+      if (!rpi) patch.storagePath = p || null;
+      const changedPath = !rpi && (p.replace(/\/$/, '') || null) !== (c.storagePath || null);
+      putFeatures(id, { cameras: patch }, t(changedPath && p ? 'gwn.cam.saved_path' : 'gwn.cam.saved'))
+        .then(() => dlg.close(true))
+        .catch((e) => { ok.disabled = false; U.showErr(err, errText(e)); });
+    });
+    path.focus();
   }
 
   function bytesLabel(n) {

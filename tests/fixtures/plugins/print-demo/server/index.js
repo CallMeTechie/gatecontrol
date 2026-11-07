@@ -4,7 +4,7 @@
 // through its admin API (/api/v1/plugins/print-demo/api/…).
 
 async function attempt(fn) {
-  try { return { ok: true, result: await fn() }; } catch (e) { return { ok: false, code: e.code || null, error: e.message }; }
+  try { return { ok: true, result: await fn() }; } catch (e) { return { ok: false, code: e.code || null, error: e.message, reason: e.reason || null }; }
 }
 
 module.exports = {

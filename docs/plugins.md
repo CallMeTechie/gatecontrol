@@ -2624,9 +2624,9 @@ its media — `application/pdf` and `image/jpeg` must be among `media.types`.
 
 | Call | Answer / rule |
 |---|---|
-| `gc.print.devices()` | `[{ id, name, model, location, ip, online, gatewayId, gateway, gatewayOnline, problem, printer, scanner, seenAt, reportedAt }]` — each device once (two gateways of one home network see the same printer: the online one wins). `printer: { state: idle\|processing\|stopped\|offline, reasons, color, duplex, formats, copiesMax, markers: [{ name, color: '#RRGGBB', type, level: 0…100\|null, low }] }`, `scanner: { state, platen, feeder, duplex, color: ['bw','gray','color'], resolutions, formats, adf: loaded\|empty\|null }`. `problem: 'cert_changed'`: the device answers with another TLS certificate than at the first contact — nothing goes there until it is confirmed (`discover({ retrust })`) |
+| `gc.print.devices()` | `[{ id, name, model, location, ip, online, gatewayId, gateway, gatewayOnline, problem, printer, scanner, seenAt, reportedAt }]` — each device once (two gateways of one home network see the same printer: the online one wins). `printer: { state: idle\|processing\|stopped\|offline, reasons, color, duplex, formats, copiesMax, convert, markers: [{ name, color: '#RRGGBB', type, level: 0…100\|null, low }] }` (`convert`: for a printer without `application/pdf` the format its gateway turns PDF into — `image/pwg-raster`, `image/urf`, `image/jpeg` — or `null`), `scanner: { state, platen, feeder, duplex, color: ['bw','gray','color'], resolutions, formats, adf: loaded\|empty\|null }`. `problem: 'cert_changed'`: the device answers with another TLS certificate than at the first contact — nothing goes there until it is confirmed (`discover({ retrust })`) |
 | `gc.print.discover({ retrust? })` | `{ asked }` — every online gateway with the function on searches again; `retrust: <device id>` drops that device's stored certificate fingerprint (an administrator confirmed the new one) |
-| `gc.print.submit({ deviceId, mediaId, user, copies?, color?, duplex?, name? })` | the job (below). `mediaId` a file of this plugin (≤ 50 MB): PDF as it is (the printer must take `application/pdf`), pictures (JPEG, PNG, WebP, HEIC, GIF, TIFF) as JPEG — or as a PDF page for a printer without JPEG. Other files (Office, text): `ERR_PRINT_FORMAT`. `copies` 1 … `copiesMax` (≤ 99), `color`/`duplex` only where the printer can. At most 20 open jobs per plugin and person (`ERR_PRINT_BUSY`) |
+| `gc.print.submit({ deviceId, mediaId, user, copies?, color?, duplex?, name? })` | the job (below). `mediaId` a file of this plugin (≤ 50 MB); its type counts by the **content** (`%PDF-`, JPEG, PNG … magic bytes — a PDF stored as `application/octet-stream` or named without `.pdf` is a PDF), the stored type only when the content says nothing. PDF as it is — to a printer that takes `application/pdf`, or whose gateway converts PDF (`printer.convert`, gateway 1.30.0+ with the capability `print-convert`: PWG raster, URF or JPEG at the printer's resolution, colour mode and paper); pictures (JPEG, PNG, WebP, HEIC, GIF, TIFF) as JPEG — or as a PDF page for a printer without JPEG. Otherwise `ERR_PRINT_FORMAT` with `e.reason` (since 1.243.0): `file_type` (not a PDF or picture: Office, text), `damaged` (a PDF or picture that cannot be read), `printer` (the printer takes no PDF and names no format the gateway can make), `gateway_update` (the printer takes no PDF and its gateway is too old to convert), `convert_off` (converting is switched off on that gateway: Gateways › Funktionen › „Drucken & Scannen“ › „PDF für Drucker ohne PDF umwandeln“). `copies` 1 … `copiesMax` (≤ 99), `color`/`duplex` only where the printer can. At most 20 open jobs per plugin and person (`ERR_PRINT_BUSY`) |
 | `gc.print.testPage({ deviceId, user })` | a job with a test page (name of the printer, time, colour bars — grey for a black-and-white printer) |
 | `gc.print.job(id)` / `gc.print.jobs({ since?, limit?, user? })` | `{ id, deviceId, gatewayId, user, name, format, bytes, pages, copies, color, duplex, state, error, message, createdAt, updatedAt, expiresAt, doneAt }` — only this plugin's jobs, newest change first (`limit` ≤ 500) |
 | `gc.print.cancel(id)` | `{ canceled, state }` — only `queued` / `waiting` |
@@ -2638,8 +2638,11 @@ its media — `application/pdf` and `image/jpeg` must be among `media.types`.
 
 Job states: `queued` → `sending` → `printing` → `done`; `waiting` while the
 printer is off or busy (the gateway tries again every 2 minutes), `failed`
-(`error`: `format_unsupported`, `printer_rejected`, `canceled_at_printer`,
-`aborted_at_printer`, …), `canceled`, `expired` (not printed within **24 h**).
+(`error`: `format_unsupported`, `convert_failed` — a PDF the gateway could
+not convert, e.g. damaged or password-protected —, `convert_too_large`,
+`printer_rejected`, `canceled_at_printer`, `aborted_at_printer`, …),
+`canceled`, `expired` (not printed within **24 h**). `message: 'converting'`
+on `sending`: the gateway is converting the PDF for the printer.
 `message: 'unconfirmed'` on `done`: the printer took the file but did not say
 it finished. Scan errors: `scanner_busy`, `feeder_empty`, `no_pages`,
 `timeout` (no word from the gateway for 3 minutes), `cert_changed`,
@@ -2719,14 +2722,14 @@ ignores the permission and `gc.cameras` is missing — check for it.
 | Call | Answer / rule |
 |---|---|
 | `gc.cameras.available()` | `{ available, gateways: [{ id, name, online, supported, enabled, service: managed\|absent\|missing, storage: { free, total, used, clips, problem }, hint }] }` — `hint` e.g. `{ key: 'one_motion', max: 1, motion, over }` on a Raspberry Pi 3 B+ (a hint, never a ban) |
-| `gc.cameras.list()` | `[{ id, gatewayId, gateway, name, host, source: onvif\|rtsp, manufacturer, model, state, problem, online, codec, width, height, stream, events: { supported, state, kinds }, settings, snapshotAt, lastEventAt }]` |
+| `gc.cameras.list()` | `[{ id, gatewayId, gateway, name, host, source: onvif\|rtsp, https, tlsInsecure, manufacturer, model, state, problem, online, codec, width, height, hasAudio, stream, events: { supported, state, kinds }, settings, snapshotAt, lastEventAt }]` — 1.242.0: `https` (ONVIF over HTTPS), `tlsInsecure` ("Zertifikat nicht prüfen"), `hasAudio` (the stream has a sound track, `null` unknown; gateway ≥ 1.29.0), `state` also `tls_untrusted` |
 | `gc.cameras.discover({ gatewayId? })` | `{ found: [{ gatewayId, gateway, host, port, path, manufacturer, model, name, cameraId }] }` — WS-Discovery on the gateway(s); `cameraId` when already added |
-| `gc.cameras.test({ gatewayId, host, onvifPort?, onvifPath?, rtspUrl?, user, password })` | `{ ok, source, info, profile, profiles, rtsp, events, codec, snapshot: { data, mime } \| null }` — nothing stored |
-| `gc.cameras.add({ gatewayId, name, host \| rtspUrl, user, password, profile?, settings? })` | `{ camera, snapshot }` — tests first, stores only when the gateway reached the camera; the password is encrypted with the server key and only ever goes to that gateway (never back to a plugin, never in the config pull). At most 16 per gateway (`ERR_CAMERA_LIMIT`) |
-| `gc.cameras.update(id, { name?, user?, password?, profile?, settings? })` / `remove(id, { deleteClips? })` | the camera / `{ removed }` |
+| `gc.cameras.test({ gatewayId, host, onvifPort?, onvifPath?, onvifTls?, tlsInsecure?, rtspUrl?, user, password })` | `{ ok, source, onvif: { port, path, tls }, tlsInsecure, info, profile, profiles, rtsp, events, codec, width, height, audio, snapshot: { data, mime } \| null }` — nothing stored. 1.242.0: `onvifTls` (ONVIF over HTTPS; without a port the gateway tries 443 last anyway), `tlsInsecure` (accept a self-signed certificate — only on the administrator's explicit choice; default: checked, `ERR_CAMERA_TLS`) |
+| `gc.cameras.add({ gatewayId, name, host \| rtspUrl, user, password, profile?, onvifTls?, tlsInsecure?, settings? })` | `{ camera, snapshot }` — tests first, stores only when the gateway reached the camera; the password is encrypted with the server key and only ever goes to that gateway (never back to a plugin, never in the config pull). At most 16 per gateway (`ERR_CAMERA_LIMIT`) |
+| `gc.cameras.update(id, { name?, user?, password?, profile?, tlsInsecure?, settings? })` / `remove(id, { deleteClips? })` | the camera / `{ removed }` |
 | `gc.cameras.snapshot(id, { maxBytes? })` | `{ data (base64 JPEG), mime, at }` — default ≤ 300 KB, fits `gc.notify({ image })` |
 | `gc.cameras.snapshotUrl(id)` | `{ url: '/camera-media/<token>/snapshot.jpg', expiresAt, every: 10 }` (token 10 min; add `?t=<n>` to refresh) |
-| `gc.cameras.live(id, req)` | in the VPN or the server's LAN: `{ mode: 'live', hls, mp4, snapshot, codec, audio, expiresAt }` (HLS with fMP4 for Safari/iOS/Android, `mp4` = a continuous fragmented MP4 for other browsers; token 10 min); from the internet `{ mode: 'snapshot', snapshot, every: 10, reason: 'vpn_required' }`. `req` is the request the plugin answers (its `req.homeRef`) |
+| `gc.cameras.live(id, req)` | in the VPN or the server's LAN: `{ mode: 'live', hls, mp4, snapshot, codec, audio, expiresAt }` (`audio`: sound switched on and the stream not known to have none) (HLS with fMP4 for Safari/iOS/Android, `mp4` = a continuous fragmented MP4 for other browsers; token 10 min); from the internet `{ mode: 'snapshot', snapshot, every: 10, reason: 'vpn_required' }`. `req` is the request the plugin answers (its `req.homeRef`) |
 | `gc.cameras.events({ cameraId?, since?, until?, kinds?, limit? })` | `[{ id, cameraId, camera, kind, kinds, startedAt, endedAt, nobodyHome, clip: { ms, bytes } \| null, thumbUrl, clipUrl }]` newest first (≤ 200; URLs valid 1 h; clips with Range) |
 | `gc.cameras.deleteEvent(id)` | `{ deleted }` — also the clip on the gateway |
 | `gc.cameras.on(handler)` | hook `cameraEvent`: `{ id, cameraId, camera, gatewayId, kind, kinds, phase: start\|update\|end, at, nobodyHome, clip }` |
@@ -2735,10 +2738,26 @@ ignores the permission and `gc.cameras` is missing — check for it.
 people who agreed; unknown = no) | never, events: [person, vehicle, animal, motion],
 retentionDays 1…90, stream: main | sub, audio }`. Frames of a plugin with the
 permission may load `/camera-media/` (`img-src`/`media-src`), and its iframe gets
-`allow="fullscreen"` (as does a plugin whose `media.types` take videos, see "Media"). Errors: `ERR_INVALID`, `ERR_NOT_FOUND`, `ERR_CAMERA_OFFLINE`,
+`allow="fullscreen"` (as does a plugin whose `media.types` take videos, see "Media"). Since 1.242.0 they may also `fetch` it (`connect-src <origin>/camera-media/`;
+the media answer `Access-Control-Allow-Origin: *` — the token is the permission, no cookie), play
+`blob:` media and load the shared live player:
+
+```html
+<script src="/plugins/_shared/camera-player/camera-player.js"></script>
+<script>
+  // live = the answer of gc.cameras.live (mode 'live')
+  const p = GCCameraPlayer.play(video, live, { onError: () => showStills(), onPlaying: () => {}, onEnded: () => renew() });
+  // p.mode: 'hls' (Safari, iOS, Android) | 'mse' (Firefox, Chrome/Edge on the PC: live.mp4 through
+  // Media Source Extensions, buffer ≤ 60 s, stays at the live edge) | 'mp4' (plain <video src>); p.stop()
+</script>
+```
+
+No library, no CDN (`public/js/plugin-camera-player.js`). Without the script (an older GateControl)
+`window.GCCameraPlayer` is missing — fall back to `video.src = canPlayType(HLS) ? hls : mp4`. Errors: `ERR_INVALID`, `ERR_NOT_FOUND`, `ERR_CAMERA_OFFLINE`,
 `ERR_CAMERA_UNSUPPORTED`, `ERR_CAMERA_AUTH`, `ERR_CAMERA_UNREACHABLE`,
 `ERR_CAMERA_NOT_ALLOWED` (not a private address of the gateway's home network),
-`ERR_CAMERA_NOT_READY`, `ERR_CAMERA_SERVICE_MISSING`, `ERR_CAMERA_LIMIT`. Who may
+`ERR_CAMERA_NOT_READY`, `ERR_CAMERA_SERVICE_MISSING`, `ERR_CAMERA_LIMIT`, `ERR_CAMERA_TLS` (1.242.0:
+the camera's HTTPS certificate is not trusted — offer "Zertifikat nicht prüfen"). Who may
 see which camera is the plugin's to decide.
 
 ## AI requests (`permissions.ai`)

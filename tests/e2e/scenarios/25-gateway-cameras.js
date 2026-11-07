@@ -12,7 +12,11 @@
 // share, the hint "höchstens 1 Kamera mit Bewegungserkennung", the compose
 // hint and the way to "Tür & Kamera" (catalogue, not installed here); the
 // hints "Ein Schalter genügt" / "Hinweise statt Verbote" under the groups.
-// Light/dark, 390 px without sideways scroll.
+// "Speicherort und Netze": a folder with ".." and a public network are refused
+// in the dialog, a NAS folder and a camera VLAN are saved (the network goes to
+// the gateway, the folder never — compose file only); the gateway's report
+// (1.29.0, storage.mount) decides between "gilt erst mit der neuen
+// Compose-Datei" and no hint. Light/dark, 390 px without sideways scroll.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -160,6 +164,63 @@ module.exports = (ctx) => {
         step('cameras: with the service, no compose hint', await until(page, (sel) => {
           const r = document.querySelector(sel);
           return !!r && !r.querySelector('[data-cameras-compose]') && !!r.querySelector('[data-cameras-hint]');
+        }, row));
+        // ── "Speicherort und Netze": the clip folder (compose file) and a camera VLAN ──
+        step('cameras: "Clips im Docker-Volume" before a folder is chosen', await page.evaluate((sel) => {
+          const w = document.querySelector(sel + ' [data-cameras-where]');
+          return !!w && w.getAttribute('data-cameras-where') === 'volume' && /cam-recordings/.test(w.textContent);
+        }, row));
+        await page.click(row + ' [data-fk="gwn-cameras-settings"]');
+        step('cameras: the dialog opens with the folder field and the networks', await until(page, () => !!document.getElementById('gwn-cam-path') && !!document.getElementById('gwn-cam-net')
+          && /Nur die eigenen Netze/.test((document.querySelector('[data-cameras-subnet-list]') || {}).textContent || '')));
+        await theme(page, 'dark');
+        await shot(page, 'gwcameras-settings-dark', false);
+        await page.fill('#gwn-cam-path', '/volume1/../kameras');
+        await page.click('[data-fk="gwn-cam-save"]');
+        step('cameras: a folder with ".." is refused in the dialog (nothing sent)', await until(page, () => {
+          const p = document.getElementById('gwn-cam-path');
+          return !!p && p.getAttribute('aria-invalid') === 'true' && /\/volume1\/kameras/.test((document.querySelector('.gwn-printdlg') || document.body).textContent);
+        }));
+        await page.fill('#gwn-cam-net', '8.8.8.0/24');
+        await page.click('[data-fk="gwn-cam-net-add"]');
+        step('cameras: a public network is refused', await until(page, () => (document.getElementById('gwn-cam-net') || {}).getAttribute && document.getElementById('gwn-cam-net').getAttribute('aria-invalid') === 'true'));
+        await page.fill('#gwn-cam-net', '192.168.20.0/24');
+        await page.click('[data-fk="gwn-cam-net-add"]');
+        step('cameras: 192.168.20.0/24 in the list', await until(page, () => !!document.querySelector('[data-cameras-subnet="192.168.20.0/24"]')));
+        await page.fill('#gwn-cam-path', '/volume1/kameras');
+        await theme(page, 'light');
+        await shot(page, 'gwcameras-settings-light', false);
+        await page.click('[data-fk="gwn-cam-save"]');
+        step('cameras: saved (real PUT): folder and network in the row', await until(page, (sel) => {
+          const r = document.querySelector(sel);
+          const w = r && r.querySelector('[data-cameras-where]');
+          return !document.getElementById('gwn-cam-path') && !!w && w.getAttribute('data-cameras-where') === 'folder' && /\/volume1\/kameras/.test(w.textContent)
+            && /192\.168\.20\.0\/24/.test((r.querySelector('[data-cameras-subnets]') || {}).textContent || '');
+        }, row));
+        const cfg2 = await (await page.request.fetch(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token } })).json();
+        step('cameras: the network goes to the gateway, the folder never (compose file only)', !!(cfg2.features && cfg2.features.cameras
+          && JSON.stringify(cfg2.features.cameras.subnets) === JSON.stringify(['192.168.20.0/24']) && !/volume1/.test(JSON.stringify(cfg2.features))));
+        // the gateway (1.29.0) still reports the Docker volume → "Neue Compose-Datei"
+        step('cameras: report of the gateway: clips still in the volume', await gw('/cameras/report', { service: 'managed', storage: { free: 40e9, total: 64e9, mount: 'volume', volume: 'gatecontrol_cam-recordings' }, cameras: [] }) === 200);
+        await fresh(page);
+        await page.reload();
+        await goFeatures(page, GW);
+        step('cameras: hint "gilt erst mit der neuen Compose-Datei" with the download', await until(page, (sel) => {
+          const h = document.querySelector(sel + ' [data-cameras-storage-state="compose"]');
+          return !!h && /Compose-Datei/.test(h.textContent) && !!h.querySelector('[data-fk="gwn-cameras-storage-compose"]');
+        }, row));
+        await page.setViewportSize({ width: 390, height: 900 });
+        await page.waitForTimeout(300);
+        const o2 = await overflow(page);
+        step('cameras: 390 px with folder and hints: no sideways scroll', o2 <= 0, 'overflow ' + o2);
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        step('cameras: report: the folder is in use', await gw('/cameras/report', { service: 'managed', storage: { free: 40e9, total: 64e9, mount: 'folder', folder: '/kameras' }, cameras: [] }) === 200);
+        await fresh(page);
+        await page.reload();
+        await goFeatures(page, GW);
+        step('cameras: no storage hint once the folder is in use', await until(page, (sel) => {
+          const r = document.querySelector(sel);
+          return !!r && !!r.querySelector('[data-cameras-where="folder"]') && !r.querySelector('[data-cameras-storage-state]');
         }, row));
         await page.click(row + ' [role="switch"]');
         step('cameras: switched off again', await until(page, (sel) => {

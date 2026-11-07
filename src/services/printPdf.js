@@ -149,6 +149,29 @@ function pdfPages(buf) {
   return Math.max(1, pages || count || 1);
 }
 
+/**
+ * The type of a file by its first bytes (magic numbers) — PDF ("%PDF-" in the
+ * first 1024 bytes, also after a BOM or a mail header), JPEG, PNG, GIF, WebP,
+ * TIFF, HEIC/HEIF — or null (unknown: Office, text …). A PDF uploaded as
+ * application/octet-stream or under a name without ".pdf" is a PDF.
+ */
+function sniff(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 4) return null;
+  const at = (s, o = 0) => buf.length >= o + s.length && buf.subarray(o, o + s.length).equals(Buffer.from(s, 'latin1'));
+  if (buf.subarray(0, 1024).indexOf('%PDF-') >= 0) return 'application/pdf';
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (at('\x89PNG\r\n\x1a\n')) return 'image/png';
+  if (at('GIF87a') || at('GIF89a')) return 'image/gif';
+  if (at('RIFF') && at('WEBP', 8)) return 'image/webp';
+  if (at('II*\0') || at('MM\0*')) return 'image/tiff';
+  if (at('ftyp', 4)) {
+    const brand = buf.subarray(8, 12).toString('latin1');
+    if (/^(heic|heix|hevc|hevx|heim|heis)$/.test(brand)) return 'image/heic';
+    if (/^(mif1|msf1)$/.test(brand)) return 'image/heif';
+  }
+  return null;
+}
+
 /** PDF string literal in WinAnsi (Latin-1), ( ) \ escaped; other characters → '?'. */
 function pdfText(s) {
   let out = '';
@@ -193,4 +216,4 @@ function testPagePdf({ title, device, when, note, color = true }) {
   ]);
 }
 
-module.exports = { jpegInfo, jpegsToPdf, pdfPages, testPagePdf, pdfText, A4 };
+module.exports = { jpegInfo, jpegsToPdf, pdfPages, testPagePdf, pdfText, sniff, A4 };

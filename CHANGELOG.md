@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.243.0] — 2026-11-07
+
+### Features
+- PDF an Drucker ohne PDF über das Gateway, Dateiart am Inhalt, echter Grund bei ERR_PRINT_FORMAT (#430)
+
+---
+
+## [1.242.0] — 2026-11-07
+
+### Features
+- Live-Bild in Firefox, HTTPS-Kameras, Speicherort der Clips und Netze im Gateway-Menü (#429)
+
+---
+
 ## [1.241.1] — 2026-11-07
 
 ### Fixes

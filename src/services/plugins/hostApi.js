@@ -15,7 +15,8 @@ const { NOTIFY_PER_HOUR_DEFAULT, NOTIFY_PER_HOUR_MAX } = require('./manifest');
 const notifyWindow = new Map();
 
 class HostApiError extends Error {
-  constructor(code, message) { super(message || code); this.code = code; }
+  /** reason: a short machine word that says why (gc.print ERR_PRINT_FORMAT: file_type | damaged | printer | gateway_update | convert_off) */
+  constructor(code, message, reason) { super(message || code); this.code = code; if (reason) this.reason = reason; }
 }
 
 function need(cond, code, msg) { if (!cond) throw new HostApiError(code, msg); }
@@ -1562,7 +1563,7 @@ async function printCall(plugin, op, args, ctx) {
       default: break;
     }
   } catch (e) {
-    if (e instanceof hp.PrintError) throw new HostApiError(hp.HOST_CODES[e.code] || 'ERR_PRINT_FAILED', e.message);
+    if (e instanceof hp.PrintError) throw new HostApiError(hp.HOST_CODES[e.code] || 'ERR_PRINT_FAILED', e.message, e.reason);
     throw e;
   }
   throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
