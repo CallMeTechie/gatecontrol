@@ -52,6 +52,9 @@ function startFakeGateway() {
       if (req.url === '/api/ai/pull') return json(202, { accepted: true });
       if (req.url === '/api/ai/pull/cancel') return json(409, { error: 'no_pull' });
       if (req.url === '/api/ai/delete') return json(200, { deleted: true });
+      if (req.url === '/api/ai/probe') {
+        return json(200, { probe: { reachable: true, url: body.url, api: body.api, version: '0.40.8', models: [{ name: 'qwen2.5:14b', size: 9e9 }, { name: '../bad name', size: 1 }], auth: !!body.key, error: null } });
+      }
       if (req.url === '/api/ai/chat') {
         if (g.mode === 'busy') return json(429, { error: 'busy' });
         if (g.mode === 'not_running') return json(409, { error: 'not_running' });
@@ -177,19 +180,29 @@ describe('setup "Lokale KI einrichten"', () => {
     assert.ok(n.memMb > 15000);
     assert.equal(p.hint, 'memory', 'Pi Keller – 1 GB RAM, zu wenig für ein Modell (a hint, it can still be chosen)');
     const fit = (id) => Object.fromEntries(v.catalogue.find((c) => c.peerId === id).models.map((m) => [m.id, m.fit]));
-    assert.deepEqual(fit(nas.peer.id), { 'llama3.2:1b': 'fits', 'llama3.2:3b': 'recommended', 'qwen2.5:7b': 'fits', 'gemma2:9b': 'not_recommended' });
+    assert.deepEqual(fit(nas.peer.id), { 'llama3.2:1b': 'fits', 'llama3.2:3b': 'recommended', 'qwen2.5:7b': 'fits', 'gemma2:9b': 'not_recommended', 'qwen2.5:14b': 'not_recommended', 'qwen2.5:32b': 'not_recommended' });
     assert.equal(v.catalogue.find((c) => c.peerId === nas.peer.id).models.find((m) => m.id === 'gemma2:9b').reason, 'slow');
     assert.ok(Object.values(fit(pi.peer.id)).every((f) => f === 'not_recommended'));
-    assert.deepEqual(local.fitList({ memMb: 8192, cores: 4, arch: 'arm64', gpu: [] }).map((m) => m.fit), ['recommended', 'fits', 'not_recommended', 'not_recommended'], 'Pi 5 (8 GB): the 1B model');
-    assert.deepEqual(local.fitList({ memMb: 32768, cores: 8, arch: 'x64', gpu: [{ vendor: 'nvidia' }] }).map((m) => m.fit).filter((f) => f === 'recommended').length, 1);
+    assert.deepEqual(local.fitList({ memMb: 8192, cores: 4, arch: 'arm64', gpu: [] }).map((m) => m.fit), ['recommended', 'fits', 'not_recommended', 'not_recommended', 'not_recommended', 'not_recommended'], 'Pi 5 (8 GB): the 1B model');
+    // a card that is there but not used ("Grafikkarte nutzen" off) changes nothing
+    assert.deepEqual(local.fitList({ memMb: 32768, cores: 8, arch: 'x64', gpu: [{ vendor: 'nvidia' }] }).map((m) => m.fit), local.fitList({ memMb: 32768, cores: 8, arch: 'x64', gpu: [] }).map((m) => m.fit));
+    // 12 GB graphics memory: everything up to Qwen 2.5 14B fits into it (fast), 32B only partly
+    const g12 = local.fitList({ memMb: 32768, cores: 8, arch: 'x64', gpu: [{ vendor: 'nvidia' }] }, 0, { on: true, vramMb: 12288 });
+    assert.deepEqual(g12.map((m) => [m.id, m.fit, m.vram]), [['llama3.2:1b', 'fits', 'full'], ['llama3.2:3b', 'fits', 'full'], ['qwen2.5:7b', 'fits', 'full'], ['gemma2:9b', 'fits', 'full'],
+      ['qwen2.5:14b', 'recommended', 'full'], ['qwen2.5:32b', 'not_recommended', 'partial']]);
+    // in graphics memory a model needs little main memory: an 8-GB box with a 24-GB card takes the 14B one
+    assert.equal(local.fitList({ memMb: 8192, cores: 4, arch: 'x64', gpu: [] }, 0, { on: true, vramMb: 24576 }).find((m) => m.id === 'qwen2.5:14b').fit, 'fits');
   });
 
-  it('validation: model, LAN address (private IPv4 only), too old a gateway', async () => {
+  it('validation: model, LAN address (private addresses or a name), too old a gateway', async () => {
     for (const [b, field] of [[{ source: 'service', peerId: nas.peer.id, model: 'Llama 3' }, 'model'], [{ source: 'x', peerId: nas.peer.id, model: 'llama3.2:3b' }, 'source'],
       [{ source: 'service', peerId: 99999, model: 'llama3.2:3b' }, 'peerId'],
       [{ source: 'lan', peerId: nas.peer.id, model: 'llama3.2', lanUrl: 'http://8.8.8.8:11434' }, 'lanUrl'],
-      [{ source: 'lan', peerId: nas.peer.id, model: 'llama3.2', lanUrl: 'http://ollama.example.com:11434' }, 'lanUrl'],
+      [{ source: 'lan', peerId: nas.peer.id, model: 'llama3.2', lanUrl: 'http://[2001:db8::1]:11434' }, 'lanUrl'],
+      [{ source: 'lan', peerId: nas.peer.id, model: 'llama3.2', lanUrl: 'http://localhost:11434' }, 'lanUrl'],
       [{ source: 'lan', peerId: nas.peer.id, model: 'llama3.2', lanUrl: 'http://127.0.0.1:11434' }, 'lanUrl'],
+      [{ source: 'lan', peerId: nas.peer.id, model: 'llama3.2', lanUrl: 'http://192.168.1.20:11434', lanKey: 'with space' }, 'lanKey'],
+      [{ source: 'service', peerId: nas.peer.id, model: 'llama3.2:3b', gpu: 'voodoo' }, 'gpu'],
       [{ source: 'lan', peerId: nas.peer.id, model: 'llama3.2', lanUrl: 'http://user:pw@192.168.1.20:11434' }, 'lanUrl']]) {
       const r = await put(AI + '/local', b);
       assert.equal(r.status, 400, JSON.stringify(b));
@@ -458,5 +471,160 @@ describe('gateway › Funktionen: the row "Lokale KI" and the memory', () => {
     const old = (await supertest(app).get('/api/v1/gateway/config').set('Authorization', 'Bearer ' + nas.apiToken).expect(200)).body;
     assert.equal(old.features.ai.enabled, false);
     assert.equal(local.peerId(), pi.peer.id);
+  });
+});
+
+// ─── the open items of phase 3c: names/IPv6, API key, connection test, graphics card ──
+
+const SUPPORTS = ['gpu', 'lanKey', 'lanHost', 'probe'];
+const LAN_KEY = 'sk-lan-SECRET-4711-abcd';
+
+describe('LAN server: names and IPv6, the API key, "Verbindung testen"', () => {
+  it('names (resolved by the gateway) and private IPv6 addresses; nothing that leaves the home network', () => {
+    assert.equal(local.lanUrl('http://KI-PC.local:11434'), 'http://ki-pc.local:11434');
+    assert.equal(local.lanUrl('https://llm.fritz.box/v1'), 'https://llm.fritz.box:443');
+    assert.equal(local.lanUrl('http://[fd00:0:0::20]:11434'), 'http://[fd00::20]:11434');
+    for (const bad of ['http://[::1]:11434', 'http://[fe80::1]:11434', 'http://[2001:db8::1]/', 'http://localhost/', 'http://a.localhost/', 'http://8.8.8.8/',
+      'http://169.254.169.254/', 'http://nas_1/', 'http://1.2.3/', 'http://[::ffff:192.168.1.2]/']) assert.equal(local.lanUrl(bad), null, bad);
+  });
+
+  it('the key: stored encrypted, only its revision in the config pull, fetched only by the forwarding gateway, never shown', async () => {
+    await put(AI + '/local', { source: 'lan', peerId: pi.peer.id, model: 'qwen2.5-7b-instruct', lanUrl: 'http://llm.fritz.box:8000/v1', lanApi: 'openai', lanKey: LAN_KEY }).expect(200);
+    const row = db.prepare("SELECT key_encrypted, key_hint FROM ai_providers WHERE id = 'local'").get();
+    assert.ok(row.key_encrypted && !row.key_encrypted.includes(LAN_KEY), 'encrypted at rest');
+    assert.equal(row.key_hint, 'abcd');
+    const cfg = (await supertest(app).get('/api/v1/gateway/config').set('Authorization', 'Bearer ' + pi.apiToken).expect(200)).body;
+    assert.equal(cfg.features.ai.lan.url, 'http://llm.fritz.box:8000');
+    assert.match(cfg.features.ai.lan.keyRev, /^[0-9a-f]{16}$/);
+    assert.ok(!JSON.stringify(cfg).includes(LAN_KEY), 'never in the config pull');
+    const cred = (await supertest(app).get('/api/v1/gateway/ai/credentials').set('Authorization', 'Bearer ' + pi.apiToken).expect(200));
+    assert.equal(cred.headers['cache-control'], 'no-store');
+    assert.deepEqual(cred.body, { rev: cfg.features.ai.lan.keyRev, key: LAN_KEY });
+    // the other gateway gets nothing
+    assert.deepEqual((await supertest(app).get('/api/v1/gateway/ai/credentials').set('Authorization', 'Bearer ' + nas.apiToken).expect(200)).body, { rev: null, key: null });
+    assert.equal((await supertest(app).get('/api/v1/gateway/config').set('Authorization', 'Bearer ' + nas.apiToken).expect(200)).body.features.ai.lan, null);
+    await supertest(app).get('/api/v1/gateway/ai/credentials').expect(401);
+    // the admin pages show only that a key is there
+    const v = (await agent.get(AI + '/local').expect(200)).body;
+    assert.equal(v.current.keySet, true);
+    assert.equal(v.current.keyHint, 'abcd');
+    assert.ok(!JSON.stringify(v).includes(LAN_KEY));
+    const all = (await agent.get(AI).expect(200)).body;
+    assert.equal(all.providers.find((p) => p.id === 'local').keySet, true);
+    assert.ok(!JSON.stringify(all).includes(LAN_KEY));
+    const f = (await agent.get(`/api/v1/gateways/${pi.peer.id}/features`).expect(200)).body.gateway;
+    assert.equal(f.ai.lanKey, true);
+    assert.ok(!JSON.stringify(f).includes(LAN_KEY));
+    const logs = db.prepare("SELECT message, details FROM activity_log WHERE event_type LIKE 'ai_local%' OR event_type = 'gateway_features_changed'").all();
+    assert.ok(logs.some((l) => /API key of the AI server saved/.test(l.message)));
+    assert.ok(!JSON.stringify(logs).includes(LAN_KEY), 'never in the activity log');
+    // saving without lanKey keeps it (same revision); a new key → a new revision
+    await put(AI + '/local', { source: 'lan', peerId: pi.peer.id, model: 'qwen2.5-7b-instruct', lanUrl: 'http://llm.fritz.box:8000/v1', lanApi: 'openai' }).expect(200);
+    const rev1 = local.credentialsFor(pi.peer.id).rev;
+    assert.equal(rev1, cfg.features.ai.lan.keyRev);
+    await put(AI + '/local', { source: 'lan', peerId: pi.peer.id, model: 'qwen2.5-7b-instruct', lanUrl: 'http://llm.fritz.box:8000/v1', lanApi: 'openai', lanKey: 'sk-new-0000' }).expect(200);
+    const c2 = local.credentialsFor(pi.peer.id);
+    assert.notEqual(c2.rev, rev1);
+    assert.equal(c2.key, 'sk-new-0000');
+    // removed: no revision, the gateway forgets it
+    await put(AI + '/local', { source: 'lan', peerId: pi.peer.id, model: 'qwen2.5-7b-instruct', lanUrl: 'http://llm.fritz.box:8000/v1', lanApi: 'openai', lanKey: null }).expect(200);
+    assert.deepEqual(local.credentialsFor(pi.peer.id), { rev: null, key: null });
+    assert.equal(((await supertest(app).get('/api/v1/gateway/config').set('Authorization', 'Bearer ' + pi.apiToken).expect(200)).body.features.ai.lan.keyRev), undefined);
+    assert.equal((await agent.get(AI + '/local').expect(200)).body.current.keySet, false);
+  });
+
+  it('"Verbindung testen": the gateway asks the server (nothing saved), with the typed or the stored key', async () => {
+    setTel(nas, { ai: aiTel({ supports: SUPPORTS }) });
+    const r = (await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: 'http://[fd00::20]:11434', lanApi: 'ollama', lanKey: 'sk-typed' }).expect(200)).body;
+    assert.deepEqual(r.probe, { reachable: true, url: 'http://[fd00::20]:11434', api: 'ollama', version: '0.40.8', models: [{ name: 'qwen2.5:14b', size: 9e9 }], auth: true, error: null });
+    assert.deepEqual(fakeGw.calls.find((c) => c.path === '/api/ai/probe').body, { url: 'http://[fd00::20]:11434', api: 'ollama', key: 'sk-typed' });
+    assert.equal(fakeGw.calls[0].token, nas.pushToken);
+    // no typed key: the stored one goes along
+    await put(AI + '/local', { source: 'lan', peerId: pi.peer.id, model: 'qwen2.5-7b-instruct', lanUrl: 'http://llm.fritz.box:8000', lanApi: 'openai', lanKey: LAN_KEY }).expect(200);
+    fakeGw.calls.length = 0;
+    await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: 'http://ki-pc.local:11434' }).expect(200);
+    assert.equal(fakeGw.calls[0].body.key, LAN_KEY);
+    // checked before: the address, the key, a gateway that cannot do it
+    assert.equal((await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: 'http://8.8.8.8:11434' })).body.field, 'lanUrl');
+    assert.equal((await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: 'http://10.0.0.2:1', lanKey: 'a b' })).body.field, 'lanKey');
+    setTel(nas);
+    const old = await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: 'http://10.0.0.2:11434' });
+    assert.equal(old.status, 409);
+    assert.equal(old.body.code, 'gateway_unsupported_ext');
+    // an unauthorized server: the gateway's error code reaches the provider as a client error
+    assert.equal(local.errorKind('unauthorized'), 'client');
+    assert.equal(local.errorKind('not_private'), 'network');
+  });
+});
+
+describe('graphics card ("Grafikkarte nutzen")', () => {
+  const NV = { vendor: 'nvidia', driver: 'nvidia', vramMb: null, integrated: false, name: 'NVIDIA GeForce RTX 3060' };
+  const host = (extra) => ({ memTotal: 31 * GB, cores: 8, arch: 'x64', gpu: [NV], nvidiaDriver: '550.54.14', kfd: false, render: true, ...extra });
+  const facts = (h) => local.factsOf({ features: { ai: { host: h } } });
+  const view = (h, gpu, s = 'nvidia', o = {}) => local.gpuView(facts(h), { source: 'service', gpu }, { gpu: s }, { supports: SUPPORTS, ...o });
+
+  it('hints from the hardware report: driver, toolkit, ROCm, compose file — never a ban', () => {
+    assert.deepEqual(view(host(), null, 'off').hints, ['available'], 'a usable card: suggested, not switched on');
+    assert.equal(view(host(), null, 'off').suggest, 'nvidia');
+    assert.deepEqual(view(host({ gpu: [{ ...NV, driver: 'nouveau' }], nvidiaDriver: null }), null).hints, ['nvidia_driver']);
+    assert.deepEqual(view(host({ nvidiaDriver: '535.183.01' }), null).hints, ['nvidia_old']);
+    // the compose file still gives the service no GPU / the container does not see it (toolkit)
+    assert.deepEqual(view(host(), { mode: 'none', devices: [], access: null, cards: [], used: false }).hints, ['compose']);
+    const tk = view(host(), { mode: 'nvidia', devices: [], access: false, cards: [], used: false });
+    assert.deepEqual([tk.hints, tk.state], [['toolkit'], 'waiting']);
+    const ok = view(host(), { mode: 'nvidia', devices: ['nvidia'], access: true, cards: [{ name: 'NVIDIA GeForce RTX 3060', vramMb: 12288, driver: '550.54.14' }], used: true });
+    assert.deepEqual([ok.hints, ok.state, ok.vramMb, ok.card.name], [[], 'in_use', 12288, 'NVIDIA GeForce RTX 3060']);
+    // AMD: ROCm needs /dev/kfd and amd64; the memory comes from sysfs
+    const amd = view(host({ gpu: [{ vendor: 'amd', driver: 'amdgpu', vramMb: 16384, integrated: false, name: null }], nvidiaDriver: null, kfd: false, arch: 'arm64' }), null, 'amd');
+    assert.deepEqual([amd.hints, amd.vramMb], [['rocm', 'arch'], 16384]);
+    // Intel: experimental; no card at all
+    assert.deepEqual(view(host({ gpu: [], render: false }), null, 'intel').hints, ['no_card', 'dri', 'experimental']);
+    // a gateway older than 1.31.0 / the Pi image
+    assert.deepEqual(local.gpuView(facts(host()), null, { gpu: 'off' }, { supports: [] }).hints, ['unsupported']);
+    assert.deepEqual(view(host(), null, 'nvidia', { platform: 'rpi' }).hints, ['rpi']);
+  });
+
+  it('chosen in the setup → the compose file gets the card; the catalogue fits by graphics memory', async () => {
+    db.prepare("UPDATE gateway_meta SET platform = 'linux' WHERE peer_id = ?").run(nas.peer.id);
+    const smi = { mode: 'nvidia', devices: ['nvidia'], access: true, cards: [{ name: 'NVIDIA GeForce RTX 3060', vramMb: 12288, driver: '550.54.14' }], used: false };
+    setTel(nas, { mem: 31 * GB, cores: 8, ai: aiTel({ supports: SUPPORTS, host: host(), gpu: { ...smi, mode: 'none', access: null, devices: [], cards: [] } }) });
+    let v = (await agent.get(AI + '/local').expect(200)).body;
+    let g = v.gateways.find((x) => x.id === nas.peer.id);
+    assert.deepEqual([g.gpuView.choice, g.gpuView.suggest, g.gpuView.hints], ['off', 'nvidia', ['available']]);
+    const cat = v.catalogue.find((c) => c.peerId === nas.peer.id);
+    assert.deepEqual(Object.keys(cat.byGpu), ['off', 'nvidia', 'amd', 'intel'], 'the fit per choice, for the page to switch live');
+    assert.deepEqual(g.gpuOptions.amd.hints, ['no_card', 'rocm', 'compose'], 'what AMD would mean here, before saving');
+    await put(AI + '/local', { source: 'service', peerId: nas.peer.id, model: 'qwen2.5:14b', gpu: 'nvidia' }).expect(200);
+    assert.equal(db.prepare('SELECT settings FROM gateway_features WHERE peer_id = ?').get(nas.peer.id).settings.includes('"gpu":"nvidia"'), true);
+    // the running service has no GPU yet: download the compose file again
+    let f = (await agent.get(`/api/v1/gateways/${nas.peer.id}/features`).expect(200)).body.gateway;
+    assert.equal(f.ai.compose, 'compose_gpu');
+    assert.deepEqual(f.ai.gpu.hints, ['compose']);
+    const kit = require('../public/js/gateway-kit');
+    const text = (await agent.post(`/api/v1/gateways/${nas.peer.id}/compose`).set('X-CSRF-Token', csrf).send({}).expect(200)).text;
+    assert.equal(text, kit.buildCompose({ platform: 'linux', network: 'host', ai: true, aiGpu: 'nvidia' }));
+    assert.match(text, /- driver: nvidia\n {14}count: all\n {14}capabilities: \[gpu\]/);
+    assert.match(text, /- GC_KI_GPU=nvidia/);
+    // after the new compose file: the service sees the card; 12 GB → Qwen 2.5 14B fits into it
+    setTel(nas, { mem: 31 * GB, cores: 8, ai: aiTel({ supports: SUPPORTS, host: host(), gpu: smi }) });
+    f = (await agent.get(`/api/v1/gateways/${nas.peer.id}/features`).expect(200)).body.gateway;
+    assert.equal(f.ai.compose, null);
+    assert.deepEqual([f.ai.gpu.state, f.ai.gpu.vramMb], ['ready', 12288]);
+    v = (await agent.get(AI + '/local').expect(200)).body;
+    const m = v.catalogue.find((c) => c.peerId === nas.peer.id).models.find((x) => x.id === 'qwen2.5:14b');
+    assert.deepEqual([m.fit, m.vram], ['recommended', 'full']);
+    assert.equal(v.current.gpu, 'nvidia');
+    // AMD: the ROCm image with the devices
+    await put(`/api/v1/gateways/${nas.peer.id}/features`, { ai: { gpu: 'amd' } }).expect(200);
+    const amd = (await agent.post(`/api/v1/gateways/${nas.peer.id}/compose`).set('X-CSRF-Token', csrf).send({}).expect(200)).text;
+    assert.match(amd, /image: ollama\/ollama:[0-9.]+-rocm@sha256:[0-9a-f]{64}/);
+    assert.match(amd, /devices:\n {6}- \/dev\/kfd\n {6}- \/dev\/dri/);
+    // the Raspberry Pi image: never a GPU in its compose
+    db.prepare("UPDATE gateway_meta SET platform = 'rpi' WHERE peer_id = ?").run(nas.peer.id);
+    assert.equal(local.composeGpu(nas.peer.id), null);
+    assert.equal((await put(`/api/v1/gateways/${nas.peer.id}/features`, { ai: { gpu: 'cuda' } })).status, 400);
+    await put(`/api/v1/gateways/${nas.peer.id}/features`, { ai: { gpu: 'off' } }).expect(200);
+    db.prepare("UPDATE gateway_meta SET platform = 'synology' WHERE peer_id = ?").run(nas.peer.id);
+    setTel(nas);
   });
 });

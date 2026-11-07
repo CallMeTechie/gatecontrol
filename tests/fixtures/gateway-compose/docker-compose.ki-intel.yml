@@ -1,0 +1,12 @@
+# Lokale KI mit Intel-Grafik über Vulkan (docs/local-ai.md §2.1, experimentell) –
+# Zusatz zu docker-compose.yml, zusammen mit dem Profil "ki":
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.ki-intel.yml
+#   COMPOSE_PROFILES=ki
+# Braucht auf dem Rechner /dev/dri (Treiber i915 oder xe). Die Datei aus
+# GateControl enthält das schon, wenn „Grafikkarte nutzen: Intel“ gewählt ist.
+services:
+  ki:
+    devices:
+      - /dev/dri
+    environment:
+      - GC_KI_GPU=intel

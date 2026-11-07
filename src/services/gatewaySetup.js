@@ -52,9 +52,9 @@ function composePlatformOf(platform) {
   return null;
 }
 /** → the compose text, or null when platform/network is not one of the profiles. */
-function buildCompose(platform, network, { zigbee = false, ai = false, cameras = false, cameraDir = null } = {}) {
+function buildCompose(platform, network, { zigbee = false, ai = false, aiGpu = null, cameras = false, cameraDir = null } = {}) {
   if (COMPOSE_PLATFORMS.indexOf(platform) < 0 || COMPOSE_NETWORKS.indexOf(network) < 0) return null;
-  return kit.buildCompose({ platform, network, zigbee: zigbee === true, ai: ai === true, cameras: cameras === true, cameraDir: typeof cameraDir === 'string' ? cameraDir : null });
+  return kit.buildCompose({ platform, network, zigbee: zigbee === true, ai: ai === true, aiGpu: typeof aiGpu === 'string' ? aiGpu : null, cameras: cameras === true, cameraDir: typeof cameraDir === 'string' ? cameraDir : null });
 }
 
 module.exports = {
