@@ -13,6 +13,7 @@
 //   POST   /:id/radio/thread/form         { name? } a new Thread network
 //   POST   /:id/radio/thread/join         { dataset } join the network of another border router (TLV hex, never stored)
 //   POST   /:id/radio/thread/dataset      the active dataset for a Matter controller (audited, never stored)
+//   PUT    /:id/radio/sticks              { id, use: auto | zigbee | thread | none } set a stick by hand (capability radio-stick-assign)
 // The switches themselves go through PUT /:id/features { radio: { zigbee, ble } }.
 
 const { Router } = require('express');
@@ -101,6 +102,14 @@ router.post('/:id/radio/thread/dataset', requireAdminSession, handle(async (req)
   const r = await radio.threadDataset(g.id);
   audit(req, g, 'gateway_thread_dataset_shown', `Thread dataset shown for gateway "${g.name}"`, {});
   return r;
+}));
+
+router.put('/:id/radio/sticks', requireAdminSession, handle((req) => {
+  const g = gw(req);
+  let user = null;
+  try { const u = require('../../services/users').getById(req.session.userId); user = u ? u.username : null; } catch { user = null; }
+  // the change itself is logged as gateway_features_changed (services/gatewayFeatures.js)
+  return radio.setStick(g.id, req.body, { ip: req.ip, user });
 }));
 
 router.delete('/:id/radio/sensors/:mac', requireAdminSession, handle((req) => radio.removeSensor(gw(req).id, req.params.mac)));

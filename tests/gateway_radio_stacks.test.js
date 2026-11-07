@@ -85,7 +85,7 @@ describe('zigbee2mqtt and Thread: switches, config pull, telemetry', () => {
       assert.equal((await admin('put', '/features').send(bad)).status, 400, JSON.stringify(bad));
     }
     const v = (await admin('put', '/features').send({ radio: { stack: 'zigbee2mqtt', thread: true, ble: true } }).expect(200)).body.gateway;
-    assert.deepEqual(v.features.radio, { zigbee: null, ble: true, stack: 'zigbee2mqtt', thread: true });
+    assert.deepEqual(v.features.radio, { zigbee: null, ble: true, stack: 'zigbee2mqtt', thread: true, sticks: [] });
     c = (await gwReq('get', '/config').expect(200)).body;
     assert.deepEqual(c.features.radio, { zigbee: null, ble: true, stack: 'zigbee2mqtt', thread: true });
     assert.equal(c.config_hash, gateways.computeConfigHash(gw.peer.id));

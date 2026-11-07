@@ -349,9 +349,10 @@ ones too) and a Thread network for Matter devices. You switch everything in the 
   MQTT” while it is off.
 - **Thread:** a stick with **RCP firmware** (OpenThread): SkyConnect/ZBT-1, ZBT-2,
   ZBDongle-E or an nRF52840 dongle.
-- **A stick serves one radio only.** Zigbee gets a stick first, Thread another one. With a
-  single multi stick Thread says “stick busy”. The list “Radio sticks” in the tab shows
-  which stick serves what and what it suits.
+- **A stick serves one radio only.** On “Automatic” Zigbee gets a stick first, Thread
+  another one. With a single multi stick Thread says “stick busy”. The list “Radio
+  sticks” in the tab shows which stick serves what and what it suits – and there you can
+  set it by hand if you like (see below).
 - **Firmware:** multi sticks (SkyConnect, ZBDongle-E) do Zigbee *or* Thread – depending on
   the firmware. The gateway cannot see it; you change it in the browser with the maker's
   web flasher.
@@ -369,6 +370,27 @@ Bluetooth, Thread)”, or Zigbee, Bluetooth and Thread one by one in the tab “
 Zigbee you choose the **Zigbee service**: “deCONZ” or “zigbee2mqtt”. deCONZ starts as
 “automatic”: it runs as soon as a ConBee or RaspBee is detected. If a stick only suits
 zigbee2mqtt, the tab says so.
+
+**Setting sticks by hand:** In the tab “Radio” under “Radio sticks” every stick has
+“Use for” with “Automatic (default)”, “Zigbee”, “Thread” and “do not use”. The choice
+wins; “Automatic” only hands out the remaining sticks. The gateway knows the stick by its
+serial number (an ID like in `/dev/serial/by-id`) – also after plugging it into another
+socket. If a stick has no serial number of its own, the choice holds for the USB socket
+(the tab says so). No SSH: the gateway hands the chosen stick to the service (deCONZ,
+zigbee2mqtt, border router) itself.
+
+- **If a chosen stick is not plugged in**, it stays in the list as “not plugged in” and
+  the radio waits for it (“stick missing”) – it takes no other stick, so zigbee2mqtt does
+  not start a new network on a different stick. Plug it back in or set it to “Automatic”.
+- **Hints, not bans:** two sticks for the same radio – the one chosen first counts, the
+  other stays free. A radio is off – the stick is taken once it is on. If the detection
+  says the stick does not fit (deCONZ on a non-ConBee, Thread on a stick without known RCP
+  firmware), the gateway takes it anyway – handy after reflashing. Only zigbee2mqtt cannot
+  drive a stick without a matching adapter at all (“stick does not fit”).
+- “do not use”: no service touches the stick – e.g. for a stick another program on the
+  same machine uses.
+- Needs a gateway **newer than 1.33.1** (that is 1.34.0 or later). On older gateways the
+  choice is locked with a hint on the version; they keep assigning automatically.
 
 **Pairing devices:** in the tab “Radio”, at Zigbee, “Start pairing” – GateControl
 searches for 3 minutes. Put the device into pairing mode (usually hold its button for
@@ -402,7 +424,9 @@ the Thread devices. Matter devices on Wi-Fi already work through Smart Home.
 not let GateControl in – once in Phoscon (port 8090 of the gateway) Gateway › Advanced ›
 “Authenticate app”, then “Try again”. “MQTT off” at zigbee2mqtt: “Switch on edge and MQTT”.
 If zigbee2mqtt or the border router keeps stopping, the stick's firmware usually does not
-fit (Zigbee firmware for zigbee2mqtt, RCP firmware for Thread).
+fit (Zigbee firmware for zigbee2mqtt, RCP firmware for Thread). “Stick missing”: the stick
+chosen by hand is not plugged in – plug it back in or set it to “Automatic” under “Radio
+sticks”.
 
 ## Local AI
 

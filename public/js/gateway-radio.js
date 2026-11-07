@@ -160,18 +160,47 @@
     return h('div', { class: 'gwr-stack' }, [h('span', { class: 'gwe-d', text: t('gwr.zb.stack') }), seg]);
   }
 
-  /** The sticks with what fits them ("passt zu zigbee2mqtt") and what they serve now. */
-  function stickList(d) {
-    const r = d.radio || {};
-    const sticks = (r.sticks || []).filter((s) => s.kind !== 'bluetooth');
-    if (!sticks.length) return null;
+  /**
+   * The sticks with what fits them ("passt zu zigbee2mqtt"), what they serve now and the choice
+   * "Automatisch (Standard) / Zigbee / Thread / nicht verwenden" (d.sticks = stickPlan of the
+   * server; sticks set by hand that are not plugged in are listed too). Hints, never bans.
+   */
+  function stickList(g, d) {
+    const rows = Array.isArray(d.sticks) ? d.sticks : ((d.radio && d.radio.sticks) || []).filter((s) => s.kind !== 'bluetooth').map((s) => ({ ...s, choice: 'auto', present: true, hints: [] }));
+    if (!rows.length) return null;
     const stack = d.settings.stack || 'deconz';
-    return h('ul', { class: 'gwr-sticks', 'data-radio-sticks': String(sticks.length) }, sticks.map((s) => {
-      const hint = K.stickHint(s, stack);
-      const use = s.use ? t('gwr.stick.use.' + s.use) : t('gwr.stick.use.none');
-      return h('li', { class: 'gwr-stick' }, [
-        h('strong', { text: stickName(s) }),
-        h('span', { class: 'gwe-d', text: ' · ' + use + (hint ? ' · ' + t(hint.key) : '') }),
+    return h('ul', { class: 'gwr-sticks', 'data-radio-sticks': String(rows.length) }, rows.map((s, i) => {
+      const name = s.present ? stickName(s) : (s.model || t('gwr.stick.unknown'));
+      const parts = [];
+      if (!s.present) parts.push(t('gwr.stick.missing'));
+      else {
+        parts.push(s.use ? t('gwr.stick.use.' + s.use) : t('gwr.stick.use.none'));
+        const fit = s.choice === 'auto' ? K.stickHint(s, stack) : null;
+        if (fit) parts.push(t(fit.key));
+      }
+      const sel = h('select', { id: 'gwr-stick-' + i, class: 'form-select gwr-stick-sel', 'data-fk': 'gwr-stick-' + i, 'aria-label': t('gwr.stick.choice_for', { name }) },
+        K.STICK_CHOICES.map((c) => h('option', { value: c, text: t('gwr.stick.choice.' + c) })));
+      sel.value = s.choice || 'auto';
+      if (!d.assignSupported || !s.id) sel.disabled = true;
+      sel.addEventListener('change', () => {
+        const use = sel.value;
+        sel.disabled = true;
+        U.api('PUT', url(g.peer_id, '/radio/sticks'), { id: s.id, use })
+          .then(() => { U.toast(t('gwr.stick.done.' + use, { name })); return reload(g.peer_id); })
+          .catch((e) => { D.alert({ message: errText(e), danger: true }); redraw(); });
+      });
+      const hints = K.stickHintKeys(s, stack).map((key) => h('li', { class: 'gwe-d', 'data-radio-stick-hint': key.replace('gwr.stick.hint.', '') }, [U.icon('info', 14), ' ', t(key)]));
+      const idLine = s.id && s.idKind !== 'port' ? h('span', { class: 'gwe-d gwe-muted gwr-stick-id', text: t('gwr.stick.id', { id: s.id }) }) : null;
+      return h('li', { class: 'gwr-stick', 'data-radio-stick': s.id || '', 'data-radio-choice': s.choice || 'auto', 'data-radio-present': s.present ? 'true' : 'false' }, [
+        h('div', { class: 'gwr-stick-row' }, [
+          h('div', { class: 'gwr-stick-t' }, [
+            h('strong', { text: name }),
+            h('span', { class: 'gwe-d', text: ' · ' + parts.join(' · ') }),
+            idLine,
+          ]),
+          h('label', { class: 'gwr-stick-c' }, [h('span', { class: 'gwe-d', text: t('gwr.stick.choice') }), sel]),
+        ]),
+        hints.length ? h('ul', { class: 'gwr-stick-hints' }, hints) : null,
       ]);
     }));
   }
@@ -186,7 +215,7 @@
     const tx = K.zigbeeText(z);
     const tagNode = U.tag(K.zigbeeTone(z.state), t(tx.key, tx.params), true);
     tagNode.setAttribute('data-radio-state', z.state);
-    const stick = (r.sticks || []).find((s) => s.deconz);
+    const stick = (r.sticks || []).find((s) => s.use === 'deconz') || (r.sticks || []).find((s) => s.deconz);
     const subParts = [];
     if (stick || z.model) subParts.push(stick ? stickName(stick) : z.model);
     if (z.firmware) subParts.push(t('gwr.zb.firmware', { v: z.firmware.replace(/^0x/, '') }));
@@ -234,6 +263,7 @@
     const st = z.state;
     const r = d.radio || {};
     if (z.service === 'image' && d.settings.zigbee !== null) return U.note('info', [t('gwr.zb.image')]);
+    if (st === 'stick_missing') return U.note('warn', [h('span', { 'data-radio-stick-missing': 'zigbee', text: t('gwr.zb.stick_missing') })]);
     if (st === 'no_stick' && z.want) return U.note('info', [t('gwr.zb.no_stick')]);
     if (st === 'off' && !(r.sticks || []).some((s) => s.deconz)) {
       // a stick deCONZ does not speak, but zigbee2mqtt does: say so instead of the shopping list
@@ -315,6 +345,8 @@
         .then(() => { U.toast(t('gwr.z2m.mqtt_done')); return reload(g.peer_id); }));
       return U.note('warn', [h('span', { 'data-radio-mqtt-off': '', text: t('gwr.z2m.mqtt_off') }), ' ', b]);
     }
+    if (st === 'stick_missing') return U.note('warn', [h('span', { 'data-radio-stick-missing': 'zigbee', text: t('gwr.zb.stick_missing') })]);
+    if (st === 'unsupported') return U.note('warn', [t('gwr.z2m.unsupported')]);
     if (st === 'no_stick') return U.note('info', [t('gwr.z2m.no_stick')]);
     if (st === 'service_missing' || d.compose === 'compose' || d.compose === 'image') return composeNote(g, d, 'gwr.z2m.compose');
     if (st === 'starting') return U.note('info', [t('gwr.z2m.starting')]);
@@ -494,7 +526,8 @@
     }
     const b = boardNote(d, 'thread');
     if (b) nodes.push(b);
-    if (st === 'stick_busy') nodes.push(U.note('warn', [t('gwr.th.stick_busy')]));
+    if (st === 'stick_missing') nodes.push(U.note('warn', [h('span', { 'data-radio-stick-missing': 'thread', text: t('gwr.th.stick_missing') })]));
+    else if (st === 'stick_busy') nodes.push(U.note('warn', [t('gwr.th.stick_busy')]));
     else if (st === 'no_stick') nodes.push(U.note('info', [t('gwr.th.no_stick')]));
     else if (st === 'no_lan') nodes.push(U.note('warn', [t('gwr.th.no_lan')]));
     else if (st === 'service_missing' || (d.compose && th.service !== 'managed')) nodes.push(composeNote(g, d, 'gwr.th.compose'));
@@ -607,8 +640,15 @@
     }
     nodes.push(h('p', { class: 'gwe-d gwr-lead' }, [t('gwr.lead'), ' ', U.guide('feat.radio')]));
     nodes.push(h('div', { class: 'gwr-grid' }, [zigbeeCard(cur.g, d), bleCard(cur.g, d), threadCard(cur.g, d)]));
-    const st = stickList(d);
-    if (st) nodes.push(h('div', { class: 'gwr-sticks-box' }, [h('h3', { class: 'gwr-h', text: t('gwr.stick.title') }), st, h('p', { class: 'gwe-d gwe-muted', text: t('gwr.stick.one') })]));
+    const st = stickList(cur.g, d);
+    if (st) {
+      const old = d.supported && !d.assignSupported
+        ? h('p', { class: 'gwe-d gwe-muted', 'data-radio-assign-old': '' }, [t('gwr.stick.assign_old', { version: d.lastWithoutAssign || '1.33.1' }), ' ',
+          h('a', { href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwr.releases') })])
+        : null;
+      nodes.push(h('section', { class: 'gwr-sticks-box', 'data-radio': 'sticks', 'aria-labelledby': 'gwr-sticks-h' }, [h('h3', { class: 'gwr-h', id: 'gwr-sticks-h', text: t('gwr.stick.title') }), st,
+        h('p', { class: 'gwe-d gwe-muted', text: t('gwr.stick.one') }), old]));
+    }
     const nas = nasCard(cur.g, d);
     if (nas) nodes.push(nas);
     cur.box.replaceChildren(...nodes);

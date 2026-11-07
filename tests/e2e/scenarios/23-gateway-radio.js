@@ -16,6 +16,11 @@
 // (network data, IPv6 hint, Matter readiness), an encrypted Bluetooth sensor
 // taken over together with its key (the config pull names only the stand, the
 // gateway gets the key from /radio/ble/keys).
+// Then the sticks set by hand: locked with the version hint on a gateway without
+// radio-stick-assign, then per stick "Automatisch (Standard) / Zigbee / Thread /
+// nicht verwenden" with real changes (the config pull carries features.radio.sticks),
+// an unplugged chosen stick ("nicht eingesteckt", zigbee2mqtt "Stick fehlt"), and
+// back to automatic.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -331,6 +336,87 @@ module.exports = (ctx) => {
         step('radio: 390 px with zigbee2mqtt and Thread: no sideways scroll', o2 <= 0, 'overflow ' + o2);
         await view(page, 'gwradio-z2m-390-light', 3600);
         await page.setViewportSize({ width: 1440, height: 1000 });
+        await theme(page, 'dark');
+
+        // ── sticks set by hand ("Automatisch (Standard) / Zigbee / Thread / nicht verwenden") ──
+        step('radio: a gateway without radio-stick-assign: choice locked, hint with the version', await page.evaluate(() => {
+          const box = document.querySelector('[data-radio="sticks"]');
+          const sel = box && box.querySelectorAll('select');
+          const old = box && box.querySelector('[data-radio-assign-old]');
+          return !!sel && sel.length === 2 && [...sel].every((x) => x.disabled) && !!old && /nach 1\.33\.1/.test(old.textContent);
+        }));
+        const ASSIGN = '1.34.0';
+        const SID = { e: 'usb-ITEAD_SONOFF_Zigbee_3.0_USB_Dongle_Plus_V2_' + '20240123-if00', zbt: 'usb-Nabu_Casa_Home_Assistant_Connect_ZBT-1_' + '9e2adbd75b8beb11-if00-port0' };
+        const assignTel = ({ zbt = true, choice = {}, use = {} } = {}) => {
+          const t = z2mTel('running', { thread: true });
+          const [e, z, bt] = t.sticks;
+          t.sticks = [{ ...e, id: SID.e, idKind: 'serial', choice: choice.e || 'auto', use: use.e || 'zigbee2mqtt', note: null }];
+          if (zbt) t.sticks.push({ ...z, id: SID.zbt, idKind: 'serial', choice: choice.zbt || 'auto', use: use.zbt || 'thread', note: null });
+          t.sticks.push(bt);
+          t.missing = zbt ? [] : [{ id: SID.zbt, use: choice.zbt || 'zigbee' }];
+          if (!zbt) t.zigbee2mqtt = { ...t.zigbee2mqtt, state: 'stick_missing', model: null, device: null, devices: null };
+          return t;
+        };
+        const ASSIGN_CAPS = [...CAPS, 'radio', 'radio-stacks', 'radio-stick-assign'];
+        step('radio: heartbeat of a gateway with radio-stick-assign (stable ids per stick)', await heartbeat(ASSIGN, ASSIGN_CAPS, assignTel()) === 200);
+        await fresh(page);
+        await page.reload();
+        await goTab(page, GW, 'radio');
+        const rowSel = (id) => '[data-radio="sticks"] [data-radio-stick="' + id + '"]';
+        step('radio: per stick "Automatisch (Standard) / Zigbee / Thread / nicht verwenden", default automatic, the id shown', await until(page, (sel) => {
+          const r = document.querySelector(sel);
+          const x = r && r.querySelector('select');
+          return !!x && !x.disabled && x.value === 'auto' && [...x.options].map((o) => o.textContent).join('|') === 'Automatisch (Standard)|Zigbee|Thread|nicht verwenden'
+            && /Kennung usb-Nabu_Casa/.test(r.textContent) && /bedient Thread/.test(r.textContent) && !document.querySelector('[data-radio-assign-old]');
+        }, rowSel(SID.zbt), 20000));
+        await page.selectOption(rowSel(SID.zbt) + ' select', 'zigbee');
+        step('radio: ZBT-1 set to Zigbee (real PUT) → "Multi-Stick" firmware hint', await until(page, (sel) => {
+          const r = document.querySelector(sel);
+          return !!r && r.getAttribute('data-radio-choice') === 'zigbee' && !!r.querySelector('[data-radio-stick-hint="firmware"]');
+        }, rowSel(SID.zbt), 15000));
+        await page.selectOption(rowSel(SID.e) + ' select', 'thread');
+        step('radio: ZBDongle-E set to Thread (real PUT)', await until(page, (sel) => {
+          const r = document.querySelector(sel);
+          return !!r && r.getAttribute('data-radio-choice') === 'thread';
+        }, rowSel(SID.e), 15000));
+        const cfg4 = await (await page.request.fetch(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token } })).json();
+        step('radio: the config pull carries the assignment (features.radio.sticks)', JSON.stringify(cfg4.features.radio.sticks) === JSON.stringify([{ id: SID.zbt, use: 'zigbee' }, { id: SID.e, use: 'thread' }]), JSON.stringify(cfg4.features.radio));
+        step('radio: heartbeat: the gateway swapped the sticks', await heartbeat(ASSIGN, ASSIGN_CAPS, assignTel({ choice: { zbt: 'zigbee', e: 'thread' }, use: { zbt: 'zigbee2mqtt', e: 'thread' } })) === 200);
+        await fresh(page);
+        await page.reload();
+        await goTab(page, GW, 'radio');
+        step('radio: the list says what serves what now', await until(page, ([a, b]) => {
+          const z = document.querySelector(a);
+          const e = document.querySelector(b);
+          return !!z && !!e && /bedient zigbee2mqtt/.test(z.textContent) && /bedient Thread/.test(e.textContent);
+        }, [rowSel(SID.zbt), rowSel(SID.e)], 20000));
+        // the ZBT-1 is unplugged: zigbee2mqtt waits for it, the row stays with a hint
+        step('radio: heartbeat: the stick chosen for Zigbee is unplugged', await heartbeat(ASSIGN, ASSIGN_CAPS, assignTel({ zbt: false, choice: { zbt: 'zigbee', e: 'thread' }, use: { e: 'thread' } })) === 200);
+        await fresh(page);
+        await page.reload();
+        await goTab(page, GW, 'radio');
+        step('radio: "nicht eingesteckt" with the hint, zigbee2mqtt "Stick fehlt" (waits, takes no other stick)', await until(page, (sel) => {
+          const r = document.querySelector(sel);
+          const c = document.querySelector('[data-radio="zigbee"]');
+          return !!r && r.getAttribute('data-radio-present') === 'false' && /nicht eingesteckt/.test(r.textContent) && !!r.querySelector('[data-radio-stick-hint="missing"]')
+            && !!c && c.querySelector('[data-radio-state]').getAttribute('data-radio-state') === 'stick_missing' && /Stick fehlt/.test(c.textContent) && !!c.querySelector('[data-radio-stick-missing="zigbee"]');
+        }, rowSel(SID.zbt), 20000));
+        await view(page, 'gwradio-sticks-dark', 2600);
+        await theme(page, 'light');
+        await view(page, 'gwradio-sticks-light', 2600);
+        await page.setViewportSize({ width: 390, height: 900 });
+        await page.waitForTimeout(400);
+        const o3 = await overflow(page);
+        step('radio: 390 px with the stick choice: no sideways scroll', o3 <= 0, 'overflow ' + o3);
+        await view(page, 'gwradio-sticks-390-light', 4000);
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        // back to automatic: the unplugged stick is forgotten, the config pull has no sticks
+        await page.selectOption(rowSel(SID.zbt) + ' select', 'auto');
+        step('radio: the unplugged stick set to "Automatisch" is forgotten', await until(page, (sel) => !document.querySelector(sel), rowSel(SID.zbt), 15000));
+        await page.selectOption(rowSel(SID.e) + ' select', 'auto');
+        await until(page, (sel) => { const r = document.querySelector(sel); return !!r && r.getAttribute('data-radio-choice') === 'auto'; }, rowSel(SID.e), 15000);
+        const cfg5 = await (await page.request.fetch(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token } })).json();
+        step('radio: all automatic again → no sticks in the config pull', cfg5.features.radio.sticks === undefined, JSON.stringify(cfg5.features.radio));
         await theme(page, 'dark');
       } finally {
         await api(page, 'POST', '/api/v1/settings/language', { language: lang0 }).catch(() => {});

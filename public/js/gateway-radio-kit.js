@@ -17,6 +17,8 @@
 //   stickHint(stick, stack)    { key } of "Dieser Stick passt zu zigbee2mqtt" … or null
 //   smallBoard(gateway)        Pi 3 / Zero (≤ 1 GB): hint before zigbee2mqtt / Thread (never a ban)
 //   threadTone(state) / keyTone(keyState) / matterReady(thread) / validKey(text)
+//   STICK_CHOICES              the choices per stick: auto (default) | zigbee | thread | none
+//   stickHintKeys(row, stack)  the i18n keys of the hints of a row of "Funksticks" (stickPlan of the server)
 (function (root, factory) {
   const api = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -28,7 +30,7 @@
 
   function zigbeeTone(state) {
     if (state === 'running') return 'green';
-    if (state === 'starting' || state === 'key_needed' || state === 'service_missing') return 'amber';
+    if (state === 'starting' || state === 'key_needed' || state === 'service_missing' || state === 'stick_missing') return 'amber';
     if (state === 'error') return 'red';
     return 'grey';
   }
@@ -132,7 +134,7 @@
 
   function threadTone(state) {
     if (state === 'running') return 'green';
-    if (state === 'starting' || state === 'stick_busy' || state === 'no_network' || state === 'detached' || state === 'service_missing' || state === 'no_lan') return 'amber';
+    if (state === 'starting' || state === 'stick_busy' || state === 'stick_missing' || state === 'no_network' || state === 'detached' || state === 'service_missing' || state === 'no_lan') return 'amber';
     if (state === 'error') return 'red';
     return 'grey';
   }
@@ -142,5 +144,20 @@
   /** 32 hex digits, with or without colons/spaces (BTHome key, Xiaomi bindkey). */
   function validKey(v) { return /^[0-9a-f]{32}$/.test(String(v || '').toLowerCase().replace(/[\s:-]/g, '')); }
 
-  return { zigbeeTone, zigbeeText, bleTone, valueParts, sensorTags, secondsLeft, sinceMinutes, badge, rowSticks, smarthomeLink, stackFor, stickHint, smallBoard, threadTone, keyTone, matterReady, validKey, SMARTHOME };
+  const STICK_CHOICES = ['auto', 'zigbee', 'thread', 'none'];
+  const STICK_HINTS = ['missing', 'second', 'radio_off', 'fit', 'no_adapter', 'firmware', 'port'];
+  /** Hints of a stick set by hand (hints, never bans): 'fit' says which service it does not fit. */
+  function stickHintKeys(row, stack) {
+    const out = [];
+    for (const h of (row && Array.isArray(row.hints) ? row.hints : [])) {
+      if (!STICK_HINTS.includes(h)) continue;
+      let key = 'gwr.stick.hint.' + h;
+      if (h === 'fit') key = row.choice === 'thread' ? 'gwr.stick.hint.fit_thread' : (stack === 'zigbee2mqtt' ? 'gwr.stick.hint.fit_zigbee' : 'gwr.stick.hint.fit_deconz');
+      if (!out.includes(key)) out.push(key);
+    }
+    return out;
+  }
+
+  return { zigbeeTone, zigbeeText, bleTone, valueParts, sensorTags, secondsLeft, sinceMinutes, badge, rowSticks, smarthomeLink, stackFor, stickHint, smallBoard, threadTone, keyTone, matterReady, validKey,
+    stickHintKeys, STICK_CHOICES, SMARTHOME };
 });
