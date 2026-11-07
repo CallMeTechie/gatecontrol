@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.249.1] — 2026-11-07
+
+### Fixes
+- Zwischenspeicher und Dateiübertragungen haben ein eigenes Budget – Heartbeat wird nicht mehr ausgehungert (#438)
+
+---
+
 ## [1.249.0] — 2026-11-07
 
 ### Features
