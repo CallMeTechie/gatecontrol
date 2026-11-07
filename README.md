@@ -406,6 +406,8 @@ All configuration is done through environment variables in the `.env` file.
 | `GC_RATE_LIMIT_LOGIN` | `5` | Max login attempts per 15 min |
 | `GC_RATE_LIMIT_API` | `100` | Max API requests per 15 min |
 | `GC_RATE_LIMIT_GATEWAY` | `300` | Max gateway API requests (heartbeat, config check, …) per 15 min, per gateway |
+| `GC_RATE_LIMIT_GATEWAY_CACHE` | `10000` | Own budget of the home cache (want, blob downloads, stock report) per 15 min, per gateway – never counts against `GC_RATE_LIMIT_GATEWAY` |
+| `GC_RATE_LIMIT_GATEWAY_BULK` | `3000` | Own budget for file transfers (print/scan/OCR pages, edge packages, speed test, camera events) per 15 min, per gateway |
 
 ### WireGuard
 
