@@ -310,7 +310,8 @@ module.exports = (ctx) => {
         await page.fill('#gwr-sname', 'Bad oben');
         await page.fill('#gwr-skey', 'zu kurz');
         await page.click('[data-fk="gwr-sname-ok"]');
-        step('radio: a key that is no key is refused in the dialog', await until(page, () => /32 Zeichen/.test((document.querySelector('.gwe-dialog, dialog[open], [role="dialog"]') || document.body).textContent)));
+        const refused = await until(page, () => /Der Schlüssel hat 32 Zeichen/.test(document.body.textContent));
+        step('radio: a key that is no key is refused in the dialog', refused, refused ? '' : await page.evaluate(() => JSON.stringify({ errs: [...document.querySelectorAll('.gwe-err')].map((e) => [e.hidden, e.textContent]), keys: document.querySelectorAll('#gwr-skey').length, oks: document.querySelectorAll('[data-fk="gwr-sname-ok"]').length })));
         await page.fill('#gwr-skey', '23:1D:39:C1:D7:CC:1A:B1:AE:E2:24:CD:09:6D:B9:32');
         await page.click('[data-fk="gwr-sname-ok"]');
         step('radio: taken over with the key → "Schlüssel gespeichert – wartet auf das nächste Paket"', await until(page, () => {
