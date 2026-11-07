@@ -32,7 +32,8 @@
       else if (k === 'text') n.textContent = v;
       else n.setAttribute(k, v === true ? '' : String(v));
     });
-    (kids || []).forEach(function (c) { if (c != null) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    // children: real DOM nodes, anything else only as text
+    (kids || []).forEach(function (c) { if (c != null) n.appendChild(c instanceof Node ? c : document.createTextNode(String(c))); });
     return n;
   }
   function api(method, url, body) {
