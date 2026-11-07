@@ -132,7 +132,7 @@ describe('waf.njk renders in every theme', () => {
       const html = render(theme);
       assert.match(html, /<a href="\/waf" class="nav-item active"/, 'active nav item');
       assert.match(html, /waf: true,/, 'window.GC.features.waf = true');
-      const group = html.indexOf('>' + de['nav.group_access'].replace('&', '&amp;') + '<', html.indexOf('id="sidebar"'));
+      const group = html.indexOf('>' + de['nav.group_access'].replace(/&/g, '&amp;') + '<', html.indexOf('id="sidebar"'));
       const item = html.indexOf('href="/waf"');
       const next = html.indexOf('class="nav-section-label"', group + 1);
       assert.ok(group > 0 && item > group && item < next, 'inside the Sicherheit group');

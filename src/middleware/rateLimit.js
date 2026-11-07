@@ -461,7 +461,24 @@ const pluginPageLimiter = rateLimit({
   },
 });
 
-module.exports = { pluginApiLimiter, pluginPageLimiter, pluginCatalogLimiter, pluginCatalogRefreshLimiter, loginLimiter, twoFactorSetupLimiter, passkeyLoginLimiter, passkeyManageLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayCacheLimiter, gatewayBulkLimiter, gatewayBudget, gatewayAuthLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter,
+// Every request of a signed-in session reads the user, the sidebar counts and
+// badges from the database (middleware/locals.js injectLocals). One budget
+// per user over all of them, far above what pages, dashboards and plugin
+// frames need together (the routes behind keep their own, smaller limits);
+// requests without a session are not counted here (nothing is read for them).
+const sessionLocalsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => config.auth.rateLimitApi * 30,
+  standardHeaders: false,
+  legacyHeaders: false,
+  skip: (req) => !(req.session && req.session.userId),
+  keyGenerator: (req) => `session-locals:${req.session.userId}`,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: req.t ? req.t('error.rate_limit.api') : 'rate_limited' });
+  },
+});
+
+module.exports = { sessionLocalsLimiter, pluginApiLimiter, pluginPageLimiter, pluginCatalogLimiter, pluginCatalogRefreshLimiter, loginLimiter, twoFactorSetupLimiter, passkeyLoginLimiter, passkeyManageLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayCacheLimiter, gatewayBulkLimiter, gatewayBudget, gatewayAuthLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter,
   eventStreamLimiter, portalApiLimiter, portalPageLimiter, portalPinLimiter, portalLinkLimiter, portalPinSetLimiter, homeNetworkLimiter, serviceOpenLimiter, routeAppRedeemLimiter,
   pushStreamLimiter, pushTestLimiter, notifySendLimiter };
 

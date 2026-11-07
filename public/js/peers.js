@@ -32,6 +32,8 @@ var DT = function (k, p) { return D.t(k, p); };
 
   // ─── DOM helpers (textContent only) ──────────────────────
   var SVGNS = 'http://www.w3.org/2000/svg';
+  // attributes: a fixed set of names (never on*), links only to this server
+  var ATTR_OK = /^(?:id|type|role|title|for|href|download|placeholder|value|style|aria-[a-z]+|data-[a-z-]+)$/;
   function h(tag, attrs, kids) {
     var n = document.createElement(tag);
     Object.keys(attrs || {}).forEach(function (k) {
@@ -39,6 +41,8 @@ var DT = function (k, p) { return D.t(k, p); };
       if (v == null || v === false) return;
       if (k === 'class') n.className = v;
       else if (k === 'text') n.textContent = v;
+      else if (!ATTR_OK.test(k)) return;
+      else if (k === 'href' && !/^[#/][^/\\]/.test(String(v))) return;
       else n.setAttribute(k, v === true ? '' : String(v));
     });
     (kids || []).forEach(function (c) { if (c != null) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
@@ -191,9 +195,12 @@ var DT = function (k, p) { return D.t(k, p); };
     deepLinkHandled = true;
     var m = /^#edit\/(\d{1,9})$/.exec(window.location.hash || '');
     if (!m) return;
-    if (allPeers.some(function (p) { return String(p.id) === m[1]; })) { showEditModal(m[1]); return; }
-    api.get('/api/peers/' + m[1]).then(function (r) {
-      if (r && r.ok && r.peer && r.peer.peer_type === 'gateway') window.location.replace('/gateways#gw/' + m[1]);
+    var own = allPeers.find(function (p) { return String(p.id) === m[1]; });
+    if (own) { showEditModal(own.id); return; }
+    // a gateway: its page is /gateways (the id that goes on is the server's own)
+    api.get('/api/peers?type=gateway').then(function (r) {
+      var gw = ((r && r.peers) || []).find(function (p) { return String(p.id) === m[1]; });
+      if (gw) window.location.replace('/gateways#gw/' + encodeURIComponent(Number(gw.id)));
     }).catch(function () { /* unknown id: stay on the list */ });
   }
 
@@ -259,7 +266,16 @@ var DT = function (k, p) { return D.t(k, p); };
   function expiringSoon(p) { var d = expiryDays(p); return d != null && d <= 7; }
   function hasSupport(p) { return (Number(p.support_bundles_unviewed) || 0) > 0; }
   function longOffline(p) { var ms = handshakeMs(p); return p.enabled && !p.isOnline && (!ms || Date.now() - ms > 7 * 86400000); }
-  var HINTS = { update: needsUpdate, expiring: expiringSoon, support: hasSupport, stale: longOffline };
+  var HINT_KEYS = ['update', 'expiring', 'support', 'stale'];
+  function hint(k, p) {
+    switch (k) {
+      case 'update': return needsUpdate(p);
+      case 'expiring': return expiringSoon(p);
+      case 'support': return hasSupport(p);
+      case 'stale': return longOffline(p);
+      default: return false;
+    }
+  }
 
   // ─── Filters in the address ──────────────────────────────
   function readHash() {
@@ -271,7 +287,7 @@ var DT = function (k, p) { return D.t(k, p); };
     if (['android', 'windows', 'none'].indexOf(q.get('device')) !== -1) F.device = q.get('device');
     if (/^(\d{1,9}|none)$/.test(q.get('owner') || '')) F.owner = q.get('owner');
     if (q.get('tags')) F.tags = q.get('tags').split(',').map(function (t) { return t.trim(); }).filter(Boolean).slice(0, 10);
-    if (q.get('hints')) F.hints = q.get('hints').split(',').filter(function (x) { return HINTS[x]; });
+    if (q.get('hints')) F.hints = q.get('hints').split(',').filter(function (x) { return HINT_KEYS.indexOf(x) !== -1; });
     if (['status', 'name', 'seen', 'traffic', 'group', 'ip'].indexOf(q.get('sort')) !== -1) F.sort = q.get('sort');
     if (q.get('q')) searchInput.value = q.get('q').slice(0, 100);
   }
@@ -299,7 +315,7 @@ var DT = function (k, p) { return D.t(k, p); };
       var mine = tagsOf(p).map(function (t) { return t.toLowerCase(); });
       if (!F.tags.every(function (t) { return mine.indexOf(t.toLowerCase()) !== -1; })) return false;
     }
-    if (!F.hints.every(function (k) { return HINTS[k](p); })) return false;
+    if (!F.hints.every(function (k) { return hint(k, p); })) return false;
     var q = searchInput.value.toLowerCase().trim();
     if (q) {
       var hay = [p.name, p.description, p.allowed_ips, p.public_key, p.tags, ownerName(p), p.owner_name, p.hostname].join(' ').toLowerCase();
@@ -381,7 +397,8 @@ var DT = function (k, p) { return D.t(k, p); };
   }
 
   function chip(label, onRemove) {
-    var b = h('button', { type: 'button', class: 'pl-x', 'aria-label': L('pl.chip_remove', { name: label }) }, [icon('x', 12)]);
+    var b = h('button', { type: 'button', class: 'pl-x' }, [icon('x', 12)]);
+    b.setAttribute('aria-label', L('pl.chip_remove', { name: label }));
     b.addEventListener('click', onRemove);
     return h('span', { class: 'tag tag-blue pl-fchip' }, [label, b]);
   }
@@ -427,7 +444,7 @@ var DT = function (k, p) { return D.t(k, p); };
     var items = [];
     if (F.hints.length === 0) {
       defs.forEach(function (d) {
-        var n = allPeers.filter(HINTS[d[0]]).length;
+        var n = allPeers.filter(function (p) { return hint(d[0], p); }).length;
         if (!n) return;
         var b = h('button', { type: 'button', class: 'pl-att ' + d[1], 'data-hint': d[0] }, [icon(d[2], 14), n === 1 ? L(d[3] + '_one') : L(d[3], { n: n })]);
         b.addEventListener('click', function () { F.hints = [d[0]]; render(); });
@@ -638,9 +655,9 @@ var DT = function (k, p) { return D.t(k, p); };
         F.tags = on ? F.tags.filter(function (x) { return x.toLowerCase() !== k; }) : F.tags.concat([t]);
       });
     }) : [h('span', { class: 'pl-fnone', text: L('pl.f_tags_none') })]));
-    secs.push(fsec(L('pl.f_attn'), Object.keys(HINTS).map(function (k) {
+    secs.push(fsec(L('pl.f_attn'), HINT_KEYS.map(function (k) {
       var on = F.hints.indexOf(k) !== -1;
-      return fbtn(L('pl.h_' + k) + ' ' + allPeers.filter(HINTS[k]).length, on, function () {
+      return fbtn(L('pl.h_' + k) + ' ' + allPeers.filter(function (p) { return hint(k, p); }).length, on, function () {
         F.hints = on ? F.hints.filter(function (x) { return x !== k; }) : F.hints.concat([k]);
       });
     })));
@@ -997,16 +1014,19 @@ var DT = function (k, p) { return D.t(k, p); };
     var n = peer.client_policy ? Object.keys(peer.client_policy).length : 0;
     if (badge) { badge.style.display = n ? '' : 'none'; badge.textContent = String(n); }
     api.get('/api/peers/' + peer.id + '/client-policy').then(function (r) {
-      if (!r || !r.ok || String(document.getElementById('edit-peer-id').value) !== String(peer.id)) return;
+      if (!r || !r.ok || String(editingPeerId) !== String(peer.id)) return;
       peerPolicyForm.setInherited(r.data.inherited, r.data.inherited_sources);
       peerPolicyForm.setValue(r.data.override || {});
       peerPolicyLoaded = JSON.stringify(peerPolicyForm.getValue());
     }).catch(function (err) { console.warn('[peers] loading client policy failed', err); });
   }
 
-  async function showEditModal(id) {
-    var peer = allPeers.find(function(p) { return String(p.id) === String(id); });
+  var editingPeerId = null;
+  async function showEditModal(wanted) {
+    var peer = allPeers.find(function(p) { return String(p.id) === String(wanted); });
     if (!peer) return;
+    var id = peer.id;
+    editingPeerId = id;
 
     document.getElementById('edit-peer-id').value = id;
     document.getElementById('edit-peer-name').value = peer.name || '';
@@ -1115,7 +1135,8 @@ var DT = function (k, p) { return D.t(k, p); };
 
   document.getElementById('btn-edit-peer-submit').addEventListener('click', async function() {
     var btn = this;
-    var id = document.getElementById('edit-peer-id').value;
+    var id = editingPeerId;
+    if (id == null) return;
     var name = document.getElementById('edit-peer-name').value.trim();
     var description = document.getElementById('edit-peer-desc').value.trim();
     var tags = document.getElementById('edit-peer-tags').value.trim();
