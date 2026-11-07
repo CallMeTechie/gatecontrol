@@ -601,6 +601,8 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
 
     // Dashboard-only: gateways that need re-pairing after master-key rotation
     if (template === 'dashboard') {
+      // "Plugins brauchen deine Hilfe": open Einrichtungshinweise (plugin.json setupNotices)
+      try { extraLocals.pluginSetup = isAdmin ? require('../services/plugins/setupNotices').summary(res.locals.language === 'en' ? 'en' : 'de') : []; } catch { extraLocals.pluginSetup = []; }
       try {
         const { getDb } = require('../db/connection');
         extraLocals.needs_repair_gateways = getDb().prepare(`

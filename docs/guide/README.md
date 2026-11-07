@@ -12,7 +12,7 @@ commands into a terminal.
 1. [Overview](01-overview.md) – What is the server, what is a gateway, what do you need?
 2. [Setting up the server](02-server-setup.md) – installation, `.env`, first login, HTTPS, updates.
 3. [Setting up a gateway](03-gateway-setup.md) – the assistant, then Synology, Raspberry Pi, Linux/Docker and Proxmox.
-4. [Edge plugins and Smart Home](04-edge-and-smart-home.md) – edge service, MQTT, the status messages and what helps.
+4. [Edge plugins and Smart Home](04-edge-and-smart-home.md) – edge service, MQTT, the status messages and what helps, plugin manuals and setup notices.
 5. [Home gateway features](05-features.md) – network watch, internet quality, presence, UPS, DNS filter, home cache.
 6. [Updating an existing gateway](06-updating-a-gateway.md) – bring an old compose file up to date.
 7. [FAQ and troubleshooting](07-faq.md) – typical messages and how to fix them.

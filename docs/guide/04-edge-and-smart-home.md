@@ -162,4 +162,29 @@ The edge container runs but cannot get through to the server.
 
 **Check:** “Connected since …” shows.
 
+## 4.5 Plugin manuals and setup notices
+
+From GateControl **1.241.0** every plugin that has one brings its own manual:
+Settings → Plugins → *plugin* → tab “Manual”. It says what the plugin does,
+what it needs, how to set it up step by step (including steps outside
+GateControl such as the compose file or settings of a camera), permissions,
+frequent questions and what is new in the installed version. Links lead to
+sections, the table of contents sits beside the text (above it on a phone).
+The manual comes anew with every plugin update.
+
+When a plugin **needs your help** after an install or an update, GateControl
+shows an amber notice:
+
+- at the top of the plugin's page (on every tab) with “Read in the manual”
+  and “Done”,
+- as “Action needed” at the plugin in the list “My plugins”,
+- as “Plugins need your help” on the dashboard.
+
+Some notices clear themselves: when a gateway lacks, for example, the service
+`kameras`, the notice names the gateway and offers “Download
+docker-compose.yml”; once the service runs, it goes away. Others you mark as
+“Done” when the work is done – that goes into the activity log with your name.
+
+**Check:** the dashboard no longer shows “Plugins need your help”.
+
 Continue with [chapter 5: Home gateway features](05-features.md).

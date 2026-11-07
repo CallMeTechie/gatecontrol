@@ -36,6 +36,24 @@
 </div>
 {% endfor %}
 
+{#- Einrichtungshinweise of plugins (plugin.json setupNotices, services/plugins/setupNotices.js):
+    a step outside GateControl after an install or update. -#}
+{% if pluginSetup and pluginSetup.length > 0 %}
+<div class="db-banner db-banner-warn" role="note" id="db-plugin-setup">
+  <span class="db-banner-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 17v.5"/></svg></span>
+  <div class="db-banner-text">
+    <strong>{{ t('plugins.setup.dash_title') }}</strong>
+    <span class="db-banner-sub">{{ t('plugins.setup.dash_text') }}</span>
+    <ul class="db-banner-list">
+      {% for ps in pluginSetup %}
+      <li data-plugin="{{ ps.id }}"><a href="/settings/plugins/manage/{{ ps.id | urlencode }}">{{ ps.name }}</a> — {{ ps.titles | join(' · ') }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% if pluginSetup.length == 1 %}<a href="/settings/plugins/manage/{{ pluginSetup[0].id | urlencode }}" class="db-btn db-btn-primary">{{ t('plugins.setup.dash_open') }}</a>{% endif %}
+</div>
+{% endif %}
+
 {% if needs_repair_gateways and needs_repair_gateways.length > 0 %}
 <div class="db-banner db-banner-warn" role="alert" id="db-repair">
   <span class="db-banner-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 17v.5"/></svg></span>

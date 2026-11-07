@@ -168,9 +168,9 @@ UI & UX Konzept":
 
 | URL | View |
 |---|---|
-| `/settings/plugins` | Meine Plugins: state tiles, "Braucht deine Aufmerksamkeit" (crashed, licence, unsigned, expiring licence, updates — each with its action), search, filter, list or tiles grouped by area, suggestions; without plugins the first-run page |
+| `/settings/plugins` | Meine Plugins: state tiles, "Braucht deine Aufmerksamkeit" (crashed, licence, unsigned, expiring licence, open setup notices, updates — each with its action), search, filter, list or tiles grouped by area, suggestions; without plugins the first-run page |
 | `/settings/plugins/catalog`, `…/catalog/<id>` | the catalogue (areas and filters in the side column); one plugin: what it adds, what it may do, how it looks, versions, the install panel |
-| `/settings/plugins/manage/<id>` | one installed plugin: Übersicht, Einstellungen, Berechtigungen, Lizenz, Protokoll, Versionen; restart, switch, update, uninstall |
+| `/settings/plugins/manage/<id>` | one installed plugin: Übersicht, Einstellungen, Berechtigungen, Lizenz, Protokoll, Versionen, Handbuch (`handbook`, `?tab=handbook#<anchor>`); banners of open setup notices above every tab; restart, switch, update, uninstall |
 | `/settings/plugins/updates` | updates with release notes, *Alle aktualisieren*, automatic updates, recently updated |
 | `/settings/plugins/licenses` | a first-party licence key without naming the plugin; the licences of all plugins |
 | `/settings/plugins/security` | upload with preview, unsigned plugins, media in backups, update checks, catalogue source |
@@ -607,6 +607,119 @@ unsigned build of the same id.
   (≤ 32) — the services of other plugins this plugin may call
   (`permissions.services: invalid`; one of its own: `permissions.services:
   own service`). See "Services".
+* `handbook` (optional, since 1.241.0): `{ "de": "HANDBUCH.md", "en":
+  "HANDBOOK.md" }` — the plugin's manual, shown as the tab „Handbuch“ /
+  "Manual" under Einstellungen › Plugins › <plugin>. See "Handbook".
+* `setupNotices` (optional, since 1.241.0): steps an administrator has to do
+  by hand after an install or update (a new compose file, settings of a
+  camera …), shown as a banner until done. See "Setup notices".
+
+Older hosts ignore `handbook` and `setupNotices` (unknown top-level keys are
+not refused), so a plugin can bring them without raising `gatecontrol`.
+
+## Handbook (`handbook`, since 1.241.0)
+
+```json
+"handbook": { "de": "HANDBUCH.md", "en": "HANDBOOK.md" }
+```
+
+* Paths relative to the plugin folder, files of the package (`.md`, at most
+  256 KB each — errors `handbook.de: invalid` / `missing` / `too large`). One
+  language is enough; other keys (a later language) are ignored.
+* The first line of each file is `<!-- version: X.Y.Z -->` with the version
+  of `plugin.json`: touch the handbook with every release (the plugin repo's
+  `tools/validate.js` and `tools/release-check.js` check it; the host only
+  says "written for version …" under the tab when they differ).
+* Shown under Einstellungen › Plugins › <plugin> › „Handbuch“ ("Manual", the
+  last tab) of every plugin whose installed package has one — in the
+  language of the interface, else German, else English. A plugin without
+  `handbook` has no tab. Deep link: `/settings/plugins/manage/<id>?tab=handbook#<anchor>`.
+* `GET /api/v1/plugins/:id/handbook?lang=de|en` (admin) →
+  `{ version, handbookVersion, lang, html, toc: [{ level, text, anchor }] }`
+  (404 `no_handbook` / `handbook_missing`).
+
+Rendered on the server (`services/plugins/markdown.js`) from a subset of
+Markdown; **no HTML of the file gets through** — `<b>` stays the text `<b>`,
+the page rebuilds the result from a whitelist once more:
+
+| Markdown | Result |
+|---|---|
+| `#`, `##`, `###` (`####` …) | headings with an anchor; levels 1–3 form the table of contents |
+| paragraphs, two trailing spaces / `\` | `<p>`, `<br>` |
+| `- ` `* ` `+ ` / `1. ` `1) ` | lists, nested by indentation, `start` of an ordered list |
+| `**fett**` `__fett__` `*kursiv*` `_kursiv_` `` `code` `` | strong, emphasis, code |
+| ```` ``` ```` / `~~~` | code blocks |
+| `[Text](https://…)`, `<https://…>` | a link in a new tab (`rel="noopener noreferrer"`) — **only https://** |
+| `[Text](#anker)` | a jump to a heading of this handbook |
+| `\| a \| b \|` + `\|:--\|--:\|` | tables (alignment) |
+| `> **Hinweis:** …` / `> **Achtung:** …` | note blocks (Hinweis/Note/Tipp: blue, Achtung/Wichtig/Warning: amber) |
+| `---` | rule |
+| `<!-- … -->` | dropped |
+| `![alt](…)` | no images (yet): the alt text |
+
+Any other link (`http:`, `javascript:`, `mailto:`, relative paths) stays
+plain text. **Anchors**: the slug of the heading — lower case, ä/ö/ü/ß →
+ae/oe/ue/ss, other accents dropped, everything but a–z/0–9 → `-`, repeated
+slugs `-2`, `-3` ("Kameras einrichten" → `kameras-einrichten`). A heading may
+name its anchor itself: `### Camera settings {#kamera-einstellungen}` — the
+same anchor in both languages.
+
+Recommended outline (the same for every plugin): „Was das Plugin kann“,
+„Voraussetzungen“, „Einrichten“ (step by step, including steps outside
+GateControl such as the compose file or camera settings), „Benutzen“
+(portal/apps), „Berechtigungen“, „Häufige Fragen / Fehlersuche“, „Neu in
+X.Y.Z“ (from the CHANGELOG of the current version).
+
+## Setup notices (`setupNotices`, since 1.241.0)
+
+```json
+"setupNotices": [
+  {
+    "id": "cameras-compose",
+    "since": "1.6.0",
+    "title": { "de": "Kameras: Compose-Datei und Kamera-Einstellungen", "en": "Cameras: compose file and camera settings" },
+    "text":  { "de": "Für Kameras im Heimnetz braucht das Gateway einmalig die neue Compose-Datei …", "en": "…" },
+    "handbook": "kameras-einrichten",
+    "check": { "type": "gatewayService", "feature": "cameras", "service": "kameras" }
+  }
+]
+```
+
+* `id` `[a-z0-9][a-z0-9-]{0,63}`, unique in the plugin; `since`: the plugin
+  version from which the notice applies — shown after an install of, or an
+  update to, a version ≥ `since`; `title` (≤ 120) and `text` (≤ 1000): a
+  string or `{ de, en }`; at most 20 notices. Errors `setupNotices: invalid`,
+  `setupNotices.<id>: invalid id | duplicate id | invalid since | invalid
+  title | invalid text | invalid handbook | invalid check`.
+* `handbook` (optional): the anchor of a heading of the handbook ("Im
+  Handbuch nachlesen" opens the tab there) — one for both languages, or
+  `{ "de": "kameras-einrichten", "en": "setting-up-cameras" }` (or one anchor
+  given with `{#…}` in both files).
+* `check` (optional, default `manual`):
+
+| `type` | Done when |
+|---|---|
+| `manual` | an administrator clicks „Erledigt“ |
+| `gatewayService` (`feature`, `service`) | at least one gateway has the feature on and its compose service runs (telemetry). While a gateway has the feature on but the service is missing, the notice stays with the gateway's name and „docker-compose.yml herunterladen“ (not for a Raspberry Pi image). Features with a service of their own: `cameras` (service `kameras`), `ai` (`ki`), `radio` / `zigbee` (`deconz`); any other name: the gateway's switch `<feature>.enabled` and `telemetry.features.<feature>.service === "managed"` |
+| `gatewayVersion` (`min`, optional `feature`) | every gateway (with that feature on) runs at least `min` |
+| `hostVersion` (`min`) | this GateControl is at least `min` |
+
+  A `type` this host does not know counts as `manual` (a newer plugin on an
+  older host still installs).
+* Open notices: a banner above every tab of Einstellungen › Plugins ›
+  <plugin> (text, gateways, „Im Handbuch nachlesen“, „Erledigt“), the badge
+  „Handeln nötig“ at the plugin in the list and under „Braucht deine
+  Aufmerksamkeit“, and „Plugins brauchen deine Hilfe“ on the dashboard
+  (administrators, enabled plugins).
+* „Erledigt“ ends a notice whatever its check says; it is stored per plugin
+  and notice id with the person, the time and the plugin version
+  (`plugin_notice_acks`, removed with „Alles löschen“) and written to the
+  activity log (`plugin_notice_done`). A notice that must come back later
+  needs a new `id`.
+* Admin API: `GET /api/v1/plugins/:id/notices` (every notice of the installed
+  version with `state` `open` | `done` | `acked`), `POST
+  /api/v1/plugins/:id/notices/:notice/ack`; the plugin views of
+  `GET /api/v1/plugins` carry `handbook` (true/false) and `notices` (the open ones).
 
 ## Network
 
@@ -5195,7 +5308,8 @@ install (`plugin_installed`) · update (`plugin_updated`) · enable/disable
 (`plugin_enabled`/`plugin_disabled`) · built-in data imported (`plugin_legacy_imported`) · stopped by licence/signature/version
 (`plugin_suspended`) · uninstall (`plugin_uninstalled`, mode keep/wipe) ·
 "Unsignierte Plugins erlauben" (`plugin_unsigned_allowed`/`plugin_unsigned_blocked`)
-· access targets (`plugin_target_changed`) · plugin notifications
+· access targets (`plugin_target_changed`) · a setup notice marked as done
+(`plugin_notice_done`) · plugin notifications
 (`plugin_notice`) · quick actions run from an app (`plugin_quick_action`) ·
 quick actions run by another plugin (`plugin_automation`) ·
 kiosk users marked/unmarked (`kiosk_user_allowed`/`kiosk_user_disallowed`,

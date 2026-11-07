@@ -20,6 +20,8 @@ const PRINT_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'print-demo
 // a plugin with permissions.radio (gc.radio, tests/gateway_radio.test.js)
 const RADIO_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'radio-demo');
 const CAMERA_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'camera-demo');
+// a plugin with a handbook and setup notices (plugin.json handbook / setupNotices, tests/plugins_handbook.test.js)
+const HANDBOOK_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'handbook-demo');
 
 const trusted = signature.generateKeyPair();
 const stranger = signature.generateKeyPair();
@@ -70,4 +72,10 @@ function cameraPackage(o = {}) {
   return packDir(CAMERA_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
 }
 
-module.exports = { CAMERA_DEMO, cameraPackage, HELLO, EDGE_DEMO, PRESENCE_DEMO, HOME_DEMO, PRINT_DEMO, RADIO_DEMO, helloPackage, edgePackage, presencePackage, homePackage, printPackage, radioPackage, trusted, stranger };
+/** The handbook test plugin, like helloPackage. */
+function handbookPackage(o = {}) {
+  const key = o.sign === undefined || o.sign === 'trusted' ? trusted.privateSeed : (o.sign === 'stranger' ? stranger.privateSeed : '');
+  return packDir(HANDBOOK_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
+}
+
+module.exports = { HANDBOOK_DEMO, handbookPackage, CAMERA_DEMO, cameraPackage, HELLO, EDGE_DEMO, PRESENCE_DEMO, HOME_DEMO, PRINT_DEMO, RADIO_DEMO, helloPackage, edgePackage, presencePackage, homePackage, printPackage, radioPackage, trusted, stranger };

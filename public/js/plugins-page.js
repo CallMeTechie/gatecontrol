@@ -721,6 +721,9 @@
       const s = P.statusChip(p);
       return { pill: pill(p.status === 'crashed' ? t('plugins.x.disturbed') : t(s.key), s.tone, true), dot: s.tone === 'warn' ? 'warn' : 'crit', crit: s.tone !== 'warn' };
     }
+    // Einrichtungshinweise (plugin.json setupNotices): a step outside GateControl is still open
+    const nn = Array.isArray(p.notices) ? p.notices.length : 0;
+    if (nn) return { pill: pill(t('plugins.notice.badge'), 'warn', true, { 'data-notices': String(nn) }), dot: 'warn', mobile: t('plugins.notice.badge') };
     if (c && c.state === 'update' && c.latest) return { pill: pill(t('plugins.x.update_to', { version: c.latest.version }), 'blue'), badge: t('plugins.x.update_badge'), mobile: t('plugins.x.update_to_m', { version: c.latest.version }) };
     // a newer version that needs a newer GateControl: say so instead of showing nothing
     if (c && c.state === 'installed' && c.requiresNewer) return { pill: pill(t('plugins.x.update_needs_gc', { version: c.requiresNewer.version, range: rng(c.requiresNewer.gatecontrol) }), 'warn'), mobile: t('plugins.x.update_needs_gc_m', { version: c.requiresNewer.version }) };
@@ -784,6 +787,10 @@
       } else if (a.kind === 'license' || a.kind === 'expiring') {
         if (a.kind === 'expiring') { tone = 'warn'; pillText = t('plugins.x.days_n', { n: Math.max(0, P.daysUntil(p.license.expiresAt) || 0) }); }
         actions.push(btn(t(a.kind === 'expiring' ? 'plugins.x.renew' : 'plugins.banner.license_action'), { href: a.kind === 'expiring' ? U.licenses : U.manage(p.id, 'license'), small: true, primary: a.kind === 'license' }));
+      } else if (a.kind === 'setup') {
+        tone = 'warn';
+        pillText = t('plugins.notice.badge');
+        actions.push(btn(t('plugins.x.view'), { href: U.manage(p.id), small: true, primary: true }));
       } else if (a.kind === 'unsigned') {
         tone = 'warn';
         actions.push(btn(t('plugins.banner.unsigned_action'), { href: U.security, small: true }));
@@ -792,7 +799,7 @@
         if (c && c.state === 'update') actions.push(btn(t('plugins.cat.update'), { small: true, primary: true, onClick: (e) => installFromCatalog(c, e.currentTarget).then(reloadInstalled) }));
       } else actions.push(btn(t('plugins.x.details'), { href: U.manage(p.id), small: true }));
       const crashes = (p.process && p.process.crashes) || 0;
-      const text = a.kind === 'crashed' ? [(p.process && p.process.lastError) || t('plugins.reason.crashed'), crashes ? t('plugins.x.restarts_n', { n: crashes }) : null].filter(Boolean).join(' · ')
+      const text = a.kind === 'setup' ? (p.notices || []).map((n) => n.title).join(' · ') : a.kind === 'crashed' ? [(p.process && p.process.lastError) || t('plugins.reason.crashed'), crashes ? t('plugins.x.restarts_n', { n: crashes }) : null].filter(Boolean).join(' · ')
         : (a.kind === 'expiring' ? t('plugins.x.att_expiring_d', { date: P.fmtDate(p.license.expiresAt, lang) })
           : (a.kind === 'license' ? t('plugins.lic.state.' + ((p.license && p.license.state) || 'missing')) + ' · ' + t('plugins.reason.license') : t('plugins.reason.' + (a.kind === 'broken' ? (p.reason || 'broken') : a.kind))));
       return el('div', { class: 'pgx-att', 'data-kind': a.kind, 'data-tone': tone }, [
@@ -1220,9 +1227,11 @@
     }
   }
 
-  function setTab(id) {
+  /** Switch the tab; `anchor`: a heading of the handbook (#<slug>, tab "handbook"). */
+  function setTab(id, anchor) {
     mtab = id;
-    try { history.replaceState(null, '', location.pathname + (id === 'overview' ? '' : '?tab=' + enc(id))); } catch (_) { /* ignore */ }
+    const hash = anchor && HB_SLUG.test(anchor) ? '#' + anchor : '';
+    try { history.replaceState(null, '', location.pathname + (id === 'overview' ? '' : '?tab=' + enc(id)) + hash); } catch (_) { /* ignore */ }
     renderManage();
   }
 
@@ -1298,6 +1307,7 @@
     }
     const banner = problemBanner(p);
     if (banner) main.appendChild(banner);
+    noticeBanners(p).forEach((b) => main.appendChild(b));
     const legacySlot = el('div', { id: 'pg-legacy-slot' });
     main.appendChild(legacySlot);
     renderLegacy(p, legacySlot);
@@ -1315,6 +1325,13 @@
         ...(tb.page ? { 'data-page': id } : {}), on: { click: () => setTab(id) } }, [label, n ? el('em', { text: String(n) }) : null]));
     });
     main.appendChild(tl);
+    if (cur === 'handbook') {
+      // the handbook: table of contents beside (phone: above) the text, no side column
+      const panel = el('div', { class: 'pgx-panel pgx-hb-panel', id: 'pg-panel', role: 'tabpanel', 'aria-labelledby': 'pg-tab-handbook' });
+      main.appendChild(panel);
+      panelHandbook(p, panel);
+      return;
+    }
     const page = (tabs.find((x) => x.id === cur) || {}).page;
     if (page) {
       // a page of the plugin: its frame over the whole width, no side column
@@ -1330,6 +1347,138 @@
     const render = PANELS.get(cur);
     if (typeof render === 'function') render(p, panel, c);
     manageAside(p, c, aside);
+  }
+
+  // ── Handbuch (plugin.json handbook) and Einrichtungshinweise (setupNotices), since 1.241.0 ──
+  // The handbook comes rendered from the server (services/plugins/markdown.js escapes everything);
+  // it is rebuilt here from a whitelist all the same — elements, ids, classes and links only.
+  const HB_SLUG = /^[a-z0-9][a-z0-9-]{0,99}$/;
+  const HB_TAGS = new Set(['h2', 'h3', 'h4', 'h5', 'p', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'strong', 'em', 'a', 'br', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'div']);
+  let hbData = null; // { key, data }
+
+  function hbJump(anchor, smooth) {
+    const target = anchor && HB_SLUG.test(anchor) ? document.getElementById('hb-' + anchor) : null;
+    if (!target) return false;
+    if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+    target.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' });
+    try { target.focus({ preventScroll: true }); } catch (_) { /* old browser */ }
+    return true;
+  }
+  function hbLink(anchor, kids, cls) {
+    return el('a', { href: '#' + anchor, class: cls || null, 'data-hb-anchor': anchor, on: { click: (e) => {
+      e.preventDefault();
+      try { history.replaceState(null, '', location.pathname + location.search + '#' + anchor); } catch (_) { /* ignore */ }
+      hbJump(anchor, true);
+    } } }, kids);
+  }
+  function hbClean(from, into) {
+    Array.prototype.forEach.call(from.childNodes, (n) => {
+      if (n.nodeType === 3) { into.appendChild(document.createTextNode(n.nodeValue)); return; }
+      if (n.nodeType !== 1) return;
+      const tag = n.tagName.toLowerCase();
+      if (!HB_TAGS.has(tag)) { hbClean(n, into); return; }
+      let e;
+      if (tag === 'a') {
+        const href = n.getAttribute('href') || '';
+        const anchor = n.getAttribute('data-hb-anchor') || '';
+        if (HB_SLUG.test(anchor) && href === '#' + anchor) e = hbLink(anchor, []);
+        else if (/^https:\/\/[^\s]+$/i.test(href)) e = el('a', { href, target: '_blank', rel: 'noopener noreferrer' });
+        else { hbClean(n, into); return; }
+      } else e = document.createElement(tag);
+      const id = n.getAttribute('id');
+      if (id && /^hb-[a-z0-9][a-z0-9-]{0,99}$/.test(id)) e.id = id;
+      const cls = n.getAttribute('class');
+      if (cls && /^hb-[a-z-]{1,20}$/.test(cls)) e.className = cls;
+      const tone = n.getAttribute('data-tone');
+      if (tag === 'blockquote' && (tone === 'info' || tone === 'warn')) e.setAttribute('data-tone', tone);
+      const start = n.getAttribute('start');
+      if (tag === 'ol' && start && /^\d{1,9}$/.test(start)) e.setAttribute('start', start);
+      hbClean(n, e);
+      into.appendChild(e);
+    });
+  }
+
+  async function panelHandbook(p, panel) {
+    panel.appendChild(el('p', { class: 'pgx-loading', text: t('plugins.area.loading') }));
+    const key = p.id + '@' + p.version + ':' + lang;
+    let d = hbData && hbData.key === key ? hbData.data : null;
+    if (!d) {
+      d = await req('GET', API + '/' + enc(p.id) + '/handbook?lang=' + lang);
+      if (d && d.ok) hbData = { key, data: d };
+    }
+    if (!panel.isConnected) return;
+    clear(panel);
+    if (!d || !d.ok) { panel.appendChild(card([el('p', { class: 'pgx-empty', id: 'pg-hb-error', text: (d && d.error) || t('plugins.hb.missing') })], null, 'pgx-pad')); return; }
+    const doc = el('article', { class: 'pgx-hb-doc', id: 'pg-hb-doc', lang: d.lang === 'en' ? 'en' : 'de' });
+    hbClean(new DOMParser().parseFromString(String(d.html || ''), 'text/html').body, doc);
+    const notes = [];
+    if (d.lang !== lang) notes.push(el('p', { class: 'pgx-hint', id: 'pg-hb-lang', text: t('plugins.hb.other_lang') }));
+    if (d.handbookVersion && d.handbookVersion !== d.version) notes.push(el('p', { class: 'pgx-hint', id: 'pg-hb-older', text: t('plugins.hb.older', { version: d.handbookVersion }) }));
+    const head = el('div', { class: 'pgx-hb-meta' }, [lbl(t('plugins.tab.handbook'), { id: 'pg-hb-h' }), el('span', { class: 'pgx-mono pgx-muted', text: 'v' + d.version })]);
+    const toc = Array.isArray(d.toc) ? d.toc.filter((x) => x && HB_SLUG.test(x.anchor || '')) : [];
+    const nav = toc.length > 1 ? el('details', { class: 'pgx-card pgx-hb-toc', id: 'pg-hb-toc', open: window.matchMedia && window.matchMedia('(min-width: 900px)').matches ? true : null }, [
+      el('summary', { class: 'pgx-lbl', text: t('plugins.hb.toc') }),
+      el('nav', { 'aria-label': t('plugins.hb.toc') }, [el('ol', { class: 'pgx-hb-tl' }, toc.map((x) => el('li', { 'data-level': String(Math.min(3, Math.max(1, x.level | 0))) },
+        [hbLink(x.anchor, [String(x.text || '')])])))]),
+    ]) : null;
+    panel.appendChild(el('div', { class: 'pgx-hb' + (nav ? '' : ' pgx-hb-solo') }, [nav, card([head].concat(notes, [doc]), { 'aria-labelledby': 'pg-hb-h' }, 'pgx-pad pgx-hb-card')]));
+    const want = decodeURIComponent((location.hash || '').slice(1));
+    if (want) setTimeout(() => hbJump(want, false), 0);
+  }
+  window.addEventListener('hashchange', () => {
+    if (VIEW !== 'manage' || mtab !== 'handbook') return;
+    hbJump(decodeURIComponent((location.hash || '').slice(1)), true);
+  });
+
+  async function downloadGatewayCompose(g, button) {
+    if (button) button.disabled = true;
+    try {
+      const r = await fetch('/api/v1/gateways/' + enc(String(g.id)) + '/compose', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.GC.csrfToken }, body: '{}',
+      });
+      // no platform known (e.g. a Pi) or no fleet: the gateway's own row "Funktionen" offers the choice
+      if (!r.ok) { window.location.assign('/gateways#gw/' + enc(String(g.id)) + '/features'); return; }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = el('a', { href: url, download: 'docker-compose.yml', hidden: true });
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast(t('plugins.notice.compose_done', { name: g.name }));
+    } catch (_) { toast(t('plugins.err.generic'), 'error'); } finally { if (button) button.disabled = false; }
+  }
+
+  async function ackNotice(p, n, button) {
+    if (button) button.disabled = true;
+    const r = await req('POST', API + '/' + enc(p.id) + '/notices/' + enc(n.id) + '/ack', {});
+    if (!r.ok) { if (button) button.disabled = false; toast(r.error || t('plugins.err.generic'), 'error'); return; }
+    const i = inst.plugins.findIndex((x) => x.id === p.id);
+    if (i >= 0 && r.plugin) inst.plugins[i] = Object.assign({}, inst.plugins[i], r.plugin);
+    toast(t('plugins.notice.acked'));
+    renderManage();
+    updateNav();
+  }
+
+  /** The open Einrichtungshinweise of a plugin: one banner each, on every tab. */
+  function noticeBanners(p) {
+    return (Array.isArray(p.notices) ? p.notices : []).map((n) => {
+      const gws = Array.isArray(n.gateways) ? n.gateways : [];
+      const names = gws.map((g) => g.name).join(', ');
+      let gwLine = null;
+      if (gws.length && n.check && n.check.type === 'gatewayService') gwLine = t('plugins.notice.gw_service', { names, service: n.check.service || '' });
+      else if (gws.length && n.check && n.check.type === 'gatewayVersion') gwLine = t('plugins.notice.gw_version', { names, min: n.check.min || '' });
+      const acts = [];
+      if (p.handbook) acts.push(linkBtn(t('plugins.notice.read'), () => setTab('handbook', n.handbook || null), { class: 'pgx-a', 'data-action': 'handbook' }));
+      if (n.check && n.check.type === 'gatewayService') {
+        gws.filter((g) => g.compose).forEach((g) => acts.push(btn(gws.length > 1 ? t('plugins.notice.compose_of', { name: g.name }) : t('plugins.notice.compose'),
+          { small: true, icon: I.download, action: 'compose', onClick: (e) => downloadGatewayCompose(g, e.currentTarget) })));
+      }
+      acts.push(btn(t('plugins.notice.done'), { small: true, primary: true, action: 'ack', onClick: (e) => ackNotice(p, n, e.currentTarget) }));
+      return el('div', { class: 'pgx-banner pgx-notice', 'data-tone': 'warn', role: 'status', 'data-notice': n.id }, [icon(I.alert, 18),
+        el('span', { class: 'pgx-grow pgx-notice-t' }, [el('b', { text: n.title }), el('span', { text: n.text }), gwLine ? el('small', { class: 'pgx-notice-gw', text: gwLine }) : null]),
+        el('span', { class: 'pgx-acts pgx-notice-a' }, acts)]);
+    });
   }
 
   function problemBanner(p) {

@@ -49,7 +49,7 @@ function packDir(dir, opts = {}) {
   if (opts.extra) for (const [k, v] of opts.extra) files.set(k, Buffer.isBuffer(v) ? v : Buffer.from(String(v)));
   const pj = files.get('plugin.json');
   if (!pj) throw new Error('plugin.json missing');
-  const res = manifestLib.validate(JSON.parse(pj.toString('utf8')), { files: new Set(files.keys()) });
+  const res = manifestLib.validate(JSON.parse(pj.toString('utf8')), { files: new Set(files.keys()), sizes: new Map([...files].map(([k, v]) => [k, v.length])) });
   if (!res.ok) throw new Error('plugin.json invalid: ' + res.errors.join(', '));
   const key = opts.signingKey !== undefined ? opts.signingKey : process.env.GC_PLUGIN_SIGNING_KEY;
   if (key) files = signature.sign(files, key);

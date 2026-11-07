@@ -143,6 +143,25 @@ Meldet ein Gerät „Zertifikat geändert“, hat sich sein Sicherheitszertifika
 geändert (z. B. nach einem Firmware-Update) – im Plugin bestätigen, dann geht
 es weiter.
 
+### Drucken vom Android-Handy
+
+Mit der Android-App ab 1.84.0 druckst du aus jeder App auf den Druckern zu
+Hause – mit und ohne VPN. Der Auftrag läuft über den Server und das Gateway zu
+Hause. Dafür braucht es das Plugin „Drucken & Scannen“ ab 1.0.1 und das Recht
+„drucken“.
+
+- **Druckdienst einschalten (einmal):** Android-Einstellungen › Verbundene
+  Geräte › Drucken › „GateControl“. Im Druckdialog einer App heißen die
+  Drucker dann „GateControl – …“ (mit dem Namen des Druckers).
+- **Teilen:** ein PDF oder Bild teilen › „Mit GateControl drucken“ – Drucker,
+  Kopien, Farbe, beidseitig, „Zu Hause drucken“.
+- **Keine Drucker?** In der App unter Einstellungen › Drucken › „Drucken über
+  GateControl“ steht, warum (Plugin nicht für die App verfügbar, kein Recht,
+  keine Verbindung).
+
+Ist der Drucker aus, wartet der Auftrag bis zu 24 Stunden („aus – druckt,
+sobald er an ist“).
+
 ### Drucker wird nicht gefunden
 
 Unter dem Schalter steht, was die letzte Suche gesehen hat („Letzte Suche
@@ -176,6 +195,7 @@ Gateway (bei der Synology auf der NAS).
 
 **Voraussetzungen:**
 
+- GateControl-Server 1.240.0+ ([Updates](02-server-einrichten.md#29-updates-einrichten)).
 - Gateway 1.28.0+. Ist es älter, steht in der Zeile „Gateway zu alt – ab 1.28.0“.
 - An der Kamera **ONVIF** bzw. **RTSP** einschalten:
   - Reolink: App oder Weboberfläche › Einstellungen › Netzwerk › Erweitert ›
@@ -187,9 +207,12 @@ Gateway (bei der Synology auf der NAS).
 - Das Plugin „Tür & Kamera“ (Einstellungen › Plugins › Katalog) ab 1.6.0.
 - Synology/Linux: einmal die aktuelle Compose-Datei mit dem Dienst `kameras`
   (nur ffmpeg, ≈ 80 MB). Fehlt er, bietet die Zeile „docker-compose.yml
-  herunterladen“ an ([Kapitel 6](06-gateway-aktualisieren.md)). Ohne ihn gehen Suche,
-  Testbild und Bewegungsmeldungen schon, Live-Bild und Clips noch nicht. Das
-  Raspberry-Pi-Image legt den Dienst selbst an.
+  herunterladen“ an – herunterladen, Projekt neu erstellen
+  ([Kapitel 6](06-gateway-aktualisieren.md#63-synology-compose-datei-erneuern)). Ohne ihn gehen Suche,
+  Testbild und Bewegungsmeldungen schon, Live-Bild und Clips noch nicht. Optional
+  `GC_CAMERA_DIR=/volume1/kameras` in der `.env`, dann liegen die Clips in diesem
+  Ordner der NAS (siehe „Aufnahmen“). Das Raspberry-Pi-Image legt den Dienst selbst
+  an; ältere Images (vor Gateway 1.28.0) brauchen dafür ein neues Image.
 
 **Einschalten:** Reiter „Funktionen“ → „Geräte im Heimnetz“ → „Kameras“. Dann
 im Plugin „Tür & Kamera“ › „Kamera hinzufügen“: das Gateway sucht Kameras
@@ -209,7 +232,7 @@ liegen im Volume `cam-recordings` – auf der Synology mit
 `GC_CAMERA_DIR=/volume1/kameras` in der `.env` in einem Ordner der NAS.
 
 **Live-Bild:** nur, wenn das Handy oder der PC im **VPN** ist (oder im selben
-Netz wie der Server). Unterwegs ohne VPN zeigt die App alle 10 Sekunden ein
+Netz wie der Server). Unterwegs ohne VPN zeigen Portal und App alle 10 Sekunden ein
 neues Standbild. Push mit Standbild bei Personen kommt höchstens einmal pro
 Kamera alle 5 Minuten.
 
@@ -221,7 +244,9 @@ Gateways steht (`PUT /api/v1/gateways/:id/features { cameras: { subnets } }`).
 
 **Datenschutz:** Ton nimmt das Gateway nur auf, wenn du ihn je Kamera
 einschaltest – Gespräche aufzuzeichnen ist nur mit Einverständnis aller erlaubt.
-Wer welche Kamera sehen darf, legst du im Plugin unter „Berechtigungen“ fest.
+Wer welche Kamera sehen darf, legst du im Plugin unter „Berechtigungen“ fest
+(Spalte „sieht“): nur diese Personen sehen sie im Portal und in der App, bekommen
+den Push und finden die Clips.
 
 ## Funk (Zigbee, Bluetooth, Thread)
 

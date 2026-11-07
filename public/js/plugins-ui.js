@@ -32,7 +32,8 @@
   // the area's own tabs; right after "settings" the plugin's settings tab pages (plugin.json
   // ui.settingsPages, since 1.225.0: [{ id, title }] of the plugin view) — only while it runs,
   // they are its sandboxed frames —; "versions" only for a plugin of the catalogue.
-  const MANAGE_TABS = ['overview', 'settings', 'perms', 'license', 'log', 'versions'];
+  // 'handbook' (since 1.241.0): only for a plugin whose package brings one (plugin.json handbook → view.handbook)
+  const MANAGE_TABS = ['overview', 'settings', 'perms', 'license', 'log', 'versions', 'handbook'];
 
   /** → [{ id, page? }] in the order shown; `page` ({ id, title }) for a plugin page. */
   function manageTabs(p, inCatalog) {
@@ -41,6 +42,7 @@
     const out = [];
     MANAGE_TABS.forEach((id) => {
       if (id === 'versions' && !inCatalog) return;
+      if (id === 'handbook' && !(p && p.handbook === true)) return;
       out.push({ id });
       if (id === 'settings') pages.forEach((x) => { if (!out.some((o) => o.id === x.id)) out.push({ id: x.id, page: x }); });
     });
@@ -396,6 +398,8 @@
         const r = p.reason;
         out.push({ kind: r === 'license' || r === 'unsigned' || r === 'incompatible' ? r : 'broken', id: p.id });
       } else if (licenseExpiring(p)) out.push({ kind: 'expiring', id: p.id });
+      // Einrichtungshinweise (plugin.json setupNotices): a step the administrator still has to do
+      if (p.status !== 'blocked' && p.enabled !== false && Array.isArray(p.notices) && p.notices.length) out.push({ kind: 'setup', id: p.id });
     });
     const ups = (updates || []).filter((u) => u && u.state === 'update');
     if (ups.length) out.push({ kind: 'updates', ids: ups.map((u) => u.id) });

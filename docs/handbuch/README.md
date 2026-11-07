@@ -12,7 +12,7 @@ Möglichkeit, Befehle in ein Terminal zu kopieren.
 1. [Überblick](01-ueberblick.md) – Was ist der Server, was ist ein Gateway, was brauchst du?
 2. [Server einrichten](02-server-einrichten.md) – Installation, `.env`, erster Login, HTTPS, Updates.
 3. [Gateway einrichten](03-gateway-einrichten.md) – der Assistent, dann Synology, Raspberry Pi, Linux/Docker und Proxmox.
-4. [Edge-Plugins und Smart Home](04-edge-und-smart-home.md) – Edge-Dienst, MQTT, die Statusmeldungen und was hilft.
+4. [Edge-Plugins und Smart Home](04-edge-und-smart-home.md) – Edge-Dienst, MQTT, die Statusmeldungen und was hilft, Handbuch und Einrichtungshinweise der Plugins.
 5. [Funktionen der Heim-Gateways](05-funktionen.md) – Netzwerk-Wächter, Internetqualität, Anwesenheit, USV, DNS-Filter, Zwischenspeicher.
 6. [Bestehendes Gateway aktualisieren](06-gateway-aktualisieren.md) – alte Compose-Datei auf den aktuellen Stand bringen.
 7. [FAQ und Fehlerbehebung](07-faq.md) – typische Meldungen und ihre Lösung.

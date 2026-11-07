@@ -131,6 +131,12 @@ scenarios/25-gateway-cameras.js Kameras: Gateway › Funktionen › „Geräte i
                         Config-Pull ohne Passwort, Zugangsdaten-Route, ≈ MB, Pi-3-B+-Hinweis
                         „höchstens 1 Kamera mit Bewegungserkennung“, Compose-Hinweis ohne
                         Dienst kameras, Weg ins Plugin „Tür & Kamera“), hell/dunkel, 390 px
+scenarios/26-plugin-handbook.js Einstellungen › Plugins › <Plugin>: Reiter „Handbuch“ und
+                        Einrichtungshinweise mit dem Test-Plugin handbook-demo (unsigniert,
+                        echte Installation): Plakette „Handeln nötig“ in der Liste, Banner auf
+                        allen Reitern, „Im Handbuch nachlesen“ → Reiter am Anker
+                        (?tab=handbook#anker), Inhaltsverzeichnis, Deep Link, kein HTML des
+                        Handbuchs, „Erledigt“, Dashboard-Hinweis, hell/dunkel, 390 px
 ```
 
 ## Ablauf
