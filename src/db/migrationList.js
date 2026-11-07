@@ -3779,6 +3779,39 @@ const migrations = [
       );`,
     detect: (db) => hasColumn(db, 'gateway_ble_sensors', 'key_enc') && tableExists(db, 'gateway_zigbee_devices'),
   },
+  {
+    version: 140,
+    name: 'print_ocr_media',
+    // Drucken & Scannen, Restpunkte phase 3c (services/homePrint.js, gateway docs/print.md):
+    //   print_jobs.media / .source  the paper (PWG name, e.g. iso_a4_210x297mm) and the tray
+    //                  (media-source keyword) a person chose — null: the printer's own default
+    //   print_ocr      a text recognition of a plugin for a person (gc.print.ocr): `pages` the JSON
+    //                  list of the page media, done on one gateway with "Texterkennung" on; the result
+    //                  is a searchable PDF (media of the plugin, unclaimed) and its text (≤ 1 MB)
+    sql: `
+      ALTER TABLE print_jobs ADD COLUMN media TEXT;
+      ALTER TABLE print_jobs ADD COLUMN source TEXT;
+      CREATE TABLE IF NOT EXISTS print_ocr (
+        id           TEXT PRIMARY KEY,
+        plugin_id    TEXT NOT NULL,
+        user_id      INTEGER NOT NULL,
+        peer_id      INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        pages        TEXT NOT NULL,
+        dpi          INTEGER NOT NULL DEFAULT 300,
+        name         TEXT NOT NULL,
+        state        TEXT NOT NULL,
+        page         INTEGER NOT NULL DEFAULT 0,
+        error        TEXT,
+        result_media TEXT,
+        result_bytes INTEGER,
+        text         TEXT,
+        created_at   INTEGER NOT NULL,
+        updated_at   INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_print_ocr_plugin ON print_ocr(plugin_id, updated_at);
+      CREATE INDEX IF NOT EXISTS idx_print_ocr_peer ON print_ocr(peer_id, state);`,
+    detect: (db) => hasColumn(db, 'print_jobs', 'media') && tableExists(db, 'print_ocr'),
+  },
 ];
 
 module.exports = { migrations };

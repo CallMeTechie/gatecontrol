@@ -408,6 +408,24 @@ router.post('/print/scans/:id', express.json({ limit: '4kb' }), (req, res) => {
   try { res.json({ ok: true, ...print().scanReport(req.gateway.peer_id, req.params.id, req.body || {}) }); } catch (err) { printFail(res, err, req.gateway.peer_id); }
 });
 
+/** GET /api/v1/gateway/print/ocr/:id/pages/:n — a page of an open text recognition of this gateway (JPEG/PNG) */
+router.get('/print/ocr/:id/pages/:n', async (req, res) => {
+  try { await print().ocrPage(req.gateway.peer_id, req.params.id, req.params.n, res); } catch (err) { if (!res.headersSent) printFail(res, err, req.gateway.peer_id); }
+});
+
+/** PUT /api/v1/gateway/print/ocr/:id/document|text — the searchable PDF (≤ 100 MB) or the recognised text (≤ 1 MB) */
+router.put('/print/ocr/:id/:kind', async (req, res) => {
+  try { res.json({ ok: true, ...(await print().storeOcr(req.gateway.peer_id, req.params.id, req.params.kind, req)) }); } catch (err) {
+    if (!res.headersSent) printFail(res, err, req.gateway.peer_id);
+    req.resume();
+  }
+});
+
+/** POST /api/v1/gateway/print/ocr/:id — { state: running | done | failed, page?, pages?, error? } */
+router.post('/print/ocr/:id', express.json({ limit: '4kb' }), (req, res) => {
+  try { res.json({ ok: true, ...print().ocrReport(req.gateway.peer_id, req.params.id, req.body || {}) }); } catch (err) { printFail(res, err, req.gateway.peer_id); }
+});
+
 /**
  * GET /api/v1/gateway/edge/packages/:id/:version — the signed package of a
  * plugin's edge part, byte for byte as installed (its sha256 is in the

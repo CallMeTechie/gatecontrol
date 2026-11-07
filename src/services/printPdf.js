@@ -172,14 +172,16 @@ function sniff(buf) {
   return null;
 }
 
-/** PDF string literal in WinAnsi (Latin-1), ( ) \ escaped; other characters → '?'. */
+// WinAnsi outside Latin-1: € – — „ “ ” ‚ ‘ ’ … • ‰ ™ (octal codes of the font's encoding)
+const WIN_ANSI = { 0x20ac: '200', 0x201a: '202', 0x201e: '204', 0x2026: '205', 0x2030: '211', 0x2018: '221', 0x2019: '222', 0x201c: '223', 0x201d: '224', 0x2022: '225', 0x2013: '226', 0x2014: '227', 0x2122: '231' };
+
+/** PDF string literal in WinAnsi (Latin-1 and the usual typographic marks), ( ) \ escaped; other characters → '?'. */
 function pdfText(s) {
   let out = '';
   for (const ch of String(s)) {
     const c = ch.codePointAt(0);
     if (ch === '(' || ch === ')' || ch === '\\') out += '\\' + ch;
-    else if (c === 0x20ac) out += '\\200';
-    else if (c === 0x2013) out += '\\226';
+    else if (WIN_ANSI[c]) out += '\\' + WIN_ANSI[c];
     else if (c >= 0x20 && c < 0x7f) out += ch;
     else if (c >= 0xa0 && c <= 0xff) out += '\\' + c.toString(8).padStart(3, '0');
     else out += '?';
@@ -216,4 +218,57 @@ function testPagePdf({ title, device, when, note, color = true }) {
   ]);
 }
 
-module.exports = { jpegInfo, jpegsToPdf, pdfPages, testPagePdf, pdfText, sniff, A4 };
+// Plain text on A4: Courier 10 pt, 12 pt lines, 2 cm margins → 80 characters, 64 lines a page
+const TEXT_COLS = 80;
+const TEXT_ROWS = 64;
+const TEXT_MAX_PAGES = 2000;
+
+/** One line of text → the lines it takes (tabs as 4 spaces, broken at a space where it can, else hard). */
+function wrap(line) {
+  const t = line.replace(/\t/g, '    ');
+  if (t.length <= TEXT_COLS) return [t];
+  const out = [];
+  let rest = t;
+  while (rest.length > TEXT_COLS) {
+    let cut = rest.lastIndexOf(' ', TEXT_COLS);
+    if (cut < TEXT_COLS / 2) cut = TEXT_COLS;
+    out.push(rest.slice(0, cut).replace(/\s+$/, ''));
+    rest = rest.slice(cut).replace(/^ /, '');
+  }
+  out.push(rest);
+  return out;
+}
+
+/**
+ * Plain text → PDF (no LibreOffice needed: Courier, WinAnsi, a form feed starts a new page).
+ * → { pdf, pages } — throws a RangeError beyond TEXT_MAX_PAGES pages.
+ */
+function textToPdf(text) {
+  const pages = [[]];
+  for (const raw of String(text).replace(/\r\n?/g, '\n').split('\n')) {
+    const parts = raw.split('\f');
+    parts.forEach((part, i) => {
+      if (i > 0) pages.push([]);
+      for (const l of wrap(part)) {
+        if (pages[pages.length - 1].length >= TEXT_ROWS) pages.push([]);
+        pages[pages.length - 1].push(l);
+      }
+    });
+    if (pages.length > TEXT_MAX_PAGES) throw new RangeError('too many pages');
+  }
+  while (pages.length > 1 && !pages[pages.length - 1].some((l) => l.trim())) pages.pop();
+  const objs = ['<< /Type /Catalog /Pages 2 0 R >>', null, '<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>'];
+  const kids = [];
+  for (const lines of pages) {
+    const ops = ['BT /F1 10 Tf 12 TL 56.69 ' + num(A4.h - 56.69 - 10) + ' Td'];
+    for (const l of lines) ops.push(pdfText(l) + " '");
+    ops.push('ET');
+    objs.push(stream('', Buffer.from(ops.join('\n'), 'latin1')));
+    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${A4.w} ${A4.h}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${objs.length} 0 R >>`);
+    kids.push(`${objs.length} 0 R`);
+  }
+  objs[1] = `<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${kids.length} >>`;
+  return { pdf: assemble(objs), pages: pages.length };
+}
+
+module.exports = { jpegInfo, jpegsToPdf, pdfPages, testPagePdf, textToPdf, pdfText, sniff, A4 };

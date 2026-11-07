@@ -43,6 +43,7 @@ zusätzliche Container oder Ordner brauchen, kommen deshalb nicht von selbst:
 | Failover-Pools, Scan über ein anderes Gateway, Ping der Internetqualität | – | unter `cap_add` die Rechte `NET_RAW`, `SETGID` und `SETUID` |
 | Kameras (Live-Bild, Clips) | 1.28.0 | Dienst `kameras`, Volumes `cam-ctl` und `${GC_CAMERA_DIR:-cam-recordings}:/recordings` |
 | Funk: zigbee2mqtt, Thread Border Router | nach 1.31.0 | Dienste `zigbee2mqtt` und `otbr` (nur wenn gewählt), Volumes `z2m-data` und `otbr-data` |
+| Office-Dateien drucken | 1.33.0 | Dienst `office`, Volume `office-ctl` |
 
 Du brauchst dieses Kapitel, wenn du eines davon siehst:
 
@@ -182,6 +183,10 @@ services:
       - type: volume            # cameras: control files and picture ring of the service kameras
         source: cam-ctl
         target: /gc-cam
+        volume: { nocopy: true }
+      - type: volume            # print: office files for the service office, the PDF back
+        source: office-ctl
+        target: /gc-office
         volume: { nocopy: true }
       - ${GC_CAMERA_DIR:-cam-recordings}:/recordings   # cameras: clips (GC_CAMERA_DIR=/volume1/kameras for a NAS folder)
     environment:
@@ -353,6 +358,12 @@ volumes:
       o: "size=256m,uid=0,gid=0,mode=0700"
   # clips and thumbnails of the cameras (when GC_CAMERA_DIR is not set)
   cam-recordings:
+  # tmpfs shared: office files of the gateway for the service office and the PDFs (only while converting)
+  office-ctl:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=160m,uid=0,gid=0,mode=0700"
 ```
 <!-- /compose -->
 

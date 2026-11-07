@@ -207,7 +207,7 @@ describe('compose and commands', () => {
       assert.match(gw, /source: edge-status\n {8}target: \/run\/gc-edge-status\n {8}read_only: true/);
       assert.match(gw, /source: edge-mqtt-conf\n {8}target: \/gc-mqtt-conf\n {8}volume: \{ nocopy: true \}/);
       assert.match(gw, /source: edge-mqtt\n {8}target: \/gc-mqtt\n {8}read_only: true/);
-      assert.match(c, /\nvolumes:\n(?: {2}# [^\n]*\n)+ {2}edge-run:\n[\s\S]*o: "size=1m,uid=0,gid=61001,mode=2750"[\s\S]*edge-status:[\s\S]*edge-mqtt-conf:\n[\s\S]*edge-state:\n[\s\S]*edge-mqtt:\n[\s\S]*radio-ctl:\n[\s\S]*o: "size=1m,uid=0,gid=0,mode=0755"\n[\s\S]*ai-ctl:\n[\s\S]*o: "size=1m,uid=0,gid=0,mode=0755"\n[\s\S]*ki-models:\n[\s\S]*cam-ctl:\n[\s\S]*o: "size=256m,uid=0,gid=0,mode=0700"\n[\s\S]*cam-recordings:\n$/);
+      assert.match(c, /\nvolumes:\n(?: {2}# [^\n]*\n)+ {2}edge-run:\n[\s\S]*o: "size=1m,uid=0,gid=61001,mode=2750"[\s\S]*edge-status:[\s\S]*edge-mqtt-conf:\n[\s\S]*edge-state:\n[\s\S]*edge-mqtt:\n[\s\S]*radio-ctl:\n[\s\S]*o: "size=1m,uid=0,gid=0,mode=0755"\n[\s\S]*ai-ctl:\n[\s\S]*o: "size=1m,uid=0,gid=0,mode=0755"\n[\s\S]*ki-models:\n[\s\S]*cam-ctl:\n[\s\S]*o: "size=256m,uid=0,gid=0,mode=0700"\n[\s\S]*cam-recordings:\n[\s\S]*office-ctl:\n[\s\S]*o: "size=160m,uid=0,gid=0,mode=0700"\n$/);
       assert.match(gw, /source: radio-ctl\n {8}target: \/gc-radio\n {8}volume: \{ nocopy: true \}/);
       assert.doesNotMatch(c, /\n  deconz:\n/, 'deconz only when wanted');
     }

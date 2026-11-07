@@ -90,7 +90,7 @@ describe('features.print and the card "Funktionen"', () => {
     assert.equal(bad.status, 400);
     v = (await admin('put', '/features').send({ print: { enabled: true, manual: ['192.168.1.70'] } }).expect(200)).body.gateway;
     assert.equal(v.print.enabled, true);
-    assert.deepEqual(v.features.print, { enabled: true, manual: ['192.168.1.70'], convert: true });
+    assert.deepEqual(v.features.print, { enabled: true, manual: ['192.168.1.70'], convert: true, ocr: false, office: false });
     assert.deepEqual(v.memory.parts.find((p) => p.key === 'print'), { key: 'print', mb: 20 });
     c = (await gwReq('get', '/config').expect(200)).body;
     assert.deepEqual(c.features.print, { enabled: true, manual: ['192.168.1.70'] });
@@ -458,7 +458,7 @@ describe('a printer without PDF (HP OfficeJet Pro 8720): the gateway converts', 
     assert.deepEqual([v.convert, v.convertSupported, v.convertAvailable, v.convertHint], [true, true, false, 'slow']);
     assert.deepEqual(v.devices.map((x) => [x.noPdf, x.convert]), [[true, 'image/urf'], [false, null]]);
     // an unknown target from the gateway is not taken
-    await gwReq('post', '/print/devices', gw2).send({ devices: [hp8720('application/pclm')] }).expect(200);
+    await gwReq('post', '/print/devices', gw2).send({ devices: [hp8720('application/vnd.hp-pcl')] }).expect(200);
     assert.equal(hp.devices().find((x) => x.id === HP).printer.convert, null);
     await admin('put', '/features', gw2).send({ print: { enabled: false } }).expect(200);
   });

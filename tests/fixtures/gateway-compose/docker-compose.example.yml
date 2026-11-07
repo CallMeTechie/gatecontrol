@@ -89,6 +89,10 @@ services:
         source: cam-ctl
         target: /gc-cam
         volume: { nocopy: true }
+      - type: volume            # Drucken (docs/print.md): Office-Dateien für den Dienst office, PDF zurück
+        source: office-ctl
+        target: /gc-office
+        volume: { nocopy: true }
       # Kameras: Clips und Vorschaubilder. Standard ist ein benanntes Volume; auf der
       # Synology z. B. GC_CAMERA_DIR=/volume1/kameras in .env für einen Ordner der NAS.
       - ${GC_CAMERA_DIR:-cam-recordings}:/recordings
@@ -609,6 +613,53 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Office-Dateien drucken (docs/print.md „Office-Dateien“) – Profil "office":
+  # startet nur mit `docker compose --profile office up -d` (oder
+  # COMPOSE_PROFILES=office in .env). Die Datei aus GateControl („docker-compose.yml
+  # herunterladen“) enthält den Dienst ohne Profil, sobald „Office-Dateien drucken“
+  # für das Gateway an ist. Image ≈ 200 MB Download, ≈ 700 MB auf der Festplatte;
+  # beim Umwandeln bis ≈ 500 MB RAM (ab 2 GB RAM empfohlen, kleinere Geräte gehen, nur langsam).
+  # Nur LibreOffice ohne Oberfläche: kein Netz, keine Rechte, nur lesen. Der Einstieg
+  # wartet auf /gc-office/office.sh, das das Gateway schreibt, und führt es aus.
+  office:
+    profiles: ["office"]
+    image: ghcr.io/callmetechie/gatecontrol-gateway:office
+    restart: unless-stopped
+    network_mode: none        # Dokumente kommen über das Volume, nichts geht ins Netz
+    user: "0:0"               # liest die Dateien des Gateways (root, 0600) – ohne jede Capability
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    # Vorrang hat das Gateway: weniger CPU-Anteil, bei Speichermangel trifft es zuerst LibreOffice
+    cpu_shares: 256
+    oom_score_adj: 800
+    mem_limit: 1g
+    pids_limit: 128
+    depends_on:
+      - gateway               # legt office-ctl an und schreibt office.sh
+    volumes:
+      - type: volume            # Dateien vom Gateway, PDF zurück
+        source: office-ctl
+        target: /gc-office
+        volume: { nocopy: true }
+    environment:
+      - TZ=${TZ:-Etc/UTC}
+    healthcheck:
+      test: ["CMD-SHELL", "[ ! -s /gc-office/office.sh ] || [ $$(( $$(date +%s) - $$(cut -d' ' -f2 /gc-office/office.state 2>/dev/null || echo 0) )) -lt 60 ]"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   # tmpfs, geteilt: der Gateway-Container (root) legt den Socket an, das
   # setgid-Bit gibt ihm die Gruppe 61001 → der Edge-Container kann ihn
@@ -660,3 +711,9 @@ volumes:
       o: "size=256m,uid=0,gid=0,mode=0700"
   # Clips und Vorschaubilder der Kameras (wenn GC_CAMERA_DIR nicht gesetzt ist)
   cam-recordings:
+  # tmpfs, geteilt: Office-Dateien des Gateways für den Dienst office und die PDFs (nur während des Umwandelns)
+  office-ctl:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=160m,uid=0,gid=0,mode=0700"

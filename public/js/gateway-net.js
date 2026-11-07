@@ -754,7 +754,7 @@
   }
 
   /** The row "Drucken & Scannen": switch, what this gateway found, the way to the plugin (or "Gateway zu alt"). */
-  function printRow(id, d) {
+  function printRow(id, d, g) {
     const p = d.print;
     const sup = d.support || {};
     const old = sup.print === false;
@@ -780,6 +780,7 @@
       add.addEventListener('click', () => printManualDialog(id, p));
       extra.push(h('span', { class: 'gwn-print-acts' }, [again, add]));
       printConvert(id, p, sup).forEach((x) => extra.push(x));
+      printExtras(id, g, p, sup).forEach((x) => extra.push(x));
     }
     const plug = p.plugin || {};
     if (plug.installed) extra.push(h('a', { href: '/plugins/gatecontrol-print', class: 'gwn-link', 'data-print-link': 'plugin', text: t('gwn.feat.print_to_plugin') }));
@@ -818,6 +819,51 @@
       }
     }
     if (p.convert !== false && p.convertHint === 'slow') out.push(h('span', { class: 'gwn-hint', 'data-print-convert': 'slow' }, [U.icon('info', 14), t('gwn.feat.print_convert_slow')]));
+    return out;
+  }
+
+  /** A checkbox under "Drucken & Scannen" (features.print.<key>) – saved at once, reset on an error. */
+  function printBox(id, key, on, label) {
+    const box = h('input', { type: 'checkbox', id: 'gwn-f-print-' + key, 'data-fk': 'gwn-f-print-' + key });
+    box.checked = !!on;
+    box.addEventListener('change', () => {
+      box.disabled = true;
+      putFeatures(id, { print: { [key]: box.checked } }, t('gwn.feat.saved')).catch((err) => { box.checked = !box.checked; box.disabled = false; D.alert({ message: errText(err), danger: true }); });
+    });
+    return h('label', { class: 'gwn-sub', for: 'gwn-f-print-' + key }, [box, h('span', { text: label })]);
+  }
+
+  /**
+   * „Texterkennung“ (searchable PDFs of scans) and „Office-Dateien drucken“ (the service office with LibreOffice) –
+   * gateway docs/print.md, gateway 1.33.0 or later: the checkboxes, a missing tool, the size of the office service,
+   * the compose file it needs, hints for weak hardware (never a ban).
+   */
+  function printExtras(id, g, p, sup) {
+    const out = [];
+    if (!p.ocrSupported && !p.officeSupported) {
+      if (p.ocrSupported === false) out.push(h('span', { class: 'gwn-hint', 'data-print-extras': 'old' }, [U.icon('info', 14), t('gwn.feat.print_extras_old', { min: p.minGatewayP3c || '1.33.0', version: sup.version || '—' })]));
+      return out;
+    }
+    if (p.ocrSupported) {
+      out.push(printBox(id, 'ocr', p.ocr, t('gwn.feat.print_ocr')));
+      if (p.ocr && p.ocrAvailable === false) out.push(h('span', { class: 'gwn-hint', 'data-print-ocr': 'tool' }, [U.icon('warn', 14), t('gwn.feat.print_ocr_tool')]));
+      else if (p.ocr && p.ocrHint === 'slow') out.push(h('span', { class: 'gwn-hint', 'data-print-ocr': 'slow' }, [U.icon('info', 14), t('gwn.feat.print_ocr_slow')]));
+      else if (p.ocr) out.push(h('span', { class: 'gwe-d', 'data-print-ocr': 'on', text: t('gwn.feat.print_ocr_on') }));
+    }
+    if (p.officeSupported) {
+      out.push(printBox(id, 'office', p.office, t('gwn.feat.print_office')));
+      if (!p.office) out.push(h('span', { class: 'gwe-d', 'data-print-office': 'size', text: t('gwn.feat.print_office_size') }));
+      else if (p.officeService === 'managed') out.push(h('span', { class: 'gwe-d', 'data-print-office': 'on', text: t('gwn.feat.print_office_on') }));
+      else if (p.officeCompose === 'compose' && window.GCGatewayCompose) {
+        const dl = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-print-office-compose', text: t('gwn.feat.ai_compose_btn') });
+        dl.addEventListener('click', () => window.GCGatewayCompose.open(g, 'gwn-print-office-compose'));
+        out.push(h('span', { class: 'gwn-hint', 'data-print-office': 'compose' }, [U.icon('info', 14), t('gwn.feat.print_office_compose'), ' ', dl]));
+      } else if (p.officeCompose === 'image') {
+        out.push(h('span', { class: 'gwn-hint', 'data-print-office': 'image' }, [U.icon('info', 14), t('gwn.feat.print_office_image'), ' ',
+          h('a', { href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwn.feat.ai_releases') })]));
+      } else out.push(h('span', { class: 'gwe-d', 'data-print-office': 'starting', text: t('gwn.feat.print_office_starting') }));
+      if (p.office && p.officeHint === 'small') out.push(h('span', { class: 'gwn-hint', 'data-print-office': 'small' }, [U.icon('info', 14), t('gwn.feat.print_office_small')]));
+    }
     return out;
   }
 
@@ -1186,7 +1232,7 @@
         d.lanDiscovery.licensed ? [] : [h('span', { class: 'gwe-d gwe-muted', text: t('gwn.feat.lan_license') })], 'lan'));
     }
     // Drucken & Scannen (phase 3c): the switch here, everything else in the plugin "Drucken & Scannen"
-    if (d.print) rows.set('print', printRow(id, d));
+    if (d.print) rows.set('print', printRow(id, d, g));
     // Kameras (phase 3c, step 4): the switch here, the cameras themselves in the plugin "Tür & Kamera"
     if (d.cameras) rows.set('cameras', camerasRow(id, g, d));
     // Lokale KI (phase 3c, step 3): the switch here, the setup in Einstellungen › KI-Anbieter

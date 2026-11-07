@@ -22,7 +22,7 @@ separate page “Gateway Pools” in the menu any more.
 General requirements:
 
 - Network watch, internet quality, presence and UPS need gateway version
-  **1.21.0** or later, DNS filter and home cache **1.22.0**, print & scan **1.24.0**, radio **1.25.0** (zigbee2mqtt, Thread and sensor keys: a gateway newer than 1.31.0), local AI **1.26.0**, cameras **1.28.0**. If the gateway is
+  **1.21.0** or later, DNS filter and home cache **1.22.0**, print & scan **1.24.0** (PDF for printers without PDF **1.30.0**, text recognition and office files **1.33.0**), radio **1.25.0** (zigbee2mqtt, Thread and sensor keys: a gateway newer than 1.31.0), local AI **1.26.0**, cameras **1.28.0**. If the gateway is
   older, the tab says so; update it then ([chapter 6](06-updating-a-gateway.md)).
 - The gateway is in the home network in **host network mode** (default for the
   Pi, the Synology package and Linux with “Host (recommended)”).
@@ -125,7 +125,8 @@ them to the internet.
 - A printer or scanner with AirPrint/AirScan (IPP or eSCL) in the same home
   network – nearly all devices since about 2015. Older ones do not show up.
 - The plugin “Print & scan” (Settings › Plugins › Catalogue). Nothing to set up
-  on the device or in the compose file – it runs inside the gateway.
+  on the device or in the compose file – it runs inside the gateway. Only
+  “Print office files” needs an extra service (see below).
 
 **Switching it on:** Tab “Features” → area “Devices at home” → switch on
 “Print & scan”. After about a minute the row lists what the gateway found
@@ -156,7 +157,7 @@ If the printer is off, the job waits up to 24 hours (“off – prints as soon a
 ### Printers without PDF (e.g. HP OfficeJet Pro 8720)
 
 Many inkjets take no PDF over the network, only their own raster formats (PWG
-raster, Apple raster/URF, JPEG). A gateway **1.30.0** or later converts PDF
+raster, Apple raster/URF, PCLm, JPEG). A gateway **1.30.0** or later converts PDF
 files for such printers itself when printing – to the printer's resolution,
 colour, paper and two-sided printing. This applies to everything that prints
 through GateControl: portal, Android print service, share, test page.
@@ -174,6 +175,59 @@ through GateControl: portal, Android print service, share, test page.
   prefer.
 - A damaged or password-protected PDF cannot be converted – the job then fails
   with that reason.
+
+### Printing office files
+
+GateControl prints Word, Excel, PowerPoint, OpenDocument and RTF files when the
+gateway turns them into a PDF first. That needs LibreOffice – a large extra
+service, so it is switched on per gateway. Plain text files (`.txt`) always
+work, also without it.
+
+- **Requirement:** gateway **1.33.0** or later (else “… need a gateway 1.33.0
+  or later”).
+- **Switch on:** in the row “Print & scan”, tick “Print office files”. Below
+  it says what it costs: a ≈ 200 MB download once, ≈ 700 MB on disk, up to
+  ≈ 500 MB of memory while converting.
+- **“… need the current compose file once”:** click “Download
+  docker-compose.yml” and use the file as when setting up (Synology: rebuild
+  the project). The Raspberry Pi sets the service up by itself (“being set up”
+  – a few minutes the first time).
+- **“Office files work now”:** in the portal, in the Android app (Share › “Print
+  with GateControl”) and everywhere else these files can be printed now. The
+  page count shows in the history after converting.
+- **Little memory (below 2 GB) or a Raspberry Pi 3/Zero:** it works, converting
+  just takes longer. A hint, not a ban.
+- The service has no network and no rights; macros in documents do not run.
+
+### Text recognition for scans
+
+With “Text recognition for scans (searchable PDFs)” people can choose
+“Searchable PDF” when scanning in the plugin: the PDF in Drive then has
+invisible text over the picture – searching, selecting and copying work, and
+Drive's search finds the document by its content. German and English are
+recognised.
+
+- **Requirement:** gateway **1.33.0** or later; the text recognition is in the
+  image (≈ 45 MB), no extra service.
+- **Switch on:** in the row “Print & scan”, tick “Text recognition for scans”.
+  One gateway with it is enough – also for scanners at other gateways.
+- **Duration:** 1–3 seconds a page on a PC, about a minute on a Raspberry Pi 3
+  or Zero. Only one text recognition runs at a time; the scan itself is there
+  at once. If it does not work (too long, gateway off), the plugin files the
+  normal PDF and says so.
+- **“This gateway lacks the text recognition”:** get the current image via
+  “Update to …”.
+
+### Paper, tray and print status
+
+When a printer names its paper sizes and trays (gateway 1.33.0 or later),
+people can choose A4, A5, Letter or photo paper (10 × 15 cm) in the plugin and
+the Android app and – in the plugin – the tray (e.g. “photo tray”). What the
+printer does not name is not offered; it then prints on its default paper.
+When the printer stops while printing, the reason shows in the history and in
+the Android app (“out of paper”, “cover open”, “paper jam” …); it goes away when
+it carries on. Printers that name only PCLm besides JPEG (some HP models) now
+get PDF files as PCLm.
 
 ### Printer not found
 

@@ -24,7 +24,8 @@ Allgemeine Voraussetzungen:
 
 - Netzwerk-Wächter, Internetqualität, Anwesenheit und USV brauchen
   Gateway-Version **1.21.0** oder neuer, DNS-Filter und Zwischenspeicher **1.22.0**,
-  Drucken & Scannen **1.24.0**, Funk **1.25.0** (zigbee2mqtt, Thread und Sensor-Schlüssel: ein Gateway nach 1.31.0), Lokale KI **1.26.0**, Kameras **1.28.0**.
+  Drucken & Scannen **1.24.0** (PDF an Drucker ohne PDF **1.30.0**, Texterkennung und
+  Office-Dateien **1.33.0**), Funk **1.25.0** (zigbee2mqtt, Thread und Sensor-Schlüssel: ein Gateway nach 1.31.0), Lokale KI **1.26.0**, Kameras **1.28.0**.
   Ist das Gateway älter, steht das im Reiter; aktualisiere es dann ([Kapitel 6](06-gateway-aktualisieren.md)).
 - Das Gateway steht im Heimnetz im **Host-Netzwerkmodus** (Standard beim Pi,
   beim Synology-Paket und bei Linux mit „Host (empfohlen)“).
@@ -129,7 +130,8 @@ Scanner bleiben im Heimnetz; GateControl stellt sie nicht ins Internet.
   das sind fast alle Geräte seit etwa 2015. Ältere erscheinen nicht.
 - Das Plugin „Drucken & Scannen“ (Einstellungen › Plugins › Katalog). Am
   Gerät und an der Compose-Datei musst du nichts ändern – es läuft im
-  Gateway selbst.
+  Gateway selbst. Nur „Office-Dateien drucken“ braucht einen Zusatzdienst
+  (siehe unten).
 
 **Einschalten:** Reiter „Funktionen“ → Bereich „Geräte im Heimnetz“ →
 „Drucken & Scannen“ einschalten. Nach etwa einer Minute steht dort, was das
@@ -165,7 +167,7 @@ sobald er an ist“).
 ### Drucker ohne PDF (z. B. HP OfficeJet Pro 8720)
 
 Viele Tintenstrahler nehmen über das Netz kein PDF an, nur ihre eigenen
-Rasterformate (PWG-Raster, Apple-Raster/URF, JPEG). Ein Gateway ab **1.30.0**
+Rasterformate (PWG-Raster, Apple-Raster/URF, PCLm, JPEG). Ein Gateway ab **1.30.0**
 wandelt PDF-Dateien für solche Drucker beim Drucken selbst um – passend zu
 Auflösung, Farbe, Papier und beidseitigem Druck des Druckers. Das gilt für
 alles, was über GateControl druckt: Portal, Android-Druckdienst, Teilen,
@@ -185,6 +187,58 @@ Testseite.
   schaltet es für dieses Gateway aus.
 - Eine kaputte oder mit Kennwort geschützte PDF-Datei kann das Gateway nicht
   umwandeln – der Auftrag schlägt dann mit diesem Grund fehl.
+
+### Office-Dateien drucken
+
+Word, Excel, PowerPoint, OpenDocument und RTF druckt GateControl, wenn das
+Gateway vorher ein PDF daraus macht. Das braucht LibreOffice – ein großer
+Zusatzdienst, deshalb nur auf Wunsch je Gateway. Reine Text-Dateien (`.txt`)
+gehen immer, auch ohne ihn.
+
+- **Voraussetzung:** Gateway ab **1.33.0** (sonst „Texterkennung … kann ein
+  Gateway ab 1.33.0“).
+- **Einschalten:** In der Zeile „Drucken & Scannen“ „Office-Dateien drucken“
+  anhaken. Darunter steht, was es kostet: einmal ≈ 200 MB herunterladen,
+  ≈ 700 MB auf dem Datenträger, beim Umwandeln bis ≈ 500 MB Arbeitsspeicher.
+- **„… brauchen einmalig die aktuelle Compose-Datei“:** auf „docker-compose.yml
+  herunterladen“ klicken und die Datei wie beim Einrichten übernehmen (Synology:
+  Projekt neu erstellen). Der Raspberry Pi richtet den Dienst selbst ein
+  („wird eingerichtet“ – beim ersten Mal ein paar Minuten).
+- **„Office-Dateien gehen jetzt“:** Im Portal, in der Android-App (Teilen ›
+  „Mit GateControl drucken“) und überall sonst lassen sich diese Dateien jetzt
+  drucken. Die Seitenzahl steht nach dem Umwandeln im Verlauf.
+- **Wenig Arbeitsspeicher (unter 2 GB) oder Raspberry Pi 3/Zero:** es geht,
+  das Umwandeln dauert aber länger. Ein Hinweis, kein Verbot.
+- Der Dienst hat kein Netz und keine Rechte; Makros in Dokumenten laufen nicht.
+
+### Texterkennung für Scans
+
+Mit „Texterkennung für Scans (durchsuchbare PDFs)“ kann man beim Scannen im
+Plugin „Durchsuchbares PDF“ wählen: Das PDF im Drive hat dann unsichtbaren
+Text über dem Bild – Suchen, Markieren, Kopieren gehen, und die Suche im Drive
+findet das Dokument über seinen Inhalt. Erkannt werden Deutsch und Englisch.
+
+- **Voraussetzung:** Gateway ab **1.33.0**; die Texterkennung ist im Image
+  (≈ 45 MB), kein Zusatzdienst.
+- **Einschalten:** In der Zeile „Drucken & Scannen“ „Texterkennung für Scans“
+  anhaken. Es reicht ein Gateway damit – auch für Scanner an anderen Gateways.
+- **Dauer:** auf einem PC 1–3 Sekunden je Seite, auf einem Raspberry Pi 3 oder
+  Zero etwa eine Minute. Es läuft immer nur eine Texterkennung zugleich; der
+  Scan selbst ist sofort da. Klappt sie nicht (zu lange, Gateway aus), legt das
+  Plugin das normale PDF ab und sagt das.
+- **„Diesem Gateway fehlt die Texterkennung“:** über „Update auf …“ das aktuelle
+  Image holen.
+
+### Papier, Fach und Druckstatus
+
+Nennt ein Drucker seine Papierformate und Fächer (Gateway ab 1.33.0), kann man
+im Plugin und in der Android-App A4, A5, Letter oder Fotopapier (10 × 15 cm)
+wählen und – im Plugin – das Fach (z. B. „Fotofach“). Was der Drucker nicht
+nennt, wird nicht angeboten; dann druckt er auf seinem Standardpapier.
+Hält der Drucker beim Drucken an, steht der Grund im Verlauf und in der
+Android-App („Papier fehlt“, „Klappe offen“, „Papierstau“ …); geht es weiter,
+verschwindet er wieder. Drucker, die außer JPEG nur PCLm nennen (manche
+HP-Modelle), bekommen PDF-Dateien jetzt als PCLm.
 
 ### Drucker wird nicht gefunden
 

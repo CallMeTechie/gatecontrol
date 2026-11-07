@@ -23,6 +23,11 @@ module.exports = {
       case '/scan': return { json: await attempt(() => P.scan(b)) };
       case '/scan-status': return { json: await attempt(() => P.scanStatus(b.id)) };
       case '/pdf': return { json: await attempt(() => P.pdf(b)) };
+      case '/job': return { json: await attempt(() => P.job(b.id)) };
+      case '/ocr-available': return { json: await attempt(() => P.ocrAvailable()) };
+      case '/ocr': return { json: await attempt(() => P.ocr(b)) };
+      case '/ocr-status': return { json: await attempt(() => P.ocrStatus(b.id)) };
+      case '/ocr-cancel': return { json: await attempt(() => P.cancelOcr(b.id)) };
       default: return { status: 404, json: { ok: false } };
     }
   },

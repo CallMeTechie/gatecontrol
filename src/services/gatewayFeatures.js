@@ -17,7 +17,7 @@
 //                                       test, the DNS profiles' times)
 //     dns      { enabled, … }          phase 3b: DNS filter (services/homeDns.js)
 //     cache    { enabled, … }          phase 3b: home cache (services/homeCache.js)
-//     print    { enabled, manual, convert }  phase 3c: Drucken & Scannen (services/homePrint.js);
+//     print    { enabled, manual, convert, ocr, office }  phase 3c: Drucken & Scannen (services/homePrint.js);
 //              convert: PDF für Drucker ohne PDF im Gateway umwandeln (Standard an)
 //     radio    { zigbee, ble, stack, thread } phase 3c, step 2: Funk (services/homeRadio.js; zigbee null = automatic)
 //     ai       { enabled, source, lanUrl, lanApi, gpu }  phase 3c, step 3: Lokale KI (services/ai/local.js)
@@ -54,7 +54,7 @@ const DEFAULTS = Object.freeze({
   presence: { enabled: true },
   ups: { enabled: false, host: '', port: 3493, name: null },
   notify: { outage: true, ups: true },
-  print: { enabled: false, manual: [], convert: true },
+  print: { enabled: false, manual: [], convert: true, ocr: false, office: false },
   radio: { zigbee: null, ble: false, stack: 'deconz', thread: false },
   ai: { enabled: false, source: 'service', lanUrl: null, lanApi: 'ollama', gpu: 'off' },
   cameras: { enabled: false, subnets: [], storagePath: null },
@@ -62,7 +62,7 @@ const DEFAULTS = Object.freeze({
 
 // Memory of the parts (MB), contract §6 — guide values for the hint only (deCONZ ≈ 90 MB with a
 // small network, ble: the passive scan in the gateway process)
-const MEM_MB = { gateway: 80, netwatch: 15, inetq: 10, edge: 50, deconz: 90, zigbee2mqtt: 120, otbr: 60, mosquitto: 10, dns: 25, cache: 10, print: 20, ble: 5 };
+const MEM_MB = { gateway: 80, netwatch: 15, inetq: 10, edge: 50, deconz: 90, zigbee2mqtt: 120, otbr: 60, mosquitto: 10, dns: 25, cache: 10, print: 20, ble: 5, printOcr: 80, printOffice: 450 };
 // the DNS filter keeps its lists in memory as sorted 53-bit hashes: 8 bytes per entry
 // (gateway side 1: 25 MB guide value with typical lists, measured +3 … 20 MB)
 const DNS_BYTES_PER_ENTRY = 8;
@@ -146,7 +146,7 @@ function applyPatch(current, patch) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
-  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert'], radio: ['zigbee', 'ble', 'stack', 'thread'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'] };
+  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'] };
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     if (!allowed[k]) continue; // other keys (lanDiscovery, edge) are handled by the route
@@ -171,7 +171,7 @@ function applyPatch(current, patch) {
           throw new FeatureError('invalid_host', 'print.manual: up to 16 private IPv4 addresses (RFC 1918)');
         }
         out.print.manual = [...new Set(val.map((x) => x.trim()))];
-      } else if (f === 'enabled' || f === 'portscan' || f === 'outage' || (k === 'notify' && f === 'ups') || (k === 'print' && f === 'convert')) {
+      } else if (f === 'enabled' || f === 'portscan' || f === 'outage' || (k === 'notify' && f === 'ups') || (k === 'print' && ['convert', 'ocr', 'office'].includes(f))) {
         if (typeof val !== 'boolean') throw new FeatureError('invalid', `${k}.${f}: must be true or false`);
         out[k][f] = val;
       } else if (f === 'speedtest') {
@@ -398,7 +398,8 @@ function memoryEstimate(peerId, s, tel) {
     if (require('./homeCache').get(peerId).enabled) parts.push({ key: 'cache', mb: MEM_MB.cache });
   } catch (e) { logger.debug({ err: e.message }, 'phase 3b memory parts unavailable'); }
   // phase 3c: Drucken & Scannen (discovery, IPP/eSCL, a page or a job in memory at a time)
-  if (s.print && s.print.enabled) parts.push({ key: 'print', mb: MEM_MB.print });
+  // (+ tesseract while it reads a page, + LibreOffice of the service office while it converts — gateway docs/print.md)
+  if (s.print && s.print.enabled) parts.push({ key: 'print', mb: MEM_MB.print + (s.print.ocr ? MEM_MB.printOcr : 0) + (s.print.office ? MEM_MB.printOffice : 0) });
   // phase 3c, step 4: Kameras (ffmpeg + the picture ring per camera)
   try {
     const cam = require('./homeCameras').memoryPart(peerId, s);

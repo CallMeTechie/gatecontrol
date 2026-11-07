@@ -395,7 +395,7 @@ function makePrint() {
     devices: () => hostCall('print.devices', {}),
     /** discover({ retrust? }) → { asked } — search again (retrust: accept a device's changed certificate) */
     discover: (opts) => hostCall('print.discover', o(opts)),
-    /** submit({ deviceId, mediaId, user, copies?, color?, duplex?, name? }) → job */
+    /** submit({ deviceId, mediaId, user, copies?, color?, duplex?, name?, media?, source? }) → job (office files and text since 1.247.0) */
     submit: (opts) => hostCall('print.submit', o(opts), 120000),
     /** testPage({ deviceId, user }) → job */
     testPage: (opts) => hostCall('print.testPage', o(opts), 120000),
@@ -404,7 +404,7 @@ function makePrint() {
     jobs: (opts) => hostCall('print.jobs', o(opts)),
     /** cancel(id) → { canceled, state } (only queued / waiting) */
     cancel: (id) => hostCall('print.cancel', { id }),
-    /** pages({ mediaId }) → { pages, format } */
+    /** pages({ mediaId }) → { pages, format, estimated? } */
     pages: (opts) => hostCall('print.pages', o(opts), 120000),
     /** scan({ deviceId, user, source?, mode?, resolution?, duplex? }) → { scanId } */
     scan: (opts) => hostCall('print.scan', o(opts)),
@@ -413,6 +413,13 @@ function makePrint() {
     cancelScan: (id) => hostCall('print.cancelScan', { id }),
     /** pdf({ pages: [mediaId], user, name, dpi? }) → { mediaId, pages, bytes, name } */
     pdf: (opts) => hostCall('print.pdf', o(opts), 120000),
+    /** ocrAvailable() → { available, gateways } — a gateway with „Texterkennung“ is online */
+    ocrAvailable: () => hostCall('print.ocrAvailable', {}),
+    /** ocr({ pages: [mediaId], user, name, dpi?, deviceId? }) → { ocrId } — a searchable PDF and its text */
+    ocr: (opts) => hostCall('print.ocr', o(opts), 120000),
+    /** ocrStatus(id) → { state: queued|running|done|failed|canceled, page, pages, error, mediaId, bytes, text } */
+    ocrStatus: (id) => hostCall('print.ocrStatus', { id }),
+    cancelOcr: (id) => hostCall('print.cancelOcr', { id }),
   });
 }
 
@@ -999,7 +1006,7 @@ process.on('message', (msg) => {
     else {
       p.reject(Object.assign(new Error(msg.error || 'host call failed'), { code: msg.code || undefined }, Number.isInteger(msg.status) ? { status: msg.status } : {},
         typeof msg.serverText === 'string' ? { serverText: msg.serverText } : {},
-        // why (gc.print ERR_PRINT_FORMAT: file_type | damaged | printer | gateway_update | convert_off)
+        // why (gc.print ERR_PRINT_FORMAT: file_type | damaged | printer | gateway_update | convert_off | office_off | office_missing)
         typeof msg.reason === 'string' ? { reason: msg.reason } : {}));
     }
     return;
