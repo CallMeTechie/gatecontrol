@@ -25,6 +25,7 @@
  *   POST /api/v1/ai/local/pull/cancel         { peerId }
  *   POST /api/v1/ai/local/delete              { peerId, model }
  *   POST /api/v1/ai/local/test                "Testen: „Fasse diese Mail zusammen“"
+ *   POST /api/v1/ai/local/probe               { peerId, lanUrl, lanApi?, lanKey? }   "Verbindung testen" (LAN server, nothing saved)
  */
 
 const express = require('express');
@@ -166,6 +167,10 @@ router.post('/local/delete', async (req, res) => {
     await L().removeModel(peerOf(b.peerId), b.model, { ip: req.ip });
     res.json({ ok: true });
   } catch (e) { fail(req, res, e); }
+});
+
+router.post('/local/probe', async (req, res) => {
+  try { res.json({ ok: true, probe: await L().probe(body(req)) }); } catch (e) { fail(req, res, e); }
 });
 
 router.post('/local/test', async (req, res) => {

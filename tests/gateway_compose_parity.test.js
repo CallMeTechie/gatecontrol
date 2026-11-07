@@ -20,6 +20,9 @@ const path = require('node:path');
 const kit = require('../public/js/gateway-kit');
 
 const EXAMPLE = fs.readFileSync(path.join(__dirname, 'fixtures', 'gateway-compose', 'docker-compose.example.yml'), 'utf8');
+// gateway >= 1.31.0: "Grafikkarte nutzen" — the gateway's additions on top of the service ki (copies of its
+// docker-compose.ki-nvidia.yml, -amd.yml, -intel.yml)
+const KI_GPU = Object.fromEntries(['nvidia', 'amd', 'intel'].map((g) => [g, fs.readFileSync(path.join(__dirname, 'fixtures', 'gateway-compose', `docker-compose.ki-${g}.yml`), 'utf8')]));
 
 // ── a small reader for the compose subset both files use ────────────────────
 // Comment lines and trailing " # …" comments go, blank lines go; what stays is
@@ -86,6 +89,9 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
     assert.equal(ex.services.ki.profiles, 'profiles: ["ki"]');
     assert.match(exGw.volumes, /source: ai-ctl/);
     assert.match(ex.services.ki.environment, /OLLAMA_HOST=127\.0\.0\.1:11435/);
+    // gateway >= 1.31.0: the watcher reports the GPU kind and devices in /gc-ai/ki.gpu
+    assert.match(ex.services.ki.environment, /- GC_KI_GPU=none/);
+    assert.match(ex.services.ki.entrypoint, /ki\.gpu/);
     // gateway >= 1.25.0: deCONZ only in the profile zigbee (nobody pulls the image without a stick), the
     // gateway mounts the control volume radio-ctl
     assert.equal(ex.services.deconz.profiles, 'profiles: ["zigbee"]');
@@ -125,6 +131,24 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
         assert.deepEqual(a.services.gateway, got.services.gateway);
         const both = parse(kit.buildCompose({ platform, network: 'host', ai: true, zigbee: true }));
         assert.deepEqual(Object.keys(both.services), ['gateway', 'edge', 'mqtt', 'deconz', 'ki']);
+      });
+      for (const gpu of ['nvidia', 'amd', 'intel']) {
+        it(`ai with the graphics card ${gpu}: the service ki of the example plus docker-compose.ki-${gpu}.yml of the gateway`, () => {
+          const a = parse(kit.buildCompose({ platform, network: 'host', ai: true, aiGpu: gpu }));
+          const add = parse(KI_GPU[gpu]).services.ki;
+          const { profiles, ...base } = ex.services.ki;
+          assert.ok(profiles);
+          // the addition replaces image/devices/deploy and the line GC_KI_GPU (compose merges environment by name)
+          const want = { ...base, ...add, environment: base.environment.replace('- GC_KI_GPU=none', `- GC_KI_GPU=${gpu}`) };
+          assert.deepEqual(listOf(add.environment), [`GC_KI_GPU=${gpu}`]);
+          assert.deepEqual(a.services.ki, want);
+          assert.deepEqual(a.services.gateway, got.services.gateway);
+          assert.equal(a.volumes, ex.volumes);
+        });
+      }
+      it('ai: a GPU only with the service ki; anything else is no GPU', () => {
+        assert.deepEqual(Object.keys(parse(kit.buildCompose({ platform, network: 'host', aiGpu: 'nvidia' })).services), ['gateway', 'edge', 'mqtt']);
+        assert.deepEqual(parse(kit.buildCompose({ platform, network: 'host', ai: true, aiGpu: 'evil' })).services.ki, parse(kit.buildCompose({ platform, network: 'host', ai: true })).services.ki);
       });
       it('cameras: the service kameras exactly as in the example, without the profile', () => {
         const c = parse(kit.buildCompose({ platform, network: 'host', cameras: true }));

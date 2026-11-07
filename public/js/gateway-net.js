@@ -931,7 +931,9 @@
   /**
    * The row "Lokale KI" (phase 3c, step 3): the switch (features.ai), the model of this gateway when it serves
    * the local AI, the way to Einstellungen › KI-Anbieter; hints instead of bans (too little memory, the compose
-   * file without the service ki, "Gateway zu alt").
+   * file without the service ki, "Gateway zu alt"). The graphics card (gateway >= 1.31.0): which one, whether the
+   * model runs on it, and what is missing (driver, NVIDIA Container Toolkit, ROCm, a new compose file) — the
+   * choice "Grafikkarte nutzen" itself sits in the setup of the KI-Anbieter.
    */
   function aiRow(id, g, d) {
     const a = d.ai;
@@ -943,7 +945,7 @@
     let text = t('gwn.feat.ai_d');
     if (a.enabled && a.chosen && a.model) {
       const mem = a.model.ramMb ? t('gwn.feat.ai_model_mem', { dl: nf(a.model.downloadMb / 1000, 1), ram: nf(a.model.ramMb / 1000, 1) }) : '';
-      text = a.source === 'lan' ? t('gwn.feat.ai_on_lan', { url: a.lanUrl || '' }) : t('gwn.feat.ai_on');
+      text = a.source === 'lan' ? t(a.lanKey ? 'gwn.feat.ai_on_lan_key' : 'gwn.feat.ai_on_lan', { url: a.lanUrl || '' }) : t('gwn.feat.ai_on');
       extra.push(h('span', { class: 'gwe-d', 'data-ai-model': a.model.id }, [t('gwn.feat.ai_model'), ' ', h('strong', { text: a.model.name }), mem ? ' ' + mem : '']));
     } else if (a.enabled && !a.chosen) {
       extra.push(h('span', { class: 'gwn-hint' }, [U.icon('info', 14), t('gwn.feat.ai_not_chosen')]));
@@ -953,7 +955,24 @@
       extra.push(h('span', { class: 'gwe-d', role: 'status' }, t('gwn.feat.ai_pulling', { done: nf((st.pull.completed || 0) / 1e9, 1), total: nf((st.pull.total || 0) / 1e9, 1) })));
     }
     if (a.hint === 'memory' && !old) extra.push(h('span', { class: 'gwn-hint', 'data-ai-hint': 'memory' }, [U.icon('warn', 14), t('gwn.feat.ai_memory')]));
-    if (a.compose === 'compose' && window.GCGatewayCompose) {
+    const gpu = a.enabled && a.gpu ? a.gpu : null;
+    if (gpu && gpu.choice !== 'off') {
+      const c = gpu.card || {};
+      const name = c.name || ({ nvidia: 'NVIDIA', amd: 'AMD', intel: 'Intel' })[gpu.choice];
+      const mem = c.vramMb ? ' ' + t('gwn.feat.ai_gpu_mem', { gb: nf(c.vramMb / 1024, 1) }) : '';
+      extra.push(h('span', { class: 'gwe-d', 'data-ai-gpu': gpu.state }, [t('gwn.feat.ai_gpu'), ' ', h('strong', { text: name }), mem, ' – ', t('gwn.feat.ai_gpu_' + gpu.state)]));
+    }
+    if (gpu) {
+      // at most two hints; "compose" is said by the compose hint below
+      gpu.hints.filter((x) => x !== 'compose').slice(0, 2).forEach((x) => {
+        extra.push(h('span', { class: 'gwn-hint', 'data-ai-gpu-hint': x }, [U.icon(x === 'available' || x === 'experimental' ? 'info' : 'warn', 14), t('gwn.feat.ai_gpu_hint.' + x, { min: a.minGatewayExt || '1.31.0' })]));
+      });
+    }
+    if (a.compose === 'compose_gpu' && window.GCGatewayCompose) {
+      const dl = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-ai-compose', text: t('gwn.feat.ai_compose_btn') });
+      dl.addEventListener('click', () => window.GCGatewayCompose.open(g, 'gwn-ai-compose'));
+      extra.push(h('span', { class: 'gwn-hint', 'data-ai-compose': 'gpu' }, [U.icon('info', 14), t('gwn.feat.ai_compose_gpu'), ' ', dl]));
+    } else if (a.compose === 'compose' && window.GCGatewayCompose) {
       const dl = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-ai-compose', text: t('gwn.feat.ai_compose_btn') });
       dl.addEventListener('click', () => window.GCGatewayCompose.open(g, 'gwn-ai-compose'));
       extra.push(h('span', { class: 'gwn-hint', 'data-ai-compose': '' }, [U.icon('info', 14), t('gwn.feat.ai_compose'), ' ', dl]));

@@ -1664,7 +1664,11 @@ it in its own data. Code: `src/services/plugins/media.js`.
 * **Frames** of a plugin with `media` get `img-src` and `media-src`
   `<origin>/plugin-media/` in their CSP, and the `<iframe>` gets
   `allow="microphone *"` — voice recording (`MediaRecorder`, Opus) works in
-  the portal and on the admin page. Since 1.178.0 their sandbox (the CSP
+  the portal and on the admin page. When `media.types` take videos (a
+  `video/…` type, `video/*` or `*/*`) the `<iframe>` also gets
+  `allow="fullscreen *"`: a `<video>` of the plugin's media URLs (or the
+  frame's own element, `requestFullscreen()`) goes full screen. Older hosts
+  give it only to `permissions.cameras`; check `document.fullscreenEnabled`. Since 1.178.0 their sandbox (the CSP
   `sandbox` directive and the `<iframe sandbox>` of the portal tab, the
   portal sections and the admin page alike) also has `allow-downloads`: a
   link to a `/plugin-media/<token>` URL of a document (answered as
@@ -2767,7 +2771,7 @@ ignores the permission and `gc.cameras` is missing — check for it.
 people who agreed; unknown = no) | never, events: [person, vehicle, animal, motion],
 retentionDays 1…90, stream: main | sub, audio }`. Frames of a plugin with the
 permission may load `/camera-media/` (`img-src`/`media-src`), and its iframe gets
-`allow="fullscreen"`. Since 1.242.0 they may also `fetch` it (`connect-src <origin>/camera-media/`;
+`allow="fullscreen"` (as does a plugin whose `media.types` take videos, see "Media"). Since 1.242.0 they may also `fetch` it (`connect-src <origin>/camera-media/`;
 the media answer `Access-Control-Allow-Origin: *` — the token is the permission, no cookie), play
 `blob:` media and load the shared live player:
 

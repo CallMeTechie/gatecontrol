@@ -386,15 +386,17 @@ router.post('/:id/compose', (req, res) => {
   // zigbee2mqtt / the Thread border router (Funk, follow-ups) when chosen for this gateway; { zigbee2mqtt, thread } decide by hand
   const zigbee2mqtt = typeof b.zigbee2mqtt === 'boolean' ? b.zigbee2mqtt : hr.composeWantsZ2m(row.id);
   const thread = typeof b.thread === 'boolean' ? b.thread : hr.composeWantsThread(row.id);
-  // the service ki (phase 3c, step 3) when the local AI runs on this gateway; { ai: true|false } decides by hand
+  // the service ki (phase 3c, step 3) when the local AI runs on this gateway; { ai: true|false } decides by hand,
+  // with the graphics card chosen there ("Grafikkarte nutzen": nvidia | amd | intel)
   const ai = typeof b.ai === 'boolean' ? b.ai : require('../../services/ai/local').composeWantsAi(row.id);
+  const aiGpu = ai ? require('../../services/ai/local').composeGpu(row.id) : null;
   // the service kameras (phase 3c, step 4) when cameras are switched on for this gateway; { cameras: true|false } decides by hand
   const cameras = typeof b.cameras === 'boolean' ? b.cameras : require('../../services/homeCameras').composeWantsCameras(row.id);
   // the folder for the clips chosen on the gateway page (Funktionen › Kameras), else the Docker volume
   const cameraDir = require('../../services/homeCameras').composeStoragePath(row.id);
-  const text = gatewaySetup.buildCompose(platform, network, { zigbee, zigbee2mqtt, thread, ai, cameras, cameraDir });
+  const text = gatewaySetup.buildCompose(platform, network, { zigbee, zigbee2mqtt, thread, ai, aiGpu, cameras, cameraDir });
   if (!text) return res.status(400).json({ ok: false, error: 'invalid_option' });
-  logger.info({ peerId: row.id, platform, network, zigbee, zigbee2mqtt, thread, ai, cameras }, 'Gateway docker-compose.yml downloaded');
+  logger.info({ peerId: row.id, platform, network, zigbee, zigbee2mqtt, thread, ai, aiGpu, cameras }, 'Gateway docker-compose.yml downloaded');
   res.set('Content-Type', 'application/yaml; charset=utf-8');
   res.set('Content-Disposition', 'attachment; filename="docker-compose.yml"');
   res.set('Cache-Control', 'no-store');
