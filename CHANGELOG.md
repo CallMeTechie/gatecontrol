@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.247.0] — 2026-11-07
+
+### Features
+- Texterkennung, Office-Dateien, Papier/Fach und Druckstatus für „Drucken & Scannen“ (#434)
+
+---
+
 ## [1.246.0] — 2026-11-07
 
 ### Features
