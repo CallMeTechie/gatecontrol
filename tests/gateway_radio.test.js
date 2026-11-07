@@ -71,7 +71,7 @@ describe('features.radio and the row "Funk"', () => {
     }
     const before = gateways.computeConfigHash(gw.peer.id);
     const v = (await admin('put', '/features').send({ radio: { zigbee: true, ble: true } }).expect(200)).body.gateway;
-    assert.deepEqual(v.features.radio, { zigbee: true, ble: true, stack: 'deconz', thread: false });
+    assert.deepEqual(v.features.radio, { zigbee: true, ble: true, stack: 'deconz', thread: false, sticks: [] });
     c = (await gwReq('get', '/config').expect(200)).body;
     assert.deepEqual(c.features.radio, { zigbee: true, ble: true });
     assert.notEqual(c.config_hash, before);
@@ -192,7 +192,7 @@ describe('tab "Funk"', () => {
     assert.equal(v.live, true);
     assert.equal(v.radio.zigbee.devices, 15);
     assert.equal(v.supported, true);
-    assert.deepEqual(v.settings, { zigbee: null, ble: true, stack: 'deconz', thread: false });
+    assert.deepEqual(v.settings, { zigbee: null, ble: true, stack: 'deconz', thread: false, sticks: [] });
     assert.equal(v.sensors.length, 2);
     assert.ok(v.smarthome && v.smarthome.installed === false);
     assert.ok(mgmt.some((m) => m.path === '/api/radio/status'));

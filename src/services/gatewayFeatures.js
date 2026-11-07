@@ -19,7 +19,7 @@
 //     cache    { enabled, … }          phase 3b: home cache (services/homeCache.js)
 //     print    { enabled, manual, convert, ocr, office }  phase 3c: Drucken & Scannen (services/homePrint.js);
 //              convert: PDF für Drucker ohne PDF im Gateway umwandeln (Standard an)
-//     radio    { zigbee, ble, stack, thread } phase 3c, step 2: Funk (services/homeRadio.js; zigbee null = automatic)
+//     radio    { zigbee, ble, stack, thread, sticks } phase 3c, step 2: Funk (services/homeRadio.js; zigbee null = automatic)
 //     ai       { enabled, source, lanUrl, lanApi, gpu }  phase 3c, step 3: Lokale KI (services/ai/local.js)
 //     cameras  { enabled, nobodyHome, credRev, subnets, cameras }  phase 3c, step 4: Kameras (services/homeCameras.js)
 //
@@ -55,7 +55,7 @@ const DEFAULTS = Object.freeze({
   ups: { enabled: false, host: '', port: 3493, name: null },
   notify: { outage: true, ups: true },
   print: { enabled: false, manual: [], convert: true, ocr: false, office: false },
-  radio: { zigbee: null, ble: false, stack: 'deconz', thread: false },
+  radio: { zigbee: null, ble: false, stack: 'deconz', thread: false, sticks: [] },
   ai: { enabled: false, source: 'service', lanUrl: null, lanApi: 'ollama', gpu: 'off' },
   cameras: { enabled: false, subnets: [], storagePath: null },
 });
@@ -146,7 +146,7 @@ function applyPatch(current, patch) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
-  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'] };
+  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread', 'sticks'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'] };
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     if (!allowed[k]) continue; // other keys (lanDiscovery, edge) are handled by the route
@@ -162,6 +162,11 @@ function applyPatch(current, patch) {
         try { out.ai[f] = require('./ai/local').patchField(f, val); } catch (e) { throw new FeatureError(e.code === 'invalid_host' ? 'invalid_host' : 'invalid', e.message); }
       } else if (k === 'radio') {
         // zigbee: true | false | null (= automatic: on when the gateway finds a deCONZ radio); stack: deconz | zigbee2mqtt
+        if (f === 'sticks') {
+          // sticks set by hand: [{ id, use: auto | zigbee | thread | none }] (services/homeRadio.js)
+          try { out.radio.sticks = require('./homeRadio').patchSticks(val); } catch (e) { throw new FeatureError('invalid', e.message); }
+          continue;
+        }
         if (f === 'stack') {
           if (val !== 'deconz' && val !== 'zigbee2mqtt') throw new FeatureError('invalid', 'radio.stack: deconz or zigbee2mqtt');
         } else if (f === 'zigbee' ? !(val === null || typeof val === 'boolean') : typeof val !== 'boolean') throw new FeatureError('invalid', `radio.${f}: must be true or false${f === 'zigbee' ? ' (or null)' : ''}`);

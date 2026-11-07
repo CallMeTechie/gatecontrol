@@ -9729,7 +9729,16 @@ a.lg-ev-msg:hover{color:var(--teal)}
 .gwr-h4{margin:6px 0 0; font-size:13.5px; font-weight:700}
 .gwr-sticks-box{max-width:860px; display:flex; flex-direction:column; gap:6px}
 .gwr-sticks{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; font-size:13.5px}
-.gwr-stick{overflow-wrap:anywhere}
+.gwr-stick{overflow-wrap:anywhere; padding:6px 0; border-top:1px solid var(--border)}
+.gwr-stick:first-child{border-top:0}
+.gwr-stick-row{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 12px}
+.gwr-stick-t{flex:1 1 260px; min-width:0}
+.gwr-stick-id{display:block; font-size:12px; overflow-wrap:anywhere}
+.gwr-stick-c{display:flex; align-items:center; gap:8px; flex:0 1 auto; min-width:0}
+.gwr-stick-sel{width:auto; min-width:0; max-width:100%}
+.gwr-stick-hints{list-style:none; margin:4px 0 0; padding:0; display:flex; flex-direction:column; gap:2px}
+.gwr-stick-hints li{display:flex; gap:4px; align-items:flex-start}
+.gwr-stick-hints li svg{flex:0 0 auto; margin-top:2px}
 
 .gwh-chk strong{font-weight:600}
 .gwh-lists{gap:6px}

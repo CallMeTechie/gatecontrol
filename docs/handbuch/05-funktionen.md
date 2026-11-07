@@ -367,9 +367,10 @@ Reiter „Funk“ – ohne SSH und ohne `settings.txt`.
   Reiter bietet „Edge und MQTT einschalten“ an, wenn er noch aus ist.
 - **Thread:** ein Stick mit **RCP-Firmware** (OpenThread): SkyConnect/ZBT-1, ZBT-2,
   ZBDongle-E oder ein nRF52840-Dongle.
-- **Ein Stick bedient nur einen Funk.** Zigbee bekommt zuerst einen Stick, Thread
-  einen anderen. Steckt nur ein Multi-Stick, steht bei Thread „Stick belegt“. Die
-  Liste „Funksticks“ im Reiter zeigt, welcher Stick was bedient und wozu er passt.
+- **Ein Stick bedient nur einen Funk.** Auf „Automatisch“ bekommt Zigbee zuerst
+  einen Stick, Thread einen anderen. Steckt nur ein Multi-Stick, steht bei Thread
+  „Stick belegt“. Die Liste „Funksticks“ im Reiter zeigt, welcher Stick was bedient
+  und wozu er passt – und dort legst du ihn auf Wunsch von Hand fest (siehe unten).
 - **Firmware:** Multi-Sticks (SkyConnect, ZBDongle-E) können Zigbee *oder* Thread –
   je nach Firmware. Das Gateway sieht die Firmware nicht; gewechselt wird im Browser
   mit dem Web-Flasher des Herstellers.
@@ -387,6 +388,29 @@ Bluetooth, Thread)“ einschalten, oder im Reiter „Funk“ Zigbee, Bluetooth u
 einzeln. Bei Zigbee wählst du den **Zigbee-Dienst**: „deCONZ“ oder „zigbee2mqtt“.
 deCONZ steht anfangs auf „automatisch“: läuft, sobald ein ConBee oder RaspBee erkannt
 ist. Steckt ein Stick, der nur zu zigbee2mqtt passt, sagt der Reiter das.
+
+**Sticks von Hand festlegen:** Im Reiter „Funk“ unter „Funksticks“ steht neben jedem
+Stick „Wofür?“ mit „Automatisch (Standard)“, „Zigbee“, „Thread“ und „nicht verwenden“.
+Die Wahl geht vor; „Automatisch“ verteilt nur die übrigen Sticks. Das Gateway erkennt
+den Stick an seiner Seriennummer (Kennung wie in `/dev/serial/by-id`) – auch nach
+dem Umstecken in eine andere Buchse. Hat ein Stick keine eigene Seriennummer, gilt
+die Wahl für die USB-Buchse (der Reiter sagt das). Ohne SSH: Das Gateway gibt dem
+Dienst (deCONZ, zigbee2mqtt, Border Router) selbst den gewählten Stick.
+
+- **Steckt ein gewählter Stick nicht**, bleibt er mit „nicht eingesteckt“ in der Liste,
+  und der Funk wartet auf ihn („Stick fehlt“) – er nimmt keinen anderen Stick, damit
+  zigbee2mqtt nicht auf einem fremden Stick ein neues Netz aufmacht. Wieder einstecken
+  oder auf „Automatisch“ stellen.
+- **Hinweise, keine Sperren:** Zwei Sticks für denselben Funk – der zuerst gewählte
+  zählt, der andere bleibt frei. Ein Funk ist aus – der Stick wird genommen, sobald er
+  an ist. Passt der Stick laut Erkennung nicht (deCONZ an einem Nicht-ConBee, Thread an
+  einem Stick ohne bekannte RCP-Firmware), nimmt das Gateway ihn trotzdem – praktisch
+  nach dem Umflashen. Nur zigbee2mqtt kann einen Stick ohne passenden Adapter gar nicht
+  ansteuern („Stick passt nicht“).
+- „nicht verwenden“: Kein Dienst fasst den Stick an – z. B. für einen Stick, den ein
+  anderes Programm am selben Rechner nutzt.
+- Braucht ein Gateway **nach 1.33.1** (also ab 1.34.0). Bei älteren Gateways ist die
+  Auswahl gesperrt, mit einem Hinweis auf die Version; sie teilen weiter automatisch zu.
 
 **Geräte anlernen:** Im Reiter „Funk“ bei Zigbee „Anlernen starten“ – GateControl
 sucht 3 Minuten. Gerät in den Kopplungsmodus bringen (meist Knopf 5 s drücken). Das
@@ -424,7 +448,8 @@ GateControl nicht hinein – einmal in Phoscon (Port 8090 des Gateways) Gateway 
 Erweitert › „App authentifizieren“, dann „Erneut versuchen“. „MQTT aus“ bei
 zigbee2mqtt: „Edge und MQTT einschalten“. Beendet sich zigbee2mqtt oder der Border
 Router immer wieder, passt meist die Firmware des Sticks nicht (Zigbee-Firmware für
-zigbee2mqtt, RCP-Firmware für Thread).
+zigbee2mqtt, RCP-Firmware für Thread). „Stick fehlt“: der von Hand gewählte Stick
+steckt nicht – unter „Funksticks“ wieder einstecken oder auf „Automatisch“ stellen.
 
 ## Lokale KI
 

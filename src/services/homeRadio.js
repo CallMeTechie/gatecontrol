@@ -22,7 +22,14 @@
 //   /api/radio/thread/join, /api/radio/thread/dataset
 //
 // A stick serves one radio: the gateway gives one to Zigbee (the chosen stack)
-// first, then another to Thread (telemetry sticks[].use). The Smart Home plugin
+// first, then another to Thread (telemetry sticks[].use). The administrator can
+// set a stick by hand ("Automatisch (Standard)" / Zigbee / Thread / "nicht
+// verwenden", settings.radio.sticks, PUT /:id/radio/sticks): the choice wins,
+// keyed by the stick's stable id (its /dev/serial/by-id name or USB socket,
+// never the ttyACM number), in the config pull as features.radio.sticks
+// [{ id, use }]; a gateway with the capability radio-stick-assign honours it
+// and reports per stick what is chosen (choice), what it serves (use) and a
+// hint (note). Conflicts are hints, never bans (stickPlan()). The Smart Home plugin
 // gets the devices of zigbee2mqtt through gc.radio.zigbee() / gc.radio.command().
 
 const { getDb } = require('../db/connection');
@@ -38,9 +45,14 @@ const FORMATS = ['bthome', 'atc1441', 'pvvx', 'mibeacon'];
 const STICK_KINDS = ['zigbee', 'thread', 'multi', 'bluetooth'];
 const STACKS = ['deconz', 'zigbee2mqtt'];
 const STICK_USES = ['deconz', 'zigbee2mqtt', 'thread'];
+// the choice per stick (settings.radio.sticks[].use; 'auto' is the default and never stored)
+const STICK_CHOICES = ['auto', 'zigbee', 'thread', 'none'];
+const STICK_NOTES = ['second', 'radio_off', 'fit', 'no_adapter'];
+const STICK_ID_RE = /^[A-Za-z0-9#+.:=@_-]{1,128}$/;
+const MAX_STICK_CHOICES = 16;
 const Z2M_ADAPTERS = ['ember', 'zstack', 'deconz'];
-const Z2M_STATES = ['off', 'no_stick', 'mqtt_missing', 'mqtt_off', 'service_missing', 'starting', 'running', 'error'];
-const TH_STATES = ['off', 'no_stick', 'stick_busy', 'no_lan', 'service_missing', 'starting', 'no_network', 'detached', 'running', 'error'];
+const Z2M_STATES = ['off', 'no_stick', 'stick_missing', 'unsupported', 'mqtt_missing', 'mqtt_off', 'service_missing', 'starting', 'running', 'error'];
+const TH_STATES = ['off', 'no_stick', 'stick_missing', 'stick_busy', 'no_lan', 'service_missing', 'starting', 'no_network', 'detached', 'running', 'error'];
 const TH_ROLES = ['disabled', 'detached', 'child', 'router', 'leader'];
 const KEY_STATES = ['ok', 'no_key', 'wrong_key', 'unsupported'];
 const KEY_RE = /^[0-9a-f]{32}$/;
@@ -50,7 +62,7 @@ const KEEP_ZIGBEE_MS = 30 * 24 * 3600 * 1000;
 const Z_KINDS = ['light', 'plug', 'cover', 'sensor', 'remote', 'other'];
 // values of a zigbee2mqtt device besides those of the Bluetooth sensors
 const Z_VALUES = { on: 'bool', bri: [0, 100], ct: [100, 1000], pos: [0, 100], linkquality: [0, 255] };
-const ZB_STATES = ['off', 'no_stick', 'unsupported', 'service_missing', 'starting', 'running', 'key_needed', 'error'];
+const ZB_STATES = ['off', 'no_stick', 'stick_missing', 'unsupported', 'service_missing', 'starting', 'running', 'key_needed', 'error'];
 const ZB_SERVICES = ['managed', 'absent', 'image', 'missing'];
 const BLE_STATES = ['off', 'no_adapter', 'starting', 'running', 'error'];
 // values of a sensor: [min, max] for numbers, 'bool' for flags (everything else is dropped)
@@ -87,20 +99,46 @@ function isoOrNull(v) {
 
 // ─── Settings (part of the gateway's features) ─────────────────────────
 
-/** features.radio of the stored settings (any shape) → { zigbee: true|false|null, ble, stack, thread } */
+/** The sticks set by hand (any shape) → [{ id, use, model }] — valid ones, the first per id, no 'auto'. */
+function normalizeSticks(raw) {
+  const out = [];
+  const seen = new Set();
+  for (const e of Array.isArray(raw) ? raw.slice(0, 64) : []) {
+    if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !STICK_ID_RE.test(e.id) || seen.has(e.id)) continue;
+    if (!STICK_CHOICES.includes(e.use) || e.use === 'auto') continue;
+    seen.add(e.id);
+    out.push({ id: e.id, use: e.use, model: clean(e.model, 48) || null });
+    if (out.length >= MAX_STICK_CHOICES) break;
+  }
+  return out;
+}
+
+/** radio.sticks of an admin change → the list, or RadioError('invalid'). */
+function patchSticks(val) {
+  if (!Array.isArray(val) || val.length > MAX_STICK_CHOICES) throw new RadioError('invalid', `radio.sticks: a list of up to ${MAX_STICK_CHOICES} sticks`);
+  for (const e of val) {
+    if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !STICK_ID_RE.test(e.id) || !STICK_CHOICES.includes(e.use)) {
+      throw new RadioError('invalid', 'radio.sticks: { id, use: auto | zigbee | thread | none }');
+    }
+  }
+  return normalizeSticks(val);
+}
+
+/** features.radio of the stored settings (any shape) → { zigbee: true|false|null, ble, stack, thread, sticks } */
 function normalizeSettings(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
-  return { zigbee: typeof r.zigbee === 'boolean' ? r.zigbee : null, ble: r.ble === true, stack: oneOf(r.stack, STACKS, 'deconz'), thread: r.thread === true };
+  return { zigbee: typeof r.zigbee === 'boolean' ? r.zigbee : null, ble: r.ble === true, stack: oneOf(r.stack, STACKS, 'deconz'), thread: r.thread === true, sticks: normalizeSticks(r.sticks) };
 }
 
 function settingsOf(peerId) { return require('./gatewayFeatures').get(peerId).radio; }
 
-/** features.radio of the config pull — stack, thread and bleKeys only when set (older hashes stay). */
+/** features.radio of the config pull — stack, thread, sticks and bleKeys only when set (older hashes stay). */
 function configPayload(peerId) {
   const s = settingsOf(peerId);
   const out = { zigbee: s.zigbee, ble: s.ble };
   if (s.stack !== 'deconz') out.stack = s.stack;
   if (s.thread) out.thread = true;
+  if (s.sticks.length) out.sticks = s.sticks.map((e) => ({ id: e.id, use: e.use }));
   const rev = s.ble ? keysRev(peerId) : null;
   if (rev) out.bleKeys = rev;
   return out;
@@ -129,7 +167,15 @@ function telemetryRadio(tel) {
     kind: s.kind, model: clean(s.model, 48) || null, bus: s.bus === 'usb' ? 'usb' : (s.bus === 'uart' ? 'uart' : 'builtin'),
     tty: typeof s.tty === 'string' && /^(tty[A-Z]{3}[0-9]{1,3}|hci[0-9]{1,2})$/.test(s.tty) ? s.tty : null, deconz: s.deconz === true,
     z2m: oneOf(s.z2m, Z2M_ADAPTERS), thread: s.thread === true, use: oneOf(s.use, STICK_USES),
+    // a gateway with radio-stick-assign: the stable id, the choice it honours and its hint
+    id: s.kind !== 'bluetooth' && typeof s.id === 'string' && STICK_ID_RE.test(s.id) ? s.id : null,
+    idKind: oneOf(s.idKind, ['serial', 'port', 'uart']),
+    choice: oneOf(s.choice, STICK_CHOICES),
+    note: oneOf(s.note, STICK_NOTES),
   }));
+  const missing = (Array.isArray(r.missing) ? r.missing : []).slice(0, 8)
+    .filter((m) => m && typeof m === 'object' && typeof m.id === 'string' && STICK_ID_RE.test(m.id) && (m.use === 'zigbee' || m.use === 'thread'))
+    .map((m) => ({ id: m.id, use: m.use }));
   const recentOf = (list) => (Array.isArray(list) ? list : []).slice(0, 5).filter((d) => d && typeof d === 'object' && typeof d.mac === 'string' && ZB_MAC_RE.test(d.mac)).map((d) => ({
     mac: d.mac, type: d.type === 'light' ? 'light' : 'sensor', name: clean(d.name, 48) || null, model: clean(d.model, 48) || null,
     manufacturer: clean(d.manufacturer, 48) || null, at: isoOrNull(d.at),
@@ -139,6 +185,7 @@ function telemetryRadio(tel) {
   return {
     stack: oneOf(r.stack, STACKS, 'deconz'),
     sticks,
+    missing,
     zigbee: {
       stack: oneOf(z.stack || r.stack, STACKS, 'deconz'),
       mode: oneOf(z.mode, ['auto', 'on', 'off'], 'auto'),
@@ -578,6 +625,11 @@ function stacksSupported(tel) {
   return !!(supported(tel) && tel.capabilities.includes('radio-stacks'));
 }
 
+/** Can the gateway take sticks set by hand? Its capability `radio-stick-assign` says so. */
+function assignSupported(tel) {
+  return !!(supported(tel) && tel.capabilities.includes('radio-stick-assign'));
+}
+
 function needStacks(g) {
   const tel = needSupport(g);
   if (!stacksSupported(tel)) throw new RadioError('gateway_unsupported', 'the gateway is too old for zigbee2mqtt and Thread (newer than ' + LAST_WITHOUT_STACKS + ')');
@@ -586,6 +638,7 @@ function needStacks(g) {
 
 // only for the hint texts (the switch goes by the capability): the last gateway release without them
 const LAST_WITHOUT_STACKS = '1.31.0';
+const LAST_WITHOUT_ASSIGN = '1.33.1';
 const ANSWERS = { not_running: 'not_running', key_needed: 'key_needed', feature_disabled: 'unavailable', deconz_failed: 'deconz_failed', invalid_request: 'invalid',
   has_network: 'has_network', no_network: 'no_network', otbr_failed: 'otbr_failed', not_found: 'not_found' };
 
@@ -650,6 +703,92 @@ async function liveStatus(peerId) {
   const list = Array.isArray(r.body.radio.zigbeeDevices) ? r.body.radio.zigbeeDevices : null;
   if (t && list) t.zigbeeDevices = list.slice(0, MAX_ZIGBEE).map(cleanZigbeeDevice).filter(Boolean).map((z) => ({ ...z, seenAt: iso(z.seenAt) }));
   return t;
+}
+
+// ─── Sticks set by hand ────────────────────────────────────────────────
+
+/** What a stick can do for a radio, from the detection: 'ok' | 'fit' (probably not) | 'no_adapter' (zigbee2mqtt cannot drive it). */
+function stickFit(s, use, stack) {
+  if (!s || use === 'none' || use === 'auto') return 'ok';
+  if (use === 'zigbee') {
+    if (stack === 'zigbee2mqtt') return s.z2m ? (s.kind === 'thread' ? 'fit' : 'ok') : 'no_adapter';
+    return s.deconz ? 'ok' : 'fit';
+  }
+  return s.thread || s.kind === 'thread' ? 'ok' : 'fit';
+}
+
+/**
+ * The rows of the list "Funksticks": every stick the gateway sees (without Bluetooth) and every
+ * stick set by hand that is not plugged in, each with its choice and the hints for it — hints,
+ * never bans (pure: settings + the radio view of the telemetry).
+ *   hints: missing (chosen, not plugged in: the radio waits for it), second (another stick has this
+ *   radio already), radio_off (the chosen radio is off), fit (the detection says it does not fit,
+ *   used anyway), no_adapter (zigbee2mqtt cannot drive it), firmware (a multi stick: its firmware
+ *   decides Zigbee or Thread), port (no serial number: the choice holds for the USB socket),
+ *   by_hand_only (the gateway does not report stable ids yet — older gateway)
+ */
+function stickPlan(settings, radio) {
+  const s = settings || normalizeSettings(null);
+  const r = radio || { sticks: [], missing: [] };
+  const chosen = new Map(s.sticks.map((e) => [e.id, e]));
+  const stack = s.stack || 'deconz';
+  const zigbeeOn = s.zigbee !== false;
+  const radioOn = (use) => (use === 'zigbee' ? zigbeeOn : use === 'thread' ? s.thread === true : true);
+  const rows = [];
+  const firstFor = {};
+  const present = (r.sticks || []).filter((x) => x.kind !== 'bluetooth');
+  // the stick chosen first for a radio (order of the setting) that is plugged in
+  for (const e of s.sticks) {
+    if ((e.use === 'zigbee' || e.use === 'thread') && !firstFor[e.use] && present.some((x) => x.id === e.id)) firstFor[e.use] = e.id;
+  }
+  for (const x of present) {
+    const e = x.id ? chosen.get(x.id) : null;
+    const choice = e ? e.use : 'auto';
+    const hints = [];
+    if (choice === 'zigbee' || choice === 'thread') {
+      if (firstFor[choice] !== x.id) hints.push('second');
+      else if (!radioOn(choice)) hints.push('radio_off');
+      else {
+        const fit = stickFit(x, choice, stack);
+        if (fit !== 'ok') hints.push(fit);
+      }
+      if (x.kind === 'multi') hints.push('firmware');
+    }
+    if (x.note && STICK_NOTES.includes(x.note) && !hints.includes(x.note)) hints.unshift(x.note);
+    if (x.idKind === 'port') hints.push('port');
+    rows.push({ id: x.id, idKind: x.idKind, model: x.model, kind: x.kind, bus: x.bus, tty: x.tty, deconz: x.deconz, z2m: x.z2m, thread: x.thread,
+      use: x.use, choice, present: true, hints });
+  }
+  for (const e of s.sticks) {
+    if (present.some((x) => x.id === e.id)) continue;
+    rows.push({ id: e.id, idKind: /^port:/.test(e.id) ? 'port' : (/^uart:/.test(e.id) ? 'uart' : 'serial'), model: e.model, kind: null, bus: /^uart:/.test(e.id) ? 'uart' : 'usb',
+      tty: null, deconz: false, z2m: null, thread: false, use: null, choice: e.use, present: false, hints: e.use === 'none' ? [] : ['missing'] });
+  }
+  return rows;
+}
+
+/** "Funksticks": set one stick by hand ({ id, use: auto | zigbee | thread | none }); auto forgets it. */
+function setStick(peerId, body, { ip, user } = {}) {
+  const b = body && typeof body === 'object' ? body : {};
+  if (typeof b.id !== 'string' || !STICK_ID_RE.test(b.id)) throw new RadioError('invalid', 'id: the stable id of a stick');
+  if (!STICK_CHOICES.includes(b.use)) throw new RadioError('invalid', 'use: auto, zigbee, thread or none');
+  const g = gatewayOf(peerId);
+  const tel = needSupport(g);
+  if (!assignSupported(tel)) throw new RadioError('gateway_unsupported', 'the gateway is too old to set sticks by hand (newer than ' + LAST_WITHOUT_ASSIGN + ')');
+  const cur = settingsOf(g.id).sticks;
+  const t = telemetryRadio(tel);
+  const seen = t ? t.sticks.find((x) => x.id === b.id) : null;
+  const known = cur.find((e) => e.id === b.id);
+  if (!seen && !known) throw new RadioError('not_found', 'the gateway does not report this stick');
+  const model = (seen && seen.model) || (known && known.model) || null;
+  // a new choice goes to the end (the first chosen for a radio wins), a changed one keeps its place
+  let next;
+  if (b.use === 'auto') next = cur.filter((e) => e.id !== b.id);
+  else if (known) next = cur.map((e) => (e.id === b.id ? { id: e.id, use: b.use, model } : e));
+  else next = cur.concat([{ id: b.id, use: b.use, model }]);
+  if (next.length > MAX_STICK_CHOICES) throw new RadioError('invalid', `up to ${MAX_STICK_CHOICES} sticks set by hand`);
+  require('./gatewayFeatures').set(g.id, { radio: { sticks: next } }, { ip, user });
+  return { sticks: stickPlan(settingsOf(g.id), t) };
 }
 
 // ─── Overview (card "Funktionen", tab "Funk") ──────────────────────────
@@ -775,10 +914,13 @@ async function view(peerId, { live = true } = {}) {
     settings,
     supported: supported(tel),
     stacksSupported: stacksSupported(tel),
+    assignSupported: assignSupported(tel),
     minGateway: MIN_GATEWAY,
     lastWithoutStacks: LAST_WITHOUT_STACKS,
+    lastWithoutAssign: LAST_WITHOUT_ASSIGN,
     live: fresh,
     radio,
+    sticks: stickPlan(settings, radio),
     sensors: sensorsOf(g.id),
     zigbeeDevices,
     smarthome,
@@ -790,8 +932,8 @@ async function view(peerId, { live = true } = {}) {
 const HOST_CODES = { invalid: 'ERR_INVALID', not_found: 'ERR_NOT_FOUND', not_running: 'ERR_RADIO_NOT_RUNNING', gateway_unreachable: 'ERR_GATEWAY_UNREACHABLE', gateway_unsupported: 'ERR_RADIO_NOT_RUNNING', unavailable: 'ERR_RADIO_NOT_RUNNING', gateway_error: 'ERR_GATEWAY_UNREACHABLE' };
 
 module.exports = {
-  MIN_GATEWAY, MAX_SENSORS, LAST_WITHOUT_STACKS, RadioError, HOST_CODES,
-  normalizeSettings, configPayload, telemetryRadio, cleanSensor, ingestBle, sensorsOf, setSensor, removeSensor, pluginSensors,
+  MIN_GATEWAY, MAX_SENSORS, LAST_WITHOUT_STACKS, LAST_WITHOUT_ASSIGN, RadioError, HOST_CODES,
+  normalizeSettings, normalizeSticks, patchSticks, stickPlan, setStick, assignSupported, configPayload, telemetryRadio, cleanSensor, ingestBle, sensorsOf, setSensor, removeSensor, pluginSensors,
   keysRev, keysFor, ingestZigbee, zigbeeDevicesOf, pluginZigbee, zigbeeCommand, removeZigbee, cleanCommand,
   threadForm, threadJoin, threadDataset,
   housekeeping, pair, unlock, retry, liveStatus, overview, view, composeWantsZigbee, composeWantsZ2m, composeWantsThread, composeHint, supported, stacksSupported, platformOf,
