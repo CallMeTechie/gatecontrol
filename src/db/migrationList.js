@@ -3732,6 +3732,18 @@ const migrations = [
       );`,
     detect: (db) => tableExists(db, 'plugin_notice_acks'),
   },
+  {
+    version: 138,
+    name: 'home_cameras_tls',
+    // Kameras im Heimnetz mit HTTPS (services/homeCameras.js, gateway docs/cameras.md § 4):
+    // onvif_tls — the camera speaks ONVIF over HTTPS (from the test); tls_insecure — the
+    // administrator chose "Zertifikat nicht prüfen" for this camera (self-signed certificate).
+    // Both 0 for every camera before: plain HTTP, certificates checked.
+    sql: `
+      ALTER TABLE home_cameras ADD COLUMN onvif_tls INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE home_cameras ADD COLUMN tls_insecure INTEGER NOT NULL DEFAULT 0;`,
+    detect: (db) => hasColumn(db, 'home_cameras', 'tls_insecure'),
+  },
 ];
 
 module.exports = { migrations };

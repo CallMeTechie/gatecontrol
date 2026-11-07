@@ -18,6 +18,7 @@ module.exports = {
       case '/available': return run(() => gc.cameras.available());
       case '/list': return run(() => gc.cameras.list());
       case '/discover': return run(() => gc.cameras.discover(b));
+      case '/test': return run(() => gc.cameras.test(b));
       case '/add': return run(() => gc.cameras.add(b));
       case '/update': return run(() => gc.cameras.update(b.id, b.patch));
       case '/snapshot': return run(() => gc.cameras.snapshot(b.id));

@@ -114,6 +114,8 @@ const SHARED_TILES = '/plugins/_shared/tiles/';
 const AVATARS = '/avatars/';
 const PLUGIN_MEDIA = '/plugin-media/';
 const CAMERA_MEDIA = '/camera-media/';
+// the live player of the cameras (MSE for browsers without HLS — Firefox, Chrome/Edge on the PC)
+const SHARED_CAMERA_PLAYER = '/plugins/_shared/camera-player/camera-player.js';
 const SANDBOX = 'sandbox allow-scripts allow-forms';
 const SANDBOX_MAPS = SANDBOX + ' allow-popups allow-popups-to-escape-sandbox';
 const SANDBOX_DOWNLOADS = ' allow-downloads';
@@ -121,7 +123,7 @@ const SANDBOX_DOWNLOADS = ' allow-downloads';
 /** The CSP sandbox directive: the base flags, + popups for maps, + downloads for media. */
 function sandboxOf(maps, media) { return (maps ? SANDBOX_MAPS : SANDBOX) + (media ? SANDBOX_DOWNLOADS : ''); }
 
-function directives({ script = [], style = [], img = [], media = [], sandbox = SANDBOX } = {}) {
+function directives({ script = [], style = [], img = [], media = [], connect = [], sandbox = SANDBOX } = {}) {
   return [
     "default-src 'none'",
     ["script-src 'unsafe-inline'", ...script].join(' '),
@@ -129,7 +131,7 @@ function directives({ script = [], style = [], img = [], media = [], sandbox = S
     ['img-src data:', ...img].join(' '),
     ...(media.length ? [['media-src', ...media].join(' ')] : []),
     'font-src data:',
-    "connect-src 'none'",
+    connect.length ? ['connect-src', ...connect].join(' ') : "connect-src 'none'",
     "form-action 'none'",
     "base-uri 'none'",
     "frame-ancestors 'self'",
@@ -161,13 +163,17 @@ function cspFor({ maps = false, origin = null, avatars = false, media = false, c
   const camSrc = cameras && origin ? [origin + CAMERA_MEDIA] : [];
   const mediaSrc = [...(media && origin ? [origin + PLUGIN_MEDIA] : []), ...camSrc];
   const pics = [...(avatars && origin ? [origin + AVATARS] : []), ...mediaSrc];
-  if (!maps) return pics.length || media ? directives({ img: pics, media: mediaSrc, sandbox: sandboxOf(false, media) }) : CSP;
+  // the live player: its script, fetch of /camera-media/ (live.mp4 for MSE) and the blob: of the MediaSource
+  const camScript = camSrc.length ? [origin + SHARED_CAMERA_PLAYER] : [];
+  const camMedia = camSrc.length ? [...mediaSrc, 'blob:'] : mediaSrc;
+  if (!maps) return pics.length || media ? directives({ script: camScript, img: pics, media: camMedia, connect: camSrc, sandbox: sandboxOf(false, media) }) : CSP;
   const base = origin ? origin + SHARED_LEAFLET : null;
   return directives({
-    script: base ? [base + 'leaflet.js'] : [],
+    script: [...(base ? [base + 'leaflet.js'] : []), ...camScript],
     style: base ? [base + 'leaflet.css'] : [],
     img: [OSM_TILES, ...(base ? [base + 'images/', origin + SHARED_TILES] : []), ...pics],
-    media: mediaSrc,
+    media: camMedia,
+    connect: camSrc,
     sandbox: sandboxOf(true, media),
   });
 }

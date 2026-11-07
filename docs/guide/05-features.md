@@ -200,8 +200,8 @@ clips stay on the gateway (on a Synology: on the NAS).
   download it and recreate the project
   ([chapter 6](06-updating-a-gateway.md#63-synology-renewing-the-compose-file)); search,
   test picture and motion events work already, the live picture and clips do not.
-  Optionally `GC_CAMERA_DIR=/volume1/kameras` in the `.env` puts the clips into that
-  folder of the NAS (see “Recordings”). The Raspberry Pi image adds the service itself;
+  A folder of the NAS for the clips is chosen in the row under “Storage and networks”
+  (see “Recordings”). The Raspberry Pi image adds the service itself;
   older images (before gateway 1.28.0) need a new image for it.
 
 **Switching on:** tab “Features” → “Devices at home” → “Cameras”. Then in the
@@ -211,23 +211,42 @@ plus name, user and password of the camera. “Connect and test” shows a test 
 only then is the camera stored. The password stays encrypted on the server and goes
 to the gateway only.
 
+**Cameras with HTTPS** (gateway 1.29.0+, GateControl 1.242.0+, plugin 1.7.0+): when a
+camera offers ONVIF only over HTTPS, the gateway finds it by itself (port 443 last) – or
+you tick “HTTPS” when adding it. The certificate is **always checked**. Most cameras have
+a self-signed certificate; then the test says “The camera's certificate is not trusted”.
+Only if you trust the camera in your home network, tick “Do not check the certificate”
+there (per camera, can be switched back under “Recordings”). The connection stays
+encrypted and still goes to the camera's address only.
+
 **Recordings:** per camera “on motion (people, cars, animals)”, “on motion, only when
 nobody is at home” (from the family's presence – when it is unknown the gateway does
 not record) or “never – live picture only”. A clip starts 5 seconds before the motion
 and ends 10 seconds after it (2 minutes at most). Motion, people and vehicles are
 detected by the **camera itself** (ONVIF events) – the gateway does no image analysis.
 Keep 7, 14 or 30 days; with less than 1 GB free the gateway records nothing new. Clips
-are in the volume `cam-recordings` – on a Synology `GC_CAMERA_DIR=/volume1/kameras` in
-the `.env` puts them into a folder of the NAS.
+are in the Docker volume `cam-recordings`. **Changing the folder** (GateControl
+1.242.0+): row “Cameras” › “Storage and networks” › “Folder for clips”, e.g.
+`/volume1/kameras` (create the folder in File Station first). Then “Download
+docker-compose.yml” and recreate the project – no SSH, no `.env`. The row says “Clips
+in the folder /volume1/kameras”; while the gateway still uses the old storage (gateway
+1.29.0+ reports it) it says “takes effect with the new compose file”. On a Raspberry Pi
+the clips stay on the SD card. A `GC_CAMERA_DIR` already set in the `.env` still wins.
 
 **Live picture:** only when the phone or PC is in the **VPN** (or in the server's own
-network). On the road without VPN the portal and the app show a new snapshot every 10 seconds. A push
-with a snapshot for people comes at most once per camera every 5 minutes.
+network). On the road without VPN the portal and the app show a new snapshot every 10 seconds. In the
+portal Safari and Edge/Chrome on phones play the picture themselves; **Firefox** and
+Chrome/Edge on the PC play it from GateControl 1.242.0 through the built-in player (Media
+Source Extensions, no external library). H.265 cameras do not play in many browsers –
+choose the sub stream (usually H.264) then. A push with a snapshot for people comes at most
+once per camera every 5 minutes, with the button “View”; everybody can switch it off for
+themselves per camera (portal tab “Door” and the apps, plugin 1.7.0+).
 
 **Hints instead of bans:** on a Raspberry Pi 3 B+ the row says “Cameras: at most 1 camera
 with motion detection”, on a Pi 4 “at most 4”. Switching on stays possible. Cameras
 outside the gateway's own home network (e.g. a camera VLAN) are reached only when that
-network is in the gateway's settings (`PUT /api/v1/gateways/:id/features { cameras: { subnets } }`).
+network is listed under “Storage and networks” › “More networks for the camera search”
+(private networks, /16 to /30, at most 8; API `PUT /api/v1/gateways/:id/features { cameras: { subnets } }`).
 
 **Privacy:** the gateway records sound only when you switch it on per camera – recording
 conversations is only allowed with everybody's consent. Who may see which camera is set in

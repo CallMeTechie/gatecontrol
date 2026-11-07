@@ -5,7 +5,7 @@
 // apiLimiter + CSRF + requireAdmin (routes/api/index.js). Admin SESSION only.
 //
 //   GET /:id/cameras    switch, cameras, storage, service, hints (live from the gateway when it answers)
-// The switch itself goes through PUT /:id/features { cameras: { enabled, subnets } };
+// The switch itself goes through PUT /:id/features { cameras: { enabled, subnets, storagePath } };
 // adding, testing and watching the cameras is the plugin "Tür & Kamera" (gc.cameras).
 
 const { Router } = require('express');

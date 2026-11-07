@@ -2715,14 +2715,14 @@ ignores the permission and `gc.cameras` is missing — check for it.
 | Call | Answer / rule |
 |---|---|
 | `gc.cameras.available()` | `{ available, gateways: [{ id, name, online, supported, enabled, service: managed\|absent\|missing, storage: { free, total, used, clips, problem }, hint }] }` — `hint` e.g. `{ key: 'one_motion', max: 1, motion, over }` on a Raspberry Pi 3 B+ (a hint, never a ban) |
-| `gc.cameras.list()` | `[{ id, gatewayId, gateway, name, host, source: onvif\|rtsp, manufacturer, model, state, problem, online, codec, width, height, stream, events: { supported, state, kinds }, settings, snapshotAt, lastEventAt }]` |
+| `gc.cameras.list()` | `[{ id, gatewayId, gateway, name, host, source: onvif\|rtsp, https, tlsInsecure, manufacturer, model, state, problem, online, codec, width, height, hasAudio, stream, events: { supported, state, kinds }, settings, snapshotAt, lastEventAt }]` — 1.242.0: `https` (ONVIF over HTTPS), `tlsInsecure` ("Zertifikat nicht prüfen"), `hasAudio` (the stream has a sound track, `null` unknown; gateway ≥ 1.29.0), `state` also `tls_untrusted` |
 | `gc.cameras.discover({ gatewayId? })` | `{ found: [{ gatewayId, gateway, host, port, path, manufacturer, model, name, cameraId }] }` — WS-Discovery on the gateway(s); `cameraId` when already added |
-| `gc.cameras.test({ gatewayId, host, onvifPort?, onvifPath?, rtspUrl?, user, password })` | `{ ok, source, info, profile, profiles, rtsp, events, codec, snapshot: { data, mime } \| null }` — nothing stored |
-| `gc.cameras.add({ gatewayId, name, host \| rtspUrl, user, password, profile?, settings? })` | `{ camera, snapshot }` — tests first, stores only when the gateway reached the camera; the password is encrypted with the server key and only ever goes to that gateway (never back to a plugin, never in the config pull). At most 16 per gateway (`ERR_CAMERA_LIMIT`) |
-| `gc.cameras.update(id, { name?, user?, password?, profile?, settings? })` / `remove(id, { deleteClips? })` | the camera / `{ removed }` |
+| `gc.cameras.test({ gatewayId, host, onvifPort?, onvifPath?, onvifTls?, tlsInsecure?, rtspUrl?, user, password })` | `{ ok, source, onvif: { port, path, tls }, tlsInsecure, info, profile, profiles, rtsp, events, codec, width, height, audio, snapshot: { data, mime } \| null }` — nothing stored. 1.242.0: `onvifTls` (ONVIF over HTTPS; without a port the gateway tries 443 last anyway), `tlsInsecure` (accept a self-signed certificate — only on the administrator's explicit choice; default: checked, `ERR_CAMERA_TLS`) |
+| `gc.cameras.add({ gatewayId, name, host \| rtspUrl, user, password, profile?, onvifTls?, tlsInsecure?, settings? })` | `{ camera, snapshot }` — tests first, stores only when the gateway reached the camera; the password is encrypted with the server key and only ever goes to that gateway (never back to a plugin, never in the config pull). At most 16 per gateway (`ERR_CAMERA_LIMIT`) |
+| `gc.cameras.update(id, { name?, user?, password?, profile?, tlsInsecure?, settings? })` / `remove(id, { deleteClips? })` | the camera / `{ removed }` |
 | `gc.cameras.snapshot(id, { maxBytes? })` | `{ data (base64 JPEG), mime, at }` — default ≤ 300 KB, fits `gc.notify({ image })` |
 | `gc.cameras.snapshotUrl(id)` | `{ url: '/camera-media/<token>/snapshot.jpg', expiresAt, every: 10 }` (token 10 min; add `?t=<n>` to refresh) |
-| `gc.cameras.live(id, req)` | in the VPN or the server's LAN: `{ mode: 'live', hls, mp4, snapshot, codec, audio, expiresAt }` (HLS with fMP4 for Safari/iOS/Android, `mp4` = a continuous fragmented MP4 for other browsers; token 10 min); from the internet `{ mode: 'snapshot', snapshot, every: 10, reason: 'vpn_required' }`. `req` is the request the plugin answers (its `req.homeRef`) |
+| `gc.cameras.live(id, req)` | in the VPN or the server's LAN: `{ mode: 'live', hls, mp4, snapshot, codec, audio, expiresAt }` (`audio`: sound switched on and the stream not known to have none) (HLS with fMP4 for Safari/iOS/Android, `mp4` = a continuous fragmented MP4 for other browsers; token 10 min); from the internet `{ mode: 'snapshot', snapshot, every: 10, reason: 'vpn_required' }`. `req` is the request the plugin answers (its `req.homeRef`) |
 | `gc.cameras.events({ cameraId?, since?, until?, kinds?, limit? })` | `[{ id, cameraId, camera, kind, kinds, startedAt, endedAt, nobodyHome, clip: { ms, bytes } \| null, thumbUrl, clipUrl }]` newest first (≤ 200; URLs valid 1 h; clips with Range) |
 | `gc.cameras.deleteEvent(id)` | `{ deleted }` — also the clip on the gateway |
 | `gc.cameras.on(handler)` | hook `cameraEvent`: `{ id, cameraId, camera, gatewayId, kind, kinds, phase: start\|update\|end, at, nobodyHome, clip }` |
@@ -2731,10 +2731,26 @@ ignores the permission and `gc.cameras` is missing — check for it.
 people who agreed; unknown = no) | never, events: [person, vehicle, animal, motion],
 retentionDays 1…90, stream: main | sub, audio }`. Frames of a plugin with the
 permission may load `/camera-media/` (`img-src`/`media-src`), and its iframe gets
-`allow="fullscreen"`. Errors: `ERR_INVALID`, `ERR_NOT_FOUND`, `ERR_CAMERA_OFFLINE`,
+`allow="fullscreen"`. Since 1.242.0 they may also `fetch` it (`connect-src <origin>/camera-media/`;
+the media answer `Access-Control-Allow-Origin: *` — the token is the permission, no cookie), play
+`blob:` media and load the shared live player:
+
+```html
+<script src="/plugins/_shared/camera-player/camera-player.js"></script>
+<script>
+  // live = the answer of gc.cameras.live (mode 'live')
+  const p = GCCameraPlayer.play(video, live, { onError: () => showStills(), onPlaying: () => {}, onEnded: () => renew() });
+  // p.mode: 'hls' (Safari, iOS, Android) | 'mse' (Firefox, Chrome/Edge on the PC: live.mp4 through
+  // Media Source Extensions, buffer ≤ 60 s, stays at the live edge) | 'mp4' (plain <video src>); p.stop()
+</script>
+```
+
+No library, no CDN (`public/js/plugin-camera-player.js`). Without the script (an older GateControl)
+`window.GCCameraPlayer` is missing — fall back to `video.src = canPlayType(HLS) ? hls : mp4`. Errors: `ERR_INVALID`, `ERR_NOT_FOUND`, `ERR_CAMERA_OFFLINE`,
 `ERR_CAMERA_UNSUPPORTED`, `ERR_CAMERA_AUTH`, `ERR_CAMERA_UNREACHABLE`,
 `ERR_CAMERA_NOT_ALLOWED` (not a private address of the gateway's home network),
-`ERR_CAMERA_NOT_READY`, `ERR_CAMERA_SERVICE_MISSING`, `ERR_CAMERA_LIMIT`. Who may
+`ERR_CAMERA_NOT_READY`, `ERR_CAMERA_SERVICE_MISSING`, `ERR_CAMERA_LIMIT`, `ERR_CAMERA_TLS` (1.242.0:
+the camera's HTTPS certificate is not trusted — offer "Zertifikat nicht prüfen"). Who may
 see which camera is the plugin's to decide.
 
 ## AI requests (`permissions.ai`)

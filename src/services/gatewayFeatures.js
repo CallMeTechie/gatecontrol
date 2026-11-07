@@ -54,7 +54,7 @@ const DEFAULTS = Object.freeze({
   print: { enabled: false, manual: [] },
   radio: { zigbee: null, ble: false },
   ai: { enabled: false, source: 'service', lanUrl: null, lanApi: 'ollama' },
-  cameras: { enabled: false, subnets: [] },
+  cameras: { enabled: false, subnets: [], storagePath: null },
 });
 
 // Memory of the parts (MB), contract §6 — guide values for the hint only (deCONZ ≈ 90 MB with a
@@ -143,7 +143,7 @@ function applyPatch(current, patch) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
-  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual'], radio: ['zigbee', 'ble'], ai: ['enabled', 'source', 'lanUrl', 'lanApi'], cameras: ['enabled', 'subnets'] };
+  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual'], radio: ['zigbee', 'ble'], ai: ['enabled', 'source', 'lanUrl', 'lanApi'], cameras: ['enabled', 'subnets', 'storagePath'] };
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     if (!allowed[k]) continue; // other keys (lanDiscovery, edge) are handled by the route
