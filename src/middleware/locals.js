@@ -40,7 +40,8 @@ function injectLocals(req, res, next) {
     }
 
     try {
-      const peerRow = db.prepare('SELECT COUNT(*) as c FROM peers WHERE enabled = 1').get();
+      // Sidebar "Peers / Clients": active devices only — gateways have their own page and badge.
+      const peerRow = db.prepare("SELECT COUNT(*) as c FROM peers WHERE enabled = 1 AND peer_type != 'gateway'").get();
       const routeRow = db.prepare('SELECT COUNT(*) as c FROM routes WHERE enabled = 1').get();
       const httpRouteRow = db.prepare("SELECT COUNT(*) as c FROM routes WHERE enabled = 1 AND (route_type = 'http' OR route_type IS NULL)").get();
       const l4RouteRow = db.prepare("SELECT COUNT(*) as c FROM routes WHERE enabled = 1 AND route_type = 'l4'").get();
@@ -57,6 +58,7 @@ function injectLocals(req, res, next) {
       res.locals.pluginBadge = 0;
       res.locals.notifyQueued = 0;
       res.locals.supportUnviewed = 0;
+      res.locals.gatewaysOffline = 0;
       if (user && user.role === 'admin' && !req.path.startsWith('/api/')) {
         const lang = req.session.language || user.language;
         res.locals.pluginNav = require('../services/plugins').navEntries(lang === 'en' ? 'en' : 'de');
@@ -67,6 +69,9 @@ function injectLocals(req, res, next) {
         try { res.locals.notifyQueued = require('../services/notify/admin').queuedBadge(); } catch { res.locals.notifyQueued = 0; }
         // "Support-Pakete" badge: bundles no admin opened yet.
         res.locals.supportUnviewed = require('../services/supportBundles').unviewedCount();
+        // "Gateways" badge: gateways that are offline right now (same rule as
+        // the dashboard problem "Gateway offline").
+        try { res.locals.gatewaysOffline = require('../services/dashboardProblems').offlineGateways(db).length; } catch { res.locals.gatewaysOffline = 0; }
       }
     } catch {
       res.locals.peerCount = 0;
@@ -77,6 +82,7 @@ function injectLocals(req, res, next) {
       res.locals.pluginNav = [];
       res.locals.notifyQueued = 0;
       res.locals.supportUnviewed = 0;
+      res.locals.gatewaysOffline = 0;
     }
   }
 

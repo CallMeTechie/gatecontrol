@@ -454,6 +454,7 @@ async function list({ now = Date.now(), access } = {}) {
 
 module.exports = {
   list,
+  offlineGateways,
   scanAccessLog, accessVerdict, classifyLine,
   ACCESS_TAIL_BYTES, ACCESS_WINDOW_MS, SLOW_MS,
   _resetAccessCacheForTest,

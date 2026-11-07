@@ -14,9 +14,11 @@ const dns = require('./dns');
 /**
  * Get all peers with live status from WireGuard
  */
-async function getAll({ limit = 250, offset = 0 } = {}) {
+async function getAll({ limit = 250, offset = 0, type = null } = {}) {
   const db = getDb();
-  const peers = db.prepare('SELECT * FROM peers ORDER BY created_at ASC LIMIT ? OFFSET ?').all(limit, offset);
+  // type 'client': everything but gateways (the Peers page), 'gateway': only gateways.
+  const where = type === 'client' ? "WHERE peer_type != 'gateway'" : type === 'gateway' ? "WHERE peer_type = 'gateway'" : '';
+  const peers = db.prepare(`SELECT * FROM peers ${where} ORDER BY created_at ASC LIMIT ? OFFSET ?`).all(limit, offset);
 
   // Merge with live WG status
   const wgStatus = await wireguard.getStatus();
@@ -749,6 +751,62 @@ async function batch(action, ids) {
   return ids.length;
 }
 
+function existingPeers(ids) {
+  const db = getDb();
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = db.prepare(`SELECT id, name, tags FROM peers WHERE id IN (${placeholders})`).all(...ids);
+  if (rows.length !== new Set(ids).size) {
+    const found = new Set(rows.map((p) => p.id));
+    throw new Error(`Peers not found: ${ids.filter((id) => !found.has(id)).join(', ')}`);
+  }
+  return rows;
+}
+
+/**
+ * Batch: put every peer into one group (null = no group). Groups only carry
+ * the client policy and the sorting — no WireGuard rewrite needed.
+ */
+function batchGroup(ids, groupId) {
+  const db = getDb();
+  if (groupId != null && (!Number.isInteger(groupId) || !db.prepare('SELECT id FROM peer_groups WHERE id = ?').get(groupId))) {
+    throw new Error('group not found');
+  }
+  const rows = existingPeers(ids);
+  const placeholders = ids.map(() => '?').join(',');
+  db.prepare(`UPDATE peers SET group_id = ?, updated_at = datetime('now') WHERE id IN (${placeholders})`).run(groupId, ...ids);
+  activity.log('batch_peers_group', `Batch group of ${ids.length} peer(s): ${rows.map((p) => p.name).join(', ')}`, {
+    source: 'admin', severity: 'info', details: { peerIds: ids, groupId },
+  });
+  return ids.length;
+}
+
+/**
+ * Batch: add one tag to every peer (kept once, case-insensitive). The tag
+ * follows the rules of the tag registry (services/tags.js).
+ */
+function batchAddTag(ids, rawTag) {
+  const tagsSvc = require('./tags');
+  const tag = tagsSvc.validTagName(rawTag);
+  const rows = existingPeers(ids);
+  const db = getDb();
+  const upd = db.prepare("UPDATE peers SET tags = ?, updated_at = datetime('now') WHERE id = ?");
+  let changed = 0;
+  db.transaction(() => {
+    for (const p of rows) {
+      const tokens = tagsSvc.splitCsv(p.tags);
+      if (tokens.some((t) => t.toLowerCase() === tag.toLowerCase())) continue;
+      tokens.push(tag);
+      upd.run(tokens.join(', '), p.id);
+      changed++;
+    }
+  })();
+  tagsSvc.ensureRegistered(tag);
+  activity.log('batch_peers_tag', `Batch tag "${tag}" on ${ids.length} peer(s): ${rows.map((p) => p.name).join(', ')}`, {
+    source: 'admin', severity: 'info', details: { peerIds: ids, tag },
+  });
+  return changed;
+}
+
 /**
  * Get all peer IDs owned by a user
  */
@@ -759,6 +817,8 @@ function peersOfOwner(userId) {
 
 module.exports = {
   getAll,
+  batchGroup,
+  batchAddTag,
   getById,
   create,
   update,

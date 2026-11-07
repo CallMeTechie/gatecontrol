@@ -11,11 +11,12 @@ reported. Then follow the guide for your device:
 - [3.4 Linux machine with Docker](#34-linux-machine-with-docker)
 - [3.5 Proxmox](#35-proxmox)
 
-You keep track of where the gateways are with [locations](#36-locations).
+You keep track of where the gateways are with [locations](#36-locations). Rename,
+switch off and remove: [3.7 Managing a gateway](#37-managing-a-gateway).
 
 ## 3.1 The assistant “Add gateway”
 
-1. In GateControl, open “Network” → “Gateways” on the left.
+1. In GateControl, open “Devices” → “Gateways” on the left.
 2. Click “Add gateway” at the top right.
 3. **Step 1:**
    - “Name”: for example `NAS basement`. Allowed are letters a–z, digits,
@@ -256,11 +257,12 @@ A location says where a gateway is – for example “Home”, “Office” or
 “Parents”. With several gateways in different places this keeps the overview.
 A location has a name and, if you like, an address (street, postcode, town,
 country). The peer group of a gateway is something else and stays as it is
-(changed under “Peers”).
+(changed in the gateway under “More” → “Change name and group …”, see
+[3.7](#37-managing-a-gateway)).
 
 **Create and change locations:**
 
-1. “Network” → “Gateways” → “Locations” at the top.
+1. “Devices” → “Gateways” → “Locations” at the top.
 2. “New location”: enter a name, the address is optional. “Create location”.
 3. The pencil changes a location, the bin deletes it. If gateways are still
    there, GateControl asks first. The gateways stay as they are and show under
@@ -285,5 +287,28 @@ Only admins manage locations. They are part of the backup and come back with
 a restore.
 
 **Check:** Under “Gateways” your gateway is in the section of its location.
+
+## 3.7 Managing a gateway
+
+Gateways are managed on the page “Gateways” only – the page “Peers / Clients”
+shows devices such as phones and laptops. Open “Devices” → “Gateways”, click
+your gateway and then “More” at the top right. Under “Manage” you find:
+
+- **Change name and group …** – name, description and peer group.
+- **Create new connection data …** – opens the assistant at step 3 with the
+  files for your device. If the gateway has reported before, GateControl asks
+  first: with new data the running gateway loses its connection until it gets
+  the new file.
+- **Change proxy port …** – the port on which the gateway takes requests in the
+  tunnel (default 8080; on a Synology e.g. 18080 when 8080 is taken).
+- **Disable …** – cuts the tunnel. Routes through this gateway cannot be
+  reached then. The gateway is listed at the bottom of the page under
+  “Disabled gateways”; “Enable” switches it on again.
+- **Remove gateway …** – shows which routes are switched off by it and asks for
+  the tunnel IP of the gateway to be sure. The routes stay (disabled) and can be
+  pointed at another gateway later.
+
+**Check:** After “Change name and group …” the new name is on the card and in
+the list of gateways.
 
 Continue with [chapter 4: Edge plugins and Smart Home](04-edge-and-smart-home.md).

@@ -253,9 +253,10 @@ module.exports = (ctx) => {
         await page.keyboard.press('ArrowDown');
         step('menu: ArrowDown opens it and focuses the first item', await until(page, () => !document.getElementById('gw-more-menu').hidden
           && document.getElementById('gw-more-btn').getAttribute('aria-expanded') === 'true' && document.activeElement === document.querySelector('#gw-more-menu [role="menuitem"]')));
-        step('menu: compose, auto-update, location, pool, release notes — no "Gateway entfernen"', await page.evaluate(() => {
+        // "Verwalten" (gateway-manage.js, docs/feature-peers-page.md): moved here from the Peers page, "Gateway entfernen" last
+        step('menu: compose, auto-update, location, pool, release notes, then "Verwalten" with "Gateway entfernen" last', await page.evaluate(() => {
           const acts = [...document.querySelectorAll('#gw-more-menu [role="menuitem"]')].map((x) => x.dataset.act);
-          return acts.join() === 'compose,setup,location,pool-add,relnotes' && document.querySelector('#gw-more-menu a[data-act="relnotes"][target="_blank"]');
+          return acts.join() === 'compose,setup,location,pool-add,relnotes,gm-rename,gm-reconnect,gm-proxy,gm-disable,gm-delete' && document.querySelector('#gw-more-menu a[data-act="relnotes"][target="_blank"]');
         }));
         await page.keyboard.press('ArrowDown');
         step('menu: ArrowDown moves on', await page.evaluate(() => document.activeElement && document.activeElement.dataset.act === 'setup'));
@@ -265,7 +266,7 @@ module.exports = (ctx) => {
         step('menu: survives the redraw of a poll (still open, same item focused); "Technische Details" stays open', await page.evaluate(() => !document.getElementById('gw-more-menu').hidden
           && document.activeElement && document.activeElement.dataset.act === 'setup' && document.querySelector('.gwo-dev details.gwo-tech').open));
         await page.keyboard.press('End');
-        step('menu: End → last item', await page.evaluate(() => document.activeElement && document.activeElement.dataset.act === 'relnotes'));
+        step('menu: End → last item', await page.evaluate(() => document.activeElement && document.activeElement.dataset.act === 'gm-delete'));
         await page.keyboard.press('Escape');
         step('menu: Escape closes it and gives the focus back to "Mehr"', await until(page, () => document.getElementById('gw-more-menu').hidden && document.activeElement && document.activeElement.id === 'gw-more-btn'));
         await page.click('#gw-more-btn');

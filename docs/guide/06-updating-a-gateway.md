@@ -4,7 +4,7 @@
 
 ## 6.1 Updating the gateway software
 
-When a new gateway version is out, the gateway's card under “Network” →
+When a new gateway version is out, the gateway's card under “Devices” →
 “Gateways” shows a button “Update to …”. One click, confirm “Update” – the
 gateway fetches the new image and restarts. If that fails, it rolls back to the
 previous version.
@@ -56,7 +56,7 @@ for **Synology** and **Linux/Docker**.
 
 Do **not** download the NAS package from the assistant again. It creates a new
 access key, and the running gateway loses its connection until it gets the new
-`gateway.env`. Get only the compose file instead: “Network” → “Gateways” → open
+`gateway.env`. Get only the compose file instead: “Devices” → “Gateways” → open
 your gateway → icon “Download docker-compose.yml only” (file with an arrow, top
 right) → “Synology NAS”, “Host” → “Download”. This creates no new keys. If the tab
 “Edge plugins” shows “edge service missing”, the same button is there as well.
@@ -97,7 +97,7 @@ sudo docker compose up -d
 ## 6.4 Linux/Docker: renewing the compose file
 
 1. Update the gateway first (see [6.1](#61-updating-the-gateway-software)).
-2. Get the current compose file: “Network” → “Gateways” → open your gateway →
+2. Get the current compose file: “Devices” → “Gateways” → open your gateway →
    icon “Download docker-compose.yml only” → “Linux machine with Docker”, “Host
    (recommended)” → “Download”. This creates no new keys. Do **not** download
    the `gateway.env` again – that creates a new access key.

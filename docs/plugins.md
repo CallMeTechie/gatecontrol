@@ -330,7 +330,7 @@ unsigned build of the same id.
   "media": { "maxBytes": 26214400, "types": ["image/jpeg", "image/webp", "audio/ogg", "application/pdf"], "quotaDefault": "10GB" },
   "services": { "provides": { "scene": { "label": { "de": "Szene schalten", "en": "Switch a scene" } } } },
   "ui": {
-    "nav": { "label": { "de": "Smart Home", "en": "Smart Home" }, "icon": "<svg path d>" },
+    "nav": { "label": { "de": "Smart Home", "en": "Smart Home" }, "icon": "<svg path d>", "section": "home" },
     "pages": [
       { "id": "main", "title": { "de": "Smart Home", "en": "Smart Home" } },
       { "id": "rooms", "title": { "de": "Räume", "en": "Rooms" } }
@@ -437,7 +437,7 @@ unsigned build of the same id.
   Einstellungen › Plugins › the plugin, right after "Einstellungen" and in
   this order (Übersicht · Einstellungen · Ressourcen · Geteilte Postfächer ·
   Berechtigungen · Lizenz · Protokoll), labelled with the page's `title`,
-  and no longer a page tab on the plugin's own page (Integrationen › the
+  and no longer a page tab on the plugin's own page (Zuhause / Apps › the
   plugin). The tab shows the page's sandboxed frame over the whole width —
   the same frame as on the plugin's page (`/plugins/<id>/frame/<page>`,
   `render` gets `view: 'page'` and that `page`, the admin API,
@@ -3829,8 +3829,17 @@ process — TCP sockets, WebSockets and, since 1.216.0, IMAP sessions
 
 ## User interface
 
-* **Sidebar** "Integrationen": one entry per installed plugin with `ui.nav`
-  (Smart Home, Klimaanlage, Fahrzeuge … are plugins); one that
+* **Sidebar**: one entry per installed plugin with `ui.nav`
+  (Smart Home, Klimaanlage, Fahrzeuge … are plugins), in the group named by
+  `ui.nav.section` (optional, since the regrouped navigation,
+  docs/feature-peers-page.md): `"home"` → "Zuhause" (house, climate, door,
+  vehicle …), `"apps"` → "Apps" (mail, files, chat …), `"devices"` → the group
+  "Geräte" below Peers / Clients and Gateways (NAS, hypervisor …). Without the
+  key a plugin goes to "Apps"; an unknown value is ignored (no manifest
+  error), so a plugin written for a newer server still loads. The official
+  plugins are placed by the server as long as their manifests do not say it
+  (services/plugins `NAV_SECTION_BUILTIN`). "Zuhause" and "Apps" fold, the
+  browser remembers it; the page that is open stays visible. One that
   is not running stays listed, greyed, tagged *aus*. Its page then explains why
   ("… ist derzeit deaktiviert (Grund). Deine Daten sind gespeichert." with a
   link to the plugin's page in the plugin area for administrators).

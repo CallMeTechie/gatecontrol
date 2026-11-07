@@ -4,7 +4,7 @@
 
 Ein Gateway kann mehr als nur den Tunnel. Alle Funktionen findest du so:
 
-1. „Netzwerk“ → „Gateways“ → auf dein Gateway klicken.
+1. „Geräte“ → „Gateways“ → auf dein Gateway klicken.
 2. Reiter „Funktionen“ (die Zahl daneben sagt, wie viele an sind).
 
 Dort schaltest du jede Funktion ein oder aus, nach Bereichen geordnet

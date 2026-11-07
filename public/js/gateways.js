@@ -477,6 +477,8 @@
     var rel = el('a', 'gw-menu-item', T('gwp.menu.relnotes', 'Was ist neu (Release-Notes)'));
     rel.href = GW_RELEASES; rel.target = '_blank'; rel.rel = 'noopener noreferrer'; rel.setAttribute('role', 'menuitem'); rel.tabIndex = -1; rel.dataset.fk = 'gw-menu:relnotes'; rel.dataset.act = 'relnotes';
     menu.appendChild(rel);
+    // rename, connection data, proxy port, disable, delete (gateway-manage.js; moved here from Peers)
+    if (window.GCGatewayManage) window.GCGatewayManage.menuItems(g, item, menu);
     wrap.appendChild(more);
     wrap.appendChild(menu);
     act.appendChild(wrap);
@@ -1535,6 +1537,8 @@
       if (mi.dataset.act === 'relnotes') return;
     }
     var rc = e.target.closest('[data-act="recheck"]'); if (rc) { probe(rc.dataset.id); return; }
+    var gm = e.target.closest('[data-act^="gm-"]');
+    if (gm && window.GCGatewayManage) { window.GCGatewayManage.run(gm.dataset.act, gm.dataset.id, last.find(function (x) { return String(x.peer_id) === String(gm.dataset.id); })); return; }
     var ds = e.target.closest('[data-act="disc-settings"]'); if (ds) { openDiscoverySettings(ds.dataset.id); return; }
     var su = e.target.closest('[data-act="setup"]'); if (su) { openSetupModal(su.dataset.id); return; }
     var lo = e.target.closest('[data-act="location"]');

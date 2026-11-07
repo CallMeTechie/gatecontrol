@@ -219,7 +219,14 @@ function backfillFromPeers() {
   return ensureRegistered(Array.from(seen));
 }
 
+/** A tag name ready to store, or throws ('tag …') — same rules as the registry. */
+function validTagName(raw) {
+  try { return validateName(normalizeName(raw)); } catch (err) { throw new Error('tag ' + err.message); }
+}
+
 module.exports = {
+  validTagName,
+  splitCsv,
   list,
   create,
   remove,

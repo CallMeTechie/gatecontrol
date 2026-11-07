@@ -20,7 +20,7 @@ env.addFilter('bytes', (v) => String(v || 0) + ' B');
 env.addFilter('reltime', () => '—');
 env.addFilter('truncate', (s) => s || '');
 function t(key) { return de[key] !== undefined ? de[key] : key; }
-function renderLayout(activeNav, features, pluginNav) {
+function renderLayout(activeNav, features, pluginNav, extra) {
   const src = '{% extends "aurora/layout.njk" %}{% block content %}<p>x</p>{% endblock %}';
   return env.renderString(src, {
     theme: 'aurora', language: 'de', t, availableLanguages: ['de', 'en'],
@@ -28,52 +28,65 @@ function renderLayout(activeNav, features, pluginNav) {
     cspNonce: 'N', csrfToken: 'c', appVersion: '9.9.9', appName: 'GateControl', baseUrl: 'https://gc.example.com',
     user: { username: 'admin', display_name: 'Admin', role: 'admin' }, title: 'T', activeNav, flash: {}, peerCount: 2, routeCount: 7,
     pluginNav: pluginNav || [],
+    ...(extra || {}),
   });
 }
 const ALL = { gateway_pools: true, internal_dns: true, pihole_integration: true, waf: true, midea_integration: true, skoda_integration: true, smarthome: true };
 // installed plugins with a page (services/plugins navEntries); Smart Home & co. are plugins now
 const PLUGIN_NAV = [
-  { id: 'gatecontrol-midea', href: '/plugins/gatecontrol-midea', label: 'Klimaanlage', icon: 'M2 4h20v10H2z', on: true },
-  { id: 'gatecontrol-skoda', href: '/plugins/gatecontrol-skoda', label: 'Fahrzeuge', icon: 'M5 16l1-5', on: false },
+  { id: 'gatecontrol-midea', href: '/plugins/gatecontrol-midea', label: 'Klimaanlage', icon: 'M2 4h20v10H2z', on: true, section: 'home' },
+  { id: 'gatecontrol-skoda', href: '/plugins/gatecontrol-skoda', label: 'Fahrzeuge', icon: 'M5 16l1-5', on: false, section: 'home' },
+  { id: 'gatecontrol-drive', href: '/plugins/gatecontrol-drive', label: 'Drive', icon: 'M3 7h18v12H3z', on: true, section: 'apps' },
+  { id: 'gatecontrol-proxmox', href: '/plugins/gatecontrol-proxmox', label: 'Proxmox VE', icon: 'M4 4h16v6H4z', on: true, section: 'devices' },
 ];
 
 function sidebarGroups(html) {
   const nav = html.slice(html.indexOf('<nav class="sidebar"'), html.indexOf('</nav>', html.indexOf('<nav class="sidebar"')));
   const out = [];
-  const re = /<div class="nav-section-label">([^<]*)<\/div>|<a href="([^"]+)" class="nav-item[^"]*"/g;
+  // plain labels and the folding ones of the plugin groups (<button><span>Label</span>…)
+  const re = /<div class="nav-section-label(?: nav-section-fold)?"[^>]*>(?:<button[^>]*><span>)?([^<]*)<|<a href="([^"]+)" class="nav-item[^"]*"/g;
   let m;
   while ((m = re.exec(nav))) {
-    if (m[1] !== undefined) out.push({ label: m[1], hrefs: [] });
+    if (m[1] !== undefined) out.push({ label: m[1].replace(/&amp;/g, '&'), hrefs: [] });
     else out[out.length - 1].hrefs.push(m[2]);
   }
   return out;
 }
 
-describe('sidebar groups (§8)', () => {
-  it('Übersicht · Netzwerk · Sicherheit · Integrationen · System with every licensed item', () => {
+describe('sidebar groups (§8, regrouped: docs/feature-peers-page.md)', () => {
+  it('Übersicht · Geräte · Dienste · Zugriff & Sicherheit · Zuhause · Apps · Wartung · System with every licensed item', () => {
     const g = sidebarGroups(renderLayout('dashboard', ALL, PLUGIN_NAV));
-    assert.deepEqual(g.map((x) => x.label), ['Übersicht', 'Netzwerk', 'Sicherheit', 'Integrationen', 'System']);
+    assert.deepEqual(g.map((x) => x.label), ['Übersicht', 'Geräte', 'Dienste', 'Zugriff & Sicherheit', 'Zuhause', 'Apps', 'Wartung', 'System']);
     assert.deepEqual(g.map((x) => x.hrefs), [
       ['/dashboard'],
-      ['/peers', '/routes', '/gateways', '/rdp', '/dns', '/pihole'],
-      ['/security', '/certificates', '/waf', '/users', '/groups', '/directory'],
+      ['/peers', '/gateways', '/plugins/gatecontrol-proxmox'],
+      ['/routes', '/rdp', '/dns', '/pihole'],
+      ['/users', '/groups', '/directory', '/security', '/certificates', '/waf'],
       ['/plugins/gatecontrol-midea', '/plugins/gatecontrol-skoda'],
-      ['/notifications', '/support-bundles', '/logs', '/settings'],
+      ['/plugins/gatecontrol-drive'],
+      ['/logs', '/support-bundles'],
+      ['/notifications', '/settings'],
     ]);
   });
 
-  it('licence conditions unchanged; the integrations label only with an installed plugin', () => {
+  it('licence conditions unchanged; plugin groups only with an installed plugin of that section', () => {
     const g = sidebarGroups(renderLayout('dashboard', {}));
-    assert.deepEqual(g.map((x) => x.label), ['Übersicht', 'Netzwerk', 'Sicherheit', 'System']);
-    assert.deepEqual(g[1].hrefs, ['/peers', '/routes', '/gateways', '/rdp']);
-    assert.deepEqual(g[2].hrefs, ['/security', '/certificates', '/users', '/groups', '/directory'], 'Sicherheits-Check needs no licence; Gruppen in every edition');
+    assert.deepEqual(g.map((x) => x.label), ['Übersicht', 'Geräte', 'Dienste', 'Zugriff & Sicherheit', 'Wartung', 'System']);
+    assert.deepEqual(g[1].hrefs, ['/peers', '/gateways']);
+    assert.deepEqual(g[2].hrefs, ['/routes', '/rdp']);
+    assert.deepEqual(g[3].hrefs, ['/users', '/groups', '/directory', '/security', '/certificates'], 'Sicherheits-Check needs no licence; Gruppen in every edition');
     // the licence keys of the former built-ins show nothing by themselves
-    assert.equal(sidebarGroups(renderLayout('dashboard', ALL)).some((x) => x.label === 'Integrationen'), false);
-    const html = renderLayout('dashboard', {}, PLUGIN_NAV.slice(1));
+    assert.equal(sidebarGroups(renderLayout('dashboard', ALL)).some((x) => x.label === 'Zuhause' || x.label === 'Apps'), false);
+    const html = renderLayout('dashboard', {}, PLUGIN_NAV.slice(1, 2));
     const one = sidebarGroups(html);
-    assert.deepEqual(one.find((x) => x.label === 'Integrationen').hrefs, ['/plugins/gatecontrol-skoda']);
-    assert.match(html, /data-plugin-nav="gatecontrol-skoda">[^]*?<span class="nav-tag-off">/, 'a plugin that is off keeps its tag');
-    assert.doesNotMatch(html, />Plugins<\/div>/, 'no separate "Plugins" group');
+    assert.deepEqual(one.find((x) => x.label === 'Zuhause').hrefs, ['/plugins/gatecontrol-skoda']);
+    assert.equal(one.some((x) => x.label === 'Apps'), false);
+    assert.match(html, /data-plugin-nav="gatecontrol-skoda" data-nav-sec="home">[^]*?<span class="nav-tag-off">/, 'a plugin that is off keeps its tag');
+    assert.match(html, /data-nav-fold="home"><button type="button" class="nav-fold-btn" aria-expanded="true" data-nav-fold-btn="home">/, 'the group folds');
+    assert.doesNotMatch(html, />Plugins<\/div>|>Integrationen</, 'no separate "Plugins" / "Integrationen" group');
+    // without a section the plugin goes to "Apps"
+    const bare = sidebarGroups(renderLayout('dashboard', {}, [{ id: 'x', href: '/plugins/x', label: 'X', icon: 'M1 1h2', on: true }]));
+    assert.deepEqual(bare.find((x) => x.label === 'Apps').hrefs, ['/plugins/x']);
   });
 
   it('badges and active state', () => {
@@ -81,16 +94,30 @@ describe('sidebar groups (§8)', () => {
     assert.match(html, /<a href="\/security" class="nav-item active">/);
     assert.match(html, /id="peer-count-badge">2</);
     assert.match(html, /id="route-count-badge">7</);
+    assert.doesNotMatch(html, /id="gw-offline-badge"/, 'no gateway badge while every gateway is fine');
+    assert.match(renderLayout('dashboard', ALL, [], { gatewaysOffline: 2 }), /id="gw-offline-badge" title="[^"]*Gateway[^"]*offline">2</);
     assert.equal(de['nav.security_check'], 'Sicherheits-Check');
+    assert.equal(de['nav.group_maintenance'], 'Wartung');
+    assert.equal(en['nav.group_maintenance'], 'Maintenance');
   });
 
-  it('bottom nav: Dashboard · Domains · Peers · Sicherheit · Mehr (button for the drawer)', () => {
+  it('bottom nav: Dashboard · Geräte · Dienste · Sicherheit · Mehr (button for the drawer)', () => {
     const html = renderLayout('waf', ALL);
     const bn = html.slice(html.indexOf('<nav class="bottom-nav">'), html.indexOf('</nav>', html.indexOf('<nav class="bottom-nav">')));
-    assert.deepEqual(Array.from(bn.matchAll(/href="([^"]+)"/g)).map((m) => m[1]), ['/dashboard', '/routes', '/peers', '/security']);
+    assert.deepEqual(Array.from(bn.matchAll(/href="([^"]+)"/g)).map((m) => m[1]), ['/dashboard', '/peers', '/routes', '/security']);
     assert.match(bn, /<a href="\/security" class="bn-item active">/, 'security group pages mark "Sicherheit"');
+    assert.match(bn, />\s*Geräte\s*</);
+    assert.match(bn, />\s*Dienste\s*</);
     assert.match(bn, /<button type="button" class="bn-item bn-more\s*" id="bn-more" aria-controls="sidebar"/);
+    assert.match(renderLayout('gateways', ALL), /<a href="\/peers" class="bn-item active">/, 'Gateways marks "Geräte"');
+    assert.match(renderLayout('rdp', ALL), /<a href="\/routes" class="bn-item active">/, 'Remote Desktops marks "Dienste"');
     assert.match(renderLayout('logs', ALL), /class="bn-item bn-more active"/, 'other pages mark "Mehr"');
+  });
+
+  it('app.js folds the plugin groups and remembers it per browser', () => {
+    const app = read('public/js/app.js');
+    assert.match(app, /var KEY = 'gc-nav-folded';/);
+    assert.match(app, /a\.hidden = closed && !a\.classList\.contains\('active'\);/, 'the open page stays visible');
   });
 });
 

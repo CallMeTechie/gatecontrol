@@ -7,7 +7,7 @@
 // the live status (first a real, then a mocked "connected" status with
 // hardware + RaspBee II), "Fertig" → detail view; "Einrichtung fortsetzen"
 // on an older gateway → platform Synology → the real package from the server
-// (unpacked, checked); the Peers page points to the assistant; Escape,
+// (unpacked, checked); the Peers page adds devices only; Escape,
 // keyboard, light/dark and 390 px.
 //
 // The app runs with the community licence (one gateway) and the seed has two,
@@ -212,12 +212,12 @@ module.exports = (ctx) => {
       step('Escape closes the assistant and clears the address',
         await until(page, () => document.getElementById('gwz-overlay').style.display !== 'flex' && !/#(add|setup)/.test(location.hash)));
 
-      // ── Peers page: no gateway checkbox, a pointer to the assistant ──
+      // ── Peers page: devices only — no gateway checkbox and no gateway hint
+      //    (docs/feature-peers-page.md; gateways are added here) ──
       await page.goto(BASE + '/peers');
       await page.click('#btn-add-peer');
-      step('Peers › add: hint + link to /gateways#add instead of the gateway checkbox',
-        await visible(page, '#add-peer-gateway-moved') && await page.$('#add-peer-is-gateway') === null
-        && (await page.getAttribute('#add-peer-gateway-moved a', 'href')) === '/gateways#add');
+      step('Peers › add: neither the gateway checkbox nor a gateway hint',
+        await visible(page, '#add-peer-name') && await page.$('#add-peer-is-gateway') === null && await page.$('#add-peer-gateway-moved') === null);
       await page.keyboard.press('Escape');
 
       // ── 390 px ──

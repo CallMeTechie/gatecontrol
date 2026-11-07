@@ -374,6 +374,38 @@ window.showMessage = function(containerId, message, type) {
   if (type !== 'error') setTimeout(() => { el.style.display = 'none'; }, 5000);
 };
 
+// ─── Sidebar: fold the plugin groups "Zuhause" / "Apps" ──────
+// (partials/sidebar.njk). The folded groups are remembered per browser; the
+// page that is open stays visible inside a folded group.
+(function() {
+  var sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  var KEY = 'gc-nav-folded';
+  var folded = [];
+  try { folded = JSON.parse(localStorage.getItem(KEY) || '[]') || []; } catch (e) { folded = []; }
+  if (!Array.isArray(folded)) folded = [];
+  function apply() {
+    sidebar.querySelectorAll('[data-nav-fold-btn]').forEach(function(btn) {
+      var sec = btn.getAttribute('data-nav-fold-btn');
+      var closed = folded.indexOf(sec) !== -1;
+      btn.setAttribute('aria-expanded', closed ? 'false' : 'true');
+      sidebar.querySelectorAll('a.nav-item[data-nav-sec="' + sec + '"]').forEach(function(a) {
+        a.hidden = closed && !a.classList.contains('active');
+      });
+    });
+  }
+  sidebar.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-nav-fold-btn]');
+    if (!btn) return;
+    var sec = btn.getAttribute('data-nav-fold-btn');
+    var i = folded.indexOf(sec);
+    if (i === -1) folded.push(sec); else folded.splice(i, 1);
+    try { localStorage.setItem(KEY, JSON.stringify(folded)); } catch (err) { /* private mode: not remembered */ }
+    apply();
+  });
+  apply();
+})();
+
 // ─── Mobile sidebar toggle ──────────────────────────────
 (function() {
   var toggle = document.getElementById('sidebar-toggle');

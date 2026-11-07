@@ -94,9 +94,9 @@ describe('the plugin area', () => {
 });
 
 describe('sidebar, plugin page, frame', () => {
-  it('the sidebar lists the plugin under "Integrationen"', async () => {
+  it('the sidebar lists the plugin under "Apps" (no ui.nav.section → apps)', async () => {
     const html = withoutScripts((await agent.get('/dashboard').expect(200)).text);
-    assert.match(html, /<div class="nav-section-label">Integrationen<\/div>\s*<a href="\/plugins\/hello" class="nav-item" data-plugin-nav="hello">/);
+    assert.match(html, /data-nav-fold="apps"><button[^>]*><span>Apps<\/span>[^]*?<\/div>\s*<a href="\/plugins\/hello" class="nav-item" data-plugin-nav="hello" data-nav-sec="apps">/);
     assert.ok(!html.includes('>Plugins</div>'), 'no separate "Plugins" group');
   });
   it('the page embeds the plugin in a sandboxed frame (no allow-same-origin)', async () => {
@@ -125,7 +125,7 @@ describe('sidebar, plugin page, frame', () => {
   it('a switched-off plugin: greyed nav entry "aus" and the "derzeit deaktiviert" page', async () => {
     await agent.post(API + '/hello/disable').set('X-CSRF-Token', csrf).send({}).expect(200);
     const dash = withoutScripts((await agent.get('/dashboard').expect(200)).text);
-    assert.match(dash, /class="nav-item nav-item-off" data-plugin-nav="hello">[\s\S]*?<span class="nav-tag-off">aus<\/span>/);
+    assert.match(dash, /class="nav-item nav-item-off" data-plugin-nav="hello" data-nav-sec="apps">[\s\S]*?<span class="nav-tag-off">aus<\/span>/);
     const page = withoutScripts((await agent.get('/plugins/hello').expect(200)).text);
     assert.doesNotMatch(page, /<iframe/);
     assert.match(page, /id="pg-off" data-reason="disabled"/);
