@@ -153,6 +153,28 @@ home. It needs the plugin “Print & scan” 1.0.1 or later and the right to pri
 
 If the printer is off, the job waits up to 24 hours (“off – prints as soon as it is on”).
 
+### Printers without PDF (e.g. HP OfficeJet Pro 8720)
+
+Many inkjets take no PDF over the network, only their own raster formats (PWG
+raster, Apple raster/URF, JPEG). A gateway **1.29.0** or later converts PDF
+files for such printers itself when printing – to the printer's resolution,
+colour, paper and two-sided printing. This applies to everything that prints
+through GateControl: portal, Android print service, share, test page.
+
+- **Switch:** in the row “Print & scan”, “Convert PDF for printers without
+  PDF” (on by default). Below it the row says which printers take no PDF and
+  whether this gateway converts for them.
+- **“… takes no PDF. A gateway 1.29.0 or later converts …”:** update the
+  gateway ([chapter 6](06-updating-a-gateway.md)). Until then only pictures
+  print there; GateControl turns a PDF file down with exactly this reason.
+- **“This gateway lacks the tool to convert PDF”:** the gateway's image is
+  older than its version – get the current image with “Update to …”.
+- **Raspberry Pi 3 or Zero:** converting takes longer there, a few minutes for
+  large PDF files. It still prints; switch it off for this gateway if you
+  prefer.
+- A damaged or password-protected PDF cannot be converted – the job then fails
+  with that reason.
+
 ### Printer not found
 
 Below the switch the row shows what the last search saw (“Last search today

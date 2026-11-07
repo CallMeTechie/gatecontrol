@@ -162,6 +162,30 @@ Hause. Dafür braucht es das Plugin „Drucken & Scannen“ ab 1.0.1 und das Rec
 Ist der Drucker aus, wartet der Auftrag bis zu 24 Stunden („aus – druckt,
 sobald er an ist“).
 
+### Drucker ohne PDF (z. B. HP OfficeJet Pro 8720)
+
+Viele Tintenstrahler nehmen über das Netz kein PDF an, nur ihre eigenen
+Rasterformate (PWG-Raster, Apple-Raster/URF, JPEG). Ein Gateway ab **1.29.0**
+wandelt PDF-Dateien für solche Drucker beim Drucken selbst um – passend zu
+Auflösung, Farbe, Papier und beidseitigem Druck des Druckers. Das gilt für
+alles, was über GateControl druckt: Portal, Android-Druckdienst, Teilen,
+Testseite.
+
+- **Schalter:** In der Zeile „Drucken & Scannen“ „PDF für Drucker ohne PDF
+  umwandeln“ (Standard an). Darunter steht, welche Drucker kein PDF nehmen und
+  ob dieses Gateway für sie umwandelt.
+- **„… nimmt kein PDF. PDF-Dateien … wandelt ein Gateway ab 1.29.0 um“:**
+  Gateway aktualisieren ([Kapitel 6](06-gateway-aktualisieren.md)). Bis dahin
+  drucken dort nur Bilder; eine PDF-Datei lehnt GateControl mit genau diesem
+  Grund ab.
+- **„Diesem Gateway fehlt das Werkzeug …“:** Das Gateway-Image ist älter als
+  seine Version – über „Update auf …“ das aktuelle Image holen.
+- **Raspberry Pi 3 oder Zero:** Das Umwandeln dauert dort länger, bei großen
+  PDF-Dateien ein paar Minuten. Gedruckt wird trotzdem; wer das nicht möchte,
+  schaltet es für dieses Gateway aus.
+- Eine kaputte oder mit Kennwort geschützte PDF-Datei kann das Gateway nicht
+  umwandeln – der Auftrag schlägt dann mit diesem Grund fehl.
+
 ### Drucker wird nicht gefunden
 
 Unter dem Schalter steht, was die letzte Suche gesehen hat („Letzte Suche

@@ -993,7 +993,9 @@ process.on('message', (msg) => {
     if (msg.ok) p.resolve(msg.value);
     else {
       p.reject(Object.assign(new Error(msg.error || 'host call failed'), { code: msg.code || undefined }, Number.isInteger(msg.status) ? { status: msg.status } : {},
-        typeof msg.serverText === 'string' ? { serverText: msg.serverText } : {}));
+        typeof msg.serverText === 'string' ? { serverText: msg.serverText } : {},
+        // why (gc.print ERR_PRINT_FORMAT: file_type | damaged | printer | gateway_update | convert_off)
+        typeof msg.reason === 'string' ? { reason: msg.reason } : {}));
     }
     return;
   }

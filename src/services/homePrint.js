@@ -55,8 +55,12 @@ const SCAN_MODES = { document: { color: 'gray', resolution: 300 }, photo: { colo
 const RESOLUTIONS = [150, 200, 300, 600];
 
 class PrintError extends Error {
-  constructor(code, message) { super(message || code); this.code = code; }
+  /** reason (only for `format`): why it cannot be printed — file_type | damaged | printer | gateway_update | convert_off */
+  constructor(code, message, reason) { super(message || code); this.code = code; if (reason) this.reason = reason; }
 }
+
+// The formats a gateway turns PDF into for a printer without PDF (device report printer.convert, gateway docs/print.md "Umwandeln")
+const CONVERT_TARGETS = ['image/pwg-raster', 'image/urf', 'image/jpeg'];
 
 function db() { return getDb(); }
 function json(s) { try { return s ? JSON.parse(s) : null; } catch { return null; } }
@@ -92,15 +96,16 @@ function dropFile(id) { try { fs.rmSync(jobFile(id), { force: true }); } catch (
 function normalizeSettings(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
   const manual = Array.isArray(r.manual) ? [...new Set(r.manual.filter((x) => typeof x === 'string').map((x) => x.trim()).filter(isRfc1918))].slice(0, 16) : [];
-  return { enabled: r.enabled === true, manual };
+  // convert: PDF for printers without PDF converted on the gateway — on unless switched off
+  return { enabled: r.enabled === true, manual, convert: r.convert !== false };
 }
 
 function settingsOf(peerId) { return require('./gatewayFeatures').get(peerId).print; }
 
-/** features.print of the config pull */
+/** features.print of the config pull (`convert` only when switched off — the gateway's default is on, the hash of all others stays) */
 function configPayload(peerId) {
   const s = settingsOf(peerId);
-  return { enabled: s.enabled, manual: s.manual.slice() };
+  return { enabled: s.enabled, manual: s.manual.slice(), ...(s.convert === false ? { convert: false } : {}) };
 }
 
 // ─── Devices (gateway → server) ────────────────────────────────────────
@@ -132,6 +137,8 @@ function cleanDevice(d) {
       duplex: bool(p.duplex),
       formats: strList(p.formats, 24, 60, /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/),
       copiesMax: Number.isInteger(p.copiesMax) ? Math.max(1, Math.min(999, p.copiesMax)) : 1,
+      // a printer without PDF: the format its gateway converts PDF into (null: it cannot — switched off, too old, no matching format)
+      convert: CONVERT_TARGETS.includes(p.convert) ? p.convert : null,
       markers: (Array.isArray(p.markers) ? p.markers : []).slice(0, 12).filter((m) => m && typeof m === 'object').map((m) => ({
         name: clean(m.name, 60),
         color: typeof m.color === 'string' && COLOR_RE.test(m.color.toUpperCase()) ? m.color.toUpperCase() : null,
@@ -331,45 +338,77 @@ async function readMedia(plugin, mediaId) {
   return { row: r, buf: Buffer.concat(chunks) };
 }
 
+/** The gateway's last telemetry (heartbeat) or null. */
+function telemetryOf(peerId) {
+  try {
+    const row = db().prepare('SELECT last_health FROM gateway_meta WHERE peer_id = ?').get(peerId);
+    const h = json(row && row.last_health);
+    return (h && h.telemetry) || null;
+  } catch { return null; }
+}
+
 /**
- * The bytes in a form the printer takes: PDF as it is (the printer must name
- * application/pdf), pictures as JPEG (sharp, turned upright) or — for a
- * printer without JPEG — as a PDF page. Office files and the like: format.
+ * Why a printer without PDF does not get one (reason of the format error):
+ * its gateway is too old to convert, converting is switched off there, or
+ * the printer names no format the gateway can make (printer).
+ */
+function noPdfReason(device) {
+  if (!device || !device.gatewayId) return 'printer';
+  const sup = require('./gatewayFeatures').support(telemetryOf(device.gatewayId));
+  if (!sup.printConvert) return 'gateway_update';
+  if (settingsOf(device.gatewayId).convert === false) return 'convert_off';
+  return 'printer';
+}
+
+/** The type of a file by its content (magic bytes), else by the stored type. */
+function typeOf(buf, mime) {
+  return pdf.sniff(buf) || String(mime || '').split(';')[0].trim().toLowerCase();
+}
+
+/**
+ * The bytes in a form the printer takes: PDF as it is (the printer names
+ * application/pdf, or its gateway converts PDF — printer.convert), pictures
+ * as JPEG (sharp, turned upright) or — for a printer without JPEG — as a PDF
+ * page. The type counts by the content (%PDF, JPEG, PNG …), not by the name
+ * or the uploaded type. Office files and the like: format (reason file_type).
+ * device: the printer's device (gatewayId) for the reason when it cannot.
  * → { buf, format, pages }
  */
-async function printable(buf, mime, printer) {
+async function printable(buf, mime, printer, device = null) {
   const fmts = printer.formats || [];
   const takes = (f) => !fmts.length || fmts.includes(f);
-  const type = String(mime || '').toLowerCase();
+  const converts = CONVERT_TARGETS.includes(printer.convert);
+  const type = typeOf(buf, mime);
+  const named = fmts.length ? fmts.join(', ') : 'nothing';
   if (type === 'application/pdf') {
     const pages = pdf.pdfPages(buf);
-    if (!pages) throw new PrintError('format', 'not a PDF file');
-    if (!takes('application/pdf')) throw new PrintError('format', 'this printer takes no PDF');
+    if (!pages) throw new PrintError('format', 'not a readable PDF file', 'damaged');
+    if (!takes('application/pdf') && !converts) throw new PrintError('format', `this printer takes no PDF (it names ${named}) and its gateway does not convert it`, noPdfReason(device));
     return { buf, format: 'application/pdf', pages };
   }
   if (IMAGE_IN.includes(type)) {
     let jpeg;
     try {
       jpeg = await require('sharp')(buf, { limitInputPixels: 120e6 }).rotate().flatten({ background: '#ffffff' }).jpeg({ quality: 92 }).toBuffer();
-    } catch { throw new PrintError('format', 'the picture cannot be read'); }
+    } catch { throw new PrintError('format', 'the picture cannot be read', 'damaged'); }
     if (takes('image/jpeg')) return { buf: jpeg, format: 'image/jpeg', pages: 1 };
-    if (takes('application/pdf')) return { buf: pdf.jpegsToPdf([{ jpeg }]), format: 'application/pdf', pages: 1 };
-    throw new PrintError('format', 'this printer takes neither JPEG nor PDF');
+    if (takes('application/pdf') || converts) return { buf: pdf.jpegsToPdf([{ jpeg }]), format: 'application/pdf', pages: 1 };
+    throw new PrintError('format', `this printer takes neither JPEG nor PDF (it names ${named})`, noPdfReason(device));
   }
-  throw new PrintError('format', 'only PDF files and pictures can be printed');
+  throw new PrintError('format', 'only PDF files and pictures can be printed', 'file_type');
 }
 
 /** Pages of a file before printing (the plugin's page limit). → { pages, format } */
 async function pagesOf(plugin, { mediaId }) {
   const { row, buf } = await readMedia(plugin, mediaId);
-  const type = String(row.mime || '').toLowerCase();
+  const type = typeOf(buf, row.mime);
   if (type === 'application/pdf') {
     const pages = pdf.pdfPages(buf);
-    if (!pages) throw new PrintError('format', 'not a PDF file');
+    if (!pages) throw new PrintError('format', 'not a readable PDF file', 'damaged');
     return { pages, format: 'application/pdf' };
   }
   if (IMAGE_IN.includes(type)) return { pages: 1, format: type };
-  throw new PrintError('format', 'only PDF files and pictures can be printed');
+  throw new PrintError('format', 'only PDF files and pictures can be printed', 'file_type');
 }
 
 function openJobs(pluginId, userId) {
@@ -411,7 +450,7 @@ async function submit(plugin, a) {
   const device = needDevice(a.deviceId, 'printer');
   const opts = options(a, device.printer);
   const { row, buf } = await readMedia(plugin, a.mediaId);
-  const p = await printable(buf, row.mime, device.printer);
+  const p = await printable(buf, row.mime, device.printer, device);
   const name = clean(a.name, 120) || clean(row.name, 120) || 'GateControl';
   return jobView(await enqueue(plugin, { device, user, ...p, name, ...opts }));
 }
@@ -430,7 +469,7 @@ async function testPage(plugin, a, lang = 'de') {
     color: !!device.printer.color,
   });
   let p;
-  try { p = await printable(doc, 'application/pdf', device.printer); } catch (e) {
+  try { p = await printable(doc, 'application/pdf', device.printer, device); } catch (e) {
     if (e.code !== 'format') throw e;
     // a printer without PDF: the same page as a picture (colour bars only — no fonts needed)
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="1754"><rect width="1240" height="1754" fill="#fff"/>
@@ -438,7 +477,7 @@ async function testPage(plugin, a, lang = 'de') {
       <rect x="640" y="300" width="240" height="240" fill="#EC008C"/><rect x="900" y="300" width="240" height="240" fill="#FFF200"/>
       <rect x="120" y="620" width="1020" height="8" fill="#000"/></svg>`;
     const img = await require('sharp')(Buffer.from(svg)).jpeg({ quality: 90 }).toBuffer();
-    p = await printable(img, 'image/jpeg', device.printer);
+    p = await printable(img, 'image/jpeg', device.printer, device);
   }
   return jobView(await enqueue(plugin, { device, user, ...p, name: en ? 'GateControl test page' : 'GateControl Testseite', copies: 1, color: !!device.printer.color, duplex: false }));
 }
@@ -742,6 +781,11 @@ function overview(peerId) {
     plugin = p ? { installed: true, enabled: p.enabled === true } : { installed: false, enabled: false };
   } catch { plugin = null; }
   const last = searchOf(peerId);
+  const gf = require('./gatewayFeatures');
+  const tel = telemetryOf(peerId);
+  const tc = tel && tel.features && tel.features.print && tel.features.print.convert;
+  const board = gf.boardOf(tel && tel.hardware && tel.hardware.model);
+  const noPdf = (d) => !!(d.printer && Array.isArray(d.printer.formats) && d.printer.formats.length && !d.printer.formats.includes('application/pdf'));
   return {
     enabled: s.enabled,
     manual: s.manual,
@@ -749,6 +793,8 @@ function overview(peerId) {
     devices: rows.slice(0, 12).map((d) => ({
       name: d.name, model: d.model || null, ip: d.ip, source: d.source === 'manual' ? 'manual' : 'mdns',
       printer: !!d.printer, scanner: !!d.scanner, online: !!d.online, problem: d.problem || null,
+      // a printer without PDF: converted by this gateway (the format) or not (null)
+      noPdf: noPdf(d), convert: noPdf(d) ? (d.printer.convert || null) : null,
     })),
     count: rows.length,
     // the last search; searchKnown false: the gateway is too old to report one ("bitte aktualisieren")
@@ -756,6 +802,13 @@ function overview(peerId) {
     searchKnown: last.known,
     plugin,
     minGateway: MIN_GATEWAY,
+    // PDF for printers without PDF (gateway docs/print.md "Umwandeln"): the switch, whether this gateway can,
+    // whether its image has the tools (null: not reported yet), a hint for weak hardware (never a ban)
+    convert: s.convert,
+    convertSupported: gf.support(tel).printConvert,
+    convertAvailable: tc && typeof tc.available === 'boolean' ? tc.available : null,
+    convertHint: ['pi3bplus', 'pi3', 'pi_zero'].includes(board) ? 'slow' : null,
+    minGatewayConvert: gf.MIN_GATEWAY_PRINT_CONVERT,
   };
 }
 

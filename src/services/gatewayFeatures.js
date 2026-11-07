@@ -17,7 +17,8 @@
 //                                       test, the DNS profiles' times)
 //     dns      { enabled, … }          phase 3b: DNS filter (services/homeDns.js)
 //     cache    { enabled, … }          phase 3b: home cache (services/homeCache.js)
-//     print    { enabled, manual }      phase 3c: Drucken & Scannen (services/homePrint.js)
+//     print    { enabled, manual, convert }  phase 3c: Drucken & Scannen (services/homePrint.js);
+//              convert: PDF für Drucker ohne PDF im Gateway umwandeln (Standard an)
 //     radio    { zigbee, ble }          phase 3c, step 2: Funk (services/homeRadio.js; zigbee null = automatic)
 //     ai       { enabled, source, lanUrl, lanApi }  phase 3c, step 3: Lokale KI (services/ai/local.js)
 //     cameras  { enabled, nobodyHome, credRev, subnets, cameras }  phase 3c, step 4: Kameras (services/homeCameras.js)
@@ -34,6 +35,8 @@ const MIN_GATEWAY = '1.21.0';
 const MIN_GATEWAY_3B = '1.22.0';
 // phase 3c, step 1 (Drucken & Scannen): only by the capability `print` — the version is the hint
 const MIN_GATEWAY_PRINT = '1.24.0';
+// PDF an Drucker ohne PDF: das Gateway wandelt um (Capability `print-convert`, die Version ist der Hinweis)
+const MIN_GATEWAY_PRINT_CONVERT = '1.29.0';
 // phase 3c, step 2 (Funk): only by the capability `radio`
 const MIN_GATEWAY_RADIO = '1.25.0';
 // phase 3c, step 3 (Lokale KI): only by the capability `ai`
@@ -51,7 +54,7 @@ const DEFAULTS = Object.freeze({
   presence: { enabled: true },
   ups: { enabled: false, host: '', port: 3493, name: null },
   notify: { outage: true, ups: true },
-  print: { enabled: false, manual: [] },
+  print: { enabled: false, manual: [], convert: true },
   radio: { zigbee: null, ble: false },
   ai: { enabled: false, source: 'service', lanUrl: null, lanApi: 'ollama' },
   cameras: { enabled: false, subnets: [] },
@@ -143,7 +146,7 @@ function applyPatch(current, patch) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
-  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual'], radio: ['zigbee', 'ble'], ai: ['enabled', 'source', 'lanUrl', 'lanApi'], cameras: ['enabled', 'subnets'] };
+  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert'], radio: ['zigbee', 'ble'], ai: ['enabled', 'source', 'lanUrl', 'lanApi'], cameras: ['enabled', 'subnets'] };
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     if (!allowed[k]) continue; // other keys (lanDiscovery, edge) are handled by the route
@@ -166,7 +169,7 @@ function applyPatch(current, patch) {
           throw new FeatureError('invalid_host', 'print.manual: up to 16 private IPv4 addresses (RFC 1918)');
         }
         out.print.manual = [...new Set(val.map((x) => x.trim()))];
-      } else if (f === 'enabled' || f === 'portscan' || f === 'outage' || (k === 'notify' && f === 'ups')) {
+      } else if (f === 'enabled' || f === 'portscan' || f === 'outage' || (k === 'notify' && f === 'ups') || (k === 'print' && f === 'convert')) {
         if (typeof val !== 'boolean') throw new FeatureError('invalid', `${k}.${f}: must be true or false`);
         out[k][f] = val;
       } else if (f === 'speedtest') {
@@ -311,7 +314,9 @@ function support(tel) {
     radio: !!(caps && caps.includes('radio')),
     ai: !!(caps && caps.includes('ai')),
     cameras: !!(caps && caps.includes('cameras')),
-    version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY, minGateway3b: MIN_GATEWAY_3B, minGatewayPrint: MIN_GATEWAY_PRINT, minGatewayRadio: MIN_GATEWAY_RADIO, minGatewayAi: MIN_GATEWAY_AI, minGatewayCameras: MIN_GATEWAY_CAMERAS,
+    // PDF für Drucker ohne PDF umwandeln (gateway docs/print.md „Umwandeln“, Gateway ab MIN_GATEWAY_PRINT_CONVERT)
+    printConvert: !!(caps && caps.includes('print-convert')),
+    version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY, minGateway3b: MIN_GATEWAY_3B, minGatewayPrint: MIN_GATEWAY_PRINT, minGatewayPrintConvert: MIN_GATEWAY_PRINT_CONVERT, minGatewayRadio: MIN_GATEWAY_RADIO, minGatewayAi: MIN_GATEWAY_AI, minGatewayCameras: MIN_GATEWAY_CAMERAS,
   };
 }
 
@@ -491,7 +496,7 @@ function overview(peerId) {
 }
 
 module.exports = {
-  DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, MIN_GATEWAY_PRINT, MIN_GATEWAY_RADIO, MIN_GATEWAY_AI, MIN_GATEWAY_CAMERAS, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
+  DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, MIN_GATEWAY_PRINT, MIN_GATEWAY_PRINT_CONVERT, MIN_GATEWAY_RADIO, MIN_GATEWAY_AI, MIN_GATEWAY_CAMERAS, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
   normalize, get, set, applyPatch, configPayload, support, overview, memoryEstimate, boardOf, speedLimit, zigbeeOf,
   needGateway, telemetryOf, gatewayPeer, notifyGateway, publicIpv4,
 };
