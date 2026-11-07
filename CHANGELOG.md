@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.246.0] — 2026-11-07
+
+### Features
+- Funk-Nachträge – zigbee2mqtt, Thread Border Router und Schlüssel für verschlüsselte Bluetooth-Sensoren (#433)
+
+---
+
 ## [1.245.0] — 2026-11-07
 
 ### Features
