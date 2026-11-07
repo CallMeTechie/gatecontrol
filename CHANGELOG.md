@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.241.0] — 2026-11-07
+
+### Features
+- Reiter „Handbuch“ und Einrichtungshinweise für Plugins (#427)
+
+---
+
 ## [1.240.0] — 2026-11-07
 
 ### Features
