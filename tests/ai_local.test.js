@@ -533,17 +533,21 @@ describe('LAN server: names and IPv6, the API key, "Verbindung testen"', () => {
     assert.equal((await agent.get(AI + '/local').expect(200)).body.current.keySet, false);
   });
 
-  it('"Verbindung testen": the gateway asks the server (nothing saved), with the typed or the stored key', async () => {
+  it('"Verbindung testen": the gateway asks the server (nothing saved), with the typed key or the stored one for the saved address', async () => {
     setTel(nas, { ai: aiTel({ supports: SUPPORTS }) });
     const r = (await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: 'http://[fd00::20]:11434', lanApi: 'ollama', lanKey: 'sk-typed' }).expect(200)).body;
     assert.deepEqual(r.probe, { reachable: true, url: 'http://[fd00::20]:11434', api: 'ollama', version: '0.40.8', models: [{ name: 'qwen2.5:14b', size: 9e9 }], auth: true, error: null });
     assert.deepEqual(fakeGw.calls.find((c) => c.path === '/api/ai/probe').body, { url: 'http://[fd00::20]:11434', api: 'ollama', key: 'sk-typed' });
     assert.equal(fakeGw.calls[0].token, nas.pushToken);
-    // no typed key: the stored one goes along
+    // no typed key: the stored one goes along — to the saved address only
     await put(AI + '/local', { source: 'lan', peerId: pi.peer.id, model: 'qwen2.5-7b-instruct', lanUrl: 'http://llm.fritz.box:8000', lanApi: 'openai', lanKey: LAN_KEY }).expect(200);
     fakeGw.calls.length = 0;
-    await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: 'http://ki-pc.local:11434' }).expect(200);
+    await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: 'http://llm.fritz.box:8000/v1' }).expect(200);
     assert.equal(fakeGw.calls[0].body.key, LAN_KEY);
+    // … but never to another address typed for the test
+    fakeGw.calls.length = 0;
+    await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: 'http://ki-pc.local:11434' }).expect(200);
+    assert.equal(fakeGw.calls[0].body.key, undefined);
     // checked before: the address, the key, a gateway that cannot do it
     assert.equal((await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: 'http://8.8.8.8:11434' })).body.field, 'lanUrl');
     assert.equal((await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: 'http://10.0.0.2:1', lanKey: 'a b' })).body.field, 'lanKey');

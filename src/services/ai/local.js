@@ -671,7 +671,8 @@ async function removeModel(id, model, { ip } = {}) {
 /**
  * "Verbindung testen": the gateway asks a LAN server that is not saved yet —
  * { peerId, lanUrl, lanApi, lanKey? } → { reachable, url, api, version, models, auth, error }.
- * Without a typed key the stored one goes along (through the tunnel, never stored on the gateway).
+ * Without a typed key the stored one goes along — only to the saved address (through the tunnel,
+ * never stored on the gateway).
  */
 async function probe(b) {
   if (!isObj(b)) throw new LocalError('invalid', 'body');
@@ -682,7 +683,10 @@ async function probe(b) {
   const api = b.lanApi === undefined ? 'ollama' : b.lanApi;
   if (!APIS.includes(api)) throw new LocalError('invalid', 'lanApi');
   if (b.lanKey != null && b.lanKey !== '' && !validKey(b.lanKey)) throw new LocalError('invalid', 'lanKey');
-  const key = b.lanKey ? b.lanKey : storedKey();
+  // the stored key only goes to the saved server — never to an address typed for the test
+  const cur = peerId() ? gatewayOf(peerId()) : null;
+  const savedUrl = cur ? settingsOf(cur.id).lanUrl : null;
+  const key = b.lanKey ? b.lanKey : (savedUrl && savedUrl === u ? storedKey() : null);
   if (!aliveOf(g.id)) throw new LocalError('gateway_unreachable', 'the gateway is offline');
   const r = await gw().mgmtCall(g.id, '/api/ai/probe', { url: u, api, ...(key ? { key } : {}) }, 20000, { maxBytes: 128 * 1024 });
   if (!r) throw new LocalError('gateway_unreachable', 'the gateway does not answer');
