@@ -371,18 +371,24 @@ function makePresence() {
 }
 
 // gc.homeCache (permissions.homeCache, phase 3b, docs/plugins.md "Home cache"): files of the plugin (media) kept
-// on the gateways' home caches; lan hints for an app in the home network.
+// on the gateways' home caches — since 1.249.0 also GateControl's previews of them (`previews: true` says so); lan
+// hints for an app in the home network.
 function makeHomeCache() {
+  const ref = (req) => (req && typeof req === 'object' && typeof req.homeRef === 'string' ? req.homeRef : null);
+  const what = (w) => (w && typeof w === 'object'
+    ? { mediaId: w.mediaId, ...(w.preview != null ? { preview: w.preview } : {}) }
+    : { sha256: w });
   return Object.freeze({
-    /** offer({ mediaId, kind: 'drive'|'photos'|'vault', userIds?, priority? }) → { sha256, size, offered } */
+    /** offer({ mediaId, kind: 'drive'|'photos'|'vault', userIds?, priority?, preview?: 'small'|'large' }) → { sha256, size, offered } */
     offer: (opts) => hostCall('homeCache.offer', opts && typeof opts === 'object' ? opts : {}),
-    /** withdraw(mediaId) → { removed } */
-    withdraw: (mediaId) => hostCall('homeCache.withdraw', { mediaId }),
-    /** lanHint(sha256 | { mediaId }, req) → { url, sha256, tlsSha256, exp } | null — req: the request the plugin answers */
-    lanHint: (what, req) => hostCall('homeCache.lanHint', {
-      ...(what && typeof what === 'object' ? { mediaId: what.mediaId } : { sha256: what }),
-      ref: req && typeof req === 'object' && typeof req.homeRef === 'string' ? req.homeRef : null,
-    }),
+    /** withdraw(mediaId, { preview? }) → { removed } */
+    withdraw: (mediaId, opts) => hostCall('homeCache.withdraw', { mediaId, ...(opts && typeof opts === 'object' && opts.preview != null ? { preview: opts.preview } : {}) }),
+    /** lanHint(sha256 | { mediaId, preview? }, req) → { url, sha256, tlsSha256, exp } | null — req: the request the plugin answers */
+    lanHint: (w, req) => hostCall('homeCache.lanHint', { ...what(w), ref: ref(req) }),
+    /** lanHints([sha256 | { mediaId, preview? }, …] (≤ 500), req) → [hint | null, …] in the same order */
+    lanHints: (list, req) => hostCall('homeCache.lanHints', { items: Array.isArray(list) ? list.map(what) : list, ref: ref(req) }),
+    /** this GateControl takes previews (offer / withdraw / lanHint with `preview`, lanHints) */
+    previews: true,
   });
 }
 

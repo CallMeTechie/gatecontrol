@@ -9792,7 +9792,7 @@
   "gwh.ckpi.faster_none": "after the first speed test",
   "gwh.kinds.title": "What is kept",
   "gwh.kinds.drive": "Drive: recently used and pinned",
-  "gwh.kinds.drive_d": "Files the Drive plugin offers – recently used and what someone makes “available offline”",
+  "gwh.kinds.drive_d": "Files the Drive plugin offers – recently used and what someone makes “available offline”, with their previews",
   "gwh.kinds.photos": "Photos",
   "gwh.kinds.photos_d": "Previews and recent originals the Drive plugin offers",
   "gwh.kinds.updates": "App updates",

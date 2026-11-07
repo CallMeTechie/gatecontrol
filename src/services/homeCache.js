@@ -15,8 +15,11 @@
 //     settings.txt CACHE_DIR=) — the tab only explains it
 //   the stock ("Vorrat", home_cache_blobs): content-addressed (sha256) —
 //     app updates the server delivers (Android app, Windows clients: kept in
-//     <data>/home-cache/updates, refreshUpdates) and files plugins offer
-//     (gc.homeCache.offer: their media, plugins/media.js)
+//     <data>/home-cache/updates, refreshUpdates), files plugins offer
+//     (gc.homeCache.offer: their media, plugins/media.js) and, since 1.249.0,
+//     GateControl's previews of those files (offer({ preview: 'small' |
+//     'large' }), source 'preview': the plaintext JPEG of
+//     plugins/mediaPreviews.js, content-addressed like everything else)
 //   what a gateway holds (home_cache_have) and its counters (cache_stats_day)
 //
 //   GET  /api/v1/gateway/cache/want           want(peerId)  → the stock for this gateway
@@ -42,10 +45,15 @@ const GB = 1024 * 1024 * 1024;
 const MIN_BYTES = 1 * GB;
 const MAX_BYTES = 4096 * GB;
 const SIZES_GB = [5, 10, 20, 50, 100, 200, 500];
-const WANT_MAX = 5000;
+// the gateway takes up to 20 000 (fetcher MAX_WANT_ITEMS); previews are many and small
+const WANT_MAX = 20000;
 const LIST_MAX = 5000;
 const BLOB_PARALLEL = 2;
 const HINT_TTL_S = 600;
+const HINTS_MAX = 500;
+const PREVIEW_SIZES = ['small', 'large'];
+// the stock of a gateway for its blob requests (a sync of thousands of previews asks once a blob)
+const STOCK_MEMO_MS = 15000;
 const UPDATE_MAX_BYTES = 1024 * 1024 * 1024;
 const UPDATE_KEEP_MS = 7 * 24 * 3600 * 1000;
 // the folder inside the gateway container (its volume; anything else: state path_not_allowed)
@@ -192,6 +200,22 @@ function stockOf(peerId, s = get(peerId)) {
   return out;
 }
 
+const stockMemo = new Map(); // peerId → { at, key, shas }
+
+/** The sha256 values of a gateway's stock, remembered a few seconds (blob requests of one sync). */
+function stockShas(peerId, s) {
+  const key = JSON.stringify(s);
+  const m = stockMemo.get(peerId);
+  if (m && m.key === key && Date.now() - m.at < STOCK_MEMO_MS) return m.shas;
+  const shas = new Set(stockOf(peerId, s).map((b) => b.sha256));
+  if (stockMemo.size > 1000) stockMemo.clear();
+  stockMemo.set(peerId, { at: Date.now(), key, shas });
+  return shas;
+}
+
+/** The stock changed (an offer, a withdrawal, the clean-up). */
+function stockChanged() { stockMemo.clear(); }
+
 /** GET /cache/want → { maxBytes, items, etag } */
 function want(peerId) {
   const s = get(peerId);
@@ -202,10 +226,21 @@ function want(peerId) {
 
 const inflight = new Map(); // peerId → open blob streams
 
-function blobSource(b, start, end) {
+/** The plaintext of a preview blob, checked against its sha256 (a device preview sent again is other content). */
+async function previewBytes(b) {
+  const r = require('./plugins/media').row(b.plugin_id, b.media_id);
+  const buf = r ? await require('./plugins/mediaPreviews').plain(r, b.label) : null;
+  if (!buf || buf.length !== b.size || crypto.createHash('sha256').update(buf).digest('hex') !== b.sha256) {
+    throw new CacheError('not_found', 'the preview is gone or changed');
+  }
+  return buf;
+}
+
+function blobSource(b, start, end, bytes) {
   if (b.source === 'update') {
     return fs.createReadStream(b.file, { start, end });
   }
+  if (b.source === 'preview') return Readable.from([bytes.subarray(start, end + 1)]);
   const media = require('./plugins/media');
   const r = media.row(b.plugin_id, b.media_id);
   if (!r) throw new CacheError('not_found', 'the file is gone');
@@ -216,13 +251,18 @@ function blobSource(b, start, end) {
  * GET /cache/blob/<sha256>: the bytes of a blob in this gateway's stock,
  * streamed (Range → 206). Never a blob of another gateway's stock.
  */
-function sendBlob(peerId, sha, req, res) {
+async function sendBlob(peerId, sha, req, res) {
   const id = String(sha || '').toLowerCase();
   if (!SHA_RE.test(id)) return res.status(404).json({ ok: false, error: 'not_found' });
   const s = get(peerId);
   const b = s.enabled ? db().prepare('SELECT * FROM home_cache_blobs WHERE sha256 = ?').get(id) : null;
-  if (!b || !blobFits(b, s, peopleAt(peerId)) || !stockOf(peerId, s).some((x) => x.sha256 === id)) return res.status(404).json({ ok: false, error: 'not_found' });
+  if (!b || !blobFits(b, s, peopleAt(peerId)) || !stockShas(peerId, s).has(id)) return res.status(404).json({ ok: false, error: 'not_found' });
   if (b.source === 'update' && !(b.file && fs.existsSync(b.file))) return res.status(404).json({ ok: false, error: 'not_found' });
+  // a preview is small: read (and checked) before the answer starts
+  let bytes = null;
+  if (b.source === 'preview') {
+    try { bytes = await previewBytes(b); } catch { return res.status(404).json({ ok: false, error: 'not_found' }); }
+  }
   const media = require('./plugins/media');
   const range = media.parseRange(req.headers.range, b.size);
   if (range === false) {
@@ -234,7 +274,7 @@ function sendBlob(peerId, sha, req, res) {
   const start = range ? range.start : 0;
   const end = range ? range.end : b.size - 1;
   let src;
-  try { src = b.size ? blobSource(b, start, end) : Readable.from([]); } catch (e) {
+  try { src = b.size ? blobSource(b, start, end, bytes) : Readable.from([]); } catch (e) {
     return res.status(e && e.code === 'not_found' ? 404 : 500).json({ ok: false, error: e && e.code === 'not_found' ? 'not_found' : 'internal' });
   }
   inflight.set(peerId, n + 1);
@@ -349,25 +389,40 @@ function signature(secret, sha256, exp) {
  * the blob may be kept there and (with userId) belongs to that person.
  */
 function hintFor(peerId, sha256, { userId = null, now = Date.now() } = {}) {
-  const id = String(sha256 || '').toLowerCase();
-  if (!SHA_RE.test(id)) return null;
+  const h = hinter(peerId, { userId, now });
+  return h ? h(sha256) : null;
+}
+
+/**
+ * The lan hints of one gateway: sha256 → hint | null (hintFor), the gateway's
+ * part (settings, people, telemetry, secret) looked up once — null when that
+ * gateway gives none at all (cache off or not running).
+ */
+function hinter(peerId, { userId = null, now = Date.now() } = {}) {
   const s = get(peerId);
   if (!s.enabled) return null;
-  const b = db().prepare('SELECT * FROM home_cache_blobs WHERE sha256 = ?').get(id);
-  if (!b || !blobFits(b, s, peopleAt(peerId))) return null;
-  if (userId != null) {
-    const users = json(b.user_ids);
-    if (Array.isArray(users) && users.length && !users.includes(userId)) return null;
-  }
-  if (!db().prepare('SELECT 1 FROM home_cache_have WHERE peer_id = ? AND sha256 = ?').get(peerId, id)) return null;
   const g = require('./gatewayFeatures').gatewayPeer(peerId);
   if (!g) return null;
   const tc = telemetryCache(require('./gatewayFeatures').telemetryOf(g));
   if (!tc || !tc.running || !tc.url || !tc.tlsSha256) return null;
   const secret = secretOf(peerId, false);
   if (!secret) return null;
+  const people = peopleAt(peerId);
   const exp = Math.floor(now / 1000) + HINT_TTL_S;
-  return { url: `${tc.url}/blob/${id}?exp=${exp}&sig=${signature(secret, id, exp)}`, sha256: id, tlsSha256: tc.tlsSha256, exp };
+  const blob = db().prepare('SELECT * FROM home_cache_blobs WHERE sha256 = ?');
+  const held = db().prepare('SELECT 1 FROM home_cache_have WHERE peer_id = ? AND sha256 = ?');
+  return (sha256) => {
+    const id = String(sha256 || '').toLowerCase();
+    if (!SHA_RE.test(id)) return null;
+    const b = blob.get(id);
+    if (!b || !blobFits(b, s, people)) return null;
+    if (userId != null) {
+      const users = json(b.user_ids);
+      if (Array.isArray(users) && users.length && !users.includes(userId)) return null;
+    }
+    if (!held.get(peerId, id)) return null;
+    return { url: `${tc.url}/blob/${id}?exp=${exp}&sig=${signature(secret, id, exp)}`, sha256: id, tlsSha256: tc.tlsSha256, exp };
+  };
 }
 
 /**
@@ -387,6 +442,25 @@ async function lanFor(ctx, sha256) {
   }
 }
 
+/**
+ * lanFor for many blobs at once (gc.homeCache.lanHints): one home-network
+ * check, then a hint (or null) per sha256, in order. Never throws.
+ */
+async function lanForMany(ctx, shas) {
+  const list = Array.isArray(shas) ? shas : [];
+  const none = list.map(() => null);
+  try {
+    if (!ctx || !list.some((x) => SHA_RE.test(String(x || '').toLowerCase()))) return none;
+    const r = await require('./homeNetwork').check(ctx.ip, ctx.peerId == null ? null : ctx.peerId, { local: ctx.local });
+    if (!r || !r.same_lan || !r.site || r.site.type !== 'gateway') return none;
+    const h = hinter(r.site.gatewayId, { userId: ctx.userId == null ? null : ctx.userId });
+    return h ? list.map((x) => (x ? h(x) : null)) : none;
+  } catch (e) {
+    logger.debug({ err: e.message }, 'home cache lan hints failed');
+    return none;
+  }
+}
+
 /** The device's own LAN addresses of a request: ?local=… or the header X-GC-Local. */
 function localOf(req) {
   const q = req.query && typeof req.query.local === 'string' ? req.query.local : null;
@@ -398,10 +472,26 @@ function localOf(req) {
 
 const PLUGIN_KINDS = ['drive', 'photos', 'vault'];
 
-/** gc.homeCache.offer({ mediaId, kind, userIds?, priority?, sha256? }) */
-function offer(pluginId, args) {
+function usersArg(v) {
+  if (v == null) return null;
+  if (!Array.isArray(v) || v.length > 256 || !v.every((x) => Number.isSafeInteger(x) && x > 0)) throw new CacheError('ERR_INVALID', 'userIds: up to 256 user ids');
+  return [...new Set(v)].sort((x, y) => x - y);
+}
+
+function priorityArg(v) {
+  const prio = v == null ? 50 : v;
+  if (!Number.isInteger(prio) || prio < 0 || prio > 100) throw new CacheError('ERR_INVALID', 'priority: 0…100');
+  return prio;
+}
+
+/**
+ * gc.homeCache.offer({ mediaId, kind, userIds?, priority?, sha256?, preview? })
+ * — `plugin` (the registry entry) is needed for a preview only.
+ */
+async function offer(pluginId, args, { plugin = null } = {}) {
   const a = args && typeof args === 'object' ? args : {};
   if (typeof a.mediaId !== 'string') throw new CacheError('ERR_INVALID', 'mediaId: a media id of this plugin');
+  if (a.preview != null) return offerPreview(pluginId, plugin, a);
   if (!PLUGIN_KINDS.includes(a.kind)) throw new CacheError('ERR_INVALID', 'kind: drive, photos or vault');
   const media = require('./plugins/media');
   const r = media.row(pluginId, a.mediaId);
@@ -410,13 +500,8 @@ function offer(pluginId, args) {
   if (a.size != null && a.size !== r.bytes) throw new CacheError('ERR_INVALID', 'size does not match the stored file');
   const sha = String(r.sha256 || '').toLowerCase();
   if (!SHA_RE.test(sha)) throw new CacheError('ERR_INVALID', 'the file has no sha256');
-  let users = null;
-  if (a.userIds != null) {
-    if (!Array.isArray(a.userIds) || a.userIds.length > 256 || !a.userIds.every((x) => Number.isSafeInteger(x) && x > 0)) throw new CacheError('ERR_INVALID', 'userIds: up to 256 user ids');
-    users = [...new Set(a.userIds)].sort((x, y) => x - y);
-  }
-  const prio = a.priority == null ? 50 : a.priority;
-  if (!Number.isInteger(prio) || prio < 0 || prio > 100) throw new CacheError('ERR_INVALID', 'priority: 0…100');
+  const users = usersArg(a.userIds);
+  const prio = priorityArg(a.priority);
   const now = Date.now();
   const cur = db().prepare('SELECT source, plugin_id FROM home_cache_blobs WHERE sha256 = ?').get(sha);
   if (cur && (cur.source !== 'plugin' || cur.plugin_id !== pluginId)) {
@@ -428,19 +513,98 @@ function offer(pluginId, args) {
     ON CONFLICT(sha256) DO UPDATE SET size = excluded.size, kind = excluded.kind, media_id = excluded.media_id, ref = excluded.ref,
       user_ids = excluded.user_ids, priority = excluded.priority, updated_at = excluded.updated_at`)
     .run(sha, r.bytes, a.kind, a.mediaId, pluginId, a.mediaId, users ? JSON.stringify(users) : null, prio, now, now);
+  stockChanged();
   return { sha256: sha, size: r.bytes, offered: true };
 }
 
-/** gc.homeCache.withdraw(mediaId) — the plugin no longer wants it kept. */
-function withdraw(pluginId, mediaId) {
+/**
+ * offer({ mediaId, preview: 'small' | 'large', kind: 'drive' | 'photos', … }):
+ * GateControl's preview of the file (media.previews, "Previews") instead of
+ * the file — its plaintext JPEG, content-addressed by its own sha256. A
+ * preview not made yet is made now in the background: ERR_PREVIEW_PENDING,
+ * offer again later. No preview possible: ERR_NOT_FOUND. Never a vault's
+ * file (the server has only its ciphertext).
+ */
+async function offerPreview(pluginId, plugin, a) {
+  if (!PREVIEW_SIZES.includes(a.preview)) throw new CacheError('ERR_INVALID', 'preview: small or large');
+  if (a.kind !== 'drive' && a.kind !== 'photos') throw new CacheError('ERR_INVALID', 'kind of a preview: drive or photos');
+  if (a.sha256 != null || a.size != null) throw new CacheError('ERR_INVALID', 'sha256 / size: not for a preview');
+  const previews = require('./plugins/mediaPreviews');
+  if (!plugin || !previews.declared(plugin)) throw new CacheError('ERR_MEDIA_DENIED', 'plugin.json declares no media.previews');
+  const users = usersArg(a.userIds);
+  const prio = priorityArg(a.priority);
+  const r = require('./plugins/media').row(pluginId, a.mediaId);
+  if (!r) throw new CacheError('ERR_NOT_FOUND', 'no such media of this plugin');
+  const st = previews.state(plugin, r);
+  if (!st) throw new CacheError('ERR_NOT_FOUND', 'this file has no preview and none is possible');
+  if (!st.ready) {
+    previews.warm(plugin, r);
+    throw new CacheError('ERR_PREVIEW_PENDING', 'the preview is being made — offer it again later');
+  }
+  const buf = await previews.plain(r, a.preview);
+  if (!buf || !buf.length) throw new CacheError('ERR_NOT_FOUND', 'the preview is not readable');
+  const sha = crypto.createHash('sha256').update(buf).digest('hex');
+  const now = Date.now();
+  const cur = db().prepare('SELECT source, plugin_id FROM home_cache_blobs WHERE sha256 = ?').get(sha);
+  // an older preview of this file (a device sent another one) goes
+  db().prepare("DELETE FROM home_cache_blobs WHERE source = 'preview' AND plugin_id = ? AND media_id = ? AND label = ? AND sha256 <> ?")
+    .run(pluginId, a.mediaId, a.preview, sha);
+  if (cur && (cur.source !== 'preview' || cur.plugin_id !== pluginId)) {
+    stockChanged();
+    return { sha256: sha, size: buf.length, offered: false, preview: a.preview };
+  }
+  db().prepare(`INSERT INTO home_cache_blobs (sha256, size, kind, source, ref, plugin_id, media_id, user_ids, priority, label, created_at, updated_at)
+    VALUES (?, ?, ?, 'preview', ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(sha256) DO UPDATE SET size = excluded.size, kind = excluded.kind, media_id = excluded.media_id, ref = excluded.ref,
+      user_ids = excluded.user_ids, priority = excluded.priority, label = excluded.label, updated_at = excluded.updated_at`)
+    .run(sha, buf.length, a.kind, `${a.mediaId}/${a.preview}`, pluginId, a.mediaId, users ? JSON.stringify(users) : null, prio, a.preview, now, now);
+  previewShaMemo.set(`${pluginId}:${a.mediaId}:${a.preview}`, { stamp: JSON.stringify(previews.stamp(r, a.preview)), sha });
+  stockChanged();
+  return { sha256: sha, size: buf.length, offered: true, preview: a.preview };
+}
+
+const previewShaMemo = new Map(); // plugin:media:size → { stamp, sha }
+
+/**
+ * The sha256 of the preview `size` of a plugin's media as it is stored now
+ * (for lanHint({ mediaId, preview })) — or null (no such file, no preview).
+ * Remembered per stored preview file (its mtime and size).
+ */
+async function previewSha(pluginId, mediaId, size) {
+  if (!PREVIEW_SIZES.includes(size) || typeof mediaId !== 'string') return null;
+  const r = require('./plugins/media').row(pluginId, mediaId);
+  if (!r) return null;
+  const previews = require('./plugins/mediaPreviews');
+  const st = previews.stamp(r, size);
+  if (!st) return null;
+  const key = `${pluginId}:${mediaId}:${size}`;
+  const m = previewShaMemo.get(key);
+  if (m && m.stamp === JSON.stringify(st)) return m.sha;
+  const buf = await previews.plain(r, size);
+  if (!buf) return null;
+  const sha = crypto.createHash('sha256').update(buf).digest('hex');
+  if (previewShaMemo.size > 20000) previewShaMemo.clear();
+  previewShaMemo.set(key, { stamp: JSON.stringify(st), sha });
+  return sha;
+}
+
+/**
+ * gc.homeCache.withdraw(mediaId, { preview? }) — the plugin no longer wants
+ * it kept: the file (no `preview`), or that preview of it.
+ */
+function withdraw(pluginId, mediaId, { preview = null } = {}) {
   if (typeof mediaId !== 'string') throw new CacheError('ERR_INVALID', 'mediaId expected');
-  const n = db().prepare("DELETE FROM home_cache_blobs WHERE source = 'plugin' AND plugin_id = ? AND media_id = ?").run(pluginId, mediaId).changes;
+  if (preview != null && !PREVIEW_SIZES.includes(preview)) throw new CacheError('ERR_INVALID', 'preview: small or large');
+  const n = preview == null
+    ? db().prepare("DELETE FROM home_cache_blobs WHERE source = 'plugin' AND plugin_id = ? AND media_id = ?").run(pluginId, mediaId).changes
+    : db().prepare("DELETE FROM home_cache_blobs WHERE source = 'preview' AND plugin_id = ? AND media_id = ? AND label = ?").run(pluginId, mediaId, preview).changes;
+  if (n) stockChanged();
   return { removed: n > 0 };
 }
 
-/** Offers whose media is gone (deleted by the plugin, the plugin removed). */
+/** Offers whose media is gone (deleted by the plugin, the plugin removed) — files and previews. */
 function dropStaleOffers() {
-  const rows = db().prepare("SELECT sha256, plugin_id, media_id FROM home_cache_blobs WHERE source = 'plugin'").all();
+  const rows = db().prepare("SELECT sha256, plugin_id, media_id FROM home_cache_blobs WHERE source IN ('plugin', 'preview')").all();
   const media = require('./plugins/media');
   let n = 0;
   for (const r of rows) {
@@ -448,6 +612,36 @@ function dropStaleOffers() {
     try { ok = !!media.row(r.plugin_id, r.media_id); } catch { ok = false; }
     if (!ok) { db().prepare('DELETE FROM home_cache_blobs WHERE sha256 = ?').run(r.sha256); n++; }
   }
+  if (n) stockChanged();
+  return n;
+}
+
+/**
+ * Preview offers whose preview is gone or other content now (a device sent
+ * another one): the stock takes the preview as it is now, under its new
+ * sha256 (same people, priority and kind). Hourly, after dropStaleOffers.
+ */
+async function refreshPreviewOffers() {
+  const rows = db().prepare("SELECT * FROM home_cache_blobs WHERE source = 'preview'").all();
+  const media = require('./plugins/media');
+  const previews = require('./plugins/mediaPreviews');
+  let n = 0;
+  for (const b of rows) {
+    const r = media.row(b.plugin_id, b.media_id);
+    let buf = null;
+    try { buf = r ? await previews.plain(r, b.label) : null; } catch { buf = null; }
+    const sha = buf ? crypto.createHash('sha256').update(buf).digest('hex') : null;
+    if (sha === b.sha256) continue;
+    db().transaction(() => {
+      db().prepare('DELETE FROM home_cache_blobs WHERE sha256 = ?').run(b.sha256);
+      if (sha && !db().prepare('SELECT 1 FROM home_cache_blobs WHERE sha256 = ?').get(sha)) {
+        db().prepare(`INSERT INTO home_cache_blobs (sha256, size, kind, source, ref, plugin_id, media_id, user_ids, priority, label, created_at, updated_at)
+          VALUES (?, ?, ?, 'preview', ?, ?, ?, ?, ?, ?, ?, ?)`).run(sha, buf.length, b.kind, b.ref, b.plugin_id, b.media_id, b.user_ids, b.priority, b.label, b.created_at, Date.now());
+      }
+    })();
+    n++;
+  }
+  if (n) stockChanged();
   return n;
 }
 
@@ -702,10 +896,10 @@ function retention(now = Date.now()) {
   return db().prepare('DELETE FROM cache_stats_day WHERE day < ?').run(old).changes;
 }
 
-function _resetForTest() { inflight.clear(); refreshing = null; }
+function _resetForTest() { inflight.clear(); refreshing = null; stockMemo.clear(); previewShaMemo.clear(); }
 
 module.exports = {
-  CacheError, KINDS, DEFAULTS, CACHE_PATH, STATES, GB, SIZES_GB, HINT_TTL_S, MIN_BYTES, MAX_BYTES,
-  normalize, get, set, secretOf, configPayload, want, stockOf, sendBlob, report, telemetryCache, signature, hintFor, lanFor, localOf,
-  offer, withdraw, dropStaleOffers, refreshUpdates, lanForUpdate, view, clear, retention, updatesDir, _resetForTest,
+  CacheError, KINDS, DEFAULTS, CACHE_PATH, STATES, GB, SIZES_GB, HINT_TTL_S, HINTS_MAX, MIN_BYTES, MAX_BYTES, PREVIEW_SIZES, WANT_MAX,
+  normalize, get, set, secretOf, configPayload, want, stockOf, sendBlob, report, telemetryCache, signature, hintFor, lanFor, lanForMany, localOf,
+  offer, withdraw, previewSha, dropStaleOffers, refreshPreviewOffers, refreshUpdates, lanForUpdate, view, clear, retention, updatesDir, _resetForTest,
 };

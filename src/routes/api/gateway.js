@@ -276,8 +276,8 @@ router.get('/cache/want', (req, res) => {
 });
 
 /** GET /api/v1/gateway/cache/blob/<sha256> — one blob of its stock, streamed (Range) */
-router.get('/cache/blob/:sha', (req, res) => {
-  try { require('../../services/homeCache').sendBlob(req.gateway.peer_id, req.params.sha, req, res); } catch (err) {
+router.get('/cache/blob/:sha', async (req, res) => {
+  try { await require('../../services/homeCache').sendBlob(req.gateway.peer_id, req.params.sha, req, res); } catch (err) {
     logger.error({ err: err && err.message, peerId: req.gateway.peer_id }, 'home cache blob failed');
     if (!res.headersSent) res.status(500).json({ ok: false, error: 'internal' });
   }
