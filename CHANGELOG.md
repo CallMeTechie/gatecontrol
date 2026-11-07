@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.250.1] — 2026-11-07
+
+### Fixes
+- Dialog „Standort von …“ breiter, Adressfelder bleiben auf einer Linie (#440)
+
+---
+
 ## [1.250.0] — 2026-11-07
 
 ### Features
