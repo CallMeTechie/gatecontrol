@@ -12,7 +12,8 @@
  *               the PC — they have no HLS of their own); the buffer is trimmed to the last 30 s and playback
  *               stays near the live edge; a stream that ends (the gateway closes it after a few minutes) is
  *               fetched again in "sequence" mode while the token is valid
- *   mode 'mp4'  neither: <video src=live.mp4> (plays where fMP4 progressive works)
+ *   mode 'mp4'  neither: <video src=live.mp4> (plays where fMP4 progressive works); also the fallback when
+ *               MSE refuses the stream — only when that fails too, onError tells the caller (stills)
  *
  * No library, no CDN. The token in the URL is the permission (no cookie: the frame has an opaque origin, the
  * server answers Access-Control-Allow-Origin: *).
@@ -178,7 +179,14 @@
     var o = opts || {};
     var mode = choose(envOf(video), live);
     if (mode === 'mse') {
-      try { return playMse(video, live, o); } catch (e) { mode = 'mp4'; }
+      // MSE refused the stream (an unexpected codec, an append error): the plain <video src=live.mp4> next —
+      // only when that fails as well does the caller hear onError (and shows stills)
+      var h = { mode: 'mse', stop: null };
+      var inner = null;
+      var toMp4 = function () { h.mode = 'mp4'; inner = playSrc(video, live.mp4, 'mp4', o); };
+      try { inner = playMse(video, live, { onPlaying: o.onPlaying, onEnded: o.onEnded, onError: toMp4 }); } catch (e) { toMp4(); }
+      h.stop = function () { if (inner) inner.stop(); };
+      return h;
     }
     if (mode === 'hls') return playSrc(video, live.hls, 'hls', o);
     if (mode === 'mp4') return playSrc(video, live.mp4, 'mp4', o);
