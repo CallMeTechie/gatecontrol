@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.242.0] — 2026-11-07
+
+### Features
+- Live-Bild in Firefox, HTTPS-Kameras, Speicherort der Clips und Netze im Gateway-Menü (#429)
+
+---
+
 ## [1.241.1] — 2026-11-07
 
 ### Fixes
