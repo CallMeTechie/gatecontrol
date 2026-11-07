@@ -312,7 +312,7 @@
   // ─── Dialog "Standort von …" ───────────────────────────────────────────
   function openChange(g) {
     if (!g) return Promise.resolve(null);
-    const dlg = U.openDialog({ title: t('gwp.loc.change_title', { name: g.name }), cls: 'gwl-dlg' });
+    const dlg = U.openDialog({ title: t('gwp.loc.change_title', { name: g.name }), wide: true, cls: 'gwl-dlg' });
     dlg.box.setAttribute('data-gwl', 'change');
     const cur = g.location ? String(g.location.id) : '';
     const name = 'gwl-pick-' + g.peer_id;
