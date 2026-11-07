@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.250.0] — 2026-11-07
+
+### Features
+- Standorte für Gateways – Name und Adresse, Flotte nach Standort, Assistent ohne Peer-Gruppe (#439)
+
+---
+
 ## [1.249.1] — 2026-11-07
 
 ### Fixes
