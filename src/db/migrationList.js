@@ -3812,6 +3812,33 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_print_ocr_peer ON print_ocr(peer_id, state);`,
     detect: (db) => hasColumn(db, 'print_jobs', 'media') && tableExists(db, 'print_ocr'),
   },
+  {
+    version: 141,
+    name: 'gateway_locations',
+    // Gateway-Standorte (services/gatewayLocations.js, docs/feature-gateway-locations.md):
+    //   gateway_locations  where gateways stand — a name (unique, case-insensitive)
+    //                      and an optional address: street (with house number),
+    //                      postal_code, city, country (ISO 3166 alpha-2); epoch ms
+    //   gateway_meta.location_id  the gateway's location; deleting a location
+    //                      leaves its gateways without one (ON DELETE SET NULL).
+    // Existing gateways start without a location. The peer group of a gateway
+    // (peers.group_id) stays what it is — the assistant no longer sets it.
+    sql: `
+      CREATE TABLE IF NOT EXISTS gateway_locations (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT NOT NULL,
+        street      TEXT,
+        postal_code TEXT,
+        city        TEXT,
+        country     TEXT,
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_gateway_locations_name ON gateway_locations(lower(name));
+      ALTER TABLE gateway_meta ADD COLUMN location_id INTEGER REFERENCES gateway_locations(id) ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS idx_gateway_meta_location ON gateway_meta(location_id);`,
+    detect: (db) => tableExists(db, 'gateway_locations') && hasColumn(db, 'gateway_meta', 'location_id'),
+  },
 ];
 
 module.exports = { migrations };

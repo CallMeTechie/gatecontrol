@@ -34,7 +34,7 @@ class WizardError extends Error {
 function gatewayRow(peerId) {
   return getDb().prepare(`
     SELECT p.id, p.name, p.hostname, p.allowed_ips, p.latest_handshake, p.enabled, p.peer_type,
-           gm.platform, gm.created_at, gm.first_seen_at, gm.last_seen_at, gm.last_health, gm.lan_ip
+           gm.platform, gm.created_at, gm.first_seen_at, gm.last_seen_at, gm.last_health, gm.lan_ip, gm.location_id
     FROM peers p JOIN gateway_meta gm ON gm.peer_id = p.id
     WHERE p.id = ? AND p.peer_type = 'gateway'
   `).get(peerId) || null;
@@ -149,6 +149,8 @@ function setupStatus(peerId) {
     peer_id: row.id,
     name: row.name,
     platform: row.platform || null,
+    // Gateway-Standort (services/gatewayLocations.js): shown in step 1 when the set-up is continued
+    location_id: row.location_id || null,
     enabled: row.enabled === 1,
     created_at: row.created_at || null,
     first_seen_at: firstSeen,

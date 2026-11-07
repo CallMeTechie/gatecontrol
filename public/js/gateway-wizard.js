@@ -1,10 +1,12 @@
 // Assistant "Gateway hinzufügen" on /gateways (docs/feature-gateway-wizard.md).
 //
-//   1  name, location (peer group), platform
+//   1  name, location (Gateway-Standort: one of the list or "Neuer Standort …",
+//      created right before the gateway — docs/feature-gateway-locations.md), platform
 //   2  Raspberry Pi only: model, LAN/WLAN, Zigbee, advanced (host name, time
 //      zone, WLAN country, SSH key)
-//   →  "Gateway anlegen": POST /api/v1/peers { is_gateway, platform } — the
-//      same endpoint, rights, CSRF and licence checks as before
+//   →  "Gateway anlegen": POST /api/v1/peers { is_gateway, platform, location_id } —
+//      the same endpoint, rights, CSRF and licence checks as before (a new
+//      location first: POST /api/v1/gateway-locations)
 //   3  instructions per platform (Pi image + gatecontrol-setup.zip built HERE,
 //      Synology package, Proxmox one-liner, Docker Compose)
 //   4  live status (GET /api/v1/gateways/:id/setup-status, polled with
@@ -19,6 +21,7 @@
 (function () {
   'use strict';
   var kit = window.GCGatewayKit;
+  var LK = window.GCGatewayLocationKit;
   var D = window.GCDialog;
   var overlay = document.getElementById('gwz-overlay');
   if (!overlay || !kit) return;
@@ -44,7 +47,7 @@
   var state;
   function freshState() {
     return {
-      step: 1, platform: null, peerId: null, name: '', groupId: '', created: false, createdAt: null,
+      step: 1, platform: null, peerId: null, name: '', locationId: '', newLoc: null, newLocId: null, created: false, createdAt: null,
       env: null, everConnected: false, busy: false,
       pi: { model: 'pi4', net: 'lan', zigbee: 'auto', ssid: '', psk: '', hidden: false, hostname: '', hostnameDirty: false,
         tz: browserTz(), country: browserCountry(), ssh: '' },
@@ -170,7 +173,8 @@
   function renderStep1() {
     if (state.step !== 1) return;
     $('gwz-name').disabled = state.created;
-    $('gwz-group').disabled = state.created;
+    $('gwz-location').disabled = state.created;
+    show($('gwz-loc-new'), !state.created && $('gwz-location').value === 'new');
     show($('gwz-created-note'), state.created);
     // A gateway created before the assistant has no platform yet: pick one.
     var lockPlatform = state.created && !!state.platformLocked;
@@ -180,26 +184,50 @@
       r.closest('.gwz-plat').classList.toggle('on', r.checked);
     });
   }
-  function loadGroups() {
-    var sel = $('gwz-group');
-    api('GET', '/api/v1/peer-groups').then(function (d) {
-      while (sel.options.length > 1) sel.remove(1);
-      (d.groups || []).forEach(function (g) {
+  // The gateway locations (GET /api/v1/gateway-locations): "Kein Standort", the list, "Neuer Standort …".
+  function loadLocations() {
+    var sel = $('gwz-location');
+    api('GET', '/api/v1/gateway-locations').then(function (d) {
+      var newOpt = sel.querySelector('option[value="new"]');
+      Array.prototype.slice.call(sel.options).forEach(function (o) { if (o.value !== '' && o.value !== 'new') o.remove(); });
+      (d.locations || []).forEach(function (l) {
         var o = document.createElement('option');
-        o.value = String(g.id); o.textContent = g.name;
-        sel.appendChild(o);
+        o.value = String(l.id); o.textContent = l.city ? l.name + ' – ' + l.city : l.name;
+        sel.insertBefore(o, newOpt);
       });
-      sel.value = state.groupId || '';
+      sel.value = state.locationId || '';
+      if (sel.value !== String(state.locationId || '')) sel.value = '';
+      renderStep1();
     }).catch(function () { /* optional */ });
+  }
+  function fillCountries() {
+    var sel = $('gwz-loc-country');
+    if (!sel || sel.options.length || !LK) return;
+    var none = document.createElement('option'); none.value = ''; none.textContent = '—'; sel.appendChild(none);
+    LK.countryOptions((window.GC && GC.language) === 'en' ? 'en' : 'de').forEach(function (c) {
+      var o = document.createElement('option'); o.value = c.code; o.textContent = c.name; sel.appendChild(o);
+    });
+    sel.value = '';
+  }
+  function readNewLoc() {
+    return { name: $('gwz-loc-name').value, city: $('gwz-loc-city').value, street: $('gwz-loc-street').value,
+      postal_code: $('gwz-loc-postal').value, country: $('gwz-loc-country').value };
   }
   var NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9 ._-]{0,62}$/;
   function step1Next() {
     if (!state.created) {
       state.name = $('gwz-name').value.trim();
-      state.groupId = $('gwz-group').value;
+      state.locationId = $('gwz-location').value;
       var bad = !state.name ? 'name_required' : (!NAME_RE.test(state.name) ? 'name_invalid' : null);
       fieldError('gwz-name', bad);
       if (bad) { $('gwz-name').focus(); return; }
+      state.newLoc = null;
+      if (state.locationId === 'new') {
+        state.newLoc = LK ? LK.body(readNewLoc()) : readNewLoc();
+        var lbad = !state.newLoc.name ? 'loc_name_required' : null;
+        fieldError('gwz-loc-name', lbad);
+        if (lbad) { $('gwz-loc-name').focus(); return; }
+      }
     }
     var pe = $('gwz-platform-err');
     if (!state.platform) { pe.textContent = T('gwiz.err.platform_required', 'Bitte eine Plattform wählen.'); show(pe, true); return; }
@@ -300,12 +328,27 @@
   }
 
   // ── Creation (the existing endpoint) ──
+  // "Neuer Standort …": created first (once — a second try after a refused gateway reuses it)
+  function ensureLocation() {
+    if (state.locationId !== 'new') return Promise.resolve(state.locationId ? Number(state.locationId) : null);
+    if (state.newLocId && state.newLocId.name === state.newLoc.name) return Promise.resolve(state.newLocId.id);
+    return api('POST', '/api/v1/gateway-locations', state.newLoc).then(function (d) {
+      if (!d.ok || !d.location) {
+        var msg = (d.fields && (d.fields.name || d.fields.postal_code || d.fields.country)) || d.error || T('gwiz.err.generic', 'Das hat nicht geklappt.');
+        var e = new Error(msg); e.loc = true; e.field = d.fields && d.fields.name ? 'gwz-loc-name' : null; throw e;
+      }
+      state.newLocId = { id: d.location.id, name: d.location.name };
+      return d.location.id;
+    });
+  }
   function createGateway() {
     if (state.busy) return;
     state.busy = true; setError(''); render();
-    var body = { name: state.name, is_gateway: true, platform: state.platform };
-    if (state.groupId) body.group_id = Number(state.groupId);
-    api('POST', '/api/v1/peers', body).then(function (d) {
+    ensureLocation().then(function (locationId) {
+      var body = { name: state.name, is_gateway: true, platform: state.platform };
+      if (locationId) body.location_id = locationId;
+      return api('POST', '/api/v1/peers', body);
+    }).then(function (d) {
       state.busy = false;
       if (!d.ok || !d.peer) {
         if (d.fields && d.fields.name) {
@@ -326,7 +369,17 @@
       try { history.replaceState(null, '', location.pathname + location.search + '#setup/' + d.peer.id); } catch (e) { /* ignore */ }
       notifyList();
       go(3);
-    }).catch(function () { state.busy = false; setError(T('gwiz.err.generic', 'Das hat nicht geklappt.')); render(); });
+    }).catch(function (err) {
+      state.busy = false;
+      if (err && err.loc) {
+        state.step = 1; render();
+        if (err.field) { var le = $('gwz-loc-name-err'); le.textContent = err.message; show(le, true); $('gwz-loc-name').setAttribute('aria-invalid', 'true'); }
+        setError(T('gwiz.err.loc_failed', 'Der Standort konnte nicht angelegt werden: {{error}}', { error: err.message }));
+        render();
+        return;
+      }
+      setError(T('gwiz.err.generic', 'Das hat nicht geklappt.')); render();
+    });
   }
   function notifyList() { document.dispatchEvent(new CustomEvent('gc:gateway-wizard', { detail: { peerId: state.peerId } })); }
 
@@ -581,6 +634,12 @@
   function resetForm() {
     $('gwz-name').value = '';
     fieldError('gwz-name', null);
+    fillCountries();
+    $('gwz-location').value = '';
+    ['gwz-loc-name', 'gwz-loc-city', 'gwz-loc-street', 'gwz-loc-postal'].forEach(function (id) { $(id).value = ''; });
+    $('gwz-loc-country').value = '';
+    $('gwz-loc-more').open = false;
+    fieldError('gwz-loc-name', null);
     show($('gwz-platform-err'), false);
     ['gwz-ssid', 'gwz-psk', 'gwz-hostname', 'gwz-tz', 'gwz-country', 'gwz-ssh'].forEach(function (id) { fieldError(id, null); });
     $('gwz-advanced').open = false;
@@ -612,13 +671,14 @@
         state.platform = g.platform;
         state.platformLocked = !!g.platform;
         state.pi.hostname = kit.suggestHostname(g.name);
+        state.locationId = g.location_id ? String(g.location_id) : '';
         $('gwz-name').value = g.name;
         if (state.platform) go(3);
-        else { loadGroups(); go(1); }
+        else { loadLocations(); go(1); }
       }).catch(function () { state.busy = false; setError(T('gwiz.err.generic', 'Das hat nicht geklappt.')); render(); });
       return;
     }
-    loadGroups();
+    loadLocations();
     go(1);
     setTimeout(function () { $('gwz-name').focus(); }, 0);
   }
@@ -659,6 +719,10 @@
   overlay.addEventListener('change', function (e) {
     var n = e.target.name;
     if (n === 'gwz-platform') { state.platform = e.target.value; show($('gwz-platform-err'), false); render(); }
+    else if (e.target.id === 'gwz-location') {
+      renderStep1();
+      if (e.target.value === 'new') $('gwz-loc-name').focus();
+    }
     else if (n === 'gwz-model' || n === 'gwz-net' || n === 'gwz-zigbee') { readStep2(); renderStep2(); }
     else if (n === 'gwz-linux-net') renderStep3();
   });

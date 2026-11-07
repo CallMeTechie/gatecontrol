@@ -11,6 +11,8 @@ gemeldet hat. Danach folgst du der Anleitung für dein Gerät:
 - [3.4 Linux-Rechner mit Docker](#34-linux-rechner-mit-docker)
 - [3.5 Proxmox](#35-proxmox)
 
+Wo die Gateways stehen, ordnest du mit [Standorten](#36-standorte).
+
 ## 3.1 Der Assistent „Gateway hinzufügen“
 
 1. Öffne in GateControl links „Netzwerk“ → „Gateways“.
@@ -18,7 +20,10 @@ gemeldet hat. Danach folgst du der Anleitung für dein Gerät:
 3. **Schritt 1:**
    - „Name“: zum Beispiel `NAS Keller`. Erlaubt sind Buchstaben a–z, Ziffern,
      Leerzeichen, Punkt, Binde- und Unterstrich (keine Umlaute, höchstens 63 Zeichen).
-   - „Standort (optional)“: kannst du leer lassen.
+   - „Standort (optional)“: wo das Gateway steht, zum Beispiel „Zuhause“ oder
+     „Büro“. Wähle einen vorhandenen Standort, „Neuer Standort …“ (Name, Ort
+     und auf Wunsch die Adresse direkt darunter) oder lass „Kein Standort“
+     stehen. Mehr dazu in [3.6](#36-standorte).
    - „Worauf soll das Gateway laufen?“: „Raspberry Pi“, „Synology NAS“,
      „Proxmox“ oder „Anderer Linux-Rechner“.
 4. **Schritt 2** gibt es nur beim Raspberry Pi (siehe [3.3](#33-raspberry-pi)).
@@ -246,5 +251,41 @@ MQTT-Broker brauchen den Edge-Container und laufen dort deshalb nicht. Wer sie
 braucht, nimmt in einer VM den Weg [3.4](#34-linux-rechner-mit-docker).
 
 **Prüfen:** Der Assistent zeigt „Gateway hat sich gemeldet“.
+
+## 3.6 Standorte
+
+Ein Standort sagt, wo ein Gateway steht – zum Beispiel „Zuhause“, „Büro“ oder
+„Eltern“. Mit mehreren Gateways an verschiedenen Orten behältst du so den
+Überblick. Ein Standort hat einen Namen und auf Wunsch eine Adresse (Straße,
+PLZ, Ort, Land). Die Peer-Gruppe eines Gateways ist etwas anderes und bleibt,
+wie sie ist (änderbar unter „Peers“).
+
+**Standorte anlegen und ändern:**
+
+1. „Netzwerk“ → „Gateways“ → oben „Standorte“.
+2. „Neuer Standort“: Name eingeben, die Adresse ist freiwillig. „Standort anlegen“.
+3. Mit dem Stift änderst du einen Standort, mit dem Papierkorb löschst du ihn.
+   Stehen dort noch Gateways, fragt GateControl nach. Die Gateways bleiben,
+   wie sie sind, und stehen danach unter „Ohne Standort“.
+
+**Den Standort eines Gateways festlegen:**
+
+- beim Anlegen im Assistenten (Schritt 1, siehe [3.1](#31-der-assistent-gateway-hinzufügen)), oder
+- im Gateway: „Mehr“ → „Standort ändern …“, in der Übersicht in der Karte
+  „Gerät & Software“ bei „Standort“ oder über den Standort oben unter dem Namen.
+  Ist das Gateway in einem Pool, kannst du den Standort mit
+  „Auch für … übernehmen“ gleich für den Pool-Partner setzen.
+
+**Die Liste nach Standort:** Sobald es einen Standort gibt, ordnet die Seite
+„Gateways“ die Gateways nach Standort – je Standort ein Abschnitt mit Adresse
+und „x von y online“, „Ohne Standort“ zuletzt. Mit „Gruppieren nach:
+Standorte | Pools“ wechselst du zur Ansicht nach Pools; dort steht der
+Standort auf jeder Karte. Der Browser merkt sich deine Wahl. Standorte ohne
+Gateway stehen nur im Dialog „Standorte“.
+
+Standorte verwalten nur Admins. Sie stecken in der Sicherung und kommen mit
+der Wiederherstellung zurück.
+
+**Prüfen:** Unter „Gateways“ steht dein Gateway im Abschnitt seines Standorts.
 
 Weiter mit [Kapitel 4: Edge-Plugins und Smart Home](04-edge-und-smart-home.md).

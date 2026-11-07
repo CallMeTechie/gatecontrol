@@ -11,6 +11,8 @@ reported. Then follow the guide for your device:
 - [3.4 Linux machine with Docker](#34-linux-machine-with-docker)
 - [3.5 Proxmox](#35-proxmox)
 
+You keep track of where the gateways are with [locations](#36-locations).
+
 ## 3.1 The assistant “Add gateway”
 
 1. In GateControl, open “Network” → “Gateways” on the left.
@@ -18,7 +20,10 @@ reported. Then follow the guide for your device:
 3. **Step 1:**
    - “Name”: for example `NAS basement`. Allowed are letters a–z, digits,
      spaces, dot, hyphen and underscore (no umlauts, at most 63 characters).
-   - “Location (optional)”: you can leave it empty.
+   - “Location (optional)”: where the gateway is, for example “Home” or
+     “Office”. Choose an existing location, “New location …” (name, town and,
+     if you like, the address right below) or keep “No location”. More in
+     [3.6](#36-locations).
    - “Where should the gateway run?”: “Raspberry Pi”, “Synology NAS”,
      “Proxmox” or “Other Linux machine”.
 4. **Step 2** only exists for the Raspberry Pi (see [3.3](#33-raspberry-pi)).
@@ -244,5 +249,41 @@ broker need the edge container and therefore do not run there. If you need
 them, use [3.4](#34-linux-machine-with-docker) in a VM.
 
 **Check:** The assistant shows “Gateway has reported”.
+
+## 3.6 Locations
+
+A location says where a gateway is – for example “Home”, “Office” or
+“Parents”. With several gateways in different places this keeps the overview.
+A location has a name and, if you like, an address (street, postcode, town,
+country). The peer group of a gateway is something else and stays as it is
+(changed under “Peers”).
+
+**Create and change locations:**
+
+1. “Network” → “Gateways” → “Locations” at the top.
+2. “New location”: enter a name, the address is optional. “Create location”.
+3. The pencil changes a location, the bin deletes it. If gateways are still
+   there, GateControl asks first. The gateways stay as they are and show under
+   “No location” afterwards.
+
+**Set the location of a gateway:**
+
+- when creating it in the assistant (step 1, see [3.1](#31-the-assistant-add-gateway)), or
+- on the gateway: “More” → “Change location …”, in the overview in the card
+  “Device & software” at “Location”, or with the location below the name.
+  If the gateway is in a pool, “Also use it for …” sets the location for the
+  pool partner at the same time.
+
+**The list by location:** As soon as there is a location, the page “Gateways”
+groups the gateways by location – one section per location with the address
+and “x of y online”, “No location” last. “Group by: Locations | Pools”
+switches to the view by pool; there each card shows its location. The browser
+remembers your choice. Locations without a gateway only show in the dialog
+“Locations”.
+
+Only admins manage locations. They are part of the backup and come back with
+a restore.
+
+**Check:** Under “Gateways” your gateway is in the section of its location.
 
 Continue with [chapter 4: Edge plugins and Smart Home](04-edge-and-smart-home.md).

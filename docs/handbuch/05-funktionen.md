@@ -20,6 +20,11 @@ findest du ebenfalls unter „Gateways“: als eigene Gruppe in der Liste, mit
 „Pool anlegen“ oben rechts und „Pool öffnen“ für die Einstellungen. Eine
 eigene Seite „Gateway-Pools“ im Menü gibt es nicht mehr.
 
+Wo die Gateways stehen („Zuhause“, „Büro“ …), ordnest du mit „Standorte“ oben
+auf derselben Seite. Sobald es einen Standort gibt, ist die Liste nach
+Standorten gruppiert; „Gruppieren nach: Standorte | Pools“ wechselt zur
+Ansicht nach Pools. Mehr in [Kapitel 3.6](03-gateway-einrichten.md#36-standorte).
+
 Allgemeine Voraussetzungen:
 
 - Netzwerk-Wächter, Internetqualität, Anwesenheit und USV brauchen

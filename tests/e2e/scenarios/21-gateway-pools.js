@@ -253,9 +253,9 @@ module.exports = (ctx) => {
         await page.keyboard.press('ArrowDown');
         step('menu: ArrowDown opens it and focuses the first item', await until(page, () => !document.getElementById('gw-more-menu').hidden
           && document.getElementById('gw-more-btn').getAttribute('aria-expanded') === 'true' && document.activeElement === document.querySelector('#gw-more-menu [role="menuitem"]')));
-        step('menu: compose, auto-update, pool, release notes — no "Gateway entfernen"', await page.evaluate(() => {
+        step('menu: compose, auto-update, location, pool, release notes — no "Gateway entfernen"', await page.evaluate(() => {
           const acts = [...document.querySelectorAll('#gw-more-menu [role="menuitem"]')].map((x) => x.dataset.act);
-          return acts.join() === 'compose,setup,pool-add,relnotes' && document.querySelector('#gw-more-menu a[data-act="relnotes"][target="_blank"]');
+          return acts.join() === 'compose,setup,location,pool-add,relnotes' && document.querySelector('#gw-more-menu a[data-act="relnotes"][target="_blank"]');
         }));
         await page.keyboard.press('ArrowDown');
         step('menu: ArrowDown moves on', await page.evaluate(() => document.activeElement && document.activeElement.dataset.act === 'setup'));
