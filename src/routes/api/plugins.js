@@ -576,7 +576,8 @@ function forwarder(userOf, idOf = (req) => req.params.id, opts = {}) {
       const person = user.loggedIn !== false && !user.kiosk && !user.automation && Number.isSafeInteger(user.id);
       // gc.homeCache.lanHint (phase 3b): an opaque req.homeRef stands for where this request comes from
       // (address, token peer, the device's LAN addresses — plugins/requestRefs.js); only with permissions.homeCache
-      const homeCache = !!(p.manifest && p.manifest.permissions && p.manifest.permissions.homeCache === true);
+      // gc.cameras.live (phase 3c, step 4) uses the same reference: live video only in the VPN / the server's LAN
+      const homeCache = !!(p.manifest && p.manifest.permissions && (p.manifest.permissions.homeCache === true || p.manifest.permissions.cameras === true));
       const send = (homeRef) => plugins.request(p.id, { method: req.method, path, query: plainQuery(req.query), body, user, lang: langOf(req), ...(homeRef ? { homeRef } : {}) });
       const call = () => (homeCache
         ? requestRefs.run(p.id, { ip: req.ip, peerId: req.tokenPeerId == null ? null : req.tokenPeerId, local: require('../../services/homeCache').localOf(req), userId: Number.isSafeInteger(user.id) ? user.id : null }, send)

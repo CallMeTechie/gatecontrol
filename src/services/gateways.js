@@ -685,6 +685,70 @@ function mgmtStream(peerId, path, payload, { totalMs = 600000, idleMs = 120000, 
 }
 
 /**
+ * A raw management request (phase 3c, step 4 — the cameras, the gateway's docs/cameras.md §3):
+ * GET or POST to the gateway's API over the tunnel; resolves with the answer stream (http.IncomingMessage)
+ * as soon as the headers are there — the caller buffers it (mgmtBinary) or pipes it on (live video, clips)
+ * and must consume or destroy it. Never follows a redirect, never leaves the gateway's tunnel address.
+ * opts: { method, body (JSON), headers (only Range / Accept), connectMs, headerMs, signal }.
+ * Rejects with code unreachable | timeout | aborted.
+ */
+function mgmtRequest(peerId, path, { method = 'GET', body = null, headers = {}, connectMs = 5000, headerMs = 15000, signal } = {}) {
+  const fail = (code, message) => Object.assign(new Error(message || code), { code });
+  const row = getDb().prepare(`
+    SELECT p.allowed_ips, gm.api_port, gm.push_token_encrypted
+    FROM gateway_meta gm JOIN peers p ON p.id = gm.peer_id
+    WHERE gm.peer_id = ?
+  `).get(peerId);
+  if (!row) return Promise.reject(fail('unreachable', 'not a gateway'));
+  const pushToken = _decryptPushToken(row.push_token_encrypted, peerId);
+  if (!pushToken) return Promise.reject(fail('unreachable', 'no gateway token'));
+  const ip = _peerIp(row.allowed_ips);
+  const data = body == null ? null : JSON.stringify(body);
+  const extra = {};
+  if (typeof headers.range === 'string' && /^bytes=\d*-\d*$/.test(headers.range)) extra.Range = headers.range;
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const timers = [];
+    const finish = (fn, v) => { if (done) return; done = true; for (const t of timers) clearTimeout(t); fn(v); };
+    const req = http.request({
+      host: ip, port: row.api_port, path, method, agent: false,
+      headers: { 'X-Gateway-Token': pushToken, ...extra, ...(data != null ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}) },
+    }, (res) => finish(resolve, res));
+    timers.push(setTimeout(() => { req.destroy(); finish(reject, fail('timeout', 'the gateway did not answer in time')); }, headerMs));
+    req.on('socket', (sock) => {
+      if (!sock.connecting) return;
+      const t = setTimeout(() => { req.destroy(); finish(reject, fail('unreachable', 'the gateway does not answer')); }, connectMs);
+      timers.push(t);
+      sock.once('connect', () => clearTimeout(t));
+    });
+    if (signal) {
+      if (signal.aborted) { req.destroy(); finish(reject, fail('aborted')); return; }
+      signal.addEventListener('abort', () => { req.destroy(); finish(reject, fail('aborted')); }, { once: true });
+    }
+    req.on('error', (err) => { logger.debug({ err: err.message, peerId, path }, 'Gateway request failed'); finish(reject, fail('unreachable', 'the gateway does not answer')); });
+    req.end(data == null ? undefined : data);
+  });
+}
+
+/** mgmtRequest buffered: → { status, type, headers, body (Buffer) }; rejects with too_large over maxBytes. */
+async function mgmtBinary(peerId, path, opts = {}) {
+  const { maxBytes = 4 * 1024 * 1024, totalMs = 20000 } = opts;
+  const res = await mgmtRequest(peerId, path, opts);
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let n = 0;
+    const t = setTimeout(() => { res.destroy(); reject(Object.assign(new Error('timeout'), { code: 'timeout' })); }, totalMs);
+    res.on('data', (c) => {
+      n += c.length;
+      if (n > maxBytes) { clearTimeout(t); res.destroy(); reject(Object.assign(new Error('answer too large'), { code: 'too_large' })); return; }
+      chunks.push(c);
+    });
+    res.on('end', () => { clearTimeout(t); resolve({ status: res.statusCode, type: String(res.headers['content-type'] || ''), headers: res.headers, body: Buffer.concat(chunks) }); });
+    res.on('error', () => { clearTimeout(t); reject(Object.assign(new Error('gateway connection lost'), { code: 'unreachable' })); });
+  });
+}
+
+/**
  * Ask a gateway to TCP-probe a target host:port inside its physical LAN.
  * Returns the parsed gateway response (with `probed_target` + `probe_result`)
  * or null on any failure. Used by rdpMonitor for true end-to-end health of
@@ -1145,6 +1209,8 @@ module.exports = {
   notifyLanScan,
   mgmtCall,
   mgmtStream,
+  mgmtRequest,
+  mgmtBinary,
   probeGatewayTarget,
   getDiscoverySettings,
   setDiscoverySettings,

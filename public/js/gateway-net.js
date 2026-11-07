@@ -930,6 +930,46 @@
     return featRow(t('gwn.feat.ai'), text, sw, extra, 'ai');
   }
 
+  /**
+   * The row "Kameras" (phase 3c, step 4): the switch (features.cameras), how many cameras are set up, the way into
+   * "Tür & Kamera"; hints instead of bans (Raspberry Pi: at most one camera with motion detection, the compose file
+   * without the service kameras, "Gateway zu alt").
+   */
+  function camerasRow(id, g, d) {
+    const c = d.cameras;
+    const sup = d.support || {};
+    const old = c.supported === false;
+    const sw = U.switchBtn(!!c.enabled, t('gwn.feat.cameras'), 'gwn-f-cameras', () => toggle(sw, id, (v) => ({ cameras: { enabled: v } }), (v) => t(v ? 'gwn.feat.on_done' : 'gwn.feat.off_done', { name: t('gwn.feat.cameras') })), old && !c.enabled);
+    const extra = [];
+    if (old) extra.push(h('span', { class: 'gwn-hint', 'data-cameras-old': '' }, [U.icon('info', 14), t('gwn.feat.cameras_old', { min: c.minGateway || sup.minGatewayCameras || '1.28.0', version: sup.version || '—' })]));
+    const parts = [t('gwn.feat.cameras_d')];
+    if (c.enabled || c.count) parts.push(t(c.count === 1 ? 'gwn.feat.cameras_one' : 'gwn.feat.cameras_n', { n: nf(c.count || 0) }));
+    const st = c.storage;
+    if (c.enabled && st && st.free != null) extra.push(h('span', { class: 'gwe-d', 'data-cameras-storage': '' }, t('gwn.feat.cameras_storage', { free: bytesLabel(st.free) })));
+    if (c.enabled && st && st.problem) extra.push(h('span', { class: 'gwn-hint', 'data-cameras-disk': st.problem }, [U.icon('warn', 14), t('gwn.feat.cameras_' + st.problem)]));
+    if (c.hint && !old) {
+      extra.push(h('span', { class: 'gwn-hint', 'data-cameras-hint': c.hint.key }, [U.icon(c.hint.over ? 'warn' : 'info', 14), t('gwn.feat.cameras_hint_' + c.hint.key, { max: c.hint.max })]));
+    }
+    if (c.compose === 'compose' && window.GCGatewayCompose) {
+      const dl = h('button', { type: 'button', class: 'gwn-linkbtn', 'data-fk': 'gwn-cameras-compose', text: t('gwn.feat.ai_compose_btn') });
+      dl.addEventListener('click', () => window.GCGatewayCompose.open(g, 'gwn-cameras-compose'));
+      extra.push(h('span', { class: 'gwn-hint', 'data-cameras-compose': '' }, [U.icon('info', 14), t('gwn.feat.cameras_compose'), ' ', dl]));
+    } else if (c.compose === 'image') {
+      extra.push(h('span', { class: 'gwn-hint', 'data-cameras-compose': 'image' }, [U.icon('info', 14), t('gwn.feat.cameras_old_image'), ' ',
+        h('a', { href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwn.feat.ai_releases') })]));
+    }
+    const plug = c.plugin || {};
+    if (plug.installed) extra.push(h('a', { href: '/plugins/gatecontrol-door', class: 'gwn-link', 'data-cameras-link': 'plugin', text: t('gwn.feat.cameras_to_plugin') }));
+    else extra.push(h('a', { href: '/settings/plugins/catalog/gatecontrol-door', class: 'gwn-link', 'data-cameras-link': 'catalog', text: t('gwn.feat.cameras_install') }));
+    return featRow(t('gwn.feat.cameras'), parts.join(' '), sw, extra, 'cameras');
+  }
+
+  function bytesLabel(n) {
+    if (!(n >= 0)) return '—';
+    if (n >= 1e12) return t('gwn.feat.cameras_tb', { n: nf(n / 1e12, 1) });
+    return t('gwn.feat.cameras_gb', { n: nf(n / 1e9, n >= 1e10 ? 0 : 1) });
+  }
+
   /** Every switch row of the gateway by its data-feature key (same API and behaviour as before: putFeatures). */
   function featureRows(g, d) {
     const rows = new Map();
@@ -995,6 +1035,8 @@
     }
     // Drucken & Scannen (phase 3c): the switch here, everything else in the plugin "Drucken & Scannen"
     if (d.print) rows.set('print', printRow(id, d));
+    // Kameras (phase 3c, step 4): the switch here, the cameras themselves in the plugin "Tür & Kamera"
+    if (d.cameras) rows.set('cameras', camerasRow(id, g, d));
     // Lokale KI (phase 3c, step 3): the switch here, the setup in Einstellungen › KI-Anbieter
     if (d.ai) rows.set('ai', aiRow(id, g, d));
     // DNS filter, home cache, local time (phase 3b, gateway-home.js)
@@ -1078,7 +1120,7 @@
       out.push(c.card);
     });
     // "Ein Schalter genügt" and "Hinweise statt Verbote" (phase 3c) — once the gateway offers the local AI
-    if (d.ai) {
+    if (d.ai || d.cameras) {
       out.push(h('div', { class: 'gwn-fhints' }, [
         U.note('info', [h('strong', { text: t('gwn.feat.hint_switch_t') }), ' ', t('gwn.feat.hint_switch')]),
         U.note('warn', [h('strong', { text: t('gwn.feat.hint_hints_t') }), ' ', t('gwn.feat.hint_hints')]),

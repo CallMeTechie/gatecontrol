@@ -19,6 +19,7 @@ const HOME_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'home-demo')
 const PRINT_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'print-demo');
 // a plugin with permissions.radio (gc.radio, tests/gateway_radio.test.js)
 const RADIO_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'radio-demo');
+const CAMERA_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'camera-demo');
 
 const trusted = signature.generateKeyPair();
 const stranger = signature.generateKeyPair();
@@ -63,4 +64,10 @@ function radioPackage(o = {}) {
   return packDir(RADIO_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
 }
 
-module.exports = { HELLO, EDGE_DEMO, PRESENCE_DEMO, HOME_DEMO, PRINT_DEMO, RADIO_DEMO, helloPackage, edgePackage, presencePackage, homePackage, printPackage, radioPackage, trusted, stranger };
+/** The camera test plugin, like helloPackage. */
+function cameraPackage(o = {}) {
+  const key = o.sign === undefined || o.sign === 'trusted' ? trusted.privateSeed : (o.sign === 'stranger' ? stranger.privateSeed : '');
+  return packDir(CAMERA_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
+}
+
+module.exports = { CAMERA_DEMO, cameraPackage, HELLO, EDGE_DEMO, PRESENCE_DEMO, HOME_DEMO, PRINT_DEMO, RADIO_DEMO, helloPackage, edgePackage, presencePackage, homePackage, printPackage, radioPackage, trusted, stranger };

@@ -4,7 +4,7 @@
 // buildCompose — also the NAS package and the "only docker-compose.yml"
 // download) against docker-compose.example.yml of gatecontrol-gateway, checked
 // in as tests/fixtures/gateway-compose/docker-compose.example.yml (copy of
-// gatecontrol-gateway feat/local-ai, 2026-11-06 / v1.26.0: service ki in the profile ki, volumes ai-ctl and ki-models). When the gateway
+// gatecontrol-gateway feat/cameras, 2026-11-06 / v1.28.0: service kameras in the profile kameras, volumes cam-ctl and cam-recordings, the gateway mounts /gc-cam and /recordings). When the gateway
 // changes its example, copy it again — this test then shows what buildCompose
 // has to follow.
 //
@@ -71,8 +71,13 @@ const EXPECTED_DIFF = {
 };
 
 describe('gateway compose: assistant vs docker-compose.example.yml of the gateway', () => {
-  it('the fixture is the gateway example (services gateway, edge, mqtt, deconz, ki; NET_RAW/SETGID/SETUID)', () => {
-    assert.deepEqual(Object.keys(ex.services), ['gateway', 'edge', 'mqtt', 'deconz', 'ki']);
+  it('the fixture is the gateway example (services gateway, edge, mqtt, deconz, ki, kameras; NET_RAW/SETGID/SETUID)', () => {
+    assert.deepEqual(Object.keys(ex.services), ['gateway', 'edge', 'mqtt', 'deconz', 'ki', 'kameras']);
+    // gateway >= 1.28.0: the cameras (ffmpeg) only in the profile kameras, the gateway mounts cam-ctl and the clips
+    assert.equal(ex.services.kameras.profiles, 'profiles: ["kameras"]');
+    assert.match(exGw.volumes, /source: cam-ctl/);
+    assert.match(exGw.volumes, /\/recordings/);
+    assert.equal(ex.services.kameras.ports, undefined);
     // gateway >= 1.26.0: the local AI (Ollama) only in the profile ki (≈ 3 GB image), the gateway mounts ai-ctl
     assert.equal(ex.services.ki.profiles, 'profiles: ["ki"]');
     assert.match(exGw.volumes, /source: ai-ctl/);
@@ -94,12 +99,12 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
       const gw = got.services.gateway;
 
       it('same services (deconz only with zigbee, ki only with ai) and top-level volumes', () => {
-        assert.deepEqual(Object.keys(got.services), Object.keys(ex.services).filter((k) => k !== 'deconz' && k !== 'ki'));
+        assert.deepEqual(Object.keys(got.services), Object.keys(ex.services).filter((k) => k !== 'deconz' && k !== 'ki' && k !== 'kameras'));
         assert.equal(got.volumes, ex.volumes);
       });
       it('zigbee: the deconz service exactly as in the example, without the profile', () => {
         const z = parse(kit.buildCompose({ platform, network: 'host', zigbee: true }));
-        assert.deepEqual(Object.keys(z.services), Object.keys(ex.services).filter((k) => k !== 'ki'));
+        assert.deepEqual(Object.keys(z.services), ['gateway', 'edge', 'mqtt', 'deconz']);
         const { profiles, ...want } = ex.services.deconz;
         assert.ok(profiles);
         assert.deepEqual(z.services.deconz, want);
@@ -115,7 +120,18 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
         assert.equal(a.volumes, ex.volumes);
         assert.deepEqual(a.services.gateway, got.services.gateway);
         const both = parse(kit.buildCompose({ platform, network: 'host', ai: true, zigbee: true }));
-        assert.deepEqual(Object.keys(both.services), Object.keys(ex.services));
+        assert.deepEqual(Object.keys(both.services), ['gateway', 'edge', 'mqtt', 'deconz', 'ki']);
+      });
+      it('cameras: the service kameras exactly as in the example, without the profile', () => {
+        const c = parse(kit.buildCompose({ platform, network: 'host', cameras: true }));
+        assert.deepEqual(Object.keys(c.services), ['gateway', 'edge', 'mqtt', 'kameras']);
+        const { profiles, ...want } = ex.services.kameras;
+        assert.ok(profiles);
+        assert.deepEqual(c.services.kameras, want);
+        assert.equal(c.volumes, ex.volumes);
+        assert.deepEqual(c.services.gateway, got.services.gateway);
+        const all = parse(kit.buildCompose({ platform, network: 'host', ai: true, zigbee: true, cameras: true }));
+        assert.deepEqual(Object.keys(all.services).sort(), Object.keys(ex.services).sort());
       });
       it('edge and mqtt exactly as in the example', () => {
         assert.deepEqual(got.services.edge, ex.services.edge);
@@ -143,8 +159,8 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
   }
 
   for (const platform of ['synology', 'linux']) {
-    it(`${platform} / bridge: HTTP routes only — no host-only capabilities, no edge, no deconz, no ki`, () => {
-      const got = parse(kit.buildCompose({ platform, network: 'bridge', zigbee: true, ai: true }));
+    it(`${platform} / bridge: HTTP routes only — no host-only capabilities, no edge, no deconz, no ki, no kameras`, () => {
+      const got = parse(kit.buildCompose({ platform, network: 'bridge', zigbee: true, ai: true, cameras: true }));
       const gw = got.services.gateway;
       assert.deepEqual(Object.keys(got.services), ['gateway']);
       assert.equal(got.volumes, null);

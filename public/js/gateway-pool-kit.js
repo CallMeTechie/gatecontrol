@@ -310,7 +310,8 @@
     { key: 'home', features: ['netwatch', 'presence', 'lan'] },
     // phase 3c: printers and scanners, radio (Zigbee, Bluetooth, Thread; later also cameras)
     // phase 3c, step 3: the local AI between printing and radio (as in the design)
-    { key: 'devices', features: ['print', 'ai', 'radio', 'zigbee'] },
+    // phase 3c, step 4: the cameras right after printing (as in the design)
+    { key: 'devices', features: ['print', 'cameras', 'ai', 'radio', 'zigbee'] },
     { key: 'wide', features: ['dns', 'cache'] },
     { key: 'power', features: ['inetq', 'ups'] },
     { key: 'ext', features: ['edge'] },
@@ -337,6 +338,7 @@
     if (d.dns) add('dns', d.dns.enabled);
     if (d.cache) add('cache', d.cache.enabled);
     if (d.print) add('print', d.print.enabled);
+    if (d.cameras) add('cameras', d.cameras.enabled);
     if (d.ai) add('ai', d.ai.enabled);
     if (d.edge) { add('edge', d.edge.enabled); add('mqtt', d.edge.enabled && d.edge.mqtt); }
     if (d.radio) add('radio', d.radio.enabled);

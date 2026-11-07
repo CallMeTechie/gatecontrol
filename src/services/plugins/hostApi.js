@@ -1580,6 +1580,42 @@ function radioCall(plugin, op) {
   throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
 }
 
+// ─── Kameras im Heimnetz (permissions.cameras, phase 3c step 4) ───────
+//
+// gc.cameras.available() / list() / discover() / test() / add() / update() /
+// remove() / snapshot() / snapshotUrl() / live() / events() / deleteEvent() —
+// services/homeCameras.js, docs/plugins.md "Cameras". The plugin never gets a
+// camera password back; live video only for a request from the VPN or the
+// server's LAN (req.homeRef, requestRefs.js). Who may see which camera is the
+// plugin's to check.
+
+async function camerasCall(plugin, op, args) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.cameras === true, 'ERR_CAMERAS_DENIED', 'this plugin has no cameras permission');
+  const hc = require('../homeCameras');
+  const a = args && typeof args === 'object' ? args : {};
+  try {
+    switch (op) {
+      case 'available': return hc.available();
+      case 'list': return hc.list();
+      case 'discover': return await hc.discover({ gatewayId: a.gatewayId == null ? undefined : a.gatewayId });
+      case 'test': return await hc.test(a.opts);
+      case 'add': return await hc.add(plugin, a.opts);
+      case 'update': return hc.update(a.id, a.patch);
+      case 'remove': return await hc.remove(a.id, a.opts || {});
+      case 'snapshot': return await hc.snapshot(a.id, a.opts || {});
+      case 'snapshotUrl': return hc.snapshotUrl(plugin.id, a.id);
+      case 'live': return await hc.live(plugin.id, a.id, require('./requestRefs').get(plugin.id, a.ref));
+      case 'events': return hc.events(plugin.id, a.opts || {});
+      case 'deleteEvent': return await hc.deleteEvent(a.id);
+      default: break;
+    }
+  } catch (e) {
+    if (e instanceof hc.CameraError) throw new HostApiError(hc.HOST_CODES[e.code] || 'ERR_CAMERA_FAILED', e.message);
+    throw e;
+  }
+  throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
+}
+
 // ─── Uploads to a home target (gc.net.uploadTarget → target.upload, since 1.193.0) ────
 //
 // gc.net.uploadTarget(id, path, { index, method, query, headers, form: {
@@ -2187,6 +2223,10 @@ async function handle(plugin, api, args, ctx) {
       return printCall(plugin, api.slice('print.'.length), args, ctx);
     // Funk (permissions.radio, homeRadio.js — phase 3c, step 2)
     case 'radio.sensors': return radioCall(plugin, 'sensors');
+    // Kameras (permissions.cameras, homeCameras.js — phase 3c, step 4)
+    case 'cameras.available': case 'cameras.list': case 'cameras.discover': case 'cameras.test': case 'cameras.add': case 'cameras.update':
+    case 'cameras.remove': case 'cameras.snapshot': case 'cameras.snapshotUrl': case 'cameras.live': case 'cameras.events': case 'cameras.deleteEvent':
+      return camerasCall(plugin, api.slice('cameras.'.length), args);
     // person groups (permissions.groups, groups.js): read; ensure / remove need "manage"
     case 'groups.list': return require('./groups').call(plugin, 'list', args);
     case 'groups.get': return require('./groups').call(plugin, 'get', args);

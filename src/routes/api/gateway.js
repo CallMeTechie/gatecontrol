@@ -317,6 +317,32 @@ router.post('/radio/ble', express.json({ limit: '64kb' }), (req, res) => {
   }
 });
 
+// ─── Phase 3c, step 4: Kameras (the gateway's docs/cameras.md §2, services/homeCameras.js) ──
+
+const cams = () => require('../../services/homeCameras');
+
+function camFail(res, err, peerId) {
+  if (err && err.code === 'invalid') return res.status(400).json({ ok: false, error: 'invalid' });
+  logger.error({ err: err && err.message, peerId }, 'gateway camera report failed');
+  return res.status(500).json({ ok: false, error: 'internal' });
+}
+
+/** GET /api/v1/gateway/cameras/credentials — user and password of this gateway's cameras (never logged, never cached) */
+router.get('/cameras/credentials', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try { return res.json(cams().credentialsFor(req.gateway.peer_id)); } catch (err) { return camFail(res, err, req.gateway.peer_id); }
+});
+
+/** POST /api/v1/gateway/cameras/report — { at, service, storage, cameras: [...] } */
+router.post('/cameras/report', express.json({ limit: '64kb' }), (req, res) => {
+  try { res.json({ ok: true, ...cams().ingestReport(req.gateway.peer_id, req.body || {}) }); } catch (err) { camFail(res, err, req.gateway.peer_id); }
+});
+
+/** POST /api/v1/gateway/cameras/events — { events: [...] } (≤ 32) */
+router.post('/cameras/events', express.json({ limit: '64kb' }), (req, res) => {
+  try { res.json({ ok: true, ...cams().ingestEvents(req.gateway.peer_id, req.body || {}) }); } catch (err) { camFail(res, err, req.gateway.peer_id); }
+});
+
 /** GET /api/v1/gateway/print/jobs — the open jobs of this gateway (ETag) */
 router.get('/print/jobs', (req, res) => {
   try {

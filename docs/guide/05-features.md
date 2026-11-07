@@ -22,7 +22,7 @@ separate page “Gateway Pools” in the menu any more.
 General requirements:
 
 - Network watch, internet quality, presence and UPS need gateway version
-  **1.21.0** or later, DNS filter and home cache **1.22.0**, print & scan **1.24.0**, radio **1.25.0**, local AI **1.26.0**. If the gateway is
+  **1.21.0** or later, DNS filter and home cache **1.22.0**, print & scan **1.24.0**, radio **1.25.0**, local AI **1.26.0**, cameras **1.28.0**. If the gateway is
   older, the tab says so; update it then ([chapter 6](06-updating-a-gateway.md)).
 - The gateway is in the home network in **host network mode** (default for the
   Pi, the Synology package and Linux with “Host (recommended)”).
@@ -160,6 +160,58 @@ searches at once.
   172.16–31.x, 192.168.x), at most 16; best make the address a fixed one in
   the router. The window shows for each address whether the gateway reached
   it.
+
+## Cameras
+
+**What for:** cameras in the home network (e.g. Reolink, Tapo, Hikvision –
+anything with ONVIF or RTSP) in the plugin “Door & Camera”: snapshots, the live
+picture through GateControl, clips on motion. No vendor cloud – pictures and
+clips stay on the gateway (on a Synology: on the NAS).
+
+**Requirements:**
+
+- Gateway 1.28.0+. If it is older, the row says “Gateway too old – needs 1.28.0”.
+- Switch **ONVIF** or **RTSP** on in the camera:
+  - Reolink: app or web interface › Settings › Network › Advanced › Server
+    settings › ONVIF and RTSP on (ONVIF port usually 8000).
+  - Tapo: app › camera › Settings › Advanced › create a **camera account** – its
+    user and password go into GateControl (not your TP-Link account). ONVIF port 2020.
+  - Others: look for “ONVIF” or “RTSP” in the camera's manual.
+- The plugin “Door & Camera” (Settings › Plugins › Catalogue) 1.6.0 or later.
+- Synology/Linux: the current compose file with the service `kameras` once
+  (ffmpeg only, ≈ 80 MB). Without it the row offers “Download docker-compose.yml”
+  ([chapter 6](06-updating-a-gateway.md)); search, test picture and motion events
+  work already, the live picture and clips do not. The Raspberry Pi image adds the
+  service itself.
+
+**Switching on:** tab “Funktionen” → “Geräte im Heimnetz” → “Kameras”. Then in the
+plugin “Door & Camera” › “Add camera”: the gateway searches for cameras (“Reolink
+E1 Zoom · 192.168.1.73 · ONVIF – newly found”) or you enter an `rtsp://…` address,
+plus name, user and password of the camera. “Connect and test” shows a test picture;
+only then is the camera stored. The password stays encrypted on the server and goes
+to the gateway only.
+
+**Recordings:** per camera “on motion (people, cars, animals)”, “on motion, only when
+nobody is at home” (from the family's presence – when it is unknown the gateway does
+not record) or “never – live picture only”. A clip starts 5 seconds before the motion
+and ends 10 seconds after it (2 minutes at most). Motion, people and vehicles are
+detected by the **camera itself** (ONVIF events) – the gateway does no image analysis.
+Keep 7, 14 or 30 days; with less than 1 GB free the gateway records nothing new. Clips
+are in the volume `cam-recordings` – on a Synology `GC_CAMERA_DIR=/volume1/kameras` in
+the `.env` puts them into a folder of the NAS.
+
+**Live picture:** only when the phone or PC is in the **VPN** (or in the server's own
+network). On the road without VPN the app shows a new snapshot every 10 seconds. A push
+with a snapshot for people comes at most once per camera every 5 minutes.
+
+**Hints instead of bans:** on a Raspberry Pi 3 B+ the row says “Cameras: at most 1 camera
+with motion detection”, on a Pi 4 “at most 4”. Switching on stays possible. Cameras
+outside the gateway's own home network (e.g. a camera VLAN) are reached only when that
+network is in the gateway's settings (`PUT /api/v1/gateways/:id/features { cameras: { subnets } }`).
+
+**Privacy:** the gateway records sound only when you switch it on per camera – recording
+conversations is only allowed with everybody's consent. Who may see which camera is set in
+the plugin under “Permissions”.
 
 ## Radio (Zigbee, Bluetooth, Thread)
 

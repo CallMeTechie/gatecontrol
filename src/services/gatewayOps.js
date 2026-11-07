@@ -67,6 +67,7 @@ function start() {
   every(MINUTE, () => withTask('print.housekeeping', () => require('./homePrint').housekeeping()));
   every(HOUR, () => withTask('print.files', () => require('./homePrint').sweepFiles()));
   every(HOUR, () => withTask('radio.sensors', () => require('./homeRadio').housekeeping()));
+  every(HOUR, () => withTask('cameras.events', () => require('./homeCameras').housekeeping()));
   every(HOUR, retentionOnce);
   every(HOUR, homeHourly);
   // first run a few minutes after the start (not in the busy start phase)

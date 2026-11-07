@@ -3654,6 +3654,66 @@ const migrations = [
       ALTER TABLE gateway_meta ADD COLUMN offline_alarm_held_at INTEGER;`,
     detect: (db) => hasColumn(db, 'gateway_meta', 'going_down_at'),
   },
+  {
+    version: 136,
+    name: 'home_cameras',
+    // Kameras im Heimnetz (phase 3c, step 4 — services/homeCameras.js, the
+    // gateway's docs/cameras.md): the cameras of a gateway (address, ONVIF or
+    // RTSP, profile, settings; the camera password encrypted with the server
+    // key, never in the config pull — the gateway fetches it from
+    // GET /api/v1/gateway/cameras/credentials), the gateways' last reports
+    // (state, storage) and the events (person / vehicle / animal / motion) with
+    // the data of their clips — the clips themselves stay on the gateway.
+    sql: `
+      CREATE TABLE IF NOT EXISTS home_cameras (
+        id            TEXT PRIMARY KEY,
+        peer_id       INTEGER NOT NULL REFERENCES peers(id) ON DELETE CASCADE,
+        name          TEXT NOT NULL,
+        host          TEXT NOT NULL,
+        onvif_port    INTEGER,
+        onvif_path    TEXT,
+        rtsp_port     INTEGER,
+        rtsp_path     TEXT,
+        profile       TEXT,
+        username      TEXT,
+        password_enc  TEXT,
+        manufacturer  TEXT,
+        model         TEXT,
+        firmware      TEXT,
+        codec         TEXT,
+        kinds         TEXT NOT NULL DEFAULT '[]',
+        settings      TEXT NOT NULL DEFAULT '{}',
+        state         TEXT,
+        plugin_id     TEXT,
+        created_at    INTEGER NOT NULL,
+        updated_at    INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_home_cameras_peer ON home_cameras(peer_id);
+      CREATE TABLE IF NOT EXISTS home_camera_gateways (
+        peer_id      INTEGER PRIMARY KEY REFERENCES peers(id) ON DELETE CASCADE,
+        report       TEXT NOT NULL DEFAULT '{}',
+        reported_at  INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS home_camera_events (
+        id           TEXT PRIMARY KEY,
+        camera_id    TEXT NOT NULL REFERENCES home_cameras(id) ON DELETE CASCADE,
+        peer_id      INTEGER NOT NULL,
+        kind         TEXT NOT NULL,
+        kinds        TEXT NOT NULL DEFAULT '[]',
+        started_at   INTEGER NOT NULL,
+        ended_at     INTEGER,
+        nobody_home  INTEGER,
+        clip_ms      INTEGER,
+        clip_bytes   INTEGER,
+        has_thumb    INTEGER NOT NULL DEFAULT 0,
+        clip_gone    INTEGER NOT NULL DEFAULT 0,
+        created_at   INTEGER NOT NULL,
+        updated_at   INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_home_camera_events_cam ON home_camera_events(camera_id, started_at);
+      CREATE INDEX IF NOT EXISTS idx_home_camera_events_time ON home_camera_events(started_at);`,
+    detect: (db) => ['home_cameras', 'home_camera_gateways', 'home_camera_events'].every((t) => tableExists(db, t)),
+  },
 ];
 
 module.exports = { migrations };

@@ -220,6 +220,8 @@ function emit(ev) {
     } catch (e) { logger.debug({ err: e.message }, 'homePresence hook not delivered'); }
   }
   try { require('./eventBus').publish('home_presence', { user_id: ev.userId, home: ev.home }); } catch { /* best-effort */ }
+  // Kameras (phase 3c, step 4): record "only when nobody is at home" — the gateways learn it in the config pull
+  try { require('./homeCameras').presenceChanged(); } catch (e) { logger.debug({ err: e.message }, 'cameras presence push failed'); }
 }
 
 /** gc.homeNetwork.presence.list() → people who agreed and have a known state. */

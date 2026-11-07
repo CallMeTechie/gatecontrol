@@ -43,6 +43,8 @@ router.use('/gateways', require('./gatewayNet'));
 router.use('/gateways', require('./gatewayHome'));
 // phase 3c, step 2: the tab "Funk" of a gateway (admin session only, routes/api/gatewayRadio.js)
 router.use('/gateways', require('./gatewayRadio'));
+// phase 3c, step 4: the cameras of a gateway (admin session only, routes/api/gatewayCameras.js)
+router.use('/gateways', require('./gatewayCameras'));
 router.use('/gateways', require('./gateways'));
 router.use('/gateway-pools', require('./gatewayPools'));
 // edge parts of plugins on gateways + the gateways' MQTT brokers (session only, routes/api/edge.js)
