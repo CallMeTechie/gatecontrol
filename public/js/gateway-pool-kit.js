@@ -366,9 +366,9 @@
   /** The memory estimate of one switched-on part (MB) or null — no number without data. */
   function memoryOf(d, feature) {
     const parts = (d && d.memory && d.memory.parts) || [];
-    // the row "Funk": deCONZ + the Bluetooth scan
+    // the row "Funk": deCONZ or zigbee2mqtt, the Thread border router and the Bluetooth scan
     if (feature === 'radio') {
-      const mb = parts.filter((x) => x && (x.key === 'deconz' || x.key === 'ble')).reduce((a, x) => a + (x.mb > 0 ? x.mb : 0), 0);
+      const mb = parts.filter((x) => x && ['deconz', 'zigbee2mqtt', 'otbr', 'ble'].includes(x.key)).reduce((a, x) => a + (x.mb > 0 ? x.mb : 0), 0);
       return mb > 0 ? mb : null;
     }
     const key = feature === 'zigbee' ? 'deconz' : feature;   // 'ai': the model of the local AI

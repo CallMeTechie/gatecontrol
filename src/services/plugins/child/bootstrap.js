@@ -424,11 +424,16 @@ function makePrint() {
 }
 
 // gc.radio (permissions.radio, phase 3c step 2, docs/plugins.md "Radio"): the Bluetooth sensors the
-// administrator took over on the gateways (Gateway › Funk › "Übernehmen") — values only, read-only
+// administrator took over on the gateways (Gateway › Funk › "Übernehmen") — values only, read-only —
+// and the zigbee2mqtt devices of the gateways (read, switch)
 function makeRadio() {
   return Object.freeze({
     /** sensors() → [{ id: 'ble:<mac hex>', gatewayId, gateway, mac, name, model, format, values, battery, online, seenAt }] */
     sensors: () => hostCall('radio.sensors', {}),
+    /** zigbee() → { gateways: [{ id, name, reportedAt }], devices: [{ id: 'z2m:<ieee hex>', gatewayId, gateway, ieee, name, model, vendor, kind, caps, values, battery, online, seenAt }] } */
+    zigbee: () => hostCall('radio.zigbee', {}),
+    /** command(id, set) — set { on, bri 0…100, ct, xy, hue 0…65535, sat 0…254, cover, pos } → { accepted } */
+    command: (id, set) => hostCall('radio.command', { id, set }, 15000),
   });
 }
 

@@ -22,7 +22,7 @@ separate page “Gateway Pools” in the menu any more.
 General requirements:
 
 - Network watch, internet quality, presence and UPS need gateway version
-  **1.21.0** or later, DNS filter and home cache **1.22.0**, print & scan **1.24.0** (PDF for printers without PDF **1.30.0**, text recognition and office files **1.33.0**), radio **1.25.0**, local AI **1.26.0**, cameras **1.28.0**. If the gateway is
+  **1.21.0** or later, DNS filter and home cache **1.22.0**, print & scan **1.24.0** (PDF for printers without PDF **1.30.0**, text recognition and office files **1.33.0**), radio **1.25.0** (zigbee2mqtt, Thread and sensor keys: a gateway newer than 1.31.0), local AI **1.26.0**, cameras **1.28.0**. If the gateway is
   older, the tab says so; update it then ([chapter 6](06-updating-a-gateway.md)).
 - The gateway is in the home network in **host network mode** (default for the
   Pi, the Synology package and Linux with “Host (recommended)”).
@@ -332,48 +332,77 @@ in the app, get the push and find the clips.
 ## Radio (Zigbee, Bluetooth, Thread)
 
 **What for:** Zigbee lights, plugs and sensors (IKEA, Philips Hue, Aqara …) through a
-radio stick on the gateway, Bluetooth thermometers that send their values openly
-(BTHome, Xiaomi with custom firmware, Shelly BLU) and – later – Matter devices over
-Thread. You switch everything in the tab “Radio” – without SSH and without
-`settings.txt`.
+radio stick on the gateway, Bluetooth thermometers (BTHome, Shelly BLU, Xiaomi – encrypted
+ones too) and a Thread network for Matter devices. You switch everything in the tab
+“Radio” – without SSH and without `settings.txt`.
 
 **Requirements:**
 
 - Gateway 1.25.0+. If it is older, the row says “Gateway too old – from 1.25.0”.
-- Zigbee: a radio by dresden elektronik – ConBee II/III on USB or RaspBee II on the Pi
-  header. GateControl recognises other Zigbee sticks (ZBT-1, Sonoff), but deCONZ
-  cannot use them.
-- **Synology/Linux:** the deCONZ service comes with the compose file. When a stick is
-  plugged in, the tab shows “Download docker-compose.yml” – download it once and
-  recreate the project ([chapter 6](06-updating-a-gateway.md)). After that everything works here.
-- **Raspberry Pi image:** nothing to do; older images (up to 1.24) still start deCONZ by
-  themselves and only show the switch with a new image.
+  zigbee2mqtt, Thread and keys for encrypted sensors need a gateway **newer than
+  1.30.0** – otherwise the tab says “gateway update needed”.
+- Zigbee with **deCONZ**: a radio by dresden elektronik – ConBee II/III on USB or
+  RaspBee II on the Pi header.
+- Zigbee with **zigbee2mqtt**: for sticks deCONZ does not speak – Sonoff ZBDongle-E/-P,
+  Home Assistant SkyConnect/ZBT-1/ZBT-2, CC2652 and EFR32 sticks (a ConBee works too).
+  zigbee2mqtt talks through the gateway's MQTT broker; the tab offers “Switch on edge and
+  MQTT” while it is off.
+- **Thread:** a stick with **RCP firmware** (OpenThread): SkyConnect/ZBT-1, ZBT-2,
+  ZBDongle-E or an nRF52840 dongle.
+- **A stick serves one radio only.** Zigbee gets a stick first, Thread another one. With a
+  single multi stick Thread says “stick busy”. The list “Radio sticks” in the tab shows
+  which stick serves what and what it suits.
+- **Firmware:** multi sticks (SkyConnect, ZBDongle-E) do Zigbee *or* Thread – depending on
+  the firmware. The gateway cannot see it; you change it in the browser with the maker's
+  web flasher.
+- **Synology/Linux:** the services (deCONZ, zigbee2mqtt, border router) come with the
+  compose file. If one is missing, the tab shows “Download docker-compose.yml” – download it
+  once and recreate the project ([chapter 6](06-updating-a-gateway.md)).
+- **Raspberry Pi image:** nothing to do; the gateway starts the services itself. On a Pi 3
+  or Zero (up to 1 GB) zigbee2mqtt (≈ 120 MB) and the border router (≈ 60 MB) run as well –
+  the tab only points out that memory can get tight.
 - Bluetooth: built in (the Pi from this image on) or a USB Bluetooth stick. A NAS usually
   has no Bluetooth.
 
 **Switching on:** tab “Features” → “Devices at home” → switch on “Radio (Zigbee,
-Bluetooth, Thread)”, or Zigbee and Bluetooth one by one in the tab “Radio”. Zigbee
-starts as “automatic”: it runs as soon as a ConBee or RaspBee is detected.
+Bluetooth, Thread)”, or Zigbee, Bluetooth and Thread one by one in the tab “Radio”. At
+Zigbee you choose the **Zigbee service**: “deCONZ” or “zigbee2mqtt”. deCONZ starts as
+“automatic”: it runs as soon as a ConBee or RaspBee is detected. If a stick only suits
+zigbee2mqtt, the tab says so.
 
 **Pairing devices:** in the tab “Radio”, at Zigbee, “Start pairing” – GateControl
 searches for 3 minutes. Put the device into pairing mode (usually hold its button for
 5 s). The new device shows up as “new”; “Name it in Smart Home” opens it in the Smart
-Home plugin. If Smart Home is not connected yet, “Add to Smart Home” creates the route
-and opens deCONZ briefly so the plugin gets its key without Phoscon.
+Home plugin. With deCONZ: if Smart Home is not connected yet, “Add to Smart Home” creates
+the route and opens deCONZ briefly. With zigbee2mqtt the devices show up in Smart Home by
+themselves (source “Radio” of the gateway); the tab lists them with their values,
+“Remove” takes a device out of the Zigbee network.
 
 **Bluetooth sensors:** the gateway only listens, it connects to nothing. New sensors
 appear as “unknown” – “Take over” and give them a name (e.g. “Basement”); only sensors
-you take over show up in Smart Home, the neighbours' stay out. Sensors with Xiaomi
-stock firmware send encrypted values – they are recognised, their values come in a
-later step.
+you take over show up in Smart Home, the neighbours' stay out. **Encrypted sensors**
+(BTHome with a key, e.g. Shelly BLU with encryption; Xiaomi stock firmware with a
+bindkey) show “key missing”. Enter the key (32 characters) when taking them over or with
+“Enter key”. GateControl stores it encrypted and hands it only to this gateway – never into
+the configuration or a log. Then they show “decrypted” with their values, with a wrong key
+“wrong key”. Older Xiaomi sensors with the old encryption (before MiBeacon v4) do not work.
 
-**Thread / Matter:** when a Thread-capable stick (ZBT-1, Sonoff ZBDongle-E) is plugged
-in, the tab shows it. GateControl adds the Thread border router in a later step. Matter
-devices on Wi-Fi already work through Smart Home.
+**Thread / Matter:** switch Thread on – the gateway starts the OpenThread Border Router. If
+it has no network yet, choose “Create network” or “Join existing network” (paste the
+dataset of another border router, e.g. from Home Assistant › Settings › Thread). While the
+network runs, the tab shows its name, channel and PAN; “Show dataset” hands out the access
+for a Matter controller (only give it to your own devices). **For Matter over Thread you
+still need a Matter controller** (Apple Home, Google Home, Home Assistant with the Matter
+server) that takes the devices in – GateControl does not commission Matter devices itself
+yet. If the gateway host does not forward IPv6, the tab says so: without
+`net.ipv6.conf.all.forwarding=1` on the host, controllers in the home network do not find
+the Thread devices. Matter devices on Wi-Fi already work through Smart Home.
 
 **If something is stuck:** “approval needed” means deCONZ has a Phoscon password and does
 not let GateControl in – once in Phoscon (port 8090 of the gateway) Gateway › Advanced ›
-“Authenticate app”, then “Try again”.
+“Authenticate app”, then “Try again”. “MQTT off” at zigbee2mqtt: “Switch on edge and MQTT”.
+If zigbee2mqtt or the border router keeps stopping, the stick's firmware usually does not
+fit (Zigbee firmware for zigbee2mqtt, RCP firmware for Thread).
 
 ## Local AI
 

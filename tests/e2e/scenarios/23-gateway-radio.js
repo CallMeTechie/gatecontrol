@@ -10,6 +10,12 @@
 // später") and built-in Bluetooth. Bluetooth is switched on with a real PUT,
 // the gateway reports two sensors, one is taken over with a name ("Übernehmen")
 // and then shows its values. Light/dark, 390 px without sideways scroll.
+// Then the follow-ups as a gateway with the capability radio-stacks: "zigbee2mqtt" chosen with
+// a real click (MQTT off → "Edge und MQTT einschalten", a real PUT), the
+// devices it reports, Thread switched on with the border router running
+// (network data, IPv6 hint, Matter readiness), an encrypted Bluetooth sensor
+// taken over together with its key (the config pull names only the stand, the
+// gateway gets the key from /radio/ble/keys).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -82,7 +88,9 @@ module.exports = (ctx) => {
         const f = db.prepare('SELECT settings FROM gateway_features WHERE peer_id = ?').get(GW);
         db.prepare('UPDATE gateway_meta SET api_token_hash = ? WHERE peer_id = ?').run(hash, GW);
         db.prepare('DELETE FROM gateway_ble_sensors WHERE peer_id = ?').run(GW);
-        return r ? { ...r, features: f ? f.settings : null } : null;
+        db.prepare('DELETE FROM gateway_zigbee_devices WHERE peer_id = ?').run(GW);
+        const e = db.prepare('SELECT edge_enabled, mqtt_enabled FROM gateway_edge WHERE peer_id = ?').get(GW);
+        return r ? { ...r, features: f ? f.settings : null, edge: e || null } : null;
       });
       step('radio: seeded gateway prepared with a known token', !!(old && old.api_token_hash));
       const gw = async (p, body) => (await page.request.fetch(BASE + '/api/v1/gateway' + p, { method: 'POST', data: body, headers: { Authorization: 'Bearer ' + token } })).status();
@@ -147,9 +155,13 @@ module.exports = (ctx) => {
           const r = document.querySelector('[data-radio-recent="00:15:8d:00:0a:0b:0c:0d"]');
           return !!r && /neu/.test(r.textContent) && /Aqara Temperatursensor/.test(r.textContent) && /gerade eben angelernt/.test(r.textContent) && !!r.querySelector('a, button');
         }));
-        step('radio: Thread "kommt später" with the ZBT-1', await page.evaluate(() => {
+        step('radio: Thread on a 1.25.0 gateway: "Gateway-Update nötig" with the ZBT-1', await page.evaluate(() => {
           const c = document.querySelector('[data-radio="thread"]');
-          return !!c && /kommt später/.test(c.textContent) && /Home Assistant Connect ZBT-1/.test(c.textContent);
+          return !!c && /Gateway-Update nötig/.test(c.textContent) && /Home Assistant Connect ZBT-1/.test(c.textContent) && /nach 1\.31\.0/.test(c.textContent);
+        }));
+        step('radio: zigbee2mqtt needs a newer gateway (choice disabled, hint)', await page.evaluate(() => {
+          const b = document.querySelector('[data-radio="zigbee"] [data-stack="zigbee2mqtt"]');
+          return !!b && b.disabled && !!document.querySelector('[data-radio-stack-old]');
         }));
         // Bluetooth on (real PUT)
         await page.click('[data-radio="ble"] [role="switch"]');
@@ -202,6 +214,124 @@ module.exports = (ctx) => {
         }, row));
         await view(page, 'gwradio-features-light');
         await theme(page, 'dark');
+
+        // ── follow-ups: a gateway with radio-stacks (zigbee2mqtt, Thread, keys) ──
+        const NEW = '1.32.0';
+        const z2mTel = (state, extra = {}) => ({
+          ...radioTel(Date.now(), true),
+          stack: 'zigbee2mqtt',
+          sticks: [{ kind: 'multi', model: 'Sonoff ZBDongle-E', bus: 'usb', tty: 'ttyACM1', deconz: false, z2m: 'ember', thread: true, use: state === 'off' ? null : 'zigbee2mqtt' },
+            { kind: 'multi', model: 'Home Assistant Connect ZBT-1', bus: 'usb', tty: 'ttyUSB0', deconz: false, z2m: 'ember', thread: true, use: extra.thread ? 'thread' : null },
+            { kind: 'bluetooth', model: null, bus: 'builtin', tty: 'hci0', deconz: false, z2m: null, thread: false, use: null }],
+          zigbee: { stack: 'zigbee2mqtt', mode: 'off', want: false, service: 'managed', state: 'off', recent: [], error: null },
+          zigbee2mqtt: { want: true, service: 'managed', state, broker: state === 'mqtt_off' ? 'mqtt_off' : 'ok', model: 'Sonoff ZBDongle-E', device: 'ttyACM1', adapter: 'ember',
+            version: '2.14.2', firmware: '7.4.4.0', channel: 15, devices: state === 'running' ? 3 : null, permitUntil: null, recent: [], error: null },
+          thread: extra.thread
+            ? { sticks: 2, models: ['Sonoff ZBDongle-E', 'Home Assistant Connect ZBT-1'], otbr: true, want: true, service: 'managed', state: 'running', role: 'leader', model: 'Home Assistant Connect ZBT-1',
+              device: 'ttyUSB0', infra: 'eth0', network: { name: 'GateControl', channel: 25, panId: 4660, extPanId: 'dead00beef00cafe' }, routers: 1, forwarding: false, error: null }
+            : { sticks: 2, models: ['Sonoff ZBDongle-E', 'Home Assistant Connect ZBT-1'], otbr: false, want: false, service: 'missing', state: 'off', role: null, network: null, error: null },
+        });
+        step('radio: heartbeat of a gateway with the capability radio-stacks', await heartbeat(NEW, [...CAPS, 'radio', 'radio-stacks'], z2mTel('off')) === 200);
+        await fresh(page);
+        await page.reload();
+        await goTab(page, GW, 'radio');
+        step('radio: the Zigbee service can be chosen: deCONZ | zigbee2mqtt', await until(page, () => {
+          const b = document.querySelector('[data-radio="zigbee"] [data-stack="zigbee2mqtt"]');
+          return !!b && !b.disabled && document.querySelector('[data-radio="zigbee"] [data-stack="deconz"]').getAttribute('aria-pressed') === 'true';
+        }, null, 20000));
+        step('radio: the stick list says what fits ("passt zu zigbee2mqtt", one stick one radio)', await page.evaluate(() => {
+          const l = document.querySelector('[data-radio-sticks]');
+          return !!l && /Sonoff ZBDongle-E \(USB\)/.test(l.textContent) && /passt zu zigbee2mqtt/.test(l.textContent) && /Ein Stick bedient immer nur einen Funk/.test(l.parentNode.textContent);
+        }));
+        await page.click('[data-radio="zigbee"] [data-stack="zigbee2mqtt"]');
+        step('radio: zigbee2mqtt chosen (real PUT) → config pull with stack', await until(page, () => {
+          const b = document.querySelector('[data-radio="zigbee"] [data-stack="zigbee2mqtt"]');
+          return !!b && b.getAttribute('aria-pressed') === 'true';
+        }, null, 15000) && (await (await page.request.fetch(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token } })).json()).features.radio.stack === 'zigbee2mqtt');
+        step('radio: heartbeat: zigbee2mqtt waits for MQTT', await heartbeat(NEW, [...CAPS, 'radio', 'radio-stacks'], z2mTel('mqtt_off')) === 200);
+        await fresh(page);
+        await page.reload();
+        await goTab(page, GW, 'radio');
+        step('radio: "MQTT aus" with "Edge und MQTT einschalten"', await until(page, () => {
+          const c = document.querySelector('[data-radio="zigbee"]');
+          return !!c && c.querySelector('[data-radio-state]').getAttribute('data-radio-state') === 'mqtt_off' && !!c.querySelector('[data-radio-mqtt-off]') && /Edge und MQTT einschalten/.test(c.textContent);
+        }, null, 20000));
+        await page.click('[data-fk="gwr-mqtt-on"]');
+        const edgeOn = await until(page, () => !document.querySelector('[data-radio-mqtt-off]') || /eingeschaltet/.test(document.body.textContent), null, 15000);
+        const es = withDb((db) => db.prepare('SELECT edge_enabled, mqtt_enabled FROM gateway_edge WHERE peer_id = ?').get(GW));
+        step('radio: edge and MQTT switched on (real PUT)', edgeOn && !!es && es.edge_enabled === 1 && es.mqtt_enabled === 1, JSON.stringify(es));
+        // zigbee2mqtt runs, reports its devices; Thread switched on and running
+        step('radio: heartbeat: zigbee2mqtt running', await heartbeat(NEW, [...CAPS, 'radio', 'radio-stacks'], z2mTel('running')) === 200);
+        const seen = new Date().toISOString();
+        step('radio: the gateway reports its zigbee2mqtt devices', await gw('/radio/zigbee', { stack: 'zigbee2mqtt', devices: [
+          { ieee: '00:17:88:01:0b:2c:3d:4e', name: 'Wohnzimmer Decke', model: '9290012573A', vendor: 'Philips', kind: 'light', caps: { bri: true, ct: true, color: 'xy' }, values: { on: true, bri: 50 }, type: 'router', supported: true, interview: 'done', seenAt: seen },
+          { ieee: '00:0d:6f:ff:fe:1a:2b:3c', name: 'Steckdose Kaffee', model: 'E1603', vendor: 'IKEA', kind: 'plug', caps: {}, values: { on: false }, type: 'router', supported: true, interview: 'done', seenAt: seen },
+          { ieee: '00:15:8d:00:01:a2:b3:c4', name: 'Bad Klima', model: 'WSDCGQ11LM', vendor: 'Aqara', kind: 'sensor', caps: { battery: true }, values: { temperature: 21.4, humidity: 55, battery: 100 }, type: 'end_device', power: 'Battery', supported: true, interview: 'done', seenAt: seen },
+        ] }) === 200);
+        await fresh(page);
+        await page.reload();
+        await goTab(page, GW, 'radio');
+        step('radio: zigbee2mqtt "läuft · 3 Geräte", the devices with values and "Entfernen"', await until(page, () => {
+          const c = document.querySelector('[data-radio="zigbee"]');
+          if (!c) return false;
+          const st = c.querySelector('[data-radio-state]');
+          const bulb = c.querySelector('[data-radio-device="00:17:88:01:0b:2c:3d:4e"]');
+          const klima = c.querySelector('[data-radio-device="00:15:8d:00:01:a2:b3:c4"]');
+          return st.getAttribute('data-radio-state') === 'running' && /läuft · 3 Geräte/.test(st.textContent) && /zigbee2mqtt 2\.14\.2/.test(c.textContent)
+            && !!bulb && /Wohnzimmer Decke/.test(bulb.textContent) && /an 50 %/.test(bulb.textContent) && /Entfernen/.test(bulb.textContent)
+            && !!klima && /21,4 °C · 55 %/.test(klima.textContent) && /Anlernen starten/.test(c.textContent);
+        }, null, 20000));
+        await page.click('[data-radio="thread"] [role="switch"]');
+        step('radio: Thread switched on (real PUT)', await until(page, () => {
+          const sw = document.querySelector('[data-radio="thread"] [role="switch"]');
+          return sw && sw.getAttribute('aria-checked') === 'true';
+        }, null, 15000));
+        const cfg2 = await (await page.request.fetch(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token } })).json();
+        step('radio: the config pull carries thread', cfg2.features.radio.thread === true, JSON.stringify(cfg2.features.radio));
+        step('radio: heartbeat: border router running', await heartbeat(NEW, [...CAPS, 'radio', 'radio-stacks'], z2mTel('running', { thread: true })) === 200);
+        // an encrypted Bluetooth sensor (BTHome with key)
+        const n2 = Date.now();
+        step('radio: the gateway reports an encrypted sensor without a key', await gw('/radio/ble', { scannedAt: new Date(n2).toISOString(), adapter: { name: 'hci0', bus: 'builtin' }, sensors: [
+          { mac: '54:48:E6:8F:80:A5', format: 'bthome', encrypted: true, keyState: 'no_key', name: 'SBHT-003C', values: {}, rssi: -60, firstSeen: new Date(n2 - 300000).toISOString(), seenAt: new Date(n2).toISOString() },
+        ] }) === 200);
+        await fresh(page);
+        await page.reload();
+        await goTab(page, GW, 'radio');
+        step('radio: Thread "läuft · Leader", network data, IPv6 hint, Matter not ready yet', await until(page, () => {
+          const c = document.querySelector('[data-radio="thread"]');
+          return !!c && /läuft · Leader/.test(c.querySelector('[data-radio-state]').textContent) && /Netz „GateControl“ · Kanal 25 · PAN 0x1234/.test(c.textContent)
+            && !!c.querySelector('[data-radio-forwarding]') && c.querySelector('[data-radio-matter]').getAttribute('data-radio-matter') === 'not_ready' && /Datensatz anzeigen/.test(c.textContent);
+        }, null, 20000));
+        step('radio: the encrypted sensor says "verschlüsselt – Schlüssel fehlt"', await page.evaluate(() => {
+          const r = document.querySelector('[data-radio-sensor="54:48:E6:8F:80:A5"]');
+          return !!r && /verschlüsselt – Schlüssel fehlt/.test(r.textContent);
+        }));
+        await page.click('[data-radio-sensor="54:48:E6:8F:80:A5"] button');
+        await page.fill('#gwr-sname', 'Bad oben');
+        await page.fill('#gwr-skey', 'zu kurz');
+        await page.click('[data-fk="gwr-sname-ok"]');
+        const refused = await until(page, () => /Der Schlüssel hat 32 Zeichen/.test(document.body.textContent));
+        step('radio: a key that is no key is refused in the dialog', refused, refused ? '' : await page.evaluate(() => JSON.stringify({ errs: [...document.querySelectorAll('.gwe-err')].map((e) => [e.hidden, e.textContent]), keys: document.querySelectorAll('#gwr-skey').length, oks: document.querySelectorAll('[data-fk="gwr-sname-ok"]').length })));
+        await page.fill('#gwr-skey', '23:1D:39:C1:D7:CC:1A:B1:AE:E2:24:CD:09:6D:B9:32');
+        await page.click('[data-fk="gwr-sname-ok"]');
+        step('radio: taken over with the key → "Schlüssel gespeichert – wartet auf das nächste Paket"', await until(page, () => {
+          const r = document.querySelector('[data-radio-sensor="54:48:E6:8F:80:A5"]');
+          return !!r && /Bad oben/.test(r.textContent) && /Schlüssel gespeichert/.test(r.textContent) && /Schlüssel ändern/.test(r.textContent);
+        }, null, 20000));
+        const cfg3 = await (await page.request.fetch(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token } })).json();
+        const keys = await (await page.request.fetch(BASE + '/api/v1/gateway/radio/ble/keys', { headers: { Authorization: 'Bearer ' + token } })).json();
+        step('radio: config pull names only the stand; the gateway gets the key separately', /^[0-9a-f]{32}$/.test(cfg3.features.radio.bleKeys || '') && !/231d39c1/.test(JSON.stringify(cfg3))
+          && keys.keys && keys.keys['54:48:E6:8F:80:A5'] === '231d39c1d7cc1ab1aee224cd096db932', JSON.stringify(cfg3.features.radio));
+        await view(page, 'gwradio-z2m-thread-dark', 2400);
+        await theme(page, 'light');
+        await view(page, 'gwradio-z2m-thread-light', 2400);
+        await page.setViewportSize({ width: 390, height: 900 });
+        await page.waitForTimeout(400);
+        const o2 = await overflow(page);
+        step('radio: 390 px with zigbee2mqtt and Thread: no sideways scroll', o2 <= 0, 'overflow ' + o2);
+        await view(page, 'gwradio-z2m-390-light', 3600);
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await theme(page, 'dark');
       } finally {
         await api(page, 'POST', '/api/v1/settings/language', { language: lang0 }).catch(() => {});
         withDb((db) => {
@@ -212,6 +342,9 @@ module.exports = (ctx) => {
             else db.prepare('DELETE FROM gateway_features WHERE peer_id = ?').run(GW);
           }
           db.prepare('DELETE FROM gateway_ble_sensors WHERE peer_id = ?').run(GW);
+          db.prepare('DELETE FROM gateway_zigbee_devices WHERE peer_id = ?').run(GW);
+          if (old && old.edge) db.prepare('UPDATE gateway_edge SET edge_enabled = ?, mqtt_enabled = ? WHERE peer_id = ?').run(old.edge.edge_enabled, old.edge.mqtt_enabled, GW);
+          else db.prepare('DELETE FROM gateway_edge WHERE peer_id = ?').run(GW);
         });
       }
     },
