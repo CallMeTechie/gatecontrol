@@ -1,0 +1,16 @@
+# Lokale KI mit AMD-Grafikkarte über ROCm (docs/local-ai.md §2.1) – Zusatz zu
+# docker-compose.yml, zusammen mit dem Profil "ki":
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.ki-amd.yml
+#   COMPOSE_PROFILES=ki
+# Nur amd64. Braucht auf dem Rechner den amdgpu-Treiber mit /dev/kfd (ROCm 7);
+# ROCm selbst bringt das Image mit. Fehlt /dev/kfd, startet der Container nicht.
+# Die Datei aus GateControl enthält das schon, wenn „Grafikkarte nutzen: AMD“
+# gewählt ist.
+services:
+  ki:
+    image: ollama/ollama:0.40.8-rocm@sha256:c772f70c3e9d407a68c66329ae1a2c861105e43907592810a9ded8a0434c2ef8
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    environment:
+      - GC_KI_GPU=amd

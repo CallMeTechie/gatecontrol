@@ -12,15 +12,36 @@
 //                   provider next to the four cloud ones (services/ai/index.js)
 //   which gateway   setting ai.local_peer
 //   what for        setting ai.local_use: all | private | fallback (routing in index.js)
-//   per gateway     gateway_features.settings.ai { enabled, source, lanUrl, lanApi }
+//   per gateway     gateway_features.settings.ai { enabled, source, lanUrl, lanApi, gpu }
 //                   → features.ai of the config pull
-//   live            management calls /api/ai/status, /pull, /pull/cancel, /delete
-//                   and the streamed /api/ai/chat (gateways.mgmtStream)
+//   live            management calls /api/ai/status, /pull, /pull/cancel, /delete,
+//                   /probe and the streamed /api/ai/chat (gateways.mgmtStream)
 //
 // The server never connects to the LAN server itself: it only stores the
-// address (a private IPv4 address and a port, checked here and again by the
-// gateway) — the gateway connects to exactly that one, nothing else.
+// address — a private IPv4 address (RFC 1918), a private IPv6 address
+// (fc00::/7) or a name the gateway resolves in the home network (nas.local,
+// pc.fritz.box), checked here and again by the gateway, which connects only
+// to private addresses (a name that resolves to the internet is refused
+// there). There is no "internet endpoint" for the local AI — that is what
+// the cloud providers are for.
+//
+// The API key of a LAN server (Ollama behind a proxy, vLLM, LocalAI, LM
+// Studio, llama.cpp server …): encrypted in the ai_providers row 'local'
+// (like the cloud keys), never in a log or the config pull. The config pull
+// carries only lan.keyRev; the one gateway that forwards to the server
+// fetches the key itself (GET /api/v1/gateway/ai/credentials,
+// credentialsFor()). "Verbindung testen" sends a typed key to the gateway
+// through the tunnel (management call, never stored there).
+//
+// Graphics card (per gateway, "Grafikkarte nutzen"): settings.ai.gpu
+// off | nvidia | amd | intel puts the devices into the downloaded compose
+// file (gateway-kit.js); the gateway reports the card, its driver and what
+// the service ki sees (features.ai.host / .gpu) — gpuView() turns that into
+// hints (driver or NVIDIA Container Toolkit missing, compose file too old)
+// and the model fit uses the graphics memory.
 
+const net = require('node:net');
+const crypto = require('node:crypto');
 const { getDb } = require('../../db/connection');
 const logger = require('../../utils/logger');
 const { isPrivateIpv4 } = require('../../utils/validate');
@@ -29,6 +50,9 @@ const http = require('./providers/http');
 const ID = 'local';
 const NAME = 'Lokale KI';
 const MIN_GATEWAY = '1.26.0';
+// GPU, API key, names/IPv6 and the connection test — what the gateway lists in features.ai.supports
+const MIN_GATEWAY_EXT = '1.31.0';
+const GPUS = Object.freeze(['off', 'nvidia', 'amd', 'intel']);
 const USES = Object.freeze(['all', 'private', 'fallback']);
 const USE_DEFAULT = 'all';
 const SOURCES = Object.freeze(['service', 'lan']);
@@ -39,7 +63,10 @@ const PRIVATE_PLUGINS = Object.freeze(['gatecontrol-drive', 'gatecontrol-mail'])
 const MODEL_RE = /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?(:[A-Za-z0-9._-]{1,64})?$/;
 // an OpenAI-compatible server names its models freely (LM Studio: "qwen2.5-7b-instruct", "lmstudio-community/…")
 const LAN_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/;
-const K = Object.freeze({ peer: 'ai.local_peer', use: 'ai.local_use' });
+const K = Object.freeze({ peer: 'ai.local_peer', use: 'ai.local_use', keyRev: 'ai.local_key_rev' });
+// an API key goes as "Authorization: Bearer …": printable, no spaces
+const KEY_RE = /^[\x21-\x7e]{1,512}$/;
+const LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 // What the gateway hears: the time limits of a local answer (CPU inference is
 // slow — minutes, not seconds), the context of the model and the answer length.
@@ -62,10 +89,15 @@ const CATALOGUE = Object.freeze([
   Object.freeze({ id: 'llama3.2:3b', name: 'Llama 3.2 3B', params: 3.2, downloadMb: 2000, ramMb: 2500 }),
   Object.freeze({ id: 'qwen2.5:7b', name: 'Qwen 2.5 7B', params: 7.6, downloadMb: 4700, ramMb: 5500 }),
   Object.freeze({ id: 'gemma2:9b', name: 'Gemma 2 9B', params: 9.2, downloadMb: 5400, ramMb: 6800 }),
+  // for a graphics card with enough memory (on a CPU only: very slow)
+  Object.freeze({ id: 'qwen2.5:14b', name: 'Qwen 2.5 14B', params: 14.8, downloadMb: 9000, ramMb: 10500 }),
+  Object.freeze({ id: 'qwen2.5:32b', name: 'Qwen 2.5 32B', params: 32.8, downloadMb: 20000, ramMb: 22000 }),
 ]);
 const RESERVE_MB = 1024;          // operating system + Docker
 const SERVICE_MB = 60;            // Ollama without a model
 const MEM_SMALLEST = CATALOGUE[0].ramMb;
+const VRAM_RESERVE_MB = 512;      // the driver and the display
+const NVIDIA_MIN_DRIVER = 550;    // Ollama: NVIDIA driver 550 or newer
 
 class LocalError extends Error {
   constructor(code, message) { super(message || code); this.code = code; }
@@ -93,11 +125,30 @@ function isoOrNull(v) {
 
 const validModel = (m) => typeof m === 'string' && MODEL_RE.test(m);
 const validLanModel = (m) => typeof m === 'string' && LAN_MODEL_RE.test(m);
+const validKey = (k) => typeof k === 'string' && KEY_RE.test(k);
+
+/** fc00::/7 — private IPv6 addresses (ULA), e.g. fd00::1 */
+function isUla(ip) {
+  if (typeof ip !== 'string' || !net.isIPv6(ip)) return false;
+  const first = parseInt(ip.split(':')[0] || '0', 16);
+  return Number.isFinite(first) && (first & 0xfe00) === 0xfc00;
+}
+
+/** A host name the gateway resolves in the home network (nas, nas.local, pc.fritz.box) — never localhost. */
+function isHostname(h) {
+  if (typeof h !== 'string' || !h || h.length > 253) return false;
+  const parts = h.split('.');
+  if (!parts.every((x) => LABEL_RE.test(x))) return false;
+  if (/^[0-9]+$/.test(parts[parts.length - 1])) return false;
+  return h !== 'localhost' && !h.endsWith('.localhost');
+}
 
 /**
- * The base URL of an AI server in the home network → 'http://192.168.1.20:11434' or null.
- * Only http/https, the host only as a private IPv4 address (RFC 1918), a port,
- * no path (but '/v1'), no credentials — as the gateway checks it.
+ * The base URL of an AI server in the home network → 'http://192.168.1.20:11434',
+ * 'http://nas.local:11434', 'http://[fd00::20]:11434' or null. Only http/https,
+ * the host as a private IPv4 address (RFC 1918), a private IPv6 address
+ * (fc00::/7) or a name (resolved by the gateway, which connects only to private
+ * addresses), a port, no path (but '/v1'), no credentials — as the gateway checks it.
  */
 function lanUrl(raw) {
   if (typeof raw !== 'string' || raw.length > 200) return null;
@@ -106,14 +157,19 @@ function lanUrl(raw) {
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
   if (u.username || u.password || u.search || u.hash) return null;
   if (!['', '/', '/v1', '/v1/'].includes(u.pathname)) return null;
-  if (!isPrivateIpv4(u.hostname)) return null;
+  const hn = u.hostname;
+  if (hn.startsWith('[') && hn.endsWith(']')) {
+    if (!isUla(hn.slice(1, -1))) return null;
+  } else if (net.isIPv4(hn)) {
+    if (!isPrivateIpv4(hn)) return null;
+  } else if (!isHostname(hn)) return null;
   const port = u.port ? Number(u.port) : (u.protocol === 'https:' ? 443 : 80);
-  return `${u.protocol}//${u.hostname}:${port}`;
+  return `${u.protocol}//${hn}:${port}`;
 }
 
 // ─── Settings of a gateway (part of its features) ──────────────────────
 
-/** gateway_features.settings.ai (any shape) → { enabled, source, lanUrl, lanApi } */
+/** gateway_features.settings.ai (any shape) → { enabled, source, lanUrl, lanApi, gpu } */
 function normalizeSettings(raw) {
   const r = isObj(raw) ? raw : {};
   return {
@@ -121,6 +177,7 @@ function normalizeSettings(raw) {
     source: SOURCES.includes(r.source) ? r.source : 'service',
     lanUrl: lanUrl(r.lanUrl),
     lanApi: APIS.includes(r.lanApi) ? r.lanApi : 'ollama',
+    gpu: GPUS.includes(r.gpu) ? r.gpu : 'off',
   };
 }
 
@@ -141,19 +198,66 @@ function patchField(f, val) {
   if (f === 'lanUrl') {
     if (val === null || val === '') return null;
     const u = lanUrl(val);
-    if (!u) throw new LocalError('invalid_host', 'ai.lanUrl: http(s)://<private IPv4 address>:<port>');
+    if (!u) throw new LocalError('invalid_host', 'ai.lanUrl: http(s)://<private address or name in the home network>:<port>');
     return u;
+  }
+  if (f === 'gpu') {
+    if (!GPUS.includes(val)) throw new LocalError('invalid', 'ai.gpu: off, nvidia, amd or intel');
+    return val;
   }
   throw new LocalError('invalid', `ai.${f}: unknown`);
 }
 
 function settingsOf(peerId) { return features().get(peerId).ai; }
 
-/** features.ai of the config pull */
+/** features.ai of the config pull — the API key never: only its revision for the gateway that forwards */
 function configPayload(peerId) {
   const s = settingsOf(peerId);
-  const lan = s.source === 'lan' && s.lanUrl ? { url: s.lanUrl, api: s.lanApi } : null;
+  const rev = s.source === 'lan' && s.lanUrl ? keyRevFor(peerId) : null;
+  const lan = s.source === 'lan' && s.lanUrl ? { url: s.lanUrl, api: s.lanApi, ...(rev ? { keyRev: rev } : {}) } : null;
   return { enabled: s.enabled && (s.source === 'service' || !!lan), source: s.source, lan };
+}
+
+// ─── API key of the LAN server ─────────────────────────────────────────
+
+function keyRow() {
+  try { return db().prepare('SELECT key_encrypted, key_hint FROM ai_providers WHERE id = ?').get(ID) || null; } catch { return null; }
+}
+
+/** The stored key (decrypted), null without one or when it cannot be decrypted (other server key). */
+function storedKey() {
+  const r = keyRow();
+  if (!r || !r.key_encrypted) return null;
+  try { const k = require('../../utils/crypto').decrypt(r.key_encrypted); return validKey(k) ? k : null; } catch { return null; }
+}
+
+/** The revision of the key for this gateway: only the chosen one with the LAN server gets one. */
+function keyRevFor(id) {
+  if (peerId() !== id) return null;
+  const r = keyRow();
+  if (!r || !r.key_encrypted) return null;
+  const rev = settings().get(K.keyRev, null);
+  return typeof rev === 'string' && /^[0-9a-f]{16}$/.test(rev) ? rev : null;
+}
+
+/** Store, replace (string) or remove (null / '') the key. */
+function setKey(key) {
+  db().prepare('INSERT OR IGNORE INTO ai_providers (id, enabled) VALUES (?, 0)').run(ID);
+  if (key) {
+    db().prepare('UPDATE ai_providers SET key_encrypted = ?, key_hint = ? WHERE id = ?').run(require('../../utils/crypto').encrypt(key), key.slice(-4), ID);
+  } else {
+    db().prepare('UPDATE ai_providers SET key_encrypted = NULL, key_hint = NULL WHERE id = ?').run(ID);
+  }
+  // a new revision: the gateway fetches the key again (or forgets it)
+  settings().set(K.keyRev, crypto.randomBytes(8).toString('hex'));
+}
+
+/** GET /api/v1/gateway/ai/credentials — the key only for the gateway that forwards to the LAN server. */
+function credentialsFor(id) {
+  const s = settingsOf(id);
+  const rev = s.enabled && s.source === 'lan' && s.lanUrl ? keyRevFor(id) : null;
+  if (!rev) return { rev: null, key: null };
+  return { rev, key: storedKey() };
 }
 
 // ─── Telemetry (features.ai of the heartbeat, input of the gateway) ────
@@ -161,6 +265,35 @@ function configPayload(peerId) {
 const STATES = ['off', 'service_missing', 'starting', 'running', 'unreachable', 'error'];
 const SERVICES = ['managed', 'absent', 'missing'];
 const PULL_STATES = ['pulling', 'done', 'error', 'cancelled'];
+const SUPPORTS = ['gpu', 'lanKey', 'lanHost', 'probe'];
+const VENDORS = ['nvidia', 'amd', 'intel'];
+const DRIVER_RE = /^[a-z0-9_-]{1,24}$/;
+const VERSION_RE = /^[0-9][0-9.]{0,19}$/;
+const mbOrNull = (v) => (Number.isInteger(v) && v > 0 && v < 4 * 1024 * 1024 ? v : null);
+
+function cleanCard(g) {
+  return {
+    vendor: VENDORS.includes(g.vendor) ? g.vendor : 'other',
+    driver: typeof g.driver === 'string' && DRIVER_RE.test(g.driver) ? g.driver : null,
+    vramMb: mbOrNull(g.vramMb),
+    integrated: g.integrated === true,
+    name: clean(g.name, 64) || null,
+  };
+}
+
+/** features.ai.gpu of the gateway (the service ki): GPU kind of the compose file, devices, nvidia-smi, model in graphics memory */
+function cleanServiceGpu(g) {
+  if (!isObj(g) || !['none', 'nvidia', 'amd', 'intel'].includes(g.mode)) return null;
+  return {
+    mode: g.mode,
+    devices: (Array.isArray(g.devices) ? g.devices : []).filter((d) => ['nvidia', 'kfd', 'dri'].includes(d)).slice(0, 3),
+    access: g.access === true ? true : (g.access === false ? false : null),
+    cards: (Array.isArray(g.cards) ? g.cards : []).slice(0, 4).filter(isObj).map((c) => ({
+      name: clean(c.name, 64) || null, vramMb: mbOrNull(c.vramMb), driver: typeof c.driver === 'string' && VERSION_RE.test(c.driver) ? c.driver : null,
+    })),
+    used: g.used === true,
+  };
+}
 
 function cleanModels(list, max) {
   return (Array.isArray(list) ? list : []).slice(0, max).filter((m) => isObj(m) && typeof m.name === 'string' && LAN_MODEL_RE.test(m.name.slice(0, 200)))
@@ -194,11 +327,22 @@ function telemetryAi(tel, { maxModels = 12 } = {}) {
     host: {
       memTotal: num(h.memTotal) || null, cores: Number.isInteger(h.cores) && h.cores > 0 && h.cores < 1024 ? h.cores : null,
       arch: typeof h.arch === 'string' && /^[a-z0-9_]{1,16}$/.test(h.arch) ? h.arch : null,
-      gpu: (Array.isArray(h.gpu) ? h.gpu : []).slice(0, 4).filter(isObj).map((g) => ({ vendor: ['nvidia', 'amd', 'intel'].includes(g.vendor) ? g.vendor : 'other' })),
+      gpu: (Array.isArray(h.gpu) ? h.gpu : []).slice(0, 4).filter(isObj).map(cleanCard),
+      nvidiaDriver: typeof h.nvidiaDriver === 'string' && VERSION_RE.test(h.nvidiaDriver) ? h.nvidiaDriver : null,
+      kfd: h.kfd === true,
+      render: h.render === true,
     },
-    lan: lan ? { url: lanUrl(lan.url), api: APIS.includes(lan.api) ? lan.api : 'ollama', reachable: lan.reachable === true } : null,
+    gpu: cleanServiceGpu(a.gpu),
+    lan: lan ? { url: lanUrl(lan.url), api: APIS.includes(lan.api) ? lan.api : 'ollama', reachable: lan.reachable === true, auth: lan.auth === true } : null,
+    supports: (Array.isArray(a.supports) ? a.supports : []).filter((x) => SUPPORTS.includes(x)),
     error: err ? { code: clean(err.code, 32) || 'error', message: clean(err.message, 160) || null } : null,
   };
+}
+
+/** What this gateway can do beyond 1.26.0 (gpu, lanKey, lanHost, probe) — from its own report. */
+function supportsOf(tel) {
+  const t = telemetryAi(tel);
+  return t ? t.supports : [];
 }
 
 function supported(tel) {
@@ -212,7 +356,85 @@ function factsOf(tel) {
   const mem = (t && t.host.memTotal) || num(hw.mem_total) || num(tel && tel.mem_total);
   const cores = (t && t.host.cores) || (Number.isInteger(hw.cpu_cores) ? hw.cpu_cores : (Number.isInteger(tel && tel.cpu_cores) ? tel.cpu_cores : null));
   const arch = (t && t.host.arch) || (typeof hw.arch === 'string' ? hw.arch : (tel && typeof tel.arch === 'string' ? tel.arch : null));
-  return { memMb: mem ? Math.round(mem / 1048576) : null, cores, arch, gpu: t ? t.host.gpu : [] };
+  return {
+    memMb: mem ? Math.round(mem / 1048576) : null, cores, arch, gpu: t ? t.host.gpu : [],
+    nvidiaDriver: t ? t.host.nvidiaDriver : null, kfd: !!(t && t.host.kfd), render: !!(t && t.host.render),
+  };
+}
+
+// ─── Graphics card (hints, never a ban) ────────────────────────────────
+
+/** The card a GPU kind would use: the first of that vendor (a discrete one first). */
+function cardFor(facts, kind) {
+  const list = (facts.gpu || []).filter((c) => c.vendor === kind);
+  return list.find((c) => !c.integrated) || list[0] || null;
+}
+
+/** A sensible suggestion: NVIDIA with its driver, AMD with ROCm, else nothing (Intel stays a choice by hand). */
+function suggestedGpu(facts) {
+  const nv = cardFor(facts, 'nvidia');
+  if (nv && nv.driver === 'nvidia') return 'nvidia';
+  const amd = cardFor(facts, 'amd');
+  if (amd && !amd.integrated && amd.driver === 'amdgpu' && facts.kfd && facts.arch !== 'arm64') return 'amd';
+  return null;
+}
+
+/**
+ * The graphics card of a gateway for the setup and the row "Lokale KI":
+ *   choice     the setting (off | nvidia | amd | intel)
+ *   suggest    what the hardware suggests (null: nothing useful found)
+ *   card       { vendor, name, vramMb, integrated, driver } of the chosen (or suggested) kind
+ *   vramMb     graphics memory for the model fit (nvidia-smi through the service, AMD from sysfs;
+ *              null: unknown or shared with the main memory)
+ *   state      off | in_use (the model sits in graphics memory) | ready (the service sees the card) | waiting
+ *   hints      what to do — codes the pages translate:
+ *              no_card, nvidia_driver, nvidia_old, toolkit, amd_driver, rocm, arch, dri, devices,
+ *              compose (the compose file of the gateway has another GPU kind), experimental,
+ *              available (off, but a usable card is there), unsupported (gateway too old), rpi
+ */
+function gpuView(facts, t, s, { platform = null, supports = [] } = {}) {
+  const choice = s && GPUS.includes(s.gpu) ? s.gpu : 'off';
+  const suggest = suggestedGpu(facts);
+  const kind = choice !== 'off' ? choice : suggest;
+  const c = kind ? cardFor(facts, kind) : null;
+  const svc = t && t.source === 'service' ? t.gpu : null;
+  const smi = svc && svc.mode === 'nvidia' ? svc.cards.find((x) => x.vramMb) : null;
+  let vramMb = null;
+  if (kind === 'nvidia' && smi) vramMb = smi.vramMb;
+  else if (c && !c.integrated && c.vramMb) vramMb = c.vramMb;
+  const card = c ? { vendor: c.vendor, name: (smi && smi.name) || c.name, vramMb, integrated: c.integrated, driver: kind === 'nvidia' ? ((smi && smi.driver) || facts.nvidiaDriver || null) : c.driver } : null;
+  const hints = [];
+  if (platform === 'rpi') {
+    if (choice !== 'off') hints.push('rpi');
+  } else if (!supports.includes('gpu')) {
+    if (choice !== 'off' || suggest) hints.push('unsupported');
+  } else if (choice === 'off') {
+    if (suggest) hints.push('available');
+  } else {
+    if (!c) hints.push('no_card');
+    if (choice === 'nvidia' && c) {
+      if (c.driver !== 'nvidia') hints.push('nvidia_driver');
+      else if (facts.nvidiaDriver && Number(facts.nvidiaDriver.split('.')[0]) < NVIDIA_MIN_DRIVER) hints.push('nvidia_old');
+    }
+    if (choice === 'amd') {
+      if (c && c.driver !== 'amdgpu') hints.push('amd_driver');
+      if (!facts.kfd) hints.push('rocm');
+      if (facts.arch && facts.arch !== 'x64') hints.push('arch');
+    }
+    if (choice === 'intel') {
+      if (!facts.render) hints.push('dri');
+      hints.push('experimental');
+    }
+    if (svc && svc.mode !== choice) hints.push('compose');
+    else if (svc && svc.access === false) hints.push(choice === 'nvidia' ? 'toolkit' : 'devices');
+  }
+  let state = 'off';
+  if (choice !== 'off') {
+    if (svc && svc.mode === choice && svc.used) state = 'in_use';
+    else if (svc && svc.mode === choice && svc.access) state = 'ready';
+    else state = 'waiting';
+  }
+  return { choice, suggest, card, vramMb, state, hints };
 }
 
 // ─── Model fit (hints, never a ban) ────────────────────────────────────
@@ -224,26 +446,48 @@ function factsOf(tel) {
  *   recommended      the best one that is fast enough (exactly one)
  *   fits             the rest
  * otherMb: what the other features of the gateway need.
+ * gpu: { on, vramMb } — the graphics card is used ("Grafikkarte nutzen"): a model
+ * that fits into its memory (vram: full) is fast and needs little main memory;
+ * one that does not (vram: partial) runs partly on the CPU. vramMb null (unknown
+ * yet, or shared memory): fast enough, no size from the card.
  */
-function fitList(facts, otherMb = 0) {
+function fitList(facts, otherMb = 0, gpu = null) {
   const free = facts.memMb ? facts.memMb - RESERVE_MB - otherMb : null;
   const cores = facts.cores || 2;
-  const gpu = (facts.gpu || []).length > 0;
+  const on = !!(gpu && gpu.on);
+  const vram = on && gpu.vramMb ? gpu.vramMb - VRAM_RESERVE_MB : null;
   const arm = facts.arch === 'arm64' || facts.arch === 'arm';
   // billions of parameters per core still OK without a GPU (ARM boards are slower per core)
   const quick = arm ? 0.35 : 0.85;
   const slow = arm ? 0.9 : 2.0;
   const rows = CATALOGUE.map((m) => {
     const ratio = m.params / cores;
+    const full = vram !== null && m.ramMb <= vram;
+    // in graphics memory the model needs only a little main memory; partly there: the rest in main memory
+    const needRam = full ? 1024 : (vram !== null ? Math.max(1024, m.ramMb - vram) : m.ramMb);
     let fit = 'fits';
     let reason = null;
-    if (free !== null && m.ramMb > free) { fit = 'not_recommended'; reason = 'memory'; } else if (!gpu && ratio > slow) { fit = 'not_recommended'; reason = 'slow'; }
-    return { ...m, fit, reason, quick: gpu || ratio <= quick };
+    if (free !== null && needRam > free) { fit = 'not_recommended'; reason = 'memory'; } else if (!full && !(on && vram === null) && ratio > (vram !== null ? slow * 1.5 : slow)) { fit = 'not_recommended'; reason = 'slow'; }
+    return { ...m, fit, reason, vram: vram === null ? null : (full ? 'full' : 'partial'), quick: full || (on && vram === null) || ratio <= quick };
   });
   const able = rows.filter((r) => r.fit === 'fits');
+  // without a GPU: the biggest quick one; with one: the biggest that fits into its memory
   const best = able.filter((r) => r.quick).pop() || able[0] || null;
   if (best) best.fit = 'recommended';
   return rows.map(({ quick, ...r }) => r);
+}
+
+/**
+ * The catalogue of one gateway: with the GPU as set (models), and per choice of
+ * "Grafikkarte nutzen" (byGpu.off / .nvidia / .amd / .intel — the page switches live).
+ */
+function catalogueFor(facts, otherMb, gv, options) {
+  const byGpu = {};
+  for (const c of GPUS) {
+    const o = options[c];
+    byGpu[c] = fitList(facts, otherMb, { on: c !== 'off', vramMb: o.vramMb });
+  }
+  return { models: fitList(facts, otherMb, { on: gv.choice !== 'off', vramMb: gv.vramMb }), byGpu };
 }
 
 /** A hint for the gateway choice: null | 'memory' (too little for any model — a server in the home network helps). */
@@ -304,15 +548,16 @@ function providerView() {
   const tel = g ? features().telemetryOf(g) : null;
   const t = telemetryAi(tel);
   const s = g ? settingsOf(g.id) : null;
+  const lanKey = !!(s && s.source === 'lan' && row && row.key_encrypted);
   return {
     id: ID,
     name: NAME,
     local: true,
     enabled: !!(row && row.enabled),
     configured: !!ready(),
-    keySet: false,
-    keyState: 'none',
-    keyHint: null,
+    keySet: lanKey,
+    keyState: lanKey ? 'set' : 'none',
+    keyHint: lanKey ? row.key_hint || null : null,
     modelText: row ? row.model_text || null : null,
     modelAudio: null,
     capabilities: ['text'],
@@ -348,12 +593,18 @@ function gateways() {
     const facts = factsOf(tel);
     const other = otherFeaturesMb(g.id, tel);
     const t = telemetryAi(tel);
+    const platform = require('../homeRadio').platformOf(g.id, tel);
+    const s = settingsOf(g.id);
+    const supports = t ? t.supports : [];
     return {
       id: g.id, name: g.name, online: aliveOf(g.id), supported: supported(tel),
       version: typeof tel.gateway_version === 'string' ? tel.gateway_version : null,
-      memMb: facts.memMb, cores: facts.cores, arch: facts.arch, gpu: facts.gpu,
-      otherMb: other, hint: gatewayHint(facts, other), chosen: g.id === chosen, platform: require('../homeRadio').platformOf(g.id, tel),
-      settings: settingsOf(g.id), state: t ? t.state : null,
+      memMb: facts.memMb, cores: facts.cores, arch: facts.arch, gpu: facts.gpu, facts,
+      otherMb: other, hint: gatewayHint(facts, other), chosen: g.id === chosen, platform,
+      settings: s, state: t ? t.state : null, supports,
+      gpuView: gpuView(facts, t, s, { platform, supports }),
+      // what each choice of "Grafikkarte nutzen" would mean (hints before saving)
+      gpuOptions: Object.fromEntries(GPUS.map((c) => [c, gpuView(facts, t, { ...s, gpu: c }, { platform, supports })])),
     };
   }).filter(Boolean);
 }
@@ -417,10 +668,46 @@ async function removeModel(id, model, { ip } = {}) {
   return r;
 }
 
+/**
+ * "Verbindung testen": the gateway asks a LAN server that is not saved yet —
+ * { peerId, lanUrl, lanApi, lanKey? } → { reachable, url, api, version, models, auth, error }.
+ * Without a typed key the stored one goes along — only to the saved address (through the tunnel,
+ * never stored on the gateway).
+ */
+async function probe(b) {
+  if (!isObj(b)) throw new LocalError('invalid', 'body');
+  const g = needGateway(Number(b.peerId));
+  if (!supportsOf(features().telemetryOf(g)).includes('probe')) throw new LocalError('gateway_unsupported_ext', 'the gateway is too old for this (from ' + MIN_GATEWAY_EXT + ')');
+  const u = lanUrl(b.lanUrl);
+  if (!u) throw new LocalError('invalid_host', 'lanUrl');
+  const api = b.lanApi === undefined ? 'ollama' : b.lanApi;
+  if (!APIS.includes(api)) throw new LocalError('invalid', 'lanApi');
+  if (b.lanKey != null && b.lanKey !== '' && !validKey(b.lanKey)) throw new LocalError('invalid', 'lanKey');
+  // the stored key only goes to the saved server — never to an address typed for the test
+  const cur = peerId() ? gatewayOf(peerId()) : null;
+  const savedUrl = cur ? settingsOf(cur.id).lanUrl : null;
+  const key = b.lanKey ? b.lanKey : (savedUrl && savedUrl === u ? storedKey() : null);
+  if (!aliveOf(g.id)) throw new LocalError('gateway_unreachable', 'the gateway is offline');
+  const r = await gw().mgmtCall(g.id, '/api/ai/probe', { url: u, api, ...(key ? { key } : {}) }, 20000, { maxBytes: 128 * 1024 });
+  if (!r) throw new LocalError('gateway_unreachable', 'the gateway does not answer');
+  if (r.status === 429) throw new LocalError('busy', 'a test is running');
+  if (r.status !== 200 || !r.body || !isObj(r.body.probe)) throw new LocalError(r.status === 400 ? 'invalid_host' : 'gateway_error', 'gateway answered ' + r.status);
+  const p = r.body.probe;
+  const e = isObj(p.error) ? p.error : null;
+  return {
+    reachable: p.reachable === true, url: lanUrl(p.url) || u, api,
+    version: typeof p.version === 'string' && /^[0-9A-Za-z.+-]{1,32}$/.test(p.version) ? p.version : null,
+    models: cleanModels(p.models, 48), auth: !!key,
+    error: e ? { code: clean(e.code, 32) || 'error', message: clean(e.message, 160) || null } : null,
+  };
+}
+
 // ─── Setup (Einstellungen › KI-Anbieter › Lokale KI einrichten) ─────────
 
 /**
- * Save the setup: { source, peerId, model, lanUrl?, lanApi? }.
+ * Save the setup: { source, peerId, model, lanUrl?, lanApi?, lanKey?, gpu? }.
+ * lanKey: a string replaces the key, null or '' removes it, missing keeps it.
+ * gpu: off | nvidia | amd | intel ("Grafikkarte nutzen", source service).
  * Switches the function on on that gateway (and off on the one before, if it
  * served the local AI), chooses the model, switches the provider on.
  * → { provider, startPull } (startPull: the gateway should download the model now)
@@ -436,15 +723,29 @@ function setup(b, { ip, user } = {}) {
   const model = b.model;
   if (source === 'service' ? !validModel(model) : !validLanModel(model)) throw new LocalError('invalid', 'model');
   const patch = { enabled: true, source };
+  let keyChange;
   if (source === 'lan') {
     const u = lanUrl(b.lanUrl);
     if (!u) throw new LocalError('invalid_host', 'lanUrl');
     if (b.lanApi !== undefined && !APIS.includes(b.lanApi)) throw new LocalError('invalid', 'lanApi');
     patch.lanUrl = u;
     patch.lanApi = b.lanApi || 'ollama';
+    if (b.lanKey === null || b.lanKey === '') keyChange = null;
+    else if (b.lanKey !== undefined) {
+      if (!validKey(b.lanKey)) throw new LocalError('invalid', 'lanKey');
+      keyChange = b.lanKey;
+    }
+  }
+  if (b.gpu !== undefined) {
+    if (!GPUS.includes(b.gpu)) throw new LocalError('invalid', 'gpu');
+    patch.gpu = b.gpu;
   }
   const before = peerId();
   const prev = providerRow();
+  const hadKey = !!(prev && prev.key_encrypted);
+  // the key first: the config pull the feature change pushes carries its new revision
+  if (keyChange !== undefined && (keyChange || hadKey)) setKey(keyChange);
+  if (before !== g.id && keyChange === undefined && hadKey) settings().set(K.keyRev, crypto.randomBytes(8).toString('hex'));
   features().set(g.id, { ai: patch }, { ip, user });
   if (before && before !== g.id && gatewayOf(before) && settingsOf(before).enabled) {
     try { features().set(before, { ai: { enabled: false } }, { ip, user }); } catch (e) { logger.warn({ err: e.message }, 'ai: local AI of the previous gateway not switched off'); }
@@ -454,7 +755,14 @@ function setup(b, { ip, user } = {}) {
   db().prepare('UPDATE ai_providers SET enabled = 1, model_text = ?, capabilities = ?, checked_at = NULL, check_error = NULL WHERE id = ?').run(model, JSON.stringify(['text']), ID);
   if (!prev || prev.model_text !== model || before !== g.id || !prev.enabled) {
     activity().log('ai_local_setup', `Local AI set up: "${model}" ${source === 'lan' ? `on the AI server ${patch.lanUrl} through` : 'on'} "${g.name}"`, {
-      source: 'admin', ipAddress: ip, severity: 'info', details: { peer_id: g.id, source, model, ...(source === 'lan' ? { lan_url: patch.lanUrl, lan_api: patch.lanApi } : {}) },
+      source: 'admin', ipAddress: ip, severity: 'info', details: { peer_id: g.id, source, model, ...(source === 'lan' ? { lan_url: patch.lanUrl, lan_api: patch.lanApi } : {}), ...(patch.gpu ? { gpu: patch.gpu } : {}) },
+    });
+  }
+  // the key itself is never logged — only that it changed; the gateway pulls the new keyRev at once
+  if (keyChange !== undefined && (keyChange || hadKey)) {
+    features().notifyGateway(g.id);
+    activity().log(keyChange ? 'ai_local_key_set' : 'ai_local_key_removed', `Local AI: API key of the AI server ${keyChange ? 'saved' : 'removed'}`, {
+      source: 'admin', ipAddress: ip, severity: 'info', details: { peer_id: g.id, ...(keyChange ? { key_hint: keyChange.slice(-4) } : {}) },
     });
   }
   return { provider: providerView(), startPull: source === 'service' };
@@ -494,9 +802,14 @@ function view() {
     provider: providerView(),
     use: use(),
     minGateway: MIN_GATEWAY,
-    gateways: list,
-    catalogue: list.map((g) => ({ peerId: g.id, models: fitList({ memMb: g.memMb, cores: g.cores, arch: g.arch, gpu: g.gpu }, g.otherMb) })),
-    current: cur ? { peerId: cur.id, source: cur.settings.source, lanUrl: cur.settings.lanUrl, lanApi: cur.settings.lanApi, model: row ? row.model_text || null : null } : null,
+    minGatewayExt: MIN_GATEWAY_EXT,
+    gateways: list.map(({ facts, ...g }) => g),
+    catalogue: list.map((g) => ({ peerId: g.id, ...catalogueFor(g.facts, g.otherMb, g.gpuView, g.gpuOptions) })),
+    current: cur ? {
+      peerId: cur.id, source: cur.settings.source, lanUrl: cur.settings.lanUrl, lanApi: cur.settings.lanApi, gpu: cur.settings.gpu,
+      model: row ? row.model_text || null : null,
+      keySet: !!(row && row.key_encrypted), keyHint: row && row.key_encrypted ? row.key_hint || null : null,
+    } : null,
     privatePlugins: PRIVATE_PLUGINS.slice(),
   };
 }
@@ -508,11 +821,31 @@ function composeWantsAi(id) {
   try { const s = settingsOf(id); return s.enabled && s.source === 'service'; } catch { return false; }
 }
 
-/** What needs one step outside: the compose file (Synology/Linux) when the service ki is missing. */
+/** The graphics card for the service ki in the compose file: nvidia | amd | intel, or null (CPU only). */
+function composeGpu(id) {
+  try {
+    const s = settingsOf(id);
+    if (!(s.enabled && s.source === 'service' && s.gpu !== 'off')) return null;
+    const g = features().gatewayPeer(id);
+    // the Raspberry Pi image has no GPU for Ollama
+    if (g && require('../homeRadio').platformOf(g.id, features().telemetryOf(g)) === 'rpi') return null;
+    return s.gpu;
+  } catch { return null; }
+}
+
+/** What needs one step outside: the compose file (Synology/Linux) when the service ki is missing or has another GPU kind. */
 function composeHint(t, s, platform) {
   if (!s || !s.enabled || s.source !== 'service') return null;
   const service = t ? t.service : 'missing';
-  if (service === 'managed') return null;
+  if (service === 'managed') {
+    // "Grafikkarte nutzen" changed: the running service has another GPU kind (an old compose file reports none)
+    if (platform !== 'rpi' && t && t.supports.includes('gpu')) {
+      const want = s.gpu === 'off' ? 'none' : s.gpu;
+      const have = t.gpu ? t.gpu.mode : 'none';
+      if (want !== have) return 'compose_gpu';
+    }
+    return null;
+  }
   if (platform === 'rpi') return service === 'absent' ? null : 'image';
   return 'compose';
 }
@@ -541,17 +874,22 @@ function overview(id) {
   const model = row && row.model_text ? row.model_text : null;
   const entry = model ? catalogueEntry(model) : null;
   const platform = require('../homeRadio').platformOf(g.id, tel);
+  const supports = t ? t.supports : [];
   return {
     enabled: s.enabled,
     source: s.source,
     lanUrl: s.lanUrl,
+    lanKey: s.source === 'lan' && chosen && !!keyRevFor(g.id),
     supported: supported(tel),
     minGateway: MIN_GATEWAY,
+    minGatewayExt: MIN_GATEWAY_EXT,
+    supports,
+    gpu: s.source === 'service' ? gpuView(facts, t, s, { platform, supports }) : null,
     chosen,
     providerEnabled: !!(row && row.enabled),
     model: model ? { id: model, name: entry ? entry.name : model, downloadMb: entry ? entry.downloadMb : null, ramMb: entry ? entry.ramMb : null,
       present: !!(t && t.models.some((m) => m.name === model || m.name === model + ':latest')) } : null,
-    state: t ? { state: t.state, service: t.service, version: t.version, loaded: t.loaded, pull: t.pull } : null,
+    state: t ? { state: t.state, service: t.service, version: t.version, loaded: t.loaded, pull: t.pull, error: t.error ? t.error.code : null } : null,
     hint: gatewayHint(facts, otherFeaturesMb(g.id, tel)),
     platform,
     compose: composeHint(t, s, platform),
@@ -566,7 +904,8 @@ function errorKind(code) {
   if (code === 'busy') return 'rate';
   if (code === 'invalid_request' || code === 'invalid') return 'client';
   if (code === 'too_large' || code === 'bad_response') return 'invalid';
-  if (code === 'unreachable' || code === 'not_running' || code === 'feature_disabled' || code === 'disabled' || code === 'aborted') return 'network';
+  if (code === 'unreachable' || code === 'not_private' || code === 'not_running' || code === 'feature_disabled' || code === 'disabled' || code === 'aborted') return 'network';
+  if (code === 'unauthorized') return 'client';
   return 'server'; // model_missing, model_error, http_5xx …
 }
 
@@ -648,8 +987,9 @@ async function complete(o) {
 function isPrivate(pluginId) { return PRIVATE_PLUGINS.includes(pluginId); }
 
 module.exports = {
-  ID, NAME, MIN_GATEWAY, USES, SOURCES, APIS, PRIVATE_PLUGINS, CATALOGUE, LIMITS, K, LocalError,
-  lanUrl, validModel, validLanModel, normalizeSettings, patchField, configPayload, telemetryAi, supported, factsOf, fitList, gatewayHint, catalogueEntry,
-  providerRow, peerId, use, ready, providerView, gateways, liveStatus, pull, cancelPull, removeModel, setup, setEnabled, setUse, view,
-  composeWantsAi, composeHint, memoryPart, overview, complete, errorKind, isPrivate, fitText,
+  ID, NAME, MIN_GATEWAY, MIN_GATEWAY_EXT, USES, SOURCES, APIS, GPUS, PRIVATE_PLUGINS, CATALOGUE, LIMITS, K, LocalError,
+  lanUrl, validModel, validLanModel, validKey, isUla, isHostname, normalizeSettings, patchField, configPayload, telemetryAi, supported, supportsOf, factsOf,
+  fitList, catalogueFor, gpuView, suggestedGpu, gatewayHint, catalogueEntry,
+  providerRow, peerId, use, ready, providerView, gateways, liveStatus, pull, cancelPull, removeModel, probe, setup, setEnabled, setUse, view,
+  storedKey, credentialsFor, composeWantsAi, composeGpu, composeHint, memoryPart, overview, complete, errorKind, isPrivate, fitText,
 };

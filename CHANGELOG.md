@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.244.0] — 2026-11-07
+
+### Features
+- Vollbild für Plugin-Frames, deren Medien Videos sein können (#431)
+
+---
+
 ## [1.243.0] — 2026-11-07
 
 ### Features

@@ -333,6 +333,17 @@ router.get('/cameras/credentials', (req, res) => {
   try { return res.json(cams().credentialsFor(req.gateway.peer_id)); } catch (err) { return camFail(res, err, req.gateway.peer_id); }
 });
 
+// ─── Phase 3c, step 3: Lokale KI — the API key of the LAN server (services/ai/local.js) ──
+
+/** GET /api/v1/gateway/ai/credentials — { rev, key } only for the gateway that forwards to the LAN server (never logged, never cached) */
+router.get('/ai/credentials', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try { return res.json(require('../../services/ai/local').credentialsFor(req.gateway.peer_id)); } catch (err) {
+    logger.error({ err: err && err.message, peerId: req.gateway.peer_id }, 'gateway AI credentials failed');
+    return res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
 /** POST /api/v1/gateway/cameras/report — { at, service, storage, cameras: [...] } */
 router.post('/cameras/report', express.json({ limit: '64kb' }), (req, res) => {
   try { res.json({ ok: true, ...cams().ingestReport(req.gateway.peer_id, req.body || {}) }); } catch (err) { camFail(res, err, req.gateway.peer_id); }

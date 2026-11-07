@@ -410,14 +410,16 @@ Cloud, wenn „Bilder senden“ an ist).
   es dort (Dienst „ki“ mit Ollama). Sinnvoll ab etwa 4 GB RAM; eine NAS mit 8–16 GB
   ist gut. Auf einem Raspberry Pi 3 B+ (1 GB) zeigt GateControl „zu wenig Speicher“ –
   einschalten bleibt möglich, besser ist dann der zweite Weg.
-- **Vorhandener KI-Server im Heimnetz:** Läuft schon Ollama oder LM Studio auf einem
-  PC, leitet ein Gateway im selben Heimnetz die Fragen nur weiter – an genau diese
-  eine Adresse (private IPv4-Adresse und Port). Am PC muss der Server im Netz
+- **Vorhandener KI-Server im Heimnetz:** Läuft schon Ollama, LM Studio, vLLM, ein
+  llama.cpp-Server oder LocalAI auf einem PC, leitet ein Gateway im selben Heimnetz die
+  Fragen nur weiter – an genau diese eine Adresse. Am PC muss der Server im Netz
   lauschen: Ollama mit `OLLAMA_HOST=0.0.0.0`, LM Studio mit „Serve on Local Network“.
 
 **Voraussetzungen:**
 
 - Gateway 1.26.0+. Ist es älter, steht in der Zeile „Gateway zu alt – ab 1.26.0“.
+  Grafikkarte, API-Schlüssel, Namen/IPv6 und „Verbindung testen“ brauchen Gateway
+  **1.31.0**+ (vorher steht dort ein Hinweis).
 - **Synology/Linux** (nur „Auf einem Gateway“): einmal die aktuelle Compose-Datei mit
   dem Dienst „ki“. Fehlt er, zeigen die Zeile „Lokale KI“ und die Einrichtung den Knopf
   „docker-compose.yml herunterladen“ – herunterladen, Projekt neu erstellen
@@ -430,16 +432,63 @@ Cloud, wenn „Bilder senden“ an ist).
 
 1. „Auf einem Gateway“ oder „Vorhandener KI-Server im Heimnetz“ wählen.
 2. Das Gateway wählen. Daneben stehen RAM, Kerne und ob eine Grafikkarte da ist.
+   Hat es eine, erscheint **„Grafikkarte nutzen“** (siehe unten).
 3. Ein Modell wählen. GateControl sagt je Gateway „empfohlen“, „passt“ oder „nicht
    empfohlen“ (zu wenig Speicher oder ohne Grafikkarte zu langsam) – wählen geht
    immer. Für den Anfang: **Llama 3.2 3B** (2 GB, schnell, gut für Zusammenfassen und
    Sortieren); auf schwacher Hardware **Llama 3.2 1B**; mit viel Speicher **Qwen 2.5 7B**
    (bessere Antworten, deutlich langsamer ohne Grafikkarte).
-   Beim KI-Server im Heimnetz: Adresse eintragen (z. B. `http://192.168.1.20:11434`),
-   „Verbinden“, dann eines seiner Modelle wählen.
+   Mit Grafikkarte zählt ihr Speicher: „im Grafikspeicher“ heißt schnell; mit 12 GB
+   oder mehr ist **Qwen 2.5 14B** eine gute Wahl, mit 24 GB **Qwen 2.5 32B**.
+   Beim KI-Server im Heimnetz: Adresse eintragen, die Art wählen (Ollama oder
+   OpenAI-kompatibel), falls nötig den API-Schlüssel, dann **„Verbindung testen“** –
+   GateControl zeigt die Modelle des Servers, ohne etwas zu speichern. Eines wählen.
 4. „Speichern“. Auf einem Gateway lädt GateControl das Modell herunter
    („Modell wird geladen: 1,3 von 2,0 GB“, „Abbrechen“ geht jederzeit; ein späteres
    „Laden“ setzt fort).
+
+**Adresse des KI-Servers:** mit Port, z. B.
+
+| So | Beispiel |
+|---|---|
+| private IPv4-Adresse | `http://192.168.1.20:11434` |
+| Name im Heimnetz | `http://ki-pc.local:11434`, `http://pc.fritz.box:1234` |
+| private IPv6-Adresse (fd…/fc…) | `http://[fd00::20]:11434` |
+| mit `/v1` (OpenAI-kompatibel) | `http://192.168.1.20:8000/v1` |
+
+Das Gateway löst Namen selbst auf (`.local` per mDNS, sonst über den Router) und
+verbindet sich **nur** mit Adressen im Heimnetz. Zeigt ein Name ins Internet, sagt
+„Verbindung testen“: „Der Name zeigt nicht ins Heimnetz“. Einen Server im Internet
+gibt es für die lokale KI nicht – dafür sind die Cloud-Anbieter da.
+
+**API-Schlüssel:** Verlangt der Server einen (Ollama hinter einem Proxy, vLLM mit
+`--api-key`, LocalAI, LM Studio oder llama.cpp mit Schlüssel), ihn ins Feld
+„API-Schlüssel“ eintragen. GateControl speichert ihn verschlüsselt, zeigt danach nur
+„gespeichert (…abcd)“ und gibt ihn nur dem Gateway, das weiterleitet – nie im
+Protokoll, nie in der Konfiguration, die die Gateways abholen. „Schlüssel entfernen“
+löscht ihn beim nächsten „Speichern“. Mit `http://` geht der Schlüssel unverschlüsselt
+durchs Heimnetz – besser `https://`, wenn der Server es kann.
+
+**Grafikkarte nutzen** (nur „Auf einem Gateway“, nicht beim Raspberry Pi): GateControl
+erkennt die Karte des Gateways (NVIDIA, AMD, Intel), ihren Treiber und – sobald der
+Dienst „ki“ sie sieht – ihren Speicher. „Grafikkarte nutzen“ wählen, „Speichern“,
+dann **einmal die neue Compose-Datei herunterladen** und das Projekt neu erstellen
+(wie oben); erst dann sieht der Dienst „ki“ die Karte. Danach steht dort „bereit“ bzw.
+„Das Modell läuft auf der Grafikkarte“.
+
+| Wahl | Was in die Compose-Datei kommt | Was auf dem Rechner da sein muss |
+|---|---|---|
+| NVIDIA | die Karte für den Dienst „ki“ | NVIDIA-Treiber ab 550 **und** das NVIDIA Container Toolkit |
+| AMD (ROCm) | das ROCm-Image von Ollama, `/dev/kfd` und `/dev/dri` | amdgpu-Treiber mit ROCm (`/dev/kfd`), nur x86-64 |
+| Intel (experimentell) | `/dev/dri` (Vulkan) | i915- oder xe-Treiber |
+
+Fehlt etwas, sagt GateControl es, statt die Wahl zu sperren: „NVIDIA-Treiber fehlt“,
+„NVIDIA Container Toolkit fehlt“ (der Dienst „ki“ sieht die Karte nicht oder startet
+nicht), „/dev/kfd fehlt (ROCm)“, „neue Compose-Datei herunterladen“. Treiber und
+Toolkit installiert man auf dem Rechner selbst (z. B. Linux: Paket
+`nvidia-container-toolkit`, dann `nvidia-ctk runtime configure --runtime=docker` und
+Docker neu starten) – das kann GateControl nicht abnehmen. Auf einer Synology gibt es
+für die meisten Modelle keine nutzbare Grafikkarte.
 
 **Wofür die lokale KI?**
 
@@ -454,13 +503,18 @@ zeigt die Antwort und wie lange sie gedauert hat. Die lokale KI kostet 0 € und
 nicht ins Budget; im Protokoll der KI-Anfragen steht sie trotzdem (mit „lokal“).
 
 **Im Reiter „Funktionen“:** Die Zeile „Lokale KI“ im Bereich „Geräte im Heimnetz“
-schaltet die KI auf diesem Gateway ein und aus und zeigt das Modell. Der Balken oben
+schaltet die KI auf diesem Gateway ein und aus und zeigt das Modell, die Grafikkarte
+(„Grafikkarte: NVIDIA GeForce RTX 3060 (12 GB) – bereit“) und was ihr fehlt; beim
+KI-Server im Heimnetz die Adresse und ob ein API-Schlüssel gesetzt ist. Der Balken oben
 zeigt den Speicher: grün die Heimnetz-Funktionen, blau das Modell im Speicher; „knapp“
 heißt, für weitere Funktionen bleibt wenig.
 
 **Wenn etwas hakt:** „Dienst „ki“ fehlt“ → Compose-Datei herunterladen (siehe oben).
 „nicht erreichbar“ beim KI-Server im Heimnetz → läuft der PC, lauscht der Server im
-Netz, stimmt der Port? Das Aktivitätsprotokoll meldet „Lokale KI antwortet nicht“
+Netz, stimmt der Port? „verlangt einen (anderen) API-Schlüssel“ → Schlüssel eintragen
+oder prüfen. „Der Name zeigt nicht ins Heimnetz“ → die IP-Adresse eintragen oder den
+Namen im Router prüfen. Grafikkarte „wartet auf die neue Compose-Datei“ → Compose-Datei
+herunterladen und das Projekt neu erstellen. Das Aktivitätsprotokoll meldet „Lokale KI antwortet nicht“
 höchstens einmal pro Stunde.
 
 ## Zwischenspeicher

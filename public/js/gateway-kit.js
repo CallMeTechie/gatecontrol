@@ -205,7 +205,9 @@
 
   // The local AI (phase 3c, step 3 — gateway >= 1.26.0, docs/local-ai.md of the gateway): Ollama,
   // switched on and off in GateControl: the gateway creates /gc-ai/run, the small watcher starts
-  // `ollama serve` (127.0.0.1:11435 only) or ends it. Without run only the watcher runs.
+  // `ollama serve` (127.0.0.1:11435 only) or ends it. Without run only the watcher runs. The watcher
+  // also reports in /gc-ai/ki.gpu which graphics devices the container sees (GC_KI_GPU = the kind
+  // this file gives it; kiService() below adds the devices for "Grafikkarte nutzen").
   const KI_SERVICE = [
     '',
     '  # Local AI with Ollama (gateway >= 1.26.0, docs/local-ai.md of the gateway) — switched on in GateControl:',
@@ -217,12 +219,21 @@
     '      - /bin/sh',
     '      - -c',
     '      - |',
-    '        C=/gc-ai; p=""',
+    '        C=/gc-ai; p=""; n=0',
     '        say() { printf \'%s %s\\n\' "$$1" "$$(date +%s)" >"$$C/.ki.state" && mv -f "$$C/.ki.state" "$$C/ki.state"; }',
     '        halt() { if [ -n "$$p" ]; then kill "$$p" 2>/dev/null; wait "$$p" 2>/dev/null; fi; p=""; }',
     '        dead() { [ ! -e "/proc/$$1" ] || grep -q \'^State:[[:space:]]*Z\' "/proc/$$1/status" 2>/dev/null; }',
+    '        gpu() {',
+    '          { echo "mode $${GC_KI_GPU:-none}"; echo "at $$(date +%s)"',
+    '            for d in /dev/nvidia0 /dev/nvidiactl /dev/kfd /dev/dri/renderD*; do [ -e "$$d" ] && echo "dev $${d##*/}"; done',
+    '            if command -v nvidia-smi >/dev/null 2>&1; then',
+    '              timeout 10 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader,nounits 2>/dev/null | head -n 4 | sed \'s/^/nv /\'',
+    '            fi',
+    '          } >"$$C/.ki.gpu" 2>/dev/null && mv -f "$$C/.ki.gpu" "$$C/ki.gpu"',
+    '        }',
     '        trap \'halt; say idle; exit 0\' TERM INT',
     '        while :; do',
+    '          if [ $$((n % 30)) -eq 0 ]; then gpu; fi; n=$$((n + 1))',
     '          if [ -f "$$C/run" ]; then',
     '            if [ -n "$$p" ] && dead "$$p"; then wait "$$p"; say exit; p=""; sleep 8; fi',
     '            if [ -z "$$p" ]; then ollama serve & p=$$!; fi',
@@ -251,6 +262,8 @@
     '      - OLLAMA_NUM_PARALLEL=1',
     '      - OLLAMA_MAX_LOADED_MODELS=1',
     '      - OLLAMA_KEEP_ALIVE=10m',
+    '      # which graphics card this file gives the service (none | nvidia | amd | intel) — the watcher reports it',
+    '      - GC_KI_GPU=none',
     '    healthcheck:',
     '      test: ["CMD-SHELL", "case \\"$$(cut -d\' \' -f1 /gc-ai/ki.state 2>/dev/null)\\" in running) ollama list >/dev/null ;; *) true ;; esac"]',
     '      interval: 60s',
@@ -263,6 +276,44 @@
     '        max-size: "10m"',
     '        max-file: "3"',
   ];
+
+  // "Grafikkarte nutzen" (gateway >= 1.31.0, docs/local-ai.md §2.1 of the gateway): the same as the gateway's
+  // docker-compose.ki-nvidia.yml / -amd.yml / -intel.yml on top of the service ki (tests/gateway_compose_parity.test.js).
+  //   nvidia  a device reservation — needs the NVIDIA driver (>= 550) and the NVIDIA Container Toolkit on the host
+  //   amd     the ROCm image of the same Ollama version with /dev/kfd and /dev/dri (amd64 only)
+  //   intel   /dev/dri for Vulkan (experimental)
+  const KI_ROCM_IMAGE = 'ollama/ollama:0.40.8-rocm@sha256:c772f70c3e9d407a68c66329ae1a2c861105e43907592810a9ded8a0434c2ef8';
+  const KI_GPUS = ['nvidia', 'amd', 'intel'];
+  function kiService(gpu) {
+    const kind = KI_GPUS.indexOf(gpu) >= 0 ? gpu : null;
+    const out = [];
+    KI_SERVICE.forEach((l) => {
+      if (kind === 'amd' && /^ {4}image: ollama\/ollama:/.test(l)) {
+        out.push('    # AMD graphics card (ROCm): the rocm image of the same Ollama version', '    image: ' + KI_ROCM_IMAGE);
+        return;
+      }
+      if (kind && l === '      - GC_KI_GPU=none') { out.push('      - GC_KI_GPU=' + kind); return; }
+      if (kind && kind !== 'nvidia' && l === '    volumes:' && out.indexOf('    devices:') < 0) {
+        out.push('    # ' + (kind === 'amd' ? 'AMD graphics card: /dev/kfd (ROCm) and /dev/dri' : 'Intel graphics (Vulkan, experimental): /dev/dri'), '    devices:');
+        if (kind === 'amd') out.push('      - /dev/kfd');
+        out.push('      - /dev/dri');
+      }
+      out.push(l);
+    });
+    if (kind === 'nvidia') {
+      out.push(
+        '    # NVIDIA graphics card: needs the NVIDIA driver (>= 550) and the NVIDIA Container Toolkit on this host',
+        '    # (without the toolkit the container does not start: "could not select device driver nvidia")',
+        '    deploy:',
+        '      resources:',
+        '        reservations:',
+        '          devices:',
+        '            - driver: nvidia',
+        '              count: all',
+        '              capabilities: [gpu]');
+    }
+    return out;
+  }
 
   // Cameras (phase 3c, step 4 — gateway >= 1.28.0, docs/cameras.md of the gateway): ffmpeg only, switched on in
   // GateControl; the gateway decides per camera what runs (control files in cam-ctl).
@@ -613,7 +664,7 @@
       if (o.zigbee === true) lines.push(...DECONZ_SERVICE);
       // the local AI (phase 3c, step 3): only when switched on for this gateway — the image is ≈ 3 GB (the
       // gateway's example keeps it in the profile "ki")
-      if (o.ai === true) lines.push(...KI_SERVICE);
+      if (o.ai === true) lines.push(...kiService(o.aiGpu));
       // cameras (phase 3c, step 4): only when switched on for this gateway (the gateway's example keeps it in the
       // profile "kameras")
       if (o.cameras === true) lines.push(...KAMERAS_SERVICE);
