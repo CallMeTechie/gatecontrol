@@ -137,6 +137,13 @@ scenarios/26-plugin-handbook.js Einstellungen › Plugins › <Plugin>: Reiter �
                         allen Reitern, „Im Handbuch nachlesen“ → Reiter am Anker
                         (?tab=handbook#anker), Inhaltsverzeichnis, Deep Link, kein HTML des
                         Handbuchs, „Erledigt“, Dashboard-Hinweis, hell/dunkel, 390 px
+scenarios/27-plugin-updates.js Einstellungen › Plugins › Updates: „Alle aktualisieren“ für
+                        16 Plugins – echter Server: Katalog-Download mit eigenem Budget
+                        (100 statt 15 des Upload-Limiters); Katalog und Installation per
+                        page.route: Budget nach 11 erschöpft → Zeilen „fehlgeschlagen: …“,
+                        Knopf zählt nur die bereiten, „Erneut versuchen“ bereitet nur die
+                        fehlgeschlagenen neu vor, fehlgeschlagene Installation aus dem
+                        fertigen Dialog wiederholen, „Schließen“ → alles aktuell, 390 px
 ```
 
 ## Ablauf

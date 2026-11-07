@@ -116,6 +116,45 @@ const uploadLimiter = rateLimit({
   },
 });
 
+// Official plugin catalogue (routes/api/pluginCatalog.js, admin session only):
+// POST /install downloads one catalogue package from GitHub and inspects it
+// (signature-checked). "Alle aktualisieren" prepares every pending update at
+// once, one request per plugin, so the downloads get a bucket of their own per
+// signed-in account, sized for updating all official plugins several times in
+// the window — not the upload budget (backup restore, branding,
+// /plugins/inspect). ?refresh=1 (the catalogue fetched again) stays modest.
+// The 429 says in the person's language when to try again.
+function pluginCatalogRateLimited(key) {
+  return (req, res) => {
+    const reset = req.rateLimit && req.rateLimit.resetTime ? new Date(req.rateLimit.resetTime).getTime() : 0;
+    const retryAfter = reset ? Math.max(1, Math.ceil((reset - Date.now()) / 1000)) : 60;
+    const minutes = Math.max(1, Math.ceil(retryAfter / 60));
+    res.set('Retry-After', String(retryAfter));
+    res.status(429).json({ ok: false, code: 'rate_limited', retryAfter, error: req.t ? req.t(key, { minutes }) : 'rate_limited' });
+  };
+}
+const pluginCatalogKey = (prefix) => (req) => (req.session && req.session.userId)
+  ? `${prefix}:u:${req.session.userId}`
+  : `${prefix}:ip:${ipKeyGenerator(req.ip)}`;
+
+const pluginCatalogLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: pluginCatalogKey('plugin-catalog'),
+  handler: pluginCatalogRateLimited('error.rate_limit.plugin_catalog'),
+});
+
+const pluginCatalogRefreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: pluginCatalogKey('plugin-catalog-refresh'),
+  handler: pluginCatalogRateLimited('error.rate_limit.plugin_catalog_refresh'),
+});
+
 // Peer hostname reporter: a compromised agent token must not be able to
 // flood the hosts-file rebuild. 3 reports per minute per token is ample
 // for legitimate boot/reconnect flows.
@@ -394,7 +433,7 @@ const pluginPageLimiter = rateLimit({
   },
 });
 
-module.exports = { pluginApiLimiter, pluginPageLimiter, loginLimiter, twoFactorSetupLimiter, passkeyLoginLimiter, passkeyManageLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayAuthLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter,
+module.exports = { pluginApiLimiter, pluginPageLimiter, pluginCatalogLimiter, pluginCatalogRefreshLimiter, loginLimiter, twoFactorSetupLimiter, passkeyLoginLimiter, passkeyManageLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayAuthLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter,
   eventStreamLimiter, portalApiLimiter, portalPageLimiter, portalPinLimiter, portalLinkLimiter, portalPinSetLimiter, homeNetworkLimiter, serviceOpenLimiter, routeAppRedeemLimiter,
   pushStreamLimiter, pushTestLimiter, notifySendLimiter };
 

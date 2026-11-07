@@ -144,8 +144,12 @@ What is verified where:
 | signature against trusted keys; same id and version as requested | `inspect()` with `expect` |
 | permissions accepted, package re-checked before writing | `install()` (as for an upload) |
 
-API (admin session + CSRF; `pluginApiLimiter`, downloads and `?refresh=1`
-also `uploadLimiter`; an API token gets 403):
+API (admin session + CSRF; `pluginApiLimiter`, downloads also
+`pluginCatalogLimiter` — 100 per 15 minutes and account, enough for
+*Alle aktualisieren* of every official plugin several times — and
+`?refresh=1` `pluginCatalogRefreshLimiter` — 20 per 15 minutes; both apart
+from the upload budget; a 429 carries `code: "rate_limited"`, `retryAfter`
+and a translated message; an API token gets 403):
 
 * `GET /api/v1/plugin-catalog` → `{ enabled, available, serverVersion, fetchedAt, plugins: [{ id, name, description, publisher, state, installedVersion, latest: { version, gatecontrol, licenseRequired, size, releaseUrl, publishedAt } | null, requiresNewer }] }`
 * `GET /api/v1/plugin-catalog` items also carry `category, icon, summary, audience, keywords, related, highlight, adds, permissions, shows, needs, languages` and `latest.notes`; the answer `source: { host, official }`

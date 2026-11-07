@@ -18,7 +18,7 @@ const catalog = require('../../services/plugins/catalog');
 const registry = require('../../services/plugins/registry');
 const semver = require('../../services/plugins/semver');
 const { ID_RE } = require('../../services/plugins/constants');
-const { pluginApiLimiter, uploadLimiter } = require('../../middleware/rateLimit');
+const { pluginApiLimiter, pluginCatalogLimiter, pluginCatalogRefreshLimiter } = require('../../middleware/rateLimit');
 const logger = require('../../utils/logger');
 
 const router = Router();
@@ -54,9 +54,9 @@ function installedOf(id) {
   try { return registry.get(id); } catch { return null; }
 }
 
-/** ?refresh=1 reaches GitHub — budgeted like an upload. */
+/** ?refresh=1 reaches GitHub — a small budget of its own (not the upload one). */
 function refreshLimit(req, res, next) {
-  if (req.query && req.query.refresh === '1') return uploadLimiter(req, res, next);
+  if (req.query && req.query.refresh === '1') return pluginCatalogRefreshLimiter(req, res, next);
   next();
 }
 
@@ -111,7 +111,7 @@ router.get('/:id', async (req, res) => {
   } catch (e) { fail(req, res, e); }
 });
 
-router.post('/install', uploadLimiter, async (req, res) => {
+router.post('/install', pluginCatalogLimiter, async (req, res) => {
   const b = req.body || {};
   const id = typeof b.id === 'string' ? b.id : '';
   const version = typeof b.version === 'string' ? b.version : '';
