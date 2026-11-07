@@ -687,7 +687,7 @@ function view(p, lang) {
     // GC.openUrl in the plugin's frames (permissions.cloudImport): the <iframe data-plugin-cloud>
     cloud: require('./frame').openUrlOf(m),
     // the <iframe allow="…"> of the plugin's frames (frame.allowAttr)
-    allow: require('./frame').allowAttr({ media: !!m.media, geolocation: !!(m.ui && m.ui.geolocation), camera: !!(m.ui && m.ui.camera), fullscreen: !!(m.permissions && m.permissions.cameras) }),
+    allow: require('./frame').allowAttr({ media: !!m.media, geolocation: !!(m.ui && m.ui.geolocation), camera: !!(m.ui && m.ui.camera), fullscreen: require('./frame').fullscreenOf(m) }),
     media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false, ...(m.media.areas ? { areas: true } : {}), ...(m.media.previews ? { previews: true } : {}) } : null,
     events: !!(m.permissions && m.permissions.events),
     settingsCount: m.ui && m.ui.settings ? m.ui.settings.length : 0,

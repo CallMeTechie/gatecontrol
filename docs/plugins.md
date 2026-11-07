@@ -1664,7 +1664,11 @@ it in its own data. Code: `src/services/plugins/media.js`.
 * **Frames** of a plugin with `media` get `img-src` and `media-src`
   `<origin>/plugin-media/` in their CSP, and the `<iframe>` gets
   `allow="microphone *"` — voice recording (`MediaRecorder`, Opus) works in
-  the portal and on the admin page. Since 1.178.0 their sandbox (the CSP
+  the portal and on the admin page. When `media.types` take videos (a
+  `video/…` type, `video/*` or `*/*`) the `<iframe>` also gets
+  `allow="fullscreen *"`: a `<video>` of the plugin's media URLs (or the
+  frame's own element, `requestFullscreen()`) goes full screen. Older hosts
+  give it only to `permissions.cameras`; check `document.fullscreenEnabled`. Since 1.178.0 their sandbox (the CSP
   `sandbox` directive and the `<iframe sandbox>` of the portal tab, the
   portal sections and the admin page alike) also has `allow-downloads`: a
   link to a `/plugin-media/<token>` URL of a document (answered as
@@ -2731,7 +2735,7 @@ ignores the permission and `gc.cameras` is missing — check for it.
 people who agreed; unknown = no) | never, events: [person, vehicle, animal, motion],
 retentionDays 1…90, stream: main | sub, audio }`. Frames of a plugin with the
 permission may load `/camera-media/` (`img-src`/`media-src`), and its iframe gets
-`allow="fullscreen"`. Errors: `ERR_INVALID`, `ERR_NOT_FOUND`, `ERR_CAMERA_OFFLINE`,
+`allow="fullscreen"` (as does a plugin whose `media.types` take videos, see "Media"). Errors: `ERR_INVALID`, `ERR_NOT_FOUND`, `ERR_CAMERA_OFFLINE`,
 `ERR_CAMERA_UNSUPPORTED`, `ERR_CAMERA_AUTH`, `ERR_CAMERA_UNREACHABLE`,
 `ERR_CAMERA_NOT_ALLOWED` (not a private address of the gateway's home network),
 `ERR_CAMERA_NOT_READY`, `ERR_CAMERA_SERVICE_MISSING`, `ERR_CAMERA_LIMIT`. Who may

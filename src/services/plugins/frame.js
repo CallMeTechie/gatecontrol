@@ -178,8 +178,21 @@ function cspFor({ maps = false, origin = null, avatars = false, media = false, c
  * ('' when none — then the iframe gets no allow attribute).
  */
 function allowAttr({ media = false, geolocation = false, camera = false, fullscreen = false } = {}) {
-  // fullscreen: permissions.cameras (phase 3c step 4) — "Vollbild" of a live picture or clip
+  // fullscreen: permissions.cameras (phase 3c step 4) — "Vollbild" of a live picture or clip; also a plugin whose
+  // media may be videos (fullscreenOf)
   return [media && 'microphone *', geolocation && 'geolocation *', camera && 'camera *', fullscreen && 'fullscreen *'].filter(Boolean).join('; ');
+}
+
+/**
+ * May the plugin's frames go full screen (<iframe allow="fullscreen *">)? permissions.cameras (live pictures, clips),
+ * and a plugin whose `media.types` take videos (a `video/…` type, `video/*` or every type): a <video> of its own
+ * media URLs plays in full screen (Drive's viewer, a messenger's video).
+ */
+function fullscreenOf(manifest) {
+  const m = manifest || {};
+  if (m.permissions && m.permissions.cameras) return true;
+  const types = m.media && Array.isArray(m.media.types) ? m.media.types : [];
+  return types.some((t) => typeof t === 'string' && (t === '*/*' || /^video\//i.test(t)));
 }
 
 /** May the plugin's frames open a cloud connection in the page (GC.openUrl)? permissions.cloudImport. */
@@ -495,4 +508,4 @@ function headers(res, opts = {}) {
   res.type('html');
 }
 
-module.exports = { CSP, cspFor, originOf, sandboxAttr, allowAttr, scanQrOf, pickPrincipalsOf, openUrlOf, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA, CAMERA_MEDIA };
+module.exports = { CSP, cspFor, originOf, sandboxAttr, allowAttr, fullscreenOf, scanQrOf, pickPrincipalsOf, openUrlOf, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA, CAMERA_MEDIA };
