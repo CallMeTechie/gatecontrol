@@ -8,7 +8,7 @@
 // per gateway, the gateways' reports and the events; plugins use it through
 // gc.cameras (permissions.cameras — the plugin "Tür & Kamera").
 //
-//   switch per gateway: gateway_features.settings.cameras { enabled, subnets }
+//   switch per gateway: gateway_features.settings.cameras { enabled, subnets, storagePath }
 //     (services/gatewayFeatures.js) → features.cameras of the config pull
 //   GET  /api/v1/gateway/cameras/credentials   credentialsFor()  (never in the config pull)
 //   POST /api/v1/gateway/cameras/report        ingestReport()
@@ -37,7 +37,10 @@ const EVENT_RE = /^e[0-9a-f]{15}$/;
 const PROFILE_RE = /^[A-Za-z0-9._:-]{1,64}$/;
 const ONVIF_PATH_RE = /^\/[A-Za-z0-9._~/-]{0,127}$/;
 const RTSP_PATH_RE = /^\/[A-Za-z0-9._~/%&=?+:;,-]{0,255}$/;
-const STATES = ['ok', 'unreachable', 'auth_failed', 'not_allowed', 'no_stream', 'error', 'starting'];
+const STATES = ['ok', 'unreachable', 'auth_failed', 'not_allowed', 'no_stream', 'tls_untrusted', 'error', 'starting'];
+// the clip folder at the gateway host (compose file only): an absolute path, no "..", no spaces or shell characters
+const STORAGE_PATH_RE = /^\/[A-Za-z0-9._@+-]+(?:\/[A-Za-z0-9._@+-]+){0,15}\/?$/;
+const MOUNTS = ['folder', 'volume', 'none'];
 const STREAM_STATES = ['running', 'idle', 'starting', 'error', 'service_missing'];
 const EVENT_STATES = ['pullpoint', 'unsupported', 'off', 'error'];
 const SERVICES = ['managed', 'absent', 'missing'];
@@ -103,11 +106,19 @@ function cidr(v) {
 
 // ─── Settings (part of the gateway's features) ─────────────────────────
 
-/** features.cameras of the stored gateway settings (any shape) → { enabled, subnets } */
+/** '/volume1/kameras/' → '/volume1/kameras', or null (not an absolute, plain path; '..' anywhere; ≤ 200 characters). */
+function storagePath(v) {
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  if (!t || t.length > 200 || !STORAGE_PATH_RE.test(t) || t.split('/').some((x) => x === '.' || x === '..')) return null;
+  return t.length > 1 ? t.replace(/\/$/, '') : null;
+}
+
+/** features.cameras of the stored gateway settings (any shape) → { enabled, subnets, storagePath } */
 function normalizeSettings(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
   const subnets = Array.isArray(r.subnets) ? [...new Set(r.subnets.map(cidr).filter(Boolean))].slice(0, 8) : [];
-  return { enabled: r.enabled === true, subnets };
+  return { enabled: r.enabled === true, subnets, storagePath: storagePath(r.storagePath) };
 }
 
 /** One field of PUT /api/v1/gateways/:id/features { cameras: { … } } → the value (throws code invalid / invalid_host). */
@@ -121,6 +132,13 @@ function patchField(f, val) {
       throw Object.assign(new Error('cameras.subnets: up to 8 private networks (RFC 1918, /16…/30)'), { code: 'invalid_host' });
     }
     return [...new Set(val.map(cidr))];
+  }
+  if (f === 'storagePath') {
+    // null / '' = the Docker volume cam-recordings (the default)
+    if (val === null || val === '') return null;
+    const p = storagePath(val);
+    if (!p) throw Object.assign(new Error('cameras.storagePath: an absolute folder of the gateway host like /volume1/kameras (letters, digits, . _ - @ +; no spaces, no "..")'), { code: 'invalid' });
+    return p;
   }
   throw Object.assign(new Error(`cameras.${f}: unknown`), { code: 'invalid' });
 }
@@ -217,9 +235,10 @@ function configPayload(peerId) {
       const st = cameraSettings(json(r.settings, {}));
       return {
         id: r.id, name: r.name, host: r.host,
-        onvif: r.onvif_port ? { port: r.onvif_port, path: r.onvif_path || '/onvif/device_service' } : null,
+        onvif: r.onvif_port ? { port: r.onvif_port, path: r.onvif_path || '/onvif/device_service', ...(r.onvif_tls === 1 ? { tls: true } : {}) } : null,
         rtsp: r.rtsp_port && r.rtsp_path ? { port: r.rtsp_port, path: r.rtsp_path } : null,
         profile: r.profile || null, stream: st.stream, record: st.record, events: st.events, retentionDays: st.retentionDays, audio: st.audio,
+        tlsInsecure: r.tls_insecure === 1,
         codec: r.codec === 'h264' || r.codec === 'h265' ? r.codec : null,
       };
     }),
@@ -250,7 +269,12 @@ function cleanError(e) {
 function cleanStorage(s) {
   const x = s && typeof s === 'object' ? s : {};
   const n = (v) => (Number.isSafeInteger(v) && v >= 0 ? v : null);
-  return { free: n(x.free), total: n(x.total), used: n(x.used), clips: n(x.clips), problem: ['disk_low', 'not_writable'].includes(x.problem) ? x.problem : null };
+  const mount = MOUNTS.includes(x.mount) ? x.mount : null;
+  return {
+    free: n(x.free), total: n(x.total), used: n(x.used), clips: n(x.clips), problem: ['disk_low', 'not_writable'].includes(x.problem) ? x.problem : null,
+    // gateway ≥ 1.29.0: where /recordings lies (a folder of the host, a Docker volume, nowhere = in the container)
+    mount, folder: mount === 'folder' ? clean(x.folder, 160) || null : null, volume: mount === 'volume' ? clean(x.volume, 128) || null : null,
+  };
 }
 
 function cleanCameraState(c) {
@@ -262,6 +286,8 @@ function cleanCameraState(c) {
     codec: c.codec === 'h264' || c.codec === 'h265' ? c.codec : null,
     width: Number.isInteger(c.width) && c.width > 0 && c.width < 20000 ? c.width : null,
     height: Number.isInteger(c.height) && c.height > 0 && c.height < 20000 ? c.height : null,
+    // gateway ≥ 1.29.0: has the stream a sound track (SDP)? null = unknown
+    audio: typeof c.audio === 'boolean' ? c.audio : null,
     stream: STREAM_STATES.includes(c.stream) ? c.stream : 'idle',
     recording: c.recording === true,
     snapshotAt: isoOrNull(c.snapshotAt),
@@ -381,7 +407,7 @@ function needGateway(peerId) {
 }
 
 const MGMT_ERRORS = {
-  auth_failed: 'auth', not_allowed: 'not_allowed', unreachable: 'unreachable', not_onvif: 'unreachable', no_stream: 'no_stream',
+  auth_failed: 'auth', not_allowed: 'not_allowed', unreachable: 'unreachable', not_onvif: 'unreachable', no_stream: 'no_stream', tls_untrusted: 'tls',
   invalid_request: 'invalid', unknown_camera: 'not_found', not_ready: 'not_ready', feature_disabled: 'unsupported', service_missing: 'service_missing',
 };
 
@@ -427,10 +453,11 @@ function cameraView(r, gwName) {
   const alive = db().prepare('SELECT alive FROM gateway_meta WHERE peer_id = ?').get(r.peer_id);
   return {
     id: r.id, gatewayId: r.peer_id, gateway: gwName, name: r.name, host: r.host,
-    source: r.onvif_port ? 'onvif' : 'rtsp', manufacturer: r.manufacturer || null, model: r.model || null,
+    source: r.onvif_port ? 'onvif' : 'rtsp', https: r.onvif_tls === 1, tlsInsecure: r.tls_insecure === 1, manufacturer: r.manufacturer || null, model: r.model || null,
     state: st ? st.state : 'starting', problem: st ? st.problem : null,
     online: !!(alive && alive.alive === 1) && !!st && st.state === 'ok',
     codec: (st && st.codec) || r.codec || null, width: st ? st.width : null, height: st ? st.height : null,
+    hasAudio: st && typeof st.audio === 'boolean' ? st.audio : null,
     stream: st ? st.stream : null,
     events: { supported: st ? st.events !== 'unsupported' : null, state: st ? st.events : null, kinds: json(r.kinds, []) },
     settings: s,
@@ -493,7 +520,8 @@ function cleanTarget(a) {
   if (onvifPort !== null && !(Number.isInteger(onvifPort) && onvifPort > 0 && onvifPort < 65536)) fail('invalid', 'onvifPort: 1…65535');
   const onvifPath = a.onvifPath == null ? null : a.onvifPath;
   if (onvifPath !== null && !(typeof onvifPath === 'string' && ONVIF_PATH_RE.test(onvifPath))) fail('invalid', 'onvifPath: a path like /onvif/device_service');
-  return { host, onvifPort, onvifPath };
+  if (a.onvifTls != null && typeof a.onvifTls !== 'boolean') fail('invalid', 'onvifTls: true or false');
+  return { host, onvifPort, onvifPath, onvifTls: a.onvifTls === true };
 }
 
 /** gc.cameras.test(): the gateway connects and answers device, profiles and a test picture (nothing stored). */
@@ -502,9 +530,12 @@ async function test(a0) {
   const g = needGateway(Number(a.gatewayId));
   const target = cleanTarget(a);
   const acc = cleanAccess(a);
+  if (a.tlsInsecure != null && typeof a.tlsInsecure !== 'boolean') fail('invalid', 'tlsInsecure: true or false');
+  // "Zertifikat nicht prüfen" only when the administrator chose it (gateway ≥ 1.29.0; older ones ignore both)
+  const tls = { ...(target.onvifTls ? { onvifTls: true } : {}), ...(a.tlsInsecure === true ? { tlsInsecure: true } : {}) };
   const body = target.rtsp
     ? { rtspUrl: target.rtspUrl, user: acc.user || target.urlUser || '', password: acc.password || target.urlPassword || '' }
-    : { host: target.host, ...(target.onvifPort ? { onvifPort: target.onvifPort } : {}), ...(target.onvifPath ? { onvifPath: target.onvifPath } : {}), user: acc.user, password: acc.password, ...(typeof a.profile === 'string' && PROFILE_RE.test(a.profile) ? { profile: a.profile } : {}) };
+    : { host: target.host, ...(target.onvifPort ? { onvifPort: target.onvifPort } : {}), ...(target.onvifPath ? { onvifPath: target.onvifPath } : {}), ...tls, user: acc.user, password: acc.password, ...(typeof a.profile === 'string' && PROFILE_RE.test(a.profile) ? { profile: a.profile } : {}) };
   const r = await mgmt(g.id, '/api/cameras/probe', body, 45000);
   return { gateway: { id: g.id, name: g.name }, ...probeView(r) };
 }
@@ -514,7 +545,8 @@ function probeView(r) {
   const info = r.info && typeof r.info === 'object' ? r.info : {};
   return {
     ok: r.ok === true, source: r.source === 'rtsp' ? 'rtsp' : 'onvif', host: isPrivate(r.host) ? r.host : null,
-    onvif: r.onvif && Number.isInteger(r.onvif.port) ? { port: r.onvif.port, path: ONVIF_PATH_RE.test(r.onvif.path || '') ? r.onvif.path : '/onvif/device_service' } : null,
+    onvif: r.onvif && Number.isInteger(r.onvif.port) ? { port: r.onvif.port, path: ONVIF_PATH_RE.test(r.onvif.path || '') ? r.onvif.path : '/onvif/device_service', tls: r.onvif.tls === true } : null,
+    tlsInsecure: r.tlsInsecure === true,
     info: { manufacturer: clean(info.manufacturer, 48) || null, model: clean(info.model, 48) || null, firmware: clean(info.firmware, 48) || null },
     profile: typeof r.profile === 'string' && PROFILE_RE.test(r.profile) ? r.profile : null,
     profiles: (Array.isArray(r.profiles) ? r.profiles : []).slice(0, 8).filter((p) => p && PROFILE_RE.test(String(p.token))).map((p) => ({
@@ -524,6 +556,9 @@ function probeView(r) {
     rtsp: r.rtsp && Number.isInteger(r.rtsp.port) && RTSP_PATH_RE.test(String(r.rtsp.path)) ? { port: r.rtsp.port, path: r.rtsp.path } : null,
     events: { supported: !!(r.events && r.events.supported), kinds: r.events && Array.isArray(r.events.kinds) ? KINDS.filter((k) => r.events.kinds.includes(k)) : [] },
     codec: ['h264', 'h265'].includes(r.codec) ? r.codec : null,
+    width: Number.isInteger(r.width) && r.width > 0 && r.width < 20000 ? r.width : null,
+    height: Number.isInteger(r.height) && r.height > 0 && r.height < 20000 ? r.height : null,
+    audio: typeof r.audio === 'boolean' ? r.audio : null,
     snapshot: snap,
   };
 }
@@ -547,10 +582,12 @@ async function add(plugin, a0) {
   const id = newId();
   const now = Date.now();
   const enc = password ? require('../utils/crypto').encrypt(password) : null;
-  const onvif = probe.source === 'onvif' ? (probe.onvif || { port: target.onvifPort || 80, path: target.onvifPath || '/onvif/device_service' }) : null;
-  db().prepare(`INSERT INTO home_cameras (id, peer_id, name, host, onvif_port, onvif_path, rtsp_port, rtsp_path, profile, username, password_enc, manufacturer, model, firmware, codec, kinds, settings, state, plugin_id, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`).run(
-    id, g.id, name, target.host, onvif ? onvif.port : null, onvif ? onvif.path : null, target.rtsp ? target.rtsp.port : null, target.rtsp ? target.rtsp.path : null,
+  const onvif = probe.source === 'onvif' ? (probe.onvif || { port: target.onvifPort || 80, path: target.onvifPath || '/onvif/device_service', tls: target.onvifTls }) : null;
+  const onvifTls = !!(onvif && onvif.tls);
+  db().prepare(`INSERT INTO home_cameras (id, peer_id, name, host, onvif_port, onvif_path, onvif_tls, tls_insecure, rtsp_port, rtsp_path, profile, username, password_enc, manufacturer, model, firmware, codec, kinds, settings, state, plugin_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`).run(
+    id, g.id, name, target.host, onvif ? onvif.port : null, onvif ? onvif.path : null, onvifTls ? 1 : 0, onvifTls && a.tlsInsecure === true ? 1 : 0,
+    target.rtsp ? target.rtsp.port : null, target.rtsp ? target.rtsp.path : null,
     typeof a.profile === 'string' && PROFILE_RE.test(a.profile) ? a.profile : probe.profile, user || null, enc, probe.info.manufacturer, probe.info.model, probe.info.firmware,
     probe.codec, JSON.stringify(probe.events.kinds), JSON.stringify(settings), plugin && plugin.id ? plugin.id : null, now, now);
   audit('camera_added', `Camera "${name}" added on gateway "${g.name}"`, { peer_id: g.id, camera: id, plugin: plugin && plugin.id });
@@ -559,7 +596,7 @@ async function add(plugin, a0) {
   return { camera: cameraView(r, g.name), snapshot: probe.snapshot };
 }
 
-/** gc.cameras.update(id, { name?, user?, password?, profile?, settings? }) */
+/** gc.cameras.update(id, { name?, user?, password?, profile?, tlsInsecure?, settings? }) */
 function update(id, p0) {
   const r = rowOf(id);
   const p = p0 && typeof p0 === 'object' && !Array.isArray(p0) ? p0 : fail('invalid', 'patch must be an object');
@@ -574,6 +611,11 @@ function update(id, p0) {
   if ('profile' in p) {
     if (p.profile !== null && !(typeof p.profile === 'string' && PROFILE_RE.test(p.profile))) fail('invalid', 'profile: an ONVIF profile token');
     sets.push('profile = ?'); vals.push(p.profile);
+  }
+  if ('tlsInsecure' in p) {
+    if (typeof p.tlsInsecure !== 'boolean') fail('invalid', 'tlsInsecure: true or false');
+    // "Zertifikat nicht prüfen": changes the access → the gateway resolves the camera again (updated_at)
+    sets.push('tls_insecure = ?'); vals.push(p.tlsInsecure ? 1 : 0);
   }
   if ('settings' in p) { sets.push('settings = ?'); vals.push(JSON.stringify(patchSettings(cameraSettings(json(r.settings, {})), p.settings))); }
   if (!sets.length) fail('invalid', 'nothing to change');
@@ -686,9 +728,15 @@ async function live(pluginId, id, ctx) {
   const st = cameraSettings(json(r.settings, {}));
   return {
     mode: 'live', via: net, ready: out.ready === true, hls: url(tok, 'index.m3u8'), mp4: url(tok, 'live.mp4'), snapshot: url(tok, 'snapshot.jpg'),
-    codec: typeof out.codec === 'string' && /^[a-z0-9., ]{1,80}$/i.test(out.codec) ? out.codec : null, audio: st.audio, every: SNAP_EVERY_S,
+    codec: typeof out.codec === 'string' && /^[a-z0-9., ]{1,80}$/i.test(out.codec) ? out.codec : null, audio: st.audio && audioOf(r) !== false, every: SNAP_EVERY_S,
     expiresAt: iso(Date.now() + LIVE_TTL_S * 1000),
   };
+}
+
+/** The last report's sound track of a camera: true / false / null (unknown, older gateway). */
+function audioOf(r) {
+  const st = json(r.state, null);
+  return st && typeof st.audio === 'boolean' ? st.audio : null;
 }
 
 function eventView(e, pluginId) {
@@ -738,8 +786,12 @@ async function deleteEvent(id) {
 
 const TYPES = { m3u8: 'application/vnd.apple.mpegurl', mp4: 'video/mp4', m4s: 'video/iso.segment', jpg: 'image/jpeg' };
 
+// The token is the permission and no cookie is used: every origin may read the media — also the sandboxed plugin
+// frames (opaque origin "null"), whose MSE player fetches live.mp4 (Firefox has no HLS of its own).
+const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Expose-Headers': 'Content-Length, Content-Range, X-Snapshot-At' };
+
 function mediaError(res, status) {
-  res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+  res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...CORS });
   return res.status(status).type('text/plain').send(status === 404 ? 'not found' : 'unavailable');
 }
 
@@ -753,7 +805,7 @@ async function pipe(req, res, peerId, path, { range = false, cache = 'no-store' 
   const ext = path.split('?')[0].split('.').pop();
   res.status(up.statusCode).set({
     'Content-Type': TYPES[ext] || 'application/octet-stream', 'Cache-Control': cache, 'X-Content-Type-Options': 'nosniff',
-    'Cross-Origin-Resource-Policy': 'cross-origin', 'Content-Security-Policy': "default-src 'none'",
+    'Cross-Origin-Resource-Policy': 'cross-origin', 'Content-Security-Policy': "default-src 'none'", ...CORS,
   });
   for (const h of ['content-length', 'content-range', 'accept-ranges']) if (up.headers[h]) res.set(h, String(up.headers[h]));
   up.on('error', () => res.destroy());
@@ -779,7 +831,7 @@ async function mediaRequest(req, res) {
   if (file === 'snapshot.jpg') {
     try {
       const s = await snapshotBytes(cam.id);
-      res.set({ 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'cross-origin', 'X-Snapshot-At': iso(s.at) });
+      res.set({ 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'cross-origin', 'X-Snapshot-At': iso(s.at), ...CORS });
       return res.send(s.data);
     } catch { return mediaError(res, 502); }
   }
@@ -810,6 +862,28 @@ function telemetryCameras(tel) {
     cameras: Number.isInteger(t.cameras) ? t.cameras : 0, recording: Number.isInteger(t.recording) ? t.recording : 0,
     storage: cleanStorage(t.storage), error: cleanError(t.error),
   };
+}
+
+/**
+ * Is the chosen clip folder in use? (gateway ≥ 1.29.0 reports where /recordings lies)
+ *   'ok'        the folder (or, without a choice, the Docker volume) is mounted
+ *   'compose'   a folder is chosen, the gateway still uses the volume / another folder → the new compose file
+ *   'container' /recordings is no mount at all: clips would go with the next update
+ *   null        unknown (older gateway, switched off, Raspberry Pi image)
+ */
+function storageState(s, storage, platform) {
+  if (!s || !s.enabled || !storage || !storage.mount || platform === 'rpi') return null;
+  if (storage.mount === 'none') return 'container';
+  if (!s.storagePath) return 'ok';
+  if (storage.mount !== 'folder' || !storage.folder) return 'compose';
+  // the gateway sees the path inside its file system (Synology: /kameras for /volume1/kameras)
+  const f = storage.folder.replace(/\/$/, '');
+  return f && f !== '/' && (s.storagePath === f || s.storagePath.endsWith(f)) ? 'ok' : 'compose';
+}
+
+/** The clip folder for the compose file of this gateway (null: the Docker volume cam-recordings). */
+function composeStoragePath(peerId) {
+  try { return settingsOf(peerId).storagePath || null; } catch { return null; }
 }
 
 /** Does the compose file of this gateway need the service kameras? (switched on) */
@@ -848,11 +922,13 @@ function overview(peerId) {
     plugin = p ? { installed: true, enabled: p.enabled === true, cameras: hasPermission(p) } : { installed: false, enabled: false, cameras: false };
   } catch { plugin = null; }
   const platform = require('./homeRadio').platformOf(g.id, tel);
+  const storage = report.storage || (t ? t.storage : null);
   return {
-    enabled: s.enabled, subnets: s.subnets, supported: supported(tel), minGateway: MIN_GATEWAY, platform,
+    enabled: s.enabled, subnets: s.subnets, storagePath: s.storagePath, supported: supported(tel), minGateway: MIN_GATEWAY, platform,
+    storageState: storageState(s, storage, platform),
     count: rows.length, names: rows.slice(0, 6).map((r) => r.name),
     service: t ? t.service : null, state: t ? t.state : null,
-    storage: report.storage || (t ? t.storage : null),
+    storage,
     hint: hardwareHint(tel, rows),
     compose: composeHint(t, s, platform),
     plugin,
@@ -894,7 +970,7 @@ const HOST_CODES = {
   invalid: 'ERR_INVALID', invalid_host: 'ERR_CAMERA_NOT_ALLOWED', not_allowed: 'ERR_CAMERA_NOT_ALLOWED', not_found: 'ERR_NOT_FOUND',
   offline: 'ERR_CAMERA_OFFLINE', unsupported: 'ERR_CAMERA_UNSUPPORTED', auth: 'ERR_CAMERA_AUTH', unreachable: 'ERR_CAMERA_UNREACHABLE',
   no_stream: 'ERR_CAMERA_UNREACHABLE', limit: 'ERR_CAMERA_LIMIT', not_ready: 'ERR_CAMERA_NOT_READY', service_missing: 'ERR_CAMERA_SERVICE_MISSING',
-  too_large: 'ERR_CAMERA_NOT_READY', gateway_error: 'ERR_CAMERA_UNREACHABLE',
+  too_large: 'ERR_CAMERA_NOT_READY', gateway_error: 'ERR_CAMERA_UNREACHABLE', tls: 'ERR_CAMERA_TLS',
 };
 
 module.exports = {
@@ -902,5 +978,6 @@ module.exports = {
   normalizeSettings, patchField, cameraSettings, patchSettings, configPayload, credentialsFor, credRev, nobodyHome, presenceChanged,
   ingestReport, ingestEvents, emit, available, list, discover, test, add, update, remove, snapshot, snapshotBytes, snapshotUrl, live, events, deleteEvent,
   sign, verify, mediaRequest, netOfRequest, overview, view, memoryPart, composeWantsCameras, composeHint, telemetryCameras, hardwareHint, supported, housekeeping,
+  storagePath, storageState, composeStoragePath,
   _resetForTest() { snapCache.clear(); tokenKey = null; lastNobody = undefined; },
 };

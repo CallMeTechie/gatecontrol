@@ -46,6 +46,12 @@ before(async () => {
     mgmt.push({ peerId, path: p, body });
     if (p === '/api/cameras/probe') {
       if (body.password !== 'geheim') return { status: 401, body: { error: 'auth_failed' } };
+      // an HTTPS camera with a self-signed certificate (gateway ≥ 1.29.0)
+      if (body.host === '192.168.1.74') {
+        if (body.tlsInsecure !== true) return { status: 502, body: { error: 'tls_untrusted' } };
+        return { status: 200, body: { ok: true, source: 'onvif', host: body.host, onvif: { port: 443, path: '/onvif/device_service', tls: true }, tlsInsecure: true, info: { manufacturer: 'Hikvision', model: 'DS-2CD', firmware: 'v5' },
+          profile: 'Main', profiles: [], rtsp: { port: 554, path: '/Streaming/Channels/101' }, events: { supported: false, kinds: [] }, codec: 'h264', width: 1920, height: 1080, audio: true, snapshot: null } };
+      }
       return { status: 200, body: { ok: true, source: 'onvif', host: body.host, onvif: { port: 8000, path: '/onvif/device_service' }, info: { manufacturer: 'Reolink', model: 'E1 Zoom', firmware: 'v3' },
         profile: 'Main', profiles: [{ token: 'Main', name: 'Main', codec: 'h264', width: 2560, height: 1440 }], rtsp: { port: 554, path: '/h264Preview_01_main' },
         events: { supported: true, kinds: ['person', 'vehicle', 'animal', 'motion'] }, codec: 'h264', snapshot: { data: JPEG.toString('base64'), mime: 'image/jpeg' } } };
@@ -87,7 +93,7 @@ describe('features.cameras and the row "Kameras"', () => {
       assert.equal((await admin('put', '/features').send(bad)).status, 400, JSON.stringify(bad));
     }
     const v = (await admin('put', '/features').send({ cameras: { enabled: true, subnets: ['192.168.20.7/24'] } }).expect(200)).body.gateway;
-    assert.deepEqual(v.features.cameras, { enabled: true, subnets: ['192.168.20.0/24'] });
+    assert.deepEqual(v.features.cameras, { enabled: true, subnets: ['192.168.20.0/24'], storagePath: null });
     c = (await gwReq('get', '/config').expect(200)).body;
     assert.equal(c.features.cameras.enabled, true);
     assert.deepEqual(c.features.cameras.cameras, []);
@@ -212,6 +218,106 @@ describe('gc.cameras in a plugin process', () => {
     assert.equal((await call('/remove', { id: camId })).result.removed, true);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM home_camera_events').get().n, 0);
     assert.deepEqual((await gwReq('get', '/config').expect(200)).body.features.cameras.cameras, []);
+  });
+});
+
+describe('HTTPS cameras, sound, resolution and the clip folder', () => {
+  let hof = null;
+  it('a self-signed certificate: ERR_CAMERA_TLS; with "Zertifikat nicht prüfen" stored and in the config pull', async () => {
+    const base = { gatewayId: gw.peer.id, name: 'Hof', host: '192.168.1.74', onvifTls: true, user: 'admin', password: 'geheim' };
+    let r = await call('/test', base);
+    assert.equal(r.code, 'ERR_CAMERA_TLS', JSON.stringify(r));
+    assert.ok(mgmt.some((m) => m.path === '/api/cameras/probe' && m.body.onvifTls === true && m.body.tlsInsecure === undefined), 'default: the certificate is checked');
+    assert.equal((await call('/test', { ...base, tlsInsecure: 'yes' })).code, 'ERR_INVALID');
+    r = await call('/test', { ...base, tlsInsecure: true });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual(r.result.onvif, { port: 443, path: '/onvif/device_service', tls: true });
+    assert.deepEqual([r.result.width, r.result.height, r.result.audio, r.result.tlsInsecure], [1920, 1080, true, true]);
+    r = await call('/add', { ...base, tlsInsecure: true });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    hof = r.result.camera.id;
+    assert.deepEqual([r.result.camera.https, r.result.camera.tlsInsecure], [true, true]);
+    let c = (await gwReq('get', '/config').expect(200)).body.features.cameras.cameras.find((x) => x.id === hof);
+    assert.deepEqual(c.onvif, { port: 443, path: '/onvif/device_service', tls: true });
+    assert.equal(c.tlsInsecure, true);
+    const plain = (await gwReq('get', '/config').expect(200)).body.features.cameras.cameras.find((x) => x.id !== hof);
+    assert.ok(!plain || (plain.tlsInsecure === false && !plain.onvif.tls), 'other cameras: plain HTTP, checked');
+    // switched back: the certificate is checked again
+    assert.equal((await call('/update', { id: hof, patch: { tlsInsecure: 'no' } })).code, 'ERR_INVALID');
+    r = await call('/update', { id: hof, patch: { tlsInsecure: false } });
+    assert.equal(r.result.tlsInsecure, false);
+    c = (await gwReq('get', '/config').expect(200)).body.features.cameras.cameras.find((x) => x.id === hof);
+    assert.equal(c.tlsInsecure, false);
+  });
+  it('the report: width, height, sound track, tls_untrusted and where the clips lie', async () => {
+    await gwReq('post', '/cameras/report').send({ service: 'managed', storage: { free: 5e11, total: 1e12, mount: 'folder', folder: '/kameras' },
+      cameras: [{ id: hof, state: 'tls_untrusted', codec: 'h264', width: 1920, height: 1080, audio: false, stream: 'idle' }] }).expect(200);
+    const cam = (await call('/list')).result.find((x) => x.id === hof);
+    assert.deepEqual([cam.state, cam.width, cam.height, cam.hasAudio], ['tls_untrusted', 1920, 1080, false]);
+    await call('/update', { id: hof, patch: { settings: { audio: true } } });
+    const l = (await call('/live', { id: hof })).result;
+    assert.equal(l.audio, false, 'sound switched on, but the stream has none');
+  });
+  it('clip folder: validated, in the overview, written into the compose file; storageState from the report', async () => {
+    for (const bad of ['volume1/kameras', '/volume1/../etc', '/a b', '/x:/y', '/$(id)', '/' + 'a'.repeat(201)]) {
+      assert.equal((await admin('put', '/features').send({ cameras: { storagePath: bad } })).status, 400, bad);
+    }
+    let v = (await admin('put', '/features').send({ cameras: { storagePath: '/volume1/kameras/' } }).expect(200)).body.gateway;
+    assert.equal(v.features.cameras.storagePath, '/volume1/kameras');
+    v = (await admin('get', '/features').expect(200)).body.gateway;
+    assert.equal(v.cameras.storagePath, '/volume1/kameras');
+    assert.equal(v.cameras.storageState, 'ok', 'the gateway sees /kameras of /volume1');
+    const c = (await gwReq('get', '/config').expect(200)).body.features.cameras;
+    assert.equal(JSON.stringify(c).includes('volume1'), false, 'never in the config pull');
+    db.prepare("UPDATE gateway_meta SET platform = 'synology' WHERE peer_id = ?").run(gw.peer.id);
+    const text = (await admin('post', '/compose').send({ platform: 'synology' }).expect(200)).text;
+    assert.match(text, /- \$\{GC_CAMERA_DIR:-\/volume1\/kameras\}:\/recordings/);
+    await gwReq('post', '/cameras/report').send({ service: 'managed', storage: { free: 5e11, mount: 'volume', volume: 'gatecontrol_cam-recordings' }, cameras: [] }).expect(200);
+    v = (await admin('get', '/features').expect(200)).body.gateway;
+    assert.equal(v.cameras.storageState, 'compose', 'still the volume: the new compose file');
+    await gwReq('post', '/cameras/report').send({ service: 'managed', storage: { free: 5e11, mount: 'none' }, cameras: [] }).expect(200);
+    assert.equal((await admin('get', '/features').expect(200)).body.gateway.cameras.storageState, 'container');
+    assert.equal(hc.storageState({ enabled: true, storagePath: '/srv/kameras' }, { mount: 'folder', folder: '/srv/kameras' }, 'linux'), 'ok');
+    assert.equal(hc.storageState({ enabled: true, storagePath: '/srv/kameras' }, { mount: 'folder', folder: '/' }, 'linux'), 'compose');
+    assert.equal(hc.storageState({ enabled: true, storagePath: null }, { mount: 'volume' }, 'linux'), 'ok');
+    assert.equal(hc.storageState({ enabled: true, storagePath: '/x' }, { mount: 'volume' }, 'rpi'), null, 'Pi image: SD card');
+    v = (await admin('put', '/features').send({ cameras: { storagePath: null } }).expect(200)).body.gateway;
+    assert.equal(v.features.cameras.storagePath, null);
+    assert.match((await admin('post', '/compose').send({ platform: 'synology' }).expect(200)).text, /GC_CAMERA_DIR:-cam-recordings\}/);
+  });
+  it('/camera-media answers every origin (CORS, no cookie) — the MSE player of the frames fetches live.mp4', async () => {
+    const u = (await call('/snapshotUrl', { id: hof })).result;
+    const r = await supertest(app).get(u.url).set('Origin', 'null').expect(200);
+    assert.equal(r.headers['access-control-allow-origin'], '*');
+    const bad = await supertest(app).get('/camera-media/x.y/snapshot.jpg').expect(404);
+    assert.equal(bad.headers['access-control-allow-origin'], '*');
+    await call('/remove', { id: hof });
+  });
+  it('frame CSP of a cameras plugin: the player script, connect-src and blob: for MediaSource — nothing more', () => {
+    const { cspFor } = require('../src/services/plugins/frame');
+    const csp = cspFor({ cameras: true, origin: 'https://gc.example.com' });
+    assert.match(csp, /script-src 'unsafe-inline' https:\/\/gc\.example\.com\/plugins\/_shared\/camera-player\/camera-player\.js/);
+    assert.match(csp, /connect-src https:\/\/gc\.example\.com\/camera-media\//);
+    assert.match(csp, /media-src https:\/\/gc\.example\.com\/camera-media\/ blob:/);
+    const plain = cspFor({ origin: 'https://gc.example.com' });
+    assert.match(plain, /connect-src 'none'/);
+    assert.doesNotMatch(plain, /camera-player|blob:/);
+    assert.match(cspFor({ cameras: true, maps: true, origin: 'https://gc.example.com' }), /leaflet\.js https:\/\/gc\.example\.com\/plugins\/_shared\/camera-player\/camera-player\.js/);
+  });
+  it('the shared player: served, and it picks HLS, MSE or plain MP4 per browser', async () => {
+    const r = await supertest(app).get('/plugins/_shared/camera-player/camera-player.js').expect(200);
+    assert.match(r.headers['content-type'], /javascript/);
+    assert.match(r.text, /GCCameraPlayer/);
+    const p = require('../public/js/plugin-camera-player');
+    const live = { mode: 'live', hls: '/camera-media/t/index.m3u8', mp4: '/camera-media/t/live.mp4', codec: 'avc1.64001f,mp4a.40.2' };
+    const env = (o) => ({ canPlayHls: false, mse: true, fetchStreams: true, isTypeSupported: () => true, ...o });
+    assert.equal(p.choose(env({ canPlayHls: true }), live), 'hls', 'Safari, iOS');
+    assert.equal(p.choose(env(), live), 'mse', 'Firefox, Chrome on the PC');
+    assert.equal(p.choose(env({ isTypeSupported: () => false }), live), 'mp4', 'codec not playable by MSE');
+    assert.equal(p.choose(env({ mse: false }), live), 'mp4');
+    assert.equal(p.choose(env(), { mode: 'snapshot', snapshot: '/x' }), null);
+    assert.equal(p.mimeOf('avc1.64001f, mp4a.40.2'), 'video/mp4; codecs="avc1.64001f,mp4a.40.2"');
+    assert.equal(p.mimeOf('"><script>'), 'video/mp4; codecs="avc1.640028"');
   });
 });
 
