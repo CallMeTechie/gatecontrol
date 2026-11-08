@@ -27,6 +27,9 @@ const updateRouter = require('../src/routes/api/client/update');
 const API = 'https://api.github.com/repos/CallMeTechie/gatecontrol-plugins';
 const CDN = 'https://release-assets.githubusercontent.com/github-production-release-asset/1';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** The host name of a requested URL (compared exactly, never as a substring). */
+const hostOf = (u) => { try { return new URL(u).hostname; } catch { return null; } };
+const asked = (host) => seen.some((s) => hostOf(s.url) === host);
 
 // ─── Fake GitHub ────────────────────────────────
 // routes: url → { status, headers, body } | { hang: true } (no answer until the caller gives up)
@@ -170,7 +173,7 @@ describe('plugin catalogue: the API route when github.com fails', () => {
     assert.equal(gh.rateLimited(), true);
     seen = [];
     await assert.rejects(catalog.get({ refresh: true }), (e) => e.code === 'catalog_unreachable');
-    assert.ok(!seen.some((s) => s.url.startsWith('https://api.github.com/')), JSON.stringify(seen.map((s) => s.url)));
+    assert.ok(!asked('api.github.com'), JSON.stringify(seen.map((s) => s.url)));
   });
 
   it('a 404 of the download path is no reason for the API route', async () => {
@@ -185,7 +188,7 @@ describe('plugin catalogue: the API route when github.com fails', () => {
     routes.set(`${API}/releases/tags/catalog`, release([{ id: 9, name: 'catalog.json', size: 10 }]));
     routes.set(`${API}/releases/assets/9`, { status: 302, headers: { location: 'https://evil.example/catalog.json' } });
     await assert.rejects(catalog.get(), (e) => e.code === 'catalog_redirect');
-    assert.ok(!seen.some((s) => s.url.startsWith('https://evil.example')));
+    assert.ok(!asked('evil.example'));
   });
 
   it('the size cap of the catalogue holds on the API route (the release says how big)', async () => {
@@ -292,7 +295,7 @@ describe('client update manifests: the API route when github.com fails', () => {
     updateRouter._expireReleasesForTest();
     seen = [];
     assert.equal((await check().expect(200)).body.version, '1.22.0');
-    assert.ok(!seen.some((s) => s.url.startsWith('https://api.github.com/')), JSON.stringify(seen.map((s) => s.url)));
+    assert.ok(!asked('api.github.com'), JSON.stringify(seen.map((s) => s.url)));
   });
 
   it('a redirect off GitHub\'s hosts is never followed', async () => {
@@ -301,7 +304,7 @@ describe('client update manifests: the API route when github.com fails', () => {
     routes.set(`${DL}/update-manifest.json.sig`, { status: 200, body: SIG });
     const r = await check().expect(200);
     assert.equal(r.body.manifest, undefined, 'no manifest without both files');
-    assert.ok(!seen.some((s) => s.url.startsWith('https://evil.example')));
+    assert.ok(!asked('evil.example'));
     await sleep(0);
   });
 });
