@@ -617,8 +617,12 @@ fehlt der Ordner oder die Compose-Zeile ([Kapitel 7](07-faq.md#zwischenspeicher-
   lädt sie die Kopien aus dem Zwischenspeicher, unterwegs über den Server.
   Ändert sich eine Datei, wird die Kopie erneuert. In den Drive-Einstellungen
   der App stehen „Speicher für Offline-Dateien“ (Standard 2 GB) und
-  „Offline-Dateien nur im WLAN laden“. Tresor-Dateien bleiben nur im
-  Zwischenspeicher (verschlüsselt), nicht auf dem Handy.
+  „Offline-Dateien nur im WLAN laden“. Auch Tresor-Dateien, -Ordner oder
+  ein ganzer Tresor lassen sich offline halten: auf dem Handy liegt dann nur
+  der verschlüsselte Inhalt, geöffnet wird wie immer erst nach dem
+  Entsperren und nur im Arbeitsspeicher – auch ohne Verbindung. Wird das
+  Gerät aus dem Tresor entfernt oder meldest du dich ab, löscht die App diese
+  Dateien.
 - **App-Updates:** Die App aus GitHub (nicht die aus Google Play) lädt ein
   Update zu Hause vom Gateway. Sie prüft Prüfsumme und App-Signatur, bevor
   Android die Installation anbietet. Ist das Gateway nicht erreichbar, lädt
