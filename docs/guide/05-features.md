@@ -592,7 +592,10 @@ the compose line is missing ([chapter 7](07-faq.md#home-cache-folder-not-writabl
   the copies from the home cache, on the road through the server. When a file
   changes, the copy is renewed. The app's Drive settings have “Storage for
   offline files” (default 2 GB) and “Load offline files on Wi-Fi only”. Vault
-  files stay in the home cache only (encrypted), not on the phone.
+  files, folders or a whole vault can be kept offline too: the phone then
+  holds only the encrypted content; as always a file opens only after
+  unlocking and only in memory – also without a connection. If the device is
+  removed from the vault or you sign out, the app deletes these files.
 - **App updates:** The app from GitHub (not the one from Google Play) loads an
   update from the gateway at home. It checks the checksum and the app
   signature before Android offers to install it. If the gateway cannot be
