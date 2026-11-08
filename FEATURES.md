@@ -1166,7 +1166,7 @@ The page **System › Logs & Monitoring** (`/logs`) shows every log source of th
 host in one place: the server log (above), plugin logs (`gc.log`), the activity
 log, Caddy's access log and remote desktop sessions.
 
-- **Slow data disk** (since 1.254.0) — a write probe (4 KB + sync every
+- **Slow data disk** (since 1.255.0) — a write probe (4 KB + sync every
   2 minutes, in a worker thread) shows one hint at the top of the page while
   the disk needs 50 ms or more per write on average over half an hour: SSD,
   not a network share, an SD card or a busy NAS volume (docs/plugins.md,

@@ -14,7 +14,7 @@
 // wait for or block the writers). The main thread never fsyncs the database
 // file then.
 //
-// When (since 1.254.0): every EVERY_MS it looks whether another connection
+// When (since 1.255.0): every EVERY_MS it looks whether another connection
 // committed (PRAGMA data_version, no I/O) and checkpoints once the oldest
 // change not yet in the database file is MAX_AGE_MS old, or at once when the
 // log grew GROW_BYTES past its size at the last checkpoint. Before, it

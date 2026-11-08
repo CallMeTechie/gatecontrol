@@ -1,6 +1,6 @@
 'use strict';
 
-// Plugin databases in WAL (since 1.254.0) and the write probe of the data disk.
+// Plugin databases in WAL (since 1.255.0) and the write probe of the data disk.
 //
 // Protocol of 8. 11. (after 1.253.5): ~500 "slow plugin database statement"
 // an hour from almost every plugin — all of them writes (a single-row UPDATE,

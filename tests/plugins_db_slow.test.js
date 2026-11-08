@@ -4,7 +4,7 @@
 // von 2–5 s, in jeder ein db.query von Mail):
 //   * ein Statement ab 200 ms im Worker wird gezählt; je Plugin und 5 Minuten
 //     eine Zeile mit Anzahl, Schreibvorgängen, längster Zeit und den häufigsten
-//     Statements ohne Werte (seit 1.254.0, vorher eine Zeile je Statement und Minute);
+//     Statements ohne Werte (seit 1.255.0, vorher eine Zeile je Statement und Minute);
 //   * die Blockade-Meldung nennt das Statement eines offenen db.query und sagt,
 //     ob der Haupt-Thread rechnete oder wartete;
 //   * ein schweres Statement (Summe über große Zeilen, Sekunden im Worker) und

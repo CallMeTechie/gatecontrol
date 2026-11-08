@@ -175,7 +175,7 @@ describe('WAL checkpoints off the main thread (db/connection.js)', () => {
   });
 });
 
-describe('the checkpoint worker checkpoints a change after MAX_AGE_MS, not every tick (since 1.254.0)', () => {
+describe('the checkpoint worker checkpoints a change after MAX_AGE_MS, not every tick (since 1.255.0)', () => {
   it('no checkpoint without a commit; a commit is checkpointed once it is maxAgeMs old; a grown log at once', async () => {
     const fs = require('node:fs');
     const os = require('node:os');

@@ -226,7 +226,7 @@ takes 50 ms or longer on average over half an hour, and goes away by itself
 when it is fast again. An SSD takes 1–5 ms, a hard disk 10–30 ms.
 
 Every change – a device reports in, a calendar is synced, a lock reports its
-state – waits for it. Since 1.254.0 the plugins write so that not every change
+state – waits for it. Since 1.255.0 the plugins write so that not every change
 waits for the disk; a slow disk still slows down backups, updates and large
 plugins.
 

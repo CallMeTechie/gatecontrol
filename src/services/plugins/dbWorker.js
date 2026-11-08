@@ -44,7 +44,7 @@ function rowBytes(row) {
 
 const db = new Database(workerData.file);
 // WAL with synchronous = NORMAL (as the host database, db/connection.js): a COMMIT appends to plugin.db-wal and
-// never waits for the disk. In the rollback journal (journal_mode = DELETE, before 1.254.0) every write — one UPDATE,
+// never waits for the disk. In the rollback journal (journal_mode = DELETE, before 1.255.0) every write — one UPDATE,
 // a kv.set — paid four fsyncs (journal, database, deleting the journal); on a slow disk that is 200–300 ms per
 // write (protocol of 8. 11.: ~500 slow writes an hour from every plugin, reads never slow). The disk is synced at
 // a checkpoint only (every WAL_AUTOCHECKPOINT pages, at CHECKPOINT_IDLE_MS of quiet, at close). Crash-safe as

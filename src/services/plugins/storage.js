@@ -41,7 +41,7 @@ const instances = new Map();
 // A slow statement of a plugin (its time in the worker, from SLOW_MS on) is counted per plugin; one line per
 // plugin and SLOW_WINDOW_MS says how many there were (`slow`, of them `writes`), the longest time (`maxMs`), the
 // longest wait beside it (`waitMs`) and the SLOW_TOP statements by count — each without its values
-// (sqlGuard.fingerprint), with its count, longest time and the rows of its last run. Before 1.254.0: a line per
+// (sqlGuard.fingerprint), with its count, longest time and the rows of its last run. Before 1.255.0: a line per
 // statement and minute — 500 lines an hour on a slow disk.
 const SLOW_MS = 200;
 const SLOW_WINDOW_MS = 5 * 60 * 1000;

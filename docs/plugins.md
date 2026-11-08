@@ -3808,7 +3808,7 @@ most 5000 rows and about 16 MB — past either limit the answer has
 `truncated: true` (the host's main thread copies the answer out of the worker
 and serialises it for the plugin in one go, so its size is bounded). A
 statement that runs 200 ms or longer in the worker is counted per plugin;
-one line per plugin and 5 minutes (since 1.254.0; before: one line per
+one line per plugin and 5 minutes (since 1.255.0; before: one line per
 statement and minute) "slow plugin database statements" says how many there
 were (`slow`), how many of them were writes (`writes`: INSERT, UPDATE,
 DELETE, COMMIT, `kv.set`, `settings.set` …), the longest time in the worker
@@ -3825,7 +3825,7 @@ database (a `SUM` over rows with large text, a `LIKE '%…%'` on bodies) slows
 the disk for the whole server: give it an index that holds the columns it
 needs (a covering index; `INDEXED BY` when SQLite should not pick the row).
 
-**Journal mode** (since 1.254.0): a plugin's database runs in WAL with
+**Journal mode** (since 1.255.0): a plugin's database runs in WAL with
 `synchronous = NORMAL`, like the host database. A write — one `UPDATE`, a
 `COMMIT`, a `kv.set` — appends to `plugin.db-wal` and does not wait for the
 disk; the disk is synced at a checkpoint only: when the log holds 1000 pages,
@@ -3848,12 +3848,12 @@ its values changed, put related writes into one transaction (`BEGIN` …
 **The host database** runs in WAL with `synchronous = NORMAL` and
 `busy_timeout = 5000`; its checkpoints run in a worker thread
 (`db/checkpointWorker.js`, PASSIVE: never waiting for or blocking a writer).
-Since 1.254.0 the worker checkpoints a commit once it is 30 s old (or at once
+Since 1.255.0 the worker checkpoints a commit once it is 30 s old (or at once
 when the log grew by 8 MB), instead of every 2 s — two syncs every 2 s
 competed with every other write on a slow disk. A power cut can lose up to
 the last 30 s of host changes.
 
-**Write speed of the data disk** (since 1.254.0, `services/diskHealth.js`): a
+**Write speed of the data disk** (since 1.255.0, `services/diskHealth.js`): a
 worker thread writes 4 KB into `<data>/.disk-probe` and syncs it every
 2 minutes. When the average of the last 15 probes (without the highest and
 lowest fifth, at least 8 probes) is 50 ms or more, Logs & Monitoring shows

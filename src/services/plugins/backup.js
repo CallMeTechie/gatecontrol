@@ -135,7 +135,7 @@ async function snapshotDb(id, budget) {
 }
 
 /**
- * A database file of a plugin in WAL mode (dbWorker.js, since 1.254.0) says so in its header (bytes 18 and 19 = 2);
+ * A database file of a plugin in WAL mode (dbWorker.js, since 1.255.0) says so in its header (bytes 18 and 19 = 2);
  * SQLite refuses to open such a file from memory (new Database(buffer): "unable to open database file"). The
  * snapshot (backup API) holds every page in the file itself — no log belongs to it: the header says "rollback
  * journal" (1), as PRAGMA journal_mode = DELETE would write it. The worker switches the restored file back to WAL.

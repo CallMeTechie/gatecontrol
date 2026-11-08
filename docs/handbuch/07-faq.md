@@ -233,7 +233,7 @@ Stunde im Mittel 50 ms oder länger dauert, und verschwindet von selbst, wenn
 es wieder schnell geht. Eine SSD braucht 1–5 ms, eine Festplatte 10–30 ms.
 
 Jede Änderung – ein Gerät meldet sich, ein Kalender wird abgeglichen, ein
-Schloss meldet seinen Zustand – wartet darauf. Seit 1.254.0 schreiben die
+Schloss meldet seinen Zustand – wartet darauf. Seit 1.255.0 schreiben die
 Plugins so, dass nicht mehr jede Änderung auf den Datenträger wartet; ein
 langsamer Datenträger bremst trotzdem Sicherungen, Updates und große Plugins.
 

@@ -3,8 +3,8 @@
 // Child process of tests/plugins_db_wal.test.js, started with LD_PRELOAD=slowfsync.so (every sync waits
 // FAKE_FSYNC_MS). Prints one JSON line.
 //
-//   node run.js plugin N  N single-row UPDATEs and N kv.set through the plugin storage (WAL since 1.254.0)
-//   node run.js delete    the same UPDATEs with the pragmas of before 1.254.0 (journal_mode = DELETE)
+//   node run.js plugin N  N single-row UPDATEs and N kv.set through the plugin storage (WAL since 1.255.0)
+//   node run.js delete    the same UPDATEs with the pragmas of before 1.255.0 (journal_mode = DELETE)
 //   node run.js probe     the disk write probe (services/diskHealth.js) until it has MIN_SAMPLES
 
 require('../../helpers/test-env');
