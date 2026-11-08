@@ -99,6 +99,11 @@
 // plugin's public endpoints (/plugin-public/<id>/…, publicEndpoints.js) in a
 // new tab, only during a click (the sandbox allows no popups).
 //
+// Portal tabs (since 1.254.0, portal frames only): window.GC.openPortal({ plugin,
+// query }) — the parent opens another plugin's portal tab with a short query
+// (the address of a direct link, "/portal?<key>=<value>#plg-<id>"), only during
+// a click, e.g. a to-do of Mail in the Notizen hub opening its mail.
+//
 // Inbox (plugin.json `ui.inbox`, portal frames only): window.GC.inbox.on(fn)
 // gets { available, unread, latest: { title, createdAt, priority } | null }
 // of the viewer's own notification inbox — the portal page's own state
@@ -376,6 +381,18 @@ const BRIDGE_CLIENT = `(function(){
       post({ type: 'gc-open-tab', id: id, url: String(url || '') });
     });
   }
+  function openPortal(o) {
+    return new Promise(function (resolve) {
+      var id = ++seq;
+      var done = function (d) { resolve(d && typeof d === 'object' ? d : { ok: false, code: 'failed' }); };
+      var t = o && typeof o === 'object' ? o : {};
+      var query = t.query && typeof t.query === 'object' ? t.query : {};
+      pending[id] = { resolve: done, reject: function (e) { done({ ok: false, code: (e && e.data && e.data.code) || 'failed' }); } };
+      pending[id].timer = setTimeout(function () { if (pending[id]) { delete pending[id]; done({ ok: false, code: 'timeout' }); } }, 30000);
+      try { query = JSON.parse(JSON.stringify(query)); } catch (_) { query = null; }
+      post({ type: 'gc-open-portal', id: id, plugin: String(t.plugin || ''), query: query });
+    });
+  }
   // permissions.events: realtime events of the plugin ({ plugin, type, data })
   function on(name, fn) {
     if (name !== 'event' || typeof fn !== 'function') return;
@@ -450,6 +467,7 @@ const BRIDGE_CLIENT = `(function(){
     keys: keys,
     mediaBytes: mediaBytes,
     openTab: openTab,
+    openPortal: openPortal,
     on: on,
     off: off,
     inbox: inbox,

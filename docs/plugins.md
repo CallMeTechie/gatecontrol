@@ -3959,6 +3959,21 @@ process — TCP sockets, WebSockets and, since 1.216.0, IMAP sessions
   (`/plugin-public/<plugin id>/…` of this origin, see "Public endpoints") in a
   new tab (`noopener`), and only during a click in the frame (the click's
   activation reaches the page).
+* **Portal tabs** (since 1.254.0, portal frames only): `await GC.openPortal({
+  plugin, query })` → `{ ok: true }` | `{ ok: false, code: 'invalid' |
+  'not_found' | 'no_gesture' | 'rate_limited' | 'not_allowed' }` — the parent
+  page opens **another plugin's portal tab** with the address of a direct link
+  (`/portal?<key>=<value>#plg-<plugin>`, see "Portal" below; the tab's frame
+  reads the query from its own `location.search`), e.g. a to-do of Mail in the
+  Notizen hub opening its mail (`{ plugin: 'gatecontrol-mail', query: { open:
+  'message/42' } }`). `query` follows the direct-link rules (keys
+  `[a-z][A-Za-z0-9_]{0,31}` except `section`, string or number values ≤ 200
+  characters, ≤ 8 of them; anything else → `invalid`); `not_found` when the
+  viewer has no tab `plg-<plugin>` (plugin off, not for this person, no own
+  tab); only during a click in the frame and at most once every 1.5 s. The
+  portal page reloads with that address. Frames of the admin pages get
+  `not_allowed`; feature-detect it (`typeof GC.openPortal === 'function'`) on
+  older GateControl.
 * **Page title**: GateControl shows a page's title once, in its header (the
   topbar: the plugin's `ui.nav.label`, else its name) — the page's only
   `<h1>`. The host adds no heading of its own above the frame; above it there
