@@ -29,9 +29,17 @@ const path = require('node:path');
 const { Worker, MessageChannel, receiveMessageOnPort } = require('node:worker_threads');
 const { dbDir, LIMITS, TIMEOUTS } = require('./constants');
 const logger = require('../../utils/logger');
+const { fingerprint } = require('./sqlGuard');
 
 const IDLE_MS = 5 * 60 * 1000;
 const instances = new Map();
+
+// A slow statement of a plugin (its time in the worker, from SLOW_MS on) is logged with the plugin, the statement
+// without its values (sqlGuard.fingerprint), the rows and the times — at most once per SLOW_EVERY_MS and
+// statement of a plugin; the line says how often it was slow since the last one.
+const SLOW_MS = 200;
+const SLOW_EVERY_MS = 60 * 1000;
+const SLOW_KEYS_MAX = 200;
 
 /** The largest size of a plugin's database: plugin.json storage.maxMB (since 1.206.0), else LIMITS.dbMaxBytes. */
 function maxBytesOf(id) {
@@ -61,6 +69,7 @@ class PluginDb {
     this.seq = 0;
     this.pending = new Map();
     this.idle = null;
+    this.slow = new Map(); // fingerprint → { at, n, maxMs } (slow statements since the last log line)
   }
 
   ensure() {
@@ -101,7 +110,34 @@ class PluginDb {
     if (!p) return;
     this.pending.delete(m.id);
     clearTimeout(p.timer);
+    if (typeof m.ms === 'number' && m.ms >= SLOW_MS) this.noteSlow(p, m);
     if (m.ok) p.resolve(m.value); else p.reject(new Error(m.error));
+  }
+
+  /** A statement that ran SLOW_MS or longer in the worker: logged (throttled per statement). */
+  noteSlow(p, m, now = Date.now()) {
+    const sql = p.args && typeof p.args.sql === 'string' ? fingerprint(p.args.sql) : null;
+    const key = sql || p.op;
+    let e = this.slow.get(key);
+    if (!e) {
+      if (this.slow.size >= SLOW_KEYS_MAX) this.slow.delete(this.slow.keys().next().value);
+      e = { at: 0, n: 0, maxMs: 0 };
+      this.slow.set(key, e);
+    }
+    e.n++;
+    e.maxMs = Math.max(e.maxMs, m.ms);
+    if (now - e.at < SLOW_EVERY_MS) return;
+    logger.warn({
+      plugin: this.id, op: p.op, ...(p.args && p.args.mode ? { mode: p.args.mode } : {}), ...(sql ? { sql } : {}),
+      ...(Number.isInteger(m.rows) ? { rows: m.rows } : {}), ...(m.ok ? {} : { failed: true }),
+      ms: Math.round(m.ms),
+      // the rest of the time until the answer was taken: waiting behind other statements, and for this thread
+      waitMs: Math.max(0, Math.round(now - p.sentAt - m.ms)),
+      ...(e.n > 1 ? { times: e.n, maxMs: Math.round(e.maxMs) } : {}),
+    }, 'slow plugin database statement');
+    e.at = now;
+    e.n = 0;
+    e.maxMs = 0;
   }
 
   call(op, args, timeoutMs = TIMEOUTS.db) {
@@ -109,7 +145,7 @@ class PluginDb {
     const id = ++this.seq;
     this.touch();
     return new Promise((resolve, reject) => {
-      const p = { op, resolve, reject, timeoutMs, sentAt: Date.now(), timer: null };
+      const p = { op, args, resolve, reject, timeoutMs, sentAt: Date.now(), timer: null };
       p.timer = setTimeout(() => this.check(id), timeoutMs);
       this.pending.set(id, p);
       this.port.postMessage({ id, op, args });
@@ -219,4 +255,4 @@ function usage(dir) {
   return total;
 }
 
-module.exports = { forPlugin, close, closeAll, usage, setLimit, maxBytesOf };
+module.exports = { forPlugin, close, closeAll, usage, setLimit, maxBytesOf, SLOW_MS, SLOW_EVERY_MS };
