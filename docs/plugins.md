@@ -2592,7 +2592,7 @@ signature in the URL is `HMAC-SHA256(secret of the gateway, sha256 + "\n" + exp)
 The same hint comes with the update check of the apps
 (`GET /api/v1/client/update/check`): `lan: { url, sha256, tlsSha256, exp }`
 next to `downloadUrl`, when the installer is in the home cache of the
-gateway the device is at. Since 1.252.0 the check also names `sha256`, the
+gateway the device is at. Since 1.253.0 the check also names `sha256`, the
 installer's SHA-256 as GitHub publishes it (`asset.digest`; absent for old
 releases), so a client that downloads the installer itself checks the normal
 download too. The Android app (APK from GitHub, not the Play build) loads
