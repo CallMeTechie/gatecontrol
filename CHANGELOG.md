@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.253.3] — 2026-11-08
+
+### Fixes
+- Katalog, Plugin-Pakete und Update-Manifeste über die GitHub-API, wenn der Download-Pfad von github.com 5xx liefert oder hängt (#445)
+
+---
+
 ## [1.253.2] — 2026-11-08
 
 ### Fixes
