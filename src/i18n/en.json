@@ -6885,6 +6885,7 @@
   "plugins.err.catalog_too_large": "The download is larger than the catalogue says – not installed.",
   "plugins.err.catalog_hash_mismatch": "The download does not match the catalogue’s checksum – not installed.",
   "plugins.err.catalog_download_failed": "The package could not be downloaded.",
+  "plugins.err.catalog_rate_limited": "GitHub allows no further requests right now – please try again later.",
   "plugins.err.catalog_unknown": "This version is not in the catalogue.",
   "plugins.err.catalog_incompatible": "This version does not fit this GateControl version.",
   "plugins.err.catalog_mismatch": "The downloaded package is not the requested plugin – not installed.",

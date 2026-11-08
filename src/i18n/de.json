@@ -6885,6 +6885,7 @@
   "plugins.err.catalog_too_large": "Der Download ist größer als im Katalog angegeben – nicht installiert.",
   "plugins.err.catalog_hash_mismatch": "Der Download stimmt nicht mit der Prüfsumme des Katalogs überein – nicht installiert.",
   "plugins.err.catalog_download_failed": "Das Paket konnte nicht geladen werden.",
+  "plugins.err.catalog_rate_limited": "GitHub lässt gerade keine weiteren Abfragen zu – bitte später noch einmal versuchen.",
   "plugins.err.catalog_unknown": "Diese Version steht nicht im Katalog.",
   "plugins.err.catalog_incompatible": "Diese Version passt nicht zu dieser GateControl-Version.",
   "plugins.err.catalog_mismatch": "Das geladene Paket ist nicht das angeforderte Plugin – nicht installiert.",
