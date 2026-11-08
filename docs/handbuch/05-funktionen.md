@@ -4,7 +4,7 @@
 
 Ein Gateway kann mehr als nur den Tunnel. Alle Funktionen findest du so:
 
-1. „Netzwerk“ → „Gateways“ → auf dein Gateway klicken.
+1. „Geräte“ → „Gateways“ → auf dein Gateway klicken.
 2. Reiter „Funktionen“ (die Zahl daneben sagt, wie viele an sind).
 
 Dort schaltest du jede Funktion ein oder aus, nach Bereichen geordnet
@@ -19,6 +19,11 @@ Gateway-Pools (mehrere Gateways im selben Netz, die füreinander einspringen)
 findest du ebenfalls unter „Gateways“: als eigene Gruppe in der Liste, mit
 „Pool anlegen“ oben rechts und „Pool öffnen“ für die Einstellungen. Eine
 eigene Seite „Gateway-Pools“ im Menü gibt es nicht mehr.
+
+Wo die Gateways stehen („Zuhause“, „Büro“ …), ordnest du mit „Standorte“ oben
+auf derselben Seite. Sobald es einen Standort gibt, ist die Liste nach
+Standorten gruppiert; „Gruppieren nach: Standorte | Pools“ wechselt zur
+Ansicht nach Pools. Mehr in [Kapitel 3.6](03-gateway-einrichten.md#36-standorte).
 
 Allgemeine Voraussetzungen:
 
@@ -578,6 +583,12 @@ höchstens einmal pro Stunde.
 **Wofür:** Hält App-Updates, Dateien und Fotos (über das Drive-Plugin) im
 Heimnetz bereit. Apps im Heimnetz laden sie dann in voller LAN-Geschwindigkeit.
 Wer was sehen darf, prüft weiterhin der Server.
+
+Ab GateControl 1.249.0 liegen dort auch die **Vorschaubilder** (Drive 1.24.0+):
+die kleinen Bilder der Foto- und Dateilisten. Zu Hause bauen sich die Listen in
+der App dann sofort auf. Vorschaubilder sind klein (meist unter 40 KB), zählen
+aber zur Höchstgröße. Sie gehören zur Art ihrer Datei (Drive oder Fotos) –
+wer „Fotos“ ausschaltet, schaltet auch deren Vorschaubilder aus.
 
 **Voraussetzungen:**
 

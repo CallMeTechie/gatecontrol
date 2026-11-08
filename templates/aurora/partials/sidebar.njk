@@ -9,16 +9,26 @@
   {% endif %}
   <a href="/profile" class="nav-item {{ 'active' if activeNav == 'profile' }}"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.account_security') }}</a>
   {% else %}
-  {# Groups (docs/feature-release-b.md §8): Übersicht · Netzwerk · Sicherheit ·
-     Integrationen · System. URLs, badges and licence conditions unchanged;
-     the quick search (command-palette.js) reads its page list from here. #}
+  {# Groups (docs/feature-release-b.md §8, regrouped in docs/feature-peers-page.md):
+     Übersicht · Geräte · Dienste · Zugriff & Sicherheit · Zuhause · Apps ·
+     Wartung · System. URLs, badges and licence conditions unchanged; the quick
+     search (command-palette.js) reads its page list and group names from here.
+     Plugin pages go by their section (services/plugins navEntries: "devices"
+     under Geräte, "home" → Zuhause, "apps" → Apps); Zuhause and Apps fold
+     (app.js, remembered per browser). -#}
+  {%- set pnav = pluginNav or [] %}
   <div class="nav-section-label">{{ t('nav.overview') }}</div>
   <a href="/dashboard" class="nav-item {{ 'active' if activeNav == 'dashboard' }}"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="9" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="14" y="3" width="7" height="5" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="14" y="12" width="7" height="9" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="3" y="16" width="7" height="5" rx="1.5" stroke="currentColor" stroke-width="2"/></svg>{{ t('nav.dashboard') }}</a>
 
-  <div class="nav-section-label">{{ t('nav.group_network') }}</div>
+  <div class="nav-section-label">{{ t('nav.group_devices') }}</div>
   <a href="/peers" class="nav-item {{ 'active' if activeNav == 'peers' }}"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="6" r="3" stroke="currentColor" stroke-width="2"/><circle cx="5" cy="18" r="3" stroke="currentColor" stroke-width="2"/><circle cx="19" cy="18" r="3" stroke="currentColor" stroke-width="2"/></svg>{{ t('nav.peers') }}<span class="nav-badge green" id="peer-count-badge">{{ peerCount or 0 }}</span></a>
+  <a href="/gateways" class="nav-item {{ 'active' if activeNav == 'gateways' }}"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/></svg>{{ t('nav.gateways') }}{% if gatewaysOffline > 0 %}<span class="nav-badge amber" id="gw-offline-badge" title="{{ t('nav.gateways_offline', { count: gatewaysOffline }) }}">{{ gatewaysOffline }}</span>{% endif %}</a>
+  {%- for pn in pnav %}{% if (pn.section or 'apps') == 'devices' %}
+  <a href="{{ pn.href }}" class="nav-item{{ ' active' if activeNav == 'plugin:' + pn.id }}{{ ' nav-item-off' if not pn.on }}" data-plugin-nav="{{ pn.id }}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{ pn.icon }}"/></svg>{{ pn.label }}{% if not pn.on %}<span class="nav-tag-off">{{ t('plugins.nav_off') }}</span>{% endif %}</a>
+  {%- endif %}{% endfor %}
+
+  <div class="nav-section-label">{{ t('nav.group_services') }}</div>
   <a href="/routes" class="nav-item {{ 'active' if activeNav == 'routes' }}"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" stroke="currentColor" stroke-width="2"/></svg>{{ t('nav.routes') }}<span class="nav-badge coral" id="route-count-badge">{{ routeCount or 0 }}</span></a>
-  <a href="/gateways" class="nav-item {{ 'active' if activeNav == 'gateways' }}"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/></svg>{{ t('nav.gateways') }}</a>
   <a href="/rdp" class="nav-item {{ 'active' if activeNav == 'rdp' }}"><svg viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="13" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 21h8M12 17v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.rdp') }}</a>
   {% if license.features.internal_dns %}
   <a href="/dns" class="nav-item {{ 'active' if activeNav == 'dns' }}"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M3 12h18" stroke="currentColor" stroke-width="2"/></svg>{{ t('nav.dns') }}</a>
@@ -27,28 +37,41 @@
   <a href="/pihole" class="nav-item {{ 'active' if activeNav == 'pihole' }}"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M5 5l14 14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.pihole') }}</a>
   {% endif %}
 
-  <div class="nav-section-label">{{ t('nav.group_security') }}</div>
-  <a href="/security" class="nav-item {{ 'active' if activeNav == 'security' }}"><svg viewBox="0 0 24 24" fill="none"><path d="M10 6h10M10 12h10M10 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="m3.5 6 1.5 1.5L7.5 5M3.5 12l1.5 1.5L7.5 11M3.5 18l1.5 1.5L7.5 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('nav.security_check') }}</a>
-  <a href="/certificates" class="nav-item {{ 'active' if activeNav == 'certificates' }}"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="11" width="18" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.certificates') }}</a>
-  {% if license.features.waf %}
-  <a href="/waf" class="nav-item {{ 'active' if activeNav == 'waf' }}"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2 4 5v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V5l-8-3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('nav.waf') }}</a>
-  {% endif %}
+  <div class="nav-section-label">{{ t('nav.group_access') }}</div>
   <a href="/users" class="nav-item {{ 'active' if activeNav == 'users' }}"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="2"/><path d="M3 20c0-3.3 2.7-5 6-5s6 1.7 6 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.users') }}</a>
   {#- Person groups (docs/groups.md): a sub-item of Benutzer, every edition. -#}
   <a href="/groups" class="nav-item nav-item-sub {{ 'active' if activeNav == 'groups' }}"><svg viewBox="0 0 24 24" fill="none"><circle cx="8" cy="9" r="2.6" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="9" r="2.6" stroke="currentColor" stroke-width="2"/><path d="M3 19c0-2.6 2.2-4 5-4s5 1.4 5 4M13.5 15.2c.8-.2 1.6-.2 2.5-.2 2.8 0 5 1.4 5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.groups') }}</a>
   {#- Directory sync (docs/groups.md): a sub-item of Benutzer next to Gruppen. -#}
   <a href="/directory" class="nav-item nav-item-sub {{ 'active' if activeNav == 'directory' }}"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="6" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="18" height="6" rx="1.5" stroke="currentColor" stroke-width="2"/><path d="M7 7h.01M7 17h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>{{ t('nav.directory') }}</a>
-
-  {% if pluginNav and pluginNav.length %}
-  {#- Integrationen (docs/plugins.md): one entry per installed plugin with a
-      page (Smart Home, Klimaanlage, Fahrzeuge … are plugins); a plugin that
-      is not running stays listed, greyed, tagged "aus" — its page explains
-      why (old bookmarks keep working). -#}
-  <div class="nav-section-label">{{ t('nav.group_integrations') }}</div>
-  {% for pn in pluginNav %}
-  <a href="{{ pn.href }}" class="nav-item{{ ' active' if activeNav == 'plugin:' + pn.id }}{{ ' nav-item-off' if not pn.on }}" data-plugin-nav="{{ pn.id }}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{ pn.icon }}"/></svg>{{ pn.label }}{% if not pn.on %}<span class="nav-tag-off">{{ t('plugins.nav_off') }}</span>{% endif %}</a>
-  {% endfor %}
+  <a href="/security" class="nav-item {{ 'active' if activeNav == 'security' }}"><svg viewBox="0 0 24 24" fill="none"><path d="M10 6h10M10 12h10M10 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="m3.5 6 1.5 1.5L7.5 5M3.5 12l1.5 1.5L7.5 11M3.5 18l1.5 1.5L7.5 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('nav.security_check') }}</a>
+  <a href="/certificates" class="nav-item {{ 'active' if activeNav == 'certificates' }}"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="11" width="18" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.certificates') }}</a>
+  {% if license.features.waf %}
+  <a href="/waf" class="nav-item {{ 'active' if activeNav == 'waf' }}"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2 4 5v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V5l-8-3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('nav.waf') }}</a>
   {% endif %}
+
+  {#- Plugins (docs/plugins.md): one entry per installed plugin with a page; a
+      plugin that is not running stays listed, greyed, tagged "aus" — its page
+      explains why (old bookmarks keep working). -#}
+  {%- set pnSections %}{% for pn in pnav %} {{ pn.section or 'apps' }} {% endfor %}{% endset %}
+  {% if ' home ' in pnSections %}
+  <div class="nav-section-label nav-section-fold" data-nav-fold="home"><button type="button" class="nav-fold-btn" aria-expanded="true" data-nav-fold-btn="home"><span>{{ t('nav.group_home') }}</span><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div>
+  {%- for pn in pnav %}{% if (pn.section or 'apps') == 'home' %}
+  <a href="{{ pn.href }}" class="nav-item{{ ' active' if activeNav == 'plugin:' + pn.id }}{{ ' nav-item-off' if not pn.on }}" data-plugin-nav="{{ pn.id }}" data-nav-sec="home"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{ pn.icon }}"/></svg>{{ pn.label }}{% if not pn.on %}<span class="nav-tag-off">{{ t('plugins.nav_off') }}</span>{% endif %}</a>
+  {%- endif %}{% endfor %}
+  {% endif %}
+  {% if ' apps ' in pnSections %}
+  <div class="nav-section-label nav-section-fold" data-nav-fold="apps"><button type="button" class="nav-fold-btn" aria-expanded="true" data-nav-fold-btn="apps"><span>{{ t('nav.group_apps') }}</span><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div>
+  {%- for pn in pnav %}{% if (pn.section or 'apps') == 'apps' %}
+  <a href="{{ pn.href }}" class="nav-item{{ ' active' if activeNav == 'plugin:' + pn.id }}{{ ' nav-item-off' if not pn.on }}" data-plugin-nav="{{ pn.id }}" data-nav-sec="apps"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{ pn.icon }}"/></svg>{{ pn.label }}{% if not pn.on %}<span class="nav-tag-off">{{ t('plugins.nav_off') }}</span>{% endif %}</a>
+  {%- endif %}{% endfor %}
+  {% endif %}
+
+  <div class="nav-section-label">{{ t('nav.group_maintenance') }}</div>
+  <a href="/logs" class="nav-item {{ 'active' if activeNav == 'logs' }}"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('nav.logs') }}</a>
+  {#- Support bundles of every device (docs/feature-support-bundle.md); badge:
+      bundles nobody opened yet (middleware/locals.js), kept live by app.js. -#}
+  {%- set sbNew = supportUnviewed or 0 %}
+  <a href="/support-bundles" class="nav-item {{ 'active' if activeNav == 'support-bundles' }}"><svg viewBox="0 0 24 24" fill="none"><path d="M21 8v13H3V8" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M1 3h22v5H1z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M10 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.support_bundles') }}{% if sbNew > 0 %}<span class="nav-badge coral" id="sb-nav-badge" title="{{ t('support_bundles.nav_badge', { count: sbNew }) }}">{{ sbNew }}</span>{% else %}<span class="nav-badge coral" id="sb-nav-badge" hidden></span>{% endif %}</a>
 
   <div class="nav-section-label">{{ t('nav.system') }}</div>
   {#- Notification centre (docs/feature-notification-center.md); the badge
@@ -56,11 +79,6 @@
       (middleware/locals.js, cached count) and notifications.js keeps it live. -#}
   {%- set ncQueued = notifyQueued or 0 %}
   <a href="/notifications" class="nav-item {{ 'active' if activeNav == 'notifications' }}"><svg viewBox="0 0 24 24" fill="none"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('nav.notifications') }}{% if ncQueued > 0 %}<span class="nav-badge amber" id="nc-nav-badge" title="{{ t('notify.nav_badge_one') if ncQueued == 1 else t('notify.nav_badge_other', { count: ncQueued }) }}">{{ ncQueued }}</span>{% else %}<span class="nav-badge amber" id="nc-nav-badge" hidden></span>{% endif %}</a>
-  {#- Support bundles of every device (docs/feature-support-bundle.md); badge:
-      bundles nobody opened yet (middleware/locals.js), kept live by app.js. -#}
-  {%- set sbNew = supportUnviewed or 0 %}
-  <a href="/support-bundles" class="nav-item {{ 'active' if activeNav == 'support-bundles' }}"><svg viewBox="0 0 24 24" fill="none"><path d="M21 8v13H3V8" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M1 3h22v5H1z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M10 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>{{ t('nav.support_bundles') }}{% if sbNew > 0 %}<span class="nav-badge coral" id="sb-nav-badge" title="{{ t('support_bundles.nav_badge', { count: sbNew }) }}">{{ sbNew }}</span>{% else %}<span class="nav-badge coral" id="sb-nav-badge" hidden></span>{% endif %}</a>
-  <a href="/logs" class="nav-item {{ 'active' if activeNav == 'logs' }}"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 4-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{{ t('nav.logs') }}</a>
   {#- Badge: plugins stopped by a problem or crashed plus the cached plugin
       updates (Einstellungen › Plugins, docs/plugins.md "Plugin area"). -#}
   <a href="/settings" class="nav-item {{ 'active' if activeNav == 'settings' }}" id="nav-settings"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>{{ t('nav.settings') }}{% if pluginBadge > 0 %}<span class="nav-badge amber" id="pg-nav-badge" title="{{ t('plugins.area.badge', { count: pluginBadge }) }}">{{ pluginBadge }}</span>{% endif %}</a>

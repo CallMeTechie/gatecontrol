@@ -4,7 +4,7 @@
 
 A gateway can do more than the tunnel. You find all features like this:
 
-1. “Network” → “Gateways” → click your gateway.
+1. “Devices” → “Gateways” → click your gateway.
 2. Tab “Features” (the number next to it says how many are on).
 
 There you switch each feature on or off, grouped by area (“Eyes on the home
@@ -18,6 +18,11 @@ Gateway pools (several gateways in the same network that step in for each
 other) are under “Gateways” as well: as a group of their own in the list, with
 “Create pool” at the top right and “Open pool” for the settings. There is no
 separate page “Gateway Pools” in the menu any more.
+
+Where the gateways are (“Home”, “Office” …) you keep with “Locations” at the
+top of the same page. As soon as there is a location, the list is grouped by
+location; “Group by: Locations | Pools” switches to the view by pool. More in
+[chapter 3.6](03-gateway-setup.md#36-locations).
 
 General requirements:
 
@@ -554,6 +559,12 @@ new compose file” → download the compose file and recreate the project. The 
 **What for:** Keeps app updates, files and photos (via the Drive plugin) in the
 home network. Apps in the home network then load them at full LAN speed. The
 server still decides who may see what.
+
+From GateControl 1.249.0 it also keeps the **previews** (Drive 1.24.0+): the
+small pictures of the photo and file lists. At home the lists in the app then
+show up at once. Previews are small (mostly under 40 KB) but count against the
+maximum size. They belong to the kind of their file (Drive or photos) –
+switching “Photos” off switches off their previews as well.
 
 **Requirements:**
 

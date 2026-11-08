@@ -216,6 +216,8 @@ jobs:
       GC_RATE_LIMIT_LOGIN: '100000'
       GC_RATE_LIMIT_API: '100000'
       GC_RATE_LIMIT_GATEWAY: '100000'
+      GC_RATE_LIMIT_GATEWAY_CACHE: '100000'
+      GC_RATE_LIMIT_GATEWAY_BULK: '100000'
       BASE: http://127.0.0.1:3000
       E2E_OUT: /tmp/gc-e2e/shots
     steps:
@@ -277,7 +279,7 @@ jobs:
       - name: Browser scenarios
         env:
           NODE_PATH: /tmp/pw/node_modules
-        run: node tests/e2e/run.js ${{ github.event_name == 'workflow_dispatch' && inputs.browser_scenarios || 'login zones security passkey dashboard settings users portal portalstart pluginviewport notifications support storage logs securitysettings virenscan gatewaywizard gatewayedge gatewaynet gatewayhome gatewaypools gatewayprint gatewayradio gatewayai gatewaycameras gatewaydocs pluginhandbook pluginupdates' }}
+        run: node tests/e2e/run.js ${{ github.event_name == 'workflow_dispatch' && inputs.browser_scenarios || 'login zones security passkey dashboard settings users portal portalstart pluginviewport notifications support storage logs securitysettings virenscan gatewaywizard gatewayedge gatewaynet gatewayhome gatewaypools gatewayprint gatewayradio gatewayai gatewaycameras gatewaylocations gatewaydocs pluginhandbook pluginupdates peers' }}
 
       - name: App log
         if: failure()

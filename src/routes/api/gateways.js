@@ -33,6 +33,7 @@ const router = Router();
  *     health: { … full last_health body, includes telemetry },
  *     routes: [{ id, domain, route_type, target_lan_host, target_lan_port,
  *                l4_listen_port, l4_protocol, wol_enabled, wol_mac }],
+ *     location: { id, name, city, country } | null,   // Gateway-Standort (services/gatewayLocations.js)
  *   }
  *
  * `?peek=1` is a side-effect-free read (the dashboard polls it): the
@@ -122,7 +123,10 @@ router.get('/', (req, res) => {
 
     const latestVersion = require('../../services/gatewayRelease').getLatestVersion();
     const { compareVersions } = require('../../utils/version');
+    // Gateway-Standorte: { id, name, city, country } | null
+    const locations = require('../../services/gatewayLocations').byGateway();
     for (const g of gateways) {
+      g.location = locations.get(g.peer_id) || null;
       g.discovery = require('../../services/gateways').getDiscoverySettings(g.peer_id) || { enabled: 0, active_scan: 0 };
       const cur = g.health && g.health.telemetry ? g.health.telemetry.gateway_version : null;
       g.update_available = !!(latestVersion && cur && compareVersions(latestVersion, cur) > 0);

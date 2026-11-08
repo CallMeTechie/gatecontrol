@@ -328,6 +328,9 @@ const SETTINGS_I18N_PREFIXES = ['st.', 'settings.', 'offsite.', 'premig.', 'auto
   'client_updates.', 'pihole.cfg.', 'tags.', 'peer_groups.', 'license.', 'common.', 'security.lockout.', 'error.settings.',
   'error.webhooks.', 'error.peer_groups.', 'error.client_policy.', 'error.client_updates.', 'error.wireguard.', 'plugins.', 'ai.'];
 
+// Strings of the Peers page (peers.njk island data-prefixes must list the same ones).
+const PEERS_I18N_PREFIXES = ['pl.', 'peer_groups.', 'common.'];
+
 const pages = [
   { path: '/dashboard', template: 'dashboard', titleKey: 'nav.dashboard' },
   { path: '/peers', template: 'peers', titleKey: 'nav.peers' },
@@ -500,6 +503,12 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
       extraLocals.rdpRouteCount = counts.total;
     } catch (err) { logger.debug({ err: err.message }, 'rdp route count for sidebar unavailable'); }
 
+    // Peers / Clients (peers.js, docs/feature-peers-page.md): its strings as
+    // one JSON island — peers.njk data-prefixes must list the same ones.
+    if (template === 'peers') {
+      extraLocals.plI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, PEERS_I18N_PREFIXES))
+        .replace(/</g, '\\u003c');
+    }
     // Peers / Support-Pakete: retention of support bundles for the hint.
     if (template === 'peers' || template === 'support-bundles') {
       extraLocals.supportRetention = {

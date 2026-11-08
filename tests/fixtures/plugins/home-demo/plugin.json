@@ -6,6 +6,6 @@
   "description": { "de": "Plugin mit gc.homeNetwork.internet und gc.homeCache (Tests).", "en": "Plugin with gc.homeNetwork.internet and gc.homeCache (tests)." },
   "gatecontrol": ">=1.0.0",
   "entry": "server/index.js",
-  "media": { "maxBytes": 10485760, "types": ["application/octet-stream", "image/*"], "quotaDefault": "1GB" },
+  "media": { "maxBytes": 10485760, "types": ["application/octet-stream", "image/*"], "quotaDefault": "1GB", "previews": true },
   "permissions": { "homeInternet": true, "homeCache": true }
 }

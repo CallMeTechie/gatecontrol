@@ -255,7 +255,7 @@ describe('aurora theme — pihole layout (Task P2-2)', () => {
 });
 
 // ── Task P2-3: Peers ID-contract (Aurora mockup fidelity) ────────────────────
-describe('aurora theme — peers layout (Task P2-3)', () => {
+describe('aurora theme — peers layout (docs/feature-peers-page.md)', () => {
   it('renders /peers under aurora (200, aurora shell)', async () => {
     selectAurora();
     const res = await agent.get('/peers').expect(200);
@@ -263,107 +263,51 @@ describe('aurora theme — peers layout (Task P2-3)', () => {
     assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
   });
 
-  it('renders Aurora toolbar, toggle-group, card-title, and data-table on /peers', async () => {
+  it('toolbar: search, status, view switch, group/device/sort, "Weitere Filter"; no gateway card', async () => {
     selectAurora();
     const res = await agent.get('/peers').expect(200);
-    assert.match(res.text, /class="toolbar"/, '.toolbar present');
-    assert.match(res.text, /class="search-box"/, '.search-box present');
-    assert.match(res.text, /class="toggle-group"/, '.toggle-group status filter present');
-    assert.match(res.text, /class="card-title"/, '.card-title present');
-    assert.match(res.text, /class="data-table"/, '.data-table present');
+    for (const id of ['peer-search', 'pl-status', 'pl-view', 'pl-group', 'pl-device', 'pl-sort', 'pl-more-btn', 'pl-more', 'pl-active', 'pl-attn', 'pl-results', 'pl-summary', 'pl-groups-link']) {
+      assert.match(res.text, new RegExp(`id="${id}"`), `#${id} present`);
+    }
+    for (const s of ['all', 'online', 'offline', 'disabled']) assert.match(res.text, new RegExp(`data-status="${s}"`), `status ${s}`);
+    assert.match(res.text, /data-view="cards" aria-pressed="true"/, 'cards by default');
+    assert.match(res.text, /data-view="list"/, 'list view');
+    assert.match(res.text, /class="toolbar rt-toolbar pl-toolbar"/, 'zones-style toolbar');
+    assert.doesNotMatch(res.text, /id="gateways-container"|gw-section-count|stat-gw-online/, 'no gateway section any more');
+    assert.match(res.text, /<script type="application\/json" id="pl-i18n" data-prefixes="pl\. peer_groups\. common\."/, 'strings island');
   });
 
-  it('renders all phase0 static container IDs on /peers under aurora', async () => {
+  it('bulk bar: enable, disable, group, owner, tag, delete, clear', async () => {
     selectAurora();
     const res = await agent.get('/peers').expect(200);
-    // Toolbar / filter anchors
-    assert.match(res.text, /id="peer-search"/, '#peer-search present');
-    assert.match(res.text, /id="aurora-status-toggle"/, '#aurora-status-toggle present');
-    assert.match(res.text, /id="peer-status-tags"/, '#peer-status-tags present (hidden)');
-    assert.match(res.text, /id="peer-tag-filters"/, '#peer-tag-filters present (hidden)');
-    assert.match(res.text, /id="peer-group-filter"/, '#peer-group-filter present (hidden)');
-    // Section count spans (JS writes textContent)
-    assert.match(res.text, /id="gw-section-count"/, '#gw-section-count present');
-    assert.match(res.text, /id="peers-section-count"/, '#peers-section-count present');
-    // Stat spans (hidden, JS writes them)
-    assert.match(res.text, /id="stat-gw-online"/, '#stat-gw-online present');
-    assert.match(res.text, /id="stat-gw-total"/, '#stat-gw-total present');
-    assert.match(res.text, /id="stat-cl-online"/, '#stat-cl-online present');
-    assert.match(res.text, /id="stat-cl-total"/, '#stat-cl-total present');
-    // Gateway grid container
-    assert.match(res.text, /id="gateways-container"/, '#gateways-container present');
-    // Peer table body
-    assert.match(res.text, /id="peers-tbody"/, '#peers-tbody present');
-    assert.match(res.text, /id="peers-mobile"/, '#peers-mobile present (suppressed)');
-    // Batch controls
-    assert.match(res.text, /id="btn-batch-peers"/, '#btn-batch-peers present (hidden)');
-    assert.match(res.text, /id="batch-bar-peers"/, '#batch-bar-peers present');
-    assert.match(res.text, /id="batch-bar-peers-count"/, '#batch-bar-peers-count present');
-    assert.match(res.text, /id="batch-select-all-peers"/, '#batch-select-all-peers present');
-    assert.match(res.text, /id="batch-enable-peers"/, '#batch-enable-peers present');
-    assert.match(res.text, /id="batch-disable-peers"/, '#batch-disable-peers present');
-    assert.match(res.text, /id="batch-delete-peers"/, '#batch-delete-peers present');
-    assert.match(res.text, /id="batch-cancel-peers"/, '#batch-cancel-peers present');
+    assert.match(res.text, /class="sh-bulkbar pl-bulk" id="pl-bulkbar"[^>]* hidden/, 'hidden until something is selected');
+    for (const a of ['enable', 'disable', 'group', 'owner', 'tag', 'delete', 'clear']) assert.match(res.text, new RegExp(`data-bulk="${a}"`), a);
   });
 
-  it('renders all 7 modal IDs on /peers under aurora', async () => {
+  it('the device modals; no gateway modals', async () => {
     selectAurora();
     const res = await agent.get('/peers').expect(200);
-    assert.match(res.text, /id="modal-add-peer"/, '#modal-add-peer present');
-    assert.match(res.text, /id="modal-edit-peer"/, '#modal-edit-peer present');
-    assert.match(res.text, /id="modal-qr-peer"/, '#modal-qr-peer present');
-    assert.match(res.text, /id="modal-peer-traffic"/, '#modal-peer-traffic present');
-    assert.match(res.text, /id="modal-gateway-tokens"/, '#modal-gateway-tokens present');
-    assert.match(res.text, /id="modal-gateway-delete"/, '#modal-gateway-delete present');
-    assert.match(res.text, /id="modal-confirm"/, '#modal-confirm present');
+    for (const id of ['modal-add-peer', 'modal-edit-peer', 'modal-qr-peer', 'modal-peer-traffic', 'modal-confirm', 'add-peer-name', 'btn-add-peer-submit',
+      'add-peer-error', 'edit-peer-id', 'edit-peer-name', 'edit-peer-error', 'access-windows-section', 'qr-peer-title', 'traffic-peer-title']) {
+      assert.match(res.text, new RegExp(`id="${id}"`), `#${id} present`);
+    }
+    assert.doesNotMatch(res.text, /id="modal-gateway-tokens"|id="modal-gateway-delete"|id="add-peer-gateway-moved"|id="edit-peer-gateway-info"/);
   });
 
-  it('renders add-peer and edit-peer modal field IDs on /peers under aurora', async () => {
-    selectAurora();
-    const res = await agent.get('/peers').expect(200);
-    // Add-peer fields
-    assert.match(res.text, /id="add-peer-name"/, '#add-peer-name present');
-    assert.match(res.text, /id="btn-add-peer-submit"/, '#btn-add-peer-submit present');
-    assert.match(res.text, /id="add-peer-error"/, '#add-peer-error present');
-    // Edit-peer fields
-    assert.match(res.text, /id="edit-peer-id"/, '#edit-peer-id present');
-    assert.match(res.text, /id="edit-peer-name"/, '#edit-peer-name present');
-    assert.match(res.text, /id="btn-edit-peer-submit"/, '#btn-edit-peer-submit present');
-    assert.match(res.text, /id="edit-peer-error"/, '#edit-peer-error present');
-    assert.match(res.text, /id="access-windows-section"/, '#access-windows-section present');
-    // QR + traffic modal fields
-    assert.match(res.text, /id="qr-peer-title"/, '#qr-peer-title present');
-    assert.match(res.text, /id="traffic-peer-title"/, '#traffic-peer-title present');
-    // Gateway-tokens modal fields
-    assert.match(res.text, /id="gateway-tokens-api-token"/, '#gateway-tokens-api-token present');
-    assert.match(res.text, /id="gateway-pairing-token"/, '#gateway-pairing-token present');
-    // Gateway-delete modal fields
-    assert.match(res.text, /id="gw-delete-confirm-btn"/, '#gw-delete-confirm-btn present');
-  });
-
-  it('toggle-group in toolbar has All/Online/Offline buttons with data-status attributes', async () => {
-    selectAurora();
-    const res = await agent.get('/peers').expect(200);
-    assert.match(res.text, /data-status="all"/, 'toggle-btn data-status="all" present');
-    assert.match(res.text, /data-status="online"/, 'toggle-btn data-status="online" present');
-    assert.match(res.text, /data-status="offline"/, 'toggle-btn data-status="offline" present');
-  });
-
-  it('peers.js renders the Aurora table and unit cards without a theme branch', () => {
+  it('peers.js: clients only, DOM built without innerHTML, view remembered', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
-    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in peers.js (Aurora is the only theme)');
-    assert.match(js, /function actionBtns\(/, 'actionBtns() present');
-    assert.match(js, /function renderPeers\(/, 'renderPeers() present');
-    assert.match(js, /function renderGatewayCard\(/, 'renderGatewayCard() present');
-    assert.match(js, /function initStatusToggle\(/, 'initStatusToggle() present');
-    assert.match(js, /\n  initStatusToggle\(\);/, 'initStatusToggle() called in init');
-    assert.match(js, /class="icon-action/, 'icon-action buttons');
+    const code = js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"\\])\/\/[^\n]*/g, '$1');
+    assert.match(js, /api\.get\('\/api\/peers\?type=client'\)/, 'loads clients only');
+    assert.match(js, /var VIEW_KEY = 'gc-peers-view';/, 'view key');
+    assert.doesNotMatch(code, /innerHTML|outerHTML|insertAdjacentHTML/, 'no HTML strings');
+    assert.doesNotMatch(js, /renderGatewayCard|loadGateways|\/api\/gateways/, 'no gateway code left');
+    assert.doesNotMatch(js, /isAurora/, 'no theme branch');
   });
 
-  it('app.css carries the peers-page additions', () => {
-    const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
-    assert.match(css, /\.aurora-gw-empty/, '.aurora-gw-empty rule present');
-    assert.match(css, /\.tag\.tag-dot/, '.tag.tag-dot rule present');
+  it('app.css carries the peers-page section (pl-)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
+    assert.match(css, /§14 Peers \/ Clients \(pl-\)/, 'section header');
+    for (const sel of ['.pl-card', '.pl-table', '.pl-pop', '.pl-fbtn', '.pl-att', '.tag.tag-dot']) assert.ok(css.includes(sel), sel);
   });
 });
 
@@ -1019,59 +963,27 @@ describe('aurora theme — profile layout (Task P2-12)', () => {
 });
 
 // ── UX-fixes: Peers gateway card — badge inside, gear-edit, card→detail nav ──
-describe('aurora theme — peers gateway card UX fixes (Issues 5/6/7)', () => {
-  it('renderGatewayCard builds badge inside the card using DOM (not detached)', () => {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
-    // Badge is created with DOM createElement and appended inside uh (card header)
-    assert.match(js, /badge\.className\s*=\s*statusClass/, 'badge.className assigned from statusClass inside renderGatewayCard');
-    assert.match(js, /right\.appendChild\(badge\)/, 'badge appended to the right-side header span (inside card)');
-    // The "right" span is added to uh (header row), which is added to unit (card)
-    assert.match(js, /uh\.appendChild\(right\)/, 'right span appended to uh header row');
-    assert.match(js, /unit\.appendChild\(uh\)/, 'uh header row appended to unit card');
+describe('aurora theme — gateway management on /gateways (moved from the Peers page)', () => {
+  it('the gateways page loads gateway-manage.js with its strings and the "disabled gateways" anchor', async () => {
+    selectAurora();
+    const res = await agent.get('/gateways').expect(200);
+    assert.match(res.text, /<script src="\/js\/gateway-manage\.js\?v=[^"]+"><\/script>\s*<script src="\/js\/gateways\.js/, 'before gateways.js');
+    assert.match(res.text, /<div id="gw-disabled" hidden><\/div>/);
+    const island = res.text.match(/<script type="application\/json" id="gwm-i18n"[^>]*>([^<]*)<\/script>/);
+    assert.ok(island, 'strings island');
+    const strings = JSON.parse(island[1]);
+    for (const k of ['gwm.rename', 'gwm.reconnect', 'gwm.proxy_port', 'gwm.disable', 'gwm.delete', 'gateway_delete_title']) assert.ok(strings[k] && strings[k] !== k, k);
   });
 
-  it('renderGatewayCard emits a gear button with data-action="edit" and data-id=peer_id', () => {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
-    // Gear button gets setAttribute('data-action', 'edit')
-    assert.match(js, /gearBtn\.setAttribute\('data-action',\s*'edit'\)/, "gear button has data-action='edit'");
-    assert.match(js, /gearBtn\.setAttribute\('data-id',\s*String\(gw\.peer_id\)\)/, 'gear button data-id is String(gw.peer_id)');
-    // Gear button is appended inside the right span (inside card header)
-    assert.match(js, /right\.appendChild\(gearBtn\)/, 'gear button appended inside card header');
-  });
-
-  it('renderGatewayCard gear button stops propagation and calls showEditModal', () => {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
-    assert.match(js, /e\.stopPropagation\(\)[\s\S]{0,40}showEditModal\(gw\.peer_id\)/, 'gear click: stopPropagation then showEditModal(gw.peer_id)');
-  });
-
-  it('renderGatewayCard sets dataset.gwDetail for test assertions and a11y', () => {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
-    assert.match(js, /unit\.dataset\.gwDetail\s*=\s*'\/gateways#gw\/'/, "unit.dataset.gwDetail set to '/gateways#gw/' prefix");
-  });
-
-  it('renderGatewayCard card click navigates to /gateways#gw/<id> (Issue 7)', () => {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
-    assert.match(js, /window\.location\.href\s*=\s*'\/gateways#gw\/'/, "card click sets window.location.href to '/gateways#gw/' + peer_id");
-    // Must NOT call showEditModal on card click (that's now the gear's job)
-    // Check: the card-click listener no longer contains showEditModal (the gear listener has it)
-    // We verify this by checking that the card-click handler only has window.location.href
-    const cardClickMatch = js.match(/unit\.addEventListener\('click',\s*function\(e\)\s*\{([\s\S]*?)\}\);/g);
-    assert.ok(cardClickMatch, 'unit addEventListener click handler present');
-    const hasNav = cardClickMatch.some(function(s) { return /window\.location\.href/.test(s); });
-    assert.ok(hasNav, 'card-click handler navigates via window.location.href');
-  });
-
-  it('renderGatewayCard card click uses button/a guard (gear and badge excluded from nav)', () => {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
-    // Card click guard: e.target.closest('button, a') prevents nav when gear is clicked
-    assert.match(js, /e\.target\.closest\('button,\s*a'\)[\s\S]{0,20}return/, 'card-click has button/a closest guard before nav');
-  });
-
-  it('i18n has peers.gateway.action_edit_gear in both en.json and de.json', () => {
-    const en = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'en.json'), 'utf8'));
-    const de = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', 'de.json'), 'utf8'));
-    assert.ok(en['peers.gateway.action_edit_gear'], 'peers.gateway.action_edit_gear present in en.json');
-    assert.ok(de['peers.gateway.action_edit_gear'], 'peers.gateway.action_edit_gear present in de.json');
+  it('gateways.js adds the entries to "Mehr" and hands gm-* actions to gateway-manage.js', () => {
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateways.js'), 'utf8');
+    assert.match(js, /window\.GCGatewayManage\.menuItems\(g, item, menu\)/);
+    assert.match(js, /closest\('\[data-act\^="gm-"\]'\)/);
+    const gm = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateway-manage.js'), 'utf8');
+    for (const a of ['gm-rename', 'gm-reconnect', 'gm-proxy', 'gm-disable', 'gm-enable', 'gm-delete']) assert.ok(gm.includes(`'${a}'`), a);
+    assert.match(gm, /\/delete-impact/, 'the routes of the gateway before deleting');
+    assert.match(gm, /\/api\/v1\/peers\?type=gateway/, 'disabled gateways listed');
+    assert.doesNotMatch(gm.replace(/\/\/[^\n]*/g, ''), /innerHTML/);
   });
 });
 

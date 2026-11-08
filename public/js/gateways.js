@@ -39,6 +39,8 @@
   // Pools on this page (gateway-pool-kit.js: pure rules, gateway-pools-ui.js: views and dialogs)
   var PK = window.GCGatewayPoolKit;
   var P = window.GCGatewayPools;
+  // Gateway-Standorte (gateway-locations.js): dialogs, sections per location, tags
+  var L = window.GCGatewayLocations;
   // UI state of the detail view that must survive the redraw of every poll
   var menuOpen = false;           // the "Mehr" menu of the head
   var techOpen = {};              // peer id → <details> "Technische Details" open
@@ -166,8 +168,9 @@
   }
   // A fleet card. `role` ({ pool, member }) when shown in a pool group: the tag
   // "1 · arbeitet gerade" / "2 · Reserve, springt ein" / "2 · offline".
-  function card(g, role) {
-    if (g.never_connected) return waitingCard(g);
+  // byLoc: the card sits in a section of a location (gateway-locations.js) — the role tag names the pool
+  function card(g, role, byLoc) {
+    if (g.never_connected) return withLocTag(waitingCard(g), g, byLoc);
     var t = (g.health && g.health.telemetry) || {};
     var st = status(g);
     var wrap = el('div', 'gw unit'); wrap.dataset.id = g.peer_id; wrap.dataset.live = st;
@@ -204,15 +207,17 @@
       var r = PK.roleOf(role.pool, role.member);
       var rt = r.until ? countdownEl('span', 'tag tag-' + r.tone, r.key, r.params, r.until) : el('span', 'tag tag-' + r.tone, TT(r.key, r.params));
       rt.setAttribute('data-role', role.member.state);
+      if (byLoc) {
+        var pre = TT('gwp.loc.pool_tag', { name: role.pool.name }) + ' · ';
+        if (rt.dataset.gwTpl) rt.dataset.gwTpl = pre + rt.dataset.gwTpl;
+        rt.textContent = pre + rt.textContent;
+      }
       tags.appendChild(rt);
     }
     var nr = (g.routes || []).length;
     if (!role && nr) tags.appendChild(el('span', 'tag tag-grey', TT(nr === 1 ? 'gwp.card.routes_one' : 'gwp.card.routes', { n: nr })));
-    // "Update auf X verfügbar · Was ist neu?" — the release notes since the installed version (#versions/<version>)
-    if (g.update_available && latest) {
-      tags.appendChild(el('span', 'tag tag-blue gw-card-update', TT('gwp.state.update', { version: latest })));
-      tags.appendChild(whatsNewLink(t.gateway_version));
-    }
+    var lt = L && !byLoc ? L.cardTag(g) : null;
+    if (lt) tags.appendChild(lt);
     if (tags.childNodes.length) wrap.appendChild(tags);
     // the failback wait (in a pool group the role tag already counts it down);
     // an update / restart says its expected time in the body below
@@ -264,6 +269,7 @@
     var t = (g.health && g.health.telemetry) || {}, h = g.health || {};
     var c = cardFrame(T('gwp.dev.title', 'Gerät & Software'), null, 'dev', 'gwo-dev');
     var body = c.body;
+    if (L) body.appendChild(L.deviceRow(g, kvRow));
     var dev = [t.hardware && t.hardware.model ? String(t.hardware.model) : platformLabel(g.platform), t.arch,
       t.cpu_cores != null ? TT('gwn.feat.cores', { n: t.cpu_cores }) : null, t.os_platform ? (t.os_platform + (t.os_release ? ' ' + t.os_release : '')) : null].filter(Boolean);
     body.appendChild(kvRow(T('gwp.dev.device', 'Gerät'), dev.length ? dev.join(' · ') : '—'));
@@ -427,8 +433,10 @@
     left.appendChild(sub);
     var hh = liveHint(g, 'page-sub gw-live-hint');
     if (hh) left.appendChild(hh);
-    // chips: pool membership (→ pool page), auto-update
+    // chips: location (→ "Standort von …"), pool membership (→ pool page), auto-update
     var chips = el('div', 'gw-head-chips');
+    var lc = L ? L.headChip(g) : null;
+    if (lc) chips.appendChild(lc);
     if (P && PK) {
       PK.poolsOf(P.pools(), g.peer_id).forEach(function (p) {
         var m = PK.memberOf(p, g.peer_id);
@@ -476,6 +484,7 @@
     item('setup', T(setupDone ? 'gwp.menu.setup_done' : 'gwp.menu.setup', 'Auto-Update einrichten'));
     // Discovery settings, only when the gateway reports the capability flag.
     if (tel0.lan_discovery === true) item('disc-settings', T('gwp.menu.discovery', 'Geräte-Erkennung einstellen'));
+    if (L) item('location', T('gwp.loc.menu', 'Standort ändern …'));
     var pa = item('pool-add', T('gwp.menu.pool', 'Zu einem Pool hinzufügen …'));
     if (P && !P.licensed) pa.appendChild(P.lockTag());
     // the release notes since the installed version, in the page (#versions/<version>, gateway-docs.js)
@@ -484,6 +493,8 @@
     if (!DOCS) { rel.target = '_blank'; rel.rel = 'noopener noreferrer'; }
     rel.setAttribute('role', 'menuitem'); rel.tabIndex = -1; rel.dataset.fk = 'gw-menu:relnotes'; rel.dataset.act = 'relnotes';
     menu.appendChild(rel);
+    // rename, connection data, proxy port, disable, delete (gateway-manage.js; moved here from Peers)
+    if (window.GCGatewayManage) window.GCGatewayManage.menuItems(g, item, menu);
     wrap.appendChild(more);
     wrap.appendChild(menu);
     act.appendChild(wrap);
@@ -1435,10 +1446,27 @@
     sec.appendChild(g2);
     return sec;
   }
+  // the location tag of a waiting card (pool view)
+  function withLocTag(node, g, byLoc) {
+    var lt = L && !byLoc ? L.cardTag(g) : null;
+    if (lt) { var tg = el('div', 'gw-card-tags'); tg.appendChild(lt); node.querySelector('.uh').after(tg); }
+    return node;
+  }
   function fleet() {
     var nodes = [];
     var pools = P ? P.pools() : [];
     var fg = PK ? PK.fleetGroups(last, pools) : { groups: [], singles: last };
+    var lbar = L ? L.bar() : null;
+    if (lbar) nodes.push(lbar);
+    // "Gruppieren nach: Standorte" — one section per location, "Ohne Standort" last
+    if (L && L.mode() === 'locations') {
+      var roles = {};
+      fg.groups.forEach(function (gr) { gr.members.forEach(function (x) { if (!roles[x.g.peer_id]) roles[x.g.peer_id] = { pool: gr.pool, member: x.member }; }); });
+      return nodes.concat(L.sections(last, {
+        card: function (g) { return card(g, roles[g.peer_id] || null, true); },
+        online: function (g) { var s = status(g); return s === 'online' || s === 'degraded'; },
+      }));
+    }
     fg.groups.forEach(function (gr) {
       var cards = gr.members.map(function (x) { return card(x.g, { pool: gr.pool, member: x.member }); });
       if (!cards.length) cards = [el('p', 'gwe-empty', T('gwp.group.empty'))];
@@ -1482,6 +1510,7 @@
     if (loading) return force ? loading.then(function () { return load(true); }) : loading;
     var pools = P ? P.load().catch(function (err) { console.warn('[gateways] loading pools failed', err); return null; }) : Promise.resolve(null);
     var gws = fetch('/api/v1/gateways', { credentials: 'same-origin' }).then(function (r) { return r.json(); });
+    if (L) pools = Promise.all([pools, L.load()]).then(function (r) { return r[0]; });
     loading = Promise.all([gws, pools]).then(function (res) { loading = null; render(res[0]); }, function (err) { loading = null; schedulePoll(); console.warn('[gateways] loading gateways failed', err); });
     return loading;
   }
@@ -1500,6 +1529,8 @@
   var addPoolBtn = document.getElementById('btn-add-pool');
   if (addPoolBtn && P) addPoolBtn.addEventListener('click', function () { P.openCreate({}); });
   if (P) P.init({ fleet: function () { return last; }, changed: function () { return load(true); } });
+  if (L) L.init({ fleet: function () { return last; }, pools: function () { return P ? P.pools() : []; }, changed: function () { return load(true); },
+    redraw: function () { if (last.length) grid.replaceChildren.apply(grid, fleet()); } });
   grid.addEventListener('click', function (e) {
     var pc = e.target.closest('[data-act="pool-create"]');
     if (pc) { e.stopPropagation(); if (P) P.openCreate({ preselect: (pc.dataset.ids || '').split(',').filter(Boolean) }); return; }
@@ -1550,8 +1581,16 @@
       if (mi.dataset.act === 'relnotes') return;
     }
     var rc = e.target.closest('[data-act="recheck"]'); if (rc) { probe(rc.dataset.id); return; }
+    var gm = e.target.closest('[data-act^="gm-"]');
+    if (gm && window.GCGatewayManage) { window.GCGatewayManage.run(gm.dataset.act, gm.dataset.id, last.find(function (x) { return String(x.peer_id) === String(gm.dataset.id); })); return; }
     var ds = e.target.closest('[data-act="disc-settings"]'); if (ds) { openDiscoverySettings(ds.dataset.id); return; }
     var su = e.target.closest('[data-act="setup"]'); if (su) { openSetupModal(su.dataset.id); return; }
+    var lo = e.target.closest('[data-act="location"]');
+    if (lo) {
+      var lg = last.find(function (x) { return String(x.peer_id) === String(lo.dataset.id); });
+      if (lg && L) L.openChange(lg);
+      return;
+    }
     var pa = e.target.closest('[data-act="pool-add"]');
     if (pa) {
       var pg = last.find(function (x) { return String(x.peer_id) === String(pa.dataset.id); });

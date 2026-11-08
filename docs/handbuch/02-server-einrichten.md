@@ -172,7 +172,7 @@ Für die Weboberfläche ist HTTPS jetzt fertig. Für jede weitere Domain, die du
 als Route einrichtest (z. B. `nas.example.com`), gilt dasselbe:
 
 1. Beim Domain-Anbieter einen A-Record auf die IP des Servers anlegen.
-2. In GateControl die Route anlegen („Netzwerk“ → „Domains / Routen“).
+2. In GateControl die Route anlegen („Dienste“ → „Domains / Routen“).
 
 Das Zertifikat holt der Server von selbst.
 

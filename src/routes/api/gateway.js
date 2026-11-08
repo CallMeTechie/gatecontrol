@@ -2,7 +2,7 @@
 
 const express = require('express');
 const { requireGateway } = require('../../middleware/gatewayAuth');
-const { gatewayApiLimiter, gatewayAuthLimiter, gatewayPairLimiter } = require('../../middleware/rateLimit');
+const { gatewayApiLimiter, gatewayCacheLimiter, gatewayBulkLimiter, gatewayAuthLimiter, gatewayPairLimiter } = require('../../middleware/rateLimit');
 const gateways = require('../../services/gateways');
 const peers = require('../../services/peers');
 const { hasFeature } = require('../../services/license');
@@ -39,7 +39,11 @@ router.post('/pair', gatewayPairLimiter, express.json({ limit: '1kb' }), (req, r
 
 router.use(gatewayAuthLimiter);
 router.use(requireGateway);
+// One budget per kind of traffic (each limiter skips the others' paths):
+// home cache and file transfers never starve heartbeat and config poll.
 router.use(gatewayApiLimiter);
+router.use(gatewayCacheLimiter);
+router.use(gatewayBulkLimiter);
 
 /** GET /api/v1/gateway/config */
 router.get('/config', (req, res) => {
@@ -276,8 +280,8 @@ router.get('/cache/want', (req, res) => {
 });
 
 /** GET /api/v1/gateway/cache/blob/<sha256> — one blob of its stock, streamed (Range) */
-router.get('/cache/blob/:sha', (req, res) => {
-  try { require('../../services/homeCache').sendBlob(req.gateway.peer_id, req.params.sha, req, res); } catch (err) {
+router.get('/cache/blob/:sha', async (req, res) => {
+  try { await require('../../services/homeCache').sendBlob(req.gateway.peer_id, req.params.sha, req, res); } catch (err) {
     logger.error({ err: err && err.message, peerId: req.gateway.peer_id }, 'home cache blob failed');
     if (!res.headersSent) res.status(500).json({ ok: false, error: 'internal' });
   }

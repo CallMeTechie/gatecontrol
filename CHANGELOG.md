@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.251.0] — 2026-11-07
+
+### Features
+- Peers / Clients neu, Gateway-Verwaltung unter „Gateways“, Navigation mit „Wartung“ (#441)
+
+---
+
+## [1.250.1] — 2026-11-07
+
+### Fixes
+- Dialog „Standort von …“ breiter, Adressfelder bleiben auf einer Linie (#440)
+
+---
+
+## [1.250.0] — 2026-11-07
+
+### Features
+- Standorte für Gateways – Name und Adresse, Flotte nach Standort, Assistent ohne Peer-Gruppe (#439)
+
+---
+
+## [1.249.1] — 2026-11-07
+
+### Fixes
+- Zwischenspeicher und Dateiübertragungen haben ein eigenes Budget – Heartbeat wird nicht mehr ausgehungert (#438)
+
+---
+
+## [1.249.0] — 2026-11-07
+
+### Features
+- Vorschaubilder in den Zwischenspeicher – Plugins dürfen GateControl-Vorschauen anbieten (#436)
+
+---
+
 ## [1.248.0] — 2026-11-07
 
 ### Features

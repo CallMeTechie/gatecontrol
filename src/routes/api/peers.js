@@ -28,6 +28,14 @@ function validateOwner(req, res, userId) {
 
 const stripPeer = (p) => stripFields(p, ['private_key_encrypted', 'preshared_key_encrypted']);
 
+/** All peers by type ({ clients, gateways, total }); disabled ones included, like the licence count. */
+function peerTypeCounts() {
+  const row = getDb().prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN peer_type = 'gateway' THEN 1 ELSE 0 END) AS gateways FROM peers").get();
+  const total = row.total || 0;
+  const gateways = row.gateways || 0;
+  return { clients: total - gateways, gateways, total };
+}
+
 /** Map service-layer error messages to i18n keys */
 const VALIDATION_ERROR_MAP = {
   'already exists': 'error.peers.name_exists',
@@ -42,11 +50,29 @@ router.post('/batch', async (req, res) => {
   try {
     const { action, ids } = req.body;
 
-    if (!action || !['enable', 'disable', 'delete'].includes(action)) {
+    if (!action || !['enable', 'disable', 'delete', 'group', 'tag'].includes(action)) {
       return res.status(400).json({ ok: false, error: req.t('error.batch.invalid_action') });
     }
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ ok: false, error: req.t('error.batch.no_ids') });
+    }
+    if (ids.length > 500 || !ids.every((n) => Number.isInteger(n) && n > 0)) {
+      return res.status(400).json({ ok: false, error: req.t('error.peers.bulk_invalid_ids') });
+    }
+
+    // group: { group_id } (null = no group) · tag: { tag } added to every peer
+    if (action === 'group' || action === 'tag') {
+      let affected;
+      try {
+        affected = action === 'group'
+          ? peers.batchGroup(ids, req.body.group_id == null || req.body.group_id === '' ? null : Number(req.body.group_id))
+          : peers.batchAddTag(ids, req.body.tag);
+      } catch (err) {
+        if (/group not found/.test(err.message)) return res.status(400).json({ ok: false, error: req.t('error.batch.group_invalid') });
+        if (/^tag /.test(err.message)) return res.status(400).json({ ok: false, error: req.t('error.batch.tag_invalid') });
+        throw err;
+      }
+      return res.json({ ok: true, affected });
     }
 
     const affected = await peers.batch(action, ids);
@@ -93,7 +119,10 @@ router.get('/', async (req, res) => {
   try {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 250, 1), 250);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
-    const list = await peers.getAll({ limit, offset });
+    // ?type=client (Peers page: no gateways, they have their own page) or
+    // ?type=gateway; without it every peer, as before (API tokens, scripts).
+    const type = req.query.type === 'client' || req.query.type === 'gateway' ? req.query.type : null;
+    const list = await peers.getAll({ limit, offset, type });
     const uMap = new Map(getDb().prepare('SELECT id, username FROM users').all().map(u => [u.id, u.username]));
     const policy = clientUpdates.getPolicy();
     const enriched = list.map(p => clientPolicy.decoratePeer(clientUpdates.decoratePeer({ ...p, owner_name: p.user_id != null ? (uMap.get(p.user_id) || null) : null }, policy)));
@@ -112,6 +141,8 @@ router.get('/', async (req, res) => {
       peers: enriched.map(stripPeer),
       limit,
       offset,
+      // licence line of the Peers page: the vpn_peers limit counts every peer, gateways included
+      counts: peerTypeCounts(),
       update_policy: { default_channel: policy.defaultChannel, min_versions: policy.minVersions },
     });
   } catch (err) {
@@ -167,7 +198,7 @@ router.get('/:id', (req, res) => {
  */
 router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
   try {
-    const { name, description, tags, expires_at, group_id, dns, is_gateway, api_port, proxy_port, user_id, platform } = req.body;
+    const { name, description, tags, expires_at, group_id, dns, is_gateway, api_port, proxy_port, user_id, platform, location_id } = req.body;
 
     // Field-level validation
     const fields = {};
@@ -196,8 +227,10 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
         return res.status(400).json({ ok: false, error: 'proxy_port must be 1..65535' });
       }
       // Gateway assistant (docs/feature-gateway-wizard.md): where it runs
-      // (rpi | synology | proxmox | linux, optional) and its location = a
-      // peer group (optional).
+      // (rpi | synology | proxmox | linux, optional) and its location
+      // (gateway_locations, optional — docs/feature-gateway-locations.md).
+      // group_id (a peer group) is still taken from API callers; the
+      // assistant no longer sends it.
       if (platform != null && platform !== '' && !gateways.normalizePlatform(platform)) {
         return res.status(400).json({ ok: false, error: req.t('error.peers.gateway_platform_invalid'), fields: { platform: req.t('error.peers.gateway_platform_invalid') } });
       }
@@ -208,6 +241,12 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
           return res.status(400).json({ ok: false, error: req.t('error.peers.group_invalid'), fields: { group_id: req.t('error.peers.group_invalid') } });
         }
       }
+      let locationId = null;
+      try {
+        locationId = require('../../services/gatewayLocations').resolveId(location_id);
+      } catch {
+        return res.status(400).json({ ok: false, error: req.t('error.gateway_locations.not_found'), fields: { location_id: req.t('error.gateway_locations.not_found') } });
+      }
       let result;
       try {
         result = await gateways.createGateway({
@@ -216,6 +255,7 @@ router.post('/', requireLimit('vpn_peers', peerCountFn), async (req, res) => {
           proxyPort: parsedProxyPort,
           platform: platform || null,
           groupId,
+          locationId,
         });
       } catch (err) {
         if (/^License limit reached: gateway_peers/.test(err.message || '')) {

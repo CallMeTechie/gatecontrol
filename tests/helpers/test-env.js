@@ -78,6 +78,8 @@ function applyBaseEnv() {
   setIfUnset('GC_RATE_LIMIT_LOGIN', '100000');
   setIfUnset('GC_RATE_LIMIT_API', '100000');
   setIfUnset('GC_RATE_LIMIT_GATEWAY', '100000');
+  setIfUnset('GC_RATE_LIMIT_GATEWAY_CACHE', '100000');
+  setIfUnset('GC_RATE_LIMIT_GATEWAY_BULK', '100000');
   // Feste, offensichtlich wertlose Testschlüssel statt Zufall: zwei Läufe
   // derselben Datei sind damit vergleichbar, und ein Geheimnis steht nirgends
   // in einer Ausgabe. Für Produktion wirft config/default.js ohnehin.

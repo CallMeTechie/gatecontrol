@@ -180,12 +180,15 @@ Einstellungen `GET/PUT /api/v1/settings/waf`:
 
 ## 8. Navigation und Schnellsuche (UI B4)
 
-- Sidebar (Aurora `sidebar.njk`, mobil `bottomnav.njk`) in Gruppen: Übersicht
-  (Dashboard) · Netzwerk (Peers/Clients, Domains/Routen, Gateways, Gateway-Pools,
-  Remote Desktops, Interner DNS, Pi-hole) · Sicherheit (Sicherheits-Check `/security`
-  [neu], SSL/Zertifikate, Web Application Firewall, Benutzer) · Integrationen
-  (Klimaanlage, Fahrzeuge, Smart Home – wie bisher nur mit Lizenz/Konfiguration) ·
-  System (Logs & Monitoring, Einstellungen). URLs bleiben.
+- Sidebar (Aurora `sidebar.njk`, mobil `bottomnav.njk`) in Gruppen – neu geordnet
+  mit der Peers-Seite (docs/feature-peers-page.md §3): Übersicht (Dashboard) ·
+  Geräte (Peers/Clients, Gateways, Geräte-Plugins) · Dienste (Domains/Routen,
+  Remote Desktops, Interner DNS, Pi-hole) · Zugriff & Sicherheit (Benutzer mit
+  Gruppen und Verzeichnis, Sicherheits-Check, SSL/Zertifikate, Web Application
+  Firewall) · Zuhause und Apps (Plugins nach `ui.nav.section`, einklappbar) ·
+  Wartung (Logs & Monitoring, Support-Pakete) · System (Benachrichtigungen,
+  Einstellungen). URLs und Lizenzbedingungen bleiben. Mobil unten: Dashboard ·
+  Geräte · Dienste · Sicherheit · Mehr.
 - Schnellsuche: Strg+K / ⌘K (und „/“ außerhalb von Eingabefeldern) öffnet eine Palette;
   durchsucht Seiten, Einstellungsabschnitte, Hosts/Einträge (`/api/v1/zones`), Peers,
   Gateways; Pfeiltasten + Enter, Esc; zuletzt benutzt in localStorage (try/catch).

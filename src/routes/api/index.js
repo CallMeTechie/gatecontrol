@@ -45,8 +45,11 @@ router.use('/gateways', require('./gatewayHome'));
 router.use('/gateways', require('./gatewayRadio'));
 // phase 3c, step 4: the cameras of a gateway (admin session only, routes/api/gatewayCameras.js)
 router.use('/gateways', require('./gatewayCameras'));
+router.use('/gateways', require('./gatewayLocations').gatewayRouter);
 router.use('/gateways', require('./gateways'));
 router.use('/gateway-pools', require('./gatewayPools'));
+// Gateway-Standorte (docs/feature-gateway-locations.md)
+router.use('/gateway-locations', require('./gatewayLocations'));
 // edge parts of plugins on gateways + the gateways' MQTT brokers (session only, routes/api/edge.js)
 router.use('/edge', require('./edge'));
 router.use('/egress-routes', require('./egressRoutes'));
