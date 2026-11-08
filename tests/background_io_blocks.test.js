@@ -155,7 +155,8 @@ describe('stall attribution: async tasks and process starts', () => {
     const waiting = loopStall.withTask('demo.waits', () => new Promise((r) => setTimeout(r, 30)));
     setImmediate(() => loopStall.withTask('demo.blocks', () => block(400)));
     await waiting;
-    await sleep(150);
+    // the watch timer reports at its next run (later on a busy runner): wait for it, bounded
+    for (let i = 0; i < 60 && !seen.length; i++) await sleep(50);
     loopStall.stop();
     const lines = loopStall.tasksBetween(0, Number.MAX_SAFE_INTEGER);
     assert.ok(lines.find((t) => t.name === 'demo.waits').async, 'marked async');

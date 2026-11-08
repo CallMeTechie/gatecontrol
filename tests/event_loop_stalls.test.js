@@ -38,9 +38,12 @@ describe('task markers', () => {
     loopStall.withTask('demo.light', () => 1);
     await sleep(80);
     setImmediate(() => loopStall.withTask('demo.heavy', () => block(500)));
-    await sleep(200);
+    // the watch timer reports the stall at its next run — on a busy CI runner that can come after
+    // other overdue timers: wait for it (bounded) instead of a fixed sleep
+    for (let i = 0; i < 60 && !seen.length; i++) await sleep(50);
+    await sleep(120);
     loopStall.stop();
-    assert.equal(seen.length, 1);
+    assert.equal(seen.length, 1, 'exactly one stall');
     const heavy = seen[0].tasks.find((t) => t.name === 'demo.heavy');
     assert.ok(heavy && heavy.ms >= 450, JSON.stringify(seen[0].tasks));
     assert.ok(!seen[0].tasks.some((t) => t.name === 'demo.light'), 'a task before the stall is not named');
