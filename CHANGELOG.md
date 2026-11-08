@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.253.2] — 2026-11-08
+
+### Fixes
+- Ereignisschleife bleibt bei großen Drives frei – Arbeit in Häppchen, WAL-Checkpoints im eigenen Thread, Anfragen in der Blockade-Meldung (#444)
+
+---
+
 ## [1.253.1] — 2026-11-08
 
 ### Security
