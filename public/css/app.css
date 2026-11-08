@@ -8896,7 +8896,10 @@ a.up-dev:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 /* Reiter „Handbuch“ (plugin.json handbook, 1.241.0): table of contents beside the text, above it on a phone */
 .pgx-hb{display:grid; grid-template-columns:minmax(200px,260px) minmax(0,1fr); gap:22px; align-items:start}
 .pgx-hb-solo{grid-template-columns:minmax(0,1fr)}
-.pgx-hb-toc{position:sticky; top:16px; padding:14px 16px; max-height:calc(100vh - 32px); overflow:auto}
+/* the contents stay in view while the text scrolls: below the sticky topbar, and the page (not
+   .main, a scroll container that never scrolls) is what scrolls while a handbook is shown */
+.main:has(.pgx-hb){overflow:visible; overflow-x:clip}
+.pgx-hb-toc{position:sticky; top:calc(var(--topbar-h, 0px) + 16px); padding:14px 16px; max-height:calc(100vh - var(--topbar-h, 0px) - 32px); overflow:auto}
 .pgx-hb-toc > summary{cursor:pointer; list-style:none; padding:2px 0 8px}
 .pgx-hb-toc > summary::-webkit-details-marker{display:none}
 .pgx-hb-tl{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px}
@@ -8909,7 +8912,7 @@ a.up-dev:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 .pgx-hb-meta .pgx-mono{font-size:12.5px}
 .pgx-hb-doc{min-width:0; overflow-wrap:anywhere; font-size:14.5px; line-height:1.65}
 .pgx-hb-doc > :first-child{margin-top:0}
-.pgx-hb-doc .hb-h{font-family:var(--font-display); color:var(--pg-text); scroll-margin-top:16px; line-height:1.25}
+.pgx-hb-doc .hb-h{font-family:var(--font-display); color:var(--pg-text); scroll-margin-top:calc(var(--topbar-h, 0px) + 16px); line-height:1.25}
 .pgx-hb-doc h2.hb-h{font-size:22px; margin:26px 0 10px}
 .pgx-hb-doc h3.hb-h{font-size:18px; margin:24px 0 8px; padding-top:14px; border-top:1px solid var(--pg-line)}
 .pgx-hb-doc h4.hb-h{font-size:15.5px; margin:18px 0 6px}
@@ -9791,6 +9794,11 @@ a.lg-ev-msg:hover{color:var(--teal)}
 .gwp-grow{flex:1 1 auto}
 .gw-fleet .grid.gwp-grid{grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr))}
 .gw-card-tags{display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 10px}
+.gw-card-tags .gw-whats-new{align-self:center; min-height:24px}
+/* "Versionen" and "Handbuch" of the Gateways page (#versions, #handbook, public/js/gateway-docs.js):
+   the building blocks of the plugin area (pgx-*), nothing of their own but the centred actions */
+.gw-docs .pgx-acts.gwd-center{justify-content:center; padding:0 22px 22px}
+.gw-docs .pgx-card-h .pgx-push{margin-left:auto}
 .gw-card-link{color:inherit; text-decoration:none}
 .gw-card-link:hover{color:var(--teal)}
 .gw-card-link:focus-visible{outline:2px solid var(--teal); outline-offset:2px; border-radius:4px}

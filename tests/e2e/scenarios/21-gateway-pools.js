@@ -255,7 +255,9 @@ module.exports = (ctx) => {
           && document.getElementById('gw-more-btn').getAttribute('aria-expanded') === 'true' && document.activeElement === document.querySelector('#gw-more-menu [role="menuitem"]')));
         step('menu: compose, auto-update, pool, release notes — no "Gateway entfernen"', await page.evaluate(() => {
           const acts = [...document.querySelectorAll('#gw-more-menu [role="menuitem"]')].map((x) => x.dataset.act);
-          return acts.join() === 'compose,setup,pool-add,relnotes' && document.querySelector('#gw-more-menu a[data-act="relnotes"][target="_blank"]');
+          // the release notes open in the page (#versions/<installed version>, gateway-docs.js)
+          const rel = document.querySelector('#gw-more-menu a[data-act="relnotes"]');
+          return acts.join() === 'compose,setup,pool-add,relnotes' && !!rel && /^#versions(\/\d+\.\d+\.\d+)?$/.test(rel.getAttribute('href')) && !rel.target;
         }));
         await page.keyboard.press('ArrowDown');
         step('menu: ArrowDown moves on', await page.evaluate(() => document.activeElement && document.activeElement.dataset.act === 'setup'));

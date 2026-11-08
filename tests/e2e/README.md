@@ -147,6 +147,13 @@ scenarios/27-plugin-updates.js Einstellungen › Plugins › Updates: „Alle ak
                         Knopf zählt nur die bereiten, „Erneut versuchen“ bereitet nur die
                         fehlgeschlagenen neu vor, fehlgeschlagene Installation aus dem
                         fertigen Dialog wiederholen, „Schließen“ → alles aktuell, 390 px
+scenarios/28-gateway-docs.js Gateways › „Versionen“ und „Handbuch“: echte /releases ohne
+                        GitHub („nicht verfügbar“ + GitHub-Link), Liste per page.route (feindliche
+                        Notiz nur als Text, „Neueste“, „Läuft auf …“), „Was ist neu?“ von Karte,
+                        Zustand und „Mehr“ (#versions/<Version>), Brotkrume zurück, Hinweis bei
+                        altem Stand; Handbuch Kapitel 3–7 (Inhaltsverzeichnis, #handbook/<Anker>,
+                        Hilfe-Thema #handbook/gw.rpi, „Anleitung“-Links in der Seite bzw. im
+                        Assistenten im neuen Tab, kein HTML), hell/dunkel, 390 px
 ```
 
 ## Ablauf

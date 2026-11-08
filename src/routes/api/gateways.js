@@ -139,6 +139,61 @@ router.get('/', (req, res) => {
   }
 });
 
+// ─── Versionen und Handbuch of the Gateways page (public/js/gateway-docs.js) ──
+
+/**
+ * GET /api/v1/gateways/releases[?from=X.Y.Z][&to=X.Y.Z][&refresh=1] — what
+ * changed in each gateway release (services/gatewayReleaseNotes.js: the GitHub
+ * releases of the gateway repository, cached, offline-safe).
+ * → { available, stale, fetched_at, latest_version, releases_url, versions[], since[] }
+ *   since: the versions after `from` up to `to` (default: the latest) — "Was ist neu?"
+ */
+router.get('/releases', async (req, res) => {
+  try {
+    const notes = require('../../services/gatewayReleaseNotes');
+    const latest = require('../../services/gatewayRelease').getLatestVersion() || null;
+    const r = await notes.list({ refresh: req.query.refresh === '1' });
+    const from = notes.VERSION_RE.test(String(req.query.from || '')) ? String(req.query.from) : null;
+    const to = notes.VERSION_RE.test(String(req.query.to || '')) ? String(req.query.to) : latest;
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      available: r.available,
+      stale: r.stale,
+      fetched_at: r.fetched_at,
+      latest_version: latest || (r.versions[0] ? r.versions[0].version : null),
+      releases_url: notes.RELEASES_URL,
+      versions: r.versions,
+      from,
+      to,
+      since: from ? notes.between(r.versions, from, to) : [],
+    });
+  } catch (err) {
+    logger.error({ error: err.message }, 'Failed to list gateway releases');
+    res.status(500).json({ ok: false, error: req.t ? req.t('common.error') : 'Error' });
+  }
+});
+
+/**
+ * GET /api/v1/gateways/handbook?lang=de|en — the gateway chapters of the user
+ * guide as one document (services/gatewayHandbook.js, the safe renderer of the
+ * plugin handbooks) → { lang, version, html, toc[], anchors{}, chapters[], source_url }
+ */
+router.get('/handbook', (req, res) => {
+  const want = req.query.lang === 'en' || req.query.lang === 'de' ? req.query.lang : (req.language || 'de');
+  try {
+    const out = require('../../services/gatewayHandbook').get(want);
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, version: require('../../../package.json').version, ...out });
+  } catch (err) {
+    if (err && err.code === 'handbook_missing') {
+      return res.status(404).json({ ok: false, code: err.code, error: req.t ? req.t('gwd.hb.missing') : 'No handbook' });
+    }
+    logger.error({ error: err.message }, 'Failed to render the gateway handbook');
+    res.status(500).json({ ok: false, error: req.t ? req.t('common.error') : 'Error' });
+  }
+});
+
 // On-demand fresh-health re-check (session-authed; /api/v1 CSRF middleware guards
 // this POST for session callers; token-auth exempt). Update action = 2b, not here.
 router.post('/:id/probe', async (req, res) => {

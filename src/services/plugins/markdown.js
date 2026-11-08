@@ -1,7 +1,8 @@
 'use strict';
 
 // A small, safe Markdown renderer for plugin handbooks (docs/plugins.md
-// "Handbook", services/plugins/handbook.js). The text comes from a plugin
+// "Handbook", services/plugins/handbook.js) — and for the handbook of the
+// Gateways page (services/gatewayHandbook.js). The text comes from a plugin
 // package, so nothing of it is passed through as HTML: every character of the
 // source is escaped and only the elements below are written by the renderer.
 //
@@ -385,6 +386,7 @@ function heading(h, ctx) {
   }
   ctx.slugs.add(slug);
   if (h.level <= 3) ctx.toc.push({ level: h.level, text, anchor: slug });
+  if (ctx.heads) ctx.heads.push({ level: h.level, source: src, anchor: slug });
   const tag = 'h' + Math.min(h.level + 1, 5);
   return `<${tag} id="hb-${esc(slug)}" class="hb-h">${inline(src, ctx)}</${tag}>`;
 }
@@ -540,13 +542,18 @@ function versionOf(text) {
 /**
  * Render a handbook.
  * @param {string} text  Markdown
- * @returns {{ html: string, toc: {level:number,text:string,anchor:string}[], version: string|null }}
+ * @param {{ heads?: boolean }} [opts]  heads: also every heading (all levels) with its
+ *   Markdown source and anchor, in document order (the gateway handbook,
+ *   services/gatewayHandbook.js, maps the GitHub anchors of its chapters with it)
+ * @returns {{ html: string, toc: {level:number,text:string,anchor:string}[], version: string|null, heads?: {level:number,source:string,anchor:string}[] }}
  */
-function render(text) {
+function render(text, opts) {
   const src = String(text || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').replace(/\0/g, '\uFFFD');
-  const ctx = { slugs: new Set(), toc: [] };
+  const ctx = { slugs: new Set(), toc: [], heads: opts && opts.heads ? [] : null };
   const html = blocks(src.split('\n'), ctx);
-  return { html, toc: ctx.toc, version: versionOf(src) };
+  const out = { html, toc: ctx.toc, version: versionOf(src) };
+  if (ctx.heads) out.heads = ctx.heads;
+  return out;
 }
 
 module.exports = { render, slugify, safeHref, inline, versionOf, esc };

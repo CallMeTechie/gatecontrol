@@ -7,6 +7,11 @@ data
 *.md
 # "What's new" reads the changelog at runtime (src/services/changelog.js)
 !CHANGELOG.md
+# the handbook of the Gateways page reads the user guide at runtime
+# (src/services/gatewayHandbook.js) — "*.md" above only matches the top level,
+# these lines keep it that way should it ever be widened
+!docs/handbuch/*.md
+!docs/guide/*.md
 .DS_Store
 *.log
 *.tar.gz

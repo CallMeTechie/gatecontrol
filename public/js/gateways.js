@@ -30,6 +30,10 @@
   var fleetView = document.getElementById('fleet-view');
   var detailView = document.getElementById('gw-detail-view');
   var poolView = document.getElementById('gw-pool-view');
+  // "Versionen" and "Handbuch" (#versions, #handbook — gateway-docs.js)
+  var docsView = document.getElementById('gw-docs-view');
+  var DOCS = window.GCGatewayDocs;
+  var docsBack = '';              // the address "Gateways" of the crumb leads back to
   var GW_RELEASES = 'https://github.com/CallMeTechie/gatecontrol-gateway/releases';
   var last = [], latest = '', openId = null, openPool = null, routed = false;
   // Pools on this page (gateway-pool-kit.js: pure rules, gateway-pools-ui.js: views and dialogs)
@@ -204,6 +208,11 @@
     }
     var nr = (g.routes || []).length;
     if (!role && nr) tags.appendChild(el('span', 'tag tag-grey', TT(nr === 1 ? 'gwp.card.routes_one' : 'gwp.card.routes', { n: nr })));
+    // "Update auf X verfügbar · Was ist neu?" — the release notes since the installed version (#versions/<version>)
+    if (g.update_available && latest) {
+      tags.appendChild(el('span', 'tag tag-blue gw-card-update', TT('gwp.state.update', { version: latest })));
+      tags.appendChild(whatsNewLink(t.gateway_version));
+    }
     if (tags.childNodes.length) wrap.appendChild(tags);
     // the failback wait (in a pool group the role tag already counts it down);
     // an update / restart says its expected time in the body below
@@ -226,6 +235,14 @@
     if (zr) { var zt = el('span', 'tag tag-blue gw-radio', zr); wrap.appendChild(zt); }
     // (Update-check moved to the header icon button above.)
     return wrap;
+  }
+  // "Was ist neu?": the versions after `from` up to the latest, in the page (gateway-docs.js)
+  function whatsNewLink(from) {
+    var a = el('a', 'gwn-link gw-whats-new', T('gwd.whats_new', 'Was ist neu?'));
+    a.href = DOCS ? DOCS.versionsHash(from) : GW_RELEASES;
+    if (!DOCS) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+    a.dataset.act = 'whats-new';
+    return a;
   }
   // ── Detail view: head, tabs, the tab "Übersicht" ──────────────────────────
   function cardFrame(title, right, id, cls) {
@@ -302,6 +319,7 @@
       li.appendChild(el('span', 'sr-only', T('gwp.state.tone_' + ch.tone) + ': '));
       li.appendChild(ch.until ? countdownEl('span', null, ch.key, ch.params, ch.until) : el('span', null, TT(ch.key, ch.params)));
       if (ch.link) { li.appendChild(document.createTextNode(' – ')); var a = el('a', 'gwn-link', T('gwp.state.look')); a.href = '#gw/' + encodeURIComponent(g.peer_id) + '/' + ch.link; li.appendChild(a); }
+      if (ch.key === 'gwp.state.update') { li.appendChild(document.createTextNode(' – ')); li.appendChild(whatsNewLink(((g.health && g.health.telemetry) || {}).gateway_version)); }
       ul.appendChild(li);
     });
     c.body.appendChild(ul);
@@ -460,8 +478,11 @@
     if (tel0.lan_discovery === true) item('disc-settings', T('gwp.menu.discovery', 'Geräte-Erkennung einstellen'));
     var pa = item('pool-add', T('gwp.menu.pool', 'Zu einem Pool hinzufügen …'));
     if (P && !P.licensed) pa.appendChild(P.lockTag());
+    // the release notes since the installed version, in the page (#versions/<version>, gateway-docs.js)
     var rel = el('a', 'gw-menu-item', T('gwp.menu.relnotes', 'Was ist neu (Release-Notes)'));
-    rel.href = GW_RELEASES; rel.target = '_blank'; rel.rel = 'noopener noreferrer'; rel.setAttribute('role', 'menuitem'); rel.tabIndex = -1; rel.dataset.fk = 'gw-menu:relnotes'; rel.dataset.act = 'relnotes';
+    rel.href = DOCS ? DOCS.versionsHash(tel0.gateway_version) : GW_RELEASES;
+    if (!DOCS) { rel.target = '_blank'; rel.rel = 'noopener noreferrer'; }
+    rel.setAttribute('role', 'menuitem'); rel.tabIndex = -1; rel.dataset.fk = 'gw-menu:relnotes'; rel.dataset.act = 'relnotes';
     menu.appendChild(rel);
     wrap.appendChild(more);
     wrap.appendChild(menu);
@@ -1238,6 +1259,7 @@
     openId = String(id); openPool = null;
     openTab = tab || 'overview';
     renderDetail(g);
+    hideDocs();
     fleetView.hidden = true; if (poolView) poolView.hidden = true; detailView.hidden = false;
     // switching tabs keeps the scroll position; a new gateway starts at the top
     if (!same) window.scrollTo(0, 0);
@@ -1245,7 +1267,7 @@
   function showPool(id) {
     var same = openPool === String(id) && poolView && !poolView.hidden;
     openId = null; openPool = String(id); menuOpen = false; netExtra = null;
-    detailView.hidden = true; detailView.replaceChildren(); fleetView.hidden = true;
+    detailView.hidden = true; detailView.replaceChildren(); fleetView.hidden = true; hideDocs();
     if (window.GCGatewayEdge) window.GCGatewayEdge.unmount();
     if (!poolView || !P) { showFleet(); return; }
     poolView.hidden = false;
@@ -1255,8 +1277,23 @@
   function showFleet() {
     openId = null; openPool = null; menuOpen = false; netExtra = null;
     detailView.hidden = true; if (poolView) { poolView.hidden = true; poolView.replaceChildren(); }
+    hideDocs();
     fleetView.hidden = false; detailView.replaceChildren();
     if (window.GCGatewayEdge) window.GCGatewayEdge.unmount();
+  }
+  function hideDocs() {
+    if (!docsView || docsView.hidden) return;
+    docsView.hidden = true;
+    if (DOCS) DOCS.hide();
+  }
+  // #versions[/<installed version>], #handbook[/<anchor or help topic>]
+  function showDocs(dm) {
+    openId = null; openPool = null; menuOpen = false; netExtra = null;
+    detailView.hidden = true; detailView.replaceChildren(); fleetView.hidden = true;
+    if (poolView) { poolView.hidden = true; poolView.replaceChildren(); }
+    if (window.GCGatewayEdge) window.GCGatewayEdge.unmount();
+    docsView.hidden = false;
+    DOCS.show(docsView, dm, { gateways: last, latest: latest, back: docsBack });
   }
   function goFleet() {
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
@@ -1265,6 +1302,10 @@
   var TAB_NAMES = ['features', 'net', 'inet', 'dns', 'cache', 'radio', 'edge', 'mqtt'];
   function route() {
     var h = location.hash || '';
+    var dm = DOCS && docsView ? DOCS.parseHash(h) : null;
+    if (dm) { showDocs(dm); return; }
+    // where "Gateways" in the crumb of the docs leads back to: the fleet, a gateway or a pool
+    docsBack = /^#(gw|pool)\//.test(h) ? h : '';
     // #gw/<id>, #gw/<id>/features, …/net, …/inet, …/dns, …/cache, …/radio, …/edge, …/mqtt (an unknown tab shows the overview)
     var m = h.match(/^#gw\/([^/]+)(?:\/([a-z]+))?$/);
     if (m) {
@@ -1433,6 +1474,7 @@
     if (!routed) { routed = true; route(); }
     else if (openId) { var g = last.find(function (x) { return String(x.peer_id) === openId; }); if (g) renderDetail(g); else goFleet(); }
     else if (openPool && P && !P.busy(poolView)) P.renderPool(poolView, openPool);
+    else if (DOCS && docsView && !docsView.hidden) DOCS.update({ gateways: last, latest: latest });
   }
   var loading = null;
   function load(force) {
@@ -1471,6 +1513,13 @@
     location.hash = '#gw/' + encodeURIComponent(c.dataset.id);
   });
   if (poolView) poolView.addEventListener('click', function (e) { if (e.target.closest('[data-act="back"]')) goFleet(); });
+  // the crumb of "Versionen" / "Handbuch": back to the fleet, the gateway or the pool it was opened from
+  if (docsView) docsView.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act="docs-back"]');
+    if (!b) return;
+    e.preventDefault();
+    if (docsBack) location.hash = docsBack; else goFleet();
+  });
   // "Mehr" menu: keyboard and outside clicks
   detailView.addEventListener('keydown', function (e) {
     var btn = e.target.closest && e.target.closest('#gw-more-btn');
@@ -1497,7 +1546,7 @@
     var mi = e.target.closest('.gw-menu-item');
     if (mi) {
       // the dialog gives the focus back to "Mehr", not to the hidden item
-      setMenu(false, 'button');
+      setMenu(false, mi.dataset.act === 'relnotes' ? null : 'button');
       if (mi.dataset.act === 'relnotes') return;
     }
     var rc = e.target.closest('[data-act="recheck"]'); if (rc) { probe(rc.dataset.id); return; }

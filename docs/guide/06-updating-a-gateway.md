@@ -25,6 +25,15 @@ heartbeat it is “Online” again. In a pool, the gateway takes its routes back
 only after the failback wait; the card counts that time down (“takes its routes
 back in 4:30”).
 
+What the new version brings is shown by **“What's new?”** next to “Update to
+… available” (on the card, in the gateway's “State” and under “More”): the
+changes of every version between the installed and the latest one.
+“Versions” at the top of the page lists all gateway versions with their
+changes; it also says which gateway runs which version right now. The list
+comes from GitHub. If your server cannot reach GitHub, you see the last loaded
+list with a hint – or, if it was never loaded, the link to the versions on
+GitHub.
+
 **Check:** After a few minutes the card shows the new version.
 
 ## 6.2 Why the compose file needs extra care

@@ -406,7 +406,11 @@
       if (g.update_state === 'updating') up.disabled = true;
       actions.push(up);
     }
-    actions.push(h('a', { class: 'btn btn-ghost', href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwe.old.whats_new') }));
+    // the release notes since the installed version, in the page (#versions/<version>, gateway-docs.js)
+    const docs = window.GCGatewayDocs;
+    const cur = g.health && g.health.telemetry ? g.health.telemetry.gateway_version : null;
+    actions.push(docs ? h('a', { class: 'btn btn-ghost', href: docs.versionsHash(cur), 'data-act': 'whats-new', text: t('gwe.old.whats_new') })
+      : h('a', { class: 'btn btn-ghost', href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwe.old.whats_new') }));
     return bigNote('warn', 'up', t('gwe.old.title', { min: sup.edgeMinGateway || '—' }),
       t('gwe.old.text', { version: sup.gatewayVersion || '—' }), actions);
   }
