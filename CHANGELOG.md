@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.253.0] — 2026-11-08
+
+### Features
+- Update-Prüfung nennt die SHA-256 des Installers (eigener APK-Download der Android-App) (#437)
+
+---
+
 ## [1.252.0] — 2026-11-08
 
 ### Features
