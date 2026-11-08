@@ -30,6 +30,11 @@ const VALID_SCHEDULES = Object.keys(SCHEDULE_MS);
 const FILENAME_REGEX = /^gatecontrol-\d{8}-\d{6}\.json$/;
 
 let timer = null;
+let startTimer = null;
+// the scheduler looks every CHECK_EVERY_MS whether a backup is due, the first time START_DELAY_MS after the start
+const CHECK_EVERY_MS = 10 * 60 * 1000;
+const START_DELAY_MS = 10 * 60 * 1000;
+const RETRY_AFTER_FAIL_MS = 60 * 60 * 1000;
 
 /**
  * Ensure backup directory exists (owner-only, 0700)
@@ -226,19 +231,27 @@ function startScheduler() {
 
   const intervalMs = SCHEDULE_MS[cfg.schedule] || SCHEDULE_MS.daily;
 
-  // Catch-up on start: if the container restarted and the scheduled
-  // window already elapsed, run immediately instead of silently missing
-  // a backup until the next interval tick. A weekly schedule with a
-  // 6-day reboot cycle would otherwise never produce a backup.
-  try {
-    const lastRunIso = settings.get('autobackup_last_run', null);
-    const lastRun = lastRunIso ? Date.parse(lastRunIso) : 0;
-    if (!lastRun || Date.now() - lastRun >= intervalMs) {
-      setImmediate(() => { runBackup().catch((err) => logger.warn({ err: err.message }, 'catch-up autobackup failed')); });
+  // Due by the time of the last backup (autobackup_last_run), looked at every
+  // CHECK_EVERY_MS — not by a timer of the schedule's length: a server that
+  // restarts more often than that (automatic updates) never reached it and
+  // made the backup as a catch-up right at the start, while every other
+  // start job ran (a backup of the plugin data holds the thread for seconds).
+  // The first look comes START_DELAY_MS after the start.
+  const due = () => {
+    try {
+      const lastRunIso = settings.get('autobackup_last_run', null);
+      const lastRun = lastRunIso ? Date.parse(lastRunIso) : 0;
+      return !lastRun || Date.now() - lastRun >= intervalMs;
+    } catch (err) {
+      logger.warn({ err: err.message }, 'autobackup due check failed');
+      return false;
     }
-  } catch (err) { logger.warn({ err: err.message }, 'autobackup catch-up check failed'); }
-
-  timer = setInterval(() => {
+  };
+  let running = false;
+  let failedAt = 0;
+  const check = () => {
+    if (running || Date.now() - failedAt < RETRY_AFTER_FAIL_MS || !due()) return;
+    running = true;
     runBackup().catch((err) => {
       logger.error({ error: err.message }, 'Automatic backup failed');
       // The mail (if the backup_problem row of the notification events is
@@ -247,8 +260,17 @@ function startScheduler() {
         source: 'system',
         severity: 'error',
       });
-    });
-  }, intervalMs);
+      // tried again after RETRY_AFTER_FAIL_MS, not at every look
+      failedAt = Date.now();
+    }).finally(() => { running = false; });
+  };
+  startTimer = setTimeout(() => {
+    startTimer = null;
+    check();
+    timer = setInterval(check, module.exports._checkEveryMs || CHECK_EVERY_MS);
+    if (timer.unref) timer.unref();
+  }, module.exports._startDelayMs != null ? module.exports._startDelayMs : START_DELAY_MS);
+  if (startTimer.unref) startTimer.unref();
 
   logger.info({ schedule: cfg.schedule, intervalMs }, 'Auto-backup scheduler started');
 }
@@ -260,6 +282,10 @@ function stopScheduler() {
   if (timer) {
     clearInterval(timer);
     timer = null;
+  }
+  if (startTimer) {
+    clearTimeout(startTimer);
+    startTimer = null;
   }
 }
 
@@ -283,4 +309,9 @@ module.exports = {
   restartScheduler,
   BACKUP_DIR,
   VALID_SCHEDULES,
+  CHECK_EVERY_MS,
+  START_DELAY_MS,
+  // tests: shorter delays
+  _startDelayMs: null,
+  _checkEveryMs: null,
 };

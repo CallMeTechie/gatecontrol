@@ -467,14 +467,19 @@ router.put('/:id/media/settings', (req, res) => {
 
 const AREA_STATUS = { not_found: 404, invalid: 400, no_areas: 404 };
 
-router.get('/:id/media/areas', (req, res) => {
+router.get('/:id/media/areas', async (req, res) => {
   const p = pluginParam(req, res);
   if (!p) return;
   const areas = require('../../services/plugins/mediaAreas');
   if (!areas.declared(p)) return res.status(404).json({ ok: false, code: 'no_areas', error: tr(req, 'plugins.err.not_found', 'Plugin not found') });
   const targetsList = require('../../services/storageTargets').list()
     .map((t) => ({ id: t.id, kind: t.kind, label: t.label, display: t.display, check: t.check, encrypted: t.encrypted, files: t.kind !== 's3' }));
-  res.json({ ok: true, areas: areas.list(p.id, { admin: true }), targets: targetsList, cache: areas.cacheStats() });
+  try {
+    res.json({ ok: true, areas: await areas.list(p.id, { admin: true }), targets: targetsList, cache: areas.cacheStats() });
+  } catch (e) {
+    logger.error({ err: e.message, plugin: p.id }, 'media areas list failed');
+    res.status(500).json({ ok: false, error: 'internal error' });
+  }
 });
 
 router.put('/:id/media/areas/:area', (req, res) => {

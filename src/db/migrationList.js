@@ -3839,6 +3839,37 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_gateway_meta_location ON gateway_meta(location_id);`,
     detect: (db) => tableExists(db, 'gateway_locations') && hasColumn(db, 'gateway_meta', 'location_id'),
   },
+  {
+    version: 142,
+    name: 'event_loop_indexes',
+    // Indexes for the background jobs that walked whole tables on the main
+    // thread (a Drive with tens of thousands of files and previews):
+    //   plugin_media_gone (target_id, remote_key)  the copy worker asks per
+    //                      file whether a deletion is due under its key
+    //                      (mediaAreas processTransfers) — without it a scan
+    //                      of all deletions per file; next_at: the due ones
+    //   plugin_media (local, target_id, bytes)     the cache sum (cacheStats)
+    //   home_cache_blobs (priority, updated_at, sha256)  the stock of a gateway
+    //                      in order, page by page (homeCache.stockOf)
+    //   home_cache_blobs (plugin_id, media_id)     offers of a plugin's file
+    //   home_cache_blobs.stamp  size and time of the preview file an offer
+    //                      was made from: the hourly check reads only previews
+    //                      that changed (refreshPreviewOffers)
+    //   inetq_samples / inetq_hourly (t), dns_reports (at): the retention
+    //                      deletes by time
+    sql: `
+      CREATE INDEX IF NOT EXISTS idx_plugin_media_gone_key ON plugin_media_gone(target_id, remote_key);
+      CREATE INDEX IF NOT EXISTS idx_plugin_media_gone_due ON plugin_media_gone(next_at);
+      CREATE INDEX IF NOT EXISTS idx_plugin_media_cached ON plugin_media(local, target_id, bytes);
+      CREATE INDEX IF NOT EXISTS idx_home_cache_blobs_stock ON home_cache_blobs(priority DESC, updated_at DESC, sha256);
+      CREATE INDEX IF NOT EXISTS idx_home_cache_blobs_media ON home_cache_blobs(plugin_id, media_id);
+      ALTER TABLE home_cache_blobs ADD COLUMN stamp TEXT;
+      CREATE INDEX IF NOT EXISTS idx_inetq_samples_t ON inetq_samples(t);
+      CREATE INDEX IF NOT EXISTS idx_inetq_hourly_t ON inetq_hourly(t);
+      CREATE INDEX IF NOT EXISTS idx_dns_reports_at ON dns_reports(at);`,
+    detect: (db) => hasColumn(db, 'home_cache_blobs', 'stamp')
+      && !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_plugin_media_gone_key'").get(),
+  },
 ];
 
 module.exports = { migrations };

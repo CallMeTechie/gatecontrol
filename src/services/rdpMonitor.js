@@ -151,7 +151,7 @@ function startMonitor() {
   const interval = config.rdp.healthCheckInterval;
   logger.info({ interval }, 'Starting RDP health check monitor');
   setTimeout(() => {
-    checkAll().catch(err => logger.warn({ error: err.message }, 'Initial RDP health check failed'));
+    require('../utils/loopStall').withTask('rdp.health', checkAll).catch(err => logger.warn({ error: err.message }, 'Initial RDP health check failed'));
   }, 10000);
   pollerInterval = setInterval(() => {
     checkAll().catch(err => logger.warn({ error: err.message }, 'RDP health check cycle failed'));

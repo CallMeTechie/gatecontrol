@@ -1014,7 +1014,7 @@ let timer = null;
 function start() {
   if (timer) return;
   prune();
-  timer = setInterval(() => prune(), 6 * 3600000);
+  timer = setInterval(require('../../utils/loopStall').task('ai.prune', () => prune()), 6 * 3600000);
   timer.unref();
 }
 

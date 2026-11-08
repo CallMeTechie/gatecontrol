@@ -28,6 +28,9 @@ const { withTask } = require('../utils/loopStall');
 
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
+// first runs of the hourly jobs: after the busy start phase, not at the same moment
+const START_DELAY_MS = 5 * MINUTE;
+const HOME_OFFSET_MS = 7 * MINUTE;
 
 let timers = [];
 let running = false;
@@ -43,13 +46,21 @@ async function retentionOnce() {
   } finally { running = false; }
 }
 
+let homeRunning = false;
+
 async function homeHourly() {
+  if (homeRunning) return;
+  homeRunning = true;
   try {
-    await withTask('home.retention', () => { require('./homeDns').retention(); require('./homeCache').retention(); require('./homeCache').dropStaleOffers(); });
-  } catch (err) { logger.warn({ err: err.message }, 'DNS / cache retention failed'); }
-  // previews in the stock as they are now (a device sent another one)
-  try { await require('./homeCache').refreshPreviewOffers(); } catch (err) { logger.warn({ err: err.message }, 'home cache previews not refreshed'); }
-  try { await require('./homeCache').refreshUpdates(); } catch (err) { logger.warn({ err: err.message }, 'home cache updates not refreshed'); }
+    try {
+      await withTask('home.retention', async () => { await require('./homeDns').retention(); require('./homeCache').retention(); });
+    } catch (err) { logger.warn({ err: err.message }, 'DNS / cache retention failed'); }
+    // offers whose file is gone (in slices — a Drive offers tens of thousands)
+    try { await withTask('home.staleOffers', () => require('./homeCache').dropStaleOffers()); } catch (err) { logger.warn({ err: err.message }, 'home cache offers not cleaned up'); }
+    // previews in the stock as they are now (a device sent another one)
+    try { await withTask('home.previews', () => require('./homeCache').refreshPreviewOffers()); } catch (err) { logger.warn({ err: err.message }, 'home cache previews not refreshed'); }
+    try { await withTask('home.updates', () => require('./homeCache').refreshUpdates()); } catch (err) { logger.warn({ err: err.message }, 'home cache updates not refreshed'); }
+  } finally { homeRunning = false; }
 }
 
 /** Gateways of one home network: the same device decisions and DNS settings everywhere. */
@@ -70,12 +81,10 @@ function start() {
   every(HOUR, () => withTask('print.files', () => require('./homePrint').sweepFiles()));
   every(HOUR, () => withTask('radio.sensors', () => require('./homeRadio').housekeeping()));
   every(HOUR, () => withTask('cameras.events', () => require('./homeCameras').housekeeping()));
-  every(HOUR, retentionOnce);
-  every(HOUR, homeHourly);
-  // first run a few minutes after the start (not in the busy start phase)
-  const first = setTimeout(() => { retentionOnce(); homeHourly(); }, 5 * MINUTE);
-  if (first.unref) first.unref();
-  timers.push(first);
+  // the hourly jobs apart from each other (one hour, shifted): a stall names one of them, not both
+  const later = (ms, fn) => { const t = setTimeout(fn, ms); if (t.unref) t.unref(); timers.push(t); };
+  later(START_DELAY_MS, () => { retentionOnce(); every(HOUR, retentionOnce); });
+  later(START_DELAY_MS + HOME_OFFSET_MS, () => { homeHourly(); every(HOUR, homeHourly); });
 }
 
 function stop() {

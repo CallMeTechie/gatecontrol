@@ -266,9 +266,9 @@ router.post('/dns', express.json({ limit: '256kb' }), phase3a((peerId, body) => 
 }));
 
 /** GET /api/v1/gateway/cache/want — the stock this gateway should keep (ETag) */
-router.get('/cache/want', (req, res) => {
+router.get('/cache/want', async (req, res) => {
   try {
-    const w = require('../../services/homeCache').want(req.gateway.peer_id);
+    const w = await require('../../services/homeCache').want(req.gateway.peer_id);
     res.set('ETag', w.etag);
     res.set('Cache-Control', 'no-cache');
     if (req.headers['if-none-match'] === w.etag) return res.status(304).end();

@@ -99,13 +99,13 @@ describe('settings and features.cache', () => {
     assert.equal((await admin('put', '/cache').send({})).status, 400);
   });
 
-  it('the host folder suggestion: on a Pi only a removable drive, never the container\'s own mounts', () => {
-    const v = hc.view(gw.peer.id);
+  it('the host folder suggestion: on a Pi only a removable drive, never the container\'s own mounts', async () => {
+    const v = await hc.view(gw.peer.id);
     assert.deepEqual(v.suggestion, { mount: '/volume1', hostDir: '/volume1/gatecontrol-cache', freeBytes: 1.2e12, removable: false, setting: 'GC_CACHE_DIR' });
     db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify({ telemetry: { gateway_version: '1.22.0',
       hardware: { model: 'Raspberry Pi 4 Model B Rev 1.4' },
       storage: [{ mount: '/', fs: 'ext4', sizeBytes: 32e9, freeBytes: 20e9, removable: false }, { mount: '/media/usb0', fs: 'ext4', sizeBytes: 1e12, freeBytes: 9e11, removable: true }] } }), gw2.peer.id);
-    const v2 = hc.view(gw2.peer.id);
+    const v2 = await hc.view(gw2.peer.id);
     assert.equal(v2.pi, true);
     assert.equal(v2.suggestion.hostDir, '/media/usb0/gatecontrol-cache');
     assert.equal(v2.suggestion.setting, 'CACHE_DIR');
@@ -236,7 +236,7 @@ describe('reports and the lan hint', () => {
     } finally { hn.check = orig; upd._resetCache(); }
   });
 
-  it('the telemetry of the gateway (side 18): urls[0], states; no hint unless running', () => {
+  it('the telemetry of the gateway (side 18): urls[0], states; no hint unless running', async () => {
     const tc = hc.telemetryCache({ lan_ip: '192.168.1.23', cache: { state: 'running', urls: ['https://192.168.1.24:8443', 'https://[fd00::1]:8443'], tlsSha256: 'ab'.repeat(32), freeBytes: 5 } });
     assert.deepEqual([tc.state, tc.running, tc.url, tc.freeBytes], ['running', true, 'https://192.168.1.24:8443', 5]);
     const bad = hc.telemetryCache({ features: { cache: { enabled: true, running: false, state: 'path_unwritable', error: { at: 1, code: 'EACCES' } } } });
@@ -245,7 +245,7 @@ describe('reports and the lan hint', () => {
     h.telemetry.features.cache.state = 'no_secret';
     db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify(h), gw.peer.id);
     assert.equal(hc.hintFor(gw.peer.id, APK_SHA), null);
-    assert.equal(hc.view(gw.peer.id).state.state, 'no_secret');
+    assert.equal((await hc.view(gw.peer.id)).state.state, 'no_secret');
     h.telemetry.features.cache.state = 'running';
     db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify(h), gw.peer.id);
   });

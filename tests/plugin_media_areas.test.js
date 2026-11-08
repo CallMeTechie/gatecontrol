@@ -231,7 +231,7 @@ describe('areas on a storage target', () => {
   it('the cache drops the least recently used local copies; reads come from the target (ranges and whole)', async () => {
     const before = media.usage(PID);
     areas.setCacheLimit(256 * MB);
-    assert.equal(areas.evict(), 0, 'fits');
+    assert.equal(await areas.evict(), 0, 'fits');
     db().prepare("UPDATE settings SET value = '1' WHERE key = ?").run(areas.CACHE_SETTING); // below the minimum → the default
     assert.equal(areas.cacheLimit(), areas.CACHE_DEFAULT);
     // force eviction: a tiny limit straight in the table (setCacheLimit refuses it)
@@ -239,7 +239,7 @@ describe('areas on a storage target', () => {
     db().prepare('UPDATE settings SET value = ? WHERE key = ?').run(String(realMin), areas.CACHE_SETTING);
     const fake = db().prepare('UPDATE plugin_media SET bytes = ? WHERE id = ?');
     fake.run(realMin + 1, id); // pretend it is big
-    assert.ok(areas.evict() >= 1);
+    assert.ok(await areas.evict() >= 1);
     fake.run(plain.length, id);
     assert.equal(rowOf(id).local, 0);
     assert.equal(fs.existsSync(media.fileOf(PID, id)), false);
@@ -380,7 +380,7 @@ describe('backup', () => {
     const buf = crypto.randomBytes(70000);
     const id = await addFile(buf, 'nas', 'a/b.bin');
     await areas.tick();
-    const exp = areas.exportAreas(PID);
+    const exp = await areas.exportAreas(PID);
     assert.ok(exp.areas.some((a) => a.area === 'nas' && a.target_id === tA));
     const f = exp.files.find((x) => x.id === id);
     assert.equal(f.remote_key, rowOf(id).remote_key);

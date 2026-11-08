@@ -180,6 +180,24 @@ Geht etwas schief: `docker compose down`, `cp docker-compose.yml.bak docker-comp
 Erst wenn alles mindestens einen Tag läuft, darfst du das Volume löschen
 (`docker volume rm gatecontrol_gatecontrol-data`, Namen aus Schritt 1).
 
+### „event loop was blocked“ im Protokoll
+
+Der Server hat einige Sekunden lang nichts anderes getan – in der Zeit warten
+Gateways, Apps und die Weboberfläche. Die Zeile nennt, was in der Zeit lief:
+
+- `tasks`: Hintergrundaufgaben (z. B. `plugins.mediaAreas`, `home.staleOffers`),
+  Startschritte (`boot.*`), Anfragen (`GET /api/v1/…`, IDs als `:id`) und
+  Plugin-Aufrufe (`plugin <id> <Aufruf>`) mit der Zeit, die sie den Server
+  belegt haben.
+- `requests`: Anfragen und Plugin-Aufrufe, die in der Zeit offen waren –
+  Kandidaten, wenn `tasks` nichts Passendes nennt.
+
+Die Aufgaben mit vielen Einträgen (Bereiche von Drive
+auf einem Speicherziel, der Zwischenspeicher der Gateways mit tausenden
+Vorschaubildern, Sicherungen) arbeiten in kleinen Stücken, und die Datenbank schreibt
+ihr Protokoll in einem eigenen Thread zurück. Kommt die Meldung trotzdem
+öfter, die Zeile mit `tasks` und `requests` in ein Ticket kopieren.
+
 ### Der Container startet nicht oder das Zertifikat kommt nicht
 
 - `GC_ADMIN_PASSWORD is not set or still default`: In der `.env` steht noch

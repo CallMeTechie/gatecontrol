@@ -209,7 +209,7 @@ async function checkState() {
 }
 
 function run(name, fn) {
-  fn().catch((err) => logger.warn({ err: err.message }, `update notification (${name}) failed`));
+  require('../utils/loopStall').withTask(`updateNotify.${name}`, fn).catch((err) => logger.warn({ err: err.message }, `update notification (${name}) failed`));
 }
 
 function start() {

@@ -240,7 +240,7 @@ function start() {
   const { withTask } = require('../../utils/loopStall');
   timers.push(setInterval(() => { withTask('plugins.catalog', checkCatalog).catch(() => {}); }, CHECK_EVERY_MS));
   timers.push(setInterval(() => { withTask('plugins.autoUpdate', autoUpdateTick).catch((e) => logger.warn({ err: e.message }, 'automatic plugin update failed')); }, TICK_MS));
-  timers.push(setTimeout(() => { checkCatalog().catch(() => {}); }, 2 * 60 * 1000));
+  timers.push(setTimeout(() => { withTask('plugins.catalog', checkCatalog).catch(() => {}); }, 2 * 60 * 1000));
   for (const t of timers) t.unref();
 }
 

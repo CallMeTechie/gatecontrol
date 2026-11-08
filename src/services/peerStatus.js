@@ -72,7 +72,7 @@ function startPoller(intervalMs = 30000) {
   if (pollInterval) return;
   logger.info({ intervalMs }, 'Starting peer status poller');
   pollPeerStatus();
-  pollInterval = setInterval(pollPeerStatus, intervalMs);
+  pollInterval = setInterval(require('../utils/loopStall').task('peers.status', pollPeerStatus), intervalMs);
 }
 
 /**

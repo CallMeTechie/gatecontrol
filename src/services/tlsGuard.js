@@ -590,7 +590,7 @@ function startWatcher({ file, intervalMs = WATCH_INTERVAL_MS, immediate = true }
   _watch.ino = null; _watch.offset = 0; _watch.partial = '';
   loadWatchState();
   const tick = () => pollOnce().catch(err => logger.warn({ err: err.message }, 'tls: watcher tick failed'));
-  _watch.timer = setInterval(tick, intervalMs);
+  _watch.timer = setInterval(require('../utils/loopStall').task('tls.log', tick), intervalMs);
   if (_watch.timer.unref) _watch.timer.unref();
   if (immediate) tick();
   logger.info({ file: _watch.file }, 'TLS log watcher started');
@@ -708,7 +708,7 @@ function startInventory({ dataDir, intervalMs = INVENTORY_INTERVAL_MS } = {}) {
   };
   run();
   if (!_inventoryTimer) {
-    _inventoryTimer = setInterval(run, intervalMs);
+    _inventoryTimer = setInterval(require('../utils/loopStall').task('tls.inventory', run), intervalMs);
     if (_inventoryTimer.unref) _inventoryTimer.unref();
   }
 }

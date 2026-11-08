@@ -437,7 +437,7 @@ let _watchdogInterval = null;
 function startWatchdog() {
   if (_watchdogInterval) return;
   _watchdogInterval = setInterval(() => {
-    watchdogTick().catch(err => {
+    require('../utils/loopStall').withTask('gateways.health', watchdogTick).catch(err => {
       require('../utils/logger').error({ err: err.message }, 'watchdog tick failed');
     });
   }, 30_000);

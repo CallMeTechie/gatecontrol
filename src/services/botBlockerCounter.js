@@ -88,7 +88,7 @@ let _timer = null;
 function start() {
   if (_timer) return;
   const counter = createCounter();
-  _timer = setInterval(() => { counter.tick(); }, INTERVAL_MS);
+  _timer = setInterval(require('../utils/loopStall').task('botblocker.count', () => counter.tick()), INTERVAL_MS);
   if (_timer.unref) _timer.unref();
 }
 

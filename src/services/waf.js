@@ -787,7 +787,7 @@ function startWatcher({ file, intervalMs = WATCH_INTERVAL_MS, immediate = true, 
   _watch.ino = null; _watch.offset = 0; _watch.partial = EMPTY; _watch.head = '';
   loadWatchState();
   const tick = () => pollOnce().catch((err) => logger.warn({ err: err.message }, 'waf: watcher tick failed'));
-  _watch.timer = setInterval(tick, intervalMs);
+  _watch.timer = setInterval(require('../utils/loopStall').task('waf.audit', tick), intervalMs);
   if (_watch.timer.unref) _watch.timer.unref();
   if (immediate) tick();
   logger.info({ file: _watch.file }, 'WAF audit log watcher started');

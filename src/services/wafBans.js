@@ -654,7 +654,7 @@ let _sweepTimer = null;
 function start() {
   if (_sweepTimer) return;
   normalizeStoredBans();
-  _sweepTimer = setInterval(sweep, SWEEP_INTERVAL_MS);
+  _sweepTimer = setInterval(require('../utils/loopStall').task('waf.bans', sweep), SWEEP_INTERVAL_MS);
   if (_sweepTimer.unref) _sweepTimer.unref();
 }
 function stop() {

@@ -153,7 +153,7 @@ function startReconciler(deps) {
   const intervalMs = deps.intervalMs || RECONCILE_INTERVAL_MS;
   if (deps.logger) deps.logger.info({ intervalMs, autoRepair: !!deps.autoRepair }, 'Starting Caddy reconciler');
   pollerInterval = setInterval(() => {
-    runReconciliationCycle(deps).catch(err => {
+    require('../utils/loopStall').withTask('caddy.reconcile', () => runReconciliationCycle(deps)).catch(err => {
       if (deps.logger) deps.logger.error({ err: err.message }, 'Caddy reconciler cycle failed');
     });
   }, intervalMs);

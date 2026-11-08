@@ -217,7 +217,7 @@ function startCollector(intervalMs = 60000) {
   if (collectorInterval) return;
   logger.info({ intervalMs }, 'Starting traffic collector');
   takeSnapshot(); // Initial snapshot
-  collectorInterval = setInterval(takeSnapshot, intervalMs);
+  collectorInterval = setInterval(require('../utils/loopStall').task('traffic.snapshot', takeSnapshot), intervalMs);
 }
 
 /**

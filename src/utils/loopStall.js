@@ -11,6 +11,16 @@
 // of a stall names the marked jobs that ran in the blocked time, with the
 // time each spent in it (`tasks`), so the next report says what blocked.
 //
+// Synchronous pieces (measure(name, fn)): request handlers up to their first
+// await, res.json / res.send (a huge answer is serialised in one go), the
+// messages of plugin processes and the answers sent to them. Only a piece
+// that took MEASURE_MIN_MS or more is kept — its time is exactly the time it
+// held the thread, so `tasks` names it even when no timer job ran.
+//
+// Requests (httpMiddleware, beginRequest/endRequest): what was open in the
+// blocked time is listed as `requests` (route with ids masked, time in the
+// window) — candidates for a stall no marker explains (their async part).
+//
 // The plugin watchdog (services/plugins/runtime.js) asks blockedSince(): a
 // plugin that seems silent only because the host itself did not run gets
 // another round instead of a SIGKILL.
@@ -26,6 +36,15 @@ const STALLS_MAX = 64;
 // finished task spans kept for the report of a stall
 const SPANS_MAX = 256;
 const TASKS_IN_LOG = 6;
+// a synchronous piece (measure) shorter than this is not kept
+const MEASURE_MIN_MS = 20;
+// requests: finished ones kept from this length on, at most REQ_MAX of them
+const REQ_KEEP_MS = 200;
+const REQ_MAX = 128;
+const REQ_OPEN_MAX = 2000;
+const REQ_IN_LOG = 6;
+// a request open longer than this (an event stream, a long poll) is no candidate
+const REQ_STALE_MS = 10 * 60 * 1000;
 
 let timer = null;
 let lastTick = null;
@@ -43,12 +62,115 @@ function beginTask(name) {
   return id;
 }
 
+function pushSpan(span) {
+  spans.push(span);
+  if (spans.length > SPANS_MAX) spans.splice(0, spans.length - SPANS_MAX);
+}
+
 function endTask(id) {
   const t = active.get(id);
   if (!t) return;
   active.delete(id);
-  spans.push({ name: t.name, at: t.at, end: performance.now() });
-  if (spans.length > SPANS_MAX) spans.splice(0, spans.length - SPANS_MAX);
+  pushSpan({ name: t.name, at: t.at, end: performance.now() });
+}
+
+let measuring = 0;
+/**
+ * Run the synchronous `fn` and keep its time as the task `name` (a string or
+ * a function → string, asked afterwards) when it took `minMs` or more.
+ * Nested measures count for the outermost one only. → what fn returns.
+ */
+function measure(name, fn, minMs = MEASURE_MIN_MS) {
+  if (measuring) return fn();
+  measuring++;
+  const at = performance.now();
+  try {
+    return fn();
+  } finally {
+    measuring--;
+    const end = performance.now();
+    if (end - at >= minMs) {
+      let n;
+      try { n = typeof name === 'function' ? name() : name; } catch { n = 'unknown'; }
+      pushSpan({ name: String(n), at, end });
+    }
+  }
+}
+
+// ─── Requests ───────────────────────────────────
+
+const openReqs = new Map(); // id → { name, at }
+const doneReqs = []; // { name, at, end }
+let reqSeq = 0;
+
+/**
+ * A request (or another awaited operation) starts; → id for endRequest().
+ * `res`: its response — an event stream that runs for hours is no candidate.
+ */
+function beginRequest(name, res = null) {
+  if (openReqs.size >= REQ_OPEN_MAX) return 0;
+  const id = ++reqSeq;
+  openReqs.set(id, { name: String(name), at: performance.now(), res });
+  return id;
+}
+
+function streaming(res) {
+  try { return !!res && res.headersSent && /event-stream/i.test(String(res.getHeader('content-type') || '')); } catch { return false; }
+}
+
+/** It ended; `name` replaces the one given at the start (the route is known now). */
+function endRequest(id, name) {
+  const r = openReqs.get(id);
+  if (!r) return;
+  openReqs.delete(id);
+  const end = performance.now();
+  if (end - r.at < REQ_KEEP_MS) return;
+  doneReqs.push({ name: name == null ? r.name : String(name), at: r.at, end });
+  if (doneReqs.length > REQ_MAX) doneReqs.splice(0, doneReqs.length - REQ_MAX);
+}
+
+/** Requests open between `from` and `to`: [{ name, ms (in the window), open }], longest first. */
+function requestsBetween(from, to) {
+  const out = [];
+  const add = (name, at, end, open) => {
+    const ms = Math.min(end, to) - Math.max(at, from);
+    if (ms >= 0) out.push({ name, ms, open });
+  };
+  for (const r of doneReqs) if (r.end >= from && r.at <= to) add(r.name, r.at, r.end, false);
+  for (const r of openReqs.values()) if (r.at <= to && to - r.at < REQ_STALE_MS && !streaming(r.res)) add(r.name, r.at, to, true);
+  return out.sort((a, b) => b.ms - a.ms);
+}
+
+const ID_SEG_RE = /^(?:\d+|[0-9a-f]{16,}|[0-9a-f]{8}-[0-9a-f-]{27,}|[A-Za-z0-9_-]{32,})$/i;
+
+/** "GET /api/v1/gateway/cache/blob/<sha>?x" → "GET /api/v1/gateway/cache/blob/:id" (ids and tokens masked, ≤ 100 chars). */
+function routeLabel(method, url) {
+  const p = String(url || '').split('?')[0].split('/').map((seg) => (ID_SEG_RE.test(seg) ? ':id' : seg)).join('/');
+  return `${method || 'GET'} ${p.slice(0, 100)}`;
+}
+
+/**
+ * Express middleware (first in app.js): the request is open until its answer
+ * is done; the synchronous part of the handlers that run from here and the
+ * serialisation of res.json / res.send are measured. measureNext (right
+ * before the routes) measures the handlers again after the body was read.
+ */
+function httpMiddleware(req, res, next) {
+  const label = () => routeLabel(req.method, req.originalUrl || req.url);
+  const id = beginRequest(label(), res);
+  let ended = false;
+  const done = () => { if (ended) return; ended = true; endRequest(id); };
+  res.once('finish', done);
+  res.once('close', done);
+  const json = res.json;
+  const send = res.send;
+  res.json = function measuredJson(...a) { return measure(() => `${label()} (json)`, () => json.apply(this, a)); };
+  res.send = function measuredSend(...a) { return measure(() => `${label()} (send)`, () => send.apply(this, a)); };
+  measure(label, () => next());
+}
+
+function measureNext(req, res, next) {
+  measure(() => routeLabel(req.method, req.originalUrl || req.url), () => next());
 }
 
 /**
@@ -90,6 +212,10 @@ function describeTasks(list) {
   return list.slice(0, TASKS_IN_LOG).map((t) => `${t.name}${t.n > 1 ? ` ×${t.n}` : ''}: ${Math.round(t.ms)} ms${t.running ? ' (still running)' : ''}`);
 }
 
+function describeRequests(list) {
+  return list.slice(0, REQ_IN_LOG).map((r) => `${r.name}: ${Math.round(r.ms)} ms${r.open ? ' (open)' : ''}`);
+}
+
 /**
  * How long the main thread was blocked (ms, sum of the stalls seen) since the
  * wall-clock time `since` — including a stall that is going on right now
@@ -126,10 +252,12 @@ function start({ everyMs = EVERY_MS, warnMs = WARN_MS, onStall = null } = {}) {
     if (late >= RECORD_MS) noteStall(late);
     if (late < warnMs) return;
     const tasks = tasksBetween(prev, now);
+    const reqs = requestsBetween(prev + everyMs, now);
     const fields = { blockedMs: late };
     if (tasks.length) fields.tasks = describeTasks(tasks);
+    if (reqs.length) fields.requests = describeRequests(reqs);
     logger.warn(fields, 'event loop was blocked');
-    if (onStall) onStall(late, tasks);
+    if (onStall) onStall(late, tasks, reqs);
   }, everyMs);
   timer.unref();
 }
@@ -140,14 +268,28 @@ function stop() {
   lastTick = null;
 }
 
+/** setInterval/setTimeout callback that runs `fn` as the task `name` (errors logged, never thrown). */
+function task(name, fn) {
+  return (...args) => {
+    let r;
+    try { r = withTask(name, () => fn(...args)); } catch (e) { logger.warn({ task: name, err: e && e.message }, 'background task failed'); return undefined; }
+    if (r && typeof r.catch === 'function') r.catch((e) => logger.warn({ task: name, err: e && e.message }, 'background task failed'));
+    return r;
+  };
+}
+
 function _resetForTest() {
   stop();
   stalls.length = 0;
   spans.length = 0;
   active.clear();
+  openReqs.clear();
+  doneReqs.length = 0;
+  measuring = 0;
 }
 
 module.exports = {
-  start, stop, withTask, beginTask, endTask, tasksBetween, blockedSince,
-  EVERY_MS, WARN_MS, RECORD_MS, _noteStallForTest: noteStall, _resetForTest,
+  start, stop, withTask, beginTask, endTask, tasksBetween, blockedSince, measure, task,
+  beginRequest, endRequest, requestsBetween, routeLabel, httpMiddleware, measureNext,
+  EVERY_MS, WARN_MS, RECORD_MS, MEASURE_MIN_MS, _noteStallForTest: noteStall, _resetForTest,
 };

@@ -7,7 +7,7 @@ class SQLiteStore extends session.Store {
   constructor() {
     super();
     // Bulk cleanup every 5 minutes for stale sessions
-    this._cleanupInterval = setInterval(() => this._cleanup(), 300000);
+    this._cleanupInterval = setInterval(require('../utils/loopStall').task('sessions.cleanup', () => this._cleanup()), 300000);
   }
 
   _expiresAt(sessionData) {

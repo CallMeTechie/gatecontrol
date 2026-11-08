@@ -881,10 +881,10 @@ function hourly() {
 function start() {
   if (timers.length) return;
   fs.mkdirSync(pluginsRoot(), { recursive: true });
-  reconcile().catch((e) => logger.warn({ err: e.message }, 'plugin start failed'));
+  require('../../utils/loopStall').withTask('plugins.start', reconcile).catch((e) => logger.warn({ err: e.message }, 'plugin start failed'));
   // licence states change in the background (daily licence refresh, expiry): look every 5 minutes
-  timers.push(setInterval(() => reconcile().catch(() => {}), 5 * 60 * 1000));
-  timers.push(setInterval(() => checkThirdPartyLicences().catch(() => {}), 24 * 60 * 60 * 1000));
+  timers.push(setInterval(() => require('../../utils/loopStall').withTask('plugins.reconcile', reconcile).catch(() => {}), 5 * 60 * 1000));
+  timers.push(setInterval(() => require('../../utils/loopStall').withTask('plugins.licences', checkThirdPartyLicences).catch(() => {}), 24 * 60 * 60 * 1000));
   // a third-party check that failed for a network error / 5xx / 429 is retried early (licensing.js)
   licensing.startRetries();
   // hourly: unclaimed plugin media older than 24 h, the neutral line of chat notifications sent

@@ -634,10 +634,25 @@ function ingest(peerId, body) {
 }
 
 /** Retention: daily values a year, the idempotence keys two days. */
-function retention(now = Date.now()) {
+const RETENTION_STEP = 2000;
+
+/** DELETE … WHERE rowid IN (… LIMIT step) until nothing is left, the event loop running between the steps. → rows deleted. */
+async function deleteInSteps(sql, arg) {
+  const st = db().prepare(`${sql} LIMIT ${RETENTION_STEP})`);
+  let n = 0;
+  for (;;) {
+    const c = st.run(arg).changes;
+    n += c;
+    if (c < RETENTION_STEP) return n;
+    await new Promise((r) => setImmediate(r));
+  }
+}
+
+/** Retention: day values a year, reports two days — in steps (idx_dns_reports_at). */
+async function retention(now = Date.now()) {
   const old = dayKey(now - 366 * DAY);
-  const a = db().prepare('DELETE FROM dns_stats_day WHERE day < ?').run(old).changes;
-  const b = db().prepare('DELETE FROM dns_reports WHERE at < ?').run(now - 2 * DAY).changes;
+  const a = await deleteInSteps('DELETE FROM dns_stats_day WHERE rowid IN (SELECT rowid FROM dns_stats_day WHERE day < ?', old);
+  const b = await deleteInSteps('DELETE FROM dns_reports WHERE rowid IN (SELECT rowid FROM dns_reports WHERE at < ?', now - 2 * DAY);
   return { days: a, reports: b };
 }
 

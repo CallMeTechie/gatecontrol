@@ -16,6 +16,8 @@ const { startScheduler: startAutoBackup, stopScheduler: stopAutoBackup } = requi
 const activity = require('./services/activity');
 const { validateLicense, startLicenseRefresh, stopLicenseRefresh } = require('./services/license');
 const { withRetry } = require('./utils/taskRetry');
+const loopStall = require('./utils/loopStall');
+const { withTask, task } = loopStall;
 
 let server;
 
@@ -25,9 +27,13 @@ async function start() {
 
   logger.info({ name: config.app.name, version: require('../package.json').version }, 'Starting application');
 
+  // A blocked main thread shows in the log with its length — from the first
+  // step on, the start steps marked (boot.*): a long start names its step
+  loopStall.start();
+
   // Initialize database
-  runMigrations();
-  await seedAdminUser();
+  withTask('boot.migrations', () => runMigrations());
+  await withTask('boot.seed', () => seedAdminUser());
 
   // Owner-only modes for sensitive files that older versions left
   // world-readable on the host bind mount (DB copies, JSON backups,
@@ -61,13 +67,13 @@ async function start() {
   catch (err) { logger.warn({ err: err.message }, 'auto-update config sync skipped'); }
 
   // Validate license (never throws — falls back to Community mode internally)
-  const licenseInfo = await validateLicense();
+  const licenseInfo = await withTask('boot.license', () => validateLicense());
   logger.info(`License: ${licenseInfo.plan} plan`);
 
   // Create and start Express app
-  const app = createApp();
+  const app = withTask('boot.app', () => createApp());
 
-  server = app.listen(config.app.port, config.app.host, () => {
+  server = app.listen(config.app.port, config.app.host, () => withTask('boot.listen', () => {
     logger.info({
       host: config.app.host,
       port: config.app.port,
@@ -98,7 +104,7 @@ async function start() {
     }
 
     // Sync WireGuard config from DB on startup (ensures peers survive manual config edits)
-    setTimeout(async () => {
+    setTimeout(() => withTask('boot.wireguard', async () => {
       try {
         const { rewriteWgConfig } = require('./services/peers');
         await rewriteWgConfig();
@@ -106,7 +112,7 @@ async function start() {
       } catch (err) {
         logger.warn({ error: err.message }, 'Could not sync WireGuard config on startup');
       }
-    }, 2000);
+    }), 2000);
 
     // Sync routes to Caddy on startup — but only if entrypoint.sh did
     // NOT already boot Caddy with the pre-generated JSON. When the JSON
@@ -116,7 +122,7 @@ async function start() {
     if (process.env.GC_CADDY_CONFIG_PRELOADED === '1') {
       logger.info('Caddy booted from pre-generated JSON — skipping initial /load sync');
     } else {
-      setTimeout(async () => {
+      setTimeout(() => withTask('boot.caddy', async () => {
         try {
           const { syncToCaddy, getAll: getAllRoutes } = require('./services/routes');
           const routes = getAllRoutes();
@@ -127,14 +133,14 @@ async function start() {
         } catch (err) {
           logger.warn({ error: err.message }, 'Could not sync routes to Caddy on startup (will retry on next change)');
         }
-      }, config.intervals.caddySyncDelay);
+      }), config.intervals.caddySyncDelay);
     }
 
     // Domain registry — seed base domains from routes and run a best-effort
     // verify pass on boot. Non-blocking: errors are swallowed. Never marks
     // rows 'failed'; only sets the server-IP warning setting if all domains
     // mismatched (≥2). Re-runs only pending rows, so it is idempotent.
-    setTimeout(async () => {
+    setTimeout(() => withTask('boot.domains', async () => {
       try {
         const { runDomainSeedAndVerify } = require('./services/domainBoot');
         const r = await runDomainSeedAndVerify();
@@ -146,7 +152,7 @@ async function start() {
       // Best-effort — must never break boot.
       try { require('./services/tlsGuard').startInventory(); }
       catch (err) { logger.warn({ err: err.message }, 'TLS inventory not started'); }
-    }, 8000); // after network/route sync settles; backoff not required (re-runs verify pending on next boot)
+    }), 8000); // after network/route sync settles; backoff not required (re-runs verify pending on next boot)
 
     // TLS guard: tls.log watcher (attempt cap, per-host certificate state) and
     // the ACME e-mail check. Best-effort.
@@ -186,8 +192,7 @@ async function start() {
     startLicenseRefresh();
     startRdpMonitor();
 
-    // A blocked main thread shows in the log with its length (plugin storage / call timeouts of the same moment)
-    require('./utils/loopStall').start();
+    // (utils/loopStall.js runs since the start of start())
 
     // Logs & Monitoring: resolved problems that occur again (notify_on_return). Best-effort.
     try { require('./services/logProblems').start(); }
@@ -289,7 +294,7 @@ async function start() {
     // Peer expiry check (every 60 seconds)
     const { checkExpiredPeers } = require('./services/peers');
     const retryPeerExpiry = withRetry('peer-expiry', checkExpiredPeers);
-    setInterval(retryPeerExpiry, 60 * 1000);
+    setInterval(task('peers.expiry', retryPeerExpiry), 60 * 1000);
 
     // Remember the endpoints of active WireGuard peers so the next container
     // start reconnects them at once (scripts/wg-restore-endpoints.sh).
@@ -297,7 +302,7 @@ async function start() {
 
     // RDP stale session cleanup (every 2 minutes)
     const retryRdpCleanup = withRetry('rdp-session-cleanup', async () => cleanupStaleRdpSessions());
-    setInterval(retryRdpCleanup, 120000);
+    setInterval(task('rdp.cleanup', retryRdpCleanup), 120000);
 
     // Periodic cleanup (every 6 hours)
     const retryCleanup = withRetry('periodic-cleanup', async () => {
@@ -316,28 +321,28 @@ async function start() {
       // Shared device locations: RETENTION_DAYS (the newest 20 per device are trimmed on insert).
       require('./services/deviceLocations').purgeExpired();
     });
-    setInterval(retryCleanup, 6 * 60 * 60 * 1000);
+    setInterval(task('cleanup.periodic', retryCleanup), 6 * 60 * 60 * 1000);
 
     // Kiosk devices (docs/feature-kiosk-devices.md): expired pairing codes go
     // at once, expired devices are logged (kiosk_expired), revoked/expired
     // devices are deleted after 30 days. Hourly, and once at start.
     const retryKioskCleanup = withRetry('kiosk-cleanup', async () => require('./services/kiosk').cleanup());
-    setInterval(retryKioskCleanup, 60 * 60 * 1000);
-    retryKioskCleanup();
+    setInterval(task('kiosk.cleanup', retryKioskCleanup), 60 * 60 * 1000);
+    setTimeout(task('kiosk.cleanup', retryKioskCleanup), 90 * 1000).unref();
 
     // Person groups (docs/groups.md): projects whose end date has passed are
     // archived (access ends, data stays); ended invitation links are purged.
     // Hourly, and once at start.
     const retryGroupsArchive = withRetry('groups-archive', async () => require('./services/groups').archiveExpired());
-    setInterval(retryGroupsArchive, 60 * 60 * 1000);
-    retryGroupsArchive();
+    setInterval(task('groups.archive', retryGroupsArchive), 60 * 60 * 1000);
+    setTimeout(task('groups.archive', retryGroupsArchive), 100 * 1000).unref();
 
     // Directory sync (docs/groups.md "Verzeichnis-Abgleich und Anmeldung"):
     // every minute the directories whose interval (5–1440 min, default 15)
     // has passed are synchronised (a full sync each time, so at least every
     // 24 h). A directory that cannot be read changes nothing.
     const retryDirectorySync = withRetry('directory-sync', async () => require('./services/directory/sync').runDue());
-    setInterval(retryDirectorySync, 60 * 1000);
+    setInterval(task('directory.sync', retryDirectorySync), 60 * 1000);
 
     // Zugriff per Gruppe (docs/groups.md): routes with the device ACL allow
     // the devices of released persons and group members — membership, device
@@ -348,7 +353,7 @@ async function start() {
     // Periodic alert checks (every hour): backup reminder, CPU / RAM / disk
     // thresholds, de-duplicated (services/alertChecks.js).
     const retryAlertChecks = withRetry('alert-checks', () => require('./services/alertChecks').run());
-    setInterval(retryAlertChecks, 60 * 60 * 1000); // Every hour
+    setInterval(task('alerts.check', retryAlertChecks), 60 * 60 * 1000); // Every hour
 
     // Notification center: hourly clean-up (queue expiry, history, queue cap)
     // plus a short ticker for delayed messages and e-mail fallbacks.
@@ -369,7 +374,7 @@ async function start() {
       source: 'system',
       severity: 'info',
     });
-  });
+  }));
   // Media uploads up to 2 GB (docs/plugins.md "Media", since 1.193.0) may take
   // longer than Node's 5-minute requestTimeout: the server allows the upload
   // deadline, middleware/requestDeadline.js keeps 5 minutes for every other body.
