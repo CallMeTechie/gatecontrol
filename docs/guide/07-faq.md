@@ -188,13 +188,28 @@ interface wait meanwhile. The line names what ran in that time:
   program, the network); the cause is usually listed before them, without a
   mark.
 - `requests`: requests and plugin calls that were open in that time –
-  candidates when `tasks` names nothing that fits.
+  candidates when `tasks` names nothing that fits. The time is the time
+  **within the stall**: a call open during the whole stall shows exactly its
+  length – even when it only waited. A plugin's `db.query` names its
+  statement without values
+  (`plugin gatecontrol-mail db.query SELECT … WHERE user_id = ?`).
+- `blockedBy`: `cpu` – the server computed in that time itself (`mainCpuMs`
+  near `blockedMs`); `waiting` – it waited, mostly for the disk or memory
+  (`diskReads`, `majorFaults` high) or because no CPU core was free
+  (`processCpuMs`: all threads together).
+
+A plugin statement that runs 200 ms or longer is logged as
+“slow plugin database statement” with the plugin, the statement, rows and time
+(at most once a minute per statement). It runs in a thread of its own and does
+not stop the server – but when it reads large parts of the database, it slows
+the disk for everyone.
 
 The jobs with many entries (Drive areas on a storage target,
 the home cache of the gateways with thousands of previews, backups) work in
 small pieces, and the database writes its log back in a thread of its own.
-If the message still comes often, copy the line with `tasks` and `requests`
-into a ticket.
+If the message still comes often, copy the whole line (with `tasks`,
+`requests` and `blockedBy`) and the “slow plugin database statement” lines
+next to it into a ticket.
 
 ### The container does not start or the certificate does not come
 

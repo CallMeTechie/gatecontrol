@@ -49,6 +49,31 @@ const REQ_STALE_MS = 10 * 60 * 1000;
 let timer = null;
 let lastTick = null;
 let everyMsNow = EVERY_MS;
+let lastUse = null;
+
+// What the process did in a blocked time (two system calls a second): the main thread's own CPU time
+// (process.threadCpuUsage, Node ≥ 23.9) and the whole process's (worker threads included), the major page faults
+// (memory read back from disk: swap) and the blocks read from disk. Main-thread CPU near the blocked time: this
+// thread computed (JavaScript, a synchronous statement on the host database, GC); far below it: it waited —
+// synchronous I/O, the disk, a lock, swap, or no CPU free for it.
+function usageNow() {
+  try {
+    const r = process.resourceUsage();
+    const t = typeof process.threadCpuUsage === 'function' ? process.threadCpuUsage() : null;
+    return { main: t ? (t.user + t.system) / 1000 : null, proc: (r.userCPUTime + r.systemCPUTime) / 1000, faults: r.majorPageFault, reads: r.fsRead };
+  } catch { return null; }
+}
+
+/** The usage between two samples for a stall of `ms` → fields of the log line. */
+function usageFields(a, b, ms) {
+  if (!a || !b) return {};
+  const out = { processCpuMs: Math.round(b.proc - a.proc), majorFaults: b.faults - a.faults, diskReads: b.reads - a.reads };
+  if (a.main != null && b.main != null) {
+    out.mainCpuMs = Math.round(b.main - a.main);
+    out.blockedBy = out.mainCpuMs >= ms * 0.6 ? 'cpu' : 'waiting';
+  }
+  return out;
+}
 
 const stalls = []; // { end, ms } — end: Date.now() when the stall was seen
 const active = new Map(); // id → { name, at } (performance.now())
@@ -271,16 +296,19 @@ function start({ everyMs = EVERY_MS, warnMs = WARN_MS, onStall = null } = {}) {
   instrumentSpawn();
   everyMsNow = everyMs;
   lastTick = performance.now();
+  lastUse = usageNow();
   timer = setInterval(() => {
     const now = performance.now();
     const prev = lastTick;
     const late = Math.round(now - prev - everyMs);
     lastTick = now;
+    const prevUse = lastUse;
+    lastUse = usageNow();
     if (late >= RECORD_MS) noteStall(late);
     if (late < warnMs) return;
     const tasks = tasksBetween(prev, now);
     const reqs = requestsBetween(prev + everyMs, now);
-    const fields = { blockedMs: late };
+    const fields = { blockedMs: late, ...usageFields(prevUse, lastUse, late) };
     if (tasks.length) fields.tasks = describeTasks(tasks);
     if (reqs.length) fields.requests = describeRequests(reqs);
     logger.warn(fields, 'event loop was blocked');
@@ -307,6 +335,7 @@ function task(name, fn) {
 
 function _resetForTest() {
   stop();
+  lastUse = null;
   stalls.length = 0;
   spans.length = 0;
   active.clear();
@@ -319,5 +348,5 @@ module.exports = {
   start, stop, withTask, beginTask, endTask, tasksBetween, blockedSince, measure, task,
   beginRequest, endRequest, requestsBetween, routeLabel, httpMiddleware, measureNext, instrumentSpawn,
   _setSpawnMinMsForTest: (ms) => { spawnMinMs = ms == null ? SPAWN_MIN_MS : ms; },
-  EVERY_MS, WARN_MS, RECORD_MS, MEASURE_MIN_MS, _noteStallForTest: noteStall, _resetForTest,
+  EVERY_MS, WARN_MS, RECORD_MS, MEASURE_MIN_MS, _noteStallForTest: noteStall, _resetForTest, _usageFieldsForTest: usageFields,
 };

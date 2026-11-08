@@ -10,6 +10,7 @@
 // with it, not with the arrival of the answer (storage.js check()).
 
 const { workerData } = require('node:worker_threads');
+const { performance } = require('node:perf_hooks');
 const Database = require('better-sqlite3');
 const { checkSql } = require('./sqlGuard');
 
@@ -19,6 +20,21 @@ const since = new Float64Array(workerData.state, 8, 1); // when state last chang
 
 const MAX_ROWS = 5000;
 const MAX_VALUE = 1024 * 1024;
+// the size of a list answer (query mode 'all'): the host's main thread copies it out of this thread and
+// serialises it for the plugin in one go — 16 MB take it ~100 ms; more rows come as `truncated` (as past MAX_ROWS)
+const MAX_ANSWER_BYTES = 16 * 1024 * 1024;
+
+/** About the bytes of a row in an answer (strings by their length, numbers 8). */
+function rowBytes(row) {
+  let n = 16;
+  for (const k in row) {
+    const v = row[k];
+    n += k.length + 8;
+    if (typeof v === 'string') n += v.length;
+    else if (v && typeof v === 'object' && typeof v.b64 === 'string') n += v.b64.length;
+  }
+  return n;
+}
 
 const db = new Database(workerData.file);
 db.pragma('journal_mode = DELETE');
@@ -73,9 +89,12 @@ function query({ sql, params, mode }) {
   if (mode === 'get') return { row: outRow(stmt.get(...args)) || null };
   const rows = [];
   let truncated = false;
+  let bytes = 0;
   for (const row of stmt.iterate(...args)) {
-    if (rows.length >= MAX_ROWS) { truncated = true; break; }
-    rows.push(outRow(row));
+    if (rows.length >= MAX_ROWS || (rows.length && bytes >= MAX_ANSWER_BYTES)) { truncated = true; break; }
+    const r = outRow(row);
+    bytes += rowBytes(r);
+    rows.push(r);
   }
   return { rows, truncated };
 }
@@ -138,6 +157,11 @@ const ops = {
   size: () => ({ bytes: db.pragma('page_count', { simple: true }) * db.pragma('page_size', { simple: true }) }),
 };
 
+// the time of an operation in this thread and the rows it returned (query) go with the answer: the host logs a
+// slow statement (storage.js) with what it was, apart from the time the answer then waited for the main thread
+const clock = () => performance.now();
+const rowsOf = (v) => (v && Array.isArray(v.rows) ? v.rows.length : (v && 'row' in v ? (v.row ? 1 : 0) : null));
+
 function mark(id) {
   since[0] = Date.now();
   Atomics.store(state, 1, id);
@@ -149,11 +173,13 @@ port.on('message', (msg) => {
   const fn = Object.prototype.hasOwnProperty.call(ops, msg.op) ? ops[msg.op] : null;
   mark(Number.isSafeInteger(msg.id) && msg.id > 0 ? msg.id : 0);
   let answer;
+  const t0 = clock();
   try {
     if (!fn) throw new Error('unknown operation');
-    answer = { id: msg.id, ok: true, value: fn(msg.args || {}) };
+    const value = fn(msg.args || {});
+    answer = { id: msg.id, ok: true, value, ms: clock() - t0, rows: rowsOf(value) };
   } catch (e) {
-    answer = { id: msg.id, ok: false, error: String((e && e.message) || e).slice(0, 500) };
+    answer = { id: msg.id, ok: false, error: String((e && e.message) || e).slice(0, 500), ms: clock() - t0 };
   }
   // done before the answer is posted: an answer the host can take is never "running"
   mark(0);

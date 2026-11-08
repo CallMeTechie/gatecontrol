@@ -618,8 +618,10 @@ async function ingestLinesAsync(lines) {
   const lookup = buildRouteLookup();
   const sl = slicer();
   let n = 0;
+  const { measure } = require('../utils/loopStall');
   for (let i = 0; i < lines.length; i += INGEST_BATCH) {
-    n += ingestLines(lines.slice(i, i + INGEST_BATCH), lookup);
+    // a slice is the thread's own work (parse, insert, bans): named in a stall when it held the thread long
+    n += measure('waf.audit ingest', () => ingestLines(lines.slice(i, i + INGEST_BATCH), lookup));
     await sl.pause();
   }
   return n;

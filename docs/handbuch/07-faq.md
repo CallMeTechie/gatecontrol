@@ -193,13 +193,28 @@ Gateways, Apps und die Weboberfläche. Die Zeile nennt, was in der Zeit lief:
   nur gewartet haben (auf ein Programm, das Netz); die Ursache steht meist
   davor, ohne Zusatz.
 - `requests`: Anfragen und Plugin-Aufrufe, die in der Zeit offen waren –
-  Kandidaten, wenn `tasks` nichts Passendes nennt.
+  Kandidaten, wenn `tasks` nichts Passendes nennt. Die Zeit ist die Zeit
+  **innerhalb der Blockade**: Ein Aufruf, der die ganze Blockade über offen
+  war, steht mit genau ihrer Länge da – auch wenn er nur gewartet hat. Ein
+  `db.query` eines Plugins nennt seine Anweisung ohne Werte
+  (`plugin gatecontrol-mail db.query SELECT … WHERE user_id = ?`).
+- `blockedBy`: `cpu` – der Server hat in der Zeit selbst gerechnet
+  (`mainCpuMs` nahe `blockedMs`); `waiting` – er hat gewartet, meist auf die
+  Platte oder den Arbeitsspeicher (`diskReads`, `majorFaults` hoch) oder weil
+  kein Prozessorkern frei war (`processCpuMs`: alle Threads zusammen).
+
+Eine Anweisung eines Plugins, die 200 ms oder länger läuft, steht als
+„slow plugin database statement“ mit Plugin, Anweisung, Zeilen und Zeit im
+Protokoll (höchstens einmal je Minute und Anweisung). Sie läuft in einem
+eigenen Thread und hält den Server nicht an – liest sie aber große Teile der
+Datenbank, bremst sie die Platte für alle.
 
 Die Aufgaben mit vielen Einträgen (Bereiche von Drive
 auf einem Speicherziel, der Zwischenspeicher der Gateways mit tausenden
 Vorschaubildern, Sicherungen) arbeiten in kleinen Stücken, und die Datenbank schreibt
 ihr Protokoll in einem eigenen Thread zurück. Kommt die Meldung trotzdem
-öfter, die Zeile mit `tasks` und `requests` in ein Ticket kopieren.
+öfter, die ganze Zeile (mit `tasks`, `requests` und `blockedBy`) und die
+Zeilen „slow plugin database statement“ daneben in ein Ticket kopieren.
 
 ### Der Container startet nicht oder das Zertifikat kommt nicht
 

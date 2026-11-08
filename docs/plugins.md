@@ -3803,6 +3803,24 @@ count; opening the file has 30 s). Statements with
 tables are refused. The plugin process can write only the sibling `files/`
 folder, never the database file.
 
+**Answers and slow statements** (since 1.253.5): `gc.db.query` returns at
+most 5000 rows and about 16 MB — past either limit the answer has
+`truncated: true` (the host's main thread copies the answer out of the worker
+and serialises it for the plugin in one go, so its size is bounded). A
+statement that runs 200 ms or longer in the worker is logged as
+"slow plugin database statement" with the plugin, the statement without its
+values (`sql`: literals as `?`, `IN (?,…)`, ≤ 160 characters), the rows, its
+time in the worker (`ms`) and the time the answer waited besides
+(`waitMs`: behind the plugin's other statements, and for the host) — once a
+minute per statement, with `times` / `maxMs` for the repeats. The host's
+stall log (`event loop was blocked`) names a plugin's `db.query` / `db.exec`
+with that statement too, and says whether the main thread computed in the
+blocked time or waited (`mainCpuMs`, `blockedBy: cpu | waiting`,
+`processCpuMs`, `majorFaults`, `diskReads`). A statement that reads the whole
+database (a `SUM` over rows with large text, a `LIKE '%…%'` on bodies) slows
+the disk for the whole server: give it an index that holds the columns it
+needs (a covering index; `INDEXED BY` when SQLite should not pick the row).
+
 **A larger database** (since 1.206.0) — for plugins that keep many records
 (GateControl Drive: hundreds of thousands of files with their versions):
 

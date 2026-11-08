@@ -17,6 +17,16 @@ const logger = require('../../utils/logger');
 function loopStall() { return require('../../utils/loopStall'); }
 
 const BOOTSTRAP = path.join(__dirname, 'child', 'bootstrap.js');
+
+/**
+ * A host call as named in a stall (utils/loopStall.js): the API, for gc.db the statement too — without its values,
+ * short (sqlGuard.fingerprint) — so the log says which statement of a plugin was under way.
+ */
+function callLabel(m) {
+  const api = String((m && m.api) || '');
+  const sql = (api === 'db.query' || api === 'db.exec') && m.args && typeof m.args.sql === 'string' ? m.args.sql : null;
+  return sql == null ? api : `${api} ${require('./sqlGuard').fingerprint(sql, 100)}`;
+}
 const MAX_HOST_CALLS = 32;
 const LOG_LINES_PER_MIN = 120;
 const PING_EVERY_MS = 30000;
@@ -134,7 +144,7 @@ class PluginProcess {
     child.stdout.on('data', lines('info'));
     child.stderr.on('data', lines('error'));
     // a message of the plugin (a host call, a result) and its synchronous handling: named in a stall (utils/loopStall.js)
-    child.on('message', (m) => loopStall().measure(() => `plugin ${this.id} ${m && m.t === 'host' ? String(m.api || '') : String((m && m.t) || '')}`, () => this.onMessage(m)));
+    child.on('message', (m) => loopStall().measure(() => `plugin ${this.id} ${m && m.t === 'host' ? callLabel(m) : String((m && m.t) || '')}`, () => this.onMessage(m)));
     child.on('error', (e) => { this.lastError = e.message; });
     child.on('exit', (code2, sig) => this.onExit(code2, sig, null, child));
     // more time while other plugins start too (host start: all at once, sharing the CPU) — counted when this one
@@ -214,8 +224,9 @@ class PluginProcess {
   onHostCall(m) {
     // child.send serialises the answer on this thread (a big list of a host call): measured
     const send = (msg) => { if (this.child && this.child.connected) { try { this.child.send(msg); } catch { /* gone */ } } };
-    const reply = (msg) => loopStall().measure(() => `plugin ${this.id} ${String(m.api || '')} (answer)`, () => send(msg));
-    const reqId = loopStall().beginRequest(`plugin ${this.id} ${String(m.api || '')}`);
+    const label = `plugin ${this.id} ${callLabel(m)}`;
+    const reply = (msg) => loopStall().measure(() => `${label} (answer)`, () => send(msg));
+    const reqId = loopStall().beginRequest(label);
     if (this.hostCalls >= MAX_HOST_CALLS) {
       reply({ t: 'hostResult', id: m.id, ok: false, error: 'too many concurrent host calls', code: 'ERR_BUSY' });
       return;
@@ -420,4 +431,4 @@ function _setBackoffForTest(list) {
 }
 
 module.exports = { ensureRunning, ensureStopped, stopAll, get, info, call, waitRunning, execArgvFor, startTimeout, events, BOOTSTRAP, _setBackoffForTest,
-  PING_EVERY_MS, PING_DEAD_MS, _PluginProcess: PluginProcess };
+  PING_EVERY_MS, PING_DEAD_MS, _PluginProcess: PluginProcess, _callLabel: callLabel };
