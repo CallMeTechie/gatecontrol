@@ -701,7 +701,7 @@ function start() {
   every(10 * 60e3, 'scan.nightly', () => { if (nightlyDue()) return nightly(); return null; });
   every(15 * 60e3, 'scan.signatures', signatureCheck);
   every(3600e3, 'scan.expire', () => expire());
-  const t = setTimeout(() => { retryPending(); signatureCheck().catch(() => {}); expire(); }, 30e3);
+  const t = setTimeout(() => { withTask('scan.start', () => { retryPending(); signatureCheck().catch(() => {}); expire(); }); }, 30e3);
   if (t.unref) t.unref();
 }
 

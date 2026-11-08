@@ -208,7 +208,7 @@ async function exportAllRaw() {
       }
     }
     if (media.declOf(p) && media.declOf(p).areas) {
-      try { entry.media_areas = require('./mediaAreas').exportAreas(p.id); } catch (e) {
+      try { entry.media_areas = await require('./mediaAreas').exportAreas(p.id); } catch (e) {
         logger.warn({ plugin: p.id, err: e.message }, 'backup: media areas skipped');
         entry.skipped.push('media_areas');
       }

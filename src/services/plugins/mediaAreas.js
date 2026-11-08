@@ -54,6 +54,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { Readable } = require('node:stream');
 const logger = require('../../utils/logger');
+const { slicer, walkRowids } = require('../../utils/slice');
 
 const AREA_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const FORMS = ['blocks', 'files'];
@@ -182,7 +183,7 @@ function pendingOf(pluginId, area) {
 /** A target for views: null = this server. `admin` adds the address. */
 function targetView(id, admin) {
   if (id == null) return { id: null, kind: 'server', label: null };
-  const t = targets().get(id);
+  const t = targets().brief(id);
   if (!t) return { id, kind: 'missing', label: null };
   const v = { id: t.id, kind: t.kind, label: t.label };
   if (admin) v.display = t.display;
@@ -201,7 +202,7 @@ function freeOf(targetId) {
   if (targetId == null) {
     try { const s = fs.statfsSync(media().mediaRoot().replace(/\/plugin-media$/, '') || '/'); return s.bavail * s.bsize; } catch { return null; }
   }
-  const t = targets().get(targetId);
+  const t = targets().brief(targetId);
   return t && t.check && t.check.free != null ? t.check.free : null;
 }
 
@@ -214,11 +215,11 @@ function parseStats(v) { try { return v ? JSON.parse(v) : null; } catch { return
  * copied) | 'moving' | 'unreachable'. scan (form 'files'): { at, error,
  * stats } of the last look for changes made on the target.
  */
-function info(pluginId, area, { admin = false } = {}) {
-  const a = rowOf(pluginId, area);
+function info(pluginId, area, { admin = false, pre = null } = {}) {
+  const a = pre ? pre.row : rowOf(pluginId, area);
   if (!a) return null;
-  const u = usageOf(pluginId, area);
-  const p = pendingOf(pluginId, area);
+  const u = pre ? pre.usage : usageOf(pluginId, area);
+  const p = pre ? pre.pending : pendingOf(pluginId, area);
   const eff = effectiveTarget(a);
   const failing = [a.target_id, a.moving_to].filter((t) => t != null).map((t) => health.get(t)).find((h) => h && h.failingSince);
   const lastErr = p.count ? db().prepare(`SELECT push_error FROM plugin_media WHERE plugin = ? AND area = ? AND push_error IS NOT NULL
@@ -236,7 +237,28 @@ function info(pluginId, area, { admin = false } = {}) {
   };
 }
 
-function list(pluginId, opts) { return rows(pluginId).map((a) => info(pluginId, a.area, opts)); }
+/**
+ * info() of every area of a plugin. Usage and pending files are counted for
+ * all areas together, in rowid ranges with the event loop running in between
+ * (a Drive keeps tens of thousands of files; other plugins ask for this list
+ * every few minutes) — not by two statements per area.
+ */
+async function list(pluginId, opts = {}) {
+  const q = db().prepare(`SELECT pm.area, COALESCE(SUM(pm.bytes), 0) AS bytes, COUNT(*) AS count,
+      COALESCE(SUM(CASE WHEN pm.ref_count > 0 AND NOT ${IN_PLACE_SQL} THEN pm.bytes ELSE 0 END), 0) AS pbytes,
+      COALESCE(SUM(CASE WHEN pm.ref_count > 0 AND NOT ${IN_PLACE_SQL} THEN 1 ELSE 0 END), 0) AS pcount
+    FROM ${JOIN_SQL} WHERE pm.rowid > ? AND pm.rowid <= ? AND pm.plugin = ? GROUP BY pm.area`);
+  const sums = new Map();
+  await walkRowids(maxRowid(), ROWS_STEP, (lo, hi) => q.all(lo, hi, pluginId), (list) => {
+    for (const r of list) {
+      const e = sums.get(r.area) || { usage: { bytes: 0, count: 0 }, pending: { bytes: 0, count: 0 } };
+      e.usage.bytes += r.bytes; e.usage.count += r.count; e.pending.bytes += r.pbytes; e.pending.count += r.pcount;
+      sums.set(r.area, e);
+    }
+  });
+  const zero = () => ({ usage: { bytes: 0, count: 0 }, pending: { bytes: 0, count: 0 } });
+  return rows(pluginId).map((a) => info(pluginId, a.area, { ...opts, pre: { row: a, ...(sums.get(a.area) || zero()) } }));
+}
 
 /**
  * Administrator: keep area `area` on target `targetId` (null = this server)
@@ -541,7 +563,7 @@ function healthy(targetId, now = Date.now()) {
 }
 
 function targetLabel(targetId) {
-  const t = targets().get(targetId);
+  const t = targets().brief(targetId);
   return t ? t.label : `#${targetId}`;
 }
 
@@ -819,15 +841,43 @@ async function transfer(r, want, form) {
   noteSuccess(want);
 }
 
+// rows of plugin_media looked at per slice (rowid range) by the worker's scans
+const ROWS_STEP = 1000;
+const TRANSFERS_MAX = 200;
+
+function maxRowid() { return db().prepare('SELECT COALESCE(MAX(rowid), 0) AS m FROM plugin_media').get().m; }
+
+/**
+ * Files not where their area wants them (oldest rowid first, at most `max`):
+ * the table is walked in rowid ranges with the event loop running in
+ * between — never one statement over all files (a Drive has tens of
+ * thousands, all in place nearly always). Not while another file still sits
+ * under the wanted key, or its deletion is pending there.
+ */
+async function pendingTransfers(max = TRANSFERS_MAX) {
+  const q = db().prepare(`SELECT pm.*, ${WANT_SQL} AS want, a.form AS want_form FROM ${JOIN_SQL}
+    WHERE pm.rowid > ? AND pm.rowid <= ? AND pm.ref_count > 0 AND NOT ${IN_PLACE_SQL} ORDER BY pm.rowid`);
+  // per candidate only (SQLite would look these up for every file of the range)
+  const taken = db().prepare('SELECT 1 FROM plugin_media WHERE target_id IS ? AND remote_key = ? AND id <> ? LIMIT 1');
+  const dying = db().prepare('SELECT 1 FROM plugin_media_gone WHERE target_id IS ? AND remote_key = ? LIMIT 1');
+  const out = [];
+  await walkRowids(maxRowid(), ROWS_STEP, (lo, hi) => q.all(lo, hi), (list) => {
+    for (const r of list) {
+      if (r.want_key != null && (taken.get(r.want, r.want_key, r.id) || dying.get(r.want, r.want_key))) continue;
+      out.push(r);
+      if (out.length >= max) return true;
+    }
+    return false;
+  });
+  return out;
+}
+
 async function processTransfers(deadline) {
-  // not while another file still sits under the wanted key, or its deletion is pending there
-  const todo = db().prepare(`SELECT pm.*, ${WANT_SQL} AS want, a.form AS want_form FROM ${JOIN_SQL}
-    WHERE pm.ref_count > 0 AND NOT ${IN_PLACE_SQL}
-      AND NOT EXISTS (SELECT 1 FROM plugin_media o WHERE o.id <> pm.id AND o.target_id IS ${WANT_SQL} AND o.remote_key = pm.want_key)
-      AND NOT EXISTS (SELECT 1 FROM plugin_media_gone g WHERE g.target_id IS ${WANT_SQL} AND g.remote_key = pm.want_key)
-    ORDER BY pm.created_at LIMIT 200`).all();
+  const todo = await pendingTransfers();
+  const s = slicer();
   for (const r of todo) {
     if (Date.now() > deadline) return;
+    await s.pause();
     const want = r.want == null ? null : r.want;
     if (want != null && !healthy(want)) continue;
     // a readable copy on a target (form 'files') only of a file the virus scan let through
@@ -876,29 +926,46 @@ function setCacheLimit(bytes) {
   return cacheLimit();
 }
 
-/** { cached (local copies of remote files), pending (local files still to be copied), limit } in bytes. */
-function cacheStats() {
-  const cached = db().prepare('SELECT COALESCE(SUM(bytes), 0) AS b FROM plugin_media WHERE local = 1 AND target_id IS NOT NULL').get().b;
-  const pending = db().prepare(`SELECT COALESCE(SUM(pm.bytes), 0) AS b FROM ${JOIN_SQL} WHERE pm.local = 1 AND NOT ${IN_PLACE_SQL}`).get().b;
-  return { cached, pending, limit: cacheLimit(), default: CACHE_DEFAULT };
+function cachedBytes() {
+  // idx_plugin_media_cached (local, target_id, bytes): the sum without touching the rows
+  return db().prepare('SELECT COALESCE(SUM(bytes), 0) AS b FROM plugin_media WHERE local = 1 AND target_id IS NOT NULL').get().b;
 }
 
-/** Drop the least recently used local copies of remote files until the cache fits. → files dropped. */
-function evict() {
+const PENDING_SQL = `SELECT COALESCE(SUM(pm.bytes), 0) AS b FROM ${JOIN_SQL} WHERE pm.local = 1 AND NOT ${IN_PLACE_SQL}`;
+
+/**
+ * { cached (local copies of remote files), pending (local files still to be
+ * copied), limit } in bytes. For the admin pages and an upload while a
+ * target is down — the worker itself never sums the pending files.
+ */
+function cacheStats() {
+  return { cached: cachedBytes(), pending: db().prepare(PENDING_SQL).get().b, limit: cacheLimit(), default: CACHE_DEFAULT };
+}
+
+/**
+ * Drop the least recently used local copies of remote files until the cache
+ * fits (asynchronous deletes, the event loop runs between the files). → files dropped.
+ */
+async function evict() {
   const limit = cacheLimit();
-  let used = cacheStats().cached;
+  let used = cachedBytes();
   if (used <= limit) return 0;
   const cands = db().prepare(`SELECT pm.id, pm.plugin, pm.bytes FROM ${JOIN_SQL}
     WHERE pm.local = 1 AND pm.target_id IS NOT NULL AND ${IN_PLACE_SQL}
     ORDER BY COALESCE(pm.accessed_at, pm.created_at) ASC LIMIT 1000`).all();
+  const drop = db().prepare('UPDATE plugin_media SET local = 0 WHERE id = ?');
+  const s = slicer();
   let n = 0;
   for (const c of cands) {
     if (used <= limit) break;
     if (fetching.has(c.id)) continue;
-    try { fs.rmSync(media().fileOf(c.plugin, c.id), { force: true }); } catch { continue; }
-    db().prepare('UPDATE plugin_media SET local = 0 WHERE id = ?').run(c.id);
+    try { await fs.promises.rm(media().fileOf(c.plugin, c.id), { force: true }); } catch { continue; }
+    // read meanwhile (ensureLocal of a request): the copy is back, keep it
+    if (fetching.has(c.id)) continue;
+    drop.run(c.id);
     used -= c.bytes;
     n++;
+    await s.pause();
   }
   return n;
 }
@@ -1010,6 +1077,16 @@ async function takeChanged(a, d, r, entry, out) {
   out.push({ type: 'changed', mediaId: fresh.id, previous: keep ? r.id : null, path: p, seq: journal(a, 'changed', fresh.id, keep ? r.id : null, p) });
 }
 
+const BATCH_ROWS = 500;
+
+/** fn(batch) for `list` in batches of BATCH_ROWS, each in one transaction, the event loop running in between. */
+async function inBatches(list, fn) {
+  for (let i = 0; i < list.length; i += BATCH_ROWS) {
+    db().transaction(() => fn(list.slice(i, i + BATCH_ROWS)))();
+    if (i + BATCH_ROWS < list.length) await new Promise((r) => setImmediate(r));
+  }
+}
+
 const scanning = new Map(); // "plugin/area" → Promise
 
 /** A scan of the area soon (a readable file was not what was stored). */
@@ -1061,15 +1138,21 @@ async function doScan(pluginId, area) {
   const started = Date.now();
   const root = rootOf(pluginId, area) + '/';
   const tomb = new Set(db().prepare('SELECT remote_key FROM plugin_media_gone WHERE target_id = ?').all(a.target_id).map((g) => g.remote_key));
-  const mine = db().prepare("SELECT * FROM plugin_media WHERE plugin = ? AND area = ? AND target_id = ? AND stored_form = 'files' AND remote_key IS NOT NULL")
-    .all(pluginId, area, a.target_id);
+  // the area's files in rowid ranges (a Drive area holds tens of thousands), the event loop running in between
+  const mine = [];
+  const mineQ = db().prepare(`SELECT * FROM plugin_media WHERE rowid > ? AND rowid <= ? AND plugin = ? AND area = ? AND target_id = ?
+    AND stored_form = 'files' AND remote_key IS NOT NULL`);
+  await walkRowids(maxRowid(), ROWS_STEP, (lo, hi) => mineQ.all(lo, hi, pluginId, area, a.target_id), (list) => { for (const r of list) mine.push(r); });
   const byKey = new Map(mine.map((r) => [r.remote_key, r]));
   const wanted = new Set(db().prepare('SELECT want_key FROM plugin_media WHERE plugin = ? AND area = ? AND want_key IS NOT NULL AND NOT (target_id IS ? AND remote_key IS want_key)')
     .all(pluginId, area, a.target_id).map((r) => r.want_key));
   const seen = new Set();
   const changed = [];
   const added = [];
+  const adopt = []; // [mtime, id]: first look after our own upload
+  const sl = slicer();
   for (const e of entries) {
+    await sl.pause();
     if (!e.key.startsWith(root)) continue;
     const r = byKey.get(e.key);
     if (r) seen.add(e.key);
@@ -1079,7 +1162,7 @@ async function doScan(pluginId, area) {
     if (r) {
       if (r.remote_mtime == null) {
         // first look after our own upload: adopt the target's time
-        if (e.size === r.remote_size) db().prepare('UPDATE plugin_media SET remote_mtime = ? WHERE id = ?').run(e.mtime, r.id);
+        if (e.size === r.remote_size) adopt.push([e.mtime, r.id]);
         else changed.push([r, e]);
       } else if (e.size !== r.remote_size || (e.mtime != null && Math.abs(e.mtime - r.remote_mtime) > MTIME_SLACK_MS)) {
         changed.push([r, e]);
@@ -1088,15 +1171,17 @@ async function doScan(pluginId, area) {
     }
     added.push([e, rel]);
   }
+  // one transaction per slice instead of a commit per file
+  const setMtime = db().prepare('UPDATE plugin_media SET remote_mtime = ? WHERE id = ?');
+  await inBatches(adopt, (batch) => { for (const [m, id] of batch) setMtime.run(m, id); });
   // missing: marked now, removed when still missing at the next scan
   const missing = mine.filter((r) => !seen.has(r.remote_key));
   const toRemove = missing.filter((r) => r.missing_since != null);
-  db().transaction(() => {
-    const mark = db().prepare('UPDATE plugin_media SET missing_since = ? WHERE id = ?');
-    for (const r of missing) if (r.missing_since == null) mark.run(nowIso(), r.id);
-    const clear = db().prepare('UPDATE plugin_media SET missing_since = NULL WHERE id = ?');
-    for (const r of mine) if (r.missing_since != null && seen.has(r.remote_key)) clear.run(r.id);
-  })();
+  const mark = db().prepare('UPDATE plugin_media SET missing_since = ? WHERE id = ?');
+  const clear = db().prepare('UPDATE plugin_media SET missing_since = NULL WHERE id = ?');
+  const at = nowIso();
+  await inBatches(missing.filter((r) => r.missing_since == null), (batch) => { for (const r of batch) mark.run(at, r.id); });
+  await inBatches(mine.filter((r) => r.missing_since != null && seen.has(r.remote_key)), (batch) => { for (const r of batch) clear.run(r.id); });
   const out = [];
   let error = null;
   const massLimit = Math.max(MASS_MIN, Math.floor(mine.length * MASS_SHARE));
@@ -1104,6 +1189,7 @@ async function doScan(pluginId, area) {
     error = 'mass_missing';
   } else {
     for (const r of toRemove) {
+      await sl.pause();
       media().forget(pluginId, r.id);
       const pth = r.path != null ? r.path : r.version_of;
       out.push({ type: 'removed', mediaId: r.id, path: pth, version: r.version_of != null, seq: journal(a, 'removed', r.id, null, pth) });
@@ -1191,7 +1277,7 @@ async function tick() {
       try { await processGone(deadline); } catch (e) { logger.warn({ err: e.message }, 'plugin media areas: deletions failed'); }
       try { await processTransfers(deadline); } catch (e) { logger.warn({ err: e.message }, 'plugin media areas: copies failed'); }
       try { finishMoves(); } catch (e) { logger.warn({ err: e.message }, 'plugin media areas: finishing moves failed'); }
-      try { evict(); } catch (e) { logger.warn({ err: e.message }, 'plugin media areas: cache clean-up failed'); }
+      try { await evict(); } catch (e) { logger.warn({ err: e.message }, 'plugin media areas: cache clean-up failed'); }
       if (timer) { try { startScans(); } catch (e) { logger.warn({ err: e.message }, 'plugin media areas: scans failed'); } }
     } while (again && timer);
   })();
@@ -1252,17 +1338,24 @@ register();
  * GC_ENCRYPTION_KEY, like media backups). Always part of the backup (also
  * without "Plugin-Medien im Backup"): the plugin's data names these ids.
  */
-function exportAreas(pluginId) {
+async function exportAreas(pluginId) {
   const { encrypt } = require('../../utils/crypto');
   const M = media();
   const areas = rows(pluginId).map((a) => ({ area: a.area, label: a.label, target_id: a.target_id, form: a.form, moving: a.moving, moving_to: a.moving_to,
     quota_bytes: a.quota_bytes, admin_quota_bytes: a.admin_quota_bytes }));
-  const files = db().prepare('SELECT * FROM plugin_media WHERE plugin = ? AND area IS NOT NULL AND ref_count > 0').all(pluginId).map((r) => ({
+  // in rowid ranges, a key re-encrypted per file: tens of thousands of files never in one go
+  const q = db().prepare('SELECT * FROM plugin_media WHERE rowid > ? AND rowid <= ? AND plugin = ? AND area IS NOT NULL AND ref_count > 0');
+  const files = [];
+  const sl = slicer();
+  const one = (r) => ({
     id: r.id, area: r.area, path: r.path, target_id: r.target_id, remote_key: r.remote_key, stored_form: r.stored_form, nonce_prefix: r.nonce_prefix,
     version_of: r.version_of, version_at: r.version_at, remote_size: r.remote_size, remote_mtime: r.remote_mtime,
     owner_user_id: r.owner_user_id, mime: r.mime, bytes: r.bytes, sha256: r.sha256, created_at: r.created_at, claimed_at: r.claimed_at,
     name: r.name == null ? null : r.name, key: encrypt(M._unwrapKey(r.key_enc, r.id).toString('hex')),
-  }));
+  });
+  await walkRowids(maxRowid(), ROWS_STEP, (lo, hi) => q.all(lo, hi, pluginId), async (list) => {
+    for (const r of list) { files.push(one(r)); await sl.pause(); }
+  });
   return { areas, files };
 }
 

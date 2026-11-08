@@ -276,7 +276,7 @@ function start({ file, intervalMs = POLL_INTERVAL_MS, immediate = false } = {}) 
   // Only what is appended from now on counts — a backlog from before the
   // restart would ban for traffic that is long over.
   try { const st = fs.statSync(_watch.file); _watch.offset = st.size; _watch.ino = st.ino; } catch { /* no log yet */ }
-  _watch.timer = setInterval(pollOnce, intervalMs);
+  _watch.timer = setInterval(require('../utils/loopStall').task('l4.poll', pollOnce), intervalMs);
   if (_watch.timer.unref) _watch.timer.unref();
   if (immediate) pollOnce();
   logger.info({ file: _watch.file }, 'layer4 connection guard started');

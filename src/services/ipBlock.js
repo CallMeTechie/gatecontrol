@@ -1031,7 +1031,7 @@ function start() {
     if (_state.sweepTimer.unref) _state.sweepTimer.unref();
   }
   if (!_state.tailTimer) {
-    _state.tailTimer = setInterval(() => { tailTick(); }, TAIL_MS);
+    _state.tailTimer = setInterval(require('../utils/loopStall').task('ipblock.tail', () => tailTick()), TAIL_MS);
     if (_state.tailTimer.unref) _state.tailTimer.unref();
   }
   if (!_state.listTimer) {

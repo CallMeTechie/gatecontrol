@@ -108,7 +108,7 @@ function startProbe(deps) {
   const intervalMs = deps.intervalMs || PROBE_INTERVAL_MS;
   if (deps.logger) deps.logger.info({ intervalMs }, 'Starting gateway probe poller');
   pollerInterval = setInterval(() => {
-    runProbeCycle(deps).catch(err => {
+    require('../utils/loopStall').withTask('gateways.probe', () => runProbeCycle(deps)).catch(err => {
       if (deps.logger) deps.logger.error({ err: err.message }, 'Gateway probe cycle failed');
     });
   }, intervalMs);

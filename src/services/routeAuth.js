@@ -74,7 +74,7 @@ function runCleanup() {
  */
 function startSessionCleanup() {
   if (cleanupInterval) return;
-  cleanupInterval = setInterval(runCleanup, 15 * 60 * 1000);
+  cleanupInterval = setInterval(require('../utils/loopStall').task('routeAuth.cleanup', runCleanup), 15 * 60 * 1000);
   cleanupInterval.unref();
   logger.info('Route auth session cleanup started (15 min interval)');
 }

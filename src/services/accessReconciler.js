@@ -119,7 +119,7 @@ async function reconcileNow() {
 
 async function start() {
   await reconcile();
-  _timer = setInterval(() => { reconcile().catch((err) => { logger.warn({ err: err.message }, 'access reconcile failed'); }); }, 60000);
+  _timer = setInterval(() => { require('../utils/loopStall').withTask('access.reconcile', reconcile).catch((err) => { logger.warn({ err: err.message }, 'access reconcile failed'); }); }, 60000);
   _timer.unref();
 }
 

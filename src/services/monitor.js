@@ -275,7 +275,7 @@ function startMonitor() {
   logger.info({ intervalMs }, 'Starting uptime monitor');
   // Initial check after 10s (let services start)
   setTimeout(runChecks, 10000);
-  pollerInterval = setInterval(runChecks, intervalMs);
+  pollerInterval = setInterval(require('../utils/loopStall').task('monitor.checks', runChecks), intervalMs);
 }
 
 /**

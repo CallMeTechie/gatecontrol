@@ -257,11 +257,11 @@ describe('statistics: POST /api/v1/gateway/dns', () => {
     assert.equal((await supertest(app).post('/api/v1/gateway/dns').send(report(t0))).status, 401);
   });
 
-  it('retention: daily values a year, idempotence keys two days', () => {
+  it('retention: daily values a year, idempotence keys two days', async () => {
     const dns = require('../src/services/homeDns');
     db.prepare("INSERT INTO dns_stats_day (peer_id, day, queries) VALUES (?, '2024-01-01', 5)").run(gw.peer.id);
     db.prepare('INSERT INTO dns_reports (peer_id, from_at, at) VALUES (?, 1, ?)').run(gw.peer.id, Date.now() - 3 * DAY);
-    const r = dns.retention();
+    const r = await dns.retention();
     assert.ok(r.days >= 1 && r.reports >= 1);
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM dns_stats_day WHERE day = '2024-01-01'").get().n, 0);
   });

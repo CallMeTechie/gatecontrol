@@ -346,7 +346,7 @@ let _tick = null;
 function startTicker(onTick) {
   if (_tick) return;
   _tick = setInterval(() => {
-    try { publishChanges(); } catch (err) { logger.warn({ err: err.message }, 'gateway live state tick failed'); }
+    try { require('../utils/loopStall').withTask('gateways.live', publishChanges); } catch (err) { logger.warn({ err: err.message }, 'gateway live state tick failed'); }
     if (onTick) Promise.resolve().then(onTick).catch((err) => logger.warn({ err: err && err.message }, 'gateway live state tick hook failed'));
   }, TICK_MS);
   if (typeof _tick.unref === 'function') _tick.unref();

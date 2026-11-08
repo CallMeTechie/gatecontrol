@@ -1141,9 +1141,16 @@ Export (oldest first, streamed, at most 200 000 lines), file name
 `gatecontrol-server-YYYYMMDD-HHMM.<format>`:
 
 - `log` — `2026-11-02T08:22:38.286Z WARN  event loop was blocked {"blockedMs":2300,"tasks":["ipblock.rebuild ×3: 2210 ms"]}`
-  (`tasks`: the marked background jobs — IP block, virus scan, backup, plugin
-  media areas, plugin catalogue/updates, log problems — that ran in the
-  blocked time, with their time in it; missing when none ran)
+  (`tasks`: the marked background jobs — every timer of the server, the start
+  steps `boot.*`, IP block, virus scan, backup, plugin media areas, home
+  cache, plugin catalogue/updates, log problems — that ran in the blocked
+  time, with their time in it, and the synchronous pieces of 20 ms or more:
+  request handlers and their `res.json`/`res.send` (`GET /api/v1/…/:id`),
+  messages of plugin processes and the answers to them (`plugin <id> <api>`);
+  `requests`: the requests and plugin host calls open in that time; each
+  missing when empty). WAL checkpoints of the database run in a worker
+  thread (`db/checkpointWorker.js`; `GC_DB_CHECKPOINT=main` keeps SQLite's
+  automatic checkpoint on the main thread).
 - `json` — array of the pino objects as written
 - `csv` — `time,level,msg,plugin,module,details`
 

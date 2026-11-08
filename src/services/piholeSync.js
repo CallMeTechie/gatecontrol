@@ -251,7 +251,7 @@ function createSync(deps) {
     const config = loadConfig();
     const intervalMs = (config.sync_interval_sec || 60) * 1000;
     intervalId = setInterval(
-      () => syncOnce().catch(err => logger.warn({ err: err.message }, 'pihole sync cycle failed')),
+      () => require('../utils/loopStall').withTask('pihole.sync', syncOnce).catch(err => logger.warn({ err: err.message }, 'pihole sync cycle failed')),
       intervalMs,
     );
     if (intervalId.unref) intervalId.unref();

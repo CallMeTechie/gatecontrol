@@ -286,7 +286,7 @@ function sweep() {
 
 function ensureSweep() {
   if (sweepTimer) return;
-  sweepTimer = setInterval(sweep, 60000);
+  sweepTimer = setInterval(require('../../../utils/loopStall').task('mail.sweep', sweep), 60000);
   sweepTimer.unref();
 }
 

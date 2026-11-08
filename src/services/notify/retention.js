@@ -72,9 +72,10 @@ function hourly() {
 function start() {
   stop();
   const hub = require('./hub');
-  const t1 = setInterval(hourly, HOUR_MS);
-  const t2 = setInterval(() => { hub.tick(); }, TICK_MS);
-  const t3 = setTimeout(() => { hourly(); hub.tick(); }, 30 * 1000);
+  const { task } = require('../../utils/loopStall');
+  const t1 = setInterval(task('notify.hourly', hourly), HOUR_MS);
+  const t2 = setInterval(task('notify.tick', () => { hub.tick(); }), TICK_MS);
+  const t3 = setTimeout(task('notify.hourly', () => { hourly(); hub.tick(); }), 30 * 1000);
   for (const t of [t1, t2, t3]) if (t.unref) t.unref();
   timers = [t1, t2, t3];
 }

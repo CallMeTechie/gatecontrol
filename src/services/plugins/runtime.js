@@ -14,6 +14,8 @@ const hostApi = require('./hostApi');
 const { LIMITS, TIMEOUTS, RESTART_BACKOFF_MS, STABLE_AFTER_MS, codeDir, filesDir } = require('./constants');
 const logger = require('../../utils/logger');
 
+function loopStall() { return require('../../utils/loopStall'); }
+
 const BOOTSTRAP = path.join(__dirname, 'child', 'bootstrap.js');
 const MAX_HOST_CALLS = 32;
 const LOG_LINES_PER_MIN = 120;
@@ -131,7 +133,8 @@ class PluginProcess {
     };
     child.stdout.on('data', lines('info'));
     child.stderr.on('data', lines('error'));
-    child.on('message', (m) => this.onMessage(m));
+    // a message of the plugin (a host call, a result) and its synchronous handling: named in a stall (utils/loopStall.js)
+    child.on('message', (m) => loopStall().measure(() => `plugin ${this.id} ${m && m.t === 'host' ? String(m.api || '') : String((m && m.t) || '')}`, () => this.onMessage(m)));
     child.on('error', (e) => { this.lastError = e.message; });
     child.on('exit', (code2, sig) => this.onExit(code2, sig, null, child));
     // more time while other plugins start too (host start: all at once, sharing the CPU) — counted when this one
@@ -209,7 +212,10 @@ class PluginProcess {
   }
 
   onHostCall(m) {
-    const reply = (msg) => { if (this.child && this.child.connected) { try { this.child.send(msg); } catch { /* gone */ } } };
+    // child.send serialises the answer on this thread (a big list of a host call): measured
+    const send = (msg) => { if (this.child && this.child.connected) { try { this.child.send(msg); } catch { /* gone */ } } };
+    const reply = (msg) => loopStall().measure(() => `plugin ${this.id} ${String(m.api || '')} (answer)`, () => send(msg));
+    const reqId = loopStall().beginRequest(`plugin ${this.id} ${String(m.api || '')}`);
     if (this.hostCalls >= MAX_HOST_CALLS) {
       reply({ t: 'hostResult', id: m.id, ok: false, error: 'too many concurrent host calls', code: 'ERR_BUSY' });
       return;
@@ -227,7 +233,7 @@ class PluginProcess {
           ...(e && typeof e.serverText === 'string' ? { serverText: e.serverText.slice(0, 200) } : {}),
           // a host API error's reason (gc.print ERR_PRINT_FORMAT: why the file cannot be printed)
           ...(e && e.code && typeof e.reason === 'string' && /^[a-z][a-z0-9_]{0,39}$/.test(e.reason) ? { reason: e.reason } : {}) }))
-      .finally(() => { this.hostCalls--; });
+      .finally(() => { this.hostCalls--; loopStall().endRequest(reqId); });
   }
 
   startTimers() {
@@ -353,7 +359,7 @@ class PluginProcess {
         reject(Object.assign(new Error('plugin did not answer in time'), { code: 'ERR_TIMEOUT' }, this.stopping ? { stopped: true } : {}));
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
-      try { this.child.send({ t: 'call', id, method, payload }); } catch (e) { clearTimeout(timer); this.pending.delete(id); reject(e); }
+      try { loopStall().measure(() => `plugin ${this.id} call ${String(method)}`, () => this.child.send({ t: 'call', id, method, payload })); } catch (e) { clearTimeout(timer); this.pending.delete(id); reject(e); }
     });
   }
 

@@ -20,6 +20,12 @@ function createApp() {
   // ─── Trust proxy (behind Caddy) ───────────────────
   app.set('trust proxy', 'loopback');
 
+  // ─── Event-loop watch (utils/loopStall.js): a request whose synchronous
+  // part or answer (res.json / res.send) holds the thread is named in the
+  // "event loop was blocked" line, open requests of that moment too ──
+  const loopStall = require('./utils/loopStall');
+  app.use(loopStall.httpMiddleware);
+
   // ─── CSP nonce generation ───────────────────────
   app.use((req, res, next) => {
     res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
@@ -189,6 +195,8 @@ function createApp() {
 
   // ─── Routes ──────────────────────────────────────
   const routes = require('./routes');
+  // the handlers once more after the body was read (body parsers continue asynchronously)
+  app.use(loopStall.measureNext);
   app.use(routes);
 
   // ─── 404 ─────────────────────────────────────────

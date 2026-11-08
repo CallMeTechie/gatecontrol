@@ -38,6 +38,7 @@ const { pipeline } = require('node:stream');
 const { Readable } = require('node:stream');
 const { getDb } = require('../db/connection');
 const logger = require('../utils/logger');
+const { slicer, walkRowids } = require('../utils/slice');
 
 const KINDS = ['drive', 'photos', 'updates', 'vault'];
 const SHA_RE = /^[0-9a-f]{64}$/;
@@ -183,45 +184,89 @@ function blobFits(b, s, people) {
   return true;
 }
 
-/** The stock of one gateway: [{ sha256, size, kind, priority }] (priority first, within maxBytes). */
-function stockOf(peerId, s = get(peerId)) {
+// the stock is read page by page in its order (idx_home_cache_blobs_stock), the event loop running in between
+const STOCK_PAGE = 2000;
+const STOCK_COLS = 'sha256, size, kind, source, plugin_id, media_id, file, user_ids, priority, label, updated_at';
+let stockGen = 0;
+
+/**
+ * The stock of one gateway: [{ sha256, size, kind, priority, … }] (priority
+ * first, within maxBytes, at most WANT_MAX). Async: a Drive offers tens of
+ * thousands of files and previews — read in pages of STOCK_PAGE in index
+ * order, never one sorted statement over all of them.
+ */
+async function stockOf(peerId, s = get(peerId)) {
   if (!s.enabled) return [];
   const people = peopleAt(peerId);
-  const rows = db().prepare('SELECT * FROM home_cache_blobs ORDER BY priority DESC, updated_at DESC, sha256').all();
+  const first = db().prepare(`SELECT ${STOCK_COLS} FROM home_cache_blobs ORDER BY priority DESC, updated_at DESC, sha256 LIMIT ?`);
+  // keyset: the rows after (priority, updated_at, sha256) of the last one, in the same order
+  const next = db().prepare(`SELECT ${STOCK_COLS} FROM home_cache_blobs
+    WHERE priority < ? OR (priority = ? AND (updated_at < ? OR (updated_at = ? AND sha256 > ?)))
+    ORDER BY priority DESC, updated_at DESC, sha256 LIMIT ?`);
+  const sl = slicer();
   const out = [];
   let sum = 0;
-  for (const b of rows) {
-    if (!blobFits(b, s, people)) continue;
-    if (sum + b.size > s.maxBytes) continue;
-    sum += b.size;
-    out.push(b);
-    if (out.length >= WANT_MAX) break;
+  let page = first.all(STOCK_PAGE);
+  while (page.length) {
+    for (const b of page) {
+      if (!blobFits(b, s, people)) continue;
+      if (sum + b.size > s.maxBytes) continue;
+      sum += b.size;
+      out.push(b);
+      if (out.length >= WANT_MAX) return out;
+    }
+    if (page.length < STOCK_PAGE) break;
+    await sl.yieldNow();
+    const last = page[page.length - 1];
+    page = next.all(last.priority, last.priority, last.updated_at, last.updated_at, last.sha256, STOCK_PAGE);
   }
   return out;
 }
 
-const stockMemo = new Map(); // peerId → { at, key, shas }
+const stockMemo = new Map(); // peerId → { at, key, items, shas, etag }
+// the stock changes only by this module (stockChanged), the people at a gateway with the devices: their ids are in the key
+const STOCK_KEEP_MS = 5 * 60 * 1000;
 
-/** The sha256 values of a gateway's stock, remembered a few seconds (blob requests of one sync). */
-function stockShas(peerId, s) {
-  const key = JSON.stringify(s);
+/**
+ * The stock of a gateway as want() answers it, remembered until the stock,
+ * the settings or the people at the gateway change (at most STOCK_KEEP_MS):
+ * the blob requests of a sync and the next want ask the same list.
+ */
+async function stockView(peerId, s = get(peerId)) {
+  const key = JSON.stringify([s, stockGen, [...peopleAt(peerId)].sort((a, b) => a - b)]);
   const m = stockMemo.get(peerId);
-  if (m && m.key === key && Date.now() - m.at < STOCK_MEMO_MS) return m.shas;
-  const shas = new Set(stockOf(peerId, s).map((b) => b.sha256));
+  if (m && m.key === key && Date.now() - m.at < STOCK_KEEP_MS) return m;
+  const gen = stockGen;
+  const stock = await stockOf(peerId, s);
+  const items = stock.map((b) => ({ sha256: b.sha256, size: b.size, kind: b.kind, priority: b.priority }));
+  const hash = crypto.createHash('sha256').update(JSON.stringify([s.enabled, s.maxBytes]));
+  // the list hashed piece by piece (the ETag is opaque to the gateway; no JSON string of 20 000 items)
+  const sl = slicer();
+  for (const it of items) { hash.update(`${it.sha256}:${it.size}:${it.kind}:${it.priority}\n`); await sl.pause(); }
+  const v = { at: Date.now(), key, stock, items, shas: new Set(items.map((x) => x.sha256)), etag: '"' + hash.digest('hex').slice(0, 32) + '"' };
   if (stockMemo.size > 1000) stockMemo.clear();
-  stockMemo.set(peerId, { at: Date.now(), key, shas });
-  return shas;
+  // changed while it was read: not remembered (the next ask reads again)
+  if (gen === stockGen) stockMemo.set(peerId, v);
+  return v;
+}
+
+/** The sha256 values of a gateway's stock (blob requests of one sync). */
+async function stockShas(peerId, s) {
+  return (await stockView(peerId, s)).shas;
 }
 
 /** The stock changed (an offer, a withdrawal, the clean-up). */
-function stockChanged() { stockMemo.clear(); }
+function stockChanged() { stockGen++; stockMemo.clear(); }
 
 /** GET /cache/want → { maxBytes, items, etag } */
-function want(peerId) {
+async function want(peerId) {
   const s = get(peerId);
-  const items = stockOf(peerId, s).map((b) => ({ sha256: b.sha256, size: b.size, kind: b.kind, priority: b.priority }));
-  const etag = '"' + crypto.createHash('sha256').update(JSON.stringify([s.enabled, s.maxBytes, items])).digest('hex').slice(0, 32) + '"';
-  return { maxBytes: s.maxBytes, items, etag };
+  if (!s.enabled) {
+    const etag = '"' + crypto.createHash('sha256').update(JSON.stringify([s.enabled, s.maxBytes, []])).digest('hex').slice(0, 32) + '"';
+    return { maxBytes: s.maxBytes, items: [], etag };
+  }
+  const v = await stockView(peerId, s);
+  return { maxBytes: s.maxBytes, items: v.items, etag: v.etag };
 }
 
 const inflight = new Map(); // peerId → open blob streams
@@ -256,7 +301,7 @@ async function sendBlob(peerId, sha, req, res) {
   if (!SHA_RE.test(id)) return res.status(404).json({ ok: false, error: 'not_found' });
   const s = get(peerId);
   const b = s.enabled ? db().prepare('SELECT * FROM home_cache_blobs WHERE sha256 = ?').get(id) : null;
-  if (!b || !blobFits(b, s, peopleAt(peerId)) || !stockShas(peerId, s).has(id)) return res.status(404).json({ ok: false, error: 'not_found' });
+  if (!b || !blobFits(b, s, peopleAt(peerId)) || !(await stockShas(peerId, s)).has(id)) return res.status(404).json({ ok: false, error: 'not_found' });
   if (b.source === 'update' && !(b.file && fs.existsSync(b.file))) return res.status(404).json({ ok: false, error: 'not_found' });
   // a preview is small: read (and checked) before the answer starts
   let bytes = null;
@@ -553,11 +598,12 @@ async function offerPreview(pluginId, plugin, a) {
     stockChanged();
     return { sha256: sha, size: buf.length, offered: false, preview: a.preview };
   }
-  db().prepare(`INSERT INTO home_cache_blobs (sha256, size, kind, source, ref, plugin_id, media_id, user_ids, priority, label, created_at, updated_at)
-    VALUES (?, ?, ?, 'preview', ?, ?, ?, ?, ?, ?, ?, ?)
+  const stamp = await previewStamp(r, a.preview);
+  db().prepare(`INSERT INTO home_cache_blobs (sha256, size, kind, source, ref, plugin_id, media_id, user_ids, priority, label, created_at, updated_at, stamp)
+    VALUES (?, ?, ?, 'preview', ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(sha256) DO UPDATE SET size = excluded.size, kind = excluded.kind, media_id = excluded.media_id, ref = excluded.ref,
-      user_ids = excluded.user_ids, priority = excluded.priority, label = excluded.label, updated_at = excluded.updated_at`)
-    .run(sha, buf.length, a.kind, `${a.mediaId}/${a.preview}`, pluginId, a.mediaId, users ? JSON.stringify(users) : null, prio, a.preview, now, now);
+      user_ids = excluded.user_ids, priority = excluded.priority, label = excluded.label, updated_at = excluded.updated_at, stamp = excluded.stamp`)
+    .run(sha, buf.length, a.kind, `${a.mediaId}/${a.preview}`, pluginId, a.mediaId, users ? JSON.stringify(users) : null, prio, a.preview, now, now, stamp);
   previewShaMemo.set(`${pluginId}:${a.mediaId}:${a.preview}`, { stamp: JSON.stringify(previews.stamp(r, a.preview)), sha });
   stockChanged();
   return { sha256: sha, size: buf.length, offered: true, preview: a.preview };
@@ -602,45 +648,76 @@ function withdraw(pluginId, mediaId, { preview = null } = {}) {
   return { removed: n > 0 };
 }
 
-/** Offers whose media is gone (deleted by the plugin, the plugin removed) — files and previews. */
-function dropStaleOffers() {
-  const rows = db().prepare("SELECT sha256, plugin_id, media_id FROM home_cache_blobs WHERE source IN ('plugin', 'preview')").all();
-  const media = require('./plugins/media');
+const SWEEP_STEP = 2000;
+const STAT_PARALLEL = 16;
+
+function maxBlobRowid() { return db().prepare('SELECT COALESCE(MAX(rowid), 0) AS m FROM home_cache_blobs').get().m; }
+
+/**
+ * Offers whose media is gone (deleted by the plugin, the plugin removed) —
+ * files and previews. One statement per rowid range of SWEEP_STEP offers (a
+ * primary-key look-up per offer), the event loop running in between: a
+ * Drive offers tens of thousands (before 1.253.2 a query per offer in one
+ * go — seconds of a blocked server every hour). → offers removed.
+ */
+async function dropStaleOffers() {
+  const del = db().prepare(`DELETE FROM home_cache_blobs WHERE rowid > ? AND rowid <= ? AND source IN ('plugin', 'preview')
+    AND NOT EXISTS (SELECT 1 FROM plugin_media pm WHERE pm.id = home_cache_blobs.media_id AND pm.plugin = home_cache_blobs.plugin_id)`);
   let n = 0;
-  for (const r of rows) {
-    let ok = false;
-    try { ok = !!media.row(r.plugin_id, r.media_id); } catch { ok = false; }
-    if (!ok) { db().prepare('DELETE FROM home_cache_blobs WHERE sha256 = ?').run(r.sha256); n++; }
-  }
+  await walkRowids(maxBlobRowid(), SWEEP_STEP, (lo, hi) => [del.run(lo, hi).changes], (r) => { n += r[0]; });
   if (n) stockChanged();
   return n;
+}
+
+/** The stored preview file of an offer as "<size>:<mtime>" (stamp column), or null. */
+async function previewStamp(r, size) {
+  const previews = require('./plugins/mediaPreviews');
+  let st;
+  try { st = await fs.promises.stat(require('./plugins/media').fileOf(r.plugin, r.id) + previews.SIZES[size].suffix); } catch { return null; }
+  return st.isFile() ? `${st.size}:${Math.floor(st.mtimeMs)}` : null;
 }
 
 /**
  * Preview offers whose preview is gone or other content now (a device sent
  * another one): the stock takes the preview as it is now, under its new
  * sha256 (same people, priority and kind). Hourly, after dropStaleOffers.
+ * Only a preview whose file changed since the offer (size and time, column
+ * stamp) is read and hashed again — not all of them every hour.
  */
 async function refreshPreviewOffers() {
-  const rows = db().prepare("SELECT * FROM home_cache_blobs WHERE source = 'preview'").all();
-  const media = require('./plugins/media');
   const previews = require('./plugins/mediaPreviews');
+  const sl = slicer();
   let n = 0;
-  for (const b of rows) {
-    const r = media.row(b.plugin_id, b.media_id);
+  const page = db().prepare("SELECT rowid AS rid, * FROM home_cache_blobs WHERE source = 'preview' AND rowid > ? AND rowid <= ?");
+  const setStamp = db().prepare('UPDATE home_cache_blobs SET stamp = ? WHERE sha256 = ?');
+  const mediaRow = db().prepare('SELECT * FROM plugin_media WHERE id = ? AND plugin = ?');
+  const one = async ({ b, r, stamp }) => {
+    if (stamp && b.stamp === stamp) return;
     let buf = null;
-    try { buf = r ? await previews.plain(r, b.label) : null; } catch { buf = null; }
+    try { buf = r && stamp ? await previews.plain(r, b.label) : null; } catch { buf = null; }
     const sha = buf ? crypto.createHash('sha256').update(buf).digest('hex') : null;
-    if (sha === b.sha256) continue;
+    if (sha === b.sha256) { setStamp.run(stamp, b.sha256); return; }
     db().transaction(() => {
       db().prepare('DELETE FROM home_cache_blobs WHERE sha256 = ?').run(b.sha256);
       if (sha && !db().prepare('SELECT 1 FROM home_cache_blobs WHERE sha256 = ?').get(sha)) {
-        db().prepare(`INSERT INTO home_cache_blobs (sha256, size, kind, source, ref, plugin_id, media_id, user_ids, priority, label, created_at, updated_at)
-          VALUES (?, ?, ?, 'preview', ?, ?, ?, ?, ?, ?, ?, ?)`).run(sha, buf.length, b.kind, b.ref, b.plugin_id, b.media_id, b.user_ids, b.priority, b.label, b.created_at, Date.now());
+        db().prepare(`INSERT INTO home_cache_blobs (sha256, size, kind, source, ref, plugin_id, media_id, user_ids, priority, label, created_at, updated_at, stamp)
+          VALUES (?, ?, ?, 'preview', ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(sha, buf.length, b.kind, b.ref, b.plugin_id, b.media_id, b.user_ids, b.priority, b.label, b.created_at, Date.now(), stamp);
       }
     })();
     n++;
-  }
+  };
+  await walkRowids(maxBlobRowid(), SWEEP_STEP, (lo, hi) => page.all(lo, hi), async (rows) => {
+    for (let i = 0; i < rows.length; i += STAT_PARALLEL) {
+      await sl.pause();
+      // the preview files of a group looked at side by side (stat only), then one by one
+      const group = rows.slice(i, i + STAT_PARALLEL).map((b) => {
+        const r = typeof b.media_id === 'string' ? mediaRow.get(b.media_id, b.plugin_id) || null : null;
+        return { b, r, stamp: r && previews.SIZES[b.label] ? previewStamp(r, b.label) : null };
+      });
+      for (const g of group) g.stamp = await g.stamp;
+      for (const g of group) { await one(g); await sl.pause(); }
+    }
+  });
   if (n) stockChanged();
   return n;
 }
@@ -758,6 +835,7 @@ function refreshUpdates(deps = {}) {
           .run(got.sha256, got.size, ref, file, `${product} ${version}`, now, now);
         current.add(got.sha256);
         fetched++;
+        stockChanged();
       } catch (e) {
         logger.warn({ err: e.message, product, channel }, 'home cache: update not fetched');
       }
@@ -767,8 +845,9 @@ function refreshUpdates(deps = {}) {
       .filter((r) => !current.has(r.sha256) && Date.now() - r.updated_at > UPDATE_KEEP_MS);
     for (const r of old) {
       db().prepare('DELETE FROM home_cache_blobs WHERE sha256 = ?').run(r.sha256);
-      try { if (r.file) fs.unlinkSync(r.file); } catch { /* gone */ }
+      try { await fs.promises.unlink(r.file); } catch { /* gone */ }
     }
+    if (old.length) stockChanged();
     return { fetched, removed: old.length };
   })().finally(() => { refreshing = null; });
   return refreshing;
@@ -822,7 +901,7 @@ function sumSince(peerId, fromDay) {
 }
 
 /** Everything the tab "Zwischenspeicher" shows (never the secret). */
-function view(peerId, now = Date.now()) {
+async function view(peerId, now = Date.now()) {
   const gf = require('./gatewayFeatures');
   const g = needGateway(peerId);
   const tel = gf.telemetryOf(g);
@@ -831,7 +910,7 @@ function view(peerId, now = Date.now()) {
   const dns = require('./homeDns');
   const today = sumSince(g.id, dns.dayKey(now));
   const month = sumSince(g.id, dns.dayKey(now - 29 * 24 * 3600 * 1000));
-  const stock = stockOf(g.id, s);
+  const { stock } = await stockView(g.id, s);
   const have = new Set(db().prepare('SELECT sha256 FROM home_cache_have WHERE peer_id = ?').all(g.id).map((x) => x.sha256));
   const kinds = {};
   for (const k of KINDS) kinds[k] = { bytes: 0, count: 0, wanted: 0 };

@@ -175,6 +175,23 @@ If something goes wrong: `docker compose down`, `cp docker-compose.yml.bak docke
 Only when everything has been running for at least a day may you delete the
 volume (`docker volume rm gatecontrol_gatecontrol-data`, name from step 1).
 
+### “event loop was blocked” in the log
+
+The server did nothing else for a few seconds – gateways, apps and the web
+interface wait meanwhile. The line names what ran in that time:
+
+- `tasks`: background jobs (e.g. `plugins.mediaAreas`, `home.staleOffers`),
+  start steps (`boot.*`), requests (`GET /api/v1/…`, ids as `:id`) and plugin
+  calls (`plugin <id> <call>`) with the time they held the server.
+- `requests`: requests and plugin calls that were open in that time –
+  candidates when `tasks` names nothing that fits.
+
+The jobs with many entries (Drive areas on a storage target,
+the home cache of the gateways with thousands of previews, backups) work in
+small pieces, and the database writes its log back in a thread of its own.
+If the message still comes often, copy the line with `tasks` and `requests`
+into a ticket.
+
 ### The container does not start or the certificate does not come
 
 - `GC_ADMIN_PASSWORD is not set or still default`: `.env` still says

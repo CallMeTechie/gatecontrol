@@ -23,7 +23,7 @@ function _sweep(nowMs = Date.now()) {
 function _clear() { issued.clear(); }
 
 // Periodic cleanup; unref so it never holds the event loop open (tests).
-const sweepTimer = setInterval(() => _sweep(), 60000);
+const sweepTimer = setInterval(() => require('../utils/loopStall').withTask('guac.nonces', () => _sweep()), 60000);
 if (sweepTimer.unref) sweepTimer.unref();
 
 module.exports = { register, consume, _sweep, _clear };

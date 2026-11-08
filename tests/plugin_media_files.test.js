@@ -391,7 +391,7 @@ describe('switching the form', () => {
 
 describe('backup', () => {
   it('the form, the readable keys and the versions come back', async () => {
-    const exp = areas.exportAreas(PID);
+    const exp = await areas.exportAreas(PID);
     assert.equal(exp.areas.find((a) => a.area === 'docs').form, 'files');
     const v = exp.files.find((f) => f.version_of === 'Archiv/Brief 1.bin');
     assert.ok(v && v.stored_form === 'files');

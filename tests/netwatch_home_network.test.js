@@ -365,12 +365,12 @@ describe('presence, "Internet zu Hause", DNS filter, home cache in the home netw
     assert.equal(dns.get(c.peer.id).enabled, false);
   });
 
-  it('the home cache of B keeps the files of people whose devices only A has seen', () => {
+  it('the home cache of B keeps the files of people whose devices only A has seen', async () => {
     db.prepare('DELETE FROM netwatch_devices WHERE peer_id = ? AND owner_user_id = ?').run(b.peer.id, annaId);
     const cache = require('../src/services/homeCache');
     db.prepare(`INSERT INTO home_cache_blobs (sha256, size, kind, source, user_ids, created_at, updated_at) VALUES (?, 10, 'photos', 'plugin', ?, 1, 1)`)
       .run('a'.repeat(64), JSON.stringify([annaId]));
     db.prepare(`INSERT INTO gateway_cache (peer_id, settings, updated_at) VALUES (?, ?, 1)`).run(b.peer.id, JSON.stringify({ enabled: true, kinds: { photos: true } }));
-    assert.deepEqual(cache.stockOf(b.peer.id).map((x) => x.sha256), ['a'.repeat(64)]);
+    assert.deepEqual((await cache.stockOf(b.peer.id)).map((x) => x.sha256), ['a'.repeat(64)]);
   });
 });

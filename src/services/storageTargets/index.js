@@ -321,6 +321,18 @@ function get(id) {
   return r ? view(r) : null;
 }
 
+/**
+ * The few fields other services show of a target (label, kind, address, the
+ * free space of its last check) — without usedBy (which counts every file
+ * stored there) and without decrypting secrets. null when it does not exist.
+ */
+function brief(id) {
+  const row = rowOf(id);
+  if (!row) return null;
+  return { id: row.id, kind: row.kind, label: row.label, display: display(row.kind, configOf(row)),
+    check: row.checked_at ? { free: row.free_bytes == null ? null : row.free_bytes } : null };
+}
+
 function create(kind, input) {
   if (getDb().prepare('SELECT COUNT(*) AS n FROM storage_targets').get().n >= MAX_TARGETS) throw new StorageError('limit', 'too many storage targets');
   const { label, config, secret } = normalise(kind, input);
@@ -600,5 +612,5 @@ async function checkInput(kind, input, id = null) {
 
 module.exports = {
   KINDS, SECRET_FIELDS, BLOCKS_ONLY, CLOUD, StorageError, normalise, list, get, create, update, remove, check, checkInput, open, driverOf,
-  registerUsage, usedBy, display, bufferSource, rowOf, configOf, secretOf,
+  registerUsage, usedBy, display, bufferSource, rowOf, configOf, secretOf, brief,
 };
