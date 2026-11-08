@@ -279,7 +279,7 @@ jobs:
       - name: Browser scenarios
         env:
           NODE_PATH: /tmp/pw/node_modules
-        run: node tests/e2e/run.js ${{ github.event_name == 'workflow_dispatch' && inputs.browser_scenarios || 'login zones security passkey dashboard settings users portal portalstart pluginviewport notifications support storage logs securitysettings virenscan gatewaywizard gatewayedge gatewaynet gatewayhome gatewaypools gatewayprint gatewayradio gatewayai gatewaycameras gatewaylocations pluginhandbook pluginupdates peers' }}
+        run: node tests/e2e/run.js ${{ github.event_name == 'workflow_dispatch' && inputs.browser_scenarios || 'login zones security passkey dashboard settings users portal portalstart pluginviewport notifications support storage logs securitysettings virenscan gatewaywizard gatewayedge gatewaynet gatewayhome gatewaypools gatewayprint gatewayradio gatewayai gatewaycameras gatewaylocations gatewaydocs pluginhandbook pluginupdates peers' }}
 
       - name: App log
         if: failure()

@@ -26,7 +26,6 @@
   const LOCALE = LANG === 'en' ? 'en-GB' : 'de-DE';
   const API = '/api/v1/gateways/';
   const SVG_NS = 'http://www.w3.org/2000/svg';
-  const GW_RELEASES = 'https://github.com/CallMeTechie/gatecontrol-gateway/releases';
 
   function url(id, rest) { return API + encodeURIComponent(String(id)) + (rest || ''); }
   function has(key) { return t(key) !== key; }
@@ -131,7 +130,7 @@
   }
   function tooOld(sup) {
     return U.bigNote('warn', 'up', t('gwn.old.title', { min: sup.minGateway3b || '1.22.0' }), t('gwn.old.text', { version: sup.version || '—' }),
-      [h('a', { class: 'btn btn-ghost', href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwe.old.whats_new') })]);
+      [U.whatsNew(cur && cur.g)]);
   }
   function enableBtn(label, fk, run) {
     const b = h('button', { type: 'button', class: 'btn btn-primary', 'data-fk': fk }, [U.icon('power', 16), label]);

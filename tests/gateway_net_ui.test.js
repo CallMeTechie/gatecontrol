@@ -111,8 +111,8 @@ describe('gateway-net.js', () => {
     const order = ['gateway-edge-kit.js', 'gateway-edge.js', 'gateway-net-kit.js', 'gateway-net.js', 'gateway-home-kit.js', 'gateway-home.js', 'gateway-radio-kit.js', 'gateway-radio.js', 'gateways.js'].map((f) => tpl.indexOf('/js/' + f));
     assert.ok(order.every((i) => i > 0));
     assert.deepEqual(order.slice().sort((a, b) => a - b), order);
-    assert.match(tpl, /data-prefixes="gwiz\. gwe\. gwn\. gwh\. gwp\. gwr\. gateway_pools\. common\."/);
-    assert.match(read('src/routes/index.js'), /GWIZ_I18N_PREFIXES = \['gwiz\.', 'gwe\.', 'gwn\.', 'gwh\.', 'gwp\.', 'gwr\.', 'gateway_pools\.', 'common\.'\]/);
+    assert.match(tpl, /data-prefixes="gwiz\. gwe\. gwn\. gwh\. gwp\. gwr\. gwd\. gateway_pools\. common\."/);
+    assert.match(read('src/routes/index.js'), /GWIZ_I18N_PREFIXES = \['gwiz\.', 'gwe\.', 'gwn\.', 'gwh\.', 'gwp\.', 'gwr\.', 'gwd\.', 'gateway_pools\.', 'common\.'\]/);
     // the pool kit before gateway-net.js (it groups the tab "Funktionen"), the pool views before gateways.js
     assert.ok(tpl.indexOf('/js/gateway-pool-kit.js') > 0 && tpl.indexOf('/js/gateway-pool-kit.js') < tpl.indexOf('/js/gateway-net.js'));
     assert.ok(tpl.indexOf('/js/gateway-pools-ui.js') > tpl.indexOf('/js/gateway-home.js') && tpl.indexOf('/js/gateway-pools-ui.js') < tpl.indexOf('/js/gateways.js?'));

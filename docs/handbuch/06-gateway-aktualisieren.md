@@ -27,6 +27,11 @@ der Alarm kommt dann. Sobald der erste Heartbeat eintrifft, steht es wieder auf
 Wartezeit für den Rückwechsel zurück; die Karte zählt diese Zeit herunter
 („übernimmt seine Routen in 4:30 wieder“).
 
+Was die neue Version bringt, zeigt **„Was ist neu?“** neben „Update auf …
+verfügbar“ im „Zustand“ des Gateways (oder „Mehr“ → „Versionen“): alle
+Versionen mit ihren Änderungen, die installierte markiert, die neueren mit
+„Neuer“. Mehr in [3.8](03-gateway-einrichten.md#38-versionen-und-handbuch).
+
 **Prüfen:** Nach einigen Minuten zeigt die Karte die neue Version.
 
 ## 6.2 Warum die Compose-Datei extra dran ist

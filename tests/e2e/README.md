@@ -158,6 +158,15 @@ scenarios/29-peers.js   /peers (docs/feature-peers-page.md): nur Geräte (?type=
                         Seitenleiste mit „Wartung“, untere Leiste, 390 px mit
                         Filter-Sheet. Eigene Geräte + Gateway in der DB, alles
                         andere für den Lauf aus (Community-Lizenz), danach zurück
+scenarios/30-gateway-docs.js Gateway-Detail › „Mehr“ › „Versionen“ und „Handbuch“
+                        (#gw/<id>/versions, …/handbook): Menü-Links, „Was ist neu?“ im Zustand
+                        und in „zu alt“-Hinweisen, echte /releases ohne GitHub („nicht
+                        verfügbar“ + GitHub-Link), Liste per page.route (feindliche Notiz nur
+                        als Text, „Installiert“, „Neuer“, „Neueste“, Hinweis „3 Versionen
+                        neuer“), Markierung folgt der gemeldeten Version, Brotkrume zum Gateway
+                        und zur Übersicht, Hinweis bei altem Stand; Handbuch Kapitel 3–7
+                        (Inhaltsverzeichnis, Anker in der Adresse, kein HTML), unbekanntes
+                        Gateway → Übersicht, hell/dunkel, 390 px
 ```
 
 ## Ablauf

@@ -254,9 +254,13 @@ module.exports = (ctx) => {
         step('menu: ArrowDown opens it and focuses the first item', await until(page, () => !document.getElementById('gw-more-menu').hidden
           && document.getElementById('gw-more-btn').getAttribute('aria-expanded') === 'true' && document.activeElement === document.querySelector('#gw-more-menu [role="menuitem"]')));
         // "Verwalten" (gateway-manage.js, docs/feature-peers-page.md): moved here from the Peers page, "Gateway entfernen" last
-        step('menu: compose, auto-update, location, pool, release notes, then "Verwalten" with "Gateway entfernen" last', await page.evaluate(() => {
+        // "Versionen" and "Handbuch" open in the page (#gw/<id>/versions, …/handbook — gateway-docs.js)
+        step('menu: compose, auto-update, location, pool, versions, manual, then "Verwalten" with "Gateway entfernen" last', await page.evaluate(() => {
           const acts = [...document.querySelectorAll('#gw-more-menu [role="menuitem"]')].map((x) => x.dataset.act);
-          return acts.join() === 'compose,setup,location,pool-add,relnotes,gm-rename,gm-reconnect,gm-proxy,gm-disable,gm-delete' && document.querySelector('#gw-more-menu a[data-act="relnotes"][target="_blank"]');
+          const v = document.querySelector('#gw-more-menu a[data-act="versions"]');
+          const h = document.querySelector('#gw-more-menu a[data-act="handbook"]');
+          return acts.join() === 'compose,setup,location,pool-add,versions,handbook,gm-rename,gm-reconnect,gm-proxy,gm-disable,gm-delete'
+            && !!v && /^#gw\/[^/]+\/versions$/.test(v.getAttribute('href')) && !v.target && !!h && /^#gw\/[^/]+\/handbook$/.test(h.getAttribute('href')) && !h.target;
         }));
         await page.keyboard.press('ArrowDown');
         step('menu: ArrowDown moves on', await page.evaluate(() => document.activeElement && document.activeElement.dataset.act === 'setup'));

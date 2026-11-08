@@ -25,6 +25,11 @@ heartbeat it is “Online” again. In a pool, the gateway takes its routes back
 only after the failback wait; the card counts that time down (“takes its routes
 back in 4:30”).
 
+What the new version brings is shown by **“What's new?”** next to “Update to
+… available” in the gateway's “Status” (or “More” → “Versions”): every version
+with its changes, the installed one marked, the newer ones “Newer”. More in
+[3.8](03-gateway-setup.md#38-versions-and-manual).
+
 **Check:** After a few minutes the card shows the new version.
 
 ## 6.2 Why the compose file needs extra care

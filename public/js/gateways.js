@@ -30,6 +30,9 @@
   var fleetView = document.getElementById('fleet-view');
   var detailView = document.getElementById('gw-detail-view');
   var poolView = document.getElementById('gw-pool-view');
+  // "Versionen" and "Handbuch" of a gateway (#gw/<id>/versions, #gw/<id>/handbook — gateway-docs.js)
+  var docsView = document.getElementById('gw-docs-view');
+  var DOCS = window.GCGatewayDocs;
   var GW_RELEASES = 'https://github.com/CallMeTechie/gatecontrol-gateway/releases';
   var last = [], latest = '', openId = null, openPool = null, routed = false;
   // Pools on this page (gateway-pool-kit.js: pure rules, gateway-pools-ui.js: views and dialogs)
@@ -237,6 +240,14 @@
     // (Update-check moved to the header icon button above.)
     return wrap;
   }
+  // "Was ist neu?": "Versionen" of the gateway, the newer versions flagged (gateway-docs.js)
+  function whatsNewLink(g) {
+    var a = el('a', 'gwn-link gw-whats-new', T('gwd.whats_new', 'Was ist neu?'));
+    a.href = DOCS ? DOCS.versionsHref(g) : GW_RELEASES;
+    if (!DOCS) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+    a.dataset.act = 'whats-new';
+    return a;
+  }
   // ── Detail view: head, tabs, the tab "Übersicht" ──────────────────────────
   function cardFrame(title, right, id, cls) {
     var U = UI();
@@ -313,6 +324,7 @@
       li.appendChild(el('span', 'sr-only', T('gwp.state.tone_' + ch.tone) + ': '));
       li.appendChild(ch.until ? countdownEl('span', null, ch.key, ch.params, ch.until) : el('span', null, TT(ch.key, ch.params)));
       if (ch.link) { li.appendChild(document.createTextNode(' – ')); var a = el('a', 'gwn-link', T('gwp.state.look')); a.href = '#gw/' + encodeURIComponent(g.peer_id) + '/' + ch.link; li.appendChild(a); }
+      if (ch.key === 'gwp.state.update') { li.appendChild(document.createTextNode(' – ')); li.appendChild(whatsNewLink(g)); }
       ul.appendChild(li);
     });
     c.body.appendChild(ul);
@@ -474,9 +486,17 @@
     if (L) item('location', T('gwp.loc.menu', 'Standort ändern …'));
     var pa = item('pool-add', T('gwp.menu.pool', 'Zu einem Pool hinzufügen …'));
     if (P && !P.licensed) pa.appendChild(P.lockTag());
-    var rel = el('a', 'gw-menu-item', T('gwp.menu.relnotes', 'Was ist neu (Release-Notes)'));
-    rel.href = GW_RELEASES; rel.target = '_blank'; rel.rel = 'noopener noreferrer'; rel.setAttribute('role', 'menuitem'); rel.tabIndex = -1; rel.dataset.fk = 'gw-menu:relnotes'; rel.dataset.act = 'relnotes';
-    menu.appendChild(rel);
+    // "Versionen" (each version with its changes, the installed one marked) and "Handbuch",
+    // like the tabs of a plugin (gateway-docs.js); without it the releases on GitHub
+    function link(action, label, href) {
+      var a = el('a', 'gw-menu-item', label);
+      a.href = href; a.setAttribute('role', 'menuitem'); a.tabIndex = -1; a.dataset.fk = 'gw-menu:' + action; a.dataset.act = action;
+      if (/^https:/.test(href)) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+      menu.appendChild(a);
+      return a;
+    }
+    link('versions', T('gwp.menu.versions', 'Versionen'), DOCS ? DOCS.versionsHash(g.peer_id) : GW_RELEASES);
+    if (DOCS) link('handbook', T('gwp.menu.handbook', 'Handbuch'), DOCS.handbookHash(g.peer_id));
     // rename, connection data, proxy port, disable, delete (gateway-manage.js; moved here from Peers)
     if (window.GCGatewayManage) window.GCGatewayManage.menuItems(g, item, menu);
     wrap.appendChild(more);
@@ -1254,6 +1274,7 @@
     openId = String(id); openPool = null;
     openTab = tab || 'overview';
     renderDetail(g);
+    hideDocs();
     fleetView.hidden = true; if (poolView) poolView.hidden = true; detailView.hidden = false;
     // switching tabs keeps the scroll position; a new gateway starts at the top
     if (!same) window.scrollTo(0, 0);
@@ -1261,7 +1282,7 @@
   function showPool(id) {
     var same = openPool === String(id) && poolView && !poolView.hidden;
     openId = null; openPool = String(id); menuOpen = false; netExtra = null;
-    detailView.hidden = true; detailView.replaceChildren(); fleetView.hidden = true;
+    detailView.hidden = true; detailView.replaceChildren(); fleetView.hidden = true; hideDocs();
     if (window.GCGatewayEdge) window.GCGatewayEdge.unmount();
     if (!poolView || !P) { showFleet(); return; }
     poolView.hidden = false;
@@ -1271,8 +1292,27 @@
   function showFleet() {
     openId = null; openPool = null; menuOpen = false; netExtra = null;
     detailView.hidden = true; if (poolView) { poolView.hidden = true; poolView.replaceChildren(); }
+    hideDocs();
     fleetView.hidden = false; detailView.replaceChildren();
     if (window.GCGatewayEdge) window.GCGatewayEdge.unmount();
+  }
+  function hideDocs() {
+    if (!docsView || docsView.hidden) return;
+    docsView.hidden = true;
+    if (DOCS) DOCS.hide();
+  }
+  // #gw/<id>/versions, #gw/<id>/handbook[/<anchor>]: "Versionen" and "Handbuch" of a gateway
+  var docsId = null;
+  function showDocs(dm) {
+    var g = last.find(function (x) { return String(x.peer_id) === String(dm.id); });
+    if (!g) { goFleet(); return; }
+    openId = null; openPool = null; menuOpen = false; netExtra = null;
+    detailView.hidden = true; detailView.replaceChildren(); fleetView.hidden = true;
+    if (poolView) { poolView.hidden = true; poolView.replaceChildren(); }
+    if (window.GCGatewayEdge) window.GCGatewayEdge.unmount();
+    docsId = String(dm.id);
+    docsView.hidden = false;
+    DOCS.show(docsView, dm, { gateway: g, latest: latest });
   }
   function goFleet() {
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
@@ -1281,6 +1321,8 @@
   var TAB_NAMES = ['features', 'net', 'inet', 'dns', 'cache', 'radio', 'edge', 'mqtt'];
   function route() {
     var h = location.hash || '';
+    var dm = DOCS && docsView ? DOCS.parseHash(h) : null;
+    if (dm) { showDocs(dm); return; }
     // #gw/<id>, #gw/<id>/features, …/net, …/inet, …/dns, …/cache, …/radio, …/edge, …/mqtt (an unknown tab shows the overview)
     var m = h.match(/^#gw\/([^/]+)(?:\/([a-z]+))?$/);
     if (m) {
@@ -1466,6 +1508,10 @@
     if (!routed) { routed = true; route(); }
     else if (openId) { var g = last.find(function (x) { return String(x.peer_id) === openId; }); if (g) renderDetail(g); else goFleet(); }
     else if (openPool && P && !P.busy(poolView)) P.renderPool(poolView, openPool);
+    else if (DOCS && docsView && !docsView.hidden) {
+      var dg = last.find(function (x) { return String(x.peer_id) === docsId; });
+      if (dg) DOCS.update({ gateway: dg, latest: latest }); else goFleet();
+    }
   }
   var loading = null;
   function load(force) {
@@ -1507,6 +1553,12 @@
     location.hash = '#gw/' + encodeURIComponent(c.dataset.id);
   });
   if (poolView) poolView.addEventListener('click', function (e) { if (e.target.closest('[data-act="back"]')) goFleet(); });
+  // the crumb of "Versionen" / "Handbuch": "Gateways" → the fleet (the gateway's name is a plain link)
+  if (docsView) docsView.addEventListener('click', function (e) {
+    if (!e.target.closest('[data-act="docs-fleet"]')) return;
+    e.preventDefault();
+    goFleet();
+  });
   // "Mehr" menu: keyboard and outside clicks
   detailView.addEventListener('keydown', function (e) {
     var btn = e.target.closest && e.target.closest('#gw-more-btn');
@@ -1533,8 +1585,9 @@
     var mi = e.target.closest('.gw-menu-item');
     if (mi) {
       // the dialog gives the focus back to "Mehr", not to the hidden item
-      setMenu(false, 'button');
-      if (mi.dataset.act === 'relnotes') return;
+      var nav = mi.tagName === 'A';
+      setMenu(false, nav ? null : 'button');
+      if (nav) return; // "Versionen", "Handbuch": the link opens it
     }
     var rc = e.target.closest('[data-act="recheck"]'); if (rc) { probe(rc.dataset.id); return; }
     var gm = e.target.closest('[data-act^="gm-"]');

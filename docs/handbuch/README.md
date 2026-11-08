@@ -17,6 +17,11 @@ Möglichkeit, Befehle in ein Terminal zu kopieren.
 6. [Bestehendes Gateway aktualisieren](06-gateway-aktualisieren.md) – alte Compose-Datei auf den aktuellen Stand bringen.
 7. [FAQ und Fehlerbehebung](07-faq.md) – typische Meldungen und ihre Lösung.
 
+Die Kapitel 3 bis 7 (alles rund um die Gateways) findest du auch direkt in
+GateControl: im Gateway unter „Mehr“ → **„Handbuch“**, mit
+Inhaltsverzeichnis. Daneben zeigt **„Versionen“**, was sich in jeder
+Gateway-Version geändert hat ([3.8](03-gateway-einrichten.md#38-versionen-und-handbuch)).
+
 ## So liest du dieses Handbuch
 
 - Die Schritte sind nummeriert. Mach sie der Reihe nach.

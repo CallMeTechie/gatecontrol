@@ -17,6 +17,11 @@ commands into a terminal.
 6. [Updating an existing gateway](06-updating-a-gateway.md) – bring an old compose file up to date.
 7. [FAQ and troubleshooting](07-faq.md) – typical messages and how to fix them.
 
+Chapters 3 to 7 (everything about gateways) are also inside GateControl: on
+the gateway under “More” → **“Manual”**, with a table of contents. Next to it,
+**“Versions”** shows what changed in each gateway version
+([3.8](03-gateway-setup.md#38-versions-and-manual)).
+
 ## How to read this guide
 
 - Steps are numbered. Do them in order.

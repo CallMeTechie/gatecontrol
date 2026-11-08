@@ -400,7 +400,7 @@ const LOGS_I18N_PREFIXES = ['lg.', 'common.'];
 const SB_I18N_PREFIXES = ['support_bundles.', 'common.'];
 
 // Gateway page + assistant "Gateway hinzufügen" (gateway-wizard.js).
-const GWIZ_I18N_PREFIXES = ['gwiz.', 'gwe.', 'gwn.', 'gwh.', 'gwp.', 'gwr.', 'gateway_pools.', 'common.'];
+const GWIZ_I18N_PREFIXES = ['gwiz.', 'gwe.', 'gwn.', 'gwh.', 'gwp.', 'gwr.', 'gwd.', 'gateway_pools.', 'common.'];
 
 // Strings the users list and the user profile hand to users.js (one JSON
 // island on both pages, like the settings page; up.* for the profile).

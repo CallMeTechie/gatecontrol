@@ -636,7 +636,7 @@
     const d = e.data;
     if (!d.supported) {
       nodes.push(U.bigNote('warn', 'up', t('gwr.old.title', { min: d.minGateway }), t('gwr.old.text', { version: d.gateway.version || '—' }),
-        [h('a', { class: 'btn btn-ghost', href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwe.old.whats_new') })]));
+        [U.whatsNew(cur && cur.g)]));
     }
     nodes.push(h('p', { class: 'gwe-d gwr-lead' }, [t('gwr.lead'), ' ', U.guide('feat.radio')]));
     nodes.push(h('div', { class: 'gwr-grid' }, [zigbeeCard(cur.g, d), bleCard(cur.g, d), threadCard(cur.g, d)]));
