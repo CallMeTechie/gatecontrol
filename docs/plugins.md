@@ -120,7 +120,14 @@ for its rate limit (`403`/`429`, `x-ratelimit-remaining: 0`, `Retry-After`)
 no API request goes out until the reset (`catalog_rate_limited` when nothing
 else worked). A 4xx of the download path (`404`) is no reason for the other
 way. `GC_PLUGIN_CATALOG_URL` on another host never takes it. Code:
-`src/utils/githubRelease.js`. The same way serves the update manifests of
+`src/utils/githubRelease.js`. The log has one line per outage and way —
+`plugin catalogue via api fallback: ok` (info, with the reason the download
+path failed) or `… failed` (warn, with `download` and `api`: the error, the
+host and the phase it hung in — `dns`, `connect`, `tls`, `first byte` — with
+the address and IPv4/IPv6); the same warning again within 5 minutes is
+counted (`repeated`), not written. While no fetch works, the last catalogue
+that loaded (up to a day old) is shown (`stale` in the API answer,
+*zuletzt geprüft* shows its age). The same way serves the update manifests of
 the Windows clients (`update-manifest.json` / `.sig`, still passed on byte
 for byte and checked by the client) and the installers of the home cache.
 

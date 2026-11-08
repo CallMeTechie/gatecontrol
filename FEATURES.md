@@ -1147,6 +1147,9 @@ Export (oldest first, streamed, at most 200 000 lines), file name
   time, with their time in it, and the synchronous pieces of 20 ms or more:
   request handlers and their `res.json`/`res.send` (`GET /api/v1/…/:id`),
   messages of plugin processes and the answers to them (`plugin <id> <api>`);
+  process starts of 20 ms or more (`spawn <program>`); async jobs carry
+  `(async)` — they were under way, possibly only waiting — and come after the
+  synchronous ones;
   `requests`: the requests and plugin host calls open in that time; each
   missing when empty). WAL checkpoints of the database run in a worker
   thread (`db/checkpointWorker.js`; `GC_DB_CHECKPOINT=main` keeps SQLite's

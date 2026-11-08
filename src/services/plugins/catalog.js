@@ -35,6 +35,8 @@ const crypto = require('node:crypto');
 const https = require('node:https');
 const semver = require('./semver');
 const gh = require('../../utils/githubRelease');
+const warnOnce = require('../../utils/warnOnce');
+const { trackPhases, describe: describePhase } = require('../../utils/httpPhase');
 const { ID_RE, LIMITS } = require('./constants');
 
 const DEFAULT_URL = 'https://github.com/CallMeTechie/gatecontrol-plugins/releases/download/catalog/catalog.json';
@@ -114,7 +116,10 @@ function getOnce(url, { maxBytes, deadline, headers = null, headerMs = null }) {
     if (left <= 0) return reject(new CatalogError('catalog_timeout', 'timeout'));
     let done = false;
     let headerTimer = null;
-    const finish = (fn, v) => { if (done) return; done = true; clearTimeout(timer); clearTimeout(headerTimer); fn(v); };
+    let phase = null;
+    // an error says where the request was (dns, connect, tls, first byte) and what the name resolved to
+    const where = (e) => Object.assign(e, { host: u.host, phase: phase ? phase() : null });
+    const finish = (fn, v) => { if (done) return; done = true; clearTimeout(timer); clearTimeout(headerTimer); fn(v instanceof Error ? where(v) : v); };
     const req = https.get(u, {
       agent: agent || undefined,
       headers: { 'User-Agent': 'GateControl-plugin-catalog', Accept: 'application/octet-stream, application/json', ...(headers || {}) },
@@ -143,6 +148,7 @@ function getOnce(url, { maxBytes, deadline, headers = null, headerMs = null }) {
       res.on('error', (e) => finish(reject, new CatalogError('catalog_unreachable', e.message)));
       res.on('aborted', () => finish(reject, new CatalogError('catalog_unreachable', 'aborted')));
     });
+    phase = trackPhases(req);
     const timer = setTimeout(() => { finish(reject, new CatalogError('catalog_timeout', 'timeout')); req.destroy(); }, left);
     timer.unref();
     if (headerMs && headerMs < left) {
@@ -182,6 +188,13 @@ async function fetchAllowed(url, o) {
   throw new CatalogError('catalog_redirect', 'too many redirects');
 }
 
+/** "no answer (api.github.com, phase tls, 140.82.121.6 (IPv4), 4001 ms)" — an error with where it hung, for the log. */
+function errText(e) {
+  if (!e) return null;
+  const msg = String(e.message || e.code || 'failed');
+  return e.phase ? `${msg} (${e.host ? e.host + ', ' : ''}${describePhase(e.phase)})` : (e.host ? `${msg} (${e.host})` : msg);
+}
+
 /** A failure the API route may get round: 5xx, no answer in time, no connection — not 4xx, a refused redirect or a size cap. */
 function worthFallback(e) {
   if (!(e instanceof CatalogError)) return false;
@@ -190,9 +203,10 @@ function worthFallback(e) {
 }
 
 /** The bytes of a release asset over the API (utils/githubRelease.js), with the same caps; hosts: the API and the asset CDN. */
-async function viaApi(ref, { maxBytes, deadline }) {
+async function viaApi(ref, { maxBytes, deadline, headerMs = null }) {
   const hosts = new Set([gh.API_HOST, ...gh.ASSET_HOSTS]);
-  const get = async (url, headers) => getOnce(url, { maxBytes: gh.RELEASE_MAX_BYTES, deadline, headers });
+  // the API gets the same time to answer as the download path (a hanging API must leave time for the other way)
+  const get = async (url, headers) => getOnce(url, { maxBytes: gh.RELEASE_MAX_BYTES, deadline, headers, headerMs });
   for (let attempt = 0; attempt < 2; attempt++) {
     let asset;
     try { asset = await gh.assetOf(ref, get); } catch (e) {
@@ -202,7 +216,7 @@ async function viaApi(ref, { maxBytes, deadline }) {
     if (asset.size != null && asset.size > maxBytes) throw new CatalogError('catalog_too_large', 'response too large');
     try {
       return await fetchAllowed(gh.assetUrl(ref, asset.id), {
-        maxBytes, deadline, hosts, headers: { Accept: 'application/octet-stream' },
+        maxBytes, deadline, hosts, headers: { Accept: 'application/octet-stream' }, headerMs,
         onAnswer: (r, hop) => { if (hop === 0 && gh.noteRateLimit(r.status, r.headers)) throw new CatalogError('catalog_rate_limited', 'GitHub API rate limit reached'); },
       });
     } catch (e) {
@@ -223,6 +237,7 @@ async function viaApi(ref, { maxBytes, deadline }) {
 async function fetchRelease(url, o) {
   const ref = gh.parseDownloadUrl(url);
   if (!ref) return fetchAllowed(url, o);
+  const what = o.what || 'download';
   const deadline = Date.now() + o.timeoutMs;
   let first = null;
   if (!gh.apiFirst()) {
@@ -233,14 +248,28 @@ async function fetchRelease(url, o) {
     }
   }
   try {
-    return await viaApi(ref, { maxBytes: o.maxBytes, deadline });
+    const body = await viaApi(ref, { maxBytes: o.maxBytes, deadline, headerMs: o.headerMs });
+    // one line per outage and way, not one per request
+    const back = warnOnce.recovered(`catalog-fallback:${what}`);
+    warnOnce.throttled(`catalog-fallback-ok:${what}`, { reason: first ? errText(first) : 'download path failed before', ...(back ? { failedForMs: back.sinceMs } : {}) },
+      `plugin ${what} via api fallback: ok`, { level: 'info', everyMs: gh.API_FIRST_MS });
+    return body;
   } catch (e) {
+    const fail = (download) => warnOnce.throttled(`catalog-fallback:${what}`, { download, api: e.code === 'catalog_rate_limited' ? 'rate_limited' : errText(e) },
+      `plugin ${what} via api fallback: failed`);
     // a refused redirect or a size cap on the API way: that answer counts
-    if (e.code === 'catalog_redirect' || e.code === 'catalog_bad_url' || e.code === 'catalog_too_large') throw e;
+    if (e.code === 'catalog_redirect' || e.code === 'catalog_bad_url' || e.code === 'catalog_too_large') { fail(first ? errText(first) : null); throw e; }
     // the API way was the only try (download path failed a while ago): the download path once more
-    if (!first && Date.now() < deadline) return fetchAllowed(url, { ...o, deadline });
+    if (!first && Date.now() < deadline) {
+      try {
+        const body = await fetchAllowed(url, { ...o, deadline });
+        warnOnce.recovered(`catalog-fallback:${what}`);
+        return body;
+      } catch (e2) { fail(errText(e2)); throw Object.assign(e2, { viaApi: errText(e) }); }
+    }
+    fail(first ? errText(first) : null);
     // both failed: the download path's answer (HTTP 504, timeout), marked when the API refused for its rate limit
-    if (first) throw Object.assign(first, { viaApi: e.code === 'catalog_rate_limited' ? 'rate_limited' : String(e.message || e.code) });
+    if (first) throw Object.assign(first, { viaApi: e.code === 'catalog_rate_limited' ? 'rate_limited' : errText(e) });
     throw e;
   }
 }
@@ -565,37 +594,47 @@ function notesBetween(cat, id, from, to) {
 
 /** The catalogue in the cache — no fetch (null when there is none). */
 function cached() {
-  return cache && cache.cat && Date.now() - cache.at < CACHED_MAX_MS ? cache.cat : null;
+  const c = cache && cache.cat ? cache : good;
+  return c && Date.now() - c.at < CACHED_MAX_MS ? c.cat : null;
 }
 
 // ─── Fetch + cache ──────────────────────────────
 
 let cache = null;      // { at, cat } | { at, error }
+let good = null;       // { at, cat }: the last catalogue that loaded — served (stale) while a fetch fails, up to CACHED_MAX_MS
 let inFlight = null;
 
 async function load() {
   const url = catalogUrl();
   const hosts = allowedHosts();
-  const body = await fetchRelease(url.href, { maxBytes: CATALOG_MAX_BYTES, timeoutMs: CATALOG_TIMEOUT_MS, headerMs: TIMEOUTS.catalogHeaders, hosts });
+  const body = await fetchRelease(url.href, { maxBytes: CATALOG_MAX_BYTES, timeoutMs: CATALOG_TIMEOUT_MS, headerMs: TIMEOUTS.catalogHeaders, hosts, what: 'catalogue' });
   let doc;
   try { doc = JSON.parse(body.toString('utf8')); } catch { throw new CatalogError('catalog_invalid', 'not JSON'); }
   return validateAsync(doc, hosts);
 }
 
+function staleOr(err, now = Date.now()) {
+  if (good && now - good.at < CACHED_MAX_MS) return good.cat;
+  throw err;
+}
+
 /**
- * The validated catalogue (cached; `refresh` fetches again). Throws
- * CatalogError catalog_disabled / catalog_unreachable / catalog_invalid / ….
+ * The validated catalogue (cached; `refresh` fetches again). When a fetch
+ * fails, the last catalogue that loaded (up to a day old) is answered instead
+ * — stale() says so. Throws CatalogError catalog_disabled /
+ * catalog_unreachable / catalog_invalid / … when there is none.
  */
 async function get({ refresh = false } = {}) {
   if (!enabled()) throw new CatalogError('catalog_disabled', 'the plugin catalogue is switched off');
   const now = Date.now();
   if (!refresh && cache) {
     if (cache.cat && now - cache.at < CACHE_TTL_MS) return cache.cat;
-    if (cache.error && now - cache.at < ERROR_TTL_MS) throw cache.error;
+    if (cache.error && now - cache.at < ERROR_TTL_MS) return staleOr(cache.error, now);
   }
   if (!inFlight) {
     inFlight = load().then((cat) => {
       cache = { at: Date.now(), cat };
+      good = { at: cache.at, cat };
       return cat;
     }, (e) => {
       const err = e instanceof CatalogError ? e : new CatalogError('catalog_unreachable', e && e.message);
@@ -603,12 +642,18 @@ async function get({ refresh = false } = {}) {
       throw err;
     }).finally(() => { inFlight = null; });
   }
-  return inFlight;
+  try { return await inFlight; } catch (e) { return staleOr(e); }
 }
 
-/** When the catalogue was fetched last (null if never / not cached). */
+/** When the catalogue in use was fetched (null if never / not cached). */
 function fetchedAt() {
-  return cache && cache.cat ? new Date(cache.at).toISOString() : null;
+  const c = cache && cache.cat ? cache : good;
+  return c ? new Date(c.at).toISOString() : null;
+}
+
+/** The catalogue in use is an older one because the last fetch failed: { code, since } — else null. */
+function stale() {
+  return cache && cache.error && good && Date.now() - good.at < CACHED_MAX_MS ? { code: cache.error.code, since: new Date(cache.at).toISOString() } : null;
 }
 
 /**
@@ -634,7 +679,7 @@ async function download(id, version, gcVersion, { refresh = false } = {}) {
   const max = Math.min(e.size, LIMITS.packageBytes);
   let buf;
   try {
-    buf = await fetchRelease(e.url, { maxBytes: max, timeoutMs: DOWNLOAD_TIMEOUT_MS, headerMs: TIMEOUTS.downloadHeaders });
+    buf = await fetchRelease(e.url, { maxBytes: max, timeoutMs: DOWNLOAD_TIMEOUT_MS, headerMs: TIMEOUTS.downloadHeaders, what: 'package' });
   } catch (err) {
     if (err instanceof CatalogError && err.code === 'catalog_unreachable') throw new CatalogError('catalog_download_failed', err.message);
     throw err;
@@ -646,10 +691,10 @@ async function download(id, version, gcVersion, { refresh = false } = {}) {
 
 module.exports = {
   CatalogError, DEFAULT_URL, GITHUB_HOSTS, CACHE_TTL_MS,
-  enabled, catalogUrl, allowedHosts, allowedUrl, validate, validateAsync, pick, stateOf, replacing, view, detail, notesBetween, cached, get, fetchedAt, installable, download, fetchAllowed, fetchRelease,
+  enabled, catalogUrl, allowedHosts, allowedUrl, validate, validateAsync, pick, stateOf, replacing, view, detail, notesBetween, cached, get, fetchedAt, stale, errText, installable, download, fetchAllowed, fetchRelease,
   TIMEOUTS,
   CATEGORIES, ICONS,
   _setTransport(fn) { transportOverride = fn || null; },
   _setAgent(a) { agent = a || null; },
-  _reset() { cache = null; inFlight = null; transportOverride = null; agent = null; gh._resetForTest(); },
+  _reset() { cache = null; good = null; inFlight = null; transportOverride = null; agent = null; gh._resetForTest(); warnOnce._resetForTest(); },
 };

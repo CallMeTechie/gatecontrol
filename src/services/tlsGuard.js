@@ -19,6 +19,7 @@ const crypto = require('node:crypto');
 const { getDb } = require('../db/connection');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
+const { slicer } = require('../utils/slice');
 const settings = require('./settings');
 const domains = require('./domains');
 const eventBus = require('./eventBus');
@@ -524,13 +525,16 @@ function saveWatchState() {
   try { settings.set(WATCH_STATE_KEY, JSON.stringify({ file: _watch.file, ino: _watch.ino, offset: _watch.offset, head: _watch.head })); }
   catch { /* best-effort */ }
 }
-function readHead(fd, size) {
+async function readHead(fh, size) {
   const len = Math.min(HEAD_LEN, size);
   if (len <= 0) return '';
   const buf = Buffer.alloc(len);
-  const n = fs.readSync(fd, buf, 0, len, 0);
-  return buf.subarray(0, n).toString('latin1');
+  const { bytesRead } = await fh.read(buf, 0, len, 0);
+  return buf.subarray(0, bytesRead).toString('latin1');
 }
+
+// a tick reads at most this much; a backlog (a restart with an old offset) follows tick by tick
+const TICK_BYTES = 512 * 1024;
 
 function tlsLogPath(dataDir) {
   return path.join(dataDir || config.caddy.dataDir || '/data/caddy', 'tls.log');
@@ -541,33 +545,38 @@ async function pollOnce() {
   if (_watch.busy) return 0;
   _watch.busy = true;
   try {
-    let st;
-    try { st = fs.statSync(_watch.file); }
+    // open once; size and inode from the handle (never stat the path and open it after)
+    let fh;
+    try { fh = await fs.promises.open(_watch.file, 'r'); }
     catch { _watch.ino = null; _watch.offset = 0; _watch.head = ''; _watch.partial = ''; return 0; }
-    let fd;
-    try { fd = fs.openSync(_watch.file, 'r'); }
-    catch { return 0; }
     let chunk;
     try {
-      const head = readHead(fd, st.size);
+      const st = await fh.stat();
+      const head = await readHead(fh, st.size);
       const known = _watch.head.length > 0 ? head.slice(0, _watch.head.length) : '';
       const rotated = _watch.ino !== null && (st.ino !== _watch.ino || st.size < _watch.offset || (known && known !== _watch.head));
       if (rotated) { _watch.offset = 0; _watch.partial = ''; }   // rotated or truncated → from the top
       _watch.ino = st.ino;
       if (_watch.offset === 0) _watch.head = head;
       if (st.size === _watch.offset) return 0;
-      const len = st.size - _watch.offset;
+      const len = Math.min(st.size - _watch.offset, TICK_BYTES);
       const buf = Buffer.alloc(len);
-      const n = fs.readSync(fd, buf, 0, len, _watch.offset);
+      let { bytesRead: n } = await fh.read(buf, 0, len, _watch.offset);
+      // capped: up to the last complete line (never a character cut in two)
+      if (len < st.size - _watch.offset) { const nl = buf.lastIndexOf(0x0a, n - 1); if (nl >= 0) n = nl + 1; }
       chunk = buf.subarray(0, n).toString('utf8');
       _watch.offset += n;
-      if (_watch.head.length < HEAD_LEN) _watch.head = readHead(fd, st.size);
-    } finally { fs.closeSync(fd); }
+      if (_watch.head.length < HEAD_LEN) _watch.head = await readHead(fh, st.size);
+    } finally { await fh.close(); }
     const text = _watch.partial + chunk;
     const lines = text.split('\n');
     _watch.partial = lines.pop() || '';
+    // a runaway line (no newline in a whole tick) is dropped, never grown forever
+    if (_watch.partial.length > TICK_BYTES) _watch.partial = '';
+    const sl = slicer();
     let applied = 0;
     for (const line of lines) {
+      await sl.pause();
       const t = line.trim();
       if (!t) continue;
       try {

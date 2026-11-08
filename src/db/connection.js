@@ -10,14 +10,36 @@ const { precreatePrivateFile, restrictDbFiles } = require('../utils/fileModes');
 let db = null;
 let checkpointer = null;
 
+// the worker starts this long after the database opened: a process that ends right after its start (a
+// CLI script, a test file) must never exit while the worker is still loading better-sqlite3 — Node ends
+// with "FATAL ERROR: Error::New napi_get_last_error_info" then (seen in CI, Node 24)
+const CHECKPOINT_START_MS = 5000;
+let checkpointTimer = null;
+
+/** off: GC_DB_CHECKPOINT=main; in tests only with GC_DB_CHECKPOINT=worker (then at once). */
+function checkpointMode() {
+  const v = String(process.env.GC_DB_CHECKPOINT || '').toLowerCase();
+  if (v === 'main') return null;
+  if (v === 'worker') return 'now';
+  return process.env.NODE_ENV === 'test' ? null : 'later';
+}
+
 /**
  * WAL checkpoints off the main thread (db/checkpointWorker.js): the main
  * connection stops checkpointing itself (wal_autocheckpoint = 0) once the
  * worker runs; should the worker fail, SQLite's automatic checkpoint is back.
  * GC_DB_CHECKPOINT=main keeps it on the main thread.
  */
+function scheduleCheckpointer(conn, dbPath) {
+  if (dbPath === ':memory:' || dbPath.startsWith('file:')) return;
+  const mode = checkpointMode();
+  if (!mode) return;
+  if (mode === 'now') return startCheckpointer(conn, dbPath);
+  checkpointTimer = setTimeout(() => { checkpointTimer = null; if (db === conn && conn.open) startCheckpointer(conn, dbPath); }, CHECKPOINT_START_MS);
+  checkpointTimer.unref();
+}
+
 function startCheckpointer(conn, dbPath) {
-  if (dbPath === ':memory:' || dbPath.startsWith('file:') || String(process.env.GC_DB_CHECKPOINT || '').toLowerCase() === 'main') return;
   let w;
   try {
     const { Worker } = require('node:worker_threads');
@@ -44,6 +66,7 @@ function startCheckpointer(conn, dbPath) {
 }
 
 function stopCheckpointer() {
+  if (checkpointTimer) { clearTimeout(checkpointTimer); checkpointTimer = null; }
   const w = checkpointer;
   checkpointer = null;
   if (w) { try { w.postMessage({ t: 'stop' }); } catch { /* gone */ } w.terminate().catch(() => {}); }
@@ -81,7 +104,7 @@ function getDb() {
   db.pragma('synchronous = NORMAL');
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
-  startCheckpointer(db, dbPath);
+  scheduleCheckpointer(db, dbPath);
 
   logger.info({ path: dbPath }, 'Database connected');
 

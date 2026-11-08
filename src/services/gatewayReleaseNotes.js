@@ -18,6 +18,7 @@ const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
 const logger = require('../utils/logger');
+const { trackPhases, describe: describePhase } = require('../utils/httpPhase');
 const { compareVersions } = require('../utils/version');
 
 const REPO = process.env.GC_GATEWAY_REPO || 'CallMeTechie/gatecontrol-gateway';
@@ -153,6 +154,8 @@ function get(url, headers) {
   return new Promise((resolve, reject) => {
     let done = false;
     const finish = (fn, v) => { if (!done) { done = true; clearTimeout(timer); fn(v); } };
+    let phase = null;
+    const where = (e) => Object.assign(e, phase ? { where: describePhase(phase()) } : {});
     const req = https.get(url, { headers }, (res) => {
       const status = res.statusCode || 0;
       if (status !== 200) { res.resume(); return finish(resolve, { status, headers: res.headers, body: null }); }
@@ -166,9 +169,10 @@ function get(url, headers) {
       res.on('end', () => finish(resolve, { status, headers: res.headers, body: Buffer.concat(chunks, size).toString('utf8') }));
       res.on('error', (e) => finish(reject, new ReleaseNotesError('releases_unreachable', e.message)));
     });
-    const timer = setTimeout(() => { finish(reject, new ReleaseNotesError('releases_unreachable', 'timeout')); req.destroy(); }, TIMEOUT);
+    phase = trackPhases(req);
+    const timer = setTimeout(() => { finish(reject, where(new ReleaseNotesError('releases_unreachable', 'timeout'))); req.destroy(); }, TIMEOUT);
     if (timer.unref) timer.unref();
-    req.on('error', (e) => finish(reject, new ReleaseNotesError('releases_unreachable', e.message)));
+    req.on('error', (e) => finish(reject, where(new ReleaseNotesError('releases_unreachable', e.message))));
   });
 }
 
@@ -179,7 +183,11 @@ async function fetchNow() {
   if (state.etag && state.versions.length) headers['If-None-Match'] = state.etag;
   try {
     const r = await get(API_URL, headers);
-    if (r.status === 304) { state.fetchedAt = Date.now(); state.error = null; persist(); return; }
+    if (r.status === 304) {
+      state.fetchedAt = Date.now(); state.error = null; persist();
+      if (require('../utils/warnOnce').recovered('gateway-release-notes')) logger.info('gateway release notes fetch works again');
+      return;
+    }
     if (r.status !== 200 || typeof r.body !== 'string') throw new ReleaseNotesError('releases_unreachable', 'HTTP ' + r.status);
     let json;
     try { json = JSON.parse(r.body); } catch { throw new ReleaseNotesError('releases_invalid', 'no JSON'); }
@@ -189,9 +197,11 @@ async function fetchNow() {
     state.etag = typeof etag === 'string' && etag.length < 200 ? etag : null;
     state.error = null;
     persist();
+    if (require('../utils/warnOnce').recovered('gateway-release-notes')) logger.info('gateway release notes fetch works again');
   } catch (e) {
     state.error = e && e.code ? e.code : 'releases_unreachable';
-    logger.warn({ err: e && e.message }, 'gateway release notes fetch failed');
+    // one line per outage (then once an hour) — the last known list is answered meanwhile
+    require('../utils/warnOnce').throttled('gateway-release-notes', { err: e && e.message, where: (e && e.where) || null }, 'gateway release notes fetch failed', { everyMs: 60 * 60 * 1000 });
   }
 }
 

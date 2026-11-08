@@ -7,6 +7,8 @@ const config = require('../../../../config/default');
 const logger = require('../../../utils/logger');
 const clientUpdates = require('../../../services/clientUpdates');
 const gh = require('../../../utils/githubRelease');
+const warnOnce = require('../../../utils/warnOnce');
+const { trackPhases, describe: describePhase } = require('../../../utils/httpPhase');
 const { extractToken } = require('../../../middleware/auth');
 
 // Per client type + channel release cache (2 min TTL). Used by both /check
@@ -93,7 +95,9 @@ const SIGNED_FAIL_MS = 60 * 1000;
 function ghGetOnce(url, { headers, timeoutMs, maxBytes }) {
   return new Promise((resolve) => {
     let done = false;
-    const finish = (v) => { if (done) return; done = true; clearTimeout(timer); resolve(v); };
+    let phase = null;
+    // a failure says where the request hung (dns, connect, tls, first byte) and the address family
+    const finish = (v) => { if (done) return; done = true; clearTimeout(timer); if (v.status === 0 && phase) v.where = describePhase(phase()); resolve(v); };
     let req;
     const timer = setTimeout(() => { finish({ status: 0, error: 'timeout' }); try { req && req.destroy(); } catch { /* gone */ } }, timeoutMs);
     if (timer.unref) timer.unref();
@@ -116,6 +120,7 @@ function ghGetOnce(url, { headers, timeoutMs, maxBytes }) {
         res.on('error', (e) => finish({ status: 0, error: e.message }));
       });
     } catch (e) { return finish({ status: 0, error: e.message }); }
+    if (typeof req.once === 'function') phase = trackPhases(req);
     req.on('timeout', () => { finish({ status: 0, error: 'timeout' }); req.destroy(); });
     req.on('error', (e) => finish({ status: 0, error: e.message }));
   });
@@ -182,7 +187,7 @@ async function fetchLatestRelease(clientType = 'community', channel = 'stable') 
   const r = await ghGet(url, { headers, auth: githubToken(), timeoutMs: RELEASE_TIMEOUT_MS, maxBytes: RELEASE_MAX_BYTES,
     onFirst: (a) => { limited = gh.noteRateLimit(a.status, a.headers); } });
   if (limited) {
-    logger.warn({ repo, until: new Date(gh.rateLimitedUntil()).toISOString() }, 'GitHub API rate limit reached — using the last known release');
+    warnOnce.throttled(`client-release-limit:${repo}`, { repo, until: new Date(gh.rateLimitedUntil()).toISOString() }, 'GitHub API rate limit reached — using the last known release');
     return cached ? cached.data : null;
   }
   if (r.status === 304 && cached) {
@@ -190,11 +195,11 @@ async function fetchLatestRelease(clientType = 'community', channel = 'stable') 
     return cached.data;
   }
   if (r.status === 0) {
-    logger.warn({ error: r.error }, 'GitHub release fetch failed');
+    warnOnce.throttled(`client-release:${repo}:0`, { error: r.error, where: r.where || null, repo }, 'GitHub release fetch failed');
     return null;
   }
   if (r.status !== 200) {
-    logger.warn({ statusCode: r.status, repo }, 'GitHub release API error');
+    warnOnce.throttled(`client-release:${repo}:${r.status}`, { statusCode: r.status, repo }, 'GitHub release API error');
     return null;
   }
   try {
@@ -226,9 +231,10 @@ async function fetchSmallAsset(asset, maxBytes = MAX_MANIFEST_BYTES) {
   const api = gh.parseAssetApiUrl(asset.url) ? asset.url : null;
   const done = (r, via) => {
     if (r.status === 200 && r.body) return r.body.toString('utf8');
-    if (r.status === 413) logger.warn({ asset: asset.name, via }, 'Update manifest asset too large');
-    else if (r.status === 0) logger.warn({ error: r.error, asset: asset.name, via }, 'Update manifest asset fetch failed');
-    else logger.warn({ statusCode: r.status, asset: asset.name, via }, 'Update manifest asset download failed');
+    // once per asset, way and answer in 5 minutes (every update check of every client asks)
+    if (r.status === 413) warnOnce.throttled(`update-asset:${asset.name}:${via}:413`, { asset: asset.name, via }, 'Update manifest asset too large');
+    else if (r.status === 0) warnOnce.throttled(`update-asset:${asset.name}:${via}:0`, { error: r.error, where: r.where || null, asset: asset.name, via }, 'Update manifest asset fetch failed');
+    else warnOnce.throttled(`update-asset:${asset.name}:${via}:${r.status}`, { statusCode: r.status, asset: asset.name, via }, 'Update manifest asset download failed');
     return null;
   };
   if (token) {
@@ -245,7 +251,10 @@ async function fetchSmallAsset(asset, maxBytes = MAX_MANIFEST_BYTES) {
   if (gh.rateLimited()) return first ? done(first, 'download') : null;
   const r = await ghGet(api, { headers, timeoutMs: ASSET_TIMEOUT_MS, maxBytes, onFirst: (a) => gh.noteRateLimit(a.status, a.headers) });
   if (r.status === 200) {
-    if (first) logger.info({ asset: asset.name, statusCode: first.status || null, error: first.error || null }, 'Update manifest asset fetched over the GitHub API');
+    if (first) {
+      warnOnce.throttled(`update-asset-api-ok:${asset.name}`, { asset: asset.name, statusCode: first.status || null, error: first.error || null, where: first.where || null },
+        'Update manifest asset fetched over the GitHub API', { level: 'info', everyMs: gh.API_FIRST_MS });
+    }
     return r.body.toString('utf8');
   }
   if (first) done(first, 'download');
@@ -529,6 +538,7 @@ module.exports._resetCache = () => {
   for (const k of Object.keys(releaseCache)) delete releaseCache[k];
   for (const k of Object.keys(signedCache)) delete signedCache[k];
   gh._resetForTest();
+  warnOnce._resetForTest();
 };
 // Test hook: the cached releases count as old (the next check asks GitHub again, conditionally).
 module.exports._expireReleasesForTest = () => { for (const v of Object.values(releaseCache)) v.fetchedAt = 0; };

@@ -131,7 +131,7 @@ async function checkCatalog() {
   if (!catalog.enabled() || !plugins().catalogCheck()) return null;
   let cat;
   try { cat = await catalog.get({ refresh: true }); } catch (e) {
-    logger.warn({ code: e.code, err: e.message }, 'plugin update check: catalogue not available');
+    require('../../utils/warnOnce').throttled(`plugin-update-check:${e.code}`, { code: e.code, err: catalog.errText ? catalog.errText(e) : e.message, ...(e.viaApi ? { viaApi: e.viaApi } : {}) }, 'plugin update check: catalogue not available', { everyMs: 60 * 60 * 1000 });
     return null;
   }
   const ups = available(cat);

@@ -394,7 +394,7 @@ Alle Konfiguration erfolgt über Umgebungsvariablen in der `.env`-Datei.
 | `GC_PORT` | `3000` | Interner Anwendungsport |
 | `GC_SECRET` | auto-generiert | Session-Secret (automatisch generiert wenn leer) |
 | `GC_DB_PATH` | `/data/gatecontrol.db` | SQLite-Datenbankpfad |
-| `GC_DB_CHECKPOINT` | – | `main`: WAL-Checkpoints im Haupt-Thread (automatischer Checkpoint von SQLite) statt in einem eigenen Thread |
+| `GC_DB_CHECKPOINT` | – | `main`: WAL-Checkpoints im Haupt-Thread (automatischer Checkpoint von SQLite) statt in einem eigenen Thread (startet 5 s nach dem Öffnen der Datenbank; unter `NODE_ENV=test` nur mit `worker`) |
 | `GC_LOG_LEVEL` | `info` | Log-Level (debug, info, warn, error) |
 | `GC_SERVER_LOG` | an | Server-Log-Datei `/data/logs/server.log` (5 MB × 5, Logs & Monitoring); `off` = nur stdout |
 

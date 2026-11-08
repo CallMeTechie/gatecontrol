@@ -67,11 +67,11 @@ function pushSpan(span) {
   if (spans.length > SPANS_MAX) spans.splice(0, spans.length - SPANS_MAX);
 }
 
-function endTask(id) {
+function endTask(id, { async = false } = {}) {
   const t = active.get(id);
   if (!t) return;
   active.delete(id);
-  pushSpan({ name: t.name, at: t.at, end: performance.now() });
+  pushSpan({ name: t.name, at: t.at, end: performance.now(), async: async || !!t.async });
 }
 
 let measuring = 0;
@@ -182,6 +182,9 @@ function withTask(name, fn) {
   let r;
   try { r = fn(); } catch (e) { endTask(id); throw e; }
   if (r && typeof r.then === 'function') {
+    // an async task: its time in a stall is the time it was under way — partly waiting (I/O, a child process), not its own work
+    const t = active.get(id);
+    if (t) t.async = true;
     return r.then((v) => { endTask(id); return v; }, (e) => { endTask(id); throw e; });
   }
   endTask(id);
@@ -194,22 +197,26 @@ function withTask(name, fn) {
  */
 function tasksBetween(from, to) {
   const by = new Map();
-  const add = (name, at, end, running) => {
+  const add = (name, at, end, running, async) => {
     const ms = Math.min(end, to) - Math.max(at, from);
     if (ms < 0) return;
-    const e = by.get(name) || { name, ms: 0, n: 0, running: false };
+    const e = by.get(name) || { name, ms: 0, n: 0, running: false, async: false };
     e.ms += ms;
     e.n += 1;
     e.running = e.running || running;
+    e.async = e.async || !!async;
     by.set(name, e);
   };
-  for (const s of spans) if (s.end >= from && s.at <= to) add(s.name, s.at, s.end, false);
-  for (const t of active.values()) if (t.at <= to) add(t.name, t.at, to, true);
+  for (const s of spans) if (s.end >= from && s.at <= to) add(s.name, s.at, s.end, false, s.async);
+  for (const t of active.values()) if (t.at <= to) add(t.name, t.at, to, true, true);
   return [...by.values()].sort((a, b) => b.ms - a.ms);
 }
 
 function describeTasks(list) {
-  return list.slice(0, TASKS_IN_LOG).map((t) => `${t.name}${t.n > 1 ? ` ×${t.n}` : ''}: ${Math.round(t.ms)} ms${t.running ? ' (still running)' : ''}`);
+  // own work first: a synchronous task's time is exactly the time it held the thread; an async one was
+  // only under way (it may just have waited for its I/O while something else blocked)
+  const sorted = [...list].sort((a, b) => (a.async === b.async ? b.ms - a.ms : (a.async ? 1 : -1)));
+  return sorted.slice(0, TASKS_IN_LOG).map((t) => `${t.name}${t.n > 1 ? ` ×${t.n}` : ''}: ${Math.round(t.ms)} ms${t.running ? ' (still running)' : (t.async ? ' (async)' : '')}`);
 }
 
 function describeRequests(list) {
@@ -239,9 +246,29 @@ function noteStall(ms, end = Date.now()) {
   if (stalls.length > STALLS_MAX) stalls.splice(0, stalls.length - STALLS_MAX);
 }
 
+const SPAWN_MIN_MS = 20;
+let spawnMinMs = SPAWN_MIN_MS;
+let spawnPatched = false;
+
+/**
+ * Starting a child process is synchronous on this thread (fork + exec; slow
+ * when the server's memory is large or under pressure): every spawn of
+ * SPAWN_MIN_MS or more is kept as `spawn <program>`.
+ */
+function instrumentSpawn() {
+  if (spawnPatched) return;
+  spawnPatched = true;
+  const { ChildProcess } = require('node:child_process');
+  const orig = ChildProcess.prototype.spawn;
+  ChildProcess.prototype.spawn = function measuredSpawn(options) {
+    return measure(() => `spawn ${String((options && options.file) || '?').split('/').pop().slice(0, 40)}`, () => orig.call(this, options), spawnMinMs);
+  };
+}
+
 /** Start watching (idempotent). `onStall(ms, tasks)` for tests. */
 function start({ everyMs = EVERY_MS, warnMs = WARN_MS, onStall = null } = {}) {
   if (timer) return;
+  instrumentSpawn();
   everyMsNow = everyMs;
   lastTick = performance.now();
   timer = setInterval(() => {
@@ -290,6 +317,7 @@ function _resetForTest() {
 
 module.exports = {
   start, stop, withTask, beginTask, endTask, tasksBetween, blockedSince, measure, task,
-  beginRequest, endRequest, requestsBetween, routeLabel, httpMiddleware, measureNext,
+  beginRequest, endRequest, requestsBetween, routeLabel, httpMiddleware, measureNext, instrumentSpawn,
+  _setSpawnMinMsForTest: (ms) => { spawnMinMs = ms == null ? SPAWN_MIN_MS : ms; },
   EVERY_MS, WARN_MS, RECORD_MS, MEASURE_MIN_MS, _noteStallForTest: noteStall, _resetForTest,
 };

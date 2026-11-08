@@ -16,6 +16,8 @@
 //   * die automatische Sicherung kommt nicht mehr direkt beim Start.
 
 const crypto = require('node:crypto');
+// the WAL checkpoint worker runs in tests only on request (db/connection.js)
+process.env.GC_DB_CHECKPOINT = 'worker';
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
 
 const { describe, it, before, after, afterEach, mock } = require('node:test');
@@ -124,7 +126,8 @@ describe('stall attribution (utils/loopStall.js)', () => {
     loopStall.start({ everyMs: 50, warnMs: 250, onStall: (ms, tasks, reqs) => seen.push({ ms, tasks, reqs }) });
     await sleep(80);
     await supertest(app).get('/slow/1234').expect(200);
-    await sleep(120);
+    // the watch timer reports at its next run (later on a busy runner): wait for it, bounded
+    for (let i = 0; i < 60 && !seen.length; i++) await sleep(50);
     loopStall.stop();
     assert.ok(seen.length >= 1, 'a stall was seen');
     const t = seen[0].tasks.find((x) => x.name === 'GET /slow/:id');
