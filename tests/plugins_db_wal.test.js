@@ -78,19 +78,21 @@ describe('plugin databases in WAL', () => {
       await db.call('exec', { sql: 'CREATE TABLE t (v TEXT)' });
       for (let i = 0; i < 5; i++) await db.call('query', { sql: 'INSERT INTO t VALUES (?)', params: ['x' + i], mode: 'run' });
       const file = path.join(dbDir('wal-idle'), 'plugin.db');
-      const before = fs.statSync(file).size;
       // a separate connection would see the rows through the log either way: the main file must have them
       let backfilled = false;
+      let size = 0;
       for (let i = 0; i < 50 && !backfilled; i++) {
         await sleep(50);
-        const buf = fs.readFileSync(file); // plugin.db alone, without its log (header: rollback journal, for memory)
+        // plugin.db alone, without its log (read once, no stat before; header: rollback journal, for memory)
+        const buf = fs.readFileSync(file);
+        size = buf.length;
         buf[18] = 1;
         buf[19] = 1;
         const c = new Database(buf);
         backfilled = c.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 't'").get().n === 1;
         c.close();
       }
-      assert.ok(backfilled, `table in plugin.db itself (size before ${before})`);
+      assert.ok(backfilled, `table in plugin.db itself (${size} bytes)`);
     } finally {
       storage._setCheckpointIdleMsForTest(null);
       await storage.close('wal-idle');
@@ -118,7 +120,7 @@ describe('a slow disk (every sync delayed with LD_PRELOAD)', () => {
     const r = spawnSync(process.execPath, [path.join(__dirname, 'fixtures', 'slow-fsync', 'run.js'), what, String(n || '')], { env, encoding: 'utf8', timeout: 60000 });
     assert.equal(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout.trim().split('\n').pop());
-    out.syncs = fs.existsSync(report) ? Number(fs.readFileSync(report, 'utf8')) : null;
+    try { out.syncs = Number(fs.readFileSync(report, 'utf8')); } catch { out.syncs = null; } // read once (no exists-check before)
     return out;
   };
 
