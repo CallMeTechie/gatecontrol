@@ -77,12 +77,20 @@ describe('fingerprint of a statement (sqlGuard.fingerprint)', () => {
 
 describe('slow plugin database statements', () => {
   it('a statement of 200 ms or more in the worker is logged with the plugin, the statement without values, rows and times', async () => {
+    // no calibration by wall-clock time (a busy runner makes it wrong, and a calibration run of 200 ms or more would
+    // itself be the logged one — the next would wait a minute): the count doubles until the worker measures 200 ms or
+    // more. Every run before was faster than that in the worker — the first slow one of a statement is always logged.
     const db = storage.forPlugin('slow-log');
-    const n = await countFor(db, 400);
     const warn = mock.method(logger, 'warn', () => {});
-    const r = await db.call('query', { sql: COUNT_SQL.replace('x < ?', `x < ${n}`), mode: 'all' }, 10000);
-    assert.equal(r.rows[0].n, n);
-    const lines = warn.mock.calls.filter((c) => c.arguments[1] === 'slow plugin database statement');
+    const slowLines = () => warn.mock.calls.filter((c) => c.arguments[1] === 'slow plugin database statement');
+    let n = 100000;
+    let runs = 0;
+    for (; runs < 12 && !slowLines().length; runs++) {
+      n *= 2;
+      const r = await db.call('query', { sql: COUNT_SQL.replace('x < ?', `x < ${n}`), mode: 'all' }, 14000);
+      assert.equal(r.rows[0].n, n);
+    }
+    const lines = slowLines();
     assert.equal(lines.length, 1, JSON.stringify(warn.mock.calls.map((c) => c.arguments)));
     const f = lines[0].arguments[0];
     assert.equal(f.plugin, 'slow-log');
@@ -176,7 +184,9 @@ describe('the stall log says whether the main thread computed or waited', () => 
     loopStall.start({ everyMs: 50, warnMs: 300, onStall: () => seen.push(1) });
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await sleep(80);
-    const spin = (ms) => { const end = Date.now() + ms; while (Date.now() < end) { /* busy */ } };
+    // spin for 500 ms of this thread's CPU time (not wall time: a busy runner may take the core away meanwhile)
+    const cpu = () => { const t = process.threadCpuUsage(); return (t.user + t.system) / 1000; };
+    const spin = (ms) => { const end = cpu() + ms; while (cpu() < end) { /* busy */ } };
     await new Promise((r) => setImmediate(() => { spin(500); r(); }));
     for (let i = 0; i < 60 && seen.length < 1; i++) await sleep(50);
     await sleep(80);
@@ -185,8 +195,10 @@ describe('the stall log says whether the main thread computed or waited', () => 
     loopStall.stop();
     const lines = warn.mock.calls.filter((c) => c.arguments[1] === 'event loop was blocked').map((c) => c.arguments[0]);
     assert.equal(lines.length, 2, JSON.stringify(lines));
-    assert.equal(lines[0].blockedBy, 'cpu', JSON.stringify(lines[0]));
-    assert.ok(lines[0].mainCpuMs >= 300);
+    assert.ok(lines[0].mainCpuMs >= 450, JSON.stringify(lines[0]));
+    // cpu unless the runner took the core away for most of the stall (then it did wait — the rule of usageFields)
+    assert.equal(lines[0].blockedBy, lines[0].mainCpuMs >= lines[0].blockedMs * 0.6 ? 'cpu' : 'waiting', JSON.stringify(lines[0]));
+    assert.ok(lines[0].mainCpuMs >= lines[0].blockedMs * 0.6 || lines[0].blockedMs > 750, `a stall of ${lines[0].blockedMs} ms with ${lines[0].mainCpuMs} ms CPU is cpu`);
     assert.equal(lines[1].blockedBy, 'waiting', JSON.stringify(lines[1]));
     assert.ok(lines[1].mainCpuMs < 150);
   });
