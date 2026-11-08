@@ -388,6 +388,37 @@
       answer({ ok: true });
     }
 
+    // GC.openPortal (since 1.254.0): portal frames only — another plugin's portal tab with a short query, the same
+    // address as a direct link ("/portal?<key>=<value>#plg-<id>"), during a click only and at most every 1.5 s
+    const portalFrame = base.indexOf('/api/v1/portal/') === 0;
+    let lastPortal = 0;
+    function openPortal(m) {
+      const answer = (data) => reply({ type: 'gc-result', id: m.id, ok: true, status: 200, data });
+      if (!portalFrame) { answer({ ok: false, code: 'not_allowed' }); return; }
+      const target = typeof m.plugin === 'string' ? m.plugin : '';
+      const query = m.query == null ? {} : m.query;
+      const q = [];
+      let ok = target.length <= 64 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(target) && typeof query === 'object' && !Array.isArray(query);
+      if (ok) {
+        const keys = Object.keys(query);
+        ok = keys.length <= 8 && keys.every((k) => {
+          const v = query[k];
+          if (k === 'section' || !/^[a-z][A-Za-z0-9_]{0,31}$/.test(k) || (typeof v !== 'string' && typeof v !== 'number') || String(v).length > 200) return false;
+          q.push(encodeURIComponent(k) + '=' + encodeURIComponent(String(v)));
+          return true;
+        });
+      }
+      if (!ok) { answer({ ok: false, code: 'invalid' }); return; }
+      const panel = document.getElementById('panel-plg-' + target);
+      if (!panel || !panel.querySelector || !panel.querySelector('iframe[data-plugin-frame]')) { answer({ ok: false, code: 'not_found' }); return; }
+      const ua = navigator.userActivation;
+      if (ua && ua.isActive !== true) { answer({ ok: false, code: 'no_gesture' }); return; }
+      if (Date.now() - lastPortal < 1500) { answer({ ok: false, code: 'rate_limited' }); return; }
+      lastPortal = Date.now();
+      answer({ ok: true });
+      window.location.assign('/portal' + (q.length ? '?' + q.join('&') : '') + '#plg-' + target);
+    }
+
     // GC.scanQr: the page's own camera dialog, the frame gets the text only
     const scanOn = frame.getAttribute('data-plugin-scanqr') != null;
     let lastScan = 0;
@@ -587,6 +618,7 @@
       else if (m.type === 'gc-keys' && Number.isInteger(m.id)) keys(m);
       else if (m.type === 'gc-media-bytes' && Number.isInteger(m.id)) mediaBytes(m);
       else if (m.type === 'gc-open-tab' && Number.isInteger(m.id)) openTab(m);
+      else if (m.type === 'gc-open-portal' && Number.isInteger(m.id)) openPortal(m);
       else if (m.type === 'gc-subscribe') setSubscribed(true);
       else if (m.type === 'gc-unsubscribe') setSubscribed(false);
       else if (m.type === 'gc-inbox-subscribe') setInbox(true);
