@@ -161,7 +161,7 @@
 
   function tooOld(sup) {
     return U.bigNote('warn', 'up', t('gwn.old.title', { min: sup.minGateway }), t('gwn.old.text', { version: sup.version || '—' }),
-      [h('a', { class: 'btn btn-ghost', href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwe.old.whats_new') })]);
+      [U.whatsNew(cur && cur.g)]);
   }
 
   // ─── Settings (shared by the tabs and the card) ───────────────────────

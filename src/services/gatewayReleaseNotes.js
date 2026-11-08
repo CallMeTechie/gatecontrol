@@ -222,15 +222,8 @@ function view() {
   };
 }
 
-/** The versions after `from` up to and including `to` (newest first) — what an update brings. */
-function between(versions, from, to) {
-  if (!VERSION_RE.test(String(from || ''))) return [];
-  return (versions || []).filter((v) => compareVersions(v.version, from) > 0
-    && (!VERSION_RE.test(String(to || '')) || compareVersions(v.version, to) <= 0));
-}
-
 module.exports = {
-  list, between, cleanNotes, parse, RELEASES_URL, VERSION_RE, ReleaseNotesError,
+  list, cleanNotes, parse, RELEASES_URL, VERSION_RE, ReleaseNotesError,
   _setTransport: (fn) => { transportOverride = fn; },
   _reset: (s = {}) => { state.versions = s.versions || []; state.fetchedAt = s.fetchedAt || 0; state.etag = s.etag || null; state.attemptAt = s.attemptAt || 0; state.error = s.error || null; inFlight = null; },
   _load: load,

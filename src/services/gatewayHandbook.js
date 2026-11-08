@@ -13,8 +13,7 @@
 // ("#dns-filter", "#3-3-raspberry-pi"); links to chapters that are not part of
 // it (server set-up, the overview, INSTALL.md) point to the guide on GitHub.
 // `anchors` maps every "<file>#<GitHub anchor>" (and "<file>" itself) to the
-// in-app anchor, so the help links of the interface (public/js/handbook.js
-// topics) open the right heading.
+// in-app anchor (what the links between the chapters are rewritten with).
 
 const fs = require('node:fs');
 const path = require('node:path');

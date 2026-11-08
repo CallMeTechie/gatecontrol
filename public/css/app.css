@@ -9804,8 +9804,7 @@ a.lg-ev-msg:hover{color:var(--teal)}
 .gwp-grow{flex:1 1 auto}
 .gw-fleet .grid.gwp-grid{grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr))}
 .gw-card-tags{display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 10px}
-.gw-card-tags .gw-whats-new{align-self:center; min-height:24px}
-/* "Versionen" and "Handbuch" of the Gateways page (#versions, #handbook, public/js/gateway-docs.js):
+/* "Versionen" and "Handbuch" of a gateway (#gw/<id>/versions, …/handbook, public/js/gateway-docs.js):
    the building blocks of the plugin area (pgx-*), nothing of their own but the centred actions */
 .gw-docs .pgx-acts.gwd-center{justify-content:center; padding:0 22px 22px}
 .gw-docs .pgx-card-h .pgx-push{margin-left:auto}

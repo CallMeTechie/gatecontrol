@@ -28,13 +28,9 @@ Wartezeit für den Rückwechsel zurück; die Karte zählt diese Zeit herunter
 („übernimmt seine Routen in 4:30 wieder“).
 
 Was die neue Version bringt, zeigt **„Was ist neu?“** neben „Update auf …
-verfügbar“ (auf der Karte, im „Zustand“ des Gateways und unter „Mehr“): die
-Änderungen jeder Version zwischen der installierten und der neuesten.
-„Versionen“ oben auf der Seite listet alle Gateway-Versionen mit ihren
-Änderungen; dort steht auch, welches Gateway gerade welche Version hat. Die
-Liste kommt von GitHub. Erreicht dein Server GitHub nicht, siehst du den
-zuletzt geladenen Stand mit einem Hinweis – oder, falls er nie geladen wurde,
-den Link zu den Versionen auf GitHub.
+verfügbar“ im „Zustand“ des Gateways (oder „Mehr“ → „Versionen“): alle
+Versionen mit ihren Änderungen, die installierte markiert, die neueren mit
+„Neuer“. Mehr in [3.8](03-gateway-einrichten.md#38-versionen-und-handbuch).
 
 **Prüfen:** Nach einigen Minuten zeigt die Karte die neue Version.
 

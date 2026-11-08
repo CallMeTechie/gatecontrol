@@ -1,13 +1,13 @@
 'use strict';
 
-// "Versionen" and "Handbuch" of the Gateways page (#versions, #handbook):
+// "Versionen" and "Handbuch" of a gateway (#gw/<id>/versions, #gw/<id>/handbook):
 //   services/gatewayReleaseNotes.js — the release notes of the gateway repository
 //     (GitHub releases, cached in memory and next to the database, offline-safe),
 //     GET /api/v1/gateways/releases
 //   services/gatewayHandbook.js — the gateway chapters (3–7) of docs/handbuch and
 //     docs/guide as one document through the safe renderer of the plugin handbooks,
 //     GET /api/v1/gateways/handbook
-//   public/js/gateway-docs-kit.js — addresses, help topics → in-app anchors
+//   public/js/gateway-docs-kit.js — addresses, the installed version and the newer ones
 
 const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -60,14 +60,6 @@ describe('gateway release notes (services/gatewayReleaseNotes.js)', () => {
     assert.equal(list[1].published_at, '2026-11-07T17:13:47.000Z');
     assert.equal(list[3].url, `${REL}/tag/v1.30.0`);
     assert.throws(() => notes.parse({}), /not a list/);
-  });
-
-  it('between(): the versions after the installed one up to the target', () => {
-    const vs = notes.parse([release('1.34.1', 'a'), release('1.34.0', 'b'), release('1.33.1', 'c'), release('1.32.0', 'd')]);
-    assert.deepEqual(notes.between(vs, '1.33.1', '1.34.1').map((v) => v.version), ['1.34.1', '1.34.0']);
-    assert.deepEqual(notes.between(vs, '1.32.0', '1.34.0').map((v) => v.version), ['1.34.0', '1.33.1']);
-    assert.deepEqual(notes.between(vs, '1.34.1', null), []);
-    assert.deepEqual(notes.between(vs, 'garbage', '1.34.1'), []);
   });
 
   it('without GitHub (tests never reach it): not available, no error thrown', async () => {
@@ -162,18 +154,9 @@ describe('gateway handbook (services/gatewayHandbook.js)', () => {
       assert.ok(hrefs.some((h) => h.startsWith(guide.BASE + guide.DIRS[lang] + '02-')));
     });
 
-    it(`${lang}: every help topic of chapters 3–7 (public/js/handbook.js) opens its heading`, () => {
+    it(`${lang}: every chapter file maps to its heading`, () => {
       const r = hbook.get(lang);
-      const topics = Object.keys(guide.TOPICS).filter((k) => kit.isTopic(k));
-      assert.ok(topics.length >= 30);
-      for (const k of topics) {
-        const a = kit.resolve(k, r.anchors, lang);
-        assert.ok(a, 'no anchor for ' + k);
-        assert.ok(r.html.includes(`id="hb-${a}"`), `${k} → ${a}`);
-      }
-      // the chapters themselves and their sections
-      assert.equal(kit.resolve('edge', r.anchors, lang), r.chapters[1].anchor);
-      assert.equal(kit.resolve('gw.rpi', r.anchors, lang), '3-3-raspberry-pi');
+      for (const c of r.chapters) assert.ok(c.anchor && r.html.includes(`id="hb-${c.anchor}"`), c.file);
     });
   }
 
@@ -212,69 +195,79 @@ describe('gateway handbook (services/gatewayHandbook.js)', () => {
 
 describe('gateway docs kit (public/js/gateway-docs-kit.js)', () => {
   it('addresses', () => {
-    assert.deepEqual(kit.parseHash('#versions'), { view: 'versions', from: null });
-    assert.deepEqual(kit.parseHash('#versions/1.31.0'), { view: 'versions', from: '1.31.0' });
-    assert.deepEqual(kit.parseHash('#versions/<x>'), { view: 'versions', from: null });
-    assert.deepEqual(kit.parseHash('#handbook'), { view: 'handbook', target: null });
-    assert.deepEqual(kit.parseHash('#handbook/3-3-raspberry-pi'), { view: 'handbook', target: '3-3-raspberry-pi' });
-    assert.deepEqual(kit.parseHash('#handbook/gw.rpi'), { view: 'handbook', target: 'gw.rpi' });
-    assert.deepEqual(kit.parseHash('#handbook/%3Cscript%3E'), { view: 'handbook', target: null });
-    assert.deepEqual(kit.parseHash('#handbook/%E0%A4%A'), { view: 'handbook', target: null });
-    assert.equal(kit.parseHash('#gw/3'), null);
-    assert.equal(kit.parseHash('#versionsx'), null);
-    assert.equal(kit.versionsHash('1.2.3'), '#versions/1.2.3');
-    assert.equal(kit.versionsHash('x'), '#versions');
-    assert.equal(kit.versionsHash(null), '#versions');
-    assert.equal(kit.handbookHash('gw.rpi'), '#handbook/gw.rpi');
-    assert.equal(kit.handbookHash(null), '#handbook');
+    assert.deepEqual(kit.parseHash('#gw/7/versions'), { id: '7', view: 'versions', target: null });
+    assert.deepEqual(kit.parseHash('#gw/7/handbook'), { id: '7', view: 'handbook', target: null });
+    assert.deepEqual(kit.parseHash('#gw/7/handbook/3-3-raspberry-pi'), { id: '7', view: 'handbook', target: '3-3-raspberry-pi' });
+    assert.deepEqual(kit.parseHash('#gw/7/handbook/%3Cscript%3E'), { id: '7', view: 'handbook', target: null });
+    assert.deepEqual(kit.parseHash('#gw/a%20b/versions'), { id: 'a b', view: 'versions', target: null });
+    assert.equal(kit.parseHash('#gw/%E0%A4%A/versions'), null);
+    assert.equal(kit.parseHash('#gw/7/versions/1.2.3'), null);
+    assert.equal(kit.parseHash('#gw/7'), null);
+    assert.equal(kit.parseHash('#gw/7/net'), null);
+    assert.equal(kit.parseHash('#versions'), null);
+    assert.equal(kit.versionsHash(7), '#gw/7/versions');
+    assert.equal(kit.versionsHash('a b'), '#gw/a%20b/versions');
+    assert.equal(kit.handbookHash(7), '#gw/7/handbook');
+    assert.equal(kit.handbookHash(7, '3-3-raspberry-pi'), '#gw/7/handbook/3-3-raspberry-pi');
+    assert.equal(kit.handbookHash(7, '<x>'), '#gw/7/handbook');
   });
 
-  it('topics: only those of chapters 3–7', () => {
-    assert.equal(kit.isTopic('gw.rpi'), true);
-    assert.equal(kit.isTopic('faq.utc'), true);
-    assert.equal(kit.isTopic('index'), false);
-    assert.equal(kit.isTopic('constructor'), false);
-    assert.equal(kit.isTopic('__proto__'), false);
-    assert.equal(kit.resolve('3-3-raspberry-pi', {}, 'de'), '3-3-raspberry-pi');
-    assert.equal(kit.resolve('gw.rpi', { '03-gateway-einrichten.md#33-raspberry-pi': '3-3-raspberry-pi' }, 'de'), '3-3-raspberry-pi');
-    assert.equal(kit.resolve('gw.rpi', { '03-gateway-einrichten.md': '3-gateway-einrichten' }, 'de'), '3-gateway-einrichten');
-    assert.equal(kit.resolve('gw.rpi', { '03-gateway-einrichten.md#33-raspberry-pi': 'x y' }, 'de'), null);
-    assert.equal(kit.resolve('gw.rpi', null, 'de'), null);
+  it('versions: clean, compare, installed / newer / older', () => {
+    assert.equal(kit.cleanVersion('v1.34.0'), '1.34.0');
+    assert.equal(kit.cleanVersion(' 1.34.0 '), '1.34.0');
+    assert.equal(kit.cleanVersion('dev'), null);
+    assert.equal(kit.cleanVersion(null), null);
+    assert.equal(kit.compare('1.10.0', '1.9.9'), 1);
+    assert.equal(kit.compare('1.9.9', '1.10.0'), -1);
+    assert.equal(kit.compare('2.0.0', '2.0.0'), 0);
+    assert.equal(kit.stateOf('1.34.0', 'v1.34.0'), 'installed');
+    assert.equal(kit.stateOf('1.34.1', '1.34.0'), 'newer');
+    assert.equal(kit.stateOf('1.33.1', '1.34.0'), 'older');
+    assert.equal(kit.stateOf('1.33.1', null), 'unknown');
+    assert.equal(kit.stateOf('x', '1.34.0'), 'unknown');
   });
 
-  it('which gateway runs which version', () => {
-    const run = kit.runningOn([{ name: 'b', health: { telemetry: { gateway_version: '1.34.0' } } }, { name: 'a', health: { telemetry: { gateway_version: 'v1.34.0' } } },
-      { name: 'c', health: { telemetry: { gateway_version: '1.33.1' } } }, { name: 'd' }, { name: 'e', health: { telemetry: { gateway_version: 'dev' } } }]);
-    assert.deepEqual(run, { '1.34.0': ['a', 'b'], '1.33.1': ['c'] });
-    assert.equal(kit.namesText(['a', 'b'], 3), 'a, b');
-    assert.equal(kit.namesText(['a', 'b', 'c', 'd', 'e'], 3, 'und {{n}} weiteren'), 'a, b, c und 2 weiteren');
+  it('summary: how many versions are newer, whether the installed one is listed', () => {
+    const vs = [{ version: '1.34.2' }, { version: '1.34.1' }, { version: '1.34.0' }, { version: '1.33.1' }];
+    assert.deepEqual(kit.summary(vs, '1.34.0'), { installed: '1.34.0', newer: 2, listed: true });
+    assert.deepEqual(kit.summary(vs, '1.34.2'), { installed: '1.34.2', newer: 0, listed: true });
+    assert.deepEqual(kit.summary(vs, '1.20.0'), { installed: '1.20.0', newer: 4, listed: false });
+    assert.deepEqual(kit.summary(vs, null), { installed: null, newer: 0, listed: false });
+    assert.deepEqual(kit.summary(null, '1.0.0'), { installed: '1.0.0', newer: 0, listed: false });
   });
 });
 
 describe('GET /api/v1/gateways/releases, /handbook and the page', () => {
   let agent;
+  let app;
   before(async () => {
     const { setup } = require('./helpers/setup');
-    ({ agent } = await setup());
+    ({ agent, app } = await setup());
   });
   after(() => { notes._setTransport(null); notes._reset(); require('./helpers/setup').teardown(); });
 
-  it('releases: the list, the versions since the installed one, the source', async () => {
+  it('releases: the list, the latest version, the source', async () => {
     notes._reset();
     notes._setTransport(answer([release('1.34.1', 'a'), release('1.34.0', BODY), release('1.33.1', 'c')]));
     require('../src/services/gatewayRelease')._setCache('1.34.1');
-    const r = await agent.get('/api/v1/gateways/releases?from=1.33.1').expect(200);
+    const r = await agent.get('/api/v1/gateways/releases').expect(200);
     assert.equal(r.headers['cache-control'], 'no-store');
     assert.equal(r.body.ok, true);
     assert.equal(r.body.available, true);
+    assert.equal(r.body.stale, false);
     assert.equal(r.body.latest_version, '1.34.1');
     assert.equal(r.body.releases_url, REL);
     assert.deepEqual(r.body.versions.map((v) => v.version), ['1.34.1', '1.34.0', '1.33.1']);
-    assert.deepEqual(r.body.since.map((v) => v.version), ['1.34.1', '1.34.0']);
-    assert.equal(r.body.since[1].notes, '- Funksticks von Hand zuordnen (#51)\n- Office-Image im Release (#52)');
-    const bad = await agent.get('/api/v1/gateways/releases?from=<script>').expect(200);
-    assert.equal(bad.body.from, null);
-    assert.deepEqual(bad.body.since, []);
+    assert.equal(r.body.versions[1].notes, '- Funksticks von Hand zuordnen (#51)\n- Office-Image im Release (#52)');
+    assert.equal(r.body.versions[1].url, `${REL}/tag/v1.34.0`);
+    // the lines the page renders as text (the plugin area's noteLines, made on the server)
+    assert.deepEqual(r.body.versions[1].lines, [{ kind: 'li', level: 0, text: 'Funksticks von Hand zuordnen (#51)' }, { kind: 'li', level: 0, text: 'Office-Image im Release (#52)' }]);
+  });
+
+  it('releases and handbook need a signed-in admin', async () => {
+    const request = require('supertest');
+    await request(app).get('/api/v1/gateways/releases').expect((res) => assert.ok([401, 403, 302].includes(res.status), String(res.status)));
+    await request(app).get('/api/v1/gateways/handbook').expect((res) => assert.ok([401, 403, 302].includes(res.status), String(res.status)));
   });
 
   it('releases: offline and never loaded → available false', async () => {
@@ -297,19 +290,17 @@ describe('GET /api/v1/gateways/releases, /handbook and the page', () => {
     assert.match(de.body.html, /id="hb-3-gateway-einrichten"/);
   });
 
-  it('the page: buttons, the view, the scripts in order, the strings in the island', async () => {
+  it('the page: the view, the scripts in order, the strings in the island', async () => {
     const html = (await agent.get('/gateways').expect(200)).text;
-    assert.match(html, /id="btn-gw-versions" href="#versions"/);
-    assert.match(html, /id="btn-gw-handbook" href="#handbook"/);
     assert.match(html, /<div id="gw-docs-view" class="pgx gw-docs" hidden><\/div>/);
     const at = (s) => html.indexOf(s);
-    assert.ok(at('/js/handbook.js') > 0 && at('/js/handbook.js') < at('/js/gateway-docs-kit.js'));
-    assert.ok(at('/js/plugins-ui.js') > 0 && at('/js/plugins-ui.js') < at('/js/gateway-docs.js?'));
-    assert.ok(at('/js/gateway-docs-kit.js') < at('/js/gateway-docs.js?') && at('/js/gateway-docs.js?') < at('/js/gateways.js?'));
+    assert.equal(at('/js/plugins-ui.js'), -1, 'the notes come as lines, the plugin helpers stay on the plugin page');
+    assert.ok(at('/js/gateway-docs-kit.js') > 0 && at('/js/gateway-docs-kit.js') < at('/js/gateway-docs.js?') && at('/js/gateway-docs.js?') < at('/js/gateways.js?'));
+    assert.ok(at('/js/gateway-edge.js?') < at('/js/gateway-docs.js?'));
     const m = /<script type="application\/json" id="gwiz-i18n" data-prefixes="([^"]+)"[^>]*>([\s\S]*?)<\/script>/.exec(html);
     assert.ok(m[1].split(' ').includes('gwd.'));
     const island = JSON.parse(m[2]);
-    assert.ok(island['gwd.ver.since'] && island['gwd.hb.toc'] && island['gwd.whats_new']);
+    assert.ok(island['gwd.ver.installed'] && island['gwd.ver.newer'] && island['gwd.hb.toc'] && island['gwd.whats_new'] && island['gwp.menu.versions'] && island['gwp.menu.handbook']);
   });
 
   it('every gwd.* string in German and English', () => {

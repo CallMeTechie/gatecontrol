@@ -394,6 +394,13 @@
     ]);
   }
 
+  // "Was ist neu?" of a "too old" note: "Versionen" of the gateway (gateway-docs.js), else the releases on GitHub
+  function whatsNew(g) {
+    const D = window.GCGatewayDocs;
+    return D && g ? h('a', { class: 'btn btn-ghost', href: D.versionsHref(g), 'data-act': 'whats-new', text: t('gwe.old.whats_new') })
+      : h('a', { class: 'btn btn-ghost', href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwe.old.whats_new') });
+  }
+
   function tooOld(g, d, ctx) {
     const sup = d.support || {};
     const actions = [];
@@ -406,11 +413,7 @@
       if (g.update_state === 'updating') up.disabled = true;
       actions.push(up);
     }
-    // the release notes since the installed version, in the page (#versions/<version>, gateway-docs.js)
-    const docs = window.GCGatewayDocs;
-    const cur = g.health && g.health.telemetry ? g.health.telemetry.gateway_version : null;
-    actions.push(docs ? h('a', { class: 'btn btn-ghost', href: docs.versionsHash(cur), 'data-act': 'whats-new', text: t('gwe.old.whats_new') })
-      : h('a', { class: 'btn btn-ghost', href: GW_RELEASES, target: '_blank', rel: 'noopener noreferrer', text: t('gwe.old.whats_new') }));
+    actions.push(whatsNew(g));
     return bigNote('warn', 'up', t('gwe.old.title', { min: sup.edgeMinGateway || '—' }),
       t('gwe.old.text', { version: sup.gatewayVersion || '—' }), actions);
   }
@@ -1081,7 +1084,7 @@
   function unmount() { cur = null; if (window.GCGatewayNet) window.GCGatewayNet.unmount(); if (window.GCGatewayHome) window.GCGatewayHome.unmount(); if (window.GCGatewayRadio) window.GCGatewayRadio.unmount(); }
 
   // Building blocks shared with the tabs "Netzwerk" / "Internet" (gateway-net.js)
-  const ui = { t, api, errText, icon, tag, card, note, guide, chip, switchBtn, fmtTime, fmtDate, openDialog, errorBox, showErr, bigNote, restoreFocus, focusKey, toast, LANG };
+  const ui = { t, api, errText, icon, tag, card, note, guide, chip, switchBtn, fmtTime, fmtDate, openDialog, errorBox, showErr, bigNote, whatsNew, restoreFocus, focusKey, toast, LANG };
 
   window.GCGatewayEdge = { tabs, mount, prefetch, unmount, fillBadges, ui, _cache: cache };
 })();

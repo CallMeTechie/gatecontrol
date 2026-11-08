@@ -311,4 +311,25 @@ your gateway and then “More” at the top right. Under “Manage” you find:
 **Check:** After “Change name and group …” the new name is on the card and in
 the list of gateways.
 
+## 3.8 Versions and manual
+
+Like a plugin, every gateway has its versions and its manual. Click “More” at
+the top right of the gateway:
+
+- **Versions** – every gateway version with its changes, the newest at the
+  top. The version this gateway runs is marked **“Installed”**; every newer
+  one **“Newer”**. If there is an update, a line above says how many versions
+  it brings. “What's new?” next to “Update to … available” in “Status” leads
+  here as well.
+- **Manual** – chapters 3 to 7 of this guide right inside GateControl, with a
+  table of contents. It ships with GateControl and needs no internet.
+
+GateControl loads the version list from GitHub (at most every 6 hours) and
+keeps it. If your server cannot reach GitHub right now, you see the last
+loaded list with a hint – or, if it was never loaded, a link to the versions
+on GitHub.
+
+**Check:** “More” → “Versions” shows “Installed” next to your gateway's
+version.
+
 Continue with [chapter 4: Edge plugins and Smart Home](04-edge-and-smart-home.md).

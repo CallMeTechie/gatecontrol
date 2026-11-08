@@ -314,4 +314,26 @@ Gateways verwaltest du nur noch auf der Seite „Gateways“ – die Seite
 **Prüfen:** Nach „Name und Gruppe ändern …“ steht der neue Name in der Karte
 und in der Liste der Gateways.
 
+## 3.8 Versionen und Handbuch
+
+Wie bei einem Plugin hat auch jedes Gateway seine Versionen und sein Handbuch.
+Klicke im Gateway oben rechts auf „Mehr“:
+
+- **Versionen** – jede Gateway-Version mit ihren Änderungen, die neueste
+  oben. Die Version, die auf diesem Gateway läuft, ist mit **„Installiert“**
+  markiert; jede neuere mit **„Neuer“**. Gibt es ein Update, steht darüber,
+  wie viele Versionen es bringt. „Was ist neu?“ neben „Update auf …
+  verfügbar“ im „Zustand“ führt ebenfalls hierher.
+- **Handbuch** – die Kapitel 3 bis 7 dieses Handbuchs direkt in GateControl,
+  mit Inhaltsverzeichnis. Es kommt mit GateControl mit und braucht kein
+  Internet.
+
+Die Versionsliste lädt GateControl von GitHub (höchstens alle 6 Stunden) und
+merkt sie sich. Erreicht dein Server GitHub gerade nicht, siehst du den
+zuletzt geladenen Stand mit einem Hinweis – oder, falls er noch nie geladen
+wurde, einen Link zu den Versionen auf GitHub.
+
+**Prüfen:** „Mehr“ → „Versionen“ zeigt bei der Version deines Gateways
+„Installiert“.
+
 Weiter mit [Kapitel 4: Edge-Plugins und Smart Home](04-edge-und-smart-home.md).
