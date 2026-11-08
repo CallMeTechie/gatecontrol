@@ -99,9 +99,13 @@ module.exports = (ctx) => {
   async function run(page, GW) {
     const V = '#gw/' + GW + '/versions';
     const H = '#gw/' + GW + '/handbook';
+    // a fresh page: when the scenario before ended on /gateways, a goto that only changes the
+    // hash keeps the fleet that was loaded before the fleet answer above was routed
+    await page.goto('about:blank');
     await page.goto(BASE + '/gateways#gw/' + GW);
     if (page.url().includes('/login')) { await ctx.login(page); await page.goto(BASE + '/gateways#gw/' + GW); }
-    step('docs: the gateway detail is open', await until(page, () => !document.getElementById('gw-detail-view').hidden && !!document.getElementById('gw-more-btn')));
+    step('docs: the gateway detail is open, with the update to 1.34.1', await until(page, () => !document.getElementById('gw-detail-view').hidden && !!document.getElementById('gw-more-btn')
+      && !!document.querySelector('.gwo-state li[data-check="update"]')));
     step('docs: the "More" menu: "Versions" and "Manual" as links in the page', await page.evaluate((x) => {
       const v = document.querySelector('#gw-more-menu a[data-act="versions"]');
       const h = document.querySelector('#gw-more-menu a[data-act="handbook"]');
