@@ -791,7 +791,8 @@ async function pollOnce() {
         if (_watch.head.length < HEAD_LEN) _watch.head = await readHead(fh, st.size);
       } finally { await fh.close(); }
 
-      stored += await ingestLinesAsync(splitLines(chunk));
+      // decoding and splitting a chunk is the thread's own work too: measured like the ingest slices
+      stored += await ingestLinesAsync(require('../utils/loopStall').measure('waf.audit split', () => splitLines(chunk)));
 
       if (_watch.offset < st.size) {
         // backlog: more of it this tick while the tick has bytes and time left, else the next tick
@@ -814,7 +815,7 @@ async function pollOnce() {
         const cur = await rh.stat();
         if (cur.size >= _watch.rotateBytes && _watch.offset >= cur.size) {
           const rest = await rotate(rh, file, _watch.offset);
-          const lines = splitLines(rest);
+          const lines = require('../utils/loopStall').measure('waf.audit split', () => splitLines(rest));
           if (_watch.partial.length) { lines.push(_watch.partial.toString('utf8')); _watch.partial = EMPTY; } // the copy is complete
           stored += await ingestLinesAsync(lines);
           _watch.offset = 0; _watch.head = '';

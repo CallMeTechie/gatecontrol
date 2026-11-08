@@ -118,11 +118,11 @@ async function snapshotDb(id, budget) {
           return restarts >= SNAPSHOT_MAX_RESTARTS ? 0x7fffffff : SNAPSHOT_STEP_PAGES;
         },
       });
-      snap = { buf: await fsp.readFile(tmp), source: tmp };
+      snap = { buf: rollbackHeader(await fsp.readFile(tmp)), source: tmp };
     } catch (err) {
       // no usable temp folder or the like: one synchronous copy, as before
       logger.warn({ plugin: id, err: err.message }, 'backup: step-wise database snapshot failed, copying it in one piece');
-      const buf = conn.serialize();
+      const buf = rollbackHeader(conn.serialize());
       snap = { buf, source: buf };
     }
     if (snap.buf.length > budget.left) throw tooLarge();
@@ -132,6 +132,20 @@ async function snapshotDb(id, budget) {
     conn.close();
     if (tmpDir) await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+/**
+ * A database file of a plugin in WAL mode (dbWorker.js, since 1.254.0) says so in its header (bytes 18 and 19 = 2);
+ * SQLite refuses to open such a file from memory (new Database(buffer): "unable to open database file"). The
+ * snapshot (backup API) holds every page in the file itself — no log belongs to it: the header says "rollback
+ * journal" (1), as PRAGMA journal_mode = DELETE would write it. The worker switches the restored file back to WAL.
+ */
+function rollbackHeader(buf) {
+  if (buf.length < 100 || buf[18] !== 2 || buf[19] !== 2 || !buf.subarray(0, SQLITE_MAGIC.length).equals(SQLITE_MAGIC)) return buf;
+  const out = Buffer.from(buf);
+  out[18] = 1;
+  out[19] = 1;
+  return out;
 }
 
 /** The secret settings (`{ enc }` values of _gc_settings) of a database snapshot (file path or serialized Buffer). */
@@ -251,7 +265,7 @@ function fromB64Map(obj) {
 
 /** The database snapshot of a backup, opened in memory and checked — or an error. */
 function openSnapshot(b64) {
-  const buf = Buffer.from(b64, 'base64');
+  const buf = rollbackHeader(Buffer.from(b64, 'base64'));
   if (!buf.subarray(0, SQLITE_MAGIC.length).equals(SQLITE_MAGIC)) throw new Error('database snapshot is not a SQLite file');
   const conn = new Database(buf);
   try {

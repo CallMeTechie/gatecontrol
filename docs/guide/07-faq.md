@@ -198,18 +198,56 @@ interface wait meanwhile. The line names what ran in that time:
   (`diskReads`, `majorFaults` high) or because no CPU core was free
   (`processCpuMs`: all threads together).
 
-A plugin statement that runs 200 ms or longer is logged as
-“slow plugin database statement” with the plugin, the statement, rows and time
-(at most once a minute per statement). It runs in a thread of its own and does
-not stop the server – but when it reads large parts of the database, it slows
-the disk for everyone.
+- `diskSyncMs`: how long the disk last took for one small write. `waiting`
+  with `diskSyncMs` from about 50 ms: the server waited for the disk (see
+  “The disk is slow to write”).
+
+Plugin statements that run 200 ms or longer are summed up per plugin for
+5 minutes in one line “slow plugin database statements”: the count (`slow`),
+how many were writes (`writes`), the longest time (`maxMs`) and the most
+frequent statements without their values. They run in a thread of their own
+and do not stop the server – but when they read large parts of the database,
+they slow the disk for everyone. Almost only writes: it is the disk, not the
+plugin.
 
 The jobs with many entries (Drive areas on a storage target,
 the home cache of the gateways with thousands of previews, backups) work in
 small pieces, and the database writes its log back in a thread of its own.
 If the message still comes often, copy the whole line (with `tasks`,
-`requests` and `blockedBy`) and the “slow plugin database statement” lines
+`requests` and `blockedBy`) and the “slow plugin database statements” lines
 next to it into a ticket.
+
+### The disk is slow to write
+
+At the top of **Logs & Monitoring**: “GateControl’s data disk is slow to write
+(avg. … ms per write …)”. Every 2 minutes GateControl measures how long the
+disk takes until a small write is really stored. The hint appears when that
+takes 50 ms or longer on average over half an hour, and goes away by itself
+when it is fast again. An SSD takes 1–5 ms, a hard disk 10–30 ms.
+
+Every change – a device reports in, a calendar is synced, a lock reports its
+state – waits for it. Since 1.254.0 the plugins write so that not every change
+waits for the disk; a slow disk still slows down backups, updates and large
+plugins.
+
+What helps:
+
+- put GateControl’s `/data` folder on an **SSD** (on a NAS: an SSD volume or
+  an SSD cache for the volume),
+- **not** on a network share (SMB/NFS), an SD card or a USB stick,
+- **not** on a NAS volume that is very busy at the same time (backups, disk
+  checks, a RAID rebuild, downloads, many cameras),
+- on a NAS with hard disks: check whether a disk check, a RAID rebuild or a
+  backup is running – then the hint is temporary.
+
+The hint is only a hint – GateControl keeps running. The measurement can be
+switched off with `GC_DISK_PROBE=off`.
+
+What can be lost: the databases of GateControl and the plugins write their
+changes to a log first and bring them onto the disk in batches. If
+GateControl crashes, nothing is lost. On a power cut the changes of the last
+seconds (at most 30 s for the server) can be missing – the database stays
+intact.
 
 ### The container does not start or the certificate does not come
 

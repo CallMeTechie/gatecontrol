@@ -3807,19 +3807,61 @@ folder, never the database file.
 most 5000 rows and about 16 MB — past either limit the answer has
 `truncated: true` (the host's main thread copies the answer out of the worker
 and serialises it for the plugin in one go, so its size is bounded). A
-statement that runs 200 ms or longer in the worker is logged as
-"slow plugin database statement" with the plugin, the statement without its
-values (`sql`: literals as `?`, `IN (?,…)`, ≤ 160 characters), the rows, its
-time in the worker (`ms`) and the time the answer waited besides
-(`waitMs`: behind the plugin's other statements, and for the host) — once a
-minute per statement, with `times` / `maxMs` for the repeats. The host's
+statement that runs 200 ms or longer in the worker is counted per plugin;
+one line per plugin and 5 minutes (since 1.254.0; before: one line per
+statement and minute) "slow plugin database statements" says how many there
+were (`slow`), how many of them were writes (`writes`: INSERT, UPDATE,
+DELETE, COMMIT, `kv.set`, `settings.set` …), the longest time in the worker
+(`maxMs`), the longest wait besides (`waitMs`: behind the plugin's other
+statements, and for the host), `windowS` and the five most frequent
+statements (`statements`: `op`, `sql` without its values — literals as `?`,
+`IN (?,…)`, ≤ 160 characters —, `n`, `maxMs`, `rows`), with `diskSyncMs`, the
+latest write probe of the data disk (see below). The host's
 stall log (`event loop was blocked`) names a plugin's `db.query` / `db.exec`
 with that statement too, and says whether the main thread computed in the
 blocked time or waited (`mainCpuMs`, `blockedBy: cpu | waiting`,
-`processCpuMs`, `majorFaults`, `diskReads`). A statement that reads the whole
+`processCpuMs`, `majorFaults`, `diskReads`, `diskSyncMs`). A statement that reads the whole
 database (a `SUM` over rows with large text, a `LIKE '%…%'` on bodies) slows
 the disk for the whole server: give it an index that holds the columns it
 needs (a covering index; `INDEXED BY` when SQLite should not pick the row).
+
+**Journal mode** (since 1.254.0): a plugin's database runs in WAL with
+`synchronous = NORMAL`, like the host database. A write — one `UPDATE`, a
+`COMMIT`, a `kv.set` — appends to `plugin.db-wal` and does not wait for the
+disk; the disk is synced at a checkpoint only: when the log holds 1000 pages,
+after 30 s without a call of the plugin, and when the worker closes (idle
+after 5 minutes, at shutdown — `plugin.db` alone is complete then, the
+`-wal` file is gone). Before, the rollback journal (`journal_mode = DELETE`,
+`synchronous = FULL`) synced the disk four times per write transaction: on a
+disk that needs 75 ms per sync, every single-row write took ~300 ms
+(measured with a simulated slow disk, `tests/plugins_db_wal.test.js`: 204 ms
+per write at 50 ms per sync before, under 1 ms now; the number of syncs no
+longer grows with the writes). The trade-off: a crash of GateControl loses
+nothing; a power cut can lose the plugin's last transactions since its last
+checkpoint (seconds to a few minutes), never corrupt the file. An existing
+file switches on its next open. A plugin backup snapshot is written with the
+header of a rollback-journal file (it holds every page), a restored file
+switches to WAL again. Fewer writes still help most: write a row only when
+its values changed, put related writes into one transaction (`BEGIN` …
+`COMMIT`), and throttle "last seen" timestamps.
+
+**The host database** runs in WAL with `synchronous = NORMAL` and
+`busy_timeout = 5000`; its checkpoints run in a worker thread
+(`db/checkpointWorker.js`, PASSIVE: never waiting for or blocking a writer).
+Since 1.254.0 the worker checkpoints a commit once it is 30 s old (or at once
+when the log grew by 8 MB), instead of every 2 s — two syncs every 2 s
+competed with every other write on a slow disk. A power cut can lose up to
+the last 30 s of host changes.
+
+**Write speed of the data disk** (since 1.254.0, `services/diskHealth.js`): a
+worker thread writes 4 KB into `<data>/.disk-probe` and syncs it every
+2 minutes. When the average of the last 15 probes (without the highest and
+lowest fifth, at least 8 probes) is 50 ms or more, Logs & Monitoring shows
+one hint at the top ("Der Datenträger von GateControl ist beim Schreiben
+langsam …": SSD, not a network share, an SD card or a busy NAS volume), and
+"data disk is slow to write" is logged once; below 30 ms it ends ("data disk
+writes fast again"). An SSD takes 1–5 ms, a hard disk 10–30 ms. Off with
+`GC_DISK_PROBE=off`.
 
 **A larger database** (since 1.206.0) — for plugins that keep many records
 (GateControl Drive: hundreds of thousands of files with their versions):

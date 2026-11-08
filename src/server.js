@@ -194,6 +194,10 @@ async function start() {
 
     // (utils/loopStall.js runs since the start of start())
 
+    // Logs & Monitoring: how fast the data disk writes (services/diskHealth.js, a hint when slow). Best-effort.
+    try { require('./services/diskHealth').start({ dir: require('node:path').dirname(config.app.dbPath) }); }
+    catch (err) { logger.warn({ err: err.message }, 'disk write probe not started'); }
+
     // Logs & Monitoring: resolved problems that occur again (notify_on_return). Best-effort.
     try { require('./services/logProblems').start(); }
     catch (err) { logger.warn({ err: err.message }, 'log problem check not started'); }
@@ -407,6 +411,7 @@ const shutdown = createShutdownHandler({
     () => stopAutoBackup(),
     () => require('./utils/loopStall').stop(),
     () => require('./services/logProblems').stop(),
+    () => { require('./services/diskHealth').stop().catch(() => {}); },
     () => stopLicenseRefresh(),
     () => require('./services/gatewayProbe').stopProbe(),
     () => require('./services/gatewayLiveState').stopTicker(),

@@ -2,8 +2,9 @@
 
 // Langsame Plugin-Datenbankabfragen (Bericht vom 8. 11. nach 1.253.4: Blockaden
 // von 2–5 s, in jeder ein db.query von Mail):
-//   * ein Statement ab 200 ms im Worker wird mit Plugin, Statement ohne Werte,
-//     Zeilen und Zeiten protokolliert — einmal je Minute und Statement;
+//   * ein Statement ab 200 ms im Worker wird gezählt; je Plugin und 5 Minuten
+//     eine Zeile mit Anzahl, Schreibvorgängen, längster Zeit und den häufigsten
+//     Statements ohne Werte (seit 1.254.0, vorher eine Zeile je Statement und Minute);
 //   * die Blockade-Meldung nennt das Statement eines offenen db.query und sagt,
 //     ob der Haupt-Thread rechnete oder wartete;
 //   * ein schweres Statement (Summe über große Zeilen, Sekunden im Worker) und
@@ -76,54 +77,79 @@ describe('fingerprint of a statement (sqlGuard.fingerprint)', () => {
 });
 
 describe('slow plugin database statements', () => {
-  it('a statement of 200 ms or more in the worker is logged with the plugin, the statement without values, rows and times', async () => {
-    // no calibration by wall-clock time (a busy runner makes it wrong, and a calibration run of 200 ms or more would
-    // itself be the logged one — the next would wait a minute): the count doubles until the worker measures 200 ms or
-    // more. Every run before was faster than that in the worker — the first slow one of a statement is always logged.
+  it('a statement of 200 ms or more in the worker is counted; the window\'s line names the plugin, the statement without values, rows and times', async () => {
+    // no calibration by wall-clock time (a busy runner makes it wrong): the count doubles until the worker measures
+    // 200 ms or more — every run before was faster than that in the worker
     const db = storage.forPlugin('slow-log');
     const warn = mock.method(logger, 'warn', () => {});
-    const slowLines = () => warn.mock.calls.filter((c) => c.arguments[1] === 'slow plugin database statement');
+    const slowLines = () => warn.mock.calls.filter((c) => c.arguments[1] === 'slow plugin database statements');
     let n = 100000;
     let runs = 0;
-    for (; runs < 12 && !slowLines().length; runs++) {
+    for (; runs < 12 && !(db.slow && db.slow.n); runs++) {
       n *= 2;
       const r = await db.call('query', { sql: COUNT_SQL.replace('x < ?', `x < ${n}`), mode: 'all' }, 14000);
       assert.equal(r.rows[0].n, n);
     }
+    assert.equal(slowLines().length, 0, 'nothing logged before the window ends');
+    db.flushSlow();
     const lines = slowLines();
     assert.equal(lines.length, 1, JSON.stringify(warn.mock.calls.map((c) => c.arguments)));
     const f = lines[0].arguments[0];
     assert.equal(f.plugin, 'slow-log');
-    assert.equal(f.op, 'query');
-    assert.equal(f.mode, 'all');
-    assert.equal(f.rows, 1);
-    assert.ok(f.ms >= storage.SLOW_MS, `ms ${f.ms}`);
-    assert.ok(f.waitMs >= 0 && f.waitMs < f.ms, `waitMs ${f.waitMs}`);
-    assert.equal(f.sql, 'WITH RECURSIVE c(x) AS (SELECT ? UNION ALL SELECT x + ? FROM c WHERE x < ?) SELECT count(*) AS n FROM c');
-    assert.ok(!f.sql.includes(String(n)), 'no values in the log');
-    // a quick statement is not logged
+    assert.equal(f.slow, 1);
+    assert.equal(f.writes, 0, 'a SELECT is no write');
+    assert.ok(f.maxMs >= storage.SLOW_MS, `ms ${f.maxMs}`);
+    assert.ok(f.waitMs >= 0 && f.waitMs < f.maxMs, `waitMs ${f.waitMs}`);
+    assert.deepEqual(f.statements.map((e) => [e.op, e.sql, e.n, e.rows]),
+      [['query', 'WITH RECURSIVE c(x) AS (SELECT ? UNION ALL SELECT x + ? FROM c WHERE x < ?) SELECT count(*) AS n FROM c', 1, 1]]);
+    assert.ok(!JSON.stringify(f).includes(String(n)), 'no values in the log');
+    // a quick statement is not counted; an empty window writes no line
     warn.mock.resetCalls();
     await db.call('kv.get', { key: 'a' });
     await db.call('query', { sql: 'SELECT 1 AS one', mode: 'get' });
-    assert.equal(warn.mock.calls.filter((c) => c.arguments[1] === 'slow plugin database statement').length, 0);
+    db.flushSlow();
+    assert.equal(slowLines().length, 0);
   });
 
-  it('once a minute per statement; the next line counts the repeats', () => {
+  it('one line per plugin and window (5 minutes): count, writes, longest time, the top statements by count', () => {
     const db = storage.forPlugin('slow-throttle');
     const warn = mock.method(logger, 'warn', () => {});
-    const p = (sql) => ({ op: 'query', args: { sql, mode: 'all' }, sentAt: 1000 });
+    const q = (sql, mode = 'run') => ({ op: 'query', args: { sql, mode }, sentAt: 1000 });
     const t = 1000000;
-    db.noteSlow(p('SELECT * FROM a WHERE x = 1'), { ok: true, ms: 300, rows: 5 }, t);
-    db.noteSlow(p('SELECT * FROM a WHERE x = 2'), { ok: true, ms: 900, rows: 5 }, t + 1000); // the same statement
-    db.noteSlow(p('SELECT * FROM b'), { ok: true, ms: 250, rows: 1 }, t + 2000); // another one
-    db.noteSlow(p('SELECT * FROM a WHERE x = 3'), { ok: false, ms: 400 }, t + storage.SLOW_EVERY_MS + 1);
-    const lines = warn.mock.calls.filter((c) => c.arguments[1] === 'slow plugin database statement').map((c) => c.arguments[0]);
-    assert.deepEqual(lines.map((l) => [l.sql, l.times || 1, l.maxMs || l.ms]), [
-      ['SELECT * FROM a WHERE x = ?', 1, 300],
-      ['SELECT * FROM b', 1, 250],
-      ['SELECT * FROM a WHERE x = ?', 2, 900],
+    // the protocol of 8. 11.: the same single-row UPDATE again and again, a COMMIT, kv.set — and one read
+    for (let i = 0; i < 40; i++) db.noteSlow(q(`UPDATE resources SET state_json = '{"on":${i}}' WHERE id = ${i}`), { ok: true, ms: 280 + i }, t + i * 1000);
+    for (let i = 0; i < 6; i++) db.noteSlow({ op: 'exec', args: { sql: 'COMMIT' }, sentAt: 1000 }, { ok: true, ms: 320 }, t + 50000 + i);
+    db.noteSlow({ op: 'kv.set', args: { key: 'k' }, sentAt: 1000 }, { ok: true, ms: 6500 }, t + 60000);
+    db.noteSlow(q('SELECT * FROM b', 'all'), { ok: false, ms: 250, rows: 1 }, t + 61000);
+    assert.equal(warn.mock.calls.length, 0, 'no line per statement any more');
+    db.flushSlow(t + 300000);
+    const lines = warn.mock.calls.filter((c) => c.arguments[1] === 'slow plugin database statements').map((c) => c.arguments[0]);
+    assert.equal(lines.length, 1);
+    const l = lines[0];
+    assert.deepEqual([l.plugin, l.slow, l.writes, l.failed, l.maxMs, l.windowS], ['slow-throttle', 48, 47, 1, 6500, 300]);
+    assert.deepEqual(l.statements.map((e) => [e.op, e.sql || null, e.n, e.maxMs]), [
+      ['query', 'UPDATE resources SET state_json = ? WHERE id = ?', 40, 319],
+      ['exec', 'COMMIT', 6, 320],
+      ['kv.set', null, 1, 6500],
+      ['query', 'SELECT * FROM b', 1, 250],
     ]);
-    assert.equal(lines[2].failed, true);
+    // the window ends with its line: the next statement opens a new one (its timer: SLOW_WINDOW_MS)
+    db.noteSlow(q('UPDATE x SET a = 1'), { ok: true, ms: 300 }, t + 400000);
+    assert.ok(db.slowTimer, 'a new window');
+    db.flushSlow(t + 400000 + storage.SLOW_WINDOW_MS);
+    assert.equal(warn.mock.calls.filter((c) => c.arguments[1] === 'slow plugin database statements').length, 2);
+    assert.equal(storage.SLOW_WINDOW_MS, 5 * 60 * 1000);
+  });
+
+  it('at most SLOW_TOP statements in the line, the rest as `others`; closing the storage writes the open window', async () => {
+    const db = storage.forPlugin('slow-many');
+    const warn = mock.method(logger, 'warn', () => {});
+    for (let i = 0; i < 9; i++) db.noteSlow({ op: 'query', args: { sql: `UPDATE t${i} SET a = 1`, mode: 'run' }, sentAt: 1 }, { ok: true, ms: 210 }, 1000 + i);
+    await storage.close('slow-many');
+    const lines = warn.mock.calls.filter((c) => c.arguments[1] === 'slow plugin database statements').map((c) => c.arguments[0]);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].statements.length, storage.SLOW_TOP);
+    assert.equal(lines[0].others, 9 - storage.SLOW_TOP);
   });
 });
 

@@ -520,6 +520,7 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
       extraLocals.logsI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, LOGS_I18N_PREFIXES))
         .replace(/</g, '\\u003c');
       try { extraLocals.logsLicenceExport = require('../services/license').hasFeature('log_export'); } catch { extraLocals.logsLicenceExport = false; }
+      try { extraLocals.diskHint = require('../services/diskHealth').hint(); } catch { extraLocals.diskHint = null; }
     }
     // Gateway assistant (gateway-wizard.js, docs/feature-gateway-wizard.md):
     // gateways.njk island data-prefixes must list the same ones.

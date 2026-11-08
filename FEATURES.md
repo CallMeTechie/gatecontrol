@@ -1166,6 +1166,11 @@ The page **System › Logs & Monitoring** (`/logs`) shows every log source of th
 host in one place: the server log (above), plugin logs (`gc.log`), the activity
 log, Caddy's access log and remote desktop sessions.
 
+- **Slow data disk** (since 1.254.0) — a write probe (4 KB + sync every
+  2 minutes, in a worker thread) shows one hint at the top of the page while
+  the disk needs 50 ms or more per write on average over half an hour: SSD,
+  not a network share, an SD card or a busy NAS volume (docs/plugins.md,
+  "Write speed of the data disk").
 - **Ereignisse** — all sources as one list, newest first: time range (1 h, 24 h,
   7 days, 30 days, custom), live updates (every 15 s), KPI tiles (errors with
   the change against the period before, warnings with the most frequent code,
@@ -1178,8 +1183,9 @@ log, Caddy's access log and remote desktop sessions.
   (export, copy as text, "Zur selben Zeit zeigen") and endless loading. The
   filter lives in the address (`/logs#events?level=error&source=server`).
 - **Entry** (`/logs#e/<id>`) — "Was bedeutet das?" for known codes (storage
-  timeout, storage worker restarted, event loop blocked, plugin did not start
-  in time, `no_right`, `lock_unreachable`, failed sign-in), the problem it
+  timeout, storage worker restarted, event loop blocked, slow plugin database,
+  slow disk, plugin did not start in time, `no_right`, `lock_unreachable`,
+  failed sign-in), the problem it
   belongs to, fields with "use as filter", raw JSON, copy, link, export with
   surroundings, and "Zur selben Zeit" (±10 s / ±1 min / ±5 min, all sources and levels).
 - **Probleme** — errors and warnings grouped across sources: by code (also

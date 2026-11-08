@@ -203,18 +203,60 @@ Gateways, Apps und die Weboberfläche. Die Zeile nennt, was in der Zeit lief:
   Platte oder den Arbeitsspeicher (`diskReads`, `majorFaults` hoch) oder weil
   kein Prozessorkern frei war (`processCpuMs`: alle Threads zusammen).
 
-Eine Anweisung eines Plugins, die 200 ms oder länger läuft, steht als
-„slow plugin database statement“ mit Plugin, Anweisung, Zeilen und Zeit im
-Protokoll (höchstens einmal je Minute und Anweisung). Sie läuft in einem
-eigenen Thread und hält den Server nicht an – liest sie aber große Teile der
-Datenbank, bremst sie die Platte für alle.
+- `diskSyncMs`: wie lange der Datenträger zuletzt für einen kleinen
+  Schreibvorgang gebraucht hat. `waiting` mit `diskSyncMs` ab etwa 50 ms: Der
+  Server hat auf den Datenträger gewartet (siehe „Der Datenträger ist beim
+  Schreiben langsam“).
+
+Anweisungen eines Plugins, die 200 ms oder länger laufen, fasst das Protokoll
+je Plugin für 5 Minuten in einer Zeile „slow plugin database statements“
+zusammen: Anzahl (`slow`), davon Schreibvorgänge (`writes`), längste Zeit
+(`maxMs`) und die häufigsten Anweisungen ohne Werte. Sie laufen in einem
+eigenen Thread und halten den Server nicht an – lesen sie aber große Teile
+der Datenbank, bremsen sie die Platte für alle. Sind es fast nur
+Schreibvorgänge, liegt es am Datenträger, nicht am Plugin.
 
 Die Aufgaben mit vielen Einträgen (Bereiche von Drive
 auf einem Speicherziel, der Zwischenspeicher der Gateways mit tausenden
 Vorschaubildern, Sicherungen) arbeiten in kleinen Stücken, und die Datenbank schreibt
 ihr Protokoll in einem eigenen Thread zurück. Kommt die Meldung trotzdem
 öfter, die ganze Zeile (mit `tasks`, `requests` und `blockedBy`) und die
-Zeilen „slow plugin database statement“ daneben in ein Ticket kopieren.
+Zeilen „slow plugin database statements“ daneben in ein Ticket kopieren.
+
+### Der Datenträger ist beim Schreiben langsam
+
+Oben in **Logs & Monitoring** steht: „Der Datenträger von GateControl ist beim
+Schreiben langsam (Ø … ms je Schreibvorgang …)“. GateControl misst alle
+2 Minuten, wie lange der Datenträger braucht, bis ein kleiner Schreibvorgang
+wirklich gespeichert ist. Der Hinweis erscheint, wenn das über eine halbe
+Stunde im Mittel 50 ms oder länger dauert, und verschwindet von selbst, wenn
+es wieder schnell geht. Eine SSD braucht 1–5 ms, eine Festplatte 10–30 ms.
+
+Jede Änderung – ein Gerät meldet sich, ein Kalender wird abgeglichen, ein
+Schloss meldet seinen Zustand – wartet darauf. Seit 1.254.0 schreiben die
+Plugins so, dass nicht mehr jede Änderung auf den Datenträger wartet; ein
+langsamer Datenträger bremst trotzdem Sicherungen, Updates und große Plugins.
+
+Was hilft:
+
+- den Ordner `/data` von GateControl auf eine **SSD** legen (bei einem NAS:
+  ein SSD-Volume oder ein SSD-Cache für das Volume),
+- **nicht** auf eine Netzwerkfreigabe (SMB/NFS), eine SD-Karte oder einen
+  USB-Stick,
+- **nicht** auf ein NAS-Volume, das gleichzeitig stark beschäftigt ist
+  (Sicherungen, Datenträgerprüfung, RAID-Aufbau, Downloads, viele Kameras),
+- bei einem NAS mit Festplatten: prüfen, ob gerade eine Datenträgerprüfung,
+  ein RAID-Aufbau oder eine Sicherung läuft – dann ist der Hinweis
+  vorübergehend.
+
+Der Hinweis ist nur ein Hinweis – GateControl läuft weiter. Ausschalten lässt
+sich die Messung mit `GC_DISK_PROBE=off`.
+
+Was dabei verloren gehen kann: Die Datenbanken von GateControl und den
+Plugins schreiben ihre Änderungen zuerst in ein Protokoll und bringen sie
+regelmäßig gesammelt auf den Datenträger. Stürzt GateControl ab, geht nichts
+verloren. Fällt der Strom aus, können die Änderungen der letzten Sekunden
+(beim Server höchstens 30 s) fehlen – die Datenbank bleibt aber heil.
 
 ### Der Container startet nicht oder das Zertifikat kommt nicht
 

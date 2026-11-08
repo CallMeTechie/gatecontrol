@@ -9269,6 +9269,7 @@ a.up-dev:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
 .lg-h{margin:0; font-family:var(--font-display); font-size:15px; font-weight:700; letter-spacing:-.01em}
 .lg-fh{display:block; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); padding:14px 0 6px; margin:0}
 .lg-note{margin:0; padding:10px 14px; border-radius:12px; background:var(--chip); border:1px dashed var(--line-2); color:var(--muted); font-size:13px}
+.lg-note-warn{background:var(--amber-bg); border:1px solid var(--amber-bd); color:var(--text-1); line-height:1.5}
 .lg-link{border:0; background:none; padding:4px 0; font:inherit; font-size:13px; font-weight:600; color:var(--teal); cursor:pointer; text-decoration:none}
 .lg-link:hover{text-decoration:underline}
 .lg-card{background:var(--surface); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); min-width:0}

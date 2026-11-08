@@ -23,6 +23,12 @@ const MAX_VALUE = 1024 * 1024;
 // the size of a list answer (query mode 'all'): the host's main thread copies it out of this thread and
 // serialises it for the plugin in one go — 16 MB take it ~100 ms; more rows come as `truncated` (as past MAX_ROWS)
 const MAX_ANSWER_BYTES = 16 * 1024 * 1024;
+// the write-ahead log is copied back into plugin.db (two fsyncs) when it holds this many pages (4 KB each) …
+const WAL_AUTOCHECKPOINT = 1000;
+// … or after this long without a call (a passive checkpoint between two calls: the data is on the disk soon,
+// no statement waits for it) — and the log file shrinks back to this size after a checkpoint
+const CHECKPOINT_IDLE_MS = workerData.checkpointIdleMs || 30 * 1000;
+const JOURNAL_SIZE_LIMIT = 4 * 1024 * 1024;
 
 /** About the bytes of a row in an answer (strings by their length, numbers 8). */
 function rowBytes(row) {
@@ -37,7 +43,18 @@ function rowBytes(row) {
 }
 
 const db = new Database(workerData.file);
-db.pragma('journal_mode = DELETE');
+// WAL with synchronous = NORMAL (as the host database, db/connection.js): a COMMIT appends to plugin.db-wal and
+// never waits for the disk. In the rollback journal (journal_mode = DELETE, before 1.254.0) every write — one UPDATE,
+// a kv.set — paid four fsyncs (journal, database, deleting the journal); on a slow disk that is 200–300 ms per
+// write (protocol of 8. 11.: ~500 slow writes an hour from every plugin, reads never slow). The disk is synced at
+// a checkpoint only (every WAL_AUTOCHECKPOINT pages, at CHECKPOINT_IDLE_MS of quiet, at close). Crash-safe as
+// before; a power cut can lose the transactions since the last checkpoint, never corrupt the file
+// (docs/plugins.md "Speicher"). Changing the mode needs the file to itself: should another connection hold it,
+// the file stays in its mode until the next start of this worker.
+try { db.pragma('journal_mode = WAL'); } catch { /* busy: next open */ }
+db.pragma('synchronous = NORMAL');
+db.pragma(`wal_autocheckpoint = ${WAL_AUTOCHECKPOINT}`);
+db.pragma(`journal_size_limit = ${JOURNAL_SIZE_LIMIT}`);
 db.pragma('foreign_keys = ON');
 db.pragma('trusted_schema = OFF');
 db.pragma(`max_page_count = ${Math.max(256, Math.floor(workerData.maxBytes / db.pragma('page_size', { simple: true })))}`);
@@ -123,6 +140,8 @@ function migrate({ list }) {
   return { applied: pending.map((m) => m.version) };
 }
 
+const WRITES = new Set(['exec', 'migrate', 'kv.set', 'kv.delete', 'settings.set']);
+
 const ops = {
   query,
   exec,
@@ -167,9 +186,25 @@ function mark(id) {
   Atomics.store(state, 1, id);
 }
 
+// a checkpoint once the plugin has been quiet for CHECKPOINT_IDLE_MS after a write (cheap when the log is empty)
+let idleTimer = null;
+let dirty = false;
+function idleCheckpoint() {
+  idleTimer = null;
+  if (!dirty) return;
+  dirty = false;
+  try { db.pragma('wal_checkpoint(PASSIVE)'); } catch { /* the next one */ }
+}
+
 port.on('message', (msg) => {
   if (!msg || typeof msg !== 'object') return;
-  if (msg.op === 'close') { try { db.close(); } catch { /* ignore */ } process.exit(0); }
+  if (msg.op === 'close') {
+    // close() copies the log into plugin.db and removes plugin.db-wal: the file alone is complete again
+    try { db.close(); } catch { /* ignore */ }
+    try { port.postMessage({ closed: true }); } catch { /* gone */ }
+    process.exit(0);
+  }
+  if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
   const fn = Object.prototype.hasOwnProperty.call(ops, msg.op) ? ops[msg.op] : null;
   mark(Number.isSafeInteger(msg.id) && msg.id > 0 ? msg.id : 0);
   let answer;
@@ -184,4 +219,8 @@ port.on('message', (msg) => {
   // done before the answer is posted: an answer the host can take is never "running"
   mark(0);
   port.postMessage(answer);
+  if (!db.inTransaction) {
+    if (WRITES.has(msg.op) || (msg.op === 'query' && answer.ok && answer.value && answer.value.changes > 0)) dirty = true;
+    if (dirty) idleTimer = setTimeout(idleCheckpoint, CHECKPOINT_IDLE_MS);
+  } else dirty = true;
 });

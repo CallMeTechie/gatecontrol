@@ -111,6 +111,8 @@ describe('logEvents: search syntax', () => {
     assert.equal(c('plugin storage timed out — worker restarted'), 'storage_worker_restarted');
     assert.equal(c('x: storage timeout'), 'storage_timeout');
     assert.equal(c('event loop was blocked'), 'event_loop_blocked');
+    assert.equal(c('slow plugin database statements'), 'slow_plugin_db');
+    assert.equal(c('data disk is slow to write — see Logs & Monitoring'), 'slow_disk');
     assert.equal(c('plugin did not start in time'), 'plugin_start_timeout');
     assert.equal(c('fetch failed', { err: { code: 'ECONNRESET' } }), 'ECONNRESET');
     assert.equal(c('socket hang up ERR_NET_X'), 'ERR_NET_X');
@@ -451,6 +453,22 @@ describe('page /logs', () => {
     assert.match(r.text, /id="lg-i18n" data-prefixes="lg\. common\."/);
     assert.match(r.text, /"lg\.code\.storage_timeout\.text":/);
     assert.match(r.text, /<script src="\/js\/logs\.js/);
+  });
+
+  it('a slow data disk: one hint at the top (services/diskHealth.js), none while it writes fast', async () => {
+    const diskHealth = require('../src/services/diskHealth');
+    diskHealth._resetForTest();
+    try {
+      let r = await getAgent().get('/logs').expect(200);
+      assert.ok(!r.text.includes('id="lg-disk-slow"'));
+      for (let i = 0; i < diskHealth.MIN_SAMPLES; i++) diskHealth.addSample(75);
+      r = await getAgent().get('/logs').expect(200);
+      const m = /<p class="lg-note lg-note-warn" id="lg-disk-slow" role="status">([^<]+)<\/p>/.exec(r.text);
+      assert.ok(m, 'hint shown');
+      assert.match(m[1], /Ø 75 ms je Schreibvorgang|avg\. 75 ms per write/);
+      assert.match(m[1], /SSD/);
+      assert.equal(r.text.split('id="lg-disk-slow"').length, 2, 'exactly one');
+    } finally { diskHealth._resetForTest(); }
   });
 
   it('no innerHTML in the page script', () => {
