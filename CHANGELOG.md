@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.253.5] — 2026-11-08
+
+### Fixes
+- langsame Plugin-Datenbankabfragen mit Anweisung protokolliert, Blockade-Meldung sagt „rechnet“ oder „wartet“, Antworten höchstens 16 MB (#447)
+
+---
+
 ## [1.253.4] — 2026-11-08
 
 ### Fixes
