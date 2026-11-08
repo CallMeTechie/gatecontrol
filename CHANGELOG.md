@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.255.0] — 2026-11-08
+
+### Features
+- Plugin-Datenbanken in WAL, Hinweis bei langsamem Datenträger, langsame Anweisungen gebündelt (#450)
+
+---
+
 ## [1.254.0] — 2026-11-08
 
 ### Features
