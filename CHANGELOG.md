@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.253.4] — 2026-11-08
+
+### Fixes
+- WAF-/TLS-/Layer-4-Log ohne Blockade, Peer-Status in einer Transaktion, Katalog- und Release-Abrufe mit Phase, Backoff und einer Warnung je Ausfall (#446)
+
+---
+
 ## [1.253.3] — 2026-11-08
 
 ### Fixes
