@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.254.0] — 2026-11-08
+
+### Features
+- GC.openPortal öffnet den Portal-Tab eines anderen Plugins (#449)
+
+---
+
 ## [1.253.5] — 2026-11-08
 
 ### Fixes
