@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.253.1] — 2026-11-08
 
 ### Security
 - Caddy-Baustein (`caddy-plugins/mirror/go.mod`): `go-jose/v3` ist raus aus dem Modulgraphen. v3 hat für GHSA-mgcc-cww5-fp2q (hoch, DoS beim Lesen von JWKs mit RSA-Schlüsseln), GHSA-4w3g-jfj2-cw2q und GHSA-vvm8-gf78-28g4 (mittel, Panics) keine Version mit Fix; es kam nur über `go.step.sm/crypto/jose` herein. `go.step.sm/crypto` 0.91.0 → 0.92.0 nutzt `go-jose/v4` (4.1.9). Weil `smallstep/certificates` 0.30.2 gegen 0.92.0 nicht baut, steht es auf dem Master-Stand `v0.30.3-0.20261105213751-6d5a251fbe01`, den auch Caddy-Master verwendet – beim nächsten Tag auf diesen wechseln.
