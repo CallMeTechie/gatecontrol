@@ -16,6 +16,8 @@
 //   * die automatische Sicherung kommt nicht mehr direkt beim Start.
 
 const crypto = require('node:crypto');
+// the WAL checkpoint worker runs in tests only on request (db/connection.js)
+process.env.GC_DB_CHECKPOINT = 'worker';
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
 
 const { describe, it, before, after, afterEach, mock } = require('node:test');

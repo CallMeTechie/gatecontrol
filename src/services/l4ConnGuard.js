@@ -218,26 +218,27 @@ async function pollOnce() {
     if (limits.size === 0) { resetCounters(); return 0; }
 
     const file = _watch.file || logPath();
-    let st;
-    try { st = await fs.promises.stat(file); }
-    catch { _watch.ino = null; _watch.offset = 0; _watch.partial = ''; return 0; }
-
-    // New file (Caddy rolled it) or truncated → start from the top.
-    if (_watch.ino !== null && (st.ino !== _watch.ino || st.size < _watch.offset)) {
-      _watch.offset = 0; _watch.partial = '';
-    }
-    _watch.ino = st.ino;
-    if (st.size <= _watch.offset) { prune(limits); return 0; }
-
-    const to = Math.min(st.size, _watch.offset + MAX_READ_BYTES);
-    const len = to - _watch.offset;
-    const buf = Buffer.allocUnsafe(len);
-    let read = 0;
+    // open once; size and inode from the handle (never stat the path and open it after)
     let fh;
     try { fh = await fs.promises.open(file, 'r'); }
-    catch { return 0; }
-    try { ({ bytesRead: read } = await fh.read(buf, 0, len, _watch.offset)); }
-    finally { await fh.close(); }
+    catch { _watch.ino = null; _watch.offset = 0; _watch.partial = ''; return 0; }
+    let st;
+    let buf;
+    let len = 0;
+    let read = 0;
+    try {
+      st = await fh.stat();
+      // New file (Caddy rolled it) or truncated → start from the top.
+      if (_watch.ino !== null && (st.ino !== _watch.ino || st.size < _watch.offset)) {
+        _watch.offset = 0; _watch.partial = '';
+      }
+      _watch.ino = st.ino;
+      if (st.size <= _watch.offset) { prune(limits); return 0; }
+      const to = Math.min(st.size, _watch.offset + MAX_READ_BYTES);
+      len = to - _watch.offset;
+      buf = Buffer.allocUnsafe(len);
+      ({ bytesRead: read } = await fh.read(buf, 0, len, _watch.offset));
+    } finally { await fh.close(); }
     // capped: up to the last complete line (never a character cut in two)
     if (len < st.size - _watch.offset) { const nl = buf.lastIndexOf(0x0a, read - 1); if (nl >= 0) read = nl + 1; }
     _watch.offset += read;

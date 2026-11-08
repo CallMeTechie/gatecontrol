@@ -685,7 +685,7 @@ function splitLines(chunk) {
  * microseconds between copy and truncate can be lost. Returns the lines read
  * from the copy (not yet ingested).
  */
-async function rotate(file, fromOffset) {
+async function rotate(fh, file, fromOffset) {
   const fsp = fs.promises;
   for (let i = ROTATE_KEEP; i >= 1; i--) {
     const src = i === 1 ? null : `${file}.${i - 1}`;
@@ -693,25 +693,38 @@ async function rotate(file, fromOffset) {
     if (i === ROTATE_KEEP) { try { await fsp.rm(dst, { force: true }); } catch { /* ignore */ } }
     if (src) { try { await fsp.rename(src, dst); } catch { /* missing → skip */ } }
   }
+  // the copy from the open handle, in pieces (never a 20 MB copy on the main thread, never the path opened again)
   const tmp = `${file}.1.tmp`;
-  // a copy of 20 MB in the thread pool, not on the main thread
-  await fsp.copyFile(file, tmp);
-  try { await fsp.chmod(tmp, FILE_MODE); } catch { /* best-effort */ }
-  await fsp.truncate(file, 0);
-  await fsp.rename(tmp, `${file}.1`);
-  const fh = await fsp.open(`${file}.1`, 'r');
+  const out = await fsp.open(tmp, 'w', FILE_MODE);
+  let size = 0;
   try {
-    const size = (await fh.stat()).size;
-    return await readRange(fh, Math.min(fromOffset, size), size);
-  } finally { await fh.close(); }
+    const buf = Buffer.alloc(MAX_READ_BYTES);
+    for (;;) {
+      const { bytesRead } = await fh.read(buf, 0, buf.length, size);
+      if (!bytesRead) break;
+      await out.write(buf, 0, bytesRead, size);
+      size += bytesRead;
+    }
+    try { await out.chmod(FILE_MODE); } catch { /* best-effort */ }
+  } finally { await out.close(); }
+  await fh.truncate(0);
+  await fsp.rename(tmp, `${file}.1`);
+  // the unread tail of the copy: what the handle held after fromOffset
+  const start = Math.min(fromOffset, size);
+  const tail = Buffer.alloc(size - start);
+  if (tail.length) {
+    const t = await fsp.open(`${file}.1`, 'r');
+    try { await t.read(tail, 0, tail.length, start); } finally { await t.close(); }
+  }
+  return tail;
 }
 
 // Data minimisation: the audit log is readable by root only and holds a
 // request (request line + rule messages) just until the watcher ingested it.
 const FILE_MODE = 0o600;
 
-async function restrictMode(file, st) {
-  try { if (st && (st.mode & 0o077) !== 0) await fs.promises.chmod(file, FILE_MODE); } catch { /* best-effort */ }
+async function restrictMode(fh, st) {
+  try { if (st && (st.mode & 0o077) !== 0) await fh.chmod(FILE_MODE); } catch { /* best-effort */ }
 }
 
 /**
@@ -755,14 +768,14 @@ async function pollOnce() {
     let read = 0;
     let st = null;
     for (let round = 0; round < 8; round++) {
-      try { st = await fsp.stat(file); }
-      catch { _watch.ino = null; _watch.offset = 0; _watch.head = ''; _watch.partial = EMPTY; return stored; }
-      await restrictMode(file, st);
+      // open once, then everything (size, inode, mode, reads) from the handle — never stat the path and open it after
       let fh;
       try { fh = await fsp.open(file, 'r'); }
-      catch { return stored; }
+      catch { _watch.ino = null; _watch.offset = 0; _watch.head = ''; _watch.partial = EMPTY; return stored; }
       let chunk = EMPTY;
       try {
+        st = await fh.stat();
+        await restrictMode(fh, st);
         const head = await readHead(fh, st.size);
         const known = _watch.head.length > 0 ? head.slice(0, _watch.head.length) : '';
         const rotated = _watch.ino !== null && (st.ino !== _watch.ino || st.size < _watch.offset || (known && known !== _watch.head));
@@ -792,20 +805,23 @@ async function pollOnce() {
     }
 
     // Fallback: rotate once the file is big AND fully read.
-    let cur;
-    try { cur = await fsp.stat(file); } catch { cur = null; }
-    if (cur && cur.size >= _watch.rotateBytes && _watch.offset >= cur.size) {
+    let rh = null;
+    try { rh = await fsp.open(file, 'r+'); } catch { rh = null; }
+    if (rh) {
       try {
-        const rest = await rotate(file, _watch.offset);
-        const lines = splitLines(rest);
-        if (_watch.partial.length) { lines.push(_watch.partial.toString('utf8')); _watch.partial = EMPTY; } // the copy is complete
-        stored += await ingestLinesAsync(lines);
-        _watch.offset = 0; _watch.head = '';
-        try { _watch.ino = (await fsp.stat(file)).ino; } catch { _watch.ino = null; }
-        logger.info({ file }, 'WAF audit log rotated');
+        const cur = await rh.stat();
+        if (cur.size >= _watch.rotateBytes && _watch.offset >= cur.size) {
+          const rest = await rotate(rh, file, _watch.offset);
+          const lines = splitLines(rest);
+          if (_watch.partial.length) { lines.push(_watch.partial.toString('utf8')); _watch.partial = EMPTY; } // the copy is complete
+          stored += await ingestLinesAsync(lines);
+          _watch.offset = 0; _watch.head = '';
+          _watch.ino = cur.ino; // truncated in place: the same file
+          logger.info({ file }, 'WAF audit log rotated');
+        }
       } catch (err) {
         logger.warn({ err: err.message, file }, 'waf: audit log rotation failed');
-      }
+      } finally { await rh.close(); }
     }
     saveWatchState();
     return stored;

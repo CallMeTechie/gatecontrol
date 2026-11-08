@@ -545,14 +545,13 @@ async function pollOnce() {
   if (_watch.busy) return 0;
   _watch.busy = true;
   try {
-    let st;
-    try { st = await fs.promises.stat(_watch.file); }
-    catch { _watch.ino = null; _watch.offset = 0; _watch.head = ''; _watch.partial = ''; return 0; }
+    // open once; size and inode from the handle (never stat the path and open it after)
     let fh;
     try { fh = await fs.promises.open(_watch.file, 'r'); }
-    catch { return 0; }
+    catch { _watch.ino = null; _watch.offset = 0; _watch.head = ''; _watch.partial = ''; return 0; }
     let chunk;
     try {
+      const st = await fh.stat();
       const head = await readHead(fh, st.size);
       const known = _watch.head.length > 0 ? head.slice(0, _watch.head.length) : '';
       const rotated = _watch.ino !== null && (st.ino !== _watch.ino || st.size < _watch.offset || (known && known !== _watch.head));

@@ -256,7 +256,7 @@ describe('plugin catalogue: where a request hangs, the last good catalogue, one 
       const cat = await catalog.get({ refresh: true });
       assert.equal(cat.generatedAt, '2026-11-08T00:00:00Z', 'the last good catalogue');
     }
-    assert.ok(asked.includes('api.github.com'), 'the API way was tried after a DNS failure of the download path');
+    assert.ok(asked.some((h) => h === 'api.github.com'), 'the API way was tried after a DNS failure of the download path');
     assert.equal(catalog.stale().code, 'catalog_timeout');
     const fails = warn.mock.calls.filter((c) => c.arguments[1] === 'plugin catalogue via api fallback: failed');
     assert.equal(fails.length, 1, 'one line for the outage, not one per request');
