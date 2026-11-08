@@ -747,10 +747,14 @@ function productsInUse() {
   return [...set.values()];
 }
 
-/** Stream a release asset to a file, hashing on the way (https, redirects, ≤ 1 GB). */
-function downloadTo(asset, dest, { token = '' } = {}) {
+/**
+ * Stream a release asset to a file, hashing on the way (https, redirects, ≤ 1 GB).
+ * `viaApi`: the API URL of the asset without a token (github.com's download
+ * path failed — utils/githubRelease.js).
+ */
+function downloadTo(asset, dest, { token = '', viaApi = false } = {}) {
   const https = require('node:https');
-  const start = token ? asset.url : asset.browser_download_url;
+  const start = token || viaApi ? asset.url : asset.browser_download_url;
   return new Promise((resolve, reject) => {
     const get = (u, hops) => {
       let parsed;
@@ -784,6 +788,23 @@ function downloadTo(asset, dest, { token = '' } = {}) {
   });
 }
 
+/**
+ * downloadTo over the browser download; when that answers 5xx, times out or
+ * drops the connection, the same asset over the API (not while GitHub's rate
+ * limit is used up). With a token the API is the first way anyway.
+ */
+async function downloadWithFallback(asset, dest, token) {
+  const gh = require('../utils/githubRelease');
+  try { return await downloadTo(asset, dest, { token }); } catch (e) {
+    const msg = String((e && e.message) || '');
+    const worth = /^http 5\d\d$/.test(msg) || msg === 'timeout' || (e && ['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EPIPE'].includes(e.code)) || msg === 'socket hang up';
+    if (token || !worth || !gh.parseAssetApiUrl(asset.url) || gh.rateLimited()) throw e;
+    try { fs.unlinkSync(dest); } catch { /* not written */ }
+    logger.info({ asset: asset.name, err: msg }, 'home cache: update fetched over the GitHub API');
+    return downloadTo(asset, dest, { viaApi: true });
+  }
+}
+
 let refreshing = null;
 
 /**
@@ -800,7 +821,7 @@ function refreshUpdates(deps = {}) {
     const fetchRelease = deps.fetchRelease || upd._internals.fetchLatestRelease;
     const signedOf = deps.signedOf || upd._internals.fetchSignedManifest;
     const pick = upd._internals.pickInstallerAsset;
-    const download = deps.download || ((asset, dest) => downloadTo(asset, dest, { token: process.env.GC_CLIENT_GITHUB_TOKEN || '' }));
+    const download = deps.download || ((asset, dest) => downloadWithFallback(asset, dest, process.env.GC_CLIENT_GITHUB_TOKEN || ''));
     const dir = updatesDir();
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     const current = new Set();
@@ -981,4 +1002,5 @@ module.exports = {
   CacheError, KINDS, DEFAULTS, CACHE_PATH, STATES, GB, SIZES_GB, HINT_TTL_S, HINTS_MAX, MIN_BYTES, MAX_BYTES, PREVIEW_SIZES, WANT_MAX,
   normalize, get, set, secretOf, configPayload, want, stockOf, sendBlob, report, telemetryCache, signature, hintFor, lanFor, lanForMany, localOf,
   offer, withdraw, previewSha, dropStaleOffers, refreshPreviewOffers, refreshUpdates, lanForUpdate, view, clear, retention, updatesDir, _resetForTest,
+  _downloadWithFallback: downloadWithFallback,
 };

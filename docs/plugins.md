@@ -97,9 +97,32 @@ every redirect target must be on an allowed host — `github.com`,
 host of `GC_PLUGIN_CATALOG_URL`; anything else, `http:` or a URL with
 credentials ends the request (`catalog_redirect` / `catalog_bad_url`), the
 foreign host is never contacted. At most 5 redirects; catalogue ≤ 2 MB within
-15 s; kept in memory for an hour (*Katalog neu laden* = `?refresh=1`; a
+10 s; kept in memory for 15 minutes (*Katalog neu laden* = `?refresh=1`; a
 failure is remembered for a minute). A test run (`NODE_ENV=test`) never
 reaches the internet.
+
+**When github.com's download path fails** (seen on 8 Nov 2026:
+`…/releases/download/…` answered 504 after 11 s while the API worked): a
+release download on `github.com` — the catalogue and every package — that
+answers 5xx, sends no answer within 4 s (catalogue) / 8 s (package) or drops
+the connection is fetched over the API instead:
+`GET https://api.github.com/repos/<owner>/<repo>/releases/tags/<tag>` (the
+asset id of the file), then
+`GET https://api.github.com/repos/<owner>/<repo>/releases/assets/<id>` with
+`Accept: application/octet-stream`, which redirects to the asset CDN.
+`api.github.com` is allowed for this way only, the same caps and the sha256
+check apply. GateControl keeps the asset id for an hour and asks the release
+with `If-None-Match` (a `304` does not count against GitHub's limit of 60
+API requests an hour per address); a replaced file (the rolling `catalog`
+release) answers 404 and is looked up once more. After a failure of the
+download path the API way comes first for 10 minutes. When GitHub refuses
+for its rate limit (`403`/`429`, `x-ratelimit-remaining: 0`, `Retry-After`)
+no API request goes out until the reset (`catalog_rate_limited` when nothing
+else worked). A 4xx of the download path (`404`) is no reason for the other
+way. `GC_PLUGIN_CATALOG_URL` on another host never takes it. Code:
+`src/utils/githubRelease.js`. The same way serves the update manifests of
+the Windows clients (`update-manifest.json` / `.sig`, still passed on byte
+for byte and checked by the client) and the installers of the home cache.
 
 **Validation** (strict — one malformed entry rejects the whole catalogue,
 `catalog_invalid`): `schema: 1`; every key a plugin id by the id rule (and

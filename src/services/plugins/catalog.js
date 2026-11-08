@@ -11,7 +11,11 @@
 //   fetch      https only; the catalogue URL and every redirect must be on
 //              ALLOWED hosts (github.com and GitHub's release-asset CDN, plus
 //              the host of an operator-set GC_PLUGIN_CATALOG_URL); size cap,
-//              overall timeout; cached in memory (CACHE_TTL_MS).
+//              overall timeout; cached in memory (CACHE_TTL_MS). A release
+//              download on github.com that answers 5xx or not in time is
+//              fetched over the API instead (utils/githubRelease.js:
+//              api.github.com → the asset CDN, asset id and ETag kept, the
+//              rate limit respected) — never for another catalogue URL.
 //   validate   strict: schema 1, plugin ids by the plugin id rule, semver
 //              versions, valid `gatecontrol` ranges, sha256 hex, sizes within
 //              the package limit, package urls https on the allowed hosts.
@@ -30,6 +34,7 @@
 const crypto = require('node:crypto');
 const https = require('node:https');
 const semver = require('./semver');
+const gh = require('../../utils/githubRelease');
 const { ID_RE, LIMITS } = require('./constants');
 
 const DEFAULT_URL = 'https://github.com/CallMeTechie/gatecontrol-plugins/releases/download/catalog/catalog.json';
@@ -37,8 +42,11 @@ const DEFAULT_URL = 'https://github.com/CallMeTechie/gatecontrol-plugins/release
 const GITHUB_HOSTS = Object.freeze(['github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com']);
 
 const CATALOG_MAX_BYTES = 2 * 1024 * 1024;
-const CATALOG_TIMEOUT_MS = 15000;
+// the whole fetch of the catalogue, both ways together (the download path and the API route)
+const CATALOG_TIMEOUT_MS = 10000;
 const DOWNLOAD_TIMEOUT_MS = 90000;
+// the download path of github.com: no answer (headers) in this time → the API route
+const TIMEOUTS = { catalogHeaders: 4000, downloadHeaders: 8000 };
 const MAX_REDIRECTS = 5;
 const CACHE_TTL_MS = 15 * 60 * 1000; // a new release shows within 15 min (before 1.186.3: 1 h)
 const ERROR_TTL_MS = 60 * 1000;
@@ -96,8 +104,8 @@ function isLoopback(host) {
  * One GET without following redirects: { status, location, body }.
  * The body is read only for 200 and never beyond `maxBytes`.
  */
-function getOnce(url, { maxBytes, deadline }) {
-  if (transportOverride) return transportOverride(url, { maxBytes, deadline });
+function getOnce(url, { maxBytes, deadline, headers = null, headerMs = null }) {
+  if (transportOverride) return transportOverride(url, { maxBytes, deadline, headers, headerMs });
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     // a test run never reaches the internet (a local test server only)
@@ -105,17 +113,19 @@ function getOnce(url, { maxBytes, deadline }) {
     const left = deadline - Date.now();
     if (left <= 0) return reject(new CatalogError('catalog_timeout', 'timeout'));
     let done = false;
-    const finish = (fn, v) => { if (done) return; done = true; clearTimeout(timer); fn(v); };
+    let headerTimer = null;
+    const finish = (fn, v) => { if (done) return; done = true; clearTimeout(timer); clearTimeout(headerTimer); fn(v); };
     const req = https.get(u, {
       agent: agent || undefined,
-      headers: { 'User-Agent': 'GateControl-plugin-catalog', Accept: 'application/octet-stream, application/json' },
+      headers: { 'User-Agent': 'GateControl-plugin-catalog', Accept: 'application/octet-stream, application/json', ...(headers || {}) },
     }, (res) => {
+      clearTimeout(headerTimer);
       const status = res.statusCode || 0;
       if (status >= 300 && status < 400) {
         res.resume();
-        return finish(resolve, { status, location: typeof res.headers.location === 'string' ? res.headers.location : null, body: null });
+        return finish(resolve, { status, headers: res.headers, location: typeof res.headers.location === 'string' ? res.headers.location : null, body: null });
       }
-      if (status !== 200) { res.resume(); return finish(resolve, { status, location: null, body: null }); }
+      if (status !== 200) { res.resume(); return finish(resolve, { status, headers: res.headers, location: null, body: null }); }
       const declared = Number(res.headers['content-length']);
       if (Number.isFinite(declared) && declared > maxBytes) {
         finish(reject, new CatalogError('catalog_too_large', 'response too large'));
@@ -129,12 +139,16 @@ function getOnce(url, { maxBytes, deadline }) {
         if (size > maxBytes) { finish(reject, new CatalogError('catalog_too_large', 'response too large')); res.destroy(); return; }
         chunks.push(c);
       });
-      res.on('end', () => finish(resolve, { status, location: null, body: Buffer.concat(chunks, size) }));
+      res.on('end', () => finish(resolve, { status, headers: res.headers, location: null, body: Buffer.concat(chunks, size) }));
       res.on('error', (e) => finish(reject, new CatalogError('catalog_unreachable', e.message)));
       res.on('aborted', () => finish(reject, new CatalogError('catalog_unreachable', 'aborted')));
     });
     const timer = setTimeout(() => { finish(reject, new CatalogError('catalog_timeout', 'timeout')); req.destroy(); }, left);
     timer.unref();
+    if (headerMs && headerMs < left) {
+      headerTimer = setTimeout(() => { finish(reject, new CatalogError('catalog_timeout', 'no answer')); req.destroy(); }, headerMs);
+      headerTimer.unref();
+    }
     req.on('error', (e) => finish(reject, new CatalogError('catalog_unreachable', e.message)));
   });
 }
@@ -148,9 +162,11 @@ async function fetchAllowed(url, o) {
   const hosts = o.hosts || allowedHosts();
   let u = allowedUrl(url, hosts);
   if (!u) throw new CatalogError('catalog_bad_url', 'URL not allowed');
-  const deadline = Date.now() + o.timeoutMs;
+  const deadline = o.deadline || Date.now() + o.timeoutMs;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    const r = await getOnce(u.href, { maxBytes: o.maxBytes, deadline });
+    // the request headers (the API's Accept) only to the first host; the CDN gets none
+    const r = await getOnce(u.href, { maxBytes: o.maxBytes, deadline, headers: hop === 0 ? o.headers || null : null, headerMs: o.headerMs || null });
+    if (o.onAnswer) o.onAnswer(r, hop);
     if (r.status >= 300 && r.status < 400) {
       let next = null;
       try { next = r.location ? new URL(r.location, u) : null; } catch { next = null; }
@@ -159,11 +175,74 @@ async function fetchAllowed(url, o) {
       u = ok;
       continue;
     }
-    if (r.status !== 200 || !Buffer.isBuffer(r.body)) throw new CatalogError('catalog_unreachable', 'HTTP ' + r.status);
+    if (r.status !== 200 || !Buffer.isBuffer(r.body)) throw Object.assign(new CatalogError('catalog_unreachable', 'HTTP ' + r.status), { status: r.status });
     if (r.body.length > o.maxBytes) throw new CatalogError('catalog_too_large', 'response too large');
     return r.body;
   }
   throw new CatalogError('catalog_redirect', 'too many redirects');
+}
+
+/** A failure the API route may get round: 5xx, no answer in time, no connection — not 4xx, a refused redirect or a size cap. */
+function worthFallback(e) {
+  if (!(e instanceof CatalogError)) return false;
+  if (e.code === 'catalog_timeout') return true;
+  return e.code === 'catalog_unreachable' && gh.worthFallback(e.status == null ? null : e.status);
+}
+
+/** The bytes of a release asset over the API (utils/githubRelease.js), with the same caps; hosts: the API and the asset CDN. */
+async function viaApi(ref, { maxBytes, deadline }) {
+  const hosts = new Set([gh.API_HOST, ...gh.ASSET_HOSTS]);
+  const get = async (url, headers) => getOnce(url, { maxBytes: gh.RELEASE_MAX_BYTES, deadline, headers });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let asset;
+    try { asset = await gh.assetOf(ref, get); } catch (e) {
+      if (e instanceof CatalogError) throw e;
+      throw Object.assign(new CatalogError(e.code === 'rate_limited' ? 'catalog_rate_limited' : 'catalog_unreachable', e.message), { status: e.status });
+    }
+    if (asset.size != null && asset.size > maxBytes) throw new CatalogError('catalog_too_large', 'response too large');
+    try {
+      return await fetchAllowed(gh.assetUrl(ref, asset.id), {
+        maxBytes, deadline, hosts, headers: { Accept: 'application/octet-stream' },
+        onAnswer: (r, hop) => { if (hop === 0 && gh.noteRateLimit(r.status, r.headers)) throw new CatalogError('catalog_rate_limited', 'GitHub API rate limit reached'); },
+      });
+    } catch (e) {
+      // the file was replaced (rolling release): a new asset id
+      if (attempt === 0 && e instanceof CatalogError && e.status === 404) { gh.forget(ref); continue; }
+      throw e;
+    }
+  }
+  throw new CatalogError('catalog_unreachable', 'asset not found');
+}
+
+/**
+ * fetchAllowed for a catalogue or package URL. A release download on
+ * github.com that answers 5xx or no headers within `headerMs` takes the API
+ * route (after such a failure for API_FIRST_MS at once); any other URL and
+ * any other failure stays as it is.
+ */
+async function fetchRelease(url, o) {
+  const ref = gh.parseDownloadUrl(url);
+  if (!ref) return fetchAllowed(url, o);
+  const deadline = Date.now() + o.timeoutMs;
+  let first = null;
+  if (!gh.apiFirst()) {
+    try { return await fetchAllowed(url, { ...o, deadline, headerMs: o.headerMs }); } catch (e) {
+      if (!worthFallback(e)) throw e;
+      first = e;
+      gh.noteDegraded();
+    }
+  }
+  try {
+    return await viaApi(ref, { maxBytes: o.maxBytes, deadline });
+  } catch (e) {
+    // a refused redirect or a size cap on the API way: that answer counts
+    if (e.code === 'catalog_redirect' || e.code === 'catalog_bad_url' || e.code === 'catalog_too_large') throw e;
+    // the API way was the only try (download path failed a while ago): the download path once more
+    if (!first && Date.now() < deadline) return fetchAllowed(url, { ...o, deadline });
+    // both failed: the download path's answer (HTTP 504, timeout), marked when the API refused for its rate limit
+    if (first) throw Object.assign(first, { viaApi: e.code === 'catalog_rate_limited' ? 'rate_limited' : String(e.message || e.code) });
+    throw e;
+  }
 }
 
 // ─── Validation ─────────────────────────────────
@@ -298,39 +377,58 @@ function meta(p, key) {
   return out;
 }
 
+function validateHead(doc) {
+  if (!isObj(doc) || doc.schema !== 1) throw new CatalogError('catalog_invalid', 'schema');
+  if (!isObj(doc.plugins)) throw new CatalogError('catalog_invalid', 'plugins');
+  const list = Object.entries(doc.plugins);
+  if (list.length > MAX_PLUGINS) throw new CatalogError('catalog_invalid', 'too many plugins');
+  return list;
+}
+
+function validatePlugin(key, p, hosts) {
+  if (!validId(key)) throw new CatalogError('catalog_invalid', 'invalid plugin id');
+  if (!isObj(p) || p.id !== key) throw new CatalogError('catalog_invalid', `${key}: id`);
+  if (!str(p.publisher, 100)) throw new CatalogError('catalog_invalid', `${key}: publisher`);
+  if (!Array.isArray(p.versions) || !p.versions.length || p.versions.length > MAX_VERSIONS) throw new CatalogError('catalog_invalid', `${key}: versions`);
+  const versions = p.versions.map((e, i) => entry(e, key, `${key}.versions[${i}]`, hosts));
+  if (p.latest != null) entry(p.latest, key, `${key}.latest`, hosts); // checked like the others, not used
+  const seen = new Set();
+  for (const v of versions) {
+    if (seen.has(v.version)) throw new CatalogError('catalog_invalid', `${key}: duplicate version ${v.version}`);
+    seen.add(v.version);
+  }
+  versions.sort((a, b) => semver.compare(b.version, a.version)); // newest first, whatever the file says
+  return Object.freeze({
+    id: key,
+    name: texts(p.name, 200, `${key}.name`),
+    description: p.description == null ? { de: '', en: '' } : texts(p.description, 2000, `${key}.description`),
+    publisher: p.publisher,
+    versions: Object.freeze(versions),
+    // what the newest release replaces (an installed one moves over on install)
+    replaces: (versions.find((v) => !v.prerelease) || versions[0]).replaces,
+    meta: Object.freeze(meta(p, key)),
+  });
+}
+
 /**
  * Strict check of a parsed catalog.json.
  * @returns {{generatedAt:string|null, plugins: Map<string, {id, name, description, publisher, versions: object[]}>}}
  */
 function validate(doc, hosts = allowedHosts()) {
-  if (!isObj(doc) || doc.schema !== 1) throw new CatalogError('catalog_invalid', 'schema');
-  if (!isObj(doc.plugins)) throw new CatalogError('catalog_invalid', 'plugins');
-  const list = Object.entries(doc.plugins);
-  if (list.length > MAX_PLUGINS) throw new CatalogError('catalog_invalid', 'too many plugins');
   const plugins = new Map();
-  for (const [key, p] of list) {
-    if (!validId(key)) throw new CatalogError('catalog_invalid', 'invalid plugin id');
-    if (!isObj(p) || p.id !== key) throw new CatalogError('catalog_invalid', `${key}: id`);
-    if (!str(p.publisher, 100)) throw new CatalogError('catalog_invalid', `${key}: publisher`);
-    if (!Array.isArray(p.versions) || !p.versions.length || p.versions.length > MAX_VERSIONS) throw new CatalogError('catalog_invalid', `${key}: versions`);
-    const versions = p.versions.map((e, i) => entry(e, key, `${key}.versions[${i}]`, hosts));
-    if (p.latest != null) entry(p.latest, key, `${key}.latest`, hosts); // checked like the others, not used
-    const seen = new Set();
-    for (const v of versions) {
-      if (seen.has(v.version)) throw new CatalogError('catalog_invalid', `${key}: duplicate version ${v.version}`);
-      seen.add(v.version);
-    }
-    versions.sort((a, b) => semver.compare(b.version, a.version)); // newest first, whatever the file says
-    plugins.set(key, Object.freeze({
-      id: key,
-      name: texts(p.name, 200, `${key}.name`),
-      description: p.description == null ? { de: '', en: '' } : texts(p.description, 2000, `${key}.description`),
-      publisher: p.publisher,
-      versions: Object.freeze(versions),
-      // what the newest release replaces (an installed one moves over on install)
-      replaces: (versions.find((v) => !v.prerelease) || versions[0]).replaces,
-      meta: Object.freeze(meta(p, key)),
-    }));
+  for (const [key, p] of validateHead(doc)) plugins.set(key, validatePlugin(key, p, hosts));
+  return { generatedAt: str(doc.generated_at, 40) ? doc.generated_at : null, plugins };
+}
+
+const SLICE_MS = 10;
+
+/** validate() with the event loop running between the plugins (every SLICE_MS) — a catalogue of up to 2 MB. */
+async function validateAsync(doc, hosts = allowedHosts()) {
+  const plugins = new Map();
+  let start = Date.now();
+  for (const [key, p] of validateHead(doc)) {
+    plugins.set(key, validatePlugin(key, p, hosts));
+    if (Date.now() - start >= SLICE_MS) { await new Promise((r) => setImmediate(r)); start = Date.now(); }
   }
   return { generatedAt: str(doc.generated_at, 40) ? doc.generated_at : null, plugins };
 }
@@ -478,10 +576,10 @@ let inFlight = null;
 async function load() {
   const url = catalogUrl();
   const hosts = allowedHosts();
-  const body = await fetchAllowed(url.href, { maxBytes: CATALOG_MAX_BYTES, timeoutMs: CATALOG_TIMEOUT_MS, hosts });
+  const body = await fetchRelease(url.href, { maxBytes: CATALOG_MAX_BYTES, timeoutMs: CATALOG_TIMEOUT_MS, headerMs: TIMEOUTS.catalogHeaders, hosts });
   let doc;
   try { doc = JSON.parse(body.toString('utf8')); } catch { throw new CatalogError('catalog_invalid', 'not JSON'); }
-  return validate(doc, hosts);
+  return validateAsync(doc, hosts);
 }
 
 /**
@@ -536,7 +634,7 @@ async function download(id, version, gcVersion, { refresh = false } = {}) {
   const max = Math.min(e.size, LIMITS.packageBytes);
   let buf;
   try {
-    buf = await fetchAllowed(e.url, { maxBytes: max, timeoutMs: DOWNLOAD_TIMEOUT_MS });
+    buf = await fetchRelease(e.url, { maxBytes: max, timeoutMs: DOWNLOAD_TIMEOUT_MS, headerMs: TIMEOUTS.downloadHeaders });
   } catch (err) {
     if (err instanceof CatalogError && err.code === 'catalog_unreachable') throw new CatalogError('catalog_download_failed', err.message);
     throw err;
@@ -548,9 +646,10 @@ async function download(id, version, gcVersion, { refresh = false } = {}) {
 
 module.exports = {
   CatalogError, DEFAULT_URL, GITHUB_HOSTS, CACHE_TTL_MS,
-  enabled, catalogUrl, allowedHosts, allowedUrl, validate, pick, stateOf, replacing, view, detail, notesBetween, cached, get, fetchedAt, installable, download, fetchAllowed,
+  enabled, catalogUrl, allowedHosts, allowedUrl, validate, validateAsync, pick, stateOf, replacing, view, detail, notesBetween, cached, get, fetchedAt, installable, download, fetchAllowed, fetchRelease,
+  TIMEOUTS,
   CATEGORIES, ICONS,
   _setTransport(fn) { transportOverride = fn || null; },
   _setAgent(a) { agent = a || null; },
-  _reset() { cache = null; inFlight = null; transportOverride = null; agent = null; },
+  _reset() { cache = null; inFlight = null; transportOverride = null; agent = null; gh._resetForTest(); },
 };
