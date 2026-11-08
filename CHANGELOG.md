@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.252.0] — 2026-11-08
+
+### Features
+- Versionen und Handbuch für jedes Gateway – wie bei den Plugins (#442)
+
+---
+
 ## [1.251.0] — 2026-11-07
 
 ### Features
