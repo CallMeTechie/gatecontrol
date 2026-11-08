@@ -1,105 +1,99 @@
 {% extends theme + "/layout.njk" %}
 
+{#- Peers / Clients (docs/feature-peers-page.md): the devices only — gateways
+    live on /gateways. Cards or a list (remembered per browser), search,
+    status/group/device filters, sort, "Weitere Filter" (owner, tags, needs
+    attention), selection with the bulk bar. Filters live in the address
+    (#status=…&group=…); /peers#edit/<id> still opens a device's dialog.
+    Everything inside #pl-results is drawn by public/js/peers.js. -#}
 {% block content %}
-{#- The page title is the topbar's (partials/topbar.njk); this row only
-    carries the licence counter and the page's actions. -#}
-<div class="page-header">
-  {% if license.features.vpn_peers is defined and license.features.vpn_peers != -1 %}
-  <div class="page-meta">
-    {{ t('st.feature.vpn_peers') }}
-    <span class="limit-badge {% if peerCount >= license.features.vpn_peers %}at-limit{% endif %}">
-      {{ peerCount }} / {{ license.features.vpn_peers }}
-    </span>
+<div class="pl-page" id="pl-page">
+<div class="page-header pl-head">
+  <div class="page-meta pl-meta">
+    <div class="pl-sum" id="pl-summary" aria-live="polite">{{ t('common.loading') }}</div>
+    {% if license.features.vpn_peers is defined and license.features.vpn_peers != -1 %}
+    <div class="pl-lic" id="pl-licence" data-limit="{{ license.features.vpn_peers }}" hidden></div>
+    {% endif %}
   </div>
-  {% endif %}
   <div class="page-actions">
-    <button class="btn btn-primary" id="btn-add-peer">
+    <a class="btn btn-ghost" href="/settings/gruppen" id="pl-groups-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5 6-5s6 1.7 6 5M16 4.5a3 3 0 0 1 0 6M21 20c0-2.5-1.5-4-4-4.6"/></svg>
+      <span>{{ t('pl.groups') }}</span>
+    </a>
+    <button type="button" class="btn btn-primary" id="btn-add-peer">
       <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
       <span data-i18n="peers.add">{{ t('peers.add') }}</span>
     </button>
   </div>
 </div>
 
-<!-- Batch button: hidden in Aurora layout but kept for JS event listener -->
-<button id="btn-batch-peers" style="display:none" aria-hidden="true"></button>
-
-<!-- Toolbar: search input + status toggle-group -->
-<div class="toolbar">
-  <div class="search-box">
-    <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="m20 20-3-3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-    <input type="search" id="peer-search" data-i18n-ph="peers.search" placeholder="{{ t('peers.search') }}">
+<div class="pl-tbwrap">
+  <div class="toolbar rt-toolbar pl-toolbar" role="search">
+    <div class="rt-search search-box pl-search">
+      <label for="peer-search" class="rt-sr">{{ t('pl.search_label') }}</label>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" width="16" height="16"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input type="search" id="peer-search" placeholder="{{ t('pl.search_ph') }}" autocomplete="off">
+    </div>
+    <div class="rt-seg pl-status" id="pl-status" role="group" aria-label="{{ t('pl.status_label') }}">
+      <button type="button" class="rt-seg-btn" data-status="all" aria-pressed="true">{{ t('pl.st_all') }} <em data-count="all"></em></button>
+      <button type="button" class="rt-seg-btn" data-status="online" aria-pressed="false"><i class="pl-dot pl-dot-on" aria-hidden="true"></i>{{ t('pl.st_online') }} <em data-count="online"></em></button>
+      <button type="button" class="rt-seg-btn" data-status="offline" aria-pressed="false">{{ t('pl.st_offline') }} <em data-count="offline"></em></button>
+      <button type="button" class="rt-seg-btn" data-status="disabled" aria-pressed="false">{{ t('pl.st_disabled') }} <em data-count="disabled"></em></button>
+    </div>
+    <div class="rt-seg rt-seg-sm pl-view" id="pl-view" role="group" aria-label="{{ t('pl.view_label') }}">
+      <button type="button" class="rt-seg-btn" data-view="cards" aria-pressed="true" title="{{ t('pl.view_cards') }}" aria-label="{{ t('pl.view_cards') }}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg></button>
+      <button type="button" class="rt-seg-btn" data-view="list" aria-pressed="false" title="{{ t('pl.view_list') }}" aria-label="{{ t('pl.view_list') }}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
+    </div>
+    <span class="pl-break" aria-hidden="true"></span>
+    <label class="rt-selectbox pl-opt">
+      <span>{{ t('pl.f_group') }}</span>
+      <select id="pl-group"><option value="">{{ t('pl.f_all') }}</option></select>
+    </label>
+    <label class="rt-selectbox pl-opt">
+      <span>{{ t('pl.f_device') }}</span>
+      <select id="pl-device">
+        <option value="">{{ t('pl.f_all') }}</option>
+        <option value="android">{{ t('pl.dev_android') }}</option>
+        <option value="windows">{{ t('pl.dev_windows') }}</option>
+        <option value="none">{{ t('pl.dev_none') }}</option>
+      </select>
+    </label>
+    <label class="rt-selectbox pl-opt">
+      <span>{{ t('pl.f_sort') }}</span>
+      <select id="pl-sort">
+        <option value="status">{{ t('pl.sort_status') }}</option>
+        <option value="name">{{ t('pl.sort_name') }}</option>
+        <option value="seen">{{ t('pl.sort_seen') }}</option>
+        <option value="traffic">{{ t('pl.sort_traffic') }}</option>
+        <option value="group">{{ t('pl.sort_group') }}</option>
+        <option value="ip">{{ t('pl.sort_ip') }}</option>
+      </select>
+    </label>
+    <button type="button" class="btn btn-ghost pl-more-btn" id="pl-more-btn" aria-expanded="false" aria-controls="pl-more">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg>
+      <span class="pl-more-l">{{ t('pl.more_filters') }}</span><span class="pl-more-s">{{ t('pl.filters') }}</span>
+      <span class="pl-count" id="pl-more-count" hidden></span>
+    </button>
   </div>
-  <span class="toggle-group" id="aurora-status-toggle">
-    <button class="toggle-btn on" data-status="all" data-i18n="common.all">{{ t('common.all') or 'All' }}</button>
-    <button class="toggle-btn" data-status="online" data-i18n="peers.online">{{ t('peers.online') or 'Online' }}</button>
-    <button class="toggle-btn" data-status="offline" data-i18n="peers.offline">{{ t('peers.offline') or 'Offline' }}</button>
-  </span>
+  <div class="pl-pop" id="pl-more" role="dialog" aria-label="{{ t('pl.filters_title') }}" hidden></div>
 </div>
+<div class="pl-active" id="pl-active" hidden></div>
+<div class="pl-attn" id="pl-attn" hidden></div>
+<div id="pl-results" class="pl-results"><div class="rt-empty-page">{{ t('common.loading') }}</div></div>
 
-<!-- Hidden DOM anchors required by peers.js — never removed -->
-<div style="display:none" aria-hidden="true">
-  <span id="peer-status-tags"></span>
-  <div id="peer-tag-filters"></div>
-  <select id="peer-group-filter"><option value="">{{ t('peer_groups.all') }}</option></select>
-  <span id="stat-gw-online"></span><span id="stat-gw-total"></span>
-  <span id="stat-cl-online"></span><span id="stat-cl-total"></span>
-</div>
-
-<!-- ─── Gateways card ──────────────────────────────────────── -->
-<div class="card span12" style="margin-bottom:18px">
-  <div class="card-title">
-    <span class="ic">
-      <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/></svg>
-    </span>
-    <span data-i18n="peers.gateways_section">{{ t('peers.gateways_section') or 'Home Gateways' }}</span>
-    <span class="card-sub" id="gw-section-count">—</span>
-  </div>
-  <div class="unit-grid" id="gateways-container" style="margin-top:14px">
-    <div class="aurora-gw-empty">{{ t('common.loading') }}</div>
+<div class="sh-bulkbar pl-bulk" id="pl-bulkbar" role="region" aria-label="{{ t('pl.bulk_label') }}" hidden>
+  <span class="sh-bulk-count" id="pl-bulk-count" aria-live="polite"></span>
+  <button type="button" class="pl-link" id="pl-bulk-all"></button>
+  <div class="sh-bulk-actions">
+    <button type="button" class="btn btn-ghost btn-sm" data-bulk="enable">{{ t('pl.bulk_enable') }}</button>
+    <button type="button" class="btn btn-ghost btn-sm" data-bulk="disable">{{ t('pl.bulk_disable') }}</button>
+    <button type="button" class="btn btn-ghost btn-sm" data-bulk="group">{{ t('pl.bulk_group') }}</button>
+    <button type="button" class="btn btn-ghost btn-sm" data-bulk="owner">{{ t('pl.bulk_owner') }}</button>
+    <button type="button" class="btn btn-ghost btn-sm" data-bulk="tag">{{ t('pl.bulk_tag') }}</button>
+    <button type="button" class="btn btn-danger btn-sm" data-bulk="delete">{{ t('pl.bulk_delete') }}</button>
+    <button type="button" class="icon-action" data-bulk="clear" title="{{ t('pl.bulk_clear') }}" aria-label="{{ t('pl.bulk_clear') }}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
   </div>
 </div>
-
-<!-- ─── Peers / Clients card ───────────────────────────────── -->
-<div class="card span12">
-  <div class="card-title">
-    <span class="ic">
-      <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-    </span>
-    <span data-i18n="peers.clients_section">{{ t('peers.clients_section') or 'Peers / Clients' }}</span>
-    <span class="card-sub" id="peers-section-count">—</span>
-  </div>
-  <table class="data-table" style="margin-top:8px">
-    <thead>
-      <tr>
-        <th class="batch-col" style="display:none;width:40px"><input type="checkbox" id="batch-select-all-peers" title="{{ t('batch.select_all') }}"></th>
-        <th data-i18n="peers.name_device">{{ t('peers.name_device') }}</th>
-        <th data-i18n="peers.wg_ip">{{ t('peers.wg_ip') }}</th>
-        <th data-i18n="peers.last_contact">{{ t('peers.last_contact') }}</th>
-        <th data-i18n="client_updates.peer_client">{{ t('client_updates.peer_client') }}</th>
-        <th data-i18n="peers.traffic">{{ t('peers.traffic') }}</th>
-        <th data-i18n="peers.status">{{ t('peers.status') }}</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody id="peers-tbody">
-      <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:40px">{{ t('common.loading') }}</td></tr>
-    </tbody>
-  </table>
-  <!-- Mobile view suppressed in Aurora (responsive table layout used instead) -->
-  <div class="peers-mobile" id="peers-mobile" style="display:none"></div>
-</div>
-
-<!-- Batch action bar (preserved for batch-mode JS flow) -->
-<div id="batch-bar-peers" class="batch-bar" style="display:none">
-  <span id="batch-bar-peers-count"></span>
-  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-    <button class="btn btn-ghost" id="batch-enable-peers">{{ t('batch.enable') }}</button>
-    <button class="btn btn-ghost" id="batch-disable-peers">{{ t('batch.disable') }}</button>
-    <button class="btn btn-danger" id="batch-delete-peers">{{ t('batch.delete') }}</button>
-    <select id="peer-bulk-owner" style="width:auto"></select>
-    <button class="btn btn-ghost" id="peer-bulk-owner-apply">{{ t('peers.owner.bulk_assign') }}</button>
-    <button class="btn btn-ghost" id="batch-cancel-peers">{{ t('batch.cancel') }}</button>
-  </div>
 </div>
 
 {% include theme + "/partials/modals/peer-add.njk" %}
@@ -107,15 +101,13 @@
 {% include theme + "/partials/modals/peer-qr.njk" %}
 {% include theme + "/partials/modals/client-enrollment.njk" %}
 {% include theme + "/partials/modals/peer-traffic.njk" %}
-{% include theme + "/partials/modals/peer-gateway-tokens.njk" %}
-{% include theme + "/partials/modals/peer-gateway-delete.njk" %}
 {% include theme + "/partials/modals/confirm.njk" %}
+<script type="application/json" id="pl-i18n" data-prefixes="pl. peer_groups. common." nonce="{{ cspNonce }}">{{ plI18n | default('{}') | safe }}</script>
 {% endblock %}
 
 {% block scripts %}
 <script src="/js/client-enrollment.js?v={{ appVersion }}"></script>
 <script src="/js/client-policy-form.js?v={{ appVersion }}"></script>
-<script src="/js/gateway-kit.js?v={{ appVersion }}"></script>
 <script src="/js/peers.js?v={{ appVersion }}"></script>
 <script src="/js/support-bundles.js?v={{ appVersion }}"></script>
 {% endblock %}

@@ -410,6 +410,32 @@ function failure(res, e) {
   return refuse(res, 500, 'internal');
 }
 
+// ─── For the home cache (homeCache.js, gc.homeCache.offer({ preview })) ──
+
+/**
+ * The plaintext JPEG of the stored preview `size` of file `r` → Buffer, or
+ * null when there is none (yet). Never makes one.
+ */
+async function plain(r, size) {
+  if (!r || !SIZES[size]) return null;
+  try {
+    return open(keyOf(r), size, await fs.promises.readFile(fileOf(r.plugin, r.id, SIZES[size].suffix)));
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return null;
+    logger.warn({ plugin: r.plugin, media: r.id, err: e && e.message }, 'plugin media previews: preview not readable');
+    return null;
+  }
+}
+
+/** { mtimeMs, size } of the stored preview file, or null — a device preview sent again changes it. */
+function stamp(r, size) {
+  if (!r || !SIZES[size]) return null;
+  try {
+    const st = fs.statSync(fileOf(r.plugin, r.id, SIZES[size].suffix));
+    return st.isFile() ? { mtimeMs: st.mtimeMs, size: st.size } : null;
+  } catch { return null; }
+}
+
 /** Tests: wait until the queue is empty. */
 async function idle() {
   for (let i = 0; i < 2000 && (running || queues.now.length || queues.background.length); i++) await new Promise((r) => setTimeout(r, 5));
@@ -417,6 +443,6 @@ async function idle() {
 
 module.exports = {
   PreviewError, SIZES, RENDER_TYPES, CLIENT_TYPES, SOURCE_MAX_BYTES, MAX_PIXELS, CLIENT_MAX_BYTES, CLIENT_MAX_PIXELS, WAIT_MS,
-  declared, state, renderable, render, warm, send, putClient, failure, drop, linkTo, sizeOf, idle,
+  declared, state, renderable, render, warm, send, putClient, failure, drop, linkTo, sizeOf, idle, plain, stamp,
   _waitMs: null,
 };

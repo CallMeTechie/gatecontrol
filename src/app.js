@@ -140,7 +140,8 @@ function createApp() {
   app.use(i18nMiddleware);
 
   // ─── Template locals ─────────────────────────────
-  app.use(injectLocals);
+  // (reads the user and the sidebar counts: one generous budget per session user)
+  app.use(require('./middleware/rateLimit').sessionLocalsLimiter, injectLocals);
 
   // ─── License locals ──────────────────────────────
   const { injectLicense } = require('./middleware/license');

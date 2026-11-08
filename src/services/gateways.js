@@ -80,7 +80,7 @@ function normalizePlatform(v) {
   return PLATFORMS.includes(v) ? v : null;
 }
 
-async function createGateway({ name, apiPort = DEFAULT_API_PORT, proxyPort = 8080, platform = null, groupId = null }) {
+async function createGateway({ name, apiPort = DEFAULT_API_PORT, proxyPort = 8080, platform = null, groupId = null, locationId = null }) {
   const db = getDb();
 
   const limit = license.getFeatureLimit('gateway_peers');
@@ -95,11 +95,11 @@ async function createGateway({ name, apiPort = DEFAULT_API_PORT, proxyPort = 808
   const { apiToken, apiTokenHash, pushToken, pushTokenEncrypted } = generateTokens();
 
   db.prepare(`
-    INSERT INTO gateway_meta (peer_id, api_port, proxy_port, api_token_hash, push_token_encrypted, created_at, platform)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(peer.id, apiPort, proxyPort, apiTokenHash, pushTokenEncrypted, Date.now(), normalizePlatform(platform));
+    INSERT INTO gateway_meta (peer_id, api_port, proxy_port, api_token_hash, push_token_encrypted, created_at, platform, location_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(peer.id, apiPort, proxyPort, apiTokenHash, pushTokenEncrypted, Date.now(), normalizePlatform(platform), locationId || null);
 
-  logger.info({ peerId: peer.id, peerName: name, apiPort, proxyPort, platform: normalizePlatform(platform) }, 'Gateway created');
+  logger.info({ peerId: peer.id, peerName: name, apiPort, proxyPort, platform: normalizePlatform(platform), locationId: locationId || null }, 'Gateway created');
 
   return { peer, apiToken, pushToken };
 }

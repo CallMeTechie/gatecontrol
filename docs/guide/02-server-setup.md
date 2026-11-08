@@ -171,7 +171,7 @@ HTTPS for the web interface is now done. The same applies to every further
 domain you set up as a route (e.g. `nas.example.com`):
 
 1. Create an A record pointing to the server's IP at your domain provider.
-2. Create the route in GateControl (“Network” → “Domains / Routes”).
+2. Create the route in GateControl (“Services” → “Domains / Routes”).
 
 The server fetches the certificate by itself.
 

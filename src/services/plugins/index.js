@@ -725,12 +725,28 @@ function navRank(id) {
   return i < 0 ? NAV_FIRST.length : i;
 }
 
+// Sidebar section of a plugin page (docs/plugins.md "Sidebar"): `ui.nav.section`
+// in the manifest — "home" (Zuhause), "apps" (Apps) or "devices" (group Geräte,
+// below Peers and Gateways). The official plugins are placed here as long as
+// their manifests do not say it themselves; every other plugin lands in "apps".
+const NAV_SECTIONS = ['home', 'apps', 'devices'];
+const NAV_SECTION_BUILTIN = {
+  'gatecontrol-smarthome': 'home', 'gatecontrol-raumklima': 'home', 'gatecontrol-door': 'home',
+  'gatecontrol-skoda': 'home', 'gatecontrol-midea': 'home', 'gatecontrol-alltag': 'home',
+  'gatecontrol-proxmox': 'devices', 'gatecontrol-synology': 'devices',
+};
+function navSection(p) {
+  const s = p.manifest && p.manifest.ui && p.manifest.ui.nav && p.manifest.ui.nav.section;
+  if (NAV_SECTIONS.includes(s)) return s;
+  return NAV_SECTION_BUILTIN[p.id] || 'apps';
+}
+
 function navEntries(lang) {
   let rows;
   try { rows = registry.list(); } catch { return []; }
   return rows.filter((p) => p.manifest && p.manifest.ui && p.manifest.ui.nav).map((p) => {
     const ev = evaluate(p);
-    return { id: p.id, label: loc(p.manifest.ui.nav.label, lang), icon: p.manifest.ui.nav.icon, href: '/plugins/' + p.id, on: ev.run };
+    return { id: p.id, label: loc(p.manifest.ui.nav.label, lang), icon: p.manifest.ui.nav.icon, href: '/plugins/' + p.id, on: ev.run, section: navSection(p) };
   }).sort((a, b) => navRank(a.id) - navRank(b.id)); // stable: the rest stays sorted by name
 }
 

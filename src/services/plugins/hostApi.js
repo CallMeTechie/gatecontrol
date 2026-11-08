@@ -1498,36 +1498,63 @@ function internetCall(plugin, op, args) {
 
 // ─── Home cache (permissions.homeCache, phase 3b) ──────────────────────
 //
-// gc.homeCache.offer({ mediaId, kind, userIds?, priority? }) / withdraw(mediaId)
-// / lanHint(sha256 | { mediaId }, req) — services/homeCache.js. A plugin offers
-// its own media (sha256 and size come from the stored file); a lan hint only
-// for the request it answers right now (req.homeRef, requestRefs.js), only
-// when that client is in the home network of a gateway holding the file.
+// gc.homeCache.offer({ mediaId, kind, userIds?, priority?, preview? }) /
+// withdraw(mediaId, { preview? }) / lanHint(sha256 | { mediaId, preview? }, req)
+// / lanHints([…], req) — services/homeCache.js. A plugin offers its own media
+// (sha256 and size come from the stored file) and, since 1.249.0, GateControl's
+// previews of it (media.previews); a lan hint only for the request it answers
+// right now (req.homeRef, requestRefs.js), only when that client is in the home
+// network of a gateway holding the file.
+
+/** The sha256 a lan hint is asked for (sha256 | { mediaId, preview? }) — only of blobs this plugin offered, else null. */
+async function hintSha(plugin, what) {
+  const hc = require('../homeCache');
+  const w = what && typeof what === 'object' ? what : {};
+  let sha = typeof w.sha256 === 'string' ? w.sha256.toLowerCase() : null;
+  if (!sha && typeof w.mediaId === 'string') {
+    if (w.preview != null) {
+      need(hc.PREVIEW_SIZES.includes(w.preview), 'ERR_INVALID', 'preview: small or large');
+      sha = await hc.previewSha(plugin.id, w.mediaId, w.preview);
+      if (!sha) return null;
+    } else {
+      const r = require('./media').row(plugin.id, w.mediaId);
+      need(r, 'ERR_NOT_FOUND', 'no such media of this plugin');
+      sha = String(r.sha256 || '').toLowerCase();
+    }
+  }
+  need(typeof sha === 'string' && /^[0-9a-f]{64}$/.test(sha), 'ERR_INVALID', 'sha256: 64 hex characters');
+  // only what this plugin offered (never another plugin's file or an app update by guessing its sha256)
+  const own = db().prepare("SELECT 1 FROM home_cache_blobs WHERE sha256 = ? AND source IN ('plugin', 'preview') AND plugin_id = ?").get(sha, plugin.id);
+  return own ? sha : null;
+}
 
 async function homeCacheCall(plugin, op, args) {
   need(plugin.manifest.permissions && plugin.manifest.permissions.homeCache === true, 'ERR_HOME_CACHE_DENIED', 'this plugin has no homeCache permission');
   const hc = require('../homeCache');
   const a = args && typeof args === 'object' ? args : {};
   try {
-    if (op === 'offer') return hc.offer(plugin.id, a);
-    if (op === 'withdraw') return hc.withdraw(plugin.id, a.mediaId);
-    if (op === 'lanHint') {
+    if (op === 'offer') return await hc.offer(plugin.id, a, { plugin });
+    if (op === 'withdraw') return hc.withdraw(plugin.id, a.mediaId, { preview: a.preview == null ? null : a.preview });
+    if (op === 'lanHint' || op === 'lanHints') {
       const ctx = require('./requestRefs').get(plugin.id, a.ref);
-      need(ctx, 'ERR_NOT_IN_REQUEST', 'lanHint(sha256, req) only while answering that request (req.homeRef)');
-      let sha = typeof a.sha256 === 'string' ? a.sha256.toLowerCase() : null;
-      if (!sha && typeof a.mediaId === 'string') {
-        const r = require('./media').row(plugin.id, a.mediaId);
-        need(r, 'ERR_NOT_FOUND', 'no such media of this plugin');
-        sha = String(r.sha256 || '').toLowerCase();
+      need(ctx, 'ERR_NOT_IN_REQUEST', `${op}(…, req) only while answering that request (req.homeRef)`);
+      if (op === 'lanHint') {
+        const sha = await hintSha(plugin, a);
+        return sha ? await hc.lanFor(ctx, sha) : null;
       }
-      need(typeof sha === 'string' && /^[0-9a-f]{64}$/.test(sha), 'ERR_INVALID', 'sha256: 64 hex characters');
-      // only files this plugin offered (never another plugin's or an app update by guessing its sha256)
-      const own = db().prepare("SELECT 1 FROM home_cache_blobs WHERE sha256 = ? AND source = 'plugin' AND plugin_id = ?").get(sha, plugin.id);
-      if (!own) return null;
-      return await hc.lanFor(ctx, sha);
+      need(Array.isArray(a.items) && a.items.length <= hc.HINTS_MAX, 'ERR_INVALID', `items: up to ${hc.HINTS_MAX}`);
+      // one bad entry is null, not the whole answer
+      const shas = [];
+      for (const it of a.items) {
+        try { shas.push(await hintSha(plugin, typeof it === 'string' ? { sha256: it } : it)); } catch (e) {
+          if (!(e instanceof HostApiError)) throw e;
+          shas.push(null);
+        }
+      }
+      return await hc.lanForMany(ctx, shas);
     }
   } catch (e) {
-    if (e && (e.code === 'ERR_INVALID' || e.code === 'ERR_NOT_FOUND')) throw new HostApiError(e.code, e.message);
+    if (e && ['ERR_INVALID', 'ERR_NOT_FOUND', 'ERR_PREVIEW_PENDING', 'ERR_MEDIA_DENIED'].includes(e.code) && !(e instanceof HostApiError)) throw new HostApiError(e.code, e.message);
     throw e;
   }
   throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
@@ -2236,6 +2263,7 @@ async function handle(plugin, api, args, ctx) {
     case 'homeCache.offer': return homeCacheCall(plugin, 'offer', args);
     case 'homeCache.withdraw': return homeCacheCall(plugin, 'withdraw', args);
     case 'homeCache.lanHint': return homeCacheCall(plugin, 'lanHint', args);
+    case 'homeCache.lanHints': return homeCacheCall(plugin, 'lanHints', args);
     // Drucken & Scannen (permissions.print, homePrint.js — phase 3c)
     case 'print.devices': case 'print.discover': case 'print.submit': case 'print.testPage': case 'print.job': case 'print.jobs':
     case 'print.cancel': case 'print.pages': case 'print.scan': case 'print.scanStatus': case 'print.cancelScan': case 'print.pdf':

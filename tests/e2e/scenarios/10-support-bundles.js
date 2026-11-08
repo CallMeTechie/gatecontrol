@@ -66,15 +66,15 @@ module.exports = (ctx) => {
       await page.goto(BASE + '/peers');
       await waitIdle(page);
       step('peer list marks the device with an unviewed bundle',
-        await visible(page, `tr[data-peer-id="${S.pixel}"] .sb-peer-badge`, 8000));
-      await page.click(`tr[data-peer-id="${S.laptop}"] [data-action="edit"]`);
+        await visible(page, `[data-peer-id="${S.pixel}"] .sb-peer-badge`, 8000));
+      await page.click(`[data-peer-id="${S.laptop}"] .pl-actions [data-action="edit"]`);
       step('edit dialog of a device with an open request shows the support section',
         await visible(page, '#edit-peer-support-group') && await until(page, () => {
           const b = document.getElementById('btn-edit-peer-support-request');
           return b && b.dataset.requested === '1';
         }));
       await page.click('#modal-edit-peer [data-close-modal]');
-      await page.click(`tr[data-peer-id="${S.pixel}"] [data-action="edit"]`);
+      await page.click(`[data-peer-id="${S.pixel}"] .pl-actions [data-action="edit"]`);
       step('edit dialog of the Android device lists its bundle with a view link',
         await visible(page, '#edit-peer-support-list [data-action="support-view"]'));
       await page.click('#edit-peer-support-list [data-action="support-view"]');

@@ -523,8 +523,12 @@ function validate(raw, opts = {}) {
     if (u.nav != null) {
       const label = locText(u.nav && u.nav.label, 40);
       const icon = u.nav && u.nav.icon != null ? String(u.nav.icon) : 'M4 4h16v16H4z';
+      // section (optional): where the sidebar puts the page — "home" (Zuhause),
+      // "apps" or "devices" (group Geräte). Unknown values are ignored, so a
+      // plugin written for a newer server still loads.
+      const section = u.nav && ['home', 'apps', 'devices'].includes(u.nav.section) ? u.nav.section : null;
       if (!label || !ICON_RE.test(icon)) err('ui.nav: invalid');
-      else ui.nav = { label, icon };
+      else ui.nav = section ? { label, icon, section } : { label, icon };
     }
     if (u.pages != null) {
       if (!Array.isArray(u.pages) || u.pages.length > 10) err('ui.pages: invalid');

@@ -169,24 +169,52 @@ const hostnameReportLimiter = rateLimit({
   },
 });
 
+// Which budget a request inside /api/v1/gateway spends (req.path relative to
+// that router). Volume traffic – the home cache (want, blobs, stock report:
+// hundreds of small previews per sync since Drive 1.24) and file transfers
+// (print/scan/OCR pages, edge packages, speed test, camera events) – has its
+// own buckets. It used to share the one per-gateway budget with heartbeat and
+// config poll: a cache sync spent it, heartbeats got 429 and the server
+// declared the gateway offline (pool failover).
+const GW_CACHE_RE = /^\/cache(?:\/want|\/blob\/[^/]+)?$/;
+const GW_BULK_RE = /^\/(?:print\/jobs\/[^/]+\/file|print\/scans\/[^/]+\/pages\/[^/]+|print\/ocr\/[^/]+\/(?:pages\/[^/]+|document|text)|edge\/packages\/[^/]+\/[^/]+|speedtest\/(?:down|up)|cameras\/events)$/;
+function gatewayBudget(req) {
+  const p = req.path || '';
+  if (GW_CACHE_RE.test(p)) return 'cache';
+  if (GW_BULK_RE.test(p)) return 'bulk';
+  return 'api';
+}
+
+function gatewayLimiter(budget, max, prefix, message) {
+  return rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max,
+    standardHeaders: true,
+    legacyHeaders: true,
+    // Same reasoning as apiLimiter: a 429 streak must not pin the window.
+    skipFailedRequests: true,
+    skip: (req) => gatewayBudget(req) !== budget,
+    keyGenerator: (req) => `${prefix}:${req.gateway.peer_id}`,
+    handler: (req, res) => {
+      res.status(429).json({ ok: false, error: message });
+    },
+  });
+}
+
 // Authenticated gateway API (heartbeat, config check, status, discovery).
 // Mounted AFTER requireGateway and keyed by peer, so every gateway gets its
 // own budget. Gateways used to share the per-IP apiLimiter bucket with the
 // admin's browser behind the same NAT: dashboard use spent the gateways'
 // (lower, session-less) budget, heartbeats got 429, and the gateway was
-// declared offline → 502 on all its routes.
-const gatewayApiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: () => config.auth.rateLimitGateway,
-  standardHeaders: true,
-  legacyHeaders: true,
-  // Same reasoning as apiLimiter: a 429 streak must not pin the window.
-  skipFailedRequests: true,
-  keyGenerator: (req) => `gw:${req.gateway.peer_id}`,
-  handler: (req, res) => {
-    res.status(429).json({ ok: false, error: 'Too many gateway API requests. Try again later.' });
-  },
-});
+// declared offline → 502 on all its routes. Cache and bulk routes skip it.
+const gatewayApiLimiter = gatewayLimiter('api', () => config.auth.rateLimitGateway, 'gw',
+  'Too many gateway API requests. Try again later.');
+// Home cache of a gateway: /cache/want, /cache/blob/<sha256>, POST /cache.
+const gatewayCacheLimiter = gatewayLimiter('cache', () => config.auth.rateLimitGatewayCache, 'gw-cache',
+  'Too many home cache requests. Try again later.');
+// File transfers of a gateway (print/scan/OCR pages, edge packages, speed test, camera events).
+const gatewayBulkLimiter = gatewayLimiter('bulk', () => config.auth.rateLimitGatewayBulk, 'gw-bulk',
+  'Too many gateway transfer requests. Try again later.');
 
 // In front of the gateway token check (requireGateway): only FAILED requests
 // count (skipSuccessfulRequests), so working gateways behind one NAT never
@@ -433,7 +461,24 @@ const pluginPageLimiter = rateLimit({
   },
 });
 
-module.exports = { pluginApiLimiter, pluginPageLimiter, pluginCatalogLimiter, pluginCatalogRefreshLimiter, loginLimiter, twoFactorSetupLimiter, passkeyLoginLimiter, passkeyManageLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayAuthLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter,
+// Every request of a signed-in session reads the user, the sidebar counts and
+// badges from the database (middleware/locals.js injectLocals). One budget
+// per user over all of them, far above what pages, dashboards and plugin
+// frames need together (the routes behind keep their own, smaller limits);
+// requests without a session are not counted here (nothing is read for them).
+const sessionLocalsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => config.auth.rateLimitApi * 30,
+  standardHeaders: false,
+  legacyHeaders: false,
+  skip: (req) => !(req.session && req.session.userId),
+  keyGenerator: (req) => `session-locals:${req.session.userId}`,
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, error: req.t ? req.t('error.rate_limit.api') : 'rate_limited' });
+  },
+});
+
+module.exports = { sessionLocalsLimiter, pluginApiLimiter, pluginPageLimiter, pluginCatalogLimiter, pluginCatalogRefreshLimiter, loginLimiter, twoFactorSetupLimiter, passkeyLoginLimiter, passkeyManageLimiter, apiLimiter, routeAuthLoginLimiter, routeAuthCodeLimiter, uploadLimiter, hostnameReportLimiter, gatewayApiLimiter, gatewayCacheLimiter, gatewayBulkLimiter, gatewayBudget, gatewayAuthLimiter, gatewayPairLimiter, clientEnrollLimiter, shareRedeemLimiter,
   eventStreamLimiter, portalApiLimiter, portalPageLimiter, portalPinLimiter, portalLinkLimiter, portalPinSetLimiter, homeNetworkLimiter, serviceOpenLimiter, routeAppRedeemLimiter,
   pushStreamLimiter, pushTestLimiter, notifySendLimiter };
 

@@ -9,6 +9,11 @@
     <div class="page-header">
       <p class="page-meta">{{ t('gwp.page_intro') }}</p>
       <div class="page-actions">
+        {#- Gateway-Standorte (gateway-locations.js, docs/feature-gateway-locations.md) -#}
+        <button type="button" class="btn btn-ghost" id="btn-locations">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="9.5" r="2.5" stroke="currentColor" stroke-width="2"/></svg>
+          <span>{{ t('gwp.loc.button') }}</span>
+        </button>
         <button type="button" class="btn btn-ghost" id="btn-add-pool">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="18" height="6" rx="2" stroke="currentColor" stroke-width="2"/></svg>
           <span>{{ t('gwp.create') }}</span>
@@ -23,6 +28,8 @@
     <div id="fleet-kpis" class="kpis"></div>
     <div id="version-warning" class="note" hidden>{{ t('gateways.version_check_unavailable') }}</div>
     <div id="fleet-grid" class="gwp-fleet"></div>
+    {#- switched-off gateways (gateway-manage.js): "Aktivieren" / "Entfernen" -#}
+    <div id="gw-disabled" hidden></div>
   </div>
   <div id="gw-detail-view" hidden></div>
   {#- the pool page #pool/<id> (gateway-pools-ui.js) -#}
@@ -52,7 +59,7 @@
 </div>
 
 {# ─── Assistant "Gateway hinzufügen" (gateway-wizard.js) ────────────────────
-   Four steps: 1 name/location/platform → 2 Raspberry-Pi settings (Pi only)
+   Four steps: 1 name/location (Gateway-Standort)/platform → 2 Raspberry-Pi settings (Pi only)
    → "Gateway anlegen" (POST /api/v1/peers, is_gateway) → 3 instructions per
    platform → 4 live status. Opened by #add, resumed by #setup/<id>. #}
 <div class="modal-overlay gwz-overlay" id="gwz-overlay" style="display:none">
@@ -76,9 +83,42 @@
             <span class="gwz-ferr" id="gwz-name-err" hidden></span>
           </div>
           <div class="gwz-field">
-            <label for="gwz-group">{{ t('gwiz.s1.location') }}</label>
-            <select id="gwz-group"><option value="">{{ t('gwiz.s1.location_none') }}</option></select>
+            <label for="gwz-location">{{ t('gwiz.s1.location') }}</label>
+            <select id="gwz-location"><option value="">{{ t('gwiz.s1.location_none') }}</option><option value="new">{{ t('gwiz.s1.location_new') }}</option></select>
           </div>
+        </div>
+        {#- "Neuer Standort …": created right before the gateway (docs/feature-gateway-locations.md) -#}
+        <div class="gwl-new" id="gwz-loc-new" hidden>
+          <strong>{{ t('gwiz.s1.loc_new_title') }}</strong>
+          <div class="gwz-grid2">
+            <div class="gwz-field">
+              <label for="gwz-loc-name">{{ t('gwiz.s1.loc_name') }}</label>
+              <input type="text" id="gwz-loc-name" maxlength="80" autocomplete="off" aria-describedby="gwz-loc-name-err">
+              <span class="gwz-ferr" id="gwz-loc-name-err" hidden></span>
+            </div>
+            <div class="gwz-field">
+              <label for="gwz-loc-city">{{ t('gwiz.s1.loc_city') }}</label>
+              <input type="text" id="gwz-loc-city" maxlength="80" autocomplete="off">
+            </div>
+          </div>
+          <details class="gwz-details" id="gwz-loc-more">
+            <summary>{{ t('gwiz.s1.loc_more') }}</summary>
+            <div class="gwl-grid3">
+              <div class="gwz-field">
+                <label for="gwz-loc-postal">{{ t('gwiz.s1.loc_postal') }}</label>
+                <input type="text" id="gwz-loc-postal" maxlength="16" autocomplete="off">
+              </div>
+              <div class="gwz-field">
+                <label for="gwz-loc-street">{{ t('gwiz.s1.loc_street') }}</label>
+                <input type="text" id="gwz-loc-street" maxlength="120" autocomplete="off">
+              </div>
+              <div class="gwz-field">
+                <label for="gwz-loc-country">{{ t('gwiz.s1.loc_country') }}</label>
+                <select id="gwz-loc-country"></select>
+              </div>
+            </div>
+          </details>
+          <p class="gwz-d gwl-hint">{{ t('gwiz.s1.loc_hint') }}</p>
         </div>
         <fieldset class="gwz-fieldset">
           <legend>{{ t('gwiz.s1.platform') }}</legend>
@@ -384,10 +424,14 @@
     </div>
   </div>
 </div>
+{#- gateway management (gateway-manage.js, docs/feature-peers-page.md) -#}
+{%- set gwmKeys = ['gwm.section', 'gwm.rename', 'gwm.reconnect', 'gwm.proxy_port', 'gwm.disable', 'gwm.enable', 'gwm.delete', 'gwm.rename_title', 'gwm.name', 'gwm.description', 'gwm.group', 'gwm.group_none', 'gwm.group_hint', 'gwm.name_required', 'gwm.saved', 'gwm.proxy_title', 'gwm.proxy_label', 'gwm.proxy_invalid', 'gwm.disable_title', 'gwm.disable_confirm', 'gwm.disable_ok', 'gwm.enabled_toast', 'gwm.disabled_toast', 'gwm.deleted_toast', 'gwm.disabled_title', 'gwm.disabled_hint', 'gwm.disabled_tag', 'peer_gateway_proxy_port_hint', 'gateway_delete_title', 'gateway_delete_warning_title', 'gateway_delete_warning_body', 'gateway_delete_peer_label', 'gateway_delete_affected_routes', 'gateway_delete_routes_hint', 'gateway_delete_no_routes', 'gateway_delete_confirm_ip_label', 'gateway_delete_ip_match', 'gateway_delete_ip_mismatch', 'gateway_delete_button', 'common.save', 'common.cancel', 'common.error'] %}
+<script type="application/json" id="gwm-i18n" nonce="{{ cspNonce }}">{ {% for k in gwmKeys %}{{ k | dump | safe }}: {{ t(k) | dump | safe }}{{ ',' if not loop.last }}{% endfor %} }</script>
 <script type="application/json" id="gwiz-i18n" data-prefixes="gwiz. gwe. gwn. gwh. gwp. gwr. gateway_pools. common." nonce="{{ cspNonce }}">{{ gwizI18n | default('{}') | safe }}</script>
 {% endblock %}
 {% block scripts %}<script src="/js/handbook.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-kit.js?v={{ appVersion }}"></script>
+<script src="/js/gateway-location-kit.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-wizard.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-edge-kit.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-edge.js?v={{ appVersion }}"></script>
@@ -399,4 +443,6 @@
 <script src="/js/gateway-radio-kit.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-radio.js?v={{ appVersion }}"></script>
 <script src="/js/gateway-pools-ui.js?v={{ appVersion }}"></script>
+<script src="/js/gateway-locations.js?v={{ appVersion }}"></script>
+<script src="/js/gateway-manage.js?v={{ appVersion }}"></script>
 <script src="/js/gateways.js?v={{ appVersion }}"></script>{% endblock %}

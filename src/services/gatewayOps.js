@@ -47,6 +47,8 @@ async function homeHourly() {
   try {
     await withTask('home.retention', () => { require('./homeDns').retention(); require('./homeCache').retention(); require('./homeCache').dropStaleOffers(); });
   } catch (err) { logger.warn({ err: err.message }, 'DNS / cache retention failed'); }
+  // previews in the stock as they are now (a device sent another one)
+  try { await require('./homeCache').refreshPreviewOffers(); } catch (err) { logger.warn({ err: err.message }, 'home cache previews not refreshed'); }
   try { await require('./homeCache').refreshUpdates(); } catch (err) { logger.warn({ err: err.message }, 'home cache updates not refreshed'); }
 }
 

@@ -232,7 +232,8 @@
     var wg = $('wg-status');
     if (wg && d.wireguard && window.GC && GC.setWgState) GC.setWgState(d.wireguard.running);
     var pb = $('peer-count-badge');
-    if (pb && d.peers) pb.textContent = d.peers.total;
+    // "Peers / Clients" counts the devices only — gateways have their own page
+    if (pb && d.peers) pb.textContent = d.peers.clients ? d.peers.clients.total : d.peers.total;
     var rb = $('route-count-badge');
     if (rb && d.routes) rb.textContent = d.routes.active;
   }
