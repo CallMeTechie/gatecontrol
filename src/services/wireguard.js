@@ -43,6 +43,8 @@ async function getStatus() {
   };
 
   const peers = [];
+  // once per call, not once per peer
+  const peerTimeout = parseInt(require('./settings').get('data.peer_online_timeout', '180'), 10) || 180;
   for (let i = 1; i < lines.length; i++) {
     const parts = lines[i].split('\t');
     if (parts.length < 8) continue;
@@ -51,9 +53,7 @@ async function getStatus() {
     const rx = parseInt(parts[5], 10) || 0;
     const tx = parseInt(parts[6], 10) || 0;
 
-    // Consider online if handshake within last 3 minutes
-    const settings = require('./settings');
-    const peerTimeout = parseInt(settings.get('data.peer_online_timeout', '180'), 10) || 180;
+    // Consider online if handshake within the timeout (default 3 minutes)
     const isOnline = latestHandshake > 0 && (Date.now() / 1000 - latestHandshake) < peerTimeout;
 
     peers.push({

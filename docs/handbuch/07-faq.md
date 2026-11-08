@@ -188,7 +188,10 @@ Gateways, Apps und die Weboberfläche. Die Zeile nennt, was in der Zeit lief:
 - `tasks`: Hintergrundaufgaben (z. B. `plugins.mediaAreas`, `home.staleOffers`),
   Startschritte (`boot.*`), Anfragen (`GET /api/v1/…`, IDs als `:id`) und
   Plugin-Aufrufe (`plugin <id> <Aufruf>`) mit der Zeit, die sie den Server
-  belegt haben.
+  belegt haben, und Prozessstarts (`spawn <Programm>`). Einträge mit
+  `(async)` oder `(still running)` liefen nur in der Zeit – sie können auch
+  nur gewartet haben (auf ein Programm, das Netz); die Ursache steht meist
+  davor, ohne Zusatz.
 - `requests`: Anfragen und Plugin-Aufrufe, die in der Zeit offen waren –
   Kandidaten, wenn `tasks` nichts Passendes nennt.
 

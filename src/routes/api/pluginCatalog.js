@@ -20,6 +20,7 @@ const semver = require('../../services/plugins/semver');
 const { ID_RE } = require('../../services/plugins/constants');
 const { pluginApiLimiter, pluginCatalogLimiter, pluginCatalogRefreshLimiter } = require('../../middleware/rateLimit');
 const logger = require('../../utils/logger');
+const warnOnce = require('../../utils/warnOnce');
 
 const router = Router();
 
@@ -44,7 +45,7 @@ function tr(req, key, fallback) {
 function fail(req, res, err) {
   const code = (err && err.code) || 'internal';
   if (!err || !err.code) logger.error({ err: err && err.message }, 'plugin catalogue API failed');
-  else if (/^catalog_/.test(code)) logger.warn({ code, err: err.message }, 'plugin catalogue');
+  else if (/^catalog_/.test(code)) warnOnce.throttled(`catalog-api:${code}`, { code, err: err.message }, 'plugin catalogue');
   let status = STATUS.get(code);
   if (!status) status = /^catalog_/.test(code) ? 502 : (/^package_/.test(code) ? 400 : 500);
   return res.status(status).json({ ok: false, code, error: tr(req, 'plugins.err.' + code, tr(req, 'plugins.err.generic', 'Plugin action failed')) });
@@ -74,11 +75,12 @@ router.get('/', refreshLimit, async (req, res) => {
   try {
     const cat = await catalog.get({ refresh: req.query.refresh === '1' });
     res.set('Cache-Control', 'no-store');
-    res.json({ ...base, available: true, fetchedAt: catalog.fetchedAt(), plugins: catalog.view(cat, lang(req), installedOf, base.serverVersion) });
+    res.json({ ...base, available: true, fetchedAt: catalog.fetchedAt(), stale: catalog.stale(), plugins: catalog.view(cat, lang(req), installedOf, base.serverVersion) });
   } catch (e) {
     // GitHub not reachable / catalogue unusable is a state of the card, not a failed request
     if (!(e instanceof catalog.CatalogError)) return fail(req, res, e);
-    logger.warn({ code: e.code, err: e.message }, 'plugin catalogue not available');
+    // once per code and 5 minutes (every page view asks — seven lines a minute while GitHub is down)
+    warnOnce.throttled(`catalog-unavailable:${e.code}`, { code: e.code, err: catalog.errText(e), ...(e.viaApi ? { viaApi: e.viaApi } : {}) }, 'plugin catalogue not available');
     res.set('Cache-Control', 'no-store');
     res.json({ ...base, available: false, code: e.code, error: tr(req, 'plugins.err.' + e.code, tr(req, 'plugins.err.generic', 'Plugin action failed')), plugins: [] });
   }
@@ -91,7 +93,7 @@ router.get('/updates', refreshLimit, async (req, res) => {
   if (!base.enabled) return res.json({ ...base, available: false, updates: [] });
   try {
     const cat = await catalog.get({ refresh: req.query.refresh === '1' });
-    res.json({ ...base, available: true, fetchedAt: catalog.fetchedAt(), updates: updates.available(cat, lang(req)) });
+    res.json({ ...base, available: true, fetchedAt: catalog.fetchedAt(), stale: catalog.stale(), updates: updates.available(cat, lang(req)) });
   } catch (e) {
     if (!(e instanceof catalog.CatalogError)) return fail(req, res, e);
     res.json({ ...base, available: false, code: e.code, error: tr(req, 'plugins.err.' + e.code, tr(req, 'plugins.err.generic', 'Plugin action failed')), updates: [] });

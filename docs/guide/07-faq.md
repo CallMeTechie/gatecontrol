@@ -182,7 +182,11 @@ interface wait meanwhile. The line names what ran in that time:
 
 - `tasks`: background jobs (e.g. `plugins.mediaAreas`, `home.staleOffers`),
   start steps (`boot.*`), requests (`GET /api/v1/…`, ids as `:id`) and plugin
-  calls (`plugin <id> <call>`) with the time they held the server.
+  calls (`plugin <id> <call>`) with the time they held the server, and
+  process starts (`spawn <program>`). Entries marked `(async)` or
+  `(still running)` only ran in that time – they may just have waited (for a
+  program, the network); the cause is usually listed before them, without a
+  mark.
 - `requests`: requests and plugin calls that were open in that time –
   candidates when `tasks` names nothing that fits.
 

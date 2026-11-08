@@ -69,11 +69,11 @@ after(() => {
   try { fs.rmSync(process.env.GC_CADDY_DATA_DIR, { recursive: true, force: true }); } catch { /* ignore */ }
 });
 
-test('more connections than the limit put the address on the ban list', () => {
+test('more connections than the limit put the address on the ban list', async () => {
   const ip = '45.33.32.156';
   assert.equal(activeBan(ip), null);
-  assert.equal(burst(ip, 3), 0, '3 of 3 is still fine');
-  assert.equal(burst(ip, 1), 1, 'the 4th crosses the limit');
+  assert.equal(await burst(ip, 3), 0, '3 of 3 is still fine');
+  assert.equal(await burst(ip, 1), 1, 'the 4th crosses the limit');
   const ban = activeBan(ip);
   assert.ok(ban, 'the address is banned');
   assert.equal(ban.manual, 0);
@@ -84,61 +84,61 @@ test('more connections than the limit put the address on the ban list', () => {
   assert.ok(wafBans.banRanges().includes(ip + '/32'));
 });
 
-test('a second burst does not ban an already banned address twice', () => {
+test('a second burst does not ban an already banned address twice', async () => {
   const ip = '45.33.32.156';
   const before = activeBan(ip).banned_at;
-  assert.equal(burst(ip, 10), 0);
+  assert.equal(await burst(ip, 10), 0);
   assert.equal(activeBan(ip).banned_at, before, 'the existing ban is untouched');
 });
 
-test('own (trusted) addresses are never banned', () => {
+test('own (trusted) addresses are never banned', async () => {
   const ip = '91.240.118.77';
   settings.set('waf.trusted_ips', JSON.stringify(['91.240.118.0/24']));
   try {
-    assert.equal(burst(ip, 10), 0);
+    assert.equal(await burst(ip, 10), 0);
     assert.equal(activeBan(ip), null, 'trusted stays unbanned no matter how many connections');
     assert.equal(wafBans.autoBan({ ip, reason: 'l4_rate: direct call' }), null);
   } finally { settings.set('waf.trusted_ips', '[]'); }
   // Without the trusted list the very same address would be banned.
-  assert.equal(burst(ip, 10), 1);
+  assert.equal(await burst(ip, 10), 1);
   assert.ok(activeBan(ip));
 });
 
-test('private, loopback, link-local and reserved addresses are never banned', () => {
+test('private, loopback, link-local and reserved addresses are never banned', async () => {
   // 203.0.113.0/24 and 198.51.100.0/24 are documentation ranges — ipaddr.js
   // reports them as `reserved`, so isPublicIp keeps them out just like an
   // RFC1918 address. Banning them would only ever hit a test set-up.
   for (const ip of ['10.10.0.5', '192.168.1.9', '127.0.0.1', '169.254.1.1', 'fd00::1', '203.0.113.9', '198.51.100.9']) {
-    assert.equal(burst(ip, 10), 0, ip);
+    assert.equal(await burst(ip, 10), 0, ip);
     assert.equal(activeBan(ip), null, ip);
   }
 });
 
-test('a listener without a limit is not counted at all', () => {
+test('a listener without a limit is not counted at all', async () => {
   const ip = '45.33.40.1';
-  assert.equal(burst(ip, 50, '9999'), 0, 'port 9999 has no entry with a rate');
+  assert.equal(await burst(ip, 50, '9999'), 0, 'port 9999 has no entry with a rate');
   assert.equal(activeBan(ip), null);
 });
 
-test('switching the rate off stops the guard from counting', () => {
+test('switching the rate off stops the guard from counting', async () => {
   db.prepare('UPDATE routes SET l4_conn_limit = NULL, l4_conn_window_s = NULL WHERE id = ?').run(routeId);
   const ip = '45.33.40.2';
-  assert.equal(burst(ip, 50), 0);
+  assert.equal(await burst(ip, 50), 0);
   assert.equal(activeBan(ip), null);
   db.prepare('UPDATE routes SET l4_conn_limit = 3, l4_conn_window_s = 60 WHERE id = ?').run(routeId);
 });
 
-test('a disabled entry does not arm the guard either', () => {
+test('a disabled entry does not arm the guard either', async () => {
   db.prepare('UPDATE routes SET enabled = 0 WHERE id = ?').run(routeId);
   const ip = '45.33.40.3';
-  assert.equal(burst(ip, 50), 0);
+  assert.equal(await burst(ip, 50), 0);
   assert.equal(activeBan(ip), null);
   db.prepare('UPDATE routes SET enabled = 1 WHERE id = ?').run(routeId);
 });
 
-test('a rotated (truncated) log is read from the top again', () => {
+test('a rotated (truncated) log is read from the top again', async () => {
   const ip = '45.33.40.4';
   fs.writeFileSync(logFile, '');            // Caddy rolled the file
-  assert.equal(burst(ip, 4), 1, 'the guard notices the shrink and re-reads');
+  assert.equal(await burst(ip, 4), 1, 'the guard notices the shrink and re-reads');
   assert.ok(activeBan(ip));
 });

@@ -3,6 +3,8 @@ const https = require('node:https');
 const path = require('node:path');
 const fs = require('node:fs');
 const logger = require('../utils/logger');
+const warnOnce = require('../utils/warnOnce');
+const { trackPhases, describe: describePhase } = require('../utils/httpPhase');
 
 const REPO = process.env.GC_GATEWAY_REPO || 'CallMeTechie/gatecontrol-gateway';
 const TOKEN = process.env.GC_CLIENT_GITHUB_TOKEN || '';
@@ -50,36 +52,73 @@ function _persist(v, rpiImage) {
 let cache = { version: _loadPersisted(), rpiImage: _validRpiImage(_readPersisted().rpiImage), fetchedAt: 0 };
 let inFlight = false;
 let fetchCalls = 0;
+// after a failed fetch: no new one before nextTryAt (30 s, doubling up to 30 min) — every page view asked
+// again while GitHub answered 503 (a warning every 30 s); the last known version is answered meanwhile
+const BACKOFF_MIN_MS = 30 * 1000;
+const BACKOFF_MAX_MS = 30 * 60 * 1000;
+const backoff = { nextTryAt: 0, ms: 0, failures: 0, since: 0 };
+const OUTAGE_KEY = 'gateway-release-fetch';
+
+function noteFailure(fields) {
+  backoff.failures++;
+  if (!backoff.since) backoff.since = Date.now();
+  backoff.ms = Math.min(BACKOFF_MAX_MS, backoff.ms ? backoff.ms * 2 : BACKOFF_MIN_MS);
+  backoff.nextTryAt = Date.now() + backoff.ms;
+  // one line per outage (then once an hour), with the version still in use
+  warnOnce.throttled(OUTAGE_KEY, { ...fields, failures: backoff.failures, retryInMs: backoff.ms, cachedVersion: cache.version || null },
+    'gateway release fetch failed — using the last known version', { everyMs: 60 * 60 * 1000 });
+}
+
+function noteSuccess() {
+  const back = warnOnce.recovered(OUTAGE_KEY);
+  if (back) logger.info({ failures: backoff.failures, failedForMs: Date.now() - backoff.since }, 'gateway release fetch works again');
+  backoff.nextTryAt = 0; backoff.ms = 0; backoff.failures = 0; backoff.since = 0;
+}
 
 function _normalizeTag(tag) { return tag ? String(tag).trim().replace(/^v/i, '') : null; }
 
 function _fetchLatest() {
   fetchCalls += 1;
-  if (inFlight || process.env.NODE_ENV === 'test') return; // never fire a real request in tests
+  if (inFlight || Date.now() < backoff.nextTryAt) return;
+  if (process.env.NODE_ENV === 'test' && !transportOverride) return; // never fire a real request in tests
   inFlight = true;
+  if (transportOverride) {
+    transportOverride().then((r) => onAnswer(r.status, r.body), (err) => { inFlight = false; noteFailure({ err: err.message }); });
+    return;
+  }
   const headers = { 'User-Agent': 'GateControl', Accept: 'application/vnd.github+json' };
   if (TOKEN) headers.Authorization = `Bearer ${TOKEN}`;
+  let settled = false;
+  let phase = null;
+  // where it hung (dns, connect, tls, first byte) and the address family
+  const fail = (fields) => { if (settled) return; settled = true; inFlight = false; noteFailure({ ...fields, ...(phase ? { where: describePhase(phase()) } : {}) }); };
   const req = https.get(`https://api.github.com/repos/${REPO}/releases/latest`, { headers, timeout: 5000 }, (res) => {
-    if (res.statusCode !== 200) { res.resume(); inFlight = false; logger.warn({ status: res.statusCode }, 'gateway release fetch non-200'); return; }
+    if (res.statusCode !== 200) { res.resume(); return fail({ status: res.statusCode }); }
     let body = '';
-    res.on('data', (c) => { body += c; if (body.length > MAX_BODY) req.destroy(); });
-    res.on('end', () => {
-      inFlight = false;
-      try {
-        const rel = JSON.parse(body);
-        const v = _normalizeTag(rel.tag_name);
-        if (v) {
-          const rpiImage = _rpiImageOf(rel);
-          cache = { version: v, rpiImage, fetchedAt: Date.now() };
-          _persist(v, rpiImage);
-        }
-      }
-      catch (err) { logger.warn({ err: err.message }, 'gateway release parse failed'); }
-    });
+    res.on('data', (c) => { body += c; if (body.length > MAX_BODY) req.destroy(new Error('answer too large')); });
+    res.on('end', () => { if (settled) return; settled = true; onAnswer(200, body); });
   });
-  req.on('error', (err) => { inFlight = false; logger.warn({ err: err.message }, 'gateway release fetch failed'); });
-  req.on('timeout', () => { req.destroy(); inFlight = false; });
+  phase = trackPhases(req);
+  req.on('error', (err) => fail({ err: err.message }));
+  req.on('timeout', () => { fail({ err: 'timeout' }); req.destroy(); });
 }
+
+function onAnswer(status, body) {
+  inFlight = false;
+  if (status !== 200) return noteFailure({ status });
+  try {
+    const rel = JSON.parse(body);
+    const v = _normalizeTag(rel.tag_name);
+    if (!v) return noteFailure({ err: 'no tag_name' });
+    const rpiImage = _rpiImageOf(rel);
+    cache = { version: v, rpiImage, fetchedAt: Date.now() };
+    _persist(v, rpiImage);
+    noteSuccess();
+  } catch (err) { noteFailure({ err: 'parse: ' + err.message }); }
+  return undefined;
+}
+
+let transportOverride = null; // tests: () => Promise<{ status, body }>
 
 // Immediate: cached/last-known version (or null); triggers a background refresh
 // when stale. NEVER blocks the caller on a live fetch.
@@ -122,4 +161,7 @@ module.exports = {
   _loadPersisted,
   _persist,
   _fetchCallCount: () => fetchCalls,
+  _backoff: backoff,
+  _setTransport: (fn) => { transportOverride = fn || null; },
+  _resetBackoff: () => { backoff.nextTryAt = 0; backoff.ms = 0; backoff.failures = 0; backoff.since = 0; inFlight = false; warnOnce.recovered(OUTAGE_KEY); },
 };

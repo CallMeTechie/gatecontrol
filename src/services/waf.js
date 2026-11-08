@@ -18,6 +18,7 @@ const childProcess = require('node:child_process');
 const { getDb } = require('../db/connection');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
+const { slicer } = require('../utils/slice');
 const settings = require('./settings');
 const eventBus = require('./eventBus');
 const { withCaddySync } = require('./routesSync');
@@ -31,7 +32,13 @@ const WATCH_STATE_KEY = 'waf.watch_state';
 const WATCH_INTERVAL_MS = 5000;
 const ROTATE_BYTES = 20 * 1024 * 1024;   // 20 MB …
 const ROTATE_KEEP = 3;                   // … rotated files .1 … .3
-const MAX_READ_BYTES = 8 * 1024 * 1024;  // per poll tick; the rest follows next tick
+// per read; a tick reads (and parses) at most TICK_BYTES and TICK_BUDGET_MS of work, the rest follows
+// next tick (before: up to 3 × 8 MB read and parsed in one synchronous go — 2.4 s blocked on a NAS).
+const MAX_READ_BYTES = 1024 * 1024;
+const TICK_BYTES = 4 * 1024 * 1024;
+const TICK_BUDGET_MS = 300;
+// lines parsed and stored per slice; the event loop runs between the slices
+const INGEST_BATCH = 100;
 const MAX_LINE_BYTES = 1024 * 1024;      // a longer line is skipped, not parsed
 const HEAD_LEN = 64;
 
@@ -564,8 +571,7 @@ function insertEvents(rows) {
 const MAX_PUBLISH_PER_BATCH = 20;
 
 /** Parse + store a batch of lines. Returns the number of stored rows. */
-function ingestLines(lines) {
-  const lookup = buildRouteLookup();
+function ingestLines(lines, lookup = buildRouteLookup()) {
   const rows = [];
   const firsts = [];
   for (const line of lines) {
@@ -602,6 +608,23 @@ function ingestLines(lines) {
   return n;
 }
 
+/**
+ * ingestLines in slices of INGEST_BATCH lines (one transaction each), the
+ * event loop running in between — a burst of blocked requests writes
+ * thousands of audit entries of a few KB each.
+ */
+async function ingestLinesAsync(lines) {
+  if (!lines.length) return 0;
+  const lookup = buildRouteLookup();
+  const sl = slicer();
+  let n = 0;
+  for (let i = 0; i < lines.length; i += INGEST_BATCH) {
+    n += ingestLines(lines.slice(i, i + INGEST_BATCH), lookup);
+    await sl.pause();
+  }
+  return n;
+}
+
 // ─── Watcher (modeled on tlsGuard: offset + inode + head fingerprint) ──
 
 // `partial` holds the bytes of an unterminated last line (a Buffer, so a
@@ -621,21 +644,21 @@ function saveWatchState() {
   try { settings.set(WATCH_STATE_KEY, JSON.stringify({ file: _watch.file, ino: _watch.ino, offset: _watch.offset, head: _watch.head })); }
   catch { /* best-effort */ }
 }
-function readHead(fd, size) {
+async function readHead(fh, size) {
   const len = Math.min(HEAD_LEN, size);
   if (len <= 0) return '';
   const buf = Buffer.alloc(len);
-  const n = fs.readSync(fd, buf, 0, len, 0);
-  return buf.subarray(0, n).toString('latin1');
+  const { bytesRead } = await fh.read(buf, 0, len, 0);
+  return buf.subarray(0, bytesRead).toString('latin1');
 }
 
-// Read [from, to) of an open file.
-function readRange(fd, from, to) {
+// Read [from, to) of an open file (a FileHandle).
+async function readRange(fh, from, to) {
   const len = Math.max(0, to - from);
   if (len === 0) return EMPTY;
   const buf = Buffer.alloc(len);
-  const n = fs.readSync(fd, buf, 0, len, from);
-  return buf.subarray(0, n);
+  const { bytesRead } = await fh.read(buf, 0, len, from);
+  return buf.subarray(0, bytesRead);
 }
 
 // Complete lines of partial + chunk; the unterminated rest stays in partial.
@@ -662,31 +685,33 @@ function splitLines(chunk) {
  * microseconds between copy and truncate can be lost. Returns the lines read
  * from the copy (not yet ingested).
  */
-function rotate(file, fromOffset) {
+async function rotate(file, fromOffset) {
+  const fsp = fs.promises;
   for (let i = ROTATE_KEEP; i >= 1; i--) {
     const src = i === 1 ? null : `${file}.${i - 1}`;
     const dst = `${file}.${i}`;
-    if (i === ROTATE_KEEP) { try { fs.rmSync(dst, { force: true }); } catch { /* ignore */ } }
-    if (src) { try { fs.renameSync(src, dst); } catch { /* missing → skip */ } }
+    if (i === ROTATE_KEEP) { try { await fsp.rm(dst, { force: true }); } catch { /* ignore */ } }
+    if (src) { try { await fsp.rename(src, dst); } catch { /* missing → skip */ } }
   }
   const tmp = `${file}.1.tmp`;
-  fs.copyFileSync(file, tmp);
-  try { fs.chmodSync(tmp, FILE_MODE); } catch { /* best-effort */ }
-  fs.truncateSync(file, 0);
-  fs.renameSync(tmp, `${file}.1`);
-  const fd = fs.openSync(`${file}.1`, 'r');
+  // a copy of 20 MB in the thread pool, not on the main thread
+  await fsp.copyFile(file, tmp);
+  try { await fsp.chmod(tmp, FILE_MODE); } catch { /* best-effort */ }
+  await fsp.truncate(file, 0);
+  await fsp.rename(tmp, `${file}.1`);
+  const fh = await fsp.open(`${file}.1`, 'r');
   try {
-    const size = fs.fstatSync(fd).size;
-    return readRange(fd, Math.min(fromOffset, size), size);
-  } finally { fs.closeSync(fd); }
+    const size = (await fh.stat()).size;
+    return await readRange(fh, Math.min(fromOffset, size), size);
+  } finally { await fh.close(); }
 }
 
 // Data minimisation: the audit log is readable by root only and holds a
 // request (request line + rule messages) just until the watcher ingested it.
 const FILE_MODE = 0o600;
 
-function restrictMode(file, st) {
-  try { if (st && (st.mode & 0o077) !== 0) fs.chmodSync(file, FILE_MODE); } catch { /* best-effort */ }
+async function restrictMode(file, st) {
+  try { if (st && (st.mode & 0o077) !== 0) await fs.promises.chmod(file, FILE_MODE); } catch { /* best-effort */ }
 }
 
 /**
@@ -697,6 +722,7 @@ function restrictMode(file, st) {
  * ftruncate can lose a line.
  */
 function truncateIfCaughtUp(file) {
+  // synchronous on purpose: the window between fstat and ftruncate must stay microseconds (two cheap syscalls)
   let fd;
   try {
     fd = fs.openSync(file, 'r+');
@@ -721,52 +747,61 @@ function truncateIfCaughtUp(file) {
 async function pollOnce() {
   if (_watch.busy) return 0;
   _watch.busy = true;
+  const fsp = fs.promises;
+  const began = Date.now();
   try {
     const file = _watch.file;
     let stored = 0;
+    let read = 0;
     let st = null;
-    for (let round = 0; round < 3; round++) {
-      try { st = fs.statSync(file); }
+    for (let round = 0; round < 8; round++) {
+      try { st = await fsp.stat(file); }
       catch { _watch.ino = null; _watch.offset = 0; _watch.head = ''; _watch.partial = EMPTY; return stored; }
-      restrictMode(file, st);
-      let fd;
-      try { fd = fs.openSync(file, 'r'); }
+      await restrictMode(file, st);
+      let fh;
+      try { fh = await fsp.open(file, 'r'); }
       catch { return stored; }
       let chunk = EMPTY;
       try {
-        const head = readHead(fd, st.size);
+        const head = await readHead(fh, st.size);
         const known = _watch.head.length > 0 ? head.slice(0, _watch.head.length) : '';
         const rotated = _watch.ino !== null && (st.ino !== _watch.ino || st.size < _watch.offset || (known && known !== _watch.head));
         if (rotated) { _watch.offset = 0; _watch.partial = EMPTY; }  // rotated/truncated elsewhere → from the top
         _watch.ino = st.ino;
         if (_watch.offset === 0) _watch.head = head;
         const to = Math.min(st.size, _watch.offset + MAX_READ_BYTES);
-        chunk = readRange(fd, _watch.offset, to);
+        chunk = await readRange(fh, _watch.offset, to);
         _watch.offset += chunk.length;
-        if (_watch.head.length < HEAD_LEN) _watch.head = readHead(fd, st.size);
-      } finally { fs.closeSync(fd); }
+        read += chunk.length;
+        if (_watch.head.length < HEAD_LEN) _watch.head = await readHead(fh, st.size);
+      } finally { await fh.close(); }
 
-      stored += ingestLines(splitLines(chunk));
+      stored += await ingestLinesAsync(splitLines(chunk));
 
-      if (_watch.offset < st.size) break;                 // backlog → next tick
+      if (_watch.offset < st.size) {
+        // backlog: more of it this tick while the tick has bytes and time left, else the next tick
+        if (read < TICK_BYTES && Date.now() - began < TICK_BUDGET_MS) continue;
+        break;
+      }
       if (!_watch.truncate || _watch.partial.length) break; // off, or a line is still being written
       const res = truncateIfCaughtUp(file);
       if (res === 'truncated') { _watch.offset = 0; _watch.head = ''; break; }
       if (res === 'failed') break;
       // 'grown' → another round reads the new lines, then tries again
+      if (read >= TICK_BYTES || Date.now() - began >= TICK_BUDGET_MS) break;
     }
 
     // Fallback: rotate once the file is big AND fully read.
     let cur;
-    try { cur = fs.statSync(file); } catch { cur = null; }
+    try { cur = await fsp.stat(file); } catch { cur = null; }
     if (cur && cur.size >= _watch.rotateBytes && _watch.offset >= cur.size) {
       try {
-        const rest = rotate(file, _watch.offset);
+        const rest = await rotate(file, _watch.offset);
         const lines = splitLines(rest);
         if (_watch.partial.length) { lines.push(_watch.partial.toString('utf8')); _watch.partial = EMPTY; } // the copy is complete
-        stored += ingestLines(lines);
+        stored += await ingestLinesAsync(lines);
         _watch.offset = 0; _watch.head = '';
-        try { _watch.ino = fs.statSync(file).ino; } catch { _watch.ino = null; }
+        try { _watch.ino = (await fsp.stat(file)).ino; } catch { _watch.ino = null; }
         logger.info({ file }, 'WAF audit log rotated');
       } catch (err) {
         logger.warn({ err: err.message, file }, 'waf: audit log rotation failed');

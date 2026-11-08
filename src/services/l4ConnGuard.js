@@ -30,10 +30,11 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
+const { slicer } = require('../utils/slice');
 
 const LOG_NAME = 'l4conn.log';
 const POLL_INTERVAL_MS = 5000;
-const MAX_READ_BYTES = 2 * 1024 * 1024;
+const MAX_READ_BYTES = 512 * 1024; // per tick (async read, parsed in slices); a backlog follows tick by tick
 // Upper bounds for the per-entry settings (API validation uses the same).
 const LIMIT_RANGE = [1, 100000];
 const WINDOW_RANGE = [1, 3600];
@@ -209,7 +210,7 @@ function banOffender(o) {
 }
 
 /** One poll: read what is new in the log, count it, ban what crossed. */
-function pollOnce() {
+async function pollOnce() {
   if (_watch.busy) return 0;
   _watch.busy = true;
   try {
@@ -218,7 +219,7 @@ function pollOnce() {
 
     const file = _watch.file || logPath();
     let st;
-    try { st = fs.statSync(file); }
+    try { st = await fs.promises.stat(file); }
     catch { _watch.ino = null; _watch.offset = 0; _watch.partial = ''; return 0; }
 
     // New file (Caddy rolled it) or truncated → start from the top.
@@ -232,11 +233,13 @@ function pollOnce() {
     const len = to - _watch.offset;
     const buf = Buffer.allocUnsafe(len);
     let read = 0;
-    let fd;
-    try { fd = fs.openSync(file, 'r'); }
+    let fh;
+    try { fh = await fs.promises.open(file, 'r'); }
     catch { return 0; }
-    try { read = fs.readSync(fd, buf, 0, len, _watch.offset); }
-    finally { fs.closeSync(fd); }
+    try { ({ bytesRead: read } = await fh.read(buf, 0, len, _watch.offset)); }
+    finally { await fh.close(); }
+    // capped: up to the last complete line (never a character cut in two)
+    if (len < st.size - _watch.offset) { const nl = buf.lastIndexOf(0x0a, read - 1); if (nl >= 0) read = nl + 1; }
     _watch.offset += read;
 
     const text = _watch.partial + buf.slice(0, read).toString('utf8');
@@ -246,9 +249,11 @@ function pollOnce() {
     if (_watch.partial.length > 64 * 1024) _watch.partial = '';
 
     const events = [];
+    const sl = slicer();
     for (const line of lines) {
       const ev = parseLine(line);
       if (ev) events.push(ev);
+      await sl.pause();
     }
     const offenders = record(events, limits);
     prune(limits);
@@ -278,7 +283,7 @@ function start({ file, intervalMs = POLL_INTERVAL_MS, immediate = false } = {}) 
   try { const st = fs.statSync(_watch.file); _watch.offset = st.size; _watch.ino = st.ino; } catch { /* no log yet */ }
   _watch.timer = setInterval(require('../utils/loopStall').task('l4.poll', pollOnce), intervalMs);
   if (_watch.timer.unref) _watch.timer.unref();
-  if (immediate) pollOnce();
+  if (immediate) pollOnce().catch(() => {});
   logger.info({ file: _watch.file }, 'layer4 connection guard started');
 }
 
