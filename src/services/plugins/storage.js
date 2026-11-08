@@ -32,14 +32,29 @@ const logger = require('../../utils/logger');
 const { fingerprint } = require('./sqlGuard');
 
 const IDLE_MS = 5 * 60 * 1000;
+// closing a worker: how long SQLite may take for its last checkpoint before the worker is terminated
+const CLOSE_MS = 3000;
+// a checkpoint after this long without a call (dbWorker.js; null: its default) — shorter in tests only
+let checkpointIdleMs = null;
 const instances = new Map();
 
-// A slow statement of a plugin (its time in the worker, from SLOW_MS on) is logged with the plugin, the statement
-// without its values (sqlGuard.fingerprint), the rows and the times — at most once per SLOW_EVERY_MS and
-// statement of a plugin; the line says how often it was slow since the last one.
+// A slow statement of a plugin (its time in the worker, from SLOW_MS on) is counted per plugin; one line per
+// plugin and SLOW_WINDOW_MS says how many there were (`slow`, of them `writes`), the longest time (`maxMs`), the
+// longest wait beside it (`waitMs`) and the SLOW_TOP statements by count — each without its values
+// (sqlGuard.fingerprint), with its count, longest time and the rows of its last run. Before 1.255.0: a line per
+// statement and minute — 500 lines an hour on a slow disk.
 const SLOW_MS = 200;
-const SLOW_EVERY_MS = 60 * 1000;
+const SLOW_WINDOW_MS = 5 * 60 * 1000;
+const SLOW_TOP = 5;
 const SLOW_KEYS_MAX = 200;
+// a write: what syncs the disk at a commit (before WAL: every one of these), or what changed rows
+const WRITE_OPS = new Set(['exec', 'migrate', 'kv.set', 'kv.delete', 'settings.set']);
+const WRITE_WORDS = new Set(['INSERT', 'UPDATE', 'DELETE', 'REPLACE', 'COMMIT', 'END', 'BEGIN', 'CREATE', 'DROP', 'ALTER', 'SAVEPOINT', 'RELEASE']);
+/** The first word of a statement (fingerprint) is one of WRITE_WORDS. */
+function writeSql(sql) {
+  const m = /^\s*([A-Za-z]{1,10})/.exec(sql);
+  return !!m && WRITE_WORDS.has(m[1].toUpperCase());
+}
 
 /** The largest size of a plugin's database: plugin.json storage.maxMB (since 1.206.0), else LIMITS.dbMaxBytes. */
 function maxBytesOf(id) {
@@ -69,7 +84,8 @@ class PluginDb {
     this.seq = 0;
     this.pending = new Map();
     this.idle = null;
-    this.slow = new Map(); // fingerprint → { at, n, maxMs } (slow statements since the last log line)
+    this.slow = null; // { from, n, writes, maxMs, waitMs, by: Map(fingerprint → { op, sql, n, maxMs, rows }) } of this window
+    this.slowTimer = null;
   }
 
   ensure() {
@@ -79,7 +95,7 @@ class PluginDb {
     const sab = new SharedArrayBuffer(STATE_BYTES);
     const { port1, port2 } = new MessageChannel();
     const w = new Worker(path.join(__dirname, 'dbWorker.js'), {
-      workerData: { file: path.join(dir, 'plugin.db'), maxBytes: this.maxBytes || maxBytesOf(this.id), state: sab, port: port2 },
+      workerData: { file: path.join(dir, 'plugin.db'), maxBytes: this.maxBytes || maxBytesOf(this.id), state: sab, port: port2, checkpointIdleMs },
       transferList: [port2],
       resourceLimits: { maxOldGenerationSizeMb: 128 },
       env: {},
@@ -114,30 +130,57 @@ class PluginDb {
     if (m.ok) p.resolve(m.value); else p.reject(new Error(m.error));
   }
 
-  /** A statement that ran SLOW_MS or longer in the worker: logged (throttled per statement). */
+  /** A statement that ran SLOW_MS or longer in the worker: counted, the window's line follows (flushSlow). */
   noteSlow(p, m, now = Date.now()) {
     const sql = p.args && typeof p.args.sql === 'string' ? fingerprint(p.args.sql) : null;
     const key = sql || p.op;
-    let e = this.slow.get(key);
-    if (!e) {
-      if (this.slow.size >= SLOW_KEYS_MAX) this.slow.delete(this.slow.keys().next().value);
-      e = { at: 0, n: 0, maxMs: 0 };
-      this.slow.set(key, e);
+    let w = this.slow;
+    if (!w) {
+      w = { from: now, n: 0, writes: 0, failed: 0, maxMs: 0, waitMs: 0, by: new Map() };
+      this.slow = w;
+      this.slowTimer = setTimeout(() => this.flushSlow(), SLOW_WINDOW_MS);
+      this.slowTimer.unref();
     }
+    let e = w.by.get(key);
+    if (!e) {
+      if (w.by.size >= SLOW_KEYS_MAX) w.by.delete(w.by.keys().next().value);
+      e = { op: p.op, sql, n: 0, maxMs: 0, rows: null };
+      w.by.set(key, e);
+    }
+    const ms = Math.round(m.ms);
+    w.n++;
     e.n++;
-    e.maxMs = Math.max(e.maxMs, m.ms);
-    if (now - e.at < SLOW_EVERY_MS) return;
+    if (WRITE_OPS.has(p.op) || (sql && writeSql(sql))) w.writes++;
+    if (!m.ok) w.failed++;
+    w.maxMs = Math.max(w.maxMs, ms);
+    e.maxMs = Math.max(e.maxMs, ms);
+    if (Number.isInteger(m.rows)) e.rows = m.rows;
+    // the rest of the time until the answer was taken: waiting behind other statements, and for this thread
+    w.waitMs = Math.max(w.waitMs, Math.max(0, Math.round(now - p.sentAt - m.ms)));
+  }
+
+  /** The line of the window of slow statements (at its end, when the storage closes). */
+  flushSlow(now = Date.now()) {
+    if (this.slowTimer) { clearTimeout(this.slowTimer); this.slowTimer = null; }
+    const w = this.slow;
+    this.slow = null;
+    if (!w || !w.n) return;
+    const top = [...w.by.values()].sort((a, b) => b.n - a.n || b.maxMs - a.maxMs).slice(0, SLOW_TOP)
+      .map((e) => ({ op: e.op, ...(e.sql ? { sql: e.sql } : {}), n: e.n, maxMs: e.maxMs, ...(e.rows != null ? { rows: e.rows } : {}) }));
+    let diskSyncMs = null;
+    try { diskSyncMs = require('../diskHealth').lastMs(); } catch { /* none */ }
     logger.warn({
-      plugin: this.id, op: p.op, ...(p.args && p.args.mode ? { mode: p.args.mode } : {}), ...(sql ? { sql } : {}),
-      ...(Number.isInteger(m.rows) ? { rows: m.rows } : {}), ...(m.ok ? {} : { failed: true }),
-      ms: Math.round(m.ms),
-      // the rest of the time until the answer was taken: waiting behind other statements, and for this thread
-      waitMs: Math.max(0, Math.round(now - p.sentAt - m.ms)),
-      ...(e.n > 1 ? { times: e.n, maxMs: Math.round(e.maxMs) } : {}),
-    }, 'slow plugin database statement');
-    e.at = now;
-    e.n = 0;
-    e.maxMs = 0;
+      plugin: this.id,
+      slow: w.n,
+      writes: w.writes,
+      ...(w.failed ? { failed: w.failed } : {}),
+      maxMs: w.maxMs,
+      waitMs: w.waitMs,
+      windowS: Math.max(1, Math.round((now - w.from) / 1000)),
+      statements: top,
+      ...(w.by.size > top.length ? { others: w.by.size - top.length } : {}),
+      ...(diskSyncMs != null ? { diskSyncMs } : {}),
+    }, 'slow plugin database statements');
   }
 
   call(op, args, timeoutMs = TIMEOUTS.db) {
@@ -200,12 +243,25 @@ class PluginDb {
 
   async close() {
     if (this.idle) { clearTimeout(this.idle); this.idle = null; }
+    this.flushSlow();
     const w = this.worker;
+    const port = this.port;
     this.worker = null;
+    this.port = null;
     if (!w) return;
-    if (this.port) { this.port.close(); this.port = null; }
     for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('storage closed')); }
     this.pending.clear();
+    // closed by SQLite (the write-ahead log goes into plugin.db, plugin.db-wal is removed) — a worker still busy
+    // with a statement, or one that does not end in CLOSE_MS, is terminated (the log stays, the next open replays it)
+    const busy = this.state && Atomics.load(this.state, ST_RUNNING);
+    if (port && !busy) {
+      const exited = new Promise((resolve) => { w.once('exit', resolve); });
+      try { port.postMessage({ op: 'close' }); } catch { /* gone */ }
+      let timer;
+      await Promise.race([exited, new Promise((resolve) => { timer = setTimeout(resolve, CLOSE_MS); })]);
+      clearTimeout(timer);
+    }
+    if (port) port.close();
     await w.terminate().catch(() => {});
   }
 }
@@ -255,4 +311,7 @@ function usage(dir) {
   return total;
 }
 
-module.exports = { forPlugin, close, closeAll, usage, setLimit, maxBytesOf, SLOW_MS, SLOW_EVERY_MS };
+module.exports = {
+  forPlugin, close, closeAll, usage, setLimit, maxBytesOf, SLOW_MS, SLOW_WINDOW_MS, SLOW_TOP,
+  _setCheckpointIdleMsForTest: (ms) => { checkpointIdleMs = ms || null; },
+};

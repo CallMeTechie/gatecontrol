@@ -47,6 +47,10 @@
   </div>
 
   <p class="lg-note" id="lg-server-off" hidden>{{ t('lg.server_off') }}</p>
+  {#- the data disk writes slowly (services/diskHealth.js: write probe every 2 min, average of the last half hour) -#}
+  {%- if diskHint %}
+  <p class="lg-note lg-note-warn" id="lg-disk-slow" role="status">{{ t('lg.disk_slow', { ms: diskHint.ms }) }}</p>
+  {%- endif %}
 
   {# ─── Ereignisse ─── #}
   <section class="lg-panel" id="lg-panel-events" role="tabpanel" aria-labelledby="lg-tab-events" hidden>

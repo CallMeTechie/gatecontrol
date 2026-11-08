@@ -52,7 +52,7 @@ afterEach(() => { mock.restoreAll(); loopStall._resetForTest(); warnOnce._resetF
 const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'gc-bgio-'));
 
 describe(`log watchers: Ereignisschleife < ${LIMIT_MS} ms bei einem Rückstau`, () => {
-  it('WAF audit log: 12 MB backlog → at most TICK_BYTES a tick, async, all lines in the end', async () => {
+  it('WAF audit log: 12 MB backlog → at most TICK_BYTES a tick, async in slices of < 200 ms of own work, all lines in the end', async (t) => {
     const waf = require('../src/services/waf');
     const fixture = fs.readFileSync(path.join(__dirname, 'fixtures', 'waf', 'coraza-audit.jsonl'), 'utf8').split('\n').filter(Boolean);
     const dir = tmpDir();
@@ -62,6 +62,20 @@ describe(`log watchers: Ereignisschleife < ${LIMIT_MS} ms bei einem Rückstau`, 
     while (size < 12 * 1024 * 1024) { const l = fixture[lines.length % fixture.length]; lines.push(l); size += l.length + 1; }
     fs.writeFileSync(file, lines.join('\n') + '\n');
     db.prepare('DELETE FROM waf_events').run();
+    // Every synchronous piece of the ingest (split a chunk, parse and store a slice) runs inside loopStall.measure:
+    // each one's CPU time on this thread is what it holds the event loop — a loaded runner that takes the core away
+    // stretches the wall clock of a slice, not its CPU time (CI, 8. 11.: a pause of 219 ms with nothing of ours in it).
+    // Node < 23.9 has no process.threadCpuUsage: the process's CPU time then (no other thread works in this test).
+    const cpu = () => { const u = typeof process.threadCpuUsage === 'function' ? process.threadCpuUsage() : process.cpuUsage(); return (u.user + u.system) / 1000; };
+    const slices = [];
+    const orig = loopStall.measure;
+    mock.method(loopStall, 'measure', (name, fn, minMs) => {
+      const n = typeof name === 'function' ? name() : name;
+      if (!/^waf\.audit /.test(String(n))) return orig(name, fn, minMs);
+      const c0 = cpu();
+      const w0 = performance.now();
+      try { return orig(name, fn, minMs); } finally { slices.push({ name: n, cpuMs: cpu() - c0, wallMs: performance.now() - w0 }); }
+    });
     waf.startWatcher({ file, intervalMs: 1e9, immediate: false, truncateAfterIngest: false, rotateBytes: 1e12 });
     try {
       let ticks = 0;
@@ -76,7 +90,13 @@ describe(`log watchers: Ereignisschleife < ${LIMIT_MS} ms bei einem Rückstau`, 
         if (st.offset >= size) break;
       }
       assert.ok(ticks >= 2, 'a backlog takes several ticks');
-      assert.ok(worst < LIMIT_MS, `longest pause ${worst} ms`);
+      const longest = slices.reduce((m, x) => (x.cpuMs > m.cpuMs ? x : m), { cpuMs: 0, wallMs: 0, name: null });
+      t.diagnostic(`${slices.length} slices; longest own work ${Math.round(longest.cpuMs)} ms CPU (${longest.name}, ${Math.round(longest.wallMs)} ms wall); longest event-loop pause ${worst} ms`);
+      assert.ok(slices.some((x) => x.name === 'waf.audit split') && slices.some((x) => x.name === 'waf.audit ingest'), 'split and ingest are measured');
+      assert.ok(slices.filter((x) => x.name === 'waf.audit ingest').length > ticks * 2, 'the ingest yields between slices');
+      assert.ok(longest.cpuMs < LIMIT_MS, `a slice held the thread for ${Math.round(longest.cpuMs)} ms of CPU`);
+      // what no slice covers (reads, state) is async: no pause of seconds, even on a loaded runner
+      assert.ok(worst < 5 * LIMIT_MS, `longest pause ${worst} ms`);
       assert.ok(db.prepare('SELECT COUNT(*) AS n FROM waf_events').get().n > lines.length / 2, 'the lines were stored');
     } finally { waf.stopWatcher(); fs.rmSync(dir, { recursive: true, force: true }); }
   });

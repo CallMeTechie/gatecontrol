@@ -75,6 +75,10 @@ function usageFields(a, b, ms) {
   return out;
 }
 
+function diskSyncMs() {
+  try { return require('../services/diskHealth').lastMs(); } catch { return null; }
+}
+
 const stalls = []; // { end, ms } — end: Date.now() when the stall was seen
 const active = new Map(); // id → { name, at } (performance.now())
 const spans = []; // { name, at, end } finished
@@ -309,6 +313,9 @@ function start({ everyMs = EVERY_MS, warnMs = WARN_MS, onStall = null } = {}) {
     const tasks = tasksBetween(prev, now);
     const reqs = requestsBetween(prev + everyMs, now);
     const fields = { blockedMs: late, ...usageFields(prevUse, lastUse, late) };
+    // the latest write probe of the data disk (services/diskHealth.js): "waiting" with a slow disk is the disk
+    const sync = diskSyncMs();
+    if (sync != null) fields.diskSyncMs = sync;
     if (tasks.length) fields.tasks = describeTasks(tasks);
     if (reqs.length) fields.requests = describeRequests(reqs);
     logger.warn(fields, 'event loop was blocked');

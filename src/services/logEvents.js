@@ -40,6 +40,8 @@ const CODES = [
   { code: 'storage_worker_restarted', re: /plugin storage timed out/i },
   { code: 'storage_timeout', re: /storage time(?:d)?[ -]?out/i },
   { code: 'event_loop_blocked', re: /event loop was blocked/i },
+  { code: 'slow_plugin_db', re: /slow plugin database statement/i },
+  { code: 'slow_disk', re: /data disk is slow to write/i },
   { code: 'plugin_start_timeout', re: /did not start in time/i },
   { code: 'no_right', re: /\bno_right\b/i },
   { code: 'lock_unreachable', re: /\block_unreachable\b/i },

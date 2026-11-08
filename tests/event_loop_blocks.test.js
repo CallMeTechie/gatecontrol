@@ -175,6 +175,46 @@ describe('WAL checkpoints off the main thread (db/connection.js)', () => {
   });
 });
 
+describe('the checkpoint worker checkpoints a change after MAX_AGE_MS, not every tick (since 1.255.0)', () => {
+  it('no checkpoint without a commit; a commit is checkpointed once it is maxAgeMs old; a grown log at once', async () => {
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const path = require('node:path');
+    const { Worker } = require('node:worker_threads');
+    const Database = require('better-sqlite3');
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gc-ckpt-')), 'h.db');
+    const main = new Database(file);
+    main.pragma('journal_mode = WAL');
+    main.pragma('synchronous = NORMAL');
+    main.pragma('wal_autocheckpoint = 0');
+    main.exec('CREATE TABLE t (x TEXT)');
+    const w = new Worker(path.join(__dirname, '..', 'src', 'db', 'checkpointWorker.js'), { workerData: { file, everyMs: 20, maxAgeMs: 400 } });
+    const seen = [];
+    w.on('message', (m) => { if (m && m.t === 'checkpoint') seen.push({ at: Date.now(), log: m.log }); });
+    try {
+      await new Promise((r) => w.once('message', r)); // ready
+      await sleep(500); // the log of CREATE TABLE: one checkpoint at most
+      const startCount = seen.length;
+      await sleep(300);
+      assert.equal(seen.length, startCount, 'quiet: no checkpoint');
+      const t0 = Date.now();
+      for (let i = 0; i < 20; i++) { main.prepare('INSERT INTO t VALUES (?)').run('a' + i); await sleep(10); }
+      for (let i = 0; i < 100 && seen.length === startCount; i++) await sleep(20);
+      assert.equal(seen.length, startCount + 1, 'one checkpoint for the burst');
+      assert.ok(seen[seen.length - 1].at - t0 >= 380, `after ${seen[seen.length - 1].at - t0} ms`);
+      // a log that grows by more than 8 MB goes at once
+      const n = seen.length;
+      const t1 = Date.now();
+      main.transaction(() => { const ins = main.prepare('INSERT INTO t VALUES (?)'); for (let i = 0; i < 3000; i++) ins.run('y'.repeat(4000)); })();
+      for (let i = 0; i < 100 && seen.length === n; i++) await sleep(10);
+      assert.ok(seen.length > n && seen[n].at - t1 < 300, 'grown log: checkpoint before maxAgeMs');
+    } finally {
+      await w.terminate();
+      main.close();
+    }
+  });
+});
+
 describe(`Ereignisschleife < ${LIMIT_MS} ms bei ${N} Einträgen`, () => {
   let areas;
   let homeCache;
