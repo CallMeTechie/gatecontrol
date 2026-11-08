@@ -92,10 +92,20 @@ function signature(files) {
   }).join('|');
 }
 
+// one open file: type and size are checked on the handle that is then read
+// (no check of the path first that the file could change after)
 function readChapter(f) {
-  const st = fs.statSync(f.abs);
-  if (!st.isFile() || st.size > MAX_FILE) throw new GatewayHandbookError('handbook_missing', 'chapter too large');
-  return fs.readFileSync(f.abs, 'utf8').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+  let fd;
+  try { fd = fs.openSync(f.abs, 'r'); } catch (e) {
+    throw new GatewayHandbookError('handbook_missing', e && e.code === 'ENOENT' ? 'chapter missing' : 'chapter not readable');
+  }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.size > MAX_FILE) throw new GatewayHandbookError('handbook_missing', 'chapter too large');
+    return fs.readFileSync(fd, 'utf8').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 function build(lang, files) {
