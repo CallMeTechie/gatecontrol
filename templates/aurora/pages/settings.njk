@@ -495,6 +495,12 @@
         <select class="st-select ipb-window" id="ipb-window" data-st-field="ipb-window" aria-label="{{ t('st.ipb.window') }}"><option value="10">{{ t('st.ipb.min10') }}</option><option value="60">{{ t('st.ipb.min60') }}</option></select>
       </div>
     </div>
+    <div class="st-row" data-st-row="ipb-unknown">
+      {{ rowText('ipb-unknown', t('st.ipb.unknown'), t('st.ipb.unknown_hint'), '', true) }}
+      <div class="st-row-ctl">
+        <select class="st-select" id="ipb-unknown" data-st-field="ipb-unknown" aria-describedby="ipb-unknown-hint ipb-unknown-err">{% for w in [1, 2, 3, 5] %}<option value="{{ w }}">{{ t('st.ipb.unknown_x' + w) }}</option>{% endfor %}</select>
+      </div>
+    </div>
     <div class="st-row st-row-read">
       <div class="st-row-text"><span class="st-label" id="ipb-dur-label">{{ t('st.ipb.duration') }}</span><span class="st-hint">{{ t('st.ipb.duration_hint') }}</span></div>
       <div class="st-row-ctl" role="group" aria-labelledby="ipb-dur-label"><span class="ipb-chip">{{ t('st.ipb.d10') }}</span><span class="st-unit" aria-hidden="true">›</span><span class="ipb-chip">{{ t('st.ipb.d60') }}</span><span class="st-unit" aria-hidden="true">›</span><span class="ipb-chip">{{ t('st.ipb.d1440') }}</span></div>

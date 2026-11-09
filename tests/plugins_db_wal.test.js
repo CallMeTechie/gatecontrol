@@ -88,9 +88,16 @@ describe('plugin databases in WAL', () => {
         size = buf.length;
         buf[18] = 1;
         buf[19] = 1;
-        const c = new Database(buf);
-        backfilled = c.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 't'").get().n === 1;
-        c.close();
+        // read while the checkpoint is still copying pages in: a torn copy is no answer yet, try again
+        let c = null;
+        try {
+          c = new Database(buf);
+          backfilled = c.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 't'").get().n === 1;
+        } catch (err) {
+          if (err.code !== 'SQLITE_CORRUPT' && err.code !== 'SQLITE_NOTADB') throw err;
+        } finally {
+          if (c) c.close();
+        }
       }
       assert.ok(backfilled, `table in plugin.db itself (${size} bytes)`);
     } finally {

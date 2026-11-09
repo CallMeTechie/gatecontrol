@@ -95,6 +95,8 @@
   function whyOf(b) {
     if (b.manual) return t('st.ipb.why_manual');
     const n = b.hits || 0;
+    // names without an account brought most of the points (services/ipBlock.js summary)
+    if (b.unknownMain && b.unknownUsers) return tp('st.ipb.why_unknown', b.unknownUsers);
     if (b.reason === 'login') return b.targetCount > 1 ? t('st.ipb.why_login_accounts', { n, k: b.targetCount }) : tp('st.ipb.why_login', n);
     return t('st.ipb.why_' + b.reason, { n });
   }
@@ -102,7 +104,8 @@
     if (b.manual) return [b.note ? '„' + b.note + '“' : null, t('st.ipb.since', { time: when(b.createdAt) })].filter(Boolean).join(' · ');
     const src = Object.keys(b.sources || {}).map((s) => t('st.ipb.src_short.' + s)).join(', ');
     const tg = (b.targets || []).slice(0, 2).join(', ');
-    return [src, tg, t('st.ipb.since', { time: when(b.createdAt) })].filter(Boolean).join(' · ');
+    const unk = b.unknownUsers && !b.unknownMain ? tp('st.ipb.detail_unknown', b.unknownUsers) : null;
+    return [src, unk, tg, t('st.ipb.since', { time: when(b.createdAt) })].filter(Boolean).join(' · ');
   }
   function renderBans() {
     const box = $('ipb-bans');
@@ -173,7 +176,10 @@
   }
   function ipbValues() {
     const c = ipb.config;
-    const v = { 'ipb-enabled': c.enabled, 'ipb-threshold': c.threshold, 'ipb-window': String(c.window_min), 'ipb-notify': c.notify };
+    const v = {
+      'ipb-enabled': c.enabled, 'ipb-threshold': c.threshold, 'ipb-window': String(c.window_min),
+      'ipb-unknown': String(c.unknown_user_weight), 'ipb-notify': c.notify,
+    };
     SOURCES.forEach((s) => { v['ipb-src-' + s] = !!c.sources[s]; });
     // without the licence the lists do not apply: shown off (and not sent)
     LISTS.forEach((l) => { v['ipb-list-' + l] = !!c.lists[l] && !!ipb.licensed; });
@@ -227,13 +233,14 @@
     fills: true,
     load() { wireIpb(); return reloadIpb(); },
     groups: [{
-      fields: ['ipb-enabled', 'ipb-threshold', 'ipb-window', 'ipb-notify'].concat(SOURCES.map((s) => 'ipb-src-' + s), LISTS.map((l) => 'ipb-list-' + l)),
-      map: { enabled: 'ipb-enabled', threshold: 'ipb-threshold', window_min: 'ipb-window', notify: 'ipb-notify', sources: 'ipb-src-login', lists: 'ipb-list-drop' },
+      fields: ['ipb-enabled', 'ipb-threshold', 'ipb-window', 'ipb-unknown', 'ipb-notify'].concat(SOURCES.map((s) => 'ipb-src-' + s), LISTS.map((l) => 'ipb-list-' + l)),
+      map: { enabled: 'ipb-enabled', threshold: 'ipb-threshold', window_min: 'ipb-window', unknown_user_weight: 'ipb-unknown', notify: 'ipb-notify', sources: 'ipb-src-login', lists: 'ipb-list-drop' },
       save(v) {
         const sources = {};
         SOURCES.forEach((s) => { sources[s] = !!v['ipb-src-' + s]; });
         const body = {
           enabled: !!v['ipb-enabled'], threshold: parseInt(v['ipb-threshold'], 10), window_min: parseInt(v['ipb-window'], 10),
+          unknown_user_weight: parseInt(v['ipb-unknown'], 10),
           notify: !!v['ipb-notify'], sources,
         };
         if (ipb && ipb.licensed) {

@@ -294,6 +294,34 @@ Ticket kopieren.
 
 Ausführlich: [INSTALL.de.md §9](../../INSTALL.de.md#9-troubleshooting).
 
+### Fehlversuch mit einer fremden E-Mail-Adresse im Protokoll
+
+Im Protokoll steht `Failed login for user: …` mit einem Namen oder einer
+E-Mail-Adresse, die du nicht kennst und für die es kein Konto gibt. Das ist
+fast immer ein automatischer Versuch mit Zugangsdaten aus einem Datenleck
+(„Credential Stuffing“) – niemand hat dein Passwort, und es gibt kein Konto,
+das betroffen wäre. In den Details steht dann `unknownUser: true`.
+
+Die Kontosperre hilft hier nicht: Es gibt kein Konto, das gesperrt werden
+könnte. Dafür ist die **IP-Sperre** da (Einstellungen › Sicherheit ›
+IP-Sperre). Sie zählt Fehlversuche einer Adresse über alle Eingänge zusammen
+und sperrt sie nach 10 Fehlversuchen in 10 Minuten. Ein unbekannter
+Benutzername zählt dabei mehrfach – Einstellung **„Unbekannte Benutzernamen
+zählen“**, voreingestellt **dreifach**. Mit 10 Fehlversuchen sperrt also schon
+der 4. Versuch mit einem unbekannten Namen. Das gilt für den
+GateControl-Login, den Login aus dem Portal, die Anmeldung in den Apps und
+die Logins geschützter Routen. Ein falsches Passwort zu einem bestehenden
+Konto und ein falscher zweiter Faktor zählen einfach.
+
+Wer sich anmeldet, merkt keinen Unterschied: Die Antwort ist für unbekannte
+und bekannte Namen gleich, so lässt sich nicht herausfinden, welche Konten es
+gibt. Vertippst du dich selbst öfter beim Namen, stell die Einstellung auf
+„doppelt“ oder „einfach“ oder trag dein Netz unter **„Nie sperren“** ein.
+Adressen im VPN und im eigenen Netz werden ohnehin nie gesperrt.
+
+**Prüfen:** In der Liste „Gerade gesperrt“ steht bei solchen Adressen
+„Anmeldeversuche mit unbekannten Benutzernamen“.
+
 ## Gateway einrichten
 
 ### Der Assistent wartet nach 10 Minuten immer noch

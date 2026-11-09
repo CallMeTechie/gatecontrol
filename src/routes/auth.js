@@ -269,14 +269,18 @@ const authRoutes = {
       if (!user || !passwordOk || user.enabled !== 1 || !usersService.canWebLogin(user)) {
         logger.warn({ username, ip: req.ip }, 'Failed login attempt');
 
-        // Record failed attempt for lockout
-        lockout.recordFailedAttempt(username, 'admin', req.ip);
-        if (user && user.username !== username) lockout.recordFailedAttempt(user.username, 'admin', req.ip);
+        // Record failed attempt for lockout. One attempt counts once for the
+        // IP block; a name without an account counts with the weight of
+        // "Unbekannte Benutzernamen" (only the counting differs — flash,
+        // redirect and the argon2 run above stay the same).
+        lockout.recordFailedAttempt(username, 'admin', req.ip, { unknownUser: !user });
+        if (user && user.username !== username) lockout.recordFailedAttempt(user.username, 'admin', req.ip, { ipBlock: false });
 
         // Log failed attempt — through activity.log, so the notification
         // settings (mail, webhooks) see it like every other event.
         activity.log('login_failed', `Failed login for user: ${username}`, {
           source: 'system', ipAddress: req.ip, severity: 'warning',
+          ...(user ? {} : { details: { unknownUser: true } }),
         });
 
         setFlash(req, 'error', res.locals.t('auth.error_invalid'));

@@ -16,8 +16,17 @@
 //                (noteSuspiciousRequest, from the error handler in app.js)
 //   rate_limit   429 answers (off by default — own apps can hit it)
 //
-// `threshold` failures within `window_min` → a ban of 10 min, the next within
-// 7 days 1 h, from the third on 1 day (level 1 … 3). Never banned: private,
+// Unknown names (login, route_auth): a failed login with a name or e-mail
+// address that matches no account counts `unknown_user_weight` times (1, 2,
+// 3 or 5; default 3) — the account lockout cannot stop those (credential
+// stuffing with leaked lists), so the address is stopped earlier. A wrong
+// second factor or a wrong password of an existing account counts once. The
+// answer of the login stays the same either way; only the counting differs.
+// A failure is one row with its weight (ip_block_failures.weight, .unknown_user).
+//
+// `threshold` failures (the sum of the weights) within `window_min` → a ban
+// of 10 min, the next within 7 days 1 h, from the third on 1 day (level
+// 1 … 3). Never banned: private,
 // loopback and link-local addresses, the VPN subnet, the "Nie sperren" list
 // and the WAF's own addresses. Bans by hand (IP or CIDR, also permanent)
 // have level 0.
@@ -56,6 +65,8 @@ const SOURCES = ['login', 'route_auth', 'share_link', 'waf', 'scan', 'rate_limit
 const LISTS = ['drop', 'attackers', 'tor'];
 const DURATIONS_MIN = [10, 60, 1440];
 const WINDOWS_MIN = [10, 60];
+const UNKNOWN_WEIGHTS = [1, 2, 3, 5];
+const WEIGHTED_SOURCES = ['login', 'route_auth'];
 const STRIKE_MEMORY_MS = 7 * 86400e3;
 const NEVER_MAX = 50;
 const MAX_AUTO_BANS = 5000;
@@ -76,6 +87,7 @@ const DEFAULTS = Object.freeze({
   enabled: true,
   threshold: 10,
   window_min: 10,
+  unknown_user_weight: 3,
   notify: true,
   sources: { login: true, route_auth: true, share_link: true, waf: true, scan: true, rate_limit: false },
   lists: { drop: true, attackers: false, tor: false },
@@ -214,6 +226,7 @@ function getConfig() {
     enabled: typeof c.enabled === 'boolean' ? c.enabled : DEFAULTS.enabled,
     threshold: Number.isInteger(c.threshold) && c.threshold >= 3 && c.threshold <= 1000 ? c.threshold : DEFAULTS.threshold,
     window_min: WINDOWS_MIN.includes(c.window_min) ? c.window_min : DEFAULTS.window_min,
+    unknown_user_weight: UNKNOWN_WEIGHTS.includes(c.unknown_user_weight) ? c.unknown_user_weight : DEFAULTS.unknown_user_weight,
     notify: typeof c.notify === 'boolean' ? c.notify : DEFAULTS.notify,
     sources: { ...DEFAULTS.sources },
     lists: { ...DEFAULTS.lists },
@@ -233,7 +246,10 @@ function bool(v, field) {
 function setConfig(input, { licensed = listsLicensed() } = {}) {
   const b = input && typeof input === 'object' ? input : {};
   const cur = getConfig();
-  const next = { enabled: cur.enabled, threshold: cur.threshold, window_min: cur.window_min, notify: cur.notify, sources: { ...cur.sources }, lists: { ...cur.lists } };
+  const next = {
+    enabled: cur.enabled, threshold: cur.threshold, window_min: cur.window_min, unknown_user_weight: cur.unknown_user_weight,
+    notify: cur.notify, sources: { ...cur.sources }, lists: { ...cur.lists },
+  };
   if (b.enabled !== undefined) next.enabled = bool(b.enabled, 'enabled');
   if (b.notify !== undefined) next.notify = bool(b.notify, 'notify');
   if (b.threshold !== undefined) {
@@ -245,6 +261,13 @@ function setConfig(input, { licensed = listsLicensed() } = {}) {
     const n = Number(b.window_min);
     if (!WINDOWS_MIN.includes(n)) throw new IpBlockError('invalid', 'window_min must be 10 or 60', 400, 'window_min');
     next.window_min = n;
+  }
+  if (b.unknown_user_weight !== undefined) {
+    const n = typeof b.unknown_user_weight === 'boolean' ? NaN : Number(b.unknown_user_weight);
+    if (!UNKNOWN_WEIGHTS.includes(n)) {
+      throw new IpBlockError('invalid', `unknown_user_weight must be one of ${UNKNOWN_WEIGHTS.join(', ')}`, 400, 'unknown_user_weight');
+    }
+    next.unknown_user_weight = n;
   }
   if (b.sources !== undefined) {
     if (!b.sources || typeof b.sources !== 'object') throw new IpBlockError('invalid', 'sources must be an object', 400, 'sources');
@@ -570,15 +593,30 @@ function strikeLevel(ip, at) {
   return Math.min(3, strikes);
 }
 
+/**
+ * What the failures of one address were: points per source (`by`), the main
+ * source, what was tried, the number of attempts, and how many of them (and
+ * their points) were names without an account. `unknownMain`: those names
+ * brought more than half of the points.
+ */
 function summary(rows) {
   const by = {};
   const targets = new Set();
+  let points = 0;
+  let unknown = 0;
+  let unknownPoints = 0;
   for (const r of rows) {
-    by[r.source] = (by[r.source] || 0) + 1;
+    const w = Number(r.weight) > 0 ? Number(r.weight) : 1;
+    by[r.source] = (by[r.source] || 0) + w;
+    points += w;
+    if (r.unknown_user) { unknown++; unknownPoints += w; }
     if (r.detail) targets.add(r.detail);
   }
   const main = Object.entries(by).sort((a, b) => b[1] - a[1])[0];
-  return { by, main: main ? main[0] : null, targets: [...targets].slice(0, 5), targetCount: targets.size };
+  return {
+    by, main: main ? main[0] : null, targets: [...targets].slice(0, 5), targetCount: targets.size,
+    points, attempts: rows.length, unknown, unknownPoints, unknownMain: unknownPoints * 2 > points,
+  };
 }
 
 function activity(type, message, details, severity = 'info') {
@@ -609,8 +647,11 @@ function autoBan(ip, rows, at) {
   const sum = summary(rows);
   const row = {
     ip, manual: 0, level, reason: sum.main || 'login',
-    detail: JSON.stringify({ by: sum.by, targets: sum.targets, targetCount: sum.targetCount }),
-    hits: rows.length, created_at: at, expires_at: at + minutes * 60e3, created_by: null,
+    detail: JSON.stringify({
+      by: sum.by, targets: sum.targets, targetCount: sum.targetCount,
+      attempts: sum.attempts, unknown: sum.unknown, unknownPoints: sum.unknownPoints, unknownMain: sum.unknownMain,
+    }),
+    hits: sum.points, created_at: at, expires_at: at + minutes * 60e3, created_by: null,
   };
   db().transaction(() => {
     db().prepare(`INSERT OR REPLACE INTO ip_blocks (ip, manual, level, reason, detail, hits, created_at, expires_at, created_by)
@@ -622,7 +663,8 @@ function autoBan(ip, rows, at) {
   rebuild();
   publish('ban', ip);
   const details = { ip, level, reason: row.reason, hits: row.hits, duration_min: minutes, sources: sum.by, targets: sum.targets };
-  const msg = `IP ${ip} blocked for ${minutes} min (${row.hits} failures, ${row.reason})`;
+  if (sum.unknown) { details.unknown_users = sum.unknown; details.unknown_main = sum.unknownMain; }
+  const msg = `IP ${ip} blocked for ${minutes} min (${row.hits} failures, ${row.reason}${sum.unknownMain ? ', mostly unknown user names' : ''})`;
   if (level === 3 && cfg.notify) activity('ip_blocked_day', msg, details, 'warning');
   else activity('ip_blocked', msg, details, level === 3 ? 'warning' : 'info');
   noteMass(at, cfg);
@@ -657,12 +699,21 @@ function lookupCountryLater(ip) {
   });
 }
 
+/** The points of one failure: `weight` (1 … 50), or the setting for a name without an account. */
+function weightOf(cfg, source, { weight = 1, unknownUser = false } = {}) {
+  if (unknownUser && WEIGHTED_SOURCES.includes(source)) return cfg.unknown_user_weight;
+  const w = Math.floor(Number(weight));
+  return Number.isFinite(w) ? Math.max(1, Math.min(50, w)) : 1;
+}
+
 /**
  * One failure of `ip` at entry point `source` (`detail`: what was tried — an
- * account, a host, a link; short text, no secrets). Bans at the threshold.
- * Never throws. → true when this failure banned the address.
+ * account, a host, a link; short text, no secrets). `unknownUser`: a login
+ * (login, route_auth) with a name that matches no account — counts with
+ * `unknown_user_weight`. Bans when the points in the window reach the
+ * threshold. Never throws. → true when this failure banned the address.
  */
-function noteFailure(ip, source, detail = null, { weight = 1, at = now() } = {}) {
+function noteFailure(ip, source, detail = null, { weight = 1, unknownUser = false, at = now() } = {}) {
   try {
     if (!SOURCES.includes(source)) return false;
     const cfg = getConfig();
@@ -671,11 +722,12 @@ function noteFailure(ip, source, detail = null, { weight = 1, at = now() } = {})
     if (!canon || !isPublicIp(canon) || isExempt(canon)) return false;
     if (_state.banned.has(processAddr(canon))) return false;
     const d = detail == null ? null : String(detail).replace(/[\r\n\t]/g, ' ').slice(0, 120);
-    const ins = db().prepare('INSERT INTO ip_block_failures (ip, source, detail, at) VALUES (?, ?, ?, ?)');
-    for (let i = 0; i < Math.max(1, Math.min(50, weight)); i++) ins.run(canon, source, d, at);
+    const unknown = !!unknownUser && WEIGHTED_SOURCES.includes(source);
+    db().prepare('INSERT INTO ip_block_failures (ip, source, detail, at, weight, unknown_user) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(canon, source, d, at, weightOf(cfg, source, { weight, unknownUser: unknown }), unknown ? 1 : 0);
     const since = at - cfg.window_min * 60e3;
-    const rows = db().prepare('SELECT source, detail FROM ip_block_failures WHERE ip = ? AND at > ?').all(canon, since);
-    if (rows.length < cfg.threshold) return false;
+    const rows = db().prepare('SELECT source, detail, weight, unknown_user FROM ip_block_failures WHERE ip = ? AND at > ?').all(canon, since);
+    if (rows.reduce((n, r) => n + (Number(r.weight) > 0 ? Number(r.weight) : 1), 0) < cfg.threshold) return false;
     return !!autoBan(canon, rows, at);
   } catch (err) {
     logger.warn({ err: err.message }, 'ip block: failure not counted');
@@ -731,6 +783,8 @@ function toApi(r) {
   return {
     ip: r.ip, manual: !!r.manual, level: r.level, reason: r.reason, hits: r.hits == null ? null : r.hits,
     sources: d.by || {}, targets: Array.isArray(d.targets) ? d.targets : [], targetCount: d.targetCount || 0,
+    attempts: Number.isInteger(d.attempts) ? d.attempts : null,
+    unknownUsers: Number.isInteger(d.unknown) ? d.unknown : 0, unknownMain: d.unknownMain === true,
     note: d.note || '', country: d.country || null,
     createdAt: new Date(r.created_at).toISOString(), expiresAt: r.expires_at == null ? null : new Date(r.expires_at).toISOString(),
     createdBy: r.created_by == null ? null : r.created_by,
@@ -991,7 +1045,7 @@ function sweep(at = now()) {
 
 function stats(at = now()) {
   const bans = activeBans(at);
-  const fails = db().prepare('SELECT COUNT(*) AS n, COUNT(DISTINCT ip) AS ips FROM ip_block_failures WHERE at > ?').get(at - 86400e3);
+  const fails = db().prepare('SELECT COALESCE(SUM(weight), 0) AS n, COUNT(DISTINCT ip) AS ips FROM ip_block_failures WHERE at > ?').get(at - 86400e3);
   // failures that led to a ban were removed from the table: add the hits of bans of the last 24 h
   const banned24 = db().prepare('SELECT COALESCE(SUM(hits), 0) AS n, COUNT(*) AS ips FROM ip_blocks WHERE manual = 0 AND created_at > ?').get(at - 86400e3);
   const ls = listsState();
@@ -1093,7 +1147,7 @@ function _resetForTest({ fetch = null, blockFile: bf = null, dataDir: dd = null,
 }
 
 module.exports = {
-  SOURCES, LISTS, DURATIONS_MIN, MANUAL_HOURS, LIST_SOURCES, PROBE_RE, IpBlockError,
+  SOURCES, LISTS, DURATIONS_MIN, MANUAL_HOURS, UNKNOWN_WEIGHTS, LIST_SOURCES, PROBE_RE, IpBlockError,
   getConfig, setConfig, getNever, addNever, removeNever, exceptions,
   noteFailure, banManual, unban, listBans, check, isExempt, exportBackup, restoreBackup,
   refreshLists, parseList, parseListAsync, noteAccessLines, noteSuspiciousRequest, sweep, stats, view,

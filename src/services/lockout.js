@@ -26,8 +26,15 @@ function getSettings() {
  * @param {string} identifier - Username (admin) or IP:routeId (route-auth)
  * @param {string} type - 'admin' or 'route_auth'
  * @param {string} ip - IP address
+ * @param {object} [opts]
+ * @param {boolean} [opts.unknownUser] - the typed name matches no account
+ *   (counts with the weight of "Unbekannte Benutzernamen" for the IP block;
+ *   never for a wrong second factor — the account exists then)
+ * @param {boolean} [opts.ipBlock] - false: lockout only, not counted for the
+ *   IP block again (the second row of one attempt, the account's own name
+ *   when an e-mail address was typed)
  */
-function recordFailedAttempt(identifier, type, ip) {
+function recordFailedAttempt(identifier, type, ip, { unknownUser = false, ipBlock = true } = {}) {
   const db = getDb();
   db.prepare(`
     INSERT INTO login_attempts (identifier, type, ip_address)
@@ -36,16 +43,21 @@ function recordFailedAttempt(identifier, type, ip) {
 
   // IP block over every entry point (services/ipBlock.js): the same failure
   // counts for the address — for a route login with the route's host (its
-  // identifier is "<e-mail>:<route id>"), else with the account name.
-  try {
-    let what = String(identifier || '');
-    if (type === 'route_auth') {
-      const rid = Number(what.split(':').pop());
-      const r = Number.isSafeInteger(rid) ? db.prepare('SELECT domain FROM routes WHERE id = ?').get(rid) : null;
-      what = r && r.domain ? r.domain : '';
-    }
-    require('./ipBlock').noteFailure(ip, type === 'route_auth' ? 'route_auth' : 'login', what || null);
-  } catch { /* best-effort */ }
+  // identifier is "<e-mail>:<route id>"), else with the account name. One
+  // attempt counts once; a name without an account counts with the weight
+  // of the setting (only the counting differs — the answer stays the same).
+  if (ipBlock) {
+    try {
+      let what = String(identifier || '');
+      if (type === 'route_auth') {
+        const rid = Number(what.split(':').pop());
+        const r = Number.isSafeInteger(rid) ? db.prepare('SELECT domain FROM routes WHERE id = ?').get(rid) : null;
+        what = r && r.domain ? r.domain : '';
+      }
+      require('./ipBlock').noteFailure(ip, type === 'route_auth' ? 'route_auth' : 'login', what || null,
+        { unknownUser: !!unknownUser && type !== 'admin_2fa' });
+    } catch { /* best-effort */ }
+  }
 
   // The attempt that locks an admin account is an event of its own
   // (notifications: account_locked). Exactly once per lock: only when this
