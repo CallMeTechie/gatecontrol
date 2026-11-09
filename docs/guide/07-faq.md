@@ -299,11 +299,17 @@ failures of one address over every entry point together and blocks it after
 setting **"Unknown user names count"**, **triple** by default. With 10
 failures the 4th attempt with an unknown name already blocks. This applies to
 the GateControl login, the login from the portal, the sign-in in the apps and
-the logins of protected routes. A wrong password of an existing account and a
-wrong second factor count once.
+the logins of protected routes – there also when someone asks for an e-mail
+code for an address that has no access to the route. A wrong password of an
+existing account, a wrong second factor and a wrong or expired e-mail code
+count once. The log shows such failures of a route as `route_auth_failed`
+with the route, the masked address (`s***@example.com`) and the IP.
 
 Whoever signs in sees no difference: the answer is the same for unknown and
-known names, so nobody can find out which accounts exist. If you often mistype
+known names, so nobody can find out which accounts exist. With the e-mail code
+login every address sees the same sentence: "If this address has access to
+this page, we have sent you a code." Only the address with access really gets
+a mail. If you often mistype
 your own name, set it to "twice" or "once", or add your network under
 **"Never block"**. Addresses in the VPN and in your own network
 are never blocked anyway.

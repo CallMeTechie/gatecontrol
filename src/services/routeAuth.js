@@ -7,7 +7,9 @@ const { getDb } = require('../db/connection');
 const { encrypt, decrypt } = require('../utils/crypto');
 const argon2Options = require('../utils/argon2Options');
 const activity = require('./activity');
-const { sendOtpEmail } = require('./email');
+// Looked up on the module at call time (not destructured) so tests can stub
+// the mail transport.
+const emailService = require('./email');
 const logger = require('../utils/logger');
 
 // ---------------------------------------------------------------------------
@@ -349,9 +351,11 @@ function hashOtp(code) {
 }
 
 /**
- * Invalidate previous OTPs for this route+email, insert a new one, send via email
+ * Invalidate previous OTPs for this route+email and store a new one.
+ * Synchronous, so a code verified right after the request finds it.
+ * → { code, expiresAt }
  */
-async function createAndSendOtp(routeId, email, domain, lang) {
+function issueOtp(routeId, email) {
   const db = getDb();
 
   // Invalidate previous OTPs
@@ -369,14 +373,51 @@ async function createAndSendOtp(routeId, email, domain, lang) {
     VALUES (?, ?, ?, ?)
   `).run(routeId, codeHash, email, expiresAt);
 
-  await sendOtpEmail({ to: email, code, domain, lang });
+  return { code, expiresAt };
+}
 
+function logOtpSent(routeId, email, domain, ip) {
   activity.log('route_auth_otp_sent', `OTP sent to ${maskEmail(email)} for route ${routeId}`, {
     details: { routeId, email: maskEmail(email), domain },
     source: 'system',
+    ipAddress: ip || null,
     severity: 'info',
   });
+}
 
+/**
+ * Invalidate previous OTPs for this route+email, insert a new one, send via email
+ * (waits for the mail server).
+ */
+async function createAndSendOtp(routeId, email, domain, lang, { ip = null } = {}) {
+  const { code, expiresAt } = issueOtp(routeId, email);
+  await emailService.sendOtpEmail({ to: email, code, domain, lang });
+  logOtpSent(routeId, email, domain, ip);
+  return { expiresAt };
+}
+
+/**
+ * Like createAndSendOtp, but the mail goes out in the background: the code is
+ * stored at once, the answer of the login page does not wait for (and so
+ * cannot reveal anything through) the mail server. A failed delivery is
+ * logged (route_auth_otp_failed); never throws.
+ */
+function sendOtpInBackground(routeId, email, domain, lang, { ip = null } = {}) {
+  const { code, expiresAt } = issueOtp(routeId, email);
+  Promise.resolve()
+    .then(() => emailService.sendOtpEmail({ to: email, code, domain, lang }))
+    .then(() => logOtpSent(routeId, email, domain, ip))
+    .catch((err) => {
+      logger.warn({ routeId, domain, err: err && err.message }, 'route auth: code e-mail could not be sent');
+      try {
+        activity.log('route_auth_otp_failed', `OTP e-mail to ${maskEmail(email)} for route ${routeId} could not be sent`, {
+          details: { routeId, email: maskEmail(email), domain, error: String((err && err.message) || err).slice(0, 200) },
+          source: 'system',
+          ipAddress: ip || null,
+          severity: 'warning',
+        });
+      } catch { /* best-effort */ }
+    });
   return { expiresAt };
 }
 
@@ -551,7 +592,7 @@ function verifyTotp(encryptedSecret, token, routeId) {
  * Mask an email address for safe logging: m***@example.com
  */
 function maskEmail(email) {
-  if (!email || !email.includes('@')) return '***';
+  if (!email || typeof email !== 'string' || !email.includes('@')) return '***';
   const [local, domain] = email.split('@');
   if (!local || local.length === 0) return `***@${domain}`;
   return `${local[0]}***@${domain}`;
@@ -579,6 +620,8 @@ module.exports = {
   generateOtp,
   hashOtp,
   createAndSendOtp,
+  sendOtpInBackground,
+  issueOtp,
   verifyOtp,
   // TOTP
   generateTotpSecret,

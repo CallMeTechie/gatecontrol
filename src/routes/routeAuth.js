@@ -15,7 +15,7 @@ const {
   completeTwoFactor,
   deleteSession,
   verifyPassword,
-  createAndSendOtp,
+  sendOtpInBackground,
   verifyOtp,
   verifyTotp,
   maskEmail,
@@ -111,6 +111,61 @@ function setSessionCookie(res, sessionId, maxAge) {
 
 function clearSessionCookie(res) {
   res.clearCookie(COOKIE_SID);
+}
+
+// ─── No enumeration of the route's address ─────────────────────────────
+// A route with the e-mail code login has ONE address. Asking for a code
+// answers the same for every address — same status, same body, at least
+// SEND_CODE_MIN_MS — and the mail goes out in the background, so neither
+// the text nor the time tells whether the address has access. An address
+// without access counts for the IP block with the weight of "Unbekannte
+// Benutzernamen" (services/ipBlock.js unknown_user_weight), like an unknown
+// name at the GateControl login; the code step then fails like a wrong code.
+const SEND_CODE_MIN_MS = 300;
+
+/** Lower-case, trimmed e-mail address, or '' when it is no plausible address. */
+function normalizeEmail(value) {
+  if (typeof value !== 'string') return '';
+  const v = value.trim().toLowerCase();
+  if (v.length < 3 || v.length > 254 || /[\s\x00-\x1f\x7f]/.test(v)) return '';
+  const at = v.lastIndexOf('@');
+  if (at < 1 || at === v.length - 1) return '';
+  return v;
+}
+
+function waitUntil(startedAt, ms) {
+  const left = ms - (Date.now() - startedAt);
+  return left > 0 ? new Promise((resolve) => setTimeout(resolve, left)) : Promise.resolve();
+}
+
+/** Pending 2FA session of THIS route (password step done), else null. */
+function pendingSessionFor(req, authConfig) {
+  const sessionId = req.cookies && req.cookies[COOKIE_SID];
+  const s = sessionId ? getSession(sessionId) : null;
+  return s && s.two_factor_pending && s.route_id === authConfig.route_id ? s : null;
+}
+
+/**
+ * Activity entry of a failed route login (Logs & Monitoring): route, masked
+ * address, IP and the step. Only for the admin — the requester's answer is
+ * the same either way. Never contains a password or code.
+ */
+function logRouteAuthFailure(req, authConfig, domain, step, email, { unknownUser = false } = {}) {
+  try {
+    // Typed by the visitor: no control characters, bounded, then masked.
+    const masked = maskEmail(typeof email === 'string' ? email.replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 254) : '');
+    const what = {
+      password: 'wrong e-mail or password',
+      code_request: 'code requested for an address without access',
+      code: 'wrong or expired code',
+    }[step] || step;
+    activity.log('route_auth_failed', `Failed route login for ${domain}: ${what} (${masked})`, {
+      details: { routeId: authConfig.route_id, domain, step, email: masked, ...(unknownUser ? { unknownUser: true } : {}) },
+      source: 'system',
+      ipAddress: req.ip,
+      severity: 'warning',
+    });
+  } catch { /* best-effort */ }
 }
 
 // GET /route-auth/verify — Caddy forward_auth endpoint
@@ -253,14 +308,10 @@ router.get('/login', (req, res) => {
       }
     }
 
-    // Check for pending 2FA session
-    let twoFactorPending = false;
-    if (sessionId) {
-      const pendingSession = getSession(sessionId);
-      if (pendingSession && pendingSession.two_factor_pending) {
-        twoFactorPending = true;
-      }
-    }
+    // Check for pending 2FA session (of this route: the password step was
+    // done here — a pending session of another route shows nothing)
+    const pendingSession = authConfig ? pendingSessionFor(req, authConfig) : null;
+    const twoFactorPending = !!pendingSession;
 
     // Set CSRF double-submit cookie (bound to domain)
     const csrfToken = generateSignedCsrf(domain);
@@ -277,7 +328,7 @@ router.get('/login', (req, res) => {
       twoFactorEnabled: !!authConfig?.two_factor_enabled,
       twoFactorMethod: authConfig?.two_factor_method || null,
       is2faStep2: twoFactorPending,
-      maskedEmail: authConfig ? maskEmail(authConfig.email) : '',
+      maskedEmail: pendingSession ? maskEmail(pendingSession.email) : '',
       routeCsrfToken: csrfToken,
       branding: routeData ? {
         title: routeData.branding_title,
@@ -333,7 +384,9 @@ router.post('/login', routeAuthLoginLimiter, (req, res) => {
       // matches no account and counts with the weight of "Unbekannte
       // Benutzernamen" for the IP block (verifyPassword ran argon2 anyway;
       // the answer below is the same).
-      lockout.recordFailedAttempt(lockoutId, 'route_auth', req.ip, { unknownUser: !authConfig.email || authConfig.email !== email });
+      const unknownUser = !authConfig.email || authConfig.email !== email;
+      lockout.recordFailedAttempt(lockoutId, 'route_auth', req.ip, { unknownUser });
+      logRouteAuthFailure(req, authConfig, domain, 'password', email, { unknownUser });
       return res.status(401).json({ ok: false, error: req.t('route_auth.invalid_credentials') });
     }
 
@@ -352,9 +405,10 @@ router.post('/login', routeAuthLoginLimiter, (req, res) => {
       );
       setSessionCookie(res, sessionId, 5 * 60 * 1000);
 
-      // Send OTP if email_code 2FA
+      // Send OTP if email_code 2FA (in the background: the step answer does
+      // not wait for the mail server; a failed delivery is logged)
       if (authConfig.two_factor_method === 'email_code') {
-        await createAndSendOtp(authConfig.route_id, email, domain, req.language);
+        sendOtpInBackground(authConfig.route_id, email, domain, req.language, { ip: req.ip });
       }
 
       return res.json({ ok: true, twoFactorRequired: true });
@@ -369,14 +423,20 @@ router.post('/login', routeAuthLoginLimiter, (req, res) => {
   })().catch((err) => res.status(500).json({ ok: false, error: err.message }));
 });
 
-// POST /route-auth/send-code — request a new OTP code
+// POST /route-auth/send-code — request a (new) e-mail code
+//   • e-mail code login (auth type email_code): for the typed address. The
+//     answer is the same for every address (see SEND_CODE_MIN_MS above);
+//     only the route's own address gets a code.
+//   • second factor by e-mail ("Code erneut senden" after the password
+//     step): to the address of the pending session; the typed one is ignored.
 router.post('/send-code', routeAuthCodeLimiter, (req, res) => {
   (async () => {
-    const { email, domain: bodyDomain, _csrf } = req.body;
-    const domain = bodyDomain || req.headers['x-forwarded-host'] || req.headers.host;
+    const startedAt = Date.now();
+    const body = req.body || {};
+    const domain = body.domain || req.headers['x-forwarded-host'] || req.headers.host;
 
     // CSRF check (bound to domain)
-    const csrfToken = _csrf || req.headers['x-csrf-token'];
+    const csrfToken = body._csrf || req.headers['x-csrf-token'];
     if (!verifySignedCsrf(csrfToken, domain)) {
       return res.status(403).json({ ok: false, error: 'CSRF validation failed' });
     }
@@ -391,21 +451,48 @@ router.post('/send-code', routeAuthCodeLimiter, (req, res) => {
       return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
     }
 
-    // Verify pending 2FA session exists before allowing code resend
-    const sessionId = req.cookies && req.cookies[COOKIE_SID];
-    const pendingSession = sessionId ? getSession(sessionId) : null;
-    if (!pendingSession || !pendingSession.two_factor_pending) {
+    const pending = pendingSessionFor(req, authConfig);
+    if (pending) {
+      // Resend of the second factor: the password step proved the address.
+      if (!authConfig.two_factor_enabled || authConfig.two_factor_method !== 'email_code') {
+        return res.status(403).json({ ok: false, error: req.t('route_auth.session_expired') });
+      }
+      if (!isSmtpConfigured()) {
+        return res.status(503).json({ ok: false, error: req.t('route_auth.code_unavailable') });
+      }
+      sendOtpInBackground(authConfig.route_id, pending.email, domain, req.language, { ip: req.ip });
+      return res.json({ ok: true, message: req.t('route_auth.code_sent') });
+    }
+
+    if (authConfig.auth_type !== 'email_code') {
+      // Password route without a pending second factor (expired / never logged in).
       return res.status(403).json({ ok: false, error: req.t('route_auth.session_expired') });
     }
 
-    // Verify email matches config
-    if (authConfig.email !== email) {
-      return res.status(400).json({ ok: false, error: req.t('route_auth.email_mismatch') });
+    // Checks that do not depend on WHICH address was typed come first.
+    const typed = normalizeEmail(body.email);
+    if (!typed) {
+      return res.status(400).json({ ok: false, error: req.t('route_auth.email_invalid') });
+    }
+    if (!isSmtpConfigured()) {
+      return res.status(503).json({ ok: false, error: req.t('route_auth.code_unavailable') });
     }
 
-    await createAndSendOtp(authConfig.route_id, email, domain, req.language);
-    res.json({ ok: true });
-  })().catch((err) => res.status(500).json({ ok: false, error: err.message }));
+    try {
+      if (authConfig.email && normalizeEmail(authConfig.email) === typed) {
+        // To the stored address (the typed one may differ in case).
+        sendOtpInBackground(authConfig.route_id, authConfig.email, domain, req.language, { ip: req.ip });
+      } else {
+        lockout.recordFailedAttempt(`${typed}:${authConfig.route_id}`, 'route_auth', req.ip, { unknownUser: true });
+        logRouteAuthFailure(req, authConfig, domain, 'code_request', typed, { unknownUser: true });
+      }
+    } catch (err) {
+      require('../utils/logger').warn({ err: err && err.message, routeId: authConfig.route_id }, 'route auth: code request failed');
+    }
+
+    await waitUntil(startedAt, SEND_CODE_MIN_MS);
+    return res.json({ ok: true, message: req.t('route_auth.code_sent_generic') });
+  })().catch(() => res.status(500).json({ ok: false, error: req.t('route_auth.code_unavailable') }));
 });
 
 // POST /route-auth/verify-code — verify OTP or TOTP code
@@ -431,12 +518,19 @@ router.post('/verify-code', routeAuthLoginLimiter, (req, res) => {
       return res.status(404).json({ ok: false, error: req.t('route_auth.not_configured') });
     }
 
-    // Get current session (pending or full)
+    // Second factor: the pending session of THIS route (password step done).
+    // Single factor (email_code / totp): always the route's own account — the
+    // address typed when asking for the code does not matter here, so a
+    // wrong code and "no code was ever sent to that address" fail alike
+    // (same answer, same lockout counter).
     const sessionId = req.cookies && req.cookies[COOKIE_SID];
-    const existingSession = sessionId ? getSession(sessionId) : null;
-    const isTwoFactor = existingSession && existingSession.two_factor_pending;
+    const pending = pendingSessionFor(req, authConfig);
+    const isTwoFactor = !!pending;
+    if (isTwoFactor ? !authConfig.two_factor_enabled : !['email_code', 'totp'].includes(authConfig.auth_type)) {
+      return res.status(403).json({ ok: false, error: req.t('route_auth.session_expired') });
+    }
 
-    const email = (existingSession && existingSession.email) || req.body.email || authConfig.email || 'anonymous';
+    const email = (pending && pending.email) || authConfig.email || 'anonymous';
 
     // Check account lockout for code verification
     const lockoutId = `${email}:${authConfig.route_id}`;
@@ -459,12 +553,15 @@ router.post('/verify-code', routeAuthLoginLimiter, (req, res) => {
       isValid = verifyTotp(authConfig.totp_secret_encrypted, code, authConfig.route_id);
     } else {
       // email OTP
-      isValid = verifyOtp(authConfig.route_id, email, code);
+      isValid = verifyOtp(authConfig.route_id, email, String(code == null ? '' : code));
     }
 
     if (!isValid) {
+      // Counts once for the IP block (the account exists); a wrong address
+      // already counted with the "unknown names" weight when it asked.
       lockout.recordFailedAttempt(lockoutId, 'route_auth', req.ip);
-      return res.status(401).json({ ok: false, error: req.t('route_auth.invalid_code') });
+      logRouteAuthFailure(req, authConfig, domain, 'code', email === 'anonymous' ? '' : email);
+      return res.status(401).json({ ok: false, error: req.t(method === 'totp' ? 'route_auth.invalid_code' : 'route_auth.invalid_email_code') });
     }
 
     // Clear lockout on successful verification

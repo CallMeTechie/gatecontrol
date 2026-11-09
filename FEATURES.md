@@ -173,6 +173,8 @@ curl -X DELETE "https://gate.example.com/api/v1/route-auth?route_id=1" \
 ### Important Notes
 
 - SMTP configuration required for Email & Code and email alerts
+- **No address enumeration (Email & Code):** asking for a code answers the same for every address — status, text ("Falls diese Adresse für diese Seite freigeschaltet ist, haben wir Ihnen einen Code geschickt." / "If this address has access to this page, we have sent you a code."), and at least 300 ms. The mail goes out in the background, so its latency or a failed delivery (activity `route_auth_otp_failed`) never shows in the answer. Only the route's own address gets a code (case and surrounding spaces do not matter). Entering a code after a wrong address fails exactly like a wrong code ("Der Code stimmt nicht oder ist abgelaufen …"). "Code erneut senden" of the second factor goes to the address of the password step.
+- Failed route logins are logged as `route_auth_failed` (warning) with route, masked address (`s***@example.com`), IP and step (`password`, `code_request`, `code`; `unknownUser: true` for an address without access) — never a password or code.
 - TOTP codes tracked in-memory to prevent replay (90s expiry)
 - Route-auth CSRF key derived from app secret via HMAC (domain-bound)
 - Lockout is email-based (not IP-based) to prevent IP rotation bypass
@@ -575,6 +577,7 @@ A failed login with a name or e-mail address that matches **no account** counts 
 | GateControl login (also from the portal) | weight of the setting | 1 | 1 |
 | App sign-in (password) | weight of the setting | 1 | 1 |
 | Route login (password step) | weight of the setting — an e-mail address other than the route's own account | 1 | 1 (code step) |
+| Route login (e-mail code) | weight of the setting — a code requested for an address other than the route's own | — | 1 (wrong or expired code) |
 
 - "Account exists" means: the name is a GateControl user name, or a directory account resolves it (Windows name, `DOMAIN\name`, UPN, e-mail). A disabled account counts as existing.
 - One attempt counts once: typing the e-mail address of an existing account no longer adds a second point for the account's own name.
