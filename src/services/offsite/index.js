@@ -15,6 +15,7 @@
 // passphrase (backup.offsite.passphrase_enc) is write-only. Nothing secret is
 // ever logged or put into last_error.
 
+const fs = require('node:fs');
 const path = require('node:path');
 const { getDb } = require('../../db/connection');
 const { encrypt, decrypt } = require('../../utils/crypto');
@@ -386,7 +387,48 @@ function getRow(id) {
 }
 
 function listTargets() {
-  return getDb().prepare('SELECT * FROM backup_targets ORDER BY id').all().map(toApi);
+  return getDb().prepare('SELECT * FROM backup_targets ORDER BY id').all().map(toApi).map(withIncomplete);
+}
+
+// ── Incomplete backups (a plugin part left out, services/plugins/backup.js) ─
+// The archive of an upload is the local backup file: its plugins_incomplete
+// is noted per target (setting K_INCOMPLETE, { "<id>": { file, plugins } })
+// and shown in the target list as `last_incomplete` (null: complete).
+const K_INCOMPLETE = 'backup.offsite.incomplete';
+
+function incompleteMap() {
+  try { const m = JSON.parse(settings.get(K_INCOMPLETE, '{}') || '{}'); return m && typeof m === 'object' && !Array.isArray(m) ? m : {}; } catch { return {}; }
+}
+
+async function noteIncomplete(id, localFile) {
+  let list = null;
+  try { list = await require('../backup').readIncomplete(localFile); } catch { list = null; }
+  const m = incompleteMap();
+  if (list && list.length) m[String(id)] = { file: remoteNameFor(localFile), plugins: list };
+  else delete m[String(id)];
+  try { settings.set(K_INCOMPLETE, JSON.stringify(m)); } catch (err) { logger.warn({ err: shortError(err) }, 'Off-site: incomplete backup not noted'); }
+  return list && list.length ? list : [];
+}
+
+function withIncomplete(t) {
+  const e = t && t.last_status === 'ok' ? incompleteMap()[String(t.id)] : null;
+  return { ...t, last_incomplete: e && Array.isArray(e.plugins) && e.plugins.length ? e : null };
+}
+
+/** An archive (Buffer) → { data, archive, cleanup } via a temp file: decrypted and read in pieces. */
+async function readArchiveBuffer(buf, passphrase) {
+  if (!gcbk.isGcbk(buf)) throw new gcbk.GcbkError('NOT_GCBK', 'not a GCBK1 file');
+  const up = require('../backupUpload');
+  const dir = up.incomingDir();
+  await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
+  const name = up.newName('verify');
+  const file = up.incomingPath(name);
+  const cleanup = () => up.removeUpload(name);
+  try {
+    await fs.promises.writeFile(file, buf, { mode: 0o600, flag: 'wx' });
+    const r = await up.readUpload(name, passphrase);
+    return { ...r, cleanup };
+  } catch (err) { await cleanup(); throw err; }
 }
 
 function getTarget(id) {
@@ -652,7 +694,7 @@ async function listRemoteFiles(id) {
 // this installation changes (the only write is the result below).
 // Warnings are stable codes; the UI has a text per code.
 
-const MAX_VERIFY_BYTES = 128 * 1024 * 1024; // a GateControl archive is gzip'd JSON
+const MAX_VERIFY_BYTES = 1024 * 1024 * 1024; // a GateControl archive is gzip'd JSON (≤ gcbk.MAX_PLAIN_BYTES unzipped)
 const VERIFY_STALE_MS = 30 * 24 * 3600 * 1000;
 const ARCHIVE_OLD_MS = 48 * 3600 * 1000;
 
@@ -701,9 +743,9 @@ async function verifyTarget(id) {
     if (!Buffer.isBuffer(buf) || buf.length === 0) throw new OffsiteError('CORRUPT', 'the archive came back empty', 400);
     if (buf.length > MAX_VERIFY_BYTES) throw new OffsiteError('CORRUPT', 'archive too large', 400);
 
-    let archive;
+    let opened;
     try {
-      archive = await gcbk.decryptBackup(buf, passphrase);
+      opened = await readArchiveBuffer(buf, passphrase);
     } catch (err) {
       if (err instanceof gcbk.GcbkError) {
         const code = err.code === 'DECRYPT_FAILED' ? 'DECRYPT_FAILED' : 'CORRUPT';
@@ -711,16 +753,21 @@ async function verifyTarget(id) {
       }
       throw err;
     }
-
-    const data = archive.payload.backup;
-    const errors = require('../backup').validateBackup(data);
-    if (errors.length > 0) {
-      throw new OffsiteError('CORRUPT', `the archive is not a usable backup: ${errors.slice(0, 3).join('; ')}`, 400);
-    }
-    const summary = require('../backup').getBackupSummary(data);
-    const counts = {
-      routes: summary.routes, peers: summary.peers, users: summary.users, settings: summary.settings,
-    };
+    const { archive } = opened;
+    let counts;
+    let incomplete;
+    try {
+      const data = opened.data;
+      const errors = require('../backup').validateBackup(data);
+      if (errors.length > 0) {
+        throw new OffsiteError('CORRUPT', `the archive is not a usable backup: ${errors.slice(0, 3).join('; ')}`, 400);
+      }
+      const summary = require('../backup').getBackupSummary(data);
+      counts = {
+        routes: summary.routes, peers: summary.peers, users: summary.users, settings: summary.settings,
+      };
+      incomplete = summary.plugins_incomplete || [];
+    } finally { await opened.cleanup(); }
 
     const includeKey = !!archive.payload.encryption_key;
     const gcVersion = archive.header.gc_version || archive.payload.gc_version || null;
@@ -733,6 +780,7 @@ async function verifyTarget(id) {
     if (gcVersion && gcVersion !== require('../../../package.json').version) warnings.push('version_differs');
     if (!counts.routes) warnings.push('no_routes');
     if (!counts.users) warnings.push('no_users');
+    if (incomplete.length) warnings.push('plugins_incomplete');
 
     const result = {
       file: newest.name,
@@ -742,6 +790,7 @@ async function verifyTarget(id) {
       include_key: includeKey,
       counts,
       warnings,
+      plugins_incomplete: incomplete,
     };
     recordVerify(row.id, warnings.length ? 'warning' : 'ok', result);
     logger.info({ target: row.id, type: row.type, file: newest.name, size: buf.length, warnings: warnings.length },
@@ -865,7 +914,7 @@ async function uploadAfterBackup(localFile) {
   let uploaded = 0;
   let failed = 0;
   for (const t of targets) {
-    try { await uploadTo(t.id, name, buf); uploaded++; } catch { failed++; }
+    try { await uploadTo(t.id, name, buf); uploaded++; await noteIncomplete(t.id, localFile); } catch { failed++; }
   }
   return { uploaded, failed, skipped: null };
 }
@@ -890,7 +939,8 @@ async function runTargetNow(id) {
   if (files.length === 0) throw new OffsiteError('NO_LOCAL_BACKUP', 'no local backup available', 409);
   const localFile = path.join(autobackup.BACKUP_DIR, files[0].filename);
   const buf = await buildArchive(localFile);
-  return uploadTo(row.id, remoteNameFor(localFile), buf);
+  const r = await uploadTo(row.id, remoteNameFor(localFile), buf);
+  return { ...r, plugins_incomplete: await noteIncomplete(row.id, localFile) };
 }
 
 // ── "Speicherziel übernehmen" ──────────────────────────────────────────────

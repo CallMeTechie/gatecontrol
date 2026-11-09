@@ -227,6 +227,17 @@ chmod 600 /root/gatecontrol-*.tar.gz
 Mehr dazu (auch Backups in der Oberfläche unter „Einstellungen“ → „Backups“):
 [INSTALL.de.md §10](../../INSTALL.de.md#10-backup-und-restore).
 
+**Plugin-Daten im Backup:** Jedes Backup nimmt bis zu 512 MB Plugin-Daten auf
+(Datenbanken und Dateien aller Plugins zusammen). Passt ein Teil nicht mehr
+hinein, fehlt er – und das steht dann unter „Lokale Backup-Dateien“, beim
+Ziel außer Haus und im Dashboard unter „Probleme“, z. B.
+„⚠ Nicht vollständig: Mail (Datenbank zu groß für das Backup)“, dazu eine
+Mitteilung wie bei einem fehlgeschlagenen Backup. Was drin ist und was
+nicht: [FAQ: Was ist im Backup?](07-faq.md#was-ist-im-backup). Plane auf der
+Platte Platz für ein Backup mehr ein, als du aufbewahrst: Das älteste wird
+erst gelöscht, wenn das neue fertig ist. Reicht der Platz nicht, legt
+GateControl kein Backup an und sagt es.
+
 **Backups außer Haus** (Einstellungen → Backups, Lizenz „geplante Backups“)
 lädt nach jedem automatischen Backup eine verschlüsselte Kopie per SFTP, SMB,
 S3 oder WebDAV hoch. Steht die NAS zu Hause hinter einem Gateway, wähle bei

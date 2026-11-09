@@ -7427,6 +7427,11 @@ a.stx-tile:hover{border-color:var(--pg-acc-bd)}
 .stx-box[data-tone="warn"],.stx .st-note-warn{background:var(--pg-warn-bg); border-color:var(--pg-warn-bd); color:var(--pg-warn)}
 .stx-box[data-tone="good"],.stx .st-note[data-state="good"]{background:var(--pg-good-bg); border-color:transparent; color:var(--pg-good)}
 .stx-box[data-tone="crit"],.stx .st-note[data-state="crit"]{background:var(--pg-crit-bg); border-color:var(--pg-crit-bd); color:var(--pg-crit)}
+/* a backup in which a plugin part is missing (settings.js incompleteBlock) */
+.stx .st-note[data-state="warn"]{background:var(--pg-warn-bg); border-color:var(--pg-warn-bd)}
+.st-incomplete{margin-top:4px; display:flex; flex-direction:column; gap:2px}
+.st-incomplete-line{font-weight:600; white-space:normal}
+.st-incomplete-help{margin:0; max-width:72ch}
 .stx .stx-box a,.stx .st-note a{color:inherit; font-weight:700}
 .stx-box b{color:inherit}
 .stx-facts{margin:0; padding-left:18px; display:flex; flex-direction:column; gap:6px}

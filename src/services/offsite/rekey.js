@@ -54,6 +54,8 @@ function rekeyBackup(backup, fromKeyHex, toKeyHex) {
       return encryptWith(toKeyHex, plain);
     }
     if (Array.isArray(v)) return v.map(walk);
+    // a SpooledString (utils/jsonSpool: a large plugin part, still in the file) or the like: no secret
+    if (v && typeof v === 'object' && Object.getPrototypeOf(v) !== Object.prototype && Object.getPrototypeOf(v) !== null) return v;
     if (v && typeof v === 'object') {
       const out = {};
       for (const [k, x] of Object.entries(v)) out[k] = walk(x);

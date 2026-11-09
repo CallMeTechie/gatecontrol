@@ -108,7 +108,7 @@ function coreContext(type, details) {
   else if (type === 'ip_blocked_day' || type === 'ip_block_mass') collapseKey = 'ip_block';
   else if ((type === 'vpn_key_shared' || type === 'vpn_new_country') && peerId) collapseKey = `vpn_misuse:${peerId}`;
   else if ((type === 'peer_connected' || type === 'peer_disconnected') && peerId) collapseKey = `peer:${peerId}`;
-  else if (type === 'backup_reminder' || type === 'autobackup_failed') collapseKey = 'backup';
+  else if (type === 'backup_reminder' || type === 'autobackup_failed' || type === 'autobackup_incomplete') collapseKey = 'backup';
   else if (type.startsWith('storage_target_') && num(d.targetId)) collapseKey = `storage:${num(d.targetId)}`;
   else if (type === 'netwatch_new_device' && peerId) collapseKey = `netwatch:${peerId}`;
   else if ((type === 'ups_on_battery' || type === 'ups_on_line') && peerId) collapseKey = `ups:${peerId}`;

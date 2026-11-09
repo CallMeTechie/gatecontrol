@@ -257,7 +257,8 @@
   var ACTION_KEY = {
     gateway_offline: 'dashboard.fix_gateway', entry_down: 'dashboard.fix_entry', tls_failed: 'dashboard.fix_cert',
     tls_paused: 'dashboard.fix_cert', tls_expiring: 'dashboard.fix_cert', update_failed: 'dashboard.fix_update',
-    update_rolled_back: 'dashboard.fix_update', backup_failed: 'dashboard.fix_backup', waf_engine_missing: 'dashboard.fix_waf',
+    update_rolled_back: 'dashboard.fix_update', backup_failed: 'dashboard.fix_backup', backup_incomplete: 'dashboard.fix_backup',
+    waf_engine_missing: 'dashboard.fix_waf',
   };
   function longDate(v) {
     var ts = UI.parseTime(v);
@@ -315,6 +316,15 @@
           title: t('problems.backup_failed', { name: (p.backup && p.backup.name) || '?' }),
           detail: [t('problems.backup_detail', { status: (p.backup && p.backup.status) || '?' })],
         };
+      case 'backup_incomplete': {
+        // the newest backup misses a plugin part: which, and what to do (ops-ui texts, layout whitelist)
+        var plugins = (p.backup && p.backup.plugins) || [];
+        var tt = function (key, fallback, params) { var v = t(key, params); return v === key ? O.fmt(fallback, params) : v; };
+        return {
+          title: t('problems.backup_incomplete', { list: O.incompleteItems(plugins, tt).join('; ') }),
+          detail: O.incompleteHelp(plugins, tt),
+        };
+      }
       case 'waf_engine_missing':
         return { title: t('problems.waf_engine_missing'), detail: [t('problems.waf_engine_detail', { count: (p.waf && p.waf.routes) || 0 })] };
       default:

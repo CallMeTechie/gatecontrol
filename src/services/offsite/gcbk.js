@@ -30,11 +30,17 @@ const fs = require('node:fs');
 const zlib = require('node:zlib');
 const { promisify } = require('node:util');
 const { pipeline } = require('node:stream/promises');
+const { Transform } = require('node:stream');
 
-// gzip in the thread pool: a backup with plugin data has up to a few hundred
-// MB — gzipSync blocked the main thread for many seconds
+// gzip in the thread pool. encryptBackup()/decryptBackup() work on one buffer
+// (small backups, tests); backup FILES go through the streaming
+// encryptBackupFile() / decryptBackupFileTo() — a backup with plugin data has
+// up to several hundred MB.
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
+// the largest decrypted payload (a backup JSON with 512 MB plugin data +
+// 128 MB plugin media is about 860 MB; services/plugins/backup.js)
+const MAX_PLAIN_BYTES = 1024 * 1024 * 1024;
 
 const MAGIC = Buffer.from('GCBK1', 'ascii');
 const FORMAT = 'gatecontrol-offsite';
@@ -141,15 +147,23 @@ async function encryptBackupFile(file, { passphrase, encryptionKey, gcVersion = 
   const key = await deriveKey(passphrase, salt, kdf);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   cipher.setAAD(aad);
-  const parts = [aad];
   async function* payload() {
     yield head;
     for await (const chunk of fs.createReadStream(file, { highWaterMark: 256 * 1024 })) yield chunk;
     yield tail;
   }
-  await pipeline(payload, zlib.createGzip(), cipher, async (source) => { for await (const c of source) parts.push(c); });
-  parts.push(cipher.getAuthTag());
-  return Buffer.concat(parts);
+  // into a temp file next to the backup, then read in one piece: the archive
+  // is in memory once (chunks + Buffer.concat held it twice)
+  const tmp = `${file}.${crypto.randomBytes(6).toString('hex')}.gcbk.tmp`;
+  try {
+    const out = fs.createWriteStream(tmp, { flags: 'wx', mode: 0o600 });
+    out.write(aad);
+    await pipeline(payload, zlib.createGzip(), cipher, out);
+    await fs.promises.appendFile(tmp, cipher.getAuthTag());
+    return await fs.promises.readFile(tmp);
+  } finally {
+    await fs.promises.rm(tmp, { force: true }).catch(() => {});
+  }
 }
 
 /** The file must hold a JSON object (first/last non-blank byte) — a cheap check instead of parsing it. */
@@ -223,6 +237,81 @@ async function decryptBackup(buf, passphrase) {
   return { header, payload };
 }
 
+/**
+ * decryptBackup() for an archive FILE, as a stream: the decrypted, unzipped
+ * payload JSON is written to `outFile` (new file, 0600) in pieces — never the
+ * whole archive or payload in memory. The GCM tag is checked at the end; on
+ * any error `outFile` is removed (nothing of an unauthenticated archive is
+ * left). Read the payload with utils/jsonSpool (backup.readBackupFile).
+ *
+ * @param {string} file      the .gcbk
+ * @param {string} passphrase
+ * @param {string} outFile   where the payload JSON goes
+ * @param {{maxBytes?: number}} [opts]
+ * @returns {Promise<{header: object, bytes: number}>}
+ */
+async function decryptBackupFileTo(file, passphrase, outFile, { maxBytes = MAX_PLAIN_BYTES } = {}) {
+  let size;
+  let first;
+  const tag = Buffer.alloc(16);
+  const fh = await fs.promises.open(file, 'r');
+  try {
+    size = (await fh.stat()).size;
+    first = Buffer.alloc(Math.min(size, 7 + MAX_HEADER + 16));
+    await fh.read(first, 0, first.length, 0);
+    if (size >= 16) await fh.read(tag, 0, 16, size - 16);
+  } finally { await fh.close(); }
+  const { header, headerLength, salt, iv } = readHeader(first); // checks the length too
+  const aad = first.subarray(0, 7 + headerLength);
+  if (size <= 7 + headerLength + 16) throw new GcbkError('CORRUPT', 'file truncated');
+  const key = await deriveKey(passphrase, salt, header);
+  const d = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  d.setAAD(aad);
+  d.setAuthTag(tag);
+  let bytes = 0;
+  const limit = new Transform({
+    transform(chunk, enc, cb) {
+      bytes += chunk.length;
+      if (bytes > maxBytes) cb(new GcbkError('TOO_LARGE', `decrypted backup is larger than ${Math.round(maxBytes / 1048576)} MB`));
+      else cb(null, chunk);
+    },
+  });
+  try {
+    await pipeline(
+      fs.createReadStream(file, { start: 7 + headerLength, end: size - 17, highWaterMark: 256 * 1024 }),
+      d, zlib.createGunzip(), limit,
+      fs.createWriteStream(outFile, { flags: 'wx', mode: 0o600 }),
+    );
+  } catch (err) {
+    await fs.promises.rm(outFile, { force: true }).catch(() => {});
+    if (err instanceof GcbkError || (err && (err.code === 'ENOSPC' || err.code === 'EEXIST'))) throw err;
+    // a wrong key shows as a broken gzip stream, a changed file at the latest as a bad tag at the end
+    throw new GcbkError('DECRYPT_FAILED', 'wrong passphrase or damaged file');
+  }
+  return { header, bytes };
+}
+
+/** The payload of a decrypted archive (decryptBackupFileTo + jsonSpool / JSON.parse) checked like decryptBackup() does. */
+function checkPayload(payload) {
+  if (!payload || payload.format !== FORMAT || !payload.backup || typeof payload.backup !== 'object') {
+    throw new GcbkError('CORRUPT', 'decrypted content is not a GateControl backup');
+  }
+  if (payload.encryption_key !== undefined && !/^[0-9a-f]{64}$/i.test(String(payload.encryption_key))) {
+    throw new GcbkError('CORRUPT', 'archived encryption key is invalid');
+  }
+  return payload;
+}
+
+/** Is the FILE an archive (magic bytes)? */
+async function isGcbkFile(file) {
+  const fh = await fs.promises.open(file, 'r');
+  try {
+    const b = Buffer.alloc(MAGIC.length);
+    const { bytesRead } = await fh.read(b, 0, b.length, 0);
+    return bytesRead === MAGIC.length && b.equals(MAGIC);
+  } finally { await fh.close(); }
+}
+
 module.exports = {
   MAGIC,
   FORMAT,
@@ -234,4 +323,8 @@ module.exports = {
   encryptBackup,
   encryptBackupFile,
   decryptBackup,
+  decryptBackupFileTo,
+  checkPayload,
+  isGcbkFile,
+  MAX_PLAIN_BYTES,
 };

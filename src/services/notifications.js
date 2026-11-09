@@ -61,7 +61,8 @@ const CATALOGUE = [
   { id: 'system', events: [
     { id: 'system_restart', types: ['system_start', 'wg_restart'] },
     { id: 'backup_restored', types: ['backup_restored'] },
-    { id: 'backup_problem', types: ['backup_reminder', 'autobackup_failed'] },
+    // autobackup_incomplete: a backup in which a plugin part is missing (services/autobackup.js)
+    { id: 'backup_problem', types: ['backup_reminder', 'autobackup_failed', 'autobackup_incomplete'] },
     { id: 'update', types: ['update_installed', 'update_rolled_back', 'update_failed'], free: true },
     { id: 'resources', types: ['resource_alert', 'resource_recovered'] },
     // A storage target (docs/storage-targets.md) has failed for 15 minutes —
@@ -196,7 +197,14 @@ function setEmailTypes(types) {
   return list;
 }
 
-function wantsEmail(type) { return emailTypes().includes(type); }
+// Types added to an existing row later: mailed when the row's older type is
+// on (the stored list of an installation predates the new type).
+const LATER_TYPES = { autobackup_incomplete: 'autobackup_failed' };
+
+function wantsEmail(type) {
+  const list = emailTypes();
+  return list.includes(type) || (LATER_TYPES[type] !== undefined && list.includes(LATER_TYPES[type]));
+}
 
 /** Add or remove every type of a catalogue row. */
 function setEventEmail(eventId, on) {

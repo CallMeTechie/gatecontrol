@@ -15,10 +15,14 @@ const { checkRanges, hasErrors, sendFieldErrors } = require('../../../utils/sett
 const { uploadLimiter } = require('../../../middleware/rateLimit');
 const gcbk = require('../../../services/offsite/gcbk');
 
-// Backups carry plugin code and data since format 5 (≤ 48 MB raw, see
-// services/plugins/backup.js) — base64 in JSON needs room above that — and,
-// with "Plugin-Medien im Backup", up to 128 MB of plugin media (raw).
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 288 * 1024 * 1024 } });
+// Backups carry plugin code and data since format 5 (≤ 512 MB raw, see
+// services/plugins/backup.js) — base64 in JSON needs a third more — and,
+// with "Plugin-Medien im Backup", up to 128 MB of plugin media (raw): about
+// 860 MB of JSON at most. The upload goes to a private folder on the backup
+// disk (never into memory) and is read in pieces (backup.readBackupFile).
+const MAX_UPLOAD_BYTES = 1024 * 1024 * 1024;
+const { storage: uploadStorage, readUpload, removeUpload } = require('../../../services/backupUpload');
+const upload = multer({ storage: uploadStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } });
 
 const router = Router();
 
@@ -83,23 +87,30 @@ router.get('/backup', async (req, res) => {
 
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  // plugins of which a part is missing (the page says so after the download)
+  const incomplete = data.plugins_incomplete || [];
+  res.setHeader('X-GC-Backup-Incomplete', String(incomplete.length));
+  if (incomplete.length) {
+    logger.warn({ plugins: incomplete.map((p) => p.id) }, `Backup download incomplete: ${require('../../../services/autobackup').incompleteLine(incomplete)}`);
+  }
   try {
     await withTask('backup.download', () => backup.writeBackup(responseSink(res), data));
-    res.end();
   } catch (err) {
     // headers are out: a half-sent body can only be cut off (the client sees an incomplete download)
     logger.error({ error: err.message }, 'Failed to send backup');
+    await data.release();
     res.destroy();
+    return;
   }
+  await data.release(); // the snapshots of the plugin data
+  res.end();
 });
 
 
 // ── Encrypted archives (.gcbk, docs/feature-release-b.md §7) ──────────────
-async function openArchive(req) {
+function passphraseOf(req) {
   const given = req.body && typeof req.body.passphrase === 'string' && req.body.passphrase !== '' ? req.body.passphrase : null;
-  const passphrase = given || require('../../../services/offsite').getPassphrase();
-  if (!passphrase) throw new gcbk.GcbkError('PASSPHRASE_REQUIRED', 'passphrase required for an encrypted backup');
-  return gcbk.decryptBackup(req.file.buffer, passphrase);
+  return given || require('../../../services/offsite').getPassphrase();
 }
 function sendArchiveError(res, err) {
   if (err instanceof gcbk.GcbkError) return res.status(400).json({ ok: false, error: err.message, code: err.code });
@@ -116,23 +127,14 @@ router.post('/restore/preview', uploadLimiter, upload.single('backup'), async (r
       return res.status(400).json({ ok: false, error: req.t('error.backup.no_file') });
     }
 
-    let data;
-    let archive = null;
-    if (gcbk.isGcbk(req.file.buffer)) {
-      try {
-        archive = await openArchive(req);
-      } catch (err) {
-        return sendArchiveError(res, err);
-      }
-      data = archive.payload.backup;
-    } else {
-      try {
-        data = JSON.parse(req.file.buffer.toString('utf-8'));
-      } catch {
-        return res.status(400).json({ ok: false, error: req.t('error.backup.invalid_json') });
-      }
+    let up;
+    try {
+      up = await readUpload(req.file.filename, passphraseOf(req));
+    } catch (err) {
+      if (err && err.code === 'INVALID_JSON') return res.status(400).json({ ok: false, error: req.t('error.backup.invalid_json') });
+      return sendArchiveError(res, err);
     }
-
+    const { data, archive } = up;
     const errors = backup.validateBackup(data);
     if (errors.length > 0) {
       return res.status(400).json({ ok: false, error: req.t('error.backup.invalid'), errors });
@@ -143,6 +145,8 @@ router.post('/restore/preview', uploadLimiter, upload.single('backup'), async (r
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to preview backup');
     res.status(500).json({ ok: false, error: req.t('error.backup.preview') });
+  } finally {
+    await removeUpload(req.file && req.file.filename);
   }
 });
 
@@ -155,30 +159,25 @@ router.post('/restore', uploadLimiter, upload.single('backup'), async (req, res)
       return res.status(400).json({ ok: false, error: req.t('error.backup.no_file') });
     }
 
-    let data;
-    if (gcbk.isGcbk(req.file.buffer)) {
+    let up;
+    try {
+      up = await readUpload(req.file.filename, passphraseOf(req));
+    } catch (err) {
+      if (err && err.code === 'INVALID_JSON') return res.status(400).json({ ok: false, error: req.t('error.backup.invalid_json') });
+      return sendArchiveError(res, err);
+    }
+    let { data } = up;
+    const { archive } = up;
+    if (archive) {
       // Encrypted off-site archive (.gcbk): passphrase from the form field, else
       // the configured one (restore on the same installation). With an archived
       // GC_ENCRYPTION_KEY the secrets are re-encrypted to this installation's key.
-      let archive;
-      try {
-        archive = await openArchive(req);
-      } catch (err) {
-        return sendArchiveError(res, err);
-      }
-      data = archive.payload.backup;
       const current = require('../../../../config/default').encryption.key;
       if (archive.payload.encryption_key && current && archive.payload.encryption_key.toLowerCase() !== current.toLowerCase()) {
         const { rekeyBackup } = require('../../../services/offsite/rekey');
         const r = rekeyBackup(data, archive.payload.encryption_key, current);
         data = r.backup;
         logger.info({ converted: r.converted }, 'Restore: secrets re-encrypted from the archived key');
-      }
-    } else {
-      try {
-        data = JSON.parse(req.file.buffer.toString('utf-8'));
-      } catch {
-        return res.status(400).json({ ok: false, error: req.t('error.backup.invalid_json') });
       }
     }
 
@@ -215,6 +214,8 @@ router.post('/restore', uploadLimiter, upload.single('backup'), async (req, res)
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to restore backup');
     res.status(500).json({ ok: false, error: req.t('error.backup.restore') });
+  } finally {
+    await removeUpload(req.file && req.file.filename);
   }
 });
 
@@ -266,9 +267,14 @@ router.post('/autobackup/run', requireFeature('scheduled_backups'), async (req, 
   try {
     const autobackup = require('../../../services/autobackup');
     const filename = await autobackup.runBackup();
-    res.json({ ok: true, filename });
+    const file = (await autobackup.listBackupFilesWithInfo()).find((f) => f.filename === filename);
+    res.json({ ok: true, filename, incomplete: (file && file.incomplete) || [] });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to run auto-backup');
+    if (err && err.code === 'NO_SPACE') {
+      const mb = (n) => Math.ceil(n / 1048576);
+      return res.status(507).json({ ok: false, code: 'NO_SPACE', error: req.t('error.autobackup.no_space', { need: mb(err.need), free: mb(err.free) }) });
+    }
     res.status(500).json({ ok: false, error: req.t('error.autobackup.run') });
   }
 });
@@ -276,10 +282,10 @@ router.post('/autobackup/run', requireFeature('scheduled_backups'), async (req, 
 /**
  * GET /api/settings/autobackup/list — List existing backup files
  */
-router.get('/autobackup/list', (req, res) => {
+router.get('/autobackup/list', async (req, res) => {
   try {
     const autobackup = require('../../../services/autobackup');
-    const files = autobackup.listBackupFiles();
+    const files = await autobackup.listBackupFilesWithInfo();
     res.json({ ok: true, files });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list backup files');

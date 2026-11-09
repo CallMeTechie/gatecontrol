@@ -14,6 +14,17 @@
 // Small subtrees (few nodes, no Base64Value) go through JSON.stringify in one
 // piece; everything else is walked here, and the sink yields to the event
 // loop after each flushed chunk.
+//
+// FileBase64Value is a Base64Value whose bytes stay in a file until they are
+// written (read in pieces then): a backup with hundreds of MB of plugin data
+// never holds them in memory (services/plugins/backup.js). A value with a
+// `rawJsonChunks()` method (utils/jsonSpool.js SpooledString: a string of a
+// parsed file, left in that file) is written as its JSON text as it is.
+
+const fs = require('node:fs');
+
+// a snapshot file is opened without following a symlink (it is always a regular file or a hard link)
+const NOFOLLOW = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0);
 
 const CHUNK_CHARS = 256 * 1024; // flush the pending text from this size on
 const B64_RAW_CHUNK = 3 * 64 * 1024; // raw bytes per base64 piece (multiple of 3: no padding inside)
@@ -25,6 +36,56 @@ class Base64Value {
   get length() { return this.buf.length; }
   toJSON() { return this.buf.toString('base64'); }
 }
+
+/**
+ * Raw bytes of a file (`size` of them, from the start), read only when
+ * written. A hard link in a snapshot folder keeps the bytes of a file the
+ * plugin deletes or replaces meanwhile; one rewritten in place is read as it
+ * is then (never more than `size` bytes).
+ */
+class FileBase64Value extends Base64Value {
+  /** @param {string} file @param {number} size */
+  constructor(file, size) { super(null); this.file = file; this.size = size; }
+  get length() { return this.size; }
+  /** the bytes (synchronous, whole file: materialize / JSON.stringify only) */
+  read() {
+    const fd = fs.openSync(this.file, NOFOLLOW);
+    try {
+      const buf = Buffer.alloc(this.size);
+      let at = 0;
+      while (at < buf.length) {
+        const n = fs.readSync(fd, buf, at, buf.length - at, at);
+        if (n === 0) break; // shortened meanwhile (rewritten in place): what is there now
+        at += n;
+      }
+      return at === buf.length ? buf : buf.subarray(0, at);
+    } finally { fs.closeSync(fd); }
+  }
+  toJSON() { return this.read().toString('base64'); }
+  /** The base64 text in pieces (async; whole multiples of 3 bytes: no padding inside). */
+  async* base64Chunks() {
+    const fh = await fs.promises.open(this.file, NOFOLLOW);
+    try {
+      const buf = Buffer.alloc(B64_RAW_CHUNK * 4);
+      let at = 0;
+      while (at < this.size) {
+        const want = Math.min(buf.length, this.size - at);
+        let got = 0;
+        while (got < want) {
+          const { bytesRead } = await fh.read(buf, got, want - got, at + got);
+          if (bytesRead === 0) break;
+          got += bytesRead;
+        }
+        if (got > 0) yield buf.toString('base64', 0, got);
+        // shortened meanwhile (rewritten in place): what is there now — every
+        // piece before was a whole multiple of 3 bytes, so the text stays valid base64
+        if (got < want) return;
+        at += got;
+      }
+    } finally { await fh.close(); }
+  }
+}
+const isRaw = (v) => v !== null && typeof v === 'object' && typeof v.rawJsonChunks === 'function';
 
 const yieldLoop = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -55,7 +116,7 @@ function makeWriter(out) {
 
 // JSON.stringify semantics of a value before it is written
 function prepare(v, key) {
-  if (v instanceof Base64Value) return v;
+  if (v instanceof Base64Value || isRaw(v)) return v;
   if (v !== null && typeof v === 'object' && typeof v.toJSON === 'function') return v.toJSON(key);
   return v;
 }
@@ -66,7 +127,7 @@ function isSmall(v) {
   let budget = SMALL_NODES;
   const walk = (x) => {
     if (--budget < 0) return false;
-    if (x instanceof Base64Value) return false;
+    if (x instanceof Base64Value || isRaw(x)) return false;
     if (x === null || typeof x !== 'object') return true;
     if (typeof x.toJSON === 'function') return true; // Date, Buffer, … — a leaf for our purposes
     if (Array.isArray(x)) { for (const e of x) if (!walk(e)) return false; return true; }
@@ -90,6 +151,22 @@ async function writeJson(out, value, { indent = 0 } = {}) {
   const colon = gap ? ': ' : ':';
 
   const writeValue = async (v, depth) => {
+    if (v instanceof FileBase64Value) {
+      w.write('"');
+      for await (const piece of v.base64Chunks()) {
+        const p = w.write(piece);
+        if (p) await p;
+      }
+      w.write('"');
+      return;
+    }
+    if (isRaw(v)) {
+      for await (const piece of v.rawJsonChunks()) {
+        const p = w.write(piece);
+        if (p) await p;
+      }
+      return;
+    }
     if (v instanceof Base64Value) {
       w.write('"');
       for (let at = 0; at < v.buf.length; at += B64_RAW_CHUNK) {
@@ -148,4 +225,4 @@ function materialize(v) {
   return v;
 }
 
-module.exports = { Base64Value, writeJson, materialize, yieldLoop };
+module.exports = { Base64Value, FileBase64Value, writeJson, materialize, yieldLoop };

@@ -322,6 +322,7 @@
     ['update_failed', 'dashboard.sum_update'],
     ['update_rolled_back', 'dashboard.sum_update'],
     ['backup_failed', 'dashboard.sum_backup'],
+    ['backup_incomplete', 'dashboard.sum_backup_incomplete'],
     ['waf_engine_missing', 'dashboard.sum_waf'],
   ];
   /**

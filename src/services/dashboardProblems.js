@@ -18,6 +18,8 @@
 //   update_failed        .auto-update-state.json via autoUpdate.getStatus()
 //   update_rolled_back   ditto
 //   backup_failed        backup_targets.last_status
+//   backup_incomplete    the newest local backup misses a plugin part
+//                        (plugins_incomplete of the file, autobackup.latestBackupInfo)
 //   waf_engine_missing   waf.engineAvailable() while entries have the WAF on
 //
 // "Gateway erreichbar, Dienst im LAN antwortet nicht": the reason cannot be
@@ -203,7 +205,7 @@ function entryHref(row, rdpIds) {
 const SEVERITY_RANK = { error: 0, warning: 1, info: 2 };
 const KIND_RANK = [
   'gateway_offline', 'entry_down', 'tls_failed', 'tls_paused', 'tls_expiring',
-  'update_failed', 'update_rolled_back', 'backup_failed', 'waf_engine_missing',
+  'update_failed', 'update_rolled_back', 'backup_failed', 'backup_incomplete', 'waf_engine_missing',
 ];
 
 // Offline = the live state of services/gatewayLiveState.js: not a gateway that
@@ -346,6 +348,25 @@ function backupProblems(db) {
     }));
 }
 
+// The newest local backup is not complete: a plugin part was left out (too
+// large / read error). Gone with the next complete backup.
+async function backupIncompleteProblem() {
+  let latest;
+  try { latest = await require('./autobackup').latestBackupInfo(); } catch { return []; }
+  if (!latest || !Array.isArray(latest.incomplete) || !latest.incomplete.length) return [];
+  return [{
+    id: 'backup_incomplete',
+    kind: 'backup_incomplete',
+    severity: 'warning',
+    href: '/settings/backup',
+    since: isoOf(latest.created),
+    backup: {
+      file: latest.filename,
+      plugins: latest.incomplete.slice(0, 20).map((p) => ({ id: p.id, name: p.name, parts: p.parts })),
+    },
+  }];
+}
+
 function wafEngineProblem(db) {
   let waf;
   try { waf = require('./waf'); } catch { return []; }
@@ -430,7 +451,7 @@ async function list({ now = Date.now(), access } = {}) {
   }
 
   // 3–6. Certificates (broken or expiring), update, off-site backups, WAF module.
-  problems.push(...tlsProblems(), ...updateProblem(), ...backupProblems(db), ...wafEngineProblem(db));
+  problems.push(...tlsProblems(), ...updateProblem(), ...backupProblems(db), ...(await backupIncompleteProblem()), ...wafEngineProblem(db));
 
   problems.sort((a, b) => {
     const s = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];

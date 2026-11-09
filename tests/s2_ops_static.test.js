@@ -63,7 +63,7 @@ describe('restore test: UI wiring', () => {
     // Missing fields simply drop out; counts are always there.
     assert.equal(O.verifyLines({ size: 10, counts: {} }, 'en').length, 2);
     assert.deepEqual(O.verifyLines(null), []);
-    assert.deepEqual(O.VERIFY_WARNINGS, ['archive_old', 'no_encryption_key', 'version_differs', 'no_routes', 'no_users']);
+    assert.deepEqual(O.VERIFY_WARNINGS, ['archive_old', 'no_encryption_key', 'version_differs', 'no_routes', 'no_users', 'plugins_incomplete']);
     for (const c of O.VERIFY_WARNINGS) assert.ok(O.verifyWarningText(c), c);
     assert.equal(O.verifyWarningText('something_else'), null);
     assert.equal(O.verifyWarningText(undefined), null);

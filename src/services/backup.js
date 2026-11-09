@@ -7,7 +7,10 @@ const routesService = require('./routes');
 const { validatePeerName, validateDomain, validatePort, validateIp } = require('../utils/validate');
 const { validateWebhookUrl } = require('./webhook');
 const logger = require('../utils/logger');
-const { writeJson, materialize } = require('../utils/jsonStream');
+const fs = require('node:fs');
+const path = require('node:path');
+const { writeJson, materialize, Base64Value } = require('../utils/jsonStream');
+const jsonSpool = require('../utils/jsonSpool');
 const { atomicWriteStreamAsync } = require('../utils/fs');
 
 // 5: + data.plugins (docs/plugins.md "Backup") and data.builtin_integrations
@@ -43,14 +46,27 @@ function pickColumns(row, cols) {
  * files, media) are jsonStream Base64Value objects — raw bytes that
  * writeBackup() writes as base64 piece by piece and whose toJSON() gives the
  * same string, so JSON.stringify of the result is the backup file as before.
+ * Databases and data files stay in a snapshot folder until they are written
+ * (FileBase64Value): call `release()` (non-enumerable) of the result when
+ * done — writeBackupFile and the download do.
  * Used for the backup file (writeBackupFile) and the download (writeBackup):
  * neither builds the whole text in memory nor blocks the event loop with it.
+ *
+ * `plugins_incomplete` (top level, before `data`, so a look at the start of
+ * a backup file finds it — readIncomplete): the plugins of which a part is
+ * missing, with the reason (plugins/backup.incompleteOf).
  */
 async function collectBackup() {
-  const backup = exportTables(getDb());
-  // filled in place: the key keeps its position in the file
-  backup.data.plugins = await exportPluginsRaw();
+  const tables = exportTables(getDb());
+  const plugins = await exportPluginsRaw();
+  tables.data.plugins = plugins; // filled in place: the key keeps its position in the file
+  const backup = { version: tables.version, created_at: tables.created_at, plugins_incomplete: incompleteOf(plugins), data: tables.data };
+  Object.defineProperty(backup, 'release', { enumerable: false, value: () => (plugins.release ? plugins.release() : undefined) });
   return backup;
+}
+
+function incompleteOf(plugins) {
+  try { return require('./plugins/backup').incompleteOf(plugins); } catch { return []; }
 }
 
 /**
@@ -59,7 +75,8 @@ async function collectBackup() {
  * files and databases are read without blocking the event loop.
  */
 async function createBackup() {
-  return materialize(await collectBackup());
+  const b = await collectBackup();
+  try { return materialize(b); } finally { await b.release(); }
 }
 
 /**
@@ -71,14 +88,111 @@ function writeBackup(out, backup, { indent = 0 } = {}) {
   return writeJson(out, backup, { indent });
 }
 
+// free space kept on the backup disk on top of the expected size of a new backup
+const DISK_RESERVE_BYTES = 64 * 1024 * 1024;
+
+/** About the size of the backup file (base64 parts × 4/3, the rest as compact JSON + indentation). */
+function estimateSize(backup) {
+  let bin = 0;
+  const walk = (v) => {
+    if (v instanceof Base64Value) { bin += Math.ceil(v.length / 3) * 4; return; }
+    if (Array.isArray(v)) { v.forEach(walk); return; }
+    if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) for (const k of Object.keys(v)) walk(v[k]);
+  };
+  walk(backup.data && backup.data.plugins);
+  let rest = 0;
+  try {
+    const { plugins, ...tables } = backup.data || {};
+    rest = Buffer.byteLength(JSON.stringify(tables) || '') * 1.5 + 1024 * 1024; // + indentation, plugin metadata
+  } catch { rest = 32 * 1024 * 1024; }
+  return Math.round(bin + rest);
+}
+
+/**
+ * Enough free space in `dir` for a backup of about `need` bytes (+ reserve)?
+ * Throws code NO_SPACE otherwise. Unknown free space (statfs unavailable): no check.
+ */
+async function checkFreeSpace(dir, need) {
+  let free;
+  try { const st = await fs.promises.statfs(dir); free = Number(st.bavail) * Number(st.bsize); } catch { return; }
+  if (!Number.isFinite(free) || free >= need + DISK_RESERVE_BYTES) return;
+  const mb = (n) => Math.ceil(n / 1048576);
+  throw Object.assign(new Error(`not enough free disk space for the backup: about ${mb(need + DISK_RESERVE_BYTES)} MB needed, ${mb(free)} MB free`),
+    { code: 'NO_SPACE', need: need + DISK_RESERVE_BYTES, free });
+}
+
 /**
  * Create a backup and write it to `filepath` (fresh tmp file + fsync +
  * rename, mode `mode`; JSON indented by 2 like the backup files always
- * were). Nothing of it runs as one long synchronous piece.
+ * were). Nothing of it runs as one long synchronous piece. Before writing,
+ * the free space of the backup disk is checked (code NO_SPACE).
+ * → { incomplete } (plugins_incomplete of the backup)
  */
 async function writeBackupFile(filepath, { mode = 0o600 } = {}) {
   const backup = await collectBackup();
-  await atomicWriteStreamAsync(filepath, (write) => writeBackup(write, backup, { indent: 2 }), { mode });
+  try {
+    await checkFreeSpace(path.dirname(filepath), estimateSize(backup));
+    await atomicWriteStreamAsync(filepath, (write) => writeBackup(write, backup, { indent: 2 }), { mode });
+    return { incomplete: backup.plugins_incomplete };
+  } finally {
+    await backup.release();
+  }
+}
+
+/**
+ * `plugins_incomplete` of a backup FILE, read from its start only (it comes
+ * before `data`). → the list, [] for a complete backup, null when the file
+ * has no such entry (older backups) or cannot be read.
+ */
+async function readIncomplete(file) {
+  let fh;
+  try {
+    fh = await fs.promises.open(file, 'r');
+    const buf = Buffer.alloc(64 * 1024);
+    const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+    const head = buf.toString('utf8', 0, bytesRead);
+    const key = head.indexOf('"plugins_incomplete"');
+    const dataAt = head.indexOf('"data"');
+    if (key === -1 || (dataAt !== -1 && dataAt < key)) return null;
+    const start = head.indexOf('[', key);
+    if (start === -1) return null;
+    // the end of the array: brackets outside strings
+    let depth = 0;
+    let inStr = false;
+    for (let i = start; i < head.length; i++) {
+      const c = head[i];
+      if (inStr) { if (c === '\\') i++; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true;
+      else if (c === '[' || c === '{') depth++;
+      else if ((c === ']' || c === '}') && --depth === 0) {
+        const list = JSON.parse(head.slice(start, i + 1));
+        return Array.isArray(list) ? list : null;
+      }
+    }
+    return null;
+  } catch { return null; } finally { if (fh) await fh.close().catch(() => {}); }
+}
+
+/**
+ * Read a backup FILE (an upload, a decrypted archive) for validate/restore:
+ * parsed in pieces (utils/jsonSpool) — the large plugin parts (database,
+ * code, data files, media) stay in the file as SpooledString until the
+ * restore writes them; every other long string is read into the object. The
+ * file must stay until the backup has been used.
+ */
+async function readBackupFile(file, { under = [] } = {}) {
+  const { value, spooled } = await jsonSpool.parseFile(file);
+  if (!spooled) return value;
+  // `under`: where the backup is in the file (['backup'] in a decrypted off-site payload)
+  return jsonSpool.resolve(value, (at) => under.every((k, i) => at[i] === k) && isPluginBinary(at.slice(under.length)));
+}
+
+// data.plugins[i].db | .files.<path> | .data_files.<path> | .media[j].data — the parts that stay spooled
+function isPluginBinary(at) {
+  if (at[0] !== 'data' || at[1] !== 'plugins' || typeof at[2] !== 'number') return false;
+  if (at.length === 4 && at[3] === 'db') return true;
+  if (at.length === 5 && (at[3] === 'files' || at[3] === 'data_files')) return true;
+  return at.length === 6 && at[3] === 'media' && typeof at[4] === 'number' && at[5] === 'data';
 }
 
 // All tables of the host database (sync, small); `data.plugins` is filled by collectBackup().
@@ -718,6 +832,8 @@ function getBackupSummary(backup) {
     webhooks: (d.webhooks || []).length,
     route_auth: (d.route_auth || []).length,
     plugins: Array.isArray(d.plugins) ? d.plugins.length : 0,
+    // plugins of which a part is missing in this backup (too large / read error)
+    plugins_incomplete: incompleteOf(d.plugins),
     // format 5 restores the complete plugin state (plugins not in it are removed)
     plugin_aware: backup.version >= 5 && Array.isArray(d.plugins),
   };
@@ -1228,6 +1344,10 @@ async function restoreBackup(backup) {
 module.exports = {
   createBackup,
   collectBackup,
+  readBackupFile,
+  readIncomplete,
+  checkFreeSpace,
+  estimateSize,
   writeBackup,
   writeBackupFile,
   validateBackup,
