@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.258.0] — 2026-11-09
+
+### Features
+- NAS-Zertifikat ohne PEM-Datei vertrauen, Offsite-S3 über VPN, SMB3-Verschlüsselung (#457)
+
+---
+
 ## [1.257.0] — 2026-11-09
 
 ### Features
