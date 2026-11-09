@@ -73,6 +73,12 @@ module.exports = (ctx) => {
       const hostShown = await page.isVisible('.pgx-stg-f[data-field="host"]');
       await page.selectOption('#pgx-stg-via', 'peer');
       step('storage: SMB switches between address and VPN device', hostShown && !(await page.isVisible('.pgx-stg-f[data-field="host"]')) && await page.isVisible('.pgx-stg-f[data-field="peerId"]'));
+      // "Verbindung verschlüsseln (SMB3)": on for a new target; switched off it says what that means
+      const encOn = await page.isChecked('#pgx-stg-encrypt');
+      const hintOn = await ctx.text(page, '#pgx-stg-encrypt-h');
+      await page.uncheck('#pgx-stg-encrypt');
+      const hintOff = await ctx.text(page, '#pgx-stg-encrypt-h');
+      step('storage: SMB encrypts by default; switching it off explains the risk', encOn && hintOn !== hintOff && hintOff.length > 20, `${encOn} / ${hintOff}`);
       await shot(page, 'storage-dialog-smb', false);
       // WebDAV (since 1.218.0): directly, through a route or a VPN device — the URL stays
       await page.click('.pgx-stg-kind[data-kind="webdav"]');
@@ -85,44 +91,55 @@ module.exports = (ctx) => {
       step('storage: WebDAV switches between address, route and VPN device', directOnly && routeShown && peerShown, `${directOnly}/${routeShown}/${peerShown}`);
       await page.keyboard.press('Escape');
 
-      // ── TLS-Diagnose (docs/storage-targets.md "Certificates"): the answer of
-      // "Prüfen" is a fixture here — the real handshake is covered by
-      // tests/storage_targets_tls.test.js and tests/storage_targets_via.test.js
+      // ── TLS (docs/storage-targets.md "Trusting a NAS"): the answers of
+      // "Prüfen" are fixtures here — the real handshakes are covered by
+      // tests/storage_targets_trust.test.js, _tls and _via
       const leaf = { subject: 'CN=synology', issuer: 'CN=Synology Inc. CA', names: ['synology'], validFrom: '2026-01-01T00:00:00.000Z', validTo: '2027-01-01T00:00:00.000Z',
         fingerprint: 'ab'.repeat(32), ca: false, selfSigned: false, pem: '-----BEGIN CERTIFICATE-----\nTEFBRg==\n-----END CERTIFICATE-----' };
       const caCert = { subject: 'CN=Synology Inc. CA', issuer: 'CN=Synology Inc. CA', names: [], validFrom: leaf.validFrom, validTo: leaf.validTo,
         fingerprint: 'cd'.repeat(32), ca: true, selfSigned: true, pem: '-----BEGIN CERTIFICATE-----\nQ0FDQQ==\n-----END CERTIFICATE-----' };
       const steps = (n) => ['connect', 'folder', 'write', 'read', 'delete'].slice(0, n).map((x, i) => ({ step: x, ok: i < n - 1 || n === 5 }));
       const sent = [];
+      let auto = false;
       await page.route('**/api/v1/storage-targets/check', async (r) => {
         const b = JSON.parse(r.request().postData() || '{}');
         sent.push(b);
-        const check = b.tlsCa ? { ok: true, error: null, message: null, free: null, total: null, steps: steps(5) }
-          : { ok: false, error: 'tls', message: 'x', free: null, total: null, steps: steps(2),
-            tls: { reason: 'untrusted_ca', code: 'SELF_SIGNED_CERT_IN_CHAIN', host: 'nas.example.com', cert: leaf, chain: [leaf, caCert], hints: [], trust: { leaf: true, chain: true } } };
+        let check;
+        if (auto) check = { ok: true, error: null, message: null, free: null, total: null, steps: steps(5), trusted: { auto: true, cert: Object.assign({ device: 'synology' }, leaf) } };
+        else if (b.tlsCa) check = { ok: true, error: null, message: null, free: null, total: null, steps: steps(5) };
+        else {
+          check = { ok: false, error: 'tls', message: 'x', free: null, total: null, steps: steps(2),
+            tls: { reason: 'untrusted_ca', code: 'SELF_SIGNED_CERT_IN_CHAIN', host: 'nas.example.com', cert: leaf, chain: [leaf, caCert], hints: [], state: 'untrusted', device: 'synology', trust: { leaf: true, chain: true } } };
+        }
         await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, check }) });
       });
       await page.click('#pgx-stg-add');
       await page.waitForSelector('.pgx-stg-kind[data-kind="webdav"]');
       await page.click('.pgx-stg-kind[data-kind="webdav"]');
+      step('storage: the PEM field is folded away under "Erweitert"', !(await page.isVisible('#pgx-stg-tlsCa')) && await visible(page, '#pgx-stg-adv > summary'));
       await page.fill('#pgx-stg-label', 'NAS');
       await page.fill('#pgx-stg-url', 'https://nas.example.com:5006/GateControl');
       await page.click('#pgx-stg-check');
       await page.waitForSelector('#pgx-stg-tls', { timeout: 10000 }).catch(() => {});
       const box = await ctx.text(page, '#pgx-stg-tls').catch(() => '');
-      step('storage: a TLS failure says why and shows the certificate (names, issuer, SHA-256)',
-        await visible(page, '#pgx-stg-tls-why[data-reason="untrusted_ca"]') && box.includes('synology') && box.includes('Synology Inc. CA') && box.includes('AB:AB:AB'), box.slice(0, 200));
-      step('storage: it offers "trust this certificate" and "use the chain sent"', await visible(page, '#pgx-stg-trust') && await visible(page, '#pgx-stg-trust-chain'));
+      step('storage: an own certificate gets a plain card with the device and its validity',
+        await visible(page, '#pgx-stg-tls-why[data-state="untrusted"]') && box.includes('synology') && /eigenen Zertifikat|own certificate/.test(box), box.slice(0, 200));
+      step('storage: the fingerprint and the chain option wait under "Details"',
+        box.includes('AB:AB:AB') && !(await page.isVisible('#pgx-stg-trust-chain')) && await visible(page, '#pgx-stg-details > summary'));
+      step('storage: one button "Diesem Gerät vertrauen"', await visible(page, '#pgx-stg-trust'));
       await shot(page, 'storage-dialog-tls', false);
       await page.click('#pgx-stg-trust');
-      const ask = await ctx.text(page, '#pgx-stg-trust-ask').catch(() => '');
-      step('storage: trusting asks first, with the names and the fingerprint',
-        await visible(page, '#pgx-stg-trust-ask') && ask.includes('synology') && ask.includes('AB:AB') && (await page.inputValue('#pgx-stg-tlsCa')) === '');
-      await page.click('#pgx-stg-trust-ok');
       await page.waitForSelector('#pgx-stg-ok', { timeout: 10000 }).catch(() => {});
       const last = sent[sent.length - 1] || {};
-      step('storage: confirmed → the leaf goes into the field and the check runs again with it',
+      step('storage: one click → the leaf goes into the field and the check runs again with it',
         (await page.inputValue('#pgx-stg-tlsCa')).includes('TEFBRg==') && String(last.tlsCa || '').includes('TEFBRg==') && !String(last.tlsCa).includes('Q0FDQQ==') && await visible(page, '#pgx-stg-ok'));
+      // through the VPN: remembered on the first contact, shown as such
+      await page.$eval('#pgx-stg-tlsCa', (n) => { n.value = ''; });
+      auto = true;
+      await page.click('#pgx-stg-check');
+      await page.waitForSelector('#pgx-stg-remembered', { timeout: 10000 }).catch(() => {});
+      step('storage: remembered on first contact → "Zertifikat der NAS gemerkt", kept in the field',
+        await visible(page, '#pgx-stg-remembered') && (await page.inputValue('#pgx-stg-tlsCa')).includes('TEFBRg=='));
       await page.unroute('**/api/v1/storage-targets/check');
       await page.keyboard.press('Escape');
 

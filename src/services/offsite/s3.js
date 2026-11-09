@@ -1,19 +1,29 @@
 'use strict';
 
 // S3 transport (AWS S3 and S3-compatible: MinIO, Wasabi, Backblaze B2, Hetzner
-// Object Storage, …) — AWS Signature Version 4 with node:crypto + fetch, no SDK.
-// docs/feature-release-b.md §7.
+// Object Storage, a MinIO on the NAS …) — AWS Signature Version 4 with
+// node:crypto, no SDK. docs/feature-release-b.md §7.
 //
 // Config: { endpoint, region, bucket, prefix, access_key_id,
-//           secret_access_key, path_style }
+//           secret_access_key, path_style, via?, tls_ca? }
 //   endpoint    https://s3.eu-central-1.amazonaws.com, https://minio.lan:9000 …
 //               empty → https://s3.<region>.amazonaws.com
 //   path_style  true  → <endpoint>/<bucket>/<key>
 //               false → <bucket>.<endpoint host>/<key> (virtual host)
+//   via         (storageTargets/via.js, as WebDAV's "Verbindung") connect to a
+//               VPN peer or a route instead of the endpoint's host — the URL
+//               still gives the scheme, the path, the Host header (signed)
+//               and the name for SNI and the certificate check
+//   tls_ca      the target's own trust anchor (PEM), as a storage target's tlsCa
 // Payloads are signed with their real SHA-256 (no UNSIGNED-PAYLOAD), which
-// every S3 implementation accepts.
+// every S3 implementation accepts. Requests go through the storage targets'
+// net.request (one checked, pinned address per request; TLS always
+// verified); a timeout is an idle timeout (no byte for that long), so a
+// large upload over a slow line is fine.
 
 const crypto = require('node:crypto');
+const net = require('../storageTargets/net');
+const via = require('../storageTargets/via');
 
 const SERVICE = 's3';
 const TIMEOUT_MS = 120 * 1000;
@@ -142,34 +152,53 @@ async function sha256hexAsync(data) {
   return h.digest('hex');
 }
 
-async function request(cfg, method, key, { query, body, headers = {}, timeoutMs = TIMEOUT_MS } = {}) {
+const MAX_ANSWER = 16 * 1024 * 1024;
+const MAX_DOWNLOAD = 1024 * 1024 * 1024; // the restore test refuses more than 128 MB anyway
+
+/** A failed connection → Error code TRANSPORT; `sys`: the system's code (index.js reads the certificate after one). */
+function transportError(method, err) {
+  const e = new Error(`S3 ${method} failed: ${(err && err.cause && err.cause.message) || (err && err.message) || err}`);
+  e.code = 'TRANSPORT';
+  if (err && err.code) e.sys = String(err.code);
+  return e;
+}
+
+/** Sign and send one request → { status, headers, stream } (the caller reads the body). */
+async function send(cfg, method, key, { query, body, headers = {}, timeoutMs = TIMEOUT_MS } = {}) {
   const url = objectUrl(cfg, key, query);
   const payload = body || Buffer.alloc(0);
   const signed = signRequest({
     method, url, headers, payloadHash: await sha256hexAsync(payload),
     region: cfg.region || 'us-east-1', accessKeyId: cfg.access_key_id, secretAccessKey: cfg.secret_access_key,
   });
-  delete signed.host; // fetch sets Host from the URL (identical value)
-  let res;
   try {
-    res = await fetch(url, {
-      method, headers: signed, body: method === 'PUT' ? payload : undefined,
-      redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),
+    const dialer = via.webdavDialer(via.webdavViaOf(cfg), url);
+    // Host (signed) is url.host, the same net.request sends
+    return await net.request({
+      method, url, headers: signed, body: method === 'PUT' ? payload : null, idleMs: timeoutMs,
+      tlsCa: cfg.tls_ca || null, dial: dialer ? dialer() : null,
     });
   } catch (err) {
-    const e = new Error(`S3 ${method} failed: ${(err.cause && err.cause.message) || err.message}`);
-    e.code = 'TRANSPORT';
-    throw e;
+    throw transportError(method, err);
   }
-  const text = await res.text();
-  if (res.status >= 300) {
-    const code = xmlValue(text, 'Code');
-    const msg = xmlValue(text, 'Message');
-    const e = new Error(`S3 ${method} ${res.status}${code ? ` ${code}` : ''}${msg ? `: ${msg}` : ''}`);
-    e.code = 'TRANSPORT';
-    e.remoteStatus = res.status;
-    throw e;
+}
+
+function statusError(method, status, text) {
+  const code = xmlValue(text, 'Code');
+  const msg = xmlValue(text, 'Message');
+  const e = new Error(`S3 ${method} ${status}${code ? ` ${code}` : ''}${msg ? `: ${msg}` : ''}`);
+  e.code = 'TRANSPORT';
+  e.remoteStatus = status;
+  return e;
+}
+
+async function request(cfg, method, key, opts = {}) {
+  const res = await send(cfg, method, key, opts);
+  let text = '';
+  try { text = (await net.readBody(res.stream, MAX_ANSWER)).toString('utf8'); } catch (err) {
+    if (res.status < 300) throw transportError(method, err);
   }
+  if (res.status >= 300) throw statusError(method, res.status, text);
   return { status: res.status, text };
 }
 
@@ -202,36 +231,17 @@ async function list(cfg) {
   return files;
 }
 
-/**
- * Read one object back (restore test) as a Buffer. Own fetch instead of
- * request(): that one reads the body as text, which would mangle the binary
- * archive. Nothing is written on the remote side.
- */
+/** Read one object back (restore test) as a Buffer. Nothing is written on the remote side. */
 async function download(cfg, name) {
-  const key = prefixOf(cfg) + name;
-  const url = objectUrl(cfg, key);
-  const signed = signRequest({
-    method: 'GET', url, headers: {}, payloadHash: sha256hex(Buffer.alloc(0)),
-    region: cfg.region || 'us-east-1', accessKeyId: cfg.access_key_id, secretAccessKey: cfg.secret_access_key,
-  });
-  delete signed.host;
-  let res;
-  try {
-    res = await fetch(url, { method: 'GET', headers: signed, redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_MS) });
-  } catch (err) {
-    const e = new Error(`S3 GET failed: ${(err.cause && err.cause.message) || err.message}`);
-    e.code = 'TRANSPORT';
-    throw e;
-  }
+  const res = await send(cfg, 'GET', prefixOf(cfg) + name);
   if (res.status >= 300) {
-    const text = await res.text().catch(() => '');
-    const code = xmlValue(text, 'Code');
-    const e = new Error(`S3 GET ${res.status}${code ? ` ${code}` : ''}`);
-    e.code = 'TRANSPORT';
-    e.remoteStatus = res.status;
+    let text = '';
+    try { text = (await net.readBody(res.stream, 64 * 1024)).toString('utf8'); } catch { /* the status decides */ }
+    const e = statusError('GET', res.status, text);
+    e.message = e.message.replace(/: .*$/, '');
     throw e;
   }
-  return Buffer.from(await res.arrayBuffer());
+  try { return await net.readBody(res.stream, MAX_DOWNLOAD); } catch (err) { throw transportError('GET', err); }
 }
 
 async function remove(cfg, name) {
@@ -246,4 +256,24 @@ async function test(cfg) {
   return `bucket reachable, write + delete ok (${files.length} file(s) under the prefix)`;
 }
 
-module.exports = { signRequest, uriEncode, objectUrl, upload, download, list, remove, test, _sha256hex: sha256hex };
+/**
+ * After a certificate failure: what the endpoint presents for the bucket's
+ * host, the same way as the transfers (net.inspectTls — the handshake only).
+ * null for http.
+ */
+async function inspectTls(cfg) {
+  const url = objectUrl(cfg, '');
+  if (url.protocol !== 'https:') return null;
+  const dialer = via.webdavDialer(via.webdavViaOf(cfg), url);
+  return net.inspectTls({ url: `https://${url.host}/`, tlsCa: cfg.tls_ca || null, dial: dialer ? dialer() : null });
+}
+
+/** Where the connection goes: { kind, dial () → { host, port } } (trust.js tunnelled). */
+function route(cfg) {
+  const url = objectUrl(cfg, '');
+  const v = via.webdavViaOf(cfg);
+  const dialer = via.webdavDialer(v, url);
+  return { kind: v.kind, dial: dialer || (() => ({ host: url.hostname, port: Number(url.port) || 443 })) };
+}
+
+module.exports = { signRequest, uriEncode, objectUrl, upload, download, list, remove, test, inspectTls, route, _sha256hex: sha256hex };

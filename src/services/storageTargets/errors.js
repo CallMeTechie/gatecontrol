@@ -8,6 +8,12 @@
 //   unreachable       no connection (DNS, refused, timeout, TLS)
 //   tls               the server's certificate is not trusted (expired, self-signed
 //                     without the target's own certificate, wrong host name)
+//   tls_changed       (a check's verdict, index.js) a certificate is stored and the
+//                     server presents another one — renewed on the NAS? trusted only
+//                     by a click (trustCert), never on its own
+//   no_encryption     SMB: encryption is switched on, the share cannot do SMB3 encryption
+//   cert_mismatch     trustCert: the server presents another certificate than the page showed
+//   not_trustable     trustCert: nothing a click may trust (`reason`: name, expired …)
 //   not_tls           the other side does not speak TLS at all (an http port, another
 //                     protocol): `sys` keeps the system's code
 //   tls_handshake     the TLS handshake failed for another reason than the certificate

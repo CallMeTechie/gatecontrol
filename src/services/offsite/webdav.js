@@ -35,10 +35,15 @@ function authHeader(cfg) {
   return { authorization: 'Basic ' + Buffer.from(`${cfg.username}:${cfg.password || ''}`, 'utf8').toString('base64') };
 }
 
-/** A failed connection → Error code TRANSPORT (+ hint 'self_address', see via.selfHint). */
+/**
+ * A failed connection → Error code TRANSPORT (+ hint 'self_address', see
+ * via.selfHint). `sys`: the system's code (CERT_HAS_EXPIRED,
+ * DEPTH_ZERO_SELF_SIGNED_CERT …) — index.js reads the certificate after one.
+ */
 async function transportError(cfg, method, url, err) {
   const e = new Error(`WebDAV ${method} failed: ${(err.cause && err.cause.message) || err.message}`);
   e.code = 'TRANSPORT';
+  if (err && err.code) e.sys = String(err.code);
   const hint = await via.selfHint(err, via.webdavViaOf(cfg), url.hostname);
   if (hint) { e.hint = hint; e.message += ` (${via.SELF_HINT_TEXT})`; }
   return e;
@@ -180,4 +185,24 @@ async function test(cfg) {
   return `${created ? 'folder created, ' : ''}write + delete ok (${files.length} file(s) in the folder)`;
 }
 
-module.exports = { upload, download, list, remove, test, parseMultistatus, collectionUrl };
+/**
+ * After a certificate failure: what the NAS presents, the same way as the
+ * transfers (net.inspectTls — the handshake only, no credentials sent).
+ * null for http.
+ */
+async function inspectTls(cfg) {
+  const url = collectionUrl(cfg);
+  if (url.protocol !== 'https:') return null;
+  const dialer = via.webdavDialer(via.webdavViaOf(cfg), url);
+  return net.inspectTls({ url, tlsCa: cfg.tls_ca || null, dial: dialer ? dialer() : null });
+}
+
+/** Where the connection goes: { kind, dial () → { host, port } } (trust.js tunnelled). */
+function route(cfg) {
+  const url = collectionUrl(cfg);
+  const v = via.webdavViaOf(cfg);
+  const dialer = via.webdavDialer(v, url);
+  return { kind: v.kind, dial: dialer || (() => ({ host: url.hostname, port: Number(url.port) || 443 })) };
+}
+
+module.exports = { upload, download, list, remove, test, inspectTls, route, parseMultistatus, collectionUrl };
