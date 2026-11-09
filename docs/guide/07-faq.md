@@ -311,6 +311,32 @@ are never blocked anyway.
 **Check:** in the list "Blocked right now" such addresses say "sign-ins with
 unknown user names".
 
+### Off-site backup to a NAS behind the VPN
+
+Message when testing an off-site backup target, e.g. `WebDAV PROPFIND failed:
+connect ECONNREFUSED 89.163.231.212:5006`, followed by “The address points to
+this GateControl server itself”: the NAS's name (`nas.example.com`) points at
+the GateControl server – from outside you reach the NAS through a GateControl
+route, but GateControl itself finds nothing on port 5006 at its own address.
+
+How to fix it (as for Drive's storage target):
+
+1. Settings → Backups → edit the target (or a new one: WebDAV).
+2. **Connection**: “Through a VPN device” and the gateway in the home network
+   (e.g. “Home Gateway (10.8.0.8)”), **Port** the NAS's WebDAV port
+   (Synology: 5006 for https). Or “Through a route” and an L4 route to the
+   NAS – it may stay internal only.
+3. The **URL** stays `https://nas.example.com:5006/…`: it sets the path, the
+   host name and the name the certificate is checked against. Paste a private
+   DSM certificate under “Own certificate or CA (PEM)” (`cert.pem` is enough).
+
+If the NAS is already a storage target for Drive: choose “Take over a storage
+target from Drive/plugins” at the top of the dialog. URL, user, connection
+and certificate are filled in, the password is copied once when you save.
+Give the URL its own sub-folder (e.g. `…/GateControl/Backups/`), so the
+backups do not end up between Drive's files. SMB and SFTP have the same
+“Connection” choice.
+
 ## Setting up a gateway
 
 ### The assistant is still waiting after 10 minutes

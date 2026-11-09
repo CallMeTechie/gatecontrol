@@ -22,6 +22,7 @@ const { encrypt, decrypt } = require('../../utils/crypto');
 const logger = require('../../utils/logger');
 const { StorageError } = require('./errors');
 const net = require('./net');
+const viaMod = require('./via');
 
 const KINDS = ['local', 'smb', 'webdav', 's3', 'gdrive', 'onedrive'];
 const SECRET_FIELDS = { local: [], smb: ['password'], webdav: ['password'], s3: ['secretAccessKey'], gdrive: [], onedrive: [] };
@@ -99,59 +100,14 @@ function via(v, input) {
     if (!(require('../plugins/netPolicy').isIpLiteral(host) || HOST_RE.test(host))) throw invalid('host');
     return { kind: 'host', host, port: port(input.port, 445) };
   }
-  if (k === 'peer') {
-    const peerId = Number(v.peerId);
-    if (!Number.isSafeInteger(peerId) || !getDb().prepare('SELECT 1 FROM peers WHERE id = ?').get(peerId)) throw invalid('via');
-    return { kind: 'peer', peerId, port: port(input.port, 445) };
-  }
-  if (k === 'route') {
-    const routeId = Number(v.routeId);
-    const r = Number.isSafeInteger(routeId) ? getDb().prepare('SELECT route_type FROM routes WHERE id = ?').get(routeId) : null;
-    if (!r || r.route_type !== 'l4') throw invalid('via', 'an L4 route');
-    return { kind: 'route', routeId };
-  }
-  throw invalid('via');
-}
-
-/**
- * Can a WebDAV target with a `scheme` URL go through route `r`? → null or why not.
- * L4 (TCP): always — the bytes go through untouched, TLS stays end to end.
- * HTTP route via a gateway: only plain http on both hops — the companion
- * proxy would make the TLS connection to the NAS itself, unchecked by us.
- * HTTP route to a peer / an address: its backend, when it speaks the URL's scheme.
- */
-function webdavRouteProblem(r, scheme) {
-  if (!r) return 'no such route';
-  if (r.route_type === 'l4') return r.l4_protocol === 'udp' ? 'a TCP route' : null;
-  if (r.target_kind === 'gateway') {
-    return scheme === 'http' && !r.backend_https ? null : 'an HTTP route through a gateway carries http only — use an L4 route for https';
-  }
-  return (scheme === 'https') === !!r.backend_https ? null : `the route's backend does not speak ${scheme}`;
+  // the peer's port is the form's `port` (not one inside `via`)
+  return viaMod.tcpVia(Object.assign({}, v, { port: undefined }), input.port, 445);
 }
 
 /** WebDAV: where to connect — the URL's own host, a VPN peer (+ port) or a route. */
-function webdavVia(v, input, url) {
-  const k = v && v.kind ? v.kind : 'host';
-  if (k === 'host') return { kind: 'host' };
-  if (k === 'peer') {
-    const peerId = Number(v.peerId);
-    if (!Number.isSafeInteger(peerId) || !getDb().prepare('SELECT 1 FROM peers WHERE id = ?').get(peerId)) throw invalid('via');
-    const p = v.port != null && v.port !== '' ? v.port : input.port;
-    return { kind: 'peer', peerId, port: port(p, Number(url.port) || (url.protocol === 'https:' ? 443 : 80)) };
-  }
-  if (k === 'route') {
-    const routeId = Number(v.routeId);
-    const r = Number.isSafeInteger(routeId) ? getDb().prepare('SELECT route_type, l4_protocol, target_kind, backend_https FROM routes WHERE id = ?').get(routeId) : null;
-    if (!r) throw invalid('via');
-    const why = webdavRouteProblem(r, url.protocol.slice(0, -1));
-    if (why) throw invalid('routeId', why);
-    return { kind: 'route', routeId };
-  }
-  throw invalid('via');
-}
+function webdavVia(v, input, url) { return viaMod.webdavVia(v, input.port, url); }
 
-/** The `via` of a WebDAV config (rows from before 1.218.0 have none: the URL's host). */
-function webdavViaOf(cfg) { return cfg.via && cfg.via.kind ? cfg.via : { kind: 'host' }; }
+const { webdavViaOf, viaLabel, routeOf } = viaMod;
 
 /**
  * Admin input → { label, config, secret } (secret: only the fields given;
@@ -257,17 +213,6 @@ function display(kind, cfg) {
   const v = cfg.via || {};
   const host = v.kind === 'peer' || v.kind === 'route' ? viaLabel(v, true) : v.host;
   return `smb://${host}${v.kind !== 'route' && v.port && v.port !== 445 ? ':' + v.port : ''}/${cfg.share}${cfg.folder ? '/' + cfg.folder : ''}`;
-}
-
-/** A peer ("nas-gateway", WebDAV: ":port" added) or a route ("nas.example.de:5006" for L4, the domain for HTTP). */
-function viaLabel(v, bare) {
-  if (v.kind === 'peer') {
-    const p = getDb().prepare('SELECT name FROM peers WHERE id = ?').get(v.peerId);
-    return (p ? p.name : `#${v.peerId}`) + (!bare && v.port ? ':' + v.port : '');
-  }
-  const r = getDb().prepare('SELECT domain, route_type, l4_listen_port FROM routes WHERE id = ?').get(v.routeId);
-  if (!r) return `#${v.routeId}`;
-  return r.route_type === 'l4' ? `${r.domain || 'L4'}:${r.l4_listen_port}` : r.domain;
 }
 
 // what keeps a target in use (plugins/mediaAreas.js registers the areas assigned to it)
@@ -381,69 +326,8 @@ function remove(id) {
 
 // ─── Drivers ────────────────────────────────────
 
-function peerAddress(peerId) {
-  const p = getDb().prepare('SELECT allowed_ips FROM peers WHERE id = ?').get(peerId);
-  return p ? String(p.allowed_ips || '').split(',')[0].split('/')[0].trim() : null;
-}
-
-/** A peer that is there and switched on → its VPN address. */
-function peerDial(peerId) {
-  const p = getDb().prepare('SELECT enabled FROM peers WHERE id = ?').get(peerId);
-  if (!p || p.enabled !== 1) throw new StorageError('unreachable', 'the peer is missing or switched off');
-  return peerAddress(peerId);
-}
-
-/** An enabled route (routes.getById) or unreachable. */
-function routeOf(routeId) {
-  const r = require('../routes').getById(routeId);
-  if (!r || !r.enabled) throw new StorageError('unreachable', 'the route is missing or switched off');
-  return r;
-}
-
-/**
- * An L4 route: what Caddy dials for it, never Caddy itself (so an internal-only
- * route stays internal) — the gateway's listener for a gateway route, else
- * the peer or the target address with the target port.
- */
-function l4Dial(r) {
-  if (r.target_kind === 'gateway' && r.target_peer_ip) return { host: String(r.target_peer_ip).split('/')[0], port: Number(r.l4_listen_port) };
-  if (r.peer_id) return { host: peerAddress(r.peer_id), port: Number(r.target_port) };
-  return { host: r.target_ip, port: Number(r.target_port) };
-}
-
 /** SMB: the address and port to dial for `via` (peer IP, L4 route listener). */
-function smbDial(v) {
-  if (v.kind === 'host') return { host: v.host, port: v.port || 445 };
-  if (v.kind === 'peer') return { host: peerDial(v.peerId), port: v.port || 445 };
-  const r = routeOf(v.routeId);
-  if (r.route_type !== 'l4') throw new StorageError('unreachable', 'the route is missing or switched off');
-  return l4Dial(r);
-}
-
-/**
- * WebDAV through a peer or a route: where to connect → { host, port, headers }
- * (null: the URL's own host). Read again for every connection.
- *   peer                 its VPN address, `port`
- *   L4 route             as l4Dial — TLS stays end to end
- *   HTTP route, gateway  the gateway's companion proxy (http, X-Gateway-Target-Domain:
- *                        the route's domain), as Caddy and the plugin targets reach it
- *   HTTP route           its backend (peer VPN address or target address, target port)
- */
-function webdavDial(v, url) {
-  if (v.kind === 'peer') return { host: peerDial(v.peerId), port: v.port };
-  if (v.kind !== 'route') return null;
-  const r = routeOf(v.routeId);
-  const why = webdavRouteProblem(r, url.protocol.slice(0, -1));
-  if (why) throw new StorageError('unreachable', why);
-  if (r.route_type === 'l4') return l4Dial(r);
-  if (r.target_kind === 'gateway') {
-    const comp = require('../routes').resolveCompanionUrl(r.id);
-    if (!comp) throw new StorageError('unreachable', 'the route has no gateway');
-    const c = new URL(comp.baseUrl);
-    return { host: c.hostname, port: Number(c.port) || 80, headers: { 'x-gateway-target-domain': comp.domain } };
-  }
-  return { host: r.peer_id ? peerAddress(r.peer_id) : r.target_ip, port: Number(r.target_port) };
-}
+function smbDial(v) { return viaMod.tcpDial(v, { port: 445 }); }
 
 function driverModule(kind) {
   switch (kind) {
@@ -470,13 +354,7 @@ async function driverOf(t) {
     try { c.dial = { address: (await net.resolve(d.host, d.port)).address, port: d.port }; } catch (e) { throw StorageError.from(e); }
   }
   if (kind === 'webdav' && webdavViaOf(cfg).kind !== 'host') {
-    const v = webdavViaOf(cfg);
-    const url = new URL(cfg.url);
-    const dial = () => {
-      const d = webdavDial(v, url);
-      if (!d || !d.host || !(d.port >= 1 && d.port <= 65535)) throw new StorageError('unreachable', 'no address');
-      return d;
-    };
+    const dial = viaMod.webdavDialer(webdavViaOf(cfg), new URL(cfg.url));
     // the route or peer is there and its address allowed: fails the "connect" step, not a later one
     const first = dial();
     try { await net.resolve(first.host, first.port); } catch (e) { throw StorageError.from(e); }
@@ -550,10 +428,26 @@ async function tlsDiagnosis(t, d) {
 }
 
 /**
+ * 'self_address' when the check could not connect (refused, no answer) to
+ * the settings' own address and that name points at this server itself: a
+ * NAS behind the VPN entered by a domain that GateControl serves (via.js).
+ */
+async function selfHintOf(t, err) {
+  if (err.code !== 'unreachable') return null;
+  const cfg = t.config || configOf(t);
+  try {
+    if (t.kind === 'webdav') return await viaMod.selfHint(err, webdavViaOf(cfg), new URL(cfg.url).hostname);
+    if (t.kind === 'smb') return await viaMod.selfHint(err, cfg.via, cfg.via && cfg.via.host);
+  } catch { /* no hint */ }
+  return null;
+}
+
+/**
  * Check a target: reach it, write a test file, read it back whole and as a
  * range, delete it, ask for the free space.
  * → { ok, error: code|null, message, free, total, steps: [{ step, ok }],
- *     sys (not_tls, tls_handshake: the system's code), tls (after a TLS failure: tlsDiagnosis) }
+ *     sys (not_tls, tls_handshake: the system's code), tls (after a TLS failure: tlsDiagnosis),
+ *     hint ('self_address': refused / no answer at an address of this server itself) }
  */
 async function runCheck(t) {
   const steps = [];
@@ -588,6 +482,8 @@ async function runCheck(t) {
     const out = { ok: false, error: err.code, message: err.message, free: null, total: null, steps };
     if (err.sys) out.sys = err.sys;
     if (['tls', 'not_tls', 'tls_handshake'].includes(err.code)) out.tls = await tlsDiagnosis(t, d);
+    const hint = await selfHintOf(t, err);
+    if (hint) out.hint = hint;
     return out;
   }
 }
@@ -612,5 +508,5 @@ async function checkInput(kind, input, id = null) {
 
 module.exports = {
   KINDS, SECRET_FIELDS, BLOCKS_ONLY, CLOUD, StorageError, normalise, list, get, create, update, remove, check, checkInput, open, driverOf,
-  registerUsage, usedBy, display, bufferSource, rowOf, configOf, secretOf, brief,
+  registerUsage, usedBy, display, bufferSource, rowOf, configOf, secretOf, brief, tlsCa, caInfo,
 };

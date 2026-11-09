@@ -4,7 +4,10 @@
 // key authentication only with the GateControl-generated ed25519 key.
 // docs/feature-release-b.md §7.
 //
-// Config: { host, port, username, path }
+// Config: { host, port, username, path, via? }
+// `via` (storageTargets/via.js, as a storage target's "Verbindung"): through
+// a VPN peer (its VPN address, `via.port`) or an L4 route (what Caddy dials
+// for it) — sftp then connects to that address; the host key is stored for it.
 // Host keys: trust on first use (StrictHostKeyChecking=accept-new) into
 // <dataDir>/offsite/known_hosts; a changed key fails with a clear message and
 // is reset when the target's host/port changes or the target is deleted.
@@ -13,6 +16,7 @@
 
 const { run, writeTemp, writeTempAsync, rmQuiet, workDir } = require('./proc');
 const path = require('node:path');
+const via = require('../storageTargets/via');
 
 const TIMEOUT_MS = 180 * 1000;
 
@@ -20,11 +24,12 @@ function knownHostsFile() { return path.join(workDir(), 'known_hosts'); }
 
 function destination(host) { return host.includes(':') ? `[${host}]` : host; }
 
-function sshOptions(cfg, keyFile) {
+/** `dial`: { address, port } of a `via` (dialOf), null for the host itself. */
+function sshOptions(cfg, keyFile, dial = null) {
   return [
     '-F', '/dev/null',
     '-i', keyFile,
-    '-P', String(cfg.port || 22),
+    '-P', String(dial ? dial.port : (cfg.port || 22)),
     '-o', 'BatchMode=yes',
     '-o', 'IdentitiesOnly=yes',
     '-o', 'PasswordAuthentication=no',
@@ -73,19 +78,30 @@ function explain(res) {
   return `SFTP failed${res.code != null ? ` (exit ${res.code})` : ''}${last ? `: ${last}` : ''}`;
 }
 
+async function dialOf(cfg) {
+  try { return await via.tcpAddress(cfg.via, { host: cfg.host, port: cfg.port || 22 }); } catch (err) {
+    const e = new Error(`SFTP: ${err.message}`);
+    e.code = 'TRANSPORT';
+    throw e;
+  }
+}
+
 async function batch(cfg, ctx, lines, timeoutMs = TIMEOUT_MS) {
   if (!ctx || !ctx.privateKey) {
     const e = new Error('SFTP: no GateControl SSH key');
     e.code = 'TRANSPORT';
     throw e;
   }
+  const dial = await dialOf(cfg);
   const keyFile = writeTemp('id_ed25519', ctx.privateKey);
   try {
-    const args = ['-b', '-', ...sshOptions(cfg, keyFile), '--', destination(cfg.host)];
+    const args = ['-b', '-', ...sshOptions(cfg, keyFile, dial), '--', destination(dial ? dial.address : cfg.host)];
     const res = await run('sftp', args, { input: lines.join('\n') + '\n', timeoutMs });
     if (res.code !== 0 || res.timedOut) {
       const e = new Error(explain(res));
       e.code = 'TRANSPORT';
+      const hint = await via.selfHint(e, cfg.via, cfg.host);
+      if (hint) { e.hint = hint; e.message += ` (${via.SELF_HINT_TEXT})`; }
       throw e;
     }
     return res.stdout;
@@ -160,9 +176,15 @@ async function test(cfg, ctx) {
 
 /** Forget the stored host key of host:port (target edited/deleted). */
 async function forgetHost(cfg) {
-  if (!cfg || !cfg.host) return;
-  const port = Number(cfg.port || 22);
-  const name = port === 22 ? cfg.host : `[${cfg.host}]:${port}`;
+  if (!cfg) return;
+  let host = cfg.host;
+  let port = Number(cfg.port || 22);
+  if (cfg.via && cfg.via.kind && cfg.via.kind !== 'host') {
+    // the address the key was stored for (peer or route as they are now; gone → nothing to find)
+    try { const d = await via.tcpAddress(cfg.via, { host: cfg.host, port }); host = d.address; port = d.port; } catch { return; }
+  }
+  if (!host) return;
+  const name = port === 22 ? host : `[${host}]:${port}`;
   try {
     await run('ssh-keygen', ['-R', name, '-f', knownHostsFile()], { timeoutMs: 10000 });
     rmQuiet(knownHostsFile() + '.old');
