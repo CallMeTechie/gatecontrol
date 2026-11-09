@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.258.1] — 2026-11-09
+
+### Änderungen
+- Backup: Plugin-Daten bis 512 MB, unvollständige Backups deutlich sichtbar (#458)
+
+---
+
 ## [1.258.0] — 2026-11-09
 
 ### Features
