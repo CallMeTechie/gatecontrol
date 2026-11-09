@@ -17,7 +17,8 @@
 //   rate_limit   429 answers (off by default — own apps can hit it)
 //
 // Unknown names (login, route_auth): a failed login with a name or e-mail
-// address that matches no account counts `unknown_user_weight` times (1, 2,
+// address that matches no account (also an e-mail code of a route asked for
+// another address than the route's own) counts `unknown_user_weight` times (1, 2,
 // 3 or 5; default 3) — the account lockout cannot stop those (credential
 // stuffing with leaked lists), so the address is stopped earlier. A wrong
 // second factor or a wrong password of an existing account counts once. The
