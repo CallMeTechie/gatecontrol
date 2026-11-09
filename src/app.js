@@ -224,15 +224,12 @@ function createApp() {
       });
     }
 
-    logger.error({ err, path: req.path }, 'Unhandled error');
+    // A body the parser turned away (no JSON, too large, unknown encoding,
+    // aborted) is the client's fault: its status, the JSON error shape, one
+    // throttled warning without the body (middleware/bodyErrors.js)
+    if (require('./middleware/bodyErrors').handle(err, req, res, THEME)) return;
 
-    // Body parser rejections are client errors, not server errors.
-    if (err.type === 'entity.parse.failed' && req.path.startsWith('/api/')) {
-      return res.status(400).json({ ok: false, code: 'invalid_json', error: 'Invalid JSON body' });
-    }
-    if (err.type === 'entity.too.large' && req.path.startsWith('/api/')) {
-      return res.status(413).json({ ok: false, code: 'payload_too_large', error: 'Payload too large' });
-    }
+    logger.error({ err, path: req.path }, 'Unhandled error');
 
     const status = err.status || 500;
     if (req.path.startsWith('/api/')) {

@@ -46,6 +46,7 @@ const CODES = [
   { code: 'no_right', re: /\bno_right\b/i },
   { code: 'lock_unreachable', re: /\block_unreachable\b/i },
   { code: 'login_failed', re: /^(?:failed login|failed second-factor)/i },
+  { code: 'malformed_body', re: /^malformed request body/i },
 ];
 const ERR_CODE_RE = /\b(ERR_[A-Z0-9_]{2,40}|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EHOSTUNREACH|EACCES|ENOSPC|EPIPE|EADDRINUSE)\b/;
 const KNOWN_CODES = new Set(CODES.map((c) => c.code));
