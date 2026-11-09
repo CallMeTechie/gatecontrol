@@ -561,7 +561,7 @@ Settings › Security › IP-Sperre (`/settings/ipsperre`). The account lockout 
 | `route_auth` | Route login (same hook, type `route_auth`) |
 | `share_link` | Wrong PIN of a public link of a plugin (Drive, GateDrop — `/s/<token>/unlock`) |
 | `waf` | Every request the WAF blocked (audit log ingest) |
-| `scan` | 404s from the access log: a probe path (`/.env`, `/wp-admin`, `/.git/` …) counts at once, any other ten 404s once |
+| `scan` | 404s from the access log: a probe path (`/.env`, `/wp-admin`, `/.git/` …) counts at once, any other ten 404s once; request bodies that are no JSON (`malformed request body`) count like those other 404s |
 | `rate_limit` | 429 answers (off by default — own apps can hit it) |
 
 Every source can be switched off. Default: 10 failures within 10 minutes (10 or 60 min, threshold 3 … 1000).
@@ -1201,7 +1201,7 @@ log, Caddy's access log and remote desktop sessions.
 - **Entry** (`/logs#e/<id>`) — "Was bedeutet das?" for known codes (storage
   timeout, storage worker restarted, event loop blocked, slow plugin database,
   slow disk, plugin did not start in time, `no_right`, `lock_unreachable`,
-  failed sign-in), the problem it
+  failed sign-in, malformed request body), the problem it
   belongs to, fields with "use as filter", raw JSON, copy, link, export with
   surroundings, and "Zur selben Zeit" (±10 s / ±1 min / ±5 min, all sources and levels).
 - **Probleme** — errors and warnings grouped across sources: by code (also

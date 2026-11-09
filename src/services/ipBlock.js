@@ -11,7 +11,9 @@
 //   share_link   wrong PIN of a public link (Drive, GateDrop — routes/publicLinks.js)
 //   waf          every request the WAF blocked (waf.ingestLines)
 //   scan         404s of one address: a probe path (/.env, /wp-admin …) counts
-//                at once, any other ten 404s count once (access.log tail)
+//                at once, any other ten 404s count once (access.log tail);
+//                request bodies that are no JSON count like those other 404s
+//                (noteSuspiciousRequest, from the error handler in app.js)
 //   rate_limit   429 answers (off by default — own apps can hit it)
 //
 // Unknown names (login, route_auth): a failed login with a name or e-mail
@@ -962,15 +964,37 @@ function noteAccessLines(lines, at = now()) {
     }
   }
   // any other 404s: every ten from one address count once (kept across ticks)
-  for (const [ip, c] of counts) {
-    const total = (_state.scan404.get(ip) || 0) + c;
-    const n = Math.floor(total / SCAN_404_PER_FAILURE);
-    _state.scan404.set(ip, total % SCAN_404_PER_FAILURE);
-    if (n > 0) noteFailure(ip, 'scan', null, { weight: n, at });
-  }
-  if (_state.scan404.size > 20000) _state.scan404.clear();
+  for (const [ip, c] of counts) countScanRequests(ip, c, at);
   if (blocked) addBlockedHits(blocked, at);
   return blocked;
+}
+
+/** `c` suspicious requests of `ip` that are not a probe path: every ten count once (source scan). */
+function countScanRequests(ip, c = 1, at = now()) {
+  const total = (_state.scan404.get(ip) || 0) + c;
+  const n = Math.floor(total / SCAN_404_PER_FAILURE);
+  _state.scan404.set(ip, total % SCAN_404_PER_FAILURE);
+  if (_state.scan404.size > 20000) _state.scan404.clear();
+  return n > 0 ? noteFailure(ip, 'scan', null, { weight: n, at }) : false;
+}
+
+/**
+ * A request GateControl itself turned away as a scanner's (a body that is no
+ * JSON — app.js): counted like a 404 of an unknown path, every ten from one
+ * address once (source scan). Caddy's access log shows these requests as
+ * 400, not 404, so none is counted twice. → true when the address was banned.
+ */
+function noteSuspiciousRequest(ip, at = now()) {
+  try {
+    const cfg = getConfig();
+    if (!ip || !cfg.enabled || !cfg.sources.scan) return false;
+    const canon = canonIp(ip);
+    if (!canon || !isPublicIp(canon) || isExempt(canon)) return false;
+    return countScanRequests(canon, 1, at);
+  } catch (err) {
+    logger.warn({ err: err.message }, 'ip block: failure not counted');
+    return false;
+  }
 }
 
 // Requests turned away by the block, per hour (last 25 hours), for the tile.
@@ -1126,7 +1150,7 @@ module.exports = {
   SOURCES, LISTS, DURATIONS_MIN, MANUAL_HOURS, UNKNOWN_WEIGHTS, LIST_SOURCES, PROBE_RE, IpBlockError,
   getConfig, setConfig, getNever, addNever, removeNever, exceptions,
   noteFailure, banManual, unban, listBans, check, isExempt, exportBackup, restoreBackup,
-  refreshLists, parseList, parseListAsync, noteAccessLines, sweep, stats, view,
+  refreshLists, parseList, parseListAsync, noteAccessLines, noteSuspiciousRequest, sweep, stats, view,
   caddyRoute, l4Ranges, blockFile, fileContent, writeNow, engineAvailable,
   middleware, start, stop, rebuild, PrefixSet, _resetForTest, _state,
 };

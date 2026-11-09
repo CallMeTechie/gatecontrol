@@ -249,6 +249,31 @@ GateControl crashes, nothing is lost. On a power cut the changes of the last
 seconds (at most 30 s for the server) can be missing – the database stays
 intact.
 
+### “malformed request body” in the log
+
+Someone sent GateControl a body it cannot read. The line is a warning, not a
+fault of the server: the request got a 4xx error (mostly 400 `invalid_json`)
+and nothing ran. It names the method, path, address (`ip`), the kind
+(`type`) and the length of the body (`length`) – never the body itself, which
+is often an attack.
+
+- `entity.parse.failed`: not valid JSON. From a foreign address to paths like
+  `/run`, `/api/…` or `/` almost always a scanner probing for holes in other
+  software.
+- `entity.too.large`: larger than allowed (1 MB, less for gateway and app
+  calls).
+- `encoding.unsupported` / `charset.unsupported`: an encoding no program of
+  GateControl sends.
+- `request.aborted`: the connection broke before the body arrived (e.g. a
+  phone losing its signal).
+
+At most one line per kind and 5 minutes reaches the log; `repeated` says how
+many came since the last line. Invalid JSON and unknown encodings count for
+the IP block (source “Probing unknown paths”) like a 404 of an unknown path: every ten from
+one address are one failure. Own addresses, the VPN and the “never block”
+list never count. If the line comes from one of your apps or a gateway, the
+fault is there – copy the line into a ticket.
+
 ### The container does not start or the certificate does not come
 
 - `GC_ADMIN_PASSWORD is not set or still default`: `.env` still says
