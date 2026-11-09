@@ -213,10 +213,13 @@ describe('backup with several MB of plugin data', () => {
     const partSize = 256 * 1024;
     const { result: r, maxGap } = await whileTicking(() => gcbk.writeBackupArchive(file, out, { passphrase, kdf, gcVersion: '9.9.9', partSize }));
     assert.ok(maxGap < MAX_TICK_GAP_MS, `max timer gap ${maxGap} ms`);
-    const bytes = fs.readFileSync(out);
+    // one open file for every look at it (no check-then-use on the path)
+    const fd = fs.openSync(out, 'r');
+    const content = () => { const b = Buffer.alloc(fs.fstatSync(fd).size); fs.readSync(fd, b, 0, b.length, 0); return b; };
+    const bytes = content();
     assert.equal(r.size, bytes.length);
     assert.equal(r.partSize, partSize);
-    assert.equal((fs.statSync(out).mode & 0o777).toString(8), '600');
+    assert.equal((fs.fstatSync(fd).mode & 0o777).toString(8), '600');
     assert.equal(r.partHashes.length, Math.ceil(bytes.length / partSize));
     r.partHashes.forEach((h, i) => assert.equal(h, crypto.createHash('sha256').update(bytes.subarray(i * partSize, (i + 1) * partSize)).digest('hex'), `part ${i}`));
     const plain = path.join(dir, 'archive.plain.json');
@@ -228,11 +231,12 @@ describe('backup with several MB of plugin data', () => {
     const out2 = path.join(dir, 'archive2.gcbk');
     const r2 = await gcbk.writeBackupArchive(file, out2, { passphrase, kdf });
     assert.equal(r2.partHashes, null);
-    assert.equal(r2.size, fs.statSync(out2).size);
+    assert.equal(r2.size, fs.readFileSync(out2).length);
     fs.rmSync(out2);
     // an existing file is never overwritten — nor removed
     await assert.rejects(gcbk.writeBackupArchive(file, out, { passphrase, kdf }), { code: 'EEXIST' });
-    assert.ok(fs.readFileSync(out).equals(bytes));
+    assert.ok(content().equals(bytes));
+    fs.closeSync(fd);
     fs.rmSync(out);
     // a failure while writing (the disk refuses after the first bytes): nothing half-written stays
     const realCreate = fs.createWriteStream;
