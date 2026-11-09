@@ -234,6 +234,25 @@ target; “Take over a storage target from Drive/plugins” fills in its
 settings. See
 [FAQ: Off-site backup to a NAS behind the VPN](07-faq.md#off-site-backup-to-a-nas-behind-the-vpn).
 
+The connection is always encrypted, without any certificate file:
+
+- **WebDAV and S3:** if the NAS identifies itself with its own certificate
+  (common for NAS devices on a home network), “Test” shows the device and how
+  long the certificate is valid, with the button **“Trust this device”**.
+  Through a VPN device or a route, GateControl remembers the certificate on
+  first contact (“NAS certificate remembered”). With “Directly to the
+  address” you always decide with a click.
+- **New certificate:** when the NAS renews its certificate, GateControl stops
+  and asks: “The NAS certificate has changed (e.g. after a renewal). Is that
+  okay?” – with the button **“Trust the new certificate”**. A changed
+  certificate is never taken over silently.
+- **SMB:** “Encrypt connection (SMB3)” is on for new targets. If the share
+  cannot do it, “Test” tells you where to switch it on at the NAS (Synology:
+  Control Panel › File Services › SMB › Advanced → SMB3 encryption).
+
+The field for a PEM file is still there, folded under “Advanced” – only for
+experts with their own CA.
+
 **Check:** `tar tzf /root/gatecontrol-*.tar.gz | grep -c data/` shows a number greater than 0.
 
 Continue with [chapter 3: Setting up a gateway](03-gateway-setup.md).

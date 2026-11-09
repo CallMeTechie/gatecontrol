@@ -17,7 +17,7 @@ Code: `src/services/storageTargets/` (service, `net.js`, `drivers/*.js`),
 | Kind | `kind` | Settings | Secret | Notes |
 |---|---|---|---|---|
 | Folder of this server | `local` | `path` (absolute) | – | another disk or a mounted volume. Never `/` or a system folder (`/etc`, `/usr`, `/proc`, `/root`, `/app` …); inside GateControl's data folder only below `<data>/storage/`. |
-| NAS over SMB | `smb` | `via` (`{ kind: 'host', host, port }`, `{ kind: 'peer', peerId, port }` or `{ kind: 'route', routeId }` — an **L4** route), `share`, `folder`, `username`, `domain` | `password` | through the image's `smbclient` (SMB 2 or newer). |
+| NAS over SMB | `smb` | `via` (`{ kind: 'host', host, port }`, `{ kind: 'peer', peerId, port }` or `{ kind: 'route', routeId }` — an **L4** route), `share`, `folder`, `username`, `domain`, `encrypt` | `password` | through the image's `smbclient` (SMB 2 or newer). `encrypt` ("Verbindung verschlüsseln (SMB3)"): see "SMB encryption". |
 | NAS over WebDAV | `webdav` | `url` (http/https, no user info), `via` (since 1.218.0: `{ kind: 'host' }` — the default, `{ kind: 'route', routeId }` or `{ kind: 'peer', peerId, port }`, see "Addresses"), `username`, `tlsCa` | `password` | Basic authentication; use https. |
 | S3-compatible | `s3` | `endpoint`, `region` (default `us-east-1`), `bucket`, `prefix`, `pathStyle` (default true), `accessKeyId`, `tlsCa` | `secretAccessKey` | AWS, Hetzner, Wasabi, Backblaze B2, MinIO, Synology C2. |
 | Google Drive | `gdrive` | `account`, `folderId`, `folderPath` | the OAuth token | the administrator's own account, scope `drive.file` (GateControl sees only what it created); connected with *Mit Google verbinden* (docs/cloud-accounts.md). |
@@ -29,7 +29,11 @@ Code: `src/services/storageTargets/` (service, `net.js`, `drivers/*.js`),
 the system's CAs); a server presenting exactly one of them needs no matching
 host name (a NAS reached by its IP with a certificate for "synology"),
 anything signed by them is checked against the host name as usual. The admin
-API answers `tlsCaInfo: [{ subject, fingerprint, validTo }]`.
+API answers `tlsCaInfo: [{ subject, device, fingerprint, validTo (ISO) }]`.
+Nobody has to paste a PEM file for a NAS any more: "Diesem Gerät vertrauen"
+stores the certificate the NAS presents, and through a VPN device or a route
+the first contact remembers it on its own (see "Trusting a NAS"). The PEM
+field is still there for experts, folded away under *Erweitert*.
 
 ### Certificates
 
@@ -88,9 +92,79 @@ terminates TLS: GateControl answers instead of the NAS — set the route's TLS
 mode to pass through). `trust.leaf`: the page offers "Diesem Zertifikat
 vertrauen" (not for a date, not with `route_decrypts`); `trust.chain`:
 "Mitgelieferte Kette übernehmen" — the CA certificates the server sent (not
-for `name`). Both ask first in the dialog with names and fingerprints, then
-put the PEM into the field and check again; it is kept only when the
-administrator saves.
+for `name`). `state` and `device` (services/storageTargets/trust.js): see
+"Trusting a NAS".
+
+### Trusting a NAS
+
+`trust.js` turns the diagnosis into what the page shows, in plain words, the
+technical details (names, issuer, dates, SHA-256 fingerprint) folded away under
+*Details*:
+
+| `tls.state` | When | The page |
+|---|---|---|
+| `untrusted` | `self_signed`, `untrusted_ca`, `missing_intermediate`, `untrusted` — and no `tlsCa` | „Die NAS weist sich mit einem eigenen Zertifikat aus. Das ist bei NAS-Geräten im Heimnetz üblich.“, the device name and „Gültig bis“, the button **„Diesem Gerät vertrauen“** |
+| `changed` | a `tlsCa` is stored and the server presents another certificate (`not_stored`); the check's error is `tls_changed` | „Das Zertifikat der NAS hat sich geändert (z. B. nach einer Erneuerung). Ist das in Ordnung?“, the button **„Neues Zertifikat vertrauen“** — also in the list, with a confirmation that shows device, validity and fingerprint |
+| `name` | a valid certificate for another name | an error with the names it has and what to enter in the address — no button |
+| `expired`, `not_yet_valid` | the dates | an error — renew the certificate on the NAS |
+| `decrypts` | `route_decrypts` | an error — the route decrypts itself |
+
+`tls.trust.leaf` is true exactly for `untrusted` and `changed`. What gets
+stored is always the presented **leaf**: pinned, valid under every name and
+IP, until it expires or the NAS replaces it — then `changed`. A name mismatch
+stays an error unless exactly the presented certificate is pinned (an
+expert's choice under *Erweitert*).
+
+**The click.** For a saved target `POST /api/v1/storage-targets/:id/trust
+{ fingerprint }` reads the certificate again (`inspectTls`, the same way as
+the transfers) and stores it as `tlsCa` only when its SHA-256 fingerprint is
+the one the page showed (`409 cert_mismatch` otherwise) and its state is
+`untrusted` or `changed` (`409 not_trustable` with `reason`); then it checks
+the target and answers `{ cert, replaced, check, target }`. For unsaved
+settings in the dialog the certificate goes into the (folded) PEM field, the
+check runs again, and it is kept with *Speichern*.
+
+**First contact through the VPN** (trust on first use, like SFTP's
+`StrictHostKeyChecking=accept-new`). The certificate is remembered without a
+click — the check answers `trusted: { auto: true, cert }`, the page shows
+„Zertifikat der NAS gemerkt“ with the details, a stored target keeps it in
+`tlsCa` (activity `storage_target_cert_remembered`) — only when all of these
+hold:
+
+- "Verbindung" is „Über ein VPN-Gerät“ or „Über eine Weiterleitung“ (WebDAV;
+  S3 storage targets connect to their endpoint itself) and the address
+  dialled is not a public one (VPN, LAN, loopback, CGNAT);
+- no `tlsCa` is stored;
+- this place was never reached with a trusted certificate before
+  (`config.tlsSeen`, set by the first passing check of a WebDAV / S3 target,
+  dropped when host, port or "Verbindung" change; a target from before counts
+  as reached when its last check passed);
+- the state is `untrusted`, and the connection gets past the certificate with it.
+
+Never over „Direkt zur Adresse“: there the path to the NAS crosses the
+internet or networks GateControl knows nothing about, and the certificate on
+the first contact may be anyone's — the administrator has to look and click.
+Through a VPN device the connection runs inside WireGuard to a peer whose
+key GateControl knows; through a route, to the gateway's listener or the
+route's target inside the VPN or the LAN. A certificate that **changed** is
+never accepted on its own, through the VPN neither: the check fails with
+`tls_changed`, the activity log gets `storage_target_cert_changed` once per
+change, the list shows „Neues Zertifikat vertrauen“. A click is logged as
+`storage_target_cert_trusted` (severity warning when it replaced one).
+
+### SMB encryption
+
+`encrypt: true` ("Verbindung verschlüsseln (SMB3)") runs `smbclient` with
+`--client-protection=encrypt` (Samba ≥ 4.15; the image's samba-client is
+4.21 / 4.22): SMB3 encryption is required, the session never falls back to
+the clear. On for new targets (input without `encrypt`); a target from
+before keeps its behaviour (`encrypt` missing = off) until it is changed —
+a PATCH without the field keeps the stored value — and its list row shows a
+one-line tip to switch it on. A share that cannot encrypt ("Encryption
+required and server doesn't support SMB3 encryption") fails with
+`no_encryption`; the page says „Die Freigabe kann keine Verschlüsselung (SMB3).
+Bei Synology: Systemsteuerung › Dateidienste › SMB › Erweitert →
+SMB3-Verschlüsselung.“ and that the switch can be turned off.
 
 ## Driver interface
 
@@ -258,21 +332,27 @@ GET    /api/v1/storage-targets/:id          → { target }
 PATCH  /api/v1/storage-targets/:id          { label, …settings, …secrets }   (a secret left empty keeps the stored one)
 DELETE /api/v1/storage-targets/:id
 POST   /api/v1/storage-targets/:id/check    → { check, target }
+POST   /api/v1/storage-targets/:id/trust    { fingerprint } → { cert, replaced, check, target }   ("Diesem Gerät vertrauen", see "Trusting a NAS")
 ```
 
 A view: `{ id, kind, label, config, secretSet: { <field>: boolean }, needsSecret,
 display, tlsCaInfo, encrypted, ranges, check: { at, ok, error, free, total } | null, usedBy:
 [{ kind, plugin, area, label }], createdAt, updatedAt }` — never a secret.
 `check`: `{ ok, error, message, free, total, steps: [{ step, ok }] }`, after a `tls`,
-`not_tls` or `tls_handshake` failure also `tls` (see "Certificates") and, for the
-latter two, `sys` (e.g. `ERR_SSL_WRONG_VERSION_NUMBER`).
+`tls_changed`, `not_tls` or `tls_handshake` failure also `tls` (see "Certificates") and, for the
+latter two, `sys` (e.g. `ERR_SSL_WRONG_VERSION_NUMBER`); `trusted: { auto, cert }`
+when the first contact through the VPN remembered the certificate. `error`
+`tls_changed`: another certificate than the stored one; `no_encryption`: an
+SMB share that cannot encrypt.
 
 Errors: `400 invalid` with `field` (the input field to fix), `404 not_found`,
 `409 in_use` (delete, or changing *where* a used target points — path, host,
 peer, route, share, folder, URL, WebDAV `via`, endpoint, bucket, prefix; a
 WebDAV PATCH without `via` keeps the stored one), `409 limit` (50
-targets). Activity: `storage_target_created`, `storage_target_changed`,
-`storage_target_deleted` (never a secret).
+targets), `409 cert_mismatch` / `409 not_trustable` (trust). Activity:
+`storage_target_created`, `storage_target_changed`, `storage_target_deleted`,
+`storage_target_cert_remembered`, `storage_target_cert_changed`,
+`storage_target_cert_trusted` (never a secret).
 
 ## Storage
 
@@ -322,7 +402,12 @@ certificate, the TLS diagnosis through a route) and
 by IP and any name, a CA with the right and the wrong name, an intermediate
 as anchor, certificates not stored, expired and not yet valid; `inspectTls`:
 every reason, no application byte, the address rules; no TLS on the port, a
-handshake aborted by an alert, the error mapping) run with every
+handshake aborted by an alert, the error mapping) and
+`tests/storage_targets_trust.test.js` (trust.js's verdicts; remembered on
+first contact through a VPN device, never directly, never for a target
+reached before; "Diesem Gerät vertrauen" and a renewed certificate with
+`tls_changed` and „Neues Zertifikat vertrauen“ over the API; a name that does
+not fit; SMB encryption through an smbclient shim) run with every
 `npm test`. `tests/storage_targets_live.test.js` runs the
 drivers against real servers when they are named in the environment
 (`GC_TEST_S3_*`, `GC_TEST_WEBDAV_*`, `GC_TEST_SMB_*`, see the file); the CI job

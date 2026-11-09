@@ -16,6 +16,9 @@
  *   PATCH  /api/v1/storage-targets/:id          change (a secret left empty keeps the stored one)
  *   DELETE /api/v1/storage-targets/:id          remove (409 while an area uses it)
  *   POST   /api/v1/storage-targets/:id/check    check the stored target (result kept on it)
+ *   POST   /api/v1/storage-targets/:id/trust    { fingerprint } "Diesem Gerät vertrauen" / "Neues
+ *                                               Zertifikat vertrauen": store the certificate the
+ *                                               server presents (only when it is that one), then check
  */
 
 const express = require('express');
@@ -27,7 +30,7 @@ const logger = require('../../utils/logger');
 const router = express.Router();
 router.use(requireAdminSession);
 
-const STATUS = { invalid: 400, not_found: 404, in_use: 409, limit: 409 };
+const STATUS = { invalid: 400, not_found: 404, in_use: 409, limit: 409, cert_mismatch: 409, not_trustable: 409 };
 
 function tr(req, key, fallback, params) {
   const s = req.t ? req.t(key, params) : key;
@@ -38,7 +41,7 @@ function fail(req, res, e) {
   const code = e && e.code;
   if (STATUS[code]) {
     const field = e.field || null;
-    return res.status(STATUS[code]).json({ ok: false, code, field,
+    return res.status(STATUS[code]).json({ ok: false, code, field, ...(e.reason ? { reason: e.reason } : {}),
       error: field ? tr(req, `plugins.stg.err.field_${field}`, tr(req, 'plugins.stg.err.invalid', 'Invalid input')) : tr(req, `plugins.stg.err.${code}`, e.message) });
   }
   logger.warn({ err: e && e.message }, 'storage target request failed');
@@ -152,6 +155,20 @@ router.post('/:id/check', async (req, res) => {
   try {
     const r = await targets.check(req.params.id);
     res.json({ ok: true, check: r, target: targets.get(req.params.id) });
+  } catch (e) { fail(req, res, e); }
+});
+
+router.post('/:id/trust', async (req, res) => {
+  const t = targets.get(req.params.id);
+  if (!t) return res.status(404).json({ ok: false, code: 'not_found', error: tr(req, 'plugins.stg.err.not_found', 'Not found') });
+  try {
+    const r = await targets.trustCert(t.id, body(req).fingerprint);
+    if (!r.already) {
+      activity.log('storage_target_cert_trusted', `Storage target "${t.label}": ${r.replaced ? 'new ' : ''}certificate of the NAS trusted (SHA-256 ${r.cert.fingerprint})`,
+        { source: 'admin', ipAddress: req.ip, severity: r.replaced ? 'warning' : 'info', details: { id: t.id, fingerprint: r.cert.fingerprint, replaced: r.replaced } });
+    }
+    const c = await targets.check(t.id);
+    res.json({ ok: true, cert: r.cert, replaced: r.replaced, check: c, target: targets.get(t.id) });
   } catch (e) { fail(req, res, e); }
 });
 

@@ -327,14 +327,17 @@ How to fix it (as for Drive's storage target):
    (Synology: 5006 for https). Or “Through a route” and an L4 route to the
    NAS – it may stay internal only.
 3. The **URL** stays `https://nas.example.com:5006/…`: it sets the path, the
-   host name and the name the certificate is checked against. Paste a private
-   DSM certificate under “Own certificate or CA (PEM)” (`cert.pem` is enough).
+   host name and the name the certificate is checked against.
+4. **Save.** The test that follows remembers the NAS certificate (“NAS
+   certificate remembered”) – you no longer need a PEM file. If “Test” shows
+   “The NAS identifies itself with its own certificate” instead, click “Trust
+   this device”.
 
 If the NAS is already a storage target for Drive: choose “Take over a storage
 target from Drive/plugins” at the top of the dialog. URL, user, connection
 and certificate are filled in, the password is copied once when you save.
 Give the URL its own sub-folder (e.g. `…/GateControl/Backups/`), so the
-backups do not end up between Drive's files. SMB and SFTP have the same
+backups do not end up between Drive's files. SMB, SFTP and S3 have the same
 “Connection” choice.
 
 ## Setting up a gateway
