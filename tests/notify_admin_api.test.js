@@ -83,7 +83,7 @@ describe('GET /overview', () => {
     assert.equal(r.body.kpis.queued, 1, 'anna is offline');
     assert.equal(r.body.kpis.queued_devices, 1);
     assert.ok(r.body.kpis.devices_total >= 3);
-    assert.deepEqual(keys(r.body.recent[0]), ['created_at', 'delivered', 'event_id', 'id', 'priority', 'read', 'recipients_label', 'silent', 'source', 'title', 'topic', 'total']);
+    assert.deepEqual(keys(r.body.recent[0]), ['created_at', 'delivered', 'elsewhere', 'event_id', 'id', 'priority', 'read', 'recipients_label', 'silent', 'source', 'title', 'topic', 'total']);
     assert.equal(r.body.recent[0].total, 2);
     assert.equal(r.body.recent[0].source, `manual:${adminId}`);
     assert.deepEqual(r.body.hub, { enabled: true, endpoint: '/api/v1/client/push', keepalive_s: 25, retention_h: 72, max_queue: 200, allow_direct: true });
@@ -280,7 +280,7 @@ describe('history', () => {
   it('GET /history: items, filters, paging', async () => {
     let r = await get('/history').expect(200);
     assert.deepEqual(keys(r.body), ['items', 'next_before', 'ok']);
-    assert.deepEqual(keys(r.body.items[0]), ['body', 'created_at', 'delivered', 'event_id', 'id', 'priority', 'read', 'recipients_label', 'silent', 'source', 'status', 'title', 'total']);
+    assert.deepEqual(keys(r.body.items[0]), ['body', 'created_at', 'delivered', 'elsewhere', 'event_id', 'id', 'priority', 'read', 'recipients_label', 'silent', 'source', 'status', 'title', 'total']);
     assert.equal(r.body.items.length, 2);
     assert.equal(r.body.next_before, null);
     const m = r.body.items.find((i) => i.id === manualId);
@@ -307,7 +307,7 @@ describe('history', () => {
     const r = await get(`/history/${manualId}`).expect(200);
     assert.deepEqual(keys(r.body), ['deliveries', 'email', 'notification', 'ok', 'timeline']);
     assert.equal(r.body.notification.id, manualId);
-    assert.deepEqual(keys(r.body.deliveries[0]), ['action', 'delivered_at', 'device_name', 'latency_ms', 'queued_at', 'read_at', 'sent_at', 'state', 'token_id', 'user_name', 'via']);
+    assert.deepEqual(keys(r.body.deliveries[0]), ['action', 'delivered_at', 'device_name', 'latency_ms', 'queued_at', 'read_at', 'read_via', 'sent_at', 'state', 'token_id', 'user_name', 'via']);
     const a = r.body.deliveries.find((d) => d.token_id === annaPhone.tokenId);
     assert.equal(a.state, 'read');
     assert.equal(a.action, 'details');

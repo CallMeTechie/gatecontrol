@@ -157,27 +157,36 @@ const ACK_FROM = {
   dismissed: ['queued', 'sent', 'delivered', 'read'],
 };
 
+/** read_via of a row the device did not read itself (migration 144). */
+function readElsewhere(row) { return !!row && row.read_at != null && row.read_via != null && row.read_via !== 'self'; }
+
 /**
  * A device confirms its own deliveries. Returns the rows that changed
- * ({ seq, notification_id, user_id }). `read`/`dismissed` also mark the
- * same person's other deliveries of those notifications as read.
+ * ({ seq, notification_id, user_id }). Only the device's own rows change;
+ * the read-sync to the person's other devices is hub.onAck (real `read` only).
  */
 function ack(tokenId, seqs, state, action) {
   const db = getDb();
   const t = iso();
   const from = ACK_FROM[state];
   const list = seqs.length ? seqs : [-1];
-  const rows = db.prepare(`SELECT seq, notification_id, user_id, state FROM notification_deliveries
+  const rows = db.prepare(`SELECT seq, notification_id, user_id, state, delivered_at, read_at, read_via FROM notification_deliveries
      WHERE token_id = ? AND seq IN (${list.map(() => '?').join(',')})`).all(tokenId, ...list);
   const changed = [];
   db.transaction(() => {
     for (const r of rows) {
       const fields = [];
       const args = [];
+      // Any ack proves the device has the notification — also one already
+      // marked read elsewhere (read-sync) before the device confirmed it.
+      if (r.delivered_at == null && r.state !== 'expired' && r.state !== 'suppressed') { fields.push('delivered_at = ?'); args.push(t); }
       if (from.includes(r.state)) {
         fields.push('state = ?'); args.push(state);
-        if (state === 'delivered' || r.state === 'queued' || r.state === 'sent') { fields.push('delivered_at = COALESCE(delivered_at, ?)'); args.push(t); }
-        if (state === 'read' || state === 'dismissed') { fields.push('read_at = COALESCE(read_at, ?)'); args.push(t); }
+        // read_via tells who set read_at: kept when it was already set (read elsewhere, then swiped away here)
+        if ((state === 'read' || state === 'dismissed') && r.read_at == null) { fields.push('read_at = ?', "read_via = 'self'"); args.push(t); }
+      } else if (state === 'read' && r.state === 'read' && readElsewhere(r)) {
+        // read elsewhere first, now opened on this device too: its own read from now on
+        fields.push('read_at = ?', "read_via = 'self'"); args.push(t);
       }
       if (action) { fields.push('action = ?'); args.push(action); }
       if (!fields.length) continue;
@@ -191,8 +200,11 @@ function ack(tokenId, seqs, state, action) {
 /**
  * Mark the deliveries of `notificationIds` of one person as read (read-sync,
  * portal "gelesen"). Returns the token ids whose rows changed, per id.
+ * `via`: where the person read it — 'device' (another of their devices) or
+ * 'portal'; stored as read_via, the admin sees "Anderswo gelesen".
+ * delivered_at stays as it is: the device did not get anything new.
  */
-function markReadForUser(userId, notificationIds, { exceptToken = null } = {}) {
+function markReadForUser(userId, notificationIds, { exceptToken = null, via = 'device' } = {}) {
   if (!notificationIds.length) return [];
   const db = getDb();
   const t = iso();
@@ -200,8 +212,10 @@ function markReadForUser(userId, notificationIds, { exceptToken = null } = {}) {
   const rows = db.prepare(`SELECT seq, token_id, notification_id FROM notification_deliveries
      WHERE user_id = ? AND notification_id IN (${ph}) AND state IN ('queued', 'sent', 'delivered')
      ${exceptToken != null ? 'AND token_id <> ?' : ''}`).all(...[userId, ...notificationIds, ...(exceptToken != null ? [exceptToken] : [])]);
-  const upd = db.prepare(`UPDATE notification_deliveries SET state = 'read', read_at = COALESCE(read_at, ?) WHERE seq = ?`);
-  db.transaction(() => { for (const r of rows) upd.run(t, r.seq); })();
+  const upd = db.prepare(`UPDATE notification_deliveries SET state = 'read', read_at = COALESCE(read_at, ?),
+     read_via = CASE WHEN read_at IS NULL THEN ? ELSE read_via END WHERE seq = ?`);
+  const v = via === 'portal' ? 'portal' : 'device';
+  db.transaction(() => { for (const r of rows) upd.run(t, v, r.seq); })();
   return rows;
 }
 
@@ -273,7 +287,7 @@ module.exports = {
   NOT_CHAT_SQL,
   now, iso, wire, parseJson,
   createNotification, getNotification, updateNotification, deleteNotification, latestByCollapse,
-  addDeliveries, requeue, deliveriesOf, markSent, pendingForToken, deliveryRow, payload, imageUrlOf, ack, markReadForUser,
+  addDeliveries, requeue, deliveriesOf, markSent, pendingForToken, deliveryRow, payload, imageUrlOf, ack, markReadForUser, readElsewhere,
   inbox, unreadCount, queuedCount, revokedForToken,
   devicePrefs, touchDevice, seen, setDevicePrefs,
   _setClock,

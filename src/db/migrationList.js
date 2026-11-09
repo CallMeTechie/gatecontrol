@@ -3887,6 +3887,31 @@ const migrations = [
       ALTER TABLE ip_block_failures ADD COLUMN unknown_user INTEGER NOT NULL DEFAULT 0;`,
     detect: (db) => hasColumn(db, 'ip_block_failures', 'weight') && hasColumn(db, 'ip_block_failures', 'unknown_user'),
   },
+  {
+    version: 144,
+    name: 'notify_read_via',
+    // Benachrichtigungen (docs/feature-notification-center.md "Gelesen-Abgleich"):
+    // where the "gelesen" of a delivery row comes from —
+    //   read_via  'self'      the device itself sent read/dismissed (ack)
+    //             'device'    the person read it on another of their devices
+    //             'portal'    the person read it in the portal ("Gelesen",
+    //                         "Alle als gelesen")
+    //             'elsewhere' read on another device or in the portal — rows
+    //                         from before this column (origin not recorded)
+    //             NULL        not read (yet)
+    // The admin's Zustellprotokoll shows a row not read by the device itself
+    // as "Anderswo gelesen" and does not count it as delivered.
+    // Existing rows: the origin was never stored. A device's own ack always
+    // set delivered_at, the read-sync never did — so a read row without
+    // delivered_at was read elsewhere; all other read rows count as 'self'
+    // (a row the device had received and that was then read elsewhere cannot
+    // be told apart any more).
+    sql: `
+      ALTER TABLE notification_deliveries ADD COLUMN read_via TEXT;
+      UPDATE notification_deliveries SET read_via = CASE WHEN delivered_at IS NULL THEN 'elsewhere' ELSE 'self' END
+        WHERE read_at IS NOT NULL;`,
+    detect: (db) => hasColumn(db, 'notification_deliveries', 'read_via'),
+  },
 ];
 
 module.exports = { migrations };
