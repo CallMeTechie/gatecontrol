@@ -350,8 +350,12 @@ function initResendButton() {
       if (!ok) {
         const msg = (data && data.error) ? data.error : 'An error occurred. Please try again.';
         showError(msg);
+      } else if (data && data.message) {
+        // E-mail code login: the same neutral text for every address
+        // ("Falls diese Adresse … freigeschaltet ist …").
+        const infoText = document.getElementById('code-info-text');
+        if (infoText) infoText.textContent = data.message;
       }
-      // On success: code re-sent, no UI change needed
     } catch (err) {
       showError('An error occurred. Please try again.');
     }

@@ -310,12 +310,18 @@ Benutzername zählt dabei mehrfach – Einstellung **„Unbekannte Benutzernamen
 zählen“**, voreingestellt **dreifach**. Mit 10 Fehlversuchen sperrt also schon
 der 4. Versuch mit einem unbekannten Namen. Das gilt für den
 GateControl-Login, den Login aus dem Portal, die Anmeldung in den Apps und
-die Logins geschützter Routen. Ein falsches Passwort zu einem bestehenden
-Konto und ein falscher zweiter Faktor zählen einfach.
+die Logins geschützter Routen – dort auch, wenn jemand einen E-Mail-Code für
+eine Adresse anfordert, die für die Route nicht freigeschaltet ist. Ein
+falsches Passwort zu einem bestehenden Konto, ein falscher zweiter Faktor und
+ein falscher oder abgelaufener E-Mail-Code zählen einfach. Im Protokoll stehen
+solche Fehlversuche einer Route als `route_auth_failed` mit Route, gekürzter
+Adresse (`s***@example.com`) und IP.
 
 Wer sich anmeldet, merkt keinen Unterschied: Die Antwort ist für unbekannte
 und bekannte Namen gleich, so lässt sich nicht herausfinden, welche Konten es
-gibt. Vertippst du dich selbst öfter beim Namen, stell die Einstellung auf
+gibt. Beim Login mit E-Mail-Code sieht jede Adresse denselben Satz: „Falls
+diese Adresse für diese Seite freigeschaltet ist, haben wir Ihnen einen Code
+geschickt.“ Nur die freigeschaltete Adresse bekommt wirklich eine Mail. Vertippst du dich selbst öfter beim Namen, stell die Einstellung auf
 „doppelt“ oder „einfach“ oder trag dein Netz unter **„Nie sperren“** ein.
 Adressen im VPN und im eigenen Netz werden ohnehin nie gesperrt.
 

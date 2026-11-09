@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.258.2] — 2026-11-09
+
+### Änderungen
+- Route-Login: E-Mail-Code verrät nicht mehr, ob eine Adresse freigeschaltet ist (#459)
+
+---
+
 ## [1.258.1] — 2026-11-09
 
 ### Änderungen
