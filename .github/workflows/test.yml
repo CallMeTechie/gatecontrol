@@ -63,8 +63,9 @@ jobs:
           retention-days: 3
           if-no-files-found: ignore
 
-  # Storage targets (docs/storage-targets.md) against real servers: S3
-  # (moto), WebDAV (wsgidav) and SMB (Samba with smbclient, as in the image).
+  # Storage targets (docs/storage-targets.md) and the off-site backup
+  # transports (services/offsite) against real servers: S3 (moto), WebDAV
+  # (wsgidav) and SMB (Samba with smbclient, as in the image).
   storage-targets:
     name: storage targets (S3, WebDAV, SMB)
     runs-on: ubuntu-latest
@@ -108,8 +109,8 @@ jobs:
           done
           curl -sf -X PUT http://127.0.0.1:5055/gc-test-bucket
 
-      - name: Run the live storage target tests
-        run: node --test --test-force-exit tests/storage_targets_live.test.js
+      - name: Run the live storage target and off-site tests
+        run: node --test --test-force-exit tests/storage_targets_live.test.js tests/offsite_live.test.js
         env:
           NODE_ENV: test
           GC_TEST_S3_ENDPOINT: http://127.0.0.1:5055

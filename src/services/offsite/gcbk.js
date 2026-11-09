@@ -34,7 +34,7 @@ const { Transform } = require('node:stream');
 
 // gzip in the thread pool. encryptBackup()/decryptBackup() work on one buffer
 // (small backups, tests); backup FILES go through the streaming
-// encryptBackupFile() / decryptBackupFileTo() — a backup with plugin data has
+// writeBackupArchive() / decryptBackupFileTo() — a backup with plugin data has
 // up to several hundred MB.
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
@@ -111,18 +111,25 @@ async function encryptBackup(backup, { passphrase, encryptionKey, gcVersion = nu
 
 /**
  * encryptBackup() for a backup FILE (services/autobackup writes them), as a
- * stream: the file is read in chunks and spliced into the payload text as it
- * is — never parsed, never stringified again — then gzip (thread pool) and
- * AES-GCM run chunk by chunk. JSON.parse + JSON.stringify + one cipher pass
- * over a few hundred MB blocked the event loop for seconds before. The
- * payload is the same as encryptBackup() makes (the backup part keeps the
- * whitespace of the file — gzip makes that free, JSON.parse ignores it).
+ * stream into the archive FILE `outFile` (new, 0600): the backup file is
+ * read in chunks and spliced into the payload text as it is — never parsed,
+ * never stringified again — then gzip (thread pool) and AES-GCM run chunk by
+ * chunk and the archive is written piece by piece. Neither the backup nor
+ * the archive is ever in memory as a whole (an archive with plugin data has
+ * a few hundred MB; services/offsite uploads it from the file). The payload
+ * is the same as encryptBackup() makes (the backup part keeps the whitespace
+ * of the file — gzip makes that free, JSON.parse ignores it). On any error
+ * `outFile` is removed.
+ *
+ * `partSize`: also the SHA-256 of every `partSize` bytes of the archive
+ * (the S3 transport signs its parts with them — no second read of the file).
  *
  * @param {string} file          path of a JSON backup file
- * @param {object} opts          as encryptBackup()
- * @returns {Promise<Buffer>}
+ * @param {string} outFile       where the archive goes (must not exist)
+ * @param {object} opts          as encryptBackup(), plus partSize
+ * @returns {Promise<{size: number, partSize: number|null, partHashes: string[]|null}>}
  */
-async function encryptBackupFile(file, { passphrase, encryptionKey, gcVersion = null, kdf = DEFAULT_KDF } = {}) {
+async function writeBackupArchive(file, outFile, { passphrase, encryptionKey, gcVersion = null, kdf = DEFAULT_KDF, partSize = null } = {}) {
   if (typeof passphrase !== 'string' || passphrase.length < MIN_PASSPHRASE) {
     throw new GcbkError('PASSPHRASE_TOO_SHORT', `passphrase must have at least ${MIN_PASSPHRASE} characters`);
   }
@@ -152,14 +159,62 @@ async function encryptBackupFile(file, { passphrase, encryptionKey, gcVersion = 
     for await (const chunk of fs.createReadStream(file, { highWaterMark: 256 * 1024 })) yield chunk;
     yield tail;
   }
-  // into a temp file next to the backup, then read in one piece: the archive
-  // is in memory once (chunks + Buffer.concat held it twice)
+  const parts = partSize ? new PartHasher(partSize) : null;
+  let size = 0;
+  // everything written to the archive passes here: counted (and hashed)
+  const tap = (chunk) => { size += chunk.length; if (parts) parts.update(chunk); return chunk; };
+  async function* archive(source) {
+    yield tap(aad);
+    for await (const chunk of source) yield tap(chunk);
+    yield tap(cipher.getAuthTag()); // after the last ciphertext: cipher.final() has run
+  }
+  try {
+    await pipeline(payload, zlib.createGzip(), cipher, archive, fs.createWriteStream(outFile, { flags: 'wx', mode: 0o600 }));
+  } catch (err) {
+    // EEXIST: someone else's file — never remove that
+    if (!(err && err.code === 'EEXIST')) await fs.promises.rm(outFile, { force: true }).catch(() => {});
+    throw err;
+  }
+  return { size, partSize: parts ? partSize : null, partHashes: parts ? parts.digest() : null };
+}
+
+/** SHA-256 of every `partSize` bytes of a stream (the last part may be shorter). */
+class PartHasher {
+  constructor(partSize) {
+    if (!Number.isSafeInteger(partSize) || partSize < 1) throw new TypeError('partSize must be a positive integer');
+    this.partSize = partSize;
+    this.hashes = [];
+    this.cur = null;
+    this.left = 0;
+  }
+  update(buf) {
+    for (let at = 0; at < buf.length;) {
+      if (!this.cur) { this.cur = crypto.createHash('sha256'); this.left = this.partSize; }
+      const n = Math.min(this.left, buf.length - at);
+      this.cur.update(buf.subarray(at, at + n));
+      at += n;
+      this.left -= n;
+      if (this.left === 0) { this.hashes.push(this.cur.digest('hex')); this.cur = null; }
+    }
+  }
+  digest() {
+    if (this.cur) { this.hashes.push(this.cur.digest('hex')); this.cur = null; }
+    return this.hashes;
+  }
+}
+
+/**
+ * writeBackupArchive() into a Buffer (tests, small backups): through a temp
+ * file next to the backup, read in one piece afterwards.
+ *
+ * @param {string} file          path of a JSON backup file
+ * @param {object} opts          as encryptBackup()
+ * @returns {Promise<Buffer>}
+ */
+async function encryptBackupFile(file, opts = {}) {
   const tmp = `${file}.${crypto.randomBytes(6).toString('hex')}.gcbk.tmp`;
   try {
-    const out = fs.createWriteStream(tmp, { flags: 'wx', mode: 0o600 });
-    out.write(aad);
-    await pipeline(payload, zlib.createGzip(), cipher, out);
-    await fs.promises.appendFile(tmp, cipher.getAuthTag());
+    await writeBackupArchive(file, tmp, { ...opts, partSize: null });
     return await fs.promises.readFile(tmp);
   } finally {
     await fs.promises.rm(tmp, { force: true }).catch(() => {});
@@ -322,6 +377,8 @@ module.exports = {
   readHeader,
   encryptBackup,
   encryptBackupFile,
+  writeBackupArchive,
+  PartHasher,
   decryptBackup,
   decryptBackupFileTo,
   checkPayload,

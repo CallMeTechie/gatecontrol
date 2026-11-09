@@ -6,12 +6,15 @@
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const crypto = require('node:crypto');
 const webdav = require('../src/services/offsite/webdav');
+const { archiveFile, downloadBuffer } = require('./helpers/offsiteFiles');
 
 describe('WebDAV transport', () => {
   const files = new Map(); // path → Buffer
   const cols = new Set(['/dav/']);
   const log = [];
+  const puts = [];
   let server;
   let base;
 
@@ -52,7 +55,12 @@ describe('WebDAV transport', () => {
         if (req.method === 'PUT') {
           const dir = p.replace(/[^/]+$/, '');
           if (!cols.has(dir)) { res.writeHead(409); res.end(); return; }
+          puts.push({ length: req.headers['content-length'], chunked: !!req.headers['transfer-encoding'], got: Buffer.concat(chunks).length });
           files.set(p, Buffer.concat(chunks)); res.writeHead(201); res.end(); return;
+        }
+        if (req.method === 'GET') {
+          if (!files.has(p)) { res.writeHead(404); res.end(); return; }
+          res.writeHead(200); res.end(files.get(p)); return;
         }
         if (req.method === 'DELETE') { const had = files.delete(p); res.writeHead(had ? 204 : 404); res.end(); return; }
         res.writeHead(405); res.end();
@@ -81,6 +89,19 @@ describe('WebDAV transport', () => {
     const f = list.find((x) => x.name === 'gatecontrol-20260914-030000.gcbk');
     assert.equal(f.size, 3);
     assert.equal(f.modified, '2026-09-14T03:00:00.000Z');
+  });
+
+  it('an archive file goes up as a stream with Content-Length (never chunked) and comes back into a file', async () => {
+    const data = crypto.randomBytes(1024 * 1024 + 3);
+    puts.length = 0;
+    const a = archiveFile(data);
+    await webdav.upload(cfg(), 'gatecontrol-20260915-030000.gcbk', a);
+    assert.deepEqual(puts, [{ length: String(data.length), chunked: false, got: data.length }]);
+    assert.ok(require('node:fs').existsSync(a.path), 'the caller owns the archive file');
+    assert.ok((await downloadBuffer(webdav, cfg(), 'gatecontrol-20260915-030000.gcbk')).equals(data));
+    await assert.rejects(downloadBuffer(webdav, cfg(), 'gatecontrol-20260915-030000.gcbk', undefined, { maxBytes: 1024 }), { code: 'TOO_LARGE' });
+    await assert.rejects(downloadBuffer(webdav, cfg(), 'missing.gcbk'), (e) => e.code === 'TRANSPORT' && e.remoteStatus === 404);
+    await webdav.remove(cfg(), 'gatecontrol-20260915-030000.gcbk');
   });
 
   it('remove deletes; a missing file is fine', async () => {

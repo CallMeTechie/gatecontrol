@@ -18,9 +18,10 @@
 const crypto = require('node:crypto');
 const net = require('../storageTargets/net');
 const via = require('../storageTargets/via');
+const { sourceOf, streamToFile, isLocalError } = require('./source');
 
 const TIMEOUT_MS = 120 * 1000;
-const MAX_DOWNLOAD = 1024 * 1024 * 1024; // the restore test refuses more than 128 MB anyway
+const MAX_DOWNLOAD = 1024 * 1024 * 1024; // a GateControl archive (index.js MAX_VERIFY_BYTES)
 
 function collectionUrl(cfg) {
   const u = new URL(cfg.url);
@@ -126,14 +127,24 @@ async function ensureCollection(cfg) {
   return false;
 }
 
-async function upload(cfg, name, buf) {
+/**
+ * PUT the archive (source.js: the archive file, streamed with
+ * Content-Length — never chunked, never in memory — or a Buffer).
+ */
+async function upload(cfg, name, body) {
+  const src = sourceOf(body);
   await ensureCollection(cfg);
   const url = new URL(encodeURIComponent(name), collectionUrl(cfg));
-  await dav(cfg, 'PUT', url, {
-    body: buf,
-    headers: { 'content-type': 'application/octet-stream', 'content-length': String(buf.length) },
-    timeoutMs: TIMEOUT_MS,
-  });
+  const stream = src.buffer ? null : src.open();
+  try {
+    await dav(cfg, 'PUT', url, {
+      body: src.buffer || stream,
+      headers: { 'content-type': 'application/octet-stream', 'content-length': String(src.size) },
+      timeoutMs: TIMEOUT_MS,
+    });
+  } finally {
+    if (stream) stream.destroy();
+  }
 }
 
 async function list(cfg) {
@@ -159,15 +170,22 @@ async function list(cfg) {
   return files;
 }
 
-/** Read one file back (restore test). Returns a Buffer; never writes anything. */
-async function download(cfg, name) {
+/**
+ * Read one file back (restore test) into the local `file` (new, 0600), piece
+ * by piece. Never writes anything on the target. → bytes. On an error the
+ * caller removes `file`.
+ */
+async function downloadTo(cfg, name, file, ctx, { maxBytes = MAX_DOWNLOAD } = {}) {
   const url = new URL(encodeURIComponent(name), collectionUrl(cfg));
   const res = await send(cfg, 'GET', url, { timeoutMs: TIMEOUT_MS });
   if (res.status < 200 || res.status >= 300) {
     await net.drain(res.stream);
     throw statusError('GET', res);
   }
-  try { return await net.readBody(res.stream, MAX_DOWNLOAD); } catch (err) { throw await transportError(cfg, 'GET', url, err); }
+  try { return await streamToFile(res.stream, file, maxBytes); } catch (err) {
+    if (err && (err.code === 'TOO_LARGE' || isLocalError(err))) throw err;
+    throw await transportError(cfg, 'GET', url, err);
+  }
 }
 
 async function remove(cfg, name) {
@@ -205,4 +223,4 @@ function route(cfg) {
   return { kind: v.kind, dial: dialer || (() => ({ host: url.hostname, port: Number(url.port) || 443 })) };
 }
 
-module.exports = { upload, download, list, remove, test, inspectTls, route, parseMultistatus, collectionUrl };
+module.exports = { upload, downloadTo, list, remove, test, inspectTls, route, parseMultistatus, collectionUrl };

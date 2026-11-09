@@ -20,13 +20,26 @@
 // net.request (one checked, pinned address per request; TLS always
 // verified); a timeout is an idle timeout (no byte for that long), so a
 // large upload over a slow line is fine.
+//
+// Uploads come from the archive file (source.js) as streams with
+// Content-Length, never as one buffer: up to PART_SIZE one PUT, above that a
+// multipart upload of PART_SIZE parts read part by part from the file (each
+// signed with its own SHA-256 — gcbk.writeBackupArchive computed them while
+// writing the archive, otherwise the part is hashed from the file first),
+// aborted when anything fails, so no half upload stays on the bucket.
 
 const crypto = require('node:crypto');
 const net = require('../storageTargets/net');
 const via = require('../storageTargets/via');
+const { sourceOf, hashFile, streamToFile, isLocalError } = require('./source');
 
 const SERVICE = 's3';
 const TIMEOUT_MS = 120 * 1000;
+// one PUT up to this size, multipart above (S3: parts 5 MiB … 5 GiB, at most 10 000)
+const PART_SIZE = 64 * 1024 * 1024;
+const MAX_PARTS = 10000;
+// the tests lower `part` (a multipart upload of a few MB)
+const limits = { part: PART_SIZE };
 
 function sha256hex(data) {
   return crypto.createHash('sha256').update(data).digest('hex');
@@ -153,7 +166,7 @@ async function sha256hexAsync(data) {
 }
 
 const MAX_ANSWER = 16 * 1024 * 1024;
-const MAX_DOWNLOAD = 1024 * 1024 * 1024; // the restore test refuses more than 128 MB anyway
+const MAX_DOWNLOAD = 1024 * 1024 * 1024; // a GateControl archive (index.js MAX_VERIFY_BYTES)
 
 /** A failed connection → Error code TRANSPORT; `sys`: the system's code (index.js reads the certificate after one). */
 function transportError(method, err) {
@@ -163,19 +176,25 @@ function transportError(method, err) {
   return e;
 }
 
-/** Sign and send one request → { status, headers, stream } (the caller reads the body). */
-async function send(cfg, method, key, { query, body, headers = {}, timeoutMs = TIMEOUT_MS } = {}) {
+/**
+ * Sign and send one request → { status, headers, stream } (the caller reads
+ * the body). `body`: a Buffer, or a Readable (`stream`) of `length` bytes
+ * whose SHA-256 is `payloadHash` — sent with Content-Length, never chunked.
+ */
+async function send(cfg, method, key, { query, body, stream = null, length = 0, payloadHash = null, headers = {}, timeoutMs = TIMEOUT_MS } = {}) {
   const url = objectUrl(cfg, key, query);
-  const payload = body || Buffer.alloc(0);
+  const payload = stream ? null : (body || Buffer.alloc(0));
   const signed = signRequest({
-    method, url, headers, payloadHash: await sha256hexAsync(payload),
+    method, url, headers, payloadHash: stream ? payloadHash : await sha256hexAsync(payload),
     region: cfg.region || 'us-east-1', accessKeyId: cfg.access_key_id, secretAccessKey: cfg.secret_access_key,
   });
+  // the length of a stream: not signed (as net.request's for a Buffer), only sent
+  if (stream) signed['content-length'] = String(length);
   try {
     const dialer = via.webdavDialer(via.webdavViaOf(cfg), url);
     // Host (signed) is url.host, the same net.request sends
     return await net.request({
-      method, url, headers: signed, body: method === 'PUT' ? payload : null, idleMs: timeoutMs,
+      method, url, headers: signed, body: stream || (method === 'PUT' || method === 'POST' ? payload : null), idleMs: timeoutMs,
       tlsCa: cfg.tls_ca || null, dial: dialer ? dialer() : null,
     });
   } catch (err) {
@@ -202,11 +221,81 @@ async function request(cfg, method, key, opts = {}) {
   return { status: res.status, text };
 }
 
-async function upload(cfg, name, buf) {
-  await request(cfg, 'PUT', prefixOf(cfg) + name, {
-    body: buf,
-    headers: { 'content-type': 'application/octet-stream' },
-  });
+/** The SHA-256 of bytes start…end of an archive file: computed while it was written, else read from the file. */
+async function partHash(src, n, start, end, partSize) {
+  if (src.partSize === partSize && src.partHashes && src.partHashes.length === Math.ceil(src.size / partSize) && src.partHashes[n]) return src.partHashes[n];
+  return hashFile(src.path, start, end);
+}
+
+/** PUT bytes start…end of the archive file as one request (a whole object or one part). */
+async function putRange(cfg, key, src, { query, headers = {}, hash, start, end }) {
+  const stream = src.open(start, end);
+  try {
+    const res = await send(cfg, 'PUT', key, { query, headers, stream, length: end - start + 1, payloadHash: hash });
+    let text = '';
+    try { text = (await net.readBody(res.stream, MAX_ANSWER)).toString('utf8'); } catch (err) {
+      if (res.status < 300) throw transportError('PUT', err);
+    }
+    if (res.status >= 300) throw statusError('PUT', res.status, text);
+    return res;
+  } finally { stream.destroy(); }
+}
+
+function xmlEscape(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+async function uploadMultipart(cfg, key, src) {
+  const partSize = Math.max(limits.part, Math.ceil(src.size / MAX_PARTS));
+  const init = await request(cfg, 'POST', key, { query: { uploads: '' }, headers: { 'content-type': 'application/octet-stream' } });
+  const uploadId = xmlValue(init.text, 'UploadId');
+  if (!uploadId) {
+    const e = new Error('S3 POST: no UploadId in the answer');
+    e.code = 'TRANSPORT';
+    throw e;
+  }
+  try {
+    const parts = [];
+    for (let n = 1, start = 0; start < src.size; n++, start += partSize) {
+      const end = Math.min(src.size, start + partSize) - 1;
+      const hash = await partHash(src, n - 1, start, end, partSize);
+      const res = await putRange(cfg, key, src, { query: { partNumber: String(n), uploadId }, hash, start, end });
+      const etag = res.headers.etag;
+      if (!etag) {
+        const e = new Error(`S3 PUT: no ETag for part ${n}`);
+        e.code = 'TRANSPORT';
+        throw e;
+      }
+      parts.push({ n, etag });
+    }
+    const xml = `<CompleteMultipartUpload>${parts.map((p) => `<Part><PartNumber>${p.n}</PartNumber><ETag>${xmlEscape(p.etag)}</ETag></Part>`).join('')}</CompleteMultipartUpload>`;
+    // assembling the parts takes the server a while for a large object
+    const done = await request(cfg, 'POST', key, { query: { uploadId }, body: Buffer.from(xml, 'utf8'), headers: { 'content-type': 'application/xml' }, timeoutMs: 10 * 60 * 1000 });
+    // S3 may answer 200 with an <Error> body when completing fails late
+    if (/<Error>/.test(done.text)) throw statusError('POST', done.status, done.text);
+  } catch (err) {
+    try { await request(cfg, 'DELETE', key, { query: { uploadId }, timeoutMs: 30000 }); } catch { /* best effort: the bucket's lifecycle rule cleans up the rest */ }
+    throw err;
+  }
+}
+
+/**
+ * Upload the archive (source.js: the archive file, or a Buffer): up to
+ * limits.part one PUT, above that a multipart upload — both streamed from
+ * the file with Content-Length.
+ */
+async function upload(cfg, name, body) {
+  const src = sourceOf(body);
+  const key = prefixOf(cfg) + name;
+  const headers = { 'content-type': 'application/octet-stream' };
+  if (src.buffer) {
+    await request(cfg, 'PUT', key, { body: src.buffer, headers });
+    return;
+  }
+  if (src.size > limits.part) {
+    await uploadMultipart(cfg, key, src);
+    return;
+  }
+  const hash = await partHash(src, 0, 0, src.size - 1, limits.part);
+  await putRange(cfg, key, src, { headers, hash, start: 0, end: src.size - 1 });
 }
 
 async function list(cfg) {
@@ -231,8 +320,12 @@ async function list(cfg) {
   return files;
 }
 
-/** Read one object back (restore test) as a Buffer. Nothing is written on the remote side. */
-async function download(cfg, name) {
+/**
+ * Read one object back (restore test) into the local `file` (new, 0600),
+ * piece by piece. Nothing is written on the remote side. → bytes. On an
+ * error the caller removes `file`.
+ */
+async function downloadTo(cfg, name, file, ctx, { maxBytes = MAX_DOWNLOAD } = {}) {
   const res = await send(cfg, 'GET', prefixOf(cfg) + name);
   if (res.status >= 300) {
     let text = '';
@@ -241,7 +334,10 @@ async function download(cfg, name) {
     e.message = e.message.replace(/: .*$/, '');
     throw e;
   }
-  try { return await net.readBody(res.stream, MAX_DOWNLOAD); } catch (err) { throw transportError('GET', err); }
+  try { return await streamToFile(res.stream, file, maxBytes); } catch (err) {
+    if (err && (err.code === 'TOO_LARGE' || isLocalError(err))) throw err;
+    throw transportError('GET', err);
+  }
 }
 
 async function remove(cfg, name) {
@@ -276,4 +372,4 @@ function route(cfg) {
   return { kind: v.kind, dial: dialer || (() => ({ host: url.hostname, port: Number(url.port) || 443 })) };
 }
 
-module.exports = { signRequest, uriEncode, objectUrl, upload, download, list, remove, test, inspectTls, route, _sha256hex: sha256hex };
+module.exports = { signRequest, uriEncode, objectUrl, upload, downloadTo, list, remove, test, inspectTls, route, PART_SIZE, _limits: limits, _sha256hex: sha256hex };

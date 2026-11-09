@@ -244,6 +244,10 @@ backup. For a NAS at home behind a gateway, choose “Through a VPN device” or
 target; “Take over a storage target from Drive/plugins” fills in its
 settings. See
 [FAQ: Off-site backup to a NAS behind the VPN](07-faq.md#off-site-backup-to-a-nas-behind-the-vpn).
+The encrypted copy is stored briefly on the server's disk next to the
+backups while it is uploaded (it is never held in memory, so a small VPS is
+fine) – plan free space for about one more backup. If it is missing,
+GateControl uploads nothing and says so at the target.
 
 The connection is always encrypted, without any certificate file:
 

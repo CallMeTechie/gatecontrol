@@ -50,6 +50,7 @@ const http = require('node:http');
 const https = require('node:https');
 const { execFileSync } = require('node:child_process');
 const { setup, teardown, getAgent, getCsrf } = require('./helpers/setup');
+const { archiveFile, downloadBuffer } = require('./helpers/offsiteFiles');
 
 const NAS = 'nas.domaincaster.example'; // never resolves: the connection has to go through the peer / route
 const API = '/api/v1/settings/backup';
@@ -174,9 +175,10 @@ describe('WebDAV through a VPN peer with an own certificate (the DS218+ of the r
     assert.deepEqual(cfg.via, { kind: 'peer', peerId: gw, port: secure.port });
     assert.match(await webdav().test(cfg), /folder created, write \+ delete ok/);
     const data = require('node:crypto').randomBytes(300 * 1024 + 7);
-    await webdav().upload(cfg, 'gatecontrol-20261109-030000.gcbk', data);
+    // the archive FILE, streamed through the tunnel with Content-Length
+    await webdav().upload(cfg, 'gatecontrol-20261109-030000.gcbk', archiveFile(data));
     assert.deepEqual((await webdav().list(cfg)).map((f) => [f.name, f.size]), [['gatecontrol-20261109-030000.gcbk', data.length]]);
-    assert.ok((await webdav().download(cfg, 'gatecontrol-20261109-030000.gcbk')).equals(data));
+    assert.ok((await downloadBuffer(webdav(), cfg, 'gatecontrol-20261109-030000.gcbk')).equals(data));
     await webdav().remove(cfg, 'gatecontrol-20261109-030000.gcbk');
     assert.equal(secure.files.size, 0);
     assert.ok(secure.seen.length >= 8);

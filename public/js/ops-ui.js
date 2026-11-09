@@ -123,6 +123,7 @@
     INVALID_FINGERPRINT: ['offsite.err.generic', 'That did not work.'],
     NOT_GCBK: ['offsite.err.corrupt', 'The file is damaged or not a GateControl backup.'],
     UNSUPPORTED: ['offsite.err.unsupported', 'This version cannot read that archive format.'],
+    NO_SPACE: ['offsite.err.no_space', 'There is not enough free disk space on the GateControl server to store the encrypted archive temporarily.'],
     INVALID_WINDOW: ['autoupdate.err.invalid_window', 'Invalid maintenance window: times as HH:MM, start ≠ end, a valid time zone.'],
     INVALID_MODE: ['autoupdate.err.generic', 'Could not save.'],
     INVALID_NOTIFY_EMAIL: ['autoupdate.err.generic', 'Could not save.'],
@@ -151,6 +152,8 @@
     cert_not_yet_valid: ['offsite.hint.cert_not_yet_valid', 'The NAS certificate is not valid yet. Check the clock of the NAS and of GateControl.'],
     cert_decrypts: ['offsite.hint.cert_decrypts', 'The route decrypts the connection itself. Set the TLS mode of the L4 route to pass-through.'],
     smb_no_encryption: ['offsite.hint.smb_no_encryption', 'The share cannot encrypt (SMB3). On Synology: Control Panel › File Services › SMB › Advanced → SMB3 encryption. Or switch off “Encrypt connection”.'],
+    // the server's own disk: the archive is stored there briefly before the upload
+    no_space: ['offsite.hint.no_space', 'There is too little free disk space on the GateControl server. The encrypted archive is stored there briefly before the upload. Delete old local backups (Settings › Backup) or free up space.'],
   };
   /** The hint of an API answer / a target row, '' when none. */
   function hintText(code) {
