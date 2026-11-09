@@ -420,6 +420,27 @@ describe('off-site archive of a large payload (streaming)', () => {
   });
 });
 
+describe('upload files', () => {
+  it('only names made by the server, only inside the incoming folder', () => {
+    const up = require('../src/services/backupUpload');
+    const name = up.newName('upload');
+    assert.match(name, /^[0-9a-f]{24}\.upload$/);
+    assert.equal(up.incomingPath(name), path.join(path.resolve(backupDir, '.incoming'), name));
+    for (const bad of ['../x.upload', '/etc/passwd', 'abc.upload', name + '/..', '', null]) assert.throws(() => up.incomingPath(bad), /invalid upload name/, String(bad));
+    // a path is reduced to its name
+    assert.equal(up.incomingPath('/tmp/' + name), up.incomingPath(name));
+  });
+  it('a symlink in a plugin\'s files is never followed into the backup', async () => {
+    const link = path.join(constants.filesDir('hello'), 'evil-link');
+    fs.symlinkSync('/etc/hostname', link);
+    try {
+      const b = await backup.createBackup();
+      const p = b.data.plugins.find((x) => x.id === 'hello');
+      assert.equal('evil-link' in p.data_files, false);
+    } finally { fs.rmSync(link, { force: true }); }
+  });
+});
+
 describe('disk space', () => {
   it('a backup is not started when the disk cannot hold it (NO_SPACE)', async () => {
     await assert.rejects(backup.checkFreeSpace(backupDir, Number.MAX_SAFE_INTEGER / 4), (err) => err.code === 'NO_SPACE' && err.need > err.free);

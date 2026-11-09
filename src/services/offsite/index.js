@@ -16,7 +16,6 @@
 // ever logged or put into last_error.
 
 const fs = require('node:fs');
-const crypto = require('node:crypto');
 const path = require('node:path');
 const { getDb } = require('../../db/connection');
 const { encrypt, decrypt } = require('../../utils/crypto');
@@ -422,11 +421,12 @@ async function readArchiveBuffer(buf, passphrase) {
   const up = require('../backupUpload');
   const dir = up.incomingDir();
   await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
-  const file = path.join(dir, `${crypto.randomBytes(12).toString('hex')}.verify`);
-  const cleanup = () => up.removeUpload({ file: { path: file } });
+  const name = up.newName('verify');
+  const file = up.incomingPath(name);
+  const cleanup = () => up.removeUpload(name);
   try {
     await fs.promises.writeFile(file, buf, { mode: 0o600, flag: 'wx' });
-    const r = await up.readUpload(file, passphrase);
+    const r = await up.readUpload(name, passphrase);
     return { ...r, cleanup };
   } catch (err) { await cleanup(); throw err; }
 }

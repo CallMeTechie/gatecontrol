@@ -129,7 +129,7 @@ router.post('/restore/preview', uploadLimiter, upload.single('backup'), async (r
 
     let up;
     try {
-      up = await readUpload(req.file.path, passphraseOf(req));
+      up = await readUpload(req.file.filename, passphraseOf(req));
     } catch (err) {
       if (err && err.code === 'INVALID_JSON') return res.status(400).json({ ok: false, error: req.t('error.backup.invalid_json') });
       return sendArchiveError(res, err);
@@ -146,7 +146,7 @@ router.post('/restore/preview', uploadLimiter, upload.single('backup'), async (r
     logger.error({ error: err.message }, 'Failed to preview backup');
     res.status(500).json({ ok: false, error: req.t('error.backup.preview') });
   } finally {
-    await removeUpload(req);
+    await removeUpload(req.file && req.file.filename);
   }
 });
 
@@ -161,7 +161,7 @@ router.post('/restore', uploadLimiter, upload.single('backup'), async (req, res)
 
     let up;
     try {
-      up = await readUpload(req.file.path, passphraseOf(req));
+      up = await readUpload(req.file.filename, passphraseOf(req));
     } catch (err) {
       if (err && err.code === 'INVALID_JSON') return res.status(400).json({ ok: false, error: req.t('error.backup.invalid_json') });
       return sendArchiveError(res, err);
@@ -215,7 +215,7 @@ router.post('/restore', uploadLimiter, upload.single('backup'), async (req, res)
     logger.error({ error: err.message }, 'Failed to restore backup');
     res.status(500).json({ ok: false, error: req.t('error.backup.restore') });
   } finally {
-    await removeUpload(req);
+    await removeUpload(req.file && req.file.filename);
   }
 });
 

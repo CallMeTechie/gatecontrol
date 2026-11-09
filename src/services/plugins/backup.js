@@ -85,6 +85,43 @@ async function newSnapDir() {
   return fsp.mkdtemp(path.join(root, 'run-')); // 0700
 }
 
+const NOFOLLOW = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0);
+
+/**
+ * One file of readTree(): opened once (never through a symlink) and
+ * everything decided on that descriptor — the plugin may swap the path at
+ * any time. With `snap` the file is hard-linked into the snapshot folder and
+ * kept only when the link is the very file that was opened (same inode);
+ * otherwise it is read through the descriptor. → Base64Value, or null (not a
+ * regular file). Throws too_large when it does not fit into `left`.
+ */
+async function readEntry(abs, left, count, snap) {
+  let fh;
+  try { fh = await fsp.open(abs, NOFOLLOW); } catch (err) {
+    if (err && err.code === 'ELOOP') return null; // a symlink now
+    throw err;
+  }
+  try {
+    const st = await fh.stat();
+    if (!st.isFile()) return null;
+    if (st.size > left || count >= LIMITS.fileCount) throw tooLarge();
+    if (snap) {
+      const link = path.join(snap.dir, String(snap.n++));
+      try {
+        await fsp.link(abs, link);
+        const lh = await fsp.open(link, NOFOLLOW);
+        let same = false;
+        try { const ls = await lh.stat(); same = ls.isFile() && ls.ino === st.ino && ls.dev === st.dev; } finally { await lh.close(); }
+        if (same) return new FileBase64Value(link, st.size);
+        await fsp.rm(link, { force: true });
+      } catch { /* no hard link here (other file system, …): read it now */ }
+    }
+    const buf = await fh.readFile();
+    if (buf.length > left) throw tooLarge();
+    return new Base64Value(buf);
+  } finally { await fh.close(); }
+}
+
 /**
  * Regular files below `root` → Map(relative path → Base64Value). Symlinks and
  * odd names are skipped. With `snap` (a snapshot folder) each file is hard-
@@ -106,19 +143,8 @@ async function readTree(root, budget, snap) {
       const abs = path.join(dir, e.name);
       if (e.isDirectory()) await walk(abs, r, depth + 1);
       else if (e.isFile()) {
-        const st = await fsp.lstat(abs);
-        if (!st.isFile()) continue;
-        if (bytes + st.size > budget.left || out.size >= LIMITS.fileCount) throw tooLarge();
-        let value = null;
-        if (snap) {
-          const link = path.join(snap.dir, String(snap.n++));
-          try { await fsp.link(abs, link); value = new FileBase64Value(link, st.size); } catch { value = null; }
-        }
-        if (!value) {
-          const buf = await fsp.readFile(abs);
-          if (bytes + buf.length > budget.left) throw tooLarge();
-          value = new Base64Value(buf);
-        }
+        const value = await readEntry(abs, budget.left - bytes, out.size, snap);
+        if (!value) continue;
         bytes += value.length;
         out.set(r, value);
       }

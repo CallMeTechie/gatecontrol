@@ -23,6 +23,9 @@
 
 const fs = require('node:fs');
 
+// a snapshot file is opened without following a symlink (it is always a regular file or a hard link)
+const NOFOLLOW = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0);
+
 const CHUNK_CHARS = 256 * 1024; // flush the pending text from this size on
 const B64_RAW_CHUNK = 3 * 64 * 1024; // raw bytes per base64 piece (multiple of 3: no padding inside)
 const SMALL_NODES = 2000; // subtrees up to this many nodes are stringified natively
@@ -46,7 +49,7 @@ class FileBase64Value extends Base64Value {
   get length() { return this.size; }
   /** the bytes (synchronous, whole file: materialize / JSON.stringify only) */
   read() {
-    const fd = fs.openSync(this.file, 'r');
+    const fd = fs.openSync(this.file, NOFOLLOW);
     try {
       const buf = Buffer.alloc(this.size);
       let at = 0;
@@ -61,7 +64,7 @@ class FileBase64Value extends Base64Value {
   toJSON() { return this.read().toString('base64'); }
   /** The base64 text in pieces (async; whole multiples of 3 bytes: no padding inside). */
   async* base64Chunks() {
-    const fh = await fs.promises.open(this.file, 'r');
+    const fh = await fs.promises.open(this.file, NOFOLLOW);
     try {
       const buf = Buffer.alloc(B64_RAW_CHUNK * 4);
       let at = 0;
