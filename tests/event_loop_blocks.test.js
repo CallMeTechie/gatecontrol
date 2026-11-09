@@ -9,10 +9,15 @@
 //     Zwischenspeicher (Dateien und Vorschauen) — halten die Schleife nie
 //     länger als 200 ms an: Arbeiter (tick), Abgleich mit dem Ziel
 //     (scanArea), Cache-Räumung, Bereichsliste, Sicherung der Bereiche,
-//     stündliche Bereinigung der Angebote, Vorrat eines Gateways (want);
+//     stündliche Bereinigung der Angebote, Vorrat eines Gateways (want) —
+//     gemessen als CPU-Zeit des Haupt-Threads ohne Pause (helpers/loopLag.js),
+//     nicht an der Wanduhr: ein ausgelasteter Runner verlängert eine Pause,
+//     nicht die eigene Arbeit (CI, 9. 11.: 245 ms); eine Pause ab 1 s fällt
+//     trotzdem auf;
 //   * die Meldung „event loop was blocked“ nennt auch Anfragen (Route mit
 //     maskierten IDs) und synchrone Stücke (measure);
-//   * WAL-Checkpoints laufen in einem eigenen Thread;
+//   * WAL-Checkpoints laufen in einem eigenen Thread; ein um 8 MB gewachsenes
+//     Log sofort, nicht erst nach maxAgeMs (im Test 5 s gegen < 2,5 s);
 //   * die automatische Sicherung kommt nicht mehr direkt beim Start.
 
 const crypto = require('node:crypto');
@@ -22,8 +27,9 @@ process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBy
 
 const { describe, it, before, after, afterEach, mock } = require('node:test');
 const assert = require('node:assert/strict');
-const { performance } = require('node:perf_hooks');
 const { setup, teardown } = require('./helpers/setup');
+// load-proof: the CPU time this thread spends without a break, the wall clock only as a coarse bound (helpers/loopLag.js)
+const { maxLag, assertLoopFree } = require('./helpers/loopLag');
 
 const slice = require('../src/utils/slice');
 const loopStall = require('../src/utils/loopStall');
@@ -35,23 +41,6 @@ const PID = 'gatecontrol-drive';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const hex = (i, len = 32) => i.toString(16).padStart(len, '0');
 function block(ms) { const end = Date.now() + ms; while (Date.now() < end) { /* busy */ } }
-
-/** Longest pause of the event loop while `fn` runs (5 ms ticks). */
-async function maxLag(fn) {
-  let worst = 0;
-  let last = performance.now();
-  const iv = setInterval(() => {
-    const t = performance.now();
-    worst = Math.max(worst, t - last - 5);
-    last = t;
-  }, 5);
-  let result;
-  try { result = await fn(); } finally {
-    worst = Math.max(worst, performance.now() - last - 5);
-    clearInterval(iv);
-  }
-  return { worst: Math.round(worst), result };
-}
 
 let db;
 before(async () => {
@@ -77,12 +66,12 @@ describe('slices (utils/slice.js)', () => {
     assert.equal(s.yields, 1);
   });
 
-  it('forEachSliced visits every item in order and keeps the loop free', async () => {
+  it('forEachSliced visits every item in order and keeps the loop free', async (t) => {
     const list = Array.from({ length: 300 }, (_, i) => i);
     const seen = [];
-    const { worst } = await maxLag(() => slice.forEachSliced(list, (x) => { seen.push(x); block(1); }));
+    const r = await maxLag(() => slice.forEachSliced(list, (x) => { seen.push(x); block(1); }));
     assert.deepEqual(seen, list);
-    assert.ok(worst < 60, `longest pause ${worst} ms`);
+    assertLoopFree(r, 'forEachSliced', 60, t);
   });
 
   it('walkRowids covers (0, max] in ranges and stops when asked', async () => {
@@ -188,11 +177,18 @@ describe('the checkpoint worker checkpoints a change after MAX_AGE_MS, not every
     main.pragma('synchronous = NORMAL');
     main.pragma('wal_autocheckpoint = 0');
     main.exec('CREATE TABLE t (x TEXT)');
-    const w = new Worker(path.join(__dirname, '..', 'src', 'db', 'checkpointWorker.js'), { workerData: { file, everyMs: 20, maxAgeMs: 400 } });
-    const seen = [];
-    w.on('message', (m) => { if (m && m.t === 'checkpoint') seen.push({ at: Date.now(), log: m.log }); });
+    const script = path.join(__dirname, '..', 'src', 'db', 'checkpointWorker.js');
+    let seen = [];
+    const startWorker = async (maxAgeMs) => {
+      const mine = [];
+      seen = mine; // the checkpoints of this worker only
+      const worker = new Worker(script, { workerData: { file, everyMs: 20, maxAgeMs } });
+      worker.on('message', (m) => { if (m && m.t === 'checkpoint') mine.push({ at: Date.now(), log: m.log }); });
+      await new Promise((r) => worker.once('message', r)); // ready
+      return worker;
+    };
+    let w = await startWorker(400);
     try {
-      await new Promise((r) => w.once('message', r)); // ready
       await sleep(500); // the log of CREATE TABLE: one checkpoint at most
       const startCount = seen.length;
       await sleep(300);
@@ -202,12 +198,25 @@ describe('the checkpoint worker checkpoints a change after MAX_AGE_MS, not every
       for (let i = 0; i < 100 && seen.length === startCount; i++) await sleep(20);
       assert.equal(seen.length, startCount + 1, 'one checkpoint for the burst');
       assert.ok(seen[seen.length - 1].at - t0 >= 380, `after ${seen[seen.length - 1].at - t0} ms`);
-      // a log that grows by more than 8 MB goes at once
+      // a log that grows by more than 8 MB goes at once — with a maxAgeMs of 5 s here, so "at once" and "after
+      // maxAgeMs" lie seconds apart and a busy runner (a slow transaction, a late tick, a slow fsync) cannot blur them
+      await w.terminate();
+      const MAX_AGE_MS = 5000;
+      w = await startWorker(MAX_AGE_MS);
+      // its start: the log left behind is checkpointed once (at the first tick), then it is quiet
+      for (let i = 0; i < 200 && !seen.length; i++) await sleep(10);
+      assert.equal(seen.length, 1, 'the log left at the start: one checkpoint');
+      await sleep(100);
       const n = seen.length;
-      const t1 = Date.now();
+      const pageSize = main.pragma('page_size', { simple: true });
       main.transaction(() => { const ins = main.prepare('INSERT INTO t VALUES (?)'); for (let i = 0; i < 3000; i++) ins.run('y'.repeat(4000)); })();
-      for (let i = 0; i < 100 && seen.length === n; i++) await sleep(10);
-      assert.ok(seen.length > n && seen[n].at - t1 < 300, 'grown log: checkpoint before maxAgeMs');
+      const t1 = Date.now(); // committed: the age of the change counts from here at the earliest
+      // the checkpoint of the grown log (a tick during the COMMIT may find no frame yet: log 0, not this one)
+      const grown = () => seen.slice(n).find((x) => x.log * pageSize > 8 * 1024 * 1024);
+      while (!grown() && Date.now() - t1 < MAX_AGE_MS - 500) await sleep(10);
+      const ckpt = grown();
+      assert.ok(ckpt, `grown log: not checkpointed within ${Date.now() - t1} ms (${JSON.stringify(seen.slice(n).map((x) => x.log))} frames)`);
+      assert.ok(ckpt.at - t1 < MAX_AGE_MS / 2, `grown log: checkpoint after ${ckpt.at - t1} ms, not at once (maxAgeMs ${MAX_AGE_MS})`);
     } finally {
       await w.terminate();
       main.close();
@@ -267,52 +276,52 @@ describe(`Ereignisschleife < ${LIMIT_MS} ms bei ${N} Einträgen`, () => {
     };
   }
 
-  it('the copy worker (tick) with every file in place, and with an area to move', async () => {
+  it('the copy worker (tick) with every file in place, and with an area to move', async (t) => {
     areas._setDriverForTest(async () => fakeDriver());
     let r = await maxLag(() => areas.tick());
-    assert.ok(r.worst < LIMIT_MS, `all in place: ${r.worst} ms`);
+    assertLoopFree(r, 'all in place', LIMIT_MS, t);
     db.prepare("UPDATE plugin_media SET want_key = remote_key || '.x' WHERE area = 'area1'").run();
     r = await maxLag(() => areas.tick());
-    assert.ok(r.worst < LIMIT_MS, `area to move: ${r.worst} ms`);
+    assertLoopFree(r, 'area to move', LIMIT_MS, t);
     assert.ok(db.prepare("SELECT COUNT(*) AS n FROM plugin_media WHERE area = 'area1' AND remote_key = want_key").get().n >= 200, 'files were moved');
     db.prepare("UPDATE plugin_media SET want_key = remote_key WHERE area = 'area1'").run();
   });
 
-  it('the look for changes on the target (scanArea), the first one after an upload', async () => {
+  it('the look for changes on the target (scanArea), the first one after an upload', async (t) => {
     areas._setDriverForTest(async () => fakeDriver());
     db.prepare("UPDATE plugin_media SET remote_mtime = NULL WHERE area = 'area2'").run();
     const r = await maxLag(async () => { for (let a = 0; a < AREAS; a++) await areas.scanArea(PID, `area${a}`); });
-    assert.ok(r.worst < LIMIT_MS, `scan: ${r.worst} ms`);
+    assertLoopFree(r, 'scan', LIMIT_MS, t);
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM plugin_media WHERE area = 'area2' AND remote_mtime IS NULL").get().n, 0, 'times adopted');
     const st = JSON.parse(db.prepare("SELECT scan_stats FROM plugin_media_areas WHERE plugin = ? AND area = 'area3'").get(PID).scan_stats);
     assert.equal(st.files, N, 'the target lists all files of the plugin');
   });
 
-  it('the area list (admin page, gc.media.areas.list) and the backup of the areas', async () => {
+  it('the area list (admin page, gc.media.areas.list) and the backup of the areas', async (t) => {
     let r = await maxLag(() => areas.list(PID, { admin: true }));
-    assert.ok(r.worst < LIMIT_MS, `list: ${r.worst} ms`);
+    assertLoopFree(r, 'list', LIMIT_MS, t);
     assert.equal(r.result.length, AREAS);
     assert.equal(r.result.reduce((a, x) => a + x.count, 0), N);
     assert.equal(r.result[0].pending.count, 0);
     r = await maxLag(() => areas.exportAreas(PID));
-    assert.ok(r.worst < LIMIT_MS, `export: ${r.worst} ms`);
+    assertLoopFree(r, 'export', LIMIT_MS, t);
     assert.equal(r.result.files.length, N);
   });
 
-  it('the cache clean-up when the cache is over its limit', async () => {
+  it('the cache clean-up when the cache is over its limit', async (t) => {
     db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(areas.CACHE_SETTING, String(areas.CACHE_MIN));
     db.prepare('UPDATE plugin_media SET bytes = ? WHERE local = 1').run(1024 * 1024);
     const r = await maxLag(() => areas.evict());
-    assert.ok(r.worst < LIMIT_MS, `evict: ${r.worst} ms`);
+    assertLoopFree(r, 'evict', LIMIT_MS, t);
     assert.equal(r.result, 1000, 'at most 1000 a run');
     db.prepare("DELETE FROM settings WHERE key = ?").run(areas.CACHE_SETTING);
   });
 
-  it('the stock of a gateway (GET /cache/want): 20 000 items, the second ask from memory', async () => {
+  it('the stock of a gateway (GET /cache/want): 20 000 items, the second ask from memory', async (t) => {
     const peer = Number(db.prepare("INSERT INTO peers (name, public_key, allowed_ips, enabled, peer_type) VALUES ('gw-blocks', ?, '10.8.0.77/32', 1, 'gateway')").run(crypto.randomBytes(32).toString('base64')).lastInsertRowid);
     db.prepare('INSERT INTO gateway_cache (peer_id, settings) VALUES (?, ?)').run(peer, JSON.stringify({ enabled: true, maxBytes: 4096 * 1024 ** 3, kinds: { drive: true, photos: true, updates: false, vault: false } }));
     let r = await maxLag(() => homeCache.want(peer));
-    assert.ok(r.worst < LIMIT_MS, `want: ${r.worst} ms`);
+    assertLoopFree(r, 'want', LIMIT_MS, t);
     assert.equal(r.result.items.length, homeCache.WANT_MAX);
     assert.ok(r.result.items.slice(0, N).every((x) => x.priority === 95), 'the small previews first');
     const etag = r.result.etag;
@@ -326,11 +335,11 @@ describe(`Ereignisschleife < ${LIMIT_MS} ms bei ${N} Einträgen`, () => {
     assert.notEqual(r.etag, etag);
   });
 
-  it('the hourly clean-up of offers whose file is gone', async () => {
+  it('the hourly clean-up of offers whose file is gone', async (t) => {
     db.prepare("UPDATE home_cache_blobs SET media_id = 'gone' || substr(media_id, 5) WHERE source = 'preview' AND rowid % 2 = 0").run();
     const before = db.prepare('SELECT COUNT(*) AS n FROM home_cache_blobs').get().n;
     const r = await maxLag(() => homeCache.dropStaleOffers());
-    assert.ok(r.worst < LIMIT_MS, `drop: ${r.worst} ms`);
+    assertLoopFree(r, 'drop', LIMIT_MS, t);
     assert.ok(r.result > 1000, `dropped ${r.result}`);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM home_cache_blobs').get().n, before - r.result);
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM home_cache_blobs WHERE media_id LIKE 'gone%'").get().n, 0);

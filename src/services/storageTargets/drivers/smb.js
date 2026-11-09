@@ -12,7 +12,12 @@
 // SMB has no ranged read in smbclient: `ranges: false`, a read fetches the
 // whole file (the media store keeps a local copy).
 //
-// config: { host, port, share, folder, username, domain } + dial { address, port } (index.js)
+// `encrypt` (on for new targets): SMB3 encryption required
+// (smbclient --client-protection=encrypt, Samba 4.15 and later — the image's
+// samba-client is 4.21+). A share that cannot encrypt fails with
+// `no_encryption`, never silently in the clear.
+//
+// config: { host, port, share, folder, username, domain, encrypt } + dial { address, port } (index.js)
 // secret: { password }
 
 const fs = require('node:fs');
@@ -32,6 +37,23 @@ function mkfifo(p) {
   return new Promise((resolve, reject) => {
     execFile('mkfifo', ['-m', '600', p], (err) => (err ? reject(new StorageError('failed', 'mkfifo: ' + err.message)) : resolve()));
   });
+}
+
+// what smbclient says when encryption is required and the server cannot do it
+const NO_ENCRYPTION_RE = /doesn't support SMB3 encryption|server that doesn't support UNIX extensions/i;
+
+/** The arguments that switch on SMB3 encryption (none when `encrypt` is off). */
+function encryptArgs(encrypt) { return encrypt ? ['--client-protection=encrypt'] : []; }
+
+/**
+ * smbclient's output (stdout + stderr) of a run with encryption required →
+ * true when the server cannot encrypt (the text, or NT_STATUS_NOT_SUPPORTED
+ * while connecting).
+ */
+function noEncryption(text, encrypt) {
+  if (!encrypt) return false;
+  const t = String(text || '');
+  return NO_ENCRYPTION_RE.test(t) || (/NT_STATUS_NOT_SUPPORTED/.test(t) && /tree ?connect|do_connect|session setup|negprot|Encryption/i.test(t));
 }
 
 /** An NT_STATUS line of smbclient's output → StorageError code. */
@@ -73,7 +95,7 @@ function create(cfg, secret) {
       await fs.promises.writeFile(authFile, lines.join('\n') + '\n', { mode: 0o600 });
       if (feed || drain) await mkfifo(fifo);
       const args = [`//${dial.address}/${cfg.share}`, '-p', String(dial.port || 445), '-A', authFile,
-        '--option=client min protocol=SMB2', '-t', '60'];
+        '--option=client min protocol=SMB2', ...encryptArgs(cfg.encrypt === true), '-t', '60'];
       const out = [];
       child = spawn(BIN, args, { stdio: ['pipe', 'pipe', 'pipe'] });
       child.stdout.on('data', (d) => { if (out.length < 400) out.push(d); });
@@ -94,6 +116,7 @@ function create(cfg, secret) {
       if (side) await unblock(fifo, feed ? 'reader' : 'writer', side);
       if (res.err) throw new StorageError('failed', res.err.code === 'ENOENT' ? 'smbclient is not installed' : res.err.message);
       const text = Buffer.concat(out).toString('utf8');
+      if (noEncryption(text, cfg.encrypt === true)) throw new StorageError('no_encryption', 'the share cannot encrypt (SMB3)');
       const statuses = text.match(/NT_STATUS_[A-Z_]+/g) || [];
       const bad = statuses.find((s) => !allow.includes(s));
       if (bad) throw new StorageError(codeOf(bad), `${bad}`);
@@ -249,4 +272,4 @@ function create(cfg, secret) {
   return { kind: 'smb', ranges: false, files: true, put, get, head, remove, move, list, space, prepare };
 }
 
-module.exports = { create, codeOf };
+module.exports = { create, codeOf, encryptArgs, noEncryption };

@@ -153,6 +153,11 @@ function checkSecret(v, field) {
   if (typeof v !== 'string' || v.length > 1024 || /[\r\n\0]/.test(v)) throw bad(field, 'invalid');
   return v;
 }
+function checkEncrypt(v, dflt) {
+  if (v === undefined || v === null) return dflt;
+  if (typeof v !== 'boolean') throw bad('encrypt', 'must be true or false');
+  return v;
+}
 function checkUrl(v, field) {
   let u;
   try { u = new URL(String(v || '').trim()); } catch { throw bad(field, 'must be an http(s) URL'); }
@@ -207,11 +212,35 @@ function storagePassword(c, type) {
 }
 
 /**
+ * The server a WebDAV / S3 target talks TLS with (host and port, how it is
+ * reached): while it stays, so does `tls_seen` (storageTargets/trust.js).
+ */
+function tlsPlace(type, cfg) {
+  try {
+    if (type === 'webdav') return JSON.stringify([new URL(cfg.url).host, cfg.via || { kind: 'host' }]);
+    if (type === 's3') return JSON.stringify([require('./s3').objectUrl(cfg, '').host, cfg.via || { kind: 'host' }]);
+  } catch { /* no URL */ }
+  return null;
+}
+
+/**
+ * `tls_seen` of a WebDAV / S3 config: reached with a trusted certificate
+ * before (trust.js — then a certificate is never remembered on its own).
+ * Kept while the server stays; false once it changes, and for a new target.
+ */
+function keepSeen(type, cfg, prev) {
+  if (!prev || !Object.keys(prev).length) return false;
+  if (tlsPlace(type, cfg) !== tlsPlace(type, prev)) return false;
+  return prev.tls_seen; // undefined for a target from before: its last run decides (seenOf)
+}
+
+/**
  * Normalise a config for `type`. `prev` = stored config (secrets kept when the
  * input omits them or sends '').
  */
 function normalizeConfig(type, input, prev = {}) {
   const c = input && typeof input === 'object' ? input : {};
+  const isNew = !prev || !Object.keys(prev).length;
   const keep = (field) => {
     const v = checkSecret(c[field], field);
     if (v === undefined || v === '') {
@@ -246,6 +275,8 @@ function normalizeConfig(type, input, prev = {}) {
         username: checkUser(c.username, false),
         password: c.clear_password === true ? '' : keep('password'),
         domain,
+        // SMB3 encryption: on for new targets; a target from before keeps its behaviour until it is changed
+        encrypt: checkEncrypt(c.encrypt, isNew ? true : prev.encrypt === true),
       };
       if (/[;"]/.test(cfg.path)) throw bad('path', 'invalid');
       return cfg;
@@ -265,12 +296,18 @@ function normalizeConfig(type, input, prev = {}) {
         path_style: c.path_style === undefined ? !!prev.path_style : c.path_style === true,
       };
       if (!cfg.secret_access_key) throw bad('secret_access_key', 'required');
+      // "Verbindung" as for WebDAV: the endpoint still names the server (Host, SNI, certificate)
+      const v = c.via && typeof c.via === 'object' ? c.via : null;
+      cfg.via = storageRule(() => require('../storageTargets/via').webdavVia(v, undefined, require('./s3').objectUrl(cfg, '')));
+      if (cfg.via.kind !== 'host' && !endpoint) throw bad('endpoint', 'required with a connection through a VPN device or a route');
+      cfg.tls_ca = storageRule(() => require('../storageTargets').tlsCa(c.tls_ca));
+      cfg.tls_seen = keepSeen('s3', cfg, prev);
       return cfg;
     }
     case 'webdav': {
       const url = checkUrl(c.url, 'url');
       const v = c.via && typeof c.via === 'object' ? c.via : null;
-      return {
+      const cfg = {
         url,
         // the URL still names the NAS (scheme, path, Host, SNI, certificate name); `via` only says where to connect
         via: storageRule(() => require('../storageTargets/via').webdavVia(v, undefined, new URL(url))),
@@ -278,6 +315,8 @@ function normalizeConfig(type, input, prev = {}) {
         password: c.clear_password === true ? '' : keep('password'),
         tls_ca: storageRule(() => require('../storageTargets').tlsCa(c.tls_ca)),
       };
+      cfg.tls_seen = keepSeen('webdav', cfg, prev);
+      return cfg;
     }
     default:
       throw new OffsiteError('INVALID_TYPE', `type must be one of ${TYPES.join(', ')}`);
@@ -292,6 +331,7 @@ function publicConfig(type, cfg) {
     out[`has_${f}`] = !!cfg[f];
   }
   if (cfg.tls_ca) out.tls_ca_info = require('../storageTargets').caInfo(cfg.tls_ca);
+  delete out.tls_seen; // internal (storageTargets/trust.js)
   return out;
 }
 
@@ -315,12 +355,24 @@ function toApi(row) {
     last_status: row.last_status,
     last_error: row.last_error,
     // the English text of transport errors carries the hint; the page shows its own words for it
-    last_error_hint: row.last_error && row.last_error.includes(require('../storageTargets/via').SELF_HINT_TEXT) ? 'self_address' : null,
+    last_error_hint: errorHint(row.last_error),
     last_verify_at: row.last_verify_at || null,
     last_verify_status: row.last_verify_status || null,
     last_verify: parseVerifyDetail(row.last_verify_detail),
     created_at: row.created_at,
   };
+}
+
+/** The hint of a stored English error text (the page has its own words per hint), or null. */
+function errorHint(text) {
+  if (!text) return null;
+  const trust = require('../storageTargets/trust');
+  if (text.includes(require('../storageTargets/via').SELF_HINT_TEXT)) return 'self_address';
+  if (text.includes(trust.CHANGED_TEXT)) return 'cert_changed';
+  if (text.includes(trust.UNTRUSTED_TEXT)) return 'cert_untrusted';
+  if (text.includes(trust.NAME_TEXT)) return 'cert_name';
+  if (text.includes(require('./smb').NO_ENCRYPTION_TEXT)) return 'smb_no_encryption';
+  return null;
 }
 
 function parseVerifyDetail(raw) {
@@ -467,19 +519,169 @@ function publish(targetId, status, extra = {}) {
   eventBus.publish('backup', { target_id: targetId, status, ...extra });
 }
 
+// ── The NAS's certificate (storageTargets/trust.js) ────────────────────────
+// WebDAV and S3: after a connection failed on the certificate, what the NAS
+// presents is read (the transports' inspectTls). Through a VPN device or a
+// route, on the first contact, it is remembered (tls_ca) and the operation
+// runs again; otherwise the error carries `tls` (the page's card: "Diesem
+// Gerät vertrauen" / "Neues Zertifikat vertrauen", trustTarget) and a hint.
+// A certificate that changed is never accepted on its own.
+
+const CERT_TYPES = new Set(['webdav', 's3']);
+const CERT_HINTS = { untrusted: 'cert_untrusted', changed: 'cert_changed', name: 'cert_name', expired: 'cert_expired', not_yet_valid: 'cert_not_yet_valid', decrypts: 'cert_decrypts' };
+const changeLogged = new Map(); // target id → fingerprint of the changed certificate already in the activity log
+
+/** A TRANSPORT error of a refused certificate (the system's code in `sys`)? */
+function isCertError(err) {
+  if (!err || err.code !== 'TRANSPORT' || !err.sys) return false;
+  return require('../storageTargets/errors').StorageError.from({ code: err.sys, message: '' }).code === 'tls';
+}
+
+/** Reached with a trusted certificate before? A target from before `tls_seen`: its last upload decides. */
+function seenOf(row, cfg) {
+  if (cfg.tls_seen === true || cfg.tls_seen === false) return cfg.tls_seen;
+  return row.last_status === 'ok';
+}
+
+/** Merge `fields` into the stored config — only while it still names the same server as `used`. */
+function patchConfig(row, used, fields) {
+  const fresh = getRow(row.id);
+  const cur = fresh && readConfig(fresh);
+  if (!cur || tlsPlace(row.type, cur) !== tlsPlace(row.type, used)) return false;
+  getDb().prepare('UPDATE backup_targets SET config_enc = ? WHERE id = ?').run(encrypt(JSON.stringify({ ...cur, ...fields })), row.id);
+  return true;
+}
+
+/** After a certificate failure: { state, reason, host, cert (trust.card), auto } or null. */
+async function certTrouble(row, cfg, t) {
+  if (typeof t.inspectTls !== 'function') return null;
+  const trust = require('../storageTargets/trust');
+  let diag;
+  try { diag = await t.inspectTls(cfg); } catch (err) {
+    logger.debug({ target: row.id, err: shortError(err) }, 'Off-site target certificate not readable');
+    return null;
+  }
+  if (!diag || !diag.cert) return null;
+  let decrypts = trust.caddyDecrypts(diag);
+  const v = cfg.via || { kind: 'host' };
+  if (v.kind === 'route') {
+    try {
+      const r = require('../storageTargets/via').routeOf(v.routeId);
+      if (r.route_type === 'l4' && r.l4_tls_mode === 'terminate') decrypts = true;
+    } catch { /* the error said why */ }
+  }
+  const state = trust.assess(diag, { stored: !!cfg.tls_ca, decrypts });
+  if (!state) return null;
+  const where = t.route(cfg);
+  const auto = trust.autoTrust({ state, stored: !!cfg.tls_ca, seen: seenOf(row, cfg), tunnel: state === 'untrusted' && await trust.tunnelled(where.kind, where.dial) });
+  return { state, reason: diag.reason, host: diag.host, cert: trust.card(diag.cert), auto };
+}
+
+/** The error of a certificate failure with what the page needs: `tls` (the card), `hint`, the activity entry for a change. */
+function certError(err, info, row) {
+  const trust = require('../storageTargets/trust');
+  const text = info.state === 'changed' ? `${trust.CHANGED_TEXT} (new: SHA-256 ${info.cert.fingerprint})`
+    : info.state === 'untrusted' ? trust.UNTRUSTED_TEXT : info.state === 'name' ? trust.NAME_TEXT : null;
+  if (text) err.message = `${err.message} (${text})`;
+  err.hint = CERT_HINTS[info.state] || null;
+  err.tls = { state: info.state, reason: info.reason, host: info.host, cert: info.cert };
+  if (info.state === 'changed' && changeLogged.get(row.id) !== info.cert.fingerprint) {
+    changeLogged.set(row.id, info.cert.fingerprint);
+    try {
+      require('../activity').log('offsite_target_cert_changed',
+        `Off-site backup target "${row.name}": the NAS presents another certificate than the stored one (SHA-256 ${info.cert.fingerprint}) — not accepted until trusted`,
+        { source: 'system', severity: 'warning' });
+    } catch { /* activity log unavailable */ }
+  }
+  return err;
+}
+
+function isHttps(type, cfg) {
+  try { return (type === 'webdav' ? new URL(cfg.url) : require('./s3').objectUrl(cfg, '')).protocol === 'https:'; } catch { return false; }
+}
+
+/**
+ * Run `fn(cfg)` against target `row` with the certificate handling above.
+ * → { value, cfg (the config that worked), trusted (trust.card of a
+ * certificate remembered on first contact) | null }
+ */
+async function withTrust(row, cfg, t, fn) {
+  if (!CERT_TYPES.has(row.type)) return { value: await fn(cfg), cfg, trusted: null };
+  let value;
+  try { value = await fn(cfg); } catch (err) {
+    if (!isCertError(err)) throw err;
+    const info = await certTrouble(row, cfg, t);
+    if (!info) throw err;
+    if (!info.auto) throw certError(err, info, row);
+    const next = { ...cfg, tls_ca: info.cert.pem.trim() };
+    let later = null;
+    try { value = await fn(next); } catch (e2) {
+      // still refused on the certificate: not only an unknown one — the page asks
+      if (isCertError(e2)) throw certError(err, { ...info, auto: false }, row);
+      later = e2; // past the certificate (a wrong password …): it is the NAS's, keep it
+    }
+    patchConfig(row, cfg, { tls_ca: next.tls_ca, tls_seen: true });
+    try {
+      require('../activity').log('offsite_target_cert_remembered',
+        `Off-site backup target "${row.name}": certificate of the NAS remembered on first contact through the VPN (SHA-256 ${info.cert.fingerprint})`,
+        { source: 'system', severity: 'info' });
+    } catch { /* activity log unavailable */ }
+    logger.info({ target: row.id, fingerprint: info.cert.fingerprint }, 'Off-site target: certificate of the NAS remembered on first contact');
+    if (later) { later.trusted = info.cert; throw later; }
+    return { value, cfg: next, trusted: info.cert };
+  }
+  if (cfg.tls_seen !== true && isHttps(row.type, cfg)) patchConfig(row, cfg, { tls_seen: true });
+  return { value, cfg, trusted: null };
+}
+
+/**
+ * "Diesem Gerät vertrauen" / "Neues Zertifikat vertrauen" (POST
+ * /targets/:id/trust): reads the certificate the NAS presents now and stores
+ * it as the target's tls_ca — only when it is the one the page showed
+ * (`fingerprint`, SHA-256 hex) and a click may trust it.
+ * → { cert (trust.card), replaced } · OffsiteError CERT_MISMATCH 409,
+ *   NOT_TRUSTABLE 409 (`reason`), INVALID_FINGERPRINT 400, NOT_FOUND 404
+ */
+async function trustTarget(id, fingerprint) {
+  const row = getRow(id);
+  if (!row) throw new OffsiteError('NOT_FOUND', 'target not found', 404);
+  const fp = String(fingerprint || '').toLowerCase().replace(/[^0-9a-f]/g, '');
+  if (!/^[0-9a-f]{64}$/.test(fp)) throw new OffsiteError('INVALID_FINGERPRINT', 'fingerprint: 64 hex digits (SHA-256)', 400);
+  const { cfg, t } = transportFor(row);
+  if (!CERT_TYPES.has(row.type) || typeof t.inspectTls !== 'function') throw notTrustable('no_tls');
+  let diag;
+  try { diag = await t.inspectTls(cfg); } catch (err) { throw new OffsiteError('TRANSPORT_FAILED', shortError(err), 502); }
+  if (!diag || !diag.cert) throw notTrustable(diag ? diag.reason : 'no_tls');
+  if (diag.cert.fingerprint !== fp) throw new OffsiteError('CERT_MISMATCH', 'the NAS presents another certificate by now — test again', 409);
+  const trust = require('../storageTargets/trust');
+  if (!diag.reason) return { cert: trust.card(diag.cert), replaced: false, already: true };
+  const info = await certTrouble(row, cfg, t);
+  if (!info || !trust.trustable(info.state)) throw notTrustable(info ? info.state : diag.reason);
+  patchConfig(row, cfg, { tls_ca: diag.cert.pem.trim(), tls_seen: true });
+  changeLogged.delete(row.id);
+  return { cert: trust.card(diag.cert), replaced: !!cfg.tls_ca };
+}
+
+function notTrustable(reason) {
+  const e = new OffsiteError('NOT_TRUSTABLE', `this certificate cannot be trusted here (${reason || 'unknown'})`, 409);
+  e.reason = reason || null;
+  return e;
+}
+
+/** POST /targets/:id/test → { detail, trusted (a certificate remembered on first contact) | null }. */
 async function testTarget(id) {
   const row = getRow(id);
   if (!row) throw new OffsiteError('NOT_FOUND', 'target not found', 404);
   const { cfg, t, ctx } = transportFor(row);
-  const detail = await t.test(cfg, ctx);
-  return detail;
+  const r = await withTrust(row, cfg, t, (c) => t.test(c, ctx));
+  return { detail: r.value, trusted: r.trusted };
 }
 
 async function listRemoteFiles(id) {
   const row = getRow(id);
   if (!row) throw new OffsiteError('NOT_FOUND', 'target not found', 404);
   const { cfg, t, ctx } = transportFor(row);
-  const files = await t.list(cfg, ctx);
+  const files = (await withTrust(row, cfg, t, (c) => t.list(c, ctx))).value;
   return files
     .filter((f) => REMOTE_NAME_RE.test(f.name))
     .sort((a, b) => b.name.localeCompare(a.name))
@@ -527,7 +729,8 @@ async function verifyTarget(id) {
     const { cfg, t, ctx } = transportFor(row);
     if (typeof t.download !== 'function') throw new OffsiteError('TRANSPORT_FAILED', 'this target type cannot read archives back', 502);
 
-    const files = (await t.list(cfg, ctx))
+    const listed = await withTrust(row, cfg, t, (c) => t.list(c, ctx));
+    const files = listed.value
       .filter((f) => REMOTE_NAME_RE.test(f.name))
       .sort((a, b) => b.name.localeCompare(a.name));
     if (files.length === 0) throw new OffsiteError('NO_REMOTE_BACKUP', 'no GateControl archive on this target yet', 409);
@@ -536,7 +739,7 @@ async function verifyTarget(id) {
       throw new OffsiteError('CORRUPT', `archive is larger than ${Math.round(MAX_VERIFY_BYTES / 1048576)} MB — not read back`, 400);
     }
 
-    const buf = await t.download(cfg, newest.name, ctx);
+    const buf = await t.download(listed.cfg, newest.name, ctx);
     if (!Buffer.isBuffer(buf) || buf.length === 0) throw new OffsiteError('CORRUPT', 'the archive came back empty', 400);
     if (buf.length > MAX_VERIFY_BYTES) throw new OffsiteError('CORRUPT', 'archive too large', 400);
 
@@ -602,6 +805,7 @@ async function verifyTarget(id) {
     if (err && err.code === 'TRANSPORT') {
       const e = new OffsiteError('TRANSPORT_FAILED', shortError(err), 502);
       if (err.hint) e.hint = err.hint;
+      if (err.tls) e.tls = err.tls;
       throw e;
     }
     throw err;
@@ -637,15 +841,16 @@ async function uploadTo(id, name, buf) {
     if (!row) throw new OffsiteError('NOT_FOUND', 'target not found', 404);
     publish(row.id, 'running', { file: name });
     try {
-      const { cfg, t, ctx } = transportFor(row);
-      await t.upload(cfg, name, buf, ctx);
+      const { cfg: stored, t, ctx } = transportFor(row);
+      const up = await withTrust(row, stored, t, (c) => t.upload(c, name, buf, ctx));
+      const cfg = up.cfg;
       let deleted = 0;
       try { deleted = await applyRetention(row, cfg, t, ctx); }
       catch (err) { logger.warn({ target: row.id, err: shortError(err) }, 'Off-site retention failed (upload itself succeeded)'); }
       recordResult(row.id, 'ok', null);
       publish(row.id, 'ok', { file: name });
       logger.info({ target: row.id, type: row.type, file: name, size: buf.length, deleted }, 'Off-site backup uploaded');
-      return { status: 'ok', file: name, deleted };
+      return { status: 'ok', file: name, deleted, ...(up.trusted ? { trusted: up.trusted } : {}) };
     } catch (err) {
       const msg = shortError(err);
       recordResult(row.id, 'failed', msg);
@@ -656,6 +861,7 @@ async function uploadTo(id, name, buf) {
       } catch { /* activity log unavailable */ }
       const e = err instanceof OffsiteError ? err : new OffsiteError('UPLOAD_FAILED', msg, 502);
       if (err && err.hint) e.hint = err.hint;
+      if (err && err.tls) e.tls = err.tls;
       throw e;
     }
   });
@@ -766,6 +972,7 @@ function storageSources() {
         port: v.kind === 'host' ? v.port || 445 : (v.kind === 'peer' ? v.port || 445 : null),
         via: v.kind === 'host' ? { kind: 'host' } : v,
         share: cfg.share, path: cfg.folder || '', username: cfg.username || '', domain: cfg.domain || '',
+        encrypt: cfg.encrypt === true,
       };
     }
     return {
@@ -869,6 +1076,7 @@ module.exports = {
   updateTarget,
   deleteTarget,
   testTarget,
+  trustTarget,
   listRemoteFiles,
   verifyTarget,
   staleVerifications,

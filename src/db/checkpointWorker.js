@@ -59,7 +59,10 @@ function checkpoint() {
     const r = db.pragma('wal_checkpoint(PASSIVE)')[0] || {};
     // all of the log in the database file: nothing waits; else (a reader on an old snapshot) the next tick again
     if (r.checkpointed === r.log) changedAt = null;
-    sizeAt = walBytes();
+    // the size a growth counts from — not moved up by a checkpoint that found no frame: a big transaction writes its
+    // pages into the log before its COMMIT is visible (seen: a tick in the last millisecond of a 12 MB transaction,
+    // log 0), and that commit would then count as no growth and wait MAX_AGE_MS
+    sizeAt = r.log > 0 ? walBytes() : Math.min(sizeAt, walBytes());
     parentPort.postMessage({ t: 'checkpoint', log: r.log, checkpointed: r.checkpointed, busy: r.busy });
   } catch (e) {
     parentPort.postMessage({ t: 'error', error: e.message });

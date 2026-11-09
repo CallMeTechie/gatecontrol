@@ -137,11 +137,11 @@ describe('targets CRUD + validation', () => {
     assert.deepEqual(sftp.body.target.config, { host: '10.8.0.1', port: 2222, via: { kind: 'host' }, username: 'backup', path: '/volume1/gc' });
     const smb = await agentReq('post', `${API}/targets`, { name: 'SMB', type: 'smb', enabled: false, config: { host: 'nas.lan', share: 'backup', path: 'gc', username: 'u', password: 'smbpw', domain: 'WORKGROUP' } });
     assert.equal(smb.status, 201);
-    assert.deepEqual(smb.body.target.config, { host: 'nas.lan', port: 445, via: { kind: 'host' }, share: 'backup', path: 'gc', username: 'u', has_password: true, domain: 'WORKGROUP' });
+    assert.deepEqual(smb.body.target.config, { host: 'nas.lan', port: 445, via: { kind: 'host' }, share: 'backup', path: 'gc', username: 'u', has_password: true, domain: 'WORKGROUP', encrypt: true });
     assert.equal(smb.body.target.enabled, false);
     const s3 = await agentReq('post', `${API}/targets`, { name: 'S3', type: 's3', enabled: false, config: { endpoint: 'https://s3.example.com/', region: 'eu-central-1', bucket: 'gc-backups', prefix: '/host1', access_key_id: 'AKIA1', secret_access_key: 'shh', path_style: true } });
     assert.equal(s3.status, 201, JSON.stringify(s3.body));
-    assert.deepEqual(s3.body.target.config, { endpoint: 'https://s3.example.com', region: 'eu-central-1', bucket: 'gc-backups', prefix: 'host1', access_key_id: 'AKIA1', has_secret_access_key: true, path_style: true });
+    assert.deepEqual(s3.body.target.config, { endpoint: 'https://s3.example.com', region: 'eu-central-1', bucket: 'gc-backups', prefix: 'host1', access_key_id: 'AKIA1', has_secret_access_key: true, path_style: true, via: { kind: 'host' }, tls_ca: null });
     // sftp targets are disabled for the transfer tests below (no server here)
     await agentReq('put', `${API}/targets/${sftp.body.target.id}`, { enabled: false });
   });

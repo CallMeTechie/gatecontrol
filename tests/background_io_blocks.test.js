@@ -25,6 +25,8 @@ const path = require('node:path');
 const net = require('node:net');
 const { performance } = require('node:perf_hooks');
 const { setup, teardown } = require('./helpers/setup');
+// load-proof: the CPU time this thread spends without a break, the wall clock only as a coarse bound (helpers/loopLag.js)
+const { maxLag, assertLoopFree, threadCpuMs } = require('./helpers/loopLag');
 
 const loopStall = require('../src/utils/loopStall');
 const warnOnce = require('../src/utils/warnOnce');
@@ -33,16 +35,6 @@ const logger = require('../src/utils/logger');
 const LIMIT_MS = 200;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function block(ms) { const end = Date.now() + ms; while (Date.now() < end) { /* busy */ } }
-
-/** Longest pause of the event loop while `fn` runs (5 ms ticks). */
-async function maxLag(fn) {
-  let worst = 0;
-  let last = performance.now();
-  const iv = setInterval(() => { const t = performance.now(); worst = Math.max(worst, t - last - 5); last = t; }, 5);
-  let result;
-  try { result = await fn(); } finally { worst = Math.max(worst, performance.now() - last - 5); clearInterval(iv); }
-  return { worst: Math.round(worst), result };
-}
 
 let db;
 before(async () => { await setup(); db = require('../src/db/connection').getDb(); });
@@ -65,8 +57,8 @@ describe(`log watchers: Ereignisschleife < ${LIMIT_MS} ms bei einem Rückstau`, 
     // Every synchronous piece of the ingest (split a chunk, parse and store a slice) runs inside loopStall.measure:
     // each one's CPU time on this thread is what it holds the event loop — a loaded runner that takes the core away
     // stretches the wall clock of a slice, not its CPU time (CI, 8. 11.: a pause of 219 ms with nothing of ours in it).
-    // Node < 23.9 has no process.threadCpuUsage: the process's CPU time then (no other thread works in this test).
-    const cpu = () => { const u = typeof process.threadCpuUsage === 'function' ? process.threadCpuUsage() : process.cpuUsage(); return (u.user + u.system) / 1000; };
+    // Node < 23.9 has no process.threadCpuUsage: /proc/thread-self/stat then, else the process's CPU time (helpers/loopLag.js).
+    const cpu = threadCpuMs;
     const slices = [];
     const orig = loopStall.measure;
     mock.method(loopStall, 'measure', (name, fn, minMs) => {
@@ -80,10 +72,12 @@ describe(`log watchers: Ereignisschleife < ${LIMIT_MS} ms bei einem Rückstau`, 
     try {
       let ticks = 0;
       let worst = 0;
+      let gapCpu = 0;
       let before = 0;
       for (; ticks < 40; ticks++) {
         const r = await maxLag(() => waf.pollOnce());
         worst = Math.max(worst, r.worst);
+        gapCpu = Math.max(gapCpu, r.cpu);
         const st = JSON.parse(db.prepare("SELECT value FROM settings WHERE key = 'waf.watch_state'").get()?.value || '{"offset":0}');
         assert.ok(st.offset - before <= 4 * 1024 * 1024 + 1024 * 1024, `tick ${ticks} read ${st.offset - before} bytes`);
         before = st.offset;
@@ -91,17 +85,19 @@ describe(`log watchers: Ereignisschleife < ${LIMIT_MS} ms bei einem Rückstau`, 
       }
       assert.ok(ticks >= 2, 'a backlog takes several ticks');
       const longest = slices.reduce((m, x) => (x.cpuMs > m.cpuMs ? x : m), { cpuMs: 0, wallMs: 0, name: null });
-      t.diagnostic(`${slices.length} slices; longest own work ${Math.round(longest.cpuMs)} ms CPU (${longest.name}, ${Math.round(longest.wallMs)} ms wall); longest event-loop pause ${worst} ms`);
+      t.diagnostic(`${slices.length} slices; longest own work ${Math.round(longest.cpuMs)} ms CPU (${longest.name}, ${Math.round(longest.wallMs)} ms wall); longest event-loop pause ${worst} ms (${gapCpu} ms CPU at most between two ticks)`);
       assert.ok(slices.some((x) => x.name === 'waf.audit split') && slices.some((x) => x.name === 'waf.audit ingest'), 'split and ingest are measured');
       assert.ok(slices.filter((x) => x.name === 'waf.audit ingest').length > ticks * 2, 'the ingest yields between slices');
       assert.ok(longest.cpuMs < LIMIT_MS, `a slice held the thread for ${Math.round(longest.cpuMs)} ms of CPU`);
+      // and nothing outside the measured slices either: no gap between two ticks with that much CPU of this thread
+      assert.ok(gapCpu < LIMIT_MS, `${gapCpu} ms of CPU between two ticks`);
       // what no slice covers (reads, state) is async: no pause of seconds, even on a loaded runner
       assert.ok(worst < 5 * LIMIT_MS, `longest pause ${worst} ms`);
       assert.ok(db.prepare('SELECT COUNT(*) AS n FROM waf_events').get().n > lines.length / 2, 'the lines were stored');
     } finally { waf.stopWatcher(); fs.rmSync(dir, { recursive: true, force: true }); }
   });
 
-  it('TLS log: an old offset with megabytes behind it is read 512 KB a tick, never a character cut in two', async () => {
+  it('TLS log: an old offset with megabytes behind it is read 512 KB a tick, never a character cut in two', async (t) => {
     const tlsGuard = require('../src/services/tlsGuard');
     const dir = tmpDir();
     const file = path.join(dir, 'tls.log');
@@ -110,11 +106,11 @@ describe(`log watchers: Ereignisschleife < ${LIMIT_MS} ms bei einem Rückstau`, 
     tlsGuard.startWatcher({ file, intervalMs: 1e9, immediate: false });
     try {
       const r = await maxLag(async () => { for (let i = 0; i < 20; i++) await tlsGuard.pollOnce(); });
-      assert.ok(r.worst < LIMIT_MS, `longest pause ${r.worst} ms`);
+      assertLoopFree(r, 'TLS log', LIMIT_MS, t);
     } finally { tlsGuard.stopWatcher(); fs.rmSync(dir, { recursive: true, force: true }); }
   });
 
-  it('layer-4 connection log: a burst is read and parsed asynchronously', async () => {
+  it('layer-4 connection log: a burst is read and parsed asynchronously', async (t) => {
     const guard = require('../src/services/l4ConnGuard');
     const routeId = db.prepare(`INSERT INTO routes (domain, target_ip, target_port, route_type, l4_protocol, l4_listen_port, l4_tls_mode,
         l4_conn_limit, l4_conn_window_s, external_enabled, https_enabled)
@@ -131,7 +127,7 @@ describe(`log watchers: Ereignisschleife < ${LIMIT_MS} ms bei einem Rückstau`, 
       }
       fs.appendFileSync(file, lines.join('\n') + '\n');
       const r = await maxLag(async () => { for (let i = 0; i < 10; i++) await guard.pollOnce(); });
-      assert.ok(r.worst < LIMIT_MS, `longest pause ${r.worst} ms`);
+      assertLoopFree(r, 'layer-4 log', LIMIT_MS, t);
     } finally { guard.stop(); fs.rmSync(dir, { recursive: true, force: true }); db.prepare('DELETE FROM routes WHERE id = ?').run(routeId); }
   });
 });

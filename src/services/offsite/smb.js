@@ -3,7 +3,11 @@
 // SMB transport via `smbclient` (Alpine samba-client): Windows shares, Samba,
 // Synology/QNAP/Fritz!Box NAS. docs/feature-release-b.md §7.
 //
-// Config: { host, port?, share, path, username, password, domain?, via? }
+// Config: { host, port?, share, path, username, password, domain?, via?, encrypt? }
+// `encrypt` ("Verbindung verschlüsseln (SMB3)", on for new targets): SMB3
+// encryption required (--client-protection=encrypt, as the storage
+// targets' SMB driver); a share that cannot encrypt fails with a clear
+// message (NO_ENCRYPTION_TEXT, the page shows its own words for it).
 // `via` (storageTargets/via.js, as a storage target's "Verbindung"): through
 // a VPN peer (its VPN address, `via.port`) or an L4 route (what Caddy dials
 // for it) — smbclient then connects to that address (-I, -p) while the
@@ -14,6 +18,10 @@
 
 const { run, writeTemp, writeTempAsync, rmQuiet } = require('./proc');
 const via = require('../storageTargets/via');
+const { encryptArgs, noEncryption } = require('../storageTargets/drivers/smb');
+
+// English, for logs, last_error and API callers; the page has its own text (hint 'smb_no_encryption')
+const NO_ENCRYPTION_TEXT = 'SMB: the share cannot encrypt the connection (SMB3) — switch on SMB3 encryption on the NAS, or switch off "encrypt connection"';
 
 const TIMEOUT_MS = 180 * 1000;
 
@@ -29,7 +37,7 @@ function authFile(cfg) {
 function baseArgs(cfg, auth, dial = null) {
   const args = [`//${cfg.host || (dial && dial.address)}/${cfg.share}`, '-A', auth];
   if (dial) args.push('-I', dial.address);
-  args.push('-p', String(dial ? dial.port : (cfg.port || 445)), '-t', '60');
+  args.push('-p', String(dial ? dial.port : (cfg.port || 445)), ...encryptArgs(cfg.encrypt === true), '-t', '60');
   if (!cfg.username) args.push('-N');
   return args;
 }
@@ -42,18 +50,23 @@ async function dialOf(cfg) {
   }
 }
 
-/** A refused / unanswered connection to an address of this server itself → hint (via.selfHint). */
+/**
+ * A refused / unanswered connection to an address of this server itself →
+ * hint (via.selfHint); a share that cannot encrypt → hint 'smb_no_encryption'.
+ */
 async function failure(cfg, message) {
   const e = new Error(message);
   e.code = 'TRANSPORT';
+  if (message === NO_ENCRYPTION_TEXT) { e.hint = 'smb_no_encryption'; return e; }
   const hint = await via.selfHint(e, cfg.via, cfg.host);
   if (hint) { e.hint = hint; e.message += ` (${via.SELF_HINT_TEXT})`; }
   return e;
 }
 
-function explain(res) {
+function explain(res, encrypt = false) {
   const out = `${res.stdout || ''}\n${res.stderr || ''}`;
   if (res.timedOut) return 'SMB timed out';
+  if (noEncryption(out, encrypt)) return NO_ENCRYPTION_TEXT;
   const st = /NT_STATUS_[A-Z_]+/.exec(out);
   const hints = {
     NT_STATUS_LOGON_FAILURE: 'wrong username or password',
@@ -77,7 +90,7 @@ async function smb(cfg, commands, { timeoutMs = TIMEOUT_MS, tolerate = false } =
     const res = await run('smbclient', [...baseArgs(cfg, auth, dial), '-c', commands.join('; ')], { timeoutMs });
     const failed = res.code !== 0 || res.timedOut
       || (!tolerate && /NT_STATUS_(?!OK\b)[A-Z_]+/.test(`${res.stdout}\n${res.stderr}`));
-    if (failed && !tolerate) throw await failure(cfg, explain(res));
+    if (failed && !tolerate) throw await failure(cfg, explain(res, cfg.encrypt === true));
     return res;
   } finally {
     rmQuiet(auth);
@@ -161,4 +174,4 @@ async function test(cfg) {
   }
 }
 
-module.exports = { upload, download, list, remove, test, parseLs, baseArgs };
+module.exports = { upload, download, list, remove, test, parseLs, baseArgs, explain, NO_ENCRYPTION_TEXT };

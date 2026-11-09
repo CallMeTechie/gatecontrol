@@ -246,6 +246,27 @@ beim Speicherziel für Drive; „Speicherziel von Drive/Plugins übernehmen“
 trägt dessen Einstellungen ein. Siehe
 [FAQ: Offsite-Backup auf eine NAS hinter dem VPN](07-faq.md#offsite-backup-auf-eine-nas-hinter-dem-vpn).
 
+Die Verbindung ist immer verschlüsselt, ohne dass du eine Zertifikatsdatei
+brauchst:
+
+- **WebDAV und S3:** Weist sich die NAS mit einem eigenen Zertifikat aus (bei
+  NAS-Geräten im Heimnetz üblich), zeigt „Testen“ das Gerät und bis wann das
+  Zertifikat gilt, dazu den Knopf **„Diesem Gerät vertrauen“**. Läuft die
+  Verbindung über ein VPN-Gerät oder eine Weiterleitung, merkt sich
+  GateControl das Zertifikat schon beim ersten Kontakt („Zertifikat der NAS
+  gemerkt“). Bei „Direkt zur Adresse“ entscheidest immer du per Klick.
+- **Neues Zertifikat:** Erneuert die NAS ihr Zertifikat, stoppt GateControl
+  und fragt: „Das Zertifikat der NAS hat sich geändert (z. B. nach einer
+  Erneuerung). Ist das in Ordnung?“ – mit dem Knopf **„Neues Zertifikat
+  vertrauen“**. Ein geändertes Zertifikat wird nie still übernommen.
+- **SMB:** „Verbindung verschlüsseln (SMB3)“ ist bei neuen Zielen an. Kann
+  die Freigabe das nicht, sagt „Testen“, wo du es an der NAS einschaltest
+  (Synology: Systemsteuerung › Dateidienste › SMB › Erweitert →
+  SMB3-Verschlüsselung).
+
+Das Feld für eine PEM-Datei gibt es weiter, eingeklappt unter „Erweitert“ –
+nur für Fachleute mit eigener CA.
+
 **Prüfen:** `tar tzf /root/gatecontrol-*.tar.gz | grep -c data/` zeigt eine Zahl größer als 0.
 
 Weiter mit [Kapitel 3: Gateway einrichten](03-gateway-einrichten.md).

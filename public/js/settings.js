@@ -1810,16 +1810,82 @@
     renderTargets(r.ok ? null : errText(r));
     bkHero();
   }
-  function targetResult(res) {
+  function targetResult(res, tg) {
     if (!res) return null;
     return el('div', { class: 'st-result', 'data-state': res.ok ? 'good' : 'crit', role: 'status' }, [
       el('span', { text: res.text }),
-      res.detail ? el('code', { class: 'st-code', text: res.detail }) : null,
+      // the NAS's certificate: a plain card instead of the technical error
+      res.tls && res.tls.cert ? trustCard(tg, res.tls) : (res.detail ? el('code', { class: 'st-code', text: res.detail }) : null),
+      res.trusted ? rememberedCard(res.trusted) : null,
       res.lines && res.lines.length ? el('div', { class: 'st-li-sub', text: res.lines.join(' · ') }) : null,
       res.warnings && res.warnings.length ? el('ul', { class: 'st-warnlist' }, res.warnings.map((w) => el('li', { text: w }))) : null,
       res.note ? el('div', { class: 'st-li-sub', text: res.note }) : null,
-      res.hint ? el('div', { class: 'st-li-sub st-warn-text', text: res.hint }) : null,
+      res.hint && !(res.tls && res.tls.cert) ? el('div', { class: 'st-li-sub st-warn-text', text: res.hint }) : null,
     ]);
+  }
+  // ── The NAS's certificate (services/offsite withTrust, storageTargets/trust.js) ──
+  const certDay = (iso) => O.fmtDate(String(iso || '').slice(0, 10), lang);
+  const certCn = (dn) => { const m = /(?:^|, )CN=([^,]+)/.exec(dn || ''); return m ? m[1] : String(dn || ''); };
+  /** Names, issuer, validity, fingerprint — folded away under "Details". */
+  function certDetails(c) {
+    const rows = [[t('offsite.trust_names'), (c.names && c.names.length ? c.names.join(', ') : certCn(c.subject))], [t('offsite.trust_issuer'), c.issuer || ''],
+      [t('offsite.trust_valid'), certDay(c.validFrom) + ' – ' + certDay(c.validTo)], [t('offsite.trust_fp'), O.formatFingerprint(c.fingerprint)]];
+    return el('details', { class: 'st-adv st-cert-details' }, [el('summary', { text: t('offsite.details') }),
+      el('dl', { class: 'st-cert-kv' }, rows.reduce((a, r) => a.concat([el('dt', { text: r[0] }), el('dd', { class: 'st-mono', text: r[1] })]), []))]);
+  }
+  /** "Zertifikat der NAS gemerkt": remembered on the first contact through the VPN. */
+  function rememberedCard(c) {
+    return el('div', { class: 'st-trustcard', 'data-state': 'remembered' }, [
+      el('b', { text: t('offsite.trust_remembered') }),
+      el('span', { class: 'st-li-sub', text: t('offsite.trust_remembered_text') }),
+      el('span', { class: 'st-li-sub', text: t('offsite.trust_device_line', { device: c.device || certCn(c.subject), to: certDay(c.validTo) }) }),
+      certDetails(c),
+    ]);
+  }
+  /**
+   * After a certificate failure: plain words, the device and its validity,
+   * "Diesem Gerät vertrauen" / "Neues Zertifikat vertrauen" (stores exactly
+   * the certificate shown: POST …/trust with its fingerprint).
+   */
+  function trustCard(tg, x) {
+    const c = x.cert;
+    const state = x.state;
+    const viaKind = tg && tg.config && tg.config.via ? tg.config.via.kind : 'host';
+    const kids = [];
+    if (state === 'untrusted' || state === 'changed') {
+      kids.push(el('b', { text: t(state === 'changed' ? 'offsite.trust_changed_title' : 'offsite.trust_title') }));
+      kids.push(el('span', { class: 'st-li-sub', text: t(state === 'changed' ? 'offsite.trust_changed_text' : 'offsite.trust_text') }));
+      kids.push(el('span', { class: 'st-li-sub', text: t('offsite.trust_device_line', { device: c.device || certCn(c.subject), to: certDay(c.validTo) }) }));
+      kids.push(el('span', { class: 'st-li-sub', text: t(state === 'changed' ? 'offsite.trust_changed_hint' : (viaKind === 'host' ? 'offsite.trust_hint_direct' : 'offsite.trust_hint_vpn')) }));
+    } else if (state === 'name') {
+      kids.push(el('span', { class: 'st-li-sub', text: t('offsite.trust_name', { host: x.host || '', names: (c.names || []).join(', ') || certCn(c.subject) }) }));
+      kids.push(el('span', { class: 'st-li-sub', text: t(viaKind === 'host' ? 'offsite.trust_name_fix' : 'offsite.trust_name_vpn', { name: c.device || certCn(c.subject) }) }));
+    } else {
+      const key = { expired: 'offsite.trust_expired', not_yet_valid: 'offsite.trust_not_yet_valid', decrypts: 'offsite.trust_decrypts' }[state] || 'offsite.trust_other';
+      kids.push(el('span', { class: 'st-li-sub', text: t(key, { to: certDay(c.validTo), from: certDay(c.validFrom) }) }));
+    }
+    kids.push(certDetails(c));
+    if (tg && (state === 'untrusted' || state === 'changed')) {
+      const b = el('button', { type: 'button', class: 'pgx-btn pgx-btn-pri pgx-btn-sm', 'data-action': 'trust', id: 'st-ot-trust-' + tg.id,
+        text: t(state === 'changed' ? 'offsite.trust_new_btn' : 'offsite.trust_btn'), disabled: !FEATURES.scheduled_backups || !!bk.busy[tg.id] });
+      b.addEventListener('click', () => trustTarget(tg, c.fingerprint));
+      kids.push(el('div', { class: 'st-btnrow' }, [b]));
+    }
+    return el('div', { class: 'st-trustcard', 'data-state': state || '' }, kids);
+  }
+  async function trustTarget(tg, fingerprint) {
+    bk.busy[tg.id] = 'trust'; renderTargets();
+    const r = await post(BK + '/targets/' + tg.id + '/trust', { fingerprint });
+    delete bk.busy[tg.id];
+    if (!r.ok) {
+      bk.results[tg.id] = { ok: false, text: O.errorText(r), detail: O.errorDetail(r) };
+      renderTargets();
+      return;
+    }
+    toast(t('offsite.trust_done'));
+    await loadTargets();
+    const fresh = (bk.targets || []).find((x) => x.id === tg.id) || tg;
+    testTarget(fresh);
   }
   function targetFiles(tg) {
     const f = bk.tfiles[tg.id];
@@ -1860,6 +1926,8 @@
           tg.config_error ? el('div', { class: 'st-li-sub st-crit', text: t('offsite.config_error') }) : null,
           tg.last_status === 'failed' && tg.last_error ? el('code', { class: 'st-code st-crit', text: tg.last_error }) : null,
           tg.last_status === 'failed' && O.hintText(tg.last_error_hint) ? el('div', { class: 'st-li-sub st-warn-text', text: O.hintText(tg.last_error_hint) }) : null,
+          // SMB from before the switch: still unencrypted until it is edited
+          tg.type === 'smb' && tg.config && tg.config.encrypt !== true ? el('div', { class: 'st-li-sub', 'data-hint': 'smb_encrypt', text: t('offsite.smb_encrypt_tip') }) : null,
           tg.last_incomplete ? incompleteBlock(tg.last_incomplete.plugins) : null,
         ]),
         el('div', { class: 'st-li-pills' }, [tg.enabled ? null : pill('off', t('offsite.paused')), pill(state, t(st.key))]),
@@ -1871,7 +1939,7 @@
           tbtn(tg, 'edit', t('st.edit'), openTarget),
           tbtn(tg, 'delete', t('st.delete_dots'), deleteTarget),
         ]),
-        targetResult(bk.results[tg.id]),
+        targetResult(bk.results[tg.id], tg),
         targetFiles(tg),
       ]));
     });
@@ -1879,18 +1947,18 @@
   async function testTarget(tg) {
     bk.busy[tg.id] = 'test'; delete bk.results[tg.id]; renderTargets();
     const r = await post(BK + '/targets/' + tg.id + '/test');
-    bk.results[tg.id] = r.ok ? { ok: true, text: t('offsite.test_ok'), detail: r.detail || '' }
-      : { ok: false, text: O.errorCode(r) === 'TRANSPORT_FAILED' ? t('offsite.test_failed') : O.errorText(r), detail: O.errorDetail(r), hint: O.hintText(r.hint) };
+    bk.results[tg.id] = r.ok ? { ok: true, text: t('offsite.test_ok'), detail: r.detail || '', trusted: r.trusted || null }
+      : { ok: false, text: O.errorCode(r) === 'TRANSPORT_FAILED' ? t('offsite.test_failed') : O.errorText(r), detail: O.errorDetail(r), hint: O.hintText(r.hint), tls: r.tls || null, trusted: r.trusted || null };
     delete bk.busy[tg.id]; renderTargets();
   }
   async function runTarget(tg) {
     bk.busy[tg.id] = 'run'; delete bk.results[tg.id]; renderTargets();
     const r = await post(BK + '/targets/' + tg.id + '/run');
     if (r.ok) {
-      bk.results[tg.id] = { ok: true, text: t('offsite.run_ok', { file: r.file || '' }) + (r.deleted ? ' · ' + t('offsite.run_deleted', { n: r.deleted }) : '') };
+      bk.results[tg.id] = { ok: true, text: t('offsite.run_ok', { file: r.file || '' }) + (r.deleted ? ' · ' + t('offsite.run_deleted', { n: r.deleted }) : ''), trusted: r.trusted || null };
       delete bk.tfiles[tg.id];
     } else {
-      bk.results[tg.id] = { ok: false, text: O.errorText(r), detail: O.errorCode(r) === 'UPLOAD_FAILED' ? '' : O.errorDetail(r), hint: O.hintText(r.hint) };
+      bk.results[tg.id] = { ok: false, text: O.errorText(r), detail: O.errorCode(r) === 'UPLOAD_FAILED' ? '' : O.errorDetail(r), hint: O.hintText(r.hint), tls: r.tls || null };
       if (O.errorCode(r) === 'PASSPHRASE_NOT_SET') passEl.focus();
     }
     delete bk.busy[tg.id];
@@ -1901,7 +1969,7 @@
     const r = await post(BK + '/targets/' + tg.id + '/verify');
     bk.results[tg.id] = r.ok
       ? { ok: true, text: t('offsite.verify_ok', { file: r.file || '' }), lines: O.verifyLines(r, lang), warnings: (r.warnings || []).map(O.verifyWarningText).filter(Boolean), note: t('offsite.verify_note') }
-      : { ok: false, text: t('offsite.verify_failed') + ' · ' + O.errorText(r), detail: O.errorDetail(r), hint: O.hintText(r.hint) };
+      : { ok: false, text: t('offsite.verify_failed') + ' · ' + O.errorText(r), detail: O.errorDetail(r), hint: O.hintText(r.hint), tls: r.tls || null };
     delete bk.busy[tg.id];
     await loadTargets();
   }
@@ -1946,42 +2014,57 @@
     if (value != null && items.some((x) => String(x[0]) === String(value))) sel.value = String(value);
     sel.disabled = !items.length;
   }
-  /** The peer / route lists for `type` (WebDAV: L4 and HTTP routes, SMB/SFTP: L4 only), keeping `v`. */
+  // WebDAV and S3 speak HTTP(S): any route, the peer's port in its own field; SMB / SFTP: L4 routes
+  const httpish = (type) => type === 'webdav' || type === 's3';
+  /** The peer / route lists for `type` (WebDAV, S3: L4 and HTTP routes, SMB/SFTP: L4 only), keeping `v`. */
   async function fillVia(type, v) {
     const c = await loadViaChoices();
     const keep = v || { peerId: viaPeer.value, routeId: viaRoute.value };
     fillSelect(viaPeer, c.peers.map((p) => [p.id, p.label + ' (' + p.ip + ')']), keep.peerId);
-    const routes = type === 'webdav' ? c.routes : c.routes.filter((r) => r.type === 'l4');
-    fillSelect(viaRoute, routes.map((r) => [r.id, r.label + (type === 'webdav' ? ' · ' + (r.type === 'l4' ? 'L4' : 'HTTP') : '') + (r.gateway ? ' · Gateway' : '')]), keep.routeId);
+    const routes = httpish(type) ? c.routes : c.routes.filter((r) => r.type === 'l4');
+    fillSelect(viaRoute, routes.map((r) => [r.id, r.label + (httpish(type) ? ' · ' + (r.type === 'l4' ? 'L4' : 'HTTP') : '') + (r.gateway ? ' · Gateway' : '')]), keep.routeId);
   }
   /** Show what the chosen "Verbindung" needs (after otShowType's data-for pass). */
   function viaSync() {
     const type = otType;
-    const has = type === 'webdav' || type === 'smb' || type === 'sftp';
+    const has = httpish(type) || type === 'smb' || type === 'sftp';
     const k = has ? viaSel.value || 'host' : 'host';
-    viaSel.querySelectorAll('option[data-label-webdav]').forEach((o) => { o.textContent = type === 'webdav' ? o.dataset.labelWebdav : o.dataset.labelTcp; });
+    viaSel.querySelectorAll('option[data-label-webdav]').forEach((o) => { o.textContent = httpish(type) ? o.dataset.labelWebdav : o.dataset.labelTcp; });
     $('st-ot-via-peer-row').hidden = !has || k !== 'peer';
     $('st-ot-via-route-row').hidden = !has || k !== 'route';
-    $('st-ot-via-port-row').hidden = type !== 'webdav' || k !== 'peer';
+    $('st-ot-via-port-row').hidden = !httpish(type) || k !== 'peer';
+    const ph = $('st-ot-via-port-h');
+    ph.textContent = type === 's3' ? ph.dataset.s3 : ph.dataset.webdav;
     $('st-ot-url-via-h').hidden = type !== 'webdav' || k === 'host';
+    $('st-ot-endpoint-via-h').hidden = type !== 's3' || k === 'host';
     $('st-ot-host-via-h').hidden = !(type === 'smb' || type === 'sftp') || k === 'host';
     $('st-ot-port-row').hidden = !(type === 'smb' || type === 'sftp') || k === 'route';
     const rh = $('st-ot-via-route-h');
-    rh.textContent = type === 'webdav' ? rh.dataset.webdav : rh.dataset.tcp;
+    rh.textContent = httpish(type) ? rh.dataset.webdav : rh.dataset.tcp;
   }
   viaSel.addEventListener('change', viaSync);
+  // "Verbindung verschlüsseln (SMB3)": what it means, on and off
+  const encEl = $('st-ot-encrypt');
+  function encryptSync() {
+    const h = $('st-ot-encrypt-h');
+    const old = !!(otEditing && otEditing.type === 'smb' && otEditing.config && otEditing.config.encrypt !== true);
+    h.textContent = encEl.checked ? h.dataset.on : (old ? h.dataset.old : h.dataset.off);
+    h.classList.toggle('st-warn-text', !encEl.checked);
+  }
+  encEl.addEventListener('change', encryptSync);
   function setVia(v, type) {
     const k = v && (v.kind === 'peer' || v.kind === 'route') ? v.kind : 'host';
     viaSel.value = k;
-    $('st-ot-via-port').value = type === 'webdav' && k === 'peer' && v.port ? String(v.port) : '';
+    $('st-ot-via-port').value = httpish(type) && k === 'peer' && v.port ? String(v.port) : '';
     if ((type === 'smb' || type === 'sftp') && k === 'peer' && v.port) $('st-ot-port').value = String(v.port);
     return fillVia(type, v || {}).then(viaSync);
   }
+  /** The certificate this target trusts, in plain words ("Vertrautes Zertifikat: synology, gültig bis …"). */
   function caNote(cfg) {
     const n = $('st-ot-ca-set');
     const info = cfg && cfg.tls_ca_info;
     n.hidden = !(info && info.length);
-    if (!n.hidden) n.textContent = t('offsite.f_ca_set', { info: info.map((c) => c.subject).join(', ') });
+    if (!n.hidden) n.textContent = t('offsite.trust_stored', { device: info[0].device || certCn(info[0].subject), to: certDay(info[0].validTo) });
   }
   // "Speicherziel von Drive/Plugins übernehmen" (GET /targets/storage-sources): WebDAV and SMB
   const srcSel = $('st-ot-src');
@@ -2041,8 +2124,9 @@
     if (type === 'sftp' || type === 'smb') fillCandidates(type);
     if (otSource && otSource.kind !== type) { otSource = null; sourceNote(); }
     if (type === 'webdav' || type === 'smb') fillSources(type);
-    if (type === 'webdav' || type === 'smb' || type === 'sftp') fillVia(type).then(viaSync);
+    if (httpish(type) || type === 'smb' || type === 'sftp') fillVia(type).then(viaSync);
     viaSync();
+    encryptSync();
   }
   otModal.querySelectorAll('.st-typecard').forEach((c) => c.addEventListener('click', () => { if (!otEditing) { otErr.hidden = true; otShowType(c.dataset.type); } }));
   function openTarget(tg) {
@@ -2066,6 +2150,7 @@
       });
       $('st-ot-pathstyle').checked = !!c.path_style;
       $('st-ot-ca').value = c.tls_ca || '';
+      encEl.checked = c.encrypt === true;
     }
     $('st-ot-l4').value = '';
     $('st-ot-l4-note').hidden = true;
@@ -2100,6 +2185,7 @@
       password: val('st-ot-pw'), clear_password: $('st-ot-clearpw').checked, path_style: $('st-ot-pathstyle').checked,
       via: val('st-ot-via'), via_peer: val('st-ot-via-peer'), via_route: val('st-ot-via-route'), via_port: val('st-ot-via-port'),
       tls_ca: val('st-ot-ca'), password_from: otSource && otSource.kind === otType && otSource.has_password ? otSource.id : null,
+      encrypt: encEl.checked,
     };
     if (!values.name.trim()) { otError(O.errorText({ code: 'INVALID_NAME' }), 'st-ot-name'); return; }
     const body = O.targetPayload(otType, values, !!otEditing);

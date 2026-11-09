@@ -23,6 +23,7 @@ const logger = require('../../utils/logger');
 const { StorageError } = require('./errors');
 const net = require('./net');
 const viaMod = require('./via');
+const trustMod = require('./trust');
 
 const KINDS = ['local', 'smb', 'webdav', 's3', 'gdrive', 'onedrive'];
 const SECRET_FIELDS = { local: [], smb: ['password'], webdav: ['password'], s3: ['secretAccessKey'], gdrive: [], onedrive: [] };
@@ -112,8 +113,11 @@ const { webdavViaOf, viaLabel, routeOf } = viaMod;
 /**
  * Admin input → { label, config, secret } (secret: only the fields given;
  * an empty or missing secret field keeps the stored one — `prev`).
+ * `before`: the stored config of the target being changed (null for a new
+ * one) — SMB's `encrypt` left out keeps its value (new targets: on), and
+ * `tlsSeen` (trust.js) stays while the server is the same.
  */
-function normalise(kind, input, prev = null) {
+function normalise(kind, input, prev = null, before = null) {
   if (!KINDS.includes(kind)) throw invalid('kind');
   const i = input && typeof input === 'object' ? input : {};
   const label = str(i.label);
@@ -126,7 +130,10 @@ function normalise(kind, input, prev = null) {
     if (!SHARE_RE.test(share)) throw invalid('share');
     if (!USER_RE.test(str(i.username)) || !USER_RE.test(str(i.domain)) || /[=\n]/.test(str(i.username) + str(i.domain))) throw invalid('username');
     const v = via(i.via, i);
-    config = { via: v, share, folder: folderPath(i.folder, 'folder'), username: str(i.username), domain: str(i.domain) };
+    if (i.encrypt !== undefined && typeof i.encrypt !== 'boolean') throw invalid('encrypt');
+    // SMB3 encryption: on for new targets; a target from before keeps its behaviour until it is changed
+    const encrypt = i.encrypt !== undefined ? i.encrypt : (before ? before.encrypt === true : true);
+    config = { via: v, share, folder: folderPath(i.folder, 'folder'), username: str(i.username), domain: str(i.domain), encrypt };
   } else if (kind === 'webdav') {
     const u = httpUrl(i.url, 'url');
     if (!USER_RE.test(str(i.username)) || str(i.username).includes(':')) throw invalid('username');
@@ -142,6 +149,7 @@ function normalise(kind, input, prev = null) {
     config = { endpoint: u.origin + u.pathname.replace(/\/+$/, ''), region, bucket, prefix: folderPath(i.prefix, 'prefix'),
       pathStyle: i.pathStyle !== false, accessKeyId: keyId, tlsCa: tlsCa(i.tlsCa) };
   }
+  if (before && before.tlsSeen && JSON.stringify(tlsPlaceOf(kind, before)) === JSON.stringify(tlsPlaceOf(kind, config))) config.tlsSeen = true;
   const secret = Object.assign({}, prev || {});
   for (const f of SECRET_FIELDS[kind]) {
     const v = i[f];
@@ -233,7 +241,8 @@ function usedBy(id) {
 /** The certificates of a target's own trust anchor, for the page. */
 function caInfo(pem) {
   if (!pem) return null;
-  try { return net.parseCa(pem).map((c) => ({ subject: c.subject, fingerprint: c.fingerprint, validTo: c.validTo })); } catch { return null; }
+  const iso = (d) => { const t = new Date(d); return Number.isNaN(t.getTime()) ? d : t.toISOString(); };
+  try { return net.parseCa(pem).map((c) => ({ subject: c.subject, device: trustMod.cn(c.subject), fingerprint: c.fingerprint, validTo: iso(c.validTo) })); } catch { return null; }
 }
 
 /** What the admin API answers for a row — never a secret. */
@@ -243,6 +252,7 @@ function view(row) {
   const secretSet = {};
   for (const f of SECRET_FIELDS[row.kind] || []) secretSet[f] = !!sec[f];
   const pub = Object.assign({}, cfg);
+  delete pub.tlsSeen; // internal (trust.js)
   return {
     id: row.id, kind: row.kind, label: row.label, config: pub, secretSet,
     needsSecret: !!row.secret_enc && !Object.keys(sec).length,
@@ -298,7 +308,7 @@ function update(id, input) {
   // WebDAV: input without `via` (API callers from before 1.218.0) keeps the stored one
   const inp = row.kind === 'webdav' && input && typeof input === 'object' && input.via === undefined && before.via
     ? Object.assign({}, input, { via: before.via }) : input;
-  const { label, config, secret } = normalise(row.kind, inp, secretOf(row));
+  const { label, config, secret } = normalise(row.kind, inp, secretOf(row), before);
   const moved = JSON.stringify(placeOf(row.kind, before)) !== JSON.stringify(placeOf(row.kind, config));
   if (moved && usedBy(row.id).length) throw new StorageError('in_use', 'in use: the place cannot change');
   getDb().prepare(`UPDATE storage_targets SET label = ?, config_json = ?, secret_enc = ?, updated_at = datetime('now'),
@@ -314,6 +324,18 @@ function placeOf(kind, cfg) {
   if (kind === 'webdav') return [cfg.url, webdavViaOf(cfg)];
   if (CLOUD[kind]) return [cfg.account, cfg.driveId || null, cfg.folderId];
   return [cfg.endpoint, cfg.bucket, cfg.prefix, cfg.pathStyle];
+}
+
+/**
+ * The server a WebDAV / S3 target talks TLS with (host and port of the URL,
+ * how it is reached): while it stays, so does `tlsSeen` (trust.js).
+ */
+function tlsPlaceOf(kind, cfg) {
+  try {
+    if (kind === 'webdav') return [new URL(cfg.url).host, webdavViaOf(cfg)];
+    if (kind === 's3') return [new URL(cfg.endpoint).host, cfg.pathStyle === false ? cfg.bucket : null];
+  } catch { /* no URL */ }
+  return null;
 }
 
 function remove(id) {
@@ -400,7 +422,11 @@ async function collect(stream) {
  *   hints  'route_decrypts'  a certificate of Caddy's internal CA, or the L4
  *                            route terminates TLS: GateControl decrypts itself
  *          'intermediate'    the server sends its leaf without the intermediate
- *   trust  { leaf, chain }   offer to pin the leaf / the CA certificates the server sent
+ *   state  trust.js assess(): 'untrusted' | 'changed' | 'name' | 'expired' | … | null
+ *   device the name of the device in the certificate ("synology")
+ *   trust  { leaf, chain }   offer to pin the leaf ("Diesem Gerät vertrauen" /
+ *                            "Neues Zertifikat vertrauen") / the CA
+ *                            certificates the server sent (experts)
  */
 async function tlsDiagnosis(t, d) {
   if (!d || typeof d.inspectTls !== 'function') return null;
@@ -410,7 +436,7 @@ async function tlsDiagnosis(t, d) {
     return null;
   }
   if (!r) return null;
-  let decrypts = r.chain.some((c) => /Caddy Local Authority/i.test(c.issuer) || /Caddy Local Authority/i.test(c.subject));
+  let decrypts = trustMod.caddyDecrypts(r);
   const cfg = t.config || configOf(t);
   if (t.kind === 'webdav' && webdavViaOf(cfg).kind === 'route') {
     try {
@@ -421,10 +447,30 @@ async function tlsDiagnosis(t, d) {
   const hints = [];
   if (decrypts) hints.push('route_decrypts');
   if (r.reason === 'missing_intermediate') hints.push('intermediate');
-  // pinning does not help against a date, nor when GateControl answers instead of the NAS
-  const pinnable = !!r.reason && !!r.cert && !decrypts && r.reason !== 'expired' && r.reason !== 'not_yet_valid';
+  const state = trustMod.assess(r, { stored: !!cfg.tlsCa, decrypts });
+  // pinning helps only against a certificate GateControl does not know — not
+  // against a date, a wrong name, or when GateControl answers instead of the NAS
+  const pinnable = trustMod.trustable(state);
   const sentCas = r.chain.slice(1).filter((c) => c.ca);
-  return Object.assign(r, { hints, trust: { leaf: pinnable, chain: pinnable && r.reason !== 'name' && sentCas.length > 0 } });
+  return Object.assign(r, { hints, state, device: trustMod.deviceName(r.cert), trust: { leaf: pinnable, chain: pinnable && sentCas.length > 0 } });
+}
+
+/**
+ * Does a WebDAV target go through a VPN device or a route to a non-public
+ * address (trust.js tunnelled)? S3 targets connect to their endpoint itself.
+ */
+async function tunnelOf(t) {
+  if (t.kind !== 'webdav') return false;
+  const cfg = t.config || configOf(t);
+  const v = webdavViaOf(cfg);
+  if (v.kind === 'host') return false;
+  return trustMod.tunnelled(v.kind, () => viaMod.webdavDialer(v, new URL(cfg.url))());
+}
+
+/** Was this target reached with a trusted certificate before (trust.js)? A stored row's last check counts. */
+function seenOf(row) {
+  const cfg = configOf(row);
+  return cfg.tlsSeen === true || (!!row.checked_at && row.check_ok === 1);
 }
 
 /**
@@ -449,7 +495,7 @@ async function selfHintOf(t, err) {
  *     sys (not_tls, tls_handshake: the system's code), tls (after a TLS failure: tlsDiagnosis),
  *     hint ('self_address': refused / no answer at an address of this server itself) }
  */
-async function runCheck(t) {
+async function runCheck(t, opts = {}) {
   const steps = [];
   const step = async (name, fn) => {
     try { const v = await fn(); steps.push({ step: name, ok: true }); return v; } catch (e) {
@@ -484,29 +530,107 @@ async function runCheck(t) {
     if (['tls', 'not_tls', 'tls_handshake'].includes(err.code)) out.tls = await tlsDiagnosis(t, d);
     const hint = await selfHintOf(t, err);
     if (hint) out.hint = hint;
+    const state = out.tls && out.tls.state;
+    if (state === 'changed') {
+      // never accepted on its own: the page asks ("Neues Zertifikat vertrauen")
+      out.error = 'tls_changed';
+      out.message = `${trustMod.CHANGED_TEXT} (new: SHA-256 ${out.tls.cert.fingerprint})`;
+    }
+    // the first contact through a VPN device or a route: remember the certificate (trust.js)
+    if (state === 'untrusted' && opts.firstContact && trustMod.autoTrust({ state, stored: false, seen: false, tunnel: await tunnelOf(t) })) {
+      const pem = out.tls.cert.pem.trim();
+      const cfg = t.config || configOf(t);
+      const again = await runCheck(Object.assign({}, t, { config: Object.assign({}, cfg, { tlsCa: pem }) }));
+      // the certificate was the problem only if the connection gets past it now
+      if (!['tls', 'tls_changed', 'not_tls', 'tls_handshake'].includes(again.error)) {
+        again.trusted = { auto: true, cert: trustMod.card(out.tls.cert) };
+        return again;
+      }
+    }
     return out;
   }
 }
 
-/** Check a stored target and keep the result on its row. */
+function activityLog(event, message, details, severity = 'warning') {
+  try { require('../activity').log(event, message, { source: 'system', severity, details }); } catch { /* activity log unavailable */ }
+}
+
+/** Set fields of a stored target's config (the certificate remembered, `tlsSeen`). */
+function patchConfig(id, fields) {
+  const row = rowOf(id);
+  if (!row) return;
+  const cfg = Object.assign(configOf(row), fields);
+  getDb().prepare('UPDATE storage_targets SET config_json = ? WHERE id = ?').run(JSON.stringify(cfg), row.id);
+}
+
+/**
+ * Check a stored target and keep the result on its row. The first contact
+ * through a VPN device or a route stores the certificate the NAS presents
+ * (trust.js, `trusted.auto`); a certificate that changed is logged once.
+ */
 async function check(id) {
   const row = rowOf(id);
   if (!row) throw new StorageError('not_found', 'no such storage target');
-  const r = await runCheck(row);
+  const cfg = configOf(row);
+  const r = await runCheck(row, { firstContact: !cfg.tlsCa && !seenOf(row) });
+  if (r.trusted && r.trusted.auto) {
+    patchConfig(row.id, { tlsCa: r.trusted.cert.pem.trim() });
+    activityLog('storage_target_cert_remembered', `Storage target "${row.label}": certificate of the NAS remembered on first contact through the VPN (SHA-256 ${r.trusted.cert.fingerprint})`,
+      { id: row.id, fingerprint: r.trusted.cert.fingerprint }, 'info');
+  } else if (r.ok && !cfg.tlsSeen && (row.kind === 'webdav' || row.kind === 's3')) patchConfig(row.id, { tlsSeen: true });
+  const error = r.ok ? null : `${r.error}: ${String(r.message || '').slice(0, 300)}`;
+  if (r.error === 'tls_changed' && row.check_error !== error) {
+    activityLog('storage_target_cert_changed', `Storage target "${row.label}": the NAS presents another certificate than the stored one (SHA-256 ${r.tls.cert.fingerprint}) — not accepted until trusted`,
+      { id: row.id, fingerprint: r.tls.cert.fingerprint });
+  }
   getDb().prepare(`UPDATE storage_targets SET checked_at = datetime('now'), check_ok = ?, check_error = ?, free_bytes = ?, total_bytes = ? WHERE id = ?`)
-    .run(r.ok ? 1 : 0, r.ok ? null : `${r.error}: ${String(r.message || '').slice(0, 300)}`, r.free, r.total, row.id);
+    .run(r.ok ? 1 : 0, error, r.free, r.total, row.id);
   return r;
 }
 
-/** Check settings before they are saved ("Prüfen" in the dialog); for an existing target its stored secret fills the gaps. */
+/**
+ * Check settings before they are saved ("Prüfen" in the dialog); for an
+ * existing target its stored secret fills the gaps. A certificate remembered
+ * on first contact comes back as `trusted` (with its PEM): the page puts it
+ * into the target's own certificate, saved with it.
+ */
 async function checkInput(kind, input, id = null) {
   const prev = id ? rowOf(id) : null;
   if (id && (!prev || prev.kind !== kind)) throw new StorageError('not_found', 'no such storage target');
-  const { config, secret } = normalise(kind, input, prev ? secretOf(prev) : null);
-  return runCheck({ kind, config, secret });
+  const before = prev ? configOf(prev) : null;
+  const { config, secret } = normalise(kind, input, prev ? secretOf(prev) : null, before);
+  const samePlace = !!before && JSON.stringify(tlsPlaceOf(kind, before)) === JSON.stringify(tlsPlaceOf(kind, config));
+  return runCheck({ kind, config, secret }, { firstContact: !config.tlsCa && !(samePlace && seenOf(prev)) });
+}
+
+/**
+ * "Diesem Gerät vertrauen" / "Neues Zertifikat vertrauen" for a stored
+ * WebDAV or S3 target: reads the certificate the server presents now and
+ * stores it as the target's own certificate — only when it is the one the
+ * page showed (`fingerprint`, SHA-256 hex) and a click may trust it
+ * (trust.js). → { cert: trust.card, replaced (an own certificate was stored before) }
+ * Throws StorageError cert_mismatch (the server presents another one by now),
+ * not_trustable (`reason`: name, expired, decrypts …), not_found.
+ */
+async function trustCert(id, fingerprint) {
+  const row = rowOf(id);
+  if (!row) throw new StorageError('not_found', 'no such storage target');
+  const fp = String(fingerprint || '').toLowerCase().replace(/[^0-9a-f]/g, '');
+  if (!/^[0-9a-f]{64}$/.test(fp)) throw invalid('fingerprint');
+  const cfg = configOf(row);
+  if (row.kind !== 'webdav' && row.kind !== 's3') throw new StorageError('not_trustable', 'only WebDAV and S3 targets have a certificate', { reason: 'no_tls' });
+  let d;
+  try { d = await driverOf(row); } catch (e) { throw StorageError.from(e); }
+  const diag = await tlsDiagnosis(row, d);
+  if (!diag || !diag.cert) throw new StorageError('not_trustable', 'no certificate to read', { reason: diag ? diag.reason : 'no_tls' });
+  if (diag.cert.fingerprint !== fp) throw new StorageError('cert_mismatch', 'the server presents another certificate by now');
+  if (!diag.reason) return { cert: trustMod.card(diag.cert), replaced: false, already: true };
+  if (!trustMod.trustable(diag.state)) throw new StorageError('not_trustable', `cannot be trusted: ${diag.state || diag.reason}`, { reason: diag.state || diag.reason });
+  patchConfig(row.id, { tlsCa: diag.cert.pem.trim() });
+  return { cert: trustMod.card(diag.cert), replaced: !!cfg.tlsCa };
 }
 
 module.exports = {
-  KINDS, SECRET_FIELDS, BLOCKS_ONLY, CLOUD, StorageError, normalise, list, get, create, update, remove, check, checkInput, open, driverOf,
+  KINDS, SECRET_FIELDS, BLOCKS_ONLY, CLOUD, StorageError, normalise, list, get, create, update, remove, check, checkInput, trustCert, open, driverOf,
   registerUsage, usedBy, display, bufferSource, rowOf, configOf, secretOf, brief, tlsCa, caInfo,
 };

@@ -367,16 +367,18 @@ So geht es (wie beim Speicherziel für Drive):
    (Synology: 5006 für https). Oder „Über eine Weiterleitung“ und eine
    L4-Weiterleitung auf die NAS – sie darf „nur intern“ bleiben.
 3. Die **Adresse** bleibt `https://nas.example.com:5006/…`: Sie bestimmt Pfad,
-   Host-Name und den Namen, gegen den das Zertifikat geprüft wird. Ein
-   eigenes DSM-Zertifikat unter „Eigenes Zertifikat oder eigene CA (PEM)“
-   einfügen (`cert.pem` reicht).
+   Host-Name und den Namen, gegen den das Zertifikat geprüft wird.
+4. **Speichern.** Der Test danach merkt sich das Zertifikat der NAS
+   („Zertifikat der NAS gemerkt“) – eine PEM-Datei brauchst du nicht mehr.
+   Zeigt „Testen“ stattdessen „Die NAS weist sich mit einem eigenen
+   Zertifikat aus“, klicke auf „Diesem Gerät vertrauen“.
 
 Hast du die NAS schon als Speicherziel für Drive eingerichtet: oben im Dialog
 „Speicherziel von Drive/Plugins übernehmen“ wählen. Adresse, Benutzer,
 Verbindung und Zertifikat werden eingetragen, das Passwort beim Speichern
 einmal kopiert. Gib in der Adresse einen eigenen Unterordner an
 (z. B. `…/GateControl/Backups/`), damit die Backups nicht zwischen den Dateien
-von Drive liegen. SMB und SFTP haben dieselbe Wahl „Verbindung“.
+von Drive liegen. SMB, SFTP und S3 haben dieselbe Wahl „Verbindung“.
 
 ## Gateway einrichten
 

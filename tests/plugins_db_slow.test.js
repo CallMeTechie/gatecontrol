@@ -20,25 +20,10 @@ const storage = require('../src/services/plugins/storage');
 const { fingerprint } = require('../src/services/plugins/sqlGuard');
 const loopStall = require('../src/utils/loopStall');
 const logger = require('../src/utils/logger');
+// load-proof: the CPU time this thread spends without a break, the wall clock only as a coarse bound (helpers/loopLag.js)
+const { maxLag, assertLoopFree } = require('./helpers/loopLag');
 
 const LIMIT_MS = 200;
-
-/** Longest pause of the event loop while `fn` runs (5 ms ticks). */
-async function maxLag(fn) {
-  let worst = 0;
-  let last = performance.now();
-  const iv = setInterval(() => {
-    const t = performance.now();
-    worst = Math.max(worst, t - last - 5);
-    last = t;
-  }, 5);
-  let result;
-  try { result = await fn(); } finally {
-    worst = Math.max(worst, performance.now() - last - 5);
-    clearInterval(iv);
-  }
-  return { worst: Math.round(worst), result };
-}
 
 const COUNT_SQL = 'WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < ?) SELECT count(*) AS n FROM c';
 
@@ -85,9 +70,12 @@ describe('slow plugin database statements', () => {
     const slowLines = () => warn.mock.calls.filter((c) => c.arguments[1] === 'slow plugin database statements');
     let n = 100000;
     let runs = 0;
+    let roundTrip = 0; // of the last call (the slow one): sent → answer taken
     for (; runs < 12 && !(db.slow && db.slow.n); runs++) {
       n *= 2;
+      const t0 = Date.now();
       const r = await db.call('query', { sql: COUNT_SQL.replace('x < ?', `x < ${n}`), mode: 'all' }, 14000);
+      roundTrip = Date.now() - t0;
       assert.equal(r.rows[0].n, n);
     }
     assert.equal(slowLines().length, 0, 'nothing logged before the window ends');
@@ -99,7 +87,9 @@ describe('slow plugin database statements', () => {
     assert.equal(f.slow, 1);
     assert.equal(f.writes, 0, 'a SELECT is no write');
     assert.ok(f.maxMs >= storage.SLOW_MS, `ms ${f.maxMs}`);
-    assert.ok(f.waitMs >= 0 && f.waitMs < f.maxMs, `waitMs ${f.waitMs}`);
+    // the wait is the round trip without the statement — not compared with the statement's time: a busy runner
+    // stretches the way to the worker and back (seen: 400–950 ms against 200–300 ms in the worker)
+    assert.ok(f.waitMs >= 0 && f.waitMs <= roundTrip - f.maxMs + 2, `waitMs ${f.waitMs}, round trip ${roundTrip} ms, statement ${f.maxMs} ms`);
     assert.deepEqual(f.statements.map((e) => [e.op, e.sql, e.n, e.rows]),
       [['query', 'WITH RECURSIVE c(x) AS (SELECT ? UNION ALL SELECT x + ? FROM c WHERE x < ?) SELECT count(*) AS n FROM c', 1, 1]]);
     assert.ok(!JSON.stringify(f).includes(String(n)), 'no values in the log');
@@ -162,12 +152,11 @@ describe(`Ereignisschleife < ${LIMIT_MS} ms bei schweren Plugin-Abfragen`, () =>
       INSERT INTO bodies (html, text, bytes) SELECT printf('%.${kb16}c', 'x'), 'text ' || x, ${kb16} FROM c` });
     const sum = await maxLag(() => db.call('query', { sql: 'SELECT SUM(bytes) AS n FROM bodies', mode: 'get' }));
     assert.equal(sum.result.row.n, 3000 * kb16);
-    assert.ok(sum.worst < LIMIT_MS, `event loop paused ${sum.worst} ms`);
+    assertLoopFree(sum, 'sum over the bodies', LIMIT_MS, t);
     const n = await countFor(db, 1500);
     const long = await maxLag(() => db.call('query', { sql: COUNT_SQL, params: [n], mode: 'get' }, 10000));
     assert.equal(long.result.row.n, n);
-    assert.ok(long.worst < LIMIT_MS, `event loop paused ${long.worst} ms during a long statement`);
-    t.diagnostic(`longest pause: sum over the bodies ${sum.worst} ms, 1.5 s statement ${long.worst} ms`);
+    assertLoopFree(long, '1.5 s statement', LIMIT_MS, t);
   });
 
   it('a list answer stops at ~16 MB (truncated) — copying it to the main thread and serialising it stays under the limit', async (t) => {
@@ -184,8 +173,7 @@ describe(`Ereignisschleife < ${LIMIT_MS} ms bei schweren Plugin-Abfragen`, () =>
     assert.equal(rows.truncated, true, 'past ~16 MB');
     assert.ok(rows.rows.length > 1500 && rows.rows.length < 2100, `rows ${rows.rows.length}`);
     assert.ok(got.result < 17.5 * 1024 * 1024, `answer ${got.result} bytes`);
-    assert.ok(got.worst < LIMIT_MS, `event loop paused ${got.worst} ms`);
-    t.diagnostic(`longest pause: ${rows.rows.length} rows, ${got.result} bytes → ${got.worst} ms`);
+    assertLoopFree(got, `${rows.rows.length} rows, ${got.result} bytes`, LIMIT_MS, t);
     // small rows: the row limit as before
     const few = await db.call('query', { sql: 'SELECT id FROM big ORDER BY id', mode: 'all' });
     assert.deepEqual([few.rows.length, few.truncated], [4000, false]);

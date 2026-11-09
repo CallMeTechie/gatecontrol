@@ -2499,6 +2499,9 @@
       [btn(t('plugins.stg.add'), { primary: true, icon: I.plus, id: 'pgx-stg-add', onClick: () => targetDialog(null) })]));
     const rows = stg.targets.map((tg) => {
       const err = tg.check && !tg.check.ok && tg.check.error ? el('p', { class: 'pgx-stg-err', text: stgErrorText(tg.check.error) }) : null;
+      const changed = !!(tg.check && !tg.check.ok && /^tls_changed\b/.test(String(tg.check.error || '')));
+      // SMB from before the switch: still unencrypted until it is edited
+      const encTip = tg.kind === 'smb' && tg.config && tg.config.encrypt !== true ? el('small', { class: 'pgx-hint', 'data-hint': 'smb_encrypt', text: t('plugins.stg.smb_encrypt_tip') }) : null;
       return el('div', { class: 'pgx-row pgx-stg-row', 'data-target': String(tg.id), 'data-kind': tg.kind }, [
         el('span', { class: 'pgx-ic', 'data-size': 'md', 'data-cat': 'system', 'aria-hidden': 'true' }, [icon(ST_ICON[tg.kind], 22)]),
         el('span', { class: 'pgx-t pgx-grow' }, [
@@ -2506,6 +2509,7 @@
           el('small', { class: 'pgx-mono', text: tg.display }),
           el('small', { class: 'pgx-muted', text: [t('plugins.stg.kind_' + tg.kind), fmtFree(tg.check), usedText(tg)].filter(Boolean).join(' · ') }),
           err,
+          encTip,
         ]),
         el('span', { class: 'pgx-stg-state' }, [checkPill(tg), tg.encrypted ? pill(t('plugins.stg.encrypted'), 'blue') : null]),
         el('span', { class: 'pgx-acts' }, [
@@ -2519,6 +2523,7 @@
             await loadTargets();
             renderStorage();
           } }),
+          changed ? btn(t('plugins.stg.trust_new_btn'), { small: true, primary: true, icon: I.shieldOk, action: 'trust', onClick: (e) => trustChanged(tg, e.currentTarget) }) : null,
           btn(t('plugins.stg.edit'), { small: true, action: 'edit', onClick: () => targetDialog(tg) }),
           btn(t('plugins.stg.delete'), { small: true, ghost: true, action: 'delete', disabled: !!(tg.usedBy && tg.usedBy.length), label: t('plugins.stg.delete_l', { name: tg.label }), onClick: async () => {
             if (!(await D.confirm({ title: t('plugins.stg.delete_title', { name: tg.label }), message: t('plugins.stg.delete_text'), okLabel: t('plugins.stg.delete'), danger: true }))) return;
@@ -2539,6 +2544,35 @@
       el('ul', { class: 'pgx-stg-about' }, ['server', 'local', 'smb', 'webdav', 's3', 'cloud'].map((k) => el('li', null, [el('b', { text: t('plugins.stg.about_' + k + '_t') }), ' ', t('plugins.stg.about_' + k)]))),
       el('p', { class: 'pgx-hint', text: t('plugins.stg.about_backup') }),
     ], { 'aria-labelledby': 'pgx-stg-about-h' }, 'pgx-pad pgx-stack-card'));
+  }
+
+  /**
+   * "Neues Zertifikat vertrauen" in the list: check again for the certificate
+   * the NAS presents now, ask with its device name, validity and fingerprint,
+   * then store exactly that one (POST /:id/trust).
+   */
+  async function trustChanged(tg, b) {
+    b.disabled = true;
+    const r = await req('POST', ST_API + '/' + tg.id + '/check', {});
+    b.disabled = false;
+    if (!r.ok) { toast(r.error, 'error'); return; }
+    const x = r.check.tls;
+    if (r.check.ok || !x || x.state !== 'changed' || !x.cert) {
+      toast(r.check.ok ? t('plugins.stg.check_ok') : stgErrorText(r.check.error, r.check.message), r.check.ok ? 'success' : 'error');
+      await loadTargets();
+      renderStorage();
+      return;
+    }
+    const c = x.cert;
+    const ok = await D.confirm({ title: t('plugins.stg.trust_changed_title'), message: t('plugins.stg.trust_changed_text'),
+      detail: [t('plugins.stg.trust_device') + ': ' + (x.device || cnOf(c.subject)), t('plugins.stg.trust_valid_to') + ': ' + P.fmtDate(c.validTo, lang),
+        t('plugins.stg.tls_fp') + ': ' + fpOf(c.fingerprint)].join(' · '), okLabel: t('plugins.stg.trust_new_btn') });
+    if (!ok) return;
+    const tr = await req('POST', ST_API + '/' + tg.id + '/trust', { fingerprint: c.fingerprint });
+    if (!tr.ok) { toast(tr.error, 'error'); return; }
+    toast(tr.check && tr.check.ok ? t('plugins.stg.trust_done') : stgErrorText(tr.check.error, tr.check.message), tr.check && tr.check.ok ? 'success' : 'error');
+    await loadTargets();
+    renderStorage();
   }
 
   /** The local cache of plugin media kept on storage targets (mediaAreas.js): usage and its size. */
@@ -2575,6 +2609,11 @@
     const s = t('plugins.stg.err_' + c, { code: m ? m[1] : '?' });
     return s === 'plugins.stg.err_' + c ? t('plugins.stg.err_failed') : s;
   }
+
+  /** "CN=synology, O=…" → "synology". */
+  function cnOf(dn) { const m = /(?:^|, )CN=([^,]+)/.exec(dn || ''); return m ? m[1] : String(dn || ''); }
+  /** SHA-256 hex → "AB:CD:…". */
+  function fpOf(f) { return (String(f || '').toUpperCase().match(/../g) || []).join(':'); }
 
   async function stgChoices() {
     if (stg.choices) return stg.choices;
@@ -2628,15 +2667,35 @@
       inputs[name] = s;
       return s;
     }
-    /** The target's own certificate or CA (PEM) — for a NAS with a self-signed certificate. */
+    /**
+     * The certificate GateControl trusts for this NAS: a plain line when one
+     * is stored ("Diesem Gerät vertrauen", remembered on first contact), the
+     * PEM field itself under "Erweitert" — for experts (an own CA).
+     */
     function caField() {
       const ta = el('textarea', { class: 'pgx-fld-in pgx-stg-pem', id: 'pgx-stg-tlsCa', name: 'tlsCa', rows: 4, spellcheck: 'false', maxLength: 65536,
         placeholder: '-----BEGIN CERTIFICATE-----' });
       ta.value = cfg.tlsCa || '';
       inputs.tlsCa = ta;
-      const info = existing && existing.tlsCaInfo && existing.tlsCaInfo.length
-        ? existing.tlsCaInfo.map((c) => c.subject + ' · SHA-256 ' + c.fingerprint.slice(0, 16) + '…').join(' / ') : null;
-      return field('tlsCa', t('plugins.stg.f_ca'), ta, info ? t('plugins.stg.f_ca_set', { info }) : t('plugins.stg.f_ca_h'));
+      const stored = existing && existing.tlsCaInfo && existing.tlsCaInfo.length ? existing.tlsCaInfo[0] : null;
+      const line = el('p', { class: 'pgx-hint pgx-stg-trusted', id: 'pgx-stg-trusted', hidden: !stored,
+        text: stored ? t('plugins.stg.trust_stored', { device: stored.device || cnOf(stored.subject), to: P.fmtDate(stored.validTo, lang) }) : '' });
+      const info = stored ? existing.tlsCaInfo.map((c) => c.subject + ' · SHA-256 ' + c.fingerprint.slice(0, 16) + '…').join(' / ') : null;
+      const adv = el('details', { class: 'pgx-stg-adv', id: 'pgx-stg-adv' }, [el('summary', { text: t('plugins.stg.advanced') }),
+        field('tlsCa', t('plugins.stg.f_ca'), ta, info ? t('plugins.stg.f_ca_set', { info }) : t('plugins.stg.f_ca_h'))]);
+      return el('div', { class: 'pgx-stg-f', 'data-field': 'trust' }, [line, adv]);
+    }
+    /** SMB: "Verbindung verschlüsseln (SMB3)" — on for new targets, a target from before keeps its setting. */
+    function encryptField() {
+      const on = existing ? cfg.encrypt === true : true;
+      const cb = el('input', { type: 'checkbox', id: 'pgx-stg-encrypt' });
+      cb.checked = on;
+      inputs.encrypt = cb;
+      const hint = el('small', { class: 'pgx-hint', id: 'pgx-stg-encrypt-h' });
+      const sync = () => { hint.textContent = t(cb.checked ? 'plugins.stg.f_encrypt_on' : (existing && !cfg.encrypt ? 'plugins.stg.f_encrypt_old' : 'plugins.stg.f_encrypt_off')); };
+      cb.addEventListener('change', sync);
+      sync();
+      return el('div', { class: 'pgx-stg-f', 'data-field': 'encrypt' }, [el('label', { class: 'pgx-check-line' }, [cb, t('plugins.stg.f_encrypt')]), hint]);
     }
     function secretInput(name) {
       return input(name, { type: 'password', max: 512, placeholder: secretSet[name] ? t('plugins.stg.secret_kept') : '' });
@@ -2757,6 +2816,7 @@
         form.appendChild(field('username', t('plugins.stg.f_user'), input('username', { value: cfg.username, max: 120 })));
         form.appendChild(field('password', t('plugins.stg.f_password'), secretInput('password')));
         form.appendChild(field('domain', t('plugins.stg.f_domain'), input('domain', { value: cfg.domain, max: 120 }), t('plugins.stg.f_domain_h')));
+        form.appendChild(encryptField());
       } else if (kind === 'webdav') {
         // since 1.218.0: through a route or a VPN peer like SMB — the URL still names the NAS (scheme, path, certificate)
         const v = cfg.via || { kind: 'host' };
@@ -2822,8 +2882,11 @@
       err.hidden = false;
     }
 
-    function showCheck(c) {
+    /** The result of a check. `stored`: of the saved target (its "Diesem Gerät vertrauen" stores at once). */
+    function showCheck(c, stored) {
       clear(result);
+      // remembered on first contact through the VPN: kept with the target (the field is saved with it)
+      if (c.trusted && c.trusted.cert && inputs.tlsCa) inputs.tlsCa.value = String(c.trusted.cert.pem || '').trim() + '\n';
       const names = ['connect', 'folder', 'write', 'read', 'delete'];
       result.appendChild(el('ul', { class: 'pgx-checks pgx-stg-checks', id: 'pgx-stg-checks' }, names.map((n) => {
         const s = (c.steps || []).find((x) => x.step === n);
@@ -2834,64 +2897,103 @@
         ]);
       })));
       if (c.ok) result.appendChild(el('p', { class: 'pgx-note pgx-note-good', id: 'pgx-stg-ok', text: [t('plugins.stg.check_ok'), fmtFree(c)].filter(Boolean).join(' · ') }));
-      if (!c.ok && c.tls) result.appendChild(tlsBox(c.tls));
+      if (c.trusted && c.trusted.cert) result.appendChild(rememberedBox(c.trusted.cert));
+      if (!c.ok && c.tls) result.appendChild(tlsBox(c.tls, !!stored));
+      if (!c.ok && c.error === 'no_encryption') result.appendChild(el('p', { class: 'pgx-note', 'data-hint': 'no_encryption' }, [icon(I.alert, 16), el('span', { text: t('plugins.stg.hint_no_encryption') })]));
       // refused / no answer at an address of this server itself: the NAS is behind the VPN
       if (!c.ok && c.hint === 'self_address') result.appendChild(el('p', { class: 'pgx-note', 'data-hint': 'self_address' }, [icon(I.alert, 16), el('span', { text: t('plugins.stg.hint_self_address') })]));
     }
 
-    /**
-     * After a TLS failure (docs/storage-targets.md "Certificates"): the
-     * certificate the server presents, why it is not trusted, what helps —
-     * and, after a confirmation with fingerprint and names, its leaf or the
-     * CA certificates it sent as the target's own certificate.
-     */
-    function tlsBox(x) {
-      const c = x.cert || { names: [], subject: '', issuer: '' };
-      const fp = (f) => f.toUpperCase().match(/../g).join(':');
-      const cn = (dn) => { const m = /(?:^|, )CN=([^,]+)/.exec(dn || ''); return m ? m[1] : dn; };
-      const names = (z) => (z.names && z.names.length ? z.names.join(', ') : cn(z.subject));
-      const day = (iso) => P.fmtDate(iso, lang);
-      const kids = [el('h4', { class: 'pgx-stg-tls-h', text: t('plugins.stg.tls_title') })];
-      if (x.reason) {
-        kids.push(el('p', { class: 'pgx-note pgx-note-warn', id: 'pgx-stg-tls-why', 'data-reason': x.reason }, [icon(I.alert, 16), el('span', {
-          text: t('plugins.stg.tls_' + x.reason, { host: x.host, names: names(c), issuer: cn(c.issuer), from: day(c.validFrom), to: day(c.validTo), code: x.code || '' }) })]));
+    /** A certificate's details for experts: names, issuer, dates, fingerprint — folded away under "Details". */
+    function certDetails(c, x) {
+      const names = c.names && c.names.length ? c.names.join(', ') : cnOf(c.subject);
+      const rows = [
+        [t('plugins.stg.tls_names'), names, true],
+        [t('plugins.stg.tls_issuer'), c.issuer, true],
+        [t('plugins.stg.tls_valid'), P.fmtDate(c.validFrom, lang) + ' – ' + P.fmtDate(c.validTo, lang)],
+        [t('plugins.stg.tls_fp'), fpOf(c.fingerprint), true],
+        x && x.chain && x.chain.length > 1 ? [t('plugins.stg.tls_chain'), x.chain.slice(1).map((z) => cnOf(z.subject)).join(' → ')] : null,
+      ];
+      const kids = [el('summary', { text: t('plugins.stg.details') }), kv(rows)];
+      ((x && x.hints) || []).filter((h) => h !== 'route_decrypts').forEach((h) => kids.push(el('p', { class: 'pgx-hint', 'data-hint': h, text: t('plugins.stg.tls_hint_' + h) })));
+      return el('details', { class: 'pgx-stg-details', id: 'pgx-stg-details' }, kids);
+    }
+
+    /** "Zertifikat der NAS gemerkt": the first contact through the VPN remembered it. */
+    function rememberedBox(c) {
+      return el('div', { class: 'pgx-stg-tls pgx-stg-trustcard', id: 'pgx-stg-remembered', 'data-state': 'remembered' }, [
+        el('h4', { class: 'pgx-stg-tls-h', text: t('plugins.stg.trust_remembered') }),
+        el('p', { class: 'pgx-hint', text: t('plugins.stg.trust_remembered_text') }),
+        kv([[t('plugins.stg.trust_device'), c.device || cnOf(c.subject)], [t('plugins.stg.trust_valid_to'), P.fmtDate(c.validTo, lang)]]),
+        certDetails(c, null),
+      ]);
+    }
+
+    /** Store the presented certificate: a saved target at once (POST /:id/trust), the form's settings with "Speichern". */
+    async function trustNow(c, stored, b) {
+      if (stored && existing) {
+        b.disabled = true;
+        const r = await req('POST', ST_API + '/' + existing.id + '/trust', { fingerprint: c.fingerprint });
+        b.disabled = false;
+        if (!r.ok) { showFail(r); return; }
+        existing = r.target;
+        inputs.tlsCa.value = String(r.cert.pem || '').trim() + '\n';
+        toast(t('plugins.stg.trust_done'));
+        showCheck(r.check, true);
+        return;
       }
-      (x.hints || []).forEach((h) => kids.push(el('p', { class: 'pgx-note', 'data-hint': h }, [icon(I.alert, 16), el('span', { text: t('plugins.stg.tls_hint_' + h) })])));
+      inputs.tlsCa.value = String(c.pem || '').trim() + '\n';
+      toast(t('plugins.stg.trust_taken'));
+      checkBtn.click();
+    }
+
+    /**
+     * After a TLS failure (docs/storage-targets.md "Certificates"), in plain
+     * words: an own certificate of the NAS ("Diesem Gerät vertrauen"), a
+     * certificate that changed ("Neues Zertifikat vertrauen"), a name that
+     * does not fit, a date — the technical details folded away under "Details".
+     * `stored`: the result of the saved target (trusting stores at once),
+     * else of the form (the certificate goes into the field, kept with "Speichern").
+     */
+    function tlsBox(x, stored) {
+      const c = x.cert || { names: [], subject: '', issuer: '' };
+      const state = x.state || null;
+      const tunnel = !!(inputs.via && inputs.via.value !== 'host');
+      const certNames = (c.names && c.names.length ? c.names.join(', ') : cnOf(c.subject));
+      const kids = [];
+      const why = (text) => kids.push(el('p', { class: 'pgx-note pgx-note-warn', id: 'pgx-stg-tls-why', 'data-reason': x.reason || '', 'data-state': state || '' }, [icon(I.alert, 16), el('span', { text })]));
+      if (state === 'untrusted' || state === 'changed') {
+        kids.push(el('h4', { class: 'pgx-stg-tls-h', text: t(state === 'changed' ? 'plugins.stg.trust_changed_title' : 'plugins.stg.trust_title') }));
+        kids.push(el('p', { class: 'pgx-stg-trust-text', id: 'pgx-stg-tls-why', 'data-reason': x.reason || '', 'data-state': state,
+          text: t(state === 'changed' ? 'plugins.stg.trust_changed_text' : 'plugins.stg.trust_text') }));
+        kids.push(kv([[t('plugins.stg.trust_device'), x.device || cnOf(c.subject)], [t('plugins.stg.trust_valid_to'), P.fmtDate(c.validTo, lang)]]));
+        kids.push(el('p', { class: 'pgx-hint', text: t(state === 'changed' ? 'plugins.stg.trust_changed_hint' : (tunnel ? 'plugins.stg.trust_hint_vpn' : 'plugins.stg.trust_hint_direct')) }));
+      } else if (state === 'name') {
+        why(t('plugins.stg.trust_name', { host: x.host, names: certNames }));
+        kids.push(el('p', { class: 'pgx-hint', text: t(tunnel ? 'plugins.stg.trust_name_vpn' : 'plugins.stg.trust_name_fix', { name: x.device || cnOf(c.subject) }) }));
+      } else if (x.reason) {
+        why(t('plugins.stg.tls_' + x.reason, { host: x.host, names: certNames, issuer: cnOf(c.issuer), from: P.fmtDate(c.validFrom, lang), to: P.fmtDate(c.validTo, lang), code: x.code || '' }));
+      }
+      if ((x.hints || []).includes('route_decrypts')) kids.push(el('p', { class: 'pgx-note', 'data-hint': 'route_decrypts' }, [icon(I.alert, 16), el('span', { text: t('plugins.stg.tls_hint_route_decrypts') })]));
       // no TLS / a handshake refused: no certificate to show
       if (!x.cert) return el('div', { class: 'pgx-stg-tls', id: 'pgx-stg-tls' }, kids);
-      kids.push(kv([
-        [t('plugins.stg.tls_subject'), c.subject, true],
-        [t('plugins.stg.tls_names'), c.names.join(', '), true],
-        [t('plugins.stg.tls_issuer'), c.issuer, true],
-        [t('plugins.stg.tls_valid'), day(c.validFrom) + ' – ' + day(c.validTo)],
-        [t('plugins.stg.tls_fp'), fp(c.fingerprint), true],
-        x.chain.length > 1 ? [t('plugins.stg.tls_chain'), x.chain.slice(1).map((z) => cn(z.subject)).join(' → ')] : null,
-      ]));
-      const cas = x.chain.slice(1).filter((z) => z.ca);
-      // the confirmation stays in this dialog (a second one on top would close both on Escape)
-      const ask = el('div', { class: 'pgx-stg-trust-ask', id: 'pgx-stg-trust-ask', role: 'group', hidden: true });
-      const take = (certs, which) => {
-        clear(ask);
-        ask.setAttribute('data-which', which);
-        ask.appendChild(el('b', { text: t('plugins.stg.tls_' + which + '_title') }));
-        ask.appendChild(el('p', { class: 'pgx-hint', text: t('plugins.stg.tls_' + which + '_text') }));
-        certs.forEach((z) => ask.appendChild(kv([[t('plugins.stg.tls_names'), names(z), true], [t('plugins.stg.tls_fp'), fp(z.fingerprint), true]])));
-        ask.appendChild(el('div', { class: 'st-btnrow' }, [
-          btn(t('common.cancel'), { small: true, ghost: true, onClick: () => { ask.hidden = true; } }),
-          btn(t('plugins.stg.tls_trust_ok'), { small: true, primary: true, id: 'pgx-stg-trust-ok', onClick: () => {
-            inputs.tlsCa.value = certs.map((z) => z.pem.trim()).join('\n') + '\n';
-            ask.hidden = true;
-            toast(t('plugins.stg.tls_taken'));
-            checkBtn.click();
-          } }),
-        ]));
-        ask.hidden = false;
-      };
-      const acts = [];
-      if (inputs.tlsCa && x.trust && x.trust.leaf) acts.push(btn(t('plugins.stg.tls_trust'), { small: true, icon: I.shieldOk, id: 'pgx-stg-trust', onClick: () => take([c], 'trust') }));
-      if (inputs.tlsCa && x.trust && x.trust.chain && cas.length) acts.push(btn(t('plugins.stg.tls_chain_take'), { small: true, id: 'pgx-stg-trust-chain', onClick: () => take(cas, 'chain') }));
-      if (acts.length) kids.push(el('div', { class: 'st-btnrow pgx-stg-tls-acts' }, acts), ask);
-      return el('div', { class: 'pgx-stg-tls', id: 'pgx-stg-tls' }, kids);
+      const details = certDetails(c, x);
+      const cas = (x.chain || []).slice(1).filter((z) => z.ca);
+      // experts: trust the CA certificates the server sent instead (then the name has to fit)
+      if (inputs.tlsCa && x.trust && x.trust.chain && cas.length) {
+        details.appendChild(el('p', { class: 'pgx-hint', text: t('plugins.stg.tls_chain_text') }));
+        details.appendChild(btn(t('plugins.stg.tls_chain_take'), { small: true, id: 'pgx-stg-trust-chain', onClick: () => {
+          inputs.tlsCa.value = cas.map((z) => z.pem.trim()).join('\n') + '\n';
+          toast(t('plugins.stg.trust_taken'));
+          checkBtn.click();
+        } }));
+      }
+      kids.push(details);
+      if (inputs.tlsCa && x.trust && x.trust.leaf) {
+        kids.push(el('div', { class: 'st-btnrow pgx-stg-tls-acts' }, [btn(t(state === 'changed' ? 'plugins.stg.trust_new_btn' : 'plugins.stg.trust_btn'),
+          { primary: true, icon: I.shieldOk, id: 'pgx-stg-trust', onClick: (e) => trustNow(c, stored, e.currentTarget) })]));
+      }
+      return el('div', { class: 'pgx-stg-tls pgx-stg-trustcard', id: 'pgx-stg-tls', 'data-state': state || '' }, kids);
     }
 
     const cancel = el('button', { type: 'button', class: 'pgx-btn', text: t('common.cancel'), on: { click: () => d.close(null) } });
@@ -2924,10 +3026,11 @@
       const c = await req('POST', ST_API + '/' + r.target.id + '/check', {});
       busyOn(false);
       toast(t(existing ? 'plugins.stg.saved' : 'plugins.stg.created'));
+      if (c.ok && c.check.trusted) toast(t('plugins.stg.trust_done'));
       if (c.ok && !c.check.ok) {
         // saved, but it does not work yet: keep the dialog open with the result
         existing = c.target;
-        showCheck(c.check);
+        showCheck(c.check, true);
         return;
       }
       d.close(r.target);

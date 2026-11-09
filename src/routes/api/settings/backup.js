@@ -354,11 +354,19 @@ function requireAdminSession(req, res, next) {
   next();
 }
 
+/**
+ * hint 'self_address': the address points at this server itself (storageTargets/via.js selfHint);
+ * 'cert_untrusted' / 'cert_changed' / 'cert_name' / …: the NAS's certificate, `tls` the page's card
+ * (services/offsite withTrust); 'smb_no_encryption': the share cannot encrypt.
+ */
+function extras(err) {
+  return { ...(err.hint ? { hint: err.hint } : {}), ...(err.tls ? { tls: err.tls } : {}), ...(err.trusted ? { trusted: err.trusted } : {}), ...(err.reason ? { reason: err.reason } : {}) };
+}
+
 function sendOffsiteError(res, err, fallback) {
-  // hint 'self_address': the address points at this server itself (storageTargets/via.js selfHint)
-  if (err && err.code === 'TRANSPORT') return res.status(502).json({ ok: false, error: err.message, code: 'TRANSPORT_FAILED', ...(err.hint ? { hint: err.hint } : {}) });
+  if (err && err.code === 'TRANSPORT') return res.status(502).json({ ok: false, error: err.message, code: 'TRANSPORT_FAILED', ...extras(err) });
   if (err instanceof offsite().OffsiteError) {
-    return res.status(err.status).json({ ok: false, error: err.message, code: err.code, ...(err.field ? { field: err.field } : {}), ...(err.hint ? { hint: err.hint } : {}) });
+    return res.status(err.status).json({ ok: false, error: err.message, code: err.code, ...(err.field ? { field: err.field } : {}), ...extras(err) });
   }
   if (err instanceof gcbk.GcbkError) return res.status(400).json({ ok: false, error: err.message, code: err.code });
   logger.error({ error: err && err.message }, fallback);
@@ -512,11 +520,32 @@ router.delete('/backup/targets/:id', requireAdminSession, licensed, async (req, 
 router.post('/backup/targets/:id/test', requireAdminSession, licensed, async (req, res) => {
   const id = targetId(req, res); if (id === null) return;
   try {
-    const detail = await offsite().testTarget(id);
-    res.json({ ok: true, detail });
+    const r = await offsite().testTarget(id);
+    res.json({ ok: true, detail: r.detail, ...(r.trusted ? { trusted: r.trusted } : {}) });
   } catch (err) {
-    if (err && err.code === 'TRANSPORT') return res.status(502).json({ ok: false, error: err.message, code: 'TRANSPORT_FAILED', detail: err.message, ...(err.hint ? { hint: err.hint } : {}) });
+    if (err && err.code === 'TRANSPORT') return res.status(502).json({ ok: false, error: err.message, code: 'TRANSPORT_FAILED', detail: err.message, ...extras(err) });
     sendOffsiteError(res, err, 'test failed');
+  }
+});
+
+/**
+ * POST /api/settings/backup/targets/:id/trust { fingerprint } — "Diesem
+ * Gerät vertrauen" / "Neues Zertifikat vertrauen" (WebDAV, S3): stores the
+ * certificate the NAS presents now, only when it is the one the page showed.
+ * 200 { ok, cert, replaced } · 409 CERT_MISMATCH / NOT_TRUSTABLE · 400 INVALID_FINGERPRINT
+ */
+router.post('/backup/targets/:id/trust', requireAdminSession, licensed, async (req, res) => {
+  const id = targetId(req, res); if (id === null) return;
+  try {
+    const r = await offsite().trustTarget(id, (req.body || {}).fingerprint);
+    const t = offsite().getTarget(id);
+    if (!r.already) {
+      activity.log('offsite_target_cert_trusted', `Off-site backup target "${t ? t.name : id}": ${r.replaced ? 'new ' : ''}certificate of the NAS trusted (SHA-256 ${r.cert.fingerprint})`,
+        { source: 'admin', ipAddress: req.ip, severity: r.replaced ? 'warning' : 'info' });
+    }
+    res.json({ ok: true, cert: r.cert, replaced: r.replaced, target: t });
+  } catch (err) {
+    sendOffsiteError(res, err, 'could not trust the certificate');
   }
 });
 

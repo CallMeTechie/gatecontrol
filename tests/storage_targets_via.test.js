@@ -203,7 +203,7 @@ describe('WebDAV through an L4 route', () => {
     assert.ok(plain.seen.length > 0);
   });
 
-  it('https with an own CA: SNI and the certificate check use the URL\'s name; without the CA: tls', async () => {
+  it('https with an own CA: SNI and the certificate check use the URL\'s name; without the CA: remembered on first contact through the route', async () => {
     const rid = route({ route_type: 'l4', l4_protocol: 'tcp', domain: 'nas-tls.example.com', l4_listen_port: '15006', l4_tls_mode: 'none',
       target_ip: '127.0.0.1', target_port: secure.port });
     const base = { label: 'NAS', url: `https://${NAS}:5006/dav/tls`, via: { kind: 'route', routeId: rid }, username: 'gc', password: 'pw' };
@@ -214,9 +214,12 @@ describe('WebDAV through an L4 route', () => {
     await d.put('x/y.bin', source(data));
     assert.ok((await collect(await d.get('x/y.bin', { start: 100, end: 65600 }))).equals(data.subarray(100, 65601)));
 
-    const untrusted = await targets().checkInput('webdav', base);
-    assert.equal(untrusted.ok, false);
-    assert.equal(untrusted.error, 'tls');
+    // no own certificate: the first contact through the route (VPN) remembers the NAS's certificate (storageTargets/trust.js)
+    const first = await targets().checkInput('webdav', base);
+    assert.equal(first.ok, true, JSON.stringify(first));
+    assert.equal(first.trusted.auto, true);
+    assert.deepEqual(first.trusted.cert.names, [NAS]);
+    assert.match(first.trusted.cert.pem, /BEGIN CERTIFICATE/);
     // the certificate names NAS, not what the URL names
     const wrongName = await targets().checkInput('webdav', { ...base, url: 'https://other.heim.example:5006/dav/tls', tlsCa: pki.ca });
     assert.equal(wrongName.error, 'tls');
@@ -227,7 +230,8 @@ describe('WebDAV through an L4 route', () => {
       target_ip: '127.0.0.1', target_port: pinned.port });
     const base = { label: 'NAS', url: `https://${NAS}:5006/dav/syn`, via: { kind: 'route', routeId: rid }, username: 'gc', password: 'pw' };
     assert.equal((await targets().checkInput('webdav', { ...base, tlsCa: pki.synCert })).ok, true);
-    assert.equal((await targets().checkInput('webdav', { ...base, tlsCa: pki.ca })).error, 'tls');
+    // another certificate stored than the one presented: "changed", never accepted on its own
+    assert.equal((await targets().checkInput('webdav', { ...base, tlsCa: pki.ca })).error, 'tls_changed');
   });
 
   it('https: DSM\'s default certificate (a leaf issued by "Synology Inc. CA") works with only its cert.pem stored', async () => {
@@ -244,14 +248,19 @@ describe('WebDAV through an L4 route', () => {
     }
   });
 
-  it('a failed TLS check shows the certificate and why; storing the offered PEM makes it pass', async () => {
+  it('a failed TLS check shows the certificate and why; storing the offered PEM makes it pass', async (t) => {
     const at = (srv, n, mode = 'none') => route({ route_type: 'l4', l4_protocol: 'tcp', domain: `nas-diag${n}.example.com`, l4_listen_port: String(15020 + n), l4_tls_mode: mode,
       target_ip: '127.0.0.1', target_port: srv.port });
     const base = (rid) => ({ label: 'NAS', url: `https://${NAS}:5006/dav/diag`, via: { kind: 'route', routeId: rid }, username: 'gc', password: 'pw' });
+    // "Direkt zur Adresse" (NAS resolves to 127.0.0.1 here): never remembered on its own, the page asks
+    const direct = (srv) => ({ label: 'NAS', url: `https://${NAS}:${srv.port}/dav/diag`, username: 'gc', password: 'pw' });
+    const net = require('../src/services/storageTargets/net');
+    net._setLookupForTest(async (h) => (h === NAS ? [{ address: '127.0.0.1', family: 4 }] : []));
+    t.after(() => net._setLookupForTest(null));
 
     // DSM sends leaf + its own CA, no own certificate stored: a CA nobody trusts
     dsm.seen.length = 0;
-    const r1 = await api('post', '/api/v1/storage-targets/check').send({ kind: 'webdav', ...base(at(dsm, 1)) }).expect(200);
+    const r1 = await api('post', '/api/v1/storage-targets/check').send({ kind: 'webdav', ...direct(dsm) }).expect(200);
     const c1 = r1.body.check;
     assert.equal(c1.error, 'tls');
     assert.equal(c1.tls.reason, 'untrusted_ca');
@@ -264,13 +273,16 @@ describe('WebDAV through an L4 route', () => {
     assert.equal(c1.tls.chain.length, 2);
     assert.equal(c1.tls.chain[1].ca, true);
     assert.deepEqual(c1.tls.trust, { leaf: true, chain: true });
+    assert.equal(c1.tls.state, 'untrusted');
+    assert.equal(c1.tls.device, 'synology');
+    assert.equal(c1.trusted, undefined, 'a direct address: nothing remembered on its own');
     assert.deepEqual(c1.tls.hints, []);
     assert.equal(dsm.seen.length, 0, 'not one request reached the server (no credentials sent)');
     // "Diesem Zertifikat vertrauen": the leaf as the target's own certificate
     assert.equal((await targets().checkInput('webdav', { ...base(at(dsm, 2)), tlsCa: c1.tls.cert.pem })).ok, true);
 
     // DSM sends the leaf alone: the intermediate is missing
-    const c2 = (await api('post', '/api/v1/storage-targets/check').send({ kind: 'webdav', ...base(at(dsmLeafOnly, 3)) }).expect(200)).body.check;
+    const c2 = (await api('post', '/api/v1/storage-targets/check').send({ kind: 'webdav', ...direct(dsmLeafOnly) }).expect(200)).body.check;
     assert.equal(c2.tls.reason, 'missing_intermediate');
     assert.deepEqual(c2.tls.hints, ['intermediate']);
     assert.deepEqual(c2.tls.trust, { leaf: true, chain: false });
@@ -279,13 +291,17 @@ describe('WebDAV through an L4 route', () => {
     // the wrong certificate stored: not the one the server presents
     const c3 = await targets().checkInput('webdav', { ...base(at(dsm, 4)), tlsCa: pki.synCert });
     assert.equal(c3.tls.reason, 'not_stored');
+    assert.equal(c3.tls.state, 'changed');
+    assert.equal(c3.error, 'tls_changed');
     assert.deepEqual(c3.tls.trust, { leaf: true, chain: true });
 
-    // the CA stored, but the URL names another host than the certificate: the names it has
+    // the CA stored, but the URL names another host than the certificate: the names it has —
+    // an error to fix in the address, not something to trust
     const c4 = await targets().checkInput('webdav', { ...base(at(dsm, 5)), tlsCa: pki.dsmCa });
     assert.equal(c4.tls.reason, 'name');
+    assert.equal(c4.tls.state, 'name');
     assert.deepEqual(c4.tls.cert.names, ['synology']);
-    assert.deepEqual(c4.tls.trust, { leaf: true, chain: false });
+    assert.deepEqual(c4.tls.trust, { leaf: false, chain: false });
 
     // a certificate of Caddy's internal CA: GateControl decrypts itself — no offer to trust it
     const c5 = await targets().checkInput('webdav', base(at(caddy, 6)));
@@ -306,7 +322,7 @@ describe('WebDAV through an L4 route', () => {
     assert.deepEqual(c8.tls.trust, { leaf: false, chain: false });
 
     // a stored target: the same diagnosis from its "Prüfen"
-    const saved = await api('post', '/api/v1/storage-targets').send({ kind: 'webdav', ...base(at(dsmLeafOnly, 8)) }).expect(201);
+    const saved = await api('post', '/api/v1/storage-targets').send({ kind: 'webdav', ...direct(dsmLeafOnly) }).expect(201);
     const c7 = await api('post', `/api/v1/storage-targets/${saved.body.target.id}/check`).send({}).expect(200);
     assert.equal(c7.body.check.tls.reason, 'missing_intermediate');
     await api('delete', `/api/v1/storage-targets/${saved.body.target.id}`).expect(200);

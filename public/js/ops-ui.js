@@ -118,6 +118,9 @@
     PASSPHRASE_REQUIRED: ['offsite.err.passphrase_required', 'The archive is encrypted — enter its passphrase.'],
     DECRYPT_FAILED: ['offsite.err.decrypt_failed', 'Wrong passphrase or damaged file.'],
     CORRUPT: ['offsite.err.corrupt', 'The file is damaged or not a GateControl backup.'],
+    CERT_MISMATCH: ['offsite.err.cert_mismatch', 'The NAS now shows a different certificate. Please test again.'],
+    NOT_TRUSTABLE: ['offsite.err.not_trustable', 'This certificate cannot be trusted here. “Test” shows why.'],
+    INVALID_FINGERPRINT: ['offsite.err.generic', 'That did not work.'],
     NOT_GCBK: ['offsite.err.corrupt', 'The file is damaged or not a GateControl backup.'],
     UNSUPPORTED: ['offsite.err.unsupported', 'This version cannot read that archive format.'],
     INVALID_WINDOW: ['autoupdate.err.invalid_window', 'Invalid maintenance window: times as HH:MM, start ≠ end, a valid time zone.'],
@@ -135,10 +138,19 @@
     url: ['offsite.field.url', 'URL'],
     via: ['offsite.field.via', 'Connection'], routeId: ['offsite.field.routeId', 'Route'], tls_ca: ['offsite.field.tls_ca', 'Own certificate'],
     password_from_storage_target: ['offsite.field.password_from_storage_target', 'Storage target'],
+    encrypt: ['offsite.field.encrypt', 'Encrypt connection'],
   };
   // Hint codes of transport errors (`hint`, `last_error_hint`) → text
   const HINT_KEYS = {
     self_address: ['offsite.hint.self_address', 'The address points to this GateControl server itself. If the target is behind the VPN, choose the VPN device or the route under “Connection”.'],
+    // the NAS's certificate (storageTargets/trust.js) and SMB encryption
+    cert_untrusted: ['offsite.hint.cert_untrusted', 'The NAS identifies itself with its own certificate. “Test” shows it — then “Trust this device”.'],
+    cert_changed: ['offsite.hint.cert_changed', 'The NAS certificate has changed (e.g. after a renewal). Is that okay? “Test” shows the new certificate.'],
+    cert_name: ['offsite.hint.cert_name', 'The address does not match the NAS certificate. “Test” shows which name it is valid for.'],
+    cert_expired: ['offsite.hint.cert_expired', 'The NAS certificate has expired. Renew it on the NAS.'],
+    cert_not_yet_valid: ['offsite.hint.cert_not_yet_valid', 'The NAS certificate is not valid yet. Check the clock of the NAS and of GateControl.'],
+    cert_decrypts: ['offsite.hint.cert_decrypts', 'The route decrypts the connection itself. Set the TLS mode of the L4 route to pass-through.'],
+    smb_no_encryption: ['offsite.hint.smb_no_encryption', 'The share cannot encrypt (SMB3). On Synology: Control Panel › File Services › SMB › Advanced → SMB3 encryption. Or switch off “Encrypt connection”.'],
   };
   /** The hint of an API answer / a target row, '' when none. */
   function hintText(code) {
@@ -294,18 +306,19 @@
     const set = (k, val) => { if (val !== undefined) cfg[k] = val; };
     const s = (k) => str(v[k]).trim();
     if (type === 'sftp' || type === 'smb') { set('host', s('host')); set('port', s('port') || undefined); set('path', s('path')); set('username', s('username')); }
-    if (type === 'smb') { set('share', s('share')); set('domain', s('domain')); }
+    if (type === 'smb') { set('share', s('share')); set('domain', s('domain')); if (v.encrypt !== undefined) set('encrypt', !!v.encrypt); }
     if (type === 's3') {
       set('endpoint', s('endpoint')); set('region', s('region') || 'us-east-1'); set('bucket', s('bucket'));
       set('prefix', s('prefix')); set('access_key_id', s('access_key_id')); set('path_style', !!v.path_style);
       if (str(v.secret_access_key) !== '') set('secret_access_key', str(v.secret_access_key));
+      if (v.tls_ca !== undefined) set('tls_ca', str(v.tls_ca).trim());
     }
     if (type === 'webdav') { set('url', s('url')); set('username', s('username')); if (v.tls_ca !== undefined) set('tls_ca', str(v.tls_ca).trim()); }
     // "Verbindung" (storageTargets/via.js): only when the form has the field
-    if ((type === 'sftp' || type === 'smb' || type === 'webdav') && v.via !== undefined) {
+    if ((type === 'sftp' || type === 'smb' || type === 'webdav' || type === 's3') && v.via !== undefined) {
       const kind = s('via') || 'host';
       if (kind === 'peer') {
-        const port = type === 'webdav' ? s('via_port') : s('port');
+        const port = type === 'webdav' || type === 's3' ? s('via_port') : s('port');
         set('via', port ? { kind: 'peer', peerId: Number(s('via_peer')), port: port } : { kind: 'peer', peerId: Number(s('via_peer')) });
       } else if (kind === 'route') set('via', { kind: 'route', routeId: Number(s('via_route')) });
       else set('via', { kind: 'host' });
