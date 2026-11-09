@@ -5032,13 +5032,47 @@ off, its data is kept.
 GateControl backups (format 5; manual, scheduled and off-site) contain every
 installed plugin: the package files including `signature` (a restore on a
 fresh server brings the plugin back without a new upload), a consistent
-snapshot of its database (SQLite serialize on a read-only connection, never a
+snapshot of its database (SQLite backup API on a read-only connection, never a
 copy of the live file), its `files/` folder, whether it was switched on, the
 third-party licence entry and the access targets (routes by domain, peers by
 name — ids change on restore). `secret` settings are additionally stored as
 plain encrypted backup fields, so restoring an off-site archive with its key
-re-encrypts them like every other secret. All plugins together are capped at
-48 MB per backup; data that does not fit is left out and logged.
+re-encrypts them like every other secret.
+
+All plugins together are capped at **512 MB of raw data per backup**
+(`MAX_PLUGIN_BYTES`, `src/services/plugins/backup.js`; the backup file holds
+it as base64, a third more). The large parts are never held in memory: the
+database snapshot (SQLite backup API in steps) and hard links of the
+`files/` are kept in a private snapshot folder (`<data>/plugin-data/.backup-tmp/`,
+removed when the backup is written, a left-over one after 12 hours) and read
+in pieces while the file is written (`FileBase64Value`, `utils/jsonStream.js`).
+A part that does not fit — or cannot be read — is left out; the plugin entry
+says which (`skipped: ['database']`) and why (`skip_reasons: { database:
+'too_large' | 'read_error' }`), and the backup file starts with
+`plugins_incomplete: [{ id, name, parts: [{ part, reason }] }]` (before
+`data`, so the backup list reads it from the first 64 KB). Such a backup is
+**visible**, never silent:
+
+* Einstellungen › Backup: the local file and the off-site target that got it
+  show „⚠ Nicht vollständig: Mail (Datenbank zu groß für das Backup)“ with a
+  short explanation and what to do; „Backup jetzt erstellen“ and the download
+  say so too (`incomplete` of `POST /autobackup/run`, `GET /autobackup/list`,
+  `last_incomplete` of `GET /backup/targets`, header `X-GC-Backup-Incomplete`
+  of the download); the restore preview lists the missing parts
+  (`summary.plugins_incomplete`), the restore test warns
+  (`plugins_incomplete`).
+* Dashboard › Probleme: `backup_incomplete` while the newest local backup is
+  incomplete.
+* Log line `Backup incomplete — not everything of these plugins is in it: …`
+  with the plugin names, activity `autobackup_incomplete` (warning) — mails,
+  push and webhooks of the notification row „Backup-Probleme“ like a failed
+  backup.
+
+Before a backup file is written, the free space of the backup disk is
+checked (expected size + 64 MB); not enough → the backup is not made
+(`NO_SPACE`, „Nicht genug freier Speicherplatz …“; scheduled: activity
+`autobackup_failed`). Retention deletes the oldest files only after the new
+one is complete — the disk needs room for `retention + 1` backups.
 
 Plugin **media** (see "Media") are not part of that and not in a backup by
 default: Plugins › Sicherheit & Upload → "Plugin-Medien im Backup" (off by
@@ -5048,8 +5082,22 @@ default; API `PUT /api/v1/plugins/policy { backupMedia }`, activity
 with `GC_ENCRYPTION_KEY`, re-keyed with off-site archives) — up to 128 MB for
 all plugins together; a plugin whose media do not fit is backed up without
 them (`skipped: ['media']`). A restore writes them back and keeps media of
-the plugin that are not in the backup. The restore upload accepts up to
-288 MB.
+the plugin that are not in the backup.
+
+The restore upload accepts up to **1 GB** (a JSON backup or an off-site
+`.gcbk`). It is stored in a private folder on the backup disk
+(`<backups>/.incoming/`, removed after the request) instead of in memory; an
+archive is decrypted there as a stream (`gcbk.decryptBackupFileTo`, the GCM
+tag checked at the end, nothing left on failure), and the JSON is read in
+pieces (`utils/jsonSpool.js`): strings longer than 16 KB stay in the file
+until the restore writes them (a plugin database is decoded into a temp file
+and checked there, data files one at a time). The off-site restore test and
+`src/bin/offsite-decrypt.js` use the same path. Memory measured with 400 MB of
+plugin data (200 MB database + 200 MB files, a 536 MB backup file): backup
++32 MB, restore +63 MB, restore preview of the `.gcbk` without extra memory.
+What stays in memory is the encrypted off-site archive while it is uploaded
+(the transports take one buffer): about its size — 336 MB for that backup
+(half of the data incompressible); the user's 67 MB backup gives 25 MB.
 
 The tables of the former built-in integrations (see "Built-in data import")
 travel in `data.builtin_integrations` (`src/services/builtinBackup.js`) until

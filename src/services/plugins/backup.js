@@ -43,22 +43,57 @@ const Database = require('better-sqlite3');
 const pkg = require('./package');
 const signature = require('./signature');
 const registry = require('./registry');
-const { ID_RE, LIMITS, codeDir, dataDir, dbDir, filesDir, pluginsRoot } = require('./constants');
+const { ID_RE, LIMITS, codeDir, dataDir, dbDir, filesDir, pluginsRoot, pluginDataRoot } = require('./constants');
 const logger = require('../../utils/logger');
-const { Base64Value, materialize } = require('../../utils/jsonStream');
+const { Base64Value, FileBase64Value, materialize } = require('../../utils/jsonStream');
+const { isSpooled } = require('../../utils/jsonSpool');
 
-const MAX_PLUGIN_BYTES = 48 * 1024 * 1024; // raw bytes of all plugins in one backup
+// Raw bytes of all plugins in one backup (code, databases, files). The large
+// parts are never held in memory — they stay in files until the backup is
+// written (FileBase64Value) and are read back in pieces on a restore
+// (utils/jsonSpool) — so the cap is about the size of the backup file (base64:
+// × 4/3) and the disk, not the RAM. A plugin part that does not fit is left
+// out, recorded in `skipped` + `skip_reasons` and shown in the backup overview.
+const MAX_PLUGIN_BYTES = 512 * 1024 * 1024;
 const MAX_MEDIA_BYTES = 128 * 1024 * 1024; // plugin media (option, off by default) of all plugins in one backup
 const SQLITE_MAGIC = Buffer.from('SQLite format 3\0', 'latin1');
+// snapshots of a backup run live here until the backup is written (same
+// file system as the plugin data: hard links instead of copies)
+const SNAP_STALE_MS = 12 * 60 * 60 * 1000;
 
 function db() { return require('../../db/connection').getDb(); }
 
+const tooLarge = () => Object.assign(new Error('too large for the backup'), { code: 'too_large' });
+/** why a part was left out: 'too_large' (the budget) or 'read_error' (anything else) */
+const reasonOf = (err) => (err && err.code === 'too_large' ? 'too_large' : 'read_error');
+
+function snapRoot() { return path.join(pluginDataRoot(), '.backup-tmp'); }
+
+/** A private folder for the snapshots of one backup run (old ones of a crashed run are removed). */
+async function newSnapDir() {
+  const root = snapRoot();
+  await fsp.mkdir(root, { recursive: true, mode: 0o700 });
+  try {
+    for (const name of await fsp.readdir(root)) {
+      const p = path.join(root, name);
+      try {
+        const st = await fsp.lstat(p);
+        if (Date.now() - st.mtimeMs > SNAP_STALE_MS) await fsp.rm(p, { recursive: true, force: true });
+      } catch { /* gone meanwhile */ }
+    }
+  } catch { /* best effort */ }
+  return fsp.mkdtemp(path.join(root, 'run-')); // 0700
+}
+
 /**
- * Regular files below `root` → Map(relative path → Buffer). Symlinks and odd
- * names are skipped. Read with fs.promises: a backup must not hold the main
- * thread (up to MAX_PLUGIN_BYTES of files).
+ * Regular files below `root` → Map(relative path → Base64Value). Symlinks and
+ * odd names are skipped. With `snap` (a snapshot folder) each file is hard-
+ * linked there and read only when the backup is written (FileBase64Value):
+ * the bytes are not held in memory, and a file the plugin deletes or replaces
+ * meanwhile stays as it was. Without (the code) or when linking fails, the
+ * file is read now (fs.promises — a backup must not hold the main thread).
  */
-async function readTree(root, budget) {
+async function readTree(root, budget, snap) {
   const out = new Map();
   let bytes = 0;
   const walk = async (dir, rel, depth) => {
@@ -71,10 +106,21 @@ async function readTree(root, budget) {
       const abs = path.join(dir, e.name);
       if (e.isDirectory()) await walk(abs, r, depth + 1);
       else if (e.isFile()) {
-        const buf = await fsp.readFile(abs);
-        bytes += buf.length;
-        if (bytes > budget.left || out.size >= LIMITS.fileCount) throw Object.assign(new Error('too large'), { code: 'too_large' });
-        out.set(r, buf);
+        const st = await fsp.lstat(abs);
+        if (!st.isFile()) continue;
+        if (bytes + st.size > budget.left || out.size >= LIMITS.fileCount) throw tooLarge();
+        let value = null;
+        if (snap) {
+          const link = path.join(snap.dir, String(snap.n++));
+          try { await fsp.link(abs, link); value = new FileBase64Value(link, st.size); } catch { value = null; }
+        }
+        if (!value) {
+          const buf = await fsp.readFile(abs);
+          if (bytes + buf.length > budget.left) throw tooLarge();
+          value = new Base64Value(buf);
+        }
+        bytes += value.length;
+        out.set(r, value);
       }
     }
   };
@@ -90,25 +136,24 @@ const SNAPSHOT_STEP_PAGES = 256;
 const SNAPSHOT_MAX_RESTARTS = 3;
 
 /**
- * A consistent snapshot of the plugin database → { buf, secrets } or null.
- * The SQLite backup API copies it in steps into a private temp file (the
- * event loop runs between steps; sqlite3_serialize did it in one synchronous
- * piece), the file is then read with fs.promises. `secrets` are the secret
- * settings of the snapshot (secretSettings).
+ * A consistent snapshot of the plugin database → { value, secrets } or null.
+ * The SQLite backup API copies it in steps into a file of the snapshot folder
+ * (the event loop runs between steps; sqlite3_serialize did it in one
+ * synchronous piece); the file is read only when the backup is written
+ * (FileBase64Value). `secrets` are the secret settings of the snapshot
+ * (secretSettings).
  */
-async function snapshotDb(id, budget) {
+async function snapshotDb(id, budget, snap) {
   const file = path.join(dbDir(id), 'plugin.db');
   try { await fsp.access(file); } catch { return null; }
   const conn = new Database(file, { readonly: true, fileMustExist: true, timeout: 5000 });
-  const tooLarge = () => Object.assign(new Error('too large'), { code: 'too_large' });
-  let tmpDir = null;
   try {
     const est = conn.pragma('page_count', { simple: true }) * conn.pragma('page_size', { simple: true });
     if (est > budget.left) throw tooLarge();
-    let snap;
+    let out;
     try {
-      tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'gc-plugin-snap-')); // 0700
-      const tmp = path.join(tmpDir, 'plugin.db');
+      if (!snap) throw new Error('no snapshot folder');
+      const tmp = path.join(snap.dir, `db-${snap.n++}.sqlite`);
       let restarts = 0;
       let lastRemaining = Infinity;
       await conn.backup(tmp, {
@@ -118,20 +163,33 @@ async function snapshotDb(id, budget) {
           return restarts >= SNAPSHOT_MAX_RESTARTS ? 0x7fffffff : SNAPSHOT_STEP_PAGES;
         },
       });
-      snap = { buf: rollbackHeader(await fsp.readFile(tmp)), source: tmp };
+      await rollbackHeaderFile(tmp);
+      const { size } = await fsp.stat(tmp);
+      out = { value: new FileBase64Value(tmp, size), source: tmp };
     } catch (err) {
-      // no usable temp folder or the like: one synchronous copy, as before
+      // no usable snapshot folder or the like: one synchronous copy, as before
       logger.warn({ plugin: id, err: err.message }, 'backup: step-wise database snapshot failed, copying it in one piece');
       const buf = rollbackHeader(conn.serialize());
-      snap = { buf, source: buf };
+      out = { value: new Base64Value(buf), source: buf };
     }
-    if (snap.buf.length > budget.left) throw tooLarge();
-    budget.left -= snap.buf.length;
-    return { buf: snap.buf, secrets: secretSettings(snap.source) };
+    if (out.value.length > budget.left) throw tooLarge();
+    budget.left -= out.value.length;
+    return { value: out.value, secrets: secretSettings(out.source) };
   } finally {
     conn.close();
-    if (tmpDir) await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+/** rollbackHeader() for a snapshot file (bytes 18 and 19 patched in place). */
+async function rollbackHeaderFile(file) {
+  const fh = await fsp.open(file, 'r+');
+  try {
+    const head = Buffer.alloc(100);
+    const { bytesRead } = await fh.read(head, 0, 100, 0);
+    if (bytesRead < 100) return;
+    const fixed = rollbackHeader(head);
+    if (fixed !== head) await fh.write(fixed.subarray(18, 20), 0, 2, 18);
+  } finally { await fh.close(); }
 }
 
 /**
@@ -161,8 +219,8 @@ function secretSettings(snapshot) {
   } catch { return {}; } finally { conn.close(); }
 }
 
-// raw bytes, written as base64 by utils/jsonStream (piece by piece) — toJSON() gives the string
-const toB64 = (m) => Object.fromEntries([...m].map(([k, v]) => [k, new Base64Value(v)]));
+// raw bytes (Base64Value), written as base64 by utils/jsonStream (piece by piece) — toJSON() gives the string
+const toB64 = (m) => Object.fromEntries(m);
 
 function exportTargets(id) {
   return db().prepare('SELECT target_id, idx, assignment FROM plugin_targets WHERE plugin_id = ? ORDER BY target_id, idx').all(id).map((r) => {
@@ -180,61 +238,101 @@ function exportTargets(id) {
   });
 }
 
+/** Human names of the parts in log lines. */
+const PART_LOG = { code: 'code', database: 'database', files: 'files', media: 'media', media_areas: 'media areas' };
+
 /**
  * Everything of the installed plugins for createBackup(), the large parts
  * (code, database, files, media) as Base64Value (raw bytes; written as
- * base64 by utils/jsonStream, toJSON() gives the string). All file and
- * database reads are asynchronous.
+ * base64 by utils/jsonStream, toJSON() gives the string) — databases and
+ * files as FileBase64Value in a snapshot folder. All file and database reads
+ * are asynchronous. The list has a non-enumerable release(): it removes the
+ * snapshot folder (call it once the backup is written).
+ *
+ * A part that is left out is in entry.skipped (['database', …]) with its
+ * reason in entry.skip_reasons ({ database: 'too_large' | 'read_error' }).
  */
 async function exportAllRaw() {
   let rows;
-  try { rows = registry.list(); } catch { return []; }
-  const budget = { left: MAX_PLUGIN_BYTES };
-  const media = require('./media');
-  const mediaBudget = media.backupEnabled() ? { left: MAX_MEDIA_BYTES } : null;
   const out = [];
+  let snapDir = null;
+  Object.defineProperty(out, 'release', {
+    enumerable: false,
+    value: async () => { if (snapDir) { const d = snapDir; snapDir = null; await fsp.rm(d, { recursive: true, force: true }).catch(() => {}); } },
+  });
+  try { rows = registry.list(); } catch { return out; }
+  if (!rows.length) return out;
+  try { snapDir = await newSnapDir(); } catch (err) {
+    logger.warn({ err: err.message }, 'backup: no snapshot folder for the plugin data — read into memory');
+  }
+  const snap = snapDir ? { dir: snapDir, n: 0 } : null;
+  const budget = { left: module.exports.MAX_PLUGIN_BYTES };
+  const media = require('./media');
+  const mediaBudget = media.backupEnabled() ? { left: module.exports.MAX_MEDIA_BYTES } : null;
   for (const p of rows) {
-    const entry = { id: p.id, version: p.version, enabled: p.enabled, installed_at: p.installedAt, updated_at: p.updatedAt, skipped: [] };
-    try { entry.files = toB64(await readTree(codeDir(p.id, p.version), budget)); } catch (e) {
-      logger.warn({ plugin: p.id, err: e.message }, 'backup: plugin code skipped');
+    const entry = { id: p.id, name: p.name, version: p.version, enabled: p.enabled, installed_at: p.installedAt, updated_at: p.updatedAt, skipped: [], skip_reasons: {} };
+    const skip = (part, err) => {
+      const reason = reasonOf(err);
+      logger.warn({ plugin: p.id, name: p.name, part, reason, err: err && err.message },
+        `backup: plugin ${PART_LOG[part] || part} skipped — "${p.name || p.id}" is not complete in this backup (${reason === 'too_large' ? 'too large' : 'read error'})`);
+      entry.skipped.push(part);
+      entry.skip_reasons[part] = reason;
+    };
+    try { entry.files = toB64(await readTree(codeDir(p.id, p.version), budget, null)); } catch (e) {
       entry.files = null;
-      entry.skipped.push('code');
+      skip('code', e);
     }
-    let snap = null;
-    try { snap = await snapshotDb(p.id, budget); } catch (e) {
-      logger.warn({ plugin: p.id, err: e.message }, 'backup: plugin database skipped');
-      entry.skipped.push('database');
-    }
-    entry.db = snap ? new Base64Value(snap.buf) : null;
-    entry.secret_settings = snap ? snap.secrets : {};
-    try { entry.data_files = toB64(await readTree(filesDir(p.id), budget)); } catch (e) {
-      logger.warn({ plugin: p.id, err: e.message }, 'backup: plugin files skipped');
+    let snapDb = null;
+    try { snapDb = await snapshotDb(p.id, budget, snap); } catch (e) { skip('database', e); }
+    entry.db = snapDb ? snapDb.value : null;
+    entry.secret_settings = snapDb ? snapDb.secrets : {};
+    try { entry.data_files = toB64(await readTree(filesDir(p.id), budget, snap)); } catch (e) {
       entry.data_files = null;
-      entry.skipped.push('files');
+      skip('files', e);
     }
     const lic = registry.getLicense(p.id);
     entry.license = lic ? { key_encrypted: lic.keyEncrypted, state: lic.state } : null;
     entry.targets = exportTargets(p.id);
     if (mediaBudget && media.declOf(p)) {
-      try { entry.media = await media.exportPlugin(p.id, mediaBudget); } catch (e) {
-        logger.warn({ plugin: p.id, err: e.message }, 'backup: plugin media skipped');
-        entry.skipped.push('media');
-      }
+      try { entry.media = await media.exportPlugin(p.id, mediaBudget); } catch (e) { skip('media', e); }
     }
     if (media.declOf(p) && media.declOf(p).areas) {
-      try { entry.media_areas = await require('./mediaAreas').exportAreas(p.id); } catch (e) {
-        logger.warn({ plugin: p.id, err: e.message }, 'backup: media areas skipped');
-        entry.skipped.push('media_areas');
-      }
+      try { entry.media_areas = await require('./mediaAreas').exportAreas(p.id); } catch (e) { skip('media_areas', e); }
     }
     out.push(entry);
   }
   return out;
 }
 
+/**
+ * The plugins of a backup (data.plugins) that are not complete in it:
+ * [{ id, name, parts: [{ part, reason }] }] — name from the installed plugin
+ * (or the id), reason 'too_large' | 'read_error' | 'unknown' (backups from
+ * before the reasons were recorded).
+ */
+function incompleteOf(list) {
+  if (!Array.isArray(list)) return [];
+  let names = null;
+  const nameOf = (id) => {
+    if (!names) { names = new Map(); try { for (const p of registry.list()) names.set(p.id, p.name); } catch { /* registry unavailable */ } }
+    return names.get(id) || id;
+  };
+  const out = [];
+  for (const e of list) {
+    if (!e || typeof e.id !== 'string' || !Array.isArray(e.skipped) || !e.skipped.length) continue;
+    const reasons = e.skip_reasons && typeof e.skip_reasons === 'object' ? e.skip_reasons : {};
+    const parts = e.skipped.filter((x) => typeof x === 'string').map((part) => ({
+      part, reason: reasons[part] === 'too_large' || reasons[part] === 'read_error' ? reasons[part] : 'unknown',
+    }));
+    if (parts.length) out.push({ id: e.id, name: typeof e.name === 'string' && e.name ? e.name.slice(0, 100) : nameOf(e.id), parts });
+  }
+  return out;
+}
+
 /** exportAllRaw() with every binary part as its base64 string (the form a backup file holds). */
 async function exportAll() {
-  return materialize(await exportAllRaw());
+  const list = await exportAllRaw();
+  try { return materialize(list); } finally { await list.release(); }
 }
 
 /** Structural checks for validateBackup(). */
@@ -252,22 +350,65 @@ function validate(list) {
   return errors;
 }
 
-function fromB64Map(obj) {
+// A base64 value of a backup: a string (JSON.parse) or a SpooledString (a
+// large backup read with utils/jsonSpool — the bytes are still in the file).
+const isB64 = (v) => typeof v === 'string' || isSpooled(v);
+const decodeB64 = async (v) => (typeof v === 'string' ? Buffer.from(v, 'base64') : v.buffer());
+
+/** {path: base64} → Map(path → Buffer) (the code: small, checked as a whole). */
+async function fromB64Map(obj) {
   const m = new Map();
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return m;
   for (const [k, v] of Object.entries(obj)) {
-    if (typeof v !== 'string') continue;
+    if (!isB64(v)) continue;
     pkg.checkPath(k);
-    m.set(k, Buffer.from(v, 'base64'));
+    m.set(k, await decodeB64(v));
   }
   return m;
 }
 
-/** The database snapshot of a backup, opened in memory and checked — or an error. */
-function openSnapshot(b64) {
-  const buf = rollbackHeader(Buffer.from(b64, 'base64'));
-  if (!buf.subarray(0, SQLITE_MAGIC.length).equals(SQLITE_MAGIC)) throw new Error('database snapshot is not a SQLite file');
-  const conn = new Database(buf);
+/** {path: base64} → Map(path → base64 value), paths checked, nothing decoded yet (the data files). */
+function b64Entries(obj) {
+  const m = new Map();
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return m;
+  for (const [k, v] of Object.entries(obj)) {
+    if (!isB64(v)) continue;
+    pkg.checkPath(k);
+    m.set(k, v);
+  }
+  return m;
+}
+
+/** Write the data files (b64Entries) below `dir`, one at a time — a large one decoded in pieces. */
+async function extractData(entries, dir) {
+  const root = path.resolve(dir);
+  fs.mkdirSync(root, { recursive: true, mode: 0o755 });
+  for (const [rel, v] of entries) {
+    const target = path.resolve(root, ...rel.split('/'));
+    if (!target.startsWith(root + path.sep)) throw new Error('path outside the plugin folder');
+    fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o755 });
+    if (typeof v === 'string') await fsp.writeFile(target, Buffer.from(v, 'base64'), { flag: 'wx', mode: 0o644 });
+    else await v.writeDecoded(target, { mode: 0o644 });
+  }
+}
+
+/** The database snapshot of a backup, opened (in memory, or from a temp file for a spooled one) and checked — or an error. */
+async function openSnapshot(b64, tmpDir) {
+  let conn;
+  if (typeof b64 === 'string') {
+    const buf = rollbackHeader(Buffer.from(b64, 'base64'));
+    if (!buf.subarray(0, SQLITE_MAGIC.length).equals(SQLITE_MAGIC)) throw new Error('database snapshot is not a SQLite file');
+    conn = new Database(buf);
+  } else {
+    const file = path.join(tmpDir, 'snapshot.db');
+    await b64.writeDecoded(file);
+    const head = Buffer.alloc(SQLITE_MAGIC.length);
+    const fd = fs.openSync(file, 'r');
+    try { fs.readSync(fd, head, 0, head.length, 0); } finally { fs.closeSync(fd); }
+    if (!head.equals(SQLITE_MAGIC)) throw new Error('database snapshot is not a SQLite file');
+    await rollbackHeaderFile(file);
+    conn = new Database(file, { readonly: true, fileMustExist: true });
+  }
   try {
     conn.pragma('trusted_schema = OFF');
     const ok = conn.pragma('quick_check', { simple: true });
@@ -311,18 +452,20 @@ async function restoreAll(list, { removeOthers = false } = {}) {
   for (const e of list) {
     const id = e && typeof e.id === 'string' && ID_RE.test(e.id) ? e.id : null;
     if (!id) { result.skipped.push({ id: String(e && e.id), reason: 'invalid' }); continue; }
+    let tmpDir = null;
     try {
       // Everything from the archive is untrusted: decode with the package
       // path checks, ALWAYS verify the signature, then decide.
-      const files = fromB64Map(e.files);
+      const files = await fromB64Map(e.files);
       const sig = signature.verify(files);
       const mres = plugins.readManifest(files);
       if (sig.status === 'invalid') { result.skipped.push({ id, reason: 'tampered' }); continue; }
       if (!mres.ok || mres.manifest.id !== id) { result.skipped.push({ id, reason: files.size ? 'manifest' : 'no_code' }); continue; }
       const m = mres.manifest;
       if (sig.status === 'trusted') m.license.server = null;
-      const dataFiles = fromB64Map(e.data_files);
-      const snapshot = typeof e.db === 'string' ? openSnapshot(e.db) : null;
+      const dataFiles = b64Entries(e.data_files);
+      if (isSpooled(e.db)) tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'gc-plugin-restore-')); // 0700
+      const snapshot = isB64(e.db) ? await openSnapshot(e.db, tmpDir) : null;
 
       await runtime.ensureStopped(id);
       await storage.close(id);
@@ -335,7 +478,7 @@ async function restoreAll(list, { removeOthers = false } = {}) {
         fs.mkdirSync(dbDir(id), { recursive: true, mode: 0o700 });
         try { await snapshot.backup(path.join(dbDir(id), 'plugin.db')); } finally { snapshot.close(); }
       }
-      if (dataFiles.size) plugins.extract(dataFiles, filesDir(id));
+      if (dataFiles.size) await extractData(dataFiles, filesDir(id));
 
       registry.upsert({
         manifest: m,
@@ -368,10 +511,16 @@ async function restoreAll(list, { removeOthers = false } = {}) {
     } catch (err) {
       logger.warn({ plugin: id, err: err.message }, 'plugin restore failed');
       result.skipped.push({ id, reason: 'failed' });
+    } finally {
+      if (tmpDir) await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     }
   }
   await plugins.reconcile();
   return result;
 }
 
-module.exports = { exportAll, exportAllRaw, restoreAll, validate, MAX_PLUGIN_BYTES, MAX_MEDIA_BYTES };
+module.exports = {
+  exportAll, exportAllRaw, restoreAll, validate, incompleteOf,
+  // read at every backup: tests set smaller caps
+  MAX_PLUGIN_BYTES, MAX_MEDIA_BYTES,
+};

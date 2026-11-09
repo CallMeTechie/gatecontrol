@@ -22,9 +22,12 @@
 // Exit: 0 ok, 1 wrong passphrase / damaged file, 2 usage error.
 
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
-const { decryptBackup, readHeader, GcbkError } = require('../services/offsite/gcbk');
+const { decryptBackupFileTo, checkPayload, readHeader, GcbkError } = require('../services/offsite/gcbk');
+const { parseFile } = require('../utils/jsonSpool');
+const { writeJson } = require('../utils/jsonStream');
 
 function usage(msg) {
   if (msg) process.stderr.write(`offsite-decrypt: ${msg}\n`);
@@ -84,6 +87,13 @@ function promptHidden(question) {
   });
 }
 
+/** Write `value` as indented JSON + newline to a stream, piece by piece (large parts straight from the temp file). */
+async function writeJsonTo(stream, value) {
+  const write = (chunk) => (stream.write(chunk) ? undefined : new Promise((resolve) => stream.once('drain', resolve)));
+  await writeJson(write, value, { indent: 2 });
+  await write('\n');
+}
+
 function writePrivate(file, content) {
   const p = path.resolve(file);
   fs.writeFileSync(p, content, { mode: 0o600 });
@@ -92,37 +102,61 @@ function writePrivate(file, content) {
 
 async function main() {
   const o = parseArgs(process.argv.slice(2));
-  let buf;
-  try { buf = fs.readFileSync(o.file); } catch (err) { usage(`cannot read ${o.file}: ${err.message}`); }
+  let head;
+  try {
+    // the header is at the start: no need to read the whole (possibly large) archive for it
+    const fd = fs.openSync(o.file, 'r');
+    try {
+      head = Buffer.alloc(Math.min(fs.fstatSync(fd).size, 7 + 4096 + 16));
+      fs.readSync(fd, head, 0, head.length, 0);
+    } finally { fs.closeSync(fd); }
+  } catch (err) { usage(`cannot read ${o.file}: ${err.message}`); }
 
   if (o.info) {
-    const { header } = readHeader(buf);
+    const { header } = readHeader(head);
     process.stdout.write(JSON.stringify(header, null, 2) + '\n');
     return;
   }
+  readHeader(head); // not a GCBK1 file: say so before asking for the passphrase
 
   let passphrase;
   if (o.passFile) passphrase = fs.readFileSync(o.passFile, 'utf8').split(/\r?\n/)[0];
   else if (process.env.GC_OFFSITE_PASSPHRASE) passphrase = process.env.GC_OFFSITE_PASSPHRASE;
   else passphrase = await promptHidden('Passphrase: ');
 
-  const { header, payload } = await decryptBackup(buf, passphrase);
-  const json = JSON.stringify(payload.backup, null, 2) + '\n';
-  if (o.out) {
-    writePrivate(o.out, json);
-    process.stderr.write(`backup written to ${o.out} (GateControl ${header.gc_version || '?'}, created ${header.created_at || '?'})\n`);
-  } else {
-    process.stdout.write(json);
-  }
-  if (payload.encryption_key) {
-    if (o.keyOut) {
-      writePrivate(o.keyOut, payload.encryption_key + '\n');
-      process.stderr.write(`GC_ENCRYPTION_KEY written to ${o.keyOut}\n`);
+  // Decrypted into a private temp file and read in pieces (an archive with
+  // plugin data unzips to several hundred MB — too much for one string).
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-offsite-decrypt-'));
+  try {
+    const plain = path.join(tmpDir, 'payload.json');
+    const { header } = await decryptBackupFileTo(o.file, passphrase, plain);
+    let payload;
+    try { payload = (await parseFile(plain)).value; } catch { throw new GcbkError('CORRUPT', 'decrypted content is not a GateControl backup'); }
+    checkPayload(payload);
+    if (o.out) {
+      const p = path.resolve(o.out);
+      const stream = fs.createWriteStream(p, { mode: 0o600 });
+      const done = new Promise((resolve, reject) => { stream.on('finish', resolve); stream.on('error', reject); });
+      await writeJsonTo(stream, payload.backup);
+      stream.end();
+      await done;
+      fs.chmodSync(p, 0o600);
+      process.stderr.write(`backup written to ${o.out} (GateControl ${header.gc_version || '?'}, created ${header.created_at || '?'})\n`);
     } else {
-      process.stderr.write('note: the archive contains the GC_ENCRYPTION_KEY of the source installation (use --key-out to extract it)\n');
+      await writeJsonTo(process.stdout, payload.backup);
     }
-  } else {
-    process.stderr.write('note: the archive does not contain the GC_ENCRYPTION_KEY — restore it on an installation with the same key\n');
+    if (payload.encryption_key) {
+      if (o.keyOut) {
+        writePrivate(o.keyOut, payload.encryption_key + '\n');
+        process.stderr.write(`GC_ENCRYPTION_KEY written to ${o.keyOut}\n`);
+      } else {
+        process.stderr.write('note: the archive contains the GC_ENCRYPTION_KEY of the source installation (use --key-out to extract it)\n');
+      }
+    } else {
+      process.stderr.write('note: the archive does not contain the GC_ENCRYPTION_KEY — restore it on an installation with the same key\n');
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
 

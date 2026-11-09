@@ -224,6 +224,7 @@
     version_differs: ['offsite.verify_warn_version_differs', 'The archive comes from a different GateControl version.'],
     no_routes: ['offsite.verify_warn_no_routes', 'The archive contains no entries.'],
     no_users: ['offsite.verify_warn_no_users', 'The archive contains no users.'],
+    plugins_incomplete: ['offsite.verify_warn_plugins_incomplete', 'Parts of plugins are missing in the archive (see “Not complete”).'],
   };
   const VERIFY_WARNINGS = Object.keys(VERIFY_WARNING_KEYS);
   function verifyWarningText(code) {
@@ -240,6 +241,45 @@
     out.push(tr('offsite.verify_counts', '{routes} entries · {peers} devices · {users} users · {settings} settings', {
       routes: Number(c.routes) || 0, peers: Number(c.peers) || 0, users: Number(c.users) || 0, settings: Number(c.settings) || 0,
     }));
+    return out;
+  }
+
+  // ─── Incomplete backups (a plugin part left out, plugins/backup.js) ─────
+  // `list`: plugins_incomplete of a backup — [{ id, name, parts: [{ part, reason }] }].
+  const INC_PARTS = {
+    code: ['backup_inc.part_code', 'program files'], database: ['backup_inc.part_database', 'database'],
+    files: ['backup_inc.part_files', 'files'], media: ['backup_inc.part_media', 'media'], media_areas: ['backup_inc.part_media_areas', 'media areas'],
+  };
+  const INC_REASONS = {
+    too_large: ['backup_inc.reason_too_large', 'too large for the backup'],
+    read_error: ['backup_inc.reason_read_error', 'could not be read'],
+    unknown: ['backup_inc.reason_unknown', 'missing'],
+  };
+  /** "Mail (database too large for the backup)" per plugin. `t(key, fallback, params)` defaults to tr. */
+  function incompleteItems(list, t) {
+    const tt = t || tr;
+    return (Array.isArray(list) ? list : []).map((p) => {
+      const parts = (p && Array.isArray(p.parts) ? p.parts : []).map((x) => {
+        const part = INC_PARTS[x && x.part] || [null, str(x && x.part)];
+        const reason = INC_REASONS[x && x.reason] || INC_REASONS.unknown;
+        return tt('backup_inc.part_reason', '{part} {reason}', { part: part[0] ? tt(part[0], part[1]) : part[1], reason: tt(reason[0], reason[1]) });
+      });
+      return tt('backup_inc.item', '{name} ({parts})', { name: str(p && (p.name || p.id)), parts: parts.join(', ') });
+    });
+  }
+  /** "⚠ Not complete: Mail (database too large for the backup)" — '' for a complete backup. */
+  function incompleteLine(list, t) {
+    const items = incompleteItems(list, t);
+    return items.length ? (t || tr)('backup_inc.line', '⚠ Not complete: {list}', { list: items.join('; ') }) : '';
+  }
+  /** The plain explanation and what to do, per reason that occurs: [text, …]. */
+  function incompleteHelp(list, t) {
+    const tt = t || tr;
+    const reasons = {};
+    (Array.isArray(list) ? list : []).forEach((p) => (p && Array.isArray(p.parts) ? p.parts : []).forEach((x) => { reasons[x && x.reason === 'too_large' ? 'too_large' : 'other'] = true; }));
+    const out = [];
+    if (reasons.too_large) out.push(tt('backup_inc.help_too_large', 'This part no longer fits into the backup (at most 512 MB of plugin data per backup), so it is missing. If you restored this backup, that data would be gone. What to do: delete what you no longer need in the plugin, then click “Back up now”. Until then, download the last complete backup (without ⚠) so it is not deleted automatically.'));
+    if (reasons.other) out.push(tt('backup_inc.help_read_error', 'This part could not be read during the backup, so it is missing. What to do: click “Back up now” again. If it happens again, look at the plugin’s log.'));
     return out;
   }
 
@@ -364,6 +404,7 @@
     ERROR_KEYS, FIELD_KEYS, HINT_KEYS, hintText, errorCode, configField, errorKey, errorText, errorDetail,
     TYPES, TYPE_LABELS, DEFAULT_PORTS, targetSummary, targetStatus, sortCandidates, targetPayload,
     VERIFY_WARNINGS, verifyWarningText, verifyLines,
+    incompleteItems, incompleteLine, incompleteHelp,
     fmtBytes, fmtDateTime, fmtDate, fmtAgo,
     el, tokenNodes, whatsNewNodes,
   };

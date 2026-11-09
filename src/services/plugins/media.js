@@ -1251,13 +1251,15 @@ function importPlugin(pluginId, list) {
   let n = 0;
   for (const e of list) {
     try {
-      if (!e || !ID_RE.test(String(e.id)) || typeof e.data !== 'string' || typeof e.key !== 'string' || typeof e.mime !== 'string'
+      // data: base64 string, or a SpooledString of a large backup (utils/jsonSpool — still in the file)
+      const spooled = !!e && !!e.data && typeof e.data === 'object' && typeof e.data.bufferSync === 'function';
+      if (!e || !ID_RE.test(String(e.id)) || (typeof e.data !== 'string' && !spooled) || typeof e.key !== 'string' || typeof e.mime !== 'string'
         || !Number.isSafeInteger(e.bytes) || e.bytes < 1 || !/^[0-9a-f]{64}$/.test(String(e.sha256))) continue;
       const key = Buffer.from(decrypt(e.key), 'hex');
       if (key.length !== 32) continue;
       // the backup (an administrator's upload) carries the sealed file: only what its own key
       // authenticates and what hashes to its SHA-256 comes back — sealed again here
-      const sealed = resealBackup(Buffer.from(e.data, 'base64'), key, e.bytes, e.sha256);
+      const sealed = resealBackup(spooled ? e.data.bufferSync() : Buffer.from(e.data, 'base64'), key, e.bytes, e.sha256);
       if (!sealed) {
         logger.warn({ plugin: pluginId, media: e.id }, 'plugin media: a file of the backup does not match its key or hash — skipped');
         continue;

@@ -311,6 +311,34 @@ are never blocked anyway.
 **Check:** in the list "Blocked right now" such addresses say "sign-ins with
 unknown user names".
 
+### What is in the backup?
+
+GateControl has three kinds of backup. You find them all under “Settings” →
+“Backups”:
+
+| File | When it is made | What is in it |
+|---|---|---|
+| `gatecontrol-v…-v…-….db` (“Snapshots before database updates”) | before every update that changes the database | a copy of GateControl's database as it was before the update. No plugin data. For emergencies only; restoring it is a manual job. |
+| `gatecontrol-….json` (“Local backup files”) | on schedule or with “Back up now” | everything you need for a restore: devices, routes, users, settings and the plugins with their databases and files (up to 512 MB). Passwords and keys stay encrypted. |
+| `gatecontrol-….gcbk` (“Off-site”) | after every automatic backup, on your NAS or in the cloud | the same `.json`, compressed and encrypted with your passphrase – that is why it is much smaller. Optionally with GateControl's key, so a new server can read it. |
+
+**Not in it:**
+
+- the files of Drive and plugins on a **storage target** (NAS, cloud) – they
+  stay there, the backup only knows their list;
+- short-lived data such as sessions, logs, login attempts and traffic
+  statistics;
+- **plugin media** (photos, receipts …), unless you switch on “Plugin media
+  in backups” under “Plugins” → “Security & upload” (up to 128 MB);
+- parts of a plugin that no longer fit into the backup or could not be read.
+  Then the list says “⚠ Not complete: …” with the plugin's name, and the
+  dashboard shows an entry under “Problems”. Delete what you no longer need
+  in the plugin and make the backup again. Until then, download the last
+  complete backup (without ⚠) and keep it.
+
+**Check:** under “Local backup files” the newest backup has no ⚠; for the
+off-site target “Test restore” reports no warning.
+
 ### Off-site backup to a NAS behind the VPN
 
 Message when testing an off-site backup target, e.g. `WebDAV PROPFIND failed:

@@ -322,6 +322,34 @@ Adressen im VPN und im eigenen Netz werden ohnehin nie gesperrt.
 **Prüfen:** In der Liste „Gerade gesperrt“ steht bei solchen Adressen
 „Anmeldeversuche mit unbekannten Benutzernamen“.
 
+### Was ist im Backup?
+
+GateControl kennt drei Sicherungen. Du findest alle unter „Einstellungen“ →
+„Backups“:
+
+| Datei | Wann sie entsteht | Was drin ist |
+|---|---|---|
+| `gatecontrol-v…-v…-….db` („Sicherungen vor Datenbank-Updates“) | vor jedem Update, das die Datenbank ändert | eine Kopie der Datenbank von GateControl, so wie sie vor dem Update war. Plugin-Daten sind nicht drin. Nur für den Notfall, Zurückspielen geht nur von Hand. |
+| `gatecontrol-….json` („Lokale Backup-Dateien“) | automatisch nach Zeitplan oder mit „Backup jetzt erstellen“ | alles, was du zum Wiederherstellen brauchst: Geräte, Weiterleitungen, Benutzer, Einstellungen und die Plugins mit ihren Datenbanken und Dateien (bis 512 MB). Passwörter und Schlüssel bleiben verschlüsselt. |
+| `gatecontrol-….gcbk` („Außer Haus“) | nach jedem automatischen Backup, auf deiner NAS oder in der Cloud | dieselbe `.json`, gepackt und mit deiner Passphrase verschlüsselt – deshalb deutlich kleiner. Auf Wunsch mit dem Schlüssel von GateControl, damit ein neuer Server sie lesen kann. |
+
+**Nicht drin** sind:
+
+- die Dateien von Drive und Plugins auf einem **Speicherziel** (NAS, Cloud) –
+  sie bleiben dort liegen, das Backup kennt nur ihre Liste;
+- kurzlebige Daten wie Anmeldungen, Protokolle, Login-Versuche und
+  Verkehrs-Statistiken;
+- **Plugin-Medien** (Fotos, Belege …), außer du schaltest unter „Plugins“ →
+  „Sicherheit & Upload“ „Plugin-Medien im Backup“ ein (bis 128 MB);
+- Teile eines Plugins, die nicht mehr ins Backup passen oder sich nicht lesen
+  ließen. Dann steht in der Liste „⚠ Nicht vollständig: …“ mit dem Namen des
+  Plugins, und im Dashboard erscheint ein Eintrag unter „Probleme“. Lösche im
+  Plugin, was du nicht mehr brauchst, und erstelle das Backup neu. Bis dahin
+  das letzte vollständige Backup (ohne ⚠) herunterladen und aufheben.
+
+**Prüfen:** Unter „Lokale Backup-Dateien“ steht beim neuesten Backup kein ⚠;
+beim Ziel außer Haus meldet „Wiederherstellung testen“ keine Warnung.
+
 ### Offsite-Backup auf eine NAS hinter dem VPN
 
 Meldung beim Testen eines Ziels „Backups außer Haus“, z. B. `WebDAV PROPFIND

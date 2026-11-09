@@ -972,6 +972,12 @@ Backups are stored in `/data/backups/` inside the Docker container. Since `/data
 
 Backups contain password and API-token hashes and encrypted keys, so they are owner-only on the host: the directory is `0700`, every backup file `0600` (backups from older versions are tightened on the next start).
 
+### Plugin data and incomplete backups
+
+Every backup carries the plugins with their databases and files — up to **512 MB of raw plugin data** per backup (plugin media, when switched on, up to 128 MB on top). The data is never held in memory: it is written from a snapshot folder and read back in pieces on a restore; the restore upload takes up to **1 GB** (JSON or `.gcbk`), stored on the backup disk, not in memory. Before a backup is written, the free space of the backup disk is checked (not enough → no backup, a clear message; scheduled backups report it as a failed backup).
+
+A plugin part that does not fit (or cannot be read) is left out — and shown, never silent: the backup list and the off-site target show **„⚠ Nicht vollständig: Mail (Datenbank zu groß für das Backup)“** with a plain explanation and what to do, the dashboard lists it under **Probleme** while the newest backup is incomplete, the restore preview and the restore test say so, the log names the plugin, and the notification row **Backup-Probleme** (mail, push, webhooks) reports it (`autobackup_incomplete`). API: `incomplete` in `POST /autobackup/run` and per file in `GET /autobackup/list`, `last_incomplete` per target in `GET /backup/targets`. What is (not) in each backup file: FAQ „Was ist im Backup?“ (docs/handbuch/07-faq.md).
+
 ### API
 
 ```bash

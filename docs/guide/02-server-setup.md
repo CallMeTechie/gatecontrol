@@ -226,6 +226,17 @@ chmod 600 /root/gatecontrol-*.tar.gz
 More on this (also backups in the interface under “Settings” → “Backups”):
 [INSTALL.md §10](../../INSTALL.md#10-backup-and-restore).
 
+**Plugin data in the backup:** every backup takes up to 512 MB of plugin data
+(the databases and files of all plugins together). If a part no longer fits,
+it is missing – and that shows under “Local backup files”, at the off-site
+target and on the dashboard under “Problems”, e.g. “⚠ Not complete: Mail
+(database too large for the backup)”, plus a notification like for a failed
+backup. What is in it and what is not:
+[FAQ: What is in the backup?](07-faq.md#what-is-in-the-backup). Plan disk
+space for one backup more than you keep: the oldest is only deleted once the
+new one is complete. If there is not enough space, GateControl makes no
+backup and says so.
+
 **Off-site backups** (Settings → Backups, licence “scheduled backups”)
 upload an encrypted copy over SFTP, SMB, S3 or WebDAV after every automatic
 backup. For a NAS at home behind a gateway, choose “Through a VPN device” or

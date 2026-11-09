@@ -1787,7 +1787,8 @@
     const newest = bk.files[0];
     const last = (a && a.lastRun) || (newest && newest.created) || null;
     $('st-bk-last').textContent = last ? (O.fmtAgo(last, lang) || O.fmtDateTime(last, lang)) : t('st.bk.never');
-    $('st-bk-last-sub').textContent = newest ? O.fmtDateTime(newest.created, lang) + ' · ' + O.fmtBytes(newest.size) : '';
+    const newestIncomplete = !!(newest && Array.isArray(newest.incomplete) && newest.incomplete.length);
+    $('st-bk-last-sub').textContent = newest ? O.fmtDateTime(newest.created, lang) + ' · ' + O.fmtBytes(newest.size) + (newestIncomplete ? ' · ' + O.incompleteLine(newest.incomplete) : '') : '';
     const next = a ? U.nextBackupAt(a.lastRun, a.schedule, a.enabled, Date.now()) : null;
     $('st-bk-next').textContent = next ? O.fmtDateTime(new Date(next).toISOString(), lang) : t('st.bk.auto_off');
     $('st-bk-next-sub').textContent = a && a.enabled ? t('autobackup.schedule_' + a.schedule) : '';
@@ -1797,7 +1798,7 @@
     $('st-bk-off').textContent = enabled.length ? t('st.bk.off_ok', { ok: enabled.length - failing.length, n: enabled.length }) : t('st.bk.off_none');
     $('st-bk-off-sub').textContent = failing.length ? t('st.bk.off_failing', { names: failing.map((x) => x.name).join(', ') }) : '';
     $('st-bk-off-stat').dataset.tone = failing.length ? 'crit' : enabled.length ? 'good' : 'warn';
-    setDot('backup', failing.length > 0 || (FEATURES.scheduled_backups && !enabled.length));
+    setDot('backup', failing.length > 0 || newestIncomplete || (FEATURES.scheduled_backups && !enabled.length));
     const parts = [last ? t('st.bk.status_last', { when: O.fmtAgo(last, lang) || O.fmtDateTime(last, lang) }) : t('st.bk.never_long')];
     parts.push(a && a.enabled ? t('st.bk.status_auto', { schedule: t('autobackup.schedule_' + a.schedule) }) : t('st.bk.auto_off'));
     parts.push(enabled.length ? tp('st.bk.status_targets', enabled.length) : t('st.bk.status_local'));
@@ -1859,6 +1860,7 @@
           tg.config_error ? el('div', { class: 'st-li-sub st-crit', text: t('offsite.config_error') }) : null,
           tg.last_status === 'failed' && tg.last_error ? el('code', { class: 'st-code st-crit', text: tg.last_error }) : null,
           tg.last_status === 'failed' && O.hintText(tg.last_error_hint) ? el('div', { class: 'st-li-sub st-warn-text', text: O.hintText(tg.last_error_hint) }) : null,
+          tg.last_incomplete ? incompleteBlock(tg.last_incomplete.plugins) : null,
         ]),
         el('div', { class: 'st-li-pills' }, [tg.enabled ? null : pill('off', t('offsite.paused')), pill(state, t(st.key))]),
         el('div', { class: 'st-li-actions st-li-actions-wrap' }, [
@@ -2170,6 +2172,13 @@
     if (r.ok && r.public_key) { bk.pubkey = r.public_key; pubkey.value = r.public_key; toast(t('offsite.key_rotated')); } else toast(O.errorText(r), 'error');
   });
 
+  // A backup in which a plugin part is missing (plugins_incomplete): the line and what to do.
+  function incompleteBlock(list) {
+    if (!Array.isArray(list) || !list.length) return null;
+    return el('div', { class: 'st-incomplete', role: 'note' }, [
+      el('div', { class: 'st-li-sub st-warn-text st-incomplete-line', text: O.incompleteLine(list) }),
+    ].concat(O.incompleteHelp(list).map((x) => el('p', { class: 'st-hint st-incomplete-help', text: x }))));
+  }
   async function loadFiles() {
     const box = $('st-bk-files');
     const r = await get('/api/v1/settings/autobackup/list');
@@ -2184,8 +2193,9 @@
         const res = await del('/api/v1/settings/autobackup/' + encodeURIComponent(f.filename));
         if (res.ok) { loadFiles().then(bkHero); } else toast(errText(res), 'error');
       });
-      box.appendChild(el('li', { class: 'st-li' }, [
-        el('span', { class: 'st-mono st-li-main st-wrap', text: f.filename }),
+      const inc = incompleteBlock(f.incomplete);
+      box.appendChild(el('li', { class: 'st-li' + (inc ? ' st-li-incomplete' : ''), 'data-incomplete': inc ? '1' : null }, [
+        el('div', { class: 'st-li-main' }, [el('span', { class: 'st-mono st-wrap', text: f.filename }), inc]),
         el('span', { class: 'st-li-sub', text: O.fmtBytes(f.size) + ' · ' + O.fmtDateTime(f.created, lang) }),
         el('div', { class: 'st-li-actions' }, [dl, rm]),
       ]));
@@ -2241,8 +2251,9 @@
     const r = await post('/api/v1/settings/autobackup/run');
     busy(b, false);
     const msg = $('st-bk-msg');
-    msg.textContent = r.ok ? t('st.bk.run_ok', { file: r.filename }) : errText(r);
-    msg.dataset.tone = r.ok ? 'good' : 'crit';
+    const incomplete = r.ok && Array.isArray(r.incomplete) && r.incomplete.length > 0;
+    msg.textContent = r.ok ? t(incomplete ? 'st.bk.run_incomplete' : 'st.bk.run_ok', { file: r.filename }) + (incomplete ? ' ' + O.incompleteLine(r.incomplete) : '') : errText(r);
+    msg.dataset.tone = r.ok ? (incomplete ? 'warn' : 'good') : 'crit';
     msg.hidden = false;
     if (r.ok) { const a = await get('/api/v1/settings/autobackup'); if (a.ok) bk.auto = a.data; await loadFiles(); bkHero(); }
   });
@@ -2252,7 +2263,9 @@
     try {
       const resp = await fetch('/api/v1/settings/backup', { credentials: 'same-origin' });
       if (!resp.ok) throw new Error(t('st.bk.download_failed'));
+      const incomplete = Number(resp.headers.get('X-GC-Backup-Incomplete')) > 0;
       const blob = await resp.blob();
+      if (incomplete) toast(t('st.bk.download_incomplete'), 'warning');
       const url = URL.createObjectURL(blob);
       const m = (resp.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/);
       const a = el('a', { href: url, download: m ? m[1] : 'gatecontrol-backup.json' });
@@ -2309,6 +2322,11 @@
     if (r.encrypted) line += ' · ' + t('offsite.restore_encrypted') + ' · ' + t(r.include_key ? 'offsite.restore_with_key' : 'offsite.restore_without_key') + (r.gc_version ? ' · v' + r.gc_version : '');
     prev.textContent = line;
     prev.dataset.state = '';
+    const inc = Array.isArray(s.plugins_incomplete) && s.plugins_incomplete.length ? s.plugins_incomplete : null;
+    if (inc) {
+      prev.appendChild(el('div', { class: 'st-warn-text st-incomplete-line', text: t('st.bk.restore_incomplete') + ' ' + O.incompleteItems(inc).join('; ') }));
+      prev.dataset.state = 'warn';
+    }
     rsPluginAware = !!s.plugin_aware;
     rsReady = true;
     $('st-rs-go').hidden = false;

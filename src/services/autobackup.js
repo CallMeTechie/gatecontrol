@@ -111,7 +111,8 @@ async function runBackupNow({ offsite = true } = {}) {
   // Collected and written piece by piece (services/backup.writeBackupFile):
   // a backup with plugin data has up to a few hundred MB — building it with
   // JSON.stringify in one go blocked the event loop for 25+ s on a NAS.
-  await backup.writeBackupFile(filepath, { mode: PRIVATE_FILE_MODE });
+  // The free space of the backup disk is checked first (code NO_SPACE).
+  const { incomplete } = await backup.writeBackupFile(filepath, { mode: PRIVATE_FILE_MODE });
 
   // Update last run time
   settings.set('autobackup_last_run', new Date().toISOString());
@@ -124,6 +125,7 @@ async function runBackupNow({ offsite = true } = {}) {
     source: 'system',
     severity: 'info',
   });
+  if (incomplete && incomplete.length) noteIncomplete(filename, incomplete);
 
   if (offsite) {
     setImmediate(() => {
@@ -134,6 +136,30 @@ async function runBackupNow({ offsite = true } = {}) {
   }
 
   return filename;
+}
+
+const PART_TEXT = { code: 'program files', database: 'database', files: 'files', media: 'media', media_areas: 'media areas' };
+const REASON_TEXT = { too_large: 'too large for the backup', read_error: 'could not be read', unknown: 'left out' };
+
+/** "Mail (database: too large for the backup)" — the plugins_incomplete list in one line. */
+function incompleteLine(list) {
+  return (list || []).map((p) => `${p.name || p.id} (${(p.parts || []).map((x) => `${PART_TEXT[x.part] || x.part}: ${REASON_TEXT[x.reason] || REASON_TEXT.unknown}`).join(', ')})`).join('; ');
+}
+
+/**
+ * A backup in which a plugin part is missing: a warning in the log with the
+ * plugin names and an activity entry `autobackup_incomplete` — the
+ * notifications of the "Backup-Probleme" row (mail, push, webhooks) come
+ * from it like for a failed backup (services/notifications.js).
+ */
+function noteIncomplete(filename, list) {
+  const line = incompleteLine(list);
+  logger.warn({ filename, plugins: list.map((p) => p.id) }, `Backup incomplete — not everything of these plugins is in it: ${line}`);
+  activity.log('autobackup_incomplete', `Backup ${filename} is incomplete: ${line}`, {
+    source: 'system',
+    severity: 'warning',
+    details: { filename, plugins: list.map((p) => ({ id: p.id, name: p.name, parts: p.parts })) },
+  });
 }
 
 /**
@@ -182,6 +208,33 @@ function listBackupFiles() {
     logger.warn({ error: err.message }, 'Failed to list backup files');
     return [];
   }
+}
+
+// plugins_incomplete per file (read from the start of the file), by name + mtime
+const incompleteCache = new Map();
+
+/**
+ * listBackupFiles() with `incomplete` per file: the plugins of which a part
+ * is missing ([] complete, null unknown — a backup from before this was
+ * recorded).
+ */
+async function listBackupFilesWithInfo() {
+  const files = listBackupFiles();
+  const seen = new Set();
+  for (const f of files) {
+    const key = `${f.filename}|${f.created}|${f.size}`;
+    seen.add(key);
+    if (!incompleteCache.has(key)) incompleteCache.set(key, await backup.readIncomplete(path.join(BACKUP_DIR, f.filename)));
+    f.incomplete = incompleteCache.get(key);
+  }
+  for (const k of incompleteCache.keys()) if (!seen.has(k)) incompleteCache.delete(k);
+  return files;
+}
+
+/** The newest local backup with its `incomplete` (listBackupFilesWithInfo), or null. */
+async function latestBackupInfo() {
+  const files = await listBackupFilesWithInfo();
+  return files[0] || null;
 }
 
 /**
@@ -302,6 +355,9 @@ module.exports = {
   updateSettings,
   runBackup,
   listBackupFiles,
+  listBackupFilesWithInfo,
+  latestBackupInfo,
+  incompleteLine,
   deleteBackupFile,
   getBackupFilePath,
   startScheduler,
