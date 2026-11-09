@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.256.0] — 2026-11-09
+
+### Features
+- unbekannte Benutzernamen zählen bei der IP-Sperre mehrfach (#452)
+
+---
+
 ## [1.255.1] — 2026-11-09
 
 ### Fixes
