@@ -258,6 +258,32 @@ regelmäßig gesammelt auf den Datenträger. Stürzt GateControl ab, geht nichts
 verloren. Fällt der Strom aus, können die Änderungen der letzten Sekunden
 (beim Server höchstens 30 s) fehlen – die Datenbank bleibt aber heil.
 
+### „malformed request body“ im Protokoll
+
+Jemand hat GateControl einen Inhalt geschickt, den es nicht lesen kann. Die
+Zeile ist eine Warnung, kein Fehler des Servers: Die Anfrage bekam einen
+4xx-Fehler (meist 400 `invalid_json`), nichts wurde ausgeführt. Sie nennt
+Methode, Pfad, Adresse (`ip`), die Art (`type`) und die Länge des Inhalts
+(`length`) – den Inhalt selbst nie, er ist oft ein Angriffsversuch.
+
+- `entity.parse.failed`: kein gültiges JSON. Von einer fremden Adresse auf
+  Pfade wie `/run`, `/api/…` oder `/` fast immer ein Scanner, der Lücken
+  anderer Software sucht.
+- `entity.too.large`: größer als erlaubt (1 MB, Gateway- und App-Aufrufe
+  weniger).
+- `encoding.unsupported` / `charset.unsupported`: eine Kodierung, die kein
+  Programm von GateControl schickt.
+- `request.aborted`: Die Verbindung brach ab, bevor der Inhalt da war (z. B.
+  ein Handy im Funkloch).
+
+Je Art steht höchstens eine Zeile in 5 Minuten im Protokoll; `repeated` sagt,
+wie viele seit der letzten Zeile dazukamen. Ungültiges JSON und unbekannte
+Kodierungen zählen für die IP-Sperre (Quelle „Durchsuchen unbekannter Adressen“) wie ein 404 eines
+unbekannten Pfads: je zehn von einer Adresse ein Fehlversuch. Eigene Adressen,
+das VPN und die Liste „Nie sperren“ zählen nie. Kommt die Zeile von einer
+eigenen App oder einem Gateway, liegt der Fehler dort – dann die Zeile in ein
+Ticket kopieren.
+
 ### Der Container startet nicht oder das Zertifikat kommt nicht
 
 - `GC_ADMIN_PASSWORD is not set or still default`: In der `.env` steht noch
