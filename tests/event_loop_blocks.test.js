@@ -208,13 +208,15 @@ describe('the checkpoint worker checkpoints a change after MAX_AGE_MS, not every
       assert.equal(seen.length, 1, 'the log left at the start: one checkpoint');
       await sleep(100);
       const n = seen.length;
+      const pageSize = main.pragma('page_size', { simple: true });
       main.transaction(() => { const ins = main.prepare('INSERT INTO t VALUES (?)'); for (let i = 0; i < 3000; i++) ins.run('y'.repeat(4000)); })();
       const t1 = Date.now(); // committed: the age of the change counts from here at the earliest
-      while (seen.length === n && Date.now() - t1 < MAX_AGE_MS - 500) await sleep(10);
-      assert.ok(seen.length > n, `grown log: no checkpoint within ${Date.now() - t1} ms`);
-      const ms = seen[n].at - t1;
-      assert.ok(ms < MAX_AGE_MS / 2, `grown log: checkpoint after ${ms} ms, not at once (maxAgeMs ${MAX_AGE_MS})`);
-      assert.ok(seen[n].log * main.pragma('page_size', { simple: true }) > 8 * 1024 * 1024, `the grown log (${seen[n].log} pages) was checkpointed`);
+      // the checkpoint of the grown log (a tick during the COMMIT may find no frame yet: log 0, not this one)
+      const grown = () => seen.slice(n).find((x) => x.log * pageSize > 8 * 1024 * 1024);
+      while (!grown() && Date.now() - t1 < MAX_AGE_MS - 500) await sleep(10);
+      const ckpt = grown();
+      assert.ok(ckpt, `grown log: not checkpointed within ${Date.now() - t1} ms (${JSON.stringify(seen.slice(n).map((x) => x.log))} frames)`);
+      assert.ok(ckpt.at - t1 < MAX_AGE_MS / 2, `grown log: checkpoint after ${ckpt.at - t1} ms, not at once (maxAgeMs ${MAX_AGE_MS})`);
     } finally {
       await w.terminate();
       main.close();
