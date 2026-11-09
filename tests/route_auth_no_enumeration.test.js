@@ -111,7 +111,7 @@ test('unknown address counts with the unknown-name weight and is logged for the 
   assert.ok(row, 'activity entry written');
   assert.equal(row.ip_address, u.ip);
   assert.equal(row.severity, 'warning');
-  assert.match(row.message, new RegExp(DOMAIN.replace(/\./g, '\\.')));
+  assert.ok(row.message.includes(DOMAIN), row.message);
   assert.ok(row.message.includes('s***@leak.example'), row.message);
   assert.ok(!row.message.includes('stranger@'), 'address is masked');
   const d = JSON.parse(row.details);
