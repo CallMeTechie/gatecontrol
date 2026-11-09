@@ -72,10 +72,12 @@ describe(`log watchers: Ereignisschleife < ${LIMIT_MS} ms bei einem Rückstau`, 
     try {
       let ticks = 0;
       let worst = 0;
+      let gapCpu = 0;
       let before = 0;
       for (; ticks < 40; ticks++) {
         const r = await maxLag(() => waf.pollOnce());
         worst = Math.max(worst, r.worst);
+        gapCpu = Math.max(gapCpu, r.cpu);
         const st = JSON.parse(db.prepare("SELECT value FROM settings WHERE key = 'waf.watch_state'").get()?.value || '{"offset":0}');
         assert.ok(st.offset - before <= 4 * 1024 * 1024 + 1024 * 1024, `tick ${ticks} read ${st.offset - before} bytes`);
         before = st.offset;
@@ -83,10 +85,12 @@ describe(`log watchers: Ereignisschleife < ${LIMIT_MS} ms bei einem Rückstau`, 
       }
       assert.ok(ticks >= 2, 'a backlog takes several ticks');
       const longest = slices.reduce((m, x) => (x.cpuMs > m.cpuMs ? x : m), { cpuMs: 0, wallMs: 0, name: null });
-      t.diagnostic(`${slices.length} slices; longest own work ${Math.round(longest.cpuMs)} ms CPU (${longest.name}, ${Math.round(longest.wallMs)} ms wall); longest event-loop pause ${worst} ms`);
+      t.diagnostic(`${slices.length} slices; longest own work ${Math.round(longest.cpuMs)} ms CPU (${longest.name}, ${Math.round(longest.wallMs)} ms wall); longest event-loop pause ${worst} ms (${gapCpu} ms CPU at most between two ticks)`);
       assert.ok(slices.some((x) => x.name === 'waf.audit split') && slices.some((x) => x.name === 'waf.audit ingest'), 'split and ingest are measured');
       assert.ok(slices.filter((x) => x.name === 'waf.audit ingest').length > ticks * 2, 'the ingest yields between slices');
       assert.ok(longest.cpuMs < LIMIT_MS, `a slice held the thread for ${Math.round(longest.cpuMs)} ms of CPU`);
+      // and nothing outside the measured slices either: no gap between two ticks with that much CPU of this thread
+      assert.ok(gapCpu < LIMIT_MS, `${gapCpu} ms of CPU between two ticks`);
       // what no slice covers (reads, state) is async: no pause of seconds, even on a loaded runner
       assert.ok(worst < 5 * LIMIT_MS, `longest pause ${worst} ms`);
       assert.ok(db.prepare('SELECT COUNT(*) AS n FROM waf_events').get().n > lines.length / 2, 'the lines were stored');

@@ -70,9 +70,12 @@ describe('slow plugin database statements', () => {
     const slowLines = () => warn.mock.calls.filter((c) => c.arguments[1] === 'slow plugin database statements');
     let n = 100000;
     let runs = 0;
+    let roundTrip = 0; // of the last call (the slow one): sent → answer taken
     for (; runs < 12 && !(db.slow && db.slow.n); runs++) {
       n *= 2;
+      const t0 = Date.now();
       const r = await db.call('query', { sql: COUNT_SQL.replace('x < ?', `x < ${n}`), mode: 'all' }, 14000);
+      roundTrip = Date.now() - t0;
       assert.equal(r.rows[0].n, n);
     }
     assert.equal(slowLines().length, 0, 'nothing logged before the window ends');
@@ -84,7 +87,9 @@ describe('slow plugin database statements', () => {
     assert.equal(f.slow, 1);
     assert.equal(f.writes, 0, 'a SELECT is no write');
     assert.ok(f.maxMs >= storage.SLOW_MS, `ms ${f.maxMs}`);
-    assert.ok(f.waitMs >= 0 && f.waitMs < f.maxMs, `waitMs ${f.waitMs}`);
+    // the wait is the round trip without the statement — not compared with the statement's time: a busy runner
+    // stretches the way to the worker and back (seen: 400–950 ms against 200–300 ms in the worker)
+    assert.ok(f.waitMs >= 0 && f.waitMs <= roundTrip - f.maxMs + 2, `waitMs ${f.waitMs}, round trip ${roundTrip} ms, statement ${f.maxMs} ms`);
     assert.deepEqual(f.statements.map((e) => [e.op, e.sql, e.n, e.rows]),
       [['query', 'WITH RECURSIVE c(x) AS (SELECT ? UNION ALL SELECT x + ? FROM c WHERE x < ?) SELECT count(*) AS n FROM c', 1, 1]]);
     assert.ok(!JSON.stringify(f).includes(String(n)), 'no values in the log');
