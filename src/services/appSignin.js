@@ -170,9 +170,11 @@ async function passwordSignIn({ username, password, totp, ip } = {}) {
   }
 
   if (!user || !passwordOk) {
-    lockout.recordFailedAttempt(name, 'admin', ip);
-    if (user && user.username !== name) lockout.recordFailedAttempt(user.username, 'admin', ip);
-    logFailed(`Failed app sign-in for user: ${name}`, ip, { method: 'password' });
+    // one attempt counts once for the IP block; a name without an account
+    // with the weight of "Unbekannte Benutzernamen" (same answer either way)
+    lockout.recordFailedAttempt(name, 'admin', ip, { unknownUser: !user });
+    if (user && user.username !== name) lockout.recordFailedAttempt(user.username, 'admin', ip, { ipBlock: false });
+    logFailed(`Failed app sign-in for user: ${name}`, ip, { method: 'password', ...(user ? {} : { unknownUser: true }) });
     throw coded('invalid_credentials');
   }
   // From here on the password was right: the answers may name the account's state.

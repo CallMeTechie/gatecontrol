@@ -266,7 +266,8 @@ test('access log: probe paths, other 404s in tens, 429 only when switched on, bl
   const many = [];
   for (let i = 0; i < 25; i++) many.push(line('185.220.100.2', 404, `/page${i}`));
   ipBlock.noteAccessLines(many);
-  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM ip_block_failures WHERE ip = '185.220.100.2'").get().n, 2);
+  // 25 other 404s → 2 points (one failure row with weight 2)
+  assert.equal(db.prepare("SELECT SUM(weight) AS n FROM ip_block_failures WHERE ip = '185.220.100.2'").get().n, 2);
   ipBlock.noteAccessLines([line('185.220.100.3', 429, '/'), line('185.220.100.3', 429, '/'), line('185.220.100.3', 429, '/')]);
   assert.equal(ipBlock.check('185.220.100.3'), null);
   ipBlock.noteAccessLines([line('185.220.100.9', 403, '/', { resp_headers: { 'X-Gc-Block': ['1'] } })]);

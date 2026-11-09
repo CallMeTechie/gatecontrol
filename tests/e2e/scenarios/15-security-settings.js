@@ -47,20 +47,23 @@ module.exports = (ctx) => {
       const view = await api(page, 'GET', '/api/v1/settings/ip-block');
       step('the switches show the saved sources', await page.getAttribute('#ipb-src-login', 'aria-checked') === String(view.body.config.sources.login)
         && await page.getAttribute('#ipb-src-rate_limit', 'aria-checked') === String(view.body.config.sources.rate_limit));
+      step('"Unbekannte Benutzernamen zählen" shows the saved weight', await page.inputValue('#ipb-unknown') === String(view.body.config.unknown_user_weight));
 
       await page.fill('#ipb-threshold', '2');
       await page.click('#st-save');
       step('a threshold below 3 is refused at the field', await page.getAttribute('#ipb-threshold', 'aria-invalid') === 'true' && !(await page.isHidden('#ipb-threshold-err')));
       await page.fill('#ipb-threshold', '12');
       await page.click('#ipb-src-rate_limit');
-      step('two changes show the save bar', await page.isVisible('#st-savebar'));
+      await page.selectOption('#ipb-unknown', '5');
+      step('the changes show the save bar', await page.isVisible('#st-savebar'));
       await Promise.all([page.waitForResponse((r) => r.url().includes('/settings/ip-block') && r.request().method() === 'PUT'), page.click('#st-save')]);
       await idle(page);
       await page.reload();
       await ready(page);
       await idle(page);
-      step('after a reload the saved values are back', await page.inputValue('#ipb-threshold') === '12' && await page.getAttribute('#ipb-src-rate_limit', 'aria-checked') === 'true');
-      await api(page, 'PUT', '/api/v1/settings/ip-block', { threshold: 10, sources: { rate_limit: false } });
+      step('after a reload the saved values are back', await page.inputValue('#ipb-threshold') === '12' && await page.getAttribute('#ipb-src-rate_limit', 'aria-checked') === 'true'
+        && await page.inputValue('#ipb-unknown') === '5');
+      await api(page, 'PUT', '/api/v1/settings/ip-block', { threshold: 10, unknown_user_weight: 3, sources: { rate_limit: false } });
 
       // block by hand → row → unblock with the question
       await page.click('#ipb-ban-open');

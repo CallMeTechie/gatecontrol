@@ -329,7 +329,11 @@ router.post('/login', routeAuthLoginLimiter, (req, res) => {
     // Verify password
     const valid = await verifyPassword(authConfig, email, password);
     if (!valid) {
-      lockout.recordFailedAttempt(lockoutId, 'route_auth', req.ip);
+      // A route has one account: an e-mail address other than its own
+      // matches no account and counts with the weight of "Unbekannte
+      // Benutzernamen" for the IP block (verifyPassword ran argon2 anyway;
+      // the answer below is the same).
+      lockout.recordFailedAttempt(lockoutId, 'route_auth', req.ip, { unknownUser: !authConfig.email || authConfig.email !== email });
       return res.status(401).json({ ok: false, error: req.t('route_auth.invalid_credentials') });
     }
 

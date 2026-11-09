@@ -566,6 +566,22 @@ Settings › Security › IP-Sperre (`/settings/ipsperre`). The account lockout 
 
 Every source can be switched off. Default: 10 failures within 10 minutes (10 or 60 min, threshold 3 … 1000).
 
+### Unknown user names
+
+A failed login with a name or e-mail address that matches **no account** counts more: "Unbekannte Benutzernamen zählen" einfach / doppelt / dreifach / fünffach (`unknown_user_weight` 1, 2, 3, 5; default 3). With the default threshold of 10 the 4th such attempt bans. The account lockout cannot stop these probes (credential stuffing with leaked lists — there is no account to lock), the IP block now stops them earlier.
+
+| Entry point | Unknown name | Wrong password of an existing account | Wrong second factor |
+|-------------|--------------|----------------------------------------|---------------------|
+| GateControl login (also from the portal) | weight of the setting | 1 | 1 |
+| App sign-in (password) | weight of the setting | 1 | 1 |
+| Route login (password step) | weight of the setting — an e-mail address other than the route's own account | 1 | 1 (code step) |
+
+- "Account exists" means: the name is a GateControl user name, or a directory account resolves it (Windows name, `DOMAIN\name`, UPN, e-mail). A disabled account counts as existing.
+- One attempt counts once: typing the e-mail address of an existing account no longer adds a second point for the account's own name.
+- **No user enumeration:** answer, status code, wording and redirect are the same for unknown and known names, and argon2 runs for unknown names too (GateControl login and app sign-in against a dummy hash, the route login always against the route's hash) — only the internal counting differs.
+- The ban list shows "N Anmeldeversuche mit unbekannten Benutzernamen" when those names brought more than half of the points (else "davon N mit unbekannten Benutzernamen" in the detail line); the log line of the ban ends in `mostly unknown user names`, its details carry `unknown_users`. The activity entry "Failed login for user: …" of the GateControl login carries `details.unknownUser: true` (app sign-in: in its details as well). Passwords are never logged.
+- A failure is stored as one row with its points (`ip_block_failures.weight`, `unknown_user`; migration 143); a ban's `hits` are points, `attempts` the number of attempts.
+
 ### Bans
 
 - Automatic bans grow when they repeat within 7 days: 10 min › 1 h › 1 day (level 1 … 3). The third one is reported (`ip_blocked_day`), as are 20 bans within 10 minutes (`ip_block_mass`, at most hourly) — notification centre row "IP für einen Tag gesperrt / viele Sperren", logs in Logs & Monitoring (warnings appear under "Probleme").
@@ -591,7 +607,7 @@ GateControl writes one file, `<caddy data>/ipblock.list` (exceptions first with 
 
 ```
 GET    /api/v1/settings/ip-block
-PUT    /api/v1/settings/ip-block              { enabled, threshold, window_min, notify, sources: {…}, lists: {…} }
+PUT    /api/v1/settings/ip-block              { enabled, threshold, window_min, unknown_user_weight: 1|2|3|5, notify, sources: {…}, lists: {…} }
 POST   /api/v1/settings/ip-block/bans         { ip, hours: 1|24|168|720|null, note }
 DELETE /api/v1/settings/ip-block/bans/:ip     (URL-encoded, also CIDR)
 POST   /api/v1/settings/ip-block/never        { ip, label }
