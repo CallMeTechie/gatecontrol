@@ -96,6 +96,9 @@ async function davServer(pair) {
   return Object.assign(srv, { files, seen });
 }
 
+// the headers the S3 transport signs besides host and x-amz-date
+const SIGNABLE = ['content-type', 'x-amz-content-sha256'];
+
 /** A fake S3 (path style, bucket "bk") that checks every SigV4 signature against what arrived. */
 async function s3Server(pair) {
   const objects = new Map();
@@ -107,8 +110,11 @@ async function s3Server(pair) {
     if (q.headers['x-amz-content-sha256'] !== hash) return false;
     const d = q.headers['x-amz-date'];
     const date = new Date(`${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}T${d.slice(9, 11)}:${d.slice(11, 13)}:${d.slice(13, 15)}Z`);
-    const headers = {};
-    for (const n of m[3].split(';')) if (n !== 'host' && n !== 'x-amz-date') headers[n] = q.headers[n];
+    // the names come from a fixed list, never from the request (no property named by the client)
+    const signed = m[3].split(';');
+    const headers = Object.create(null);
+    for (const n of SIGNABLE) if (signed.includes(n)) headers[n] = q.headers[n];
+    if (signed.some((n) => n !== 'host' && n !== 'x-amz-date' && !SIGNABLE.includes(n))) return false;
     const h = s3().signRequest({ method: q.method, url: new URL(`https://${q.headers.host}${q.url}`), headers, payloadHash: hash, region: m[2], accessKeyId: AK, secretAccessKey: SK, date });
     return /Signature=([0-9a-f]{64})$/.exec(h.authorization)[1] === m[4];
   };
