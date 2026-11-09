@@ -177,6 +177,16 @@ Einstellungen `GET/PUT /api/v1/settings/waf`:
   password}`. Antworten enthalten nie Geheimnisse (`has_password: true`).
 - Upload nach jedem geplanten Backup an alle aktiven Ziele, Aufbewahrung `keep`
   (nur eigene Dateien `gatecontrol-*.gcbk` löschen), Ergebnis in `last_*`, SSE `backup`.
+- Das Archiv ist nie als Ganzes im Speicher: `gcbk.writeBackupArchive` schreibt es als
+  Stream in eine Datei im privaten Ordner `<Backup-Ordner>/.incoming` (Name vom Server,
+  zufällig; vorher Prüfung des freien Platzes, sonst `NO_SPACE`/507, Hinweis `no_space`;
+  Löschen im `finally`, Reste eines Absturzes beim ersten Gebrauch). Die Transporte senden
+  aus der Datei (`services/offsite/source.js`): WebDAV ein PUT als Stream mit
+  Content-Length; S3 bis 64 MiB ein PUT, darüber Multipart in 64-MiB-Teilen (jeder Teil mit
+  eigenem SHA-256 signiert, beim Schreiben des Archivs berechnet; Abbruch per
+  AbortMultipartUpload bei einem Fehler); SMB/SFTP `put` direkt aus der Datei (Zeitlimit
+  wächst mit der Größe). Der Wiederherstellungstest lädt per `downloadTo` in eine Datei.
+  Messung: `node scripts/offsite-memory-check.js --mb 400`.
 
 ## 8. Navigation und Schnellsuche (UI B4)
 

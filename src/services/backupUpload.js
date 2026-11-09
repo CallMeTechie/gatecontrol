@@ -7,6 +7,9 @@
 // An off-site archive (.gcbk) is decrypted into a second file next to it
 // (gcbk.decryptBackupFileTo). Both files stay until the request is done:
 // the large plugin parts of the parsed backup are still read from them.
+// The off-site backups use the folder too (services/offsite/index.js): the
+// archive of an upload ("<random>.offsite") and the one a restore test
+// downloads ("<random>.verify").
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -49,7 +52,7 @@ function storage() {
 }
 
 // Names of the files in the folder: always made here (random hex), never taken from a request.
-const NAME_RE = /^[0-9a-f]{24}\.(upload|verify)$/;
+const NAME_RE = /^[0-9a-f]{24}\.(upload|verify|offsite)$/;
 
 /** A file of the incoming folder by its NAME (checked, below the folder) → absolute path; throws otherwise. */
 function incomingPath(name) {

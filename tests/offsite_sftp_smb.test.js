@@ -36,6 +36,13 @@ for (const flag of ['-i', '-A']) {
   if (i !== -1) { const f = args[i + 1]; out.files[flag] = { mode: (fs.statSync(f).mode & 0o777).toString(8), content: fs.readFileSync(f, 'utf8') }; }
 }
 const n = fs.readdirSync(rec).length;
+// "get <remote> <local>": the tool writes the local file (it exists already, 0600 — record its mode)
+const cmdText = stdin + '\\n' + (args.indexOf('-c') !== -1 ? args[args.indexOf('-c') + 1] : '');
+const get = /get "[^"]+" "([^"]+)"/.exec(cmdText);
+if (get) { out.files.get = { mode: (fs.statSync(get[1]).mode & 0o777).toString(8) }; fs.writeFileSync(get[1], 'remote archive'); }
+// "put <local> <remote>": what the local file held at that moment
+const put = /put "([^"]+)" "[^"]+"/.exec(cmdText);
+if (put) out.files.put = { content: fs.readFileSync(put[1], 'utf8') };
 fs.writeFileSync(path.join(rec, String(n).padStart(3, '0') + '.json'), JSON.stringify(out));
 const mode = fs.existsSync(path.join(rec, '..', 'fail')) ? fs.readFileSync(path.join(rec, '..', 'fail'), 'utf8') : '';
 if (tool === 'sftp') {
@@ -59,6 +66,7 @@ for (const t of ['sftp', 'smbclient']) {
 const sftp = require('../src/services/offsite/sftp');
 const smb = require('../src/services/offsite/smb');
 const { generate } = require('../src/services/offsite/sshKey');
+const { archiveFile, tmpName } = require('./helpers/offsiteFiles');
 
 function records() {
   return fs.readdirSync(rec).sort().map((f) => JSON.parse(fs.readFileSync(path.join(rec, f), 'utf8')));
@@ -102,6 +110,34 @@ describe('SFTP', () => {
     assert.equal(r.env.GC_SECRET_CANARY, undefined, 'app environment not inherited');
     assert.equal(r.env.GC_ENCRYPTION_KEY, undefined);
     assert.deepEqual(workFiles(), [], 'key + upload temp files removed');
+  });
+
+  it('upload of an archive FILE: put straight from it (no copy, no temp file), the file stays the caller\'s', async () => {
+    reset();
+    const a = archiveFile(Buffer.from('the archive'));
+    await sftp.upload(cfg, 'gatecontrol-20260914-030000.gcbk', a, ctx);
+    const [r] = records();
+    assert.ok(r.stdin.split('\n').includes(`put "${a.path}" "gatecontrol-20260914-030000.gcbk.part"`));
+    assert.equal(r.files.put.content, 'the archive');
+    assert.ok(fs.existsSync(a.path));
+    assert.deepEqual(workFiles(), []);
+    // a path the batch line cannot carry is refused before anything runs
+    reset();
+    await assert.rejects(sftp.upload(cfg, 'x.gcbk', { path: '/tmp/a"b', size: 3 }, ctx), (e) => e.code === 'TRANSPORT' && /local path/.test(e.message));
+    assert.equal(records().length, 0);
+  });
+
+  it('downloadTo: get into the given file (created 0600 first)', async () => {
+    reset();
+    const p = tmpName('dl');
+    assert.equal(await sftp.downloadTo(cfg, 'gatecontrol-20260914-030000.gcbk', p, ctx), 'remote archive'.length);
+    const [r] = records();
+    assert.ok(r.stdin.split('\n').includes(`get "gatecontrol-20260914-030000.gcbk" "${p}"`));
+    assert.equal(r.files.get.mode, '600');
+    assert.equal(fs.readFileSync(p, 'utf8'), 'remote archive');
+    fs.rmSync(p);
+    await assert.rejects(sftp.downloadTo(cfg, 'gatecontrol-20260914-030000.gcbk', p, ctx, { maxBytes: 4 }), { code: 'TOO_LARGE' });
+    fs.rmSync(p, { force: true });
   });
 
   it('list parses `ls -ln` (files only)', async () => {
@@ -156,6 +192,38 @@ describe('SMB', () => {
     assert.match(recs[2].args[recs[2].args.indexOf('-c') + 1],
       /^cd "gc\/host1"; put "\/.+\/offsite\/upload-[0-9a-f]{16}" "gatecontrol-20260914-030000\.gcbk\.part"; rename "gatecontrol-20260914-030000\.gcbk\.part" "gatecontrol-20260914-030000\.gcbk"$/);
     assert.deepEqual(workFiles(), []);
+  });
+
+  it('upload of an archive FILE: put straight from it (no copy, no temp file); ";" in its path is refused (smbclient -c splits there)', async () => {
+    reset();
+    const a = archiveFile(Buffer.from('the archive'));
+    await smb.upload(cfg, 'gatecontrol-20260914-030000.gcbk', a);
+    const r = records()[2];
+    assert.match(r.args[r.args.indexOf('-c') + 1], new RegExp(`; put "${a.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}" "gatecontrol-20260914-030000\\.gcbk\\.part"; `));
+    assert.equal(r.files.put.content, 'the archive');
+    assert.ok(fs.existsSync(a.path));
+    assert.deepEqual(workFiles(), []);
+    reset();
+    await assert.rejects(smb.upload(cfg, 'x.gcbk', { path: '/tmp/a;b', size: 3 }), (e) => e.code === 'TRANSPORT' && /local path/.test(e.message));
+    assert.equal(records().length, 0);
+  });
+
+  it('downloadTo: get into the given file (created 0600 first)', async () => {
+    reset();
+    const p = tmpName('dl');
+    assert.equal(await smb.downloadTo(cfg, 'gatecontrol-20260914-030000.gcbk', p), 'remote archive'.length);
+    const [r] = records();
+    assert.equal(r.args[r.args.indexOf('-c') + 1], `cd "gc/host1"; get "gatecontrol-20260914-030000.gcbk" "${p}"`);
+    assert.equal(r.files.get.mode, '600');
+    assert.equal(fs.readFileSync(p, 'utf8'), 'remote archive');
+    fs.rmSync(p);
+  });
+
+  it('the time limit of a transfer grows with the archive size', () => {
+    const { transferTimeout } = require('../src/services/offsite/source');
+    assert.equal(transferTimeout(180000, 0), 180000);
+    // 336 MB at the slowest rate worth waiting for (1 Mbit/s): about 45 min more
+    assert.equal(transferTimeout(180000, 336 * 1048576), 180000 + 2688 * 1000);
   });
 
   it('list parses smbclient `ls` (no dirs, names with spaces, dates)', async () => {

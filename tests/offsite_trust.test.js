@@ -38,6 +38,7 @@ const https = require('node:https');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const { setup, teardown, getAgent, getCsrf } = require('./helpers/setup');
+const { archiveFile, downloadBuffer } = require('./helpers/offsiteFiles');
 
 const NAS = 'nas.heim.example'; // resolves only where a test says so
 const API = '/api/v1/settings/backup';
@@ -277,9 +278,10 @@ describe('S3 through a VPN device ("Verbindung") with the trust handling', () =>
     s3srv.seen.length = 0;
     assert.match(await s3().test(cfg), /write \+ delete ok/);
     const data = crypto.randomBytes(200 * 1024 + 3);
-    await s3().upload(cfg, 'gatecontrol-20261109-030000.gcbk', data);
+    // the archive FILE, streamed through the tunnel (signed with its SHA-256, read from the file)
+    await s3().upload(cfg, 'gatecontrol-20261109-030000.gcbk', archiveFile(data));
     assert.deepEqual((await s3().list(cfg)).map((f) => [f.name, f.size]), [['gatecontrol-20261109-030000.gcbk', data.length]]);
-    assert.ok((await s3().download(cfg, 'gatecontrol-20261109-030000.gcbk')).equals(data));
+    assert.ok((await downloadBuffer(s3(), cfg, 'gatecontrol-20261109-030000.gcbk')).equals(data));
     await s3().remove(cfg, 'gatecontrol-20261109-030000.gcbk');
     assert.ok(s3srv.seen.length >= 6);
     assert.ok(s3srv.seen.every((s) => s.host === `${NAS}:9000` && s.sni === NAS), JSON.stringify(s3srv.seen.slice(0, 2)));

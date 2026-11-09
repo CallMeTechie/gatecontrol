@@ -12,12 +12,17 @@
 // a VPN peer (its VPN address, `via.port`) or an L4 route (what Caddy dials
 // for it) — smbclient then connects to that address (-I, -p) while the
 // share is still named after `host` (or the address, when no host is set).
+// The archive goes up from its file (source.js): smbclient `put` reads and
+// writes it in chunks itself — nothing of it passes through GateControl's
+// memory; the time limit grows with its size.
 // Credentials go through a temporary authentication file (-A, mode 0600,
 // deleted afterwards) — never on the command line, where every process on
 // the host could read them from /proc.
 
+const fs = require('node:fs');
 const { run, writeTemp, writeTempAsync, rmQuiet } = require('./proc');
 const via = require('../storageTargets/via');
+const { sourceOf, localPath, transferTimeout, TooLarge } = require('./source');
 const { encryptArgs, noEncryption } = require('../storageTargets/drivers/smb');
 
 // English, for logs, last_error and API callers; the page has its own text (hint 'smb_no_encryption')
@@ -131,13 +136,16 @@ function parseLs(out) {
   return files;
 }
 
-async function upload(cfg, name, buf) {
-  const local = await writeTempAsync('upload', buf);
+/** Upload the archive (source.js: its file as it is, a Buffer through a temp file) as "<name>.part", then rename. */
+async function upload(cfg, name, body) {
+  const src = sourceOf(body);
+  const local = src.path ? localPath(src.path, 'SMB') : await writeTempAsync('upload', src.buffer);
   try {
     await ensurePath(cfg);
-    await smb(cfg, [...cd(cfg), `put ${q(local)} ${q(name + '.part')}`, `rename ${q(name + '.part')} ${q(name)}`]);
+    await smb(cfg, [...cd(cfg), `put ${q(local)} ${q(name + '.part')}`, `rename ${q(name + '.part')} ${q(name)}`],
+      { timeoutMs: transferTimeout(TIMEOUT_MS, src.size) });
   } finally {
-    rmQuiet(local);
+    if (!src.path) rmQuiet(local);
   }
 }
 
@@ -146,15 +154,19 @@ async function list(cfg) {
   return parseLs(res.stdout);
 }
 
-/** Read one file back (restore test) into a Buffer; nothing on the share changes. */
-async function download(cfg, name) {
-  const local = writeTemp('download', '');
-  try {
-    await smb(cfg, [...cd(cfg), `get ${q(name)} ${q(local)}`]);
-    return await require('node:fs').promises.readFile(local);
-  } finally {
-    rmQuiet(local);
-  }
+/**
+ * Read one file back (restore test) into the local `file` (created here,
+ * 0600; smbclient writes it in chunks); nothing on the share changes.
+ * `size`: what the listing said (the time limit). → bytes. On an error the
+ * caller removes `file`.
+ */
+async function downloadTo(cfg, name, file, ctx, { maxBytes = Infinity, size = 0 } = {}) {
+  const local = localPath(file, 'SMB');
+  await fs.promises.writeFile(local, '', { flag: 'wx', mode: 0o600 });
+  await smb(cfg, [...cd(cfg), `get ${q(name)} ${q(local)}`], { timeoutMs: transferTimeout(TIMEOUT_MS, size) });
+  const bytes = (await fs.promises.stat(local)).size;
+  if (bytes > maxBytes) throw new TooLarge(maxBytes);
+  return bytes;
 }
 
 async function remove(cfg, name) {
@@ -174,4 +186,4 @@ async function test(cfg) {
   }
 }
 
-module.exports = { upload, download, list, remove, test, parseLs, baseArgs, explain, NO_ENCRYPTION_TEXT };
+module.exports = { upload, downloadTo, list, remove, test, parseLs, baseArgs, explain, NO_ENCRYPTION_TEXT };

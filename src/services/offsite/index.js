@@ -371,6 +371,7 @@ function errorHint(text) {
   if (text.includes(trust.UNTRUSTED_TEXT)) return 'cert_untrusted';
   if (text.includes(trust.NAME_TEXT)) return 'cert_name';
   if (text.includes(require('./smb').NO_ENCRYPTION_TEXT)) return 'smb_no_encryption';
+  if (text.includes(NO_SPACE_TEXT)) return 'no_space';
   return null;
 }
 
@@ -415,20 +416,50 @@ function withIncomplete(t) {
   return { ...t, last_incomplete: e && Array.isArray(e.plugins) && e.plugins.length ? e : null };
 }
 
-/** An archive (Buffer) → { data, archive, cleanup } via a temp file: decrypted and read in pieces. */
-async function readArchiveBuffer(buf, passphrase) {
-  if (!gcbk.isGcbk(buf)) throw new gcbk.GcbkError('NOT_GCBK', 'not a GCBK1 file');
+// ── Archive files ──────────────────────────────────────────────────────────
+// An archive is never held in memory: it is written to a file in the backup
+// disk's private incoming folder (backupUpload.incomingDir, 0700; a random
+// name made here, checked to stay inside the folder) and the transports send
+// it from there (source.js); the restore test downloads into such a file.
+// The file is removed when the transfer is done (finally); one left over by a
+// crash is removed on the first use in the next process.
+
+// the text of the error (last_error, logs); the page shows its own words (hint 'no_space')
+const NO_SPACE_TEXT = 'not enough free disk space on this server for the off-site archive';
+let archivesSwept = false;
+
+async function archiveDir() {
   const up = require('../backupUpload');
   const dir = up.incomingDir();
   await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
-  const name = up.newName('verify');
-  const file = up.incomingPath(name);
-  const cleanup = () => up.removeUpload(name);
-  try {
-    await fs.promises.writeFile(file, buf, { mode: 0o600, flag: 'wx' });
-    const r = await up.readUpload(name, passphrase);
-    return { ...r, cleanup };
-  } catch (err) { await cleanup(); throw err; }
+  try { await fs.promises.chmod(dir, 0o700); } catch { /* best effort */ }
+  if (!archivesSwept) {
+    // nothing of this process is in flight yet: an archive there is a leftover
+    archivesSwept = true;
+    try {
+      for (const n of await fs.promises.readdir(dir)) {
+        if (/^[0-9a-f]{24}\.(offsite|verify)(\.plain\.json)?$/.test(n)) await fs.promises.rm(path.join(dir, n), { force: true });
+      }
+    } catch { /* best effort */ }
+  }
+  return dir;
+}
+
+/** The disk is full (a check before, or ENOSPC while writing) → OffsiteError NO_SPACE (507, hint no_space). */
+function noSpace(err) {
+  const mb = (n) => Math.ceil(n / 1048576);
+  const detail = err && Number.isFinite(err.need) && Number.isFinite(err.free) ? `: about ${mb(err.need)} MB needed, ${mb(err.free)} MB free` : '';
+  const e = new OffsiteError('NO_SPACE', NO_SPACE_TEXT + detail, 507);
+  e.hint = 'no_space';
+  return e;
+}
+function isNoSpace(err) { return !!(err && (err.code === 'NO_SPACE' || err.code === 'ENOSPC' || err.code === 'EDQUOT')); }
+
+/** Free space for `bytes` (+ the backup's disk reserve) in the archive folder, else NO_SPACE. */
+async function checkArchiveSpace(dir, bytes) {
+  try { await require('../backup').checkFreeSpace(dir, bytes); } catch (err) {
+    throw isNoSpace(err) ? noSpace(err) : err;
+  }
 }
 
 function getTarget(id) {
@@ -718,7 +749,7 @@ function remoteNameTime(name) {
  * POST /targets/:id/verify — restore test.
  * @returns {Promise<{file,size,created_at,gc_version,include_key,counts,warnings}>}
  * @throws {OffsiteError} NO_REMOTE_BACKUP | PASSPHRASE_NOT_SET | DECRYPT_FAILED
- *                        | CORRUPT | TRANSPORT_FAILED | NOT_FOUND
+ *                        | CORRUPT | TRANSPORT_FAILED | NOT_FOUND | NO_SPACE
  */
 async function verifyTarget(id) {
   const row = getRow(id);
@@ -727,7 +758,7 @@ async function verifyTarget(id) {
     const passphrase = getPassphrase();
     if (!passphrase) throw new OffsiteError('PASSPHRASE_NOT_SET', 'set the off-site passphrase first', 409);
     const { cfg, t, ctx } = transportFor(row);
-    if (typeof t.download !== 'function') throw new OffsiteError('TRANSPORT_FAILED', 'this target type cannot read archives back', 502);
+    if (typeof t.downloadTo !== 'function') throw new OffsiteError('TRANSPORT_FAILED', 'this target type cannot read archives back', 502);
 
     const listed = await withTrust(row, cfg, t, (c) => t.list(c, ctx));
     const files = listed.value
@@ -739,24 +770,36 @@ async function verifyTarget(id) {
       throw new OffsiteError('CORRUPT', `archive is larger than ${Math.round(MAX_VERIFY_BYTES / 1048576)} MB — not read back`, 400);
     }
 
-    const buf = await t.download(listed.cfg, newest.name, ctx);
-    if (!Buffer.isBuffer(buf) || buf.length === 0) throw new OffsiteError('CORRUPT', 'the archive came back empty', 400);
-    if (buf.length > MAX_VERIFY_BYTES) throw new OffsiteError('CORRUPT', 'archive too large', 400);
-
+    // into a file, piece by piece (the archive is never in memory as a whole)
+    const up = require('../backupUpload');
+    const dir = await archiveDir();
+    await checkArchiveSpace(dir, Number(newest.size) || 0);
+    const fileName = up.newName('verify');
+    const file = up.incomingPath(fileName);
+    let size;
     let opened;
-    try {
-      opened = await readArchiveBuffer(buf, passphrase);
-    } catch (err) {
-      if (err instanceof gcbk.GcbkError) {
-        const code = err.code === 'DECRYPT_FAILED' ? 'DECRYPT_FAILED' : 'CORRUPT';
-        throw new OffsiteError(code, err.message, 400);
-      }
-      throw err;
-    }
-    const { archive } = opened;
     let counts;
     let incomplete;
     try {
+      try {
+        size = await t.downloadTo(listed.cfg, newest.name, file, ctx, { maxBytes: MAX_VERIFY_BYTES, size: Number(newest.size) || 0 });
+      } catch (err) {
+        if (err && err.code === 'TOO_LARGE') throw new OffsiteError('CORRUPT', 'archive too large', 400);
+        if (isNoSpace(err)) throw noSpace(err);
+        throw err;
+      }
+      if (!size) throw new OffsiteError('CORRUPT', 'the archive came back empty', 400);
+      try {
+        if (!(await gcbk.isGcbkFile(file))) throw new gcbk.GcbkError('NOT_GCBK', 'not a GCBK1 file');
+        opened = await up.readUpload(fileName, passphrase);
+      } catch (err) {
+        if (err instanceof gcbk.GcbkError) {
+          const code = err.code === 'DECRYPT_FAILED' ? 'DECRYPT_FAILED' : 'CORRUPT';
+          throw new OffsiteError(code, err.message, 400);
+        }
+        if (isNoSpace(err)) throw noSpace(err);
+        throw err;
+      }
       const data = opened.data;
       const errors = require('../backup').validateBackup(data);
       if (errors.length > 0) {
@@ -767,7 +810,8 @@ async function verifyTarget(id) {
         routes: summary.routes, peers: summary.peers, users: summary.users, settings: summary.settings,
       };
       incomplete = summary.plugins_incomplete || [];
-    } finally { await opened.cleanup(); }
+    } finally { await up.removeUpload(fileName); }
+    const { archive } = opened;
 
     const includeKey = !!archive.payload.encryption_key;
     const gcVersion = archive.header.gc_version || archive.payload.gc_version || null;
@@ -784,7 +828,7 @@ async function verifyTarget(id) {
 
     const result = {
       file: newest.name,
-      size: buf.length,
+      size,
       created_at: createdAt,
       gc_version: gcVersion,
       include_key: includeKey,
@@ -793,7 +837,7 @@ async function verifyTarget(id) {
       plugins_incomplete: incomplete,
     };
     recordVerify(row.id, warnings.length ? 'warning' : 'ok', result);
-    logger.info({ target: row.id, type: row.type, file: newest.name, size: buf.length, warnings: warnings.length },
+    logger.info({ target: row.id, type: row.type, file: newest.name, size, warnings: warnings.length },
       'Off-site restore test passed');
     publish(row.id, 'verified', { file: newest.name, verify_status: warnings.length ? 'warning' : 'ok' });
     return result;
@@ -833,8 +877,8 @@ async function applyRetention(row, cfg, t, ctx) {
   return doomed.length;
 }
 
-/** Upload one archive buffer to one target (serialised per target). */
-async function uploadTo(id, name, buf) {
+/** Upload one archive (buildArchive's file, source.js) to one target (serialised per target). */
+async function uploadTo(id, name, archive) {
   const prevRun = running.get(id) || Promise.resolve();
   const job = prevRun.catch(() => { /* previous upload's failure was already reported to its own caller; only serialisation matters here */ }).then(async () => {
     const row = getRow(id);
@@ -842,14 +886,15 @@ async function uploadTo(id, name, buf) {
     publish(row.id, 'running', { file: name });
     try {
       const { cfg: stored, t, ctx } = transportFor(row);
-      const up = await withTrust(row, stored, t, (c) => t.upload(c, name, buf, ctx));
+      // a fresh read of the file per attempt (withTrust may run it twice)
+      const up = await withTrust(row, stored, t, (c) => t.upload(c, name, archive, ctx));
       const cfg = up.cfg;
       let deleted = 0;
       try { deleted = await applyRetention(row, cfg, t, ctx); }
       catch (err) { logger.warn({ target: row.id, err: shortError(err) }, 'Off-site retention failed (upload itself succeeded)'); }
       recordResult(row.id, 'ok', null);
       publish(row.id, 'ok', { file: name });
-      logger.info({ target: row.id, type: row.type, file: name, size: buf.length, deleted }, 'Off-site backup uploaded');
+      logger.info({ target: row.id, type: row.type, file: name, size: archive.size, deleted }, 'Off-site backup uploaded');
       return { status: 'ok', file: name, deleted, ...(up.trusted ? { trusted: up.trusted } : {}) };
     } catch (err) {
       const msg = shortError(err);
@@ -874,18 +919,38 @@ function remoteNameFor(localFile) {
   return m ? `gatecontrol-${m[1]}.gcbk` : null;
 }
 
-/** Encrypt a local JSON backup file into a GCBK1 buffer. */
-async function buildArchive(localFile) {
+/**
+ * Encrypt a local JSON backup file into a GCBK1 archive FILE (see "Archive
+ * files" above), streamed from the backup file into the archive file — no
+ * JSON.parse/stringify, never the archive in memory. `s3`: also the SHA-256
+ * of its S3 parts (an S3 target signs them; computed while writing).
+ * → { path, size, partSize, partHashes, cleanup () } — call cleanup() when done.
+ * Throws OffsiteError PASSPHRASE_NOT_SET, NO_SPACE (hint no_space).
+ */
+async function buildArchive(localFile, { s3 = false } = {}) {
   const passphrase = getPassphrase();
   if (!passphrase) throw new OffsiteError('PASSPHRASE_NOT_SET', 'set the off-site passphrase first', 409);
   const { include_key: includeKey } = getOffsiteSettings();
   const config = require('../../../config/default');
-  // streamed from the file (no JSON.parse/stringify of a few hundred MB on the main thread)
-  return gcbk.encryptBackupFile(localFile, {
-    passphrase,
-    encryptionKey: includeKey ? config.encryption.key : undefined,
-    gcVersion: require('../../../package.json').version,
-  });
+  const up = require('../backupUpload');
+  const dir = await archiveDir();
+  // gzip'd JSON: at most about as large as the backup file (base64 plugin data shrinks to ~3/4)
+  const { size: plain } = await fs.promises.stat(localFile);
+  await checkArchiveSpace(dir, Math.ceil(plain * 1.01) + 64 * 1024);
+  const file = up.incomingPath(up.newName('offsite'));
+  const cleanup = () => fs.promises.rm(file, { force: true }).catch((err) => logger.warn({ err: shortError(err) }, 'Off-site: archive file not removed'));
+  try {
+    const r = await gcbk.writeBackupArchive(localFile, file, {
+      passphrase,
+      encryptionKey: includeKey ? config.encryption.key : undefined,
+      gcVersion: require('../../../package.json').version,
+      partSize: s3 ? require('./s3')._limits.part : null,
+    });
+    return { path: file, size: r.size, partSize: r.partSize, partHashes: r.partHashes, cleanup };
+  } catch (err) {
+    await cleanup();
+    throw isNoSpace(err) ? noSpace(err) : err;
+  }
 }
 
 function hasLicense() {
@@ -897,25 +962,27 @@ function hasLicense() {
  * targets. Never throws (logged + recorded per target).
  */
 async function uploadAfterBackup(localFile) {
-  const targets = getDb().prepare('SELECT id FROM backup_targets WHERE enabled = 1 ORDER BY id').all();
+  const targets = getDb().prepare('SELECT id, type FROM backup_targets WHERE enabled = 1 ORDER BY id').all();
   if (targets.length === 0) return { uploaded: 0, failed: 0, skipped: 'no_targets' };
   if (!hasLicense()) return { uploaded: 0, failed: 0, skipped: 'unlicensed' };
   const name = remoteNameFor(localFile);
   if (!name) return { uploaded: 0, failed: 0, skipped: 'bad_name' };
-  let buf;
+  let archive;
   try {
-    buf = await buildArchive(localFile);
+    archive = await buildArchive(localFile, { s3: targets.some((t) => t.type === 's3') });
   } catch (err) {
     const msg = shortError(err);
-    for (const t of targets) { recordResult(t.id, 'failed', msg); publish(t.id, 'failed', { error: msg }); }
+    for (const t of targets) { recordResult(t.id, 'failed', msg); publish(t.id, 'failed', { error: msg, ...(err.hint ? { hint: err.hint } : {}) }); }
     logger.warn({ err: msg }, 'Off-site backup skipped');
     return { uploaded: 0, failed: targets.length, skipped: null };
   }
   let uploaded = 0;
   let failed = 0;
-  for (const t of targets) {
-    try { await uploadTo(t.id, name, buf); uploaded++; await noteIncomplete(t.id, localFile); } catch { failed++; }
-  }
+  try {
+    for (const t of targets) {
+      try { await uploadTo(t.id, name, archive); uploaded++; await noteIncomplete(t.id, localFile); } catch { failed++; }
+    }
+  } finally { await archive.cleanup(); }
   return { uploaded, failed, skipped: null };
 }
 
@@ -938,8 +1005,9 @@ async function runTargetNow(id) {
   }
   if (files.length === 0) throw new OffsiteError('NO_LOCAL_BACKUP', 'no local backup available', 409);
   const localFile = path.join(autobackup.BACKUP_DIR, files[0].filename);
-  const buf = await buildArchive(localFile);
-  const r = await uploadTo(row.id, remoteNameFor(localFile), buf);
+  const archive = await buildArchive(localFile, { s3: row.type === 's3' });
+  let r;
+  try { r = await uploadTo(row.id, remoteNameFor(localFile), archive); } finally { await archive.cleanup(); }
   return { ...r, plugins_incomplete: await noteIncomplete(row.id, localFile) };
 }
 

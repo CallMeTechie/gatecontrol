@@ -9,6 +9,8 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const crypto = require('node:crypto');
 const s3 = require('../src/services/offsite/s3');
+const gcbk = require('../src/services/offsite/gcbk');
+const { archiveFile, downloadBuffer } = require('./helpers/offsiteFiles');
 
 const EMPTY = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 const sigOf = (h) => /Signature=([0-9a-f]{64})$/.exec(h.authorization)[1];
@@ -84,6 +86,9 @@ describe('fake S3 server', () => {
   const REGION = 'eu-test-1';
   const objects = new Map(); // key → Buffer
   const seen = [];
+  const uploads = new Map(); // UploadId → { key, parts: Map(n → { etag, body }) }
+  const fault = { part: 0, complete: false, aborted: [] };
+  const bodies = []; // { method, url, length, chunked, got } of every request with a body
   let server;
   let cfg;
 
@@ -111,6 +116,7 @@ describe('fake S3 server', () => {
       req.on('end', () => {
         const body = Buffer.concat(chunks);
         seen.push(`${req.method} ${req.url}`);
+        if (body.length) bodies.push({ method: req.method, url: req.url, length: req.headers['content-length'], chunked: !!req.headers['transfer-encoding'], got: body.length });
         if (!verify(req, body)) {
           res.writeHead(403, { 'content-type': 'application/xml' });
           res.end('<Error><Code>SignatureDoesNotMatch</Code><Message>bad sig</Message></Error>');
@@ -121,8 +127,39 @@ describe('fake S3 server', () => {
         const bucket = parts.shift();
         if (bucket !== 'bk') { res.writeHead(404); res.end('<Error><Code>NoSuchBucket</Code></Error>'); return; }
         const key = parts.join('/');
+        const uploadId = url.searchParams.get('uploadId');
+        if (req.method === 'POST' && url.searchParams.has('uploads')) {
+          const id = crypto.randomBytes(8).toString('hex');
+          uploads.set(id, { key, parts: new Map() });
+          res.writeHead(200, { 'content-type': 'application/xml' });
+          res.end(`<?xml version="1.0"?><InitiateMultipartUploadResult><Bucket>bk</Bucket><Key>${xml(key)}</Key><UploadId>${id}</UploadId></InitiateMultipartUploadResult>`);
+          return;
+        }
+        if (uploadId) {
+          const u = uploads.get(uploadId);
+          if (!u || u.key !== key) { res.writeHead(404); res.end('<Error><Code>NoSuchUpload</Code></Error>'); return; }
+          if (req.method === 'PUT') {
+            const n = Number(url.searchParams.get('partNumber'));
+            if (fault.part === n) { res.writeHead(500); res.end('<Error><Code>InternalError</Code><Message>disk</Message></Error>'); return; }
+            const etag = `"${crypto.createHash('md5').update(body).digest('hex')}"`;
+            u.parts.set(n, { etag, body });
+            res.writeHead(200, { etag }); res.end(); return;
+          }
+          if (req.method === 'POST') {
+            const listed = [...body.toString('utf8').matchAll(/<Part><PartNumber>(\d+)<\/PartNumber><ETag>([^<]+)<\/ETag><\/Part>/g)]
+              .map((m) => ({ n: Number(m[1]), etag: m[2].replace(/&quot;/g, '"') }));
+            if (fault.complete || !listed.length || listed.some((p) => !u.parts.has(p.n) || u.parts.get(p.n).etag !== p.etag)) {
+              res.writeHead(200, { 'content-type': 'application/xml' }); res.end('<?xml version="1.0"?><Error><Code>InvalidPart</Code><Message>late</Message></Error>'); return;
+            }
+            objects.set(key, Buffer.concat(listed.map((p) => u.parts.get(p.n).body)));
+            uploads.delete(uploadId);
+            res.writeHead(200, { 'content-type': 'application/xml' }); res.end('<CompleteMultipartUploadResult><ETag>"x-2"</ETag></CompleteMultipartUploadResult>'); return;
+          }
+          if (req.method === 'DELETE') { uploads.delete(uploadId); fault.aborted.push(uploadId); res.writeHead(204); res.end(); return; }
+        }
         if (req.method === 'PUT') { objects.set(key, body); res.writeHead(200); res.end(); return; }
         if (req.method === 'DELETE') { objects.delete(key); res.writeHead(204); res.end(); return; }
+        if (req.method === 'GET' && key && objects.has(key)) { res.writeHead(200); res.end(objects.get(key)); return; }
         if (req.method === 'GET' && !key && url.searchParams.get('list-type') === '2') {
           const prefix = url.searchParams.get('prefix') || '';
           const all = [...objects.keys()].filter((k) => k.startsWith(prefix)).sort();
@@ -176,6 +213,91 @@ describe('fake S3 server', () => {
   it('a wrong secret surfaces the S3 error code', async () => {
     await assert.rejects(s3.upload({ ...cfg, secret_access_key: 'nope' }, 'x.gcbk', Buffer.from('x')),
       (e) => e.code === 'TRANSPORT' && /403 SignatureDoesNotMatch: bad sig/.test(e.message));
+  });
+
+  it('an archive file up to the part size: one PUT streamed with Content-Length, signed with its SHA-256 (computed while writing, or read from the file)', async () => {
+    const data = crypto.randomBytes(300 * 1024 + 5);
+    bodies.length = 0;
+    await s3.upload(cfg, 'file-1.gcbk', archiveFile(data));
+    // the hash gcbk.writeBackupArchive computed (one part: the whole file)
+    const hash = crypto.createHash('sha256').update(data).digest('hex');
+    await s3.upload(cfg, 'file-2.gcbk', archiveFile(data, { partSize: s3._limits.part, partHashes: [hash] }));
+    assert.ok(objects.get('gc/backups/file-1.gcbk').equals(data));
+    assert.ok(objects.get('gc/backups/file-2.gcbk').equals(data));
+    assert.equal(bodies.length, 2);
+    assert.ok(bodies.every((b) => b.method === 'PUT' && !b.chunked && Number(b.length) === data.length));
+    // a wrong precomputed hash is what the server refuses: the hash really is the one sent
+    await assert.rejects(s3.upload(cfg, 'file-3.gcbk', archiveFile(data, { partSize: s3._limits.part, partHashes: ['0'.repeat(64)] })), /403 SignatureDoesNotMatch/);
+    assert.ok((await downloadBuffer(s3, cfg, 'file-1.gcbk')).equals(data));
+  });
+
+  describe('multipart (the part size lowered)', () => {
+    const PART = 64 * 1024;
+    let saved;
+    before(() => { saved = s3._limits.part; s3._limits.part = PART; });
+    after(() => { s3._limits.part = saved; });
+
+    it('above the part size: parts read from the file one by one, each signed with its own SHA-256, then completed', async () => {
+      const data = crypto.randomBytes(3 * PART + 17); // four parts, the last one short
+      bodies.length = 0;
+      seen.length = 0;
+      await s3.upload(cfg, 'big.gcbk', archiveFile(data));
+      assert.ok(objects.get('gc/backups/big.gcbk').equals(data));
+      const partPuts = bodies.filter((b) => b.method === 'PUT' && /partNumber=/.test(b.url));
+      assert.deepEqual(partPuts.map((b) => b.got), [PART, PART, PART, 17]);
+      assert.ok(partPuts.every((b) => !b.chunked && Number(b.length) === b.got));
+      assert.ok(seen.some((x) => /^POST .*\?uploads=$/.test(x)), 'initiated');
+      assert.equal(uploads.size, 0, 'completed');
+    });
+
+    it('with the part hashes gcbk.writeBackupArchive computed while writing the archive', async () => {
+      const dir = require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'gc-s3-parts-'));
+      try {
+        const json = require('node:path').join(dir, 'b.json');
+        require('node:fs').writeFileSync(json, JSON.stringify({ version: 1, data: { blob: crypto.randomBytes(200 * 1024).toString('base64') } }));
+        const out = require('node:path').join(dir, 'a.gcbk');
+        const r = await gcbk.writeBackupArchive(json, out, { passphrase: 'a long passphrase', kdf: { N: 1024, r: 8, p: 1 }, partSize: PART });
+        assert.ok(r.size > 3 * PART);
+        assert.equal(r.partHashes.length, Math.ceil(r.size / PART));
+        bodies.length = 0;
+        await s3.upload(cfg, 'from-archive.gcbk', { path: out, ...r });
+        assert.ok(objects.get('gc/backups/from-archive.gcbk').equals(require('node:fs').readFileSync(out)));
+        assert.equal(bodies.filter((b) => /partNumber=/.test(b.url)).length, r.partHashes.length);
+      } finally { require('node:fs').rmSync(dir, { recursive: true, force: true }); }
+    });
+
+    it('a failing part: the multipart upload is aborted, the error says what S3 said, no object', async () => {
+      fault.part = 2;
+      fault.aborted.length = 0;
+      try {
+        await assert.rejects(s3.upload(cfg, 'broken.gcbk', archiveFile(crypto.randomBytes(2 * PART + 1))),
+          (e) => e.code === 'TRANSPORT' && /S3 PUT 500 InternalError: disk/.test(e.message));
+      } finally { fault.part = 0; }
+      assert.equal(fault.aborted.length, 1);
+      assert.equal(uploads.size, 0);
+      assert.equal(objects.has('gc/backups/broken.gcbk'), false);
+    });
+
+    it('completing fails late (200 with an <Error> body): aborted too', async () => {
+      fault.complete = true;
+      fault.aborted.length = 0;
+      try {
+        await assert.rejects(s3.upload(cfg, 'late.gcbk', archiveFile(crypto.randomBytes(PART + 1))), /InvalidPart/);
+      } finally { fault.complete = false; }
+      assert.equal(fault.aborted.length, 1);
+      assert.equal(objects.has('gc/backups/late.gcbk'), false);
+    });
+
+    it('a Buffer (the write probe) still goes up as one PUT', async () => {
+      await s3.upload(cfg, 'probe.bin', crypto.randomBytes(PART * 2));
+      assert.equal(objects.get('gc/backups/probe.bin').length, PART * 2);
+    });
+  });
+
+  it('downloadTo: into a file, limited', async () => {
+    objects.set('gc/backups/dl.gcbk', crypto.randomBytes(5000));
+    assert.ok((await downloadBuffer(s3, cfg, 'dl.gcbk')).equals(objects.get('gc/backups/dl.gcbk')));
+    await assert.rejects(downloadBuffer(s3, cfg, 'dl.gcbk', undefined, { maxBytes: 4000 }), { code: 'TOO_LARGE' });
   });
 
   it('unreachable endpoint → TRANSPORT error', async () => {

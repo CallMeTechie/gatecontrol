@@ -245,6 +245,10 @@ S3 oder WebDAV hoch. Steht die NAS zu Hause hinter einem Gateway, wähle bei
 beim Speicherziel für Drive; „Speicherziel von Drive/Plugins übernehmen“
 trägt dessen Einstellungen ein. Siehe
 [FAQ: Offsite-Backup auf eine NAS hinter dem VPN](07-faq.md#offsite-backup-auf-eine-nas-hinter-dem-vpn).
+Die verschlüsselte Kopie liegt während des Hochladens kurz auf der Platte
+des Servers neben den Backups (nie als Ganzes im Arbeitsspeicher, ein kleiner
+VPS reicht also) – plane Platz für etwa ein Backup mehr ein. Fehlt er, lädt
+GateControl nichts hoch und sagt es beim Ziel.
 
 Die Verbindung ist immer verschlüsselt, ohne dass du eine Zertifikatsdatei
 brauchst:

@@ -12,11 +12,15 @@
 // <dataDir>/offsite/known_hosts; a changed key fails with a clear message and
 // is reset when the target's host/port changes or the target is deleted.
 // Uploads go to "<name>.part" and are renamed afterwards, so an interrupted
-// upload never counts as a backup for the retention.
+// upload never counts as a backup for the retention. The archive goes up from
+// its file (source.js): `put` streams it — nothing of it passes through
+// GateControl's memory; the time limit grows with its size.
 
+const fs = require('node:fs');
 const { run, writeTemp, writeTempAsync, rmQuiet, workDir } = require('./proc');
 const path = require('node:path');
 const via = require('../storageTargets/via');
+const { sourceOf, localPath, transferTimeout, TooLarge } = require('./source');
 
 const TIMEOUT_MS = 180 * 1000;
 
@@ -124,17 +128,19 @@ function parseLs(out) {
   return files;
 }
 
-async function upload(cfg, name, buf, ctx) {
-  const local = await writeTempAsync('upload', buf);
+/** Upload the archive (source.js: its file as it is, a Buffer through a temp file) as "<name>.part", then rename. */
+async function upload(cfg, name, body, ctx) {
+  const src = sourceOf(body);
+  const local = src.path ? localPath(src.path, 'SFTP') : await writeTempAsync('upload', src.buffer);
   try {
     await batch(cfg, ctx, [
       ...cdScript(cfg.path),
       `-rm ${q(name + '.part')}`,
       `put ${q(local)} ${q(name + '.part')}`,
       `rename ${q(name + '.part')} ${q(name)}`,
-    ]);
+    ], transferTimeout(TIMEOUT_MS, src.size));
   } finally {
-    rmQuiet(local);
+    if (!src.path) rmQuiet(local);
   }
 }
 
@@ -143,15 +149,19 @@ async function list(cfg, ctx) {
   return parseLs(out);
 }
 
-/** Read one file back (restore test) into a Buffer; the remote side is read-only here. */
-async function download(cfg, name, ctx) {
-  const local = writeTemp('download', '');
-  try {
-    await batch(cfg, ctx, [...cdScript(cfg.path), `get ${q(name)} ${q(local)}`]);
-    return await require('node:fs').promises.readFile(local);
-  } finally {
-    rmQuiet(local);
-  }
+/**
+ * Read one file back (restore test) into the local `file` (created here,
+ * 0600; sftp writes it in chunks); the remote side is read-only here.
+ * `size`: what the listing said (the time limit). → bytes. On an error the
+ * caller removes `file`.
+ */
+async function downloadTo(cfg, name, file, ctx, { maxBytes = Infinity, size = 0 } = {}) {
+  const local = localPath(file, 'SFTP');
+  await fs.promises.writeFile(local, '', { flag: 'wx', mode: 0o600 });
+  await batch(cfg, ctx, [...cdScript(cfg.path), `get ${q(name)} ${q(local)}`], transferTimeout(TIMEOUT_MS, size));
+  const bytes = (await fs.promises.stat(local)).size;
+  if (bytes > maxBytes) throw new TooLarge(maxBytes);
+  return bytes;
 }
 
 async function remove(cfg, name, ctx) {
@@ -191,4 +201,4 @@ async function forgetHost(cfg) {
   } catch { /* no ssh-keygen / no file — nothing to forget */ }
 }
 
-module.exports = { upload, download, list, remove, test, forgetHost, parseLs, cdScript, sshOptions };
+module.exports = { upload, downloadTo, list, remove, test, forgetHost, parseLs, cdScript, sshOptions };

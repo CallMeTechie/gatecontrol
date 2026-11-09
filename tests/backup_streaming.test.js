@@ -204,6 +204,56 @@ describe('backup with several MB of plugin data', () => {
     fs.rmSync(bad);
   });
 
+  it('the off-site archive written into a FILE (writeBackupArchive): size and part hashes counted while writing, decryptable piece by piece', async () => {
+    const gcbk = require('../src/services/offsite/gcbk');
+    const kdf = { N: 1024, r: 8, p: 1 };
+    const passphrase = 'correct horse battery';
+    const dir = path.dirname(file);
+    const out = path.join(dir, 'archive.gcbk');
+    const partSize = 256 * 1024;
+    const { result: r, maxGap } = await whileTicking(() => gcbk.writeBackupArchive(file, out, { passphrase, kdf, gcVersion: '9.9.9', partSize }));
+    assert.ok(maxGap < MAX_TICK_GAP_MS, `max timer gap ${maxGap} ms`);
+    // one open file for every look at it (no check-then-use on the path)
+    const fd = fs.openSync(out, 'r');
+    const content = () => { const b = Buffer.alloc(fs.fstatSync(fd).size); fs.readSync(fd, b, 0, b.length, 0); return b; };
+    const bytes = content();
+    assert.equal(r.size, bytes.length);
+    assert.equal(r.partSize, partSize);
+    assert.equal((fs.fstatSync(fd).mode & 0o777).toString(8), '600');
+    assert.equal(r.partHashes.length, Math.ceil(bytes.length / partSize));
+    r.partHashes.forEach((h, i) => assert.equal(h, crypto.createHash('sha256').update(bytes.subarray(i * partSize, (i + 1) * partSize)).digest('hex'), `part ${i}`));
+    const plain = path.join(dir, 'archive.plain.json');
+    await gcbk.decryptBackupFileTo(out, passphrase, plain);
+    const payload = gcbk.checkPayload(JSON.parse(fs.readFileSync(plain, 'utf8')));
+    assert.deepEqual(payload.backup, parsed);
+    fs.rmSync(plain);
+    // without partSize: no hashes
+    const out2 = path.join(dir, 'archive2.gcbk');
+    const r2 = await gcbk.writeBackupArchive(file, out2, { passphrase, kdf });
+    assert.equal(r2.partHashes, null);
+    assert.equal(r2.size, fs.readFileSync(out2).length);
+    fs.rmSync(out2);
+    // an existing file is never overwritten — nor removed
+    await assert.rejects(gcbk.writeBackupArchive(file, out, { passphrase, kdf }), { code: 'EEXIST' });
+    assert.ok(content().equals(bytes));
+    fs.closeSync(fd);
+    fs.rmSync(out);
+    // a failure while writing (the disk refuses after the first bytes): nothing half-written stays
+    const realCreate = fs.createWriteStream;
+    const out3 = path.join(dir, 'archive3.gcbk');
+    fs.createWriteStream = (p, o) => {
+      const w = realCreate(p, o);
+      let n = 0;
+      const write = w._write.bind(w);
+      w._write = (chunk, enc, cb) => { n += chunk.length; if (n > 64 * 1024) cb(Object.assign(new Error('no space left on device'), { code: 'ENOSPC' })); else write(chunk, enc, cb); };
+      return w;
+    };
+    try {
+      await assert.rejects(gcbk.writeBackupArchive(file, out3, { passphrase, kdf }), { code: 'ENOSPC' });
+    } finally { fs.createWriteStream = realCreate; }
+    assert.equal(fs.existsSync(out3), false);
+  });
+
   it('without a usable temp folder the plugin database is still in the backup (one-piece copy)', async () => {
     const prev = process.env.TMPDIR;
     process.env.TMPDIR = path.join(path.dirname(file), 'missing', 'tmp');

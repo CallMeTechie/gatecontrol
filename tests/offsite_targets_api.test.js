@@ -45,12 +45,15 @@ function startDav() {
         res.writeHead(207); res.end(`<d:multistatus xmlns:d="DAV:">${items.join('')}</d:multistatus>`); return;
       }
       if (req.method === 'MKCOL') { cols.add(p); res.writeHead(201); res.end(); return; }
-      if (req.method === 'PUT') { files.set(p, Buffer.concat(chunks)); res.writeHead(201); res.end(); return; }
+      if (req.method === 'PUT') {
+        dav.puts.push({ length: req.headers['content-length'], chunked: !!req.headers['transfer-encoding'], got: Buffer.concat(chunks).length });
+        files.set(p, Buffer.concat(chunks)); res.writeHead(201); res.end(); return;
+      }
       if (req.method === 'DELETE') { files.delete(p); res.writeHead(204); res.end(); return; }
       res.writeHead(405); res.end();
     });
   });
-  dav = { files, cols, failPut: false };
+  dav = { files, cols, failPut: false, puts: [] };
   return new Promise((r) => server.listen(0, '127.0.0.1', () => { davBase = `http://127.0.0.1:${server.address().port}`; r(); }));
 }
 
@@ -269,6 +272,63 @@ describe('targets CRUD + validation', () => {
         assert.ok(!t.last_error.includes('davpass'));
         assert.equal(events[events.length - 1].status, 'failed');
       } finally { dav.failPut = false; }
+    });
+
+    // the archive is a file on the backup disk (never in memory), gone after the upload
+    const archiveFiles = () => {
+      const d = path.join(backupDir, '.incoming');
+      return fs.existsSync(d) ? fs.readdirSync(d).filter((n) => /\.(offsite|verify)/.test(n)) : [];
+    };
+
+    it('run: the archive goes up from a file with Content-Length (not chunked); the file is removed afterwards, also after a failure', async () => {
+      dav.puts.length = 0;
+      const res = await agentReq('post', `${API}/targets/${davId}/run`, {});
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      const put = dav.puts.find((x) => x.got > 100);
+      assert.ok(put, 'the archive arrived');
+      assert.equal(put.chunked, false);
+      assert.equal(Number(put.length), put.got);
+      assert.deepEqual(archiveFiles(), []);
+      dav.failPut = true;
+      try { assert.equal((await agentReq('post', `${API}/targets/${davId}/run`, {})).status, 502); } finally { dav.failPut = false; }
+      assert.deepEqual(archiveFiles(), []);
+    });
+
+    it('a leftover archive of a crashed run is removed; a foreign file in the folder is not', async () => {
+      // the sweep runs on the first use in a process — here: a fresh copy of the module state
+      const d = path.join(backupDir, '.incoming');
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(path.join(d, 'aaaaaaaaaaaaaaaaaaaaaaaa.offsite'), 'old');
+      fs.writeFileSync(path.join(d, 'bbbbbbbbbbbbbbbbbbbbbbbb.upload'), 'a restore upload in flight');
+      const key = require.resolve('../src/services/offsite');
+      const saved = require.cache[key];
+      delete require.cache[key];
+      try {
+        await require('../src/services/offsite').buildArchive(path.join(backupDir, require('../src/services/autobackup').listBackupFiles()[0].filename))
+          .then((a) => a.cleanup());
+      } finally { require.cache[key] = saved; }
+      assert.deepEqual(fs.readdirSync(d).sort(), ['bbbbbbbbbbbbbbbbbbbbbbbb.upload']);
+      fs.rmSync(path.join(d, 'bbbbbbbbbbbbbbbbbbbbbbbb.upload'));
+    });
+
+    it('not enough free disk space for the archive: 507 NO_SPACE with the hint, recorded per target after a backup', async () => {
+      const backup = require('../src/services/backup');
+      const orig = backup.checkFreeSpace;
+      backup.checkFreeSpace = async () => { throw Object.assign(new Error('not enough free disk space for the backup'), { code: 'NO_SPACE', need: 300 * 1048576, free: 20 * 1048576 }); };
+      try {
+        const res = await agentReq('post', `${API}/targets/${davId}/run`, {});
+        assert.equal(res.status, 507);
+        assert.equal(res.body.code, 'NO_SPACE');
+        assert.equal(res.body.hint, 'no_space');
+        assert.match(res.body.error, /about 300 MB needed, 20 MB free/);
+        const autobackup = require('../src/services/autobackup');
+        const r = await require('../src/services/offsite').uploadAfterBackup(path.join(autobackup.BACKUP_DIR, autobackup.listBackupFiles()[0].filename));
+        assert.deepEqual(r, { uploaded: 0, failed: 1, skipped: null });
+        const t = (await getAgent().get(`${API}/targets`)).body.targets.find((x) => x.id === davId);
+        assert.equal(t.last_status, 'failed');
+        assert.equal(t.last_error_hint, 'no_space');
+      } finally { backup.checkFreeSpace = orig; }
+      assert.deepEqual(archiveFiles(), []);
     });
 
     it('test with wrong credentials → 502 with detail', async () => {
