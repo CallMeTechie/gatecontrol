@@ -197,10 +197,12 @@
     const total = count(o.total);
     const delivered = count(o.delivered);
     const read = count(o.read);
+    // read elsewhere before it reached the device: not delivered, but nothing is missing either
+    const elsewhere = count(o.elsewhere);
     if (bool(o.silent)) return { key: 'notify.status.silent', params: {}, tone: 'muted' };
     if (!total) return { key: null, text: '–', params: {}, tone: 'muted' };
     if (read >= total) return { key: 'notify.status.read', params: { read, total }, tone: 'good' };
-    return { key: 'notify.status.delivered', params: { delivered, total }, tone: delivered >= total ? 'good' : 'warn' };
+    return { key: 'notify.status.delivered', params: { delivered, total }, tone: delivered + elsewhere >= total ? 'good' : 'warn' };
   }
   /** Status column of the history (ok / waiting / partial). */
   function histStatusOf(item) {
@@ -208,14 +210,26 @@
     const total = count(o.total);
     const delivered = count(o.delivered);
     const read = count(o.read);
-    const open = Math.max(0, total - delivered);
+    const elsewhere = count(o.elsewhere);
+    const open = Math.max(0, total - delivered - elsewhere);
     if (!total) return bool(o.silent) ? { key: 'notify.status.silent', params: {}, tone: 'muted' } : { key: null, text: '–', params: {}, tone: 'muted' };
     const status = ['ok', 'partial', 'waiting'].indexOf(o.status) >= 0 ? o.status : (open ? 'waiting' : 'ok');
     if (status === 'partial' && open) return { key: 'notify.hist.status_partial', params: { delivered, total, n: open }, tone: 'crit' };
     if (status === 'waiting' && open) return { key: 'notify.hist.status_waiting', params: { delivered, total, n: open }, tone: 'warn' };
     if (read >= total) return { key: 'notify.status.read', params: { read, total }, tone: 'good' };
+    if (elsewhere) return { key: 'notify.hist.status_elsewhere', params: { delivered, total, n: elsewhere }, tone: 'good' };
     return { key: 'notify.hist.status_ok', params: { delivered, total }, tone: 'good' };
   }
+
+  /** Zustellprotokoll: marked read because the person read it on another device or in the portal. */
+  function readElsewhere(dv) { return isObj(dv) && !!dv.read_at && ['device', 'portal', 'elsewhere'].indexOf(dv.read_via) >= 0; }
+  /** The state shown for a delivery: "Anderswo gelesen" apart from "Gelesen". */
+  function deliveryState(dv) {
+    const s = isObj(dv) ? str(dv.state) : '';
+    return s === 'read' && readElsewhere(dv) ? 'read_elsewhere' : s;
+  }
+  /** Text key of the read part of a delivery line ("geöffnet …", "auf anderem Gerät gelesen …"). */
+  function readKey(dv) { return readElsewhere(dv) ? 'notify.proto.read_' + dv.read_via : 'notify.proto.read_at'; }
 
   /** Seconds as a duration key: {key, params} for the "seit …" texts. */
   function durationOf(ms) {
@@ -342,6 +356,7 @@
     TABS, PRIORITIES, GROUPS, SOURCES, FILTERS, DEVICE_STATES, RULE_FIELDS, SETTINGS_FIELDS, TTL_CHOICES, HISTORY_LIMIT,
     GROUP_SOURCE, fieldCodes, emailLocked, norm, parseHash, hashFor, prioOf, prioTone, idList, normRecipients, sameRecipients, hasRecipient, normRule, copyRule,
     ruleDiff, ruleMatches, groupRules, ruleLocked, recipientParts, statusOf, histStatusOf, durationOf, spanOf, choicesWith,
+    readElsewhere, deliveryState, readKey,
     latencyNumber, reachOf, noPush, ttlChoices, sendBody, sourceKind, historyQuery, normSettings, settingsDiff, rangeError,
   };
   if (!win || !win.document) return pure;
@@ -1463,6 +1478,7 @@
     const btn = was ? $('nc-hist-body').querySelector('button[data-id="' + cssEsc(was) + '"]') : null;
     if (btn) btn.focus();
   }
+  function readText(dv) { return T(readKey(dv), { time: fmtTime(dv.read_at, true) }); }
   function deliveryLine(dv) {
     const parts = [];
     if (dv.delivered_at) {
@@ -1472,14 +1488,17 @@
       else if (dv.latency_ms != null) s += ' (' + latencyText(dv.latency_ms) + ')';
       else if (via) s += ' (' + via + ')';
       parts.push(s);
-      parts.push(dv.read_at ? T('notify.proto.read_at', { time: fmtTime(dv.read_at, true) }) : T('notify.proto.not_read'));
+      parts.push(dv.read_at ? readText(dv) : T('notify.proto.not_read'));
+    } else if (readElsewhere(dv)) {
+      // never reached this device: it is not sent any more either
+      parts.push(T('notify.proto.not_delivered'), readText(dv));
     } else if (dv.queued_at) {
       parts.push(T('notify.proto.queued_at', { time: fmtWhen(dv.queued_at, true) }));
     }
     if (dv.action) parts.push(T('notify.proto.action', { name: str(dv.action) }));
     return parts.join(' · ');
   }
-  function stateTone(s) { return { read: 'good', delivered: 'info', sent: 'info', queued: 'warn', dismissed: 'muted', expired: 'crit', failed: 'crit', revoked: 'muted' }[s] || 'muted'; }
+  function stateTone(s) { return { read: 'good', read_elsewhere: 'muted', delivered: 'info', sent: 'info', queued: 'warn', dismissed: 'muted', expired: 'crit', failed: 'crit', revoked: 'muted' }[s] || 'muted'; }
   function renderDetail(id, res, error) {
     const box = clear($('nc-proto'));
     const head = el('div', { class: 'nc-aside-head' });
@@ -1528,10 +1547,10 @@
     box.appendChild(el('h3', { class: 'nc-label', text: T('notify.proto.deliveries') }));
     if (!dl.length) box.appendChild(el('p', { class: 'nc-hint', text: T('notify.proto.no_deliveries') }));
     else {
-      box.appendChild(el('ul', { class: 'nc-deliveries' }, dl.map((dv) => el('li', { class: 'nc-delivery', 'data-state': str(dv.state) }, [
+      box.appendChild(el('ul', { class: 'nc-deliveries' }, dl.map((dv) => el('li', { class: 'nc-delivery', 'data-state': deliveryState(dv) }, [
         el('div', { class: 'nc-delivery-head' }, [
           el('b', { text: [str(dv.device_name), str(dv.user_name)].filter(Boolean).join(' · ') || '#' + str(dv.token_id) }),
-          el('span', { class: 'nc-status nc-pill-sm', 'data-tone': stateTone(dv.state), text: label('notify.dstate.', str(dv.state)) }),
+          el('span', { class: 'nc-status nc-pill-sm', 'data-tone': stateTone(deliveryState(dv)), text: label('notify.dstate.', deliveryState(dv)) }),
         ]),
         el('div', { class: 'nc-sub', text: deliveryLine(dv) }),
       ]))));

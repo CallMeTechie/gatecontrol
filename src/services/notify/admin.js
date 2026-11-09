@@ -10,16 +10,28 @@ const config = require('./config');
 const { ENDPOINT } = require('./constants');
 
 const DONE = "('delivered', 'read', 'dismissed')";
+// The device itself read it (or swiped it away). A read row without
+// read_via (cannot occur after migration 144) counts as read on the device.
+const SELF_READ = "(read_at IS NOT NULL AND COALESCE(read_via, 'self') = 'self')";
+// Marked read because the person read it on another device or in the portal.
+const ELSEWHERE_READ = "(read_at IS NOT NULL AND COALESCE(read_via, 'self') <> 'self')";
 
 function placeholders(list) { return list.map(() => '?').join(','); }
 
-/** Delivery counts per notification id. */
+/**
+ * Delivery counts per notification id. `delivered`: the device confirmed it
+ * (delivered_at); `read`: read on the device itself; `elsewhere`: never
+ * reached the device, the person read it elsewhere first (nothing is sent
+ * any more — not "zugestellt", but not missing either).
+ */
 function statsFor(ids) {
   const out = new Map();
   if (!ids.length) return out;
   const rows = getDb().prepare(`SELECT notification_id AS id, COUNT(*) AS total,
-       SUM(CASE WHEN state IN ${DONE} THEN 1 ELSE 0 END) AS delivered,
-       SUM(CASE WHEN read_at IS NOT NULL THEN 1 ELSE 0 END) AS read,
+       SUM(CASE WHEN delivered_at IS NOT NULL THEN 1 ELSE 0 END) AS delivered,
+       SUM(CASE WHEN ${SELF_READ} THEN 1 ELSE 0 END) AS read,
+       SUM(CASE WHEN delivered_at IS NULL AND ${ELSEWHERE_READ} THEN 1 ELSE 0 END) AS elsewhere,
+       SUM(CASE WHEN ${ELSEWHERE_READ} THEN 1 ELSE 0 END) AS read_elsewhere,
        SUM(silent) AS silent,
        SUM(CASE WHEN state IN ('queued', 'sent') THEN 1 ELSE 0 END) AS waiting
      FROM notification_deliveries WHERE notification_id IN (${placeholders(ids)}) GROUP BY notification_id`).all(...ids);
@@ -30,7 +42,7 @@ function statsFor(ids) {
 function statusOf(n, st) {
   const live = !n.expires_at || n.expires_at > store.iso();
   if (n.release_at || (live && st && st.waiting > 0)) return 'waiting';
-  if (!st || st.delivered === st.total) return 'ok';
+  if (!st || st.delivered + (st.elsewhere || 0) >= st.total) return 'ok';
   return 'partial';
 }
 
@@ -76,7 +88,7 @@ function recipientsLabel(n, t) {
 }
 
 function itemOf(n, st, t) {
-  const s = st || { total: 0, delivered: 0, read: 0, silent: 0 };
+  const s = st || { total: 0, delivered: 0, read: 0, elsewhere: 0, silent: 0 };
   // a chat notification (docs/plugins.md "Chat notifications") is a private
   // message between people: the administrator sees that it went out, never its text
   const chat = n.kind === 'message';
@@ -95,6 +107,7 @@ function itemOf(n, st, t) {
     delivered: s.delivered || 0,
     total: s.total || 0,
     read: s.read || 0,
+    elsewhere: s.elsewhere || 0,
     silent: n.silent === 1 || (s.total > 0 && s.silent === s.total),
     status: statusOf(n, st),
   };
@@ -170,7 +183,7 @@ function overview(t) {
       direct: conns.filter((c) => c.via === 'direct').length,
       tunnel: conns.filter((c) => c.via === 'tunnel').length,
       delivered_24h: db.prepare('SELECT COUNT(*) AS n FROM notification_deliveries WHERE delivered_at >= ?').get(day).n,
-      read_24h: db.prepare('SELECT COUNT(*) AS n FROM notification_deliveries WHERE read_at >= ?').get(day).n,
+      read_24h: db.prepare(`SELECT COUNT(*) AS n FROM notification_deliveries WHERE read_at >= ? AND ${SELF_READ}`).get(day).n,
       queued: queued.n,
       queued_devices: queued.devices,
       failed_7d: db.prepare(`SELECT COUNT(*) AS n FROM notification_deliveries WHERE state = 'expired' AND queued_at >= ?`).get(week).n,
@@ -218,8 +231,9 @@ function devices() {
      JOIN notifications n ON n.id = d.notification_id
      WHERE d.state = 'queued' AND n.revoked_at IS NULL AND (n.expires_at IS NULL OR n.expires_at > ?) GROUP BY d.token_id`).all(nowIso)
     .map((r) => [r.token_id, r]));
-  const acks = new Map(db.prepare(`SELECT token_id, MAX(COALESCE(read_at, delivered_at)) AS at FROM notification_deliveries
-     WHERE delivered_at IS NOT NULL OR read_at IS NOT NULL GROUP BY token_id`).all().map((r) => [r.token_id, r.at]));
+  // "Bestätigt": the last ack the device itself sent — a read elsewhere is none
+  const acks = new Map(db.prepare(`SELECT token_id, MAX(COALESCE(CASE WHEN ${SELF_READ} THEN read_at END, delivered_at)) AS at
+     FROM notification_deliveries WHERE delivered_at IS NOT NULL OR ${SELF_READ} GROUP BY token_id`).all().map((r) => [r.token_id, r.at]));
   const list = rows.map((r) => {
     const conn = stream.get(r.id);
     let state = 'unsupported';
@@ -291,6 +305,9 @@ function detail(id, t) {
     sent_at: d.sent_at,
     delivered_at: d.delivered_at,
     read_at: d.read_at,
+    // who set read_at: 'self' (this device), 'device' (another device of the
+    // person), 'portal', 'elsewhere' (one of the two, rows from before the origin was stored) — null: not read
+    read_via: d.read_at ? (d.read_via || 'self') : null,
     latency_ms: d.delivered_at && d.queued_at ? Math.max(0, Date.parse(d.delivered_at) - Date.parse(d.queued_at)) : null,
     action: d.action || null,
   }));
@@ -302,8 +319,11 @@ function detail(id, t) {
   if (firstSent) timeline.push({ at: firstSent, kind: 'sent', text: t('push.timeline.sent', { count: String(rows.filter((r) => r.sent_at).length) }) });
   const firstDelivered = first('delivered_at');
   if (firstDelivered) timeline.push({ at: firstDelivered, kind: 'delivered', text: t('push.timeline.delivered', { count: String(st ? st.delivered : 0) }) });
-  const firstRead = first('read_at');
+  const selfRows = rows.filter((r) => r.read_at && !store.readElsewhere(r));
+  const firstRead = selfRows.map((r) => r.read_at).sort()[0] || null;
   if (firstRead) timeline.push({ at: firstRead, kind: 'read', text: t('push.timeline.read', { count: String(st ? st.read : 0) }) });
+  const firstElsewhere = rows.filter((r) => store.readElsewhere(r)).map((r) => r.read_at).sort()[0] || null;
+  if (firstElsewhere) timeline.push({ at: firstElsewhere, kind: 'read_elsewhere', text: t('push.timeline.read_elsewhere', { count: String(st ? st.read_elsewhere : 0) }) });
   if (n.email_state === 'sent' && n.email_sent_at) timeline.push({ at: n.email_sent_at, kind: 'email', text: t('push.timeline.email') });
   if (n.revoked_at) timeline.push({ at: n.revoked_at, kind: 'revoked', text: t('push.timeline.revoked') });
   const expired = rows.filter((r) => r.state === 'expired').length;

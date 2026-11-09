@@ -62,8 +62,8 @@ Ereignis (activity.log / gc.notify / Admin)
               ├─ getrennte Geräte beim nächsten Verbinden (Last-Event-ID)
               ├─ E-Mail sofort oder als Rückfall, wenn nach N Minuten kein Gerät bestätigt hat
               └─ Webhooks wie bisher
-Gerät ──► POST /api/v1/client/push/ack  (zugestellt / gelesen / Aktion)
-       ◄── Gelesen-Abgleich an die anderen Geräte derselben Person
+Gerät ──► POST /api/v1/client/push/ack  (zugestellt / gelesen / weggewischt / Aktion)
+       ◄── Gelesen-Abgleich an die anderen Geräte derselben Person (nur „gelesen“)
 ```
 
 **Warum SSE und nicht WebSocket:**
@@ -164,6 +164,12 @@ CREATE TABLE IF NOT EXISTS notify_device_prefs (   -- vom Gerät gemeldet
   `email_state`/`email_due_at`/`email_sent_at` (E-Mail-Rückfall), `meta`
   (nur Server: die zurückgehaltene E-Mail) und `updated_at`.
 * `notification_deliveries.silent`: in der Ruhezeit zugestellt.
+* `notification_deliveries.read_via` (Migration v144 `notify_read_via`): woher
+  das „gelesen“ einer Zeile kommt — `self` (das Gerät selbst hat `read`
+  oder `dismissed` bestätigt), `device` (die Person hat es auf einem anderen
+  ihrer Geräte gelesen), `portal` (im Portal „Gelesen“/„Alle als gelesen“),
+  `elsewhere` (eins von beiden, Zeile von vor der Migration), `NULL` (nicht
+  gelesen). Siehe „Gelesen-Abgleich“ unten.
 * `notify_device_prefs` zusätzlich `client_type`, `via`, `last_seen_at`. Eine
   Zeile heißt: Auf diesem Token läuft eine App mit Push (Stream einmal
   geöffnet oder `prefs`/`test` gerufen). Nur solche Geräte bekommen eine
@@ -172,6 +178,33 @@ CREATE TABLE IF NOT EXISTS notify_device_prefs (   -- vom Gerät gemeldet
   „unsupported“ (reine WireGuard-Peers).
 * Zeitstempel sind ISO-8601 UTC mit Millisekunden; an die Geräte gehen
   `created_at`/`expires_at` ohne Millisekunden.
+
+**Gelesen-Abgleich:**
+
+* Nur ein echtes `read` eines Geräts (geöffnet, angetippt, Knopf, „Gelesen“)
+  markiert dieselbe Mitteilung auf den anderen Geräten derselben Person als
+  gelesen (`state='read'`, `read_via='device'`) und schickt den offenen
+  Streams `event: read`. Das Portal („Gelesen“, „Alle als gelesen“) wirkt
+  genauso auf alle Geräte (`read_via='portal'`).
+* `dismissed` (weggewischt, Benachrichtigung geschlossen) gilt nur für die
+  Zeile dieses Geräts; die anderen Geräte behalten die Mitteilung als
+  ungelesen. (Früher ging auch `dismissed` als „gelesen“ an alle Geräte.)
+* `delivered_at` setzt nur das Gerät selbst (jede Bestätigung, auch auf
+  einer schon anderswo gelesenen Zeile). Eine anderswo gelesene Zeile wird
+  nicht mehr gesendet (`pendingForToken` liefert nur `queued`/`sent`); im
+  Posteingang des Geräts steht sie als `read`.
+* Admin-Zustellprotokoll: eine solche Zeile heißt „Anderswo gelesen“
+  (statt „Gelesen“), darunter z. B. „nicht zugestellt · auf anderem Gerät
+  gelesen …“ bzw. „… · im Portal gelesen …“. „zugestellt“ zählt nur Zeilen
+  mit `delivered_at`, „gelesen“ nur Lesen auf dem Gerät selbst; eine
+  anderswo gelesene, nie zugestellte Zeile fehlt nicht (Status „ok“, im
+  Verlauf „1/2 · 1 anderswo gelesen“). „Bestätigt“ im Reiter Geräte ist die
+  letzte Bestätigung des Geräts selbst.
+* Bestehende Zeilen (Migration v144): Die Herkunft wurde früher nicht
+  gespeichert. Eine eigene Bestätigung setzte immer `delivered_at`, der
+  Abgleich nie — gelesene Zeilen ohne `delivered_at` bekommen `elsewhere`,
+  alle anderen gelesenen `self` (eine Zeile, die das Gerät erhalten hatte und
+  die dann anderswo gelesen wurde, ist nachträglich nicht mehr erkennbar).
 
 **Aufräumen:** Ein Job läuft stündlich.
 
@@ -242,7 +275,7 @@ Alle Antworten tragen zusätzlich `"ok": true`.
 * `GET /api/v1/notify/overview` → `{kpis:{devices_connected, devices_total,
   direct, tunnel, delivered_24h, read_24h, queued, queued_devices, failed_7d,
   median_latency_ms}, recent:[{id, title, event_id, topic, priority, source,
-  created_at, recipients_label, delivered, total, read, silent}] (8),
+  created_at, recipients_label, delivered, total, read, elsewhere, silent}] (8),
   hub:{enabled, endpoint, keepalive_s, retention_h, max_queue, allow_direct},
   sources:[{id: security|devices|services|system|plugins, count}] (7 Tage)}`
 * `GET /api/v1/notify/rules` → `{rules:[{event_id, group, label, priority,
@@ -266,10 +299,12 @@ Alle Antworten tragen zusätzlich `"ok": true`.
   ohne Lizenz; Limit wie bisher (10 je Minute und Konto).
 * `GET /api/v1/notify/history?filter=all|important|undelivered|plugins|manual&days=7&before=<id>&limit=50`
   → `{items:[{id, title, body, event_id, source, priority, created_at,
-  delivered, total, read, recipients_label, silent, status: ok|partial|waiting}], next_before}`
+  delivered, total, read, elsewhere, recipients_label, silent, status: ok|partial|waiting}], next_before}`
+  (`delivered`: vom Gerät bestätigt; `read`: auf dem Gerät selbst gelesen;
+  `elsewhere`: nie zugestellt, weil anderswo gelesen — siehe „Gelesen-Abgleich“)
 * `GET /api/v1/notify/history/:id` → `{notification, timeline:[{at, kind, text}],
   deliveries:[{token_id, device_name, user_name, state, via, queued_at, sent_at,
-  delivered_at, read_at, latency_ms, action}], email:{sent, at}}`;
+  delivered_at, read_at, read_via, latency_ms, action}], email:{sent, at}}`;
   `POST …/history/:id/resend` → `{ok}`
 * `GET/PUT /api/v1/notify/settings` → `{enabled, retention_h, history_days,
   max_queue, keepalive_s, allow_direct, email_fallback_s, max_streams}`
@@ -676,7 +711,7 @@ data: {"seq":123,"id":45,"event_id":"gateway_state","topic":"devices","priority"
                "facts":[{"label":"Zuletzt gesehen","value":"10.10.26, 21:40"},{"label":"Betroffene Routen","value":"3"}]}}
 
 event: read
-data: {"ids":[45]}            # auf einem anderen Gerät derselben Person gelesen → hier ausblenden
+data: {"ids":[45]}            # auf einem anderen Gerät derselben Person (oder im Portal) gelesen → hier ausblenden
 
 event: revoke
 data: {"ids":[45]}            # zurückgezogen (z. B. Entwarnung ersetzt Meldung) → ausblenden
@@ -1018,8 +1053,9 @@ GET /api/v1/client/plugins/<plugin>/media/<mediaId>     (auch HEAD)
   (`action` optional, `[A-Za-z0-9_.:-]{1,64}` — auch die `id` einer
   `quick_action`; höchstens 200 `seqs`).
 * Antwort: `{"ok":true}`.
-* `read` und `dismissed` werden an die anderen Geräte derselben Person als
-  `event: read` weitergegeben.
+* Nur `read` wird an die anderen Geräte derselben Person als `event: read`
+  weitergegeben (und dort als gelesen gespeichert). `dismissed` gilt nur für
+  dieses Gerät.
 
 ### `GET /api/v1/client/push/inbox?limit=100&before=<seq>`
 

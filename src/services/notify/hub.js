@@ -673,12 +673,16 @@ function syncRead(userId, ids, exceptToken = null) {
   }
 }
 
-/** After a device ack: read/dismissed reach the person's other devices. */
+/**
+ * After a device ack: a real `read` (opened, tapped, a button, "gelesen")
+ * reaches the person's other devices. `dismissed` (swiped away, closed)
+ * stays on that device: the person has not read it.
+ */
 function onAck(tokenId, userId, changed, state) {
-  if (state !== 'read' && state !== 'dismissed') return;
+  if (state !== 'read') return;
   const ids = [...new Set(changed.map((c) => c.notification_id))];
   if (!ids.length || userId == null) return;
-  store.markReadForUser(userId, ids, { exceptToken: tokenId });
+  store.markReadForUser(userId, ids, { exceptToken: tokenId, via: 'device' });
   syncRead(userId, ids, tokenId);
 }
 
@@ -688,7 +692,7 @@ function markRead(userId, ids) {
   // "all" = the inbox: chat notifications are not part of it (store.NOT_CHAT_SQL)
   const list = ids || db.prepare(`SELECT DISTINCT d.notification_id AS id FROM notification_deliveries d JOIN notifications n ON n.id = d.notification_id
      WHERE d.user_id = ? AND d.state IN ('queued', 'sent', 'delivered') AND ${store.NOT_CHAT_SQL}`).all(userId).map((r) => r.id);
-  const rows = store.markReadForUser(userId, list);
+  const rows = store.markReadForUser(userId, list, { via: 'portal' });
   const changedIds = [...new Set(rows.map((r) => r.notification_id))];
   syncRead(userId, changedIds);
   return changedIds.length;
