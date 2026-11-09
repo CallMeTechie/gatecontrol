@@ -3870,6 +3870,23 @@ const migrations = [
     detect: (db) => hasColumn(db, 'home_cache_blobs', 'stamp')
       && !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_plugin_media_gone_key'").get(),
   },
+  {
+    version: 143,
+    name: 'ip_block_failure_weight',
+    // IP-Sperre (services/ipBlock.js): one row per failure with its points
+    // instead of one row per point —
+    //   weight        the points of the failure (1; a name without an account
+    //                 counts with the setting "Unbekannte Benutzernamen", ten
+    //                 404s of the access log once …)
+    //   unknown_user  1: a login with a name or e-mail address that matches
+    //                 no account (the ban says "unbekannte Benutzernamen"
+    //                 when those brought most of the points)
+    // Existing rows were one point each: weight 1.
+    sql: `
+      ALTER TABLE ip_block_failures ADD COLUMN weight INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE ip_block_failures ADD COLUMN unknown_user INTEGER NOT NULL DEFAULT 0;`,
+    detect: (db) => hasColumn(db, 'ip_block_failures', 'weight') && hasColumn(db, 'ip_block_failures', 'unknown_user'),
+  },
 ];
 
 module.exports = { migrations };

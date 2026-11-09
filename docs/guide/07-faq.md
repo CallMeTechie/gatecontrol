@@ -259,6 +259,33 @@ intact.
 
 In detail: [INSTALL.md §9](../../INSTALL.md#9-troubleshooting).
 
+### Failed login with a stranger's e-mail address in the log
+
+The log says `Failed login for user: …` with a name or e-mail address you do
+not know and that has no account. That is almost always an automated attempt
+with credentials from a data leak ("credential stuffing") – nobody has your
+password, and there is no account that could be affected. Its details then
+say `unknownUser: true`.
+
+The account lockout does not help here: there is no account to lock. That is
+what the **IP block** is for (Settings › Security › IP block). It counts the
+failures of one address over every entry point together and blocks it after
+10 failures within 10 minutes. An unknown user name counts several times –
+setting **"Unknown user names count"**, **triple** by default. With 10
+failures the 4th attempt with an unknown name already blocks. This applies to
+the GateControl login, the login from the portal, the sign-in in the apps and
+the logins of protected routes. A wrong password of an existing account and a
+wrong second factor count once.
+
+Whoever signs in sees no difference: the answer is the same for unknown and
+known names, so nobody can find out which accounts exist. If you often mistype
+your own name, set it to "twice" or "once", or add your network under
+**"Never block"**. Addresses in the VPN and in your own network
+are never blocked anyway.
+
+**Check:** in the list "Blocked right now" such addresses say "sign-ins with
+unknown user names".
+
 ## Setting up a gateway
 
 ### The assistant is still waiting after 10 minutes
