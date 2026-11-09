@@ -226,6 +226,14 @@ chmod 600 /root/gatecontrol-*.tar.gz
 More on this (also backups in the interface under “Settings” → “Backups”):
 [INSTALL.md §10](../../INSTALL.md#10-backup-and-restore).
 
+**Off-site backups** (Settings → Backups, licence “scheduled backups”)
+upload an encrypted copy over SFTP, SMB, S3 or WebDAV after every automatic
+backup. For a NAS at home behind a gateway, choose “Through a VPN device” or
+“Through a route” under “Connection” – exactly as for Drive's storage
+target; “Take over a storage target from Drive/plugins” fills in its
+settings. See
+[FAQ: Off-site backup to a NAS behind the VPN](07-faq.md#off-site-backup-to-a-nas-behind-the-vpn).
+
 **Check:** `tar tzf /root/gatecontrol-*.tar.gz | grep -c data/` shows a number greater than 0.
 
 Continue with [chapter 3: Setting up a gateway](03-gateway-setup.md).

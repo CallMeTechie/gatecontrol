@@ -987,6 +987,22 @@ curl -X DELETE -H "Authorization: Bearer gc_your_token" \
   https://gate.example.com/api/v1/settings/autobackup/gatecontrol-20260322-120000.json
 ```
 
+### Off-site Backups (built in)
+
+With the **scheduled backups** licence, GateControl uploads an encrypted copy (`gatecontrol-YYYYMMDD-HHmmss.gcbk`, passphrase + scrypt/AES-256-GCM) of every automatic backup to SFTP, SMB, S3-compatible storage or WebDAV (**Settings > Backups > Off-site**), keeps the newest *n* per target and offers a read-only restore test.
+
+**NAS behind the VPN.** WebDAV, SMB and SFTP targets have the same **Connection** choice as the storage targets (`via`, shared code in `src/services/storageTargets/via.js`):
+
+| Connection | Connects to |
+|---|---|
+| Directly to the address (default) | the URL's / host field's own address, as before |
+| Through a VPN device | the peer's VPN address and the given port (e.g. a gateway peer forwarding to the NAS, port 5006) |
+| Through a route | what Caddy dials for the route, never Caddy itself: an L4 route's target or gateway listener (internal-only is fine); WebDAV over http also an HTTP route through a gateway's companion proxy |
+
+For WebDAV the URL still sets the scheme, path, `Host` header and the name for SNI and the certificate check, so the NAS's certificate for `nas.example.com` stays valid through the tunnel; a private certificate or CA can be stored per target (**Own certificate or CA (PEM)**). SMB uses `smbclient -I <address> -p <port>`, SFTP connects to the dialled address. **Take over a storage target from Drive/plugins** fills URL, user, connection and certificate from an existing WebDAV/SMB storage target and copies its password once on save (logged in the activity log). When a connection to the target's own address is refused or times out and that name resolves to this server's public IP, the test says so ("The address points to this GateControl server itself …"). A JSON-backup restore re-links the peer / route of a target's connection by peer name / route domain.
+
+API: `config.via` = `{ kind: 'host' }` | `{ kind: 'peer', peerId, port }` | `{ kind: 'route', routeId }`, WebDAV `config.tls_ca` (PEM), `config.password_from_storage_target` (write-only); `GET /api/v1/settings/backup/targets/storage-sources` lists the storage targets that can be taken over (never a secret); transport errors carry `hint: 'self_address'`.
+
 ### Combining with External Storage
 
 For off-site backup storage, use API tokens and a cron job:

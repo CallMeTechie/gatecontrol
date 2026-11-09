@@ -349,9 +349,10 @@ function requireAdminSession(req, res, next) {
 }
 
 function sendOffsiteError(res, err, fallback) {
-  if (err && err.code === 'TRANSPORT') return res.status(502).json({ ok: false, error: err.message, code: 'TRANSPORT_FAILED' });
+  // hint 'self_address': the address points at this server itself (storageTargets/via.js selfHint)
+  if (err && err.code === 'TRANSPORT') return res.status(502).json({ ok: false, error: err.message, code: 'TRANSPORT_FAILED', ...(err.hint ? { hint: err.hint } : {}) });
   if (err instanceof offsite().OffsiteError) {
-    return res.status(err.status).json({ ok: false, error: err.message, code: err.code, ...(err.field ? { field: err.field } : {}) });
+    return res.status(err.status).json({ ok: false, error: err.message, code: err.code, ...(err.field ? { field: err.field } : {}), ...(err.hint ? { hint: err.hint } : {}) });
   }
   if (err instanceof gcbk.GcbkError) return res.status(400).json({ ok: false, error: err.message, code: err.code });
   logger.error({ error: err && err.message }, fallback);
@@ -445,10 +446,28 @@ router.get('/backup/targets/l4-candidates', requireAdminSession, (req, res) => {
   catch (err) { sendOffsiteError(res, err, 'could not list L4 routes'); }
 });
 
+/**
+ * GET /backup/targets/storage-sources — the WebDAV / SMB storage targets the
+ * form can take URL, user, "Verbindung" and certificate from (never a
+ * secret; saving with `password_from_storage_target` copies the password).
+ */
+router.get('/backup/targets/storage-sources', requireAdminSession, (req, res) => {
+  try { res.json({ ok: true, sources: offsite().storageSources() }); }
+  catch (err) { sendOffsiteError(res, err, 'could not list storage targets'); }
+});
+
+/** " (password taken from storage target …)" for the activity log, when the form copied one. */
+function copiedFrom(body) {
+  const id = body && body.config && body.config.password_from_storage_target;
+  if (id === undefined || id === null || id === '' || (body.config.password && body.config.password !== '')) return '';
+  const t = require('../../../services/storageTargets').brief(id);
+  return t ? ` (password taken from storage target "${t.label}")` : '';
+}
+
 router.post('/backup/targets', requireAdminSession, licensed, (req, res) => {
   try {
     const target = offsite().createTarget(req.body || {});
-    activity.log('offsite_target_created', `Off-site backup target created: ${target.name} (${target.type})`, { source: 'admin', ipAddress: req.ip, severity: 'info' });
+    activity.log('offsite_target_created', `Off-site backup target created: ${target.name} (${target.type})${copiedFrom(req.body)}`, { source: 'admin', ipAddress: req.ip, severity: 'info' });
     res.status(201).json({ ok: true, target });
   } catch (err) {
     sendOffsiteError(res, err, 'could not create target');
@@ -465,7 +484,7 @@ router.put('/backup/targets/:id', requireAdminSession, licensed, async (req, res
   const id = targetId(req, res); if (id === null) return;
   try {
     const target = await offsite().updateTarget(id, req.body || {});
-    activity.log('offsite_target_updated', `Off-site backup target updated: ${target.name}`, { source: 'admin', ipAddress: req.ip, severity: 'info' });
+    activity.log('offsite_target_updated', `Off-site backup target updated: ${target.name}${copiedFrom(req.body)}`, { source: 'admin', ipAddress: req.ip, severity: 'info' });
     res.json({ ok: true, target });
   } catch (err) {
     sendOffsiteError(res, err, 'could not update target');
@@ -490,7 +509,7 @@ router.post('/backup/targets/:id/test', requireAdminSession, licensed, async (re
     const detail = await offsite().testTarget(id);
     res.json({ ok: true, detail });
   } catch (err) {
-    if (err && err.code === 'TRANSPORT') return res.status(502).json({ ok: false, error: err.message, code: 'TRANSPORT_FAILED', detail: err.message });
+    if (err && err.code === 'TRANSPORT') return res.status(502).json({ ok: false, error: err.message, code: 'TRANSPORT_FAILED', detail: err.message, ...(err.hint ? { hint: err.hint } : {}) });
     sendOffsiteError(res, err, 'test failed');
   }
 });

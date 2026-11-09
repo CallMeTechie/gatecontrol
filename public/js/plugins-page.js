@@ -2515,7 +2515,7 @@
             const r = await req('POST', ST_API + '/' + tg.id + '/check', {});
             b.disabled = false;
             if (!r.ok) { toast(r.error, 'error'); return; }
-            toast(r.check.ok ? t('plugins.stg.check_ok') : stgErrorText(r.check.error, r.check.message), r.check.ok ? 'success' : 'error');
+            toast(r.check.ok ? t('plugins.stg.check_ok') : stgErrorText(r.check.error, r.check.message) + (r.check.hint === 'self_address' ? ' ' + t('plugins.stg.hint_self_address') : ''), r.check.ok ? 'success' : 'error');
             await loadTargets();
             renderStorage();
           } }),
@@ -2835,6 +2835,8 @@
       })));
       if (c.ok) result.appendChild(el('p', { class: 'pgx-note pgx-note-good', id: 'pgx-stg-ok', text: [t('plugins.stg.check_ok'), fmtFree(c)].filter(Boolean).join(' · ') }));
       if (!c.ok && c.tls) result.appendChild(tlsBox(c.tls));
+      // refused / no answer at an address of this server itself: the NAS is behind the VPN
+      if (!c.ok && c.hint === 'self_address') result.appendChild(el('p', { class: 'pgx-note', 'data-hint': 'self_address' }, [icon(I.alert, 16), el('span', { text: t('plugins.stg.hint_self_address') })]));
     }
 
     /**

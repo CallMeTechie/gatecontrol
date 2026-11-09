@@ -852,6 +852,9 @@ async function restoreBackup(backup) {
   let builtinRows = 0;
   let directoryResult = { count: 0, secretReentry: [] };
   let storageTargetCount = 0;
+  // the off-site targets stay; the peer / route of their "Verbindung" is found again by name / domain
+  let offsiteVia = [];
+  try { offsiteVia = require('./offsite').viaSnapshot(db); } catch (err) { logger.warn({ err: err.message }, 'backup restore: off-site connections not noted'); }
   const restore = db.transaction(() => {
     // Clear existing data in dependency order
     db.prepare('DELETE FROM route_peer_acl').run();
@@ -1026,6 +1029,7 @@ async function restoreBackup(backup) {
     // Storage targets — replaced only when the backup has them (older
     // backups: the targets stay).
     if (Array.isArray(storageTargetRows)) storageTargetCount = restoreStorageTargets(db, storageTargetRows, { peerIdMap, routeIdByDomain });
+    if (offsiteVia.length) require('./offsite').remapVia(db, offsiteVia, { peerIdMap, routeIdByDomain });
 
     // AI providers and plugin policy — replaced only when the backup has
     // them. A key from another GC_ENCRYPTION_KEY stays as it is: the

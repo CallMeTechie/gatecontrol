@@ -294,6 +294,34 @@ Ticket kopieren.
 
 Ausführlich: [INSTALL.de.md §9](../../INSTALL.de.md#9-troubleshooting).
 
+### Offsite-Backup auf eine NAS hinter dem VPN
+
+Meldung beim Testen eines Ziels „Backups außer Haus“, z. B. `WebDAV PROPFIND
+failed: connect ECONNREFUSED 89.163.231.212:5006`, darunter „Die Adresse zeigt
+auf diesen GateControl-Server selbst“: Der Name der NAS
+(`nas.example.com`) zeigt auf den GateControl-Server – von außen erreichst du
+die NAS über eine Weiterleitung von GateControl, aber GateControl selbst
+findet auf Port 5006 bei sich nichts.
+
+So geht es (wie beim Speicherziel für Drive):
+
+1. Einstellungen → Backups → Ziel bearbeiten (oder neu: WebDAV).
+2. **Verbindung**: „Über ein VPN-Gerät“ und das Gateway im Heimnetz wählen
+   (z. B. „Home Gateway (10.8.0.8)“), **Port** den WebDAV-Port der NAS
+   (Synology: 5006 für https). Oder „Über eine Weiterleitung“ und eine
+   L4-Weiterleitung auf die NAS – sie darf „nur intern“ bleiben.
+3. Die **Adresse** bleibt `https://nas.example.com:5006/…`: Sie bestimmt Pfad,
+   Host-Name und den Namen, gegen den das Zertifikat geprüft wird. Ein
+   eigenes DSM-Zertifikat unter „Eigenes Zertifikat oder eigene CA (PEM)“
+   einfügen (`cert.pem` reicht).
+
+Hast du die NAS schon als Speicherziel für Drive eingerichtet: oben im Dialog
+„Speicherziel von Drive/Plugins übernehmen“ wählen. Adresse, Benutzer,
+Verbindung und Zertifikat werden eingetragen, das Passwort beim Speichern
+einmal kopiert. Gib in der Adresse einen eigenen Unterordner an
+(z. B. `…/GateControl/Backups/`), damit die Backups nicht zwischen den Dateien
+von Drive liegen. SMB und SFTP haben dieselbe Wahl „Verbindung“.
+
 ## Gateway einrichten
 
 ### Der Assistent wartet nach 10 Minuten immer noch

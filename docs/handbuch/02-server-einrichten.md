@@ -227,6 +227,14 @@ chmod 600 /root/gatecontrol-*.tar.gz
 Mehr dazu (auch Backups in der Oberfläche unter „Einstellungen“ → „Backups“):
 [INSTALL.de.md §10](../../INSTALL.de.md#10-backup-und-restore).
 
+**Backups außer Haus** (Einstellungen → Backups, Lizenz „geplante Backups“)
+lädt nach jedem automatischen Backup eine verschlüsselte Kopie per SFTP, SMB,
+S3 oder WebDAV hoch. Steht die NAS zu Hause hinter einem Gateway, wähle bei
+„Verbindung“ „Über ein VPN-Gerät“ oder „Über eine Weiterleitung“ – genau wie
+beim Speicherziel für Drive; „Speicherziel von Drive/Plugins übernehmen“
+trägt dessen Einstellungen ein. Siehe
+[FAQ: Offsite-Backup auf eine NAS hinter dem VPN](07-faq.md#offsite-backup-auf-eine-nas-hinter-dem-vpn).
+
 **Prüfen:** `tar tzf /root/gatecontrol-*.tar.gz | grep -c data/` zeigt eine Zahl größer als 0.
 
 Weiter mit [Kapitel 3: Gateway einrichten](03-gateway-einrichten.md).

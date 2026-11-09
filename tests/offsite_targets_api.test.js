@@ -99,7 +99,7 @@ describe('targets CRUD + validation', () => {
     assert.equal(t.type, 'webdav');
     assert.equal(t.enabled, true);
     assert.equal(t.keep, 2);
-    assert.deepEqual(t.config, { url: `${davBase}/dav/gc/`, username: 'bob', has_password: true });
+    assert.deepEqual(t.config, { url: `${davBase}/dav/gc/`, via: { kind: 'host' }, username: 'bob', has_password: true, tls_ca: null });
     assert.equal(t.last_status, null);
     const row = db.prepare('SELECT config_enc FROM backup_targets WHERE id = ?').get(davId);
     assert.ok(!row.config_enc.includes('davpass'), 'config encrypted at rest');
@@ -134,10 +134,10 @@ describe('targets CRUD + validation', () => {
   it('creates sftp / smb / s3 targets with defaults; secrets hidden', async () => {
     const sftp = await agentReq('post', `${API}/targets`, { name: 'SSH', type: 'sftp', config: { host: '10.8.0.1', port: 2222, username: 'backup', path: '/volume1/gc' } });
     assert.equal(sftp.status, 201);
-    assert.deepEqual(sftp.body.target.config, { host: '10.8.0.1', port: 2222, username: 'backup', path: '/volume1/gc' });
+    assert.deepEqual(sftp.body.target.config, { host: '10.8.0.1', port: 2222, via: { kind: 'host' }, username: 'backup', path: '/volume1/gc' });
     const smb = await agentReq('post', `${API}/targets`, { name: 'SMB', type: 'smb', enabled: false, config: { host: 'nas.lan', share: 'backup', path: 'gc', username: 'u', password: 'smbpw', domain: 'WORKGROUP' } });
     assert.equal(smb.status, 201);
-    assert.deepEqual(smb.body.target.config, { host: 'nas.lan', port: 445, share: 'backup', path: 'gc', username: 'u', has_password: true, domain: 'WORKGROUP' });
+    assert.deepEqual(smb.body.target.config, { host: 'nas.lan', port: 445, via: { kind: 'host' }, share: 'backup', path: 'gc', username: 'u', has_password: true, domain: 'WORKGROUP' });
     assert.equal(smb.body.target.enabled, false);
     const s3 = await agentReq('post', `${API}/targets`, { name: 'S3', type: 's3', enabled: false, config: { endpoint: 'https://s3.example.com/', region: 'eu-central-1', bucket: 'gc-backups', prefix: '/host1', access_key_id: 'AKIA1', secret_access_key: 'shh', path_style: true } });
     assert.equal(s3.status, 201, JSON.stringify(s3.body));
