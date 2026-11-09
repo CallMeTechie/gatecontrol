@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.258.4] — 2026-11-09
+
+### Änderungen
+- Benachrichtigungen: „Anderswo gelesen“ statt „Gelesen“, Wegwischen gleicht nicht mehr ab (#461)
+
+---
+
 ## [1.258.3] — 2026-11-09
 
 ### Änderungen
