@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.257.0] — 2026-11-09
+
+### Features
+- Verbindung über VPN-Gerät oder Weiterleitung, eigenes Zertifikat, Speicherziel übernehmen (#453)
+
+---
+
 ## [1.256.0] — 2026-11-09
 
 ### Features
