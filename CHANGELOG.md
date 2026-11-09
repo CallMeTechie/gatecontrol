@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.258.3] — 2026-11-09
+
+### Änderungen
+- Offsite-Backup: Archiv als Datei streamen statt im Speicher halten (#460)
+
+---
+
 ## [1.258.2] — 2026-11-09
 
 ### Änderungen
