@@ -3,12 +3,17 @@
 // SMB transport via `smbclient` (Alpine samba-client): Windows shares, Samba,
 // Synology/QNAP/Fritz!Box NAS. docs/feature-release-b.md §7.
 //
-// Config: { host, port?, share, path, username, password, domain? }
+// Config: { host, port?, share, path, username, password, domain?, via? }
+// `via` (storageTargets/via.js, as a storage target's "Verbindung"): through
+// a VPN peer (its VPN address, `via.port`) or an L4 route (what Caddy dials
+// for it) — smbclient then connects to that address (-I, -p) while the
+// share is still named after `host` (or the address, when no host is set).
 // Credentials go through a temporary authentication file (-A, mode 0600,
 // deleted afterwards) — never on the command line, where every process on
 // the host could read them from /proc.
 
 const { run, writeTemp, writeTempAsync, rmQuiet } = require('./proc');
+const via = require('../storageTargets/via');
 
 const TIMEOUT_MS = 180 * 1000;
 
@@ -20,10 +25,30 @@ function authFile(cfg) {
   return writeTemp('smbauth', lines.join('\n') + '\n');
 }
 
-function baseArgs(cfg, auth) {
-  const args = [`//${cfg.host}/${cfg.share}`, '-A', auth, '-p', String(cfg.port || 445), '-t', '60'];
+/** `dial`: { address, port } of a `via` (dialOf), null for the host itself. */
+function baseArgs(cfg, auth, dial = null) {
+  const args = [`//${cfg.host || (dial && dial.address)}/${cfg.share}`, '-A', auth];
+  if (dial) args.push('-I', dial.address);
+  args.push('-p', String(dial ? dial.port : (cfg.port || 445)), '-t', '60');
   if (!cfg.username) args.push('-N');
   return args;
+}
+
+async function dialOf(cfg) {
+  try { return await via.tcpAddress(cfg.via, { host: cfg.host, port: cfg.port || 445 }); } catch (err) {
+    const e = new Error(`SMB: ${err.message}`);
+    e.code = 'TRANSPORT';
+    throw e;
+  }
+}
+
+/** A refused / unanswered connection to an address of this server itself → hint (via.selfHint). */
+async function failure(cfg, message) {
+  const e = new Error(message);
+  e.code = 'TRANSPORT';
+  const hint = await via.selfHint(e, cfg.via, cfg.host);
+  if (hint) { e.hint = hint; e.message += ` (${via.SELF_HINT_TEXT})`; }
+  return e;
 }
 
 function explain(res) {
@@ -46,16 +71,13 @@ function explain(res) {
 }
 
 async function smb(cfg, commands, { timeoutMs = TIMEOUT_MS, tolerate = false } = {}) {
+  const dial = await dialOf(cfg);
   const auth = authFile(cfg);
   try {
-    const res = await run('smbclient', [...baseArgs(cfg, auth), '-c', commands.join('; ')], { timeoutMs });
+    const res = await run('smbclient', [...baseArgs(cfg, auth, dial), '-c', commands.join('; ')], { timeoutMs });
     const failed = res.code !== 0 || res.timedOut
       || (!tolerate && /NT_STATUS_(?!OK\b)[A-Z_]+/.test(`${res.stdout}\n${res.stderr}`));
-    if (failed && !tolerate) {
-      const e = new Error(explain(res));
-      e.code = 'TRANSPORT';
-      throw e;
-    }
+    if (failed && !tolerate) throw await failure(cfg, explain(res));
     return res;
   } finally {
     rmQuiet(auth);

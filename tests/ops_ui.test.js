@@ -151,6 +151,22 @@ describe('ops-ui: targets', () => {
     const sftp = O.targetPayload('sftp', { name: 'x', host: '10.8.0.1', port: '2222', username: 'backup', path: 'gc' }, false);
     assert.deepEqual(sftp.config, { host: '10.8.0.1', port: '2222', path: 'gc', username: 'backup' });
   });
+  it('payload: "Verbindung", own certificate and the storage target\'s password only when the form has them', () => {
+    const base = { name: 'DS218+', keep: '', enabled: true, url: 'https://nas.example.com:5006/GateControl/Backups/', username: 'gc', password: '' };
+    const peer = O.targetPayload('webdav', { ...base, via: 'peer', via_peer: '7', via_port: '5006', tls_ca: ' PEM ', password_from: 3 }, false);
+    assert.deepEqual(peer.config, { url: base.url, username: 'gc', tls_ca: 'PEM', via: { kind: 'peer', peerId: 7, port: '5006' }, password_from_storage_target: 3 });
+    assert.deepEqual(O.targetPayload('webdav', { ...base, via: 'peer', via_peer: '7', via_port: '' }, false).config.via, { kind: 'peer', peerId: 7 });
+    assert.deepEqual(O.targetPayload('webdav', { ...base, via: 'route', via_route: '12' }, false).config.via, { kind: 'route', routeId: 12 });
+    assert.deepEqual(O.targetPayload('webdav', { ...base, via: 'host' }, false).config.via, { kind: 'host' });
+    // a typed password wins over the storage target's
+    assert.equal('password_from_storage_target' in O.targetPayload('webdav', { ...base, password: 'neu', password_from: 3 }, false).config, false);
+    // SMB / SFTP through a peer: the port field is the peer's port
+    assert.deepEqual(O.targetPayload('smb', { ...base, share: 'b', host: '', port: '445', via: 'peer', via_peer: '4' }, false).config.via, { kind: 'peer', peerId: 4, port: '445' });
+    assert.deepEqual(O.targetPayload('sftp', { ...base, host: '', port: '', username: 'b', via: 'route', via_route: '9' }, false).config.via, { kind: 'route', routeId: 9 });
+    assert.equal(O.hintText('self_address'), 'The address points to this GateControl server itself. If the target is behind the VPN, choose the VPN device or the route under “Connection”.');
+    assert.equal(O.hintText('nope'), '');
+    assert.equal(O.errorText({ code: 'INVALID_CONFIG', field: 'routeId' }), 'Please check the field “Route”.');
+  });
   it('payloads pass the server-side normaliser', () => {
     const offsite = require('../src/services/offsite');
     const body = O.targetPayload('sftp', { name: 'x', host: '10.8.0.1', port: '2222', username: 'backup', path: 'gc' }, false);

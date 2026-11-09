@@ -1759,7 +1759,7 @@
 
   // ── Backups ──
   const BK = '/api/v1/settings/backup';
-  const bk = { auto: null, targets: null, files: [], busy: {}, results: {}, tfiles: {}, candidates: null, pubkey: null, offsite: null };
+  const bk = { auto: null, targets: null, files: [], busy: {}, results: {}, tfiles: {}, candidates: null, pubkey: null, offsite: null, choices: null, sources: null };
   const passEl = $('st-off-pass');
   const pass2El = $('st-off-pass2');
   CUSTOM['off-pass'] = {
@@ -1817,6 +1817,7 @@
       res.lines && res.lines.length ? el('div', { class: 'st-li-sub', text: res.lines.join(' · ') }) : null,
       res.warnings && res.warnings.length ? el('ul', { class: 'st-warnlist' }, res.warnings.map((w) => el('li', { text: w }))) : null,
       res.note ? el('div', { class: 'st-li-sub', text: res.note }) : null,
+      res.hint ? el('div', { class: 'st-li-sub st-warn-text', text: res.hint }) : null,
     ]);
   }
   function targetFiles(tg) {
@@ -1857,6 +1858,7 @@
           el('div', { class: 'st-li-sub', text: meta.join(' · ') }),
           tg.config_error ? el('div', { class: 'st-li-sub st-crit', text: t('offsite.config_error') }) : null,
           tg.last_status === 'failed' && tg.last_error ? el('code', { class: 'st-code st-crit', text: tg.last_error }) : null,
+          tg.last_status === 'failed' && O.hintText(tg.last_error_hint) ? el('div', { class: 'st-li-sub st-warn-text', text: O.hintText(tg.last_error_hint) }) : null,
         ]),
         el('div', { class: 'st-li-pills' }, [tg.enabled ? null : pill('off', t('offsite.paused')), pill(state, t(st.key))]),
         el('div', { class: 'st-li-actions st-li-actions-wrap' }, [
@@ -1876,7 +1878,7 @@
     bk.busy[tg.id] = 'test'; delete bk.results[tg.id]; renderTargets();
     const r = await post(BK + '/targets/' + tg.id + '/test');
     bk.results[tg.id] = r.ok ? { ok: true, text: t('offsite.test_ok'), detail: r.detail || '' }
-      : { ok: false, text: O.errorCode(r) === 'TRANSPORT_FAILED' ? t('offsite.test_failed') : O.errorText(r), detail: O.errorDetail(r) };
+      : { ok: false, text: O.errorCode(r) === 'TRANSPORT_FAILED' ? t('offsite.test_failed') : O.errorText(r), detail: O.errorDetail(r), hint: O.hintText(r.hint) };
     delete bk.busy[tg.id]; renderTargets();
   }
   async function runTarget(tg) {
@@ -1886,7 +1888,7 @@
       bk.results[tg.id] = { ok: true, text: t('offsite.run_ok', { file: r.file || '' }) + (r.deleted ? ' · ' + t('offsite.run_deleted', { n: r.deleted }) : '') };
       delete bk.tfiles[tg.id];
     } else {
-      bk.results[tg.id] = { ok: false, text: O.errorText(r), detail: O.errorCode(r) === 'UPLOAD_FAILED' ? '' : O.errorDetail(r) };
+      bk.results[tg.id] = { ok: false, text: O.errorText(r), detail: O.errorCode(r) === 'UPLOAD_FAILED' ? '' : O.errorDetail(r), hint: O.hintText(r.hint) };
       if (O.errorCode(r) === 'PASSPHRASE_NOT_SET') passEl.focus();
     }
     delete bk.busy[tg.id];
@@ -1897,7 +1899,7 @@
     const r = await post(BK + '/targets/' + tg.id + '/verify');
     bk.results[tg.id] = r.ok
       ? { ok: true, text: t('offsite.verify_ok', { file: r.file || '' }), lines: O.verifyLines(r, lang), warnings: (r.warnings || []).map(O.verifyWarningText).filter(Boolean), note: t('offsite.verify_note') }
-      : { ok: false, text: t('offsite.verify_failed') + ' · ' + O.errorText(r), detail: O.errorDetail(r) };
+      : { ok: false, text: t('offsite.verify_failed') + ' · ' + O.errorText(r), detail: O.errorDetail(r), hint: O.hintText(r.hint) };
     delete bk.busy[tg.id];
     await loadTargets();
   }
@@ -1924,7 +1926,105 @@
   const otErr = $('st-ot-err');
   const OT_INPUTS = { host: 'st-ot-host', port: 'st-ot-port', username: 'st-ot-user', path: 'st-ot-path', share: 'st-ot-share', domain: 'st-ot-domain',
     endpoint: 'st-ot-endpoint', region: 'st-ot-region', bucket: 'st-ot-bucket', prefix: 'st-ot-prefix', access_key_id: 'st-ot-akid',
-    secret_access_key: 'st-ot-secret', url: 'st-ot-url', password: 'st-ot-pw' };
+    secret_access_key: 'st-ot-secret', url: 'st-ot-url', password: 'st-ot-pw', via: 'st-ot-via', routeId: 'st-ot-via-route', tls_ca: 'st-ot-ca',
+    password_from_storage_target: 'st-ot-src' };
+  // "Verbindung": peers and routes as for the storage targets (GET /api/v1/storage-targets/choices)
+  const viaSel = $('st-ot-via');
+  const viaPeer = $('st-ot-via-peer');
+  const viaRoute = $('st-ot-via-route');
+  let otSource = null; // the storage target taken over ("Speicherziel übernehmen")
+  function loadViaChoices() {
+    // one request, shared: the fills resolve in the order they were asked for
+    if (!bk.choices) bk.choices = get('/api/v1/storage-targets/choices').then((r) => (r.ok ? { peers: r.peers || [], routes: r.routes || [] } : { peers: [], routes: [] }));
+    return bk.choices;
+  }
+  function fillSelect(sel, items, value) {
+    while (sel.options.length) sel.remove(0);
+    items.forEach((x) => sel.appendChild(el('option', { value: String(x[0]), text: x[1] })));
+    if (value != null && items.some((x) => String(x[0]) === String(value))) sel.value = String(value);
+    sel.disabled = !items.length;
+  }
+  /** The peer / route lists for `type` (WebDAV: L4 and HTTP routes, SMB/SFTP: L4 only), keeping `v`. */
+  async function fillVia(type, v) {
+    const c = await loadViaChoices();
+    const keep = v || { peerId: viaPeer.value, routeId: viaRoute.value };
+    fillSelect(viaPeer, c.peers.map((p) => [p.id, p.label + ' (' + p.ip + ')']), keep.peerId);
+    const routes = type === 'webdav' ? c.routes : c.routes.filter((r) => r.type === 'l4');
+    fillSelect(viaRoute, routes.map((r) => [r.id, r.label + (type === 'webdav' ? ' · ' + (r.type === 'l4' ? 'L4' : 'HTTP') : '') + (r.gateway ? ' · Gateway' : '')]), keep.routeId);
+  }
+  /** Show what the chosen "Verbindung" needs (after otShowType's data-for pass). */
+  function viaSync() {
+    const type = otType;
+    const has = type === 'webdav' || type === 'smb' || type === 'sftp';
+    const k = has ? viaSel.value || 'host' : 'host';
+    viaSel.querySelectorAll('option[data-label-webdav]').forEach((o) => { o.textContent = type === 'webdav' ? o.dataset.labelWebdav : o.dataset.labelTcp; });
+    $('st-ot-via-peer-row').hidden = !has || k !== 'peer';
+    $('st-ot-via-route-row').hidden = !has || k !== 'route';
+    $('st-ot-via-port-row').hidden = type !== 'webdav' || k !== 'peer';
+    $('st-ot-url-via-h').hidden = type !== 'webdav' || k === 'host';
+    $('st-ot-host-via-h').hidden = !(type === 'smb' || type === 'sftp') || k === 'host';
+    $('st-ot-port-row').hidden = !(type === 'smb' || type === 'sftp') || k === 'route';
+    const rh = $('st-ot-via-route-h');
+    rh.textContent = type === 'webdav' ? rh.dataset.webdav : rh.dataset.tcp;
+  }
+  viaSel.addEventListener('change', viaSync);
+  function setVia(v, type) {
+    const k = v && (v.kind === 'peer' || v.kind === 'route') ? v.kind : 'host';
+    viaSel.value = k;
+    $('st-ot-via-port').value = type === 'webdav' && k === 'peer' && v.port ? String(v.port) : '';
+    if ((type === 'smb' || type === 'sftp') && k === 'peer' && v.port) $('st-ot-port').value = String(v.port);
+    return fillVia(type, v || {}).then(viaSync);
+  }
+  function caNote(cfg) {
+    const n = $('st-ot-ca-set');
+    const info = cfg && cfg.tls_ca_info;
+    n.hidden = !(info && info.length);
+    if (!n.hidden) n.textContent = t('offsite.f_ca_set', { info: info.map((c) => c.subject).join(', ') });
+  }
+  // "Speicherziel von Drive/Plugins übernehmen" (GET /targets/storage-sources): WebDAV and SMB
+  const srcSel = $('st-ot-src');
+  async function fillSources(type) {
+    if (!bk.sources) bk.sources = get(BK + '/targets/storage-sources').then((r) => (r.ok ? (r.sources || []) : []));
+    const sources = await bk.sources;
+    while (srcSel.options.length > 1) srcSel.remove(1);
+    sources.filter((x) => x.kind === type).forEach((x) => srcSel.appendChild(el('option', { value: String(x.id), text: x.label + ' · ' + x.display })));
+    srcSel.value = otSource && otSource.kind === type ? String(otSource.id) : '';
+    srcSel.disabled = srcSel.options.length < 2;
+  }
+  function sourceNote() {
+    const n = $('st-ot-src-note');
+    if (!otSource) { n.hidden = true; return; }
+    const name = otSource.label;
+    let text = t(otSource.kind === 'webdav' ? 'offsite.f_source_filled_webdav' : 'offsite.f_source_filled_smb', { name });
+    text += ' ' + (otSource.password_unreadable ? t('offsite.f_source_pw_unreadable', { name })
+      : otSource.has_password ? t('offsite.f_source_pw', { name }) : t('offsite.f_source_pw_none', { name }));
+    n.textContent = text;
+    n.hidden = false;
+  }
+  srcSel.addEventListener('change', async () => {
+    const src = (await (bk.sources || Promise.resolve([]))).find((x) => String(x.id) === srcSel.value) || null;
+    otSource = src;
+    if (src) {
+      const c = src.config || {};
+      if (src.kind === 'webdav') {
+        $('st-ot-url').value = c.url || '';
+        $('st-ot-ca').value = c.tls_ca || '';
+      } else {
+        $('st-ot-host').value = c.host || '';
+        $('st-ot-port').value = c.port ? String(c.port) : '';
+        $('st-ot-share').value = c.share || '';
+        $('st-ot-path').value = c.path || '';
+        $('st-ot-domain').value = c.domain || '';
+      }
+      $('st-ot-user').value = c.username || '';
+      $('st-ot-pw').value = '';
+      if (!$('st-ot-name').value.trim()) $('st-ot-name').value = String(src.label).slice(0, 64);
+      await setVia(c.via, otType);
+      const focus = src.kind === 'webdav' ? $('st-ot-url') : $('st-ot-path');
+      focus.focus();
+    }
+    sourceNote();
+  });
   function otShowType(type) {
     otType = type;
     otModal.querySelectorAll('.st-typecard').forEach((c) => c.setAttribute('aria-pressed', c.dataset.type === type ? 'true' : 'false'));
@@ -1937,10 +2037,16 @@
     $('st-ot-secret-hint').hidden = !(otEditing && type === 's3' && cfg.has_secret_access_key);
     if (type === 'sftp') loadPubkey();
     if (type === 'sftp' || type === 'smb') fillCandidates(type);
+    if (otSource && otSource.kind !== type) { otSource = null; sourceNote(); }
+    if (type === 'webdav' || type === 'smb') fillSources(type);
+    if (type === 'webdav' || type === 'smb' || type === 'sftp') fillVia(type).then(viaSync);
+    viaSync();
   }
   otModal.querySelectorAll('.st-typecard').forEach((c) => c.addEventListener('click', () => { if (!otEditing) { otErr.hidden = true; otShowType(c.dataset.type); } }));
   function openTarget(tg) {
     otEditing = tg || null;
+    bk.choices = null; // peers, routes and storage targets as they are now
+    bk.sources = null;
     otErr.hidden = true;
     $('st-ot-form').reset();
     otModal.querySelectorAll('[aria-invalid]').forEach((n) => n.removeAttribute('aria-invalid'));
@@ -1957,10 +2063,17 @@
         if (c[k] != null && OT_INPUTS[k]) $(OT_INPUTS[k]).value = String(c[k]);
       });
       $('st-ot-pathstyle').checked = !!c.path_style;
+      $('st-ot-ca').value = c.tls_ca || '';
     }
     $('st-ot-l4').value = '';
     $('st-ot-l4-note').hidden = true;
+    otSource = null;
+    sourceNote();
+    caNote(otEditing && otEditing.config);
+    const cfg0 = (otEditing && otEditing.config) || {};
+    viaSel.value = cfg0.via && (cfg0.via.kind === 'peer' || cfg0.via.kind === 'route') ? cfg0.via.kind : 'host';
     otShowType(otEditing ? otEditing.type : 'sftp');
+    if (otEditing) setVia(cfg0.via, otEditing.type);
     window.openModal('st-ot-modal');
     (otEditing ? $('st-ot-name') : otModal.querySelector('.st-typecard[aria-pressed="true"]')).focus();
   }
@@ -1983,6 +2096,8 @@
       domain: val('st-ot-domain'), endpoint: val('st-ot-endpoint'), region: val('st-ot-region'), bucket: val('st-ot-bucket'),
       prefix: val('st-ot-prefix'), access_key_id: val('st-ot-akid'), secret_access_key: val('st-ot-secret'), url: val('st-ot-url'),
       password: val('st-ot-pw'), clear_password: $('st-ot-clearpw').checked, path_style: $('st-ot-pathstyle').checked,
+      via: val('st-ot-via'), via_peer: val('st-ot-via-peer'), via_route: val('st-ot-via-route'), via_port: val('st-ot-via-port'),
+      tls_ca: val('st-ot-ca'), password_from: otSource && otSource.kind === otType && otSource.has_password ? otSource.id : null,
     };
     if (!values.name.trim()) { otError(O.errorText({ code: 'INVALID_NAME' }), 'st-ot-name'); return; }
     const body = O.targetPayload(otType, values, !!otEditing);
@@ -1992,6 +2107,7 @@
     const r = otEditing ? await put(BK + '/targets/' + otEditing.id, body) : await post(BK + '/targets', body);
     busy(btn, false);
     if (r.ok && r.target) {
+      otSource = null;
       window.closeModal('st-ot-modal');
       toast(t('offsite.saved_target'));
       delete bk.results[r.target.id];
@@ -2002,7 +2118,8 @@
     }
     const code = O.errorCode(r);
     const field = code === 'INVALID_CONFIG' ? O.configField(r) : null;
-    otError(O.errorText(r), field ? OT_INPUTS[field] : code === 'INVALID_NAME' ? 'st-ot-name' : code === 'INVALID_KEEP' ? 'st-ot-keep' : null);
+    const fieldInput = field === 'port' && otType === 'webdav' ? 'st-ot-via-port' : field ? OT_INPUTS[field] : null;
+    otError(O.errorText(r), fieldInput || (code === 'INVALID_NAME' ? 'st-ot-name' : code === 'INVALID_KEEP' ? 'st-ot-keep' : null));
     if (wasNew && r.feature) otError(t('st.err.license'));
   }
   const l4 = $('st-ot-l4');

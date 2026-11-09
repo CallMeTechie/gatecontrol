@@ -133,7 +133,18 @@
     bucket: ['offsite.field.bucket', 'Bucket'], prefix: ['offsite.field.prefix', 'Prefix'],
     access_key_id: ['offsite.field.access_key_id', 'Access key ID'], secret_access_key: ['offsite.field.secret_access_key', 'Secret access key'],
     url: ['offsite.field.url', 'URL'],
+    via: ['offsite.field.via', 'Connection'], routeId: ['offsite.field.routeId', 'Route'], tls_ca: ['offsite.field.tls_ca', 'Own certificate'],
+    password_from_storage_target: ['offsite.field.password_from_storage_target', 'Storage target'],
   };
+  // Hint codes of transport errors (`hint`, `last_error_hint`) → text
+  const HINT_KEYS = {
+    self_address: ['offsite.hint.self_address', 'The address points to this GateControl server itself. If the target is behind the VPN, choose the VPN device or the route under “Connection”.'],
+  };
+  /** The hint of an API answer / a target row, '' when none. */
+  function hintText(code) {
+    const h = HINT_KEYS[str(code)];
+    return h ? tr(h[0], h[1]) : '';
+  }
 
   /** Normalised error code of an API answer / thrown api error ({feature} = licence gate). */
   function errorCode(body) {
@@ -181,7 +192,9 @@
       case 'smb': {
         const port = c.port && Number(c.port) !== DEFAULT_PORTS[t.type] ? ':' + c.port : '';
         const where = t.type === 'smb' ? '/' + str(c.share) + (c.path ? '/' + str(c.path).replace(/^\/+/, '') : '') : str(c.path);
-        return [str(c.username) ? str(c.username) + '@' + str(c.host) + port : str(c.host) + port, where].filter(Boolean).join(' · ');
+        // through a peer / route the host field may be empty
+        const host = str(c.host) || (c.via && c.via.kind === 'peer' ? 'VPN' : c.via && c.via.kind === 'route' ? 'L4' : '');
+        return [str(c.username) ? str(c.username) + '@' + host + port : host + port, where].filter(Boolean).join(' · ');
       }
       case 's3': {
         let host = 'AWS';
@@ -247,10 +260,21 @@
       set('prefix', s('prefix')); set('access_key_id', s('access_key_id')); set('path_style', !!v.path_style);
       if (str(v.secret_access_key) !== '') set('secret_access_key', str(v.secret_access_key));
     }
-    if (type === 'webdav') { set('url', s('url')); set('username', s('username')); }
+    if (type === 'webdav') { set('url', s('url')); set('username', s('username')); if (v.tls_ca !== undefined) set('tls_ca', str(v.tls_ca).trim()); }
+    // "Verbindung" (storageTargets/via.js): only when the form has the field
+    if ((type === 'sftp' || type === 'smb' || type === 'webdav') && v.via !== undefined) {
+      const kind = s('via') || 'host';
+      if (kind === 'peer') {
+        const port = type === 'webdav' ? s('via_port') : s('port');
+        set('via', port ? { kind: 'peer', peerId: Number(s('via_peer')), port: port } : { kind: 'peer', peerId: Number(s('via_peer')) });
+      } else if (kind === 'route') set('via', { kind: 'route', routeId: Number(s('via_route')) });
+      else set('via', { kind: 'host' });
+    }
     if (type === 'smb' || type === 'webdav') {
       if (str(v.password) !== '') set('password', str(v.password));
       else if (v.clear_password) set('clear_password', true);
+      // "Speicherziel übernehmen": its password, copied by the server when none is typed
+      else if (v.password_from) set('password_from_storage_target', Number(v.password_from));
     }
     const body = { name: s('name'), keep: s('keep') === '' ? undefined : Number(s('keep')), enabled: !!v.enabled, config: cfg };
     if (!editing) body.type = type;
@@ -337,7 +361,7 @@
     fmt, tr, MIN_PASSPHRASE, MAX_PASSPHRASE, passphraseStrength,
     normalizeFingerprint, formatFingerprint,
     DEFAULT_TZ, isHHMM, windowProblem, timeZones, browserTimeZone, timeIn,
-    ERROR_KEYS, FIELD_KEYS, errorCode, configField, errorKey, errorText, errorDetail,
+    ERROR_KEYS, FIELD_KEYS, HINT_KEYS, hintText, errorCode, configField, errorKey, errorText, errorDetail,
     TYPES, TYPE_LABELS, DEFAULT_PORTS, targetSummary, targetStatus, sortCandidates, targetPayload,
     VERIFY_WARNINGS, verifyWarningText, verifyLines,
     fmtBytes, fmtDateTime, fmtDate, fmtAgo,

@@ -159,6 +159,51 @@ function checkUrl(v, field) {
   return u.toString();
 }
 
+// ── "Verbindung" (via) and the trust anchor — the storage targets' rules ──
+// storageTargets/via.js validates and resolves `via` for both features; its
+// `invalid` errors become INVALID_CONFIG here, the field name as it is
+// ('via', 'routeId', 'port'; tlsCa → tls_ca).
+
+function storageRule(fn) {
+  try { return fn(); } catch (e) {
+    if (e && e.code === 'invalid') {
+      const field = e.field === 'tlsCa' ? 'tls_ca' : (e.field || 'via');
+      const raw = String(e.message || '');
+      const msg = (raw.startsWith(`${e.field}: `) ? raw.slice(String(e.field).length + 2) : raw) || 'invalid';
+      throw bad(field, msg);
+    }
+    throw e;
+  }
+}
+
+/** SMB / SFTP: { kind: 'host' } or a peer (its port: via.port, else `port`) / an L4 TCP route. */
+function tcpViaOf(c, dflt) {
+  const v = c.via && typeof c.via === 'object' ? c.via : null;
+  return storageRule(() => require('../storageTargets/via').tcpVia(v, c.port, dflt, { tcpOnly: true })) || { kind: 'host' };
+}
+
+/** The host field: required when connecting to it, optional (a name for the share / logs) through a peer or route. */
+function hostFor(c, v) {
+  if (v.kind === 'host' || (c.host !== undefined && c.host !== null && String(c.host).trim() !== '')) return checkHost(str(c.host));
+  return '';
+}
+
+/**
+ * The password of a storage target the administrator picked in the form
+ * ("Speicherziel übernehmen", `password_from_storage_target`: its id) —
+ * copied once into this target, never linked. → undefined when none picked.
+ */
+function storagePassword(c, type) {
+  const id = c.password_from_storage_target;
+  if (id === undefined || id === null || id === '') return undefined;
+  const st = require('../storageTargets');
+  const row = st.rowOf(id);
+  if (!row || row.kind !== type) throw bad('password_from_storage_target', `no such ${type} storage target`);
+  const sec = st.secretOf(row);
+  if (row.secret_enc && !Object.keys(sec).length) throw bad('password_from_storage_target', 'its password cannot be decrypted — enter it here');
+  return sec.password || '';
+}
+
 /**
  * Normalise a config for `type`. `prev` = stored config (secrets kept when the
  * input omits them or sends '').
@@ -167,25 +212,33 @@ function normalizeConfig(type, input, prev = {}) {
   const c = input && typeof input === 'object' ? input : {};
   const keep = (field) => {
     const v = checkSecret(c[field], field);
-    if (v === undefined || v === '') return prev[field] || '';
+    if (v === undefined || v === '') {
+      const fromStorage = field === 'password' ? storagePassword(c, type) : undefined;
+      return fromStorage !== undefined ? fromStorage : (prev[field] || '');
+    }
     return v;
   };
   switch (type) {
-    case 'sftp':
+    case 'sftp': {
+      const via = tcpViaOf(c, 22);
       return {
-        host: checkHost(str(c.host)),
+        host: hostFor(c, via),
         port: checkPort(c.port, 22),
+        via,
         username: checkUser(c.username, true),
         path: checkPath(c.path),
       };
+    }
     case 'smb': {
       const share = String(c.share || '').trim();
       if (!SHARE_RE.test(share)) throw bad('share', 'required (letters, digits, space and . _ $ -)');
       const domain = c.domain === undefined || c.domain === null ? '' : String(c.domain).trim();
       if (domain && !DOMAIN_RE.test(domain)) throw bad('domain', 'invalid');
+      const via = tcpViaOf(c, 445);
       const cfg = {
-        host: checkHost(str(c.host)),
+        host: hostFor(c, via),
         port: checkPort(c.port, 445),
+        via,
         share,
         path: checkPath(c.path),
         username: checkUser(c.username, false),
@@ -212,12 +265,18 @@ function normalizeConfig(type, input, prev = {}) {
       if (!cfg.secret_access_key) throw bad('secret_access_key', 'required');
       return cfg;
     }
-    case 'webdav':
+    case 'webdav': {
+      const url = checkUrl(c.url, 'url');
+      const v = c.via && typeof c.via === 'object' ? c.via : null;
       return {
-        url: checkUrl(c.url, 'url'),
+        url,
+        // the URL still names the NAS (scheme, path, Host, SNI, certificate name); `via` only says where to connect
+        via: storageRule(() => require('../storageTargets/via').webdavVia(v, undefined, new URL(url))),
         username: checkUser(c.username, false),
         password: c.clear_password === true ? '' : keep('password'),
+        tls_ca: storageRule(() => require('../storageTargets').tlsCa(c.tls_ca)),
       };
+    }
     default:
       throw new OffsiteError('INVALID_TYPE', `type must be one of ${TYPES.join(', ')}`);
   }
@@ -230,6 +289,7 @@ function publicConfig(type, cfg) {
     delete out[f];
     out[`has_${f}`] = !!cfg[f];
   }
+  if (cfg.tls_ca) out.tls_ca_info = require('../storageTargets').caInfo(cfg.tls_ca);
   return out;
 }
 
@@ -252,6 +312,8 @@ function toApi(row) {
     last_run_at: row.last_run_at,
     last_status: row.last_status,
     last_error: row.last_error,
+    // the English text of transport errors carries the hint; the page shows its own words for it
+    last_error_hint: row.last_error && row.last_error.includes(require('../storageTargets/via').SELF_HINT_TEXT) ? 'self_address' : null,
     last_verify_at: row.last_verify_at || null,
     last_verify_status: row.last_verify_status || null,
     last_verify: parseVerifyDetail(row.last_verify_detail),
@@ -321,7 +383,7 @@ async function updateTarget(id, body = {}) {
   else if (!readConfig(row)) throw new OffsiteError('INVALID_CONFIG', 'stored config is unreadable — send the full config');
   getDb().prepare('UPDATE backup_targets SET name = ?, config_enc = ?, enabled = ?, keep = ? WHERE id = ?')
     .run(name, encrypt(JSON.stringify(cfg)), body.enabled === undefined ? row.enabled : (body.enabled ? 1 : 0), keep, row.id);
-  if (row.type === 'sftp' && (prev.host !== cfg.host || Number(prev.port) !== Number(cfg.port))) {
+  if (row.type === 'sftp' && (prev.host !== cfg.host || Number(prev.port) !== Number(cfg.port) || JSON.stringify(prev.via || null) !== JSON.stringify(cfg.via || null))) {
     await require('./sftp').forgetHost(prev);
   }
   return getTarget(row.id);
@@ -490,6 +552,7 @@ async function verifyTarget(id) {
     publish(row.id, 'verified', { verify_status: 'failed' });
     if (err && err.code === 'TRANSPORT') {
       const e = new OffsiteError('TRANSPORT_FAILED', shortError(err), 502);
+      if (err.hint) e.hint = err.hint;
       throw e;
     }
     throw err;
@@ -543,6 +606,7 @@ async function uploadTo(id, name, buf) {
         require('../activity').log('offsite_backup_failed', `Off-site backup to "${row.name}" failed: ${msg}`, { source: 'system', severity: 'error' });
       } catch { /* activity log unavailable */ }
       const e = err instanceof OffsiteError ? err : new OffsiteError('UPLOAD_FAILED', msg, 502);
+      if (err && err.hint) e.hint = err.hint;
       throw e;
     }
   });
@@ -623,6 +687,83 @@ async function runTargetNow(id) {
   return uploadTo(row.id, remoteNameFor(localFile), buf);
 }
 
+// ── "Speicherziel übernehmen" ──────────────────────────────────────────────
+
+/**
+ * The WebDAV and SMB storage targets (Einstellungen › Plugins › Speicher)
+ * the off-site form can take its settings from (GET
+ * /targets/storage-sources): address, "Verbindung", user, trust anchor —
+ * in this feature's config fields, never a secret (has_password says
+ * whether one is stored). Saving with `password_from_storage_target: id`
+ * copies that password once (normalizeConfig).
+ */
+function storageSources() {
+  const st = require('../storageTargets');
+  let rows;
+  try {
+    rows = getDb().prepare("SELECT * FROM storage_targets WHERE kind IN ('webdav', 'smb') ORDER BY label COLLATE NOCASE, id").all();
+  } catch { return []; }
+  return rows.map((row) => {
+    const cfg = st.configOf(row);
+    const sec = st.secretOf(row);
+    let config;
+    if (row.kind === 'webdav') {
+      config = { url: cfg.url, via: cfg.via && cfg.via.kind ? cfg.via : { kind: 'host' }, username: cfg.username || '', tls_ca: cfg.tlsCa || null };
+    } else {
+      const v = cfg.via || { kind: 'host' };
+      config = {
+        host: v.kind === 'host' ? v.host : '',
+        port: v.kind === 'host' ? v.port || 445 : (v.kind === 'peer' ? v.port || 445 : null),
+        via: v.kind === 'host' ? { kind: 'host' } : v,
+        share: cfg.share, path: cfg.folder || '', username: cfg.username || '', domain: cfg.domain || '',
+      };
+    }
+    return {
+      id: row.id, kind: row.kind, label: row.label, display: st.display(row.kind, cfg), config,
+      has_password: !!sec.password, password_unreadable: !!row.secret_enc && !Object.keys(sec).length,
+    };
+  });
+}
+
+// ── Restore of a JSON backup: the peer / route of a `via` ─────────────────
+// The off-site targets are not part of the JSON backup (they stay as they
+// are), but a restore numbers peers and routes anew. Before it the peer of
+// every `via` is noted by name and the route by domain; afterwards they are
+// looked up again (services/backup.restoreBackup) — gone → id 0: the target
+// stays, unreachable until edited, like a storage target.
+
+/** [{ id, cfg, peer_name | route_domain }] of the targets with a peer / route. */
+function viaSnapshot(db) {
+  const out = [];
+  let rows;
+  try { rows = db.prepare('SELECT id, config_enc FROM backup_targets').all(); } catch { return out; }
+  for (const row of rows) {
+    const cfg = readConfig(row);
+    const v = cfg && cfg.via;
+    if (!v || (v.kind !== 'peer' && v.kind !== 'route')) continue;
+    const ref = v.kind === 'peer'
+      ? { peer_name: (db.prepare('SELECT name FROM peers WHERE id = ?').get(v.peerId) || {}).name || null }
+      : { route_domain: (db.prepare('SELECT domain FROM routes WHERE id = ?').get(v.routeId) || {}).domain || null };
+    out.push({ id: row.id, cfg, ...ref });
+  }
+  return out;
+}
+
+/** After the restore: the new ids of those peers / routes into the targets. Returns the count changed. */
+function remapVia(db, snapshot, { peerIdMap, routeIdByDomain }) {
+  let n = 0;
+  const upd = db.prepare('UPDATE backup_targets SET config_enc = ? WHERE id = ?');
+  for (const s of snapshot || []) {
+    const v = { ...s.cfg.via };
+    if (v.kind === 'peer') v.peerId = (s.peer_name && peerIdMap.get(s.peer_name)) || 0;
+    else v.routeId = (s.route_domain && routeIdByDomain.get(s.route_domain)) || 0;
+    try { upd.run(encrypt(JSON.stringify({ ...s.cfg, via: v })), s.id); n++; } catch (err) {
+      logger.warn({ target: s.id, err: shortError(err) }, 'backup restore: off-site target connection not updated');
+    }
+  }
+  return n;
+}
+
 /**
  * Internal L4 routes a LAN NAS can be reached through (GET
  * /targets/l4-candidates). connect_host is the server's WireGuard address: an
@@ -687,4 +828,7 @@ module.exports = {
   buildArchive,
   remoteNameFor,
   l4Candidates,
+  storageSources,
+  viaSnapshot,
+  remapVia,
 };

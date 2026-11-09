@@ -187,6 +187,14 @@ checked and pinned as always):
 | `{ kind: 'route', routeId }`, **HTTP route through a gateway** | the gateway's companion proxy (`http://<gateway VPN address>:<proxy port>` with `X-Gateway-Target-Domain: <route domain>`, `routes.resolveCompanionUrl`) — **http URLs only**, and only when the route speaks http to the NAS |
 | `{ kind: 'route', routeId }`, other **HTTP route** | its backend (peer VPN address or target address, target port) — only when the backend speaks the URL's scheme |
 
+Validation and dial resolution live in `via.js`; the off-site backup targets
+(WebDAV, SMB, SFTP — `services/offsite`) use the same module, so a NAS is
+reached the same way from both. A check that fails with `unreachable`
+because the connection to the settings' own address was refused or timed out
+carries `hint: 'self_address'` when that name resolves to this server's own
+public address (`domains.getServerPublicIps`) — the NAS is behind the VPN and
+needs a peer or a route.
+
 Never through Caddy and the route's public domain: an internal-only route
 (docs/route-external-exposure.md) stays internal, its outside block does not
 apply to GateControl itself. The route or peer is read again for every

@@ -1,15 +1,26 @@
 'use strict';
 
 // WebDAV transport (Nextcloud/ownCloud, Synology/QNAP WebDAV, Apache mod_dav,
-// nginx-dav, …) over fetch: PROPFIND / MKCOL / PUT / DELETE with Basic auth.
+// nginx-dav, …): PROPFIND / MKCOL / PUT / GET / DELETE with Basic auth.
 // docs/feature-release-b.md §7.
 //
-// Config: { url, username, password } — url is the target collection, e.g.
-// https://cloud.example.com/remote.php/dav/files/alice/gatecontrol/
+// Config: { url, username, password, via?, tls_ca? } — url is the target
+// collection, e.g. https://cloud.example.com/remote.php/dav/files/alice/gatecontrol/
+//
+// Requests go through the storage targets' net.request (one checked, pinned
+// address per request; TLS always verified). `via` (storageTargets/via.js,
+// the same as a storage target's "Verbindung"): connect to a VPN peer or a
+// route instead of the URL's host — the URL still gives the scheme, the
+// path, the Host header and the name for SNI and the certificate check, so
+// a NAS certificate for nas.example.com stays valid through the tunnel.
+// `tls_ca`: the target's own trust anchor (PEM), as a storage target's tlsCa.
 
 const crypto = require('node:crypto');
+const net = require('../storageTargets/net');
+const via = require('../storageTargets/via');
 
 const TIMEOUT_MS = 120 * 1000;
+const MAX_DOWNLOAD = 1024 * 1024 * 1024; // the restore test refuses more than 128 MB anyway
 
 function collectionUrl(cfg) {
   const u = new URL(cfg.url);
@@ -24,31 +35,49 @@ function authHeader(cfg) {
   return { authorization: 'Basic ' + Buffer.from(`${cfg.username}:${cfg.password || ''}`, 'utf8').toString('base64') };
 }
 
-async function dav(cfg, method, url, { body, headers = {}, timeoutMs = 30000, okStatuses } = {}) {
-  let res;
+/** A failed connection → Error code TRANSPORT (+ hint 'self_address', see via.selfHint). */
+async function transportError(cfg, method, url, err) {
+  const e = new Error(`WebDAV ${method} failed: ${(err.cause && err.cause.message) || err.message}`);
+  e.code = 'TRANSPORT';
+  const hint = await via.selfHint(err, via.webdavViaOf(cfg), url.hostname);
+  if (hint) { e.hint = hint; e.message += ` (${via.SELF_HINT_TEXT})`; }
+  return e;
+}
+
+/**
+ * One request → { status, headers, stream }. `timeoutMs`: no byte for that
+ * long ends it (an idle timeout, so a large upload over a slow line is fine).
+ */
+async function send(cfg, method, url, { body = null, headers = {}, timeoutMs = 30000 } = {}) {
   try {
-    res = await fetch(url, {
-      method,
+    const dialer = via.webdavDialer(via.webdavViaOf(cfg), url);
+    return await net.request({
+      // a string body as a Buffer: sent with Content-Length, not chunked (some NAS refuse chunked PROPFIND)
+      method, url, body: typeof body === 'string' ? Buffer.from(body, 'utf8') : body, idleMs: timeoutMs,
       headers: { ...authHeader(cfg), ...headers },
-      body,
-      redirect: 'manual',
-      signal: AbortSignal.timeout(timeoutMs),
+      tlsCa: cfg.tls_ca || null,
+      dial: dialer ? dialer() : null,
     });
   } catch (err) {
-    const e = new Error(`WebDAV ${method} failed: ${(err.cause && err.cause.message) || err.message}`);
-    e.code = 'TRANSPORT';
-    throw e;
+    throw await transportError(cfg, method, url, err);
   }
-  const text = await res.text().catch(() => '');
-  if (okStatuses ? !okStatuses.includes(res.status) : (res.status < 200 || res.status >= 300)) {
-    let hint = '';
-    if (res.status === 401 || res.status === 403) hint = ' (check username/password and permissions)';
-    else if (res.status >= 300 && res.status < 400) hint = ` (redirect to ${res.headers.get('location') || '?'} — enter the final URL)`;
-    const e = new Error(`WebDAV ${method} ${res.status}${hint}`);
-    e.code = 'TRANSPORT';
-    e.remoteStatus = res.status;
-    throw e;
-  }
+}
+
+function statusError(method, res) {
+  let hint = '';
+  if (res.status === 401 || res.status === 403) hint = ' (check username/password and permissions)';
+  else if (res.status >= 300 && res.status < 400) hint = ` (redirect to ${res.headers.location || '?'} — enter the final URL)`;
+  const e = new Error(`WebDAV ${method} ${res.status}${hint}`);
+  e.code = 'TRANSPORT';
+  e.remoteStatus = res.status;
+  return e;
+}
+
+async function dav(cfg, method, url, { body, headers = {}, timeoutMs = 30000, okStatuses } = {}) {
+  const res = await send(cfg, method, url, { body, headers, timeoutMs });
+  let text = '';
+  try { text = (await net.readBody(res.stream)).toString('utf8'); } catch { /* answer cut off: the status decides */ }
+  if (okStatuses ? !okStatuses.includes(res.status) : (res.status < 200 || res.status >= 300)) throw statusError(method, res);
   return { status: res.status, text };
 }
 
@@ -128,26 +157,12 @@ async function list(cfg) {
 /** Read one file back (restore test). Returns a Buffer; never writes anything. */
 async function download(cfg, name) {
   const url = new URL(encodeURIComponent(name), collectionUrl(cfg));
-  let res;
-  try {
-    res = await fetch(url, {
-      method: 'GET',
-      headers: authHeader(cfg),
-      redirect: 'manual',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-  } catch (err) {
-    const e = new Error(`WebDAV GET failed: ${(err.cause && err.cause.message) || err.message}`);
-    e.code = 'TRANSPORT';
-    throw e;
-  }
+  const res = await send(cfg, 'GET', url, { timeoutMs: TIMEOUT_MS });
   if (res.status < 200 || res.status >= 300) {
-    const e = new Error(`WebDAV GET ${res.status}`);
-    e.code = 'TRANSPORT';
-    e.remoteStatus = res.status;
-    throw e;
+    await net.drain(res.stream);
+    throw statusError('GET', res);
   }
-  return Buffer.from(await res.arrayBuffer());
+  try { return await net.readBody(res.stream, MAX_DOWNLOAD); } catch (err) { throw await transportError(cfg, 'GET', url, err); }
 }
 
 async function remove(cfg, name) {

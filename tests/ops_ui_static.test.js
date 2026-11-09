@@ -84,7 +84,8 @@ describe('ops UI: templates', () => {
   it('Backups section: off-site card, pre-migration card, target dialog (type cards first), .gcbk restore', () => {
     for (const id of ['card-offsite', 'st-off-abhint', 'st-off-pass', 'st-off-pass2', 'st-off-strength', 'st-off-key', 'st-off-add', 'st-off-targets',
       'card-premigration', 'st-premig', 'st-ot-modal', 'st-ot-url', 'st-ot-host', 'st-ot-port', 'st-ot-l4', 'st-ot-pubkey', 'st-ot-keycopy',
-      'st-ot-keyrotate', 'st-ot-pw', 'st-ot-secret', 'st-ot-clearpw', 'st-ot-keep', 'st-ot-enabled', 'st-ot-err', 'st-rs-passrow', 'st-rs-pass']) {
+      'st-ot-keyrotate', 'st-ot-pw', 'st-ot-secret', 'st-ot-clearpw', 'st-ot-keep', 'st-ot-enabled', 'st-ot-err', 'st-rs-passrow', 'st-rs-pass',
+      'st-ot-src', 'st-ot-src-note', 'st-ot-via', 'st-ot-via-peer', 'st-ot-via-route', 'st-ot-via-port', 'st-ot-ca', 'st-ot-ca-set']) {
       assert.ok(hasId(id), id);
     }
     assert.match(SETTINGS_TPL, /id="st-rs-file" accept="\.json,\.gcbk"/);
