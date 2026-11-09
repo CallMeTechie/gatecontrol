@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.255.1] — 2026-11-09
+
+### Fixes
+- kaputte Request-Bodies als 4xx mit gedrosselter Warnung statt „Unhandled error“ (#451)
+
+---
+
 ## [1.255.0] — 2026-11-08
 
 ### Features
