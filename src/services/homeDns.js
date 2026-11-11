@@ -47,6 +47,7 @@ const ID_RE = /^[a-z0-9_-]{1,32}$/;
 const HHMM_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const MAC_RE = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/;
 const DEFAULT_ID = 'default';
+const ALL_DAY = Object.freeze({ from: '00:00', to: '24:00' });
 
 class DnsError extends Error {
   constructor(code, message) { super(message || code); this.code = code; }
@@ -108,15 +109,33 @@ function text(v, max) {
   return s || null;
 }
 
+/**
+ * from/to of a time → the stored pair, null when it is none. The whole day is
+ * 00:00–24:00 (also taken as 00:00–00:00); '24:00' as the end of any other
+ * time is midnight, stored as '00:00'. Other equal times stay refused — the
+ * gateway reads them as the whole day, which nobody means with 08:00–08:00.
+ */
+function normSpan(from, to) {
+  if (to !== ALL_DAY.to && !HHMM_RE.test(to)) return null;
+  if (from === ALL_DAY.from && (to === ALL_DAY.to || to === ALL_DAY.from)) return { from: ALL_DAY.from, to: ALL_DAY.to };
+  const end = to === ALL_DAY.to ? '00:00' : to;
+  return from === end ? null : { from, to: end };
+}
+
+/** Is this time the whole day (00:00–24:00)? */
+function allDay(x) { return !!x && x.from === ALL_DAY.from && x.to === ALL_DAY.to; }
+
 function normSchedule(x) {
   if (!x || typeof x !== 'object') return null;
   const days = Array.isArray(x.days) ? [...new Set(x.days.filter((d) => Number.isInteger(d) && d >= 1 && d <= 7))].sort((a, b) => a - b) : [];
-  if (!days.length || !HHMM_RE.test(x.from) || !HHMM_RE.test(x.to) || x.from === x.to) return null;
+  if (!days.length || !HHMM_RE.test(x.from)) return null;
+  const span = normSpan(x.from, x.to);
+  if (!span) return null;
   const block = x.block === 'all' ? 'all' : 'categories';
   const categories = block === 'categories' && Array.isArray(x.categories)
     ? catalog.CATEGORY_IDS.filter((c) => x.categories.includes(c)) : [];
   if (block === 'categories' && !categories.length) return null;
-  return { days, from: x.from, to: x.to, block, categories, allowAlways: patternsSoft(x.allowAlways) };
+  return { days, from: span.from, to: span.to, block, categories, allowAlways: patternsSoft(x.allowAlways) };
 }
 
 function normProfile(p, i) {
@@ -341,7 +360,7 @@ function validateProfile(b, s, peerId, current) {
         if (!x || typeof x !== 'object') throw new DnsError('invalid_schedule', `schedules[${i}]: object`);
         if (x.allowAlways !== undefined) patterns(x.allowAlways, `schedules[${i}].allowAlways`);
         const n = normSchedule(x);
-        if (!n) throw Object.assign(new DnsError('invalid_schedule', `schedules[${i}]: days 1–7, from/to HH:MM (different), block all or categories with at least one category`), { index: i });
+        if (!n) throw Object.assign(new DnsError('invalid_schedule', `schedules[${i}]: days 1–7, from/to HH:MM (different, or 00:00–24:00 for the whole day), block all or categories with at least one category`), { index: i });
         return n;
       });
     } else if (k === 'users' || k === 'devices') {
@@ -537,6 +556,7 @@ function nextSchedule(profile, now = Date.now(), tz = serverTz()) {
   if (!profile || !profile.schedules || !profile.schedules.length) return null;
   const today = partsOf(now, tz);
   let best = null;
+  const windows = [];
   for (let off = -1; off <= 7; off++) {
     const base = new Date(Date.UTC(today.y, today.mo - 1, today.d + off));
     const y = base.getUTCFullYear(); const mo = base.getUTCMonth() + 1; const d = base.getUTCDate();
@@ -549,11 +569,22 @@ function nextSchedule(profile, now = Date.now(), tz = serverTz()) {
       const endBase = x.to > x.from ? new Date(Date.UTC(y, mo - 1, d)) : new Date(Date.UTC(y, mo - 1, d + 1));
       const end = zoned(endBase.getUTCFullYear(), endBase.getUTCMonth() + 1, endBase.getUTCDate(), th, tm, tz);
       if (end <= now) continue;
-      if (!best || start < best.start) best = { start, end, x };
+      windows.push({ start, end, x });
+      if (!best || start < best.start) best = windows[windows.length - 1];
     }
   }
   if (!best) return null;
-  return { from: iso(best.start), to: iso(best.end), block: best.x.block, categories: best.x.categories.slice(), active: best.start <= now };
+  // times that follow each other without a gap and block the same (whole
+  // days in a row, 18:00–24:00 before a whole day) are one window
+  const same = (a, b) => a.block === b.block && JSON.stringify(a.categories) === JSON.stringify(b.categories);
+  let end = best.end;
+  for (let again = true; again;) {
+    again = false;
+    for (const w of windows) {
+      if (w.start <= end && w.end > end && same(w.x, best.x)) { end = w.end; again = true; }
+    }
+  }
+  return { from: iso(best.start), to: iso(end), block: best.x.block, categories: best.x.categories.slice(), active: best.start <= now };
 }
 
 // ─── Statistics (POST /api/v1/gateway/dns) ─────────────────────────────
@@ -876,6 +907,6 @@ function notice(type, r, reason, durationMs) {
 module.exports = {
   DnsError, LIMITS, DEFAULT_ID, DOWN_AFTER_MS,
   normPattern, normalize, get, setGeneral, createProfile, updateProfile, deleteProfile,
-  configPayload, profileOfUser, nextSchedule, dayKey, zoned, ingest, retention, telemetryDns, view, test, checkDown, outageOf,
+  configPayload, profileOfUser, nextSchedule, allDay, ALL_DAY, dayKey, zoned, ingest, retention, telemetryDns, view, test, checkDown, outageOf,
   assignment, gatewayName, validDohUrl, reconcileHomes,
 };
