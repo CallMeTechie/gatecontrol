@@ -160,6 +160,20 @@ describe('gateway handbook (services/gatewayHandbook.js)', () => {
     });
   }
 
+  it('every help topic of the page (public/js/handbook.js) has its heading in the in-app handbook, in both languages', () => {
+    for (const lang of ['de', 'en']) {
+      const map = hbook.topicAnchors(lang);
+      const html = hbook.get(lang).html;
+      for (const topic of Object.keys(guide.TOPICS)) {
+        if (topic === 'index') { assert.equal(map.index, undefined, 'the overview is not part of the gateway chapters'); continue; }
+        assert.match(String(map[topic]), kit.SLUG_RE, `${lang} ${topic}`);
+        assert.ok(html.includes(`id="hb-${map[topic]}"`), `${lang} ${topic} → #${map[topic]} is a heading of the handbook`);
+      }
+    }
+    assert.equal(hbook.topicAnchors('de')['gw.rpi'], '3-3-raspberry-pi');
+    assert.equal(hbook.topicAnchors('en')['feat.print'], hbook.get('en').anchors['05-features.md#print--scan']);
+  });
+
   it('a link between the chapters becomes the in-app anchor', () => {
     const r = hbook.get('de');
     // 03 → "05-funktionen.md#zwischenspeicher"
@@ -225,6 +239,38 @@ describe('gateway docs kit (public/js/gateway-docs-kit.js)', () => {
     assert.equal(kit.stateOf('1.33.1', '1.34.0'), 'older');
     assert.equal(kit.stateOf('1.33.1', null), 'unknown');
     assert.equal(kit.stateOf('x', '1.34.0'), 'unknown');
+  });
+
+  it('"Alle Versionen" opens with the newest five; down to the installed one when that is older; the rest folds', () => {
+    const list = (n) => Array.from({ length: n }, (_, i) => ({ version: `1.${40 - i}.0` })); // 1.40.0, 1.39.0, …
+    assert.equal(kit.VERSIONS_FIRST, 5);
+    assert.equal(kit.visibleCount(list(20), '1.40.0'), 5, 'the gateway is up to date: the newest five');
+    assert.equal(kit.visibleCount(list(20), null), 5, 'no version reported');
+    assert.equal(kit.visibleCount(list(20), '1.2.0'), 5, 'older than the whole list');
+    assert.equal(kit.visibleCount(list(20), 'v1.38.0'), 5, 'within the first five');
+    assert.equal(kit.visibleCount(list(20), '1.31.0'), 10, 'nine versions behind: every newer one and the installed one stay in sight');
+    assert.equal(kit.visibleCount(list(5), '1.40.0'), 5);
+    assert.equal(kit.visibleCount(list(3), '1.40.0'), 3);
+    assert.equal(kit.visibleCount(list(6), '1.40.0'), 6, 'no fold for a single row');
+    assert.equal(kit.visibleCount(list(7), '1.40.0'), 5);
+    assert.equal(kit.visibleCount(list(20), '1.40.0', 3), 3);
+    assert.equal(kit.visibleCount([], '1.40.0'), 0);
+    assert.equal(kit.visibleCount(null, null), 0);
+  });
+
+  it('"Anleitung": a help topic → its heading in the handbook of the gateway; nothing for a topic outside it', () => {
+    const anchors = { 'gw.rpi': '3-3-raspberry-pi', 'feat.dns': 'dns-filter', top: '', bad: '../x', obj: {} };
+    assert.equal(kit.topicHash(7, 'gw.rpi', anchors), '#gw/7/handbook/3-3-raspberry-pi');
+    assert.equal(kit.topicHash('7', 'feat.dns', anchors), '#gw/7/handbook/dns-filter');
+    assert.equal(kit.topicHash(7, 'top', anchors), '#gw/7/handbook');
+    assert.equal(kit.topicHash(7, 'index', anchors), null);
+    assert.equal(kit.topicHash(7, 'bad', anchors), null);
+    assert.equal(kit.topicHash(7, 'obj', anchors), null);
+    assert.equal(kit.topicHash(7, 'toString', anchors), null);
+    assert.equal(kit.topicHash(null, 'gw.rpi', anchors), null);
+    assert.equal(kit.topicHash(7, 'gw.rpi', null), null);
+    // and back: the address parses to the same heading
+    assert.deepEqual(kit.parseHash(kit.topicHash(7, 'gw.rpi', anchors)), { id: '7', view: 'handbook', target: '3-3-raspberry-pi' });
   });
 
   it('summary: how many versions are newer, whether the installed one is listed', () => {
@@ -301,6 +347,31 @@ describe('GET /api/v1/gateways/releases, /handbook and the page', () => {
     assert.ok(m[1].split(' ').includes('gwd.'));
     const island = JSON.parse(m[2]);
     assert.ok(island['gwd.ver.installed'] && island['gwd.ver.newer'] && island['gwd.hb.toc'] && island['gwd.whats_new'] && island['gwp.menu.versions'] && island['gwp.menu.handbook']);
+    assert.ok(island['gwd.ver.older_show'] && island['gwd.ver.older_hide']);
+  });
+
+  it('the page: "Anleitung" leads into the handbook of the app — the topics come as an island, in the language of the page', async () => {
+    const html = (await agent.get('/gateways').expect(200)).text;
+    const m = /<script type="application\/json" id="gw-handbook-topics"[^>]*>([\s\S]*?)<\/script>/.exec(html);
+    assert.ok(m, 'the island is there');
+    const topics = JSON.parse(m[1]);
+    const lang = /<html[^>]* lang="en"/.test(html) ? 'en' : 'de';
+    assert.deepEqual(topics, hbook.topicAnchors(lang));
+    // the links of the assistant name their topic; gateway-wizard.js gives them the address of the gateway's handbook
+    for (const topic of ['gw.rpi', 'gw.synology', 'gw.proxmox', 'gw.linux']) {
+      assert.match(html, new RegExp(`<a href="[^"]+" target="_blank" rel="noopener noreferrer" data-guide="${topic.replace('.', '\\.')}">`), topic);
+      assert.ok(topics[topic], topic);
+    }
+    const wiz = fs.readFileSync(path.join(ROOT, 'public/js/gateway-wizard.js'), 'utf8');
+    const edge = fs.readFileSync(path.join(ROOT, 'public/js/gateway-edge.js'), 'utf8');
+    assert.match(wiz, /DK\.topicHash\(state\.peerId, a\.dataset\.guide, HB_TOPICS\)/);
+    assert.match(edge, /DK\.topicHash\(guideGw, topic, HB_TOPICS\)/);
+    // every "Anleitung" of the tabs goes through guide() / guideUrl(): no address of the guide outside built by hand
+    for (const f of ['gateway-edge.js', 'gateway-net.js', 'gateway-home.js', 'gateway-radio.js', 'gateway-wizard.js']) {
+      const src = fs.readFileSync(path.join(ROOT, 'public/js', f), 'utf8');
+      assert.doesNotMatch(src, /docs\/(handbuch|guide)\//, f);
+      assert.equal((src.match(/GCHandbook\.url\(/g) || []).length, f === 'gateway-edge.js' ? 1 : 0, f + ': only the fallback of guideUrl()');
+    }
   });
 
   it('every gwd.* string in German and English', () => {

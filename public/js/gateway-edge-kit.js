@@ -60,13 +60,22 @@
   };
 
   /**
-   * The guide for a reason (null: none) — `platform` as the gateway assistant stores it (rpi, synology, …),
-   * `lang` the language of the interface ('de' | 'en').
+   * The help topic for a reason (null: none) — `platform` as the gateway assistant stores it (rpi, synology, …).
+   * gateway-edge.js opens it in the handbook of the Gateways page.
+   */
+  function reasonTopic(reason, platform) {
+    const d = Object.prototype.hasOwnProperty.call(REASON_TOPICS, reason) ? REASON_TOPICS[reason] : null;
+    if (!d) return null;
+    return (platform && d[platform]) || d.other;
+  }
+
+  /**
+   * The same topic in the user guide outside the app (null: none) — `lang` the language of the interface ('de' | 'en').
    */
   function reasonDoc(reason, platform, lang) {
-    const d = Object.prototype.hasOwnProperty.call(REASON_TOPICS, reason) ? REASON_TOPICS[reason] : null;
-    if (!d || !HB) return null;
-    return HB.url((platform && d[platform]) || d.other, lang);
+    const topic = reasonTopic(reason, platform);
+    if (!topic || !HB) return null;
+    return HB.url(topic, lang);
   }
 
   /** What a plugin row shows: { state, tone, key }. */
@@ -338,7 +347,7 @@
   }
 
   return {
-    TABS, STATES, REASONS, reasonDoc, parseHash, hashFor, pluginState, boundaryState, pluginControl, summary, capabilityRows, capabilityKeys, needsMqtt,
+    TABS, STATES, REASONS, reasonDoc, reasonTopic, parseHash, hashFor, pluginState, boundaryState, pluginControl, summary, capabilityRows, capabilityKeys, needsMqtt,
     memoryHint, ramLabel, EDGE_BASE_MB, PER_PLUGIN_MB,
     ACCOUNTS_MAX, TOPICS_MAX, USER_RE, ACCESS, TEMPLATES, template, usernameProblem, topicOk, plannedTopics, accountBody,
     topicPrefix, brokerAddress, fingerprintText, tlsView, brokerStatus, accountStatus, errorKey, LOG_FILTERS, logLabel,

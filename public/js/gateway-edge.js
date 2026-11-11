@@ -97,9 +97,23 @@
   function note(tone, children, ic) {
     return h('div', { class: 'gwe-note gwe-note-' + tone }, [icon(ic || (tone === 'warn' || tone === 'crit' ? 'warn' : 'info'), 18), h('div', { class: 'gwe-note-t' }, children)]);
   }
-  // A quiet "Anleitung" link into the user guide (public/js/handbook.js); null for an unknown topic.
+  // help topic → heading of the handbook inside the app (the page's island, services/gatewayHandbook.js topicAnchors)
+  let HB_TOPICS = {};
+  try { HB_TOPICS = JSON.parse((document.getElementById('gw-handbook-topics') || {}).textContent || '{}') || {}; } catch (_) { HB_TOPICS = {}; }
+  let guideGw = null; // the gateway whose tab is open (mount): "Anleitung" opens its handbook
+
+  // Where "Anleitung" leads: the handbook of the Gateways page at the heading of the topic
+  // (#gw/<id>/handbook/<anchor>, gateway-docs.js) — in a new tab, so the tab or dialog it was
+  // asked from stays as it is. A topic that is not part of it: the user guide (public/js/handbook.js).
+  function guideUrl(topic) {
+    const DK = window.GCGatewayDocsKit;
+    const hash = DK && DK.topicHash ? DK.topicHash(guideGw, topic, HB_TOPICS) : null;
+    if (hash) return location.pathname + hash;
+    return window.GCHandbook ? window.GCHandbook.url(topic, LANG) : null;
+  }
+  // A quiet "Anleitung" link; null for an unknown topic.
   function guide(topic, cls) {
-    const url = window.GCHandbook ? window.GCHandbook.url(topic, LANG) : null;
+    const url = guideUrl(topic);
     return url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', class: cls || null, 'data-guide': topic, text: t('gwe.reason.guide') }) : null;
   }
   function chip(tone, text, ic) { return h('span', { class: 'gwe-chip' + (tone ? ' gwe-chip-' + tone : '') }, [ic ? icon(ic, 14) : null, text]); }
@@ -523,7 +537,8 @@
   // the explanation of a reason (gwe.state_d.<reason>), the user guide (handbook.js) and the gateway's own error text
   function reasonText(g, d, reason) {
     const kids = [t('gwe.state_d.' + reason)];
-    const url = K.reasonDoc(reason, g.platform, LANG);
+    const topic = K.reasonTopic(reason, g.platform);
+    const url = topic ? guideUrl(topic) : null;
     if (url) kids.push(' ', h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', 'data-guide': 'reason', text: t('gwe.reason.guide') }));
     const msg = d.connection && d.connection.reason === reason ? d.connection.detail : null;
     if (msg) kids.push(' · ' + t('gwe.reason.gw_says') + ' ', h('code', { class: 'gwe-mono', text: msg }));
@@ -1056,6 +1071,7 @@
 
   // ─── Public ───────────────────────────────────────────────────────────
   function mount(box, g, tab, ctx) {
+    guideGw = g.peer_id;
     // tabs "Funktionen", "Netzwerk" and "Internet" (phase 3a) live in gateway-net.js
     if ((tab === 'features' || tab === 'net' || tab === 'inet') && window.GCGatewayNet) {
       cur = null;

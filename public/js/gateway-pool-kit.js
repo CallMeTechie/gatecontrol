@@ -59,14 +59,15 @@
 
   /**
    * What the reserve check of a member found missing: { k, n, missing } —
-   * k of the pool's n routes keep their target reachable through it — or
-   * null when it reaches every target it reported on or reports nothing
-   * (no data: no claim either way).
+   * k of the n routes it stands by for (the pool's routes and the routes
+   * pinned to its partners: `total` of the server) keep their target
+   * reachable through it — or null when it reaches every target it reported
+   * on or reports nothing (no data: no claim either way).
    */
   function reserveGap(pool, member) {
     const r = member && member.reserve;
     if (!r || !(r.checked > 0) || r.reachable >= r.checked) return null;
-    const n = ((pool && pool.routes) || []).length || r.total || r.checked;
+    const n = r.total || ((pool && pool.routes) || []).length || r.checked;
     const missing = r.missing || [];
     return { k: Math.max(0, n - (missing.length || (r.checked - r.reachable))), n, missing };
   }
@@ -349,6 +350,23 @@
     return out;
   }
 
+  // The functions a fleet card names (services/gatewayFeatures.js CHIP_KEYS —
+  // the server sends them in this order: switched on deliberately first).
+  const CHIP_KEYS = ['print', 'cameras', 'radio', 'ai', 'cache', 'dns', 'edge', 'mqtt', 'ups', 'netwatch', 'inetq', 'presence'];
+  const CHIP_LIMIT = 3; // with the German names that is one row of a card
+
+  /**
+   * The chips of a fleet card: { shown, more } from `features_on` of the
+   * gateway (GET /api/v1/gateways). Up to `limit` names — a row of the card —
+   * and the rest folds into "+N". Unknown keys (a newer server) are left out.
+   */
+  function featureChips(keys, limit) {
+    const max = limit > 0 ? limit : CHIP_LIMIT;
+    const seen = new Set();
+    const list = (Array.isArray(keys) ? keys : []).filter((k) => CHIP_KEYS.includes(k) && !seen.has(k) && seen.add(k));
+    return { shown: list.slice(0, max), more: list.slice(max) };
+  }
+
   /** A tab whose function is switched off (shown muted, "· aus"). */
   function tabOff(d, tab) {
     if (!d || !d.features) return false;
@@ -385,6 +403,6 @@
     cidr, subnetsOf, sameLan, suggestion,
     healthChecks, overall,
     clock, liveOf, pollDelay,
-    FEATURE_GROUPS, groupOf, featureStates, tabOff, memoryOf,
+    FEATURE_GROUPS, groupOf, featureStates, featureChips, CHIP_KEYS, CHIP_LIMIT, tabOff, memoryOf,
   };
 });

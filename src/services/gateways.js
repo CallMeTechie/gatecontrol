@@ -104,9 +104,21 @@ async function createGateway({ name, apiPort = DEFAULT_API_PORT, proxyPort = 808
   return { peer, apiToken, pushToken };
 }
 
+// The gateway a pinned route belongs to: where it returns to after a failover.
+const HOME_PEER = 'COALESCE(r.original_peer_id, r.target_peer_id)';
+// A route pinned to another member of an enabled pool this gateway (@me) is in.
+// gatewayHealth pivots such a route to an alive sibling of the pool when its
+// gateway goes down — whatever the pool's mode.
+const PARTNER_PINNED = `(r.target_pool_id IS NULL AND ${HOME_PEER} IN (
+          SELECT m2.peer_id FROM gateway_pool_members m1
+          JOIN gateway_pools gp ON gp.id = m1.pool_id AND gp.enabled = 1
+          JOIN gateway_pool_members m2 ON m2.pool_id = m1.pool_id AND m2.peer_id != m1.peer_id
+          WHERE m1.peer_id = @me))`;
+
 /**
  * Build the gateway-config payload sent to a Gateway on poll.
- * Includes all HTTP + L4 routes with target_peer_id=peerId.
+ * Includes all HTTP + L4 routes with target_peer_id=peerId, the routes of its
+ * pools and the routes pinned to its pool partners.
  */
 function getGatewayConfig(peerId) {
   const db = getDb();
@@ -114,41 +126,62 @@ function getGatewayConfig(peerId) {
   // Failover for peer-pinned routes happens via DB pivot in gatewayHealth:
   // when the pinned peer goes offline the route's target_peer_id is moved
   // to the alive sibling. By the time a companion polls, target_peer_id
-  // already names whoever is currently serving the route — no sibling
-  // lookup needed here. target_pool_id (explicit pool routing for
-  // load-balancing) still surfaces in every pool member's config.
+  // already names whoever is currently serving the route. target_pool_id
+  // (explicit pool routing for load-balancing) surfaces in every pool
+  // member's config.
+  //
+  // Reserve check: a member of an enabled pool also gets the routes pinned
+  // to its partners (PARTNER_PINNED) — like the pool's own routes. Caddy only
+  // sends it their traffic after the pivot, but with the route in its config
+  // the gateway probes the LAN target with every heartbeat
+  // (route_reachability), so the pool page can say BEFORE an outage whether
+  // the reserve reaches it (gatewayPoolState.reserveOf).
   const httpRoutes = db.prepare(`
-    SELECT id, domain, target_kind, target_lan_host, target_lan_port,
-           backend_https, backend_tls_fingerprint, wol_enabled, wol_mac
-    FROM routes
-    WHERE target_kind = 'gateway' AND enabled = 1
-      AND (route_type = 'http' OR route_type IS NULL)
+    SELECT r.id, r.domain, r.target_kind, r.target_lan_host, r.target_lan_port,
+           r.backend_https, r.backend_tls_fingerprint, r.wol_enabled, r.wol_mac,
+           ${HOME_PEER} AS home_peer_id, gm_home.lan_ip AS home_lan_ip
+    FROM routes r
+    LEFT JOIN gateway_meta gm_home ON gm_home.peer_id = ${HOME_PEER}
+    WHERE r.target_kind = 'gateway' AND r.enabled = 1
+      AND (r.route_type = 'http' OR r.route_type IS NULL)
       AND (
-        target_peer_id = ?
-        OR target_pool_id IN (SELECT pool_id FROM gateway_pool_members WHERE peer_id = ?)
+        r.target_peer_id = @me
+        OR r.target_pool_id IN (SELECT pool_id FROM gateway_pool_members WHERE peer_id = @me)
+        OR ${PARTNER_PINNED}
       )
-    ORDER BY id
-  `).all(peerId, peerId);
+    ORDER BY r.id
+  `).all({ me: peerId });
 
   const l4Routes = db.prepare(`
     SELECT r.id, r.l4_listen_port AS listen_port, r.target_lan_host, r.target_lan_port,
-           r.original_peer_id, gm_home.lan_ip AS home_lan_ip,
+           ${HOME_PEER} AS home_peer_id, gm_home.lan_ip AS home_lan_ip,
            r.wol_enabled, r.wol_mac
     FROM routes r
-    LEFT JOIN gateway_meta gm_home ON gm_home.peer_id = r.original_peer_id
+    LEFT JOIN gateway_meta gm_home ON gm_home.peer_id = ${HOME_PEER}
     WHERE r.target_kind = 'gateway' AND r.enabled = 1
       AND r.route_type = 'l4'
       AND (
-        r.target_peer_id = ?
-        OR r.target_pool_id IN (SELECT pool_id FROM gateway_pool_members WHERE peer_id = ?)
+        r.target_peer_id = @me
+        OR r.target_pool_id IN (SELECT pool_id FROM gateway_pool_members WHERE peer_id = @me)
+        OR ${PARTNER_PINNED}
       )
     ORDER BY r.id
-  `).all(peerId, peerId);
+  `).all({ me: peerId });
+
+  // A loopback target (127.0.0.1) means the host of the route's HOME gateway.
+  // On any other gateway — the sibling serving it after a failover, or a
+  // partner that only checks it as a reserve — it is the home gateway's LAN
+  // IP. Unknown (the home never reported one): the route is left out (fail
+  // closed; Caddy serves the maintenance page for the HTTP case).
+  const lanHostFor = (r) => {
+    if (!isLoopbackHost(r.target_lan_host) || r.home_peer_id == null || r.home_peer_id === peerId) return r.target_lan_host;
+    return r.home_lan_ip || null;
+  };
 
   return {
     config_hash_version: CONFIG_HASH_VERSION,
     peer_id: peerId,
-    routes: httpRoutes.map(r => ({
+    routes: httpRoutes.map(r => ({ ...r, target_lan_host: lanHostFor(r) })).filter(r => r.target_lan_host != null).map(r => ({
       id: r.id,
       domain: r.domain,
       target_kind: r.target_kind,
@@ -182,15 +215,13 @@ function getGatewayConfig(peerId) {
       ...(r.wol_mac ? { wol_mac: r.wol_mac } : {}),
     })),
     l4_routes: l4Routes.map(r => {
-      // Loopback L4 target that has failed over to a sibling: rewrite to the
-      // home gateway's LAN IP (this peer is the sibling, not the home). If the
-      // home LAN IP is unknown, omit the listener (fail closed — no header /
-      // 502 possible at layer 4; a missing listener = connection refused).
-      let lanHost = r.target_lan_host;
-      if (isLoopbackHost(lanHost) && r.original_peer_id != null) {
-        if (r.home_lan_ip) lanHost = r.home_lan_ip;
-        else return null;
-      }
+      // Loopback L4 target on a gateway that is not the route's home (failed
+      // over to this sibling, or checked by it as a reserve): the home
+      // gateway's LAN IP. If the home LAN IP is unknown, omit the listener
+      // (fail closed — no header / 502 possible at layer 4; a missing
+      // listener = connection refused).
+      const lanHost = lanHostFor(r);
+      if (lanHost == null) return null;
       return {
         id: r.id,
         // SQLite stores l4_listen_port as TEXT (so Caddy-side range syntax
@@ -212,6 +243,26 @@ function getGatewayConfig(peerId) {
     // Not part of the shared config-hash schema — computeConfigHash adds it to the hash itself.
     features: require('./gatewayFeatures').configPayload(peerId),
   };
+}
+
+/**
+ * The routes a gateway only stands by for: pinned to a partner of one of its
+ * (enabled) pools, in its config for the reserve check (PARTNER_PINNED) —
+ * [{ id, domain, route_type, target_lan_host, target_lan_port, l4_listen_port,
+ * peer_id, peer_name }] with the gateway the route belongs to. The gateways
+ * page marks them in "Routen über dieses Gateway".
+ */
+function reserveRoutesFor(peerId) {
+  return getDb().prepare(`
+    SELECT r.id, r.domain, r.route_type, r.target_lan_host, r.target_lan_port, r.l4_listen_port,
+           ${HOME_PEER} AS peer_id, hp.name AS peer_name
+    FROM routes r
+    LEFT JOIN peers hp ON hp.id = ${HOME_PEER}
+    WHERE r.target_kind = 'gateway' AND r.enabled = 1
+      AND (r.target_peer_id IS NULL OR r.target_peer_id != @me)
+      AND ${PARTNER_PINNED}
+    ORDER BY r.domain COLLATE NOCASE, r.id
+  `).all({ me: peerId });
 }
 
 /**
@@ -289,11 +340,14 @@ function handleHeartbeat(peerId, health) {
   const sm = _getSm(peerId);
   const prevStatus = sm.status;
   const healthy = _isHeartbeatHealthy(health);
-  sm.recordHeartbeat(healthy);
+  // direct: the gateway's own word — a healthy one ends 'offline' at once
+  sm.recordHeartbeat(healthy, { direct: true });
 
   if (sm.status !== prevStatus) {
     _onStatusTransition(peerId, prevStatus, sm.status, health);
   }
+  // it answers (healthy or not): its routes are no case for the offline page
+  _setOfflinePage(peerId, false);
 
   // Flap-Metric
   if (sm.flapCountLastHour() > 4) {
@@ -305,38 +359,64 @@ function handleHeartbeat(peerId, health) {
   }
 }
 
+// ─── Offline page of a gateway in no pool ─────────────────────────────
+// The routes of these gateways serve the offline page (caddyConfig:
+// route.gateway_offline, templates/gateway-offline.njk) while the gateway is
+// away: on when the sliding window says 'offline' and a probe of the server
+// fails, off with the first heartbeat (or when the window is back online).
+// Pool members never get here: gatewayHealth moves their routes to a sibling.
+//
+// It used to be a partial PATCH of the route's handlers on the window's
+// transitions. That kept the page for the window's five-minute cooldown after
+// the gateway was back, and the restoring PATCH carried the bare word `revert`,
+// which the Caddy admin API refuses as a body (not JSON) — the page then stayed
+// until the next full sync. Now the set below is the state, buildCaddyConfig
+// reads it, and a change asks for one coalesced sync like every other change
+// of the routing.
+const _offlinePage = new Set(); // peerId
+
+function _inPool(peerId) {
+  // Late-require to avoid circular import at module-load.
+  try {
+    return require('./gatewayPool').isPeerInAnyPool(peerId);
+  } catch (err) {
+    // Logged at warn so a broken gatewayPool module doesn't silently
+    // route every pool-member peer through the legacy path.
+    logger.warn({ err: err.message, peerId }, 'gatewayPool require failed in legacy transition path; falling through to legacy');
+    return false;
+  }
+}
+
+function _setOfflinePage(peerId, on) {
+  const want = !!on && !_inPool(peerId);
+  if (want === _offlinePage.has(peerId)) return false;
+  if (want) _offlinePage.add(peerId); else _offlinePage.delete(peerId);
+  logger.info({ peerId, offline: want }, want ? 'Gateway away — its routes show the offline page' : 'Gateway answers again — offline page taken back');
+  try {
+    require('./caddySync').requestCaddySync().catch((err) => logger.warn({ err: err.message, peerId }, 'Caddy sync for the gateway offline page failed'));
+  } catch (err) {
+    logger.debug({ err: err.message }, 'caddy sync not available');
+  }
+  return true;
+}
+
+/** Gateways (in no pool) whose routes serve the offline page right now — for buildCaddyConfig. */
+function offlinePagePeerIds() {
+  const out = new Set();
+  // a gateway that joined a pool in the meantime: its routes are the pool's business now
+  for (const id of _offlinePage) if (!_inPool(id)) out.add(id);
+  return out;
+}
+
 function _onStatusTransition(peerId, from, to, health) {
   // Pool-member peers are managed by the new gatewayHealth.evaluatePeer
   // system (threshold-based, with pool-specific cooldown). Skip the
   // legacy sliding-window transition path entirely for them — otherwise
   // we get double Caddy renders and duplicate activity-log/webhook events.
-  // Late-require to avoid circular import at module-load.
-  try {
-    if (require('./gatewayPool').isPeerInAnyPool(peerId)) return;
-  } catch (err) {
-    // Logged at warn so a broken gatewayPool module doesn't silently
-    // route every pool-member peer through the legacy path.
-    logger.warn({ err: err.message, peerId }, 'gatewayPool require failed in legacy transition path; falling through to legacy');
-  }
+  if (_inPool(peerId)) return;
 
   const peer = getDb().prepare('SELECT name FROM peers WHERE id=?').get(peerId);
   const peerName = peer ? peer.name : `peer-${peerId}`;
-
-  // Delegate Caddy patch (Task 20) — late-require to avoid cycle
-  try {
-    const meta = getDb().prepare('SELECT last_seen_at FROM gateway_meta WHERE peer_id=?').get(peerId);
-    const caddyConfig = require('./caddyConfig');
-    if (typeof caddyConfig.patchGatewayRouteHandlers === 'function') {
-      caddyConfig.patchGatewayRouteHandlers({
-        peerId,
-        offline: to === 'offline',
-        gatewayName: peerName,
-        lastSeen: meta && meta.last_seen_at ? new Date(meta.last_seen_at).toISOString() : '',
-      }).catch(err => logger.warn({ err: err.message, peerId }, 'Caddy patch failed'));
-    }
-  } catch (err) {
-    logger.debug({ err: err.message }, 'caddyConfig patch not available');
-  }
 
   const liveState = require('./gatewayLiveState');
   if (to === 'offline') {
@@ -423,6 +503,7 @@ function _forceCooldownExhaustedForTest(peerId) {
 
 function _resetSmCacheForTest() {
   _smCache.clear();
+  _offlinePage.clear();
 }
 
 /**
@@ -948,6 +1029,12 @@ function recordProbeResult(peerId, healthy) {
   if (sm.status !== prevStatus) {
     _onStatusTransition(peerId, prevStatus, sm.status, null);
   }
+  // Offline page: on while the window says offline and the gateway does not
+  // answer the probe. A probe that gets through takes it back only together
+  // with the window (handleHeartbeat does it with the first heartbeat) — single
+  // probes going either way must not reload Caddy every 15 seconds.
+  if (sm.status !== 'offline') _setOfflinePage(peerId, false);
+  else if (!healthy) _setOfflinePage(peerId, true);
 }
 
 // ─── Pairing codes (one-shot bootstrap for install-pve.sh) ────────────
@@ -1187,6 +1274,8 @@ async function refreshHealth(peerId) {
   db.prepare('UPDATE gateway_meta SET last_health = ?, last_seen_at = ? WHERE peer_id = ?')
     .run(JSON.stringify(merged), Date.now(), peerId);
   recordProbeResult(peerId, true);
+  // its API answered with a full status over the tunnel — the way Caddy takes to it
+  _setOfflinePage(peerId, false);
   return { reachable: true };
 }
 
@@ -1197,6 +1286,7 @@ module.exports = {
   setPlatform,
   createGateway,
   getGatewayConfig,
+  reserveRoutesFor,
   computeConfigHash,
   hashOfConfig,
   stableJson,
@@ -1226,6 +1316,8 @@ module.exports = {
   _forceCooldownExhaustedForTest,
   _resetSmCacheForTest,
   _smCache,
+  _offlinePage,
+  offlinePagePeerIds,
   notifySelfUpdate,
   markUpdateRequested,
   _clearUpdateTracking,

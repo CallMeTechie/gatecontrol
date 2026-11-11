@@ -50,14 +50,15 @@ test('pin-route still works (target_peer_id, no target_pool_id)', () => {
   assert.ok(cfg.routes.find(r => r.domain === 'pin.test'));
 });
 
-// Pin-routes do NOT leak to siblings — failover happens via DB pivot in
-// gatewayHealth, so by the time a companion polls its config, target_peer_id
-// already names the peer that should serve the route. A pure pool-sibling
-// (route pinned to someone else) never sees that route.
-test('pool sibling does NOT see pin-routes of other pool members', () => {
+// Pin-routes are in the config of the pool partners as well: failover still
+// happens via DB pivot in gatewayHealth, but the reserve has to probe the
+// route's LAN target BEFORE that (reserve check, tests/gateway_reserve_pinned.test.js).
+// A gateway outside the pool never sees the route.
+test('pool sibling sees pin-routes of other pool members (reserve check), an outsider does not', () => {
   const db = getDb();
   insertGatewayPeer(db, 10); // home
   insertGatewayPeer(db, 11); // ds918 (sibling)
+  insertGatewayPeer(db, 12); // not in the pool
   const poolId = gatewayPool.createPool({ name: 'P', mode: 'failover', failback_cooldown_s: 60 });
   gatewayPool.addMember(poolId, 10, 1);
   gatewayPool.addMember(poolId, 11, 2);
@@ -70,9 +71,12 @@ test('pool sibling does NOT see pin-routes of other pool members', () => {
   const cfg10 = gateways.getGatewayConfig(10);
   assert.ok(cfg10.routes.find(r => r.domain === 'nas-of-home.test'));
 
-  // Peer 11 (sibling) does NOT see them while peer 10 is the active target —
-  // the route would only appear in 11's config after a DB pivot has moved
-  // target_peer_id to 11.
+  // Peer 11 (sibling) has it too — with the same target, so its
+  // route_reachability says whether it could take the route over.
   const cfg11 = gateways.getGatewayConfig(11);
-  assert.equal(cfg11.routes.find(r => r.domain === 'nas-of-home.test'), undefined);
+  assert.deepEqual(cfg11.routes.find(r => r.domain === 'nas-of-home.test'), cfg10.routes.find(r => r.domain === 'nas-of-home.test'));
+
+  // Peer 12 shares no pool with peer 10
+  const cfg12 = gateways.getGatewayConfig(12);
+  assert.equal(cfg12.routes.find(r => r.domain === 'nas-of-home.test'), undefined);
 });
