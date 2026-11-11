@@ -163,11 +163,16 @@ describe('ZIP writer (stored)', () => {
 });
 
 describe('compose and commands', () => {
-  it('Synology: wireguard-go (/dev/net/tun), host network, /state volume', () => {
+  it('Synology: wireguard-go (/dev/net/tun), host network, /state volume, writable config, no access data', () => {
     const c = kit.buildCompose({ platform: 'synology', network: 'host' });
     assert.match(c, /network_mode: host/);
-    assert.match(c, /\/dev\/net\/tun:\/dev\/net\/tun/);
-    assert.match(c, /\.\/config:\/config:ro/);
+    // the TUN device as it always was: `devices`, no device rule for it, no MKNOD
+    assert.match(c, /\n {4}devices:\n {6}- \/dev\/net\/tun:\/dev\/net\/tun\n/);
+    assert.doesNotMatch(c, /MKNOD|c 10:200/);
+    assert.match(c, /\n {6}- \.\/config:\/config /);
+    assert.doesNotMatch(c, /config:\/config:ro/);
+    assert.match(c, /GC_SETUP_PORT=\$\{GC_SETUP_PORT:-8642\}/);
+    assert.doesNotMatch(c, /gc_gw_|GC_API_TOKEN|WG_PRIVATE_KEY/);
     assert.match(c, /\.\/gateway-state:\/state/);
     assert.match(c, /GATEWAY_ENV_PATH=\/config\/gateway\.env/);
   });
@@ -183,6 +188,7 @@ describe('compose and commands', () => {
     assert.doesNotMatch(c, /network_mode: host/);
     assert.doesNotMatch(c, /\/dev\/net\/tun/);
     assert.match(c, /"8080:8080"/);
+    assert.match(c, /"8642:8642"/, 'the setup page needs its port in bridge mode');
     assert.doesNotMatch(c, /\n  edge:|edge-run/, 'edge parts need host network');
   });
   it('host network: the edge service of the gateway contract (same image, user 61001, no privileges, no network) + shared volumes', () => {

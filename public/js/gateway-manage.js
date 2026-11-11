@@ -2,7 +2,8 @@
 
 // Gateway management on /gateways (docs/feature-peers-page.md): the actions
 // that used to live in the Peers page's edit dialog of a gateway peer —
-// name/description/peer group, new connection data (the assistant at step 3), proxy port,
+// name/description/peer group, "Zugang erneuern" (a setup code with the server address for the
+// setup page of the gateway; the file way through the assistant at step 3), proxy port,
 // disable / enable and delete with the list of routes it takes down.
 //
 //   GCGatewayManage.menuItems(g, item, menu)  adds the entries to the "Mehr"
@@ -58,7 +59,7 @@
     menu.appendChild(el('div', { class: 'gw-menu-sep', role: 'separator' }));
     menu.appendChild(el('div', { class: 'gw-menu-label', 'aria-hidden': 'true', text: T('gwm.section') }));
     item('gm-rename', T('gwm.rename'));
-    item('gm-reconnect', T('gwm.reconnect'));
+    item('gm-renew', T('gwm.renew'));
     item('gm-proxy', T('gwm.proxy_port'));
     item('gm-disable', T('gwm.disable'));
     menu.appendChild(el('div', { class: 'gw-menu-sep', role: 'separator' }));
@@ -68,6 +69,7 @@
   function run(action, id, g) {
     if (!id) return;
     if (action === 'gm-rename') return rename(id);
+    if (action === 'gm-renew') return renew(id, g);
     if (action === 'gm-reconnect') { location.hash = '#setup/' + encodeURIComponent(id); return; }
     if (action === 'gm-proxy') return proxyPort(id);
     if (action === 'gm-disable') return setEnabled(id, false, g && g.name);
@@ -121,6 +123,133 @@
       name.select();
       return d.promise;
     }).catch(function (e) { return fail(e.message); });
+  }
+
+  // ── "Zugang erneuern" (POST /api/v1/gateways/:id/renew-access) ──
+  // The access of the running gateway ends at once, so this always asks first. Then the server
+  // address and a setup code are shown: the gateway asks for them on its setup page in the home
+  // network (http://<address>:8642, "Zugang ungültig" — gateway docs/setup-page.md). A gateway
+  // that does not know the page yet goes the file way (the assistant at step 3) as before.
+  function telemetryOf(g) { return (g && g.health && g.health.telemetry) || {}; }
+  // asked fresh from the server (the list of the page can be a moment old): does this gateway know the setup page?
+  function knowsSetupPage(id, g) {
+    return api('GET', '/api/v1/gateways/' + encodeURIComponent(id) + '/features').then(function (r) {
+      var sup = r && r.ok && r.gateway && r.gateway.support;
+      if (sup) return sup.setupPage === true;
+      var caps = telemetryOf(g).capabilities;
+      return Array.isArray(caps) && caps.indexOf('setup-page') >= 0;
+    });
+  }
+  function fileWay(id) {
+    var W = window.GCGatewayWizard;
+    if (W && W.open) {
+      // the address as "Einrichtung fortsetzen" sets it: a reload continues here
+      try { history.replaceState(null, '', location.pathname + location.search + '#setup/' + encodeURIComponent(id)); } catch (e) { /* ignore */ }
+      W.open({ mode: 'resume', id: Number(id), way: 'file' });
+    } else location.hash = '#setup/' + encodeURIComponent(id);
+  }
+  function copy(text, btn) {
+    function done() { var old = btn.textContent; btn.textContent = T('gwm.renew_copied'); setTimeout(function () { btn.textContent = old; }, 1600); }
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done, function () { /* denied */ }); return; }
+    var ta = el('textarea', { class: 'sr-only' });
+    ta.value = text;
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { /* noop */ }
+    document.body.removeChild(ta);
+  }
+  function renew(id, g) {
+    var name = (g && g.name) || '';
+    return knowsSetupPage(id, g).then(function (knows) {
+      // a gateway before the setup page: the way as before (the assistant asks before it rotates)
+      if (!knows) {
+        return D.confirm({ title: T('gwm.renew_title'), message: T('gwm.renew_confirm_old', { name: name }), okLabel: T('gwm.renew_file') })
+          .then(function (ok) { if (ok) fileWay(id); });
+      }
+      return D.confirm({ title: T('gwm.renew_title'), message: T('gwm.renew_confirm', { name: name }), danger: true, okLabel: T('gwm.renew_ok') }).then(function (ok) {
+        if (!ok) return;
+        return api('POST', '/api/v1/gateways/' + encodeURIComponent(id) + '/renew-access', {}).then(function (r) {
+          if (!r || !r.ok || !r.code) return fail(r && r.error);
+          changed();
+          return renewDialog(id, g, r);
+        });
+      });
+    }).catch(function (e) { return fail(e.message); });
+  }
+  function renewDialog(id, g, first) {
+    var d = D.dialog({ title: T('gwm.renew_title') });
+    d.box.classList.add('gwm-renew');
+    var lan = telemetryOf(g).lan_ip;
+    var url = 'http://' + (lan && /^[0-9.]+$/.test(lan) ? lan : '<' + T('gwm.renew_url') + '>') + ':8642';
+    var pair = first;
+    var timer = null, poll = null, closed = false;
+    var server = el('strong', { class: 'gwz-pair-v', id: 'gwm-renew-server' });
+    var code = el('strong', { class: 'gwz-pair-v', id: 'gwm-renew-code' });
+    var left = el('span', { class: 'gwz-pair-t', id: 'gwm-renew-left' });
+    var cpS = el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: T('gwm.renew_copy') });
+    var cpC = el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: T('gwm.renew_copy') });
+    cpS.addEventListener('click', function () { copy(pair.server, cpS); });
+    cpC.addEventListener('click', function () { copy(pair.code, cpC); });
+    var again = el('button', { type: 'button', class: 'gwz-link', id: 'gwm-renew-new', text: T('gwm.renew_new') });
+    var waitText = el('span', { text: T('gwm.renew_wait') });
+    var wait = el('div', { class: 'gwz-wait', role: 'status' }, [el('span', { class: 'gwz-spin', 'aria-hidden': 'true' }), waitText]);
+    var err = el('div', { class: 'zn-field-error', role: 'alert' }); err.hidden = true;
+    var file = el('button', { type: 'button', class: 'gwz-link', id: 'gwm-renew-file', text: T('gwm.renew_file') });
+    d.body.appendChild(el('p', { class: 'gwm-renew-text' }, [T('gwm.renew_text'), ' ', el('code', { class: 'gwz-k', text: url })]));
+    d.body.appendChild(el('div', { class: 'gwz-pairbox' }, [
+      el('div', { class: 'gwz-pair' }, [el('span', { class: 'gwz-pair-l', text: T('gwm.renew_server') }), server, cpS]),
+      el('div', { class: 'gwz-pair' }, [el('span', { class: 'gwz-pair-l', text: T('gwm.renew_code') }), code, left, cpC]),
+    ]));
+    d.body.appendChild(el('p', { class: 'form-hint' }, [again]));
+    d.body.appendChild(wait);
+    d.body.appendChild(err);
+    d.body.appendChild(el('p', { class: 'form-hint' }, [T('gwm.renew_file_text'), ' ', file]));
+    function tick() {
+      var ms = pair.expiresAt - Date.now();
+      left.classList.toggle('over', ms <= 0);
+      if (ms <= 0) { left.textContent = T('gwm.renew_expired'); return; }
+      var sec = Math.floor(ms / 1000);
+      left.textContent = T('gwm.renew_left', { t: Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0') });
+    }
+    function show() { server.textContent = pair.server; code.textContent = pair.code; tick(); }
+    function stop() { closed = true; clearInterval(timer); clearTimeout(poll); }
+    function check() {
+      if (closed) return;
+      api('GET', '/api/v1/gateways/' + encodeURIComponent(id) + '/setup-status').then(function (r) {
+        if (closed) return;
+        var pr = r && r.ok && r.gateway && r.gateway.pairing;
+        if (pr && pr.consumed_at && pr.expires_at === pair.expiresAt) {
+          wait.classList.add('done');
+          waitText.textContent = T('gwm.renew_redeemed', { name: (g && g.name) || (r.gateway && r.gateway.name) || '' });
+          clearInterval(timer); left.textContent = '';
+          changed();
+          return;
+        }
+        poll = setTimeout(check, 3000);
+      }).catch(function () { poll = setTimeout(check, 5000); });
+    }
+    again.addEventListener('click', function () {
+      again.disabled = true; err.hidden = true;
+      // the access is already invalid: only a new code (the one before stops working)
+      api('POST', '/api/v1/peers/' + encodeURIComponent(id) + '/gateway-pairing-code', {}).then(function (r) {
+        again.disabled = false;
+        if (!r || !r.ok || !r.code) { err.textContent = (r && r.error) || T('common.error'); err.hidden = false; return; }
+        pair = { code: r.code, server: r.server || pair.server, expiresAt: r.expiresAt };
+        wait.classList.remove('done'); waitText.textContent = T('gwm.renew_wait');
+        show();
+        clearInterval(timer); timer = setInterval(tick, 1000);
+        clearTimeout(poll); poll = setTimeout(check, 3000);
+      }).catch(function (e) { again.disabled = false; err.textContent = e.message; err.hidden = false; });
+    });
+    file.addEventListener('click', function () { d.close(null); fileWay(id); });
+    var close = el('button', { type: 'button', class: 'btn btn-primary', id: 'gwm-renew-close', text: T('gwm.renew_close') });
+    close.addEventListener('click', function () { d.close(true); });
+    d.foot.appendChild(close);
+    show();
+    timer = setInterval(tick, 1000);
+    poll = setTimeout(check, 3000);
+    d.promise.then(stop, stop);
+    close.focus();
+    return d.promise;
   }
 
   // ── Proxy port (PATCH /api/v1/peers/:id/proxy-port) ──

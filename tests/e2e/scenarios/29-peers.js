@@ -185,9 +185,9 @@ module.exports = (ctx) => {
 
         // ── Gateway detail: the moved functions ──
         await page.goto(BASE + '/gateways#gw/' + S.gw);
-        step('gateway detail "Mehr": rename, connection data, proxy port, disable, remove',
+        step('gateway detail "Mehr": rename, renew access, proxy port, disable, remove',
           await visible(page, '#gw-more-btn') && await openMore(page)
-          && await page.locator('#gw-more-menu [data-act="gm-reconnect"], #gw-more-menu [data-act="gm-proxy"], #gw-more-menu [data-act="gm-disable"], #gw-more-menu [data-act="gm-delete"]').count() === 4);
+          && await page.locator('#gw-more-menu [data-act="gm-renew"], #gw-more-menu [data-act="gm-proxy"], #gw-more-menu [data-act="gm-disable"], #gw-more-menu [data-act="gm-delete"]').count() === 4);
         await shot(page, 'peers-gw-menu-light', false);
         await page.click('#gw-more-menu [data-act="gm-rename"]');
         await page.fill('#gwm-name', 'E2E-GW-Neu');
@@ -203,8 +203,11 @@ module.exports = (ctx) => {
         const info = async () => { const r = await api(page, 'GET', '/api/v1/peers/' + S.gw + '/gateway-info'); return r.body && r.body.gateway && r.body.gateway.proxy_port; };
         step('proxy port → saved', await until(page, () => !document.querySelector('.gcd-dialog')) && await info() === 18080);
         await openMore(page);
-        await page.click('#gw-more-menu [data-act="gm-reconnect"]');
-        step('"Verbindungsdaten neu erzeugen" opens the assistant for this gateway', await until(page, (id) => location.hash === '#setup/' + id, S.gw) && await visible(page, '#gwz-overlay'));
+        // this gateway never reported the capability setup-page: "Zugang erneuern" says so and goes the file way
+        // (the assistant at step 3 with gateway.env) — the code way is in the scenario gatewaywizard
+        await page.click('#gw-more-menu [data-act="gm-renew"]');
+        await gcdOk(page);
+        step('"Zugang erneuern" of an older gateway opens the assistant for this gateway (file way)', await until(page, (id) => location.hash === '#setup/' + id, S.gw) && await visible(page, '#gwz-overlay'));
         await page.keyboard.press('Escape');
         await page.goto(BASE + '/gateways#gw/' + S.gw);
         await openMore(page);

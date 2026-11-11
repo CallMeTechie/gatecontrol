@@ -44,7 +44,7 @@
   var menuOpen = false;           // the "Mehr" menu of the head
   var techOpen = {};              // peer id → <details> "Technische Details" open
   var routesAll = {};             // peer id → "Alle n Routen anzeigen" expanded
-  var netExtra = null;            // { id, node }: "Erkannte Geräte" + "Scan-Ziele" of the tab "Netzwerk", kept across polls
+  var netExtra = null;            // { id, caps, node }: "Erkannte Geräte" + "Scan-Ziele" of the tab "Netzwerk", kept across polls
   var _discoveryListener = null; // replaced on every discoveredDevicesCard build to avoid leak on renderDetail re-runs
 
   function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = String(text); return n; }
@@ -371,14 +371,17 @@
   }
   // "Erkannte Geräte" + "Scan-Ziele (Egress)" below the tab "Netzwerk" — independent of the
   // network watch (shown under its off-note too). Built once per visit: their own loads and the
-  // open add form survive the redraw of every poll.
+  // open add form survive the redraw of every poll. Both cards are built from what the gateway
+  // reported (lan_discovery, scan_egress): a report that changes that builds them anew — a page
+  // opened before the gateway's first heartbeat must not keep "unterstützt keine Discovery".
   function netExtras(g) {
-    if (netExtra && netExtra.id === String(g.peer_id)) return netExtra.node;
     var telE = (g.health && g.health.telemetry) || {};
+    var caps = (telE.lan_discovery === true ? 'd' : '') + (telE.scan_egress === true ? 'e' : '');
+    if (netExtra && netExtra.id === String(g.peer_id) && netExtra.caps === caps) return netExtra.node;
     var row = el('div', 'gw-half-row gw-net-extras');
     row.appendChild(discoveredDevicesCard(g));
     if (telE.scan_egress === true) row.appendChild(egressCard(g));
-    netExtra = { id: String(g.peer_id), node: row };
+    netExtra = { id: String(g.peer_id), caps: caps, node: row };
     return row;
   }
   // Tabs of the detail view: "Übersicht" (below), "Funktionen", "Netzwerk" and "Internet"

@@ -671,4 +671,28 @@ fehlt der Ordner oder die Compose-Zeile ([Kapitel 7](07-faq.md#zwischenspeicher-
   Android die Installation anbietet. Ist das Gateway nicht erreichbar, lädt
   sie es wie bisher aus dem Internet.
 
+## Statusseite im Heimnetz
+
+Jedes Gateway hat im Heimnetz eine eigene kleine Seite:
+`http://<Adresse des Gateways>:8642` (Raspberry-Pi-Image zusätzlich
+`http://<Name>.local`). Vor der Einrichtung gibst du dort Serveradresse und
+Einrichtungscode ein ([Kapitel 3](03-gateway-einrichten.md#die-einrichtungsseite-des-gateways)).
+Danach zeigt sie nur noch den Zustand: mit welchem Server das Gateway
+verbunden ist, den letzten Kontakt, ob der VPN-Tunnel steht, die Version und
+die Adresse im Heimnetz. Eingaben nimmt sie dann nicht an, und Schlüssel oder
+Zugangsdaten zeigt sie nie. Aus dem Internet und über den Tunnel ist sie nicht
+erreichbar.
+
+**Ausschalten:** Reiter „Funktionen“ → „System“ → „Statusseite im Heimnetz“
+(Standard: an). Ausgeschaltet schließt das Gateway den Port. Zwei Dinge bleiben
+trotzdem erreichbar, sonst käme man nicht mehr an das Gateway heran: die
+Einrichtung (solange es keine Zugangsdaten hat) und die Code-Eingabe nach
+„Zugang erneuern“ ([Kapitel 3.7](03-gateway-einrichten.md#37-gateway-verwalten)).
+
+Bei einem älteren Gateway ist der Schalter ausgegraut – es kennt die Seite
+noch nicht. Nach einem Update des Gateways wirkt er.
+
+**Prüfen:** Im Browser im Heimnetz `http://<Adresse des Gateways>:8642` öffnen:
+eingeschaltet zeigt die Seite „Verbunden“, ausgeschaltet antwortet dort nichts.
+
 Weiter mit [Kapitel 6: Bestehendes Gateway aktualisieren](06-gateway-aktualisieren.md).

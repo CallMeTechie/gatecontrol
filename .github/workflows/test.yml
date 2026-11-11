@@ -84,8 +84,16 @@ jobs:
 
       - name: Start S3, WebDAV and SMB test servers
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends samba smbclient
+          # The runner's package mirror is at times not resolvable for minutes. A plain
+          # `apt-get update` then ends with warnings only (exit 0) and the install dies on
+          # the stale index ("Unable to fetch some archives"): let the update fail on any
+          # error and try both again.
+          for try in 1 2 3; do
+            if sudo apt-get update -q -o APT::Update::Error-Mode=any -o Acquire::Retries=3 \
+              && sudo apt-get install -y -q --no-install-recommends -o Acquire::Retries=3 samba smbclient; then break; fi
+            if [ "$try" = 3 ]; then echo "package mirror not reachable"; exit 1; fi
+            sleep 30
+          done
           python3 -m venv /tmp/st
           /tmp/st/bin/pip install -q "moto[server]==5.2.4" "wsgidav==4.4.0" "cheroot==11.1.2"
           nohup /tmp/st/bin/moto_server -H 127.0.0.1 -p 5055 > /tmp/moto.log 2>&1 &

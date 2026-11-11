@@ -24,12 +24,22 @@ Peer-Dialog. Der Assistent führt in vier Schritten durch Anlage, Einrichtung un
      Browser nicht; die Eingaben werden dort geprüft (SSID ≤ 32 Byte, PSK 8–63 oder 64 Hex,
      Hostname RFC 1123, OpenSSH-Schlüssel ed25519/ecdsa/rsa ≥ 3072). Imager-Repository-URL
      eingeklappt zum Kopieren.
-   - *Synology:* `gatecontrol-gateway-nas.zip` vom Server (`POST /api/v1/gateways/:id/setup-bundle`):
-     `docker-compose.yml` (Onboarding-Vorlage, Synology-Variante, `./gateway-state:/state`),
-     `config/gateway.env`, `gateway-state/`, `update.sh` (vendored Vorlage). Feste Dateinamen.
-     Aufgabenplaner-Befehl mit `GATEWAY_STATE_DIR` und `GC_GW_COMPOSE_DIR` passend zum Ordner.
-   - *Proxmox:* Einzeiler mit Kopplungscode (`/gateway-pairing-code`, 10 Minuten, neu erzeugbar).
-   - *Linux:* Compose (Host/Bridge), `gateway.env`, `update.sh`, Cron-Zeile.
+   - *Synology und Linux:* **Einrichtungsseite des Gateways** (gatecontrol-gateway
+     `docs/setup-page.md`). (1) Compose-Datei ohne Zugangsdaten zum Kopieren/Herunterladen
+     (`gateway-kit.js` `buildCompose`, dieselbe Quelle wie das NAS-Paket und „Nur
+     docker-compose.yml herunterladen“; Linux: Host/Bridge), für die Synology zusätzlich
+     `gatecontrol-gateway-nas.zip` **ohne** `gateway.env` (`POST /api/v1/gateways/:id/setup-package`:
+     Compose, `update.sh`, leere Ordner `config/`, `gateway-state/`, `gateway-cache/`; nichts wird
+     rotiert). (2) `http://<Adresse>:8642` öffnen. (3) **Serveradresse** und **Einrichtungscode**
+     getrennt, je mit „Kopieren“, Countdown, „Neuen Code erzeugen“
+     (`POST /api/v1/peers/:id/gateway-pairing-code` → `{ code, server, token, expiresAt }`).
+     Darunter die Warte-Anzeige: `setup-status.pairing.consumed_at` zeigt, dass das Gateway den Code
+     eingelöst hat – der Assistent geht von selbst zu Schritt 4. Automatische Updates eingeklappt.
+   - *Bisheriger Weg (Link „Lieber die Datei gateway.env herunterladen“):* Synology
+     `gatecontrol-gateway-nas.zip` mit `config/gateway.env` (`POST …/setup-bundle`, rotiert),
+     Aufgabenplaner-Befehl; Linux Compose (Host/Bridge), `gateway.env`, `update.sh`, Cron-Zeile.
+   - *Proxmox:* Einzeiler mit Kopplungscode `CODE@host` (`/gateway-pairing-code`, 10 Minuten, neu
+     erzeugbar) – unverändert.
 5. **Live-Status** (`GET /api/v1/gateways/:id/setup-status`, Abfrage mit Back-off 3 s → 15 s,
    sofort bei `gc:gateway`-Ereignissen): angelegt → erster Kontakt (`gateway_meta.first_seen_at`,
    WireGuard-Handshake) → Hardware (Telemetrie `hardware` ab Gateway 1.17.0, ältere: übersprungen)
@@ -42,6 +52,23 @@ Die Tokens liegen nur gehasht bzw. verschlüsselt auf dem Server. Direkt nach de
 Browser die `gateway.env` aus der Antwort im Speicher. Beim Fortsetzen (und für das NAS-Paket)
 erzeugt der Server neue Tokens (`gateway-env/rotate`); war das Gateway schon verbunden, fragt der
 Assistent vorher nach.
+
+## „Zugang erneuern“
+
+Gateway › „Mehr“ › **Zugang erneuern …** (`public/js/gateway-manage.js`): fragt immer nach, dann
+`POST /api/v1/gateways/:id/renew-access` (nur Sitzung, CSRF). Der Server rotiert die Tokens
+(die neuen werden verworfen) und stellt einen Einrichtungscode aus; die Antwort enthält nur
+`{ code, server, expiresAt }`. Das laufende Gateway bekommt `403 invalid_token`, öffnet auf seiner
+Einrichtungsseite die Code-Eingabe (Serveradresse dort fest) und holt sich mit dem Code eine neue
+`gateway.env`. Ein deaktiviertes Gateway bekommt stattdessen `403 gateway_disabled` – dort öffnet
+sich nichts. Gateways ohne die Capability `setup-page` (älter oder nie verbunden) gehen wie bisher
+über den Assistenten bei Schritt 3 mit der Datei; der Link dorthin steht auch im Dialog.
+
+## „Statusseite im Heimnetz“
+
+Schalter pro Gateway im Reiter „Funktionen“ › „System“ (`gatewayFeatures` `setupPage.status`,
+Standard an) → Config-Pull `features.setup_page.status`. Ohne Capability `setup-page` ausgegraut
+mit Hinweis.
 
 ## „Im Smart Home einbinden“
 

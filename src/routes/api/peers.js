@@ -659,8 +659,10 @@ router.post('/:id/gateway-env/rotate', (req, res) => {
 router.post('/:id/gateway-pairing-code', (req, res) => {
   const peerId = parseInt(req.params.id, 10);
   try {
-    const { token, expiresAt } = require('../../services/gateways').createPairingCode(peerId);
-    res.json({ ok: true, token, expiresAt });
+    // `token` (CODE@host) for the Proxmox one-liner; `code` and `server` apart for the setup page of the gateway
+    const { token, code, server, expiresAt } = require('../../services/gateways').createPairingCode(peerId);
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, token, code, server, expiresAt });
   } catch (err) {
     if (err.message === 'not_a_gateway') {
       return res.status(404).json({ ok: false, error: 'not_a_gateway' });

@@ -62,6 +62,26 @@ describe('gatewayAuth middleware', () => {
     assert.equal(m.getStatus(), 403);
   });
 
+  it('tells a renewed access (invalid_token) from a switched-off gateway (gateway_disabled)', () => {
+    // the setup page of the gateway asks for a new code only on invalid_token (gateway docs/setup-page.md, state F)
+    const unknown = mockReqRes('Bearer gc_gw_' + '1'.repeat(64));
+    auth.requireGateway(unknown.req, unknown.res, unknown.next);
+    assert.deepEqual([unknown.getStatus(), unknown.getBody()], [403, { error: 'invalid_token' }]);
+
+    const db = require('../src/db/connection').getDb();
+    db.prepare('UPDATE peers SET enabled = 0 WHERE id = ?').run(peerId);
+    const off = mockReqRes(`Bearer ${apiToken}`);
+    auth.requireGateway(off.req, off.res, off.next);
+    assert.deepEqual([off.getStatus(), off.getBody(), off.wasNextCalled()], [403, { error: 'gateway_disabled' }, false]);
+    db.prepare('UPDATE peers SET enabled = 1 WHERE id = ?').run(peerId);
+
+    // "Zugang erneuern": the old token is gone at once
+    gateways.renewAccess(peerId);
+    const old = mockReqRes(`Bearer ${apiToken}`);
+    auth.requireGateway(old.req, old.res, old.next);
+    assert.deepEqual([old.getStatus(), old.getBody()], [403, { error: 'invalid_token' }]);
+  });
+
   it('rejects wrong-format token with 401', () => {
     const m = mockReqRes('NotBearer xyz');
     auth.requireGateway(m.req, m.res, m.next);

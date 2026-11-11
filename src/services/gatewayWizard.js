@@ -156,6 +156,8 @@ function setupStatus(peerId) {
     first_seen_at: firstSeen,
     last_seen_at: row.last_seen_at || null,
     connected: !!(firstSeen || hsS),
+    // the current pairing code (setup page of the gateway): step 3 goes on by itself once it is redeemed
+    pairing: (() => { try { return require('./gateways').pairingState(row.id); } catch { return null; } })(),
     tunnel_up: hsS > 0 && (Date.now() / 1000 - hsS) < TUNNEL_FRESH_S,
     status,
     state: liveStateName,
