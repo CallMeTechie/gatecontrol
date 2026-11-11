@@ -850,6 +850,8 @@
   function _discErrText(r, fallback) {
     return r.json().then(function (d) {
       var err = d && d.error ? String(d.error) : '';
+      // the licence middleware answers with a translated sentence and names the feature in `feature`
+      if (d && d.feature === 'gateway_lan_discovery') return T('gateways.discovery.feature_locked', 'LAN-Erkennung ist im aktuellen Plan nicht aktiviert.');
       if (!err) return fallback;
       if (/not licensed|feature_not_available|gateway_lan_discovery/i.test(err)) return T('gateways.discovery.feature_locked', 'LAN-Erkennung ist im aktuellen Plan nicht aktiviert.');
       if (err === 'discovery_disabled') return T('gateways.discovery.not_enabled', 'Erst Discovery aktivieren und speichern.');
@@ -1065,10 +1067,21 @@
       }
     }
 
+    // Without the licence feature the server answers with an empty list and licensed: false —
+    // a note in place of the list, the scan button off (scanning would only end in a 403).
+    function showLocked() {
+      setScanRunning(false);
+      scanBtn.disabled = true; scanBtn.style.opacity = '0.4'; scanBtn.style.cursor = 'not-allowed';
+      status.textContent = '';
+      var hint = discMuted(T('gateways.discovery.feature_locked', 'LAN-Erkennung ist im aktuellen Plan nicht aktiviert.'));
+      hint.setAttribute('data-disc-locked', '');
+      list.replaceChildren(hint);
+    }
     function loadCached() {
       fetch('/api/v1/gateways/' + g.peer_id + '/discovered', { credentials: 'same-origin' })
         .then(function (r) {
           if (r.ok) return r.json().then(function (d) {
+            if (d.ok && d.licensed === false) { showLocked(); return; }
             if (d.ok) {
               render(d.devices, d.done, d.timed_out, d.updated_at, d.in_flight);
               // If the server says a scan is still in flight when we mount,
@@ -1076,8 +1089,9 @@
               if (d.in_flight) setScanRunning(true);
             } else render([], false, false, null);
           });
-          // 403 (license-locked) or 404 — surface so the admin knows why the card is empty.
+          // 404, or 403 from a server before `licensed: false` — say why the card is empty.
           render([], false, false, null);
+          if (r.status === 403) { showLocked(); return; }
           return _discErrText(r, '').then(function (t) { if (t) status.textContent = t; });
         }).catch(function (err) { console.warn('[gateways] discovery request failed', err); });
     }

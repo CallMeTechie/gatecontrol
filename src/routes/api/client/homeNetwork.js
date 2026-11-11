@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * GET /api/v1/client/home-network[?local=<ipv4>[,<ipv4>…]] — trusted-network
+ * GET /api/v1/client/home-network[?local=<address>[,<address>…]] — trusted-network
  * detection of the apps ("VPN off in a trusted network"), the mode that
  * needs no location permission, and the presence probe of Familie: "the
  * device is at home". The app asks through the normal path (public
@@ -12,10 +12,11 @@
  *         site: null | { type: 'server' }
  *                    | { type: 'gateway', gatewayId: <int>, name: <string> } }
  *
- *   local     optional: the device's own private IPv4 addresses on its
+ *   local     optional: the device's own private addresses on its
  *             Wi-Fi/Ethernet interfaces, comma-separated, at most 4 looked
- *             at; anything that is not a strict RFC 1918 dotted quad is
- *             ignored. Needed for the gateway rule only.
+ *             at: strict RFC 1918 dotted quads and — a home network without
+ *             IPv4 — unique local IPv6 addresses (fc00::/7, no zone);
+ *             anything else is ignored. Needed for the gateway rule only.
  *   lan       the server's private IPv4 addresses (RFC 1918) on its real LAN
  *             interfaces — max 8 (services/homeNetwork.js)
  *   same_lan  true when either rule matches (site != null):

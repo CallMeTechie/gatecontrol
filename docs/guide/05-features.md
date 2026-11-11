@@ -66,6 +66,14 @@ detects outages with their cause.
 “Internet” you set “Measure speed”: “never automatically”, “4× a day” or
 “every hour”. Every hour uses a lot of data.
 
+**Data volume:** Each gateway may use at most 12 GB of measuring volume in 24
+hours. The gateway keeps track of its own use (gateways from the release with
+the daily budget on) – so it is lost neither when the gateway restarts nor when
+the server is updated. Once the budget is used up, the card “Speed” says from
+when on measuring works again. With “every hour”, each measurement is cut to
+about 200 MB per direction – download **and** upload; on fast lines this makes
+it slightly less exact.
+
 **Check:** Measurements show up in the tab “Internet”.
 
 ## Presence
@@ -88,7 +96,8 @@ a NUT server, for example from the Synology.
 1. On the Synology: “Control Panel” → “Hardware & Power” → “UPS” → enable the
    network UPS server and allow the gateway's IP.
 2. In GateControl click “Set address” at “UPS status”.
-3. Enter the “Address of the UPS server” (private IPv4), the “Port” (usually
+3. Enter the “Address of the UPS server” (private IPv4 – in a home network
+   without IPv4 a private IPv6 address such as `fd00::10`), the “Port” (usually
    3493) and optionally the UPS name (empty = the first UPS; Synology: `ups`).
 4. “Save and switch on”.
 

@@ -1142,6 +1142,8 @@
       try {
         const res = await api.get('/api/v1/gateways/' + encodeURIComponent(String(pid)) + '/discovered');
         if (closed || pid !== st.peerId) return;
+        // without the licence feature the server answers with an empty list, not with an error
+        if (res && res.licensed === false) setHint(t('zones.discovery.hint_license'));
         apply(res || {}, false);
       } catch (err) {
         if (closed || pid !== st.peerId) return;

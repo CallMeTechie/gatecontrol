@@ -402,15 +402,22 @@ function telemetryCache(tel) {
   const pick = (k) => (f && f[k] != null ? f[k] : (x ? x[k] : undefined));
   const fp = typeof c.tlsSha256 === 'string' ? c.tlsSha256.replace(/:/g, '').toLowerCase() : null;
   const port = Number.isInteger(c.port) && c.port > 0 && c.port < 65536 ? c.port : 8443;
-  const { isPrivateIpv4 } = require('../utils/validate');
+  const { isPrivateIpv4, isUlaIpv6 } = require('../utils/validate');
   let url = null;
+  let url6 = null;
   const cands = [pick('url'), ...(Array.isArray(pick('urls')) ? pick('urls') : [])].filter((v) => typeof v === 'string');
   for (const cand of cands) {
     try {
       const u = new URL(cand);
-      if (u.protocol === 'https:' && isPrivateIpv4(u.hostname) && !u.username) { url = `https://${u.hostname}:${u.port || 443}`; break; }
+      if (u.protocol !== 'https:' || u.username) continue;
+      if (isPrivateIpv4(u.hostname)) { url = `https://${u.hostname}:${u.port || 443}`; break; }
+      // a home network without IPv4: the gateway listens on its unique local address (fc00::/7) —
+      // taken only when it offers no private IPv4 address at all
+      const h6 = u.hostname.startsWith('[') && u.hostname.endsWith(']') ? u.hostname.slice(1, -1) : null;
+      if (!url6 && h6 && isUlaIpv6(h6)) url6 = `https://[${h6}]:${u.port || 443}`;
     } catch { /* next */ }
   }
+  if (!url && url6) url = url6;
   if (!url && cands.length === 0 && typeof t.lan_ip === 'string' && isPrivateIpv4(t.lan_ip)) url = `https://${t.lan_ip}:${port}`;
   const state = STATES.includes(c.state) ? c.state : (c.running === true ? 'running' : null);
   const errOf = (e) => (typeof e === 'string' ? e : (e && typeof e === 'object' ? (typeof e.message === 'string' ? e.message : (typeof e.code === 'string' ? e.code : null)) : null));

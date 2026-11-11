@@ -322,7 +322,7 @@ describe('gateway site — the device\'s local addresses', () => {
     for (const local of [
       '', ',', 'abc', '192.168.27', '192.168.27.555', '192.168.027.55', '192.168.27.55/24', ' 192.168.27.0x37',
       '8.8.8.8', '100.64.1.1', '169.254.1.1', '10.8.0.9', `${HOME6}::5`, '::ffff:192.168.27.55',
-      `${'1'.repeat(130)},192.168.27.55`,
+      `${'1'.repeat(190)},192.168.27.55`, // longer than 200 characters: ignored as a whole
     ]) {
       const r = await get(dev, { xff: HOME4, local }).expect(200);
       assert.equal(r.body.same_lan, false, JSON.stringify(local));
@@ -385,5 +385,96 @@ describe('server rule and gateway rule together', () => {
       await get(dev, { xff: HOME4, local: '192.168.99.1' }).expect(200);
     } finally { for (const lvl of Object.keys(orig)) logger[lvl] = orig[lvl]; }
     assert.ok(!seen.some((s) => s.includes('192.168.27.55') || s.includes('192.168.99.1') || s.includes(HOME4)), seen.join('\n'));
+  });
+});
+
+// A home network without IPv4: the gateway reports its unique local subnets
+// (telemetry.lan_subnets6, capability `ipv6-lan`), the device names its own
+// unique local address in `local`. The public-address rule is unchanged.
+describe('gateway site — a home network without IPv4 (unique local addresses)', () => {
+  const ULA_LAN = 'fd12:3456:789a:1::/64';
+  const ULA_DEV = 'fd12:3456:789a:1:a1b2:c3d4:e5f6:7788';
+  const v6Health = (subnets6, subnets4 = []) => JSON.stringify({ telemetry: {
+    lan_subnets: subnets4.map((cidr, i) => ({ iface: 'eth0', cidr, primary: i === 0 })),
+    lan_subnets6: subnets6.map((cidr) => ({ iface: 'eth0', cidr })),
+  } });
+  const gateway6 = (name, subnets6 = [ULA_LAN], subnets4 = []) => makeGateway(name, [], { health: v6Health(subnets6, subnets4) });
+
+  it('direct and through the tunnel: same /64 public address + a unique local address in the gateway\'s ULA subnet → home', async () => {
+    const gw = gateway6('gw-ula');
+    wgPeers = [wgEntry(gw.key, `[${HOME6}::8]:51820`)];
+    const dev = device('hs-ula');
+    const r = await get(dev, { xff: `${HOME6}:abcd:1234:5678:9abc`, local: ULA_DEV }).expect(200);
+    assert.deepEqual([r.body.same_lan, r.body.via], [true, 'direct']);
+    assert.deepEqual(r.body.site, { type: 'gateway', gatewayId: gw.id, name: 'gw-ula' });
+    // upper case, several addresses, an IPv4 address that matches nothing
+    assert.equal((await get(dev, { xff: `${HOME6}::77`, local: `10.0.0.5,${ULA_DEV.toUpperCase()}` }).expect(200)).body.same_lan, true);
+    wgPeers = [wgEntry(gw.key, `[${HOME6}::8]:51820`), wgEntry(keyOf(dev), `[${HOME6}:1::99]:60123`)];
+    const t = await get(dev, { xff: dev.ip, local: ULA_DEV }).expect(200);
+    assert.deepEqual([t.body.same_lan, t.body.via], [true, 'tunnel']);
+  });
+
+  it('the subnet alone is never enough: another public address → no', async () => {
+    const gw = gateway6('gw-ula-pub');
+    wgPeers = [wgEntry(gw.key, `[${HOME6}::8]:51820`)];
+    const dev = device('hs-ula-pub');
+    assert.equal((await get(dev, { xff: '2a01:4f8:c0c:9999::8', local: ULA_DEV }).expect(200)).body.same_lan, false, 'other /64');
+    assert.equal((await get(dev, { xff: HOME4, local: ULA_DEV }).expect(200)).body.same_lan, false, 'other family');
+    assert.equal((await get(dev, { xff: `${HOME6}::77` }).expect(200)).body.same_lan, false, 'no local address');
+  });
+
+  it('only unique local addresses count as local: link-local, global, zone, brackets, IPv4-mapped → no', async () => {
+    const gw = gateway6('gw-ula-local', [ULA_LAN, 'fe80::/64', '2a01:4f8:c0c:1a2b::/64']);
+    wgPeers = [wgEntry(gw.key, `[${HOME6}::8]:51820`)];
+    const dev = device('hs-ula-local');
+    for (const local of ['fe80::a1b2:c3d4:e5f6:7788', `${HOME6}::77`, `${ULA_DEV}%wlan0`, `[${ULA_DEV}]`, '::ffff:192.168.27.55', 'fd12:3456:789a:2::5', 'fd12::g', '::1']) {
+      assert.equal((await get(dev, { xff: `${HOME6}::77`, local }).expect(200)).body.same_lan, false, local);
+    }
+    assert.equal((await get(dev, { xff: `${HOME6}::77`, local: ULA_DEV }).expect(200)).body.same_lan, true, 'the control');
+  });
+
+  it('reported subnets: inside fc00::/7 and /48 … /127 only — a wider prefix would match every household', async () => {
+    const dev = device('hs-ula-sub');
+    for (const cidr of ['fc00::/7', 'fd00::/8', 'fd12:3456::/32', 'fd12:3456:789a::/47', '::/0', '2a01:4f8:c0c:1a2b::/64', 'fe80::/64', `${ULA_DEV}/128`, 'fd12:3456:789a:1::', 'nonsense']) {
+      const gw = gateway6('gw-ula-bad-' + cidr.replace(/[^a-z0-9]/gi, ''), [cidr]);
+      wgPeers = [wgEntry(gw.key, `[${HOME6}::8]:51820`)];
+      assert.equal((await get(dev, { xff: `${HOME6}::77`, local: ULA_DEV }).expect(200)).body.same_lan, false, cidr);
+      H.db().prepare('UPDATE peers SET enabled = 0 WHERE id = ?').run(gw.id);
+    }
+    for (const cidr of ['fd12:3456:789a::/48', 'fd12:3456:789a:1::/64', `${ULA_DEV}/127`]) {
+      const gw = gateway6('gw-ula-ok-' + cidr.replace(/[^a-z0-9]/gi, ''), [cidr]);
+      wgPeers = [wgEntry(gw.key, `[${HOME6}::8]:51820`)];
+      assert.equal((await get(dev, { xff: `${HOME6}::77`, local: ULA_DEV }).expect(200)).body.same_lan, true, cidr);
+      H.db().prepare('UPDATE peers SET enabled = 0 WHERE id = ?').run(gw.id);
+    }
+    assert.equal(homeNetwork.siteSubnet6('fd12:3456:789a:1::5/64')[0].toString(), 'fd12:3456:789a:1::');
+    assert.equal(homeNetwork.siteSubnet6(null), null);
+  });
+
+  it('a dual-stack home keeps working with either family; families are never compared with each other', async () => {
+    const gw = gateway6('gw-dual', [ULA_LAN], [HOME_LAN]);
+    wgPeers = [wgEntry(gw.key, `${HOME4}:41641`)];
+    const dev = device('hs-dual');
+    assert.equal((await get(dev, { xff: HOME4, local: '192.168.27.55' }).expect(200)).body.same_lan, true, 'IPv4 as before');
+    assert.equal((await get(dev, { xff: HOME4, local: ULA_DEV }).expect(200)).body.same_lan, true, 'the device names only its ULA');
+    assert.equal((await get(dev, { xff: HOME4, local: `192.168.99.1,fd00:dead::1` }).expect(200)).body.same_lan, false);
+    // an older gateway (no lan_subnets6): a ULA address matches nothing, nothing throws
+    const old = makeGateway('gw-old-v4');
+    H.db().prepare('UPDATE peers SET enabled = 0 WHERE id = ?').run(gw.id);
+    wgPeers = [wgEntry(old.key, `${HOME4}:41641`)];
+    const r = await get(dev, { xff: HOME4, local: ULA_DEV }).expect(200);
+    assert.deepEqual([r.body.ok, r.body.same_lan], [true, false]);
+  });
+
+  it('the local parameter: four full IPv6 addresses fit; longer than 200 characters is ignored as a whole', async () => {
+    const full = (n) => `fd12:3456:789a:0001:aaaa:bbbb:cccc:000${n}`;
+    const four = [1, 2, 3, 4].map(full).join(',');
+    assert.equal(four.length, 4 * 39 + 3);
+    assert.deepEqual(homeNetwork.parseLocal(four).map((a) => a.toString()), [1, 2, 3, 4].map((n) => `fd12:3456:789a:1:aaaa:bbbb:cccc:${n}`));
+    assert.deepEqual(homeNetwork.parseLocal(`${full(1)},${full(1).toUpperCase()},192.168.27.55,192.168.27.55`).map((a) => a.kind()), ['ipv6', 'ipv4']);
+    assert.deepEqual(homeNetwork.parseLocal(four + ',' + ' '.repeat(60)), []);
+    assert.deepEqual(homeNetwork.parseLocal([full(1), full(2), full(3), full(4), full(5)].join(',').slice(0, 200)).length, 4);
+    assert.equal(homeNetwork.toUla('fd00::1').toString(), 'fd00::1');
+    for (const x of ['fe80::1', 'fd00::1%eth0', '::ffff:10.0.0.1', '2a02::1', '10.0.0.1', '', null]) assert.equal(homeNetwork.toUla(x), null, String(x));
   });
 });

@@ -27,7 +27,7 @@
 // or, for a gateway that does not report it, its version (≥ MIN_GATEWAY).
 
 const { getDb } = require('../db/connection');
-const { isPrivateIpv4 } = require('../utils/validate');
+const { isPrivateIpv4, isUlaIpv6 } = require('../utils/validate');
 const logger = require('../utils/logger');
 
 const MIN_GATEWAY = '1.21.0';
@@ -93,7 +93,8 @@ function normalize(raw) {
   const pr = r.presence || {};
   const up = r.ups || {};
   const no = r.notify || {};
-  const host = typeof up.host === 'string' && isPrivateIpv4(up.host.trim()) ? up.host.trim() : '';
+  // the NUT server: a private IPv4 address or — a home network without IPv4 — a unique local IPv6 address (fc00::/7)
+  const host = typeof up.host === 'string' && (isPrivateIpv4(up.host.trim()) || isUlaIpv6(up.host.trim())) ? up.host.trim() : '';
   const port = Number.isInteger(up.port) && up.port >= 1 && up.port <= 65535 ? up.port : 3493;
   const targets = Array.isArray(iq.targets) ? [...new Set(iq.targets.filter((x) => typeof x === 'string' && publicIpv4(x)).map((x) => x.trim()))].slice(0, TARGETS_MAX).sort() : [];
   return {
@@ -142,7 +143,7 @@ function telemetryOf(g) {
  * Unknown keys or wrong types → FeatureError('invalid').
  * @returns {{ before, after }}
  */
-function applyPatch(current, patch) {
+function applyPatch(current, patch, { ipv6 = false } = {}) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
@@ -189,7 +190,10 @@ function applyPatch(current, patch) {
         out.inetq.targets = val.map((x) => x.trim());
       } else if (f === 'host') {
         const h = typeof val === 'string' ? val.trim() : null;
-        if (h === null || (h !== '' && !isPrivateIpv4(h))) throw new FeatureError('invalid_host', 'ups.host: a private IPv4 address (RFC 1918)');
+        if (h === null || (h !== '' && !isPrivateIpv4(h) && !isUlaIpv6(h))) throw new FeatureError('invalid_host', 'ups.host: a private IPv4 address (RFC 1918) or a unique local IPv6 address (fc00::/7)');
+        // an IPv6 address only for a gateway that takes one (capability `ipv6-lan`): an older gateway would
+        // drop the host and leave the UPS silently off
+        if (h !== '' && !isPrivateIpv4(h) && !ipv6 && h !== current.ups.host) throw new FeatureError('ups_host_ipv6', 'ups.host: this gateway takes a private IPv4 address only — update the gateway for IPv6');
         out.ups.host = h;
       } else if (f === 'port') {
         if (!Number.isInteger(val) || val < 1 || val > 65535) throw new FeatureError('invalid', 'ups.port: 1…65535');
@@ -211,7 +215,8 @@ function applyPatch(current, patch) {
 function set(peerId, patch, { ip, user } = {}) {
   const g = needGateway(peerId);
   const before = get(g.id);
-  const after = applyPatch(before, patch);
+  const caps = telemetryOf(g).capabilities;
+  const after = applyPatch(before, patch, { ipv6: Array.isArray(caps) && caps.includes('ipv6-lan') });
   db().prepare(`INSERT INTO gateway_features (peer_id, settings, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(peer_id) DO UPDATE SET settings = excluded.settings, updated_at = excluded.updated_at`)
     .run(g.id, JSON.stringify(after), Date.now());
@@ -246,7 +251,10 @@ function configPayload(peerId) {
   }
   return {
     netwatch: { enabled: s.netwatch.enabled, portscan: s.netwatch.portscan },
-    inetq: { enabled: s.inetq.enabled, speedtest: s.inetq.speedtest, ...(s.inetq.targets.length ? { targets: s.inetq.targets.slice() } : {}) },
+    // speedVolume: the daily volume of the speed tests and, plan 'hourly', the cap per test and direction
+    // (services/inetq.js speedVolume; a gateway without the capability `speed-volume` ignores it)
+    inetq: { enabled: s.inetq.enabled, speedtest: s.inetq.speedtest, ...(s.inetq.targets.length ? { targets: s.inetq.targets.slice() } : {}),
+      speedVolume: require('./inetq').speedVolume(s.inetq.speedtest) },
     presence: { enabled: s.netwatch.enabled && s.presence.enabled, macs },
     ups: { enabled: s.ups.enabled, host: s.ups.host, port: s.ups.port, name: s.ups.name },
     // phase 3b (contract server side 1–3)
@@ -491,7 +499,13 @@ function overview(peerId) {
     lan = { available: tel.lan_discovery === true, licensed, enabled: !!(d && d.enabled) };
   } catch { lan = null; }
   let edge = null;
-  try { const es = require('./edge/store').settings(g.id); edge = { enabled: es.edgeEnabled, mqtt: es.mqttEnabled }; } catch { edge = null; }
+  try {
+    const es = require('./edge/store').settings(g.id);
+    // native: a gateway without Docker (Proxmox LXC) has no edge container — a hint in the row, never a ban
+    const meta = db().prepare('SELECT platform FROM gateway_meta WHERE peer_id = ?').get(g.id);
+    const native = require('../../public/js/gateway-edge-kit').nativeGateway({ platform: meta ? meta.platform : null, telemetry: tel });
+    edge = { enabled: es.edgeEnabled, mqtt: es.mqttEnabled, native };
+  } catch { edge = null; }
   const z = zigbeeOf(tel);
   let dns = null;
   let cache = null;

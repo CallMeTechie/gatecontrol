@@ -239,6 +239,13 @@ describe('reports and the lan hint', () => {
   it('the telemetry of the gateway (side 18): urls[0], states; no hint unless running', async () => {
     const tc = hc.telemetryCache({ lan_ip: '192.168.1.23', cache: { state: 'running', urls: ['https://192.168.1.24:8443', 'https://[fd00::1]:8443'], tlsSha256: 'ab'.repeat(32), freeBytes: 5 } });
     assert.deepEqual([tc.state, tc.running, tc.url, tc.freeBytes], ['running', true, 'https://192.168.1.24:8443', 5]);
+    // a home network without IPv4: the gateway listens on its unique local address only — that one is the hint;
+    // link-local and global IPv6 never are
+    const v6 = hc.telemetryCache({ lan_ip: null, cache: { state: 'running', port: 8443, urls: ['https://[fe80::1]:8443', 'https://[2a02:8070::5]:8443', 'https://[fd12:3456:789a:1::5]:8443', 'https://[fd00::9]:8443'], tlsSha256: 'ab'.repeat(32) } });
+    assert.equal(v6.url, 'https://[fd12:3456:789a:1::5]:8443');
+    assert.equal(hc.telemetryCache({ cache: { state: 'running', urls: ['https://[2a02:8070::5]:8443', 'https://[fe80::1]:8443', 'http://[fd00::9]:8443', 'https://user@[fd00::9]:8443'] } }).url, null);
+    // IPv4 first, wherever it stands in the list
+    assert.equal(hc.telemetryCache({ cache: { state: 'running', urls: ['https://[fd00::9]:8443', 'https://192.168.1.24:8443'] } }).url, 'https://192.168.1.24:8443');
     const bad = hc.telemetryCache({ features: { cache: { enabled: true, running: false, state: 'path_unwritable', error: { at: 1, code: 'EACCES' } } } });
     assert.deepEqual([bad.state, bad.running, bad.error], ['path_unwritable', false, 'EACCES']);
     const h = JSON.parse(db.prepare('SELECT last_health FROM gateway_meta WHERE peer_id = ?').get(gw.peer.id).last_health);
