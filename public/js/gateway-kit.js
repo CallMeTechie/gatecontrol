@@ -707,8 +707,8 @@
     // The gateway service as in docker-compose.example.yml of gatecontrol-gateway (tests/fixtures/
     // gateway-compose/docker-compose.example.yml, compared by tests/gateway_compose_parity.test.js).
     // Deliberate differences: no TZ line (the gateway takes its time zone from the server since
-    // gateway 1.22.0 — the env value would only be a fallback), /dev/net/tun and the wireguard-go
-    // switch only on synology (linux = kernel WireGuard), bridge mode without the host-only parts.
+    // gateway 1.22.0 — the env value would only be a fallback), the wireguard-go switch only on
+    // synology (linux = kernel WireGuard), bridge mode without the host-only parts.
     lines.push(
       'services:',
       '  gateway:',
@@ -735,18 +735,21 @@
         '      - SETUID            # keepalived enable_script_security (health-check script)'
       );
     }
-    // /dev/net/tun only for the wireguard-go userspace path.
-    if (platform === 'synology') {
-      lines.push(
-        '    devices:',
-        '      - /dev/net/tun:/dev/net/tun'
-      );
-    }
+    // /dev/net/tun for wireguard-go, allowed by rule instead of `devices:` — with `devices` the container does
+    // not start at all while the host has no /dev/net/tun (Synology before `insmod tun.ko`); this way it starts,
+    // creates the node itself (hence MKNOD) and its setup page says what to do. On linux the kernel WireGuard is
+    // used and the rule only keeps the userspace fallback possible.
+    lines.push(
+      '      - MKNOD             # create /dev/net/tun in the container (device_cgroup_rules below, nothing else)',
+      '    device_cgroup_rules:',
+      "      - 'c 10:200 rwm'"
+    );
     if (network === 'bridge') {
       lines.push(
         '    ports:',
         '      - "8080:8080"   # HTTP proxy (Caddy upstream)',
-        '      - "9876:9876"   # Management API (do NOT expose to internet)'
+        '      - "9876:9876"   # Management API (do NOT expose to internet)',
+        '      - "8642:8642"   # setup and status page of the gateway (home network only)'
       );
     }
     lines.push(
@@ -758,7 +761,8 @@
       '      - /run',
       '      - /etc/wireguard',
       '    volumes:',
-      '      - ./config:/config:ro',
+      // rw: the setup page of the gateway stores gateway.env here (0600); no access data in this file
+      '      - ./config:/config         # the gateway stores gateway.env here (setup page http://<address>:8642)',
       '      - ./gateway-state:/state   # rw: auto-update state (self-update flag + last-pull)',
       // home cache (gateway >= 1.22.0): always mounted at /cache, used only when switched on for
       // this gateway; GC_CACHE_DIR moves it elsewhere (e.g. a USB disk), as in the gateway's own example
@@ -814,7 +818,9 @@
     lines.push(
       '    environment:',
       '      - LOG_LEVEL=info',
-      '      - GATEWAY_ENV_PATH=/config/gateway.env'
+      '      - GATEWAY_ENV_PATH=/config/gateway.env',
+      // setup and status page in the home network (gateway docs/setup-page.md); another port: GC_SETUP_PORT in .env
+      '      - GC_SETUP_PORT=${GC_SETUP_PORT:-8642}'
     );
     // the image sets it too; kept visible where the userspace path is the point of the profile
     if (platform === 'synology') lines.push('      - WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go');

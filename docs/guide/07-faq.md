@@ -407,11 +407,48 @@ normally. You do not need to do anything.
 
 ### “/dev/net/tun” is missing (Synology)
 
-On the Synology the gateway needs the device `/dev/net/tun`. If it is missing,
-the container `gateway` does not start and the message names `/dev/net/tun`.
-Load the module `tun` via SSH with `sudo insmod /lib/modules/tun.ko` – to make
-it survive a restart, add it as a task at “Boot-up”, as for
-[xt_owner](04-edge-and-smart-home.md#network-fence-missing).
+On the Synology the gateway needs the device `/dev/net/tun`. DSM only provides
+it once the module `tun` is loaded.
+
+**With the current compose file** the container starts all the same, and the
+[setup page of the gateway](03-gateway-setup.md#the-setup-page-of-the-gateway)
+(`http://<address of the Synology>:8642`) shows “VPN device missing” with the
+instructions – without SSH:
+
+1. “Control Panel” → “Task Scheduler” → “Create” → “Triggered Task” →
+   “User-defined script”.
+2. User `root`, event “Boot-up”.
+3. Command: `insmod /lib/modules/tun.ko`
+4. Select the task and choose “Run”. The page checks again every 10 seconds.
+
+**With an older compose file** (`devices: /dev/net/tun`) the container
+`gateway` does not start and the message names `/dev/net/tun`. The same task
+helps; restart the project afterwards. Via SSH `sudo insmod /lib/modules/tun.ko`
+works as well.
+
+### The setup page of the gateway does not open
+
+The page `http://<address of the gateway>:8642` exists in the home network only.
+
+1. Are you in the same network as the gateway (not through VPN, not mobile)?
+2. Is the address right? It is the address of the Synology or the machine in
+   the home network, with `http://` and port `8642`.
+3. Is the container `gateway` running?
+4. Is the gateway already connected and “Status page in the home network”
+   switched off for this gateway? Then nothing answers there
+   ([chapter 5](05-features.md#status-page-in-the-home-network)).
+5. Does the browser say “421”? Then open the page with the IP address instead
+   of a name.
+
+**Check:** The page shows “Connect to GateControl” or “Connected”.
+
+### The setup page says “Folder config not writable”
+
+The compose file still says `./config:/config:ro`. Remove the `:ro` and
+recreate the project – or take the current compose file from GateControl
+([chapter 6](06-updating-a-gateway.md)). A gateway that already runs with a
+`gateway.env` does not have to change anything: it keeps running, only “Renew
+access” needs a new file there as before.
 
 ## Running gateway
 

@@ -315,7 +315,8 @@
     { key: 'wide', features: ['dns', 'cache'] },
     { key: 'power', features: ['inetq', 'ups'] },
     { key: 'ext', features: ['edge'] },
-    { key: 'system', features: ['timezone'] },
+    // setuppage: "Statusseite im Heimnetz" (the status page of the gateway in its LAN)
+    { key: 'system', features: ['timezone', 'setuppage'] },
   ];
   function groupOf(feature) {
     const g = FEATURE_GROUPS.find((x) => x.features.indexOf(feature) >= 0);

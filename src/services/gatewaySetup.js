@@ -21,15 +21,30 @@ function readUpdateSh() {
 const NAS_BUNDLE_NAME = 'gatecontrol-gateway-nas.zip';
 
 /**
+ * The old way: the package with config/gateway.env.
  * @param {string} envContent  the gateway.env (fresh tokens)
  * @returns {Buffer} gatecontrol-gateway-nas.zip
  */
 function buildNasBundle(envContent) {
   if (typeof envContent !== 'string' || !envContent) throw new Error('env_required');
+  return nasZip(envContent);
+}
+
+/**
+ * The same package without access data: the gateway gets them itself through
+ * its setup page (server address + setup code). The empty folders matter —
+ * Synology's Container Manager does not create missing bind-mount folders.
+ * @returns {Buffer} gatecontrol-gateway-nas.zip
+ */
+function buildNasPackage() {
+  return nasZip(null);
+}
+
+function nasZip(envContent) {
   const zip = kit.zipStored([
     { name: 'docker-compose.yml', data: kit.buildCompose({ platform: 'synology', network: 'host' }) },
     { name: 'config/' },
-    { name: 'config/gateway.env', data: envContent, mode: 0o600 },
+    ...(envContent ? [{ name: 'config/gateway.env', data: envContent, mode: 0o600 }] : []),
     // the compose mounts ./gateway-state:/state (auto-update flag, last pull)
     { name: 'gateway-state/' },
     // and ./gateway-cache:/cache (home cache) — Synology's Container Manager does not create a
@@ -58,6 +73,6 @@ function buildCompose(platform, network, { zigbee = false, zigbee2mqtt = false, 
 }
 
 module.exports = {
-  readUpdateSh, buildNasBundle, NAS_BUNDLE_NAME,
+  readUpdateSh, buildNasBundle, buildNasPackage, NAS_BUNDLE_NAME,
   buildCompose, composePlatformOf, COMPOSE_PLATFORMS, COMPOSE_NETWORKS,
 };

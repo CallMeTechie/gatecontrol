@@ -69,8 +69,8 @@ const exGw = ex.services.gateway;
 const EXPECTED_DIFF = {
   // TZ comes from the server (features.timezone, gateway >= 1.22.0); the env value is only a fallback.
   environmentDrop: ['TZ=${TZ:-Etc/UTC}'],
-  // linux = kernel WireGuard: no TUN device, no userspace switch (wg-quick falls back by itself).
-  linuxDrop: { devices: true, environment: ['WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go'] },
+  // linux = kernel WireGuard: no userspace switch (wg-quick falls back by itself).
+  linuxDrop: { environment: ['WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go'] },
 };
 
 describe('gateway compose: assistant vs docker-compose.example.yml of the gateway', () => {
@@ -100,7 +100,13 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
     // gateway mounts the control volume radio-ctl
     assert.equal(ex.services.deconz.profiles, 'profiles: ["zigbee"]');
     assert.match(exGw.volumes, /source: radio-ctl/);
-    assert.deepEqual(listOf(exGw.cap_add), ['NET_ADMIN', 'NET_BIND_SERVICE', 'NET_RAW', 'SETGID', 'SETUID']);
+    assert.deepEqual(listOf(exGw.cap_add), ['NET_ADMIN', 'NET_BIND_SERVICE', 'NET_RAW', 'SETGID', 'SETUID', 'MKNOD']);
+    // setup page of the gateway: /dev/net/tun by rule (the container starts without the device and says what to do),
+    // ./config writable (the gateway stores gateway.env itself), the port of the page
+    assert.equal(exGw.devices, undefined);
+    assert.deepEqual(listOf(exGw.device_cgroup_rules), ["'c 10:200 rwm'"]);
+    assert.ok(listOf(exGw.volumes).includes('./config:/config'));
+    assert.ok(listOf(exGw.environment).includes('GC_SETUP_PORT=${GC_SETUP_PORT:-8642}'));
     // gateway >= 1.23.0: the edge container has no network (no fence, no xt_owner); the gateway writes the broker files
     assert.equal(ex.services.edge.network_mode, 'network_mode: none');
     assert.ok(!/edge-mqtt/.test(ex.services.edge.volumes), 'the edge container never sees the broker files');
@@ -189,22 +195,21 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
         assert.deepEqual(got.services.edge, ex.services.edge);
         assert.deepEqual(got.services.mqtt, ex.services.mqtt);
       });
-      it('gateway: cap_add, user, read_only, tmpfs, volumes, healthcheck, logging as in the example', () => {
-        for (const k of ['image', 'restart', 'network_mode', 'cap_drop', 'cap_add', 'read_only', 'user', 'tmpfs', 'volumes', 'healthcheck', 'logging']) {
+      it('gateway: cap_add, device rule, user, read_only, tmpfs, volumes, healthcheck, logging as in the example', () => {
+        for (const k of ['image', 'restart', 'network_mode', 'cap_drop', 'cap_add', 'device_cgroup_rules', 'read_only', 'user', 'tmpfs', 'volumes', 'healthcheck', 'logging']) {
           assert.equal(gw[k], exGw[k], `gateway.${k}`);
         }
       });
-      it('gateway: devices and environment (minus the listed differences)', () => {
+      it('gateway: environment (minus the listed differences), no devices', () => {
         const env = listOf(exGw.environment).filter((e) => EXPECTED_DIFF.environmentDrop.indexOf(e) < 0)
           .filter((e) => platform === 'synology' || EXPECTED_DIFF.linuxDrop.environment.indexOf(e) < 0);
         assert.deepEqual(listOf(gw.environment), env);
-        if (platform === 'synology') assert.equal(gw.devices, exGw.devices);
-        else assert.equal(gw.devices, undefined);
+        assert.equal(gw.devices, undefined);
       });
       it('gateway: no keys beyond the example', () => {
         const extra = Object.keys(gw).filter((k) => !(k in exGw));
         assert.deepEqual(extra, []);
-        const missing = Object.keys(exGw).filter((k) => !(k in gw) && !(k === 'devices' && platform === 'linux'));
+        const missing = Object.keys(exGw).filter((k) => !(k in gw));
         assert.deepEqual(missing, []);
       });
     });
@@ -218,11 +223,13 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
       assert.equal(got.volumes, null);
       assert.equal(gw.network_mode, undefined);
       // NET_RAW: ping of the internet quality; keepalived (SETGID/SETUID) and low ports need the host network
-      assert.deepEqual(listOf(gw.cap_add), ['NET_ADMIN', 'NET_RAW']);
-      assert.deepEqual(listOf(gw.ports), ['"8080:8080"', '"9876:9876"']);
-      assert.deepEqual(listOf(gw.volumes), ['./config:/config:ro', './gateway-state:/state', '${GC_CACHE_DIR:-./gateway-cache}:/cache']);
+      assert.deepEqual(listOf(gw.cap_add), ['NET_ADMIN', 'NET_RAW', 'MKNOD']);
+      // 8642: the setup and status page of the gateway must be reachable from the home network
+      assert.deepEqual(listOf(gw.ports), ['"8080:8080"', '"9876:9876"', '"8642:8642"']);
+      assert.deepEqual(listOf(gw.volumes), ['./config:/config', './gateway-state:/state', '${GC_CACHE_DIR:-./gateway-cache}:/cache']);
       for (const k of ['user', 'read_only', 'tmpfs', 'healthcheck', 'logging']) assert.equal(gw[k], exGw[k], `gateway.${k}`);
-      assert.equal(gw.devices, platform === 'synology' ? exGw.devices : undefined);
+      assert.equal(gw.devices, undefined);
+      assert.equal(gw.device_cgroup_rules, exGw.device_cgroup_rules);
     });
   }
 });

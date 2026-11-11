@@ -419,6 +419,39 @@ router.post('/:id/setup-bundle', (req, res) => {
 });
 
 /**
+ * Synology package without access data (compose, update.sh, the empty folders): the gateway fetches
+ * its gateway.env itself through its setup page. No token rotation, nothing of the gateway in it.
+ */
+router.post('/:id/setup-package', (req, res) => {
+  if (req.tokenAuth) return res.status(403).json({ ok: false, error: 'session_required' });
+  const row = _gatewayIdOr404(req, res);
+  if (!row) return;
+  res.set('Content-Type', 'application/zip');
+  res.set('Content-Disposition', `attachment; filename="${gatewaySetup.NAS_BUNDLE_NAME}"`);
+  res.set('Cache-Control', 'no-store');
+  res.send(gatewaySetup.buildNasPackage());
+});
+
+/**
+ * "Zugang erneuern" (gateway management): the access of the running gateway ends at once and a
+ * setup code is shown with the server address — the gateway asks for it on its setup page
+ * (http://<address>:8642, state "Zugang ungültig"). The client asks first; session only.
+ */
+router.post('/:id/renew-access', (req, res) => {
+  if (req.tokenAuth) return res.status(403).json({ ok: false, error: 'session_required' });
+  const row = _gatewayIdOr404(req, res);
+  if (!row) return;
+  try {
+    const { code, server, expiresAt } = require('../../services/gateways').renewAccess(row.id);
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, code, server, expiresAt });
+  } catch (err) {
+    logger.error({ error: err.message, peerId: row.id }, 'Failed to renew gateway access');
+    res.status(500).json({ ok: false, error: req.t('common.error') });
+  }
+});
+
+/**
  * "Nur docker-compose.yml herunterladen": the current compose of the assistant for this gateway
  * (gateway-kit.js buildCompose, the same text as the NAS package) — renews an old compose without
  * edge/mqtt/cache (edge reason edge_missing). No gateway.env and no token rotation, so the running

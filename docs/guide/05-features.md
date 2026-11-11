@@ -601,4 +601,28 @@ the compose line is missing ([chapter 7](07-faq.md#home-cache-folder-not-writabl
   signature before Android offers to install it. If the gateway cannot be
   reached, it loads the update from the internet as before.
 
+## Status page in the home network
+
+Every gateway has a small page of its own in the home network:
+`http://<address of the gateway>:8642` (Raspberry Pi image also
+`http://<name>.local`). Before the set-up you enter the server address and the
+setup code there ([chapter 3](03-gateway-setup.md#the-setup-page-of-the-gateway)).
+Afterwards it only shows the state: which server the gateway is connected to,
+the last contact, whether the VPN tunnel is up, the version and the address in
+the home network. It takes no input then, and it never shows keys or access
+data. It cannot be reached from the internet or through the tunnel.
+
+**Switching it off:** tab “Features” → “System” → “Status page in the home
+network” (default: on). Switched off, the gateway closes the port. Two things
+stay reachable all the same, otherwise the gateway could not be reached any
+more: the set-up (as long as it has no access data) and the code entry after
+“Renew access” ([chapter 3.7](03-gateway-setup.md#37-managing-a-gateway)).
+
+On an older gateway the switch is greyed out – it does not know the page yet.
+After an update of the gateway it takes effect.
+
+**Check:** open `http://<address of the gateway>:8642` in a browser in the home
+network: switched on, the page shows “Connected”; switched off, nothing answers
+there.
+
 Continue with [chapter 6: Updating an existing gateway](06-updating-a-gateway.md).

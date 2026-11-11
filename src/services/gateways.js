@@ -998,6 +998,9 @@ function createPairingCode(peerId) {
   let host;
   try { host = new URL(config.app.baseUrl).host; } catch { host = require('os').hostname(); }
   const token = `${code}@${host}`;
+  // The setup page of the gateway (gateway docs/setup-page.md) takes the two
+  // parts in separate fields: the address as the admin opens GateControl.
+  const server = host;
 
   try {
     activity.log('gateway_pairing_code_created',
@@ -1005,7 +1008,26 @@ function createPairingCode(peerId) {
       { source: 'admin', severity: 'info', details: { peerId, peerName: peer.name, expires_at: expiresAt } });
   } catch (err) { logger.warn({ err: err.message, peerId }, 'activity log write failed (gateway_pairing_code_created)'); }
 
-  return { code, token, expiresAt };
+  return { code, token, server, expiresAt };
+}
+
+/**
+ * "Zugang erneuern": the access of the gateway ends now (tokens rotated, the
+ * new ones are thrown away) and a pairing code is issued. The running gateway
+ * gets `invalid_token`, opens the code entry of its setup page and redeems
+ * the code there — which rotates once more and hands the gateway its new
+ * gateway.env. Nothing with access data leaves the server here.
+ */
+function renewAccess(peerId) {
+  rotateGatewayTokens(peerId);
+  const { code, server, expiresAt } = createPairingCode(peerId);
+  return { code, server, expiresAt };
+}
+
+/** State of the current pairing code of a gateway (assistant: "geht von selbst weiter"). */
+function pairingState(peerId) {
+  const row = getDb().prepare('SELECT expires_at, consumed_at FROM gateway_pairing_codes WHERE peer_id=? ORDER BY expires_at DESC LIMIT 1').get(peerId);
+  return row ? { expires_at: row.expires_at, consumed_at: row.consumed_at || null } : null;
 }
 
 /**
@@ -1219,6 +1241,8 @@ module.exports = {
   rotateGatewayTokens,
   buildEnvForPeer,
   createPairingCode,
+  renewAccess,
+  pairingState,
   redeemPairingCode,
   cleanupExpiredPairingCodes,
   _mergeHealth,

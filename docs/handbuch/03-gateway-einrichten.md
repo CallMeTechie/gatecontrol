@@ -38,10 +38,48 @@ Du kannst den Assistenten jederzeit schließen. Das Gateway erscheint dann als
 Karte mit „wartet auf ersten Start“. Mit „Einrichtung fortsetzen“ geht es
 weiter, wo du aufgehört hast.
 
-**Wichtig zu den Einrichtungsdateien:** Sie enthalten den Zugangsschlüssel des
-Gateways. Jeder neue Download erzeugt einen neuen Schlüssel – nur die zuletzt
-heruntergeladene Datei gilt. War das Gateway schon verbunden, fragt der
-Assistent vorher nach, weil das laufende Gateway sonst die Verbindung verliert.
+### Die Einrichtungsseite des Gateways
+
+Auf der Synology und auf einem Linux-Rechner gibt es nichts mehr
+herunterzuladen, das Zugangsdaten enthält. Das Gateway startet ohne
+Zugangsdatei und zeigt, solange es nicht verbunden ist, im Heimnetz eine
+eigene Seite:
+
+```
+http://<Adresse des Geräts>:8642
+```
+
+Dort gibst du zwei Angaben aus Schritt 3 des Assistenten ein:
+
+- **Serveradresse** – die Adresse, unter der du GateControl öffnest, zum
+  Beispiel `gate.example.de`.
+- **Einrichtungscode** – `XXXX-XXXX-XXXX-XXXX`. Er gilt 10 Minuten und nur
+  einmal; „Neuen Code erzeugen“ macht einen neuen.
+
+Nach „Verbinden“ holt sich das Gateway seine Zugangsdaten selbst, speichert
+sie im Ordner `config` und zeigt jeden Schritt. Der Assistent in GateControl
+wartet so lange und geht von selbst weiter.
+
+Gut zu wissen:
+
+- Die Seite gibt es **nur im Heimnetz**. Aus dem Internet und über den Tunnel
+  antwortet sie nicht, und sie zeigt nie Schlüssel oder Zugangsdaten.
+- Fehlt dem Gerät etwas (kein Internet, falsche Uhrzeit, VPN-Gerät fehlt,
+  Ordner `config` nicht beschreibbar), sagt die Seite, was zu tun ist – auf der
+  Synology mit einer Klick-Anleitung für DSM, ohne SSH.
+- Nach dem Verbinden zeigt dieselbe Adresse nur noch den Zustand. Das lässt
+  sich pro Gateway abschalten: [Statusseite im Heimnetz](05-funktionen.md#statusseite-im-heimnetz).
+- Höchstens 5 Versuche in 5 Minuten. Danach heißt es „Zu viele Versuche“.
+- Meldet die Seite „… antwortet nicht“ oder „Unter … antwortet kein
+  GateControl“: Prüfe die Serveradresse.
+
+**Der bisherige Weg bleibt:** In Schritt 3 steht unten „Lieber die Datei
+gateway.env herunterladen (bisheriger Weg)“. Diese Dateien enthalten den
+Zugangsschlüssel des Gateways. Jeder neue Download erzeugt einen neuen
+Schlüssel – nur die zuletzt heruntergeladene Datei gilt. War das Gateway schon
+verbunden, fragt der Assistent vorher nach, weil das laufende Gateway sonst die
+Verbindung verliert. Der Raspberry Pi und Proxmox richten sich wie bisher ein
+(Abschnitte [3.3](#33-raspberry-pi) und [3.5](#35-proxmox)).
 
 **Prüfen:** Unter „Gateways“ steht eine Karte mit dem Namen deines Gateways.
 
@@ -52,13 +90,15 @@ Du brauchst DSM 7.2 oder neuer und das Paket **Container Manager** aus dem Paket
 ### Schritte
 
 1. Wähle im Assistenten „Synology NAS“ und klicke „Gateway anlegen und weiter“.
-2. Klicke auf `gatecontrol-gateway-nas.zip`. Das Paket enthält die fertige
-   `docker-compose.yml`, die `gateway.env`, das Update-Skript `update.sh` und
-   die leeren Ordner `gateway-state` und `gateway-cache`.
-3. Öffne in DSM die **File Station** → Ordner `docker`.
-4. Lege dort einen Ordner `gatecontrol-gateway` an.
-5. Lade die ZIP-Datei in diesen Ordner hoch. Rechtsklick auf die ZIP → „Extrahieren“ → in diesen Ordner.
-6. Lösche danach die ZIP-Datei – sie enthält den Zugangsschlüssel.
+2. Schritt 3 zeigt die Compose-Datei. Sie enthält keine Zugangsdaten und ist
+   für alle Gateways gleich. Klicke „Als Paket mit Ordnern (ZIP)“ – das Paket
+   `gatecontrol-gateway-nas.zip` bringt die `docker-compose.yml`, das
+   Update-Skript `update.sh` und die leeren Ordner `config`, `gateway-state`
+   und `gateway-cache` mit.
+3. Öffne in DSM die **File Station** → Ordner `docker` und lege dort einen
+   Ordner `gatecontrol-gateway` an.
+4. Lade die ZIP-Datei in diesen Ordner hoch. Rechtsklick auf die ZIP →
+   „Extrahieren“ → in diesen Ordner.
 
    So sieht der Ordner jetzt aus:
 
@@ -67,7 +107,6 @@ Du brauchst DSM 7.2 oder neuer und das Paket **Container Manager** aus dem Paket
    ├─ docker-compose.yml
    ├─ update.sh
    ├─ config/
-   │  └─ gateway.env
    ├─ gateway-state/
    └─ gateway-cache/
    ```
@@ -75,12 +114,12 @@ Du brauchst DSM 7.2 oder neuer und das Paket **Container Manager** aus dem Paket
    > **Synology legt fehlende Ordner nicht an.** Fehlt ein Ordner, den die
    > Compose-Datei einbindet, bricht der Start mit `Bind mount failed: … does not exist`
    > ab. Das Paket bringt `config/`, `gateway-state/` und `gateway-cache/` mit.
-   > Schreibst oder änderst du die Compose-Datei selbst, legst du fehlende
-   > Ordner vorher in der File Station an.
+   > Kopierst du die Compose-Datei stattdessen („Kopieren“) und fügst sie im
+   > Container Manager ein, legst du die drei Ordner vorher in der File Station an.
 
-7. Öffne den **Container Manager** → „Projekt“ → „Erstellen“.
-8. Projektname: `gatecontrol-gateway`. Pfad: der Ordner `docker/gatecontrol-gateway`.
-9. Wähle „Vorhandene docker-compose.yml verwenden“ → „Weiter“ → „Fertig“.
+5. Öffne den **Container Manager** → „Projekt“ → „Erstellen“.
+6. Projektname: `gatecontrol-gateway`. Pfad: der Ordner `docker/gatecontrol-gateway`.
+7. Wähle „Vorhandene docker-compose.yml verwenden“ → „Weiter“ → „Fertig“.
    Der Container Manager lädt jetzt die Images (dafür braucht die NAS Zugang zu
    `ghcr.io` und Docker Hub) und startet drei Container: `gateway`, `edge` und `mqtt`.
 
@@ -88,28 +127,47 @@ Du brauchst DSM 7.2 oder neuer und das Paket **Container Manager** aus dem Paket
    > Der Kernel der Synology kann die Prozess-Grenze (`pids_limit`) nicht
    > setzen. Docker lässt sie weg, alles andere läuft normal.
 
-10. **Automatische Updates (einmalig, empfohlen):** „Systemsteuerung“ →
+8. Öffne im Browser im Heimnetz `http://<Adresse der Synology>:8642` – die
+   [Einrichtungsseite des Gateways](#die-einrichtungsseite-des-gateways).
+9. Trage **Serveradresse** und **Einrichtungscode** aus dem Assistenten ein
+   (jeweils mit „Kopieren“) und klicke „Verbinden“. Die Seite zeigt: Code
+   angenommen → Zugangsdaten gespeichert → VPN-Tunnel → GateControl meldet das
+   Gateway als online.
+
+   > Zeigt die Seite **„VPN-Gerät fehlt“**, steht darunter, was zu tun ist:
+   > „Systemsteuerung“ → „Aufgabenplaner“ → „Erstellen“ → „Ausgelöste Aufgabe“
+   > → „Benutzerdefiniertes Skript“, Benutzer `root`, Ereignis „Hochfahren“,
+   > Befehl `insmod /lib/modules/tun.ko`; Aufgabe markieren und „Ausführen“.
+   > Die Seite prüft alle 10 Sekunden neu und gibt „Verbinden“ dann frei.
+
+10. Der Assistent geht von selbst zu Schritt 4.
+11. **Automatische Updates (einmalig, empfohlen):** „Systemsteuerung“ →
     „Aufgabenplaner“ → „Erstellen“ → „Geplante Aufgabe“ → „Benutzerdefiniertes Skript“.
     - Benutzer: `root`
     - Zeitplan: täglich, jede Minute wiederholen
-    - Befehl: kopiere ihn aus dem Assistenten. Er sieht so aus:
+    - Befehl: kopiere ihn aus dem Assistenten (unten in Schritt 3 aufklappen). Er sieht so aus:
 
       ```bash
       PATH=/usr/local/bin:$PATH GATEWAY_STATE_DIR=/volume1/docker/gatecontrol-gateway/gateway-state GC_GW_COMPOSE_DIR=/volume1/docker/gatecontrol-gateway bash /volume1/docker/gatecontrol-gateway/update.sh
       ```
 
       Liegt der Ordner `docker` auf einem anderen Volume, ersetze `volume1`.
-11. Klicke im Assistenten „Projekt läuft – weiter“ und warte auf Schritt 4.
 
 **Prüfen:**
 
 - Container Manager → „Container“: `gatecontrol-gateway-gateway-1`,
   `gatecontrol-gateway-edge-1` und `gatecontrol-gateway-mqtt-1` laufen.
-- Der Assistent zeigt „NAS hat sich gemeldet“ und „Tunnel steht“.
+- Die Seite des Gateways zeigt „Verbunden“, der Assistent „NAS hat sich
+  gemeldet“ und „Tunnel steht“.
 
-Kommt nach 10 Minuten nichts: Läuft das Projekt („Aktiv“)? Liegt `gateway.env`
-im Ordner `config`? Das Protokoll (Container Manager → „Container“ →
-`…-gateway-1` → „Protokoll“) nennt den Grund.
+Kommt nach 10 Minuten nichts: Läuft das Projekt („Aktiv“)? Was zeigt
+`http://<Adresse der Synology>:8642`? Das Protokoll (Container Manager →
+„Container“ → `…-gateway-1` → „Protokoll“) nennt den Grund.
+
+**Bisheriger Weg (mit Datei):** „Lieber die Datei gateway.env herunterladen“
+im Assistenten. Das Paket `gatecontrol-gateway-nas.zip` enthält dann zusätzlich
+`config/gateway.env` – nach dem Extrahieren die ZIP löschen, sie enthält den
+Zugangsschlüssel. Die Einrichtungsseite brauchst du dann nicht.
 
 ### Edge auf der Synology
 
@@ -202,40 +260,50 @@ Debian 11+ und Ubuntu 22.04+).
 1. Wähle im Assistenten „Anderer Linux-Rechner“ und klicke „Gateway anlegen und weiter“.
 2. „Netzwerkmodus“: **„Host (empfohlen)“**. Nur damit gehen L4-Routen,
    Wake-on-LAN, Edge-Plugins und die Funktionen aus Kapitel 5.
-3. Lade die drei Dateien herunter: `docker-compose.yml`, `gateway.env`, `update.sh`.
-4. Bring die Dateien auf den Linux-Rechner (z. B. mit `scp` in dein
-   Home-Verzeichnis) und lege den Ordner an:
+3. Lege auf dem Linux-Rechner einen Ordner an und speichere die Compose-Datei
+   aus dem Assistenten dort als `docker-compose.yml` („Kopieren“ oder
+   „Herunterladen“). Sie enthält keine Zugangsdaten:
 
    ```bash
-   sudo mkdir -p /opt/gatecontrol-gateway/config /opt/gatecontrol-gateway/gateway-state /opt/gatecontrol-gateway/gateway-cache
+   sudo mkdir -p /opt/gatecontrol-gateway
    cd /opt/gatecontrol-gateway
-   sudo mv ~/docker-compose.yml ~/update.sh .
-   sudo mv ~/gateway.env config/
-   sudo chmod 600 config/gateway.env
-   sudo chmod +x update.sh
+   sudo nano docker-compose.yml      # Inhalt aus dem Assistenten einfügen, speichern
    ```
 
-5. Starte das Gateway:
+4. Starte das Gateway:
 
    ```bash
-   cd /opt/gatecontrol-gateway
    sudo docker compose up -d
    ```
 
-6. **Automatische Updates (einmalig, empfohlen):** Öffne `sudo crontab -e` und
-   füge die Zeile aus dem Assistenten ein:
+   Docker legt die Ordner `config`, `gateway-state` und `gateway-cache` selbst an.
+
+5. Öffne im Browser im Heimnetz `http://<Adresse des Rechners>:8642` – die
+   [Einrichtungsseite des Gateways](#die-einrichtungsseite-des-gateways) –,
+   trage **Serveradresse** und **Einrichtungscode** aus dem Assistenten ein und
+   klicke „Verbinden“. Der Assistent geht danach von selbst zu Schritt 4.
+6. **Automatische Updates (einmalig, empfohlen):** Lade `update.sh` aus dem
+   Assistenten (unten in Schritt 3 aufklappen) nach `/opt/gatecontrol-gateway`,
+   öffne `sudo crontab -e` und füge die Zeile aus dem Assistenten ein:
 
    ```
    * * * * * PATH=/usr/local/bin:$PATH GATEWAY_STATE_DIR=/opt/gatecontrol-gateway/gateway-state GC_GW_COMPOSE_DIR=/opt/gatecontrol-gateway bash /opt/gatecontrol-gateway/update.sh
    ```
 
-7. Klicke im Assistenten „Container läuft – weiter“.
-
 **Prüfen:**
 
 - `sudo docker compose ps` zeigt `gateway`, `edge` und `mqtt` als laufend.
-- Der Assistent zeigt „Gateway hat sich gemeldet“ und „Tunnel steht“.
+- Die Seite des Gateways zeigt „Verbunden“, der Assistent „Gateway hat sich
+  gemeldet“ und „Tunnel steht“.
 - Wenn nicht: `sudo docker compose logs gateway` nennt den Grund.
+
+Im Netzwerkmodus „Bridge“ gibt die Compose-Datei den Port 8642 der
+Einrichtungsseite frei (`ports: "8642:8642"`).
+
+**Bisheriger Weg (mit Datei):** „Lieber die Datei gateway.env herunterladen“
+im Assistenten, dann `docker-compose.yml`, `gateway.env` und `update.sh`
+herunterladen, `gateway.env` nach `/opt/gatecontrol-gateway/config/` legen
+(`sudo chmod 600 config/gateway.env`) und `sudo docker compose up -d`.
 
 ## 3.5 Proxmox
 
@@ -298,10 +366,17 @@ Gateways verwaltest du nur noch auf der Seite „Gateways“ – die Seite
 „Mehr“. Unter „Verwalten“ findest du:
 
 - **Name und Gruppe ändern …** – Name, Beschreibung und Peer-Gruppe.
-- **Verbindungsdaten neu erzeugen …** – öffnet den Assistenten bei
-  Schritt 3 mit den Dateien für dein Gerät. Hat sich das Gateway schon einmal
-  gemeldet, fragt GateControl vorher: Mit neuen Daten verliert das laufende
-  Gateway die Verbindung, bis es die neue Datei bekommt.
+- **Zugang erneuern …** – macht den bisherigen Zugang des Gateways ungültig,
+  zum Beispiel wenn eine `gateway.env` in falsche Hände geraten sein könnte.
+  GateControl fragt immer vorher: Das laufende Gateway verliert sofort die
+  Verbindung. Danach zeigt GateControl **Serveradresse** und
+  **Einrichtungscode**. Öffne im Heimnetz die Seite des Gateways
+  (`http://<Adresse des Gateways>:8642`) – nach etwa zwei Minuten fragt sie
+  nach einem neuen Code. Gib beides dort ein; die Serveradresse ist auf der
+  Seite fest, ändern lässt sich nur der Code. Routen und Einstellungen bleiben.
+  Ältere Gateways ohne diese Seite und Gateways mit nur lesbarem Ordner
+  `config` bekommen stattdessen wie bisher eine neue Datei (der Assistent bei
+  Schritt 3, „gateway.env neu herunterladen“).
 - **Proxy-Port ändern …** – der Port, auf dem das Gateway im Tunnel Anfragen
   annimmt (Standard 8080; auf einer Synology z. B. 18080, wenn 8080 belegt ist).
 - **Deaktivieren …** – trennt den Tunnel. Routen über dieses Gateway sind

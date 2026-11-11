@@ -58,6 +58,9 @@ const DEFAULTS = Object.freeze({
   radio: { zigbee: null, ble: false, stack: 'deconz', thread: false, sticks: [] },
   ai: { enabled: false, source: 'service', lanUrl: null, lanApi: 'ollama', gpu: 'off' },
   cameras: { enabled: false, subnets: [], storagePath: null },
+  // "Statusseite im Heimnetz": the status page of the gateway in its LAN (gateway docs/setup-page.md);
+  // the setup itself and "Zugang ungültig" stay reachable there either way
+  setupPage: { status: true },
 });
 
 // Memory of the parts (MB), contract §6 — guide values for the hint only (deCONZ ≈ 90 MB with a
@@ -106,6 +109,7 @@ function normalize(raw) {
     radio: require('./homeRadio').normalizeSettings(r.radio),
     ai: require('./ai/local').normalizeSettings(r.ai),
     cameras: require('./homeCameras').normalizeSettings(r.cameras),
+    setupPage: { status: bool((r.setupPage || {}).status, DEFAULTS.setupPage.status) },
   };
 }
 
@@ -146,7 +150,7 @@ function applyPatch(current, patch) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
-  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread', 'sticks'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'] };
+  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread', 'sticks'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'], setupPage: ['status'] };
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     if (!allowed[k]) continue; // other keys (lanDiscovery, edge) are handled by the route
@@ -154,7 +158,10 @@ function applyPatch(current, patch) {
     for (const [f, val] of Object.entries(v)) {
       if (!allowed[k].includes(f)) throw new FeatureError('invalid', `${k}.${f}: unknown`);
       any = true;
-      if (k === 'cameras') {
+      if (k === 'setupPage') {
+        if (typeof val !== 'boolean') throw new FeatureError('invalid', 'setupPage.status: must be true or false');
+        out.setupPage.status = val;
+      } else if (k === 'cameras') {
         // Kameras: the switch and extra private networks the gateway may reach (services/homeCameras.js)
         try { out.cameras[f] = require('./homeCameras').patchField(f, val); } catch (e) { throw new FeatureError(e.code === 'invalid_host' ? 'invalid_host' : 'invalid', e.message); }
       } else if (k === 'ai') {
@@ -213,7 +220,7 @@ function set(peerId, patch, { ip, user } = {}) {
   db().prepare(`INSERT INTO gateway_features (peer_id, settings, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(peer_id) DO UPDATE SET settings = excluded.settings, updated_at = excluded.updated_at`)
     .run(g.id, JSON.stringify(after), Date.now());
-  const changed = FEATURE_KEYS.concat(['notify', 'print', 'radio', 'ai', 'cameras']).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+  const changed = FEATURE_KEYS.concat(['notify', 'print', 'radio', 'ai', 'cameras', 'setupPage']).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
   if (changed.length) {
     try {
       require('./activity').log('gateway_features_changed', `Gateway features changed on "${g.name}" (${changed.join(', ')})`, {
@@ -259,6 +266,8 @@ function configPayload(peerId) {
     ai: part(peerId, 'ai', () => require('./ai/local').configPayload(peerId)),
     // phase 3c, step 4: Kameras (an older gateway ignores it; never a password — the gateway fetches those)
     cameras: part(peerId, 'cameras', () => require('./homeCameras').configPayload(peerId)),
+    // status page of the gateway in its home network (capability `setup-page`; an older gateway ignores it)
+    setup_page: { status: s.setupPage.status },
   };
 }
 
@@ -323,6 +332,8 @@ function support(tel) {
     cameras: !!(caps && caps.includes('cameras')),
     // PDF für Drucker ohne PDF umwandeln (gateway docs/print.md „Umwandeln“, Gateway ab MIN_GATEWAY_PRINT_CONVERT)
     printConvert: !!(caps && caps.includes('print-convert')),
+    // setup and status page in the home network (gateway docs/setup-page.md): the switch only works there
+    setupPage: !!(caps && caps.includes('setup-page')),
     version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY, minGateway3b: MIN_GATEWAY_3B, minGatewayPrint: MIN_GATEWAY_PRINT, minGatewayPrintConvert: MIN_GATEWAY_PRINT_CONVERT, minGatewayRadio: MIN_GATEWAY_RADIO, minGatewayAi: MIN_GATEWAY_AI, minGatewayCameras: MIN_GATEWAY_CAMERAS,
   };
 }

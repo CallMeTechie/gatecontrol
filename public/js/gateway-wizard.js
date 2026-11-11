@@ -8,7 +8,12 @@
 //      the same endpoint, rights, CSRF and licence checks as before (a new
 //      location first: POST /api/v1/gateway-locations)
 //   3  instructions per platform (Pi image + gatecontrol-setup.zip built HERE,
-//      Synology package, Proxmox one-liner, Docker Compose)
+//      Proxmox one-liner). Synology and Linux: the setup page of the gateway
+//      (gateway docs/setup-page.md) — a compose without access data, then the
+//      server address and a setup code (POST …/gateway-pairing-code, 10 min)
+//      on http://<address>:8642; the step goes on by itself once the code is
+//      redeemed. The file way (Synology package / gateway.env) stays one
+//      click away (state.way = 'file').
 //   4  live status (GET /api/v1/gateways/:id/setup-status, polled with
 //      back-off and on gc:gateway events)
 //
@@ -49,6 +54,8 @@
     return {
       step: 1, platform: null, peerId: null, name: '', locationId: '', newLoc: null, newLocId: null, created: false, createdAt: null,
       env: null, everConnected: false, busy: false,
+      // Synology/Linux: 'code' = setup page of the gateway, 'file' = download gateway.env (the way before)
+      way: 'code', pair: null, cwTimer: null, cwPoll: null, cwDone: false,
       pi: { model: 'pi4', net: 'lan', zigbee: 'auto', ssid: '', psk: '', hidden: false, hostname: '', hostnameDirty: false,
         tz: browserTz(), country: browserCountry(), ssh: '' },
       info: null, status: null, step4Since: 0, pollTimer: null, pollDelay: 3000, pairTimer: null, pairExpires: 0,
@@ -126,7 +133,8 @@
   function render() {
     overlay.querySelectorAll('.gwz-step').forEach(function (s) {
       var on = String(state.step) === s.getAttribute('data-step')
-        && (!s.hasAttribute('data-platform') || s.getAttribute('data-platform') === state.platform);
+        && (!s.hasAttribute('data-platform') || s.getAttribute('data-platform') === state.platform)
+        && (!s.hasAttribute('data-way') || s.getAttribute('data-way') === way());
       s.hidden = !on;
     });
     $('gwz-title').textContent = title();
@@ -153,9 +161,13 @@
     renderStep1(); renderStep2(); renderStep3();
   }
 
+  // Synology and Linux have two ways through step 3; the Pi and Proxmox keep their own.
+  function way() { return state.platform === 'synology' || state.platform === 'linux' ? state.way : null; }
+
   function go(step) {
     setError('');
     stopPairing();
+    stopCode();
     if (step !== 4) stopPolling();
     state.step = step;
     if (step === 2 && !state.pi.hostnameDirty) state.pi.hostname = kit.suggestHostname(state.name);
@@ -403,6 +415,7 @@
   // ── Step 3 ──
   function enterStep3() {
     if (state.platform === 'proxmox') loadPairing();
+    if (way() === 'code') { loadCode(); startCodePoll(); }
   }
   function fmtMB(n) { return n ? Math.round(n / 1048576) + ' MB' : ''; }
   function renderStep3() {
@@ -432,7 +445,9 @@
         if (p.ssh) bits.push(T('gwiz.pi.sum_ssh', 'SSH mit Schlüssel'));
         $('gwz-pi-summary-text').textContent = bits.join(' · ');
       }
-    } else if (state.platform === 'synology') {
+    }
+    if (way() === 'code') { renderCodeWay(); return; }
+    if (state.platform === 'synology') {
       $('gwz-nas-cmd').textContent = kit.nasTaskCommand(kit.NAS_DIR);
     } else if (state.platform === 'linux') {
       var net = radioValue('gwz-linux-net') || 'host';
@@ -465,6 +480,100 @@
         state.env = null; // the tokens of the creation response are no longer valid
         return r.blob().then(function (b) { saveBlob(b, 'gatecontrol-gateway-nas.zip'); });
       });
+    }).catch(function () { setError(T('gwiz.err.generic', 'Das hat nicht geklappt.')); });
+  }
+
+  // ── Step 3, Synology/Linux through the setup page of the gateway ──
+  function cwNet() { return state.platform === 'linux' ? (radioValue('gwz-cw-net') || 'host') : 'host'; }
+  function cwCompose() { return kit.buildCompose({ platform: state.platform, network: cwNet() }); }
+  function renderCodeWay() {
+    var pf = state.platform;
+    var linux = pf === 'linux';
+    $('gwz-cw-need').textContent = T('gwiz.cw.need_' + pf, '');
+    $('gwz-cw-s1-title').textContent = T('gwiz.cw.s1_title_' + pf, '');
+    $('gwz-cw-s1-text').textContent = T('gwiz.cw.s1_text_' + pf, '');
+    $('gwz-cw-s1-hint').textContent = T('gwiz.cw.s1_hint_' + pf, '');
+    show($('gwz-cw-net'), linux);
+    show($('gwz-cw-up'), linux);
+    show($('gwz-cw-package'), !linux);
+    if (linux) $('gwz-cw-net-hint').textContent = T('gwiz.linux.net_hint_' + cwNet(), '');
+    $('gwz-cw-compose').textContent = cwCompose();
+    $('gwz-cw-url').textContent = T('gwiz.cw.url_' + pf, 'http://<…>:8642');
+    // automatic updates: the same command as before, collapsed
+    $('gwz-cw-update-text').textContent = T(linux ? 'gwiz.linux.update_text' : 'gwiz.nas.update_text', '');
+    $('gwz-cw-update-cmd').textContent = linux ? $('gwz-linux-cron').textContent : kit.nasTaskCommand(kit.NAS_DIR);
+    $('gwz-cw-update-hint').textContent = linux ? '' : T('gwiz.nas.volume_hint', '');
+    var sh = $('gwz-cw-update-sh');
+    sh.href = '/api/v1/gateways/' + state.peerId + '/update-sh';
+    show(sh, linux);
+    renderCode();
+  }
+  function renderCode() {
+    var p = state.pair;
+    $('gwz-cw-server').textContent = p ? p.server : '…';
+    $('gwz-cw-code').textContent = p ? p.code : T('gwiz.pve.generating', 'Wird erzeugt …');
+    tickCode();
+    $('gwz-cw-wait').classList.toggle('done', !!state.cwDone);
+    $('gwz-cw-wait-text').textContent = state.cwDone ? T('gwiz.cw.redeemed', '') : T('gwiz.cw.wait', '');
+  }
+  function tickCode() {
+    var el = $('gwz-cw-countdown');
+    var p = state.pair;
+    if (!p) { el.textContent = ''; return; }
+    var ms = p.expiresAt - Date.now();
+    el.classList.toggle('over', ms <= 0);
+    if (ms <= 0) { el.textContent = T('gwiz.cw.expired', 'abgelaufen'); return; }
+    var sec = Math.floor(ms / 1000);
+    el.textContent = T('gwiz.cw.left', 'noch {{t}}', { t: Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0') });
+  }
+  /** A fresh setup code (the one before stops working). Creating it changes nothing for a running gateway. */
+  function loadCode() {
+    state.pair = null; state.cwDone = false;
+    renderCode();
+    var id = state.peerId;
+    api('POST', '/api/v1/peers/' + id + '/gateway-pairing-code', {}).then(function (d) {
+      if (!state || state.peerId !== id || state.step !== 3 || way() !== 'code') return;
+      if (!d.ok || !d.code) { $('gwz-cw-code').textContent = '—'; setError(d.error || T('gwiz.err.generic', 'Das hat nicht geklappt.')); return; }
+      // a server before the two fields: CODE@host
+      var server = d.server || String(d.token || '').split('@')[1] || location.host;
+      state.pair = { code: d.code, server: server, expiresAt: d.expiresAt };
+      renderCode();
+      if (state.cwTimer) clearInterval(state.cwTimer);
+      state.cwTimer = setInterval(tickCode, 1000);
+    }).catch(function () { setError(T('gwiz.err.generic', 'Das hat nicht geklappt.')); });
+  }
+  // "geht von selbst weiter": the status says when the gateway redeemed the code
+  function startCodePoll() {
+    if (state.cwPoll) clearTimeout(state.cwPoll);
+    state.cwPoll = setTimeout(pollCode, 3000);
+  }
+  function pollCode() {
+    if (!state || !isOpen() || state.step !== 3 || way() !== 'code') return;
+    var id = state.peerId;
+    api('GET', '/api/v1/gateways/' + id + '/setup-status').then(function (d) {
+      if (!state || state.peerId !== id || state.step !== 3 || way() !== 'code') return;
+      var pr = d.ok && d.gateway && d.gateway.pairing;
+      if (pr && state.pair && pr.consumed_at && pr.expires_at === state.pair.expiresAt) {
+        state.cwDone = true;
+        state.status = d.gateway;
+        renderCode();
+        setTimeout(function () { if (state && state.peerId === id && state.step === 3 && isOpen()) go(4); }, 1200);
+        return;
+      }
+      startCodePoll();
+    }).catch(function () { startCodePoll(); });
+  }
+  function stopCode() {
+    if (!state) return;
+    if (state.cwTimer) { clearInterval(state.cwTimer); state.cwTimer = null; }
+    if (state.cwPoll) { clearTimeout(state.cwPoll); state.cwPoll = null; }
+  }
+  function downloadPackage() {
+    fetch('/api/v1/gateways/' + state.peerId + '/setup-package', {
+      method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf(), 'Content-Type': 'application/json' }, body: '{}',
+    }).then(function (r) {
+      if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) { setError(j.error || T('gwiz.err.generic', 'Das hat nicht geklappt.')); });
+      return r.blob().then(function (b) { saveBlob(b, 'gatecontrol-gateway-nas.zip'); });
     }).catch(function () { setError(T('gwiz.err.generic', 'Das hat nicht geklappt.')); });
   }
 
@@ -649,8 +758,10 @@
 
   function open(opts) {
     var o = opts || {};
-    if (state) { stopPolling(); stopPairing(); }
+    if (state) { stopPolling(); stopPairing(); stopCode(); }
     state = freshState();
+    // "gateway.env neu herunterladen (bisheriger Weg)" of the gateway management
+    if (o.way === 'file') state.way = 'file';
     resetForm();
     if (window.openModal) window.openModal('gwz-overlay'); else overlay.style.display = 'flex';
     loadInfo();
@@ -684,7 +795,7 @@
   }
 
   function close() {
-    stopPolling(); stopPairing();
+    stopPolling(); stopPairing(); stopCode();
     if (state) state.env = null;
     if (window.closeModal) window.closeModal('gwz-overlay'); else overlay.style.display = 'none';
     if (/^#(add|setup\/)/.test(location.hash)) {
@@ -702,6 +813,11 @@
     if (e.target.closest('#gwz-pi-edit')) { go(2); return; }
     if (e.target.closest('#gwz-nas-bundle')) { downloadNasBundle(); return; }
     if (e.target.closest('#gwz-pve-regen')) { loadPairing(); return; }
+    var wy = e.target.closest('[data-gwz-way]');
+    if (wy) { state.way = wy.getAttribute('data-gwz-way') === 'file' ? 'file' : 'code'; go(3); return; }
+    if (e.target.closest('#gwz-cw-regen')) { setError(''); loadCode(); startCodePoll(); return; }
+    if (e.target.closest('#gwz-cw-download')) { saveBlob(new Blob([cwCompose()], { type: 'text/yaml' }), 'docker-compose.yml'); return; }
+    if (e.target.closest('#gwz-cw-package')) { downloadPackage(); return; }
     if (e.target.closest('#gwz-smarthome')) { connectSmarthome(); return; }
     if (e.target.closest('#gwz-linux-compose')) {
       saveBlob(new Blob([kit.buildCompose({ platform: 'linux', network: radioValue('gwz-linux-net') || 'host' })], { type: 'text/yaml' }), 'docker-compose.yml');
@@ -724,7 +840,7 @@
       if (e.target.value === 'new') $('gwz-loc-name').focus();
     }
     else if (n === 'gwz-model' || n === 'gwz-net' || n === 'gwz-zigbee') { readStep2(); renderStep2(); }
-    else if (n === 'gwz-linux-net') renderStep3();
+    else if (n === 'gwz-linux-net' || n === 'gwz-cw-net') renderStep3();
   });
   $('gwz-back').addEventListener('click', function () {
     if (state.busy) return;
@@ -754,7 +870,7 @@
     if (e.key !== 'Escape' || !state) return;
     setTimeout(function () {
       if (isOpen()) return;
-      stopPolling(); stopPairing();
+      stopPolling(); stopPairing(); stopCode();
       state.env = null;
       if (/^#(add|setup\/)/.test(location.hash)) {
         try { history.replaceState(null, '', location.pathname + location.search); } catch (err) { /* ignore */ }
@@ -763,6 +879,7 @@
   });
   var evDeb = null;
   function onLive() {
+    if (state && state.step === 3 && isOpen() && way() === 'code') { if (state.cwPoll) clearTimeout(state.cwPoll); state.cwPoll = setTimeout(pollCode, 600); return; }
     if (!state || state.step !== 4 || !isOpen()) return;
     clearTimeout(evDeb);
     evDeb = setTimeout(function () { state.pollDelay = 3000; poll(); }, 600);

@@ -40,6 +40,34 @@ describe('gateways pairing-code', () => {
     assert.ok(expiresAt <= Date.now() + 11 * 60 * 1000); // 10 min + a hair
   });
 
+  it('returns the server address apart from the code (two fields on the setup page of the gateway)', async () => {
+    const gw = await gateways.createGateway({ name: 'pair-gw-server', apiPort: 9876 });
+    const { code, token, server } = gateways.createPairingCode(gw.peer.id);
+    assert.equal(token, `${code}@${server}`, 'the Proxmox one-liner keeps CODE@host');
+    assert.ok(server.length > 0 && !/[@/\s]/.test(server));
+    assert.equal(server, new URL(require('../config/default').app.baseUrl).host);
+  });
+
+  it('renewAccess: the old access ends at once, a code is issued, redeeming it gives a new gateway.env', async () => {
+    const gw = await gateways.createGateway({ name: 'pair-gw-renew', apiPort: 9876 });
+    const before = db.prepare('SELECT api_token_hash FROM gateway_meta WHERE peer_id=?').get(gw.peer.id).api_token_hash;
+    const out = gateways.renewAccess(gw.peer.id);
+    assert.deepEqual(Object.keys(out).sort(), ['code', 'expiresAt', 'server'], 'no access data leaves the server');
+    assert.match(out.code, /^[A-F0-9]{4}(-[A-F0-9]{4}){3}$/);
+    const mid = db.prepare('SELECT api_token_hash FROM gateway_meta WHERE peer_id=?').get(gw.peer.id).api_token_hash;
+    assert.notEqual(mid, before, 'the running gateway is invalid now');
+    assert.deepEqual(gateways.pairingState(gw.peer.id), { expires_at: out.expiresAt, consumed_at: null });
+
+    const { envContent } = gateways.redeemPairingCode(out.code, '192.0.2.7');
+    const token = /^GC_API_TOKEN=(gc_gw_[0-9a-f]{64})$/m.exec(envContent)[1];
+    const after = db.prepare('SELECT api_token_hash FROM gateway_meta WHERE peer_id=?').get(gw.peer.id).api_token_hash;
+    assert.equal(after, 'sha256:' + crypto.createHash('sha256').update(token).digest('hex'));
+    assert.notEqual(after, mid);
+    assert.ok(gateways.pairingState(gw.peer.id).consumed_at > 0);
+    assert.throws(() => gateways.renewAccess(999999), /not_a_gateway/);
+    assert.equal(gateways.pairingState(999999), null);
+  });
+
   it('persists only the SHA-256 hash, never the cleartext code', async () => {
     const gw = await gateways.createGateway({ name: 'pair-gw-2', apiPort: 9876 });
     const { code } = gateways.createPairingCode(gw.peer.id);

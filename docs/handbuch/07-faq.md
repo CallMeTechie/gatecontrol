@@ -420,11 +420,49 @@ läuft normal. Du musst nichts tun.
 
 ### „/dev/net/tun“ fehlt (Synology)
 
-Das Gateway braucht auf der Synology das Gerät `/dev/net/tun`. Fehlt es, startet
-der Container `gateway` nicht und die Meldung nennt `/dev/net/tun`. Das Modul
-`tun` lädst du per SSH mit `sudo insmod /lib/modules/tun.ko` – damit es einen
-Neustart übersteht, wie bei [xt_owner](04-edge-und-smart-home.md#netzgrenze-fehlt)
-als Aufgabe beim „Hochfahren“.
+Das Gateway braucht auf der Synology das Gerät `/dev/net/tun`. DSM stellt es
+erst bereit, wenn das Modul `tun` geladen ist.
+
+**Mit der aktuellen Compose-Datei** startet der Container trotzdem, und die
+[Einrichtungsseite des Gateways](03-gateway-einrichten.md#die-einrichtungsseite-des-gateways)
+(`http://<Adresse der Synology>:8642`) zeigt „VPN-Gerät fehlt“ mit der
+Anleitung – ohne SSH:
+
+1. „Systemsteuerung“ → „Aufgabenplaner“ → „Erstellen“ → „Ausgelöste Aufgabe“ →
+   „Benutzerdefiniertes Skript“.
+2. Benutzer `root`, Ereignis „Hochfahren“.
+3. Befehl: `insmod /lib/modules/tun.ko`
+4. Aufgabe markieren und „Ausführen“ wählen. Die Seite prüft alle 10 Sekunden
+   neu.
+
+**Mit einer älteren Compose-Datei** (`devices: /dev/net/tun`) startet der
+Container `gateway` nicht und die Meldung nennt `/dev/net/tun`. Dieselbe
+Aufgabe hilft; danach das Projekt neu starten. Per SSH geht auch
+`sudo insmod /lib/modules/tun.ko`.
+
+### Die Einrichtungsseite des Gateways öffnet sich nicht
+
+Die Seite `http://<Adresse des Gateways>:8642` gibt es nur im Heimnetz.
+
+1. Bist du im selben Netz wie das Gateway (nicht über VPN, nicht mobil)?
+2. Stimmt die Adresse? Es ist die Adresse der Synology bzw. des Rechners im
+   Heimnetz, mit `http://` und Port `8642`.
+3. Läuft der Container `gateway`?
+4. Ist das Gateway schon verbunden und „Statusseite im Heimnetz“ für dieses
+   Gateway ausgeschaltet? Dann antwortet dort nichts
+   ([Kapitel 5](05-funktionen.md#statusseite-im-heimnetz)).
+5. Meldet der Browser „421“? Dann öffne die Seite mit der IP-Adresse statt
+   mit einem Namen.
+
+**Prüfen:** Die Seite zeigt „Mit GateControl verbinden“ oder „Verbunden“.
+
+### Die Einrichtungsseite sagt „Ordner config nicht beschreibbar“
+
+In der Compose-Datei steht noch `./config:/config:ro`. Entferne das `:ro` und
+erstelle das Projekt neu – oder nimm die aktuelle Compose-Datei aus GateControl
+([Kapitel 6](06-gateway-aktualisieren.md)). Ein Gateway, das schon mit einer
+`gateway.env` läuft, muss nichts ändern: Es läuft weiter, nur „Zugang erneuern“
+braucht dort wie bisher eine neue Datei.
 
 ## Gateway im Betrieb
 

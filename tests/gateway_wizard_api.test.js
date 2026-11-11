@@ -147,7 +147,7 @@ describe('Synology package', () => {
     const byName = Object.fromEntries(entries.map((e) => [e.name, e]));
     const compose = byName['docker-compose.yml'].data.toString();
     assert.match(compose, /network_mode: host/);
-    assert.match(compose, /\/dev\/net\/tun/);
+    assert.match(compose, /device_cgroup_rules:/);
     assert.match(compose, /\.\/gateway-state:\/state/);
     assert.equal(byName['update.sh'].data.toString(),
       fs.readFileSync(path.join(__dirname, '..', 'src/services/gatewaySetup/templates/update.sh'), 'utf8'));
@@ -162,6 +162,75 @@ describe('Synology package', () => {
     const id = db.prepare("SELECT peer_id FROM gateway_meta LIMIT 1").get().peer_id;
     await agent.post(`/api/v1/gateways/${id}/setup-bundle`).expect(403);
     await post('/api/v1/gateways/999999/setup-bundle').expect(404);
+  });
+});
+
+describe('set-up through the setup page of the gateway (server address + setup code)', () => {
+  let id;
+  it('POST …/setup-package → the Synology package without access data, nothing rotated', async () => {
+    id = (await post('/api/v1/peers', { name: 'NAS Keller', is_gateway: true, platform: 'synology' }).expect(201)).body.peer.id;
+    const hash = db.prepare('SELECT api_token_hash FROM gateway_meta WHERE peer_id = ?').get(id).api_token_hash;
+    const r = await post(`/api/v1/gateways/${id}/setup-package`).buffer(true).parse(binaryParser).expect(200);
+    assert.equal(r.headers['content-type'], 'application/zip');
+    assert.match(r.headers['content-disposition'], /filename="gatecontrol-gateway-nas\.zip"/);
+    const entries = unzip(r.body);
+    assert.deepEqual(entries.map((e) => e.name), ['docker-compose.yml', 'config/', 'gateway-state/', 'gateway-cache/', 'update.sh']);
+    const all = entries.map((e) => (e.data ? e.data.toString() : '')).join('\n');
+    assert.doesNotMatch(all, /gc_gw_[0-9a-f]{8}|GC_API_TOKEN=|WG_PRIVATE_KEY=/);
+    assert.match(all, /\n {6}- \.\/config:\/config /, 'the gateway must be able to store its gateway.env');
+    assert.equal(db.prepare('SELECT api_token_hash FROM gateway_meta WHERE peer_id = ?').get(id).api_token_hash, hash);
+    await agent.post(`/api/v1/gateways/${id}/setup-package`).expect(403);
+    await post('/api/v1/gateways/999999/setup-package').expect(404);
+  });
+  it('the pairing code comes with the server address in its own field; setup-status tells when it was redeemed', async () => {
+    const r = await post(`/api/v1/peers/${id}/gateway-pairing-code`).expect(200);
+    assert.match(r.body.code, /^[A-F0-9]{4}(-[A-F0-9]{4}){3}$/);
+    assert.equal(r.body.token, `${r.body.code}@${r.body.server}`);
+    assert.match(r.headers['cache-control'], /no-store/);
+    let st = (await agent.get(`/api/v1/gateways/${id}/setup-status`).expect(200)).body.gateway;
+    assert.deepEqual(st.pairing, { expires_at: r.body.expiresAt, consumed_at: null });
+    // the gateway redeems it (public endpoint, as its setup page does)
+    const paired = await agent.post('/api/v1/gateway/pair').send({ code: r.body.code }).expect(200);
+    assert.match(paired.body.envContent, /^GC_API_TOKEN=gc_gw_/m);
+    st = (await agent.get(`/api/v1/gateways/${id}/setup-status`).expect(200)).body.gateway;
+    assert.ok(st.pairing.consumed_at > 0);
+    assert.doesNotMatch(JSON.stringify(st), /gc_gw_|code_hash/);
+  });
+  it('POST …/renew-access ("Zugang erneuern"): code + server address, the running gateway gets invalid_token', async () => {
+    const first = (await post(`/api/v1/peers/${id}/gateway-pairing-code`).expect(200)).body.code;
+    const env = (await agent.post('/api/v1/gateway/pair').send({ code: first }).expect(200)).body.envContent;
+    const token = /^GC_API_TOKEN=(gc_gw_[0-9a-f]{64})$/m.exec(env)[1];
+    await agent.post('/api/v1/gateway/heartbeat').set('Authorization', `Bearer ${token}`).send({}).expect(200);
+    const r = await post(`/api/v1/gateways/${id}/renew-access`).expect(200);
+    assert.deepEqual(Object.keys(r.body).sort(), ['code', 'expiresAt', 'ok', 'server']);
+    assert.match(r.body.code, /^[A-F0-9]{4}(-[A-F0-9]{4}){3}$/);
+    assert.match(r.headers['cache-control'], /no-store/);
+    const refused = await agent.post('/api/v1/gateway/heartbeat').set('Authorization', `Bearer ${token}`).send({}).expect(403);
+    assert.deepEqual(refused.body, { error: 'invalid_token' });
+    // the gateway redeems the new code on its setup page and is back
+    const env2 = (await agent.post('/api/v1/gateway/pair').send({ code: r.body.code }).expect(200)).body.envContent;
+    const token2 = /^GC_API_TOKEN=(gc_gw_[0-9a-f]{64})$/m.exec(env2)[1];
+    await agent.post('/api/v1/gateway/heartbeat').set('Authorization', `Bearer ${token2}`).send({}).expect(200);
+    await agent.post(`/api/v1/gateways/${id}/renew-access`).expect(403);
+    await post('/api/v1/gateways/999999/renew-access').expect(404);
+  });
+  it('"Statusseite im Heimnetz": default on, in the config pull, switchable; greyed out without the capability', async () => {
+    const features = require('../src/services/gatewayFeatures');
+    assert.deepEqual(features.get(id).setupPage, { status: true });
+    assert.deepEqual(features.configPayload(id).setup_page, { status: true });
+    let o = (await agent.get(`/api/v1/gateways/${id}/features`).expect(200)).body.gateway;
+    assert.equal(o.support.setupPage, false, 'an older gateway does not know the page');
+    assert.deepEqual(o.features.setupPage, { status: true });
+    const hash0 = gateways.computeConfigHash(id);
+    o = (await agent.put(`/api/v1/gateways/${id}/features`).set('X-CSRF-Token', csrf).send({ setupPage: { status: false } }).expect(200)).body.gateway;
+    assert.deepEqual(o.features.setupPage, { status: false });
+    assert.deepEqual(features.configPayload(id).setup_page, { status: false });
+    assert.notEqual(gateways.computeConfigHash(id), hash0, 'the gateway pulls the change');
+    await agent.put(`/api/v1/gateways/${id}/features`).set('X-CSRF-Token', csrf).send({ setupPage: { status: 'no' } }).expect(400);
+    await agent.put(`/api/v1/gateways/${id}/features`).set('X-CSRF-Token', csrf).send({ setupPage: { port: 80 } }).expect(400);
+    assert.equal(features.support({ capabilities: ['netwatch', 'setup-page'] }).setupPage, true);
+    assert.equal(features.support({ capabilities: ['netwatch'] }).setupPage, false);
+    assert.equal(features.support({ gateway_version: '1.20.0' }).setupPage, false);
   });
 });
 

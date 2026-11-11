@@ -210,7 +210,7 @@ describe('gateway-pool-kit: tab "Funktionen"', () => {
   };
   it('the groups hold every switch row of gateway-net.js / gateway-home.js exactly once', () => {
     const all = PK.FEATURE_GROUPS.flatMap((g) => g.features);
-    assert.deepEqual(all.slice().sort(), ['ai', 'cache', 'cameras', 'dns', 'edge', 'inetq', 'lan', 'netwatch', 'presence', 'print', 'radio', 'timezone', 'ups', 'zigbee']);
+    assert.deepEqual(all.slice().sort(), ['ai', 'cache', 'cameras', 'dns', 'edge', 'inetq', 'lan', 'netwatch', 'presence', 'print', 'radio', 'setuppage', 'timezone', 'ups', 'zigbee']);
     assert.equal(new Set(all).size, all.length);
     const net = read('public/js/gateway-net.js');
     const home = read('public/js/gateway-home.js');

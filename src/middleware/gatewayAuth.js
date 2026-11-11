@@ -31,12 +31,19 @@ function authenticate(authorizationHeader, ip) {
            p.name AS peer_name, p.allowed_ips, p.enabled
     FROM gateway_meta gm
     JOIN peers p ON p.id = gm.peer_id
-    WHERE gm.api_token_hash = ? AND p.peer_type = 'gateway' AND p.enabled = 1
+    WHERE gm.api_token_hash = ? AND p.peer_type = 'gateway'
   `).get(tokenHash);
 
   if (!match) {
     logger.warn({ ip }, 'Invalid gateway token');
     return { ok: false, status: 403, error: 'invalid_token' };
+  }
+  // A switched-off gateway keeps its access: `gateway_disabled` tells it apart
+  // from `invalid_token` ("Zugang erneuern"), on which the setup page of the
+  // gateway asks for a new code (gateway docs/setup-page.md, state F).
+  if (match.enabled !== 1) {
+    logger.warn({ ip }, 'Token of a disabled gateway');
+    return { ok: false, status: 403, error: 'gateway_disabled' };
   }
 
   // Defense-in-depth: explicit timingSafeEqual on the stored vs computed hash

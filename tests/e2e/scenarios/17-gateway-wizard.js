@@ -6,9 +6,14 @@
 // gatecontrol-setup.zip built in the browser — downloaded, unpacked, checked),
 // the live status (first a real, then a mocked "connected" status with
 // hardware + RaspBee II), "Fertig" → detail view; "Einrichtung fortsetzen"
-// on an older gateway → platform Synology → the real package from the server
-// (unpacked, checked); the Peers page adds devices only; Escape,
-// keyboard, light/dark and 390 px.
+// on an older gateway → platform Synology → the set-up through the setup page
+// of the gateway (compose without access data, server address + setup code
+// in two fields, a new code, the package without gateway.env; the code is
+// redeemed like the gateway does and the step goes on by itself), the file
+// way behind its link → the real package from the server (unpacked, checked);
+// "Zugang erneuern" in the gateway management (asks first, the old token is
+// refused, code + server address) and the switch "Statusseite im Heimnetz";
+// the Peers page adds devices only; Escape, keyboard, light/dark and 390 px.
 //
 // The app runs with the community licence (one gateway) and the seed has two,
 // so creating a gateway is refused by the real API — that refusal is checked,
@@ -55,6 +60,14 @@ module.exports = (ctx) => {
     const sec = [...document.querySelectorAll('#gwz-overlay .gwz-step')].filter((x) => !x.hidden);
     return sec.length === 1 && sec[0].dataset.step === String(s) && (!p || sec[0].dataset.platform === p);
   }, [n, platform || null]);
+  // step 3 of Synology/Linux: 'code' = setup page of the gateway, 'file' = gateway.env as before
+  const wayShown = (page, w) => until(page, (way) => {
+    const sec = [...document.querySelectorAll('#gwz-overlay .gwz-step')].filter((x) => !x.hidden);
+    return sec.length === 1 && sec[0].dataset.step === '3' && sec[0].dataset.way === way;
+  }, w);
+  const CODE_RE = /^[A-F0-9]{4}(-[A-F0-9]{4}){3}$/;
+  // the server address the assistant shows: the host of GC_BASE_URL (as the admin opens GateControl)
+  const SERVER = new URL(process.env.GC_BASE_URL || 'http://localhost:3000').host;
   const download = async (page, sel) => {
     const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 8000 }), page.click(sel)]);
     return { name: dl.suggestedFilename(), data: fs.readFileSync(await dl.path()) };
@@ -189,10 +202,71 @@ module.exports = (ctx) => {
       await until(page, (id) => document.querySelector(`.gw-waiting[data-id="${id}"] .gw-resume`), GW.home);
       await page.click(`.gw-waiting[data-id="${GW.home}"] .gw-resume`);
       step('"Einrichtung fortsetzen" of a gateway without platform → step 1, name fixed, platform to choose',
-        await stepShown(page, 1) && await page.$eval('#gwz-name', (n) => n.disabled && n.value === 'e2e-gw-home') && await visible(page, '#gwz-created-note'));
+        await stepShown(page, 1) && await until(page, () => { const n = document.getElementById('gwz-name'); return n.disabled && n.value === 'e2e-gw-home'; })
+        && await visible(page, '#gwz-created-note'));
       await page.click('#gwz-overlay label.gwz-plat:has(input[value="synology"])');
       await page.click('#gwz-next');
-      step('platform stored → Synology instructions (step 3)', await stepShown(page, 3, 'synology'));
+      step('platform stored → Synology: set-up through the setup page of the gateway (step 3)', await wayShown(page, 'code'));
+      const cw = async () => page.evaluate(() => ({
+        server: document.getElementById('gwz-cw-server').textContent, code: document.getElementById('gwz-cw-code').textContent,
+        left: document.getElementById('gwz-cw-countdown').textContent, compose: document.getElementById('gwz-cw-compose').textContent,
+        url: document.getElementById('gwz-cw-url').textContent, title: document.getElementById('gwz-cw-s1-title').textContent,
+      }));
+      await until(page, (re) => new RegExp(re).test(document.getElementById('gwz-cw-code').textContent), CODE_RE.source);
+      const c1 = await cw();
+      step('server address and setup code in two fields, with a countdown', c1.server === SERVER && CODE_RE.test(c1.code) && /\d:\d\d/.test(c1.left), JSON.stringify([c1.server, c1.left]));
+      step('the compose file carries no access data and a writable config folder',
+        /\n {6}- \.\/config:\/config /.test(c1.compose) && /GC_SETUP_PORT/.test(c1.compose) && !/gc_gw_|GC_API_TOKEN|WG_PRIVATE_KEY|config:\/config:ro/.test(c1.compose));
+      step('step 2 names the setup page (port 8642), step 1 the Container Manager', /:8642$/.test(c1.url) && /Container Manager/.test(c1.title), c1.url);
+      const cwGuide = await page.$eval('section[data-way="code"] a[data-guide="gw.setup_page"]', (x) => x.href).catch(() => '');
+      step('the instructions link to the user guide (setup page of the gateway)', /\/docs\/(handbuch|guide)\/03-[a-z-]+\.md#[a-z-]+$/.test(cwGuide), cwGuide);
+      const yml = await download(page, '#gwz-cw-download');
+      step('"Herunterladen" → docker-compose.yml, the same text', yml.name === 'docker-compose.yml' && yml.data.toString() === c1.compose);
+      const pkg = await download(page, '#gwz-cw-package');
+      let pkgNames = [];
+      try { pkgNames = unzip(pkg.data).map((e) => e.name); } catch (e) { step('package unpacks', false, String(e)); }
+      step('the package brings compose, update.sh and the empty folders — no gateway.env',
+        pkg.name === 'gatecontrol-gateway-nas.zip' && ['docker-compose.yml', 'config/', 'gateway-state/', 'gateway-cache/', 'update.sh'].every((n) => pkgNames.includes(n))
+        && !pkgNames.includes('config/gateway.env') && !/gc_gw_/.test(pkg.data.toString('latin1')), pkgNames.join(','));
+      await theme(page, 'light');
+      await shot(page, 'gwz-step3-code-nas-light');
+      await theme(page, 'dark');
+      await shot(page, 'gwz-step3-code-nas-dark');
+      // the lower half: server address + code, the waiting line, the link to the file way
+      await page.$eval('#gwz-overlay .gwz-body', (b) => { b.scrollTop = b.scrollHeight; });
+      await shot(page, 'gwz-step3-code-nas-code-dark');
+      await theme(page, 'light');
+      await shot(page, 'gwz-step3-code-nas-code-light');
+      await page.click('#gwz-cw-regen');
+      await until(page, (old) => { const t = document.getElementById('gwz-cw-code').textContent; return t !== old && /^[A-F0-9]{4}-/.test(t); }, c1.code);
+      const c2 = await cw();
+      step('"Neuen Code erzeugen" shows another code', CODE_RE.test(c2.code) && c2.code !== c1.code);
+      const stale = await page.request.post(BASE + '/api/v1/gateway/pair', { data: { code: c1.code } });
+      step('the code before no longer works', stale.status() === 400);
+      // the gateway redeems the code on its setup page (the public endpoint it calls)
+      const paired = await page.request.post(BASE + '/api/v1/gateway/pair', { data: { code: c2.code } });
+      const pairedEnv = paired.status() === 200 ? (await paired.json()).envContent : '';
+      const gwToken = (/^GC_API_TOKEN=(gc_gw_[0-9a-f]{64})$/m.exec(pairedEnv) || [])[1] || '';
+      step('redeemed by the gateway → gateway.env', !!gwToken);
+      step('the assistant goes on by itself (step 4)', await stepShown(page, 4) || await until(page, () => {
+        const sec = [...document.querySelectorAll('#gwz-overlay .gwz-step')].filter((x) => !x.hidden);
+        return sec.length === 1 && sec[0].dataset.step === '4';
+      }, null, 12000));
+      await page.click('#gwz-back');
+      step('"Anleitung nochmal" → back at the setup page way with a fresh code', await wayShown(page, 'code')
+        && await until(page, (old) => { const t = document.getElementById('gwz-cw-code').textContent; return /^[A-F0-9]{4}-/.test(t) && t !== old; }, c2.code));
+      await page.setViewportSize({ width: 390, height: 844 });
+      const ovCw = await overflow(page);
+      step('390 px: no horizontal scrolling in the setup page way', ovCw <= 0, `overflow ${ovCw}px`);
+      await shot(page, 'gwz-step3-code-nas-390-dark');
+      await theme(page, 'light');
+      await shot(page, 'gwz-step3-code-nas-390-light');
+      await page.$eval('#gwz-overlay .gwz-body', (b) => { b.scrollTop = b.scrollHeight; });
+      await shot(page, 'gwz-step3-code-nas-code-390-light');
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      // the way before stays one click away
+      await page.click('section[data-way="code"] [data-gwz-way="file"]');
+      step('"Lieber die Datei gateway.env herunterladen" → the Synology instructions as before', await stepShown(page, 3, 'synology') && await wayShown(page, 'file'));
       const nasGuide = await page.$eval('section[data-platform="synology"] a[data-guide="gw.synology"]', (x) => x.href).catch(() => '');
       step('Synology instructions link to the user guide (chapter 3.2)', /\/docs\/(handbuch|guide)\/03-[a-z-]+\.md#32-synology-nas$/.test(nasGuide), nasGuide);
       const plat = await api(page, 'GET', `/api/v1/gateways/${GW.home}/setup-status`);
@@ -208,9 +282,98 @@ module.exports = (ctx) => {
         && /^GC_API_TOKEN=gc_gw_[0-9a-f]{64}$/m.test(nasEnv), nasNames.join(','));
       await theme(page, 'light');
       await shot(page, 'gwz-step3-nas-light');
+      await page.click('section[data-platform="synology"] [data-gwz-way="code"]');
+      step('and back to the set-up without a file', await wayShown(page, 'code'));
       await page.keyboard.press('Escape');
       step('Escape closes the assistant and clears the address',
         await until(page, () => document.getElementById('gwz-overlay').style.display !== 'flex' && !/#(add|setup)/.test(location.hash)));
+
+      // ── Linux: the same three steps, network mode, docker compose up ──
+      await page.goto(BASE + '/gateways');
+      await api(page, 'PUT', `/api/v1/gateways/${GW.home}/platform`, { platform: 'linux' });
+      await page.goto(BASE + `/gateways#setup/${GW.home}`);
+      step('Linux: set-up through the setup page, compose with kernel WireGuard', await wayShown(page, 'code')
+        && await until(page, () => /Linux kernel WireGuard/.test(document.getElementById('gwz-cw-compose').textContent) && !document.getElementById('gwz-cw-up').hidden
+          && !document.getElementById('gwz-cw-net').hidden && document.getElementById('gwz-cw-package').hidden));
+      await page.click('#gwz-cw-net label:has(input[value="bridge"])');
+      step('Linux bridge: the port of the setup page is published', await until(page, () => /"8642:8642"/.test(document.getElementById('gwz-cw-compose').textContent)));
+      await page.click('#gwz-cw-net label:has(input[value="host"])');
+      await theme(page, 'light');
+      await shot(page, 'gwz-step3-code-linux-light');
+      await page.keyboard.press('Escape');
+      await api(page, 'PUT', `/api/v1/gateways/${GW.home}/platform`, { platform: 'synology' });
+
+      // ── "Zugang erneuern" and "Statusseite im Heimnetz" (a gateway that knows the setup page) ──
+      const tokenOf = (env) => (/^GC_API_TOKEN=(gc_gw_[0-9a-f]{64})$/m.exec(env || '') || [])[1] || '';
+      const beat = (token) => page.request.post(BASE + '/api/v1/gateway/heartbeat', { headers: { Authorization: 'Bearer ' + token },
+        data: { http_proxy_healthy: true, tcp_listeners: [], wg_handshake_age_s: 5, uptime_s: 60, hostname: 'nas',
+          telemetry: { gateway_version: '1.35.0', capabilities: ['netwatch', 'inetq', 'presence', 'ups', 'setup-page'], lan_ip: '192.168.178.20' } } });
+      // the file way above rotated the tokens once more: a fresh code, redeemed like the gateway does
+      const fresh = await api(page, 'POST', `/api/v1/peers/${GW.home}/gateway-pairing-code`, {});
+      const env3 = await (await page.request.post(BASE + '/api/v1/gateway/pair', { data: { code: fresh.body.code } })).json();
+      const token3 = tokenOf(env3.envContent);
+      step('the gateway reports in (heartbeat with the capability setup-page)', (await beat(token3)).status() === 200);
+      await page.goto(BASE + `/gateways#gw/${GW.home}`);
+      await page.reload();
+      await until(page, () => document.querySelector('#gw-detail-view #gw-more-btn'));
+      await page.click('#gw-more-btn');
+      step('"Mehr" has "Zugang erneuern"', await until(page, () => !!document.querySelector('#gw-more-menu [data-act="gm-renew"]')));
+      await page.click('#gw-more-menu [data-act="gm-renew"]');
+      step('it asks first — the running gateway loses its connection', await until(page, () => {
+        const d = document.querySelector('.zn-dialog'); return d && /e2e-gw-home/.test(d.textContent) && !!d.querySelector('.gcd-ok');
+      }));
+      step('before the answer nothing changed', (await beat(token3)).status() === 200);
+      await theme(page, 'light');
+      await shot(page, 'gwm-renew-confirm-light');
+      await page.click('.zn-dialog .gcd-ok');
+      step('then: server address and setup code with a countdown, the page of the gateway by its LAN address', await until(page, (srv) => {
+        const d = document.querySelector('.gwm-renew');
+        return d && document.getElementById('gwm-renew-server').textContent === srv && /^[A-F0-9]{4}(-[A-F0-9]{4}){3}$/.test(document.getElementById('gwm-renew-code').textContent)
+          && /\d:\d\d/.test(document.getElementById('gwm-renew-left').textContent) && /http:\/\/192\.168\.178\.20:8642/.test(d.textContent);
+      }, SERVER));
+      const refused = await beat(token3);
+      step('the old access is refused with invalid_token (the gateway then asks for the code)', refused.status() === 403 && (await refused.json()).error === 'invalid_token');
+      await shot(page, 'gwm-renew-light');
+      await theme(page, 'dark');
+      await shot(page, 'gwm-renew-dark');
+      await page.setViewportSize({ width: 390, height: 844 });
+      const ovRenew = await overflow(page);
+      step('390 px: the dialog fits', ovRenew <= 0, `overflow ${ovRenew}px`);
+      await shot(page, 'gwm-renew-390-dark');
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      const renewCode = await page.textContent('#gwm-renew-code');
+      const env4 = await (await page.request.post(BASE + '/api/v1/gateway/pair', { data: { code: renewCode } })).json();
+      const token4 = tokenOf(env4.envContent);
+      step('the gateway redeems the code → the dialog says so, the new access works',
+        await until(page, () => document.querySelector('.gwm-renew .gwz-wait.done'), null, 12000) && (await beat(token4)).status() === 200);
+      await page.click('#gwm-renew-close');
+
+      await page.goto(BASE + `/gateways#gw/${GW.home}/features`);
+      step('tab "Funktionen": the switch "Statusseite im Heimnetz" is on, with the address in the home network', await until(page, () => {
+        const r = document.querySelector('[data-feature="setuppage"]');
+        const sw = r && r.querySelector('[data-fk="gwn-f-setuppage"]');
+        return sw && !sw.disabled && sw.getAttribute('aria-checked') === 'true' && /192\.168\.178\.20:8642/.test(r.textContent);
+      }, null, 12000));
+      await page.$eval('[data-feature="setuppage"]', (n) => n.scrollIntoView({ block: 'center' }));
+      await theme(page, 'light');
+      await shot(page, 'gwn-setuppage-light', false);
+      await page.click('[data-fk="gwn-f-setuppage"]');
+      await until(page, () => { const sw = document.querySelector('[data-fk="gwn-f-setuppage"]'); return sw && sw.getAttribute('aria-checked') === 'false' && !sw.disabled; });
+      const feat = await api(page, 'GET', `/api/v1/gateways/${GW.home}/features`);
+      step('switched off → stored and delivered with the config pull', feat.body.gateway.features.setupPage.status === false);
+      const cfg = await (await page.request.get(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token4 } })).json();
+      step('config pull: features.setup_page.status = false', cfg.features && cfg.features.setup_page && cfg.features.setup_page.status === false);
+      await api(page, 'PUT', `/api/v1/gateways/${GW.home}/features`, { setupPage: { status: true } });
+      // an older gateway (no capability): the switch is greyed out with the hint
+      await page.goto(BASE + `/gateways#gw/${GW.nas}/features`);
+      step('older gateway: the switch is greyed out with a hint', await until(page, () => {
+        const r = document.querySelector('[data-feature="setuppage"]');
+        const sw = r && r.querySelector('[data-fk="gwn-f-setuppage"]');
+        return sw && sw.disabled && !!r.querySelector('[data-setuppage-old]');
+      }, null, 12000));
+      await page.$eval('[data-feature="setuppage"]', (n) => n.scrollIntoView({ block: 'center' }));
+      await shot(page, 'gwn-setuppage-old-light', false);
+      ctx.allow((p) => p.kind === 'console' && /403|400/.test(p.text));
 
       // ── Peers page: devices only — no gateway checkbox and no gateway hint
       //    (docs/feature-peers-page.md; gateways are added here) ──

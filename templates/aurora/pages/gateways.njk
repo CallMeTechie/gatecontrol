@@ -281,8 +281,76 @@
         </details>
       </section>
 
+      {# ── Step 3: Synology NAS / other Linux through the setup page of the gateway ──
+         (gateway docs/setup-page.md): a compose without access data, then server address + setup
+         code on http://<address>:8642. The file way (gateway.env) stays below, data-way="file". #}
+      <section class="gwz-step" data-step="3" data-way="code" hidden>
+        <p class="gwz-lead" id="gwz-cw-need"></p>
+        {% if handbookUrl %}<p class="gwz-d gwz-guide"><a href="{{ handbookUrl('gw.setup_page') }}" target="_blank" rel="noopener noreferrer" data-guide="gw.setup_page">{{ t('gwiz.guide') }}</a></p>{% endif %}
+        <ol class="gwz-st">
+          <li>
+            <h3 id="gwz-cw-s1-title"></h3>
+            <p id="gwz-cw-s1-text"></p>
+            <fieldset class="gwz-fieldset gwz-cw-net" id="gwz-cw-net" hidden>
+              <legend>{{ t('gwiz.linux.net') }}</legend>
+              <div class="gwz-seg">
+                <label><input type="radio" name="gwz-cw-net" value="host" checked><span>{{ t('gwiz.linux.net_host') }}</span></label>
+                <label><input type="radio" name="gwz-cw-net" value="bridge"><span>{{ t('gwiz.linux.net_bridge') }}</span></label>
+              </div>
+              <p class="gwz-d" id="gwz-cw-net-hint"></p>
+            </fieldset>
+            <pre class="gwz-code gwz-pre gwz-compose" id="gwz-cw-compose" tabindex="0" aria-label="{{ t('gwiz.cw.compose_label') }}"></pre>
+            <div class="gwz-row">
+              <button type="button" class="btn btn-ghost btn-sm" data-gwz-copy="gwz-cw-compose">{{ t('gwiz.copy') }}</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="gwz-cw-download">{{ t('gwiz.cw.download') }}</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="gwz-cw-package" hidden>{{ t('gwiz.cw.package') }}</button>
+            </div>
+            <p class="gwz-d" id="gwz-cw-s1-hint"></p>
+            <div class="gwz-row" id="gwz-cw-up" hidden>
+              <code class="gwz-code" id="gwz-cw-up-cmd">docker compose up -d</code>
+              <button type="button" class="btn btn-ghost btn-sm" data-gwz-copy="gwz-cw-up-cmd">{{ t('gwiz.copy') }}</button>
+            </div>
+          </li>
+          <li>
+            <h3>{{ t('gwiz.cw.s2_title') }}</h3>
+            <p>{{ t('gwiz.cw.s2_text') }} <code class="gwz-k" id="gwz-cw-url"></code></p>
+            <p class="gwz-d">{{ t('gwiz.cw.s2_hint') }}</p>
+          </li>
+          <li>
+            <h3>{{ t('gwiz.cw.s3_title') }}</h3>
+            <div class="gwz-pairbox">
+              <div class="gwz-pair">
+                <span class="gwz-pair-l" id="gwz-cw-server-l">{{ t('gwiz.cw.server') }}</span>
+                <strong class="gwz-pair-v" id="gwz-cw-server" aria-labelledby="gwz-cw-server-l"></strong>
+                <button type="button" class="btn btn-ghost btn-sm" data-gwz-copy="gwz-cw-server" aria-label="{{ t('gwiz.cw.copy_server') }}">{{ t('gwiz.copy') }}</button>
+              </div>
+              <div class="gwz-pair">
+                <span class="gwz-pair-l" id="gwz-cw-code-l">{{ t('gwiz.cw.code') }}</span>
+                <strong class="gwz-pair-v" id="gwz-cw-code" aria-labelledby="gwz-cw-code-l"></strong>
+                <span class="gwz-pair-t" id="gwz-cw-countdown"></span>
+                <button type="button" class="btn btn-ghost btn-sm" data-gwz-copy="gwz-cw-code" aria-label="{{ t('gwiz.cw.copy_code') }}">{{ t('gwiz.copy') }}</button>
+              </div>
+            </div>
+            <p class="gwz-d">{{ t('gwiz.cw.once') }} <button type="button" class="gwz-link" id="gwz-cw-regen">{{ t('gwiz.cw.regen') }}</button></p>
+          </li>
+        </ol>
+        <div class="gwz-wait" id="gwz-cw-wait" role="status"><span class="gwz-spin" aria-hidden="true"></span><span id="gwz-cw-wait-text">{{ t('gwiz.cw.wait') }}</span></div>
+        <details class="gwz-details">
+          <summary>{{ t('gwiz.cw.update_title') }}</summary>
+          <p id="gwz-cw-update-text"></p>
+          <div class="gwz-row">
+            <code class="gwz-code" id="gwz-cw-update-cmd"></code>
+            <button type="button" class="btn btn-ghost btn-sm" data-gwz-copy="gwz-cw-update-cmd">{{ t('gwiz.copy') }}</button>
+            <a class="btn btn-ghost btn-sm" id="gwz-cw-update-sh" href="#" hidden>update.sh</a>
+          </div>
+          <p class="gwz-d" id="gwz-cw-update-hint"></p>
+        </details>
+        <p class="gwz-d"><button type="button" class="gwz-link" data-gwz-way="file">{{ t('gwiz.cw.to_file') }}</button></p>
+      </section>
+
       {# ── Step 3: Synology NAS ── #}
-      <section class="gwz-step" data-step="3" data-platform="synology" hidden>
+      <section class="gwz-step" data-step="3" data-platform="synology" data-way="file" hidden>
+        <p class="gwz-d"><button type="button" class="gwz-link" data-gwz-way="code">{{ t('gwiz.cw.to_code') }}</button></p>
         <p class="gwz-lead">{{ t('gwiz.nas.need') }}</p>
         {% if handbookUrl %}<p class="gwz-d gwz-guide"><a href="{{ handbookUrl('gw.synology') }}" target="_blank" rel="noopener noreferrer" data-guide="gw.synology">{{ t('gwiz.guide') }}</a></p>{% endif %}
         <ol class="gwz-st">
@@ -350,7 +418,8 @@
       </section>
 
       {# ── Step 3: other Linux (Docker Compose) ── #}
-      <section class="gwz-step" data-step="3" data-platform="linux" hidden>
+      <section class="gwz-step" data-step="3" data-platform="linux" data-way="file" hidden>
+        <p class="gwz-d"><button type="button" class="gwz-link" data-gwz-way="code">{{ t('gwiz.cw.to_code') }}</button></p>
         <p class="gwz-lead">{{ t('gwiz.linux.need') }}</p>
         {% if handbookUrl %}<p class="gwz-d gwz-guide"><a href="{{ handbookUrl('gw.linux') }}" target="_blank" rel="noopener noreferrer" data-guide="gw.linux">{{ t('gwiz.guide') }}</a></p>{% endif %}
         <ol class="gwz-st">
@@ -427,7 +496,7 @@
   </div>
 </div>
 {#- gateway management (gateway-manage.js, docs/feature-peers-page.md) -#}
-{%- set gwmKeys = ['gwm.section', 'gwm.rename', 'gwm.reconnect', 'gwm.proxy_port', 'gwm.disable', 'gwm.enable', 'gwm.delete', 'gwm.rename_title', 'gwm.name', 'gwm.description', 'gwm.group', 'gwm.group_none', 'gwm.group_hint', 'gwm.name_required', 'gwm.saved', 'gwm.proxy_title', 'gwm.proxy_label', 'gwm.proxy_invalid', 'gwm.disable_title', 'gwm.disable_confirm', 'gwm.disable_ok', 'gwm.enabled_toast', 'gwm.disabled_toast', 'gwm.deleted_toast', 'gwm.disabled_title', 'gwm.disabled_hint', 'gwm.disabled_tag', 'peer_gateway_proxy_port_hint', 'gateway_delete_title', 'gateway_delete_warning_title', 'gateway_delete_warning_body', 'gateway_delete_peer_label', 'gateway_delete_affected_routes', 'gateway_delete_routes_hint', 'gateway_delete_no_routes', 'gateway_delete_confirm_ip_label', 'gateway_delete_ip_match', 'gateway_delete_ip_mismatch', 'gateway_delete_button', 'common.save', 'common.cancel', 'common.error'] %}
+{%- set gwmKeys = ['gwm.section', 'gwm.rename', 'gwm.reconnect', 'gwm.renew', 'gwm.renew_title', 'gwm.renew_confirm', 'gwm.renew_confirm_old', 'gwm.renew_ok', 'gwm.renew_text', 'gwm.renew_url', 'gwm.renew_server', 'gwm.renew_code', 'gwm.renew_left', 'gwm.renew_expired', 'gwm.renew_new', 'gwm.renew_copy', 'gwm.renew_copied', 'gwm.renew_wait', 'gwm.renew_redeemed', 'gwm.renew_file_text', 'gwm.renew_file', 'gwm.renew_close', 'gwm.proxy_port', 'gwm.disable', 'gwm.enable', 'gwm.delete', 'gwm.rename_title', 'gwm.name', 'gwm.description', 'gwm.group', 'gwm.group_none', 'gwm.group_hint', 'gwm.name_required', 'gwm.saved', 'gwm.proxy_title', 'gwm.proxy_label', 'gwm.proxy_invalid', 'gwm.disable_title', 'gwm.disable_confirm', 'gwm.disable_ok', 'gwm.enabled_toast', 'gwm.disabled_toast', 'gwm.deleted_toast', 'gwm.disabled_title', 'gwm.disabled_hint', 'gwm.disabled_tag', 'peer_gateway_proxy_port_hint', 'gateway_delete_title', 'gateway_delete_warning_title', 'gateway_delete_warning_body', 'gateway_delete_peer_label', 'gateway_delete_affected_routes', 'gateway_delete_routes_hint', 'gateway_delete_no_routes', 'gateway_delete_confirm_ip_label', 'gateway_delete_ip_match', 'gateway_delete_ip_mismatch', 'gateway_delete_button', 'common.save', 'common.cancel', 'common.error'] %}
 <script type="application/json" id="gwm-i18n" nonce="{{ cspNonce }}">{ {% for k in gwmKeys %}{{ k | dump | safe }}: {{ t(k) | dump | safe }}{{ ',' if not loop.last }}{% endfor %} }</script>
 <script type="application/json" id="gwiz-i18n" data-prefixes="gwiz. gwe. gwn. gwh. gwp. gwr. gwd. gateway_pools. common." nonce="{{ cspNonce }}">{{ gwizI18n | default('{}') | safe }}</script>
 {% endblock %}

@@ -1237,6 +1237,23 @@
     if (d.cameras) rows.set('cameras', camerasRow(id, g, d));
     // Lokale KI (phase 3c, step 3): the switch here, the setup in Einstellungen › KI-Anbieter
     if (d.ai) rows.set('ai', aiRow(id, g, d));
+    // "Statusseite im Heimnetz": the status page of the gateway in its LAN (gateway docs/setup-page.md) — a
+    // gateway that does not know the page yet: greyed out with the hint
+    if (f.setupPage) {
+      const sup = d.support || {};
+      const knows = sup.setupPage === true;
+      const swPage = U.switchBtn(knows && f.setupPage.status !== false, t('gwn.feat.setuppage'), 'gwn-f-setuppage',
+        () => toggle(swPage, id, (v) => ({ setupPage: { status: v } }), (v) => t(v ? 'gwn.feat.on_done' : 'gwn.feat.off_done', { name: t('gwn.feat.setuppage') })), !knows);
+      const extra = [];
+      if (!knows) extra.push(h('span', { class: 'gwn-hint', 'data-setuppage-old': '' }, [U.icon('info', 14), t('gwn.feat.setuppage_old', { version: sup.version || '—' })]));
+      else {
+        const lan = g.health && g.health.telemetry && g.health.telemetry.lan_ip;
+        if (f.setupPage.status !== false && typeof lan === 'string' && /^[0-9.]+$/.test(lan)) {
+          extra.push(h('span', { class: 'gwe-d', 'data-setuppage-url': '' }, [t('gwn.feat.setuppage_url'), ' ', h('code', { text: 'http://' + lan + ':8642' })]));
+        }
+      }
+      rows.set('setuppage', featRow(t('gwn.feat.setuppage'), t('gwn.feat.setuppage_d'), swPage, extra, 'setuppage'));
+    }
     // DNS filter, home cache, local time (phase 3b, gateway-home.js)
     if (window.GCGatewayHome) {
       window.GCGatewayHome.featureRows(id, d, (gid) => reloadFeatures(gid)).forEach((r) => rows.set(r.getAttribute('data-feature'), r));
