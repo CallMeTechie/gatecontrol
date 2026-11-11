@@ -74,7 +74,7 @@
     return d.toLocaleDateString(LOCALE, { weekday: 'short', day: '2-digit', month: '2-digit' }) + ' ' + time;
   }
   function dayNames() { return t('gwh.days.short').split(','); }
-  function scheduleTitle(x) { return K.scheduleTitle(x, dayNames(), t('gwh.days.every')); }
+  function scheduleTitle(x) { return K.scheduleTitle(x, dayNames(), t('gwh.days.every'), t('gwh.sched.all_day')); }
   function catNames(list) { return (list || []).map((c) => t('gwh.cat.' + c)); }
   function joinAnd(list) {
     if (list.length <= 1) return list.join('');
@@ -437,11 +437,18 @@
         cb.checked = (x.days || []).indexOf(n) >= 0;
         return h('label', { class: 'gwh-day', for: pre + 'd' + n, title: names[n - 1] }, [cb, h('span', { text: shortNames[n - 1], 'aria-hidden': 'true' }), h('span', { class: 'sr-only', text: names[n - 1] })]);
       })]);
-    const from = h('input', { type: 'time', id: pre + 'from', class: 'form-input gwh-time', value: x.from || '21:00' });
-    const to = h('input', { type: 'time', id: pre + 'to', class: 'form-input gwh-time', value: x.to || '07:00' });
+    // the whole day is stored as 00:00–24:00 — a time field cannot show 24:00
+    const whole = h('input', { type: 'checkbox', id: pre + 'whole' });
+    whole.checked = K.allDay(x);
+    const from = h('input', { type: 'time', id: pre + 'from', class: 'form-input gwh-time', value: whole.checked ? '21:00' : x.from || '21:00' });
+    const to = h('input', { type: 'time', id: pre + 'to', class: 'form-input gwh-time', value: whole.checked ? '07:00' : x.to || '07:00' });
+    const times = h('div', { class: 'gwh-times' }, [field(pre + 'from', t('gwh.sched.from'), from), field(pre + 'to', t('gwh.sched.to'), to)]);
     const overnight = h('p', { class: 'gwe-d gwh-overnight', 'aria-live': 'polite' });
-    const syncNight = () => { overnight.textContent = from.value && to.value && to.value < from.value ? t('gwh.sched.overnight') : ''; };
-    from.addEventListener('input', syncNight); to.addEventListener('input', syncNight);
+    const syncNight = () => {
+      times.hidden = whole.checked;
+      overnight.textContent = whole.checked ? t('gwh.sched.all_day_hint') : from.value && to.value && to.value < from.value ? t('gwh.sched.overnight') : '';
+    };
+    from.addEventListener('input', syncNight); to.addEventListener('input', syncNight); whole.addEventListener('change', syncNight);
     const rAll = h('input', { type: 'radio', name: pre + 'block', id: pre + 'all', value: 'all' });
     const rCat = h('input', { type: 'radio', name: pre + 'block', id: pre + 'cat', value: 'categories' });
     (x.block === 'all' ? rAll : rCat).checked = true;
@@ -460,16 +467,17 @@
     ok.addEventListener('click', () => {
       const ds = K.DAYS.filter((n) => days.querySelector('#' + pre + 'd' + n).checked);
       if (!ds.length) { U.showErr(err, t('gwh.sched.err_days')); return; }
-      if (!/^\d\d:\d\d$/.test(from.value) || !/^\d\d:\d\d$/.test(to.value) || from.value === to.value) { U.showErr(err, t('gwh.sched.err_time')); from.focus(); return; }
+      if (!whole.checked && (!/^\d\d:\d\d$/.test(from.value) || !/^\d\d:\d\d$/.test(to.value) || from.value === to.value)) { U.showErr(err, t('gwh.sched.err_time')); from.focus(); return; }
       const block = rAll.checked ? 'all' : 'categories';
       const cs = cats.filter((x2) => x2.cb.checked).map((x2) => x2.c);
       if (block === 'categories' && !cs.length) { U.showErr(err, t('gwh.sched.err_cats')); return; }
-      onDone({ days: ds, from: from.value, to: to.value, block, categories: block === 'all' ? [] : cs, allowAlways: K.parsePatterns(allow.value) });
+      onDone({ days: ds, from: whole.checked ? '00:00' : from.value, to: whole.checked ? '24:00' : to.value, block, categories: block === 'all' ? [] : cs, allowAlways: K.parsePatterns(allow.value) });
     });
     syncNight(); syncBlock();
     const box = h('div', { class: 'gwh-sched-ed', role: 'group', 'aria-label': t('gwh.sched.edit') }, [
       days,
-      h('div', { class: 'gwh-times' }, [field(pre + 'from', t('gwh.sched.from'), from), field(pre + 'to', t('gwh.sched.to'), to)]),
+      h('label', { class: 'gwe-check', for: pre + 'whole' }, [whole, h('span', { text: t('gwh.sched.all_day_pick') })]),
+      times,
       overnight,
       h('fieldset', { class: 'gwh-block' }, [h('legend', { class: 'form-label', text: t('gwh.sched.block') }),
         h('label', { class: 'gwe-check', for: pre + 'cat' }, [rCat, h('span', { text: t('gwh.sched.block_cats') })]), catBox,

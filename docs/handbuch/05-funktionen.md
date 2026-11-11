@@ -133,6 +133,17 @@ Pi-hole oder systemd-resolved).
 6. Profile und Zeiten legst du unter „Profile“ an. Die Zeiten gelten in der
    Zeitzone des Servers.
 
+**Zeiten:** Eine Zeit gilt an den gewählten Tagen von „Von“ bis „Bis“. Liegt
+„Bis“ vor „Von“ (z. B. 21:00 – 07:00), geht sie über Mitternacht und endet am
+nächsten Morgen – es zählt der Tag, an dem sie beginnt. Für einen ganzen Tag
+(00:00 bis 24:00 Uhr) setzt du den Haken „Ganztägig“, z. B. „Sa–So ganztägig“.
+
+**Mehrere Standorte:** Profile, Zeiten und Ausnahmen gehören zum Gateway, in
+dessen Reiter du sie anlegst – nicht zu allen Gateways. Das Gateway zu Hause
+und das in der Ferienwohnung oder im Büro haben also je eigene Profile.
+Nur Gateways im selben Heimnetz (Reserve-Gateway, gleicher Router) teilen sich
+die Einstellungen; der Reiter zeigt dann „Gilt im ganzen Heimnetz“.
+
 **Wichtig:** Ist das Gateway aus, können die Geräte im Heimnetz keine Namen mehr
 auflösen – das Internet wirkt dann „weg“. Ein zweites Gateway als Reserve hilft.
 Willst du den Filter wieder abschalten, leere **zuerst** das Feld im Router.
