@@ -94,13 +94,14 @@ module.exports = (ctx) => {
       step('net: page in German for the run', langSet.status === 200, 'status ' + langSet.status);
       try {
         const now = Date.now();
-        const hb = await gw('/heartbeat', { uptime_s: 3600, telemetry: {
+        const telemetry = {
           gateway_version: '1.21.0', node_version: 'v22.22.0', cpu_cores: 4, cpu_load_avg: [0.2, 0.3, 0.3], mem_total: 1024 ** 3, mem_used: 380 * 1024 ** 2,
           hardware: { model: 'Raspberry Pi 3 Model B Plus Rev 1.3', cpu_cores: 4, mem_total: 1024 ** 3, storage: { total: 30e9, free: 22e9 },
             radios: [{ kind: 'zigbee', type: 'raspbee2-conbee2', device: '/dev/ttyAMA0', detected: true, enabled: true }] },
           lan_ip: '192.168.1.23', lan_discovery: true, capabilities: ['netwatch', 'inetq', 'presence', 'ups'], state_dir_writable: true,
           ups: { status: 'OL', charge: 100, runtimeSec: 2520, model: 'APC Back-UPS 700', at: now },
-        } });
+        };
+        const hb = await gw('/heartbeat', { uptime_s: 3600, telemetry });
         step('net: heartbeat with hardware, capabilities and UPS (gateway API)', hb === 200);
         step('net: inventory of the network watch', await gw('/netwatch', { scanAt: now - 5 * MIN, full: true, devices: devices(now) }) === 200);
         step('net: two new devices (one with a random MAC)', await gw('/netwatch', { scanAt: now - 4 * MIN, full: false, devices: [
@@ -121,7 +122,11 @@ module.exports = (ctx) => {
         }) === 200);
 
         // ── overview: the card "Funktionen" (what is on), the switches in the tab "Funktionen" ──
+        // a real load: the page is already on /gateways (opened above for the language), so going to the
+        // hash alone would keep the gateway list from before the heartbeat — and with it a card
+        // "Erkannte Geräte" that depends on whether a poll happened to run in between
         await page.goto(`${BASE}/gateways#gw/${GW}`);
+        await page.reload();
         await theme(page, 'dark');
         step('net: the overview shows the card "Funktionen" with chips and "Verwalten" → tab', await until(page, () => {
           const c = document.querySelector('.gwn-fsum');
@@ -220,6 +225,19 @@ module.exports = (ctx) => {
           const b = n && n.closest('.gw') ? n.closest('.gw').querySelector('button') : null;
           return !!n && n.textContent.length > 10 && !/\(/.test(n.textContent) && !!b && b.disabled;
         }));
+        // the card follows what the gateway reports: without the capability "keine Discovery", with it the note again
+        // (the page asks again when it becomes visible — the same refresh as the poll)
+        const discCard = (page0, locked) => until(page0, (l) => {
+          const c = document.querySelector('.gw-net-extras .gw'), b = c && c.querySelector('button');
+          return !!c && !!b && b.disabled && !!c.querySelector('[data-disc-locked]') === l && c.querySelector('.body').textContent.length > 10;
+        }, locked);
+        const again = () => page.evaluate(() => { document.dispatchEvent(new Event('visibilitychange')); });
+        await gw('/heartbeat', { uptime_s: 3610, telemetry: { ...telemetry, lan_discovery: false } });
+        await again();
+        step('net: "Erkannte Geräte" follows the report: capability gone → "unterstützt keine Discovery"', await discCard(page, false));
+        await gw('/heartbeat', { uptime_s: 3620, telemetry });
+        await again();
+        step('net: … capability back → the licence note again, without leaving the tab', await discCard(page, true));
         allow((p) => p.kind === 'console' && /403/.test(p.text));
         allow((p) => p.kind === 'console' && /502/.test(p.text));
 
