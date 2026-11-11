@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.261.3] — 2026-11-11
+
+### Fixes
+- update.sh der Gateways auf v1.37.0 nachgezogen (Office-Image wird mit erneuert) (#468)
+
+---
+
 ## [1.261.2] — 2026-11-11
 
 ### Änderungen
