@@ -163,6 +163,54 @@ describe('zigbee2mqtt devices', () => {
     answer = () => ({ status: 202, body: { accepted: true } });
   });
 
+  it('several channels, thermostats and firmware over the air: reported fields checked, handed to plugins, commands checked', async () => {
+    const seen = new Date().toISOString();
+    const more = [
+      { ieee: 'a4:c1:38:00:00:11:22:33', name: 'Schalter Flur', model: 'TS0003', vendor: 'Tuya', kind: 'plug', type: 'router', seenAt: seen,
+        caps: { channels: ['l1', 'l2', 'l3', 'l1', '../x', 7], ota: true, chProps: { l1: 'state_l1' } },
+        values: { on: true, ch: { l1: true, l2: false, l3: 'yes', '__proto__x': true, 'bad name': true }, ota: { state: 'available', installed: '16777220', latest: '16777221', checked: '2026-11-11T10:00:00Z', junk: 1 } } },
+      { ieee: '54:ef:44:10:00:aa:bb:cc', name: 'Heizung Bad', model: 'SRTS-A01', vendor: 'Aqara', kind: 'climate', type: 'end_device', power: 'Battery', seenAt: seen,
+        caps: { setpoint: { min: 5, max: 30, step: 0.5 }, modes: ['heat', 'off', 'party'], battery: true, ota: true },
+        values: { temperature: 20.4, setpoint: 21.5, mode: 'heat', heating: true, valve: 37.4, battery: 64, ota: { state: 'updating', progress: 37.6, error: 'nonsense' } } },
+      { ieee: '00:15:8d:00:09:09:09:09', name: 'Kaputt', kind: 'climate', type: 'end_device', seenAt: seen,
+        caps: { setpoint: { min: 30, max: 5, step: 0 }, modes: 'heat', channels: ['l1'], ota: 'yes' },
+        values: { setpoint: 500, mode: 'party', heating: 'yes', valve: 300, ch: [true], ota: { state: 'weird', progress: 12, installed: '<b>', checked: 'never' } } },
+    ];
+    await gwReq('post', '/radio/zigbee').send({ stack: 'zigbee2mqtt', devices: more }).expect(200);
+    const by = Object.fromEntries(hr.pluginZigbee().devices.map((d) => [d.name, d]));
+    assert.deepEqual(by['Schalter Flur'].caps, { ota: true, channels: ['l1', 'l2', 'l3'] }, 'clean channel names once, nothing unknown');
+    assert.deepEqual(by['Schalter Flur'].values, { on: true, ch: { l1: true, l2: false }, ota: { state: 'available', installed: '16777220', latest: '16777221', checked: '2026-11-11T10:00:00.000Z' } });
+    assert.equal(by['Heizung Bad'].kind, 'climate');
+    assert.deepEqual(by['Heizung Bad'].caps, { battery: true, ota: true, setpoint: { min: 5, max: 30, step: 0.5 }, modes: ['off', 'heat'] });
+    assert.deepEqual(by['Heizung Bad'].values, { temperature: 20.4, battery: 64, setpoint: 21.5, mode: 'heat', heating: true, valve: 37, ota: { state: 'updating', progress: 38 } });
+    assert.deepEqual([by['Kaputt'].caps, by['Kaputt'].values], [{}, { ota: { state: 'idle' } }], 'what does not fit is dropped');
+    // the tab "Funk" names the kind
+    const en = require('../src/i18n/en.json');
+    const de = require('../src/i18n/de.json');
+    assert.ok(en['gwr.z2m.kind.climate'] && de['gwr.z2m.kind.climate']);
+
+    // commands of a plugin: a channel, a thermostat, firmware
+    assert.deepEqual(hr.cleanCommand({ on: true, channel: 'l2' }), { on: true, channel: 'l2' });
+    assert.deepEqual(hr.cleanCommand({ setpoint: 21.5, mode: 'heat', junk: 1 }), { setpoint: 21.5, mode: 'heat' });
+    assert.deepEqual(hr.cleanCommand({ ota: 'check' }), { ota: 'check' });
+    for (const bad of [{ channel: 'l2' }, { on: true, channel: '../x' }, { on: true, channel: 7 }, { on: 'yes', channel: 'l1' }, { setpoint: 99 }, { setpoint: '21' }, { mode: 'party' },
+      { ota: 'erase' }, { ota: true }, { ota: 'update', on: true }, { on: true, ota: 'check' }]) {
+      assert.throws(() => hr.cleanCommand(bad), (e) => e.code === 'invalid', JSON.stringify(bad));
+    }
+    mgmt.length = 0;
+    answer = () => ({ status: 202, body: { accepted: true } });
+    assert.deepEqual(await hr.zigbeeCommand('z2m:a4c1380000112233', { on: false, channel: 'l3' }), { accepted: true });
+    assert.deepEqual(mgmt.at(-1), { peerId: gw.peer.id, path: '/api/radio/zigbee/set', body: { ieee: 'a4:c1:38:00:00:11:22:33', set: { on: false, channel: 'l3' } } });
+    await hr.zigbeeCommand('z2m:54ef441000aabbcc', { setpoint: 22 });
+    assert.deepEqual(mgmt.at(-1).body, { ieee: '54:ef:44:10:00:aa:bb:cc', set: { setpoint: 22 } });
+    await hr.zigbeeCommand('z2m:a4c1380000112233', { ota: 'update' });
+    assert.deepEqual(mgmt.at(-1).body, { ieee: 'a4:c1:38:00:00:11:22:33', set: { ota: 'update' } });
+    await assert.rejects(hr.zigbeeCommand('z2m:a4c1380000112233', { ota: 'update', bri: 5 }), (e) => e.code === 'invalid');
+    assert.equal(mgmt.length, 3, 'a refused command never reaches the gateway');
+    // back to the list the following tests expect
+    await gwReq('post', '/radio/zigbee').send({ stack: 'zigbee2mqtt', devices: DEVICES.slice(0, 3) }).expect(200);
+  });
+
   it('"Entfernen" goes to the gateway (checked address), audited', async () => {
     mgmt.length = 0;
     assert.equal((await admin('post', '/radio/zigbee/remove').send({ ieee: '../etc' })).status, 400);

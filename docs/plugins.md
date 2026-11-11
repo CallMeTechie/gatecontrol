@@ -2802,7 +2802,7 @@ const { gateways, devices } = await gc.radio.zigbee();
 await gc.radio.command('z2m:001788010b2c3d4e', { on: true, bri: 40 });   // → { accepted: true }
 ```
 
-`kind` is `light`, `plug` (also switches/relays), `cover`, `sensor` or `remote`;
+`kind` is `light`, `plug` (also switches/relays), `cover`, `sensor`, `remote` or `climate` (a thermostat);
 `caps` names what can be set (`bri`, `ct`, `color: 'xy' | 'hs'`, `position`) and
 what is measured (`power`, `battery`). `values` use the names of the Bluetooth
 sensors plus `on`, `bri` (0–100), `ct` (mired), `pos` (0–100), `linkquality`,
@@ -2812,7 +2812,22 @@ mired, `xy` `[x, y]`, `hue` 0–65535 / `sat` 0–254 (converted for zigbee2mqtt
 unknown id `ERR_NOT_FOUND`, a gateway whose zigbee2mqtt does not run
 `ERR_RADIO_NOT_RUNNING`, one that does not answer `ERR_GATEWAY_UNREACHABLE`. The
 command goes to the gateway, which publishes `zigbee2mqtt/<name>/set`; the new
-state comes with the next report (at most 5 s later). Only gateways with
+state comes with the next report (at most 5 s later).
+
+With a gateway newer than 1.34.2 (older ones report none of this — check `caps`):
+
+* **Several channels** (a 2- or 3-gang switch): `caps.channels` `['l1', 'l2', …]` (2–8 names `[a-z0-9_]{1,8}`),
+  `values.ch` `{ l1: true, l2: false }`; `values.on` stays the first channel. `command(id, { on, channel: 'l2' })`
+  switches one of them.
+* **Thermostats** (`kind: 'climate'`): `caps.setpoint` `{ min, max, step }` (°C) and `caps.modes` (of `off`, `heat`,
+  `auto`, `cool`, `fan_only`, `dry`); `values.temperature` (measured), `setpoint`, `mode`, `heating`, `valve` (%).
+  `command(id, { setpoint: 21.5 })` / `{ mode: 'heat' }` — the gateway keeps the target within the device's limits.
+* **Firmware over the air:** `caps.ota`, `values.ota` `{ state: 'idle' | 'available' | 'updating' | 'scheduled',
+  progress (%, while updating), installed, latest, checked (ISO time of the last search), error: 'check_failed' |
+  'update_failed' }`. `command(id, { ota: 'check' })` asks zigbee2mqtt whether there is an update,
+  `{ ota: 'update' }` starts it (10–60 minutes); `ota` stands alone in a command.
+
+Only gateways with
 “zigbee2mqtt” chosen count; switched back to deCONZ, their devices are gone
 from the list. On an older GateControl `gc.radio.zigbee` is missing — check for it.
 
