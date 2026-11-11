@@ -475,7 +475,6 @@ module.exports = (ctx) => {
         live.on = false;
         await page.evaluate(() => { location.hash = ''; });
         step('pools: no raw i18n keys on the page', await page.evaluate(() => !/\bgwp\.[a-z_]+\.[a-z_.]+/.test(['fleet-view', 'gw-detail-view', 'gw-pool-view'].map((i) => document.getElementById(i).innerText).join(' '))));
-        allow((p) => p.kind === 'http' && p.status === 403 && /\/discovered$/.test(p.url));
         allow((p) => p.kind === 'console' && /403/.test(p.text));
       } finally {
         await page.unroute(/\/api\/v1\/gateway-pools(\/.*)?(\?.*)?$/).catch(() => {});

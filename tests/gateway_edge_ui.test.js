@@ -127,6 +127,41 @@ describe('gateway-edge-kit: address and states', () => {
     for (const r of K.REASONS) assert.ok(K.reasonDoc(r, null, 'de') && K.reasonDoc(r, null, 'en'), r);
   });
 
+  it('a gateway without Docker (Proxmox LXC): no edge container — a hint, the switches stay (de + en)', () => {
+    const tel = (t) => ({ health: { telemetry: t } });
+    // the gateway says so itself (telemetry.runtime, gateways that report it)
+    assert.equal(K.nativeGateway({ platform: null, ...tel({ runtime: 'native', edge: null }) }), true);
+    assert.equal(K.nativeGateway({ platform: 'linux', ...tel({ runtime: 'native' }) }), true);
+    // an older gateway: the platform the assistant stored
+    assert.equal(K.nativeGateway({ platform: 'proxmox', ...tel({ edge: null }) }), true);
+    assert.equal(K.nativeGateway({ platform: 'proxmox' }), true);
+    // Docker in a Proxmox VM, or anything that reports an edge service: not native
+    assert.equal(K.nativeGateway({ platform: 'proxmox', ...tel({ runtime: 'container', edge: null }) }), false);
+    assert.equal(K.nativeGateway({ platform: 'proxmox', ...tel({ edge: { deployed: true } }) }), false);
+    assert.equal(K.nativeGateway({ platform: null, ...tel({ runtime: 'native', edge: { deployed: true } }) }), false);
+    for (const p of ['rpi', 'synology', 'linux', null, undefined]) assert.equal(K.nativeGateway({ platform: p, ...tel({ edge: null }) }), false, String(p));
+    assert.equal(K.nativeGateway(null), false);
+    // the server side of the row "Edge-Plugins & MQTT" reads the same rule ({ platform, telemetry })
+    assert.equal(K.nativeGateway({ platform: 'proxmox', telemetry: {} }), true);
+    assert.equal(K.nativeGateway({ platform: null, telemetry: { runtime: 'native' } }), true);
+    for (const k of ['gwe.native.title', 'gwe.native.text', 'gwe.state_d.edge_missing_native', 'gwn.feat.edge_native']) {
+      assert.ok(de[k] && en[k], k);
+      // the texts name what is missing and never ask for a compose file
+      assert.doesNotMatch(de[k] + en[k], /Compose-Datei|compose file/i, k);
+    }
+    const src = stripComments(EDGE_JS);
+    // the note in both tabs; the generic "compose file" text and the compose download are not offered there
+    assert.match(src, /function nativeNote\(\)[\s\S]{0,260}'gwe\.native\.title'[\s\S]{0,120}guide\('gw\.proxmox'\)/);
+    assert.match(src, /reason === 'edge_missing' && K\.nativeGateway\(g\)/);
+    assert.match(src, /g\.platform !== 'rpi' && !native\) c\.body\.appendChild\(composeHelp\(g\)\)/);
+    assert.match(src, /bigNote\('grey', 'power', t\('gwe\.off\.title'\), text, \[on\]\)\]\.concat\(K\.nativeGateway\(g\) \? \[nativeNote\(\)\] : \[\]\)/);
+    // a hint, never a ban: the note disables nothing
+    const i = src.indexOf('function nativeNote');
+    assert.doesNotMatch(src.slice(i, i + 400), /disabled/);
+    const NET_JS = read('public/js/gateway-net.js');
+    assert.match(NET_JS, /if \(d\.edge\.native\) edgeExtra\.push\(h\('span', \{ class: 'gwn-hint', 'data-edge-native': '' \}/);
+  });
+
   it('a plugin not set up here: edge off → edge_off, unsigned and not allowed → unsigned (blocked switch), else not_set_up', () => {
     assert.equal(K.pluginState(p(null), { edgeEnabled: false }).state, 'edge_off');
     assert.equal(K.pluginState(p(null, { verified: false }), settings).state, 'unsigned');
@@ -220,6 +255,17 @@ describe('gateway-edge-kit: MQTT accounts as the server takes them', () => {
     assert.equal(K.brokerAddress('192.168.1.23', false), '192.168.1.23:1883');
     assert.equal(K.brokerAddress('192.168.1.23', true), '192.168.1.23:8883');
     assert.equal(K.brokerAddress(null), null);
+    // the mDNS name: from the heartbeat (telemetry.mdns_name), else from a hardware profile — one label + .local only
+    assert.equal(K.mdnsName(null, { mdns_name: 'Pi-Keller.local' }), 'pi-keller.local');
+    assert.equal(K.mdnsName({ hardware: { mdns_name: 'pi-keller.local' } }, {}), 'pi-keller.local');
+    assert.equal(K.mdnsName(null, { hardware: { mdns_name: 'nas.local' } }), 'nas.local');
+    assert.equal(K.mdnsName({ hardware: { mdns_name: 'edge.local' } }, { mdns_name: 'host.local' }), 'host.local', 'the heartbeat is the freshest');
+    assert.equal(K.mdnsName({ hardware: { mdns_name: 'ok.local' } }, { mdns_name: 'bad name.local' }), 'ok.local');
+    for (const v of [null, '', 'pi-keller', 'pi.keller.local', '-x.local', 'x-.local', '<b>.local', 'a'.repeat(64) + '.local', 'pi-keller.local.', 'pi_keller.local', 42, {}]) {
+      assert.equal(K.mdnsName(null, { mdns_name: v }), null, String(v));
+    }
+    assert.equal(K.mdnsName(null, null), null);
+    assert.equal(K.mdnsName(undefined, undefined), null);
     assert.equal(K.brokerStatus({ mqttEnabled: false }).key, 'off');
     assert.equal(K.brokerStatus({ mqttEnabled: true, edgeEnabled: false }).key, 'waits_edge');
     assert.equal(K.brokerStatus({ mqttEnabled: true, edgeEnabled: true }, null, false).key, 'offline');

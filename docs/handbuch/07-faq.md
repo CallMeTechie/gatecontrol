@@ -450,6 +450,11 @@ Meldung (keine neuen Schlüssel). Beim
 Raspberry-Pi-Image steht `EDGE=off` in `settings.txt` – auf `EDGE=on` ändern
 und neu starten. Mehr: [Kapitel 4](04-edge-und-smart-home.md#edge-dienst-fehlt).
 
+Steht dort stattdessen „Kein Edge-Container auf diesem Gateway“, läuft das
+Gateway als Proxmox-Container ohne Docker ([Kapitel 3.5](03-gateway-einrichten.md#35-proxmox)).
+Dort gibt es keine Compose-Datei zu erneuern: Edge-Plugins und der MQTT-Broker
+brauchen ein Gateway mit Docker, zum Beispiel in einer VM.
+
 ### „Compose-Datei veraltet“ / „Netzgrenze fehlt“ / xt_owner
 
 Die Compose-Datei stammt von vor Gateway 1.23.0: Der Edge-Container läuft
@@ -488,3 +493,28 @@ ihn auf eine andere Adresse. Das Gateway erzwingt nichts und versucht es jede Mi
 
 Im Router steht noch das Gateway als DNS-Server. Leere das Feld im Router und
 schalte das WLAN der Geräte einmal aus und wieder ein.
+
+### „LAN-Erkennung ist im aktuellen Plan nicht aktiviert“
+
+Die Karte „Erkannte Geräte“ (Reiter „Netzwerk“) und die Gerätevorschläge beim
+Anlegen einer Route gehören zur Lizenzfunktion „LAN-Erkennung“. Ohne sie bleibt
+die Liste leer und der Scan-Knopf aus – das ist kein Fehler des Gateways. Der
+Netzwerk-Wächter im selben Reiter hängt nicht davon ab.
+
+### Mein Heimnetz hat nur IPv6 – was geht?
+
+Ein Gateway ohne private IPv4-Adresse funktioniert für Routen (auch zu Zielen
+mit IPv6-Adresse), den DNS-Filter, den Zwischenspeicher, die Lokale KI im
+Heimnetz und den USV-Status (Adresse wie `fd00::10`). „Zu Hause“ erkennt
+GateControl dann über die privaten IPv6-Adressen (`fd…`): Der Router muss
+solche ULA-Adressen verteilen (bei der FRITZ!Box in den IPv6-Einstellungen des
+Heimnetzes: „Unique Local Addresses (ULA) immer zuweisen“), das Gateway meldet
+sein ULA-Netz, und die App schickt ihre eigene ULA-Adresse mit. Der Server
+wertet das ab dieser Fassung aus; eine App, die nur IPv4-Adressen mitschickt,
+gilt in einem reinen IPv6-Netz weiter als unterwegs.
+
+Nur mit IPv4 arbeiten weiterhin: Netzwerk-Wächter, Anwesenheit im WLAN und
+LAN-Erkennung (sie durchsuchen ein IPv4-Subnetz), die Internetqualität
+(Messziele und Router über IPv4), MQTT-Broker und Edge-Plugins im Heimnetz,
+Wake-on-LAN, Drucken & Scannen und Kameras. Schalte sie in einem reinen
+IPv6-Netz aus – die Internetqualität würde sonst einen Dauerausfall melden.

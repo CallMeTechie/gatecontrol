@@ -257,7 +257,6 @@ module.exports = (ctx) => {
         step('home: "Domain prüfen" without a reachable gateway → message in the dialog', await until(page, () => { const e = document.querySelector('.gwh-testdlg .gwe-err'); return e && !e.hidden; }, null, 15000));
         await page.keyboard.press('Escape');
         allow((p) => p.kind === 'http' && p.status === 502 && /\/dns\/test$|\/cache\/clear$/.test(p.url));
-        allow((p) => p.kind === 'http' && p.status === 403 && /\/discovered$/.test(p.url));
         allow((p) => p.kind === 'console' && /403|502/.test(p.text));
 
         // ── tab "Zwischenspeicher" ──
@@ -342,7 +341,6 @@ module.exports = (ctx) => {
         await page.waitForTimeout(300);
         await view(page, 'gwhome-dns-390-dark', 2600);
         await page.setViewportSize({ width: 1440, height: 1000 });
-        allow((p) => p.kind === 'http' && p.status === 403 && /\/discovered$/.test(p.url));
         allow((p) => p.kind === 'console' && /403/.test(p.text));
       } finally {
         await api(page, 'POST', '/api/v1/settings/language', { language: lang0 }).catch(() => {});

@@ -213,8 +213,13 @@ module.exports = (ctx) => {
         step('net: "Jetzt scannen" without a reachable gateway → in-app message', await until(page, () => document.querySelector('.gcd-dialog .gcd-msg'), null, 15000));
         await page.keyboard.press('Escape');
         allow((p) => p.kind === 'http' && p.status === 502 && /\/netwatch\/scan$/.test(p.url));
-        // the existing card "Gefundene Geräte" asks /discovered, which the seed licence does not cover (not phase 3a)
-        allow((p) => p.kind === 'http' && p.status === 403 && /\/discovered$/.test(p.url));
+        // the existing card "Erkannte Geräte" asks /discovered, which the seed licence does not cover: the server
+        // answers with an empty list and licensed: false — a note in the card, the scan button off, no failed request
+        step('net: "Erkannte Geräte" without the licence feature: a note instead of an error, scan button off', await until(page, () => {
+          const n = document.querySelector('.gw-net-extras [data-disc-locked]');
+          const b = n && n.closest('.gw') ? n.closest('.gw').querySelector('button') : null;
+          return !!n && n.textContent.length > 10 && !/\(/.test(n.textContent) && !!b && b.disabled;
+        }));
         allow((p) => p.kind === 'console' && /403/.test(p.text));
         allow((p) => p.kind === 'console' && /502/.test(p.text));
 
@@ -266,7 +271,6 @@ module.exports = (ctx) => {
         await page.waitForTimeout(300);
         await view(page, 'gwnet-net-390-dark', 2400);
         await page.setViewportSize({ width: 1440, height: 1000 });
-        allow((p) => p.kind === 'http' && p.status === 403 && /\/discovered$/.test(p.url));
         allow((p) => p.kind === 'console' && /403/.test(p.text));
       } finally {
         await api(page, 'POST', '/api/v1/settings/language', { language: lang0 }).catch(() => {});

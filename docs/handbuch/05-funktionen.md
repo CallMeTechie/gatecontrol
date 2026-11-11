@@ -57,6 +57,14 @@ und erkennt Ausfälle mit Ursache.
 „Internet“ stellst du bei „Geschwindigkeit messen“ ein: „nie automatisch“,
 „4× täglich“ oder „stündlich“. Stündlich braucht viel Datenvolumen.
 
+**Datenvolumen:** Je Gateway sind höchstens 12 GB Messvolumen in 24 Stunden
+erlaubt. Das Gateway merkt sich seinen Verbrauch selbst (Gateway ab der Fassung
+mit dem Tagesbudget) – er geht also weder bei einem Neustart des Gateways noch
+bei einem Update des Servers verloren. Ist das Budget aufgebraucht, steht in
+der Karte „Geschwindigkeit“, ab wann wieder gemessen wird. Bei „stündlich“
+wird jede Messung auf rund 200 MB je Richtung gekürzt – Download **und**
+Upload; an schnellen Anschlüssen ist sie dadurch etwas ungenauer.
+
 **Prüfen:** Im Reiter „Internet“ erscheinen Messwerte.
 
 ## Anwesenheit
@@ -79,7 +87,8 @@ mein Handy im WLAN“ einschalten.
 1. Auf der Synology: „Systemsteuerung“ → „Hardware & Energie“ → „USV“ →
    Netzwerk-USV-Server aktivieren und die IP des Gateways erlauben.
 2. In GateControl bei „USV-Status“ auf „Adresse einstellen“ klicken.
-3. „Adresse des USV-Servers“ (private IPv4), „Port“ (meist 3493) und optional
+3. „Adresse des USV-Servers“ (private IPv4 – in einem Heimnetz ohne IPv4 eine
+   private IPv6-Adresse wie `fd00::10`), „Port“ (meist 3493) und optional
    den USV-Namen eintragen (leer = die erste USV; Synology: `ups`).
 4. „Speichern und einschalten“.
 

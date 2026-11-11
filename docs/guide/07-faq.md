@@ -436,6 +436,11 @@ date with [chapter 6](06-updating-a-gateway.md) – quickest with the button
 `settings.txt` says `EDGE=off` – change it to `EDGE=on` and restart. More:
 [chapter 4](04-edge-and-smart-home.md#edge-service-missing).
 
+If it says “No edge container on this gateway” instead, the gateway runs as a
+Proxmox container without Docker ([chapter 3.5](03-gateway-setup.md#35-proxmox)).
+There is no compose file to renew there: edge plugins and the MQTT broker need
+a gateway with Docker, for example in a VM.
+
 ### “Compose file outdated” / “Network fence missing” / xt_owner
 
 The compose file is from before gateway 1.23.0: the edge container still runs
@@ -474,3 +479,28 @@ another address. The gateway forces nothing and tries again every minute.
 
 The router still lists the gateway as DNS server. Clear the field in the router
 and switch the devices' Wi-Fi off and on once.
+
+### “LAN discovery is not enabled on your current plan”
+
+The card “Discovered devices” (tab “Network”) and the device suggestions when
+creating a route belong to the licence feature “LAN discovery”. Without it the
+list stays empty and the scan button is off – this is not a fault of the
+gateway. The network watch in the same tab does not depend on it.
+
+### My home network has IPv6 only – what works?
+
+A gateway without a private IPv4 address works for routes (also to targets
+with an IPv6 address), the DNS filter, the home cache, the local AI in the home
+network and the UPS status (an address like `fd00::10`). GateControl then
+recognises “at home” by the private IPv6 addresses (`fd…`): the router has to
+distribute such ULA addresses (on the FRITZ!Box in the IPv6 settings of the
+home network: “Always assign unique local addresses (ULA)”), the gateway
+reports its ULA network, and the app sends its own ULA address along. The
+server evaluates this from this release on; an app that only sends IPv4
+addresses still counts as away in an IPv6-only network.
+
+These keep working with IPv4 only: network watch, presence in the Wi-Fi and LAN
+discovery (they search an IPv4 subnet), the internet quality (targets and
+router over IPv4), the MQTT broker and edge plugins in the home network,
+Wake-on-LAN, printing & scanning and cameras. Switch them off in an IPv6-only
+network – the internet quality would otherwise report a permanent outage.

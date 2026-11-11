@@ -24,7 +24,7 @@ const logger = require('../../utils/logger');
 const router = Router();
 
 const STATUS = {
-  not_found: 404, invalid: 400, invalid_host: 400, invalid_owner: 400, ups_host_required: 400, ERR_INVALID: 400,
+  not_found: 404, invalid: 400, invalid_host: 400, ups_host_ipv6: 400, invalid_owner: 400, ups_host_required: 400, ERR_INVALID: 400,
   gateway_unreachable: 502, gateway_error: 502, gateway_unsupported: 409, not_licensed: 403, unavailable: 409,
 };
 

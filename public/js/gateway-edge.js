@@ -449,7 +449,7 @@
       const text = names.length ? t(names.length === 1 ? 'gwe.off.text_one' : 'gwe.off.text', { n: names.length, names: names.join(', ') }) : t('gwe.off.text_none');
       const on = h('button', { type: 'button', class: 'btn btn-primary', 'data-fk': 'gwe-edge-on' }, [icon('power', 16), t('gwe.off.enable')]);
       on.addEventListener('click', () => { on.disabled = true; setEdge(g, null, true).finally(() => { on.disabled = false; }); });
-      return [bigNote('grey', 'power', t('gwe.off.title'), text, [on])];
+      return [bigNote('grey', 'power', t('gwe.off.title'), text, [on])].concat(K.nativeGateway(g) ? [nativeNote()] : []);
     }
     const top = h('div', { class: 'gwe-grid2' }, [edgeCard(g, d), unsignedCard(g, d)]);
     return [top, pluginsCard(g, d)];
@@ -471,11 +471,14 @@
     else chips.appendChild(chip('', conn.lastSeen ? t('gwe.edge.offline_since', { time: fmtTime(conn.lastSeen) }) : t('gwe.edge.offline'), 'x'));
     if (hello && hello.edgeHost) chips.appendChild(chip('', t('gwe.edge.host', { version: hello.edgeHost })));
     c.body.appendChild(chips);
-    // why the channel is down — here unless a plugin row below already says it
-    if (why && !(d.plugins || []).some((p) => K.pluginState(p, d.settings).state === why)) {
+    // a gateway without Docker (Proxmox LXC): no edge container there — said once, instead of asking for a compose file
+    const native = K.nativeGateway(g);
+    if (native) c.body.appendChild(nativeNote());
+    // why the channel is down — here unless a plugin row below already says it (or the note above does)
+    if (why && !(native && why === 'edge_missing') && !(d.plugins || []).some((p) => K.pluginState(p, d.settings).state === why)) {
       c.body.appendChild(note(why === 'gateway_offline' ? 'info' : 'warn', [h('strong', { text: t('gwe.state.' + why) }), ' '].concat(reasonText(g, d, why))));
     }
-    if ((why === 'edge_missing' || why === 'compose_outdated') && g.platform !== 'rpi') c.body.appendChild(composeHelp(g));
+    if ((why === 'edge_missing' || why === 'compose_outdated') && g.platform !== 'rpi' && !native) c.body.appendChild(composeHelp(g));
     // connected, but the edge container still runs in the host network without a fence: the current compose file
     // (no network for edge, no kernel module) is the way out — the plugin rows show 'denied' meanwhile
     if (!why && bound.composeOutdated) {
@@ -506,6 +509,11 @@
     return c.card;
   }
 
+  // "Kein Edge-Container auf diesem Gateway" (Proxmox LXC without Docker): a hint — the switches stay usable
+  function nativeNote() {
+    return h('div', { 'data-native': '' }, note('info', [h('strong', { text: t('gwe.native.title') }), ' ', t('gwe.native.text'), ' ', guide('gw.proxmox')]));
+  }
+
   function unsignedCard(g, d) {
     const allowed = !!d.settings.allowUnsignedEdge;
     const c = card(t('gwe.uns.title'), tag(allowed ? 'amber' : 'grey', t(allowed ? 'gwe.uns.allowed' : 'gwe.uns.blocked')), { id: 'uns' });
@@ -522,8 +530,10 @@
 
   // the explanation of a reason (gwe.state_d.<reason>), the user guide (handbook.js) and the gateway's own error text
   function reasonText(g, d, reason) {
-    const kids = [t('gwe.state_d.' + reason)];
-    const url = K.reasonDoc(reason, g.platform, LANG);
+    // no edge service on a gateway without Docker: there is no compose file to renew
+    const native = reason === 'edge_missing' && K.nativeGateway(g);
+    const kids = [t(native ? 'gwe.state_d.edge_missing_native' : 'gwe.state_d.' + reason)];
+    const url = K.reasonDoc(reason, native ? 'proxmox' : g.platform, LANG);
     if (url) kids.push(' ', h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', 'data-guide': 'reason', text: t('gwe.reason.guide') }));
     const msg = d.connection && d.connection.reason === reason ? d.connection.detail : null;
     if (msg) kids.push(' · ' + t('gwe.reason.gw_says') + ' ', h('code', { class: 'gwe-mono', text: msg }));
@@ -768,12 +778,7 @@
 
   // ─── Tab "MQTT" ───────────────────────────────────────────────────────
   function lanIp(g) { const t0 = (g.health && g.health.telemetry) || {}; return typeof t0.lan_ip === 'string' && t0.lan_ip ? t0.lan_ip : null; }
-  function mdnsName(g, d) {
-    const hw = d.gateway && d.gateway.hardware;
-    const tel = (g.health && g.health.telemetry) || {};
-    const v = (hw && hw.mdns_name) || tel.mdns_name;
-    return typeof v === 'string' && v ? v : null;
-  }
+  function mdnsName(g, d) { return K.mdnsName(d.gateway, g.health && g.health.telemetry); }
 
   function mqttPanel(g, d) {
     const ctx = cur.ctx || {};
@@ -797,6 +802,8 @@
       c.body.appendChild(note('warn', [t('gwe.mqtt.needs_edge'), ' ', on]));
     }
     if (d.gateway && !d.gateway.mqttAvailable) c.body.appendChild(note('warn', [t('gwe.mqtt.not_available')]));
+    // without Docker (Proxmox LXC) there is no mqtt container either — unless the reason below already says so
+    const native = K.nativeGateway(g);
     const st = K.brokerStatus(s, d.mqtt && d.mqtt.status, d.connection && d.connection.online, d.connection && d.connection.reason);
     const status = [tag(st.tone, st.reason ? t('gwe.state.' + st.reason) : t('gwe.mqtt.status.' + st.key), true)];
     if (st.key === 'running') {
@@ -813,6 +820,7 @@
     if (md) rows.appendChild(kv(t('gwe.mqtt.k_mdns'), [h('code', { class: 'gwe-mono', text: md }), ' ', h('span', { class: 'gwe-muted', text: '(mDNS)' })]));
     c.body.appendChild(rows);
     if (st.reason) c.body.appendChild(note(st.reason === 'gateway_offline' ? 'info' : 'warn', reasonText(g, d, st.reason)));
+    if (native && st.reason !== 'edge_missing') c.body.appendChild(nativeNote());
     return c.card;
   }
 
