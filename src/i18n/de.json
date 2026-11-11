@@ -10699,6 +10699,7 @@
   "gwr.z2m.kind.plug": "Steckdose/Schalter",
   "gwr.z2m.kind.cover": "Rollladen",
   "gwr.z2m.kind.sensor": "Sensor",
+  "gwr.z2m.kind.climate": "Thermostat",
   "gwr.z2m.kind.remote": "Taster",
   "gwr.z2m.kind.other": "Gerät",
   "gwr.z2m.on": "an",

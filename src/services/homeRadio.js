@@ -59,7 +59,15 @@ const KEY_RE = /^[0-9a-f]{32}$/;
 const TLV_RE = /^[0-9a-f]{20,508}$/;
 const MAX_ZIGBEE = 128;
 const KEEP_ZIGBEE_MS = 30 * 24 * 3600 * 1000;
-const Z_KINDS = ['light', 'plug', 'cover', 'sensor', 'remote', 'other'];
+const Z_KINDS = ['light', 'plug', 'cover', 'sensor', 'remote', 'climate', 'other'];
+// several switched channels (state_l1 …), thermostats and firmware over the air (gateway docs/radio.md "zigbee2mqtt")
+const Z_CHANNEL_RE = /^[a-z0-9_]{1,8}$/;
+const Z_MAX_CHANNELS = 8;
+const Z_MODES = ['off', 'heat', 'auto', 'cool', 'fan_only', 'dry'];
+const Z_OTA_STATES = ['idle', 'available', 'updating', 'scheduled'];
+const Z_OTA_ERRORS = ['check_failed', 'update_failed'];
+const Z_OTA_ACTIONS = ['check', 'update'];
+const Z_VERSION_RE = /^[\w.+-]{1,32}$/;
 // values of a zigbee2mqtt device besides those of the Bluetooth sensors
 const Z_VALUES = { on: 'bool', bri: [0, 100], ct: [100, 1000], pos: [0, 100], linkquality: [0, 255] };
 const ZB_STATES = ['off', 'no_stick', 'stick_missing', 'unsupported', 'service_missing', 'starting', 'running', 'key_needed', 'error'];
@@ -449,14 +457,46 @@ function cleanZigbeeValues(v) {
     if (typeof x === 'number' && Number.isFinite(x) && x >= rule[0] && x <= rule[1]) out[k] = Math.round(x);
   }
   if (typeof v.action === 'string' && /^[a-z0-9_-]{1,32}$/i.test(v.action)) out.action = v.action;
+  // channels of a device with several outputs: { l1: true, l2: false }
+  if (v.ch && typeof v.ch === 'object' && !Array.isArray(v.ch)) {
+    const ch = {};
+    for (const [k, x] of Object.entries(v.ch).slice(0, Z_MAX_CHANNELS)) if (Z_CHANNEL_RE.test(k) && typeof x === 'boolean') ch[k] = x;
+    if (Object.keys(ch).length) out.ch = ch;
+  }
+  // a thermostat: target temperature (half degrees stay), mode, heating right now, valve
+  if (typeof v.setpoint === 'number' && Number.isFinite(v.setpoint) && v.setpoint >= 0 && v.setpoint <= 50) out.setpoint = Math.round(v.setpoint * 10) / 10;
+  if (Z_MODES.includes(v.mode)) out.mode = v.mode;
+  if (typeof v.heating === 'boolean') out.heating = v.heating;
+  if (typeof v.valve === 'number' && Number.isFinite(v.valve) && v.valve >= 0 && v.valve <= 100) out.valve = Math.round(v.valve);
+  // firmware over the air
+  if (v.ota && typeof v.ota === 'object' && !Array.isArray(v.ota)) {
+    const o = { state: oneOf(v.ota.state, Z_OTA_STATES, 'idle') };
+    if (o.state === 'updating' && typeof v.ota.progress === 'number' && Number.isFinite(v.ota.progress)) o.progress = Math.max(0, Math.min(100, Math.round(v.ota.progress)));
+    for (const k of ['installed', 'latest']) if (typeof v.ota[k] === 'string' && Z_VERSION_RE.test(v.ota[k])) o[k] = v.ota[k];
+    const checked = typeof v.ota.checked === 'string' ? Date.parse(v.ota.checked) : NaN;
+    if (Number.isFinite(checked)) o.checked = new Date(checked).toISOString();
+    if (Z_OTA_ERRORS.includes(v.ota.error)) o.error = v.ota.error;
+    out.ota = o;
+  }
   return out;
 }
 
 function cleanZigbeeCaps(c) {
   const o = c && typeof c === 'object' ? c : {};
   const out = {};
-  for (const k of ['bri', 'ct', 'position', 'power', 'battery']) if (o[k] === true) out[k] = true;
+  for (const k of ['bri', 'ct', 'position', 'power', 'battery', 'ota']) if (o[k] === true) out[k] = true;
   if (o.color === 'xy' || o.color === 'hs') out.color = o.color;
+  if (Array.isArray(o.channels)) {
+    const ch = [...new Set(o.channels.filter((x) => typeof x === 'string' && Z_CHANNEL_RE.test(x)))].slice(0, Z_MAX_CHANNELS);
+    if (ch.length >= 2) out.channels = ch;
+  }
+  const sp = o.setpoint && typeof o.setpoint === 'object' ? o.setpoint : null;
+  const n = (x, lo, hi) => typeof x === 'number' && Number.isFinite(x) && x >= lo && x <= hi;
+  if (sp && n(sp.min, 0, 40) && n(sp.max, 1, 50) && sp.max > sp.min && n(sp.step, 0.1, 5)) out.setpoint = { min: sp.min, max: sp.max, step: sp.step };
+  if (Array.isArray(o.modes)) {
+    const modes = Z_MODES.filter((m) => o.modes.includes(m));
+    if (modes.length) out.modes = modes;
+  }
   return out;
 }
 
@@ -547,7 +587,11 @@ function pluginZigbee(now = Date.now()) {
   return out;
 }
 
-/** The command of a plugin { on, bri, ct, xy, hue, sat, cover, pos } → only these keys, checked. */
+/**
+ * The command of a plugin { on, bri, ct, xy, hue, sat, cover, pos } → only these keys, checked. Also: one channel of a
+ * device with several ({ on, channel }), a thermostat ({ setpoint, mode }) and firmware ({ ota: 'check' | 'update' },
+ * alone).
+ */
 function cleanCommand(set) {
   if (!set || typeof set !== 'object' || Array.isArray(set)) throw new RadioError('invalid', 'set must be an object');
   const out = {};
@@ -560,6 +604,16 @@ function cleanCommand(set) {
   if ('xy' in set) { if (!(Array.isArray(set.xy) && set.xy.length === 2 && set.xy.every((x) => num(x, 0, 1)))) throw new RadioError('invalid', 'xy: [x, y]'); out.xy = set.xy; }
   if ('cover' in set) { if (!['open', 'close', 'stop'].includes(set.cover)) throw new RadioError('invalid', 'cover: open | close | stop'); out.cover = set.cover; }
   if ('pos' in set) { if (!num(set.pos, 0, 100)) throw new RadioError('invalid', 'pos: 0…100'); out.pos = set.pos; }
+  if ('channel' in set) {
+    if (typeof set.channel !== 'string' || !Z_CHANNEL_RE.test(set.channel) || typeof set.on !== 'boolean') throw new RadioError('invalid', 'channel: a channel name with on true or false');
+    out.channel = set.channel;
+  }
+  if ('setpoint' in set) { if (!num(set.setpoint, 0, 50)) throw new RadioError('invalid', 'setpoint: 0…50 °C'); out.setpoint = set.setpoint; }
+  if ('mode' in set) { if (!Z_MODES.includes(set.mode)) throw new RadioError('invalid', 'mode: ' + Z_MODES.join(' | ')); out.mode = set.mode; }
+  if ('ota' in set) {
+    if (!Z_OTA_ACTIONS.includes(set.ota) || Object.keys(out).length) throw new RadioError('invalid', 'ota: check | update, nothing else with it');
+    out.ota = set.ota;
+  }
   if (!Object.keys(out).length) throw new RadioError('invalid', 'nothing to do');
   return out;
 }

@@ -328,22 +328,30 @@ function makeEdge() {
 // at home / away of people who agreed themselves, by their phone in the home network. Never MAC/IP addresses.
 const presenceHandlers = [];
 
+/** { actor } of gc.homeNetwork.internet.pause / resume / extend (since 1.259.0), nothing without one. */
+function internetActor(opts) {
+  return opts && typeof opts === 'object' && opts.actor != null ? { actor: opts.actor } : {};
+}
+
 function makeHomeNetwork(features) {
   return Object.freeze({
     ...(features.homePresence ? { presence: makePresence() } : {}),
     // gc.homeNetwork.internet (permissions.homeInternet, phase 3b, docs/plugins.md "Internet at home"): the DNS
     // filter's pause / extra time for a person's devices at home. Changes only inside a changing request of a
     // signed-in person (the actor, logged); the plugin checks itself that this person may decide (a parent).
+    // Since 1.259.0 an automation names the person it acts for: { actor: userId } (`actors: true` says the host knows it).
     ...(features.homeInternet ? {
       internet: Object.freeze({
         /** status(userId) → { userId, profile: { id, name, gateway } | null, paused, extended, nextSchedule, devices, filtered } */
         status: (userId) => hostCall('homeNetwork.internet.status', { userId }),
-        /** pause(userId, untilISO | minutes) — internet off (≤ 7 days) → status */
-        pause: (userId, until) => hostCall('homeNetwork.internet.pause', { userId, until }),
-        /** resume(userId) — end the pause → status */
-        resume: (userId) => hostCall('homeNetwork.internet.resume', { userId }),
-        /** extend(userId, minutes) — the profile's times suspended for `minutes` more (0 ends it, ≤ 24 h) → status */
-        extend: (userId, minutes) => hostCall('homeNetwork.internet.extend', { userId, minutes }),
+        /** pause(userId, untilISO | minutes, { actor }?) — internet off (≤ 7 days) → status */
+        pause: (userId, until, opts) => hostCall('homeNetwork.internet.pause', { userId, until, ...internetActor(opts) }),
+        /** resume(userId, { actor }?) — end the pause → status */
+        resume: (userId, opts) => hostCall('homeNetwork.internet.resume', { userId, ...internetActor(opts) }),
+        /** extend(userId, minutes, { actor }?) — the profile's times suspended for `minutes` more (0 ends it, ≤ 24 h) → status */
+        extend: (userId, minutes, opts) => hostCall('homeNetwork.internet.extend', { userId, minutes, ...internetActor(opts) }),
+        /** since 1.259.0: pause / resume / extend take { actor: userId } — an automation acts for the person who set it up */
+        actors: true,
       }),
     } : {}),
   });
