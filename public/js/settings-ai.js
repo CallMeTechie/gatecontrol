@@ -49,6 +49,9 @@
   function when(iso) {
     try { return new Date(iso).toLocaleString(lang, { dateStyle: 'short', timeStyle: 'short' }); } catch (_) { return iso || ''; }
   }
+  function dayOf(iso) {
+    try { return new Date(iso).toLocaleDateString(lang, { dateStyle: 'medium' }); } catch (_) { return iso || ''; }
+  }
   function monthName() {
     try { return new Date().toLocaleDateString(lang, { month: 'long' }); } catch (_) { return ''; }
   }
@@ -396,12 +399,15 @@
   // go into its compose file; hints when a driver or the NVIDIA Container
   // Toolkit is missing), the model list with a fit per gateway and graphics
   // memory (hints, never a ban), the download with "Abbrechen"; a LAN server by
-  // address or name with an optional API key and "Verbindung testen"; card
+  // address or name with an optional API key and "Verbindung testen" — for an
+  // https server with a self-signed certificate the test shows the certificate
+  // and its fingerprint, "Diesem Zertifikat vertrauen" pins it (saved with
+  // "Speichern", checked by the gateway on every connection); card
   // "Wofür die lokale KI?": the three modes, "Testen" and "Speichern".
   const LBASE = BASE + '/local';
   let lview = null;       // GET /api/v1/ai/local
   let lstatus = null;     // GET /api/v1/ai/local/status (live from the gateway)
-  let draft = null;       // { source, peerId, model, lanUrl, lanApi, gpu, lanKey, keyRemove } as chosen on the page
+  let draft = null;       // { source, peerId, model, lanUrl, lanApi, gpu, lanKey, keyRemove, lanPin, pinUrl } as chosen on the page
   let lprobe = null;      // the answer of "Verbindung testen" { url, api, reachable, models, … } (nothing saved)
   let useDraft = null;
   let pollTimer = null;
@@ -426,10 +432,13 @@
   function gpuOf(g) { return (g && g.settings && g.settings.gpu) || 'off'; }
   function firstDraft() {
     const cur = lview.current;
-    if (cur) return { source: cur.source, peerId: cur.peerId, model: cur.model, lanUrl: cur.lanUrl || '', lanApi: cur.lanApi || 'ollama', gpu: cur.gpu || 'off', lanKey: '', keyRemove: false };
+    if (cur) {
+      return { source: cur.source, peerId: cur.peerId, model: cur.model, lanUrl: cur.lanUrl || '', lanApi: cur.lanApi || 'ollama', gpu: cur.gpu || 'off', lanKey: '', keyRemove: false,
+        lanPin: cur.lanPin || '', pinUrl: cur.lanPin ? cur.lanUrl : null };
+    }
     const gws = (lview.gateways || []).filter((g) => g.supported);
     const g = gws.find((x) => !x.hint) || gws[0] || null;
-    draft = { source: g && g.hint ? 'lan' : 'service', peerId: g ? g.id : null, model: null, lanUrl: '', lanApi: 'ollama', gpu: gpuOf(g), lanKey: '', keyRemove: false };
+    draft = { source: g && g.hint ? 'lan' : 'service', peerId: g ? g.id : null, model: null, lanUrl: '', lanApi: 'ollama', gpu: gpuOf(g), lanKey: '', keyRemove: false, lanPin: '', pinUrl: null };
     const rec = g ? catalogueOf(g.id).find((m) => m.fit === 'recommended') : null;
     draft.model = rec ? rec.id : null;
     return draft;
@@ -648,14 +657,68 @@
     return el('div', { class: 'st-fl' }, [el('label', { class: 'st-fl-label', for: 'ai-local-key', text: t('ai.local.key') }),
       el('div', { class: 'ai-prov-row' }, row), el('span', { class: 'st-hint', id: 'ai-local-key-hint', text: sup ? hint : t('ai.local.key_old', { min: lview.minGatewayExt || '1.31.0' }) })]);
   }
-  function probeBox() {
+  // ─── https with a self-signed certificate: pin it, never switch the check off ───
+  const isHttps = (u) => /^https:/i.test(u || '');
+  // "AB:CD:…" as devices and OpenSSL show a SHA-256 fingerprint
+  const fpText = (hex) => (/^[0-9a-f]{64}$/i.test(hex || '') ? hex.toUpperCase().match(/.{2}/g).join(':') : '');
+  // the fingerprint as text, in two halves with a break opportunity between them
+  const fpCode = (hex, attrs) => { const x = fpText(hex); return el('code', Object.assign({ class: 'st-mono' }, attrs || {}), [x.slice(0, 48), el('wbr'), x.slice(48)]); };
+  function canPin(g) { return !!(g && (g.supports || []).indexOf('lanPin') >= 0); }
+  // the fingerprint confirmed on the page — it belongs to the address it was confirmed for
+  function draftPin() {
+    return draft.lanPin && isHttps(draft.lanUrl) && local_origin(draft.lanUrl) === draft.pinUrl ? draft.lanPin : null;
+  }
+  const TLS_CODES = ['tls_untrusted', 'tls_pin_mismatch'];
+  // the certificate the server presented: fingerprint, name, expiry — and "trust it"
+  function certBox(g, code) {
+    const c = lprobe.certificate;
+    const changed = code === 'tls_pin_mismatch';
+    const kids = [el('strong', { text: t(changed ? 'ai.local.pin.changed_title' : 'ai.local.pin.title') }),
+      el('span', { text: t(changed ? 'ai.local.pin.changed_text' : 'ai.local.pin.text') })];
+    if (!canPin(g)) kids.push(el('span', { 'data-pin-old': '', text: t('ai.local.pin.gw_old') }));
+    else if (!c) kids.push(el('span', { text: t('ai.local.pin.no_cert') }));
+    else {
+      kids.push(el('span', {}, [t('ai.local.pin.fp') + ' ', fpCode(c.sha256, { 'data-pin-fp': '' })]));
+      const facts = [c.subject ? t('ai.local.pin.subject', { name: c.subject }) : null, c.validTo ? t('ai.local.pin.valid_to', { date: dayOf(c.validTo) }) : null,
+        c.selfSigned ? t('ai.local.pin.self_signed') : null].filter(Boolean);
+      if (facts.length) kids.push(el('span', { text: facts.join(' · ') }));
+      kids.push(el('span', { text: t(changed ? 'ai.local.pin.changed_hint' : 'ai.local.pin.hint') }));
+      const trust = el('button', { type: 'button', class: 'pgx-btn pgx-btn-sm', id: 'ai-local-pin-trust', text: t(changed ? 'ai.local.pin.trust_new' : 'ai.local.pin.trust'), disabled: off });
+      trust.addEventListener('click', () => {
+        // nothing is stored yet: the test runs again against exactly this certificate, "Speichern" keeps it
+        draft.lanPin = c.sha256;
+        draft.pinUrl = local_origin(draft.lanUrl);
+        runProbe(g, trust);
+      });
+      kids.push(trust);
+    }
+    return el('div', { class: 'stx-box ai-local-pin', 'data-tone': 'warn', role: 'status', 'data-probe': code }, kids);
+  }
+  // the line under the address: which certificate is pinned (saved or waiting for "Speichern")
+  function pinLine() {
+    const pin = draft.lanPin;
+    if (!pin) return null;
+    const cur = lview.current;
+    const saved = !!(cur && cur.source === 'lan' && cur.lanPin === pin && cur.lanUrl === draft.pinUrl);
+    const rm = el('button', { type: 'button', class: 'pgx-btn pgx-btn-sm', id: 'ai-local-pin-remove', text: t('ai.local.pin.remove'), disabled: off });
+    rm.addEventListener('click', () => { draft.lanPin = ''; draft.pinUrl = null; lprobe = null; renderLocal(); });
+    const line = el('div', { class: 'st-fl', 'data-pin': saved ? 'saved' : 'draft' }, [el('span', { class: 'st-fl-label', text: t('ai.local.pin.label') }),
+      el('div', { class: 'ai-prov-row ai-local-pin' }, [fpCode(pin), rm]),
+      el('span', { class: 'st-hint', text: t(saved ? 'ai.local.pin.saved_hint' : 'ai.local.pin.draft_hint') })]);
+    // another address typed: the pin does not go along (it shows again when the address is back)
+    line.hidden = !draftPin();
+    return line;
+  }
+  function probeBox(g) {
     if (!lprobe) return null;
     if (lprobe.error && !lprobe.models) return el('p', { class: 'stx-box', 'data-tone': 'crit', role: 'status', 'data-probe': 'error', text: lprobe.error });
     if (lprobe.reachable) {
       return el('p', { class: 'stx-box', 'data-tone': 'good', role: 'status', 'data-probe': 'ok',
-        text: t('ai.local.probe_ok', { url: lprobe.url, n: (lprobe.models || []).length }) + (lprobe.version ? ' · Ollama ' + lprobe.version : '') });
+        text: t('ai.local.probe_ok', { url: lprobe.url, n: (lprobe.models || []).length }) + (lprobe.version ? ' · Ollama ' + lprobe.version : '')
+          + (lprobe.pinned ? ' · ' + t('ai.local.pin.ok') : '') });
     }
     const code = (lprobe.error && lprobe.error.code) || 'unreachable';
+    if (TLS_CODES.indexOf(code) >= 0) return certBox(g, code);
     const known = ['unauthorized', 'not_private', 'unreachable', 'timeout', 'redirect'];
     return el('p', { class: 'stx-box', 'data-tone': 'warn', role: 'status', 'data-probe': code, text: t('ai.local.probe_err.' + (known.indexOf(code) >= 0 ? code : 'other'), { code }) });
   }
@@ -664,6 +727,8 @@
     try {
       const body = { peerId: g.id, lanUrl: draft.lanUrl, lanApi: draft.lanApi };
       if (draft.lanKey) body.lanKey = draft.lanKey;
+      // always said: the pin of the page, or none (the server never falls back to a pin the page dropped)
+      if (canPin(g)) body.lanPin = draftPin();
       const r = await call(window.api.post(LBASE + '/probe', body));
       lprobe = r.ok ? r.probe : { error: r.error || t('ai.err.internal') };
       if (r.ok && lprobe.reachable && lprobe.models.length && !lprobe.models.some((m) => m.name === draft.model)) draft.model = null;
@@ -673,7 +738,8 @@
   function lanFields(g) {
     const url = el('input', { type: 'text', class: 'st-input st-mono', id: 'ai-local-url', inputmode: 'url', autocomplete: 'off', spellcheck: 'false', maxLength: 200,
       placeholder: 'http://192.168.1.20:11434', value: draft.lanUrl || '', disabled: off });
-    url.addEventListener('input', () => { draft.lanUrl = url.value.trim(); });
+    const pinNode = pinLine();
+    url.addEventListener('input', () => { draft.lanUrl = url.value.trim(); if (pinNode) pinNode.hidden = !draftPin(); });
     const apiSel = el('select', { class: 'st-select', id: 'ai-local-api', disabled: off }, [
       el('option', { value: 'ollama', text: t('ai.local.api_ollama') }), el('option', { value: 'openai', text: t('ai.local.api_openai') }),
     ]);
@@ -709,16 +775,17 @@
     sel.value = draft.model || '';
     sel.addEventListener('change', () => { draft.model = sel.value || null; });
     const lerr = lstatus && lstatus.source === 'lan' && lstatus.error ? lstatus.error.code : null;
-    const reach = lprobe ? probeBox() : (lstatus && lstatus.source === 'lan'
-      ? el('p', { class: 'stx-box', 'data-tone': lstatus.state === 'running' ? 'good' : 'warn', role: 'status',
+    const reach = lprobe ? probeBox(g) : (lstatus && lstatus.source === 'lan'
+      ? el('p', { class: 'stx-box', 'data-tone': lstatus.state === 'running' ? 'good' : 'warn', role: 'status', 'data-lan-state': lstatus.state === 'running' ? 'running' : (lerr || 'unreachable'),
         text: lstatus.state === 'running' ? t('ai.local.lan_ok', { url: (lstatus.lan && lstatus.lan.url) || draft.lanUrl })
-          : (lerr === 'unauthorized' || lerr === 'not_private' ? t('ai.local.probe_err.' + lerr) : t('ai.local.lan_unreachable')) })
+          : (['unauthorized', 'not_private'].concat(TLS_CODES).indexOf(lerr) >= 0 ? t('ai.local.probe_err.' + lerr) : t('ai.local.lan_unreachable')) })
       : null);
     // a key over plain http travels unencrypted through the home network
     const plainKey = /^http:/i.test(draft.lanUrl || '') && (draft.lanKey || (lview.current && lview.current.keySet && !draft.keyRemove));
     return [
       el('div', { class: 'st-fl' }, [el('label', { class: 'st-fl-label', for: 'ai-local-url', text: t('ai.local.lan_url') }),
         el('div', { class: 'ai-prov-row' }, [url, apiSel, connect]), el('span', { class: 'st-hint', text: t('ai.local.lan_url_hint') })]),
+      pinNode,
       keyFields(g),
       plainKey ? el('p', { class: 'pgx-hint', 'data-key-http': '', text: t('ai.local.key_http') }) : null,
       reach,
@@ -743,6 +810,8 @@
         // a typed key replaces the stored one, "Schlüssel entfernen" removes it, nothing typed keeps it
         if (draft.lanKey) body.lanKey = draft.lanKey;
         else if (draft.keyRemove) body.lanKey = null;
+        // the certificate confirmed on the page (https), or none — the gateway checks it on every connection
+        if (canPin(g)) body.lanPin = draftPin();
       }
       if (draft.source === 'service' && g && (g.supports || []).indexOf('gpu') >= 0 && g.platform !== 'rpi') body.gpu = draft.gpu || 'off';
       const r = await call(window.api.put(LBASE, body));
@@ -750,6 +819,8 @@
       lview = r;
       draft.lanKey = '';
       draft.keyRemove = false;
+      draft.lanPin = (r.current && r.current.lanPin) || '';
+      draft.pinUrl = draft.lanPin ? r.current.lanUrl : null;
       lprobe = null;
       toast(t('ai.local.saved'));
       await loadStatus(draft.peerId);

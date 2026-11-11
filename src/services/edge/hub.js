@@ -100,6 +100,30 @@ function windowCount(map, key, perSecond) {
 
 function str(v, max) { return typeof v === 'string' ? v.replace(/[\0-\x1f\x7f]/g, ' ').slice(0, max) : null; }
 
+/**
+ * The certificate of the gateway's MQTT TLS listener from a status frame:
+ * { tlsSha256, tlsValidTo, tlsCert } — only when the PEM is ONE certificate whose
+ * SHA-256 is the reported fingerprint (what the page shows is what devices see);
+ * a fingerprint alone is kept as it is. Nothing usable → {}.
+ */
+function tlsCertOf(m) {
+  const fp = typeof m.tlsSha256 === 'string' && /^[0-9a-f]{64}$/.test(m.tlsSha256) ? m.tlsSha256 : null;
+  if (!fp) return {};
+  const out = { tlsSha256: fp };
+  const pem = typeof m.tlsCert === 'string' && m.tlsCert.length <= 4096 ? m.tlsCert.trim() : '';
+  if (/^-----BEGIN CERTIFICATE-----\n[A-Za-z0-9+/=\n]+\n-----END CERTIFICATE-----$/.test(pem)) {
+    try {
+      const x = new crypto.X509Certificate(pem);
+      if (crypto.createHash('sha256').update(x.raw).digest('hex') === fp) {
+        const to = new Date(x.validTo);
+        out.tlsValidTo = Number.isNaN(to.getTime()) ? null : to.toISOString();
+        out.tlsCert = pem + '\n';
+      }
+    } catch { /* not a certificate */ }
+  }
+  return out;
+}
+
 function boundedJson(v, max) {
   try { const s = JSON.stringify(v); return s && s.length <= max ? JSON.parse(s) : null; } catch { return null; }
 }
@@ -182,7 +206,8 @@ class Conn {
     const hello = {
       version: str(gw.version, 32),
       edgeHost: str(gw.edgeHost, 32),
-      mqtt: { available: !!(gw.mqtt && gw.mqtt.available === true) },
+      // tlsCert: the gateway creates the certificate of the TLS listener (port 8883) itself — older ones cannot offer TLS
+      mqtt: { available: !!(gw.mqtt && gw.mqtt.available === true), tlsCert: !!(gw.mqtt && gw.mqtt.tlsCert === true) },
       // the gateway's network fence for edge parts ({ active, backend }) — without it no edge part starts there
       fence: gw.fence && typeof gw.fence === 'object' ? { active: gw.fence.active === true, backend: str(gw.fence.backend, 32) } : null,
       // gateway >= 1.23.0: 'isolated' = the edge container has no network (compose network_mode: none, all I/O
@@ -258,9 +283,12 @@ class Conn {
     }
     if (m.mqtt && typeof m.mqtt === 'object') {
       const accounts = Array.isArray(m.mqtt.accounts) ? m.mqtt.accounts.slice(0, limits.statusAccounts) : [];
+      const tls = ['off', 'on', 'missing_cert'].includes(m.mqtt.tls) ? m.mqtt.tls : null;
       store.setMqttStatus(this.peerId, {
         running: m.mqtt.running === true,
-        tls: ['off', 'on', 'missing_cert'].includes(m.mqtt.tls) ? m.mqtt.tls : null,
+        tls,
+        // the certificate the gateway made for port 8883: fingerprint, expiry and the PEM (public — never a key)
+        ...(tls === 'on' ? tlsCertOf(m.mqtt) : {}),
         clients: Number.isSafeInteger(m.mqtt.clients) && m.mqtt.clients >= 0 ? m.mqtt.clients : 0,
         accounts: accounts.filter((x) => x && typeof x.user === 'string').map((x) => ({
           user: str(x.user, 64), connected: x.connected === true, lastSeen: str(x.lastSeen, 40),

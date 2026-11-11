@@ -88,6 +88,8 @@ function pluginEdgeView(p, lang) {
 
 function helloView(s) {
   return s.hello ? { version: s.hello.version || null, edgeHost: s.hello.edgeHost || null, mqttAvailable: !!(s.hello.mqtt && s.hello.mqtt.available),
+    // can this gateway offer TLS on port 8883 (it makes the certificate itself)? Older gateways: "Gateway-Update nötig"
+    mqttTlsSupported: !!(s.hello.mqtt && s.hello.mqtt.tlsCert),
     fence: s.hello.fence || null, isolation: s.hello.isolation || null, hardware: s.hello.hardware || null, at: s.helloAt ? new Date(s.helloAt).toISOString() : null } : null;
 }
 

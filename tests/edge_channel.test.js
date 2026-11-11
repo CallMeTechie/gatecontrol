@@ -67,6 +67,20 @@ function closed(ws) {
 
 const hello = { t: 'hello', v: 1, gw: { version: '1.20.0', edgeHost: '1.0.0', mqtt: { available: true } } };
 
+// The certificate a gateway made for its MQTT TLS listener (public part only; SHA-256 over its DER below).
+const TLS_FP = 'efcc6bcba293fa77e8c2a59f5e8c5dfb3d4673e5174905628a2e201e98e84853';
+const TLS_PEM = ['-----BEGIN CERTIFICATE-----',
+  'MIIBlDCCATmgAwIBAgIQD7HpNlj0RelI/e8zH0KrWjAKBggqhkjOPQQDAjAbMRkw',
+  'FwYDVQQDDBBHYXRlQ29udHJvbCBNUVRUMB4XDTI2MTExMDExMTYxMFoXDTM2MTEw',
+  'ODExMTYxMFowGzEZMBcGA1UEAwwQR2F0ZUNvbnRyb2wgTVFUVDBZMBMGByqGSM49',
+  'AgEGCCqGSM49AwEHA0IABEbbMrTGCG+6x/yLC4TryhfKrvMiIougrI+7pFE8A++9',
+  'Np/EyoeeuWHgQYicFKPj1m0INIp5CepraQUwHGver/ujXzBdMAkGA1UdEwQCMAAw',
+  'DgYDVR0PAQH/BAQDAgeAMBMGA1UdJQQMMAoGCCsGAQUFBwMBMCsGA1UdEQQkMCKC',
+  'CWd3LWtlbGxlcoIPZ3cta2VsbGVyLmxvY2FshwTAqAEKMAoGCCqGSM49BAMCA0kA',
+  'MEYCIQDpJowddegI10UntlhD/2EpN1oefXJdWwa5/LRo1+YLZAIhAKk4/Aq3iVT+',
+  '6+TWtX/B3gNqDlnVHoo8KyXUKfpFDc0d',
+  '-----END CERTIFICATE-----', ''].join('\n');
+
 function activities(type) {
   return db.prepare('SELECT event_type, message, details FROM activity_log WHERE event_type = ? ORDER BY id').all(type);
 }
@@ -715,6 +729,43 @@ describe('MQTT accounts', () => {
     await sleep(150);
     const r = await agent.get(`${API}/gateways/${gwA.peer.id}`).expect(200);
     assert.deepEqual(r.body.gateway.mqtt.status, { running: true, tls: null, clients: 2, accounts: [{ user: 'a', connected: true, lastSeen: '2026-11-05T10:00:00Z' }] });
+  });
+
+  it('TLS on port 8883: the gateway says whether it makes the certificate itself, and reports fingerprint and certificate', async () => {
+    // the hello above carried no mqtt.tlsCert: an older gateway — the page locks the switch ("Gateway-Update nötig")
+    let g = (await agent.get(`${API}/gateways/${gwA.peer.id}`).expect(200)).body.gateway;
+    assert.equal(g.gateway.mqttTlsSupported, false);
+    h.reportStatus({ plugins: [], mqtt: { running: true, tls: 'missing_cert', clients: 0, accounts: [] } });
+    await sleep(150);
+    g = (await agent.get(`${API}/gateways/${gwA.peer.id}`).expect(200)).body.gateway;
+    assert.deepEqual(g.mqtt.status, { running: true, tls: 'missing_cert', clients: 0, accounts: [] });
+
+    // a gateway that creates the certificate itself
+    h.send({ t: 'hello', v: 1, gw: { version: '1.35.0', edgeHost: '1.0.0', mqtt: { available: true, tlsCert: true } } });
+    await sleep(150); // the state after the hello (the simulated host answers it with a plain status)
+    h.reportStatus({ plugins: [], mqtt: { running: true, tls: 'on', tlsSha256: TLS_FP, tlsCert: TLS_PEM, clients: 1, accounts: [], tlsKey: 'never kept' } });
+    await sleep(150);
+    g = (await agent.get(`${API}/gateways/${gwA.peer.id}`).expect(200)).body.gateway;
+    assert.equal(g.gateway.mqttTlsSupported, true);
+    assert.deepEqual(g.mqtt.status, { running: true, tls: 'on', tlsSha256: TLS_FP, tlsValidTo: '2036-11-08T11:16:10.000Z', tlsCert: TLS_PEM, clients: 1, accounts: [] });
+
+    // what the page shows is what devices see: a certificate that is not the one of the fingerprint is not kept
+    h.reportStatus({ plugins: [], mqtt: { running: true, tls: 'on', tlsSha256: 'ab'.repeat(32), tlsCert: TLS_PEM, clients: 1, accounts: [] } });
+    await sleep(150);
+    g = (await agent.get(`${API}/gateways/${gwA.peer.id}`).expect(200)).body.gateway;
+    assert.deepEqual(g.mqtt.status, { running: true, tls: 'on', tlsSha256: 'ab'.repeat(32), clients: 1, accounts: [] });
+    // nonsense: nothing
+    for (const bad of [{ tlsSha256: 'AB'.repeat(32) }, { tlsSha256: 'xyz', tlsCert: TLS_PEM }, { tlsCert: TLS_PEM }, { tlsSha256: 7 }]) {
+      h.reportStatus({ plugins: [], mqtt: { running: true, tls: 'on', clients: 1, accounts: [], ...bad } });
+      await sleep(120);
+      g = (await agent.get(`${API}/gateways/${gwA.peer.id}`).expect(200)).body.gateway;
+      assert.deepEqual(g.mqtt.status, { running: true, tls: 'on', clients: 1, accounts: [] }, JSON.stringify(bad));
+    }
+    // TLS off: no certificate in the status, whatever the gateway sends along
+    h.reportStatus({ plugins: [], mqtt: { running: true, tls: 'off', tlsSha256: TLS_FP, tlsCert: TLS_PEM, clients: 1, accounts: [] } });
+    await sleep(150);
+    g = (await agent.get(`${API}/gateways/${gwA.peer.id}`).expect(200)).body.gateway;
+    assert.deepEqual(g.mqtt.status, { running: true, tls: 'off', clients: 1, accounts: [] });
   });
 });
 

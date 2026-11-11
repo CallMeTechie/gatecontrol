@@ -12,7 +12,7 @@
 //                   provider next to the four cloud ones (services/ai/index.js)
 //   which gateway   setting ai.local_peer
 //   what for        setting ai.local_use: all | private | fallback (routing in index.js)
-//   per gateway     gateway_features.settings.ai { enabled, source, lanUrl, lanApi, gpu }
+//   per gateway     gateway_features.settings.ai { enabled, source, lanUrl, lanApi, lanPin, gpu }
 //                   → features.ai of the config pull
 //   live            management calls /api/ai/status, /pull, /pull/cancel, /delete,
 //                   /probe and the streamed /api/ai/chat (gateways.mgmtStream)
@@ -33,6 +33,18 @@
 // credentialsFor()). "Verbindung testen" sends a typed key to the gateway
 // through the tunnel (management call, never stored there).
 //
+// A LAN server with https and a self-signed certificate: the certificate is
+// PINNED, the check is never switched off. "Verbindung testen" lets the
+// gateway show the certificate the server presents (probe().certificate — a
+// bare TLS handshake, no request, no key); the admin compares the fingerprint
+// and confirms it; it is stored as settings.ai.lanPin (SHA-256, 64 hex
+// characters — public data), goes to the gateway as lan.pin of the config pull
+// and from then on every connection is made only with exactly that certificate
+// (the gateway's pinned agent). A new address forgets the pin. Without a pin
+// the gateway keeps the normal check (a publicly valid certificate works, a
+// self-signed one is refused: tls_untrusted). Gateways without `lanPin` in
+// features.ai.supports cannot pin — "Gateway-Update nötig".
+//
 // Graphics card (per gateway, "Grafikkarte nutzen"): settings.ai.gpu
 // off | nvidia | amd | intel puts the devices into the downloaded compose
 // file (gateway-kit.js); the gateway reports the card, its driver and what
@@ -51,6 +63,7 @@ const ID = 'local';
 const NAME = 'Lokale KI';
 const MIN_GATEWAY = '1.26.0';
 // GPU, API key, names/IPv6 and the connection test — what the gateway lists in features.ai.supports
+// (a pinned certificate for https, `lanPin`, came later: asked from supports alone, no version here)
 const MIN_GATEWAY_EXT = '1.31.0';
 const GPUS = Object.freeze(['off', 'nvidia', 'amd', 'intel']);
 const USES = Object.freeze(['all', 'private', 'fallback']);
@@ -67,6 +80,7 @@ const K = Object.freeze({ peer: 'ai.local_peer', use: 'ai.local_use', keyRev: 'a
 // an API key goes as "Authorization: Bearer …": printable, no spaces
 const KEY_RE = /^[\x21-\x7e]{1,512}$/;
 const LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const PIN_RE = /^[0-9a-f]{64}$/;
 
 // What the gateway hears: the time limits of a local answer (CPU inference is
 // slow — minutes, not seconds), the context of the model and the answer length.
@@ -167,16 +181,32 @@ function lanUrl(raw) {
   return `${u.protocol}//${hn}:${port}`;
 }
 
+/**
+ * A SHA-256 certificate fingerprint → 64 lower-case hex characters, or null.
+ * Browsers, OpenSSL and Node print the same fingerprint differently
+ * ("AB:CD:…", "sha256:abcd…"): all of them are accepted.
+ */
+function pinOf(raw) {
+  if (typeof raw !== 'string' || raw.length > 200) return null;
+  const hex = raw.trim().toLowerCase().replace(/^sha256:/, '').replace(/[\s:-]/g, '');
+  return PIN_RE.test(hex) ? hex : null;
+}
+
+const isHttps = (u) => typeof u === 'string' && u.startsWith('https://');
+
 // ─── Settings of a gateway (part of its features) ──────────────────────
 
-/** gateway_features.settings.ai (any shape) → { enabled, source, lanUrl, lanApi, gpu } */
+/** gateway_features.settings.ai (any shape) → { enabled, source, lanUrl, lanApi, lanPin, gpu } */
 function normalizeSettings(raw) {
   const r = isObj(raw) ? raw : {};
+  const url = lanUrl(r.lanUrl);
   return {
     enabled: r.enabled === true,
     source: SOURCES.includes(r.source) ? r.source : 'service',
-    lanUrl: lanUrl(r.lanUrl),
+    lanUrl: url,
     lanApi: APIS.includes(r.lanApi) ? r.lanApi : 'ollama',
+    // the pinned certificate of an https server (SHA-256) — nothing to pin without TLS
+    lanPin: isHttps(url) ? pinOf(r.lanPin) : null,
     gpu: GPUS.includes(r.gpu) ? r.gpu : 'off',
   };
 }
@@ -201,11 +231,26 @@ function patchField(f, val) {
     if (!u) throw new LocalError('invalid_host', 'ai.lanUrl: http(s)://<private address or name in the home network>:<port>');
     return u;
   }
+  if (f === 'lanPin') {
+    if (val === null || val === '') return null;
+    const pin = pinOf(val);
+    if (!pin) throw new LocalError('invalid', 'ai.lanPin: the SHA-256 fingerprint of the certificate (64 hex characters)');
+    return pin;
+  }
   if (f === 'gpu') {
     if (!GPUS.includes(val)) throw new LocalError('invalid', 'ai.gpu: off, nvidia, amd or intel');
     return val;
   }
   throw new LocalError('invalid', `ai.${f}: unknown`);
+}
+
+/**
+ * After a change of the admin API (gatewayFeatures.applyPatch): a pin belongs to
+ * the server it was confirmed for — a new address without a new pin forgets it.
+ */
+function afterPatch(before, after, patch) {
+  if (isObj(patch) && patch.lanUrl !== undefined && patch.lanPin === undefined && after.lanUrl !== (before && before.lanUrl)) after.lanPin = null;
+  return after;
 }
 
 function settingsOf(peerId) { return features().get(peerId).ai; }
@@ -214,7 +259,7 @@ function settingsOf(peerId) { return features().get(peerId).ai; }
 function configPayload(peerId) {
   const s = settingsOf(peerId);
   const rev = s.source === 'lan' && s.lanUrl ? keyRevFor(peerId) : null;
-  const lan = s.source === 'lan' && s.lanUrl ? { url: s.lanUrl, api: s.lanApi, ...(rev ? { keyRev: rev } : {}) } : null;
+  const lan = s.source === 'lan' && s.lanUrl ? { url: s.lanUrl, api: s.lanApi, ...(rev ? { keyRev: rev } : {}), ...(s.lanPin ? { pin: s.lanPin } : {}) } : null;
   return { enabled: s.enabled && (s.source === 'service' || !!lan), source: s.source, lan };
 }
 
@@ -265,7 +310,7 @@ function credentialsFor(id) {
 const STATES = ['off', 'service_missing', 'starting', 'running', 'unreachable', 'error'];
 const SERVICES = ['managed', 'absent', 'missing'];
 const PULL_STATES = ['pulling', 'done', 'error', 'cancelled'];
-const SUPPORTS = ['gpu', 'lanKey', 'lanHost', 'probe'];
+const SUPPORTS = ['gpu', 'lanKey', 'lanHost', 'probe', 'lanPin'];
 const VENDORS = ['nvidia', 'amd', 'intel'];
 const DRIVER_RE = /^[a-z0-9_-]{1,24}$/;
 const VERSION_RE = /^[0-9][0-9.]{0,19}$/;
@@ -333,13 +378,13 @@ function telemetryAi(tel, { maxModels = 12 } = {}) {
       render: h.render === true,
     },
     gpu: cleanServiceGpu(a.gpu),
-    lan: lan ? { url: lanUrl(lan.url), api: APIS.includes(lan.api) ? lan.api : 'ollama', reachable: lan.reachable === true, auth: lan.auth === true } : null,
+    lan: lan ? { url: lanUrl(lan.url), api: APIS.includes(lan.api) ? lan.api : 'ollama', reachable: lan.reachable === true, auth: lan.auth === true, pinned: lan.pinned === true } : null,
     supports: (Array.isArray(a.supports) ? a.supports : []).filter((x) => SUPPORTS.includes(x)),
     error: err ? { code: clean(err.code, 32) || 'error', message: clean(err.message, 160) || null } : null,
   };
 }
 
-/** What this gateway can do beyond 1.26.0 (gpu, lanKey, lanHost, probe) — from its own report. */
+/** What this gateway can do beyond 1.26.0 (gpu, lanKey, lanHost, probe, lanPin) — from its own report. */
 function supportsOf(tel) {
   const t = telemetryAi(tel);
   return t ? t.supports : [];
@@ -668,16 +713,28 @@ async function removeModel(id, model, { ip } = {}) {
   return r;
 }
 
+/** The certificate a gateway reports (probe): { sha256, subject, issuer, validTo, selfSigned } or null. */
+function cleanCertificate(c) {
+  const sha256 = isObj(c) ? pinOf(c.sha256) : null;
+  if (!sha256) return null;
+  return { sha256, subject: clean(c.subject, 200) || null, issuer: clean(c.issuer, 200) || null, validTo: isoOrNull(c.validTo), selfSigned: c.selfSigned === true };
+}
+
 /**
  * "Verbindung testen": the gateway asks a LAN server that is not saved yet —
- * { peerId, lanUrl, lanApi, lanKey? } → { reachable, url, api, version, models, auth, error }.
+ * { peerId, lanUrl, lanApi, lanKey?, lanPin? } → { reachable, url, api, version, models, auth, pinned, pinSupported, certificate, error }.
  * Without a typed key the stored one goes along — only to the saved address (through the tunnel,
  * never stored on the gateway).
+ * https: lanPin (the fingerprint the admin confirmed on the page) pins the certificate for this test;
+ * missing, the stored pin goes along — only to the saved address; null tests without one. When the
+ * certificate does not pass the check (error tls_untrusted) or is not the pinned one (tls_pin_mismatch),
+ * `certificate` is what the server presented — to compare and confirm. Nothing is stored here.
  */
 async function probe(b) {
   if (!isObj(b)) throw new LocalError('invalid', 'body');
   const g = needGateway(Number(b.peerId));
-  if (!supportsOf(features().telemetryOf(g)).includes('probe')) throw new LocalError('gateway_unsupported_ext', 'the gateway is too old for this (from ' + MIN_GATEWAY_EXT + ')');
+  const supports = supportsOf(features().telemetryOf(g));
+  if (!supports.includes('probe')) throw new LocalError('gateway_unsupported_ext', 'the gateway is too old for this (from ' + MIN_GATEWAY_EXT + ')');
   const u = lanUrl(b.lanUrl);
   if (!u) throw new LocalError('invalid_host', 'lanUrl');
   const api = b.lanApi === undefined ? 'ollama' : b.lanApi;
@@ -685,10 +742,20 @@ async function probe(b) {
   if (b.lanKey != null && b.lanKey !== '' && !validKey(b.lanKey)) throw new LocalError('invalid', 'lanKey');
   // the stored key only goes to the saved server — never to an address typed for the test
   const cur = peerId() ? gatewayOf(peerId()) : null;
-  const savedUrl = cur ? settingsOf(cur.id).lanUrl : null;
+  const saved = cur ? settingsOf(cur.id) : null;
+  const savedUrl = saved ? saved.lanUrl : null;
   const key = b.lanKey ? b.lanKey : (savedUrl && savedUrl === u ? storedKey() : null);
+  // the pin: the one confirmed on the page, else the stored one of the saved server; only with https
+  let pin = null;
+  if (b.lanPin !== undefined && b.lanPin !== null && b.lanPin !== '') {
+    pin = pinOf(b.lanPin);
+    if (!pin) throw new LocalError('invalid', 'lanPin');
+  } else if (b.lanPin === undefined && savedUrl && savedUrl === u) pin = saved.lanPin;
+  if (!isHttps(u)) pin = null;
+  const pinSupported = supports.includes('lanPin');
+  if (pin && !pinSupported) throw new LocalError('gateway_unsupported_pin', 'the gateway cannot pin a certificate yet (update the gateway)');
   if (!aliveOf(g.id)) throw new LocalError('gateway_unreachable', 'the gateway is offline');
-  const r = await gw().mgmtCall(g.id, '/api/ai/probe', { url: u, api, ...(key ? { key } : {}) }, 20000, { maxBytes: 128 * 1024 });
+  const r = await gw().mgmtCall(g.id, '/api/ai/probe', { url: u, api, ...(key ? { key } : {}), ...(pin ? { pin } : {}) }, 20000, { maxBytes: 128 * 1024 });
   if (!r) throw new LocalError('gateway_unreachable', 'the gateway does not answer');
   if (r.status === 429) throw new LocalError('busy', 'a test is running');
   if (r.status !== 200 || !r.body || !isObj(r.body.probe)) throw new LocalError(r.status === 400 ? 'invalid_host' : 'gateway_error', 'gateway answered ' + r.status);
@@ -698,6 +765,8 @@ async function probe(b) {
     reachable: p.reachable === true, url: lanUrl(p.url) || u, api,
     version: typeof p.version === 'string' && /^[0-9A-Za-z.+-]{1,32}$/.test(p.version) ? p.version : null,
     models: cleanModels(p.models, 48), auth: !!key,
+    // pinned: this test ran against exactly the certificate `pin`; certificate: what the server showed instead
+    pinned: !!pin, pin, pinSupported, certificate: isHttps(u) ? cleanCertificate(p.certificate) : null,
     error: e ? { code: clean(e.code, 32) || 'error', message: clean(e.message, 160) || null } : null,
   };
 }
@@ -705,8 +774,10 @@ async function probe(b) {
 // ─── Setup (Einstellungen › KI-Anbieter › Lokale KI einrichten) ─────────
 
 /**
- * Save the setup: { source, peerId, model, lanUrl?, lanApi?, lanKey?, gpu? }.
+ * Save the setup: { source, peerId, model, lanUrl?, lanApi?, lanKey?, lanPin?, gpu? }.
  * lanKey: a string replaces the key, null or '' removes it, missing keeps it.
+ * lanPin (https): the fingerprint of the certificate the admin confirmed — a string pins it,
+ * null or '' removes the pin, missing keeps it (a new address forgets it).
  * gpu: off | nvidia | amd | intel ("Grafikkarte nutzen", source service).
  * Switches the function on on that gateway (and off on the one before, if it
  * served the local AI), chooses the model, switches the provider on.
@@ -735,6 +806,13 @@ function setup(b, { ip, user } = {}) {
       if (!validKey(b.lanKey)) throw new LocalError('invalid', 'lanKey');
       keyChange = b.lanKey;
     }
+    if (b.lanPin === null || b.lanPin === '') patch.lanPin = null;
+    else if (b.lanPin !== undefined) {
+      const pin = pinOf(b.lanPin);
+      if (!pin || !isHttps(u)) throw new LocalError('invalid', 'lanPin');
+      if (!supportsOf(features().telemetryOf(g)).includes('lanPin')) throw new LocalError('gateway_unsupported_pin', 'the gateway cannot pin a certificate yet (update the gateway)');
+      patch.lanPin = pin;
+    }
   }
   if (b.gpu !== undefined) {
     if (!GPUS.includes(b.gpu)) throw new LocalError('invalid', 'gpu');
@@ -743,10 +821,11 @@ function setup(b, { ip, user } = {}) {
   const before = peerId();
   const prev = providerRow();
   const hadKey = !!(prev && prev.key_encrypted);
+  const pinBefore = settingsOf(g.id).lanPin;
   // the key first: the config pull the feature change pushes carries its new revision
   if (keyChange !== undefined && (keyChange || hadKey)) setKey(keyChange);
   if (before !== g.id && keyChange === undefined && hadKey) settings().set(K.keyRev, crypto.randomBytes(8).toString('hex'));
-  features().set(g.id, { ai: patch }, { ip, user });
+  const pinAfter = features().set(g.id, { ai: patch }, { ip, user }).ai.lanPin;
   if (before && before !== g.id && gatewayOf(before) && settingsOf(before).enabled) {
     try { features().set(before, { ai: { enabled: false } }, { ip, user }); } catch (e) { logger.warn({ err: e.message }, 'ai: local AI of the previous gateway not switched off'); }
   }
@@ -764,6 +843,14 @@ function setup(b, { ip, user } = {}) {
     activity().log(keyChange ? 'ai_local_key_set' : 'ai_local_key_removed', `Local AI: API key of the AI server ${keyChange ? 'saved' : 'removed'}`, {
       source: 'admin', ipAddress: ip, severity: 'info', details: { peer_id: g.id, ...(keyChange ? { key_hint: keyChange.slice(-4) } : {}) },
     });
+  }
+  // a fingerprint is public data: logged in full, so a changed pin can be traced
+  if (pinAfter !== pinBefore) {
+    activity().log(pinAfter ? 'ai_local_pin_set' : 'ai_local_pin_removed',
+      `Local AI: certificate of the AI server ${pinAfter ? 'pinned' : 'no longer pinned'}`, {
+        source: 'admin', ipAddress: ip, severity: pinAfter ? 'info' : 'warning',
+        details: { peer_id: g.id, ...(patch.lanUrl ? { lan_url: patch.lanUrl } : {}), ...(pinAfter ? { sha256: pinAfter } : {}), ...(pinBefore ? { before: pinBefore } : {}) },
+      });
   }
   return { provider: providerView(), startPull: source === 'service' };
 }
@@ -806,7 +893,7 @@ function view() {
     gateways: list.map(({ facts, ...g }) => g),
     catalogue: list.map((g) => ({ peerId: g.id, ...catalogueFor(g.facts, g.otherMb, g.gpuView, g.gpuOptions) })),
     current: cur ? {
-      peerId: cur.id, source: cur.settings.source, lanUrl: cur.settings.lanUrl, lanApi: cur.settings.lanApi, gpu: cur.settings.gpu,
+      peerId: cur.id, source: cur.settings.source, lanUrl: cur.settings.lanUrl, lanApi: cur.settings.lanApi, lanPin: cur.settings.lanPin, gpu: cur.settings.gpu,
       model: row ? row.model_text || null : null,
       keySet: !!(row && row.key_encrypted), keyHint: row && row.key_encrypted ? row.key_hint || null : null,
     } : null,
@@ -880,6 +967,7 @@ function overview(id) {
     source: s.source,
     lanUrl: s.lanUrl,
     lanKey: s.source === 'lan' && chosen && !!keyRevFor(g.id),
+    lanPinned: s.source === 'lan' && !!s.lanPin,
     supported: supported(tel),
     minGateway: MIN_GATEWAY,
     minGatewayExt: MIN_GATEWAY_EXT,
@@ -988,7 +1076,7 @@ function isPrivate(pluginId) { return PRIVATE_PLUGINS.includes(pluginId); }
 
 module.exports = {
   ID, NAME, MIN_GATEWAY, MIN_GATEWAY_EXT, USES, SOURCES, APIS, GPUS, PRIVATE_PLUGINS, CATALOGUE, LIMITS, K, LocalError,
-  lanUrl, validModel, validLanModel, validKey, isUla, isHostname, normalizeSettings, patchField, configPayload, telemetryAi, supported, supportsOf, factsOf,
+  lanUrl, pinOf, validModel, validLanModel, validKey, isUla, isHostname, normalizeSettings, patchField, afterPatch, configPayload, telemetryAi, supported, supportsOf, factsOf,
   fitList, catalogueFor, gpuView, suggestedGpu, gatewayHint, catalogueEntry,
   providerRow, peerId, use, ready, providerView, gateways, liveStatus, pull, cancelPull, removeModel, probe, setup, setEnabled, setUse, view,
   storedKey, credentialsFor, composeWantsAi, composeGpu, composeHint, memoryPart, overview, complete, errorKind, isPrivate, fitText,
