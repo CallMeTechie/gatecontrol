@@ -3,5 +3,5 @@
 Byte-identical copies of `gatecontrol-gateway` `deploy/` at the tag below. The CI drift check
 (scripts/check-vendored-templates.js) fails the build if they diverge.
 
-- tag: v1.19.0
+- tag: v1.37.0
 - update.sh ← deploy/update.sh
