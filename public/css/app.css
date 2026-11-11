@@ -7509,6 +7509,10 @@ a.stx-tile:hover{border-color:var(--pg-acc-bd)}
 .ai-dl-bar{display:block; height:8px; border-radius:999px; background:var(--pg-line2); overflow:hidden}
 .ai-dl-fill{display:block; height:100%; background:var(--pg-acc)}
 .ai-local-compose{display:flex; flex-wrap:wrap; align-items:center; gap:8px}
+/* https server with a self-signed certificate: the certificate to confirm (box) and the pinned fingerprint (row) */
+.stx-box.ai-local-pin{display:flex; flex-direction:column; align-items:flex-start; gap:6px}
+.ai-local-pin code{overflow-wrap:anywhere; min-width:0}
+.ai-local .st-fl[hidden]{display:none}
 .ai-local .ai-prov-row{flex-wrap:wrap}
 .ai-local .ai-prov-row .st-input{flex:1 1 220px}
 .ai-local-actions{margin-top:2px}

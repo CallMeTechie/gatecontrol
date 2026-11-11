@@ -57,6 +57,30 @@ Only needed if devices such as Shelly, Tasmota or ESPHome should report via MQTT
 
 **Check:** The “Status” shows “running” and the number of connected clients goes up.
 
+### Encrypted connections (TLS, port 8883)
+
+In the home network port 1883 is usually enough. To encrypt the connection,
+switch on “TLS on port 8883” under **“Encrypted connections (TLS)”** in the tab
+“MQTT” – per gateway, off by default.
+
+- Port 8883 comes **in addition**; port 1883 stays open. Devices without TLS
+  keep working.
+- The gateway creates the certificate itself (self-signed). It stays the same
+  across restarts and updates.
+- The card then shows the **fingerprint (SHA-256)** and “Copy the certificate
+  (PEM)”. Devices that check the certificate are given the fingerprint or the
+  certificate as their “own CA”. Enter the gateway’s address with port 8883 as
+  the server in the device.
+
+**Can my device do that?** Many Shelly and Tasmota devices cannot do TLS, or
+only with effort: first-generation Shelly not at all, newer Shelly with an
+uploaded certificate (“User CA”), Tasmota mostly only with a firmware build
+that includes TLS. When in doubt the device stays on port 1883.
+
+If it says **“Gateway update needed”**, the gateway is too old to create the
+certificate itself – the switch is greyed out. After the
+[update](06-updating-a-gateway.md) it can be switched on.
+
 ## 4.3 Where do my devices show up?
 
 The devices show up **in the plugin**, on the left under “Home” →

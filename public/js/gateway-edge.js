@@ -833,18 +833,32 @@
 
   function tlsCard(g, d) {
     const s = d.settings;
+    const v = K.tlsView(s, d.mqtt && d.mqtt.status, d.gateway);
     const sw = switchBtn(!!s.mqttTls, t('gwe.tls.switch'), 'gwe-tls-sw', () => {
       const next = sw.getAttribute('aria-checked') !== 'true';
       toggleSetting(g, sw, 'mqttTls', next, t(next ? 'gwe.tls.on_done' : 'gwe.tls.off_done'));
-    });
+    }, v.locked);
+    if (v.locked) sw.title = t('gwe.tls.update_needed');
     const c = card(t('gwe.tls.title'), sw, { id: 'tls' });
-    c.body.appendChild(h('p', { class: 'gwe-d', text: t('gwe.tls.text') }));
-    const tls = d.mqtt && d.mqtt.status ? d.mqtt.status.tls : null;
-    if (s.mqttTls && tls === 'missing_cert') c.body.appendChild(note('warn', [h('strong', { text: t('gwe.tls.missing_cert') }), ' ', t('gwe.tls.missing_cert_d')]));
-    else if (s.mqttTls && tls === 'on') {
+    c.body.appendChild(h('p', { class: 'gwe-d' }, [t('gwe.tls.text'), ' ', guide('mqtt.tls')]));
+    if (v.key === 'update_needed') c.body.appendChild(note('warn', [h('strong', { text: t('gwe.tls.update_needed') }), ' ', t('gwe.tls.update_needed_d')]));
+    else if (v.key === 'missing_cert') c.body.appendChild(note('warn', [h('strong', { text: t('gwe.tls.missing_cert') }), ' ', t('gwe.tls.missing_cert_d')]));
+    else if (v.key === 'on') {
       const addr = K.brokerAddress(lanIp(g), true);
-      c.body.appendChild(h('div', { class: 'gwe-kvs' }, [kv(t('gwe.tls.k_port'), [tag('green', t('gwe.tls.active'), true), addr ? ' ' : null, addr ? h('code', { class: 'gwe-mono', text: addr }) : null])]));
-    } else c.body.appendChild(note('info', [t('gwe.tls.cert_note')]));
+      const rows = h('div', { class: 'gwe-kvs' }, [kv(t('gwe.tls.k_port'), [tag('green', t('gwe.tls.active'), true), addr ? ' ' : null, addr ? h('code', { class: 'gwe-mono', text: addr }) : null])]);
+      // the certificate the gateway made itself: what devices that check it are given
+      // two halves with a break opportunity between them (the text itself stays "AB:CD:…")
+      if (v.fingerprint) {
+        rows.appendChild(kv(t('gwe.tls.k_fp'), [h('code', { class: 'gwe-mono', 'data-tls-fp': '' }, [v.fingerprint.slice(0, 48), h('wbr'), v.fingerprint.slice(48)]),
+          copyBtn(() => v.fingerprint, t('gwe.tls.copy_fp'))]));
+      }
+      if (v.cert) {
+        rows.appendChild(kv(t('gwe.tls.k_cert'), [h('span', { text: v.validTo ? t('gwe.tls.cert_self_until', { date: fmtDate(v.validTo) }) : t('gwe.tls.cert_self') }),
+          copyBtn(() => v.cert, t('gwe.tls.copy_cert'))]));
+      }
+      c.body.appendChild(rows);
+      if (v.fingerprint) c.body.appendChild(h('p', { class: 'gwe-d', text: t('gwe.tls.fp_hint') }));
+    } else c.body.appendChild(note('info', [t(v.key === 'pending' ? 'gwe.tls.pending' : 'gwe.tls.cert_note')]));
     return c.card;
   }
 
