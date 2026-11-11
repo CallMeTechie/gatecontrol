@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.261.2] — 2026-11-11
+
+### Änderungen
+- Gateway – Betrieb & Netz: Speedtest-Budget übersteht Neustarts, Hinweis statt Fehler ohne Lizenz und bei Proxmox-LXC, IPv6-Heimnetz (#466)
+
+---
+
 ## [1.261.1] — 2026-11-11
 
 ### Änderungen
