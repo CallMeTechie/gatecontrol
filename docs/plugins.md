@@ -1054,7 +1054,7 @@ module.exports = {
 | `gc.devices.list({ userId })` | since 1.193.0: the person's GateControl apps `[{ id, name, platform, clientType, appVersion, online, lastSeen, via }]` (`devices`) — see "Devices" |
 | `gc.notify({ …, users, devices, silent, data })` | since 1.193.0: only to these devices of `users`; `silent: true` a data notification without display (`devices`) — see "Devices" |
 | `gc.homeNetwork.presence.list()` / `.on(handler)` / `.consent(userId)` / `.setConsent(userId, on)` / `.devices(userId)` / `.setCounts(userId, deviceId, on)` | since 1.230.0: who is at home by their phone in the home network — only people who agreed themselves, never MAC/IP addresses (`homePresence`) — see "Presence over the home network" |
-| `gc.homeNetwork.internet.status(userId)` / `.pause(userId, untilISO \| minutes)` / `.resume(userId)` / `.extend(userId, minutes)` | since 1.231.0: the home DNS filter of a person — pause the internet, suspend the profile's times; changes only on behalf of a signed-in person (`homeInternet`) — see "Internet at home" |
+| `gc.homeNetwork.internet.status(userId)` / `.pause(userId, untilISO \| minutes)` / `.resume(userId)` / `.extend(userId, minutes)` | since 1.231.0: the home DNS filter of a person — pause the internet, suspend the profile's times; changes only on behalf of a signed-in person (`homeInternet`), since 1.259.0 also for the person an automation names (`{ actor }`) — see "Internet at home" |
 | `gc.homeCache.offer({ mediaId, kind, userIds, priority })` / `.withdraw(mediaId)` / `.lanHint(sha256 \| { mediaId }, req)` | since 1.231.0: keep the plugin's files on the gateways' home caches and send an app in the home network there (`homeCache`) — see "Home cache"; since 1.249.0 also GateControl's previews of them (`preview`, `.lanHints([…], req)`) |
 | `gc.ai.available({ capability })` / `gc.ai.status()` | since 1.214.0: is AI usable for the plugin (asks no provider) / `{ available, mediaAllowed, capabilities, budgetLeftCents }` (`ai`) — see "AI requests" |
 | `gc.ai.extract({ task, user, instructions, input, schema, maxOutputTokens, timeoutMs })` / `gc.ai.generate({ … })` | since 1.214.0: structured data checked against a schema / free text from the AI provider set up in GateControl → `{ ok, data \| text, provider, model, usage, fallback }` (`ai`) — see "AI requests" |
@@ -2558,13 +2558,37 @@ The install dialog shows it as "Internet zu Hause". Without it,
 `pause`, `resume` and `extend` only work **inside a changing request
 (POST/PUT/PATCH/DELETE) of a signed-in person** to this plugin (portal
 signed in, the app, or the plugin's admin page) — never in `tick`, a hook,
-a GET, on a kiosk device or a moment after the answer (`ERR_NOT_PERSON`).
+a GET, on a kiosk device or a moment after the answer (`ERR_NOT_PERSON`;
+since 1.259.0 an automation names its person instead, see below).
 That person is the **actor**: the activity log says "Internet paused for
 "Tim" until 18:30 (by Marc, plugin familie)". GateControl does not check
 who may decide for whom — **the plugin checks that the person in the
 request may** (the family plugin: a parent of that child). Errors:
 `ERR_INVALID` (unknown or disabled person, wrong times), `ERR_NOT_PERSON`,
 `ERR_HOME_INTERNET_DENIED`.
+
+**Automations (since 1.259.0).** A rule a person set up runs in the
+background (`tick`, a hook) or inside the request of somebody else — a
+child's phone reports "at home" and the rule "Hausaufgaben" pauses the
+internet. For that, `pause`, `resume` and `extend` take the person the
+plugin acts for as a last argument:
+
+```js
+await gc.homeNetwork.internet.pause(childId, 30, { actor: rule.ownerId });
+await gc.homeNetwork.internet.resume(childId, { actor: rule.ownerId });
+await gc.homeNetwork.internet.extend(childId, 30, { actor: rule.ownerId });
+```
+
+`actor` is an enabled GateControl account (else `ERR_INVALID`) and wins
+over the people in a request that happens to be in flight. The activity log
+says "Internet paused for "Tim" until 18:30 (automatically for Marc, plugin
+familie)", its details carry `automated: true`. As before GateControl does
+not check who may decide for whom: **the plugin checks, when the automation
+runs, that the named person may still decide** (the family plugin: still a
+parent, the child still a minor of the family) and skips the step otherwise.
+`gc.homeNetwork.internet.actors === true` tells a plugin that the host knows
+`{ actor }`; an older host ignores the argument and answers
+`ERR_NOT_PERSON` outside a request.
 
 Example (family plugin, a parent's button "30 Minuten mehr"):
 
@@ -2802,7 +2826,7 @@ const { gateways, devices } = await gc.radio.zigbee();
 await gc.radio.command('z2m:001788010b2c3d4e', { on: true, bri: 40 });   // → { accepted: true }
 ```
 
-`kind` is `light`, `plug` (also switches/relays), `cover`, `sensor` or `remote`;
+`kind` is `light`, `plug` (also switches/relays), `cover`, `sensor`, `remote` or `climate` (a thermostat);
 `caps` names what can be set (`bri`, `ct`, `color: 'xy' | 'hs'`, `position`) and
 what is measured (`power`, `battery`). `values` use the names of the Bluetooth
 sensors plus `on`, `bri` (0–100), `ct` (mired), `pos` (0–100), `linkquality`,
@@ -2812,7 +2836,22 @@ mired, `xy` `[x, y]`, `hue` 0–65535 / `sat` 0–254 (converted for zigbee2mqtt
 unknown id `ERR_NOT_FOUND`, a gateway whose zigbee2mqtt does not run
 `ERR_RADIO_NOT_RUNNING`, one that does not answer `ERR_GATEWAY_UNREACHABLE`. The
 command goes to the gateway, which publishes `zigbee2mqtt/<name>/set`; the new
-state comes with the next report (at most 5 s later). Only gateways with
+state comes with the next report (at most 5 s later).
+
+With a gateway newer than 1.34.2 (older ones report none of this — check `caps`):
+
+* **Several channels** (a 2- or 3-gang switch): `caps.channels` `['l1', 'l2', …]` (2–8 names `[a-z0-9_]{1,8}`),
+  `values.ch` `{ l1: true, l2: false }`; `values.on` stays the first channel. `command(id, { on, channel: 'l2' })`
+  switches one of them.
+* **Thermostats** (`kind: 'climate'`): `caps.setpoint` `{ min, max, step }` (°C) and `caps.modes` (of `off`, `heat`,
+  `auto`, `cool`, `fan_only`, `dry`); `values.temperature` (measured), `setpoint`, `mode`, `heating`, `valve` (%).
+  `command(id, { setpoint: 21.5 })` / `{ mode: 'heat' }` — the gateway keeps the target within the device's limits.
+* **Firmware over the air:** `caps.ota`, `values.ota` `{ state: 'idle' | 'available' | 'updating' | 'scheduled',
+  progress (%, while updating), installed, latest, checked (ISO time of the last search), error: 'check_failed' |
+  'update_failed' }`. `command(id, { ota: 'check' })` asks zigbee2mqtt whether there is an update,
+  `{ ota: 'update' }` starts it (10–60 minutes); `ota` stands alone in a command.
+
+Only gateways with
 “zigbee2mqtt” chosen count; switched back to deCONZ, their devices are gone
 from the list. On an older GateControl `gc.radio.zigbee` is missing — check for it.
 

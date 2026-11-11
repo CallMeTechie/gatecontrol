@@ -10671,6 +10671,7 @@
   "gwr.z2m.kind.plug": "plug/switch",
   "gwr.z2m.kind.cover": "shutter",
   "gwr.z2m.kind.sensor": "sensor",
+  "gwr.z2m.kind.climate": "thermostat",
   "gwr.z2m.kind.remote": "button",
   "gwr.z2m.kind.other": "device",
   "gwr.z2m.on": "on",
