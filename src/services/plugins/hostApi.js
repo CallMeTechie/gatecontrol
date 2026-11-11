@@ -1475,6 +1475,22 @@ function presenceCall(plugin, op, args) {
 // DELETE) of a signed-in person to this plugin — that person is the actor
 // (activity log); never in a tick, a hook, a GET or on a kiosk device. The
 // plugin decides itself who may (the family plugin: parents). No MACs.
+//
+// Since 1.259.0 a plugin may name the person it acts for itself —
+// pause(userId, until, { actor }) / resume(userId, { actor }) /
+// extend(userId, minutes, { actor }): an automation the person set up (the
+// family plugin: a rule runs in the background, or inside the request of
+// somebody else — the actor is whoever made the rule, and the plugin checks
+// that this person may still decide). Logged as "automatically for …".
+
+/** The enabled person a plugin names as the actor of an automation (args.actor), or null when it names none. */
+function namedActor(args) {
+  const id = args && args.actor;
+  if (id == null) return null;
+  need(Number.isSafeInteger(id) && id > 0, 'ERR_INVALID', 'actor: a user id');
+  need(db().prepare('SELECT 1 FROM users WHERE id = ? AND enabled = 1').get(id), 'ERR_INVALID', 'actor: unknown or disabled person');
+  return id;
+}
 
 function internetCall(plugin, op, args) {
   need(plugin.manifest.permissions && plugin.manifest.permissions.homeInternet === true, 'ERR_HOME_INTERNET_DENIED', 'this plugin has no homeInternet permission');
@@ -1483,9 +1499,12 @@ function internetCall(plugin, op, args) {
   need(Number.isSafeInteger(uid) && uid > 0, 'ERR_INVALID', 'invalid user id');
   try {
     if (op === 'status') return hi.status(uid);
-    const actors = require('./personContext').writers(plugin.id);
-    need(actors.length > 0, 'ERR_NOT_PERSON', 'only inside a changing request (POST/PUT/PATCH/DELETE) of a signed-in person');
-    const ctx = { pluginId: plugin.id, actors };
+    // a named actor counts wherever the call comes from: a rule that runs inside the request of somebody else
+    // (a child's phone reports "at home") still acts for the person who made the rule
+    const named = namedActor(args);
+    const actors = named ? [named] : require('./personContext').writers(plugin.id);
+    need(actors.length > 0, 'ERR_NOT_PERSON', 'only inside a changing request (POST/PUT/PATCH/DELETE) of a signed-in person, or with { actor }');
+    const ctx = { pluginId: plugin.id, actors, automated: !!named };
     if (op === 'pause') return hi.pause(uid, args.until, ctx);
     if (op === 'resume') return hi.resume(uid, ctx);
     if (op === 'extend') return hi.extend(uid, args.minutes, ctx);
