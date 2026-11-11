@@ -174,4 +174,23 @@ function get(lang) {
   return out;
 }
 
-module.exports = { GatewayHandbookError, get, CHAPTERS, _githubSlugger: githubSlugger, _rewriteLinks: rewriteLinks, _dropNav: dropNav, _clear: () => cache.clear() };
+/**
+ * Where the help links of the Gateways page ("Anleitung", public/js/handbook.js
+ * TOPICS) land inside this handbook: { topic: heading } in `lang`, e.g.
+ * { 'gw.rpi': '3-3-raspberry-pi', 'feat.dns': 'dns-filter' }. A topic whose
+ * chapter is not part of it (the overview, the server set-up) is left out —
+ * its link keeps pointing to the guide outside. {} when the chapters are missing.
+ */
+function topicAnchors(lang) {
+  const l = langOf(lang);
+  let anchors;
+  try { anchors = get(l).anchors; } catch { return {}; }
+  const out = {};
+  for (const [topic, t] of Object.entries(guide.TOPICS)) {
+    const a = t && typeof t[l] === 'string' ? anchors[t[l]] : null;
+    if (a) out[topic] = a;
+  }
+  return out;
+}
+
+module.exports = { GatewayHandbookError, get, topicAnchors, CHAPTERS, _githubSlugger: githubSlugger, _rewriteLinks: rewriteLinks, _dropNav: dropNav, _clear: () => cache.clear() };

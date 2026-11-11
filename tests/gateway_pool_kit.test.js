@@ -76,6 +76,43 @@ describe('gateway-pool-kit: hash, groups, roles, status', () => {
     assert.equal(PK.effectiveStatus({ ...p, status: 'partial' }), 'partial', 'the server may say it itself');
   });
 
+  it('reserve check: the gap counts against what the member stands by for (pool routes + routes pinned to its partners)', () => {
+    // one pool route, two routes pinned to the partner — the standby misses one of the pinned ones
+    const miss = { total: 3, checked: 3, reachable: 2, missing: [{ id: 9, domain: 'drucker.example.com' }] };
+    const p = { mode: 'failover', status: 'partial', routes: [{ id: 1 }], active_peer_ids: [1],
+      members: [{ peer_id: 1, priority: 1, state: 'active', reserve: null }, { peer_id: 2, priority: 2, state: 'standby', reserve: miss }] };
+    assert.deepEqual(PK.reserveGap(p, p.members[1]), { k: 2, n: 3, missing: miss.missing });
+    // an answer without `total` (older server): the pool's routes, as before
+    assert.deepEqual(PK.reserveGap({ ...p, routes: [{ id: 1 }, { id: 2 }] }, { reserve: { checked: 2, reachable: 1, missing: [{ id: 2 }] } }), { k: 1, n: 2, missing: [{ id: 2 }] });
+  });
+
+  it('feature chips of a fleet card: a few names, the rest behind "+N"', () => {
+    assert.equal(PK.CHIP_LIMIT, 3);
+    assert.deepEqual(PK.featureChips(['netwatch', 'inetq', 'presence']), { shown: ['netwatch', 'inetq', 'presence'], more: [] });
+    assert.deepEqual(PK.featureChips(['print', 'cameras']), { shown: ['print', 'cameras'], more: [] });
+    // a fourth one folds: the names stay one row of the card
+    assert.deepEqual(PK.featureChips(['print', 'cameras', 'radio', 'ai']), { shown: ['print', 'cameras', 'radio'], more: ['ai'] });
+    // six switched on: three names and "+3"
+    const many = PK.featureChips(['print', 'cameras', 'radio', 'ai', 'cache', 'netwatch']);
+    assert.deepEqual(many, { shown: ['print', 'cameras', 'radio'], more: ['ai', 'cache', 'netwatch'] });
+    assert.deepEqual(PK.featureChips(PK.CHIP_KEYS).more.length, PK.CHIP_KEYS.length - 3);
+    assert.deepEqual(PK.featureChips(['print', 'cameras', 'radio', 'ai', 'cache', 'dns'], 2), { shown: ['print', 'cameras'], more: ['radio', 'ai', 'cache', 'dns'] });
+    // nothing on, no data, unknown or repeated keys
+    assert.deepEqual(PK.featureChips([]), { shown: [], more: [] });
+    assert.deepEqual(PK.featureChips(undefined), { shown: [], more: [] });
+    assert.deepEqual(PK.featureChips(['print', 'print', 'teleport', null, 'ai']), { shown: ['print', 'ai'], more: [] });
+  });
+
+  it('feature chips: every key has a name in German and English, the same list as the server', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const de = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src/i18n/de.json'), 'utf8'));
+    const en = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src/i18n/en.json'), 'utf8'));
+    for (const k of PK.CHIP_KEYS) assert.ok(de['gwp.fname.' + k] && en['gwp.fname.' + k], k);
+    for (const k of ['gwp.card.features', 'gwp.card.features_more', 'gwp.rt.pinned_ok', 'gwp.rt.pinned_missing', 'gwp.routes.reserve_for']) assert.ok(de[k] && en[k], k);
+    assert.deepEqual(PK.CHIP_KEYS, require('../src/services/gatewayFeatures').CHIP_KEYS);
+  });
+
   it('statusTone covers every server status', () => {
     for (const s of ['protected', 'partial', 'on_reserve', 'no_reserve', 'single', 'down', 'off']) assert.ok(['green', 'amber', 'red', 'grey'].includes(PK.statusTone(s)), s);
     assert.equal(PK.statusTone('protected'), 'green');

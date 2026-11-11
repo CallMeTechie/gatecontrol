@@ -131,9 +131,9 @@ module.exports = (ctx) => {
           const hint = r && r.querySelector('[data-radio-old]');
           return !!sw && sw.disabled && !!hint && /Gateway zu alt – ab 1\.25\.0/.test(hint.textContent);
         }, row));
-        step('radio: the row links to the user guide (chapter 5)', await page.evaluate((sel) => {
+        step('radio: the row links to the handbook inside the app (chapter 5, "Funk")', await page.evaluate((sel) => {
           const a = document.querySelector(sel + ' a[data-guide="feat.radio"]');
-          return !!a && /05-funktionen\.md#funk-zigbee-bluetooth-thread$/.test(a.href);
+          return !!a && /\/gateways#gw\/\d+\/handbook\/funk-zigbee-bluetooth-thread$/.test(a.href) && a.target === '_blank';
         }, row));
         step('radio: the tab "Funk" sits between "Zwischenspeicher" and "Edge-Plugins"', await page.evaluate(() => {
           const ids = [...document.querySelectorAll('.gwe-tabs [data-tab]')].map((b) => b.getAttribute('data-tab'));

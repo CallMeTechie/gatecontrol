@@ -37,9 +37,12 @@ const VERSIONS = [
   { version: '1.31.0', published_at: '2026-11-07T14:31:00.000Z', notes: '- Lokale KI mit Grafikkarte (#49)', url: REL + '/tag/v1.31.0' },
   { version: '1.30.0', published_at: '2026-11-06T10:00:00.000Z', notes: '- Drucken und Scannen (#45)', url: REL + '/tag/v1.30.0' },
 ];
+// a longer history: with it "All versions" opens with the newest ones and folds the rest
+const OLDER = ['1.29.2', '1.29.1', '1.29.0', '1.28.0', '1.27.1', '1.27.0', '1.26.0', '1.25.0']
+  .map((v, i) => ({ version: v, published_at: new Date(Date.UTC(2026, 9, 28 - i)).toISOString(), notes: '- Änderung in ' + v, url: REL + '/tag/v' + v }));
 // the API sends the notes as lines too (the plugin area's noteLines, routes/api/gateways.js)
 const { noteLines } = require('../../../public/js/plugins-ui');
-VERSIONS.forEach((v) => { v.lines = noteLines(v.notes); });
+VERSIONS.concat(OLDER).forEach((v) => { v.lines = noteLines(v.notes); });
 const health = (v) => JSON.stringify({ telemetry: { gateway_version: v, hardware: { model: 'Raspberry Pi 4' }, cpu_cores: 4, state_dir_writable: true } });
 
 module.exports = (ctx) => {
@@ -53,9 +56,10 @@ module.exports = (ctx) => {
   const hash = (page, h) => page.evaluate((x) => { location.hash = x; }, h);
 
   let stale = false;
+  let long = false; // the list with the older versions too
   async function mockReleases(page) {
     await page.route(/\/api\/v1\/gateways\/releases(\?.*)?$/, (route) => {
-      const body = { ok: true, available: true, stale, fetched_at: Date.now() - 3 * 3600 * 1000, latest_version: '1.34.1', releases_url: REL, versions: VERSIONS };
+      const body = { ok: true, available: true, stale, fetched_at: Date.now() - 3 * 3600 * 1000, latest_version: '1.34.1', releases_url: REL, versions: long ? VERSIONS.concat(OLDER) : VERSIONS };
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
   }
@@ -69,6 +73,8 @@ module.exports = (ctx) => {
         db.prepare('UPDATE gateway_meta SET last_health = ?, last_seen_at = ? WHERE peer_id = ?').run(health('1.31.0'), Date.now(), GW);
         return r || null;
       });
+      // the switched-on functions of the gateway (chips of its fleet card), restored at the end
+      const feat0 = withDb((db) => db.prepare('SELECT settings, updated_at FROM gateway_features WHERE peer_id = ?').get(GW) || null);
       // the real fleet answer, with a latest version (the test run has no GitHub)
       await page.route(/\/api\/v1\/gateways(\?.*)?$/, async (route) => {
         const res = await route.fetch();
@@ -91,6 +97,10 @@ module.exports = (ctx) => {
           if (!old) return;
           db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(old.last_health, GW);
           db.prepare('UPDATE peers SET enabled = ? WHERE id = ?').run(old.enabled, GW);
+        });
+        withDb((db) => {
+          if (feat0) db.prepare('UPDATE gateway_features SET settings = ?, updated_at = ? WHERE peer_id = ?').run(feat0.settings, feat0.updated_at, GW);
+          else db.prepare('DELETE FROM gateway_features WHERE peer_id = ?').run(GW);
         });
       }
     },
@@ -178,12 +188,88 @@ module.exports = (ctx) => {
     await page.click('#gw-docs-view [data-act="docs-fleet"]');
     step('docs: the crumb "Gateways" leads back to the fleet', await until(page, () => !document.getElementById('fleet-view').hidden && document.getElementById('gw-docs-view').hidden && !location.hash));
 
+    // the fleet card: the switched-on functions as chips (features_on of the real API)
+    const setFeatures = (settings) => withDb((db) => db.prepare(`INSERT INTO gateway_features (peer_id, settings, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(peer_id) DO UPDATE SET settings = excluded.settings, updated_at = excluded.updated_at`).run(GW, JSON.stringify(settings), Date.now()));
+    // what the card must show: features_on of the real API through the rule of the kit (other
+    // scenarios leave the DNS filter, the home cache … switched on for this gateway)
+    const cardVsApi = async (id) => {
+      const r = await fetch('/api/v1/gateways?peek=1', { credentials: 'same-origin' }).then((x) => x.json());
+      const g = r.gateways.find((x) => String(x.peer_id) === id);
+      const want = window.GCGatewayPoolKit.featureChips(g.features_on);
+      const card = document.querySelector('#fleet-grid .gw[data-id="' + id + '"]');
+      const row = card && card.querySelector('.gw-card-feats');
+      if (!row) return { ok: false, on: g.features_on, got: null };
+      const I = JSON.parse(document.getElementById('gwiz-i18n').textContent);
+      const names = (keys) => keys.map((k) => I['gwp.fname.' + k]);
+      const chips = [...row.querySelectorAll('span.gwe-chip')];
+      const more = row.querySelector('a.gw-card-feats-more');
+      const c = card.getBoundingClientRect();
+      const ok = chips.map((x) => x.getAttribute('data-feature')).join() === want.shown.join()
+        && chips.map((x) => x.textContent).join('|') === names(want.shown).join('|')
+        && (want.more.length ? !!more && more.textContent === '+' + want.more.length && more.getAttribute('data-more') === want.more.join(' ')
+          && more.title === names(want.more).join(', ') && more.getAttribute('aria-label') === 'and ' + want.more.length + ' more: ' + names(want.more).join(', ')
+          && more.getAttribute('href') === '#gw/' + id + '/features' : !more)
+        && row.getAttribute('aria-label') === 'Functions switched on'
+        && [...row.children].every((x) => { const b = x.getBoundingClientRect(); return b.left >= c.left && b.right <= c.right + 0.5; });
+      return { ok, on: g.features_on, got: [...row.children].map((x) => x.textContent).join() };
+    };
+    setFeatures({ print: { enabled: true }, cameras: { enabled: true }, netwatch: { enabled: false }, inetq: { enabled: false } });
+    await page.evaluate(() => document.dispatchEvent(new CustomEvent('gc:gateway', { detail: {} })));
+    await until(page, (id) => { const r = document.querySelector('#fleet-grid .gw[data-id="' + id + '"] .gw-card-feats [data-feature="print"]'); return !!r; }, String(GW), 6000);
+    let fc = await page.evaluate(cardVsApi, String(GW));
+    step('fleet: the card names the switched-on functions as chips ("Print & scan", "Cameras" first), as the API reports them',
+      fc.ok && fc.on.slice(0, 2).join() === 'print,cameras' && /^Print & scan,Cameras/.test(fc.got) && !fc.on.includes('netwatch') && !fc.on.includes('presence'), JSON.stringify(fc));
+    setFeatures({ print: { enabled: true }, cameras: { enabled: true }, ai: { enabled: true }, radio: { ble: true } });
+    await page.evaluate(() => document.dispatchEvent(new CustomEvent('gc:gateway', { detail: {} })));
+    await until(page, (id) => !!document.querySelector('#fleet-grid .gw[data-id="' + id + '"] .gw-card-feats a.gw-card-feats-more[data-more~="presence"]'), String(GW), 6000);
+    fc = await page.evaluate(cardVsApi, String(GW));
+    step('fleet: seven or more functions on → three chips ("Print & scan", "Cameras", "Radio") and "+N" (its name lists the rest), inside the card',
+      fc.ok && fc.on.length >= 7 && fc.on.includes('ai') && /^Print & scan,Cameras,Radio,\+\d+$/.test(fc.got), JSON.stringify(fc));
+    await shot(page, 'gateway-fleet-feature-chips');
+    await page.click('#fleet-grid .gw[data-id="' + GW + '"] a.gw-card-feats-more');
+    step('fleet: "+N" opens the tab "Functions" of the gateway', await until(page, (id) => location.hash === '#gw/' + id + '/features' && !document.getElementById('gw-detail-view').hidden, String(GW)));
+    await hash(page, '');
+    await until(page, () => !document.getElementById('fleet-view').hidden);
+
     // stale: the last list with a banner
     stale = true;
     await hash(page, V);
     step('docs: GitHub not reachable: the last list with a hint', await until(page, () => !!document.getElementById('gwd-ver-stale') && /cannot be reached/.test(document.getElementById('gwd-ver-stale').textContent)
       && document.querySelectorAll('#gwd-versions .pgx-vr').length === 5));
     stale = false;
+
+    // a long history: the newest five, the rest behind "Show older"
+    long = true;
+    await page.click('#gwd-ver-reload');
+    const shownRows = () => [...document.querySelectorAll('#gwd-versions .pgx-vr')].filter((r) => r.offsetParent !== null).map((r) => r.getAttribute('data-version')).join();
+    step('docs: 13 versions: the newest five show (with "Installed" and every "Newer" one), eight are folded behind "Show older (8)"', await until(page, () => {
+      const older = document.getElementById('gwd-ver-older');
+      const btn = document.getElementById('gwd-ver-older-btn');
+      const shown = [...document.querySelectorAll('#gwd-versions .pgx-vr')].filter((r) => r.offsetParent !== null).map((r) => r.getAttribute('data-version')).join();
+      return !!older && older.hidden && older.querySelectorAll('.pgx-vr').length === 8 && shown === '1.34.1,1.34.0,1.33.1,1.31.0,1.30.0'
+        && !!btn && btn.textContent === 'Show older (8)' && btn.getAttribute('aria-expanded') === 'false' && btn.getAttribute('aria-controls') === 'gwd-ver-older'
+        && !document.getElementById('gwd-ver-stale');
+    }), await page.evaluate(shownRows));
+    await shot(page, 'gateway-docs-versions-folded');
+    await page.focus('#gwd-ver-older-btn');
+    await page.keyboard.press('Enter');
+    step('docs: "Show older" (keyboard) opens the rest; the button says "Hide older"', await until(page, () => {
+      const older = document.getElementById('gwd-ver-older');
+      const btn = document.getElementById('gwd-ver-older-btn');
+      const rows = [...document.querySelectorAll('#gwd-versions .pgx-vr')].filter((r) => r.offsetParent !== null);
+      return !older.hidden && rows.length === 13 && rows[12].getAttribute('data-version') === '1.25.0' && rows[5].getAttribute('data-state') === 'older'
+        && btn.textContent === 'Hide older' && btn.getAttribute('aria-expanded') === 'true' && older.contains(document.activeElement);
+    }));
+    await page.evaluate(() => document.dispatchEvent(new CustomEvent('gc:gateway', { detail: {} })));
+    await page.waitForTimeout(1500);
+    step('docs: the poll leaves the older versions open', await page.evaluate(() => !document.getElementById('gwd-ver-older').hidden));
+    await page.click('#gwd-ver-older-btn');
+    step('docs: "Hide older" folds them again', await until(page, () => document.getElementById('gwd-ver-older').hidden
+      && document.getElementById('gwd-ver-older-btn').textContent === 'Show older (8)'));
+    long = false;
+    await page.click('#gwd-ver-refresh');
+    step('docs: a short list (five versions) has no fold', await until(page, () => document.querySelectorAll('#gwd-versions .pgx-vr').length === 5 && !document.getElementById('gwd-ver-older-btn')));
 
     // the tab "Manual"
     await page.click('#gwd-tab-handbook');

@@ -147,6 +147,16 @@ function configPayload(peerId) {
 /** Does zigbee2mqtt run for this gateway (chosen and not switched off)? */
 function z2mWanted(s) { return s.stack === 'zigbee2mqtt' && s.zigbee !== false; }
 
+/**
+ * Is any part of "Funk" on: Bluetooth, Thread, or Zigbee by its stack
+ * (zigbee2mqtt: unless switched off; deCONZ: what the gateway wants — automatic
+ * means "on when it finds a radio" — or, without its report, the switch).
+ * s: the radio settings, t: telemetryRadio(tel) or null.
+ */
+function enabledOf(s, t) {
+  return !!(s.ble || s.thread || (s.stack === 'zigbee2mqtt' ? z2mWanted(s) : (t ? t.zigbee.want : s.zigbee === true)));
+}
+
 // ─── Telemetry (features.radio of the heartbeat, input of the gateway) ─
 
 function cleanError(e) {
@@ -847,7 +857,7 @@ function overview(peerId) {
     ble: s.ble,
     stack: s.stack,
     thread: s.thread,
-    enabled: !!(s.ble || s.thread || (z2m ? z2mWanted(s) : (t ? t.zigbee.want : s.zigbee === true))),
+    enabled: enabledOf(s, t),
     supported: supported(tel),
     stacksSupported: stacksSupported(tel),
     minGateway: MIN_GATEWAY,
@@ -933,7 +943,7 @@ const HOST_CODES = { invalid: 'ERR_INVALID', not_found: 'ERR_NOT_FOUND', not_run
 
 module.exports = {
   MIN_GATEWAY, MAX_SENSORS, LAST_WITHOUT_STACKS, LAST_WITHOUT_ASSIGN, RadioError, HOST_CODES,
-  normalizeSettings, normalizeSticks, patchSticks, stickPlan, setStick, assignSupported, configPayload, telemetryRadio, cleanSensor, ingestBle, sensorsOf, setSensor, removeSensor, pluginSensors,
+  normalizeSettings, enabledOf, normalizeSticks, patchSticks, stickPlan, setStick, assignSupported, configPayload, telemetryRadio, cleanSensor, ingestBle, sensorsOf, setSensor, removeSensor, pluginSensors,
   keysRev, keysFor, ingestZigbee, zigbeeDevicesOf, pluginZigbee, zigbeeCommand, removeZigbee, cleanCommand,
   threadForm, threadJoin, threadDataset,
   housekeeping, pair, unlock, retry, liveStatus, overview, view, composeWantsZigbee, composeWantsZ2m, composeWantsThread, composeHint, supported, stacksSupported, platformOf,

@@ -143,9 +143,9 @@ module.exports = (ctx) => {
             && !!link && link.getAttribute('data-cameras-link') === 'catalog' && /\/settings\/plugins\/catalog\/gatecontrol-door$/.test(link.href);
         }, row));
         step('cameras: "Hinweise statt Verbote" names the cameras', await page.evaluate(() => /höchstens 1 Kamera mit Bewegungserkennung/.test((document.querySelector('.gwn-fhints') || {}).textContent || '')));
-        step('cameras: the row links to the user guide (chapter 5)', await page.evaluate((sel) => {
+        step('cameras: the row links to the handbook inside the app (chapter 5, "Kameras")', await page.evaluate((sel) => {
           const a = document.querySelector(sel + ' a[data-guide="feat.cameras"]');
-          return !a || /05-funktionen\.md#kameras$/.test(a.href);
+          return !a || /\/gateways#gw\/\d+\/handbook\/kameras$/.test(a.href);
         }, row));
         await view(page, 'gwcameras-on-dark');
         await theme(page, 'light');

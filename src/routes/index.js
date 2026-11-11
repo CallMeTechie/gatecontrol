@@ -527,6 +527,12 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
     if (template === 'gateways') {
       extraLocals.gwizI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, GWIZ_I18N_PREFIXES))
         .replace(/</g, '\\u003c');
+      // "Anleitung" links of the page and the assistant: topic → heading of the
+      // handbook inside the app (#gw/<id>/handbook/<anchor>, gateway-docs.js)
+      try {
+        extraLocals.gwHandbookTopics = JSON.stringify(require('../services/gatewayHandbook').topicAnchors(req.language || res.locals.language))
+          .replace(/</g, '\\u003c');
+      } catch { extraLocals.gwHandbookTopics = '{}'; }
     }
     if (template === 'support-bundles') {
       extraLocals.sbI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, SB_I18N_PREFIXES))
