@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.261.1] — 2026-11-11
+
+### Änderungen
+- TLS im Heimnetz: MQTT-Broker mit TLS und Fingerabdruck, KI-Server mit selbst signiertem HTTPS anheften (#465)
+
+---
+
 ## [1.261.0] — 2026-11-11
 
 ### Features
