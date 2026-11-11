@@ -47,6 +47,18 @@ describe('POST /api/v1/gateways/:id/compose', () => {
     assert.deepEqual(hashes(id), before, 'tokens must not be rotated');
   });
 
+  it('{ tun_loader: true } → the one-shot service tun-loader, synology only; off by default', async () => {
+    const nas = await gateway('NAS Test', 'synology');
+    assert.equal((await post(`/api/v1/gateways/${nas}/compose`, { tun_loader: true }).expect(200)).text,
+      kit.buildCompose({ platform: 'synology', network: 'host', tunLoader: true }));
+    assert.match(kit.buildCompose({ platform: 'synology', network: 'host', tunLoader: true }), /\n {2}tun-loader:\n/);
+    for (const v of [false, 'true', 1]) {
+      assert.equal((await post(`/api/v1/gateways/${nas}/compose`, { tun_loader: v }).expect(200)).text, kit.buildCompose({ platform: 'synology', network: 'host' }));
+    }
+    const lin = await gateway('Linux Test', 'linux');
+    assert.equal((await post(`/api/v1/gateways/${lin}/compose`, { tun_loader: true }).expect(200)).text, kit.buildCompose({ platform: 'linux', network: 'host' }));
+  });
+
   it('platform from the assistant: linux and proxmox → linux profile; body overrides; bridge', async () => {
     const lin = await gateway('Linux Keller', 'linux');
     assert.equal((await post(`/api/v1/gateways/${lin}/compose`).expect(200)).text, kit.buildCompose({ platform: 'linux', network: 'host' }));

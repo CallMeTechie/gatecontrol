@@ -248,6 +248,33 @@ module.exports = (ctx) => {
       await shot(page, 'gwz-step3-code-nas-code-dark');
       await theme(page, 'light');
       await shot(page, 'gwz-step3-code-nas-code-light');
+      // „VPN-Gerät automatisch bereitstellen (Test)": off by default; on → the compose and the package bring the
+      // one-shot service tun-loader and the task-scheduler hint goes; off again → everything as before
+      const tunl = () => page.evaluate(() => ({
+        shown: !document.getElementById('gwz-cw-tunl').hidden, on: document.getElementById('gwz-cw-tunl-on').checked,
+        hint: !document.getElementById('gwz-cw-tun').hidden, compose: document.getElementById('gwz-cw-compose').textContent,
+      }));
+      const t0 = await tunl();
+      step('Synology: the switch for the tun-loader helper is there and off; compose and hint as before',
+        t0.shown && !t0.on && t0.hint && t0.compose === c1.compose && !/tun-loader|SYS_MODULE/.test(t0.compose));
+      await page.click('#gwz-cw-tunl label');
+      const t1 = await tunl();
+      step('switch on → compose with the service tun-loader (SYS_MODULE only), the gateway waits for it, the task-scheduler hint goes',
+        t1.on && !t1.hint && /\n {2}tun-loader:\n/.test(t1.compose) && /\n {6}- SYS_MODULE/.test(t1.compose)
+        && /\n {4}depends_on:\n {6}tun-loader:\n {8}condition: service_completed_successfully\n/.test(t1.compose)
+        && /\n {4}devices:\n {6}- \/dev\/net\/tun:\/dev\/net\/tun\n/.test(t1.compose) && !/privileged/.test(t1.compose));
+      const pkgT = await download(page, '#gwz-cw-package');
+      let pkgCompose = '';
+      try { pkgCompose = unzip(pkgT.data).find((e) => e.name === 'docker-compose.yml').data.toString(); } catch (e) { step('package with the helper unpacks', false, String(e)); }
+      step('the package then carries the same compose', pkgCompose === t1.compose);
+      await page.$eval('#gwz-cw-tunl', (n) => n.scrollIntoView({ block: 'center' }));
+      await shot(page, 'gwz-step3-code-nas-tunloader-light');
+      await theme(page, 'dark');
+      await shot(page, 'gwz-step3-code-nas-tunloader-dark');
+      await theme(page, 'light');
+      await page.click('#gwz-cw-tunl label');
+      const t2 = await tunl();
+      step('switch off again → everything as before', !t2.on && t2.hint && t2.compose === c1.compose);
       await page.click('#gwz-cw-regen');
       await until(page, (old) => { const t = document.getElementById('gwz-cw-code').textContent; return t !== old && /^[A-F0-9]{4}-/.test(t); }, c1.code);
       const c2 = await cw();
@@ -305,7 +332,8 @@ module.exports = (ctx) => {
       await page.goto(BASE + `/gateways#setup/${GW.home}`);
       step('Linux: set-up through the setup page, compose with kernel WireGuard', await wayShown(page, 'code')
         && await until(page, () => /Linux kernel WireGuard/.test(document.getElementById('gwz-cw-compose').textContent) && !document.getElementById('gwz-cw-up').hidden
-          && !document.getElementById('gwz-cw-net').hidden && document.getElementById('gwz-cw-package').hidden));
+          && !document.getElementById('gwz-cw-net').hidden && document.getElementById('gwz-cw-package').hidden
+          && document.getElementById('gwz-cw-tunl').hidden));
       await page.click('#gwz-cw-net label:has(input[value="bridge"])');
       step('Linux bridge: the port of the setup page is published', await until(page, () => /"8642:8642"/.test(document.getElementById('gwz-cw-compose').textContent)));
       await page.click('#gwz-cw-net label:has(input[value="host"])');

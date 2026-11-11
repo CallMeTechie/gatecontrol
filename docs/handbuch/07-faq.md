@@ -437,6 +437,49 @@ geht auch `sudo insmod /lib/modules/tun.ko`.
 
 **Prüfen:** Das Projekt startet, der Container `gateway` läuft.
 
+### VPN-Gerät automatisch bereitstellen (Test, Synology)
+
+Statt der Aufgabe im Aufgabenplaner kann ein kleiner Hilfsdienst das Modul
+laden. Das ist ein **Test** und standardmäßig **aus** – ohne den Schalter
+bleibt alles wie bisher.
+
+**Einschalten:** Im Assistenten „Gateway hinzufügen“ → „Synology NAS“ in
+Schritt 3 den Haken **„VPN-Gerät automatisch bereitstellen (Test)“** setzen
+und erst danach die Compose-Datei kopieren oder das Paket herunterladen. Für
+ein bestehendes Gateway: Gateway-Seite → „Nur docker-compose.yml
+herunterladen“ → Gerät „Synology NAS“ → denselben Haken setzen, dann die Datei
+wie in [Kapitel 6](06-gateway-aktualisieren.md) einsetzen.
+
+**Was passiert:** Die Compose-Datei bekommt einen vierten Dienst
+`tun-loader`. Er läuft **vor** dem Gateway, prüft, ob es `/dev/net/tun` gibt,
+lädt sonst das Modul (`insmod /lib/modules/tun.ko`) und beendet sich nach
+wenigen Sekunden. Erst dann startet das Gateway. Am Gateway selbst ändert sich
+nichts.
+
+**Rechte:** Der Hilfsdienst **darf Kernel-Module laden** – das ist ein
+weitreichendes Recht. Deshalb ist alles andere zu: kein Netzwerk, keine
+weiteren Rechte, Dateisystem nur lesbar, kein „privilegierter“ Container, und
+er läuft nur beim Start. Er benutzt das Gateway-Image, kein fremdes.
+
+**Prüfen:** „Container Manager“ → „Container“ → `…-tun-loader-1` →
+„Protokoll“. Dort steht `tun-loader: /dev/net/tun ist bereit` (Modul geladen)
+oder `… ist da, nichts zu laden` (Gerät gab es schon). Der Container steht
+danach als **beendet** in der Liste – das ist richtig so. Das Projekt kann
+deshalb gelb angezeigt werden, obwohl `gateway`, `edge` und `mqtt` laufen.
+
+**Nach einem Neustart der NAS** startet Docker die Container selbst, ohne den
+Hilfsdienst. Das Gateway bleibt dann zunächst stehen. Die Aufgabe für
+automatische Updates ([Kapitel 3](03-gateway-einrichten.md), `update.sh`, jede Minute)
+erkennt das und startet das Gateway nach ein bis zwei Minuten – dafür braucht
+es `update.sh` ab Gateway 1.39.0 (im Paket aus GateControl enthalten, sobald
+dein Server sie mitbringt). Ohne diese Aufgabe startest du das Projekt nach
+einem Neustart im Container Manager von Hand.
+
+**Klappt das Laden nicht,** steht im Protokoll von `…-tun-loader-1` eine
+Meldung mit `FEHLER:` und dem Weg über den Aufgabenplaner (siehe oben), und
+das Gateway startet nicht. **Zurück:** Compose-Datei ohne den Haken holen,
+einsetzen und die Aufgabe im Aufgabenplaner anlegen.
+
 ### Die Einrichtungsseite des Gateways öffnet sich nicht
 
 Die Seite `http://<Adresse des Gateways>:8642` gibt es nur im Heimnetz.

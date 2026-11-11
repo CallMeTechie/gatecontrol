@@ -8949,6 +8949,8 @@
   "gwiz.cw.tun_2": "Benutzer root, Ereignis „Hochfahren“",
   "gwiz.cw.tun_3": "Befehl:",
   "gwiz.cw.tun_4": "Aufgabe markieren und „Ausführen“ wählen, dann das Projekt starten",
+  "gwiz.cw.tunl_label": "VPN-Gerät automatisch bereitstellen (Test)",
+  "gwiz.cw.tunl_hint": "Die Compose-Datei bekommt dann einen kleinen Hilfsdienst „tun-loader“: Er läuft vor dem Gateway, lädt das Kernel-Modul für /dev/net/tun, falls es fehlt, und beendet sich nach wenigen Sekunden – die Aufgabe im DSM-Aufgabenplaner entfällt. Dafür darf dieser Dienst Kernel-Module laden (sonst nichts: kein Netz, keine weiteren Rechte) und läuft nur beim Start. Nach einem Neustart der NAS bringt die Aufgabe für automatische Updates das Gateway innerhalb von ein bis zwei Minuten zurück. Noch im Test – ohne Haken bleibt alles wie bisher.",
   "gwiz.cw.s1_title_linux": "Ordner anlegen und Container starten",
   "gwiz.cw.s1_text_linux": "Einen Ordner anlegen (z. B. /opt/gatecontrol-gateway), diese Compose-Datei dort als docker-compose.yml speichern und im Ordner starten:",
   "gwiz.cw.s1_hint_linux": "Die Compose-Datei ist für alle Gateways gleich. Docker legt die Ordner config, gateway-state und gateway-cache beim Start selbst an.",

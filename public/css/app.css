@@ -2195,6 +2195,8 @@ table tbody tr:last-child td { border-bottom: none; }
 .gwz-st .gwz-row { margin-top: 8px; }
 .gwz-cw-net, .gwz-cw-tun { margin-top: 10px; }
 .gwz-cw-tun[hidden] { display: none; }
+.gwz-cw-tunl { margin-top: 10px; display: grid; gap: 6px; }
+.gwz-cw-tunl[hidden] { display: none; }
 .gwz-pairbox { display: flex; flex-direction: column; border: 1px dashed var(--teal-dim, var(--line-2)); border-radius: 14px; background: var(--surface); overflow: hidden; }
 .gwz-pair { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 12px 14px; min-width: 0; }
 .gwz-pair + .gwz-pair { border-top: 1px solid var(--line); }
@@ -3732,6 +3734,7 @@ input[type=date]:focus, select:focus {
 .gwe-field .form-hint{margin-top:5px}
 .gwe-ferr{margin-top:5px; font-size:12px; color:var(--red)}
 .gwe-ferr[hidden]{display:none}
+.gwe-check[hidden]{display:none}
 .gwe-tpl-note{margin:-6px 0 0}
 .gwe-fieldset{border:1px solid var(--line); border-radius:var(--r-sm); padding:12px 14px; margin:0; display:flex; flex-direction:column; gap:10px; min-width:0}
 .gwe-fieldset legend{padding:0 6px; font-size:12.5px; font-weight:600; color:var(--muted)}

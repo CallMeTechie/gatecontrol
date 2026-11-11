@@ -56,6 +56,8 @@
       env: null, everConnected: false, busy: false,
       // Synology/Linux: 'code' = setup page of the gateway, 'file' = download gateway.env (the way before)
       way: 'code', pair: null, cwTimer: null, cwPoll: null, cwDone: false,
+      // Synology, optional (test): the one-shot service tun-loader in the compose — off by default
+      tunLoader: false,
       pi: { model: 'pi4', net: 'lan', zigbee: 'auto', ssid: '', psk: '', hidden: false, hostname: '', hostnameDirty: false,
         tz: browserTz(), country: browserCountry(), ssh: '' },
       info: null, status: null, step4Since: 0, pollTimer: null, pollDelay: 3000, pairTimer: null, pairExpires: 0,
@@ -501,7 +503,8 @@
 
   // ── Step 3, Synology/Linux through the setup page of the gateway ──
   function cwNet() { return state.platform === 'linux' ? (radioValue('gwz-cw-net') || 'host') : 'host'; }
-  function cwCompose() { return kit.buildCompose({ platform: state.platform, network: cwNet() }); }
+  function cwTunLoader() { return state.platform === 'synology' && state.tunLoader === true; }
+  function cwCompose() { return kit.buildCompose({ platform: state.platform, network: cwNet(), tunLoader: cwTunLoader() }); }
   function renderCodeWay() {
     var pf = state.platform;
     var linux = pf === 'linux';
@@ -512,7 +515,11 @@
     show($('gwz-cw-net'), linux);
     show($('gwz-cw-up'), linux);
     show($('gwz-cw-package'), !linux);
-    show($('gwz-cw-tun'), !linux);
+    // "VPN-Gerät automatisch bereitstellen (Test)": with it the compose brings the helper, and the
+    // task-scheduler hint is not needed
+    show($('gwz-cw-tunl'), !linux);
+    $('gwz-cw-tunl-on').checked = cwTunLoader();
+    show($('gwz-cw-tun'), !linux && !cwTunLoader());
     if (linux) $('gwz-cw-net-hint').textContent = T('gwiz.linux.net_hint_' + cwNet(), '');
     $('gwz-cw-compose').textContent = cwCompose();
     $('gwz-cw-url').textContent = T('gwiz.cw.url_' + pf, 'http://<…>:8642');
@@ -587,7 +594,8 @@
   }
   function downloadPackage() {
     fetch('/api/v1/gateways/' + state.peerId + '/setup-package', {
-      method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf(), 'Content-Type': 'application/json' }, body: '{}',
+      method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tun_loader: cwTunLoader() }),
     }).then(function (r) {
       if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) { setError(j.error || T('gwiz.err.generic', 'Das hat nicht geklappt.')); });
       return r.blob().then(function (b) { saveBlob(b, 'gatecontrol-gateway-nas.zip'); });
@@ -858,6 +866,7 @@
     }
     else if (n === 'gwz-model' || n === 'gwz-net' || n === 'gwz-zigbee') { readStep2(); renderStep2(); }
     else if (n === 'gwz-linux-net' || n === 'gwz-cw-net') renderStep3();
+    else if (e.target.id === 'gwz-cw-tunl-on') { state.tunLoader = e.target.checked; renderStep3(); }
   });
   $('gwz-back').addEventListener('click', function () {
     if (state.busy) return;

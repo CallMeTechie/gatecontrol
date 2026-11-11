@@ -27,22 +27,24 @@ const NAS_BUNDLE_NAME = 'gatecontrol-gateway-nas.zip';
  */
 function buildNasBundle(envContent) {
   if (typeof envContent !== 'string' || !envContent) throw new Error('env_required');
-  return nasZip(envContent);
+  return nasZip(envContent, false);
 }
 
 /**
  * The same package without access data: the gateway gets them itself through
  * its setup page (server address + setup code). The empty folders matter —
  * Synology's Container Manager does not create missing bind-mount folders.
+ * @param {{tunLoader?: boolean}} [opts]  tunLoader: "VPN-Gerät automatisch bereitstellen (Test)" — the
+ *   compose then has the one-shot service tun-loader (loads the kernel module tun before the gateway starts)
  * @returns {Buffer} gatecontrol-gateway-nas.zip
  */
-function buildNasPackage() {
-  return nasZip(null);
+function buildNasPackage({ tunLoader = false } = {}) {
+  return nasZip(null, tunLoader === true);
 }
 
-function nasZip(envContent) {
+function nasZip(envContent, tunLoader) {
   const zip = kit.zipStored([
-    { name: 'docker-compose.yml', data: kit.buildCompose({ platform: 'synology', network: 'host' }) },
+    { name: 'docker-compose.yml', data: kit.buildCompose({ platform: 'synology', network: 'host', tunLoader: tunLoader === true }) },
     { name: 'config/' },
     ...(envContent ? [{ name: 'config/gateway.env', data: envContent, mode: 0o600 }] : []),
     // the compose mounts ./gateway-state:/state (auto-update flag, last pull)
@@ -67,9 +69,9 @@ function composePlatformOf(platform) {
   return null;
 }
 /** → the compose text, or null when platform/network is not one of the profiles. */
-function buildCompose(platform, network, { zigbee = false, zigbee2mqtt = false, thread = false, ai = false, aiGpu = null, cameras = false, cameraDir = null, office = false } = {}) {
+function buildCompose(platform, network, { zigbee = false, zigbee2mqtt = false, thread = false, ai = false, aiGpu = null, cameras = false, cameraDir = null, office = false, tunLoader = false } = {}) {
   if (COMPOSE_PLATFORMS.indexOf(platform) < 0 || COMPOSE_NETWORKS.indexOf(network) < 0) return null;
-  return kit.buildCompose({ platform, network, zigbee: zigbee === true, zigbee2mqtt: zigbee2mqtt === true, thread: thread === true, ai: ai === true, aiGpu: typeof aiGpu === 'string' ? aiGpu : null, cameras: cameras === true, cameraDir: typeof cameraDir === 'string' ? cameraDir : null, office: office === true });
+  return kit.buildCompose({ platform, network, zigbee: zigbee === true, zigbee2mqtt: zigbee2mqtt === true, thread: thread === true, ai: ai === true, aiGpu: typeof aiGpu === 'string' ? aiGpu : null, cameras: cameras === true, cameraDir: typeof cameraDir === 'string' ? cameraDir : null, office: office === true, tunLoader: tunLoader === true });
 }
 
 module.exports = {

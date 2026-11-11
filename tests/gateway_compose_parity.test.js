@@ -24,6 +24,11 @@ const EXAMPLE = fs.readFileSync(path.join(__dirname, 'fixtures', 'gateway-compos
 // docker-compose.ki-nvidia.yml, -amd.yml, -intel.yml)
 const KI_GPU = Object.fromEntries(['nvidia', 'amd', 'intel'].map((g) => [g, fs.readFileSync(path.join(__dirname, 'fixtures', 'gateway-compose', `docker-compose.ki-${g}.yml`), 'utf8')]));
 
+// "VPN-Gerät automatisch bereitstellen (Test)": the gateway's optional add-on docker-compose.tun-loader.yml
+// (copy of gatecontrol-gateway feat/tun-loader, 2026-11-11) — the one-shot service tun-loader and depends_on
+// for the gateway. Only on synology and only when asked for.
+const TUN_LOADER = fs.readFileSync(path.join(__dirname, 'fixtures', 'gateway-compose', 'docker-compose.tun-loader.yml'), 'utf8');
+
 // ── a small reader for the compose subset both files use ────────────────────
 // Comment lines and trailing " # …" comments go, blank lines go; what stays is
 // [indent, text] per line. Block scalars (the mqtt watcher) keep their lines.
@@ -215,6 +220,52 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
       });
     });
   }
+
+  describe('tun-loader (optional, synology only): docker-compose.tun-loader.yml of the gateway', () => {
+    const add = parse(TUN_LOADER);
+    it('the fixture is the gateway add-on: the service tun-loader with SYS_MODULE only, and depends_on for the gateway', () => {
+      assert.deepEqual(Object.keys(add.services), ['tun-loader', 'gateway']);
+      assert.deepEqual(Object.keys(add.services.gateway), ['depends_on']);
+      const t = add.services['tun-loader'];
+      assert.deepEqual(listOf(t.cap_drop), ['ALL']);
+      assert.deepEqual(listOf(t.cap_add), ['SYS_MODULE']);
+      assert.equal(t.network_mode, 'network_mode: none');
+      assert.equal(t.read_only, 'read_only: true');
+      assert.equal(t.restart, 'restart: "no"');
+      assert.equal(t.privileged, undefined);
+      assert.deepEqual(listOf(t.volumes), ['/lib/modules:/lib/modules:ro']);
+      assert.equal(t.image, exGw.image, 'the gateway image, no other image');
+    });
+    for (const network of ['host', 'bridge']) {
+      it(`synology / ${network}: the service exactly as in the add-on, the gateway only gains depends_on`, () => {
+        const base = parse(kit.buildCompose({ platform: 'synology', network }));
+        const got = parse(kit.buildCompose({ platform: 'synology', network, tunLoader: true }));
+        assert.deepEqual(Object.keys(got.services), Object.keys(base.services).concat('tun-loader'));
+        assert.deepEqual(got.services['tun-loader'], add.services['tun-loader']);
+        const { depends_on: dep, ...gw } = got.services.gateway;
+        assert.equal(dep, add.services.gateway.depends_on);
+        // /dev/net/tun stays exactly as it was: devices, no rule, no further capability
+        assert.deepEqual(gw, base.services.gateway);
+        assert.equal(gw.devices, exGw.devices);
+        assert.equal(gw.device_cgroup_rules, undefined);
+        for (const name of Object.keys(base.services).filter((k) => k !== 'gateway')) assert.deepEqual(got.services[name], base.services[name], name);
+        assert.equal(got.volumes, base.volumes);
+      });
+    }
+    it('off by default; anything but true is off; never on linux (kernel WireGuard, no /dev/net/tun)', () => {
+      const plain = kit.buildCompose({ platform: 'synology', network: 'host' });
+      assert.ok(!/tun-loader|SYS_MODULE|depends_on:\n {6}tun/.test(plain));
+      for (const v of [undefined, null, false, 'true', 1, {}]) assert.equal(kit.buildCompose({ platform: 'synology', network: 'host', tunLoader: v }), plain);
+      for (const network of ['host', 'bridge']) assert.equal(kit.buildCompose({ platform: 'linux', network, tunLoader: true }), kit.buildCompose({ platform: 'linux', network }));
+    });
+    it('with every other optional service: tun-loader is added, nothing else changes', () => {
+      const all = { platform: 'synology', network: 'host', ai: true, zigbee: true, zigbee2mqtt: true, thread: true, cameras: true, office: true };
+      const a = parse(kit.buildCompose(all));
+      const b = parse(kit.buildCompose({ ...all, tunLoader: true }));
+      assert.deepEqual(Object.keys(b.services), Object.keys(a.services).concat('tun-loader'));
+      assert.equal(b.volumes, a.volumes);
+    });
+  });
 
   for (const platform of ['synology', 'linux']) {
     it(`${platform} / bridge: HTTP routes only — no host-only capabilities, no edge, no deconz, no ki, no kameras`, () => {
