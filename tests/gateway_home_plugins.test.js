@@ -176,6 +176,53 @@ describe('gc.homeNetwork.internet', () => {
     assert.ok(db.prepare("SELECT 1 FROM activity_log WHERE event_type = 'home_internet_resumed'").get());
   });
 
+  it('{ actor }: an automation acts for the person who set it up — outside a request, logged as automatic', async () => {
+    assert.equal((await api('get', '/actors')).actors, true);
+    const users = require('../src/services/users');
+    const annaId = (await users.create({ username: 'anna-actor', password: 'AnnaPass123!xy', role: 'user', displayName: 'Anna' })).id;
+    const result = async () => waitFor(async () => (await api('get', '/later-result')).result);
+    // a moment after the answer: no request of a person in flight, the plugin names the actor
+    pushed.length = 0;
+    await api('post', '/later', { userId: timId, actor: annaId });
+    const later = await result();
+    assert.equal(later.ok, true, JSON.stringify(later));
+    assert.ok(Date.parse(later.result.paused) > Date.now() + 9 * MIN);
+    assert.deepEqual(pushed, [gw.peer.id], 'the gateway is told like for a person\'s own change');
+    const a = db.prepare("SELECT message, details FROM activity_log WHERE event_type = 'home_internet_paused' ORDER BY id DESC").get();
+    const det = JSON.parse(a.details);
+    assert.deepEqual([det.actor_user_ids, det.actors, det.automated, det.plugin_id], [[annaId], ['Anna'], true, P]);
+    assert.match(a.message, /automatically for Anna, plugin home-demo/);
+    assert.equal(db.prepare("SELECT actor_user_id FROM home_internet WHERE user_id = ? AND kind = 'pause'").get(timId).actor_user_id, annaId);
+    // resume and extend the same way
+    await api('post', '/later', { userId: timId, actor: annaId, op: 'resume' });
+    assert.equal((await result()).result.paused, null);
+    assert.match(db.prepare("SELECT message FROM activity_log WHERE event_type = 'home_internet_resumed' ORDER BY id DESC").get().message, /automatically for Anna/);
+    await api('post', '/later', { userId: timId, actor: annaId, op: 'extend', minutes: 20 });
+    assert.ok(Date.parse((await result()).result.extended) > Date.now() + 19 * MIN);
+    await api('post', '/later', { userId: timId, actor: annaId, op: 'extend', minutes: 0 });
+    assert.equal((await result()).result.extended, null);
+    // inside a request of somebody else the named person is the actor, not the one in the request (the admin, id 1)
+    const r = await api('post', '/pause', { userId: timId, until: 15, actor: annaId });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const det2 = JSON.parse(db.prepare("SELECT details FROM activity_log WHERE event_type = 'home_internet_paused' ORDER BY id DESC").get().details);
+    assert.deepEqual([det2.actor_user_ids, det2.automated], [[annaId], true]);
+    // a person's own change is not marked
+    await api('post', '/pause', { userId: timId, until: 15 });
+    const det3 = JSON.parse(db.prepare("SELECT details FROM activity_log WHERE event_type = 'home_internet_paused' ORDER BY id DESC").get().details);
+    assert.deepEqual([det3.actor_user_ids, 'automated' in det3], [[1], false]);
+    // an actor must be an enabled person; without one nothing changes outside a request
+    for (const actor of [99999, 0, 'anna', 1.5]) {
+      await api('post', '/later', { userId: timId, actor });
+      assert.equal((await result()).code, 'ERR_INVALID', String(actor));
+    }
+    db.prepare('UPDATE users SET enabled = 0 WHERE id = ?').run(annaId);
+    await api('post', '/later', { userId: timId, actor: annaId });
+    assert.equal((await result()).code, 'ERR_INVALID', 'a disabled account acts for nobody');
+    await api('post', '/later', { userId: timId, actor: null });
+    assert.equal((await result()).code, 'ERR_NOT_PERSON');
+    await api('post', '/resume', { userId: timId });
+  });
+
   it('writers(): the people with a changing request in flight', async () => {
     const ctx = require('../src/services/plugins/personContext');
     assert.deepEqual(ctx.writers('q'), []);

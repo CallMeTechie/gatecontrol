@@ -182,25 +182,35 @@ function actorText(actors) {
   return n.length ? n.join(', ') : '?';
 }
 
+/** "by Anna, plugin familie" — an automation the person set up (a rule): "automatically for Anna, plugin familie". */
+function byText({ pluginId, actors, automated }) {
+  return `${automated ? 'automatically for' : 'by'} ${actorText(actors)}${pluginId ? ', plugin ' + pluginId : ''}`;
+}
+
+/** The details of an activity entry: who, through which plugin — `automated` only when it was (a rule, since 1.259.0). */
+function actorDetails({ pluginId, actors, automated }) {
+  return { actor_user_ids: actors, actors: actorNames(actors), plugin_id: pluginId, ...(automated ? { automated: true } : {}) };
+}
+
 /** "Internet aus" until an ISO time or for `minutes` (≤ 7 days). */
-function pause(userId, value, { pluginId = null, actors = [], now = Date.now() } = {}) {
+function pause(userId, value, { pluginId = null, actors = [], automated = false, now = Date.now() } = {}) {
   const u = needUser(userId);
   const until = untilFrom(value, now, MAX_PAUSE_MS);
+  const who = { pluginId, actors, automated };
   store(u.id, 'pause', until, { pluginId, actors });
-  log('home_internet_paused', `Internet paused for "${label(u)}" until ${clock(until)} (by ${actorText(actors)}${pluginId ? ', plugin ' + pluginId : ''})`, u,
-    { until: iso(until), actor_user_ids: actors, actors: actorNames(actors), plugin_id: pluginId });
+  log('home_internet_paused', `Internet paused for "${label(u)}" until ${clock(until)} (${byText(who)})`, u, { until: iso(until), ...actorDetails(who) });
   push(u.id);
   return status(u.id, now);
 }
 
 /** End a pause (the times of the profile apply again; an extension stays). */
-function resume(userId, { pluginId = null, actors = [], now = Date.now() } = {}) {
+function resume(userId, { pluginId = null, actors = [], automated = false, now = Date.now() } = {}) {
   const u = needUser(userId);
   const had = current(u.id, now).pause;
+  const who = { pluginId, actors, automated };
   db().prepare("DELETE FROM home_internet WHERE user_id = ? AND kind = 'pause'").run(u.id);
   if (had) {
-    log('home_internet_resumed', `Internet back on for "${label(u)}" (by ${actorText(actors)}${pluginId ? ', plugin ' + pluginId : ''})`, u,
-      { actor_user_ids: actors, actors: actorNames(actors), plugin_id: pluginId });
+    log('home_internet_resumed', `Internet back on for "${label(u)}" (${byText(who)})`, u, actorDetails(who));
     push(u.id);
   }
   return status(u.id, now);
@@ -211,15 +221,15 @@ function resume(userId, { pluginId = null, actors = [], now = Date.now() } = {})
  * from the end of a running extension, else from now (≤ 24 h ahead).
  * `minutes` 0 ends a running extension.
  */
-function extend(userId, minutes, { pluginId = null, actors = [], now = Date.now() } = {}) {
+function extend(userId, minutes, { pluginId = null, actors = [], automated = false, now = Date.now() } = {}) {
   const u = needUser(userId);
   if (!Number.isInteger(minutes) || minutes < 0) throw new InternetError('ERR_INVALID', 'minutes: a whole number ≥ 0');
   const cur = current(u.id, now).extend;
+  const who = { pluginId, actors, automated };
   if (minutes === 0) {
     db().prepare("DELETE FROM home_internet WHERE user_id = ? AND kind = 'extend'").run(u.id);
     if (cur) {
-      log('home_internet_extended', `Extra time for "${label(u)}" ended (by ${actorText(actors)}${pluginId ? ', plugin ' + pluginId : ''})`, u,
-        { until: null, actor_user_ids: actors, actors: actorNames(actors), plugin_id: pluginId });
+      log('home_internet_extended', `Extra time for "${label(u)}" ended (${byText(who)})`, u, { until: null, ...actorDetails(who) });
       push(u.id);
     }
     return status(u.id, now);
@@ -227,8 +237,7 @@ function extend(userId, minutes, { pluginId = null, actors = [], now = Date.now(
   const until = Math.max(now, cur || 0) + minutes * MINUTE;
   if (until - now > MAX_EXTEND_MS) throw new InternetError('ERR_INVALID', 'at most 24 hours ahead');
   store(u.id, 'extend', until, { pluginId, actors });
-  log('home_internet_extended', `Extra time for "${label(u)}" until ${clock(until)} (by ${actorText(actors)}${pluginId ? ', plugin ' + pluginId : ''})`, u,
-    { until: iso(until), minutes, actor_user_ids: actors, actors: actorNames(actors), plugin_id: pluginId });
+  log('home_internet_extended', `Extra time for "${label(u)}" until ${clock(until)} (${byText(who)})`, u, { until: iso(until), minutes, ...actorDetails(who) });
   push(u.id);
   return status(u.id, now);
 }

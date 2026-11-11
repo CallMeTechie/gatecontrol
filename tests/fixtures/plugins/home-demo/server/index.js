@@ -6,6 +6,9 @@
 
 let later = null;
 
+/** { actor } when the test names one (since 1.259.0: an automation acts for that person) */
+const by = (b) => (b.actor === undefined ? undefined : { actor: b.actor });
+
 async function attempt(fn) {
   try { return { ok: true, result: await fn() }; } catch (e) { return { ok: false, code: e.code || null, error: e.message }; }
 }
@@ -18,17 +21,21 @@ module.exports = {
     const C = gc.homeCache;
     switch (req.path) {
       case '/has': return { json: { ok: true, internet: !!I, presence: !!(gc.homeNetwork && gc.homeNetwork.presence), cache: !!C, homeRef: typeof req.homeRef === 'string' } };
+      case '/actors': return { json: { ok: true, actors: !!I && I.actors === true } };
       case '/status': return { json: await attempt(() => I.status(Number(q.userId || b.userId))) };
       case '/pause':
         // a GET is no changing request: refused
         if (req.method === 'GET') return { json: await attempt(() => I.pause(Number(q.userId), 30)) };
-        return { json: await attempt(() => I.pause(b.userId, b.until)) };
-      case '/resume': return { json: await attempt(() => I.resume(b.userId)) };
-      case '/extend': return { json: await attempt(() => I.extend(b.userId, b.minutes)) };
+        return { json: await attempt(() => I.pause(b.userId, b.until, by(b))) };
+      case '/resume': return { json: await attempt(() => I.resume(b.userId, by(b))) };
+      case '/extend': return { json: await attempt(() => I.extend(b.userId, b.minutes, by(b))) };
       case '/later':
-        // outside of any request of a person: a moment after the answer
+        // outside of any request of a person: a moment after the answer (b.op / b.actor: an automation for that person)
         later = null;
-        setTimeout(() => { attempt(() => I.pause(b.userId, 10)).then((r) => { later = r; }); }, 50);
+        setTimeout(() => {
+          const run = b.op === 'resume' ? () => I.resume(b.userId, by(b)) : (b.op === 'extend' ? () => I.extend(b.userId, b.minutes, by(b)) : () => I.pause(b.userId, 10, by(b)));
+          attempt(run).then((r) => { later = r; });
+        }, 50);
         return { json: { ok: true } };
       case '/later-result': return { json: { ok: true, result: later } };
       case '/offer': return { json: await attempt(() => C.offer(b)) };
