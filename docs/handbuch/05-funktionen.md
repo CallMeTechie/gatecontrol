@@ -530,6 +530,28 @@ Protokoll, nie in der Konfiguration, die die Gateways abholen. „Schlüssel ent
 löscht ihn beim nächsten „Speichern“. Mit `http://` geht der Schlüssel unverschlüsselt
 durchs Heimnetz – besser `https://`, wenn der Server es kann.
 
+**HTTPS mit selbst signiertem Zertifikat:** Ein KI-Server im Heimnetz hat mit
+`https://` fast immer ein Zertifikat, das er sich selbst ausgestellt hat. Das
+Gateway prüft Zertifikate **immer** – statt die Prüfung abzuschalten, heftest du
+das Zertifikat an:
+
+1. Adresse mit `https://` eintragen und **„Verbindung testen“** klicken.
+2. GateControl zeigt „Der Server weist sich mit einem eigenen Zertifikat aus“ mit
+   dem **Fingerabdruck (SHA-256)**, Name und Ablaufdatum. Vergleiche den
+   Fingerabdruck mit dem, den der KI-Server anzeigt.
+3. **„Diesem Zertifikat vertrauen“** – der Test läuft noch einmal, jetzt mit
+   diesem Zertifikat, und zeigt die Modelle.
+4. **„Speichern“.** Ab jetzt verbindet sich das Gateway nur noch mit genau
+   diesem Zertifikat; unter der Adresse steht „Angeheftetes Zertifikat“.
+
+Erneuert der Server sein Zertifikat, meldet GateControl „Der Server zeigt ein
+anderes Zertifikat als das gespeicherte“ und das Gateway verbindet sich nicht
+mehr, bis du mit „Verbindung testen“ → „Neuem Zertifikat vertrauen“ →
+„Speichern“ zustimmst. Hast du am Server nichts geändert, vergleiche zuerst den
+Fingerabdruck. „Entfernen“ löst das Zertifikat wieder; eine neue Adresse vergisst
+es von selbst. Steht dort „Gateway-Update nötig“, kann das Gateway noch kein
+Zertifikat anheften – erst das [Gateway aktualisieren](06-gateway-aktualisieren.md).
+
 **Grafikkarte nutzen** (nur „Auf einem Gateway“, nicht beim Raspberry Pi): GateControl
 erkennt die Karte des Gateways (NVIDIA, AMD, Intel), ihren Treiber und – sobald der
 Dienst „ki“ sie sieht – ihren Speicher. „Grafikkarte nutzen“ wählen, „Speichern“,

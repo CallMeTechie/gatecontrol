@@ -262,6 +262,36 @@
     return lanIp + ':' + (tls ? 8883 : 1883);
   }
 
+  /** A SHA-256 fingerprint as devices and OpenSSL show it: "AB:CD:…" (null when it is not 64 hex characters). */
+  function fingerprintText(hex) {
+    if (typeof hex !== 'string' || !/^[0-9a-f]{64}$/i.test(hex)) return null;
+    return hex.toUpperCase().match(/.{2}/g).join(':');
+  }
+
+  /**
+   * The card "TLS" of the broker: { key, locked, fingerprint, cert, validTo }.
+   *   key      update_needed  the gateway cannot make the certificate itself (older gateway) — the switch is
+   *                           locked while TLS is off (switching it off again always works)
+   *            off | pending (switched on, the gateway has not reported yet) | on | missing_cert
+   * `gateway`: the hello view (null while the gateway never connected — then nothing is locked).
+   */
+  function tlsView(settings, status, gateway) {
+    const on = !!(settings && settings.mqttTls);
+    const old = !!gateway && gateway.mqttTlsSupported === false;
+    const tls = status ? status.tls : null;
+    const out = { key: 'off', locked: old && !on, fingerprint: null, cert: null, validTo: null };
+    if (old) out.key = 'update_needed';
+    else if (!on) out.key = 'off';
+    else if (tls === 'missing_cert') out.key = 'missing_cert';
+    else if (tls === 'on') {
+      out.key = 'on';
+      out.fingerprint = fingerprintText(status.tlsSha256);
+      out.cert = typeof status.tlsCert === 'string' && status.tlsCert ? status.tlsCert : null;
+      out.validTo = typeof status.tlsValidTo === 'string' ? status.tlsValidTo : null;
+    } else out.key = 'pending';
+    return out;
+  }
+
   /**
    * Status line of the broker: { key, tone } (gwe.mqtt.status.<key>); while the edge channel is down
    * and the server knows why (connection.reason), also `reason` with the tone of that reason.
@@ -311,6 +341,6 @@
     TABS, STATES, REASONS, reasonDoc, parseHash, hashFor, pluginState, boundaryState, pluginControl, summary, capabilityRows, capabilityKeys, needsMqtt,
     memoryHint, ramLabel, EDGE_BASE_MB, PER_PLUGIN_MB,
     ACCOUNTS_MAX, TOPICS_MAX, USER_RE, ACCESS, TEMPLATES, template, usernameProblem, topicOk, plannedTopics, accountBody,
-    topicPrefix, brokerAddress, brokerStatus, accountStatus, errorKey, LOG_FILTERS, logLabel,
+    topicPrefix, brokerAddress, fingerprintText, tlsView, brokerStatus, accountStatus, errorKey, LOG_FILTERS, logLabel,
   };
 });

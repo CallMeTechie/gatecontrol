@@ -487,6 +487,43 @@ module.exports = (ctx) => {
         return /192\.168\.1\.23:1883/.test(t) && /pi-keller\.local/.test(t) && document.querySelector('#gwe-tabpanel [aria-labelledby="gwe-h-broker"] .gwe-copy');
       }));
       step('mqtt mock: TLS on, gateway reports missing_cert → "Zertifikat fehlt"', await page.evaluate(() => !!document.querySelector('[aria-labelledby="gwe-h-tls"] .gwe-note-warn')));
+      // TLS on port 8883: the gateway made its certificate — fingerprint and certificate to copy into devices
+      const tlsBefore = { gateway: { ...pi.gateway }, settings: { ...pi.settings }, status: { ...pi.mqtt.status } };
+      const fp = 'efcc6bcba293fa77e8c2a59f5e8c5dfb3d4673e5174905628a2e201e98e84853';
+      pi.gateway.mqttTlsSupported = true;
+      pi.mqtt.status = { ...pi.mqtt.status, tls: 'on', tlsSha256: fp, tlsValidTo: '2036-11-08T11:16:10.000Z', tlsCert: '-----BEGIN CERTIFICATE-----\nMIIBlDCCATmg\n-----END CERTIFICATE-----\n' };
+      await fresh(page);
+      await goTab(page, PI, 'edge');
+      await goTab(page, PI, 'mqtt');
+      step('mqtt mock: TLS on → port 8883 active, the fingerprint (SHA-256) and the certificate with "Kopieren", port 1883 stays', await page.evaluate((hex) => {
+        const c = document.querySelector('[aria-labelledby="gwe-h-tls"]');
+        const code = c && c.querySelector('[data-tls-fp]');
+        const sw = c && c.querySelector('[data-fk="gwe-tls-sw"]');
+        return !!code && code.textContent === hex.toUpperCase().match(/../g).join(':') && c.querySelectorAll('.gwe-copy').length === 2
+          && /192\.168\.1\.23:8883/.test(c.textContent) && !c.querySelector('.gwe-note-warn') && sw.getAttribute('aria-checked') === 'true' && !sw.disabled
+          && /192\.168\.1\.23:1883/.test(document.querySelector('[aria-labelledby="gwe-h-broker"]').textContent)
+          && /Shelly/.test(c.textContent) && !!c.querySelector('a[data-guide="mqtt.tls"]');
+      }, fp));
+      await shot(page, 'gwe-mqtt-tls-dark');
+      // an older gateway cannot make the certificate: the switch is locked, "Gateway-Update nötig"
+      pi.gateway.mqttTlsSupported = false;
+      pi.settings.mqttTls = false;
+      pi.mqtt.status = { ...tlsBefore.status, tls: 'off' };
+      await fresh(page);
+      await goTab(page, PI, 'edge');
+      await goTab(page, PI, 'mqtt');
+      step('mqtt mock: older gateway → the TLS switch is locked, "Gateway-Update nötig"', await page.evaluate(() => {
+        const c = document.querySelector('[aria-labelledby="gwe-h-tls"]');
+        const sw = c && c.querySelector('[data-fk="gwe-tls-sw"]');
+        return !!sw && sw.disabled && sw.getAttribute('aria-checked') === 'false' && /Gateway-Update nötig|Gateway update needed/.test(c.querySelector('.gwe-note-warn').textContent)
+          && !c.querySelector('[data-tls-fp]');
+      }));
+      pi.gateway = tlsBefore.gateway;
+      pi.settings = tlsBefore.settings;
+      pi.mqtt.status = tlsBefore.status;
+      await fresh(page);
+      await goTab(page, PI, 'edge');
+      await goTab(page, PI, 'mqtt');
       step('mqtt mock: table with 4 accounts, plugin/admin, locked one offers "entsperren", every account can be deleted', await page.evaluate(() => {
         const rows = [...document.querySelectorAll('.gwe-table tbody tr')];
         const esp = document.querySelector('tr[data-account="esp-test"] [data-fk^="lock:"]');

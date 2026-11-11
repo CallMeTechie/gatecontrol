@@ -507,6 +507,27 @@ gateways fetch. “Remove the key” deletes it with the next “Save”. With `
 key travels unencrypted through the home network – `https://` is better if the server
 can do it.
 
+**HTTPS with a self-signed certificate:** with `https://` an AI server in the home
+network nearly always has a certificate it issued to itself. The gateway **always**
+checks certificates – instead of switching the check off, you pin the certificate:
+
+1. Enter the address with `https://` and click **“Test the connection”**.
+2. GateControl shows “The server identifies itself with its own certificate” with
+   the **fingerprint (SHA-256)**, the name and the expiry date. Compare the
+   fingerprint with the one the AI server shows.
+3. **“Trust this certificate”** – the test runs again, now with this certificate,
+   and lists the models.
+4. **“Save”.** From now on the gateway connects only with exactly this
+   certificate; below the address it says “Pinned certificate”.
+
+When the server renews its certificate, GateControl reports “The server presents
+another certificate than the stored one” and the gateway no longer connects until
+you agree with “Test the connection” → “Trust the new certificate” → “Save”. If
+you changed nothing on the server, compare the fingerprint first. “Remove” lets
+the certificate go again; a new address forgets it by itself. If it says “Gateway
+update needed”, the gateway cannot pin a certificate yet –
+[update the gateway](06-updating-a-gateway.md) first.
+
 **Use the graphics card** (only “On a gateway”, not on the Raspberry Pi): GateControl
 finds the gateway’s card (NVIDIA, AMD, Intel), its driver and – once the service “ki”
 sees it – its memory. Choose “Use the graphics card”, “Save”, then **download the new

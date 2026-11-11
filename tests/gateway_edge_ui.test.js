@@ -220,6 +220,29 @@ describe('gateway-edge-kit: MQTT accounts as the server takes them', () => {
     assert.equal(K.brokerAddress('192.168.1.23', false), '192.168.1.23:1883');
     assert.equal(K.brokerAddress('192.168.1.23', true), '192.168.1.23:8883');
     assert.equal(K.brokerAddress(null), null);
+    // TLS on port 8883: the fingerprint as devices show it; an older gateway locks the switch (only while it is off)
+    const fp = 'efcc6bcba293fa77e8c2a59f5e8c5dfb3d4673e5174905628a2e201e98e84853';
+    assert.equal(K.fingerprintText(fp), 'EF:CC:6B:CB:A2:93:FA:77:E8:C2:A5:9F:5E:8C:5D:FB:3D:46:73:E5:17:49:05:62:8A:2E:20:1E:98:E8:48:53');
+    for (const bad of [null, '', 'abc', fp + '00', 'zz'.repeat(32)]) assert.equal(K.fingerprintText(bad), null);
+    const can = { mqttTlsSupported: true };
+    const old = { mqttTlsSupported: false };
+    assert.deepEqual(K.tlsView({ mqttTls: false }, null, can), { key: 'off', locked: false, fingerprint: null, cert: null, validTo: null });
+    assert.deepEqual(K.tlsView({ mqttTls: false }, null, null), { key: 'off', locked: false, fingerprint: null, cert: null, validTo: null }, 'a gateway that never connected: nothing locked');
+    assert.deepEqual(K.tlsView({ mqttTls: false }, { tls: 'off' }, old), { key: 'update_needed', locked: true, fingerprint: null, cert: null, validTo: null });
+    assert.equal(K.tlsView({ mqttTls: true }, { tls: 'missing_cert' }, old).key, 'update_needed');
+    assert.equal(K.tlsView({ mqttTls: true }, { tls: 'missing_cert' }, old).locked, false, 'switching it off again always works');
+    assert.equal(K.tlsView({ mqttTls: true }, { tls: 'missing_cert' }, can).key, 'missing_cert');
+    assert.equal(K.tlsView({ mqttTls: true }, null, can).key, 'pending');
+    assert.equal(K.tlsView({ mqttTls: true }, { tls: 'off' }, can).key, 'pending');
+    assert.deepEqual(K.tlsView({ mqttTls: true }, { tls: 'on', tlsSha256: fp, tlsCert: 'PEM', tlsValidTo: '2036-11-08T11:16:10.000Z' }, can),
+      { key: 'on', locked: false, fingerprint: K.fingerprintText(fp), cert: 'PEM', validTo: '2036-11-08T11:16:10.000Z' });
+    assert.deepEqual(K.tlsView({ mqttTls: true }, { tls: 'on' }, can), { key: 'on', locked: false, fingerprint: null, cert: null, validTo: null }, 'an older status without the fingerprint');
+    for (const k of ['pending', 'update_needed', 'update_needed_d', 'k_fp', 'copy_fp', 'k_cert', 'cert_self', 'cert_self_until', 'copy_cert', 'fp_hint', 'text', 'cert_note', 'missing_cert_d']) {
+      assert.ok(de['gwe.tls.' + k] && en['gwe.tls.' + k], 'gwe.tls.' + k);
+    }
+    assert.match(de['gwe.tls.text'], /Shelly.*Tasmota/);
+    assert.match(de['gwe.tls.text'], /1883 bleibt/);
+    assert.match(de['gwe.tls.update_needed'], /Gateway-Update nötig/);
     assert.equal(K.brokerStatus({ mqttEnabled: false }).key, 'off');
     assert.equal(K.brokerStatus({ mqttEnabled: true, edgeEnabled: false }).key, 'waits_edge');
     assert.equal(K.brokerStatus({ mqttEnabled: true, edgeEnabled: true }, null, false).key, 'offline');
