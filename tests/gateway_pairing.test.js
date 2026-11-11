@@ -61,7 +61,11 @@ describe('gateways pairing-code', () => {
     const { envContent } = gateways.redeemPairingCode(out.code, '192.0.2.7');
     const token = /^GC_API_TOKEN=(gc_gw_[0-9a-f]{64})$/m.exec(envContent)[1];
     const after = db.prepare('SELECT api_token_hash FROM gateway_meta WHERE peer_id=?').get(gw.peer.id).api_token_hash;
-    assert.equal(after, 'sha256:' + crypto.createHash('sha256').update(token).digest('hex'));
+    // the gateway API accepts exactly the token of the new gateway.env (the same check the middleware does)
+    const accepted = require('../src/middleware/gatewayAuth').authenticate(`Bearer ${token}`, '192.0.2.7');
+    assert.equal(accepted.ok, true);
+    assert.equal(accepted.gateway.peer_id, gw.peer.id);
+    assert.equal(accepted.gateway.token_hash, after);
     assert.notEqual(after, mid);
     assert.ok(gateways.pairingState(gw.peer.id).consumed_at > 0);
     assert.throws(() => gateways.renewAccess(999999), /not_a_gateway/);
