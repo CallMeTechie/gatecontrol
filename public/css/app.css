@@ -9800,6 +9800,7 @@ a.lg-ev-msg:hover{color:var(--teal)}
 .gwh-day:has(input:checked){background:var(--teal-soft); border-color:var(--teal); color:var(--text)}
 .gwh-day:has(input:focus-visible){outline:2px solid var(--teal); outline-offset:2px}
 .gwh-times{display:grid; grid-template-columns:repeat(2,minmax(0,160px)); gap:12px}
+.gwh-times[hidden]{display:none}
 .gwh-time{min-height:40px}
 .gwh-overnight{min-height:0}
 .gwh-overnight:empty{display:none}

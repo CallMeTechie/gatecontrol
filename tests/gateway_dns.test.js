@@ -198,6 +198,62 @@ describe('profiles: people and devices of the network watch → MAC addresses', 
     assert.equal(dns.dayKey(dns.zoned(2026, 11, 5, 23, 30, tz), tz), '2026-11-05');
   });
 
+  it('a time for the whole day: 00:00–24:00, also given as 00:00–00:00; 24:00 else is midnight', async () => {
+    const dns = require('../src/services/homeDns');
+    const r = await admin('post', '/dns/profiles').send({ name: 'Wochenende', schedules: [
+      { days: [6, 7], from: '00:00', to: '24:00', block: 'all' },
+      { days: [1], from: '00:00', to: '00:00', block: 'categories', categories: ['games'] },
+      { days: [2], from: '18:00', to: '24:00', block: 'all' },
+    ] }).expect(200);
+    const p = r.body.profile;
+    assert.deepEqual(p.schedules.map((x) => [x.from, x.to]), [['00:00', '24:00'], ['00:00', '24:00'], ['18:00', '00:00']]);
+    assert.equal(dns.allDay(p.schedules[0]), true);
+    assert.equal(dns.allDay(p.schedules[2]), false);
+    // the gateway gets it as it has always read it: `to` 24:00
+    const sent = (await gwReq('get', '/config')).body.features.dns.profiles.find((x) => x.id === p.id);
+    assert.deepEqual(sent.schedules[0], { days: [6, 7], from: '00:00', to: '24:00', block: 'all', categories: [], allowAlways: [] });
+    // still refused: equal times that are not the whole day, 24:00 as the start, 25:00
+    for (const [from, to] of [['08:00', '08:00'], ['24:00', '06:00'], ['00:00', '25:00'], ['24:00', '24:00']]) {
+      assert.equal((await admin('put', `/dns/profiles/${p.id}`).send({ schedules: [{ days: [1], from, to, block: 'all' }] })).body.code, 'invalid_schedule', `${from}–${to}`);
+    }
+    const tz = 'Europe/Berlin';
+    // Friday 6 November 2026 20:00: the weekend follows — Saturday and Sunday are one window
+    const n1 = dns.nextSchedule({ schedules: [p.schedules[0]] }, dns.zoned(2026, 11, 6, 20, 0, tz), tz);
+    assert.deepEqual(n1, { from: '2026-11-06T23:00:00.000Z', to: '2026-11-08T23:00:00.000Z', block: 'all', categories: [], active: false });
+    // Sunday noon: running, until midnight
+    const n2 = dns.nextSchedule({ schedules: [p.schedules[0]] }, dns.zoned(2026, 11, 8, 12, 0, tz), tz);
+    assert.equal(n2.active, true);
+    assert.equal(n2.to, '2026-11-08T23:00:00.000Z');
+    // Tuesday 18:00–24:00 before a whole Wednesday is one window; another block is not joined
+    const tue = { days: [2], from: '18:00', to: '00:00', block: 'all', categories: [] };
+    const wed = { days: [3], from: '00:00', to: '24:00', block: 'all', categories: [] };
+    const tueNoon = dns.zoned(2026, 11, 3, 12, 0, tz);
+    assert.equal(dns.nextSchedule({ schedules: [tue, wed] }, tueNoon, tz).to, '2026-11-04T23:00:00.000Z');
+    assert.equal(dns.nextSchedule({ schedules: [tue, { ...wed, block: 'categories', categories: ['games'] }] }, tueNoon, tz).to, '2026-11-03T23:00:00.000Z');
+    // the day the clocks go back (25 October 2026) has 25 hours
+    const oct = dns.nextSchedule({ schedules: [{ days: [7], from: '00:00', to: '24:00', block: 'all', categories: [] }] }, dns.zoned(2026, 10, 25, 12, 0, tz), tz);
+    assert.deepEqual([oct.from, oct.to], ['2026-10-24T22:00:00.000Z', '2026-10-25T23:00:00.000Z']);
+    // stored settings of an older version stay as they are
+    assert.deepEqual(dns.normalize({ profiles: [{ schedules: [{ days: [1], from: '21:00', to: '07:00', block: 'all' }, { days: [1], from: '09:00', to: '09:00', block: 'all' }] }] }).profiles[0].schedules,
+      [{ days: [1], from: '21:00', to: '07:00', block: 'all', categories: [], allowAlways: [] }]);
+    await admin('delete', `/dns/profiles/${p.id}`).expect(200);
+  });
+
+  it('profiles belong to the gateway: another site keeps its own', async () => {
+    const dns = require('../src/services/homeDns');
+    const before = JSON.stringify(dns.get(gw.peer.id));
+    const office = (await admin('post', '/dns/profiles', gw2).send({ name: 'Kinder', lists: ['ads'], schedules: [{ days: [1, 2, 3, 4, 5, 6, 7], from: '00:00', to: '24:00', block: 'categories', categories: ['games'] }] }).expect(200)).body.profile;
+    assert.notEqual(office.id, kids.id);
+    assert.equal(JSON.stringify(dns.get(gw.peer.id)), before, 'the first gateway is untouched');
+    assert.deepEqual(dns.get(gw2.peer.id).profiles.map((x) => x.name), [STD, 'Kinder']);
+    assert.equal(dns.get(gw.peer.id).profiles.find((x) => x.id === kids.id).schedules.length, 2);
+    // every day the whole day: one window to the end of the look-ahead
+    const n = dns.nextSchedule(office, dns.zoned(2026, 11, 5, 12, 0, 'Europe/Berlin'), 'Europe/Berlin');
+    assert.equal(n.active, true);
+    assert.equal(n.to, '2026-11-12T23:00:00.000Z');
+    await admin('delete', `/dns/profiles/${office.id}`, gw2).expect(200);
+  });
+
   it('patterns: subdomains, wildcards, punycode; junk is refused', () => {
     const { normPattern } = require('../src/services/homeDns');
     assert.equal(normPattern('Example.COM.'), 'example.com');

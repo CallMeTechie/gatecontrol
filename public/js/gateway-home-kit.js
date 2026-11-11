@@ -33,9 +33,12 @@
     return runs.map(([a, b]) => (a === b ? names[a - 1] : names[a - 1] + '–' + names[b - 1])).join(', ');
   }
 
-  /** 'Mo–Fr 21:00 – 07:00' */
-  function scheduleTitle(x, names, every) {
-    return daysLabel(x.days, names, every) + ' ' + x.from + ' – ' + x.to;
+  /** Is a time window the whole day (00:00–24:00)? */
+  function allDay(x) { return !!x && x.from === '00:00' && x.to === '24:00'; }
+
+  /** 'Mo–Fr 21:00 – 07:00', 'Sa, So ganztägig' */
+  function scheduleTitle(x, names, every, whole) {
+    return daysLabel(x.days, names, every) + ' ' + (allDay(x) ? (whole || '00:00 – 24:00') : x.from + ' – ' + x.to);
   }
 
   /** Does a time window cross midnight (to before from)? */
@@ -108,5 +111,5 @@
     return v == null || !Number.isFinite(Number(v)) ? null : Math.round(Number(v) * 10) / 10;
   }
 
-  return { DAYS, CATEGORIES, ROUTERS, KINDS, daysLabel, scheduleTitle, overnight, parsePatterns, bytesParts, gibLabel, dnsMemMb, routerCheck, pickV6, pct };
+  return { DAYS, CATEGORIES, ROUTERS, KINDS, daysLabel, scheduleTitle, allDay, overnight, parsePatterns, bytesParts, gibLabel, dnsMemMb, routerCheck, pickV6, pct };
 });

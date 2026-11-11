@@ -213,6 +213,43 @@ module.exports = (ctx) => {
         allow((p) => p.kind === 'http' && p.status === 400 && /\/dns\/profiles\//.test(p.url));
         allow((p) => p.kind === 'console' && /400/.test(p.text));
 
+        // a time for the whole day: "Ganztägig" hides from/to, the gateway gets 00:00–24:00
+        await page.click('#gwe-tabpanel .gwh-prof[data-profile="' + kids.id + '"] [data-fk^="gwh-prof:"]');
+        await until(page, () => document.querySelector('.gwh-profdlg .gwh-addtime'));
+        await page.click('.gwh-profdlg .gwh-addtime');
+        await until(page, () => document.getElementById('gwh-sn-whole'));
+        await page.evaluate(() => { for (const n of [1, 2, 3, 4, 5, 6, 7]) { const c = document.getElementById('gwh-sn-d' + n); if (c.checked !== (n > 5)) c.click(); } });
+        await page.check('#gwh-sn-whole');
+        step('home: "Ganztägig" hides from/to and says midnight to midnight', await until(page, () => {
+          const t = document.querySelector('.gwh-sched-ed .gwh-times');
+          return t && getComputedStyle(t).display === 'none' && (document.querySelector('.gwh-sched-ed .gwh-overnight') || {}).textContent.length > 5;
+        }));
+        await dialogShot(page, 'gwhome-allday-editor-dark');
+        await page.click('.gwh-sched-ed .btn-primary');
+        step('home: the list shows the whole day by name (Sa–So ganztägig)', await until(page, () => /(Sa–So ganztägig|Sat–Sun all day)/.test((document.querySelector('.gwh-rules') || {}).textContent || '')));
+        await dialogShot(page, 'gwhome-allday-rules-dark');
+        await page.click('.gwh-profdlg .gwn-foot-r .btn-primary');
+        await until(page, () => !document.querySelector('.gwh-profdlg'));
+        const cfgDay = await pullCfg();
+        const kidsDay = cfgDay.features.dns.profiles.find((p) => p.id === kids.id);
+        step('home: the gateway pulls the whole day as 00:00–24:00 on Saturday and Sunday',
+          !!kidsDay && kidsDay.schedules.length === 2 && kidsDay.schedules[1].from === '00:00' && kidsDay.schedules[1].to === '24:00' && kidsDay.schedules[1].days.join() === '6,7', JSON.stringify(kidsDay && kidsDay.schedules));
+        step('home: the profile row counts the second time', await until(page, ([id]) => /\(\+1\)/.test((document.querySelector('#gwe-tabpanel .gwh-prof[data-profile="' + id + '"]') || {}).textContent || ''), [kids.id]));
+        await page.click('#gwe-tabpanel .gwh-prof[data-profile="' + kids.id + '"] [data-fk^="gwh-prof:"]');
+        await until(page, () => document.querySelectorAll('.gwh-profdlg .gwh-rule').length === 2);
+        await page.click('.gwh-profdlg .gwh-rule:nth-of-type(2) .btn-ghost');
+        step('home: editing it again: "Ganztägig" is ticked, from/to stay hidden', await until(page, () => {
+          const c = document.getElementById('gwh-s1-whole');
+          return c && c.checked && getComputedStyle(document.querySelector('.gwh-sched-ed .gwh-times')).display === 'none';
+        }));
+        await page.uncheck('#gwh-s1-whole');
+        step('home: without the tick from/to come back with a usable time', await until(page, () => {
+          const t = document.querySelector('.gwh-sched-ed .gwh-times');
+          return getComputedStyle(t).display !== 'none' && document.getElementById('gwh-s1-from').value === '21:00' && document.getElementById('gwh-s1-to').value === '07:00';
+        }));
+        await page.keyboard.press('Escape');
+        await until(page, () => !document.querySelector('.gwh-profdlg'));
+
         // router dialog
         await page.click('[data-fk="gwh-router"]');
         step('home: router dialog: FRITZ!Box steps with IPv4 and the ULA IPv6 address, copy buttons', await until(page, () => {

@@ -29,6 +29,11 @@ describe('gateway-home-kit', () => {
     assert.equal(K.daysLabel([1, 2, 3, 4, 5, 6, 7], n, 'täglich'), 'täglich');
     assert.equal(K.daysLabel([], n, 'x'), '');
     assert.equal(K.scheduleTitle({ days: [1, 2, 3, 4, 5], from: '21:00', to: '07:00' }, n, 'x'), 'Mo–Fr 21:00 – 07:00');
+    assert.equal(K.scheduleTitle({ days: [6, 7], from: '00:00', to: '24:00' }, n, 'x', 'ganztägig'), 'Sa–So ganztägig');
+    assert.equal(K.scheduleTitle({ days: [1], from: '00:00', to: '24:00' }, n, 'x'), 'Mo 00:00 – 24:00');
+    assert.equal(K.allDay({ from: '00:00', to: '24:00' }), true);
+    assert.equal(K.allDay({ from: '00:00', to: '00:00' }), false);
+    assert.equal(K.overnight({ from: '00:00', to: '24:00' }), false);
     assert.equal(K.overnight({ from: '21:00', to: '07:00' }), true);
     assert.equal(K.overnight({ from: '08:00', to: '12:00' }), false);
   });

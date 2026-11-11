@@ -127,6 +127,17 @@ device (e.g. the Synology “DNS Server” package, Pi-hole or systemd-resolved)
 5. Switch the devices' Wi-Fi off and on once.
 6. Create profiles and times under “Profiles”. The times use the server's time zone.
 
+**Times:** A time applies on the chosen days from “From” to “To”. If “To” is
+before “From” (e.g. 21:00 – 07:00), it goes past midnight and ends the next
+morning – the day it starts on counts. For a whole day (00:00 to 24:00) tick
+“All day”, e.g. “Sat–Sun all day”.
+
+**Several sites:** Profiles, times and exceptions belong to the gateway in
+whose tab you create them – not to all gateways. The gateway at home and the
+one in the holiday flat or the office each have their own profiles. Only
+gateways in the same home network (failover gateway, same router) share the
+settings; the tab then shows “Holds for the whole home network”.
+
 **Important:** If the gateway is off, the devices in the home network can no
 longer resolve names – the internet then seems “gone”. A second gateway as a
 reserve helps. If you want to switch the filter off again, clear the field in
