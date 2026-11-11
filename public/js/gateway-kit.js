@@ -707,8 +707,8 @@
     // The gateway service as in docker-compose.example.yml of gatecontrol-gateway (tests/fixtures/
     // gateway-compose/docker-compose.example.yml, compared by tests/gateway_compose_parity.test.js).
     // Deliberate differences: no TZ line (the gateway takes its time zone from the server since
-    // gateway 1.22.0 — the env value would only be a fallback), the wireguard-go switch only on
-    // synology (linux = kernel WireGuard), bridge mode without the host-only parts.
+    // gateway 1.22.0 — the env value would only be a fallback), /dev/net/tun and the wireguard-go
+    // switch only on synology (linux = kernel WireGuard), bridge mode without the host-only parts.
     lines.push(
       'services:',
       '  gateway:',
@@ -735,15 +735,13 @@
         '      - SETUID            # keepalived enable_script_security (health-check script)'
       );
     }
-    // /dev/net/tun for wireguard-go, allowed by rule instead of `devices:` — with `devices` the container does
-    // not start at all while the host has no /dev/net/tun (Synology before `insmod tun.ko`); this way it starts,
-    // creates the node itself (hence MKNOD) and its setup page says what to do. On linux the kernel WireGuard is
-    // used and the rule only keeps the userspace fallback possible.
-    lines.push(
-      '      - MKNOD             # create /dev/net/tun in the container (device_cgroup_rules below, nothing else)',
-      '    device_cgroup_rules:',
-      "      - 'c 10:200 rwm'"
-    );
+    // /dev/net/tun only for the wireguard-go userspace path.
+    if (platform === 'synology') {
+      lines.push(
+        '    devices:',
+        '      - /dev/net/tun:/dev/net/tun'
+      );
+    }
     if (network === 'bridge') {
       lines.push(
         '    ports:',

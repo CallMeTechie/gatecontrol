@@ -407,24 +407,22 @@ normally. You do not need to do anything.
 
 ### “/dev/net/tun” is missing (Synology)
 
-On the Synology the gateway needs the device `/dev/net/tun`. DSM only provides
-it once the module `tun` is loaded.
-
-**With the current compose file** the container starts all the same, and the
-[setup page of the gateway](03-gateway-setup.md#the-setup-page-of-the-gateway)
-(`http://<address of the Synology>:8642`) shows “VPN device missing” with the
-instructions – without SSH:
+On the Synology the gateway needs the device `/dev/net/tun`. If it is missing,
+the container `gateway` does not start and the message names `/dev/net/tun` –
+the setup page does not exist yet then. DSM provides the device once the module
+`tun` is loaded. This works without SSH:
 
 1. “Control Panel” → “Task Scheduler” → “Create” → “Triggered Task” →
    “User-defined script”.
 2. User `root`, event “Boot-up”.
 3. Command: `insmod /lib/modules/tun.ko`
-4. Select the task and choose “Run”. The page checks again every 10 seconds.
+4. Select the task and choose “Run”.
+5. Start the project in Container Manager.
 
-**With an older compose file** (`devices: /dev/net/tun`) the container
-`gateway` does not start and the message names `/dev/net/tun`. The same task
-helps; restart the project afterwards. Via SSH `sudo insmod /lib/modules/tun.ko`
-works as well.
+With the event “Boot-up” this survives a restart of the NAS. Via SSH
+`sudo insmod /lib/modules/tun.ko` works as well.
+
+**Check:** The project starts, the container `gateway` is running.
 
 ### The setup page of the gateway does not open
 

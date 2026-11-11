@@ -2193,7 +2193,8 @@ table tbody tr:last-child td { border-bottom: none; }
 .gwz-link:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; border-radius: 4px; }
 .gwz-compose { margin-top: 10px; max-height: 168px; white-space: pre; flex: none; }
 .gwz-st .gwz-row { margin-top: 8px; }
-.gwz-cw-net { margin-top: 10px; }
+.gwz-cw-net, .gwz-cw-tun { margin-top: 10px; }
+.gwz-cw-tun[hidden] { display: none; }
 .gwz-pairbox { display: flex; flex-direction: column; border: 1px dashed var(--teal-dim, var(--line-2)); border-radius: 14px; background: var(--surface); overflow: hidden; }
 .gwz-pair { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 12px 14px; min-width: 0; }
 .gwz-pair + .gwz-pair { border-top: 1px solid var(--line); }

@@ -63,8 +63,10 @@ Good to know:
 - The page exists **in the home network only**. It does not answer from the
   internet or through the tunnel, and it never shows keys or access data.
 - If the device lacks something (no internet, wrong clock, VPN device missing,
-  folder `config` not writable), the page says what to do – on a Synology with
-  click instructions for DSM, without SSH.
+  folder `config` not writable), the page says what to do. On a Synology this
+  does not hold for the VPN device: if `/dev/net/tun` is missing there, the
+  container does not start at all and the page does not exist yet – see the
+  [FAQ](07-faq.md#devnettun-is-missing-synology).
 - Once connected, the same address only shows the state. This can be switched
   off per gateway: [Status page in the home network](05-features.md#status-page-in-the-home-network).
 - At most 5 attempts in 5 minutes. After that it says “Too many attempts”.
@@ -124,17 +126,17 @@ You need DSM 7.2 or newer and the **Container Manager** package from the Package
    > The Synology kernel cannot set the process limit (`pids_limit`). Docker
    > leaves it out; everything else runs normally.
 
+   > **If the project does not start and the message names `/dev/net/tun`**,
+   > the Synology lacks the VPN device. Without SSH: “Control Panel” → “Task
+   > Scheduler” → “Create” → “Triggered Task” → “User-defined script”, user
+   > `root`, event “Boot-up”, command `insmod /lib/modules/tun.ko`; select the
+   > task, “Run”, then start the project. The assistant shows the same steps.
+
 8. In a browser in the home network open `http://<address of the Synology>:8642`
    – the [setup page of the gateway](#the-setup-page-of-the-gateway).
 9. Enter the **server address** and the **setup code** from the assistant
    (each with “Copy”) and click “Connect”. The page shows: code accepted →
    access data stored → VPN tunnel → GateControl reports the gateway as online.
-
-   > If the page shows **“VPN device missing”**, it says below what to do:
-   > “Control Panel” → “Task Scheduler” → “Create” → “Triggered Task” →
-   > “User-defined script”, user `root`, event “Boot-up”, command
-   > `insmod /lib/modules/tun.ko`; select the task and choose “Run”. The page
-   > checks again every 10 seconds and then enables “Connect”.
 
 10. The assistant continues to step 4 by itself.
 11. **Automatic updates (once, recommended):** “Control Panel” → “Task

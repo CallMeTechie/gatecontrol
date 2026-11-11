@@ -420,25 +420,22 @@ läuft normal. Du musst nichts tun.
 
 ### „/dev/net/tun“ fehlt (Synology)
 
-Das Gateway braucht auf der Synology das Gerät `/dev/net/tun`. DSM stellt es
-erst bereit, wenn das Modul `tun` geladen ist.
-
-**Mit der aktuellen Compose-Datei** startet der Container trotzdem, und die
-[Einrichtungsseite des Gateways](03-gateway-einrichten.md#die-einrichtungsseite-des-gateways)
-(`http://<Adresse der Synology>:8642`) zeigt „VPN-Gerät fehlt“ mit der
-Anleitung – ohne SSH:
+Das Gateway braucht auf der Synology das Gerät `/dev/net/tun`. Fehlt es, startet
+der Container `gateway` nicht und die Meldung nennt `/dev/net/tun` – die
+Einrichtungsseite gibt es dann noch nicht. DSM stellt das Gerät bereit, sobald
+das Modul `tun` geladen ist. Das geht ohne SSH:
 
 1. „Systemsteuerung“ → „Aufgabenplaner“ → „Erstellen“ → „Ausgelöste Aufgabe“ →
    „Benutzerdefiniertes Skript“.
 2. Benutzer `root`, Ereignis „Hochfahren“.
 3. Befehl: `insmod /lib/modules/tun.ko`
-4. Aufgabe markieren und „Ausführen“ wählen. Die Seite prüft alle 10 Sekunden
-   neu.
+4. Aufgabe markieren und „Ausführen“ wählen.
+5. Das Projekt im Container Manager starten.
 
-**Mit einer älteren Compose-Datei** (`devices: /dev/net/tun`) startet der
-Container `gateway` nicht und die Meldung nennt `/dev/net/tun`. Dieselbe
-Aufgabe hilft; danach das Projekt neu starten. Per SSH geht auch
-`sudo insmod /lib/modules/tun.ko`.
+Mit dem Ereignis „Hochfahren“ übersteht das einen Neustart der NAS. Per SSH
+geht auch `sudo insmod /lib/modules/tun.ko`.
+
+**Prüfen:** Das Projekt startet, der Container `gateway` läuft.
 
 ### Die Einrichtungsseite des Gateways öffnet sich nicht
 

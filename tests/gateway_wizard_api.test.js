@@ -147,7 +147,7 @@ describe('Synology package', () => {
     const byName = Object.fromEntries(entries.map((e) => [e.name, e]));
     const compose = byName['docker-compose.yml'].data.toString();
     assert.match(compose, /network_mode: host/);
-    assert.match(compose, /device_cgroup_rules:/);
+    assert.match(compose, /\/dev\/net\/tun/);
     assert.match(compose, /\.\/gateway-state:\/state/);
     assert.equal(byName['update.sh'].data.toString(),
       fs.readFileSync(path.join(__dirname, '..', 'src/services/gatewaySetup/templates/update.sh'), 'utf8'));

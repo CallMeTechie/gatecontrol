@@ -65,8 +65,10 @@ Gut zu wissen:
 - Die Seite gibt es **nur im Heimnetz**. Aus dem Internet und über den Tunnel
   antwortet sie nicht, und sie zeigt nie Schlüssel oder Zugangsdaten.
 - Fehlt dem Gerät etwas (kein Internet, falsche Uhrzeit, VPN-Gerät fehlt,
-  Ordner `config` nicht beschreibbar), sagt die Seite, was zu tun ist – auf der
-  Synology mit einer Klick-Anleitung für DSM, ohne SSH.
+  Ordner `config` nicht beschreibbar), sagt die Seite, was zu tun ist. Auf der
+  Synology gilt das nicht für das VPN-Gerät: Fehlt dort `/dev/net/tun`, startet
+  der Container gar nicht, und die Seite gibt es noch nicht – siehe
+  [FAQ](07-faq.md#devnettun-fehlt-synology).
 - Nach dem Verbinden zeigt dieselbe Adresse nur noch den Zustand. Das lässt
   sich pro Gateway abschalten: [Statusseite im Heimnetz](05-funktionen.md#statusseite-im-heimnetz).
 - Höchstens 5 Versuche in 5 Minuten. Danach heißt es „Zu viele Versuche“.
@@ -127,18 +129,19 @@ Du brauchst DSM 7.2 oder neuer und das Paket **Container Manager** aus dem Paket
    > Der Kernel der Synology kann die Prozess-Grenze (`pids_limit`) nicht
    > setzen. Docker lässt sie weg, alles andere läuft normal.
 
+   > **Startet das Projekt nicht und die Meldung nennt `/dev/net/tun`**, fehlt
+   > der Synology das VPN-Gerät. Ohne SSH: „Systemsteuerung“ → „Aufgabenplaner“
+   > → „Erstellen“ → „Ausgelöste Aufgabe“ → „Benutzerdefiniertes Skript“,
+   > Benutzer `root`, Ereignis „Hochfahren“, Befehl
+   > `insmod /lib/modules/tun.ko`; Aufgabe markieren, „Ausführen“, dann das
+   > Projekt starten. Der Assistent zeigt dieselben Schritte.
+
 8. Öffne im Browser im Heimnetz `http://<Adresse der Synology>:8642` – die
    [Einrichtungsseite des Gateways](#die-einrichtungsseite-des-gateways).
 9. Trage **Serveradresse** und **Einrichtungscode** aus dem Assistenten ein
    (jeweils mit „Kopieren“) und klicke „Verbinden“. Die Seite zeigt: Code
    angenommen → Zugangsdaten gespeichert → VPN-Tunnel → GateControl meldet das
    Gateway als online.
-
-   > Zeigt die Seite **„VPN-Gerät fehlt“**, steht darunter, was zu tun ist:
-   > „Systemsteuerung“ → „Aufgabenplaner“ → „Erstellen“ → „Ausgelöste Aufgabe“
-   > → „Benutzerdefiniertes Skript“, Benutzer `root`, Ereignis „Hochfahren“,
-   > Befehl `insmod /lib/modules/tun.ko`; Aufgabe markieren und „Ausführen“.
-   > Die Seite prüft alle 10 Sekunden neu und gibt „Verbinden“ dann frei.
 
 10. Der Assistent geht von selbst zu Schritt 4.
 11. **Automatische Updates (einmalig, empfohlen):** „Systemsteuerung“ →

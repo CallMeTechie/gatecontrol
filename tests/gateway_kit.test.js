@@ -163,13 +163,12 @@ describe('ZIP writer (stored)', () => {
 });
 
 describe('compose and commands', () => {
-  it('Synology: wireguard-go (/dev/net/tun by rule), host network, /state volume, writable config, no access data', () => {
+  it('Synology: wireguard-go (/dev/net/tun), host network, /state volume, writable config, no access data', () => {
     const c = kit.buildCompose({ platform: 'synology', network: 'host' });
     assert.match(c, /network_mode: host/);
-    // the container must start without the device (the setup page then says what to do)
-    assert.doesNotMatch(c, /\/dev\/net\/tun:\/dev\/net\/tun/);
-    assert.match(c, /device_cgroup_rules:\n {6}- 'c 10:200 rwm'/);
-    assert.match(c, /- MKNOD/);
+    // the TUN device as it always was: `devices`, no device rule for it, no MKNOD
+    assert.match(c, /\n {4}devices:\n {6}- \/dev\/net\/tun:\/dev\/net\/tun\n/);
+    assert.doesNotMatch(c, /MKNOD|c 10:200/);
     assert.match(c, /\n {6}- \.\/config:\/config /);
     assert.doesNotMatch(c, /config:\/config:ro/);
     assert.match(c, /GC_SETUP_PORT=\$\{GC_SETUP_PORT:-8642\}/);
@@ -187,7 +186,7 @@ describe('compose and commands', () => {
   it('Linux bridge: no TUN device, ports published, no host network', () => {
     const c = kit.buildCompose({ platform: 'linux', network: 'bridge' });
     assert.doesNotMatch(c, /network_mode: host/);
-    assert.doesNotMatch(c, /\/dev\/net\/tun:/);
+    assert.doesNotMatch(c, /\/dev\/net\/tun/);
     assert.match(c, /"8080:8080"/);
     assert.match(c, /"8642:8642"/, 'the setup page needs its port in bridge mode');
     assert.doesNotMatch(c, /\n  edge:|edge-run/, 'edge parts need host network');

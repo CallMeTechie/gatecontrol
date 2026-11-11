@@ -142,9 +142,8 @@ services:
       - NET_RAW           # ping (internet quality), keepalived VRRP + GARP (failover)
       - SETGID            # keepalived enable_script_security (health-check script)
       - SETUID            # keepalived enable_script_security (health-check script)
-      - MKNOD             # create /dev/net/tun in the container (device_cgroup_rules below, nothing else)
-    device_cgroup_rules:
-      - 'c 10:200 rwm'
+    devices:
+      - /dev/net/tun:/dev/net/tun
     read_only: true
     user: "0:0"                # wg-quick needs root; only the capabilities above
     tmpfs:

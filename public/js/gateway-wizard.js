@@ -512,6 +512,7 @@
     show($('gwz-cw-net'), linux);
     show($('gwz-cw-up'), linux);
     show($('gwz-cw-package'), !linux);
+    show($('gwz-cw-tun'), !linux);
     if (linux) $('gwz-cw-net-hint').textContent = T('gwiz.linux.net_hint_' + cwNet(), '');
     $('gwz-cw-compose').textContent = cwCompose();
     $('gwz-cw-url').textContent = T('gwiz.cw.url_' + pf, 'http://<…>:8642');

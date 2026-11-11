@@ -306,6 +306,17 @@
               <button type="button" class="btn btn-ghost btn-sm" id="gwz-cw-package" hidden>{{ t('gwiz.cw.package') }}</button>
             </div>
             <p class="gwz-d" id="gwz-cw-s1-hint"></p>
+            {#- Synology: without /dev/net/tun the container does not start at all — so the hint stands here, before the page -#}
+            <details class="gwz-details gwz-cw-tun" id="gwz-cw-tun" hidden>
+              <summary>{{ t('gwiz.cw.tun_title') }}</summary>
+              <p>{{ t('gwiz.cw.tun_text') }}</p>
+              <ol class="gwz-sub">
+                <li>{{ t('gwiz.cw.tun_1') }}</li>
+                <li>{{ t('gwiz.cw.tun_2') }}</li>
+                <li>{{ t('gwiz.cw.tun_3') }} <code class="gwz-k">insmod /lib/modules/tun.ko</code></li>
+                <li>{{ t('gwiz.cw.tun_4') }}</li>
+              </ol>
+            </details>
             <div class="gwz-row" id="gwz-cw-up" hidden>
               <code class="gwz-code" id="gwz-cw-up-cmd">docker compose up -d</code>
               <button type="button" class="btn btn-ghost btn-sm" data-gwz-copy="gwz-cw-up-cmd">{{ t('gwiz.copy') }}</button>
