@@ -578,7 +578,7 @@
 
   function upsDialog(id, ups) {
     const dlg = U.openDialog({ title: t('gwn.ups.dlg_title'), wide: false, cls: 'gwn-upsdlg' });
-    const host = h('input', { type: 'text', id: 'gwn-u-host', class: 'form-input gwe-mono', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false', value: ups.host || '', placeholder: '192.168.1.10', 'aria-describedby': 'gwn-u-host-hint' });
+    const host = h('input', { type: 'text', id: 'gwn-u-host', class: 'form-input gwe-mono', inputmode: 'text', autocomplete: 'off', spellcheck: 'false', value: ups.host || '', placeholder: '192.168.1.10', 'aria-describedby': 'gwn-u-host-hint' });
     const port = h('input', { type: 'number', id: 'gwn-u-port', class: 'form-input gwe-mono', min: '1', max: '65535', value: String(ups.port || 3493) });
     const name = h('input', { type: 'text', id: 'gwn-u-name', class: 'form-input gwe-mono', maxLength: 64, autocomplete: 'off', spellcheck: 'false', value: ups.name || '', 'aria-describedby': 'gwn-u-name-hint' });
     const err = U.errorBox();
@@ -595,7 +595,7 @@
     dlg.foot.append(cancel, ok);
     ok.addEventListener('click', () => {
       const p = Number(port.value);
-      if (!/^(10|172|192)\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host.value.trim())) { U.showErr(err, t('gwn.err.invalid_host')); host.setAttribute('aria-invalid', 'true'); host.focus(); return; }
+      if (!K.upsHostOk(host.value)) { U.showErr(err, t('gwn.err.invalid_ups_host')); host.setAttribute('aria-invalid', 'true'); host.focus(); return; }
       if (!Number.isInteger(p) || p < 1 || p > 65535) { U.showErr(err, t('gwn.ups.port_invalid')); port.focus(); return; }
       ok.disabled = true;
       putFeatures(id, { ups: { enabled: true, host: host.value.trim(), port: p, name: name.value.trim() || null } }, t('gwn.ups.saved'))
@@ -1213,8 +1213,10 @@
           .then(() => refreshFeatures(id))
           .catch((err) => { swEdge.disabled = false; swEdge.setAttribute('aria-checked', next ? 'false' : 'true'); D.alert({ message: errText(err), danger: true }); });
       });
-      rows.set('edge', featRow(t('gwn.feat.edge'), t('gwn.feat.edge_d'), swEdge,
-        [h('a', { href: '#gw/' + encodeURIComponent(String(id)) + '/edge', class: 'gwn-link', text: t('gwn.feat.to_edge') })], 'edge'));
+      const edgeExtra = [h('a', { href: '#gw/' + encodeURIComponent(String(id)) + '/edge', class: 'gwn-link', text: t('gwn.feat.to_edge') })];
+      // a gateway without Docker (Proxmox LXC): no edge container there — a hint, the switch stays
+      if (d.edge.native) edgeExtra.push(h('span', { class: 'gwn-hint', 'data-edge-native': '' }, [U.icon('info', 14), t('gwn.feat.edge_native')]));
+      rows.set('edge', featRow(t('gwn.feat.edge'), t('gwn.feat.edge_d'), swEdge, edgeExtra, 'edge'));
     }
     // Funk (phase 3c, step 2): Zigbee, Bluetooth, Thread — the row of gateway-radio.js; the old
     // Zigbee row only for a server answer without it

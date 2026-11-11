@@ -60,6 +60,30 @@ Nur nötig, wenn Geräte wie Shelly, Tasmota oder ESPHome über MQTT melden soll
 
 **Prüfen:** Der „Status“ zeigt „läuft“, und die Zahl der verbundenen Clients steigt.
 
+### Verschlüsselt verbinden (TLS, Port 8883)
+
+Im Heimnetz reicht meist Port 1883. Wer die Verbindung verschlüsseln will,
+schaltet im Reiter „MQTT“ bei **„Verschlüsselt verbinden (TLS)“** den Schalter
+„TLS auf Port 8883“ ein – pro Gateway, Standard ist aus.
+
+- Port 8883 kommt **zusätzlich**; Port 1883 bleibt offen. Geräte ohne TLS laufen
+  also weiter.
+- Das Gateway erzeugt das Zertifikat selbst (selbst signiert). Es bleibt über
+  Neustarts und Updates gleich.
+- Die Karte zeigt danach den **Fingerabdruck (SHA-256)** und „Zertifikat (PEM)
+  kopieren“. Geräte, die das Zertifikat prüfen, bekommen den Fingerabdruck oder
+  das Zertifikat als „eigene CA“ hinterlegt. Als Server im Gerät die Adresse des
+  Gateways mit Port 8883 eintragen.
+
+**Kann mein Gerät das?** Viele Shelly- und Tasmota-Geräte können kein TLS oder
+nur mit Aufwand: Shelly der ersten Generation gar nicht, neuere Shelly mit
+hochgeladenem Zertifikat („User CA“), Tasmota meist nur mit einer Firmware, die
+TLS enthält. Im Zweifel bleibt das Gerät auf Port 1883.
+
+Steht dort **„Gateway-Update nötig“**, ist das Gateway zu alt, um das Zertifikat
+selbst zu erzeugen – der Schalter ist dann ausgegraut. Nach dem
+[Update](06-gateway-aktualisieren.md) lässt er sich einschalten.
+
 ## 4.3 Wo erscheinen meine Geräte?
 
 Die Geräte erscheinen **im Plugin**, also links unter „Zuhause“ →

@@ -2,7 +2,18 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { isPrivateIpv4, isLoopbackHost } = require('../src/utils/validate');
+const { isPrivateIpv4, isLoopbackHost, isUlaIpv6 } = require('../src/utils/validate');
+
+describe('isUlaIpv6 (the private address of a home network without IPv4)', () => {
+  it('accepts unique local addresses (fc00::/7)', () => {
+    for (const ip of ['fd00::1', 'fc00::1', 'fd12:3456:789a:1::10', 'FD12:3456:789A:1:0:0:0:10', ' fd00::1 ', 'fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff']) assert.equal(isUlaIpv6(ip), true, ip);
+  });
+  it('rejects link-local, global, loopback, zone, brackets, embedded IPv4 and anything that is no address', () => {
+    for (const ip of ['fe80::1', 'fe00::1', '2a02:8070::5', '::1', '::', 'fd00::1%eth0', '[fd00::1]', '::ffff:10.0.0.1', 'fd00::10.0.0.1', '192.168.1.10', 'fd00', 'fd00:::1', '', null, undefined, 5, {}]) {
+      assert.equal(isUlaIpv6(ip), false, String(ip));
+    }
+  });
+});
 
 describe('isPrivateIpv4', () => {
   it('accepts RFC1918 private ranges', () => {

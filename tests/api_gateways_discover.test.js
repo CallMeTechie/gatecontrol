@@ -67,5 +67,28 @@ test('GET /:id/discovered returns the cached snapshot', async () => {
   assert.equal(res.body.ok, true);
   assert.equal(res.body.devices.length, 1);
   assert.equal(res.body.in_flight, false);
+  assert.equal(res.body.licensed, true);
+  srv.close();
+});
+
+test('GET /:id/discovered without the licence feature: an empty list with licensed: false, not a 403', async () => {
+  discoveryCache._reset();
+  const { peerId, srv } = await seedScannableGateway();
+  discoveryCache.begin(peerId, 'r2');
+  discoveryCache.ingest(peerId, 'r2', [{ ip: '192.168.1.5', ports: [] }], true);
+  const license = require('../src/services/license');
+  license._overrideForTest({ gateway_lan_discovery: false, gateway_peers: -1 });
+  try {
+    const res = await agent.get(`/api/v1/gateways/${peerId}/discovered`).expect(200);
+    assert.deepEqual(res.body, { ok: true, licensed: false, feature: 'gateway_lan_discovery', devices: [], in_flight: false, done: false, timed_out: false, updated_at: null });
+    // what an earlier scan found is not handed out without the licence; an unknown gateway is still 404
+    await agent.get('/api/v1/gateways/999999/discovered').expect(404);
+    // scanning itself stays behind the licence
+    const scan = await agent.post(`/api/v1/gateways/${peerId}/discover`).set('X-CSRF-Token', csrf).send({}).expect(403);
+    assert.equal(scan.body.feature, 'gateway_lan_discovery');
+  } finally {
+    license._overrideForTest({ gateway_lan_discovery: true, gateway_lan_discovery_multi_subnet: true, gateway_peers: -1 });
+  }
+  assert.equal((await agent.get(`/api/v1/gateways/${peerId}/discovered`).expect(200)).body.devices.length, 1);
   srv.close();
 });

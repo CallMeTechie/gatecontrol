@@ -24,13 +24,15 @@ anderen Client-Routen. Die App fragt über den **normalen Weg** (öffentlicher
 Hostname), mit oder ohne VPN. Die Server-Regel greift nur durch den Tunnel,
 die Gateway-Regel auch ohne.
 
-Optionaler Query-Parameter `local=<ipv4>[,<ipv4>…]`: die eigenen privaten
-IPv4-Adressen des Geräts auf seinen WLAN-/Ethernet-Schnittstellen. Nur ein
-einzelner Parameter zählt (mehrfach angegeben → ignoriert), höchstens die
-ersten 4 Einträge werden betrachtet, jeder muss eine strikte
-RFC-1918-Adresse in Punktschreibweise außerhalb des WireGuard-Subnetzes sein
-– alles andere wird stillschweigend verworfen. Ohne gültiges `local` greift
-die Gateway-Regel nie.
+Optionaler Query-Parameter `local=<adresse>[,<adresse>…]`: die eigenen
+privaten Adressen des Geräts auf seinen WLAN-/Ethernet-Schnittstellen. Nur ein
+einzelner Parameter zählt (mehrfach angegeben → ignoriert, länger als 200
+Zeichen → ignoriert), höchstens die ersten 4 Einträge werden betrachtet. Jeder
+muss eine strikte RFC-1918-Adresse in Punktschreibweise außerhalb des
+WireGuard-Subnetzes sein oder – für Heimnetze ohne IPv4 – eine private
+IPv6-Adresse (ULA, `fc00::/7`, z. B. `fd12:3456:789a:1::55`; ohne Zone, nie
+Link-Local `fe80::…`, nie eine öffentliche Adresse). Alles andere wird
+stillschweigend verworfen. Ohne gültiges `local` greift die Gateway-Regel nie.
 
 ```json
 { "ok": true, "lan": [], "same_lan": true, "via": "direct",
@@ -105,6 +107,18 @@ Das Gerät ist am Standort des Gateways G, wenn **alles** gilt:
    nur IPv4-Subnetze, die vollständig in einem RFC-1918-Block liegen (z. B.
    `0.0.0.0/0`, `10.0.0.0/7`, `172.0.0.0/8` werden verworfen) und das
    WireGuard-Subnetz nicht überlappen.
+
+   **Heimnetz ohne IPv4:** ein Gateway mit der Capability `ipv6-lan` meldet
+   zusätzlich `telemetry.lan_subnets6[].cidr` – die ULA-Subnetze seines LAN.
+   Eine ULA-Adresse aus `local` zählt, wenn sie in einem dieser Subnetze liegt.
+   Verwendet werden nur Subnetze, die vollständig in `fc00::/7` liegen und ein
+   Präfix von /48 bis /127 haben (`fc00::/7` oder `fd00::/8` selbst würden die
+   ULA jedes anderen Haushalts treffen). Eine Adresse wird nur mit Subnetzen
+   ihrer eigenen Familie verglichen. Punkt 2 (gleiche öffentliche Adresse)
+   gilt unverändert – auch in einem IPv6-Netz reicht das Subnetz allein nie.
+   Link-Local- und öffentliche IPv6-Adressen zählen als `local` nicht; ein
+   Heimnetz, das nur öffentliche IPv6-Adressen ohne ULA vergibt, erkennt die
+   Gateway-Regel deshalb nicht. Die Server-Regel bleibt IPv4.
 
 Passen mehrere Gateways, antwortet das mit der kleinsten Peer-ID. Fehler
 (`wg show`, Datenbank, kaputte Telemetrie) ergeben `false`.

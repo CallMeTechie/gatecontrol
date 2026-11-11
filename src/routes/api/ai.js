@@ -17,7 +17,8 @@
  *
  * The local AI (phase 3c, step 3 — services/ai/local.js):
  *   GET  /api/v1/ai/local                     setup: gateways (memory, cores, GPU, hint), catalogue with fit, current choice, use
- *   PUT  /api/v1/ai/local                     { source, peerId, model, lanUrl?, lanApi? }   switches it on at that gateway
+ *   PUT  /api/v1/ai/local                     { source, peerId, model, lanUrl?, lanApi?, lanKey?, lanPin?, gpu? }   switches it on at that gateway
+ *                                             (lanPin: the confirmed SHA-256 fingerprint of an https server's certificate; null removes it)
  *   PUT  /api/v1/ai/local/use                 { use: all | private | fallback }
  *   PUT  /api/v1/ai/local/enabled             { enabled }
  *   GET  /api/v1/ai/local/status?peer=        live from the gateway (models, download, loaded model)
@@ -25,7 +26,8 @@
  *   POST /api/v1/ai/local/pull/cancel         { peerId }
  *   POST /api/v1/ai/local/delete              { peerId, model }
  *   POST /api/v1/ai/local/test                "Testen: „Fasse diese Mail zusammen“"
- *   POST /api/v1/ai/local/probe               { peerId, lanUrl, lanApi?, lanKey? }   "Verbindung testen" (LAN server, nothing saved)
+ *   POST /api/v1/ai/local/probe               { peerId, lanUrl, lanApi?, lanKey?, lanPin? }   "Verbindung testen" (LAN server, nothing saved);
+ *                                             https: `certificate` when the server's certificate must be confirmed (tls_untrusted, tls_pin_mismatch)
  */
 
 const express = require('express');

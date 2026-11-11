@@ -66,6 +66,14 @@ detects outages with their cause.
 “Internet” you set “Measure speed”: “never automatically”, “4× a day” or
 “every hour”. Every hour uses a lot of data.
 
+**Data volume:** Each gateway may use at most 12 GB of measuring volume in 24
+hours. The gateway keeps track of its own use (gateways from the release with
+the daily budget on) – so it is lost neither when the gateway restarts nor when
+the server is updated. Once the budget is used up, the card “Speed” says from
+when on measuring works again. With “every hour”, each measurement is cut to
+about 200 MB per direction – download **and** upload; on fast lines this makes
+it slightly less exact.
+
 **Check:** Measurements show up in the tab “Internet”.
 
 ## Presence
@@ -88,7 +96,8 @@ a NUT server, for example from the Synology.
 1. On the Synology: “Control Panel” → “Hardware & Power” → “UPS” → enable the
    network UPS server and allow the gateway's IP.
 2. In GateControl click “Set address” at “UPS status”.
-3. Enter the “Address of the UPS server” (private IPv4), the “Port” (usually
+3. Enter the “Address of the UPS server” (private IPv4 – in a home network
+   without IPv4 a private IPv6 address such as `fd00::10`), the “Port” (usually
    3493) and optionally the UPS name (empty = the first UPS; Synology: `ups`).
 4. “Save and switch on”.
 
@@ -518,6 +527,27 @@ only to the gateway that forwards – never in a log, never in the configuration
 gateways fetch. “Remove the key” deletes it with the next “Save”. With `http://` the
 key travels unencrypted through the home network – `https://` is better if the server
 can do it.
+
+**HTTPS with a self-signed certificate:** with `https://` an AI server in the home
+network nearly always has a certificate it issued to itself. The gateway **always**
+checks certificates – instead of switching the check off, you pin the certificate:
+
+1. Enter the address with `https://` and click **“Test the connection”**.
+2. GateControl shows “The server identifies itself with its own certificate” with
+   the **fingerprint (SHA-256)**, the name and the expiry date. Compare the
+   fingerprint with the one the AI server shows.
+3. **“Trust this certificate”** – the test runs again, now with this certificate,
+   and lists the models.
+4. **“Save”.** From now on the gateway connects only with exactly this
+   certificate; below the address it says “Pinned certificate”.
+
+When the server renews its certificate, GateControl reports “The server presents
+another certificate than the stored one” and the gateway no longer connects until
+you agree with “Test the connection” → “Trust the new certificate” → “Save”. If
+you changed nothing on the server, compare the fingerprint first. “Remove” lets
+the certificate go again; a new address forgets it by itself. If it says “Gateway
+update needed”, the gateway cannot pin a certificate yet –
+[update the gateway](06-updating-a-gateway.md) first.
 
 **Use the graphics card** (only “On a gateway”, not on the Raspberry Pi): GateControl
 finds the gateway’s card (NVIDIA, AMD, Intel), its driver and – once the service “ki”

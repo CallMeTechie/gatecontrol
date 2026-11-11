@@ -64,7 +64,8 @@ describe('features in the config pull', () => {
     const r = await gwReq('get', '/config').expect(200);
     assert.deepEqual(r.body.features, {
       netwatch: { enabled: true, portscan: true },
-      inetq: { enabled: true, speedtest: '4x' },
+      // speedVolume: the daily volume of the speed tests (the cap per test only with the plan 'hourly')
+      inetq: { enabled: true, speedtest: '4x', speedVolume: { dayBytes: 12000000000 } },
       presence: { enabled: true, macs: [] },
       ups: { enabled: false, host: '', port: 3493, name: null },
       // phase 3b (tests/gateway_dns.test.js, gateway_cache.test.js)
@@ -167,6 +168,37 @@ describe('admin API: features', () => {
     assert.deepEqual(r.body.gateway.features.ups, { enabled: true, host: '192.168.1.10', port: 3493, name: 'ups' });
     assert.deepEqual((await gwReq('get', '/config')).body.features.ups, { enabled: true, host: '192.168.1.10', port: 3493, name: 'ups' });
     assert.equal(activities('gateway_features_changed').length > 0, true);
+  });
+
+  it('UPS in a home network without IPv4: a unique local IPv6 address — only for a gateway that takes one', async () => {
+    const health = () => JSON.parse(db.prepare('SELECT last_health FROM gateway_meta WHERE peer_id = ?').get(gw.peer.id).last_health || '{}');
+    const setCaps = (caps) => {
+      const h = health();
+      h.telemetry = { ...(h.telemetry || {}), capabilities: caps };
+      db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify(h), gw.peer.id);
+    };
+    const before = health();
+    try {
+      // link-local, global, zone, brackets: never
+      for (const host of ['fe80::1', '2a02:8070::5', 'fd00::1%eth0', '[fd00::10]', '::1', '::ffff:192.168.1.10']) {
+        assert.equal((await admin('put', '/features').send({ ups: { host } })).body.code, 'invalid_host', host);
+      }
+      // an older gateway would drop the host silently → a clear answer instead
+      setCaps(['netwatch', 'inetq', 'presence', 'ups']);
+      const old = await admin('put', '/features').send({ ups: { host: 'fd12:3456:789a:1::10' } });
+      assert.deepEqual([old.status, old.body.code], [400, 'ups_host_ipv6']);
+      assert.equal((await admin('get', '/features')).body.gateway.features.ups.host, '192.168.1.10');
+      setCaps(['netwatch', 'inetq', 'presence', 'ups', 'ipv6-lan']);
+      const r = await admin('put', '/features').send({ ups: { host: 'fd12:3456:789a:1::10' } }).expect(200);
+      assert.equal(r.body.gateway.features.ups.host, 'fd12:3456:789a:1::10');
+      assert.equal((await gwReq('get', '/config')).body.features.ups.host, 'fd12:3456:789a:1::10');
+      // the stored address stays when something else of the UPS changes on a gateway that lost the capability
+      setCaps(['ups']);
+      await admin('put', '/features').send({ ups: { host: 'fd12:3456:789a:1::10', port: 3494 } }).expect(200);
+    } finally {
+      db.prepare('UPDATE gateway_meta SET last_health = ? WHERE peer_id = ?').run(JSON.stringify(before), gw.peer.id);
+      await admin('put', '/features').send({ ups: { enabled: true, host: '192.168.1.10', port: 3493, name: 'ups' } }).expect(200);
+    }
   });
 
   it('the existing LAN discovery switch is used, not a second one', async () => {
@@ -503,6 +535,69 @@ describe('speed test endpoints', () => {
     q._resetForTest();
   });
 
+  it('the budget survives a restart of the server: the tests the gateway reported count', async () => {
+    const q = inetq();
+    q._resetForTest();
+    const now = Date.now();
+    const H = 3600 * 1000;
+    db.prepare('DELETE FROM inetq_speedtests WHERE peer_id = ?').run(gw.peer.id);
+    try {
+      // 3 tests of 4 GB in the last 24 hours, one from yesterday, one dated into the future (gateway clock)
+      await gwReq('post', '/inetq').send({ speedtests: [
+        { at: now - 20 * H, downMbps: 900, upMbps: 900, bytes: 4000000000 },
+        { at: now - 10 * H, downMbps: 900, upMbps: 900, bytes: 4000000000 },
+        { at: now - 1 * H, downMbps: 900, upMbps: 900, bytes: 4000000000 },
+      ] }).expect(200);
+      db.prepare('INSERT INTO inetq_speedtests (peer_id, at, down_mbps, up_mbps, bytes) VALUES (?, ?, 1, 1, ?)').run(gw.peer.id, now - 30 * H, 9000000000);
+      db.prepare('INSERT INTO inetq_speedtests (peer_id, at, down_mbps, up_mbps, bytes) VALUES (?, ?, 1, 1, ?)').run(gw.peer.id, now + 6 * H, 9000000000);
+      q._resetForTest(); // the restart: what this process streamed is gone
+      const info = q.budgetInfo(gw.peer.id);
+      assert.equal(info.usedBytes, 12000000000);
+      assert.equal(info.exhausted, true);
+      assert.equal(Math.round((Date.parse(info.resetAt) - (now + 4 * H)) / 60000), 0, 'room again when the oldest test is 24 hours old');
+      assert.deepEqual(q.acquire(gw.peer.id, 1), { error: 'budget' });
+      // refused with Retry-After, both directions
+      const down = await raw('GET', '/speedtest/down?bytes=100000');
+      assert.equal(down.status, 429);
+      assert.match(down.text, /budget/);
+      const ra = Number(down.headers['retry-after']);
+      assert.ok(ra > 4 * 3600 - 120 && ra <= 4 * 3600, `Retry-After ${down.headers['retry-after']}`);
+      const up = await raw('POST', '/speedtest/up', { body: Buffer.alloc(1000, 7), headers: { 'Content-Type': 'application/octet-stream' } });
+      assert.equal(up.status, 429);
+      assert.ok(Number(up.headers['retry-after']) > 0);
+      // another gateway is not touched; 'busy' carries no Retry-After
+      assert.equal(q.budgetInfo(gw2.peer.id).usedBytes, 0);
+      // what the process streamed and what was reported are not added up
+      q._resetForTest();
+      q.account(gw.peer.id, 500000000);
+      assert.equal(q.budgetInfo(gw.peer.id).usedBytes, 12000000000);
+      q.account(gw.peer.id, 12500000000);
+      assert.equal(q.budgetInfo(gw.peer.id).usedBytes, 13000000000);
+    } finally {
+      db.prepare('DELETE FROM inetq_speedtests WHERE peer_id = ?').run(gw.peer.id);
+      q._resetForTest();
+    }
+    assert.equal(q.budgetInfo(gw.peer.id).usedBytes, 0);
+    assert.equal(q.budgetRetryAfter(gw.peer.id), 3600);
+  });
+
+  it('plan "hourly": the config pull caps a test per direction — download and upload; other plans only carry the daily volume', async () => {
+    const q = inetq();
+    assert.deepEqual(q.speedVolume('4x'), { dayBytes: q.SPEED_BUDGET_BYTES });
+    assert.deepEqual(q.speedVolume('off'), { dayBytes: q.SPEED_BUDGET_BYTES });
+    assert.deepEqual(q.speedVolume('hourly'), { dayBytes: q.SPEED_BUDGET_BYTES, downBytes: q.SPEED_HOURLY_TEST_BYTES, upBytes: q.SPEED_HOURLY_TEST_BYTES });
+    // 24 tests a day stay inside the daily budget, with room for "Jetzt messen"
+    assert.ok(24 * 2 * q.SPEED_HOURLY_TEST_BYTES < q.SPEED_BUDGET_BYTES);
+    const hashBefore = (await gwReq('get', '/config')).body.config_hash;
+    await admin('put', '/features').send({ inetq: { speedtest: 'hourly' } }).expect(200);
+    try {
+      const c = (await gwReq('get', '/config').expect(200)).body;
+      assert.deepEqual(c.features.inetq.speedVolume, { dayBytes: 12000000000, downBytes: 200000000, upBytes: 200000000 });
+      assert.notEqual(c.config_hash, hashBefore, 'the gateway fetches the new volume at once');
+    } finally { await admin('put', '/features').send({ inetq: { speedtest: '4x' } }).expect(200); }
+    assert.deepEqual((await gwReq('get', '/config')).body.features.inetq.speedVolume, { dayBytes: 12000000000 });
+  });
+
   it('a busy gateway gets 429 busy', async () => {
     const q = inetq();
     const slots = Array.from({ length: 8 }, () => q.acquire(gw.peer.id, 1));
@@ -510,6 +605,7 @@ describe('speed test endpoints', () => {
       const r = await raw('GET', '/speedtest/down?bytes=10');
       assert.equal(r.status, 429);
       assert.match(r.text, /busy/);
+      assert.equal(r.headers['retry-after'], undefined);
     } finally { slots.forEach((s) => s.release()); }
   });
 

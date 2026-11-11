@@ -265,10 +265,71 @@
     return t.replace(/\/#$/, '');
   }
 
+  // mDNS name of a gateway: one label + ".local" (what the gateway asks its LAN for, gatecontrol-gateway
+  // src/health/mdnsName.js) — anything else a gateway reports is not shown
+  const MDNS_NAME_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.local$/;
+
+  /**
+   * The gateway's mDNS name ("pi-keller.local") or null: from the heartbeat (telemetry.mdns_name, gateway
+   * with that field), else from the hardware profile of the edge hello or of the heartbeat.
+   */
+  function mdnsName(hello, telemetry) {
+    const tel = telemetry && typeof telemetry === 'object' ? telemetry : {};
+    const cands = [tel.mdns_name, hello && hello.hardware && hello.hardware.mdns_name, tel.hardware && tel.hardware.mdns_name];
+    for (let i = 0; i < cands.length; i++) {
+      const v = typeof cands[i] === 'string' ? cands[i].trim().toLowerCase() : '';
+      if (v.length <= 69 && MDNS_NAME_RE.test(v)) return v;
+    }
+    return null;
+  }
+
+  /**
+   * A gateway without Docker (the Proxmox LXC installer runs it natively under systemd): there is no edge
+   * container and no MQTT broker on it. Known from the telemetry (`runtime: 'native'`, gateways that report
+   * it), else from the platform the assistant stored — never for a gateway that reports an edge service or
+   * says it runs in a container. A hint for the page, never a ban.
+   */
+  function nativeGateway(g) {
+    const tel = (g && g.health && g.health.telemetry) || (g && g.telemetry) || {};
+    if (tel.edge && typeof tel.edge === 'object') return false;
+    if (tel.runtime === 'native') return true;
+    return !!(g && g.platform === 'proxmox' && tel.runtime !== 'container');
+  }
+
   /** broker address "<lan ip>:<port>" or null. */
   function brokerAddress(lanIp, tls) {
     if (typeof lanIp !== 'string' || !lanIp) return null;
     return lanIp + ':' + (tls ? 8883 : 1883);
+  }
+
+  /** A SHA-256 fingerprint as devices and OpenSSL show it: "AB:CD:…" (null when it is not 64 hex characters). */
+  function fingerprintText(hex) {
+    if (typeof hex !== 'string' || !/^[0-9a-f]{64}$/i.test(hex)) return null;
+    return hex.toUpperCase().match(/.{2}/g).join(':');
+  }
+
+  /**
+   * The card "TLS" of the broker: { key, locked, fingerprint, cert, validTo }.
+   *   key      update_needed  the gateway cannot make the certificate itself (older gateway) — the switch is
+   *                           locked while TLS is off (switching it off again always works)
+   *            off | pending (switched on, the gateway has not reported yet) | on | missing_cert
+   * `gateway`: the hello view (null while the gateway never connected — then nothing is locked).
+   */
+  function tlsView(settings, status, gateway) {
+    const on = !!(settings && settings.mqttTls);
+    const old = !!gateway && gateway.mqttTlsSupported === false;
+    const tls = status ? status.tls : null;
+    const out = { key: 'off', locked: old && !on, fingerprint: null, cert: null, validTo: null };
+    if (old) out.key = 'update_needed';
+    else if (!on) out.key = 'off';
+    else if (tls === 'missing_cert') out.key = 'missing_cert';
+    else if (tls === 'on') {
+      out.key = 'on';
+      out.fingerprint = fingerprintText(status.tlsSha256);
+      out.cert = typeof status.tlsCert === 'string' && status.tlsCert ? status.tlsCert : null;
+      out.validTo = typeof status.tlsValidTo === 'string' ? status.tlsValidTo : null;
+    } else out.key = 'pending';
+    return out;
   }
 
   /**
@@ -320,6 +381,6 @@
     TABS, STATES, REASONS, reasonDoc, reasonTopic, parseHash, hashFor, pluginState, boundaryState, pluginControl, summary, capabilityRows, capabilityKeys, needsMqtt,
     memoryHint, ramLabel, EDGE_BASE_MB, PER_PLUGIN_MB,
     ACCOUNTS_MAX, TOPICS_MAX, USER_RE, ACCESS, TEMPLATES, template, usernameProblem, topicOk, plannedTopics, accountBody,
-    topicPrefix, brokerAddress, brokerStatus, accountStatus, errorKey, LOG_FILTERS, logLabel,
+    topicPrefix, brokerAddress, fingerprintText, tlsView, brokerStatus, accountStatus, errorKey, LOG_FILTERS, logLabel, mdnsName, nativeGateway,
   };
 });

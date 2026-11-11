@@ -38,7 +38,7 @@ let app, agent, csrf, db, ai, local, gateways, nas, pi, fakeGw, cloud;
 // ─── a fake gateway management API (the AI part) ─────────────────────────
 
 function startFakeGateway() {
-  const g = { calls: [], mode: 'ok', words: ['{"summary":', '"Rechnung bis Freitag bezahlen."}'], status: null, token: null };
+  const g = { calls: [], mode: 'ok', words: ['{"summary":', '"Rechnung bis Freitag bezahlen."}'], status: null, token: null, cert: null };
   g.server = http.createServer((req, res) => {
     let b = '';
     req.on('data', (c) => { b += c; });
@@ -53,6 +53,11 @@ function startFakeGateway() {
       if (req.url === '/api/ai/pull/cancel') return json(409, { error: 'no_pull' });
       if (req.url === '/api/ai/delete') return json(200, { deleted: true });
       if (req.url === '/api/ai/probe') {
+        // an https server with a self-signed certificate (g.cert): only with exactly its fingerprint as the pin
+        if (g.cert && /^https:/.test(body.url) && body.pin !== g.cert.sha256) {
+          return json(200, { probe: { reachable: false, url: body.url, api: body.api, version: null, models: [], auth: !!body.key, pinned: !!body.pin, certificate: g.cert,
+            error: { code: body.pin ? 'tls_pin_mismatch' : 'tls_untrusted', message: 'the certificate of the AI server is not trusted (DEPTH_ZERO_SELF_SIGNED_CERT)' } } });
+        }
         return json(200, { probe: { reachable: true, url: body.url, api: body.api, version: '0.40.8', models: [{ name: 'qwen2.5:14b', size: 9e9 }, { name: '../bad name', size: 1 }], auth: !!body.key, error: null } });
       }
       if (req.url === '/api/ai/chat') {
@@ -536,7 +541,8 @@ describe('LAN server: names and IPv6, the API key, "Verbindung testen"', () => {
   it('"Verbindung testen": the gateway asks the server (nothing saved), with the typed key or the stored one for the saved address', async () => {
     setTel(nas, { ai: aiTel({ supports: SUPPORTS }) });
     const r = (await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: 'http://[fd00::20]:11434', lanApi: 'ollama', lanKey: 'sk-typed' }).expect(200)).body;
-    assert.deepEqual(r.probe, { reachable: true, url: 'http://[fd00::20]:11434', api: 'ollama', version: '0.40.8', models: [{ name: 'qwen2.5:14b', size: 9e9 }], auth: true, error: null });
+    assert.deepEqual(r.probe, { reachable: true, url: 'http://[fd00::20]:11434', api: 'ollama', version: '0.40.8', models: [{ name: 'qwen2.5:14b', size: 9e9 }], auth: true,
+      pinned: false, pin: null, pinSupported: false, certificate: null, error: null });
     assert.deepEqual(fakeGw.calls.find((c) => c.path === '/api/ai/probe').body, { url: 'http://[fd00::20]:11434', api: 'ollama', key: 'sk-typed' });
     assert.equal(fakeGw.calls[0].token, nas.pushToken);
     // no typed key: the stored one goes along — to the saved address only
@@ -630,5 +636,149 @@ describe('graphics card ("Grafikkarte nutzen")', () => {
     await put(`/api/v1/gateways/${nas.peer.id}/features`, { ai: { gpu: 'off' } }).expect(200);
     db.prepare("UPDATE gateway_meta SET platform = 'synology' WHERE peer_id = ?").run(nas.peer.id);
     setTel(nas);
+  });
+});
+
+// ─── https with a self-signed certificate: pinned, never unchecked ───────
+
+describe('LAN server with https and a self-signed certificate: the certificate is pinned', () => {
+  const FP = 'a1b2c3d4'.repeat(8);
+  const FP2 = '0f1e2d3c'.repeat(8);
+  const COLONS = FP.toUpperCase().match(/../g).join(':');
+  const URL_TLS = 'https://192.168.1.20:11434';
+  const certOf = (sha256) => ({ sha256, subject: 'CN=ki-pc', issuer: 'CN=ki-pc', validTo: '2035-01-01T00:00:00.000Z', selfSigned: true, extra: 'dropped' });
+  const PIN = SUPPORTS.concat('lanPin');
+  const probes = () => fakeGw.calls.filter((c) => c.path === '/api/ai/probe');
+  const pinLogs = () => db.prepare("SELECT event_type, details FROM activity_log WHERE event_type LIKE 'ai_local_pin%' ORDER BY id").all();
+  // lan of the config pull, without the key revision (a key may be stored from the tests above)
+  const cfgLan = async () => {
+    const { keyRev: _rev, ...lan } = (await supertest(app).get('/api/v1/gateway/config').set('Authorization', 'Bearer ' + nas.apiToken).expect(200)).body.features.ai.lan;
+    return lan;
+  };
+
+  before(() => { fakeGw.cert = certOf(FP); });
+  after(() => { fakeGw.cert = null; });
+
+  it('a fingerprint in any usual spelling; only with https; settings and config pull', () => {
+    assert.equal(local.pinOf(FP), FP);
+    assert.equal(local.pinOf(COLONS), FP);
+    assert.equal(local.pinOf('sha256:' + FP.toUpperCase()), FP);
+    for (const bad of ['', 'abc', FP + '00', FP.slice(2), 'zz'.repeat(32), null, 7, 'x'.repeat(300)]) assert.equal(local.pinOf(bad), null, String(bad));
+    assert.equal(local.normalizeSettings({ source: 'lan', lanUrl: URL_TLS, lanPin: COLONS }).lanPin, FP);
+    assert.equal(local.normalizeSettings({ source: 'lan', lanUrl: 'http://192.168.1.20:11434', lanPin: FP }).lanPin, null, 'no TLS, nothing to pin');
+    assert.equal(local.normalizeSettings({}).lanPin, null);
+    assert.equal(local.patchField('lanPin', COLONS), FP);
+    assert.equal(local.patchField('lanPin', ''), null);
+    assert.throws(() => local.patchField('lanPin', 'nope'), (e) => e.code === 'invalid');
+    // the gateway's report
+    const t = local.telemetryAi({ features: { ai: aiTel({ source: 'lan', supports: PIN.concat('evil'), lan: { url: URL_TLS, api: 'ollama', reachable: true, auth: false, pinned: true } }) } });
+    assert.deepEqual(t.supports, PIN);
+    assert.equal(t.lan.pinned, true);
+  });
+
+  it('"Verbindung testen" shows the certificate to confirm — nothing is stored, the check is never switched off', async () => {
+    setTel(nas, { ai: aiTel({ supports: PIN }) });
+    let r = (await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: URL_TLS, lanApi: 'ollama', lanPin: null }).expect(200)).body.probe;
+    assert.equal(r.reachable, false);
+    assert.equal(r.error.code, 'tls_untrusted');
+    assert.equal(r.pinned, false);
+    assert.equal(r.pinSupported, true);
+    assert.deepEqual(r.certificate, { sha256: FP, subject: 'CN=ki-pc', issuer: 'CN=ki-pc', validTo: '2035-01-01T00:00:00.000Z', selfSigned: true });
+    assert.deepEqual(probes()[0].body, { url: URL_TLS, api: 'ollama' }, 'no pin, and nothing that switches the check off');
+    // the admin confirmed the fingerprint on the page: the test runs against exactly that certificate
+    r = (await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: URL_TLS, lanApi: 'ollama', lanPin: COLONS }).expect(200)).body.probe;
+    assert.equal(probes()[1].body.pin, FP);
+    assert.equal(r.reachable, true);
+    assert.equal(r.pinned, true);
+    assert.equal(r.pin, FP);
+    assert.equal(r.certificate, null);
+    assert.equal((await agent.get(`/api/v1/gateways/${nas.peer.id}/features`).expect(200)).body.gateway.ai.lanPinned, false, 'nothing stored by a test');
+    // not a fingerprint
+    const bad = await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: URL_TLS, lanPin: 'kein-fingerabdruck' });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.field, 'lanPin');
+    // http: there is nothing to pin, the pin does not go along
+    fakeGw.calls.length = 0;
+    await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: 'http://192.168.1.20:11434', lanPin: FP }).expect(200);
+    assert.equal(probes()[0].body.pin, undefined);
+  });
+
+  it('"Speichern" stores the confirmed fingerprint: config pull lan.pin, shown in the setup, logged', async () => {
+    setTel(nas, { ai: aiTel({ supports: PIN }) });
+    const saved = (await put(AI + '/local', { source: 'lan', peerId: nas.peer.id, model: 'qwen2.5:14b', lanUrl: URL_TLS, lanApi: 'ollama', lanPin: COLONS }).expect(200)).body;
+    assert.equal(saved.current.lanPin, FP);
+    assert.deepEqual(await cfgLan(), { url: URL_TLS, api: 'ollama', pin: FP });
+    assert.equal(require('../src/services/gatewayFeatures').get(nas.peer.id).ai.lanPin, FP);
+    assert.equal((await agent.get(`/api/v1/gateways/${nas.peer.id}/features`).expect(200)).body.gateway.ai.lanPinned, true);
+    const log = pinLogs().pop();
+    assert.equal(log.event_type, 'ai_local_pin_set');
+    assert.equal(JSON.parse(log.details).sha256, FP);
+    // saving again without lanPin keeps it; no second log row
+    const n = pinLogs().length;
+    await put(AI + '/local', { source: 'lan', peerId: nas.peer.id, model: 'qwen2.5:14b', lanUrl: URL_TLS, lanApi: 'ollama' }).expect(200);
+    assert.equal((await cfgLan()).pin, FP);
+    assert.equal(pinLogs().length, n);
+  });
+
+  it('the stored pin goes along with a test of the saved address only; a changed certificate is shown, not accepted', async () => {
+    setTel(nas, { ai: aiTel({ supports: PIN }) });
+    await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: URL_TLS }).expect(200);
+    assert.equal(probes()[0].body.pin, FP);
+    await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: 'https://192.168.1.21:11434' }).expect(200);
+    assert.equal(probes()[1].body.pin, undefined, 'never for another address');
+    await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: URL_TLS, lanPin: null }).expect(200);
+    assert.equal(probes()[2].body.pin, undefined, 'the page dropped the pin: none');
+    // the server now presents another certificate (renewed — or somebody else answers)
+    fakeGw.cert = certOf(FP2);
+    const r = (await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: URL_TLS }).expect(200)).body.probe;
+    assert.equal(r.reachable, false);
+    assert.equal(r.error.code, 'tls_pin_mismatch');
+    assert.equal(r.pinned, true);
+    assert.equal(r.certificate.sha256, FP2);
+    assert.equal((await cfgLan()).pin, FP, 'the stored pin stays until the admin confirms the new one');
+    // "Neuem Zertifikat vertrauen" + "Speichern"
+    await put(AI + '/local', { source: 'lan', peerId: nas.peer.id, model: 'qwen2.5:14b', lanUrl: URL_TLS, lanApi: 'ollama', lanPin: FP2 }).expect(200);
+    assert.equal((await cfgLan()).pin, FP2);
+    const log = pinLogs().pop();
+    assert.deepEqual([log.event_type, JSON.parse(log.details).sha256, JSON.parse(log.details).before], ['ai_local_pin_set', FP2, FP]);
+    fakeGw.cert = certOf(FP);
+  });
+
+  it('a new address forgets the pin; "Entfernen" removes it; a pin without https is refused', async () => {
+    setTel(nas, { ai: aiTel({ supports: PIN }) });
+    // another server: the old fingerprint would say nothing about it
+    await put(AI + '/local', { source: 'lan', peerId: nas.peer.id, model: 'qwen2.5:14b', lanUrl: 'https://192.168.1.21:11434', lanApi: 'ollama' }).expect(200);
+    assert.deepEqual(await cfgLan(), { url: 'https://192.168.1.21:11434', api: 'ollama' });
+    assert.equal(pinLogs().pop().event_type, 'ai_local_pin_removed');
+    // … also through the features API
+    await put(AI + '/local', { source: 'lan', peerId: nas.peer.id, model: 'qwen2.5:14b', lanUrl: URL_TLS, lanApi: 'ollama', lanPin: FP }).expect(200);
+    await put(`/api/v1/gateways/${nas.peer.id}/features`, { ai: { lanUrl: 'https://192.168.1.22:11434' } }).expect(200);
+    assert.equal((await cfgLan()).pin, undefined);
+    await put(`/api/v1/gateways/${nas.peer.id}/features`, { ai: { lanUrl: URL_TLS, lanPin: COLONS } }).expect(200);
+    assert.equal((await cfgLan()).pin, FP, 'address and pin together');
+    assert.equal((await put(`/api/v1/gateways/${nas.peer.id}/features`, { ai: { lanPin: 'nope' } })).status, 400);
+    // "Entfernen" + "Speichern"
+    await put(AI + '/local', { source: 'lan', peerId: nas.peer.id, model: 'qwen2.5:14b', lanUrl: URL_TLS, lanApi: 'ollama', lanPin: null }).expect(200);
+    assert.equal((await cfgLan()).pin, undefined);
+    assert.equal((await agent.get(AI + '/local').expect(200)).body.current.lanPin, null);
+    // refused: not a fingerprint, or nothing to pin (http)
+    for (const b of [{ lanUrl: URL_TLS, lanPin: 'abc' }, { lanUrl: 'http://192.168.1.20:11434', lanPin: FP }]) {
+      const bad = await put(AI + '/local', { source: 'lan', peerId: nas.peer.id, model: 'qwen2.5:14b', lanApi: 'ollama', ...b });
+      assert.equal(bad.status, 400, JSON.stringify(b));
+      assert.equal(bad.body.field, 'lanPin');
+    }
+  });
+
+  it('a gateway that cannot pin yet: "Gateway-Update nötig" — never a connection without the check', async () => {
+    setTel(nas, { ai: aiTel({ supports: SUPPORTS }) });
+    const r = (await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: URL_TLS, lanPin: null }).expect(200)).body.probe;
+    assert.equal(r.pinSupported, false);
+    assert.equal(r.error.code, 'tls_untrusted');
+    const p = await post(AI + '/local/probe', { peerId: nas.peer.id, lanUrl: URL_TLS, lanPin: FP });
+    assert.deepEqual([p.status, p.body.code], [409, 'gateway_unsupported_pin']);
+    assert.match(p.body.error, /Gateway/);
+    const s = await put(AI + '/local', { source: 'lan', peerId: nas.peer.id, model: 'qwen2.5:14b', lanUrl: URL_TLS, lanApi: 'ollama', lanPin: FP });
+    assert.deepEqual([s.status, s.body.code], [409, 'gateway_unsupported_pin']);
+    assert.equal((await cfgLan()).pin, undefined);
   });
 });

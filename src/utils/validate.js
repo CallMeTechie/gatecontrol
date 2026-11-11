@@ -44,6 +44,18 @@ function isPrivateIpv4(ip) {
   return false;
 }
 
+// True only for a unique local IPv6 address (ULA, fc00::/7 — e.g. fd00::10): the
+// private address of a home network without IPv4. Never link-local (fe80::/10:
+// the same prefix in every network, needs a zone), loopback, IPv4-mapped or a
+// global address; no zone, no brackets.
+function isUlaIpv6(ip) {
+  if (typeof ip !== 'string') return false;
+  const s = ip.trim();
+  if (!s || s.includes('%') || s.includes('.') || !require('node:net').isIPv6(s)) return false;
+  const first = parseInt(s.split(':')[0] || '0', 16);
+  return Number.isFinite(first) && (first & 0xfe00) === 0xfc00;
+}
+
 // A loopback target_lan_host is host-relative — only meaningful on the gateway
 // that actually serves the request. Covers 127.0.0.0/8 + the textual names.
 const _LOOPBACK_NAMES = new Set(['localhost', '::1', '0:0:0:0:0:0:0:1']);
@@ -286,6 +298,7 @@ module.exports = {
   isPortBlocked,
   parsePortRange,
   isPrivateIpv4,
+  isUlaIpv6,
   isLoopbackHost,
   validateEmail,
 };

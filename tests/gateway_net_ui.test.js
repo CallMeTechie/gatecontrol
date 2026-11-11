@@ -16,6 +16,24 @@ const de = JSON.parse(read('src/i18n/de.json'));
 const en = JSON.parse(read('src/i18n/en.json'));
 
 describe('gateway-net-kit', () => {
+  it('the address of the UPS server: private IPv4, or a unique local IPv6 address (a home network without IPv4)', () => {
+    for (const v of ['192.168.1.10', ' 10.0.0.1 ', '172.16.0.1', '172.31.255.254', 'fd00::10', 'fd12:3456:789a:1::10', 'FC00:0:0:0:0:0:0:1']) assert.equal(K.upsHostOk(v), true, v);
+    for (const v of ['8.8.8.8', '172.32.0.1', '192.168.1.300', '192.168.1', 'fe80::1', '2a02:8070::5', 'fd00::1%eth0', '[fd00::10]', 'fd00:::1', 'fd00::1::2', 'fd00:1:2:3:4:5:6:7:8', 'fd00:1', '::1', 'nas.local', '', null, undefined]) {
+      assert.equal(K.upsHostOk(v), false, String(v));
+    }
+    // what the dialog lets through, the server takes — and the other way round for the same samples
+    const { isPrivateIpv4, isUlaIpv6 } = require('../src/utils/validate');
+    for (const v of ['192.168.1.10', '10.0.0.1', 'fd00::10', 'fd12:3456:789a:1::10', '8.8.8.8', 'fe80::1', '2a02::1', 'fd00:1', '::1']) {
+      assert.equal(K.upsHostOk(v), isPrivateIpv4(v) || isUlaIpv6(v), v);
+    }
+    const js = read('public/js/gateway-net.js');
+    assert.match(js, /if \(!K\.upsHostOk\(host\.value\)\) \{ U\.showErr\(err, t\('gwn\.err\.invalid_ups_host'\)\)/);
+    for (const k of ['gwn.err.invalid_ups_host', 'gwn.err.ups_host_ipv6', 'gwn.ups.host_hint']) {
+      assert.ok(de[k] && en[k], k);
+      assert.match(de[k] + en[k], /IPv6/, k);
+    }
+  });
+
   it('risky ports: telnet always, SMB not on a NAS', () => {
     assert.deepEqual(K.risksOf({ vendor: 'Brother', ports: [{ port: 80 }, { port: 23 }, { port: 631 }] }), [{ port: 23, key: 'telnet' }]);
     assert.deepEqual(K.risksOf({ vendor: 'Synology', ports: [{ port: 445 }, { port: 5001 }] }), []);

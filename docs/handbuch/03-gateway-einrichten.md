@@ -318,6 +318,9 @@ Du brauchst Proxmox VE 8 oder neuer und die Shell des Hosts (Weboberfläche → 
 Dieser Weg installiert das Gateway **ohne Docker**. Edge-Plugins und der
 MQTT-Broker brauchen den Edge-Container und laufen dort deshalb nicht. Wer sie
 braucht, nimmt in einer VM den Weg [3.4](#34-linux-rechner-mit-docker).
+GateControl sagt das auch beim Gateway selbst: in den Reitern „Edge-Plugins“
+und „MQTT“ und in der Zeile „Edge-Plugins & MQTT“ steht „Kein Edge-Container
+auf diesem Gateway“. Das ist ein Hinweis – die Schalter bleiben bedienbar.
 
 **Prüfen:** Der Assistent zeigt „Gateway hat sich gemeldet“.
 

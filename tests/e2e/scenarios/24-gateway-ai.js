@@ -313,6 +313,72 @@ module.exports = (ctx) => {
           const r = document.querySelector('[data-fgroup="devices"] [data-feature="ai"]');
           return !!r && /leitet an den KI-Server im Heimnetz weiter \(http:\/\/ki-pc\.local:8000, mit API-Schlüssel\)/.test(r.textContent);
         }));
+
+        // ── https with a self-signed certificate: shown, confirmed, pinned — the check is never switched off ──
+        const FP = 'a1b2c3d4'.repeat(8);
+        const FP_TEXT = FP.toUpperCase().match(/../g).join(':');
+        const TLS_URL = 'https://192.168.1.20:11434';
+        step('ai pin: the gateway reports that it can pin a certificate (supports lanPin)',
+          (await heartbeat(aiTel({ source: 'lan', service: 'missing', models: [], loaded: [], supports: SUPPORTS.concat('lanPin'),
+            lan: { url: 'http://ki-pc.local:8000', api: 'openai', reachable: true, auth: true, pinned: false } }), '1.35.0')) === 200);
+        const pinProbes = [];
+        await page.unroute('**/api/v1/ai/local/probe').catch(() => {});
+        await page.route('**/api/v1/ai/local/probe', async (route) => {
+          const b = JSON.parse(route.request().postData() || '{}');
+          pinProbes.push(b);
+          const base = { url: TLS_URL, api: 'ollama', auth: false, pinSupported: true };
+          const probe = b.lanPin === FP
+            ? { ...base, reachable: true, version: '0.40.8', models: [{ name: 'qwen2.5:14b', size: 9e9 }], pinned: true, pin: FP, certificate: null, error: null }
+            : { ...base, reachable: false, version: null, models: [], pinned: !!b.lanPin, pin: b.lanPin || null,
+              certificate: { sha256: FP, subject: 'CN=ki-pc', issuer: 'CN=ki-pc', validTo: '2035-01-01T00:00:00.000Z', selfSigned: true },
+              error: { code: b.lanPin ? 'tls_pin_mismatch' : 'tls_untrusted', message: 'the certificate of the AI server is not trusted' } };
+          return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, probe }) });
+        });
+        await page.goto(BASE + '/settings/ki');
+        await theme(page, 'light');
+        await until(page, () => !!document.getElementById('ai-local-url'), null, 15000);
+        await page.fill('#ai-local-url', TLS_URL);
+        await page.selectOption('#ai-local-api', 'ollama');
+        await page.click('#ai-local-connect');
+        step('ai pin: "Verbindung testen" on https with a self-signed certificate → the certificate with its fingerprint, name, expiry and "Diesem Zertifikat vertrauen"', await until(page, (fp) => {
+          const box = document.querySelector('#ai-local [data-probe="tls_untrusted"]');
+          const code = box && box.querySelector('[data-pin-fp]');
+          const b = document.getElementById('ai-local-pin-trust');
+          return !!code && code.textContent === fp && /CN=ki-pc/.test(box.textContent) && /selbst signiert/.test(box.textContent)
+            && !!b && b.textContent.trim() === 'Diesem Zertifikat vertrauen' && !document.querySelector('#ai-local [data-pin]');
+        }, FP_TEXT));
+        step('ai pin: the first test carried no pin (and nothing that switches the check off)', pinProbes.length === 1 && pinProbes[0].lanPin === null && pinProbes[0].lanUrl === TLS_URL);
+        await view(page, 'gwai-pin-confirm-light');
+        await page.click('#ai-local-pin-trust');
+        step('ai pin: confirmed → the test runs again with exactly this fingerprint: connected, "Zertifikat geprüft", the pin waits for "Speichern"', await until(page, (fp) => {
+          const ok = document.querySelector('#ai-local [data-probe="ok"]');
+          const line = document.querySelector('#ai-local [data-pin="draft"]');
+          const sel = document.getElementById('ai-local-lanmodel');
+          return !!ok && /Zertifikat geprüft/.test(ok.textContent) && !!line && !line.hidden && line.querySelector('code').textContent === fp
+            && /Noch nicht gespeichert/.test(line.textContent) && !!sel && sel.options.length === 2;
+        }, FP_TEXT) && pinProbes.length === 2 && pinProbes[1].lanPin === FP);
+        await page.selectOption('#ai-local-lanmodel', 'qwen2.5:14b');
+        await page.click('#ai-local-save');
+        step('ai pin: saved (real PUT) → "Angeheftetes Zertifikat" with "Entfernen"', await until(page, (fp) => {
+          const line = document.querySelector('#ai-local [data-pin="saved"]');
+          return !!line && !line.hidden && line.querySelector('code').textContent === fp && !!document.getElementById('ai-local-pin-remove')
+            && /nur mit genau diesem Zertifikat/.test(line.textContent);
+        }, FP_TEXT, 15000));
+        const cfg4 = await (await page.request.fetch(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token } })).json();
+        const lan4 = cfg4.features && cfg4.features.ai && cfg4.features.ai.lan;
+        step('ai pin: the config pull carries lan.pin — the gateway connects only with this certificate', !!(lan4 && lan4.url === TLS_URL && lan4.pin === FP), JSON.stringify(lan4));
+        await view(page, 'gwai-pin-saved-light');
+        // another address typed: the pin does not go along
+        await page.fill('#ai-local-url', 'https://192.168.1.21:11434');
+        step('ai pin: another address → the pinned certificate is not shown for it', await page.evaluate(() => document.querySelector('#ai-local [data-pin]').hidden === true));
+        await page.fill('#ai-local-url', TLS_URL);
+        step('ai pin: the address back → the pin shows again', await page.evaluate(() => document.querySelector('#ai-local [data-pin]').hidden === false));
+        await page.setViewportSize({ width: 390, height: 900 });
+        await page.waitForTimeout(400);
+        const o4 = await overflow(page);
+        step('ai pin: 390 px, the pinned fingerprint: no sideways scroll', o4 <= 0, 'overflow ' + o4);
+        await view(page, 'gwai-pin-390-light', 3200);
+        await page.setViewportSize({ width: 1440, height: 1000 });
       } finally {
         await page.unroute('**/api/v1/ai/local/probe').catch(() => {});
         await page.unroute('**/api/v1/ai/local/status*').catch(() => {});

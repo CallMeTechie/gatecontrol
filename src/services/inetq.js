@@ -42,6 +42,12 @@ const SPEED_STREAM_MAX_MS = 30 * 1000;
 // plan 'hourly': each download stream gets at most this much (the gateway measures what arrived in
 // its time) — 24 tests a day must not eat the daily budget on a fast line
 const SPEED_HOURLY_MAX_BYTES = 25 * 1000 * 1000;
+// plan 'hourly': the volume of one test per direction, all streams together (config pull
+// `inetq.speedVolume`, gateways with the capability `speed-volume`). The server can cut a download by
+// itself, but the upload is the gateway's to send — so the gateway caps both directions. 24 tests of
+// 2 × 200 MB are 9.6 GB: inside the daily budget, with room for "Jetzt messen". A line up to about
+// 160 Mbit/s is not cut at all (10 s per direction).
+const SPEED_HOURLY_TEST_BYTES = 200 * 1000 * 1000;
 const SPEED_CHUNK = 64 * 1024;
 
 class InetqError extends Error {
@@ -113,7 +119,7 @@ function ingest(peerId, body) {
     db().prepare('UPDATE gateway_features SET inetq_report_at = ? WHERE peer_id = ?').run(now, peerId);
   })();
   noticeOutages(peerId);
-  if (speedtests.length) speedRequested.delete(peerId);
+  if (speedtests.length) { speedRequested.delete(peerId); reported.delete(peerId); }
   return { samples: samples.length, outages: outages.length, speedtests: speedtests.length };
 }
 
@@ -309,13 +315,35 @@ async function retention(now = Date.now()) {
 // ─── Speed test endpoints (gateway token) ──────────────────────────────
 
 const streams = { total: 0, byPeer: new Map() };
-const budget = new Map(); // peerId → [{ at, bytes }] (in memory: a restart starts a new day)
+const budget = new Map(); // peerId → [{ at, bytes }] — what this process streamed (gone with a restart)
 const budgetHit = new Map(); // peerId → epoch ms when a stream was refused for the budget
+// peerId → { readAt, bytes, oldest }: the volume of the tests the gateway reported in the last 24 h
+// (inetq_speedtests.bytes). It survives a restart of the server — without it every restart (every
+// update) started a new day. Read at most every few seconds: a test asks once per stream request.
+const reported = new Map();
+const REPORTED_CACHE_MS = 5000;
 
+function reportedTests(peerId, now) {
+  const c = reported.get(peerId);
+  if (c && now >= c.readAt && now - c.readAt < REPORTED_CACHE_MS) return c;
+  let rows = [];
+  try {
+    // tests dated into the future (a gateway clock ahead) do not count: they would block for more than a day
+    rows = db().prepare('SELECT at, bytes FROM inetq_speedtests WHERE peer_id = ? AND at > ? AND at <= ? AND bytes > 0 ORDER BY at')
+      .all(peerId, now - DAY, now + 5 * 60 * 1000);
+  } catch (err) {
+    logger.debug({ err: err.message, peerId }, 'speed test budget: reported tests unreadable');
+  }
+  const v = { readAt: now, bytes: rows.reduce((a, r) => a + r.bytes, 0), oldest: rows.length ? rows[0].at : null };
+  reported.set(peerId, v);
+  return v;
+}
+
+/** The volume of the last 24 h: what this process streamed, or — after a restart — what the gateway reported. */
 function budgetUsed(peerId, now) {
   const list = (budget.get(peerId) || []).filter((x) => now - x.at < DAY);
   budget.set(peerId, list);
-  return list.reduce((a, x) => a + x.bytes, 0);
+  return Math.max(list.reduce((a, x) => a + x.bytes, 0), reportedTests(peerId, now).bytes);
 }
 
 function account(peerId, bytes) {
@@ -331,8 +359,29 @@ function budgetInfo(peerId, now = Date.now()) {
   const list = budget.get(peerId) || [];
   const hit = budgetHit.get(peerId);
   const exhausted = used >= SPEED_BUDGET_BYTES * 0.95 || (hit != null && now - hit < DAY && used > SPEED_BUDGET_BYTES / 2);
-  const oldest = list.length ? Math.min(...list.map((x) => x.at)) : null;
+  const olds = list.map((x) => x.at);
+  const rep = reportedTests(peerId, now);
+  if (rep.oldest != null) olds.push(rep.oldest);
+  const oldest = olds.length ? Math.min(...olds) : null;
   return { usedBytes: used, limitBytes: SPEED_BUDGET_BYTES, exhausted, resetAt: exhausted && oldest ? iso(oldest + DAY) : null };
+}
+
+/** `Retry-After` (seconds) of a stream refused for the budget: until the oldest volume leaves the 24 hours. */
+function budgetRetryAfter(peerId, now = Date.now()) {
+  const list = (budget.get(peerId) || []).map((x) => x.at);
+  const rep = reportedTests(peerId, now);
+  if (rep.oldest != null) list.push(rep.oldest);
+  const until = list.length ? Math.min(...list) + DAY : now + 3600 * 1000;
+  return Math.min(24 * 3600, Math.max(60, Math.ceil((until - now) / 1000)));
+}
+
+/**
+ * The volume of the speed tests for the config pull (`features.inetq.speedVolume`, an older gateway
+ * ignores it): dayBytes — the daily budget, which the gateway keeps in its state directory as well;
+ * downBytes / upBytes — plan 'hourly' only: the cap of one test per direction.
+ */
+function speedVolume(plan) {
+  return { dayBytes: SPEED_BUDGET_BYTES, ...(plan === 'hourly' ? { downBytes: SPEED_HOURLY_TEST_BYTES, upBytes: SPEED_HOURLY_TEST_BYTES } : {}) };
 }
 
 /** Take a stream slot → release() or an error code ('busy' | 'budget'). */
@@ -368,7 +417,10 @@ function speedDown(req, res) {
   try { hourly = features(peerId).inetq.speedtest === 'hourly'; } catch { hourly = false; }
   if (hourly) n = Math.min(n, SPEED_HOURLY_MAX_BYTES);
   const slot = acquire(peerId, n);
-  if (slot.error) return res.status(429).json({ ok: false, error: slot.error });
+  if (slot.error) {
+    if (slot.error === 'budget') res.set('Retry-After', String(budgetRetryAfter(peerId)));
+    return res.status(429).json({ ok: false, error: slot.error });
+  }
   res.set({ 'Content-Type': 'application/octet-stream', 'Content-Length': String(n), 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   // one random block, sent again and again with a fresh random prefix — not compressible, no big buffers
   const block = crypto.randomBytes(SPEED_CHUNK);
@@ -413,7 +465,12 @@ function speedUp(req, res) {
     return res.status(413).json({ ok: false, error: 'too_large', max: SPEED_MAX_BYTES });
   }
   const slot = acquire(peerId, len || 0);
-  if (slot.error) { res.set('Connection', 'close'); req.resume(); return res.status(429).json({ ok: false, error: slot.error }); }
+  if (slot.error) {
+    res.set('Connection', 'close');
+    if (slot.error === 'budget') res.set('Retry-After', String(budgetRetryAfter(peerId)));
+    req.resume();
+    return res.status(429).json({ ok: false, error: slot.error });
+  }
   const started = Date.now();
   let bytes = 0;
   let over = false;
@@ -451,10 +508,11 @@ function speedUp(req, res) {
   return undefined;
 }
 
-function _resetForTest() { streams.total = 0; streams.byPeer.clear(); budget.clear(); budgetHit.clear(); speedRequested.clear(); }
+function _resetForTest() { streams.total = 0; streams.byPeer.clear(); budget.clear(); budgetHit.clear(); reported.clear(); speedRequested.clear(); }
 
 module.exports = {
-  InetqError, RAW_KEEP_MS, LONG_KEEP_MS, SPEED_MAX_BYTES, SPEED_HOURLY_MAX_BYTES, budgetInfo, SPEED_STREAMS_PER_GATEWAY, SPEED_STREAMS_TOTAL, SPEED_BUDGET_BYTES,
+  InetqError, RAW_KEEP_MS, LONG_KEEP_MS, SPEED_MAX_BYTES, SPEED_HOURLY_MAX_BYTES, SPEED_HOURLY_TEST_BYTES, budgetInfo, budgetRetryAfter, speedVolume,
+  SPEED_STREAMS_PER_GATEWAY, SPEED_STREAMS_TOTAL, SPEED_BUDGET_BYTES,
   ingest, view, speedtest, onHeartbeat, retention, noticeOutages, speedDown, speedUp, acquire, account, _resetForTest,
   _stepRows: null, _streamMaxMs: null,
 };

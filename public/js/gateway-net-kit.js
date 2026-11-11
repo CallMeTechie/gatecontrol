@@ -184,9 +184,29 @@
     return Math.round(mb) + ' MB';
   }
 
+  /**
+   * The address of the UPS server as the dialog takes it (the server checks it again, strictly): a private
+   * IPv4 address, or — a home network without IPv4 — a unique local IPv6 address (fc00::/7, e.g. fd00::10;
+   * never link-local fe80:…, no zone, no brackets).
+   */
+  function upsHostOk(value) {
+    const v = String(value == null ? '' : value).trim();
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(v);
+    if (m) {
+      const o = m.slice(1).map(Number);
+      if (o.some((x) => x > 255)) return false;
+      return o[0] === 10 || (o[0] === 172 && o[1] >= 16 && o[1] <= 31) || (o[0] === 192 && o[1] === 168);
+    }
+    if (!/^f[cd][0-9a-f]{2}(?::[0-9a-f]{0,4}){1,7}$/i.test(v)) return false;
+    const groups = v.split(':');
+    const gaps = v.split('::').length - 1;
+    if (gaps > 1 || v.indexOf(':::') >= 0) return false;
+    return gaps === 1 ? groups.length <= 8 : (groups.length === 8 && groups.every((x) => x !== ''));
+  }
+
   return {
     RISKY, FILTERS, RANGES, RANGE_MS, BUCKET_MS,
     isNas, risksOf, displayName, filterDevices, sortDevices, kpis,
-    upsState, onBattery, causeKey, minutes, chartGeometry, summary, ramLabel,
+    upsState, onBattery, causeKey, minutes, chartGeometry, summary, ramLabel, upsHostOk,
   };
 });

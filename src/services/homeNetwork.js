@@ -203,17 +203,32 @@ function fromPeerAddress(peer, v4) {
 // AND one of its own private addresses lies in a LAN subnet G reports.
 
 const MAX_LOCAL = 4;
-const MAX_LOCAL_QUERY = 128; // 4 × "255.255.255.255" + separators, with room
+const MAX_LOCAL_QUERY = 200; // 4 × a full IPv6 address (39 characters) + separators, with room
 const MAX_GATEWAY_SUBNETS = 16;
 const SITE_HANDSHAKE_MAX_AGE_S = 180;
 
 /**
- * `local` query value → up to 4 distinct ipaddr IPv4 objects: the device's
- * own addresses on its Wi-Fi/Ethernet interfaces. Only a single string is
+ * A unique local IPv6 address (ULA, fc00::/7) as an ipaddr object, else null:
+ * the private address of a home network without IPv4. No zone ("%eth0"), no
+ * IPv4-mapped or embedded IPv4 form; link-local (fe80::/10 — the same prefix
+ * in every network) and global addresses are never "the home LAN".
+ */
+function toUla(ip) {
+  try {
+    const s = String(ip == null ? '' : ip).trim();
+    if (!s || s.includes('%') || s.includes('.') || !ipaddr.IPv6.isValid(s)) return null;
+    const a = ipaddr.IPv6.parse(s);
+    return a.range() === 'uniqueLocal' ? a : null;
+  } catch { return null; }
+}
+
+/**
+ * `local` query value → up to 4 distinct ipaddr objects: the device's own
+ * addresses on its Wi-Fi/Ethernet interfaces. Only a single string is
  * accepted (a repeated parameter is ignored as a whole); only the first four
  * comma-separated entries are looked at; each must be a strict dotted-quad
- * RFC 1918 address outside the WireGuard subnet — everything else is
- * dropped.
+ * RFC 1918 address outside the WireGuard subnet or — a home network without
+ * IPv4 — a unique local IPv6 address (toUla()); everything else is dropped.
  */
 function parseLocal(raw) {
   if (typeof raw !== 'string' || !raw || raw.length > MAX_LOCAL_QUERY) return [];
@@ -221,9 +236,14 @@ function parseLocal(raw) {
   const seen = new Set();
   for (const part of raw.split(',').slice(0, MAX_LOCAL)) {
     const s = part.trim();
-    if (!ipaddr.IPv4.isValidFourPartDecimal(s)) continue;
-    const a = ipaddr.IPv4.parse(s);
-    if (a.range() !== 'private' || inWgSubnet(a)) continue;
+    let a;
+    if (ipaddr.IPv4.isValidFourPartDecimal(s)) {
+      a = ipaddr.IPv4.parse(s);
+      if (a.range() !== 'private' || inWgSubnet(a)) continue;
+    } else {
+      a = toUla(s);
+      if (!a) continue;
+    }
     const key = a.toString();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -273,6 +293,36 @@ function siteSubnet(cidr) {
     if (wg && (first.match(wg[0], wg[1]) || wg[0].match(first, bits))) return null;
     return [first, bits];
   } catch { return null; }
+}
+
+/**
+ * A gateway-reported IPv6 LAN subnet as [network, bits], or null unless it is
+ * a CIDR lying entirely inside fc00::/7 with a prefix of /48 … /127: a ULA
+ * site prefix or one of its subnets. A wider prefix (fc00::/7 itself, fd00::/8)
+ * would match the ULA of every other household.
+ */
+function siteSubnet6(cidr) {
+  try {
+    const s = String(cidr == null ? '' : cidr).trim();
+    if (!s.includes('/') || s.includes('%') || s.includes('.')) return null;
+    const [net, bits] = ipaddr.parseCIDR(s);
+    if (net.kind() !== 'ipv6' || bits < 48 || bits > 127) return null;
+    const first = ipaddr.IPv6.networkAddressFromCIDR(s);
+    return first.range() === 'uniqueLocal' ? [first, bits] : null;
+  } catch { return null; }
+}
+
+/** IPv6 (ULA) LAN subnets a gateway reported (telemetry.lan_subnets6[].cidr, gateways with `ipv6-lan`). */
+function gatewaySubnets6(lastHealth) {
+  let list;
+  try { list = JSON.parse(lastHealth || '{}').telemetry.lan_subnets6; } catch { return []; }
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const e of list.slice(0, MAX_GATEWAY_SUBNETS)) {
+    const sub = siteSubnet6(e && typeof e === 'object' ? e.cidr : null);
+    if (sub) out.push(sub);
+  }
+  return out;
 }
 
 /** LAN subnets a gateway reported in its last heartbeat (telemetry.lan_subnets[].cidr). */
@@ -325,9 +375,11 @@ function enabledGateways() {
  *       enabled with a fresh handshake);
  *     - direct: req.ip (trust proxy 'loopback', i.e. Caddy's
  *       X-Forwarded-For only) — public addresses only;
- *  3. at least one `local` address lies in a LAN subnet G reports. Without
- *     `local` the rule never matches (CGNAT: two households behind one
- *     carrier address).
+ *  3. at least one `local` address lies in a LAN subnet G reports — an
+ *     RFC 1918 address in an IPv4 subnet (lan_subnets) or a unique local
+ *     address in an IPv6 subnet (lan_subnets6: a home network without
+ *     IPv4). Without `local` the rule never matches (CGNAT: two households
+ *     behind one carrier address).
  */
 async function gatewaySite(ip, peerId, local, own) {
   if (!local.length) return null;
@@ -351,8 +403,9 @@ async function gatewaySite(ip, peerId, local, own) {
   for (const g of gws) {
     const ep = freshEndpoint(byKey.get(g.public_key));
     if (!ep || !samePublic(device, ep)) continue;
-    const subnets = gatewaySubnets(g.last_health);
-    if (local.some((a) => subnets.some(([net, bits]) => a.match(net, bits)))) {
+    // both families; an address is only ever matched against a subnet of its own family
+    const subnets = gatewaySubnets(g.last_health).concat(gatewaySubnets6(g.last_health));
+    if (local.some((a) => subnets.some(([net, bits]) => a.kind() === net.kind() && a.match(net, bits)))) {
       return { gatewayId: Number(g.id), name: String(g.name || '') };
     }
   }
@@ -517,7 +570,7 @@ function homeMap() {
 }
 
 module.exports = {
-  check, viaOf, lanEntries, defaultGateways, parseLocal, publicAddr, samePublic, siteSubnet,
+  check, viaOf, lanEntries, defaultGateways, parseLocal, publicAddr, samePublic, siteSubnet, siteSubnet6, toUla,
   gatewayHomes, homeOf, homeMap,
   EXCLUDED_IFACE_PREFIXES, MAX_LAN, MAX_LOCAL, SITE_HANDSHAKE_MAX_AGE_S,
   _setInterfacesForTest, _setRouteTableForTest,

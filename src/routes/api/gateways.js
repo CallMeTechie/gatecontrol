@@ -349,11 +349,18 @@ router.post('/:id/discover', require('../../middleware/license').requireFeature(
   res.status(202).json({ ok: true, request_id: requestId, subnets_scanned: subnets });
 });
 
-router.get('/:id/discovered', require('../../middleware/license').requireFeature('gateway_lan_discovery'), (req, res) => {
+// Read-only list of what the last scan found. Without the licence feature the answer is not an
+// error but an empty list with `licensed: false` — the pages that ask on opening (gateway page,
+// route dialog, migration dialog) show a note instead of a failed request. Scanning and the
+// settings themselves stay behind the licence (403 above).
+router.get('/:id/discovered', (req, res) => {
   const id = Number(req.params.id);
   if (!_gatewayTelemetry(id)) return res.status(404).json({ ok: false, error: 'not_found' });
+  if (!require('../../services/license').hasFeature('gateway_lan_discovery')) {
+    return res.json({ ok: true, licensed: false, feature: 'gateway_lan_discovery', devices: [], in_flight: false, done: false, timed_out: false, updated_at: null });
+  }
   const snap = require('../../services/discoveryCache').get(id);
-  res.json({ ok: true, devices: snap ? snap.devices : [], in_flight: snap ? snap.in_flight : false, done: snap ? snap.done : false, timed_out: snap ? snap.timed_out : false, updated_at: snap ? snap.updated_at : null });
+  res.json({ ok: true, licensed: true, devices: snap ? snap.devices : [], in_flight: snap ? snap.in_flight : false, done: snap ? snap.done : false, timed_out: snap ? snap.timed_out : false, updated_at: snap ? snap.updated_at : null });
 });
 
 // ─── Gateway assistant "Gateway hinzufügen" (docs/feature-gateway-wizard.md) ──

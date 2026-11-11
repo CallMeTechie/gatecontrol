@@ -20,14 +20,14 @@
 //     print    { enabled, manual, convert, ocr, office }  phase 3c: Drucken & Scannen (services/homePrint.js);
 //              convert: PDF für Drucker ohne PDF im Gateway umwandeln (Standard an)
 //     radio    { zigbee, ble, stack, thread, sticks } phase 3c, step 2: Funk (services/homeRadio.js; zigbee null = automatic)
-//     ai       { enabled, source, lanUrl, lanApi, gpu }  phase 3c, step 3: Lokale KI (services/ai/local.js)
+//     ai       { enabled, source, lanUrl, lanApi, lanPin, gpu }  phase 3c, step 3: Lokale KI (services/ai/local.js)
 //     cameras  { enabled, nobodyHome, credRev, subnets, cameras }  phase 3c, step 4: Kameras (services/homeCameras.js)
 //
 // What a gateway can do is read from its telemetry: `capabilities` (array)
 // or, for a gateway that does not report it, its version (≥ MIN_GATEWAY).
 
 const { getDb } = require('../db/connection');
-const { isPrivateIpv4 } = require('../utils/validate');
+const { isPrivateIpv4, isUlaIpv6 } = require('../utils/validate');
 const logger = require('../utils/logger');
 
 const MIN_GATEWAY = '1.21.0';
@@ -56,7 +56,7 @@ const DEFAULTS = Object.freeze({
   notify: { outage: true, ups: true },
   print: { enabled: false, manual: [], convert: true, ocr: false, office: false },
   radio: { zigbee: null, ble: false, stack: 'deconz', thread: false, sticks: [] },
-  ai: { enabled: false, source: 'service', lanUrl: null, lanApi: 'ollama', gpu: 'off' },
+  ai: { enabled: false, source: 'service', lanUrl: null, lanApi: 'ollama', lanPin: null, gpu: 'off' },
   cameras: { enabled: false, subnets: [], storagePath: null },
   // "Statusseite im Heimnetz": the status page of the gateway in its LAN (gateway docs/setup-page.md);
   // the setup itself and "Zugang ungültig" stay reachable there either way
@@ -96,7 +96,8 @@ function normalize(raw) {
   const pr = r.presence || {};
   const up = r.ups || {};
   const no = r.notify || {};
-  const host = typeof up.host === 'string' && isPrivateIpv4(up.host.trim()) ? up.host.trim() : '';
+  // the NUT server: a private IPv4 address or — a home network without IPv4 — a unique local IPv6 address (fc00::/7)
+  const host = typeof up.host === 'string' && (isPrivateIpv4(up.host.trim()) || isUlaIpv6(up.host.trim())) ? up.host.trim() : '';
   const port = Number.isInteger(up.port) && up.port >= 1 && up.port <= 65535 ? up.port : 3493;
   const targets = Array.isArray(iq.targets) ? [...new Set(iq.targets.filter((x) => typeof x === 'string' && publicIpv4(x)).map((x) => x.trim()))].slice(0, TARGETS_MAX).sort() : [];
   return {
@@ -146,11 +147,11 @@ function telemetryOf(g) {
  * Unknown keys or wrong types → FeatureError('invalid').
  * @returns {{ before, after }}
  */
-function applyPatch(current, patch) {
+function applyPatch(current, patch, { ipv6 = false } = {}) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
-  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread', 'sticks'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'], setupPage: ['status'] };
+  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread', 'sticks'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'lanPin', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'], setupPage: ['status'] };
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     if (!allowed[k]) continue; // other keys (lanDiscovery, edge) are handled by the route
@@ -196,7 +197,10 @@ function applyPatch(current, patch) {
         out.inetq.targets = val.map((x) => x.trim());
       } else if (f === 'host') {
         const h = typeof val === 'string' ? val.trim() : null;
-        if (h === null || (h !== '' && !isPrivateIpv4(h))) throw new FeatureError('invalid_host', 'ups.host: a private IPv4 address (RFC 1918)');
+        if (h === null || (h !== '' && !isPrivateIpv4(h) && !isUlaIpv6(h))) throw new FeatureError('invalid_host', 'ups.host: a private IPv4 address (RFC 1918) or a unique local IPv6 address (fc00::/7)');
+        // an IPv6 address only for a gateway that takes one (capability `ipv6-lan`): an older gateway would
+        // drop the host and leave the UPS silently off
+        if (h !== '' && !isPrivateIpv4(h) && !ipv6 && h !== current.ups.host) throw new FeatureError('ups_host_ipv6', 'ups.host: this gateway takes a private IPv4 address only — update the gateway for IPv6');
         out.ups.host = h;
       } else if (f === 'port') {
         if (!Number.isInteger(val) || val < 1 || val > 65535) throw new FeatureError('invalid', 'ups.port: 1…65535');
@@ -208,6 +212,8 @@ function applyPatch(current, patch) {
     }
   }
   if (!any) throw new FeatureError('invalid', 'nothing to change');
+  // Lokale KI: the pinned certificate belongs to the address it was confirmed for
+  if (p.ai) out.ai = require('./ai/local').afterPatch(current.ai, out.ai, p.ai);
   if (out.ups.enabled && !out.ups.host) throw new FeatureError('ups_host_required', 'ups.host is needed to switch the UPS status on');
   return normalize(out);
 }
@@ -216,7 +222,8 @@ function applyPatch(current, patch) {
 function set(peerId, patch, { ip, user } = {}) {
   const g = needGateway(peerId);
   const before = get(g.id);
-  const after = applyPatch(before, patch);
+  const caps = telemetryOf(g).capabilities;
+  const after = applyPatch(before, patch, { ipv6: Array.isArray(caps) && caps.includes('ipv6-lan') });
   db().prepare(`INSERT INTO gateway_features (peer_id, settings, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(peer_id) DO UPDATE SET settings = excluded.settings, updated_at = excluded.updated_at`)
     .run(g.id, JSON.stringify(after), Date.now());
@@ -251,7 +258,10 @@ function configPayload(peerId) {
   }
   return {
     netwatch: { enabled: s.netwatch.enabled, portscan: s.netwatch.portscan },
-    inetq: { enabled: s.inetq.enabled, speedtest: s.inetq.speedtest, ...(s.inetq.targets.length ? { targets: s.inetq.targets.slice() } : {}) },
+    // speedVolume: the daily volume of the speed tests and, plan 'hourly', the cap per test and direction
+    // (services/inetq.js speedVolume; a gateway without the capability `speed-volume` ignores it)
+    inetq: { enabled: s.inetq.enabled, speedtest: s.inetq.speedtest, ...(s.inetq.targets.length ? { targets: s.inetq.targets.slice() } : {}),
+      speedVolume: require('./inetq').speedVolume(s.inetq.speedtest) },
     presence: { enabled: s.netwatch.enabled && s.presence.enabled, macs },
     ups: { enabled: s.ups.enabled, host: s.ups.host, port: s.ups.port, name: s.ups.name },
     // phase 3b (contract server side 1–3)
@@ -500,7 +510,13 @@ function overview(peerId) {
     lan = { available: tel.lan_discovery === true, licensed, enabled: !!(d && d.enabled) };
   } catch { lan = null; }
   let edge = null;
-  try { const es = require('./edge/store').settings(g.id); edge = { enabled: es.edgeEnabled, mqtt: es.mqttEnabled }; } catch { edge = null; }
+  try {
+    const es = require('./edge/store').settings(g.id);
+    // native: a gateway without Docker (Proxmox LXC) has no edge container — a hint in the row, never a ban
+    const meta = db().prepare('SELECT platform FROM gateway_meta WHERE peer_id = ?').get(g.id);
+    const native = require('../../public/js/gateway-edge-kit').nativeGateway({ platform: meta ? meta.platform : null, telemetry: tel });
+    edge = { enabled: es.edgeEnabled, mqtt: es.mqttEnabled, native };
+  } catch { edge = null; }
   const z = zigbeeOf(tel);
   let dns = null;
   let cache = null;

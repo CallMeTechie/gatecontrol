@@ -313,6 +313,9 @@ You need Proxmox VE 8 or newer and the host shell (web UI → node → “Shell�
 This way installs the gateway **without Docker**. Edge plugins and the MQTT
 broker need the edge container and therefore do not run there. If you need
 them, use [3.4](#34-linux-machine-with-docker) in a VM.
+GateControl says so at the gateway itself: the tabs “Edge plugins” and “MQTT”
+and the row “Edge plugins & MQTT” show “No edge container on this gateway”.
+This is a note – the switches stay usable.
 
 **Check:** The assistant shows “Gateway has reported”.
 
