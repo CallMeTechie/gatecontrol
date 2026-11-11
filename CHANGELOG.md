@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.260.0] — 2026-11-11
+
+### Features
+- zigbee2mqtt – Mehrkanal-Geräte, Thermostate und OTA-Updates für Plugins (#463)
+
+---
+
 ## [1.259.0] — 2026-11-11
 
 ### Features
