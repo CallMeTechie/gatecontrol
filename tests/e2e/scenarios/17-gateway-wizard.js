@@ -230,7 +230,7 @@ module.exports = (ctx) => {
         /\n {6}- \.\/config:\/config /.test(c1.compose) && /GC_SETUP_PORT/.test(c1.compose) && !/gc_gw_|GC_API_TOKEN|WG_PRIVATE_KEY|config:\/config:ro/.test(c1.compose));
       step('step 2 names the setup page (port 8642), step 1 the Container Manager', /:8642$/.test(c1.url) && /Container Manager/.test(c1.title), c1.url);
       const cwGuide = await page.$eval('section[data-way="code"] a[data-guide="gw.setup_page"]', (x) => x.href).catch(() => '');
-      step('the instructions link to the user guide (setup page of the gateway)', /\/docs\/(handbuch|guide)\/03-[a-z-]+\.md#[a-z-]+$/.test(cwGuide), cwGuide);
+      step('the instructions link to the handbook inside the app (the setup page of the gateway)', cwGuide === BASE + '/gateways#gw/' + GW.home + '/handbook/the-setup-page-of-the-gateway', cwGuide);
       const yml = await download(page, '#gwz-cw-download');
       step('"Herunterladen" → docker-compose.yml, the same text', yml.name === 'docker-compose.yml' && yml.data.toString() === c1.compose);
       const pkg = await download(page, '#gwz-cw-package');
