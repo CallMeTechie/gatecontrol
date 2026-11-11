@@ -2189,6 +2189,27 @@ table tbody tr:last-child td { border-bottom: none; }
 .gwz-pre { margin: 0; white-space: pre-wrap; max-height: 280px; overflow: auto; }
 .gwz-tree { margin: 10px 0 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.55; overflow-x: auto; color: var(--text); }
 .gwz-link { background: none; border: 0; padding: 0; font: inherit; color: var(--teal); text-decoration: underline; cursor: pointer; }
+/* step 3 through the setup page of the gateway (server address + setup code) and "Zugang erneuern" */
+.gwz-link:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; border-radius: 4px; }
+.gwz-compose { margin-top: 10px; max-height: 168px; white-space: pre; flex: none; }
+.gwz-st .gwz-row { margin-top: 8px; }
+.gwz-cw-net, .gwz-cw-tun { margin-top: 10px; }
+.gwz-cw-tun[hidden] { display: none; }
+.gwz-pairbox { display: flex; flex-direction: column; border: 1px dashed var(--teal-dim, var(--line-2)); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.gwz-pair { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 12px 14px; min-width: 0; }
+.gwz-pair + .gwz-pair { border-top: 1px solid var(--line); }
+.gwz-pair-l { flex: 1 0 100%; font-size: 12px; font-weight: 700; color: var(--muted); }
+.gwz-pair-v { flex: 1 1 200px; min-width: 0; font-family: var(--font-mono); font-size: clamp(15px, 2.6vw, 19px); font-weight: 600; letter-spacing: .03em; color: var(--text); overflow-wrap: anywhere; user-select: all; }
+.gwz-pair-t { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--amber); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gwz-pair-t.over { color: var(--red); }
+.gwz-wait { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--r-sm); background: var(--chip); border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.gwz-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--teal); animation: btnSpin 1s linear infinite; flex: none; }
+.gwz-wait.done { color: var(--text); border-color: var(--teal-dim, var(--line-2)); }
+.gwz-wait.done .gwz-spin { animation: none; border-color: var(--teal); background: var(--teal); }
+@media (prefers-reduced-motion: reduce) { .gwz-spin { animation: none; } }
+.gwm-renew .modal-body { display: flex; flex-direction: column; gap: 14px; }
+.gwm-renew .modal-body p { margin: 0; }
+.gwm-renew-text { font-size: 13.5px; line-height: 1.55; color: var(--text); }
 .gwz-checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .gwz-checks > li { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .gwz-checks > li:last-child { border-bottom: 0; }

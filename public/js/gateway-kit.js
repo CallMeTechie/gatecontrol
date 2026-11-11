@@ -746,7 +746,8 @@
       lines.push(
         '    ports:',
         '      - "8080:8080"   # HTTP proxy (Caddy upstream)',
-        '      - "9876:9876"   # Management API (do NOT expose to internet)'
+        '      - "9876:9876"   # Management API (do NOT expose to internet)',
+        '      - "8642:8642"   # setup and status page of the gateway (home network only)'
       );
     }
     lines.push(
@@ -758,7 +759,8 @@
       '      - /run',
       '      - /etc/wireguard',
       '    volumes:',
-      '      - ./config:/config:ro',
+      // rw: the setup page of the gateway stores gateway.env here (0600); no access data in this file
+      '      - ./config:/config         # the gateway stores gateway.env here (setup page http://<address>:8642)',
       '      - ./gateway-state:/state   # rw: auto-update state (self-update flag + last-pull)',
       // home cache (gateway >= 1.22.0): always mounted at /cache, used only when switched on for
       // this gateway; GC_CACHE_DIR moves it elsewhere (e.g. a USB disk), as in the gateway's own example
@@ -814,7 +816,9 @@
     lines.push(
       '    environment:',
       '      - LOG_LEVEL=info',
-      '      - GATEWAY_ENV_PATH=/config/gateway.env'
+      '      - GATEWAY_ENV_PATH=/config/gateway.env',
+      // setup and status page in the home network (gateway docs/setup-page.md); another port: GC_SETUP_PORT in .env
+      '      - GC_SETUP_PORT=${GC_SETUP_PORT:-8642}'
     );
     // the image sets it too; kept visible where the userspace path is the point of the profile
     if (platform === 'synology') lines.push('      - WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go');

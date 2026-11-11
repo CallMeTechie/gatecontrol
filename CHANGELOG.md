@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.262.0] — 2026-11-11
+
+### Features
+- Einrichtung über die Seite des Gateways – Serveradresse + Einrichtungscode, „Zugang erneuern“, Statusseite im Heimnetz (#467)
+
+---
+
+## [1.261.3] — 2026-11-11
+
+### Fixes
+- update.sh der Gateways auf v1.37.0 nachgezogen (Office-Image wird mit erneuert) (#468)
+
+---
+
 ## [1.261.2] — 2026-11-11
 
 ### Änderungen

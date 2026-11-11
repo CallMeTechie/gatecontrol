@@ -4,7 +4,7 @@
 // buildCompose — also the NAS package and the "only docker-compose.yml"
 // download) against docker-compose.example.yml of gatecontrol-gateway, checked
 // in as tests/fixtures/gateway-compose/docker-compose.example.yml (copy of
-// gatecontrol-gateway feat/print-ocr-office, 2026-11-07 / v1.33.0: service office in the profile office, volume office-ctl, the gateway mounts /gc-office; before that feat/funk-z2m-thread-ble with zigbee2mqtt (profile zigbee2mqtt) and otbr (profile thread), volumes z2m-data and otbr-data). When the gateway
+// gatecontrol-gateway feat/gateway-einrichtungsseite, 2026-11-11: setup page — ./config writable, GC_SETUP_PORT, /dev/net/tun unchanged in `devices`; before that feat/print-ocr-office, 2026-11-07 / v1.33.0: service office in the profile office, volume office-ctl, the gateway mounts /gc-office; before that feat/funk-z2m-thread-ble with zigbee2mqtt (profile zigbee2mqtt) and otbr (profile thread), volumes z2m-data and otbr-data). When the gateway
 // changes its example, copy it again — this test then shows what buildCompose
 // has to follow.
 //
@@ -101,6 +101,12 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
     assert.equal(ex.services.deconz.profiles, 'profiles: ["zigbee"]');
     assert.match(exGw.volumes, /source: radio-ctl/);
     assert.deepEqual(listOf(exGw.cap_add), ['NET_ADMIN', 'NET_BIND_SERVICE', 'NET_RAW', 'SETGID', 'SETUID']);
+    // setup page of the gateway: ./config writable (the gateway stores gateway.env itself) and the port of the
+    // page; /dev/net/tun stays as it was (`devices`, no rule, no MKNOD)
+    assert.deepEqual(listOf(exGw.devices), ['/dev/net/tun:/dev/net/tun']);
+    assert.equal(exGw.device_cgroup_rules, undefined);
+    assert.ok(listOf(exGw.volumes).includes('./config:/config'));
+    assert.ok(listOf(exGw.environment).includes('GC_SETUP_PORT=${GC_SETUP_PORT:-8642}'));
     // gateway >= 1.23.0: the edge container has no network (no fence, no xt_owner); the gateway writes the broker files
     assert.equal(ex.services.edge.network_mode, 'network_mode: none');
     assert.ok(!/edge-mqtt/.test(ex.services.edge.volumes), 'the edge container never sees the broker files');
@@ -219,10 +225,12 @@ describe('gateway compose: assistant vs docker-compose.example.yml of the gatewa
       assert.equal(gw.network_mode, undefined);
       // NET_RAW: ping of the internet quality; keepalived (SETGID/SETUID) and low ports need the host network
       assert.deepEqual(listOf(gw.cap_add), ['NET_ADMIN', 'NET_RAW']);
-      assert.deepEqual(listOf(gw.ports), ['"8080:8080"', '"9876:9876"']);
-      assert.deepEqual(listOf(gw.volumes), ['./config:/config:ro', './gateway-state:/state', '${GC_CACHE_DIR:-./gateway-cache}:/cache']);
+      // 8642: the setup and status page of the gateway must be reachable from the home network
+      assert.deepEqual(listOf(gw.ports), ['"8080:8080"', '"9876:9876"', '"8642:8642"']);
+      assert.deepEqual(listOf(gw.volumes), ['./config:/config', './gateway-state:/state', '${GC_CACHE_DIR:-./gateway-cache}:/cache']);
       for (const k of ['user', 'read_only', 'tmpfs', 'healthcheck', 'logging']) assert.equal(gw[k], exGw[k], `gateway.${k}`);
       assert.equal(gw.devices, platform === 'synology' ? exGw.devices : undefined);
+      assert.equal(gw.device_cgroup_rules, undefined);
     });
   }
 });

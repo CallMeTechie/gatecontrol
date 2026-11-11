@@ -972,7 +972,7 @@ describe('aurora theme — gateway management on /gateways (moved from the Peers
     const island = res.text.match(/<script type="application\/json" id="gwm-i18n"[^>]*>([^<]*)<\/script>/);
     assert.ok(island, 'strings island');
     const strings = JSON.parse(island[1]);
-    for (const k of ['gwm.rename', 'gwm.reconnect', 'gwm.proxy_port', 'gwm.disable', 'gwm.delete', 'gateway_delete_title']) assert.ok(strings[k] && strings[k] !== k, k);
+    for (const k of ['gwm.rename', 'gwm.reconnect', 'gwm.renew', 'gwm.renew_confirm', 'gwm.renew_server', 'gwm.renew_code', 'gwm.proxy_port', 'gwm.disable', 'gwm.delete', 'gateway_delete_title']) assert.ok(strings[k] && strings[k] !== k, k);
   });
 
   it('gateways.js adds the entries to "Mehr" and hands gm-* actions to gateway-manage.js', () => {
@@ -980,7 +980,7 @@ describe('aurora theme — gateway management on /gateways (moved from the Peers
     assert.match(js, /window\.GCGatewayManage\.menuItems\(g, item, menu\)/);
     assert.match(js, /closest\('\[data-act\^="gm-"\]'\)/);
     const gm = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'gateway-manage.js'), 'utf8');
-    for (const a of ['gm-rename', 'gm-reconnect', 'gm-proxy', 'gm-disable', 'gm-enable', 'gm-delete']) assert.ok(gm.includes(`'${a}'`), a);
+    for (const a of ['gm-rename', 'gm-renew', 'gm-reconnect', 'gm-proxy', 'gm-disable', 'gm-enable', 'gm-delete']) assert.ok(gm.includes(`'${a}'`), a);
     assert.match(gm, /\/delete-impact/, 'the routes of the gateway before deleting');
     assert.match(gm, /\/api\/v1\/peers\?type=gateway/, 'disabled gateways listed');
     assert.doesNotMatch(gm.replace(/\/\/[^\n]*/g, ''), /innerHTML/);

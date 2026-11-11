@@ -262,7 +262,7 @@ module.exports = (ctx) => {
           const acts = [...document.querySelectorAll('#gw-more-menu [role="menuitem"]')].map((x) => x.dataset.act);
           const v = document.querySelector('#gw-more-menu a[data-act="versions"]');
           const h = document.querySelector('#gw-more-menu a[data-act="handbook"]');
-          return acts.join() === 'compose,setup,location,pool-add,versions,handbook,gm-rename,gm-reconnect,gm-proxy,gm-disable,gm-delete'
+          return acts.join() === 'compose,setup,location,pool-add,versions,handbook,gm-rename,gm-renew,gm-proxy,gm-disable,gm-delete'
             && !!v && /^#gw\/[^/]+\/versions$/.test(v.getAttribute('href')) && !v.target && !!h && /^#gw\/[^/]+\/handbook$/.test(h.getAttribute('href')) && !h.target;
         }));
         await page.keyboard.press('ArrowDown');

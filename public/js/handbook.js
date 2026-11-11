@@ -22,6 +22,8 @@
     'gw.synology': { de: '03-gateway-einrichten.md#32-synology-nas', en: '03-gateway-setup.md#32-synology-nas' },
     'gw.linux': { de: '03-gateway-einrichten.md#34-linux-rechner-mit-docker', en: '03-gateway-setup.md#34-linux-machine-with-docker' },
     'gw.proxmox': { de: '03-gateway-einrichten.md#35-proxmox', en: '03-gateway-setup.md#35-proxmox' },
+    // the setup page of the gateway in the home network (server address + setup code)
+    'gw.setup_page': { de: '03-gateway-einrichten.md#die-einrichtungsseite-des-gateways', en: '03-gateway-setup.md#the-setup-page-of-the-gateway' },
     // chapter 4: edge plugins and Smart Home, its status messages
     edge: { de: '04-edge-und-smart-home.md', en: '04-edge-and-smart-home.md' },
     mqtt: { de: '04-edge-und-smart-home.md#42-mqtt-broker-einschalten', en: '04-edge-and-smart-home.md#42-switching-the-mqtt-broker-on' },
@@ -43,6 +45,7 @@
     'feat.radio': { de: '05-funktionen.md#funk-zigbee-bluetooth-thread', en: '05-features.md#radio-zigbee-bluetooth-thread' },
     'feat.ai': { de: '05-funktionen.md#lokale-ki', en: '05-features.md#local-ai' },
     'feat.cameras': { de: '05-funktionen.md#kameras', en: '05-features.md#cameras' },
+    'feat.setuppage': { de: '05-funktionen.md#statusseite-im-heimnetz', en: '05-features.md#status-page-in-the-home-network' },
     'feat.edge': { de: '04-edge-und-smart-home.md', en: '04-edge-and-smart-home.md' },
     'feat.zigbee': { de: '04-edge-und-smart-home.md#zigbee-mit-deconz-raspberry-pi', en: '04-edge-and-smart-home.md#zigbee-with-deconz-raspberry-pi' },
     // chapter 6: updating a gateway (the complete compose file)

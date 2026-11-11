@@ -2,11 +2,18 @@
 # Copy to docker-compose.yml and adjust to your environment.
 #
 # Requirements:
-#   - gateway.env from GateControl UI (Peer-Detail → Download)
+#   - No access data in this file. After the first start open the setup page
+#     of the gateway in the home network (http://<address of this device>:8642)
+#     and enter the server address and the setup code from GateControl
+#     (Gateways › Gateway hinzufügen) — docs/setup-page.md.
+#     The old way still works: put gateway.env from GateControl into ./config.
 #   - Gateway must be on same L2 segment as target LAN devices (WoL!)
 #   - Host network mode required for dynamic L4 port binding
 #
 # Ports im LAN (nur wenn in GateControl eingeschaltet, nur LAN-Adressen, nie Tunnel):
+#   8642/tcp    Einrichtungs- und Statusseite (docs/setup-page.md) – immer, nur
+#               für Geräte im Heimnetz; anderer Port: GC_SETUP_PORT, Statusseite
+#               pro Gateway in GateControl abschaltbar, ganz aus: GC_SETUP_PAGE=off
 #   53/udp+tcp  DNS-Filter (docs/dns-cache.md) – belegt ein anderer Dienst
 #               (z. B. DSM-Paket „DNS Server“, Pi-hole) Port 53, meldet das
 #               Gateway „port_busy“ und erzwingt nichts.
@@ -50,7 +57,7 @@ services:
       - /run       # includes /run/keepalived (NearManager mkdir's at runtime)
       - /etc/wireguard  # wireguard-go writes config here
     volumes:
-      - ./config:/config:ro      # Place gateway.env here
+      - ./config:/config         # rw: the setup page stores gateway.env here (0600); with :ro only the old way works (gateway.env by hand)
       - ./gateway-state:/state          # rw: self-update flag + last-pull marker (#2b)
       # Zwischenspeicher (docs/dns-cache.md): Blobs für Apps im Heimnetz. Auf der
       # Synology z. B. GC_CACHE_DIR=/volume1/gatecontrol-cache in .env setzen.
@@ -99,6 +106,8 @@ services:
     environment:
       - LOG_LEVEL=info
       - GATEWAY_ENV_PATH=/config/gateway.env
+      # Einrichtungs-/Statusseite im Heimnetz (docs/setup-page.md); anderer Port: GC_SETUP_PORT in .env
+      - GC_SETUP_PORT=${GC_SETUP_PORT:-8642}
       # Force wg-quick to use wireguard-go (userspace) instead of kernel module.
       # Required on Synology DSM, Alpine containers w/o wg-kernel-module, VMs etc.
       # (Also baked into Dockerfile as ENV — overrideable here.)

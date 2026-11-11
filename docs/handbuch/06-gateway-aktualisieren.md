@@ -155,7 +155,7 @@ services:
       - /run
       - /etc/wireguard
     volumes:
-      - ./config:/config:ro
+      - ./config:/config         # the gateway stores gateway.env here (setup page http://<address>:8642)
       - ./gateway-state:/state   # rw: auto-update state (self-update flag + last-pull)
       - ${GC_CACHE_DIR:-./gateway-cache}:/cache   # home cache, only used when switched on
       # edge container: the gateway socket there, its summary back, broker files for mqtt
@@ -197,6 +197,7 @@ services:
     environment:
       - LOG_LEVEL=info
       - GATEWAY_ENV_PATH=/config/gateway.env
+      - GC_SETUP_PORT=${GC_SETUP_PORT:-8642}
       - WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go
     healthcheck:
       interval: 60s
