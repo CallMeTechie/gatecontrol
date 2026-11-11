@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.263.0] — 2026-11-11
+
+### Features
+- DNS-Filter – ganztägige Zeit (00:00–24:00), aufeinanderfolgende Zeiten als ein Fenster (#469)
+
+---
+
 ## [1.262.0] — 2026-11-11
 
 ### Features
