@@ -570,9 +570,13 @@
           .then(() => U.toast(t('gwp.rt.taken', { domain: r.domain })), (e) => D.alert({ message: errText(e), danger: true }))
           .then(() => { ui.saving = false; return refresh().catch(() => {}); });
       });
+      // the reserve check of the member that would take it over (gatewayPoolState: pinned_routes[].reserve)
+      const rs = r.reserve && typeof r.reserve.reachable === 'boolean' ? r.reserve : null;
+      const chk = rs ? h('span', { class: 'tag tag-' + (rs.reachable ? 'green' : 'amber'), 'data-reserve': rs.reachable ? 'ok' : 'missing',
+        text: t(rs.reachable ? 'gwp.rt.pinned_ok' : 'gwp.rt.pinned_missing', { name: nameOf(rs.peer_id, rs.name) }) }) : null;
       rows.push(h('div', { class: 'gwp-li gwp-li-pinned', 'data-route': String(r.id), 'data-pinned': '1' }, [
         h('span', { class: 'gwp-li-m' }, [r.domain || ('#' + r.id), ' ', h('span', { class: 'gwe-d', text: '· ' + t('gwp.rt.pinned', { name: nameOf(r.peer_id, r.peer_name) }) })]),
-        take]));
+        chk, take]));
     });
     if (!rows.length) c.body.appendChild(h('p', { class: 'gwe-empty', text: t('gwp.rt.none') }));
     const all = !!ui.all['rt:' + p.id];

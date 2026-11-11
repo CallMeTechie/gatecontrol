@@ -57,7 +57,6 @@ describe('caddyConfig contract: public exports', () => {
       '_caddyApi',
       'getAclPeers',
       'setAclPeers',
-      'patchGatewayRouteHandlers',
       'renderMaintenancePage',
     ];
     const exported = Object.keys(caddyConfig);

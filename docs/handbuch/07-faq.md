@@ -479,6 +479,11 @@ Das Gateway meldet sich nicht mehr beim Server.
 „Startet neu“ statt „Offline“: Das Gateway hat sich ordentlich beendet (Neustart
 des Containers oder des Geräts) und wird für zehn Minuten zurück erwartet.
 
+Was Besucher in der Zeit sehen: Die Routen eines Gateways ohne Pool zeigen die
+Seite „Home Gateway ist offline“, sobald es nicht mehr antwortet. Mit dem
+ersten Lebenszeichen des Gateways ist die Seite wieder weg und die Routen
+laufen normal. In einem Pool springt stattdessen die Reserve ein.
+
 ### „Edge-Dienst fehlt“
 
 In der Compose-Datei des Gateways fehlen die Dienste `edge` und `mqtt`. Bring

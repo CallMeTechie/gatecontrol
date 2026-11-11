@@ -150,9 +150,20 @@ module.exports = (ctx) => {
       // ── Step 3 (Pi) ──
       const imgHref = await page.getAttribute('#gwz-pi-image', 'href');
       step('Pi image links to the gateway releases', /^https:\/\/github\.com\/CallMeTechie\/gatecontrol-gateway\/releases\//.test(imgHref || ''), imgHref);
-      // the user guide, chapter 3.3 (public/js/handbook.js), in a new tab
+      // the handbook inside the app, chapter 3.3 of this gateway's handbook (gateway-docs.js), in a new tab
       const piGuide = await page.$eval('section[data-platform="rpi"] a[data-guide="gw.rpi"]', (x) => ({ href: x.href, target: x.target })).catch(() => ({}));
-      step('Pi instructions link to the user guide (chapter 3.3)', /\/docs\/(handbuch|guide)\/03-[a-z-]+\.md#33-raspberry-pi$/.test(piGuide.href || '') && piGuide.target === '_blank', piGuide.href);
+      step('Pi instructions link to the handbook inside the app (chapter 3.3 of this gateway)', piGuide.href === BASE + '/gateways#gw/' + GW.nas + '/handbook/3-3-raspberry-pi' && piGuide.target === '_blank', piGuide.href);
+      {
+        const [hbPage] = await Promise.all([page.context().waitForEvent('page'), page.click('section[data-platform="rpi"] a[data-guide="gw.rpi"]')]);
+        const opened = await hbPage.waitForFunction(() => {
+          const view = document.getElementById('gw-docs-view');
+          const head = document.getElementById('hb-3-3-raspberry-pi');
+          return !!view && !view.hidden && !!head && document.querySelector('#gwd-tab-handbook[aria-selected="true"]') && head.getBoundingClientRect().top < window.innerHeight;
+        }, null, { timeout: 10000 }).then(() => true).catch(() => false);
+        step('"Detailed instructions" opens the handbook of the app at "3.3 Raspberry Pi" in a new tab; the assistant stays open', opened
+          && await stepShown(page, 3, 'rpi'), hbPage.url());
+        await hbPage.close();
+      }
       step('Imager repository URL in the collapsed block',
         (await page.textContent('#gwz-imager-url')) === 'https://github.com/CallMeTechie/gatecontrol-gateway/releases/latest/download/gatecontrol-rpi-imager.json');
       const zip = await download(page, '#gwz-pi-setup');
@@ -268,7 +279,7 @@ module.exports = (ctx) => {
       await page.click('section[data-way="code"] [data-gwz-way="file"]');
       step('"Lieber die Datei gateway.env herunterladen" → the Synology instructions as before', await stepShown(page, 3, 'synology') && await wayShown(page, 'file'));
       const nasGuide = await page.$eval('section[data-platform="synology"] a[data-guide="gw.synology"]', (x) => x.href).catch(() => '');
-      step('Synology instructions link to the user guide (chapter 3.2)', /\/docs\/(handbuch|guide)\/03-[a-z-]+\.md#32-synology-nas$/.test(nasGuide), nasGuide);
+      step('Synology instructions link to the handbook inside the app (chapter 3.2 of this gateway)', nasGuide === BASE + '/gateways#gw/' + GW.home + '/handbook/3-2-synology-nas', nasGuide);
       const plat = await api(page, 'GET', `/api/v1/gateways/${GW.home}/setup-status`);
       step('API: platform synology stored', plat.body && plat.body.gateway && plat.body.gateway.platform === 'synology');
       step('task scheduler command matches the folder', /GATEWAY_STATE_DIR=\/volume1\/docker\/gatecontrol-gateway\/gateway-state GC_GW_COMPOSE_DIR=\/volume1\/docker\/gatecontrol-gateway bash \/volume1\/docker\/gatecontrol-gateway\/update\.sh/.test(await page.textContent('#gwz-nas-cmd')));

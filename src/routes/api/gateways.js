@@ -33,7 +33,11 @@ const router = Router();
  *     health: { … full last_health body, includes telemetry },
  *     routes: [{ id, domain, route_type, target_lan_host, target_lan_port,
  *                l4_listen_port, l4_protocol, wol_enabled, wol_mac }],
+ *     reserve_routes: [{ id, domain, …, peer_id, peer_name }],   // pinned to a pool partner: it only
+ *                                   // checks their targets (gateways.reserveRoutesFor)
  *     location: { id, name, city, country } | null,   // Gateway-Standort (services/gatewayLocations.js)
+ *     features_on: ['print', 'cameras', …],  // switched-on functions for the chips of the fleet card
+ *                                   // (services/gatewayFeatures.js enabledKeys, names: gwp.fname.<key>)
  *   }
  *
  * `?peek=1` is a side-effect-free read (the dashboard polls it): the
@@ -109,6 +113,7 @@ router.get('/', (req, res) => {
         latest_handshake: row.latest_handshake || null,
         health,
         routes: routeStmt.all(row.id),
+        reserve_routes: gatewaysSvc.reserveRoutesFor(row.id),
         update_state: _ust.state,
         update_target_version: row.update_target_version || null,
         update_requested_at: row.update_requested_at || null,
@@ -125,9 +130,14 @@ router.get('/', (req, res) => {
     const { compareVersions } = require('../../utils/version');
     // Gateway-Standorte: { id, name, city, country } | null
     const locations = require('../../services/gatewayLocations').byGateway();
+    const gatewayFeatures = require('../../services/gatewayFeatures');
     for (const g of gateways) {
       g.location = locations.get(g.peer_id) || null;
       g.discovery = require('../../services/gateways').getDiscoverySettings(g.peer_id) || { enabled: 0, active_scan: 0 };
+      try { g.features_on = gatewayFeatures.enabledKeys(g.peer_id, g.health && g.health.telemetry); } catch (err) {
+        logger.debug({ err: err.message, peerId: g.peer_id }, 'switched-on functions unavailable');
+        g.features_on = [];
+      }
       const cur = g.health && g.health.telemetry ? g.health.telemetry.gateway_version : null;
       g.update_available = !!(latestVersion && cur && compareVersions(latestVersion, cur) > 0);
       // Terminal lifecycle states are surfaced once, then cleared so the

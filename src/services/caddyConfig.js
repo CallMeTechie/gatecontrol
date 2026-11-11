@@ -58,7 +58,6 @@ const {
   _verifyLocalTls,
   _restartCaddyViaSupervisor,
   _managementHost,
-  patchGatewayRouteHandlers,
 } = require('./caddyAdminClient');
 
 const gatewayPool = require('./gatewayPool');
@@ -134,6 +133,13 @@ function resolveRouteUpstreams(route, options = {}) {
     lb_policy: pool.mode === 'load_balancing' ? pool.lb_policy : null,
     pool,
   };
+}
+
+/** "2026-05-04 14:32 UTC" for the offline page of a gateway ('' when it never reported). */
+function lastSeenText(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return new Date(n).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
 }
 
 function buildPoolOutageBlock(route) {
@@ -287,7 +293,7 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
   const routes = Array.isArray(injectedRoutes) ? injectedRoutes : db.prepare(`
     SELECT r.*, p.allowed_ips, p.name AS peer_name,
            gp.allowed_ips AS target_peer_allowed_ips, gp.name AS target_peer_name,
-           gm.proxy_port AS target_peer_proxy_port,
+           gm.proxy_port AS target_peer_proxy_port, gm.last_seen_at AS target_peer_last_seen,
            gm_home.lan_ip AS home_lan_ip,
            sb.aliases AS host_aliases, sb.alias_mode AS host_alias_mode,
            sb.domain_id AS host_domain_id, d.tls_min_version AS zone_tls_min_version
@@ -303,6 +309,12 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 
   const httpRoutes = routes.filter(r => r.route_type !== 'l4');
   const l4Routes = routes.filter(r => r.route_type === 'l4');
+
+  // Gateways in no pool that are away right now (gateways.js "Offline page of
+  // a gateway in no pool"): their routes serve the offline page instead of
+  // proxying into nothing. Empty set → the config is byte-identical.
+  let offlineGateways = new Set();
+  try { offlineGateways = require('./gateways').offlinePagePeerIds(); } catch (err) { logger.debug({ err: err.message }, 'gateway offline pages unavailable'); }
 
   // PEM files for backend-CA / mTLS (docs/feature-security-options.md §B/§F):
   // Caddy reads them from disk, so they must exist before this config is
@@ -477,10 +489,12 @@ function buildCaddyConfig(injectedRoutes, options = {}) {
 
     // Gateway-offline: serve maintenance page instead of proxying
     let reverseProxy;
-    if (route.target_kind === 'gateway' && (route.gateway_offline || loopbackOutage)) {
+    const gatewayAway = !!route.gateway_offline
+      || (!route.target_pool_id && route.target_peer_id != null && offlineGateways.has(route.target_peer_id));
+    if (route.target_kind === 'gateway' && (gatewayAway || loopbackOutage)) {
       const html = renderMaintenancePage({
-        gateway_name: route.gateway_name || '',
-        gateway_last_seen: route.gateway_last_seen || '',
+        gateway_name: route.gateway_name || route.target_peer_name || '',
+        gateway_last_seen: route.gateway_last_seen || lastSeenText(route.target_peer_last_seen),
       });
       reverseProxy = {
         handler: 'static_response',
@@ -1392,7 +1406,6 @@ module.exports = {
   syncToCaddy,
   getAclPeers,
   setAclPeers,
-  patchGatewayRouteHandlers,
   _caddyApi,
   renderMaintenancePage,
   resolveRouteUpstreams,

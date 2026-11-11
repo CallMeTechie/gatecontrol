@@ -2096,6 +2096,11 @@ table tbody tr:last-child td { border-bottom: none; }
 .gw-fleet .gw-waiting-text { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
 .gw-fleet .gw-resume { align-self: flex-start; }
 .gw-fleet .gw-radio { align-self: flex-start; margin-top: 8px; font-size: 11.5px; }
+/* switched-on functions of a gateway on its fleet card (gateways.js featureChips): small chips, "+N" for the rest */
+.gw-fleet .gw-card-feats { margin-top: 12px; gap: 5px; }
+.gw-fleet .gw-card-feats .gwe-chip { padding: 2px 8px; font-size: 11.5px; color: var(--text-2); }
+.gw-fleet .gw-card-feats .gw-card-feats-more { text-decoration: none; font-weight: 700; font-variant-numeric: tabular-nums; }
+.gw-fleet .gw-card-feats .gw-card-feats-more:hover { border-color: var(--line-2); color: var(--text); }
 .gw-fleet .gw-empty-fleet { grid-column: 1 / -1; padding: 28px 16px; text-align: center; color: var(--muted); border: 1px dashed var(--line-2); border-radius: var(--r-sm); }
 .gw-fleet .gw-empty-fleet p { margin: 0; }
 /* .btn & co. set display — the hidden attribute must still win inside the assistant */
@@ -9851,6 +9856,9 @@ a.lg-ev-msg:hover{color:var(--teal)}
 /* "Versionen" and "Handbuch" of a gateway (#gw/<id>/versions, …/handbook, public/js/gateway-docs.js):
    the building blocks of the plugin area (pgx-*), nothing of their own but the centred actions */
 .gw-docs .pgx-acts.gwd-center{justify-content:center; padding:0 22px 22px}
+/* "Ältere anzeigen" under the newest versions of "Alle Versionen" */
+.gw-docs .pgx-acts.gwd-older{margin:0; padding:12px 18px; border-top:1px solid var(--pg-line)}
+.gw-docs #gwd-ver-older .pgx-vr:focus{outline:none}
 .gw-docs .pgx-card-h .pgx-push{margin-left:auto}
 .gw-card-link{color:inherit; text-decoration:none}
 .gw-card-link:hover{color:var(--teal)}

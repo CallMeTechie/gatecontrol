@@ -465,6 +465,11 @@ The gateway no longer reports to the server.
 “Restarting” instead of “Offline”: the gateway stopped properly (restart of the
 container or the device) and is expected back for ten minutes.
 
+What visitors see meanwhile: the routes of a gateway in no pool show the page
+“Home Gateway is offline” once it stops answering. With the first sign of life
+of the gateway the page is gone again and the routes work as usual. In a pool
+the reserve steps in instead.
+
 ### “Edge service missing”
 
 The gateway's compose file lacks the services `edge` and `mqtt`. Bring it up to

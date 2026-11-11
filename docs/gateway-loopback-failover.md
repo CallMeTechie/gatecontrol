@@ -24,8 +24,10 @@ When a route with loopback target is created on a home gateway, the system sets 
 
 While the route is served by a non-home sibling gateway:
 - The system rewrites the target from `127.0.0.1` to the home gateway's `gateway_meta.lan_ip` (reported via heartbeat).
-- **HTTP routes**: The rewrite is communicated via the `X-Gateway-Target` header in caddyConfig (see `src/services/caddyConfig.js`).
+- **HTTP routes**: The rewrite is communicated via the `X-Gateway-Target` header in caddyConfig (see `src/services/caddyConfig.js`) and applied in `getGatewayConfig` (see `src/services/gateways.js`) — the gateway's proxy forwards to the target of its config.
 - **L4/TCP routes** (SSH, RDP): The rewrite is applied in `getGatewayConfig` (see `src/services/gateways.js`).
+
+The same rewrite holds for a pool partner that only stands by: every member of an enabled pool gets the routes pinned to its partners in its config and probes their targets with every heartbeat (reserve check, `gatewayPoolState.js`). For a loopback target it probes the home gateway's LAN IP — what it would forward to after a failover. If that LAN IP is unknown, the partner does not get the route.
 
 ### Fail-Closed Design
 

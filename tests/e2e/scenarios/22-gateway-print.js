@@ -127,9 +127,9 @@ module.exports = (ctx) => {
           const g = [...document.querySelectorAll('[data-fgroup]')].map((x) => x.getAttribute('data-fgroup'));
           return g.indexOf('devices') === g.indexOf('home') + 1;
         }));
-        step('print: the row links to the user guide (chapter 5)', await page.evaluate((sel) => {
+        step('print: the row links to the handbook inside the app (chapter 5, "Drucken & Scannen")', await page.evaluate((sel) => {
           const a = document.querySelector(sel + ' a[data-guide="feat.print"]');
-          return !!a && /05-funktionen\.md#drucken--scannen$/.test(a.href);
+          return !!a && /\/gateways#gw\/\d+\/handbook\/drucken-scannen$/.test(a.href) && a.target === '_blank';
         }, row));
         await view(page, 'gwprint-old-dark');
 

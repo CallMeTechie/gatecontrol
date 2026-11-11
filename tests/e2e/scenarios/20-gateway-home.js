@@ -145,9 +145,10 @@ module.exports = (ctx) => {
           if (!document.querySelector('[data-fgroup="wide"] [data-feature="dns"]') || !document.querySelector('[data-fgroup="system"] [data-feature="timezone"]')) return false;
           return f('dns') && f('dns').querySelector('[role="switch"]') && f('cache') && f('cache').querySelector('[role="switch"]') && f('timezone') && !f('timezone').querySelector('[role="switch"]');
         }));
-        step('home: the rows link to the user guide (chapter 5)', await page.evaluate(() => {
+        step('home: the rows link to the handbook inside the app (chapter 5), each at its heading', await page.evaluate(() => {
           const g = (k) => document.querySelector(`.gwn-features [data-feature="${k}"] a[data-guide="feat.${k}"]`);
-          return ['netwatch', 'dns', 'cache'].every((k) => g(k) && /\/docs\/(handbuch\/05-funktionen|guide\/05-features)\.md#/.test(g(k).href) && g(k).target === '_blank');
+          const want = { netwatch: /\/handbook\/(network-watch|netzwerk-waechter)$/, dns: /\/handbook\/dns-filter$/, cache: /\/handbook\/(home-cache|zwischenspeicher)$/ };
+          return ['netwatch', 'dns', 'cache'].every((k) => g(k) && g(k).href.indexOf(location.origin + '/gateways#gw/') === 0 && want[k].test(g(k).href) && g(k).target === '_blank');
         }));
         step('home: the time zone row explains that TZ on the gateway is not needed', await page.evaluate(() => /TZ/.test(document.querySelector('.gwn-features [data-feature="timezone"]').textContent)));
 

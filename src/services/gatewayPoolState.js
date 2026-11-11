@@ -15,8 +15,12 @@
 // Reserve check: every member gets the routes of its pools in its config
 // (gateways.getGatewayConfig: target_pool_id IN its pools) and probes their
 // LAN targets — route_reachability in its last heartbeat. Routes pinned to a
-// single member are only in that member's config, so the standbys cannot say
-// anything about them.
+// single member are in the config of its partners as well (PARTNER_PINNED
+// there), so a standby reports on them too: `reserve` of a member covers the
+// pool's routes and the routes pinned to the OTHER members, and every pinned
+// route says whether the member that would take it over reaches its target
+// (`reserve`). A gateway that has not pulled that config yet reports nothing
+// about a route — no claim either way.
 
 const { getDb } = require('../db/connection');
 const gatewayPool = require('./gatewayPool');
@@ -49,21 +53,30 @@ function servingIds(pool, members, meta) {
   return pool.mode === 'load_balancing' ? alive : alive.slice(0, 1);
 }
 
-/**
- * What a member reports about the LAN targets of the pool's routes.
- * null when it reports nothing about them (offline, older gateway, no routes).
- */
-function reserveOf(row, poolRoutes) {
-  if (!row || row.alive !== 1 || !poolRoutes.length) return null;
+/** route id → what an alive member reports about it (route_reachability); null: it reports nothing at all. */
+function reachabilityOf(row) {
+  if (!row || row.alive !== 1) return null;
   const health = json(row.last_health) || {};
   const rr = Array.isArray(health.route_reachability) ? health.route_reachability : null;
   if (!rr) return null;
   const byId = new Map();
   for (const r of rr) if (r && Number.isInteger(r.route_id)) byId.set(r.route_id, r);
-  const checked = poolRoutes.filter((r) => byId.has(r.id));
+  return byId;
+}
+
+/**
+ * What a member reports about the LAN targets of `routes` — the pool's routes
+ * and the routes pinned to its partners.
+ * null when it reports nothing about them (offline, older gateway, no routes).
+ */
+function reserveOf(row, routes) {
+  if (!routes.length) return null;
+  const byId = reachabilityOf(row);
+  if (!byId) return null;
+  const checked = routes.filter((r) => byId.has(r.id));
   if (!checked.length) return null;
   const missing = checked.filter((r) => !byId.get(r.id).reachable).map((r) => ({ id: r.id, domain: r.domain }));
-  return { total: poolRoutes.length, checked: checked.length, reachable: checked.length - missing.length, missing };
+  return { total: routes.length, checked: checked.length, reachable: checked.length - missing.length, missing };
 }
 
 /**
@@ -120,6 +133,18 @@ function poolState(db, pool, meta, maxCooldown, live) {
     FROM routes WHERE target_pool_id = ? AND target_kind = 'gateway'
     ORDER BY domain COLLATE NOCASE, id`).all(pool.id);
   const enabledRoutes = routes.filter((r) => r.enabled === 1);
+  const ids = members.map((m) => m.peer_id);
+  // Routes pinned to a member (its home: where it returns to after a failover)
+  const pinned = ids.length ? db.prepare(`
+    SELECT r.id, r.domain, r.route_type, r.target_lan_host, r.target_lan_port, r.enabled,
+           COALESCE(r.original_peer_id, r.target_peer_id) AS peer_id,
+           CASE WHEN r.original_peer_id IS NOT NULL THEN 1 ELSE 0 END AS failed_over
+    FROM routes r
+    WHERE r.target_kind = 'gateway' AND r.target_pool_id IS NULL
+      AND COALESCE(r.original_peer_id, r.target_peer_id) IN (${ids.map(() => '?').join(',')})
+    ORDER BY r.domain COLLATE NOCASE, r.id`).all(...ids) : [];
+  // the partners only get them while the pool is switched on (gateways.getGatewayConfig)
+  const pinnedChecked = pool.enabled ? pinned.filter((r) => r.enabled === 1) : [];
   const states = members.map((m) => {
     const r = meta.get(m.peer_id) || null;
     let state = 'offline';
@@ -145,20 +170,28 @@ function poolState(db, pool, meta, maxCooldown, live) {
       last_seen_at: r ? r.last_seen_at || null : null,
       went_down_at: r ? r.went_down_at || null : null,
       failback_at: state === 'recovering' ? r.recovered_first_hb_at + cooldown * 1000 : null,
-      reserve: reserveOf(r, enabledRoutes),
+      // the pool's routes and the routes pinned to its partners
+      reserve: reserveOf(r, enabledRoutes.concat(pinnedChecked.filter((x) => x.peer_id !== m.peer_id))),
     };
   });
-  const ids = members.map((m) => m.peer_id);
-  const pinned = ids.length ? db.prepare(`
-    SELECT r.id, r.domain, r.route_type, r.target_lan_host, r.target_lan_port, r.enabled,
-           COALESCE(r.original_peer_id, r.target_peer_id) AS peer_id,
-           CASE WHEN r.original_peer_id IS NOT NULL THEN 1 ELSE 0 END AS failed_over
-    FROM routes r
-    WHERE r.target_kind = 'gateway' AND r.target_pool_id IS NULL
-      AND COALESCE(r.original_peer_id, r.target_peer_id) IN (${ids.map(() => '?').join(',')})
-    ORDER BY r.domain COLLATE NOCASE, r.id`).all(...ids).map((r) => ({
+  // Who takes a pinned route over when its gateway goes away: the first alive
+  // member by priority (gatewayPool.resolveActivePeer) that is not its home —
+  // and whether that one reaches the target. null: nobody to take it, or the
+  // member reports nothing about the route (yet).
+  const reach = new Map();
+  const reachOf = (id) => { if (!reach.has(id)) reach.set(id, reachabilityOf(meta.get(id))); return reach.get(id); };
+  const pinnedReserve = (route) => {
+    if (!pool.enabled || route.enabled !== 1 || route.failed_over === 1) return null;
+    const next = members.find((m) => m.peer_id !== route.peer_id && meta.get(m.peer_id) && meta.get(m.peer_id).alive === 1);
+    if (!next) return null;
+    const hit = (reachOf(next.peer_id) || new Map()).get(route.id);
+    if (!hit) return null;
+    return { peer_id: next.peer_id, name: meta.get(next.peer_id).name, reachable: !!hit.reachable };
+  };
+  const pinnedOut = pinned.map((r) => ({
     ...r, failed_over: r.failed_over === 1, peer_name: meta.get(r.peer_id) ? meta.get(r.peer_id).name : null,
-  })) : [];
+    reserve: pinnedReserve(r),
+  }));
   const rdp = db.prepare('SELECT COUNT(*) AS n FROM rdp_routes WHERE gateway_pool_id = ?').get(pool.id).n;
   return {
     id: pool.id,
@@ -173,7 +206,7 @@ function poolState(db, pool, meta, maxCooldown, live) {
     members: states,
     routes,
     rdp_routes: rdp,
-    pinned_routes: pinned,
+    pinned_routes: pinnedOut,
     ...historyOf(db, pool.id, meta),
   };
 }

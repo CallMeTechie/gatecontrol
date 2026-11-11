@@ -75,6 +75,7 @@
   let host = null;         // the view's element (#gw-docs-view)
   let rel = null;          // the last answer of /releases
   let hb = null;           // { lang, data }
+  let olderOpen = false;   // "Ältere anzeigen" of "Alle Versionen" is open (kept across the poll, closed for another gateway)
 
   function installedOf(g) { return K.cleanVersion(g && g.health && g.health.telemetry ? g.health.telemetry.gateway_version : null); }
 
@@ -119,8 +120,24 @@
         el('span', { class: 'pgx-grow' }, [el('b', { text: t('gwd.ver.update', { version: newest }) }), ' ',
           el('span', { class: 'pgx-muted', text: t(s.newer === 1 ? 'gwd.ver.newer_one' : 'gwd.ver.newer_n', { n: s.newer, installed: s.installed }) })])]));
     }
-    const rows = versions.map((v) => versionRow(v, installed, newest));
+    // the newest ones (and everything down to the installed one); the rest behind "Ältere anzeigen"
+    const first = K.visibleCount(versions, installed);
+    const rows = versions.slice(0, first).map((v) => versionRow(v, installed, newest));
     if (!rows.length) rows.push(el('p', { class: 'pgx-empty', text: t('gwd.ver.empty') }));
+    if (versions.length > first) {
+      const rest = versions.length - first;
+      const older = el('div', { id: 'gwd-ver-older', hidden: !olderOpen }, versions.slice(first).map((v) => versionRow(v, installed, newest)));
+      const label = () => t(olderOpen ? 'gwd.ver.older_hide' : 'gwd.ver.older_show', { n: rest });
+      const btn = linkBtn(label(), () => {
+        olderOpen = !olderOpen;
+        older.hidden = !olderOpen;
+        btn.textContent = label();
+        btn.setAttribute('aria-expanded', String(olderOpen));
+        // opened: on to the first of the older ones (keyboard and screen reader land where the new rows start)
+        if (olderOpen && older.firstChild) { older.firstChild.setAttribute('tabindex', '-1'); try { older.firstChild.focus({ preventScroll: true }); } catch (_) { /* old browser */ } }
+      }, { id: 'gwd-ver-older-btn', 'aria-expanded': String(olderOpen), 'aria-controls': 'gwd-ver-older' });
+      rows.push(older, el('p', { class: 'pgx-acts gwd-older' }, [btn]));
+    }
     // the installed version is older than the list (or the gateway reports none)
     let note = null;
     if (!installed) note = t('gwd.ver.unknown');
@@ -290,6 +307,7 @@
       if (route.view === 'handbook' && route.target) { cur.target = route.target; hbJump(route.target, true); }
       return;
     }
+    if (!cur || cur.id !== route.id) olderOpen = false;
     cur = { id: route.id, view: route.view, target: route.target || null };
     render(false);
     if (route.view === 'versions') window.scrollTo(0, 0);
@@ -307,7 +325,7 @@
     const panel = document.getElementById('gwd-panel');
     if (panel && !panel.querySelector('.pgx-loading')) versionsBody(panel, rel);
   }
-  function hide() { cur = null; if (host) clear(host); }
+  function hide() { cur = null; olderOpen = false; if (host) clear(host); }
 
   /** The address of "Versionen" of a gateway — for "Was ist neu?" of the other tabs. */
   function versionsHref(g) { return g && g.peer_id != null ? K.versionsHash(g.peer_id) : RELEASES; }

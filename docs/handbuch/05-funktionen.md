@@ -15,10 +15,22 @@ zeigt in der Karte „Funktionen“ nur, was an und was aus ist; „Verwalten“
 führt in den Reiter. Reiter einer ausgeschalteten Funktion stehen blass mit
 „· aus“ da und lassen sich trotzdem öffnen.
 
+Schon in der Liste der Gateways siehst du, was an ist: Unten auf jeder Karte
+stehen die eingeschalteten Funktionen als kleine Chips („Drucken & Scannen“,
+„Kameras“, „Funk“ …). Sind es mehr als drei, steht dahinter „+3“ – ein Klick
+darauf öffnet den Reiter „Funktionen“ dieses Gateways.
+
 Gateway-Pools (mehrere Gateways im selben Netz, die füreinander einspringen)
 findest du ebenfalls unter „Gateways“: als eigene Gruppe in der Liste, mit
 „Pool anlegen“ oben rechts und „Pool öffnen“ für die Einstellungen. Eine
 eigene Seite „Gateway-Pools“ im Menü gibt es nicht mehr.
+
+Im Pool prüft die Reserve laufend, ob sie die Ziele im Heimnetz erreicht –
+für die Routen des Pools und auch für Routen, die fest an einem Gateway des
+Pools hängen (sie springen bei einem Ausfall mit um). Auf der Pool-Seite steht
+das Ergebnis an jeder dieser Routen: „… erreicht das Ziel“ oder „… erreicht
+das Ziel nicht“. So siehst du vor einem Ausfall, ob die Reserve die Route
+übernehmen könnte.
 
 Wo die Gateways stehen („Zuhause“, „Büro“ …), ordnest du mit „Standorte“ oben
 auf derselben Seite. Sobald es einen Standort gibt, ist die Liste nach
