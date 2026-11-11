@@ -60,8 +60,8 @@ services:
     read_only: true
     # Das Modul liegt auf dem Rechner – ohne diesen einen Ordner (nur lesend) gibt es nichts
     # zu laden. Ob das Gerät da ist, liest der Dienst aus /proc/misc, ohne /dev des Rechners.
-    # kics-scan ignore-block
     volumes:
+      # kics-scan ignore-line
       - /lib/modules:/lib/modules:ro   # tun.ko des Rechners (Synology: /lib/modules/tun.ko)
     healthcheck:
       disable: true
