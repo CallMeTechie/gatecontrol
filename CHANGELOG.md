@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.261.0] — 2026-11-11
+
+### Features
+- Funktions-Chips, Handbuch in der App, Reservecheck für angeheftete Routen, Offline-Seite sofort zurück (#464)
+
+---
+
 ## [1.260.0] — 2026-11-11
 
 ### Features

@@ -3,7 +3,8 @@ const logger = require('../utils/logger');
 
 /**
  * Sliding-window hysteresis state machine for Gateway health.
- * Symmetrischer Cooldown in BEIDE Richtungen.
+ * Symmetrischer Cooldown in BEIDE Richtungen — mit einer Ausnahme: der eigene
+ * gesunde Heartbeat des Gateways beendet 'offline' sofort (recordHeartbeat).
  * Default: window=5, offline=3/5 fail, online=4/5 success, cooldown=5min.
  */
 class StateMachine {
@@ -18,10 +19,40 @@ class StateMachine {
     this._transitions = []; // [{at, from, to}]
   }
 
-  recordHeartbeat(success) {
+  /**
+   * @param {boolean} success
+   * @param {{ direct?: boolean }} [opts] direct: a heartbeat the gateway sent
+   *   itself (not a probe of the server, gatewayProbe.js)
+   */
+  recordHeartbeat(success, opts) {
+    // Back from an outage: the gateway's own healthy heartbeat ends 'offline'
+    // at once. The cooldown and the four-of-five rule guard against a window
+    // that flaps on single samples — but they also kept a gateway that had
+    // long been back 'offline' until five minutes after it went away (its
+    // routes showed the offline page all that time). The window starts anew,
+    // so the failures of the outage cannot flip it straight back, and the
+    // cooldown still holds for the way down.
+    if (success && opts && opts.direct && this.status === 'offline') {
+      this._window = [true];
+      this._transition('online', Date.now());
+      return;
+    }
     this._window.push(!!success);
     if (this._window.length > this.windowSize) this._window.shift();
     this._evaluate();
+  }
+
+  _transition(next, now) {
+    this._transitions.push({ at: now, from: this.status, to: next });
+    // Prune entries older than 24h to keep the array bounded. The
+    // flap counter only looks back 1h so anything older is dead
+    // weight that would otherwise grow unbounded over months.
+    const dayCutoff = now - 24 * 60 * 60 * 1000;
+    while (this._transitions.length > 0 && this._transitions[0].at < dayCutoff) {
+      this._transitions.shift();
+    }
+    this.status = next;
+    this._lastTransitionAt = now;
   }
 
   _evaluate() {
@@ -40,16 +71,7 @@ class StateMachine {
       if (this.status !== 'unknown' && (now - this._lastTransitionAt) < this.cooldownMs) {
         return; // Cooldown blocks transition
       }
-      this._transitions.push({ at: now, from: this.status, to: next });
-      // Prune entries older than 24h to keep the array bounded. The
-      // flap counter only looks back 1h so anything older is dead
-      // weight that would otherwise grow unbounded over months.
-      const dayCutoff = now - 24 * 60 * 60 * 1000;
-      while (this._transitions.length > 0 && this._transitions[0].at < dayCutoff) {
-        this._transitions.shift();
-      }
-      this.status = next;
-      this._lastTransitionAt = now;
+      this._transition(next, now);
     }
   }
 

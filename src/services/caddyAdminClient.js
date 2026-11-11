@@ -2,8 +2,6 @@
 
 const config = require('../../config/default');
 const logger = require('../utils/logger');
-const { renderMaintenancePage } = require('./caddyMaintenance');
-const { getDb } = require('../db/connection');
 
 const CADDY_ADMIN = config.caddy.adminUrl;
 
@@ -146,9 +144,10 @@ function _patchAttempt(urlString, body, timeoutMs) {
   });
 }
 
-// ─── Gateway-aware partial patching of Caddy Admin API ──────
-// Uses @id route markers so status transitions can be applied without
-// a full config reload — PATCH /id/gc_route_<id>/handle.
+// ─── Partial patching of Caddy Admin API ──────
+// PATCH by @id route marker. No caller left: the offline page of a gateway
+// is part of the built config now (caddyConfig: offlineGateways) and goes
+// through syncToCaddy like every other change.
 const _caddyApi = {
   async patch(patchPath, body) {
     // Same production-safety guard as caddyApi().
@@ -255,32 +254,6 @@ function _managementHost(caddyConfig) {
   } catch { return null; }
 }
 
-async function patchGatewayRouteHandlers({ peerId, offline, gatewayName, lastSeen }) {
-  const db = getDb();
-  const routes = db.prepare(`
-    SELECT id, domain FROM routes
-    WHERE target_peer_id = ? AND target_kind = 'gateway' AND enabled = 1
-  `).all(peerId);
-
-  for (const route of routes) {
-    const routeId = `gc_route_${route.id}`;
-    const handler = offline
-      ? {
-          handler: 'static_response',
-          status_code: 502,
-          headers: { 'Content-Type': ['text/html; charset=utf-8'] },
-          body: renderMaintenancePage({ gateway_name: gatewayName, gateway_last_seen: lastSeen }),
-        }
-      : null;
-
-    try {
-      await module.exports._caddyApi.patch(`/id/${routeId}/handle`, handler || 'revert');
-    } catch (err) {
-      logger.warn({ err: err.message, routeId }, 'Caddy partial patch failed');
-    }
-  }
-}
-
 module.exports = {
   caddyApi,
   _caddyApi,
@@ -289,5 +262,4 @@ module.exports = {
   _verifyLocalTls,
   _restartCaddyViaSupervisor,
   _managementHost,
-  patchGatewayRouteHandlers,
 };

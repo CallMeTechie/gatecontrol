@@ -126,6 +126,7 @@ module.exports = (ctx) => {
       }];
       // the reserve check of e2e-gw-nas: one target of the pool's routes not reachable (false: no data)
       let reserveData = true;
+      let pinnedReach = true; // … and of the route pinned to e2e-gw-home: does the reserve reach its target
       const alive = { [HOME]: true, [NAS]: true, [FH]: true, [PIFH]: true };
       const names = { [HOME]: 'e2e-gw-home', [NAS]: 'e2e-gw-nas', [FH]: 'Ferienhaus', [PIFH]: 'Pi Ferienhaus' };
       const stateOf = (p) => {
@@ -142,7 +143,9 @@ module.exports = (ctx) => {
         const up = members.filter((m) => m.state === 'active' || m.state === 'standby').length;
         const status = members.length < 2 ? 'single' : (members[0].state === 'active' ? (up > 1 ? 'protected' : 'no_reserve') : 'on_reserve');
         return { id: p.id, name: p.name, mode: p.mode, lb_policy: p.lb_policy, failback_cooldown_s: p.failback_cooldown_s, outage_message: p.outage_message, enabled: true,
-          status, active_peer_ids: serving, members, routes: p.routes, rdp_routes: p.rdp_routes, pinned_routes: p.pinned.map((x) => ({ ...x, peer_name: names[x.peer_id] })),
+          status, active_peer_ids: serving, members, routes: p.routes, rdp_routes: p.rdp_routes,
+          // the reserve check of a pinned route (gatewayPoolState): the member that would take it over reaches its target
+          pinned_routes: p.pinned.map((x) => ({ ...x, peer_name: names[x.peer_id], reserve: reserveData && x.peer_id === HOME && alive[NAS] && !back(NAS) ? { peer_id: NAS, name: names[NAS], reachable: pinnedReach } : null })),
           history: p.history.map((e) => ({ ...e, from_name: names[e.from_peer_id], to_name: names[e.to_peer_id] })), last_switch_at: p.history.length ? p.history[0].at : null,
           since: { at: now - 30 * 24 * 60 * MIN, peer_id: serving[0] || null, name: names[serving[0]] } };
       };
@@ -324,9 +327,22 @@ module.exports = (ctx) => {
           return rt.querySelectorAll('.gwp-li[data-route]').length === 3 && rt.querySelector('.gwp-li-pinned [data-fk="gwp-take:9503"]')
             && document.querySelectorAll('.gwp-hist .gwp-li[data-kind]').length === 2 && document.querySelector('.gwp-hist [data-kind="failover"] .gwe-d');
         }));
+        step('pool: the pinned route says that its reserve reaches the target (reserve check for pinned routes)', await page.evaluate(() => {
+          const tag = document.querySelector('.gwp-routes .gwp-li-pinned[data-route="9503"] .tag[data-reserve="ok"]');
+          return !!tag && tag.classList.contains('tag-green') && /e2e-gw-nas (erreicht das Ziel|reaches the target)$/.test(tag.textContent);
+        }));
         await view(page, 'gwpool-page-dark');
         await theme(page, 'light');
         await view(page, 'gwpool-page-light');
+        pinnedReach = false;
+        await page.evaluate(() => document.dispatchEvent(new CustomEvent('gc:gateway')));
+        step('pool: … and warns when it does not', await until(page, () => {
+          const tag = document.querySelector('.gwp-routes .gwp-li-pinned[data-route="9503"] .tag[data-reserve="missing"]');
+          return !!tag && tag.classList.contains('tag-amber') && /e2e-gw-nas (erreicht das Ziel nicht|does not reach the target)$/.test(tag.textContent);
+        }));
+        pinnedReach = true;
+        await page.evaluate(() => document.dispatchEvent(new CustomEvent('gc:gateway')));
+        await until(page, () => !!document.querySelector('.gwp-routes .gwp-li-pinned .tag[data-reserve="ok"]'));
         // without reserve-check data the wording stays as before: "geschützt", "alle n Routen"
         reserveData = false;
         await page.evaluate(() => document.dispatchEvent(new CustomEvent('gc:gateway')));

@@ -68,5 +68,39 @@
     return { installed: i, newer, listed };
   }
 
-  return { VERSION_RE, SLUG_RE, parseHash, versionsHash, handbookHash, cleanVersion, compare, stateOf, summary };
+  // "Alle Versionen" opens with the newest ones; the rest folds behind "Ältere anzeigen".
+  const VERSIONS_FIRST = 5;
+
+  /**
+   * How many rows of the list (newest first) show at once: the newest `limit`
+   * — and, when the gateway runs an older version of the list, everything
+   * down to it, so what an update brings ("Neuer") and "Installiert" never
+   * hide. A single row left over is shown too (a fold for one row is no gain).
+   * @param {{version:string}[]} versions newest first
+   */
+  function visibleCount(versions, installed, limit) {
+    const list = Array.isArray(versions) ? versions : [];
+    const max = limit > 0 ? limit : VERSIONS_FIRST;
+    const i = cleanVersion(installed);
+    const at = i ? list.findIndex((v) => v && v.version === i) : -1;
+    const n = Math.max(max, at + 1);
+    return list.length - n <= 1 ? list.length : n;
+  }
+
+  /**
+   * The handbook address of a help topic (public/js/handbook.js TOPICS) inside
+   * the app: #gw/<id>/handbook/<anchor>. `anchors` maps topic → heading of the
+   * in-app handbook (the page's island #gw-handbook-topics, made by
+   * services/gatewayHandbook.js topicAnchors); '' is its first page.
+   * null: the topic is not part of it (or no gateway) — the caller links to the guide outside.
+   */
+  function topicHash(id, topic, anchors) {
+    if (id == null || id === '' || !anchors || typeof anchors !== 'object') return null;
+    if (!Object.prototype.hasOwnProperty.call(anchors, topic)) return null;
+    const a = anchors[topic];
+    if (a !== '' && !(typeof a === 'string' && SLUG_RE.test(a))) return null;
+    return handbookHash(id, a);
+  }
+
+  return { VERSION_RE, SLUG_RE, VERSIONS_FIRST, parseHash, versionsHash, handbookHash, topicHash, cleanVersion, compare, stateOf, summary, visibleCount };
 });

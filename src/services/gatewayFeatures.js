@@ -434,6 +434,39 @@ function memoryEstimate(peerId, s, tel) {
   return { usedMb, totalMb, level, parts };
 }
 
+// The functions a fleet card names as chips (public/js/gateway-pool-kit.js
+// featureChips), the ones somebody switched on deliberately first — the three
+// that are on from the start come last.
+const CHIP_KEYS = ['print', 'cameras', 'radio', 'ai', 'cache', 'dns', 'edge', 'mqtt', 'ups', 'netwatch', 'inetq', 'presence'];
+
+/**
+ * Which functions are switched on for a gateway — the keys of CHIP_KEYS, in
+ * that order (names: i18n gwp.fname.<key>). The same answers as the card
+ * "Funktionen" of its overview (gateway-pool-kit.js featureStates), without
+ * the whole overview() behind it: GET /api/v1/gateways asks for every gateway
+ * of the fleet. A part that cannot be read counts as off.
+ * @param {number} peerId
+ * @param {object} [tel] its telemetry (the radio: "automatic" is on when the gateway found a stick)
+ */
+function enabledKeys(peerId, tel) {
+  const s = get(peerId);
+  const on = new Set();
+  const part = (key, fn) => { try { if (fn()) on.add(key); } catch (e) { logger.debug({ err: e.message, peerId }, `feature ${key} unreadable`); } };
+  part('print', () => s.print.enabled);
+  part('cameras', () => s.cameras.enabled);
+  part('radio', () => { const hr = require('./homeRadio'); return hr.enabledOf(s.radio, hr.telemetryRadio(tel || {})); });
+  part('ai', () => s.ai.enabled);
+  part('cache', () => require('./homeCache').get(peerId).enabled);
+  part('dns', () => require('./homeDns').get(peerId).enabled);
+  part('edge', () => require('./edge/store').settings(peerId).edgeEnabled);
+  part('mqtt', () => { const es = require('./edge/store').settings(peerId); return es.edgeEnabled && es.mqttEnabled; });
+  part('ups', () => s.ups.enabled);
+  part('netwatch', () => s.netwatch.enabled);
+  part('inetq', () => s.inetq.enabled);
+  part('presence', () => s.netwatch.enabled && s.presence.enabled);
+  return CHIP_KEYS.filter((k) => on.has(k));
+}
+
 function radioPart(peerId) {
   try { return require('./homeRadio').overview(peerId); } catch (e) { logger.debug({ err: e.message }, 'radio overview unavailable'); return null; }
 }
@@ -522,6 +555,6 @@ function overview(peerId) {
 
 module.exports = {
   DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, MIN_GATEWAY_PRINT, MIN_GATEWAY_PRINT_CONVERT, MIN_GATEWAY_RADIO, MIN_GATEWAY_AI, MIN_GATEWAY_CAMERAS, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
-  normalize, get, set, applyPatch, configPayload, support, overview, memoryEstimate, boardOf, speedLimit, zigbeeOf,
+  normalize, get, set, applyPatch, configPayload, support, overview, enabledKeys, CHIP_KEYS, memoryEstimate, boardOf, speedLimit, zigbeeOf,
   needGateway, telemetryOf, gatewayPeer, notifyGateway, publicIpv4,
 };

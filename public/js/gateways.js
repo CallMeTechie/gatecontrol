@@ -165,6 +165,30 @@
     var names = { 'raspbee2-conbee2': onGpio ? 'RaspBee II' : 'ConBee II', conbee3: 'ConBee III', 'raspbee-conbee-1': onGpio ? 'RaspBee' : 'ConBee', 'conbee-usb': 'ConBee' };
     return (names[r.type] || T('gwiz.s4.zigbee_radio', 'Funkmodul')) + ' · Zigbee';
   }
+  // The switched-on functions of a gateway as chips (features_on of GET
+  // /api/v1/gateways, gateway-pool-kit.js featureChips): three names, the rest
+  // behind "+N" — a link to the tab "Funktionen", where the switches are.
+  function featureChips(g) {
+    var fc = PK && PK.featureChips ? PK.featureChips(g.features_on) : { shown: [], more: [] };
+    if (!fc.shown.length) return null;
+    var name = function (k) { return T('gwp.fname.' + k, k); };
+    var row = el('div', 'gwe-chips gw-card-feats');
+    row.setAttribute('role', 'list');
+    row.setAttribute('aria-label', T('gwp.card.features', 'Eingeschaltete Funktionen'));
+    fc.shown.forEach(function (k) {
+      var c = el('span', 'gwe-chip', name(k)); c.dataset.feature = k; c.setAttribute('role', 'listitem');
+      row.appendChild(c);
+    });
+    if (fc.more.length) {
+      var rest = fc.more.map(name).join(', ');
+      var m = el('a', 'gwe-chip gw-card-feats-more', '+' + fc.more.length);
+      m.href = '#gw/' + encodeURIComponent(g.peer_id) + '/features';
+      m.title = rest; m.dataset.more = fc.more.join(' '); m.setAttribute('role', 'listitem');
+      m.setAttribute('aria-label', TT('gwp.card.features_more', { n: fc.more.length, list: rest }));
+      row.appendChild(m);
+    }
+    return row;
+  }
   // A fleet card. `role` ({ pool, member }) when shown in a pool group: the tag
   // "1 · arbeitet gerade" / "2 · Reserve, springt ein" / "2 · offline".
   // byLoc: the card sits in a section of a location (gateway-locations.js) — the role tag names the pool
@@ -235,6 +259,8 @@
       if (t.mem_total) { var mp = pct(t.mem_used, t.mem_total); resRow(wrap, 'RAM', mp + '%', mp, mp > 90); }
       if (t.disk && t.disk.total) { var dp = pct(t.disk.used, t.disk.total); resRow(wrap, T('gateways.lbl_disk', 'Disk'), dp + '%', dp, dp > 85); }
     }
+    var feats = featureChips(g);
+    if (feats) wrap.appendChild(feats);
     var zr = zigbeeRadio(t);
     if (zr) { var zt = el('span', 'tag tag-blue gw-radio', zr); wrap.appendChild(zt); }
     // (Update-check moved to the header icon button above.)
@@ -547,6 +573,8 @@
     var rr = h.route_reachability || [];
     var cfg = g.routes || [];
     var cfgById = {}; cfg.forEach(function (rc) { cfgById[rc.id] = rc; });
+    // routes pinned to a pool partner: this gateway only checks their targets as the reserve
+    var rsvById = {}; (g.reserve_routes || []).forEach(function (rc) { rsvById[rc.id] = rc; });
     var upN = rr.filter(function (r) { return r.reachable; }).length;
     var pillCls = (rr.length && upN === rr.length) ? 'green' : (upN === 0 ? 'red' : 'amber');
     var c = cardFrame(T('gwp.routes.title', 'Routen über dieses Gateway'), rr.length ? tagEl(pillCls, TT('gwp.routes.reach', { up: upN, n: rr.length })) : null, 'routes', 'full gwo-routes');
@@ -562,13 +590,20 @@
       thead.appendChild(htr); tbl.appendChild(thead);
       var tbody = el('tbody');
       (all ? rr : rr.slice(0, ROUTES_FIRST)).forEach(function (r) {
-        var rc = cfgById[r.route_id] || {};
+        var rsv = rsvById[r.route_id] || null;
+        var rc = cfgById[r.route_id] || rsv || {};
         var tr = el('tr');
         // Prefer the user-configured domain (`rc.domain`) over the gateway's
         // synthetic `l4:<port>` reachability label — L4 routes don't carry a
         // real domain on the gateway side so the synthetic value would shadow
         // the friendly name the admin actually chose.
-        tr.appendChild(el('td', null, rc.domain || r.domain || ('#' + r.route_id)));
+        var dom = el('td', null, rc.domain || r.domain || ('#' + r.route_id));
+        if (rsv) {
+          tr.dataset.reserve = '1';
+          dom.appendChild(document.createTextNode(' '));
+          dom.appendChild(tagEl('grey', TT('gwp.routes.reserve_for', { name: rsv.peer_name || ('#' + rsv.peer_id) })));
+        }
+        tr.appendChild(dom);
         tr.appendChild(el('td', 'sub', rc.target_lan_host ? rc.target_lan_host + (rc.target_lan_port ? ':' + rc.target_lan_port : '') : '—'));
         var sc = el('td'); sc.appendChild(el('span', 'pill ' + (r.reachable ? 'online' : 'offline'), r.reachable ? T('gateways.reachable', 'erreichbar') : T('gateways.unreachable', 'nicht erreichbar'))); tr.appendChild(sc);
         tr.appendChild(el('td', 'num', r.latency_ms != null ? r.latency_ms + ' ms' : '—'));

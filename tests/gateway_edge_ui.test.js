@@ -123,6 +123,14 @@ describe('gateway-edge-kit: address and states', () => {
     assert.equal(K.reasonDoc('edge_not_connected'), de + '04-edge-und-smart-home.md#edge-erreicht-gatecontrol-nicht');
     assert.equal(K.reasonDoc('gateway_offline', 'synology', 'en'), en + '04-edge-and-smart-home.md#gateway-offline');
     assert.equal(K.reasonDoc('offline'), null);
+    // the topic itself (public/js/handbook.js) — gateway-edge.js opens it in the handbook inside the app
+    assert.equal(K.reasonTopic('edge_missing', 'synology'), 'update.synology');
+    assert.equal(K.reasonTopic('edge_missing', 'rpi'), 'edge.edge_missing');
+    assert.equal(K.reasonTopic('edge_missing', null), 'update');
+    assert.equal(K.reasonTopic('compose_outdated', 'linux'), 'update.linux');
+    assert.equal(K.reasonTopic('edge_fence', 'synology'), 'edge.edge_fence');
+    assert.equal(K.reasonTopic('offline'), null);
+    assert.equal(K.reasonTopic('toString'), null);
     assert.equal(K.reasonDoc('toString'), null);
     for (const r of K.REASONS) assert.ok(K.reasonDoc(r, null, 'de') && K.reasonDoc(r, null, 'en'), r);
   });
