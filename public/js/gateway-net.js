@@ -1245,7 +1245,7 @@
       const swPage = U.switchBtn(knows && f.setupPage.status !== false, t('gwn.feat.setuppage'), 'gwn-f-setuppage',
         () => toggle(swPage, id, (v) => ({ setupPage: { status: v } }), (v) => t(v ? 'gwn.feat.on_done' : 'gwn.feat.off_done', { name: t('gwn.feat.setuppage') })), !knows);
       const extra = [];
-      if (!knows) extra.push(h('span', { class: 'gwn-hint', 'data-setuppage-old': '' }, [U.icon('info', 14), t('gwn.feat.setuppage_old', { version: sup.version || '—' })]));
+      if (!knows) extra.push(h('span', { class: 'gwn-hint', 'data-setuppage-old': '' }, [U.icon('info', 14), sup.version ? t('gwn.feat.setuppage_old', { version: sup.version }) : t('gwn.feat.setuppage_unknown')]));
       else {
         const lan = g.health && g.health.telemetry && g.health.telemetry.lan_ip;
         if (f.setupPage.status !== false && typeof lan === 'string' && /^[0-9.]+$/.test(lan)) {

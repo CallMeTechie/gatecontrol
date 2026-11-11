@@ -9664,6 +9664,7 @@
   "gwn.feat.setuppage": "Statusseite im Heimnetz",
   "gwn.feat.setuppage_d": "Das Gateway zeigt Geräten im Heimnetz seinen Zustand – ohne Eingaben und ohne Zugangsdaten. Die Einrichtung und „Zugang erneuern“ bleiben dort auch ausgeschaltet erreichbar.",
   "gwn.feat.setuppage_old": "Dieses Gateway kennt die Seite noch nicht (Version {{version}}) – der Schalter wirkt nach einem Update des Gateways.",
+  "gwn.feat.setuppage_unknown": "Dieses Gateway hat sich noch nicht gemeldet – der Schalter wirkt, sobald es die Seite kennt.",
   "gwn.feat.setuppage_url": "Im Heimnetz:",
   "gwn.cam.dlg_title": "Kameras: Speicherort und Netze",
   "gwn.cam.dlg_intro": "Hier legst du fest, wo das Gateway die Clips speichert und welche weiteren Netze es nach Kameras fragen darf. Die Kameras selbst richtest du im Plugin „Tür & Kamera“ ein.",

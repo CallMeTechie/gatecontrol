@@ -142,8 +142,11 @@
   }
   function fileWay(id) {
     var W = window.GCGatewayWizard;
-    if (W && W.open) W.open({ mode: 'resume', id: Number(id), way: 'file' });
-    else location.hash = '#setup/' + encodeURIComponent(id);
+    if (W && W.open) {
+      // the address as "Einrichtung fortsetzen" sets it: a reload continues here
+      try { history.replaceState(null, '', location.pathname + location.search + '#setup/' + encodeURIComponent(id)); } catch (e) { /* ignore */ }
+      W.open({ mode: 'resume', id: Number(id), way: 'file' });
+    } else location.hash = '#setup/' + encodeURIComponent(id);
   }
   function copy(text, btn) {
     function done() { var old = btn.textContent; btn.textContent = T('gwm.renew_copied'); setTimeout(function () { btn.textContent = old; }, 1600); }
