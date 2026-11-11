@@ -14,10 +14,22 @@ the features that are on. The gateway's overview only shows in the card
 “Features” what is on and what is off; “Manage” leads to the tab. Tabs of a
 feature that is off look faded with “· off” and still open.
 
+The list of gateways already shows what is on: at the bottom of every card
+the features that are switched on appear as small chips (“Print & scan”,
+“Cameras”, “Radio” …). If there are more than three, a “+3” follows – a click
+on it opens the tab “Features” of that gateway.
+
 Gateway pools (several gateways in the same network that step in for each
 other) are under “Gateways” as well: as a group of their own in the list, with
 “Create pool” at the top right and “Open pool” for the settings. There is no
 separate page “Gateway Pools” in the menu any more.
+
+In a pool the reserve keeps checking whether it reaches the targets in the
+home network – for the routes of the pool and also for routes pinned to one
+gateway of the pool (they move along on an outage). The pool page shows the
+result on each of these routes: “… reaches the target” or “… does not reach
+the target”. That way you see before an outage whether the reserve could take
+the route over.
 
 Where the gateways are (“Home”, “Office” …) you keep with “Locations” at the
 top of the same page. As soon as there is a location, the list is grouped by

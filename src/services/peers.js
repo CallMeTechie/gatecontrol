@@ -322,6 +322,7 @@ async function remove(id) {
   try {
     const gw = require('./gateways');
     if (gw && gw._smCache && typeof gw._smCache.delete === 'function') gw._smCache.delete(id);
+    if (gw && gw._offlinePage && typeof gw._offlinePage.delete === 'function') gw._offlinePage.delete(id);
   } catch { /* cache cleanup only; a missing/unloaded gateways module has nothing cached */ }
 
   await rewriteWgConfig();

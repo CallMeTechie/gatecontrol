@@ -405,8 +405,24 @@
     if (state.platform === 'proxmox') loadPairing();
   }
   function fmtMB(n) { return n ? Math.round(n / 1048576) + ' MB' : ''; }
+  // "Ausführliche Anleitung im Handbuch" of every platform: the handbook of the
+  // Gateways page at that chapter (#gw/<id>/handbook/<anchor>, gateway-docs.js)
+  // — in a new tab, the assistant stays open. The gateway exists from step 3
+  // on; without it (or for a topic outside the handbook) the link of the page
+  // stays: the user guide.
+  var HB_TOPICS = {};
+  try { HB_TOPICS = JSON.parse((document.getElementById('gw-handbook-topics') || {}).textContent || '{}') || {}; } catch (e) { HB_TOPICS = {}; }
+  function guideLinks() {
+    var DK = window.GCGatewayDocsKit;
+    overlay.querySelectorAll('a[data-guide]').forEach(function (a) {
+      if (a.dataset.guideExt == null) a.dataset.guideExt = a.getAttribute('href') || '';
+      var hash = DK && DK.topicHash ? DK.topicHash(state.peerId, a.dataset.guide, HB_TOPICS) : null;
+      a.setAttribute('href', hash ? location.pathname + hash : a.dataset.guideExt);
+    });
+  }
   function renderStep3() {
     if (state.step !== 3) return;
+    guideLinks();
     overlay.querySelectorAll('.gwz-rotate-note').forEach(function (n) { n.hidden = !!state.env; });
     var info = state.info || {};
     if (state.platform === 'rpi') {
