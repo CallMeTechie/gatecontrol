@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.259.0] — 2026-11-11
+
+### Features
+- gc.homeNetwork.internet – Akteur für Automationen ({ actor }) (#462)
+
+---
+
 ## [1.258.4] — 2026-11-09
 
 ### Änderungen
