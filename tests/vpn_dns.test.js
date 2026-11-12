@@ -847,6 +847,8 @@ describe('a profile shared with a home network ("gilt zu Hause und unterwegs")',
   const vpnKids = async () => (await ok('get')).profiles.find((p) => p.id === kidsId);
   const homeProfile = () => hd.get(gateway).profiles.find((p) => p.id === homeKids);
   const ids = async () => (await ok('get')).profiles.map((p) => ({ id: p.id }));
+  // exactly this entry in what the filter service has for the profile (the patterns are whole entries, never parts of a name)
+  const filterDenies = (entry) => new Set(svc.cfg.policy.profiles.find((x) => x.id === kidsId).deny).has(entry);
   const patchKids = async (patch) => ok('set', { profiles: (await ids()).map((p) => (p.id === kidsId ? { ...p, ...patch } : p)) });
 
   it('homes(): the home networks and their profiles', async () => {
@@ -874,7 +876,7 @@ describe('a profile shared with a home network ("gilt zu Hause und unterwegs")',
     assert.deepEqual(p.schedules.map((x) => [x.from, x.to, x.block]), [['22:00', '06:00', 'all']]);
     assert.equal((await ok('homes'))[0].profiles[1].linkedTo, kidsId);
     // the filter gets the home's content
-    await waitFor(() => svc.cfg.policy.profiles.find((x) => x.id === kidsId).deny.includes('fortnite.com'));
+    await waitFor(() => filterDenies('fortnite.com'));
     assert.deepEqual((await askFilter('fortnite.com', '10.8.0.21')).a, ['0.0.0.0']);
     // checks: unknown gateway / profile, default only with default, one home profile only once
     const bad = async (home, i = 1) => (await call('set', { profiles: (await ids()).map((x, j) => (j === i ? { ...x, home } : x)) }));
@@ -899,7 +901,7 @@ describe('a profile shared with a home network ("gilt zu Hause und unterwegs")',
     // at home (the gateway page): the VPN devices follow without anybody touching the protection
     hd.updateProfile(gateway, homeKids, { deny: ['minecraft.net'], users: [lea] });
     assert.deepEqual([(await vpnKids()).deny, (await vpnKids()).users], [['minecraft.net'], [lea]]);
-    await waitFor(() => svc.cfg.policy.profiles.find((x) => x.id === kidsId).deny.includes('minecraft.net'));
+    await waitFor(() => filterDenies('minecraft.net'));
     assert.deepEqual((await askFilter('minecraft.net', '10.8.0.21')).a, ['0.0.0.0']);
     assert.deepEqual(vpnDns.stored().profiles.find((x) => x.id === kidsId).deny, ['minecraft.net'], 'the copy kept here is up to date');
     // what the home refuses is refused here, and nothing is half-written
@@ -941,7 +943,7 @@ describe('a profile shared with a home network ("gilt zu Hause und unterwegs")',
     await patchKids({ lists: ['ads', 'adult'], safeSearch: true, deny: ['roblox.com'], users: [lea],
       schedules: [{ days: [1, 2, 3, 4, 5], from: '21:00', to: '07:00', block: 'categories', categories: ['social'] }, { days: [6, 7], from: '00:00', to: '24:00', block: 'all' }] });
     assert.deepEqual(homeProfile().deny, ['minecraft.net'], 'unlinked: the home is not written any more');
-    await waitFor(() => svc.cfg.policy.profiles.find((x) => x.id === kidsId).deny.includes('roblox.com'));
+    await waitFor(() => filterDenies('roblox.com'));
   });
 });
 
