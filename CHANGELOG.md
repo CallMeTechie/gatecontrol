@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.266.0] — 2026-11-12
+
+### Features
+- „Fremden DNS und DoT sperren“ für gefilterte VPN-Geräte (Option, Standard aus) (#475)
+
+---
+
 ## [1.265.0] — 2026-11-12
 
 ### Features
