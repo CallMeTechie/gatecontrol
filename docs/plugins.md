@@ -2958,7 +2958,7 @@ default upstreams); the settings stay.
 
 | Call | Answer / rule |
 |---|---|
-| `gc.vpnDns.status()` | `{ available, enabled, state: 'off' \| 'starting' \| 'filtering' \| 'fallback', since (ISO), chain: 'filter' \| 'pihole' \| 'default', pihole: { configured, wantsChain, chain: 'off' \| 'active' \| 'displaced' \| 'fallback' }, pause: suspension for all devices \| null, pauses: n (devices / people), service: { running, ready, pid, startedAt, port, listen, upstream, memory: { rss, lists }, cacheEntries, truncated, failOpen, asOf } \| { running: false }, peers: { filtered, ownDns, excluded, gateways, suspended }, lists: [used lists], today: { queries, blocked, cached }, log: { enabled, retentionDays } }` |
+| `gc.vpnDns.status()` | `{ available, enabled, blockedBy: null \| 'internal_dns_off', state: 'off' \| 'starting' \| 'filtering' \| 'fallback', since (ISO), chain: 'filter' \| 'pihole' \| 'default', pihole: { configured, wantsChain, chain: 'off' \| 'active' \| 'displaced' \| 'fallback' }, pause: suspension for all devices \| null, pauses: n (devices / people), service: { running, ready, pid, startedAt, port, listen, upstream, memory: { rss, lists }, cacheEntries, truncated, failOpen, asOf } \| { running: false }, peers: { filtered, ownDns, excluded, gateways, suspended }, lists: [used lists], today: { queries, blocked, cached }, log: { enabled, retentionDays } }` |
 | `gc.vpnDns.catalog()` | `{ lists: [{ id, source, home, license, format, entries, defaultOn }], categories: [{ id, domains }], providers: [{ id, label, home }], limits }` — the lists, categories and upstream providers of the gateways' DNS filter (`src/services/homeDnsCatalog.js`), plus the provider `system` (the server's plain resolvers, no DoH) |
 | `gc.vpnDns.get()` | the settings, see below |
 | `gc.vpnDns.set(patch, { actor }?)` | changes the named top-level keys → the new settings. **Administrator** |
@@ -3024,7 +3024,8 @@ group of kind `family` with the roles `parent` / `child` — read it with
 `permissions.groups: "read"` (`gc.groups.list` / `members`).
 
 Suspended means **unfiltered**, never "no internet". While the protection is
-suspended for all devices nothing is counted. The query log is off by
+suspended for all devices nothing is counted. Switching the protection off
+(`enabled: false`) ends every suspension. The query log is off by
 default; without it only totals and the top blocked domains are kept —
 nothing per device. Switching it off deletes it.
 
