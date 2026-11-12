@@ -8,7 +8,8 @@
 # `pkill dnsmasq` from services/dns.js restartDnsmasq), it is restarted so it
 # re-reads /app/config/dnsmasq.conf. This is required because dnsmasq does NOT
 # re-read upstream `server=`/`add-subnet` lines on SIGHUP — only on a restart —
-# so the Pi-hole DNS chain (apply/revert) relies on a real dnsmasq restart.
+# so the DNS chain (services/dnsChain.js: Pi-hole or the filter service,
+# apply/revert) relies on a real dnsmasq restart.
 WG_UP=0
 DNSMASQ_PID=
 
@@ -58,10 +59,12 @@ start_dnsmasq
 # (an un-waited foreground sleep would delay clean shutdown). When dnsmasq is
 # no longer running — because it crashed, or services/dns.js terminated it to
 # apply a new config — restart it so the current /app/config/dnsmasq.conf
-# (e.g. updated Pi-hole upstreams) takes effect.
+# (e.g. updated chain upstreams) takes effect. The check runs five times a
+# second: while dnsmasq is gone no VPN device resolves a name, and a switch of
+# the DNS chain should cost a fraction of a second, not a whole one.
 FAILS=0
 while true; do
-  sleep 1 &
+  sleep 0.2 &
   wait $!
   if kill -0 "$DNSMASQ_PID" 2>/dev/null; then
     FAILS=0

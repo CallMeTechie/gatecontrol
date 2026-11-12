@@ -3,8 +3,9 @@
 const piholeConfig = require('./piholeConfig');
 const { createClient } = require('./piholeClient');
 const { createSync } = require('./piholeSync');
-const { makeChain, buildDnsToken } = require('./piholeDnsChain');
-const { createDnsWatch } = require('./piholeDnsWatch');
+const { buildDnsToken } = require('./dnsChainConf');
+const { piholeProvider } = require('./piholeDnsWatch');
+const dnsChain = require('./dnsChain');
 const eventBus = require('./eventBus');
 const settings = require('./settings');
 const peers = require('./peers');
@@ -27,19 +28,11 @@ function setDesired(v) {
   }
 }
 
-const dnsChain = makeChain({
-  confPath: process.env.GC_DNSMASQ_CONF || '/app/config/dnsmasq.conf',
-  defaults: (process.env.GC_DNSMASQ_UPSTREAMS || '1.1.1.1,8.8.8.8').split(','),
-  // Chain apply/revert changes upstream `server=` lines, which dnsmasq only
-  // picks up on a real restart (SIGHUP is insufficient) — use restartDnsmasq.
-  reload: () => { if (typeof dns.restartDnsmasq === 'function') dns.restartDnsmasq(); },
-});
-
-// Real DNS queries to the chain's upstreams every few seconds; falls back to
-// the default upstreams while none answers (see piholeDnsWatch.js).
-const dnsWatch = createDnsWatch({
+// Pi-hole is one provider of the VPN's DNS chain (dnsChain.js owns dnsmasq's
+// upstreams): real DNS queries to the instances every few seconds; the chain
+// falls back to the default upstreams while none answers (see dnsChainWatch.js).
+dnsChain.register(piholeProvider({
   loadConfig: piholeConfig.load,
-  dnsChain,
   onChange: (state, status) => {
     const down = state === 'fallback';
     try {
@@ -62,7 +55,16 @@ const dnsWatch = createDnsWatch({
       dnsChain: status,
     });
   },
-});
+}));
+
+// The chain as the Pi-hole pages see it: 'off' | 'pihole' | 'fallback'.
+const dnsWatch = {
+  status: () => dnsChain.statusFor('pihole'),
+  tick: () => dnsChain.tick().then(() => dnsChain.statusFor('pihole')),
+  start: () => dnsChain.start(),
+  stop: () => dnsChain.stop(),
+  isFallback: () => dnsChain.statusFor('pihole').state === 'fallback',
+};
 
 async function peersProvider() {
   const all = await peers.getAll();
@@ -162,24 +164,7 @@ function chainSingleGateway(cfg) {
 }
 
 function applyDnsChain() {
-  const cfg = piholeConfig.load();
-  try {
-    const tokens = (cfg.enabled && cfg.manage_dns_chain) ? cfg.instances.map(buildDnsToken).filter(Boolean) : [];
-    if (!tokens.length) {
-      dnsChain.revert();
-    } else if (dnsWatch.status().state === 'pihole') {
-      // Known to answer: take over changed addresses at once.
-      dnsChain.apply(tokens);
-      return;
-    }
-    // Chain off, just switched on, or fallen back: the watch asks the Pi-hole
-    // DNS first and only then makes it the upstream — a resolver that does
-    // not answer must never become the only one.
-    dnsWatch.tick().catch(() => { /* tick() logs and never rejects */ });
-  } catch (err) {
-    const logger = require('../utils/logger');
-    logger.warn({ err: err.message }, 'pihole applyDnsChain failed (conf missing?)');
-  }
+  dnsChain.refresh();
 }
 
 function start() {

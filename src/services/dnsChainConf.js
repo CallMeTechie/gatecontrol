@@ -3,8 +3,14 @@
 const fs = require('node:fs');
 const net = require('node:net');
 
-const BEGIN = '# >>> gatecontrol-pihole >>>';
-const END = '# <<< gatecontrol-pihole <<<';
+// The managed block carries the name of the provider that put it there:
+// `# >>> gatecontrol-pihole >>>` … `# <<< gatecontrol-pihole <<<`.
+const beginOf = (provider) => `# >>> gatecontrol-${provider} >>>`;
+const endOf = (provider) => `# <<< gatecontrol-${provider} <<<`;
+const BEGIN = beginOf('pihole');
+const END = endOf('pihole');
+const PROVIDER_RE = /^[a-z][a-z0-9]{0,31}$/;
+const ANY_BEGIN_RE = /^# >>> gatecontrol-[a-z0-9]+ >>>$/m;
 
 let logger;
 try {
@@ -14,15 +20,12 @@ try {
 }
 
 /**
- * Strip the managed BEGIN..END block from conf content (if present).
+ * Strip the managed BEGIN..END block of any provider from conf content (if present).
  * @param {string} content
  * @returns {string}
  */
 function stripManaged(content) {
-  const escapedBegin = BEGIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const escapedEnd = END.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`\\n?${escapedBegin}[\\s\\S]*?${escapedEnd}\\n?`, 'g');
-  return content.replace(re, '');
+  return content.replace(/\n?# >>> gatecontrol-[a-z0-9]+ >>>[\s\S]*?# <<< gatecontrol-[a-z0-9]+ <<<\n?/g, '');
 }
 
 /**
@@ -52,26 +55,34 @@ function stripEcsLines(content) {
 /**
  * Factory for a dnsmasq upstream/ECS chain manager.
  *
+ * The upstream `server=` lines of dnsmasq.conf have ONE writer: the instance
+ * services/dnsChain.js creates. A chain replaces every `server=` line, so a
+ * second writer would silently undo the first one's work.
+ *
  * @param {object} opts
  * @param {string}   opts.confPath  - path to dnsmasq.conf
  * @param {string[]} opts.defaults  - default upstream IPs to restore on revert
  * @param {Function} opts.reload    - callback invoked after writing (e.g. to reload dnsmasq)
- * @returns {{ apply(dnsIps: string[]): void, revert(): void }}
+ * @returns {{ apply(dnsIps: string[], opts?: { provider?: string, ecs?: boolean }): void, revert(): void }}
  */
 function makeChain({ confPath, defaults, reload }) {
   let lastApplied = 'default';
 
   return {
-    apply(dnsIps) {
+    // provider: whose chain this is (names the managed block). ecs: add the
+    // client address to every forwarded query (`add-subnet=32,128`), so the
+    // upstream can tell the VPN devices apart.
+    apply(dnsIps, { provider = 'pihole', ecs = true } = {}) {
+      if (!PROVIDER_RE.test(String(provider))) throw new Error('dns chain: invalid provider name');
       // No upstream at all would leave dnsmasq unable to resolve anything.
       dnsIps = (dnsIps || []).filter(isValidToken);
       if (!dnsIps.length) { this.revert(); return; }
-      const key = 'managed:' + dnsIps.join(',');
+      const key = `${provider}:${ecs ? 'ecs' : 'plain'}:` + dnsIps.join(',');
       if (lastApplied === key) return;
 
       let content = fs.readFileSync(confPath, 'utf8');
 
-      // If the conf already routes to exactly these upstreams with ECS, skip the
+      // If the conf already routes to exactly these upstreams (with ECS), skip the
       // rewrite + reload entirely. entrypoint.sh bakes the same chain into the
       // conf at boot, so this avoids a redundant dnsmasq restart (and the brief
       // DNS blip that comes with it) on every container start. Compared
@@ -80,9 +91,9 @@ function makeChain({ confPath, defaults, reload }) {
       const currentServers = (content.match(/^server=.*/gm) || [])
         .map(l => l.slice('server='.length).trim()).sort();
       const hasEcs = /^add-subnet=/m.test(content);
-      if (hasEcs && JSON.stringify(currentServers) === JSON.stringify([...dnsIps].sort())) {
+      if (hasEcs === !!ecs && JSON.stringify(currentServers) === JSON.stringify([...dnsIps].sort())) {
         lastApplied = key;
-        logger.info(`[piholeDnsChain] upstreams already applied, no restart: ${dnsIps.join(', ')}`);
+        logger.info(`[dnsChain] ${provider} upstreams already applied, no restart: ${dnsIps.join(', ')}`);
         return;
       }
 
@@ -96,16 +107,16 @@ function makeChain({ confPath, defaults, reload }) {
 
       const block = [
         '',
-        BEGIN,
-        'add-subnet=32,128',
+        beginOf(provider),
+        ...(ecs ? ['add-subnet=32,128'] : []),
         ...dnsIps.map(ip => `server=${ip}`),
-        END,
+        endOf(provider),
         '',
       ].join('\n');
 
       fs.writeFileSync(confPath, content + block);
       lastApplied = key;
-      logger.info(`[piholeDnsChain] applied upstreams: ${dnsIps.join(', ')}`);
+      logger.info(`[dnsChain] applied ${provider} upstreams: ${dnsIps.join(', ')}`);
       reload();
     },
 
@@ -124,7 +135,7 @@ function makeChain({ confPath, defaults, reload }) {
         .map(l => l.slice('server='.length).trim()).sort();
       const hasEcs = /^add-subnet=/m.test(content);
       const wanted = defaults.map(ip => String(ip).trim()).filter(isValidToken);
-      if (!hasEcs && !content.includes(BEGIN)
+      if (!hasEcs && !ANY_BEGIN_RE.test(content)
         && JSON.stringify(currentServers) === JSON.stringify([...wanted].sort())) {
         lastApplied = 'default';
         return;
@@ -138,7 +149,7 @@ function makeChain({ confPath, defaults, reload }) {
       const serverLines = wanted.map(ip => `server=${ip}`).join('\n');
       fs.writeFileSync(confPath, content + '\n' + serverLines + '\n');
       lastApplied = 'default';
-      logger.info('[piholeDnsChain] reverted to defaults');
+      logger.info('[dnsChain] reverted to defaults');
       reload();
     },
   };
@@ -161,7 +172,7 @@ function isValidDnsTarget(inst) {
 }
 
 /**
- * Build a dnsmasq server= token for a pihole instance.
+ * Build a dnsmasq server= token for a DNS target (e.g. a pihole instance).
  * Returns `ip#port` when dns_port is set and not 53, else just `ip`.
  * Returns null when dns_ip is absent or not a valid address/port.
  * @param {{ dns_ip?: string, dns_port?: number|string }} inst

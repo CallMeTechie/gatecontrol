@@ -3,6 +3,7 @@
 const { Router } = require('express');
 const system = require('../../services/system');
 const dns = require('../../services/dns');
+const dnsChain = require('../../services/dnsChain');
 const autoUpdate = require('../../services/autoUpdate');
 const systemSetup = require('../../services/systemSetup');
 const { requireFeature } = require('../../middleware/license');
@@ -26,11 +27,12 @@ router.get('/resources', async (req, res) => {
  * GET /api/system/dns/status
  * Returns internal DNS status: peer counts by hostname source, hosts
  * file metadata, feature flag. Used by the admin UI DNS widget.
+ * `chain`: who owns dnsmasq's upstreams right now (services/dnsChain.js).
  */
 router.get('/dns/status', requireFeature('internal_dns'), (req, res) => {
   try {
     const status = dns.getStatus();
-    res.json({ ok: true, ...status });
+    res.json({ ok: true, ...status, chain: dnsChain.status() });
   } catch (err) {
     res.status(500).json({ ok: false, error: 'DNS status unavailable' });
   }

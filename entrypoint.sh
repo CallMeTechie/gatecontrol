@@ -255,6 +255,10 @@ echo "» Generating dnsmasq config (split-horizon for ${GC_API_HOST} → ${GC_WG
   # with instances, route through the Pi-hole IPs and enable ECS add-subnet so
   # Pi-hole sees the original client subnet. Falls back to GC_DNSMASQ_UPSTREAMS
   # on any error so dnsmasq never starts without upstreams.
+  # After the start these lines belong to services/dnsChain.js alone (it probes
+  # the chain and reverts to the defaults when it does not answer). The filter
+  # service of the DNS protection is never baked in here: it only becomes the
+  # upstream once it has answered a probe.
   PIHOLE_UPSTREAMS=$(node -e '
     try {
       const db=require("better-sqlite3")(process.env.GC_DB_PATH||"/data/gatecontrol.db",{readonly:true});

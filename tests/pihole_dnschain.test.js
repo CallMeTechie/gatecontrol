@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { makeChain, buildDnsToken, isValidDnsTarget } = require('../src/services/piholeDnsChain');
+const { makeChain, buildDnsToken, isValidDnsTarget } = require('../src/services/dnsChainConf');
 
 let tmpDir, confPath, reloads;
 beforeEach(() => {
