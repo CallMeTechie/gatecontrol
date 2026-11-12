@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.265.0] — 2026-11-12
+
+### Features
+- Pi-hole als abgekündigt markiert, Umzug zum DNS-Schutz, treffender Eintrag bei „Domain prüfen“ (#474)
+
+---
+
 ## [1.264.0] — 2026-11-12
 
 ### Features
