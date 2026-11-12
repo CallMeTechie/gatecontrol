@@ -149,10 +149,189 @@ auflösen – das Internet wirkt dann „weg“. Ein zweites Gateway als Reserve
 
 **Unterwegs (VPN-Geräte):** Der DNS-Filter des Gateways wirkt nur im Heimnetz.
 Für Handys und Laptops, die per VPN verbunden sind, filtert der Server selbst –
-mit dem Plugin „DNS-Schutz“ (Einstellungen › Plugins). Es nutzt dieselben
-Listen und Kategorien. Fällt der Filter auf dem Server aus, läuft das Internet
-der Geräte ungefiltert weiter; das Dashboard meldet es. Ohne das Plugin nutzen
-die VPN-Geräte die normalen DNS-Server des Servers.
+mit dem Plugin „DNS-Schutz“; siehe [DNS-Schutz](#dns-schutz). Ein Profil kann
+für beides gelten.
+
+Willst du den Filter wieder abschalten, leere **zuerst** das Feld im Router.
+
+Manche Router (viele Speedport-Modelle, Vodafone Station) erlauben keinen
+eigenen DNS-Server. Dann trägst du ihn an den Geräten selbst ein; die Anleitung
+in GateControl erklärt das.
+
+**Prüfen:** In der „Prüfung“ der Anleitung steht „Router zeigt auf das Gateway“.
+
+## DNS-Schutz
+
+**Wofür:** Filtert Werbung, Tracker und Schadseiten für alle Geräte, die über
+das VPN von GateControl ins Internet gehen – Handys und Laptops unterwegs. Der
+Server filtert selbst; es braucht kein zweites Gerät. Der DNS-Schutz ist eine
+Funktion des Servers, kein Reiter am Gateway: Er kommt mit dem Plugin
+„DNS-Schutz“ (Einstellungen › Plugins).
+
+Der [DNS-Filter](#dns-filter) des Gateways und der DNS-Schutz ergänzen sich:
+
+| Wo ist das Gerät? | Wer filtert? |
+|---|---|
+| Im Heimnetz (WLAN/LAN), ohne VPN | Der DNS-Filter des Gateways – wenn er eingeschaltet und im Router eingetragen ist |
+| Per VPN mit GateControl verbunden | Der DNS-Schutz auf dem Server |
+| VPN-Gerät mit eigenem DNS-Server, ausgenommenes Gerät, Gateway | Niemand – siehe „Grenzen“ |
+
+Ein Profil kann für beides gelten („gilt zu Hause und unterwegs“, siehe unten).
+
+**Voraussetzungen:**
+
+- Server **1.267.0** oder neuer.
+- Das interne DNS von GateControl ist eingeschaltet (das ist die Voreinstellung).
+- Das Plugin „DNS-Schutz“ und eine Lizenz dafür. Ohne Lizenz oder wenn das
+  Plugin ausgeschaltet wird, filtert der Server nicht; die Einstellungen
+  bleiben erhalten.
+- Für „Eltern unterbrechen für ihre Kinder“ und „Internet pausieren“: das
+  Plugin „Familie“ (ab 1.15.0).
+- Für „Mit Heimnetz-Profil verbinden“: ein Heimnetz-Gateway mit DNS-Filter.
+- Für den Bildschirm in den Apps: Android-App ab 1.105, Windows-App ab 1.84.
+  Ältere Apps zeigen ihn nicht; das Portal geht immer.
+
+**Einrichten:**
+
+1. Öffne „Einstellungen“ → „Plugins“ → „DNS-Schutz“ → „Einstellungen“. Beim
+   ersten Aufruf startet der Dialog „DNS-Schutz einrichten“.
+2. **Listen wählen.** Vorgeschlagen sind „Werbung & Tracker“ und „Schadsoftware
+   & Betrug“. Die Auswahl gilt für alle VPN-Geräte und lässt sich später ändern.
+3. **Einschalten.** Der Server lädt die Listen, prüft den Filter mit zwei Proben
+   und schaltet dann das DNS der VPN-Geräte um. Dabei bleibt das DNS etwa eine
+   Sekunde ohne Antwort.
+4. **Fertig.** Lege danach bei Bedarf Profile an (Reiter „Profile“).
+
+Mit „Später“ schließt du den Dialog; du findest ihn wieder über „Einrichten“ in
+der Übersicht des Plugins.
+
+**Listen & Ausnahmen:** Die Listen kommen aus dem Katalog von GateControl
+(Werbung & Tracker, Schadsoftware & Betrug, Inhalte für Erwachsene,
+Glücksspiel) – dieselben wie beim DNS-Filter des Gateways. Sie werden täglich
+neu geladen; „Jetzt aktualisieren“ lädt sofort.
+
+- **„Immer erlaubt“ / „Immer gesperrt“** gelten in jedem Profil. Ein Eintrag
+  umfasst die Domain und alle Unterseiten. Steht eine Domain in beiden Feldern,
+  gewinnt „Immer erlaubt“.
+- **„Domain prüfen“** zeigt, ob und warum eine Adresse für ein Gerät gesperrt
+  ist – mit Profil, Grund und dem treffenden Eintrag – und bietet „Für alle
+  erlauben“ oder „Nur im Profil … erlauben“ an.
+- Namen im eigenen Netz (Geräte, Routen, Portal) werden nie gesperrt.
+
+**Profile:** Ein Profil bündelt Listen, Sichere Suche, Zeiten und eigene
+Einträge. Mitglieder sind **Gruppen**, **Personen** und **Geräte**.
+
+Welches Profil gilt? **Gerät schlägt Person schlägt Gruppe schlägt Standard:**
+Hat ein Gerät ein eigenes Profil, gilt dieses. Sonst das Profil der Person, der
+das Gerät gehört. Sonst das Profil der Gruppe. Sonst das Standardprofil. Stehen
+zwei Profile auf derselben Stufe, gewinnt das weiter oben stehende.
+
+- **Sichere Suche:** Google, Bing, DuckDuckGo und YouTube liefern nur
+  jugendfreie Treffer.
+- **Zeiten:** Tage und Uhrzeit, in der „Soziale Netzwerke“, „Spiele“, „Videos“
+  oder alles gesperrt ist. Liegt „Bis“ vor „Von“, geht die Zeit über
+  Mitternacht. Es gilt die Zeitzone des Servers.
+- Das **Standardprofil** hat keine Mitglieder und lässt sich nicht löschen.
+- Im Reiter „Geräte“ siehst du für jedes VPN-Gerät, welches Profil wirkt. Über
+  „Profil ändern“ gibst du einem Gerät ein eigenes Profil oder nimmst es ganz
+  aus.
+
+**Zu Hause und unterwegs (Profil mit dem Heimnetz verbinden):** Hat dein
+Heimnetz-Gateway einen DNS-Filter, kann ein Profil an beiden Orten gelten.
+Öffne das Profil und wähle unter „Mit Heimnetz-Profil verbinden“
+
+- **ein Profil des Heimnetzes:** Beim Speichern übernimmt das Profil dessen
+  Listen, Sichere Suche, Zeiten, „Immer erlaubt“, „Immer gesperrt“ und
+  Personen. Die bisherigen Angaben im DNS-Schutz werden ersetzt.
+- **„Im Heimnetz … neu anlegen“:** Das Heimnetz bekommt dieses Profil mit
+  seinem Inhalt und Namen.
+
+Danach zeigt das Profil „gilt zu Hause und unterwegs“. Die Felder mit der
+Marke „Heimnetz“ stehen im Heimnetz-Profil: Eine Änderung im DNS-Schutz wirkt
+auch zu Hause, eine Änderung auf der Gateway-Seite wirkt in Sekunden auch
+unterwegs. Nur im DNS-Schutz gelten der Name, Gruppen und Geräte. „Verbindung
+lösen“ trennt die beiden wieder; beide behalten ihren Stand. Das Standardprofil
+lässt sich nur mit dem Standardprofil des Heimnetzes verbinden, und ein
+Heimnetz-Profil kann nur mit einem Profil verbunden sein.
+
+**Unterbrechen:** Geht eine Seite nicht, lässt sich der Schutz für ein paar
+Minuten ausschalten – in der Android-App (ab 1.105), in der Windows-App
+(ab 1.84) und im Portal (Tab „DNS-Schutz“). Er schaltet sich von selbst wieder
+ein. Solange wird für diese Geräte nichts gesperrt und nichts gezählt.
+
+Wer darf für wen unterbrechen?
+
+- **Jeder** für die eigenen Geräte.
+- **Admins** für alle – auf der Einstellungsseite des Plugins für alle
+  VPN-Geräte auf einmal (5 Min., 30 Min., 1 Std. oder „bis ich wieder
+  einschalte“; „+30 Min.“ verlängert).
+- **Eltern** (Plugin „Familie“) auch für die Mitglieder ihrer Familie, aber nie
+  für Admins.
+
+Im Reiter „Einstellungen“ des Plugins legst du fest, wer in der App
+unterbrechen darf („Nur Admins“, „Alle Benutzer“ – die Voreinstellung – oder
+„Je Profil“), die längste Dauer für Benutzer (5 Min., 30 Min., 1 Std. – die
+Voreinstellung – oder 4 Std.) und ob Benutzer „Bis ich wieder einschalte“
+wählen dürfen (Voreinstellung: nein). Wieder einschalten darf jeder für die
+eigenen Geräte; eine Unterbrechung für alle Geräte beendet nur ein Admin. Jede
+Unterbrechung steht mit Person und Dauer in der Aktivität von GateControl.
+
+**„Internet pausieren“ aus Familie:** Pausiert jemand im Plugin „Familie“ das
+Internet einer Person, gilt das auch für deren VPN-Geräte unterwegs
+(Voreinstellung: an; abschaltbar unter „Einstellungen“ › „Heimnetz und
+Familie“). Es antworten dann nur Einträge aus „Immer erlaubt“. Übersicht,
+Geräteliste und Portal zeigen „Internet pausiert bis …“; „Unterbrechen“ wird
+solange nicht angeboten, und beenden lässt sich die Pause nur in „Familie“.
+
+**Fremden DNS und DoT sperren:** Der Schalter (Karte „Umgehung erschweren“) ist
+nach der Installation **aus**. Eingeschaltet gilt für jedes Gerät, das gerade
+gefiltert wird:
+
+- Anfragen an fremde DNS-Server (Port 53) beantwortet der DNS-Schutz – mit dem
+  Profil des Geräts.
+- DNS über TLS (Port 853, „Privates DNS“ von Android) wird abgewiesen. Android
+  im Modus „Automatisch“ nutzt dann das normale DNS.
+
+Unberührt bleiben Geräte mit eigenem DNS-Server, ausgenommene Geräte und
+Gateways mit den Netzen dahinter. Die Regeln entfallen, solange der Filter
+ausgefallen ist, der Schutz aus ist oder für alle unterbrochen wurde; für ein
+einzeln unterbrochenes Gerät entfallen sie, solange es unterbrochen ist.
+**DNS über HTTPS (DoH) wird nicht gesperrt** – im Netz sieht es aus wie
+normales HTTPS. Ein Gerät mit fest eingetragenem „Privatem DNS“ löst mit
+eingeschalteter Sperre keine Namen mehr auf: Stelle es auf „Automatisch“ oder
+nimm das Gerät aus.
+
+**Abfrageprotokoll:** Nach der Installation ist es **aus** – der Server
+speichert dann nur Zähler (Anfragen, gesperrt, häufigste gesperrte Domains),
+nichts je Gerät. Eingeschaltet speichert er, welches Gerät wann welche Adresse
+aufgerufen hat und ob sie gesperrt wurde.
+
+- **Aufbewahrung:** 24 Stunden, 3, 7 (Standard) oder 30 Tage. Ältere Einträge
+  löscht der Server von selbst.
+- **Wer darf es sehen:** „Nur Admins“ oder „Benutzer sehen eigene Geräte“ (im
+  Portal, nie die Geräte anderer).
+- **Ausschalten** löscht das vorhandene Protokoll und die Zähler je Gerät.
+
+**Wenn der Filter ausfällt:** Das Internet der Geräte läuft **ungefiltert
+weiter**. Der Server prüft den Filter alle 2 Sekunden, schaltet in wenigen
+Sekunden auf die normalen DNS-Server zurück und von selbst wieder auf den
+Filter, sobald er antwortet. Solange steht im Dashboard und in der Übersicht
+des Plugins ein roter Hinweis („Rückfall“); die Admins bekommen auf Wunsch eine
+Mitteilung („Bei Ausfall des Filters“, auf Wunsch auch die Benutzer).
+„Filter-Dienst neu starten“ hilft, wenn er hängt.
+
+**Grenzen:** Gefiltert werden Geräte, die den DNS-Server von GateControl
+benutzen. Nicht gefiltert werden:
+
+- Geräte mit einem **eigenen DNS-Server** (in GateControl unter „Peers“ am
+  Gerät eingetragen) – der Reiter „Geräte“ zeigt sie mit „Eigener DNS“.
+- **Ausgenommene** Geräte und Gateways.
+- **„Privates DNS“** in Android, ein Browser mit eigenem DNS (DoH), ein von
+  Hand eingetragener DoH-Server, ein weiteres VPN oder ein Browser mit
+  eingebautem Proxy. Gegen fremden DNS und DoT hilft „Fremden DNS und DoT
+  sperren“, gegen DoH nicht.
+- Apps, die in der GateControl-App **vom Tunnel ausgenommen** sind: Ihr
+  Datenverkehr geht am VPN vorbei und damit auch am DNS-Schutz.
 
 **Pi-hole-Anbindung entfernt (Version 1.268.0):** GateControl bindet Pi-hole
 nicht mehr an – die Seite „Pi-hole“, die Pi-hole-Einstellungen, die Rechte
@@ -163,13 +342,9 @@ die VPN-Geräte nutzen wieder die normalen DNS-Server (oder den DNS-Schutz,
 wenn er eingeschaltet ist) – ohne Namensauflösung steht kein Gerät da. War
 Pi-hole eingerichtet, weist das Dashboard einmal darauf hin. Dein Pi-hole selbst
 bleibt unberührt und kann im Heimnetz weiterlaufen.
-Willst du den Filter wieder abschalten, leere **zuerst** das Feld im Router.
 
-Manche Router (viele Speedport-Modelle, Vodafone Station) erlauben keinen
-eigenen DNS-Server. Dann trägst du ihn an den Geräten selbst ein; die Anleitung
-in GateControl erklärt das.
-
-**Prüfen:** In der „Prüfung“ der Anleitung steht „Router zeigt auf das Gateway“.
+**Prüfen:** Die Übersicht des Plugins zeigt, ob gefiltert wird; „Domain
+prüfen“ zeigt, ob und warum eine Adresse für ein Gerät gesperrt ist.
 
 ## Drucken & Scannen
 
