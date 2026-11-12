@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.264.0] — 2026-11-12
+
+### Features
+- DNS-Schutz für VPN-Geräte – Filter-Dienst als eigener Prozess, gc.vpnDns und Recht permissions.vpnDns (#473)
+
+---
+
 ## [1.263.2] — 2026-11-12
 
 ### Änderungen
