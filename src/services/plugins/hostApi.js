@@ -1515,6 +1515,80 @@ function internetCall(plugin, op, args) {
   throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
 }
 
+// ─── DNS protection of the VPN devices (permissions.vpnDns) ─────────────
+//
+// gc.vpnDns.* — services/vpnDns.js. The server filters (its own filter
+// service behind dnsmasq); the plugin says what is blocked for whom, suspends
+// the protection and reads counters. Reading works anywhere (also in a tick or
+// a hook). Changes need an acting person:
+//   - the one person with a changing request (POST/PUT/PATCH/DELETE) to this
+//     plugin in flight, or
+//   - the person the plugin names itself — { actor: userId } — e.g. because
+//     several people are changing something at once, or for an automation.
+// The actor is written to the activity log. Settings, the restart of the
+// filter service, the log and the Pi-hole hand-over need an administrator as
+// the actor (ERR_NOT_ADMIN). Suspending is open to everybody; who may do it
+// for whom and for how long is the plugin's decision — the host only keeps
+// two fixed rules (ERR_FORBIDDEN): for all devices only an administrator,
+// and for an administrator's devices nobody but an administrator or the
+// owner.
+
+const VPN_DNS_READ = new Set(['status', 'catalog', 'get', 'devices', 'lists', 'stats', 'test', 'pauses', 'log']);
+const VPN_DNS_ADMIN = new Set(['set', 'restart', 'releasePihole', 'clearLog', 'refreshLists']);
+const VPN_DNS_CODES = new Set(['ERR_INVALID', 'ERR_NOT_FOUND', 'ERR_FORBIDDEN', 'ERR_NOT_PERSON', 'ERR_UNAVAILABLE', 'ERR_LOG_OFF', 'ERR_NOT_FILTERING']);
+
+/** { pluginId, actor: { id, name, role }, automated } of a changing gc.vpnDns call. */
+function vpnDnsActor(plugin, args) {
+  const ctx = require('./personContext');
+  let id = namedActor(args);
+  let automated = false;
+  if (id) {
+    automated = !ctx.has(plugin.id, id, { write: true });
+  } else {
+    const writers = ctx.writers(plugin.id);
+    need(writers.length > 0, 'ERR_NOT_PERSON', 'only inside a changing request (POST/PUT/PATCH/DELETE) of a signed-in person, or with { actor }');
+    need(writers.length === 1, 'ERR_NOT_PERSON', 'several people are changing something right now — name the acting person with { actor }');
+    id = writers[0];
+  }
+  const u = db().prepare('SELECT id, username, display_name, role FROM users WHERE id = ? AND enabled = 1').get(id);
+  need(u, 'ERR_NOT_PERSON', 'unknown or disabled person');
+  return { pluginId: plugin.id, actor: { id: u.id, name: u.display_name || u.username, role: u.role }, automated };
+}
+
+async function vpnDnsCall(plugin, op, args) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.vpnDns === true, 'ERR_VPN_DNS_DENIED', 'this plugin has no vpnDns permission');
+  const vd = require('../vpnDns');
+  const a = args && typeof args === 'object' ? args : {};
+  try {
+    if (VPN_DNS_READ.has(op)) {
+      if (op === 'status') return vd.status();
+      if (op === 'catalog') return vd.catalog();
+      if (op === 'get') return vd.get();
+      if (op === 'devices') return vd.devices();
+      if (op === 'lists') return vd.lists();
+      if (op === 'stats') return vd.stats(a.opts);
+      if (op === 'pauses') return vd.pauses();
+      if (op === 'log') return vd.log(a.query);
+      return await vd.test(a.domain, a.who);
+    }
+    const ctx = vpnDnsActor(plugin, a);
+    if (VPN_DNS_ADMIN.has(op)) {
+      need(ctx.actor.role === 'admin', 'ERR_NOT_ADMIN', 'only an administrator');
+      if (op === 'set') return vd.set(a.patch, ctx);
+      if (op === 'restart') return await vd.restart(ctx);
+      if (op === 'releasePihole') return vd.releasePihole(ctx);
+      if (op === 'clearLog') return vd.clearLog(ctx);
+      return await vd.refreshLists();
+    }
+    if (op === 'pause') return vd.pause(a.target, ctx);
+    if (op === 'resume') return vd.resume(a.target, ctx);
+  } catch (e) {
+    if (e && VPN_DNS_CODES.has(e.code)) throw new HostApiError(e.code, e.message);
+    throw e;
+  }
+  throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
+}
+
 // ─── Home cache (permissions.homeCache, phase 3b) ──────────────────────
 //
 // gc.homeCache.offer({ mediaId, kind, userIds?, priority?, preview? }) /
@@ -2278,6 +2352,11 @@ async function handle(plugin, api, args, ctx) {
     case 'homeNetwork.internet.pause': return internetCall(plugin, 'pause', args);
     case 'homeNetwork.internet.resume': return internetCall(plugin, 'resume', args);
     case 'homeNetwork.internet.extend': return internetCall(plugin, 'extend', args);
+    // DNS protection of the VPN devices (permissions.vpnDns, vpnDns.js)
+    case 'vpnDns.status': case 'vpnDns.catalog': case 'vpnDns.get': case 'vpnDns.set': case 'vpnDns.devices': case 'vpnDns.lists':
+    case 'vpnDns.refreshLists': case 'vpnDns.stats': case 'vpnDns.test': case 'vpnDns.pauses': case 'vpnDns.pause': case 'vpnDns.resume':
+    case 'vpnDns.restart': case 'vpnDns.releasePihole': case 'vpnDns.log': case 'vpnDns.clearLog':
+      return vpnDnsCall(plugin, api.slice('vpnDns.'.length), args);
     // home cache (permissions.homeCache, homeCache.js — phase 3b)
     case 'homeCache.offer': return homeCacheCall(plugin, 'offer', args);
     case 'homeCache.withdraw': return homeCacheCall(plugin, 'withdraw', args);

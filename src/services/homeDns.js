@@ -906,6 +906,8 @@ function notice(type, r, reason, durationMs) {
 
 module.exports = {
   DnsError, LIMITS, DEFAULT_ID, DOWN_AFTER_MS,
+  // shared with the DNS protection of the VPN devices (vpnDns.js): the same domains, times and names
+  normSchedule, patterns, patternsSoft, cleanText: text,
   normPattern, normalize, get, setGeneral, createProfile, updateProfile, deleteProfile,
   configPayload, profileOfUser, nextSchedule, allDay, ALL_DAY, dayKey, zoned, ingest, retention, telemetryDns, view, test, checkDown, outageOf,
   assignment, gatewayName, validDohUrl, reconcileHomes,

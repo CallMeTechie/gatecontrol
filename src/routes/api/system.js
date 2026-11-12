@@ -24,6 +24,37 @@ router.get('/resources', async (req, res) => {
 });
 
 /**
+ * GET /api/system/dns/protection
+ * The dashboard notice of the DNS protection of the VPN devices
+ * (services/vpnDns.js): `notice` is null without a plugin that uses it, else
+ * { state, plugin, kind: 'fallback' | 'paused' | null, since, until, openEnd, by }.
+ */
+router.get('/dns/protection', (req, res) => {
+  try {
+    res.json({ ok: true, notice: require('../../services/vpnDns').notice() });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: 'DNS protection status unavailable' });
+  }
+});
+
+/**
+ * POST /api/system/dns/protection/resume
+ * "Wieder einschalten" of the dashboard notice: ends the suspension for all
+ * VPN devices. The signed-in administrator is the actor (activity log).
+ */
+router.post('/dns/protection/resume', (req, res) => {
+  const vpnDns = require('../../services/vpnDns');
+  try {
+    const u = req.session && req.session.userId ? require('../../services/users').getById(req.session.userId) : null;
+    if (!u) return res.status(403).json({ ok: false, error: 'login_required' });
+    vpnDns.resume({ scope: 'all' }, { actor: { id: u.id, name: u.display_name || u.username, role: u.role } });
+    return res.json({ ok: true, notice: vpnDns.notice() });
+  } catch (err) {
+    return res.status(err && err.code === 'ERR_FORBIDDEN' ? 403 : 500).json({ ok: false, error: 'DNS protection not resumed' });
+  }
+});
+
+/**
  * GET /api/system/dns/status
  * Returns internal DNS status: peer counts by hostname source, hosts
  * file metadata, feature flag. Used by the admin UI DNS widget.

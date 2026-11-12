@@ -3912,6 +3912,69 @@ const migrations = [
         WHERE read_at IS NOT NULL;`,
     detect: (db) => hasColumn(db, 'notification_deliveries', 'read_via'),
   },
+  {
+    version: 145,
+    name: 'vpn_dns',
+    // DNS protection for VPN devices (services/vpnDns.js, plugin API
+    // gc.vpnDns, permissions.vpnDns) —
+    //   vpn_dns            one row: the settings (JSON, normalised on read)
+    //   vpn_dns_pauses     "Unterbrechen": scope 'all' (target_id 0) | 'peer'
+    //                      | 'user'; until_at NULL = until switched on again
+    //   vpn_dns_stats_day  counters per day in the server's time zone, the
+    //                      top blocked domains (JSON) — nothing per device
+    //   vpn_dns_peer_day   counters per device and day — only written while
+    //                      the query log is on
+    //   vpn_dns_log        the query log (off by default; retention in the
+    //                      settings, deleted when it is switched off)
+    sql: `
+      CREATE TABLE IF NOT EXISTS vpn_dns (
+        id          INTEGER PRIMARY KEY CHECK (id = 1),
+        settings    TEXT NOT NULL,
+        updated_at  INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS vpn_dns_pauses (
+        scope       TEXT NOT NULL,
+        target_id   INTEGER NOT NULL DEFAULT 0,
+        until_at    INTEGER,
+        by_user_id  INTEGER,
+        by_name     TEXT,
+        plugin_id   TEXT,
+        automated   INTEGER NOT NULL DEFAULT 0,
+        created_at  INTEGER NOT NULL,
+        PRIMARY KEY (scope, target_id)
+      );
+      CREATE TABLE IF NOT EXISTS vpn_dns_stats_day (
+        day         TEXT PRIMARY KEY,
+        queries     INTEGER NOT NULL DEFAULT 0,
+        blocked     INTEGER NOT NULL DEFAULT 0,
+        cached      INTEGER NOT NULL DEFAULT 0,
+        top         TEXT,
+        by_profile  TEXT,
+        updated_at  INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS vpn_dns_peer_day (
+        day         TEXT NOT NULL,
+        peer_id     INTEGER NOT NULL,
+        queries     INTEGER NOT NULL DEFAULT 0,
+        blocked     INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (day, peer_id)
+      );
+      CREATE TABLE IF NOT EXISTS vpn_dns_log (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        at          INTEGER NOT NULL,
+        peer_id     INTEGER,
+        name        TEXT NOT NULL,
+        type        TEXT,
+        action      TEXT NOT NULL,
+        reason      TEXT,
+        profile_id  TEXT,
+        list        TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_vpn_dns_log_at ON vpn_dns_log(at);
+      CREATE INDEX IF NOT EXISTS idx_vpn_dns_log_peer ON vpn_dns_log(peer_id, id);`,
+    detect: (db) => ['vpn_dns', 'vpn_dns_pauses', 'vpn_dns_stats_day', 'vpn_dns_peer_day', 'vpn_dns_log']
+      .every((t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t)),
+  },
 ];
 
 module.exports = { migrations };

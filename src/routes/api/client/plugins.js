@@ -45,7 +45,9 @@
  * token's owner as `req.user = { id, name, role, portal: true, loggedIn:
  * true, app: true }` and decides itself what an app user may do; a plugin
  * with permissions.devices (since 1.193.0) also gets the asking device as
- * `req.user.device = { id, platform }` (gc.devices.list ids). Language:
+ * `req.user.device = { id, platform }` (gc.devices.list ids); a plugin with
+ * permissions.vpnDns gets the asking device's VPN peer as `req.user.peerId`
+ * (the ids of gc.vpnDns.devices; null for a token without a peer). Language:
  * ?lang=de|en, else the owner's language setting, else Accept-Language, else 'de'.
  */
 
@@ -165,6 +167,11 @@ router.all('/:id/api/*', (req, res, next) => {
   // the asking device, for plugins that see devices (permissions.devices)
   if (p && p.manifest.permissions && p.manifest.permissions.devices === true) {
     try { v.user.device = require('../../../services/plugins/devices').viewerDevice(req); } catch { /* no device */ }
+  }
+  // the asking device as a VPN peer, for the plugin of the DNS protection (permissions.vpnDns):
+  // "Unterbrechen" in the apps holds for this device — null when the token is bound to no peer
+  if (p && p.manifest.permissions && p.manifest.permissions.vpnDns === true) {
+    v.user.peerId = Number.isSafeInteger(req.tokenPeerId) ? req.tokenPeerId : null;
   }
   req.appViewer = v;
   return next();

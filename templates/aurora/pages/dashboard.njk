@@ -54,6 +54,19 @@
 </div>
 {% endif %}
 
+{#- DNS protection of the VPN devices (services/vpnDns.js): the filter service does not answer (red) or the
+    protection is suspended for all devices (amber). Filled by dashboard.js; empty without the plugin. -#}
+<div class="db-banner db-banner-warn" role="alert" id="db-vpndns" hidden>
+  <span class="db-banner-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.1-8-4.5-8-9V6l8-3zM12 9v4M12 16v.5"/></svg></span>
+  <div class="db-banner-text">
+    <strong id="db-vpndns-title"></strong>
+    <span class="db-banner-sub" id="db-vpndns-text"></span>
+  </div>
+  <a href="/settings/plugins" class="db-btn" id="db-vpndns-open">{{ t('dashboard.vpndns.open') }}</a>
+  <button type="button" class="db-btn db-btn-primary" id="db-vpndns-resume" hidden>{{ t('dashboard.vpndns.resume') }}</button>
+</div>
+<script type="application/json" id="db-vpndns-data">{{ vpnDnsNotice | safe }}</script>
+
 {% if needs_repair_gateways and needs_repair_gateways.length > 0 %}
 <div class="db-banner db-banner-warn" role="alert" id="db-repair">
   <span class="db-banner-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 17v.5"/></svg></span>
@@ -293,6 +306,11 @@
         <div class="db-subtile-label">{{ t('dashboard.sec_pihole') }}</div>
         <div class="db-subtile-value" id="db-sec-pihole-value">—</div>
         <div class="db-subtile-sub" id="db-sec-pihole-sub"></div>
+      </div>
+      <div class="db-subtile" id="db-sec-vpndns" hidden>
+        <div class="db-subtile-label">{{ t('dashboard.sec_vpndns') }}</div>
+        <div class="db-subtile-value" id="db-sec-vpndns-value">—</div>
+        <div class="db-subtile-sub" id="db-sec-vpndns-sub"></div>
       </div>
     </div>
     <a class="db-checkrow" id="db-sec-check" href="/security" data-state="loading" hidden>

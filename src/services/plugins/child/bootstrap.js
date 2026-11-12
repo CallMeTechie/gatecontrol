@@ -324,6 +324,58 @@ function makeEdge() {
   });
 }
 
+// gc.vpnDns (permissions.vpnDns, docs/plugins.md "DNS protection"): the DNS protection of the VPN devices. The host
+// filters; the plugin sets what is blocked for whom, suspends it and reads counters. Changes need an acting person:
+// the one with a changing request to this plugin in flight, or { actor: userId } (settings: an administrator).
+const vpnDnsHandlers = [];
+
+function makeVpnDns() {
+  const o = (x) => (x && typeof x === 'object' ? x : {});
+  const actor = (opts) => (o(opts).actor != null ? { actor: o(opts).actor } : {});
+  return Object.freeze({
+    /** the version of this interface (raised when methods are added) */
+    version: 1,
+    /** status() → { available, enabled, state: off|starting|filtering|fallback, since, chain, pihole, pause, pauses, service, peers, lists, today, log } */
+    status: () => hostCall('vpnDns.status', {}),
+    /** catalog() → { lists, categories, providers, limits } */
+    catalog: () => hostCall('vpnDns.catalog', {}),
+    /** get() → the settings { enabled, upstream, blockResponse, allow, deny, log, excluded, profiles } */
+    get: () => hostCall('vpnDns.get', {}),
+    /** set(patch, { actor }?) → the new settings — an administrator */
+    set: (patch, opts) => hostCall('vpnDns.set', { patch: o(patch), ...actor(opts) }),
+    /** devices() → [{ peerId, name, ip, type, platform, user, peerGroup, state, ownDns, profile, via, viaId, suspended, suspendedUntil, suspendedBy, today }] */
+    devices: () => hostCall('vpnDns.devices', {}),
+    /** lists() → { lists: [{ id, used, loaded, entries, estimated, updatedAt, checkedAt, error, profiles }], memoryBytes, entries, asOf } */
+    lists: () => hostCall('vpnDns.lists', {}),
+    /** refreshLists({ actor }?) → { started } — an administrator */
+    refreshLists: (opts) => hostCall('vpnDns.refreshLists', { ...actor(opts) }),
+    /** stats({ days }?) → { today, days, top, perPeer, perPeerToday } (per device only with the query log on) */
+    stats: (opts) => hostCall('vpnDns.stats', { opts: o(opts) }),
+    /** test(domain, { peerId | userId | profileId }?) → { domain, action, reason, list, category, safeSearch, profile, device, filtered } */
+    test: (domain, who) => hostCall('vpnDns.test', { domain: String(domain), who: o(who) }),
+    /** pauses() → [{ scope, id, until, openEnd, since, by, automated }] */
+    pauses: () => hostCall('vpnDns.pauses', {}),
+    /** pause({ scope: all|peer|user, id?, minutes | until | forever: true }, { actor }?) → the suspension */
+    pause: (target, opts) => hostCall('vpnDns.pause', { target: o(target), ...actor(opts) }),
+    /** resume({ scope, id? }, { actor }?) → true when a suspension ended */
+    resume: (target, opts) => hostCall('vpnDns.resume', { target: o(target), ...actor(opts) }),
+    /** restart({ actor }?) → { restarting, how } — the filter service; an administrator */
+    restart: (opts) => hostCall('vpnDns.restart', { ...actor(opts) }),
+    /** releasePihole({ actor }?) → { configured, wantsChain, chain } — Pi-hole gives up the DNS chain; only while filtering; an administrator */
+    releasePihole: (opts) => hostCall('vpnDns.releasePihole', { ...actor(opts) }),
+    /** log({ limit, before, peerId, userId, blockedOnly, search, since }?) → { entries, next } — ERR_LOG_OFF while the query log is off */
+    log: (query) => hostCall('vpnDns.log', { query: o(query) }),
+    /** clearLog({ actor }?) → { removed } — an administrator */
+    clearLog: (opts) => hostCall('vpnDns.clearLog', { ...actor(opts) }),
+    /** on(handler({ type: fallback|restored|paused|resumed, at, scope?, id?, until?, openEnd?, by?, reason? })) → off() */
+    on: (handler) => {
+      if (typeof handler !== 'function') throw new TypeError('gc.vpnDns.on(handler)');
+      vpnDnsHandlers.push(handler);
+      return () => { const i = vpnDnsHandlers.indexOf(handler); if (i >= 0) vpnDnsHandlers.splice(i, 1); };
+    },
+  });
+}
+
 // gc.homeNetwork (permissions.homePresence, phase 3a, docs/plugins.md "Presence over the home network"):
 // at home / away of people who agreed themselves, by their phone in the home network. Never MAC/IP addresses.
 const presenceHandlers = [];
@@ -501,6 +553,16 @@ async function deliverCameraEvent(ev) {
   return { handled: cameraHandlers.length };
 }
 
+async function deliverVpnDns(ev) {
+  const arg = Object.freeze({ ...(ev && typeof ev === 'object' ? ev : {}) });
+  for (const fn of vpnDnsHandlers.slice()) {
+    try { await fn(arg); } catch (err) {
+      send({ t: 'log', level: 'error', message: 'gc.vpnDns.on handler failed: ' + String((err && (err.stack || err.message)) || err).slice(0, 900) });
+    }
+  }
+  return { handled: vpnDnsHandlers.length };
+}
+
 async function deliverPresence(ev) {
   const e = ev && typeof ev === 'object' ? ev : {};
   const arg = Object.freeze({ userId: e.userId, home: e.home === true ? true : (e.home === false ? false : null), since: e.since || null, source: e.source || 'wifi' });
@@ -545,6 +607,7 @@ function makeGc(info) {
     ...(features.print ? { print: makePrint() } : {}),
     ...(features.radio ? { radio: makeRadio() } : {}),
     ...(features.cameras ? { cameras: makeCameras() } : {}),
+    ...(features.vpnDns ? { vpnDns: makeVpnDns() } : {}),
     // device accounts of a gateway's MQTT broker (plugin.json edge.capabilities.mqtt): create(gatewayId,
     // { label, topics, name }) → { username, password (once), acl, label }; list(gatewayId); remove(gatewayId, username)
     ...(features.mqtt ? {
@@ -970,6 +1033,9 @@ async function handleCall(method, payload) {
     case 'cameraEvent':
       // an event of a camera in the home network (gc.cameras.on) — answer ignored
       return deliverCameraEvent(payload);
+    case 'vpnDns':
+      // the DNS protection fell back / answers again / was suspended / switched on again (gc.vpnDns.on) — answer ignored
+      return deliverVpnDns(payload);
     case 'edgeEvent':
       // an event of the plugin's edge part on a gateway (gc.edge.on) — answered after the handlers ran
       return deliverEdgeEvent(payload);

@@ -210,6 +210,13 @@ async function start() {
     try { require('./services/ai').start(); }
     catch (err) { logger.warn({ err: err.message }, 'ai service not started'); }
 
+    // DNS protection of the VPN devices (services/vpnDns.js): claims the DNS
+    // chain again when it was on — before Pi-hole's start, so dnsmasq is not
+    // put on another upstream in between. Does nothing without a plugin that
+    // holds permissions.vpnDns.
+    try { require('./services/vpnDns').start(); }
+    catch (err) { logger.warn({ err: err.message }, 'vpn dns start failed'); }
+
     // Pi-hole sync — best-effort; a missing dnsmasq.conf or misconfigured
     // instance must never block server boot.
     try { require('./services/pihole').start(); }
@@ -428,6 +435,7 @@ const shutdown = createShutdownHandler({
     () => require('./services/updateNotify').stop(),
     () => require('./services/notify').stop(),
     () => require('./services/gatewayOps').stop(),
+    () => require('./services/vpnDns').stop(),
     () => require('./services/edge/hub').closeAll(),
     () => { require('./services/plugins').stop().catch(() => {}); },
   ],

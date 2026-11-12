@@ -78,4 +78,13 @@ function handbookPackage(o = {}) {
   return packDir(HANDBOOK_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
 }
 
-module.exports = { HANDBOOK_DEMO, handbookPackage, CAMERA_DEMO, cameraPackage, HELLO, EDGE_DEMO, PRESENCE_DEMO, HOME_DEMO, PRINT_DEMO, RADIO_DEMO, helloPackage, edgePackage, presencePackage, homePackage, printPackage, radioPackage, trusted, stranger };
+// a plugin with permissions.vpnDns (gc.vpnDns, tests/vpn_dns.test.js)
+const DNS_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'dns-demo');
+
+/** The DNS protection test plugin, like helloPackage. */
+function dnsPackage(o = {}) {
+  const key = o.sign === undefined || o.sign === 'trusted' ? trusted.privateSeed : (o.sign === 'stranger' ? stranger.privateSeed : '');
+  return packDir(DNS_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
+}
+
+module.exports = { DNS_DEMO, dnsPackage, HANDBOOK_DEMO, handbookPackage, CAMERA_DEMO, cameraPackage, HELLO, EDGE_DEMO, PRESENCE_DEMO, HOME_DEMO, PRINT_DEMO, RADIO_DEMO, helloPackage, edgePackage, presencePackage, homePackage, printPackage, radioPackage, trusted, stranger };
