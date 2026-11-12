@@ -120,6 +120,31 @@ to the plugin catalogue (`piholeDeprecation()` in `src/routes/index.js`).
 `status().pihole.targets` names where the devices reach Pi-hole and the
 gateway behind it, for the first step of that dialog.
 
+## Home network: shared profiles and "Internet pausieren"
+
+- **Shared profile** (`profile.home = { gateway, profile }`). One source of
+  truth: the home's settings (`gateway_dns`, mirrored to every gateway of a
+  home network by homeDns). `vpnDns.get()` lays the home's `lists`,
+  `safeSearch`, `allow`, `deny`, `schedules`, `users` over the profile
+  (`withHome()`); `set()` writes a change through `homeDns.updateProfile()` /
+  `createProfile()` in the same transaction as its own row (`writeHomes()`);
+  `homeDns.save()` tells `vpnDns.homeChanged()`, which keeps the copy stored
+  here up to date (it holds when the home goes away), drops a link whose
+  profile is gone and rewrites the filter's config. No sync job, no "who
+  changed last". `gc.vpnDns.homes()` lists what can be shared.
+- **Pauses** (`homeInternet`, on by default). `home_internet` rows of a person
+  become `policy.pauses` / `policy.extensions` of the filter service with the
+  keys of the person's devices — the engine knows both from the gateways. The
+  service lets a pause win over a suspension (`_effectiveKey`), the firewall
+  keeps the rules of paused devices. Known limit: dnsmasq merges identical UDP
+  queries that are under way at the same moment — if another device asks the
+  very name a paused device asks in the same few milliseconds, the paused one
+  can get that answer once (the TC rule looks at profiles, not at a single
+  paused device; making every answer "truncated" while somebody is paused
+  would send all devices' DNS over TCP for hours).
+- "Unterbrechen" of the protection has no counterpart at home and stays what
+  it is: VPN devices only, unfiltered.
+
 ## Blocking foreign DNS ("Fremden DNS und DoT sperren")
 
 Setting `blockForeignDns`, off by default; `src/services/vpnDnsFirewall.js`.

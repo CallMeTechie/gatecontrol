@@ -334,8 +334,9 @@ function makeVpnDns() {
   const actor = (opts) => (o(opts).actor != null ? { actor: o(opts).actor } : {});
   return Object.freeze({
     /** the version of this interface (raised when methods or fields are added; 2: test().match/scope, blockedBy, status().pihole.targets;
-     *  3: the setting blockForeignDns, status().foreignDns) */
-    version: 3,
+     *  3: the setting blockForeignDns, status().foreignDns;
+     *  4: profiles shared with a home network (profile.home, homes()), the setting homeInternet) */
+    version: 4,
     /** status() → { available, enabled, state: off|starting|filtering|fallback, since, chain, pihole, pause, pauses, service, peers, lists, today, log } */
     status: () => hostCall('vpnDns.status', {}),
     /** catalog() → { lists, categories, providers, limits } */
@@ -356,6 +357,8 @@ function makeVpnDns() {
     test: (domain, who) => hostCall('vpnDns.test', { domain: String(domain), who: o(who) }),
     /** pauses() → [{ scope, id, until, openEnd, since, by, automated }] */
     pauses: () => hostCall('vpnDns.pauses', {}),
+    /** homes() → [{ gateway: { peerId, name }, gateways, configured, enabled, profiles: [{ id, name, …, linkedTo }] }] — home networks whose profiles can be shared */
+    homes: () => hostCall('vpnDns.homes', {}),
     /** pause({ scope: all|peer|user, id?, minutes | until | forever: true }, { actor }?) → the suspension */
     pause: (target, opts) => hostCall('vpnDns.pause', { target: o(target), ...actor(opts) }),
     /** resume({ scope, id? }, { actor }?) → true when a suspension ended */

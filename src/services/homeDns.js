@@ -203,6 +203,8 @@ function save(peerId, s, at = Date.now()) {
   db().prepare(`INSERT INTO gateway_dns (peer_id, settings, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(peer_id) DO UPDATE SET settings = excluded.settings, updated_at = excluded.updated_at`)
     .run(peerId, JSON.stringify(s), at);
+  // profiles shared with the DNS protection of the VPN devices follow (vpnDns.js; nothing happens without a shared one)
+  try { require('./vpnDns').homeChanged(Number(peerId)); } catch (e) { logger.debug({ err: e.message }, 'vpn dns not told about the DNS filter settings'); }
 }
 
 /** The peer ids of the home network of a gateway (itself included). */
