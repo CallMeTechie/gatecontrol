@@ -302,20 +302,25 @@ class FilterService {
   /** Read config.json when it changed (or `force`). A file that cannot be read keeps the settings in force. */
   async loadConfig(force = false) {
     const file = path.join(this.stateDir, CONFIG_FILE);
-    let st;
-    try { st = fs.statSync(file); } catch { return false; }
-    const stamp = `${st.mtimeMs}:${st.size}:${st.ino}`;
-    if (!force && stamp === this.cfgStamp) return false;
+    // One open file for the check and the read: the server replaces the file
+    // by renaming a new one over it, and what was checked must be what is read.
+    let fd;
+    try { fd = fs.openSync(file, 'r'); } catch { return false; }
+    let stamp;
     let raw;
     try {
-      raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const st = fs.fstatSync(fd);
+      stamp = `${st.mtimeMs}:${st.size}:${st.ino}`;
+      if (!force && stamp === this.cfgStamp) return false;
+      this.cfgStamp = stamp;
+      raw = JSON.parse(fs.readFileSync(fd, 'utf8'));
     } catch (err) {
       this.counters.configErrors++;
       this.logger.warn({ err: err.message }, 'dnsfilter: config.json not readable — keeping the settings in force');
-      this.cfgStamp = stamp;
       return false;
+    } finally {
+      fs.closeSync(fd);
     }
-    this.cfgStamp = stamp;
     await this.apply(sanitize(raw));
     return true;
   }

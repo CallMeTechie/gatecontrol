@@ -365,7 +365,8 @@ describe('settings and who gets which profile', () => {
     assert.deepEqual(kids.allow, ['paypal.com']);
     assert.deepEqual(kids.deny, ['roblox.com', 'temu.com']);
     assert.deepEqual(Object.keys(c.policy.lists).sort(), ['ads', 'adult', 'malware']);
-    assert.ok(c.internal.includes('app.example.com') && c.internal.includes('laptop.gc.internal'));
+    const internal = new Set(c.internal);
+    assert.ok(internal.has('app.example.com') && internal.has('laptop.gc.internal'));
     assert.deepEqual(c.plain, [process.env.GC_DNSMASQ_UPSTREAMS]);
     assert.deepEqual(c.suspended, { all: null, keys: {} });
   });
@@ -410,9 +411,9 @@ describe('switched on: the service, the chain, the filter', () => {
     assert.deepEqual((await askFilter('ads.example', '10.8.0.222', { tcp: true })).a, [UP_IP], 'an address no peer has');
     // a name dnsmasq answers itself is never blocked, whatever the lists say
     await ok('set', { deny: ['temu.com', 'app.example.com'] });
-    await waitFor(() => svc.cfg.policy.profiles[0].deny.includes('app.example.com'));
+    await waitFor(() => new Set(svc.cfg.policy.profiles[0].deny).has('app.example.com'));
     assert.equal((await askFilter('app.example.com', '10.8.0.30', { qtype: wire.TYPE.AAAA })).rcode, 0);
-    assert.equal(upstream.seen.includes('app.example.com'), true, 'forwarded, not blocked');
+    assert.equal(new Set(upstream.seen).has('app.example.com'), true, 'forwarded, not blocked');
     // the chain's probe is answered without the upstream
     const before = upstream.seen.length;
     assert.equal((await askFilter('', null, { qtype: wire.TYPE.NS })).rcode, 0);
