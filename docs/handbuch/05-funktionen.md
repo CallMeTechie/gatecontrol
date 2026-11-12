@@ -146,6 +146,13 @@ die Einstellungen; der Reiter zeigt dann „Gilt im ganzen Heimnetz“.
 
 **Wichtig:** Ist das Gateway aus, können die Geräte im Heimnetz keine Namen mehr
 auflösen – das Internet wirkt dann „weg“. Ein zweites Gateway als Reserve hilft.
+
+**Unterwegs (VPN-Geräte):** Der DNS-Filter des Gateways wirkt nur im Heimnetz.
+Für Handys und Laptops, die per VPN verbunden sind, filtert der Server selbst –
+mit dem Plugin „DNS-Schutz“ (Einstellungen › Plugins). Es nutzt dieselben
+Listen und Kategorien. Fällt der Filter auf dem Server aus, läuft das Internet
+der Geräte ungefiltert weiter; das Dashboard meldet es. Ohne das Plugin ändert
+sich nichts, auch nicht für eine bestehende Pi-hole-Anbindung.
 Willst du den Filter wieder abschalten, leere **zuerst** das Feld im Router.
 
 Manche Router (viele Speedport-Modelle, Vodafone Station) erlauben keinen
