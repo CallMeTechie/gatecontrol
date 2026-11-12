@@ -3975,6 +3975,21 @@ const migrations = [
     detect: (db) => ['vpn_dns', 'vpn_dns_pauses', 'vpn_dns_stats_day', 'vpn_dns_peer_day', 'vpn_dns_log']
       .every((t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t)),
   },
+  {
+    version: 146,
+    name: 'vpn_dns_block_scope',
+    // DNS protection: what blocked a query —
+    //   vpn_dns_stats_day.by_reason  blocked queries of the day by kind (JSON:
+    //                                list, denyAll, denyProfile, schedule, other)
+    //   vpn_dns_log.scope            an own entry ("Immer gesperrt" / "Immer
+    //                                erlaubt") held for everybody ('all') or
+    //                                only in the profile ('profile'); NULL
+    //                                for everything else and for older rows
+    sql: `
+      ALTER TABLE vpn_dns_stats_day ADD COLUMN by_reason TEXT;
+      ALTER TABLE vpn_dns_log ADD COLUMN scope TEXT;`,
+    detect: (db) => hasColumn(db, 'vpn_dns_stats_day', 'by_reason') && hasColumn(db, 'vpn_dns_log', 'scope'),
+  },
 ];
 
 module.exports = { migrations };

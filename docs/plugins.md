@@ -2947,7 +2947,9 @@ and reads counters. Code: `src/services/vpnDns.js`, host API `vpnDnsCall` in
 The install dialog names it first and as sensitive: "DNS der VPN-Geräte
 filtern". Without it `gc.vpnDns` does not exist and the host answers
 `ERR_VPN_DNS_DENIED`; an older GateControl ignores the permission and
-`gc.vpnDns` is missing — check for it (`gc.vpnDns.version` is `1`).
+`gc.vpnDns` is missing — check for it. `gc.vpnDns.version` is `2` since
+1.265.0 (`1` before: no `match` / `scope` of `test()`, no `blockedBy`, no
+`pihole.targets`, no `scope` in the log).
 
 **Nothing runs without such a plugin.** The filter service is started, and the
 DNS chain claimed, only while the settings say `enabled` **and** a plugin with
@@ -2958,21 +2960,21 @@ default upstreams); the settings stay.
 
 | Call | Answer / rule |
 |---|---|
-| `gc.vpnDns.status()` | `{ available, enabled, blockedBy: null \| 'internal_dns_off', state: 'off' \| 'starting' \| 'filtering' \| 'fallback', since (ISO), chain: 'filter' \| 'pihole' \| 'default', pihole: { configured, wantsChain, chain: 'off' \| 'active' \| 'displaced' \| 'fallback' }, pause: suspension for all devices \| null, pauses: n (devices / people), service: { running, ready, pid, startedAt, port, listen, upstream, memory: { rss, lists }, cacheEntries, truncated, failOpen, asOf } \| { running: false }, peers: { filtered, ownDns, excluded, gateways, suspended }, lists: [used lists], today: { queries, blocked, cached }, log: { enabled, retentionDays } }` |
+| `gc.vpnDns.status()` | `{ available, enabled, blockedBy: null \| 'internal_dns_off', state: 'off' \| 'starting' \| 'filtering' \| 'fallback', since (ISO), chain: 'filter' \| 'pihole' \| 'default', pihole: { configured, wantsChain, chain: 'off' \| 'active' \| 'displaced' \| 'fallback', targets: [{ name, ip, port, gateway: { peerId, name, via: 'tunnel' \| 'lan' } \| null }] }, pause: suspension for all devices \| null, pauses: n (devices / people), service: { running, ready, pid, startedAt, port, listen, upstream, memory: { rss, lists }, cacheEntries, truncated, failOpen, asOf } \| { running: false }, peers: { filtered, ownDns, excluded, gateways, suspended }, lists: [used lists], today: { queries, blocked, cached, blockedBy }, log: { enabled, retentionDays } }` — `pihole.targets` (version 2): where the VPN devices reach Pi-hole, and the gateway behind an address (its own tunnel address, or an address of a LAN it reported) |
 | `gc.vpnDns.catalog()` | `{ lists: [{ id, source, home, license, format, entries, defaultOn }], categories: [{ id, domains }], providers: [{ id, label, home }], limits }` — the lists, categories and upstream providers of the gateways' DNS filter (`src/services/homeDnsCatalog.js`), plus the provider `system` (the server's plain resolvers, no DoH) |
 | `gc.vpnDns.get()` | the settings, see below |
 | `gc.vpnDns.set(patch, { actor }?)` | changes the named top-level keys → the new settings. **Administrator** |
 | `gc.vpnDns.devices()` | every peer: `{ peerId, name, ip, type: 'peer' \| 'gateway', platform, user: { id, name, role } \| null, peerGroup: { id, name } \| null, state: 'filtered' \| 'ownDns' \| 'excluded' \| 'gateway' \| 'disabled', ownDns: '1.1.1.1' \| null, profile: { id, name } \| null, via: 'peer' \| 'user' \| 'peerGroup' \| 'group' \| 'default' \| null, viaId, suspended, suspendedUntil (ISO \| null = open end), suspendedBy: 'all' \| 'peer' \| 'user' \| null, today: { queries, blocked } \| null }` — `today` only with the query log on |
 | `gc.vpnDns.lists()` | `{ lists: [{ id, source, home, license, defaultOn, used, loaded, entries, estimated, updatedAt, checkedAt, error, profiles: [profile ids] }], memoryBytes, entries, asOf }` — what the service has loaded (`estimated`: the catalogue's rough size, not loaded) |
 | `gc.vpnDns.refreshLists({ actor }?)` | "Jetzt aktualisieren" → `{ started: true }`. **Administrator** |
-| `gc.vpnDns.stats({ days = 7 }?)` | `{ today: { day, queries, blocked, cached, top: [{ domain, count }] }, days: [{ day, queries, blocked, cached }], top (of the range), perPeer, perPeerToday: [{ peerId, queries, blocked }] \| null }` — days in the server's time zone, at most 90; per device only with the query log on |
-| `gc.vpnDns.test(domain, { peerId \| userId \| profileId }?)` | "Domain prüfen", asked from the service (it has the lists): `{ domain, action: 'allow' \| 'block', reason, list, category, safeSearch, profile: { id, name } \| null, device, filtered }`; without a target the default profile. Reasons: `list`, `profile_deny`, `profile_allow`, `schedule`, `schedule_category`, `default`, `no_profile` (unfiltered), `suspended`, `internal`, `local`, `canary` |
+| `gc.vpnDns.stats({ days = 7 }?)` | `{ today: { day, queries, blocked, cached, blockedBy, top: [{ domain, count }] }, days: [{ day, queries, blocked, cached, blockedBy }], blockedBy (of the range), top (of the range), perPeer, perPeerToday: [{ peerId, queries, blocked }] \| null }` — days in the server's time zone, at most 90; per device only with the query log on. `blockedBy` (version 2): the blocked queries by what blocked them, `{ list, denyAll, denyProfile, schedule, other }` — `denyAll` is "Immer gesperrt" for everybody, `denyProfile` the same entry of a profile; all zero for days counted by an older server |
+| `gc.vpnDns.test(domain, { peerId \| userId \| profileId }?)` | "Domain prüfen", asked from the service (it has the lists): `{ domain, action: 'allow' \| 'block', reason, list, category, safeSearch, scope, match, profile: { id, name } \| null, device, filtered }`; without a target the default profile. Version 2: `match: { entry, kind: 'domain' \| 'subdomains' \| 'exact' } \| null` is the entry that hit — of the list (`reason: 'list'`: `{ entry: 'tiktok.com', kind: 'domain' }` = "tiktok.com mit allen Unterseiten"; `exact` = this name only, hosts lists), of the own entries or of the category — and `scope: 'all' \| 'profile' \| null` says whether an own entry (`profile_deny`, `profile_allow`) holds for everybody or only in the profile. Reasons: `list`, `profile_deny`, `profile_allow`, `schedule`, `schedule_category`, `default`, `no_profile` (unfiltered), `suspended`, `internal`, `local`, `canary` |
 | `gc.vpnDns.pauses()` | the running suspensions: `[{ scope: 'all' \| 'peer' \| 'user', id, until (ISO \| null), openEnd, since, by: { userId, name } \| null, automated }]` |
 | `gc.vpnDns.pause({ scope, id?, minutes \| until \| forever: true }, { actor }?)` | suspends the protection for all VPN devices, one device (`peer`) or all devices of a person (`user`) — `minutes` 1…10080, `until` ISO at most 7 days ahead, `forever` = until switched on again. Replaces a running suspension of the same target ("+30 Min.") → the suspension |
 | `gc.vpnDns.resume({ scope, id? }, { actor }?)` | → `true` when a suspension ended |
 | `gc.vpnDns.restart({ actor }?)` | "Filter-Dienst neu starten" → `{ restarting: true, how: 'asked' \| 'killed' \| 'not_running' }`. **Administrator** |
 | `gc.vpnDns.releasePihole({ actor }?)` | the last step of moving from Pi-hole: Pi-hole stops asking for the DNS chain (`manage_dns_chain` off) → `status().pihole`. Only while `state` is `filtering` (`ERR_NOT_FILTERING`). **Administrator** |
-| `gc.vpnDns.log({ limit ≤ 500, before, peerId, userId, blockedOnly, search, since }?)` | the query log, newest first: `{ entries: [{ id, at, peerId, name, type, action, reason, profileId, list }], next }` (`next` → `before` of the next page); `ERR_LOG_OFF` while it is off |
+| `gc.vpnDns.log({ limit ≤ 500, before, peerId, userId, blockedOnly, search, since, scope }?)` | the query log, newest first: `{ entries: [{ id, at, peerId, name, type, action, reason, profileId, list, scope }], next }` (`scope` as in `test()`, version 2; `null` for older rows) (`next` → `before` of the next page); `ERR_LOG_OFF` while it is off |
 | `gc.vpnDns.clearLog({ actor }?)` | → `{ removed }` (also the counters per device). **Administrator** |
 | `gc.vpnDns.on(handler)` | events: `{ type: 'fallback' \| 'restored' \| 'paused' \| 'resumed', at, scope?, id?, until?, openEnd?, by?, reason?: 'manual' \| 'expired' }` → `off()` |
 
@@ -3034,7 +3036,13 @@ API (`/api/v1/client/plugins/<id>/api/…`, see "App"); with `permissions.vpnDns
 `req.user.peerId` is the VPN peer of the asking device (the ids of
 `devices()`; `null` for a token without a peer). `GET
 /api/v1/client/permissions` carries `vpnDns: { plugin, state } | null` so an
-app knows whether the server has the DNS protection and which plugin to ask.
+app knows whether the server has the DNS protection and which plugin to ask —
+an object only while the protection is switched on. Since 1.265.0 the field
+`dnsProtection: { plugin, enabled, state: 'off' | 'starting' | 'filtering' |
+'fallback' } | null` beside it answers the same question also while the
+protection is off: `null` = no plugin that serves the apps, `enabled: false` =
+the plugin is there, the protection is switched off. `vpnDns` is unchanged, so
+an app that does not know the new field behaves as before.
 
 Errors: `ERR_VPN_DNS_DENIED`, `ERR_INVALID` (the message names the field),
 `ERR_NOT_FOUND`, `ERR_NOT_PERSON`, `ERR_NOT_ADMIN`, `ERR_FORBIDDEN`,

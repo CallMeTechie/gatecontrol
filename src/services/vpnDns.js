@@ -582,7 +582,7 @@ function filterConfig(s = get(), now = Date.now()) {
     upstream: { provider: s.upstream.provider, url: s.upstream.url, fallbackRouter: s.upstream.fallbackRouter },
     plain: (process.env.GC_DNSMASQ_UPSTREAMS || '1.1.1.1,8.8.8.8').split(',').map((x) => x.trim()).filter(Boolean),
     internal: internalNames(),
-    policy: { alwaysAllow: [], lists, categories, profiles },
+    policy: { alwaysAllow: [], lists, categories, profiles, globalAllow: s.allow.slice(), globalDeny: s.deny.slice() },
     clients,
     suspended: suspended(devices, now),
   };
@@ -817,6 +817,18 @@ function peerIdOf(key) {
   return m ? Number(m[1]) : null;
 }
 
+/**
+ * Blocked queries by what blocked them (stored per day, JSON): a list, an own
+ * entry "Immer gesperrt" for everybody (denyAll) or of a profile
+ * (denyProfile), a time of a profile, anything else (Firefox' DoH canary).
+ */
+const BLOCK_KINDS = Object.freeze(['list', 'denyAll', 'denyProfile', 'schedule', 'other']);
+
+function blockedByOf(raw) {
+  const v = (typeof raw === 'string' ? json(raw) : raw) || {};
+  return Object.fromEntries(BLOCK_KINDS.map((k) => [k, Math.max(0, Number(v[k]) || 0)]));
+}
+
 /** What the service counted since the last take → the day's row, per device and the log (only with the log on). */
 async function ingest(t, now = Date.now()) {
   if (!t || !t.stats) return;
@@ -824,7 +836,7 @@ async function ingest(t, now = Date.now()) {
   const day = dayKey(now);
   const s = get();
   if (b.queries > 0) {
-    const cur = db().prepare('SELECT top, by_profile FROM vpn_dns_stats_day WHERE day = ?').get(day);
+    const cur = db().prepare('SELECT top, by_profile, by_reason FROM vpn_dns_stats_day WHERE day = ?').get(day);
     const top = new Map(Object.entries((cur && json(cur.top)) || {}));
     for (const e of Array.isArray(b.topBlocked) ? b.topBlocked : []) {
       if (e && typeof e.domain === 'string' && Number.isFinite(e.count)) top.set(e.domain, (top.get(e.domain) || 0) + e.count);
@@ -836,10 +848,12 @@ async function ingest(t, now = Date.now()) {
       const e = byProfile[id] || { queries: 0, blocked: 0 };
       byProfile[id] = { queries: e.queries + (Number(v.queries) || 0), blocked: e.blocked + (Number(v.blocked) || 0) };
     }
-    db().prepare(`INSERT INTO vpn_dns_stats_day (day, queries, blocked, cached, top, by_profile, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+    const byReason = blockedByOf(cur && cur.by_reason);
+    for (const k of BLOCK_KINDS) byReason[k] += Math.max(0, Number(t.blockedBy && t.blockedBy[k]) || 0);
+    db().prepare(`INSERT INTO vpn_dns_stats_day (day, queries, blocked, cached, top, by_profile, by_reason, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(day) DO UPDATE SET queries = queries + excluded.queries, blocked = blocked + excluded.blocked, cached = cached + excluded.cached,
-        top = excluded.top, by_profile = excluded.by_profile, updated_at = excluded.updated_at`)
-      .run(day, Number(b.queries) || 0, Number(b.blocked) || 0, Number(b.cached) || 0, JSON.stringify(kept), JSON.stringify(byProfile), now);
+        top = excluded.top, by_profile = excluded.by_profile, by_reason = excluded.by_reason, updated_at = excluded.updated_at`)
+      .run(day, Number(b.queries) || 0, Number(b.blocked) || 0, Number(b.cached) || 0, JSON.stringify(kept), JSON.stringify(byProfile), JSON.stringify(byReason), now);
   }
   if (!s.log.enabled) return; // nothing per device is kept without the query log
   const up = db().prepare(`INSERT INTO vpn_dns_peer_day (day, peer_id, queries, blocked) VALUES (?, ?, ?, ?)
@@ -849,7 +863,7 @@ async function ingest(t, now = Date.now()) {
     if (id && v) up.run(day, id, Number(v.queries) || 0, Number(v.blocked) || 0);
   }
   const rows = Array.isArray(t.log) ? t.log : [];
-  const ins = db().prepare('INSERT INTO vpn_dns_log (at, peer_id, name, type, action, reason, profile_id, list) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  const ins = db().prepare('INSERT INTO vpn_dns_log (at, peer_id, name, type, action, reason, profile_id, list, scope) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
   const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : null);
   for (let i = 0; i < rows.length; i += LOG_CHUNK) {
     db().transaction(() => {
@@ -857,7 +871,8 @@ async function ingest(t, now = Date.now()) {
         const id = e && peerIdOf(e.key);
         if (!id || typeof e.name !== 'string') continue;
         ins.run(Number(e.at) || now, id, e.name.slice(0, 253), str(e.type, 12), e.action === 'block' ? 'block' : 'allow',
-          e.safeSearch && e.action !== 'block' ? 'safe_search' : str(e.reason, 32), str(e.profileId, 32), str(e.list || e.category, 32));
+          e.safeSearch && e.action !== 'block' ? 'safe_search' : str(e.reason, 32), str(e.profileId, 32), str(e.list || e.category, 32),
+          e.scope === 'all' || e.scope === 'profile' ? e.scope : null);
       }
     })();
     // a busy minute is thousands of rows: give the event loop back between the chunks
@@ -883,22 +898,25 @@ function topOf(rowTop, n = LIMITS.top) {
 }
 
 function todayRow(now = Date.now()) {
-  try { return db().prepare('SELECT queries, blocked, cached, top FROM vpn_dns_stats_day WHERE day = ?').get(dayKey(now)) || null; } catch { return null; }
+  try { return db().prepare('SELECT queries, blocked, cached, top, by_reason FROM vpn_dns_stats_day WHERE day = ?').get(dayKey(now)) || null; } catch { return null; }
 }
 
 /** gc.vpnDns.stats({ days }) → today, the last days, the top blocked domains; per device only with the query log on. */
 function stats(opts = {}, now = Date.now()) {
   const days = Number.isInteger(opts && opts.days) ? Math.max(1, Math.min(90, opts.days)) : 7;
   const from = dayKey(now - (days - 1) * DAY);
-  const rows = db().prepare('SELECT day, queries, blocked, cached, top FROM vpn_dns_stats_day WHERE day >= ? ORDER BY day').all(from);
+  const rows = db().prepare('SELECT day, queries, blocked, cached, top, by_reason FROM vpn_dns_stats_day WHERE day >= ? ORDER BY day').all(from);
   const today = dayKey(now);
-  const t = rows.find((r) => r.day === today) || { queries: 0, blocked: 0, cached: 0, top: null };
+  const t = rows.find((r) => r.day === today) || { queries: 0, blocked: 0, cached: 0, top: null, by_reason: null };
+  const sum = blockedByOf(null);
+  for (const r of rows) { const b = blockedByOf(r.by_reason); for (const k of BLOCK_KINDS) sum[k] += b[k]; }
   const all = new Map();
   for (const r of rows) for (const e of topOf(r.top, LIMITS.topKeep)) all.set(e.domain, (all.get(e.domain) || 0) + e.count);
   const s = get();
   return {
-    today: { day: today, queries: t.queries, blocked: t.blocked, cached: t.cached, top: topOf(t.top) },
-    days: rows.map((r) => ({ day: r.day, queries: r.queries, blocked: r.blocked, cached: r.cached })),
+    today: { day: today, queries: t.queries, blocked: t.blocked, cached: t.cached, blockedBy: blockedByOf(t.by_reason), top: topOf(t.top) },
+    days: rows.map((r) => ({ day: r.day, queries: r.queries, blocked: r.blocked, cached: r.cached, blockedBy: blockedByOf(r.by_reason) })),
+    blockedBy: sum,
     top: [...all.entries()].map(([domain, count]) => ({ domain, count })).sort((a, b) => b.count - a.count || (a.domain < b.domain ? -1 : 1)).slice(0, LIMITS.top),
     perPeer: s.log.enabled
       ? db().prepare('SELECT peer_id AS peerId, SUM(queries) AS queries, SUM(blocked) AS blocked FROM vpn_dns_peer_day WHERE day >= ? GROUP BY peer_id ORDER BY peer_id').all(from)
@@ -922,11 +940,12 @@ function log(q = {}) {
   if (o.blockedOnly === true) where.push("l.action = 'block'");
   if (typeof o.search === 'string' && o.search.trim()) { where.push("l.name LIKE ? ESCAPE '\\'"); args.push('%' + o.search.trim().toLowerCase().slice(0, 100).replace(/[\\%_]/g, '\\$&') + '%'); }
   if (typeof o.since === 'string' && Number.isFinite(Date.parse(o.since))) { where.push('l.at >= ?'); args.push(Date.parse(o.since)); }
-  const rows = db().prepare(`SELECT l.id, l.at, l.peer_id, l.name, l.type, l.action, l.reason, l.profile_id, l.list FROM vpn_dns_log l
+  if (o.scope === 'all' || o.scope === 'profile') { where.push('l.scope = ?'); args.push(o.scope); }
+  const rows = db().prepare(`SELECT l.id, l.at, l.peer_id, l.name, l.type, l.action, l.reason, l.profile_id, l.list, l.scope FROM vpn_dns_log l
     ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY l.id DESC LIMIT ?`).all(...args, limit + 1);
   const page = rows.slice(0, limit);
   return {
-    entries: page.map((r) => ({ id: r.id, at: iso(r.at), peerId: r.peer_id, name: r.name, type: r.type, action: r.action, reason: r.reason, profileId: r.profile_id, list: r.list })),
+    entries: page.map((r) => ({ id: r.id, at: iso(r.at), peerId: r.peer_id, name: r.name, type: r.type, action: r.action, reason: r.reason, profileId: r.profile_id, list: r.list, scope: r.scope || null })),
     next: rows.length > limit ? page[page.length - 1].id : null,
   };
 }
@@ -960,8 +979,63 @@ function piholeInfo() {
     const cfg = require('./piholeConfig').load();
     const wants = !!(cfg.enabled && cfg.manage_dns_chain && (cfg.instances || []).length);
     const st = dnsChain.statusFor('pihole');
-    return { configured: !!cfg.enabled, wantsChain: wants, chain: !wants ? 'off' : (st.displacedBy ? 'displaced' : (st.state === 'pihole' ? 'active' : st.state)) };
-  } catch { return { configured: false, wantsChain: false, chain: 'off' }; }
+    return {
+      configured: !!cfg.enabled, wantsChain: wants, chain: !wants ? 'off' : (st.displacedBy ? 'displaced' : (st.state === 'pihole' ? 'active' : st.state)),
+      targets: cfg.enabled ? piholeTargets(cfg) : [],
+    };
+  } catch { return { configured: false, wantsChain: false, chain: 'off', targets: [] }; }
+}
+
+/**
+ * Where the VPN devices reach Pi-hole (the text of the first step of moving
+ * over: "unter 192.168.178.5 (über das Gateway „Pi Keller“)"): every instance
+ * with a DNS address, and the gateway behind it — the address is the
+ * gateway's own tunnel address (`via: 'tunnel'`) or lies in a LAN the gateway
+ * reported (`via: 'lan'`); null for a Pi-hole that is reached directly.
+ */
+function piholeTargets(cfg) {
+  const out = [];
+  let gws = null;
+  for (const inst of (cfg.instances || []).slice(0, 16)) {
+    const ip = String((inst && inst.dns_ip) || '').trim();
+    if (!net.isIP(ip)) continue;
+    if (!gws) gws = gatewayNets();
+    let gateway = null;
+    const own = gws.find((g) => g.ip === ip);
+    if (own) gateway = { peerId: own.id, name: own.name, via: 'tunnel' };
+    else {
+      const lan = net.isIPv4(ip) ? gws.find((g) => g.subnets.some((c) => inCidr4(ip, c))) : null;
+      if (lan) gateway = { peerId: lan.id, name: lan.name, via: 'lan' };
+    }
+    const port = parseInt(inst.dns_port, 10);
+    out.push({ name: typeof inst.name === 'string' && inst.name ? inst.name.slice(0, 80) : null, ip, port: port >= 1 && port <= 65535 ? port : 53, gateway });
+  }
+  return out;
+}
+
+function inCidr4(ip, cidr) {
+  const m = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(String(cidr || ''));
+  if (!m || !net.isIPv4(m[1]) || Number(m[2]) > 32) return false;
+  const n = (x) => x.split('.').reduce((a, o) => ((a << 8) + Number(o)) >>> 0, 0);
+  const bits = Number(m[2]);
+  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+  return ((n(ip) & mask) >>> 0) === ((n(m[1]) & mask) >>> 0);
+}
+
+/** The gateways with their tunnel address and the LAN subnets of their last heartbeat. */
+function gatewayNets() {
+  try {
+    const dnsLib = require('./dns');
+    return db().prepare(`SELECT p.id, p.name, p.allowed_ips, gm.last_health FROM peers p LEFT JOIN gateway_meta gm ON gm.peer_id = p.id
+      WHERE p.peer_type = 'gateway' ORDER BY p.id`).all().map((g) => {
+      let subnets = [];
+      try {
+        const list = JSON.parse(g.last_health || '{}').telemetry.lan_subnets;
+        if (Array.isArray(list)) subnets = list.slice(0, 16).map((e) => (e && typeof e.cidr === 'string' ? e.cidr : null)).filter(Boolean);
+      } catch { /* never reported */ }
+      return { id: g.id, name: g.name, ip: dnsLib.extractPeerIp(g.allowed_ips), subnets };
+    });
+  } catch { return []; }
 }
 
 function listsView() {
@@ -1004,7 +1078,7 @@ function status(now = Date.now()) {
   const sus = suspended(devices, now);
   const count = (state) => devices.filter((d) => d.state === state).length;
   const all = pauseRows(now).find((r) => r.scope === 'all');
-  const t = todayRow(now) || { queries: 0, blocked: 0, cached: 0 };
+  const t = todayRow(now) || { queries: 0, blocked: 0, cached: 0, by_reason: null };
   return {
     available: available(),
     enabled: s.enabled,
@@ -1022,7 +1096,7 @@ function status(now = Date.now()) {
       suspended: sus.all !== null ? count('filtered') : devices.filter((d) => d.state === 'filtered' && sus.keys[keyOf(d.peerId)] !== undefined).length,
     },
     lists: listsView().filter((l) => l.used),
-    today: { queries: t.queries, blocked: t.blocked, cached: t.cached },
+    today: { queries: t.queries, blocked: t.blocked, cached: t.cached, blockedBy: blockedByOf(t.by_reason) },
     log: { enabled: s.log.enabled, retentionDays: s.log.retentionDays },
   };
 }
@@ -1085,6 +1159,9 @@ async function test(domain, who = {}) {
   const prof = r.profileId ? s.profiles.find((p) => p.id === r.profileId) : null;
   return {
     domain: r.domain, action: r.action, reason: r.reason, list: r.list || null, category: r.category || null, safeSearch: r.safeSearch || null,
+    // an own entry: for everybody ('all') or only in the profile ('profile'); the entry (of a list, of the own
+    // entries, of a category) that hit: { entry: 'tiktok.com', kind: 'domain' | 'subdomains' | 'exact' }
+    scope: r.scope || null, match: r.match && typeof r.match.entry === 'string' ? { entry: r.match.entry, kind: r.match.kind } : null,
     profile: prof ? { id: prof.id, name: prof.name } : null,
     device: dev ? { peerId: dev.peerId, name: dev.name, state: dev.state } : null,
     filtered: !dev || dev.state === 'filtered',
@@ -1167,10 +1244,41 @@ function notice(now = Date.now()) {
  */
 function clientInfo() {
   if (!run.wanted) return null;
+  const p = appPlugin();
+  return p ? { plugin: p.id, state: stateNow() } : null;
+}
+
+/** The plugin with the permission that may run and serves the apps. */
+function appPlugin() {
   let app;
   try { app = require('./plugins/app'); } catch { return null; }
-  const p = allowedPlugins().find((x) => app.usable(x));
-  return p ? { plugin: p.id, state: stateNow() } : null;
+  return allowedPlugins().find((x) => app.usable(x)) || null;
+}
+
+/**
+ * The same question, answered also while the protection is off — the field
+ * `dnsProtection` next to `vpnDns` in GET /api/v1/client/permissions. `vpnDns`
+ * keeps its meaning (an object only while the protection is wanted), so an app
+ * that does not know the new field behaves as before; one that does can tell
+ * "the plugin is there, the protection is switched off" (`enabled: false`,
+ * `state: 'off'`) from "no plugin" (null).
+ */
+function clientPlugin() {
+  const p = appPlugin();
+  if (!p) return null;
+  let enabled = false;
+  try { enabled = get().enabled; } catch { /* no settings yet */ }
+  return { plugin: p.id, enabled, state: stateNow() };
+}
+
+/** The installed plugin with permissions.vpnDns (whether it may run or not) — where "Zum DNS-Schutz umziehen" leads. */
+function installedPlugin() {
+  try {
+    const p = require('./plugins/registry').list().filter(hasPermission);
+    const ok = allowedPlugins();
+    const pick = ok[0] || p[0] || null;
+    return pick ? { id: pick.id, usable: ok.some((x) => x.id === pick.id) } : null;
+  } catch { return null; }
 }
 
 function publish() {
@@ -1205,7 +1313,7 @@ module.exports = {
   normalize, validate, get, set,
   resolve, profileOfUser, filterConfig, internalNames,
   pause, resume, pauses, sweepPauses, suspended,
-  status, devices, lists, stats, test, log, clearLog, catalog: catalogView, refreshLists, restart, releasePihole, notice, clientInfo,
+  status, devices, lists, stats, test, log, clearLog, catalog: catalogView, refreshLists, restart, releasePihole, notice, clientInfo, clientPlugin, installedPlugin, piholeTargets, BLOCK_KINDS,
   reconcile, pluginsChanged, refreshSoon, tick, start, stop, ingest, retention, control, dir, filterPort, writeConfig,
   _run: run, _resetForTest, _hookMs: null,
 };

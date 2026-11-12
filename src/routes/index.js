@@ -422,6 +422,27 @@ function profileTab(v) { return PROFILE_TABS.includes(v) ? v : 'overview'; }
 const settingsUI = require('../../public/js/settings-ui');
 const PLUGIN_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /**
+ * The notice "abgekündigt" on the Pi-hole page: the DNS protection (a plugin
+ * with permissions.vpnDns) replaces the integration.
+ *   plugin  the plugin is installed → its settings page (the dialog that
+ *           moves over from Pi-hole opens there)
+ *   moved   … and the protection is switched on already → the same page
+ *   catalog no such plugin → the plugin catalogue
+ * `href` only for administrators (the plugin area is theirs).
+ */
+function piholeDeprecation(isAdmin) {
+  let plugin = null;
+  let on = false;
+  try {
+    const vd = require('../services/vpnDns');
+    plugin = vd.installedPlugin();
+    on = !!(plugin && plugin.usable && vd.get().enabled);
+  } catch { plugin = null; }
+  if (!plugin) return { state: 'catalog', href: isAdmin ? '/settings/plugins/catalog' : null };
+  return { state: on ? 'moved' : 'plugin', href: isAdmin ? `/settings/plugins/manage/${encodeURIComponent(plugin.id)}?tab=settings` : null };
+}
+
+/**
  * Which settings page a request asks for → { section } to render,
  * { redirect } for old addresses (?tab=…, ?plugin=…, /settings/uebersicht,
  * /settings/<old tab name>) or { notFound }.
@@ -614,6 +635,9 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
       extraLocals.settingsI18n = JSON.stringify(stringsWithPrefix(req.language || res.locals.language, SETTINGS_I18N_PREFIXES))
         .replace(/</g, '\\u003c');
     }
+
+    // Pi-hole page: the integration is deprecated — where "Zum DNS-Schutz umziehen" leads
+    if (template === 'pihole') extraLocals.piholeDeprecation = piholeDeprecation(isAdmin);
 
     // Dashboard-only: gateways that need re-pairing after master-key rotation
     if (template === 'dashboard') {

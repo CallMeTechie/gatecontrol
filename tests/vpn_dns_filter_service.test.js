@@ -20,7 +20,7 @@ const { monitorEventLoopDelay } = require('node:perf_hooks');
 
 const CORE = path.join(__dirname, '..', 'src', 'services', 'vpnDnsFilter', 'dnsfilter-core');
 const { wire } = require(CORE);
-const { FilterService, sanitize, plainTarget, running, MAX_LOG_QUEUE } = require('../src/services/vpnDnsFilter/service');
+const { FilterService, sanitize, plainTarget, running, patternHit, listHit, blockKind, MAX_LOG_QUEUE } = require('../src/services/vpnDnsFilter/service');
 
 const UP_IP = '93.184.216.34';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -113,6 +113,32 @@ describe('config', () => {
     assert.equal(plainTarget('example.com'), null);
   });
 
+  it('the entry that hit: of a small set and of a list kept as hashes', async () => {
+    const { PatternSet, parseListText } = require(CORE);
+    const set = new PatternSet(['tiktok.com', '*.intern.example']);
+    assert.deepEqual(patternHit(set, 'tiktok.com'), { entry: 'tiktok.com', kind: 'domain' });
+    assert.deepEqual(patternHit(set, 'ads.cdn.tiktok.com'), { entry: 'tiktok.com', kind: 'domain' });
+    assert.deepEqual(patternHit(set, 'a.intern.example'), { entry: '*.intern.example', kind: 'subdomains' });
+    assert.equal(patternHit(set, 'intern.example'), null, 'only what is below it');
+    assert.equal(patternHit(set, 'nottiktok.com'), null);
+    assert.equal(patternHit(new PatternSet([]), 'tiktok.com'), null);
+    // a list of domains with their subdomains (adblock) and one of exact names (hosts)
+    const { list: adblock } = await parseListText('||tiktok.com^\n||ads.example^\n', 'adblock');
+    const { list: hosts } = await parseListText('0.0.0.0 tracker.example\n', 'hosts');
+    assert.deepEqual(listHit(adblock, 'v16.cdn.tiktok.com'), { entry: 'tiktok.com', kind: 'domain' });
+    assert.deepEqual(listHit(adblock, 'tiktok.com'), { entry: 'tiktok.com', kind: 'domain' });
+    assert.equal(listHit(adblock, 'tiktok.com.evil.example'), null);
+    assert.deepEqual(listHit(hosts, 'tracker.example'), { entry: 'tracker.example', kind: 'exact' });
+    assert.equal(listHit(hosts, 'a.tracker.example'), null);
+    assert.equal(listHit(null, 'tiktok.com'), null);
+    assert.deepEqual([blockKind({ reason: 'list' }, null), blockKind({ reason: 'profile_deny' }, 'all'), blockKind({ reason: 'profile_deny' }, 'profile'),
+      blockKind({ reason: 'schedule_category' }, null), blockKind({ reason: 'schedule' }, null), blockKind({ reason: 'canary' }, null)],
+    ['list', 'denyAll', 'denyProfile', 'schedule', 'schedule', 'other']);
+    // the entries for everybody come apart from the profiles' own; a file without them is as before
+    const c = sanitize({ policy: { globalDeny: ['temu.com', 7], globalAllow: 'x' } });
+    assert.deepEqual([c.globalDeny.toArray(), c.globalAllow.toArray()], [['temu.com'], []]);
+  });
+
   it('running(): until a time, or 0 = until switched on again', () => {
     assert.equal(running(null, 100), false);
     assert.equal(running(undefined, 100), false);
@@ -163,6 +189,27 @@ describe('the service (in this process)', () => {
     // ECS from a sender that is not loopback is not believed
     assert.deepEqual(read(await svc.handle(query('ads.example', '10.8.0.11'), { ip: '192.0.2.9', udp: false })).a, [UP_IP]);
     assert.ok(svc.status().counters.tc >= 4);
+  });
+
+  it('"Domain prüfen" and the counters say what blocked: for everybody, in the profile, a time', async () => {
+    writeConfig(dir, baseConfig(ports, { rev: 2, policy: { ...baseConfig(ports).policy, globalDeny: ['ads.example'] } }));
+    await svc.loadConfig(true);
+    svc.take();
+    assert.deepEqual(svc.test({ domain: 'x.ads.example', key: 'peer:2' }), { domain: 'x.ads.example', profileId: 'kids', action: 'block', reason: 'profile_deny', scope: 'all', match: { entry: 'ads.example', kind: 'domain' } });
+    assert.deepEqual(svc.test({ domain: 'games.example', profileId: 'kids' }), { domain: 'games.example', profileId: 'kids', action: 'block', reason: 'profile_deny', scope: 'profile', match: { entry: 'games.example', kind: 'domain' } });
+    const cat = svc.test({ domain: 'www.tiktok.com', key: 'peer:2' });
+    assert.deepEqual([cat.reason, cat.category, cat.scope, cat.match], ['schedule_category', 'social', null, { entry: 'tiktok.com', kind: 'domain' }]);
+    assert.deepEqual(svc.test({ domain: 'ok.example', key: 'peer:1' }), { domain: 'ok.example', profileId: 'default', action: 'allow', reason: 'default', scope: null, match: null });
+    await svc.handle(query('ads.example', '10.8.0.11'), { ip: '127.0.0.1', udp: true });
+    await svc.handle(query('games.example', '10.8.0.12'), { ip: '127.0.0.1', udp: true });
+    await svc.handle(query('tiktok.com', '10.8.0.12'), { ip: '127.0.0.1', udp: true });
+    await svc.handle(query('ok.example', '10.8.0.11'), { ip: '127.0.0.1', udp: true });
+    const t = svc.take();
+    assert.deepEqual(t.blockedBy, { denyAll: 1, denyProfile: 1, schedule: 1 });
+    assert.equal(t.stats.blocked, 3);
+    assert.deepEqual(svc.take().blockedBy, {}, 'taken once');
+    writeConfig(dir, baseConfig(ports, { rev: 3 }));
+    await svc.loadConfig(true);
   });
 
   it('the probe of the chain is answered without the upstream; the canary of Firefox is NXDOMAIN', async () => {
