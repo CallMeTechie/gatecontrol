@@ -7,6 +7,8 @@ const { lanFetch } = require('../utils/lanFetch');
  * One client instance per Pi-hole server; caches the session SID.
  */
 
+const REQUEST_TIMEOUT_MS = 8000;
+
 function getNestedValue(obj, path) {
   return path.split('.').reduce((acc, key) => (acc != null ? acc[key] : undefined), obj);
 }
@@ -47,7 +49,9 @@ function createClient(instance) {
 
   async function doFetch(path, options = {}) {
     const url = `${baseUrl}${path}`;
-    const fetchOptions = { ...options };
+    // Without a limit a request to an instance that vanished mid-connection
+    // waits for undici's 5-minute header timeout and holds the whole sync round.
+    const fetchOptions = { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), ...options };
     if (dispatcher) {
       fetchOptions.dispatcher = dispatcher;
     }

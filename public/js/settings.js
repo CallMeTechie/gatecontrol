@@ -1543,6 +1543,12 @@
         return out;
       }),
     });
+    // Hint only (never a block): every DNS address is one gateway's tunnel address.
+    const renderPhHint = (gw) => {
+      const hint = $('st-ph-gwhint');
+      hint.textContent = gw ? t('st.ph.single_gateway', { name: gw.name, ip: gw.ip }) : '';
+      hint.hidden = !gw;
+    };
     const renderPh = () => {
       clear(phList);
       setStatus('pihole', tp('st.ph.status', phInstances.length));
@@ -1604,12 +1610,13 @@
     $('st-ph-url').addEventListener('blur', () => {
       const dns = $('st-ph-dns');
       if (dns.value.trim()) return;
-      try { dns.value = new URL($('st-ph-url').value.trim()).hostname; } catch (_) { /* still typing */ }
+      // only an IP: the DNS address becomes a dnsmasq upstream, a hostname cannot
+      try { const h = new URL($('st-ph-url').value.trim()).hostname.replace(/^\[|\]$/g, ''); if (/^(\d{1,3}\.){3}\d{1,3}$/.test(h) || h.includes(':')) dns.value = h; } catch (_) { /* still typing */ }
     });
     const storeInstances = async (instances) => {
       // Saved values of the other fields: unsaved edits stay in the save bar.
       const r = await put('/api/v1/settings/pihole', phPayload(Object.assign({}, phSaved, baseline.pihole || {}), instances));
-      if (r.ok) { const fresh = await get('/api/v1/settings/pihole'); phInstances = ((fresh.ok && fresh.data.instances) || instances).slice(); renderPh(); }
+      if (r.ok) { const fresh = await get('/api/v1/settings/pihole'); phInstances = ((fresh.ok && fresh.data.instances) || instances).slice(); renderPh(); renderPhHint(fresh.ok ? fresh.data.chain_single_gateway : null); }
       return r;
     };
     $('st-ph-add').addEventListener('click', () => openPh(-1));
@@ -1657,12 +1664,14 @@
         const c = r.data;
         phInstances = (c.instances || []).slice();
         renderPh();
+        renderPhHint(c.chain_single_gateway);
         Object.assign(phSaved, { 'ph-on': !!c.enabled, 'ph-chain': !!c.manage_dns_chain, 'ph-sync': c.sync_interval_sec || 30, 'ph-top': c.top_clients_count || 1000 });
         fill('pihole', phSaved);
       },
       groups: [{
         fields: ['ph-on', 'ph-chain', 'ph-sync', 'ph-top'], map: { sync_interval_sec: 'ph-sync', top_clients_count: 'ph-top' },
         save: (v) => api.put('/api/v1/settings/pihole', phPayload(v, phInstances)),
+        after: async () => { const r = await get('/api/v1/settings/pihole'); if (r.ok) renderPhHint(r.data.chain_single_gateway); },
       }],
     };
   }

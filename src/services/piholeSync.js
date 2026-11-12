@@ -9,20 +9,20 @@ const {
   mapClientsToPeers,
   detectAttribution,
 } = require('./piholeAggregate');
-const { buildDnsToken } = require('./piholeDnsChain');
 const logger = require('../utils/logger');
 
-const REVERT_AFTER = 2;
-
 /**
- * createSync(deps) — Pi-hole poll/aggregate loop with reconciliation + auto-revert.
+ * createSync(deps) — Pi-hole poll/aggregate loop with reconciliation.
+ *
+ * The DNS chain is NOT decided here: whether the API answers says nothing
+ * about whether the resolver does (and the other way round), and a sync round
+ * can take as long as the interval. piholeDnsWatch.js asks the DNS itself.
  *
  * deps:
  *   loadConfig()      → { enabled, sync_interval_sec, manage_dns_chain, instances[] }
  *   clientFactory(inst) → piholeClient
  *   peersProvider()   → [{ id, name, ip }] — may be sync OR async
  *   eventBus          → { publish(type, payload) }
- *   dnsChain          → { apply(ips), revert() }
  *   now()             → Date.now() (ms) — injectable for tests
  *   loadDesired()     → { enabled, timer_ends_at } | null
  */
@@ -32,14 +32,12 @@ function createSync(deps) {
     clientFactory,
     peersProvider,
     eventBus,
-    dnsChain,
     now = () => Date.now(),
     loadDesired = () => null,
   } = deps;
 
   let intervalId = null;
-  let downCycles = 0;
-  let chainReverted = false;
+  let cycleRunning = false;
 
   // Client cache: Map<instanceId, { sig: string, client: piholeClient }>
   // Avoids re-creating (and re-logging-in) clients on every sync cycle,
@@ -210,32 +208,6 @@ function createSync(deps) {
       cache = { ...cache, instances, lastSyncAt: now() };
     }
 
-    // Auto-revert DNS chain logic
-    if (config.manage_dns_chain) {
-      if (ok.length === 0) {
-        downCycles++;
-        if (downCycles >= REVERT_AFTER && !chainReverted) {
-          try {
-            dnsChain.revert();
-          } catch (err) {
-            logger.warn({ err: err.message }, 'pihole dnsChain.revert() failed');
-          }
-          chainReverted = true;
-        }
-      } else {
-        downCycles = 0;
-        if (chainReverted) {
-          const tokens = config.instances.map(buildDnsToken).filter(Boolean);
-          try {
-            dnsChain.apply(tokens);
-          } catch (err) {
-            logger.warn({ err: err.message }, 'pihole dnsChain.apply() failed');
-          }
-          chainReverted = false;
-        }
-      }
-    }
-
     eventBus.publish('pihole', {
       summary: cache.summary,
       blocking: cache.blocking,
@@ -250,10 +222,15 @@ function createSync(deps) {
     if (intervalId) return;
     const config = loadConfig();
     const intervalMs = (config.sync_interval_sec || 60) * 1000;
-    intervalId = setInterval(
-      () => require('../utils/loopStall').withTask('pihole.sync', syncOnce).catch(err => logger.warn({ err: err.message }, 'pihole sync cycle failed')),
-      intervalMs,
-    );
+    // A round against an unreachable instance can outlast a short interval:
+    // skip the tick instead of stacking rounds (and their logins) on top.
+    intervalId = setInterval(() => {
+      if (cycleRunning) return;
+      cycleRunning = true;
+      require('../utils/loopStall').withTask('pihole.sync', syncOnce)
+        .catch(err => logger.warn({ err: err.message }, 'pihole sync cycle failed'))
+        .finally(() => { cycleRunning = false; });
+    }, intervalMs);
     if (intervalId.unref) intervalId.unref();
   }
 

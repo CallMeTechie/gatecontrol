@@ -5,6 +5,7 @@ const { requireFeature } = require('../../../middleware/license');
 const { checkRanges, hasErrors, sendFieldErrors } = require('../../../utils/settingsValidate');
 const piholeConfig = require('../../../services/piholeConfig');
 const pihole = require('../../../services/pihole');
+const { isValidDnsTarget } = require('../../../services/piholeDnsChain');
 const logger = require('../../../utils/logger');
 
 const router = Router();
@@ -14,7 +15,7 @@ const router = Router();
  */
 router.get('/pihole', requireFeature('pihole_integration'), (req, res) => {
   const cfg = piholeConfig.load();
-  res.json({ ok: true, data: piholeConfig.redact(cfg) });
+  res.json({ ok: true, data: { ...piholeConfig.redact(cfg), chain_single_gateway: pihole.chainSingleGateway(cfg) } });
 });
 
 /**
@@ -25,6 +26,16 @@ router.put('/pihole', requireFeature('pihole_integration'), (req, res) => {
 
   if (!Array.isArray(body.instances)) {
     return res.status(400).json({ ok: false, error: req.t('error.settings.pihole_instances_invalid') });
+  }
+  // dns_ip/dns_port end up as a `server=` line in dnsmasq.conf.
+  for (const inst of body.instances) {
+    const hasIp = inst && inst.dns_ip !== undefined && inst.dns_ip !== null && inst.dns_ip !== '';
+    const hasPort = inst && inst.dns_port !== undefined && inst.dns_port !== null && inst.dns_port !== '';
+    if (!inst || typeof inst !== 'object'
+      || (hasIp && !isValidDnsTarget(inst))
+      || (!hasIp && hasPort && !isValidDnsTarget({ dns_ip: '127.0.0.1', dns_port: inst.dns_port }))) {
+      return res.status(400).json({ ok: false, error: req.t('error.settings.pihole_dns_invalid') });
+    }
   }
   const { values, fields } = checkRanges(req, body, { sync_interval_sec: [10, 3600], top_clients_count: [1, 5000] });
   if (hasErrors(fields)) return sendFieldErrors(req, res, fields);
