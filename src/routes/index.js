@@ -619,6 +619,8 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
     if (template === 'dashboard') {
       // "Plugins brauchen deine Hilfe": open Einrichtungshinweise (plugin.json setupNotices)
       try { extraLocals.pluginSetup = isAdmin ? require('../services/plugins/setupNotices').summary(res.locals.language === 'en' ? 'en' : 'de') : []; } catch { extraLocals.pluginSetup = []; }
+      // DNS protection of the VPN devices: fell back / suspended for everybody (services/vpnDns.js; null without the plugin)
+      try { extraLocals.vpnDnsNotice = isAdmin ? JSON.stringify(require('../services/vpnDns').notice()).replace(/</g, '\\u003c') : 'null'; } catch { extraLocals.vpnDnsNotice = 'null'; }
       try {
         const { getDb } = require('../db/connection');
         extraLocals.needs_repair_gateways = getDb().prepare(`

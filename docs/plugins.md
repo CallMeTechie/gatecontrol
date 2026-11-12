@@ -353,6 +353,7 @@ unsigned build of the same id.
     "homePresence": true,
     "homeInternet": true,
     "homeCache": true,
+    "vpnDns": true,
     "groups": "read",
     "ai": { "purpose": { "de": "Dokumente erkennen", "en": "Recognise documents" }, "capabilities": ["text", "vision"] },
     "cloudImport": { "purpose": { "de": "Dateien aus Google Drive und OneDrive übernehmen", "en": "Take files from Google Drive and OneDrive" } }
@@ -1056,6 +1057,7 @@ module.exports = {
 | `gc.homeNetwork.presence.list()` / `.on(handler)` / `.consent(userId)` / `.setConsent(userId, on)` / `.devices(userId)` / `.setCounts(userId, deviceId, on)` | since 1.230.0: who is at home by their phone in the home network — only people who agreed themselves, never MAC/IP addresses (`homePresence`) — see "Presence over the home network" |
 | `gc.homeNetwork.internet.status(userId)` / `.pause(userId, untilISO \| minutes)` / `.resume(userId)` / `.extend(userId, minutes)` | since 1.231.0: the home DNS filter of a person — pause the internet, suspend the profile's times; changes only on behalf of a signed-in person (`homeInternet`), since 1.259.0 also for the person an automation names (`{ actor }`) — see "Internet at home" |
 | `gc.homeCache.offer({ mediaId, kind, userIds, priority })` / `.withdraw(mediaId)` / `.lanHint(sha256 \| { mediaId }, req)` | since 1.231.0: keep the plugin's files on the gateways' home caches and send an app in the home network there (`homeCache`) — see "Home cache"; since 1.249.0 also GateControl's previews of them (`preview`, `.lanHints([…], req)`) |
+| `gc.vpnDns.status()` / `.get()` / `.set(patch)` / `.devices()` / `.lists()` / `.stats()` / `.test(domain, who)` / `.pause(target)` / `.resume(target)` / `.pauses()` / `.log(query)` / `.restart()` / `.on(handler)` … | since 1.264.0: the DNS protection of the VPN devices — the host filters (its own filter service behind dnsmasq), the plugin sets lists, own entries and profiles for groups, people and devices, suspends the protection and reads counters; changes on behalf of a signed-in person or `{ actor }` (`vpnDns`) — see "DNS protection" |
 | `gc.ai.available({ capability })` / `gc.ai.status()` | since 1.214.0: is AI usable for the plugin (asks no provider) / `{ available, mediaAllowed, capabilities, budgetLeftCents }` (`ai`) — see "AI requests" |
 | `gc.ai.extract({ task, user, instructions, input, schema, maxOutputTokens, timeoutMs })` / `gc.ai.generate({ … })` | since 1.214.0: structured data checked against a schema / free text from the AI provider set up in GateControl → `{ ok, data \| text, provider, model, usage, fallback }` (`ai`) — see "AI requests" |
 | `gc.groups.list/get/members/isMember/leadersOf(…)` | the person groups of GateControl (`groups`) — see "Groups" |
@@ -2921,6 +2923,123 @@ No library, no CDN (`public/js/plugin-camera-player.js`). Without the script (an
 `ERR_CAMERA_NOT_READY`, `ERR_CAMERA_SERVICE_MISSING`, `ERR_CAMERA_LIMIT`, `ERR_CAMERA_TLS` (1.242.0:
 the camera's HTTPS certificate is not trusted — offer "Zertifikat nicht prüfen"). Who may
 see which camera is the plugin's to decide.
+
+## DNS protection (`permissions.vpnDns`)
+
+Since 1.264.0. GateControl filters the DNS of the **VPN devices** itself: a
+filter service — a process of its own beside the server (supervisord program
+`dnsfilter`, `src/services/vpnDnsFilter/service.js`), built on the DNS filter
+engine of the gateways (`src/services/vpnDnsFilter/dnsfilter-core/`, a mirrored
+copy, see `VENDORED.md` there) — sits behind dnsmasq as the provider `vpnfilter`
+of the DNS chain (`src/services/dnsChain.js`). dnsmasq keeps answering the
+internal names and hands everything else to the filter together with the
+address of the asking device; a filter that does not answer is replaced by the
+default upstreams within seconds (the internet of the devices never depends on
+it). The plugin "DNS-Schutz" (`gatecontrol-dns`) is built on this API: the host
+filters, the plugin decides what is blocked for whom, suspends the protection
+and reads counters. Code: `src/services/vpnDns.js`, host API `vpnDnsCall` in
+`src/services/plugins/hostApi.js`.
+
+```json
+"permissions": { "vpnDns": true }
+```
+
+The install dialog names it first and as sensitive: "DNS der VPN-Geräte
+filtern". Without it `gc.vpnDns` does not exist and the host answers
+`ERR_VPN_DNS_DENIED`; an older GateControl ignores the permission and
+`gc.vpnDns` is missing — check for it (`gc.vpnDns.version` is `1`).
+
+**Nothing runs without such a plugin.** The filter service is started, and the
+DNS chain claimed, only while the settings say `enabled` **and** a plugin with
+the permission may run (installed, enabled, compatible, licensed). Disabling or
+removing the plugin, or a licence that ran out, switches the service off and
+gives the chain back (to Pi-hole, when Pi-hole manages the chain, else the
+default upstreams); the settings stay.
+
+| Call | Answer / rule |
+|---|---|
+| `gc.vpnDns.status()` | `{ available, enabled, blockedBy: null \| 'internal_dns_off', state: 'off' \| 'starting' \| 'filtering' \| 'fallback', since (ISO), chain: 'filter' \| 'pihole' \| 'default', pihole: { configured, wantsChain, chain: 'off' \| 'active' \| 'displaced' \| 'fallback' }, pause: suspension for all devices \| null, pauses: n (devices / people), service: { running, ready, pid, startedAt, port, listen, upstream, memory: { rss, lists }, cacheEntries, truncated, failOpen, asOf } \| { running: false }, peers: { filtered, ownDns, excluded, gateways, suspended }, lists: [used lists], today: { queries, blocked, cached }, log: { enabled, retentionDays } }` |
+| `gc.vpnDns.catalog()` | `{ lists: [{ id, source, home, license, format, entries, defaultOn }], categories: [{ id, domains }], providers: [{ id, label, home }], limits }` — the lists, categories and upstream providers of the gateways' DNS filter (`src/services/homeDnsCatalog.js`), plus the provider `system` (the server's plain resolvers, no DoH) |
+| `gc.vpnDns.get()` | the settings, see below |
+| `gc.vpnDns.set(patch, { actor }?)` | changes the named top-level keys → the new settings. **Administrator** |
+| `gc.vpnDns.devices()` | every peer: `{ peerId, name, ip, type: 'peer' \| 'gateway', platform, user: { id, name, role } \| null, peerGroup: { id, name } \| null, state: 'filtered' \| 'ownDns' \| 'excluded' \| 'gateway' \| 'disabled', ownDns: '1.1.1.1' \| null, profile: { id, name } \| null, via: 'peer' \| 'user' \| 'peerGroup' \| 'group' \| 'default' \| null, viaId, suspended, suspendedUntil (ISO \| null = open end), suspendedBy: 'all' \| 'peer' \| 'user' \| null, today: { queries, blocked } \| null }` — `today` only with the query log on |
+| `gc.vpnDns.lists()` | `{ lists: [{ id, source, home, license, defaultOn, used, loaded, entries, estimated, updatedAt, checkedAt, error, profiles: [profile ids] }], memoryBytes, entries, asOf }` — what the service has loaded (`estimated`: the catalogue's rough size, not loaded) |
+| `gc.vpnDns.refreshLists({ actor }?)` | "Jetzt aktualisieren" → `{ started: true }`. **Administrator** |
+| `gc.vpnDns.stats({ days = 7 }?)` | `{ today: { day, queries, blocked, cached, top: [{ domain, count }] }, days: [{ day, queries, blocked, cached }], top (of the range), perPeer, perPeerToday: [{ peerId, queries, blocked }] \| null }` — days in the server's time zone, at most 90; per device only with the query log on |
+| `gc.vpnDns.test(domain, { peerId \| userId \| profileId }?)` | "Domain prüfen", asked from the service (it has the lists): `{ domain, action: 'allow' \| 'block', reason, list, category, safeSearch, profile: { id, name } \| null, device, filtered }`; without a target the default profile. Reasons: `list`, `profile_deny`, `profile_allow`, `schedule`, `schedule_category`, `default`, `no_profile` (unfiltered), `suspended`, `internal`, `local`, `canary` |
+| `gc.vpnDns.pauses()` | the running suspensions: `[{ scope: 'all' \| 'peer' \| 'user', id, until (ISO \| null), openEnd, since, by: { userId, name } \| null, automated }]` |
+| `gc.vpnDns.pause({ scope, id?, minutes \| until \| forever: true }, { actor }?)` | suspends the protection for all VPN devices, one device (`peer`) or all devices of a person (`user`) — `minutes` 1…10080, `until` ISO at most 7 days ahead, `forever` = until switched on again. Replaces a running suspension of the same target ("+30 Min.") → the suspension |
+| `gc.vpnDns.resume({ scope, id? }, { actor }?)` | → `true` when a suspension ended |
+| `gc.vpnDns.restart({ actor }?)` | "Filter-Dienst neu starten" → `{ restarting: true, how: 'asked' \| 'killed' \| 'not_running' }`. **Administrator** |
+| `gc.vpnDns.releasePihole({ actor }?)` | the last step of moving from Pi-hole: Pi-hole stops asking for the DNS chain (`manage_dns_chain` off) → `status().pihole`. Only while `state` is `filtering` (`ERR_NOT_FILTERING`). **Administrator** |
+| `gc.vpnDns.log({ limit ≤ 500, before, peerId, userId, blockedOnly, search, since }?)` | the query log, newest first: `{ entries: [{ id, at, peerId, name, type, action, reason, profileId, list }], next }` (`next` → `before` of the next page); `ERR_LOG_OFF` while it is off |
+| `gc.vpnDns.clearLog({ actor }?)` | → `{ removed }` (also the counters per device). **Administrator** |
+| `gc.vpnDns.on(handler)` | events: `{ type: 'fallback' \| 'restored' \| 'paused' \| 'resumed', at, scope?, id?, until?, openEnd?, by?, reason?: 'manual' \| 'expired' }` → `off()` |
+
+**Settings** (`get` / `set`):
+
+```js
+{
+  enabled: false,
+  upstream: { provider: 'quad9' | 'cloudflare' | 'custom' | 'system', url, fallbackRouter: true },
+  blockResponse: 'zero' | 'nxdomain',
+  allow: ['paypal.com'],            // "Immer erlaubt" — in every profile
+  deny: ['temu.com'],               // "Immer gesperrt" — in every profile
+  log: { enabled: false, retentionDays: 7 },
+  excluded: [peerId],               // devices that are never filtered
+  profiles: [{                      // profiles[0] is the default profile (id 'default', no members)
+    id, name, lists: ['ads'], safeSearch, allow: [], deny: [],
+    schedules: [{ days: [1..7], from: 'HH:MM', to: 'HH:MM' | '24:00', block: 'all' | 'categories', categories: [], allowAlways: [] }],
+    groups: [groupId], peerGroups: [peerGroupId], users: [userId], peers: [peerId],
+  }],
+}
+```
+
+`set({ profiles })` replaces the list: a profile is matched by its `id` and
+keeps the fields the patch does not name, one without an `id` is new (the
+host makes the id), one that is missing is deleted. Which profile holds for a
+device: its own (`peers`) beats the person's (`users`, the owner of the peer)
+beats the peer group's (`peerGroups`) beats a person group's (`groups`, with
+subgroups) — else the default profile. Gateways are never filtered; a device
+with a DNS server of its own (`state: 'ownDns'`) does not ask the server.
+Patterns and times follow the gateways' DNS filter (a pattern holds for the
+domain and its subdomains; times in the server's time zone). Up to 16
+profiles, 200 patterns per field.
+
+**Who acts.** Reading works anywhere (also in `tick` and in a hook). A change
+needs an acting person: the one person with a **changing request
+(POST/PUT/PATCH/DELETE)** to this plugin in flight, or the person the plugin
+names itself — `{ actor: userId }` (needed when several people change
+something at the same moment, and for an automation; logged as automated when
+that person has no changing request in flight). The actor is written to the
+activity log. `set`, `refreshLists`, `restart`, `releasePihole` and `clearLog`
+need an administrator as the actor (`ERR_NOT_ADMIN`). `pause` / `resume` are
+open to everybody — **the plugin decides who may suspend for whom and for how
+long** (own devices, parents for their children, the longest duration, whether
+"until I switch it on again" is offered). The host only keeps two fixed
+rules (`ERR_FORBIDDEN`): for all devices only an administrator, and for the
+devices of an administrator nobody but an administrator or that person.
+"Parent" is not a host role: the family plugin mirrors the family as a person
+group of kind `family` with the roles `parent` / `child` — read it with
+`permissions.groups: "read"` (`gc.groups.list` / `members`).
+
+Suspended means **unfiltered**, never "no internet". While the protection is
+suspended for all devices nothing is counted. Switching the protection off
+(`enabled: false`) ends every suspension. The query log is off by
+default; without it only totals and the top blocked domains are kept —
+nothing per device. Switching it off deletes it.
+
+**Apps.** A plugin with `permissions.app` serves the apps through its client
+API (`/api/v1/client/plugins/<id>/api/…`, see "App"); with `permissions.vpnDns`
+`req.user.peerId` is the VPN peer of the asking device (the ids of
+`devices()`; `null` for a token without a peer). `GET
+/api/v1/client/permissions` carries `vpnDns: { plugin, state } | null` so an
+app knows whether the server has the DNS protection and which plugin to ask.
+
+Errors: `ERR_VPN_DNS_DENIED`, `ERR_INVALID` (the message names the field),
+`ERR_NOT_FOUND`, `ERR_NOT_PERSON`, `ERR_NOT_ADMIN`, `ERR_FORBIDDEN`,
+`ERR_UNAVAILABLE` (the filter service does not answer), `ERR_LOG_OFF`,
+`ERR_NOT_FILTERING`.
 
 ## AI requests (`permissions.ai`)
 
@@ -4847,7 +4966,9 @@ natively from the plugin's API — no plugin HTML). Code:
 * **Viewer**: the owner of the token as `req.user = { id, name, role, portal:
   true, loggedIn: true, app: true }` (the quick actions' viewer; since
   1.193.0 plus `device: { id, platform }` for plugins with
-  `permissions.devices` — see "Devices"). `app: true`
+  `permissions.devices` — see "Devices"; since 1.264.0 plus `peerId`, the
+  VPN peer of the asking device, for plugins with `permissions.vpnDns` — see
+  "DNS protection"). `app: true`
   tells the plugin the call comes from an app; the plugin decides itself what
   an app user may do. A token without an owner gets no plugins (and 403 for
   the API).

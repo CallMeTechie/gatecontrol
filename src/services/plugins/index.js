@@ -156,6 +156,8 @@ function permissionSummary(m, lang) {
     // phase 3b: internet of a person at home (pause, extra time) / files in the gateways' home caches
     homeInternet: !!p.homeInternet,
     homeCache: !!p.homeCache,
+    // DNS protection of the VPN devices (gc.vpnDns) — shown as a sensitive permission
+    vpnDns: !!p.vpnDns,
     // phase 3c: printers and scanners at home through the gateways (gc.print)
     print: !!p.print,
     // phase 3c, step 2: the Bluetooth sensors of the gateways (gc.radio)
@@ -406,6 +408,8 @@ function reconcile() {
     try { require('../kiosk').invalidate(); } catch { /* not loaded */ }
     // gateways get their new target state (a plugin switched off on the server stops on the gateways too)
     try { require('../edge/hub').refreshSoon(); } catch { /* not loaded */ }
+    // DNS protection of the VPN devices: runs only while a plugin with permissions.vpnDns may run
+    try { require('../vpnDns').pluginsChanged(); } catch { /* not loaded */ }
   };
   reconciling = reconciling.then(run, run);
   return reconciling;
@@ -482,6 +486,8 @@ async function removeInstalled(p, mode) {
   }
   // An uninstalled plugin marks nobody as a kiosk user any more.
   require('../kiosk').invalidate();
+  // … and the DNS protection of the VPN devices ends with the plugin that held permissions.vpnDns
+  try { require('../vpnDns').pluginsChanged(); } catch { /* not loaded */ }
 }
 
 /**

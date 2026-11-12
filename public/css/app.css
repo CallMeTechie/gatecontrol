@@ -4856,6 +4856,8 @@ body.au-page { display: flex; flex-direction: column; align-items: center; justi
 .db-banner-warn{background:var(--amber-bg); border-color:var(--amber-bd); align-items:flex-start}
 .db-banner-ic{width:28px; height:28px; flex:0 0 auto; border-radius:50%; display:grid; place-items:center; background:var(--surface); color:var(--db-accent-ink)}
 .db-banner-warn .db-banner-ic{color:var(--db-warn-ink)}
+.db-banner-danger{background:var(--red-bg); border-color:var(--red-bd); align-items:flex-start}
+.db-banner-danger .db-banner-ic{color:var(--red)}
 .db-banner-ic svg{width:15px; height:15px}
 .db-banner-text{flex:1 1 260px; min-width:0; font-size:13.5px; display:flex; flex-direction:column; gap:2px}
 .db-banner-sub{color:var(--db-muted); font-size:13px}

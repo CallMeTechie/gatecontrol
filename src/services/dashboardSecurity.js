@@ -15,6 +15,9 @@
 //   pihole   blocked share and query count of Pi-hole's own summary window
 //            (synced cache, no request to Pi-hole) — only with
 //            `pihole_integration` and once a sync has data
+//   vpnDns   today's queries and blocked share of the DNS protection of the
+//            VPN devices (services/vpnDns.js) — only while it is switched on
+//            by a plugin with permissions.vpnDns
 //   check    the security check summary + the ids of the open findings
 //
 // Every query is an indexed range or a small aggregate (no log scans); the
@@ -102,6 +105,13 @@ function piholeSummary() {
   };
 }
 
+function vpnDnsSummary() {
+  const vd = require('./vpnDns');
+  if (!vd.notice()) return null; // not switched on (or no plugin that may use it)
+  const t = vd.stats({ days: 1 }).today;
+  return { total: t.queries, blocked: t.blocked, percent: t.queries > 0 ? Math.round((t.blocked / t.queries) * 1000) / 10 : 0 };
+}
+
 async function checkSummary(userId, t) {
   const res = await require('./securityCheck').runCheck({ userId });
   const checks = Array.isArray(res.checks) ? res.checks : [];
@@ -137,6 +147,7 @@ async function build({ userId, t, now }) {
     logins: section('logins', () => loginSummary(db)),
     bots: hasFeature('bot_blocking') ? section('bots', () => botSummary(db)) : null,
     pihole: hasFeature('pihole_integration') ? section('pihole', () => piholeSummary()) : null,
+    vpnDns: section('vpnDns', () => vpnDnsSummary()),
     check: null,
   };
   try { out.check = await checkSummary(userId, t); }

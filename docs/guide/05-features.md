@@ -149,6 +149,13 @@ explains how.
 
 **Check:** The “Check” in the guide says “Router points to the gateway”.
 
+**On the road (VPN devices):** the gateway's DNS filter only works in the home
+network. For phones and laptops connected by VPN the server filters itself –
+with the plugin "DNS-Schutz" (Settings › Plugins). It uses the same lists and
+categories. If the filter on the server fails, the internet of the devices
+keeps working unfiltered; the dashboard says so. Without the plugin nothing
+changes, not for an existing Pi-hole integration either.
+
 ## Print & scan
 
 **What for:** Print at home while you are out (the boarding pass is in the

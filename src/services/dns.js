@@ -287,6 +287,10 @@ function rebuildNow() {
   const entries = content.split('\n').filter((l) => l && !l.startsWith('#')).length;
   logger.info({ entries, path: config.dns.hostsFile }, 'DNS hosts-file rebuilt');
 
+  // The filter service of the DNS protection knows the peers by address and
+  // never blocks the names in this file: tell it (a no-op while it is off).
+  try { require('./vpnDns').refreshSoon(); } catch (err) { logger.debug({ err: err.message }, 'vpn dns not refreshed'); }
+
   // SIGHUP dnsmasq — pkill tolerates the process not running (exit 1),
   // we log that as a warning rather than propagating because a missing
   // dnsmasq during tests or cold-start is not a Node-process error.

@@ -276,7 +276,11 @@
     }
     const chainCell = document.getElementById('ph-health-chain');
     if (chainCell) {
-      replaceChildren(chainCell, fallback
+      // displaced: the DNS protection (filter service) owns the chain, Pi-hole is not asked
+      chainCell.title = chain.displacedBy === 'vpnfilter' ? T('pihole.chain_displaced_hint', '') : '';
+      replaceChildren(chainCell, chain.displacedBy === 'vpnfilter'
+        ? badge('tag-grey', T('pihole.chain_displaced', 'Replaced by DNS protection'))
+        : fallback
         ? badge('tag-amber', T('pihole.chain_fallback', 'Fallback'))
         : chain.state === 'pihole'
           ? badge('tag-green', T('pihole.chain_pihole', 'Via Pi-hole'))

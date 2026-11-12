@@ -180,7 +180,9 @@ class PluginProcess {
       // gc.radio: permissions.radio (phase 3c, step 2)
       radio: perms.radio === true,
       // gc.cameras: permissions.cameras (phase 3c, step 4)
-      cameras: perms.cameras === true };
+      cameras: perms.cameras === true,
+      // gc.vpnDns: permissions.vpnDns (DNS protection of the VPN devices)
+      vpnDns: perms.vpnDns === true };
     child.send({ t: 'init', plugin: { id: p.id, version: p.version, entry, filesDir: files, features } });
   }
 

@@ -1049,6 +1049,11 @@
     subtile('pihole', ph, ph ? UI.fmtPercent(ph.percent, LANG) : '', ph
       ? t('dashboard.sec_pihole_sub', { n: UI.fmtNumber(ph.total, LANG) })
       : '');
+    // DNS protection of the VPN devices (today) — only while a plugin has it switched on
+    var vd = d.vpnDns;
+    subtile('vpndns', vd, vd ? UI.fmtPercent(vd.percent, LANG) : '', vd
+      ? t('dashboard.sec_vpndns_sub', { n: UI.fmtNumber(vd.total, LANG) })
+      : '');
 
     var row = $('db-sec-check');
     var c = d.check;
@@ -1075,6 +1080,7 @@
     'gc:security': ['security', 'problems'],
     'gc:waf': ['security'],
     'gc:pihole': ['security'],
+    'gc:vpn_dns': ['security'],
   };
   Object.keys(SSE).forEach(function (ev) {
     document.addEventListener(ev, function () { refreshSoon(SSE[ev]); });
@@ -1083,7 +1089,57 @@
   document.addEventListener('gc:reconnected', function () {
     if (!state.lastOk) return; // the initial connect — the first tick is already running
     refreshSoon(Object.keys(jobs));
+    loadVpnDns();
   });
+
+  // ─── DNS protection of the VPN devices: outage / suspended for everybody ───
+  // The notice comes with the page (#db-vpndns-data) and with every event
+  // `vpn_dns`; null (no plugin, or everything is fine) hides the banner.
+  function clock(iso) {
+    var d = iso ? new Date(iso) : null;
+    return d && !isNaN(d) ? d.toLocaleTimeString(LANG, { hour: '2-digit', minute: '2-digit' }) : '';
+  }
+  function renderVpnDns(n) {
+    var box = $('db-vpndns');
+    if (!box) return;
+    var kind = n && n.kind;
+    box.hidden = !kind;
+    if (!kind) return;
+    var down = kind === 'fallback';
+    box.classList.toggle('db-banner-danger', down);
+    box.classList.toggle('db-banner-warn', !down);
+    box.dataset.kind = kind;
+    $('db-vpndns-open').href = n.plugin ? '/settings/plugins/manage/' + encodeURIComponent(n.plugin) : '/settings/plugins';
+    $('db-vpndns-resume').hidden = down;
+    if (down) {
+      $('db-vpndns-title').textContent = t('dashboard.vpndns.down_title');
+      $('db-vpndns-text').textContent = t('dashboard.vpndns.down_text', { time: clock(n.since) });
+    } else {
+      $('db-vpndns-title').textContent = n.openEnd ? t('dashboard.vpndns.paused_title_open') : t('dashboard.vpndns.paused_title', { time: clock(n.until) });
+      $('db-vpndns-text').textContent = n.by ? t('dashboard.vpndns.paused_by', { name: n.by }) : t('dashboard.vpndns.paused_all');
+    }
+  }
+  function loadVpnDns() {
+    if (!$('db-vpndns')) return;
+    api('/api/v1/system/dns/protection').then(function (j) { if (j && j.ok) renderVpnDns(j.notice); }).catch(function () { /* next event */ });
+  }
+  (function () {
+    var data = $('db-vpndns-data');
+    var first = null;
+    try { first = data ? JSON.parse(data.textContent || 'null') : null; } catch (_) { first = null; }
+    renderVpnDns(first);
+    var btn = $('db-vpndns-resume');
+    if (btn) {
+      btn.addEventListener('click', function () {
+        btn.disabled = true;
+        window.api.post('/api/v1/system/dns/protection/resume', {})
+          .then(function (j) { if (j && j.ok) renderVpnDns(j.notice); })
+          .catch(function () { /* the banner stays; the next event corrects it */ })
+          .then(function () { btn.disabled = false; });
+      });
+    }
+    document.addEventListener('gc:vpn_dns', function (ev) { renderVpnDns(ev.detail && ev.detail.notice); });
+  })();
 
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) {

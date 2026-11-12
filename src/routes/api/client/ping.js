@@ -10,6 +10,10 @@ const clientPolicy = require('../../../services/clientPolicy');
 
 const router = Router();
 
+function vpnDnsInfo() {
+  try { return require('../../../services/vpnDns').clientInfo(); } catch { return null; }
+}
+
 // GET /api/v1/client/ping — health check, confirms auth works.
 router.get('/ping', (req, res) => {
   const { version } = require('../../../../package.json');
@@ -39,6 +43,9 @@ router.get('/permissions', (req, res) => {
       piholeControl: tokens.checkScope(scopes, '/api/v1/pihole/blocking', 'POST') && hasFeature('pihole_integration'),
     },
     scopes,
+    // DNS protection of the VPN devices: null, or the plugin that serves the apps
+    // (GET/POST /api/v1/client/plugins/<plugin>/api/…) and the state of the filter.
+    vpnDns: vpnDnsInfo(),
     // Client policy version (see GET /api/v1/client/policy)
     policyVersion: clientPolicy.versionFor(
       req.tokenPeerId != null ? (peers.getById(req.tokenPeerId) || null) : null,

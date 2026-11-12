@@ -42,15 +42,37 @@ jobs:
       - name: Vendored template drift check
         run: node scripts/check-vendored-templates.js
 
+      # The DNS filter engine of the gateways, mirrored for the DNS protection
+      # of the VPN devices (src/services/vpnDnsFilter/VENDORED.md).
+      - name: Vendored DNS filter engine drift check
+        run: node scripts/check-vendored-dnsfilter.js
+
       # JSON.parse keeps the last value of a duplicate key — three of them sat
       # in en.json for months without a single red test.
       - name: Duplicate i18n keys
         run: node scripts/check-i18n-duplicates.js
 
+      # tests/vpn_dns_filter_dnsmasq.test.js: the filter service of the DNS
+      # protection behind a real dnsmasq. Two extra local addresses stand for
+      # two VPN devices (a loopback address would be "the server itself").
+      - name: dnsmasq and two device addresses for the DNS filter test
+        run: |
+          for try in 1 2 3; do
+            if sudo apt-get update -q -o APT::Update::Error-Mode=any -o Acquire::Retries=3 \
+              && sudo apt-get install -y -q --no-install-recommends -o Acquire::Retries=3 dnsmasq-base; then break; fi
+            if [ "$try" = 3 ]; then echo "package mirror not reachable"; exit 1; fi
+            sleep 30
+          done
+          sudo ip addr add 198.18.53.2/32 dev lo
+          sudo ip addr add 198.18.53.3/32 dev lo
+          dnsmasq --version | head -1
+
       - name: Run tests with coverage
         run: npx c8 --reporter=text --reporter=lcov --lines 40 npm test
         env:
           NODE_ENV: test
+          # never skipped here: without dnsmasq or the addresses the test fails
+          GC_TEST_DNSMASQ: required
 
       # Only lcov.info of one Node version: the whole coverage/ folder holds
       # c8's raw V8 data (~100 MB per run) and filled the Actions storage.

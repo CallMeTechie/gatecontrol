@@ -1,0 +1,10 @@
+{
+  "id": "dns-demo",
+  "name": { "de": "DNS-Schutz-Demo", "en": "DNS protection demo" },
+  "version": "1.0.0",
+  "publisher": "GateControl Tests",
+  "description": { "de": "Plugin mit gc.vpnDns (Tests).", "en": "Plugin with gc.vpnDns (tests)." },
+  "gatecontrol": ">=1.0.0",
+  "entry": "server/index.js",
+  "permissions": { "vpnDns": true, "app": true, "users": true }
+}
