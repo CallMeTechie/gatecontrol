@@ -2950,7 +2950,10 @@ filtern". Without it `gc.vpnDns` does not exist and the host answers
 `gc.vpnDns` is missing — check for it. `gc.vpnDns.version` is `2` since
 1.265.0 (`1` before: no `match` / `scope` of `test()`, no `blockedBy`, no
 `pihole.targets`, no `scope` in the log) and `3` since 1.266.0 (the setting
-`blockForeignDns`, `status().foreignDns`, `devices()[].foreignDnsBlocked`).
+`blockForeignDns`, `status().foreignDns`, `devices()[].foreignDnsBlocked`)
+and `4` since 1.267.0 (profiles shared with a home network: `profile.home`,
+`homes()`; the setting `homeInternet`, `devices()[].internetPaused` /
+`.timesSuspended`, the reason `paused`, `blockedBy.pause`).
 
 **Nothing runs without such a plugin.** The filter service is started, and the
 DNS chain claimed, only while the settings say `enabled` **and** a plugin with
@@ -2970,6 +2973,7 @@ default upstreams); the settings stay.
 | `gc.vpnDns.refreshLists({ actor }?)` | "Jetzt aktualisieren" → `{ started: true }`. **Administrator** |
 | `gc.vpnDns.stats({ days = 7 }?)` | `{ today: { day, queries, blocked, cached, blockedBy, top: [{ domain, count }] }, days: [{ day, queries, blocked, cached, blockedBy }], blockedBy (of the range), top (of the range), perPeer, perPeerToday: [{ peerId, queries, blocked }] \| null }` — days in the server's time zone, at most 90; per device only with the query log on. `blockedBy` (version 2): the blocked queries by what blocked them, `{ list, denyAll, denyProfile, schedule, other }` — `denyAll` is "Immer gesperrt" for everybody, `denyProfile` the same entry of a profile; all zero for days counted by an older server |
 | `gc.vpnDns.test(domain, { peerId \| userId \| profileId }?)` | "Domain prüfen", asked from the service (it has the lists): `{ domain, action: 'allow' \| 'block', reason, list, category, safeSearch, scope, match, profile: { id, name } \| null, device, filtered }`; without a target the default profile. Version 2: `match: { entry, kind: 'domain' \| 'subdomains' \| 'exact' } \| null` is the entry that hit — of the list (`reason: 'list'`: `{ entry: 'tiktok.com', kind: 'domain' }` = "tiktok.com mit allen Unterseiten"; `exact` = this name only, hosts lists), of the own entries or of the category — and `scope: 'all' \| 'profile' \| null` says whether an own entry (`profile_deny`, `profile_allow`) holds for everybody or only in the profile. Reasons: `list`, `profile_deny`, `profile_allow`, `schedule`, `schedule_category`, `default`, `no_profile` (unfiltered), `suspended`, `internal`, `local`, `canary` |
+| `gc.vpnDns.homes()` | version 4 — the home networks whose DNS filter profiles can be shared: `[{ gateway: { peerId, name }, gateways: [{ peerId, name }], configured, enabled, profiles: [{ id, name, lists, safeSearch, allow, deny, schedules, users, devices (count), linkedTo: profile id here \| null }] }]` — one entry per home (a failover pool or one LAN is one home) |
 | `gc.vpnDns.pauses()` | the running suspensions: `[{ scope: 'all' \| 'peer' \| 'user', id, until (ISO \| null), openEnd, since, by: { userId, name } \| null, automated }]` |
 | `gc.vpnDns.pause({ scope, id?, minutes \| until \| forever: true }, { actor }?)` | suspends the protection for all VPN devices, one device (`peer`) or all devices of a person (`user`) — `minutes` 1…10080, `until` ISO at most 7 days ahead, `forever` = until switched on again. Replaces a running suspension of the same target ("+30 Min.") → the suspension |
 | `gc.vpnDns.resume({ scope, id? }, { actor }?)` | → `true` when a suspension ended |
@@ -2991,10 +2995,12 @@ default upstreams); the settings stay.
   log: { enabled: false, retentionDays: 7 },
   excluded: [peerId],               // devices that are never filtered
   blockForeignDns: false,           // "Fremden DNS und DoT sperren" (version 3), see below
+  homeInternet: true,               // "Internet pausieren" / "Zeit verlängern" of a person also hold for their VPN devices (version 4)
   profiles: [{                      // profiles[0] is the default profile (id 'default', no members)
     id, name, lists: ['ads'], safeSearch, allow: [], deny: [],
     schedules: [{ days: [1..7], from: 'HH:MM', to: 'HH:MM' | '24:00', block: 'all' | 'categories', categories: [], allowAlways: [] }],
     groups: [groupId], peerGroups: [peerGroupId], users: [userId], peers: [peerId],
+    home: null | { gateway: peerId, profile: 'id', gatewayName, name },   // the same as a profile of a home network (version 4)
   }],
 }
 ```
@@ -3026,6 +3032,38 @@ devices of an administrator nobody but an administrator or that person.
 "Parent" is not a host role: the family plugin mirrors the family as a person
 group of kind `family` with the roles `parent` / `child` — read it with
 `permissions.groups: "read"` (`gc.groups.list` / `members`).
+
+**A profile shared with a home network** (`home`, version 4 — "gilt zu Hause
+und unterwegs"). A profile can be *the same* as a profile of the DNS filter of
+a home gateway (`src/services/homeDns.js`): its lists, safe search, own
+entries, times and people (`lists`, `safeSearch`, `allow`, `deny`,
+`schedules`, `users`) then live in the home's settings. `get()` reads them from
+there, `set()` writes a change there (the home validates, its gateways are told
+to pull) — and a change on the gateway page holds for the VPN devices within
+seconds. Each side keeps its own: the name, the VPN members (`groups`,
+`peerGroups`, `peers`), the home's devices, and the entries for everybody
+(`allow` / `deny` here, "Ausnahmen" there). In a profile patch:
+`home: { gateway, profile }` takes that profile of the home over (its content
+replaces the profile's; what the same patch names besides is a change of it),
+`home: { gateway, create: true }` gives the home this profile (with this
+content and name) and shares it, `home: null` ends the sharing (both keep what
+they have). The default profiles only go with each other; a profile of a home
+is shared at most once. When the home's profile is deleted or its gateway is
+gone the link is dropped and the profile keeps its last content (activity
+`vpn_dns_home_unlinked`). What the home refuses (a name it has already, more
+than 64 people) comes back as `ERR_INVALID` with the field `profiles[i].home`,
+and nothing is saved on either side.
+
+**"Internet pausieren" of a person** (`homeInternet`, on by default, version
+4). The family plugin's pause and extra time (`gc.homeInternet`, enforced by
+the gateways at home) also hold for the person's filtered VPN devices: while
+paused only what is always allowed (and the server's own names) answers
+(`reason: 'paused'`, counted as `blockedBy.pause`), an extension suspends the
+times of the profile. A pause is **not** undone by suspending the protection
+("Unterbrechen" — for the device or for all devices), and the device keeps its
+firewall rules of `blockForeignDns`. `devices()[].internetPaused` /
+`.timesSuspended` (ISO or null) say so — a plugin should not offer
+"Unterbrechen" as a way out then. Devices that are excluded are not paused.
 
 **Foreign DNS and DoT** (`blockForeignDns`, off by default, version 3). A
 filtered device could simply ask another DNS server. With the setting on, the

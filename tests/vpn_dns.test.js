@@ -271,8 +271,8 @@ describe('manifest: permissions.vpnDns', () => {
   it('gc.vpnDns exists with the permission; installed but switched off, still nothing runs', async () => {
     const r = await agent.get(`/api/v1/plugins/${P}/api/has`).expect(200);
     assert.equal(r.body.vpnDns, true);
-    assert.equal(r.body.version, 3);
-    assert.deepEqual(r.body.methods, ['catalog', 'clearLog', 'devices', 'get', 'lists', 'log', 'on', 'pause', 'pauses', 'refreshLists', 'releasePihole',
+    assert.equal(r.body.version, 4);
+    assert.deepEqual(r.body.methods, ['catalog', 'clearLog', 'devices', 'get', 'homes', 'lists', 'log', 'on', 'pause', 'pauses', 'refreshLists', 'releasePihole',
       'restart', 'resume', 'set', 'stats', 'status', 'test', 'version']);
     const st = await ok('status');
     assert.equal(st.available, true);
@@ -499,7 +499,7 @@ describe('switched on: the service, the chain, the filter', () => {
     assert.equal(s.perPeer, null);
     assert.equal(s.perPeerToday, null);
     // blocked by what: a list, "Immer gesperrt" for everybody (temu.com) — nothing of a profile's own entries yet
-    assert.deepEqual(Object.keys(s.today.blockedBy), ['list', 'denyAll', 'denyProfile', 'schedule', 'other']);
+    assert.deepEqual(Object.keys(s.today.blockedBy), ['list', 'denyAll', 'denyProfile', 'schedule', 'pause', 'other']);
     assert.ok(s.today.blockedBy.list >= 2 && s.today.blockedBy.denyAll >= 1, JSON.stringify(s.today.blockedBy));
     assert.equal(s.today.blockedBy.denyProfile, 0);
     assert.equal(Object.values(s.today.blockedBy).reduce((a, b) => a + b, 0), s.today.blocked, 'every blocked query has one kind');
@@ -768,6 +768,180 @@ describe('foreign DNS and DoT ("Umgehung erschweren")', () => {
     await ok('set', { excluded: [] });
     await vpnDns.syncFirewall();
     assert.deepEqual([(await ok('status')).foreignDns.active, (await ok('status')).foreignDns.error], [true, null]);
+  });
+});
+
+describe('"Internet pausieren" of a person (family plugin) reaches their VPN devices', () => {
+  const who = () => ({ pluginId: 'gatecontrol-familie', actors: [anna] });
+  const keyLea = () => `peer:${leaPhone}`;
+
+  it('paused: only what is always allowed answers — for the person’s devices, for nobody else', async () => {
+    const hi = require('../src/services/homeInternet');
+    assert.equal(vpnDns.get().homeInternet, true);
+    hi.pause(lea, 30, who());
+    await waitFor(() => svc.cfg.policy.pauses.length === 1);
+    assert.deepEqual(svc.cfg.policy.pauses[0].clients, [keyLea()]);
+    assert.deepEqual((await askFilter('ok.example', '10.8.0.21')).a, ['0.0.0.0'], 'internet off');
+    assert.deepEqual((await askFilter('www.paypal.com', '10.8.0.21', { tcp: true })).a, [UP_IP], '"Immer erlaubt" still answers');
+    assert.equal((await askFilter('app.example.com', '10.8.0.21', { qtype: wire.TYPE.AAAA })).rcode, 0, 'the server’s own names too');
+    assert.deepEqual((await askFilter('ok.example', '10.8.0.12', { tcp: true })).a, [UP_IP], 'Anna is not paused');
+    const r = await ok('test', 'ok.example', { peerId: leaPhone });
+    assert.deepEqual([r.action, r.reason], ['block', 'paused']);
+    const d = (await ok('devices')).find((x) => x.peerId === leaPhone);
+    assert.ok(Date.parse(d.internetPaused) > Date.now());
+    assert.equal((await ok('devices')).find((x) => x.peerId === annaPhone).internetPaused, null);
+  });
+
+  it('suspending the protection ("Unterbrechen") does not switch the internet back on, nor does it lift the firewall rules', async () => {
+    await as(lea, 'vpnDns.pause', { target: { scope: 'peer', id: leaPhone, minutes: 5 } });
+    await waitFor(() => svc.cfg.suspended.keys.has(keyLea()));
+    assert.deepEqual((await askFilter('ok.example', '10.8.0.21')).a, ['0.0.0.0']);
+    assert.equal((await ok('test', 'ok.example', { peerId: leaPhone })).reason, 'paused');
+    await vpnDns.syncFirewall();
+    assert.ok(ipt.tables.nat.GC_VPNDNS_NAT.some((x) => x.includes('-s 10.8.0.21/32')), 'no way round over a foreign DNS server');
+    // … also not when an administrator suspends for all devices: only the paused devices keep their rules
+    await ok('pause', { scope: 'all', minutes: 5 });
+    await vpnDns.syncFirewall();
+    assert.deepEqual([...new Set(ipt.tables.nat.GC_VPNDNS_NAT.map((x) => /-s (\S+)\/32/.exec(x)).filter(Boolean).map((m) => m[1]))], ['10.8.0.21']);
+    assert.deepEqual((await askFilter('ok.example', '10.8.0.21')).a, ['0.0.0.0']);
+    await ok('resume', { scope: 'all' });
+  });
+
+  it('ended by the parent: the internet is back (and the suspension is what it was); counted as its own kind', async () => {
+    const hi = require('../src/services/homeInternet');
+    hi.resume(lea, who());
+    await waitFor(() => svc.cfg.policy.pauses.length === 0);
+    assert.deepEqual((await askFilter('ok.example', '10.8.0.21', { tcp: true })).a, [UP_IP]);
+    assert.deepEqual((await askFilter('adult.example', '10.8.0.21', { tcp: true })).a, [UP_IP], 'still suspended: unfiltered');
+    assert.equal(await as(lea, 'vpnDns.resume', { target: { scope: 'peer', id: leaPhone } }), true);
+    await waitFor(() => !svc.cfg.suspended.keys.has(keyLea()));
+    vpnDns._run.takeAt = 0;
+    await vpnDns.tick();
+    assert.ok((await ok('stats')).today.blockedBy.pause >= 2);
+    assert.equal((await ok('devices')).find((x) => x.peerId === leaPhone).internetPaused, null);
+  });
+
+  it('"Zeit verlängern" suspends the times of the profile on the VPN devices as well; the setting switches both off', async () => {
+    const hi = require('../src/services/homeInternet');
+    hi.extend(lea, 30, who());
+    await waitFor(() => svc.cfg.policy.extensions.length === 1);
+    assert.deepEqual(svc.cfg.policy.extensions[0].clients, [keyLea()]);
+    assert.ok(Date.parse((await ok('devices')).find((x) => x.peerId === leaPhone).timesSuspended) > Date.now());
+    hi.pause(lea, 30, who());
+    await waitFor(() => svc.cfg.policy.pauses.length === 1);
+    const s = await ok('set', { homeInternet: false });
+    assert.equal(s.homeInternet, false);
+    await waitFor(() => svc.cfg.policy.pauses.length === 0 && svc.cfg.policy.extensions.length === 0);
+    assert.deepEqual((await askFilter('ok.example', '10.8.0.21', { tcp: true })).a, [UP_IP], 'at home only');
+    assert.equal((await ok('devices')).find((x) => x.peerId === leaPhone).internetPaused, null);
+    await ok('set', { homeInternet: true });
+    hi.resume(lea, who());
+    hi.extend(lea, 0, who());
+    await waitFor(() => svc.cfg.policy.pauses.length === 0 && svc.cfg.policy.extensions.length === 0);
+    assert.equal((await call('set', { homeInternet: 1 })).code, 'ERR_INVALID');
+  });
+});
+
+describe('a profile shared with a home network ("gilt zu Hause und unterwegs")', () => {
+  let hd, homeKids, kidsId;
+  const vpnKids = async () => (await ok('get')).profiles.find((p) => p.id === kidsId);
+  const homeProfile = () => hd.get(gateway).profiles.find((p) => p.id === homeKids);
+  const ids = async () => (await ok('get')).profiles.map((p) => ({ id: p.id }));
+  const patchKids = async (patch) => ok('set', { profiles: (await ids()).map((p) => (p.id === kidsId ? { ...p, ...patch } : p)) });
+
+  it('homes(): the home networks and their profiles', async () => {
+    hd = require('../src/services/homeDns');
+    db.prepare('INSERT OR IGNORE INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, created_at) VALUES (?, 9876, ?, ?, ?)').run(gateway, 'h-' + gateway, 'x', Date.now());
+    kidsId = vpnDns.get().profiles[1].id;
+    assert.deepEqual(await ok('homes'), [{
+      gateway: { peerId: gateway, name: 'Pi Keller' }, gateways: [{ peerId: gateway, name: 'Pi Keller' }], configured: false, enabled: false,
+      profiles: [{ id: 'default', name: hd.get(gateway).profiles[0].name, lists: ['ads', 'malware'], safeSearch: false, allow: [], deny: [], schedules: [], users: [], devices: 0, linkedTo: null }],
+    }]);
+    hd.setGeneral(gateway, { enabled: true });
+    homeKids = hd.createProfile(gateway, { name: 'Kinder zu Hause', lists: ['ads', 'gambling'], safeSearch: false, deny: ['fortnite.com'], users: [lea],
+      schedules: [{ days: [1, 2, 3, 4, 5, 6, 7], from: '22:00', to: '06:00', block: 'all' }] }).id;
+    const h = (await ok('homes'))[0];
+    assert.deepEqual([h.configured, h.enabled, h.profiles.map((p) => [p.name, p.linkedTo])], [true, true, [[h.profiles[0].name, null], ['Kinder zu Hause', null]]]);
+  });
+
+  it('taking the home’s profile over: its lists, entries, times and people hold here — the members of the VPN stay', async () => {
+    const before = await vpnKids();
+    assert.deepEqual([before.home, before.lists, before.deny], [null, ['ads', 'adult'], ['roblox.com']]);
+    await patchKids({ home: { gateway, profile: homeKids } });
+    const p = await vpnKids();
+    assert.deepEqual(p.home, { gateway, profile: homeKids, gatewayName: 'Pi Keller', name: 'Kinder zu Hause' });
+    assert.deepEqual([p.name, p.lists, p.safeSearch, p.deny, p.users], ['Kinder', ['ads', 'gambling'], false, ['fortnite.com'], [lea]]);
+    assert.deepEqual(p.schedules.map((x) => [x.from, x.to, x.block]), [['22:00', '06:00', 'all']]);
+    assert.equal((await ok('homes'))[0].profiles[1].linkedTo, kidsId);
+    // the filter gets the home's content
+    await waitFor(() => svc.cfg.policy.profiles.find((x) => x.id === kidsId).deny.includes('fortnite.com'));
+    assert.deepEqual((await askFilter('fortnite.com', '10.8.0.21')).a, ['0.0.0.0']);
+    // checks: unknown gateway / profile, default only with default, one home profile only once
+    const bad = async (home, i = 1) => (await call('set', { profiles: (await ids()).map((x, j) => (j === i ? { ...x, home } : x)) }));
+    assert.match((await bad({ gateway: 99999, profile: homeKids })).error, /profiles\[1\]\.home\.gateway/);
+    assert.match((await bad({ gateway, profile: 'nope' })).error, /profiles\[1\]\.home\.profile/);
+    assert.match((await bad({ gateway, profile: 'default' })).error, /default profile/);
+    assert.match((await bad({ gateway, profile: homeKids }, 0)).error, /default profile/);
+    assert.match((await bad({ gateway, profile: homeKids }, 2)).error, /shared already/);
+  });
+
+  it('a change here is written to the home (and told to its gateways); a change at home holds here', async () => {
+    await patchKids({ deny: ['fortnite.com', 'roblox.com'], safeSearch: true, users: [lea, anna] });
+    assert.deepEqual([homeProfile().deny, homeProfile().safeSearch, homeProfile().users], [['fortnite.com', 'roblox.com'], true, [anna, lea].sort((a, b) => a - b)]);
+    assert.equal(homeProfile().name, 'Kinder zu Hause', 'each side keeps its name');
+    assert.ok(db.prepare("SELECT 1 FROM activity_log WHERE event_type = 'gateway_dns_profile_changed' AND details LIKE '%safeSearch%'").get());
+    // a setting that has nothing to do with it writes nothing to the home
+    const at = db.prepare('SELECT updated_at FROM gateway_dns WHERE peer_id = ?').get(gateway).updated_at;
+    const logged = db.prepare("SELECT COUNT(*) AS n FROM activity_log WHERE event_type = 'vpn_dns_changed'").get().n;
+    await ok('set', { blockResponse: 'zero' });
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM activity_log WHERE event_type = 'vpn_dns_changed'").get().n, logged, 'nothing changed: nothing saved');
+    assert.equal(db.prepare('SELECT updated_at FROM gateway_dns WHERE peer_id = ?').get(gateway).updated_at, at);
+    // at home (the gateway page): the VPN devices follow without anybody touching the protection
+    hd.updateProfile(gateway, homeKids, { deny: ['minecraft.net'], users: [lea] });
+    assert.deepEqual([(await vpnKids()).deny, (await vpnKids()).users], [['minecraft.net'], [lea]]);
+    await waitFor(() => svc.cfg.policy.profiles.find((x) => x.id === kidsId).deny.includes('minecraft.net'));
+    assert.deepEqual((await askFilter('minecraft.net', '10.8.0.21')).a, ['0.0.0.0']);
+    assert.deepEqual(vpnDns.stored().profiles.find((x) => x.id === kidsId).deny, ['minecraft.net'], 'the copy kept here is up to date');
+    // what the home refuses is refused here, and nothing is half-written
+    const r = await call('set', { profiles: (await ids()).map((x) => (x.id === kidsId ? { ...x, users: [lea], lists: ['ads'], home: { gateway, profile: homeKids } } : x)), blockResponse: 'nxdomain' });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual(homeProfile().lists, ['ads']);
+    await ok('set', { blockResponse: 'zero' });
+  });
+
+  it('the profile is deleted at home → the link is dropped, the profile here keeps its content', async () => {
+    hd.deleteProfile(gateway, homeKids);
+    const p = await vpnKids();
+    assert.deepEqual([p.home, p.deny, p.lists, p.users], [null, ['minecraft.net'], ['ads'], [lea]]);
+    assert.equal(vpnDns.stored().profiles.find((x) => x.id === kidsId).home, null);
+    assert.ok(db.prepare("SELECT 1 FROM activity_log WHERE event_type = 'vpn_dns_home_unlinked'").get());
+    assert.deepEqual((await askFilter('minecraft.net', '10.8.0.21')).a, ['0.0.0.0']);
+  });
+
+  it('the other way round: the home gets a profile of the protection; unlinked again both keep what they have', async () => {
+    await patchKids({ home: { gateway, create: true } });
+    const p = await vpnKids();
+    assert.match(p.home.profile, /^p[0-9a-f]{8}$/);
+    homeKids = p.home.profile;
+    assert.deepEqual([homeProfile().name, homeProfile().deny, homeProfile().lists, homeProfile().users], ['Kinder', ['minecraft.net'], ['ads'], [lea]]);
+    // the default profiles go with each other
+    await ok('set', { profiles: (await ids()).map((x, i) => (i === 0 ? { ...x, home: { gateway, profile: 'default' } } : x)) });
+    assert.deepEqual((await ok('get')).profiles[0].lists, ['ads', 'malware']);
+    assert.equal((await ok('get')).profiles[0].home.profile, 'default');
+    await ok('set', { profiles: (await ids()).map((x, i) => (i === 0 ? { ...x, home: null, lists: ['ads'] } : x)) });
+    assert.deepEqual(hd.get(gateway).profiles[0].lists, ['ads', 'malware'], 'no longer shared: the home keeps its own');
+    // a name the home has already: said with the field, nothing is saved
+    hd.createProfile(gateway, { name: 'Büro' });
+    const dup = await call('set', { profiles: (await ids()).map((x, i) => (i === 2 ? { ...x, home: { gateway, create: true } } : x)) });
+    assert.equal(dup.code, 'ERR_INVALID');
+    assert.match(dup.error, /profiles\[2\]\.home: .*name/);
+    assert.equal((await ok('get')).profiles[2].home, null);
+    // put back what the other tests expect
+    await patchKids({ home: null });
+    await patchKids({ lists: ['ads', 'adult'], safeSearch: true, deny: ['roblox.com'], users: [lea],
+      schedules: [{ days: [1, 2, 3, 4, 5], from: '21:00', to: '07:00', block: 'categories', categories: ['social'] }, { days: [6, 7], from: '00:00', to: '24:00', block: 'all' }] });
+    assert.deepEqual(homeProfile().deny, ['minecraft.net'], 'unlinked: the home is not written any more');
+    await waitFor(() => svc.cfg.policy.profiles.find((x) => x.id === kidsId).deny.includes('roblox.com'));
   });
 });
 

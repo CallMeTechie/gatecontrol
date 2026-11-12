@@ -118,6 +118,7 @@ function blockKind(d, scope) {
   if (d.reason === 'list') return 'list';
   if (d.reason === 'profile_deny') return scope === 'all' ? 'denyAll' : 'denyProfile';
   if (d.reason === 'schedule' || d.reason === 'schedule_category') return 'schedule';
+  if (d.reason === 'paused') return 'pause';
   return 'other';
 }
 
@@ -180,7 +181,8 @@ function sanitize(raw) {
     },
     plain: arr(r.plain).map(plainTarget).filter(Boolean).slice(0, 4),
     internal: new Set(strings(r.internal, 20000)),
-    policy: { alwaysAllow: strings(pol.alwaysAllow, 2000), lists, categories, profiles, defaultProfile: null, pauses: [], extensions: [] },
+    // pauses / extensions: "Internet aus bis" / "Zeiten ausgesetzt bis" of a person (homeInternet.js), as device keys
+    policy: { alwaysAllow: strings(pol.alwaysAllow, 2000), lists, categories, profiles, defaultProfile: null, pauses: untilEntries(pol.pauses), extensions: untilEntries(pol.extensions) },
     // "Immer erlaubt" / "Immer gesperrt" of the whole protection. They are part
     // of every profile's allow/deny already; kept apart as well so an answer
     // can say whether an entry holds for everybody or only in the profile.
@@ -189,6 +191,12 @@ function sanitize(raw) {
     clients,
     suspended: { all: until(sus.all), keys },
   };
+}
+
+/** [{ clients: [key], until: ms }] — only entries the engine can read. */
+function untilEntries(v) {
+  return arr(v).slice(0, 4096).filter((e) => e && Number.isFinite(e.until) && e.until > 0)
+    .map((e) => ({ clients: strings(e.clients, 4096), until: e.until })).filter((e) => e.clients.length);
 }
 
 /** Is a suspension (until ms, 0 = until somebody switches the protection on again) running? */
@@ -399,6 +407,8 @@ class FilterService {
   _effectiveKey(ip, now) {
     const key = this._realKey(ip);
     if (!key) return null;
+    // "Internet aus" of a person (a parent paused it) is not undone by suspending the protection
+    if (this.policy.pausedUntil(key, now)) return key;
     const sus = this.cfg.suspended;
     if (running(sus.all, now) || running(sus.keys.get(key), now)) return null;
     return key;
@@ -546,7 +556,7 @@ class FilterService {
       k = REP + profileId;
     } else if (typeof key === 'string' && key) {
       const sus = this.cfg.suspended;
-      suspended = running(sus.all, now) || running(sus.keys.get(key), now);
+      suspended = !this.policy.pausedUntil(key, now) && (running(sus.all, now) || running(sus.keys.get(key), now));
       k = suspended ? null : key;
     }
     const r = this.policy.decide(name, k, now);
@@ -686,4 +696,4 @@ function main() {
 if (require.main === module) main();
 /* c8 ignore stop */
 
-module.exports = { FilterService, VpnPolicy, sanitize, plainTarget, running, patternHit, listHit, blockKind, DEFAULT_PORT, CONFIG_FILE, SOCKET_FILE, PID_FILE, REP, MAX_LOG_QUEUE };
+module.exports = { FilterService, VpnPolicy, sanitize, untilEntries, plainTarget, running, patternHit, listHit, blockKind, DEFAULT_PORT, CONFIG_FILE, SOCKET_FILE, PID_FILE, REP, MAX_LOG_QUEUE };

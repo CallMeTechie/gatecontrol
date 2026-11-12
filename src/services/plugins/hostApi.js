@@ -1533,7 +1533,7 @@ function internetCall(plugin, op, args) {
 // and for an administrator's devices nobody but an administrator or the
 // owner.
 
-const VPN_DNS_READ = new Set(['status', 'catalog', 'get', 'devices', 'lists', 'stats', 'test', 'pauses', 'log']);
+const VPN_DNS_READ = new Set(['status', 'catalog', 'get', 'devices', 'lists', 'stats', 'test', 'pauses', 'log', 'homes']);
 const VPN_DNS_ADMIN = new Set(['set', 'restart', 'releasePihole', 'clearLog', 'refreshLists']);
 const VPN_DNS_CODES = new Set(['ERR_INVALID', 'ERR_NOT_FOUND', 'ERR_FORBIDDEN', 'ERR_NOT_PERSON', 'ERR_UNAVAILABLE', 'ERR_LOG_OFF', 'ERR_NOT_FILTERING']);
 
@@ -1568,6 +1568,7 @@ async function vpnDnsCall(plugin, op, args) {
       if (op === 'lists') return vd.lists();
       if (op === 'stats') return vd.stats(a.opts);
       if (op === 'pauses') return vd.pauses();
+      if (op === 'homes') return vd.homes();
       if (op === 'log') return vd.log(a.query);
       return await vd.test(a.domain, a.who);
     }
@@ -2355,7 +2356,7 @@ async function handle(plugin, api, args, ctx) {
     // DNS protection of the VPN devices (permissions.vpnDns, vpnDns.js)
     case 'vpnDns.status': case 'vpnDns.catalog': case 'vpnDns.get': case 'vpnDns.set': case 'vpnDns.devices': case 'vpnDns.lists':
     case 'vpnDns.refreshLists': case 'vpnDns.stats': case 'vpnDns.test': case 'vpnDns.pauses': case 'vpnDns.pause': case 'vpnDns.resume':
-    case 'vpnDns.restart': case 'vpnDns.releasePihole': case 'vpnDns.log': case 'vpnDns.clearLog':
+    case 'vpnDns.restart': case 'vpnDns.releasePihole': case 'vpnDns.log': case 'vpnDns.clearLog': case 'vpnDns.homes':
       return vpnDnsCall(plugin, api.slice('vpnDns.'.length), args);
     // home cache (permissions.homeCache, homeCache.js — phase 3b)
     case 'homeCache.offer': return homeCacheCall(plugin, 'offer', args);

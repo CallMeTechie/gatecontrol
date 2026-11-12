@@ -36,6 +36,14 @@
 //                 filter really filters; lifted in a fallback, while the
 //                 protection is suspended and when it is switched off.
 //
+//   home          a profile can be THE SAME as a profile of the DNS filter of a
+//                 home network (homeDns.js): `home: { gateway, profile }`.
+//                 Lists, safe search, own entries, times and people then live
+//                 in the home's settings — read from there, written there —
+//                 so a change on either side holds on both ("gilt zu Hause
+//                 und unterwegs"). "Internet pausieren" of a person
+//                 (homeInternet.js) reaches their VPN devices as well.
+//
 // None of it runs without a plugin that holds permissions.vpnDns and may run
 // (installed, enabled, licensed): no service process, no chain entry, no
 // timer. A server with Pi-hole only behaves exactly as before.
@@ -140,7 +148,62 @@ function normProfile(p, i) {
     peerGroups: members(r.peerGroups),
     users: members(r.users),
     peers: members(r.peers),
+    home: normHome(r.home),
   };
+}
+
+// ─── A profile shared with a home network ──────────────────────────────
+
+// What a shared profile has in common with the home's profile. The name, the
+// VPN members (groups, peer groups, devices) and the home's devices stay each
+// side's own.
+const SHARED = Object.freeze(['lists', 'safeSearch', 'allow', 'deny', 'schedules', 'users']);
+
+function normHome(h) {
+  if (!h || typeof h !== 'object') return null;
+  const gateway = Number(h.gateway);
+  if (!Number.isSafeInteger(gateway) || gateway <= 0 || typeof h.profile !== 'string' || !ID_RE.test(h.profile)) return null;
+  return { gateway, profile: h.profile };
+}
+
+function gatewayRow(id) {
+  try { return db().prepare("SELECT id, name FROM peers WHERE id = ? AND peer_type = 'gateway'").get(id) || null; } catch { return null; }
+}
+
+/** One id for a whole home network (a failover pool, the same LAN): its smallest gateway id. */
+function homeKey(gateway) {
+  try { return Math.min(...require('./homeNetwork').homeOf(gateway)); } catch { return gateway; }
+}
+
+/** The home's profile a link names → { gateway: { id, name }, profile } or null (gateway or profile gone). */
+function homeProfileOf(link) {
+  const g = link ? gatewayRow(link.gateway) : null;
+  if (!g) return null;
+  const profile = homeDns().get(g.id).profiles.find((p) => p.id === link.profile);
+  return profile ? { gateway: g, profile } : null;
+}
+
+function sharedOf(p, isDefault) {
+  const out = {};
+  for (const k of SHARED) if (!(isDefault && k === 'users')) out[k] = JSON.parse(JSON.stringify(p[k]));
+  return out;
+}
+
+/**
+ * The settings with what the homes say: a shared profile carries the home's
+ * lists, safe search, own entries, times and people (the copy stored here only
+ * holds when the home's profile or its gateway is gone — then the link is
+ * dropped). `home` gets the names for display.
+ */
+function withHome(s) {
+  s.profiles.forEach((p, i) => {
+    if (!p.home) return;
+    const h = homeProfileOf(p.home);
+    if (!h) { p.home = null; return; }
+    Object.assign(p, sharedOf(h.profile, i === 0));
+    p.home = { gateway: h.gateway.id, profile: h.profile.id, gatewayName: h.gateway.name, name: h.profile.name };
+  });
+  return s;
 }
 
 /** Stored settings (any shape) → the complete, valid settings object. */
@@ -169,6 +232,7 @@ function normalize(raw) {
     log: { enabled: bool(log.enabled, false), retentionDays: Number.isInteger(days) && days >= 1 && days <= LIMITS.retentionDays ? days : 7 },
     excluded: ints(r.excluded, LIMITS.excluded),
     blockForeignDns: bool(r.blockForeignDns, false),
+    homeInternet: bool(r.homeInternet, true),
     profiles,
   };
 }
@@ -179,6 +243,12 @@ function row() {
 
 /** The settings (defaults when there never were any). */
 function get() {
+  const r = row();
+  return withHome(normalize(r ? json(r.settings) : null));
+}
+
+/** The settings as stored (a shared profile with the copy kept here, not the home's content). */
+function stored() {
   const r = row();
   return normalize(r ? json(r.settings) : null);
 }
@@ -214,9 +284,11 @@ function validateProfile(b, i, cur, taken) {
   if (!b || typeof b !== 'object' || Array.isArray(b)) throw invalid(`${what}: object`, { field: what });
   const isDefault = i === 0;
   const out = cur ? JSON.parse(JSON.stringify(cur)) : { ...defaultProfile(), id: null, name: null, lists: [] };
+  // the link first: taking a home's profile over means taking its content — what the patch names besides is a change of it
+  if (b.home !== undefined) validateHome(b.home, `${what}.home`, out, isDefault);
   for (const [k, v] of Object.entries(b)) {
     const f = `${what}.${k}`;
-    if (k === 'id') continue;
+    if (k === 'id' || k === 'home') continue;
     if (k === 'name') {
       const n = hd.cleanText(v, LIMITS.name);
       if (!n) throw invalid(`${f}: 1…${LIMITS.name} characters`, { field: f });
@@ -252,6 +324,31 @@ function validateProfile(b, i, cur, taken) {
   return out;
 }
 
+/**
+ * `home` of a profile patch:
+ *   null                         no longer shared (the profile keeps its content)
+ *   { gateway, profile }         the same as this profile of the home — its content is taken over
+ *   { gateway, create: true }    the home gets this profile (with this content), then as above
+ * The default profiles only go with each other.
+ */
+function validateHome(v, f, out, isDefault) {
+  if (v === null) { out.home = null; return; }
+  if (!v || typeof v !== 'object' || Array.isArray(v)) throw invalid(`${f}: null or { gateway, profile }`, { field: f });
+  const g = Number.isSafeInteger(v.gateway) && v.gateway > 0 ? gatewayRow(v.gateway) : null;
+  if (!g) throw invalid(`${f}.gateway: unknown gateway`, { field: `${f}.gateway` });
+  if (v.create === true && v.profile === undefined) {
+    if (isDefault) throw invalid(`${f}: the default profile goes with the home's default profile`, { field: f });
+    out.home = { gateway: g.id, create: true };
+    return;
+  }
+  const h = typeof v.profile === 'string' ? homeProfileOf({ gateway: g.id, profile: v.profile }) : null;
+  if (!h) throw invalid(`${f}.profile: unknown profile of this home network`, { field: `${f}.profile` });
+  if (isDefault !== (h.profile.id === DEFAULT_ID)) throw invalid(`${f}: the default profile only goes with the home's default profile`, { field: f });
+  const same = out.home && out.home.gateway === g.id && out.home.profile === h.profile.id;
+  out.home = { gateway: g.id, profile: h.profile.id };
+  if (!same) Object.assign(out, sharedOf(h.profile, isDefault));
+}
+
 /** A patch of the settings → the complete new settings. Throws ERR_INVALID with `field`. */
 function validate(patch, before) {
   const b = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
@@ -261,7 +358,7 @@ function validate(patch, before) {
   let any = false;
   for (const [k, v] of Object.entries(b)) {
     any = true;
-    if (k === 'enabled' || k === 'blockForeignDns') {
+    if (k === 'enabled' || k === 'blockForeignDns' || k === 'homeInternet') {
       if (typeof v !== 'boolean') throw invalid(`${k} must be true or false`, { field: k });
       out[k] = v;
     } else if (k === 'blockResponse') {
@@ -317,10 +414,51 @@ function validate(patch, before) {
         seen.add(n.id);
         return n;
       });
+      const linked = new Set();
+      out.profiles.forEach((p, i) => {
+        if (!p.home || p.home.create) return;
+        const key = `${homeKey(p.home.gateway)}/${p.home.profile}`;
+        if (linked.has(key)) throw invalid(`profiles[${i}].home: this profile of the home network is shared already`, { field: `profiles[${i}].home` });
+        linked.add(key);
+      });
     } else throw invalid(`${k}: unknown`, { field: k });
   }
   if (!any) throw invalid('nothing to change');
-  return normalize(out);
+  // normalize() would drop a link that is still to be made ({ gateway, create }): keep those for set()
+  const creating = new Map(out.profiles.filter((p) => p.home && p.home.create).map((p) => [p.id, p.home]));
+  const done = normalize(out);
+  for (const p of done.profiles) if (creating.has(p.id)) p.home = creating.get(p.id);
+  return done;
+}
+
+/**
+ * Write what changed in shared profiles to their homes (homeDns validates and
+ * tells the gateways) and make the profiles a home is to get. Runs inside the
+ * transaction that saves the settings: either both sides change or neither.
+ */
+function writeHomes(after, ctx) {
+  const hd = homeDns();
+  const actor = { user: ctx.actor ? ctx.actor.name : null };
+  after.profiles.forEach((p, i) => {
+    if (!p.home) return;
+    const f = `profiles[${i}].home`;
+    try {
+      if (p.home.create) {
+        const made = hd.createProfile(p.home.gateway, { name: p.name, ...sharedOf(p, false) }, actor);
+        p.home = { gateway: p.home.gateway, profile: made.id };
+        return;
+      }
+      const h = homeProfileOf(p.home);
+      if (!h) throw invalid(`${f}.profile: unknown profile of this home network`, { field: `${f}.profile` });
+      const want = sharedOf(p, i === 0);
+      const diff = Object.keys(want).filter((k) => JSON.stringify(want[k]) !== JSON.stringify(h.profile[k]));
+      if (diff.length) hd.updateProfile(p.home.gateway, p.home.profile, Object.fromEntries(diff.map((k) => [k, want[k]])), actor);
+    } catch (e) {
+      if (e instanceof VpnDnsError) throw e;
+      // the home's own rules (a name taken there, more people than a home profile holds, …)
+      throw invalid(`${f}: ${e.message}`, { field: f, ...(e.code ? { reason: e.code } : {}) });
+    }
+  });
 }
 
 function audit(type, message, details, ctx = {}, severity = 'info') {
@@ -336,9 +474,17 @@ function audit(type, message, details, ctx = {}, severity = 'info') {
 function set(patch, ctx = {}) {
   const before = get();
   const after = validate(patch, before);
-  const keys = Object.keys(after).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
-  if (!keys.length) return after;
-  save(after);
+  const base = normalize(before); // without the names a shared profile carries for display
+  const keys = Object.keys(after).filter((k) => JSON.stringify(base[k]) !== JSON.stringify(after[k]));
+  if (!keys.length) return withHome(after);
+  run.homeWriting = true;
+  try {
+    db().transaction(() => {
+      if (after.profiles.some((p) => p.home)) writeHomes(after, ctx);
+      save(after);
+    })();
+  } finally { run.homeWriting = false; }
+  withHome(after);
   if (before.log.enabled && !after.log.enabled) clearLog({ silent: true });
   // switched off for good: a suspension "until I switch it on again" must not wait for the next time it is on
   if (before.enabled && !after.enabled) db().prepare('DELETE FROM vpn_dns_pauses').run();
@@ -529,6 +675,97 @@ function suspended(devices, now = Date.now()) {
   return out;
 }
 
+// ─── "Internet zu Hause" of a person, also on the way ──────────────────
+
+/**
+ * What the family plugin's "Internet pausieren" / "Zeit verlängern"
+ * (homeInternet.js: per person, enforced by the gateways at home) means for
+ * the person's VPN devices: { pause: Map(userId → until ms), extend: Map }.
+ * Empty with the setting `homeInternet` off.
+ */
+function homeInternetOf(s, now = Date.now()) {
+  const out = { pause: new Map(), extend: new Map() };
+  if (!s.homeInternet) return out;
+  let rows;
+  try { rows = db().prepare('SELECT user_id, kind, until_at FROM home_internet WHERE until_at > ? ORDER BY user_id').all(now); } catch { return out; }
+  for (const r of rows) if (out[r.kind]) out[r.kind].set(r.user_id, r.until_at);
+  return out;
+}
+
+/** [{ clients: [device keys], until: ms }] for the filter service — one entry per person with filtered devices. */
+function homeEntries(map, devices) {
+  const out = [];
+  for (const [userId, until] of map) {
+    const clients = devices.filter((d) => d.profileId && d.ip && d.user && d.user.id === userId && (d.state === 'filtered' || d.state === 'ownDns')).map((d) => keyOf(d.peerId)).sort();
+    if (clients.length) out.push({ clients, until });
+  }
+  return out;
+}
+
+/**
+ * The DNS filter settings of a gateway were written (homeDns.save — the
+ * gateway page, a failover gateway taking the settings over): shared profiles
+ * follow. The copy stored here is brought up to date (it holds should the home
+ * go away), a link whose profile was deleted at home is dropped, and the
+ * filter service gets the new content.
+ */
+function homeChanged() {
+  if (run.homeWriting) return;
+  let s;
+  try { s = stored(); } catch { return; }
+  if (!s.profiles.some((p) => p.home)) return;
+  const now = normalize(withHome(JSON.parse(JSON.stringify(s))));
+  if (JSON.stringify(now) === JSON.stringify(s)) return;
+  const dropped = s.profiles.filter((p, i) => p.home && !now.profiles[i].home);
+  save(now);
+  for (const p of dropped) {
+    audit('vpn_dns_home_unlinked', `DNS protection: profile "${p.name}" is no longer shared with a home network (its profile there is gone)`, { profile: p.id, gateway: p.home.gateway, home_profile: p.home.profile });
+  }
+  refreshSoon();
+}
+
+/**
+ * gc.vpnDns.homes() → the home networks whose DNS filter profiles can be
+ * shared: one entry per home (a failover pool or one LAN is one home), with
+ * its profiles and which profile here is the same (`linkedTo`).
+ */
+function homes() {
+  const hd = homeDns();
+  let gws;
+  try { gws = db().prepare("SELECT p.id, p.name, (SELECT 1 FROM gateway_dns d WHERE d.peer_id = p.id) AS has FROM peers p WHERE p.peer_type = 'gateway' ORDER BY p.name COLLATE NOCASE, p.id").all(); } catch { return []; }
+  const s = get();
+  const linked = new Map(s.profiles.filter((p) => p.home).map((p) => [`${homeKey(p.home.gateway)}/${p.home.profile}`, p.id]));
+  const byHome = new Map();
+  for (const g of gws) {
+    const key = homeKey(g.id);
+    if (!byHome.has(key)) byHome.set(key, []);
+    byHome.get(key).push(g);
+  }
+  const out = [];
+  for (const [key, list] of byHome) {
+    const main = list.find((g) => g.id === key) || list[0];
+    const hs = hd.get(main.id);
+    out.push({
+      gateway: { peerId: main.id, name: main.name },
+      gateways: list.map((g) => ({ peerId: g.id, name: g.name })),
+      configured: list.some((g) => g.has === 1),
+      enabled: hs.enabled,
+      profiles: hs.profiles.map((p) => ({
+        id: p.id, name: p.name, lists: p.lists.slice(), safeSearch: p.safeSearch, allow: p.allow.slice(), deny: p.deny.slice(),
+        schedules: JSON.parse(JSON.stringify(p.schedules)), users: p.users.slice(), devices: p.devices.length,
+        linkedTo: linked.get(`${key}/${p.id}`) || null,
+      })),
+    });
+  }
+  return out;
+}
+
+/** "Internet pausieren" / "Zeit verlängern" changed for a person (homeInternet.js): the filter service must know at once. */
+function homeInternetChanged() {
+  if (!run.started) return;
+  refreshNow();
+}
+
 // ─── The filter service's config ───────────────────────────────────────
 
 function minutes(hhmm, allow24) {
@@ -581,6 +818,7 @@ function filterConfig(s = get(), now = Date.now()) {
   for (const c of catalog.CATEGORY_IDS) categories[c] = catalog.CATEGORIES[c].slice();
   let tz = null;
   try { tz = require('./notify/router').serverTz(); } catch { /* process zone */ }
+  const home = homeInternetOf(s, now);
   return {
     v: 1,
     enabled: true,
@@ -591,7 +829,10 @@ function filterConfig(s = get(), now = Date.now()) {
     upstream: { provider: s.upstream.provider, url: s.upstream.url, fallbackRouter: s.upstream.fallbackRouter },
     plain: (process.env.GC_DNSMASQ_UPSTREAMS || '1.1.1.1,8.8.8.8').split(',').map((x) => x.trim()).filter(Boolean),
     internal: internalNames(),
-    policy: { alwaysAllow: [], lists, categories, profiles, globalAllow: s.allow.slice(), globalDeny: s.deny.slice() },
+    policy: {
+      alwaysAllow: [], lists, categories, profiles, globalAllow: s.allow.slice(), globalDeny: s.deny.slice(),
+      pauses: homeEntries(home.pause, devices), extensions: homeEntries(home.extend, devices),
+    },
     clients,
     suspended: suspended(devices, now),
   };
@@ -641,6 +882,7 @@ const run = {
   soon: null,
   ticking: null,
   started: false,
+  homeWriting: false,   // set() is writing to a home right now: its own echo (homeChanged) is not news
 };
 
 function wanted() {
@@ -830,12 +1072,12 @@ function firewallWant(now = Date.now(), s = get()) {
   if (!run.wanted || !s.blockForeignDns || stateNow() !== 'filtering') return null;
   const list = resolve(s);
   const sus = suspended(list, now);
-  if (sus.all !== null) return null;
-  return {
-    iface: config.wireguard.interface,
-    serverIp: config.wireguard.gatewayIp,
-    peers: list.filter((d) => d.state === 'filtered' && d.ip && sus.keys[keyOf(d.peerId)] === undefined).map((d) => d.ip),
-  };
+  // "Internet aus" of a person outlasts a suspension (as in the filter): those devices keep their rules
+  const paused = homeInternetOf(s, now).pause;
+  const off = (d) => !!d.user && paused.has(d.user.id);
+  const peers = list.filter((d) => d.state === 'filtered' && d.ip && (off(d) || (sus.all === null && sus.keys[keyOf(d.peerId)] === undefined))).map((d) => d.ip);
+  if (sus.all !== null && !peers.length) return null;
+  return { iface: config.wireguard.interface, serverIp: config.wireguard.gatewayIp, peers };
 }
 
 /** Bring the firewall in line with firewallWant(). Resolves when done; never rejects, never throws. */
@@ -882,9 +1124,10 @@ function peerIdOf(key) {
 /**
  * Blocked queries by what blocked them (stored per day, JSON): a list, an own
  * entry "Immer gesperrt" for everybody (denyAll) or of a profile
- * (denyProfile), a time of a profile, anything else (Firefox' DoH canary).
+ * (denyProfile), a time of a profile, "Internet aus" of a person (pause),
+ * anything else (Firefox' DoH canary).
  */
-const BLOCK_KINDS = Object.freeze(['list', 'denyAll', 'denyProfile', 'schedule', 'other']);
+const BLOCK_KINDS = Object.freeze(['list', 'denyAll', 'denyProfile', 'schedule', 'pause', 'other']);
 
 function blockedByOf(raw) {
   const v = (typeof raw === 'string' ? json(raw) : raw) || {};
@@ -1175,6 +1418,8 @@ function devices(now = Date.now()) {
     ? new Map(db().prepare('SELECT peer_id, queries, blocked FROM vpn_dns_peer_day WHERE day = ?').all(dayKey(now)).map((r) => [r.peer_id, { queries: r.queries, blocked: r.blocked }]))
     : null;
   const direct = new Set(pauseRows(now).filter((r) => r.scope === 'peer').map((r) => r.target_id));
+  const home = homeInternetOf(s, now);
+  const homeUntil = (map, d) => (d.profileId && d.user && map.has(d.user.id) ? iso(map.get(d.user.id)) : null);
   const fw = firewall().status().active ? firewallWant(now, s) : null;
   const blocked = new Set(fw ? fw.peers : []);
   return list.map((d) => {
@@ -1188,6 +1433,9 @@ function devices(now = Date.now()) {
       suspendedBy: until === null ? null : (sus.all !== null ? 'all' : (direct.has(d.peerId) ? 'peer' : 'user')),
       today: per ? (per.get(d.peerId) || { queries: 0, blocked: 0 }) : null,
       foreignDnsBlocked: !!d.ip && blocked.has(d.ip),
+      // "Internet pausieren" / "Zeit verlängern" of the person (family plugin): holds for this device as well
+      internetPaused: homeUntil(home.pause, d),
+      timesSuspended: homeUntil(home.extend, d),
     };
   });
 }
@@ -1371,7 +1619,7 @@ function emit(ev) {
 
 function _resetForTest() {
   stop();
-  Object.assign(run, { wanted: false, chainOn: false, everActive: false, down: false, wantedAt: 0, svc: null, svcAt: 0, lastConfig: null, configAt: 0, takeAt: 0, retentionAt: 0, firewallCheckAt: 0, ticking: null });
+  Object.assign(run, { wanted: false, chainOn: false, everActive: false, down: false, wantedAt: 0, svc: null, svcAt: 0, lastConfig: null, configAt: 0, takeAt: 0, retentionAt: 0, firewallCheckAt: 0, ticking: null, homeWriting: false });
 }
 
 module.exports = {
@@ -1381,6 +1629,6 @@ module.exports = {
   resolve, profileOfUser, filterConfig, internalNames,
   pause, resume, pauses, sweepPauses, suspended,
   status, devices, lists, stats, test, log, clearLog, catalog: catalogView, refreshLists, restart, releasePihole, notice, clientInfo, clientPlugin, installedPlugin, piholeTargets, BLOCK_KINDS,
-  reconcile, pluginsChanged, refreshSoon, tick, start, stop, firewallWant, syncFirewall, networkChanged, ingest, retention, control, dir, filterPort, writeConfig,
+  homeInternetOf, homeInternetChanged, homeChanged, homes, stored, SHARED, reconcile, pluginsChanged, refreshSoon, tick, start, stop, firewallWant, syncFirewall, networkChanged, ingest, retention, control, dir, filterPort, writeConfig,
   _run: run, _resetForTest, _hookMs: null,
 };
