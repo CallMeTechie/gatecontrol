@@ -42,7 +42,9 @@ const path = require('node:path');
 const core = require('./dnsfilter-core');
 
 const { wire, Policy, Resolver, ResponseCache, Upstream, DnsListener, DnsStats, ListManager, cleanDomain, routerQuery, fetchList, isLoopback } = core;
+const { hasHash } = require('./dnsfilter-core/domainSet');
 const { TYPE, RCODE } = wire;
+const { hash53, suffixes, PatternSet } = core;
 
 const DEFAULT_PORT = 5354;
 const CONFIG_FILE = 'config.json';
@@ -81,6 +83,43 @@ class VpnPolicy extends Policy {
 function arr(v) { return Array.isArray(v) ? v : []; }
 function obj(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
 function strings(v, max) { return arr(v).filter((x) => typeof x === 'string' && x.length <= 253).slice(0, max); }
+
+/**
+ * The entry of a small pattern set that matches `name`:
+ * { entry: 'tiktok.com', kind: 'domain' } (the domain and everything below it),
+ * { entry: '*.tiktok.com', kind: 'subdomains' } (only what is below it) or null.
+ */
+function patternHit(set, name) {
+  if (!set || !set.size) return null;
+  if (set.incl.has(name)) return { entry: name, kind: 'domain' };
+  for (const s of suffixes(name).slice(1)) {
+    if (set.incl.has(s)) return { entry: s, kind: 'domain' };
+    if (set.sub.has(s)) return { entry: '*.' + s, kind: 'subdomains' };
+  }
+  return null;
+}
+
+/**
+ * The entry of a loaded list that blocks `name`. The lists are kept as hashes,
+ * but the name asked for is known — so the entry is the end of the name whose
+ * hash is in the list: { entry, kind: 'exact' } (hosts lists: this name only)
+ * or { entry, kind: 'domain' } (the domain and everything below it).
+ */
+function listHit(list, name) {
+  if (!list) return null;
+  const parts = suffixes(name);
+  if (list.exact.length && hasHash(list.exact, hash53(name))) return { entry: name, kind: 'exact' };
+  for (const s of parts) if (hasHash(list.suffix, hash53(s))) return { entry: s, kind: 'domain' };
+  return null;
+}
+
+/** How blocked queries are counted: by what blocked them. */
+function blockKind(d, scope) {
+  if (d.reason === 'list') return 'list';
+  if (d.reason === 'profile_deny') return scope === 'all' ? 'denyAll' : 'denyProfile';
+  if (d.reason === 'schedule' || d.reason === 'schedule_category') return 'schedule';
+  return 'other';
+}
 
 /** '1.1.1.1' | '1.1.1.1#5300' → { ip, port } or null. */
 function plainTarget(v) {
@@ -142,6 +181,11 @@ function sanitize(raw) {
     plain: arr(r.plain).map(plainTarget).filter(Boolean).slice(0, 4),
     internal: new Set(strings(r.internal, 20000)),
     policy: { alwaysAllow: strings(pol.alwaysAllow, 2000), lists, categories, profiles, defaultProfile: null, pauses: [], extensions: [] },
+    // "Immer erlaubt" / "Immer gesperrt" of the whole protection. They are part
+    // of every profile's allow/deny already; kept apart as well so an answer
+    // can say whether an entry holds for everybody or only in the profile.
+    globalAllow: new PatternSet(strings(pol.globalAllow, 2000)),
+    globalDeny: new PatternSet(strings(pol.globalDeny, 2000)),
     clients,
     suspended: { all: until(sus.all), keys },
   };
@@ -167,6 +211,7 @@ class FilterService {
     this.readyAt = null;
     this.counters = { tc: 0, failOpen: 0, probes: 0, logDropped: 0, reloads: 0, configErrors: 0 };
     this.clientCounters = new Map();
+    this.blockedBy = {};
     this.logQueue = [];
     this.cache = new ResponseCache({ now });
     this.realStats = new DnsStats({ now });
@@ -376,7 +421,33 @@ class FilterService {
     return false;
   }
 
+  /**
+   * What a decision was made of, for "Domain prüfen", the query log and the
+   * counters: `scope` — an own entry holds for everybody ('all') or only in
+   * the profile ('profile') — and `match`, the entry that hit.
+   */
+  _explain(name, d) {
+    try {
+      if (d.reason === 'profile_deny' || d.reason === 'profile_allow') {
+        const allow = d.reason === 'profile_allow';
+        const all = patternHit(allow ? this.cfg.globalAllow : this.cfg.globalDeny, name);
+        if (all) return { scope: 'all', match: all };
+        const p = this.policy.profiles.get(d.profileId);
+        return { scope: 'profile', match: p ? patternHit(allow ? p.allowSet : p.denySet, name) : null };
+      }
+      if (d.reason === 'list') return { scope: null, match: listHit(this.lists.lists.get(d.list), name) };
+      if (d.reason === 'schedule_category') return { scope: null, match: patternHit(this.policy.categories.get(d.category), name) };
+    } catch { /* an explanation never stands in the way of an answer */ }
+    return { scope: null, match: null };
+  }
+
   _note(key, suspended, q, d, now) {
+    const scope = d.reason === 'profile_deny' || d.reason === 'profile_allow' ? this._explain(q.name, d).scope : null;
+    // counted like the totals: not while the protection is suspended for everybody
+    if (d.action === 'block' && !running(this.cfg.suspended.all, now)) {
+      const kind = blockKind(d, scope);
+      this.blockedBy[kind] = (this.blockedBy[kind] || 0) + 1;
+    }
     if (!this.cfg.logQueries || !key) return;
     if (!suspended) {
       let c = this.clientCounters.get(key);
@@ -387,7 +458,7 @@ class FilterService {
     this.logQueue.push({
       at: now, key, name: q.name, type: wire.typeName(q.qtype),
       action: d.action, reason: suspended ? 'suspended' : d.reason, profileId: d.profileId,
-      list: d.list || null, category: d.category || null, safeSearch: d.safeSearch || null,
+      list: d.list || null, category: d.category || null, safeSearch: d.safeSearch || null, scope: suspended ? null : scope,
     });
   }
 
@@ -483,6 +554,7 @@ class FilterService {
     if (r.list) out.list = r.list;
     if (r.category) out.category = r.category;
     if (r.safeSearch) out.safeSearch = r.safeSearch;
+    if (!suspended) Object.assign(out, this._explain(name, r));
     return out;
   }
 
@@ -491,11 +563,13 @@ class FilterService {
     const { body } = this.realStats.take();
     const clients = Object.fromEntries(this.clientCounters);
     this.clientCounters = new Map();
+    const blockedBy = this.blockedBy;
+    this.blockedBy = {};
     const log = this.logQueue;
     this.logQueue = [];
     const dropped = this.counters.logDropped;
     this.counters.logDropped = 0;
-    return { stats: body, clients, log, logDropped: dropped };
+    return { stats: body, blockedBy, clients, log, logDropped: dropped };
   }
 
   refreshLists() {
@@ -612,4 +686,4 @@ function main() {
 if (require.main === module) main();
 /* c8 ignore stop */
 
-module.exports = { FilterService, VpnPolicy, sanitize, plainTarget, running, DEFAULT_PORT, CONFIG_FILE, SOCKET_FILE, PID_FILE, REP, MAX_LOG_QUEUE };
+module.exports = { FilterService, VpnPolicy, sanitize, plainTarget, running, patternHit, listHit, blockKind, DEFAULT_PORT, CONFIG_FILE, SOCKET_FILE, PID_FILE, REP, MAX_LOG_QUEUE };

@@ -111,6 +111,15 @@ answers (Pi-hole stays active until then); `gc.vpnDns.releasePihole()` then
 switches Pi-hole's "manage the DNS chain" off, so that switching the
 protection off later does not silently bring Pi-hole back.
 
+The Pi-hole integration is **deprecated** (not removed): the Pi-hole page
+carries a notice with the button "Zum DNS-Schutz umziehen" →
+`/settings/plugins/manage/<plugin>?tab=settings` (the plugin's settings page,
+where its dialog moves over) when a plugin with `permissions.vpnDns` is
+installed, "DNS-Schutz öffnen" once the protection is switched on, else a link
+to the plugin catalogue (`piholeDeprecation()` in `src/routes/index.js`).
+`status().pihole.targets` names where the devices reach Pi-hole and the
+gateway behind it, for the first step of that dialog.
+
 ## Raising the engine
 
 1. Change and release the engine in `gatecontrol-gateway`.

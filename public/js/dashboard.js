@@ -1109,7 +1109,7 @@
     box.classList.toggle('db-banner-danger', down);
     box.classList.toggle('db-banner-warn', !down);
     box.dataset.kind = kind;
-    $('db-vpndns-open').href = n.plugin ? '/settings/plugins/manage/' + encodeURIComponent(n.plugin) : '/settings/plugins';
+    $('db-vpndns-open').href = n.plugin ? '/settings/plugins/manage/' + encodeURIComponent(n.plugin) + '?tab=settings' : '/settings/plugins';
     $('db-vpndns-resume').hidden = down;
     if (down) {
       $('db-vpndns-title').textContent = t('dashboard.vpndns.down_title');

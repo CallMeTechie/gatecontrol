@@ -65,6 +65,17 @@ function as(userId, api, args) {
   return personContext.run(P, userId, true, () => hostApi.handle(plugins.get(P), api, args));
 }
 
+/**
+ * One round of the DNS chain that started after this call. dnsChain.tick()
+ * alone hands out the round that is under way (the chain's own timer starts
+ * one every 2 s) — and that one may have looked at the world before the test
+ * changed it.
+ */
+async function freshRound() {
+  await dnsChain.tick();
+  return dnsChain.tick();
+}
+
 async function waitFor(fn, ms = 5000) {
   const end = Date.now() + ms;
   for (;;) {
@@ -205,6 +216,15 @@ describe('without a plugin with permissions.vpnDns nothing runs', () => {
     assert.equal((await agent.get('/api/v1/dashboard/security-summary').expect(200)).body.vpnDns, null);
   });
 
+  it('the Pi-hole page says "abgekündigt" and points to the plugin catalogue', async () => {
+    const page = await agent.get('/pihole').expect(200);
+    assert.match(page.text, /id="ph-deprecated"[^>]*data-state="catalog"/);
+    assert.match(page.text, /Die Pi-hole-Anbindung ist abgekündigt|The Pi-hole integration is deprecated/);
+    assert.match(page.text, /id="ph-deprecated-move" href="\/settings\/plugins\/catalog"/);
+    assert.equal(vpnDns.installedPlugin(), null);
+    assert.equal(vpnDns.clientPlugin(), null);
+  });
+
   it('settings alone do not start it either (a plugin was removed, its settings stay)', () => {
     db.prepare('INSERT INTO vpn_dns (id, settings, updated_at) VALUES (1, ?, ?)').run(JSON.stringify({ enabled: true }), Date.now());
     assert.equal(vpnDns.reconcile(), false);
@@ -249,7 +269,7 @@ describe('manifest: permissions.vpnDns', () => {
   it('gc.vpnDns exists with the permission; installed but switched off, still nothing runs', async () => {
     const r = await agent.get(`/api/v1/plugins/${P}/api/has`).expect(200);
     assert.equal(r.body.vpnDns, true);
-    assert.equal(r.body.version, 1);
+    assert.equal(r.body.version, 2);
     assert.deepEqual(r.body.methods, ['catalog', 'clearLog', 'devices', 'get', 'lists', 'log', 'on', 'pause', 'pauses', 'refreshLists', 'releasePihole',
       'restart', 'resume', 'set', 'stats', 'status', 'test', 'version']);
     const st = await ok('status');
@@ -259,6 +279,21 @@ describe('manifest: permissions.vpnDns', () => {
     assert.equal(st.chain, 'default');
     assert.deepEqual(st.service, { running: false });
     assert.deepEqual(fs.readdirSync(STATE), []);
+  });
+
+  it('the apps: "the plugin is there, the protection is off" is not "no plugin" — `vpnDns` stays null as before', async () => {
+    const dev = H.makeDevice(anna, { name: 'vpndns-off-phone' });
+    const perm = await supertest(app).get('/api/v1/client/permissions').set('X-API-Token', dev.raw).expect(200);
+    assert.equal(perm.body.vpnDns, null, 'apps that only know vpnDns keep their Pi-hole view');
+    assert.deepEqual(perm.body.dnsProtection, { plugin: P, enabled: false, state: 'off' });
+    assert.deepEqual(vpnDns.installedPlugin(), { id: P, usable: true });
+    // the Pi-hole page: "Zum DNS-Schutz umziehen" opens the plugin's settings page
+    const page = await agent.get('/pihole').expect(200);
+    assert.match(page.text, /id="ph-deprecated"[^>]*data-state="plugin"/);
+    assert.match(page.text, new RegExp(`id="ph-deprecated-move" href="/settings/plugins/manage/${P}\\?tab=settings"`));
+    assert.match(page.text, /Zum DNS-Schutz umziehen|Move to the DNS protection/);
+    require('../src/services/tokens').revoke(dev.tokenId, '127.0.0.1');
+    db.prepare('DELETE FROM peers WHERE id = ?').run(dev.peerId);
   });
 });
 
@@ -369,6 +404,7 @@ describe('settings and who gets which profile', () => {
     assert.ok(internal.has('app.example.com') && internal.has('laptop.gc.internal'));
     assert.deepEqual(c.plain, [process.env.GC_DNSMASQ_UPSTREAMS]);
     assert.deepEqual(c.suspended, { all: null, keys: {} });
+    assert.deepEqual([c.policy.globalAllow, c.policy.globalDeny], [['paypal.com'], ['temu.com']], 'the entries for everybody, also apart');
   });
 });
 
@@ -424,6 +460,19 @@ describe('switched on: the service, the chain, the filter', () => {
     const kids = vpnDns.get().profiles[1];
     let r = await ok('test', 'ADULT.example.', { peerId: leaPhone });
     assert.deepEqual([r.domain, r.action, r.reason, r.list, r.profile.name, r.device.name], ['adult.example', 'block', 'list', 'adult', 'Kinder', 'Leas Handy']);
+    assert.deepEqual([r.match, r.scope], [{ entry: 'adult.example', kind: 'domain' }, null]);
+    // the entry of the list that hit — "Treffer adult.example mit allen Unterseiten"
+    r = await ok('test', 'cdn.img.adult.example', { peerId: leaPhone });
+    assert.deepEqual([r.list, r.match], ['adult', { entry: 'adult.example', kind: 'domain' }]);
+    // "Immer gesperrt" for everybody is not "Immer gesperrt" in the profile
+    r = await ok('test', 'shop.temu.com', { peerId: leaPhone });
+    assert.deepEqual([r.action, r.reason, r.scope, r.match], ['block', 'profile_deny', 'all', { entry: 'temu.com', kind: 'domain' }]);
+    r = await ok('test', 'www.roblox.com', { peerId: leaPhone });
+    assert.deepEqual([r.action, r.reason, r.scope, r.match], ['block', 'profile_deny', 'profile', { entry: 'roblox.com', kind: 'domain' }]);
+    r = await ok('test', 'www.paypal.com', { peerId: leaPhone });
+    assert.deepEqual([r.action, r.reason, r.scope, r.match], ['allow', 'profile_allow', 'all', { entry: 'paypal.com', kind: 'domain' }]);
+    r = await ok('test', 'ok.example', { peerId: leaPhone });
+    assert.deepEqual([r.reason, r.scope, r.match], ['default', null, null]);
     r = await ok('test', 'adult.example', { peerId: bossPhone });
     assert.deepEqual([r.action, r.reason], ['allow', 'default']);
     r = await ok('test', 'roblox.com', { userId: lea });
@@ -447,11 +496,18 @@ describe('switched on: the service, the chain, the filter', () => {
     assert.ok(s.today.top.some((x) => x.domain === 'ads.example'));
     assert.equal(s.perPeer, null);
     assert.equal(s.perPeerToday, null);
+    // blocked by what: a list, "Immer gesperrt" for everybody (temu.com) — nothing of a profile's own entries yet
+    assert.deepEqual(Object.keys(s.today.blockedBy), ['list', 'denyAll', 'denyProfile', 'schedule', 'other']);
+    assert.ok(s.today.blockedBy.list >= 2 && s.today.blockedBy.denyAll >= 1, JSON.stringify(s.today.blockedBy));
+    assert.equal(s.today.blockedBy.denyProfile, 0);
+    assert.equal(Object.values(s.today.blockedBy).reduce((a, b) => a + b, 0), s.today.blocked, 'every blocked query has one kind');
+    assert.deepEqual([s.blockedBy, s.days[s.days.length - 1].blockedBy], [s.today.blockedBy, s.today.blockedBy]);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM vpn_dns_log').get().n, 0);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM vpn_dns_peer_day').get().n, 0);
     assert.equal((await call('log', {})).code, 'ERR_LOG_OFF');
     const st = await ok('status');
     assert.equal(st.today.queries, s.today.queries);
+    assert.deepEqual(st.today.blockedBy, s.today.blockedBy);
     // the dashboard's security card
     require('../src/services/dashboardSecurity')._resetCacheForTest();
     const sec = (await agent.get('/api/v1/dashboard/security-summary').expect(200)).body.vpnDns;
@@ -467,12 +523,27 @@ describe('switched on: the service, the chain, the filter', () => {
     await askFilter('ads.example', '10.8.0.30');
     vpnDns._run.takeAt = 0;
     await vpnDns.tick();
+    {
+      // own entries in the log and the counters: for everybody or in the profile
+      const before = (await ok('stats')).today.blockedBy;
+      await askFilter('roblox.com', '10.8.0.21');
+      await askFilter('temu.com', '10.8.0.30');
+      vpnDns._run.takeAt = 0;
+      await vpnDns.tick();
+      const after = (await ok('stats')).today.blockedBy;
+      assert.deepEqual([after.denyProfile - before.denyProfile, after.denyAll - before.denyAll, after.list - before.list], [1, 1, 0]);
+      const own = (await ok('log', { blockedOnly: true, limit: 2 })).entries.map((e) => [e.name, e.reason, e.scope]);
+      assert.deepEqual(own, [['temu.com', 'profile_deny', 'all'], ['roblox.com', 'profile_deny', 'profile']]);
+      assert.deepEqual((await ok('log', { scope: 'profile' })).entries.map((e) => e.name), ['roblox.com']);
+      db.prepare("DELETE FROM vpn_dns_log WHERE name IN ('roblox.com', 'temu.com')").run();
+      db.prepare('UPDATE vpn_dns_peer_day SET queries = queries - 1, blocked = blocked - 1 WHERE peer_id IN (?, ?)').run(leaPhone, bossPhone);
+    }
     const lp = (await ok('devices')).find((d) => d.peerId === leaPhone);
     assert.deepEqual(lp.today, { queries: 2, blocked: 1 });
     const s = await ok('stats');
     assert.deepEqual(s.perPeerToday.find((x) => x.peerId === leaPhone), { peerId: leaPhone, queries: 2, blocked: 1 });
     let l = await ok('log', { userId: lea });
-    assert.deepEqual(l.entries.map((e) => [e.name, e.action, e.reason, e.list, e.peerId]), [['ok.example', 'allow', 'default', null, leaPhone], ['ads.example', 'block', 'list', 'ads', leaPhone]]);
+    assert.deepEqual(l.entries.map((e) => [e.name, e.action, e.reason, e.list, e.peerId, e.scope]), [['ok.example', 'allow', 'default', null, leaPhone, null], ['ads.example', 'block', 'list', 'ads', leaPhone, null]]);
     l = await ok('log', { blockedOnly: true, search: 'ADS', limit: 1 });
     assert.equal(l.entries.length, 1);
     assert.ok(l.next > 0);
@@ -582,6 +653,10 @@ describe('the apps', () => {
     const dev = H.makeDevice(anna, { name: 'vpndns-phone' });
     const perm = await supertest(app).get('/api/v1/client/permissions').set('X-API-Token', dev.raw).expect(200);
     assert.deepEqual(perm.body.vpnDns, { plugin: P, state: 'filtering' });
+    assert.deepEqual(perm.body.dnsProtection, { plugin: P, enabled: true, state: 'filtering' });
+    assert.match((await agent.get('/pihole').expect(200)).text, /id="ph-deprecated"[^>]*data-state="moved"/);
+    // the dashboard's notice opens the plugin's settings page as well
+    assert.match(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8'), /encodeURIComponent\(n\.plugin\) \+ '\?tab=settings'/);
     const me = await supertest(app).get(`/api/v1/client/plugins/${P}/api/me`).set('X-API-Token', dev.raw).expect(200);
     assert.equal(me.body.user.id, anna);
     assert.equal(me.body.user.peerId, dev.peerId);
@@ -605,13 +680,24 @@ describe('outage and Pi-hole', () => {
     const pc = require('../src/services/piholeConfig');
     require('../src/services/pihole');
     pc.save({ ...pc.load(), enabled: true, manage_dns_chain: true, instances: [{ id: 'a', name: 'pi', url: 'http://10.9.9.9', app_password: '', dns_ip: '10.9.9.9', dns_port: 53 }] });
-    await dnsChain.tick();
+    await freshRound();
     assert.equal(dnsChain.status().provider, 'vpnfilter');
     assert.deepEqual(dnsChain.status().displaced, ['pihole']);
     const ph = await agent.get('/api/v1/pihole/status');
     if (ph.status === 200 && ph.body.dnsChain) assert.equal(ph.body.dnsChain.displacedBy, 'vpnfilter');
-    assert.deepEqual((await ok('status')).pihole, { configured: true, wantsChain: true, chain: 'displaced' });
-    assert.deepEqual(await ok('releasePihole'), { configured: true, wantsChain: false, chain: 'off' });
+    // where the devices reach Pi-hole: directly, …
+    const direct = [{ name: 'pi', ip: '10.9.9.9', port: 53, gateway: null }];
+    assert.deepEqual((await ok('status')).pihole, { configured: true, wantsChain: true, chain: 'displaced', targets: direct });
+    // … on a gateway (its tunnel address) or behind one (an address of a LAN it reported)
+    db.prepare('INSERT OR REPLACE INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, last_health, created_at) VALUES (?, 9876, ?, ?, ?, ?)')
+      .run(gateway, 'h-' + gateway, 'x', JSON.stringify({ telemetry: { lan_subnets: [{ cidr: '192.168.178.0/24' }] } }), Date.now());
+    const inst = (name, ip, port) => ({ id: name, name, url: 'http://' + ip, app_password: '', dns_ip: ip, dns_port: port });
+    assert.deepEqual(vpnDns.piholeTargets({ instances: [inst('keller', '192.168.178.5', 5353), inst('pi', '10.8.0.2', 53), inst('fern', '192.168.179.5', 53), inst('leer', '', 53)] }), [
+      { name: 'keller', ip: '192.168.178.5', port: 5353, gateway: { peerId: gateway, name: 'Pi Keller', via: 'lan' } },
+      { name: 'pi', ip: '10.8.0.2', port: 53, gateway: { peerId: gateway, name: 'Pi Keller', via: 'tunnel' } },
+      { name: 'fern', ip: '192.168.179.5', port: 53, gateway: null },
+    ]);
+    assert.deepEqual(await ok('releasePihole'), { configured: true, wantsChain: false, chain: 'off', targets: direct });
     assert.equal(pc.load().manage_dns_chain, false);
     assert.equal(dnsChain.status().provider, 'vpnfilter');
     pc.save({ ...pc.load(), enabled: false });
@@ -620,7 +706,7 @@ describe('outage and Pi-hole', () => {
   it('the service dies → fallback with notice, activity and event; it comes back → restored', async () => {
     const before = restarts;
     svc.stop();
-    await dnsChain.tick();
+    await freshRound();
     await dnsChain.tick();
     assert.equal(dnsChain.vpnFilter.status().state, 'fallback');
     assert.equal(restarts, before + 1);
@@ -637,7 +723,8 @@ describe('outage and Pi-hole', () => {
     assert.equal((await call('restart')).ok, true, 'restart is possible while it is down');
 
     await startService();
-    for (let i = 0; i < 3; i++) await dnsChain.tick();
+    await freshRound();
+    for (let i = 0; i < 2; i++) await dnsChain.tick();
     assert.equal(dnsChain.vpnFilter.status().state, 'vpnfilter');
     assert.equal((await ok('status')).state, 'filtering');
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM activity_log WHERE event_type = 'vpn_dns_restored'").get().n, 1);
@@ -660,7 +747,8 @@ describe('outage and Pi-hole', () => {
 
 describe('switched off again', () => {
   it('the plugin is disabled → the service leaves, the chain is released, dnsmasq is back on its defaults', async () => {
-    for (let i = 0; i < 3; i++) await dnsChain.tick();
+    await freshRound();
+    for (let i = 0; i < 2; i++) await dnsChain.tick();
     assert.equal(dnsChain.vpnFilter.status().state, 'vpnfilter');
     await agent.post(`/api/v1/plugins/${P}/disable`).set('X-CSRF-Token', csrf).send({}).expect(200);
     await waitFor(() => vpnDns._run.wanted === false);
@@ -668,12 +756,14 @@ describe('switched off again', () => {
     assert.equal(fs.existsSync(path.join(STATE, 'enabled')), false);
     assert.equal(JSON.parse(fs.readFileSync(path.join(STATE, 'config.json'), 'utf8')).enabled, false);
     await waitFor(() => svc.exited === true);
-    await dnsChain.tick();
+    await freshRound();
     assert.equal(dnsChain.vpnFilter.status().state, 'off');
     assert.equal(dnsChain.status().provider, null);
     assert.doesNotMatch(fs.readFileSync(confPath, 'utf8'), /add-subnet|vpnfilter/);
     assert.equal(vpnDns.notice(), null);
     assert.equal(vpnDns.clientInfo(), null);
+    assert.equal(vpnDns.clientPlugin(), null, 'a plugin that may not run does not serve the apps');
+    assert.deepEqual(vpnDns.installedPlugin(), { id: P, usable: false });
     assert.equal(vpnDns.get().enabled, true, 'the settings stay for when the plugin comes back');
 
     // enabled again: back on without touching the settings
@@ -698,5 +788,7 @@ describe('switched off again', () => {
     assert.equal(dnsChain.vpnFilter.status().state, 'off');
     assert.equal(vpnDns.get().enabled, true);
     assert.equal(vpnDns.status().state, 'off');
+    assert.equal(vpnDns.clientPlugin(), null);
+    assert.equal(vpnDns.installedPlugin(), null);
   });
 });

@@ -14,6 +14,10 @@ function vpnDnsInfo() {
   try { return require('../../../services/vpnDns').clientInfo(); } catch { return null; }
 }
 
+function dnsProtectionInfo() {
+  try { return require('../../../services/vpnDns').clientPlugin(); } catch { return null; }
+}
+
 // GET /api/v1/client/ping — health check, confirms auth works.
 router.get('/ping', (req, res) => {
   const { version } = require('../../../../package.json');
@@ -46,6 +50,10 @@ router.get('/permissions', (req, res) => {
     // DNS protection of the VPN devices: null, or the plugin that serves the apps
     // (GET/POST /api/v1/client/plugins/<plugin>/api/…) and the state of the filter.
     vpnDns: vpnDnsInfo(),
+    // The same plugin also while the protection is switched off: null = no plugin that serves the apps, else
+    // { plugin, enabled, state: 'off' | 'starting' | 'filtering' | 'fallback' }. `vpnDns` above is unchanged —
+    // apps that only know that field keep their behaviour (docs/plugins.md "DNS protection").
+    dnsProtection: dnsProtectionInfo(),
     // Client policy version (see GET /api/v1/client/policy)
     policyVersion: clientPolicy.versionFor(
       req.tokenPeerId != null ? (peers.getById(req.tokenPeerId) || null) : null,

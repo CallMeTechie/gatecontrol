@@ -333,8 +333,8 @@ function makeVpnDns() {
   const o = (x) => (x && typeof x === 'object' ? x : {});
   const actor = (opts) => (o(opts).actor != null ? { actor: o(opts).actor } : {});
   return Object.freeze({
-    /** the version of this interface (raised when methods are added) */
-    version: 1,
+    /** the version of this interface (raised when methods or fields are added; 2: test().match/scope, blockedBy, status().pihole.targets) */
+    version: 2,
     /** status() → { available, enabled, state: off|starting|filtering|fallback, since, chain, pihole, pause, pauses, service, peers, lists, today, log } */
     status: () => hostCall('vpnDns.status', {}),
     /** catalog() → { lists, categories, providers, limits } */
