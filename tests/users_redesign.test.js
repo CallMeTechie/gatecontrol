@@ -1,7 +1,7 @@
 'use strict';
 
 // Users page redesign + "Mein Bereich" (member self-service) + per-device
-// Pi-hole statistics: services, admin API, login flow, /me isolation,
+// services, admin API, login flow, /me isolation,
 // role-aware navigation and templates.
 
 const crypto = require('node:crypto');
@@ -51,43 +51,42 @@ function sessionsOf(userId) {
   return db().prepare("SELECT COUNT(*) AS c FROM sessions WHERE json_extract(data, '$.userId') = ?").get(userId).c;
 }
 
-// ─── Role cap: Pi-hole statistics for members ────────────────────────
+// ─── Role cap ────────────────────────────────────────────────────────
 
 describe('role cap and enrollment defaults', () => {
-  it('members may hold `pihole` (read) but never `pihole:control` or admin scopes', () => {
+  it('members hold the app scopes, never admin scopes; the Pi-hole scopes are gone for everybody', () => {
     const u = users();
-    assert.deepEqual(u.filterScopesForRole(['client', 'pihole', 'pihole:control', 'full-access', 'peers'], 'user'), ['client', 'pihole']);
-    assert.ok(u.getAllowedScopes('admin').includes('pihole:control'));
+    assert.deepEqual(u.filterScopesForRole(['client', 'pihole', 'pihole:control', 'full-access', 'peers'], 'user'), ['client']);
+    assert.ok(!u.getAllowedScopes('admin').includes('pihole') && !u.getAllowedScopes('admin').includes('pihole:control'));
+    assert.match(tokens().validateScopes(['client', 'pihole']), /no longer exists/);
   });
 
-  it('DEFAULT_SCOPES lie inside the member cap and carry no pihole; admins keep it by default', () => {
+  it('DEFAULT_SCOPES lie inside the member cap; administrators get the same', () => {
     const e = require('../src/services/clientEnrollment');
     const cap = users().getAllowedScopes('user');
     assert.ok(e.DEFAULT_SCOPES.every((s) => cap.includes(s)));
-    assert.ok(!e.DEFAULT_SCOPES.includes('pihole'), 'pihole is opt-in for member devices');
-    assert.ok(e.ADMIN_DEFAULT_SCOPES.includes('pihole'));
+    assert.deepEqual(e.defaultScopesFor('admin'), e.DEFAULT_SCOPES);
   });
 
-  it('a member device code without scopes gets no pihole; with pihole requested it does, control never', async () => {
+  it('a member device code never carries a Pi-hole scope, whatever is asked for', async () => {
     const e = require('../src/services/clientEnrollment');
     const id = await makeUser('cap-member');
     assert.ok(!e.createCode({ userId: id }).scopes.includes('pihole'));
     const withPi = e.createCode({ userId: id, scopes: ['client', 'pihole', 'pihole:control'] }).scopes;
-    assert.ok(withPi.includes('pihole'));
-    assert.ok(!withPi.includes('pihole:control'));
+    assert.deepEqual(withPi, ['client']);
   });
 
-  it('a member token with pihole reaches the read endpoints only; top-clients is limited to its own peer', async () => {
-    require('../src/services/license')._overrideForTest({ pihole_integration: true, api_tokens: true });
+  it('the old Pi-hole API answers 410 to an app token (and to one that still names the scopes)', async () => {
+    require('../src/services/license')._overrideForTest({ api_tokens: true });
     const id = await makeUser('pi-member');
     const p = peer('pi-phone', '10.8.0.201', id);
-    const raw = tokens().create({ name: 'pi', scopes: ['client', 'pihole', 'pihole:control'], userId: id, peerId: p }, '127.0.0.1').rawToken;
+    const raw = tokens().create({ name: 'pi', scopes: ['client'], userId: id, peerId: p }, '127.0.0.1').rawToken;
     const r = (m, url) => supertest(app)[m](url).set('Authorization', `Bearer ${raw}`);
-    await r('get', '/api/v1/pihole/summary').expect(200);
-    const tc = await r('get', '/api/v1/pihole/top-clients').expect(200);
-    assert.ok((tc.body.data || []).every((c) => c.peerId === p));
-    const ctl = await r('post', '/api/v1/pihole/blocking').send({ enabled: false });
-    assert.equal(ctl.status, 403, 'pihole:control is capped away for members');
+    for (const url of ['/api/v1/pihole/summary', '/api/v1/pihole/top-clients', '/api/v1/pihole/health']) {
+      const res = await r('get', url).expect(410);
+      assert.deepEqual({ ok: res.body.ok, code: res.body.code }, { ok: false, code: 'pihole_removed' });
+    }
+    assert.equal((await r('post', '/api/v1/pihole/blocking').send({ enabled: false }).expect(410)).body.code, 'pihole_removed');
   });
 });
 
@@ -193,7 +192,7 @@ describe('users admin API', () => {
     assert.ok(!res.text.includes('password_hash') && !res.text.includes('$argon2'));
   });
 
-  it('GET /users/:id/visibility: reasons, hidden count, portal, pihole per device', async () => {
+  it('GET /users/:id/visibility: reasons, hidden count, portal', async () => {
     const d = db();
     const id = await makeUser('vis-member', 'user', { displayName: 'Vis Member' });
     const other = await makeUser('vis-other');
@@ -201,7 +200,7 @@ describe('users admin API', () => {
     d.prepare("INSERT INTO routes (domain, target_ip, target_port, route_type, enabled, user_ids) VALUES ('mine.vis.test', '10.0.0.1', 80, 'http', 1, ?)").run(JSON.stringify([id, other]));
     d.prepare("INSERT INTO routes (domain, target_ip, target_port, route_type, enabled, user_ids) VALUES ('theirs.vis.test', '10.0.0.1', 80, 'http', 1, ?)").run(JSON.stringify([other]));
     const p = peer('vis-phone', '10.8.0.220', id);
-    const t = tokens().create({ name: 'Vis phone', scopes: ['client', 'pihole'], userId: id, peerId: p }, '127.0.0.1').token;
+    const t = tokens().create({ name: 'Vis phone', scopes: ['client'], userId: id, peerId: p }, '127.0.0.1').token;
     const res = await agent.get(`/api/v1/users/${id}/visibility`).expect(200);
     const names = res.body.services.visible.map((s) => s.host);
     assert.ok(names.includes('all.vis.test') && names.includes('mine.vis.test') && !names.includes('theirs.vis.test'));
@@ -209,7 +208,7 @@ describe('users admin API', () => {
     assert.equal(res.body.services.visible.find((s) => s.host === 'mine.vis.test').reason, 'picked');
     assert.ok(res.body.services.hidden >= 1);
     assert.equal(res.body.web, 'none');
-    assert.equal(res.body.pihole.devices.find((x) => x.tokenId === t.id).on, true);
+    assert.ok(t.id && !('pihole' in res.body), 'no Pi-hole part any more');
     await agent.get('/api/v1/users/999999/visibility').expect(404);
   });
 
@@ -217,9 +216,9 @@ describe('users admin API', () => {
     const owner = await makeUser('patch-member');
     const t = tokens().create({ name: 'Patch me', scopes: ['read-only'] }, '127.0.0.1').token;
     const capped = await agent.patch(`/api/v1/tokens/${t.id}`).set('X-CSRF-Token', csrf)
-      .send({ user_id: owner, scopes: ['client', 'pihole', 'pihole:control', 'full-access'] }).expect(200);
-    assert.deepEqual(capped.body.token.scopes, ['client', 'pihole']);
-    assert.deepEqual(capped.body.dropped.sort(), ['full-access', 'pihole:control']);
+      .send({ user_id: owner, scopes: ['client', 'peers', 'full-access'] }).expect(200);
+    assert.deepEqual(capped.body.token.scopes, ['client']);
+    assert.deepEqual(capped.body.dropped.sort(), ['full-access', 'peers']);
     const exp = new Date(Date.now() + 86400000 * 30).toISOString();
     const renamed = await agent.patch(`/api/v1/tokens/${t.id}`).set('X-CSRF-Token', csrf).send({ name: 'Renamed', expires_at: exp }).expect(200);
     assert.equal(renamed.body.token.name, 'Renamed');
@@ -428,7 +427,7 @@ describe('own devices API (/api/v1/me) isolation', () => {
     db().prepare('UPDATE users SET self_enroll_enabled = 1 WHERE id = ?').run(alice);
     const res = await a.post('/api/v1/me/enrollment').set('X-CSRF-Token', aCsrf)
       .send({ pihole: true, scopes: ['full-access', 'pihole:control'], userId: bob, peerId: bobPeer }).expect(201);
-    assert.deepEqual(res.body.scopes.sort(), ['client', 'client:dns', 'client:rdp', 'client:services', 'client:traffic', 'pihole']);
+    assert.deepEqual(res.body.scopes.sort(), ['client', 'client:dns', 'client:rdp', 'client:services', 'client:traffic']);
     const row = db().prepare('SELECT user_id, peer_id FROM client_enrollment_codes ORDER BY created_at DESC, rowid DESC LIMIT 1').get();
     assert.equal(row.user_id, alice);
     assert.equal(row.peer_id, null);

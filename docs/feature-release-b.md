@@ -193,7 +193,7 @@ Einstellungen `GET/PUT /api/v1/settings/waf`:
 - Sidebar (Aurora `sidebar.njk`, mobil `bottomnav.njk`) in Gruppen – neu geordnet
   mit der Peers-Seite (docs/feature-peers-page.md §3): Übersicht (Dashboard) ·
   Geräte (Peers/Clients, Gateways, Geräte-Plugins) · Dienste (Domains/Routen,
-  Remote Desktops, Interner DNS, Pi-hole) · Zugriff & Sicherheit (Benutzer mit
+  Remote Desktops, Interner DNS) · Zugriff & Sicherheit (Benutzer mit
   Gruppen und Verzeichnis, Sicherheits-Check, SSL/Zertifikate, Web Application
   Firewall) · Zuhause und Apps (Plugins nach `ui.nav.section`, einklappbar) ·
   Wartung (Logs & Monitoring, Support-Pakete) · System (Benachrichtigungen,

@@ -1529,153 +1529,6 @@
     ],
   };
 
-  // ── Pi-hole ──
-  if (sectionEl('pihole')) {
-    let phInstances = [];
-    let phEditing = -1;
-    const phSaved = {};
-    const phList = $('st-ph-list');
-    const phPayload = (vals, instances) => ({
-      enabled: vals['ph-on'], manage_dns_chain: vals['ph-chain'], sync_interval_sec: int(vals['ph-sync']), top_clients_count: int(vals['ph-top']),
-      instances: instances.map((i) => {
-        const out = { id: i.id, label: i.label || '', url: i.url, dns_ip: i.dns_ip || '', dns_port: int(i.dns_port) || 53, verify_tls: i.verify_tls !== false, password_set: !!i.password_set };
-        if (i.app_password) out.app_password = i.app_password;
-        return out;
-      }),
-    });
-    // Hint only (never a block): every DNS address is one gateway's tunnel address.
-    const renderPhHint = (gw) => {
-      const hint = $('st-ph-gwhint');
-      hint.textContent = gw ? t('st.ph.single_gateway', { name: gw.name, ip: gw.ip }) : '';
-      hint.hidden = !gw;
-    };
-    const renderPh = () => {
-      clear(phList);
-      setStatus('pihole', tp('st.ph.status', phInstances.length));
-      if (!phInstances.length) { phList.appendChild(empty(t('pihole.cfg.no_instances'))); return; }
-      phInstances.forEach((inst, idx) => {
-        const test = el('button', { type: 'button', class: 'st-btn st-btn-sm', text: t('pihole.cfg.test_connection') });
-        test.addEventListener('click', async () => {
-          busy(test, true);
-          const r = await post('/api/v1/settings/pihole/test/' + encodeURIComponent(inst.id));
-          busy(test, false);
-          toast(phTestText(r, inst.dns_port), r.ok && r.data && r.data.connected ? 'success' : 'error');
-        });
-        const edit = el('button', { type: 'button', class: 'st-btn st-btn-sm', text: t('st.edit'), 'aria-label': t('st.ph.edit_label', { name: inst.label || inst.url }) });
-        edit.addEventListener('click', () => openPh(idx));
-        const detail = [inst.url];
-        if (inst.dns_ip) detail.push(t('st.ph.dns', { ip: inst.dns_ip, port: inst.dns_port || 53 }));
-        detail.push(t(inst.verify_tls !== false ? 'st.ph.tls_on' : 'st.ph.tls_off'));
-        phList.appendChild(el('li', { class: 'st-li' }, [
-          el('div', { class: 'st-li-main' }, [el('div', { class: 'st-li-title', text: inst.label || inst.url }), el('div', { class: 'st-li-sub st-mono', text: detail.join(' · ') })]),
-          el('div', { class: 'st-li-actions' }, [test, edit]),
-        ]));
-      });
-    };
-    const phTestText = (r, port) => {
-      if (!(r.ok && r.data && r.data.connected)) return errText(r.ok ? { error: t('pihole.cfg.test_failed') } : r);
-      let msg = t('st.ph.test_ok', { version: r.data.version || '?' });
-      if (r.data.dns) {
-        if (!r.data.dns.reachable) msg += ' · ' + t('st.ph.dns_unreachable', { port: port || 53 });
-        else {
-          msg += ' · ' + t('st.ph.dns_ok');
-          if (r.data.dns.blocking === true) msg += ' · ' + t('st.ph.blocking_on');
-          else if (r.data.dns.blocking === false) msg += ' · ' + t('st.ph.blocking_off');
-        }
-      }
-      return msg;
-    };
-    const openPh = (idx) => {
-      phEditing = idx;
-      const inst = idx >= 0 ? phInstances[idx] : null;
-      const title = $('st-ph-title');
-      title.textContent = inst ? title.dataset.edit : title.dataset.add;
-      $('st-ph-label').value = inst ? inst.label || '' : '';
-      $('st-ph-url').value = inst ? inst.url || '' : '';
-      $('st-ph-dns').value = inst ? inst.dns_ip || '' : '';
-      $('st-ph-dnsport').value = inst ? inst.dns_port || 53 : 53;
-      $('st-ph-pw').value = '';
-      $('st-ph-pw-hint').hidden = !(inst && inst.password_set);
-      $('st-ph-tls').checked = inst ? inst.verify_tls !== false : true;
-      $('st-ph-delete').hidden = !inst;
-      $('st-ph-url-err').hidden = true;
-      $('st-ph-testmsg').hidden = true;
-      window.openModal('st-ph-modal');
-      $('st-ph-label').focus();
-    };
-    const phForm = () => ({
-      label: $('st-ph-label').value.trim(), url: $('st-ph-url').value.trim(), dns_ip: $('st-ph-dns').value.trim(),
-      dns_port: int($('st-ph-dnsport').value) || 53, app_password: $('st-ph-pw').value, verify_tls: $('st-ph-tls').checked,
-    });
-    $('st-ph-url').addEventListener('blur', () => {
-      const dns = $('st-ph-dns');
-      if (dns.value.trim()) return;
-      // only an IP: the DNS address becomes a dnsmasq upstream, a hostname cannot
-      try { const h = new URL($('st-ph-url').value.trim()).hostname.replace(/^\[|\]$/g, ''); if (/^(\d{1,3}\.){3}\d{1,3}$/.test(h) || h.includes(':')) dns.value = h; } catch (_) { /* still typing */ }
-    });
-    const storeInstances = async (instances) => {
-      // Saved values of the other fields: unsaved edits stay in the save bar.
-      const r = await put('/api/v1/settings/pihole', phPayload(Object.assign({}, phSaved, baseline.pihole || {}), instances));
-      if (r.ok) { const fresh = await get('/api/v1/settings/pihole'); phInstances = ((fresh.ok && fresh.data.instances) || instances).slice(); renderPh(); renderPhHint(fresh.ok ? fresh.data.chain_single_gateway : null); }
-      return r;
-    };
-    $('st-ph-add').addEventListener('click', () => openPh(-1));
-    $('st-ph-form').addEventListener('submit', (e) => { e.preventDefault(); $('st-ph-save').click(); });
-    $('st-ph-save').addEventListener('click', async (e) => {
-      const f = phForm();
-      if (!/^https?:\/\/\S+$/i.test(f.url)) { $('st-ph-url-err').textContent = t('pihole.cfg.url_required'); $('st-ph-url-err').hidden = false; return; }
-      const list = phInstances.map((i) => Object.assign({}, i));
-      if (phEditing >= 0) {
-        const cur = list[phEditing];
-        Object.assign(cur, { label: f.label, url: f.url, dns_ip: f.dns_ip, dns_port: f.dns_port, verify_tls: f.verify_tls });
-        if (f.app_password) { cur.app_password = f.app_password; cur.password_set = true; }
-      } else {
-        const n = { id: Date.now().toString(), label: f.label, url: f.url, dns_ip: f.dns_ip, dns_port: f.dns_port, verify_tls: f.verify_tls, password_set: !!f.app_password };
-        if (f.app_password) n.app_password = f.app_password;
-        list.push(n);
-      }
-      busy(e.currentTarget, true);
-      const r = await storeInstances(list);
-      busy(e.currentTarget, false);
-      if (r.ok) { window.closeModal('st-ph-modal'); toast(t('pihole.cfg.saved')); } else { $('st-ph-testmsg').textContent = errText(r); $('st-ph-testmsg').hidden = false; }
-    });
-    $('st-ph-delete').addEventListener('click', async () => {
-      if (phEditing < 0) return;
-      const inst = phInstances[phEditing];
-      if (!(await D.confirm({ title: t('st.ph.delete_title'), message: t('st.ph.delete_msg', { name: inst.label || inst.url }), okLabel: t('common.delete'), danger: true }))) return;
-      const r = await storeInstances(phInstances.filter((_, i) => i !== phEditing));
-      if (r.ok) window.closeModal('st-ph-modal'); else toast(errText(r), 'error');
-    });
-    $('st-ph-test').addEventListener('click', async (e) => {
-      const f = phForm();
-      const msg = $('st-ph-testmsg');
-      if (!/^https?:\/\/\S+$/i.test(f.url)) { $('st-ph-url-err').textContent = t('pihole.cfg.url_required'); $('st-ph-url-err').hidden = false; return; }
-      busy(e.currentTarget, true);
-      const r = await post('/api/v1/settings/pihole/test', { url: f.url, app_password: f.app_password || null, verify_tls: f.verify_tls, dns_ip: f.dns_ip, dns_port: f.dns_port });
-      busy(e.currentTarget, false);
-      msg.textContent = phTestText(r, f.dns_port);
-      msg.dataset.state = r.ok && r.data && r.data.connected ? 'good' : 'crit';
-      msg.hidden = false;
-    });
-    SECTIONS.pihole = {
-      async load() {
-        const r = await get('/api/v1/settings/pihole');
-        if (!r.ok) return;
-        const c = r.data;
-        phInstances = (c.instances || []).slice();
-        renderPh();
-        renderPhHint(c.chain_single_gateway);
-        Object.assign(phSaved, { 'ph-on': !!c.enabled, 'ph-chain': !!c.manage_dns_chain, 'ph-sync': c.sync_interval_sec || 30, 'ph-top': c.top_clients_count || 1000 });
-        fill('pihole', phSaved);
-      },
-      groups: [{
-        fields: ['ph-on', 'ph-chain', 'ph-sync', 'ph-top'], map: { sync_interval_sec: 'ph-sync', top_clients_count: 'ph-top' },
-        save: (v) => api.put('/api/v1/settings/pihole', phPayload(v, phInstances)),
-        after: async () => { const r = await get('/api/v1/settings/pihole'); if (r.ok) renderPhHint(r.data.chain_single_gateway); },
-      }],
-    };
-  }
-
   // ── Geo-IP ──
   SECTIONS.geoip = {
     async load() {
@@ -1713,7 +1566,7 @@
   // ── Portal ──
   let portalSaved = { host: '', internal: '' };
   const PORTAL_MAP = { enabled: 'po-on', autoappear: 'po-auto', trust_owner_mapping: 'po-trust' };
-  const WIDGET_MAP = { device: 'w-device', traffic: 'w-traffic', services: 'w-services', pihole: 'w-pihole' };
+  const WIDGET_MAP = { device: 'w-device', traffic: 'w-traffic', services: 'w-services' };
   function renderPortalPreview() {
     const v = valuesOf('portal');
     const host = U.portalHost(v['po-domain'], v['po-prefix'], portalSaved.internal);
@@ -1743,7 +1596,7 @@
       const w = d.widgets || {};
       fill('portal', {
         'po-on': !!d.enabled, 'po-auto': d.autoappear !== false, 'po-trust': !!d.trustOwnerMapping,
-        'w-device': !!w.device, 'w-traffic': !!w.traffic, 'w-services': !!w.services, 'w-pihole': !!w.pihole,
+        'w-device': !!w.device, 'w-traffic': !!w.traffic, 'w-services': !!w.services,
         'po-domain': d.base_domain || '', 'po-prefix': d.prefix == null ? 'home' : d.prefix,
       });
       renderPortalPreview();

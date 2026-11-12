@@ -1,7 +1,7 @@
 'use strict';
 
 // Portal settings cluster — master switch + per-widget toggles + public host + owner mapping.
-// Keys: portal.enabled, portal.widget.{device,traffic,services,pihole}, portal.trust_owner_mapping,
+// Keys: portal.enabled, portal.widget.{device,traffic,services}, portal.trust_owner_mapping,
 //       portal.base_domain, portal.prefix
 
 const { Router } = require('express');
@@ -34,7 +34,7 @@ router.get('/portal', (req, res) => {
  * PUT /api/v1/settings/portal — Update portal master switch + widget toggles + host + owner mapping
  *
  * Accepts:
- *   { enabled: bool, widgets: { device: bool, traffic: bool, services: bool, pihole: bool },
+ *   { enabled: bool, widgets: { device: bool, traffic: bool, services: bool },
  *     trust_owner_mapping: bool, base_domain: string, prefix: string }
  */
 router.put('/portal', async (req, res) => {
@@ -53,9 +53,6 @@ router.put('/portal', async (req, res) => {
     }
     if (widgets.services !== undefined) {
       settings.set('portal.widget.services', widgets.services ? '1' : '0');
-    }
-    if (widgets.pihole !== undefined) {
-      settings.set('portal.widget.pihole', widgets.pihole ? '1' : '0');
     }
 
     if (body.trust_owner_mapping !== undefined) {

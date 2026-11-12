@@ -23,10 +23,9 @@ test('portal.css contains dark and light theme token blocks', async () => {
   assert.ok(res.text.includes('[data-theme="light"]'), 'missing light theme block');
 });
 
-test('portal.css styles the DNS-protection donut and the state rules', async () => {
+test('portal.css styles the state rules; the donut of the removed Pi-hole card is gone', async () => {
   const res = await supertest(app).get('/css/portal.css').expect(200);
-  assert.ok(res.text.includes('.pt-donut'), 'missing .pt-donut');
-  assert.ok(res.text.includes('conic-gradient'), 'donut drawn with a conic gradient');
+  assert.ok(!res.text.includes('.pt-donut'), 'no .pt-donut left');
   for (const sel of ['.pt-empty', '.pt-msg', '[hidden]']) assert.ok(res.text.includes(sel), sel);
 });
 

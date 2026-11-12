@@ -21,7 +21,7 @@ before(async () => {
 after(() => teardown());
 
 // Core pages that are always available with the test license override.
-// dns/pihole are feature-gated (not unlocked in setup) → verified manually.
+// dns is feature-gated (not unlocked in setup) → verified manually.
 const PAGES = [
   '/dashboard', '/peers', '/routes', '/gateways',
   '/rdp', '/certificates', '/users', '/groups', '/directory', '/logs', '/settings', '/profile',
@@ -179,78 +179,6 @@ describe('aurora theme — dashboard layout (redesign)', () => {
     assert.doesNotMatch(js.replace(/\/\/.*$/gm, ''), /innerHTML|insertAdjacentHTML|outerHTML/, 'DOM via createElement/textContent only');
     assert.match(js, /function tick\(/, 'tick() loop present');
     assert.match(js, /visibilitychange/, 'pauses while hidden');
-  });
-});
-
-// ── Task P2-2: Pi-hole ID-contract (Aurora mockup fidelity) ──────────────────
-describe('aurora theme — pihole layout (Task P2-2)', () => {
-  it('renders /pihole under aurora (200, aurora shell)', async () => {
-    selectAurora();
-    const res = await agent.get('/pihole').expect(200);
-    assert.match(res.text, /class="app"/, 'aurora .app shell present');
-    assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
-  });
-
-  it('renders Aurora grid structure and signature classes on /pihole', async () => {
-    selectAurora();
-    const res = await agent.get('/pihole').expect(200);
-    assert.match(res.text, /class="grid"/, '.grid container present');
-    assert.match(res.text, /class="card span5"/, '.card.span5 present');
-    assert.match(res.text, /class="card span7"/, '.card.span7 present');
-    assert.match(res.text, /class="card-title"/, '.card-title present');
-    assert.match(res.text, /class="donut"/, '.donut SVG present');
-    assert.match(res.text, /class="pi-wrap"/, '.pi-wrap present');
-    assert.match(res.text, /class="toplist"/, '.toplist present');
-  });
-
-  it('renders all phase0 contract IDs on /pihole under aurora', async () => {
-    selectAurora();
-    const res = await agent.get('/pihole').expect(200);
-    // Stat IDs
-    assert.match(res.text, /id="ph-stat-queries"/, '#ph-stat-queries present');
-    assert.match(res.text, /id="ph-stat-blocked"/, '#ph-stat-blocked present');
-    assert.match(res.text, /id="ph-stat-blocked-pct"/, '#ph-stat-blocked-pct present');
-    assert.match(res.text, /id="ph-stat-gravity"/, '#ph-stat-gravity present');
-    assert.match(res.text, /id="ph-stat-clients"/, '#ph-stat-clients present');
-    // Donut
-    assert.match(res.text, /id="pi-donut"/, '#pi-donut present');
-    // Chart
-    assert.match(res.text, /id="ph-chart-svg"/, '#ph-chart-svg present');
-    // Toplists
-    assert.match(res.text, /id="ph-top-domains-tbody"/, '#ph-top-domains-tbody present');
-    assert.match(res.text, /id="ph-top-clients-tbody"/, '#ph-top-clients-tbody present');
-    assert.match(res.text, /id="ph-client-col-peer"/, '#ph-client-col-peer present');
-    // Query types
-    assert.match(res.text, /id="ph-query-types-list"/, '#ph-query-types-list present');
-    // Attribution / status
-    assert.match(res.text, /id="ph-attribution-warn"/, '#ph-attribution-warn present');
-    assert.match(res.text, /id="ph-blocking-badge"/, '#ph-blocking-badge present');
-    assert.match(res.text, /id="ph-status-badge"/, '#ph-status-badge present');
-    // Health
-    assert.match(res.text, /id="ph-health-status"/, '#ph-health-status present');
-    assert.match(res.text, /id="ph-health-sync"/, '#ph-health-sync present');
-    assert.match(res.text, /id="ph-health-instances"/, '#ph-health-instances present');
-    // Controls
-    assert.match(res.text, /id="btn-pihole-reload"/, '#btn-pihole-reload present');
-    assert.match(res.text, /id="btn-ph-pause-30s"/, '#btn-ph-pause-30s present');
-    assert.match(res.text, /id="btn-ph-pause-5m"/, '#btn-ph-pause-5m present');
-    assert.match(res.text, /id="btn-ph-pause-30m"/, '#btn-ph-pause-30m present');
-    assert.match(res.text, /id="btn-ph-enable"/, '#btn-ph-enable present');
-  });
-
-  it('toplist uses <ul> tag for ph-top-domains-tbody and ph-top-clients-tbody in aurora', async () => {
-    selectAurora();
-    const res = await agent.get('/pihole').expect(200);
-    assert.match(res.text, /<ul id="ph-top-domains-tbody"/, 'ph-top-domains-tbody is a <ul> in Aurora');
-    assert.match(res.text, /<ul id="ph-top-clients-tbody"/, 'ph-top-clients-tbody is a <ul> in Aurora');
-  });
-
-  it('pihole.js renders the Aurora toplists without a theme branch', () => {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'pihole.js'), 'utf8');
-    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in pihole.js (Aurora is the only theme)');
-    assert.match(js, /function renderSummary\(/, 'renderSummary() present');
-    assert.match(js, /function renderTopDomains\(/, 'renderTopDomains() present');
-    assert.match(js, /function renderTopClients\(/, 'renderTopClients() present');
   });
 });
 

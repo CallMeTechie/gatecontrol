@@ -156,7 +156,7 @@ describe('i18n', () => {
     env.addFilter('reltime', () => '—');
     env.addFilter('truncate', (s, n) => (!s || s.length <= n ? (s || '') : s.substring(0, n) + '...'));
     const t = (key) => (de[key] !== undefined ? de[key] : key);
-    const license = { plan: 'pro', features: { scheduled_backups: true, http_routes: -1, l4_routes: -1, pihole: { available: true } }, hasFeature: () => true, isWithinLimit: () => true };
+    const license = { plan: 'pro', features: { scheduled_backups: true, http_routes: -1, l4_routes: -1 }, hasFeature: () => true, isWithinLimit: () => true };
     const html = env.render('aurora/pages/settings.njk', {
       theme: 'aurora', language: 'de', t, availableLanguages: ['de', 'en'], cspNonce: 'N', csrfToken: 'c',
       appVersion: '9.9.9', appName: 'GateControl', baseUrl: 'https://gc.example.com',

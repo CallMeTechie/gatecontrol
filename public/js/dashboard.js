@@ -942,6 +942,16 @@
     if (news.open) { setNewsOpen(false); return; }
     loadWhatsNew(true, false);
   });
+  // "Die Pi-hole-Anbindung wurde entfernt": closed by an administrator, for everybody
+  var piGone = $('db-pihole-removed-dismiss');
+  if (piGone) piGone.addEventListener('click', function () {
+    var box = $('db-pihole-removed');
+    window.api.post('/api/v1/system/notices/pihole-removed/dismiss', {}).then(function () {
+      if (box) box.hidden = true;
+    }).catch(function () {
+      if (window.showToast) window.showToast(T('dashboard.pihole_removed.dismiss_failed', 'Could not close the notice.'), 'error');
+    });
+  });
   $('whats-new-dismiss').addEventListener('click', function () {
     $('whats-new').hidden = true;
     var body = news.current ? { version: news.current } : {};
@@ -1045,10 +1055,6 @@
     subtile('bots', bots, bots ? UI.fmtNumber(bots.total, LANG) : '', bots
       ? t(UI.plural('dashboard.sec_bots_sub', bots.routes), { n: bots.routes })
       : '');
-    var ph = d.pihole;
-    subtile('pihole', ph, ph ? UI.fmtPercent(ph.percent, LANG) : '', ph
-      ? t('dashboard.sec_pihole_sub', { n: UI.fmtNumber(ph.total, LANG) })
-      : '');
     // DNS protection of the VPN devices (today) — only while a plugin has it switched on
     var vd = d.vpnDns;
     subtile('vpndns', vd, vd ? UI.fmtPercent(vd.percent, LANG) : '', vd
@@ -1079,7 +1085,6 @@
     'gc:routes': ['problems', 'stats'],
     'gc:security': ['security', 'problems'],
     'gc:waf': ['security'],
-    'gc:pihole': ['security'],
     'gc:vpn_dns': ['security'],
   };
   Object.keys(SSE).forEach(function (ev) {

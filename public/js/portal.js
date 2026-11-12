@@ -5,7 +5,7 @@
 // #netzwerk, #geraete, #gruppen) and a WAI-ARIA tablist (arrow keys, Home/End). Every area that
 // is unlicensed or has no data is hidden (tab, panel and start card).
 //
-// Data: /api/v1/portal/* (device, traffic, services, pihole + owner/household,
+// Data: /api/v1/portal/* (device, traffic, services,
 // me/devices, me/enrollment, plugins/start + search, groups). "Zuhause" and
 // "Fahrzeug" hold plugin sections only (sandboxed frames, docs/plugins.md
 // "Portal"). Managing devices needs a portal or web session (ctx.loggedIn);
@@ -114,11 +114,6 @@
     while (v >= 1024 && i < BYTE_UNITS.length - 1) { v /= 1024; i++; }
     var num = i === 0 ? String(Math.round(v)) : new Intl.NumberFormat(LANG, { maximumFractionDigits: 1 }).format(v);
     return num + ' ' + BYTE_UNITS[i];
-  }
-  function fmtNum(v, digits) {
-    var n = Number(v);
-    if (v === null || v === undefined || v === '' || !isFinite(n)) return '–';
-    return new Intl.NumberFormat(LANG, { maximumFractionDigits: digits == null ? 0 : digits }).format(n);
   }
   function toDate(v) {
     if (v == null || v === '') return null;
@@ -338,10 +333,10 @@
     if (location.hash.slice(1) === tab) activate('start');
   }
 
-  // ═══ Device + traffic + Pi-hole (status strip, Netzwerk) ═══════════════
+  // ═══ Device + traffic (status strip, Netzwerk) ════════════════════════
   var traffic = null;
   var trafficRange = '7d';
-  var netState = { device: TABS.device ? 'pending' : 'off', traffic: TABS.traffic ? 'pending' : 'off', pihole: TABS.pihole ? 'pending' : 'off' };
+  var netState = { device: TABS.device ? 'pending' : 'off', traffic: TABS.traffic ? 'pending' : 'off' };
   function netSettled(part, ok) {
     netState[part] = ok ? 'ok' : 'none';
     var keys = Object.keys(netState);
@@ -456,76 +451,6 @@
       netSettled('traffic', true);
     }).catch(function () { netSettled('traffic', false); });
   }
-
-  var PI_URL = { device: '/api/v1/portal/pihole', owner: '/api/v1/portal/pihole/owner', household: '/api/v1/portal/pihole/household' };
-  function setDonut(node, pct) {
-    if (!node) return;
-    var p = Math.max(0, Math.min(100, Number(pct) || 0));
-    node.style.setProperty('--p', p + '%');
-  }
-  function renderPiReason(reason) {
-    show($('pt-pi-body'), false);
-    show($('pt-pi-foot'), false);
-    var box = $('pt-pi-msg');
-    if (!box) return;
-    clear(box);
-    var key = { no_owner: 'portal.pihole.no_owner', login_required: 'portal.pihole.login_required', collapsed: 'portal.pihole.collapsed',
-      no_data: 'portal.pihole.no_data', unidentified: 'portal.pihole.unidentified' }[reason] || 'portal.pihole.unavailable';
-    box.appendChild(el('span', null, T(key)));
-    if (reason === 'no_owner' || reason === 'login_required') {
-      box.appendChild(doc.createTextNode(' '));
-      box.appendChild(el('a', { href: '/login?returnTo=/portal' }, T('portal.login')));
-    }
-    box.hidden = false;
-  }
-  function loadPihole(scope, first) {
-    if (!TABS.pihole) return;
-    var url = Object.prototype.hasOwnProperty.call(PI_URL, scope) ? PI_URL[scope] : PI_URL.device;
-    getJson(url).then(function (res) {
-      var body = res.body || {};
-      if (!okData(res)) {
-        if (first && scope === 'device' && body.reason === 'unavailable') { hideArea('pihole'); netSettled('pihole', false); return; }
-        renderPiReason(body.reason);
-        if (first) netSettled('pihole', true);
-        return;
-      }
-      var d = body.data;
-      show($('pt-pi-body'), true);
-      show($('pt-pi-foot'), true);
-      setDonut($('pt-pi-donut'), d.blockedPct);
-      setText('pt-pi-pct', fmtNum(d.blockedPct) + ' %');
-      setText('pt-pi-total', fmtNum(d.total));
-      setText('pt-pi-blocked', fmtNum(d.blocked));
-      var household = scope === 'household';
-      show($('pt-pi-allowed-l'), !household);
-      show($('pt-pi-allowed'), !household);
-      setText('pt-pi-allowed', fmtNum(d.allowed));
-      if (scope === 'owner') { setText('pt-pi-extra-l', T('portal.pihole.devices')); setText('pt-pi-extra', fmtNum(d.deviceCount)); }
-      if (household) { setText('pt-pi-extra-l', T('portal.pihole.active_clients')); setText('pt-pi-extra', fmtNum(d.activeClients || 0)); }
-      show($('pt-pi-extra-l'), scope !== 'device');
-      show($('pt-pi-extra'), scope !== 'device');
-      message('pt-pi-msg', d.total === 0 ? T('portal.pihole.zero_queries') : '');
-      if (scope === 'device') {
-        setDonut($('pt-start-donut'), d.blockedPct);
-        setText('pt-start-donut-v', fmtNum(d.blockedPct) + ' %');
-        show($('pt-start-pi'), true);
-        setText('pt-strip-pi', T('portal.strip.adblock_value', { pct: fmtNum(d.blockedPct) }));
-        show($('pt-strip-pi-wrap'), true);
-      }
-      if (first) netSettled('pihole', true);
-    }).catch(function () { if (first) netSettled('pihole', false); });
-  }
-  (function wirePiSeg() {
-    var seg = $('pt-pi-seg');
-    if (!seg) return;
-    seg.addEventListener('click', function (e) {
-      var b = e.target.closest('button[data-scope]');
-      if (!b) return;
-      seg.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
-      message('pt-pi-msg', '');
-      loadPihole(b.getAttribute('data-scope'), false);
-    });
-  })();
 
   // ═══ Services ═══════════════════════════════════════════════════════════
   var services = [];
@@ -682,7 +607,6 @@
     btn.addEventListener('click', function () {
       var prev = doc.activeElement;
       var titleId = 'pt-enroll-t';
-      var pihole = TABS.pihole ? el('input', { type: 'checkbox' }) : null;
       var err = el('div', { class: 'pt-alert', role: 'alert', hidden: true });
       var codeBox = el('div', { class: 'pt-code', hidden: true });
       var create = el('button', { type: 'button', class: 'pt-btn pt-btn-primary' }, T('portal.devices.enroll_create'));
@@ -691,7 +615,6 @@
       var box = el('div', { class: 'pt-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId }, [
         el('h2', { class: 'pt-h2', id: titleId }, T('portal.devices.new')),
         el('p', { class: 'pt-dialog-text' }, T('portal.devices.enroll_text')),
-        pihole ? el('label', { class: 'pt-check' }, [pihole, T('portal.devices.enroll_pihole')]) : null,
         codeBox, err,
         el('div', { class: 'pt-dialog-foot' }, [closeBtn, create]),
       ]);
@@ -709,7 +632,7 @@
       create.addEventListener('click', function () {
         create.disabled = true;
         err.hidden = true;
-        send('POST', '/api/v1/portal/me/enrollment', { pihole: !!(pihole && pihole.checked) }).then(function (res) {
+        send('POST', '/api/v1/portal/me/enrollment', {}).then(function (res) {
           create.disabled = false;
           var b = res.body || {};
           if (res.status !== 201 || !b.ok) { err.textContent = T('portal.devices.enroll_failed'); err.hidden = false; return; }
@@ -1658,7 +1581,6 @@
   activate(location.hash.slice(1) || 'start');
   loadDevice();
   loadTraffic();
-  loadPihole('device', true);
   loadServices();
   // Own profile picture and favourite colour on "Meine Geräte"
   // (docs/feature-avatars.md; signed in, never on a kiosk device).

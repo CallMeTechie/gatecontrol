@@ -15,9 +15,9 @@ try {
 // after the first: at most INTERVAL_MS + TIMEOUT_MS + RETRY_MS + TIMEOUT_MS =
 // 9 s, then dnsmasq restarts (well under 1 s, scripts/wg-wrapper.sh). Going
 // back takes UP_AFTER good rounds in a row, so a flapping resolver does not
-// restart dnsmasq every few seconds. The interval is not shorter because every
-// probe is a query in Pi-hole's own statistics (17 280 a day per instance at
-// 5 s).
+// restart dnsmasq every few seconds. These defaults suit a resolver somewhere
+// in the network, where every probe is a query in its own statistics; the
+// local filter service brings a faster cadence (services/dnsChain.js).
 const INTERVAL_MS = 5000;
 const RETRY_MS = 1000;
 const TIMEOUT_MS = 1500;
@@ -87,7 +87,7 @@ async function probeDns(inst, timeoutMs = TIMEOUT_MS) {
  *   now()         → ms, injectable for tests
  *
  * provider:
- *   id            'pihole' | 'vpnfilter' | …  (also the name of its active state)
+ *   id            'vpnfilter' | …  (also the name of its active state)
  *   label         for log lines
  *   ecs           forward the client address to the targets (default true)
  *   targets()     → [{ id, label, dns_ip, dns_port }]; none = chain not wanted
@@ -124,8 +124,7 @@ function createChainWatch(deps) {
     return { provider: owner ? owner.id : null, state, since, checkedAt, targets, displaced };
   }
 
-  // What one provider sees — the shape the Pi-hole pages have always got:
-  // state 'off' | '<id>' | 'fallback'.
+  // What one provider sees: state 'off' | '<id>' | 'fallback'.
   function statusFor(id) {
     if (owner && owner.id === id) return { state: state === 'active' ? id : 'fallback', since, checkedAt, targets };
     if (owner) return { state: 'off', since, checkedAt: null, targets: [], displacedBy: owner.id };

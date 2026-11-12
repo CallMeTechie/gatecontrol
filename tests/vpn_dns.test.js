@@ -197,7 +197,7 @@ after(async () => {
 });
 
 describe('without a plugin with permissions.vpnDns nothing runs', () => {
-  it('no service, no chain entry, no file — Pi-hole users notice nothing', async () => {
+  it('no service, no chain entry, no file', async () => {
     const conf = fs.readFileSync(confPath, 'utf8');
     assert.equal(vpnDns.available(), false);
     assert.equal(vpnDns.start(), false);
@@ -218,11 +218,8 @@ describe('without a plugin with permissions.vpnDns nothing runs', () => {
     assert.equal((await agent.get('/api/v1/dashboard/security-summary').expect(200)).body.vpnDns, null);
   });
 
-  it('the Pi-hole page says "abgekündigt" and points to the plugin catalogue', async () => {
-    const page = await agent.get('/pihole').expect(200);
-    assert.match(page.text, /id="ph-deprecated"[^>]*data-state="catalog"/);
-    assert.match(page.text, /Die Pi-hole-Anbindung ist abgekündigt|The Pi-hole integration is deprecated/);
-    assert.match(page.text, /id="ph-deprecated-move" href="\/settings\/plugins\/catalog"/);
+  it('no plugin: nothing is installed, the apps get no plugin; the old Pi-hole page leads to the dashboard', async () => {
+    assert.equal((await agent.get('/pihole').expect(302)).headers.location, '/dashboard');
     assert.equal(vpnDns.installedPlugin(), null);
     assert.equal(vpnDns.clientPlugin(), null);
   });
@@ -262,7 +259,7 @@ describe('manifest: permissions.vpnDns', () => {
     assert.equal(ui.sensitivePerms(inspect.plugin.permissions)[0], 'plugins.perm.vpn_dns');
     for (const lang of ['de', 'en']) {
       const s = require(`../src/i18n/${lang}.json`);
-      for (const k of ['plugins.perm.vpn_dns', 'plugins.perm.vpn_dns_on', 'pihole.chain_displaced', 'dashboard.vpndns.down_title', 'dashboard.vpndns.paused_title', 'dashboard.vpndns.resume']) {
+      for (const k of ['plugins.perm.vpn_dns', 'plugins.perm.vpn_dns_on', 'dashboard.pihole_removed.title', 'dashboard.vpndns.down_title', 'dashboard.vpndns.paused_title', 'dashboard.vpndns.resume']) {
         assert.ok(s[k], `${lang}: ${k}`);
       }
     }
@@ -286,14 +283,11 @@ describe('manifest: permissions.vpnDns', () => {
   it('the apps: "the plugin is there, the protection is off" is not "no plugin" — `vpnDns` stays null as before', async () => {
     const dev = H.makeDevice(anna, { name: 'vpndns-off-phone' });
     const perm = await supertest(app).get('/api/v1/client/permissions').set('X-API-Token', dev.raw).expect(200);
-    assert.equal(perm.body.vpnDns, null, 'apps that only know vpnDns keep their Pi-hole view');
+    assert.equal(perm.body.vpnDns, null);
+    // the Pi-hole integration is gone: the flags stay in the answer, always false (older apps hide their view)
+    assert.deepEqual([perm.body.permissions.pihole, perm.body.permissions.piholeControl], [false, false]);
     assert.deepEqual(perm.body.dnsProtection, { plugin: P, enabled: false, state: 'off' });
     assert.deepEqual(vpnDns.installedPlugin(), { id: P, usable: true });
-    // the Pi-hole page: "Zum DNS-Schutz umziehen" opens the plugin's settings page
-    const page = await agent.get('/pihole').expect(200);
-    assert.match(page.text, /id="ph-deprecated"[^>]*data-state="plugin"/);
-    assert.match(page.text, new RegExp(`id="ph-deprecated-move" href="/settings/plugins/manage/${P}\\?tab=settings"`));
-    assert.match(page.text, /Zum DNS-Schutz umziehen|Move to the DNS protection/);
     require('../src/services/tokens').revoke(dev.tokenId, '127.0.0.1');
     db.prepare('DELETE FROM peers WHERE id = ?').run(dev.peerId);
   });
@@ -656,7 +650,6 @@ describe('the apps', () => {
     const perm = await supertest(app).get('/api/v1/client/permissions').set('X-API-Token', dev.raw).expect(200);
     assert.deepEqual(perm.body.vpnDns, { plugin: P, state: 'filtering' });
     assert.deepEqual(perm.body.dnsProtection, { plugin: P, enabled: true, state: 'filtering' });
-    assert.match((await agent.get('/pihole').expect(200)).text, /id="ph-deprecated"[^>]*data-state="moved"/);
     // the dashboard's notice opens the plugin's settings page as well
     assert.match(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8'), /encodeURIComponent\(n\.plugin\) \+ '\?tab=settings'/);
     const me = await supertest(app).get(`/api/v1/client/plugins/${P}/api/me`).set('X-API-Token', dev.raw).expect(200);
@@ -947,32 +940,22 @@ describe('a profile shared with a home network ("gilt zu Hause und unterwegs")',
   });
 });
 
-describe('outage and Pi-hole', () => {
-  it('Pi-hole is displaced, not a second fallback; releasePihole only while the filter owns the chain', async () => {
-    const pc = require('../src/services/piholeConfig');
-    require('../src/services/pihole');
-    pc.save({ ...pc.load(), enabled: true, manage_dns_chain: true, instances: [{ id: 'a', name: 'pi', url: 'http://10.9.9.9', app_password: '', dns_ip: '10.9.9.9', dns_port: 53 }] });
+describe('outage', () => {
+  it('plugins written for servers with Pi-hole: status().pihole says "none", releasePihole() does nothing', async () => {
     await freshRound();
     assert.equal(dnsChain.status().provider, 'vpnfilter');
-    assert.deepEqual(dnsChain.status().displaced, ['pihole']);
-    const ph = await agent.get('/api/v1/pihole/status');
-    if (ph.status === 200 && ph.body.dnsChain) assert.equal(ph.body.dnsChain.displacedBy, 'vpnfilter');
-    // where the devices reach Pi-hole: directly, …
-    const direct = [{ name: 'pi', ip: '10.9.9.9', port: 53, gateway: null }];
-    assert.deepEqual((await ok('status')).pihole, { configured: true, wantsChain: true, chain: 'displaced', targets: direct });
-    // … on a gateway (its tunnel address) or behind one (an address of a LAN it reported)
-    db.prepare('INSERT OR REPLACE INTO gateway_meta (peer_id, api_port, api_token_hash, push_token_encrypted, last_health, created_at) VALUES (?, 9876, ?, ?, ?, ?)')
-      .run(gateway, 'h-' + gateway, 'x', JSON.stringify({ telemetry: { lan_subnets: [{ cidr: '192.168.178.0/24' }] } }), Date.now());
-    const inst = (name, ip, port) => ({ id: name, name, url: 'http://' + ip, app_password: '', dns_ip: ip, dns_port: port });
-    assert.deepEqual(vpnDns.piholeTargets({ instances: [inst('keller', '192.168.178.5', 5353), inst('pi', '10.8.0.2', 53), inst('fern', '192.168.179.5', 53), inst('leer', '', 53)] }), [
-      { name: 'keller', ip: '192.168.178.5', port: 5353, gateway: { peerId: gateway, name: 'Pi Keller', via: 'lan' } },
-      { name: 'pi', ip: '10.8.0.2', port: 53, gateway: { peerId: gateway, name: 'Pi Keller', via: 'tunnel' } },
-      { name: 'fern', ip: '192.168.179.5', port: 53, gateway: null },
-    ]);
-    assert.deepEqual(await ok('releasePihole'), { configured: true, wantsChain: false, chain: 'off', targets: direct });
-    assert.equal(pc.load().manage_dns_chain, false);
+    assert.deepEqual(dnsChain.status().displaced, []);
+    const none = { configured: false, wantsChain: false, chain: 'off', targets: [] };
+    const conf = fs.readFileSync(confPath, 'utf8');
+    const before = restarts;
+    assert.deepEqual((await ok('status')).pihole, none);
+    assert.deepEqual(await ok('releasePihole'), none);
+    assert.equal(fs.readFileSync(confPath, 'utf8'), conf, 'the chain is not touched');
+    assert.equal(restarts, before);
     assert.equal(dnsChain.status().provider, 'vpnfilter');
-    pc.save({ ...pc.load(), enabled: false });
+    // … also when the protection does not filter and without an acting person (it used to refuse then)
+    assert.deepEqual(vpnDns.releasePihole(), none);
+    assert.deepEqual(await hostApi.handle({ id: P, manifest: { permissions: { vpnDns: true } } }, 'vpnDns.releasePihole', {}), none);
   });
 
   it('the service dies → fallback with notice, activity and event; it comes back → restored', async () => {

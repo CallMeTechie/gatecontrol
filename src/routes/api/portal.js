@@ -6,8 +6,6 @@ const routesSvc = require('../../services/routes');
 const { getDb } = require('../../db/connection');
 const logger = require('../../utils/logger');
 const portalConfig = require('../../services/portalConfig');
-const pihole = require('../../services/pihole');
-const license = require('../../services/license');
 const { canAccessRoute } = require('../../services/rdpAcl');
 const { csrfProtection } = require('../../middleware/csrf');
 const { createMeRouter } = require('./me');
@@ -42,10 +40,6 @@ router.use('/plugins', require('./pluginsPortal'));
 
 function unidentified(res) {
   return res.json({ ok: true, data: null, reason: 'unidentified' });
-}
-
-function piholeUnavailable(cache) {
-  return !license.hasFeature('pihole_integration') || !cache.instances || cache.instances.length === 0;
 }
 
 // Convert JS Date to 'YYYY-MM-DD HH:MM:SS' (UTC, no ms) for comparison
@@ -186,85 +180,6 @@ router.get('/services', (req, res) => {
   } catch (err) {
     logger.error({ error: err.message }, 'portal /services failed');
     return unidentified(res);
-  }
-});
-
-router.get('/pihole', (req, res) => {
-  try {
-    if (!portalConfig().widgets.pihole) return res.status(404).json({ ok: false });
-    // Reuse the existing Pro feature gate; INLINE (not requireFeature middleware) so the
-    // frontend gets a clean "hide" signal (data:null) instead of a 403.
-    const cache = pihole.getCache();
-    if (piholeUnavailable(cache)) {
-      return res.json({ ok: true, data: null, reason: 'unavailable' });
-    }
-    if (req.portalPeerId == null) return unidentified(res); // reuse the existing helper (siblings do too)
-    if (cache.attribution === 'collapsed') return res.json({ ok: true, data: null, reason: 'collapsed' });
-
-    const pid = req.portalPeerId;
-    const allowedEntry = (cache.topClients || []).find(c => c.peerId === pid);
-    const blockedEntry = (cache.topClientsBlocked || []).find(c => c.peerId === pid);
-    // Device present in NEITHER top-N list → no_data. Do NOT fake zeros (would lie that
-    // Pi-hole saw this device). Keep this null-check — do not collapse back to flat 0.
-    if (!allowedEntry && !blockedEntry) return res.json({ ok: true, data: null, reason: 'no_data' });
-
-    const allowed = allowedEntry ? allowedEntry.count : 0;
-    const blocked = blockedEntry ? blockedEntry.count : 0;
-    const total = allowed + blocked;
-    const blockedPct = total ? Math.round((blocked / total) * 100) : 0;
-    res.json({ ok: true, data: { total, blocked, allowed, blockedPct, asOf: cache.lastSyncAt } });
-  } catch (err) {
-    logger.error({ error: err.message }, 'portal /pihole failed');
-    // intentional: a service/cache error is 'unavailable', NOT 'unidentified'
-    return res.json({ ok: true, data: null, reason: 'unavailable' });
-  }
-});
-
-router.get('/pihole/owner', (req, res) => {
-  try {
-    if (!portalConfig().widgets.pihole) return res.status(404).json({ ok: false });
-    const cache = pihole.getCache();
-    if (piholeUnavailable(cache)) {
-      return res.json({ ok: true, data: null, reason: 'unavailable' });
-    }
-    if (req.portalOwnerId == null) return res.json({ ok: true, data: null, reason: 'no_owner' });
-    if (cache.attribution === 'collapsed') return res.json({ ok: true, data: null, reason: 'collapsed' });
-    const ownerPeerIds = new Set(peers.peersOfOwner(req.portalOwnerId)); // owner id NEVER from req body/query
-    let allowed = 0;
-    let blocked = 0;
-    const seen = new Set();
-    for (const c of (cache.topClients || [])) {
-      if (ownerPeerIds.has(c.peerId)) { allowed += c.count; seen.add(c.peerId); }
-    }
-    for (const c of (cache.topClientsBlocked || [])) {
-      if (ownerPeerIds.has(c.peerId)) { blocked += c.count; seen.add(c.peerId); }
-    }
-    if (seen.size === 0) return res.json({ ok: true, data: null, reason: 'no_data' });
-    const total = allowed + blocked;
-    const blockedPct = total ? Math.round((blocked / total) * 100) : 0;
-    res.json({ ok: true, data: { total, blocked, allowed, blockedPct, deviceCount: seen.size, asOf: cache.lastSyncAt } });
-  } catch (err) {
-    logger.error({ error: err.message }, 'portal /pihole/owner failed');
-    return res.json({ ok: true, data: null, reason: 'unavailable' });
-  }
-});
-
-router.get('/pihole/household', (req, res) => {
-  try {
-    if (!portalConfig().widgets.pihole) return res.status(404).json({ ok: false });
-    const cache = pihole.getCache();
-    if (piholeUnavailable(cache)) {
-      return res.json({ ok: true, data: null, reason: 'unavailable' });
-    }
-    if (!req.portalLoggedIn) return res.json({ ok: true, data: null, reason: 'login_required' }); // trust switch never relaxes household
-    const s = cache.summary;
-    if (!s || !s.queries) return res.json({ ok: true, data: null, reason: 'unavailable' });
-    const total = s.queries.total || 0, blocked = s.queries.blocked || 0;
-    const blockedPct = total ? Math.round((blocked / total) * 100) : 0;
-    res.json({ ok: true, data: { total, blocked, blockedPct, activeClients: (s.clients && s.clients.active != null) ? s.clients.active : null, asOf: cache.lastSyncAt } });
-  } catch (err) {
-    logger.error({ error: err.message }, 'portal /pihole/household failed');
-    return res.json({ ok: true, data: null, reason: 'unavailable' });
   }
 });
 

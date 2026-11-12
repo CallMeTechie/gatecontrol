@@ -22,7 +22,7 @@
   // 'start' is /settings itself (the former section "Übersicht" lives on
   // there); every other section has its own address /settings/<section>.
   const SECTIONS = ['start', 'domains', 'netzwerk', 'daten', 'anmeldung', 'geraete', 'ipsperre', 'routenschutz', 'virenscan', 'gruppen', 'richtlinien',
-    'splittunnel', 'clientupdates', 'email', 'benachrichtigungen', 'webhooks', 'monitoring', 'pihole', 'geoip',
+    'splittunnel', 'clientupdates', 'email', 'benachrichtigungen', 'webhooks', 'monitoring', 'geoip',
     'portal', 'plugins', 'ki', 'backup', 'updates', 'lizenz', 'gefahr'];
 
   // The twelve tabs of the old page (links: /settings#backup from the
@@ -39,7 +39,7 @@
     'split-tunnel': 'splittunnel',
     'client-updates': 'clientupdates',
     'client-policy': 'richtlinien',
-    pihole: 'pihole',
+    pihole: 'start', // the Pi-hole integration is gone
     portal: 'portal',
   };
   // Element ids of the old page that have no element of that id any more.

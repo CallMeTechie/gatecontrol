@@ -190,10 +190,10 @@
   const CLIENT_SCOPES = ['client', 'client:services', 'client:rdp', 'client:traffic', 'client:dns'];
   const APP_PRESET = ['client', 'client:services', 'client:rdp', 'client:traffic', 'client:dns'];
   const ADMIN_SCOPES = ['read-only', 'peers', 'routes', 'settings', 'webhooks', 'logs', 'system'];
-  const MEMBER_CAP = ['client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp', 'pihole'];
+  const MEMBER_CAP = ['client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp'];
   const RIGHT_KEY = {
     'client': 'client', 'client:services': 'services', 'client:rdp': 'rdp', 'client:traffic': 'traffic', 'client:dns': 'dns',
-    'pihole': 'pihole', 'pihole:control': 'pihole_control', 'full-access': 'full', 'read-only': 'read', 'peers': 'peers',
+    'full-access': 'full', 'read-only': 'read', 'peers': 'peers',
     'routes': 'routes', 'settings': 'settings', 'webhooks': 'webhooks', 'logs': 'logs', 'system': 'system', 'gateway': 'gateway', 'backup': 'backup',
   };
   function rightLabel(scope) { return RIGHT_KEY[scope] ? T('us.right.' + RIGHT_KEY[scope]) : scope; }
@@ -201,7 +201,7 @@
   function allowedFor(role, scope) { return role === 'admin' || role == null || MEMBER_CAP.indexOf(scope) >= 0; }
   function sameSet(a, b) { return a.length === b.length && a.every((x) => b.indexOf(x) >= 0); }
   function presetOf(scopes, device) {
-    const s = (scopes || []).filter((x) => x !== 'pihole');
+    const s = scopes || [];
     if (scopes.indexOf('full-access') >= 0) return 'full';
     if (sameSet(scopes, ['read-only'])) return 'read';
     if (sameSet(s, APP_PRESET)) return 'app';
@@ -1182,13 +1182,6 @@
       panel.appendChild(seeGroup(T('us.see.rdp'), T('us.see.count', { n: v.rdp.visible.length, total: v.rdp.total }), ICON.pc,
         { label: T('us.see.link_shares'), href: '/rdp' }, rdpItems));
     }
-    // Pi-hole
-    let piItems;
-    if (!v.pihole.licensed) piItems = [{ name: T('us.see.pihole_unlicensed'), tone: 'us-dot-off', why: 'all', reason: '' }];
-    else if (!v.pihole.devices.length) piItems = [{ name: T('us.see.pihole_no_devices'), tone: 'us-dot-off', why: 'all', reason: '' }];
-    else piItems = v.pihole.devices.map((x) => ({ name: x.name, detail: x.on ? T('us.see.pihole_on') : T('us.see.pihole_off'), tone: x.on ? 'us-dot-good' : 'us-dot-warn', why: 'pick', reason: T('us.see.why_device') }));
-    panel.appendChild(seeGroup(T('us.see.pihole'), '', ICON.shield,
-      { label: T('us.see.link_change'), href: '#', click: (e) => { e.preventDefault(); selectTab('access'); } }, piItems));
   }
 
   // ── Tab: Anmeldung & Sicherheit ────────────────────────────────────
@@ -1419,7 +1412,7 @@
   }
 
   // ── Wizard ─────────────────────────────────────────────────────────
-  const wz = { step: 1, kind: 'device', ownerId: null, preset: 'app', scopes: [], pihole: false, binding: false, peers: [], result: null, timer: null, st: null, lastBody: null, after: null, fixedOwner: false };
+  const wz = { step: 1, kind: 'device', ownerId: null, preset: 'app', scopes: [], binding: false, peers: [], result: null, timer: null, st: null, lastBody: null, after: null, fixedOwner: false };
 
   function ownerOf(id) { return id == null || id === '' ? null : userById(Number(id)); }
   function wzRole() { const o = ownerOf(wz.ownerId); return o ? o.role : null; }
@@ -1477,7 +1470,6 @@
     if (reset) {
       wz.preset = defaultPreset();
       wz.scopes = wz.kind === 'device' ? APP_PRESET.slice() : (wzRole() === 'user' ? CLIENT_SCOPES.slice() : ['read-only']);
-      wz.pihole = wz.kind === 'device' && wzRole() === 'admin';
       wz.binding = wz.kind === 'device';
     }
     show($('us-wz-classic-wrap'), wz.kind === 'token');
@@ -1510,12 +1502,11 @@
   function scopeCatalog() {
     if (wz.kind === 'device') {
       return [
-        { title: null, scopes: CLIENT_SCOPES.concat(CTX.pihole ? ['pihole', 'pihole:control'] : []) },
+        { title: null, scopes: CLIENT_SCOPES.slice() },
       ];
     }
     return [
       { title: T('us.wz.g_app'), scopes: CLIENT_SCOPES.slice() },
-      CTX.pihole ? { title: T('us.wz.g_pihole'), scopes: ['pihole', 'pihole:control'] } : null,
       { title: T('us.wz.g_admin'), scopes: ADMIN_SCOPES.slice() },
     ].filter(Boolean);
   }
@@ -1546,7 +1537,6 @@
   function wzScopes() {
     const role = wzRole();
     let s = wz.preset === 'custom' ? wz.scopes.slice() : presetScopes(wz.preset);
-    if (wz.kind === 'device' && wz.preset !== 'custom' && wz.pihole && CTX.pihole) s.push('pihole');
     s = s.filter((x, i) => s.indexOf(x) === i && allowedFor(role, x));
     return s;
   }
@@ -1562,18 +1552,12 @@
         p.locked ? el('span', { class: 'us-hint' }, T('us.wz.admin_only')) : null,
       ]);
       b.addEventListener('click', () => {
-        if (p.id === 'custom' && wz.preset !== 'custom') wz.scopes = presetScopes(wz.preset).concat(wz.kind === 'device' && wz.pihole ? ['pihole'] : []);
+        if (p.id === 'custom' && wz.preset !== 'custom') wz.scopes = presetScopes(wz.preset);
         wz.preset = p.id;
         renderPresets();
       });
       host.appendChild(b);
     });
-    // Pi-hole statistics as a right of the device (app/vpn presets)
-    if (wz.kind === 'device' && CTX.pihole && wz.preset !== 'custom') {
-      const cb = el('input', { type: 'checkbox', checked: wz.pihole, on: { change: (e) => { wz.pihole = e.target.checked; } } });
-      host.appendChild(el('label', { class: 'us-check us-check-top us-pihole-opt' }, [cb, el('span', null, [el('b', null, T('us.right.pihole')),
-        el('span', { class: 'us-hint' }, role === 'admin' ? T('us.wz.pihole_admin') : T('us.wz.pihole_member'))])]));
-    }
     const sc = clear($('us-wz-scopes'));
     sc.hidden = wz.preset !== 'custom';
     if (wz.preset !== 'custom') return;
@@ -1733,7 +1717,7 @@
     const peerSel = $('us-wz-peer');
     const peerTxt = peerSel.options[peerSel.selectedIndex] ? peerSel.options[peerSel.selectedIndex].textContent : '';
     const rights = presetOf(info.scopes, wz.kind === 'device') !== 'custom' && wz.preset !== 'custom'
-      ? presetLabel(wz.preset) + (info.scopes.indexOf('pihole') >= 0 && wz.kind === 'device' ? ' + ' + rightLabel('pihole') : '')
+      ? presetLabel(wz.preset)
       : info.scopes.map(rightLabel).join(', ');
     const rows = [
       [T('us.wz.sum_name'), info.name],
@@ -1893,8 +1877,8 @@
     const role = owner ? owner.role : null;
     $('us-ed-rights-q').textContent = device ? T('us.ed.rights_q_device') : T('us.ed.rights_q_api');
     const host = clear($('us-ed-rights'));
-    let list = device ? CLIENT_SCOPES.concat(CTX.pihole ? ['pihole', 'pihole:control'] : [])
-      : ['full-access'].concat(CLIENT_SCOPES, CTX.pihole ? ['pihole', 'pihole:control'] : [], ADMIN_SCOPES);
+    let list = device ? CLIENT_SCOPES.slice()
+      : ['full-access'].concat(CLIENT_SCOPES, ADMIN_SCOPES);
     (t.scopes || []).forEach((s) => { if (list.indexOf(s) < 0) list = list.concat([s]); });
     list.forEach((s) => {
       const locked = !allowedFor(role, s);

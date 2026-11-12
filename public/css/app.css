@@ -3456,7 +3456,7 @@ input[type=date]:focus, select:focus {
 .search-box input{border:0; background:transparent; outline:0; color:var(--text); font-family:var(--font-body); font-size:13.5px; width:100%}
 
 /* ----------------------------------------------------------------------------
-   13 · DATA-VIZ — NEW (aurora): kpi, donut, chart, toplist, resbar (peers, gateways, Pi-hole pages)
+   13 · DATA-VIZ — NEW (aurora): kpi, donut, chart, toplist, resbar (peers, gateways pages)
    --------------------------------------------------------------------------- */
 .kpi{display:flex; flex-direction:column; gap:10px}
 .kpi .top{display:flex; align-items:center; gap:10px}
@@ -6354,7 +6354,6 @@ a.sc-item:hover { border-color: var(--teal); color: var(--teal); }
 .us-preset[aria-pressed="true"]{border-color:var(--teal); background:var(--teal-soft)}
 .us-preset.is-locked{opacity:.55; cursor:not-allowed}
 .us-preset-text{flex:1 1 auto; min-width:0}
-.us-pihole-opt{padding:10px 14px; border-radius:12px; border:1px solid var(--line)}
 .us-scopes{padding:14px 16px; border-radius:14px; background:var(--chip); border:1px solid var(--line)}
 .us-scopes[hidden]{display:none}
 .us-scope-group{font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--faint); margin:8px 0 4px}

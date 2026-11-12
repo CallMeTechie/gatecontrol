@@ -166,7 +166,6 @@
   benachrichtigungen: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10 21h4',
   webhooks: 'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7',
   monitoring: 'M3 20h18M6 16l4-5 3 3 5-7',
-  pihole: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 8v8M8 12h8',
   geoip: 'M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11zM12 10v.5',
   portal: 'M3 9l9-6 9 6v11H3zM9 20v-6h6v6',
   plugins: 'M14 4h-4v3H7v4h3v3h4v-3h3V7h-3zM5 20h14',
@@ -189,11 +188,10 @@
   { id: 'clients', items: [['gruppen', ''], ['richtlinien', ''], ['splittunnel', 'split_tunnel_preset'], ['clientupdates', '']] },
   { id: 'notify', items: [['email', ''], ['benachrichtigungen', ''], ['webhooks', 'webhooks']] },
   { id: 'observe', items: [['monitoring', '']] },
-  { id: 'integrations', items: [['pihole', 'pihole_integration'], ['geoip', ''], ['portal', '']] },
+  { id: 'integrations', items: [['geoip', ''], ['portal', '']] },
   { id: 'extensions', items: [['plugins', ''], ['ki', '']] },
   { id: 'maintenance', items: [['backup', ''], ['updates', ''], ['lizenz', ''], ['gefahr', '']] }
 ] %}
-{% set piholeOn = has('pihole_integration') %}
 {% set cur = stSection or 'start' %}
 {%- macro secPath(id) -%}{{ '/settings' if id == 'start' else '/settings/' + id }}{%- endmacro -%}
 {%- macro secAttrs(id) %} data-section="{{ id }}" aria-labelledby="st-h-{{ id }}" data-st-keywords="{{ t('st.kw.' + id) }}"{% if id != cur %} hidden{% endif %}{%- endmacro -%}
@@ -221,7 +219,7 @@
       <div class="stx-grp" data-group="{{ g.id }}">
         <span class="pgx-lbl" id="st-nav-g-{{ g.id }}">{{ t('st.group.' + g.id) }}</span>
         <ul class="stx-navlist" aria-labelledby="st-nav-g-{{ g.id }}">
-          {%- for it in g.items %}{% if it[0] != 'pihole' or piholeOn %}
+          {%- for it in g.items %}
           <li><a class="pgx-sl stx-sl" href="{{ secPath(it[0]) }}" data-section="{{ it[0] }}"{% if it[0] == 'plugins' %} data-ext="1" data-st-keywords="{{ t('st.kw.plugins') }}"{% endif %}{% if it[0] == cur %} aria-current="page"{% endif %}>
             {{ ic(IC[it[0]], 18) }}
             <span class="stx-sl-l">{{ t('st.nav.' + it[0]) }}</span>
@@ -230,7 +228,7 @@
             <span class="stx-state" data-state-of="{{ it[0] }}"></span>
             <span class="stx-chev">{{ ic(IC.next, 14) }}</span>
           </a></li>
-          {%- endif %}{% endfor %}
+          {%- endfor %}
         </ul>
       </div>
       {%- endfor %}
@@ -301,12 +299,12 @@
       <div class="pgx-card stx-allcard">
         <span class="stx-allt">{{ t('st.group.' + g.id) }}</span>
         <span class="stx-alld">{{ t('st.groupdesc.' + g.id) }}</span>
-        {%- for it in g.items %}{% if it[0] != 'pihole' or piholeOn %}
+        {%- for it in g.items %}
         <a class="stx-alll" href="{{ secPath(it[0]) }}" data-section="{{ it[0] }}"{% if it[0] == 'plugins' %} data-ext="1"{% endif %}>
           <span class="stx-alll-l">{{ t('st.nav.' + it[0]) }}{% if it[1] %} <span class="st-pro stx-pro">{{ PRO }}</span>{% endif %}</span>
           <span class="stx-state" data-state-of="{{ it[0] }}"></span>{{ ic(IC.next, 14) }}
         </a>
-        {%- endif %}{% endfor %}
+        {%- endfor %}
       </div>
       {%- endfor %}
     </div>
@@ -893,27 +891,6 @@
   </section>
 </section>
 
-{# ══ Integrationen · Pi-hole (only with the licence) ══════════════════ #}
-{% if piholeOn %}
-<section class="st-section"{{ secAttrs('pihole') }}>
-  {% call pageHead('pihole', t('st.nav.pihole'), t('st.desc.pihole')) %}
-    <button type="button" class="pgx-btn pgx-btn-pri" id="st-ph-add">{{ ic(IC.plus) }}{{ t('pihole.cfg.add_instance') }}</button>
-  {% endcall %}
-  <section class="pgx-card stx-card" aria-labelledby="st-c-ph">
-    {% call cardHead('st-c-ph', t('st.ph.title'), t('st.ph.desc'), PRO) %}{% endcall %}
-    {{ switchRow('st-ph-on', 'ph-on', t('pihole.cfg.enabled')) }}
-    {{ switchRow('st-ph-chain', 'ph-chain', t('pihole.cfg.manage_chain'), t('pihole.cfg.manage_chain_hint')) }}
-    {{ numRow('st-ph-sync', 'ph-sync', t('pihole.cfg.sync_interval'), t('st.range', { min: 10, max: 3600 }), t('st.unit.seconds'), 10, 3600) }}
-    {{ numRow('st-ph-top', 'ph-top', t('pihole.cfg.top_clients_count'), t('pihole.cfg.top_clients_count_hint'), '', 1, 5000) }}
-  </section>
-  <section class="pgx-card stx-card" aria-labelledby="st-c-phinst">
-    {% call cardHead('st-c-phinst', t('pihole.cfg.instances_title'), t('st.ph.instances_desc')) %}{% endcall %}
-    <ul class="st-list" id="st-ph-list"></ul>
-    <div class="st-note st-note-warn" id="st-ph-gwhint" role="status" hidden></div>
-  </section>
-</section>
-{% endif %}
-
 {# ══ Integrationen · Geo-IP ═══════════════════════════════════════════ #}
 <section class="st-section"{{ secAttrs('geoip') }}>
   {% call pageHead('geoip', t('st.nav.geoip'), t('st.desc.geoip')) %}
@@ -951,7 +928,6 @@
     {{ switchRow('st-w-device', 'w-device', t('settings.portal.widget_device')) }}
     {{ switchRow('st-w-traffic', 'w-traffic', t('settings.portal.widget_traffic')) }}
     {{ switchRow('st-w-services', 'w-services', t('settings.portal.widget_services')) }}
-    {{ switchRow('st-w-pihole', 'w-pihole', t('settings.portal.widget_pihole')) }}
   </section>
 </section>
 
@@ -1287,34 +1263,6 @@ chmod +x update.sh</pre>
   </div>
 </div>
 
-{# ── Dialog: Pi-hole instance ─────────────────────────────────────── #}
-{% if piholeOn %}
-<div class="modal-overlay st-modal" id="st-ph-modal" style="display:none">
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="st-ph-title">
-    <div class="modal-head">
-      <span class="modal-title" id="st-ph-title" data-add="{{ t('pihole.cfg.add_instance') }}" data-edit="{{ t('st.ph.edit') }}">{{ t('pihole.cfg.add_instance') }}</span>
-      <button type="button" class="modal-close" data-close-modal aria-label="{{ t('common.close') }}">&times;</button>
-    </div>
-    <form class="modal-body st-dlg" id="st-ph-form" novalidate autocomplete="off">
-      <div class="st-fl"><label class="st-fl-label" for="st-ph-label">{{ t('pihole.cfg.label') }}</label><input type="text" class="st-input" id="st-ph-label" maxlength="100"></div>
-      <div class="st-fl"><label class="st-fl-label" for="st-ph-url">{{ t('pihole.cfg.url') }}</label><input type="url" class="st-input st-mono" id="st-ph-url" placeholder="http://10.8.0.5:8080" spellcheck="false" aria-describedby="st-ph-url-err"><span class="st-err" id="st-ph-url-err" role="alert" hidden></span></div>
-      <div class="st-grid2">
-        <div class="st-fl"><label class="st-fl-label" for="st-ph-dns">{{ t('pihole.cfg.dns_ip') }}</label><input type="text" class="st-input st-mono" id="st-ph-dns" placeholder="10.8.0.5" spellcheck="false"></div>
-        <div class="st-fl"><label class="st-fl-label" for="st-ph-dnsport">{{ t('pihole.cfg.dns_port') }}</label><input type="number" class="st-input st-mono" id="st-ph-dnsport" min="1" max="65535" value="53" aria-describedby="st-ph-dnsport-hint"><span class="st-hint" id="st-ph-dnsport-hint">{{ t('pihole.cfg.dns_port_hint') }}</span></div>
-      </div>
-      <div class="st-fl"><label class="st-fl-label" for="st-ph-pw">{{ t('pihole.cfg.password') }}</label><input type="password" class="st-input" id="st-ph-pw" autocomplete="new-password" aria-describedby="st-ph-pw-hint"><span class="st-hint" id="st-ph-pw-hint" hidden>{{ t('pihole.cfg.password_keep_hint') }}</span></div>
-      <label class="st-check"><input type="checkbox" id="st-ph-tls" checked> <span>{{ t('pihole.cfg.tls') }}</span></label>
-      <div class="st-note" id="st-ph-testmsg" role="status" hidden></div>
-    </form>
-    <div class="modal-foot">
-      <button type="button" class="pgx-btn pgx-btn-danger st-foot-left" id="st-ph-delete" hidden>{{ t('st.ph.delete') }}</button>
-      <button type="button" class="pgx-btn" id="st-ph-test">{{ t('pihole.cfg.test_connection') }}</button>
-      <button type="button" class="pgx-btn pgx-btn-pri" id="st-ph-save">{{ t('common.save') }}</button>
-    </div>
-  </div>
-</div>
-{% endif %}
-
 {# ── Dialog: one AI provider ("Verwalten": key, test, model, delete key) ── #}
 <div class="modal-overlay st-modal" id="ai-prov-modal" style="display:none">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ai-prov-title">
@@ -1351,7 +1299,7 @@ chmod +x update.sh</pre>
 
 <script type="application/json" id="st-catalogue" nonce="{{ cspNonce }}">{{ notifyCatalogue | default('[]') | safe }}</script>
 {# All st.* strings plus the prefixes the helper scripts read (src/routes/index.js, stringsWithPrefix). #}
-<script type="application/json" id="st-i18n" data-prefixes="st. settings. offsite. premig. autoupdate. autobackup. updatesh. client_policy. client_updates. pihole.cfg. tags. peer_groups. license. common. security.lockout. error.settings. error.webhooks. error.peer_groups. error.client_policy. error.client_updates. error.wireguard. plugins. ai." nonce="{{ cspNonce }}">{{ settingsI18n | default('{}') | safe }}</script>
+<script type="application/json" id="st-i18n" data-prefixes="st. settings. offsite. premig. autoupdate. autobackup. updatesh. client_policy. client_updates. tags. peer_groups. license. common. security.lockout. error.settings. error.webhooks. error.peer_groups. error.client_policy. error.client_updates. error.wireguard. plugins. ai." nonce="{{ cspNonce }}">{{ settingsI18n | default('{}') | safe }}</script>
 {% endblock %}
 
 {% block scripts %}

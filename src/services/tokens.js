@@ -14,8 +14,11 @@ const VALID_SCOPES = [
   'peers', 'routes', 'settings', 'webhooks', 'logs', 'system', 'backup',
   'client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp',
   'gateway',
-  'pihole', 'pihole:control',
 ];
+
+// Scopes that existed once (the Pi-hole integration). Stored tokens are
+// cleaned by a migration; a request that still names one is told so.
+const RETIRED_SCOPES = ['pihole', 'pihole:control'];
 
 /**
  * Map API path prefixes to required scopes
@@ -31,9 +34,9 @@ const SCOPE_MAP = [
   ['/api/v1/client', 'client'],
   // Gateway scope
   ['/api/v1/gateway', 'gateway'],
-  // Pi-hole scopes (control path before base path)
-  ['/api/v1/pihole/blocking', 'pihole:control'],
-  ['/api/v1/pihole', 'pihole'],
+  // Removed Pi-hole integration: the app tokens reach the 410 answer
+  // (routes/api/index.js) instead of a scope error
+  ['/api/v1/pihole', 'client'],
   // Server resource scopes
   ['/api/v1/peers', 'peers'],
   ['/api/v1/routes', 'routes'],
@@ -114,6 +117,9 @@ function validateScopes(scopes) {
     return 'At least one scope is required';
   }
   for (const s of scopes) {
+    if (RETIRED_SCOPES.includes(s)) {
+      return `Scope no longer exists: ${s} (the Pi-hole integration was removed)`;
+    }
     if (!VALID_SCOPES.includes(s)) {
       return `Invalid scope: ${s}`;
     }
@@ -618,6 +624,7 @@ module.exports = {
   assignToUser,
   isReadOnlyDenied,
   VALID_SCOPES,
+  RETIRED_SCOPES,
   SCOPE_MAP,
   READ_ONLY_DENY,
 };

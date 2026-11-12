@@ -15,13 +15,14 @@ const { createChainWatch } = require('./dnsChainWatch');
  * provider's DNS does not answer, dnsmasq goes back to the default upstreams
  * (GC_DNSMASQ_UPSTREAMS), never to another filter.
  *   vpnfilter — GateControl's own filter service on 127.0.0.1#<port>
- *   pihole    — the Pi-hole instances (services/pihole.js)
+ * (The former provider 'pihole' is gone with the Pi-hole integration; a chain
+ * it left in dnsmasq.conf is taken out by the first refresh(), see revert().)
  */
-const RANK = ['vpnfilter', 'pihole'];
+const RANK = ['vpnfilter'];
 
 // Cadence for the local filter service: no foreign statistics to spoil and no
 // network in between, so it is asked more often and with a shorter timeout
-// than Pi-hole. Dead filter → default upstreams after at most
+// than the watch's defaults. Dead filter → default upstreams after at most
 // 2000 + 1000 + 500 + 1000 ms, then one dnsmasq restart.
 const VPNFILTER_INTERVAL_MS = 2000;
 const VPNFILTER_RETRY_MS = 500;
@@ -97,7 +98,7 @@ function refresh() {
 }
 
 /**
- * { provider: 'vpnfilter'|'pihole'|null, state: 'off'|'active'|'fallback',
+ * { provider: 'vpnfilter'|null, state: 'off'|'active'|'fallback',
  *   since, checkedAt, targets: [{ id, label, dns, ok }], displaced: [ids] }
  */
 function status() {

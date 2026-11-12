@@ -125,7 +125,7 @@ function tcpAsk(src, port, name, qtype, timeoutMs) {
  * Like a device: UDP, and over TCP again when the answer comes back
  * truncated — and, like a device, asked again when nothing comes back
  * (`tries`): another test file of the suite restarts every dnsmasq of the
- * machine (`pkill dnsmasq`, tests/pihole_boot.test.js), ours is back at once.
+ * machine (`pkill dnsmasq`), ours is back at once.
  */
 async function ask(src, port, name, { qtype = wire.TYPE.A, timeoutMs = 1500, tries = 4 } = {}) {
   for (let i = 1; ; i++) {

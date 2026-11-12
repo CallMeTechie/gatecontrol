@@ -182,6 +182,18 @@ router.get('/whats-new', (req, res) => {
   }
 });
 
+// The dashboard notice "Die Pi-hole-Anbindung wurde entfernt"
+// (services/piholeRemoval.js): an administrator closes it, for everybody.
+router.post('/notices/pihole-removed/dismiss', (req, res) => {
+  if (!sessionUserId(req)) return res.status(403).json({ ok: false, error: 'session required', code: 'SESSION_REQUIRED' });
+  try {
+    require('../../services/piholeRemoval').dismiss();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: 'notice not closed', code: 'NOTICE_DISMISS_FAILED' });
+  }
+});
+
 router.post('/whats-new/seen', (req, res) => {
   const uid = sessionUserId(req);
   if (!uid) return res.status(403).json({ ok: false, error: 'session required', code: 'SESSION_REQUIRED' });

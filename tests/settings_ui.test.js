@@ -14,10 +14,10 @@ const N = require('../src/services/notifications');
 const TPL = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'settings.njk'), 'utf8');
 
 describe('sections and the address', () => {
-  it('the 26 sections: the start page, 24 pages of the template and the plugin area, in menu order', () => {
+  it('the 25 sections: the start page, 23 pages of the template and the plugin area, in menu order', () => {
     const inTpl = [...TPL.matchAll(/<section class="st-section(?: [a-z-]+)?"\{\{ secAttrs\('([a-z]+)'\) \}\}>/g)].map((m) => m[1]);
     assert.deepEqual(inTpl, U.SECTIONS.filter((s) => s !== 'plugins'));
-    assert.equal(U.SECTIONS.length, 26);
+    assert.equal(U.SECTIONS.length, 25);
     assert.equal(U.SECTIONS[0], 'start');
   });
   it('one address per section: sectionPath / sectionFromPath', () => {
@@ -33,7 +33,8 @@ describe('sections and the address', () => {
     assert.equal(U.sectionFromPath('/settings/nope'), null);
     assert.equal(U.sectionFromPath('/settings/plugins/catalog'), null, 'the plugin area has its own pages');
     assert.equal(U.sectionFromPath('/dashboard'), null);
-    assert.equal(U.sectionFromPath('/settings/pihole', ['start', 'email']), null, 'only known sections');
+    assert.equal(U.sectionFromPath('/settings/portal', ['start', 'email']), null, 'only known sections');
+    assert.equal(U.sectionFromPath('/settings/pihole'), 'start', 'the removed Pi-hole settings');
   });
   it('#<section> and ?tab=<section>', () => {
     assert.deepEqual(U.resolveLocation({ hash: '#daten' }), { section: 'daten', anchor: null });
@@ -43,7 +44,7 @@ describe('sections and the address', () => {
     const expected = {
       general: 'start', uebersicht: 'start', security: 'anmeldung', backup: 'backup', email: 'email', monitoring: 'monitoring',
       advanced: 'updates', license: 'lizenz', 'split-tunnel': 'splittunnel', 'client-updates': 'clientupdates',
-      'client-policy': 'richtlinien', pihole: 'pihole', portal: 'portal',
+      'client-policy': 'richtlinien', pihole: 'start', portal: 'portal',
     };
     for (const [old, sec] of Object.entries(expected)) {
       assert.equal(U.resolveLocation({ hash: '#' + old }).section, sec, '#' + old);
@@ -62,7 +63,7 @@ describe('sections and the address', () => {
     assert.equal(U.resolveLocation({ hash: '#email', search: '?tab=general' }).section, 'email');
     assert.equal(U.resolveLocation({ hash: '#nope' }), null);
     assert.equal(U.resolveLocation({ hash: '#<img src=x>' }), null);
-    assert.equal(U.resolveLocation({ hash: '#pihole' }, { known: U.SECTIONS.filter((s) => s !== 'pihole') }), null);
+    assert.equal(U.resolveLocation({ hash: '#portal' }, { known: U.SECTIONS.filter((s) => s !== 'portal') }), null);
     assert.equal(U.resolveLocation({ hash: '#%E0%A4%A' }), null);
   });
 });

@@ -2,7 +2,7 @@
 
 // Where an outgoing HTTPS request got stuck: "no answer", "socket hang up"
 // and "timeout" alone do not say whether the name did not resolve (the
-// server's DNS goes through the Pi-hole chain), the connection did not come
+// server's own resolver did not answer), the connection did not come
 // up (a broken IPv6 route), TLS did not finish or the server did not answer.
 //
 //   const phase = trackPhases(req);   // right after https.get / request

@@ -78,7 +78,7 @@ describe('W1: no browser dialogs in public/js/**', () => {
     // Deleting, revoking, restoring, resetting: danger: true on the dialog.
     const DESTRUCTIVE = [
       ['public/js/settings.js', ['st.cleanup.confirm', 'st.wh.delete_msg', 'settings.restore_warning', 'autobackup.confirm_delete',
-        'license.remove_confirm', 'st.ph.delete_msg', 'st.domains.remove_msg', 'st.groups.delete_msg', 'tags.confirm_delete',
+        'license.remove_confirm', 'st.domains.remove_msg', 'st.groups.delete_msg', 'tags.confirm_delete',
         'offsite.delete_msg', 'offsite.key_rotate_msg', 'st.cp.inherit_msg', 'st.confirm.req2fa_off', 'st.confirm.lockout_low']],
       ['public/js/users.js', ['us.confirm.revoke_title', 'us.confirm.self_off_title', 'us.sec.passkey_remove_title', 'us.sec.reset_title', 'us.sec.pin_reset_title', 'us.dirty.title']],
       ['public/js/portal.js', ['portal.devices.lock_title']],

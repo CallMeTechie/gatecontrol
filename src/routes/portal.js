@@ -107,10 +107,9 @@ function tabsFor(req, plg) {
     home: sections.home.length > 0,
     plugins: ((plg && plg.tabs) || []).length + sections.home.length + sections.car.length + profile.length > 0,
     car: sections.car.length > 0,
-    net: identified && (w.device || w.traffic || w.pihole),
+    net: identified && (w.device || w.traffic),
     device: identified && w.device,
     traffic: identified && w.traffic,
-    pihole: identified && w.pihole && license.hasFeature('pihole_integration'),
     // A kiosk device never manages devices or notification settings.
     devices: !!req.portalLoggedIn && !isKiosk(req),
     // Notification center: bell, inbox, own settings (signed in, push on).

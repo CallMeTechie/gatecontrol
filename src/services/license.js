@@ -48,7 +48,6 @@ const COMMUNITY_FALLBACK = {
   browser_sessions: false,
   split_tunnel_preset: false,
   internal_dns: false,
-  pihole_integration: false,
   // Former built-in integrations, now first-party plugins (gatecontrol-midea,
   // -skoda, -smarthome): the licence server derives the plan-included plugin
   // entitlement (source "plan") from these keys — they no longer show any UI.
@@ -75,6 +74,22 @@ const COMMUNITY_FALLBACK = {
   ip_blocklists: false,              // Pro: IP-Sperre — Sperrlisten (Spamhaus DROP, blocklist.de, Tor-Ausgänge)
   malware_scanning: false,           // Pro: Virenscan mit ClamAV oder eigenem Scanner (ICAP), nächtliche Nachprüfung
 };
+
+// Features that no longer exist in GateControl. Licence tokens issued earlier
+// still carry them: such a token stays valid as it is, the key is simply not
+// taken over (no entry in the licence card, nothing to switch on).
+//   pihole_integration — the Pi-hole integration, replaced by the DNS
+//                        protection (a plugin with permissions.vpnDns)
+const RETIRED_FEATURES = new Set(['pihole_integration']);
+
+/** The token's features without the retired keys. */
+function currentFeatures(features) {
+  const out = {};
+  for (const [key, val] of Object.entries(features && typeof features === 'object' ? features : {})) {
+    if (!RETIRED_FEATURES.has(key)) out[key] = val;
+  }
+  return out;
+}
 
 let cachedPlan = 'community';
 let cachedFeatures = { ...COMMUNITY_FALLBACK };
@@ -534,8 +549,9 @@ function applyLicense(data, verification = 'legacy') {
   // (not yet known to the license server) still work. License-returned
   // values override the fallback; in between, paid plans get the
   // plan default for booleans the token does not carry.
-  cachedFeatures = { ...COMMUNITY_FALLBACK, ...planDefaults(data.plan, data.features), ...data.features };
-  tokenFeatureKeys = new Set(Object.keys(data.features || {}));
+  const carried = currentFeatures(data.features);
+  cachedFeatures = { ...COMMUNITY_FALLBACK, ...planDefaults(data.plan, carried), ...carried };
+  tokenFeatureKeys = new Set(Object.keys(carried));
   cachedLicenseInfo = {
     expires_at: data.expires_at || null,
     updates_until: data.updates_until || null,
@@ -968,6 +984,7 @@ module.exports = {
   hasLicenseKey,
   removeLicense,
   COMMUNITY_FALLBACK,
+  RETIRED_FEATURES,
   _getHardwareFingerprint: getHardwareFingerprint,
   _overrideForTest,
   _applyLicenseForTest,

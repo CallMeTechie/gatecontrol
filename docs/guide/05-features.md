@@ -153,8 +153,18 @@ explains how.
 network. For phones and laptops connected by VPN the server filters itself –
 with the plugin "DNS-Schutz" (Settings › Plugins). It uses the same lists and
 categories. If the filter on the server fails, the internet of the devices
-keeps working unfiltered; the dashboard says so. Without the plugin nothing
-changes, not for an existing Pi-hole integration either.
+keeps working unfiltered; the dashboard says so. Without the plugin the VPN
+devices use the server's normal DNS servers.
+
+**Pi-hole integration removed (version 1.268.0):** GateControl no longer
+connects to Pi-hole – the page “Pi-hole”, the Pi-hole settings, the API token
+scopes `pihole` and `pihole:control` and the addresses `/api/v1/pihole/…` are
+gone. The replacement is the DNS protection. The update deletes the stored
+Pi-hole settings including the credentials, and the VPN devices use the normal
+DNS servers again (or the DNS protection, when it is switched on) – no device
+is left without name resolution. Where Pi-hole was set up, the dashboard says
+so once. Your Pi-hole itself is not touched and can keep running in the home
+network.
 
 ## Print & scan
 

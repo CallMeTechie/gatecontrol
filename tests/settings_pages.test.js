@@ -76,7 +76,7 @@ describe('one address per section', () => {
     }
   });
 
-  it('unknown sections are a 404; Pi-hole without its licence leads to the start page', async () => {
+  it('unknown sections are a 404; the address of the removed Pi-hole settings leads to the start page', async () => {
     await agent.get('/settings/nope').expect(404);
     await agent.get('/settings/..%2Fdashboard').expect(404);
     assert.equal((await agent.get('/settings/pihole').expect(302)).headers.location, '/settings');

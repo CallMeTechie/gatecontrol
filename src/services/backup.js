@@ -1218,6 +1218,10 @@ async function restoreBackup(backup) {
       }
       insertSetting.run(s.key, s.value);
     }
+    // A backup from before the Pi-hole integration was removed: its settings
+    // (with the instances' passwords) and token scopes are not taken over.
+    try { require('./piholeRemoval').purge(db); }
+    catch (err) { logger.warn({ err: err.message }, 'backup restore: Pi-hole leftovers not removed'); }
 
     // Restore webhooks
     const insertWebhook = db.prepare(`

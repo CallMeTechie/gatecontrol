@@ -151,8 +151,18 @@ auflösen – das Internet wirkt dann „weg“. Ein zweites Gateway als Reserve
 Für Handys und Laptops, die per VPN verbunden sind, filtert der Server selbst –
 mit dem Plugin „DNS-Schutz“ (Einstellungen › Plugins). Es nutzt dieselben
 Listen und Kategorien. Fällt der Filter auf dem Server aus, läuft das Internet
-der Geräte ungefiltert weiter; das Dashboard meldet es. Ohne das Plugin ändert
-sich nichts, auch nicht für eine bestehende Pi-hole-Anbindung.
+der Geräte ungefiltert weiter; das Dashboard meldet es. Ohne das Plugin nutzen
+die VPN-Geräte die normalen DNS-Server des Servers.
+
+**Pi-hole-Anbindung entfernt (Version 1.268.0):** GateControl bindet Pi-hole
+nicht mehr an – die Seite „Pi-hole“, die Pi-hole-Einstellungen, die Rechte
+`pihole` und `pihole:control` für API-Tokens und die Adressen
+`/api/v1/pihole/…` gibt es nicht mehr. Ersatz ist der DNS-Schutz. Beim Update
+werden die gespeicherten Pi-hole-Einstellungen samt Zugangsdaten gelöscht, und
+die VPN-Geräte nutzen wieder die normalen DNS-Server (oder den DNS-Schutz,
+wenn er eingeschaltet ist) – ohne Namensauflösung steht kein Gerät da. War
+Pi-hole eingerichtet, weist das Dashboard einmal darauf hin. Dein Pi-hole selbst
+bleibt unberührt und kann im Heimnetz weiterlaufen.
 Willst du den Filter wieder abschalten, leere **zuerst** das Feld im Router.
 
 Manche Router (viele Speedport-Modelle, Vodafone Station) erlauben keinen

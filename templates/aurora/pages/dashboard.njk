@@ -54,6 +54,20 @@
 </div>
 {% endif %}
 
+{#- The Pi-hole integration was removed (services/piholeRemoval.js): shown once on installations
+    that had it set up, until an administrator closes it. -#}
+{% if piholeRemoved %}
+<div class="db-banner db-banner-accent" role="note" id="db-pihole-removed">
+  <span class="db-banner-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.1-8-4.5-8-9V6l8-3zM12 9v4M12 16v.5"/></svg></span>
+  <div class="db-banner-text">
+    <strong>{{ t('dashboard.pihole_removed.title') }}</strong>
+    <span class="db-banner-sub">{{ t('dashboard.pihole_removed.text') }}</span>
+  </div>
+  <a href="{{ piholeRemoved.href }}" class="db-btn db-btn-primary">{{ t('dashboard.pihole_removed.open_plugin') if piholeRemoved.installed else t('dashboard.pihole_removed.open_catalog') }}</a>
+  <button type="button" class="db-btn" id="db-pihole-removed-dismiss">{{ t('dashboard.pihole_removed.dismiss') }}</button>
+</div>
+{% endif %}
+
 {#- DNS protection of the VPN devices (services/vpnDns.js): the filter service does not answer (red) or the
     protection is suspended for all devices (amber). Filled by dashboard.js; empty without the plugin. -#}
 <div class="db-banner db-banner-warn" role="alert" id="db-vpndns" hidden>
@@ -301,11 +315,6 @@
         <div class="db-subtile-label">{{ t('dashboard.sec_bots') }}</div>
         <div class="db-subtile-value" id="db-sec-bots-value">—</div>
         <div class="db-subtile-sub" id="db-sec-bots-sub"></div>
-      </div>
-      <div class="db-subtile" id="db-sec-pihole" hidden>
-        <div class="db-subtile-label">{{ t('dashboard.sec_pihole') }}</div>
-        <div class="db-subtile-value" id="db-sec-pihole-value">—</div>
-        <div class="db-subtile-sub" id="db-sec-pihole-sub"></div>
       </div>
       <div class="db-subtile" id="db-sec-vpndns" hidden>
         <div class="db-subtile-label">{{ t('dashboard.sec_vpndns') }}</div>

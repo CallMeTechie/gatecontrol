@@ -8,8 +8,8 @@
 # `pkill dnsmasq` from services/dns.js restartDnsmasq), it is restarted so it
 # re-reads /app/config/dnsmasq.conf. This is required because dnsmasq does NOT
 # re-read upstream `server=`/`add-subnet` lines on SIGHUP — only on a restart —
-# so the DNS chain (services/dnsChain.js: Pi-hole or the filter service,
-# apply/revert) relies on a real dnsmasq restart.
+# so the DNS chain (services/dnsChain.js: the filter service of the DNS
+# protection, apply/revert) relies on a real dnsmasq restart.
 WG_UP=0
 DNSMASQ_PID=
 

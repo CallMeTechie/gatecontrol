@@ -46,20 +46,15 @@ const FINGERPRINT_RE = /^[a-f0-9]{64}$/;
 // full-access are deliberately not enrollable — a phone never needs them.
 const ENROLLABLE_SCOPES = [
   'client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp',
-  'pihole', 'pihole:control',
 ];
 // Default rights of a new device when the caller names none: the app
-// scopes. Pi-hole statistics are opt-in per device for members (wizard /
-// "Zugang bearbeiten"); administrators' devices keep getting them by
-// default, as before. Both lists stay inside the role cap
-// (services/users.js ROLE_SCOPES).
+// scopes — inside the role cap (services/users.js ROLE_SCOPES).
 const DEFAULT_SCOPES = [
   'client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp',
 ];
-const ADMIN_DEFAULT_SCOPES = [...DEFAULT_SCOPES, 'pihole'];
 
-function defaultScopesFor(role) {
-  return role === 'admin' ? ADMIN_DEFAULT_SCOPES : DEFAULT_SCOPES;
+function defaultScopesFor() {
+  return DEFAULT_SCOPES;
 }
 const TOKEN_NAME_PREFIX = 'App: ';
 
@@ -445,6 +440,5 @@ module.exports = {
   defaultScopesFor,
   ENROLLABLE_SCOPES,
   DEFAULT_SCOPES,
-  ADMIN_DEFAULT_SCOPES,
   CODE_TTL_MS,
 };

@@ -470,7 +470,7 @@ describe('kiosk session: allow-list', () => {
     const ok = [
       ['GET', '/portal'], ['GET', '/portal/'], ['GET', '/portal/plugins/familie/frame'], ['POST', '/portal/kiosk/logout'],
       ['GET', '/portal/kiosk'], ['POST', '/portal/kiosk'],
-      ['GET', '/api/v1/portal/device'], ['GET', '/api/v1/portal/services'], ['GET', '/api/v1/portal/pihole/household'],
+      ['GET', '/api/v1/portal/device'], ['GET', '/api/v1/portal/services'], ['GET', '/api/v1/portal/traffic'],
       ['GET', '/api/v1/portal/plugins/start'], ['GET', '/api/v1/portal/plugins/search'],
       ['POST', '/api/v1/portal/plugins/familie/api/wall/toggle'], ['DELETE', '/api/v1/portal/plugins/familie/api/x'],
     ];
