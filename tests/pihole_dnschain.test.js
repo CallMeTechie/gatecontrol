@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { makeChain, buildDnsToken } = require('../src/services/piholeDnsChain');
+const { makeChain, buildDnsToken, isValidDnsTarget } = require('../src/services/piholeDnsChain');
 
 let tmpDir, confPath, reloads;
 beforeEach(() => {
@@ -93,23 +93,93 @@ test('apply with plain ip token produces server=ip without hash', () => {
   assert.doesNotMatch(c, /server=10\.8\.0\.5#/);
 });
 
-test('revert is a no-op (no reload, no rewrite) when nothing is GC-managed', () => {
+test('revert is a no-op (no reload, no rewrite) when the conf already routes to the defaults', () => {
   const before = fs.readFileSync(confPath, 'utf8');
-  let reloads2 = 0;
-  const ch = makeChain({ confPath, defaults: ['1.1.1.1', '8.8.8.8'], reload: () => { reloads2++; } });
-  // Simulate the disabled-on-boot scenario: lastApplied is not 'default' (force it)
-  // We call apply first to set lastApplied, then manually restore the file to pre-apply state
-  // so the managed block is absent — but instead, we use a fresh chain that directly
-  // sets lastApplied by calling a dummy apply then restoring file, or we can trigger
-  // via the internal state. The simplest approach: use a second chain that previously
-  // applied but the file was externally reverted (managed block gone).
-  // Easiest: just call revert() on a chain whose internal state was set by apply().
-  const ch2 = makeChain({ confPath, defaults: ['1.1.1.1', '8.8.8.8'], reload: () => { reloads2++; } });
-  ch2.apply(['10.8.0.5']); // sets lastApplied to managed, increments reloads2
-  reloads2 = 0; // reset counter
-  // Now restore the file externally to the no-managed-block state
-  fs.writeFileSync(confPath, before);
-  ch2.revert(); // managed block absent → should be a no-op
-  assert.equal(reloads2, 0, 'revert must not reload when no managed block is present');
-  assert.equal(fs.readFileSync(confPath, 'utf8'), before, 'revert must not rewrite file when no managed block is present');
+  chain().revert();
+  assert.equal(reloads, 0, 'revert must not restart dnsmasq when nothing is to revert');
+  assert.equal(fs.readFileSync(confPath, 'utf8'), before);
+});
+
+test('revert undoes the chain entrypoint.sh baked in at boot (no managed block)', () => {
+  // The cause of "no DNS while Pi-hole is off": after a container start the
+  // conf holds the Pi-hole upstreams WITHOUT the managed block. revert() only
+  // looked for the block and did nothing — the fallback never happened.
+  fs.writeFileSync(confPath, 'bind-dynamic\nadd-subnet=32,128\nserver=10.8.0.2#5335\nhost-record=gc.example.com,10.8.0.1\n');
+  const ch = chain();
+  ch.apply(['10.8.0.2#5335']); // boot: already applied, no restart
+  assert.equal(reloads, 0);
+  ch.revert();
+  const c = fs.readFileSync(confPath, 'utf8');
+  assert.deepEqual(c.match(/^server=.*/gm), ['server=1.1.1.1', 'server=8.8.8.8']);
+  assert.doesNotMatch(c, /add-subnet/, 'no client subnets to public resolvers');
+  assert.match(c, /^bind-dynamic$/m);
+  assert.match(c, /^host-record=gc\.example\.com,10\.8\.0\.1$/m, 'the rest of the conf is kept');
+  assert.equal(reloads, 1);
+});
+
+test('revert works on a fresh chain too (process restarted while the chain was applied)', () => {
+  chain().apply(['10.8.0.5']);
+  reloads = 0;
+  chain().revert(); // new instance: remembers nothing
+  const c = fs.readFileSync(confPath, 'utf8');
+  assert.deepEqual(c.match(/^server=.*/gm), ['server=1.1.1.1', 'server=8.8.8.8']);
+  assert.doesNotMatch(c, /gatecontrol-pihole|add-subnet/);
+  assert.equal(reloads, 1);
+});
+
+test('apply after a baked chain leaves exactly one add-subnet line', () => {
+  fs.writeFileSync(confPath, 'bind-dynamic\nadd-subnet=32,128\nserver=10.8.0.9\n');
+  chain().apply(['10.8.0.5']);
+  const c = fs.readFileSync(confPath, 'utf8');
+  assert.equal((c.match(/^add-subnet=/gm) || []).length, 1);
+  assert.deepEqual(c.match(/^server=.*/gm), ['server=10.8.0.5']);
+});
+
+test('apply → revert → apply restarts dnsmasq each time', () => {
+  const ch = chain();
+  ch.apply(['10.8.0.5']);
+  ch.revert();
+  ch.apply(['10.8.0.5']);
+  assert.equal(reloads, 3);
+  assert.deepEqual(fs.readFileSync(confPath, 'utf8').match(/^server=.*/gm), ['server=10.8.0.5']);
+});
+
+test('apply without any upstream never leaves dnsmasq without a server', () => {
+  const ch = chain();
+  ch.apply(['10.8.0.5']);
+  ch.apply([]);
+  assert.deepEqual(fs.readFileSync(confPath, 'utf8').match(/^server=.*/gm), ['server=1.1.1.1', 'server=8.8.8.8']);
+});
+
+// ─── what may end up in a server= line ─────────────────────────────────────
+test('buildDnsToken: only IP literals and ports 1–65535', () => {
+  assert.equal(buildDnsToken({ dns_ip: 'fd00::2', dns_port: 5335 }), 'fd00::2#5335');
+  for (const bad of [
+    { dns_ip: 'pi.hole' },
+    { dns_ip: '10.8.0.2\nconf-file=/etc/passwd' },
+    { dns_ip: '10.8.0.2#53\nserver=6.6.6.6' },
+    { dns_ip: '10.8.0.2 ' },
+    { dns_ip: '10.8.0.2', dns_port: 0 },
+    { dns_ip: '10.8.0.2', dns_port: 65536 },
+    { dns_ip: '10.8.0.2', dns_port: '53\nserver=6.6.6.6' },
+    { dns_ip: '10.8.0.2', dns_port: '5335x' },
+    { dns_ip: 12345 },
+  ]) {
+    assert.equal(buildDnsToken(bad), null, JSON.stringify(bad));
+    assert.equal(isValidDnsTarget(bad), false);
+  }
+});
+
+test('apply never writes anything but valid upstreams, whatever it is handed', () => {
+  chain().apply(['10.8.0.5', '10.8.0.6\nconf-file=/tmp/x', 'pi.hole', '10.8.0.7#99999', '10.8.0.8#5335']);
+  const c = fs.readFileSync(confPath, 'utf8');
+  assert.deepEqual(c.match(/^server=.*/gm), ['server=10.8.0.5', 'server=10.8.0.8#5335']);
+  assert.doesNotMatch(c, /conf-file|pi\.hole/);
+});
+
+test('apply with only invalid upstreams falls back to the defaults', () => {
+  const ch = chain();
+  ch.apply(['10.8.0.5']);
+  ch.apply(['bad\nline']);
+  assert.deepEqual(fs.readFileSync(confPath, 'utf8').match(/^server=.*/gm), ['server=1.1.1.1', 'server=8.8.8.8']);
 });

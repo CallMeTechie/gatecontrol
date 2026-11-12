@@ -42,6 +42,26 @@ test('dns_port round-trips through PUT then GET', async () => {
   assert.equal(get.body.data.instances[0].dns_port, 5335);
 });
 
+test('PUT rejects a DNS address or port that is not one (it becomes a dnsmasq server= line)', async () => {
+  const put = (inst) => agent.put('/api/v1/settings/pihole').set('X-CSRF-Token', csrf)
+    .send({ enabled: true, manage_dns_chain: true, instances: [{ id: 'p1', url: 'http://10.8.0.5:8080', ...inst }] });
+  for (const bad of [
+    { dns_ip: '10.8.0.5\nconf-file=/etc/passwd' },
+    { dns_ip: 'pi.hole' },
+    { dns_ip: '10.8.0.5', dns_port: 70000 },
+    { dns_ip: '10.8.0.5', dns_port: '53\nserver=6.6.6.6' },
+    { dns_port: 0 },
+  ]) {
+    const res = await put(bad);
+    assert.equal(res.status, 400, JSON.stringify(bad));
+    assert.ok(res.body.error);
+  }
+  assert.equal(require('../src/services/piholeConfig').load().instances.length, 0, 'nothing stored');
+  assert.equal((await put({ dns_ip: '10.8.0.5', dns_port: 5335 })).status, 200);
+  assert.equal((await put({ dns_ip: '', dns_port: 53 })).status, 200, 'no DNS address is allowed (monitoring only)');
+  assert.equal((await put({})).status, 200);
+});
+
 test('PUT rejects non-array instances', async () => {
   const res = await agent.put('/api/v1/settings/pihole').set('X-CSRF-Token', csrf).send({ enabled:true, instances:'nope' });
   assert.equal(res.status, 400);

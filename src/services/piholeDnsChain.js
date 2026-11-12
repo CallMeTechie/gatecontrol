@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const net = require('node:net');
 
 const BEGIN = '# >>> gatecontrol-pihole >>>';
 const END = '# <<< gatecontrol-pihole <<<';
@@ -37,6 +38,18 @@ function stripServerLines(content) {
 }
 
 /**
+ * Remove top-level `add-subnet=` lines from content.
+ * @param {string} content
+ * @returns {string}
+ */
+function stripEcsLines(content) {
+  return content
+    .split('\n')
+    .filter(line => !/^add-subnet=/.test(line))
+    .join('\n');
+}
+
+/**
  * Factory for a dnsmasq upstream/ECS chain manager.
  *
  * @param {object} opts
@@ -50,6 +63,9 @@ function makeChain({ confPath, defaults, reload }) {
 
   return {
     apply(dnsIps) {
+      // No upstream at all would leave dnsmasq unable to resolve anything.
+      dnsIps = (dnsIps || []).filter(isValidToken);
+      if (!dnsIps.length) { this.revert(); return; }
       const key = 'managed:' + dnsIps.join(',');
       if (lastApplied === key) return;
 
@@ -71,6 +87,8 @@ function makeChain({ confPath, defaults, reload }) {
       }
 
       content = stripManaged(content);
+      // A chain baked in by entrypoint.sh sits outside the managed block.
+      content = stripEcsLines(content);
       content = stripServerLines(content);
 
       // Ensure content ends with a single newline before the block
@@ -92,8 +110,6 @@ function makeChain({ confPath, defaults, reload }) {
     },
 
     revert() {
-      if (lastApplied === 'default') return;
-
       let content;
       try {
         content = fs.readFileSync(confPath, 'utf8');
@@ -102,16 +118,28 @@ function makeChain({ confPath, defaults, reload }) {
         return;
       }
 
-      if (!content.includes(BEGIN)) {
+      // Decided by what the conf actually says, not by a marker or by what this
+      // process remembers: entrypoint.sh bakes the Pi-hole chain into the conf
+      // at boot WITHOUT the managed block, and that chain has to be revertible
+      // too (it used to be skipped — the fallback never happened after a
+      // container start). No rewrite + restart when the conf already routes to
+      // exactly the defaults.
+      const currentServers = (content.match(/^server=.*/gm) || [])
+        .map(l => l.slice('server='.length).trim()).sort();
+      const hasEcs = /^add-subnet=/m.test(content);
+      const wanted = defaults.map(ip => String(ip).trim()).filter(isValidToken);
+      if (!hasEcs && !content.includes(BEGIN)
+        && JSON.stringify(currentServers) === JSON.stringify([...wanted].sort())) {
         lastApplied = 'default';
         return;
       }
 
       content = stripManaged(content);
+      content = stripEcsLines(content);
       content = stripServerLines(content);
       content = content.trimEnd();
 
-      const serverLines = defaults.map(ip => `server=${ip}`).join('\n');
+      const serverLines = wanted.map(ip => `server=${ip}`).join('\n');
       fs.writeFileSync(confPath, content + '\n' + serverLines + '\n');
       lastApplied = 'default';
       logger.info('[piholeDnsChain] reverted to defaults');
@@ -121,16 +149,39 @@ function makeChain({ confPath, defaults, reload }) {
 }
 
 /**
+ * A DNS address/port as it may appear in a dnsmasq `server=` line: an IP
+ * literal (nothing else — a line break would smuggle further dnsmasq options
+ * into the conf) and a port 1–65535 (empty = 53).
+ * @param {{ dns_ip?: string, dns_port?: number|string }} inst
+ * @returns {boolean}
+ */
+function isValidDnsTarget(inst) {
+  if (!inst || typeof inst.dns_ip !== 'string' || net.isIP(inst.dns_ip) === 0) return false;
+  const raw = inst.dns_port;
+  if (raw === undefined || raw === null || raw === '') return true;
+  if (!/^\d{1,5}$/.test(String(raw))) return false;
+  const port = Number(raw);
+  return port >= 1 && port <= 65535;
+}
+
+/**
  * Build a dnsmasq server= token for a pihole instance.
  * Returns `ip#port` when dns_port is set and not 53, else just `ip`.
- * Returns null when dns_ip is absent.
+ * Returns null when dns_ip is absent or not a valid address/port.
  * @param {{ dns_ip?: string, dns_port?: number|string }} inst
  * @returns {string|null}
  */
 function buildDnsToken(inst) {
-  if (!inst || !inst.dns_ip) return null;
+  if (!isValidDnsTarget(inst)) return null;
   const port = parseInt(inst.dns_port, 10);
   return (port && port !== 53) ? `${inst.dns_ip}#${port}` : inst.dns_ip;
 }
 
-module.exports = { makeChain, buildDnsToken, BEGIN, END };
+// What the writer itself accepts, whatever the caller passes: ip or ip#port.
+function isValidToken(token) {
+  if (typeof token !== 'string') return false;
+  const [ip, port, ...rest] = token.split('#');
+  return rest.length === 0 && isValidDnsTarget({ dns_ip: ip, dns_port: port });
+}
+
+module.exports = { makeChain, buildDnsToken, isValidDnsTarget, BEGIN, END };

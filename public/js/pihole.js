@@ -265,6 +265,24 @@
       ));
     }
 
+    // DNS chain: through Pi-hole, fallen back to the default upstreams, or not managed.
+    const chain = health.dnsChain || {};
+    const fallback = chain.state === 'fallback';
+    const chainWarn = document.getElementById('ph-chain-warn');
+    if (chainWarn) {
+      chainWarn.style.display = fallback ? '' : 'none';
+      setText('ph-chain-warn-text', T('pihole.chain_fallback_warn', 'Pi-hole DNS does not answer.')
+        + (chain.since ? ' ' + T('pihole.chain_since', 'Since') + ' ' + fmtDate(chain.since) + '.' : ''));
+    }
+    const chainCell = document.getElementById('ph-health-chain');
+    if (chainCell) {
+      replaceChildren(chainCell, fallback
+        ? badge('tag-amber', T('pihole.chain_fallback', 'Fallback'))
+        : chain.state === 'pihole'
+          ? badge('tag-green', T('pihole.chain_pihole', 'Via Pi-hole'))
+          : badge('tag-grey', T('pihole.chain_off', 'Not managed')));
+    }
+
     const peerCol = document.getElementById('ph-client-col-peer');
     if (peerCol) {
       peerCol.textContent = _attribution === 'per_peer'

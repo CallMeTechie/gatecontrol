@@ -68,11 +68,12 @@ test('reconciliation: null desired-state enforces nothing', async () => {
   assert.equal(setCalls.length, 0);
 });
 
-test('auto-revert: all instances down for >=2 cycles reverts the DNS chain; recovery re-applies with port', async () => {
+test('the DNS chain is not decided by the API sync (piholeDnsWatch asks the DNS itself)', async () => {
+  // API down for many rounds, then up again: the sync must not touch the chain —
+  // an unreachable API says nothing about the resolver (and it used to take
+  // 2 × the sync interval, up to 2 hours).
   let down = true;
   const chainCalls = [];
-  // One client object whose methods throw while `down` is true.
-  // Toggling `down` (not swapping the returned client) is compatible with client caching.
   const client = {
     id: 'p1',
     getSummary:    async () => { if (down) throw new Error('down'); return {queries:{total:1,blocked:0},gravity:{domains_being_blocked:0},clients:{active:0}}; },
@@ -89,11 +90,13 @@ test('auto-revert: all instances down for >=2 cycles reverts the DNS chain; reco
     dnsChain: { apply:(tokens)=>chainCalls.push(['apply',tokens.join(',')]), revert:()=>chainCalls.push(['revert']) },
     loadDesired: () => null,
   });
-  await sync.syncOnce(); // cycle 1: down
-  await sync.syncOnce(); // cycle 2: down → triggers revert
+  await sync.syncOnce();
+  await sync.syncOnce();
+  await sync.syncOnce();
   down = false;
-  await sync.syncOnce(); // cycle 3: up → re-applies chain
-  assert.deepEqual(chainCalls, [['revert'], ['apply','10.8.0.2#5335']]);
+  await sync.syncOnce();
+  assert.deepEqual(chainCalls, []);
+  assert.equal(sync.getCache().instances[0].connected, true);
 });
 
 test('client factory is called once per instance and reused across syncOnce cycles', async () => {
