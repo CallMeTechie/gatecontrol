@@ -59,6 +59,7 @@ const TAKE_EVERY_MS = 60 * 1000;
 const TAKE_LOG_EVERY_MS = 20 * 1000;
 const HOOK_MS = 5000;
 const LOG_CHUNK = 400;
+const RETENTION_STEP = 5000;
 
 class VpnDnsError extends Error {
   constructor(code, message, extra) { super(message || code); this.code = code; if (extra) Object.assign(this, extra); }
@@ -331,6 +332,8 @@ function set(patch, ctx = {}) {
   if (!keys.length) return after;
   save(after);
   if (before.log.enabled && !after.log.enabled) clearLog({ silent: true });
+  // switched off for good: a suspension "until I switch it on again" must not wait for the next time it is on
+  if (before.enabled && !after.enabled) db().prepare('DELETE FROM vpn_dns_pauses').run();
   audit('vpn_dns_changed', `DNS protection settings changed (${keys.join(', ')})`, { changed: keys, enabled: after.enabled }, ctx);
   reconcile();
   refreshSoon();
@@ -762,7 +765,7 @@ function tick(now = Date.now()) {
     }
     if (now - run.retentionAt >= 60 * MINUTE) {
       run.retentionAt = now;
-      try { retention(now); } catch (e) { logger.debug({ err: e.message }, 'vpn dns: retention'); }
+      try { await retention(now); } catch (e) { logger.debug({ err: e.message }, 'vpn dns: retention'); }
     }
   }).catch((e) => { logger.warn({ err: e.message }, 'vpn dns tick failed'); }).finally(() => { run.ticking = null; });
   return run.ticking;
@@ -862,9 +865,14 @@ async function ingest(t, now = Date.now()) {
   }
 }
 
-function retention(now = Date.now()) {
+/** What is older than the retention goes — the log in steps, so a long log never holds the event loop. */
+async function retention(now = Date.now()) {
   const s = get();
-  db().prepare('DELETE FROM vpn_dns_log WHERE at < ?').run(now - s.log.retentionDays * DAY);
+  const step = db().prepare('DELETE FROM vpn_dns_log WHERE id IN (SELECT id FROM vpn_dns_log WHERE at < ? ORDER BY id LIMIT ?)');
+  for (let i = 0; i < 2000; i++) {
+    if (step.run(now - s.log.retentionDays * DAY, RETENTION_STEP).changes < RETENTION_STEP) break;
+    await new Promise((r) => setImmediate(r));
+  }
   db().prepare('DELETE FROM vpn_dns_peer_day WHERE day < ?').run(dayKey(now - LIMITS.retentionDays * DAY));
   db().prepare('DELETE FROM vpn_dns_stats_day WHERE day < ?').run(dayKey(now - 400 * DAY));
 }

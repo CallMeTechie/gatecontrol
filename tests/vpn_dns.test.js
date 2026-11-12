@@ -478,7 +478,7 @@ describe('switched on: the service, the chain, the filter', () => {
     assert.equal((await ok('log', { before: l.next, blockedOnly: true })).entries.length, 1);
     // retention
     db.prepare('UPDATE vpn_dns_log SET at = ? WHERE name = ?').run(Date.now() - 4 * 86400000, 'ok.example');
-    vpnDns.retention();
+    await vpnDns.retention();
     assert.equal((await ok('log', { search: 'ok.example' })).entries.length, 0);
 
     await ok('set', { log: { enabled: false } });
@@ -680,9 +680,11 @@ describe('switched off again', () => {
     await waitFor(() => vpnDns._run.wanted === true);
     assert.ok(fs.existsSync(path.join(STATE, 'enabled')));
     assert.equal(await runtime.waitRunning(P), true);
+    await ok('pause', { scope: 'all', forever: true });
     await ok('set', { enabled: false });
     assert.equal(vpnDns._run.wanted, false);
     assert.equal(fs.existsSync(path.join(STATE, 'enabled')), false);
+    assert.deepEqual(vpnDns.pauses(), [], 'switched off: no suspension waits for the next time');
   });
 
   it('the plugin is uninstalled while the protection is on → off, the settings stay', async () => {
