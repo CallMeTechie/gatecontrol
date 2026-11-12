@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.263.2] — 2026-11-12
+
+### Änderungen
+- eine DNS-Kette mit Anbietern (Pi-hole, vorbereitet: DNS-Schutz) (#472)
+
+---
+
 ## [1.263.1] — 2026-11-12
 
 ### Fixes
