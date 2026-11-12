@@ -18,6 +18,9 @@ _stop() {
   if [ -n "$DNSMASQ_PID" ]; then
     kill "$DNSMASQ_PID" 2>/dev/null
   fi
+  # Rules of "Fremden DNS und DoT sperren" name this interface and the DNS
+  # that just stopped: take them away with it (a no-op when there are none).
+  sh /app/scripts/vpndns-firewall-clear.sh || true
   if [ "$WG_UP" -eq 1 ]; then
     wg-quick down "$GC_WG_INTERFACE" 2>&1 || true
   fi

@@ -2949,7 +2949,8 @@ filtern". Without it `gc.vpnDns` does not exist and the host answers
 `ERR_VPN_DNS_DENIED`; an older GateControl ignores the permission and
 `gc.vpnDns` is missing — check for it. `gc.vpnDns.version` is `2` since
 1.265.0 (`1` before: no `match` / `scope` of `test()`, no `blockedBy`, no
-`pihole.targets`, no `scope` in the log).
+`pihole.targets`, no `scope` in the log) and `3` since 1.266.0 (the setting
+`blockForeignDns`, `status().foreignDns`, `devices()[].foreignDnsBlocked`).
 
 **Nothing runs without such a plugin.** The filter service is started, and the
 DNS chain claimed, only while the settings say `enabled` **and** a plugin with
@@ -2960,11 +2961,11 @@ default upstreams); the settings stay.
 
 | Call | Answer / rule |
 |---|---|
-| `gc.vpnDns.status()` | `{ available, enabled, blockedBy: null \| 'internal_dns_off', state: 'off' \| 'starting' \| 'filtering' \| 'fallback', since (ISO), chain: 'filter' \| 'pihole' \| 'default', pihole: { configured, wantsChain, chain: 'off' \| 'active' \| 'displaced' \| 'fallback', targets: [{ name, ip, port, gateway: { peerId, name, via: 'tunnel' \| 'lan' } \| null }] }, pause: suspension for all devices \| null, pauses: n (devices / people), service: { running, ready, pid, startedAt, port, listen, upstream, memory: { rss, lists }, cacheEntries, truncated, failOpen, asOf } \| { running: false }, peers: { filtered, ownDns, excluded, gateways, suspended }, lists: [used lists], today: { queries, blocked, cached, blockedBy }, log: { enabled, retentionDays } }` — `pihole.targets` (version 2): where the VPN devices reach Pi-hole, and the gateway behind an address (its own tunnel address, or an address of a LAN it reported) |
+| `gc.vpnDns.status()` | `{ available, enabled, blockedBy: null \| 'internal_dns_off', state: 'off' \| 'starting' \| 'filtering' \| 'fallback', since (ISO), chain: 'filter' \| 'pihole' \| 'default', pihole: { configured, wantsChain, chain: 'off' \| 'active' \| 'displaced' \| 'fallback', targets: [{ name, ip, port, gateway: { peerId, name, via: 'tunnel' \| 'lan' } \| null }] }, pause: suspension for all devices \| null, pauses: n (devices / people), service: { running, ready, pid, startedAt, port, listen, upstream, memory: { rss, lists }, cacheEntries, truncated, failOpen, asOf } \| { running: false }, peers: { filtered, ownDns, excluded, gateways, suspended }, lists: [used lists], today: { queries, blocked, cached, blockedBy }, foreignDns: { enabled, active, devices, since, error }, log: { enabled, retentionDays } }` — `foreignDns` (version 3): "Fremden DNS und DoT sperren" — the setting, whether the firewall rules are in force right now, for how many devices, the last error of iptables; `pihole.targets` (version 2): where the VPN devices reach Pi-hole, and the gateway behind an address (its own tunnel address, or an address of a LAN it reported) |
 | `gc.vpnDns.catalog()` | `{ lists: [{ id, source, home, license, format, entries, defaultOn }], categories: [{ id, domains }], providers: [{ id, label, home }], limits }` — the lists, categories and upstream providers of the gateways' DNS filter (`src/services/homeDnsCatalog.js`), plus the provider `system` (the server's plain resolvers, no DoH) |
 | `gc.vpnDns.get()` | the settings, see below |
 | `gc.vpnDns.set(patch, { actor }?)` | changes the named top-level keys → the new settings. **Administrator** |
-| `gc.vpnDns.devices()` | every peer: `{ peerId, name, ip, type: 'peer' \| 'gateway', platform, user: { id, name, role } \| null, peerGroup: { id, name } \| null, state: 'filtered' \| 'ownDns' \| 'excluded' \| 'gateway' \| 'disabled', ownDns: '1.1.1.1' \| null, profile: { id, name } \| null, via: 'peer' \| 'user' \| 'peerGroup' \| 'group' \| 'default' \| null, viaId, suspended, suspendedUntil (ISO \| null = open end), suspendedBy: 'all' \| 'peer' \| 'user' \| null, today: { queries, blocked } \| null }` — `today` only with the query log on |
+| `gc.vpnDns.devices()` | every peer: `{ peerId, name, ip, type: 'peer' \| 'gateway', platform, user: { id, name, role } \| null, peerGroup: { id, name } \| null, state: 'filtered' \| 'ownDns' \| 'excluded' \| 'gateway' \| 'disabled', ownDns: '1.1.1.1' \| null, profile: { id, name } \| null, via: 'peer' \| 'user' \| 'peerGroup' \| 'group' \| 'default' \| null, viaId, suspended, suspendedUntil (ISO \| null = open end), suspendedBy: 'all' \| 'peer' \| 'user' \| null, today: { queries, blocked } \| null, foreignDnsBlocked }` — `today` only with the query log on; `foreignDnsBlocked` (version 3): the firewall rules of "Fremden DNS und DoT sperren" hold for this device right now |
 | `gc.vpnDns.lists()` | `{ lists: [{ id, source, home, license, defaultOn, used, loaded, entries, estimated, updatedAt, checkedAt, error, profiles: [profile ids] }], memoryBytes, entries, asOf }` — what the service has loaded (`estimated`: the catalogue's rough size, not loaded) |
 | `gc.vpnDns.refreshLists({ actor }?)` | "Jetzt aktualisieren" → `{ started: true }`. **Administrator** |
 | `gc.vpnDns.stats({ days = 7 }?)` | `{ today: { day, queries, blocked, cached, blockedBy, top: [{ domain, count }] }, days: [{ day, queries, blocked, cached, blockedBy }], blockedBy (of the range), top (of the range), perPeer, perPeerToday: [{ peerId, queries, blocked }] \| null }` — days in the server's time zone, at most 90; per device only with the query log on. `blockedBy` (version 2): the blocked queries by what blocked them, `{ list, denyAll, denyProfile, schedule, other }` — `denyAll` is "Immer gesperrt" for everybody, `denyProfile` the same entry of a profile; all zero for days counted by an older server |
@@ -2989,6 +2990,7 @@ default upstreams); the settings stay.
   deny: ['temu.com'],               // "Immer gesperrt" — in every profile
   log: { enabled: false, retentionDays: 7 },
   excluded: [peerId],               // devices that are never filtered
+  blockForeignDns: false,           // "Fremden DNS und DoT sperren" (version 3), see below
   profiles: [{                      // profiles[0] is the default profile (id 'default', no members)
     id, name, lists: ['ads'], safeSearch, allow: [], deny: [],
     schedules: [{ days: [1..7], from: 'HH:MM', to: 'HH:MM' | '24:00', block: 'all' | 'categories', categories: [], allowAlways: [] }],
@@ -3024,6 +3026,23 @@ devices of an administrator nobody but an administrator or that person.
 "Parent" is not a host role: the family plugin mirrors the family as a person
 group of kind `family` with the roles `parent` / `child` — read it with
 `permissions.groups: "read"` (`gc.groups.list` / `members`).
+
+**Foreign DNS and DoT** (`blockForeignDns`, off by default, version 3). A
+filtered device could simply ask another DNS server. With the setting on, the
+server's firewall (`src/services/vpnDnsFirewall.js`, two iptables chains of
+its own) rewrites port 53 of the filtered devices to the server's DNS — the
+device gets its answer filtered with its own profile — and refuses port 853
+(DNS over TLS, Android's "Privates DNS", DNS over QUIC) at once. It holds for
+exactly the devices that are filtered at that moment: never for a device with
+a DNS server of its own, an excluded device, a gateway or the network behind
+it, never for the server's own traffic. The rules exist only while the filter
+really filters: they are lifted in a fallback, while the protection is
+suspended (for the suspended devices, or all), when the protection or the
+setting is switched off, when the plugin is disabled or removed, at container
+start and stop. An iptables error is reported in `status().foreignDns.error`
+and never touches name resolution. **DNS over HTTPS is not blocked** — on the
+network it is ordinary HTTPS (Firefox' own DoH is switched off by the canary
+domain, see `docs/feature-vpn-dns-filter.md` "Blocking foreign DNS").
 
 Suspended means **unfiltered**, never "no internet". While the protection is
 suspended for all devices nothing is counted. Switching the protection off

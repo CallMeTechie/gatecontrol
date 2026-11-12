@@ -124,6 +124,8 @@ async function restart() {
   }
 
   logger.info({ interface: iface }, 'WireGuard restarted and verified');
+  // wg-quick's PostUp put its ACCEPT rule first again: the jumps of "Fremden DNS und DoT sperren" go back above it
+  try { require('./vpnDns').networkChanged().catch(() => {}); } catch (err) { logger.debug({ err: err.message }, 'vpn dns firewall not re-checked'); }
   return true;
 }
 

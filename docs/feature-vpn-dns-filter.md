@@ -120,6 +120,80 @@ to the plugin catalogue (`piholeDeprecation()` in `src/routes/index.js`).
 `status().pihole.targets` names where the devices reach Pi-hole and the
 gateway behind it, for the first step of that dialog.
 
+## Blocking foreign DNS ("Fremden DNS und DoT sperren")
+
+Setting `blockForeignDns`, off by default; `src/services/vpnDnsFirewall.js`.
+The server sets its firewall rules with plain `iptables` (entrypoint.sh, the
+PostUp lines of `wg0.conf`), and so does this — in two chains of its own, so
+that everything it added can be taken away without touching a foreign rule:
+
+```
+nat     PREROUTING -i wg0 -p udp|tcp --dport 53  -j GC_VPNDNS_NAT
+        GC_VPNDNS_NAT  -d <server VPN address>/32 -j RETURN
+                       -s <device>/32 -p udp|tcp --dport 53 -j DNAT --to-destination <server VPN address>:53
+filter  FORWARD    -i wg0 -p tcp|udp --dport 853 -j GC_VPNDNS_FWD
+        GC_VPNDNS_FWD  -s <device>/32 -p tcp --dport 853 -j REJECT --reject-with tcp-reset
+                       -s <device>/32 -p udp --dport 853 -j REJECT --reject-with icmp-port-unreachable
+```
+
+- **Who.** One pair of rules per device that is filtered right now
+  (`vpnDns.firewallWant()`): state `filtered` and not suspended. Devices with a
+  DNS server of their own, excluded devices and gateways are no source of any
+  rule; networks behind a gateway have other source addresses; the server's
+  own traffic never passes PREROUTING / FORWARD with `-i wg0`.
+- **What the device sees.** A query to 8.8.8.8:53 is answered by the server's
+  dnsmasq (the answer seems to come from 8.8.8.8), filtered with the device's
+  profile. Port 853 is refused immediately, so Android's "Privates DNS" in the
+  automatic mode falls back to plain DNS without waiting. A device that
+  *requires* DNS over TLS (a fixed provider name) has no name resolution — that
+  is what the option means, and what "Unterbrechen" is for.
+- **When.** Only while `state` is `filtering`. Fallback, starting, switched
+  off, suspended for everybody → no rule and no jump at all: a filter that does
+  not filter must not have anybody's DNS rewritten to it. A suspended device
+  loses its rules for as long as it is suspended ("as without the protection").
+  The server compares the devices with the rules in force every round (5 s) and
+  after every change; an unchanged set costs no command.
+- **How.** The chains are filled with one `iptables-restore --noflush` (atomic
+  per table). The jump in FORWARD must stand before wg-quick's `-i wg0 -j
+  ACCEPT`, which is inserted first again whenever WireGuard is restarted — the
+  jumps are put back to the top right after `wireguard.restart()` and checked
+  once a minute.
+- **Cleaning up.** Switching off (setting, protection, plugin disabled or
+  removed, licence) removes the jumps and both chains. The container shares
+  the host's network, so rules could outlive it: `scripts/vpndns-firewall-clear.sh`
+  runs at container start (entrypoint.sh) and when WireGuard is stopped
+  (wg-wrapper.sh); a marker file (`<state dir>/firewall.json`) makes a server
+  that was killed take its rules away at the next start even when the
+  protection is off by then. A server that never used the option runs no
+  iptables command.
+- **Errors.** iptables missing or refusing → `status().foreignDns.error`, a
+  warning in the log, whatever was set half-way is removed, retried with the
+  next round. Name resolution is never involved.
+- **IPv6.** The VPN hands out IPv4 addresses only; there is nothing to rewrite.
+- **Existing connections.** A flow that was rewritten stays rewritten until its
+  connection-tracking entry runs out (UDP: at most 2 minutes after the last
+  packet); new flows follow the new rules at once.
+
+**Not blocked: DNS over HTTPS.** DoH is HTTPS on port 443 to an ordinary web
+server and cannot be told from any other HTTPS by address or port. What exists:
+Firefox switches its own DoH off when `use-application-dns.net` does not
+resolve — the filter always answers that name with NXDOMAIN. Chrome, Edge and
+Android only use DoH automatically when the configured resolver is a known
+provider that offers it; behind the server's DNS that is not the case. A DoH
+server somebody enters by hand in a browser, a VPN-in-VPN app or a browser
+with built-in proxy gets round the filter. Blocking the *names* of the known
+DoH providers with a list would be possible (the catalogue of lists has none
+today) but does not stop a DoH server reached by address. The option is
+therefore called "Umgehung erschweren", not "verhindern".
+
+Tests: `tests/vpn_dns_firewall.test.js` (the exact rules; with a stand-in for
+iptables: order of the jumps, refill, cleaning up, errors),
+`tests/vpn_dns_firewall_live.test.js` (**real netfilter** in three network
+namespaces — devices, server, internet: redirect, refusal, the devices that
+are left alone, the server's own traffic, cleaning up; needs root, in the CI
+run with `sudo`), `tests/vpn_dns.test.js` (which devices, suspension, outage,
+plugin disabled — with the stand-in).
+
 ## Raising the engine
 
 1. Change and release the engine in `gatecontrol-gateway`.

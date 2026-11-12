@@ -30,6 +30,12 @@
 //                 service puts dnsmasq back on the default upstreams within
 //                 seconds (dnsChain.js) — activity entry, event, hook.
 //
+//   foreign DNS   "Fremden DNS und DoT sperren" (setting blockForeignDns, off
+//                 by default): firewall rules for the devices that are
+//                 filtered right now (vpnDnsFirewall.js) — only while the
+//                 filter really filters; lifted in a fallback, while the
+//                 protection is suspended and when it is switched off.
+//
 // None of it runs without a plugin that holds permissions.vpnDns and may run
 // (installed, enabled, licensed): no service process, no chain entry, no
 // timer. A server with Pi-hole only behaves exactly as before.
@@ -58,6 +64,7 @@ const CONFIG_EVERY_MS = 15 * 1000;
 const TAKE_EVERY_MS = 60 * 1000;
 const TAKE_LOG_EVERY_MS = 20 * 1000;
 const HOOK_MS = 5000;
+const FIREWALL_CHECK_EVERY_MS = 60 * 1000;
 const LOG_CHUNK = 400;
 const RETENTION_STEP = 5000;
 
@@ -161,6 +168,7 @@ function normalize(raw) {
     deny: hd.patternsSoft(r.deny),
     log: { enabled: bool(log.enabled, false), retentionDays: Number.isInteger(days) && days >= 1 && days <= LIMITS.retentionDays ? days : 7 },
     excluded: ints(r.excluded, LIMITS.excluded),
+    blockForeignDns: bool(r.blockForeignDns, false),
     profiles,
   };
 }
@@ -253,9 +261,9 @@ function validate(patch, before) {
   let any = false;
   for (const [k, v] of Object.entries(b)) {
     any = true;
-    if (k === 'enabled') {
-      if (typeof v !== 'boolean') throw invalid('enabled must be true or false', { field: k });
-      out.enabled = v;
+    if (k === 'enabled' || k === 'blockForeignDns') {
+      if (typeof v !== 'boolean') throw invalid(`${k} must be true or false`, { field: k });
+      out[k] = v;
     } else if (k === 'blockResponse') {
       if (v !== 'zero' && v !== 'nxdomain') throw invalid('blockResponse: zero or nxdomain', { field: k });
       out.blockResponse = v;
@@ -337,6 +345,7 @@ function set(patch, ctx = {}) {
   audit('vpn_dns_changed', `DNS protection settings changed (${keys.join(', ')})`, { changed: keys, enabled: after.enabled }, ctx);
   reconcile();
   refreshSoon();
+  syncFirewall();
   publish();
   return after;
 }
@@ -627,6 +636,7 @@ const run = {
   configAt: 0,
   takeAt: 0,
   retentionAt: 0,
+  firewallCheckAt: 0,
   timer: null,
   soon: null,
   ticking: null,
@@ -677,6 +687,7 @@ function onChainChange(state) {
     run.down = true;
     outage(true);
   }
+  syncFirewall(); // a filter that does not filter must not have the devices' DNS rewritten to it
   publish();
 }
 
@@ -712,6 +723,7 @@ function reconcile({ boot = false } = {}) {
       switchOff();
       try { dnsChain.vpnFilter.disable(); } catch (e) { logger.debug({ err: e.message }, 'vpn dns: chain not released'); }
     }
+    syncFirewall(); // takes its rules away — runs nothing on a server that never set any
     publish();
     return false;
   }
@@ -767,6 +779,11 @@ function tick(now = Date.now()) {
       run.retentionAt = now;
       try { await retention(now); } catch (e) { logger.debug({ err: e.message }, 'vpn dns: retention'); }
     }
+    // the devices that are filtered right now (a suspension that ran out, a new device); once a minute also
+    // whether the jumps still stand first (WireGuard restarted, somebody inserted a rule above)
+    const check = now - run.firewallCheckAt >= FIREWALL_CHECK_EVERY_MS;
+    if (check) run.firewallCheckAt = now;
+    await syncFirewall({ check, now });
   }).catch((e) => { logger.warn({ err: e.message }, 'vpn dns tick failed'); }).finally(() => { run.ticking = null; });
   return run.ticking;
 }
@@ -784,6 +801,7 @@ function refreshSoon() {
     run.soon = null;
     if (!run.wanted) return;
     try { writeConfig(); } catch (e) { logger.warn({ err: e.message }, 'vpn dns: config not written'); }
+    syncFirewall();
   }, 500);
   if (run.soon.unref) run.soon.unref();
 }
@@ -791,7 +809,51 @@ function refreshSoon() {
 /** A suspension changed: the service must know at once. */
 function refreshNow() {
   if (run.wanted) { try { writeConfig(); } catch (e) { logger.warn({ err: e.message }, 'vpn dns: config not written'); } }
+  syncFirewall();
   publish();
+}
+
+// ─── Foreign DNS and DoT ("Umgehung erschweren") ───────────────────────
+
+function firewall() { return require('./vpnDnsFirewall'); }
+
+/**
+ * Whose foreign DNS is blocked right now → { iface, serverIp, peers } or null
+ * (no rules at all). Only the devices the filter really filters at this
+ * moment: none while the protection is off, starting or fallen back (then the
+ * devices are unfiltered anyway, and nothing may depend on the server's DNS
+ * that does not have to), none while it is suspended for everybody; not a
+ * device that is suspended, excluded, has a DNS server of its own or is a
+ * gateway.
+ */
+function firewallWant(now = Date.now(), s = get()) {
+  if (!run.wanted || !s.blockForeignDns || stateNow() !== 'filtering') return null;
+  const list = resolve(s);
+  const sus = suspended(list, now);
+  if (sus.all !== null) return null;
+  return {
+    iface: config.wireguard.interface,
+    serverIp: config.wireguard.gatewayIp,
+    peers: list.filter((d) => d.state === 'filtered' && d.ip && sus.keys[keyOf(d.peerId)] === undefined).map((d) => d.ip),
+  };
+}
+
+/** Bring the firewall in line with firewallWant(). Resolves when done; never rejects, never throws. */
+function syncFirewall({ check = false, now = Date.now() } = {}) {
+  try {
+    let want = null;
+    try { want = firewallWant(now); } catch (e) { logger.warn({ err: e.message }, 'vpn dns: firewall devices not read — rules lifted'); }
+    return firewall().sync(want, { dir: dir(), iface: config.wireguard.interface, check, now });
+  } catch (e) {
+    logger.warn({ err: e.message }, 'vpn dns: firewall not synced');
+    return Promise.resolve();
+  }
+}
+
+/** WireGuard was restarted (its PostUp rules are first again): put the jumps back at once. */
+function networkChanged() {
+  if (!run.started) return Promise.resolve();
+  return syncFirewall({ check: true });
 }
 
 function start() {
@@ -1097,6 +1159,8 @@ function status(now = Date.now()) {
     },
     lists: listsView().filter((l) => l.used),
     today: { queries: t.queries, blocked: t.blocked, cached: t.cached, blockedBy: blockedByOf(t.by_reason) },
+    // "Fremden DNS und DoT sperren": the setting, whether the rules are in force, for how many devices, the last error
+    foreignDns: { enabled: s.blockForeignDns, ...firewall().status() },
     log: { enabled: s.log.enabled, retentionDays: s.log.retentionDays },
   };
 }
@@ -1111,6 +1175,8 @@ function devices(now = Date.now()) {
     ? new Map(db().prepare('SELECT peer_id, queries, blocked FROM vpn_dns_peer_day WHERE day = ?').all(dayKey(now)).map((r) => [r.peer_id, { queries: r.queries, blocked: r.blocked }]))
     : null;
   const direct = new Set(pauseRows(now).filter((r) => r.scope === 'peer').map((r) => r.target_id));
+  const fw = firewall().status().active ? firewallWant(now, s) : null;
+  const blocked = new Set(fw ? fw.peers : []);
   return list.map((d) => {
     const own = sus.keys[keyOf(d.peerId)];
     const until = d.profileId ? (sus.all !== null ? sus.all : (own === undefined ? null : own)) : null;
@@ -1121,6 +1187,7 @@ function devices(now = Date.now()) {
       suspendedUntil: until ? iso(until) : null,
       suspendedBy: until === null ? null : (sus.all !== null ? 'all' : (direct.has(d.peerId) ? 'peer' : 'user')),
       today: per ? (per.get(d.peerId) || { queries: 0, blocked: 0 }) : null,
+      foreignDnsBlocked: !!d.ip && blocked.has(d.ip),
     };
   });
 }
@@ -1304,7 +1371,7 @@ function emit(ev) {
 
 function _resetForTest() {
   stop();
-  Object.assign(run, { wanted: false, chainOn: false, everActive: false, down: false, wantedAt: 0, svc: null, svcAt: 0, lastConfig: null, configAt: 0, takeAt: 0, retentionAt: 0, ticking: null });
+  Object.assign(run, { wanted: false, chainOn: false, everActive: false, down: false, wantedAt: 0, svc: null, svcAt: 0, lastConfig: null, configAt: 0, takeAt: 0, retentionAt: 0, firewallCheckAt: 0, ticking: null });
 }
 
 module.exports = {
@@ -1314,6 +1381,6 @@ module.exports = {
   resolve, profileOfUser, filterConfig, internalNames,
   pause, resume, pauses, sweepPauses, suspended,
   status, devices, lists, stats, test, log, clearLog, catalog: catalogView, refreshLists, restart, releasePihole, notice, clientInfo, clientPlugin, installedPlugin, piholeTargets, BLOCK_KINDS,
-  reconcile, pluginsChanged, refreshSoon, tick, start, stop, ingest, retention, control, dir, filterPort, writeConfig,
+  reconcile, pluginsChanged, refreshSoon, tick, start, stop, firewallWant, syncFirewall, networkChanged, ingest, retention, control, dir, filterPort, writeConfig,
   _run: run, _resetForTest, _hookMs: null,
 };
