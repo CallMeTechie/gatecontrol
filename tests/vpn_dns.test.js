@@ -22,6 +22,7 @@ process.env.GC_VPNDNS_DIR = STATE;
 const { dnsPackage } = require('./helpers/plugins');
 const { setup, teardown, getCsrf } = require('./helpers/setup');
 const H = require('./helpers/notify');
+const { fakeIptables } = require('./helpers/fakeIptables');
 const { wire } = require('../src/services/vpnDnsFilter/dnsfilter-core');
 const { FilterService } = require('../src/services/vpnDnsFilter/service');
 
@@ -31,7 +32,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let app, agent, csrf, db, runtime, plugins, vpnDns, dnsChain, hostApi, personContext;
 let adminId, anna, lea, boss, annaPhone, annaLaptop, leaPhone, bossPhone, guestTab, ownDnsPc, gateway, office, family;
-let upstream, svc, restarts = 0, confPath;
+let upstream, svc, restarts = 0, confPath, ipt, fw;
 
 function freePort() {
   return new Promise((resolve) => {
@@ -186,6 +187,7 @@ before(async () => {
 
 after(async () => {
   if (svc) svc.stop();
+  if (fw) fw._resetForTest();
   if (upstream) upstream.close();
   vpnDns.stop();
   dnsChain.stop();
@@ -269,7 +271,7 @@ describe('manifest: permissions.vpnDns', () => {
   it('gc.vpnDns exists with the permission; installed but switched off, still nothing runs', async () => {
     const r = await agent.get(`/api/v1/plugins/${P}/api/has`).expect(200);
     assert.equal(r.body.vpnDns, true);
-    assert.equal(r.body.version, 2);
+    assert.equal(r.body.version, 3);
     assert.deepEqual(r.body.methods, ['catalog', 'clearLog', 'devices', 'get', 'lists', 'log', 'on', 'pause', 'pauses', 'refreshLists', 'releasePihole',
       'restart', 'resume', 'set', 'stats', 'status', 'test', 'version']);
     const st = await ok('status');
@@ -675,6 +677,100 @@ describe('the apps', () => {
   });
 });
 
+describe('foreign DNS and DoT ("Umgehung erschweren")', () => {
+  // the firewall of this machine is never touched: iptables is a stand-in that keeps the rules
+  // (the exact rules: vpn_dns_firewall.test.js; against the real netfilter: vpn_dns_firewall_live.test.js)
+  const sources = (chain) => [...new Set(((chain === 'nat' ? ipt.tables.nat.GC_VPNDNS_NAT : ipt.tables.filter.GC_VPNDNS_FWD) || [])
+    .map((r) => /-s (\S+)\/32/.exec(r)).filter(Boolean).map((m) => m[1]))].sort();
+  const hooked = () => ipt.tables.nat.PREROUTING.length + ipt.tables.filter.FORWARD.filter((r) => r.includes('GC_VPNDNS')).length;
+  const filteredIps = async () => (await ok('devices')).filter((d) => d.state === 'filtered').map((d) => d.ip).sort();
+
+  it('off by default: not one firewall command, whatever happens', async () => {
+    fw = require('../src/services/vpnDnsFirewall');
+    ipt = fakeIptables();
+    fw._setExecForTest(ipt.exec);
+    assert.equal(vpnDns.get().blockForeignDns, false);
+    assert.deepEqual((await ok('status')).foreignDns, { enabled: false, active: false, devices: 0, since: null, error: null });
+    await vpnDns.tick();
+    await vpnDns.syncFirewall({ check: true });
+    assert.deepEqual(ipt.calls, []);
+    assert.equal(fs.existsSync(path.join(STATE, fw.MARKER)), false);
+    assert.equal((await call('set', { blockForeignDns: 'yes' })).code, 'ERR_INVALID');
+  });
+
+  it('switched on: rules for exactly the devices that are filtered — not own DNS, not excluded, not a gateway', async () => {
+    const s = await ok('set', { blockForeignDns: true });
+    assert.equal(s.blockForeignDns, true);
+    await vpnDns.syncFirewall();
+    const want = await filteredIps();
+    assert.ok(want.includes('10.8.0.12') && want.includes('10.8.0.21') && want.includes('10.8.0.30'));
+    assert.deepEqual(sources('nat'), want);
+    assert.deepEqual(sources('filter'), want);
+    assert.ok(!want.includes('10.8.0.31') && !want.includes('10.8.0.2'), 'own DNS and gateway are not filtered');
+    assert.equal(ipt.tables.nat.GC_VPNDNS_NAT[0], '-d 10.8.0.1/32 -j RETURN');
+    assert.ok(ipt.tables.nat.GC_VPNDNS_NAT.includes('-s 10.8.0.21/32 -p udp -m udp --dport 53 -j DNAT --to-destination 10.8.0.1:53'));
+    assert.ok(ipt.tables.filter.GC_VPNDNS_FWD.includes('-s 10.8.0.21/32 -p tcp -m tcp --dport 853 -j REJECT --reject-with tcp-reset'));
+    assert.equal(ipt.tables.filter.FORWARD[0], '-i wg0 -p tcp -m tcp --dport 853 -j GC_VPNDNS_FWD', 'before wg-quick’s ACCEPT');
+    assert.equal(hooked(), 4);
+    const st = (await ok('status')).foreignDns;
+    assert.deepEqual([st.enabled, st.active, st.devices, st.error], [true, true, want.length, null]);
+    const by = new Map((await ok('devices')).map((d) => [d.peerId, d.foreignDnsBlocked]));
+    assert.deepEqual([by.get(leaPhone), by.get(ownDnsPc), by.get(gateway)], [true, false, false]);
+    // excluded: out of the rules at once
+    await ok('set', { excluded: [guestTab] });
+    await vpnDns.syncFirewall();
+    assert.ok(!sources('nat').includes('10.8.0.40'));
+    await ok('set', { excluded: [] });
+    await vpnDns.syncFirewall();
+    assert.ok(sources('nat').includes('10.8.0.40'));
+  });
+
+  it('suspended means "as without the protection": the device’s rules go, and come back by themselves', async () => {
+    await as(anna, 'vpnDns.pause', { target: { scope: 'peer', id: annaPhone, minutes: 5 } });
+    await vpnDns.syncFirewall();
+    assert.ok(!sources('nat').includes('10.8.0.12') && !sources('filter').includes('10.8.0.12'));
+    assert.ok(sources('nat').includes('10.8.0.13'), 'her laptop keeps its rules');
+    assert.equal((await ok('devices')).find((d) => d.peerId === annaPhone).foreignDnsBlocked, false);
+    // it runs out: the next round of the server puts the rules back (nobody has to do anything)
+    db.prepare("UPDATE vpn_dns_pauses SET until_at = ? WHERE scope = 'peer' AND target_id = ?").run(Date.now() - 1000, annaPhone);
+    await vpnDns.tick();
+    assert.ok(sources('nat').includes('10.8.0.12'));
+    // for all devices: no rule and no jump at all
+    await ok('pause', { scope: 'all', minutes: 5 });
+    await vpnDns.syncFirewall();
+    assert.deepEqual([ipt.tables.nat.GC_VPNDNS_NAT, ipt.tables.filter.GC_VPNDNS_FWD, hooked()], [undefined, undefined, 0]);
+    assert.deepEqual(ipt.tables.filter.FORWARD, ['-i wg0 -j ACCEPT', '-i eth0 -o wg0 -m state --state RELATED,ESTABLISHED -j ACCEPT']);
+    assert.equal((await ok('status')).foreignDns.active, false);
+    await ok('resume', { scope: 'all' });
+    await vpnDns.syncFirewall();
+    assert.deepEqual(sources('nat'), await filteredIps());
+    assert.equal(hooked(), 4);
+  });
+
+  it('WireGuard restarted: the jumps go back above its ACCEPT', async () => {
+    ipt.tables.filter.FORWARD = ['-i wg0 -j ACCEPT', ...ipt.tables.filter.FORWARD.filter((r) => r !== '-i wg0 -j ACCEPT')];
+    await vpnDns.networkChanged();
+    assert.match(ipt.tables.filter.FORWARD[0], /GC_VPNDNS_FWD/);
+    assert.equal(ipt.tables.filter.FORWARD.filter((r) => r.includes('GC_VPNDNS')).length, 2);
+  });
+
+  it('iptables refuses: said in the status, name resolution is not touched', async () => {
+    const real = ipt.exec;
+    fw._setExecForTest(async () => ({ code: 4, stdout: '', stderr: 'iptables v1.8.10: Permission denied (you must be root)' }));
+    await ok('set', { excluded: [guestTab] }); // another set of devices → applied again
+    await vpnDns.syncFirewall();
+    const st = (await ok('status')).foreignDns;
+    assert.deepEqual([st.enabled, st.active], [true, false]);
+    assert.match(st.error, /Permission denied/);
+    assert.equal((await ok('status')).state, 'filtering');
+    assert.deepEqual((await askFilter('ads.example', '10.8.0.30')).a, ['0.0.0.0']);
+    fw._setExecForTest(real);
+    await ok('set', { excluded: [] });
+    await vpnDns.syncFirewall();
+    assert.deepEqual([(await ok('status')).foreignDns.active, (await ok('status')).foreignDns.error], [true, null]);
+  });
+});
+
 describe('outage and Pi-hole', () => {
   it('Pi-hole is displaced, not a second fallback; releasePihole only while the filter owns the chain', async () => {
     const pc = require('../src/services/piholeConfig');
@@ -714,6 +810,10 @@ describe('outage and Pi-hole', () => {
     await vpnDns.tick();
     const st = await ok('status');
     assert.deepEqual([st.state, st.chain, st.service.running], ['fallback', 'default', false]);
+    // fallen back: nothing is filtered, so nothing is rewritten or refused either — the rules are gone
+    await vpnDns.syncFirewall();
+    assert.deepEqual([st.foreignDns.enabled, (await ok('status')).foreignDns.active], [true, false]);
+    assert.deepEqual([ipt.tables.nat.GC_VPNDNS_NAT, ipt.tables.filter.GC_VPNDNS_FWD, ipt.tables.nat.PREROUTING], [undefined, undefined, []]);
     const n = (await agent.get('/api/v1/system/dns/protection').expect(200)).body.notice;
     assert.equal(n.kind, 'fallback');
     assert.ok(Date.parse(n.since) > 0);
@@ -727,6 +827,9 @@ describe('outage and Pi-hole', () => {
     for (let i = 0; i < 2; i++) await dnsChain.tick();
     assert.equal(dnsChain.vpnFilter.status().state, 'vpnfilter');
     assert.equal((await ok('status')).state, 'filtering');
+    await vpnDns.syncFirewall();
+    assert.equal((await ok('status')).foreignDns.active, true, 'the filter answers again: the rules are back');
+    assert.ok(ipt.tables.nat.GC_VPNDNS_NAT.length > 1);
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM activity_log WHERE event_type = 'vpn_dns_restored'").get().n, 1);
     const ev = await waitFor(async () => {
       const e = (await agent.get(`/api/v1/plugins/${P}/api/events`).expect(200)).body.events.map((x) => x.type);
@@ -761,6 +864,13 @@ describe('switched off again', () => {
     assert.equal(dnsChain.status().provider, null);
     assert.doesNotMatch(fs.readFileSync(confPath, 'utf8'), /add-subnet|vpnfilter/);
     assert.equal(vpnDns.notice(), null);
+    // the plugin is gone: so are the firewall rules, to the last one
+    await vpnDns.syncFirewall();
+    assert.deepEqual(ipt.tables, {
+      nat: { PREROUTING: [], POSTROUTING: ['-s 10.8.0.0/24 -o eth0 -j MASQUERADE'] },
+      filter: { INPUT: [], FORWARD: ['-i wg0 -j ACCEPT', '-i eth0 -o wg0 -m state --state RELATED,ESTABLISHED -j ACCEPT'] },
+    });
+    assert.equal(fs.existsSync(path.join(STATE, fw.MARKER)), false);
     assert.equal(vpnDns.clientInfo(), null);
     assert.equal(vpnDns.clientPlugin(), null, 'a plugin that may not run does not serve the apps');
     assert.deepEqual(vpnDns.installedPlugin(), { id: P, usable: false });
@@ -771,6 +881,9 @@ describe('switched off again', () => {
     await waitFor(() => vpnDns._run.wanted === true);
     assert.ok(fs.existsSync(path.join(STATE, 'enabled')));
     assert.equal(await runtime.waitRunning(P), true);
+    // back on (the service of this test is gone, so the filter does not filter yet): still no rule
+    await vpnDns.syncFirewall();
+    assert.equal(ipt.tables.nat.GC_VPNDNS_NAT, undefined);
     await ok('pause', { scope: 'all', forever: true });
     await ok('set', { enabled: false });
     assert.equal(vpnDns._run.wanted, false);

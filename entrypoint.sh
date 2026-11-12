@@ -88,6 +88,13 @@ iptables -t nat -C POSTROUTING -s "${GC_WG_SUBNET}" -o "${GC_NET_INTERFACE}" -j 
   iptables -t nat -A POSTROUTING -s "${GC_WG_SUBNET}" -o "${GC_NET_INTERFACE}" -j MASQUERADE
 echo "» MASQUERADE rule active: ${GC_WG_SUBNET} → ${GC_NET_INTERFACE}"
 
+# ─── Leftover rules of "Fremden DNS und DoT sperren" ──
+# The container shares the host's network, so firewall rules of the DNS
+# protection (src/services/vpnDnsFirewall.js) outlive a container that was
+# killed. Start from a clean slate; the server sets them again once the
+# filter really filters. A no-op when there are none.
+sh /app/scripts/vpndns-firewall-clear.sh || true
+
 # ─── Ensure data directory ───────────────────────────
 mkdir -p /data/caddy /data/wireguard /data/branding
 mkdir -p "$(dirname "$GC_DB_PATH")"

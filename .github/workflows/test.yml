@@ -74,6 +74,13 @@ jobs:
           # never skipped here: without dnsmasq or the addresses the test fails
           GC_TEST_DNSMASQ: required
 
+      # "Fremden DNS und DoT sperren" of the DNS protection against the real
+      # netfilter: the test builds three network namespaces of its own
+      # (devices, server, internet), so no rule of the runner is touched. It
+      # needs root — in `npm test` above it is skipped.
+      - name: Firewall rules of the DNS protection against real netfilter
+        run: sudo env "PATH=$PATH" GC_TEST_NETFILTER=required node --test --test-force-exit tests/vpn_dns_firewall_live.test.js
+
       # Only lcov.info of one Node version: the whole coverage/ folder holds
       # c8's raw V8 data (~100 MB per run) and filled the Actions storage.
       - name: Upload coverage report
