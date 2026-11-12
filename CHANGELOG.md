@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.263.1] — 2026-11-12
+
+### Fixes
+- DNS-Kette fällt bei totem Pi-hole-DNS in Sekunden auf die Standard-Upstreams zurück (#471)
+
+---
+
 ## [1.263.0] — 2026-11-11
 
 ### Features
