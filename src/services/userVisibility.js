@@ -14,8 +14,6 @@
  *                 legacy token_ids list, else everybody
  *   Reasons       'all' | 'picked' (named person, names) | 'group' (member
  *                 of a released group, groups: paths) | 'token'
- *   Pi-hole       per device token: the `pihole` scope after the role cap,
- *                 and the licence feature pihole_integration
  *
  * Never returns credentials: names, hosts and ports only.
  */
@@ -117,13 +115,12 @@ function rdpEntries(userId, tokenIds, byId, ctx = {}) {
 
 /**
  * Full picture for the admin tab.
- * Returns { user, role, web, services, rdp, pihole } — `web` is
+ * Returns { user, role, web, services, rdp } — `web` is
  * 'all' (admin), 'self_service' (member with "Mein Bereich") or 'none'.
  */
 function forUser(userId) {
   const db = getDb();
   const users = require('./users');
-  const license = require('./license');
   const user = users.getById(userId);
   if (!user) return null;
   const all = db.prepare('SELECT id, username, display_name FROM users').all();
@@ -131,14 +128,6 @@ function forUser(userId) {
   const tokens = db.prepare('SELECT id, name, scopes, peer_id, enrolled FROM api_tokens WHERE user_id = ? ORDER BY name').all(userId);
   const tokenIds = tokens.map((t) => t.id);
   const ctx = { userGroups: groupAccess.userGroupSet(userId) };
-
-  const piholeLicensed = !!license.hasFeature('pihole_integration');
-  const devices = tokens.filter(isDeviceToken).map((t) => {
-    let scopes = [];
-    try { scopes = JSON.parse(t.scopes) || []; } catch { scopes = []; }
-    const effective = users.filterScopesForRole(scopes, user.role);
-    return { tokenId: t.id, name: t.name, on: effective.includes('pihole') || effective.includes('full-access') };
-  });
 
   let web = 'none';
   if (user.role === 'admin') web = 'all';
@@ -150,7 +139,6 @@ function forUser(userId) {
     web,
     services: httpEntries(userId, byId, ctx),
     rdp: rdpEntries(userId, tokenIds, byId, ctx),
-    pihole: { licensed: piholeLicensed, devices },
   };
 }
 

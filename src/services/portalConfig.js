@@ -8,7 +8,7 @@ const settings = require('./settings');
  * trustOwnerMapping ("Geräte-Besitzer automatisch erkennen") defaults to on too
  * since the portal redesign (migration 90).
  *
- * @returns {{ enabled: boolean, widgets: { device: boolean, traffic: boolean, services: boolean, pihole: boolean }, trustOwnerMapping: boolean }}
+ * @returns {{ enabled: boolean, widgets: { device: boolean, traffic: boolean, services: boolean }, trustOwnerMapping: boolean }}
  */
 const on = (key) => settings.get(key, '1') !== '0';
 
@@ -19,7 +19,6 @@ function portalConfig() {
       device:   on('portal.widget.device'),
       traffic:  on('portal.widget.traffic'),
       services: on('portal.widget.services'),
-      pihole:   on('portal.widget.pihole'),
     },
     trustOwnerMapping: settings.get('portal.trust_owner_mapping', '1') !== '0',
   };

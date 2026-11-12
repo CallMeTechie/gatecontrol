@@ -72,7 +72,7 @@ describe('client enrollment — admin issues a code', () => {
     const u = await users.create({ username: 'enroll-user', role: 'user', password: 'Secret123!x' });
     const scopes = enrollment.resolveScopes(undefined, u.id);
     assert.ok(scopes.includes('client:rdp'));
-    assert.ok(!scopes.includes('pihole'), 'role user may not get pihole');
+    assert.ok(!scopes.includes('peers'), 'role user never gets an admin scope');
   });
 });
 

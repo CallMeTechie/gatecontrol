@@ -215,10 +215,6 @@ function sectionStates(src) {
     st('webhooks', 'active', { n: count('SELECT COUNT(*) AS c FROM webhooks WHERE enabled = 1') });
   });
   tryRead('monitoring', () => st('monitoring', 'interval', { n: require('./monitor').getSettings().interval }));
-  tryRead('pihole', () => {
-    if (!require('./license').hasFeature('pihole_integration')) return;
-    st('pihole', 'instances', { n: (require('./piholeConfig').load().instances || []).length });
-  });
   tryRead('geoip', () => st('geoip', settings.get('ip2location.api_key', '') ? 'key_set' : 'no_key'));
   tryRead('portal', () => st('portal', require('./portalConfig')().enabled ? 'on' : 'off'));
   if (src.ipBlock) st('ipsperre', src.ipBlock.enabled ? 'blocked_now' : 'off', src.ipBlock.enabled ? { n: src.ipBlock.blocked } : {});

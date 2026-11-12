@@ -44,7 +44,7 @@ const KIOSK_ALLOW = [
   { methods: ['GET', 'HEAD', 'POST'], re: /^\/portal\/kiosk$/ },
   { methods: ['POST'], re: /^\/portal\/kiosk\/logout$/ },
   // Read-only data of the built-in portal widgets
-  { methods: ['GET', 'HEAD'], re: /^\/api\/v1\/portal\/(?:device|traffic|services|pihole|pihole\/owner|pihole\/household)$/ },
+  { methods: ['GET', 'HEAD'], re: /^\/api\/v1\/portal\/(?:device|traffic|services)$/ },
   // Plugins: Start tiles, search, and the plugin API of portal plugins (any method; CSRF like every signed-in viewer)
   { methods: ['GET', 'HEAD'], re: /^\/api\/v1\/portal\/plugins\/(?:start|search)$/ },
   { methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'], re: new RegExp(`^/api/v1/portal/plugins/${PLUGIN_ID}/api/[^?#]*$`) },

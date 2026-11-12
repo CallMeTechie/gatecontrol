@@ -285,6 +285,8 @@ router.use(require('../middleware/twoFactorPolicy').twoFactorPolicy);
 
 // ─── Protected page routes ─────────────────────────
 router.get('/', requireAuth, (req, res) => res.redirect('/dashboard'));
+// The Pi-hole page is gone with the integration (old bookmarks, the app's link).
+router.get('/pihole', requireAuth, (req, res) => res.redirect('/dashboard'));
 
 // ─── Kiosk devices (docs/feature-kiosk-devices.md) ──────────────────
 // Before every route under /portal and /api/v1/portal (the plugin frames
@@ -325,7 +327,7 @@ function profileLocals(req, res) {
 // String prefixes the settings page hands to its scripts (settings.njk island
 // data-prefixes must list the same ones).
 const SETTINGS_I18N_PREFIXES = ['st.', 'settings.', 'offsite.', 'premig.', 'autoupdate.', 'autobackup.', 'updatesh.', 'client_policy.',
-  'client_updates.', 'pihole.cfg.', 'tags.', 'peer_groups.', 'license.', 'common.', 'security.lockout.', 'error.settings.',
+  'client_updates.', 'tags.', 'peer_groups.', 'license.', 'common.', 'security.lockout.', 'error.settings.',
   'error.webhooks.', 'error.peer_groups.', 'error.client_policy.', 'error.client_updates.', 'error.wireguard.', 'plugins.', 'ai.'];
 
 // Strings of the Peers page (peers.njk island data-prefixes must list the same ones).
@@ -361,7 +363,6 @@ const pages = [
   // Directory sync (docs/groups.md "Verzeichnis-Abgleich und Anmeldung"): data from /api/v1/directories.
   { path: '/directory', template: 'directory', titleKey: 'nav.directory' },
   { path: '/dns', template: 'dns', titleKey: 'nav.dns' },
-  { path: '/pihole', template: 'pihole', titleKey: 'pihole.title' },
   { path: '/gateways', template: 'gateways', titleKey: 'nav.gateways' },
 ];
 
@@ -422,34 +423,12 @@ function profileTab(v) { return PROFILE_TABS.includes(v) ? v : 'overview'; }
 const settingsUI = require('../../public/js/settings-ui');
 const PLUGIN_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /**
- * The notice "abgekündigt" on the Pi-hole page: the DNS protection (a plugin
- * with permissions.vpnDns) replaces the integration.
- *   plugin  the plugin is installed → its settings page (the dialog that
- *           moves over from Pi-hole opens there)
- *   moved   … and the protection is switched on already → the same page
- *   catalog no such plugin → the plugin catalogue
- * `href` only for administrators (the plugin area is theirs).
- */
-function piholeDeprecation(isAdmin) {
-  let plugin = null;
-  let on = false;
-  try {
-    const vd = require('../services/vpnDns');
-    plugin = vd.installedPlugin();
-    on = !!(plugin && plugin.usable && vd.get().enabled);
-  } catch { plugin = null; }
-  if (!plugin) return { state: 'catalog', href: isAdmin ? '/settings/plugins/catalog' : null };
-  return { state: on ? 'moved' : 'plugin', href: isAdmin ? `/settings/plugins/manage/${encodeURIComponent(plugin.id)}?tab=settings` : null };
-}
-
-/**
  * Which settings page a request asks for → { section } to render,
  * { redirect } for old addresses (?tab=…, ?plugin=…, /settings/uebersicht,
  * /settings/<old tab name>) or { notFound }.
  */
-function settingsTarget(req, opts) {
-  const piholeOn = !!(opts && opts.piholeOn);
-  const known = settingsUI.SECTIONS.filter((x) => x !== 'pihole' || piholeOn);
+function settingsTarget(req) {
+  const known = settingsUI.SECTIONS;
   const q = req.query || {};
   const param = req.params && req.params.section;
   if (!param) {
@@ -469,6 +448,7 @@ function settingsTarget(req, opts) {
   if (known.includes(id) && id !== 'plugins') return { section: id };
   const section = settingsUI.sectionFromPath(`/settings/${id}`, known);
   if (section) return { redirect: settingsUI.sectionPath(section) };
+  // the Pi-hole integration is gone: its old address leads to the start page
   if (id === 'pihole') return { redirect: '/settings' };
   return { notFound: true };
 }
@@ -496,9 +476,7 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
       return res.redirect('/profile');
     }
     if (template === 'settings') {
-      let piholeOn = false;
-      try { piholeOn = hasFeature('pihole_integration'); } catch { piholeOn = false; }
-      const target = settingsTarget(req, { piholeOn });
+      const target = settingsTarget(req);
       if (target.redirect) return res.redirect(302, target.redirect);
       if (target.notFound) return res.status(404).render(`${res.locals.theme}/pages/404.njk`, { title: '404' });
       extraLocals.stSection = target.section;
@@ -636,13 +614,12 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
         .replace(/</g, '\\u003c');
     }
 
-    // Pi-hole page: the integration is deprecated — where "Zum DNS-Schutz umziehen" leads
-    if (template === 'pihole') extraLocals.piholeDeprecation = piholeDeprecation(isAdmin);
-
     // Dashboard-only: gateways that need re-pairing after master-key rotation
     if (template === 'dashboard') {
       // "Plugins brauchen deine Hilfe": open Einrichtungshinweise (plugin.json setupNotices)
       try { extraLocals.pluginSetup = isAdmin ? require('../services/plugins/setupNotices').summary(res.locals.language === 'en' ? 'en' : 'de') : []; } catch { extraLocals.pluginSetup = []; }
+      // "Die Pi-hole-Anbindung wurde entfernt" — only where Pi-hole was set up, until an administrator closes it
+      try { extraLocals.piholeRemoved = isAdmin ? require('../services/piholeRemoval').notice() : null; } catch { extraLocals.piholeRemoved = null; }
       // DNS protection of the VPN devices: fell back / suspended for everybody (services/vpnDns.js; null without the plugin)
       try { extraLocals.vpnDnsNotice = isAdmin ? JSON.stringify(require('../services/vpnDns').notice()).replace(/</g, '\\u003c') : 'null'; } catch { extraLocals.vpnDnsNotice = 'null'; }
       try {

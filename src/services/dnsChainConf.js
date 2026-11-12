@@ -4,11 +4,11 @@ const fs = require('node:fs');
 const net = require('node:net');
 
 // The managed block carries the name of the provider that put it there:
-// `# >>> gatecontrol-pihole >>>` … `# <<< gatecontrol-pihole <<<`.
+// `# >>> gatecontrol-vpnfilter >>>` … `# <<< gatecontrol-vpnfilter <<<`.
+// Blocks of any name are recognised and removed — also the
+// `gatecontrol-pihole` block of the former Pi-hole integration.
 const beginOf = (provider) => `# >>> gatecontrol-${provider} >>>`;
 const endOf = (provider) => `# <<< gatecontrol-${provider} <<<`;
-const BEGIN = beginOf('pihole');
-const END = endOf('pihole');
 const PROVIDER_RE = /^[a-z][a-z0-9]{0,31}$/;
 const ANY_BEGIN_RE = /^# >>> gatecontrol-[a-z0-9]+ >>>$/m;
 
@@ -72,7 +72,7 @@ function makeChain({ confPath, defaults, reload }) {
     // provider: whose chain this is (names the managed block). ecs: add the
     // client address to every forwarded query (`add-subnet=32,128`), so the
     // upstream can tell the VPN devices apart.
-    apply(dnsIps, { provider = 'pihole', ecs = true } = {}) {
+    apply(dnsIps, { provider = 'vpnfilter', ecs = true } = {}) {
       if (!PROVIDER_RE.test(String(provider))) throw new Error('dns chain: invalid provider name');
       // No upstream at all would leave dnsmasq unable to resolve anything.
       dnsIps = (dnsIps || []).filter(isValidToken);
@@ -83,11 +83,10 @@ function makeChain({ confPath, defaults, reload }) {
       let content = fs.readFileSync(confPath, 'utf8');
 
       // If the conf already routes to exactly these upstreams (with ECS), skip the
-      // rewrite + reload entirely. entrypoint.sh bakes the same chain into the
-      // conf at boot, so this avoids a redundant dnsmasq restart (and the brief
-      // DNS blip that comes with it) on every container start. Compared
-      // semantically (server= set + add-subnet presence), independent of the
-      // exact byte layout entrypoint.sh vs. this writer produce.
+      // rewrite + reload entirely: no redundant dnsmasq restart (and the brief
+      // DNS blip that comes with it) when the server process starts again next
+      // to a dnsmasq that kept running. Compared semantically (server= set +
+      // add-subnet presence), independent of the exact byte layout.
       const currentServers = (content.match(/^server=.*/gm) || [])
         .map(l => l.slice('server='.length).trim()).sort();
       const hasEcs = /^add-subnet=/m.test(content);
@@ -98,7 +97,8 @@ function makeChain({ confPath, defaults, reload }) {
       }
 
       content = stripManaged(content);
-      // A chain baked in by entrypoint.sh sits outside the managed block.
+      // A chain written by anything else (older versions baked the Pi-hole chain
+      // in at boot) sits outside the managed block.
       content = stripEcsLines(content);
       content = stripServerLines(content);
 
@@ -126,11 +126,12 @@ function makeChain({ confPath, defaults, reload }) {
       let content = fs.readFileSync(confPath, 'utf8');
 
       // Decided by what the conf actually says, not by a marker or by what this
-      // process remembers: entrypoint.sh bakes the Pi-hole chain into the conf
-      // at boot WITHOUT the managed block, and that chain has to be revertible
-      // too (it used to be skipped — the fallback never happened after a
-      // container start). No rewrite + restart when the conf already routes to
-      // exactly the defaults.
+      // process remembers: versions with the Pi-hole integration baked its chain
+      // into the conf at boot WITHOUT the managed block, and that chain has to
+      // be revertible too (it used to be skipped — the fallback never happened
+      // after a container start; today this is what takes a left-over Pi-hole
+      // chain out after the update). No rewrite + restart when the conf
+      // already routes to exactly the defaults.
       const currentServers = (content.match(/^server=.*/gm) || [])
         .map(l => l.slice('server='.length).trim()).sort();
       const hasEcs = /^add-subnet=/m.test(content);
@@ -172,7 +173,7 @@ function isValidDnsTarget(inst) {
 }
 
 /**
- * Build a dnsmasq server= token for a DNS target (e.g. a pihole instance).
+ * Build a dnsmasq server= token for a DNS target (e.g. the filter service).
  * Returns `ip#port` when dns_port is set and not 53, else just `ip`.
  * Returns null when dns_ip is absent or not a valid address/port.
  * @param {{ dns_ip?: string, dns_port?: number|string }} inst
@@ -191,4 +192,4 @@ function isValidToken(token) {
   return rest.length === 0 && isValidDnsTarget({ dns_ip: ip, dns_port: port });
 }
 
-module.exports = { makeChain, buildDnsToken, isValidDnsTarget, BEGIN, END };
+module.exports = { makeChain, buildDnsToken, isValidDnsTarget };

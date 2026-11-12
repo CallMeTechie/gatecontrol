@@ -1,11 +1,10 @@
 'use strict';
-// LAN-Integrationen (Pi-hole) folgen Redirects nur innerhalb des
+// LAN-Integrationen folgen Redirects nur innerhalb des
 // konfigurierten Origins; Cloud-Metadaten sind als Ziel immer gesperrt.
 const { test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { lanFetch, isMetadataHost } = require('../src/utils/lanFetch');
-const pihole = require('../src/services/piholeClient');
 
 const servers = [];
 function listen(handler) {
@@ -41,8 +40,8 @@ test('redirect to another origin is rejected and never requested', async () => {
   let internalHits = 0;
   const internal = await listen((req, res) => { internalHits++; res.end('{"secret":1}'); });
   const rogue = await listen((req, res) => { res.writeHead(302, { Location: `${internal}/config/` }); res.end(); });
-  await assert.rejects(() => lanFetch(`${rogue}/api/auth`, {}, { label: 'pihole' }),
-    (e) => e.code === 'LAN_REDIRECT_CROSS_ORIGIN' && /^pihole_redirect_blocked/.test(e.message));
+  await assert.rejects(() => lanFetch(`${rogue}/api/auth`, {}, { label: 'nas' }),
+    (e) => e.code === 'LAN_REDIRECT_CROSS_ORIGIN' && /^nas_redirect_blocked/.test(e.message));
   assert.equal(internalHits, 0);
 });
 
@@ -81,33 +80,7 @@ test('non-http protocols are rejected', async () => {
   await assert.rejects(() => lanFetch('file:///etc/passwd'), (e) => e.code === 'LAN_INVALID_PROTOCOL');
 });
 
-test('Pi-hole client: cross-origin redirect on auth is an error', async () => {
-  let internalHits = 0;
-  const internal = await listen((req, res) => { internalHits++; res.end('{"session":{"sid":"X"}}'); });
-  const rogue = await listen((req, res) => { res.writeHead(307, { Location: `${internal}/api/auth` }); res.end(); });
-  const c = pihole.createClient({ id: 'p', url: rogue, app_password: 'pw' });
-  await assert.rejects(() => c.getSummary(), (e) => e.code === 'LAN_REDIRECT_CROSS_ORIGIN');
-  assert.equal(internalHits, 0);
-});
-
-test('Pi-hole client: same-origin redirect still works', async () => {
-  const seen = [];
-  const base = await listen((req, res) => {
-    seen.push(`${req.method} ${req.url}`);
-    if (req.url === '/api/padd') { res.writeHead(301, { Location: '/api/padd/' }); res.end(); return; }
-    if (req.url === '/api/auth') { res.end(JSON.stringify({ session: { sid: 'S' } })); return; }
-    if (req.url === '/api/padd/') {
-      assert.equal(req.headers['x-ftl-sid'], 'S');
-      res.end(JSON.stringify({ queries: { total: 3, blocked: 1 } })); return;
-    }
-    res.statusCode = 404; res.end('{}');
-  });
-  const s = await pihole.createClient({ id: 'p', url: base, app_password: 'pw' }).getSummary();
-  assert.equal(s.queries.total, 3);
-  assert.deepEqual(seen, ['POST /api/auth', 'GET /api/padd', 'GET /api/padd/']);
-});
-
-// ─── Schema-Upgrade http → https (Pi-hole v6, Reverse-Proxies) ────────
+// ─── Schema-Upgrade http → https (Weboberflächen, Reverse-Proxies) ────────
 // https auf :443 lässt sich im Test nicht binden → fetch wird gemockt.
 function mockFetchSequence(routes) {
   const orig = global.fetch;

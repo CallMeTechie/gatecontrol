@@ -5,8 +5,7 @@ malicious sites, profiles for groups, people and devices). The technique lives
 in the server; the plugin "DNS-Schutz" brings the pages, the licence and the
 app views through the plugin API `gc.vpnDns` (docs/plugins.md "DNS
 protection"). **Without a plugin that holds `permissions.vpnDns` and may run,
-nothing of this is active** — no process, no chain entry, no timer; a server
-with Pi-hole behaves exactly as before.
+nothing of this is active** — no process, no chain entry, no timer.
 
 ```
 VPN device ──► dnsmasq (10.8.0.1:53)
@@ -46,8 +45,8 @@ asking process's event loop is never held for more than a few milliseconds.
 
 The service is not the server's child: supervisord starts the wrapper, the
 wrapper starts the service. After a server restart the chain is claimed again
-at once (`vpnDns.start()` runs before Pi-hole's start), without putting dnsmasq
-on another upstream in between.
+once the filter has answered a probe; until then dnsmasq uses the default
+upstreams `entrypoint.sh` wrote.
 
 ## What the service guarantees
 
@@ -100,25 +99,43 @@ retention 7 days by default, deleted when switched off).
 plugin, the event `vpn_dns` for the admin UI. The dashboard shows a red notice
 ("DNS-Schutz ausgefallen – Geräte laufen ungefiltert") or an amber one while
 the protection is suspended for all devices (`GET
-/api/v1/system/dns/protection`, `POST …/resume`). The Pi-hole page shows
-"Verdrängt durch DNS-Schutz" while the filter owns the chain (`displacedBy`).
+/api/v1/system/dns/protection`, `POST …/resume`).
 
-## Pi-hole
+## Pi-hole (removed in 1.268.0)
 
-Exactly one provider owns the chain; the filter outranks Pi-hole. Switching
-the protection on takes the chain over in one dnsmasq restart once the filter
-answers (Pi-hole stays active until then); `gc.vpnDns.releasePihole()` then
-switches Pi-hole's "manage the DNS chain" off, so that switching the
-protection off later does not silently bring Pi-hole back.
+The Pi-hole integration is gone; the filter is the only provider of the DNS
+chain (`RANK = ['vpnfilter']` in `services/dnsChain.js`).
 
-The Pi-hole integration is **deprecated** (not removed): the Pi-hole page
-carries a notice with the button "Zum DNS-Schutz umziehen" →
-`/settings/plugins/manage/<plugin>?tab=settings` (the plugin's settings page,
-where its dialog moves over) when a plugin with `permissions.vpnDns` is
-installed, "DNS-Schutz öffnen" once the protection is switched on, else a link
-to the plugin catalogue (`piholeDeprecation()` in `src/routes/index.js`).
-`status().pihole.targets` names where the devices reach Pi-hole and the
-gateway behind it, for the first step of that dialog.
+- **dnsmasq:** `entrypoint.sh` writes the default upstreams at every container
+  start; the server refreshes the chain at every start (`dnsChain.refresh()`
+  in `server.js`), which takes a Pi-hole chain out of a conf that was not
+  written anew — the managed block `gatecontrol-pihole` as well as the form
+  older versions baked in at boot (`add-subnet` + the Pi-hole addresses
+  without a block). With the protection on, the filter becomes the upstream
+  once it has answered a probe, as always. A VPN device is never left without
+  name resolution (`tests/pihole_removal_dnsmasq.test.js`, with a real
+  dnsmasq).
+- **Data:** migration 147 and `services/piholeRemoval.js` (`purge()`, also at
+  every start and after a restore) delete the settings `pihole_config` (URLs,
+  app passwords), `pihole_blocking_desired`, `portal.widget.pihole` and take
+  the scopes `pihole` / `pihole:control` out of the stored API tokens and
+  setup codes. An installation that had Pi-hole set up gets the activity entry
+  `pihole_integration_removed` and a dashboard notice with a link to the
+  plugin (or its catalogue entry) until an administrator closes it (`POST
+  /api/v1/system/notices/pihole-removed/dismiss`).
+- **Licence:** the feature key `pihole_integration` is retired
+  (`RETIRED_FEATURES` in `services/license.js`): a licence token that still
+  carries it stays valid, the key is not taken over.
+- **Apps:** `GET /api/v1/client/permissions` keeps `permissions.pihole` and
+  `permissions.piholeControl`, always `false` (older app versions hide their
+  Pi-hole view on that); `/api/v1/pihole/*` answers `410 { ok: false, code:
+  'pihole_removed' }`.
+- **Plugins:** `gc.vpnDns.releasePihole()` stays as a call that does nothing
+  and answers `{ configured: false, wantsChain: false, chain: 'off', targets:
+  [] }`; `status().pihole` always is that object, `status().chain` is only
+  ever `'filter'` or `'default'`.
+- **Web:** `/pihole` leads to the dashboard, `/settings/pihole` to the
+  settings start page.
 
 ## Home network: shared profiles and "Internet pausieren"
 

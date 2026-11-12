@@ -142,7 +142,7 @@ describe('ops UI: templates', () => {
       baseUrl: 'https://gc.example.com', user: { id: 1, username: 'admin', display_name: 'Admin', role: 'admin' }, flash: {}, title: 'x',
     };
     for (const licensed of [true, false]) {
-      const license = { plan: 'pro', features: { scheduled_backups: licensed, http_routes: -1, l4_routes: -1, pihole: { available: true } }, hasFeature: (k) => (k === 'scheduled_backups' ? licensed : true), isWithinLimit: () => true };
+      const license = { plan: 'pro', features: { scheduled_backups: licensed, http_routes: -1, l4_routes: -1 }, hasFeature: (k) => (k === 'scheduled_backups' ? licensed : true), isWithinLimit: () => true };
       const html = env.render('aurora/pages/settings.njk', Object.assign({}, base, { license, activeNav: 'settings', currentPath: '/settings' }));
       assert.equal(/id="st-off-add"[^>]* disabled/.test(html), !licensed, 'add target only with the licence');
       assert.equal(html.includes('data-license-hint="scheduled_backups"'), !licensed, 'licence hint without it');

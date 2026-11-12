@@ -151,10 +151,191 @@ explains how.
 
 **On the road (VPN devices):** the gateway's DNS filter only works in the home
 network. For phones and laptops connected by VPN the server filters itself –
-with the plugin "DNS-Schutz" (Settings › Plugins). It uses the same lists and
-categories. If the filter on the server fails, the internet of the devices
-keeps working unfiltered; the dashboard says so. Without the plugin nothing
-changes, not for an existing Pi-hole integration either.
+with the plugin "DNS-Schutz"; see [DNS protection](#dns-protection). A profile
+can hold for both.
+
+## DNS protection
+
+**What for:** Filters ads, trackers and malicious sites for every device that
+reaches the internet through GateControl's VPN – phones and laptops on the
+road. The server filters itself; no second device is needed. The DNS
+protection is a function of the server, not a tab of the gateway: it comes
+with the plugin “DNS-Schutz” (Settings › Plugins).
+
+The gateway's [DNS filter](#dns-filter) and the DNS protection complement each
+other:
+
+| Where is the device? | Who filters? |
+|---|---|
+| In the home network (Wi-Fi/LAN), without VPN | The gateway's DNS filter – when it is switched on and entered in the router |
+| Connected to GateControl by VPN | The DNS protection on the server |
+| VPN device with a DNS server of its own, excluded device, gateway | Nobody – see “Limits” |
+
+A profile can hold for both (“holds at home and on the road”, see below).
+
+**Requirements:**
+
+- Server **1.267.0** or later.
+- GateControl's internal DNS is switched on (that is the default).
+- The plugin “DNS-Schutz” and a licence for it. Without a licence, or when the
+  plugin is switched off, the server does not filter; the settings are kept.
+- For “parents suspend for their children” and “Pause internet”: the plugin
+  “Familie” (1.15.0 or later).
+- For “Link to a home profile”: a home gateway with a DNS filter.
+- For the screen in the apps: Android app 1.105 or later, Windows app 1.84 or
+  later. Older apps do not show it; the portal always works.
+
+**Setting up:**
+
+1. Open “Settings” → “Plugins” → “DNS Protection” → “Settings”. On the first
+   visit the dialog “Set up the DNS protection” starts.
+2. **Pick the lists.** “Ads & trackers” and “Malware & fraud” are suggested.
+   The selection holds for all VPN devices and can be changed later.
+3. **Switch on.** The server loads the lists, checks the filter with two probes
+   and then switches the VPN devices' DNS over. The DNS stays without an answer
+   for about a second.
+4. **Done.** Create profiles afterwards if you need them (tab “Profiles”).
+
+“Later” closes the dialog; you find it again with “Set up” in the plugin's
+overview.
+
+**Lists & exceptions:** The lists come from GateControl's catalogue (ads &
+trackers, malware & fraud, adult content, gambling) – the same as for the
+gateway's DNS filter. They are loaded again every day; “Update now” loads them
+at once.
+
+- **“Always allowed” / “Always blocked”** hold in every profile. An entry
+  covers the domain and all its subdomains. When a domain is in both fields,
+  “Always allowed” wins.
+- **“Check a domain”** shows whether and why an address is blocked for a
+  device – with the profile, the reason and the entry that hit – and offers
+  “Allow for everybody” or “Allow only in the profile …”.
+- Names of the own network (devices, routes, portal) are never blocked.
+
+**Profiles:** A profile bundles lists, safe search, times and own entries. Its
+members are **groups**, **people** and **devices**.
+
+Which profile holds? **Device beats person beats group beats default:** if a
+device has a profile of its own, that one holds. Else the profile of the
+person the device belongs to. Else the profile of the group. Else the default
+profile. When two profiles are on the same level, the one further up wins.
+
+- **Safe search:** Google, Bing, DuckDuckGo and YouTube only return results
+  suitable for minors.
+- **Times:** days and a time of day during which “Social networks”, “Games”,
+  “Videos” or everything is blocked. When “To” lies before “From”, the time
+  runs past midnight. The server's time zone counts.
+- The **default profile** has no members and cannot be deleted.
+- The tab “Devices” shows for every VPN device which profile holds. “Change
+  profile” gives a device a profile of its own or excludes it entirely.
+
+**At home and on the road (linking a profile to the home network):** When your
+home gateway has a DNS filter, a profile can hold in both places. Open the
+profile and choose under “Link to a home profile”
+
+- **a profile of the home network:** on saving, the profile takes its lists,
+  safe search, times, “Always allowed”, “Always blocked” and people. What was
+  set in the DNS protection is replaced.
+- **“Create in the home network …”:** the home network gets this profile with
+  its content and name.
+
+The profile then shows “holds at home and on the road”. The fields marked
+“Home” are kept in the home profile: a change in the DNS protection also takes
+effect at home, a change on the gateway page takes effect on the road within
+seconds. Only in the DNS protection hold the name, groups and devices.
+“Unlink” separates the two again; both keep what they have. The default
+profile can only be linked to the home network's default profile, and a home
+profile can be linked to one profile only.
+
+**Suspending:** When a page does not work, the protection can be switched off
+for a few minutes – in the Android app (1.105 or later), in the Windows app
+(1.84 or later) and in the portal (tab “DNS Protection”). It switches itself
+back on. Meanwhile nothing is blocked and nothing is counted for these devices.
+
+Who may suspend for whom?
+
+- **Everybody** for their own devices.
+- **Administrators** for everybody – on the plugin's settings page for all VPN
+  devices at once (5 min, 30 min, 1 h or “until I switch it back on”; “+30 min”
+  extends).
+- **Parents** (plugin “Familie”) also for the members of their family, but
+  never for administrators.
+
+The plugin's tab “Settings” sets who may suspend in the app (“Administrators
+only”, “All users” – the default – or “Per profile”), the longest duration for
+users (5 min, 30 min, 1 h – the default – or 4 h) and whether users may choose
+“Until I switch it back on” (default: no). Everybody may switch the protection
+back on for their own devices; a suspension for all devices is ended by an
+administrator only. Every suspension is in GateControl's activity log with the
+person and the duration.
+
+**“Pause internet” of Family:** When somebody pauses a person's internet in
+the plugin “Familie”, this also holds for that person's VPN devices on the road
+(default: on; can be switched off under “Settings” › “Home network and
+family”). Only entries of “Always allowed” answer then. Overview, device list
+and portal show “Internet paused until …”; “Suspend” is not offered meanwhile,
+and the pause can only be ended in “Familie”.
+
+**Block foreign DNS and DoT:** The switch (card “Make it harder to get
+around”) is **off** after the installation. Switched on, this holds for every
+device that is being filtered right now:
+
+- Queries to foreign DNS servers (port 53) are answered by the DNS protection –
+  with the device's profile.
+- DNS over TLS (port 853, Android's “Private DNS”) is refused. Android in the
+  mode “Automatic” then uses ordinary DNS.
+
+Untouched stay devices with a DNS server of their own, excluded devices and
+gateways with the networks behind them. The rules are gone while the filter is
+down, the protection is off or suspended for everybody; for a single suspended
+device they are gone while it is suspended. **DNS over HTTPS (DoH) is not
+blocked** – on the network it looks like ordinary HTTPS. A device with a fixed
+“Private DNS” resolves no names any more while the block is on: set it to
+“Automatic” or exclude the device.
+
+**Query log:** After the installation it is **off** – the server then keeps
+only counters (queries, blocked, top blocked domains), nothing per device.
+Switched on, it keeps which device asked for which address when, and whether
+it was blocked.
+
+- **Retention:** 24 hours, 3, 7 (default) or 30 days. The server deletes older
+  entries by itself.
+- **Who may see it:** “Administrators only” or “Users see their own devices”
+  (in the portal, never other people's devices).
+- **Switching off** deletes the existing log and the counters per device.
+
+**When the filter fails:** The devices' internet **goes on unfiltered**. The
+server checks the filter every 2 seconds, switches back to the normal DNS
+servers within a few seconds and by itself to the filter again once it
+answers. Meanwhile a red notice (“Fallback”) is shown on the dashboard and in
+the plugin's overview; the administrators get a notification if wanted (“When
+the filter is down”, on request the users as well). “Restart the filter
+service” helps when it hangs.
+
+**Limits:** Devices that use GateControl's DNS server are filtered. Not
+filtered are:
+
+- devices with a **DNS server of their own** (entered in GateControl under
+  “Peers” at the device) – the tab “Devices” shows them as “Own DNS”.
+- **Excluded** devices and gateways.
+- **“Private DNS”** in Android, a browser with its own DNS (DoH), a DoH server
+  entered by hand, another VPN or a browser with a built-in proxy. “Block
+  foreign DNS and DoT” helps against foreign DNS and DoT, not against DoH.
+- Apps that are **excluded from the tunnel** in the GateControl app: their
+  traffic goes past the VPN and therefore past the DNS protection.
+
+**Pi-hole integration removed (version 1.268.0):** GateControl no longer
+connects to Pi-hole – the page “Pi-hole”, the Pi-hole settings, the API token
+scopes `pihole` and `pihole:control` and the addresses `/api/v1/pihole/…` are
+gone. The replacement is the DNS protection. The update deletes the stored
+Pi-hole settings including the credentials, and the VPN devices use the normal
+DNS servers again (or the DNS protection, when it is switched on) – no device
+is left without name resolution. Where Pi-hole was set up, the dashboard says
+so once. Your Pi-hole itself is not touched and can keep running in the home
+network.
+
+**Check:** The plugin's overview shows whether filtering is on; “Check a
+domain” shows whether and why an address is blocked for a device.
 
 ## Print & scan
 

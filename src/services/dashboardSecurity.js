@@ -12,9 +12,6 @@
 //            running counter since the blocker was switched on per route
 //            (services/botBlockerCounter.js adds to it, nothing resets it),
 //            so this is a TOTAL, not a 24 h value — only with `bot_blocking`
-//   pihole   blocked share and query count of Pi-hole's own summary window
-//            (synced cache, no request to Pi-hole) — only with
-//            `pihole_integration` and once a sync has data
 //   vpnDns   today's queries and blocked share of the DNS protection of the
 //            VPN devices (services/vpnDns.js) — only while it is switched on
 //            by a plugin with permissions.vpnDns
@@ -94,17 +91,6 @@ function botSummary(db) {
   return { total: r.total || 0, routes: r.routes || 0, scope: 'total' };
 }
 
-function piholeSummary() {
-  const cache = require('./pihole').getCache();
-  const q = cache && cache.summary && cache.summary.queries;
-  if (!q || !Number.isFinite(Number(q.total))) return null;
-  return {
-    total: Number(q.total) || 0,
-    blocked: Number(q.blocked) || 0,
-    percent: Number(q.percent) || 0,
-  };
-}
-
 function vpnDnsSummary() {
   const vd = require('./vpnDns');
   if (!vd.notice()) return null; // not switched on (or no plugin that may use it)
@@ -146,7 +132,6 @@ async function build({ userId, t, now }) {
     waf: hasFeature('waf') ? section('waf', () => wafSummary(db, now)) : null,
     logins: section('logins', () => loginSummary(db)),
     bots: hasFeature('bot_blocking') ? section('bots', () => botSummary(db)) : null,
-    pihole: hasFeature('pihole_integration') ? section('pihole', () => piholeSummary()) : null,
     vpnDns: section('vpnDns', () => vpnDnsSummary()),
     check: null,
   };

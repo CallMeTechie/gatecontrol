@@ -295,8 +295,8 @@ describe('owner recognition by VPN address', () => {
   it('a shared device never uses it', async () => {
     const res = await portalAgent(shared.ip).get('/portal').expect(302);
     assert.equal(res.headers.location, '/portal/who');
-    const midea = await portalAgent(shared.ip).get('/api/v1/portal/pihole/owner').expect(200);
-    assert.notEqual(midea.body.reason, undefined);
+    // … and stays signed out: nothing of a person is served
+    await portalAgent(shared.ip).get('/api/v1/portal/me/devices').expect(401);
   });
 
   it('the migration keeps an explicit "off"', () => {

@@ -30,12 +30,11 @@
 
   // Settings sections (settings.njk data-section, /settings/<section>; the
   // start page is /settings, the plugin area /settings/plugins).
-  // `pihole` only when the sidebar shows Pi-hole (same licence flag).
   const SETTINGS = [
     'start', 'domains', 'netzwerk', 'daten', 'anmeldung', 'geraete', 'ipsperre', 'routenschutz', 'virenscan', 'gruppen', 'richtlinien', 'splittunnel',
-    'clientupdates', 'email', 'benachrichtigungen', 'webhooks', 'monitoring', 'pihole', 'geoip', 'portal', 'plugins', 'ki', 'backup',
+    'clientupdates', 'email', 'benachrichtigungen', 'webhooks', 'monitoring', 'geoip', 'portal', 'plugins', 'ki', 'backup',
     'updates', 'lizenz', 'gefahr',
-  ].map((tab) => ({ tab, key: 'st.nav.' + tab, needsPath: tab === 'pihole' ? '/pihole' : undefined }));
+  ].map((tab) => ({ tab, key: 'st.nav.' + tab }));
 
   // ── Pure helpers ──────────────────────────────────────────────────────
   function str(v) { return v == null ? '' : String(v); }

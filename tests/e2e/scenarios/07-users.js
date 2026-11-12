@@ -94,7 +94,7 @@ module.exports = (ctx) => {
       ]);
       const body = created.request().postDataJSON();
       step('the device code is created for the member with app scopes', created.status() === 201 && body.userId === M
-        && !body.scopes.includes('pihole:control') && !body.scopes.includes('full-access'), JSON.stringify(body.scopes));
+        && !body.scopes.includes('peers') && !body.scopes.includes('full-access'), JSON.stringify(body.scopes));
       step('step 4 shows QR and code', await visible(page, '#us-wz-code-value:not(:empty)') && await page.isVisible('#us-wz-qr'));
       await shot(page, 'users-wizard-code', false);
       await page.click('#us-wz-next');

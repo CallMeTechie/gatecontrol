@@ -558,3 +558,51 @@ LAN-Erkennung (sie durchsuchen ein IPv4-Subnetz), die Internetqualität
 (Messziele und Router über IPv4), MQTT-Broker und Edge-Plugins im Heimnetz,
 Wake-on-LAN, Drucken & Scannen und Kameras. Schalte sie in einem reinen
 IPv6-Netz aus – die Internetqualität würde sonst einen Dauerausfall melden.
+
+## DNS-Schutz
+
+### DNS-Schutz: Eine Seite wird fälschlich gesperrt
+
+Öffne „Einstellungen“ → „Plugins“ → „DNS-Schutz“ → „Listen & Ausnahmen“ →
+„Domain prüfen“, trag die Adresse ein und wähle das Gerät oder Profil. Das
+Ergebnis nennt die Liste oder den Eintrag, der sperrt. Mit „Für alle erlauben“
+(oder „Nur im Profil … erlauben“) legst du eine Ausnahme an. Für den Moment
+hilft „Unterbrechen“ – der Schutz schaltet sich von selbst wieder ein.
+Mehr in [Kapitel 5, DNS-Schutz](05-funktionen.md#dns-schutz).
+
+### DNS-Schutz: Ein Gerät wird nicht gefiltert
+
+Sieh im Reiter „Geräte“ des Plugins nach:
+
+1. **„Eigener DNS“:** Das Gerät hat einen eigenen DNS-Server eingetragen –
+   entferne ihn unter „Peers“ am Gerät.
+2. **„Ausgenommen“:** Nimm es über „Profil ändern“ wieder auf.
+3. „Privates DNS“ in Android oder ein Browser mit eigenem DNS umgeht den
+   Filter. Dagegen hilft „Fremden DNS und DoT sperren“ (Reiter
+   „Einstellungen“), nicht aber gegen DNS über HTTPS.
+
+Gefiltert werden nur Geräte, die per VPN verbunden sind. Im Heimnetz ohne VPN
+ist der DNS-Filter des Gateways zuständig.
+
+### DNS-Schutz: Was passiert, wenn der Filter ausfällt?
+
+Das Internet der Geräte läuft ungefiltert weiter. Der Server schaltet in wenigen
+Sekunden auf die normalen DNS-Server zurück und versucht es alle 2 Sekunden
+erneut; antwortet der Filter wieder, filtert er von selbst weiter. Solange steht
+im Dashboard und in der Übersicht des Plugins ein roter Hinweis („Rückfall“).
+„Filter-Dienst neu starten“ hilft, wenn er hängt.
+
+### Die Pi-hole-Anbindung wurde entfernt – was nun?
+
+Seit Version 1.268.0 bindet GateControl Pi-hole nicht mehr an. Beim Update
+passiert nichts Gefährliches: Die VPN-Geräte nutzen wieder die normalen
+DNS-Server und lösen Namen weiter auf – nur gefiltert wird nicht mehr, bis du
+den DNS-Schutz einschaltest. Die gespeicherten Pi-hole-Einstellungen und
+Zugangsdaten sind gelöscht.
+
+1. Installiere das Plugin „DNS-Schutz“ („Einstellungen“ → „Plugins“).
+2. Richte es ein ([Kapitel 5, DNS-Schutz](05-funktionen.md#dns-schutz)). Die
+   Listen von Pi-hole werden nicht übernommen; deine Ausnahmen trägst du unter
+   „Immer erlaubt“ ein.
+3. Dein Pi-hole selbst bleibt unberührt. Du kannst es ausschalten oder für das
+   Heimnetz weiterlaufen lassen.

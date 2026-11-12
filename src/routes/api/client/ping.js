@@ -2,7 +2,6 @@
 
 const { Router } = require('express');
 const { hasFeature } = require('../../../services/license');
-const tokens = require('../../../services/tokens');
 const portalConfig = require('../../../services/portalConfig');
 const settings = require('../../../services/settings');
 const peers = require('../../../services/peers');
@@ -42,9 +41,10 @@ router.get('/permissions', (req, res) => {
       traffic: hasScope('client:traffic'),
       dns: hasScope('client:dns'),
       rdp: hasScope('client:rdp') && hasFeature('remote_desktop'),
-      // pihole flags derive from checkScope itself (single source of truth with enforcement).
-      pihole: tokens.checkScope(scopes, '/api/v1/pihole/summary', 'GET') && hasFeature('pihole_integration'),
-      piholeControl: tokens.checkScope(scopes, '/api/v1/pihole/blocking', 'POST') && hasFeature('pihole_integration'),
+      // The Pi-hole integration is gone. The two flags stay in the answer, always
+      // false: app versions that still have a Pi-hole view hide it on `false`.
+      pihole: false,
+      piholeControl: false,
     },
     scopes,
     // DNS protection of the VPN devices: null, or the plugin that serves the apps

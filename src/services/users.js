@@ -10,9 +10,8 @@ const NO_PASSWORD_SENTINEL = '!';
 
 const ROLE_SCOPES = {
   admin: null, // null = all scopes allowed
-  // Members: the app scopes plus read-only Pi-hole statistics (per device,
-  // off by default when a device is set up). Never pihole:control.
-  user: ['client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp', 'pihole'],
+  // Members: the app scopes.
+  user: ['client', 'client:services', 'client:traffic', 'client:dns', 'client:rdp'],
 };
 
 const ROLES = ['admin', 'user'];

@@ -19,14 +19,14 @@ afterEach(() => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } c
 
 function chain() { return makeChain({ confPath, defaults: ['1.1.1.1','8.8.8.8'], reload: () => { reloads++; } }); }
 
-test('apply writes managed block with pihole upstreams + add-subnet, reloads', () => {
+test('apply writes the managed block with the upstreams + add-subnet, reloads', () => {
   chain().apply(['10.8.0.5', '10.8.0.6']);
   const c = fs.readFileSync(confPath, 'utf8');
-  assert.match(c, /# >>> gatecontrol-pihole >>>/);
+  assert.match(c, /# >>> gatecontrol-vpnfilter >>>/);
   assert.match(c, /server=10\.8\.0\.5/);
   assert.match(c, /server=10\.8\.0\.6/);
   assert.match(c, /add-subnet=32,128/);
-  assert.doesNotMatch(c.split('# >>> gatecontrol-pihole >>>')[1], /server=1\.1\.1\.1/);
+  assert.doesNotMatch(c.split('# >>> gatecontrol-vpnfilter >>>')[1], /server=1\.1\.1\.1/);
   assert.equal(reloads, 1);
 });
 
@@ -38,8 +38,8 @@ test('apply is idempotent (no second reload for identical state)', () => {
 });
 
 test('apply on a fresh instance skips reload when conf already routes to the same upstreams (boot case)', () => {
-  // Simulate entrypoint.sh having baked the chain into the conf before boot:
-  // add-subnet + the exact pihole upstreams already present.
+  // The chain is in the conf already (the server process started again next
+  // to a running dnsmasq): add-subnet + exactly these upstreams.
   fs.writeFileSync(confPath, 'bind-dynamic\nadd-subnet=32,128\nserver=10.8.0.5\n');
   // A fresh chain (lastApplied='default', as on every process start) must NOT
   // restart dnsmasq when the effective upstreams already match.
@@ -59,7 +59,7 @@ test('revert restores default upstreams and removes managed block', () => {
   ch.apply(['10.8.0.5']);
   ch.revert();
   const c = fs.readFileSync(confPath, 'utf8');
-  assert.doesNotMatch(c, /# >>> gatecontrol-pihole >>>/);
+  assert.doesNotMatch(c, /# >>> gatecontrol-/);
   assert.doesNotMatch(c, /add-subnet/);
 });
 
@@ -100,10 +100,10 @@ test('revert is a no-op (no reload, no rewrite) when the conf already routes to 
   assert.equal(fs.readFileSync(confPath, 'utf8'), before);
 });
 
-test('revert undoes the chain entrypoint.sh baked in at boot (no managed block)', () => {
-  // The cause of "no DNS while Pi-hole is off": after a container start the
-  // conf holds the Pi-hole upstreams WITHOUT the managed block. revert() only
-  // looked for the block and did nothing — the fallback never happened.
+test('revert undoes a chain that sits in the conf without the managed block (as versions with the Pi-hole integration baked it in at boot)', () => {
+  // Once the cause of "no DNS while Pi-hole is off": the conf held the Pi-hole
+  // upstreams WITHOUT the managed block. revert() only looked for the block
+  // and did nothing. Today this is what takes such a chain out after the update.
   fs.writeFileSync(confPath, 'bind-dynamic\nadd-subnet=32,128\nserver=10.8.0.2#5335\nhost-record=gc.example.com,10.8.0.1\n');
   const ch = chain();
   ch.apply(['10.8.0.2#5335']); // boot: already applied, no restart
@@ -123,7 +123,7 @@ test('revert works on a fresh chain too (process restarted while the chain was a
   chain().revert(); // new instance: remembers nothing
   const c = fs.readFileSync(confPath, 'utf8');
   assert.deepEqual(c.match(/^server=.*/gm), ['server=1.1.1.1', 'server=8.8.8.8']);
-  assert.doesNotMatch(c, /gatecontrol-pihole|add-subnet/);
+  assert.doesNotMatch(c, /gatecontrol-|add-subnet/);
   assert.equal(reloads, 1);
 });
 
@@ -182,6 +182,13 @@ test('apply with only invalid upstreams falls back to the defaults', () => {
   ch.apply(['10.8.0.5']);
   ch.apply(['bad\nline']);
   assert.deepEqual(fs.readFileSync(confPath, 'utf8').match(/^server=.*/gm), ['server=1.1.1.1', 'server=8.8.8.8']);
+});
+
+test('revert takes the managed block of the former Pi-hole provider out, the rest of the conf stays', () => {
+  fs.writeFileSync(confPath, 'bind-dynamic\nhost-record=gc.example.com,10.8.0.1\n# >>> gatecontrol-pihole >>>\nadd-subnet=32,128\nserver=10.8.0.2#5335\nserver=192.168.1.5\n# <<< gatecontrol-pihole <<<\n');
+  chain().revert();
+  assert.equal(fs.readFileSync(confPath, 'utf8'), 'bind-dynamic\nhost-record=gc.example.com,10.8.0.1\nserver=1.1.1.1\nserver=8.8.8.8\n');
+  assert.equal(reloads, 1);
 });
 
 test('revert without a conf throws (nothing to manage here), like apply', () => {

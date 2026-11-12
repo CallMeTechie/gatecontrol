@@ -365,7 +365,8 @@ function makeVpnDns() {
     resume: (target, opts) => hostCall('vpnDns.resume', { target: o(target), ...actor(opts) }),
     /** restart({ actor }?) → { restarting, how } — the filter service; an administrator */
     restart: (opts) => hostCall('vpnDns.restart', { ...actor(opts) }),
-    /** releasePihole({ actor }?) → { configured, wantsChain, chain } — Pi-hole gives up the DNS chain; only while filtering; an administrator */
+    /** releasePihole() → { configured: false, wantsChain: false, chain: 'off', targets: [] } — obsolete: the Pi-hole integration is gone (status().pihole
+     *  always says so too). Kept so that plugins written against older servers keep running; does nothing, never fails. */
     releasePihole: (opts) => hostCall('vpnDns.releasePihole', { ...actor(opts) }),
     /** log({ limit, before, peerId, userId, blockedOnly, search, since }?) → { entries, next } — ERR_LOG_OFF while the query log is off */
     log: (query) => hostCall('vpnDns.log', { query: o(query) }),

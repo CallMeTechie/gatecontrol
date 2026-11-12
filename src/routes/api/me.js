@@ -146,8 +146,8 @@ router.delete('/devices/:tokenId', selfServiceLimiter, (req, res) => {
 
 /**
  * POST /api/v1/me/enrollment — setup code for an own new device.
- * Body: { pihole?: boolean } — the only choice a member makes; everything
- * else is fixed (new peer owned by the member, app scopes, role cap).
+ * No choices: everything is fixed (new peer owned by the member, app scopes,
+ * role cap).
  */
 router.post('/enrollment', selfServiceLimiter, async (req, res) => {
   const user = me(req);
@@ -157,7 +157,6 @@ router.post('/enrollment', selfServiceLimiter, async (req, res) => {
   try {
     const enrollment = require('../../services/clientEnrollment');
     const scopes = [...enrollment.DEFAULT_SCOPES];
-    if (req.body && req.body.pihole === true) scopes.push('pihole');
     const result = enrollment.createCode({ userId: user.id, scopes });
     let base;
     try {

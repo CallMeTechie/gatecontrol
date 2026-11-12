@@ -85,7 +85,6 @@ const PUBLIC_KEYS = new Set([
   'portal.autoappear',
   'portal.trust_owner_mapping',
   'portal.widget.device',
-  'portal.widget.pihole',
   'portal.widget.services',
   'portal.widget.traffic',
   'machine_binding.mode',

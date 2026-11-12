@@ -5,7 +5,7 @@
 //   GET /api/v1/dashboard/stats            peers split into clients/gateways (one source)
 //   GET /api/v1/dashboard/traffic          1h/24h/7d/30d, unit, continuous buckets
 //   GET /api/v1/dashboard/top-peers        SQL aggregate of peer_traffic_snapshots
-//   GET /api/v1/dashboard/security-summary WAF/logins/bots/Pi-hole/check, cached
+//   GET /api/v1/dashboard/security-summary WAF/logins/bots/check, cached
 //   GET /api/v1/logs/recent?category=      allow-listed category → event_type prefixes
 //   GET /api/v1/gateways?peek=1            no side effect on the update tracking
 //   GET /dashboard                         non-admin sessions go to /profile
@@ -145,15 +145,15 @@ describe('GET /dashboard/top-peers', () => {
 });
 
 describe('GET /dashboard/security-summary', () => {
-  it('without the licence features: WAF, bots and Pi-hole are null; logins and the check are there', async () => {
-    license._overrideForTest({ waf: false, bot_blocking: false, pihole_integration: false });
+  it('without the licence features: WAF and bots are null; logins and the check are there', async () => {
+    license._overrideForTest({ waf: false, bot_blocking: false });
     security._resetCacheForTest();
     db.prepare("INSERT INTO activity_log (event_type, message, severity) VALUES ('login_failed', 'x', 'warning'), ('login_2fa_failed', 'x', 'warning'), ('passkey_login_failed', 'x', 'warning')").run();
     db.prepare("INSERT INTO activity_log (event_type, message, severity, created_at) VALUES ('login_failed', 'old', 'warning', datetime('now', '-2 days'))").run();
     const res = await agent.get('/api/v1/dashboard/security-summary').expect(200);
     assert.equal(res.body.waf, null);
     assert.equal(res.body.bots, null);
-    assert.equal(res.body.pihole, null);
+    assert.ok(!('pihole' in res.body), 'the Pi-hole part is gone');
     assert.equal(res.body.logins.failed_24h, 3, 'only the last 24 h, all three failure types');
     assert.equal(typeof res.body.logins.locked_accounts, 'number');
     const c = res.body.check;
@@ -162,7 +162,7 @@ describe('GET /dashboard/security-summary', () => {
   });
 
   it('with the licences: hourly WAF series (24 buckets, current hour last), bans and the bot total', async () => {
-    license._overrideForTest({ waf: true, bot_blocking: true, pihole_integration: true });
+    license._overrideForTest({ waf: true, bot_blocking: true });
     security._resetCacheForTest();
     const now = new Date();
     const ev = db.prepare("INSERT INTO waf_events (ts, host, client_ip, action, tx_id) VALUES (?, 'w.example', '203.0.113.9', ?, ?)");
@@ -184,9 +184,7 @@ describe('GET /dashboard/security-summary', () => {
     assert.equal(waf.banned_ips, 1);
     assert.equal(res.body.bots.total, 41);
     assert.equal(res.body.bots.scope, 'total', 'a running counter, labelled as total');
-    // No Pi-hole sync in tests: licensed, but no data → null (sub-tile hidden).
-    assert.equal(res.body.pihole, null);
-    license._overrideForTest({ waf: false, bot_blocking: false, pihole_integration: false });
+    license._overrideForTest({ waf: false, bot_blocking: false });
   });
 
   it('is cached per user (30 s) — a second call within the window does not rebuild', async () => {

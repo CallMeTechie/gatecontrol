@@ -11,7 +11,7 @@ const { setup, teardown } = require('./helpers/setup');
 const config = require('../config/default');
 
 let app;
-beforeEach(async () => { await setup(); require('../src/services/license')._overrideForTest({ pihole_integration: true }); app = require('../src/app').createApp(); });
+beforeEach(async () => { await setup(); app = require('../src/app').createApp(); });
 afterEach(teardown);
 
 async function portalHtml() {
@@ -42,9 +42,11 @@ test('portal.css: max width 1320, horizontal tab scroll, dark + light', async ()
   assert.ok(res.text.includes('[data-theme="dark"]') && res.text.includes('[data-theme="light"]'));
 });
 
-test('Pi-hole donut and scope ids', async () => {
+test('no Pi-hole card, donut or status entry any more (the integration is gone)', async () => {
   const h = await portalHtml();
-  for (const id of ['pt-pi-donut', 'pt-pi-pct', 'pt-pi-total', 'pt-pi-blocked', 'pt-pi-allowed', 'pt-pi-seg']) assert.ok(h.includes('id="' + id + '"'), id);
+  for (const id of ['pt-pi-card', 'pt-pi-donut', 'pt-pi-seg', 'pt-start-pi', 'pt-strip-pi']) assert.ok(!h.includes('id="' + id + '"'), id);
+  const js = fs.readFileSync('public/js/portal.js', 'utf8');
+  assert.ok(!js.includes('/api/v1/portal/pihole'));
 });
 
 test('"Zuhause" and "Fahrzeug" hold plugin sections only (no built-in Smart Home / Klima / Fahrzeug parts)', () => {

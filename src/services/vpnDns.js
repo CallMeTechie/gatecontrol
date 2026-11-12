@@ -46,7 +46,7 @@
 //
 // None of it runs without a plugin that holds permissions.vpnDns and may run
 // (installed, enabled, licensed): no service process, no chain entry, no
-// timer. A server with Pi-hole only behaves exactly as before.
+// timer.
 
 const fs = require('node:fs');
 const net = require('node:net');
@@ -1100,10 +1100,6 @@ function networkChanged() {
 
 function start() {
   run.started = true;
-  // Pi-hole registers as a provider of the chain when its module loads: it has
-  // to be known before the first chain call here, or releasing the chain
-  // would put dnsmasq on the default upstreams although Pi-hole wants it.
-  try { require('./pihole'); } catch (e) { logger.debug({ err: e.message }, 'vpn dns: pihole not loaded'); }
   try { return reconcile({ boot: true }); } catch (e) { logger.warn({ err: e.message }, 'vpn dns not started'); return false; }
 }
 
@@ -1276,71 +1272,16 @@ function stateNow() {
 function chainNow() {
   const st = dnsChain.status();
   if (st.state !== 'active') return 'default';
-  return st.provider === 'vpnfilter' ? 'filter' : (st.provider === 'pihole' ? 'pihole' : 'default');
-}
-
-function piholeInfo() {
-  try {
-    const cfg = require('./piholeConfig').load();
-    const wants = !!(cfg.enabled && cfg.manage_dns_chain && (cfg.instances || []).length);
-    const st = dnsChain.statusFor('pihole');
-    return {
-      configured: !!cfg.enabled, wantsChain: wants, chain: !wants ? 'off' : (st.displacedBy ? 'displaced' : (st.state === 'pihole' ? 'active' : st.state)),
-      targets: cfg.enabled ? piholeTargets(cfg) : [],
-    };
-  } catch { return { configured: false, wantsChain: false, chain: 'off', targets: [] }; }
+  return st.provider === 'vpnfilter' ? 'filter' : 'default';
 }
 
 /**
- * Where the VPN devices reach Pi-hole (the text of the first step of moving
- * over: "unter 192.168.178.5 (über das Gateway „Pi Keller“)"): every instance
- * with a DNS address, and the gateway behind it — the address is the
- * gateway's own tunnel address (`via: 'tunnel'`) or lies in a LAN the gateway
- * reported (`via: 'lan'`); null for a Pi-hole that is reached directly.
+ * `status().pihole` — kept for the plugins that were written against servers
+ * with the Pi-hole integration (gatecontrol-dns up to 1.1.x reads it for its
+ * moving dialog): the integration is gone, so there is never a Pi-hole.
  */
-function piholeTargets(cfg) {
-  const out = [];
-  let gws = null;
-  for (const inst of (cfg.instances || []).slice(0, 16)) {
-    const ip = String((inst && inst.dns_ip) || '').trim();
-    if (!net.isIP(ip)) continue;
-    if (!gws) gws = gatewayNets();
-    let gateway = null;
-    const own = gws.find((g) => g.ip === ip);
-    if (own) gateway = { peerId: own.id, name: own.name, via: 'tunnel' };
-    else {
-      const lan = net.isIPv4(ip) ? gws.find((g) => g.subnets.some((c) => inCidr4(ip, c))) : null;
-      if (lan) gateway = { peerId: lan.id, name: lan.name, via: 'lan' };
-    }
-    const port = parseInt(inst.dns_port, 10);
-    out.push({ name: typeof inst.name === 'string' && inst.name ? inst.name.slice(0, 80) : null, ip, port: port >= 1 && port <= 65535 ? port : 53, gateway });
-  }
-  return out;
-}
-
-function inCidr4(ip, cidr) {
-  const m = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(String(cidr || ''));
-  if (!m || !net.isIPv4(m[1]) || Number(m[2]) > 32) return false;
-  const n = (x) => x.split('.').reduce((a, o) => ((a << 8) + Number(o)) >>> 0, 0);
-  const bits = Number(m[2]);
-  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
-  return ((n(ip) & mask) >>> 0) === ((n(m[1]) & mask) >>> 0);
-}
-
-/** The gateways with their tunnel address and the LAN subnets of their last heartbeat. */
-function gatewayNets() {
-  try {
-    const dnsLib = require('./dns');
-    return db().prepare(`SELECT p.id, p.name, p.allowed_ips, gm.last_health FROM peers p LEFT JOIN gateway_meta gm ON gm.peer_id = p.id
-      WHERE p.peer_type = 'gateway' ORDER BY p.id`).all().map((g) => {
-      let subnets = [];
-      try {
-        const list = JSON.parse(g.last_health || '{}').telemetry.lan_subnets;
-        if (Array.isArray(list)) subnets = list.slice(0, 16).map((e) => (e && typeof e.cidr === 'string' ? e.cidr : null)).filter(Boolean);
-      } catch { /* never reported */ }
-      return { id: g.id, name: g.name, ip: dnsLib.extractPeerIp(g.allowed_ips), subnets };
-    });
-  } catch { return []; }
+function piholeInfo() {
+  return { configured: false, wantsChain: false, chain: 'off', targets: [] };
 }
 
 function listsView() {
@@ -1522,19 +1463,11 @@ async function restart(ctx = {}) {
 }
 
 /**
- * gc.vpnDns.releasePihole() — the last step of moving from Pi-hole: Pi-hole
- * no longer asks for the chain. Only while the filter really owns it, so a
- * failed switch never leaves the devices without any filter.
+ * gc.vpnDns.releasePihole() — kept so that plugins written against servers
+ * with the Pi-hole integration keep working (it was the last step of moving
+ * over). There is no Pi-hole chain any more: nothing to do, never an error.
  */
-function releasePihole(ctx = {}) {
-  if (stateNow() !== 'filtering') throw new VpnDnsError('ERR_NOT_FILTERING', 'the DNS protection does not filter yet — Pi-hole keeps the chain');
-  const pc = require('./piholeConfig');
-  const cfg = pc.load();
-  if (cfg.manage_dns_chain) {
-    pc.save({ ...cfg, manage_dns_chain: false });
-    dnsChain.refresh();
-    audit('vpn_dns_pihole_released', 'DNS protection: the Pi-hole DNS chain was switched off (replaced by the DNS protection)', {}, ctx);
-  }
+function releasePihole() {
   return piholeInfo();
 }
 
@@ -1554,7 +1487,7 @@ function notice(now = Date.now()) {
 
 /**
  * What the apps learn with GET /api/v1/client/permissions: null (no DNS
- * protection on this server — the apps keep their Pi-hole view), or the
+ * protection on this server), or the
  * plugin whose client API serves them and the state of the filter.
  */
 function clientInfo() {
@@ -1628,7 +1561,7 @@ module.exports = {
   normalize, validate, get, set,
   resolve, profileOfUser, filterConfig, internalNames,
   pause, resume, pauses, sweepPauses, suspended,
-  status, devices, lists, stats, test, log, clearLog, catalog: catalogView, refreshLists, restart, releasePihole, notice, clientInfo, clientPlugin, installedPlugin, piholeTargets, BLOCK_KINDS,
+  status, devices, lists, stats, test, log, clearLog, catalog: catalogView, refreshLists, restart, releasePihole, notice, clientInfo, clientPlugin, installedPlugin, BLOCK_KINDS,
   homeInternetOf, homeInternetChanged, homeChanged, homes, stored, SHARED, reconcile, pluginsChanged, refreshSoon, tick, start, stop, firewallWant, syncFirewall, networkChanged, ingest, retention, control, dir, filterPort, writeConfig,
   _run: run, _resetForTest, _hookMs: null,
 };

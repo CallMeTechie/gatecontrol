@@ -31,7 +31,7 @@ function renderLayout(activeNav, features, pluginNav, extra) {
     ...(extra || {}),
   });
 }
-const ALL = { gateway_pools: true, internal_dns: true, pihole_integration: true, waf: true, midea_integration: true, skoda_integration: true, smarthome: true };
+const ALL = { gateway_pools: true, internal_dns: true, waf: true, midea_integration: true, skoda_integration: true, smarthome: true };
 // installed plugins with a page (services/plugins navEntries); Smart Home & co. are plugins now
 const PLUGIN_NAV = [
   { id: 'gatecontrol-midea', href: '/plugins/gatecontrol-midea', label: 'Klimaanlage', icon: 'M2 4h20v10H2z', on: true, section: 'home' },
@@ -60,7 +60,7 @@ describe('sidebar groups (§8, regrouped: docs/feature-peers-page.md)', () => {
     assert.deepEqual(g.map((x) => x.hrefs), [
       ['/dashboard'],
       ['/peers', '/gateways', '/plugins/gatecontrol-proxmox'],
-      ['/routes', '/rdp', '/dns', '/pihole'],
+      ['/routes', '/rdp', '/dns'],
       ['/users', '/groups', '/directory', '/security', '/certificates', '/waf'],
       ['/plugins/gatecontrol-midea', '/plugins/gatecontrol-skoda'],
       ['/plugins/gatecontrol-drive'],
@@ -266,7 +266,7 @@ describe('command palette: pure core', () => {
       assert.ok(layout.includes(`'st.nav.${s.tab}':`) && layout.includes(`'st.kw.${s.tab}':`), 'whitelist ' + s.tab);
       assert.equal(s.key, 'st.nav.' + s.tab);
     }
-    assert.equal(P.SETTINGS.find((s) => s.tab === 'pihole').needsPath, '/pihole');
+    assert.equal(P.SETTINGS.find((s) => s.tab === 'pihole'), undefined, 'the Pi-hole integration is gone');
   });
 });
 

@@ -33,6 +33,9 @@ async function start() {
 
   // Initialize database
   withTask('boot.migrations', () => runMigrations());
+  // Leftovers of the removed Pi-hole integration (settings with credentials,
+  // token scopes) — also when a backup from before the removal was restored.
+  require('./services/piholeRemoval').atStart();
   await withTask('boot.seed', () => seedAdminUser());
 
   // Owner-only modes for sensitive files that older versions left
@@ -211,16 +214,19 @@ async function start() {
     catch (err) { logger.warn({ err: err.message }, 'ai service not started'); }
 
     // DNS protection of the VPN devices (services/vpnDns.js): claims the DNS
-    // chain again when it was on — before Pi-hole's start, so dnsmasq is not
-    // put on another upstream in between. Does nothing without a plugin that
-    // holds permissions.vpnDns.
+    // chain again when it was on. Does nothing without a plugin that holds
+    // permissions.vpnDns.
     try { require('./services/vpnDns').start(); }
     catch (err) { logger.warn({ err: err.message }, 'vpn dns start failed'); }
 
-    // Pi-hole sync — best-effort; a missing dnsmasq.conf or misconfigured
-    // instance must never block server boot.
-    try { require('./services/pihole').start(); }
-    catch (err) { logger.warn({ err: err.message }, 'pihole start failed'); }
+    // DNS chain (services/dnsChain.js): one refresh at every start. Without
+    // the DNS protection it puts dnsmasq on the default upstreams — a no-op
+    // when the conf already says so; it is what takes the chain of the former
+    // Pi-hole integration out of a dnsmasq.conf that entrypoint.sh did not
+    // write anew. With the protection on, the watch asks the filter service
+    // first. Best-effort: a missing dnsmasq.conf must never block server boot.
+    try { const chain = require('./services/dnsChain'); chain.refresh(); chain.start(); }
+    catch (err) { logger.warn({ err: err.message }, 'dns chain start failed'); }
 
     // Internal DNS — rebuild the addn-hosts file on boot so route domains
     // resolve to the gateway immediately. Without this, the file only gets

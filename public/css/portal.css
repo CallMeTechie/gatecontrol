@@ -265,17 +265,6 @@ button, input, select { font: inherit; color: inherit; }
 .pt-bars.is-anim .pt-bar, .pt-chart.is-anim .pt-bar { animation: pt-grow .5s ease-out both; transform-origin: bottom; }
 @keyframes pt-grow { from { transform: scaleY(.05); } to { transform: scaleY(1); } }
 .pt-bars-axis { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--faint); margin-top: 4px; }
-.pt-net-donut { flex: 0 0 120px; text-align: center; }
-.pt-donut {
-  --p: 0%;
-  width: 96px; height: 96px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; position: relative;
-  background: conic-gradient(var(--coral) 0 var(--p), var(--track) var(--p) 100%);
-}
-.pt-donut::before { content: ""; position: absolute; inset: 13px; border-radius: 50%; background: var(--surface); }
-.pt-donut span { position: relative; font-weight: 800; }
-.pt-donut-lg { width: 110px; height: 110px; flex: 0 0 auto; margin: 0; }
-.pt-donut-lg::before { inset: 15px; }
-.pt-donut-lg span { font-size: 18px; }
 .pt-chart { display: flex; align-items: stretch; gap: 10px; height: 180px; padding: 0 4px; }
 .pt-chart .pt-bar-col { flex: 1 1 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; min-width: 0; }
 .pt-bar-pair { flex: 1 1 auto; display: flex; align-items: flex-end; gap: 3px; }
@@ -291,7 +280,6 @@ button, input, select { font: inherit; color: inherit; }
 .pt-dl dd { margin: 0; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
 .pt-dl dd.pt-mono { font-size: 13px; }
 .pt-dl-auto { grid-template-columns: auto auto; gap: 6px 14px; }
-.pt-pi-body { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
 
 /* ============ Devices ============ */
 .pt-devlist { list-style: none; margin: 0; padding: 0 18px; }

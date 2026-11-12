@@ -1526,7 +1526,7 @@ function internetCall(plugin, op, args) {
 //   - the person the plugin names itself — { actor: userId } — e.g. because
 //     several people are changing something at once, or for an automation.
 // The actor is written to the activity log. Settings, the restart of the
-// filter service, the log and the Pi-hole hand-over need an administrator as
+// filter service and the log need an administrator as
 // the actor (ERR_NOT_ADMIN). Suspending is open to everybody; who may do it
 // for whom and for how long is the plugin's decision — the host only keeps
 // two fixed rules (ERR_FORBIDDEN): for all devices only an administrator,
@@ -1534,7 +1534,7 @@ function internetCall(plugin, op, args) {
 // owner.
 
 const VPN_DNS_READ = new Set(['status', 'catalog', 'get', 'devices', 'lists', 'stats', 'test', 'pauses', 'log', 'homes']);
-const VPN_DNS_ADMIN = new Set(['set', 'restart', 'releasePihole', 'clearLog', 'refreshLists']);
+const VPN_DNS_ADMIN = new Set(['set', 'restart', 'clearLog', 'refreshLists']);
 const VPN_DNS_CODES = new Set(['ERR_INVALID', 'ERR_NOT_FOUND', 'ERR_FORBIDDEN', 'ERR_NOT_PERSON', 'ERR_UNAVAILABLE', 'ERR_LOG_OFF', 'ERR_NOT_FILTERING']);
 
 /** { pluginId, actor: { id, name, role }, automated } of a changing gc.vpnDns call. */
@@ -1572,12 +1572,13 @@ async function vpnDnsCall(plugin, op, args) {
       if (op === 'log') return vd.log(a.query);
       return await vd.test(a.domain, a.who);
     }
+    // obsolete (the Pi-hole integration is gone): answered for older plugins, nothing happens
+    if (op === 'releasePihole') return vd.releasePihole();
     const ctx = vpnDnsActor(plugin, a);
     if (VPN_DNS_ADMIN.has(op)) {
       need(ctx.actor.role === 'admin', 'ERR_NOT_ADMIN', 'only an administrator');
       if (op === 'set') return vd.set(a.patch, ctx);
       if (op === 'restart') return await vd.restart(ctx);
-      if (op === 'releasePihole') return vd.releasePihole(ctx);
       if (op === 'clearLog') return vd.clearLog(ctx);
       return await vd.refreshLists();
     }

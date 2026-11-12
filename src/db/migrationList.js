@@ -3990,6 +3990,24 @@ const migrations = [
       ALTER TABLE vpn_dns_log ADD COLUMN scope TEXT;`,
     detect: (db) => hasColumn(db, 'vpn_dns_stats_day', 'by_reason') && hasColumn(db, 'vpn_dns_log', 'scope'),
   },
+  {
+    version: 147,
+    name: 'pihole_integration_removed',
+    // The Pi-hole integration is gone (replaced by the DNS protection):
+    //   settings pihole_config (URLs, the instances' app passwords),
+    //            pihole_blocking_desired, portal.widget.pihole → deleted
+    //   api_tokens / client_enrollment_codes: the scopes `pihole` and
+    //            `pihole:control` are taken out of the stored lists
+    // An installation that had Pi-hole set up gets one activity entry and the
+    // setting pihole_removed.notice = '1' (the dashboard notice, until an
+    // administrator closes it). The work is done in JS (JSON columns) by
+    // services/piholeRemoval.js purge(), which the server also calls at every
+    // start — a backup from before this migration brings the rows back.
+    // dnsmasq.conf is not touched here: services/dnsChain.js takes a Pi-hole
+    // chain out at the start of the server.
+    sql: `DELETE FROM settings WHERE key = 'pihole_blocking_desired';`,
+    run: (db) => { require('../services/piholeRemoval').purge(db); },
+  },
 ];
 
 module.exports = { migrations };

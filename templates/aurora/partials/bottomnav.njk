@@ -11,7 +11,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><path d="M14 10l-4 4"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/></svg>
       {{ t('nav.group_devices') }}
     </a>
-    <a href="/routes" class="bn-item {{ 'active' if activeNav in ['routes', 'rdp', 'dns', 'pihole'] }}">
+    <a href="/routes" class="bn-item {{ 'active' if activeNav in ['routes', 'rdp', 'dns'] }}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
       {{ t('nav.group_services') }}
     </a>
@@ -19,7 +19,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V5l-8-3z"/><path d="m9 12 2 2 4-4"/></svg>
       {{ t('nav.group_security') }}
     </a>
-    <button type="button" class="bn-item bn-more {{ 'active' if activeNav not in ['dashboard', 'peers', 'gateways', 'routes', 'rdp', 'dns', 'pihole', 'security', 'certificates', 'waf', 'users', 'groups', 'directory'] }}" id="bn-more" aria-controls="sidebar" aria-haspopup="true">
+    <button type="button" class="bn-item bn-more {{ 'active' if activeNav not in ['dashboard', 'peers', 'gateways', 'routes', 'rdp', 'dns', 'security', 'certificates', 'waf', 'users', 'groups', 'directory'] }}" id="bn-more" aria-controls="sidebar" aria-haspopup="true">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
       {{ t('nav.more') }}
     </button>

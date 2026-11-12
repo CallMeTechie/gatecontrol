@@ -544,3 +544,50 @@ discovery (they search an IPv4 subnet), the internet quality (targets and
 router over IPv4), the MQTT broker and edge plugins in the home network,
 Wake-on-LAN, printing & scanning and cameras. Switch them off in an IPv6-only
 network – the internet quality would otherwise report a permanent outage.
+
+## DNS protection
+
+### DNS protection: a site is blocked by mistake
+
+Open “Settings” → “Plugins” → “DNS Protection” → “Lists & exceptions” → “Check
+a domain”, enter the address and pick the device or profile. The result names
+the list or the entry that blocks. “Allow for everybody” (or “Allow only in the
+profile …”) makes an exception. For the moment “Suspend” helps – the
+protection switches itself back on.
+More in [chapter 5, DNS protection](05-features.md#dns-protection).
+
+### DNS protection: a device is not filtered
+
+Look at the plugin's tab “Devices”:
+
+1. **“Own DNS”:** the device has a DNS server of its own – remove it under
+   “Peers” at the device.
+2. **“Excluded”:** take it back in with “Change profile”.
+3. “Private DNS” in Android or a browser with its own DNS bypass the filter.
+   “Block foreign DNS and DoT” (tab “Settings”) helps against that, but not
+   against DNS over HTTPS.
+
+Only devices connected by VPN are filtered. In the home network without VPN the
+gateway's DNS filter is in charge.
+
+### DNS protection: what happens when the filter fails?
+
+The devices' internet goes on unfiltered. The server switches back to the
+normal DNS servers within a few seconds and tries again every 2 seconds; once
+the filter answers again, it filters again by itself. Meanwhile a red notice
+(“Fallback”) is shown on the dashboard and in the plugin's overview. “Restart
+the filter service” helps when it hangs.
+
+### The Pi-hole integration was removed – what now?
+
+Since version 1.268.0 GateControl no longer connects to Pi-hole. Nothing
+dangerous happens on the update: the VPN devices use the normal DNS servers
+again and keep resolving names – only nothing is filtered until you switch the
+DNS protection on. The stored Pi-hole settings and credentials are deleted.
+
+1. Install the plugin “DNS-Schutz” (“Settings” → “Plugins”).
+2. Set it up ([chapter 5, DNS protection](05-features.md#dns-protection)).
+   Pi-hole's lists are not taken over; enter your exceptions under “Always
+   allowed”.
+3. Your Pi-hole itself is not touched. Switch it off or keep it running for the
+   home network.

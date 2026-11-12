@@ -166,8 +166,8 @@ router.get('/top-peers', (req, res) => {
  * GET /api/dashboard/security-summary
  * The "Sicherheit (24 h)" card in one cached read
  * (services/dashboardSecurity.js): WAF (licence `waf`), failed logins,
- * bot blocker total (licence `bot_blocking`), Pi-hole (licence
- * `pihole_integration`), security check summary. Unlicensed parts are null.
+ * bot blocker total (licence `bot_blocking`), DNS protection of the VPN
+ * devices, security check summary. Unlicensed parts are null.
  */
 router.get('/security-summary', async (req, res) => {
   try {

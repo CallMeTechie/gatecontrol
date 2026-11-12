@@ -2959,12 +2959,18 @@ and `4` since 1.267.0 (profiles shared with a home network: `profile.home`,
 DNS chain claimed, only while the settings say `enabled` **and** a plugin with
 the permission may run (installed, enabled, compatible, licensed). Disabling or
 removing the plugin, or a licence that ran out, switches the service off and
-gives the chain back (to Pi-hole, when Pi-hole manages the chain, else the
-default upstreams); the settings stay.
+gives the chain back (to the default upstreams); the settings stay.
+
+**Pi-hole (removed in 1.268.0).** The Pi-hole integration is gone. For plugins
+written against 1.264–1.267 the interface keeps its shape: `status().pihole`
+is always `{ configured: false, wantsChain: false, chain: 'off', targets: []
+}`, `status().chain` is never `'pihole'`, and `releasePihole()` does nothing
+and answers that same object (no error, no actor needed). New plugins should
+not use either.
 
 | Call | Answer / rule |
 |---|---|
-| `gc.vpnDns.status()` | `{ available, enabled, blockedBy: null \| 'internal_dns_off', state: 'off' \| 'starting' \| 'filtering' \| 'fallback', since (ISO), chain: 'filter' \| 'pihole' \| 'default', pihole: { configured, wantsChain, chain: 'off' \| 'active' \| 'displaced' \| 'fallback', targets: [{ name, ip, port, gateway: { peerId, name, via: 'tunnel' \| 'lan' } \| null }] }, pause: suspension for all devices \| null, pauses: n (devices / people), service: { running, ready, pid, startedAt, port, listen, upstream, memory: { rss, lists }, cacheEntries, truncated, failOpen, asOf } \| { running: false }, peers: { filtered, ownDns, excluded, gateways, suspended }, lists: [used lists], today: { queries, blocked, cached, blockedBy }, foreignDns: { enabled, active, devices, since, error }, log: { enabled, retentionDays } }` — `foreignDns` (version 3): "Fremden DNS und DoT sperren" — the setting, whether the firewall rules are in force right now, for how many devices, the last error of iptables; `pihole.targets` (version 2): where the VPN devices reach Pi-hole, and the gateway behind an address (its own tunnel address, or an address of a LAN it reported) |
+| `gc.vpnDns.status()` | `{ available, enabled, blockedBy: null \| 'internal_dns_off', state: 'off' \| 'starting' \| 'filtering' \| 'fallback', since (ISO), chain: 'filter' \| 'default', pihole: { configured: false, wantsChain: false, chain: 'off', targets: [] } (obsolete, see above), pause: suspension for all devices \| null, pauses: n (devices / people), service: { running, ready, pid, startedAt, port, listen, upstream, memory: { rss, lists }, cacheEntries, truncated, failOpen, asOf } \| { running: false }, peers: { filtered, ownDns, excluded, gateways, suspended }, lists: [used lists], today: { queries, blocked, cached, blockedBy }, foreignDns: { enabled, active, devices, since, error }, log: { enabled, retentionDays } }` — `foreignDns` (version 3): "Fremden DNS und DoT sperren" — the setting, whether the firewall rules are in force right now, for how many devices, the last error of iptables; `pihole.targets` (version 2): where the VPN devices reach Pi-hole, and the gateway behind an address (its own tunnel address, or an address of a LAN it reported) |
 | `gc.vpnDns.catalog()` | `{ lists: [{ id, source, home, license, format, entries, defaultOn }], categories: [{ id, domains }], providers: [{ id, label, home }], limits }` — the lists, categories and upstream providers of the gateways' DNS filter (`src/services/homeDnsCatalog.js`), plus the provider `system` (the server's plain resolvers, no DoH) |
 | `gc.vpnDns.get()` | the settings, see below |
 | `gc.vpnDns.set(patch, { actor }?)` | changes the named top-level keys → the new settings. **Administrator** |
@@ -2978,7 +2984,7 @@ default upstreams); the settings stay.
 | `gc.vpnDns.pause({ scope, id?, minutes \| until \| forever: true }, { actor }?)` | suspends the protection for all VPN devices, one device (`peer`) or all devices of a person (`user`) — `minutes` 1…10080, `until` ISO at most 7 days ahead, `forever` = until switched on again. Replaces a running suspension of the same target ("+30 Min.") → the suspension |
 | `gc.vpnDns.resume({ scope, id? }, { actor }?)` | → `true` when a suspension ended |
 | `gc.vpnDns.restart({ actor }?)` | "Filter-Dienst neu starten" → `{ restarting: true, how: 'asked' \| 'killed' \| 'not_running' }`. **Administrator** |
-| `gc.vpnDns.releasePihole({ actor }?)` | the last step of moving from Pi-hole: Pi-hole stops asking for the DNS chain (`manage_dns_chain` off) → `status().pihole`. Only while `state` is `filtering` (`ERR_NOT_FILTERING`). **Administrator** |
+| `gc.vpnDns.releasePihole()` | obsolete since 1.268.0 (the Pi-hole integration is gone): does nothing → `status().pihole`. Kept so that older plugins keep running |
 | `gc.vpnDns.log({ limit ≤ 500, before, peerId, userId, blockedOnly, search, since, scope }?)` | the query log, newest first: `{ entries: [{ id, at, peerId, name, type, action, reason, profileId, list, scope }], next }` (`scope` as in `test()`, version 2; `null` for older rows) (`next` → `before` of the next page); `ERR_LOG_OFF` while it is off |
 | `gc.vpnDns.clearLog({ actor }?)` | → `{ removed }` (also the counters per device). **Administrator** |
 | `gc.vpnDns.on(handler)` | events: `{ type: 'fallback' \| 'restored' \| 'paused' \| 'resumed', at, scope?, id?, until?, openEnd?, by?, reason?: 'manual' \| 'expired' }` → `off()` |
@@ -3022,7 +3028,7 @@ needs an acting person: the one person with a **changing request
 names itself — `{ actor: userId }` (needed when several people change
 something at the same moment, and for an automation; logged as automated when
 that person has no changing request in flight). The actor is written to the
-activity log. `set`, `refreshLists`, `restart`, `releasePihole` and `clearLog`
+activity log. `set`, `refreshLists`, `restart` and `clearLog`
 need an administrator as the actor (`ERR_NOT_ADMIN`). `pause` / `resume` are
 open to everybody — **the plugin decides who may suspend for whom and for how
 long** (own devices, parents for their children, the longest duration, whether

@@ -182,7 +182,6 @@
       <span><span class="pt-muted">{{ t('portal.device.vpn_address') }}</span> <b class="pt-mono" id="pt-strip-ip">–</b></span>
       <span><span class="pt-muted">{{ t('portal.device.last_handshake') }}</span> <b id="pt-strip-hs">–</b></span>
       {% if tabs.traffic %}<span id="pt-strip-today-wrap" hidden><span class="pt-muted">{{ t('portal.strip.today') }}</span> <b id="pt-strip-today">–</b></span>{% endif %}
-      {% if tabs.pihole %}<span id="pt-strip-pi-wrap" hidden><span class="pt-muted">{{ t('portal.strip.adblock') }}</span> <b id="pt-strip-pi">–</b></span>{% endif %}
     </div>
     {% endif %}
 
@@ -220,12 +219,6 @@
             <div class="pt-bars" id="pt-start-bars" aria-hidden="true"></div>
             <div class="pt-bars-axis" id="pt-start-bars-axis" aria-hidden="true"></div>
             <div class="pt-sr" id="pt-start-bars-sr"></div>
-          </div>
-          {% endif %}
-          {% if tabs.pihole %}
-          <div class="pt-net-donut" id="pt-start-pi" hidden>
-            <div class="pt-donut" id="pt-start-donut" aria-hidden="true"><span id="pt-start-donut-v">–</span></div>
-            <div class="pt-mini-label">{{ t('portal.net.blocked') }}</div>
           </div>
           {% endif %}
         </div>
@@ -317,30 +310,6 @@
           <dt>{{ t('portal.device.last_handshake') }}</dt><dd id="pt-d-hs">–</dd>
           <dt>{{ t('portal.device.transfer') }}</dt><dd id="pt-d-xfer">–</dd>
         </dl>
-      </section>
-      {% endif %}
-
-      {% if tabs.pihole %}
-      <section class="pt-card pt-pad" data-area="pihole" id="pt-pi-card" aria-labelledby="pt-c-pi">
-        <div class="pt-card-row">
-          <h2 class="pt-h2" id="pt-c-pi">{{ t('portal.pihole.title') }}</h2>
-          <div class="pt-seg" role="group" aria-label="{{ t('portal.pihole.scope') }}" id="pt-pi-seg">
-            <button type="button" data-scope="device" aria-pressed="true">{{ t('portal.pihole.scope_device') }}</button>
-            <button type="button" data-scope="owner" aria-pressed="false">{{ t('portal.pihole.scope_owner') }}</button>
-            <button type="button" data-scope="household" aria-pressed="false">{{ t('portal.pihole.scope_household') }}</button>
-          </div>
-        </div>
-        <div class="pt-pi-body" id="pt-pi-body">
-          <div class="pt-donut pt-donut-lg" id="pt-pi-donut" aria-hidden="true"><span id="pt-pi-pct">–</span></div>
-          <dl class="pt-dl pt-dl-auto">
-            <dt>{{ t('portal.pihole.total') }}</dt><dd id="pt-pi-total">–</dd>
-            <dt>{{ t('portal.pihole.blocked') }}</dt><dd id="pt-pi-blocked">–</dd>
-            <dt id="pt-pi-allowed-l">{{ t('portal.pihole.allowed') }}</dt><dd id="pt-pi-allowed">–</dd>
-            <dt id="pt-pi-extra-l" hidden></dt><dd id="pt-pi-extra" hidden></dd>
-          </dl>
-        </div>
-        <p class="pt-foot" id="pt-pi-foot">{{ t('portal.pihole.foot') }}</p>
-        <div class="pt-msg" id="pt-pi-msg" role="status" hidden></div>
       </section>
       {% endif %}
     </div>

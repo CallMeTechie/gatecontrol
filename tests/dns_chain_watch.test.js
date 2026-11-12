@@ -2,9 +2,28 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const dgram = require('node:dgram');
-const { createDnsWatch, probeDns, INTERVAL_MS, RETRY_MS, TIMEOUT_MS, DOWN_AFTER } = require('../src/services/piholeDnsWatch');
+const { createChainWatch, probeDns, INTERVAL_MS, RETRY_MS, TIMEOUT_MS, DOWN_AFTER } = require('../src/services/dnsChainWatch');
 
-const INST = { id: 'p1', label: 'Pi-hole DS918+', dns_ip: '10.8.0.2', dns_port: 5335 };
+// The state machine of the chain watch with ONE provider and the default
+// cadence and hysteresis (dnsChainWatch.js) — a resolver somewhere in the
+// network. deps.loadConfig() says whether the provider wants the chain.
+function createDnsWatch(deps) {
+  const provider = {
+    id: 'vpnfilter',
+    label: 'filter',
+    targets() {
+      const config = deps.loadConfig();
+      return (config.enabled && config.manage_dns_chain && config.instances) || [];
+    },
+    probe: deps.probe,
+    onChange: deps.onChange || (() => {}),
+  };
+  const watch = createChainWatch({ providers: () => [provider], chain: deps.dnsChain, now: deps.now });
+  const status = () => watch.statusFor('vpnfilter');
+  return { tick: () => watch.tick().then(status), status, isFallback: () => status().state === 'fallback' };
+}
+
+const INST = { id: 'p1', label: 'Resolver DS918+', dns_ip: '10.8.0.2', dns_port: 5335 };
 
 function harness({ instances = [INST], config = {} } = {}) {
   const h = { alive: { p1: true }, calls: [], changes: [], cfg: { enabled: true, manage_dns_chain: true, instances, ...config } };
@@ -26,12 +45,12 @@ test('worst case stays below ten seconds of probing', () => {
   assert.ok(INTERVAL_MS + TIMEOUT_MS + (DOWN_AFTER - 1) * (RETRY_MS + TIMEOUT_MS) <= 10000);
 });
 
-test('healthy Pi-hole DNS: chain applied, stays, default upstreams never used', async () => {
+test('healthy resolver: chain applied, stays, default upstreams never used', async () => {
   const h = harness();
   for (let i = 0; i < 5; i++) await h.watch.tick();
   assert.deepEqual(h.calls, [['apply', '10.8.0.2#5335']]);
-  assert.equal(h.watch.status().state, 'pihole');
-  assert.deepEqual(h.watch.status().targets, [{ id: 'p1', label: 'Pi-hole DS918+', dns: '10.8.0.2#5335', ok: true }]);
+  assert.equal(h.watch.status().state, 'vpnfilter');
+  assert.deepEqual(h.watch.status().targets, [{ id: 'p1', label: 'Resolver DS918+', dns: '10.8.0.2#5335', ok: true }]);
   assert.deepEqual(h.changes, [], 'switching on is not an outage/recovery event');
 });
 
@@ -43,7 +62,7 @@ test('outage: one failed round is tolerated, the second reverts; recovery needs 
   h.alive.p1 = false;
   await h.watch.tick();
   assert.deepEqual(h.calls, [], 'a single lost probe does not restart dnsmasq');
-  assert.equal(h.watch.status().state, 'pihole');
+  assert.equal(h.watch.status().state, 'vpnfilter');
   await h.watch.tick();
   assert.deepEqual(h.calls, [['revert']]);
   assert.equal(h.watch.status().state, 'fallback');
@@ -61,8 +80,8 @@ test('outage: one failed round is tolerated, the second reverts; recovery needs 
   assert.equal(h.watch.status().state, 'fallback', 'two good rounds are not enough');
   await h.watch.tick();
   assert.deepEqual(h.calls, [['revert'], ['apply', '10.8.0.2#5335']]);
-  assert.equal(h.watch.status().state, 'pihole');
-  assert.deepEqual(h.changes, [['fallback', 'fallback'], ['pihole', 'pihole']]);
+  assert.equal(h.watch.status().state, 'vpnfilter');
+  assert.deepEqual(h.changes, [['fallback', 'fallback'], ['vpnfilter', 'vpnfilter']]);
 });
 
 test('a single failed round between good ones does nothing', async () => {
@@ -89,7 +108,7 @@ test('flapping resolver does not get the chain back', async () => {
   assert.equal(h.watch.status().state, 'fallback');
 });
 
-test('start with a dead Pi-hole DNS: reverted in the first round (boot with the gateway off)', async () => {
+test('start with a dead resolver: reverted in the first round (boot with the gateway off)', async () => {
   const h = harness();
   h.alive.p1 = false;
   await h.watch.tick();
@@ -111,40 +130,6 @@ test('two instances: fallback only when none answers', async () => {
   h.alive.p2 = false;
   await h.watch.tick(); await h.watch.tick();
   assert.equal(h.watch.status().state, 'fallback');
-});
-
-test('API reachable, DNS dead: the chain still falls back (API on a pool route, DNS on one gateway)', async () => {
-  // The old rule ("no instance reachable via API for two sync rounds") never
-  // fired here: DNS stayed dead for as long as the gateway was off.
-  const { createSync } = require('../src/services/piholeSync');
-  const calls = [];
-  const dnsChain = { apply: (t) => calls.push(['apply', t.join(',')]), revert: () => calls.push(['revert']) };
-  const cfg = { enabled: true, manage_dns_chain: true, sync_interval_sec: 30, instances: [INST] };
-  const client = {
-    id: 'p1',
-    getSummary: async () => ({ queries: { total: 1, blocked: 0 }, gravity: { domains_being_blocked: 0 }, clients: { active: 0 } }),
-    getHistory: async () => [], getTopDomains: async () => [], getTopClients: async () => [],
-    getQueryTypes: async () => ({}), getBlocking: async () => ({ blocking: true }),
-  };
-  const sync = createSync({ loadConfig: () => cfg, clientFactory: () => client, peersProvider: () => [], eventBus: { publish() {} }, dnsChain });
-  let dnsAlive = true;
-  const watch = createDnsWatch({ loadConfig: () => cfg, dnsChain, probe: async () => dnsAlive });
-  await watch.tick();
-  dnsAlive = false;
-  for (let i = 0; i < 2; i++) { await sync.syncOnce(); await watch.tick(); }
-  assert.equal(sync.getCache().instances[0].connected, true, 'the API answers throughout');
-  assert.deepEqual(calls, [['apply', '10.8.0.2#5335'], ['revert']]);
-  assert.equal(watch.status().state, 'fallback');
-
-  // and the other way round: API down, DNS fine → the filter stays in place
-  dnsAlive = true;
-  for (let i = 0; i < 3; i++) await watch.tick();
-  calls.length = 0;
-  client.getSummary = async () => { throw new Error('down'); };
-  for (let i = 0; i < 4; i++) { await sync.syncOnce(); await watch.tick(); }
-  assert.equal(sync.getCache().instances[0].connected, false);
-  assert.deepEqual(calls, []);
-  assert.equal(watch.status().state, 'pihole');
 });
 
 test('a throwing probe counts as no answer', async () => {
@@ -176,7 +161,7 @@ test('switched off while fallen back: state off; switched on again asks the DNS 
   h.cfg = { ...h.cfg, manage_dns_chain: true };
   h.alive.p1 = true;
   await h.watch.tick();
-  assert.equal(h.watch.status().state, 'pihole');
+  assert.equal(h.watch.status().state, 'vpnfilter');
   assert.deepEqual(h.calls[2], ['apply', '10.8.0.2#5335']);
 });
 
@@ -191,7 +176,7 @@ test('a failing chain write does not kill the watch', async () => {
   assert.equal(watch.status().state, 'off');
   fail = false;
   await watch.tick();
-  assert.equal(watch.status().state, 'pihole');
+  assert.equal(watch.status().state, 'vpnfilter');
 });
 
 // ─── probeDns against a real UDP socket ─────────────────────────────────────

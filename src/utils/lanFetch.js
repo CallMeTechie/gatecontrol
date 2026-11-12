@@ -1,11 +1,11 @@
 'use strict';
 
 /**
- * fetch() für admin-konfigurierte LAN-Integrationen (Pi-hole).
+ * fetch() für admin-konfigurierte LAN-Integrationen.
  *
  * Anders als Webhooks (utils/outboundGuard.js) zeigen diese URLs absichtlich
  * ins LAN — und wegen `network_mode: host` unter Umständen auch auf
- * 127.0.0.1 (Pi-hole auf demselben Host). Das konfigurierte Ziel selbst
+ * 127.0.0.1 (ein Dienst auf demselben Host). Das konfigurierte Ziel selbst
  * bleibt deshalb erlaubt: der Admin hat es gewählt.
  *
  * Was verhindert wird: dass das Gerät hinter der URL (kompromittiert oder
@@ -16,7 +16,7 @@
  *   - Ein Redirect auf denselben Origin (Schema + Host + Port) wird höchstens
  *     `maxRedirects`-mal verfolgt. Zusätzlich erlaubt ist genau das
  *     Schema-Upgrade http://host(:80) → https://host(:443) auf demselben
- *     Hostnamen (Pi-hole v6 und manche Reverse-Proxies leiten so um).
+ *     Hostnamen (manche Weboberflächen und Reverse-Proxies leiten so um).
  *     Alles andere — fremder Host oder Port, https → http — ist ein Fehler.
  *   - Bekannte Cloud-Metadaten-Adressen sind als Ziel immer gesperrt
  *     (nur als IP-Literal — ein Hostname, der dorthin auflöst, wäre eine

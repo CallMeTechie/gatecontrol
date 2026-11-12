@@ -4,21 +4,11 @@ const { getPlan, getFeatures, hasFeature, getFeatureLimit, isWithinLimit, isUnli
 
 function injectLicense(req, res, next) {
   const info = getLicenseInfo();
-  // Lazy require to avoid potential circular dependency at module load time
-  const pihole = require('../services/pihole');
-  const piholeCache = pihole.getCache();
   const features = getFeatures();
   const sources = featureSources();
   res.locals.license = {
     plan: getPlan(),
-    features: {
-      ...features,
-      pihole: {
-        available: true,
-        licensed: hasFeature('pihole_integration'),
-        attribution: piholeCache.attribution,
-      },
-    },
+    features,
     // Where each value comes from: 'token' | 'plan_default' | 'community'.
     // The settings licence card marks features a paid plan only derives.
     sources,

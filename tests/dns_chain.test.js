@@ -19,11 +19,11 @@ const assert = require('node:assert/strict');
 const { createChainWatch, INTERVAL_MS, TIMEOUT_MS, DOWN_AFTER } = require('../src/services/dnsChainWatch');
 const { makeChain } = require('../src/services/dnsChainConf');
 
-const PH = { id: 'p1', label: 'Pi-hole', dns_ip: '10.8.0.2', dns_port: 5335 };
+const PH = { id: 'p1', label: 'Second filter', dns_ip: '10.8.0.2', dns_port: 5335 };
 const VF = { id: 'vpnfilter', label: '', dns_ip: '127.0.0.1', dns_port: 5354 };
 
 function harness() {
-  const h = { want: { pihole: true, vpnfilter: false }, alive: { pihole: true, vpnfilter: true }, calls: [], events: [], changes: [] };
+  const h = { want: { second: true, vpnfilter: false }, alive: { second: true, vpnfilter: true }, calls: [], events: [], changes: [] };
   const provider = (id, target) => ({
     id,
     targets: () => (h.want[id] ? [target] : []),
@@ -31,7 +31,7 @@ function harness() {
     onChange: (state, status) => h.events.push([id, state, status.state]),
   });
   h.watch = createChainWatch({
-    providers: () => [provider('vpnfilter', VF), provider('pihole', PH)],
+    providers: () => [provider('vpnfilter', VF), provider('second', PH)],
     chain: { apply: (t, o) => h.calls.push(['apply', o.provider, t.join(',')]), revert: () => h.calls.push(['revert']) },
     onChange: (s) => h.changes.push([s.provider, s.state]),
     now: () => 1000,
@@ -43,11 +43,11 @@ function harness() {
 test('one provider wants the chain: it owns it, the other one is simply off', async () => {
   const h = harness();
   await h.ticks(3);
-  assert.deepEqual(h.calls, [['apply', 'pihole', '10.8.0.2#5335']]);
-  assert.deepEqual(h.watch.status(), { provider: 'pihole', state: 'active', since: 1000, checkedAt: 1000,
-    targets: [{ id: 'p1', label: 'Pi-hole', dns: '10.8.0.2#5335', ok: true }], displaced: [] });
-  assert.equal(h.watch.statusFor('pihole').state, 'pihole');
-  assert.deepEqual(h.watch.statusFor('vpnfilter'), { state: 'off', since: 1000, checkedAt: null, targets: [], displacedBy: 'pihole' });
+  assert.deepEqual(h.calls, [['apply', 'second', '10.8.0.2#5335']]);
+  assert.deepEqual(h.watch.status(), { provider: 'second', state: 'active', since: 1000, checkedAt: 1000,
+    targets: [{ id: 'p1', label: 'Second filter', dns: '10.8.0.2#5335', ok: true }], displaced: [] });
+  assert.equal(h.watch.statusFor('second').state, 'second');
+  assert.deepEqual(h.watch.statusFor('vpnfilter'), { state: 'off', since: 1000, checkedAt: null, targets: [], displacedBy: 'second' });
 });
 
 test('takeover: the higher provider replaces the chain in one step, never via the default upstreams', async () => {
@@ -55,16 +55,16 @@ test('takeover: the higher provider replaces the chain in one step, never via th
   await h.ticks(2);
   h.want.vpnfilter = true;
   await h.ticks(3);
-  assert.deepEqual(h.calls, [['apply', 'pihole', '10.8.0.2#5335'], ['apply', 'vpnfilter', '127.0.0.1#5354']], 'no revert in between');
+  assert.deepEqual(h.calls, [['apply', 'second', '10.8.0.2#5335'], ['apply', 'vpnfilter', '127.0.0.1#5354']], 'no revert in between');
   assert.equal(h.watch.status().provider, 'vpnfilter');
   assert.equal(h.watch.status().state, 'active');
-  assert.deepEqual(h.watch.status().displaced, ['pihole']);
+  assert.deepEqual(h.watch.status().displaced, ['second']);
   assert.equal(h.watch.statusFor('vpnfilter').state, 'vpnfilter');
-  assert.equal(h.watch.statusFor('pihole').state, 'off');
-  assert.equal(h.watch.statusFor('pihole').displacedBy, 'vpnfilter');
-  assert.deepEqual(h.watch.statusFor('pihole').targets, []);
+  assert.equal(h.watch.statusFor('second').state, 'off');
+  assert.equal(h.watch.statusFor('second').displacedBy, 'vpnfilter');
+  assert.deepEqual(h.watch.statusFor('second').targets, []);
   assert.deepEqual(h.events, [], 'a takeover is neither an outage nor a recovery');
-  assert.deepEqual(h.changes, [['pihole', 'active'], ['vpnfilter', 'active']]);
+  assert.deepEqual(h.changes, [['second', 'active'], ['vpnfilter', 'active']]);
 });
 
 test('takeover by a provider that does not answer: default upstreams, the old chain is gone too', async () => {
@@ -73,7 +73,7 @@ test('takeover by a provider that does not answer: default upstreams, the old ch
   h.want.vpnfilter = true;
   h.alive.vpnfilter = false;
   await h.ticks(1);
-  assert.deepEqual(h.calls, [['apply', 'pihole', '10.8.0.2#5335'], ['revert']]);
+  assert.deepEqual(h.calls, [['apply', 'second', '10.8.0.2#5335'], ['revert']]);
   assert.equal(h.watch.status().provider, 'vpnfilter');
   assert.equal(h.watch.status().state, 'fallback');
   assert.deepEqual(h.events, [['vpnfilter', 'fallback', 'fallback']]);
@@ -88,9 +88,9 @@ test('active provider dies: fallback to the defaults — a displaced provider is
   await h.ticks(1);
   assert.deepEqual(h.calls, [], 'one failed round is tolerated');
   await h.ticks(4);
-  assert.deepEqual(h.calls, [['revert']], 'reverted once; Pi-hole (alive and wanted) is never applied');
+  assert.deepEqual(h.calls, [['revert']], 'reverted once; the second one (alive and wanted) is never applied');
   assert.equal(h.watch.statusFor('vpnfilter').state, 'fallback');
-  assert.equal(h.watch.statusFor('pihole').state, 'off');
+  assert.equal(h.watch.statusFor('second').state, 'off');
 
   h.alive.vpnfilter = true;
   await h.ticks(2);
@@ -106,26 +106,26 @@ test('higher provider switched off: the displaced one gets the chain back, asked
   await h.ticks(2);
   h.want.vpnfilter = false;
   await h.ticks(1);
-  assert.deepEqual(h.calls.slice(1), [['apply', 'pihole', '10.8.0.2#5335']]);
-  assert.equal(h.watch.statusFor('pihole').state, 'pihole');
+  assert.deepEqual(h.calls.slice(1), [['apply', 'second', '10.8.0.2#5335']]);
+  assert.equal(h.watch.statusFor('second').state, 'second');
   assert.deepEqual(h.watch.status().displaced, []);
 
   // … and when that one is dead at this moment, the defaults
   h.want.vpnfilter = true;
   await h.ticks(1);
   h.want.vpnfilter = false;
-  h.alive.pihole = false;
+  h.alive.second = false;
   await h.ticks(1);
   assert.deepEqual(h.calls.at(-1), ['revert']);
-  assert.equal(h.watch.statusFor('pihole').state, 'fallback');
-  assert.deepEqual(h.events, [['pihole', 'fallback', 'fallback']]);
+  assert.equal(h.watch.statusFor('second').state, 'fallback');
+  assert.deepEqual(h.events, [['second', 'fallback', 'fallback']]);
 });
 
 test('nobody wants the chain any more: defaults, state off', async () => {
   const h = harness();
   h.want.vpnfilter = true;
   await h.ticks(1);
-  h.want.vpnfilter = false; h.want.pihole = false;
+  h.want.vpnfilter = false; h.want.second = false;
   await h.ticks(2);
   assert.deepEqual(h.calls.slice(1), [['revert']]);
   assert.deepEqual(h.watch.status(), { provider: null, state: 'off', since: 1000, checkedAt: 1000, targets: [], displaced: [] });
@@ -149,7 +149,7 @@ test('conf: the managed block names its provider; a new provider replaces the ol
   fs.writeFileSync(confPath, 'bind-dynamic\nserver=1.1.1.1\nserver=8.8.8.8\n');
   let reloads = 0;
   const chain = makeChain({ confPath, defaults: ['1.1.1.1', '8.8.8.8'], reload: () => { reloads++; } });
-  chain.apply(['10.8.0.2#5335'], { provider: 'pihole', ecs: true });
+  chain.apply(['10.8.0.2#5335'], { provider: 'second', ecs: true });
   chain.apply(['127.0.0.1#5354'], { provider: 'vpnfilter', ecs: true });
   const c = fs.readFileSync(confPath, 'utf8');
   assert.equal(c, 'bind-dynamic\n# >>> gatecontrol-vpnfilter >>>\nadd-subnet=32,128\nserver=127.0.0.1#5354\n# <<< gatecontrol-vpnfilter <<<\n');
@@ -165,7 +165,7 @@ test('conf: a provider without ECS gets no add-subnet line; the provider name ca
   fs.writeFileSync(confPath, 'bind-dynamic\nadd-subnet=32,128\nserver=10.8.0.2\n');
   let reloads = 0;
   const chain = makeChain({ confPath, defaults: ['1.1.1.1'], reload: () => { reloads++; } });
-  chain.apply(['10.8.0.2'], { provider: 'pihole', ecs: false });
+  chain.apply(['10.8.0.2'], { provider: 'second', ecs: false });
   assert.doesNotMatch(fs.readFileSync(confPath, 'utf8'), /add-subnet/);
   assert.equal(reloads, 1, 'same server, but ECS has to go: rewritten');
   assert.throws(() => chain.apply(['10.8.0.2'], { provider: 'x >>>\nserver=6.6.6.6' }), /invalid provider/);
@@ -186,86 +186,84 @@ function listen(p) {
 const close = (s) => new Promise((resolve) => s.close(resolve));
 const servers = () => fs.readFileSync(confPath, 'utf8').match(/^server=.*/gm);
 
-test('owner: Pi-hole chain → filter service → filter dies → defaults → filter off → Pi-hole again', async () => {
+test('owner: a left-over Pi-hole chain → defaults → filter service → filter dies → defaults → filter back → filter off', async () => {
   let restarts = 0;
   const dns = require('../src/services/dns');
   dns.restartDnsmasq = () => { restarts++; };
   const dnsChain = require('../src/services/dnsChain');
-  const piSock = await listen(0);
   let fSock = await listen(0);
-  const piPort = piSock.address().port; const fPort = fSock.address().port;
+  const fPort = fSock.address().port;
   const seen = [];
   const off = dnsChain.onChange((s) => seen.push(`${s.provider}:${s.state}`));
-  const piEvents = []; const fEvents = [];
-  let piWanted = true;
-  dnsChain.register({
-    id: 'pihole', label: 'Pi-hole',
-    targets: () => (piWanted ? [{ id: 'p1', dns_ip: '127.0.0.1', dns_port: piPort }] : []),
-    onChange: (state) => piEvents.push(state),
-  });
+  const fEvents = [];
   try {
-    // as entrypoint.sh leaves it: the Pi-hole chain baked in
-    fs.writeFileSync(confPath, `bind-dynamic\nno-resolv\nadd-subnet=32,128\nserver=127.0.0.1#${piPort}\n`);
+    // as a version with the Pi-hole integration left it: its chain baked in, no managed block
+    fs.writeFileSync(confPath, 'bind-dynamic\nno-resolv\nadd-subnet=32,128\nserver=10.8.0.2#5335\n');
     dnsChain.refresh();
     await dnsChain.tick();
-    assert.equal(dnsChain.status().provider, 'pihole');
-    assert.equal(restarts, 0);
+    assert.deepEqual(servers(), ['server=1.1.1.1', 'server=8.8.8.8'], 'nobody wants the chain: default upstreams');
+    assert.doesNotMatch(fs.readFileSync(confPath, 'utf8'), /add-subnet/);
+    assert.equal(dnsChain.status().provider, null);
+    assert.equal(restarts, 1);
+
+    // … and the managed block of the former provider
+    fs.writeFileSync(confPath, 'bind-dynamic\n# >>> gatecontrol-pihole >>>\nadd-subnet=32,128\nserver=10.8.0.2#5335\n# <<< gatecontrol-pihole <<<\n');
+    dnsChain.refresh();
+    assert.deepEqual(servers(), ['server=1.1.1.1', 'server=8.8.8.8'], 'at once, before any probe round');
+    await dnsChain.tick();
+    assert.doesNotMatch(fs.readFileSync(confPath, 'utf8'), /add-subnet|gatecontrol-/);
+    assert.equal(restarts, 2);
+    dnsChain.refresh();
+    await dnsChain.tick();
+    assert.equal(restarts, 2, 'already on the defaults: no further restart');
 
     dnsChain.vpnFilter.enable({ port: fPort, onChange: (state) => fEvents.push(state) });
     await dnsChain.tick();
     assert.deepEqual(servers(), [`server=127.0.0.1#${fPort}`]);
     assert.match(fs.readFileSync(confPath, 'utf8'), /# >>> gatecontrol-vpnfilter >>>\nadd-subnet=32,128\n/);
-    assert.equal(restarts, 1, 'one dnsmasq restart for the switch');
-    assert.deepEqual(dnsChain.status().displaced, ['pihole']);
-    assert.equal(dnsChain.statusFor('pihole').state, 'off');
+    assert.equal(restarts, 3, 'one dnsmasq restart for the switch');
+    assert.deepEqual(dnsChain.status().displaced, []);
     assert.equal(dnsChain.vpnFilter.status().state, 'vpnfilter');
 
-    // saving the Pi-hole settings while displaced must not touch the conf
+    // a refresh while the filter owns the chain must not touch the conf
     dnsChain.refresh();
     await dnsChain.tick();
     assert.deepEqual(servers(), [`server=127.0.0.1#${fPort}`]);
-    assert.equal(restarts, 1);
+    assert.equal(restarts, 3);
 
     await close(fSock);
     await dnsChain.tick(); await dnsChain.tick();
-    assert.deepEqual(servers(), ['server=1.1.1.1', 'server=8.8.8.8'], 'defaults, not Pi-hole');
+    assert.deepEqual(servers(), ['server=1.1.1.1', 'server=8.8.8.8'], 'defaults');
     assert.doesNotMatch(fs.readFileSync(confPath, 'utf8'), /add-subnet|gatecontrol-/);
-    assert.equal(restarts, 2);
+    assert.equal(restarts, 4);
     assert.equal(dnsChain.vpnFilter.status().state, 'fallback');
     assert.deepEqual(fEvents, ['fallback']);
 
     fSock = await listen(fPort);
     await dnsChain.tick(); await dnsChain.tick(); await dnsChain.tick();
     assert.deepEqual(servers(), [`server=127.0.0.1#${fPort}`]);
-    assert.equal(restarts, 3);
+    assert.equal(restarts, 5);
     assert.deepEqual(fEvents, ['fallback', 'vpnfilter']);
 
     dnsChain.vpnFilter.disable();
     await dnsChain.tick();
-    assert.deepEqual(servers(), [`server=127.0.0.1#${piPort}`]);
-    assert.match(fs.readFileSync(confPath, 'utf8'), /# >>> gatecontrol-pihole >>>/);
-    assert.equal(restarts, 4);
-    assert.equal(dnsChain.statusFor('pihole').state, 'pihole');
-    assert.deepEqual(piEvents, [], 'Pi-hole never failed: no outage or recovery entry for it');
-
-    piWanted = false;
-    dnsChain.refresh();
-    await dnsChain.tick();
     assert.deepEqual(servers(), ['server=1.1.1.1', 'server=8.8.8.8']);
+    assert.equal(restarts, 6);
     assert.deepEqual(dnsChain.status().provider, null);
-    assert.deepEqual(seen, ['pihole:active', 'vpnfilter:active', 'vpnfilter:fallback', 'vpnfilter:active', 'pihole:active', 'null:off']);
+    assert.deepEqual(seen, ['vpnfilter:active', 'vpnfilter:fallback', 'vpnfilter:active', 'null:off']);
   } finally {
     off();
     dnsChain.vpnFilter.disable();
-    await close(piSock); try { await close(fSock); } catch { /* already closed */ }
+    try { await close(fSock); } catch { /* already closed */ }
   }
 });
 
-test('owner: only known providers, sane filter port; the filter is noticed dead faster than Pi-hole', () => {
+test('owner: only known providers, sane filter port; the filter is noticed dead faster than the default cadence', () => {
   const dnsChain = require('../src/services/dnsChain');
-  assert.deepEqual(dnsChain.RANK, ['vpnfilter', 'pihole']);
+  assert.deepEqual(dnsChain.RANK, ['vpnfilter']);
   assert.throws(() => dnsChain.register({ id: 'other', targets: () => [] }), /unknown provider/);
-  assert.throws(() => dnsChain.register({ id: 'pihole' }), /targets/);
+  assert.throws(() => dnsChain.register({ id: 'pihole', targets: () => [] }), /unknown provider/, 'the former provider is gone');
+  assert.throws(() => dnsChain.register({ id: 'vpnfilter' }), /targets/);
   for (const port of [0, 53, 70000, '12a', null]) assert.throws(() => dnsChain.vpnFilter.enable({ port }), /invalid filter port/);
   assert.equal(dnsChain.vpnFilter.status().state, 'off');
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'dnsChain.js'), 'utf8');
@@ -287,11 +285,7 @@ test('only one owner: nothing but dnsChain.js creates a chain writer or restarts
   const using = (re) => files.filter((f) => re.test(fs.readFileSync(f, 'utf8'))).map((f) => path.relative(root, f)).sort();
   assert.deepEqual(using(/\bmakeChain\(/), ['services/dnsChain.js', 'services/dnsChainConf.js']);
   assert.deepEqual(using(/\brestartDnsmasq\(\)/), ['services/dns.js', 'services/dnsChain.js']);
-  assert.deepEqual(using(/createChainWatch\(/), ['services/dnsChain.js', 'services/dnsChainWatch.js', 'services/piholeDnsWatch.js']);
-  // Pi-hole reaches the conf only through the owner
-  const pihole = fs.readFileSync(path.join(root, 'services', 'pihole.js'), 'utf8');
-  assert.doesNotMatch(pihole, /\.revert\(|\.apply\(|dnsmasq\.conf/);
-  assert.match(pihole, /dnsChain\.register\(piholeProvider\(/);
+  assert.deepEqual(using(/createChainWatch\(/), ['services/dnsChain.js', 'services/dnsChainWatch.js']);
   // the watcher runs five times a second, so a switch costs well under a second
   const wrapper = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'wg-wrapper.sh'), 'utf8');
   assert.match(wrapper, /while true; do\n {2}sleep 0\.2 &\n {2}wait \$!/);
