@@ -103,6 +103,8 @@ function gatewaysOf(userId) {
 
 function push(userId) {
   for (const peerId of gatewaysOf(userId)) require('./gatewayFeatures').notifyGateway(peerId);
+  // the person's VPN devices follow (DNS protection, vpnDns.js — a no-op while it is off)
+  try { require('./vpnDns').homeInternetChanged(); } catch (e) { logger.debug({ err: e.message }, 'vpn dns not told about the pause'); }
 }
 
 function actorNames(ids) {
