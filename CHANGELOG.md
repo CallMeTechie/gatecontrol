@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.268.0] — 2026-11-12
+
+### Features
+- Pi-hole-Anbindung entfernt – Ersatz ist der DNS-Schutz (#477)
+
+---
+
 ## [1.267.0] — 2026-11-12
 
 ### Features
