@@ -5,7 +5,7 @@ const { requireFeature } = require('../../../middleware/license');
 const { checkRanges, hasErrors, sendFieldErrors } = require('../../../utils/settingsValidate');
 const piholeConfig = require('../../../services/piholeConfig');
 const pihole = require('../../../services/pihole');
-const { isValidDnsTarget } = require('../../../services/piholeDnsChain');
+const { isValidDnsTarget } = require('../../../services/dnsChainConf');
 const logger = require('../../../utils/logger');
 
 const router = Router();

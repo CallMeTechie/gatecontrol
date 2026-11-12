@@ -16,7 +16,7 @@ const logger = require('../utils/logger');
  *
  * The DNS chain is NOT decided here: whether the API answers says nothing
  * about whether the resolver does (and the other way round), and a sync round
- * can take as long as the interval. piholeDnsWatch.js asks the DNS itself.
+ * can take as long as the interval. dnsChainWatch.js asks the DNS itself.
  *
  * deps:
  *   loadConfig()      → { enabled, sync_interval_sec, manage_dns_chain, instances[] }
