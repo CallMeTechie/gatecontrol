@@ -321,7 +321,13 @@ class FilterService {
   }
 
   async _refreshLists() {
-    try { await this.lists.refreshDue(); } catch (err) { this.logger.warn({ err: err.message }, 'dnsfilter: list refresh'); }
+    // A list switched on while another one was being loaded is not part of
+    // that round: go again until nothing is left that was never tried.
+    for (let round = 0; round < 4; round++) {
+      try { await this.lists.refreshDue(); } catch (err) { this.logger.warn({ err: err.message }, 'dnsfilter: list refresh'); }
+      const untried = [...this.lists.used].some((id) => { const m = this.lists.meta[id]; return m && !m.checkedAt && !this.lists.lists.has(id); });
+      if (!untried) break;
+    }
     if (!this.ready) { this.ready = true; this.readyAt = this.now(); }
   }
 

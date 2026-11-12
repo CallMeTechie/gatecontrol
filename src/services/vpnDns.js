@@ -1000,6 +1000,8 @@ function status(now = Date.now()) {
   return {
     available: available(),
     enabled: s.enabled,
+    // switched on, but the server's internal DNS (dnsmasq) is off: there is nothing to put the filter behind
+    blockedBy: s.enabled && !config.dns.enabled ? 'internal_dns_off' : null,
     state: st,
     since: st === 'off' ? null : iso(st === 'starting' ? run.wantedAt : chain.since),
     chain: chainNow(),

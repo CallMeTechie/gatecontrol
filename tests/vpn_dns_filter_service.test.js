@@ -234,6 +234,46 @@ describe('the service (in this process)', () => {
   });
 });
 
+describe('the wrapper (supervisord program dnsfilter)', () => {
+  it('runs the service only while <dir>/enabled exists, and starts it again when it exits', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-test-dnswrap-'));
+    const bin = path.join(dir, 'bin');
+    fs.mkdirSync(bin);
+    // a stand-in for `node …/service.js`: notes that it was started and stays
+    fs.writeFileSync(path.join(bin, 'node'), `#!/bin/sh\necho "$$ $GC_VPNDNS_DIR" >> "${dir}/starts"\nexec sleep 30\n`, { mode: 0o755 });
+    const starts = () => { try { return fs.readFileSync(path.join(dir, 'starts'), 'utf8').trim().split('\n').filter(Boolean); } catch { return []; } };
+    const wrapper = spawn('sh', [path.join(__dirname, '..', 'scripts', 'dnsfilter-wrapper.sh')], {
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GC_VPNDNS_DIR: dir }, stdio: 'ignore',
+    });
+    const until = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { if (fn()) return true; await sleep(50); } return fn(); };
+    try {
+      await sleep(600);
+      assert.deepEqual(starts(), [], 'no service without the file');
+      fs.writeFileSync(path.join(dir, 'enabled'), '');
+      assert.ok(await until(() => starts().length === 1, 4000), 'started once the file exists');
+      assert.equal(starts()[0].split(' ')[1], dir);
+      process.kill(Number(starts()[0].split(' ')[0]), 'SIGKILL');
+      assert.ok(await until(() => starts().length === 2, 4000), 'started again after it died');
+      fs.rmSync(path.join(dir, 'enabled'));
+      process.kill(Number(starts()[1].split(' ')[0]), 'SIGTERM'); // what "switched off" does: the service leaves
+      await sleep(1600);
+      assert.equal(starts().length, 2, 'not started again without the file');
+      const child = Number(starts()[1].split(' ')[0]);
+      fs.writeFileSync(path.join(dir, 'enabled'), '');
+      assert.ok(await until(() => starts().length === 3, 4000));
+      const exited = new Promise((r) => wrapper.once('exit', r));
+      wrapper.kill('SIGTERM');
+      await exited;
+      const last = Number(starts()[2].split(' ')[0]);
+      assert.ok(await until(() => { try { process.kill(last, 0); return false; } catch { return true; } }, 3000), 'the wrapper takes the service down with it');
+      assert.notEqual(child, last);
+    } finally {
+      wrapper.kill('SIGKILL');
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('measured: the service as its own process with lists the size of the default lists', () => {
   let dir; let ports; let up; let child;
   after(() => { if (child) child.kill('SIGKILL'); if (up) up.close(); if (dir) fs.rmSync(dir, { recursive: true, force: true }); });
