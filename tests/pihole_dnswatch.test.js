@@ -238,3 +238,16 @@ test('probeDns: no or unusable address is dead, never throws', async () => {
   assert.equal(await probeDns(null), false);
   assert.equal(await probeDns({ dns_ip: 'not an ip' }, 200), false);
 });
+
+test('no dnsmasq.conf on this host: the watch stays off and reports no outage', async () => {
+  const changes = [];
+  const watch = createDnsWatch({
+    loadConfig: () => ({ enabled: true, manage_dns_chain: true, instances: [INST] }),
+    dnsChain: { apply: () => { throw new Error('ENOENT'); }, revert: () => { throw new Error('ENOENT'); } },
+    probe: async () => false,
+    onChange: (s) => changes.push(s),
+  });
+  await watch.tick(); await watch.tick();
+  assert.equal(watch.status().state, 'off');
+  assert.deepEqual(changes, []);
+});

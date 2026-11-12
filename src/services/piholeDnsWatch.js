@@ -102,6 +102,7 @@ function createDnsWatch(deps) {
   let checkedAt = null;
   let timer = null;
   let inflight = null;
+  let lastError = null;
   let stopped = true;
 
   function status() {
@@ -176,8 +177,12 @@ function createDnsWatch(deps) {
         }
       }
     } catch (err) {
-      logger.warn({ err: err.message }, 'pihole dns watch round failed');
+      // e.g. no dnsmasq.conf on this host: say it once, not every round
+      if (lastError !== err.message) logger.warn({ err: err.message }, 'pihole dns watch round failed');
+      lastError = err.message;
+      return status();
     }
+    lastError = null;
     return status();
   }
 

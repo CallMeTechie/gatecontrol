@@ -110,13 +110,9 @@ function makeChain({ confPath, defaults, reload }) {
     },
 
     revert() {
-      let content;
-      try {
-        content = fs.readFileSync(confPath, 'utf8');
-      } catch {
-        lastApplied = 'default';
-        return;
-      }
+      // A missing conf throws, as in apply(): the callers treat "no dnsmasq
+      // conf here" as "chain cannot be managed", not as a successful revert.
+      let content = fs.readFileSync(confPath, 'utf8');
 
       // Decided by what the conf actually says, not by a marker or by what this
       // process remembers: entrypoint.sh bakes the Pi-hole chain into the conf

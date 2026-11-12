@@ -183,3 +183,9 @@ test('apply with only invalid upstreams falls back to the defaults', () => {
   ch.apply(['bad\nline']);
   assert.deepEqual(fs.readFileSync(confPath, 'utf8').match(/^server=.*/gm), ['server=1.1.1.1', 'server=8.8.8.8']);
 });
+
+test('revert without a conf throws (nothing to manage here), like apply', () => {
+  fs.rmSync(confPath);
+  assert.throws(() => chain().revert(), /ENOENT/);
+  assert.equal(reloads, 0);
+});
