@@ -34,7 +34,12 @@ const CLEAR = path.join(__dirname, '..', 'scripts', 'vpndns-firewall-clear.sh');
 function sh(cmd, args, opts = {}) {
   return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, ...opts });
 }
-function has(cmd) { try { sh('sh', ['-c', `command -v ${cmd}`]); return true; } catch { return false; } }
+/** Is there a program of this name on the PATH? Looked up in the file system — no shell is involved. */
+function has(cmd) {
+  return String(process.env.PATH || '').split(path.delimiter).filter(Boolean).some((dir) => {
+    try { fs.accessSync(path.join(dir, cmd), fs.constants.X_OK); return true; } catch { return false; }
+  });
+}
 
 function missing() {
   if (typeof process.getuid === 'function' && process.getuid() !== 0) return 'not root';
@@ -77,15 +82,20 @@ if (mode === 'serve') {
   c.on('error', (e) => { console.log('error:' + e.code + ' after ' + (Date.now() - t0 < 500 ? 'fast' : 'slow')); process.exit(0); });
 }`;
 
+// Runs the firewall module: <module path> <want as JSON> <options as JSON> → its status as JSON. Everything
+// comes in as an argument — no program text is put together from paths.
+const RUNNER = `
+const [file, want, opts] = process.argv.slice(2);
+const fw = require(file);
+fw.sync(JSON.parse(want), JSON.parse(opts)).then(() => { console.log(JSON.stringify(fw.status())); });`;
+
 describe('foreign DNS and DoT blocked — real netfilter', { skip: why ? `needs root, ip and iptables with network namespaces: ${why}` : false }, () => {
-  let dir; let helper; const servers = [];
+  let dir; let helper; let runner; const servers = [];
 
   const ask = (proto, src, dst, port) => inNs(NS.dev, process.execPath, [helper, proto, src, dst, String(port)]).trim();
   /** Run the firewall module inside the server namespace: sync(want) → its status. */
-  const fwSync = (want, opts = {}) => JSON.parse(inNs(NS.srv, process.execPath, ['-e', `
-    const fw = require(${JSON.stringify(FW)});
-    fw.sync(${JSON.stringify(want)}, { dir: ${JSON.stringify(dir)}, iface: ${JSON.stringify(WG)}, ...${JSON.stringify(opts)} }).then(() => { console.log(JSON.stringify(fw.status())); });
-  `], { env: { ...process.env, NODE_ENV: 'test' } }).trim().split('\n').pop());
+  const fwSync = (want, opts = {}) => JSON.parse(inNs(NS.srv, process.execPath, [runner, FW, JSON.stringify(want), JSON.stringify({ dir, iface: WG, ...opts })],
+    { env: { ...process.env, NODE_ENV: 'test' } }).trim().split('\n').pop());
   const rules = (table) => inNs(NS.srv, 'iptables', ['-w', '5', '-t', table, '-S']);
   const serve = (ns, name, bind, ports) => new Promise((resolve, reject) => {
     const c = spawn('ip', ['netns', 'exec', ns, process.execPath, helper, 'serve', name, bind, ...ports.map(String)], { stdio: ['ignore', 'pipe', 'inherit'] });
@@ -98,6 +108,8 @@ describe('foreign DNS and DoT blocked — real netfilter', { skip: why ? `needs 
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-test-fwlive-'));
     helper = path.join(dir, 'helper.js');
     fs.writeFileSync(helper, HELPER);
+    runner = path.join(dir, 'runner.js');
+    fs.writeFileSync(runner, RUNNER);
     for (const ns of Object.values(NS)) ip('netns', 'add', ns);
     ip('link', 'add', WG, 'netns', NS.srv, 'type', 'veth', 'peer', 'name', 'eth0', 'netns', NS.dev);
     ip('link', 'add', 'ens0', 'netns', NS.srv, 'type', 'veth', 'peer', 'name', 'eth0', 'netns', NS.net);
