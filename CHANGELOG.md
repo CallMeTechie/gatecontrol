@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.267.0] — 2026-11-12
+
+### Features
+- Profile gemeinsam mit dem Heimnetz, „Internet pausieren“ wirkt auch auf VPN-Geräte (#476)
+
+---
+
 ## [1.266.0] — 2026-11-12
 
 ### Features
