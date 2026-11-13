@@ -468,6 +468,36 @@ What visitors see meanwhile: the routes of a gateway in no pool show the page
 of the gateway the page is gone again and the routes work as usual. In a pool
 the reserve steps in instead.
 
+### Gateway “degraded”
+
+The gateway is connected, but its self-check reports a problem. The card
+“Status” in the gateway's overview names the reason.
+
+Most often: the gateway cannot open the listen port of a TCP/UDP route. The
+card then shows the route, the port and the reason:
+
+- **Port taken:** another service on the gateway's device already uses this
+  port. Choose a different listen port in the route.
+- **Permission denied:** choose a listen port from 1024 upwards.
+- **Tunnel address not ready:** the gateway tries again with every heartbeat;
+  this usually sorts itself out.
+
+In a pool this applies to the reserve as well: it gets the routes of its
+partner and opens their ports too. The addition “(reserve for …)” says whose
+route it is.
+
+No problem is the note “the target is this gateway itself and the target
+service holds port …”: when a route points at the gateway's device with the
+same listen and target port, the service answers there directly. The gateway
+stays “online”.
+
+If it only says “The gateway’s self-check reports a problem”, the gateway does
+not report the reason yet – update it
+([chapter 6](06-updating-a-gateway.md)).
+
+**Check:** After changing the route the card under “Gateways” shows the
+gateway online again within a minute.
+
 ### “Edge service missing”
 
 The gateway's compose file lacks the services `edge` and `mqtt`. Bring it up to

@@ -271,10 +271,12 @@
   // ─── "Zustand" of a gateway (tab "Übersicht") ─────────────────────────
   /**
    * The checks of the card "Zustand" in order of importance:
-   * [{ tone: 'ok'|'warn'|'bad'|'info', key, params, link }] (i18n gwp.state.*).
+   * [{ tone: 'ok'|'warn'|'bad'|'info', key, params, link, note }] (i18n gwp.state.*;
+   * note: { key, params } — a short addition behind the text).
    * ctx: { status (liveOf().key), latest, fresh (new devices of the network watch, or null), agoText,
    *        untilText (end of an expected restart), failback ({ key, left, until }: the failback wait) }
    */
+  const L4_REASONS = ['port_in_use', 'permission_denied', 'address_unavailable', 'error'];
   function healthChecks(g, ctx) {
     const c = ctx || {};
     const h = (g && g.health) || {};
@@ -285,7 +287,27 @@
     if (c.status === 'offline') out.push({ tone: 'bad', key: 'gwp.state.offline', params: { ago: c.agoText || '—' } });
     else if (away) out.push({ tone: 'warn', key: 'gwp.state.' + c.status, params: { ago: c.agoText || '—', time: c.untilText || '—' } });
     else out.push({ tone: 'ok', key: 'gwp.state.tunnel', params: { ago: c.agoText || '—' } });
-    if (c.status === 'degraded') out.push({ tone: 'warn', key: 'gwp.state.degraded' });
+    // Listeners of TCP/UDP routes (GET /api/v1/gateways: l4_listeners). A
+    // missing one is what makes the gateway "degraded" — named with route,
+    // port and reason instead of the bare "self-check reports a problem",
+    // which stays for everything else (proxy, API, a listener that fails).
+    const l4 = (g && g.l4_listeners) || {};
+    const issues = away ? [] : (Array.isArray(l4.issues) ? l4.issues : []);
+    const other = h.http_proxy_healthy === false || h.api_healthy === false
+      || (Array.isArray(h.tcp_listeners) && h.tcp_listeners.some((l) => l && l.status === 'listener_failed'));
+    if (c.status === 'degraded' && (!issues.length || other)) out.push({ tone: 'warn', key: 'gwp.state.degraded' });
+    const l4Params = (e) => ({ route: e.domain || '#' + e.route_id, proto: e.protocol === 'udp' ? 'UDP' : 'TCP', port: e.listen_port || '?', code: e.code || '—' });
+    const l4Note = (e) => (e.reserve_of ? { key: 'gwp.state.l4_reserve_of', params: { name: e.reserve_of } } : null);
+    issues.forEach((e) => {
+      const reason = L4_REASONS.indexOf(e.reason) >= 0 ? e.reason : 'error';
+      out.push({ tone: 'warn', key: 'gwp.state.l4_' + reason, params: l4Params(e), note: l4Note(e) });
+    });
+    // the target service of the gateway itself holds the port: no listener needed
+    if (!away) (Array.isArray(l4.direct) ? l4.direct : []).forEach((e) => {
+      out.push(e.reachable === false
+        ? { tone: 'warn', key: 'gwp.state.l4_direct_down', params: l4Params(e), note: l4Note(e) }
+        : { tone: 'info', key: 'gwp.state.l4_direct', params: l4Params(e), note: l4Note(e) });
+    });
     if (c.failback) out.push({ tone: 'info', key: c.failback.key, params: { left: c.failback.left || '—' }, until: c.failback.until });
     const rr = Array.isArray(h.route_reachability) ? h.route_reachability : [];
     if (rr.length && !away) {

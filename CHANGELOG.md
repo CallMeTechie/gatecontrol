@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.269.0] — 2026-11-13
+
+### Features
+- „degradiert“ nennt Route, Port und Grund, wenn ein Gateway einen L4-Listener nicht öffnen kann (#478)
+
+---
+
 ## [1.268.0] — 2026-11-12
 
 ### Features

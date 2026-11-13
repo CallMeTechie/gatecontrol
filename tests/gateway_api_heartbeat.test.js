@@ -67,6 +67,22 @@ describe('gateway API: /heartbeat', () => {
     });
   });
 
+  it('keeps the reasons of missing L4 listeners a newer gateway sends (l4_listener_issues, l4_listeners_direct)', async () => {
+    const r = await postJson('/api/v1/gateway/heartbeat', {
+      uptime_s: 60, http_proxy_healthy: true, api_healthy: true, tcp_listeners: [],
+      l4_routes_configured: 2, l4_listeners_missing: 1, overall_healthy: false,
+      l4_listener_issues: [{ route_id: 7, listen_port: 5335, reason: 'port_in_use', code: 'EADDRINUSE' }],
+      l4_listeners_direct: [{ route_id: 8, listen_port: 5336, reachable: true }],
+    }, { Authorization: `Bearer ${apiToken}` });
+    assert.equal(r.status, 200);
+    const health = JSON.parse(db.prepare('SELECT last_health FROM gateway_meta WHERE peer_id=?').get(peerId).last_health);
+    assert.deepEqual(health.l4_listener_issues, [{ route_id: 7, listen_port: 5335, reason: 'port_in_use', code: 'EADDRINUSE' }]);
+    const notes = require('../src/services/gateways').l4ListenerNotes(peerId, health);
+    // the routes are not in this database: the port and the reason still come through
+    assert.deepEqual(notes.issues.map((i) => [i.route_id, i.listen_port, i.reason]), [[7, 5335, 'port_in_use']]);
+    assert.deepEqual(notes.direct.map((i) => [i.route_id, i.listen_port, i.reachable]), [[8, 5336, true]]);
+  });
+
   it('rejects heartbeat with invalid payload (wrong type)', async () => {
     const r = await postJson('/api/v1/gateway/heartbeat', { uptime_s: 'not-a-number' }, { Authorization: `Bearer ${apiToken}` });
     assert.equal(r.status, 400);
