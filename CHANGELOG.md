@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.270.1] — 2026-11-13
+
+### Fixes
+- Plugin-Datenbanken sichern in einem Thread des Hosts (Release von #480 nachgeholt) – der Test dazu prüft die Reihenfolge statt Millisekunden (#482)
+
+---
+
 ## [1.270.0] — 2026-11-13
 
 ### Features
