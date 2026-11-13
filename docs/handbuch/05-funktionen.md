@@ -165,6 +165,59 @@ in GateControl erklärt das.
 
 **Prüfen:** In der „Prüfung“ der Anleitung steht „Router zeigt auf das Gateway“.
 
+## VPN-Namen im Heimnetz
+
+**Wofür:** Jedes VPN-Gerät hat einen Namen, zum Beispiel
+`laptop-buero.vpn.example.com` (die Namen hier sind Beispiele; deine Zone
+steht unter „Einstellungen“ → „VPN & Netzwerk“ → „Namen im VPN“). Unterwegs im
+VPN lösen die Geräte diese Namen von selbst auf. Zu Hause kennt sie niemand:
+Der Fernseher oder der PC im Heimnetz fragt den Router, und der weiß nichts von
+ihnen. Mit dieser Funktion fragt das Gateway den Server durch den VPN-Tunnel –
+Geräte zu Hause erreichen VPN-Geräte dann unter ihrem Namen.
+
+**Voraussetzungen:**
+
+- Der [DNS-Filter](#dns-filter) des Heimnetzes ist eingeschaltet und im Router
+  als DNS-Server eingetragen. Nur dann fragen die Geräte im Heimnetz das
+  Gateway nach Namen.
+- Ein Gateway, das die Funktion kennt. Bei einem älteren Gateway steht der
+  Hinweis am Schalter; er wirkt nach einem Update des Gateways.
+- Damit ein Gerät zu Hause ein VPN-Gerät auch **erreicht** (nicht nur seinen
+  Namen auflöst), muss sein Weg ins VPN über das Gateway führen – wie bei jeder
+  Adresse aus dem VPN.
+
+**Einschalten:** Reiter „Funktionen“ → „Für das ganze Heimnetz“ → „VPN-Namen
+im Heimnetz auflösen“ (Standard: aus). Der Schalter gilt für das ganze
+Heimnetz: Hast du ein Reserve-Gateway im selben Heimnetz, gilt er dort von
+selbst mit – auch nachdem die Reserve übernommen hat. Fehlt eine Voraussetzung,
+steht ein Hinweis am Schalter; einschalten kannst du trotzdem.
+
+**Wenn es nicht klappt:** Meldet ein Gateway, dass es den Namensdienst des
+Servers nicht fragen kann oder keine Antwort bekommt, steht das mit dem Grund
+am Schalter – bei mehreren Gateways im Heimnetz mit dem Namen des Gateways.
+Solange lösen die Geräte zu Hause die VPN-Namen über dieses Gateway nicht auf.
+
+| Schalter | Frage eines Geräts zu Hause nach `laptop-buero.vpn.example.com` |
+|---|---|
+| an | Das Gateway fragt den Server durch den Tunnel und gibt dessen Antwort weiter. |
+| aus | Das Gateway antwortet selbst: „gibt es nicht“. |
+
+**In keinem Fall** gibt das Gateway eine Frage nach diesen Namen an den Router
+oder an einen DNS-Anbieter im Internet weiter. So verlassen die Namen deiner
+Geräte das Haus nicht, und es kommt keine falsche Antwort der öffentlichen
+Domain zurück. Das gilt für alle Zonen der „Namen im VPN“, auch für die alte
+Schreibweise `gc.internal`.
+
+Stellst du die Zone unter „Namen im VPN“ um, übernimmt das Gateway sie von
+selbst – ohne Neustart. Ist der Tunnel unterbrochen, bekommen die Geräte für
+diese Namen sofort eine Fehlermeldung statt zu warten; alle anderen Namen
+funktionieren weiter.
+
+**Was sich für `gc.internal` ändert:** Ein Gateway, das die Funktion kennt,
+gibt Fragen nach `…gc.internal` nicht mehr an den Router weiter (der kannte die
+Namen ohnehin nicht). Andere Namen mit der Endung `.internal`, etwa
+`nas.internal`, gehen weiter an den Router.
+
 ## DNS-Schutz
 
 **Wofür:** Filtert Werbung, Tracker und Schadseiten für alle Geräte, die über

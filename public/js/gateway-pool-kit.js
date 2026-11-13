@@ -335,7 +335,8 @@
     // phase 3c, step 3: the local AI between printing and radio (as in the design)
     // phase 3c, step 4: the cameras right after printing (as in the design)
     { key: 'devices', features: ['print', 'cameras', 'ai', 'radio', 'zigbee'] },
-    { key: 'wide', features: ['dns', 'cache'] },
+    // vpnnames: "VPN-Namen im Heimnetz auflösen" — one switch for every gateway of the home network, like the DNS filter
+    { key: 'wide', features: ['dns', 'vpnnames', 'cache'] },
     { key: 'power', features: ['inetq', 'ups'] },
     { key: 'ext', features: ['edge'] },
     // setuppage: "Statusseite im Heimnetz" (the status page of the gateway in its LAN)

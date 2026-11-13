@@ -22,6 +22,12 @@
 //     radio    { zigbee, ble, stack, thread, sticks } phase 3c, step 2: Funk (services/homeRadio.js; zigbee null = automatic)
 //     ai       { enabled, source, lanUrl, lanApi, lanPin, gpu }  phase 3c, step 3: Lokale KI (services/ai/local.js)
 //     cameras  { enabled, nobodyHome, credRev, subnets, cameras }  phase 3c, step 4: Kameras (services/homeCameras.js)
+//     internal_dns { server, domains, primary, resolve } | null   "Namen im VPN" (services/vpnNames.js): the zones
+//              of the device names and whether the gateway resolves them for its home network (the switch
+//              "VPN-Namen im Heimnetz auflösen", off by default; one value for every gateway of a home network,
+//              kept with the DNS filter settings: services/homeDns.js `vpnNames`). Whatever the switch says, the
+//              gateway keeps questions about these zones away from the router and public resolvers. null: the
+//              server has no name service.
 //
 // What a gateway can do is read from its telemetry: `capabilities` (array)
 // or, for a gateway that does not report it, its version (≥ MIN_GATEWAY).
@@ -278,7 +284,39 @@ function configPayload(peerId) {
     cameras: part(peerId, 'cameras', () => require('./homeCameras').configPayload(peerId)),
     // status page of the gateway in its home network (capability `setup-page`; an older gateway ignores it)
     setup_page: { status: s.setupPage.status },
+    // "Namen im VPN": the zones of the device names (capability `dns-vpn-names`; an older gateway ignores it)
+    internal_dns: internalDns(peerId),
   };
+}
+
+/**
+ * `features.internal_dns`: the zones the server's DNS answers alone, its
+ * address in the VPN and the switch of the home network of this gateway
+ * (homeDns settings `vpnNames`) — the same meaning as
+ * `internalDns` of the client config (routes/api/client/peers.js). null when
+ * the name service is off (GC_DNS_ENABLED=false) or the zones cannot be read:
+ * the gateway then behaves as it did before it knew any zone.
+ */
+function internalDns(peerId) {
+  try {
+    const config = require('../../config/default');
+    if (!config.dns.enabled) return null;
+    const names = require('./vpnNames').current();
+    return { server: config.wireguard.gatewayIp, domains: names.zones.slice(), primary: names.primary, resolve: require('./homeDns').get(peerId).vpnNames === true };
+  } catch (e) {
+    logger.error({ err: e.message }, 'features.internal_dns not built — sent without zones');
+    return null;
+  }
+}
+
+/** Tell every gateway to pull its config: the zones of the device names changed (services/vpnNames.js save). */
+function notifyAllGateways() {
+  let rows = [];
+  try { rows = db().prepare("SELECT id FROM peers WHERE peer_type = 'gateway' AND enabled = 1").all(); } catch (e) {
+    logger.debug({ err: e.message }, 'gateways not listed — the next poll brings the zones');
+  }
+  for (const r of rows) notifyGateway(r.id);
+  return rows.length;
 }
 
 function validZone(tz) {
@@ -344,6 +382,8 @@ function support(tel) {
     printConvert: !!(caps && caps.includes('print-convert')),
     // setup and status page in the home network (gateway docs/setup-page.md): the switch only works there
     setupPage: !!(caps && caps.includes('setup-page')),
+    // "Namen im VPN" in the home network: the DNS filter of the gateway knows the zones (gateway docs/dns-cache.md)
+    vpnNames: !!(caps && caps.includes('dns-vpn-names')),
     version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY, minGateway3b: MIN_GATEWAY_3B, minGatewayPrint: MIN_GATEWAY_PRINT, minGatewayPrintConvert: MIN_GATEWAY_PRINT_CONVERT, minGatewayRadio: MIN_GATEWAY_RADIO, minGatewayAi: MIN_GATEWAY_AI, minGatewayCameras: MIN_GATEWAY_CAMERAS,
   };
 }
@@ -496,6 +536,71 @@ function printPart(peerId) {
   try { return require('./homePrint').overview(peerId); } catch (e) { logger.debug({ err: e.message }, 'print overview unavailable'); return null; }
 }
 
+// Reasons the gateway names for a failed question to the server's DNS (gateway src/dnsfilter-core/upstream.js,
+// routerQuery): no answer in time / the question did not get through the tunnel. Anything else is shown as it came.
+const VPN_NAMES_TIMEOUT = ['timeout'];
+const VPN_NAMES_NET = ['udp', 'tcp', 'closed'];
+
+/**
+ * What the gateway reports about "VPN-Namen im Heimnetz auflösen" (telemetry `dns.vpnNames`, gateway
+ * src/dns/dns.js + src/dns/vpnNames.js) → null (nothing to say) or the reason names are not resolved:
+ *   { kind: 'no_route' }                   the server's address is not behind the tunnel of this gateway
+ *   { kind: 'no_answer', reason, code }    the server's DNS does not answer: reason 'timeout' | 'net' | 'other'
+ *                                          ('other' carries the code of the gateway) or null (none named)
+ * Only for a gateway that forwards (forward = true) at least one zone; a single lost question is no fault:
+ * the gateway calls the way down after two in a row, or the last two questions failed with no answer since.
+ * Everything here is input of the gateway and is checked; the code is shortened and holds no control characters.
+ */
+function vpnNamesProblem(tel) {
+  const dnsTel = tel && typeof tel === 'object' && tel.dns && typeof tel.dns === 'object' && !Array.isArray(tel.dns) ? tel.dns : null;
+  const v = dnsTel && dnsTel.vpnNames && typeof dnsTel.vpnNames === 'object' && !Array.isArray(dnsTel.vpnNames) ? dnsTel.vpnNames : null;
+  if (!v || v.forward !== true || !Array.isArray(v.zones) || !v.zones.length) return null;
+  if (v.routed === false) return { kind: 'no_route' };
+  const le = v.lastError && typeof v.lastError === 'object' && !Array.isArray(v.lastError) ? v.lastError : null;
+  const errAt = le && Number.isFinite(le.at) ? le.at : null;
+  const okAt = Number.isFinite(v.lastOkAt) ? v.lastOkAt : null;
+  const failing = errAt != null && Number.isFinite(v.failures) && v.failures >= 2 && (okAt == null || okAt < errAt);
+  if (v.down !== true && !failing) return null;
+  // eslint-disable-next-line no-control-regex
+  const code = le && typeof le.code === 'string' ? le.code.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim().slice(0, 60) : '';
+  if (!code) return { kind: 'no_answer', reason: null, code: null };
+  if (VPN_NAMES_TIMEOUT.includes(code)) return { kind: 'no_answer', reason: 'timeout', code: null };
+  if (VPN_NAMES_NET.includes(code)) return { kind: 'no_answer', reason: 'net', code: null };
+  return { kind: 'no_answer', reason: 'other', code };
+}
+
+/**
+ * The row "VPN-Namen im Heimnetz auflösen" (one switch for the home network of the gateway):
+ *   { available, enabled, zones, primary, gateways: [{ id, name, self, supported, version, problem }] }
+ * available: the server has a name service. gateways: this gateway first, then the others of its home network —
+ * what each of them says stays visible per gateway. problem (vpnNamesProblem) only while the switch is on and
+ * that gateway is reachable: an offline gateway has its own display, and its last report says nothing about now.
+ */
+function vpnNamesPart(g) {
+  const d = internalDns(g.id);
+  if (!d) return { available: false, enabled: false, zones: [], primary: null, gateways: [] };
+  let ids = [g.id];
+  try { ids = [g.id, ...require('./homeNetwork').homeOf(g.id).filter((x) => x !== g.id)]; } catch (e) {
+    logger.debug({ err: e.message }, 'vpn names: home network of the gateway unavailable');
+  }
+  const gateways = [];
+  for (const id of ids) {
+    const x = id === g.id ? g : gatewayPeer(id);
+    if (!x) continue; // a disabled gateway of the home network
+    const tel = telemetryOf(x);
+    const sup = support(tel);
+    let problem = null;
+    if (d.resolve && sup.vpnNames) {
+      try {
+        const live = require('./gatewayLiveState').forPeer(x.id);
+        if (live && live.reachable) problem = vpnNamesProblem(tel);
+      } catch (e) { logger.debug({ err: e.message }, 'vpn names: live state unavailable'); }
+    }
+    gateways.push({ id: x.id, name: x.name, self: x.id === g.id, supported: sup.vpnNames, version: sup.version, problem });
+  }
+  return { available: true, enabled: d.resolve, zones: d.domains, primary: d.primary, gateways };
+}
+
 /** Everything the card "Funktionen dieses Gateways" shows. */
 function overview(peerId) {
   const g = needGateway(peerId);
@@ -562,6 +667,7 @@ function overview(peerId) {
     ai: aiPart(g.id),
     cameras: camerasPart(g.id),
     timezone: { tz, utc: tz === 'UTC' || tz === 'Etc/UTC' },
+    vpnNames: vpnNamesPart(g),
     home,
   };
 }
@@ -569,5 +675,5 @@ function overview(peerId) {
 module.exports = {
   DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, MIN_GATEWAY_PRINT, MIN_GATEWAY_PRINT_CONVERT, MIN_GATEWAY_RADIO, MIN_GATEWAY_AI, MIN_GATEWAY_CAMERAS, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
   normalize, get, set, applyPatch, configPayload, support, overview, enabledKeys, CHIP_KEYS, memoryEstimate, boardOf, speedLimit, zigbeeOf,
-  needGateway, telemetryOf, gatewayPeer, notifyGateway, publicIpv4,
+  needGateway, telemetryOf, gatewayPeer, notifyGateway, notifyAllGateways, internalDns, vpnNamesProblem, publicIpv4,
 };

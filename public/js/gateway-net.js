@@ -1168,6 +1168,52 @@
     return t('gwn.feat.cameras_gb', { n: nf(n / 1e9, n >= 1e10 ? 0 : 1) });
   }
 
+  /** The gateway reports that it cannot ask the server for the names (overview vpnNames.gateways[].problem): what and why. */
+  function vpnNamesProblemText(p) {
+    if (p.kind === 'no_route') return t('gwn.feat.vpnnames_noroute');
+    const why = p.reason === 'timeout' ? t('gwn.feat.vpnnames_why_timeout') : p.reason === 'net' ? t('gwn.feat.vpnnames_why_net')
+      : p.reason === 'other' && p.code ? t('gwn.feat.vpnnames_why_other', { code: p.code }) : '';
+    return t('gwn.feat.vpnnames_noanswer') + (why ? ' ' + why : '');
+  }
+
+  /**
+   * The row "VPN-Namen im Heimnetz auflösen" (group "Für das ganze Heimnetz": one switch for every gateway of the
+   * home network, stored with the DNS filter settings). What a single gateway says stays per gateway, with its name
+   * when the home network has several.
+   */
+  function vpnNamesRow(id, d) {
+    const v = d.vpnNames;
+    const name = t('gwn.feat.vpnnames');
+    const sw = U.switchBtn(!!v.enabled, name, 'gwn-f-vpnnames', () => {
+      const next = sw.getAttribute('aria-checked') !== 'true';
+      sw.disabled = true;
+      sw.setAttribute('aria-checked', next ? 'true' : 'false');
+      U.api('PUT', url(id, '/dns'), { vpnNames: next }).then(() => {
+        U.toast(t(next ? 'gwn.feat.on_done' : 'gwn.feat.off_done', { name }));
+        return reloadFeatures(id);
+      }).catch((e) => {
+        sw.disabled = false;
+        sw.setAttribute('aria-checked', next ? 'false' : 'true');
+        D.alert({ message: errText(e), danger: true });
+      });
+    });
+    const several = v.gateways.length > 1;
+    const hint = (attr, value, ico, text, gw) => h('span', { class: 'gwn-hint', [attr]: value }, [U.icon(ico, 14),
+      gw && several ? h('span', null, [h('strong', { text: gw.name }), ': ', text]) : text]);
+    const extra = [];
+    if (!v.available) extra.push(hint('data-vpnnames-noservice', '', 'info', t('gwn.feat.vpnnames_noservice')));
+    else {
+      v.gateways.filter((x) => !x.supported).forEach((x) => extra.push(hint('data-vpnnames-old', String(x.id), 'info',
+        x.version ? t('gwn.feat.vpnnames_old', { version: x.version }) : t('gwn.feat.vpnnames_unknown'), x)));
+      if (d.dns && !d.dns.enabled) extra.push(hint('data-vpnnames-nodns', '', 'info', t('gwn.feat.vpnnames_nodns')));
+      else if (v.enabled) v.gateways.filter((x) => x.problem).forEach((x) => extra.push(hint('data-vpnnames-problem', x.problem.kind === 'no_route' ? 'no_route' : 'no_answer', 'warn', vpnNamesProblemText(x.problem), x)));
+    }
+    if (v.available && v.primary) {
+      extra.push(h('span', { class: 'gwe-d', 'data-vpnnames-zone': '' }, [t(v.enabled ? 'gwn.feat.vpnnames_on' : 'gwn.feat.vpnnames_off'), ' ', h('code', { text: t('gwn.feat.vpnnames_example', { zone: v.primary }) })]));
+    }
+    return featRow(name, t('gwn.feat.vpnnames_d'), sw, extra, 'vpnnames');
+  }
+
   /** Every switch row of the gateway by its data-feature key (same API and behaviour as before: putFeatures). */
   function featureRows(g, d) {
     const rows = new Map();
@@ -1256,6 +1302,9 @@
       }
       rows.set('setuppage', featRow(t('gwn.feat.setuppage'), t('gwn.feat.setuppage_d'), swPage, extra, 'setuppage'));
     }
+    // "VPN-Namen im Heimnetz auflösen": the DNS filter of the gateway asks the server for the names of the VPN
+    // devices (features.internal_dns). Hints, never a ban: the switch stays usable when something is missing.
+    if (d.vpnNames) rows.set('vpnnames', vpnNamesRow(id, d));
     // DNS filter, home cache, local time (phase 3b, gateway-home.js)
     if (window.GCGatewayHome) {
       window.GCGatewayHome.featureRows(id, d, (gid) => reloadFeatures(gid)).forEach((r) => rows.set(r.getAttribute('data-feature'), r));

@@ -375,6 +375,56 @@ module.exports = (ctx) => {
       const cfg = await (await page.request.get(BASE + '/api/v1/gateway/config', { headers: { Authorization: 'Bearer ' + token4 } })).json();
       step('config pull: features.setup_page.status = false', cfg.features && cfg.features.setup_page && cfg.features.setup_page.status === false);
       await api(page, 'PUT', `/api/v1/gateways/${GW.home}/features`, { setupPage: { status: true } });
+      // "VPN-Namen im Heimnetz auflösen": the gateway reports that the server's DNS does not answer → a warning at the switch
+      const beatNames = (vpnNames) => page.request.post(BASE + '/api/v1/gateway/heartbeat', { headers: { Authorization: 'Bearer ' + token4 },
+        data: { http_proxy_healthy: true, tcp_listeners: [], wg_handshake_age_s: 5, uptime_s: 60, hostname: 'nas',
+          telemetry: { gateway_version: '1.40.0', capabilities: ['netwatch', 'inetq', 'presence', 'ups', 'setup-page', 'dns', 'dns-vpn-names'], lan_ip: '192.168.178.20',
+            dns: { state: 'running', vpnNames } } } });
+      const namesTel = { zones: ['gc.internal'], primary: 'gc.internal', forward: true, routed: true, lastOkAt: null, lastError: { at: Date.now(), code: 'timeout' }, failures: 2, down: true };
+      await beatNames(namesTel);
+      await api(page, 'PUT', `/api/v1/gateways/${GW.home}/dns`, { enabled: true, vpnNames: true });
+      await page.goto(BASE + `/gateways#gw/${GW.home}/features`);
+      await page.reload();
+      await until(page, () => !!document.querySelector('[data-fgroup="wide"] [data-feature="vpnnames"] [data-vpnnames-problem]'), null, 12000);
+      const texts = { de: require('../../../src/i18n/de.json'), en: require('../../../src/i18n/en.json') };
+      const measure = () => page.evaluate(() => {
+        const r = document.querySelector('[data-fgroup="wide"] [data-feature="vpnnames"]');
+        const sw = r && r.querySelector('[data-fk="gwn-f-vpnnames"]');
+        const hints = r ? [...r.querySelectorAll('[data-vpnnames-problem]')] : [];
+        return { lang: document.documentElement.lang === 'en' ? 'en' : 'de', on: !!sw && sw.getAttribute('aria-checked') === 'true', usable: !!sw && !sw.disabled,
+          hints: hints.map((n) => ({ kind: n.getAttribute('data-vpnnames-problem'), text: n.textContent, icon: !!n.querySelector('svg') })) };
+      });
+      const seen = await measure();
+      const tx = texts[seen.lang];
+      step('the server\'s DNS does not answer the gateway → a warning with the reason at the switch, which stays usable',
+        seen.on && seen.usable && seen.hints.length === 1 && seen.hints[0].kind === 'no_answer' && seen.hints[0].icon
+          && seen.hints[0].text === tx['gwn.feat.vpnnames_noanswer'] + ' ' + tx['gwn.feat.vpnnames_why_timeout'], JSON.stringify(seen));
+      await page.$eval('[data-feature="vpnnames"]', (n) => n.scrollIntoView({ block: 'center' }));
+      await shot(page, 'gwn-vpnnames-problem-light', false);
+      await theme(page, 'dark');
+      await shot(page, 'gwn-vpnnames-problem-dark', false);
+      await theme(page, 'light');
+      // the server's address is not behind the tunnel: the other case the gateway reports
+      await beatNames({ ...namesTel, routed: false, down: false, lastError: null, failures: 0 });
+      await page.reload();
+      await until(page, () => !!document.querySelector('[data-feature="vpnnames"] [data-vpnnames-problem="no_route"]'), null, 12000);
+      const seenRoute = await measure();
+      step('the server\'s address is not behind the tunnel → the warning says so',
+        seenRoute.hints.length === 1 && seenRoute.hints[0].kind === 'no_route' && seenRoute.hints[0].text === tx['gwn.feat.vpnnames_noroute'], JSON.stringify(seenRoute));
+      // the server answers again → no warning; switched off → none either
+      await beatNames({ ...namesTel, lastOkAt: Date.now(), lastError: null, failures: 0, down: false });
+      await page.reload();
+      await until(page, () => !!document.querySelector('[data-feature="vpnnames"] [data-vpnnames-zone]'), null, 12000);
+      const seenOk = await measure();
+      step('the server answers again → no warning', seenOk.on && seenOk.hints.length === 0, JSON.stringify(seenOk));
+      await beatNames(namesTel);
+      await api(page, 'PUT', `/api/v1/gateways/${GW.home}/dns`, { vpnNames: false });
+      await page.reload();
+      await until(page, () => !!document.querySelector('[data-feature="vpnnames"] [data-vpnnames-zone]'), null, 12000);
+      const seenOff = await measure();
+      step('switched off → no warning, whatever the gateway reports', !seenOff.on && seenOff.hints.length === 0, JSON.stringify(seenOff));
+      await api(page, 'PUT', `/api/v1/gateways/${GW.home}/dns`, { enabled: false });
+      await beat(token4);
       // an older gateway (no capability): the switch is greyed out with the hint
       await page.goto(BASE + `/gateways#gw/${GW.nas}/features`);
       step('older gateway: the switch is greyed out with a hint', await until(page, () => {
@@ -384,6 +434,22 @@ module.exports = (ctx) => {
       }, null, 12000));
       await page.$eval('[data-feature="setuppage"]', (n) => n.scrollIntoView({ block: 'center' }));
       await shot(page, 'gwn-setuppage-old-light', false);
+      // "VPN-Namen im Heimnetz auflösen" on the same older gateway: a hint, never a ban — the switch is off and usable
+      step('older gateway: "VPN-Namen im Heimnetz auflösen" is off, usable and carries a hint', await until(page, () => {
+        const r = document.querySelector('[data-fgroup="wide"] [data-feature="vpnnames"]');
+        const sw = r && r.querySelector('[data-fk="gwn-f-vpnnames"]');
+        return sw && !sw.disabled && sw.getAttribute('aria-checked') === 'false' && !!r.querySelector('.gwn-hint');
+      }, null, 12000));
+      await page.$eval('[data-feature="vpnnames"]', (n) => n.scrollIntoView({ block: 'center' }));
+      await shot(page, 'gwn-vpnnames-light', false);
+      await page.click('[data-fk="gwn-f-vpnnames"]');
+      await until(page, () => { const sw = document.querySelector('[data-fk="gwn-f-vpnnames"]'); return sw && sw.getAttribute('aria-checked') === 'true' && !sw.disabled; });
+      const featNames = await api(page, 'GET', `/api/v1/gateways/${GW.nas}/features`);
+      step('switched on → stored for the home network of this gateway', featNames.body.gateway.vpnNames.enabled === true);
+      await theme(page, 'dark');
+      await shot(page, 'gwn-vpnnames-on-dark', false);
+      await theme(page, 'light');
+      await api(page, 'PUT', `/api/v1/gateways/${GW.nas}/dns`, { vpnNames: false });
       ctx.allow((p) => p.kind === 'console' && /403|400/.test(p.text));
 
       // ── Peers page: devices only — no gateway checkbox and no gateway hint

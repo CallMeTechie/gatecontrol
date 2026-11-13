@@ -40,6 +40,7 @@
     'feat.presence': { de: '05-funktionen.md#anwesenheit', en: '05-features.md#presence' },
     'feat.ups': { de: '05-funktionen.md#usv-status', en: '05-features.md#ups-status' },
     'feat.dns': { de: '05-funktionen.md#dns-filter', en: '05-features.md#dns-filter' },
+    'feat.vpnnames': { de: '05-funktionen.md#vpn-namen-im-heimnetz', en: '05-features.md#vpn-names-in-the-home-network' },
     'feat.cache': { de: '05-funktionen.md#zwischenspeicher', en: '05-features.md#home-cache' },
     'feat.print': { de: '05-funktionen.md#drucken--scannen', en: '05-features.md#print--scan' },
     'feat.radio': { de: '05-funktionen.md#funk-zigbee-bluetooth-thread', en: '05-features.md#radio-zigbee-bluetooth-thread' },

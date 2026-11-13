@@ -173,8 +173,9 @@ function check(baseRaw, subRaw) {
 }
 
 /**
- * Save a checked choice and put it into effect: dnsmasq.conf, the hosts file
- * and the open app streams (the client config names the zones).
+ * Save a checked choice and put it into effect: dnsmasq.conf, the hosts file,
+ * the open app streams (the client config names the zones) and the gateways
+ * (`features.internal_dns` of their config pull).
  * @returns {{ ok: true, restarted: boolean } & ReturnType<typeof current>}
  */
 function save(baseRaw, subRaw) {
@@ -184,6 +185,9 @@ function save(baseRaw, subRaw) {
   settings.set(KEY_BASE, base);
   if (base) settings.set(KEY_SUB, norm(subRaw));
   const restarted = apply();
+  // the gateways get the zones in `features.internal_dns` of their config pull (part of its hash): told
+  // to pull now — one that is not reachable takes them over with its next poll
+  try { require('./gatewayFeatures').notifyAllGateways(); } catch (err) { log().debug({ err: err.message }, 'gateways not told about the zones'); }
   return Object.assign({ ok: true, restarted }, current());
 }
 

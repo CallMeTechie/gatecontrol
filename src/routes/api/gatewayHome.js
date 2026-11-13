@@ -8,7 +8,7 @@
 // (requireAdminSession).
 //
 //   GET    /:id/dns                        state, today's numbers, profiles, router check, catalogue
-//   PUT    /:id/dns                        { enabled?, logQueries?, upstream?, allowAll? }
+//   PUT    /:id/dns                        { enabled?, logQueries?, upstream?, allowAll?, vpnNames? }
 //   POST   /:id/dns/profiles               { name, lists?, safeSearch?, allow?, deny?, schedules?, users?, devices? }
 //   PUT    /:id/dns/profiles/:pid          the same fields
 //   DELETE /:id/dns/profiles/:pid          not the default profile
