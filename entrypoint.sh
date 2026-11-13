@@ -245,6 +245,11 @@ echo "» Generating dnsmasq config (split-horizon for ${GC_API_HOST} → ${GC_WG
   # blocks poisoning via spoofed upstream answers). domain-needed drops
   # name-only (un-qualified) lookups; bogus-priv drops reverse lookups of
   # RFC1918 addresses.
+  # GC_DNS_DOMAIN is the zone that always exists (portal, internal routes,
+  # stored addresses). A zone chosen in Settings → VPN & Netzwerk ("Namen im
+  # VPN", <sub>.<own domain>) is NOT written here: the server process adds it
+  # in a block of its own after its start (services/vpnNames.js) and restarts
+  # dnsmasq when the block is new.
   echo "local=/${GC_DNS_DOMAIN}/"
   echo "domain=${GC_DNS_DOMAIN}"
   echo "domain-needed"

@@ -1299,6 +1299,13 @@ async function restoreBackup(backup) {
     logger.warn({ error: err.message }, 'Could not mark hostnames stale after restore');
   }
 
+  // The restored settings may name another zone for the device names.
+  try {
+    require('./vpnNames').apply();
+  } catch (err) {
+    logger.warn({ error: err.message }, 'Could not apply the zone of the device names after restore');
+  }
+
   try {
     await routesService.syncToCaddy();
   } catch (err) {

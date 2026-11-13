@@ -283,3 +283,36 @@ experts with their own CA.
 **Check:** `tar tzf /root/gatecontrol-*.tar.gz | grep -c data/` shows a number greater than 0.
 
 Continue with [chapter 3: Setting up a gateway](03-gateway-setup.md).
+
+## 2.11 Names in the VPN
+
+Every VPN device can get a name. You then reach your office computer, for
+example, as `laptop-buero.gc.internal` instead of an address like `10.8.0.14`.
+The names only exist in the VPN.
+
+If you have entered a domain of your own under “Services” → “Domains / Routes”,
+the names can hang on it:
+
+1. Open “Settings” → “VPN & network” → “Names in the VPN”.
+2. Choose your domain under “Domain”.
+3. Leave the suggestion `vpn` under “Subdomain” or enter another one. Below
+   you see at once what a device will be called, for example
+   `laptop-buero.vpn.example.com`.
+4. Click “Save” at the bottom.
+
+The previous name with `gc.internal` keeps working. You do not have to enter
+anything at your domain provider, and nobody can resolve these names from
+outside. If the page says that the subdomain already is a host or a route, use
+the free subdomain it suggests.
+
+You see and change the name of a device under “Devices” → “Peers / Clients”:
+it is on the card of the device, with a button to copy it. A device without a
+name offers “Give a name”. For a gateway the name is in the head of its page;
+you change it there under “More” → “Change name and group …”.
+
+The Windows apps need an update for the new spelling. Until then keep using
+the name with `gc.internal` on Windows computers.
+
+**Check:** Under “Settings” → “VPN & network” → “State of the names” the row
+“Service” says “running”. On a device in the VPN,
+`ping laptop-buero.vpn.example.com` answers (with the name of one of your devices).

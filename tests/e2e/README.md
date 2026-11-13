@@ -164,6 +164,17 @@ scenarios/29-peers.js   /peers (docs/feature-peers-page.md): nur Geräte (?type=
                         Seitenleiste mit „Wartung“, untere Leiste, 390 px mit
                         Filter-Sheet. Eigene Geräte + Gateway in der DB, alles
                         andere für den Lauf aus (Community-Lizenz), danach zurück
+scenarios/31-vpn-names.js „Namen im VPN“ (docs/feature-vpn-names.md): /dns leitet in die
+                        Einstellungen, Menüpunkt weg, Karte ohne Lizenz gesperrt,
+                        „Zustand der Namen“. Mit Lizenz in einer EIGENEN App
+                        (app-licensed.js, eigener Prozess, eigenes Datenverzeichnis):
+                        die vier Zustände der Karte (Standard, eigene Domain,
+                        Kollision, Domain entfernt), Speicherleiste, dnsmasq.conf und
+                        Hosts-Datei, Name auf Karte/Zeile mit Kopieren und Herkunft,
+                        „Namen vergeben“, Dialogfeld (ungültig, reserviert, vergeben,
+                        Ablehnung des Servers am Feld), Filter „veraltet“, Gateway
+                        (Karte, Kopfzeile, „Mehr“), Hinweis in „Domain entfernen“,
+                        390 px, dunkel
 scenarios/30-gateway-docs.js Gateway-Detail › „Mehr“ › „Versionen“ und „Handbuch“
                         (#gw/<id>/versions, …/handbook): Menü-Links, „Was ist neu?“ im Zustand
                         und in „zu alt“-Hinweisen, echte /releases ohne GitHub („nicht
@@ -235,3 +246,9 @@ Alles, was zum Anlegen eine Pro-Funktion braucht, macht `seed.js` — dort wirkt
 `license._overrideForTest`, weil es derselbe Prozess ist. Die Szenarien lesen
 danach und kommen ohne aus. Ein neues Szenario, das schreibt, muss das
 berücksichtigen (oder das Seed erweitern).
+
+Muss ein Szenario eine Pro-Funktion der Oberfläche selbst sehen, startet es eine
+eigene App mit `tests/e2e/app-licensed.js` (eigener Prozess, eigenes leeres
+Datenverzeichnis, eigener Port; `E2E_FEATURES=internal_dns,vpn_peers=-1`) und
+beendet sie wieder — so macht es `31-vpn-names.js`. Die App der CI bleibt dabei
+unverändert bei der Community-Ausstattung.

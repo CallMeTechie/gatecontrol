@@ -525,6 +525,36 @@ router.get('/:id/qr', async (req, res) => {
 });
 
 /**
+ * Why a device name was refused, in the admin's words, with a suggestion
+ * where there is one. → { status, body } | null (not a refusal: a real error)
+ *   code: reserved | taken | route | invalid — the dialogs show `error`, the
+ *   suggestion is also in `suggestion` so it can be taken over with a click.
+ */
+function hostnameRefusal(err, raw, t) {
+  const dnsService = require('../../services/dns');
+  const msg = (err && err.message) || '';
+  const name = String(raw == null ? '' : raw).trim();
+  const body = (code, error, suggestion) => ({ status: code === 'taken' || code === 'route' ? 409 : 400,
+    body: { ok: false, code, error, suggestion: suggestion || null, fields: { hostname: error } } });
+  if (err instanceof dnsService.HostnameUnavailableError) {
+    const params = { name: err.hostname, owner: err.owner || '', fqdn: err.fqdn || '', suggestion: err.suggestion || '' };
+    if (err.code === 'ERR_HOSTNAME_ROUTE') {
+      return body('route', t(err.suggestion ? 'error.dns.hostname_route_suggest' : 'error.dns.hostname_route', params), err.suggestion);
+    }
+    return body('taken', t(err.suggestion ? 'error.dns.hostname_taken_suggest' : 'error.dns.hostname_taken', params), err.suggestion);
+  }
+  if (msg.includes('reserved')) {
+    const suggestion = dnsService.suggestHostname(name);
+    return body('reserved', t(suggestion ? 'error.dns.hostname_reserved_suggest' : 'error.dns.hostname_reserved', { name: name.toLowerCase(), suggestion: suggestion || '' }), suggestion);
+  }
+  if (msg.includes('invalid characters') || msg.includes('empty') || msg.includes('too long') || msg.includes('exceeds') || msg.includes('disallowed byte') || msg.includes('must be a string')) {
+    const suggestion = dnsService.suggestHostname(name);
+    return body('invalid', t(suggestion ? 'error.dns.hostname_invalid_suggest' : 'error.dns.hostname_invalid', { suggestion: suggestion || '' }), suggestion);
+  }
+  return null;
+}
+
+/**
  * PATCH /api/peers/:id/hostname — Admin-set internal DNS hostname.
  * License-gated via 'internal_dns'. Empty/null clears the hostname.
  */
@@ -543,13 +573,8 @@ router.patch('/:id/hostname', requireFeature('internal_dns'), (req, res) => {
     const result = peers.setHostname(peer.id, raw || null, 'admin');
     res.json({ ok: true, peer: stripPeer(peers.getById(peer.id)), assigned: result.assigned, changed: result.changed });
   } catch (err) {
-    const msg = err.message || '';
-    if (msg.includes('reserved')) {
-      return res.status(400).json({ ok: false, error: req.t('error.dns.hostname_reserved') });
-    }
-    if (msg.includes('invalid characters') || msg.includes('empty') || msg.includes('too long') || msg.includes('disallowed byte')) {
-      return res.status(400).json({ ok: false, error: req.t('error.dns.hostname_invalid') });
-    }
+    const refused = hostnameRefusal(err, req.body && req.body.hostname, req.t);
+    if (refused) return res.status(refused.status).json(refused.body);
     logger.error({ error: err.message }, 'Failed to set peer hostname');
     res.status(500).json({ ok: false, error: req.t('common.error') });
   }

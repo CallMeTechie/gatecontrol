@@ -32,6 +32,15 @@ function checkDomainPolicy(domain, { currentDomain = null, routeType = 'http' } 
   const ph = portalHost();
   if ((mh && host === mh) || (ph && host === ph)) return { error: 'domain_collision' };
 
+  // The zone of the device names ("Namen im VPN", services/vpnNames.js)
+  // belongs to the devices alone: the server answers it by itself, a route
+  // or host in it would be shadowed by — or shadow — a device. And a name a
+  // device already has in the legacy zone is not free for a route either.
+  const vpnNames = require('./vpnNames');
+  if (vpnNames.insideDeviceZone(host)) return { error: 'device_zone', zone: vpnNames.current().primary };
+  const device = vpnNames.deviceAt(host);
+  if (device) return { error: 'device_name', device };
+
   // Verified-only for public TLDs; carve-out for non-public.
   if (isPublicDomain(host)) {
     const base = baseDomain(host);

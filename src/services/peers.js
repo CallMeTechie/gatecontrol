@@ -401,8 +401,10 @@ async function toggle(id) {
  *  - source='agent': only writes if the peer currently has no hostname
  *    OR the existing hostname_source is 'agent' or 'stale'. Sticky-admin
  *    means agent auto-reports don't clobber an admin-curated value.
- *  - On hostname collision, auto-appends -2, -3, … inside a transaction
- *    so concurrent agents can't both claim the same suffix.
+ *  - On a collision (another device, a route or the portal under the same
+ *    name): source='agent' auto-appends -2, -3, … inside a transaction so
+ *    concurrent agents can't both claim the same suffix; source='admin'
+ *    throws dns.HostnameUnavailableError with a suggestion.
  *  - Logs an activity event on change (old → new) for incident response.
  *  - Triggers a debounced DNS rebuild.
  *
@@ -458,13 +460,22 @@ function setHostname(peerId, rawHostname, source) {
     return { peer, assigned: previous, changed: false };
   }
 
+  // A name the admin gives is never changed silently: a taken one is refused
+  // with a suggestion (dns.HostnameUnavailableError). A name the device
+  // reports itself gets -2, -3, … appended as before.
   const assigned = dns.reserveUniqueHostname(normalized, peerId, (finalHostname) => {
     db.prepare(`
       UPDATE peers SET hostname = ?, hostname_source = ?,
         hostname_reported_at = datetime('now'), updated_at = datetime('now')
       WHERE id = ?
     `).run(finalHostname, source, peerId);
-  });
+  }, { onClash: source === 'admin' ? 'reject' : 'suffix' });
+
+  // The device reports a taken name on every heartbeat and gets the same
+  // suffix again: nothing changed, nothing to log or rebuild.
+  if (previous && previous.toLowerCase() === assigned && previousSource === source) {
+    return { peer, assigned: previous, changed: false };
+  }
 
   activity.log('peer_hostname_changed',
     `Peer "${peer.name}" hostname "${previous || '∅'}" → "${assigned}"`,

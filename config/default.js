@@ -97,6 +97,8 @@ const config = {
   // process and reloaded into dnsmasq via SIGHUP.
   dns: {
     enabled: env('GC_DNS_ENABLED', 'true') !== 'false',
+    // The zone that always exists. A second, primary zone for the device
+    // names can be chosen in the settings (services/vpnNames.js).
     domain: env('GC_DNS_DOMAIN', 'gc.internal'),
     hostsFile: env('GC_DNS_HOSTS_FILE', '/data/dns/peers.hosts'),
     // Debounce window for coalescing rapid peer mutations into a single

@@ -292,7 +292,10 @@ var DT = function (k, p) { return D.t(k, p); };
   function expiringSoon(p) { var d = expiryDays(p); return d != null && d <= 7; }
   function hasSupport(p) { return (Number(p.support_bundles_unviewed) || 0) > 0; }
   function longOffline(p) { var ms = handshakeMs(p); return p.enabled && !p.isOnline && (!ms || Date.now() - ms > 7 * 86400000); }
-  var HINT_KEYS = ['update', 'outdated', 'expiring', 'support', 'stale'];
+  // 'oldname': the name in the VPN comes from a restored backup and the device has
+  // not confirmed it since ("veraltet" — Einstellungen › VPN & Netzwerk links here)
+  function oldName(p) { return !!p.hostname && p.hostname_source === 'stale'; }
+  var HINT_KEYS = ['update', 'outdated', 'expiring', 'support', 'stale', 'oldname'];
   function hint(k, p) {
     switch (k) {
       case 'update': return needsUpdate(p);
@@ -300,6 +303,7 @@ var DT = function (k, p) { return D.t(k, p); };
       case 'expiring': return expiringSoon(p);
       case 'support': return hasSupport(p);
       case 'stale': return longOffline(p);
+      case 'oldname': return oldName(p);
       default: return false;
     }
   }
@@ -548,6 +552,17 @@ var DT = function (k, p) { return D.t(k, p); };
   }
 
   // ─── Cards ───────────────────────────────────────────────
+  // Name im VPN (vpn-names.js): the full name with a copy button and where it
+  // comes from; a device without one offers to give one.
+  var VN = window.GCVpnNames || null;
+  function nameLines(p) {
+    if (!VN) return null;
+    var nodes = VN.line(p, { onAssign: function (d) { showEditModal(d.id, 'hostname'); } });
+    return nodes.length ? h('div', { class: 'pl-vn' }, nodes) : null;
+  }
+  function nameCell(p) {
+    return VN && p.hostname ? h('div', { class: 'pl-vn pl-vn-row' }, VN.line(p, { noSource: p.hostname_source !== 'stale' })) : null;
+  }
   function grid(list) {
     return h('div', { class: 'unit-grid pl-grid' + (selected.size ? ' pl-selecting' : ''), id: 'pl-grid' }, list.map(card));
   }
@@ -563,6 +578,7 @@ var DT = function (k, p) { return D.t(k, p); };
         h('div', { class: 'pl-ttl' }, [h('div', { class: 'pl-name' }, [nameLink(p), supportBadge(p)]), h('div', { class: 'pl-sub', text: subLine(p) || '—' })]),
         h('span', { class: 'pl-st' }, [statusTag(p)]),
       ]),
+      nameLines(p),
       h('div', { class: 'pl-chips' }, chips),
       h('div', { class: 'pl-rows' }, [
         row(L('pl.row_app'), appLabel(p)),
@@ -593,6 +609,7 @@ var DT = function (k, p) { return D.t(k, p); };
         h('td', {}, [h('div', { class: 'pl-dev' }, [avatar(p, 16), h('div', { class: 'pl-ttl' }, [
           h('div', { class: 'pl-name' }, [nameLink(p), supportBadge(p), expiryTag(p)]),
           h('div', { class: 'pl-sub', text: subLine(p) }),
+          nameCell(p),
         ])])]),
         h('td', {}, [h('div', { class: 'pl-stc' }, [statusTag(p), h('span', { class: 'pl-sub', text: ago(handshakeMs(p)) })])]),
         h('td', { class: 'pl-c-app' }, [h('div', { class: 'pl-stc' }, [h('span', { class: 'pl-app', text: appLabel(p) })].concat(appExtras(p)))]),
@@ -956,8 +973,7 @@ var DT = function (k, p) { return D.t(k, p); };
     document.getElementById('add-peer-expires').value = '';
     document.getElementById('add-peer-expires-date').value = '';
     document.getElementById('add-peer-expires-date').style.display = 'none';
-    var addHostnameEl = document.getElementById('add-peer-hostname');
-    if (addHostnameEl) addHostnameEl.value = '';
+    if (addNameField) addNameField.set(null);
     hideError('add-peer-error');
     clearFieldErrors();
     renderGroupDropdowns();
@@ -989,23 +1005,18 @@ var DT = function (k, p) { return D.t(k, p); };
         clearFieldErrors();
 
         // Hostname is a separate, license-gated endpoint. Only call when the
-        // field is visible AND the admin entered a value.
-        var addHostnameInput = document.getElementById('add-peer-hostname');
-        var addHostnameVal = addHostnameInput ? addHostnameInput.value.trim() : '';
-        if (addHostnameInput && addHostnameVal && data.peer && data.peer.id) {
-          try {
-            var hnRes = await api.patch('/api/peers/' + data.peer.id + '/hostname', { hostname: addHostnameVal });
-            if (!hnRes.ok) {
-              showError('add-peer-error', hnRes.error || 'Hostname update failed');
-              // Peer is created — don't roll back, just surface the hostname error.
-              loadPeers();
-              loadGroups();
-              return;
-            }
-          } catch (hnErr) {
-            showError('add-peer-error', hnErr.message);
-            loadPeers();
+        // field is visible AND the admin entered a value. The device exists by
+        // now: a name the server refuses (the live check knows the rules and
+        // the other devices, not the routes) is corrected in "Bearbeiten".
+        var addHostnameVal = addNameField ? addNameField.value() : '';
+        if (addHostnameVal && data.peer && data.peer.id) {
+          var hnRes = await api.patch('/api/peers/' + data.peer.id + '/hostname', { hostname: addHostnameVal }).catch(function (e) { return (e && e.data) || { ok: false, error: e.message }; });
+          if (!hnRes.ok) {
+            closeModal('modal-add-peer');
+            await loadPeers();
             loadGroups();
+            await showEditModal(data.peer.id, 'hostname');
+            if (editNameField) { editNameField.input.value = addHostnameVal; editNameField.serverError(hnRes); }
             return;
           }
         }
@@ -1050,7 +1061,7 @@ var DT = function (k, p) { return D.t(k, p); };
   }
 
   var editingPeerId = null;
-  async function showEditModal(wanted) {
+  async function showEditModal(wanted, focusField) {
     var peer = allPeers.find(function(p) { return String(p.id) === String(wanted); });
     if (!peer) return;
     var id = peer.id;
@@ -1125,41 +1136,33 @@ var DT = function (k, p) { return D.t(k, p); };
     var editDns = document.getElementById('edit-peer-dns');
     if (editDns) editDns.value = peer.dns || '';
 
-    var editHostname = document.getElementById('edit-peer-hostname');
-    if (editHostname) {
-      editHostname.value = peer.hostname || '';
-      var badge = document.getElementById('edit-peer-hostname-badge');
-      if (badge) {
-        if (peer.hostname_source === 'admin') {
-          badge.textContent = GC.t['peers.hostname_source_admin'] || 'manuell';
-          badge.className = 'badge badge-sm badge-info';
-          badge.style.display = '';
-        } else if (peer.hostname_source === 'agent') {
-          badge.textContent = GC.t['peers.hostname_source_agent'] || 'auto';
-          badge.className = 'badge badge-sm badge-success';
-          badge.style.display = '';
-        } else if (peer.hostname_source === 'stale') {
-          badge.textContent = GC.t['peers.hostname_source_stale'] || 'stale';
-          badge.className = 'badge badge-sm badge-warning';
-          badge.style.display = '';
-        } else {
-          badge.style.display = 'none';
-        }
-      }
-    }
-
-    // Access windows (Pro: access_windows — section only present when the flag is on)
-    var accessSection = document.getElementById('access-windows-section');
-    if (accessSection) {
-      accessSection.setAttribute('data-target-id', String(id));
-      loadAccessRules(id);
-    }
+    if (editNameField) editNameField.set(peer);
 
     hideError('edit-peer-error');
     clearFieldErrors();
     openModal('modal-edit-peer');
-    document.getElementById('edit-peer-name').focus();
+    // "Namen vergeben" on a card leads straight to the field
+    var first = focusField === 'hostname' && editNameField ? editNameField.input : document.getElementById('edit-peer-name');
+    first.focus();
   }
+
+  // Name im VPN in both dialogs (vpn-names.js): live check against the rules,
+  // the reserved names and the names of the other devices; the server's answer
+  // (PATCH …/hostname) is shown at the field with its suggestion.
+  function nameField(prefix, saveBtnId) {
+    var input = document.getElementById(prefix + '-peer-hostname');
+    if (!input || !VN) return null;
+    return VN.field({
+      input: input,
+      suffix: document.getElementById(prefix + '-peer-hostname-suffix'),
+      hint: document.getElementById(prefix + '-peer-hostname-hint'),
+      badge: document.getElementById(prefix + '-peer-hostname-badge'),
+      saveBtn: document.getElementById(saveBtnId),
+      others: function () { return allPeers; },
+    });
+  }
+  var editNameField = nameField('edit', 'btn-edit-peer-submit');
+  var addNameField = nameField('add', 'btn-add-peer-submit');
 
   document.getElementById('btn-edit-peer-submit').addEventListener('click', async function() {
     var btn = this;
@@ -1211,17 +1214,12 @@ var DT = function (k, p) { return D.t(k, p); };
 
       // Hostname is a separate endpoint (license-gated). Only call when the
       // field is visible AND the value actually changed.
-      var hostnameInput = document.getElementById('edit-peer-hostname');
-      if (hostnameInput) {
-        var currentPeer = allPeers.find(function(p) { return String(p.id) === String(id); }) || {};
-        var newHostname = hostnameInput.value.trim();
-        var prevHostname = currentPeer.hostname || '';
-        if (newHostname !== prevHostname) {
-          var hnRes = await api.patch('/api/peers/' + id + '/hostname', { hostname: newHostname });
-          if (!hnRes.ok) {
-            showError('edit-peer-error', hnRes.error || 'Hostname update failed');
-            return;
-          }
+      if (editNameField && editNameField.changed()) {
+        var hnRes = await api.patch('/api/peers/' + id + '/hostname', { hostname: editNameField.value() }).catch(function (e) { return (e && e.data) || { ok: false, error: e.message }; });
+        if (!hnRes.ok) {
+          editNameField.serverError(hnRes);
+          loadPeers();
+          return;
         }
       }
 

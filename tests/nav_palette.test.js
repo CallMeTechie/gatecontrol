@@ -60,7 +60,7 @@ describe('sidebar groups (§8, regrouped: docs/feature-peers-page.md)', () => {
     assert.deepEqual(g.map((x) => x.hrefs), [
       ['/dashboard'],
       ['/peers', '/gateways', '/plugins/gatecontrol-proxmox'],
-      ['/routes', '/rdp', '/dns'],
+      ['/routes', '/rdp'],
       ['/users', '/groups', '/directory', '/security', '/certificates', '/waf'],
       ['/plugins/gatecontrol-midea', '/plugins/gatecontrol-skoda'],
       ['/plugins/gatecontrol-drive'],

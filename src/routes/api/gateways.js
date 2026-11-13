@@ -53,7 +53,7 @@ router.get('/', (req, res) => {
     const peek = req.query.peek === '1' || req.query.peek === 'true';
     const db = getDb();
     const rows = db.prepare(`
-      SELECT p.id, p.name, p.hostname, p.allowed_ips, p.latest_handshake,
+      SELECT p.id, p.name, p.hostname, p.hostname_source, p.allowed_ips, p.latest_handshake,
              gm.api_port, gm.last_seen_at, gm.last_health,
              gm.update_request_id, gm.update_requested_at, gm.update_target_version,
              gm.platform, gm.created_at, gm.first_seen_at
@@ -101,6 +101,7 @@ router.get('/', (req, res) => {
         peer_id: row.id,
         name: row.name,
         hostname: row.hostname,
+        hostname_source: row.hostname_source || null,
         ip: row.allowed_ips ? row.allowed_ips.split('/')[0] : null,
         api_port: row.api_port,
         status,

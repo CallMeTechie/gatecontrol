@@ -240,6 +240,13 @@ async function start() {
     try { require('./services/dns').rebuildNow(); }
     catch (err) { logger.warn({ err: err.message }, 'initial DNS hosts-file rebuild failed'); }
 
+    // Namen im VPN (services/vpnNames.js): entrypoint.sh has just written
+    // dnsmasq.conf with the legacy zone (GC_DNS_DOMAIN) only — add the zone
+    // chosen in the settings. No rewrite and no dnsmasq restart when the conf
+    // already says so (server process restarted next to a running dnsmasq).
+    try { require('./services/vpnNames').applyDnsmasq(); }
+    catch (err) { logger.warn({ err: err.message }, 'vpn names: dnsmasq.conf not written at start'); }
+
     // Caddy reconciler — periodic detection-only check that the live
     // Caddy config matches the DB state via @id marker comparison.
     // Auto-repair is off by default; enable with GC_CADDY_AUTO_RECONCILE=1

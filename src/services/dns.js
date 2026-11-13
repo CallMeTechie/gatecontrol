@@ -16,6 +16,8 @@ const RESERVED_HOSTNAMES = new Set([
   'localhost', 'local', 'host', 'broadcasthost',
   'gateway', 'server', 'gc-server',
   'admin', 'root', 'router',
+  // The portal: home.<GC_DNS_DOMAIN> (services/portalConfig.js)
+  'home',
   // Reserved for future expansion
   'dns', 'vpn', 'api', 'auth', 'mail', 'ns', 'ns1', 'ns2',
 ]);
@@ -133,10 +135,42 @@ function assertSafeRouteDomain(domain) {
 // ────────────────────────────────────────────────────────────
 
 /**
- * Reserve a unique hostname for a peer, appending -2, -3, … if the
- * candidate collides with another peer's hostname. Wraps the check and
- * the caller's UPDATE in a single IMMEDIATE transaction so concurrent
- * reporters can't both take the same suffix.
+ * A device name that cannot be given: `code` says why, `suggestion` names a
+ * free one (when there is one), `owner` the device that has it.
+ *   ERR_HOSTNAME_TAKEN — another device has the name
+ *   ERR_HOSTNAME_ROUTE — a route or the portal answers under `<name>.<zone>`
+ */
+class HostnameUnavailableError extends Error {
+  constructor(code, hostname, { suggestion = null, owner = null, fqdn = null } = {}) {
+    super(`hostname unavailable: ${hostname}`);
+    this.code = code;
+    this.hostname = hostname;
+    this.suggestion = suggestion;
+    this.owner = owner;
+    this.fqdn = fqdn;
+  }
+}
+
+// `<candidate>-<n>`, kept within the 63 characters of a DNS label. null when
+// the cut leaves an invalid label.
+function withSuffix(candidate, n) {
+  const suffix = `-${n}`;
+  const attempt = candidate.slice(0, 63 - suffix.length).replace(/-+$/, '') + suffix;
+  try { strictHostnameAssert(attempt); } catch { return null; }
+  return attempt;
+}
+
+/**
+ * Reserve a unique hostname for a peer. A name is taken when another peer has
+ * it, or when a route or the portal already answers under `<name>.<zone>` in
+ * one of the zones of the device names (services/vpnNames.js).
+ *
+ *   onClash 'suffix' (names the devices report themselves): append -2, -3, …
+ *   onClash 'reject' (names the admin gives): throw HostnameUnavailableError
+ *     with the first free suffix as a suggestion — never a silent "-2".
+ *
+ * The check and the caller's UPDATE run in a single IMMEDIATE transaction so
+ * concurrent reporters can't both take the same suffix.
  *
  * The updateFn receives the assigned hostname and MUST write it to the
  * peer row before the transaction commits.
@@ -144,38 +178,63 @@ function assertSafeRouteDomain(domain) {
  * @param {string} candidate Pre-normalized candidate hostname
  * @param {number} peerId    Owner peer id (excluded from uniqueness check)
  * @param {(assigned:string) => void} updateFn Runs inside the transaction
+ * @param {{ onClash?: 'suffix'|'reject' }} [opts]
  * @returns {string} The final assigned hostname (may differ from candidate)
  */
-function reserveUniqueHostname(candidate, peerId, updateFn) {
+function reserveUniqueHostname(candidate, peerId, updateFn, { onClash = 'suffix' } = {}) {
   strictHostnameAssert(candidate);
 
   const db = getDb();
+  const vpnNames = require('./vpnNames');
   const findClash = db.prepare(
-    'SELECT id FROM peers WHERE hostname = ? COLLATE NOCASE AND id != ?'
+    'SELECT id, name FROM peers WHERE hostname = ? COLLATE NOCASE AND id != ?'
   );
+  // → { code, owner?, fqdn? } | null
+  const taken = (name) => {
+    const peer = findClash.get(name, peerId);
+    if (peer) return { code: 'ERR_HOSTNAME_TAKEN', owner: peer.name };
+    const fqdn = vpnNames.deviceNameCollision(name);
+    return fqdn ? { code: 'ERR_HOSTNAME_ROUTE', fqdn } : null;
+  };
 
   const tx = db.transaction(() => {
-    let attempt = candidate;
-    // Preserve label length: -N suffix may push us over 63 chars.
-    for (let n = 1; n < 100; n++) {
-      if (n > 1) {
-        const suffix = `-${n}`;
-        const room = 63 - suffix.length;
-        attempt = candidate.slice(0, room).replace(/-+$/, '') + suffix;
-        // Final sanity: suffix could have produced invalid leading or
-        // trailing char after truncation — revalidate.
-        try { strictHostnameAssert(attempt); } catch { continue; }
-      }
-      const clash = findClash.get(attempt, peerId);
-      if (!clash) {
-        updateFn(attempt);
-        return attempt;
-      }
+    const first = taken(candidate);
+    if (!first) {
+      updateFn(candidate);
+      return candidate;
     }
+    for (let n = 2; n < 100; n++) {
+      const attempt = withSuffix(candidate, n);
+      if (!attempt || taken(attempt)) continue;
+      if (onClash === 'reject') {
+        throw new HostnameUnavailableError(first.code, candidate, { suggestion: attempt, owner: first.owner, fqdn: first.fqdn });
+      }
+      updateFn(attempt);
+      return attempt;
+    }
+    if (onClash === 'reject') throw new HostnameUnavailableError(first.code, candidate, { owner: first.owner, fqdn: first.fqdn });
     throw new Error(`could not find free hostname suffix for ${candidate}`);
   });
 
   return tx.immediate ? tx.immediate() : tx();
+}
+
+/**
+ * A name close to `input` that the rules allow: lowercase, everything else
+ * to hyphens, at most 63 characters; a reserved name gets "-1" style help
+ * from the caller. → string | null (nothing usable left)
+ */
+function suggestHostname(input) {
+  const s = String(input == null ? '' : input)
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 63)
+    .replace(/-+$/, '');
+  if (!s || !HOSTNAME_RE.test(s)) return null;
+  if (RESERVED_HOSTNAMES.has(s)) return withSuffix(s, 2);
+  return s;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -202,7 +261,9 @@ function extractPeerIp(allowedIps) {
  */
 function renderHostsContent() {
   const db = getDb();
-  const domain = config.dns.domain;
+  // Primary zone first (reverse lookups answer with it), then the legacy
+  // zone as the second spelling — see services/vpnNames.js.
+  const zones = require('./vpnNames').current().zones;
 
   const peers = db.prepare(`
     SELECT id, hostname, allowed_ips
@@ -230,16 +291,16 @@ function renderHostsContent() {
       logger.warn({ peerId: peer.id, hostname: peer.hostname, err: err.message }, 'DNS skip: hostname failed strict validation');
       continue;
     }
-    // Format: <ip> <fqdn> <short>
-    // dnsmasq serves both names. FQDN first makes reverse-PTR pick it up.
-    lines.push(`${ip}\t${hostname}.${domain}\t${hostname}`);
+    // Format: <ip> <fqdn in the primary zone> [<fqdn in the legacy zone>] <short>
+    // dnsmasq serves every name. The first one is what a reverse lookup answers.
+    lines.push([ip, ...zones.map((z) => `${hostname}.${z}`), hostname].join('\t'));
   }
 
   // Route domains resolve to the VPN gateway so VPN clients always reach
   // routes internally (split-tunnel-safe), never via the public IP. This
   // applies to ALL enabled routes with a domain (incl. L4), independent of
   // external_enabled. Exact A-records only — no wildcard — so peer names
-  // like server.marcbackes.net (a peer, not a route) stay untouched.
+  // like server.example.com (a peer, not a route) stay untouched.
   const gwIp = config.wireguard.gatewayIp;
   const routeRows = db.prepare(`
     SELECT DISTINCT domain FROM routes
@@ -416,9 +477,14 @@ function getStatus() {
     hostsFile = { path: config.dns.hostsFile, mtime: stat.mtime.toISOString(), size: stat.size };
   } catch { /* file may not exist yet */ }
 
+  const names = require('./vpnNames').current();
   return {
     enabled: config.dns.enabled,
+    // `domain` stays the legacy zone (GC_DNS_DOMAIN); `domains` lists every
+    // zone the device names answer under, `primary` the one that is shown.
     domain: config.dns.domain,
+    domains: names.zones,
+    primary: names.primary,
     peers: {
       total: row.total || 0,
       with_hostname: row.with_hostname || 0,
@@ -434,6 +500,8 @@ module.exports = {
   normalizeHostname,
   strictHostnameAssert,
   reserveUniqueHostname,
+  suggestHostname,
+  HostnameUnavailableError,
   extractPeerIp,
   renderHostsContent,
   rebuildNow,

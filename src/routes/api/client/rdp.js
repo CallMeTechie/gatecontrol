@@ -150,8 +150,13 @@ router.get('/rdp/:id/connect', (req, res) => {
     // of the IP, avoiding the "The credentials that were used to
     // connect … did not work" dialog on hosts whose cert CN differs
     // from the IP.
+    // peer_fqdn stays in the legacy zone (GC_DNS_DOMAIN): apps that only
+    // know that zone have a resolver rule for it alone. peer_fqdn_primary is
+    // the same device in the primary zone of the device names
+    // (services/vpnNames.js) — equal to peer_fqdn while no own domain is chosen.
     let peer_hostname = null;
     let peer_fqdn = null;
+    let peer_fqdn_primary = null;
     try {
       const { hasFeature: _hasFeature } = require("../../../services/license");
       if (_hasFeature('internal_dns')) {
@@ -162,6 +167,7 @@ router.get('/rdp/:id/connect', (req, res) => {
         if (peerRow && peerRow.hostname) {
           peer_hostname = peerRow.hostname;
           peer_fqdn = `${peerRow.hostname}.${configDef.dns.domain}`;
+          peer_fqdn_primary = `${peerRow.hostname}.${require('../../../services/vpnNames').current().primary}`;
         }
       }
     } catch (err) {
@@ -179,6 +185,7 @@ router.get('/rdp/:id/connect', (req, res) => {
       connect_port: connectEp.connect_port,
       peer_hostname,
       peer_fqdn,
+      peer_fqdn_primary,
       external_hostname: route.external_hostname,
       external_port: route.external_port,
       access_mode: route.access_mode,

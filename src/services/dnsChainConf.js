@@ -7,6 +7,8 @@ const net = require('node:net');
 // `# >>> gatecontrol-vpnfilter >>>` … `# <<< gatecontrol-vpnfilter <<<`.
 // Blocks of any name are recognised and removed — also the
 // `gatecontrol-pihole` block of the former Pi-hole integration.
+// (The block of services/vpnNames.js — the zone of the device names — has
+// another form on purpose and is not touched here.)
 const beginOf = (provider) => `# >>> gatecontrol-${provider} >>>`;
 const endOf = (provider) => `# <<< gatecontrol-${provider} <<<`;
 const PROVIDER_RE = /^[a-z][a-z0-9]{0,31}$/;

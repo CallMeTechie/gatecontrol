@@ -50,6 +50,8 @@ const TOKEN_FORBIDDEN = [
   /^\/ip-block(\/|$)/,
   /^\/route-guard(\/|$)/,
   /^\/scan(\/|$)/,
+  // Namen im VPN: rewrites dnsmasq.conf and restarts dnsmasq — admin session only.
+  /^\/vpn-names(\/|$)/,
 ];
 router.use((req, res, next) => {
   if (!req.tokenAuth) return next();
@@ -71,6 +73,8 @@ router.use('/', require('./network'));
 router.use('/', require('./observability'));
 router.use('/', require('./gateway'));
 router.use('/', require('./portal'));
+// Namen im VPN: zone of the device names + their state (services/vpnNames.js)
+router.use('/', require('./vpnNames'));
 router.use('/', require('./domains'));
 // WAF: own IPs, trusted bypass, scanner ban (docs/feature-release-b.md §3)
 router.use('/', require('./waf'));

@@ -207,7 +207,7 @@
     unEl.style.cssText = 'display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     nameWrap.appendChild(unEl);
     var hwModel = t.hardware && t.hardware.model ? String(t.hardware.model) : platformLabel(g.platform);
-    nameWrap.appendChild(el('div', 'ud', [hwModel, t.gateway_version || '—', g.hostname].filter(Boolean).join(' · ')));
+    nameWrap.appendChild(el('div', 'ud', [hwModel, t.gateway_version || '—'].filter(Boolean).join(' · ')));
     uh.appendChild(nameWrap);
     var tone = PK && PK.liveOf ? PK.liveOf(g).tone : (st === 'online' ? 'green' : st === 'degraded' ? 'amber' : 'grey');
     var stTag = el('span', 'tag tag-' + tone + ' tag-dot', liveLabel(st));
@@ -224,6 +224,8 @@
     right.appendChild(rcBtn);
     uh.appendChild(right);
     wrap.appendChild(uh);
+    // Name im VPN (vpn-names.js): what the gateway is reachable as, with a copy button
+    if (g.hostname && window.GCVpnNames) wrap.appendChild(window.GCVpnNames.chip(g.hostname, 'gw-vn'));
     // Role in the pool group (or the route count of a single gateway)
     var tags = el('div', 'gw-card-tags');
     if (role && PK) {
@@ -452,7 +454,6 @@
     left.appendChild(hd);
     var sub = el('p', 'page-sub');
     var parts = [];
-    if (g.hostname) parts.push(document.createTextNode(g.hostname));
     if (g.ip) { var tn = el('span'); tn.appendChild(document.createTextNode(T('gateways.sub_tunnel', 'Tunnel') + ' ')); tn.appendChild(el('code', null, g.ip)); parts.push(tn); }
     parts.push(document.createTextNode(TT('gwp.head.heartbeat', { ago: agoT(g.last_seen_at) })));
     if (tel0.gateway_version) {
@@ -460,6 +461,8 @@
     }
     parts.forEach(function (n, i) { if (i) sub.appendChild(document.createTextNode(' · ')); sub.appendChild(n); });
     left.appendChild(sub);
+    // Name im VPN: the full name with a copy button, next to the VPN address
+    if (g.hostname && window.GCVpnNames) left.appendChild(window.GCVpnNames.chip(g.hostname, 'gw-vn'));
     var hh = liveHint(g, 'page-sub gw-live-hint');
     if (hh) left.appendChild(hh);
     // chips: location (→ "Standort von …"), pool membership (→ pool page), auto-update

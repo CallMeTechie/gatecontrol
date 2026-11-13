@@ -202,7 +202,7 @@ describe('aurora theme — peers layout (docs/feature-peers-page.md)', () => {
     assert.match(res.text, /data-view="list"/, 'list view');
     assert.match(res.text, /class="toolbar rt-toolbar pl-toolbar"/, 'zones-style toolbar');
     assert.doesNotMatch(res.text, /id="gateways-container"|gw-section-count|stat-gw-online/, 'no gateway section any more');
-    assert.match(res.text, /<script type="application\/json" id="pl-i18n" data-prefixes="pl\. peer_groups\. common\."/, 'strings island');
+    assert.match(res.text, /<script type="application\/json" id="pl-i18n" data-prefixes="pl\. peer_groups\. common\. vn\."/, 'strings island');
   });
 
   it('bulk bar: enable, disable, group, owner, tag, delete, clear', async () => {
@@ -458,84 +458,21 @@ describe('aurora theme — certificates layout (Task P2-6)', () => {
   });
 });
 
-// ── Task P2-7: DNS page (Aurora mockup fidelity) ─────────────────────────────
-describe('aurora theme — dns layout (Task P2-7)', () => {
-  it('renders /dns under aurora (200, aurora shell)', async () => {
+// ── The page "Interner DNS" is gone (the name stands with the device, the
+// zone and the state of the names live in Einstellungen › VPN & Netzwerk) ────
+describe('aurora theme — the former dns page', () => {
+  it('/dns leads to the settings', async () => {
     selectAurora();
-    const res = await agent.get('/dns').expect(200);
-    assert.match(res.text, /class="app"/, 'aurora .app shell present');
-    assert.match(res.text, /\/css\/app\.css/, 'loads app.css');
+    const res = await agent.get('/dns').expect(302);
+    assert.equal(res.headers.location, '/settings/netzwerk#card-vpn-names');
   });
 
-  it('renders Aurora grid structure, data-table, and card-title on /dns', async () => {
-    selectAurora();
-    const res = await agent.get('/dns').expect(200);
-    assert.match(res.text, /class="grid"/, '.grid container present');
-    assert.match(res.text, /class="data-table"/, '.data-table present');
-    assert.match(res.text, /class="card-title"/, '.card-title present');
+  it('its template and script are gone', () => {
+    assert.equal(fs.existsSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'dns.njk')), false);
+    assert.equal(fs.existsSync(path.join(__dirname, '..', 'public', 'js', 'dns.js')), false);
   });
 
-  it('renders page-header with page-actions and feature-lock badge (no in-page title) on /dns', async () => {
-    selectAurora();
-    const res = await agent.get('/dns').expect(200);
-    assert.match(res.text, /class="page-header"/, '.page-header present');
-    assert.doesNotMatch(res.text, /class="page-(eyebrow|title|sub)"/, 'no in-page title block — the title is the topbar\'s');
-    assert.match(res.text, /class="page-actions"/, '.page-actions present');
-    assert.match(res.text, /class="feature-lock"/, '.feature-lock badge present');
-  });
-
-  it('renders data-table thead with Hostname, Type, IP columns on /dns', async () => {
-    selectAurora();
-    const njk = fs.readFileSync(path.join(__dirname, '..', 'templates', 'aurora', 'pages', 'dns.njk'), 'utf8');
-    assert.match(njk, /dns\.hostname/, 'njk references dns.hostname key for Hostname column');
-    assert.match(njk, /dns\.record_type/, 'njk references dns.record_type key for Type column');
-    assert.match(njk, /dns\.ip/, 'njk references dns.ip key for IP column');
-    const res = await agent.get('/dns').expect(200);
-    assert.match(res.text, /<th[^>]*>.*Hostname.*<\/th>|<th>Hostname/, 'Hostname column header rendered');
-    assert.match(res.text, /<th[^>]*>.*Type.*<\/th>|<th>Type/, 'Type column header rendered');
-    assert.match(res.text, /<th[^>]*>.*IP.*<\/th>|<th>IP/, 'IP column header rendered');
-  });
-
-  it('renders all phase0 contract IDs on /dns under aurora', async () => {
-    selectAurora();
-    const res = await agent.get('/dns').expect(200);
-    // Stat IDs (hidden in Aurora, but present for JS null-check safety)
-    assert.match(res.text, /id="dns-stat-total"/, '#dns-stat-total present');
-    assert.match(res.text, /id="dns-stat-resolved"/, '#dns-stat-resolved present');
-    assert.match(res.text, /id="dns-stat-auto"/, '#dns-stat-auto present');
-    assert.match(res.text, /id="dns-stat-stale"/, '#dns-stat-stale present');
-    // Config section IDs (hidden in Aurora)
-    assert.match(res.text, /id="dns-status-badge"/, '#dns-status-badge present');
-    assert.match(res.text, /id="dns-domain"/, '#dns-domain present');
-    assert.match(res.text, /id="dns-hosts-path"/, '#dns-hosts-path present');
-    assert.match(res.text, /id="dns-mtime"/, '#dns-mtime present');
-    // The default/pro static table is gone (records are merged into one table)
-    assert.doesNotMatch(res.text, /id="dns-static-tbody"/, '#dns-static-tbody absent');
-    // Peer table body (Aurora unified table)
-    assert.match(res.text, /id="dns-peer-tbody"/, '#dns-peer-tbody present');
-    // Search input
-    assert.match(res.text, /id="dns-peer-search"/, '#dns-peer-search present');
-    // Reload button
-    assert.match(res.text, /id="btn-dns-reload"/, '#btn-dns-reload present');
-  });
-
-  it('Aurora dns table uses 3-column thead (no 6-col default pattern)', async () => {
-    selectAurora();
-    const res = await agent.get('/dns').expect(200);
-    // Aurora loading placeholder uses colspan 3
-    assert.match(res.text, /colspan="3"/, 'loading row uses colspan="3" (3-column Aurora table)');
-    // Aurora must NOT expose the 6-col pattern from the default theme
-    assert.doesNotMatch(res.text, /colspan="6"/, '6-column default colspan absent in Aurora dns');
-  });
-
-  it('dns.js renders the unified records table without a theme branch', () => {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dns.js'), 'utf8');
-    assert.doesNotMatch(js, /isAurora/, 'no theme branch left in dns.js (Aurora is the only theme)');
-    assert.match(js, /function renderPeers\(/, 'renderPeers() present');
-    assert.doesNotMatch(js, /renderStatic|dns-static-tbody/, 'the separate static table (default/pro) is gone');
-  });
-
-  it('app.css already carries feature-lock, data-table, cell-name, mono rules (no new rules needed)', () => {
+  it('app.css still carries feature-lock, data-table, cell-name, mono rules', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
     assert.match(css, /\.feature-lock\b/, '.feature-lock rule present in app.css');
     assert.match(css, /\.data-table\b/, '.data-table rule present in app.css');

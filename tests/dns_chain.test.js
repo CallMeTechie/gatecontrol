@@ -284,7 +284,9 @@ test('only one owner: nothing but dnsChain.js creates a chain writer or restarts
   })(root);
   const using = (re) => files.filter((f) => re.test(fs.readFileSync(f, 'utf8'))).map((f) => path.relative(root, f)).sort();
   assert.deepEqual(using(/\bmakeChain\(/), ['services/dnsChain.js', 'services/dnsChainConf.js']);
-  assert.deepEqual(using(/\brestartDnsmasq\(\)/), ['services/dns.js', 'services/dnsChain.js']);
+  // vpnNames.js restarts dnsmasq for its own block (the zone of the device
+  // names: `local=` / `host-record=`), never for the upstreams.
+  assert.deepEqual(using(/\brestartDnsmasq\(\)/), ['services/dns.js', 'services/dnsChain.js', 'services/vpnNames.js']);
   assert.deepEqual(using(/createChainWatch\(/), ['services/dnsChain.js', 'services/dnsChainWatch.js']);
   // the watcher runs five times a second, so a switch costs well under a second
   const wrapper = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'wg-wrapper.sh'), 'utf8');

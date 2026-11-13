@@ -286,3 +286,36 @@ nur für Fachleute mit eigener CA.
 **Prüfen:** `tar tzf /root/gatecontrol-*.tar.gz | grep -c data/` zeigt eine Zahl größer als 0.
 
 Weiter mit [Kapitel 3: Gateway einrichten](03-gateway-einrichten.md).
+
+## 2.11 Namen im VPN
+
+Jedes VPN-Gerät kann einen Namen bekommen. Dann erreichst du zum Beispiel
+deinen Rechner im Büro unter `laptop-buero.gc.internal` statt unter einer
+Adresse wie `10.8.0.14`. Die Namen gelten nur im VPN.
+
+Wenn du eine eigene Domain unter „Dienste“ → „Domains / Routen“ eingetragen
+hast, können die Namen an ihr hängen:
+
+1. Öffne „Einstellungen“ → „VPN & Netzwerk“ → „Namen im VPN“.
+2. Wähle bei „Domain“ deine Domain.
+3. Lass bei „Unterbereich“ den Vorschlag `vpn` stehen oder trag einen anderen
+   ein. Darunter siehst du sofort, wie ein Gerät heißen wird, zum Beispiel
+   `laptop-buero.vpn.example.com`.
+4. Klick unten auf „Speichern“.
+
+Der bisherige Name mit `gc.internal` funktioniert weiter. Bei deinem
+Domain-Anbieter musst du nichts eintragen, und von außen kann niemand diese
+Namen auflösen. Meldet die Seite, dass der Unterbereich schon ein Host oder
+eine Route ist, nimm den vorgeschlagenen freien Unterbereich.
+
+Den Namen eines Geräts siehst und änderst du unter „Geräte“ → „Peers /
+Clients“: Er steht auf der Karte des Geräts, mit einem Knopf zum Kopieren.
+Ein Gerät ohne Namen bietet „Namen vergeben“ an. Bei einem Gateway steht der
+Name in der Kopfzeile; ändern kannst du ihn dort unter „Mehr“ → „Name und Gruppe ändern …“.
+
+Die Windows-Apps brauchen für die neue Schreibweise ein Update. Bis dahin
+nimmst du auf Windows-Rechnern weiter den Namen mit `gc.internal`.
+
+**Prüfen:** Unter „Einstellungen“ → „VPN & Netzwerk“ → „Zustand der Namen“
+steht bei „Dienst“ das Wort „läuft“. Auf einem Gerät im VPN antwortet
+`ping laptop-buero.vpn.example.com` (mit dem Namen eines deiner Geräte).
