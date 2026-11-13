@@ -313,8 +313,11 @@ Clients“: Er steht auf der Karte des Geräts, mit einem Knopf zum Kopieren.
 Ein Gerät ohne Namen bietet „Namen vergeben“ an. Bei einem Gateway steht der
 Name in der Kopfzeile; ändern kannst du ihn dort unter „Mehr“ → „Name und Gruppe ändern …“.
 
-Die Windows-Apps brauchen für die neue Schreibweise ein Update. Bis dahin
-nimmst du auf Windows-Rechnern weiter den Namen mit `gc.internal`.
+Namen unter der eigenen Domain gibt es ab Server **1.271.0**. Die Windows-Apps
+lösen sie ab GateControl Pro **1.85.0** und Community **1.49.0** auf – sie
+legen dafür je Zone eine DNS-Regel an. Ältere Apps lösen nur die Schreibweise
+mit `gc.internal` zuverlässig auf; nimm dort bis zum Update diesen Namen. Die
+Android-App braucht kein Update.
 
 **Prüfen:** Unter „Einstellungen“ → „VPN & Netzwerk“ → „Zustand der Namen“
 steht bei „Dienst“ das Wort „läuft“. Auf einem Gerät im VPN antwortet

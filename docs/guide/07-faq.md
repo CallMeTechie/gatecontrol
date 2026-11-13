@@ -395,7 +395,8 @@ The page no longer exists. The name of a device now stands with the device
 itself: under “Devices” → “Peers / Clients” on its card, for gateways in the
 head of the page. Which ending the names use is set under “Settings” →
 “VPN & network” → “Names in the VPN”; the “State of the names” is there too.
-Old bookmarks of the page lead there. More:
+Old bookmarks of the page lead there. This applies from server **1.271.0**.
+More:
 [2.11 Names in the VPN](02-server-setup.md#211-names-in-the-vpn).
 
 ### A device name in the VPN is not found
@@ -406,9 +407,10 @@ Old bookmarks of the page lead there. More:
 2. Look up what the device is called under “Devices” → “Peers / Clients” and
    copy the name with the button next to it. If it says “No name in the VPN”,
    give it one.
-3. On a Windows computer with the GateControl app: use the name ending in
-   `gc.internal` as long as the app does not have the update for the new
-   ending yet.
+3. On a Windows computer with the GateControl app: the apps resolve the new
+   ending from GateControl Pro **1.85.0** and Community **1.49.0**. With an
+   older app use the name ending in `gc.internal`, or update the app. The
+   Android app needs no update.
 4. If the name is marked “stale”, it comes from a restored backup. It still
    applies. As soon as the device reports again, the mark disappears.
 

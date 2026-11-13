@@ -408,7 +408,8 @@ Die Seite gibt es nicht mehr. Der Name eines Geräts steht jetzt beim Gerät
 selbst: unter „Geräte“ → „Peers / Clients“ auf der Karte, bei Gateways in der
 Kopfzeile. Unter welcher Endung die Namen laufen, stellst du unter
 „Einstellungen“ → „VPN & Netzwerk“ → „Namen im VPN“ ein; dort steht auch der
-„Zustand der Namen“. Alte Lesezeichen auf die Seite landen dort. Mehr dazu:
+„Zustand der Namen“. Alte Lesezeichen auf die Seite landen dort. Das gilt ab
+Server **1.271.0**. Mehr dazu:
 [2.11 Namen im VPN](02-server-einrichten.md#211-namen-im-vpn).
 
 ### Ein Gerätename im VPN wird nicht gefunden
@@ -419,9 +420,10 @@ Kopfzeile. Unter welcher Endung die Namen laufen, stellst du unter
 2. Sieh unter „Geräte“ → „Peers / Clients“ nach, wie das Gerät heißt, und
    kopiere den Namen mit dem Knopf daneben. Steht dort „Kein Name im VPN“,
    vergib einen.
-3. Auf einem Windows-Rechner mit der GateControl-App: Nimm den Namen mit
-   `gc.internal` am Ende, solange die App das Update für die neue Endung noch
-   nicht hat.
+3. Auf einem Windows-Rechner mit der GateControl-App: Die neue Endung lösen
+   die Apps ab GateControl Pro **1.85.0** und Community **1.49.0** auf. Mit
+   einer älteren App nimm den Namen mit `gc.internal` am Ende oder aktualisiere
+   die App. Die Android-App braucht kein Update.
 4. Steht am Namen „veraltet“, stammt er aus einer zurückgespielten Sicherung.
    Er gilt weiter. Sobald sich das Gerät wieder meldet, verschwindet der Hinweis.
 

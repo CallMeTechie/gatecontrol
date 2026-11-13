@@ -180,8 +180,9 @@ Geräte zu Hause erreichen VPN-Geräte dann unter ihrem Namen.
 - Der [DNS-Filter](#dns-filter) des Heimnetzes ist eingeschaltet und im Router
   als DNS-Server eingetragen. Nur dann fragen die Geräte im Heimnetz das
   Gateway nach Namen.
-- Ein Gateway, das die Funktion kennt. Bei einem älteren Gateway steht der
-  Hinweis am Schalter; er wirkt nach einem Update des Gateways.
+- Server **1.272.0** oder neuer und Gateway **1.39.0** oder neuer. Bei einem
+  älteren Gateway steht der Hinweis am Schalter; er wirkt nach dem Update des
+  Gateways ([Kapitel 6](06-gateway-aktualisieren.md)).
 - Damit ein Gerät zu Hause ein VPN-Gerät auch **erreicht** (nicht nur seinen
   Namen auflöst), muss sein Weg ins VPN über das Gateway führen – wie bei jeder
   Adresse aus dem VPN.
