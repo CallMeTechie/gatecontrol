@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.271.0] — 2026-11-13
+
+### Features
+- Namen im VPN unter der eigenen Domain – der Name steht beim Gerät, die Seite „Interner DNS“ entfällt (#483)
+
+---
+
 ## [1.270.1] — 2026-11-13
 
 ### Fixes
