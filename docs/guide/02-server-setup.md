@@ -310,6 +310,17 @@ it is on the card of the device, with a button to copy it. A device without a
 name offers “Give a name”. For a gateway the name is in the head of its page;
 you change it there under “More” → “Change name and group …”.
 
+**Names of gateways:** A gateway has a name too, and it resolves on every VPN
+device. Only the server can reach it, though: the tunnel of a gateway lets no
+other VPN device in, on purpose. The interface says so below the name.
+`nas.vpn.example.com:5000` therefore does not answer, even when the gateway
+runs on the NAS. For services in the home network behind the gateway – the
+interface of the NAS, a printer, a camera – create a route under “Services” →
+“Domains / Routes”: choose the gateway or its pool as the target and enter the
+address of the device in the home network and the port (for example
+`192.168.1.20` and `5000`). The host of the route must not be below the zone
+of the device names: `nas.example.com` works, `nas.vpn.example.com` does not.
+
 Names under your own domain exist from server **1.271.0**. The Windows apps
 resolve them from GateControl Pro **1.85.0** and Community **1.49.0** – they
 create one DNS rule per zone for this. Older apps only resolve the spelling

@@ -295,6 +295,7 @@ module.exports = (ctx) => {
               && cb.querySelector('.vn-name code').textContent === 'pixel-8.vpn.example.com'
               && cb.querySelector('.vn-src').textContent.trim() === t['vn.src_agent'];
           }, [S.buero, S.pixel, T]));
+        step('a normal device has no gateway note', await p.evaluate(() => document.querySelectorAll('#pl-grid .vn-name').length >= 2 && document.querySelectorAll('.vn-gw-note').length === 0));
         await p.click(`.pl-card[data-peer-id="${S.pixel}"] .vn-copy`);
         step('the copy button on the card copies the full name', await until(p, async () => (await navigator.clipboard.readText().catch(() => '')) === 'pixel-8.vpn.example.com'));
         step('the search finds a device by its name in the VPN',
@@ -391,9 +392,10 @@ module.exports = (ctx) => {
           const g = document.querySelector('#modal-edit-peer .vn-grp').getBoundingClientRect();
           const m = document.querySelector('#modal-edit-peer .modal').getBoundingClientRect();
           const i = document.getElementById('edit-peer-hostname').getBoundingClientRect();
-          return { inside: g.left >= m.left && g.right <= m.right + 0.5, input: Math.round(i.width), overflow: document.documentElement.scrollWidth - window.innerWidth };
+          return { inside: g.left >= m.left && g.right <= m.right + 0.5, input: Math.round(i.width), overflow: document.documentElement.scrollWidth - window.innerWidth, notes: document.querySelectorAll('.vn-gw-note').length };
         });
         step('390 px: the field with its ending fits the dialog', field.inside && field.input >= 100 && field.overflow <= 0, JSON.stringify(field));
+        step('the dialog of a normal device has no gateway note', field.notes === 0, JSON.stringify(field));
         await shot(p, 'vpnnames-dialog-390-dark', false);
         await p.click('#modal-edit-peer [data-close-modal]');
         await p.goto(B + '/settings/netzwerk');
@@ -412,15 +414,63 @@ module.exports = (ctx) => {
         await p.goto(B + '/gateways');
         step('gateway card: the name with the copy button',
           await until(p, (id) => { const c = document.querySelector(`.gw.unit[data-id="${id}"] .gw-vn code`); return c && c.textContent === 'gw-buero.vpn.example.com'; }, S.gw));
+        // The name of a gateway resolves, but only the server reaches it (its
+        // tunnel lets nobody else in): the note says so and leads to the routes.
+        // One measurement per place: text, link, once and inside its box, no sideways scroll.
+        const GW_NOTE = T['vn.gw_note'] + T['vn.gw_note_link'];
+        const gwNote = (box) => p.evaluate((sel) => {
+          const b = document.querySelector(sel);
+          const n = b && b.querySelector('.vn-gw-note');
+          if (!n) return { found: false };
+          const r = n.getBoundingClientRect(); const c = b.getBoundingClientRect();
+          const a = n.querySelector('a');
+          return { found: true, text: n.textContent, href: a ? a.getAttribute('href') : '', name: !!b.querySelector('.vn-name code, .vn-grp input'),
+            copy: !!b.querySelector('.vn-copy'), inside: r.width > 1 && r.left >= c.left - 0.5 && r.right <= c.right + 0.5,
+            overflow: document.documentElement.scrollWidth - window.innerWidth, all: b.querySelectorAll('.vn-gw-note').length };
+        }, box);
+        const noteOk = (n, copy) => n.found && n.text === GW_NOTE && n.href === '/routes' && n.name && n.copy === copy && n.inside && n.overflow <= 0 && n.all === 1;
+        const CARD = `.gw.unit[data-id="${S.gw}"]`;
+        let note = await gwNote(CARD);
+        step('gateway card: the note that only the server reaches the name, with the link to the routes', noteOk(note, true), JSON.stringify(note));
+        await shot(p, 'vpnnames-gateway-card');
         await p.click(`.gw.unit[data-id="${S.gw}"] a.gw-card-link`);
         step('gateway head: the name next to the VPN address',
           await until(p, () => { const c = document.querySelector('.gw-head .gw-vn code'); return c && c.textContent === 'gw-buero.vpn.example.com' && !!document.querySelector('.gw-head .gw-vn .vn-copy'); }));
+        note = await gwNote('.gw-head-t');
+        step('gateway head: the same note below the name', noteOk(note, true), JSON.stringify(note));
         await shot(p, 'vpnnames-gateway');
+        await p.setViewportSize({ width: 390, height: 844 });
+        await theme(p, 'dark');
+        await until(p, () => !!document.querySelector('.gw-head-t .vn-gw-note'));
+        note = await gwNote('.gw-head-t');
+        step('390 px: the note wraps inside the head', noteOk(note, true), JSON.stringify(note));
+        await shot(p, 'vpnnames-gateway-390-dark');
+        await p.goto(B + '/gateways');
+        await until(p, (sel) => !!document.querySelector(sel + ' .vn-gw-note'), CARD);
+        note = await gwNote(CARD);
+        step('390 px: the note wraps inside the card', noteOk(note, true), JSON.stringify(note));
+        await shot(p, 'vpnnames-gateway-card-390-dark');
+        await p.click(`${CARD} a.gw-card-link`);
+        await until(p, () => !!document.querySelector('.gw-head-t .vn-gw-note'));
+        await p.click('#gw-more-btn');
+        await p.click('#gw-more-menu [data-act="gm-rename"]');
+        await visible(p, '#gwm-hostname');
+        note = await gwNote('.vn-field');
+        step('390 px: the dialog "Name und Gruppe ändern" carries the note at the field', noteOk(note, false), JSON.stringify(note));
+        await shot(p, 'vpnnames-gateway-dialog-390-dark', false);
+        await p.keyboard.press('Escape');
+        await until(p, () => !document.getElementById('gwm-hostname'));
+        await theme(p, 'light');
+        await p.setViewportSize({ width: 1440, height: 1000 });
+        await until(p, () => !!document.querySelector('.gw-head-t .vn-gw-note'));
         await p.click('#gw-more-btn');
         await p.click('#gw-more-menu [data-act="gm-rename"]');
         step('"Mehr": the name in the VPN can be changed where the display name is',
           await visible(p, '#gwm-hostname') && await p.inputValue('#gwm-hostname') === 'gw-buero'
           && await p.evaluate(() => document.querySelector('.vn-field .vn-suf').textContent === '.vpn.example.com'));
+        note = await gwNote('.vn-field');
+        step('"Mehr": the note stands at the field', noteOk(note, false), JSON.stringify(note));
+        await shot(p, 'vpnnames-gateway-dialog', false);
         await p.fill('#gwm-hostname', 'gw-keller');
         await p.click('#gwm-save');
         step('saved: the head shows the new name',

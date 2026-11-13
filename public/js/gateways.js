@@ -225,7 +225,11 @@
     uh.appendChild(right);
     wrap.appendChild(uh);
     // Name im VPN (vpn-names.js): what the gateway is reachable as, with a copy button
-    if (g.hostname && window.GCVpnNames) wrap.appendChild(window.GCVpnNames.chip(g.hostname, 'gw-vn'));
+    // … and the note that only the server reaches it (the tunnel of a gateway lets nobody else in)
+    if (g.hostname && window.GCVpnNames) {
+      wrap.appendChild(window.GCVpnNames.chip(g.hostname, 'gw-vn'));
+      wrap.appendChild(window.GCVpnNames.gatewayNote('gw-vn-note'));
+    }
     // Role in the pool group (or the route count of a single gateway)
     var tags = el('div', 'gw-card-tags');
     if (role && PK) {
@@ -462,7 +466,10 @@
     parts.forEach(function (n, i) { if (i) sub.appendChild(document.createTextNode(' · ')); sub.appendChild(n); });
     left.appendChild(sub);
     // Name im VPN: the full name with a copy button, next to the VPN address
-    if (g.hostname && window.GCVpnNames) left.appendChild(window.GCVpnNames.chip(g.hostname, 'gw-vn'));
+    if (g.hostname && window.GCVpnNames) {
+      left.appendChild(window.GCVpnNames.chip(g.hostname, 'gw-vn'));
+      left.appendChild(window.GCVpnNames.gatewayNote('gw-vn-note'));
+    }
     var hh = liveHint(g, 'page-sub gw-live-hint');
     if (hh) left.appendChild(hh);
     // chips: location (→ "Standort von …"), pool membership (→ pool page), auto-update

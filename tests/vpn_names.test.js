@@ -541,6 +541,28 @@ describe('Namen im VPN', () => {
       }
     });
 
+    // The name of a gateway resolves, but its tunnel only lets the server in
+    // (services/gateways.js buildEnvContent): the pages say so where the name
+    // of a gateway stands, and nowhere else.
+    it('the name of a gateway carries the note that only the server reaches it', async () => {
+      const root = path.join(__dirname, '..');
+      const src = (f) => fs.readFileSync(path.join(root, f), 'utf8');
+      const de = JSON.parse(src('src/i18n/de.json'));
+      const en = JSON.parse(src('src/i18n/en.json'));
+      assert.equal(de['vn.gw_note'], 'Diesen Namen erreicht nur der Server. Für Dienste im Heimnetz hinter dem Gateway eine Route anlegen:');
+      assert.equal(en['vn.gw_note'], 'Only the server reaches this name. For services in the home network behind the gateway, create a route:');
+      assert.equal(de['vn.gw_note_link'], de['nav.routes']);
+      assert.equal(en['vn.gw_note_link'], en['nav.routes']);
+      const gwPage = await getAgent().get('/gateways').expect(200);
+      const strings = JSON.parse(/<script type="application\/json" id="gwiz-i18n"[^>]*>([\s\S]*?)<\/script>/.exec(gwPage.text)[1]);
+      assert.ok(strings['vn.gw_note'] && strings['vn.gw_note_link'], 'the note is in the string island of the gateways page');
+      // card and head of a gateway, and the field of its dialog
+      assert.equal(src('public/js/gateways.js').split("GCVpnNames.gatewayNote('gw-vn-note')").length - 1, 2);
+      assert.ok(src('public/js/gateway-manage.js').includes("VN.field({ id: 'gwm-hostname', saveBtn: null, gateway: true })"));
+      // a normal device never gets it: the peers page does not ask for it
+      for (const f of ['public/js/peers.js', 'public/js/settings.js']) assert.ok(!src(f).includes('gatewayNote') && !src(f).includes('gateway: true'), f);
+    });
+
     it('without the licence the card is visibly locked', async () => {
       license._overrideForTest({ internal_dns: false });
       try {

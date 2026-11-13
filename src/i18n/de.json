@@ -213,6 +213,8 @@
   "vn.err_taken_suggest": "„{{name}}“ gehört schon zum Gerät {{owner}}. Frei wäre {{suggestion}}.",
   "vn.err_generic": "Der Name konnte nicht gespeichert werden.",
   "vn.use_suggestion": "Übernehmen",
+  "vn.gw_note": "Diesen Namen erreicht nur der Server. Für Dienste im Heimnetz hinter dem Gateway eine Route anlegen:",
+  "vn.gw_note_link": "Domains / Routen",
   "auth.login": "Anmelden",
   "auth.sign_in_subtitle": "Melden Sie sich an, um fortzufahren",
   "auth.username": "Benutzername",

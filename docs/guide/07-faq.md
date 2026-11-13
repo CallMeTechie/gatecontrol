@@ -414,6 +414,13 @@ More:
 4. If the name is marked “stale”, it comes from a restored backup. It still
    applies. As soon as the device reports again, the mark disappears.
 
+5. The name is found, but nothing answers? Then it is probably the name of a
+   gateway. Only the server reaches it; the interface says so below the name.
+   For the NAS, the printer or the camera behind the gateway, create a route
+   under “Services” → “Domains / Routes”, with the gateway as the target and
+   the address of the device in the home network. More:
+   [2.11 Names in the VPN](02-server-setup.md#211-names-in-the-vpn).
+
 **Check:** On a device in the VPN, `ping` answers for the copied name.
 
 ## Setting up a gateway

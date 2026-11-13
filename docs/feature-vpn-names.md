@@ -103,6 +103,26 @@ bietet „Namen vergeben“ an), in den Dialogen „Peer hinzufügen“ und
 „Bearbeiten“ (Feld „Name im VPN“ mit fester Endung), bei Gateways auf der
 Karte, in der Kopfzeile und unter „Mehr“ → „Name und Gruppe ändern …“.
 
+### Namen von Gateways
+
+Der Name eines Gateways löst wie jeder andere auf, erreichbar ist er aber nur
+vom Server: Der Tunnel eines Gateways lässt mit Absicht nur den Server zu
+(`services/gateways.js`, `buildEnvContent`: `WG_ADDRESS=<ip>/32`,
+`WG_ALLOWED_IPS=10.8.0.1/32`). Von einem anderen VPN-Gerät aus antwortet
+`nas.vpn.example.com:5000` deshalb nicht. Das bleibt so; die Oberfläche sagt
+es dort, wo der Name eines Gateways steht (Karte, Kopfzeile, Feld im Dialog
+„Name und Gruppe ändern …“): „Diesen Namen erreicht nur der Server. Für
+Dienste im Heimnetz hinter dem Gateway eine Route anlegen: Domains / Routen“
+(`vn.gw_note`, `vn.gw_note_link`; `GCVpnNames.gatewayNote()`, im Dialog
+`field({ gateway: true })`). Name und Kopieren-Knopf bleiben. Geräte unter
+„Peers / Clients“ zeigen den Hinweis nicht – Gateways stehen dort nicht. Die
+Karte „Zustand der Namen“ zählt Gateways nur mit und listet sie nicht einzeln.
+
+Dienste im Heimnetz hinter dem Gateway (NAS-Oberfläche, Drucker, Kameras)
+bekommen eine Route unter „Domains / Routen“ mit dem Gateway oder Pool als
+Ziel und der LAN-Adresse; ihr Host darf nicht unter der Zone der Gerätenamen
+liegen (`DEVICE_ZONE`).
+
 Lizenz: Gerätenamen und die eigene Domain gehören zum Merkmal `internal_dns`.
 Ohne das Merkmal ist die Karte sichtbar gesperrt; die festen Namen des Servers
 und die Adressen der Routen lösen weiter auf.
