@@ -174,8 +174,9 @@ at home then reach VPN devices by their name.
 - The [DNS filter](#dns-filter) of the home network is switched on and entered in
   the router as the DNS server. Only then do the devices in the home network
   ask the gateway for names.
-- A gateway that knows the function. For an older gateway the switch carries a
-  hint; it takes effect after an update of the gateway.
+- Server **1.272.0** or newer and gateway **1.39.0** or newer. For an older
+  gateway the switch carries a hint; it takes effect after the update of the
+  gateway ([chapter 6](06-updating-a-gateway.md)).
 - For a device at home to actually **reach** a VPN device (not only resolve its
   name), its way into the VPN has to lead over the gateway – as for any address
   of the VPN.

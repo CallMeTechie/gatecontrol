@@ -310,8 +310,11 @@ it is on the card of the device, with a button to copy it. A device without a
 name offers “Give a name”. For a gateway the name is in the head of its page;
 you change it there under “More” → “Change name and group …”.
 
-The Windows apps need an update for the new spelling. Until then keep using
-the name with `gc.internal` on Windows computers.
+Names under your own domain exist from server **1.271.0**. The Windows apps
+resolve them from GateControl Pro **1.85.0** and Community **1.49.0** – they
+create one DNS rule per zone for this. Older apps only resolve the spelling
+with `gc.internal` reliably; use that name there until the update. The Android
+app needs no update.
 
 **Check:** Under “Settings” → “VPN & network” → “State of the names” the row
 “Service” says “running”. On a device in the VPN,
