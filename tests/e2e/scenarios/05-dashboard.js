@@ -51,7 +51,11 @@ module.exports = (ctx) => {
     await page.evaluate(() => window.GCDashboard.run('updates'));
     return page.waitForFunction((v) => document.getElementById('db-updates').dataset.view === v, want, { timeout: 5000 }).then(() => true, () => false);
   };
-  const fieldsOf = (page) => page.locator('#db-up-grid .db-up-item').evaluateAll((ns) => ns.map((n) => ({
+  // In ONE evaluate: the page renders the card anew whenever its "updates" or its auto-update job answers
+  // (dashboard.js renderUpdates, replaceChildren). locator.evaluateAll first collects the elements and measures
+  // them in a second step — a render in between left it with detached nodes, every left/top 0 ("1100 px: the
+  // fields wrap to two columns" and "390 px: the four fields stack" failed that way on a busy runner).
+  const fieldsOf = (page) => page.evaluate(() => [...document.querySelectorAll('#db-up-grid .db-up-item')].map((n) => ({
     field: n.dataset.field, view: n.dataset.view, state: n.dataset.state,
     main: n.querySelector('.db-up-main').textContent.trim().length > 0,
     href: (n.querySelector('.db-up-act a') || {}).getAttribute ? n.querySelector('.db-up-act a').getAttribute('href') : null,
