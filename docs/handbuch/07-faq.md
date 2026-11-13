@@ -192,6 +192,9 @@ Gateways, Apps und die Weboberfläche. Die Zeile nennt, was in der Zeit lief:
   `(async)` oder `(still running)` liefen nur in der Zeit – sie können auch
   nur gewartet haben (auf ein Programm, das Netz); die Ursache steht meist
   davor, ohne Zusatz.
+  Ein Eintrag `db <Anweisung>` ist eine Anweisung der Datenbank des Servers
+  (ohne ihre Werte), in der er so lange gewartet hat – auf den Datenträger
+  oder darauf, dass ein anderes Programm die Datenbank freigibt.
 - `requests`: Anfragen und Plugin-Aufrufe, die in der Zeit offen waren –
   Kandidaten, wenn `tasks` nichts Passendes nennt. Die Zeit ist die Zeit
   **innerhalb der Blockade**: Ein Aufruf, der die ganze Blockade über offen
@@ -216,6 +219,18 @@ eigenen Thread und halten den Server nicht an – lesen sie aber große Teile
 der Datenbank, bremsen sie die Platte für alle. Sind es fast nur
 Schreibvorgänge, liegt es am Datenträger, nicht am Plugin.
 
+**Die Datenbank von außen ansehen** (`sqlite3` in einer Shell, ein
+Sicherungsprogramm, das die Datei öffnet): Lesen stört nicht – große Abfragen
+belegen aber denselben Datenträger. Ein Programm, das schreibt oder eine
+Schreibtransaktion offen lässt (`BEGIN IMMEDIATE`, ein `UPDATE` ohne
+`COMMIT`), hält den Server an: Jeder seiner Schreibvorgänge wartet dann bis
+zu 5 Sekunden und schlägt mit „database is locked“ fehl; im Protokoll steht
+`db <Anweisung>: 5000 ms`. Deshalb nur lesend öffnen und nichts offen lassen:
+`sqlite3 -readonly data/gatecontrol.db` (im Ordner von GateControl), darin
+zuerst `PRAGMA query_only=ON;`.
+Für eine Kopie die Sicherung von GateControl verwenden, nicht die Datei
+kopieren.
+
 Die Aufgaben mit vielen Einträgen (Bereiche von Drive
 auf einem Speicherziel, der Zwischenspeicher der Gateways mit tausenden
 Vorschaubildern, Sicherungen) arbeiten in kleinen Stücken, und die Datenbank schreibt
@@ -234,8 +249,9 @@ es wieder schnell geht. Eine SSD braucht 1–5 ms, eine Festplatte 10–30 ms.
 
 Jede Änderung – ein Gerät meldet sich, ein Kalender wird abgeglichen, ein
 Schloss meldet seinen Zustand – wartet darauf. Seit 1.255.0 schreiben die
-Plugins so, dass nicht mehr jede Änderung auf den Datenträger wartet; ein
-langsamer Datenträger bremst trotzdem Sicherungen, Updates und große Plugins.
+Plugins so, dass nicht mehr jede Änderung auf den Datenträger wartet; ihre
+Datenbanken sichert GateControl im Hintergrund, eine nach der anderen, ohne
+dass ein Schreibvorgang darauf wartet. Ein langsamer Datenträger bremst trotzdem Sicherungen, Updates und große Plugins.
 
 Was hilft:
 

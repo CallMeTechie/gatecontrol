@@ -187,6 +187,9 @@ interface wait meanwhile. The line names what ran in that time:
   `(still running)` only ran in that time – they may just have waited (for a
   program, the network); the cause is usually listed before them, without a
   mark.
+  An entry `db <statement>` is a statement of the server's database (without
+  its values) in which it waited that long – for the disk, or for another
+  program to release the database.
 - `requests`: requests and plugin calls that were open in that time –
   candidates when `tasks` names nothing that fits. The time is the time
   **within the stall**: a call open during the whole stall shows exactly its
@@ -210,6 +213,17 @@ and do not stop the server – but when they read large parts of the database,
 they slow the disk for everyone. Almost only writes: it is the disk, not the
 plugin.
 
+**Looking at the database from outside** (`sqlite3` in a shell, a backup
+tool that opens the file): reading does no harm – large queries use the same
+disk, though. A program that writes or leaves a write transaction open
+(`BEGIN IMMEDIATE`, an `UPDATE` without `COMMIT`) stops the server: each of
+its writes then waits up to 5 seconds and fails with “database is locked”;
+the log shows `db <statement>: 5000 ms`. So open it read-only and leave
+nothing open: `sqlite3 -readonly data/gatecontrol.db` (in GateControl's
+folder), then first
+`PRAGMA query_only=ON;`. For a copy use GateControl's backup, do not copy the
+file.
+
 The jobs with many entries (Drive areas on a storage target,
 the home cache of the gateways with thousands of previews, backups) work in
 small pieces, and the database writes its log back in a thread of its own.
@@ -227,8 +241,9 @@ when it is fast again. An SSD takes 1–5 ms, a hard disk 10–30 ms.
 
 Every change – a device reports in, a calendar is synced, a lock reports its
 state – waits for it. Since 1.255.0 the plugins write so that not every change
-waits for the disk; a slow disk still slows down backups, updates and large
-plugins.
+waits for the disk; GateControl saves their databases in the background, one
+after the other, without a write waiting for it. A slow disk still slows down
+backups, updates and large plugins.
 
 What helps:
 

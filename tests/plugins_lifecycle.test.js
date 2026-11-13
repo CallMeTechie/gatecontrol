@@ -234,6 +234,47 @@ describe('enable / disable', () => {
   });
 });
 
+// Gefunden am laufenden Server (Lebenszyklus unter Schreiblast): Ein Plugin wurde mitten in BEGIN … COMMIT
+// deaktiviert. Die Datenbankverbindung gehört dem Host und überlebt den Prozess — die Transaktion blieb offen,
+// jedes BEGIN des neu gestarteten Plugins scheiterte („cannot start a transaction within a transaction“), seine
+// übrigen Schreibvorgänge landeten in der alten Transaktion und wurden nie bestätigt.
+describe('a plugin process that ends inside a database transaction', () => {
+  const sql = (q) => call('hello', '/sql', 'post', { sql: q });
+  const texts = async () => (await call('hello', '/greetings').expect(200)).body.rows.map((r) => r.text);
+
+  it('crash: the open transaction is rolled back, the restarted process can begin its own', async () => {
+    assert.equal(await runtime.waitRunning('hello'), true);
+    await sql('BEGIN').expect(200);
+    await sql("INSERT INTO greetings (text) VALUES ('half-done')").expect(200);
+    assert.ok((await texts()).includes('half-done'), 'visible inside the transaction');
+    const crashes = runtime.info('hello').crashes;
+    await call('hello', '/crash', 'post', {}).expect(200);
+    for (let i = 0; i < 100 && runtime.info('hello').crashes === crashes; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(await runtime.waitRunning('hello'), true);
+    assert.equal((await texts()).includes('half-done'), false, 'rolled back');
+    const begin = await sql('BEGIN');
+    assert.equal(begin.status, 200, JSON.stringify(begin.body));
+    await sql("INSERT INTO greetings (text) VALUES ('whole')").expect(200);
+    await sql('COMMIT').expect(200);
+    assert.ok((await texts()).includes('whole'));
+    // committed for real: it survives the storage closing (a write inside a forgotten transaction would not)
+    await require('../src/services/plugins/storage').close('hello');
+    assert.ok((await texts()).includes('whole'));
+    await sql("DELETE FROM greetings WHERE text = 'whole'").expect(200); // the tests below count the rows
+  });
+
+  it('disable / enable: the same', async () => {
+    await sql('BEGIN').expect(200);
+    await sql("INSERT INTO greetings (text) VALUES ('half-done-2')").expect(200);
+    await agent.post(API + '/hello/disable').set('X-CSRF-Token', csrf).send({}).expect(200);
+    await agent.post(API + '/hello/enable').set('X-CSRF-Token', csrf).send({}).expect(200);
+    assert.equal(await runtime.waitRunning('hello'), true);
+    assert.equal((await texts()).includes('half-done-2'), false);
+    assert.equal((await sql('BEGIN')).status, 200);
+    await sql('COMMIT').expect(200);
+  });
+});
+
 describe('a background run cut off by the host is no warning', () => {
   // The host ends plugin processes on purpose (shutdown, update, disable,
   // restart by an administrator): a background run cut off by that is logged

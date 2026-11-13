@@ -132,6 +132,50 @@ describe('stall attribution (utils/loopStall.js)', () => {
     assert.ok(big.includes('GET /big (json)') || big.includes('GET /big'), JSON.stringify(big));
   });
 
+  // Protokoll vom 12./13. 11.: 49 von 53 Blockaden „waiting“ mit wenigen ms CPU, genannt wurden nur Aufgaben mit
+  // „(async)“. Eine Anweisung der Host-Datenbank läuft synchron auf dem Hauptthread (Anhängen an das
+  // Schreibprotokoll, fsync seines Kopfes nach einem Checkpoint, Warten auf eine fremde Sperre) — sie steht jetzt
+  // mit ihrer Zeit in `tasks`.
+  it('a database statement the thread waited in is named, without its values', () => {
+    const Database = require('better-sqlite3');
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const path = require('node:path');
+    assert.equal(typeof loopStall.instrumentDb, 'function');
+    loopStall.instrumentDb();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-test-stalldb-'));
+    const db = new Database(path.join(dir, 'a.db'));
+    const other = new Database(path.join(dir, 'a.db'));
+    try {
+      db.pragma('journal_mode = WAL');
+      db.exec('CREATE TABLE t (k TEXT PRIMARY KEY, v TEXT)');
+      db.function('wait_ms', (n) => { block(n); return n; });
+      const names = () => loopStall.tasksBetween(0, Number.MAX_SAFE_INTEGER).map((t) => t.name);
+
+      db.prepare('INSERT INTO t (k, v) VALUES (?, ?)').run('a', '1');
+      assert.equal(db.prepare('SELECT v FROM t WHERE k = ?').get('a').v, '1');
+      assert.deepEqual(names(), [], 'a fast statement is not kept');
+
+      assert.equal(db.prepare("SELECT wait_ms(40) AS n WHERE 'geheim' <> 'x'").get().n, 40);
+      assert.deepEqual(db.prepare('SELECT wait_ms(30) AS n').all(), [{ n: 30 }]);
+      db.exec("UPDATE t SET v = 'geheim' WHERE wait_ms(30) > 0");
+      assert.deepEqual(names().sort(), ['db SELECT wait_ms(?) AS n', 'db SELECT wait_ms(?) AS n WHERE ? <> ?', 'db UPDATE t SET v = ? WHERE wait_ms(?) > ?']);
+
+      // another connection holds the write lock (a shell with an open transaction): the write waits busy_timeout,
+      // fails — and is named with the time it waited
+      loopStall._resetForTest();
+      db.pragma('busy_timeout = 60');
+      other.exec('BEGIN IMMEDIATE');
+      assert.throws(() => db.prepare('UPDATE t SET v = ? WHERE k = ?').run('2', 'a'), { code: 'SQLITE_BUSY' });
+      other.exec('ROLLBACK');
+      const waited = loopStall.tasksBetween(0, Number.MAX_SAFE_INTEGER).find((t) => t.name === 'db UPDATE t SET v = ? WHERE k = ?');
+      assert.ok(waited && waited.ms >= 50, JSON.stringify(names()));
+    } finally {
+      db.close(); other.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('task() marks a timer callback and logs its error instead of throwing', async () => {
     const warn = mock.method(logger, 'warn', () => {});
     loopStall.task('demo.timer', () => block(25))();

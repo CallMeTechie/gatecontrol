@@ -17,6 +17,7 @@ const { checkSql } = require('./sqlGuard');
 const port = workerData.port;
 const state = new Int32Array(workerData.state, 0, 2); // [open, id of the running call]
 const since = new Float64Array(workerData.state, 8, 1); // when state last changed
+const writes = new Int32Array(workerData.state, 16, 1); // counts the calls that wrote — read by the checkpoint thread
 
 const MAX_ROWS = 5000;
 const MAX_VALUE = 1024 * 1024;
@@ -29,6 +30,10 @@ const WAL_AUTOCHECKPOINT = 1000;
 // no statement waits for it) — and the log file shrinks back to this size after a checkpoint
 const CHECKPOINT_IDLE_MS = workerData.checkpointIdleMs || 30 * 1000;
 const JOURNAL_SIZE_LIMIT = 4 * 1024 * 1024;
+// While the host's checkpoint thread serves this file (checkpointWorker.js) none of the two happens here; the
+// automatic checkpoint stays as the upper limit of the log, should that thread not keep up: at this many pages
+// (16 MB) the write that reaches them checkpoints itself — a statement waits rather than the log grows for ever.
+const WAL_CAP_PAGES = workerData.walCapPages || 4000;
 
 /** About the bytes of a row in an answer (strings by their length, numbers 8). */
 function rowBytes(row) {
@@ -174,6 +179,10 @@ const ops = {
     return {};
   },
   size: () => ({ bytes: db.pragma('page_count', { simple: true }) * db.pragma('page_size', { simple: true }) }),
+  // the plugin's process ended (storage.js endTransaction): a transaction it left open is rolled back — this
+  // connection outlives the process, and the next one's BEGIN would fail ("within a transaction") while its other
+  // writes joined the old transaction and were never committed
+  'txn.end': () => { const open = db.inTransaction; if (open) db.exec('ROLLBACK'); return { rolledBack: open }; },
 };
 
 // the time of an operation in this thread and the rows it returned (query) go with the answer: the host logs a
@@ -187,17 +196,46 @@ function mark(id) {
 }
 
 // a checkpoint once the plugin has been quiet for CHECKPOINT_IDLE_MS after a write (cheap when the log is empty)
+// — only while this thread checkpoints itself (`served` false)
 let idleTimer = null;
 let dirty = false;
+let served = false;
+// a statement that only opens or ends a transaction, and whether the open transaction wrote
+const TXN_CONTROL = /^\s*(?:BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE)\b[^;]{0,80};?\s*$/i;
+let txnWrote = false;
 function idleCheckpoint() {
   idleTimer = null;
-  if (!dirty) return;
+  if (!dirty || served) return;
   dirty = false;
   try { db.pragma('wal_checkpoint(PASSIVE)'); } catch { /* the next one */ }
 }
 
+/** The host's checkpoint thread serves this file (true) or no longer does (false: as before, by this thread). */
+function setServed(on) {
+  served = !!on;
+  try { db.pragma(`wal_autocheckpoint = ${served ? WAL_CAP_PAGES : WAL_AUTOCHECKPOINT}`); } catch { /* stays as it is */ }
+  if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+  if (!served) { dirty = true; idleTimer = setTimeout(idleCheckpoint, CHECKPOINT_IDLE_MS); }
+}
+
+/**
+ * The checkpoint thread copied the whole log into plugin.db, as of write `seq`. The next write would start the
+ * log from its beginning and sync its new header (SQLite does that in every mode but synchronous = OFF) — one
+ * sync of the disk inside a one-row UPDATE. It is done here instead, between two calls: a write that changes
+ * nothing (user_version to its own value). By this connection, never by the checkpoint thread's: a write of
+ * another connection would fail a transaction of the plugin that read first and writes then (SQLITE_BUSY_SNAPSHOT).
+ * Not while a transaction is open, not when the plugin wrote since (the log is not empty then).
+ */
+function restartLog(seq) {
+  if (!served || db.inTransaction || Atomics.load(writes, 0) !== seq) return;
+  try { db.pragma(`user_version = ${Number(db.pragma('user_version', { simple: true })) || 0}`); } catch { /* the next write does it */ }
+}
+
 port.on('message', (msg) => {
   if (!msg || typeof msg !== 'object') return;
+  // from the host itself (storage.js), never a plugin's call: no answer
+  if (msg.op === 'checkpoints') { setServed(msg.by === 'service'); return; }
+  if (msg.op === 'restartLog') { restartLog(msg.seq); return; }
   if (msg.op === 'close') {
     // close() copies the log into plugin.db and removes plugin.db-wal: the file alone is complete again
     try { db.close(); } catch { /* ignore */ }
@@ -219,8 +257,16 @@ port.on('message', (msg) => {
   // done before the answer is posted: an answer the host can take is never "running"
   mark(0);
   port.postMessage(answer);
+  const wrote = WRITES.has(msg.op) || (msg.op === 'query' && answer.ok && answer.value && answer.value.changes > 0);
+  // For the checkpoint thread: did this call put something into the log? BEGIN / COMMIT … alone do not — a
+  // transaction that only read would otherwise cost a checkpoint and a new start of the log (three syncs).
+  const control = msg.op === 'exec' && msg.args && TXN_CONTROL.test(String(msg.args.sql || '').slice(0, 200));
+  let logged = wrote && !control;
+  if (db.inTransaction) { if (logged) txnWrote = true; } else { if (control && txnWrote) logged = true; txnWrote = false; }
+  // after the write, never before: a checkpoint that read the counter first must not take a write as included
+  if (logged) Atomics.add(writes, 0, 1);
   if (!db.inTransaction) {
-    if (WRITES.has(msg.op) || (msg.op === 'query' && answer.ok && answer.value && answer.value.changes > 0)) dirty = true;
-    if (dirty) idleTimer = setTimeout(idleCheckpoint, CHECKPOINT_IDLE_MS);
+    if (wrote) dirty = true;
+    if (dirty && !served) idleTimer = setTimeout(idleCheckpoint, CHECKPOINT_IDLE_MS);
   } else dirty = true;
 });

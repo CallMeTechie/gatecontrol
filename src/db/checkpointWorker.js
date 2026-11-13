@@ -12,7 +12,13 @@
 // The main connection runs with wal_autocheckpoint = 0; this thread opens a
 // second connection to the same file and runs PASSIVE checkpoints (they never
 // wait for or block the writers). The main thread never fsyncs the database
-// file then.
+// file then. One sync stays with it: after a complete checkpoint the next
+// write starts the log from its beginning and syncs the new header (SQLite
+// does that in every mode but synchronous = OFF, which could corrupt the file
+// at a power cut) — one fsync of the log on the main thread per checkpoint,
+// named in a stall as `db <statement>` (utils/loopStall.js). So a job that
+// writes when nothing changed costs more than its write: it keeps this cycle
+// going (two fsyncs here, one on the main thread, every MAX_AGE_MS).
 //
 // When (since 1.255.0): every EVERY_MS it looks whether another connection
 // committed (PRAGMA data_version, no I/O) and checkpoints once the oldest
@@ -28,9 +34,14 @@ const fs = require('node:fs');
 const { parentPort, workerData } = require('node:worker_threads');
 const Database = require('better-sqlite3');
 
+const gate = require('./checkpointGate');
+
 const EVERY_MS = workerData.everyMs || 2000;
 const MAX_AGE_MS = workerData.maxAgeMs || 30 * 1000;
 const GROW_BYTES = 8 * 1024 * 1024;
+// one checkpoint at a time over the host database and the plugin databases (checkpointGate.js): this one waits
+// that long for a running one, then runs anyway
+const GATE_WAIT_MS = workerData.gateWaitMs || 5000;
 
 let db = null;
 try {
@@ -54,6 +65,7 @@ let sizeAt = walBytes();
 function checkpoint() {
   if (busy) return;
   busy = true;
+  const held = workerData.gate ? gate.acquire(workerData.gate, gate.HOST, GATE_WAIT_MS) : false;
   try {
     // → [{ busy, log, checkpointed }]
     const r = db.pragma('wal_checkpoint(PASSIVE)')[0] || {};
@@ -67,6 +79,7 @@ function checkpoint() {
   } catch (e) {
     parentPort.postMessage({ t: 'error', error: e.message });
   } finally {
+    if (held) gate.release(workerData.gate, gate.HOST);
     busy = false;
   }
 }

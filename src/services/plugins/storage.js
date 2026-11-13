@@ -30,12 +30,15 @@ const { Worker, MessageChannel, receiveMessageOnPort } = require('node:worker_th
 const { dbDir, LIMITS, TIMEOUTS } = require('./constants');
 const logger = require('../../utils/logger');
 const { fingerprint } = require('./sqlGuard');
+const checkpoints = require('./checkpointService');
 
 const IDLE_MS = 5 * 60 * 1000;
 // closing a worker: how long SQLite may take for its last checkpoint before the worker is terminated
 const CLOSE_MS = 3000;
 // a checkpoint after this long without a call (dbWorker.js; null: its default) — shorter in tests only
 let checkpointIdleMs = null;
+// the upper limit of a log while the checkpoint thread serves the file (dbWorker.js; null: its default) — tests only
+let walCapPages = null;
 const instances = new Map();
 
 // A slow statement of a plugin (its time in the worker, from SLOW_MS on) is counted per plugin; one line per
@@ -69,7 +72,8 @@ function maxBytesOf(id) {
 // Float64 at 8: when that state last changed (Date.now())
 const ST_OPEN = 0;
 const ST_RUNNING = 1;
-const STATE_BYTES = 16;
+// + Int32 at 16: the calls that wrote, counted by the storage thread — how the checkpoint thread sees a change
+const STATE_BYTES = 24;
 const REARM_MIN_MS = 10;
 
 class PluginDb {
@@ -86,6 +90,8 @@ class PluginDb {
     this.idle = null;
     this.slow = null; // { from, n, writes, maxMs, waitMs, by: Map(fingerprint → { op, sql, n, maxMs, rows }) } of this window
     this.slowTimer = null;
+    this.sab = null;
+    this.served = null;
   }
 
   ensure() {
@@ -95,7 +101,7 @@ class PluginDb {
     const sab = new SharedArrayBuffer(STATE_BYTES);
     const { port1, port2 } = new MessageChannel();
     const w = new Worker(path.join(__dirname, 'dbWorker.js'), {
-      workerData: { file: path.join(dir, 'plugin.db'), maxBytes: this.maxBytes || maxBytesOf(this.id), state: sab, port: port2, checkpointIdleMs },
+      workerData: { file: path.join(dir, 'plugin.db'), maxBytes: this.maxBytes || maxBytesOf(this.id), state: sab, port: port2, checkpointIdleMs, walCapPages },
       transferList: [port2],
       resourceLimits: { maxOldGenerationSizeMb: 128 },
       env: {},
@@ -115,6 +121,8 @@ class PluginDb {
     w.on('exit', () => fail(new Error('storage closed')));
     this.worker = w;
     this.port = port1;
+    this.sab = sab;
+    this.served = null; // null: not asked yet; 'asked' | true | false — by the host's checkpoint thread (checkpointService.js)
     this.state = new Int32Array(sab, 0, 2);
     this.since = new Float64Array(sab, 8, 1);
     this.startedAt = Date.now();
@@ -122,6 +130,10 @@ class PluginDb {
   }
 
   onAnswer(m) {
+    // the first answer: the file exists and is in WAL — from now on the checkpoint thread can serve it
+    if (this.served === null && this.worker) {
+      this.served = checkpoints.add(this.id, path.join(dbDir(this.id), 'plugin.db'), this.sab) ? 'asked' : false;
+    }
     const p = m && this.pending.get(m.id);
     if (!p) return;
     this.pending.delete(m.id);
@@ -230,6 +242,7 @@ class PluginDb {
     this.worker = null;
     this.port.close();
     this.port = null;
+    this.served = null; // the checkpoint thread keeps serving the file; the next worker registers its own counter
     for (const q of this.pending.values()) { clearTimeout(q.timer); q.reject(new Error('storage timeout')); }
     this.pending.clear();
     w.terminate().catch(() => {});
@@ -246,14 +259,20 @@ class PluginDb {
     this.flushSlow();
     const w = this.worker;
     const port = this.port;
+    const state = this.state;
     this.worker = null;
     this.port = null;
-    if (!w) return;
+    this.served = null;
     for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('storage closed')); }
     this.pending.clear();
+    // first the checkpoint thread's connection (also the one left by a storage thread that was terminated): SQLite
+    // copies the log back and removes plugin.db-wal only when the last connection closes, and the folder may be
+    // replaced or deleted right after
+    await checkpoints.remove(this.id);
+    if (!w) return;
     // closed by SQLite (the write-ahead log goes into plugin.db, plugin.db-wal is removed) — a worker still busy
     // with a statement, or one that does not end in CLOSE_MS, is terminated (the log stays, the next open replays it)
-    const busy = this.state && Atomics.load(this.state, ST_RUNNING);
+    const busy = state && Atomics.load(state, ST_RUNNING);
     if (port && !busy) {
       const exited = new Promise((resolve) => { w.once('exit', resolve); });
       try { port.postMessage({ op: 'close' }); } catch { /* gone */ }
@@ -266,10 +285,49 @@ class PluginDb {
   }
 }
 
+// the checkpoint thread serves a file / copied its whole log / ended: told to the storage thread of that plugin
+function tell(id, msg) {
+  const db = instances.get(id);
+  if (!db || !db.port) return null;
+  try { db.port.postMessage(msg); } catch { /* closing */ }
+  return db;
+}
+checkpoints.handlers.onAdded = (id, ok) => {
+  const db = instances.get(id);
+  if (!db || db.served !== 'asked') return;
+  db.served = ok;
+  if (ok) tell(id, { op: 'checkpoints', by: 'service' });
+};
+checkpoints.handlers.onCheckpointed = (id, seq) => {
+  const db = instances.get(id);
+  if (db && db.served === true) tell(id, { op: 'restartLog', seq });
+};
+checkpoints.handlers.onLost = () => {
+  for (const [id, db] of instances) {
+    if (db.served) tell(id, { op: 'checkpoints', by: 'self' });
+    if (db.worker) db.served = false;
+  }
+};
+
 function forPlugin(id) {
   let db = instances.get(id);
   if (!db) { db = new PluginDb(id); instances.set(id, db); }
   return db;
+}
+
+/**
+ * The process of plugin `id` ended (stopped, crashed, replaced by an update): a transaction it left open
+ * (`BEGIN` without its `COMMIT`) is rolled back. → true when there was one. Nothing opens for this: no storage
+ * thread, no transaction.
+ */
+async function endTransaction(id) {
+  const db = instances.get(id);
+  if (!db || !db.worker) return false;
+  try {
+    const r = await db.call('txn.end');
+    if (r && r.rolledBack) logger.warn({ plugin: id }, 'plugin process ended inside a database transaction — rolled back');
+    return !!(r && r.rolledBack);
+  } catch { return false; }
 }
 
 async function close(id) {
@@ -292,6 +350,7 @@ async function setLimit(id, maxBytes) {
 
 async function closeAll() {
   await Promise.all([...instances.keys()].map(close));
+  await checkpoints.stop();
 }
 
 /** Bytes used by a plugin's data folder (database + files). */
@@ -312,6 +371,7 @@ function usage(dir) {
 }
 
 module.exports = {
-  forPlugin, close, closeAll, usage, setLimit, maxBytesOf, SLOW_MS, SLOW_WINDOW_MS, SLOW_TOP,
+  forPlugin, close, closeAll, endTransaction, usage, setLimit, maxBytesOf, SLOW_MS, SLOW_WINDOW_MS, SLOW_TOP,
   _setCheckpointIdleMsForTest: (ms) => { checkpointIdleMs = ms || null; },
+  _setWalCapPagesForTest: (n) => { walCapPages = n || null; },
 };

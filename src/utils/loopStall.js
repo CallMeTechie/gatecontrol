@@ -17,6 +17,10 @@
 // that took MEASURE_MIN_MS or more is kept — its time is exactly the time it
 // held the thread, so `tasks` names it even when no timer job ran.
 //
+// Database statements (instrumentDb): a statement of the host database that
+// took DB_MIN_MS or more is in `tasks` as `db <statement without values>` —
+// the thread waited in it (the disk, a lock held by another process).
+//
 // Requests (httpMiddleware, beginRequest/endRequest): what was open in the
 // blocked time is listed as `requests` (route with ids masked, time in the
 // window) — candidates for a stall no marker explains (their async part).
@@ -294,10 +298,58 @@ function instrumentSpawn() {
   };
 }
 
+const DB_MIN_MS = 20;
+let dbMinMs = DB_MIN_MS;
+let dbPatched = false;
+
+/**
+ * Statements of a database opened on this thread (the host database) are
+ * synchronous: a write appends to the write-ahead log — and the first one
+ * after a checkpoint syncs the log's new header (an fsync on this thread,
+ * db/checkpointWorker.js) —, a read may fetch pages from the disk, and a
+ * write waits up to busy_timeout while another process holds the database.
+ * Every statement of DB_MIN_MS or more is kept as `db <statement without its
+ * values>` — also inside a measured piece (a request, a plugin call), so a
+ * stall names the statement the thread waited in. Two clock reads per
+ * statement.
+ */
+function instrumentDb() {
+  if (dbPatched) return;
+  dbPatched = true;
+  try {
+    const Database = require('better-sqlite3');
+    const probe = new Database(':memory:');
+    const proto = Object.getPrototypeOf(probe.prepare('SELECT 1'));
+    probe.close();
+    const keep = (sql, at) => {
+      const end = performance.now();
+      if (end - at < dbMinMs) return;
+      let name;
+      try { name = `db ${require('../services/plugins/sqlGuard').fingerprint(sql, 100)}`; } catch { name = 'db'; }
+      pushSpan({ name, at, end });
+    };
+    const wrap = (orig) => function measuredStatement(...a) {
+      const at = performance.now();
+      try { return orig.apply(this, a); } finally { keep(this.source, at); }
+    };
+    proto.run = wrap(proto.run);
+    proto.get = wrap(proto.get);
+    proto.all = wrap(proto.all);
+    const exec = Database.prototype.exec;
+    Database.prototype.exec = function measuredExec(sql) {
+      const at = performance.now();
+      try { return exec.call(this, sql); } finally { keep(sql, at); }
+    };
+  } catch (err) {
+    logger.debug({ err: err && err.message }, 'database statements not measured');
+  }
+}
+
 /** Start watching (idempotent). `onStall(ms, tasks)` for tests. */
 function start({ everyMs = EVERY_MS, warnMs = WARN_MS, onStall = null } = {}) {
   if (timer) return;
   instrumentSpawn();
+  instrumentDb();
   everyMsNow = everyMs;
   lastTick = performance.now();
   lastUse = usageNow();
@@ -353,7 +405,8 @@ function _resetForTest() {
 
 module.exports = {
   start, stop, withTask, beginTask, endTask, tasksBetween, blockedSince, measure, task,
-  beginRequest, endRequest, requestsBetween, routeLabel, httpMiddleware, measureNext, instrumentSpawn,
+  beginRequest, endRequest, requestsBetween, routeLabel, httpMiddleware, measureNext, instrumentSpawn, instrumentDb,
+  _setDbMinMsForTest: (ms) => { dbMinMs = ms == null ? DB_MIN_MS : ms; },
   _setSpawnMinMsForTest: (ms) => { spawnMinMs = ms == null ? SPAWN_MIN_MS : ms; },
   EVERY_MS, WARN_MS, RECORD_MS, MEASURE_MIN_MS, _noteStallForTest: noteStall, _resetForTest, _usageFieldsForTest: usageFields,
 };

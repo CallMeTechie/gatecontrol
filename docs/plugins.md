@@ -4071,7 +4071,41 @@ per write at 50 ms per sync before, under 1 ms now; the number of syncs no
 longer grows with the writes). The trade-off: a crash of GateControl loses
 nothing; a power cut can lose the plugin's last transactions since its last
 checkpoint (seconds to a few minutes), never corrupt the file. An existing
-file switches on its next open. A plugin backup snapshot is written with the
+file switches on its next open.
+
+**Checkpoints in a thread of the host** (`services/plugins/checkpointService.js`,
+`checkpointWorker.js`): WAL alone left one-row writes of 0.3–10 s on a disk
+with slow syncs (protocol of 13. 11.: 38 ms per sync, 26 a second) — the
+write that reached the 1000 pages checkpointed inside its `COMMIT`, the first
+write after every checkpoint synced the header of the restarted log, a call
+that arrived during the quiet-time checkpoint waited for it, and plugins
+written in the same tick checkpointed in the same moment. Now one thread
+holds a second connection per plugin database and runs PASSIVE checkpoints,
+one database after the other (and never together with the host database's
+checkpoint: `db/checkpointGate.js`): once the oldest change not yet in
+`plugin.db` is 25 s old (seen at most 2 s later), or at once when the log grew
+by 4 MB. After a complete checkpoint the storage thread restarts the log
+itself between two calls (a write that changes nothing), so the plugin's
+next write does not sync either; a call that arrives in that moment waits for
+that one sync, never for the checkpoint. Should the thread not keep up, the
+write that brings the log to 4000 pages (16 MB) checkpoints itself; should it
+end, the storage threads checkpoint themselves as before (1000 pages, 30 s
+quiet). Measured with slowed syncs (`tests/plugins_db_wal.test.js`, 100 ms
+per sync): first write after a checkpoint 102 ms before, under 1 ms now; a
+read during the checkpoint 190 ms before. What a power cut can lose is not
+more than before: at most 27 s after the first change not yet checkpointed
+(before: 30 s after the last one — for a plugin that never rests, until its
+log held 1000 pages). `GC_PLUGIN_CHECKPOINT=inline` switches the thread off.
+
+**A transaction left open** — the connection to `plugin.db` belongs to the
+host (one storage thread per plugin) and outlives the plugin's process. When
+the process ends between `BEGIN` and `COMMIT` (disabled, crashed, replaced by
+an update), the host rolls the transaction back and logs "plugin process
+ended inside a database transaction — rolled back". Before, it stayed open:
+every later `BEGIN` failed with "cannot start a transaction within a
+transaction" and the plugin's other writes were never committed.
+
+A plugin backup snapshot is written with the
 header of a rollback-journal file (it holds every page), a restored file
 switches to WAL again. Fewer writes still help most: write a row only when
 its values changed, put related writes into one transaction (`BEGIN` …
@@ -4083,7 +4117,10 @@ its values changed, put related writes into one transaction (`BEGIN` …
 Since 1.255.0 the worker checkpoints a commit once it is 30 s old (or at once
 when the log grew by 8 MB), instead of every 2 s — two syncs every 2 s
 competed with every other write on a slow disk. A power cut can lose up to
-the last 30 s of host changes.
+the last 30 s of host changes. One sync stays on the main thread: the first
+write after a complete checkpoint restarts the log and syncs its header — a
+statement of the host database that took 20 ms or more is named in the stall
+log as `db <statement without values>`.
 
 **Write speed of the data disk** (since 1.255.0, `services/diskHealth.js`): a
 worker thread writes 4 KB into `<data>/.disk-probe` and syncs it every

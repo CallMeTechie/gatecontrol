@@ -313,6 +313,8 @@ class PluginProcess {
     this.child = null;
     this.clearTimers();
     hostApi.closeSockets(this.id);
+    // its database connection lives in the host (storage.js): a transaction the process left open ends with it
+    require('./storage').endTransaction(this.id).catch(() => {});
     // stopped: the host ended the process on purpose (stop()) — callers log that quietly
     const stopped = this.stopping;
     for (const p of this.pending.values()) {

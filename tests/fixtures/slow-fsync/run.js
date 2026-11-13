@@ -6,6 +6,13 @@
 //   node run.js plugin N  N single-row UPDATEs and N kv.set through the plugin storage (WAL since 1.255.0)
 //   node run.js delete    the same UPDATEs with the pragmas of before 1.255.0 (journal_mode = DELETE)
 //   node run.js probe     the disk write probe (services/diskHealth.js) until it has MIN_SAMPLES
+//   node run.js quiet N   N times: a write, a quiet time (the log is checkpointed), the next write and reads meanwhile
+//                         — what the first write after the checkpoint costs, and a read that arrives during it
+//   node run.js many N    N plugins written in the same moment: when each one's log was checkpointed
+//   node run.js kill      rows written one after the other, each printed once stored — until the test kills the process
+//
+// quiet / many / kill: with GC_PLUGIN_CHECKPOINT=worker the host's checkpoint thread serves the files
+// (services/plugins/checkpointService.js), else each storage thread checkpoints itself (GC_PLUGIN_CHECKPOINT=inline).
 
 require('../../helpers/test-env');
 const fs = require('node:fs');
@@ -57,6 +64,83 @@ function rollbackJournal() {
   return { medianMs: median(ms), maxMs: Math.max(...ms) };
 }
 
+const QUIET_MS = 150;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** The storage with a short quiet time; → the checkpoints the host's thread reported: [{ id, from, to }]. */
+function checkpointed() {
+  const storage = require('../../../src/services/plugins/storage');
+  const service = require('../../../src/services/plugins/checkpointService');
+  storage._setCheckpointIdleMsForTest(QUIET_MS);
+  service._setOptionsForTest({ everyMs: 25, maxAgeMs: QUIET_MS });
+  const seen = [];
+  service.handlers.onCheckpoint = (m) => { if (m.log > 0) seen.push({ id: m.id, from: m.at, to: m.at + m.ms, complete: m.complete }); };
+  return { storage, service, seen };
+}
+
+async function quiet() {
+  const { storage, service, seen } = checkpointed();
+  const db = storage.forPlugin('quiet');
+  await db.call('exec', { sql: 'CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)' });
+  await db.call('query', { sql: "INSERT INTO t VALUES (1, 'a')", mode: 'run' });
+  const sync = Number(process.env.FAKE_FSYNC_MS) || 0;
+  const first = [];
+  const reads = [];
+  for (let i = 0; i < WRITES; i++) {
+    // reads all through the quiet time and the checkpoint in it (two syncs, and the new start of the log)
+    const until = performance.now() + QUIET_MS + sync * 6 + 200;
+    // QUIET_READS=one: a single read, right after the quiet time ended (a storage thread that checkpoints itself
+    // does so only once no call came for QUIET_MS)
+    if (process.env.QUIET_READS === 'one') await sleep(QUIET_MS + 15);
+    while (performance.now() < until) {
+      const t0 = performance.now();
+      await db.call('query', { sql: 'SELECT v FROM t WHERE id = 1', mode: 'get' });
+      reads.push(performance.now() - t0);
+      await sleep(process.env.QUIET_READS === 'one' ? Math.max(1, until - performance.now()) : 7);
+    }
+    const t0 = performance.now();
+    await db.call('query', { sql: 'UPDATE t SET v = ? WHERE id = 1', params: ['v' + i], mode: 'run' });
+    first.push(performance.now() - t0);
+  }
+  const row = await db.call('query', { sql: 'SELECT v FROM t WHERE id = 1', mode: 'get' });
+  const served = service.running();
+  await storage.closeAll();
+  const dir = path.join(require('../../../src/services/plugins/constants').dbDir('quiet'));
+  return { firstWriteMaxMs: Math.max(...first), readMaxMs: Math.max(...reads), reads: reads.length, checkpoints: seen.length, served, value: row.row.v, files: fs.readdirSync(dir).sort() };
+}
+
+async function many() {
+  const { storage, seen } = checkpointed();
+  const dbs = [];
+  for (let i = 0; i < WRITES; i++) {
+    const db = storage.forPlugin('many-' + i);
+    await db.call('exec', { sql: 'CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)' });
+    dbs.push(db);
+  }
+  const sync = Number(process.env.FAKE_FSYNC_MS) || 0;
+  await sleep(QUIET_MS + WRITES * sync * 4 + 300);
+  seen.length = 0;
+  await Promise.all(dbs.map((db) => db.call('query', { sql: "INSERT OR REPLACE INTO t VALUES (1, 'x')", mode: 'run' })));
+  await sleep(QUIET_MS + WRITES * sync * 4 + 300);
+  const t0 = Math.min(...seen.map((c) => c.from));
+  const list = seen.map((c) => ({ id: c.id, from: c.from - t0, to: c.to - t0 }));
+  await storage.closeAll();
+  return { checkpoints: list };
+}
+
+async function kill() {
+  const { storage } = checkpointed();
+  const db = storage.forPlugin('kill');
+  await db.call('exec', { sql: 'CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)' });
+  process.stdout.write(`dir ${require('../../../src/services/plugins/constants').dbDir('kill')}\n`);
+  for (let i = 1; ; i++) {
+    await db.call('query', { sql: 'INSERT INTO t VALUES (?, ?)', params: [i, 'x'.repeat(500)], mode: 'run' });
+    if (i % 10 === 0) await db.call('kv.set', { key: 'last', value: i });
+    process.stdout.write(`stored ${i}\n`);
+    if (i % 25 === 0) await sleep(QUIET_MS + 30); // quiet times: checkpoints and new starts of the log in between
+  }
+}
+
 async function probe() {
   const diskHealth = require('../../../src/services/diskHealth');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-slow-probe-'));
@@ -73,7 +157,8 @@ async function probe() {
 
 (async () => {
   const what = process.argv[2];
-  const out = what === 'plugin' ? await plugin() : (what === 'delete' ? rollbackJournal() : await probe());
+  const modes = { plugin, delete: rollbackJournal, probe, quiet, many, kill };
+  const out = await modes[Object.prototype.hasOwnProperty.call(modes, what) ? what : 'probe']();
   process.stdout.write(JSON.stringify(out) + '\n');
   process.exit(0);
 })().catch((e) => { process.stderr.write(String((e && e.stack) || e)); process.exit(1); });

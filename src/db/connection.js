@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const config = require('../../config/default');
 const logger = require('../utils/logger');
 const { precreatePrivateFile, restrictDbFiles } = require('../utils/fileModes');
+const gate = require('./checkpointGate');
 
 let db = null;
 let checkpointer = null;
@@ -43,7 +44,7 @@ function startCheckpointer(conn, dbPath) {
   let w;
   try {
     const { Worker } = require('node:worker_threads');
-    w = new Worker(path.join(__dirname, 'checkpointWorker.js'), { workerData: { file: dbPath } });
+    w = new Worker(path.join(__dirname, 'checkpointWorker.js'), { workerData: { file: dbPath, gate: gate.shared() } });
   } catch (err) {
     logger.warn({ err: err.message }, 'WAL checkpoint worker not started — checkpoints stay on the main thread');
     return;
@@ -51,6 +52,7 @@ function startCheckpointer(conn, dbPath) {
   const back = (why) => {
     if (checkpointer !== w) return;
     checkpointer = null;
+    gate.clear(gate.HOST);
     try { if (db === conn && conn.open) conn.pragma('wal_autocheckpoint = 1000'); } catch { /* closed */ }
     if (why) logger.warn({ err: why }, 'WAL checkpoint worker ended — checkpoints on the main thread again');
   };
@@ -69,7 +71,7 @@ function stopCheckpointer() {
   if (checkpointTimer) { clearTimeout(checkpointTimer); checkpointTimer = null; }
   const w = checkpointer;
   checkpointer = null;
-  if (w) { try { w.postMessage({ t: 'stop' }); } catch { /* gone */ } w.terminate().catch(() => {}); }
+  if (w) { try { w.postMessage({ t: 'stop' }); } catch { /* gone */ } w.terminate().catch(() => {}); gate.clear(gate.HOST); }
 }
 
 function getDb() {
