@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.272.1] — 2026-11-13
+
+### Fixes
+- Hinweis am VPN-Namen eines Gateways – den Namen erreicht nur der Server (#486)
+
+---
+
 ## [1.272.0] — 2026-11-13
 
 ### Features
