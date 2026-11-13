@@ -152,9 +152,26 @@ describe('stall attribution (utils/loopStall.js)', () => {
       db.function('wait_ms', (n) => { block(n); return n; });
       const names = () => loopStall.tasksBetween(0, Number.MAX_SAFE_INTEGER).map((t) => t.name);
 
-      db.prepare('INSERT INTO t (k, v) VALUES (?, ?)').run('a', '1');
-      assert.equal(db.prepare('SELECT v FROM t WHERE k = ?').get('a').v, '1');
-      assert.deepEqual(names(), [], 'a fast statement is not kept');
+      // The set-up above wrote to the disk (switch of the journal mode: new files and a sync, a new table). On
+      // a busy disk that alone takes DB_MIN_MS or more and is then kept, as it should be — it is not what is
+      // asked here (CI, 13.11.: 'db PRAGMA journal_mode = WAL' was in the list).
+      loopStall._resetForTest();
+      // "A fast statement is not kept" as a rule on one clock instead of a hope about the disk: the time measured
+      // here, around the call, is never shorter than the one measured inside it. So a statement that took less
+      // than DB_MIN_MS here must not be in the list, and whatever is in the list took DB_MIN_MS or more.
+      const timed = (fn) => { const t0 = performance.now(); const value = fn(); return { value, ms: performance.now() - t0 }; };
+      const quick = [
+        ['db INSERT INTO t (k, v) VALUES (?, ?)', timed(() => db.prepare('INSERT INTO t (k, v) VALUES (?, ?)').run('a', '1'))],
+        ['db SELECT v FROM t WHERE k = ?', timed(() => db.prepare('SELECT v FROM t WHERE k = ?').get('a'))],
+      ];
+      assert.equal(quick[1][1].value.v, '1');
+      const kept = loopStall.tasksBetween(0, Number.MAX_SAFE_INTEGER);
+      for (const k of kept) assert.ok(k.ms >= loopStall.DB_MIN_MS, `kept although it took ${k.ms} ms: ${k.name}`);
+      for (const [name, t] of quick) {
+        if (t.ms < loopStall.DB_MIN_MS) assert.ok(!kept.some((k) => k.name === name), `a fast statement is not kept (${name}, ${t.ms.toFixed(1)} ms)`);
+      }
+      assert.ok(kept.every((k) => quick.some(([name]) => name === k.name)), JSON.stringify(names()));
+      loopStall._resetForTest();
 
       assert.equal(db.prepare("SELECT wait_ms(40) AS n WHERE 'geheim' <> 'x'").get().n, 40);
       assert.deepEqual(db.prepare('SELECT wait_ms(30) AS n').all(), [{ n: 30 }]);
