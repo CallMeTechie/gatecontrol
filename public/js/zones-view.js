@@ -512,6 +512,35 @@
     return list;
   }
 
+  // GET /zones data without the hosts and entries whose DELETE is under way
+  // (removed: { hosts, entries } — Sets of ids). The server deletes the row
+  // first and answers only after the Caddy sync, so the page drops them at
+  // once instead of waiting for the answer. A host that loses its last entry
+  // goes with it, as on the server.
+  function withoutRemoved(data, removed) {
+    const hostIds = removed && removed.hosts;
+    const entryIds = removed && removed.entries;
+    if (!data || !((hostIds && hostIds.size) || (entryIds && entryIds.size))) return data;
+    const keepHosts = (hosts) => {
+      const out = [];
+      for (const h of hosts || []) {
+        if (hostIds && hostIds.has(h.id)) continue;
+        const all = h.entries || [];
+        const left = entryIds ? all.filter((e) => !entryIds.has(e.id)) : all;
+        if (left.length === all.length) { out.push(h); continue; }
+        if (!left.length) continue;
+        out.push(Object.assign({}, h, {
+          entries: left, entry_count: left.length, enabled_count: left.filter((e) => e.enabled).length,
+        }));
+      }
+      return out;
+    };
+    return Object.assign({}, data, {
+      zones: (data.zones || []).map((z) => Object.assign({}, z, { hosts: keepHosts(z.hosts) })),
+      unassigned: keepHosts(data.unassigned),
+    });
+  }
+
   function zoneKey(zone) {
     return zone && zone.domain_id != null ? 'z:' + zone.domain_id : UNASSIGNED_KEY;
   }
@@ -591,7 +620,7 @@
     entryTargetHost, entryTargetPort, entryListenPort, entryChip, entryName, isOnDemand, hstsActive, wafState, entryPortLabel, entryHealth,
     worstHealth, hostHealth, hostEnabled, hostAccess,
     gatewayKey, zoneGatewayKey, entryGatewayKey, hostGatewayKey, parseGatewayKey,
-    isFilterActive, filterZones, summarize, countEntries, buildUnassignedZone, pageZones,
+    isFilterActive, filterZones, summarize, countEntries, buildUnassignedZone, pageZones, withoutRemoved,
     zoneKey, gatewayChoices, smbEntries, previewFqdn, validSubdomain, validIPv4, validPort,
     PROTECTIONS, RISKS, BULK_MAX, HSTS_BULK_MAX_AGE, isPublicEntry, isHttpsEntry, entryProtections, entryShield, entryRisk,
     entryFilterActive, filtersToHash, filtersFromHash, selectableEntries, bulkPlan, entryIndex,

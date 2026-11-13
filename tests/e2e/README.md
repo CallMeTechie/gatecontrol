@@ -12,7 +12,9 @@ run.js                  Playwright-Treiber: meldet an, fährt die Szenarien,
                         schreibt Screenshots, druckt einen JSON-Bericht
 scenarios/01-login.js   Anmeldung, falsches Passwort, TOTP-Zweitfaktor
 scenarios/02-zones.js   /routes: Zonen, Suche/Typ-Filter, Domain-Einstellungen,
-                        Host bearbeiten (Ziel-Port inline + Editor), Neuer Host, 400 px
+                        Host bearbeiten (Ziel-Port inline + Editor), Neuer Host,
+                        Löschen (Zeile geht sofort; späte, fehlgeschlagene und
+                        verlorene Antwort per page.route), 400 px
 scenarios/03-security.js /security: Prüfungen gegen die API, hell/dunkel, 400 px
 scenarios/04-passkey.js  Passkey registrieren, benutzernamenlos anmelden,
                         entfernen (virtueller Authenticator über CDP)

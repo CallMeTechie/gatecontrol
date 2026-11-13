@@ -22,7 +22,8 @@
   const PREVIEW_HOSTS = 10;
 
   const state = {
-    data: null,
+    data: null,                // what the page shows: `loaded` minus pending deletes
+    loaded: null,              // last GET /zones
     lastSync: null,
     error: null,
     errorToasted: false,
@@ -67,7 +68,7 @@
         do {
           rerun = false;
           const res = await UI.call(api.get('/api/v1/zones'));
-          state.data = {
+          state.loaded = {
             zones: res.zones || [],
             unassigned: res.unassigned || [],
             gateways: res.gateways || [],
@@ -76,21 +77,52 @@
           };
           state.lastSync = new Date();
         } while (rerun);
+        state.data = V.withoutRemoved(state.loaded, removing);
         pruneSelection();
         state.error = null;
         state.errorToasted = false;
-        render();
-        if (DM) DM.refresh();
-        if (HD) HD.refresh();
+        show();
       } catch (err) {
         state.error = err;
         if (!state.data) render();
-        else if (!state.errorToasted) { state.errorToasted = true; UI.toastError(err); }
+        else {
+          if (!state.errorToasted) { state.errorToasted = true; UI.toastError(err); }
+          // No fresh data: what a finished delete had hidden is unknown again.
+          if (state.data !== V.withoutRemoved(state.loaded, removing)) { try { show(); } catch (_) { /* the error above stands */ } }
+        }
       } finally {
         inflight = null;
       }
     })();
     return inflight;
+  }
+
+  // The loaded data minus what is being deleted right now, drawn on the page
+  // and in the open dialogs.
+  function show() {
+    if (!state.loaded) return;
+    state.data = V.withoutRemoved(state.loaded, removing);
+    render();
+    if (DM) DM.refresh();
+    if (HD) HD.refresh();
+  }
+
+  // A DELETE answers only after the server synced Caddy (the row is gone
+  // before that), and an answer can get lost on the way. So what is being
+  // deleted leaves the page at once: removing({ hosts, entries }) hides the
+  // ids and returns the function that ends it — the caller reloads afterwards,
+  // which brings the row back if the server kept it.
+  const removing = { hosts: new Set(), entries: new Set() };
+  function markRemoving(ids) {
+    const hosts = ((ids && ids.hosts) || []).filter((id) => !removing.hosts.has(id));
+    const entries = ((ids && ids.entries) || []).filter((id) => !removing.entries.has(id));
+    hosts.forEach((id) => removing.hosts.add(id));
+    entries.forEach((id) => removing.entries.add(id));
+    show();
+    return () => {
+      hosts.forEach((id) => removing.hosts.delete(id));
+      entries.forEach((id) => removing.entries.delete(id));
+    };
   }
 
   let debounceTimer = null;
@@ -423,8 +455,9 @@
     try {
       await UI.call(api.put('/api/v1/hosts/' + host.id + '/toggle', { enabled }));
       UI.toastOk(t(enabled ? 'host.enabled_ok' : 'host.disabled_ok', { host: host.fqdn || V.hostLabel(host) }));
-      await load();
     } catch (err) { UI.toastError(err); }
+    // Also after an error: a lost answer says nothing about what the server did.
+    await load();
   }
 
   // Shield popup item → the place where that protection is configured.
@@ -763,7 +796,7 @@
   }
 
   // ─── Init ──────────────────────────────────────────────────────────────
-  if (DM) DM.bind({ getData: () => state.data, reload: load, lastSync: () => state.lastSync });
+  if (DM) DM.bind({ getData: () => state.data, reload: load, removing: markRemoving, lastSync: () => state.lastSync });
   initToolbar();
   render();
   load().then(() => {
