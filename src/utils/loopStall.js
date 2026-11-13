@@ -408,5 +408,5 @@ module.exports = {
   beginRequest, endRequest, requestsBetween, routeLabel, httpMiddleware, measureNext, instrumentSpawn, instrumentDb,
   _setDbMinMsForTest: (ms) => { dbMinMs = ms == null ? DB_MIN_MS : ms; },
   _setSpawnMinMsForTest: (ms) => { spawnMinMs = ms == null ? SPAWN_MIN_MS : ms; },
-  EVERY_MS, WARN_MS, RECORD_MS, MEASURE_MIN_MS, _noteStallForTest: noteStall, _resetForTest, _usageFieldsForTest: usageFields,
+  EVERY_MS, WARN_MS, RECORD_MS, MEASURE_MIN_MS, DB_MIN_MS, _noteStallForTest: noteStall, _resetForTest, _usageFieldsForTest: usageFields,
 };

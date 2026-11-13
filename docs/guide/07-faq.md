@@ -389,6 +389,31 @@ Give the URL its own sub-folder (e.g. `…/GateControl/Backups/`), so the
 backups do not end up between Drive's files. SMB, SFTP and S3 have the same
 “Connection” choice.
 
+### Where has the page “Internal DNS” gone?
+
+The page no longer exists. The name of a device now stands with the device
+itself: under “Devices” → “Peers / Clients” on its card, for gateways in the
+head of the page. Which ending the names use is set under “Settings” →
+“VPN & network” → “Names in the VPN”; the “State of the names” is there too.
+Old bookmarks of the page lead there. More:
+[2.11 Names in the VPN](02-server-setup.md#211-names-in-the-vpn).
+
+### A device name in the VPN is not found
+
+1. Open “Settings” → “VPN & network” → “State of the names”. If “Service” does
+   not say “running”, restart the server container (`docker compose restart`
+   in the folder of the server).
+2. Look up what the device is called under “Devices” → “Peers / Clients” and
+   copy the name with the button next to it. If it says “No name in the VPN”,
+   give it one.
+3. On a Windows computer with the GateControl app: use the name ending in
+   `gc.internal` as long as the app does not have the update for the new
+   ending yet.
+4. If the name is marked “stale”, it comes from a restored backup. It still
+   applies. As soon as the device reports again, the mark disappears.
+
+**Check:** On a device in the VPN, `ping` answers for the copied name.
+
 ## Setting up a gateway
 
 ### The assistant is still waiting after 10 minutes

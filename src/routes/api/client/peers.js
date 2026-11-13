@@ -188,13 +188,22 @@ router.post('/register', requireLimit('vpn_peers', peerCountFn), async (req, res
 });
 
 /**
- * Where the clients send lookups for peer hostnames (`<host>.<domain>`):
+ * Where the clients send lookups for peer hostnames (`<host>.<zone>`):
  * the dnsmasq bound to the VPN gateway. null when internal DNS is off, so
  * clients install no resolver rule for it.
+ *
+ *   domain  — the legacy zone (GC_DNS_DOMAIN, default gc.internal). Unchanged
+ *             on purpose: Windows apps that only know this field create
+ *             exactly ONE resolver rule (NRPT) from it, and the portal and
+ *             internal routes live in this zone.
+ *   domains — every zone the server answers itself, primary first. Additive;
+ *             apps that know it create one rule per entry.
+ *   primary — the zone the device names are shown with (services/vpnNames.js).
  */
 function internalDns() {
   if (!config.dns.enabled) return null;
-  return { domain: config.dns.domain, server: config.wireguard.gatewayIp };
+  const names = require('../../../services/vpnNames').current();
+  return { domain: config.dns.domain, server: config.wireguard.gatewayIp, domains: names.zones, primary: names.primary };
 }
 
 /**
@@ -244,7 +253,9 @@ router.get('/config/check', async (req, res) => {
     const clientHash = req.query.hash;
 
     if (clientHash && clientHash === currentHash) {
-      return res.json({ ok: true, updated: false });
+      // internalDns also here: the zones of the device names can change
+      // without the WireGuard config (and so its hash) changing.
+      return res.json({ ok: true, updated: false, internalDns: internalDns() });
     }
 
     res.json({ ok: true, updated: true, config, hash: currentHash, internalDns: internalDns() });
@@ -282,7 +293,9 @@ router.post('/peer/hostname', hostnameReportLimiter, requireFeature('internal_dn
     }
 
     const result = peers.setHostname(req.tokenPeerId, raw, 'agent');
-    res.json({ ok: true, assigned: result.assigned, changed: result.changed });
+    // fqdn/fqdns: the assigned name in the primary zone / in every zone
+    const fqdns = result.assigned ? require('../../../services/vpnNames').fqdnsOf(result.assigned) : [];
+    res.json({ ok: true, assigned: result.assigned, changed: result.changed, fqdn: fqdns[0] || null, fqdns });
   } catch (err) {
     const msg = err.message || '';
     if (msg.includes('reserved')) {

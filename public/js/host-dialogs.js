@@ -56,6 +56,7 @@
     HOST_EXISTS: 'host.err_exists', HOST_HAS_HTTP: 'entry.err_http_taken', TYPE_DOMAIN_REQUIRED: 'entry.err_no_domain',
     TYPE_LISTEN_PORT_REQUIRED: 'entry.err_listen_port', LAN_HOST_REQUIRED: 'host.err_lan_required',
     DOMAIN_CONFLICT: 'host.err_domain_conflict', DOMAIN_UNVERIFIED: 'host.err_domain_unverified', LABEL_INVALID: 'entry.err_label',
+    DEVICE_ZONE: 'host.err_device_zone', DEVICE_NAME: 'host.err_device_name',
   };
   function serverText(err) {
     const code = err && err.data && err.data.code;

@@ -363,6 +363,65 @@
     {% if not has('custom_dns') %}{{ lockNote('custom_dns') }}{% endif %}
     {{ numRow('st-peer-timeout', 'peer-timeout', t('st.vpn.timeout'), t('st.vpn.timeout_hint'), t('st.unit.seconds'), 30, 600) }}
   </section>
+  {#- Namen im VPN (services/vpnNames.js): the zone the VPN devices are named
+      under — a subdomain of a domain from "Domains / Routen" or the legacy
+      zone (GC_DNS_DOMAIN). Four states: own domain, default, the subdomain
+      collides, the domain was removed. -#}
+  <section class="pgx-card stx-card" aria-labelledby="st-c-names" id="card-vpn-names" data-state="std">
+    {% call cardHead('st-c-names', t('st.names.title'), t('st.names.desc'), chip=(PRO if not has('internal_dns') else '')) %}
+      <span class="st-pill" data-state="good" id="st-vn-active" hidden>{{ t('st.names.active') }}</span>
+    {% endcall %}
+    {% if not has('internal_dns') %}{{ lockNote('internal_dns') }}{% endif %}
+    <div class="st-note st-note-warn vn-removed" id="st-vn-removed" role="status" hidden></div>
+    {{ selectRow('st-vn-domain', 'vn-domain', t('st.names.domain'), [['', t('st.names.default_option', { zone: vpnLegacyZone })]], t('st.names.domain_hint'), disabled=not has('internal_dns')) }}
+    <div class="st-row" data-st-row="vn-sub">
+      {{ rowText('st-vn-sub', t('st.names.sub'), t('st.names.sub_hint'), '', true) }}
+      <div class="st-row-ctl vn-sub-ctl">
+        <input type="text" class="st-input st-mono vn-sub-in" id="st-vn-sub" data-st-field="vn-sub" placeholder="vpn" maxlength="63" autocomplete="off" spellcheck="false" autocapitalize="none"
+          aria-describedby="st-vn-sub-hint st-vn-sub-err"{% if not has('internal_dns') %} disabled{% endif %}>
+        <span class="vn-suf st-mono" id="st-vn-suffix"></span>
+        <span class="st-read vn-off" id="st-vn-sub-off" hidden>{{ t('st.names.sub_off') }}</span>
+      </div>
+    </div>
+    <div class="st-row st-row-read">
+      <div class="st-row-text"><span class="st-label" id="st-vn-preview-label">{{ t('st.names.preview') }}</span><span class="st-hint">{{ t('st.names.preview_hint') }}</span></div>
+      <div class="st-row-ctl vn-prev-ctl" aria-live="polite">
+        <span class="vn-name" id="st-vn-preview" aria-labelledby="st-vn-preview-label">
+          <code id="st-vn-preview-name"></code>
+          <button type="button" class="vn-copy" id="st-vn-preview-copy" aria-label="{{ t('st.names.copy') }}" title="{{ t('st.names.copy') }}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button>
+        </span>
+        <span class="st-hint vn-prev-note" id="st-vn-preview-note"></span>
+      </div>
+    </div>
+    <p class="stx-box vn-only" data-tone="good"><b>{{ t('st.names.vpn_only_b') }}</b> {{ t('st.names.vpn_only') }}</p>
+    <div class="st-row" id="st-vn-back-row" hidden>
+      <div class="st-row-text"><span class="st-label">{{ t('st.names.back_label') }}</span><span class="st-hint">{{ t('st.names.back_hint') }}</span></div>
+      <div class="st-row-ctl"><button type="button" class="pgx-btn" id="st-vn-back">{{ t('st.names.back', { zone: vpnLegacyZone }) }}</button></div>
+    </div>
+  </section>
+  <section class="pgx-card stx-card" aria-labelledby="st-c-namestate" id="card-vpn-names-state">
+    {% call cardHead('st-c-namestate', t('st.names.state_title'), t('st.names.state_desc')) %}{% endcall %}
+    <div class="st-row st-row-read">
+      <div class="st-row-text"><span class="st-label">{{ t('st.names.service') }}</span></div>
+      <div class="st-row-ctl"><span class="st-pill" id="st-vn-service">–</span></div>
+    </div>
+    <div class="st-row st-row-read">
+      <div class="st-row-text"><span class="st-label">{{ t('st.names.written') }}</span><span class="st-hint">{{ t('st.names.written_hint') }}</span></div>
+      <div class="st-row-ctl"><span class="st-read" id="st-vn-written">–</span></div>
+    </div>
+    <div class="st-row st-row-read">
+      <div class="st-row-text"><span class="st-label">{{ t('st.names.entries') }}</span></div>
+      <div class="st-row-ctl"><span class="st-read" id="st-vn-entries">–</span></div>
+    </div>
+    <div class="st-row st-row-read">
+      <div class="st-row-text"><span class="st-label">{{ t('st.names.stale') }}</span><span class="st-hint">{{ t('st.names.stale_hint') }}</span></div>
+      <div class="st-row-ctl"><span class="st-pill" id="st-vn-stale">–</span><a class="vn-link" id="st-vn-stale-link" href="/peers#hints=oldname" hidden>{{ t('st.names.stale_view') }}</a></div>
+    </div>
+    <details class="vn-fixed" id="st-vn-fixed">
+      <summary>{{ t('st.names.fixed') }}<small id="st-vn-fixed-n"></small></summary>
+      <ul id="st-vn-fixed-list"></ul>
+    </details>
+  </section>
   <section class="pgx-card stx-card" aria-labelledby="st-c-block">
     {% call cardHead('st-c-block', t('st.block.title'), t('st.block.desc')) %}{% endcall %}
     {{ segRow('st-rb-action', 'rb-action', t('st.block.action'), [['not_found', t('st.block.not_found')], ['custom', t('st.block.custom')], ['redirect', t('st.block.redirect')], ['empty', t('st.block.empty')]]) }}

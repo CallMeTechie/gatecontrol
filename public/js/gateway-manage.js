@@ -98,6 +98,11 @@
       group.value = p.group_id ? String(p.group_id) : '';
       var err = el('div', { class: 'zn-field-error', role: 'alert' }); err.hidden = true;
       d.body.appendChild(el('div', { class: 'form-group' }, [el('label', { class: 'form-label', for: 'gwm-name', text: T('gwm.name') }), name]));
+      // Name im VPN (vpn-names.js): a gateway reports its name itself; one given
+      // here is kept (PATCH /api/v1/peers/:id/hostname). Licence: internal_dns.
+      var VN = window.GCVpnNames;
+      var vnField = VN && VN.cfg.licensed ? VN.field({ id: 'gwm-hostname', saveBtn: null }) : null;
+      if (vnField) { d.body.appendChild(vnField.root); vnField.set(p); }
       d.body.appendChild(el('div', { class: 'form-group' }, [el('label', { class: 'form-label', for: 'gwm-desc', text: T('gwm.description') }), desc]));
       d.body.appendChild(el('div', { class: 'form-group' }, [el('label', { class: 'form-label', for: 'gwm-group', text: T('gwm.group') }), group,
         el('small', { class: 'form-hint', text: T('gwm.group_hint') })]));
@@ -108,9 +113,18 @@
       save.addEventListener('click', function () {
         var n = name.value.trim();
         if (!n) { err.textContent = T('gwm.name_required'); err.hidden = false; name.focus(); return; }
+        if (vnField && !vnField.valid()) { vnField.input.focus(); return; }
         save.disabled = true;
         api('PUT', '/api/v1/peers/' + encodeURIComponent(id), { name: n, description: desc.value.trim(), group_id: group.value ? Number(group.value) : null }).then(function (res) {
+          if (!res || !res.ok || !vnField || !vnField.changed()) return res;
+          return api('PATCH', '/api/v1/peers/' + encodeURIComponent(id) + '/hostname', { hostname: vnField.value() }).then(function (hn) {
+            if (hn && hn.ok) return res;
+            vnField.serverError(hn);
+            return { ok: false, atField: true };
+          });
+        }).then(function (res) {
           save.disabled = false;
+          if (res && res.atField) { changed(); return; }
           if (!res || !res.ok) { err.textContent = (res && res.error) || T('common.error'); err.hidden = false; return; }
           d.close(true);
           toast(T('gwm.saved'));

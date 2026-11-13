@@ -50,7 +50,10 @@ function collidesWithPeer(host) {
   // dnsmasq publishes each peer as `<hostname>.<dns.domain>` (see dns.js). A
   // portal host must not shadow a peer FQDN (its → gateway-IP entry would hijack it).
   const rows = getDb().prepare("SELECT hostname FROM peers WHERE hostname IS NOT NULL AND hostname != ''").all();
-  return rows.some(r => `${String(r.hostname).trim().toLowerCase()}.${config.dns.domain}` === host);
+  if (rows.some(r => `${String(r.hostname).trim().toLowerCase()}.${config.dns.domain}` === host)) return true;
+  // … and the zone chosen under "Namen im VPN" belongs to the devices alone
+  // (services/vpnNames.js): the server answers it by itself.
+  return require('./vpnNames').insideDeviceZone(host);
 }
 async function validatePortalHost(base, prefix) {
   base = String(base || '').trim().toLowerCase();

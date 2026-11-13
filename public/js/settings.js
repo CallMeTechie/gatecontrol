@@ -751,7 +751,11 @@
     });
     const remove = el('button', { type: 'button', class: 'st-icon-btn', 'aria-label': t('st.domains.remove_label', { domain: d.domain }), title: t('st.domains.remove_label', { domain: d.domain }) }, [icon(ICON_TRASH)]);
     remove.addEventListener('click', async () => {
-      if (!(await D.confirm({ title: t('st.domains.remove_title'), message: t('st.domains.remove_msg', { domain: d.domain }), okLabel: t('st.remove'), danger: true }))) return;
+      // "Namen im VPN" hangs on this domain: say so before it goes (the names go on working)
+      const names = await get('/api/v1/settings/vpn-names');
+      const zone = names.ok && names.data.custom && names.data.base_domain === String(d.domain).toLowerCase() ? names.data.primary : '';
+      if (!(await D.confirm({ title: t('st.domains.remove_title'), message: t('st.domains.remove_msg', { domain: d.domain }),
+        detail: zone ? t('st.names.remove_detail', { zone }) : undefined, okLabel: t('st.remove'), danger: true }))) return;
       const r = await del('/api/v1/settings/domains/' + d.id);
       if (r.ok) SECTIONS.domains.loadList(); else toast(errText(r), 'error');
     });
@@ -838,20 +842,164 @@
   });
 
   // ── VPN & Netzwerk ──
+  // "Namen im VPN": the zone of the device names (GET/PUT /api/v1/settings/vpn-names).
+  // The card has four states (data-state): own — a domain of the admin,
+  // std — the legacy zone, clash — the subdomain is taken, gone — the saved
+  // domain was removed from "Domains / Routen".
+  const VN_EXAMPLE = 'laptop-buero';
+  const vn = { saved: null, check: null, checkKey: '', timer: null, seq: 0 };
+  function vnKey(v) { return v['vn-domain'] + '|' + String(v['vn-sub'] || '').trim().toLowerCase(); }
+  function vnZone(v) {
+    const sub = String(v['vn-sub'] || '').trim().toLowerCase();
+    return v['vn-domain'] ? sub + '.' + v['vn-domain'] : (vn.saved ? vn.saved.legacy : '');
+  }
+  function renderNames() {
+    const d = vn.saved;
+    if (!d) return;
+    const v = valuesOf('netzwerk');
+    const own = !!v['vn-domain'];
+    const dirty = vnKey(v) !== vnKey({ 'vn-domain': d.base_domain, 'vn-sub': d.sub });
+    const bad = own && vn.check && vn.checkKey === vnKey(v) && !vn.check.free ? vn.check : null;
+    const gone = d.removed && own && v['vn-domain'] === d.base_domain;
+    const card = $('card-vpn-names');
+    card.dataset.state = bad ? 'clash' : gone ? 'gone' : own ? 'own' : 'std';
+    $('st-vn-active').hidden = !(d.custom && !d.removed && !dirty);
+    // Unterbereich: only with an own domain
+    const subIn = $('st-vn-sub');
+    subIn.hidden = !own;
+    $('st-vn-suffix').hidden = !own;
+    $('st-vn-suffix').textContent = own ? '.' + v['vn-domain'] : '';
+    $('st-vn-sub-off').hidden = own;
+    const subErr = $('st-vn-sub-err');
+    if (bad) { subIn.setAttribute('aria-invalid', 'true'); subErr.textContent = bad.error; subErr.hidden = false; } else if (subErr.dataset.vn) { subIn.removeAttribute('aria-invalid'); subErr.textContent = ''; subErr.hidden = true; }
+    subErr.dataset.vn = bad ? '1' : '';
+    if (gone) $('st-vn-domain').setAttribute('aria-invalid', 'true'); else $('st-vn-domain').removeAttribute('aria-invalid');
+    // Vorschau
+    const name = $('st-vn-preview-name');
+    const note = $('st-vn-preview-note');
+    const zone = vnZone(v);
+    const subOk = !own || /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(String(v['vn-sub'] || '').trim().toLowerCase());
+    $('st-vn-preview').hidden = !!bad || !subOk;
+    clear(name);
+    name.appendChild(document.createTextNode(VN_EXAMPLE));
+    name.appendChild(el('i', { text: '.' + zone }));
+    $('st-vn-preview').dataset.copy = VN_EXAMPLE + '.' + zone;
+    clear(note);
+    if (bad || !subOk) note.textContent = t('st.names.preview_wait');
+    else if (own && zone !== d.legacy) {
+      const parts = t('st.names.legacy_note', { name: '\u0000' }).split('\u0000');
+      note.appendChild(document.createTextNode(parts[0]));
+      note.appendChild(el('span', { class: 'st-mono', text: VN_EXAMPLE + '.' + d.legacy }));
+      note.appendChild(document.createTextNode(parts[1] || ''));
+    }
+    // Domain entfernt
+    const box = $('st-vn-removed');
+    box.hidden = !gone;
+    clear(box);
+    if (gone) {
+      box.appendChild(el('b', { text: t('st.names.removed_b', { domain: d.base_domain }) }));
+      box.appendChild(document.createTextNode(' ' + t('st.names.removed', { zone: d.primary, legacy: d.legacy })));
+    }
+    $('st-vn-back-row').hidden = !gone;
+  }
+  // The live check (the same checks as the save): after the last keystroke.
+  function scheduleNameCheck() {
+    const v = valuesOf('netzwerk');
+    clearTimeout(vn.timer);
+    if (!v['vn-domain']) { vn.check = null; vn.checkKey = ''; return; }
+    const key = vnKey(v);
+    if (key === vn.checkKey) return;
+    vn.timer = setTimeout(async () => {
+      const seq = ++vn.seq;
+      const r = await post('/api/v1/settings/vpn-names/check', { base_domain: v['vn-domain'], sub: String(v['vn-sub'] || '').trim() });
+      if (seq !== vn.seq || !r.ok) return;
+      vn.check = r.data;
+      vn.checkKey = key;
+      renderNames();
+    }, 250);
+  }
+  function fmtWritten(iso) {
+    if (!iso) return t('st.names.written_never');
+    const d = new Date(iso);
+    if (isNaN(d)) return t('st.names.written_never');
+    const time = fmtTime(d);
+    if (d.toDateString() === new Date().toDateString()) return t('st.names.today', { time });
+    return d.toLocaleDateString(lang, { day: '2-digit', month: '2-digit', year: 'numeric' }) + ', ' + time;
+  }
+  async function loadNameState() {
+    const r = await get('/api/v1/settings/vpn-names/status');
+    if (!r.ok) return;
+    const d = r.data;
+    const svc = $('st-vn-service');
+    svc.dataset.state = d.service === 'running' ? 'good' : d.service === 'off' ? '' : d.service === 'stale' ? 'warn' : 'crit';
+    svc.dataset.service = d.service;
+    svc.textContent = t('st.names.service_' + d.service);
+    $('st-vn-written').textContent = fmtWritten(d.written);
+    const e = d.entries || {};
+    const box = $('st-vn-entries');
+    clear(box);
+    box.appendChild(document.createTextNode(String(e.total || 0) + ' '));
+    box.appendChild(el('span', { class: 'vn-muted', text: '· ' + [tp('st.names.n_devices', e.devices || 0), tp('st.names.n_routes', e.routes || 0), tp('st.names.n_portal', e.portal || 0)].join(', ') }));
+    const stale = $('st-vn-stale');
+    stale.textContent = String(d.stale || 0);
+    stale.dataset.state = d.stale ? 'warn' : '';
+    $('st-vn-stale-link').hidden = !d.stale;
+    const fixed = d.fixed || [];
+    $('st-vn-fixed-n').textContent = tp((d.zones || []).length > 1 ? 'st.names.fixed_both' : 'st.names.fixed_one', fixed.length);
+    const list = $('st-vn-fixed-list');
+    clear(list);
+    fixed.forEach((f) => {
+      const li = el('li', { text: f.fqdns[0] });
+      f.fqdns.slice(1).forEach((x) => li.appendChild(el('span', { text: x })));
+      li.appendChild(el('span', { text: f.ip }));
+      list.appendChild(li);
+    });
+  }
+  async function loadNames() {
+    const [n, dm] = await Promise.all([get('/api/v1/settings/vpn-names'), get('/api/v1/settings/domains')]);
+    if (!n.ok) return {};
+    const d = n.data;
+    vn.saved = d;
+    vn.check = null;
+    vn.checkKey = '';
+    const sel = $('st-vn-domain');
+    while (sel.options.length > 1) sel.remove(1);
+    const known = dm.ok ? (dm.data.domains || []) : [];
+    known.forEach((x) => sel.appendChild(el('option', { value: x.domain, text: x.domain })));
+    if (d.base_domain && !known.some((x) => x.domain === d.base_domain)) {
+      sel.appendChild(el('option', { value: d.base_domain, text: t('st.names.removed_option', { domain: d.base_domain }) }));
+    }
+    return { 'vn-domain': d.base_domain || '', 'vn-sub': d.custom ? d.sub : d.default_sub };
+  }
   SECTIONS.netzwerk = {
     async load() {
-      const [dns, data, rb] = await Promise.all([get('/api/v1/settings/dns'), get('/api/v1/settings/data'), get('/api/v1/settings/route-block-default')]);
-      const vals = {};
+      const [dns, data, rb, names] = await Promise.all([get('/api/v1/settings/dns'), get('/api/v1/settings/data'), get('/api/v1/settings/route-block-default'), loadNames()]);
+      const vals = Object.assign({}, names);
       if (dns.ok) vals.dns = dns.data.dns || '';
       if (data.ok) vals['peer-timeout'] = data.data.peer_online_timeout;
       if (rb.ok) { vals['rb-action'] = rb.data.action || 'not_found'; vals['rb-url'] = rb.data.redirect_url || ''; vals['rb-body'] = rb.data.body || ''; }
       fill('netzwerk', vals);
+      renderNames();
+      loadNameState();
     },
+    onChange(e) {
+      const f = e.target.closest && e.target.closest('[data-st-field]');
+      if (!f || !/^vn-/.test(f.dataset.stField)) return;
+      // a new domain starts with the suggested subdomain again
+      if (f.dataset.stField === 'vn-domain' && !$('st-vn-sub').value.trim()) $('st-vn-sub').value = vn.saved ? vn.saved.default_sub : 'vpn';
+      scheduleNameCheck();
+      renderNames();
+    },
+    onDiscard() { vn.check = null; vn.checkKey = ''; renderNames(); },
     validate(v, dirty) {
       const errs = {};
       if (dirty.some((d) => d.startsWith('rb-'))) {
         if (v['rb-action'] === 'redirect' && !/^https?:\/\/\S+$/i.test(v['rb-url'].trim())) errs['rb-url'] = t('error.settings.block_redirect_invalid');
         if (v['rb-action'] === 'custom' && !v['rb-body'].trim()) errs['rb-body'] = t('error.settings.block_body_required');
+      }
+      // the live check already said that this subdomain is taken
+      if (dirty.some((d) => d.startsWith('vn-')) && v['vn-domain'] && vn.check && vn.checkKey === vnKey(v) && !vn.check.free) {
+        errs[vn.check.fields && vn.check.fields.base_domain ? 'vn-domain' : 'vn-sub'] = vn.check.error;
       }
       return errs;
     },
@@ -861,8 +1009,23 @@
         save: (v) => api.put('/api/v1/settings/data', { peer_online_timeout: v['peer-timeout'] }) },
       { fields: ['rb-action', 'rb-url', 'rb-body'], map: { action: 'rb-action', body: 'rb-body', redirect_url: 'rb-url' },
         save: (v) => api.put('/api/v1/settings/route-block-default', { action: v['rb-action'], body: v['rb-body'], redirect_url: v['rb-url'].trim() }) },
+      { fields: ['vn-domain', 'vn-sub'], map: { base_domain: 'vn-domain', sub: 'vn-sub' }, errorField: 'vn-sub',
+        save: (v) => api.put('/api/v1/settings/vpn-names', { base_domain: v['vn-domain'], sub: String(v['vn-sub'] || '').trim().toLowerCase() }),
+        after: async () => { fill('netzwerk', await loadNames()); renderNames(); loadNameState(); } },
     ],
   };
+  $('st-vn-preview-copy').addEventListener('click', () => copyText($('st-vn-preview').dataset.copy || ''));
+  $('st-vn-back').addEventListener('click', async (e) => {
+    busy(e.currentTarget, true);
+    const r = await put('/api/v1/settings/vpn-names', { base_domain: '' });
+    busy(e.currentTarget, false);
+    if (!r.ok) { toast(errText(r), 'error'); return; }
+    toast(t('st.names.back_done', { zone: r.data.legacy }));
+    fill('netzwerk', await loadNames());
+    renderNames();
+    loadNameState();
+    updateBar();
+  });
 
   // ── Daten & Aufbewahrung ──
   const DATA_MAP = { retention_traffic_days: 'ret-traffic', retention_activity_days: 'ret-activity', retention_waf_days: 'ret-waf' };

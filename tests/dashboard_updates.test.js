@@ -477,7 +477,7 @@ describe('what goes with the card', () => {
 
   it('the peers list knows the filter "App veraltet" (#hints=outdated)', () => {
     const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'peers.js'), 'utf8');
-    assert.match(js, /HINT_KEYS = \['update', 'outdated', 'expiring', 'support', 'stale'\]/);
+    assert.match(js, /HINT_KEYS = \['update', 'outdated', 'expiring', 'support', 'stale', 'oldname'\]/);
     assert.match(js, /case 'outdated': return outdated\(p\)/);
     assert.match(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8'), /\/peers#hints=outdated/);
     for (const lang of ['de', 'en']) assert.ok(require(`../src/i18n/${lang}.json`)['pl.h_outdated'], lang);

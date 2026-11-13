@@ -1,0 +1,4 @@
+{#- "Name im VPN" with the device (public/js/vpn-names.js): the zones and the
+    reserved names — routes/index.js vpnNamesIsland. The strings (vn.*) are in
+    the string island of the page. -#}
+<script type="application/json" id="vpn-names-data" nonce="{{ cspNonce }}">{{ vpnNamesJson | default('{}') | safe }}</script>

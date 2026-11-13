@@ -402,6 +402,31 @@ einmal kopiert. Gib in der Adresse einen eigenen Unterordner an
 (z. B. `…/GateControl/Backups/`), damit die Backups nicht zwischen den Dateien
 von Drive liegen. SMB, SFTP und S3 haben dieselbe Wahl „Verbindung“.
 
+### Wo ist die Seite „Interner DNS“ geblieben?
+
+Die Seite gibt es nicht mehr. Der Name eines Geräts steht jetzt beim Gerät
+selbst: unter „Geräte“ → „Peers / Clients“ auf der Karte, bei Gateways in der
+Kopfzeile. Unter welcher Endung die Namen laufen, stellst du unter
+„Einstellungen“ → „VPN & Netzwerk“ → „Namen im VPN“ ein; dort steht auch der
+„Zustand der Namen“. Alte Lesezeichen auf die Seite landen dort. Mehr dazu:
+[2.11 Namen im VPN](02-server-einrichten.md#211-namen-im-vpn).
+
+### Ein Gerätename im VPN wird nicht gefunden
+
+1. Öffne „Einstellungen“ → „VPN & Netzwerk“ → „Zustand der Namen“. Steht bei
+   „Dienst“ nicht „läuft“, starte den Server-Container neu
+   (`docker compose restart` im Ordner des Servers).
+2. Sieh unter „Geräte“ → „Peers / Clients“ nach, wie das Gerät heißt, und
+   kopiere den Namen mit dem Knopf daneben. Steht dort „Kein Name im VPN“,
+   vergib einen.
+3. Auf einem Windows-Rechner mit der GateControl-App: Nimm den Namen mit
+   `gc.internal` am Ende, solange die App das Update für die neue Endung noch
+   nicht hat.
+4. Steht am Namen „veraltet“, stammt er aus einer zurückgespielten Sicherung.
+   Er gilt weiter. Sobald sich das Gerät wieder meldet, verschwindet der Hinweis.
+
+**Prüfen:** Auf einem Gerät im VPN antwortet `ping` auf den kopierten Namen.
+
 ## Gateway einrichten
 
 ### Der Assistent wartet nach 10 Minuten immer noch

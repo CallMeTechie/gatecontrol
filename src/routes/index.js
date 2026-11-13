@@ -330,8 +330,25 @@ const SETTINGS_I18N_PREFIXES = ['st.', 'settings.', 'offsite.', 'premig.', 'auto
   'client_updates.', 'tags.', 'peer_groups.', 'license.', 'common.', 'security.lockout.', 'error.settings.',
   'error.webhooks.', 'error.peer_groups.', 'error.client_policy.', 'error.client_updates.', 'error.wireguard.', 'plugins.', 'ai.'];
 
+// "Name im VPN" with the device (Peers, Gateways — public/js/vpn-names.js):
+// the zones and the reserved names as one JSON island
+// (partials/vpn-names-data.njk). Its strings (vn.*) travel in the string
+// island of the page (PEERS_I18N_PREFIXES / GWIZ_I18N_PREFIXES).
+function vpnNamesIsland() {
+  let data = { primary: 'gc.internal', legacy: 'gc.internal', custom: false, licensed: false, reserved: [] };
+  try {
+    const s = require('../services/vpnNames').current();
+    data = {
+      primary: s.primary, legacy: s.legacy, custom: s.custom,
+      licensed: require('../services/license').hasFeature('internal_dns'),
+      reserved: Array.from(require('../services/dns').RESERVED_HOSTNAMES),
+    };
+  } catch (err) { logger.debug({ err: err.message }, 'vpn names for the page unavailable'); }
+  return JSON.stringify(data).replace(/</g, '\\u003c');
+}
+
 // Strings of the Peers page (peers.njk island data-prefixes must list the same ones).
-const PEERS_I18N_PREFIXES = ['pl.', 'peer_groups.', 'common.'];
+const PEERS_I18N_PREFIXES = ['pl.', 'peer_groups.', 'common.', 'vn.'];
 
 const pages = [
   { path: '/dashboard', template: 'dashboard', titleKey: 'nav.dashboard' },
@@ -362,7 +379,6 @@ const pages = [
   { path: '/groups', template: 'groups', titleKey: 'nav.groups' },
   // Directory sync (docs/groups.md "Verzeichnis-Abgleich und Anmeldung"): data from /api/v1/directories.
   { path: '/directory', template: 'directory', titleKey: 'nav.directory' },
-  { path: '/dns', template: 'dns', titleKey: 'nav.dns' },
   { path: '/gateways', template: 'gateways', titleKey: 'nav.gateways' },
 ];
 
@@ -370,6 +386,10 @@ const pages = [
 // page #pool/<id>, public/js/gateway-pools-ui.js): old links to the former
 // page /gateway-pools land there.
 router.get('/gateway-pools', requireAuth, (req, res) => res.redirect('/gateways'));
+
+// The page "Interner DNS" is gone: the name is shown with the device (Peers,
+// Gateways), the zone and the state of the names live in the settings.
+router.get('/dns', requireAuth, (req, res) => res.redirect('/settings/netzwerk#card-vpn-names'));
 
 // Former built-in pages, now first-party plugins (docs/plugins.md "Built-in
 // data import"): old bookmarks lead to the plugin's page when it is
@@ -401,7 +421,7 @@ const LOGS_I18N_PREFIXES = ['lg.', 'common.'];
 const SB_I18N_PREFIXES = ['support_bundles.', 'common.'];
 
 // Gateway page + assistant "Gateway hinzufügen" (gateway-wizard.js).
-const GWIZ_I18N_PREFIXES = ['gwiz.', 'gwe.', 'gwn.', 'gwh.', 'gwp.', 'gwr.', 'gwd.', 'gateway_pools.', 'common.'];
+const GWIZ_I18N_PREFIXES = ['gwiz.', 'gwe.', 'gwn.', 'gwh.', 'gwp.', 'gwr.', 'gwd.', 'gateway_pools.', 'common.', 'vn.'];
 
 // Strings the users list and the user profile hand to users.js (one JSON
 // island on both pages, like the settings page; up.* for the profile).
@@ -488,6 +508,14 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
     // former integration whose plugin is not installed yet.
     if (template === 'dashboard' || template === 'settings') {
       try { extraLocals.builtinMoved = require('../services/plugins/legacy').pendingMoves(); } catch { extraLocals.builtinMoved = []; }
+    }
+    // Settings → VPN & Netzwerk → "Namen im VPN": the legacy zone for the labels
+    if (template === 'settings') {
+      try { extraLocals.vpnLegacyZone = require('../services/vpnNames').legacyZone(); } catch { extraLocals.vpnLegacyZone = 'gc.internal'; }
+    }
+    // Peers / Gateways: the name of a device in the VPN (public/js/vpn-names.js)
+    if (template === 'peers' || template === 'gateways') {
+      extraLocals.vpnNamesJson = vpnNamesIsland();
     }
     // Settings → Plugins: the "Offizielle Plugins" card (GC_PLUGIN_CATALOG=off hides it)
     if (template === 'settings') {

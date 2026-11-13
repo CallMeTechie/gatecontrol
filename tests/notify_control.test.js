@@ -327,9 +327,30 @@ describe('GET /client/config — internal DNS', () => {
       cfg.dns.domain = 'vpn.home';
       cfg.wireguard.gatewayIp = '10.44.0.1';
       const full = await client('get', `/api/v1/client/config?peerId=${annaPhone.peerId}`, annaPhone).expect(200);
-      assert.deepEqual(full.body.internalDns, { domain: 'vpn.home', server: '10.44.0.1' });
+      // nothing chosen under "Namen im VPN": the one zone is the legacy one
+      const legacyOnly = { domain: 'vpn.home', server: '10.44.0.1', domains: ['vpn.home'], primary: 'vpn.home' };
+      assert.deepEqual(full.body.internalDns, legacyOnly);
       const check = await client('get', `/api/v1/client/config/check?peerId=${annaPhone.peerId}`, annaPhone).expect(200);
-      assert.deepEqual(check.body.internalDns, { domain: 'vpn.home', server: '10.44.0.1' });
+      assert.deepEqual(check.body.internalDns, legacyOnly);
+
+      // an own domain: `domain` stays the legacy zone (apps that only know it
+      // create exactly one resolver rule), `domains` lists both, primary first
+      const db = require('../src/db/connection').getDb();
+      db.prepare("INSERT OR IGNORE INTO domains (domain, status) VALUES ('example.com', 'verified')").run();
+      settings.set('dns.names.base_domain', 'example.com');
+      settings.set('dns.names.sub', 'vpn');
+      try {
+        const both = { domain: 'vpn.home', server: '10.44.0.1', domains: ['vpn.example.com', 'vpn.home'], primary: 'vpn.example.com' };
+        const own = await client('get', `/api/v1/client/config?peerId=${annaPhone.peerId}`, annaPhone).expect(200);
+        assert.deepEqual(own.body.internalDns, both);
+        // the zones change without the WireGuard config: also told when the hash is unchanged
+        const same = await client('get', `/api/v1/client/config/check?peerId=${annaPhone.peerId}&hash=${own.body.hash}`, annaPhone).expect(200);
+        assert.equal(same.body.updated, false);
+        assert.deepEqual(same.body.internalDns, both);
+      } finally {
+        settings.set('dns.names.base_domain', '');
+        db.prepare("DELETE FROM domains WHERE domain = 'example.com'").run();
+      }
 
       cfg.dns.enabled = false;
       const off = await client('get', `/api/v1/client/config?peerId=${annaPhone.peerId}`, annaPhone).expect(200);

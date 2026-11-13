@@ -102,12 +102,14 @@
 {% include theme + "/partials/modals/client-enrollment.njk" %}
 {% include theme + "/partials/modals/peer-traffic.njk" %}
 {% include theme + "/partials/modals/confirm.njk" %}
-<script type="application/json" id="pl-i18n" data-prefixes="pl. peer_groups. common." nonce="{{ cspNonce }}">{{ plI18n | default('{}') | safe }}</script>
+{% include theme + "/partials/vpn-names-data.njk" %}
+<script type="application/json" id="pl-i18n" data-prefixes="pl. peer_groups. common. vn." nonce="{{ cspNonce }}">{{ plI18n | default('{}') | safe }}</script>
 {% endblock %}
 
 {% block scripts %}
 <script src="/js/client-enrollment.js?v={{ appVersion }}"></script>
 <script src="/js/client-policy-form.js?v={{ appVersion }}"></script>
+<script src="/js/vpn-names.js?v={{ appVersion }}"></script>
 <script src="/js/peers.js?v={{ appVersion }}"></script>
 <script src="/js/support-bundles.js?v={{ appVersion }}"></script>
 {% endblock %}
