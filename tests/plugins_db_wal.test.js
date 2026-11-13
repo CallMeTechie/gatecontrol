@@ -154,13 +154,18 @@ describe('a slow disk (every sync delayed with LD_PRELOAD)', () => {
   it('checkpoint thread: the first write after a checkpoint does not wait for the disk, a read during it not for the checkpoint', { skip }, (t) => {
     const SYNC = 100;
     const now = child('quiet', SYNC, 5, { GC_PLUGIN_CHECKPOINT: 'worker' });
-    t.diagnostic(`${SYNC} ms per sync, checkpoint thread: first write after a checkpoint ≤ ${now.firstWriteMaxMs.toFixed(1)} ms, a read ≤ ${now.readMaxMs.toFixed(1)} ms (${now.reads} reads), ${now.checkpoints} checkpoints`);
+    t.diagnostic(`${SYNC} ms per sync, checkpoint thread: first write after a checkpoint ≤ ${now.firstWriteMaxMs.toFixed(1)} ms, a read ≤ ${now.readMaxMs.toFixed(1)} ms (${now.reads} reads), ${now.checkpoints} checkpoints of ≥ ${now.checkpointMinMs} ms, reads answered during each: ${now.readsDuring.join(', ')}`);
     assert.equal(now.served, true);
     assert.ok(now.checkpoints >= 5, `a checkpoint in every quiet time (${now.checkpoints})`);
     assert.ok(now.firstWriteMaxMs < SYNC / 2, `the write after a checkpoint took ${now.firstWriteMaxMs} ms — it waited for a sync`);
-    // a read never waits for the checkpoint (two syncs and the copying, in the host's thread) — at most for the
-    // one sync of the log's new start, which the storage thread does between two calls
-    assert.ok(now.readMaxMs < SYNC * 1.5, `a read took ${now.readMaxMs} ms — it waited for the checkpoint`);
+    assert.ok(now.checkpointMinMs >= SYNC * 2 - 10, `a checkpoint with two syncs of ${SYNC} ms (${now.checkpointMinMs} ms)`);
+    // A read never waits for the checkpoint (two syncs and the copying, in the host's thread): reads are answered
+    // WHILE every checkpoint runs, and none that began in its first half is still open at its end. An order on one
+    // clock, no limit in milliseconds — the longest read is the one that meets the sync of the log's new start
+    // (the storage thread, between two calls), and that sync takes what the machine's real disk takes on top of
+    // the 100 ms: 160 and 266 ms on two busy CI runners (13. 11.), with the limit of before (1.5 syncs) a red master.
+    assert.ok(now.readsDuring.every((n) => n >= 1), `reads answered while a checkpoint ran: ${now.readsDuring.join(', ')} — a read waited for the checkpoint`);
+    assert.equal(now.readsHeld, 0, 'reads that began in the first half of a checkpoint and were answered only after it');
     assert.equal(now.value, 'v4');
     assert.deepEqual(now.files, ['plugin.db'], 'closed cleanly: the log copied back and removed');
     // each storage thread on its own (as before, and as the fallback): both wait
