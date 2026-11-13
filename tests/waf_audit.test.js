@@ -235,6 +235,55 @@ test('watcher: rotates only once the file passed the limit AND is fully read', a
   }, { rotateBytes: L.xssBlocked.length + 10, truncateAfterIngest: false });
 });
 
+// Protokoll vom 12./13. 11. (langsamer Datenträger): `waf.audit` stand in 30 von 53 Zeilen „event loop was blocked“.
+// Jeder Durchgang (alle 5 s) schrieb den unveränderten Lesestand in die Host-Datenbank und kürzte die schon leere
+// Datei — beides synchron auf dem Hauptthread, auch wenn nichts zu tun war.
+test('watcher: a tick with nothing new neither writes the host database nor touches the empty file', async () => {
+  const changes = () => db.prepare('SELECT total_changes() AS n').get().n;
+  const sync = { open: 0, truncate: 0 };
+  const orig = { openSync: fs.openSync, ftruncateSync: fs.ftruncateSync };
+  await withLog([], async (file) => {
+    fs.openSync = (p, ...a) => { if (p === file) sync.open++; return orig.openSync(p, ...a); };
+    fs.ftruncateSync = (...a) => { sync.truncate++; return orig.ftruncateSync(...a); };
+    try {
+      assert.equal(await waf.pollOnce(), 0); // the first tick may store where it stands
+      let before = changes();
+      for (let i = 0; i < 5; i++) assert.equal(await waf.pollOnce(), 0);
+      assert.equal(changes() - before, 0, 'no statement changed the host database in five idle ticks');
+      assert.deepEqual(sync, { open: 0, truncate: 0 }, 'the empty file is neither opened synchronously nor truncated');
+
+      // a blocked request arrives: stored, the file emptied at once, the state written …
+      fs.appendFileSync(file, L.xssBlocked + '\n');
+      assert.equal(await waf.pollOnce(), 4);
+      assert.equal(fs.statSync(file).size, 0, 'truncated after ingest');
+      assert.equal(sync.truncate, 1);
+      // … and the ticks after it are idle again
+      before = changes();
+      Object.assign(sync, { open: 0, truncate: 0 });
+      for (let i = 0; i < 5; i++) assert.equal(await waf.pollOnce(), 0);
+      assert.equal(changes() - before, 0);
+      assert.deepEqual(sync, { open: 0, truncate: 0 });
+    } finally { Object.assign(fs, orig); }
+  });
+});
+
+// The state is still written whenever it changed: a restart in the middle of a file reads on from there.
+test('watcher: the read position is stored when it moved (truncation off), a restart does not replay', async () => {
+  const saved = () => JSON.parse(db.prepare("SELECT value FROM settings WHERE key = 'waf.watch_state'").get().value);
+  await withLog([L.xssBlocked], async (file) => {
+    assert.equal(await waf.pollOnce(), 4);
+    assert.equal(saved().offset, L.xssBlocked.length + 1);
+    assert.equal(await waf.pollOnce(), 0);
+    fs.appendFileSync(file, L.lfiBlocked + '\n');
+    assert.equal(await waf.pollOnce(), 4);
+    assert.equal(saved().offset, L.xssBlocked.length + L.lfiBlocked.length + 2);
+    waf.stopWatcher();
+    waf.startWatcher({ file, intervalMs: 1e9, immediate: false, truncateAfterIngest: false });
+    assert.equal(await waf.pollOnce(), 0, 'nothing replayed');
+    assert.equal(count(), 8);
+  }, { truncateAfterIngest: false });
+});
+
 test('watcher (default): file is emptied right after ingest, mode 0600, nothing lost on the next write', async () => {
   await withLog([L.xssBlocked, L.upstream403], async (file) => {
     fs.chmodSync(file, 0o644);

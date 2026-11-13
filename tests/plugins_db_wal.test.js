@@ -113,7 +113,7 @@ describe('a slow disk (every sync delayed with LD_PRELOAD)', () => {
   let shim = null;
   let tmp = null;
 
-  const child = (what, delayMs, n) => {
+  const child = (what, delayMs, n, extra = {}) => {
     if (!shim) {
       tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-slowfsync-'));
       shim = path.join(tmp, 'slowfsync.so');
@@ -124,6 +124,7 @@ describe('a slow disk (every sync delayed with LD_PRELOAD)', () => {
     const env = { ...process.env, LD_PRELOAD: shim, FAKE_FSYNC_MS: String(delayMs), FAKE_FSYNC_REPORT: report, NODE_ENV: 'test' };
     for (const k of Object.keys(env)) if (/^GC_/.test(k)) delete env[k]; // the child's own temp data folder (test-env)
     env.TMPDIR = dataDir;
+    Object.assign(env, extra);
     const r = spawnSync(process.execPath, [path.join(__dirname, 'fixtures', 'slow-fsync', 'run.js'), what, String(n || '')], { env, encoding: 'utf8', timeout: 60000 });
     assert.equal(r.status, 0, r.stderr);
     const out = JSON.parse(r.stdout.trim().split('\n').pop());
@@ -144,6 +145,74 @@ describe('a slow disk (every sync delayed with LD_PRELOAD)', () => {
     assert.ok(before.syncs >= 30, `rollback journal: ${before.syncs} syncs`);
     assert.ok(wal.syncs != null && wal.syncs === wal4.syncs, `WAL: a write adds no sync (${wal.syncs} with 20 writes, ${wal4.syncs} with 80)`);
     assert.deepEqual(wal.files, ['plugin.db'], 'closed cleanly');
+  });
+
+  // Protokoll vom 12./13. 11. (Cloud-Platte, 38 ms je Sync, 26 je Sekunde): 225 „slow plugin database statements“
+  // an einem Tag, 92 % Schreibvorgänge mit einer Zeile, typisch 250–400 ms. WAL allein hat das nicht beendet: Der
+  // erste Schreibvorgang nach jedem Checkpoint beginnt das Protokoll neu und wartet auf einen Sync, und der
+  // Checkpoint lief im Thread der Anweisungen. Jetzt: ein Thread des Hosts für alle Plugin-Datenbanken.
+  it('checkpoint thread: the first write after a checkpoint does not wait for the disk, a read during it not for the checkpoint', { skip }, (t) => {
+    const SYNC = 100;
+    const now = child('quiet', SYNC, 5, { GC_PLUGIN_CHECKPOINT: 'worker' });
+    t.diagnostic(`${SYNC} ms per sync, checkpoint thread: first write after a checkpoint ≤ ${now.firstWriteMaxMs.toFixed(1)} ms, a read ≤ ${now.readMaxMs.toFixed(1)} ms (${now.reads} reads), ${now.checkpoints} checkpoints`);
+    assert.equal(now.served, true);
+    assert.ok(now.checkpoints >= 5, `a checkpoint in every quiet time (${now.checkpoints})`);
+    assert.ok(now.firstWriteMaxMs < SYNC / 2, `the write after a checkpoint took ${now.firstWriteMaxMs} ms — it waited for a sync`);
+    // a read never waits for the checkpoint (two syncs and the copying, in the host's thread) — at most for the
+    // one sync of the log's new start, which the storage thread does between two calls
+    assert.ok(now.readMaxMs < SYNC * 1.5, `a read took ${now.readMaxMs} ms — it waited for the checkpoint`);
+    assert.equal(now.value, 'v4');
+    assert.deepEqual(now.files, ['plugin.db'], 'closed cleanly: the log copied back and removed');
+    // each storage thread on its own (as before, and as the fallback): both wait
+    const before = child('quiet', SYNC, 5, { GC_PLUGIN_CHECKPOINT: 'inline', QUIET_READS: 'one' });
+    t.diagnostic(`${SYNC} ms per sync, storage threads themselves: first write ≤ ${before.firstWriteMaxMs.toFixed(1)} ms, a read ≤ ${before.readMaxMs.toFixed(1)} ms`);
+    assert.equal(before.served, false);
+    assert.ok(before.firstWriteMaxMs >= SYNC, `without the thread the write pays the sync (${before.firstWriteMaxMs} ms)`);
+    assert.ok(before.readMaxMs >= SYNC * 1.5, `without the thread a read waits for the checkpoint (${before.readMaxMs} ms)`);
+    assert.equal(before.value, 'v4');
+    assert.deepEqual(before.files, ['plugin.db']);
+  });
+
+  it('checkpoint thread: plugins written in the same moment are checkpointed one after the other, never two at once', { skip }, (t) => {
+    const out = child('many', 40, 6, { GC_PLUGIN_CHECKPOINT: 'worker' });
+    const list = out.checkpoints.sort((a, b) => a.from - b.from);
+    t.diagnostic(list.map((c) => `${c.id} ${c.from}–${c.to}`).join(', '));
+    assert.deepEqual(list.map((c) => c.id).sort(), ['many-0', 'many-1', 'many-2', 'many-3', 'many-4', 'many-5']);
+    for (let i = 1; i < list.length; i++) {
+      // the thread's own clock (ms): when it began a checkpoint and how long it took
+      assert.ok(list[i].from >= list[i - 1].to - 1, `${list[i].id} began at ${list[i].from}, ${list[i - 1].id} ended at ${list[i - 1].to}`);
+      assert.ok(list[i - 1].to - list[i - 1].from >= 70, 'a checkpoint with two syncs of 40 ms');
+    }
+  });
+
+  it('checkpoint thread: a process killed between writes, checkpoints and new starts of the log leaves a consistent file with every stored row', { skip }, async () => {
+    const { spawn } = require('node:child_process');
+    if (!shim) child('plugin', 0, 1); // builds the shim
+    const dataDir = fs.mkdtempSync(path.join(tmp, 'kill-'));
+    const env = { ...process.env, LD_PRELOAD: shim, FAKE_FSYNC_MS: '15', NODE_ENV: 'test', GC_PLUGIN_CHECKPOINT: 'worker' };
+    for (const k of Object.keys(env)) if (/^GC_/.test(k) && k !== 'GC_PLUGIN_CHECKPOINT') delete env[k];
+    env.TMPDIR = dataDir;
+    const p = spawn(process.execPath, [path.join(__dirname, 'fixtures', 'slow-fsync', 'run.js'), 'kill'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let text = '';
+    let err = '';
+    p.stderr.on('data', (d) => { err += d; });
+    const stored = () => { const all = [...text.matchAll(/^stored (\d+)$/gm)]; return all.length ? Number(all[all.length - 1][1]) : 0; };
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { p.kill('SIGKILL'); reject(new Error(`too slow: ${stored()} rows; ${err}`)); }, 30000);
+      p.stdout.on('data', (d) => { text += d; if (stored() >= 130) { clearTimeout(timer); p.kill('SIGKILL'); } });
+      p.on('exit', () => { clearTimeout(timer); resolve(); });
+    });
+    const n = stored();
+    assert.ok(n >= 130, `${n} rows stored; ${err}`);
+    const dir = /^dir (.+)$/m.exec(text)[1];
+    assert.ok(fs.readdirSync(dir).includes('plugin.db-wal'), 'killed: the log is still there');
+    const c = new Database(path.join(dir, 'plugin.db'));
+    try {
+      assert.equal(c.pragma('integrity_check', { simple: true }), 'ok');
+      const got = c.prepare('SELECT COUNT(*) AS n, MAX(id) AS max FROM t').get();
+      assert.ok(got.max >= n && got.n === got.max, `rows 1…${got.max} without a gap (${got.n}), ${n} were reported stored`);
+      assert.ok(JSON.parse(c.prepare("SELECT value FROM _gc_kv WHERE key = 'last'").get().value) >= Math.floor(n / 10) * 10);
+    } finally { c.close(); }
   });
 
   it('the write probe measures the delay and calls the disk slow; a fast disk is not', { skip }, (t) => {

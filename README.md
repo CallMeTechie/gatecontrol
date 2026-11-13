@@ -395,6 +395,7 @@ All configuration is done through environment variables in the `.env` file.
 | `GC_SECRET` | auto-generated | Session secret (auto-generated if empty) |
 | `GC_DB_PATH` | `/data/gatecontrol.db` | SQLite database path |
 | `GC_DB_CHECKPOINT` | – | `main`: WAL checkpoints on the main thread (SQLite's automatic checkpoint) instead of in a worker thread (started 5 s after the database opened; under `NODE_ENV=test` only with `worker`) |
+| `GC_PLUGIN_CHECKPOINT` | – | `inline`: every plugin database checkpoints in its own storage thread (1000 pages, 30 s quiet) instead of in the host's checkpoint thread for all plugin databases (one after the other; under `NODE_ENV=test` only with `worker`) |
 | `GC_LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
 | `GC_SERVER_LOG` | on | Server log file `/data/logs/server.log` (5 MB × 5, Logs & Monitoring); `off` = stdout only |
 

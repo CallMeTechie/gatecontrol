@@ -632,7 +632,7 @@ async function ingestLinesAsync(lines) {
 // `partial` holds the bytes of an unterminated last line (a Buffer, so a
 // multi-byte character split across two reads is decoded correctly).
 const EMPTY = Buffer.alloc(0);
-const _watch = { timer: null, file: null, ino: null, offset: 0, head: '', partial: EMPTY, busy: false, rotateBytes: ROTATE_BYTES, truncate: true };
+const _watch = { timer: null, file: null, ino: null, offset: 0, head: '', partial: EMPTY, busy: false, rotateBytes: ROTATE_BYTES, truncate: true, saved: null };
 
 function loadWatchState() {
   try {
@@ -640,10 +640,17 @@ function loadWatchState() {
     if (!raw) return;
     const s = JSON.parse(raw);
     if (s && s.file === _watch.file) { _watch.ino = s.ino ?? null; _watch.offset = Number(s.offset) || 0; _watch.head = s.head || ''; }
+    _watch.saved = raw;
   } catch { /* fresh start */ }
 }
+// Only a changed state is written: this runs on every tick (5 s), and a write of the host database is
+// synchronous on the main thread — an append to the write-ahead log, and after each checkpoint the sync of
+// its new header. Writing the same state again kept that cycle going on an idle server (seen on a slow
+// disk: `waf.audit` named in most "event loop was blocked" lines, seconds each).
 function saveWatchState() {
-  try { settings.set(WATCH_STATE_KEY, JSON.stringify({ file: _watch.file, ino: _watch.ino, offset: _watch.offset, head: _watch.head })); }
+  const state = JSON.stringify({ file: _watch.file, ino: _watch.ino, offset: _watch.offset, head: _watch.head });
+  if (state === _watch.saved) return;
+  try { settings.set(WATCH_STATE_KEY, state); _watch.saved = state; }
   catch { /* best-effort */ }
 }
 async function readHead(fh, size) {
@@ -800,6 +807,9 @@ async function pollOnce() {
         break;
       }
       if (!_watch.truncate || _watch.partial.length) break; // off, or a line is still being written
+      // nothing in it: no truncation — opening for writing and ftruncate are synchronous on this thread, and
+      // an empty file is the usual state between two blocked requests (every tick, 5 s)
+      if (st.size === 0) break;
       const res = truncateIfCaughtUp(file);
       if (res === 'truncated') { _watch.offset = 0; _watch.head = ''; break; }
       if (res === 'failed') break;
@@ -838,7 +848,7 @@ function startWatcher({ file, intervalMs = WATCH_INTERVAL_MS, immediate = true, 
   _watch.file = file || auditLogPath();
   _watch.rotateBytes = rotateBytes;
   _watch.truncate = !!truncateAfterIngest;
-  _watch.ino = null; _watch.offset = 0; _watch.partial = EMPTY; _watch.head = '';
+  _watch.ino = null; _watch.offset = 0; _watch.partial = EMPTY; _watch.head = ''; _watch.saved = null;
   loadWatchState();
   const tick = () => pollOnce().catch((err) => logger.warn({ err: err.message }, 'waf: watcher tick failed'));
   _watch.timer = setInterval(require('../utils/loopStall').task('waf.audit', tick), intervalMs);
