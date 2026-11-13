@@ -159,6 +159,54 @@ network. For phones and laptops connected by VPN the server filters itself –
 with the plugin "DNS-Schutz"; see [DNS protection](#dns-protection). A profile
 can hold for both.
 
+## VPN names in the home network
+
+**What for:** Every VPN device has a name, for example
+`laptop-buero.vpn.example.com` (the names here are examples; your zone is under
+“Settings” → “VPN & network” → “Names in the VPN”). On the road in the VPN the
+devices resolve these names by themselves. At home nobody knows them: the TV or
+the PC in the home network asks the router, and it knows nothing about them.
+With this function the gateway asks the server through the VPN tunnel – devices
+at home then reach VPN devices by their name.
+
+**Requirements:**
+
+- The [DNS filter](#dns-filter) of this gateway is switched on and entered in
+  the router as the DNS server. Only then do the devices in the home network
+  ask the gateway for names.
+- A gateway that knows the function. For an older gateway the switch carries a
+  hint; it takes effect after an update of the gateway.
+- For a device at home to actually **reach** a VPN device (not only resolve its
+  name), its way into the VPN has to lead over the gateway – as for any address
+  of the VPN.
+
+**Switching on:** tab “Functions” → “System” → “Resolve VPN names in the home
+network” (default: off). The switch holds for this one gateway; if you have a
+failover gateway in the same home network, switch it on there as well. If a
+requirement is missing, the switch carries a hint; you can switch it on all the
+same.
+
+| Switch | A device at home asks for `laptop-buero.vpn.example.com` |
+|---|---|
+| on | The gateway asks the server through the tunnel and passes its answer on. |
+| off | The gateway answers itself: “does not exist”. |
+
+**In no case** does the gateway pass a question about these names on to the
+router or to a DNS provider on the internet. So the names of your devices do
+not leave the house, and no wrong answer of the public domain comes back. That
+holds for every zone of the “Names in the VPN”, also for the old spelling
+`gc.internal`.
+
+If you change the zone under “Names in the VPN”, the gateway takes it over by
+itself – without a restart. If the tunnel is interrupted, the devices get an
+error for these names at once instead of waiting; all other names go on
+working.
+
+**What changes for `gc.internal`:** a gateway that knows the function no longer
+passes questions about `…gc.internal` on to the router (which did not know the
+names anyway). Other names ending in `.internal`, such as `nas.internal`, still
+go to the router.
+
 ## DNS protection
 
 **What for:** Filters ads, trackers and malicious sites for every device that

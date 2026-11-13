@@ -339,7 +339,9 @@
     { key: 'power', features: ['inetq', 'ups'] },
     { key: 'ext', features: ['edge'] },
     // setuppage: "Statusseite im Heimnetz" (the status page of the gateway in its LAN)
-    { key: 'system', features: ['timezone', 'setuppage'] },
+    // vpnnames: "VPN-Namen im Heimnetz auflösen" — a switch of this one gateway, so not in the group
+    // "Für das ganze Heimnetz", whose settings the gateways of a home network share
+    { key: 'system', features: ['timezone', 'setuppage', 'vpnnames'] },
   ];
   function groupOf(feature) {
     const g = FEATURE_GROUPS.find((x) => x.features.indexOf(feature) >= 0);

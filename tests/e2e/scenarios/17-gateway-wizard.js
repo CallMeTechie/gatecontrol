@@ -384,6 +384,22 @@ module.exports = (ctx) => {
       }, null, 12000));
       await page.$eval('[data-feature="setuppage"]', (n) => n.scrollIntoView({ block: 'center' }));
       await shot(page, 'gwn-setuppage-old-light', false);
+      // "VPN-Namen im Heimnetz auflösen" on the same older gateway: a hint, never a ban — the switch is off and usable
+      step('older gateway: "VPN-Namen im Heimnetz auflösen" is off, usable and carries a hint', await until(page, () => {
+        const r = document.querySelector('[data-fgroup="system"] [data-feature="vpnnames"]');
+        const sw = r && r.querySelector('[data-fk="gwn-f-vpnnames"]');
+        return sw && !sw.disabled && sw.getAttribute('aria-checked') === 'false' && !!r.querySelector('.gwn-hint');
+      }, null, 12000));
+      await page.$eval('[data-feature="vpnnames"]', (n) => n.scrollIntoView({ block: 'center' }));
+      await shot(page, 'gwn-vpnnames-light', false);
+      await page.click('[data-fk="gwn-f-vpnnames"]');
+      await until(page, () => { const sw = document.querySelector('[data-fk="gwn-f-vpnnames"]'); return sw && sw.getAttribute('aria-checked') === 'true' && !sw.disabled; });
+      const featNames = await api(page, 'GET', `/api/v1/gateways/${GW.nas}/features`);
+      step('switched on → stored for this gateway', featNames.body.gateway.features.vpnNames.enabled === true);
+      await theme(page, 'dark');
+      await shot(page, 'gwn-vpnnames-on-dark', false);
+      await theme(page, 'light');
+      await api(page, 'PUT', `/api/v1/gateways/${GW.nas}/features`, { vpnNames: { enabled: false } });
       ctx.allow((p) => p.kind === 'console' && /403|400/.test(p.text));
 
       // ── Peers page: devices only — no gateway checkbox and no gateway hint

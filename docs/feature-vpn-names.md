@@ -157,5 +157,50 @@ Die Antwort auf `POST /api/v1/client/peer/hostname` nennt zusätzlich `fqdn` und
 
 Noch offen (spätere Stufen): Die Windows-Apps brauchen ein Update, das je Zone
 eine Regel anlegt; bis dahin lösen sie die neue Schreibweise nicht verlässlich
-auf, die alte funktioniert unverändert. Gateways mit DNS-Filter fürs Heimnetz
-kennen die neue Zone noch nicht.
+auf, die alte funktioniert unverändert.
+
+### Gateways: VPN-Namen im Heimnetz auflösen
+
+Ein Gateway mit DNS-Filter beantwortet die DNS-Fragen der Geräte im Heimnetz.
+Der Server nennt ihm die Zonen im Config-Pull (`GET /api/v1/gateway/config`):
+
+```json
+"features": { "internal_dns": { "server": "10.8.0.1", "domains": ["vpn.example.com", "gc.internal"], "primary": "vpn.example.com", "resolve": false } }
+```
+
+| Feld | Inhalt |
+|---|---|
+| `server`, `domains`, `primary` | wie `internalDns` der Apps |
+| `resolve` | Schalter dieses Gateways „VPN-Namen im Heimnetz auflösen“ (Standard `false`) |
+
+`internal_dns` ist `null`, wenn der Namensdienst aus ist (`GC_DNS_ENABLED=false`).
+
+**Übertragungsweg:** `features` wird vom Server und vom Gateway außerhalb des
+Pakets `@callmetechie/gatecontrol-config-hash` in den Config-Hash eingerechnet
+(`sha256(libHash + "\n" + stableJson(features))`, `gateways.computeConfigHash`).
+Ein neues Feld dort braucht deshalb keine neue Fassung des Pakets, und ein
+älteres Gateway rechnet den Hash über das ganze `features`-Objekt richtig mit,
+ohne das Feld zu kennen. Ändert sich die Zone oder der Schalter, ändert sich der
+Hash; `vpnNames.save` und der Schalter sagen den Gateways Bescheid
+(`notifyConfigChanged`), sonst kommt es mit der nächsten Abfrage an.
+
+**Was das Gateway damit tut** (ab der Fassung mit der Capability `dns-vpn-names`,
+Gateway-Doku `docs/dns-cache.md`): Fragen nach einer der Zonen gehen bei
+`resolve: true` durch den Tunnel an `server`, bei `false` antwortet das Gateway
+selbst mit NXDOMAIN. In keinem Fall gehen sie an den Router oder einen
+öffentlichen Resolver. Fällt der Tunnel aus, kommt sofort SERVFAIL.
+
+| Server | Gateway | Verhalten im Heimnetz |
+|---|---|---|
+| alt | alt | wie bisher: `*.gc.internal` an den Router, `*.vpn.example.com` an den öffentlichen Resolver |
+| neu | alt | wie bisher; das Gateway übergeht `internal_dns`. In der Verwaltung steht am Schalter der Hinweis, dass er nach einem Update des Gateways wirkt |
+| alt | neu | wie bisher; ohne `internal_dns` kennt das Gateway keine Zonen |
+| neu | neu | Zonen bleiben im Haus; Schalter an: Namen lösen im Heimnetz auf |
+
+**Verwaltung:** Gateway → „Funktionen“ → „System“ → „VPN-Namen im Heimnetz
+auflösen“, gespeichert in `gateway_features.settings.vpnNames.enabled`,
+geändert über `PUT /api/v1/gateways/:id/features { "vpnNames": { "enabled": true } }`.
+Der Schalter gilt für genau ein Gateway (auch in einem Pool). Hinweise statt
+Verbote: Der Schalter bleibt bedienbar, wenn der DNS-Filter aus ist, das Gateway
+die Funktion noch nicht kennt oder der Namensdienst aus ist; die Zeile nennt
+dann den Grund. Handbuch: Kapitel 5, „VPN-Namen im Heimnetz“.

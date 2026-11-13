@@ -312,11 +312,11 @@ describe('gateway-pool-kit: tab "Funktionen"', () => {
   };
   it('the groups hold every switch row of gateway-net.js / gateway-home.js exactly once', () => {
     const all = PK.FEATURE_GROUPS.flatMap((g) => g.features);
-    assert.deepEqual(all.slice().sort(), ['ai', 'cache', 'cameras', 'dns', 'edge', 'inetq', 'lan', 'netwatch', 'presence', 'print', 'radio', 'setuppage', 'timezone', 'ups', 'zigbee']);
+    assert.deepEqual(all.slice().sort(), ['ai', 'cache', 'cameras', 'dns', 'edge', 'inetq', 'lan', 'netwatch', 'presence', 'print', 'radio', 'setuppage', 'timezone', 'ups', 'vpnnames', 'zigbee']);
     assert.equal(new Set(all).size, all.length);
     const net = read('public/js/gateway-net.js');
     const home = read('public/js/gateway-home.js');
-    for (const k of ['netwatch', 'inetq', 'presence', 'ups', 'edge', 'zigbee', 'lan', 'print', 'ai', 'cameras']) assert.match(net, new RegExp("rows\\.set\\('" + k + "'"), k);
+    for (const k of ['netwatch', 'inetq', 'presence', 'ups', 'edge', 'zigbee', 'lan', 'print', 'ai', 'cameras', 'vpnnames']) assert.match(net, new RegExp("rows\\.set\\('" + k + "'"), k);
     for (const k of ['dns', 'cache', 'timezone']) assert.match(home, new RegExp("'" + k + "'\\)\\);"), k);
     // phase 3c, step 2: the row "Funk" comes from gateway-radio.js (the old Zigbee row only without it)
     assert.match(net, /rows\.set\('radio', radioRow\)/);

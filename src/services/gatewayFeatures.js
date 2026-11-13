@@ -22,6 +22,10 @@
 //     radio    { zigbee, ble, stack, thread, sticks } phase 3c, step 2: Funk (services/homeRadio.js; zigbee null = automatic)
 //     ai       { enabled, source, lanUrl, lanApi, lanPin, gpu }  phase 3c, step 3: Lokale KI (services/ai/local.js)
 //     cameras  { enabled, nobodyHome, credRev, subnets, cameras }  phase 3c, step 4: Kameras (services/homeCameras.js)
+//     internal_dns { server, domains, primary, resolve } | null   "Namen im VPN" (services/vpnNames.js): the zones
+//              of the device names and whether THIS gateway resolves them for its home network (the switch
+//              vpnNames.enabled, off by default). Whatever the switch says, the gateway keeps questions about
+//              these zones away from the router and public resolvers. null: the server has no name service.
 //
 // What a gateway can do is read from its telemetry: `capabilities` (array)
 // or, for a gateway that does not report it, its version (≥ MIN_GATEWAY).
@@ -61,6 +65,8 @@ const DEFAULTS = Object.freeze({
   // "Statusseite im Heimnetz": the status page of the gateway in its LAN (gateway docs/setup-page.md);
   // the setup itself and "Zugang ungültig" stay reachable there either way
   setupPage: { status: true },
+  // "VPN-Namen im Heimnetz auflösen": the DNS filter of the gateway asks the server for the device names
+  vpnNames: { enabled: false },
 });
 
 // Memory of the parts (MB), contract §6 — guide values for the hint only (deCONZ ≈ 90 MB with a
@@ -111,6 +117,7 @@ function normalize(raw) {
     ai: require('./ai/local').normalizeSettings(r.ai),
     cameras: require('./homeCameras').normalizeSettings(r.cameras),
     setupPage: { status: bool((r.setupPage || {}).status, DEFAULTS.setupPage.status) },
+    vpnNames: { enabled: bool((r.vpnNames || {}).enabled, DEFAULTS.vpnNames.enabled) },
   };
 }
 
@@ -151,7 +158,7 @@ function applyPatch(current, patch, { ipv6 = false } = {}) {
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new FeatureError('invalid', 'invalid body');
   const out = JSON.parse(JSON.stringify(current));
-  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread', 'sticks'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'lanPin', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'], setupPage: ['status'] };
+  const allowed = { netwatch: ['enabled', 'portscan'], inetq: ['enabled', 'speedtest', 'targets'], presence: ['enabled'], ups: ['enabled', 'host', 'port', 'name'], notify: ['outage', 'ups'], print: ['enabled', 'manual', 'convert', 'ocr', 'office'], radio: ['zigbee', 'ble', 'stack', 'thread', 'sticks'], ai: ['enabled', 'source', 'lanUrl', 'lanApi', 'lanPin', 'gpu'], cameras: ['enabled', 'subnets', 'storagePath'], setupPage: ['status'], vpnNames: ['enabled'] };
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     if (!allowed[k]) continue; // other keys (lanDiscovery, edge) are handled by the route
@@ -227,7 +234,7 @@ function set(peerId, patch, { ip, user } = {}) {
   db().prepare(`INSERT INTO gateway_features (peer_id, settings, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(peer_id) DO UPDATE SET settings = excluded.settings, updated_at = excluded.updated_at`)
     .run(g.id, JSON.stringify(after), Date.now());
-  const changed = FEATURE_KEYS.concat(['notify', 'print', 'radio', 'ai', 'cameras', 'setupPage']).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+  const changed = FEATURE_KEYS.concat(['notify', 'print', 'radio', 'ai', 'cameras', 'setupPage', 'vpnNames']).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
   if (changed.length) {
     try {
       require('./activity').log('gateway_features_changed', `Gateway features changed on "${g.name}" (${changed.join(', ')})`, {
@@ -278,7 +285,38 @@ function configPayload(peerId) {
     cameras: part(peerId, 'cameras', () => require('./homeCameras').configPayload(peerId)),
     // status page of the gateway in its home network (capability `setup-page`; an older gateway ignores it)
     setup_page: { status: s.setupPage.status },
+    // "Namen im VPN": the zones of the device names (capability `dns-vpn-names`; an older gateway ignores it)
+    internal_dns: internalDns(s),
   };
+}
+
+/**
+ * `features.internal_dns`: the zones the server's DNS answers alone, its
+ * address in the VPN and the switch of this gateway — the same meaning as
+ * `internalDns` of the client config (routes/api/client/peers.js). null when
+ * the name service is off (GC_DNS_ENABLED=false) or the zones cannot be read:
+ * the gateway then behaves as it did before it knew any zone.
+ */
+function internalDns(s) {
+  try {
+    const config = require('../../config/default');
+    if (!config.dns.enabled) return null;
+    const names = require('./vpnNames').current();
+    return { server: config.wireguard.gatewayIp, domains: names.zones.slice(), primary: names.primary, resolve: s.vpnNames.enabled };
+  } catch (e) {
+    logger.error({ err: e.message }, 'features.internal_dns not built — sent without zones');
+    return null;
+  }
+}
+
+/** Tell every gateway to pull its config: the zones of the device names changed (services/vpnNames.js save). */
+function notifyAllGateways() {
+  let rows = [];
+  try { rows = db().prepare("SELECT id FROM peers WHERE peer_type = 'gateway' AND enabled = 1").all(); } catch (e) {
+    logger.debug({ err: e.message }, 'gateways not listed — the next poll brings the zones');
+  }
+  for (const r of rows) notifyGateway(r.id);
+  return rows.length;
 }
 
 function validZone(tz) {
@@ -344,6 +382,8 @@ function support(tel) {
     printConvert: !!(caps && caps.includes('print-convert')),
     // setup and status page in the home network (gateway docs/setup-page.md): the switch only works there
     setupPage: !!(caps && caps.includes('setup-page')),
+    // "Namen im VPN" in the home network: the DNS filter of the gateway knows the zones (gateway docs/dns-cache.md)
+    vpnNames: !!(caps && caps.includes('dns-vpn-names')),
     version: typeof t.gateway_version === 'string' ? t.gateway_version : null, minGateway: MIN_GATEWAY, minGateway3b: MIN_GATEWAY_3B, minGatewayPrint: MIN_GATEWAY_PRINT, minGatewayPrintConvert: MIN_GATEWAY_PRINT_CONVERT, minGatewayRadio: MIN_GATEWAY_RADIO, minGatewayAi: MIN_GATEWAY_AI, minGatewayCameras: MIN_GATEWAY_CAMERAS,
   };
 }
@@ -496,6 +536,12 @@ function printPart(peerId) {
   try { return require('./homePrint').overview(peerId); } catch (e) { logger.debug({ err: e.message }, 'print overview unavailable'); return null; }
 }
 
+/** The row "VPN-Namen im Heimnetz auflösen": { available, zones, primary } (available: the server has a name service). */
+function vpnNamesPart(s) {
+  const d = internalDns(s);
+  return d ? { available: true, zones: d.domains, primary: d.primary } : { available: false, zones: [], primary: null };
+}
+
 /** Everything the card "Funktionen dieses Gateways" shows. */
 function overview(peerId) {
   const g = needGateway(peerId);
@@ -562,6 +608,7 @@ function overview(peerId) {
     ai: aiPart(g.id),
     cameras: camerasPart(g.id),
     timezone: { tz, utc: tz === 'UTC' || tz === 'Etc/UTC' },
+    vpnNames: vpnNamesPart(s),
     home,
   };
 }
@@ -569,5 +616,5 @@ function overview(peerId) {
 module.exports = {
   DEFAULTS, MIN_GATEWAY, MIN_GATEWAY_3B, MIN_GATEWAY_PRINT, MIN_GATEWAY_PRINT_CONVERT, MIN_GATEWAY_RADIO, MIN_GATEWAY_AI, MIN_GATEWAY_CAMERAS, SPEEDTEST_PLANS, MEM_MB, FeatureError, timezone,
   normalize, get, set, applyPatch, configPayload, support, overview, enabledKeys, CHIP_KEYS, memoryEstimate, boardOf, speedLimit, zigbeeOf,
-  needGateway, telemetryOf, gatewayPeer, notifyGateway, publicIpv4,
+  needGateway, telemetryOf, gatewayPeer, notifyGateway, notifyAllGateways, internalDns, publicIpv4,
 };

@@ -1168,6 +1168,25 @@
     return t('gwn.feat.cameras_gb', { n: nf(n / 1e9, n >= 1e10 ? 0 : 1) });
   }
 
+  /** The row "VPN-Namen im Heimnetz auflösen" (group "System": a switch of this one gateway). */
+  function vpnNamesRow(id, d) {
+    const f = d.features;
+    const sup = d.support || {};
+    const v = d.vpnNames;
+    const name = t('gwn.feat.vpnnames');
+    const sw = U.switchBtn(!!f.vpnNames.enabled, name, 'gwn-f-vpnnames',
+      () => toggle(sw, id, (on) => ({ vpnNames: { enabled: on } }), (on) => t(on ? 'gwn.feat.on_done' : 'gwn.feat.off_done', { name })));
+    const hint = (attr, text) => h('span', { class: 'gwn-hint', [attr]: '' }, [U.icon('info', 14), text]);
+    const extra = [];
+    if (!v.available) extra.push(hint('data-vpnnames-noservice', t('gwn.feat.vpnnames_noservice')));
+    else if (sup.vpnNames !== true) extra.push(hint('data-vpnnames-old', sup.version ? t('gwn.feat.vpnnames_old', { version: sup.version }) : t('gwn.feat.vpnnames_unknown')));
+    else if (d.dns && !d.dns.enabled) extra.push(hint('data-vpnnames-nodns', t('gwn.feat.vpnnames_nodns')));
+    if (v.available && v.primary) {
+      extra.push(h('span', { class: 'gwe-d', 'data-vpnnames-zone': '' }, [t(f.vpnNames.enabled ? 'gwn.feat.vpnnames_on' : 'gwn.feat.vpnnames_off'), ' ', h('code', { text: t('gwn.feat.vpnnames_example', { zone: v.primary }) })]));
+    }
+    return featRow(name, t('gwn.feat.vpnnames_d'), sw, extra, 'vpnnames');
+  }
+
   /** Every switch row of the gateway by its data-feature key (same API and behaviour as before: putFeatures). */
   function featureRows(g, d) {
     const rows = new Map();
@@ -1256,6 +1275,9 @@
       }
       rows.set('setuppage', featRow(t('gwn.feat.setuppage'), t('gwn.feat.setuppage_d'), swPage, extra, 'setuppage'));
     }
+    // "VPN-Namen im Heimnetz auflösen": the DNS filter of the gateway asks the server for the names of the VPN
+    // devices (features.internal_dns). Hints, never a ban: the switch stays usable when something is missing.
+    if (f.vpnNames && d.vpnNames) rows.set('vpnnames', vpnNamesRow(id, d));
     // DNS filter, home cache, local time (phase 3b, gateway-home.js)
     if (window.GCGatewayHome) {
       window.GCGatewayHome.featureRows(id, d, (gid) => reloadFeatures(gid)).forEach((r) => rows.set(r.getAttribute('data-feature'), r));
