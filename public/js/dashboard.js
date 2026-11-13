@@ -770,6 +770,9 @@
     return api('/api/system/auto-update').then(function (d) {
       state.au = d;
       renderAutoUpdate(d);
+      // the Server field of the "Updates" card names the same age — not while a control in it has the focus
+      var upBox = $('db-updates');
+      if (upBox && !upBox.contains(document.activeElement)) renderUpdates();
       revealAutoUpdate(d);
     });
   });
@@ -1049,7 +1052,8 @@
       // the same words and the same age as the Server card (auto-update state)
       var label = au.status === 'active' ? T('autoupdate.active', 'Auto-update active')
         : au.status === 'stale' ? T('autoupdate.stale', 'Cron no longer running?') : T('autoupdate.not_configured', 'Auto-update not set up');
-      o.sub = joined([[label], au.status === 'active' ? checkedNodes(f.checked_at) : null]);
+      var age = state.au && state.au.age_s != null ? state.au.age_s : au.age_s;
+      o.sub = joined([[label], au.status === 'active' ? [T('autoupdate.last_checked', 'checked {x} ago').replace('{x}', auAgo(age))] : null]);
       o.act.push(upLink('/settings/updates', 'dashboard.up_link_settings'));
     }
     return o;
