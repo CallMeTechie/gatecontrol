@@ -35,11 +35,10 @@
     {% block content %}{% endblock %}
   </main>
 </div>
-{# Bottom navigation and quick-add button are admin tools; a member's
-   navigation is the sidebar drawer (Mein Bereich, Konto, Portal). #}
+{# The bottom navigation is an admin tool; a member's navigation is the
+   sidebar drawer (Mein Bereich, Konto, Portal). #}
 {% if user and user.role == 'admin' %}
 {% include theme + "/partials/bottomnav.njk" %}
-{% include theme + "/partials/fab.njk" %}
 {% endif %}
 
 <script nonce="{{ cspNonce }}">

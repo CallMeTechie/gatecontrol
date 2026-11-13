@@ -20,7 +20,11 @@ scenarios/04-passkey.js  Passkey registrieren, benutzernamenlos anmelden,
                         entfernen (virtueller Authenticator über CDP)
 scenarios/05-dashboard.js /dashboard: Kacheln, Traffic-Diagramm (x-Achse,
                         Tooltip per Maus und Tastatur), Zeitraum übersteht
-                        Poll und Neuladen, Tabelle, Aktivität + Filter, 390 px
+                        Poll und Neuladen, Tabelle, Aktivität + Filter, 390 px;
+                        Karte „Updates“ in drei Zuständen (updates-mock.js,
+                        page.route), linke/rechte Kante wie die Einstellungen
+                        (gemessen bei 1920 und 1440 px), kein schwebendes Plus
+                        bei 390 px, Anlege-Knöpfe im Kopf (?action=add)
 scenarios/06-settings.js /settings: Bereiche (#bereich, alte Tab-Namen, ?tab=),
                         Suche, Speicherleiste (ändern, speichern, neu laden,
                         verwerfen, 400 mit Feldfehler, Rückfrage beim Wechsel),

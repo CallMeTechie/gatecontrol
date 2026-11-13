@@ -130,7 +130,7 @@ router.get('/traffic', (req, res) => {
  * `online` uses the handshake the status poller stores (peers.latest_handshake)
  * with the same timeout as `wg show` (data.peer_online_timeout).
  * → { period, peers: [{ peer_id, name, peer_type, upload, download, total, online }],
- *     clients: { below_min, unreported } }
+ *     clients: { below_min, unreported, outdated } }
  */
 router.get('/top-peers', (req, res) => {
   try {
@@ -150,12 +150,17 @@ router.get('/top-peers', (req, res) => {
     }));
     let belowMin = 0;
     let unreported = 0;
+    let outdated = 0;
     try {
       const overview = require('../../services/clientUpdates').getOverview();
       belowMin = overview.products.reduce((n, p) => n + (p.below_min || 0), 0);
       unreported = overview.unreported || 0;
+      // "Client veraltet" of the peers card: the same count as the Apps field of
+      // the "Updates" card (older than the newest release) — never fewer than
+      // the devices below the minimum version, whatever is known about releases.
+      outdated = Math.max(belowMin, require('../../services/dashboardUpdates').appsField().outdated || 0);
     } catch (err) { logger.debug({ err: err.message }, 'client versions unavailable'); }
-    res.json({ ok: true, period, peers, clients: { below_min: belowMin, unreported } });
+    res.json({ ok: true, period, peers, clients: { below_min: belowMin, unreported, outdated } });
   } catch (err) {
     logger.error({ err: err.message }, 'Failed to load top peers');
     res.status(500).json({ ok: false, error: req.t('error.dashboard.traffic') });
@@ -176,6 +181,29 @@ router.get('/security-summary', async (req, res) => {
     res.json({ ok: true, ...data });
   } catch (err) {
     logger.error({ err: err.message }, 'Failed to assemble the security summary');
+    res.status(500).json({ ok: false, error: req.t('error.dashboard.stats') });
+  }
+});
+
+/**
+ * GET /api/dashboard/updates[?refresh=1]
+ * The "Updates" card: server, plugins, gateways and apps in one answer
+ * (services/dashboardUpdates.js). Answers from the caches — never waits for
+ * GitHub or the plugin catalogue and writes nothing; what is due is refreshed
+ * in the background (?refresh=1, "Erneut prüfen": whatever the age, at most
+ * once a minute), so a later call shows the new state.
+ * → { state: 'ok'|'updates'|'unknown', updates, checked_at, failed_at,
+ *     server, plugins, gateways, apps }
+ */
+router.get('/updates', (req, res) => {
+  try {
+    const updates = require('../../services/dashboardUpdates');
+    const data = updates.summary({ lang: req.language === 'en' ? 'en' : 'de' });
+    updates.refreshInBackground({ force: req.query.refresh === '1' });
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, ...data });
+  } catch (err) {
+    logger.error({ err: err.message }, 'Failed to assemble the updates card');
     res.status(500).json({ ok: false, error: req.t('error.dashboard.stats') });
   }
 });
