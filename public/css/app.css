@@ -10175,6 +10175,8 @@ a.gwp-mrow-n{color:var(--teal)}
 .pl-vn{display:flex; flex-direction:column; gap:5px; min-width:0}
 .pl-vn-row{margin-top:6px; width:fit-content; max-width:100%}
 .pl-vn-row .vn-name{padding:3px 3px 3px 9px; border-radius:9px}
+/* in the table the name stays on one line (the table card scrolls sideways when it has to) */
+.pl-table .pl-vn-row .vn-name code{overflow-wrap:normal; white-space:nowrap}
 .pl-vn-row .vn-copy{width:24px; height:24px; border-radius:7px}
 .gw-vn{margin:-2px 0 10px}
 .gw-head-t .gw-vn{margin:0; align-self:flex-start; max-width:100%}
