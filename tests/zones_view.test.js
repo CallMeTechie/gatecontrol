@@ -323,3 +323,47 @@ describe('zones-view: input helpers', () => {
     assert.equal(V.validPort('5010-5000', true), false);
   });
 });
+
+// A DELETE answers only after the server's Caddy sync: the page hides what is
+// being deleted at once (zones-page.js markRemoving) with this filter.
+describe('zones-view: withoutRemoved', () => {
+  const ids = (data) => hostIds(V.pageZones(data));
+  const entryIds = (data, hostId) => V.pageZones(data).flatMap((z) => z.hosts).find((h) => h.id === hostId).entries.map((e) => e.id);
+
+  it('returns the data itself when nothing is being deleted', () => {
+    const data = zonesFixture();
+    assert.equal(V.withoutRemoved(data, { hosts: new Set(), entries: new Set() }), data);
+    assert.equal(V.withoutRemoved(data, null), data);
+    assert.equal(V.withoutRemoved(null, { hosts: new Set([1]), entries: new Set() }), null);
+  });
+
+  it('drops one forwarding of a host — HTTPS, TCP on a pool, and keeps the rest', () => {
+    const data = zonesFixture();
+    const out = V.withoutRemoved(data, { hosts: new Set(), entries: new Set([202, 104]) });
+    assert.deepEqual(entryIds(out, 5), [201]);
+    assert.deepEqual(entryIds(out, 3).sort(), [105, 106]);
+    const nas = V.pageZones(out).flatMap((z) => z.hosts).find((h) => h.id === 5);
+    assert.equal(nas.entry_count, 1);
+    assert.equal(nas.enabled_count, 1);
+    assert.equal(V.countEntries(byDomain(V.pageZones(out), 'domaincaster.com')).entries, 1);
+    // the loaded data stays as it was (a failed delete shows the row again)
+    assert.deepEqual(entryIds(data, 5), [201, 202]);
+    assert.equal(ids(out).length, ids(data).length);
+  });
+
+  it('a host that loses its last forwarding goes with it — the UDP host without a domain', () => {
+    const data = zonesFixture();
+    const out = V.withoutRemoved(data, { hosts: new Set(), entries: new Set([301]) });
+    assert.equal(ids(out).includes(9), false);
+    assert.deepEqual(out.unassigned, []);
+    assert.equal(ids(data).includes(9), true);
+  });
+
+  it('drops a whole host and leaves the other zones alone', () => {
+    const data = zonesFixture();
+    const out = V.withoutRemoved(data, { hosts: new Set([5]), entries: new Set() });
+    assert.deepEqual(byDomain(V.pageZones(out), 'domaincaster.com').hosts, []);
+    assert.deepEqual(hostIds([byDomain(V.pageZones(out), 'marcbackes.net')]), hostIds([byDomain(V.pageZones(data), 'marcbackes.net')]));
+    assert.equal(out.gateways, data.gateways);
+  });
+});

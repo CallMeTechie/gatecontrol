@@ -464,6 +464,26 @@
   }
 
   // ── Delete (immediately, with confirmation) ──
+  // The server deletes the row first and answers only after the Caddy sync,
+  // and that answer can get lost. So the row leaves the page at once
+  // (ctx().removing) and the page data is reloaded whatever the answer was;
+  // `gone` then tells from that data whether the delete took place.
+  async function runDelete(o) {
+    const c = ctx();
+    const done = c.removing ? c.removing(o.ids) : () => {};
+    let failure = null;
+    try {
+      await UI.call(api.del(o.url));
+      UI.toastOk(o.okText);
+    } catch (err) { failure = err; }
+    done();
+    await c.reload();
+    if (!failure) return true;
+    if (o.gone()) { UI.toastOk(o.okText); return true; }
+    UI.toastError(failure);
+    return false;
+  }
+
   async function deleteEntry(e, host, zone, btn) {
     const line = V.entryLine(e);
     const last = (host.entries || []).filter((x) => !x.rdp_owned).length <= 1;
@@ -474,14 +494,17 @@
       okLabel: t('common.delete'), danger: true,
     });
     if (!ok) return;
+    if (hs) { delete hs.drafts[e.id]; hs.editing.delete(e.id); delete hs.entryErrors[e.id]; }
+    // hs = null right here: the dialog's own clean-up runs a tick later, after
+    // the page was redrawn without the host.
+    if (last && hs) { hs.drafts = {}; hs.dlg.close(true); hs = null; }
     UI.busy(btn, true);
     try {
-      await UI.call(api.del('/api/routes/' + e.id));
-      if (hs) { delete hs.drafts[e.id]; hs.editing.delete(e.id); delete hs.entryErrors[e.id]; }
-      UI.toastOk(t('entry.deleted'));
-      if (last && hs) { hs.drafts = {}; hs.dlg.close(true); }
-      await ctx().reload();
-    } catch (err) { UI.toastError(err); } finally { UI.busy(btn, false); }
+      await runDelete({
+        url: '/api/routes/' + e.id, ids: { entries: [e.id] }, okText: t('entry.deleted'),
+        gone: () => { const f = findHost(host.id); return !f || !(f.host.entries || []).some((x) => x.id === e.id); },
+      });
+    } finally { UI.busy(btn, false); }
   }
 
   async function deleteHost(host, zone) {
@@ -493,13 +516,11 @@
       detail: rdp ? t('host.confirm_delete_rdp') : null, okLabel: t('common.delete'), danger: true,
     });
     if (!ok) return false;
-    try {
-      await UI.call(api.del('/api/v1/hosts/' + host.id));
-      UI.toastOk(t('host.deleted', { host: fqdn }));
-      if (hs && hs.hostId === host.id) { hs.drafts = {}; hs.hd = V.hostDraft(host); hs.dlg.close(true); }
-      await ctx().reload();
-      return true;
-    } catch (err) { UI.toastError(err); return false; }
+    if (hs && hs.hostId === host.id) { hs.drafts = {}; hs.dlg.close(true); hs = null; }
+    return runDelete({
+      url: '/api/v1/hosts/' + host.id, ids: { hosts: [host.id] }, okText: t('host.deleted', { host: fqdn }),
+      gone: () => !findHost(host.id),
+    });
   }
 
   async function clearOverride(host, zone, btn) {
@@ -513,8 +534,9 @@
     try {
       await UI.call(api.put('/api/v1/hosts/' + host.id + '/gateway-override', { override: false }));
       UI.toastOk(t('host.override_cleared', { host: host.fqdn || V.hostLabel(host) }));
-      await ctx().reload();
     } catch (err) { UI.toastError(err); } finally { UI.busy(btn, false); }
+    // Also after an error: a lost answer says nothing about what the server did.
+    await ctx().reload();
   }
 
   // Full editor ("Optionen") — reloads the page data on save.

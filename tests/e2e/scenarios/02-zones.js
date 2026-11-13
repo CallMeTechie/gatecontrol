@@ -185,6 +185,88 @@ module.exports = (ctx) => {
         step('nothing was created', !!z2 && z2.hosts.length === apiHosts, `${z2 && z2.hosts.length} hosts`);
       }
 
+      // ── Löschen: die Zeile geht sofort, die Liste folgt dem Server ───────
+      // Der Server löscht die Zeile zuerst und antwortet erst nach dem
+      // Caddy-Sync; die Antwort kann auch verloren gehen. Beides hier über
+      // page.route nachgestellt — an den Server geht kein DELETE, die
+      // Fixtures bleiben, wie sie sind.
+      const noToast = (pg) => pg.waitForFunction(() => !document.querySelector('.toast'), null, { timeout: 8000 }).catch(() => {});
+      const tcp = await entryOf(page, FIXTURES.hosts.nas, (e) => e.route_type === 'l4');
+      step('API: the nas host has a TCP forwarding', !!tcp);
+      if (tcp) {
+        const nasRow = `.rt-host[data-host-id="${FIXTURES.hosts.nas}"]`;
+        const tcpLine = `${nasRow} .rt-line[data-entry-id="${tcp.id}"]`;
+        const lineGone = (timeout) => page.waitForFunction((sel) => !document.querySelector(sel), tcpLine, { timeout }).then(() => true).catch(() => false);
+        // 1. The answer is late and then says "failed".
+        let answer;
+        const held = new Promise((r) => { answer = r; });
+        let asked = false;
+        const delEntry = new RegExp('/api/v1/routes/' + tcp.id + '$');
+        await page.route(delEntry, async (r) => {
+          if (r.request().method() !== 'DELETE') return r.continue();
+          asked = true;
+          await held;
+          return r.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'e2e: sync failed' }) });
+        });
+        await noToast(page);
+        await page.locator(`${nasRow} .rt-edit-host`).click();
+        await visible(page, '[data-rt-dialog="host-edit"] .rt-dlg', 6000);
+        const he = dialog(page, 'host-edit');
+        await he.locator(`.rt-erow[data-entry-id="${tcp.id}"] .rt-ibtn-danger`).click();
+        await visible(page, '.zn-dialog .btn-danger', 4000);
+        await page.click('.zn-dialog .btn-danger');
+        const goneAtOnce = await lineGone(3000);
+        const dialogRows = await he.locator('.rt-erow[data-entry-id]').count();
+        step('delete: the forwarding leaves list and dialog while the server still works',
+          asked && goneAtOnce && dialogRows === 1, `request sent ${asked}, line gone ${goneAtOnce}, ${dialogRows} rows in the dialog`);
+        answer();
+        const back = await visible(page, tcpLine, 6000);
+        const failToast = await visible(page, '.toast-error', 4000);
+        step('delete: a failed delete brings the forwarding back and says so', back && failToast, `line back ${back}, error message ${failToast}`);
+        await page.unroute(delEntry);
+        ctx.allow((p) => p.kind === 'http' && p.status === 500 && delEntry.test(p.url), (p) => p.kind === 'console' && /status of 500/.test(p.text));
+        await page.keyboard.press('Escape');
+        await closed(page, 'host-edit');
+
+        // 2. The delete took place, its answer never arrives: the list still
+        //    follows the server (here: GET /zones without the wiki host).
+        const wikiRow = `.rt-host[data-host-id="${FIXTURES.hosts.wiki}"]`;
+        const delHost = new RegExp('/api/v1/hosts/' + FIXTURES.hosts.wiki + '$');
+        const zonesUrl = /\/api\/v1\/zones$/;
+        let deleted = false;
+        await page.route(delHost, (r) => {
+          if (r.request().method() !== 'DELETE') return r.continue();
+          deleted = true;
+          return r.abort('connectionreset');
+        });
+        await page.route(zonesUrl, async (r) => {
+          if (!deleted) return r.continue();
+          const res = await r.fetch();
+          const body = await res.json();
+          (body.zones || []).forEach((z) => { z.hosts = (z.hosts || []).filter((h) => h.id !== FIXTURES.hosts.wiki); });
+          return r.fulfill({ response: res, json: body });
+        });
+        await noToast(page);
+        await page.locator(`${wikiRow} .rt-more`).click();
+        await visible(page, '.zn-menu .zn-menu-item.danger', 4000);
+        await page.click('.zn-menu .zn-menu-item.danger');
+        await visible(page, '.zn-dialog .btn-danger', 4000);
+        await page.click('.zn-dialog .btn-danger');
+        const hostGone = await page.waitForFunction((sel) => !document.querySelector(sel), wikiRow, { timeout: 6000 }).then(() => true).catch(() => false);
+        await page.waitForTimeout(600);
+        const okToast = await page.locator('.toast-success').count();
+        const errToast = await page.locator('.toast-error').count();
+        step('delete: without an answer the list is reloaded and shows the host as deleted',
+          deleted && hostGone && okToast === 1 && errToast === 0, `request sent ${deleted}, row gone ${hostGone}, ${okToast} success / ${errToast} error message(s)`);
+        await page.unroute(delHost);
+        await page.unroute(zonesUrl);
+        ctx.allow((p) => p.kind === 'console' && /Failed to load resource/.test(p.text));
+        await page.evaluate(() => window.GCZonesPage.reload());
+        const z3 = await zoneData(page);
+        step('delete: the fixtures are untouched', !!z3 && z3.hosts.length === apiHosts && await visible(page, wikiRow, 6000) && await visible(page, tcpLine, 6000),
+          `${z3 && z3.hosts.length} hosts`);
+      }
+
       // ── Telefonbreite ────────────────────────────────────────────────────
       await page.setViewportSize({ width: 400, height: 860 });
       await page.goto(BASE + '/routes');
