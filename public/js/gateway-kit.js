@@ -665,6 +665,63 @@
     '        max-file: "3"',
   ];
 
+  // "VPN-Gerät automatisch bereitstellen (Test)" — optional, Synology only, off by default: a one-shot
+  // service that runs BEFORE the gateway and loads the kernel module tun when /dev/net/tun is missing
+  // (DSM only creates the device once the module is loaded — until now a task in the DSM task scheduler).
+  // Exactly as in docker-compose.tun-loader.yml of gatecontrol-gateway (tests/fixtures/gateway-compose/,
+  // compared by tests/gateway_compose_parity.test.js). Rights: may load kernel modules (SYS_MODULE) and
+  // nothing else — every other capability dropped, no network, read-only, only /lib/modules of the NAS
+  // mounted (read-only), no privileged; it uses the gateway image with a fixed command. Whether the
+  // device is there it reads from /proc/misc. The gateway service itself stays as it is (devices:
+  // /dev/net/tun) and only waits for it (depends_on). `$$` is compose's escape for a literal `$`.
+  const TUN_LOADER_SERVICE = [
+    '',
+    '  # VPN device for Synology (test, optional): runs before the gateway, loads the kernel module tun when',
+    '  # /dev/net/tun is missing, and ends after a few seconds. May load kernel modules (SYS_MODULE) — nothing',
+    '  # else: no other capability, no network, read-only. Its log says what it did (container …-tun-loader-1).',
+    '  tun-loader:',
+    '    image: ghcr.io/callmetechie/gatecontrol-gateway:latest',
+    '    entrypoint:',
+    '      - /bin/sh',
+    '      - -c',
+    '      - |',
+    '        MISC="$${GC_TUN_MISC:-/proc/misc}"; KO="$${GC_TUN_KO:-/lib/modules/tun.ko}"; W="$${GC_TUN_WAIT:-5}"',
+    '        say() { echo "tun-loader: $$*"; }',
+    '        have() { grep -Eq \'^[[:space:]]*[0-9]+[[:space:]]+tun$$\' "$$MISC" 2>/dev/null; }',
+    '        if have; then say "/dev/net/tun ist da, nichts zu laden / is present, nothing to load"; exit 0; fi',
+    '        if [ ! -f "$$KO" ]; then',
+    '          say "kein $$KO (keine Synology): versuche modprobe tun, sonst lädt der Kernel das Modul beim ersten Zugriff selbst / no $$KO (not a Synology): trying modprobe tun, otherwise the kernel loads the module on first use"',
+    '          out="$$(modprobe tun 2>&1)" || say "modprobe: $${out:-fehlgeschlagen / failed}"',
+    '          exit 0',
+    '        fi',
+    '        say "/dev/net/tun fehlt, lade $$KO / is missing, loading $$KO"',
+    '        out="$$(insmod "$$KO" 2>&1)" || say "insmod: $${out:-fehlgeschlagen / failed}"',
+    '        i=0; while ! have && [ "$$i" -lt "$$W" ]; do sleep 1; i=$$((i + 1)); done',
+    '        if have; then say "/dev/net/tun ist bereit / is ready"; exit 0; fi',
+    '        say "FEHLER: /dev/net/tun ließ sich nicht bereitstellen, das Gateway startet nicht. Bisheriger Weg: DSM › Systemsteuerung › Aufgabenplaner › Ausgelöste Aufgabe (root, Hochfahren): insmod /lib/modules/tun.ko – einmal ausführen, dann das Projekt starten."',
+    '        say "ERROR: /dev/net/tun could not be provided, the gateway will not start. The way so far: DSM › Control Panel › Task Scheduler › Triggered Task (root, boot-up): insmod /lib/modules/tun.ko – run it once, then start the project."',
+    '        exit 1',
+    '    restart: "no"',
+    '    network_mode: none        # no network',
+    '    user: "0:0"               # loading a module needs root; only the one capability below',
+    '    cap_drop:',
+    '      - ALL',
+    '    cap_add:',
+    '      - SYS_MODULE            # load the kernel module tun — nothing else',
+    '    security_opt:',
+    '      - no-new-privileges:true',
+    '    read_only: true',
+    '    volumes:',
+    '      - /lib/modules:/lib/modules:ro   # tun.ko of the NAS (/lib/modules/tun.ko), read-only',
+    '    healthcheck:',
+    '      disable: true',
+    '    logging:',
+    '      driver: json-file',
+    '      options:',
+    '        max-size: "1m"',
+    '        max-file: "2"',
+  ];
+
   // ─── docker-compose.yml (onboarding) ──────────────────────────────────
   // platform: synology → wireguard-go userspace (needs /dev/net/tun; DSM and
   // other hosts without the WireGuard kernel module), linux → kernel WG.
@@ -686,6 +743,8 @@
     const network = o.network === 'bridge' ? 'bridge' : 'host';
     const lines = [];
     const headerNotes = [];
+    // the tun-loader helper only where the userspace path needs /dev/net/tun, and only when asked for
+    const tunLoader = platform === 'synology' && o.tunLoader === true;
 
     if (network === 'bridge') {
       headerNotes.push(
@@ -833,6 +892,14 @@
       '        max-size: "10m"',
       '        max-file: "3"'
     );
+    // optional (test): the gateway waits for the one-shot service that provides /dev/net/tun
+    if (tunLoader) {
+      lines.push(
+        '    depends_on:',
+        '      tun-loader:',
+        '        condition: service_completed_successfully'
+      );
+    }
     if (network === 'host') {
       lines.push(...EDGE_SERVICES);
       // Zigbee (phase 3c, step 2): only when wanted — the image is ≈ 350 MB (the gateway's example keeps it in
@@ -850,8 +917,9 @@
       // office files (Drucken & Scannen): only when „Office-Dateien drucken“ is on (the gateway's example keeps it
       // in the profile "office")
       if (o.office === true) lines.push(...OFFICE_SERVICE);
-      lines.push(...VOLUMES);
     }
+    if (tunLoader) lines.push(...TUN_LOADER_SERVICE);
+    if (network === 'host') lines.push(...VOLUMES);
     const header = headerNotes.length > 0 ? headerNotes.join('\n') + '\n' : '';
     return header + lines.join('\n') + '\n';
   }

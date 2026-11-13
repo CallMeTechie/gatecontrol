@@ -1,0 +1,77 @@
+# VPN-Gerät automatisch bereitstellen (Test, wählbar) – Zusatz zu docker-compose.yml
+# (docs/deployment/synology.md „VPN-Gerät automatisch bereitstellen“):
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.tun-loader.yml
+# Auf der Synology (Container Manager kennt nur eine Datei) liefert GateControl die
+# fertige Datei: Gateway hinzufügen › Synology NAS › „VPN-Gerät automatisch
+# bereitstellen (Test)“. Wer von Hand arbeitet, fügt den Dienst tun-loader und die
+# Zeilen depends_on des Dienstes gateway in die eigene docker-compose.yml ein.
+#
+# Wozu: DSM stellt /dev/net/tun erst bereit, wenn das Kernel-Modul geladen ist
+# (insmod /lib/modules/tun.ko) – bisher eine Aufgabe im DSM-Aufgabenplaner. Fehlt das
+# Gerät, startet der Dienst gateway nicht. tun-loader läuft VOR dem Gateway, lädt das
+# Modul, wenn das Gerät fehlt, und beendet sich nach wenigen Sekunden.
+#
+# Rechte: darf Kernel-Module laden (SYS_MODULE) – sonst nichts: alle anderen
+# Capabilities entzogen, kein Netz, Dateisystem nur lesbar, /lib/modules des Rechners
+# nur lesend eingebunden, kein privileged. Der Dienst gateway bleibt unverändert
+# (devices: /dev/net/tun, keine zusätzlichen Rechte).
+#
+# Grenze: Nach einem Neustart des Rechners startet Docker die Container selbst, ohne
+# Compose und damit ohne tun-loader. Fehlt das Gerät dann, startet das Gateway nicht;
+# deploy/update.sh (Auto-Update-Aufgabe, jede Minute) erkennt das und startet das
+# Projekt neu – erst tun-loader, dann das Gateway. Ohne die Auto-Update-Aufgabe das
+# Projekt nach einem Neustart von Hand starten oder beim Aufgabenplaner bleiben.
+#
+# Auf anderen Rechnern (übliches Linux, Raspberry Pi) ist die Datei unnötig und
+# schadet nicht: Ist das Gerät da, meldet tun-loader das; sonst versucht er
+# `modprobe tun` und lässt das Gateway in jedem Fall starten.
+services:
+  tun-loader:
+    image: ghcr.io/callmetechie/gatecontrol-gateway:latest
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        MISC="$${GC_TUN_MISC:-/proc/misc}"; KO="$${GC_TUN_KO:-/lib/modules/tun.ko}"; W="$${GC_TUN_WAIT:-5}"
+        say() { echo "tun-loader: $$*"; }
+        have() { grep -Eq '^[[:space:]]*[0-9]+[[:space:]]+tun$$' "$$MISC" 2>/dev/null; }
+        if have; then say "/dev/net/tun ist da, nichts zu laden / is present, nothing to load"; exit 0; fi
+        if [ ! -f "$$KO" ]; then
+          say "kein $$KO (keine Synology): versuche modprobe tun, sonst lädt der Kernel das Modul beim ersten Zugriff selbst / no $$KO (not a Synology): trying modprobe tun, otherwise the kernel loads the module on first use"
+          out="$$(modprobe tun 2>&1)" || say "modprobe: $${out:-fehlgeschlagen / failed}"
+          exit 0
+        fi
+        say "/dev/net/tun fehlt, lade $$KO / is missing, loading $$KO"
+        out="$$(insmod "$$KO" 2>&1)" || say "insmod: $${out:-fehlgeschlagen / failed}"
+        i=0; while ! have && [ "$$i" -lt "$$W" ]; do sleep 1; i=$$((i + 1)); done
+        if have; then say "/dev/net/tun ist bereit / is ready"; exit 0; fi
+        say "FEHLER: /dev/net/tun ließ sich nicht bereitstellen, das Gateway startet nicht. Bisheriger Weg: DSM › Systemsteuerung › Aufgabenplaner › Ausgelöste Aufgabe (root, Hochfahren): insmod /lib/modules/tun.ko – einmal ausführen, dann das Projekt starten."
+        say "ERROR: /dev/net/tun could not be provided, the gateway will not start. The way so far: DSM › Control Panel › Task Scheduler › Triggered Task (root, boot-up): insmod /lib/modules/tun.ko – run it once, then start the project."
+        exit 1
+    restart: "no"
+    network_mode: none        # kein Netz
+    user: "0:0"               # Modul laden braucht root; nur die eine Capability unten
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_MODULE            # Kernel-Modul tun laden – sonst nichts
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    # Das Modul liegt auf dem Rechner – ohne diesen einen Ordner (nur lesend) gibt es nichts
+    # zu laden. Ob das Gerät da ist, liest der Dienst aus /proc/misc, ohne /dev des Rechners.
+    volumes:
+      # kics-scan ignore-line
+      - /lib/modules:/lib/modules:ro   # tun.ko des Rechners (Synology: /lib/modules/tun.ko)
+    healthcheck:
+      disable: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "2"
+
+  gateway:
+    depends_on:
+      tun-loader:
+        condition: service_completed_successfully

@@ -136,6 +136,13 @@ Du brauchst DSM 7.2 oder neuer und das Paket **Container Manager** aus dem Paket
    > `insmod /lib/modules/tun.ko`; Aufgabe markieren, „Ausführen“, dann das
    > Projekt starten. Der Assistent zeigt dieselben Schritte.
 
+   > **Wahlweise (Test):** Mit dem Schalter **„VPN-Gerät automatisch
+   > bereitstellen (Test)“** im Assistenten bringt die Compose-Datei einen
+   > kleinen Hilfsdienst mit, der das Modul vor dem Start des Gateways selbst
+   > lädt – die Aufgabe im Aufgabenplaner entfällt. Der Schalter ist
+   > standardmäßig aus. Was er tut und welche Rechte der Dienst hat:
+   > [FAQ](07-faq.md#vpn-gerät-automatisch-bereitstellen-test-synology).
+
 8. Öffne im Browser im Heimnetz `http://<Adresse der Synology>:8642` – die
    [Einrichtungsseite des Gateways](#die-einrichtungsseite-des-gateways).
 9. Trage **Serveradresse** und **Einrichtungscode** aus dem Assistenten ein

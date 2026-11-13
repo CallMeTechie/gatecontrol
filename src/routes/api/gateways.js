@@ -449,6 +449,8 @@ router.post('/:id/setup-bundle', (req, res) => {
 /**
  * Synology package without access data (compose, update.sh, the empty folders): the gateway fetches
  * its gateway.env itself through its setup page. No token rotation, nothing of the gateway in it.
+ * Body { tun_loader: true } ("VPN-Gerät automatisch bereitstellen (Test)", default off): the compose
+ * then has the one-shot service tun-loader.
  */
 router.post('/:id/setup-package', (req, res) => {
   if (req.tokenAuth) return res.status(403).json({ ok: false, error: 'session_required' });
@@ -457,7 +459,7 @@ router.post('/:id/setup-package', (req, res) => {
   res.set('Content-Type', 'application/zip');
   res.set('Content-Disposition', `attachment; filename="${gatewaySetup.NAS_BUNDLE_NAME}"`);
   res.set('Cache-Control', 'no-store');
-  res.send(gatewaySetup.buildNasPackage());
+  res.send(gatewaySetup.buildNasPackage({ tunLoader: (req.body || {}).tun_loader === true }));
 });
 
 /**
@@ -513,9 +515,11 @@ router.post('/:id/compose', (req, res) => {
   const cameraDir = require('../../services/homeCameras').composeStoragePath(row.id);
   // the service office (Drucken & Scannen) when „Office-Dateien drucken“ is on for this gateway; { office: true|false } by hand
   const office = typeof b.office === 'boolean' ? b.office : require('../../services/homePrint').composeWantsOffice(row.id);
-  const text = gatewaySetup.buildCompose(platform, network, { zigbee, zigbee2mqtt, thread, ai, aiGpu, cameras, cameraDir, office });
+  // "VPN-Gerät automatisch bereitstellen (Test)": only by hand ({ tun_loader: true }), synology only — nothing is stored
+  const tunLoader = b.tun_loader === true;
+  const text = gatewaySetup.buildCompose(platform, network, { zigbee, zigbee2mqtt, thread, ai, aiGpu, cameras, cameraDir, office, tunLoader });
   if (!text) return res.status(400).json({ ok: false, error: 'invalid_option' });
-  logger.info({ peerId: row.id, platform, network, zigbee, zigbee2mqtt, thread, ai, aiGpu, cameras, office }, 'Gateway docker-compose.yml downloaded');
+  logger.info({ peerId: row.id, platform, network, zigbee, zigbee2mqtt, thread, ai, aiGpu, cameras, office, tunLoader }, 'Gateway docker-compose.yml downloaded');
   res.set('Content-Type', 'application/yaml; charset=utf-8');
   res.set('Content-Disposition', 'attachment; filename="docker-compose.yml"');
   res.set('Cache-Control', 'no-store');

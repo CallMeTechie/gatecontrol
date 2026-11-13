@@ -132,6 +132,13 @@ You need DSM 7.2 or newer and the **Container Manager** package from the Package
    > `root`, event “Boot-up”, command `insmod /lib/modules/tun.ko`; select the
    > task, “Run”, then start the project. The assistant shows the same steps.
 
+   > **Optional (test):** with the switch **“Provide the VPN device
+   > automatically (test)”** in the assistant the compose file brings a small
+   > helper service that loads the module itself before the gateway starts –
+   > no task in the Task Scheduler needed. The switch is off by default. What
+   > it does and which rights the service has:
+   > [FAQ](07-faq.md#provide-the-vpn-device-automatically-test-synology).
+
 8. In a browser in the home network open `http://<address of the Synology>:8642`
    – the [setup page of the gateway](#the-setup-page-of-the-gateway).
 9. Enter the **server address** and the **setup code** from the assistant

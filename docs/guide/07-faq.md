@@ -424,6 +424,47 @@ With the event “Boot-up” this survives a restart of the NAS. Via SSH
 
 **Check:** The project starts, the container `gateway` is running.
 
+### Provide the VPN device automatically (test, Synology)
+
+Instead of the task in the Task Scheduler a small helper service can load the
+module. This is a **test** and **off** by default – without the switch
+everything stays as before.
+
+**Switch it on:** in the assistant “Add gateway” → “Synology NAS”, step 3,
+tick **“Provide the VPN device automatically (test)”** and only then copy the
+compose file or download the package. For an existing gateway: gateway page →
+“Download docker-compose.yml only” → device “Synology NAS” → the same tick,
+then put the file in place as in [chapter 6](06-updating-a-gateway.md).
+
+**What happens:** the compose file gets a fourth service `tun-loader`. It runs
+**before** the gateway, checks whether `/dev/net/tun` exists, loads the module
+otherwise (`insmod /lib/modules/tun.ko`) and ends after a few seconds. Only
+then the gateway starts. Nothing changes in the gateway itself.
+
+**Rights:** the helper service **may load kernel modules** – a far-reaching
+right. So everything else is closed: no network, no further rights, read-only
+file system, no “privileged” container, and it only runs at start. It uses the
+gateway image, no third-party image.
+
+**Check:** “Container Manager” → “Container” → `…-tun-loader-1` → “Log”. It
+says `tun-loader: … is ready` (module loaded) or `… is present, nothing to
+load` (the device was there already). The container is then listed as
+**exited** – that is correct. The project may therefore show yellow although
+`gateway`, `edge` and `mqtt` run.
+
+**After a restart of the NAS** Docker starts the containers itself, without
+the helper service. The gateway stays down at first. The task for automatic
+updates ([chapter 3](03-gateway-setup.md), `update.sh`, every minute) notices
+that and starts the gateway after one or two minutes – this needs `update.sh`
+from gateway 1.39.0 (part of the package from GateControl once your server
+ships it). Without that task you start the project by hand in the Container
+Manager after a restart.
+
+**If loading fails,** the log of `…-tun-loader-1` shows a message with
+`ERROR:` and the way through the Task Scheduler (see above), and the gateway
+does not start. **Back:** get the compose file without the tick, put it in
+place and create the task in the Task Scheduler.
+
 ### The setup page of the gateway does not open
 
 The page `http://<address of the gateway>:8642` exists in the home network only.

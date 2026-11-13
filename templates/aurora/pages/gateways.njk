@@ -306,6 +306,11 @@
               <button type="button" class="btn btn-ghost btn-sm" id="gwz-cw-package" hidden>{{ t('gwiz.cw.package') }}</button>
             </div>
             <p class="gwz-d" id="gwz-cw-s1-hint"></p>
+            {#- Synology, optional (test), off by default: the compose then brings the one-shot service tun-loader -#}
+            <div class="gwz-cw-tunl" id="gwz-cw-tunl" hidden>
+              <label class="gwz-check"><input type="checkbox" id="gwz-cw-tunl-on" aria-describedby="gwz-cw-tunl-hint"> {{ t('gwiz.cw.tunl_label') }}</label>
+              <p class="gwz-d" id="gwz-cw-tunl-hint">{{ t('gwiz.cw.tunl_hint') }}</p>
+            </div>
             {#- Synology: without /dev/net/tun the container does not start at all — so the hint stands here, before the page -#}
             <details class="gwz-details gwz-cw-tun" id="gwz-cw-tun" hidden>
               <summary>{{ t('gwiz.cw.tun_title') }}</summary>

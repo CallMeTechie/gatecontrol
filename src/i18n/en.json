@@ -8923,6 +8923,8 @@
   "gwiz.cw.tun_2": "User root, event “Boot-up”",
   "gwiz.cw.tun_3": "Command:",
   "gwiz.cw.tun_4": "Select the task and choose “Run”, then start the project",
+  "gwiz.cw.tunl_label": "Provide the VPN device automatically (test)",
+  "gwiz.cw.tunl_hint": "The compose file then gets a small helper service “tun-loader”: it runs before the gateway, loads the kernel module for /dev/net/tun if it is missing, and ends after a few seconds – no task in the DSM task scheduler needed. In return this service may load kernel modules (nothing else: no network, no further rights) and only runs at start. After a restart of the NAS the task for automatic updates brings the gateway back within one or two minutes. Still a test – without the tick everything stays as before.",
   "gwiz.cw.s1_title_linux": "Create a folder and start the container",
   "gwiz.cw.s1_text_linux": "Create a folder (e.g. /opt/gatecontrol-gateway), save this compose file there as docker-compose.yml and start it in the folder:",
   "gwiz.cw.s1_hint_linux": "The compose file is the same for every gateway. Docker creates the folders config, gateway-state and gateway-cache by itself at the first start.",

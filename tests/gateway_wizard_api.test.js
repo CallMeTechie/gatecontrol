@@ -16,6 +16,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { setup, teardown, getCsrf } = require('./helpers/setup');
 const { unzip } = require('./helpers/unzip');
+const kit = require('../public/js/gateway-kit');
 
 let agent, csrf, db, gateways, license;
 const post = (url, body) => agent.post(url).set('X-CSRF-Token', csrf).send(body || {});
@@ -181,6 +182,35 @@ describe('set-up through the setup page of the gateway (server address + setup c
     assert.equal(db.prepare('SELECT api_token_hash FROM gateway_meta WHERE peer_id = ?').get(id).api_token_hash, hash);
     await agent.post(`/api/v1/gateways/${id}/setup-package`).expect(403);
     await post('/api/v1/gateways/999999/setup-package').expect(404);
+  });
+  it('…/setup-package { tun_loader: true } → the compose with the one-shot service tun-loader; anything else: as before', async () => {
+    const compose = async (body) => unzip((await post(`/api/v1/gateways/${id}/setup-package`, body).buffer(true).parse(binaryParser).expect(200)).body)
+      .find((e) => e.name === 'docker-compose.yml').data.toString();
+    const plain = kit.buildCompose({ platform: 'synology', network: 'host' });
+    const withLoader = await compose({ tun_loader: true });
+    assert.equal(withLoader, kit.buildCompose({ platform: 'synology', network: 'host', tunLoader: true }));
+    assert.match(withLoader, /\n {2}tun-loader:\n/);
+    assert.match(withLoader, /\n {4}depends_on:\n {6}tun-loader:\n {8}condition: service_completed_successfully\n/);
+    assert.match(withLoader, /\n {4}cap_add:\n {6}- SYS_MODULE/);
+    // the gateway keeps /dev/net/tun exactly as before
+    assert.match(withLoader, /\n {4}devices:\n {6}- \/dev\/net\/tun:\/dev\/net\/tun\n/);
+    assert.doesNotMatch(withLoader, /privileged|device_cgroup_rules|MKNOD/);
+    for (const body of [{}, { tun_loader: false }, { tun_loader: 'true' }, { tun_loader: 1 }]) assert.equal(await compose(body), plain, JSON.stringify(body));
+    assert.doesNotMatch(plain, /tun-loader|SYS_MODULE/);
+  });
+  it('the assistant: the switch „VPN-Gerät automatisch bereitstellen (Test)“ is there, off, with the hint about its rights (DE/EN)', () => {
+    const page = fs.readFileSync(path.join(__dirname, '..', 'templates/aurora/pages/gateways.njk'), 'utf8');
+    assert.match(page, /<input type="checkbox" id="gwz-cw-tunl-on" aria-describedby="gwz-cw-tunl-hint">/);
+    assert.doesNotMatch(page, /id="gwz-cw-tunl-on"[^>]*checked/);
+    for (const lang of ['de', 'en']) {
+      const dict = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src/i18n', lang + '.json'), 'utf8'));
+      assert.match(dict['gwiz.cw.tunl_label'], /\((Test|test)\)$/);
+      assert.match(dict['gwiz.cw.tunl_hint'], lang === 'de' ? /Kernel-Module laden/ : /load kernel modules/);
+      assert.match(dict['gwiz.cw.tunl_hint'], lang === 'de' ? /nur beim Start/ : /only runs at start/);
+    }
+    const js = fs.readFileSync(path.join(__dirname, '..', 'public/js/gateway-wizard.js'), 'utf8');
+    assert.match(js, /tunLoader: false,/, 'off by default');
+    assert.match(js, /show\(\$\('gwz-cw-tun'\), !linux && !cwTunLoader\(\)\)/, 'with the switch the task-scheduler hint goes');
   });
   it('the pairing code comes with the server address in its own field; setup-status tells when it was redeemed', async () => {
     const r = await post(`/api/v1/peers/${id}/gateway-pairing-code`).expect(200);

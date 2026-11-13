@@ -247,14 +247,21 @@
     const net = h('fieldset', { class: 'gwe-fieldset' }, [h('legend', { text: t('gwe.compose.network') }),
       choice('network', 'host', t('gwe.compose.n_host'), null, true),
       choice('network', 'bridge', t('gwe.compose.n_bridge'), t('gwe.compose.n_bridge_d'), false)]);
+    // Synology, optional (test), off by default: the one-shot service tun-loader (loads the kernel module tun)
+    const tunl = h('input', { type: 'checkbox', id: 'gwe-compose-tunl' });
+    const tunlBox = h('label', { class: 'gwe-check', for: 'gwe-compose-tunl' }, [tunl,
+      h('span', null, [h('strong', { text: t('gwiz.cw.tunl_label') }), h('span', { class: 'gwe-d', text: ' – ' + t('gwiz.cw.tunl_hint') })])]);
     const stepsBox = h('div', { class: 'gwe-compose-steps' });
     const err = errorBox();
     const value = (name) => { const r = dlg.box.querySelector('input[name="gwe-compose-' + name + '"]:checked'); return r ? r.value : null; };
     // steps + the matching chapter of the user guide (handbook.js topics update.synology / update.linux)
-    const drawSteps = () => stepsBox.replaceChildren(
-      h('p', { class: 'gwe-label' }, [h('strong', { text: t('gwe.compose.steps') }), ' ', guide('update.' + value('platform'))]),
-      composeSteps(value('platform')));
-    dlg.body.append(h('p', { class: 'gwe-intro', text: t('gwe.compose.intro') }), plat, net, stepsBox, err);
+    const drawSteps = () => {
+      tunlBox.hidden = value('platform') !== 'synology';
+      stepsBox.replaceChildren(
+        h('p', { class: 'gwe-label' }, [h('strong', { text: t('gwe.compose.steps') }), ' ', guide('update.' + value('platform'))]),
+        composeSteps(value('platform')));
+    };
+    dlg.body.append(h('p', { class: 'gwe-intro', text: t('gwe.compose.intro') }), plat, net, tunlBox, stepsBox, err);
     drawSteps();
     plat.addEventListener('change', drawSteps);
     const ok = h('button', { type: 'button', class: 'btn btn-primary', 'data-fk': 'gwe-compose-dl', text: t('gwe.compose.download') });
@@ -262,7 +269,7 @@
     ok.addEventListener('click', () => {
       ok.disabled = true;
       showErr(err, '');
-      downloadCompose(g, { platform: value('platform'), network: value('network') })
+      downloadCompose(g, { platform: value('platform'), network: value('network'), tun_loader: value('platform') === 'synology' && tunl.checked })
         .then(() => toast(t('gwe.compose.done')), (e) => showErr(err, errText(e)))
         .finally(() => { ok.disabled = false; });
     });
