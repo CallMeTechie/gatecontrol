@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.269.1] — 2026-11-13
+
+### Fixes
+- gelöschte Weiterleitung verschwindet sofort, Liste folgt immer dem Server (#479)
+
+---
+
 ## [1.269.0] — 2026-11-13
 
 ### Features
