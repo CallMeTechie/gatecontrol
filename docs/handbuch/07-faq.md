@@ -427,6 +427,13 @@ Server **1.271.0**. Mehr dazu:
 4. Steht am Namen „veraltet“, stammt er aus einer zurückgespielten Sicherung.
    Er gilt weiter. Sobald sich das Gerät wieder meldet, verschwindet der Hinweis.
 
+5. Der Name wird gefunden, aber es antwortet nichts? Dann ist es
+   wahrscheinlich der Name eines Gateways. Ihn erreicht nur der Server; die
+   Oberfläche weist unter dem Namen darauf hin. Für das NAS, den Drucker oder
+   die Kamera hinter dem Gateway leg unter „Dienste“ → „Domains / Routen“ eine
+   Route an, mit dem Gateway als Ziel und der Adresse des Geräts im Heimnetz.
+   Mehr dazu: [2.11 Namen im VPN](02-server-einrichten.md#211-namen-im-vpn).
+
 **Prüfen:** Auf einem Gerät im VPN antwortet `ping` auf den kopierten Namen.
 
 ## Gateway einrichten

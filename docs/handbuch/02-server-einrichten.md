@@ -313,6 +313,18 @@ Clients“: Er steht auf der Karte des Geräts, mit einem Knopf zum Kopieren.
 Ein Gerät ohne Namen bietet „Namen vergeben“ an. Bei einem Gateway steht der
 Name in der Kopfzeile; ändern kannst du ihn dort unter „Mehr“ → „Name und Gruppe ändern …“.
 
+**Namen von Gateways:** Auch ein Gateway hat einen Namen, und er löst auf
+jedem VPN-Gerät auf. Erreichen kann ihn aber nur der Server: Der Tunnel eines
+Gateways lässt mit Absicht kein anderes VPN-Gerät hinein. Darauf weist die
+Oberfläche unter dem Namen hin. `nas.vpn.example.com:5000` antwortet also
+nicht, auch wenn das Gateway auf dem NAS läuft. Für Dienste im Heimnetz hinter
+dem Gateway – die Oberfläche des NAS, einen Drucker, eine Kamera – legst du
+unter „Dienste“ → „Domains / Routen“ eine Route an: Als Ziel wählst du das
+Gateway oder seinen Pool und trägst die Adresse des Geräts im Heimnetz und den
+Port ein (zum Beispiel `192.168.1.20` und `5000`). Der Host der Route darf
+nicht unter dem Bereich der Gerätenamen liegen: `nas.example.com` geht,
+`nas.vpn.example.com` nicht.
+
 Namen unter der eigenen Domain gibt es ab Server **1.271.0**. Die Windows-Apps
 lösen sie ab GateControl Pro **1.85.0** und Community **1.49.0** auf – sie
 legen dafür je Zone eine DNS-Regel an. Ältere Apps lösen nur die Schreibweise

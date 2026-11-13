@@ -213,6 +213,8 @@
   "vn.err_taken_suggest": "“{{name}}” already belongs to the device {{owner}}. {{suggestion}} would be free.",
   "vn.err_generic": "The name could not be saved.",
   "vn.use_suggestion": "Use it",
+  "vn.gw_note": "Only the server reaches this name. For services in the home network behind the gateway, create a route:",
+  "vn.gw_note_link": "Domains / Routes",
   "auth.login": "Login",
   "auth.sign_in_subtitle": "Sign in to continue",
   "auth.username": "Username",

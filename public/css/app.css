@@ -10180,6 +10180,13 @@ a.gwp-mrow-n{color:var(--teal)}
 .pl-vn-row .vn-copy{width:24px; height:24px; border-radius:7px}
 .gw-vn{margin:-2px 0 10px}
 .gw-head-t .gw-vn{margin:0; align-self:flex-start; max-width:100%}
+/* the note at the name of a gateway: only the server reaches it */
+.vn-gw-note{gap:2px 5px; font-size:12px; line-height:1.45; color:var(--muted); min-width:0}
+.vn-gw-note span{min-width:0; overflow-wrap:anywhere}
+.vn-gw-note .vn-link{font-size:inherit}
+.gw-vn-note{margin:-6px 0 10px}
+.gw-head-t .gw-vn-note{margin:0; max-width:100%}
+.vn-field .vn-gw-note{margin-top:4px}
 /* dialog field: input + fixed ending */
 .vn-grp{display:flex; align-items:stretch; min-width:0; border-radius:11px}
 .vn-grp input[type=text]{flex:1 1 120px; min-width:0; width:auto; font-family:var(--font-mono); border-top-right-radius:0; border-bottom-right-radius:0}

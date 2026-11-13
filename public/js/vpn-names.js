@@ -15,6 +15,8 @@
 //                                          line; without a name the offer to
 //                                          give one (opts.onAssign)
 //   GCVpnNames.chip(hostname)            → node: name + copy button only
+//   GCVpnNames.gatewayNote()             → node: "only the server reaches this
+//                                          name" + link to Domains / Routen
 //   GCVpnNames.field(opts)               → the dialog field (label, input with
 //                                          the fixed ending, hint that says
 //                                          what is wrong and suggests a name)
@@ -106,6 +108,20 @@
     box.appendChild(code);
     box.appendChild(b);
     return box;
+  }
+  /**
+   * The note at the name of a gateway. The name resolves for every device, but
+   * the tunnel of a gateway only lets the server in (services/gateways.js,
+   * buildEnvContent: WG_ALLOWED_IPS is the server alone), so no other VPN
+   * device gets an answer. What is behind the gateway is reached with a route.
+   */
+  function gatewayNote(extraClass) {
+    var n = h('div', 'vn-src vn-gw-note' + (extraClass ? ' ' + extraClass : ''));
+    n.appendChild(h('span', null, t('vn.gw_note')));
+    var a = h('a', 'vn-link', t('vn.gw_note_link'));
+    a.href = '/routes';
+    n.appendChild(a);
+    return n;
   }
   function sourceText(source) {
     return source === 'admin' ? t('vn.src_admin') : (source === 'agent' || source === 'stale') ? t('vn.src_agent') : '';
@@ -207,6 +223,8 @@
    *   opts.suffix/.hint/.badge  existing nodes next to it (else created)
    *   opts.saveBtn       disabled while the name cannot be saved
    *   opts.others()      → [{ hostname, name }] the other devices
+   *   opts.gateway       the device is a gateway: the note that only the
+   *                      server reaches the name stands below the hint
    * → { root, input, set(device), value(), valid(), serverError(res) }
    */
   function field(opts) {
@@ -233,6 +251,7 @@
       hint.id = opts.id + '-hint';
       input.setAttribute('aria-describedby', hint.id);
       root.appendChild(label); root.appendChild(grp); root.appendChild(hint);
+      if (opts.gateway) root.appendChild(gatewayNote());
     }
     var device = null;
     var server = null; // the server's refusal for exactly this value
@@ -309,5 +328,5 @@
     };
   }
 
-  window.GCVpnNames = { cfg: cfg, t: t, line: line, chip: chip, field: field, check: check, suggest: suggest, fqdn: fqdn, copy: copy };
+  window.GCVpnNames = { cfg: cfg, t: t, line: line, chip: chip, gatewayNote: gatewayNote, field: field, check: check, suggest: suggest, fqdn: fqdn, copy: copy };
 })();

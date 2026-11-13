@@ -101,7 +101,7 @@
       // Name im VPN (vpn-names.js): a gateway reports its name itself; one given
       // here is kept (PATCH /api/v1/peers/:id/hostname). Licence: internal_dns.
       var VN = window.GCVpnNames;
-      var vnField = VN && VN.cfg.licensed ? VN.field({ id: 'gwm-hostname', saveBtn: null }) : null;
+      var vnField = VN && VN.cfg.licensed ? VN.field({ id: 'gwm-hostname', saveBtn: null, gateway: true }) : null;
       if (vnField) { d.body.appendChild(vnField.root); vnField.set(p); }
       d.body.appendChild(el('div', { class: 'form-group' }, [el('label', { class: 'form-label', for: 'gwm-desc', text: T('gwm.description') }), desc]));
       d.body.appendChild(el('div', { class: 'form-group' }, [el('label', { class: 'form-label', for: 'gwm-group', text: T('gwm.group') }), group,
