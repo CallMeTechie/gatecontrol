@@ -144,17 +144,36 @@
   }
 
   // ── The rules (services/dns.js: HOSTNAME_RE, RESERVED_HOSTNAMES, suggestHostname) ──
+  // one pass over a bounded input, no regular expression (as on the server)
+  function trimHyphens(s) {
+    var a = 0; var b = s.length;
+    while (a < b && s.charAt(a) === '-') a++;
+    while (b > a && s.charAt(b - 1) === '-') b--;
+    return s.slice(a, b);
+  }
   function suggest(input) {
-    var s = String(input == null ? '' : input);
-    try { s = s.normalize('NFKD').replace(/[̀-ͯ]/g, ''); } catch (e) { /* old browser */ }
-    s = s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 63).replace(/-+$/, '');
+    var raw = String(input == null ? '' : input).slice(0, 255);
+    try { raw = raw.normalize('NFKD'); } catch (e) { /* old browser */ }
+    raw = raw.toLowerCase();
+    var out = '';
+    var gap = false;
+    for (var i = 0; i < raw.length && out.length < 63; i++) {
+      var c = raw.charCodeAt(i);
+      if (c >= 0x0300 && c <= 0x036f) continue;
+      var keep = (c >= 0x61 && c <= 0x7a) || (c >= 0x30 && c <= 0x39);
+      if (!keep) { gap = true; continue; }
+      if (gap && out) out += '-';
+      gap = false;
+      out += raw.charAt(i);
+    }
+    var s = trimHyphens(out.slice(0, 63));
     if (!s || !LABEL_RE.test(s)) return null;
-    if (RESERVED[s]) return s.slice(0, 61).replace(/-+$/, '') + '-2';
+    if (RESERVED[s]) return trimHyphens(s.slice(0, 61)) + '-2';
     return s;
   }
   function freeSuffix(name, taken) {
     for (var n = 2; n < 100; n++) {
-      var c = name.slice(0, 63 - String(n).length - 1).replace(/-+$/, '') + '-' + n;
+      var c = trimHyphens(name.slice(0, 63 - String(n).length - 1)) + '-' + n;
       if (!taken[c] && !RESERVED[c]) return c;
     }
     return null;

@@ -76,7 +76,10 @@ describe('Namen im VPN', () => {
   function addRoute(domain) {
     return Number(db.prepare("INSERT INTO routes (domain, target_ip, target_port, enabled, route_type) VALUES (?, '10.0.0.1', 8080, 1, 'http')").run(domain).lastInsertRowid);
   }
-  const hostsFile = () => fs.readFileSync(config.dns.hostsFile, 'utf8');
+  // the lines of the hosts file for one address, exactly as written
+  const hostsLines = (ip) => fs.readFileSync(config.dns.hostsFile, 'utf8').split('\n').filter((l) => l.startsWith(ip + '\t'));
+  // the lines of dnsmasq.conf with one option
+  const confLines = (option) => fs.readFileSync(confPath, 'utf8').split('\n').filter((l) => l.startsWith(option + '='));
 
   beforeEach(() => {
     db.prepare('DELETE FROM peers').run();
@@ -115,7 +118,7 @@ describe('Namen im VPN', () => {
         addDomain('example.com');
         assert.equal(vpnNames.save('example.com', 'vpn').ok, true);
         assert.deepEqual(vpnNames.current().zones, ['vpn.example.com', 'corp.lan']);
-        assert.match(vpnNames.blockLines().join('\n'), /local=\/vpn\.example\.com\//);
+        assert.equal(vpnNames.blockLines()[1], 'local=/vpn.example.com/');
       } finally {
         config.dns.domain = saved;
       }
@@ -222,23 +225,22 @@ describe('Namen im VPN', () => {
       addDomain('example.com');
       addPeer('anna-laptop', 'Laptop-Buero', 'admin');
       vpnNames.save('example.com', 'vpn');
-      assert.match(hostsFile(), new RegExp(`^10\\.8\\.0\\.11\\tlaptop-buero\\.vpn\\.example\\.com\\tlaptop-buero\\.${config.dns.domain.replace(/\./g, '\\.')}\\tlaptop-buero$`, 'm'));
+      assert.deepEqual(hostsLines('10.8.0.11'), [['10.8.0.11', 'laptop-buero.vpn.example.com', `laptop-buero.${config.dns.domain}`, 'laptop-buero'].join('\t')]);
     });
 
     it('without an own domain the line is as before', () => {
       addPeer('anna-laptop', 'laptop-buero', 'admin');
       dns.rebuildNow();
-      assert.match(hostsFile(), new RegExp(`^10\\.8\\.0\\.11\\tlaptop-buero\\.${config.dns.domain.replace(/\./g, '\\.')}\\tlaptop-buero$`, 'm'));
+      assert.deepEqual(hostsLines('10.8.0.11'), [['10.8.0.11', `laptop-buero.${config.dns.domain}`, 'laptop-buero'].join('\t')]);
     });
 
     it('routes and the portal stay where they are', () => {
       addDomain('example.com');
       addRoute('phoscon-buero.gc.internal');
       vpnNames.save('example.com', 'vpn');
-      const body = hostsFile();
-      assert.match(body, /^10\.8\.0\.1\tphoscon-buero\.gc\.internal$/m);
-      assert.match(body, new RegExp(`^10\\.8\\.0\\.1\\thome\\.${config.dns.domain.replace(/\./g, '\\.')}$`, 'm'));
-      assert.doesNotMatch(body, /home\.vpn\.example\.com/);
+      // exactly these two for the gateway address: the route and the portal in
+      // the legacy zone — nothing of them in the zone of the devices
+      assert.deepEqual(hostsLines('10.8.0.1'), ['10.8.0.1\tphoscon-buero.gc.internal', `10.8.0.1\thome.${config.dns.domain}`]);
     });
   });
 
@@ -277,12 +279,10 @@ describe('Namen im VPN', () => {
     it('another zone replaces the block, the default removes it', () => {
       vpnNames.save('example.com', 'vpn');
       vpnNames.save('example.com', 'geraete');
-      let conf = fs.readFileSync(confPath, 'utf8');
-      assert.doesNotMatch(conf, /vpn\.example\.com/);
-      assert.equal((conf.match(/^local=\/geraete\.example\.com\/$/gm) || []).length, 1);
+      assert.deepEqual(confLines('local'), ['local=/gc.internal/', 'local=/geraete.example.com/']);
+      assert.deepEqual(confLines('host-record').slice(3), ['gateway', 'server', 'gc-server'].map((n) => `host-record=${n}.geraete.example.com,10.8.0.1`));
       vpnNames.save('', '');
-      conf = fs.readFileSync(confPath, 'utf8');
-      assert.equal(conf, BOOT_CONF, 'exactly what entrypoint.sh wrote');
+      assert.equal(fs.readFileSync(confPath, 'utf8'), BOOT_CONF, 'exactly what entrypoint.sh wrote');
       assert.equal(restarts, 3);
     });
 
@@ -442,8 +442,12 @@ describe('Namen im VPN', () => {
       const res = await api('put', '/api/v1/settings/vpn-names').send({ base_domain: 'example.com', sub: 'nas' }).expect(400);
       assert.equal(res.body.code, 'collision_host');
       assert.equal(res.body.suggestion, 'vpn');
-      assert.match(res.body.fields.sub, /nas\.example\.com/);
-      assert.match(res.body.fields.sub, /vpn/);
+      assert.equal(res.body.fqdn, 'nas.example.com');
+      // the whole sentence, in the language of the session
+      const sentences = [require('../src/i18n/de.json'), require('../src/i18n/en.json')].map((l) =>
+        l['st.names.err.collision_host'].replace('{{fqdn}}', 'nas.example.com') + ' ' + l['st.names.err.suggest'].replace('{{sub}}', 'vpn'));
+      assert.ok(sentences.some((x) => x === res.body.fields.sub), res.body.fields.sub);
+      assert.equal(res.body.error, res.body.fields.sub);
       const check = await api('post', '/api/v1/settings/vpn-names/check').send({ base_domain: 'example.com', sub: 'nas' }).expect(200);
       assert.equal(check.body.data.free, false);
       assert.equal(check.body.data.code, 'collision_host');

@@ -226,16 +226,30 @@ function blockLines(state = current()) {
  * @returns {boolean} whether the conf changed (and dnsmasq was restarted)
  */
 function applyDnsmasq() {
-  const file = confPath();
-  if (!fs.existsSync(file)) return false;
-  const before = fs.readFileSync(file, 'utf8');
-  const lines = blockLines();
-  const have = (before.match(BLOCK_RE) || []).map((b) => b.trim()).join('\n');
-  if (have === lines.join('\n')) return false;
-  let content = before.replace(BLOCK_RE, '\n').trimEnd();
-  if (lines.length) content += '\n' + lines.join('\n');
-  fs.writeFileSync(file, content + '\n');
-  log().info({ zone: lines.length ? current().primary : null }, 'vpn names: dnsmasq.conf written, restarting dnsmasq');
+  // One open file for reading and writing: what is written is based on
+  // exactly what was read, whatever happens to the path in between.
+  let fd;
+  try {
+    fd = fs.openSync(confPath(), 'r+');
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return false; // no dnsmasq here (tests, a development machine)
+    throw err;
+  }
+  let zone = null;
+  try {
+    const before = fs.readFileSync(fd, 'utf8');
+    const lines = blockLines();
+    const have = (before.match(BLOCK_RE) || []).map((b) => b.trim()).join('\n');
+    if (have === lines.join('\n')) return false;
+    let content = before.replace(BLOCK_RE, '\n').trimEnd();
+    if (lines.length) { content += '\n' + lines.join('\n'); zone = current().primary; }
+    const data = Buffer.from(content + '\n', 'utf8');
+    fs.ftruncateSync(fd, 0);
+    fs.writeSync(fd, data, 0, data.length, 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+  log().info({ zone }, 'vpn names: dnsmasq.conf written, restarting dnsmasq');
   require('./dns').restartDnsmasq();
   return true;
 }

@@ -165,6 +165,6 @@ describe('Namen im VPN behind a real dnsmasq', { skip: !hasDnsmasq && !REQUIRED 
     assert.deepEqual(await ask(`laptop-buero.${config.dns.domain}`), ['10.8.0.10']);
     forwarded.length = 0;
     assert.notEqual(await code('laptop-buero.vpn.example.com'), 'ok');
-    assert.ok(forwarded.includes('laptop-buero.vpn.example.com'), 'not a local zone any more');
+    assert.deepEqual([...new Set(forwarded)], ['laptop-buero.vpn.example.com'], 'not a local zone any more: the question goes upstream');
   });
 });

@@ -151,11 +151,25 @@ class HostnameUnavailableError extends Error {
   }
 }
 
+// Hyphens off the end / both ends of a label. A loop on purpose, not
+// /-+$/: these run on names from requests, and a regex with a repetition is
+// one more thing that can be made slow with a long run of hyphens.
+function trimEndHyphens(s) {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 0x2d) end--;
+  return s.slice(0, end);
+}
+function trimHyphens(s) {
+  let start = 0;
+  while (start < s.length && s.charCodeAt(start) === 0x2d) start++;
+  return trimEndHyphens(s.slice(start));
+}
+
 // `<candidate>-<n>`, kept within the 63 characters of a DNS label. null when
 // the cut leaves an invalid label.
 function withSuffix(candidate, n) {
   const suffix = `-${n}`;
-  const attempt = candidate.slice(0, 63 - suffix.length).replace(/-+$/, '') + suffix;
+  const attempt = trimEndHyphens(candidate.slice(0, 63 - suffix.length)) + suffix;
   try { strictHostnameAssert(attempt); } catch { return null; }
   return attempt;
 }
@@ -219,19 +233,32 @@ function reserveUniqueHostname(candidate, peerId, updateFn, { onClash = 'suffix'
   return tx.immediate ? tx.immediate() : tx();
 }
 
+// The longest input suggestHostname() looks at: a DNS label has 63
+// characters, the rest of an over-long input cannot matter.
+const SUGGEST_INPUT_MAX = 255;
+
 /**
- * A name close to `input` that the rules allow: lowercase, everything else
- * to hyphens, at most 63 characters; a reserved name gets "-1" style help
- * from the caller. → string | null (nothing usable left)
+ * A name close to `input` that the rules allow: lowercase, accents dropped,
+ * every run of other characters becomes one hyphen, at most 63 characters; a
+ * reserved name gets "-2". → string | null (nothing usable left)
+ *
+ * One pass over a bounded input, no regular expression: the input comes
+ * straight from a request.
  */
 function suggestHostname(input) {
-  const s = String(input == null ? '' : input)
-    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 63)
-    .replace(/-+$/, '');
+  const raw = String(input == null ? '' : input).slice(0, SUGGEST_INPUT_MAX).normalize('NFKD').toLowerCase();
+  let out = '';
+  let gap = false; // characters that are not allowed since the last kept one
+  for (let i = 0; i < raw.length && out.length < 63; i++) {
+    const c = raw.charCodeAt(i);
+    if (c >= 0x0300 && c <= 0x036f) continue; // combining accent of the letter before
+    const keep = (c >= 0x61 && c <= 0x7a) || (c >= 0x30 && c <= 0x39);
+    if (!keep) { gap = true; continue; }
+    if (gap && out) out += '-';
+    gap = false;
+    out += raw[i];
+  }
+  const s = trimHyphens(out.slice(0, 63));
   if (!s || !HOSTNAME_RE.test(s)) return null;
   if (RESERVED_HOSTNAMES.has(s)) return withSuffix(s, 2);
   return s;

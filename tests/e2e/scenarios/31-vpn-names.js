@@ -49,6 +49,16 @@ module.exports = (ctx) => {
     await page.waitForTimeout(150);
   };
   const cardState = (page) => page.evaluate(() => document.getElementById('card-vpn-names').dataset.state);
+  // A text of the settings page with its values filled in, read from the page's
+  // own string island — the scenario compares whole sentences, in either language.
+  const stText = (page, key, params) => page.evaluate(([k, ps]) => {
+    let str = JSON.parse(document.getElementById('st-i18n').textContent)[k];
+    for (const [name, value] of Object.entries(ps || {})) str = str.split('{{' + name + '}}').join(value);
+    return str;
+  }, [key, params]);
+  const fill = (str, params) => Object.entries(params).reduce((acc, [name, value]) => acc.split('{{' + name + '}}').join(value), str);
+  // the lines of a dnsmasq.conf with one option
+  const confLines = (file, option) => fs.readFileSync(file, 'utf8').split('\n').filter((l) => l.startsWith(option + '='));
 
   // ── The licensed app of part B ──
   async function startLicensed() {
@@ -209,14 +219,15 @@ module.exports = (ctx) => {
 
         // ── Kollision ──
         await p.fill('#st-vn-sub', 'nas');
+        const clashText = await stText(p, 'st.names.err.collision_host', { fqdn: 'nas.example.com' }) + ' ' + await stText(p, 'st.names.err.suggest', { sub: 'vpn' });
         step('collision: the message names the host and a free subdomain, the preview waits',
-          await until(p, () => {
+          await until(p, (want) => {
             const err = document.getElementById('st-vn-sub-err');
             return document.getElementById('card-vpn-names').dataset.state === 'clash' && !err.hidden
-              && /nas\.example\.com/.test(err.textContent) && /\bvpn\b/.test(err.textContent)
+              && err.textContent === want
               && document.getElementById('st-vn-preview').hidden && document.getElementById('st-vn-preview-note').textContent.trim().length > 10
               && document.getElementById('st-vn-sub').getAttribute('aria-invalid') === 'true';
-          }));
+          }, clashText), clashText);
         await shot(p, 'vpnnames-collision');
         await p.click('#st-save');
         await p.waitForTimeout(300);
@@ -233,8 +244,10 @@ module.exports = (ctx) => {
         step('the server names both zones, the own one first', saved.primary === 'vpn.example.com' && saved.zones.join() === 'vpn.example.com,gc.internal', JSON.stringify(saved.zones));
         const conf = fs.readFileSync(app.conf, 'utf8');
         step('dnsmasq.conf: local= and the fixed names of the new zone next to what the container start wrote',
-          /^local=\/vpn\.example\.com\/$/m.test(conf) && /^host-record=gc-server\.vpn\.example\.com,/m.test(conf) && /^local=\/gc\.internal\/$/m.test(conf) && /^server=1\.1\.1\.1$/m.test(conf));
-        step('hosts file: the device under both spellings', /\tlaptop-buero\.vpn\.example\.com\tlaptop-buero\.gc\.internal\tlaptop-buero$/m.test(fs.readFileSync(app.hosts, 'utf8')));
+          confLines(app.conf, 'local').join() === 'local=/gc.internal/,local=/vpn.example.com/'
+          && confLines(app.conf, 'host-record').slice(1).join() === ['gateway', 'server', 'gc-server'].map((n) => `host-record=${n}.vpn.example.com,10.8.0.1`).join()
+          && confLines(app.conf, 'server').join() === 'server=1.1.1.1,server=8.8.8.8', conf.length + ' bytes');
+        step('hosts file: the device under both spellings', fs.readFileSync(app.hosts, 'utf8').split('\n').filter((l) => l.startsWith('10.8.0.10\t')).join() === '10.8.0.10\tlaptop-buero.vpn.example.com\tlaptop-buero.gc.internal\tlaptop-buero');
         await p.reload();
         step('after a reload the choice is still there',
           await until(p, () => document.getElementById('st-vn-domain').value === 'example.com' && document.getElementById('st-vn-sub').value === 'vpn'
@@ -251,11 +264,12 @@ module.exports = (ctx) => {
         // ── Zustand der Namen ──
         step('state card: entries, one stale name with a link, the fixed names with both endings',
           await until(p, () => {
-            const li = [...document.querySelectorAll('#st-vn-fixed-list li')].map((n) => n.textContent);
+            // each row: the name in the new zone, in the legacy zone, the address
+            const li = [...document.querySelectorAll('#st-vn-fixed-list li')].map((n) => [...n.childNodes].map((c) => c.textContent).join(' | '));
             // four devices with a name (the gateway is one), one route, the portal
             return /^6\s/.test(document.getElementById('st-vn-entries').textContent)
               && document.getElementById('st-vn-stale').textContent === '1' && !document.getElementById('st-vn-stale-link').hidden
-              && li.length === 3 && li.every((x) => /\.vpn\.example\.com/.test(x) && /\.gc\.internal/.test(x) && /10\.8\.0\.1/.test(x))
+              && li.join('\n') === ['gateway', 'server', 'gc-server'].map((n) => `${n}.vpn.example.com | ${n}.gc.internal | 10.8.0.1`).join('\n')
               && document.getElementById('st-vn-service').dataset.service === 'down';
           }));
         await p.locator('#st-vn-fixed summary').click();
@@ -314,7 +328,7 @@ module.exports = (ctx) => {
         await shot(p, 'vpnnames-dialog-taken', false);
         await p.fill('#edit-peer-hostname', 'tablet-kinder');
         step('in order: the hint names both spellings',
-          await hintState('ok') && await p.evaluate(() => { const x = document.getElementById('edit-peer-hostname-hint').textContent; return /tablet-kinder\.vpn\.example\.com/.test(x) && /tablet-kinder\.gc\.internal/.test(x); }));
+          await hintState('ok') && await p.textContent('#edit-peer-hostname-hint') === fill(T['vn.hint_ok_both'], { fqdn: 'tablet-kinder.vpn.example.com', legacy: 'tablet-kinder.gc.internal' }));
         await p.click('#btn-edit-peer-submit');
         step('saved: the card shows the name as set by the admin',
           await until(p, ([id, t]) => {
@@ -420,26 +434,31 @@ module.exports = (ctx) => {
         await p.click('#st-save');
         step('another domain: saved, the block in dnsmasq.conf follows',
           await until(p, () => document.getElementById('st-savebar').hidden && !document.getElementById('st-vn-active').hidden)
-          && /^local=\/vpn\.example\.org\/$/m.test(fs.readFileSync(app.conf, 'utf8')) && !/vpn\.example\.com/.test(fs.readFileSync(app.conf, 'utf8')));
+          && confLines(app.conf, 'local').join() === 'local=/gc.internal/,local=/vpn.example.org/'
+          && confLines(app.conf, 'host-record').join() === ['host-record=gateway.gc.internal,10.8.0.1'].concat(['gateway', 'server', 'gc-server'].map((n) => `host-record=${n}.vpn.example.org,10.8.0.1`)).join(),
+          confLines(app.conf, 'local').join());
         await p.goto(B + '/settings/domains');
         await visible(p, '#st-dom-list li[data-domain="example.org"]');
         await p.click('#st-dom-list li[data-domain="example.org"] .st-li-actions .st-icon-btn');
         step('"Domain entfernen" says that the names hang on it and go on working',
-          await visible(p, '.gcd-dialog .gcd-detail') && /vpn\.example\.org/.test(await p.textContent('.gcd-dialog .gcd-detail')));
+          await visible(p, '.gcd-dialog .gcd-detail')
+          && await p.textContent('.gcd-dialog .gcd-detail') === await stText(p, 'st.names.remove_detail', { zone: 'vpn.example.org' }));
         await shot(p, 'vpnnames-domain-remove', false);
         await p.click('.gcd-dialog .gcd-ok');
         await until(p, () => !document.querySelector('#st-dom-list li[data-domain="example.org"]'));
         await p.goto(B + '/settings/netzwerk');
+        const goneText = await stText(p, 'st.names.removed_b', { domain: 'example.org' }) + ' ' + await stText(p, 'st.names.removed', { zone: 'vpn.example.org', legacy: 'gc.internal' });
+        const goneOption = await stText(p, 'st.names.removed_option', { domain: 'example.org' });
         step('domain removed: the card says so, the names go on, the way back is offered',
-          await until(p, () => {
+          await until(p, ([text, option]) => {
             const box = document.getElementById('st-vn-removed');
             const sel = document.getElementById('st-vn-domain');
             return document.getElementById('card-vpn-names').dataset.state === 'gone' && !box.hidden
-              && /example\.org/.test(box.textContent) && /vpn\.example\.org/.test(box.textContent) && /gc\.internal/.test(box.textContent)
-              && sel.value === 'example.org' && sel.getAttribute('aria-invalid') === 'true' && sel.selectedOptions[0].textContent !== 'example.org'
+              && box.textContent === text
+              && sel.value === 'example.org' && sel.getAttribute('aria-invalid') === 'true' && sel.selectedOptions[0].textContent === option
               && !document.getElementById('st-vn-back-row').hidden && document.getElementById('st-vn-active').hidden;
-          }));
-        step('… and the names still resolve as before', (await names()).zones.join() === 'vpn.example.org,gc.internal' && /^local=\/vpn\.example\.org\/$/m.test(fs.readFileSync(app.conf, 'utf8')));
+          }, [goneText, goneOption]), goneText);
+        step('… and the names still resolve as before', (await names()).zones.join() === 'vpn.example.org,gc.internal' && confLines(app.conf, 'local').join() === 'local=/gc.internal/,local=/vpn.example.org/');
         await shot(p, 'vpnnames-domain-removed');
         await p.click('#st-vn-back');
         step('"Zurück zu gc.internal": default again, the block is gone from dnsmasq.conf',
