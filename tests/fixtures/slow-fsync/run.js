@@ -65,7 +65,13 @@ function rollbackJournal() {
 }
 
 const QUIET_MS = 150;
+// how long past its usual time a checkpoint's report is waited for (a machine whose real disk is busy)
+const REPORT_WAIT_MS = 8000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** Until `done()` or REPORT_WAIT_MS passed. */
+async function reported(done) {
+  for (const end = performance.now() + REPORT_WAIT_MS; !done() && performance.now() < end;) await sleep(20);
+}
 
 /** The storage with a short quiet time; → the checkpoints the host's thread reported: [{ id, from, to }]. */
 function checkpointed() {
@@ -92,10 +98,19 @@ async function quiet() {
     // QUIET_READS=one: a single read, right after the quiet time ended (a storage thread that checkpoints itself
     // does so only once no call came for QUIET_MS)
     if (process.env.QUIET_READS === 'one') await sleep(QUIET_MS + 15);
-    while (performance.now() < until) {
+    // With the host's thread the reads go on until the checkpoint of this quiet time was reported (on a disk that
+    // is busy for real it can end after `until`), and one more: sent after the report, so answered after the
+    // storage thread started the log anew (storage.js asks it to before the report is handed on, on the port of
+    // the calls). The write below is then "the first write after a checkpoint", whatever the disk took.
+    const want = service.running() ? seen.length + 1 : 0;
+    for (;;) {
+      const last = performance.now() >= until && (seen.length >= want || performance.now() >= until + REPORT_WAIT_MS);
+      if (last && !want) break;
+      const from = Date.now();
       const t0 = performance.now();
       await db.call('query', { sql: 'SELECT v FROM t WHERE id = 1', mode: 'get' });
-      reads.push(performance.now() - t0);
+      reads.push({ from, to: Date.now(), ms: performance.now() - t0 });
+      if (last) break;
       await sleep(process.env.QUIET_READS === 'one' ? Math.max(1, until - performance.now()) : 7);
     }
     const t0 = performance.now();
@@ -106,7 +121,19 @@ async function quiet() {
   const served = service.running();
   await storage.closeAll();
   const dir = path.join(require('../../../src/services/plugins/constants').dbDir('quiet'));
-  return { firstWriteMaxMs: Math.max(...first), readMaxMs: Math.max(...reads), reads: reads.length, checkpoints: seen.length, served, value: row.row.v, files: fs.readdirSync(dir).sort() };
+  // Reads against the checkpoints of the host's thread, on the one clock both have (Date.now, whole ms) — an order,
+  // not a duration: the syncs of this child are slow by the shim AND by the real disk of the machine, a limit in
+  // milliseconds would measure that disk. The reads come one after the other, so:
+  //   during  per checkpoint, the reads that began and were answered while it ran — a read that waits for the
+  //           checkpoint is answered after its end, never during it;
+  //   held    the reads that began in the first half of a checkpoint and were not answered before its end.
+  const during = seen.map((c) => reads.filter((r) => r.from >= c.from && r.to < c.to).length);
+  const held = seen.reduce((n, c) => n + reads.filter((r) => r.from >= c.from && r.from < c.from + (c.to - c.from) / 2 && r.to >= c.to).length, 0);
+  return {
+    firstWriteMaxMs: Math.max(...first), readMaxMs: Math.max(...reads.map((r) => r.ms)), reads: reads.length,
+    checkpoints: seen.length, checkpointMinMs: seen.length ? Math.min(...seen.map((c) => c.to - c.from)) : null, readsDuring: during, readsHeld: held,
+    served, value: row.row.v, files: fs.readdirSync(dir).sort(),
+  };
 }
 
 async function many() {
@@ -118,10 +145,14 @@ async function many() {
     dbs.push(db);
   }
   const sync = Number(process.env.FAKE_FSYNC_MS) || 0;
+  // the usual time of the checkpoints, and past it until each database's was reported (a disk busy for real)
+  const all = () => dbs.every((db, i) => seen.some((c) => c.id === 'many-' + i));
   await sleep(QUIET_MS + WRITES * sync * 4 + 300);
+  await reported(all);
   seen.length = 0;
   await Promise.all(dbs.map((db) => db.call('query', { sql: "INSERT OR REPLACE INTO t VALUES (1, 'x')", mode: 'run' })));
   await sleep(QUIET_MS + WRITES * sync * 4 + 300);
+  await reported(all);
   const t0 = Math.min(...seen.map((c) => c.from));
   const list = seen.map((c) => ({ id: c.id, from: c.from - t0, to: c.to - t0 }));
   await storage.closeAll();
