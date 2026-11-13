@@ -218,7 +218,7 @@ module.exports = (ctx) => {
       const nav = await page.$$eval('#sidebar a.nav-item', (as) => as.map((a) => a.getAttribute('href')));
       step('the member navigation is Portal + Konto & Sicherheit', nav.some((h) => /^https:\/\/home\./.test(h)) && nav.includes('/profile') && !nav.includes('/me')
         && !nav.some((h) => ['/dashboard', '/users', '/settings', '/peers'].includes(h)), nav.join(' '));
-      step('no bottom navigation and no quick-add button', !(await page.$('.bottom-nav')) && !(await page.$('#fab-btn')));
+      step('no bottom navigation', !(await page.$('.bottom-nav')));
       await page.goto(BASE + '/users');
       step('admin pages send the member to /profile', /\/profile$/.test(page.url()), page.url());
       const forbidden = await api(page, 'GET', '/api/v1/users');

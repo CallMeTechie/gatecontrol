@@ -87,6 +87,9 @@ async function start() {
     // latest-available version immediately (avoids the cold-start "version
     // check unavailable" banner).
     try { require('./services/gatewayRelease').init(); } catch (_e) { /* best-effort */ }
+    // …and, a little later, the newest release of GateControl and of the apps
+    // in use for the "Updates" card of the dashboard (once; no timer after that).
+    try { require('./services/releaseWatch').init(() => require('./services/dashboardUpdates').wantedKeys()); } catch (_e) { /* best-effort */ }
 
     // Attach the guacamole-lite WS tunnel for browser RDP/VNC/SSH. Needs the
     // real http.Server (only created here, not in app.js). Best-effort: a

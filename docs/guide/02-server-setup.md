@@ -209,6 +209,18 @@ cd /opt/gatecontrol
 
 If an update fails, `update.sh` brings back the previous version automatically.
 
+Whether there are updates is shown on the dashboard, in the “Updates” card
+right below the tiles. It has four fields: Server, Plugins, Gateways and Apps.
+When everything is up to date, there is only the line “Everything is up to
+date”. When there are updates, the card opens: each field says what is new and
+leads to the matching page. The “Server” field names the new version in Manual
+mode, too. The “Apps” field counts the devices whose app is older than the
+newest version. Devices that have not reported a version yet do not count as
+outdated; they are listed as “without a version”. For this, GateControl asks
+GitHub at most once an hour. If GitHub or the plugin catalogue does not answer,
+the field shows “Could not be checked” and the last known state. The arrow
+button on the right of the card checks again right away.
+
 **Check:** After 5 minutes at most, “Settings” → “Updates” shows a status (no
 longer “Auto-update not set up”). The log is in `/var/log/gatecontrol-update.log`.
 If it stays at “not set up”, see the FAQ

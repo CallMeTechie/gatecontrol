@@ -268,14 +268,63 @@ function getOverview(policy = getPolicy()) {
   return { products, unreported };
 }
 
-/** Peer row → extra read-only fields for the admin API. */
+/**
+ * The devices that reported a version, grouped by product, effective update
+ * channel and version — what the "Updates" card of the dashboard compares
+ * with the newest releases (services/dashboardUpdates.js).
+ * → { groups: [{ product, channel, version, count }], unreported }
+ * `product` is null for a device that reported a version but never its
+ * product; `unreported` counts the devices without any version (no gateways).
+ */
+function getVersionGroups(policy = getPolicy()) {
+  const rows = getDb().prepare(`
+    SELECT client_product AS product, client_version AS version, update_channel AS channel, COUNT(*) AS count
+      FROM peers
+     WHERE client_version IS NOT NULL AND client_version != '' AND COALESCE(peer_type, 'client') != 'gateway'
+     GROUP BY client_product, client_version, update_channel`).all();
+  const merged = new Map();
+  for (const r of rows) {
+    const product = PRODUCTS.includes(r.product) ? r.product : null;
+    const channel = effectiveChannel({ update_channel: r.channel }, policy);
+    const key = `${product || ''}|${channel}|${r.version}`;
+    const g = merged.get(key) || { product, channel, version: r.version, count: 0 };
+    g.count += r.count;
+    merged.set(key, g);
+  }
+  const unreported = getDb().prepare(
+    "SELECT COUNT(*) AS n FROM peers WHERE (client_version IS NULL OR client_version = '') AND COALESCE(peer_type, 'client') != 'gateway'"
+  ).get().n;
+  return { groups: [...merged.values()], unreported };
+}
+
+/**
+ * Peer row → extra read-only fields for the admin API.
+ * client_latest_version / client_update_available compare with the newest
+ * release of the device's app and channel as far as it is known
+ * (services/releaseWatch.js, cache only): no release known, no version or no
+ * product reported → null / false.
+ */
 function decoratePeer(peer, policy = getPolicy()) {
   if (!peer) return peer;
+  const channel = effectiveChannel(peer, policy);
+  let latest = null;
+  let outdated = false;
+  if (peer.client_version && PRODUCTS.includes(peer.client_product)) {
+    try {
+      const watch = require('./releaseWatch');
+      latest = watch.latestVersion(peer.client_product, channel);
+      outdated = watch.isOutdated(peer.client_product, channel, peer.client_version) === true;
+    } catch (err) {
+      logger.debug({ err: err.message }, 'newest app release unavailable');
+    }
+  }
   return {
     ...peer,
-    update_channel_effective: effectiveChannel(peer, policy),
+    update_channel_effective: channel,
     client_min_version: minVersionFor(peer.client_product, policy),
     client_below_min: isBelowMinimum(peer.client_product, peer.client_version, policy),
+    client_latest_version: latest,
+    client_update_available: outdated,
   };
 }
 
@@ -326,6 +375,7 @@ module.exports = {
   setPeerChannel,
   recordClientVersion,
   getOverview,
+  getVersionGroups,
   decoratePeer,
   resolveTokenPeer,
   _resetForTest,

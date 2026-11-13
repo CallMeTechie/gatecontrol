@@ -295,7 +295,7 @@
   }, true);
   doc.querySelectorAll('[data-us-dialog]').forEach((ov) => {
     // Out of .app (its own stacking context) so the dialogs cover the mobile
-    // bottom navigation and the quick-add button.
+    // bottom navigation.
     doc.body.appendChild(ov);
     ov.addEventListener('mousedown', (e) => { ov._downOnBackdrop = e.target === ov; });
     ov.addEventListener('click', (e) => {

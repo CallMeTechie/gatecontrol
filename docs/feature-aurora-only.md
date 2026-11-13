@@ -61,7 +61,7 @@ Oberflächen nur noch für Aurora.
    `app.css`; Test, dass die Login-Seite unabhängig von `default_theme` und
    `GC_DEFAULT_THEME` Aurora rendert; Migrationstest v75.
 9. E2E (/root/gc-wt/e2e): Harness läuft nur noch mit `aurora`; bestehende
-   Szenarien in Aurora grün (zones_r3, hsts_real, tls_real, discovery, fab,
+   Szenarien in Aurora grün (zones_r3, hsts_real, tls_real, discovery,
    secopt, waf, waf_real, admin_2fa zuletzt). Screenshots von Login, 2FA-Login,
    Dashboard, Zonen, Einstellungen, route-auth-Login zur Sichtprüfung.
 

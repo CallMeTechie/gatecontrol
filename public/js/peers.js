@@ -287,13 +287,16 @@ var DT = function (k, p) { return D.t(k, p); };
     });
   }
   function needsUpdate(p) { return !!p.client_below_min; }
+  // older than the newest release of the device's app and channel (services/releaseWatch.js)
+  function outdated(p) { return !!p.client_update_available; }
   function expiringSoon(p) { var d = expiryDays(p); return d != null && d <= 7; }
   function hasSupport(p) { return (Number(p.support_bundles_unviewed) || 0) > 0; }
   function longOffline(p) { var ms = handshakeMs(p); return p.enabled && !p.isOnline && (!ms || Date.now() - ms > 7 * 86400000); }
-  var HINT_KEYS = ['update', 'expiring', 'support', 'stale'];
+  var HINT_KEYS = ['update', 'outdated', 'expiring', 'support', 'stale'];
   function hint(k, p) {
     switch (k) {
       case 'update': return needsUpdate(p);
+      case 'outdated': return outdated(p);
       case 'expiring': return expiringSoon(p);
       case 'support': return hasSupport(p);
       case 'stale': return longOffline(p);
@@ -511,6 +514,7 @@ var DT = function (k, p) { return D.t(k, p); };
   function appExtras(p) {
     var out = [];
     if (needsUpdate(p)) out.push(h('span', { class: 'tag tag-red pl-mini', title: p.client_min_version ? L('pl.update_min', { v: p.client_min_version }) : null, text: L('pl.update_needed') }));
+    else if (outdated(p)) out.push(h('span', { class: 'tag tag-amber pl-mini', title: p.client_latest_version ? L('pl.outdated_to', { v: p.client_latest_version }) : null, text: L('pl.outdated') }));
     if (p.update_channel_effective === 'beta') out.push(h('span', { class: 'tag tag-purple pl-mini', text: L('pl.beta') }));
     return out;
   }

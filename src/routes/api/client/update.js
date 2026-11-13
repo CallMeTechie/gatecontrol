@@ -33,6 +33,13 @@ const CLIENT_REPOS = {
   pro:       process.env.GC_CLIENT_REPO_PRO       || 'CallMeTechie/GateControl-Pro-Client',
   android:   process.env.GC_CLIENT_REPO_ANDROID   || 'CallMeTechie/GateControl-Android-Client',
 };
+// The releases the "Updates" card of the dashboard compares against
+// (services/releaseWatch.js): the apps and GateControl itself. Never a client
+// type of the public update routes (resolveClientType answers the apps only).
+const RELEASE_REPOS = {
+  ...CLIENT_REPOS,
+  server: process.env.GC_SERVER_REPO || 'CallMeTechie/gatecontrol',
+};
 
 function resolveClientType(req) {
   // 1. Expliziter Parameter (neue Clients)
@@ -163,16 +170,20 @@ async function ghGet(startUrl, { headers, auth = '', timeoutMs, maxBytes, onFirs
  * Asks with If-None-Match (a 304 does not count against GitHub's rate limit);
  * while the rate limit is used up (utils/githubRelease.js) the last answer
  * is used without asking.
+ * → { ok, data, reason }: `ok` says whether GitHub answered (now or within the
+ * cache time); `data` is the release (the last known one while the rate limit
+ * is used up, else null on a failure); `reason` names the failure
+ * ('rate_limited' | 'unreachable' | 'http_<status>' | 'invalid').
  */
-async function fetchLatestRelease(clientType = 'community', channel = 'stable') {
+async function fetchReleaseResult(clientType = 'community', channel = 'stable') {
   const cacheKey = `${clientType}:${channel}`;
   const cached = releaseCache[cacheKey];
   if (cached && (Date.now() - cached.fetchedAt) < CACHE_TTL) {
-    return cached.data;
+    return { ok: true, data: cached.data };
   }
-  if (gh.rateLimited()) return cached ? cached.data : null;
+  if (gh.rateLimited()) return { ok: false, data: cached ? cached.data : null, reason: 'rate_limited' };
 
-  const repo = CLIENT_REPOS[clientType] || CLIENT_REPOS.community;
+  const repo = RELEASE_REPOS[clientType] || CLIENT_REPOS.community;
   const beta = channel === 'beta';
   const url = beta
     ? `https://api.github.com/repos/${repo}/releases?per_page=30`
@@ -188,29 +199,34 @@ async function fetchLatestRelease(clientType = 'community', channel = 'stable') 
     onFirst: (a) => { limited = gh.noteRateLimit(a.status, a.headers); } });
   if (limited) {
     warnOnce.throttled(`client-release-limit:${repo}`, { repo, until: new Date(gh.rateLimitedUntil()).toISOString() }, 'GitHub API rate limit reached — using the last known release');
-    return cached ? cached.data : null;
+    return { ok: false, data: cached ? cached.data : null, reason: 'rate_limited' };
   }
   if (r.status === 304 && cached) {
     cached.fetchedAt = Date.now();
-    return cached.data;
+    return { ok: true, data: cached.data };
   }
   if (r.status === 0) {
     warnOnce.throttled(`client-release:${repo}:0`, { error: r.error, where: r.where || null, repo }, 'GitHub release fetch failed');
-    return null;
+    return { ok: false, data: null, reason: 'unreachable' };
   }
   if (r.status !== 200) {
     warnOnce.throttled(`client-release:${repo}:${r.status}`, { statusCode: r.status, repo }, 'GitHub release API error');
-    return null;
+    return { ok: false, data: null, reason: `http_${r.status}` };
   }
   try {
     const parsed = JSON.parse(r.body.toString('utf8'));
     const data = beta ? pickBetaRelease(parsed) : parsed;
     const etag = r.headers && typeof r.headers.etag === 'string' && r.headers.etag.length <= 200 ? r.headers.etag : null;
     releaseCache[cacheKey] = { data, fetchedAt: Date.now(), etag };
-    return data;
+    return { ok: true, data };
   } catch {
-    return null;
+    return { ok: false, data: null, reason: 'invalid' };
   }
+}
+
+/** The release of fetchReleaseResult (null on a failure without a cached answer). */
+async function fetchLatestRelease(clientType = 'community', channel = 'stable') {
+  return (await fetchReleaseResult(clientType, channel)).data;
 }
 
 /**
@@ -530,7 +546,7 @@ function isNewerVersion(latest, current) {
 module.exports = updateRouter;
 module.exports._pickBetaRelease = pickBetaRelease;
 // The home cache (services/homeCache.js refreshUpdates) keeps the installers the clients get here.
-module.exports._internals = { fetchLatestRelease, fetchSignedManifest, pickInstallerAsset, resolveClientType };
+module.exports._internals = { fetchLatestRelease, fetchReleaseResult, fetchSignedManifest, pickInstallerAsset, resolveClientType, RELEASE_REPOS };
 // Test hook: a release as if GitHub had answered it (cached like a real one).
 module.exports._setReleaseForTest = (clientType, channel, data) => { releaseCache[`${clientType}:${channel}`] = { data, fetchedAt: Date.now() }; };
 // Test hook: drop cached releases/manifests.

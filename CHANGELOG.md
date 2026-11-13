@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.270.0] — 2026-11-13
+
+### Features
+- linksbündig wie die Einstellungen, Karte „Updates“ für Server, Plugins, Gateways und Apps, kein Plus mehr in der mobilen Ansicht (#481)
+
+---
+
 ## [1.269.1] — 2026-11-13
 
 ### Fixes

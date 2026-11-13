@@ -85,7 +85,7 @@
 
   // ─── State ────────────────────────────────────────────────────────────────
   var state = {
-    stats: null, problems: null, problemsError: false, gw: null, tls: null, top: null, res: null, au: null, sec: null,
+    stats: null, problems: null, problemsError: false, gw: null, tls: null, top: null, res: null, au: null, sec: null, up: null,
     traffic: null, range: '24h', table: false, cat: 'all', feed: [], lastOk: 0, failures: 0,
   };
   var RANGES = ['1h', '24h', '7d', '30d'];
@@ -609,7 +609,9 @@
   function renderTopPeers() {
     var d = state.top || {};
     var peers = Array.isArray(d.peers) ? d.peers : [];
-    $('db-peers-outdated').textContent = UI.fmtNumber((d.clients && d.clients.below_min) || 0, LANG);
+    // the same count as the Apps field of the "Updates" card (never fewer than the devices below the minimum version)
+    var cl = d.clients || {};
+    $('db-peers-outdated').textContent = UI.fmtNumber(cl.outdated != null ? cl.outdated : (cl.below_min || 0), LANG);
     var max = peers.reduce(function (m, p) { return Math.max(m, p.total || 0); }, 0) || 1;
     var list = $('db-top-peers');
     list.replaceChildren.apply(list, peers.map(function (p) {
@@ -768,6 +770,9 @@
     return api('/api/system/auto-update').then(function (d) {
       state.au = d;
       renderAutoUpdate(d);
+      // the Server field of the "Updates" card names the same age — not while a control in it has the focus
+      var upBox = $('db-updates');
+      if (upBox && !upBox.contains(document.activeElement)) renderUpdates();
       revealAutoUpdate(d);
     });
   });
@@ -876,6 +881,7 @@
       var r = !queued && j && TRIGGER_REASONS[j.reason];
       if (window.showToast) window.showToast(r ? T(r[0], r[1]) : T('autoupdate.trigger_queued', 'Update queued'), queued ? 'success' : 'error');
       run('au');
+      run('updates');
     }).catch(function (err) { console.warn('[dashboard] triggering update failed', err); });
   }
   function openAuSetup() {
@@ -893,6 +899,337 @@
     if (window.openModal) window.openModal('au-setup-modal-overlay');
   }
   // The modal closes via the global [data-close-modal] handler in app.js.
+
+  // ─── Updates (server, plugins, gateways, apps) ────────────────────────────
+  // GET /dashboard/updates answers from the server's caches (it never waits
+  // for GitHub); what is due is refreshed there in the background. One slim
+  // row while everything is current, else a card with the four fields.
+  var UP_EVERY_MS = 270000;
+  var UP_FIELDS = ['server', 'plugins', 'gateways', 'apps'];
+  var upFollow = { timer: null, left: 0 };
+  job('updates', UP_EVERY_MS, function () {
+    return api('/api/v1/dashboard/updates').then(function (d) {
+      state.up = d;
+      renderUpdates();
+      // a field that was never checked: the first check runs right now — look again shortly
+      var pending = UP_FIELDS.some(function (k) { return d[k] && d[k].state === 'unknown' && !d[k].check_failed; });
+      if (pending && !upFollow.timer && upFollow.left === 0) followUpdates(3, 6000);
+    }, function (err) {
+      if (state.up === null) renderUpdatesError();
+      throw err;
+    });
+  });
+  function followUpdates(times, delay) {
+    upFollow.left = times;
+    if (upFollow.timer) clearTimeout(upFollow.timer);
+    (function next() {
+      if (upFollow.left <= 0) { upFollow.timer = null; return; }
+      upFollow.timer = setTimeout(function () {
+        upFollow.left -= 1;
+        upFollow.timer = null;
+        if (!document.hidden) run('updates').then(function () { if (upFollow.left > 0) next(); else upFollow.left = -1; });
+      }, delay);
+    })();
+  }
+  /** "Erneut prüfen": asks the server to check again (at most once a minute there), then reads the result. */
+  function recheckUpdates(btn) {
+    if (btn) { btn.disabled = true; btn.classList.add('db-up-busy'); }
+    return api('/api/v1/dashboard/updates?refresh=1').then(function () {
+      followUpdates(2, 4000);
+    }, function (err) {
+      console.warn('[dashboard] update check failed', err);
+      run('updates');
+    });
+  }
+  /** Nodes of a translated text; the parameters named in `code` are set as <code>. */
+  function rich(key, params, code) {
+    var s = String(t(key));
+    var out = [];
+    var re = /\{\{?(\w+)\}?\}/g;
+    var last = 0;
+    var m;
+    while ((m = re.exec(s))) {
+      if (m.index > last) out.push(s.slice(last, m.index));
+      var v = params && params[m[1]] != null ? String(params[m[1]]) : '';
+      out.push(code && code.indexOf(m[1]) >= 0 ? el('code', { text: v }) : v);
+      last = re.lastIndex;
+    }
+    if (last < s.length) out.push(s.slice(last));
+    return out;
+  }
+  /** Segments (arrays of nodes) joined with " · ". */
+  function joined(segs, sep) {
+    var out = [];
+    segs.filter(function (x) { return x && x.length; }).forEach(function (seg, i) {
+      if (i) out.push(sep || ' · ');
+      out = out.concat(seg);
+    });
+    return out;
+  }
+  /** "heute, 08:10" / "gestern, 21:04" / "12.11., 21:04" in the viewer's time. */
+  function whenText(v) {
+    var ts = UI.parseTime(v);
+    if (!Number.isFinite(ts)) return '';
+    var d = new Date(ts);
+    var loc = LANG === 'de' ? 'de-DE' : 'en-GB';
+    var time = new Intl.DateTimeFormat(loc, { hour: '2-digit', minute: '2-digit' }).format(d);
+    var day = function (x) { return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
+    var diff = Math.round((day(new Date()) - day(d)) / 86400000);
+    if (diff === 0) return t('dashboard.up_today', { time: time });
+    if (diff === 1) return t('dashboard.up_yesterday', { time: time });
+    return new Intl.DateTimeFormat(loc, { day: '2-digit', month: '2-digit' }).format(d) + ', ' + time;
+  }
+  function agoNode(v) {
+    var ts = UI.parseTime(v);
+    return Number.isFinite(ts) ? el('time', { 'data-ts': String(ts), datetime: new Date(ts).toISOString(), text: rel(ts) }) : null;
+  }
+  /** "geprüft vor 12 Min." with a self-updating time, or null. */
+  function checkedNodes(v, key) {
+    var node = agoNode(v);
+    if (!node) return null;
+    var parts = String(t(key || 'dashboard.up_checked')).split(/\{\{?ago\}?\}/);
+    return [parts[0] || '', node, parts[1] || ''];
+  }
+  function upLink(href, key, primary) {
+    return el('a', { class: primary ? 'db-btn db-btn-sm' : 'db-link', href: href, text: t(key) });
+  }
+  function upRecheckBtn(small) {
+    var b = small
+      ? el('button', { type: 'button', class: 'db-btn db-btn-sm', 'data-up-recheck': '1', text: t('dashboard.up_recheck') })
+      : el('button', { type: 'button', class: 'db-icon-btn', 'data-up-recheck': '1', title: t('dashboard.up_recheck'), 'aria-label': t('dashboard.up_recheck') }, [iconSvg('refresh', 16, 2.2)]);
+    b.addEventListener('click', function () { recheckUpdates(b); });
+    return b;
+  }
+  // How a field is shown: an update always shows; a failed check without one reads "unknown".
+  function upView(f) {
+    if (!f) return 'unknown';
+    if (f.state === 'update') return 'update';
+    if (f.state === 'unknown' || f.check_failed) return 'unknown';
+    return f.state;
+  }
+  function unknownMain(f) { return t(f.check_failed ? 'dashboard.up_unchecked' : 'dashboard.up_pending'); }
+  function appName(p) {
+    var name = t('dashboard.up_app_' + p.product);
+    return p.channel === 'beta' ? t('dashboard.up_app_beta', { name: name }) : name;
+  }
+
+  function serverField(f) {
+    var view = upView(f);
+    var au = f.auto || {};
+    var win = au.window || {};
+    var o = { badge: null, main: '', sub: [], act: [] };
+    if (view === 'update') {
+      o.badge = t('dashboard.up_badge_update');
+      // the version is known from the releases; "waiting for the window" alone does not name one
+      o.main = f.update_available && f.latest_version ? t('dashboard.up_update_version', { version: f.latest_version }) : t('dashboard.up_update_ready');
+      var how;
+      if (au.last_action === 'failed') how = [t('dashboard.up_server_failed')];
+      else if (au.status && au.status !== 'active') how = [t('dashboard.up_server_no_auto')];
+      else if (au.mode === 'manual') how = [t('dashboard.up_server_manual')];
+      else if (win.enabled) how = [win.start && win.end ? t('dashboard.up_server_waiting', { start: win.start, end: win.end }) : t('dashboard.up_server_waiting_plain')];
+      else how = [t('dashboard.up_server_auto')];
+      o.sub = joined([rich('dashboard.up_installed', { version: f.running_version }, ['version']), how]);
+      // "Jetzt aktualisieren": only where the Server card offers it (Manual mode or a maintenance window)
+      if (au.can_trigger) {
+        var trig = el('button', { type: 'button', class: 'db-btn db-btn-sm db-btn-primary', id: 'db-up-trigger', text: T('autoupdate.trigger', 'Update now') });
+        if (au.mode !== 'manual') trig.title = T('autoupdate.trigger_now_window', 'Deploys the update right away without waiting for the window.');
+        if (au.status !== 'active') { trig.disabled = true; trig.title = T('autoupdate.not_configured', 'Auto-update not set up'); }
+        trig.addEventListener('click', triggerAuUpdate);
+        o.act.push(trig);
+      }
+      if (f.release_url) o.act.push(el('a', { class: 'db-link', href: f.release_url, target: '_blank', rel: 'noopener noreferrer', text: t('dashboard.up_whats_new') }));
+      else o.act.push(upLink('/settings/updates', 'dashboard.up_link_settings'));
+    } else if (view === 'unknown') {
+      o.badge = t('dashboard.up_badge_unknown');
+      o.main = unknownMain(f);
+      o.sub = f.check_failed
+        ? joined([[t('dashboard.up_github_down')], rich('dashboard.up_server_running', { version: f.running_version }, ['version'])], ' ')
+        : [t('dashboard.up_pending_sub')];
+      o.act.push(f.check_failed ? upRecheckBtn(true) : upLink('/settings/updates', 'dashboard.up_link_settings'));
+    } else {
+      o.badge = t('dashboard.up_badge_current');
+      o.main = t('dashboard.up_current', { version: f.running_version });
+      // the same words and the same age as the Server card (auto-update state)
+      var label = au.status === 'active' ? T('autoupdate.active', 'Auto-update active')
+        : au.status === 'stale' ? T('autoupdate.stale', 'Cron no longer running?') : T('autoupdate.not_configured', 'Auto-update not set up');
+      var age = state.au && state.au.age_s != null ? state.au.age_s : au.age_s;
+      o.sub = joined([[label], au.status === 'active' ? [T('autoupdate.last_checked', 'checked {x} ago').replace('{x}', auAgo(age))] : null]);
+      o.act.push(upLink('/settings/updates', 'dashboard.up_link_settings'));
+    }
+    return o;
+  }
+
+  function pluginsField(f) {
+    var view = upView(f);
+    var o = { badge: null, main: '', sub: [], act: [] };
+    var ups = f.updates || [];
+    if (view === 'update') {
+      o.badge = String(ups.length);
+      o.main = t(UI.plural('dashboard.up_plugins_updates', ups.length), { n: ups.length });
+      var segs = ups.slice(0, 3).map(function (u) { return [u.name + ' ', el('code', { text: u.to })]; });
+      if (ups.length > 3) segs.push([t('dashboard.up_more', { n: ups.length - 3 })]);
+      o.sub = joined(segs);
+      if (f.check_failed) o.sub = [t('dashboard.up_state_of', { when: whenText(f.checked_at) }) + ' '].concat(o.sub);
+      o.act.push(upLink('/settings/plugins/updates', 'dashboard.up_plugins_view', true));
+    } else if (view === 'unknown') {
+      o.badge = t('dashboard.up_badge_unknown');
+      o.main = unknownMain(f);
+      if (!f.check_failed) o.sub = [t('dashboard.up_pending_sub')];
+      else o.sub = joined([[t('dashboard.up_catalog_down')], f.state === 'current' && f.checked_at ? [t('dashboard.up_last_current', { when: whenText(f.checked_at) })] : null], ' ');
+      o.act.push(f.check_failed ? upRecheckBtn(true) : upLink('/settings/plugins', 'dashboard.up_plugins_open'));
+    } else if (view === 'off') {
+      o.badge = t('dashboard.up_badge_off');
+      o.main = t('dashboard.up_plugins_off');
+      o.sub = [t('dashboard.up_plugins_off_sub')];
+      o.act.push(upLink('/settings/plugins', 'dashboard.up_plugins_open'));
+    } else if (view === 'none') {
+      o.main = t('dashboard.up_plugins_none');
+      o.act.push(upLink('/settings/plugins', 'dashboard.up_plugins_open'));
+    } else {
+      o.badge = t('dashboard.up_badge_current');
+      o.main = t(UI.plural('dashboard.up_plugins_current', f.installed), { n: f.installed });
+      o.sub = checkedNodes(f.checked_at) || [];
+      o.act.push(upLink('/settings/plugins', 'dashboard.up_plugins_open'));
+    }
+    return o;
+  }
+
+  function gatewaysField(f) {
+    var view = upView(f);
+    var o = { badge: null, main: '', sub: [], act: [] };
+    var items = f.items || [];
+    var unreported = f.unreported ? [t(UI.plural('dashboard.up_gw_unreported', f.unreported), { n: f.unreported })] : null;
+    if (view === 'update') {
+      o.badge = t('dashboard.up_badge_of', { n: f.outdated, total: f.total });
+      o.main = t('dashboard.up_update_version', { version: f.latest_version });
+      var old = items.filter(function (g) { return g.update_available; });
+      var ok = items.filter(function (g) { return !g.update_available && g.version; });
+      var segs = old.slice(0, 2).map(function (g) { return rich('dashboard.up_gw_reports', { name: g.name, version: g.version }, ['version']); });
+      if (old.length > 2) segs.push([t('dashboard.up_more', { n: old.length - 2 })]);
+      if (ok.length === 1) segs.push([t('dashboard.up_gw_is_current', { name: ok[0].name })]);
+      else if (ok.length > 1) segs.push([t('dashboard.up_gw_n_current', { n: ok.length })]);
+      segs.push(unreported);
+      o.sub = joined(segs);
+      if (f.check_failed) o.sub = [t('dashboard.up_state_of', { when: whenText(f.checked_at) }) + ' '].concat(o.sub);
+      o.act.push(upLink('/gateways', 'dashboard.up_gw_open', true));
+    } else if (view === 'unknown') {
+      o.badge = t('dashboard.up_badge_unknown');
+      o.main = unknownMain(f);
+      if (!f.check_failed) o.sub = [t('dashboard.up_pending_sub')];
+      else o.sub = joined([[t('dashboard.up_github_down')], f.latest_version && f.state === 'current' ? rich('dashboard.up_last_version', { version: f.latest_version }, ['version']) : null], ' ');
+      o.act.push(upLink('/gateways', 'dashboard.up_gw_open'));
+    } else if (view === 'none') {
+      o.main = t('dashboard.up_gw_none');
+      o.act.push(upLink('/gateways', 'dashboard.up_gw_open'));
+    } else {
+      o.badge = t('dashboard.up_badge_current');
+      o.main = t(UI.plural('dashboard.up_gw_current', f.total), { n: f.total });
+      o.sub = joined([rich('dashboard.up_gw_latest', { version: f.latest_version }, ['version']), unreported, checkedNodes(f.checked_at)]);
+      o.act.push(upLink('/gateways', 'dashboard.up_gw_open'));
+    }
+    return o;
+  }
+
+  function appsField(f) {
+    var view = upView(f);
+    var o = { badge: null, main: '', sub: [], act: [] };
+    var products = f.products || [];
+    var unreported = f.unreported ? [t(UI.plural('dashboard.up_unreported', f.unreported), { n: f.unreported })] : null;
+    if (view === 'update') {
+      o.badge = t('dashboard.up_badge_of', { n: f.outdated, total: f.total });
+      o.main = t(UI.plural('dashboard.up_apps_outdated', f.outdated), { n: f.outdated });
+      var segs = products.filter(function (p) { return p.outdated > 0; }).slice(0, 3).map(function (p) {
+        var v = p.versions[0];
+        // one outdated version: "1.16.0 → 1.17.2"; several: only the target
+        var from = p.versions.length === 1 && v ? [el('code', { text: v.version }), ' → '] : [];
+        return [appName(p) + ' '].concat(from, [el('code', { text: p.latest_version }), ' ' + t(UI.plural('dashboard.up_apps_on', p.outdated), { n: p.outdated })]);
+      });
+      segs.push(unreported);
+      o.sub = joined(segs);
+      if (f.check_failed) o.sub = [t('dashboard.up_state_of', { when: whenText(f.checked_at) }) + ' '].concat(o.sub);
+      o.act.push(upLink('/peers#hints=outdated', 'dashboard.up_apps_view', true));
+    } else if (view === 'unknown') {
+      o.badge = t('dashboard.up_badge_unknown');
+      o.main = unknownMain(f);
+      if (!f.check_failed) o.sub = [t('dashboard.up_pending_sub')];
+      else o.sub = joined([[t('dashboard.up_github_down')], f.state === 'current' && f.checked_at ? [t('dashboard.up_last_current', { when: whenText(f.checked_at) })]
+        : [t(UI.plural('dashboard.up_apps_report', f.total), { n: f.total })]], ' ');
+      o.act.push(upLink('/peers', 'dashboard.up_apps_view'));
+    } else if (view === 'none') {
+      o.main = t('dashboard.up_apps_none');
+      o.sub = unreported || [t('dashboard.up_apps_none_sub')];
+      o.act.push(upLink('/peers', 'dashboard.up_apps_view'));
+    } else {
+      o.badge = t('dashboard.up_badge_current');
+      o.main = t(UI.plural('dashboard.up_apps_current', f.total), { n: f.total });
+      o.sub = joined(products.slice(0, 4).map(function (p) { return [appName(p) + ' ', el('code', { text: p.latest_version })]; }).concat([unreported]));
+      o.act.push(upLink('/peers', 'dashboard.up_apps_view'));
+    }
+    return o;
+  }
+  var UP_BUILD = { server: serverField, plugins: pluginsField, gateways: gatewaysField, apps: appsField };
+
+  function upItem(key, f) {
+    var view = upView(f);
+    var st = view === 'update' ? 'warn' : view === 'current' ? 'good' : 'none';
+    var o = UP_BUILD[key](f || {});
+    return el('article', { class: 'db-up-item', 'data-state': st, 'data-field': key, 'data-view': view, 'aria-labelledby': 'db-up-' + key + '-name' }, [
+      el('div', { class: 'db-up-top', 'data-state': st }, [
+        statusCircle(st),
+        el('h3', { class: 'db-up-name', id: 'db-up-' + key + '-name', text: t('dashboard.up_' + key) }),
+        o.badge ? el('span', { class: 'db-badge', 'data-state': st === 'none' ? null : st, text: o.badge }) : null,
+      ]),
+      el('div', { class: 'db-up-main', text: o.main }),
+      el('div', { class: 'db-up-sub' }, o.sub),
+      el('div', { class: 'db-up-act' }, o.act),
+    ]);
+  }
+  function upOkText(d) {
+    var parts = [t('dashboard.up_ok_server', { version: d.server.running_version })];
+    if (d.plugins.installed) parts.push(t(UI.plural('dashboard.up_ok_plugins', d.plugins.installed), { n: d.plugins.installed }));
+    if (d.gateways.total) parts.push(t(UI.plural('dashboard.up_ok_gateways', d.gateways.total), { n: d.gateways.total, version: d.gateways.latest_version }));
+    if (d.apps.total) parts.push(t(UI.plural('dashboard.up_ok_devices', d.apps.total), { n: d.apps.total }));
+    return parts.join(' · ');
+  }
+  function renderUpdates() {
+    var box = $('db-updates');
+    var d = state.up;
+    if (!box || !d) return;
+    box.dataset.view = d.state;
+    if (d.state === 'ok') {
+      box.replaceChildren(el('div', { class: 'db-up-ok', id: 'db-up-ok', 'data-state': 'good' }, [
+        statusCircle('good'),
+        el('h2', { class: 'db-up-ok-title', id: 'db-up-title', text: t('dashboard.up_ok_title') }),
+        el('span', { class: 'db-up-ok-text', text: upOkText(d) }),
+        el('span', { class: 'db-up-ok-meta' }, checkedNodes(d.checked_at) || []),
+        upRecheckBtn(false),
+      ]));
+      return;
+    }
+    var failed = d.state === 'unknown' && d.failed_at;
+    var meta = failed ? checkedNodes(d.failed_at, 'dashboard.up_check_failed')
+      : d.state === 'unknown' ? [t('dashboard.up_checking')] : checkedNodes(d.checked_at);
+    box.replaceChildren(el('div', { class: 'db-card', id: 'db-up-card' }, [
+      el('div', { class: 'db-card-head db-up-head' }, [
+        el('h2', { class: 'db-card-title', id: 'db-up-title', text: t('dashboard.up_title') }),
+        d.updates && d.state === 'updates' ? el('span', { class: 'db-count', id: 'db-up-count', text: String(d.updates) }) : null,
+        el('span', { class: 'db-card-meta', id: 'db-up-meta' }, meta || []),
+        upRecheckBtn(false),
+      ]),
+      el('div', { class: 'db-up-grid', id: 'db-up-grid' }, UP_FIELDS.map(function (k) { return upItem(k, d[k]); })),
+    ]));
+  }
+  function renderUpdatesError() {
+    var box = $('db-updates');
+    if (!box) return;
+    box.dataset.view = 'error';
+    box.replaceChildren(el('div', { class: 'db-up-ok', 'data-state': 'none' }, [
+      statusCircle('none'),
+      el('h2', { class: 'db-up-ok-title', text: t('dashboard.up_title') }),
+      el('span', { class: 'db-up-ok-text', text: t('dashboard.up_load_failed') }),
+      upRecheckBtn(false),
+    ]));
+  }
 
   // ─── "Was ist neu" strip (release B §6) ───────────────────────────────────
   // GET /system/whats-new → { current, unseen, sections:[{version,date,groups}] }.
