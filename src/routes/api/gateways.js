@@ -33,6 +33,10 @@ const router = Router();
  *     health: { … full last_health body, includes telemetry },
  *     routes: [{ id, domain, route_type, target_lan_host, target_lan_port,
  *                l4_listen_port, l4_protocol, wol_enabled, wol_mac }],
+ *     l4_listeners: { issues: [{ route_id, listen_port, reason, code, domain, protocol, reserve_of }],
+ *                     direct: [{ route_id, listen_port, reachable, domain, protocol, reserve_of }] },
+ *                                   // listeners of TCP/UDP routes it could not open and why; routes its
+ *                                   // own target service answers directly (gateways.l4ListenerNotes)
  *     reserve_routes: [{ id, domain, …, peer_id, peer_name }],   // pinned to a pool partner: it only
  *                                   // checks their targets (gateways.reserveRoutesFor)
  *     location: { id, name, city, country } | null,   // Gateway-Standort (services/gatewayLocations.js)
@@ -114,6 +118,7 @@ router.get('/', (req, res) => {
         health,
         routes: routeStmt.all(row.id),
         reserve_routes: gatewaysSvc.reserveRoutesFor(row.id),
+        l4_listeners: gatewaysSvc.l4ListenerNotes(row.id, health),
         update_state: _ust.state,
         update_target_version: row.update_target_version || null,
         update_requested_at: row.update_requested_at || null,

@@ -32,6 +32,11 @@ das Ergebnis an jeder dieser Routen: „… erreicht das Ziel“ oder „… err
 das Ziel nicht“. So siehst du vor einem Ausfall, ob die Reserve die Route
 übernehmen könnte.
 
+Dafür bekommt die Reserve auch die TCP/UDP-Routen ihres Partners und öffnet
+deren Listen-Ports. Gelingt das nicht (etwa weil der Port auf ihrem Gerät
+schon belegt ist), zeigt sie „degradiert“ und nennt im „Zustand“ Route, Port
+und Grund – siehe [FAQ](07-faq.md#gateway-degradiert).
+
 Wo die Gateways stehen („Zuhause“, „Büro“ …), ordnest du mit „Standorte“ oben
 auf derselben Seite. Sobald es einen Standort gibt, ist die Liste nach
 Standorten gruppiert; „Gruppieren nach: Standorte | Pools“ wechselt zur

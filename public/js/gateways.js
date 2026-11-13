@@ -349,6 +349,7 @@
       li.appendChild(mk);
       li.appendChild(el('span', 'sr-only', T('gwp.state.tone_' + ch.tone) + ': '));
       li.appendChild(ch.until ? countdownEl('span', null, ch.key, ch.params, ch.until) : el('span', null, TT(ch.key, ch.params)));
+      if (ch.note) li.appendChild(document.createTextNode(' ' + TT(ch.note.key, ch.note.params)));
       if (ch.link) { li.appendChild(document.createTextNode(' – ')); var a = el('a', 'gwn-link', T('gwp.state.look')); a.href = '#gw/' + encodeURIComponent(g.peer_id) + '/' + ch.link; li.appendChild(a); }
       if (ch.key === 'gwp.state.update') { li.appendChild(document.createTextNode(' – ')); li.appendChild(whatsNewLink(g)); }
       ul.appendChild(li);

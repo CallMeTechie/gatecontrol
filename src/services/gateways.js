@@ -265,6 +265,53 @@ function reserveRoutesFor(peerId) {
   `).all({ me: peerId });
 }
 
+// Why a gateway could not open the listener of a TCP/UDP route — the reasons a
+// gateway reports in its heartbeat (l4_listener_issues[].reason).
+const L4_ISSUE_REASONS = ['port_in_use', 'permission_denied', 'address_unavailable', 'error'];
+const L4_NOTES_MAX = 20;
+
+/**
+ * What a gateway's heartbeat says about the listeners of its TCP/UDP routes,
+ * checked and with the route it means:
+ *   { issues: [{ route_id, listen_port, reason, code, domain, protocol, reserve_of }],
+ *     direct: [{ route_id, listen_port, reachable, domain, protocol, reserve_of }] }
+ * issues: listeners it could not open (it counts them in l4_listeners_missing
+ * and reports overall_healthy false). direct: routes that point at the gateway
+ * itself on their own listen port — the target service holds the port and
+ * answers the server directly, nothing is missing. reserve_of: the name of the
+ * gateway the route belongs to when this one only stands by for it.
+ * A gateway before these fields (or a malformed list) gives two empty lists.
+ */
+function l4ListenerNotes(peerId, health) {
+  const h = health && typeof health === 'object' ? health : {};
+  const port = (v) => (Number.isInteger(v) && v > 0 && v <= 65535 ? v : null);
+  const rows = (list) => (Array.isArray(list) ? list : [])
+    .filter((e) => e && typeof e === 'object' && Number.isSafeInteger(e.route_id)).slice(0, L4_NOTES_MAX);
+  const routeStmt = getDb().prepare(`
+    SELECT r.domain, r.l4_protocol, r.l4_listen_port, ${HOME_PEER} AS home_peer_id, hp.name AS home_name
+    FROM routes r LEFT JOIN peers hp ON hp.id = ${HOME_PEER}
+    WHERE r.id = ? AND r.route_type = 'l4'
+  `);
+  const withRoute = (e, extra) => {
+    const r = routeStmt.get(e.route_id);
+    return {
+      route_id: e.route_id,
+      listen_port: port(e.listen_port) || (r ? port(Number(r.l4_listen_port)) : null),
+      ...extra,
+      domain: r ? (r.domain || null) : null,
+      protocol: r ? (r.l4_protocol === 'udp' ? 'udp' : 'tcp') : null,
+      reserve_of: r && r.home_peer_id != null && r.home_peer_id !== peerId ? (r.home_name || null) : null,
+    };
+  };
+  return {
+    issues: rows(h.l4_listener_issues).map((e) => withRoute(e, {
+      reason: L4_ISSUE_REASONS.includes(e.reason) ? e.reason : 'error',
+      code: typeof e.code === 'string' && /^[A-Z0-9_]{1,32}$/.test(e.code) ? e.code : null,
+    })),
+    direct: rows(h.l4_listeners_direct).map((e) => withRoute(e, { reachable: e.reachable !== false })),
+  };
+}
+
 /**
  * Compute SHA-256 hash of the gateway config for a peer. Delegates to the
  * shared library for byte-identical results with the Gateway side.
@@ -1183,7 +1230,9 @@ function cleanupExpiredPairingCodes() {
 
 // Self-check fields the gateway's GET /api/status returns. NOT telemetry/
 // hostname/config_hash — those are heartbeat-only and MUST be preserved.
-const SELF_CHECK_FIELDS = ['http_proxy_healthy', 'api_healthy', 'tcp_listeners', 'wg_handshake_age_s', 'dns_resolve_ok', 'route_reachability', 'overall_healthy'];
+const SELF_CHECK_FIELDS = ['http_proxy_healthy', 'api_healthy', 'tcp_listeners', 'wg_handshake_age_s', 'dns_resolve_ok', 'route_reachability', 'overall_healthy',
+  // the listeners of the TCP/UDP routes (l4ListenerNotes) — they explain overall_healthy
+  'l4_routes_configured', 'l4_listeners_missing', 'l4_listener_issues', 'l4_listeners_direct'];
 
 // ─── Gateway self-update lifecycle helpers ────────────────────────────────
 
@@ -1309,6 +1358,7 @@ module.exports = {
   createGateway,
   getGatewayConfig,
   reserveRoutesFor,
+  l4ListenerNotes,
   computeConfigHash,
   hashOfConfig,
   stableJson,

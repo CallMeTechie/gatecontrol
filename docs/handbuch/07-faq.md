@@ -481,6 +481,36 @@ Seite „Home Gateway ist offline“, sobald es nicht mehr antwortet. Mit dem
 ersten Lebenszeichen des Gateways ist die Seite wieder weg und die Routen
 laufen normal. In einem Pool springt stattdessen die Reserve ein.
 
+### Gateway „degradiert“
+
+Das Gateway ist verbunden, sein Selbsttest meldet aber ein Problem. Den Grund
+nennt die Karte „Zustand“ in der Übersicht des Gateways.
+
+Am häufigsten: Das Gateway kann den Listen-Port einer TCP/UDP-Route nicht
+öffnen. Dort steht dann die Route, der Port und der Grund:
+
+- **Port belegt:** Auf dem Gerät des Gateways nutzt schon ein anderer Dienst
+  diesen Port. Wähle in der Route einen anderen Listen-Port.
+- **Keine Berechtigung:** Wähle einen Listen-Port ab 1024.
+- **Tunnel-Adresse nicht bereit:** Das Gateway versucht es mit jedem Heartbeat
+  erneut; das gibt sich meist von selbst.
+
+Im Pool gilt das auch für die Reserve: Sie bekommt die Routen ihres Partners
+und öffnet deren Ports ebenfalls. Der Zusatz „(Reserve für …)“ sagt, wem die
+Route gehört.
+
+Kein Problem ist der Hinweis „Das Ziel ist dieses Gateway selbst und der
+Zieldienst belegt Port …“: Zeigt eine Route auf das Gerät des Gateways und
+hat denselben Listen- und Zielport, antwortet der Dienst dort direkt. Das
+Gateway bleibt „online“.
+
+Steht nur „Der Selbsttest des Gateways meldet ein Problem“ da, meldet das
+Gateway den Grund noch nicht – aktualisiere es
+([Kapitel 6](06-gateway-aktualisieren.md)).
+
+**Prüfen:** Nach dem Ändern der Route zeigt die Karte unter „Gateways“ das
+Gateway innerhalb einer Minute wieder als online.
+
 ### „Edge-Dienst fehlt“
 
 In der Compose-Datei des Gateways fehlen die Dienste `edge` und `mqtt`. Bring
