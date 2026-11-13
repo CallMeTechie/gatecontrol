@@ -179,6 +179,10 @@ function normalize(raw) {
     upstream: { provider, url: provider === 'custom' ? url : null, fallbackRouter: bool(up.fallbackRouter, true) },
     allowAll: patternsSoft(r.allowAll),
     profiles,
+    // "VPN-Namen im Heimnetz auflösen": the gateways of the home network ask the server for the names of the
+    // VPN devices (gatewayFeatures.internalDns → features.internal_dns.resolve). Kept here because it is shared
+    // like everything else in these settings — after a switch-over the failover gateway answers the same way.
+    vpnNames: bool(r.vpnNames, false),
   };
 }
 
@@ -295,7 +299,7 @@ function reconcileHomes() {
   return n;
 }
 
-/** PUT …/dns { enabled?, logQueries?, upstream?, allowAll? } → settings */
+/** PUT …/dns { enabled?, logQueries?, upstream?, allowAll?, vpnNames? } → settings */
 function setGeneral(peerId, patch, actor = {}) {
   const g = needGateway(peerId);
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
@@ -305,7 +309,7 @@ function setGeneral(peerId, patch, actor = {}) {
   let any = false;
   for (const [k, v] of Object.entries(p)) {
     any = true;
-    if (k === 'enabled' || k === 'logQueries') {
+    if (k === 'enabled' || k === 'logQueries' || k === 'vpnNames') {
       if (typeof v !== 'boolean') throw new DnsError('invalid', `${k} must be true or false`);
       out[k] = v;
     } else if (k === 'allowAll') {
@@ -331,7 +335,7 @@ function setGeneral(peerId, patch, actor = {}) {
   if (!any) throw new DnsError('invalid', 'nothing to change');
   const after = normalize(out);
   if (changed(g.id, before, after)) {
-    const keys = ['enabled', 'logQueries', 'upstream', 'allowAll'].filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+    const keys = ['enabled', 'logQueries', 'upstream', 'allowAll', 'vpnNames'].filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
     audit('gateway_dns_changed', g, `DNS filter settings changed on "${g.name}" (${keys.join(', ')})`, { changed: keys, enabled: after.enabled }, actor);
   }
   return after;

@@ -82,8 +82,8 @@ describe('features in the config pull', () => {
       cameras: { enabled: false },
       // status page of the gateway in its home network (tests/gateway_wizard_api.test.js): on
       setup_page: { status: true },
-      // "Namen im VPN" (tests/gateway_vpn_names.test.js): the zones, the switch of this gateway off
-      internal_dns: require('../src/services/gatewayFeatures').internalDns({ vpnNames: { enabled: false } }),
+      // "Namen im VPN" (tests/gateway_vpn_names.test.js): the zones, the switch of the home network off
+      internal_dns: { ...require('../src/services/gatewayFeatures').internalDns(gw.peer.id), resolve: false },
     });
     const gateways = require('../src/services/gateways');
     assert.equal(r.body.config_hash, gateways.computeConfigHash(gw.peer.id));

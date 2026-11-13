@@ -171,7 +171,7 @@ at home then reach VPN devices by their name.
 
 **Requirements:**
 
-- The [DNS filter](#dns-filter) of this gateway is switched on and entered in
+- The [DNS filter](#dns-filter) of the home network is switched on and entered in
   the router as the DNS server. Only then do the devices in the home network
   ask the gateway for names.
 - A gateway that knows the function. For an older gateway the switch carries a
@@ -180,11 +180,17 @@ at home then reach VPN devices by their name.
   name), its way into the VPN has to lead over the gateway – as for any address
   of the VPN.
 
-**Switching on:** tab “Functions” → “System” → “Resolve VPN names in the home
-network” (default: off). The switch holds for this one gateway; if you have a
-failover gateway in the same home network, switch it on there as well. If a
+**Switching on:** tab “Functions” → “For the whole home network” → “Resolve
+VPN names in the home network” (default: off). The switch holds for the whole
+home network: if you have a failover gateway in the same home network, it holds
+there by itself as well – also after the failover gateway has taken over. If a
 requirement is missing, the switch carries a hint; you can switch it on all the
 same.
+
+**If it does not work:** when a gateway reports that it cannot ask the server’s
+name service or gets no answer, the switch says so, with the reason – with the
+name of the gateway when the home network has several. Until then the devices
+at home do not resolve the VPN names through this gateway.
 
 | Switch | A device at home asks for `laptop-buero.vpn.example.com` |
 |---|---|

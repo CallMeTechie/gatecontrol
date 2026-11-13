@@ -177,7 +177,7 @@ Geräte zu Hause erreichen VPN-Geräte dann unter ihrem Namen.
 
 **Voraussetzungen:**
 
-- Der [DNS-Filter](#dns-filter) dieses Gateways ist eingeschaltet und im Router
+- Der [DNS-Filter](#dns-filter) des Heimnetzes ist eingeschaltet und im Router
   als DNS-Server eingetragen. Nur dann fragen die Geräte im Heimnetz das
   Gateway nach Namen.
 - Ein Gateway, das die Funktion kennt. Bei einem älteren Gateway steht der
@@ -186,11 +186,16 @@ Geräte zu Hause erreichen VPN-Geräte dann unter ihrem Namen.
   Namen auflöst), muss sein Weg ins VPN über das Gateway führen – wie bei jeder
   Adresse aus dem VPN.
 
-**Einschalten:** Reiter „Funktionen“ → „System“ → „VPN-Namen im Heimnetz
-auflösen“ (Standard: aus). Der Schalter gilt für dieses eine Gateway; hast du
-ein Reserve-Gateway im selben Heimnetz, schalte ihn dort ebenfalls ein. Fehlt
-eine Voraussetzung, steht ein Hinweis am Schalter; einschalten kannst du
-trotzdem.
+**Einschalten:** Reiter „Funktionen“ → „Für das ganze Heimnetz“ → „VPN-Namen
+im Heimnetz auflösen“ (Standard: aus). Der Schalter gilt für das ganze
+Heimnetz: Hast du ein Reserve-Gateway im selben Heimnetz, gilt er dort von
+selbst mit – auch nachdem die Reserve übernommen hat. Fehlt eine Voraussetzung,
+steht ein Hinweis am Schalter; einschalten kannst du trotzdem.
+
+**Wenn es nicht klappt:** Meldet ein Gateway, dass es den Namensdienst des
+Servers nicht fragen kann oder keine Antwort bekommt, steht das mit dem Grund
+am Schalter – bei mehreren Gateways im Heimnetz mit dem Namen des Gateways.
+Solange lösen die Geräte zu Hause die VPN-Namen über dieses Gateway nicht auf.
 
 | Schalter | Frage eines Geräts zu Hause nach `laptop-buero.vpn.example.com` |
 |---|---|
