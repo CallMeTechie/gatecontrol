@@ -656,6 +656,11 @@ function stale() {
   return cache && cache.error && good && Date.now() - good.at < CACHED_MAX_MS ? { code: cache.error.code, since: new Date(cache.at).toISOString() } : null;
 }
 
+/** The last fetch failed: { code, at } (ISO) — else null. No fetch. */
+function lastError() {
+  return cache && cache.error ? { code: cache.error.code || 'catalog_unreachable', at: new Date(cache.at).toISOString() } : null;
+}
+
 /**
  * The catalogue entry an administrator may install: listed, not a
  * pre-release, compatible with this GateControl.
@@ -691,7 +696,7 @@ async function download(id, version, gcVersion, { refresh = false } = {}) {
 
 module.exports = {
   CatalogError, DEFAULT_URL, GITHUB_HOSTS, CACHE_TTL_MS,
-  enabled, catalogUrl, allowedHosts, allowedUrl, validate, validateAsync, pick, stateOf, replacing, view, detail, notesBetween, cached, get, fetchedAt, stale, errText, installable, download, fetchAllowed, fetchRelease,
+  enabled, catalogUrl, allowedHosts, allowedUrl, validate, validateAsync, pick, stateOf, replacing, view, detail, notesBetween, cached, get, fetchedAt, stale, lastError, errText, installable, download, fetchAllowed, fetchRelease,
   TIMEOUTS,
   CATEGORIES, ICONS,
   _setTransport(fn) { transportOverride = fn || null; },

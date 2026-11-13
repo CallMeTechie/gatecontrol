@@ -151,7 +151,13 @@ router.get('/', (req, res) => {
         gatewaysSvc._clearUpdateTracking(g.peer_id);
       }
     }
-    res.json({ ok: true, gateways, latest_version: latestVersion });
+    // when the newest gateway version was last checked, and whether the newest attempt failed
+    const check = require('../../services/gatewayRelease').getStatus();
+    res.json({
+      ok: true, gateways, latest_version: latestVersion,
+      latest_checked_at: check.checked_at ? new Date(check.checked_at).toISOString() : null,
+      latest_check_failed: check.failed,
+    });
   } catch (err) {
     logger.error({ error: err.message }, 'Failed to list gateways');
     res.status(500).json({ ok: false, error: req.t ? req.t('common.error') : 'Error' });

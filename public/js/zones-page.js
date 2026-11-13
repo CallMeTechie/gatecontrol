@@ -801,7 +801,7 @@
   render();
   load().then(() => {
     // Deep links: /routes?domain=<id>[&host=<id>] (certificates, security,
-    // quick search), /routes?action=add (FAB, quick search) and
+    // quick search), /routes?action=add (quick search) and
     // /routes?action=new-host (dashboard "Neuer Host" — same as the button).
     try {
       const q = new URLSearchParams(window.location.search);

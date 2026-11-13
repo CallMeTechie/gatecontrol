@@ -495,58 +495,10 @@ window.showMessage = function(containerId, message, type) {
   else if (mq.addListener) mq.addListener(handleResize);
 })();
 
-// ─── FAB Speed Dial ──────────────────────────────────────
+// ─── ?action=add ─────────────────────────────────────────
+// /peers?action=add and /routes?action=add (dashboard header, quick search)
+// open the page's add dialog.
 (function () {
-  var fabWrap = document.getElementById('fab-wrap');
-  var fabBtn = document.getElementById('fab-btn');
-  var fabBackdrop = document.getElementById('fab-backdrop');
-  if (!fabWrap || !fabBtn) return;
-
-  function toggleFab() {
-    var isOpen = fabWrap.classList.toggle('open');
-    fabBtn.setAttribute('aria-expanded', String(isOpen));
-    if (fabBackdrop) fabBackdrop.classList.toggle('open', isOpen);
-  }
-
-  function closeFab() {
-    fabWrap.classList.remove('open');
-    fabBtn.setAttribute('aria-expanded', 'false');
-    if (fabBackdrop) fabBackdrop.classList.remove('open');
-  }
-
-  fabBtn.addEventListener('click', toggleFab);
-  if (fabBackdrop) fabBackdrop.addEventListener('click', closeFab);
-
-  // Navigate to page and trigger add action
-  var addPeer = document.getElementById('fab-add-peer');
-  var addRoute = document.getElementById('fab-add-route');
-
-  if (addPeer) {
-    addPeer.addEventListener('click', function (e) {
-      e.preventDefault();
-      closeFab();
-      if (window.location.pathname === '/peers') {
-        var btn = document.getElementById('btn-add-peer');
-        if (btn) btn.click();
-      } else {
-        window.location.href = '/peers?action=add';
-      }
-    });
-  }
-  if (addRoute) {
-    addRoute.addEventListener('click', function (e) {
-      e.preventDefault();
-      closeFab();
-      if (window.location.pathname === '/routes') {
-        // Zones page: open the add-domain dialog.
-        var btn = document.getElementById('zn-add-domain');
-        if (btn) btn.click();
-      } else {
-        window.location.href = '/routes?action=add';
-      }
-    });
-  }
-
   // Handle ?action=add on page load
   var params = new URLSearchParams(window.location.search);
   if (params.get('action') === 'add') {

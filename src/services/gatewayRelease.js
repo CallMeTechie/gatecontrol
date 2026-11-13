@@ -50,17 +50,21 @@ function _persist(v, rpiImage) {
 }
 
 let cache = { version: _loadPersisted(), rpiImage: _validRpiImage(_readPersisted().rpiImage), fetchedAt: 0 };
+// when the persisted version was written (the last successful check before this start)
+const _savedAt0 = Number(_readPersisted().savedAt);
+let knownAt = cache.version && Number.isFinite(_savedAt0) && _savedAt0 > 0 && _savedAt0 <= Date.now() ? _savedAt0 : 0;
 let inFlight = false;
 let fetchCalls = 0;
 // after a failed fetch: no new one before nextTryAt (30 s, doubling up to 30 min) — every page view asked
 // again while GitHub answered 503 (a warning every 30 s); the last known version is answered meanwhile
 const BACKOFF_MIN_MS = 30 * 1000;
 const BACKOFF_MAX_MS = 30 * 60 * 1000;
-const backoff = { nextTryAt: 0, ms: 0, failures: 0, since: 0 };
+const backoff = { nextTryAt: 0, ms: 0, failures: 0, since: 0, lastAt: 0 };
 const OUTAGE_KEY = 'gateway-release-fetch';
 
 function noteFailure(fields) {
   backoff.failures++;
+  backoff.lastAt = Date.now();
   if (!backoff.since) backoff.since = Date.now();
   backoff.ms = Math.min(BACKOFF_MAX_MS, backoff.ms ? backoff.ms * 2 : BACKOFF_MIN_MS);
   backoff.nextTryAt = Date.now() + backoff.ms;
@@ -72,7 +76,7 @@ function noteFailure(fields) {
 function noteSuccess() {
   const back = warnOnce.recovered(OUTAGE_KEY);
   if (back) logger.info({ failures: backoff.failures, failedForMs: Date.now() - backoff.since }, 'gateway release fetch works again');
-  backoff.nextTryAt = 0; backoff.ms = 0; backoff.failures = 0; backoff.since = 0;
+  backoff.nextTryAt = 0; backoff.ms = 0; backoff.failures = 0; backoff.since = 0; backoff.lastAt = 0;
 }
 
 function _normalizeTag(tag) { return tag ? String(tag).trim().replace(/^v/i, '') : null; }
@@ -112,6 +116,7 @@ function onAnswer(status, body) {
     if (!v) return noteFailure({ err: 'no tag_name' });
     const rpiImage = _rpiImageOf(rel);
     cache = { version: v, rpiImage, fetchedAt: Date.now() };
+    knownAt = cache.fetchedAt;
     _persist(v, rpiImage);
     noteSuccess();
   } catch (err) { noteFailure({ err: 'parse: ' + err.message }); }
@@ -125,6 +130,21 @@ let transportOverride = null; // tests: () => Promise<{ status, body }>
 function getLatestVersion() {
   if (Date.now() - cache.fetchedAt > CACHE_TTL) _fetchLatest();
   return cache.version;
+}
+
+/**
+ * What the check knows, for the "Updates" card of the dashboard — no fetch:
+ * `checked_at` is the last successful check (ms; from the persisted file
+ * until the first one of this run, null when never), `failed` says that the
+ * newest attempt did not get an answer (`failed_at` ms).
+ */
+function getStatus() {
+  return {
+    version: cache.version || null,
+    checked_at: cache.fetchedAt || knownAt || null,
+    failed: backoff.failures > 0,
+    failed_at: backoff.failures > 0 ? (backoff.lastAt || backoff.since || null) : null,
+  };
 }
 
 /** { name, size, url } of the latest release's Pi image, or null (not known yet / no image in it). */
@@ -152,16 +172,17 @@ function init(retriesLeft = INIT_MAX_RETRIES) {
 
 module.exports = {
   getLatestVersion,
+  getStatus,
   getRpiImage,
   _normalizeTag,
   _fetchLatest,
   _rpiImageOf,
-  _setCache: (v, rpiImage = null) => { cache = { version: v, rpiImage: _validRpiImage(rpiImage), fetchedAt: Date.now() }; _persist(v, cache.rpiImage); },
+  _setCache: (v, rpiImage = null) => { cache = { version: v, rpiImage: _validRpiImage(rpiImage), fetchedAt: Date.now() }; knownAt = cache.fetchedAt; _persist(v, cache.rpiImage); },
   init,
   _loadPersisted,
   _persist,
   _fetchCallCount: () => fetchCalls,
   _backoff: backoff,
   _setTransport: (fn) => { transportOverride = fn || null; },
-  _resetBackoff: () => { backoff.nextTryAt = 0; backoff.ms = 0; backoff.failures = 0; backoff.since = 0; inFlight = false; warnOnce.recovered(OUTAGE_KEY); },
+  _resetBackoff: () => { backoff.nextTryAt = 0; backoff.ms = 0; backoff.failures = 0; backoff.since = 0; backoff.lastAt = 0; inFlight = false; warnOnce.recovered(OUTAGE_KEY); },
 };

@@ -153,6 +153,18 @@
   {% endfor %}
 </div>
 
+{# Updates: server, plugins, gateways and apps (GET /dashboard/updates,
+   services/dashboardUpdates.js). One slim row while everything is current,
+   a card with four fields when there are updates or a check failed —
+   built by dashboard.js; the row below is the frame while loading. #}
+<section class="db-up" id="db-updates" data-view="loading" aria-label="{{ t('dashboard.up_title') }}">
+  <div class="db-up-ok" data-state="loading">
+    {{ statusIcon() }}
+    <h2 class="db-up-ok-title">{{ t('dashboard.up_title') }}</h2>
+    <span class="db-up-ok-text">{{ t('dashboard.live_loading') }}</span>
+  </div>
+</section>
+
 <div class="db-row db-row-main" id="db-row-main">
 
   {# Braucht Aufmerksamkeit (docs/feature-next-package.md S3 §1): GET

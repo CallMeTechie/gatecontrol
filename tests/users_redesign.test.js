@@ -472,7 +472,7 @@ describe('role-aware navigation', () => {
     const res = await m.get('/profile').expect(200);
     const html = withoutScripts(res.text);
     assert.ok(/href="https:\/\/home\.[^"]+"/.test(html) && html.includes('href="/profile"') && !html.includes('href="/me"'));
-    for (const admin of ['href="/dashboard"', 'href="/peers"', 'href="/settings"', 'href="/users"', 'class="bottom-nav"', 'id="fab-btn"']) {
+    for (const admin of ['href="/dashboard"', 'href="/peers"', 'href="/settings"', 'href="/users"', 'class="bottom-nav"']) {
       assert.ok(!html.includes(admin), admin);
     }
     assert.ok(!res.text.includes('/js/events.js'), 'no admin event stream');

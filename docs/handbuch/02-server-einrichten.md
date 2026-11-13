@@ -210,6 +210,18 @@ cd /opt/gatecontrol
 
 Klappt ein Update nicht, stellt `update.sh` die vorige Version automatisch wieder her.
 
+Ob es Updates gibt, zeigt das Dashboard in der Karte „Updates“ direkt unter den
+Kacheln. Sie hat vier Felder: Server, Plugins, Gateways und Apps. Ist alles
+aktuell, steht dort nur die Zeile „Alles aktuell“. Gibt es Updates, klappt die
+Karte auf: Jedes Feld sagt, was neu ist, und führt zur passenden Seite. Im Feld
+„Server“ steht auch im Modus „Manuell“ die neue Versionsnummer. Im Feld „Apps“
+zählt die Karte die Geräte, deren App älter ist als die neueste Version. Geräte,
+die noch keine Version gemeldet haben, zählen nicht als veraltet, sie stehen als
+„ohne Angabe“ da. GateControl fragt dafür höchstens einmal pro Stunde bei GitHub
+nach. Antwortet GitHub oder der Plugin-Katalog nicht, zeigt das Feld „Konnte
+nicht geprüft werden“ und den letzten bekannten Stand. Mit dem Pfeil-Knopf
+rechts in der Karte prüfst du sofort noch einmal.
+
 **Prüfen:** Nach spätestens 5 Minuten zeigt „Einstellungen“ → „Updates“ einen
 Status (nicht mehr „Auto-Update nicht eingerichtet“). Das Protokoll steht in
 `/var/log/gatecontrol-update.log`. Bleibt es bei „nicht eingerichtet“, hilft die
