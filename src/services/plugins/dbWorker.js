@@ -179,6 +179,10 @@ const ops = {
     return {};
   },
   size: () => ({ bytes: db.pragma('page_count', { simple: true }) * db.pragma('page_size', { simple: true }) }),
+  // the plugin's process ended (storage.js endTransaction): a transaction it left open is rolled back — this
+  // connection outlives the process, and the next one's BEGIN would fail ("within a transaction") while its other
+  // writes joined the old transaction and were never committed
+  'txn.end': () => { const open = db.inTransaction; if (open) db.exec('ROLLBACK'); return { rolledBack: open }; },
 };
 
 // the time of an operation in this thread and the rows it returned (query) go with the answer: the host logs a

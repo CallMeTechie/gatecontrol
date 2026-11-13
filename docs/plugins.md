@@ -4097,6 +4097,14 @@ more than before: at most 27 s after the first change not yet checkpointed
 (before: 30 s after the last one — for a plugin that never rests, until its
 log held 1000 pages). `GC_PLUGIN_CHECKPOINT=inline` switches the thread off.
 
+**A transaction left open** — the connection to `plugin.db` belongs to the
+host (one storage thread per plugin) and outlives the plugin's process. When
+the process ends between `BEGIN` and `COMMIT` (disabled, crashed, replaced by
+an update), the host rolls the transaction back and logs "plugin process
+ended inside a database transaction — rolled back". Before, it stayed open:
+every later `BEGIN` failed with "cannot start a transaction within a
+transaction" and the plugin's other writes were never committed.
+
 A plugin backup snapshot is written with the
 header of a rollback-journal file (it holds every page), a restored file
 switches to WAL again. Fewer writes still help most: write a row only when

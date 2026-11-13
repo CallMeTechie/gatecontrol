@@ -315,6 +315,21 @@ function forPlugin(id) {
   return db;
 }
 
+/**
+ * The process of plugin `id` ended (stopped, crashed, replaced by an update): a transaction it left open
+ * (`BEGIN` without its `COMMIT`) is rolled back. → true when there was one. Nothing opens for this: no storage
+ * thread, no transaction.
+ */
+async function endTransaction(id) {
+  const db = instances.get(id);
+  if (!db || !db.worker) return false;
+  try {
+    const r = await db.call('txn.end');
+    if (r && r.rolledBack) logger.warn({ plugin: id }, 'plugin process ended inside a database transaction — rolled back');
+    return !!(r && r.rolledBack);
+  } catch { return false; }
+}
+
 async function close(id) {
   const db = instances.get(id);
   instances.delete(id);
@@ -356,7 +371,7 @@ function usage(dir) {
 }
 
 module.exports = {
-  forPlugin, close, closeAll, usage, setLimit, maxBytesOf, SLOW_MS, SLOW_WINDOW_MS, SLOW_TOP,
+  forPlugin, close, closeAll, endTransaction, usage, setLimit, maxBytesOf, SLOW_MS, SLOW_WINDOW_MS, SLOW_TOP,
   _setCheckpointIdleMsForTest: (ms) => { checkpointIdleMs = ms || null; },
   _setWalCapPagesForTest: (n) => { walCapPages = n || null; },
 };
