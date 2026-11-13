@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.272.0] — 2026-11-13
+
+### Features
+- VPN-Namen im Heimnetz auflösen – Zonen der Gerätenamen im Config-Pull, Schalter fürs Heimnetz, Fehlerhinweis (#484)
+
+---
+
 ## [1.271.0] — 2026-11-13
 
 ### Features
