@@ -31,6 +31,11 @@ result on each of these routes: “… reaches the target” or “… does not 
 the target”. That way you see before an outage whether the reserve could take
 the route over.
 
+For that the reserve also gets the TCP/UDP routes of its partner and opens
+their listen ports. If that fails (for instance because the port is already
+taken on its device), it shows “degraded” and names route, port and reason in
+“Status” – see the [FAQ](07-faq.md#gateway-degraded).
+
 Where the gateways are (“Home”, “Office” …) you keep with “Locations” at the
 top of the same page. As soon as there is a location, the list is grouped by
 location; “Group by: Locations | Pools” switches to the view by pool. More in

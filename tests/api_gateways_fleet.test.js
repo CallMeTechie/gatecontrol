@@ -42,6 +42,13 @@ describe('gateways fleet service', () => {
     assert.equal(merged.hostname, 'gw1');
     assert.equal(merged.route_reachability.length, 1);
   });
+  it('_mergeHealth takes the L4 listener fields of a re-check; a gateway before them leaves the stored ones', () => {
+    const stored = { overall_healthy: false, l4_listeners_missing: 1, l4_listener_issues: [{ route_id: 7, listen_port: 5335, reason: 'port_in_use' }], telemetry: { gateway_version: '1.8.0' } };
+    const fresh = gateways._mergeHealth(stored, { overall_healthy: true, l4_routes_configured: 1, l4_listeners_missing: 0, l4_listener_issues: [], l4_listeners_direct: [] });
+    assert.deepEqual([fresh.overall_healthy, fresh.l4_listeners_missing, fresh.l4_listener_issues, fresh.l4_listeners_direct, fresh.l4_routes_configured], [true, 0, [], [], 1]);
+    assert.deepEqual(fresh.telemetry, { gateway_version: '1.8.0' });
+    assert.deepEqual(gateways._mergeHealth(stored, { overall_healthy: false }).l4_listener_issues, stored.l4_listener_issues);
+  });
   it('returns null for a non-gateway peer id', async () => { assert.equal(await gateways.refreshHealth(999999), null); });
   it('on success merges fresh health, keeps telemetry, feeds the state machine', async () => {
     const r = await gateways.refreshHealth(peerId);

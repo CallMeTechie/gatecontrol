@@ -186,6 +186,71 @@ describe('gateway-pool-kit: "Zustand" of a gateway', () => {
   });
 });
 
+describe('gateway-pool-kit: "Zustand" names the missing listeners of TCP/UDP routes', () => {
+  const texts = (c, dict) => c.map((x) => Object.keys(x.params || {}).reduce((s, p) => s.split('{{' + p + '}}').join(String(x.params[p])), dict[x.key])
+    + (x.note ? ' ' + dict[x.note.key].replace('{{name}}', x.note.params.name) : ''));
+  const healthy = { config_hash: 'abc', http_proxy_healthy: true, api_healthy: true, tcp_listeners: [] };
+
+  it('a heartbeat of a gateway before the new fields: degraded stays the general hint, nothing else', () => {
+    // GET /api/v1/gateways of a server before the field, and of this one for an old gateway
+    for (const l4 of [undefined, { issues: [], direct: [] }]) {
+      const g = gw(1, { health: { ...healthy, overall_healthy: false, l4_listeners_missing: 1 }, l4_listeners: l4 });
+      const c = PK.healthChecks(g, { status: 'degraded' });
+      assert.deepEqual(c.map((x) => [x.tone, x.key]), [['warn', 'gwp.state.degraded'], ['ok', 'gwp.state.tunnel'], ['ok', 'gwp.state.synced']]);
+    }
+  });
+
+  it('port taken: route, protocol, port, reason and the advice — instead of the general hint', () => {
+    const g = gw(1, { health: { ...healthy, overall_healthy: false, l4_listeners_missing: 1 },
+      l4_listeners: { issues: [{ route_id: 9, listen_port: 5335, reason: 'port_in_use', code: 'EADDRINUSE', domain: 'dns.example.com', protocol: 'udp', reserve_of: 'DS218+' }], direct: [] } });
+    const c = PK.healthChecks(g, { status: 'degraded' });
+    assert.deepEqual(c.map((x) => [x.tone, x.key]), [['warn', 'gwp.state.l4_port_in_use'], ['ok', 'gwp.state.tunnel'], ['ok', 'gwp.state.synced']]);
+    assert.deepEqual(c[0].params, { route: 'dns.example.com', proto: 'UDP', port: 5335, code: 'EADDRINUSE' });
+    assert.equal(texts(c, de)[0], 'Route „dns.example.com“ (UDP 5335): Port 5335 ist auf diesem Gateway schon von einem anderen Dienst belegt – die Weiterleitung läuft hier nicht. Wähle in der Route einen anderen Listen-Port. (Reserve für DS218+)');
+    assert.match(texts(c, en)[0], /^Route “dns\.example\.com” \(UDP 5335\): port 5335 is already taken .* Choose a different listen port in the route\. \(reserve for DS218\+\)$/);
+    assert.equal(PK.overall(c), 'warn');
+  });
+
+  it('every reason has its line; an unknown one and a route without a name still say port and code', () => {
+    const issue = (reason, extra) => ({ route_id: 4, listen_port: 80, reason, code: 'EACCES', domain: null, protocol: 'tcp', reserve_of: null, ...extra });
+    const g = gw(1, { health: { ...healthy, overall_healthy: false },
+      l4_listeners: { issues: [issue('permission_denied'), issue('address_unavailable'), issue('error', { code: 'EMFILE' }), issue('whatever', { code: null })] } });
+    const c = PK.healthChecks(g, { status: 'degraded' });
+    assert.deepEqual(c.filter((x) => x.key.startsWith('gwp.state.l4_')).map((x) => x.key),
+      ['gwp.state.l4_permission_denied', 'gwp.state.l4_address_unavailable', 'gwp.state.l4_error', 'gwp.state.l4_error']);
+    const t = texts(c, de);
+    assert.match(t[0], /^Route „#4“ \(TCP 80\): Das Gateway darf Port 80 nicht öffnen/);
+    assert.match(t[2], /Fehler EMFILE/);
+    assert.match(t[3], /Fehler —/);
+    assert.equal(c.some((x) => x.key === 'gwp.state.degraded'), false);
+  });
+
+  it('something else is wrong as well (proxy, API, a failing listener): the general hint stays next to the reasons', () => {
+    const l4 = { issues: [{ route_id: 9, listen_port: 5335, reason: 'port_in_use', protocol: 'tcp' }] };
+    for (const extra of [{ http_proxy_healthy: false }, { api_healthy: false }, { tcp_listeners: [{ port: 22, status: 'listener_failed' }] }]) {
+      const c = PK.healthChecks(gw(1, { health: { ...healthy, ...extra, overall_healthy: false }, l4_listeners: l4 }), { status: 'degraded' });
+      assert.deepEqual(c.filter((x) => x.tone === 'warn').map((x) => x.key), ['gwp.state.degraded', 'gwp.state.l4_port_in_use']);
+    }
+  });
+
+  it('the target service holds the port itself: an info, the gateway stays "online"; not answering is a warning', () => {
+    const d = (reachable) => ({ route_id: 9, listen_port: 5335, reachable, domain: 'dns.example.com', protocol: 'tcp', reserve_of: null });
+    const g = gw(1, { health: { ...healthy, overall_healthy: true, l4_listeners_missing: 0 }, l4_listeners: { issues: [], direct: [d(true)] } });
+    assert.equal(PK.liveOf({ ...g, state: 'online' }).key, 'online');
+    const c = PK.healthChecks(g, { status: 'online' });
+    assert.deepEqual(c.map((x) => [x.tone, x.key]), [['info', 'gwp.state.l4_direct'], ['ok', 'gwp.state.tunnel'], ['ok', 'gwp.state.synced']]);
+    assert.equal(PK.overall(c), 'ok');
+    assert.equal(texts(c, de)[0], 'Route „dns.example.com“ (TCP 5335): Das Ziel ist dieses Gateway selbst und der Zieldienst belegt Port 5335 – er wird direkt erreicht, eine Weiterleitung ist nicht nötig.');
+    const down = PK.healthChecks({ ...g, l4_listeners: { direct: [d(false)] } }, { status: 'online' });
+    assert.deepEqual(down[0], { tone: 'warn', key: 'gwp.state.l4_direct_down', params: { route: 'dns.example.com', proto: 'TCP', port: 5335, code: '—' }, note: null });
+  });
+
+  it('a gateway that is away says nothing about its listeners', () => {
+    const g = gw(1, { health: { ...healthy }, l4_listeners: { issues: [{ route_id: 9, listen_port: 5335, reason: 'port_in_use' }], direct: [{ route_id: 8, listen_port: 53 }] } });
+    assert.deepEqual(PK.healthChecks(g, { status: 'offline' }).map((x) => x.key), ['gwp.state.offline']);
+  });
+});
+
 describe('gateway-pool-kit: live state (gatewayLiveState)', () => {
   const NOW = 1_000_000_000;
   it('clock: m:ss, never negative', () => {
@@ -306,6 +371,7 @@ describe('the views: texts and safety', () => {
     for (const k of ['failover', 'load_balancing']) { keys.add('gwp.mode.' + k); keys.add('gwp.mode.' + k + '_d'); }
     for (const k of ['ok', 'warn', 'bad']) keys.add('gwp.state.overall_' + k);
     for (const k of ['ok', 'warn', 'bad', 'info']) keys.add('gwp.state.tone_' + k);
+    for (const k of ['port_in_use', 'permission_denied', 'address_unavailable', 'error']) keys.add('gwp.state.l4_' + k);
     for (const k of ['protected', 'partial', 'on_reserve', 'no_reserve', 'single', 'down', 'off']) { keys.add('gwp.status.' + k); keys.add('gwp.status_short.' + k); }
     for (const k of ['ok', 'tight', 'too_much']) keys.add('gwp.feat.level_' + k);
     for (const k of ['active', 'lb_active', 'standby', 'standby_partial', 'recovering', 'offline', 'updating', 'restarting']) keys.add('gwp.mstate.' + k);
