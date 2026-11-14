@@ -354,6 +354,7 @@ unsigned build of the same id.
     "homeInternet": true,
     "homeCache": true,
     "vpnDns": true,
+    "bridges": true,
     "groups": "read",
     "ai": { "purpose": { "de": "Dokumente erkennen", "en": "Recognise documents" }, "capabilities": ["text", "vision"] },
     "cloudImport": { "purpose": { "de": "Dateien aus Google Drive und OneDrive übernehmen", "en": "Take files from Google Drive and OneDrive" } }
@@ -1058,6 +1059,7 @@ module.exports = {
 | `gc.homeNetwork.internet.status(userId)` / `.pause(userId, untilISO \| minutes)` / `.resume(userId)` / `.extend(userId, minutes)` | since 1.231.0: the home DNS filter of a person — pause the internet, suspend the profile's times; changes only on behalf of a signed-in person (`homeInternet`), since 1.259.0 also for the person an automation names (`{ actor }`) — see "Internet at home" |
 | `gc.homeCache.offer({ mediaId, kind, userIds, priority })` / `.withdraw(mediaId)` / `.lanHint(sha256 \| { mediaId }, req)` | since 1.231.0: keep the plugin's files on the gateways' home caches and send an app in the home network there (`homeCache`) — see "Home cache"; since 1.249.0 also GateControl's previews of them (`preview`, `.lanHints([…], req)`) |
 | `gc.vpnDns.status()` / `.get()` / `.set(patch)` / `.devices()` / `.lists()` / `.stats()` / `.test(domain, who)` / `.pause(target)` / `.resume(target)` / `.pauses()` / `.log(query)` / `.restart()` / `.on(handler)` … | since 1.264.0: the DNS protection of the VPN devices — the host filters (its own filter service behind dnsmasq), the plugin sets lists, own entries and profiles for groups, people and devices, suspends the protection and reads counters; changes on behalf of a signed-in person or `{ actor }` (`vpnDns`) — see "DNS protection" |
+| `gc.bridges.status()` / `.configure(patch)` / `.login.flows(userId, network)` / `.login.start(…)` / `.login.step(…)` / `.login.cancel(…)` / `.logins(userId, network)` / `.logout(userId, network, loginId)` | preview: the bridges to outside messengers (WhatsApp first) that run next to the server — their state, the administrator's switch, and a person's **own** link; the plugin never sees an address, a token or a session key (`bridges`) — see "Messenger bridges" |
 | `gc.ai.available({ capability })` / `gc.ai.status()` | since 1.214.0: is AI usable for the plugin (asks no provider) / `{ available, mediaAllowed, capabilities, budgetLeftCents }` (`ai`) — see "AI requests" |
 | `gc.ai.extract({ task, user, instructions, input, schema, maxOutputTokens, timeoutMs })` / `gc.ai.generate({ … })` | since 1.214.0: structured data checked against a schema / free text from the AI provider set up in GateControl → `{ ok, data \| text, provider, model, usage, fallback }` (`ai`) — see "AI requests" |
 | `gc.groups.list/get/members/isMember/leadersOf(…)` | the person groups of GateControl (`groups`) — see "Groups" |
@@ -2923,6 +2925,67 @@ No library, no CDN (`public/js/plugin-camera-player.js`). Without the script (an
 `ERR_CAMERA_NOT_READY`, `ERR_CAMERA_SERVICE_MISSING`, `ERR_CAMERA_LIMIT`, `ERR_CAMERA_TLS` (1.242.0:
 the camera's HTTPS certificate is not trusted — offer "Zertifikat nicht prüfen"). Who may
 see which camera is the plugin's to decide.
+
+## Messenger bridges (`permissions.bridges`)
+
+**Preview** — offered only on a server started with `GC_BRIDGES_PREVIEW=1`;
+everywhere else `gc.bridges.status()` answers `{ available: false, reason:
+'preview_off' }` and nothing else exists. Design, stages and security limits:
+[feature-messenger-bridges.md](feature-messenger-bridges.md).
+
+A side service — a small internal Matrix homeserver and one bridge per outside
+messenger (first `whatsapp`) — lets the messenger plugin talk to people without
+a GateControl account. A plugin process has no network, so it never talks to
+that service itself: the host does, and the plugin names a **network** and a
+**person** (user id). Where the bridges run (today: this server; later: a
+gateway) is the host's business — the contract is the same. Code:
+`src/services/bridges/` (service, provisioning client), host API `bridgesCall`
+in `src/services/plugins/hostApi.js`, `update.sh` (`sync_bridges`, marker 5).
+
+```json
+"permissions": { "bridges": true }
+```
+
+An older GateControl ignores the key (no `gc.bridges`): detect it with
+`gc.bridges && typeof gc.bridges.status === 'function'`. The install dialog
+names the permission first and marks it as sensitive.
+
+| Call | Answer |
+|---|---|
+| `gc.bridges.version` | `1` |
+| `status()` | `{ available, reason, enabled, location: 'server', locations: [{ id, kind, cores, memMb, freeMb }], networks: [{ id, enabled, state: 'off' \| 'starting' \| 'running' \| 'failed', version, memMb, limitMb }], host: { state, error: 'compose_missing' \| 'start_failed' \| null, checkedAt, cron, script: { host, needed }, homeserver: { running, memMb, limitMb, version } }, history: { enabled: false } }` — states, versions and memory only; never a name, a number or a content |
+| `configure({ enabled?, networks?: { whatsapp?: boolean } })` | `status()`. Only inside a changing request (POST/PUT/PATCH/DELETE) of an **administrator** (`ERR_NOT_PERSON`, `ERR_NOT_ADMIN`); logged as `bridges_changed`. Off by default |
+| `login.flows(userId, network)` | `[{ id, name, description }]` — WhatsApp: `qr`, `phone` (pairing code) |
+| `login.start(userId, network, flowId)` | `{ processId, step }` |
+| `login.step(userId, network, processId, stepId, kind, input?)` | `kind` `'user_input'` (`input`: `{ <field id>: text }`) or `'display_and_wait'` → `{ processId, step }`. A `display_and_wait` answers when the person confirmed on the phone; until then (15 s per call) `{ processId, waiting: true }` — call again with the same arguments, the bridge is asked only once |
+| `login.cancel(userId, network, processId)` | `{ ok: true }` |
+| `logins(userId, network)` | `[{ network, id, name, state: 'connected' \| 'connecting' \| 'logged_out' \| 'error' \| 'unknown', since, error }]` — `name` is what the bridge calls the account (WhatsApp: the person's own number) |
+| `logout(userId, network, loginId)` | `{ ok: true }` |
+
+`step`: `{ id, type: 'user_input' | 'display_and_wait' | 'complete',
+instructions, fields?: [{ id, type, name, description, optional }], display?:
+{ type: 'qr' | 'code' | 'emoji' | 'nothing', data }, loginId? }`. `display.data`
+is the raw content of the QR code or the pairing code — draw it yourself, the
+bridge's picture address is never passed on. Steps that need a browser driven
+by the bridge (`cookies`, `client_http`, `webauthn`) are refused with
+`ERR_BRIDGE` / `reason: 'unsupported_step'`.
+
+**Only the person themselves.** Everything that takes a `userId` works only
+while a request of *that* person to this plugin is in flight (`flows`,
+`logins`: any request; the rest: a changing one) — else `ERR_NOT_PERSON`. Not
+in a `tick`, not in a hook, not for a family member, not as an administrator.
+
+Errors (`e.code`, with `e.reason`): `ERR_BRIDGES_DENIED` (no permission),
+`ERR_BRIDGES_UNAVAILABLE` (`preview_off`, `off`, `not_running`),
+`ERR_BRIDGE_UNREACHABLE` (`not_running`, `timeout`, `unreachable`),
+`ERR_BRIDGE` (the bridge refused or failed; `reason` is `not_found`,
+`refused`, `unsupported_step`, `bad_answer`, `too_large` or the bridge's own
+error code as a word, e.g. `m_bad_json`, `fi_mau_whatsapp_login_timeout` — its
+text stays in the server log), `ERR_BUSY`,
+`ERR_INVALID`, `ERR_NOT_PERSON`, `ERR_NOT_ADMIN`.
+
+Testing without WhatsApp: `tests/helpers/fake-bridge.js` is a stand-in for a
+bridge's provisioning API on a Unix socket (`tests/bridges.test.js`).
 
 ## DNS protection (`permissions.vpnDns`)
 

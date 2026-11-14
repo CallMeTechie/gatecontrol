@@ -324,6 +324,35 @@ function makeEdge() {
   });
 }
 
+// gc.bridges (permissions.bridges, docs/plugins.md "Messenger bridges"): the bridges to outside messengers that run
+// next to the server (services/bridges). The plugin names a network ('whatsapp') and a person by user id — never an
+// address, a token or a Matrix id. Everything about a person's link only while that person's request is in flight.
+function makeBridges() {
+  const login = Object.freeze({
+    /** flows(userId, network) → [{ id, name, description }] */
+    flows: (userId, network) => hostCall('bridges.login.flows', { userId, network }),
+    /** start(userId, network, flowId) → { processId, step } */
+    start: (userId, network, flowId) => hostCall('bridges.login.start', { userId, network, flowId }),
+    /** step(userId, network, processId, stepId, 'user_input' | 'display_and_wait', input?) → { processId, step } | { processId, waiting: true } */
+    step: (userId, network, processId, stepId, kind, input) => hostCall('bridges.login.step', { userId, network, processId, stepId, kind, input }),
+    /** cancel(userId, network, processId) → { ok: true } */
+    cancel: (userId, network, processId) => hostCall('bridges.login.cancel', { userId, network, processId }),
+  });
+  return Object.freeze({
+    /** the version of this interface (raised when methods or fields are added) */
+    version: 1,
+    /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb }], host, history } */
+    status: () => hostCall('bridges.status', {}),
+    /** configure({ enabled?, networks?: { whatsapp?: boolean } }) → status() — inside a changing request of an administrator */
+    configure: (patch) => hostCall('bridges.configure', { patch }),
+    login,
+    /** logins(userId, network) → [{ network, id, name, state: connected | connecting | logged_out | error | unknown, since, error }] */
+    logins: (userId, network) => hostCall('bridges.logins', { userId, network }),
+    /** logout(userId, network, loginId) → { ok: true } */
+    logout: (userId, network, loginId) => hostCall('bridges.logout', { userId, network, loginId }),
+  });
+}
+
 // gc.vpnDns (permissions.vpnDns, docs/plugins.md "DNS protection"): the DNS protection of the VPN devices. The host
 // filters; the plugin sets what is blocked for whom, suspends it and reads counters. Changes need an acting person:
 // the one with a changing request to this plugin in flight, or { actor: userId } (settings: an administrator).
@@ -613,6 +642,7 @@ function makeGc(info) {
     ...(features.radio ? { radio: makeRadio() } : {}),
     ...(features.cameras ? { cameras: makeCameras() } : {}),
     ...(features.vpnDns ? { vpnDns: makeVpnDns() } : {}),
+    ...(features.bridges ? { bridges: makeBridges() } : {}),
     // device accounts of a gateway's MQTT broker (plugin.json edge.capabilities.mqtt): create(gatewayId,
     // { label, topics, name }) → { username, password (once), acl, label }; list(gatewayId); remove(gatewayId, username)
     ...(features.mqtt ? {

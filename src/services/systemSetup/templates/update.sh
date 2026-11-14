@@ -32,9 +32,17 @@
 # "clamav" when docker-compose.yml has it, else a plain docker run with the
 # same settings) and stops it again — only when this script started it — once
 # another scanner is chosen. Result: $DATA_DIR/.clamav-state.json.
+# Messenger bridges (marker 5): the server writes "bridges":"whatsapp" into the
+# config file while an administrator has them switched on. Every run then
+# brings up the services bruecken-hs and bruecken-<name> of the compose
+# profile "bruecken" (only when docker-compose.yml has them — no docker run
+# fallback: their settings live in that file) and removes the containers
+# again — only when this script started them — once the field is gone. Their
+# data in $DATA_DIR/bridges stays. Result: $DATA_DIR/.bridges-state.json with
+# the state and the memory each container really uses.
 # The marker line below is the version both sides compare; bump it whenever
 # this file changes in a way the host should pick up.
-# gc-update-sh: 4
+# gc-update-sh: 5
 #
 # Data directory: $COMPOSE_DIR/data (the release compose binds ./data:/data).
 # When the running container mounts /data from somewhere else — the named
@@ -299,6 +307,85 @@ sync_clamav() {
   fi
 }
 
+BRIDGES_STATE="$DATA_DIR/.bridges-state.json"
+# Next to docker-compose.yml (root's), not on the /data volume GateControl can write.
+BRIDGES_MANAGED="$COMPOSE_DIR/.bruecken-managed"
+
+bridges_wanted() { # the wanted bridges, one per line (strict charset: the names end up in container names)
+  [ -f "$CONFIG_FILE" ] || return 0
+  tr -d '\n' <"$CONFIG_FILE" 2>/dev/null | sed -n 's/.*"bridges"[[:space:]]*:[[:space:]]*"\([a-z,]*\)".*/\1/p' \
+    | tr ',' '\n' | grep -E '^[a-z]{2,16}$' | sort -u || true
+}
+bridges_services() { ( cd "$COMPOSE_DIR" && docker compose --profile bruecken config --services 2>/dev/null ) | grep -E '^bruecken-[a-z]{2,16}$' || true; }
+bridge_running() { [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null || true)" = "true" ]; }
+to_mb() { # "123.4MiB" / "1.2GiB" / "900KiB" → whole MiB; anything else → nothing
+  printf '%s' "$1" | awk '/^[0-9.]+GiB$/ { printf "%d", $0 * 1024; exit } /^[0-9.]+MiB$/ { printf "%d", $0 + 0.5; exit } /^[0-9.]+KiB$/ { printf "%d", $0 / 1024; exit } /^[0-9.]+B$/ { printf "0"; exit }'
+}
+bridge_json() { # $1=container → {"running":…,"mem_mb":…,"limit_mb":…,"version":"…"}
+  local run=false usage="" mem="" lim="" ver=""
+  if bridge_running "$1"; then
+    run=true
+    usage="$(docker stats --no-stream --format '{{.MemUsage}}' "$1" 2>/dev/null | head -n1 | tr -d ' ' || true)"
+    mem="$(to_mb "${usage%%/*}")"; lim="$(to_mb "${usage##*/}")"
+    ver="$(safe "$(docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$1" 2>/dev/null || true)")"
+  fi
+  printf '{"running":%s,"mem_mb":%s,"limit_mb":%s,"version":"%s"}' "$run" "${mem:-null}" "${lim:-null}" "$ver"
+}
+bridges_state() { # $1=state (running|starting|failed|stopped) $2=error code (or "") $3…=bridge names
+  local st="$1" er="$2" body n
+  shift 2
+  body="\"hs\":$(bridge_json bruecken-hs)"
+  for n in "$@"; do body="$body,\"$n\":$(bridge_json "bruecken-$n")"; done
+  printf '{"checked_at":"%s","state":"%s","error":"%s","update_sh":%s,"services":{%s}}\n' \
+    "$(date -Iseconds)" "$(safe "$st")" "$(safe "$er")" "$SELF_VERSION" "$body" | write_atomic "$BRIDGES_STATE"
+}
+
+sync_bridges() {
+  # Every run: bring the bridges in line with the switch in the messenger's settings.
+  local want svc names n up=1
+  want="$(bridges_wanted)"
+  if [ -n "$want" ]; then
+    svc="$(bridges_services)"
+    names="bruecken-hs"
+    for n in $want; do names="$names bruecken-$n"; done
+    for n in $names; do
+      if ! printf '%s\n' "$svc" | grep -qx "$n"; then
+        # a docker-compose.yml without the profile: it has to be replaced once, by hand
+        # shellcheck disable=SC2086
+        bridges_state failed compose_missing $want; return 0
+      fi
+      bridge_running "$n" || up=0
+    done
+    # a bridge that was switched off while others stay on
+    if [ -f "$BRIDGES_MANAGED" ]; then
+      for n in $svc; do
+        case " $names " in *" $n "*) ;; *) bridge_running "$n" && { log "bridges: $n switched off — removing the container"; docker rm -f "$n" >>"$LOG" 2>&1 || true; } ;; esac
+      done
+    fi
+    # shellcheck disable=SC2086
+    if [ "$up" = 1 ]; then bridges_state running "" $want; return 0; fi
+    # a failed start is retried every 30 minutes, not every run
+    if [ -n "$(find "$BRIDGES_STATE" -mmin -30 2>/dev/null)" ] && grep -q '"state":"failed"' "$BRIDGES_STATE" 2>/dev/null; then return 0; fi
+    log "bridges: starting $names"
+    # shellcheck disable=SC2086
+    if ( cd "$COMPOSE_DIR" && docker compose --profile bruecken up -d $names ) >>"$LOG" 2>&1; then
+      : >"$BRIDGES_MANAGED" 2>/dev/null || true
+      # shellcheck disable=SC2086
+      bridges_state starting "" $want
+    else
+      log "bridges: start failed"
+      # shellcheck disable=SC2086
+      bridges_state failed start_failed $want
+    fi
+  elif [ -f "$BRIDGES_MANAGED" ]; then
+    # only containers this script started; their data in $DATA_DIR/bridges stays
+    log "bridges: switched off — removing the containers"
+    for n in $(bridges_services); do docker rm -f "$n" >>"$LOG" 2>&1 || true; done
+    rm -f "$BRIDGES_MANAGED"
+    bridges_state stopped ""
+  fi
+}
+
 ensure_clamav() {
   # After a GateControl update: pull the pinned tag of the clamav container
   # (the 1.4 LTS series — engine fixes arrive here) and recreate it when the
@@ -434,6 +521,7 @@ deploy() { # $1=mode — recreate onto :latest; on health failure roll back. Exi
 }
 
 sync_clamav || true
+sync_bridges || true
 
 if [ "$MODE" = "manual" ]; then
   if [ ! -f "$FLAG_FILE" ]; then
