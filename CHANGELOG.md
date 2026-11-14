@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.275.0] — 2026-11-14
+
+### Features
+- Messenger-Brücken, Stufe 3 – Nachrichten zwischen Brücke und Plugin (Vorschau, standardmäßig aus) (#489)
+
+---
+
 ## [1.274.0] — 2026-11-14
 
 ### Features
