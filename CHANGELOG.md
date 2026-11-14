@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.273.0] — 2026-11-14
+
+### Features
+- Messenger-Brücken, Stufe 1 – Brücken-Dienst am Server (Vorschau, standardmäßig aus), Host-API gc.bridges (#487)
+
+---
+
 ## [1.272.1] — 2026-11-13
 
 ### Fixes
