@@ -1,6 +1,6 @@
 'use strict';
 
-// Messenger bridges (docs/feature-messenger-bridges.md), stage 1.
+// Messenger bridges (docs/feature-messenger-bridges.md), stages 1 and 2.
 //
 // A side service next to GateControl — a small internal Matrix homeserver and
 // one bridge per outside messenger (first: WhatsApp) — lets the chat of the
@@ -18,7 +18,9 @@
 //                    /data/.auto-update-config.json ("bridges":"whatsapp");
 //                    the host's update.sh (marker 5) starts the compose
 //                    profile "bruecken" and reports to
-//                    /data/.bridges-state.json.
+//                    /data/.bridges-state.json. Their images are pinned
+//                    (images.js), their configuration is written here
+//                    (config.js) before anything starts.
 //   no port          homeserver and bridges are reached over Unix sockets in
 //                    /data/bridges/run only; nothing listens on a network.
 //   secrets          one master key in /data/bridges/secrets.json (0600), made
@@ -35,12 +37,16 @@ const crypto = require('node:crypto');
 const settings = require('../settings');
 const logger = require('../../utils/logger');
 const provision = require('./provision');
+const config = require('./config');
+const images = require('./images');
+const hs = require('./hs');
 
 const NETWORKS = Object.freeze(['whatsapp']);
-const SERVER_NAME = 'gc.internal';
-const SCRIPT = 5; // update.sh marker that knows the profile "bruecken"
+const SERVER_NAME = config.SERVER_NAME;
+const SCRIPT = 6; // update.sh marker that knows the profile "bruecken" with relays, the configuration revision and the probe
 const HOST_STATES = ['running', 'starting', 'failed', 'stopped'];
-const HOST_ERRORS = ['compose_missing', 'start_failed'];
+const HOST_ERRORS = ['compose_missing', 'config_missing', 'start_failed'];
+const PROBE_RESULTS = ['ok', 'not_wanted', 'compose_missing', 'config_missing', 'start_failed', 'not_running'];
 const WAIT_KEEP_MS = 5 * 60000;
 const MAX_WAITS = 32;
 
@@ -92,7 +98,11 @@ function readKey() {
 }
 
 function tokens(key) {
-  return { asToken: derive(key, 'as_token'), hsToken: derive(key, 'hs_token'), provisionSecret: derive(key, 'provisioning') };
+  return {
+    asToken: derive(key, 'as_token'), hsToken: derive(key, 'hs_token'), provisionSecret: derive(key, 'provisioning'),
+    // the server's own application service on the internal homeserver (config.js)
+    coreAsToken: derive(key, 'core_as_token'), coreHsToken: derive(key, 'core_hs_token'),
+  };
 }
 
 /** The tokens of the bridges (for this module and the container configuration only), or null before the first switch-on. */
@@ -113,6 +123,19 @@ function ensureSecrets() {
   return tokens(key);
 }
 
+/**
+ * What update.sh shall run, with the configuration written first: { names, rev }.
+ * rev changes with the configuration files — update.sh recreates the
+ * containers then. Called whenever the host file is written (boot, switch).
+ * Never throws: when the files cannot be written the wish stays, without rev.
+ */
+function wish() {
+  const names = wanted();
+  if (!names.length) return { names, rev: null };
+  try { return { names, rev: config.write(dir(), ensureSecrets(), names).rev }; }
+  catch (err) { logger.warn({ err: err.message }, 'bridges: could not write the configuration of the containers'); return { names, rev: null }; }
+}
+
 // ─── What the host did ─────────────────────────────────
 
 function num(v, max) { const n = Number(v); return Number.isFinite(n) && n >= 0 && n <= max ? Math.round(n) : null; }
@@ -121,7 +144,7 @@ function ver(v) { return typeof v === 'string' && /^[A-Za-z0-9._+-]{1,40}$/.test
 /**
  * What update.sh wrote into .bridges-state.json (every run while the bridges
  * are wanted) — only known values.
- * → { state, error, checkedAt, services: { <name>: { running, memMb, limitMb, version } }, script, cron }
+ * → { state, error, checkedAt, services: { <name>: { running, memMb, limitMb, version, outdated } }, script, cron, probe }
  */
 function hostStatus() {
   const au = require('../autoUpdate');
@@ -134,9 +157,10 @@ function hostStatus() {
   const services = {};
   for (const name of ['hs', ...NETWORKS]) {
     const s = ok && file.services && typeof file.services === 'object' ? file.services[name] : null;
-    services[name] = s && typeof s === 'object'
-      ? { running: s.running === true, memMb: num(s.mem_mb, 65536), limitMb: num(s.limit_mb, 65536), version: ver(s.version) }
-      : { running: false, memMb: null, limitMb: null, version: null };
+    if (!s || typeof s !== 'object') { services[name] = { running: false, memMb: null, limitMb: null, version: null, outdated: null }; continue; }
+    // the image the container really runs, against the pin of this GateControl (images.js)
+    const img = s.running === true ? images.compare(name, s.image) : { version: null, outdated: null };
+    services[name] = { running: s.running === true, memMb: num(s.mem_mb, 65536), limitMb: num(s.limit_mb, 65536), version: ver(s.version) || img.version, outdated: img.outdated };
   }
   return {
     state: ok && HOST_STATES.includes(file.state) ? file.state : null,
@@ -145,6 +169,33 @@ function hostStatus() {
     services,
     script: { host, needed: SCRIPT },
     cron,
+    probe: probeResult(au.DATA_DIR),
+  };
+}
+
+/**
+ * What `update.sh bridges-probe` measured on the host (.bridges-probe.json) — numbers only; the log lines in that
+ * file are for the person who ran it and are not passed on.
+ * → null | { at, result, windowSeconds, services: { <name>: { running, restarts, oomKilled, memMb, memPeakMb, limitMb, writtenKb } }, sockets: { <name>: boolean }, diskMb }
+ */
+function probeResult(dataDir) {
+  let f = null;
+  try { f = JSON.parse(fs.readFileSync(path.join(dataDir, '.bridges-probe.json'), 'utf8')); } catch { return null; }
+  if (!f || typeof f !== 'object' || typeof f.probed_at !== 'string' || Number.isNaN(Date.parse(f.probed_at))) return null;
+  const services = {};
+  const sockets = {};
+  for (const name of ['hs', ...NETWORKS, ...NETWORKS.map((n) => `${n}-relay`)]) {
+    const s = f.services && typeof f.services === 'object' ? f.services[name] : null;
+    if (!s || typeof s !== 'object') continue;
+    services[name] = {
+      running: s.running === true, restarts: num(s.restarts, 100000), oomKilled: s.oom === true,
+      memMb: num(s.mem_mb, 65536), memPeakMb: num(s.mem_peak_mb, 65536), limitMb: num(s.limit_mb, 65536), writtenKb: num(s.write_kb, 1e9),
+    };
+  }
+  for (const name of ['hs', ...NETWORKS]) sockets[name] = !!(f.sockets && typeof f.sockets === 'object' && f.sockets[name] === true);
+  return {
+    at: new Date(f.probed_at).toISOString(), result: PROBE_RESULTS.includes(f.result) ? f.result : null,
+    windowSeconds: num(f.window_s, 86400), services, sockets, diskMb: num(f.disk_mb, 1e7),
   };
 }
 
@@ -172,11 +223,16 @@ function status() {
       const s = host.services[id];
       let state = 'off';
       if (cfg.enabled && cfg.networks[id]) state = up && s.running ? 'running' : (host.state === 'failed' ? 'failed' : 'starting');
-      return { id, enabled: cfg.networks[id], state, version: s.version, memMb: s.memMb, limitMb: s.limitMb };
+      // outdated: the container runs another image than this GateControl pins (wantVersion) — the
+      // docker-compose.yml on the host is older (or newer) than the server
+      return { id, enabled: cfg.networks[id], state, version: s.version, memMb: s.memMb, limitMb: s.limitMb, outdated: s.outdated === true, wantVersion: images.IMAGES[id].version };
     }),
     host: {
       state: cfg.enabled ? host.state : 'stopped', error: cfg.enabled ? host.error : null, checkedAt: host.checkedAt,
-      cron: host.cron, script: host.script, homeserver: { running: host.services.hs.running, memMb: host.services.hs.memMb, limitMb: host.services.hs.limitMb, version: host.services.hs.version },
+      cron: host.cron, script: host.script,
+      homeserver: { running: host.services.hs.running, memMb: host.services.hs.memMb, limitMb: host.services.hs.limitMb, version: host.services.hs.version, outdated: host.services.hs.outdated === true, wantVersion: images.IMAGES.hs.version },
+      // the memory limits in docker-compose.yml are not measured yet: `update.sh bridges-probe` on the host delivers the numbers
+      limitsProvisional: true, probe: host.probe,
     },
     // older history is not loaded on the server (slow disk): a later stage does it in small portions at night
     history: { enabled: false },
@@ -268,9 +324,28 @@ async function loginStep(userId, network, processId, stepId, kind, input, { poll
   return w.value;
 }
 
+/** The person's internal account on the homeserver, made before the first link (the bridge invites it into its rooms). */
+const accounts = new Set();
+async function ensureAccount(userId) {
+  if (accounts.has(userId)) return;
+  const secrets = readSecrets();
+  if (!secrets) return;
+  try {
+    await hs.ensureUser({ socket: hs.socketOf(dir()), token: secrets.coreAsToken }, `gc_${userId}`);
+    accounts.add(userId);
+  } catch (err) {
+    // the link itself does not need the account; the bridge's log tells when an invite fails
+    logger.warn({ err: err.message, userId }, 'bridges: internal account not made');
+  }
+}
+
 const login = {
   flows: (userId, network) => clientFor(userId, network).flows(),
-  start: (userId, network, flowId) => clientFor(userId, network).start(flowId),
+  start: async (userId, network, flowId) => {
+    const c = clientFor(userId, network);
+    await ensureAccount(userId);
+    return c.start(flowId);
+  },
   step: loginStep,
   cancel: (userId, network, processId) => {
     for (const k of waits.keys()) if (k.startsWith(`${userId}:${network}:${processId}:`)) waits.delete(k);
@@ -286,10 +361,31 @@ async function logins(userId, network) {
 
 function logout(userId, network, loginId) { return clientFor(userId, network).logout(loginId); }
 
-function _reset() { waits.clear(); }
+/**
+ * Unlink somebody else's account: every login of `userId` on `network` is logged out at the bridge. The one thing
+ * a person may do to another person's link — and only to end it (a parent taking a child's permission back). Who
+ * may do it to whom is the plugin's rule; the host API checks that `ctx.actor` really acts right now, refuses
+ * administrators as targets, and every call is written to the activity log.
+ * ctx: { actor: { id, name }, pluginId } → { unlinked: <count> }
+ */
+async function unlinkFor(userId, network, ctx) {
+  const c = clientFor(userId, network);
+  const w = await c.whoami();
+  let n = 0;
+  for (const l of w.logins) { await c.logout(l.id); n++; }
+  try {
+    require('../activity').log('bridges_unlinked_for', `Messenger-Brücke ${network}: Verknüpfung von Konto ${userId} getrennt`, {
+      source: 'plugin', severity: 'info',
+      details: { network, userId, logins: n, by: ctx && ctx.actor ? ctx.actor.id : null, byName: ctx && ctx.actor ? ctx.actor.name : null, plugin: ctx ? ctx.pluginId : null },
+    });
+  } catch (err) { logger.debug({ err: err.message }, 'bridges: activity not written'); }
+  return { unlinked: n };
+}
+
+function _reset() { waits.clear(); accounts.clear(); }
 
 module.exports = {
   NETWORKS, SCRIPT, SERVER_NAME, BridgesError,
-  previewOn, getConfig, wanted, status, configure, hostStatus, ensureSecrets, readSecrets, dir,
-  login, logins, logout, mxidOf, _reset,
+  previewOn, getConfig, wanted, wish, status, configure, hostStatus, ensureSecrets, readSecrets, dir,
+  login, logins, logout, unlinkFor, mxidOf, _reset,
 };

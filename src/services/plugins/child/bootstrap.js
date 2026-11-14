@@ -340,8 +340,8 @@ function makeBridges() {
   });
   return Object.freeze({
     /** the version of this interface (raised when methods or fields are added) */
-    version: 1,
-    /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb }], host, history } */
+    version: 2,
+    /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion }], host, history } */
     status: () => hostCall('bridges.status', {}),
     /** configure({ enabled?, networks?: { whatsapp?: boolean } }) → status() — inside a changing request of an administrator */
     configure: (patch) => hostCall('bridges.configure', { patch }),
@@ -350,6 +350,8 @@ function makeBridges() {
     logins: (userId, network) => hostCall('bridges.logins', { userId, network }),
     /** logout(userId, network, loginId) → { ok: true } */
     logout: (userId, network, loginId) => hostCall('bridges.logout', { userId, network, loginId }),
+    /** since version 2: unlinkFor(userId, network, actorId) → { unlinked } — end somebody else's link (a parent for a child); never an administrator's */
+    unlinkFor: (userId, network, actor) => hostCall('bridges.unlinkFor', { userId, network, actor }),
   });
 }
 

@@ -120,9 +120,11 @@ describe('the service', () => {
     }));
     let st = bridges.status();
     assert.equal(st.host.state, 'running');
-    assert.deepEqual(st.host.homeserver, { running: true, memMb: 61, limitMb: 384, version: '1.2.0' });
-    assert.deepEqual(st.networks[0], { id: 'whatsapp', enabled: true, state: 'running', version: 'v26.10', memMb: 88, limitMb: 512 });
-    assert.equal(st.host.script.needed, 5);
+    assert.deepEqual(st.host.homeserver, { running: true, memMb: 61, limitMb: 384, version: '1.2.0', outdated: false, wantVersion: '1.9.4' });
+    assert.deepEqual(st.networks[0], { id: 'whatsapp', enabled: true, state: 'running', version: 'v26.10', memMb: 88, limitMb: 512, outdated: false, wantVersion: '0.2610.0' });
+    assert.equal(st.host.limitsProvisional, true, 'no measured memory need yet');
+    assert.equal(st.host.probe, null);
+    assert.equal(st.host.script.needed, 6);
 
     fs.writeFileSync(stateFile(), JSON.stringify({ checked_at: new Date().toISOString(), state: 'failed', error: 'compose_missing', services: {} }));
     st = bridges.status();
@@ -135,7 +137,7 @@ describe('the service', () => {
     assert.equal(st.host.state, null);
     assert.equal(st.host.error, null);
     assert.equal(st.host.checkedAt, null);
-    assert.deepEqual(st.host.homeserver, { running: false, memMb: null, limitMb: null, version: null });
+    assert.deepEqual(st.host.homeserver, { running: false, memMb: null, limitMb: null, version: null, outdated: false, wantVersion: '1.9.4' });
     assert.equal(st.networks[0].version, null);
   });
 });
@@ -332,9 +334,16 @@ case "$1" in
     case "$*" in
       *State.Running*) [ -f "$S/run_\${!#}" ] && echo true || echo false; exit 0 ;;
       *image.version*) echo "v26.10"; exit 0 ;;
+      *Config.Image*) cat "$S/image_\${!#}" 2>/dev/null || echo "example.org/x/\${!#}:v1@sha256:$(printf '%064d' 0)"; exit 0 ;;
+      *State.Pid*) echo "$$"; exit 0 ;;
+      *RestartCount*) echo 0; exit 0 ;;
+      *OOMKilled*) echo false; exit 0 ;;
+      *ExitCode*) echo 0; exit 0 ;;
+      *State.Health*) echo healthy; exit 0 ;;
       *) exit 1 ;;
     esac ;;
-  stats) echo "87.6MiB / 512MiB"; exit 0 ;;
+  stats) case "$*" in *BlockIO*) echo "1.5MB / 2.5MB" ;; *) echo "87.6MiB / 512MiB" ;; esac; exit 0 ;;
+  logs) echo "started; token $(printf 'x%.0s' $(seq 1 40)) for 4915120000000"; exit 0 ;;
   rm) rm -f "$S/run_\${!#}"; exit 0 ;;
   compose)
     case "$*" in
@@ -345,16 +354,23 @@ case "$1" in
 esac
 exit 0
 `;
-  function run(config) {
+  function run(config, args = []) {
     fs.writeFileSync(path.join(box, 'data', '.auto-update-config.json'), JSON.stringify(config) + '\n');
-    const r = spawnSync('bash', [path.join(box, 'update.sh')], {
+    const r = spawnSync('bash', [path.join(box, 'update.sh'), ...args], {
       env: { PATH: `${path.join(box, 'bin')}:${process.env.PATH}`, SHIM_ST: path.join(box, 'st'), GC_UPDATE_LOG: path.join(box, 'update.log'), TMPDIR: box, HOME: box },
       encoding: 'utf8',
     });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     let state = null;
     try { state = JSON.parse(fs.readFileSync(path.join(box, 'data', '.bridges-state.json'), 'utf8')); } catch { state = null; }
-    return { state, calls: fs.readFileSync(path.join(box, 'st', 'calls'), 'utf8') };
+    return { state, calls: fs.readFileSync(path.join(box, 'st', 'calls'), 'utf8'), out: r.stdout };
+  }
+  // what the server writes before it asks for the bridges
+  function writeConfig() {
+    for (const f of ['hs/config/tuwunel.toml', 'whatsapp/config/config.yaml']) {
+      fs.mkdirSync(path.dirname(path.join(box, 'data', 'bridges', f)), { recursive: true });
+      fs.writeFileSync(path.join(box, 'data', 'bridges', f), 'x\n');
+    }
   }
   const st = (f) => path.join(box, 'st', f);
 
@@ -365,6 +381,7 @@ exit 0
     fs.copyFileSync(path.join(ROOT, 'update.sh'), path.join(box, 'update.sh'));
     fs.writeFileSync(path.join(box, 'bin', 'docker'), DOCKER, { mode: 0o755 });
     fs.writeFileSync(st('calls'), '');
+    writeConfig();
   });
 
   it('does nothing while the bridges are not wanted', { skip }, () => {
@@ -379,7 +396,7 @@ exit 0
     const r = run({ mode: 'manual', bridges: 'whatsapp' });
     assert.equal(r.state.state, 'failed');
     assert.equal(r.state.error, 'compose_missing');
-    assert.equal(r.state.update_sh, 5);
+    assert.equal(r.state.update_sh, 6);
     assert.doesNotMatch(r.calls, / up -d /);
   });
 
@@ -393,8 +410,9 @@ exit 0
     fs.writeFileSync(st('calls'), '');
     r = run({ mode: 'manual', bridges: 'whatsapp' });
     assert.equal(r.state.state, 'running');
-    assert.deepEqual(r.state.services.hs, { running: true, mem_mb: 88, limit_mb: 512, version: 'v26.10' });
-    assert.deepEqual(r.state.services.whatsapp, { running: true, mem_mb: 88, limit_mb: 512, version: 'v26.10' });
+    const img = (n) => `example.org/x/${n}:v1@sha256:${'0'.repeat(64)}`;
+    assert.deepEqual(r.state.services.hs, { running: true, mem_mb: 88, limit_mb: 512, version: 'v26.10', image: img('bruecken-hs') });
+    assert.deepEqual(r.state.services.whatsapp, { running: true, mem_mb: 88, limit_mb: 512, version: 'v26.10', image: img('bruecken-whatsapp') });
     assert.doesNotMatch(r.calls, / up -d /, 'a running service is left alone');
 
     r = run({ mode: 'manual' });
@@ -423,5 +441,76 @@ exit 0
     r = run({ mode: 'manual', bridges: 'whatsapp;rm -rf /,$(id)' });
     assert.equal(r.state, null, 'a value outside [a-z,] is no wish at all');
     assert.doesNotMatch(r.calls, /bruecken/);
+  });
+
+  it('starts the relay of a bridge with it, and waits for the configuration the server writes', { skip }, () => {
+    fs.writeFileSync(st('services'), 'bruecken-hs\nbruecken-whatsapp\nbruecken-whatsapp-relay\n');
+    fs.rmSync(path.join(box, 'data', 'bridges'), { recursive: true });
+    let r = run({ mode: 'manual', bridges: 'whatsapp' });
+    assert.equal(r.state.state, 'failed');
+    assert.equal(r.state.error, 'config_missing');
+    assert.doesNotMatch(r.calls, / up -d /, 'Docker would make empty folders');
+
+    writeConfig();
+    fs.unlinkSync(path.join(box, 'data', '.bridges-state.json'));
+    r = run({ mode: 'manual', bridges: 'whatsapp', bridges_rev: 'aaaaaaaaaaaa' });
+    assert.match(r.calls, /compose --profile bruecken up -d bruecken-hs bruecken-whatsapp bruecken-whatsapp-relay/);
+    assert.match(fs.readFileSync(path.join(box, '.bruecken-managed'), 'utf8'), /^rev=aaaaaaaaaaaa compose=\d+/);
+
+    r = run({ mode: 'manual' });
+    assert.ok(!fs.existsSync(st('run_bruecken-whatsapp-relay')), 'the relay goes with the bridges');
+  });
+
+  it('recreates its containers when the configuration changed, and looks again after a new docker-compose.yml', { skip }, () => {
+    fs.writeFileSync(st('services'), 'bruecken-hs\nbruecken-whatsapp\n');
+    run({ mode: 'manual', bridges: 'whatsapp', bridges_rev: 'aaaaaaaaaaaa' });
+    fs.writeFileSync(st('calls'), '');
+    let r = run({ mode: 'manual', bridges: 'whatsapp', bridges_rev: 'aaaaaaaaaaaa' });
+    assert.equal(r.state.state, 'running');
+    assert.doesNotMatch(r.calls, / up -d /);
+
+    r = run({ mode: 'manual', bridges: 'whatsapp', bridges_rev: 'bbbbbbbbbbbb' });
+    assert.match(r.calls, /compose --profile bruecken up -d --force-recreate bruecken-hs bruecken-whatsapp/);
+    assert.match(fs.readFileSync(path.join(box, '.bruecken-managed'), 'utf8'), /^rev=bbbbbbbbbbbb /);
+
+    fs.writeFileSync(st('calls'), '');
+    fs.appendFileSync(path.join(box, 'docker-compose.yml'), '# a newer file\n');
+    r = run({ mode: 'manual', bridges: 'whatsapp', bridges_rev: 'bbbbbbbbbbbb' });
+    assert.match(r.calls, /compose --profile bruecken up -d bruecken-hs bruecken-whatsapp/, 'compose decides what changed');
+    assert.doesNotMatch(r.calls, /--force-recreate/);
+  });
+
+  it('bridges-probe: starts what is switched on, measures, and writes numbers and blanked log lines', { skip }, () => {
+    fs.writeFileSync(st('services'), 'bruecken-hs\nbruecken-whatsapp\nbruecken-whatsapp-relay\n');
+    const probe = () => JSON.parse(fs.readFileSync(path.join(box, 'data', '.bridges-probe.json'), 'utf8'));
+    let r = run({ mode: 'manual' }, ['bridges-probe', '10']);
+    assert.equal(probe().result, 'not_wanted');
+    assert.doesNotMatch(r.calls, / up -d /, 'the probe switches nothing on');
+
+    // the sockets the containers would make (bound by a child that exits: the file stays)
+    for (const f of ['hs/run/hs.sock', 'run/whatsapp.sock']) {
+      const file = path.join(box, 'data', 'bridges', f);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      const c = spawnSync(process.execPath, ['-e', `const s=require('net').createServer();s.listen(${JSON.stringify(file)},()=>process.exit(0));`]);
+      assert.equal(c.status, 0);
+    }
+    r = run({ mode: 'manual', bridges: 'whatsapp' }, ['bridges-probe', '10']);
+    const p = probe();
+    assert.match(r.calls, /compose --profile bruecken up -d bruecken-hs bruecken-whatsapp bruecken-whatsapp-relay/);
+    assert.equal(p.update_sh, 6);
+    assert.equal(p.window_s, 10);
+    assert.deepEqual(Object.keys(p.services), ['hs', 'whatsapp', 'whatsapp-relay']);
+    assert.equal(p.services.hs.running, true);
+    assert.equal(p.services.hs.mem_mb, 88);
+    assert.equal(p.services.hs.mem_peak_mb, 88);
+    assert.equal(p.services.hs.limit_mb, 512);
+    assert.equal(p.services.hs.restarts, 0);
+    assert.equal(p.services.hs.oom, false);
+    assert.equal(p.services.hs.blkio_write_kb, 0);
+    assert.doesNotMatch(p.logs.hs, /x{32}/, 'what looks like a token is blanked');
+    assert.doesNotMatch(p.logs.hs, /4915120000000/, 'and long numbers');
+    assert.match(r.out, /Result: /);
+    assert.equal(p.result, 'ok');
+    assert.deepEqual(p.sockets, { hs: true, whatsapp: true });
   });
 });

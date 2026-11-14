@@ -1599,7 +1599,14 @@ async function vpnDnsCall(plugin, op, args) {
 // changing request of an administrator. Everything about a person's own link
 // (flows, start, step, cancel, logins, logout) only while THAT person has a
 // request to this plugin in flight — nobody links, reads or unlinks for
-// somebody else, not the plugin in a tick and not an administrator.
+// somebody else, not the plugin in a tick and not an administrator. The one
+// exception ends a link and never makes or reads one: unlinkFor({ userId,
+// network, actor }) — a parent taking a child's permission back. `actor`
+// must be a person with a changing request in flight right now (to this
+// plugin or to the plugin whose service call this plugin is answering), the
+// target is never an administrator, and the call is written to the activity
+// log with both. Whether the actor is that child's parent is the plugin's
+// rule (the family plugin's roles).
 
 const BRIDGES_CODES = new Set(['ERR_INVALID', 'ERR_BRIDGES_UNAVAILABLE', 'ERR_BRIDGE_UNREACHABLE', 'ERR_BRIDGE', 'ERR_BUSY']);
 
@@ -1616,6 +1623,17 @@ async function bridgesCall(plugin, op, args) {
     }
     const uid = a.userId;
     need(Number.isSafeInteger(uid) && uid > 0, 'ERR_INVALID', 'invalid user id');
+    if (op === 'unlinkFor') {
+      const actorId = a.actor;
+      need(Number.isSafeInteger(actorId) && actorId > 0 && actorId !== uid, 'ERR_INVALID', 'actor: another person');
+      need(require('./personContext').writing(actorId), 'ERR_NOT_PERSON', 'only while the acting person has a changing request (POST/PUT/PATCH/DELETE) in flight');
+      const actor = db().prepare('SELECT id, username, display_name FROM users WHERE id = ? AND enabled = 1').get(actorId);
+      need(actor, 'ERR_NOT_PERSON', 'unknown or disabled person');
+      const target = db().prepare('SELECT id, role FROM users WHERE id = ?').get(uid);
+      need(target, 'ERR_INVALID', 'unknown user');
+      need(target.role !== 'admin', 'ERR_BRIDGES_DENIED', "an administrator's link is never ended by somebody else");
+      return await br.unlinkFor(uid, a.network, { actor: { id: actor.id, name: actor.display_name || actor.username }, pluginId: plugin.id });
+    }
     const write = op !== 'login.flows' && op !== 'logins';
     need(require('./personContext').has(plugin.id, uid, { write }), 'ERR_NOT_PERSON', write
       ? 'only inside a changing request (POST/PUT/PATCH/DELETE) of that person'
@@ -2403,7 +2421,7 @@ async function handle(plugin, api, args, ctx) {
       return vpnDnsCall(plugin, api.slice('vpnDns.'.length), args);
     // messenger bridges (permissions.bridges, services/bridges)
     case 'bridges.status': case 'bridges.configure': case 'bridges.login.flows': case 'bridges.login.start': case 'bridges.login.step':
-    case 'bridges.login.cancel': case 'bridges.logins': case 'bridges.logout':
+    case 'bridges.login.cancel': case 'bridges.logins': case 'bridges.logout': case 'bridges.unlinkFor':
       return bridgesCall(plugin, api.slice('bridges.'.length), args);
     // home cache (permissions.homeCache, homeCache.js — phase 3b)
     case 'homeCache.offer': return homeCacheCall(plugin, 'offer', args);

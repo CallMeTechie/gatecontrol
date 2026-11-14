@@ -2952,8 +2952,8 @@ names the permission first and marks it as sensitive.
 
 | Call | Answer |
 |---|---|
-| `gc.bridges.version` | `1` |
-| `status()` | `{ available, reason, enabled, location: 'server', locations: [{ id, kind, cores, memMb, freeMb }], networks: [{ id, enabled, state: 'off' \| 'starting' \| 'running' \| 'failed', version, memMb, limitMb }], host: { state, error: 'compose_missing' \| 'start_failed' \| null, checkedAt, cron, script: { host, needed }, homeserver: { running, memMb, limitMb, version } }, history: { enabled: false } }` — states, versions and memory only; never a name, a number or a content |
+| `gc.bridges.version` | `2` (`1`: without `unlinkFor`, `outdated`, `wantVersion`, `host.probe`) |
+| `status()` | `{ available, reason, enabled, location: 'server', locations: [{ id, kind, cores, memMb, freeMb }], networks: [{ id, enabled, state: 'off' \| 'starting' \| 'running' \| 'failed', version, memMb, limitMb, outdated, wantVersion }], host: { state, error: 'compose_missing' \| 'config_missing' \| 'start_failed' \| null, checkedAt, cron, script: { host, needed }, homeserver: { running, memMb, limitMb, version, outdated, wantVersion }, limitsProvisional, probe }, history: { enabled: false } }` — states, versions and memory only; never a name, a number or a content. `outdated`: the container runs another image than this GateControl pins (`wantVersion`) — the host's `docker-compose.yml` is older. `limitsProvisional`: the memory limits are upper bounds nobody measured yet. `probe`: `null` or what `./update.sh bridges-probe` measured on the host — `{ at, result: 'ok' \| 'not_wanted' \| 'compose_missing' \| 'config_missing' \| 'start_failed' \| 'not_running', windowSeconds, services: { hs \| whatsapp \| whatsapp-relay: { running, restarts, oomKilled, memMb, memPeakMb, limitMb, writtenKb } }, sockets: { hs, whatsapp }, diskMb }` |
 | `configure({ enabled?, networks?: { whatsapp?: boolean } })` | `status()`. Only inside a changing request (POST/PUT/PATCH/DELETE) of an **administrator** (`ERR_NOT_PERSON`, `ERR_NOT_ADMIN`); logged as `bridges_changed`. Off by default |
 | `login.flows(userId, network)` | `[{ id, name, description }]` — WhatsApp: `qr`, `phone` (pairing code) |
 | `login.start(userId, network, flowId)` | `{ processId, step }` |
@@ -2961,6 +2961,7 @@ names the permission first and marks it as sensitive.
 | `login.cancel(userId, network, processId)` | `{ ok: true }` |
 | `logins(userId, network)` | `[{ network, id, name, state: 'connected' \| 'connecting' \| 'logged_out' \| 'error' \| 'unknown', since, error }]` — `name` is what the bridge calls the account (WhatsApp: the person's own number) |
 | `logout(userId, network, loginId)` | `{ ok: true }` |
+| `unlinkFor(userId, network, actorId)` | since version 2: `{ unlinked: <count> }` — every login of `userId` on that bridge is ended **by somebody else** (`actorId`), e.g. a parent taking a child's permission back. See below |
 
 `step`: `{ id, type: 'user_input' | 'display_and_wait' | 'complete',
 instructions, fields?: [{ id, type, name, description, optional }], display?:
@@ -2975,6 +2976,16 @@ while a request of *that* person to this plugin is in flight (`flows`,
 `logins`: any request; the rest: a changing one) — else `ERR_NOT_PERSON`. Not
 in a `tick`, not in a hook, not for a family member, not as an administrator.
 
+**The one exception ends a link:** `unlinkFor(userId, network, actorId)` never
+makes or reads one. `actorId` is another person than `userId` and must have a
+changing request in flight **right now** — to this plugin, or to the plugin
+whose `gc.services.call` this plugin is answering (the family plugin's page
+calls the messenger's service) — else `ERR_NOT_PERSON`. An administrator's
+link is never ended this way (`ERR_BRIDGES_DENIED`). Every call is written to
+the activity log (`bridges_unlinked_for`: target, actor, plugin, number of
+logins). **Who may do it to whom is the plugin's rule** — check the relation
+(the family plugin's `family_roles`) before calling.
+
 Errors (`e.code`, with `e.reason`): `ERR_BRIDGES_DENIED` (no permission),
 `ERR_BRIDGES_UNAVAILABLE` (`preview_off`, `off`, `not_running`),
 `ERR_BRIDGE_UNREACHABLE` (`not_running`, `timeout`, `unreachable`),
@@ -2985,7 +2996,8 @@ text stays in the server log), `ERR_BUSY`,
 `ERR_INVALID`, `ERR_NOT_PERSON`, `ERR_NOT_ADMIN`.
 
 Testing without WhatsApp: `tests/helpers/fake-bridge.js` is a stand-in for a
-bridge's provisioning API on a Unix socket (`tests/bridges.test.js`).
+bridge's provisioning API on a Unix socket (`tests/bridges.test.js`,
+`tests/bridges_config.test.js`).
 
 ## DNS protection (`permissions.vpnDns`)
 
