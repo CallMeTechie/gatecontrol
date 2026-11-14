@@ -130,11 +130,11 @@ Du brauchst DSM 7.2 oder neuer und das Paket **Container Manager** aus dem Paket
    > setzen. Docker lässt sie weg, alles andere läuft normal.
 
    > **Startet das Projekt nicht und die Meldung nennt `/dev/net/tun`**, fehlt
-   > der Synology das VPN-Gerät. Ohne SSH: „Systemsteuerung“ → „Aufgabenplaner“
-   > → „Erstellen“ → „Ausgelöste Aufgabe“ → „Benutzerdefiniertes Skript“,
-   > Benutzer `root`, Ereignis „Hochfahren“, Befehl
-   > `insmod /lib/modules/tun.ko`; Aufgabe markieren, „Ausführen“, dann das
-   > Projekt starten. Der Assistent zeigt dieselben Schritte.
+   > der Synology das VPN-Gerät. Dagegen hilft eine Aufgabe im Aufgabenplaner
+   > (ohne SSH, Benutzer `root`, Ereignis „Hochfahren“): Sie lädt das Modul
+   > `tun`, legt das Gerät an und startet danach das Gateway – auch nach jedem
+   > Neustart der NAS. Das Skript zum Kopieren zeigt der Assistent; Schritte
+   > und Erklärung stehen in der [FAQ](07-faq.md#devnettun-fehlt-synology).
 
 8. Öffne im Browser im Heimnetz `http://<Adresse der Synology>:8642` – die
    [Einrichtungsseite des Gateways](#die-einrichtungsseite-des-gateways).

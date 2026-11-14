@@ -472,20 +472,65 @@ läuft normal. Du musst nichts tun.
 
 Das Gateway braucht auf der Synology das Gerät `/dev/net/tun`. Fehlt es, startet
 der Container `gateway` nicht und die Meldung nennt `/dev/net/tun` – die
-Einrichtungsseite gibt es dann noch nicht. DSM stellt das Gerät bereit, sobald
-das Modul `tun` geladen ist. Das geht ohne SSH:
+Einrichtungsseite gibt es dann noch nicht.
+
+Ob das Gerät von selbst da ist, hängt vom Modell ab: Auf manchen ist es nach
+dem Hochfahren vorhanden (bei uns: DS918+), auf anderen nicht (bei uns:
+DS218+). Startet dein Projekt ohne diese Meldung und läuft das Gateway auch
+nach einem Neustart der NAS wieder, brauchst du nichts zu tun.
+
+Sonst richtest du einmal eine Aufgabe ein, ohne SSH:
 
 1. „Systemsteuerung“ → „Aufgabenplaner“ → „Erstellen“ → „Ausgelöste Aufgabe“ →
    „Benutzerdefiniertes Skript“.
 2. Benutzer `root`, Ereignis „Hochfahren“.
-3. Befehl: `insmod /lib/modules/tun.ko`
+3. Unter „Aufgabeneinstellungen“ dieses Skript einfügen:
+
+   ```sh
+   # GateControl-Gateway (Synology): /dev/net/tun bereitstellen, dann Gateway starten
+   PATH="$PATH:/usr/local/bin:/usr/sbin:/sbin:/usr/bin:/bin"
+   modprobe tun 2>/dev/null || insmod "$(find /lib/modules -name 'tun.ko*' | head -n 1)" 2>/dev/null
+   mkdir -p /dev/net
+   [ -c /dev/net/tun ] || mknod /dev/net/tun c 10 200
+   chmod 0666 /dev/net/tun
+   n=0
+   until docker info >/dev/null 2>&1; do
+     n=$((n + 1)); [ "$n" -lt 24 ] || exit 1
+     sleep 5
+   done
+   for c in $(docker ps -aq --filter status=exited --filter status=created); do
+     case "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.service"}} {{.Config.Image}}' "$c")" in
+       "gateway "*gatecontrol-gateway* | "otbr "*openthread/otbr*) docker start "$c" ;;
+     esac
+   done
+   ```
+
 4. Aufgabe markieren und „Ausführen“ wählen.
-5. Das Projekt im Container Manager starten.
+5. Läuft das Gateway danach noch nicht, das Projekt im Container Manager
+   starten.
 
-Mit dem Ereignis „Hochfahren“ übersteht das einen Neustart der NAS. Per SSH
-geht auch `sudo insmod /lib/modules/tun.ko`.
+**Was die Aufgabe tut:**
 
-**Prüfen:** Das Projekt startet, der Container `gateway` läuft.
+- Sie lädt das Modul `tun` und legt das Gerät `/dev/net/tun` an, falls es
+  fehlt.
+- Sie wartet höchstens zwei Minuten, bis Docker bereit ist, und startet dann
+  den Container des Gateways, wenn er nicht läuft (mit Thread auch den
+  Container `otbr`). Sie erkennt ihn an der Compose-Datei von GateControl –
+  wie du das Projekt genannt hast, ist egal.
+- Sie erstellt nichts neu und fasst laufende Container nicht an. Du kannst sie
+  beliebig oft ausführen; ist das Gerät schon da, ändert sie nichts.
+
+**Nach einem Neustart der NAS:** Ohne die Aufgabe bleibt das Gateway auf einer
+NAS ohne das Gerät gestoppt – Docker versucht den Start, bevor das Gerät da
+ist, und versucht es danach nicht noch einmal. Mit der Aufgabe (Ereignis
+„Hochfahren“) kommt das Gateway von selbst wieder, etwa ein bis zwei Minuten
+nach dem Hochfahren. Sie startet es bei jedem Hochfahren, auch wenn du den
+Container vorher von Hand gestoppt hattest; soll das Gateway aus bleiben,
+deaktiviere die Aufgabe.
+
+**Prüfen:** Im Container Manager läuft der Container `gateway` – auch nach
+einem Neustart der NAS. Im Aufgabenplaner zeigt „Aktion“ → „Ergebnis anzeigen“
+den letzten Lauf der Aufgabe.
 
 ### Die Einrichtungsseite des Gateways öffnet sich nicht
 

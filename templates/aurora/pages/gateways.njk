@@ -313,9 +313,29 @@
               <ol class="gwz-sub">
                 <li>{{ t('gwiz.cw.tun_1') }}</li>
                 <li>{{ t('gwiz.cw.tun_2') }}</li>
-                <li>{{ t('gwiz.cw.tun_3') }} <code class="gwz-k">insmod /lib/modules/tun.ko</code></li>
+                <li>{{ t('gwiz.cw.tun_3') }}
+                  {#- wording of deploy/synology-tun.sh of gatecontrol-gateway (tests/gateway_synology_tun.test.js) #}
+                  <pre class="gwz-code gwz-pre gwz-tun-script" id="gwz-cw-tun-script" tabindex="0" aria-label="{{ t('gwiz.cw.tun_script_label') }}">{% raw %}# GateControl-Gateway (Synology): /dev/net/tun bereitstellen, dann Gateway starten
+PATH="$PATH:/usr/local/bin:/usr/sbin:/sbin:/usr/bin:/bin"
+modprobe tun 2&gt;/dev/null || insmod "$(find /lib/modules -name 'tun.ko*' | head -n 1)" 2&gt;/dev/null
+mkdir -p /dev/net
+[ -c /dev/net/tun ] || mknod /dev/net/tun c 10 200
+chmod 0666 /dev/net/tun
+n=0
+until docker info &gt;/dev/null 2&gt;&amp;1; do
+  n=$((n + 1)); [ "$n" -lt 24 ] || exit 1
+  sleep 5
+done
+for c in $(docker ps -aq --filter status=exited --filter status=created); do
+  case "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.service"}} {{.Config.Image}}' "$c")" in
+    "gateway "*gatecontrol-gateway* | "otbr "*openthread/otbr*) docker start "$c" ;;
+  esac
+done{% endraw %}</pre>
+                  <div class="gwz-row"><button type="button" class="btn btn-ghost btn-sm" data-gwz-copy="gwz-cw-tun-script">{{ t('gwiz.copy') }}</button></div>
+                </li>
                 <li>{{ t('gwiz.cw.tun_4') }}</li>
               </ol>
+              <p class="gwz-d">{{ t('gwiz.cw.tun_what') }}</p>
             </details>
             <div class="gwz-row" id="gwz-cw-up" hidden>
               <code class="gwz-code" id="gwz-cw-up-cmd">docker compose up -d</code>

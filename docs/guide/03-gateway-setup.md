@@ -127,10 +127,11 @@ You need DSM 7.2 or newer and the **Container Manager** package from the Package
    > leaves it out; everything else runs normally.
 
    > **If the project does not start and the message names `/dev/net/tun`**,
-   > the Synology lacks the VPN device. Without SSH: “Control Panel” → “Task
-   > Scheduler” → “Create” → “Triggered Task” → “User-defined script”, user
-   > `root`, event “Boot-up”, command `insmod /lib/modules/tun.ko`; select the
-   > task, “Run”, then start the project. The assistant shows the same steps.
+   > the Synology lacks the VPN device. A task in the Task Scheduler fixes
+   > this (without SSH, user `root`, event “Boot-up”): it loads the module
+   > `tun`, creates the device and then starts the gateway – also after every
+   > restart of the NAS. The assistant shows the script to copy; steps and
+   > explanation are in the [FAQ](07-faq.md#devnettun-is-missing-synology).
 
 8. In a browser in the home network open `http://<address of the Synology>:8642`
    – the [setup page of the gateway](#the-setup-page-of-the-gateway).
