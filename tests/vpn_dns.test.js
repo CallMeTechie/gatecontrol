@@ -29,6 +29,11 @@ const { FilterService } = require('../src/services/vpnDnsFilter/service');
 const P = 'dns-demo';
 const UP_IP = '93.184.216.34';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// The profile „Kinder“ blocks everything on two days of the week, and the suite asks the filter "now". With the fixed
+// weekend [6, 7] every run on a Saturday or Sunday met that block instead of the lists (4 red tests). The two days are
+// therefore the 3rd and 4th day from today (ISO: Monday = 1) — never today, never tomorrow for a run over midnight.
+const TODAY = ((new Date().getDay() + 6) % 7) + 1;
+const BLOCK_DAYS = [3, 4].map((n) => ((TODAY - 1 + n) % 7) + 1).sort((a, b) => a - b);
 
 let app, agent, csrf, db, runtime, plugins, vpnDns, dnsChain, hostApi, personContext;
 let adminId, anna, lea, boss, annaPhone, annaLaptop, leaPhone, bossPhone, guestTab, ownDnsPc, gateway, office, family;
@@ -351,7 +356,7 @@ describe('settings and who gets which profile', () => {
       profiles: [
         { lists: ['ads'] },
         { name: 'Kinder', lists: ['ads', 'adult'], safeSearch: true, deny: ['roblox.com'], users: [lea],
-          schedules: [{ days: [1, 2, 3, 4, 5], from: '21:00', to: '07:00', block: 'categories', categories: ['social'] }, { days: [6, 7], from: '00:00', to: '24:00', block: 'all' }] },
+          schedules: [{ days: [1, 2, 3, 4, 5], from: '21:00', to: '07:00', block: 'categories', categories: ['social'] }, { days: BLOCK_DAYS, from: '00:00', to: '24:00', block: 'all' }] },
         { name: 'Büro', lists: ['malware'], peerGroups: [office] },
         { name: 'Familie', groups: [family] },
         { name: 'Gerät', peers: [annaLaptop] },
@@ -934,7 +939,7 @@ describe('a profile shared with a home network ("gilt zu Hause und unterwegs")',
     // put back what the other tests expect
     await patchKids({ home: null });
     await patchKids({ lists: ['ads', 'adult'], safeSearch: true, deny: ['roblox.com'], users: [lea],
-      schedules: [{ days: [1, 2, 3, 4, 5], from: '21:00', to: '07:00', block: 'categories', categories: ['social'] }, { days: [6, 7], from: '00:00', to: '24:00', block: 'all' }] });
+      schedules: [{ days: [1, 2, 3, 4, 5], from: '21:00', to: '07:00', block: 'categories', categories: ['social'] }, { days: BLOCK_DAYS, from: '00:00', to: '24:00', block: 'all' }] });
     assert.deepEqual(homeProfile().deny, ['minecraft.net'], 'unlinked: the home is not written any more');
     await waitFor(() => filterDenies('roblox.com'));
   });
