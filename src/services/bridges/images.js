@@ -36,6 +36,14 @@ const IMAGES = Object.freeze({
     version: '1.8.1.3',
     digest: 'sha256:71131702f671a88b3808a70b7330f9679cd9b9933adcafadc191508edfe55bba',
   }),
+  // the same relay for the server itself: the homeserver's events reach the server's Unix socket through it
+  'core-relay': Object.freeze({
+    service: 'bruecken-core-relay',
+    repo: 'alpine/socat',
+    tag: '1.8.1.3',
+    version: '1.8.1.3',
+    digest: 'sha256:71131702f671a88b3808a70b7330f9679cd9b9933adcafadc191508edfe55bba',
+  }),
 });
 
 /** The full reference as the compose file writes it: <repo>:<tag>@<digest>. */

@@ -46,9 +46,15 @@
 # the containers this script started. `./update.sh bridges-probe [seconds]`
 # starts the wanted bridges, measures memory and disk writes and writes
 # $DATA_DIR/.bridges-probe.json (see bridges_probe below).
+# Marker 7: the server itself has a relay too (bruecken-core-relay — the
+# homeserver's events reach GateControl through it); it is started with the
+# bridges when the docker-compose.yml has it and reported as "core-relay"
+# ("present":false = the compose file is older and has to be replaced once).
+# The probe's log lines leave out everything about linking and events and
+# blank ids, numbers and keys (probe_text).
 # The marker line below is the version both sides compare; bump it whenever
 # this file changes in a way the host should pick up.
-# gc-update-sh: 6
+# gc-update-sh: 7
 #
 # Data directory: $COMPOSE_DIR/data (the release compose binds ./data:/data).
 # When the running container mounts /data from somewhere else — the named
@@ -356,6 +362,12 @@ bridges_state() { # $1=state (running|starting|failed|stopped) $2=error code (or
   shift 2
   body="\"hs\":$(bridge_json bruecken-hs)"
   for n in "$@"; do body="$body,\"$n\":$(bridge_json "bruecken-$n")"; done
+  # the server's own relay: missing in an older docker-compose.yml
+  if bridges_services | grep -qx 'bruecken-core-relay'; then
+    body="$body,\"core-relay\":{\"present\":true,\"running\":$(bridge_running bruecken-core-relay && echo true || echo false)}"
+  else
+    body="$body,\"core-relay\":{\"present\":false,\"running\":false}"
+  fi
   printf '{"checked_at":"%s","state":"%s","error":"%s","update_sh":%s,"services":{%s}}\n' \
     "$(date -Iseconds)" "$(safe "$st")" "$(safe "$er")" "$SELF_VERSION" "$body" | write_atomic "$BRIDGES_STATE"
 }
@@ -371,6 +383,7 @@ sync_bridges() {
   if [ -n "$want" ]; then
     svc="$(bridges_services)"
     names="bruecken-hs"
+    if printf '%s\n' "$svc" | grep -qx 'bruecken-core-relay'; then names="$names bruecken-core-relay"; fi
     for n in $want; do
       names="$names bruecken-$n"
       if printf '%s\n' "$svc" | grep -qx "bruecken-$n-relay"; then names="$names bruecken-$n-relay"; fi
@@ -440,8 +453,23 @@ sync_bridges() {
 # seen), what each wrote to the disk in that time, restarts, and the last log lines. Result:
 # $DATA_DIR/.bridges-probe.json (the messenger's settings show the numbers; the log lines are only in the
 # file) and a summary on the terminal. Reads and measures only — it changes no setting.
-probe_text() { # stdin → the inside of a JSON string: secrets and long numbers blanked, control characters dropped
-  sed -E -e 's/[A-Za-z0-9_-]{32,}/[...]/g' -e 's/[0-9]{7,}/[#]/g' | tail -c 6000 | tr -d '\000-\010\013-\037' \
+probe_redact() { # stdin → the same lines, without what belongs to nobody but the person
+  # Whole lines go: linking (QR and pairing data, wa.me links), calls of the provisioning API, raw events and
+  # request bodies. In the rest: Matrix addresses, WhatsApp ids (JID/LID), id fields, keys and tokens (Base64 and
+  # the like, 20 characters and more) and runs of digits are blanked.
+  grep -Eiv 'wa\.me|linked_devices|/_matrix/provision|provisioning|event_data|pairing|(^|[^a-z])qr([^a-z]|$)|req(uest)?_?body|"body"' \
+    | sed -E \
+      -e 's/@[A-Za-z0-9._=\/+-]+:[A-Za-z0-9.-]+/[@]/g' \
+      -e 's/[A-Za-z0-9._:+-]+@(s\.whatsapp\.net|lid|g\.us|c\.us|broadcast|newsletter|hosted|hosted\.lid)/[jid]/g' \
+      -e 's/(user_mxid|user_id|user_login_id|login_id|portal_id|portal_receiver|sender_id|chat_id|room_id|event_id|message_id|ghost_id|jid|lid|phone|identifier)(["=: ]+)[^ ,"}]+/\1\2[...]/g' \
+      -e 's/[!$][A-Za-z0-9._=\/+-]{8,}(:[A-Za-z0-9.-]+)?/[id]/g' \
+      -e 's/[A-Za-z0-9+=_-]{20,}/[...]/g' \
+      -e 's/\+[0-9][0-9 ()\/-]{5,}[0-9]/[#]/g' \
+      -e 's/([0-9]{2,} ){2,}[0-9]{2,}/[#]/g' \
+      -e 's/[0-9]{5,}/[#]/g' || true
+}
+probe_text() { # stdin → the inside of a JSON string: redacted (probe_redact), control characters dropped
+  probe_redact | tail -c 6000 | tr -d '\000-\010\013-\037' \
     | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/ /g' | awk 'BEGIN { ORS = "" } NR > 1 { print "\\n" } { print }'
 }
 probe_write_kb() { # $1=container → kB its main process wrote so far (/proc/<pid>/io), "" when unreadable
@@ -471,6 +499,7 @@ bridges_probe() {
     er="$(sed -n 's/.*"error":"\([a-z_]*\)".*/\1/p' "$BRIDGES_STATE" 2>/dev/null | head -n1)"
     svc="$(bridges_services)"
     names="bruecken-hs"
+    if printf '%s\n' "$svc" | grep -qx 'bruecken-core-relay'; then names="$names bruecken-core-relay"; fi
     for n in $want; do
       names="$names bruecken-$n"
       if printf '%s\n' "$svc" | grep -qx "bruecken-$n-relay"; then names="$names bruecken-$n-relay"; fi

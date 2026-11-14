@@ -1607,6 +1607,12 @@ async function vpnDnsCall(plugin, op, args) {
 // target is never an administrator, and the call is written to the activity
 // log with both. Whether the actor is that child's parent is the plugin's
 // rule (the family plugin's roles).
+// Version 3 (messages): events.pull / events.ack hand the plugin what the
+// bridges delivered for ALL linked people (the plugin files it into each
+// person's chats) and need no person — they read no bridge and send nothing.
+// send, react, redact, read and typing act AS a person towards the outside
+// messenger: only inside a changing request of exactly that person. chats()
+// only inside a request of that person.
 
 const BRIDGES_CODES = new Set(['ERR_INVALID', 'ERR_BRIDGES_UNAVAILABLE', 'ERR_BRIDGE_UNREACHABLE', 'ERR_BRIDGE', 'ERR_BUSY']);
 
@@ -1621,6 +1627,8 @@ async function bridgesCall(plugin, op, args) {
       need(ctx.actor.role === 'admin', 'ERR_NOT_ADMIN', 'only an administrator');
       return br.configure(a.patch, ctx);
     }
+    if (op === 'events.pull') return br.events.pull({ after: a.after, limit: a.limit });
+    if (op === 'events.ack') return br.events.ack(a.upTo);
     const uid = a.userId;
     need(Number.isSafeInteger(uid) && uid > 0, 'ERR_INVALID', 'invalid user id');
     if (op === 'unlinkFor') {
@@ -1634,7 +1642,7 @@ async function bridgesCall(plugin, op, args) {
       need(target.role !== 'admin', 'ERR_BRIDGES_DENIED', "an administrator's link is never ended by somebody else");
       return await br.unlinkFor(uid, a.network, { actor: { id: actor.id, name: actor.display_name || actor.username }, pluginId: plugin.id });
     }
-    const write = op !== 'login.flows' && op !== 'logins';
+    const write = op !== 'login.flows' && op !== 'logins' && op !== 'chats';
     need(require('./personContext').has(plugin.id, uid, { write }), 'ERR_NOT_PERSON', write
       ? 'only inside a changing request (POST/PUT/PATCH/DELETE) of that person'
       : 'only inside a request of that person');
@@ -1644,6 +1652,12 @@ async function bridgesCall(plugin, op, args) {
     if (op === 'login.cancel') return await br.login.cancel(uid, a.network, a.processId);
     if (op === 'logins') return await br.logins(uid, a.network);
     if (op === 'logout') return await br.logout(uid, a.network, a.loginId);
+    if (op === 'chats') return br.chats(uid, a.network);
+    if (op === 'send') return await br.send(uid, a.network, a.chatId, a.message);
+    if (op === 'react') return await br.react(uid, a.network, a.chatId, a.reaction);
+    if (op === 'redact') return await br.redact(uid, a.network, a.chatId, a.redaction);
+    if (op === 'read') return await br.read(uid, a.network, a.chatId, a.messageId);
+    if (op === 'typing') return await br.typing(uid, a.network, a.chatId, a.on === true);
   } catch (e) {
     if (e && BRIDGES_CODES.has(e.code)) throw new HostApiError(e.code, e.code === 'ERR_BRIDGE' ? 'the bridge refused or failed' : e.message, e.reason);
     throw e;
@@ -2422,6 +2436,8 @@ async function handle(plugin, api, args, ctx) {
     // messenger bridges (permissions.bridges, services/bridges)
     case 'bridges.status': case 'bridges.configure': case 'bridges.login.flows': case 'bridges.login.start': case 'bridges.login.step':
     case 'bridges.login.cancel': case 'bridges.logins': case 'bridges.logout': case 'bridges.unlinkFor':
+    case 'bridges.events.pull': case 'bridges.events.ack': case 'bridges.chats': case 'bridges.send': case 'bridges.react':
+    case 'bridges.redact': case 'bridges.read': case 'bridges.typing':
       return bridgesCall(plugin, api.slice('bridges.'.length), args);
     // home cache (permissions.homeCache, homeCache.js — phase 3b)
     case 'homeCache.offer': return homeCacheCall(plugin, 'offer', args);

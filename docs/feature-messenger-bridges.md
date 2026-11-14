@@ -216,6 +216,99 @@ inside the internal server, no spaces, no status notices. RocksDB options of
 the homeserver (`rocksdb_optimize_for_spinning_disks`, `rocksdb_direct_io`)
 stay on their defaults until the probe shows a reason.
 
+## Messages (stage 3)
+
+How a message gets from the outside messenger into a plugin and back. Nothing
+of this was run against the real programs in development — it is read from
+the sources of the pinned versions and tested against stand-ins
+(`tests/bridges_messages.test.js`, `tests/helpers/fake-homeserver.js`).
+
+```
+bridge ──events──▶ homeserver ──PUT /_matrix/app/v1/transactions/{txnId}──▶ bruecken-core-relay (socat)
+                                                                                  │ Unix socket data/bridges/run/core.sock
+                                                                                  ▼
+                       appservice.js (hs_token, constant-time)  ─▶  events.js  ─▶  bridge_inbox (sealed)
+                                                                                  │ hook bridgeEvents, gc.bridges.events.pull / ack
+                                                                                  ▼
+                                                                              the plugin
+plugin ──gc.bridges.send / react / redact / read / typing──▶ hs.js ──client API as @gc_<id>──▶ homeserver ──▶ bridge
+```
+
+**Why transactions and not `/sync`.** The server is registered as the
+application service `gatecontrol`; with a `url` the homeserver pushes every
+event of the rooms its accounts are in. It keeps that queue in its own
+database and deletes an entry only after HTTP 200, retrying after 2, 4, … 512
+seconds — so nothing is lost while GateControl restarts, and GateControl keeps
+no position of its own. The transaction id is a hash of the events and stays
+the same for a retry: `bridge_txns` remembers the last 2000, a transaction is
+taken once. Polling `/sync` per person would need a stored position per
+account, a reload of cut-off timelines after a pause, and an open request per
+person. Price of the push: one more relay container, so the
+`docker-compose.yml` on the host has to be replaced once (`update.sh` marker 7
+starts `bruecken-core-relay` when the file has it and reports
+`"core-relay":{"present":false}` when not; `status().messages.relay` says
+`missing`).
+
+**Whose room.** The bridge runs with `split_portals`: every person gets rooms
+of their own, also for a group two people are in. `bridge_rooms` maps a room
+to one person, one network and a random reference (`r…`) — the only thing a
+plugin sees of a room. A room is taken over when the bridge invites the
+account (the server accepts) or joins it itself (double puppeting: the
+registration `gcpuppet` has no address, the bridge acts with its token for
+`@gc_…`). What was said before the account was in the room — the very message
+that made the bridge open it — is fetched once (`GET …/messages`, 30 events).
+An invite for a second person into a known room, or from an account that is
+no bridge, is ignored.
+
+**Neutral events** (`events.pull`), each with `seq`, `userId`, `network`,
+`chat: { id, kind: 'direct' | 'group', name }`, `at` (ms):
+
+| `type` | Fields |
+|---|---|
+| `chat` | the chat became known or changed its name / kind; `closed: true` when the account left |
+| `message` | `id`, `sender`, `kind: 'text' \| 'notice' \| 'media' \| 'unsupported'`, `text`, `replyTo` (a message id or null), `media: { kind: 'image' \| 'video' \| 'audio' \| 'voice' \| 'file' \| 'sticker' \| 'location', name }` for `media` — the file itself is not carried yet |
+| `edit` | `id`, `sender`, `target`, `text` |
+| `redact` | `id`, `sender`, `target` — a message or a reaction |
+| `reaction` | `id`, `sender`, `target`, `emoji` |
+| `status` | `target`, `status: 'sent' \| 'delivered' \| 'failed'`, `reason`, `retriable` — the bridge's word on a message GateControl sent (`com.beeper.message_send_status`); `delivered` only in direct chats |
+| `contact` | `contact: { id, name }` — a contact's name changed |
+| `lost` | a row that could not be opened (the bridges' folder was replaced) — acknowledge it |
+
+`sender`: `{ id, name }` (a contact; `id` is an HMAC of the bridge's address,
+`c…`), `{ self: true }` (written by the person in the messenger's own app) or
+`{ system: true }` (the bridge itself). Messages GateControl sent itself do
+not come back. Not stored, only in the hook's payload: `typing`
+`{ chat, contacts: [id] }` and `receipt` `{ chat, upTo, reader }`.
+
+No Matrix address, no room id and no phone number is in any of it; message ids
+are the homeserver's event ids (hashes). The inbox is sealed with a key derived
+from the master key, so texts of other people are not readable in the server's
+database or its backups; rows go when the plugin acknowledges them, at the
+latest after 14 days. A person's rooms and waiting events go with their
+account (foreign keys).
+
+**Out.** `send` (text, `replyTo`, `edit`), `react`, `redact`, `read`, `typing`
+— each as the person's internal account, only while that person has a
+changing request in flight. There is no queue in the server: when the bridge
+is away the call fails (`ERR_BRIDGE_UNREACHABLE`) and the plugin shows it.
+
+**Changed for this in the configuration** (every key is in the fixtures):
+homeserver — `url` and `receive_ephemeral` for `gatecontrol`, the registration
+`gcpuppet`; bridge — `double_puppet.secrets`, `bridge.split_portals: true`
+(irreversible; nothing used the rooms before), `matrix.message_status_events:
+true`, `matrix.message_error_notices: false`, `appservice.bot.avatar: remove`
+(the default picture lies on another server, which an island never reaches —
+the likely source of the line "Federation is disabled" at the homeserver's
+start; that line comes from `validate_request_destination` and is harmless),
+`logging.min_level: warn` (zeroconfig: "levels below the global min_level are
+never logged" — the info and debug lines are the ones that name chats and
+accounts).
+
+**Not in this stage:** files of any kind (stage 4; until then `media` with
+kind and name), starting a chat with a new number (the provisioning API has
+`resolve_identifier` and `create_dm`; it needs a dialog in the clients),
+contact pictures, history.
+
 ## Probe
 
 `./update.sh bridges-probe [seconds]` on the host (as root, in the install
@@ -229,8 +322,12 @@ folder) reads and measures, it changes no setting:
    (`/proc/<pid>/io` of the main process and `docker stats` BlockIO),
    restarts, OOM kills, health;
 4. it writes `/data/.bridges-probe.json` — the numbers, the image references
-   and the last 60 log lines per container with everything that looks like a
-   token or a long number blanked — and prints a summary.
+   and the last 60 log lines per container, redacted (`probe_redact`): lines
+   about linking (QR and pairing data, `wa.me` links), calls of the
+   provisioning API, raw events and request bodies are left out entirely; in
+   the rest Matrix addresses, WhatsApp ids, id fields, anything that looks
+   like a key or token (20 characters and more) and runs of digits are
+   blanked — and prints a summary.
 
 `status().host.probe` passes the **numbers** on (the messenger's settings
 show them); the log lines stay in the file.
@@ -241,8 +338,8 @@ show them); the log lines stay in the file.
 |---|---|
 | 1 | service, preview gate, wish/state files, `update.sh`, secrets, `gc.bridges` (state, switch, a person's link through the provisioning API), tests against a stand-in bridge |
 | 2 | this: compose profile `bruecken` with pinned images, generated configuration, provisional limits, the probe, "outdated", `unlinkFor`; plugins: portal page "Verknüpfte Dienste", the parents' switch in the family plugin. Open until the probe ran: whether the programs start with these files, and the real limits |
-| 3 | messages: the server as an application service (events → plugin hook, sending), outside contacts and rooms ↔ chats in the plugin |
-| 4 | media, chat list marks and filters in the apps |
+| 3 | messages (see "Messages"): the server as an application service — transactions through `bruecken-core-relay`, neutral events in a sealed inbox, sending as the person; text, reply, edit, deletion, reaction, read, typing, what the bridge says about a sent message; the probe blanks more. Plugin: bridged chats for the linked person only |
+| 4 | media, a chat with a new number, contact pictures, chat list marks and filters in the apps |
 | 5 | history (30 days, in small portions at night), backup of the bridge state, storage targets for media, "phone not seen" notices, "bridge outdated" |
 | 6 | a gateway as the place, moving between places |
 | 7 | Signal, Telegram |
@@ -258,7 +355,10 @@ show them); the log lines stay in the file.
 * `docker-compose.yml`, `deploy/docker-compose.yml` — profile `bruecken`
 * `src/services/bridges/provision.js` — the provisioning client
 * `src/services/autoUpdate.js` — `"bridges"`, `"bridges_rev"` in the host config file
-* `update.sh` — `sync_bridges`, `bridges_probe` (marker 6)
+* `update.sh` — `sync_bridges`, `bridges_probe` (marker 7: also `bruecken-core-relay`; `probe_redact`)
+* `src/services/bridges/appservice.js`, `events.js`, `hs.js` — stage 3: the listener for the homeserver's
+  transactions, their translation into neutral events (tables `bridge_rooms`, `bridge_inbox`, `bridge_txns`,
+  migration 148), the homeserver's client API as a person's internal account
 * `src/services/plugins/hostApi.js` (`bridgesCall`), `child/bootstrap.js`
   (`makeBridges`), `manifest.js` (`permissions.bridges`)
 * `tests/bridges.test.js`, `tests/bridges_config.test.js`,

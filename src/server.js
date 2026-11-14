@@ -210,7 +210,12 @@ async function start() {
 
     // Plugins (docs/plugins.md): start every plugin that may run. Best-effort.
     try { require('./services/plugins').start(); }
-    catch (err) { logger.warn({ err: err.message }, 'plugins not started'); }     // RDP health check monitor
+    catch (err) { logger.warn({ err: err.message }, 'plugins not started'); }
+
+    // Messenger bridges (docs/feature-messenger-bridges.md, preview): while they are switched on, listen for the
+    // events of the internal homeserver. Nothing happens when they are off. Best-effort.
+    try { require('./services/bridges').start().catch((err) => logger.warn({ err: err.message }, 'bridges: listener not started')); }
+    catch (err) { logger.warn({ err: err.message }, 'bridges: listener not started'); }     // RDP health check monitor
 
     // AI service (docs/plugins.md "AI requests"): log retention. Best-effort.
     try { require('./services/ai').start(); }

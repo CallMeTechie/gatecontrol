@@ -340,7 +340,7 @@ function makeBridges() {
   });
   return Object.freeze({
     /** the version of this interface (raised when methods or fields are added) */
-    version: 2,
+    version: 3,
     /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion }], host, history } */
     status: () => hostCall('bridges.status', {}),
     /** configure({ enabled?, networks?: { whatsapp?: boolean } }) → status() — inside a changing request of an administrator */
@@ -352,6 +352,25 @@ function makeBridges() {
     logout: (userId, network, loginId) => hostCall('bridges.logout', { userId, network, loginId }),
     /** since version 2: unlinkFor(userId, network, actorId) → { unlinked } — end somebody else's link (a parent for a child); never an administrator's */
     unlinkFor: (userId, network, actor) => hostCall('bridges.unlinkFor', { userId, network, actor }),
+    // ── since version 3: messages (docs/plugins.md "Messenger bridges", "Messages") ──
+    events: Object.freeze({
+      /** pull({ after?, limit? }) → { events: [{ seq, userId, network, type, chat, … }], more } — everything the bridges delivered and nobody acknowledged */
+      pull: (opts) => hostCall('bridges.events.pull', { after: opts && opts.after, limit: opts && opts.limit }),
+      /** ack(upTo) → { ok, pending } — events up to this seq are filed; the server forgets them */
+      ack: (upTo) => hostCall('bridges.events.ack', { upTo }),
+    }),
+    /** chats(userId, network) → [{ id, kind, open }] — inside a request of that person */
+    chats: (userId, network) => hostCall('bridges.chats', { userId, network }),
+    /** send(userId, network, chatId, { txnId, text, replyTo?, edit? }) → { id } — inside a changing request of that person */
+    send: (userId, network, chatId, message) => hostCall('bridges.send', { userId, network, chatId, message }),
+    /** react(userId, network, chatId, { txnId, target, emoji }) → { id } */
+    react: (userId, network, chatId, reaction) => hostCall('bridges.react', { userId, network, chatId, reaction }),
+    /** redact(userId, network, chatId, { txnId, target }) → { ok } — delete for everyone / take a reaction back */
+    redact: (userId, network, chatId, redaction) => hostCall('bridges.redact', { userId, network, chatId, redaction }),
+    /** read(userId, network, chatId, messageId) → { ok } */
+    read: (userId, network, chatId, messageId) => hostCall('bridges.read', { userId, network, chatId, messageId }),
+    /** typing(userId, network, chatId, on) → { ok } */
+    typing: (userId, network, chatId, on) => hostCall('bridges.typing', { userId, network, chatId, on: on === true }),
   });
 }
 
@@ -1043,6 +1062,11 @@ async function handleCall(method, payload) {
       // optional (media, since 1.222.0): the virus scan changed a file after its upload answered —
       // { mediaId, state, blocked, finding } (docs/feature-malware-scan-contract.md). Answer ignored
       if (typeof plugin.mediaScanned === 'function') await plugin.mediaScanned(payload, gc);
+      return {};
+    case 'bridgeEvents':
+      // optional (permissions.bridges, gc.bridges version 3): the bridges delivered something — { pending, ephemeral: [typing /
+      // receipt events, never stored] }; fetch the rest with gc.bridges.events.pull / ack. Answer ignored
+      if (typeof plugin.bridgeEvents === 'function') await plugin.bridgeEvents(payload, gc);
       return {};
     case 'mediaChanged':
       // optional (media.areas, since 1.204.1): files changed on a storage target were taken in —
