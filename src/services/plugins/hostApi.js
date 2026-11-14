@@ -1591,6 +1591,48 @@ async function vpnDnsCall(plugin, op, args) {
   throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
 }
 
+// ─── Messenger bridges (permissions.bridges) ───────────────────────────
+//
+// gc.bridges.* — services/bridges (docs/feature-messenger-bridges.md). The
+// bridges to outside messengers run next to the server; a plugin never talks
+// to them itself. status() is free to read. configure() only inside a
+// changing request of an administrator. Everything about a person's own link
+// (flows, start, step, cancel, logins, logout) only while THAT person has a
+// request to this plugin in flight — nobody links, reads or unlinks for
+// somebody else, not the plugin in a tick and not an administrator.
+
+const BRIDGES_CODES = new Set(['ERR_INVALID', 'ERR_BRIDGES_UNAVAILABLE', 'ERR_BRIDGE_UNREACHABLE', 'ERR_BRIDGE', 'ERR_BUSY']);
+
+async function bridgesCall(plugin, op, args) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.bridges === true, 'ERR_BRIDGES_DENIED', 'this plugin has no bridges permission');
+  const br = require('../bridges');
+  const a = args && typeof args === 'object' ? args : {};
+  try {
+    if (op === 'status') return br.status();
+    if (op === 'configure') {
+      const ctx = vpnDnsActor(plugin, {});
+      need(ctx.actor.role === 'admin', 'ERR_NOT_ADMIN', 'only an administrator');
+      return br.configure(a.patch, ctx);
+    }
+    const uid = a.userId;
+    need(Number.isSafeInteger(uid) && uid > 0, 'ERR_INVALID', 'invalid user id');
+    const write = op !== 'login.flows' && op !== 'logins';
+    need(require('./personContext').has(plugin.id, uid, { write }), 'ERR_NOT_PERSON', write
+      ? 'only inside a changing request (POST/PUT/PATCH/DELETE) of that person'
+      : 'only inside a request of that person');
+    if (op === 'login.flows') return await br.login.flows(uid, a.network);
+    if (op === 'login.start') return await br.login.start(uid, a.network, a.flowId);
+    if (op === 'login.step') return await br.login.step(uid, a.network, a.processId, a.stepId, a.kind, a.input);
+    if (op === 'login.cancel') return await br.login.cancel(uid, a.network, a.processId);
+    if (op === 'logins') return await br.logins(uid, a.network);
+    if (op === 'logout') return await br.logout(uid, a.network, a.loginId);
+  } catch (e) {
+    if (e && BRIDGES_CODES.has(e.code)) throw new HostApiError(e.code, e.code === 'ERR_BRIDGE' ? 'the bridge refused or failed' : e.message, e.reason);
+    throw e;
+  }
+  throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
+}
+
 // ─── Home cache (permissions.homeCache, phase 3b) ──────────────────────
 //
 // gc.homeCache.offer({ mediaId, kind, userIds?, priority?, preview? }) /
@@ -2359,6 +2401,10 @@ async function handle(plugin, api, args, ctx) {
     case 'vpnDns.refreshLists': case 'vpnDns.stats': case 'vpnDns.test': case 'vpnDns.pauses': case 'vpnDns.pause': case 'vpnDns.resume':
     case 'vpnDns.restart': case 'vpnDns.releasePihole': case 'vpnDns.log': case 'vpnDns.clearLog': case 'vpnDns.homes':
       return vpnDnsCall(plugin, api.slice('vpnDns.'.length), args);
+    // messenger bridges (permissions.bridges, services/bridges)
+    case 'bridges.status': case 'bridges.configure': case 'bridges.login.flows': case 'bridges.login.start': case 'bridges.login.step':
+    case 'bridges.login.cancel': case 'bridges.logins': case 'bridges.logout':
+      return bridgesCall(plugin, api.slice('bridges.'.length), args);
     // home cache (permissions.homeCache, homeCache.js — phase 3b)
     case 'homeCache.offer': return homeCacheCall(plugin, 'offer', args);
     case 'homeCache.withdraw': return homeCacheCall(plugin, 'withdraw', args);

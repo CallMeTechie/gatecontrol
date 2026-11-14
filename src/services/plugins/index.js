@@ -158,6 +158,8 @@ function permissionSummary(m, lang) {
     homeCache: !!p.homeCache,
     // DNS protection of the VPN devices (gc.vpnDns) — shown as a sensitive permission
     vpnDns: !!p.vpnDns,
+    // messenger bridges (gc.bridges) — shown as a sensitive permission
+    bridges: !!p.bridges,
     // phase 3c: printers and scanners at home through the gateways (gc.print)
     print: !!p.print,
     // phase 3c, step 2: the Bluetooth sensors of the gateways (gc.radio)

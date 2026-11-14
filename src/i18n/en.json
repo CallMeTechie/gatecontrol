@@ -7091,6 +7091,8 @@
   "plugins.perm.discovery_v": "Search devices in the local network (UDP {{ports}}) – only if you allow it",
   "plugins.perm.home_presence": "Presence in the home network",
   "plugins.perm.home_presence_on": "Sees who is at home – only for people who switch it on themselves; never device addresses",
+  "plugins.perm.bridges": "Bridges to other messengers",
+  "plugins.perm.bridges_on": "The plugin may have the bridges to other messengers (WhatsApp first) switched on and off, and link and unlink a signed-in person’s own account. It never sees the bridges’ credentials or session keys.",
   "plugins.perm.vpn_dns": "Filter the DNS of VPN devices",
   "plugins.perm.vpn_dns_on": "The plugin decides which internet addresses are blocked for VPN devices, can suspend the filter and sees counters. With the query log switched on it also sees which device asked for which address.",
   "plugins.perm.home_internet": "Internet at home",
