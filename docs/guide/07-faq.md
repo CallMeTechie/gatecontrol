@@ -458,20 +458,64 @@ normally. You do not need to do anything.
 
 On the Synology the gateway needs the device `/dev/net/tun`. If it is missing,
 the container `gateway` does not start and the message names `/dev/net/tun` –
-the setup page does not exist yet then. DSM provides the device once the module
-`tun` is loaded. This works without SSH:
+the setup page does not exist yet then.
+
+Whether the device is there by itself depends on the model: on some it exists
+after boot-up (in our case: DS918+), on others it does not (in our case:
+DS218+). If your project starts without this message and the gateway also
+runs again after a restart of the NAS, you do not need to do anything.
+
+Otherwise you set up a task once, without SSH:
 
 1. “Control Panel” → “Task Scheduler” → “Create” → “Triggered Task” →
    “User-defined script”.
 2. User `root`, event “Boot-up”.
-3. Command: `insmod /lib/modules/tun.ko`
+3. Under “Task Settings” paste this script:
+
+   ```sh
+   # GateControl-Gateway (Synology): /dev/net/tun bereitstellen, dann Gateway starten
+   PATH="$PATH:/usr/local/bin:/usr/sbin:/sbin:/usr/bin:/bin"
+   modprobe tun 2>/dev/null || insmod "$(find /lib/modules -name 'tun.ko*' | head -n 1)" 2>/dev/null
+   mkdir -p /dev/net
+   [ -c /dev/net/tun ] || mknod /dev/net/tun c 10 200
+   chmod 0666 /dev/net/tun
+   n=0
+   until docker info >/dev/null 2>&1; do
+     n=$((n + 1)); [ "$n" -lt 24 ] || exit 1
+     sleep 5
+   done
+   for c in $(docker ps -aq --filter status=exited --filter status=created); do
+     case "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.service"}} {{.Config.Image}}' "$c")" in
+       "gateway "*gatecontrol-gateway* | "otbr "*openthread/otbr*) docker start "$c" ;;
+     esac
+   done
+   ```
+
 4. Select the task and choose “Run”.
-5. Start the project in Container Manager.
+5. If the gateway is still not running after that, start the project in
+   Container Manager.
 
-With the event “Boot-up” this survives a restart of the NAS. Via SSH
-`sudo insmod /lib/modules/tun.ko` works as well.
+**What the task does:**
 
-**Check:** The project starts, the container `gateway` is running.
+- It loads the module `tun` and creates the device `/dev/net/tun` if it is
+  missing.
+- It waits at most two minutes until Docker is ready and then starts the
+  container of the gateway if it is not running (with Thread also the
+  container `otbr`). It recognises it by the compose file from GateControl –
+  what you called the project does not matter.
+- It creates nothing new and does not touch running containers. You can run it
+  as often as you like; if the device is already there, it changes nothing.
+
+**After a restart of the NAS:** Without the task the gateway stays stopped on
+a NAS without the device – Docker tries to start it before the device is
+there and does not try again afterwards. With the task (event “Boot-up”) the
+gateway comes back by itself, about one to two minutes after boot-up. It
+starts the gateway at every boot-up, even if you had stopped the container by
+hand before; if the gateway is to stay off, disable the task.
+
+**Check:** In Container Manager the container `gateway` is running – also
+after a restart of the NAS. In the Task Scheduler “Action” → “View Result”
+shows the last run of the task.
 
 ### The setup page of the gateway does not open
 
