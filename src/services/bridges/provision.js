@@ -17,6 +17,10 @@ const TIMEOUT_MS = 20000;
 // display_and_wait answers when the person scanned the code — or after the bridge's own timeout
 const WAIT_TIMEOUT_MS = 180000;
 const ID_RE = /^[A-Za-z0-9._:=+-]{1,128}$/;
+const SOCKET_RE = /^\/[A-Za-z0-9._/-]{1,90}\/run\/[a-z]{2,16}\.sock$/;
+const TOKEN_RE = /^[A-Za-z0-9_-]{32,128}$/;
+const PATH_RE = /^[a-z_]+(\/[A-Za-z0-9._:=+%-]{1,400}){0,4}$/;
+const MXID_RE = /^@gc_[0-9]{1,16}:[a-z0-9.-]{1,64}$/;
 const STEP_TYPES = ['display_and_wait', 'user_input', 'complete'];
 const FIELD_TYPES = ['username', 'phone_number', 'email', 'password', '2fa_code', 'token', 'url', 'domain', 'select'];
 const DISPLAY_TYPES = ['qr', 'emoji', 'code', 'nothing'];
@@ -41,6 +45,13 @@ function word(v) { return typeof v === 'string' ? v.replace(/[^A-Za-z0-9._-]/g, 
  */
 function request(target, req) {
   return new Promise((resolve, reject) => {
+    // the only place a request may go: a bridge's own socket, named by this module (socketOf) — and only with a
+    // well-formed token, a known method and a path built here
+    if (!SOCKET_RE.test(String(target.socket || '')) || String(target.socket).includes('..') || !TOKEN_RE.test(String(target.secret || ''))
+      || !['GET', 'POST'].includes(req.method) || !PATH_RE.test(String(req.path || '')) || !MXID_RE.test(String(req.mxid || ''))) {
+      reject(new BridgeError('ERR_INVALID', 'invalid bridge request'));
+      return;
+    }
     const body = req.body === undefined ? null : Buffer.from(JSON.stringify(req.body));
     const r = http.request({
       socketPath: target.socket,

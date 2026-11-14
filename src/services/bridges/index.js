@@ -21,7 +21,8 @@
 //                    /data/.bridges-state.json.
 //   no port          homeserver and bridges are reached over Unix sockets in
 //                    /data/bridges/run only; nothing listens on a network.
-//   secrets          /data/bridges/secrets.json (0600), made here once, never
+//   secrets          one master key in /data/bridges/secrets.json (0600), made
+//                    here once; the tokens are derived from it and never
 //                    returned by any API. The bridge's session keys stay in
 //                    the bridge's own database at the place it runs.
 //   people           a person is addressed by their GateControl user id; the
@@ -74,26 +75,42 @@ function wanted() {
 
 function secretsFile() { return path.join(dir(), 'secrets.json'); }
 
-function readSecrets() {
+// One master key on disk; what goes over a socket is derived from it per purpose (HMAC-SHA-256), so the file's
+// content itself is never sent anywhere and a token seen in one place says nothing about the others.
+const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
+
+function derive(key, purpose) {
+  return crypto.createHmac('sha256', Buffer.from(key, 'base64url')).update(`gatecontrol-bridges:${purpose}`).digest('base64url');
+}
+
+function readKey() {
   try {
     const s = JSON.parse(fs.readFileSync(secretsFile(), 'utf8'));
-    const ok = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{32,128}$/.test(v);
-    if (s && ok(s.asToken) && ok(s.hsToken) && ok(s.provisionSecret)) return s;
+    if (s && typeof s.key === 'string' && KEY_RE.test(s.key)) return s.key;
   } catch { /* not made yet */ }
   return null;
 }
 
-/** Make the folder and the tokens once (0700 / 0600). → the secrets (for this module only). */
+function tokens(key) {
+  return { asToken: derive(key, 'as_token'), hsToken: derive(key, 'hs_token'), provisionSecret: derive(key, 'provisioning') };
+}
+
+/** The tokens of the bridges (for this module and the container configuration only), or null before the first switch-on. */
+function readSecrets() {
+  const key = readKey();
+  return key ? tokens(key) : null;
+}
+
+/** Make the folder and the master key once (0700 / 0600). → the tokens. */
 function ensureSecrets() {
-  const have = readSecrets();
+  const have = readKey();
   fs.mkdirSync(path.join(dir(), 'run'), { recursive: true, mode: 0o700 });
-  if (have) return have;
-  const tok = () => crypto.randomBytes(32).toString('base64url');
-  const s = { asToken: tok(), hsToken: tok(), provisionSecret: tok() };
+  if (have) return tokens(have);
+  const key = crypto.randomBytes(32).toString('base64url');
   const tmp = `${secretsFile()}.${crypto.randomBytes(6).toString('hex')}.tmp`;
-  try { fs.writeFileSync(tmp, JSON.stringify(s) + '\n', { mode: 0o600 }); fs.renameSync(tmp, secretsFile()); }
+  try { fs.writeFileSync(tmp, JSON.stringify({ key }) + '\n', { mode: 0o600 }); fs.renameSync(tmp, secretsFile()); }
   catch (err) { try { fs.unlinkSync(tmp); } catch { /* never written */ } throw err; }
-  return s;
+  return tokens(key);
 }
 
 // ─── What the host did ─────────────────────────────────

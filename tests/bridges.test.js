@@ -87,6 +87,10 @@ describe('the service', () => {
     const mode = fs.statSync(path.join(bridges.dir(), 'secrets.json')).mode & 0o777;
     assert.equal(mode, 0o600, 'secrets.json is readable by the server only');
     assert.doesNotMatch(JSON.stringify(st), new RegExp(secrets.provisionSecret), 'status never carries a secret');
+    // on disk: one master key; what is sent to a bridge is derived from it, never the file's content
+    const onDisk = JSON.parse(fs.readFileSync(path.join(bridges.dir(), 'secrets.json'), 'utf8'));
+    assert.deepEqual(Object.keys(onDisk), ['key']);
+    for (const tok of Object.values(secrets)) assert.ok(tok !== onDisk.key && !fs.readFileSync(path.join(bridges.dir(), 'secrets.json'), 'utf8').includes(tok));
     // a second switch keeps the tokens (the containers hold them too)
     bridges.configure({ enabled: true }, {});
     assert.deepEqual(bridges.readSecrets(), secrets);
@@ -229,6 +233,20 @@ describe('a person links their own account (stand-in bridge)', () => {
     // a step only a browser driven by the bridge could do (passkey) is named, not passed on
     bridge.oddStep = 'webauthn';
     await assert.rejects(bridges.login.start(annaId, 'whatsapp', 'qr'), (e) => e.code === 'ERR_BRIDGE' && e.reason === 'unsupported_step');
+  });
+
+  it('sends requests to a bridge socket of its own only', async () => {
+    const { request } = require('../src/services/bridges/provision');
+    const secret = bridges.readSecrets().provisionSecret;
+    const good = { method: 'GET', path: 'whoami', mxid: `@gc_${annaId}:gc.internal` };
+    for (const socket of ['/etc/passwd', 'relative/run/whatsapp.sock', path.join(bridges.dir(), 'run', '..', 'run', 'whatsapp.sock').replace('/run/whatsapp', '/x/../run/whatsapp'), '/data/bridges/run/WhatsApp.sock']) {
+      await assert.rejects(request({ socket, secret }, good), (e) => e.code === 'ERR_INVALID', socket);
+    }
+    const socket = path.join(bridges.dir(), 'run', 'whatsapp.sock');
+    await assert.rejects(request({ socket, secret: 'short' }, good), (e) => e.code === 'ERR_INVALID');
+    await assert.rejects(request({ socket, secret }, { ...good, method: 'DELETE' }), (e) => e.code === 'ERR_INVALID');
+    await assert.rejects(request({ socket, secret }, { ...good, path: '../v1/x' }), (e) => e.code === 'ERR_INVALID');
+    await assert.rejects(request({ socket, secret }, { ...good, mxid: '@admin:matrix.org' }), (e) => e.code === 'ERR_INVALID');
   });
 
   it('says so when the bridge is not there or switched off', async () => {

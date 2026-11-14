@@ -46,11 +46,13 @@ WhatsApp ── bridge (mautrix) ──(Unix socket)── internal Matrix homes
    only outgoing connections to its messenger.
 2. **No federation, no registration, no guests.** The server name
    `gc.internal` resolves nowhere.
-3. **Secrets** (`as_token`, `hs_token`, the provisioning secret) are made once
-   by the server (`crypto.randomBytes(32)`), kept in
-   `/data/bridges/secrets.json` (0600, folder 0700) and returned by no API. The
-   session keys of a bridge live in its own database where it runs; a backup of
-   them leaves that place only encrypted (later stage).
+3. **Secrets.** The server makes one master key (`crypto.randomBytes(32)`),
+   kept in `/data/bridges/secrets.json` (0600, folder 0700). `as_token`,
+   `hs_token` and the provisioning secret are derived from it per purpose
+   (HMAC-SHA-256): the file's content is never sent anywhere, and no API
+   returns a token. The session keys of a bridge live in its own database
+   where it runs; a backup of them leaves that place only encrypted (later
+   stage).
 4. **A contract, not a pass-through.** `gc.bridges` takes fixed network names
    and checked ids, builds every path itself and returns reduced fields only;
    a bridge's error text stays in the server log.
