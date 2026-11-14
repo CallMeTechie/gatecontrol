@@ -367,7 +367,7 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null, images: false }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, ai: null, cloudImport: null, publicEndpoints: null, mail: null, homePresence: false, homeInternet: false, homeCache: false, print: false, radio: false, cameras: false, vpnDns: false };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null, images: false }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, ai: null, cloudImport: null, publicEndpoints: null, mail: null, homePresence: false, homeInternet: false, homeCache: false, print: false, radio: false, cameras: false, vpnDns: false, bridges: false };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
@@ -390,7 +390,9 @@ function validate(raw, opts = {}) {
     // cameras (phase 3c, step 4): cameras in the home networks of the gateways (gc.cameras)
     // vpnDns: the DNS protection of the VPN devices — what is blocked for whom, suspending it, counters and
     // (with the query log on) which device asked for which name (gc.vpnDns, services/vpnDns.js)
-    for (const k of ['storage', 'portal', 'users', 'app', 'kiosk', 'events', 'notifySink', 'publicLinks', 'devices', 'homePresence', 'homeInternet', 'homeCache', 'print', 'radio', 'cameras', 'vpnDns']) {
+    // bridges: the messenger bridges to outside messengers — state, the administrator's switch, a person's own
+    // link (gc.bridges, services/bridges, docs/feature-messenger-bridges.md)
+    for (const k of ['storage', 'portal', 'users', 'app', 'kiosk', 'events', 'notifySink', 'publicLinks', 'devices', 'homePresence', 'homeInternet', 'homeCache', 'print', 'radio', 'cameras', 'vpnDns', 'bridges']) {
       if (p[k] == null) continue;
       if (typeof p[k] !== 'boolean') err(`permissions.${k}: invalid`);
       else perms[k] = p[k];

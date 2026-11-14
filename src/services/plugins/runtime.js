@@ -182,7 +182,9 @@ class PluginProcess {
       // gc.cameras: permissions.cameras (phase 3c, step 4)
       cameras: perms.cameras === true,
       // gc.vpnDns: permissions.vpnDns (DNS protection of the VPN devices)
-      vpnDns: perms.vpnDns === true };
+      vpnDns: perms.vpnDns === true,
+      // gc.bridges: permissions.bridges (messenger bridges)
+      bridges: perms.bridges === true };
     child.send({ t: 'init', plugin: { id: p.id, version: p.version, entry, filesDir: files, features } });
   }
 

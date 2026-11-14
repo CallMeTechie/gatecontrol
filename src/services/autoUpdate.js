@@ -90,10 +90,19 @@ function isInWindow(w, now = new Date()) {
 function wantsLocalClamav() {
   try { return require('./scan').getConfig().engine === 'clamav_local'; } catch { return false; }
 }
+// Messenger bridges (services/bridges, docs/feature-messenger-bridges.md):
+// update.sh (marker 5) runs the compose profile "bruecken" while "bridges"
+// names at least one bridge ("whatsapp", later comma separated) and stops it
+// (only what it started) once the field is gone. Never throws.
+function wantedBridges() {
+  try { return require('./bridges').wanted().filter((n) => /^[a-z]{2,16}$/.test(n)); } catch { return []; }
+}
 function writeConfigFile(mode, win = getWindow()) {
   const cfg = { mode };
   if (win.enabled) cfg.window = { start: win.start, end: win.end, tz: win.tz };
   if (wantsLocalClamav()) cfg.clamav = 'on';
+  const bridges = wantedBridges();
+  if (bridges.length) cfg.bridges = bridges.join(',');
   writeAtomic(CONFIG_FILE, JSON.stringify(cfg) + '\n');
 }
 /** Re-project the settings onto the host file (scan engine changed). Never throws. */

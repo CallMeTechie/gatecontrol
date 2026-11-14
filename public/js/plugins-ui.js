@@ -181,6 +181,8 @@
     if (perm.cameras) rows.push({ label: t('plugins.perm.cameras'), value: t('plugins.perm.cameras_on') });
     // DNS protection of the VPN devices: a sensitive permission, named first and marked
     if (perm.vpnDns) rows.unshift({ label: t('plugins.perm.vpn_dns'), value: t('plugins.perm.vpn_dns_on') });
+    // messenger bridges: accounts in outside messengers pass through them — sensitive as well
+    if (perm.bridges) rows.unshift({ label: t('plugins.perm.bridges'), value: t('plugins.perm.bridges_on') });
     // person groups (docs/plugins.md "Groups"): read, or read and manage its own groups
     if (perm.groups === 'read' || perm.groups === 'manage') rows.push({ label: t('plugins.perm.groups'), value: t(perm.groups === 'manage' ? 'plugins.perm.groups_manage' : 'plugins.perm.groups_read') });
     // Google Drive / OneDrive of a person (gc.cloud), with the plugin's purpose
@@ -486,6 +488,7 @@
     const n = perm.network || {};
     const out = [];
     if (perm.vpnDns) out.push('plugins.perm.vpn_dns');
+    if (perm.bridges) out.push('plugins.perm.bridges');
     if ((n.homeTargets || []).length || n.discovery) out.push('plugins.perm.lan');
     if ((n.internet || []).length) out.push('plugins.perm.internet');
     if (perm.actions) out.push('plugins.perm.actions');
