@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.274.0] — 2026-11-14
+
+### Features
+- Messenger-Brücken, Stufe 2 – Compose-Profil „bruecken“ mit gepinnten Abbildern, erzeugte Konfiguration, Probe am Server (Vorschau, standardmäßig aus) (#488)
+
+---
+
 ## [1.273.0] — 2026-11-14
 
 ### Features
