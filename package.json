@@ -57,7 +57,7 @@
   },
   "private": true,
   "devDependencies": {
-    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/core": "^10.1.1",
     "supertest": "^7.3.1"
   }
 }
