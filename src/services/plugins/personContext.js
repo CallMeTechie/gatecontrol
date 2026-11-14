@@ -63,6 +63,12 @@ function writers(pluginId) {
   return [...m.entries()].filter(([, e]) => e.write > 0).map(([uid]) => uid).sort((a, b) => a - b);
 }
 
+/** Has `userId` a changing request in flight to ANY plugin right now (a person who is acting at this moment)? */
+function writing(userId) {
+  for (const m of active.values()) { const e = m.get(userId); if (e && e.write > 0) return true; }
+  return false;
+}
+
 function _resetForTest() { active.clear(); }
 
-module.exports = { run, has, writers, _resetForTest };
+module.exports = { run, has, writers, writing, _resetForTest };

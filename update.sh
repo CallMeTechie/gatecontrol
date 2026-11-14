@@ -39,10 +39,16 @@
 # fallback: their settings live in that file) and removes the containers
 # again — only when this script started them — once the field is gone. Their
 # data in $DATA_DIR/bridges stays. Result: $DATA_DIR/.bridges-state.json with
-# the state and the memory each container really uses.
+# the state, the image and the memory each container really uses.
+# Marker 6: a bridge may have a relay (bruecken-<name>-relay); the server
+# writes the containers' configuration into $DATA_DIR/bridges and its revision
+# as "bridges_rev" — a new revision or a replaced docker-compose.yml updates
+# the containers this script started. `./update.sh bridges-probe [seconds]`
+# starts the wanted bridges, measures memory and disk writes and writes
+# $DATA_DIR/.bridges-probe.json (see bridges_probe below).
 # The marker line below is the version both sides compare; bump it whenever
 # this file changes in a way the host should pick up.
-# gc-update-sh: 5
+# gc-update-sh: 6
 #
 # Data directory: $COMPOSE_DIR/data (the release compose binds ./data:/data).
 # When the running container mounts /data from somewhere else — the named
@@ -308,28 +314,42 @@ sync_clamav() {
 }
 
 BRIDGES_STATE="$DATA_DIR/.bridges-state.json"
+BRIDGES_PROBE="$DATA_DIR/.bridges-probe.json"
 # Next to docker-compose.yml (root's), not on the /data volume GateControl can write.
 BRIDGES_MANAGED="$COMPOSE_DIR/.bruecken-managed"
+# docker-compose.yml mounts the bridges' folders from here (default ./data/bridges):
+# the data directory may be somewhere else (see above).
+export GC_BRIDGES_DIR="$DATA_DIR/bridges"
 
 bridges_wanted() { # the wanted bridges, one per line (strict charset: the names end up in container names)
   [ -f "$CONFIG_FILE" ] || return 0
   tr -d '\n' <"$CONFIG_FILE" 2>/dev/null | sed -n 's/.*"bridges"[[:space:]]*:[[:space:]]*"\([a-z,]*\)".*/\1/p' \
     | tr ',' '\n' | grep -E '^[a-z]{2,16}$' | sort -u || true
 }
-bridges_services() { ( cd "$COMPOSE_DIR" && docker compose --profile bruecken config --services 2>/dev/null ) | grep -E '^bruecken-[a-z]{2,16}$' || true; }
+bridges_rev() { # the revision of the containers' configuration the server wrote ("" = unknown)
+  [ -f "$CONFIG_FILE" ] || return 0
+  tr -d '\n' <"$CONFIG_FILE" 2>/dev/null | sed -n 's/.*"bridges_rev"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{12\}\)".*/\1/p'
+}
+# bruecken-hs, bruecken-<name> and the relay of a bridge (bruecken-<name>-relay: hands the homeserver's calls to
+# the bridge's Unix socket)
+bridges_services() { ( cd "$COMPOSE_DIR" && docker compose --profile bruecken config --services 2>/dev/null ) | grep -E '^bruecken-[a-z]{2,16}(-relay)?$' || true; }
 bridge_running() { [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null || true)" = "true" ]; }
 to_mb() { # "123.4MiB" / "1.2GiB" / "900KiB" → whole MiB; anything else → nothing
   printf '%s' "$1" | awk '/^[0-9.]+GiB$/ { printf "%d", $0 * 1024; exit } /^[0-9.]+MiB$/ { printf "%d", $0 + 0.5; exit } /^[0-9.]+KiB$/ { printf "%d", $0 / 1024; exit } /^[0-9.]+B$/ { printf "0"; exit }'
 }
-bridge_json() { # $1=container → {"running":…,"mem_mb":…,"limit_mb":…,"version":"…"}
-  local run=false usage="" mem="" lim="" ver=""
+bridge_image() { docker inspect -f '{{.Config.Image}}' "$1" 2>/dev/null | head -n1 | tr -cd 'A-Za-z0-9._:+/@-' || true; }
+bridge_json() { # $1=container → {"running":…,"mem_mb":…,"limit_mb":…,"version":"…","image":"…"}
+  local run=false usage="" mem="" lim="" ver="" img=""
   if bridge_running "$1"; then
     run=true
     usage="$(docker stats --no-stream --format '{{.MemUsage}}' "$1" 2>/dev/null | head -n1 | tr -d ' ' || true)"
     mem="$(to_mb "${usage%%/*}")"; lim="$(to_mb "${usage##*/}")"
     ver="$(safe "$(docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$1" 2>/dev/null || true)")"
+    # the image the container really runs (<repo>:<tag>@<digest> as docker-compose.yml names it): the server
+    # compares it with the one it pins and shows "outdated"
+    img="$(bridge_image "$1")"
   fi
-  printf '{"running":%s,"mem_mb":%s,"limit_mb":%s,"version":"%s"}' "$run" "${mem:-null}" "${lim:-null}" "$ver"
+  printf '{"running":%s,"mem_mb":%s,"limit_mb":%s,"version":"%s","image":"%s"}' "$run" "${mem:-null}" "${lim:-null}" "$ver" "$img"
 }
 bridges_state() { # $1=state (running|starting|failed|stopped) $2=error code (or "") $3…=bridge names
   local st="$1" er="$2" body n
@@ -339,15 +359,22 @@ bridges_state() { # $1=state (running|starting|failed|stopped) $2=error code (or
   printf '{"checked_at":"%s","state":"%s","error":"%s","update_sh":%s,"services":{%s}}\n' \
     "$(date -Iseconds)" "$(safe "$st")" "$(safe "$er")" "$SELF_VERSION" "$body" | write_atomic "$BRIDGES_STATE"
 }
+# What the containers were started with: the configuration revision of the server and the docker-compose.yml.
+# A change of either means `compose up` has to look again (it recreates only what really changed; a new
+# configuration needs --force-recreate, the files are bind mounts compose does not watch).
+bridges_stamp() { printf 'rev=%s compose=%s\n' "$(bridges_rev)" "$(cksum <"$COMPOSE_DIR/docker-compose.yml" 2>/dev/null | tr -d ' ')"; }
 
 sync_bridges() {
   # Every run: bring the bridges in line with the switch in the messenger's settings.
-  local want svc names n up=1
+  local want svc names n cfg up=1 stamp old force=""
   want="$(bridges_wanted)"
   if [ -n "$want" ]; then
     svc="$(bridges_services)"
     names="bruecken-hs"
-    for n in $want; do names="$names bruecken-$n"; done
+    for n in $want; do
+      names="$names bruecken-$n"
+      if printf '%s\n' "$svc" | grep -qx "bruecken-$n-relay"; then names="$names bruecken-$n-relay"; fi
+    done
     for n in $names; do
       if ! printf '%s\n' "$svc" | grep -qx "$n"; then
         # a docker-compose.yml without the profile: it has to be replaced once, by hand
@@ -356,11 +383,32 @@ sync_bridges() {
       fi
       bridge_running "$n" || up=0
     done
+    # the server writes the configuration before it asks for the bridges; without it Docker would make empty
+    # folders and the containers would only crash
+    cfg="hs/config/tuwunel.toml"
+    for n in $want; do cfg="$cfg $n/config/config.yaml"; done
+    for n in $cfg; do
+      if [ ! -f "$GC_BRIDGES_DIR/$n" ]; then
+        # shellcheck disable=SC2086
+        bridges_state failed config_missing $want; return 0
+      fi
+    done
     # a bridge that was switched off while others stay on
     if [ -f "$BRIDGES_MANAGED" ]; then
       for n in $svc; do
         case " $names " in *" $n "*) ;; *) bridge_running "$n" && { log "bridges: $n switched off — removing the container"; docker rm -f "$n" >>"$LOG" 2>&1 || true; } ;; esac
       done
+    fi
+    stamp="$(bridges_stamp)"
+    old="$(cat "$BRIDGES_MANAGED" 2>/dev/null || true)"
+    if [ -f "$BRIDGES_MANAGED" ] && [ "$old" != "$stamp" ]; then
+      # only containers this script started are touched
+      case "$old" in "rev=$(bridges_rev) "*) ;; *) force="--force-recreate" ;; esac
+      if [ "$up" = 1 ]; then
+        up=0
+        log "bridges: configuration or docker-compose.yml changed — updating the containers"
+        rm -f "$BRIDGES_STATE"
+      fi
     fi
     # shellcheck disable=SC2086
     if [ "$up" = 1 ]; then bridges_state running "" $want; return 0; fi
@@ -368,8 +416,8 @@ sync_bridges() {
     if [ -n "$(find "$BRIDGES_STATE" -mmin -30 2>/dev/null)" ] && grep -q '"state":"failed"' "$BRIDGES_STATE" 2>/dev/null; then return 0; fi
     log "bridges: starting $names"
     # shellcheck disable=SC2086
-    if ( cd "$COMPOSE_DIR" && docker compose --profile bruecken up -d $names ) >>"$LOG" 2>&1; then
-      : >"$BRIDGES_MANAGED" 2>/dev/null || true
+    if ( cd "$COMPOSE_DIR" && docker compose --profile bruecken up -d $force $names ) >>"$LOG" 2>&1; then
+      printf '%s\n' "$stamp" >"$BRIDGES_MANAGED" 2>/dev/null || true
       # shellcheck disable=SC2086
       bridges_state starting "" $want
     else
@@ -384,6 +432,103 @@ sync_bridges() {
     rm -f "$BRIDGES_MANAGED"
     bridges_state stopped ""
   fi
+}
+
+# ./update.sh bridges-probe [seconds]
+# Starts the bridges that are switched on (nothing else, and nothing when they are off), waits until they
+# run, then measures for <seconds> (default 60, 10…900): memory per container (now and the highest value
+# seen), what each wrote to the disk in that time, restarts, and the last log lines. Result:
+# $DATA_DIR/.bridges-probe.json (the messenger's settings show the numbers; the log lines are only in the
+# file) and a summary on the terminal. Reads and measures only — it changes no setting.
+probe_text() { # stdin → the inside of a JSON string: secrets and long numbers blanked, control characters dropped
+  sed -E -e 's/[A-Za-z0-9_-]{32,}/[...]/g' -e 's/[0-9]{7,}/[#]/g' | tail -c 6000 | tr -d '\000-\010\013-\037' \
+    | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/ /g' | awk 'BEGIN { ORS = "" } NR > 1 { print "\\n" } { print }'
+}
+probe_write_kb() { # $1=container → kB its main process wrote so far (/proc/<pid>/io), "" when unreadable
+  local pid
+  pid="$(docker inspect -f '{{.State.Pid}}' "$1" 2>/dev/null || true)"
+  case "$pid" in ''|0|*[!0-9]*) return 0 ;; esac
+  awk '/^write_bytes:/ { printf "%d", $2 / 1024 }' "/proc/$pid/io" 2>/dev/null || true
+}
+probe_blkio_kb() { # $1=container → kB written according to docker stats ("1.2MB / 3.4MB" → the second), "" when unknown
+  docker stats --no-stream --format '{{.BlockIO}}' "$1" 2>/dev/null | head -n1 | awk -F'/' '{ v = $2; gsub(/ /, "", v);
+    if (v ~ /^[0-9.]+GB$/) printf "%d", v * 1000000; else if (v ~ /^[0-9.]+MB$/) printf "%d", v * 1000;
+    else if (v ~ /^[0-9.]+kB$/) printf "%d", v + 0; else if (v ~ /^[0-9.]+B$/) printf "0" }' || true
+}
+probe_mem_mb() { to_mb "$(docker stats --no-stream --format '{{.MemUsage}}' "$1" 2>/dev/null | head -n1 | tr -d ' ' | cut -d/ -f1)"; }
+bridges_probe() {
+  local window="${1:-60}" want names="" svc n c i result="ok" st er body="" socks="" logs="" disk=""
+  case "$window" in ''|*[!0-9]*) window=60 ;; esac
+  if [ "$window" -lt 10 ] || [ "$window" -gt 900 ]; then window=60; fi
+  want="$(bridges_wanted)"
+  if [ -z "$want" ]; then
+    result="not_wanted"
+    echo "The bridges are not switched on (Messenger › Übersicht › Brücken; the server needs GC_BRIDGES_PREVIEW=1)."
+  else
+    rm -f "$BRIDGES_STATE"   # start now, not at the next retry
+    sync_bridges
+    st="$(sed -n 's/.*"state":"\([a-z_]*\)".*/\1/p' "$BRIDGES_STATE" 2>/dev/null | head -n1)"
+    er="$(sed -n 's/.*"error":"\([a-z_]*\)".*/\1/p' "$BRIDGES_STATE" 2>/dev/null | head -n1)"
+    svc="$(bridges_services)"
+    names="bruecken-hs"
+    for n in $want; do
+      names="$names bruecken-$n"
+      if printf '%s\n' "$svc" | grep -qx "bruecken-$n-relay"; then names="$names bruecken-$n-relay"; fi
+    done
+    if [ "$st" = "failed" ]; then
+      result="${er:-start_failed}"
+      echo "The bridges were not started: $result (details: $LOG)."
+    else
+      echo "Waiting for the containers ($names) …"
+      i=0
+      while [ "$i" -lt 36 ]; do
+        c=1
+        for n in $names; do bridge_running "$n" || c=0; done
+        [ -S "$GC_BRIDGES_DIR/hs/run/hs.sock" ] || c=0
+        for n in $want; do [ -S "$GC_BRIDGES_DIR/run/$n.sock" ] || c=0; done
+        [ "$c" = 1 ] && break
+        sleep 5; i=$((i + 1))
+      done
+      [ "$c" = 1 ] || result="not_running"
+    fi
+  fi
+  if [ -n "$names" ] && [ "$result" != "compose_missing" ] && [ "$result" != "config_missing" ]; then
+    local w0 b0 w1 b1 mem peak m lim usage t
+    declare -A W0 B0 PEAK
+    for n in $names; do W0[$n]="$(probe_write_kb "$n")"; B0[$n]="$(probe_blkio_kb "$n")"; PEAK[$n]=0; done
+    echo "Measuring for $window seconds …"
+    t=0
+    while [ "$t" -lt "$window" ]; do
+      sleep 10; t=$((t + 10))
+      for n in $names; do m="$(probe_mem_mb "$n")"; if [ -n "$m" ] && [ "$m" -gt "${PEAK[$n]}" ]; then PEAK[$n]="$m"; fi; done
+    done
+    for n in $names; do
+      usage="$(docker stats --no-stream --format '{{.MemUsage}}' "$n" 2>/dev/null | head -n1 | tr -d ' ' || true)"
+      mem="$(to_mb "${usage%%/*}")"; lim="$(to_mb "${usage##*/}")"
+      w1="$(probe_write_kb "$n")"; b1="$(probe_blkio_kb "$n")"; w0="${W0[$n]}"; b0="${B0[$n]}"
+      peak="${PEAK[$n]}"; if [ -n "$mem" ] && [ "$mem" -gt "$peak" ]; then peak="$mem"; fi
+      c="${n#bruecken-}"
+      body="$body${body:+,}\"$c\":{\"running\":$(bridge_running "$n" && echo true || echo false)"
+      body="$body,\"restarts\":$(docker inspect -f '{{.RestartCount}}' "$n" 2>/dev/null | tr -cd '0-9' | head -c 6 | grep . || echo null)"
+      body="$body,\"oom\":$([ "$(docker inspect -f '{{.State.OOMKilled}}' "$n" 2>/dev/null || true)" = "true" ] && echo true || echo false)"
+      body="$body,\"exit\":$(docker inspect -f '{{.State.ExitCode}}' "$n" 2>/dev/null | tr -cd '0-9' | head -c 4 | grep . || echo null)"
+      body="$body,\"health\":\"$(safe "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$n" 2>/dev/null || true)")\""
+      body="$body,\"mem_mb\":${mem:-null},\"mem_peak_mb\":${peak:-null},\"limit_mb\":${lim:-null}"
+      if [ -n "$w0" ] && [ -n "$w1" ] && [ "$w1" -ge "$w0" ]; then body="$body,\"write_kb\":$((w1 - w0))"; else body="$body,\"write_kb\":null"; fi
+      if [ -n "$b0" ] && [ -n "$b1" ] && [ "$b1" -ge "$b0" ]; then body="$body,\"blkio_write_kb\":$((b1 - b0))"; else body="$body,\"blkio_write_kb\":null"; fi
+      body="$body,\"image\":\"$(bridge_image "$n")\"}"
+      logs="$logs${logs:+,}\"$c\":\"$(docker logs --tail 60 "$n" 2>&1 | probe_text)\""
+      printf '  %-26s %s  memory %s MB (highest %s, limit %s)  written %s kB in %ss  restarts %s\n' "$n" \
+        "$(bridge_running "$n" && echo running || echo 'NOT RUNNING')" "${mem:-?}" "${peak:-?}" "${lim:-?}" \
+        "$([ -n "$w0" ] && [ -n "$w1" ] && echo $((w1 - w0)) || echo '?')" "$window" "$(docker inspect -f '{{.RestartCount}}' "$n" 2>/dev/null || echo '?')"
+    done
+    socks="\"hs\":$([ -S "$GC_BRIDGES_DIR/hs/run/hs.sock" ] && echo true || echo false)"
+    for n in $want; do socks="$socks,\"$n\":$([ -S "$GC_BRIDGES_DIR/run/$n.sock" ] && echo true || echo false)"; done
+  fi
+  disk="$(du -sm "$GC_BRIDGES_DIR" 2>/dev/null | awk '{ printf "%d", $1 }' || true)"
+  printf '{"probed_at":"%s","update_sh":%s,"result":"%s","window_s":%s,"disk_mb":%s,"services":{%s},"sockets":{%s},"logs":{%s}}\n' \
+    "$(date -Iseconds)" "$SELF_VERSION" "$(safe "$result")" "$window" "${disk:-null}" "$body" "$socks" "$logs" | write_atomic "$BRIDGES_PROBE"
+  echo "Result: $result — written to $BRIDGES_PROBE"
 }
 
 ensure_clamav() {
@@ -519,6 +664,11 @@ deploy() { # $1=mode — recreate onto :latest; on health failure roll back. Exi
   log "ERROR: rollback to $prev failed too — manual intervention required (docker compose ps / logs)"
   write_state failed "$mode" "$new_id" "$new_ver"; exit 4
 }
+
+if [ "${1:-}" = "bridges-probe" ]; then
+  bridges_probe "${2:-}" || true
+  exit 0
+fi
 
 sync_clamav || true
 sync_bridges || true

@@ -93,16 +93,24 @@ function wantsLocalClamav() {
 // Messenger bridges (services/bridges, docs/feature-messenger-bridges.md):
 // update.sh (marker 5) runs the compose profile "bruecken" while "bridges"
 // names at least one bridge ("whatsapp", later comma separated) and stops it
-// (only what it started) once the field is gone. Never throws.
+// (only what it started) once the field is gone. "bridges_rev" (marker 6) is
+// the revision of the containers' configuration, written by the server right
+// before: update.sh recreates the containers when it changes. Never throws.
 function wantedBridges() {
-  try { return require('./bridges').wanted().filter((n) => /^[a-z]{2,16}$/.test(n)); } catch { return []; }
+  try {
+    const w = require('./bridges').wish();
+    return { names: w.names.filter((n) => /^[a-z]{2,16}$/.test(n)), rev: typeof w.rev === 'string' && /^[0-9a-f]{12}$/.test(w.rev) ? w.rev : null };
+  } catch { return { names: [], rev: null }; }
 }
 function writeConfigFile(mode, win = getWindow()) {
   const cfg = { mode };
   if (win.enabled) cfg.window = { start: win.start, end: win.end, tz: win.tz };
   if (wantsLocalClamav()) cfg.clamav = 'on';
   const bridges = wantedBridges();
-  if (bridges.length) cfg.bridges = bridges.join(',');
+  if (bridges.names.length) {
+    cfg.bridges = bridges.names.join(',');
+    if (bridges.rev) cfg.bridges_rev = bridges.rev;
+  }
   writeAtomic(CONFIG_FILE, JSON.stringify(cfg) + '\n');
 }
 /** Re-project the settings onto the host file (scan engine changed). Never throws. */

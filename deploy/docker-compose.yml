@@ -79,6 +79,141 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Messenger bridges (preview, off by default; Messenger plugin › Übersicht ›
+  # "Brücken"): a small internal Matrix homeserver and one bridge per outside
+  # messenger. Nothing of this starts by itself — update.sh brings the profile
+  # "bruecken" up while an administrator has the bridges switched on, and only
+  # on a server started with GC_BRIDGES_PREVIEW=1 (.env).
+  #  - No port is published. The homeserver sits in a network without a way
+  #    out ("internal") and listens on a Unix socket; a bridge listens on a
+  #    Unix socket too and has a network only for its way OUT to the messenger.
+  #  - GateControl writes their configuration into ./data/bridges before the
+  #    first start (update.sh sets GC_BRIDGES_DIR when the data lives elsewhere).
+  #  - Images are pinned by version and digest; GateControl shows "outdated"
+  #    when a container runs another one (src/services/bridges/images.js).
+  #  - Root inside, but with a single capability: DAC_OVERRIDE, because the
+  #    GateControl container re-owns everything under /data at each start.
+  #  - mem_limit / cpus are PROVISIONAL upper bounds, not measured needs:
+  #    `./update.sh bridges-probe` measures on this server.
+  bruecken-hs:
+    image: ghcr.io/matrix-construct/tuwunel:v1.9.4@sha256:0e86c6164d6c9f5b60291938eb61ad8395021c37fe58d47a963ea7edddbedaec
+    container_name: bruecken-hs
+    profiles: ["bruecken"]
+    command: ["--config", "/etc/bruecken/tuwunel.toml"]
+    networks:
+      - bruecken-intern
+    volumes:
+      - ${GC_BRIDGES_DIR:-./data/bridges}/hs/config:/etc/bruecken:ro
+      - ${GC_BRIDGES_DIR:-./data/bridges}/hs/data:/var/lib/tuwunel
+      - ${GC_BRIDGES_DIR:-./data/bridges}/hs/run:/run/bruecken
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 384m
+    # A database migration after an image update must not be cut off.
+    stop_grace_period: 5m
+    restart: unless-stopped
+    # The probe has to read the same configuration as the server it asks.
+    healthcheck:
+      test: ["CMD", "tuwunel", "--config", "/etc/bruecken/tuwunel.toml", "--health-check"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 5m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  bruecken-whatsapp:
+    image: dock.mau.dev/mautrix/whatsapp:v0.2610.0@sha256:c807054cb015d0f5c90d20d85aac216d062b4a6f4ae834b931fd5e7f03e27391
+    container_name: bruecken-whatsapp
+    profiles: ["bruecken"]
+    # The program itself, not the image's docker-run.sh (that one chowns /data
+    # and edits the configuration): GateControl's configuration, read-only,
+    # never rewritten (--no-update).
+    command: ["/usr/bin/mautrix-whatsapp", "--config", "/etc/bruecken/config.yaml", "--no-update"]
+    working_dir: /data
+    depends_on:
+      - bruecken-hs
+      - bruecken-whatsapp-relay
+    networks:
+      - bruecken-aussen
+    volumes:
+      - ${GC_BRIDGES_DIR:-./data/bridges}/whatsapp/config:/etc/bruecken:ro
+      - ${GC_BRIDGES_DIR:-./data/bridges}/whatsapp/data:/data
+      - ${GC_BRIDGES_DIR:-./data/bridges}/run:/run/bruecken
+      - ${GC_BRIDGES_DIR:-./data/bridges}/hs/run:/run/bruecken-hs:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    cpus: "1.0"
+    mem_limit: 512m
+    stop_grace_period: 1m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/bruecken/whatsapp.sock"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # The homeserver reaches a bridge by HTTP only, the bridge listens on a Unix
+  # socket only: this relay (socat) sits in the homeserver's closed network and
+  # hands its calls to the bridge's socket.
+  bruecken-whatsapp-relay:
+    image: alpine/socat:1.8.1.3@sha256:71131702f671a88b3808a70b7330f9679cd9b9933adcafadc191508edfe55bba
+    container_name: bruecken-whatsapp-relay
+    profiles: ["bruecken"]
+    command: ["TCP-LISTEN:29318,fork,reuseaddr", "UNIX-CONNECT:/run/bruecken/whatsapp.sock"]
+    networks:
+      - bruecken-intern
+    volumes:
+      - ${GC_BRIDGES_DIR:-./data/bridges}/run:/run/bruecken:ro
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    cpus: "0.25"
+    mem_limit: 32m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "socat", "-u", "OPEN:/dev/null", "TCP:127.0.0.1:29318,connect-timeout=3"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
 configs:
   clamd_conf:
     content: |
@@ -95,6 +230,15 @@ configs:
       MaxScanSize 400M
       MaxRecursion 5
       MaxThreads 4
+
+networks:
+  # Homeserver and relays only; no route to the outside (no federation is
+  # even possible) and nothing published.
+  bruecken-intern:
+    internal: true
+  # A bridge's way out to its messenger. Nothing is published.
+  bruecken-aussen:
+    driver: bridge
 
 volumes:
   clamav-db:
