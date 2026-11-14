@@ -8,7 +8,8 @@
 //   whatsapp/config/config.yaml    the WhatsApp bridge (mautrix-whatsapp)
 //   hs/data, whatsapp/data         their databases
 //   hs/run, run                    the Unix sockets: hs/run/hs.sock (the homeserver's; the bridge sees that
-//                                  folder read-only) and run/<network>.sock (a bridge's; its relay sees it read-only)
+//                                  folder read-only), run/<network>.sock (a bridge's; its relay sees it read-only)
+//                                  and run/core.sock (this server's, appservice.js; its relay sees it read-only)
 //
 // Every key written here exists in the example configuration of the pinned
 // version (images.js) — tests/bridges_config.test.js checks each one against
@@ -29,6 +30,16 @@
 //                "sqlite3-fk-wal" sets), no history (backfill.enabled false,
 //                no rooms for old conversations at login), no encryption
 //                inside the internal server, no spaces, no status notices
+//
+// Stage 3 (messages):
+//   homeserver   the server's own application service gets an address (the relay bruecken-core-relay) and the
+//                ephemeral events (typing, read receipts); a third registration without address ("gcpuppet")
+//                whose token the bridge uses to act for the people's internal accounts
+//   bridge       double puppeting with that token (the bridge joins a person's account to new rooms itself, and
+//                what the person writes in the messenger's own app arrives as theirs); one room per person even
+//                for shared groups (split_portals); the bridge's word on every sent message as an event
+//                (message_status_events) instead of an error text in the chat; no bot picture from another
+//                server; a log that names no chats (min_level warn)
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -39,28 +50,42 @@ const SERVER_NAME = 'gc.internal';
 const RUN_DIR = '/run/bruecken';
 const HS_SOCKET = `${RUN_DIR}/hs.sock`;          // as the homeserver sees its own socket
 const HS_SOCKET_BRIDGE = '/run/bruecken-hs/hs.sock'; // as a bridge sees it
-const RELAY_PORT = { whatsapp: 29318 };
+const RELAY_PORT = { whatsapp: 29318, core: 29319 };
 // the server's own application service on the internal homeserver: it owns the accounts of the GateControl people
 const CORE_ID = 'gatecontrol';
 const CORE_BOT = 'gcbot';
+// a registration without address: its token lets a bridge act for those accounts ("double puppeting")
+const PUPPET_ID = 'gcpuppet';
+const PUPPET_BOT = 'gcpuppetbot';
 
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const userRegex = (prefix) => `@${reEsc(prefix)}.*:${reEsc(SERVER_NAME)}`;
 
 /**
  * The homeserver's configuration as a model: { global: { key: value }, appservices: { id: { …, users: [ns] } } }.
- * @param {{asToken:string, hsToken:string, coreAsToken:string, coreHsToken:string}} secrets
+ * @param {{asToken:string, hsToken:string, coreAsToken:string, coreHsToken:string, puppetAsToken:string, puppetHsToken:string}} secrets
  * @param {string[]} networks the bridges that are switched on
  */
 function hsModel(secrets, networks) {
   const appservices = {
-    // no url: the server asks the homeserver, the homeserver never calls the server
+    // the homeserver pushes the events of the people's rooms to the server — by HTTP only, so through a relay that
+    // hands the call to the server's Unix socket (run/core.sock)
     [CORE_ID]: {
+      url: `http://bruecken-core-relay:${RELAY_PORT.core}`,
       as_token: secrets.coreAsToken,
       hs_token: secrets.coreHsToken,
       sender_localpart: CORE_BOT,
       rate_limited: false,
+      receive_ephemeral: true,
       users: [{ exclusive: true, regex: userRegex('gc_') }],
+    },
+    // no url: nothing is pushed for this one, a bridge only acts with its token
+    [PUPPET_ID]: {
+      as_token: secrets.puppetAsToken,
+      hs_token: secrets.puppetHsToken,
+      sender_localpart: PUPPET_BOT,
+      rate_limited: false,
+      users: [{ exclusive: false, regex: userRegex('gc_') }],
     },
   };
   for (const n of networks) {
@@ -146,7 +171,8 @@ function bridgeModel(network, secrets) {
       hostname: `${RUN_DIR}/${network}.sock`,
       port: 0,
       id: network,
-      bot: { username: `${network}bot` },
+      // no picture: the default one lies on another server, which this island never reaches
+      bot: { username: `${network}bot`, avatar: 'remove' },
       ephemeral_events: true,
       as_token: secrets.asToken,
       hs_token: secrets.hsToken,
@@ -161,13 +187,18 @@ function bridgeModel(network, secrets) {
     bridge: {
       personal_filtering_spaces: false,
       bridge_status_notices: 'none',
+      // one room per person, also for a group two people are in: nobody shares a room with another account
+      split_portals: true,
       // only accounts of the internal server, and only as users — no relay, no administrator
       permissions: { [SERVER_NAME]: 'user' },
     },
     matrix: {
       federate_rooms: false,
       delivery_receipts: false,
-      message_status_events: false,
+      // what became of a sent message arrives as an event (the server turns it into "sent / delivered / failed"),
+      // not as an error text written into the chat
+      message_status_events: true,
+      message_error_notices: false,
     },
     provisioning: {
       shared_secret: secrets.provisionSecret,
@@ -176,9 +207,10 @@ function bridgeModel(network, secrets) {
       enable_session_transfers: false,
     },
     backfill: { enabled: false },
-    double_puppet: { servers: {}, allow_discovery: false, secrets: {} },
+    double_puppet: { servers: {}, allow_discovery: false, secrets: { [SERVER_NAME]: `as_token:${secrets.puppetAsToken}` } },
     encryption: { allow: false, default: false, require: false },
-    logging: { min_level: 'info', writers: [{ type: 'stdout', format: 'pretty' }] },
+    // warn: the info and debug lines name chats and accounts (ids with phone numbers) — they are not written at all
+    logging: { min_level: 'warn', writers: [{ type: 'stdout', format: 'pretty' }] },
     network: {
       // no rooms for old conversations at login: a room appears with its first new message
       history_sync: { max_initial_conversations: 0, request_full_sync: false, media_requests: { auto_request_media: false } },
@@ -261,6 +293,6 @@ function write(dir, secrets, networks) {
 }
 
 module.exports = {
-  SERVER_NAME, RUN_DIR, HS_SOCKET, HS_SOCKET_BRIDGE, RELAY_PORT, CORE_ID, CORE_BOT,
+  SERVER_NAME, RUN_DIR, HS_SOCKET, HS_SOCKET_BRIDGE, RELAY_PORT, CORE_ID, CORE_BOT, PUPPET_ID, PUPPET_BOT,
   hsModel, hsToml, bridgeModel, bridgeYaml, files, rev, write,
 };

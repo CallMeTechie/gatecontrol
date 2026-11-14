@@ -1,6 +1,6 @@
 'use strict';
 
-// Messenger bridges (docs/feature-messenger-bridges.md), stages 1 and 2.
+// Messenger bridges (docs/feature-messenger-bridges.md), stages 1 to 3.
 //
 // A side service next to GateControl — a small internal Matrix homeserver and
 // one bridge per outside messenger (first: WhatsApp) — lets the chat of the
@@ -29,6 +29,14 @@
 //                    the bridge's own database at the place it runs.
 //   people           a person is addressed by their GateControl user id; the
 //                    internal Matrix id never leaves this module.
+//   messages         (stage 3) the homeserver pushes what happens in the rooms
+//                    of the GateControl people to this process (appservice.js,
+//                    a Unix socket behind the relay bruecken-core-relay);
+//                    events.js turns it into neutral events a plugin pulls
+//                    (events.pull / events.ack, woken by the hook
+//                    bridgeEvents). Sending goes the other way through the
+//                    homeserver's client API (hs.js) as the person's internal
+//                    account — only while that person acts.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -40,10 +48,12 @@ const provision = require('./provision');
 const config = require('./config');
 const images = require('./images');
 const hs = require('./hs');
+const appservice = require('./appservice');
+const eventsMod = require('./events');
 
 const NETWORKS = Object.freeze(['whatsapp']);
 const SERVER_NAME = config.SERVER_NAME;
-const SCRIPT = 6; // update.sh marker that knows the profile "bruecken" with relays, the configuration revision and the probe
+const SCRIPT = 7; // update.sh marker that knows the profile "bruecken" with relays (also the server's own: bruecken-core-relay), the configuration revision and the probe
 const HOST_STATES = ['running', 'starting', 'failed', 'stopped'];
 const HOST_ERRORS = ['compose_missing', 'config_missing', 'start_failed'];
 const PROBE_RESULTS = ['ok', 'not_wanted', 'compose_missing', 'config_missing', 'start_failed', 'not_running'];
@@ -102,6 +112,8 @@ function tokens(key) {
     asToken: derive(key, 'as_token'), hsToken: derive(key, 'hs_token'), provisionSecret: derive(key, 'provisioning'),
     // the server's own application service on the internal homeserver (config.js)
     coreAsToken: derive(key, 'core_as_token'), coreHsToken: derive(key, 'core_hs_token'),
+    // a registration without address: the bridge acts with its token for the people's internal accounts ("double puppeting")
+    puppetAsToken: derive(key, 'puppet_as_token'), puppetHsToken: derive(key, 'puppet_hs_token'),
   };
 }
 
@@ -170,6 +182,10 @@ function hostStatus() {
     script: { host, needed: SCRIPT },
     cron,
     probe: probeResult(au.DATA_DIR),
+    // the relay that brings the homeserver's events to this server (docker-compose.yml since stage 3):
+    // true/false as update.sh (marker 7) saw it, null when it did not say (older script)
+    coreRelay: ok && file.services && typeof file.services === 'object' && file.services['core-relay'] && typeof file.services['core-relay'] === 'object'
+      ? { present: file.services['core-relay'].present !== false, running: file.services['core-relay'].running === true } : null,
   };
 }
 
@@ -234,8 +250,23 @@ function status() {
       // the memory limits in docker-compose.yml are not measured yet: `update.sh bridges-probe` on the host delivers the numbers
       limitsProvisional: true, probe: host.probe,
     },
+    // stage 3: the way of the messages. listening — this server waits for the homeserver's events; relay — the
+    // container that hands them over (missing: the docker-compose.yml on the host is older than this server);
+    // lastEventAt / pending — when the homeserver last delivered, and what no plugin has fetched yet. No contents.
+    messages: messagesStatus(cfg, host),
     // older history is not loaded on the server (slow disk): a later stage does it in small portions at night
     history: { enabled: false },
+  };
+}
+
+function messagesStatus(cfg, host) {
+  const st = runtime.events ? runtime.events.stats : null;
+  return {
+    listening: !!runtime.listener,
+    relay: !cfg.enabled ? null : (host.coreRelay ? (host.coreRelay.present ? (host.coreRelay.running ? 'running' : 'stopped') : 'missing') : 'unknown'),
+    lastEventAt: st && st.lastAt ? new Date(st.lastAt).toISOString() : null,
+    transactions: st ? st.transactions : 0,
+    pending: runtime.events ? runtime.events.pending() : 0,
   };
 }
 
@@ -262,6 +293,8 @@ function configure(patch, ctx) {
   settings.set('bridges.networks', JSON.stringify(next.networks));
   settings.set('bridges.enabled', next.enabled ? '1' : '0');
   require('../autoUpdate').syncConfigFile();
+  // the listener for the homeserver's events follows the switch
+  start().catch((err) => logger.warn({ err: err.message }, 'bridges: listener not started'));
   if (next.enabled !== cur.enabled || NETWORKS.some((n) => next.networks[n] !== cur.networks[n])) {
     try {
       require('../activity').log('bridges_changed', `Messenger-Brücken ${next.enabled ? 'eingeschaltet' : 'ausgeschaltet'}`, {
@@ -382,10 +415,192 @@ async function unlinkFor(userId, network, ctx) {
   return { unlinked: n };
 }
 
-function _reset() { waits.clear(); accounts.clear(); }
+// ─── Messages (stage 3) ────────────────────────────────
+
+const runtime = { listener: null, events: null, key: null, starting: null, wake: null };
+const selfCache = new Map(); // `${userId}:${network}` → { at, ids }
+
+function hsTarget() {
+  const secrets = readSecrets();
+  return secrets ? { socket: hs.socketOf(dir()), token: secrets.coreAsToken } : null;
+}
+
+/** The ids of a person's own logins on a bridge (kept 10 minutes): tells their own messages from a contact's when the bridge writes both through ghosts. */
+async function selfIds(userId, network) {
+  const k = `${userId}:${network}`;
+  const c = selfCache.get(k);
+  if (c && Date.now() - c.at < 600000) return c.ids;
+  const secrets = readSecrets();
+  if (!secrets) return [];
+  let ids = [];
+  try {
+    const w = await provision.client({ socket: provision.socketOf(dir(), network), secret: secrets.provisionSecret }, mxidOf(userId)).whoami();
+    ids = w.logins.map((l) => String(l.id));
+  } catch { ids = c ? c.ids : []; }
+  if (selfCache.size > 500) selfCache.clear();
+  selfCache.set(k, { at: Date.now(), ids });
+  return ids;
+}
+
+/** The translator of this installation (one per master key), or null before the bridges were ever switched on. */
+function eventsOf() {
+  const key = readKey();
+  if (!key) return null;
+  if (runtime.events && runtime.key === key) return runtime.events;
+  runtime.key = key;
+  runtime.events = eventsMod.create({
+    serverName: SERVER_NAME, networks: [...NETWORKS],
+    key: crypto.createHmac('sha256', Buffer.from(key, 'base64url')).update('gatecontrol-bridges:events').digest(),
+    target: hsTarget, selfIds,
+  });
+  return runtime.events;
+}
+
+/** Tell the plugins that may use the bridges: there is something to fetch (and what is not kept: typing, read receipts). */
+function wakePlugins(ephemeral) {
+  let list = [];
+  try { list = require('../plugins/registry').list(); } catch { return; }
+  for (const p of list) {
+    const perms = p.manifest && p.manifest.permissions;
+    if (!perms || perms.bridges !== true || !p.enabled) continue;
+    try {
+      const rt = require('../plugins/runtime');
+      if (rt.info(p.id).state !== 'running') continue;
+      rt.call(p.id, 'bridgeEvents', { pending: runtime.events ? runtime.events.pending() : 0, ephemeral: ephemeral || [] }, 15000).catch(() => {});
+    } catch { /* fetched at the plugin's next tick */ }
+  }
+}
+
+async function onTransaction(txnId, body) {
+  const ev = eventsOf();
+  if (!ev) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not set up', 'not_running');
+  const r = await ev.transaction(txnId, body);
+  if (r.stored || r.ephemeral.length) (runtime.wake || wakePlugins)(r.ephemeral);
+}
+
+/**
+ * Listen for the homeserver's events while the bridges are wanted, stop when they are not. Called at the server's
+ * start and whenever the switch changes. Never throws for "nothing to do".
+ */
+function start() {
+  // one after the other: a switch flipped twice in a row ends in the state of the last flip
+  const run = (runtime.starting || Promise.resolve()).catch(() => {}).then(async () => {
+    if (!wanted().length) { await stop(); return false; }
+    if (runtime.listener) return true;
+    const secrets = ensureSecrets();
+    eventsOf();
+    runtime.listener = await appservice.listen({ socket: appservice.socketOf(dir()), hsToken: secrets.coreHsToken, onTransaction });
+    logger.info('bridges: listening for the homeserver');
+    return true;
+  });
+  runtime.starting = run;
+  return run;
+}
+
+async function stop() {
+  const l = runtime.listener;
+  runtime.listener = null;
+  if (l) { try { await l.close(); } catch { /* closed */ } }
+}
+
+/** The room behind a person's chat — only theirs, only on a bridge that is switched on. */
+function roomFor(userId, network, chatId) {
+  if (!NETWORKS.includes(network)) throw new BridgesError('ERR_INVALID', 'unknown network');
+  mxidOf(userId);
+  if (!previewOn()) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not offered on this server', 'preview_off');
+  const cfg = getConfig();
+  if (!cfg.enabled || !cfg.networks[network]) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'this bridge is switched off', 'off');
+  const ev = eventsOf();
+  const target = hsTarget();
+  if (!ev || !target) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not set up yet', 'not_running');
+  const row = ev.roomOf(userId, network, chatId);
+  if (!row) throw new BridgesError('ERR_INVALID', 'unknown chat');
+  if (row.state !== 'joined') throw new BridgesError('ERR_BRIDGE', 'this chat is closed', 'chat_closed');
+  return { row, target, mxid: mxidOf(userId) };
+}
+
+const eventId = (v, what) => { if (!hs.EVENT_RE.test(String(v || ''))) throw new BridgesError('ERR_INVALID', `${what}: a message id`); return v; };
+const txnOf = (v) => { if (!hs.TXN_RE.test(String(v || ''))) throw new BridgesError('ERR_INVALID', 'txnId: 8…96 characters of A-Z a-z 0-9 _ -'); return v; };
+
+/**
+ * gc.bridges.send(userId, network, chatId, { txnId, text, replyTo?, edit? }) → { id }
+ * A text message; `replyTo` quotes a message, `edit` replaces the text of one of the person's own. The same txnId
+ * sends once (the homeserver keeps it). The bridge's word on it comes later as an event of type 'status'.
+ */
+async function send(userId, network, chatId, msg) {
+  const { row, target, mxid } = roomFor(userId, network, chatId);
+  const m = msg && typeof msg === 'object' && !Array.isArray(msg) ? msg : null;
+  if (!m) throw new BridgesError('ERR_INVALID', 'message: an object');
+  const text = typeof m.text === 'string' ? m.text.replace(/\r\n?/g, '\n').replace(/[\0-\x08\x0b-\x1f\x7f]/g, '') : '';
+  if (!text.trim() || text.length > eventsMod.TEXT_MAX) throw new BridgesError('ERR_INVALID', 'text: 1…16000 characters');
+  const txnId = txnOf(m.txnId);
+  let content = { msgtype: 'm.text', body: text };
+  if (m.edit != null) {
+    content = { msgtype: 'm.text', body: `* ${text}`, 'm.new_content': { msgtype: 'm.text', body: text }, 'm.relates_to': { rel_type: 'm.replace', event_id: eventId(m.edit, 'edit') } };
+  } else if (m.replyTo != null) {
+    content['m.relates_to'] = { 'm.in_reply_to': { event_id: eventId(m.replyTo, 'replyTo') } };
+  }
+  return { id: await hs.send(target, mxid, row.room_id, 'm.room.message', txnId, content) };
+}
+
+/** gc.bridges.react(userId, network, chatId, { txnId, target, emoji }) → { id } — take it back with redact(…, { target: id }). */
+async function react(userId, network, chatId, r) {
+  const { row, target, mxid } = roomFor(userId, network, chatId);
+  const x = r && typeof r === 'object' ? r : {};
+  if (typeof x.emoji !== 'string' || !x.emoji || x.emoji.length > 32 || /[\s\0-\x1f\x7f]/.test(x.emoji)) throw new BridgesError('ERR_INVALID', 'emoji: 1…32 characters');
+  const content = { 'm.relates_to': { rel_type: 'm.annotation', event_id: eventId(x.target, 'target'), key: x.emoji } };
+  return { id: await hs.send(target, mxid, row.room_id, 'm.reaction', txnOf(x.txnId), content) };
+}
+
+/** gc.bridges.redact(userId, network, chatId, { txnId, target }) → { ok } — delete a message for everyone, or take a reaction back. */
+async function redact(userId, network, chatId, r) {
+  const { row, target, mxid } = roomFor(userId, network, chatId);
+  const x = r && typeof r === 'object' ? r : {};
+  await hs.redact(target, mxid, row.room_id, eventId(x.target, 'target'), txnOf(x.txnId));
+  return { ok: true };
+}
+
+/** gc.bridges.read(userId, network, chatId, messageId) → { ok } — the person read up to this message. */
+async function read(userId, network, chatId, messageId) {
+  const { row, target, mxid } = roomFor(userId, network, chatId);
+  return hs.read(target, mxid, row.room_id, eventId(messageId, 'messageId'));
+}
+
+/** gc.bridges.typing(userId, network, chatId, on) → { ok } */
+async function typing(userId, network, chatId, on) {
+  const { row, target, mxid } = roomFor(userId, network, chatId);
+  return hs.typing(target, mxid, row.room_id, on === true);
+}
+
+/** gc.bridges.chats(userId, network) → [{ id, kind, open }] — the person's chats on a bridge (no names: those travel with the events). */
+function chats(userId, network) {
+  if (!NETWORKS.includes(network)) throw new BridgesError('ERR_INVALID', 'unknown network');
+  mxidOf(userId);
+  const ev = previewOn() ? eventsOf() : null;
+  return ev ? ev.chats(userId, network) : [];
+}
+
+const events = {
+  /** events.pull({ after?, limit? }) → { events, more } */
+  pull: (o) => {
+    if (!previewOn()) return { events: [], more: false };
+    const ev = eventsOf();
+    return ev ? ev.pull(o && typeof o === 'object' ? o : {}) : { events: [], more: false };
+  },
+  /** events.ack(upTo) → { ok, pending } */
+  ack: (upTo) => {
+    const ev = eventsOf();
+    if (!ev) return { ok: true, pending: 0 };
+    try { return ev.ack(upTo); } catch (e) { throw new BridgesError('ERR_INVALID', e.message); }
+  },
+};
+
+function _reset() { waits.clear(); accounts.clear(); selfCache.clear(); runtime.events = null; runtime.key = null; runtime.wake = null; }
 
 module.exports = {
   NETWORKS, SCRIPT, SERVER_NAME, BridgesError,
   previewOn, getConfig, wanted, wish, status, configure, hostStatus, ensureSecrets, readSecrets, dir,
   login, logins, logout, unlinkFor, mxidOf, _reset,
+  start, stop, send, react, redact, read, typing, chats, events,
+  _onTransaction: onTransaction, _eventsOf: eventsOf, _runtime: runtime,
 };

@@ -124,7 +124,7 @@ describe('the service', () => {
     assert.deepEqual(st.networks[0], { id: 'whatsapp', enabled: true, state: 'running', version: 'v26.10', memMb: 88, limitMb: 512, outdated: false, wantVersion: '0.2610.0' });
     assert.equal(st.host.limitsProvisional, true, 'no measured memory need yet');
     assert.equal(st.host.probe, null);
-    assert.equal(st.host.script.needed, 6);
+    assert.equal(st.host.script.needed, 7);
 
     fs.writeFileSync(stateFile(), JSON.stringify({ checked_at: new Date().toISOString(), state: 'failed', error: 'compose_missing', services: {} }));
     st = bridges.status();
@@ -343,7 +343,7 @@ case "$1" in
       *) exit 1 ;;
     esac ;;
   stats) case "$*" in *BlockIO*) echo "1.5MB / 2.5MB" ;; *) echo "87.6MiB / 512MiB" ;; esac; exit 0 ;;
-  logs) echo "started; token $(printf 'x%.0s' $(seq 1 40)) for 4915120000000"; exit 0 ;;
+  logs) cat "$S/logs" 2>/dev/null || echo "started; token $(printf 'x%.0s' $(seq 1 40)) for 4915120000000"; exit 0 ;;
   rm) rm -f "$S/run_\${!#}"; exit 0 ;;
   compose)
     case "$*" in
@@ -396,7 +396,7 @@ exit 0
     const r = run({ mode: 'manual', bridges: 'whatsapp' });
     assert.equal(r.state.state, 'failed');
     assert.equal(r.state.error, 'compose_missing');
-    assert.equal(r.state.update_sh, 6);
+    assert.equal(r.state.update_sh, 7);
     assert.doesNotMatch(r.calls, / up -d /);
   });
 
@@ -497,7 +497,7 @@ exit 0
     r = run({ mode: 'manual', bridges: 'whatsapp' }, ['bridges-probe', '10']);
     const p = probe();
     assert.match(r.calls, /compose --profile bruecken up -d bruecken-hs bruecken-whatsapp bruecken-whatsapp-relay/);
-    assert.equal(p.update_sh, 6);
+    assert.equal(p.update_sh, 7);
     assert.equal(p.window_s, 10);
     assert.deepEqual(Object.keys(p.services), ['hs', 'whatsapp', 'whatsapp-relay']);
     assert.equal(p.services.hs.running, true);
@@ -512,5 +512,62 @@ exit 0
     assert.match(r.out, /Result: /);
     assert.equal(p.result, 'ok');
     assert.deepEqual(p.sockets, { hs: true, whatsapp: true });
+  });
+
+  it('bridges-probe: nothing of a link, an event or a person is left in the log lines', { skip }, () => {
+    fs.writeFileSync(st('services'), 'bruecken-hs\nbruecken-whatsapp\nbruecken-whatsapp-relay\nbruecken-core-relay\n');
+    for (const f of ['hs/run/hs.sock', 'run/whatsapp.sock']) {
+      const file = path.join(box, 'data', 'bridges', f);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      assert.equal(spawnSync(process.execPath, ['-e', `const s=require('net').createServer();s.listen(${JSON.stringify(file)},()=>process.exit(0));`]).status, 0);
+    }
+    // lines as the real containers wrote them in the probe on the server (shortened), each with something that must not stay
+    fs.writeFileSync(st('logs'), [
+      '2026-11-14T20:11:02Z INF Bridge started',
+      '2026-11-14T20:12:40Z DBG Login step display_and_wait data=2@k3JhbGciOiJIUzI1NiJ9abcdefgh,Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MA==,qwertzuiop type=qr',
+      '2026-11-14T20:12:41Z INF Open https://wa.me/settings/linked_devices#QWxhZGRpbjpvcGVuIHNlc2FtZQ to link',
+      '2026-11-14T20:12:42Z INF Access method=POST path=/_matrix/provision/v3/login/step/abc/def/display_and_wait user_id=@gc_3:gc.internal status=200',
+      '2026-11-14T20:12:43Z DBG Pairing code requested phone=+49 151 23456789',
+      '2026-11-14T20:13:01Z INF Successfully paired user_mxid=@gc_3:gc.internal jid=4915123456789:12@s.whatsapp.net lid=123456789012345@lid',
+      '2026-11-14T20:13:02Z INF Login completed successfully user_id=@gc_3:gc.internal login_id=4915123456789',
+      '2026-11-14T20:13:05Z WRN Failed to handle event event_data={"key":{"remoteJid":"4915198765432@s.whatsapp.net"},"message":{"conversation":"Hallo Kim"}}',
+      '2026-11-14T20:13:06Z DBG Sending request req_body={"msgtype":"m.text","body":"geheim"}',
+      '2026-11-14T20:13:07Z INF Created portal portal_id=120363041234567890@g.us room_id=!AbCdEfGhIjKl:gc.internal event_id=$QmFzZTY0RXZlbnRJZA sender @whatsapp_4915198765432:gc.internal',
+      '2026-11-14T20:13:08Z ERR Session key c2Vzc2lvbmtleXNlc3Npb25rZXk= noise aGFuZHNoYWtlLWtleS1tYXRlcmlhbA for device 4915123456789',
+      '2026-11-14T20:13:09Z INF Number 0151 2345 6789 called',
+    ].join('\n') + '\n');
+    run({ mode: 'manual', bridges: 'whatsapp' }, ['bridges-probe', '10']);
+    const p = JSON.parse(fs.readFileSync(path.join(box, 'data', '.bridges-probe.json'), 'utf8'));
+    assert.deepEqual(Object.keys(p.services), ['hs', 'core-relay', 'whatsapp', 'whatsapp-relay'], 'the server’s own relay is measured too');
+    const log = p.logs.whatsapp;
+    // whole lines are gone: linking, the provisioning API, raw events, request bodies
+    for (const gone of ['wa.me', 'linked_devices', '/_matrix/provision', 'display_and_wait', 'Pairing', 'event_data', 'remoteJid', 'Hallo Kim', 'req_body', 'geheim']) {
+      assert.ok(!log.includes(gone), `"${gone}" must not be in the probe file`);
+    }
+    // in what stays: no address, no id, no key, no number
+    assert.doesNotMatch(log, /@gc_3|gc\.internal|whatsapp_49|s\.whatsapp\.net|@lid|@g\.us/);
+    assert.doesNotMatch(log, /4915123456789|4915198765432|120363041234567890|123456789012345/);
+    assert.doesNotMatch(log, /2345 6789|23456789/);
+    assert.doesNotMatch(log, /c2Vzc2lvbmtleXNlc3Npb25rZXk|aGFuZHNoYWtlLWtleS1tYXRlcmlhbA|QmFzZTY0RXZlbnRJZA|AbCdEfGhIjKl/);
+    // and still useful: what happened, and when
+    assert.match(log, /2026-11-14T20:11:02Z INF Bridge started/);
+    assert.match(log, /2026-11-14T20:13:02Z INF Login completed successfully/);
+    assert.match(log, /Created portal/);
+  });
+
+  it('starts the server’s own relay with the bridges when the compose file has it, and says when it is missing', { skip }, () => {
+    fs.writeFileSync(st('services'), 'bruecken-hs\nbruecken-whatsapp\nbruecken-whatsapp-relay\n');
+    let r = run({ mode: 'manual', bridges: 'whatsapp' });
+    assert.match(r.calls, /up -d bruecken-hs bruecken-whatsapp bruecken-whatsapp-relay\n/, 'an older compose file: the bridges start as before');
+    assert.deepEqual(r.state.services['core-relay'], { present: false, running: false });
+
+    fs.writeFileSync(st('services'), 'bruecken-hs\nbruecken-whatsapp\nbruecken-whatsapp-relay\nbruecken-core-relay\n');
+    fs.writeFileSync(st('calls'), '');
+    r = run({ mode: 'manual', bridges: 'whatsapp' });
+    assert.match(r.calls, /up -d bruecken-hs bruecken-core-relay bruecken-whatsapp bruecken-whatsapp-relay\n/, 'the new service is started on the next run');
+    fs.writeFileSync(st('calls'), '');
+    r = run({ mode: 'manual', bridges: 'whatsapp' });
+    assert.equal(r.state.state, 'running');
+    assert.deepEqual(r.state.services['core-relay'], { present: true, running: true });
   });
 });

@@ -2952,7 +2952,7 @@ names the permission first and marks it as sensitive.
 
 | Call | Answer |
 |---|---|
-| `gc.bridges.version` | `2` (`1`: without `unlinkFor`, `outdated`, `wantVersion`, `host.probe`) |
+| `gc.bridges.version` | `3` (`2`: without messages — `events`, `send`, …; `1`: also without `unlinkFor`, `outdated`, `wantVersion`, `host.probe`) |
 | `status()` | `{ available, reason, enabled, location: 'server', locations: [{ id, kind, cores, memMb, freeMb }], networks: [{ id, enabled, state: 'off' \| 'starting' \| 'running' \| 'failed', version, memMb, limitMb, outdated, wantVersion }], host: { state, error: 'compose_missing' \| 'config_missing' \| 'start_failed' \| null, checkedAt, cron, script: { host, needed }, homeserver: { running, memMb, limitMb, version, outdated, wantVersion }, limitsProvisional, probe }, history: { enabled: false } }` — states, versions and memory only; never a name, a number or a content. `outdated`: the container runs another image than this GateControl pins (`wantVersion`) — the host's `docker-compose.yml` is older. `limitsProvisional`: the memory limits are upper bounds nobody measured yet. `probe`: `null` or what `./update.sh bridges-probe` measured on the host — `{ at, result: 'ok' \| 'not_wanted' \| 'compose_missing' \| 'config_missing' \| 'start_failed' \| 'not_running', windowSeconds, services: { hs \| whatsapp \| whatsapp-relay: { running, restarts, oomKilled, memMb, memPeakMb, limitMb, writtenKb } }, sockets: { hs, whatsapp }, diskMb }` |
 | `configure({ enabled?, networks?: { whatsapp?: boolean } })` | `status()`. Only inside a changing request (POST/PUT/PATCH/DELETE) of an **administrator** (`ERR_NOT_PERSON`, `ERR_NOT_ADMIN`); logged as `bridges_changed`. Off by default |
 | `login.flows(userId, network)` | `[{ id, name, description }]` — WhatsApp: `qr`, `phone` (pairing code) |
@@ -2985,6 +2985,33 @@ link is never ended this way (`ERR_BRIDGES_DENIED`). Every call is written to
 the activity log (`bridges_unlinked_for`: target, actor, plugin, number of
 logins). **Who may do it to whom is the plugin's rule** — check the relation
 (the family plugin's `family_roles`) before calling.
+
+**Version 3 — messages** (`gc.bridges.version >= 3`; details and the event
+table: [feature-messenger-bridges.md](feature-messenger-bridges.md),
+"Messages"):
+
+| Call | Answer |
+|---|---|
+| `events.pull({ after?, limit? })` | `{ events: [{ seq, userId, network, type, chat, … }], more }` — what the bridges delivered for **all** linked people and nobody acknowledged (`limit` ≤ 200). Needs no person: it reads no bridge and sends nothing |
+| `events.ack(upTo)` | `{ ok, pending }` — events up to this `seq` are filed; the server deletes them |
+| `chats(userId, network)` | `[{ id, kind, open }]` — inside a request of that person |
+| `send(userId, network, chatId, { txnId, text, replyTo?, edit? })` | `{ id }` — a text as that person; the same `txnId` (8…96 of `A-Za-z0-9_-`) sends once. What became of it arrives as an event `status` |
+| `react(userId, network, chatId, { txnId, target, emoji })` | `{ id }` — take it back with `redact(…, { target: id })` |
+| `redact(userId, network, chatId, { txnId, target })` | `{ ok }` — delete a message for everyone, or take a reaction back |
+| `read(userId, network, chatId, messageId)` / `typing(userId, network, chatId, on)` | `{ ok }` |
+
+`send`, `react`, `redact`, `read` and `typing` act **as a person towards the
+outside messenger**: only inside a changing request of exactly that person
+(`ERR_NOT_PERSON` otherwise — not in a tick, not in a hook), and only into a
+chat of theirs (`ERR_INVALID` for anybody else's). `status().messages`:
+`{ listening, relay: 'running' | 'stopped' | 'missing' | 'unknown' | null,
+lastEventAt, transactions, pending }` — no contents.
+
+Hook (optional): `async bridgeEvents({ pending, ephemeral }, gc)` — the bridges
+delivered something. `ephemeral` carries what is never stored (typing, read
+receipts); everything else is fetched with `events.pull` and acknowledged with
+`events.ack` once it is filed. Also pull in the background run: a plugin that
+was not running when the hook fired misses nothing that way.
 
 Errors (`e.code`, with `e.reason`): `ERR_BRIDGES_DENIED` (no permission),
 `ERR_BRIDGES_UNAVAILABLE` (`preview_off`, `off`, `not_running`),

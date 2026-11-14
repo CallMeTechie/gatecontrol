@@ -4008,6 +4008,44 @@ const migrations = [
     sql: `DELETE FROM settings WHERE key = 'pihole_blocking_desired';`,
     run: (db) => { require('../services/piholeRemoval').purge(db); },
   },
+  {
+    version: 148,
+    name: 'bridge_messages',
+    // Messenger bridges, stage 3 (services/bridges/events.js):
+    //   bridge_rooms   a room a bridge made for a GateControl person on the
+    //                  internal homeserver ↔ the reference a plugin knows the
+    //                  chat by. No names, no numbers — ids only.
+    //   bridge_inbox   neutral events a plugin has not fetched yet; payload is
+    //                  sealed (AES-256-GCM, key derived from the bridges'
+    //                  master key in /data/bridges/secrets.json). Rows go when
+    //                  the plugin acknowledged them.
+    //   bridge_txns    the ids of the homeserver's last transactions, so one
+    //                  that is sent twice is taken once.
+    sql: `
+      CREATE TABLE IF NOT EXISTS bridge_rooms (
+        room_id TEXT PRIMARY KEY,
+        ref TEXT NOT NULL UNIQUE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        network TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'direct',
+        state TEXT NOT NULL DEFAULT 'joined',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_bridge_rooms_user ON bridge_rooms (user_id, network);
+      CREATE TABLE IF NOT EXISTS bridge_inbox (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        at INTEGER NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        network TEXT NOT NULL,
+        payload TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS bridge_txns (
+        id TEXT PRIMARY KEY,
+        at INTEGER NOT NULL
+      );`,
+    detect: (db) => tableExists(db, 'bridge_rooms') && tableExists(db, 'bridge_inbox') && tableExists(db, 'bridge_txns'),
+  },
 ];
 
 module.exports = { migrations };

@@ -25,7 +25,7 @@ const config = require('../src/services/bridges/config');
 const images = require('../src/services/bridges/images');
 const TUWUNEL = require('./fixtures/bridges/keys-tuwunel-1.9.4.json');
 const MAUTRIX = require('./fixtures/bridges/keys-mautrix-whatsapp-0.2610.0.json');
-const SECRETS = { asToken: 'a'.repeat(43), hsToken: 'b'.repeat(43), provisionSecret: 'c'.repeat(43), coreAsToken: 'd'.repeat(43), coreHsToken: 'e'.repeat(43) };
+const SECRETS = { asToken: 'a'.repeat(43), hsToken: 'b'.repeat(43), provisionSecret: 'c'.repeat(43), coreAsToken: 'd'.repeat(43), coreHsToken: 'e'.repeat(43), puppetAsToken: 'f'.repeat(43), puppetHsToken: 'g'.repeat(43) };
 
 function keyPaths(o, prefix = '') {
   const out = [];
@@ -72,7 +72,7 @@ function parseYaml(text) {
 
 describe('pinned images and the release docker-compose.yml', () => {
   it('every image is pinned by version and digest', () => {
-    assert.deepEqual(Object.keys(images.IMAGES), ['hs', 'whatsapp', 'whatsapp-relay']);
+    assert.deepEqual(Object.keys(images.IMAGES), ['hs', 'whatsapp', 'whatsapp-relay', 'core-relay']);
     for (const [name, i] of Object.entries(images.IMAGES)) {
       assert.match(i.digest, /^sha256:[0-9a-f]{64}$/, name);
       assert.match(i.tag, /^v?\d+(\.\d+)+$/, `${name}: a version, never latest`);
@@ -201,11 +201,20 @@ describe('the homeserver configuration (Tuwunel)', () => {
     assert.equal(whatsapp.sender_localpart, 'whatsappbot');
     assert.deepEqual(whatsapp.users, [{ exclusive: true, regex: '@whatsapp_.*:gc\\.internal' }]);
     assert.equal(gatecontrol.as_token, SECRETS.coreAsToken);
-    assert.ok(!('url' in gatecontrol), 'the homeserver never calls the server');
+    // stage 3: the homeserver pushes the people's events to the server — through the server's own relay
+    assert.equal(gatecontrol.url, `http://bruecken-core-relay:${config.RELAY_PORT.core}`);
+    assert.equal(gatecontrol.receive_ephemeral, true, 'typing and read receipts');
     assert.deepEqual(gatecontrol.users, [{ exclusive: true, regex: '@gc_.*:gc\\.internal' }]);
-    assert.equal(new Set([whatsapp.as_token, whatsapp.hs_token, gatecontrol.as_token, gatecontrol.hs_token]).size, 4);
+    // the registration a bridge acts with for the people's accounts: no address, the same accounts, not exclusive
+    const { gcpuppet } = model.appservices;
+    assert.ok(!('url' in gcpuppet), 'nothing is pushed for it');
+    assert.equal(gcpuppet.as_token, SECRETS.puppetAsToken);
+    assert.deepEqual(gcpuppet.users, [{ exclusive: false, regex: '@gc_.*:gc\\.internal' }]);
+    assert.notEqual(gcpuppet.sender_localpart, gatecontrol.sender_localpart);
+    assert.equal(new Set([whatsapp.as_token, whatsapp.hs_token, gatecontrol.as_token, gatecontrol.hs_token, gcpuppet.as_token, gcpuppet.hs_token]).size, 6, 'no token twice (the homeserver refuses that)');
+    assert.equal(new Set(Object.values(model.appservices).map((a) => a.sender_localpart)).size, 3);
     // a bridge that is switched off is not registered
-    assert.deepEqual(Object.keys(config.hsModel(SECRETS, []).appservices), ['gatecontrol']);
+    assert.deepEqual(Object.keys(config.hsModel(SECRETS, []).appservices), ['gatecontrol', 'gcpuppet']);
   });
 
   it('serialises to TOML: one [global] table, appservice tables, floats as floats, strings escaped', () => {
@@ -274,8 +283,21 @@ describe('the bridge configuration (mautrix-whatsapp)', () => {
     assert.equal(model.encryption.allow, false);
     assert.equal(model.bridge.personal_filtering_spaces, false);
     assert.equal(model.matrix.federate_rooms, false);
-    assert.deepEqual(model.double_puppet, { servers: {}, allow_discovery: false, secrets: {} }, 'none of the example servers of the built-in defaults');
+    assert.deepEqual(model.double_puppet.servers, {}, 'none of the example servers of the built-in defaults');
+    assert.equal(model.double_puppet.allow_discovery, false);
     assert.deepEqual(model.logging.writers, [{ type: 'stdout', format: 'pretty' }], 'no log file');
+  });
+
+  it('stage 3: acts for the people’s accounts, one room per person, reports what became of a message, names nobody in the log', () => {
+    // double puppeting with the token of the registration made for it — not the bridge's own, not the server's
+    assert.deepEqual(model.double_puppet.secrets, { 'gc.internal': `as_token:${SECRETS.puppetAsToken}` });
+    assert.equal(model.bridge.split_portals, true, 'nobody shares a room with another account');
+    assert.equal(model.matrix.message_status_events, true);
+    assert.equal(model.matrix.message_error_notices, false, 'no error texts written into the chat');
+    assert.equal(model.appservice.ephemeral_events, true);
+    assert.equal(model.appservice.bot.avatar, 'remove', 'no picture from another server');
+    assert.equal(model.logging.min_level, 'warn', 'the lines that name chats and accounts are not written');
+    assert.equal(model.network.history_sync.max_initial_conversations, 0, 'a chat appears with its first new message');
   });
 
   it('serialises to YAML that reads back as the same object', () => {
