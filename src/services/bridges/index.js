@@ -270,7 +270,7 @@ function locations() {
  * no contents: states, versions and memory only.
  */
 function status() {
-  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 6 };
+  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 7 };
   const cfg = getConfig();
   const host = hostStatus();
   const up = cfg.enabled && host.state === 'running' && host.services.hs.running;
@@ -310,7 +310,7 @@ function status() {
     // stage 5: the copies of files at the homeserver that went after the plugin took them over
     cleanup: { deleted: cleanup.deleted, lastAt: cleanup.lastAt ? new Date(cleanup.lastAt).toISOString() : null, error: cleanup.error, waiting: runtime.events ? runtime.events.mediaWaiting() : 0 },
     // the version of gc.bridges this server offers (child/bootstrap.js)
-    version: 6,
+    version: 7,
   };
 }
 
@@ -821,7 +821,7 @@ async function typing(userId, network, chatId, on) {
   return hs.typing(target, mxid, row.room_id, on === true);
 }
 
-/** gc.bridges.chats(userId, network) → [{ id, kind, open }] — the person's chats on a bridge (no names: those travel with the events). */
+/** gc.bridges.chats(userId, network) → [{ id, kind, open, channel, readOnly }] — the person's chats on a bridge (no names: those travel with the events). */
 function chats(userId, network) {
   if (!NETWORKS.includes(network)) throw new BridgesError('ERR_INVALID', 'unknown network');
   mxidOf(userId);
@@ -902,6 +902,11 @@ async function cleanupRun({ limit = CLEAN_PER_RUN } = {}) {
 async function tick() {
   await backupMod.tick();
   try { await cleanupRun(); } catch (err) { logger.warn({ err: err.message }, 'bridges: clean-up failed'); }
+  // version 7: kind, channel and readOnly of the rooms known from before, a few per tick
+  try {
+    const r = runtime.events && hsTarget() ? await runtime.events.refreshRooms({ limit: 20 }) : null;
+    if (r && r.stored) (runtime.wake || wakePlugins)([]);
+  } catch (err) { logger.warn({ err: err.message }, 'bridges: rooms not looked at'); }
 }
 
 /** The master key (backup.js) — never returned by any API. */

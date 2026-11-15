@@ -4076,6 +4076,18 @@ const migrations = [
       ALTER TABLE plugin_media_areas ADD COLUMN sealed INTEGER NOT NULL DEFAULT 0;`,
     detect: (db) => tableExists(db, 'bridge_backlog') && tableExists(db, 'bridge_media') && hasColumn(db, 'plugin_media_areas', 'sealed'),
   },
+  {
+    version: 150,
+    name: 'bridge_rooms_channel',
+    // Messenger bridges, gc.bridges version 7 (services/bridges/events.js): what the room's state says about a chat.
+    //   channel    1 a channel the person follows (only the channel writes), 0 a chat or group, NULL not looked at yet
+    //              (a room from before this version — events.refreshRooms fills it in, a few per tick)
+    //   read_only  1 the person may not write (power levels: a channel, a group where only admins write)
+    sql: `
+      ALTER TABLE bridge_rooms ADD COLUMN channel INTEGER;
+      ALTER TABLE bridge_rooms ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0;`,
+    detect: (db) => hasColumn(db, 'bridge_rooms', 'channel') && hasColumn(db, 'bridge_rooms', 'read_only'),
+  },
 ];
 
 module.exports = { migrations };
