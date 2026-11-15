@@ -4046,6 +4046,36 @@ const migrations = [
       );`,
     detect: (db) => tableExists(db, 'bridge_rooms') && tableExists(db, 'bridge_inbox') && tableExists(db, 'bridge_txns'),
   },
+  {
+    version: 149,
+    name: 'bridge_history_media',
+    // Messenger bridges, stage 5 (services/bridges/events.js):
+    //   bridge_backlog  older messages (history) a person wanted, sealed like bridge_inbox, until the plugin takes
+    //                   them — in small portions at night, or at once before a new message of the same chat
+    //   bridge_media    the files of the rooms as the homeserver keeps them (address and person, no name), so the
+    //                   server can delete its copy at the homeserver once the plugin took it over
+    // Plugin media areas: `sealed` = the plugin wants the files of this area kept sealed on every target (never as
+    // readable files on a NAS) — the messenger's files from other people's chats.
+    sql: `
+      CREATE TABLE IF NOT EXISTS bridge_backlog (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        at INTEGER NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        network TEXT NOT NULL,
+        chat TEXT NOT NULL,
+        payload TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_bridge_backlog_chat ON bridge_backlog (user_id, chat, seq);
+      CREATE TABLE IF NOT EXISTS bridge_media (
+        mxc TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        at INTEGER NOT NULL,
+        state TEXT NOT NULL,
+        PRIMARY KEY (mxc, user_id)
+      );
+      ALTER TABLE plugin_media_areas ADD COLUMN sealed INTEGER NOT NULL DEFAULT 0;`,
+    detect: (db) => tableExists(db, 'bridge_backlog') && tableExists(db, 'bridge_media') && hasColumn(db, 'plugin_media_areas', 'sealed'),
+  },
 ];
 
 module.exports = { migrations };

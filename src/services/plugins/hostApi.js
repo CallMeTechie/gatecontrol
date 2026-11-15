@@ -1618,6 +1618,12 @@ async function vpnDnsCall(plugin, op, args) {
 // GateControl's virus scan, like gc.media.fetch; it needs no person (it sends nothing and reads only what was
 // delivered for them). send() takes a file of this plugin (message.media.mediaId) — only one the virus scan let
 // through. resolve / createDm ask the bridge about a phone number: inside a changing request of that person.
+// Version 5 (history, health): history.get / history.set — what of the older messages a person wants — inside a
+// request (set: a changing request) of that person. history.pull / history.ack hand the plugin the history the
+// people wanted (it files it at night in small portions) and need no person, like events.pull. health({ userIds,
+// network }) reads the state of those people's logins at the bridge (a phone not seen for 12 days, a version the
+// messenger turns away) without a person: it sends nothing and names nobody. A file taken over with media.fetch may
+// go at the homeserver afterwards (services/bridges mediaFetched).
 
 const BRIDGES_CODES = new Set(['ERR_INVALID', 'ERR_BRIDGES_UNAVAILABLE', 'ERR_BRIDGE_UNREACHABLE', 'ERR_BRIDGE', 'ERR_BUSY', 'ERR_RATE_LIMIT']);
 const BRIDGE_FILE_TIMEOUT_MS = 200000;
@@ -1670,9 +1676,18 @@ async function bridgesCall(plugin, op, args) {
     }
     if (op === 'events.pull') return br.events.pull({ after: a.after, limit: a.limit });
     if (op === 'events.ack') return br.events.ack(a.upTo);
+    // version 5: the history the people wanted, and the state of their logins — no person needed
+    if (op === 'history.pull') return br.history.pull({ limit: a.limit, chatId: a.chatId, userId: a.userId });
+    if (op === 'history.ack') return br.history.ack(a.seqs);
+    if (op === 'health') return await br.health({ userIds: a.userIds, network: a.network });
     const uid = a.userId;
     need(Number.isSafeInteger(uid) && uid > 0, 'ERR_INVALID', 'invalid user id');
-    if (op === 'media.fetch') return await bridgeFetch(plugin, br, a);
+    if (op === 'media.fetch') {
+      const r = await bridgeFetch(plugin, br, a);
+      // version 5: taken over — the homeserver's copy may go
+      try { br.mediaFetched(uid, a.ref); } catch { /* noted at the next fetch */ }
+      return r;
+    }
     if (op === 'unlinkFor') {
       const actorId = a.actor;
       need(Number.isSafeInteger(actorId) && actorId > 0 && actorId !== uid, 'ERR_INVALID', 'actor: another person');
@@ -1684,7 +1699,7 @@ async function bridgesCall(plugin, op, args) {
       need(target.role !== 'admin', 'ERR_BRIDGES_DENIED', "an administrator's link is never ended by somebody else");
       return await br.unlinkFor(uid, a.network, { actor: { id: actor.id, name: actor.display_name || actor.username }, pluginId: plugin.id });
     }
-    const write = op !== 'login.flows' && op !== 'logins' && op !== 'chats';
+    const write = op !== 'login.flows' && op !== 'logins' && op !== 'chats' && op !== 'history.get';
     // a file to send: checked before anybody is asked (its own, servable)
     const file = op === 'send' && a.message && typeof a.message === 'object' && a.message.media != null
       ? bridgeFile(plugin, a.message.media && a.message.media.mediaId) : null;
@@ -1705,6 +1720,8 @@ async function bridgesCall(plugin, op, args) {
     if (op === 'redact') return await br.redact(uid, a.network, a.chatId, a.redaction);
     if (op === 'read') return await br.read(uid, a.network, a.chatId, a.messageId);
     if (op === 'typing') return await br.typing(uid, a.network, a.chatId, a.on === true);
+    if (op === 'history.get') return br.history.get(uid);
+    if (op === 'history.set') return br.history.set(uid, a.days);
   } catch (e) {
     if (e && BRIDGES_CODES.has(e.code)) {
       const he = new HostApiError(e.code, e.code === 'ERR_BRIDGE' ? 'the bridge refused or failed' : e.message, e.reason);
@@ -2090,6 +2107,8 @@ function callTimeout(api, args) {
   if (api === 'http.fetchImage') return 20000;
   // gc.bridges: a file streamed from / to the homeserver (≤ 2 min), then the virus scan (≤ 15 s)
   if (api === 'bridges.media.fetch' || (api === 'bridges.send' && args && args.message && args.message.media != null)) return BRIDGE_FILE_TIMEOUT_MS;
+  // gc.bridges.health: one question to the bridge per person (≤ 20 s each) — a plugin asks for a few at a time
+  if (api === 'bridges.health') return 120000;
   // gc.print: a file up to 50 MB read, converted (sharp) and written; a PDF of up to 100 pages
   if (api === 'print.submit' || api === 'print.pdf' || api === 'print.testPage' || api === 'print.pages' || api === 'print.ocr') return 120000;
   // gc.edge.call: the call's own limit (≤ 30 s) and the way to the gateway and back
@@ -2492,6 +2511,7 @@ async function handle(plugin, api, args, ctx) {
     case 'bridges.events.pull': case 'bridges.events.ack': case 'bridges.chats': case 'bridges.send': case 'bridges.react':
     case 'bridges.redact': case 'bridges.read': case 'bridges.typing':
     case 'bridges.media.fetch': case 'bridges.resolve': case 'bridges.createDm':
+    case 'bridges.history.get': case 'bridges.history.set': case 'bridges.history.pull': case 'bridges.history.ack': case 'bridges.health':
       return bridgesCall(plugin, api.slice('bridges.'.length), args);
     // home cache (permissions.homeCache, homeCache.js — phase 3b)
     case 'homeCache.offer': return homeCacheCall(plugin, 'offer', args);

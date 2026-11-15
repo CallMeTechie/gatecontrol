@@ -1059,7 +1059,7 @@ module.exports = {
 | `gc.homeNetwork.internet.status(userId)` / `.pause(userId, untilISO \| minutes)` / `.resume(userId)` / `.extend(userId, minutes)` | since 1.231.0: the home DNS filter of a person — pause the internet, suspend the profile's times; changes only on behalf of a signed-in person (`homeInternet`), since 1.259.0 also for the person an automation names (`{ actor }`) — see "Internet at home" |
 | `gc.homeCache.offer({ mediaId, kind, userIds, priority })` / `.withdraw(mediaId)` / `.lanHint(sha256 \| { mediaId }, req)` | since 1.231.0: keep the plugin's files on the gateways' home caches and send an app in the home network there (`homeCache`) — see "Home cache"; since 1.249.0 also GateControl's previews of them (`preview`, `.lanHints([…], req)`) |
 | `gc.vpnDns.status()` / `.get()` / `.set(patch)` / `.devices()` / `.lists()` / `.stats()` / `.test(domain, who)` / `.pause(target)` / `.resume(target)` / `.pauses()` / `.log(query)` / `.restart()` / `.on(handler)` … | since 1.264.0: the DNS protection of the VPN devices — the host filters (its own filter service behind dnsmasq), the plugin sets lists, own entries and profiles for groups, people and devices, suspends the protection and reads counters; changes on behalf of a signed-in person or `{ actor }` (`vpnDns`) — see "DNS protection" |
-| `gc.bridges.status()` / `.configure(patch)` / `.login.flows(userId, network)` / `.login.start(…)` / `.login.step(…)` / `.login.cancel(…)` / `.logins(userId, network)` / `.logout(userId, network, loginId)` | preview: the bridges to outside messengers (WhatsApp first) that run next to the server — their state, the administrator's switch, and a person's **own** link; since version 3 messages, since version 4 files (`media.fetch`) and a new chat by number (`resolve`, `createDm`); the plugin never sees an address, a token or a session key (`bridges`) — see "Messenger bridges" |
+| `gc.bridges.status()` / `.configure(patch)` / `.login.flows(userId, network)` / `.login.start(…)` / `.login.step(…)` / `.login.cancel(…)` / `.logins(userId, network)` / `.logout(userId, network, loginId)` | preview: the bridges to outside messengers (WhatsApp first) that run next to the server — their state, the administrator's switch, and a person's **own** link; since version 3 messages, since version 4 files (`media.fetch`) and a new chat by number (`resolve`, `createDm`), since version 5 older messages (`history.*`) and the state of the logins (`health`); the plugin never sees an address, a token or a session key (`bridges`) — see "Messenger bridges" |
 | `gc.ai.available({ capability })` / `gc.ai.status()` | since 1.214.0: is AI usable for the plugin (asks no provider) / `{ available, mediaAllowed, capabilities, budgetLeftCents }` (`ai`) — see "AI requests" |
 | `gc.ai.extract({ task, user, instructions, input, schema, maxOutputTokens, timeoutMs })` / `gc.ai.generate({ … })` | since 1.214.0: structured data checked against a schema / free text from the AI provider set up in GateControl → `{ ok, data \| text, provider, model, usage, fallback }` (`ai`) — see "AI requests" |
 | `gc.groups.list/get/members/isMember/leadersOf(…)` | the person groups of GateControl (`groups`) — see "Groups" |
@@ -1898,6 +1898,11 @@ WebDAV, an S3 bucket). Code: `src/services/plugins/mediaAreas.js`.
   digit), at most 1000 per plugin; `label` ≤ 80 characters (shown to the
   administrator, default the id); `quota` in bytes (1 MB … 1 PB, null = none;
   the administrator can set another one that wins).
+  `sealed: true` (since the version after 1.276.0): the area keeps files of other people (the
+  messenger's files from bridged chats) — they are never readable on a target,
+  the form is always `blocks`; an administrator cannot choose `files` for it,
+  and an area that was readable is sealed in the background. The info carries
+  `sealed`. An older GateControl ignores the key.
 * `gc.media.areas.info(area)` → `{ area, label, target: { id, kind, label },
   moving: { to, done, total } | null, bytes, count, quota, quotaDefault,
   pending: { count, bytes }, state, error, encrypted: true, free }` or null.
@@ -3021,6 +3026,25 @@ message (with `mime`, `size`, `w`, `h`, `durationMs`, `waveform`),
 | `createDm(userId, network, number)` | `{ chat: { id, kind: 'direct', name } }` — the direct chat with that number, made or found; its events follow as usual. Same rules; `ERR_BRIDGE` / `not_found` when the number is not at the service |
 
 Never log or store the number: the host does not either.
+
+**Version 5 — history, health, snapshot, clean-up** (`gc.bridges.version >= 5`;
+details: [feature-messenger-bridges.md](feature-messenger-bridges.md), "History",
+"Backup", "Files at the homeserver", "Health"). Events of older messages carry
+`history: true` (a chat's waiting history also arrives in `events.pull`, right
+before a new event of that chat).
+
+| Call | Answer |
+|---|---|
+| `history.get(userId)` | `{ allowed, days, default, options: [0, 30, -1], pending }` — inside a request of that person; `days` 0 none, 30, -1 everything |
+| `history.set(userId, days)` | `history.get()` — inside a changing request of that person; fewer days drop what waits and is not wanted |
+| `history.pull({ limit?, chatId?, userId? })` | `{ events, more }` — the history the people wanted, oldest first; needs no person |
+| `history.ack(seqs)` | `{ ok, pending }` — these were filed (or are not wanted); needs no person |
+| `health({ userIds, network })` | `[{ userId, logins: [{ state, since, error, phoneOffline, clientOutdated }] \| null }]` — the state of those people's logins at the bridge (`phoneOffline`: the phone was not seen for 12 days; `clientOutdated`: the messenger refuses the bridge's version); no id and no name of a login; needs no person; ≤ 100 people |
+
+`status()` adds `history: { enabled, default, options, pending, conversations, messages, timeZone }`,
+`backup: { time, timeZone, lastAt, bytes, requested, error, restore }`, `cleanup: { deleted, waiting, lastAt, error }`,
+`networks[].clientOutdated` and `version`; `configure()` takes `history` (boolean), `backupNow: true` and
+`backupTime: 'HH:MM'`. A file taken over with `media.fetch` is deleted at the homeserver afterwards.
 
 Hook (optional): `async bridgeEvents({ pending, ephemeral }, gc)` — the bridges
 delivered something. `ephemeral` carries what is never stored (typing, read

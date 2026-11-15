@@ -72,7 +72,10 @@ describe('the service', () => {
     assert.equal(st.locations[0].kind, 'server');
     assert.ok(st.locations[0].cores >= 1 && st.locations[0].memMb > 0);
     assert.deepEqual(st.networks.map((n) => [n.id, n.enabled, n.state]), [['whatsapp', false, 'off']]);
-    assert.equal(st.history.enabled, false, 'older history is not loaded on the server');
+    // stage 5: older messages are allowed by default (each person chooses; 30 days unless they change it)
+    assert.equal(st.history.enabled, true);
+    assert.equal(st.history.default, 30);
+    assert.deepEqual(st.history.options, [0, 30, -1]);
     au.syncConfigFile();
     assert.equal(cfgFile().bridges, undefined);
 
@@ -121,10 +124,10 @@ describe('the service', () => {
     let st = bridges.status();
     assert.equal(st.host.state, 'running');
     assert.deepEqual(st.host.homeserver, { running: true, memMb: 61, limitMb: 384, version: '1.2.0', outdated: false, wantVersion: '1.9.4' });
-    assert.deepEqual(st.networks[0], { id: 'whatsapp', enabled: true, state: 'running', version: 'v26.10', memMb: 88, limitMb: 512, outdated: false, wantVersion: '0.2610.0' });
+    assert.deepEqual(st.networks[0], { id: 'whatsapp', enabled: true, state: 'running', version: 'v26.10', memMb: 88, limitMb: 512, outdated: false, wantVersion: '0.2610.0', clientOutdated: false });
     assert.equal(st.host.limitsProvisional, true, 'no measured memory need yet');
     assert.equal(st.host.probe, null);
-    assert.equal(st.host.script.needed, 7);
+    assert.equal(st.host.script.needed, 8);
 
     fs.writeFileSync(stateFile(), JSON.stringify({ checked_at: new Date().toISOString(), state: 'failed', error: 'compose_missing', services: {} }));
     st = bridges.status();
@@ -173,10 +176,13 @@ describe('a person links their own account (stand-in bridge)', () => {
     bridge.confirm(code.processId);
     const done = await bridges.login.step(annaId, 'whatsapp', code.processId, code.step.id, 'display_and_wait', undefined, { pollMs: 2000 });
     assert.equal(done.step.type, 'complete');
-    assert.match(done.step.loginId, /^login-\d+$/);
+    // a reference instead of the bridge's id (WhatsApp: the phone number) — HMAC per person, the same in logins()
+    assert.match(done.step.loginId, /^l[A-Za-z0-9_-]{22}$/);
 
     const mine = await bridges.logins(annaId, 'whatsapp');
     assert.equal(mine.length, 1);
+    assert.equal(mine[0].id, done.step.loginId);
+    assert.ok(!bridge.logins.get(`@gc_${annaId}:gc.internal`).some((l) => l.id === mine[0].id), 'never the bridge’s own id');
     assert.equal(mine[0].state, 'connected');
     assert.equal(mine[0].network, 'whatsapp');
     assert.ok(!('space_room' in mine[0]) && !('profile' in mine[0]), 'nothing of Matrix is passed on');
@@ -199,15 +205,17 @@ describe('a person links their own account (stand-in bridge)', () => {
     const done = await bridges.login.step(benId, 'whatsapp', qr.processId, qr.step.id, 'display_and_wait', undefined, { pollMs: 2000 });
     assert.equal(done.step.type, 'complete');
 
-    bridge.logOut(`@gc_${benId}:gc.internal`, done.step.loginId);
+    bridge.logOut(`@gc_${benId}:gc.internal`, bridge.logins.get(`@gc_${benId}:gc.internal`)[0].id);
     const mine = await bridges.logins(benId, 'whatsapp');
     assert.equal(mine[0].state, 'logged_out');
     assert.equal(mine[0].error, 'wa-logged-out');
 
     assert.deepEqual(await bridges.logout(benId, 'whatsapp', done.step.loginId), { ok: true });
     assert.deepEqual(await bridges.logins(benId, 'whatsapp'), []);
-    // somebody else's login id is unknown to the bridge under their own id
-    await assert.rejects(bridges.logout(benId, 'whatsapp', 'login-1'), (e) => e.code === 'ERR_BRIDGE' && e.reason === 'not_found');
+    // somebody else's reference names nothing under this person; a raw id of the bridge is no reference at all
+    const annas = (await bridges.logins(annaId, 'whatsapp'))[0].id;
+    await assert.rejects(bridges.logout(benId, 'whatsapp', annas), (e) => e.code === 'ERR_BRIDGE' && e.reason === 'not_found');
+    await assert.rejects(bridges.logout(benId, 'whatsapp', 'login-1'), (e) => e.code === 'ERR_INVALID');
   });
 
   it('a code that ran out, a cancelled login, a wrong number', async () => {
@@ -396,7 +404,7 @@ exit 0
     const r = run({ mode: 'manual', bridges: 'whatsapp' });
     assert.equal(r.state.state, 'failed');
     assert.equal(r.state.error, 'compose_missing');
-    assert.equal(r.state.update_sh, 7);
+    assert.equal(r.state.update_sh, 8);
     assert.doesNotMatch(r.calls, / up -d /);
   });
 
@@ -497,7 +505,7 @@ exit 0
     r = run({ mode: 'manual', bridges: 'whatsapp' }, ['bridges-probe', '10']);
     const p = probe();
     assert.match(r.calls, /compose --profile bruecken up -d bruecken-hs bruecken-whatsapp bruecken-whatsapp-relay/);
-    assert.equal(p.update_sh, 7);
+    assert.equal(p.update_sh, 8);
     assert.equal(p.window_s, 10);
     assert.deepEqual(Object.keys(p.services), ['hs', 'whatsapp', 'whatsapp-relay']);
     assert.equal(p.services.hs.running, true);

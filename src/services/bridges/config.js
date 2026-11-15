@@ -40,6 +40,18 @@
 //                for shared groups (split_portals); the bridge's word on every sent message as an event
 //                (message_status_events) instead of an error text in the chat; no bot picture from another
 //                server; a log that names no chats (min_level warn)
+//
+// Stage 5 (history, clean-up):
+//   homeserver   the server's own bot account (gcbot) is made a server administrator at every start
+//                (admin_execute "users make-user-admin") — only so that the server can delete a file of a room from
+//                the homeserver once a plugin took it over (Synapse admin API, hs.js deleteMedia). The account has no
+//                password and no device; its token never leaves this server.
+//   bridge       history only while an administrator allows it (opts.history): the phone's history sync at a new
+//                link is kept by the bridge (backfill.enabled — without it the bridge drops the notification), rooms
+//                are made at the link for at most HISTORY.conversations chats, each with at most HISTORY.messages
+//                messages; the other chats get theirs when their next message arrives. No backfill queue (it needs a
+//                Beeper homeserver), no media requests to the phone. Which history a PERSON wants (off, 30 days,
+//                everything) is decided by the server when it arrives (events.js), not here.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -57,6 +69,9 @@ const CORE_BOT = 'gcbot';
 // a registration without address: its token lets a bridge act for those accounts ("double puppeting")
 const PUPPET_ID = 'gcpuppet';
 const PUPPET_BOT = 'gcpuppetbot';
+
+// stage 5: what the bridge loads at a new link when history is allowed (estimates for a handful of people — not measured)
+const HISTORY = Object.freeze({ conversations: 30, messages: 200, catchup: 100 });
 
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const userRegex = (prefix) => `@${reEsc(prefix)}.*:${reEsc(SERVER_NAME)}`;
@@ -127,6 +142,10 @@ function hsModel(secrets, networks) {
       max_request_size: 32 * 1024 * 1024,
       log: 'info',
       log_colors: false,
+      // stage 5: the server's bot may delete a file a plugin took over (hs.js deleteMedia). Run at every start; an
+      // error (the account not there yet at the very first start) does not stop the homeserver
+      admin_execute: [`users make-user-admin @${CORE_BOT}:${SERVER_NAME}`],
+      admin_execute_errors_ignore: true,
     },
     appservices,
   };
@@ -160,7 +179,8 @@ function hsToml(model) {
  * The configuration of a mautrix bridge as a model (only what differs from the bridge's own defaults; the bridge
  * fills in the rest from its built-in example and, started with --no-update, never writes the file).
  */
-function bridgeModel(network, secrets) {
+function bridgeModel(network, secrets, opts = {}) {
+  const history = opts.history === true;
   if (network !== 'whatsapp') throw new Error(`bridges config: unknown network ${network}`);
   return {
     homeserver: {
@@ -209,14 +229,19 @@ function bridgeModel(network, secrets) {
       debug_endpoints: false,
       enable_session_transfers: false,
     },
-    backfill: { enabled: false },
+    // stage 5: history at a new link, only while an administrator allows it (see HISTORY)
+    backfill: history
+      ? { enabled: true, max_initial_messages: HISTORY.messages, max_catchup_messages: HISTORY.catchup, queue: { enabled: false } }
+      : { enabled: false },
     double_puppet: { servers: {}, allow_discovery: false, secrets: { [SERVER_NAME]: `as_token:${secrets.puppetAsToken}` } },
     encryption: { allow: false, default: false, require: false },
     // warn: the info and debug lines name chats and accounts (ids with phone numbers) — they are not written at all
     logging: { min_level: 'warn', writers: [{ type: 'stdout', format: 'pretty' }] },
     network: {
-      // no rooms for old conversations at login: a room appears with its first new message
-      history_sync: { max_initial_conversations: 0, request_full_sync: false, media_requests: { auto_request_media: false } },
+      // without history: no rooms for old conversations at login — a room appears with its first new message.
+      // With history (stage 5): rooms for the most recent chats at once; never a full sync, never asking the phone for
+      // files that ran out
+      history_sync: { max_initial_conversations: history ? HISTORY.conversations : 0, request_full_sync: false, media_requests: { auto_request_media: false } },
     },
   };
 }
@@ -258,20 +283,22 @@ function bridgeYaml(model) {
 // ─── Files ─────────────────────────────────────────────
 
 /** The files of the containers: relative path → content. */
-function files(secrets, networks) {
+function files(secrets, networks, opts = {}) {
   const out = { 'hs/config/tuwunel.toml': hsToml(hsModel(secrets, networks)) };
-  for (const n of networks) out[`${n}/config/config.yaml`] = bridgeYaml(bridgeModel(n, secrets));
+  for (const n of networks) out[`${n}/config/config.yaml`] = bridgeYaml(bridgeModel(n, secrets, opts));
   return out;
 }
 
 function dirsOf(networks) {
-  return ['run', 'hs/run', 'hs/config', 'hs/data', ...networks.flatMap((n) => [`${n}/config`, `${n}/data`])];
+  // backup (stage 5): where update.sh leaves a snapshot of the stopped containers' data for the server, and where the
+  // server leaves one to be restored (services/bridges/backup.js)
+  return ['run', 'backup', 'hs/run', 'hs/config', 'hs/data', ...networks.flatMap((n) => [`${n}/config`, `${n}/data`])];
 }
 
 /** What the containers were configured with — update.sh recreates them when it changes (12 hex digits). */
-function rev(secrets, networks) {
+function rev(secrets, networks, opts = {}) {
   const h = crypto.createHash('sha256');
-  for (const [name, content] of Object.entries(files(secrets, networks)).sort(([a], [b]) => (a < b ? -1 : 1))) h.update(`${name}\0${content}\0`);
+  for (const [name, content] of Object.entries(files(secrets, networks, opts)).sort(([a], [b]) => (a < b ? -1 : 1))) h.update(`${name}\0${content}\0`);
   return h.digest('hex').slice(0, 12);
 }
 
@@ -279,10 +306,10 @@ function rev(secrets, networks) {
  * Make the folders and write the files that differ. → { changed: [relative paths], rev }
  * The folders are 0700: the containers reach them as root with DAC_OVERRIDE (see docker-compose.yml), nobody else does.
  */
-function write(dir, secrets, networks) {
+function write(dir, secrets, networks, opts = {}) {
   for (const d of dirsOf(networks)) fs.mkdirSync(path.join(dir, d), { recursive: true, mode: 0o700 });
   const changed = [];
-  for (const [name, content] of Object.entries(files(secrets, networks))) {
+  for (const [name, content] of Object.entries(files(secrets, networks, opts))) {
     const file = path.join(dir, name);
     let have = null;
     try { have = fs.readFileSync(file, 'utf8'); } catch { have = null; }
@@ -292,10 +319,10 @@ function write(dir, secrets, networks) {
     catch (err) { try { fs.unlinkSync(tmp); } catch { /* never written */ } throw err; }
     changed.push(name);
   }
-  return { changed, rev: rev(secrets, networks) };
+  return { changed, rev: rev(secrets, networks, opts) };
 }
 
 module.exports = {
-  SERVER_NAME, RUN_DIR, HS_SOCKET, HS_SOCKET_BRIDGE, RELAY_PORT, CORE_ID, CORE_BOT, PUPPET_ID, PUPPET_BOT,
+  SERVER_NAME, RUN_DIR, HS_SOCKET, HS_SOCKET_BRIDGE, RELAY_PORT, CORE_ID, CORE_BOT, PUPPET_ID, PUPPET_BOT, HISTORY,
   hsModel, hsToml, bridgeModel, bridgeYaml, files, rev, write,
 };

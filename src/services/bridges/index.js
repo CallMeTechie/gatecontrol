@@ -1,6 +1,6 @@
 'use strict';
 
-// Messenger bridges (docs/feature-messenger-bridges.md), stages 1 to 4.
+// Messenger bridges (docs/feature-messenger-bridges.md), stages 1 to 5.
 //
 // A side service next to GateControl — a small internal Matrix homeserver and
 // one bridge per outside messenger (first: WhatsApp) — lets the chat of the
@@ -28,7 +28,9 @@
 //                    returned by any API. The bridge's session keys stay in
 //                    the bridge's own database at the place it runs.
 //   people           a person is addressed by their GateControl user id; the
-//                    internal Matrix id never leaves this module.
+//                    internal Matrix id never leaves this module. A login is
+//                    named by a reference (loginRef, HMAC per person) — the
+//                    bridge's own id is the person's phone number at WhatsApp.
 //   messages         (stage 3) the homeserver pushes what happens in the rooms
 //                    of the GateControl people to this process (appservice.js,
 //                    a Unix socket behind the relay bruecken-core-relay);
@@ -47,6 +49,19 @@
 //   new chat         (stage 4) resolve / createDm ask the bridge about a phone
 //                    number (provisioning API resolve_identifier / create_dm);
 //                    the number is never logged and never stored here.
+//   history          (stage 5) an administrator allows it (bridges.history, on by default); then the bridge keeps the
+//                    phone's history at a new link and fills the rooms (config.js). Each person chooses what of it
+//                    comes to GateControl (off, the last 30 days — the default — or everything): history.get / set.
+//                    events.js keeps what they want in bridge_backlog; the plugin takes it at night in small portions.
+//   backup           (stage 5) backup.js: a snapshot of the stopped containers' data, made by update.sh at night,
+//                    encrypted here at once, carried by the GateControl backup (data.bridges) and put back on a restore.
+//   clean-up         (stage 5) a file of a room is deleted at the homeserver once the plugin took it over (or nobody
+//                    wanted it for 30 days) — as the server's bot, the homeserver's only administrator (hs.js).
+//   health           (stage 5) health() tells a plugin, without a person's request, the state of each linked person's
+//                    login (also "the phone was not seen for 12 days", the bridge's own warning) — no name, no number.
+//   images           (stage 5) the pins of images.js go to update.sh with every config file ("bridges_images"): a
+//                    GateControl release with a new pin updates the containers at the next run of the script, without
+//                    a new docker-compose.yml on the host. Nothing unpinned is ever pulled.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -60,10 +75,11 @@ const images = require('./images');
 const hs = require('./hs');
 const appservice = require('./appservice');
 const eventsMod = require('./events');
+const backupMod = require('./backup');
 
 const NETWORKS = Object.freeze(['whatsapp']);
 const SERVER_NAME = config.SERVER_NAME;
-const SCRIPT = 7; // update.sh marker that knows the profile "bruecken" with relays (also the server's own: bruecken-core-relay), the configuration revision and the probe
+const SCRIPT = 8; // update.sh marker that knows the profile "bruecken" with relays (also the server's own: bruecken-core-relay), the configuration revision, the probe — and (8) the pinned images, snapshots and their restore
 const HOST_STATES = ['running', 'starting', 'failed', 'stopped'];
 const HOST_ERRORS = ['compose_missing', 'config_missing', 'start_failed'];
 const PROBE_RESULTS = ['ok', 'not_wanted', 'compose_missing', 'config_missing', 'start_failed', 'not_running'];
@@ -75,6 +91,12 @@ const LOOKUPS_PER_HOUR = 20;
 const NUMBER_RE = /^\+[1-9][0-9]{6,14}$/;
 const SEND_KINDS = { image: 'm.image', video: 'm.video', audio: 'm.audio', voice: 'm.audio', file: 'm.file' };
 const MIME_RE = /^[a-z][a-z0-9-]{0,30}\/[a-z0-9][a-z0-9.+_-]{0,99}$/;
+// stage 5: what a person may choose of the history (days; 0 none, -1 everything the bridge brings) and the default
+const HISTORY_OPTIONS = Object.freeze([0, 30, -1]);
+const HISTORY_DEFAULT = 30;
+const TICK_MS = 5 * 60000;
+const CLEAN_PER_RUN = 50;
+const HEALTH_MAX = 100;
 
 class BridgesError extends Error {
   constructor(code, message, reason) { super(message || code); this.code = code; if (reason) this.reason = reason; }
@@ -91,7 +113,8 @@ function getConfig() {
   try { nets = JSON.parse(settings.get('bridges.networks', 'null')); } catch { nets = null; }
   const networks = {};
   for (const n of NETWORKS) networks[n] = !!(nets && typeof nets === 'object' && nets[n] === true);
-  return { enabled: settings.get('bridges.enabled', '0') === '1', location: 'server', networks };
+  // stage 5: older messages at a new link — on unless an administrator switched it off
+  return { enabled: settings.get('bridges.enabled', '0') === '1', location: 'server', networks, history: settings.get('bridges.history', '1') !== '0' };
 }
 
 /** The bridges update.sh should run right now ([] = none). Read at boot too — never throws. */
@@ -159,9 +182,12 @@ function ensureSecrets() {
  */
 function wish() {
   const names = wanted();
-  if (!names.length) return { names, rev: null };
-  try { return { names, rev: config.write(dir(), ensureSecrets(), names).rev }; }
-  catch (err) { logger.warn({ err: err.message }, 'bridges: could not write the configuration of the containers'); return { names, rev: null }; }
+  if (!names.length) return { names, rev: null, images: null, backup: null, restore: null };
+  // stage 5: the images this GateControl pins, and what to do about snapshots
+  const imgs = ['hs', 'core-relay', ...names.flatMap((n) => [n, `${n}-relay`])].filter((k) => images.IMAGES[k]).map((k) => `${k}=${images.ref(k)}`).join(',');
+  const bk = backupMod.wish();
+  try { return { names, rev: config.write(dir(), ensureSecrets(), names, { history: getConfig().history }).rev, images: imgs, ...bk }; }
+  catch (err) { logger.warn({ err: err.message }, 'bridges: could not write the configuration of the containers'); return { names, rev: null, images: imgs, ...bk }; }
 }
 
 // ─── What the host did ─────────────────────────────────
@@ -241,7 +267,7 @@ function locations() {
  * no contents: states, versions and memory only.
  */
 function status() {
-  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false } };
+  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 5 };
   const cfg = getConfig();
   const host = hostStatus();
   const up = cfg.enabled && host.state === 'running' && host.services.hs.running;
@@ -257,7 +283,10 @@ function status() {
       if (cfg.enabled && cfg.networks[id]) state = up && s.running ? 'running' : (host.state === 'failed' ? 'failed' : 'starting');
       // outdated: the container runs another image than this GateControl pins (wantVersion) — the
       // docker-compose.yml on the host is older (or newer) than the server
-      return { id, enabled: cfg.networks[id], state, version: s.version, memMb: s.memMb, limitMb: s.limitMb, outdated: s.outdated === true, wantVersion: images.IMAGES[id].version };
+      // clientOutdated (stage 5): the messenger itself turned the bridge away as too old (WhatsApp "405 client outdated")
+      // — only a newer pin helps, that is a GateControl update
+      return { id, enabled: cfg.networks[id], state, version: s.version, memMb: s.memMb, limitMb: s.limitMb, outdated: s.outdated === true, wantVersion: images.IMAGES[id].version,
+        clientOutdated: !!(clientOutdated.get(id) && Date.now() - clientOutdated.get(id) < 86400000) };
     }),
     host: {
       state: cfg.enabled ? host.state : 'stopped', error: cfg.enabled ? host.error : null, checkedAt: host.checkedAt,
@@ -270,8 +299,15 @@ function status() {
     // container that hands them over (missing: the docker-compose.yml on the host is older than this server);
     // lastEventAt / pending — when the homeserver last delivered, and what no plugin has fetched yet. No contents.
     messages: messagesStatus(cfg, host),
-    // older history is not loaded on the server (slow disk): a later stage does it in small portions at night
-    history: { enabled: false },
+    // stage 5: older messages — allowed or not, what a person gets by default, what waits for the night
+    history: { enabled: cfg.history, default: HISTORY_DEFAULT, options: [...HISTORY_OPTIONS], pending: runtime.events ? runtime.events.historyPending() : 0,
+      conversations: config.HISTORY.conversations, messages: config.HISTORY.messages, timeZone: backupMod.timeZone() },
+    // stage 5: the nightly snapshot of the bridges' data (encrypted, in the GateControl backup)
+    backup: backupMod.status(),
+    // stage 5: the copies of files at the homeserver that went after the plugin took them over
+    cleanup: { deleted: cleanup.deleted, lastAt: cleanup.lastAt ? new Date(cleanup.lastAt).toISOString() : null, error: cleanup.error, waiting: runtime.events ? runtime.events.mediaWaiting() : 0 },
+    // the version of gc.bridges this server offers (child/bootstrap.js)
+    version: 5,
   };
 }
 
@@ -294,9 +330,16 @@ function configure(patch, ctx) {
   if (!previewOn()) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not offered on this server', 'preview_off');
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new BridgesError('ERR_INVALID', 'patch: an object');
-  for (const k of Object.keys(p)) if (k !== 'enabled' && k !== 'networks') throw new BridgesError('ERR_INVALID', `unknown key ${String(k).slice(0, 40)}`);
+  for (const k of Object.keys(p)) if (!['enabled', 'networks', 'history', 'backupNow', 'backupTime'].includes(k)) throw new BridgesError('ERR_INVALID', `unknown key ${String(k).slice(0, 40)}`);
   const cur = getConfig();
-  const next = { enabled: cur.enabled, networks: { ...cur.networks } };
+  const next = { enabled: cur.enabled, networks: { ...cur.networks }, history: cur.history };
+  // stage 5: older messages allowed at all; a snapshot now; the time of the nightly one
+  if (p.history !== undefined) { if (typeof p.history !== 'boolean') throw new BridgesError('ERR_INVALID', 'history: a boolean'); next.history = p.history; }
+  if (p.backupTime !== undefined) { try { backupMod.setBackupTime(p.backupTime); } catch { throw new BridgesError('ERR_INVALID', 'backupTime: HH:MM'); } }
+  if (p.backupNow !== undefined) {
+    if (p.backupNow !== true) throw new BridgesError('ERR_INVALID', 'backupNow: true');
+    if (!wanted().length) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges do not run', 'off');
+  }
   if (p.enabled !== undefined) { if (typeof p.enabled !== 'boolean') throw new BridgesError('ERR_INVALID', 'enabled: a boolean'); next.enabled = p.enabled; }
   if (p.networks !== undefined) {
     if (!p.networks || typeof p.networks !== 'object' || Array.isArray(p.networks)) throw new BridgesError('ERR_INVALID', 'networks: an object');
@@ -308,9 +351,15 @@ function configure(patch, ctx) {
   if (next.enabled) ensureSecrets();
   settings.set('bridges.networks', JSON.stringify(next.networks));
   settings.set('bridges.enabled', next.enabled ? '1' : '0');
+  settings.set('bridges.history', next.history ? '1' : '0');
+  if (p.backupNow === true && !backupMod.requested()) backupMod.request('now');
   require('../autoUpdate').syncConfigFile();
   // the listener for the homeserver's events follows the switch
   start().catch((err) => logger.warn({ err: err.message }, 'bridges: listener not started'));
+  if (next.history !== cur.history) {
+    try { require('../activity').log('bridges_changed', `Messenger-Brücken: älterer Verlauf ${next.history ? 'erlaubt' : 'abgeschaltet'}`, { source: 'admin', severity: 'info', details: { history: next.history, by: ctx && ctx.actor ? ctx.actor.name : null } }); }
+    catch (err) { logger.debug({ err: err.message }, 'bridges: activity not written'); }
+  }
   if (next.enabled !== cur.enabled || NETWORKS.some((n) => next.networks[n] !== cur.networks[n])) {
     try {
       require('../activity').log('bridges_changed', `Messenger-Brücken ${next.enabled ? 'eingeschaltet' : 'ausgeschaltet'}`, {
@@ -349,7 +398,26 @@ function sweepWaits(now) {
   for (const [k, w] of waits) if (now - w.at > WAIT_KEEP_MS) waits.delete(k);
 }
 
-async function loginStep(userId, network, processId, stepId, kind, input, { pollMs = 15000 } = {}) {
+/** stage 5: when a person's link was completed (events.js tells history from late messages by it). */
+function linkedTimes() {
+  let m = null;
+  try { m = JSON.parse(settings.get('bridges.linked_at', '{}')); } catch { m = null; }
+  return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
+}
+function linkedAt(userId, network) { const v = Number(linkedTimes()[`${userId}:${network}`]); return Number.isSafeInteger(v) && v > 0 ? v : 0; }
+function noteLinked(userId, network, step) {
+  if (!step || !step.step || step.step.type !== 'complete') return step;
+  const m = linkedTimes();
+  m[`${userId}:${network}`] = Date.now();
+  try { settings.set('bridges.linked_at', JSON.stringify(m)); } catch (err) { logger.warn({ err: err.message }, 'bridges: link time not noted'); }
+  return step;
+}
+
+async function loginStep(userId, network, processId, stepId, kind, input, opts) {
+  return stepOut(userId, network, noteLinked(userId, network, await loginStepRaw(userId, network, processId, stepId, kind, input, opts)));
+}
+
+async function loginStepRaw(userId, network, processId, stepId, kind, input, { pollMs = 15000 } = {}) {
   const c = clientFor(userId, network);
   if (kind !== 'display_and_wait') return c.step(processId, stepId, kind, input);
   const now = Date.now();
@@ -393,7 +461,7 @@ const login = {
   start: async (userId, network, flowId) => {
     const c = clientFor(userId, network);
     await ensureAccount(userId);
-    return c.start(flowId);
+    return stepOut(userId, network, noteLinked(userId, network, await c.start(flowId)));
   },
   step: loginStep,
   cancel: (userId, network, processId) => {
@@ -403,12 +471,121 @@ const login = {
 };
 
 /** The person's logins on one bridge → [{ network, id, name, state, since, error }]. */
-async function logins(userId, network) {
-  const w = await clientFor(userId, network).whoami();
-  return w.logins.map((l) => ({ network, ...l }));
+/**
+ * The reference of a login a plugin gets instead of the bridge's id (WhatsApp names a login after the person's phone
+ * number): HMAC per person and network, not reversible; the server maps it back by asking the bridge (logout).
+ */
+const LOGIN_REF_RE = /^l[A-Za-z0-9_-]{22}$/;
+function loginRef(userId, network, raw) {
+  const key = readKey();
+  if (!key) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not set up yet', 'not_running');
+  const k = crypto.createHmac('sha256', Buffer.from(key, 'base64url')).update('gatecontrol-bridges:login-refs').digest();
+  return 'l' + crypto.createHmac('sha256', k).update(`${userId}\0${network}\0${raw}`).digest('base64url').slice(0, 22);
+}
+/** A login step as a plugin gets it: a completed one names the login by its reference. */
+function stepOut(userId, network, r) {
+  if (r && r.step && r.step.type === 'complete' && r.step.loginId) return { ...r, step: { ...r.step, loginId: loginRef(userId, network, r.step.loginId) } };
+  return r;
 }
 
-function logout(userId, network, loginId) { return clientFor(userId, network).logout(loginId); }
+async function logins(userId, network) {
+  const w = await clientFor(userId, network).whoami();
+  noteLogins(network, w.logins);
+  return w.logins.map((l) => ({ network, ...l, id: loginRef(userId, network, l.id) }));
+}
+
+// stage 5: WhatsApp turned a login away as too old (seen in any login of the last day)
+const clientOutdated = new Map(); // network → when
+function noteLogins(network, list) {
+  if ((list || []).some((l) => l && l.clientOutdated)) clientOutdated.set(network, Date.now());
+  else if ((list || []).some((l) => l && l.state === 'connected')) clientOutdated.delete(network);
+}
+
+/**
+ * gc.bridges.health({ userIds, network }) → [{ userId, logins: [{ state, since, error, phoneOffline, clientOutdated }] | null }]
+ * The state of each person's login — for a plugin's background run, without a person's request: it reads the bridge
+ * and sends nothing. No id and no name of the login (WhatsApp names both after the person's number), no contact. At
+ * most HEALTH_MAX people per call.
+ */
+async function health({ userIds, network } = {}) {
+  if (!NETWORKS.includes(network)) throw new BridgesError('ERR_INVALID', 'unknown network');
+  if (!Array.isArray(userIds) || userIds.length > HEALTH_MAX || userIds.some((u) => !Number.isSafeInteger(u) || u <= 0)) throw new BridgesError('ERR_INVALID', `userIds: up to ${HEALTH_MAX} people`);
+  const out = [];
+  for (const userId of [...new Set(userIds)]) {
+    let list = null;
+    try {
+      const w = await clientFor(userId, network).whoami();
+      noteLogins(network, w.logins);
+      // no id: a WhatsApp login is named after the person's number
+      list = w.logins.map((l) => ({ state: l.state, since: l.since, error: l.error, phoneOffline: !!l.phoneOffline, clientOutdated: !!l.clientOutdated }));
+    } catch (e) {
+      if (e && e.code === 'ERR_BRIDGES_UNAVAILABLE') throw e;
+      list = null;
+    }
+    out.push({ userId, logins: list });
+  }
+  return out;
+}
+
+// ─── History a person wants (stage 5) ──────────────────
+
+function historyPeople() {
+  let m = null;
+  try { m = JSON.parse(settings.get('bridges.history_people', '{}')); } catch { m = null; }
+  return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
+}
+/** The days of history a person wants: 0 none, -1 everything, n the last n days — 0 while an administrator forbids it. */
+function historyOf(userId) {
+  if (!getConfig().history) return 0;
+  const v = historyPeople()[String(userId)];
+  return HISTORY_OPTIONS.includes(v) ? v : HISTORY_DEFAULT;
+}
+
+const history = {
+  /** history.get(userId) → { allowed, days, default, options, pending } — inside a request of that person */
+  get: (userId) => {
+    mxidOf(userId);
+    const cfg = getConfig();
+    const v = historyPeople()[String(userId)];
+    return { allowed: previewOn() && cfg.history, days: HISTORY_OPTIONS.includes(v) ? v : HISTORY_DEFAULT, default: HISTORY_DEFAULT, options: [...HISTORY_OPTIONS],
+      pending: runtime.events ? runtime.events.historyPending(userId) : 0 };
+  },
+  /** history.set(userId, days) → get() — inside a changing request of that person; fewer days drop what waits and is not wanted */
+  set: (userId, days) => {
+    mxidOf(userId);
+    if (!HISTORY_OPTIONS.includes(days)) throw new BridgesError('ERR_INVALID', `days: one of ${HISTORY_OPTIONS.join(', ')}`);
+    const m = historyPeople();
+    if (days === HISTORY_DEFAULT) delete m[String(userId)]; else m[String(userId)] = days;
+    settings.set('bridges.history_people', JSON.stringify(m));
+    if (runtime.events) { try { runtime.events.historyTrim(userId); } catch (err) { logger.warn({ err: err.message }, 'bridges: history not trimmed'); } }
+    return history.get(userId);
+  },
+  /** history.pull({ limit?, chatId?, userId? }) → { events, more } — needs no person (the plugin files it at night) */
+  pull: (o) => {
+    if (!previewOn()) return { events: [], more: false };
+    const ev = eventsOf();
+    if (!ev) return { events: [], more: false };
+    const a = o && typeof o === 'object' ? o : {};
+    try { return ev.historyPull({ limit: a.limit, chatId: a.chatId == null ? null : a.chatId, userId: a.userId == null ? null : a.userId }); }
+    catch (e) { throw new BridgesError('ERR_INVALID', e.message); }
+  },
+  /** history.ack(seqs) → { ok, pending } */
+  ack: (seqs) => {
+    const ev = eventsOf();
+    if (!ev) return { ok: true, pending: 0 };
+    try { return ev.historyAck(seqs); } catch (e) { throw new BridgesError('ERR_INVALID', e.message); }
+  },
+};
+
+/** logout(userId, network, loginRef): the reference of logins() → the bridge's id of that login (asked, never stored). */
+async function logout(userId, network, ref) {
+  const c = clientFor(userId, network);
+  if (typeof ref !== 'string' || !LOGIN_REF_RE.test(ref)) throw new BridgesError('ERR_INVALID', 'loginId: a login reference');
+  const w = await c.whoami();
+  const l = w.logins.find((x) => loginRef(userId, network, x.id) === ref);
+  if (!l) throw new BridgesError('ERR_BRIDGE', 'no such login', 'not_found');
+  return c.logout(l.id);
+}
 
 /**
  * Unlink somebody else's account: every login of `userId` on `network` is logged out at the bridge. The one thing
@@ -433,7 +610,7 @@ async function unlinkFor(userId, network, ctx) {
 
 // ─── Messages (stage 3) ────────────────────────────────
 
-const runtime = { listener: null, events: null, key: null, starting: null, wake: null };
+const runtime = { listener: null, events: null, key: null, starting: null, wake: null, timer: null };
 const selfCache = new Map(); // `${userId}:${network}` → { at, ids }
 
 function hsTarget() {
@@ -467,7 +644,7 @@ function eventsOf() {
   runtime.events = eventsMod.create({
     serverName: SERVER_NAME, networks: [...NETWORKS],
     key: crypto.createHmac('sha256', Buffer.from(key, 'base64url')).update('gatecontrol-bridges:events').digest(),
-    target: hsTarget, selfIds,
+    target: hsTarget, selfIds, historyOf, linkedAt,
   });
   return runtime.events;
 }
@@ -507,6 +684,11 @@ function start() {
     eventsOf();
     runtime.listener = await appservice.listen({ socket: appservice.socketOf(dir()), hsToken: secrets.coreHsToken, onTransaction });
     logger.info('bridges: listening for the homeserver');
+    // stage 5: snapshots and the clean-up of the homeserver's copies, every few minutes
+    if (!runtime.timer) {
+      runtime.timer = setInterval(() => { tick().catch(() => {}); }, TICK_MS);
+      if (runtime.timer.unref) runtime.timer.unref();
+    }
     return true;
   });
   runtime.starting = run;
@@ -516,6 +698,7 @@ function start() {
 async function stop() {
   const l = runtime.listener;
   runtime.listener = null;
+  if (runtime.timer) { clearInterval(runtime.timer); runtime.timer = null; }
   if (l) { try { await l.close(); } catch { /* closed */ } }
 }
 
@@ -666,6 +849,77 @@ async function openFile(userId, network, ref, { max } = {}) {
   return hs.download(target, mxidOf(userId), r.mxc, { max, serverName: SERVER_NAME });
 }
 
+/** stage 5: the plugin took this file over (host API, after it was stored and scanned) — the homeserver's copy may go. */
+function mediaFetched(userId, ref) {
+  const ev = previewOn() ? eventsOf() : null;
+  const r = ev ? ev.openMediaRef(ref) : null;
+  if (r && r.userId === userId) { try { ev.mediaFetched(userId, r.mxc); } catch (err) { logger.debug({ err: err.message }, 'bridges: file not noted'); } }
+}
+
+// ─── Clean-up at the homeserver (stage 5) ──────────────
+
+const cleanup = { deleted: 0, lastAt: null, error: null, running: false };
+const BOT = `@${config.CORE_BOT}:${SERVER_NAME}`;
+
+/**
+ * Delete at the homeserver what the plugin took over, what nobody wanted, what nobody fetched for 30 days
+ * (events.mediaToClean). The bot is the homeserver's administrator (config.js admin_execute); until it took its seat
+ * in the admin room it is refused — then it joins once and tries again. → files deleted
+ */
+async function cleanupRun({ limit = CLEAN_PER_RUN } = {}) {
+  if (cleanup.running || !previewOn() || !wanted().length) return 0;
+  const ev = eventsOf();
+  const target = hsTarget();
+  if (!ev || !target) return 0;
+  cleanup.running = true;
+  let n = 0;
+  try {
+    let joined = false;
+    for (const mxc of ev.mediaToClean(Date.now(), limit)) {
+      try { await hs.deleteMedia(target, BOT, mxc, SERVER_NAME); }
+      catch (e) {
+        if (e && e.code === 'ERR_BRIDGE_UNREACHABLE') { cleanup.error = 'unreachable'; break; }
+        if (e && e.reason === 'm_forbidden' && !joined) {
+          joined = true;
+          try { await hs.joinAdminRoom(target, BOT, SERVER_NAME); await hs.deleteMedia(target, BOT, mxc, SERVER_NAME); }
+          catch (e2) { cleanup.error = e2 && e2.reason === 'm_forbidden' ? 'no_admin' : 'failed'; break; }
+        } else { cleanup.error = e && e.reason === 'm_forbidden' ? 'no_admin' : 'failed'; break; }
+      }
+      ev.mediaCleaned(mxc);
+      n++;
+      cleanup.error = null;
+    }
+  } finally { cleanup.running = false; }
+  cleanup.deleted += n;
+  cleanup.lastAt = Date.now();
+  return n;
+}
+
+/** Every TICK_MS while the bridges are wanted: snapshots (backup.js) and the clean-up. */
+async function tick() {
+  await backupMod.tick();
+  try { await cleanupRun(); } catch (err) { logger.warn({ err: err.message }, 'bridges: clean-up failed'); }
+}
+
+/** The master key (backup.js) — never returned by any API. */
+function masterKey() { return readKey(); }
+/** A restore puts the master key back (backup.js). The one before is kept next to it. */
+function writeMasterKey(key) {
+  if (typeof key !== 'string' || !KEY_RE.test(key)) throw new BridgesError('ERR_INVALID', 'not a master key');
+  const have = readKey();
+  if (have === key) return false;
+  fs.mkdirSync(path.join(dir(), 'run'), { recursive: true, mode: 0o700 });
+  if (have) { try { fs.copyFileSync(secretsFile(), `${secretsFile()}.before-restore`); fs.chmodSync(`${secretsFile()}.before-restore`, 0o600); } catch { /* best effort */ } }
+  const tmp = `${secretsFile()}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  try { fs.writeFileSync(tmp, JSON.stringify({ key }) + '\n', { mode: 0o600 }); fs.renameSync(tmp, secretsFile()); }
+  catch (err) { try { fs.unlinkSync(tmp); } catch { /* never written */ } throw err; }
+  runtime.events = null;
+  runtime.key = null;
+  accounts.clear();
+  return true;
+}
+function forget() { if (runtime.events) runtime.events._forget(); accounts.clear(); selfCache.clear(); }
+
 // ─── A new chat by number (stage 4) ────────────────────
 
 const lookups = new Map(); // userId → [times of the last hour]
@@ -752,12 +1006,17 @@ const events = {
   },
 };
 
-function _reset() { waits.clear(); accounts.clear(); selfCache.clear(); uploads.clear(); lookups.clear(); runtime.events = null; runtime.key = null; runtime.wake = null; }
+function _reset() {
+  waits.clear(); accounts.clear(); selfCache.clear(); uploads.clear(); lookups.clear(); clientOutdated.clear();
+  runtime.events = null; runtime.key = null; runtime.wake = null;
+  Object.assign(cleanup, { deleted: 0, lastAt: null, error: null, running: false });
+}
 
 module.exports = {
   NETWORKS, SCRIPT, SERVER_NAME, BridgesError,
   previewOn, getConfig, wanted, wish, status, configure, hostStatus, ensureSecrets, readSecrets, dir,
   login, logins, logout, unlinkFor, mxidOf, _reset,
   start, stop, send, react, redact, read, typing, chats, events, openFile, resolve, createDm, numberOf,
+  history, historyOf, linkedAt, health, mediaFetched, cleanupRun, tick, masterKey, writeMasterKey, _forget: forget, HISTORY_OPTIONS, HISTORY_DEFAULT,
   _onTransaction: onTransaction, _eventsOf: eventsOf, _runtime: runtime,
 };

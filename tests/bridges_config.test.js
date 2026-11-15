@@ -227,7 +227,7 @@ describe('the homeserver configuration (Tuwunel)', () => {
     assert.match(toml, /^\[global\.appservice\.whatsapp\]\nurl = "http:\/\/bruecken-whatsapp-relay:29318"$/m);
     assert.match(toml, /^\[\[global\.appservice\.whatsapp\.users\]\]\nexclusive = true\nregex = "@whatsapp_\.\*:gc\\\\\.internal"$/m);
     // every line is a comment, a table header or key = value
-    for (const l of toml.split('\n')) assert.match(l, /^(#.*|\[\[?[a-z._]+\]\]?|[a-z_]+ = (".*"|true|false|\d+(\.\d+)?|\[\])|)$/, l);
+    for (const l of toml.split('\n')) assert.match(l, /^(#.*|\[\[?[a-z._]+\]\]?|[a-z_]+ = (".*"|true|false|\d+(\.\d+)?|\[\]|\[".*"\])|)$/, l);
     // every table once
     const heads = toml.split('\n').filter((l) => /^\[[a-z]/.test(l));
     assert.equal(new Set(heads).size, heads.length);
@@ -375,7 +375,9 @@ describe('the service with stage 2', () => {
     const cfg = JSON.parse(fs.readFileSync(au.CONFIG_FILE, 'utf8'));
     assert.equal(cfg.bridges, 'whatsapp');
     assert.match(cfg.bridges_rev, /^[0-9a-f]{12}$/);
-    assert.equal(cfg.bridges_rev, config.rev(secrets, ['whatsapp']));
+    // stage 5: older history is allowed by default (the bridge keeps it at a new link)
+    assert.equal(cfg.bridges_rev, config.rev(secrets, ['whatsapp'], { history: true }));
+    assert.equal(yaml.backfill.enabled, true);
     // the same after a restart: nothing changes
     au.syncConfigFile();
     assert.equal(JSON.parse(fs.readFileSync(au.CONFIG_FILE, 'utf8')).bridges_rev, cfg.bridges_rev);

@@ -32,6 +32,18 @@
 // "unchanged"). The plugin hands the ref back to gc.bridges.media.fetch; the address itself never leaves this module.
 // The pictures of a chat (m.room.avatar) and of a contact (avatar_url of its membership) travel the same way, as
 // chat.avatar and sender.avatar / contact.avatar (null: no picture; missing: not known in this event).
+//
+// History (stage 5): with history allowed, the bridge sends older messages into a room right after it made it
+// (mautrix "forward backfill", each with its own time in the past). An event is history when it is from before the
+// person linked (opts.linkedAt, noted when a link completes) and older than the room is here (bridge_rooms.created_at),
+// each minus a minute — the bridge's own word for it does not exist on a plain Matrix server. What the person chose decides (opts.historyOf: off, a number of days, everything): history they do
+// not want is never written here; history they want goes to bridge_backlog (sealed like the inbox, marked
+// `history: true`) — the plugin takes it in small portions at night (history.pull / history.ack). Order and no doubles:
+// before a live event of a chat is filed, what still waits of that chat's history moves into the inbox ahead of it,
+// so a chat is filled in the order the bridge sent it; the plugin keeps the event id unique per chat.
+// Files of a room (stage 5): every file a message carries is noted in bridge_media (address and person, never a name);
+// once the plugin took it (index.js mediaFetched), or it was history nobody wanted, or nobody fetched it for
+// MEDIA_KEEP_MS, index.js deletes it from the homeserver (mediaToClean / mediaCleaned).
 
 const crypto = require('node:crypto');
 const logger = require('../../utils/logger');
@@ -42,6 +54,17 @@ const NAME_MAX = 120;
 const INBOX_MAX_ROWS = 50000;
 const INBOX_MAX_AGE_MS = 14 * 86400000;
 const TXN_KEEP = 2000;
+// stage 5: history
+const HISTORY_SLACK_MS = 60000;
+const HISTORY_TYPES = ['message', 'edit', 'reaction', 'redact'];
+const BACKLOG_MAX_ROWS = 100000;
+const BACKLOG_MAX_AGE_MS = 30 * 86400000;
+// live events that need the chat's history in place first
+const FLUSH_TYPES = ['message', 'edit', 'reaction', 'redact', 'status'];
+// a file nobody fetched stays this long at the homeserver; one taken over goes after MEDIA_SETTLE_MS (another person's
+// copy of the same file may still be on its way)
+const MEDIA_KEEP_MS = 30 * 86400000;
+const MEDIA_SETTLE_MS = 3600000;
 const PULL_MAX = 200;
 const DOUBLE_PUPPET = 'fi.mau.double_puppet_source';
 const MEDIA_TYPES = { 'm.image': 'image', 'm.video': 'video', 'm.audio': 'audio', 'm.file': 'file', 'm.location': 'location' };
@@ -77,7 +100,7 @@ function create(opts) {
 
   const rooms = new Map();  // room id → row (or null: looked up, not ours)
   const info = new Map();   // room id → { kind, name, names: Map(mxid → name) } — from the room's state, memory only
-  const stats = { transactions: 0, events: 0, skipped: 0, lastAt: null, failed: 0 };
+  const stats = { transactions: 0, events: 0, skipped: 0, lastAt: null, failed: 0, history: 0, historyDropped: 0 };
   const failing = new Map(); // txn id → tries (a transaction that keeps failing is dropped after a few)
 
   // ─── small things ──────────────────────────────────────
@@ -277,7 +300,24 @@ function create(opts) {
     }
 
     if (!row || row.state !== 'joined') { stats.skipped++; return; }
-    const push = (payload) => out.push({ userId: row.user_id, network: row.network, payload: { ...payload, at } });
+    // stage 5: history = from before the person linked AND older than the room is here (what they want of it decides).
+    // A message that only arrives late (the bridge or the phone was away) is never history: it is newer than the link.
+    const linkedAt = opts.linkedAt ? Number(opts.linkedAt(row.user_id, row.network)) || 0 : 0;
+    const hist = !backlog && linkedAt > 0 && at < linkedAt - HISTORY_SLACK_MS && Number.isFinite(Number(row.created_at)) && at < Number(row.created_at) - HISTORY_SLACK_MS;
+    const push = (payload, extra) => {
+      const mxc = extra && extra.mxc ? extra.mxc : null;
+      if (hist && HISTORY_TYPES.includes(payload.type)) {
+        if (!keepHistory(row.user_id, at)) {
+          stats.historyDropped++;
+          if (mxc) out.push({ userId: row.user_id, network: row.network, drop: true, mxc });
+          return;
+        }
+        stats.history++;
+        out.push({ userId: row.user_id, network: row.network, payload: { ...payload, at, history: true }, mxc });
+        return;
+      }
+      out.push({ userId: row.user_id, network: row.network, payload: { ...payload, at }, mxc });
+    };
     let i;
     try { i = await roomInfo(row); }
     catch (err) {
@@ -347,7 +387,8 @@ function create(opts) {
         // the kind, the file's name and a caption; the file itself as a reference the plugin fetches (stage 4)
         const fileName = line(typeof c.filename === 'string' ? c.filename : (mk === 'location' ? '' : c.body), 200) || null;
         const caption = typeof c.filename === 'string' && c.body !== c.filename ? text(c.body) : (mk === 'location' ? text(c.body) : '');
-        push({ type: 'message', ...base, kind: 'media', media: mediaOf(row, mk, c, fileName), text: caption || null, replyTo: reply });
+        push({ type: 'message', ...base, kind: 'media', media: mediaOf(row, mk, c, fileName), text: caption || null, replyTo: reply },
+          { mxc: hs.mxcOf(c.url, opts.serverName) ? c.url : null });
         return;
       }
       push({ type: 'message', ...base, kind: 'unsupported', text: null, replyTo: reply });
@@ -391,6 +432,17 @@ function create(opts) {
       media.waveform = Array.from({ length: n }, (_, k) => { const v = Number(w[Math.floor((k * w.length) / n)]); return Number.isFinite(v) ? Math.max(0, Math.min(1024, Math.round(v))) : 0; });
     }
     return media;
+  }
+
+  /**
+   * Does the person want this piece of history? opts.historyOf(userId) → days: 0 none, -1 everything, n the last n
+   * days (counted from now). Without the option (older callers): everything.
+   */
+  function keepHistory(userId, at) {
+    let days = -1;
+    if (opts.historyOf) { try { days = Number(opts.historyOf(userId)); } catch { days = 0; } }
+    if (!Number.isFinite(days) || days === 0) return false;
+    return days < 0 || at >= Date.now() - days * 86400000;
   }
 
   /** A room just became the person's: its name and kind, then what was said before the account was in it. */
@@ -475,18 +527,34 @@ function create(opts) {
     }
     failing.delete(id);
     const now = Date.now();
-    const ins = db().prepare('INSERT INTO bridge_inbox (at, user_id, network, payload) VALUES (?, ?, ?, ?)');
-    db().transaction(() => {
-      for (const o of out) ins.run(now, o.userId, o.network, seal(o.payload));
-      db().prepare('INSERT OR IGNORE INTO bridge_txns (id, at) VALUES (?, ?)').run(id, now);
+    const d = db();
+    const ins = d.prepare('INSERT INTO bridge_inbox (at, user_id, network, payload) VALUES (?, ?, ?, ?)');
+    const back = d.prepare('INSERT INTO bridge_backlog (at, user_id, network, chat, payload) VALUES (?, ?, ?, ?, ?)');
+    const waits = d.prepare('SELECT 1 FROM bridge_backlog WHERE user_id = ? AND chat = ? LIMIT 1');
+    const move = d.prepare('INSERT INTO bridge_inbox (at, user_id, network, payload) SELECT at, user_id, network, payload FROM bridge_backlog WHERE user_id = ? AND chat = ? ORDER BY seq');
+    const moved = d.prepare('DELETE FROM bridge_backlog WHERE user_id = ? AND chat = ?');
+    const file = d.prepare("INSERT INTO bridge_media (mxc, user_id, at, state) VALUES (?, ?, ?, ?) ON CONFLICT(mxc, user_id) DO NOTHING");
+    let stored = 0;
+    d.transaction(() => {
+      for (const o of out) {
+        if (o.mxc) file.run(o.mxc, o.userId, now, o.drop ? 'drop' : 'wait');
+        if (o.drop) continue;
+        const chat = o.payload.chat && typeof o.payload.chat.id === 'string' ? o.payload.chat.id : null;
+        if (o.payload.history && chat) { back.run(now, o.userId, o.network, chat, seal(o.payload)); stored++; continue; }
+        // the history of this chat comes first, in the order it arrived
+        if (chat && FLUSH_TYPES.includes(o.payload.type) && waits.get(o.userId, chat)) { stored += move.run(o.userId, chat).changes; moved.run(o.userId, chat); }
+        ins.run(now, o.userId, o.network, seal(o.payload));
+        stored++;
+      }
+      d.prepare('INSERT OR IGNORE INTO bridge_txns (id, at) VALUES (?, ?)').run(id, now);
     })();
     stats.transactions++;
-    stats.events += out.length;
+    stats.events += stored;
     stats.lastAt = now;
     if (stats.transactions % 200 === 0) prune(now);
     const eph = [];
     for (const ev of edus) { try { eph.push(...ephemeral(ev)); } catch { /* not understood */ } }
-    return { stored: out.length, ephemeral: eph.map((e) => ({ userId: e.userId, network: e.network, ...e.payload })), duplicate: false };
+    return { stored, ephemeral: eph.map((e) => ({ userId: e.userId, network: e.network, ...e.payload })), duplicate: false };
   }
 
   /** Old transaction ids and an inbox nobody empties. */
@@ -497,6 +565,12 @@ function create(opts) {
     const top = d.prepare('SELECT MAX(seq) AS s FROM bridge_inbox').get().s || 0;
     const over = d.prepare('DELETE FROM bridge_inbox WHERE seq <= ?').run(top - INBOX_MAX_ROWS).changes;
     if (old + over) logger.warn({ dropped: old + over }, 'bridges: events nobody fetched were dropped');
+    // stage 5: history nobody took in a month, and the notes about files long gone
+    const hOld = d.prepare('DELETE FROM bridge_backlog WHERE at < ?').run(now - BACKLOG_MAX_AGE_MS).changes;
+    const hTop = d.prepare('SELECT MAX(seq) AS s FROM bridge_backlog').get().s || 0;
+    const hOver = d.prepare('DELETE FROM bridge_backlog WHERE seq <= ?').run(hTop - BACKLOG_MAX_ROWS).changes;
+    if (hOld + hOver) logger.warn({ dropped: hOld + hOver }, 'bridges: history nobody took was dropped');
+    d.prepare('DELETE FROM bridge_media WHERE at < ?').run(now - 2 * MEDIA_KEEP_MS);
   }
 
   // ─── what a plugin reads ───────────────────────────────
@@ -521,6 +595,64 @@ function create(opts) {
     return { ok: true, pending: db().prepare('SELECT COUNT(*) AS n FROM bridge_inbox').get().n };
   }
   function pending() { try { return db().prepare('SELECT COUNT(*) AS n FROM bridge_inbox').get().n; } catch { return 0; } }
+
+  // ─── history (stage 5) ─────────────────────────────────
+
+  /** history.pull({ limit, chatId?, userId? }) → { events: [{ seq, userId, network, …payload }], more } — oldest first. */
+  function historyPull({ limit = 100, chatId = null, userId = null } = {}) {
+    const n = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, PULL_MAX) : 100;
+    const where = [];
+    const args = [];
+    if (chatId != null) { if (typeof chatId !== 'string' || !/^r[A-Za-z0-9_-]{20}$/.test(chatId)) throw new hs.HsError('ERR_INVALID', 'chatId: a chat reference'); where.push('chat = ?'); args.push(chatId); }
+    if (userId != null) { if (!Number.isSafeInteger(userId) || userId <= 0) throw new hs.HsError('ERR_INVALID', 'userId: a person'); where.push('user_id = ?'); args.push(userId); }
+    const rows = db().prepare(`SELECT seq, user_id, network, payload FROM bridge_backlog${where.length ? ' WHERE ' + where.join(' AND ') : ''} ORDER BY seq LIMIT ?`).all(...args, n + 1);
+    const events = rows.slice(0, n).map((r) => {
+      const p = open(r.payload);
+      return p && typeof p === 'object' ? { seq: r.seq, userId: r.user_id, network: r.network, ...p, history: true } : { seq: r.seq, userId: r.user_id, network: r.network, type: 'lost', history: true };
+    });
+    return { events, more: rows.length > n };
+  }
+  /** history.ack(seqs) → { ok, pending } — these pieces of history are filed (or not wanted any more). */
+  function historyAck(seqs) {
+    if (!Array.isArray(seqs) || seqs.length > 1000 || seqs.some((x) => !Number.isSafeInteger(x) || x < 0)) throw new hs.HsError('ERR_INVALID', 'seqs: up to 1000 sequence numbers');
+    const del = db().prepare('DELETE FROM bridge_backlog WHERE seq = ?');
+    db().transaction(() => { for (const x of seqs) del.run(x); })();
+    return { ok: true, pending: historyPending() };
+  }
+  function historyPending(userId) {
+    try {
+      return userId == null ? db().prepare('SELECT COUNT(*) AS n FROM bridge_backlog').get().n
+        : db().prepare('SELECT COUNT(*) AS n FROM bridge_backlog WHERE user_id = ?').get(userId).n;
+    } catch { return 0; }
+  }
+  /** A person changed their mind (fewer days, or none): what waits and is not wanted any more goes now. → rows dropped */
+  function historyTrim(userId) {
+    let n = 0;
+    const del = db().prepare('DELETE FROM bridge_backlog WHERE seq = ?');
+    const rows = db().prepare('SELECT seq, payload FROM bridge_backlog WHERE user_id = ?').all(userId);
+    db().transaction(() => {
+      for (const r of rows) {
+        const p = open(r.payload);
+        if (!p || !keepHistory(userId, Number(p.at) || 0)) { del.run(r.seq); n++; }
+      }
+    })();
+    return n;
+  }
+
+  // ─── files at the homeserver (stage 5) ─────────────────
+
+  /** A plugin took this file of the person over (or it is not wanted): it may go once nobody else waits for it. */
+  function mediaFetched(userId, mxc) {
+    db().prepare("UPDATE bridge_media SET state = 'done', at = ? WHERE mxc = ? AND user_id = ? AND state = 'wait'").run(Date.now(), mxc, userId);
+  }
+  /** Files to delete at the homeserver: everybody took theirs (an hour ago), or somebody's waited longer than MEDIA_KEEP_MS. */
+  function mediaToClean(now = Date.now(), limit = 50) {
+    return db().prepare(`SELECT mxc FROM bridge_media GROUP BY mxc
+      HAVING MAX(at) < ? AND (SUM(CASE WHEN state = 'wait' THEN 1 ELSE 0 END) = 0 OR MAX(CASE WHEN state = 'wait' THEN at END) < ?)
+      ORDER BY MIN(at) LIMIT ?`).all(now - MEDIA_SETTLE_MS, now - MEDIA_KEEP_MS, limit).map((r) => r.mxc);
+  }
+  function mediaCleaned(mxc) { db().prepare('DELETE FROM bridge_media WHERE mxc = ?').run(mxc); }
+  function mediaWaiting() { try { return db().prepare("SELECT COUNT(DISTINCT mxc) AS n FROM bridge_media WHERE state = 'wait'").get().n; } catch { return 0; } }
 
   /** The room of a person's chat (joined), or null. */
   function roomOf(userId, network, chatId) {
@@ -548,7 +680,9 @@ function create(opts) {
     return saveRoom(roomId, userId, network, 'invited', 'direct');
   }
 
-  return { transaction, pull, ack, pending, roomOf, chats, prune, stats, mxidOf, contactRef, mediaRef, openMediaRef, adopt, _handlePdu: handlePdu, _ephemeral: ephemeral, _forget: () => { rooms.clear(); info.clear(); } };
+  return {
+    transaction, pull, ack, pending, roomOf, chats, prune, stats, mxidOf, contactRef, mediaRef, openMediaRef, adopt,
+    historyPull, historyAck, historyPending, historyTrim, mediaFetched, mediaToClean, mediaCleaned, mediaWaiting, _handlePdu: handlePdu, _ephemeral: ephemeral, _forget: () => { rooms.clear(); info.clear(); } };
 }
 
-module.exports = { create, TEXT_MAX, PULL_MAX, REF_RE };
+module.exports = { create, TEXT_MAX, PULL_MAX, REF_RE, HISTORY_SLACK_MS, MEDIA_KEEP_MS, MEDIA_SETTLE_MS };
