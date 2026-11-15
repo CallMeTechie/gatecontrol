@@ -139,6 +139,10 @@ describe('targets', () => {
     assert.equal((await call('wake', { id: 't', host: '10.8.0.44', port: 3389 })).code, 'ERR_INVALID');
     assert.equal((await call('listener', { key: 'k', gateway: { peerId: 99 }, host: '192.168.1.5', port: 3389 })).code, 'ERR_NOT_FOUND');
     assert.deepEqual((await call('recordings.available')).result, { available: false, reason: 'not_yet' });
+    // the gateways and pools a listener can name (stage 1): names and ids only
+    const gw = (await call('gateways')).result;
+    assert.ok(Array.isArray(gw.gateways) && Array.isArray(gw.pools));
+    for (const g of gw.gateways) assert.deepEqual(Object.keys(g).sort(), ['name', 'online', 'peerId']);
     assert.deepEqual((await call('recordings.list')).result, []);
     assert.equal((await call('session', { user: adminId, protocol: 'rdp', target: TARGET, record: true })).code, 'ERR_REMOTE_RECORDING_UNAVAILABLE');
   });
@@ -233,10 +237,13 @@ describe('sessions: ticket, page, token, tunnel', () => {
 });
 
 describe('built-in data import `remote`', () => {
-  it('no upgrade notice yet (prepared, switched off)', () => {
+  it('the upgrade notice is on (stage 1); with the plugin installed /rdp points to "Daten übernehmen"', async () => {
     const legacy = require('../src/services/plugins/legacy');
-    assert.equal(legacy.DATASETS.get(ID).notice, false);
-    assert.ok(!legacy.pendingMoves().some((m) => m.pluginId === ID));
+    assert.notEqual(legacy.DATASETS.get(ID).notice, false);
+    assert.ok(!legacy.pendingMoves().some((m) => m.pluginId === ID), 'installed: no install notice');
+    const page = await agent.get('/rdp').expect(200);
+    assert.match(page.text, /data-builtin-moved="gatecontrol-remote"/);
+    assert.match(page.text, /settings\/plugins\/manage\/gatecontrol-remote/);
   });
   it('routes with handles instead of credentials, ids kept, sessions and maintenance; re-run keeps the handles', async () => {
     const st = (await agent.get(`/api/v1/plugins/${ID}/legacy`).expect(200)).body;
@@ -259,6 +266,11 @@ describe('built-in data import `remote`', () => {
     const again = (await pget('/snapshot')).result.routes.find((x) => x.id === 7);
     assert.equal(again.credential, r.credential, 'same handle on "Erneut übernehmen"');
     assert.equal(db.prepare('SELECT COUNT(*) AS c FROM rdp_routes').get().c, 1, 'the built-in table stays');
+  });
+  it('once taken over, /rdp leads to the plugin; the API of the core stays', async () => {
+    const r = await agent.get('/rdp').expect(302);
+    assert.equal(r.headers.location, '/plugins/' + ID);
+    await agent.get('/api/v1/rdp').expect((res) => assert.notEqual(res.status, 410));
   });
 });
 
@@ -294,6 +306,20 @@ describe('facade for the old app API', () => {
     assert.equal(last.op, 'connect');
     assert.equal(last.id, '7');
     assert.equal(last.query.ecdhPublicKey, undefined, 'the app key is the core\'s business');
+    assert.deepEqual(last.server, { connectHost: require('../src/services/remote/facade').connectHost() });
+    assert.ok(last.server.connectHost, 'the host of the base URL');
+  });
+  it('the core completes the answers: connect address of a gateway target, the DNS names of a device', async () => {
+    const host = require('../src/services/remote/facade').connectHost();
+    await ppost('/facade', { answer: { status: 200, body: { ok: true, routes: [{ id: 8, access_mode: 'gateway', connect_address: null, connect_port: 13389 }, { id: 9, access_mode: 'internal', connect_address: '10.8.0.9' }] } } });
+    const list = await agent.get('/api/v1/client/rdp').expect(200);
+    assert.deepEqual(list.body.routes.map((x) => x.connect_address), [host, '10.8.0.9']);
+    await ppost('/facade', { answer: { status: 200, body: { ok: true, connection: { id: 8, host: '192.168.1.20', access_mode: 'gateway', connect_address: null } } } });
+    const c = (await agent.get('/api/v1/client/rdp/8/connect').expect(200)).body.connection;
+    assert.equal(c.connect_address, host);
+    assert.deepEqual([c.peer_hostname, c.peer_fqdn, c.peer_fqdn_primary], [null, null, null], 'no peer with this address');
+    await ppost('/facade', { answer: { status: 200, body: { ok: true, connection: { id: 8, host: '10.8.0.44', peer_hostname: 'eigen' } } } });
+    assert.equal((await agent.get('/api/v1/client/rdp/8/connect').expect(200)).body.connection.peer_hostname, 'eigen', 'a value of the plugin stays');
   });
   it('a stopped plugin: 503 instead of outdated core data', async () => {
     await plugins.setEnabled(ID, false);

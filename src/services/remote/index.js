@@ -9,7 +9,7 @@
 //
 //   sessions.js    gc.remote.session / end / sessions, the session page, the tunnel lifecycle
 //   vault.js       gc.remote.vault.* — secrets stay in the core, the plugin holds handles
-//   targets.js     gc.remote.probe / wake / listener(s)
+//   targets.js     gc.remote.probe / wake / listener(s) / gateways
 //   recordings.js  gc.remote.recordings.* (the frame; recording comes with stage 3)
 //   facade.js      the old app API /api/v1/client/rdp* answered from the plugin (hook clientFacade)
 
@@ -47,6 +47,7 @@ async function call(plugin, op, args) {
     case 'listener': return targets.listener(plugin, a.target);
     case 'listener.remove': return targets.removeListener(plugin, a.key);
     case 'listeners': return targets.listeners(plugin);
+    case 'gateways': return targets.gateways();
     case 'recordings.available': return recordings.available();
     case 'recordings.list': return recordings.list(plugin, a);
     case 'recordings.stream': return recordings.stream(plugin, a.id);

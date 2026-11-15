@@ -2606,7 +2606,7 @@ async function handle(plugin, api, args, ctx) {
     // Fernzugriff (permissions.remote, services/remote — gc.remote version 1)
     case 'remote.session': case 'remote.end': case 'remote.sessions':
     case 'remote.vault.put': case 'remote.vault.remove': case 'remote.vault.info': case 'remote.vault.list':
-    case 'remote.probe': case 'remote.wake': case 'remote.listener': case 'remote.listener.remove': case 'remote.listeners':
+    case 'remote.probe': case 'remote.wake': case 'remote.listener': case 'remote.listener.remove': case 'remote.listeners': case 'remote.gateways':
     case 'remote.recordings.available': case 'remote.recordings.list': case 'remote.recordings.stream': case 'remote.recordings.remove':
       return remoteCall(plugin, api.slice('remote.'.length), args);
     // person groups (permissions.groups, groups.js): read; ensure / remove need "manage"

@@ -20,6 +20,20 @@
 </div>
 {% endif %}
 
+{#- Remote Desktops is the plugin "Fernzugriff" now (docs/feature-remote-access.md): install it, or take the data over -#}
+{% if rdpMoved %}
+<div class="rdp-locked-hint" style="margin-bottom:16px" role="note" data-builtin-moved="gatecontrol-remote">
+  {% if rdpMoved.installed %}
+  {{ t('plugins.moved.remote_import') }}
+  <a href="{{ rdpMoved.manageUrl }}" style="margin-left:8px;font-weight:600">{{ t('plugins.moved.remote_import_go') }}</a>
+  {% else %}
+  {{ t('plugins.moved.remote') }}
+  {% if rdpMoved.catalog %}<a href="/settings/plugins/catalog/{{ rdpMoved.pluginId }}" style="margin-left:8px;font-weight:600">{{ t('plugins.moved.install_now') }}</a>
+  {% else %}<a href="{{ rdpMoved.url }}" target="_blank" rel="noopener noreferrer" style="margin-left:8px;font-weight:600">{{ t('plugins.moved.download') }}</a>{% endif %}
+  {% endif %}
+</div>
+{% endif %}
+
 {# -- Stats Cards: hidden in Aurora but kept for JS null-check safety --------- #}
 {# setStatValue() null-checks getElementById; hidden keeps HTML valid & IDs reachable #}
 <div id="rdp-stats" hidden>

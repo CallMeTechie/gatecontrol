@@ -213,6 +213,23 @@ async function removeAllListeners(pluginId) {
   db().prepare('DELETE FROM remote_listeners WHERE plugin_id = ?').run(pluginId);
 }
 
+/**
+ * gc.remote.gateways() → { gateways: [{ peerId, name, online }], pools: [{ poolId, name }] } — the home gateways and
+ * failover pools a listener can name (the plugin's device page picks one). Names and ids only, no addresses.
+ */
+function gateways() {
+  let live = new Map();
+  try { live = require('../gatewayLiveState').all(); } catch { live = new Map(); }
+  const peers = db().prepare(`SELECT p.id, p.name FROM peers p JOIN gateway_meta gm ON gm.peer_id = p.id
+    WHERE p.peer_type = 'gateway' AND p.enabled = 1 ORDER BY p.name COLLATE NOCASE, p.id`).all();
+  let pools = [];
+  try { pools = db().prepare('SELECT id, name FROM gateway_pools WHERE enabled = 1 ORDER BY name COLLATE NOCASE, id').all(); } catch { pools = []; }
+  return {
+    gateways: peers.map((p) => ({ peerId: p.id, name: p.name, online: !!(live.get(p.id) && live.get(p.id).state === 'online') })),
+    pools: pools.map((x) => ({ poolId: x.id, name: x.name })),
+  };
+}
+
 // ─── Resolution ──────────────────────────────────
 
 /**
@@ -286,6 +303,6 @@ function _setLookupForTest(fn) { if (process.env.NODE_ENV === 'test') lookupFn =
 function _resetForTest() { if (process.env.NODE_ENV === 'test') { wakeLast.clear(); lookupFn = null; } }
 
 module.exports = {
-  TargetError, normalise, endpoint, resolveHost, addressAllowed, listener, removeListener, listeners, removeAllListeners, probe, wake, hubIp,
+  TargetError, normalise, endpoint, resolveHost, addressAllowed, listener, removeListener, listeners, removeAllListeners, gateways, probe, wake, hubIp,
   _setLookupForTest, _resetForTest,
 };

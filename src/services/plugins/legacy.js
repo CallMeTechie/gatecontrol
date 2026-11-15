@@ -216,7 +216,8 @@ const skoda = {
 
 // Remote Desktops → the shop plugin "Fernzugriff" (gatecontrol-remote, gc.remote). Unlike the three
 // above, the built-in feature STAYS in the core while the plugin is new (stage 0/1 of the plan): its tables
-// and pages keep working, the import only copies. Secrets never go into the snapshot: every credential
+// and API keep working, the import only copies; once taken over, the page /rdp leads to the plugin
+// (routes/index.js) and the old app API is answered by the plugin (services/remote/facade.js). Secrets never go into the snapshot: every credential
 // set of a route becomes an entry of the core's key vault (services/remote/vault.js) and the snapshot
 // carries its handle — idempotent per route (source "rdp_route:<id>"), so "Erneut übernehmen" refreshes
 // the same handles. Ids stay (routes[].id = rdp_routes.id, sessions[].route_id), so the plugin's rights and
@@ -302,9 +303,9 @@ const DATASETS = new Map([
   ['gatecontrol-smarthome', Object.freeze({ dataset: 'smarthome', target: 'gateway', source: smarthome })],
   ['gatecontrol-midea', Object.freeze({ dataset: 'midea', target: 'ac', source: midea })],
   ['gatecontrol-skoda', Object.freeze({ dataset: 'skoda', target: null, source: skoda })],
-  // notice: false — the upgrade notice ("Remote Desktops wird das Shop-Plugin Fernzugriff", i18n plugins.moved.remote)
-  // is prepared but not shown yet: the built-in feature keeps working until the plugin is in the shop (stage 1)
-  ['gatecontrol-remote', Object.freeze({ dataset: 'remote', target: null, source: remote, notice: false })],
+  // the upgrade notice ("Remote Desktops ist jetzt das Plugin „Fernzugriff“", i18n plugins.moved.remote) since stage 1, when
+  // the plugin is in the shop; the built-in feature keeps working, /rdp leads to the plugin once its data was taken over
+  ['gatecontrol-remote', Object.freeze({ dataset: 'remote', target: null, source: remote })],
 ]);
 
 function defOf(pluginId) {
