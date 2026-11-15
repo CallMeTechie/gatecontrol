@@ -65,6 +65,9 @@
 //   accounts         (user profile, gc.bridges version 8) matchAccounts: which of those contacts are accounts here — the
 //                    profile service compares (keyed hashes); every whoami tells it the numbers of the person's own
 //                    logins (noteOwn) for "Bestätigt über dein WhatsApp" and the recognition by the own WhatsApp.
+//   recognition      (chats v2, gc.bridges version 9) recognition.get / set: the person's own answer to "Dürfen andere auf
+//                    diesem Server dich an deinem WhatsApp erkennen?", asked by the messenger right after a link — the same
+//                    consent as "Erkennung › an meinem verknüpften WhatsApp" in the profile (services/profile).
 //   images           (stage 5) the pins of images.js go to update.sh with every config file ("bridges_images"): a
 //                    GateControl release with a new pin updates the containers at the next run of the script, without
 //                    a new docker-compose.yml on the host. Nothing unpinned is ever pulled.
@@ -273,7 +276,7 @@ function locations() {
  * no contents: states, versions and memory only.
  */
 function status() {
-  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 8 };
+  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 9 };
   const cfg = getConfig();
   const host = hostStatus();
   const up = cfg.enabled && host.state === 'running' && host.services.hs.running;
@@ -313,7 +316,7 @@ function status() {
     // stage 5: the copies of files at the homeserver that went after the plugin took them over
     cleanup: { deleted: cleanup.deleted, lastAt: cleanup.lastAt ? new Date(cleanup.lastAt).toISOString() : null, error: cleanup.error, waiting: runtime.events ? runtime.events.mediaWaiting() : 0 },
     // the version of gc.bridges this server offers (child/bootstrap.js)
-    version: 8,
+    version: 9,
   };
 }
 
@@ -1167,6 +1170,27 @@ async function matchAccounts(userId, network) {
 }
 
 /**
+ * gc.bridges.recognition (version 9) — the person's consent "an meinem verknüpften WhatsApp" (the user profile), so the
+ * messenger can ask it where WhatsApp is linked (chats v2). get(userId) → { asked, allowed, linked } — asked: the person
+ * answered once (in the profile or here); linked: a login of the network is known. set(userId, allowed, ctx) → get();
+ * the profile service keeps the answer with its time and writes the activity log. Only `whatsapp` (the one network whose
+ * own login the server compares). Inside a request (set: a changing request) of that person — hostApi checks that.
+ */
+const recognition = {
+  get: (userId, network = 'whatsapp') => {
+    if (network !== 'whatsapp') throw new BridgesError('ERR_INVALID', 'recognition: whatsapp only');
+    const r = require('../profile').ownView(userId).recognition;
+    return { asked: !!r.whatsappAnswered, allowed: !!r.byWhatsapp, linked: !!r.whatsappLinked || linkedAt(userId, network) > 0 };
+  },
+  set: (userId, allowed, ctx = {}, network = 'whatsapp') => {
+    if (network !== 'whatsapp') throw new BridgesError('ERR_INVALID', 'recognition: whatsapp only');
+    if (typeof allowed !== 'boolean') throw new BridgesError('ERR_INVALID', 'allowed: true or false');
+    require('../profile').update(userId, { recognition: { byWhatsapp: allowed } }, ctx);
+    return recognition.get(userId, network);
+  },
+};
+
+/**
  * gc.bridges.createDmByRef(userId, network, ref) → { chat: { id, kind: 'direct', name } }
  * The direct chat with a contact of contacts() / matchNumbers() (made or found) — by the bridge's own contact, not by a
  * number: nothing is asked of WhatsApp about a number, nothing counted. Inside a changing request of that person;
@@ -1213,7 +1237,7 @@ module.exports = {
   NETWORKS, SCRIPT, SERVER_NAME, BridgesError,
   previewOn, getConfig, wanted, wish, status, configure, hostStatus, ensureSecrets, readSecrets, dir,
   login, logins, logout, unlinkFor, mxidOf, _reset,
-  start, stop, send, react, redact, read, typing, chats, events, openFile, resolve, createDm, numberOf, contacts, matchNumbers, createDmByRef, matchAccounts, refreshOwnNumbers, _openContactRef: openContactRef,
+  start, stop, send, react, redact, read, typing, chats, events, openFile, resolve, createDm, numberOf, contacts, matchNumbers, createDmByRef, matchAccounts, recognition, refreshOwnNumbers, _openContactRef: openContactRef,
   history, historyOf, linkedAt, health, mediaFetched, cleanupRun, tick, masterKey, writeMasterKey, _forget: forget, HISTORY_OPTIONS, HISTORY_DEFAULT,
   _onTransaction: onTransaction, _eventsOf: eventsOf, _runtime: runtime,
 };
