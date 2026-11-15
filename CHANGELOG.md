@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.277.0] — 2026-11-15
+
+### Features
+- Messenger-Brücken, Stufe 5 – älterer Verlauf je Person, verschlüsselte Sicherung des Brücken-Zustands, Aufräumen im Homeserver, Handy-Warnung und Pins über update.sh (Vorschau, standardmäßig aus) (#492)
+
+---
+
 ## [1.276.0] — 2026-11-15
 
 ### Features
