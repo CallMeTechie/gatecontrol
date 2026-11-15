@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.282.0] — 2026-11-15
+
+### Features
+- Erkennung beim Verknüpfen von WhatsApp (gc.bridges Version 9) (#498)
+
+---
+
 ## [1.281.0] — 2026-11-15
 
 ### Features
