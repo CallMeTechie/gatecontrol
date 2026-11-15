@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.278.0] — 2026-11-15
+
+### Features
+- Messenger-Brücken, Stufe 4c – Kontakte der Brücke für „Neuer Chat“ (gc.bridges Version 6, Vorschau) (#493)
+
+---
+
 ## [1.277.0] — 2026-11-15
 
 ### Features
