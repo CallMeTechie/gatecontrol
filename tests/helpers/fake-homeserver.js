@@ -12,18 +12,44 @@
 //   hs.down = true                    answers nothing (the socket is closed at once)
 //   hs.refuseJoin = 'M_FORBIDDEN'     the next joins are refused
 //   await hs.push(txnId, { events, ephemeral }, { token }) → { status, json }
+//   hs.file(id, { data, mime })       a file of the homeserver: mxc://gc.internal/<id> (stage 4)
+//   hs.files                          Map id → { data, mime, name, userId } — also what GateControl uploaded
+//   hs.noLength = true                files are answered without Content-Length (chunked)
 //   await hs.close()
 
 const fs = require('node:fs');
 const http = require('node:http');
 
 function startFakeHomeserver({ socket, asToken, coreSocket, hsToken }) {
-  const state = { requests: [], rooms: new Map(), users: new Set(), down: false, refuseJoin: null, seq: 0, sent: [] };
+  const state = { requests: [], rooms: new Map(), users: new Set(), down: false, refuseJoin: null, seq: 0, sent: [], files: new Map(), noLength: false };
   const send = (res, status, json) => { const b = JSON.stringify(json); res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(b) }); res.end(b); };
 
   const server = http.createServer((req, res) => {
     if (state.down) { req.socket.destroy(); return; }
     const url = new URL(req.url, 'http://hs');
+    // stage 4: files — authenticated download (Matrix v1.11) and upload, as an account of GateControl's namespace
+    if (url.pathname.startsWith('/_matrix/client/v1/media/download/') || url.pathname === '/_matrix/media/v3/upload') {
+      const userId = url.searchParams.get('user_id');
+      const auth = req.headers.authorization || '';
+      const parts = [];
+      req.on('data', (c) => parts.push(c));
+      req.on('end', () => {
+        state.requests.push({ method: req.method, path: url.pathname, query: url.search, userId, auth, body: null, bytes: Buffer.concat(parts).length });
+        if (auth !== `Bearer ${asToken}`) return send(res, 401, { errcode: 'M_UNKNOWN_TOKEN', error: 'Unknown access token' });
+        if (!/^@gc_\d+:gc\.internal$/.test(String(userId))) return send(res, 403, { errcode: 'M_EXCLUSIVE', error: 'User is not in namespace.' });
+        if (req.method === 'POST') {
+          const id = `up${++state.seq}`;
+          state.files.set(id, { data: Buffer.concat(parts), mime: req.headers['content-type'] || null, name: url.searchParams.get('filename'), userId, length: Number(req.headers['content-length']) });
+          return send(res, 200, { content_uri: `mxc://gc.internal/${id}` });
+        }
+        const seg = url.pathname.slice('/_matrix/client/v1/media/download/'.length).split('/').map(decodeURIComponent);
+        const f = seg[0] === 'gc.internal' ? state.files.get(seg[1]) : null;
+        if (!f) return send(res, 404, { errcode: 'M_NOT_FOUND', error: 'Media not found' });
+        res.writeHead(200, { 'Content-Type': f.mime || 'application/octet-stream', ...(state.noLength ? {} : { 'Content-Length': f.data.length }) });
+        return res.end(f.data);
+      });
+      return;
+    }
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', () => {
@@ -96,6 +122,9 @@ function startFakeHomeserver({ socket, asToken, coreSocket, hsToken }) {
       rooms: state.rooms,
       set down(v) { state.down = !!v; },
       set refuseJoin(v) { state.refuseJoin = v; },
+      set noLength(v) { state.noLength = !!v; },
+      files: state.files,
+      file(id, { data, mime = 'application/octet-stream' } = {}) { state.files.set(id, { data: Buffer.from(data), mime }); return `mxc://gc.internal/${id}`; },
       room(roomId, { state: st = [], timeline = [], members = [] } = {}) {
         const r = { state: st, timeline, members: new Set(members), txns: new Map() };
         state.rooms.set(roomId, r);

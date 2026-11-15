@@ -122,6 +122,9 @@ function hsModel(secrets, networks) {
       allow_local_presence: false,
       allow_incoming_presence: false,
       allow_outgoing_presence: false,
+      // stage 4: files cross in both directions — a little more than the messenger's 25 MB (default 24 MiB);
+      // the homeserver holds one upload in memory at a time per request
+      max_request_size: 32 * 1024 * 1024,
       log: 'info',
       log_colors: false,
     },

@@ -247,7 +247,9 @@ class PluginProcess {
           // gc.mail (since 1.216.0): what the mail server answered (≤ 200 characters, without the credentials)
           ...(e && typeof e.serverText === 'string' ? { serverText: e.serverText.slice(0, 200) } : {}),
           // a host API error's reason (gc.print ERR_PRINT_FORMAT: why the file cannot be printed)
-          ...(e && e.code && typeof e.reason === 'string' && /^[a-z][a-z0-9_]{0,39}$/.test(e.reason) ? { reason: e.reason } : {}) }))
+          ...(e && e.code && typeof e.reason === 'string' && /^[a-z][a-z0-9_]{0,39}$/.test(e.reason) ? { reason: e.reason } : {}),
+          // when to ask again (gc.bridges.resolve / createDm ERR_RATE_LIMIT, gc.bridges version 4)
+          ...(e && e.code === 'ERR_RATE_LIMIT' && Number.isSafeInteger(e.retryAfterS) && e.retryAfterS > 0 ? { retryAfterS: Math.min(e.retryAfterS, 86400) } : {}) }))
       .finally(() => { this.hostCalls--; loopStall().endRequest(reqId); });
   }
 

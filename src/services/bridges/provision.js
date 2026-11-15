@@ -143,6 +143,15 @@ function flowsOut(list) {
     .map((f) => ({ id: f.id, name: str(f.name, 80), description: str(f.description, 300) }));
 }
 
+const ROOM_RE = /^![A-Za-z0-9._=/+-]{1,128}(:[a-z0-9.-]{1,64})?$/;
+
+/** resolve_identifier / create_dm → { name, roomId } — never the id, the address or the identifiers (they hold the number). */
+function identifierOut(r) {
+  if (!r || typeof r !== 'object') return null;
+  const name = str(r.name, 480).replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || null;
+  return { name, roomId: ROOM_RE.test(String(r.dm_room_mxid || '')) ? r.dm_room_mxid : null };
+}
+
 function client(target, mxid) {
   const call = (method, p, body, timeoutMs) => request(target, { method, path: p, mxid, body, timeoutMs });
   const seg = (v) => { if (!ID_RE.test(String(v || ''))) throw new BridgeError('ERR_INVALID', 'invalid id'); return encodeURIComponent(v); };
@@ -166,10 +175,15 @@ function client(target, mxid) {
       return stepOut(await call('POST', `login/step/${seg(processId)}/${seg(stepId)}/${kind}`, body, kind === 'display_and_wait' ? WAIT_TIMEOUT_MS : TIMEOUT_MS));
     },
     cancel: async (processId) => { await call('POST', `login/cancel/${seg(processId)}`, {}); return { ok: true }; },
+    // stage 4: a phone number (+…, checked by the caller) — resolve_identifier / create_dm (bridgev2 provisionutil
+    // RespResolveIdentifier: id, name, avatar_url, identifiers, mxid, dm_room_mxid). Only the name and the room go on;
+    // 404 (not at the service) → ERR_BRIDGE not_found
+    resolve: async (number) => identifierOut(await call('GET', `resolve_identifier/${encodeURIComponent(number)}`)),
+    createDm: async (number) => identifierOut(await call('POST', `create_dm/${encodeURIComponent(number)}`, {})),
     logout: async (loginId) => { await call('POST', `logout/${seg(loginId)}`, {}); return { ok: true }; },
   };
 }
 
 function socketOf(dir, network) { return path.join(dir, 'run', `${network}.sock`); }
 
-module.exports = { client, request, stepOut, whoamiOut, flowsOut, socketOf, BridgeError, ID_RE, WAIT_TIMEOUT_MS };
+module.exports = { client, request, stepOut, whoamiOut, flowsOut, identifierOut, socketOf, BridgeError, ID_RE, WAIT_TIMEOUT_MS };

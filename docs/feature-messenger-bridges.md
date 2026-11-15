@@ -261,20 +261,20 @@ An invite for a second person into a known room, or from an account that is
 no bridge, is ignored.
 
 **Neutral events** (`events.pull`), each with `seq`, `userId`, `network`,
-`chat: { id, kind: 'direct' | 'group', name }`, `at` (ms):
+`chat: { id, kind: 'direct' | 'group', name, avatar? }` (`avatar` since stage 4), `at` (ms):
 
 | `type` | Fields |
 |---|---|
 | `chat` | the chat became known or changed its name / kind; `closed: true` when the account left |
-| `message` | `id`, `sender`, `kind: 'text' \| 'notice' \| 'media' \| 'unsupported'`, `text`, `replyTo` (a message id or null), `media: { kind: 'image' \| 'video' \| 'audio' \| 'voice' \| 'file' \| 'sticker' \| 'location', name }` for `media` — the file itself is not carried yet |
+| `message` | `id`, `sender`, `kind: 'text' \| 'notice' \| 'media' \| 'unsupported'`, `text`, `replyTo` (a message id or null), `media: { kind: 'image' \| 'video' \| 'audio' \| 'voice' \| 'file' \| 'sticker' \| 'location', name }` for `media` — since stage 4 with `ref` and the file's details (see "Files") |
 | `edit` | `id`, `sender`, `target`, `text` |
 | `redact` | `id`, `sender`, `target` — a message or a reaction |
 | `reaction` | `id`, `sender`, `target`, `emoji` |
 | `status` | `target`, `status: 'sent' \| 'delivered' \| 'failed'`, `reason`, `retriable` — the bridge's word on a message GateControl sent (`com.beeper.message_send_status`); `delivered` only in direct chats |
-| `contact` | `contact: { id, name }` — a contact's name changed |
+| `contact` | `contact: { id, name, avatar }` — a contact's name or picture changed |
 | `lost` | a row that could not be opened (the bridges' folder was replaced) — acknowledge it |
 
-`sender`: `{ id, name }` (a contact; `id` is an HMAC of the bridge's address,
+`sender`: `{ id, name, avatar }` (a contact; `id` is an HMAC of the bridge's address,
 `c…`), `{ self: true }` (written by the person in the messenger's own app) or
 `{ system: true }` (the bridge itself). Messages GateControl sent itself do
 not come back. Not stored, only in the hook's payload: `typing`
@@ -309,6 +309,89 @@ kind and name), starting a chat with a new number (the provisioning API has
 `resolve_identifier` and `create_dm`; it needs a dialog in the clients),
 contact pictures, history.
 
+## Files (stage 4)
+
+Read from the sources of the pinned versions, tested against the stand-ins
+(`tests/bridges_media.test.js`); not run against the real programs.
+
+```
+in   bridge ──upload──▶ homeserver ──event with mxc://──▶ events.js: media.ref (sealed) ─▶ plugin
+     plugin ──gc.bridges.media.fetch(userId, network, ref)──▶ hs.js GET /_matrix/client/v1/media/download/…
+            ──stream──▶ media.storeStream (sealed on disk, virus scan "bridge") ──▶ { mediaId, mime, bytes, name, scan }
+out  plugin ──gc.bridges.send(…, { media: { mediaId, kind } })──▶ media.readRange (only if the scan let it through)
+            ──stream──▶ hs.js POST /_matrix/media/v3/upload ──▶ m.image / m.video / m.audio / m.file ──▶ bridge
+```
+
+**In.** A `message` of kind `media` carries `media: { kind, name, ref, mime,
+size, w, h, durationMs, waveform? }`. `ref` (`m…`) is the file's mxc://
+address and the person it was delivered for, sealed with a key derived from
+the master key (AES-256-GCM, the nonce derived from the content: the same file
+for the same person always gives the same ref — a plugin can tell "unchanged",
+nothing else can be read). A file of another server or an encrypted one
+(`file` instead of `url`; the rooms of the bridges are not encrypted) has no
+ref. A location has no file: `media.geo { lat, lon }` from `geo_uri`.
+`gc.bridges.media.fetch(userId, network, ref, { name })` needs no person — it
+sends nothing and reads only what was delivered for that person — and stores
+into **this** plugin's media: the size limit (`media.maxBytes`) is checked
+against the homeserver's Content-Length before a byte is read (no length: not
+read at all), the type must be one of `media.types` (any other file that is
+no picture, sound or video is kept as `application/octet-stream`, a download),
+the quota and the room on the server as for every file. The bytes go straight
+from the socket into the sealed file (one fsync, as for every file); the
+virus scan checks them as a file of that plugin (scan kind `bridge`; for the
+messenger the source "messenger"), a later result comes with the hook
+`mediaScanned`. Refusals: `ERR_MEDIA_TOO_LARGE`, `ERR_MEDIA_TYPE`,
+`ERR_MEDIA_QUOTA`, `ERR_BUSY` (scan unavailable and uploads held),
+`ERR_BRIDGE` (`m_not_found`, `bad_answer`), `ERR_BRIDGE_UNREACHABLE`,
+`ERR_INVALID` (a ref of another person, or of another installation).
+
+**Pictures.** The picture of a chat (`m.room.avatar`; with
+`private_chat_portal_meta` also the contact's picture in a direct chat) is
+`chat.avatar`, a contact's (`avatar_url` of its membership) `sender.avatar` /
+`contact.avatar` — refs like a file's, `null` when there is none, missing when
+the event does not know it. Fetched the same way.
+
+**Out.** `send(…, { txnId, text?, replyTo?, media: { mediaId, kind: 'image' |
+'video' | 'audio' | 'voice' | 'file', name?, w?, h?, durationMs?, waveform? } })`:
+the plugin's own stored file, only when the virus scan lets it be served
+(`ERR_MEDIA_SCAN_PENDING`, `ERR_MEDIA_QUARANTINED`, `ERR_MEDIA_BLOCKED`
+otherwise), read chunk by chunk and streamed to the homeserver; what was
+uploaded is remembered per file (memory), so sending again uploads nothing.
+The content is what mautrix-whatsapp reads (`pkg/msgconv/from-matrix.go`,
+`constructMediaMessage`, `reuploadFileToWhatsApp`): `body` = the caption or
+the name, `filename`, `info { mimetype, size, w, h, duration }`; a voice
+message is `m.audio` with `org.matrix.msc3245.voice` (PTT) and
+`org.matrix.msc1767.audio { duration, waveform }` (values ≤ 255 are taken as
+they are). What the bridge takes (`pkg/connector/capabilities.go`): pictures
+`image/jpeg` (png and webp are converted to JPEG), videos `video/mp4` /
+`video/3gpp`, sound and voice `audio/ogg` (taken as Opus), `audio/mp4`,
+`audio/aac`, `audio/mpeg`, `audio/amr` — **not** `audio/webm` —, files of any
+type, up to 2000 MB. The plugin checks this before it sends.
+
+**Homeserver.** `max_request_size` is raised from 24 MiB to 32 MiB, so a file
+up to the messenger's 25 MB goes through in both directions (Tuwunel holds a
+request in memory). The homeserver keeps its own copy of every file that
+crossed — removing it needs its admin API (stage 5, with storage targets).
+
+## A new chat by number (stage 4)
+
+`gc.bridges.resolve(userId, network, number)` → `{ found: true, name } |
+{ found: false }` and `gc.bridges.createDm(userId, network, number)` →
+`{ chat: { id, kind: 'direct', name } }` — the provisioning API's
+`GET /v3/resolve_identifier/{id}` and `POST /v3/create_dm/{id}`
+(bridgev2 `provisionutil.ResolveIdentifier`; WhatsApp asks "is this number on
+WhatsApp", `startchat.go validateIdentifer`). Inside a changing request of
+that person; the number must be `+` with the country code (spaces, dashes,
+brackets and a leading `00` are taken), else `ERR_INVALID` / `invalid_number`.
+At most 20 numbers per person and hour (`ERR_RATE_LIMIT` with `retryAfterS`)
+— every number is a question to WhatsApp. Of the answer only the name and the
+room go on; the bridge's id, address and identifiers (they hold the number)
+and its error texts (they name the number) stay out, and the number is never
+written to a log or a table. `createDm` knows the room at once (state
+`invited` in `bridge_rooms`, the plugin has the chat reference straight away);
+its join brings name and kind as usual, sending works as soon as the account
+is in the room.
+
 ## Probe
 
 `./update.sh bridges-probe [seconds]` on the host (as root, in the install
@@ -339,7 +422,7 @@ show them); the log lines stay in the file.
 | 1 | service, preview gate, wish/state files, `update.sh`, secrets, `gc.bridges` (state, switch, a person's link through the provisioning API), tests against a stand-in bridge |
 | 2 | this: compose profile `bruecken` with pinned images, generated configuration, provisional limits, the probe, "outdated", `unlinkFor`; plugins: portal page "Verknüpfte Dienste", the parents' switch in the family plugin. Open until the probe ran: whether the programs start with these files, and the real limits |
 | 3 | messages (see "Messages"): the server as an application service — transactions through `bruecken-core-relay`, neutral events in a sealed inbox, sending as the person; text, reply, edit, deletion, reaction, read, typing, what the bridge says about a sent message; the probe blanks more. Plugin: bridged chats for the linked person only |
-| 4 | media, a chat with a new number, contact pictures, chat list marks and filters in the apps |
+| 4 | files in both directions through the plugin's media with the virus scan, pictures of chats and contacts, a chat with a new number (API only); the apps follow |
 | 5 | history (30 days, in small portions at night), backup of the bridge state, storage targets for media, "phone not seen" notices, "bridge outdated" |
 | 6 | a gateway as the place, moving between places |
 | 7 | Signal, Telegram |
@@ -359,6 +442,9 @@ show them); the log lines stay in the file.
 * `src/services/bridges/appservice.js`, `events.js`, `hs.js` — stage 3: the listener for the homeserver's
   transactions, their translation into neutral events (tables `bridge_rooms`, `bridge_inbox`, `bridge_txns`,
   migration 148), the homeserver's client API as a person's internal account
+* stage 4: `events.js` (`media.ref`, pictures, `adopt`), `hs.js` (`download`, `upload`), `index.js` (`openFile`,
+  `send` with a file, `resolve`, `createDm`), `provision.js` (`resolve_identifier`, `create_dm`), `hostApi.js`
+  (`bridgeFetch`, `bridgeFile`), `media.js` (`storeStream` with scan kind `bridge`)
 * `src/services/plugins/hostApi.js` (`bridgesCall`), `child/bootstrap.js`
   (`makeBridges`), `manifest.js` (`permissions.bridges`)
 * `tests/bridges.test.js`, `tests/bridges_config.test.js`,

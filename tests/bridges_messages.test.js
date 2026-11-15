@@ -131,7 +131,7 @@ describe('rooms', () => {
     assert.match(row.ref, /^r[A-Za-z0-9_-]{20}$/);
     const evs = await pulled();
     assert.deepEqual(evs.map((e) => e.type), ['chat', 'message']);
-    assert.deepEqual(evs[0].chat, { id: row.ref, kind: 'direct', name: 'Kim Muster' });
+    assert.deepEqual(evs[0].chat, { id: row.ref, kind: 'direct', name: 'Kim Muster', avatar: null });
     assert.equal(evs[0].userId, annaId);
     assert.equal(evs[1].text, 'Kommt ihr Samstag?');
     assert.equal(evs[1].sender.name, 'Kim Muster');
@@ -251,7 +251,7 @@ describe('the neutral events', () => {
       ['notice', null, null, 'Du wurdest abgemeldet'],
     ]);
     assert.deepEqual(evs[8].sender, { system: true });
-    assert.doesNotMatch(JSON.stringify(evs), /mxc:|geo:/, 'no file address goes out before files are carried');
+    assert.doesNotMatch(JSON.stringify(evs), /mxc:|geo:/, 'no file address goes out — files travel as sealed references (stage 4)');
   });
 
   it('tells the person’s own messages apart: written in the messenger’s app = theirs, sent by GateControl = known already', async () => {
@@ -299,7 +299,7 @@ describe('the neutral events', () => {
     ] });
     const evs = await pulled();
     assert.deepEqual(evs.map((e) => e.type), ['chat', 'contact', 'message']);
-    assert.deepEqual(evs[0].chat, { id: chat, kind: 'direct', name: 'Kim M.' });
+    assert.deepEqual(evs[0].chat, { id: chat, kind: 'direct', name: 'Kim M.', avatar: null });
     assert.equal(evs[1].contact.name, 'Kim (neu)');
     assert.equal(evs[2].sender.name, 'Kim (neu)');
     assert.equal(evs[2].sender.id, evs[1].contact.id);

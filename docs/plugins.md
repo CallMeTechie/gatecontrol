@@ -1059,7 +1059,7 @@ module.exports = {
 | `gc.homeNetwork.internet.status(userId)` / `.pause(userId, untilISO \| minutes)` / `.resume(userId)` / `.extend(userId, minutes)` | since 1.231.0: the home DNS filter of a person — pause the internet, suspend the profile's times; changes only on behalf of a signed-in person (`homeInternet`), since 1.259.0 also for the person an automation names (`{ actor }`) — see "Internet at home" |
 | `gc.homeCache.offer({ mediaId, kind, userIds, priority })` / `.withdraw(mediaId)` / `.lanHint(sha256 \| { mediaId }, req)` | since 1.231.0: keep the plugin's files on the gateways' home caches and send an app in the home network there (`homeCache`) — see "Home cache"; since 1.249.0 also GateControl's previews of them (`preview`, `.lanHints([…], req)`) |
 | `gc.vpnDns.status()` / `.get()` / `.set(patch)` / `.devices()` / `.lists()` / `.stats()` / `.test(domain, who)` / `.pause(target)` / `.resume(target)` / `.pauses()` / `.log(query)` / `.restart()` / `.on(handler)` … | since 1.264.0: the DNS protection of the VPN devices — the host filters (its own filter service behind dnsmasq), the plugin sets lists, own entries and profiles for groups, people and devices, suspends the protection and reads counters; changes on behalf of a signed-in person or `{ actor }` (`vpnDns`) — see "DNS protection" |
-| `gc.bridges.status()` / `.configure(patch)` / `.login.flows(userId, network)` / `.login.start(…)` / `.login.step(…)` / `.login.cancel(…)` / `.logins(userId, network)` / `.logout(userId, network, loginId)` | preview: the bridges to outside messengers (WhatsApp first) that run next to the server — their state, the administrator's switch, and a person's **own** link; the plugin never sees an address, a token or a session key (`bridges`) — see "Messenger bridges" |
+| `gc.bridges.status()` / `.configure(patch)` / `.login.flows(userId, network)` / `.login.start(…)` / `.login.step(…)` / `.login.cancel(…)` / `.logins(userId, network)` / `.logout(userId, network, loginId)` | preview: the bridges to outside messengers (WhatsApp first) that run next to the server — their state, the administrator's switch, and a person's **own** link; since version 3 messages, since version 4 files (`media.fetch`) and a new chat by number (`resolve`, `createDm`); the plugin never sees an address, a token or a session key (`bridges`) — see "Messenger bridges" |
 | `gc.ai.available({ capability })` / `gc.ai.status()` | since 1.214.0: is AI usable for the plugin (asks no provider) / `{ available, mediaAllowed, capabilities, budgetLeftCents }` (`ai`) — see "AI requests" |
 | `gc.ai.extract({ task, user, instructions, input, schema, maxOutputTokens, timeoutMs })` / `gc.ai.generate({ … })` | since 1.214.0: structured data checked against a schema / free text from the AI provider set up in GateControl → `{ ok, data \| text, provider, model, usage, fallback }` (`ai`) — see "AI requests" |
 | `gc.groups.list/get/members/isMember/leadersOf(…)` | the person groups of GateControl (`groups`) — see "Groups" |
@@ -2952,7 +2952,7 @@ names the permission first and marks it as sensitive.
 
 | Call | Answer |
 |---|---|
-| `gc.bridges.version` | `3` (`2`: without messages — `events`, `send`, …; `1`: also without `unlinkFor`, `outdated`, `wantVersion`, `host.probe`) |
+| `gc.bridges.version` | `4` (`3`: without files and a new chat by number — `media.fetch`, `send(… media)`, `resolve`, `createDm`; `2`: also without messages — `events`, `send`, …; `1`: also without `unlinkFor`, `outdated`, `wantVersion`, `host.probe`) |
 | `status()` | `{ available, reason, enabled, location: 'server', locations: [{ id, kind, cores, memMb, freeMb }], networks: [{ id, enabled, state: 'off' \| 'starting' \| 'running' \| 'failed', version, memMb, limitMb, outdated, wantVersion }], host: { state, error: 'compose_missing' \| 'config_missing' \| 'start_failed' \| null, checkedAt, cron, script: { host, needed }, homeserver: { running, memMb, limitMb, version, outdated, wantVersion }, limitsProvisional, probe }, history: { enabled: false } }` — states, versions and memory only; never a name, a number or a content. `outdated`: the container runs another image than this GateControl pins (`wantVersion`) — the host's `docker-compose.yml` is older. `limitsProvisional`: the memory limits are upper bounds nobody measured yet. `probe`: `null` or what `./update.sh bridges-probe` measured on the host — `{ at, result: 'ok' \| 'not_wanted' \| 'compose_missing' \| 'config_missing' \| 'start_failed' \| 'not_running', windowSeconds, services: { hs \| whatsapp \| whatsapp-relay: { running, restarts, oomKilled, memMb, memPeakMb, limitMb, writtenKb } }, sockets: { hs, whatsapp }, diskMb }` |
 | `configure({ enabled?, networks?: { whatsapp?: boolean } })` | `status()`. Only inside a changing request (POST/PUT/PATCH/DELETE) of an **administrator** (`ERR_NOT_PERSON`, `ERR_NOT_ADMIN`); logged as `bridges_changed`. Off by default |
 | `login.flows(userId, network)` | `[{ id, name, description }]` — WhatsApp: `qr`, `phone` (pairing code) |
@@ -3007,6 +3007,21 @@ chat of theirs (`ERR_INVALID` for anybody else's). `status().messages`:
 `{ listening, relay: 'running' | 'stopped' | 'missing' | 'unknown' | null,
 lastEventAt, transactions, pending }` — no contents.
 
+**Version 4 — files, pictures, a new chat by number** (`gc.bridges.version >= 4`;
+details: [feature-messenger-bridges.md](feature-messenger-bridges.md), "Files",
+"A new chat by number"). Events carry files as references: `media.ref` of a
+message (with `mime`, `size`, `w`, `h`, `durationMs`, `waveform`),
+`chat.avatar`, `sender.avatar` / `contact.avatar` (`null`: no picture).
+
+| Call | Answer |
+|---|---|
+| `media.fetch(userId, network, ref, { name? })` | `{ mediaId, mime, bytes, name, scan }` — the file into **this** plugin's media (needs `media` in plugin.json), unclaimed, no owner, checked by the virus scan; `media.maxBytes` is checked before a byte is read. Needs no person (it sends nothing). `ERR_MEDIA_TOO_LARGE`, `ERR_MEDIA_TYPE` (a picture, sound or video of a type not in `media.types`; any other file is kept as `application/octet-stream` when the plugin takes that), `ERR_MEDIA_QUOTA`, `ERR_BUSY`, `ERR_INVALID` (a ref of another person) |
+| `send(userId, network, chatId, { txnId, text?, replyTo?, media: { mediaId, kind: 'image' \| 'video' \| 'audio' \| 'voice' \| 'file', name?, w?, h?, durationMs?, waveform? } })` | `{ id }` — a file of this plugin, only one the virus scan lets be served (`ERR_MEDIA_SCAN_PENDING`, `ERR_MEDIA_QUARANTINED`, `ERR_MEDIA_BLOCKED`; `ERR_NOT_FOUND`); `text` is the caption. Check the types the bridge takes first (feature doc) |
+| `resolve(userId, network, number)` | `{ found: true, name } \| { found: false }` — inside a changing request of that person; `number` with `+` and the country code (`ERR_INVALID` / `invalid_number`); at most 20 per person and hour (`ERR_RATE_LIMIT`, `e.retryAfterS`) |
+| `createDm(userId, network, number)` | `{ chat: { id, kind: 'direct', name } }` — the direct chat with that number, made or found; its events follow as usual. Same rules; `ERR_BRIDGE` / `not_found` when the number is not at the service |
+
+Never log or store the number: the host does not either.
+
 Hook (optional): `async bridgeEvents({ pending, ephemeral }, gc)` — the bridges
 delivered something. `ephemeral` carries what is never stored (typing, read
 receipts); everything else is fetched with `events.pull` and acknowledged with
@@ -3020,11 +3035,13 @@ Errors (`e.code`, with `e.reason`): `ERR_BRIDGES_DENIED` (no permission),
 `refused`, `unsupported_step`, `bad_answer`, `too_large` or the bridge's own
 error code as a word, e.g. `m_bad_json`, `fi_mau_whatsapp_login_timeout` — its
 text stays in the server log), `ERR_BUSY`,
-`ERR_INVALID`, `ERR_NOT_PERSON`, `ERR_NOT_ADMIN`.
+`ERR_INVALID`, `ERR_NOT_PERSON`, `ERR_NOT_ADMIN`, `ERR_RATE_LIMIT` (version 4).
 
 Testing without WhatsApp: `tests/helpers/fake-bridge.js` is a stand-in for a
 bridge's provisioning API on a Unix socket (`tests/bridges.test.js`,
-`tests/bridges_config.test.js`).
+`tests/bridges_config.test.js`), `tests/helpers/fake-homeserver.js` one for the
+homeserver with its media API (`tests/bridges_messages.test.js`,
+`tests/bridges_media.test.js`).
 
 ## DNS protection (`permissions.vpnDns`)
 

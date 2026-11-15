@@ -26,6 +26,12 @@
 //   @gc_<id> with fi.mau.double_puppet_source   written by the person in the messenger's own app
 //                        (the bridge acts for the account, "double puppeting") → sender.self
 //   @gc_<id> without it  sent by GateControl itself — the plugin has it already, skipped
+//
+// Files (stage 4): a picture, video, voice message, file or sticker carries `media.ref` — the file's mxc:// address
+// and the person it was delivered for, sealed (the same address always gives the same ref, so a plugin can tell
+// "unchanged"). The plugin hands the ref back to gc.bridges.media.fetch; the address itself never leaves this module.
+// The pictures of a chat (m.room.avatar) and of a contact (avatar_url of its membership) travel the same way, as
+// chat.avatar and sender.avatar / contact.avatar (null: no picture; missing: not known in this event).
 
 const crypto = require('node:crypto');
 const logger = require('../../utils/logger');
@@ -39,6 +45,9 @@ const TXN_KEEP = 2000;
 const PULL_MAX = 200;
 const DOUBLE_PUPPET = 'fi.mau.double_puppet_source';
 const MEDIA_TYPES = { 'm.image': 'image', 'm.video': 'video', 'm.audio': 'audio', 'm.file': 'file', 'm.location': 'location' };
+const MIME_RE = /^[a-z][a-z0-9-]{0,30}\/[a-z0-9][a-z0-9.+_-]{0,99}$/;
+const REF_RE = /^m[A-Za-z0-9_-]{40,700}$/;
+const WAVE_MAX = 64;
 const STATUS_REASONS = {
   'm.event_not_handled': 'not_handled', 'com.beeper.unsupported_event': 'unsupported', 'com.beeper.undecryptable_event': 'undecryptable',
   'm.event_too_old': 'too_old', 'm.foreign_network_error': 'network_error', 'm.no_permission': 'no_permission', 'm.bridge_unavailable': 'bridge_unavailable',
@@ -64,6 +73,7 @@ function create(opts) {
   const RE_BOT = new RegExp(`^@(${nets})bot:${server}$`);
   const sealKey = crypto.createHmac('sha256', opts.key).update('inbox').digest();
   const refKey = crypto.createHmac('sha256', opts.key).update('refs').digest();
+  const mediaKey = crypto.createHmac('sha256', opts.key).update('media').digest();
 
   const rooms = new Map();  // room id → row (or null: looked up, not ours)
   const info = new Map();   // room id → { kind, name, names: Map(mxid → name) } — from the room's state, memory only
@@ -90,6 +100,31 @@ function create(opts) {
   function contactRef(network, mxid) {
     return 'c' + crypto.createHmac('sha256', refKey).update(`${network}\0${mxid}`).digest('base64url').slice(0, 21);
   }
+  /**
+   * The reference of a file for one person: sealed (AES-256-GCM) with a nonce derived from its content — the same
+   * file for the same person gives the same reference, nothing else can be read from it.
+   */
+  function mediaRef(userId, mxc) {
+    const plain = Buffer.from(`${userId}\n${mxc}`, 'utf8');
+    const iv = crypto.createHmac('sha256', mediaKey).update(plain).digest().subarray(0, 12);
+    const c = crypto.createCipheriv('aes-256-gcm', mediaKey, iv);
+    const ct = Buffer.concat([c.update(plain), c.final()]);
+    return 'm' + Buffer.concat([iv, c.getAuthTag(), ct]).toString('base64url');
+  }
+  /** → { userId, mxc } of a reference made here, or null. */
+  function openMediaRef(ref) {
+    if (typeof ref !== 'string' || !REF_RE.test(ref)) return null;
+    try {
+      const b = Buffer.from(ref.slice(1), 'base64url');
+      const d = crypto.createDecipheriv('aes-256-gcm', mediaKey, b.subarray(0, 12));
+      d.setAuthTag(b.subarray(12, 28));
+      const [uid, mxc] = Buffer.concat([d.update(b.subarray(28)), d.final()]).toString('utf8').split('\n');
+      const userId = Number(uid);
+      return Number.isSafeInteger(userId) && userId > 0 && hs.mxcOf(mxc, opts.serverName) ? { userId, mxc } : null;
+    } catch { return null; }
+  }
+  /** A picture's mxc:// address → its reference for the person; null for none (or one of another server). */
+  const pictureRef = (userId, url) => (hs.mxcOf(url, opts.serverName) ? mediaRef(userId, url) : null);
   const personOf = (mxid) => { const m = RE_PERSON.exec(String(mxid || '')); const n = m ? Number(m[1]) : 0; return Number.isSafeInteger(n) && n > 0 ? n : null; };
   const ghostOf = (mxid) => { const m = RE_GHOST.exec(String(mxid || '')); return m ? { network: m[1], id: m[2] } : null; };
   const botOf = (mxid) => { const m = RE_BOT.exec(String(mxid || '')); return m ? m[1] : null; };
@@ -121,13 +156,13 @@ function create(opts) {
     const target = opts.target();
     if (!target) throw new hs.HsError('ERR_BRIDGE_UNREACHABLE', 'the homeserver is not set up', 'not_running');
     const st = await hs.state(target, mxidOf(row.user_id), row.room_id);
-    const i = { kind: row.kind, name: null, names: new Map(), network: null };
+    const i = { kind: row.kind, name: null, names: new Map(), avatars: new Map(), avatar: null, network: null };
     for (const ev of st) applyState(i, ev);
     if (info.size > 2000) info.clear();
     info.set(row.room_id, i);
     return i;
   }
-  /** One state event into a room's info → what changed ('name' | 'kind' | 'member' | null). */
+  /** One state event into a room's info → what changed ('name' | 'kind' | 'avatar' | 'member' | null). */
   function applyState(i, ev) {
     if (!ev || typeof ev !== 'object' || typeof ev.type !== 'string') return null;
     const c = ev.content && typeof ev.content === 'object' ? ev.content : {};
@@ -136,6 +171,12 @@ function create(opts) {
       if (n === i.name) return null;
       i.name = n;
       return 'name';
+    }
+    if (ev.type === 'm.room.avatar') {
+      const u = hs.mxcOf(c.url, opts.serverName) ? c.url : null;
+      if (u === i.avatar) return null;
+      i.avatar = u;
+      return 'avatar';
     }
     if (ev.type === 'm.bridge' || ev.type === 'uk.half-shot.bridge') {
       const p = c.protocol && typeof c.protocol === 'object' ? c.protocol.id : null;
@@ -148,15 +189,17 @@ function create(opts) {
     }
     if (ev.type === 'm.room.member' && typeof ev.state_key === 'string' && ghostOf(ev.state_key)) {
       const n = line(c.displayname, NAME_MAX) || null;
+      const a = hs.mxcOf(c.avatar_url, opts.serverName) ? c.avatar_url : null;
       if (c.membership !== 'join' && c.membership !== 'invite') return null;
-      if (i.names.get(ev.state_key) === n) return null;
-      if (i.names.size < 5000) i.names.set(ev.state_key, n);
+      if (i.names.has(ev.state_key) && i.names.get(ev.state_key) === n && (i.avatars.get(ev.state_key) || null) === a) return null;
+      if (i.names.size < 5000) { i.names.set(ev.state_key, n); if (a) i.avatars.set(ev.state_key, a); else i.avatars.delete(ev.state_key); }
       return 'member';
     }
     return null;
   }
 
-  const chatOf = (row, i) => ({ id: row.ref, kind: i ? i.kind : row.kind, name: i ? i.name : null });
+  const chatOf = (row, i) => ({ id: row.ref, kind: i ? i.kind : row.kind, name: i ? i.name : null, ...(i ? { avatar: pictureRef(row.user_id, i.avatar) } : {}) });
+  const contactOf = (row, i, mxid) => ({ id: contactRef(row.network, mxid), name: (i && i.names.get(mxid)) || null, avatar: i ? pictureRef(row.user_id, i.avatars.get(mxid)) : null });
 
   async function senderOf(row, i, ev) {
     const c = ev.content && typeof ev.content === 'object' ? ev.content : {};
@@ -168,7 +211,7 @@ function create(opts) {
     let self = false;
     if (opts.selfIds) { try { self = (await opts.selfIds(row.user_id, row.network)).includes(g.id); } catch { self = false; } }
     if (self) return { self: true };
-    return { id: contactRef(row.network, ev.sender), name: (i && i.names.get(ev.sender)) || null };
+    return contactOf(row, i, ev.sender);
   }
 
   // ─── one event ─────────────────────────────────────────
@@ -250,8 +293,8 @@ function create(opts) {
       if (backlog) return;
       const changed = applyState(i, ev);
       if (changed === 'kind') row = saveRoom(row.room_id, row.user_id, row.network, 'joined', i.kind);
-      if (changed === 'name' || changed === 'kind') push({ type: 'chat', chat: chatOf(row, i) });
-      if (changed === 'member') push({ type: 'contact', chat: chatOf(row, i), contact: { id: contactRef(row.network, ev.state_key), name: i.names.get(ev.state_key) || null } });
+      if (changed === 'name' || changed === 'kind' || changed === 'avatar') push({ type: 'chat', chat: chatOf(row, i) });
+      if (changed === 'member') push({ type: 'contact', chat: chatOf(row, i), contact: contactOf(row, i, ev.state_key) });
       return;
     }
 
@@ -301,10 +344,10 @@ function create(opts) {
       }
       const mk = msgtype === 'm.sticker' ? 'sticker' : MEDIA_TYPES[msgtype];
       if (mk) {
-        // media travel in a later stage: the kind, the file's name and a caption are kept so nothing is swallowed
+        // the kind, the file's name and a caption; the file itself as a reference the plugin fetches (stage 4)
         const fileName = line(typeof c.filename === 'string' ? c.filename : (mk === 'location' ? '' : c.body), 200) || null;
         const caption = typeof c.filename === 'string' && c.body !== c.filename ? text(c.body) : (mk === 'location' ? text(c.body) : '');
-        push({ type: 'message', ...base, kind: 'media', media: { kind: mk === 'audio' && c['org.matrix.msc3245.voice'] ? 'voice' : mk, name: fileName }, text: caption || null, replyTo: reply });
+        push({ type: 'message', ...base, kind: 'media', media: mediaOf(row, mk, c, fileName), text: caption || null, replyTo: reply });
         return;
       }
       push({ type: 'message', ...base, kind: 'unsupported', text: null, replyTo: reply });
@@ -316,6 +359,38 @@ function create(opts) {
       return;
     }
     stats.skipped++;
+  }
+
+  /** What a plugin learns about a file: kind, name, type, size, the picture's sides, the length; the reference to fetch it. */
+  function mediaOf(row, mk, c, name) {
+    const info = c.info && typeof c.info === 'object' && !Array.isArray(c.info) ? c.info : {};
+    const int = (v, max) => { const n = Number(v); return Number.isSafeInteger(n) && n > 0 && n <= max ? n : null; };
+    const media = { kind: mk === 'audio' && c['org.matrix.msc3245.voice'] ? 'voice' : mk, name };
+    if (mk === 'location') {
+      // geo:<lat>,<lon>[;…] — shown as a link; there is no file
+      const g = /^geo:(-?\d{1,3}(?:\.\d{1,12})?),(-?\d{1,3}(?:\.\d{1,12})?)/.exec(String(c.geo_uri || ''));
+      const lat = g ? Number(g[1]) : NaN;
+      const lon = g ? Number(g[2]) : NaN;
+      if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180) media.geo = { lat, lon };
+      return media;
+    }
+    // an encrypted file (`file` instead of `url`) cannot be opened here: the rooms of the bridges are not encrypted
+    if (!hs.mxcOf(c.url, opts.serverName)) return media;
+    media.ref = mediaRef(row.user_id, c.url);
+    const mime = String(info.mimetype || '').split(';')[0].trim().toLowerCase();
+    media.mime = MIME_RE.test(mime) ? mime : null;
+    media.size = int(info.size, 1e13);
+    media.w = int(info.w, 100000);
+    media.h = int(info.h, 100000);
+    const audio = c['org.matrix.msc1767.audio'] && typeof c['org.matrix.msc1767.audio'] === 'object' ? c['org.matrix.msc1767.audio'] : {};
+    media.durationMs = int(info.duration, 864e5) || int(audio.duration, 864e5);
+    if (Array.isArray(audio.waveform) && audio.waveform.length) {
+      // at most WAVE_MAX values 0…1024 (MSC1767), evenly picked
+      const w = audio.waveform;
+      const n = Math.min(WAVE_MAX, w.length);
+      media.waveform = Array.from({ length: n }, (_, k) => { const v = Number(w[Math.floor((k * w.length) / n)]); return Number.isFinite(v) ? Math.max(0, Math.min(1024, Math.round(v))) : 0; });
+    }
+    return media;
   }
 
   /** A room just became the person's: its name and kind, then what was said before the account was in it. */
@@ -459,7 +534,21 @@ function create(opts) {
       .map((r) => ({ id: r.ref, kind: r.kind, open: r.state === 'joined' }));
   }
 
-  return { transaction, pull, ack, pending, roomOf, chats, prune, stats, mxidOf, contactRef, _handlePdu: handlePdu, _ephemeral: ephemeral, _forget: () => { rooms.clear(); info.clear(); } };
+  /**
+   * A room the bridge made for the person right now (a new chat by number, createDm): known before its invite or
+   * join arrives, so the plugin has the chat at once; the join fills in name and kind. → the row
+   */
+  function adopt(userId, network, roomId) {
+    if (!hs.ROOM_RE.test(String(roomId || ''))) throw new hs.HsError('ERR_BRIDGE', 'the bridge named no room', 'bad_answer');
+    const row = roomRow(roomId);
+    if (row) {
+      if (row.user_id !== userId || row.network !== network) throw new hs.HsError('ERR_BRIDGE', 'the room belongs to another person', 'bad_answer');
+      return row;
+    }
+    return saveRoom(roomId, userId, network, 'invited', 'direct');
+  }
+
+  return { transaction, pull, ack, pending, roomOf, chats, prune, stats, mxidOf, contactRef, mediaRef, openMediaRef, adopt, _handlePdu: handlePdu, _ephemeral: ephemeral, _forget: () => { rooms.clear(); info.clear(); } };
 }
 
-module.exports = { create, TEXT_MAX, PULL_MAX };
+module.exports = { create, TEXT_MAX, PULL_MAX, REF_RE };

@@ -1613,8 +1613,49 @@ async function vpnDnsCall(plugin, op, args) {
 // send, react, redact, read and typing act AS a person towards the outside
 // messenger: only inside a changing request of exactly that person. chats()
 // only inside a request of that person.
+// Version 4 (files, a new chat by number): media.fetch({ userId, network, ref }) streams a file the bridges
+// delivered for that person (a reference from an event — never an address) into THIS plugin's media, with
+// GateControl's virus scan, like gc.media.fetch; it needs no person (it sends nothing and reads only what was
+// delivered for them). send() takes a file of this plugin (message.media.mediaId) — only one the virus scan let
+// through. resolve / createDm ask the bridge about a phone number: inside a changing request of that person.
 
-const BRIDGES_CODES = new Set(['ERR_INVALID', 'ERR_BRIDGES_UNAVAILABLE', 'ERR_BRIDGE_UNREACHABLE', 'ERR_BRIDGE', 'ERR_BUSY']);
+const BRIDGES_CODES = new Set(['ERR_INVALID', 'ERR_BRIDGES_UNAVAILABLE', 'ERR_BRIDGE_UNREACHABLE', 'ERR_BRIDGE', 'ERR_BUSY', 'ERR_RATE_LIMIT']);
+const BRIDGE_FILE_TIMEOUT_MS = 200000;
+
+/** gc.bridges.media.fetch: a file of a bridged chat into the plugin's media → { mediaId, mime, bytes, name, scan } */
+async function bridgeFetch(plugin, br, a) {
+  const media = needMedia(plugin);
+  const decl = media.declOf(plugin);
+  need(a.name == null || (typeof a.name === 'string' && a.name.length <= 4096), 'ERR_INVALID', 'invalid name');
+  need(media.usage(plugin.id).bytes < media.quotaOf(plugin), 'ERR_MEDIA_QUOTA', 'media quota exhausted');
+  let file;
+  try { file = await br.openFile(a.userId, a.network, a.ref, { max: decl.maxBytes }); } catch (e) {
+    if (e && e.reason === 'too_large') throw new HostApiError('ERR_MEDIA_TOO_LARGE', `the file is larger than ${decl.maxBytes} bytes`);
+    throw e;
+  }
+  // the type the homeserver names; a file of another type is kept as a download when the plugin takes those
+  let mime = media.baseType(file.mime);
+  if (!media.typeAllowed(decl, mime) && media.typeAllowed(decl, 'application/octet-stream') && !/^(image|audio|video)\//.test(mime)) mime = 'application/octet-stream';
+  if (!media.typeAllowed(decl, mime)) { file.stream.destroy(); throw new HostApiError('ERR_MEDIA_TYPE', `type ${mime || '(none)'} is not declared in media.types`); }
+  try {
+    return await media.storeStream(plugin, file.stream, { length: file.length, mime, name: a.name == null ? null : a.name, owner: null, scanKind: 'bridge' });
+  } catch (e) {
+    file.stream.destroy();
+    if (e instanceof media.MediaError && MEDIA_ERRORS[e.code]) throw new HostApiError(MEDIA_ERRORS[e.code], e.code === 'empty' ? 'the file is empty' : e.code);
+    if (e instanceof media.MediaError) throw new HostApiError('ERR_BRIDGE_UNREACHABLE', 'the file did not arrive whole', 'unreachable');
+    throw e;
+  }
+}
+
+/** A file of this plugin to be sent over a bridge: its own, stored, let through by the virus scan → what bridges.send reads. */
+function bridgeFile(plugin, mediaId) {
+  const media = needMedia(plugin);
+  need(typeof mediaId === 'string' && media.ID_RE.test(mediaId), 'ERR_INVALID', 'media.mediaId: a media id');
+  const r = media.row(plugin.id, mediaId);
+  need(r, 'ERR_NOT_FOUND', 'no such media of this plugin');
+  needServable(r);
+  return { key: `${plugin.id}:${r.id}`, length: r.bytes, mime: r.mime, source: () => media.readRange(r, 0, r.bytes - 1) };
+}
 
 async function bridgesCall(plugin, op, args) {
   need(plugin.manifest.permissions && plugin.manifest.permissions.bridges === true, 'ERR_BRIDGES_DENIED', 'this plugin has no bridges permission');
@@ -1631,6 +1672,7 @@ async function bridgesCall(plugin, op, args) {
     if (op === 'events.ack') return br.events.ack(a.upTo);
     const uid = a.userId;
     need(Number.isSafeInteger(uid) && uid > 0, 'ERR_INVALID', 'invalid user id');
+    if (op === 'media.fetch') return await bridgeFetch(plugin, br, a);
     if (op === 'unlinkFor') {
       const actorId = a.actor;
       need(Number.isSafeInteger(actorId) && actorId > 0 && actorId !== uid, 'ERR_INVALID', 'actor: another person');
@@ -1643,6 +1685,9 @@ async function bridgesCall(plugin, op, args) {
       return await br.unlinkFor(uid, a.network, { actor: { id: actor.id, name: actor.display_name || actor.username }, pluginId: plugin.id });
     }
     const write = op !== 'login.flows' && op !== 'logins' && op !== 'chats';
+    // a file to send: checked before anybody is asked (its own, servable)
+    const file = op === 'send' && a.message && typeof a.message === 'object' && a.message.media != null
+      ? bridgeFile(plugin, a.message.media && a.message.media.mediaId) : null;
     need(require('./personContext').has(plugin.id, uid, { write }), 'ERR_NOT_PERSON', write
       ? 'only inside a changing request (POST/PUT/PATCH/DELETE) of that person'
       : 'only inside a request of that person');
@@ -1653,13 +1698,19 @@ async function bridgesCall(plugin, op, args) {
     if (op === 'logins') return await br.logins(uid, a.network);
     if (op === 'logout') return await br.logout(uid, a.network, a.loginId);
     if (op === 'chats') return br.chats(uid, a.network);
-    if (op === 'send') return await br.send(uid, a.network, a.chatId, a.message);
+    if (op === 'send') return await br.send(uid, a.network, a.chatId, a.message, file);
+    if (op === 'resolve') return await br.resolve(uid, a.network, a.number);
+    if (op === 'createDm') return await br.createDm(uid, a.network, a.number);
     if (op === 'react') return await br.react(uid, a.network, a.chatId, a.reaction);
     if (op === 'redact') return await br.redact(uid, a.network, a.chatId, a.redaction);
     if (op === 'read') return await br.read(uid, a.network, a.chatId, a.messageId);
     if (op === 'typing') return await br.typing(uid, a.network, a.chatId, a.on === true);
   } catch (e) {
-    if (e && BRIDGES_CODES.has(e.code)) throw new HostApiError(e.code, e.code === 'ERR_BRIDGE' ? 'the bridge refused or failed' : e.message, e.reason);
+    if (e && BRIDGES_CODES.has(e.code)) {
+      const he = new HostApiError(e.code, e.code === 'ERR_BRIDGE' ? 'the bridge refused or failed' : e.message, e.reason);
+      if (e.retryAfterS) he.retryAfterS = e.retryAfterS;
+      throw he;
+    }
     throw e;
   }
   throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
@@ -2037,6 +2088,8 @@ function callTimeout(api, args) {
   // gc.mail: a connect within its timeoutMs, big messages and SMTP sends longer (mail/index.js)
   if (api.startsWith('mail.')) return require('./mail').callTimeout(api, args);
   if (api === 'http.fetchImage') return 20000;
+  // gc.bridges: a file streamed from / to the homeserver (≤ 2 min), then the virus scan (≤ 15 s)
+  if (api === 'bridges.media.fetch' || (api === 'bridges.send' && args && args.message && args.message.media != null)) return BRIDGE_FILE_TIMEOUT_MS;
   // gc.print: a file up to 50 MB read, converted (sharp) and written; a PDF of up to 100 pages
   if (api === 'print.submit' || api === 'print.pdf' || api === 'print.testPage' || api === 'print.pages' || api === 'print.ocr') return 120000;
   // gc.edge.call: the call's own limit (≤ 30 s) and the way to the gateway and back
@@ -2438,6 +2491,7 @@ async function handle(plugin, api, args, ctx) {
     case 'bridges.login.cancel': case 'bridges.logins': case 'bridges.logout': case 'bridges.unlinkFor':
     case 'bridges.events.pull': case 'bridges.events.ack': case 'bridges.chats': case 'bridges.send': case 'bridges.react':
     case 'bridges.redact': case 'bridges.read': case 'bridges.typing':
+    case 'bridges.media.fetch': case 'bridges.resolve': case 'bridges.createDm':
       return bridgesCall(plugin, api.slice('bridges.'.length), args);
     // home cache (permissions.homeCache, homeCache.js — phase 3b)
     case 'homeCache.offer': return homeCacheCall(plugin, 'offer', args);
