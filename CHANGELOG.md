@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.281.0] — 2026-11-15
+
+### Features
+- Host-Seite für das Plugin „Fernzugriff“ (gc.remote Version 1, Stufe 0) (#497)
+
+---
+
 ## [1.280.0] — 2026-11-15
 
 ### Features
