@@ -12,6 +12,10 @@ function listActiveSessions() {
   ).all();
 }
 
+function remoteActive() {
+  try { return require('./remote/sessions').activeCount(); } catch { return 0; }
+}
+
 // Reclaim-before-cap (spec §4, Concern A): free heartbeat-overdue slots, then
 // enforce caps (global + per-route + per-user) against the LIVE remainder.
 function admitSession({ routeId, tokenId = null, peerId = null, isStale }) {
@@ -26,7 +30,8 @@ function admitSession({ routeId, tokenId = null, peerId = null, isStale }) {
 
   // 2. Cap checks against the live remainder.
   const live = listActiveSessions();
-  if (live.length >= maxGlobal) return { ok: false, reason: 'global_limit' };
+  // guacd is shared with the sessions of gc.remote (services/remote/sessions.js): they count towards the overall limit
+  if (live.length + remoteActive() >= maxGlobal) return { ok: false, reason: 'global_limit' };
   const forRoute = live.filter((s) => s.rdp_route_id === routeId).length;
   if (forRoute >= maxPerRoute) return { ok: false, reason: 'route_limit' };
   if (peerId != null) {

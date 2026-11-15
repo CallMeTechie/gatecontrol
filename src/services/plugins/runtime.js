@@ -184,7 +184,9 @@ class PluginProcess {
       // gc.vpnDns: permissions.vpnDns (DNS protection of the VPN devices)
       vpnDns: perms.vpnDns === true,
       // gc.bridges: permissions.bridges (messenger bridges)
-      bridges: perms.bridges === true };
+      bridges: perms.bridges === true,
+      // gc.remote: permissions.remote (remote access, version 1 — services/remote)
+      remote: perms.remote === true };
     child.send({ t: 'init', plugin: { id: p.id, version: p.version, entry, filesDir: files, features } });
   }
 
@@ -327,7 +329,13 @@ class PluginProcess {
     }
     this.pending.clear();
     if (this.stopResolve) { const r = this.stopResolve; this.stopResolve = null; r(); }
-    if (!this.wanted) { this.state = 'stopped'; events.emit('state', this.id, 'stopped'); return; }
+    if (!this.wanted) {
+      this.state = 'stopped';
+      // gc.remote: the tickets and open tunnels of a stopped plugin end (a crash restarts and keeps them)
+      try { require('../remote').pluginStopped(this.id); } catch { /* not loaded */ }
+      events.emit('state', this.id, 'stopped');
+      return;
+    }
     // unexpected end → crash, restart with backoff
     this.crashes++;
     if (this.startedAt && Date.now() - this.startedAt > STABLE_AFTER_MS) this.backoffIdx = 0;

@@ -2439,7 +2439,7 @@ single device. Code: `src/services/plugins/devices.js`.
   ```js
   [{ id: '42',                 // string, stable: the device token's id
      name: 'Pixel 8',          // the token's name
-     platform: 'android',      // 'android' | 'windows' | 'ios' | 'web' | null
+     platform: 'android',      // 'android' | 'windows' | 'ios' | 'web' | 'linux' | null
      clientType: 'pro',        // 'pro' | 'community' | null (Windows editions)
      appVersion: '2.4.0',      // or null
      online: true,             // push stream connected now, or within the last 60 s
@@ -2931,6 +2931,96 @@ No library, no CDN (`public/js/plugin-camera-player.js`). Without the script (an
 `ERR_CAMERA_NOT_READY`, `ERR_CAMERA_SERVICE_MISSING`, `ERR_CAMERA_LIMIT`, `ERR_CAMERA_TLS` (1.242.0:
 the camera's HTTPS certificate is not trusted — offer "Zertifikat nicht prüfen"). Who may
 see which camera is the plugin's to decide.
+
+## Remote access (`permissions.remote`)
+
+Since GateControl with stage 0 of the plugin "Fernzugriff" (`gatecontrol-remote`, a shop
+plugin with a licence of its own — see "Licences"). The heavy part stays in the core:
+the guacd container, the tunnels, the session page, the key vault, the L4 listeners of the
+gateways and wake-on-LAN. The plugin owns devices, rights, codes, history and its pages and
+names **person and target** in every call — the same pattern as `gc.print` and `gc.cameras`.
+A plugin process has no network of its own and its frames have `connect-src 'none'`, so a
+Guacamole WebSocket in the frame is impossible: a session always runs on a page of
+GateControl. Code: `src/services/remote/` (`sessions.js`, `vault.js`, `targets.js`,
+`recordings.js`, `facade.js`), host API `remoteCall` in `src/services/plugins/hostApi.js`,
+the page `src/routes/remoteSession.js`, the tunnel `src/tunnel/guacTunnel.js`.
+
+```json
+"permissions": { "remote": true }
+```
+
+The install dialog shows it as "Fernzugriff" (named first, like the other sensitive
+permissions). Without it `gc.remote` does not exist and the host answers
+`ERR_REMOTE_DENIED`; an older GateControl ignores the permission and `gc.remote` is missing —
+check `gc.remote && gc.remote.version >= 1`.
+
+**Targets.** Every call names a target `{ id, name?, host, port }` (direct: the VPN address
+of a device, the server's LAN, a public host) or `{ id, name?, listener: '<key>' }` (through
+an L4 listener of the plugin, see below); `gateway: { peerId }` marks a LAN target of a home
+gateway (probe / wake go through it, a session needs a listener), `mac` is for `wake`. `id`
+(1–64 of `A-Z a-z 0-9 . _ : -`) is the plugin's own device id — the limits per target and the
+events use it. Never a target: loopback, link-local, unspecified, multicast, broadcast and
+reserved addresses and the hub address itself (only through a listener). A host name is
+resolved by the core, every address is checked and guacd gets the checked address.
+
+| Call | Answer / rule |
+|---|---|
+| `gc.remote.version` | `1` |
+| `gc.remote.session({ user, target, protocol, mode?, record?, credential?, options?, ttlS? })` | `{ ref, url: '/remote/session/<ref>', expiresAt, mode, protocol }` — a **ticket**. `user`: an enabled person (who may connect is the plugin's to decide before the call); `protocol`: `rdp` \| `vnc` \| `ssh` \| `telnet`; `mode`: `control` (default) \| `view` (guacd `read-only`); `credential`: a vault handle of this plugin; `options`: the fields of the old `rdp_routes` with the same meaning — `browser_clipboard, color_depth, nla_enabled, network_profile, disable_wallpaper, disable_themes, disable_animations, redirect_printers, rdp_disable_audio, resolution_mode, resolution_width, resolution_height, domain` (anything else `ERR_INVALID`; SFTP and VNC audio are not in version 1); `ttlS` 30…600 (default 120): the page must be opened by then. `record: true` → `ERR_REMOTE_RECORDING_UNAVAILABLE` until stage 3. Needs a valid plugin licence (`ERR_REMOTE_UNLICENSED`) |
+| `gc.remote.end({ ref } \| { sessionId })` | `{ ended }` — the ticket goes (no reconnect) and its open tunnels close now; with `sessionId` only that tunnel |
+| `gc.remote.sessions({ active?, targetId?, limit? })` | `[{ id, targetId, targetName, userId, protocol, mode, record, status, startedAt, endedAt, durationSeconds, endReason }]` newest first (≤ 500) — the plugin's rows of `remote_sessions` |
+| `gc.remote.vault.put({ username?, password?, domain?, privateKey?, passphrase?, label?, handle? })` | `{ handle: 'rv_<32 hex>', kind: password \| ssh_key \| username, label, has: { username, password, domain, privateKey, passphrase }, readable, createdAt, updatedAt }` — **never a value**. With `handle` a change of that entry: fields not given stay, `null` / `''` clears. Encrypted with the server key (AES-256-GCM, table `remote_vault`, in backups as ciphertext); `readable: false` after a restore onto another server key — ask for it again. ≤ 5000 per plugin |
+| `gc.remote.vault.remove(handle)` / `info(handle)` / `list()` | `{ removed }` / metadata \| `null` / `[metadata]` |
+| `gc.remote.probe(target)` | `{ online, responseTime, via: direct \| gateway }` — TCP; a gateway target through the gateway's probe |
+| `gc.remote.wake(target)` | `{ sent: true, via: gateway \| server }` — magic packet to `target.mac` (through the gateway of the target / its listener, else the server's broadcast); once per 10 s and MAC (`ERR_REMOTE_RATE_LIMITED`) |
+| `gc.remote.listener({ key, gateway: { peerId } \| { poolId }, host, port, listenPort? })` | `{ key, routeId, listenPort, gateway, lanHost, lanPort, enabled, shared }` — an L4 route (TCP, no TLS) on the server that the gateway passes on to `host:port` in its home network, as old gateway-mode RDP routes have it. An existing L4 route with exactly this target and port (the one of an old RDP route) is **reused** (`shared: true`) and never removed by the plugin. A port in use: `ERR_REMOTE_PORT_IN_USE` |
+| `gc.remote.listener.remove(key)` / `gc.remote.listeners()` | `{ removed }` / `[listener]` |
+| `gc.remote.recordings.available()` | `{ available: false, reason: 'not_yet' }` in version 1 (recording comes with stage 3) |
+| `gc.remote.recordings.list({ targetId?, sessionId?, limit? })` / `stream(id)` / `remove(id)` | `[]` until stage 3 / `{ url, expiresAt }` (`ERR_REMOTE_RECORDING_UNAVAILABLE` for now) / `{ removed }` |
+| `gc.remote.on('session', handler)` | hook `remoteSession`: `{ phase: start \| end \| abort, sessionId, ref, targetId, userId, protocol, mode, record, startedAt, reason?, durationSeconds?, endedAt? }` — `end` for `normal` / `ended_by_plugin`, `abort` for `heartbeat`, `plugin_stopped`, `reclaimed` |
+
+**The session page.** The frame opens the ticket with **`GC.openSession(ref)`** (frames of a
+plugin with the permission only, in a click: `{ ok }` \| `{ ok: false, code: no_gesture \|
+invalid \| not_allowed }`) — a new tab with `/remote/session/<ref>`, the page of the old browser
+sessions. Only the person named in `user`, signed in (web or portal session, never a kiosk
+device), and only in the browser session that opened the address first (the ticket binds
+itself to it); anything else gets one and the same 404. The page asks
+`POST /remote/session/<ref>/token` for every connect and reconnect: a fresh single-use token
+(60 s, `services/guacToken.js`), the limits checked, the secret taken from the vault only now.
+The tunnel `/api/v1/remote/guac-tunnel` checks token and ticket again; a token of a gc.remote
+session never opens the old path and the other way round. Limits (`config.guac`): overall
+(`GC_GUAC_MAX_GLOBAL`, together with the old RDP sessions — one guacd), per person
+(`GC_GUAC_MAX_PER_USER`), per target (`GC_GUAC_MAX_PER_ROUTE`); heartbeat as before
+(`GC_GUAC_HEARTBEAT_MS` × `GC_GUAC_HEARTBEAT_MISSES`). A ticket lives until `gc.remote.end`,
+until its plugin is stopped (a crash restart keeps it) or 8 h after it was opened; tickets are
+in memory only — a restart ends them (open rows end as `server_restart`). Activity log:
+`remote_session_started`, `remote_session_ended`, `remote_recording_deleted`.
+
+**Uninstall**: tickets and tunnels end, the plugin's own listener routes go (shared ones stay);
+"Alles löschen" also removes its vault entries and recordings.
+
+### Facade for the old app API (`clientFacade`)
+
+The apps released before the plugin keep calling `/api/v1/client/rdp*`. Once the plugin of the
+dataset `remote` (`gatecontrol-remote`, or the plugin that replaced it) is installed, trusted,
+holds `permissions.remote` **and its built-in data was taken over**, the core hands each of
+these requests to the plugin's hook
+
+```js
+async clientFacade({ op, id, query, body, user: { id, tokenId, peerId, scopes, platform, selfIp }, ip }, gc)
+// op: list | status | connect | browserSession | sessionStart | sessionHeartbeat | sessionEnd
+// → { handled: false }                       the core answers as before
+//   { status, body }                         sent as it is (credential keys in it are removed)
+//   { status, body, credential: { handle, fields? } }   connect: the core adds connection.credentials_e2ee
+//   { guac: { target, protocol, mode?, credential?, options? } }   browserSession: the core answers { ok, token, wsPath, ttl }
+```
+
+Credentials never pass through the plugin and only go out with **ECDH** (`ecdhPublicKey` of the
+app): without it the facade answers `400 ecdh_required` — no RSA, no plaintext. A plugin
+without the hook, or without the take-over, changes nothing. A plugin that does not run answers
+`503 plugin_unavailable` (`403 license_required` without a licence) — the core data may be
+outdated by then. The core's own `/connect` still has its plaintext fallback for old apps
+without a key; it is **deprecated** and logged (one warning per token and hour).
 
 ## Messenger bridges (`permissions.bridges`)
 
@@ -5378,7 +5468,10 @@ pages, portal tab and sections). Only for those plugins' frames
   customer's GateControl plan contains the former built-in feature (e.g.
   `smarthome` → `gatecontrol-smarthome`, `midea_integration` →
   `gatecontrol-midea`; token `sub` = `plan:<id>`); the UI
-  shows "Im Plan enthalten". A key entered although the plugin is already
+  shows "Im Plan enthalten". `remote_desktop` gives **no** such claim:
+  the shop plugin "Fernzugriff" (`gatecontrol-remote`) always needs a licence of
+  its own (monthly, yearly or a plugin lifetime licence), also with a server
+  lifetime licence. A key entered although the plugin is already
   covered comes back with the error `covered_by_plan` / `covered_by_lifetime`:
   it never decides the state (the covering entitlement does) and the UI says
   that the key is not needed. A key entered for the plugin is added to the plugin keys
@@ -5581,6 +5674,20 @@ are in backups (see "Backup") and are brought into the plugin once. Code:
   | `gatecontrol-smarthome` | `smarthome`: `smarthome_gateways`, `_resources`, `_resource_owners`, `_rules` | `gateway` ← each gateway's route |
   | `gatecontrol-midea` | `midea`: the Midea cloud account (setting `midea_config`), `midea_devices`, `midea_device_owners` | `ac` ← each LAN device's address (`{ kind: 'host' }`; cloud devices need none) |
   | `gatecontrol-skoda` | `skoda`: `skoda_accounts`, `skoda_vehicles`, `skoda_vehicle_owners` | — (Škoda cloud only) |
+  | `gatecontrol-remote` | `remote`: `rdp_routes` (credentials as **vault handles**), `rdp_sessions` (newest 20 000), the maintenance windows | — (gateway targets become `gc.remote.listener`s, which reuse the routes' L4 ports) |
+
+  **Remote Desktops is different**: the built-in feature stays in the core while the plugin is
+  new — the import only copies, `/rdp` and `/api/v1/rdp` keep working. Its snapshot is
+  `{ routes, sessions, maintenance }`: `routes[]` = the columns of `rdp_routes` (ids kept;
+  `user_ids` / `group_ids` / `token_ids` / `tags` as lists, switches as booleans), without the
+  `*_encrypted` columns and `screenshot_data`, plus `credential` (vault handle of username,
+  password, domain, SSH key, passphrase — or null), `sftp_credential` and
+  `credential_unreadable`; the handles are idempotent per route (`rdp_route:<id>`), so
+  "Erneut übernehmen" keeps them. `sessions[]` `{ id, route_id, token_id, token_name, peer_id,
+  status, started_at, last_heartbeat, ended_at, duration_seconds, end_reason, client_ip, via,
+  protocol }`, `maintenance[]` `{ route_id, enabled, schedule }`. The upgrade notice
+  (`plugins.moved.remote`, "Remote Desktops wird das Shop-Plugin „Fernzugriff“") is prepared
+  but switched off (`notice: false` in `DATASETS`) until stage 1.
 * **Upgrade notice** (`pendingMoves()`): while a dataset has data
   (`counts()` > 0), its plugin is not installed and the data was **never
   imported**, the dashboard and the plugin area say that the feature is a
@@ -5643,6 +5750,10 @@ are in backups (see "Backup") and are brought into the plugin once. Code:
 * **Licence**: the feature keys `smarthome`, `midea_integration`,
   `skoda_integration` stay — they are how a plan includes the plugins
   (entitlement source `plan`, see "Licences"); they show no UI themselves.
+  **Not so for `remote_desktop`**: "Fernzugriff" is never included in a plan or
+  a server lifetime licence — it needs its own (subscription or plugin lifetime,
+  entitlement slug `gatecontrol-remote`). Without it the plugin starts no new
+  sessions; data and the built-in Remote Desktops stay.
 
 ## Edge part (`edge`, Edge-Teil)
 

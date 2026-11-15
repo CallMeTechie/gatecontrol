@@ -1,0 +1,386 @@
+'use strict';
+
+// Sessions of gc.remote (docs/plugins.md "Remote access"). The plugin decides
+// WHO may connect WHERE; the core builds the session and owns the transport:
+//
+//   1. gc.remote.session({ user, target, protocol, mode, record, credential, options })
+//      → a TICKET: a single-use address /remote/session/<ref> of a GateControl
+//      page (never the plugin's frame — that one has connect-src 'none'). The
+//      plugin hands `ref` to its frame, which opens the page with
+//      GC.openSession(ref).
+//   2. The person opens the page: only the person named in `user`, signed in
+//      (web or portal session), and only in the browser session that opened it
+//      first (the ticket is bound to it; another browser gets "not found").
+//      Opened within `ttlS` (default 120 s) or never.
+//   3. The page asks for a guacamole token (POST …/token): every time a fresh
+//      single-use token of 60 s (services/guacToken.js — the same as the old
+//      browser sessions), limits checked (config.guac: overall together with
+//      the old RDP sessions, per person, per target), the password resolved
+//      from the vault only now.
+//   4. The tunnel (/api/v1/remote/guac-tunnel, tunnel/guacTunnel.js) checks the
+//      token and the ticket again, then runs the session with the heartbeat of
+//      the old sessions; each opened tunnel is a row of remote_sessions.
+//   5. Hook `remoteSession` of the plugin: { phase: start | end | abort, … }.
+//
+// A ticket lives until gc.remote.end, until its plugin stops or loses its
+// licence, or for maxTicketMs after it was opened (reconnects in between mint
+// new tokens). Nothing of this is persisted: a restart ends every ticket (the
+// rows of the open tunnels are closed as "server_restart").
+
+const crypto = require('node:crypto');
+const config = require('../../../config/default');
+const logger = require('../../utils/logger');
+const targets = require('./targets');
+const vault = require('./vault');
+
+class SessionError extends Error {
+  constructor(code, message) { super(message || code); this.code = code; }
+}
+
+const PROTOCOLS = Object.freeze(['rdp', 'vnc', 'ssh', 'telnet']);
+const MODES = Object.freeze(['view', 'control']);
+const REF_RE = /^[A-Za-z0-9_-]{43}$/;
+const TTL_DEFAULT_S = 120;
+const TTL_MIN_S = 30;
+const TTL_MAX_S = 600;
+const MAX_TICKET_MS = 8 * 60 * 60 * 1000;
+const TICKETS_MAX = 500;
+const WS_PATH = '/api/v1/remote/guac-tunnel';
+
+// options a plugin may set — the columns of the old rdp_routes with the same meaning
+// (services/guacSettings.js builds the guacd settings from them, so a target taken over
+// from an RDP route connects exactly as before)
+const OPTION_RULES = Object.freeze({
+  browser_clipboard: 'bool',
+  color_depth: [8, 16, 24, 32],
+  nla_enabled: 'bool',
+  network_profile: ['lan', 'broadband', 'modem', 'auto'],
+  disable_wallpaper: 'bool',
+  disable_themes: 'bool',
+  disable_animations: 'bool',
+  redirect_printers: 'bool',
+  rdp_disable_audio: 'bool',
+  resolution_mode: ['fullscreen', 'fixed', 'dynamic'],
+  resolution_width: 'dim',
+  resolution_height: 'dim',
+  domain: 'text',
+});
+
+const tickets = new Map(); // ref → ticket
+const live = new Map();    // remote_sessions.id → { close(reason) }
+
+function db() { return require('../../db/connection').getDb(); }
+
+function cleanOptions(o) {
+  const out = {};
+  if (o == null) return out;
+  if (typeof o !== 'object' || Array.isArray(o)) throw new SessionError('invalid', 'options: an object');
+  for (const [k, v] of Object.entries(o)) {
+    const rule = OPTION_RULES[k];
+    if (!rule) throw new SessionError('invalid', `options.${k}: unknown`);
+    if (v == null) continue;
+    if (rule === 'bool') { if (typeof v !== 'boolean') throw new SessionError('invalid', `options.${k}: true or false`); out[k] = v ? 1 : 0; }
+    else if (rule === 'dim') { const n = Number(v); if (!Number.isInteger(n) || n < 1 || n > 7680) throw new SessionError('invalid', `options.${k}: 1…7680`); out[k] = n; }
+    else if (rule === 'text') { if (typeof v !== 'string' || v.length > 256) throw new SessionError('invalid', `options.${k}: ≤ 256 characters`); out[k] = v; }
+    else if (!rule.includes(v)) throw new SessionError('invalid', `options.${k}: one of ${rule.join(', ')}`);
+    else out[k] = v;
+  }
+  return out;
+}
+
+function userOf(id) {
+  const n = Number(id);
+  if (!Number.isSafeInteger(n) || n <= 0) throw new SessionError('invalid', 'user: a user id');
+  const u = db().prepare('SELECT id, username, display_name, enabled FROM users WHERE id = ?').get(n);
+  if (!u || u.enabled !== 1) throw new SessionError('not_found', 'no such enabled person');
+  return u;
+}
+
+function licensed(plugin) {
+  try { return !!require('../plugins/licensing').status(plugin).licensed; } catch { return false; }
+}
+
+function running(pluginId) {
+  try { return require('../plugins/runtime').info(pluginId).state === 'running'; } catch { return false; }
+}
+
+function sweep(now = Date.now()) {
+  for (const [ref, t] of tickets) {
+    const dead = t.claimedBy ? now >= t.expiresAt : now >= t.openBy;
+    if (dead && !liveOf(ref).length) tickets.delete(ref);
+  }
+}
+
+function liveOf(ref) {
+  const out = [];
+  for (const [id, l] of live) if (l.ref === ref) out.push(id);
+  return out;
+}
+
+// ─── Admission (shared guacd: the old RDP sessions count towards the overall limit) ───
+
+function isStale(lastHeartbeat) {
+  if (!lastHeartbeat) return false;
+  return Date.now() - Date.parse(lastHeartbeat + 'Z') > config.guac.heartbeatMs * config.guac.heartbeatMisses;
+}
+
+function activeRows() {
+  try { return db().prepare("SELECT id, plugin_id, target_id, user_id, last_heartbeat FROM remote_sessions WHERE status = 'active'").all(); } catch { return []; }
+}
+
+/** Active remote sessions (for the overall limit of guacSessions.admitSession). */
+function activeCount() { return activeRows().length; }
+
+function admit({ pluginId, targetId, userId }) {
+  for (const s of activeRows()) if (!live.has(s.id) && isStale(s.last_heartbeat)) end(s.id, 'reclaimed');
+  const rows = activeRows();
+  let rdp = 0;
+  try { rdp = db().prepare("SELECT COUNT(*) AS c FROM rdp_sessions WHERE status = 'active'").get().c; } catch { rdp = 0; }
+  if (rows.length + rdp >= config.guac.maxGlobal) return { ok: false, reason: 'global_limit' };
+  if (rows.filter((s) => s.plugin_id === pluginId && s.target_id === targetId).length >= config.guac.maxPerRoute) return { ok: false, reason: 'target_limit' };
+  if (rows.filter((s) => s.user_id === userId).length >= config.guac.maxPerUser) return { ok: false, reason: 'user_limit' };
+  return { ok: true };
+}
+
+// ─── Tickets ─────────────────────────────────────
+
+/**
+ * gc.remote.session({ user, target, protocol, mode?, record?, credential?, options?, ttlS? })
+ * → { ref, url, expiresAt, mode, protocol }
+ */
+async function create(plugin, a) {
+  const o = a && typeof a === 'object' ? a : {};
+  if (!licensed(plugin)) throw new SessionError('unlicensed', 'the plugin has no valid licence — no new sessions');
+  const user = userOf(o.user);
+  const protocol = String(o.protocol || '');
+  if (!PROTOCOLS.includes(protocol)) throw new SessionError('invalid', `protocol: one of ${PROTOCOLS.join(', ')}`);
+  const mode = o.mode == null ? 'control' : String(o.mode);
+  if (!MODES.includes(mode)) throw new SessionError('invalid', 'mode: view or control');
+  if (o.record === true) throw new SessionError('recording_unavailable', 'recording is not available on this server yet');
+  if (o.record != null && typeof o.record !== 'boolean') throw new SessionError('invalid', 'record: true or false');
+  const target = targets.normalise(o.target);
+  const ep = await targets.endpoint(plugin, target);
+  if (!ep.host) throw new SessionError('listener_required', 'a LAN target of a gateway needs a listener (gc.remote.listener)');
+  const credential = o.credential == null ? null : String(o.credential);
+  if (credential != null) {
+    const meta = vault.isHandle(credential) ? vault.info(plugin.id, credential) : null;
+    if (!meta) throw new SessionError('credential_not_found', 'no such vault entry of this plugin');
+    if (!meta.readable) throw new SessionError('credential_unreadable', 'the vault entry cannot be read (server key changed) — enter it again');
+  }
+  const options = cleanOptions(o.options);
+  const ttlS = o.ttlS == null ? TTL_DEFAULT_S : Number(o.ttlS);
+  if (!Number.isInteger(ttlS) || ttlS < TTL_MIN_S || ttlS > TTL_MAX_S) throw new SessionError('invalid', `ttlS: ${TTL_MIN_S}…${TTL_MAX_S}`);
+  const pre = admit({ pluginId: plugin.id, targetId: target.id, userId: user.id });
+  if (!pre.ok) throw new SessionError('limit', pre.reason);
+  sweep();
+  if (tickets.size >= TICKETS_MAX) throw new SessionError('limit', 'too_many_tickets');
+  const ref = crypto.randomBytes(32).toString('base64url');
+  const now = Date.now();
+  tickets.set(ref, {
+    ref, pluginId: plugin.id, userId: user.id, target, protocol, mode, credential, options,
+    createdAt: now, openBy: now + ttlS * 1000, claimedBy: null, claimedAt: null, expiresAt: null, tokens: 0,
+  });
+  return { ref, url: '/remote/session/' + ref, expiresAt: new Date(now + ttlS * 1000).toISOString(), mode, protocol };
+}
+
+/**
+ * The ticket behind a page request: `userId` must be its person, `sid` the browser session that
+ * opened it first (bound on first use). null for anything else — unknown, expired, another
+ * person, another browser — always the same answer.
+ */
+function claim(ref, userId, sid, now = Date.now()) {
+  if (typeof ref !== 'string' || !REF_RE.test(ref) || !sid) return null;
+  const t = tickets.get(ref);
+  if (!t || t.userId !== userId) return null;
+  if (!t.claimedBy) {
+    if (now >= t.openBy) { tickets.delete(ref); return null; }
+    t.claimedBy = sid;
+    t.claimedAt = now;
+    t.expiresAt = now + MAX_TICKET_MS;
+  } else if (t.claimedBy !== sid || now >= t.expiresAt) return null;
+  return t;
+}
+
+function pluginOf(pluginId) {
+  try { return require('../plugins/registry').get(pluginId); } catch { return null; }
+}
+
+/**
+ * A guacamole token for a claimed ticket (the session page asks for one per connect / reconnect)
+ * → { ok: true, token, wsPath, ttl } | { ok: false, status, code }
+ */
+async function mint(t, { clientIp } = {}) {
+  const plugin = pluginOf(t.pluginId);
+  if (!plugin || !running(plugin.id)) return { ok: false, status: 503, code: 'plugin_unavailable' };
+  if (!licensed(plugin)) return { ok: false, status: 403, code: 'unlicensed' };
+  const adm = admit({ pluginId: t.pluginId, targetId: t.target.id, userId: t.userId });
+  if (!adm.ok) return { ok: false, status: 429, code: 'limit_reached' };
+  let ep;
+  try { ep = await targets.endpoint(plugin, t.target); } catch (e) { return { ok: false, status: 409, code: 'target_' + ((e && e.code) || 'invalid') }; }
+  if (!ep.host) return { ok: false, status: 409, code: 'listener_required' };
+  let secret = {};
+  if (t.credential) {
+    secret = vault.resolve(t.pluginId, t.credential);
+    if (!secret) return { ok: false, status: 409, code: 'credential_unreadable' };
+  }
+  const route = {
+    protocol: t.protocol, host: ep.host, port: ep.port, access_mode: 'internal',
+    ...t.options,
+    domain: secret.domain || t.options.domain || null,
+  };
+  const { buildConnectionSettings } = require('../guacSettings');
+  const conn = buildConnectionSettings(route, {
+    username: secret.username || null, password: secret.password || null,
+    ssh_private_key: secret.privateKey || null, ssh_passphrase: secret.passphrase || null,
+  });
+  if (t.mode === 'view') conn.settings['read-only'] = 'true';
+  const { token, ttlMs } = require('../guacToken').mint({
+    ...conn,
+    remoteRef: t.ref, remotePlugin: t.pluginId, remoteTarget: t.target.id, remoteUser: t.userId,
+    remoteMode: t.mode, protocol: t.protocol, clientIp: clientIp || null,
+  }, { ttlMs: config.guac.tokenTtlMs });
+  t.tokens++;
+  return { ok: true, token, wsPath: WS_PATH, ttl: Math.floor(ttlMs / 1000) };
+}
+
+/** Admission at the tunnel (after the token checked out): the ticket still lives, the limits hold. */
+function admitTunnel(conn) {
+  const t = tickets.get(conn.remoteRef);
+  if (!t || t.pluginId !== conn.remotePlugin || !t.claimedBy || Date.now() >= t.expiresAt) return { ok: false, reason: 'ticket_gone' };
+  const plugin = pluginOf(t.pluginId);
+  if (!plugin || !running(plugin.id) || !licensed(plugin)) return { ok: false, reason: 'plugin_unavailable' };
+  return admit({ pluginId: t.pluginId, targetId: t.target.id, userId: t.userId });
+}
+
+// ─── Lifecycle (tunnel/guacTunnel.js) ────────────
+
+function eventOf(row, phase, extra = {}) {
+  return {
+    phase, sessionId: row.id, ref: row.ref || null, targetId: row.target_id, userId: row.user_id, protocol: row.protocol, mode: row.mode,
+    record: false, startedAt: row.started_at ? new Date(row.started_at + 'Z').toISOString() : null, ...extra,
+  };
+}
+
+/** Hook `remoteSession` of the plugin (never awaited; a failure lands in the plugin's log). */
+function emit(pluginId, ev) {
+  try {
+    if (!running(pluginId)) return;
+    require('../plugins/runtime').call(pluginId, 'remoteSession', ev, module.exports._hookMs || 5000).catch((e) => {
+      try { require('../plugins/registry').addLog(pluginId, e && e.stopped ? 'debug' : 'warn', 'remoteSession failed: ' + String((e && e.message) || e).slice(0, 200)); } catch { /* db closed */ }
+    });
+  } catch (e) { logger.debug({ err: e.message }, 'remoteSession hook not delivered'); }
+}
+
+/** A tunnel opened → the row; `close(reason)` ends it from here (gc.remote.end, plugin stopped). */
+function opened(conn, { clientIp, close } = {}) {
+  const t = tickets.get(conn.remoteRef) || null;
+  const r = db().prepare(`INSERT INTO remote_sessions (plugin_id, target_id, target_name, user_id, protocol, mode, record, via, status, client_ip, last_heartbeat)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 'browser', 'active', ?, datetime('now'))`)
+    .run(conn.remotePlugin, conn.remoteTarget, t && t.target.name ? t.target.name : null, conn.remoteUser, conn.protocol, conn.remoteMode || 'control', clientIp || null);
+  const id = Number(r.lastInsertRowid);
+  live.set(id, { ref: conn.remoteRef, close: typeof close === 'function' ? close : () => {} });
+  const row = { ...db().prepare('SELECT * FROM remote_sessions WHERE id = ?').get(id), ref: conn.remoteRef };
+  try {
+    require('../activity').log('remote_session_started', `Remote session started: "${row.target_name || row.target_id}" (${row.protocol}, ${row.mode}) via plugin "${row.plugin_id}"`, {
+      source: 'plugin', severity: 'info', ipAddress: clientIp || null,
+      details: { plugin: row.plugin_id, sessionId: id, targetId: row.target_id, userId: row.user_id, protocol: row.protocol, mode: row.mode },
+    });
+  } catch { /* best-effort */ }
+  emit(row.plugin_id, eventOf(row, 'start'));
+  return id;
+}
+
+function heartbeat(id) {
+  try { db().prepare("UPDATE remote_sessions SET last_heartbeat = datetime('now') WHERE id = ? AND status = 'active'").run(id); } catch { /* ended */ }
+}
+
+const NORMAL_REASONS = new Set(['normal', 'ended_by_plugin']);
+
+/** A tunnel closed (or was ended) → the row ends, hook `remoteSession` end | abort. */
+function end(id, reason = 'normal') {
+  live.delete(id);
+  const row = db().prepare('SELECT * FROM remote_sessions WHERE id = ?').get(id);
+  if (!row || row.status !== 'active') return null;
+  const dur = Math.max(0, Math.floor((Date.now() - Date.parse(row.started_at + 'Z')) / 1000));
+  db().prepare("UPDATE remote_sessions SET status = 'ended', ended_at = datetime('now'), duration_seconds = ?, end_reason = ? WHERE id = ?").run(dur, reason, id);
+  try {
+    require('../activity').log('remote_session_ended', `Remote session ended: "${row.target_name || row.target_id}" (${dur}s, ${reason}) via plugin "${row.plugin_id}"`, {
+      source: 'plugin', severity: 'info', details: { plugin: row.plugin_id, sessionId: id, targetId: row.target_id, userId: row.user_id, durationSeconds: dur, reason },
+    });
+  } catch { /* best-effort */ }
+  emit(row.plugin_id, eventOf(row, NORMAL_REASONS.has(reason) ? 'end' : 'abort', { reason, durationSeconds: dur, endedAt: new Date().toISOString() }));
+  return { id, durationSeconds: dur, reason };
+}
+
+/**
+ * gc.remote.end({ ref } | { sessionId }) → { ended } — the ticket goes (no reconnect) and its open
+ * tunnels close now; with sessionId only that tunnel.
+ */
+function endFor(plugin, a) {
+  const o = a && typeof a === 'object' ? a : {};
+  let n = 0;
+  if (o.ref != null) {
+    if (typeof o.ref !== 'string' || !REF_RE.test(o.ref)) throw new SessionError('invalid', 'invalid ref');
+    const t = tickets.get(o.ref);
+    if (!t || t.pluginId !== plugin.id) return { ended: 0 };
+    tickets.delete(o.ref);
+    for (const id of liveOf(o.ref)) { closeLive(id, 'ended_by_plugin'); n++; }
+    return { ended: n };
+  }
+  const id = Number(o.sessionId);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new SessionError('invalid', 'ref or sessionId required');
+  const row = db().prepare("SELECT plugin_id FROM remote_sessions WHERE id = ? AND status = 'active'").get(id);
+  if (!row || row.plugin_id !== plugin.id) return { ended: 0 };
+  closeLive(id, 'ended_by_plugin');
+  return { ended: 1 };
+}
+
+function closeLive(id, reason) {
+  const l = live.get(id);
+  end(id, reason);
+  if (l) { try { l.close(reason); } catch { /* gone */ } }
+}
+
+/** gc.remote.sessions({ active?, targetId?, limit? }) → [{ id, targetId, targetName, userId, protocol, mode, status, startedAt, endedAt, durationSeconds, endReason }] */
+function list(plugin, a) {
+  const o = a && typeof a === 'object' ? a : {};
+  const limit = Math.max(1, Math.min(500, Number(o.limit) || 100));
+  const where = ['plugin_id = ?'];
+  const params = [plugin.id];
+  if (o.active === true) where.push("status = 'active'");
+  if (o.targetId != null) { where.push('target_id = ?'); params.push(String(o.targetId)); }
+  const iso = (v) => (v ? new Date(v + 'Z').toISOString() : null);
+  return db().prepare(`SELECT * FROM remote_sessions WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ${limit}`).all(...params).map((r) => ({
+    id: r.id, targetId: r.target_id, targetName: r.target_name, userId: r.user_id, protocol: r.protocol, mode: r.mode, record: r.record === 1,
+    status: r.status, startedAt: iso(r.started_at), endedAt: iso(r.ended_at), durationSeconds: r.duration_seconds, endReason: r.end_reason,
+  }));
+}
+
+/** A plugin stopped, lost its licence or went: its tickets and tunnels end. */
+function endAllFor(pluginId, reason = 'plugin_stopped') {
+  for (const [ref, t] of tickets) if (t.pluginId === pluginId) tickets.delete(ref);
+  for (const [id] of [...live]) {
+    const row = db().prepare('SELECT plugin_id FROM remote_sessions WHERE id = ?').get(id);
+    if (row && row.plugin_id === pluginId) closeLive(id, reason);
+  }
+}
+
+/** Server start: rows of tunnels of the last run are closed. */
+function closeLeftovers() {
+  try { db().prepare("UPDATE remote_sessions SET status = 'ended', ended_at = datetime('now'), end_reason = 'server_restart' WHERE status = 'active'").run(); } catch { /* table missing */ }
+}
+
+const sweepTimer = setInterval(() => { try { sweep(); } catch { /* db closed */ } }, 60000);
+if (sweepTimer.unref) sweepTimer.unref();
+
+function _resetForTest() {
+  if (process.env.NODE_ENV !== 'test') return;
+  tickets.clear();
+  live.clear();
+}
+function _ticketForTest(ref) { return process.env.NODE_ENV === 'test' ? tickets.get(ref) || null : null; }
+
+module.exports = {
+  SessionError, create, claim, mint, admitTunnel, opened, heartbeat, end, endFor, endAllFor, list, activeCount, closeLeftovers,
+  PROTOCOLS, MODES, WS_PATH, REF_RE, OPTION_RULES, _resetForTest, _ticketForTest, _hookMs: null,
+};

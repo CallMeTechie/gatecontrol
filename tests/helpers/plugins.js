@@ -20,6 +20,8 @@ const PRINT_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'print-demo
 // a plugin with permissions.radio (gc.radio, tests/gateway_radio.test.js)
 const RADIO_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'radio-demo');
 const CAMERA_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'camera-demo');
+// a plugin with permissions.remote, id gatecontrol-remote (gc.remote, tests/remote_host_api.test.js)
+const REMOTE_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'remote-demo');
 // a plugin with a handbook and setup notices (plugin.json handbook / setupNotices, tests/plugins_handbook.test.js)
 const HANDBOOK_DEMO = path.join(__dirname, '..', 'fixtures', 'plugins', 'handbook-demo');
 
@@ -67,6 +69,12 @@ function radioPackage(o = {}) {
 }
 
 /** The camera test plugin, like helloPackage. */
+/** The remote access test plugin (id gatecontrol-remote), like helloPackage. */
+function remotePackage(o = {}) {
+  const key = o.sign === undefined || o.sign === 'trusted' ? trusted.privateSeed : (o.sign === 'stranger' ? stranger.privateSeed : '');
+  return packDir(REMOTE_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
+}
+
 function cameraPackage(o = {}) {
   const key = o.sign === undefined || o.sign === 'trusted' ? trusted.privateSeed : (o.sign === 'stranger' ? stranger.privateSeed : '');
   return packDir(CAMERA_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
@@ -87,4 +95,4 @@ function dnsPackage(o = {}) {
   return packDir(DNS_DEMO, { signingKey: key, overrides: o.overrides, extra: o.extra }).buffer;
 }
 
-module.exports = { DNS_DEMO, dnsPackage, HANDBOOK_DEMO, handbookPackage, CAMERA_DEMO, cameraPackage, HELLO, EDGE_DEMO, PRESENCE_DEMO, HOME_DEMO, PRINT_DEMO, RADIO_DEMO, helloPackage, edgePackage, presencePackage, homePackage, printPackage, radioPackage, trusted, stranger };
+module.exports = { REMOTE_DEMO, remotePackage, DNS_DEMO, dnsPackage, HANDBOOK_DEMO, handbookPackage, CAMERA_DEMO, cameraPackage, HELLO, EDGE_DEMO, PRESENCE_DEMO, HOME_DEMO, PRINT_DEMO, RADIO_DEMO, helloPackage, edgePackage, presencePackage, homePackage, printPackage, radioPackage, trusted, stranger };

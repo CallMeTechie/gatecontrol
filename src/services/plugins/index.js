@@ -168,6 +168,8 @@ function permissionSummary(m, lang) {
     radio: !!p.radio,
     // phase 3c, step 4: the cameras in the home networks of the gateways (gc.cameras)
     cameras: !!p.cameras,
+    // remote access (gc.remote): sessions to devices, the key vault, listeners through the gateways — sensitive
+    remote: !!p.remote,
     // person groups (docs/plugins.md "Groups"): 'read' | 'manage' | null
     groups: p.groups === 'read' || p.groups === 'manage' ? p.groups : null,
     // Google Drive / OneDrive of a person (gc.cloud) and what for
@@ -479,6 +481,8 @@ async function removeInstalled(p, mode) {
   rmrf(path.join(pluginsRoot(), id));
   registry.remove(id);
   require('../edge').onPluginRemoved(id, mode);
+  // gc.remote: its sessions end, its own listeners go; with "Alles löschen" also its vault and recordings
+  try { await require('../remote').pluginRemoved(id, mode); } catch { /* best-effort */ }
   if (mode === 'wipe') {
     rmrf(dataDir(id));
     require('./media').removeAll(id);
@@ -696,6 +700,8 @@ function view(p, lang) {
     pickPrincipals: require('./frame').pickPrincipalsOf(m),
     // GC.openUrl in the plugin's frames (permissions.cloudImport): the <iframe data-plugin-cloud>
     cloud: require('./frame').openUrlOf(m),
+    // GC.openSession in the plugin's frames (permissions.remote): the <iframe data-plugin-remote>
+    remote: require('./frame').openSessionOf(m),
     // the <iframe allow="…"> of the plugin's frames (frame.allowAttr)
     allow: require('./frame').allowAttr({ media: !!m.media, geolocation: !!(m.ui && m.ui.geolocation), camera: !!(m.ui && m.ui.camera), fullscreen: require('./frame').fullscreenOf(m) }),
     media: m.media ? { maxBytes: m.media.maxBytes, types: m.media.types, quotaDefault: m.media.quotaDefault, uploads: m.media.uploads !== false, ...(m.media.areas ? { areas: true } : {}), ...(m.media.previews ? { previews: true } : {}) } : null,

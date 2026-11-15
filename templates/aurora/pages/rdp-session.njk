@@ -126,7 +126,7 @@
 <script src="/js/rdp-player.js?v={{ appVersion }}"></script>
 
 {# JSON island 1: init config — no user free-text, only numeric id + enum protocol + CSRF + guac object #}
-<script type="application/json" id="rdp-session-cfg" nonce="{{ cspNonce }}">{{ { routeId: route.id, protocol: route.protocol, csrf: csrfToken, guac: guac, resolutionMode: route.resolution_mode, resWidth: route.resolution_width, resHeight: route.resolution_height } | dump | safe }}</script>
+<script type="application/json" id="rdp-session-cfg" nonce="{{ cspNonce }}">{{ { routeId: route.id, protocol: route.protocol, csrf: csrfToken, guac: guac, resolutionMode: route.resolution_mode, resWidth: route.resolution_width, resHeight: route.resolution_height, remoteRef: remoteRef } | dump | safe }}</script>
 
 {# JSON island 2: i18n strings needed for JS state updates #}
 <script type="application/json" id="rdp-session-i18n" nonce="{{ cspNonce }}">{{ {
@@ -149,6 +149,8 @@
   'use strict';
   var cfg  = JSON.parse(document.getElementById('rdp-session-cfg').textContent);
   var i18n = JSON.parse(document.getElementById('rdp-session-i18n').textContent);
+  /* gc.remote: the ticket of /remote/session/<ref> — only its exact shape is used */
+  var remoteRef = typeof cfg.remoteRef === 'string' && /^[A-Za-z0-9_-]{43}$/.test(cfg.remoteRef) ? cfg.remoteRef : null;
 
   /* Expose guac config for player retry-window logic */
   window.GC = window.GC || {};
@@ -205,7 +207,8 @@
       }
     },
     mint: function () {
-      return fetch('/api/v1/rdp/' + cfg.routeId + '/browser-session', {
+      /* a session of gc.remote (/remote/session/<ref>/token, ref checked); else the old RDP route */
+      return fetch(remoteRef ? ('/remote/session/' + remoteRef + '/token') : ('/api/v1/rdp/' + Number(cfg.routeId) + '/browser-session'), {
         method: 'POST',
         headers: { 'X-CSRF-Token': cfg.csrf },
         credentials: 'same-origin'
@@ -258,7 +261,8 @@
 
   /* Back to RDP list */
   var backBtn = document.getElementById('rdp-back-btn');
-  if (backBtn) backBtn.addEventListener('click', function () { location.href = '/rdp'; });
+  /* fixed addresses only — never one taken from the page */
+  if (backBtn) backBtn.addEventListener('click', function () { location.href = remoteRef ? '/portal' : '/rdp'; });
 
   /* Retry after error */
   document.getElementById('rdp-retry-btn').addEventListener('click', function () {

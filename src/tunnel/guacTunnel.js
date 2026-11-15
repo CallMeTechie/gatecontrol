@@ -13,8 +13,11 @@
 //   * guacamole-lite@1.2.0 has no clean `noServer`; ws only accepts noServer
 //     when the wsOptions key `server` EXISTS — hence `{ server: undefined,
 //     noServer: true, path }`.
-//   * GC has no other WS/upgrade consumer (verified), so owning the upgrade
-//     event for our PATH is safe; non-matching paths are left untouched.
+//   * GC has more than one WebSocket endpoint (this tunnel, the sessions of
+//     gc.remote on REMOTE_PATH, the edge channel of the gateways in
+//     services/edge/hub.js). Each registers its path with the shared upgrade
+//     dispatcher (tunnel/upgrade.js), which hands an upgrade to exactly one
+//     handler by pathname; other paths are left untouched.
 //   * guacd target is ALWAYS the local sidecar 127.0.0.1:4822; the ROUTE
 //     target lives inside the encrypted token settings (Task 6 resolver).
 
@@ -27,6 +30,9 @@ const rdpSessions = require('../services/rdpSessions');
 const logger = require('../utils/logger');
 
 const PATH = '/api/v1/client/rdp/guac-tunnel';
+// Sessions of gc.remote (services/remote/sessions.js) — the same guacamole-lite
+// server and token format; the token carries remoteRef instead of rdpRouteId.
+const REMOTE_PATH = '/api/v1/remote/guac-tunnel';
 
 // Pure, unit-testable slice: verify token (jti/exp/nonce, single-use) + run
 // admission. Returns { ok, connection } or { ok:false, reason }.
@@ -71,14 +77,23 @@ function attachGuacTunnel(httpServer) {
     peerId: conn.peerId,
     isStale,
   });
+  // A token of a gc.remote session only opens REMOTE_PATH, an old one only PATH.
+  const remoteSessions = () => require('../services/remote/sessions');
+  const admitRemote = (conn) => remoteSessions().admitTunnel(conn);
 
   // Intercept the HTTP upgrade ourselves so token verify + admission run
   // BEFORE guacamole-lite connects to guacd.
-  httpServer.on('upgrade', (req, socket, head) => {
+  const onUpgrade = (req, socket, head) => {
     const { pathname, query } = url.parse(req.url, true);
-    if (pathname !== PATH) return; // not ours — let any other consumer handle it
+    const remote = pathname === REMOTE_PATH;
+    if (pathname !== PATH && !remote) return; // not ours — let any other consumer handle it
 
-    const result = evaluateConnection(query.token, { admit });
+    const result = evaluateConnection(query.token, {
+      admit: (conn) => {
+        if (remote !== (typeof conn.remoteRef === 'string')) return { ok: false, reason: 'wrong_path' };
+        return remote ? admitRemote(conn) : admit(conn);
+      },
+    });
     if (!result.ok) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
@@ -92,13 +107,17 @@ function attachGuacTunnel(httpServer) {
       // Hand off to guacamole-lite's newConnection → guacd.
       guac.webSocketServer.emit('connection', ws, req);
     });
-  });
+  };
+  const upgrade = require('./upgrade');
+  upgrade.register(httpServer, PATH, onUpgrade);
+  upgrade.register(httpServer, REMOTE_PATH, onUpgrade);
 
   // Session lifecycle + WS heartbeat. The GuacamoleLite instance (extends
   // EventEmitter) emits open/close/error with the ClientConnection; cc.webSocket
   // is the ws we stashed meta on.
   guac.on('open', (cc) => {
     const m = (cc.webSocket && cc.webSocket._guacMeta) || {};
+    if (typeof m.remoteRef === 'string') { openRemote(cc, m); return; }
     const session = rdpSessions.startSession(m.rdpRouteId, {
       via: 'browser',
       protocol: m.protocol || (m.type === 'rdp' ? 'rdp' : m.type),
@@ -131,8 +150,46 @@ function attachGuacTunnel(httpServer) {
     });
   });
 
+  // A gc.remote session: a row of remote_sessions, the same heartbeat; the
+  // plugin can end it (gc.remote.end), its hook `remoteSession` hears of it.
+  function openRemote(cc, m) {
+    const ws = cc.webSocket;
+    let sid;
+    try {
+      sid = remoteSessions().opened(m, {
+        clientIp: m.clientIp,
+        close: () => { ws._remoteEnded = true; try { cc.close(); } catch { /* closing */ } try { ws.terminate(); } catch { /* gone */ } },
+      });
+    } catch (err) {
+      logger.warn({ err: err.message }, 'remote session could not start');
+      try { cc.close(); } catch { /* closing */ }
+      return;
+    }
+    ws._remoteSessionId = sid;
+    ws._missedPongs = 0;
+    const hb = setInterval(() => {
+      if (ws._missedPongs >= config.guac.heartbeatMisses) {
+        ws._remoteDropped = true;
+        try { cc.close(); } catch { /* already closing */ }
+        try { ws.terminate(); } catch { /* already gone */ }
+        clearInterval(hb);
+        return;
+      }
+      ws._missedPongs++;
+      try { ws.ping(); } catch { /* socket gone */ }
+    }, config.guac.heartbeatMs);
+    ws._guacHb = hb;
+    ws.on('pong', () => { ws._missedPongs = 0; remoteSessions().heartbeat(sid); });
+  }
+
   guac.on('close', (cc) => {
     if (cc.webSocket && cc.webSocket._guacHb) clearInterval(cc.webSocket._guacHb);
+    const rid = cc.webSocket && cc.webSocket._remoteSessionId;
+    if (rid) {
+      // ended by the plugin: already recorded; a lost heartbeat is an abort
+      if (!cc.webSocket._remoteEnded) { try { remoteSessions().end(rid, cc.webSocket._remoteDropped ? 'heartbeat' : 'normal'); } catch { /* ended */ } }
+      return;
+    }
     const sid = cc.webSocket && cc.webSocket._guacSessionId;
     if (sid) {
       try { rdpSessions.endSession(sid, 'normal'); } catch { /* already ended */ }
@@ -141,8 +198,8 @@ function attachGuacTunnel(httpServer) {
 
   guac.on('error', (cc, err) => logger.error({ err }, 'guac tunnel error'));
 
-  logger.info({ path: PATH }, 'guac WS tunnel attached');
+  logger.info({ path: PATH, remotePath: REMOTE_PATH }, 'guac WS tunnel attached');
   return guac;
 }
 
-module.exports = { attachGuacTunnel, evaluateConnection, isStale };
+module.exports = { attachGuacTunnel, evaluateConnection, isStale, PATH, REMOTE_PATH };
