@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.278.1] — 2026-11-15
+
+### Fixes
+- keine Telefonnummer als Name, Medien ohne Content-Length, Protokoll bei nicht geholten Dateien (#494)
+
+---
+
 ## [1.278.0] — 2026-11-15
 
 ### Features
