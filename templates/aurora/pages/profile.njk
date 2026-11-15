@@ -88,6 +88,16 @@
       </div>
       <div class="pf-row-control" id="pf-look"></div>
     </div>
+    {% if profilePortalUrl %}
+    {#- The user profile (docs/feature-user-profile.md): further fields, phone numbers, recognition, "Meine Daten". -#}
+    <div class="pf-row">
+      <div class="pf-row-label">
+        <span class="pf-label">{{ t('myprofile.title') }}</span>
+        <div class="pf-hint">{{ t('myprofile.web_hint') }}</div>
+      </div>
+      <div class="pf-row-control"><a class="btn btn-ghost" id="pf-portal-profile" href="{{ profilePortalUrl }}" rel="noopener">{{ t('myprofile.web_open') }}</a></div>
+    </div>
+    {% endif %}
     <div class="pf-msg" id="profile-message" role="status"></div>
     <div class="pf-foot">
       <button type="button" class="btn btn-primary pf-btn" id="btn-save-profile">{{ t('profile.save_changes') }}</button>

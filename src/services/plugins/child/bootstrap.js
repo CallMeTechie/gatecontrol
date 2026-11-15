@@ -343,8 +343,8 @@ function makeBridges() {
   return Object.freeze({
     /** the version of this interface (raised when methods or fields are added; 5: history, health, status().backup / cleanup;
      *  6: contacts, matchNumbers, createDmByRef; 7: channels — chat.channel / chat.readOnly, sender.channel, marks and
-     *  preview of a text) */
-    version: 7,
+     *  preview of a text; 8: matchAccounts (the user profile)) */
+    version: 8,
     /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion, clientOutdated }], host, messages, history, backup, cleanup } */
     status: () => hostCall('bridges.status', {}),
     /** configure({ enabled?, networks?: { whatsapp?: boolean }, history?: boolean, backupNow?: true, backupTime?: 'HH:MM' }) → status() — inside a changing request of an administrator */
@@ -411,6 +411,9 @@ function makeBridges() {
     matchNumbers: (userId, network, numbers) => hostCall('bridges.matchNumbers', { userId, network, numbers }),
     /** createDmByRef(userId, network, ref) → { chat: { id, kind: 'direct', name } } — the direct chat with a contact of contacts() / matchNumbers(); inside a changing request of that person */
     createDmByRef: (userId, network, ref) => hostCall('bridges.createDmByRef', { userId, network, ref }),
+    // ── since version 8: accounts among the contacts (docs/plugins.md "Messenger bridges", "Accounts") ──
+    /** matchAccounts(userId, network) → { matches: [{ contactId, userId, strength: 'strong' | 'medium', via: 'own_whatsapp' | 'profile_phone' }] } — inside a request of that person */
+    matchAccounts: (userId, network) => hostCall('bridges.matchAccounts', { userId, network }),
   });
 }
 
@@ -805,6 +808,11 @@ function makeGc(info) {
       list: () => hostCall('users.list', {}),
       get: (id) => hostCall('users.get', { id }),
     }),
+    // permissions.profile (docs/plugins.md "Profile"): the fields of the user profile the plugin asked for
+    profile: Object.freeze({
+      /** get(userId, { viewer? }) → { userId, firstName?, lastName?, about?, birthday?, phones? } | null — only what that viewer may see */
+      get: (userId, opts) => hostCall('profile.get', { id: userId, viewer: opts && opts.viewer != null ? opts.viewer : null }),
+    }),
     /** permissions.kiosk: allow(userId, true|false) marks a user as a kiosk user; list() → [userId] */
     kiosk: Object.freeze({
       allow: (userId, allowed) => hostCall('kiosk.allow', { userId, allowed }),
@@ -1113,6 +1121,14 @@ async function handleCall(method, payload) {
       // { area, seq, count }; read them with gc.media.areas.changes(area, { since }). Answer ignored
       if (typeof plugin.mediaChanged === 'function') await plugin.mediaChanged(payload, gc);
       return {};
+    case 'profileChanged':
+      // optional (permissions.users, the user profile): { userId, fields } — never a value; fetch again what you show. Answer ignored
+      if (typeof plugin.profileChanged === 'function') await plugin.profileChanged(payload, gc);
+      return {};
+    case 'myData':
+      // optional (permissions.users, "Meine Daten herunterladen"): { userId } → { data } — this plugin's part of the
+      // person's export (JSON, ≤ 256 KB; null = nothing). Called while that person downloads, ≤ 5 s
+      return { data: typeof plugin.myData === 'function' ? ((await plugin.myData(payload, gc)) ?? null) : null };
     case 'groupsChanged':
       // optional (permissions.groups): { changes: [{ type, groupId, userId?, role?, reason? }] }, batched ≤ 1×/s; answer ignored
       if (typeof plugin.groupsChanged === 'function') await plugin.groupsChanged(payload, gc);

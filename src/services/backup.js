@@ -327,6 +327,19 @@ function exportTables(db) {
       .map(a => ({ user_name: a.user_name, avatar_id: a.avatar_id, mime: a.mime, data: Buffer.from(a.data).toString('base64'), updated_at: a.updated_at }));
   } catch (err) { logger.warn({ err: err.message }, 'backup export: user_avatars skipped'); }
 
+  // ── the user profile (docs/feature-user-profile.md) ─────────
+  // Owner by username. A number stays encrypted with the server's key (number_enc) next to its keyed hash; codes of
+  // unconfirmed addresses are not kept (a new one is sent). The hashes of the own messenger logins are not backed up:
+  // the next whoami makes them again.
+  let userPhones = [];
+  let userEmails = [];
+  try {
+    userPhones = db.prepare(`SELECT u.username AS user_name, p.kind, p.number_enc, p.number_hash, p.visibility, p.use_for_recognition,
+        p.state, p.confirmed_at, p.created_at, p.updated_at FROM user_phones p JOIN users u ON u.id = p.user_id ORDER BY p.id`).all();
+    userEmails = db.prepare(`SELECT u.username AS user_name, e.address, e.address_lc, e.state, e.confirmed_at, e.created_at
+      FROM user_emails e JOIN users u ON u.id = e.user_id ORDER BY e.id`).all();
+  } catch (err) { logger.warn({ err: err.message }, 'backup export: user profile skipped'); }
+
   // ── person groups (docs/groups.md) ──────────────────────────
   // Group ids are kept (group_ref) — rdp_routes.group_ids, route group_refs
   // and plugin data refer to them. Members and invitation creators by
@@ -440,6 +453,8 @@ function exportTables(db) {
       service_bundles: serviceBundles,
       users,
       user_avatars: userAvatars,
+      user_phones: userPhones,
+      user_emails: userEmails,
       groups: groupsData.groups,
       group_members: groupsData.members,
       group_invites: groupsData.invites,
@@ -841,6 +856,7 @@ function getBackupSummary(backup) {
     service_bundles: (d.service_bundles || []).length,
     users: (d.users || []).length,
     user_avatars: (d.user_avatars || []).length,
+    user_phones: (d.user_phones || []).length,
     groups: (d.groups || []).length,
     group_members: (d.group_members || []).length,
     directories: (d.directories || []).length,
@@ -911,6 +927,11 @@ function validateEncryptedFields(data) {
       }
     });
   }
+  // the phone numbers of the user profile (docs/feature-user-profile.md)
+  (Array.isArray(data.user_phones) ? data.user_phones : []).forEach((p, i) => {
+    if (!p || !p.number_enc) return;
+    try { decrypt(String(p.number_enc)); } catch { errors.push(`user_phones #${i + 1}: cannot decrypt`); }
+  });
   for (const [what, v] of require('./bridges/backup').encryptedFields(data.bridges)) {
     try { decrypt(String(v)); } catch { errors.push(`${what}: cannot decrypt`); }
   }
@@ -954,6 +975,8 @@ async function restoreBackup(backup) {
     service_bundles: serviceBundles = [],
     users = [],
     user_avatars: userAvatars = [],
+    user_phones: userPhones = [],
+    user_emails: userEmails = [],
     groups: groupRows,
     group_members: groupMembers = [],
     group_invites: groupInvites = [],
@@ -1107,6 +1130,32 @@ async function restoreBackup(backup) {
           const img = avatars.validateImage(buf);
           insertAvatar.run(uid, a.avatar_id, img.mime, buf, typeof a.updated_at === 'string' ? a.updated_at : null);
         } catch (e) { logger.warn({ err: e.message }, 'user avatar restore skipped'); }
+      }
+    }
+
+    // Restore the profile's phone numbers and further addresses (docs/feature-user-profile.md) — with their users only;
+    // a row that does not fit the schema is skipped (the numbers stay encrypted as they were).
+    if (Array.isArray(users) && users.length > 0) {
+      const profile = require('./profile');
+      const insPhone = db.prepare(`INSERT OR IGNORE INTO user_phones (user_id, kind, number_enc, number_hash, visibility, use_for_recognition, state, confirmed_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))`);
+      for (const p of Array.isArray(userPhones) ? userPhones : []) {
+        try {
+          const uid = p && userIdByName.get(p.user_name);
+          if (!uid || typeof p.number_enc !== 'string' || typeof p.number_hash !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(p.number_hash)
+            || !profile.KINDS.includes(p.kind) || !profile.PHONE_VISIBILITY.includes(p.visibility) || !profile.PHONE_STATES.includes(p.state)) continue;
+          insPhone.run(uid, p.kind, p.number_enc, p.number_hash, p.visibility, p.use_for_recognition === 0 ? 0 : 1, p.state,
+            typeof p.confirmed_at === 'string' ? p.confirmed_at : null, typeof p.created_at === 'string' ? p.created_at : null, typeof p.updated_at === 'string' ? p.updated_at : null);
+        } catch (e) { logger.warn({ err: e.message }, 'user phone restore skipped'); }
+      }
+      const insEmail = db.prepare(`INSERT OR IGNORE INTO user_emails (user_id, address, address_lc, state, confirmed_at, created_at)
+        VALUES (?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`);
+      for (const e of Array.isArray(userEmails) ? userEmails : []) {
+        try {
+          const uid = e && userIdByName.get(e.user_name);
+          if (!uid || typeof e.address !== 'string' || e.address.length > 255 || !['confirmed', 'unconfirmed'].includes(e.state)) continue;
+          insEmail.run(uid, e.address, e.address.toLowerCase(), e.state, typeof e.confirmed_at === 'string' ? e.confirmed_at : null, typeof e.created_at === 'string' ? e.created_at : null);
+        } catch (err) { logger.warn({ err: err.message }, 'user email restore skipped'); }
       }
     }
 

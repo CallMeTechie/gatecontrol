@@ -93,7 +93,8 @@
     </button>
 
     {% if viewer.kind == 'person' %}
-    <div class="pt-user" data-viewer="person" data-via="{{ viewer.via }}">
+    {#- "Mein Profil" (docs/feature-user-profile.md): the own picture opens it (signed in, no kiosk). #}
+    <{{ 'a' if tabs.profile else 'div' }} class="pt-user{{ ' pt-user-link' if tabs.profile }}" data-viewer="person" data-via="{{ viewer.via }}"{% if tabs.profile %} href="#profil" data-goto="profil" id="pt-user-profile" aria-label="{{ t('myprofile.open') }} – {{ viewer.name }}" title="{{ t('myprofile.open') }}"{% endif %}>
       <span class="pt-user-text">
         <span class="pt-user-name">{{ viewer.name }}</span>
         <span class="pt-user-sub">
@@ -109,7 +110,7 @@
         </span>
       </span>
       <span class="pt-avatar av-c-{{ viewer.color }}{{ ' has-img' if viewer.avatarUrl }}" id="pt-avatar" aria-hidden="true">{% if viewer.avatarUrl %}<img class="av-img" src="{{ viewer.avatarUrl }}" alt="">{% else %}{{ viewer.initials }}{% endif %}</span>
-    </div>
+    </{{ 'a' if tabs.profile else 'div' }}>
     {% elif viewer.kind == 'anonymous' %}
     <div class="pt-user is-anon" data-viewer="anonymous">
       <span class="pt-user-text">
@@ -330,16 +331,14 @@
       <ul class="pt-devlist" id="pt-devices"><li class="pt-empty">{{ t('portal.loading') }}</li></ul>
     </section>
     <p class="pt-foot" id="pt-devices-foot"></p>
-    {% if viewer.kind == 'person' and portalLoggedIn and not kiosk %}
-    {#- Own profile picture and favourite colour (docs/feature-avatars.md), public/js/avatar-edit.js -#}
-    <section class="pt-card pt-narrow pt-look" aria-labelledby="pt-c-look">
-      <h2 class="pt-h2" id="pt-c-look">{{ t('avatar.title') }}</h2>
-      <div id="pt-look"></div>
-    </section>
+    {% if tabs.profile %}
+    {#- Picture, colour and the plugins' profile sections moved to "Mein Profil" (docs/feature-user-profile.md). #}
+    <a class="pt-card pt-narrow pt-navcard" href="#profil" data-goto="profil" id="pt-devices-profile">
+      <span class="pt-navcard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>
+      <span class="pt-grow"><b>{{ t('myprofile.title') }}</b><span class="pt-small pt-muted pt-block">{{ t('myprofile.navcard') }}</span></span>
+      <span class="pt-navcard-go" aria-hidden="true">›</span>
+    </a>
     {% endif %}
-    {#- Plugin sections on the viewer's own profile (docs/plugins.md "Portal", since 1.188.0):
-        a signed-in person only, never a kiosk device (routes/portal.js). #}
-    {%- for sec in pluginSections.profile %}{{ pluginSection(sec, 'pt-narrow') }}{% endfor %}
     {% if tabs.notify %}
     <a class="pt-card pt-narrow pt-navcard" href="#benachrichtigungen" data-goto="benachrichtigungen" id="pt-devices-notify">
       <span class="pt-navcard-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span>
@@ -361,6 +360,43 @@
     <div class="pt-grp-layout" id="pt-grp-layout" hidden>
       <section class="pt-card pt-pad pt-grp-main" id="pt-grp-main" aria-live="polite"></section>
       <div class="pt-grp-side" id="pt-grp-side"></div>
+    </div>
+  </section>
+  {% endif %}
+
+  {#- ═══ Mein Profil (docs/feature-user-profile.md) ════════════════════════
+      A page without a tab of its own: the own picture in the header and the
+      card in "Meine Geräte" lead here (#profil). Left the fields, right the
+      picture, the recognition, the plugins' profile sections and "Meine
+      Daten"; on a phone everything below each other. Data:
+      /api/v1/portal/me/profile… (public/js/portal.js "Mein Profil"). #}
+  {% if tabs.profile %}
+  <section class="pt-panel" id="panel-profil" role="region" aria-labelledby="pt-h-profile" tabindex="0" data-panel="profil" data-extra hidden>
+    <div class="pt-pf-hero">
+      <span class="pt-avatar pt-pf-avatar av-c-{{ viewer.color }}{{ ' has-img' if viewer.avatarUrl }}" id="pt-pf-avatar" aria-hidden="true">{% if viewer.avatarUrl %}<img class="av-img" src="{{ viewer.avatarUrl }}" alt="">{% else %}{{ viewer.initials }}{% endif %}</span>
+      <div class="pt-hero-text">
+        <h1 class="pt-h1 pt-h1-sm" id="pt-h-profile">{{ t('myprofile.title') }}</h1>
+        <p class="pt-lead">{{ t('myprofile.lead') }}</p>
+      </div>
+    </div>
+    <div class="pt-pf-grid">
+      <div class="pt-pf-main" id="pt-pf-main" aria-live="polite"><div class="pt-card pt-pad"><div class="pt-empty">{{ t('portal.loading') }}</div></div></div>
+      <div class="pt-pf-side">
+        {#- Own profile picture and favourite colour (docs/feature-avatars.md), public/js/avatar-edit.js -#}
+        <section class="pt-card pt-pad pt-look" aria-labelledby="pt-c-look">
+          <h2 class="pt-h2" id="pt-c-look">{{ t('avatar.title') }}</h2>
+          <div id="pt-look"></div>
+        </section>
+        <section class="pt-card pt-pad" id="pt-pf-recog" aria-labelledby="pt-h-recog" hidden></section>
+        {#- Plugin sections on the viewer's own profile (docs/plugins.md "Portal", since 1.188.0):
+            a signed-in person only, never a kiosk device (routes/portal.js). #}
+        {%- for sec in pluginSections.profile %}{{ pluginSection(sec) }}{% endfor %}
+        <section class="pt-card pt-pad" aria-labelledby="pt-h-mydata">
+          <h2 class="pt-h2" id="pt-h-mydata">{{ t('myprofile.mydata') }}</h2>
+          <p class="pt-card-lead">{{ t('myprofile.mydata_lead') }}</p>
+          <a class="pt-btn pt-btn-sm" id="pt-pf-export" href="/api/v1/portal/me/profile/export" download><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>{{ t('myprofile.download') }}</a>
+        </section>
+      </div>
     </div>
   </section>
   {% endif %}

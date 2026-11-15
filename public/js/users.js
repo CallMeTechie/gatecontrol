@@ -778,6 +778,7 @@
       }
     });
     const main = el('div', { class: 'up-main' }, [
+      profileCard(u),
       upCard(T('up.devices'), [el('span', { class: 'up-count' }, devices ? P('up.dev.count', devices.length) : ''), tabLink(T('up.manage'), 'access')], [devList]),
     ]);
 
@@ -838,6 +839,90 @@
       el('div', { class: 'up-switchrow' }, [el('span', { class: 'up-switchrow-label' }, T('up.loc.allow')), sw]),
     ]);
     panel.appendChild(el('div', { class: 'up-grid' }, [main, el('div', { class: 'up-side' }, [lookCard(d), access, groupsCard(d), security, locCard])]));
+  }
+
+  // "Profil" (docs/feature-user-profile.md): what an administrator needs —
+  // name, e-mail, language (changed in the dialog "Bearbeiten" as before) —
+  // and the rest only where the person shows it to everybody ("verborgen"
+  // otherwise). Phone numbers as count, state and recognition, never a digit;
+  // a number that stands in another account too is named, confirm / remove
+  // without seeing it.
+  const PF_EDIT = 'M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4';
+  function pfVisChip(level) {
+    const tone = level === 'all' ? 'us-chip-good' : (level === 'family' ? 'us-chip-member' : 'us-chip-off');
+    return el('span', { class: 'us-chip ' + tone }, T('myprofile.vis.' + level));
+  }
+  function pfEditBtn(label) {
+    return el('button', { type: 'button', class: 'btn btn-sm btn-ghost up-pf-edit', 'aria-label': label, title: label, on: { click: () => { const b = $('up-edit'); if (b && !b.disabled) b.click(); } } }, icon(PF_EDIT, 15));
+  }
+  function pfRow(label, value, end, muted) {
+    return el('div', { class: 'up-pf-row' }, [
+      el('div', { class: 'up-pf-label' }, label),
+      el('div', { class: 'up-pf-value' + (muted ? ' is-muted' : '') }, value),
+      el('div', { class: 'up-pf-end' }, end || null),
+    ]);
+  }
+  function pfBirthday(b) {
+    if (!b) return null;
+    const d = new Date(Date.UTC(b.year || 2000, b.month - 1, b.day));
+    let s;
+    try { s = d.toLocaleDateString(LANG, { day: 'numeric', month: 'long', timeZone: 'UTC' }); } catch (_) { s = b.day + '.' + b.month + '.'; }
+    return b.year ? s + ' ' + b.year : s;
+  }
+  function profileCard(u) {
+    const body = el('div', { class: 'up-pf' }, el('p', { class: 'up-muted' }, T('common.loading')));
+    const banner = el('div', { class: 'us-warnbox up-pf-dup', role: 'status', hidden: true }, [el('b', null, T('up.pf.dup_title')), ' ', T('up.pf.dup_text', { name: firstName(u) })]);
+    const card = el('div', { class: 'up-pf-wrap' }, [banner, upCard(T('up.pf.title'), [el('span', { class: 'up-pf-hint', title: T('up.pf.what_text') }, T('up.pf.what'))], [body])]);
+    const draw = (p) => {
+      clear(body);
+      banner.hidden = !(p.phones && p.phones.duplicate);
+      const hidden = (f) => el('span', null, T('up.pf.hidden'));
+      const val = (f, text) => (f.hidden ? hidden(f) : (text == null || text === '' ? '–' : text));
+      const name = [p.firstName.value, p.lastName.value].filter(Boolean).join(' ');
+      const nameField = { hidden: p.firstName.hidden || p.lastName.hidden };
+      const rows = [
+        pfRow(T('up.pf.display_name'), p.displayName, pfEditBtn(T('up.edit'))),
+        pfRow(T('up.pf.name'), val(nameField, name), pfVisChip(p.firstName.visibility), nameField.hidden),
+        pfRow(T('up.pf.email'), p.email || '–', pfEditBtn(T('up.edit'))),
+        pfRow(T('up.pf.language'), p.language === 'en' ? 'English' : (p.language === 'de' ? 'Deutsch' : (p.language || '–')), pfEditBtn(T('up.edit'))),
+        pfRow(T('up.pf.about'), val(p.about, p.about.value), pfVisChip(p.about.visibility), p.about.hidden),
+        pfRow(T('up.pf.birthday'), val(p.birthday, pfBirthday(p.birthday.value)), pfVisChip(p.birthday.visibility), p.birthday.hidden),
+      ];
+      if (p.emails && p.emails.count) rows.push(pfRow(T('up.pf.emails'), T('up.pf.emails_count', { n: p.emails.count, confirmed: p.emails.confirmed }), pfVisChip(p.emails.visibility)));
+      const ph = p.phones || {};
+      if (ph.enabled) {
+        const summary = !ph.count ? T('up.pf.phones_none')
+          : T('up.pf.phones_summary', { n: ph.count, confirmed: ph.confirmed }) + (ph.recognition ? ' · ' + T('up.pf.recognition_on') : '');
+        rows.push(pfRow(T('up.pf.phones'), summary, el('span', { class: 'up-pf-note' }, T('up.pf.no_digits'))));
+        (ph.list || []).forEach((n, i) => {
+          const parts = [T('myprofile.kind.' + n.kind), T('up.pf.state.' + n.state)];
+          if (n.useForRecognition && p.recognition.byPhone) parts.push(T('up.pf.recognition_on'));
+          const value = [parts.join(' · ')];
+          if (n.duplicate) value.push(' · ', el('b', { class: 'up-pf-dupword' }, T('up.pf.duplicate')));
+          const acts = [];
+          if (!n.confirmed || n.duplicate) {
+            if (!n.confirmed) acts.push(el('button', { type: 'button', class: 'btn btn-sm us-btn-chip', on: { click: () => act('POST', '/confirm', n, i) } }, T('up.pf.confirm')));
+          }
+          acts.push(el('button', { type: 'button', class: 'btn btn-sm btn-ghost', on: { click: () => act('DELETE', '', n, i) } }, T('up.pf.remove')));
+          rows.push(pfRow(T('up.pf.phone_n', { n: i + 1 }), value, acts));
+        });
+      }
+      rows.forEach((r) => body.appendChild(r));
+    };
+    const act = async (method, suffix, n, i) => {
+      if (method === 'DELETE') {
+        const ok = await D.confirm({ title: T('up.pf.remove_title', { n: i + 1 }), message: T('up.pf.remove_text', { name: firstName(u) }), okLabel: T('up.pf.remove'), danger: true });
+        if (!ok) return;
+      }
+      try {
+        const res = await call(method, '/api/v1/users/' + u.id + '/profile/phones/' + n.id + suffix);
+        toast(method === 'DELETE' ? T('up.pf.removed') : T('up.pf.confirmed'));
+        draw(res.profile);
+      } catch (err) { D.alert({ message: errMsg(err), danger: true }); }
+    };
+    call('GET', '/api/v1/users/' + u.id + '/profile').then((res) => draw(res.profile))
+      .catch((err) => { clear(body).appendChild(el('p', { class: 'up-error' }, errMsg(err))); });
+    return card;
   }
 
   // "Gruppen" (docs/groups.md): the person's groups with role; a group the
@@ -2335,10 +2420,37 @@
     } catch (err) { window.btnReset(btn); setError('us-pf-error', errMsg(err)); }
   });
 
+  // "Einstellungen" of the users (docs/feature-user-profile.md): phone
+  // numbers in the profile (on), recognition by confirmed numbers only (off).
+  async function openProfileSettings() {
+    let cur;
+    try { cur = (await call('GET', '/api/v1/users/settings/profile')).settings; } catch (err) { D.alert({ message: errMsg(err), danger: true }); return; }
+    const d = D.dialog({ title: T('us.settings.title') });
+    const row = (id, label, hint, on) => {
+      const sw = el('button', { type: 'button', class: 'st-switch us-switch', role: 'switch', id, 'aria-checked': on ? 'true' : 'false', 'aria-label': label }, el('span', { class: 'st-knob', 'aria-hidden': 'true' }));
+      sw.addEventListener('click', () => sw.setAttribute('aria-checked', sw.getAttribute('aria-checked') === 'true' ? 'false' : 'true'));
+      d.body.appendChild(el('div', { class: 'up-switchrow us-settings-row' }, [el('span', { class: 'up-switchrow-label' }, [el('b', null, label), el('span', { class: 'us-hint' }, hint)]), sw]));
+      return sw;
+    };
+    d.body.appendChild(el('p', { class: 'up-muted' }, T('us.settings.lead')));
+    const phones = row('us-set-phones', T('us.settings.phones'), T('us.settings.phones_hint'), cur.phonesEnabled);
+    const confirmed = row('us-set-confirmed', T('us.settings.confirmed_only'), T('us.settings.confirmed_only_hint'), cur.confirmedOnly);
+    d.foot.appendChild(el('button', { type: 'button', class: 'btn btn-ghost', on: { click: () => d.close(null) } }, T('common.cancel')));
+    d.foot.appendChild(el('button', { type: 'button', class: 'btn btn-primary', id: 'us-set-save', on: { click: async () => {
+      try {
+        await call('PUT', '/api/v1/users/settings/profile', { phonesEnabled: phones.getAttribute('aria-checked') === 'true', confirmedOnly: confirmed.getAttribute('aria-checked') === 'true' });
+        toast(T('us.saved'));
+        d.close(true);
+      } catch (err) { D.alert({ message: errMsg(err), danger: true }); }
+    } } }, T('common.save')));
+  }
+
   // ── Page wiring ────────────────────────────────────────────────────
   function bindList() {
     $('us-btn-add').addEventListener('click', openCreate);
     $('us-btn-roles').addEventListener('click', () => openDlg('us-dlg-roles'));
+    const st = $('us-btn-settings');
+    if (st) st.addEventListener('click', openProfileSettings);
     $('us-search').addEventListener('input', (e) => { state.q = e.target.value; renderList(); });
     $('us-filters').addEventListener('click', (e) => {
       const b = e.target.closest('[data-filter]');

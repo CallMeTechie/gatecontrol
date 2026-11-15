@@ -694,6 +694,37 @@ const notifyMediaLimiter = rateLimit({
   handler: (req, res) => { res.status(429).end(); },
 });
 module.exports.notifyMediaLimiter = notifyMediaLimiter;
+// Changes of the own profile (docs/feature-user-profile.md): fields, numbers, addresses, consents — from a browser
+// (web or portal session) 120 per 15 minutes and person, from an app 120 per hour and token. The e-mail code has
+// its own limits (services/profile.js).
+const profileWriteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    if (req.tokenAuth) return `profile:t:${req.tokenId}`;
+    const s = req.session || {};
+    if (s.userId) return `profile:u:${s.userId}`;
+    if (s.portalUserId) return `profile:u:${s.portalUserId}`;
+    return `profile:ip:${ipKeyGenerator(req.ip)}`;
+  },
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, code: 'RATE_LIMITED', error: req.t ? req.t('myprofile.err.rate_limited') : 'rate_limited' });
+  },
+});
+const clientProfileLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.tokenAuth ? `client-profile:${req.tokenId}` : `client-profile:${ipKeyGenerator(req.ip)}`),
+  handler: (req, res) => {
+    res.status(429).json({ ok: false, code: 'RATE_LIMITED', error: req.t ? req.t('myprofile.err.rate_limited') : 'rate_limited' });
+  },
+});
+module.exports.profileWriteLimiter = profileWriteLimiter;
+module.exports.clientProfileLimiter = clientProfileLimiter;
 module.exports.clientAvatarLimiter = clientAvatarLimiter;
 module.exports.avatarWriteLimiter = avatarWriteLimiter;
 module.exports.avatarFileLimiter = avatarFileLimiter;

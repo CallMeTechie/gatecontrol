@@ -1,6 +1,7 @@
 // public/js/portal.js — GateControl portal (redesign "variant A": tabs).
 //
-// Start · Dienste · Zuhause · Fahrzeug · Netzwerk · Meine Geräte · Gruppen.
+// Start · Dienste · Zuhause · Fahrzeug · Netzwerk · Meine Geräte · Gruppen;
+// pages without a tab: Mitteilungen, Meine Benachrichtigungen, Mein Profil.
 // The tabs are URL-addressable (#start, #dienste, #zuhause, #fahrzeug,
 // #netzwerk, #geraete, #gruppen) and a WAI-ARIA tablist (arrow keys, Home/End). Every area that
 // is unlicensed or has no data is hidden (tab, panel and start card).
@@ -178,7 +179,7 @@
     return new Promise(function (resolve) {
       var prev = doc.activeElement;
       var titleId = 'pt-dlg-t-' + Date.now();
-      var cancel = el('button', { type: 'button', class: 'pt-btn' }, T('portal.cancel'));
+      var cancel = el('button', { type: 'button', class: 'pt-btn' }, o.cancelLabel || T('portal.cancel'));
       var ok = el('button', { type: 'button', class: 'pt-btn ' + (o.danger ? 'pt-btn-danger-solid' : 'pt-btn-primary') }, o.okLabel || T('portal.ok'));
       var box = el('div', { class: 'pt-dialog', role: o.danger ? 'alertdialog' : 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId }, [
         el('h2', { class: 'pt-h2', id: titleId }, o.title || ''),
@@ -1541,6 +1542,342 @@
   }
   onPanel(function (id) { if (id === 'gruppen') loadGroups(); });
 
+  // ═══ Mein Profil (docs/feature-user-profile.md) ════════════════════════
+  // A page without a tab (#profil): the own picture in the header leads here.
+  // Left "Über dich", "Telefonnummern", "Weiteres"; right picture & colour,
+  // "Erkennung", the plugins' profile sections, "Meine Daten". Every change
+  // goes to /api/v1/portal/me/profile… and the answer (the whole profile) is
+  // drawn again — the server decides what is allowed (directory fields,
+  // limits, numbers switched off). Numbers are shown to their owner only.
+  var PROFILE_API = '/api/v1/portal/me/profile';
+  var pf = { data: null, loading: false, failed: false };
+  var PF_IC = {
+    edit: 'M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4',
+    plus: 'M12 5v14M5 12h14',
+    lock: 'M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3',
+    check: 'M5 12l5 5 9-10',
+    info: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8h.01M11 12h1v5h1',
+    scan: 'M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3M9 10h.01M15 10h.01M9 15c2 1.5 4 1.5 6 0',
+    all: 'M16 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9.5 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM21 19v-1a3.5 3.5 0 0 0-2.5-3.4M15.5 4.2a3 3 0 0 1 0 5.6',
+    family: 'M4 11l8-6 8 6M6 10v9h12v-9',
+    self: 'M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3',
+  };
+  function pfError(res) { return (res && res.body && res.body.error) || T('myprofile.err.failed'); }
+  function visChip(level) {
+    var ic = level === 'all' ? PF_IC.all : (level === 'family' ? PF_IC.family : PF_IC.self);
+    return el('span', { class: 'pt-vis', 'data-tone': level }, [icon(ic, 13), T('myprofile.vis.' + level)]);
+  }
+  function lockNote(text) { return el('span', { class: 'pt-pf-note' }, [icon(PF_IC.lock, 13), text]); }
+  function pfRow(label, value, end) {
+    return el('div', { class: 'pt-pf-row' }, [
+      el('div', { class: 'pt-pf-label' }, label),
+      el('div', { class: 'pt-pf-value' }, value),
+      el('div', { class: 'pt-pf-end' }, end || null),
+    ]);
+  }
+  function pfCard(title, action, lead, rows, id) {
+    return el('section', { class: 'pt-card pt-pf-card', id: id || null, 'aria-label': title }, [
+      el('div', { class: 'pt-pf-head' }, [el('h2', { class: 'pt-h2' }, title), action || null]),
+      lead ? el('p', { class: 'pt-pf-lead' }, lead) : null,
+    ].concat(rows));
+  }
+  function headBtn(label, ic, onClick, id) {
+    return el('button', { type: 'button', class: 'pt-linkbtn pt-pf-act', id: id || null, on: { click: onClick } }, [icon(ic, 14), label]);
+  }
+  function fmtBirthday(b) {
+    if (!b) return null;
+    var d = new Date(Date.UTC(b.year || 2000, b.month - 1, b.day));
+    var s;
+    try { s = d.toLocaleDateString(LANG, { day: 'numeric', month: 'long', timeZone: 'UTC' }); } catch (_) { s = b.day + '.' + b.month + '.'; }
+    if (b.year && !b.yearHidden) s += ' ' + b.year;
+    else if (b.year && b.yearHidden) s += ' · ' + T('myprofile.year_hidden');
+    return s;
+  }
+  function langName(code) { return T('myprofile.lang.' + code) === 'myprofile.lang.' + code ? String(code || '') : T('myprofile.lang.' + code); }
+  function fullName(p) { return [p.firstName, p.lastName].filter(Boolean).join(' '); }
+
+  function renderProfile() {
+    var host = $('pt-pf-main');
+    if (!host) return;
+    clear(host);
+    var p = pf.data;
+    if (!p) {
+      host.appendChild(el('div', { class: 'pt-card pt-pad' }, pf.failed
+        ? [T('myprofile.load_failed') + ' ', el('button', { type: 'button', class: 'pt-linkbtn', on: { click: function () { loadProfile(true); } } }, T('portal.notify.retry'))]
+        : empty(T('portal.loading'))));
+      return;
+    }
+    var locked = p.locked || {};
+    var dirNote = function () { return lockNote(T('myprofile.from_directory')); };
+    // ── Über dich ──
+    host.appendChild(pfCard(T('myprofile.about_you'), headBtn(T('myprofile.edit'), PF_IC.edit, editAbout, 'pt-pf-edit-about'), null, [
+      pfRow(T('myprofile.f.display_name'), p.displayName, locked.displayName ? dirNote() : visChip('all')),
+      pfRow(T('myprofile.f.name'), fullName(p) || el('span', { class: 'pt-muted' }, T('myprofile.empty_name')), visChip(p.visibility.firstName)),
+      pfRow(T('myprofile.f.about'), p.about || el('span', { class: 'pt-muted' }, '–'), visChip(p.visibility.about)),
+      pfRow(T('myprofile.f.username'), el('span', { class: 'pt-mono' }, p.username), lockNote(T('myprofile.fixed'))),
+    ], 'pt-pf-about'));
+    // ── Telefonnummern ──
+    if (p.features && p.features.phones) {
+      var rows = p.phones.map(function (ph) {
+        var stateLine = el('span', { class: 'pt-pf-state', 'data-tone': ph.confirmed ? 'good' : 'warn' },
+          [icon(ph.confirmed ? PF_IC.check : PF_IC.info, 13), T('myprofile.state.' + ph.state)]);
+        var badges = [stateLine];
+        if (ph.useForRecognition && p.recognition.byPhone) badges.push(el('span', { class: 'pt-pf-badge' }, [icon(PF_IC.scan, 13), T('myprofile.recognize_badge')]));
+        var editBtn = el('button', { type: 'button', class: 'pt-btn pt-btn-sm pt-pf-iconbtn', 'aria-label': T('myprofile.phone.edit_label', { kind: T('myprofile.kind.' + ph.kind) }), title: T('myprofile.edit'),
+          on: { click: function () { editPhone(ph); } } }, icon(PF_IC.edit, 15));
+        return pfRow(T('myprofile.kind.' + ph.kind), [el('b', { class: 'pt-mono pt-pf-num' }, ph.number || '–'), el('span', { class: 'pt-pf-badges' }, badges)],
+          [visChip(ph.visibility === 'none' ? 'none' : ph.visibility), editBtn]);
+      });
+      if (!rows.length) rows.push(el('div', { class: 'pt-pf-empty' }, T('myprofile.phone.none')));
+      var add = p.phones.length < p.limits.phones ? headBtn(T('myprofile.add'), PF_IC.plus, function () { editPhone(null); }, 'pt-pf-add-phone') : null;
+      host.appendChild(pfCard(T('myprofile.phones'), add, T('myprofile.phone.lead'), rows, 'pt-pf-phones'));
+    }
+    // ── Weiteres ──
+    var more = [pfRow(T('myprofile.f.email'), p.email || el('span', { class: 'pt-muted' }, '–'), locked.email ? dirNote() : visChip(p.visibility.email))];
+    (p.emails || []).forEach(function (e) {
+      var ok = e.state === 'confirmed';
+      var acts = [];
+      if (!ok && p.features.emailConfirm) acts.push(el('button', { type: 'button', class: 'pt-btn pt-btn-sm', on: { click: function () { codeDialog(e); } } }, T('myprofile.email.enter_code')));
+      acts.push(el('button', { type: 'button', class: 'pt-btn pt-btn-sm pt-btn-danger', 'aria-label': T('myprofile.email.remove_label', { address: e.address }), on: { click: function () { removeEmail(e); } } }, T('myprofile.remove')));
+      more.push(pfRow(T('myprofile.f.email_more'), [el('span', { class: 'pt-pf-wrap' }, e.address),
+        el('span', { class: 'pt-pf-state', 'data-tone': ok ? 'good' : 'warn' }, [icon(ok ? PF_IC.check : PF_IC.info, 13), T(ok ? 'myprofile.email.confirmed' : 'myprofile.email.unconfirmed')])], acts));
+    });
+    if ((p.emails || []).length < p.limits.emails) {
+      more.push(el('div', { class: 'pt-pf-row pt-pf-row-act' }, el('button', { type: 'button', class: 'pt-linkbtn pt-pf-act', id: 'pt-pf-add-email', on: { click: addEmail } }, [icon(PF_IC.plus, 14), T('myprofile.email.add')])));
+    }
+    more.push(pfRow(T('myprofile.f.birthday'), fmtBirthday(p.birthday) || el('span', { class: 'pt-muted' }, '–'), visChip(p.visibility.birthday)));
+    more.push(pfRow(T('myprofile.f.language'), langName(p.language), visChip(p.visibility.language)));
+    more.push(pfRow(T('myprofile.f.timezone'), p.timezone || T('myprofile.tz_server', { tz: p.serverTimezone }), el('span', { class: 'pt-pf-note' }, T('myprofile.tz_quiet'))));
+    host.appendChild(pfCard(T('myprofile.more'), headBtn(T('myprofile.edit'), PF_IC.edit, editMore, 'pt-pf-edit-more'), null, more, 'pt-pf-more'));
+    renderRecognition();
+  }
+
+  function renderRecognition() {
+    var box = $('pt-pf-recog');
+    var p = pf.data;
+    if (!box || !p) return;
+    clear(box);
+    box.hidden = false;
+    var r = p.recognition;
+    function sw(id, label, sub, on, key) {
+      var input = el('input', { type: 'checkbox', role: 'switch', class: 'pt-switch', id: id, checked: !!on, 'aria-describedby': id + '-sub' });
+      input.addEventListener('change', function () {
+        var body = { recognition: {} };
+        body.recognition[key] = input.checked;
+        input.disabled = true;
+        saveProfile('PATCH', PROFILE_API, body).then(function (ok) { input.disabled = false; if (!ok) input.checked = !input.checked; });
+      });
+      return el('label', { class: 'pt-pf-switch', for: id }, [el('span', { class: 'pt-grow' }, [el('b', null, label), el('span', { class: 'pt-small pt-muted pt-block', id: id + '-sub' }, sub)]), input]);
+    }
+    box.appendChild(el('h2', { class: 'pt-h2', id: 'pt-h-recog' }, T('myprofile.recognition')));
+    box.appendChild(el('p', { class: 'pt-card-lead' }, T('myprofile.recognition_lead')));
+    box.appendChild(sw('pt-pf-rec-wa', T('myprofile.rec.whatsapp'), r.whatsappLinked ? T('myprofile.rec.wa_linked') : T('myprofile.rec.wa_not_linked'), r.byWhatsapp, 'byWhatsapp'));
+    if (p.features && p.features.phones) {
+      box.appendChild(sw('pt-pf-rec-phone', T('myprofile.rec.phones'), T('myprofile.rec.phones_sub', { n: r.phonesForRecognition, total: p.phones.length }), r.byPhone, 'byPhone'));
+    }
+  }
+
+  /** A change → the whole profile back. Returns Promise<true | error text>. */
+  function saveProfile(method, url, body, okText) {
+    return send(method, url, body).then(function (res) {
+      if (res.status >= 200 && res.status < 300 && res.body && res.body.ok) {
+        if (res.body.profile) { pf.data = res.body.profile; renderProfile(); }
+        toast(okText || T('myprofile.saved'));
+        return res.body;
+      }
+      var msg = pfError(res);
+      toast(msg, 'error');
+      return msg;
+    }).catch(function () { toast(T('myprofile.err.failed'), 'error'); return T('myprofile.err.failed'); });
+  }
+  function done(r) { return r && typeof r === 'object' ? true : r; }
+
+  function field(label, input, hint) {
+    return el('label', { class: 'pt-field-label pt-pf-field' }, [label, input, hint ? el('span', { class: 'pt-small pt-muted pt-block pt-pf-hint' }, hint) : null]);
+  }
+  function textInput(value, max, extra) {
+    var o = { type: 'text', class: 'pt-grp-input', value: value || '', maxlength: max };
+    Object.keys(extra || {}).forEach(function (k) { o[k] = extra[k]; });
+    return el('input', o);
+  }
+  function visSelect(levels, value, label) {
+    var s = el('select', { class: 'pt-grp-select', 'aria-label': label });
+    levels.forEach(function (l) { s.appendChild(el('option', { value: l, selected: l === value }, T('myprofile.vis_long.' + l))); });
+    return s;
+  }
+  function fieldLevels(p) { return p.family ? ['self', 'family', 'all'] : ['self', 'all']; }
+
+  function editAbout() {
+    var p = pf.data;
+    var lk = p.locked || {};
+    var display = textInput(p.displayName, p.limits.displayName, { autocomplete: 'nickname', disabled: !!lk.displayName });
+    var first = textInput(p.firstName, p.limits.name, { autocomplete: 'given-name' });
+    var last = textInput(p.lastName, p.limits.name, { autocomplete: 'family-name' });
+    var about = textInput(p.about, p.limits.about);
+    var nameVis = visSelect(fieldLevels(p), p.visibility.firstName, T('myprofile.who_sees_name'));
+    var aboutVis = visSelect(fieldLevels(p), p.visibility.about, T('myprofile.who_sees_about'));
+    grpDialog({
+      title: T('myprofile.about_you'), okLabel: T('myprofile.save'),
+      fields: [
+        field(T('myprofile.f.display_name'), display, lk.displayName ? T('myprofile.from_directory') : null),
+        el('div', { class: 'pt-pf-two' }, [field(T('myprofile.f.first_name'), first), field(T('myprofile.f.last_name'), last)]),
+        field(T('myprofile.who_sees_name'), nameVis),
+        field(T('myprofile.f.about'), about, T('myprofile.about_hint', { max: p.limits.about })),
+        field(T('myprofile.who_sees_about'), aboutVis),
+      ],
+      onOk: function () {
+        var body = { firstName: first.value, lastName: last.value, about: about.value,
+          visibility: { firstName: nameVis.value, lastName: nameVis.value, about: aboutVis.value } };
+        if (!lk.displayName) body.displayName = display.value;
+        return saveProfile('PATCH', PROFILE_API, body).then(done);
+      },
+    });
+  }
+
+  function editMore() {
+    var p = pf.data;
+    var lk = p.locked || {};
+    var email = el('input', { type: 'email', class: 'pt-grp-input', value: p.email || '', maxlength: 255, autocomplete: 'email', disabled: !!lk.email });
+    var emailVis = visSelect(fieldLevels(p), p.visibility.email, T('myprofile.who_sees_email'));
+    var b = p.birthday;
+    var bday = el('input', { type: 'date', class: 'pt-grp-input', value: b && b.year ? b.date : '', max: new Date().toISOString().slice(0, 10) });
+    var hideYear = el('input', { type: 'checkbox', checked: !!(b && b.yearHidden) });
+    var bdayVis = visSelect(fieldLevels(p), p.visibility.birthday, T('myprofile.who_sees_birthday'));
+    var lang = el('select', { class: 'pt-grp-select', 'aria-label': T('myprofile.f.language') });
+    ['de', 'en'].forEach(function (l) { lang.appendChild(el('option', { value: l, selected: l === p.language }, langName(l))); });
+    var tz = el('select', { class: 'pt-grp-select', 'aria-label': T('myprofile.f.timezone') });
+    tz.appendChild(el('option', { value: '', selected: !p.timezone }, T('myprofile.tz_server', { tz: p.serverTimezone })));
+    var zones = [];
+    try { zones = Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : []; } catch (_) { zones = []; }
+    var mine = browserTz();
+    [mine, p.timezone].forEach(function (z) { if (z && zones.indexOf(z) < 0) zones.unshift(z); });
+    zones.forEach(function (z) { tz.appendChild(el('option', { value: z, selected: z === p.timezone }, z)); });
+    grpDialog({
+      title: T('myprofile.more'), okLabel: T('myprofile.save'),
+      fields: [
+        field(T('myprofile.f.email'), email, lk.email ? T('myprofile.from_directory') : null),
+        field(T('myprofile.who_sees_email'), emailVis),
+        field(T('myprofile.f.birthday'), bday),
+        el('label', { class: 'pt-pf-check' }, [hideYear, T('myprofile.hide_year')]),
+        field(T('myprofile.who_sees_birthday'), bdayVis),
+        field(T('myprofile.f.language'), lang),
+        field(T('myprofile.f.timezone'), tz, T('myprofile.tz_quiet')),
+      ],
+      onOk: function () {
+        var body = { language: lang.value, timezone: tz.value || null, visibility: { email: emailVis.value, birthday: bdayVis.value } };
+        if (!lk.email) body.email = email.value.trim() || null;
+        // a birthday without a year (kept by the apps) stays as it is unless a full date is entered or it is cleared
+        if (bday.value) body.birthday = { date: bday.value, yearHidden: hideYear.checked };
+        else if (!b || b.year) body.birthday = null;
+        return saveProfile('PATCH', PROFILE_API, body).then(function (r) {
+          if (r && typeof r === 'object' && body.language && body.language !== LANG) { location.reload(); }
+          return done(r);
+        });
+      },
+    });
+  }
+
+  /** "Dürfen andere dich an dieser Nummer erkennen?" — once, after the first number is saved. */
+  function askRecognition() {
+    portalConfirm({ title: T('myprofile.ask.title'), message: T('myprofile.ask.text') + ' ' + T('myprofile.ask.later'), okLabel: T('myprofile.ask.yes'), cancelLabel: T('myprofile.ask.no') })
+      .then(function (yes) { saveProfile('PATCH', PROFILE_API, { recognition: { byPhone: !!yes } }, yes ? T('myprofile.rec.on') : T('myprofile.rec.off')); });
+  }
+
+  function editPhone(ph) {
+    var p = pf.data;
+    var kind = el('select', { class: 'pt-grp-select', 'aria-label': T('myprofile.phone.kind') });
+    p.options.kinds.forEach(function (k) { kind.appendChild(el('option', { value: k, selected: ph ? ph.kind === k : k === 'mobile' }, T('myprofile.kind.' + k))); });
+    var num = el('input', { type: 'tel', class: 'pt-grp-input pt-mono', value: ph ? ph.number || '' : '', maxlength: 40, inputmode: 'tel', autocomplete: 'tel', placeholder: '+49 151 …' });
+    var levels = p.family ? ['none', 'family', 'all'] : ['none', 'all'];
+    var current = ph ? ph.visibility : 'none';
+    var seg = el('div', { class: 'pt-pf-seg', role: 'radiogroup', 'aria-label': T('myprofile.who_sees') });
+    var radios = levels.map(function (l) {
+      var r = el('input', { type: 'radio', name: 'pt-pf-vis', value: l, checked: l === current });
+      seg.appendChild(el('label', { class: 'pt-pf-segbtn' }, [r, el('span', null, T('myprofile.vis_long.' + l))]));
+      return r;
+    });
+    var visHint = el('span', { class: 'pt-small pt-muted pt-block pt-pf-hint', hidden: current !== 'none' }, T('myprofile.vis_none_hint'));
+    seg.addEventListener('change', function () { radios.forEach(function (r) { if (r.checked) visHint.hidden = r.value !== 'none'; }); });
+    var use = el('input', { type: 'checkbox', role: 'switch', class: 'pt-switch', id: 'pt-pf-use', checked: ph ? ph.useForRecognition : true, 'aria-describedby': 'pt-pf-use-sub' });
+    var useSub = ph && ph.confirmed ? T('myprofile.state.' + ph.state) : T('myprofile.phone.unconfirmed_hint');
+    var fields = [
+      el('div', { class: 'pt-pf-two' }, [field(T('myprofile.phone.kind'), kind), field(T('myprofile.phone.number'), num)]),
+      el('span', { class: 'pt-small pt-muted pt-block' }, T('myprofile.phone.number_hint')),
+      el('div', { class: 'pt-field-label pt-pf-field' }, [T('myprofile.who_sees'), seg, visHint]),
+      el('label', { class: 'pt-pf-switch pt-pf-switch-box', for: 'pt-pf-use' }, [el('span', { class: 'pt-grow' }, [el('b', null, T('myprofile.phone.use')),
+        el('span', { class: 'pt-small pt-muted pt-block', id: 'pt-pf-use-sub' }, useSub)]), use]),
+    ];
+    if (ph) {
+      fields.push(el('button', { type: 'button', class: 'pt-btn pt-btn-sm pt-btn-danger pt-pf-remove', on: { click: function () {
+        dlg.close();
+        portalConfirm({ title: T('myprofile.phone.remove_title'), message: T('myprofile.phone.remove_text'), okLabel: T('myprofile.remove'), danger: true }).then(function (yes) {
+          if (yes) saveProfile('DELETE', PROFILE_API + '/phones/' + Number(ph.id), undefined, T('myprofile.phone.removed'));
+        });
+      } } }, T('myprofile.phone.remove')));
+    }
+    var first = !ph && !p.phones.length && !p.recognition.phoneAnswered;
+    var dlg = grpDialog({
+      title: ph ? T('myprofile.phone.edit_title') : T('myprofile.phone.add_title'), okLabel: T('myprofile.save'), fields: fields,
+      onOk: function () {
+        var vis = 'none';
+        radios.forEach(function (r) { if (r.checked) vis = r.value; });
+        var body = { kind: kind.value, number: num.value, visibility: vis, useForRecognition: use.checked };
+        return saveProfile(ph ? 'PATCH' : 'POST', PROFILE_API + '/phones' + (ph ? '/' + Number(ph.id) : ''), body).then(function (r) {
+          if (r && typeof r === 'object' && first) setTimeout(askRecognition, 0);
+          return done(r);
+        });
+      },
+    });
+  }
+
+  function addEmail() {
+    var input = el('input', { type: 'email', class: 'pt-grp-input', maxlength: 255, autocomplete: 'email', placeholder: 'name@example.com' });
+    grpDialog({
+      title: T('myprofile.email.add'), okLabel: T('myprofile.add'),
+      text: pf.data.features.emailConfirm ? T('myprofile.email.add_text') : T('myprofile.email.add_text_nomail'),
+      fields: [field(T('myprofile.f.email_more'), input)],
+      onOk: function () {
+        return saveProfile('POST', PROFILE_API + '/emails', { address: input.value.trim() }).then(function (r) {
+          if (r && typeof r === 'object' && r.codeSent && r.email) setTimeout(function () { codeDialog(r.email); }, 0);
+          return done(r);
+        });
+      },
+    });
+  }
+
+  function codeDialog(e) {
+    var input = el('input', { type: 'text', class: 'pt-grp-input pt-mono', maxlength: 6, inputmode: 'numeric', autocomplete: 'one-time-code', pattern: '[0-9]{6}' });
+    var resend = el('button', { type: 'button', class: 'pt-linkbtn', on: { click: function () {
+      resend.disabled = true;
+      saveProfile('POST', PROFILE_API + '/emails/' + Number(e.id) + '/resend', {}, T('myprofile.email.code_sent')).then(function () { resend.disabled = false; });
+    } } }, T('myprofile.email.resend'));
+    grpDialog({
+      title: T('myprofile.email.code_title'), okLabel: T('myprofile.email.confirm'), text: T('myprofile.email.code_text', { address: e.address }),
+      fields: [field(T('myprofile.email.code'), input), resend],
+      onOk: function () {
+        return saveProfile('POST', PROFILE_API + '/emails/' + Number(e.id) + '/confirm', { code: input.value.trim() }, T('myprofile.email.confirmed_toast')).then(done);
+      },
+    });
+  }
+
+  function removeEmail(e) {
+    portalConfirm({ title: T('myprofile.email.remove_title'), message: e.address, okLabel: T('myprofile.remove'), danger: true }).then(function (yes) {
+      if (yes) saveProfile('DELETE', PROFILE_API + '/emails/' + Number(e.id), undefined, T('myprofile.email.removed'));
+    });
+  }
+
+  function loadProfile(force) {
+    if (!TABS.profile || pf.loading || (pf.data && !force)) return;
+    pf.loading = true;
+    getJson(PROFILE_API).then(function (res) {
+      pf.loading = false;
+      if (res.status === 200 && res.body && res.body.ok && res.body.profile) { pf.data = res.body.profile; pf.failed = false; }
+      else pf.failed = true;
+      renderProfile();
+    }).catch(function () { pf.loading = false; pf.failed = true; renderProfile(); });
+  }
+  onPanel(function (id) { if (id === 'profil') loadProfile(false); });
+
   // Kiosk device (docs/feature-kiosk-devices.md): "Abmelden" unpairs the
   // tablet for good — ask first (a tap on a wall tablet is easy).
   (function wireKioskLogout() {
@@ -1582,7 +1919,7 @@
   loadDevice();
   loadTraffic();
   loadServices();
-  // Own profile picture and favourite colour on "Meine Geräte"
+  // Own profile picture and favourite colour on "Mein Profil"
   // (docs/feature-avatars.md; signed in, never on a kiosk device).
   (function initLook() {
     var host = $('pt-look');
@@ -1596,7 +1933,7 @@
       help: 'avatar.color_help',
       buttonClass: 'pt-btn pt-btn-sm',
       ghostClass: 'pt-btn pt-btn-sm',
-      onChange: function (look) { window.GCAvatar.paint($('pt-avatar'), look); },
+      onChange: function (look) { window.GCAvatar.paint($('pt-avatar'), look); window.GCAvatar.paint($('pt-pf-avatar'), look); },
     });
   })();
   loadDevices();

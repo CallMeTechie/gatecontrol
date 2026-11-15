@@ -144,7 +144,7 @@ describe('profile sections in the portal', () => {
 
   it('contributions: only for a signed-in person, never a kiosk device or device trust', async () => {
     const c = await portal.contributions(viewer(), 'de');
-    assert.deepEqual(c.sections.profile.map((s) => [s.key, s.title, s.goto, s.allow]), [['plg-hello-prof-me', 'Mein Hallo', 'geraete', 'camera *']]);
+    assert.deepEqual(c.sections.profile.map((s) => [s.key, s.title, s.goto, s.allow]), [['plg-hello-prof-me', 'Mein Hallo', 'profil', 'camera *']]);
     assert.deepEqual(c.tabs.find((x) => x.id === 'hello-prof').allow, 'camera *');
     assert.deepEqual((await portal.contributions(viewer({ loggedIn: false }), 'de')).sections.profile, []);
     assert.deepEqual((await portal.contributions(viewer({ kiosk: true }), 'de')).sections.profile, []);
@@ -153,13 +153,14 @@ describe('profile sections in the portal', () => {
     assert.equal(portal.profileViewer(null), false);
   });
 
-  it('the portal shows the section on "Meine Geräte", below picture and colour, with the camera', async () => {
+  it('the portal shows the section on "Mein Profil", below picture and colour, with the camera', async () => {
     const page = (await agent.get('/portal').expect(200)).text;
-    const geraete = page.slice(page.indexOf('id="panel-geraete"'));
-    const i = geraete.indexOf('id="pt-sec-plg-hello-prof-me"');
-    assert.ok(i > 0, 'in the panel "Meine Geräte"');
-    assert.ok(geraete.indexOf('id="pt-c-look"') < i, 'after the own picture and colour');
-    assert.match(geraete, /<section class="pt-plugin-section pt-narrow" id="pt-sec-plg-hello-prof-me"[^>]*>\s*<iframe class="pt-plugin-frame" title="(?:Mein Hallo|My hello)" src="\/portal\/plugins\/hello-prof\/frame\?section=me" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" loading="lazy" allow="camera \*"/);
+    const profil = page.slice(page.indexOf('id="panel-profil"'));
+    const i = profil.indexOf('id="pt-sec-plg-hello-prof-me"');
+    assert.ok(i > 0, 'in the panel "Mein Profil" (docs/feature-user-profile.md)');
+    assert.ok(profil.indexOf('id="pt-c-look"') < i, 'after the own picture and colour');
+    assert.ok(!page.slice(page.indexOf('id="panel-geraete"'), page.indexOf('id="panel-profil"')).includes('pt-sec-plg-hello-prof-me'), 'no longer on "Meine Geräte"');
+    assert.match(profil, /<section class="pt-plugin-section" id="pt-sec-plg-hello-prof-me"[^>]*>\s*<iframe class="pt-plugin-frame" title="(?:Mein Hallo|My hello)" src="\/portal\/plugins\/hello-prof\/frame\?section=me" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" loading="lazy" allow="camera \*"/);
     assert.match(page, /src="\/portal\/plugins\/hello-prof\/frame" sandbox="allow-scripts allow-forms" referrerpolicy="no-referrer" loading="lazy" allow="camera \*"/, 'its own tab too');
     const f = await agent.get('/portal/plugins/hello-prof/frame?section=me').expect(200);
     assert.match(f.text, /<p id="view">portal:<\/p>/);

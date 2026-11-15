@@ -272,6 +272,9 @@ describe('client API /api/v1/client/me/*', () => {
   it('GET me/profile: user and palette (no red), default colour from the id', async () => {
     const r = await client(phone).get('/api/v1/client/me/profile').expect(200);
     const def = avatars.PALETTE[anna % 10];
+    // since the user profile the answer carries the profile, too (tests/user_profile.test.js)
+    assert.equal(r.body.profile.userId, anna);
+    delete r.body.profile;
     assert.deepEqual(r.body, {
       ok: true,
       user: { id: anna, name: 'Anna Berg', initials: 'AB', color: def.key, colorHex: def.hex, avatarUrl: null },

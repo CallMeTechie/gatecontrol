@@ -4,7 +4,8 @@
  * Own profile picture and favourite colour of the apps (docs/feature-avatars.md):
  *
  *   GET    /api/v1/client/me/profile
- *     200 { ok, user: { id, name, initials, color, colorHex, avatarUrl|null }, palette: [{ key, hex }] }
+ *     200 { ok, user: { id, name, initials, color, colorHex, avatarUrl|null }, palette: [{ key, hex }], profile }
+ *     (profile since the user profile, docs/feature-user-profile.md — its other endpoints: routes/api/profileApi.js)
  *   PUT    /api/v1/client/me/avatar   raw body (image/png | image/jpeg | image/webp, ≤ 96 KB)
  *     200 { ok, avatarUrl }
  *   DELETE /api/v1/client/me/avatar   → { ok }
@@ -22,7 +23,8 @@
 
 const { Router } = require('express');
 const { requireClientToken, tokenViewer } = require('./helpers');
-const { clientAvatarLimiter } = require('../../../middleware/rateLimit');
+const { clientAvatarLimiter, clientProfileLimiter } = require('../../../middleware/rateLimit');
+const profileApi = require('../profileApi');
 const { avatarUpload, handlers } = require('../avatarApi');
 
 const router = Router();
@@ -39,7 +41,13 @@ function guard(req, res, next) {
 
 const h = handlers((req) => req.avatarUserId, (req) => ({ actorId: req.avatarUserId, ip: req.ip, source: 'api' }));
 
-router.get('/me/profile', guard, h.profile);
+// The profile (docs/feature-user-profile.md, routes/api/profileApi.js): GET answers picture and colour as before plus
+// `profile`; PATCH /me/profile, /me/profile/phones…, /me/profile/emails…, GET /me/profile/export.
+const p = profileApi.handlers((req) => req.avatarUserId, (req) => ({ actorId: req.avatarUserId, ip: req.ip, source: 'api' }));
+router.get('/me/profile', guard, p.get);
+const sub = Router();
+profileApi.mount(sub, p, { write: [clientProfileLimiter, guard] });
+router.use('/me', sub);
 router.put('/me/avatar', clientAvatarLimiter, guard, avatarUpload, h.putAvatar);
 router.delete('/me/avatar', clientAvatarLimiter, guard, h.deleteAvatar);
 router.put('/me/color', clientAvatarLimiter, guard, h.putColor);

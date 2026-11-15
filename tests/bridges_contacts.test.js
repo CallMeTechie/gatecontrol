@@ -195,7 +195,7 @@ describe('createDmByRef', () => {
 });
 
 describe('gc.bridges version 6', () => {
-  it('status() names version 7 (6 and newer: contacts)', () => {
-    assert.equal(bridges.status().version, 7);
+  it('status() names version 8 (6 and newer: contacts; 8: matchAccounts of the user profile)', () => {
+    assert.equal(bridges.status().version, 8);
   });
 });

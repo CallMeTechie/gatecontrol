@@ -41,7 +41,8 @@ const SECRET_MAX = 128;
 const UNTIL_MAX_MS = 400 * 24 * 3600 * 1000;
 const CONTROL_RE = /[\0-\x1f\x7f]/;
 /** GateControl tab of a section → the portal's tab id (panel-<id>). */
-const TAB_IDS = Object.freeze({ home: 'zuhause', car: 'fahrzeug', profile: 'geraete' });
+// profile: "Mein Profil" (#profil, docs/feature-user-profile.md) — until the user profile it was "Meine Geräte"
+const TAB_IDS = Object.freeze({ home: 'zuhause', car: 'fahrzeug', profile: 'profil' });
 
 /** May this viewer see profile sections? A signed-in person, not a kiosk device. */
 function profileViewer(user) { return !!(user && user.loggedIn === true && user.kiosk !== true); }

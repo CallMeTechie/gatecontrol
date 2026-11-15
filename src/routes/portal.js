@@ -112,6 +112,8 @@ function tabsFor(req, plg) {
     traffic: identified && w.traffic,
     // A kiosk device never manages devices or notification settings.
     devices: !!req.portalLoggedIn && !isKiosk(req),
+    // "Mein Profil" (docs/feature-user-profile.md): a page without a tab, behind the own picture — signed in, no kiosk.
+    profile: !!req.portalLoggedIn && !isKiosk(req),
     // Notification center: bell, inbox, own settings (signed in, push on).
     notify: !!req.portalLoggedIn && !isKiosk(req) && notifyEnabled(),
     // "Meine Gruppen" (docs/groups.md "Portal"): signed in, no kiosk, member of at least one group.
@@ -213,7 +215,7 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, a
   const lang = req.language || res.locals.language;
   const island = (obj) => JSON.stringify(obj).replace(/</g, '\\u003c');
   res.render('portal/portal.njk', {
-    portalI18n: island(stringsWithPrefix(lang, ['portal.', 'avatar.', 'grp.role.', 'grp.kind.'])),
+    portalI18n: island(stringsWithPrefix(lang, ['portal.', 'avatar.', 'grp.role.', 'grp.kind.', 'myprofile.'])),
     portalCtx: island({
       csrf: res.locals.csrfToken || '',
       lang,
@@ -222,7 +224,7 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, a
       person: viewer.kind === 'person',
       firstName: viewer.kind === 'person' ? viewer.first : '',
       canEnroll: viewer.kind === 'person' && !!req.portalLoggedIn && !!viewer.canEnroll,
-      // Own profile picture and colour on "Meine Geräte" (never on a kiosk device).
+      // Own profile picture and colour on "Mein Profil" (never on a kiosk device).
       canEditLook: viewer.kind === 'person' && !!req.portalLoggedIn && !isKiosk(req),
       kiosk: isKiosk(req),
       tabs,
@@ -230,8 +232,8 @@ router.get('/portal', portalPageLimiter, enabled, portalIdentity, portalOwner, a
     widgets: portalConfig().widgets,
     tabs,
     pluginTabs: plg.tabs,
-    // profile sections (since 1.188.0) only where "Meine Geräte" is shown: a signed-in person, no kiosk
-    pluginSections: { ...plg.sections, profile: tabs.devices ? (plg.sections.profile || []) : [] },
+    // profile sections (since 1.188.0) only on "Mein Profil": a signed-in person, no kiosk
+    pluginSections: { ...plg.sections, profile: tabs.profile ? (plg.sections.profile || []) : [] },
     // Start tiles / search of plugins (public/js/portal.js asks /api/v1/portal/plugins/start|search)
     viewer,
     note,

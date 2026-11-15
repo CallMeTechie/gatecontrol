@@ -10220,3 +10220,23 @@ a.gwp-mrow-n{color:var(--teal)}
 .vn-fixed li span{color:var(--pg-muted, var(--muted))}
 .pl-vn + .pl-chips:empty{display:none}
 .stx #st-vn-domain[aria-invalid="true"],.stx #st-vn-sub[aria-invalid="true"]{border-color:var(--pg-crit); box-shadow:0 0 0 3px var(--pg-crit-bg)}
+
+/* User page, card "Profil" (docs/feature-user-profile.md) */
+.up-pf-wrap{display:flex; flex-direction:column; gap:12px; min-width:0}
+.up-pf-hint{font-size:12.5px; color:var(--muted); cursor:help}
+.up-pf{display:flex; flex-direction:column; margin:0 -18px -18px}
+.up-pf-row{display:grid; grid-template-columns:160px minmax(0, 1fr) auto; align-items:center; gap:6px 14px; padding:10px 18px; border-top:1px solid var(--line); font-size:13.5px}
+.up-pf-label{color:var(--muted); font-size:12.5px}
+.up-pf-value{min-width:0; overflow-wrap:anywhere}
+.up-pf-value.is-muted{color:var(--muted)}
+.up-pf-end{display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:6px}
+.up-pf-edit{min-width:34px; padding:0 8px}
+.up-pf-note{font-size:12px; color:var(--muted)}
+.up-pf-dupword{color:var(--amber)}
+.up-pf-dup{font-size:13px}
+.us-settings-row{align-items:flex-start}
+.us-settings-row .up-switchrow-label{display:flex; flex-direction:column; gap:2px}
+@media (max-width:640px){
+  .up-pf-row{grid-template-columns:minmax(0, 1fr) auto}
+  .up-pf-label{grid-column:1 / -1}
+}

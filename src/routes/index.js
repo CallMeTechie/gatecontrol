@@ -425,7 +425,7 @@ const GWIZ_I18N_PREFIXES = ['gwiz.', 'gwe.', 'gwn.', 'gwh.', 'gwp.', 'gwr.', 'gw
 
 // Strings the users list and the user profile hand to users.js (one JSON
 // island on both pages, like the settings page; up.* for the profile).
-const USERS_I18N_PREFIXES = ['us.', 'users.mb.', 'error.users.', 'error.tokens.', 'error.enrollment.', 'enrollment.', 'common.', 'passkey.error_not_found', 'up.', 'avatar.'];
+const USERS_I18N_PREFIXES = ['us.', 'users.mb.', 'error.users.', 'error.tokens.', 'error.enrollment.', 'enrollment.', 'common.', 'passkey.error_not_found', 'up.', 'avatar.', 'myprofile.kind.', 'myprofile.state.', 'myprofile.vis.'];
 
 // Strings of the groups page (groups.js).
 const GROUPS_I18N_PREFIXES = ['grp.', 'error.groups.', 'common.', 'avatar.'];
@@ -522,6 +522,8 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
       try { extraLocals.pluginCatalog = require('../services/plugins/catalog').enabled(); } catch { extraLocals.pluginCatalog = false; }
     }
     if (!isAdmin) extraLocals.portalUrl = portalLink();
+    // Profil: the further fields of the user profile live on "Mein Profil" in the portal (docs/feature-user-profile.md)
+    if (template === 'profile') { const pl = portalLink(); extraLocals.profilePortalUrl = pl ? `${pl}/portal#profil` : null; }
 
     // Inject RDP route count for sidebar badge (all pages)
     try {

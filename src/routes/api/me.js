@@ -35,7 +35,8 @@ const activity = require('../../services/activity');
 const logger = require('../../utils/logger');
 const qrcode = require('../../services/qrcode');
 const { isDeviceToken } = require('../../services/userVisibility');
-const { avatarWriteLimiter } = require('../../middleware/rateLimit');
+const { avatarWriteLimiter, profileWriteLimiter } = require('../../middleware/rateLimit');
+const profileApi = require('./profileApi');
 const { avatarUpload, handlers: avatarHandlers } = require('./avatarApi');
 
 /** The web session's account (the /api/v1/me mount). */
@@ -187,7 +188,14 @@ router.post('/enrollment', selfServiceLimiter, async (req, res) => {
  *   PUT    /api/v1/[portal/]me/color   { color: key | null } → { ok, color, colorHex }
  */
 const ownAvatar = avatarHandlers((req) => req.meUserId, (req) => ({ actorId: req.meUserId, ip: req.ip, source: 'user' }));
-router.get('/profile', ownAvatar.profile);
+/*
+ * The own profile (docs/feature-user-profile.md, routes/api/profileApi.js) — the portal's "Mein Profil", also for
+ * members without "Mein Bereich" (portal session): GET /profile answers picture and colour as before plus `profile`;
+ * PATCH /profile, /profile/phones…, /profile/emails…, GET /profile/export.
+ */
+const ownProfile = profileApi.handlers((req) => req.meUserId, (req) => ({ actorId: req.meUserId, ip: req.ip, source: 'user' }));
+router.get('/profile', ownProfile.get);
+profileApi.mount(router, ownProfile, { write: [profileWriteLimiter] });
 router.put('/avatar', avatarWriteLimiter, avatarUpload, ownAvatar.putAvatar);
 router.delete('/avatar', avatarWriteLimiter, ownAvatar.deleteAvatar);
 router.put('/color', avatarWriteLimiter, ownAvatar.putColor);
