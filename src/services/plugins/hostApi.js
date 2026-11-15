@@ -4,6 +4,7 @@
 // Every call is checked against the plugin's plugin.json permissions here —
 // the plugin process itself is never trusted.
 
+const logger = require('../../utils/logger');
 const netPolicy = require('./netPolicy');
 const storage = require('./storage');
 const pluginSettings = require('./pluginSettings');
@@ -1651,9 +1652,25 @@ async function bridgeFetch(plugin, br, a) {
   } catch (e) {
     file.stream.destroy();
     if (e instanceof media.MediaError && MEDIA_ERRORS[e.code]) throw new HostApiError(MEDIA_ERRORS[e.code], e.code === 'empty' ? 'the file is empty' : e.code);
-    if (e instanceof media.MediaError) throw new HostApiError('ERR_BRIDGE_UNREACHABLE', 'the file did not arrive whole', 'unreachable');
+    if (e instanceof media.MediaError) throw Object.assign(new HostApiError('ERR_BRIDGE_UNREACHABLE', 'the file did not arrive whole', 'unreachable'), { detail: e.code });
     throw e;
   }
+}
+
+// A file that could not be fetched: one warning per plugin and code/reason in FETCH_WARN_MS — the code and the reason
+// only (never the reference, a name or an address), so "wird geladen" that never ends shows in the server's log.
+const FETCH_WARN_MS = 3600000;
+const fetchWarned = new Map();
+function noteFetchFailure(plugin, e) {
+  const code = String((e && e.code) || 'error').replace(/[^A-Za-z0-9_]/g, '').slice(0, 40);
+  const reason = e && typeof e.reason === 'string' ? e.reason.replace(/[^A-Za-z0-9_]/g, '').slice(0, 40) : null;
+  const k = `${plugin.id}|${code}|${reason}`;
+  const now = Date.now();
+  if (now - (fetchWarned.get(k) || 0) < FETCH_WARN_MS) return;
+  if (fetchWarned.size > 200) fetchWarned.clear();
+  fetchWarned.set(k, now);
+  const detail = e && typeof e.detail === 'string' ? e.detail.replace(/[^A-Za-z0-9_]/g, '').slice(0, 40) : undefined;
+  logger.warn({ plugin: plugin.id, code, reason, detail }, 'bridges: a file was not fetched');
 }
 
 /** A file of this plugin to be sent over a bridge: its own, stored, let through by the virus scan → what bridges.send reads. */
@@ -1686,7 +1703,8 @@ async function bridgesCall(plugin, op, args) {
     const uid = a.userId;
     need(Number.isSafeInteger(uid) && uid > 0, 'ERR_INVALID', 'invalid user id');
     if (op === 'media.fetch') {
-      const r = await bridgeFetch(plugin, br, a);
+      let r;
+      try { r = await bridgeFetch(plugin, br, a); } catch (e) { noteFetchFailure(plugin, e); throw e; }
       // version 5: taken over — the homeserver's copy may go
       try { br.mediaFetched(uid, a.ref); } catch { /* noted at the next fetch */ }
       return r;

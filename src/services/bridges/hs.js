@@ -172,7 +172,8 @@ function mxcOf(v, serverName) {
 /**
  * Download a file as the person's internal account (authenticated media, Matrix v1.11). Nothing is held in memory:
  * → { stream, length, mime } — the caller reads `stream` to its end or destroys it. Refused before a byte is read
- * when the homeserver names no length or more than `max` bytes (reason too_large).
+ * when the homeserver names more than `max` bytes (reason too_large); `length` null when it answers chunked (no
+ * Content-Length) — then the caller stops at `max`.
  */
 function download(target, mxid, mxc, { max, serverName } = {}) {
   checkTarget(target);
@@ -199,9 +200,11 @@ function download(target, mxid, mxc, { max, serverName } = {}) {
         });
         return;
       }
-      const length = Number(res.headers['content-length']);
-      if (!Number.isSafeInteger(length) || length < 1) { res.destroy(); fail(new HsError('ERR_BRIDGE', 'the homeserver named no length', 'bad_answer')); return; }
-      if (Number.isSafeInteger(max) && length > max) { res.destroy(); fail(new HsError('ERR_BRIDGE', 'the file is too large', 'too_large')); return; }
+      // no Content-Length (an answer sent chunked): length null — the caller counts what arrives, at most `max`
+      const raw = res.headers['content-length'];
+      const length = raw == null && res.headers['transfer-encoding'] ? null : Number(raw);
+      if (length !== null && (!Number.isSafeInteger(length) || length < 1)) { res.destroy(); fail(new HsError('ERR_BRIDGE', 'the homeserver named no length', 'bad_answer')); return; }
+      if (length !== null && Number.isSafeInteger(max) && length > max) { res.destroy(); fail(new HsError('ERR_BRIDGE', 'the file is too large', 'too_large')); return; }
       const ct = String(res.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
       settled = true;
       resolve({ stream: res, length, mime: MIME_RE.test(ct) ? ct : 'application/octet-stream' });

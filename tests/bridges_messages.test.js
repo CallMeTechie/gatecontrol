@@ -305,6 +305,29 @@ describe('the neutral events', () => {
     assert.equal(evs[2].sender.id, evs[1].contact.id);
   });
 
+  it('never a phone number as a name: a chat or contact the bridge names by number gets none, " (WA)" goes', async () => {
+    // mautrix-whatsapp's own template falls back to the number ("+49 151 00000000 (WA)") and to its redacted form
+    const room = '!m5n:gc.internal';
+    const chat = await annaAndKim(room);
+    await hs.push('t-m5n', { events: [
+      ev(room, BOT, 'm.room.name', { name: '+4915100000000 (WA)' }, { state_key: '' }),
+      member(room, KIM, KIM, 'join', '+49 151 00000000'),
+      msg(room, KIM, 'hi'),
+      ev(room, BOT, 'm.room.name', { name: '+4\u2219\u2219\u2219\u2219\u2219\u2219\u2219\u2219\u221900 (WA)' }, { state_key: '' }),
+      member(room, KIM, KIM, 'join', 'Kim Muster (WA)'),
+      ev(room, BOT, 'm.room.name', { name: 'Kim Muster (WA)' }, { state_key: '' }),
+    ] });
+    const evs = await pulled();
+    assert.deepEqual(evs.map((e) => e.type), ['chat', 'contact', 'message', 'contact', 'chat']);
+    assert.equal(evs[0].chat.id, chat);
+    assert.equal(evs[0].chat.name, null, 'a number is no name');
+    assert.equal(evs[1].contact.name, null);
+    assert.equal(evs[2].sender.name, null);
+    assert.equal(evs[3].contact.name, 'Kim Muster', 'the suffix goes');
+    assert.equal(evs[4].chat.name, 'Kim Muster');
+    assert.doesNotMatch(JSON.stringify(evs), /151|0{6}|\(WA\)|\u2219/);
+  });
+
   it('typing and read receipts go out with the wake-up call and are never stored', async () => {
     const room = '!m6:gc.internal';
     const chat = await annaAndKim(room);

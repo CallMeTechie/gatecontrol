@@ -218,7 +218,34 @@ differs from the built-in defaults is written, the bridge fills in the rest):
 `backfill.enabled`; `double_puppet.*` (emptied — the defaults carry example
 servers); `encryption.allow/default/require`; `logging`;
 `network.history_sync.max_initial_conversations` (0),
-`.request_full_sync`, `.media_requests.auto_request_media`.
+`.request_full_sync`, `.media_requests.auto_request_media`;
+`network.displayname_template` (`{{or .BusinessName .PushName}}`, see
+[Names](#names)).
+
+### Names
+
+mautrix-whatsapp v0.2610.0 names a contact's account ("ghost") with
+`{{or .BusinessName .PushName .Phone .RedactedPhone "Unknown user"}} (WA)`
+(`pkg/connector/example-config.yaml`, `config.go formatDisplayname`): as long
+as it knows no push name — right after a link, before the contact wrote — the
+name **is the phone number**, and the DM room's name follows the ghost
+(bridgev2 `private_chat_portal_meta`, `Portal.UpdateInfoFromGhost`). Found in
+the first real test: a chat „+49… (WA)“. Therefore:
+
+* the template is `{{or .BusinessName .PushName}}` — what the contact shows
+  publicly, no number, no suffix (the apps mark the network themselves). Not
+  `.FullName`: that is the name in the *linking person's* address book, and a
+  ghost is shared by everybody who has that contact (its name and every
+  member event carry it into the other person's rooms). No name → empty.
+* every name leaves the server through `services/bridges/names.js`: the
+  suffix ` (WA)` goes, a name that is only a number (≥ 5 digits, or the
+  bridge's redacted form with `∙`) and „Unknown user“ become `null` — room
+  names, member names, contact lists, `resolve`/`createDm`. A ghost keeps its
+  old name until the bridge syncs it again (push name, contact sync after an
+  app state sync); the check covers that time too.
+* the plugin names a chat without a name after the person's own address
+  book (Mail, by `matchNumbers` — the number never leaves the server) and
+  otherwise with a neutral label („WhatsApp-Kontakt“).
 
 **Sparing with the disk** (the server's does about 38 ms per fdatasync):
 small homeserver caches and no presence; the bridge's SQLite driver
@@ -348,8 +375,9 @@ ref. A location has no file: `media.geo { lat, lon }` from `geo_uri`.
 `gc.bridges.media.fetch(userId, network, ref, { name })` needs no person — it
 sends nothing and reads only what was delivered for that person — and stores
 into **this** plugin's media: the size limit (`media.maxBytes`) is checked
-against the homeserver's Content-Length before a byte is read (no length: not
-read at all), the type must be one of `media.types` (any other file that is
+against the homeserver's Content-Length before a byte is read (an answer
+without Content-Length, sent chunked, is counted as it arrives and stopped at
+the limit), the type must be one of `media.types` (any other file that is
 no picture, sound or video is kept as `application/octet-stream`, a download),
 the quota and the room on the server as for every file. The bytes go straight
 from the socket into the sealed file (one fsync, as for every file); the
@@ -358,7 +386,10 @@ messenger the source "messenger"), a later result comes with the hook
 `mediaScanned`. Refusals: `ERR_MEDIA_TOO_LARGE`, `ERR_MEDIA_TYPE`,
 `ERR_MEDIA_QUOTA`, `ERR_BUSY` (scan unavailable and uploads held),
 `ERR_BRIDGE` (`m_not_found`, `bad_answer`), `ERR_BRIDGE_UNREACHABLE`,
-`ERR_INVALID` (a ref of another person, or of another installation).
+`ERR_INVALID` (a ref of another person, or of another installation). Every
+refusal is written to the server's log once per plugin, code and reason an
+hour („bridges: a file was not fetched“, `code`, `reason`, `detail` — never
+the ref, a name or an address): a file that keeps „loading“ shows there.
 
 **Pictures.** The picture of a chat (`m.room.avatar`; with
 `private_chat_portal_meta` also the contact's picture in a direct chat) is

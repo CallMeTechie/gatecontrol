@@ -48,6 +48,8 @@
 const crypto = require('node:crypto');
 const logger = require('../../utils/logger');
 const hs = require('./hs');
+// never a phone number as a name (names.js)
+const { nameOut } = require('./names');
 
 const TEXT_MAX = 16000;
 const NAME_MAX = 120;
@@ -190,7 +192,7 @@ function create(opts) {
     if (!ev || typeof ev !== 'object' || typeof ev.type !== 'string') return null;
     const c = ev.content && typeof ev.content === 'object' ? ev.content : {};
     if (ev.type === 'm.room.name') {
-      const n = line(c.name, NAME_MAX) || null;
+      const n = nameOut(c.name, NAME_MAX);
       if (n === i.name) return null;
       i.name = n;
       return 'name';
@@ -211,7 +213,7 @@ function create(opts) {
       return 'kind';
     }
     if (ev.type === 'm.room.member' && typeof ev.state_key === 'string' && ghostOf(ev.state_key)) {
-      const n = line(c.displayname, NAME_MAX) || null;
+      const n = nameOut(c.displayname, NAME_MAX);
       const a = hs.mxcOf(c.avatar_url, opts.serverName) ? c.avatar_url : null;
       if (c.membership !== 'join' && c.membership !== 'invite') return null;
       if (i.names.has(ev.state_key) && i.names.get(ev.state_key) === n && (i.avatars.get(ev.state_key) || null) === a) return null;

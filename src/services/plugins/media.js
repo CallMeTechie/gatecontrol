@@ -384,7 +384,8 @@ async function storeBuffer(plugin, buf, { mime, name = null, owner = null } = {}
  * Store `length` bytes the host streams from elsewhere (gc.cloud.import —
  * services/plugins/cloud.js; gc.bridges.media.fetch (version 4), scanKind
  * 'bridge'): the same checks and writer as storeBuffer(),
- * the bytes never held in memory. `owner` is the person who asked.
+ * the bytes never held in memory. `length` null: the source names none — what
+ * arrives counts, at most media.maxBytes (a bridge's homeserver answering chunked). `owner` is the person who asked.
  * @returns {Promise<{ mediaId, mime, bytes, name }>}
  * @throws {MediaError} no_media, unsupported_type, empty, too_large, quota_exceeded, length_mismatch / aborted
  */
@@ -393,12 +394,14 @@ async function storeStream(plugin, source, { length, mime, name = null, owner = 
   if (!decl) throw new MediaError('no_media', 404);
   const type = baseType(mime);
   if (!typeAllowed(decl, type)) throw new MediaError('unsupported_type', 415);
-  if (!Number.isSafeInteger(length) || length < 1) throw new MediaError('empty', 400);
-  if (length > decl.maxBytes) throw new MediaError('too_large', 413);
-  if (usage(plugin.id).bytes + length > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
-  capacity(plugin, length);
+  // length null: a source that names no length (a homeserver answering chunked) — what arrives, at most maxBytes
+  const open = length === null;
+  if (!open && (!Number.isSafeInteger(length) || length < 1)) throw new MediaError('empty', 400);
+  if (!open && length > decl.maxBytes) throw new MediaError('too_large', 413);
+  if (usage(plugin.id).bytes + (open ? 0 : length) > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
+  capacity(plugin, open ? 1 : length);
   const clean = cleanName(name);
-  const out = await writeFile(plugin, { source, length, mime: type, owner, name: clean, scan: { kind: scanKind } });
+  const out = await writeFile(plugin, { source, length, max: open ? decl.maxBytes : null, mime: type, owner, name: clean, scan: { kind: scanKind } });
   return { ...out, name: clean };
 }
 
