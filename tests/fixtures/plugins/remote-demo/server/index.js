@@ -17,6 +17,7 @@ const CALLS = {
   listener: (gc, a) => gc.remote.listener(a),
   'listener.remove': (gc, a) => gc.remote.listener.remove(a.key),
   listeners: (gc) => gc.remote.listeners(),
+  gateways: (gc) => gc.remote.gateways(),
   'recordings.available': (gc) => gc.remote.recordings.available(),
   'recordings.list': (gc, a) => gc.remote.recordings.list(a),
   'recordings.stream': (gc, a) => gc.remote.recordings.stream(a.id),
@@ -49,7 +50,7 @@ module.exports = {
     return { ok: true };
   },
   async clientFacade(payload, gc) {
-    await keep(gc, 'facadeCalls', { op: payload.op, id: payload.id, query: payload.query, user: payload.user });
+    await keep(gc, 'facadeCalls', { op: payload.op, id: payload.id, query: payload.query, user: payload.user, server: payload.server || null });
     const a = await gc.storage.get('facade');
     return a || { handled: false };
   },

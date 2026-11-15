@@ -408,6 +408,26 @@ for (const [path, pluginId, sub] of MOVED_PAGES) {
   });
 }
 
+/**
+ * The page /rdp and the plugin "Fernzugriff" (gatecontrol-remote): { redirect } once the built-in data was taken
+ * over by the installed plugin; { installed: true, manageUrl } while it is installed but not taken over yet;
+ * { installed: false, url, catalog, pluginId } while it is not installed (the upgrade notice); else null.
+ */
+function rdpMoved() {
+  const ID = 'gatecontrol-remote';
+  try {
+    const legacy = require('../services/plugins/legacy');
+    const registry = require('../services/plugins/registry');
+    const p = registry.resolve(ID);
+    if (p) {
+      if (legacy.everImported(p.id)) return { redirect: legacy.movedPage(ID) };
+      return { installed: true, manageUrl: `/settings/plugins/manage/${p.id}` };
+    }
+    const mv = legacy.pendingMoves().find((m) => m.pluginId === ID);
+    return mv ? { installed: false, url: mv.url, catalog: mv.catalog, pluginId: ID } : null;
+  } catch { return null; }
+}
+
 // Notification centre page: notify.* plus the common strings its script reads
 // (notifications.njk island data-prefixes must list the same ones).
 const NOTIFY_I18N_PREFIXES = ['notify.', 'common.'];
@@ -508,6 +528,13 @@ pages.forEach(({ path, template, nav, titleKey, member }) => {
     // former integration whose plugin is not installed yet.
     if (template === 'dashboard' || template === 'settings') {
       try { extraLocals.builtinMoved = require('../services/plugins/legacy').pendingMoves(); } catch { extraLocals.builtinMoved = []; }
+    }
+    // Remote Desktops is the plugin "Fernzugriff" now (docs/feature-remote-access.md, stage 1): once its data was
+    // taken over the page leads to the plugin; before, it says so (not installed: install it; installed: take over)
+    if (template === 'rdp') {
+      const moved = rdpMoved();
+      if (moved && moved.redirect) return res.redirect(moved.redirect);
+      extraLocals.rdpMoved = moved;
     }
     // Settings → VPN & Netzwerk → "Namen im VPN": the legacy zone for the labels
     if (template === 'settings') {

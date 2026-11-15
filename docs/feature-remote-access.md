@@ -38,9 +38,23 @@ id `gatecontrol-remote`). This page describes what the core provides for it
   take-over; credentials through the facade with ECDH only.
 * Platform `linux` for `gc.devices` (the Linux agent of stage 4).
 * **Nothing changes for users yet**: the built-in Remote Desktops works as
-  before, the notice „Remote Desktops wird das Shop-Plugin Fernzugriff“
-  (`plugins.moved.remote`) is prepared but not shown (`notice: false` of the
-  dataset). It is switched on with stage 1, when the plugin is in the shop.
+  before. The notice `plugins.moved.remote` was prepared here and is switched
+  on with stage 1 (below).
+
+## Stage 1 (the plugin „Fernzugriff“ 1.0)
+
+The plugin (gatecontrol-plugins, `plugins/gatecontrol-remote`) has the pages Geräte, Berechtigungen, Sitzungen and
+Einstellungen, the portal tab and the profile section, takes the built-in data over and answers the old app API. The
+core adds what only it knows:
+
+* `gc.remote.gateways()` — the home gateways and failover pools for the device page (names and ids only).
+* The facade passes `server: { connectHost }` and completes the plugin's answers like the old endpoints:
+  `connect_address` of a gateway target, the DNS names of a device (`peer_hostname`, `peer_fqdn`,
+  `peer_fqdn_primary`, feature `internal_dns`) — see plugins.md "Facade for the old app API".
+* The upgrade notice `plugins.moved.remote` is switched on (dashboard, plugin area, the page `/rdp`):
+  "Remote Desktops ist jetzt das Plugin „Fernzugriff“". With the plugin installed but its data not taken over yet,
+  `/rdp` points to "Daten übernehmen" on the plugin's page; once taken over, `/rdp` leads to the plugin's page.
+  The built-in tables and `/api/v1/rdp` stay (the Windows app's wake-on-LAN and status calls use them).
 
 ## Licence
 

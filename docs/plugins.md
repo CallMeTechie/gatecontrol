@@ -2975,6 +2975,7 @@ resolved by the core, every address is checked and guacd gets the checked addres
 | `gc.remote.wake(target)` | `{ sent: true, via: gateway \| server }` — magic packet to `target.mac` (through the gateway of the target / its listener, else the server's broadcast); once per 10 s and MAC (`ERR_REMOTE_RATE_LIMITED`) |
 | `gc.remote.listener({ key, gateway: { peerId } \| { poolId }, host, port, listenPort? })` | `{ key, routeId, listenPort, gateway, lanHost, lanPort, enabled, shared }` — an L4 route (TCP, no TLS) on the server that the gateway passes on to `host:port` in its home network, as old gateway-mode RDP routes have it. An existing L4 route with exactly this target and port (the one of an old RDP route) is **reused** (`shared: true`) and never removed by the plugin. A port in use: `ERR_REMOTE_PORT_IN_USE` |
 | `gc.remote.listener.remove(key)` / `gc.remote.listeners()` | `{ removed }` / `[listener]` |
+| `gc.remote.gateways()` | `{ gateways: [{ peerId, name, online }], pools: [{ poolId, name }] }` — the home gateways and failover pools a listener can name (names and ids only). Since the GateControl after 1.281.0 (stage 1 of "Fernzugriff"): feature-detect it (`typeof gc.remote.gateways === 'function'`) |
 | `gc.remote.recordings.available()` | `{ available: false, reason: 'not_yet' }` in version 1 (recording comes with stage 3) |
 | `gc.remote.recordings.list({ targetId?, sessionId?, limit? })` / `stream(id)` / `remove(id)` | `[]` until stage 3 / `{ url, expiresAt }` (`ERR_REMOTE_RECORDING_UNAVAILABLE` for now) / `{ removed }` |
 | `gc.remote.on('session', handler)` | hook `remoteSession`: `{ phase: start \| end \| abort, sessionId, ref, targetId, userId, protocol, mode, record, startedAt, reason?, durationSeconds?, endedAt? }` — `end` for `normal` / `ended_by_plugin`, `abort` for `heartbeat`, `plugin_stopped`, `reclaimed` |
@@ -3014,6 +3015,14 @@ async clientFacade({ op, id, query, body, user: { id, tokenId, peerId, scopes, p
 //   { status, body, credential: { handle, fields? } }   connect: the core adds connection.credentials_e2ee
 //   { guac: { target, protocol, mode?, credential?, options? } }   browserSession: the core answers { ok, token, wsPath, ttl }
 ```
+
+The payload also carries `server: { connectHost }` (since the GateControl after 1.281.0) — the address an app
+connects to for a target behind a home gateway (`GC_RDP_PUBLIC_HOST`, else the host of the base URL, as
+`resolveConnectEndpoint`). Its presence tells the plugin that the core completes the answers like the old
+endpoints: a route of `list` or the `connection` of `connect` with `access_mode: 'gateway'` and no
+`connect_address` gets it, and a `connection` without `peer_hostname` (the key left out) gets `peer_hostname`,
+`peer_fqdn` and `peer_fqdn_primary` of its `host` (feature `internal_dns`, else `null`) — the plugin needs no access
+to the peers. On 1.281.0 (no `server`) the plugin "Fernzugriff" answers `{ handled: false }`.
 
 Credentials never pass through the plugin and only go out with **ECDH** (`ecdhPublicKey` of the
 app): without it the facade answers `400 ecdh_required` — no RSA, no plaintext. A plugin
@@ -5686,8 +5695,10 @@ are in backups (see "Backup") and are brought into the plugin once. Code:
   "Erneut übernehmen" keeps them. `sessions[]` `{ id, route_id, token_id, token_name, peer_id,
   status, started_at, last_heartbeat, ended_at, duration_seconds, end_reason, client_ip, via,
   protocol }`, `maintenance[]` `{ route_id, enabled, schedule }`. The upgrade notice
-  (`plugins.moved.remote`, "Remote Desktops wird das Shop-Plugin „Fernzugriff“") is prepared
-  but switched off (`notice: false` in `DATASETS`) until stage 1.
+  (`plugins.moved.remote`, "Remote Desktops ist jetzt das Plugin „Fernzugriff“") is shown since
+  stage 1 like the others; the page `/rdp` says it as well (installed but not taken over yet: "Daten
+  übernehmen" on the plugin's page) and leads to `/plugins/gatecontrol-remote` once the data was taken over
+  (`movedPage`). `/api/v1/rdp` and the core's tables stay.
 * **Upgrade notice** (`pendingMoves()`): while a dataset has data
   (`counts()` > 0), its plugin is not installed and the data was **never
   imported**, the dashboard and the plugin area say that the feature is a

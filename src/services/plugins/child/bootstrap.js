@@ -694,6 +694,8 @@ function makeRemote() {
     listener: Object.freeze(listener),
     /** listeners() → [listener] */
     listeners: () => hostCall('remote.listeners', {}),
+    /** gateways() → { gateways: [{ peerId, name, online }], pools: [{ poolId, name }] } — for listener(); feature-detect it */
+    gateways: () => hostCall('remote.gateways', {}),
     recordings: Object.freeze({
       /** available() → { available, reason } */
       available: () => hostCall('remote.recordings.available', {}),

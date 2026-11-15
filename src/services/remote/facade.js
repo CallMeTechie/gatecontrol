@@ -25,6 +25,15 @@
 // `{ guac: { target, protocol, mode?, credential?, options? } }` for
 // browserSession: the core makes a ticket for the app's person and answers
 // { ok, token, wsPath, ttl } like the old endpoint.
+//
+// What only the core knows (stage 1 of the plugin): the payload carries
+// `server: { connectHost }` — the address an app connects to for a target
+// behind a home gateway (GC_RDP_PUBLIC_HOST, else the host of the base URL),
+// the one resolveConnectEndpoint uses — and the core completes the plugin's
+// answer like the old endpoints: a route / connection of a gateway target
+// without connect_address gets it, a connection without the DNS names of its
+// host (peer_hostname, peer_fqdn, peer_fqdn_primary — undefined in the answer)
+// gets them (internal_dns), so the plugin needs no access to the peers.
 
 const logger = require('../../utils/logger');
 
@@ -62,6 +71,40 @@ function selfIpOf(req) {
   } catch { return null; }
 }
 
+/** The address an app connects to for a gateway target (rdp.resolveConnectEndpoint). */
+function connectHost() {
+  const config = require('../../../config/default');
+  if (config.rdp && config.rdp.publicHost) return config.rdp.publicHost;
+  try { return new URL(config.app.baseUrl).hostname || null; } catch { return null; }
+}
+
+/** The DNS names of a VPN address (the old /connect: internal_dns, the legacy and the primary zone) or nulls. */
+function peerNames(host) {
+  const none = { peer_hostname: null, peer_fqdn: null, peer_fqdn_primary: null };
+  if (typeof host !== 'string' || !host) return none;
+  try {
+    if (!require('../license').hasFeature('internal_dns')) return none;
+    const row = require('../../db/connection').getDb().prepare('SELECT hostname FROM peers WHERE hostname IS NOT NULL AND allowed_ips LIKE ?').get(`${host}/%`);
+    if (!row || !row.hostname) return none;
+    const config = require('../../../config/default');
+    return { peer_hostname: row.hostname, peer_fqdn: `${row.hostname}.${config.dns.domain}`, peer_fqdn_primary: `${row.hostname}.${require('../vpnNames').current().primary}` };
+  } catch { return none; }
+}
+
+/** Complete the plugin's answer with what only the core knows (see the head). */
+function complete(op, body) {
+  if (!body || typeof body !== 'object') return body;
+  const fill = (r) => {
+    if (r && typeof r === 'object' && r.access_mode === 'gateway' && (r.connect_address === null || r.connect_address === undefined)) r.connect_address = connectHost();
+  };
+  if (op === 'list' && Array.isArray(body.routes)) body.routes.forEach(fill);
+  if (op === 'connect' && body.connection && typeof body.connection === 'object') {
+    fill(body.connection);
+    if (body.connection.peer_hostname === undefined) Object.assign(body.connection, peerNames(body.connection.host));
+  }
+  return body;
+}
+
 function payloadOf(op, req) {
   let platform = null;
   try { const d = require('../plugins/devices').viewerDevice(req); platform = d ? d.platform : null; } catch { platform = null; }
@@ -77,6 +120,8 @@ function payloadOf(op, req) {
       scopes: Array.isArray(req.tokenScopes) ? req.tokenScopes.slice(0, 20) : [], platform, selfIp: selfIpOf(req),
     },
     ip: req.ip || null,
+    // what only the core knows; its presence tells the plugin that the core completes the answers (complete())
+    server: { connectHost: connectHost() },
   };
 }
 
@@ -153,7 +198,7 @@ function middleware(op) {
       return res.status(r.status).json(r.body);
     }
     const status = Number.isInteger(answer.status) && answer.status >= 200 && answer.status <= 599 ? answer.status : 200;
-    const body = strip(answer.body && typeof answer.body === 'object' ? answer.body : { ok: status < 400 });
+    const body = complete(op, strip(answer.body && typeof answer.body === 'object' ? answer.body : { ok: status < 400 }));
     if (answer.credential != null && status < 300) {
       const c = credentialsFor(plugin, answer.credential, req.query && req.query.ecdhPublicKey);
       if (c.error) return res.status(c.status).json({ ok: false, error: c.error });
@@ -164,4 +209,4 @@ function middleware(op) {
   };
 }
 
-module.exports = { middleware, active, DATASET_PLUGIN, OPS, _hookMs: null };
+module.exports = { middleware, active, complete, connectHost, DATASET_PLUGIN, OPS, _hookMs: null };
