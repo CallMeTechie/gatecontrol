@@ -303,13 +303,13 @@ An invite for a second person into a known room, or from an account that is
 no bridge, is ignored.
 
 **Neutral events** (`events.pull`), each with `seq`, `userId`, `network`,
-`chat: { id, kind: 'direct' | 'group', name, avatar? }` (`avatar` since stage 4), `at` (ms):
+`chat: { id, kind: 'direct' | 'group', name, avatar?, channel?, readOnly? }` (`avatar` since stage 4, `channel` / `readOnly` since version 7 — see "Channels, groups, format"), `at` (ms):
 
 | `type` | Fields |
 |---|---|
 | `chat` | the chat became known or changed its name / kind; `closed: true` when the account left |
-| `message` | `id`, `sender`, `kind: 'text' \| 'notice' \| 'media' \| 'unsupported'`, `text`, `replyTo` (a message id or null), `media: { kind: 'image' \| 'video' \| 'audio' \| 'voice' \| 'file' \| 'sticker' \| 'location', name }` for `media` — since stage 4 with `ref` and the file's details (see "Files") |
-| `edit` | `id`, `sender`, `target`, `text` |
+| `message` | `id`, `sender`, `kind: 'text' \| 'notice' \| 'media' \| 'unsupported'`, `text`, `marks?`, `preview?` (version 7), `replyTo` (a message id or null), `media: { kind: 'image' \| 'video' \| 'audio' \| 'voice' \| 'file' \| 'sticker' \| 'location', name }` for `media` — since stage 4 with `ref` and the file's details (see "Files") |
+| `edit` | `id`, `sender`, `target`, `text`, `marks?`, `preview?` (version 7) |
 | `redact` | `id`, `sender`, `target` — a message or a reaction |
 | `reaction` | `id`, `sender`, `target`, `emoji` |
 | `status` | `target`, `status: 'sent' \| 'delivered' \| 'failed'`, `reason`, `retriable` — the bridge's word on a message GateControl sent (`com.beeper.message_send_status`); `delivered` only in direct chats |
@@ -318,7 +318,7 @@ no bridge, is ignored.
 
 `sender`: `{ id, name, avatar }` (a contact; `id` is an HMAC of the bridge's address,
 `c…`), `{ self: true }` (written by the person in the messenger's own app) or
-`{ system: true }` (the bridge itself). Messages GateControl sent itself do
+`{ system: true }` (the bridge itself) — since version 7 `{ channel: true, system: true }` for a channel's post. Messages GateControl sent itself do
 not come back. Not stored, only in the hook's payload: `typing`
 `{ chat, contacts: [id] }` and `receipt` `{ chat, upTo, reader }`.
 
@@ -572,6 +572,60 @@ folder) reads and measures, it changes no setting:
 
 `status().host.probe` passes the **numbers** on (the messenger's settings
 show them); the log lines stay in the file.
+
+## Channels, groups, format (gc.bridges version 7)
+
+"Chats v2 – Teil A". Read from the sources of the pinned versions (mautrix-whatsapp v0.2610.0, mautrix-go bridgev2) and
+tested against the stand-in homeserver (`tests/bridges_channels.test.js`); not yet seen with a real channel.
+
+**Kind of a chat.** bridgev2 writes `com.beeper.room_type.v2` into `m.bridge` only for a direct chat (`dm`, then also
+`com.beeper.room_type: dm`) and a space (`bridgev2/portal.go` `getBridgeInfo`; the field has `omitempty`). A WhatsApp group
+and a channel are `RoomTypeDefault` (`pkg/connector/chatinfo.go` `wrapGroupInfo`, `wrapNewsletterInfo`) — the field is
+missing, and before version 7 every group stayed `direct`. Now the kind is read from the chat's id at the bridge,
+`m.bridge` → `channel.id` (`waid.MakePortalID`: the WhatsApp JID): `…@g.us` a group, `…@newsletter` a channel,
+`…@s.whatsapp.net` / `…@lid` a person. The id never leaves `events.js` (like a phone number).
+
+**`chat` fields** (whenever the room's state is known, so in every `chat` event): `channel` — a channel the person follows
+(`kind: 'group'`); `readOnly` — the person may not write: their level in `m.room.power_levels` (`users[@gc_<id>]`, else
+`users_default`) is below the one of `m.room.message` (`events`, else `events_default`). A channel has
+`events_default: 50` and the follower 0 (`wrapNewsletterInfo`), a WhatsApp group "only admins" `events_default` = the
+admin level (`wrapGroupInfo`, `IsAnnounce`). A change of the power levels sends a new `chat` event. `gc.bridges.chats()`
+names both too (`bridge_rooms.channel`, `read_only`, migration 150).
+
+**A channel's posts** come from the bridge's own account (`pkg/connector/id.go` `makeEventSender`: `NewsletterServer` →
+`EventSender{}`, "Send as bot"). In a channel the sender is `{ channel: true, system: true }` (`system` for plugins that
+only know version 6: they keep showing a notice), the post a `text` or `media` message — not a `notice` — and its edits,
+deletions and other kinds (`unsupported`) pass like a contact's. The bridge's own messages elsewhere stay notices.
+
+**Format** (`format.js`). mautrix-whatsapp keeps WhatsApp's markers (`*bold*`) in `body` and writes HTML into
+`formatted_body` (`pkg/msgconv/wa-text.go`). A `text` (also an `edit`, a caption) gets the text of that HTML and
+`marks: [{ type: 'bold' | 'italic' | 'strike' | 'code' | 'link', start, end, url? }]` — offsets in UTF-16 code units of
+`text`, end exclusive, marks may nest; `link` only for an http(s) address written as a link (never a mention — those are
+`matrix.to` addresses of the bridge's accounts — or another scheme). Lines (`<br>`, blocks) become `\n`, list items
+`• ` / `1. `, a quote `> `. The parser is strict: a tag, attribute or entity it does not know, or tags that do not fit,
+and the HTML is dropped — the message carries its plain `body`, without `marks`. No HTML ever reaches a plugin. Plain
+addresses in a text are no marks: the apps make them clickable themselves (in every chat).
+
+**Link preview.** `com.beeper.linkpreviews` (MSC4095; `pkg/msgconv/urlpreview.go`) → `preview: { url, title, description,
+site, image: { ref, mime, w, h, size } | null }` on a `text` message or `edit` — the first one, an http(s) `url` only (an
+address without a scheme gets `https://`), `site` = `og:site_name` or the host. The picture is a file reference like
+`media.ref` (fetched with `media.fetch`, noted in `bridge_media` for the clean-up).
+
+**History of a channel.** When a channel is opened its newest 10 posts are fetched (not 30); of the history the bridge
+brings at a new link (`backfill.max_initial_messages`, up to 200 per chat) a channel keeps the newest 10 in
+`bridge_backlog` (`channelTrim` — with what belongs to them; the files of the others are marked unwanted). The bridge
+cannot be told to leave channels out of the 30 conversations it fills at a link: `history_sync.max_initial_conversations`
+counts every conversation of WhatsApp's history sync by its last message (`pkg/connector/backfill.go`,
+`wadb/conversation.go` `getRecentConversations` — no filter by kind, no setting per kind). Whether WhatsApp's history
+sync includes channels at all is open (not seen with a real phone).
+
+**Rooms from before.** `bridge_rooms.channel` is NULL for a room known before version 7. Its next event, or
+`refreshRooms()` (20 rooms per tick of `index.js`), reads its state again and sends a `chat` event when kind, channel or
+readOnly differ — a group that was `direct` becomes `group` in the plugin without a new message.
+
+**Reactions** go out as before (`react`); `HandleMatrixReaction` has no special case for a channel — whether WhatsApp takes
+a reaction on a channel post is open. A refusal comes back as a `status` event (`failed`) with the reaction's id as
+`target`. The bridge passes on no reaction counts of a channel.
 
 ## Stages
 

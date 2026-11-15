@@ -342,8 +342,9 @@ function makeBridges() {
   });
   return Object.freeze({
     /** the version of this interface (raised when methods or fields are added; 5: history, health, status().backup / cleanup;
-     *  6: contacts, matchNumbers, createDmByRef) */
-    version: 6,
+     *  6: contacts, matchNumbers, createDmByRef; 7: channels — chat.channel / chat.readOnly, sender.channel, marks and
+     *  preview of a text) */
+    version: 7,
     /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion, clientOutdated }], host, messages, history, backup, cleanup } */
     status: () => hostCall('bridges.status', {}),
     /** configure({ enabled?, networks?: { whatsapp?: boolean }, history?: boolean, backupNow?: true, backupTime?: 'HH:MM' }) → status() — inside a changing request of an administrator */
@@ -362,7 +363,7 @@ function makeBridges() {
       /** ack(upTo) → { ok, pending } — events up to this seq are filed; the server forgets them */
       ack: (upTo) => hostCall('bridges.events.ack', { upTo }),
     }),
-    /** chats(userId, network) → [{ id, kind, open }] — inside a request of that person */
+    /** chats(userId, network) → [{ id, kind, open, channel, readOnly }] — inside a request of that person */
     chats: (userId, network) => hostCall('bridges.chats', { userId, network }),
     /**
      * send(userId, network, chatId, { txnId, text, replyTo?, edit? }) → { id } — inside a changing request of that person;
