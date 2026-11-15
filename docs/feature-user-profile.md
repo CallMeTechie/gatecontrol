@@ -49,7 +49,9 @@ goes back when the link ends), `admin`, `directory` (reserved for a number from 
 ## Recognition
 
 Two consents under "Erkennung", both off: **an meinem verknüpften WhatsApp** and **an meinen Telefonnummern**. The
-portal and the apps ask once — when WhatsApp is linked and when the first number is saved.
+portal and the apps ask once — when WhatsApp is linked and when the first number is saved. Where WhatsApp is linked (the messenger's page
+"Verknüpfte Dienste", in the portal and the apps) the messenger asks through `gc.bridges.recognition` (version 9:
+`get` → `{ asked, allowed, linked }`, `set(userId, allowed)`) — the same consent, kept with the time of the answer.
 
 `gc.bridges.matchAccounts(userId, network)` (version 8) asks "which of my contacts at the bridge are accounts here?".
 The server compares the numbers of the contact list the bridge keeps (no question to WhatsApp) with the keyed hashes:

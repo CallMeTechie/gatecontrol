@@ -9,6 +9,7 @@
 //   * "Meine Daten": numbers in plain text for the person only
 //   * gc.profile.get (permissions.profile) and gc.bridges.matchAccounts (version 8) with a stand-in bridge:
 //     consent off → nothing, a number in two accounts → nothing, never the viewer, unconfirmed = medium only
+//   * gc.bridges.recognition (version 9): the consent "an meinem WhatsApp" asked by the messenger where WhatsApp is linked
 
 const crypto = require('node:crypto');
 process.env.GC_ENCRYPTION_KEY = process.env.GC_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
@@ -390,6 +391,39 @@ describe('gc.bridges.matchAccounts (version 8)', () => {
 
   it('only inside a request of that person', async () => {
     await assert.rejects(hostApi.handle(PLUGIN({}), 'bridges.matchAccounts', { userId: viewer, network: 'whatsapp' }), (e) => e.code === 'ERR_NOT_PERSON');
+  });
+});
+
+describe('gc.bridges.recognition (version 9)', () => {
+  const get = (userId) => asPerson(userId, () => hostApi.handle(PLUGIN({}), 'bridges.recognition.get', { userId, network: 'whatsapp' }));
+  const set = (userId, allowed) => ctx.run('gatecontrol-messenger', userId, true, () => hostApi.handle(PLUGIN({}), 'bridges.recognition.set', { userId, network: 'whatsapp', allowed }));
+
+  it('asked once: the answer is the profile\'s consent "an meinem verknüpften WhatsApp", with its time', async () => {
+    const u = H.makeUser('pf-rec');
+    assert.deepEqual(await get(u), { asked: false, allowed: false, linked: false });
+    assert.deepEqual(await set(u, true), { asked: true, allowed: true, linked: false });
+    assert.equal(profile.ownView(u).recognition.byWhatsapp, true);
+    assert.equal(profile.ownView(u).recognition.whatsappAnswered, true);
+    // "Nein" is an answer too: asked stays true
+    assert.deepEqual(await set(u, false), { asked: true, allowed: false, linked: false });
+    assert.equal(profile.ownView(u).recognition.byWhatsapp, false);
+  });
+
+  it('only for whatsapp, only booleans, set only inside a changing request of that person', async () => {
+    const u = H.makeUser('pf-rec2');
+    await assert.rejects(asPerson(u, () => hostApi.handle(PLUGIN({}), 'bridges.recognition.get', { userId: u, network: 'signal' })), (e) => e.code === 'ERR_INVALID');
+    await assert.rejects(set(u, 'ja'), (e) => e.code === 'ERR_INVALID');
+    await assert.rejects(asPerson(u, () => hostApi.handle(PLUGIN({}), 'bridges.recognition.set', { userId: u, network: 'whatsapp', allowed: true })), (e) => e.code === 'ERR_NOT_PERSON');
+    await assert.rejects(hostApi.handle(PLUGIN({}), 'bridges.recognition.get', { userId: u, network: 'whatsapp' }), (e) => e.code === 'ERR_NOT_PERSON');
+    const other = H.makeUser('pf-rec3');
+    await assert.rejects(asPerson(other, () => hostApi.handle(PLUGIN({}), 'bridges.recognition.get', { userId: u, network: 'whatsapp' })), (e) => e.code === 'ERR_NOT_PERSON');
+    assert.equal(profile.ownView(u).recognition.whatsappAnswered, false);
+  });
+
+  it('a plugin without the bridges permission gets nothing', async () => {
+    const u = H.makeUser('pf-rec4');
+    const p = { id: 'gatecontrol-messenger', manifest: { permissions: { users: true } } };
+    await assert.rejects(asPerson(u, () => hostApi.handle(p, 'bridges.recognition.get', { userId: u })), (e) => e.code === 'ERR_BRIDGES_DENIED');
   });
 });
 

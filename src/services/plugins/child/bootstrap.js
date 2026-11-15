@@ -343,8 +343,8 @@ function makeBridges() {
   return Object.freeze({
     /** the version of this interface (raised when methods or fields are added; 5: history, health, status().backup / cleanup;
      *  6: contacts, matchNumbers, createDmByRef; 7: channels — chat.channel / chat.readOnly, sender.channel, marks and
-     *  preview of a text; 8: matchAccounts (the user profile)) */
-    version: 8,
+     *  preview of a text; 8: matchAccounts (the user profile); 9: recognition — the consent to be recognised by the own WhatsApp) */
+    version: 9,
     /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion, clientOutdated }], host, messages, history, backup, cleanup } */
     status: () => hostCall('bridges.status', {}),
     /** configure({ enabled?, networks?: { whatsapp?: boolean }, history?: boolean, backupNow?: true, backupTime?: 'HH:MM' }) → status() — inside a changing request of an administrator */
@@ -414,6 +414,13 @@ function makeBridges() {
     // ── since version 8: accounts among the contacts (docs/plugins.md "Messenger bridges", "Accounts") ──
     /** matchAccounts(userId, network) → { matches: [{ contactId, userId, strength: 'strong' | 'medium', via: 'own_whatsapp' | 'profile_phone' }] } — inside a request of that person */
     matchAccounts: (userId, network) => hostCall('bridges.matchAccounts', { userId, network }),
+    // ── since version 9: the consent to be recognised by the own WhatsApp (docs/plugins.md "Messenger bridges", "Accounts") ──
+    recognition: Object.freeze({
+      /** get(userId, network = 'whatsapp') → { asked, allowed, linked } — inside a request of that person */
+      get: (userId, network) => hostCall('bridges.recognition.get', { userId, network: network == null ? 'whatsapp' : network }),
+      /** set(userId, allowed, network = 'whatsapp') → get() — inside a changing request of that person */
+      set: (userId, allowed, network) => hostCall('bridges.recognition.set', { userId, allowed, network: network == null ? 'whatsapp' : network }),
+    }),
   });
 }
 

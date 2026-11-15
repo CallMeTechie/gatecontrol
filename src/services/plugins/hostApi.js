@@ -1631,6 +1631,9 @@ async function vpnDnsCall(plugin, op, args) {
 // Version 8 (the user profile, docs/feature-user-profile.md): matchAccounts — which of the person's contacts at the
 // bridge are accounts here ({ contactId, userId, strength, via }) — inside a request of that person; the comparison
 // stays in the server (services/profile.matchContacts). (Version 7 is the channels of chats v2.)
+// Version 9 (chats v2, persons): recognition.get / recognition.set — the person's own consent "Andere dürfen mich an
+// meinem WhatsApp erkennen" (the profile's "Erkennung"), asked by the messenger where WhatsApp is linked — inside a request
+// (set: a changing request) of that person; set goes through services/profile.update (time of the answer, activity log).
 
 const BRIDGES_CODES = new Set(['ERR_INVALID', 'ERR_BRIDGES_UNAVAILABLE', 'ERR_BRIDGE_UNREACHABLE', 'ERR_BRIDGE', 'ERR_BUSY', 'ERR_RATE_LIMIT']);
 const BRIDGE_FILE_TIMEOUT_MS = 200000;
@@ -1723,7 +1726,7 @@ async function bridgesCall(plugin, op, args) {
       need(target.role !== 'admin', 'ERR_BRIDGES_DENIED', "an administrator's link is never ended by somebody else");
       return await br.unlinkFor(uid, a.network, { actor: { id: actor.id, name: actor.display_name || actor.username }, pluginId: plugin.id });
     }
-    const write = op !== 'login.flows' && op !== 'logins' && op !== 'chats' && op !== 'history.get' && op !== 'contacts' && op !== 'matchNumbers' && op !== 'matchAccounts';
+    const write = op !== 'login.flows' && op !== 'logins' && op !== 'chats' && op !== 'history.get' && op !== 'contacts' && op !== 'matchNumbers' && op !== 'matchAccounts' && op !== 'recognition.get';
     // a file to send: checked before anybody is asked (its own, servable)
     const file = op === 'send' && a.message && typeof a.message === 'object' && a.message.media != null
       ? bridgeFile(plugin, a.message.media && a.message.media.mediaId) : null;
@@ -1746,6 +1749,9 @@ async function bridgesCall(plugin, op, args) {
     if (op === 'createDmByRef') return await br.createDmByRef(uid, a.network, a.ref);
     // version 8: which contacts are accounts here (the user profile)
     if (op === 'matchAccounts') return await br.matchAccounts(uid, a.network);
+    // version 9: the person's consent to be recognised by the own WhatsApp (the user profile)
+    if (op === 'recognition.get') return br.recognition.get(uid, a.network == null ? 'whatsapp' : a.network);
+    if (op === 'recognition.set') return br.recognition.set(uid, a.allowed, { source: 'user', actorId: uid }, a.network == null ? 'whatsapp' : a.network);
     if (op === 'react') return await br.react(uid, a.network, a.chatId, a.reaction);
     if (op === 'redact') return await br.redact(uid, a.network, a.chatId, a.redaction);
     if (op === 'read') return await br.read(uid, a.network, a.chatId, a.messageId);
@@ -2555,7 +2561,7 @@ async function handle(plugin, api, args, ctx) {
     case 'bridges.redact': case 'bridges.read': case 'bridges.typing':
     case 'bridges.media.fetch': case 'bridges.resolve': case 'bridges.createDm':
     case 'bridges.history.get': case 'bridges.history.set': case 'bridges.history.pull': case 'bridges.history.ack': case 'bridges.health':
-    case 'bridges.contacts': case 'bridges.matchNumbers': case 'bridges.createDmByRef': case 'bridges.matchAccounts':
+    case 'bridges.contacts': case 'bridges.matchNumbers': case 'bridges.createDmByRef': case 'bridges.matchAccounts': case 'bridges.recognition.get': case 'bridges.recognition.set':
       return bridgesCall(plugin, api.slice('bridges.'.length), args);
     // home cache (permissions.homeCache, homeCache.js — phase 3b)
     case 'homeCache.offer': return homeCacheCall(plugin, 'offer', args);
