@@ -56,6 +56,25 @@ core adds what only it knows:
   `/rdp` points to "Daten übernehmen" on the plugin's page; once taken over, `/rdp` leads to the plugin's page.
   The built-in tables and `/api/v1/rdp` stay (the Windows app's wake-on-LAN and status calls use them).
 
+## Stage 2 (the Windows switch, gc.remote version 2, the plugin „Fernzugriff“ 1.1)
+
+Switching „Remote Desktop erlauben“ on in the Windows app registers the PC with the plugin; it shows up at once
+under Fernzugriff › Geräte and for everybody allowed. 3389 stays closed until a session is allowed — and then only
+for exactly one counterpart (the plugin's contract: code, confirmation on the PC, „Ohne Code für Berechtigte“).
+The core adds:
+
+* `req.user.device.vpnIp` — the VPN address of the asking app (the first address of its token's peer) for plugins
+  with `permissions.remote`: the host of the PC's RDP target.
+* `gc.remote.hubAddress()` and `from` in the answer of `gc.remote.session` — guacd connects from the hub address;
+  for a browser session the PC opens 3389 for it only.
+* `gc.remote.peerAddress(userId, deviceId)` — the VPN address of the helper's own app device, only in a request of
+  that person: for an app session the PC opens 3389 for it only.
+* Signal topics (`notifyTopics[].signal`): silent data pushes to single devices that no switch, mute or quiet hours
+  hold back — "open / close the firewall for this session".
+* The facade also answers `POST /api/v1/rdp/:id/wol`, `GET /api/v1/rdp/:id/status`, `/:id/wol/status` and
+  `/api/v1/rdp/status` for app tokens (`wake`, `statusAdmin`, `statusAll`) — the devices of the plugin have no row
+  in `rdp_routes`.
+
 ## Licence
 
 „Fernzugriff“ needs a licence of its own — monthly, yearly or a lifetime

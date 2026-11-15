@@ -6,5 +6,8 @@
   "description": { "de": "Plugin mit gc.remote (Tests).", "en": "Plugin with gc.remote (tests)." },
   "gatecontrol": ">=1.0.0",
   "entry": "server/index.js",
-  "permissions": { "remote": true, "storage": true }
+  "permissions": { "remote": true, "storage": true, "app": true, "devices": true, "notify": true },
+  "notifyTopics": [
+    { "id": "remote_signal", "label": { "de": "Fernzugriff-Signale", "en": "Remote access signals" }, "signal": true }
+  ]
 }

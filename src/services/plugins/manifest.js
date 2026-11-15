@@ -511,7 +511,7 @@ function validate(raw, opts = {}) {
         const label = locText(t && t.label, 60);
         if (!t || typeof t.id !== 'string' || !NOTIFY_TOPIC_RE.test(t.id) || !label || (t.default != null && typeof t.default !== 'boolean')
           || (t.allowCritical != null && typeof t.allowCritical !== 'boolean') || (t.chat != null && typeof t.chat !== 'boolean')
-          || (t.email != null && typeof t.email !== 'boolean')) {
+          || (t.email != null && typeof t.email !== 'boolean') || (t.signal != null && typeof t.signal !== 'boolean')) {
           err('notifyTopics: invalid'); break;
         }
         if (topics.some((x) => x.id === t.id)) { err('notifyTopics: duplicate'); break; }
@@ -519,12 +519,16 @@ function validate(raw, opts = {}) {
         if (t.chat === true && (t.allowCritical === true || t.id === 'default')) { err('notifyTopics: chat topic cannot be critical or default'); break; }
         // chat messages stay in the chat: never by e-mail
         if (t.chat === true && t.email === true) { err('notifyTopics: chat topic cannot be mailed'); break; }
+        // signal (gc.remote stage 2): silent data pushes to single devices only — never chat, mail, critical or 'default'
+        if (t.signal === true && (t.chat === true || t.email === true || t.allowCritical === true || t.id === 'default')) { err('notifyTopics: signal topic cannot be chat, mailed, critical or default'); break; }
         // allowCritical: priority 'critical' is kept for this topic (bypasses quiet hours like core critical events)
         // chat: chat notifications (conversation, sender, reply / mark_read — docs/plugins.md "Chat notifications")
         // email (since 1.225.0): the e-mail channel of the topic is on by default for every person it
         // reaches (server SMTP, the person's account address, services/notify/personMail.js)
+        // signal: a machine channel to the plugin's own app devices (silent + devices only): no switch for the
+        // person, no rule for the admin, no mutes or quiet hours (e.g. open the firewall for one session)
         topics.push({ id: t.id, label, default: t.default !== false, ...(t.allowCritical === true ? { allowCritical: true } : {}), ...(t.chat === true ? { chat: true } : {}),
-          ...(t.email === true ? { email: true } : {}) });
+          ...(t.email === true ? { email: true } : {}), ...(t.signal === true ? { signal: true } : {}) });
       }
       m.notifyTopics = topics;
     }

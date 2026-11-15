@@ -18,6 +18,9 @@ const CALLS = {
   'listener.remove': (gc, a) => gc.remote.listener.remove(a.key),
   listeners: (gc) => gc.remote.listeners(),
   gateways: (gc) => gc.remote.gateways(),
+  hubAddress: (gc) => gc.remote.hubAddress(),
+  peerAddress: (gc, a) => gc.remote.peerAddress(a.userId, a.deviceId),
+  notify: (gc, a) => gc.notify(a),
   'recordings.available': (gc) => gc.remote.recordings.available(),
   'recordings.list': (gc, a) => gc.remote.recordings.list(a),
   'recordings.stream': (gc, a) => gc.remote.recordings.stream(a.id),
@@ -33,6 +36,11 @@ module.exports = {
   },
   async request(req, gc) {
     const b = req.body || {};
+    // the app API (version 2): the asking device with its VPN address, and peerAddress inside the person's request
+    if (req.path === '/me') return { json: { ok: true, user: req.user } };
+    if (req.path === '/myAddress') {
+      try { return { json: { ok: true, result: await gc.remote.peerAddress(req.user.id, req.user.device && req.user.device.id) } }; } catch (e) { return { json: { ok: false, code: e.code || null } }; }
+    }
     if (req.path === '/has') return { json: { ok: true, remote: !!gc.remote, version: gc.remote ? gc.remote.version : null } };
     if (req.path === '/events') return { json: { ok: true, result: (await gc.storage.get('events')) || [] } };
     if (req.path === '/snapshot') return { json: { ok: true, result: (await gc.storage.get('snapshot')) || null } };

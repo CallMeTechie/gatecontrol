@@ -658,7 +658,7 @@ async function deliverCameraEvent(ev) {
   return { handled: cameraHandlers.length };
 }
 
-// gc.remote (permissions.remote, version 1, docs/plugins.md "Remote access"): sessions to devices on a page of
+// gc.remote (permissions.remote, version 2, docs/plugins.md "Remote access"): sessions to devices on a page of
 // the core, a key vault of the core (the plugin only holds handles, never a secret), probe / wake-on-LAN,
 // L4 listeners through the gateways, recordings (stage 3) and the hook remoteSession
 const remoteHandlers = [];
@@ -669,8 +669,8 @@ function makeRemote() {
   /** listener.remove(key) → { removed } — a shared route (of an old RDP route) stays */
   listener.remove = (key) => hostCall('remote.listener.remove', { key }, 60000);
   return Object.freeze({
-    version: 1,
-    /** session({ user, target, protocol: rdp|vnc|ssh|telnet, mode?: view|control, record?, credential?, options?, ttlS? }) → { ref, url, expiresAt, mode, protocol } */
+    version: 2,
+    /** session({ user, target, protocol: rdp|vnc|ssh|telnet, mode?: view|control, record?, credential?, options?, ttlS? }) → { ref, url, expiresAt, mode, protocol, from } */
     session: (opts) => hostCall('remote.session', o(opts), 30000),
     /** end({ ref } | { sessionId }) → { ended } */
     end: (opts) => hostCall('remote.end', o(opts)),
@@ -696,6 +696,10 @@ function makeRemote() {
     listeners: () => hostCall('remote.listeners', {}),
     /** gateways() → { gateways: [{ peerId, name, online }], pools: [{ poolId, name }] } — for listener(); feature-detect it */
     gateways: () => hostCall('remote.gateways', {}),
+    /** hubAddress() → '10.8.0.1' — the server's VPN address, where guacd connects from (version 2) */
+    hubAddress: () => hostCall('remote.hubAddress', {}),
+    /** peerAddress(userId, deviceId) → VPN address | null of an app device of the person, only in a request of that person (version 2) */
+    peerAddress: (userId, deviceId) => hostCall('remote.peerAddress', { userId, deviceId }),
     recordings: Object.freeze({
       /** available() → { available, reason } */
       available: () => hostCall('remote.recordings.available', {}),

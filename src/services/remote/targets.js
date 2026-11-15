@@ -299,10 +299,45 @@ async function wake(plugin, target) {
   return { sent: true, via: 'server' };
 }
 
+/** The first VPN address of the peer an API token (an app device) is bound to, or null. */
+function tokenAddress(tokenId) {
+  const id = Number(tokenId);
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  try {
+    const row = db().prepare('SELECT p.allowed_ips FROM api_tokens t JOIN peers p ON p.id = t.peer_id WHERE t.id = ?').get(id);
+    const ip = row && row.allowed_ips ? String(row.allowed_ips).split(',')[0].split('/')[0].trim() : '';
+    return net.isIP(ip) ? ip : null;
+  } catch { return null; }
+}
+
+/** gc.remote.hubAddress() — the server's address in the VPN: guacd connects from it to a VPN device. */
+function hubAddress() { return hubIp(); }
+
+/**
+ * gc.remote.peerAddress(userId, deviceId) — the VPN address of an app device of
+ * a person (version 2): the firewall of a Windows PC opens 3389 for exactly
+ * this helper. Only for a device of that person (gc.devices ids) and only
+ * while a request of that person to this plugin is in flight
+ * (plugins/personContext.js) — the plugin cannot look up the devices of
+ * people who are not using it right now. → address | null (no peer).
+ */
+function peerAddress(plugin, a) {
+  const o = a && typeof a === 'object' ? a : {};
+  const userId = Number(o.userId);
+  if (!Number.isSafeInteger(userId) || userId <= 0) throw new TargetError('invalid', 'userId required');
+  const D = require('../plugins/devices');
+  const deviceId = D.idOf(o.deviceId);
+  if (deviceId === null) throw new TargetError('invalid', 'deviceId required');
+  if (!require('../plugins/personContext').has(plugin.id, userId)) throw new TargetError('not_allowed', 'only in a request of this person');
+  if (!D.ownedBy([userId], [deviceId]).has(deviceId)) throw new TargetError('not_allowed', 'not an app device of this person');
+  return tokenAddress(deviceId);
+}
+
 function _setLookupForTest(fn) { if (process.env.NODE_ENV === 'test') lookupFn = fn; }
 function _resetForTest() { if (process.env.NODE_ENV === 'test') { wakeLast.clear(); lookupFn = null; } }
 
 module.exports = {
   TargetError, normalise, endpoint, resolveHost, addressAllowed, listener, removeListener, listeners, removeAllListeners, gateways, probe, wake, hubIp,
+  tokenAddress, hubAddress, peerAddress,
   _setLookupForTest, _resetForTest,
 };

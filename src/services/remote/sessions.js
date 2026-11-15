@@ -180,7 +180,10 @@ async function create(plugin, a) {
     ref, pluginId: plugin.id, userId: user.id, target, protocol, mode, credential, options,
     createdAt: now, openBy: now + ttlS * 1000, claimedBy: null, claimedAt: null, expiresAt: null, tokens: 0,
   });
-  return { ref, url: '/remote/session/' + ref, expiresAt: new Date(now + ttlS * 1000).toISOString(), mode, protocol };
+  // from (version 2): where guacd's connection comes from — the hub address for a direct target, so a
+  // Windows PC opens 3389 for exactly it (stage 2); a listener target is reached through its gateway
+  const from = target.listener ? null : targets.hubIp();
+  return { ref, url: '/remote/session/' + ref, expiresAt: new Date(now + ttlS * 1000).toISOString(), mode, protocol, from };
 }
 
 /**

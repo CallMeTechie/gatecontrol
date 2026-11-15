@@ -566,6 +566,7 @@ function tick() {
  */
 function emitPlugin(pluginId, n) {
   if (!config.value('enabled')) return { pushed: false, reason: 'disabled' };
+  if (n.signal === true) return emitSignal(pluginId, n);
   if (!licensed()) return { pushed: false, reason: 'unlicensed' };
   const eventId = `plugin:${pluginId}:${n.topic}`;
   const rule = rules.ensurePluginRule(eventId);
@@ -610,6 +611,25 @@ function emitPlugin(pluginId, n) {
     mailed = personMail.send(pluginId, { ...n, topic: eventId, priority: prio }, rule);
   } catch (err) { logger.warn({ err: err.message, pluginId }, 'plugin notification e-mails failed'); }
   return { pushed: !!r, id: r ? r.id : null, mailed };
+}
+
+/**
+ * A data push on a signal topic (notifyTopics[].signal, hostApi.notify): to the
+ * named app devices only, at once — no rule, no topic switch, no device mute,
+ * no quiet hours, never mailed or routed into a chat. It is the plugin's
+ * channel to its own app (e.g. "Fernzugriff": open the firewall of a PC for one
+ * session), not a notification; the plugin's licence decides, not the one of
+ * the notification centre.
+ */
+function emitSignal(pluginId, n) {
+  if (!Array.isArray(n.devices) || !n.devices.length) return { pushed: false, reason: 'no_devices' };
+  const eventId = `plugin:${pluginId}:${n.topic}`;
+  const r = publish({
+    eventId, eventType: 'plugin_notice', topic: eventId, source: `plugin:${pluginId}`, priority: 'normal',
+    title: n.title, body: n.body, data: n.data, collapseKey: n.collapseKey ? sanitize.collapseKey(`plugin:${pluginId}:${n.collapseKey}`) : null,
+    ttlS: n.ttl, image: null, target: { type: 'devices', ids: n.devices }, kind: 'data', silent: true, card: null,
+  }, { rule: null, route: { tokenIds: n.devices, bypass: true }, emitKey: null });
+  return { pushed: !!r, id: r ? r.id : null, mailed: 0 };
 }
 
 // ─── Manual messages and tests ──────────────────────────────────────────
@@ -705,7 +725,7 @@ function topicsForUser(userId, lang) {
   const admin = userId != null && router.isAdmin(userId);
   const out = CORE_TOPICS.filter((t) => admin || !ADMIN_ONLY_TOPICS.has(t)).map((id) => ({ id, label: text.topicLabel(id, lang) }));
   if (licensed()) {
-    for (const pt of rules.pluginTopics()) out.push({ id: pt.topic, label: text.topicLabel(pt.topic, lang) });
+    for (const pt of rules.pluginTopics()) if (pt.signal !== true) out.push({ id: pt.topic, label: text.topicLabel(pt.topic, lang) });
   }
   return out;
 }

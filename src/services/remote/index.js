@@ -1,6 +1,6 @@
 'use strict';
 
-// gc.remote, version 1 — the core part of the plugin "Fernzugriff"
+// gc.remote, version 2 — the core part of the plugin "Fernzugriff"
 // (gatecontrol-remote; docs/plugins.md "Remote access"). A plugin process has
 // no network of its own and its frames have connect-src 'none', so the core
 // keeps the transport (guacd, the tunnels, the session page, the key vault,
@@ -9,11 +9,12 @@
 //
 //   sessions.js    gc.remote.session / end / sessions, the session page, the tunnel lifecycle
 //   vault.js       gc.remote.vault.* — secrets stay in the core, the plugin holds handles
-//   targets.js     gc.remote.probe / wake / listener(s) / gateways
+//   targets.js     gc.remote.probe / wake / listener(s) / gateways / hubAddress / peerAddress
 //   recordings.js  gc.remote.recordings.* (the frame; recording comes with stage 3)
 //   facade.js      the old app API /api/v1/client/rdp* answered from the plugin (hook clientFacade)
 
-const VERSION = 1;
+// 2: hubAddress, peerAddress, `from` in the answer of session (stage 2: the Windows switch)
+const VERSION = 2;
 
 const sessions = require('./sessions');
 const vault = require('./vault');
@@ -48,6 +49,8 @@ async function call(plugin, op, args) {
     case 'listener.remove': return targets.removeListener(plugin, a.key);
     case 'listeners': return targets.listeners(plugin);
     case 'gateways': return targets.gateways();
+    case 'hubAddress': return targets.hubAddress();
+    case 'peerAddress': return targets.peerAddress(plugin, a);
     case 'recordings.available': return recordings.available();
     case 'recordings.list': return recordings.list(plugin, a);
     case 'recordings.stream': return recordings.stream(plugin, a.id);

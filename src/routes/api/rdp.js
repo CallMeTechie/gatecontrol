@@ -32,6 +32,16 @@ function handlePortConflict(req, res, err) {
   return true;
 }
 
+// Once the plugin "Fernzugriff" took over the RDP targets, it answers what the
+// Windows app asks here with its token (services/remote/facade.js: wake,
+// statusAdmin, statusAll) — before the feature check: the plugin has a licence
+// of its own. Browser sessions and everything else stay with the core.
+const facade = require('../../services/remote/facade').middleware;
+router.get('/status', facade('statusAll'));
+router.post('/:id/wol', facade('wake'));
+router.get('/:id/wol/status', facade('statusAdmin'));
+router.get('/:id/status', facade('statusAdmin'));
+
 // All RDP routes require the remote_desktop feature
 router.use(requireFeature('remote_desktop'));
 
