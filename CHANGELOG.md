@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.276.0] — 2026-11-15
+
+### Features
+- Messenger-Brücken, Stufe 4 – Dateien, Profilbilder und neuer Chat per Nummer über die Brücke (Vorschau, standardmäßig aus) (#491)
+
+---
+
 ## [1.275.0] — 2026-11-14
 
 ### Features
