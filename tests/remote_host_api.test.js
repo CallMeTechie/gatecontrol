@@ -169,7 +169,7 @@ describe('sessions: ticket, page, token, tunnel', () => {
   it('the page gets a single-use token (60 s) with the secret inside it only, view mode read-only', async () => {
     const page = await agent.get('/remote/session/' + ref).expect(200);
     const cfgIsland = pageCsrf(page.text);
-    assert.equal(cfgIsland.mintUrl, `/remote/session/${ref}/token`);
+    assert.equal(cfgIsland.remoteRef, ref);
     const t = await agent.post(`/remote/session/${ref}/token`).set('X-CSRF-Token', cfgIsland.csrf).expect(200);
     assert.equal(t.body.wsPath, '/api/v1/remote/guac-tunnel');
     assert.equal(t.body.ttl, 60);

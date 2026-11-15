@@ -53,8 +53,7 @@ function page(req, res) {
   return res.render(`${res.locals.theme || 'aurora'}/pages/rdp-session.njk`, {
     title: res.locals.t('rdp.session.title'),
     route: { id: 0, protocol: t.protocol, resolution_mode: o.resolution_mode || 'fullscreen', resolution_width: o.resolution_width || null, resolution_height: o.resolution_height || null },
-    mintUrl: `/remote/session/${req.params.ref}/token`,
-    backUrl: '/portal',
+    remoteRef: t.ref,
     guac: require('../../config/default').guac,
   });
 }
