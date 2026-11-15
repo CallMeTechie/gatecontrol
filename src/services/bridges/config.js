@@ -238,6 +238,12 @@ function bridgeModel(network, secrets, opts = {}) {
     // warn: the info and debug lines name chats and accounts (ids with phone numbers) — they are not written at all
     logging: { min_level: 'warn', writers: [{ type: 'stdout', format: 'pretty' }] },
     network: {
+      // a contact's name: only what the contact (or the business) shows publicly — never the phone number (the
+      // default falls back to it, and to its redacted form) and no " (WA)" (the apps mark the network themselves).
+      // Not .FullName either: that is the name in the linking person's own address book, and a contact's account
+      // ("ghost") is shared by everybody who has that contact. No name → empty; services/bridges/names.js drops what a
+      // bridge still names by number, the plugin shows the person's own address book name or a neutral label
+      displayname_template: '{{or .BusinessName .PushName}}',
       // without history: no rooms for old conversations at login — a room appears with its first new message.
       // With history (stage 5): rooms for the most recent chats at once; never a full sync, never asking the phone for
       // files that ran out

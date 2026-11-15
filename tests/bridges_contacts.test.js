@@ -98,6 +98,15 @@ describe('contacts', () => {
     assert.equal(ev.openMediaRef(kim.avatar).userId, annaId);
   });
 
+  it('a contact the bridge names by its number has no name here — the number never goes out as one', async () => {
+    bridge.contacts = [{ number: '+4915100000000', name: '+4915100000000 (WA)' }, { number: '+4915100000001', name: 'Mia (WA)' }];
+    const r = await list();
+    assert.deepEqual(r.contacts.map((c) => c.name), [null, 'Mia']);
+    assert.doesNotMatch(JSON.stringify(r), /15100000|\(WA\)/);
+    const m = await match(['+49 151 00000000']);
+    assert.equal(m.matches[0].name, null);
+  });
+
   it('kept in memory for 10 minutes: asked once, a new reference each time', async () => {
     const a = await list();
     const b = await list();

@@ -161,8 +161,13 @@ describe('files in: a reference, then the plugin fetches', () => {
     const v = await fetch(virus);
     assert.deepEqual([v.scan.state, v.scan.blocked], ['infected', true]);
     await assert.rejects(fetch(big, annaId, NOMEDIA), (e) => e.code === 'ERR_MEDIA_DENIED');
+    // an answer without Content-Length (chunked): taken as it comes, at most the plugin's limit
     hs.noLength = true;
-    await assert.rejects(fetch(odd), (e) => e.code === 'ERR_BRIDGE' && e.reason === 'bad_answer', 'no length: nothing is read');
+    const chunked = await fetch(odd);
+    assert.deepEqual([chunked.mime, chunked.bytes], ['application/octet-stream', Buffer.byteLength('BEGIN:VCARD\nEND:VCARD\n')]);
+    const before = db.prepare('SELECT COUNT(*) AS n FROM plugin_media').get().n;
+    await assert.rejects(fetch(big), (e) => e.code === 'ERR_MEDIA_TOO_LARGE', 'chunked and too large: stopped at the limit');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM plugin_media').get().n, before, 'nothing kept of it');
     hs.noLength = false;
     hs.files.delete('odd');
     await assert.rejects(fetch(odd), (e) => e.code === 'ERR_BRIDGE' && e.reason === 'm_not_found');

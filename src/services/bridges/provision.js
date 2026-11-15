@@ -11,6 +11,7 @@
 
 const http = require('node:http');
 const path = require('node:path');
+const { nameOut } = require('./names');
 
 const MAX_BODY = 256 * 1024;
 // stage 4c: a contact list (GET /v3/contacts, POST /v3/search_users) can be long — a few hundred bytes per contact
@@ -168,7 +169,7 @@ function contactsOut(list) {
   return (Array.isArray(list) ? list : []).slice(0, MAX_CONTACTS)
     .filter((r) => r && typeof r === 'object' && (BRIDGE_ID_RE.test(String(r.id || '')) || GHOST_RE.test(String(r.mxid || ''))))
     .map((r) => {
-      const name = str(r.name, 480).replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || null;
+      const name = nameOut(str(r.name, 480), 120);
       const numbers = (Array.isArray(r.identifiers) ? r.identifiers : []).slice(0, 8).map((x) => TEL_RE.exec(String(x || ''))).filter(Boolean).map((m) => m[1]);
       return {
         id: BRIDGE_ID_RE.test(String(r.id || '')) ? r.id : null,
@@ -184,7 +185,7 @@ function contactsOut(list) {
 /** resolve_identifier / create_dm → { name, roomId } — never the id, the address or the identifiers (they hold the number). */
 function identifierOut(r) {
   if (!r || typeof r !== 'object') return null;
-  const name = str(r.name, 480).replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || null;
+  const name = nameOut(str(r.name, 480), 120);
   return { name, roomId: ROOM_RE.test(String(r.dm_room_mxid || '')) ? r.dm_room_mxid : null };
 }
 
