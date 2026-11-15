@@ -610,3 +610,60 @@ button, input, select { font: inherit; color: inherit; }
   .pt-grp-fields { grid-template-columns: minmax(0, 1fr); }
   .pt-grp-member { flex-wrap: wrap; }
 }
+
+/* ============ Mein Profil (docs/feature-user-profile.md) ============ */
+a.pt-user-link { color: var(--text); text-decoration: none; cursor: pointer; }
+a.pt-user-link:hover { border-color: var(--accent-bd); }
+.pt-pf-hero { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+.pt-pf-hero .pt-lead { margin-bottom: 0; }
+.pt-pf-avatar { width: 72px; height: 72px; font-size: 24px; }
+.pt-pf-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.pt-pf-main, .pt-pf-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.pt-pf-side .pt-plugin-section { margin: 0; }
+.pt-pf-head { display: flex; align-items: center; gap: 10px; padding: 16px 18px 10px; }
+.pt-pf-head .pt-pf-act { margin-left: auto; }
+.pt-pf-lead { margin: -4px 18px 10px; color: var(--muted); font-size: 13px; }
+.pt-pf-act { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.pt-pf-row { display: grid; grid-template-columns: 170px minmax(0, 1fr) auto; align-items: center; gap: 6px 14px; padding: 12px 18px; border-top: 1px solid var(--line); }
+.pt-pf-row-act { display: block; }
+.pt-pf-label { color: var(--muted); font-size: 13px; }
+.pt-pf-value { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.pt-pf-end { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.pt-pf-empty { padding: 12px 18px 16px; border-top: 1px solid var(--line); color: var(--muted); }
+.pt-pf-num { font-size: 14.5px; }
+.pt-pf-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.pt-pf-state, .pt-pf-badge, .pt-pf-note { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; }
+.pt-pf-state[data-tone="good"] { color: var(--good-text); }
+.pt-pf-state[data-tone="warn"] { color: var(--warn-text); }
+.pt-pf-badge { padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); }
+.pt-pf-note { color: var(--muted); font-weight: 500; }
+.pt-pf-wrap { overflow-wrap: anywhere; }
+.pt-vis { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.pt-vis[data-tone="all"] { background: var(--good-bg); color: var(--good-text); }
+.pt-vis[data-tone="family"] { background: var(--blue-bg); color: var(--blue-text); }
+.pt-vis[data-tone="self"], .pt-vis[data-tone="none"] { background: var(--chip); color: var(--muted); border: 1px solid var(--line-2); }
+.pt-pf-iconbtn { min-width: 36px; padding: 0 9px; }
+.pt-pf-switch { display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 12px; border-radius: 12px; background: var(--chip); border: 1px solid var(--line); cursor: pointer; }
+.pt-pf-field { margin: 0; }
+.pt-pf-hint { margin-top: 6px; font-weight: 500; }
+.pt-pf-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.pt-pf-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.pt-pf-seg { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.pt-pf-segbtn { position: relative; display: inline-flex; }
+.pt-pf-segbtn input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.pt-pf-segbtn span { padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font-weight: 600; cursor: pointer; }
+.pt-pf-segbtn input:checked + span { border-color: var(--teal); background: var(--accent-soft); color: var(--accent-text); }
+.pt-pf-segbtn input:focus-visible + span { outline: 2px solid var(--teal); outline-offset: 2px; }
+.pt-pf-remove { align-self: flex-start; }
+@media (max-width: 900px) {
+  .pt-pf-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .pt-pf-row { grid-template-columns: minmax(0, 1fr) auto; padding: 10px 14px; }
+  .pt-pf-label { grid-column: 1 / -1; }
+  .pt-pf-head { padding: 14px 14px 8px; }
+  .pt-pf-lead { margin: -2px 14px 10px; }
+  .pt-pf-empty { padding: 10px 14px 14px; }
+  .pt-pf-avatar { width: 56px; height: 56px; font-size: 19px; }
+  .pt-pf-two { grid-template-columns: minmax(0, 1fr); }
+}

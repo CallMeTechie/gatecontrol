@@ -62,6 +62,9 @@
 //   contacts         (stage 4c) contacts / matchNumbers / createDmByRef: the person's contacts at the bridge (its own
 //                    store, GET /v3/contacts — no question to WhatsApp) with sealed references instead of numbers;
 //                    held in memory for 10 minutes, never written, never logged.
+//   accounts         (user profile, gc.bridges version 8) matchAccounts: which of those contacts are accounts here — the
+//                    profile service compares (keyed hashes); every whoami tells it the numbers of the person's own
+//                    logins (noteOwn) for "Bestätigt über dein WhatsApp" and the recognition by the own WhatsApp.
 //   images           (stage 5) the pins of images.js go to update.sh with every config file ("bridges_images"): a
 //                    GateControl release with a new pin updates the containers at the next run of the script, without
 //                    a new docker-compose.yml on the host. Nothing unpinned is ever pulled.
@@ -270,7 +273,7 @@ function locations() {
  * no contents: states, versions and memory only.
  */
 function status() {
-  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 6 };
+  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 8 };
   const cfg = getConfig();
   const host = hostStatus();
   const up = cfg.enabled && host.state === 'running' && host.services.hs.running;
@@ -310,7 +313,7 @@ function status() {
     // stage 5: the copies of files at the homeserver that went after the plugin took them over
     cleanup: { deleted: cleanup.deleted, lastAt: cleanup.lastAt ? new Date(cleanup.lastAt).toISOString() : null, error: cleanup.error, waiting: runtime.events ? runtime.events.mediaWaiting() : 0 },
     // the version of gc.bridges this server offers (child/bootstrap.js)
-    version: 6,
+    version: 8,
   };
 }
 
@@ -494,7 +497,36 @@ function stepOut(userId, network, r) {
 async function logins(userId, network) {
   const w = await clientFor(userId, network).whoami();
   noteLogins(network, w.logins);
-  return w.logins.map((l) => ({ network, ...l, id: loginRef(userId, network, l.id) }));
+  noteOwn(userId, network, w.logins);
+  // never the number of the login (phone)
+  return w.logins.map(({ phone, ...l }) => ({ network, ...l, id: loginRef(userId, network, l.id) }));
+}
+
+// ─── The own number (the user profile, docs/feature-user-profile.md) ─
+
+/** The number of a login: the bridge's profile phone, else a WhatsApp id made of digits, else a name that is one. */
+function loginNumber(l) {
+  if (!l) return null;
+  return numberOf(l.phone || '') || (/^[1-9][0-9]{6,14}$/.test(String(l.id || '')) ? numberOf('+' + l.id) : null) || numberOf(String(l.name || ''));
+}
+/** After every whoami: the numbers of the person's own logins go to the profile (keyed hashes only — services/profile). */
+function noteOwn(userId, network, list) {
+  try {
+    const nums = (list || []).filter((l) => l && l.state !== 'logged_out').map(loginNumber).filter(Boolean);
+    require('../profile').noteOwnNumbers(userId, network, nums);
+  } catch (err) { logger.debug({ err: err.message }, 'bridges: own number not noted'); }
+}
+/**
+ * refreshOwnNumbers(userId, network) — before the profile is shown: ask the bridge (kept 10 minutes, see selfIds) when
+ * the person ever linked this network. Never throws.
+ */
+async function refreshOwnNumbers(userId, network) {
+  try {
+    if (!previewOn() || !NETWORKS.includes(network)) return;
+    const cfg = getConfig();
+    if (!cfg.enabled || !cfg.networks[network] || !linkedAt(userId, network)) return;
+    await selfIds(userId, network);
+  } catch { /* the stored state stays */ }
 }
 
 // stage 5: WhatsApp turned a login away as too old (seen in any login of the last day)
@@ -519,6 +551,7 @@ async function health({ userIds, network } = {}) {
     try {
       const w = await clientFor(userId, network).whoami();
       noteLogins(network, w.logins);
+      noteOwn(userId, network, w.logins);
       // no id: a WhatsApp login is named after the person's number
       list = w.logins.map((l) => ({ state: l.state, since: l.since, error: l.error, phoneOffline: !!l.phoneOffline, clientOutdated: !!l.clientOutdated }));
     } catch (e) {
@@ -587,7 +620,10 @@ async function logout(userId, network, ref) {
   const w = await c.whoami();
   const l = w.logins.find((x) => loginRef(userId, network, x.id) === ref);
   if (!l) throw new BridgesError('ERR_BRIDGE', 'no such login', 'not_found');
-  return c.logout(l.id);
+  const r = await c.logout(l.id);
+  noteOwn(userId, network, w.logins.filter((x) => x !== l));
+  selfCache.delete(`${userId}:${network}`);
+  return r;
 }
 
 /**
@@ -602,6 +638,7 @@ async function unlinkFor(userId, network, ctx) {
   const w = await c.whoami();
   let n = 0;
   for (const l of w.logins) { await c.logout(l.id); n++; }
+  noteOwn(userId, network, []);
   try {
     require('../activity').log('bridges_unlinked_for', `Messenger-Brücke ${network}: Verknüpfung von Konto ${userId} getrennt`, {
       source: 'plugin', severity: 'info',
@@ -632,6 +669,7 @@ async function selfIds(userId, network) {
   try {
     const w = await provision.client({ socket: provision.socketOf(dir(), network), secret: secrets.provisionSecret }, mxidOf(userId)).whoami();
     ids = w.logins.map((l) => String(l.id));
+    noteOwn(userId, network, w.logins);
   } catch { ids = c ? c.ids : []; }
   if (selfCache.size > 500) selfCache.clear();
   selfCache.set(k, { at: Date.now(), ids });
@@ -1102,6 +1140,28 @@ async function matchNumbers(userId, network, numbers) {
 }
 
 /**
+ * gc.bridges.matchAccounts(userId, network) → { matches: [{ contactId, userId, strength, via }] } (version 8)
+ * Which of the person's contacts at the bridge are accounts on this server? The numbers of the contact list the bridge
+ * keeps (no question to WhatsApp) are compared inside the server's profile service (services/profile.matchContacts)
+ * with the own linked logins and the profile numbers of the accounts that agreed to be recognised; a plugin gets the
+ * pairing only — `contactId` as the events name the contact (sender.id), the account, `strength` (strong | medium) and
+ * `via` (own_whatsapp | profile_phone). Never a number or a hash, never the person herself, never a number that stands
+ * in two accounts. Inside a request of that person.
+ */
+async function matchAccounts(userId, network) {
+  const c = clientFor(userId, network);
+  const list = await contactList(userId, network, c);
+  const ev = eventsOf();
+  const pairs = [];
+  for (const x of list) {
+    if (!ev || !x.mxid) continue;
+    const contactId = ev.contactRef(network, x.mxid);
+    for (const number of x.numbers) pairs.push({ contactId, number });
+  }
+  return { matches: require('../profile').matchContacts(userId, network, pairs) };
+}
+
+/**
  * gc.bridges.createDmByRef(userId, network, ref) → { chat: { id, kind: 'direct', name } }
  * The direct chat with a contact of contacts() / matchNumbers() (made or found) — by the bridge's own contact, not by a
  * number: nothing is asked of WhatsApp about a number, nothing counted. Inside a changing request of that person;
@@ -1148,7 +1208,7 @@ module.exports = {
   NETWORKS, SCRIPT, SERVER_NAME, BridgesError,
   previewOn, getConfig, wanted, wish, status, configure, hostStatus, ensureSecrets, readSecrets, dir,
   login, logins, logout, unlinkFor, mxidOf, _reset,
-  start, stop, send, react, redact, read, typing, chats, events, openFile, resolve, createDm, numberOf, contacts, matchNumbers, createDmByRef, _openContactRef: openContactRef,
+  start, stop, send, react, redact, read, typing, chats, events, openFile, resolve, createDm, numberOf, contacts, matchNumbers, createDmByRef, matchAccounts, refreshOwnNumbers, _openContactRef: openContactRef,
   history, historyOf, linkedAt, health, mediaFetched, cleanupRun, tick, masterKey, writeMasterKey, _forget: forget, HISTORY_OPTIONS, HISTORY_DEFAULT,
   _onTransaction: onTransaction, _eventsOf: eventsOf, _runtime: runtime,
 };

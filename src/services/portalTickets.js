@@ -67,7 +67,7 @@ function consume(raw) {
 // schemes, backslashes, queries, too long — is ignored (null), never an error.
 
 const NEXT_MAX = 100;
-const PORTAL_TABS = new Set(['start', 'dienste', 'zuhause', 'fahrzeug', 'netzwerk', 'geraete', 'mitteilungen', 'benachrichtigungen']);
+const PORTAL_TABS = new Set(['start', 'dienste', 'zuhause', 'fahrzeug', 'netzwerk', 'geraete', 'mitteilungen', 'benachrichtigungen', 'profil']);
 const PLUGIN_TAB_RE = /^plg-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const NEXT_RE = /^\/(?:portal\/?)?(?:#([a-z0-9-]{1,60}))?$/;
 

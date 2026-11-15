@@ -4076,6 +4076,72 @@ const migrations = [
       ALTER TABLE plugin_media_areas ADD COLUMN sealed INTEGER NOT NULL DEFAULT 0;`,
     detect: (db) => tableExists(db, 'bridge_backlog') && tableExists(db, 'bridge_media') && hasColumn(db, 'plugin_media_areas', 'sealed'),
   },
+  {
+    version: 150,
+    name: 'user_profile',
+    // The user profile (docs/feature-user-profile.md, services/profile.js), kept by the person in the portal
+    // ("Mein Profil") and in the apps:
+    //   users.first_name / last_name / about   freely chosen; about ≤ 140 characters
+    //   users.birthday                         'YYYY-MM-DD', or '--MM-DD' without a year; birthday_year_hidden: the
+    //                                          year is known but nobody else sees it
+    //   users.profile_visibility               JSON { field: 'self' | 'family' | 'all' } (missing = the default)
+    //   users.recognize_by_whatsapp / _phone   the two consents of "Erkennung" (both off), *_at when answered
+    //   user_phones   up to 5 numbers: the number encrypted with the server's key (number_enc), a keyed hash of the
+    //                 E.164 form to compare (number_hash, never the number), kind, visibility (none / family / all),
+    //                 use_for_recognition and the state (unconfirmed / whatsapp / admin / directory)
+    //   user_emails   up to 3 further addresses; a code (SHA-256 at rest) confirms one when the server can send mail
+    //   user_bridge_selves  the keyed hash of the number of a person's own linked messenger login (whoami) — for
+    //                 "Bestätigt über dein WhatsApp" and the recognition by the own WhatsApp; never the number
+    // Everything goes with the user (ON DELETE CASCADE).
+    sql: `
+      ALTER TABLE users ADD COLUMN first_name TEXT;
+      ALTER TABLE users ADD COLUMN last_name TEXT;
+      ALTER TABLE users ADD COLUMN about TEXT;
+      ALTER TABLE users ADD COLUMN birthday TEXT;
+      ALTER TABLE users ADD COLUMN birthday_year_hidden INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN profile_visibility TEXT;
+      ALTER TABLE users ADD COLUMN recognize_by_whatsapp INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN recognize_by_whatsapp_at TEXT;
+      ALTER TABLE users ADD COLUMN recognize_by_phone INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN recognize_by_phone_at TEXT;
+      CREATE TABLE IF NOT EXISTS user_phones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL DEFAULT 'mobile',
+        number_enc TEXT NOT NULL,
+        number_hash TEXT NOT NULL,
+        visibility TEXT NOT NULL DEFAULT 'none',
+        use_for_recognition INTEGER NOT NULL DEFAULT 1,
+        state TEXT NOT NULL DEFAULT 'unconfirmed',
+        confirmed_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (user_id, number_hash)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_phones_hash ON user_phones (number_hash);
+      CREATE TABLE IF NOT EXISTS user_emails (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        address TEXT NOT NULL,
+        address_lc TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'unconfirmed',
+        code_hash TEXT,
+        code_expires_at INTEGER,
+        code_tries INTEGER NOT NULL DEFAULT 0,
+        confirmed_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (user_id, address_lc)
+      );
+      CREATE TABLE IF NOT EXISTS user_bridge_selves (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        network TEXT NOT NULL,
+        number_hash TEXT NOT NULL,
+        seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (user_id, network, number_hash)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_bridge_selves_hash ON user_bridge_selves (number_hash);`,
+    detect: (db) => hasColumn(db, 'users', 'recognize_by_phone') && tableExists(db, 'user_phones') && tableExists(db, 'user_emails') && tableExists(db, 'user_bridge_selves'),
+  },
 ];
 
 module.exports = { migrations };

@@ -367,7 +367,7 @@ function validate(raw, opts = {}) {
   // permissions
   const p = raw.permissions == null ? {} : raw.permissions;
   if (!p || typeof p !== 'object' || Array.isArray(p)) err('permissions: invalid');
-  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null, images: false }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, ai: null, cloudImport: null, publicEndpoints: null, mail: null, homePresence: false, homeInternet: false, homeCache: false, print: false, radio: false, cameras: false, vpnDns: false, bridges: false };
+  const perms = { network: { internet: [], homeTargets: [], localDiscovery: null, images: false }, storage: false, portal: false, users: false, notify: false, notifyPerHour: null, app: false, kiosk: false, actions: false, actionsInteractive: false, background: null, events: false, services: [], notifySink: false, publicLinks: false, devices: false, groups: null, ai: null, cloudImport: null, publicEndpoints: null, mail: null, homePresence: false, homeInternet: false, homeCache: false, print: false, radio: false, cameras: false, vpnDns: false, bridges: false, profile: null };
   if (p && typeof p === 'object') {
     if (p.lan != null) err('permissions.lan: replaced by permissions.network.homeTargets / localDiscovery');
     const net = validateNetwork(p.network, err);
@@ -425,6 +425,15 @@ function validate(raw, opts = {}) {
     if (p.groups != null) {
       if (p.groups === 'read' || p.groups === 'manage') perms.groups = p.groups;
       else err('permissions.groups: invalid');
+    }
+    // profile: the fields of the user profile it may read (gc.profile.get, docs/feature-user-profile.md) — a list of
+    // "firstName", "lastName", "about", "birthday" and, separately, "phones"; only what the viewer may see. Needs `users`.
+    if (p.profile != null) {
+      const list = p.profile;
+      const FIELDS = ['firstName', 'lastName', 'about', 'birthday', 'phones'];
+      if (!Array.isArray(list) || !list.length || list.length > FIELDS.length || !list.every((f) => FIELDS.includes(f)) || new Set(list).size !== list.length) err('permissions.profile: invalid');
+      else if (p.users !== true) err('permissions.profile: needs permissions.users');
+      else perms.profile = FIELDS.filter((f) => list.includes(f));
     }
     // services: ["<plugin>:<service>"] — services of other plugins it may call (gc.services.call)
     if (p.services != null) {

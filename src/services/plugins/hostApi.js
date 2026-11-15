@@ -1628,6 +1628,9 @@ async function vpnDnsCall(plugin, op, args) {
 // Version 6 (a new chat with a contact): contacts / matchNumbers read the person's contacts at the bridge (its own
 // store — no question to the messenger) inside a request of that person; createDmByRef starts a chat with one of them
 // by its sealed reference inside a changing request of that person. No number, id or address goes to the plugin.
+// Version 8 (the user profile, docs/feature-user-profile.md): matchAccounts — which of the person's contacts at the
+// bridge are accounts here ({ contactId, userId, strength, via }) — inside a request of that person; the comparison
+// stays in the server (services/profile.matchContacts). (Version 7 is the channels of chats v2.)
 
 const BRIDGES_CODES = new Set(['ERR_INVALID', 'ERR_BRIDGES_UNAVAILABLE', 'ERR_BRIDGE_UNREACHABLE', 'ERR_BRIDGE', 'ERR_BUSY', 'ERR_RATE_LIMIT']);
 const BRIDGE_FILE_TIMEOUT_MS = 200000;
@@ -1720,7 +1723,7 @@ async function bridgesCall(plugin, op, args) {
       need(target.role !== 'admin', 'ERR_BRIDGES_DENIED', "an administrator's link is never ended by somebody else");
       return await br.unlinkFor(uid, a.network, { actor: { id: actor.id, name: actor.display_name || actor.username }, pluginId: plugin.id });
     }
-    const write = op !== 'login.flows' && op !== 'logins' && op !== 'chats' && op !== 'history.get' && op !== 'contacts' && op !== 'matchNumbers';
+    const write = op !== 'login.flows' && op !== 'logins' && op !== 'chats' && op !== 'history.get' && op !== 'contacts' && op !== 'matchNumbers' && op !== 'matchAccounts';
     // a file to send: checked before anybody is asked (its own, servable)
     const file = op === 'send' && a.message && typeof a.message === 'object' && a.message.media != null
       ? bridgeFile(plugin, a.message.media && a.message.media.mediaId) : null;
@@ -1741,6 +1744,8 @@ async function bridgesCall(plugin, op, args) {
     if (op === 'contacts') return await br.contacts(uid, a.network, { query: a.query });
     if (op === 'matchNumbers') return await br.matchNumbers(uid, a.network, a.numbers);
     if (op === 'createDmByRef') return await br.createDmByRef(uid, a.network, a.ref);
+    // version 8: which contacts are accounts here (the user profile)
+    if (op === 'matchAccounts') return await br.matchAccounts(uid, a.network);
     if (op === 'react') return await br.react(uid, a.network, a.chatId, a.reaction);
     if (op === 'redact') return await br.redact(uid, a.network, a.chatId, a.redaction);
     if (op === 'read') return await br.read(uid, a.network, a.chatId, a.messageId);
@@ -2465,6 +2470,19 @@ async function handle(plugin, api, args, ctx) {
       need(Number.isInteger(id) && id > 0, 'ERR_INVALID', 'invalid user id');
       return userView(db().prepare(`SELECT ${USER_COLS} FROM users WHERE id = ? AND enabled = 1`).get(id));
     }
+    case 'profile.get': {
+      // the user profile (docs/feature-user-profile.md): only the fields of permissions.profile, only what the viewer
+      // may see. A viewer counts only while that person has a request to this plugin in flight — else the view of
+      // somebody without relation (what everybody sees).
+      const allowed = plugin.manifest.permissions && Array.isArray(plugin.manifest.permissions.profile) ? plugin.manifest.permissions.profile : [];
+      need(allowed.length > 0, 'ERR_PROFILE_DENIED', 'this plugin has no profile permission');
+      const id = Number(args && args.id);
+      need(Number.isSafeInteger(id) && id > 0, 'ERR_INVALID', 'invalid user id');
+      const v = args && args.viewer != null ? Number(args.viewer) : null;
+      need(v === null || (Number.isSafeInteger(v) && v > 0), 'ERR_INVALID', 'invalid viewer');
+      const viewer = v !== null && require('./personContext').has(plugin.id, v) ? v : null;
+      return require('../profile').viewFor(id, viewer, allowed);
+    }
     case 'kiosk.allow': {
       // docs/feature-kiosk-devices.md: mark/unmark a user as a kiosk user (never an admin or a disabled account)
       need(plugin.manifest.permissions && plugin.manifest.permissions.kiosk, 'ERR_KIOSK_DENIED', 'this plugin has no kiosk permission');
@@ -2537,7 +2555,7 @@ async function handle(plugin, api, args, ctx) {
     case 'bridges.redact': case 'bridges.read': case 'bridges.typing':
     case 'bridges.media.fetch': case 'bridges.resolve': case 'bridges.createDm':
     case 'bridges.history.get': case 'bridges.history.set': case 'bridges.history.pull': case 'bridges.history.ack': case 'bridges.health':
-    case 'bridges.contacts': case 'bridges.matchNumbers': case 'bridges.createDmByRef':
+    case 'bridges.contacts': case 'bridges.matchNumbers': case 'bridges.createDmByRef': case 'bridges.matchAccounts':
       return bridgesCall(plugin, api.slice('bridges.'.length), args);
     // home cache (permissions.homeCache, homeCache.js — phase 3b)
     case 'homeCache.offer': return homeCacheCall(plugin, 'offer', args);

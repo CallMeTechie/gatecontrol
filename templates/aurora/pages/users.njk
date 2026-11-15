@@ -13,6 +13,8 @@
   <div class="page-header us-header">
     <div class="page-actions us-header-actions">
       <button type="button" class="btn btn-ghost" id="us-btn-roles">{{ t('us.compare_roles') }}</button>
+      {#- Settings of the user profile (docs/feature-user-profile.md) #}
+      <button type="button" class="btn btn-ghost" id="us-btn-settings">{{ t('us.settings.button') }}</button>
       <button type="button" class="btn btn-primary" id="us-btn-add">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         {{ t('us.add_user') }}
@@ -74,7 +76,7 @@
 
 {% include "aurora/partials/users-dialogs.njk" %}
 
-<script type="application/json" id="us-i18n" data-prefixes="us. users.mb. error.users. error.tokens. error.enrollment. enrollment. common. passkey.error_not_found up. avatar." nonce="{{ cspNonce }}">{{ usersI18n | default('{}') | safe }}</script>
+<script type="application/json" id="us-i18n" data-prefixes="us. users.mb. error.users. error.tokens. error.enrollment. enrollment. common. passkey.error_not_found up. avatar. myprofile.kind. myprofile.state. myprofile.vis." nonce="{{ cspNonce }}">{{ usersI18n | default('{}') | safe }}</script>
 <script type="application/json" id="us-ctx" nonce="{{ cspNonce }}">{"self": {{ (user.id if user else 0) | dump | safe }}, "lang": {{ language | dump | safe }}, "rdp": {{ ('true' if license.features.remote_desktop else 'false') | safe }}}</script>
 {% endblock %}
 

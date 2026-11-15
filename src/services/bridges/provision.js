@@ -122,7 +122,7 @@ function stepOut(s) {
   return { processId: s.login_id, step };
 }
 
-/** whoami → the person's logins [{ id, name, state, since, error }] and the bridge's flows. */
+/** whoami → the person's logins [{ id, name, phone, state, since, error }] and the bridge's flows (phone: services/bridges only). */
 function whoamiOut(w) {
   const logins = (w && Array.isArray(w.logins) ? w.logins : []).slice(0, 16)
     .filter((l) => l && ID_RE.test(String(l.id || '')))
@@ -134,9 +134,12 @@ function whoamiOut(w) {
       // PhoneDisconnectWarningTime) as TRANSIENT_DISCONNECT with wa-phone-offline although it is connected — the link
       // still works; and 405 "client outdated" (handlewhatsapp.go) when WhatsApp turns the bridge's version away
       const phoneOffline = error === 'wa-phone-offline';
+      // the number of the login (bridgev2 RemoteProfile.phone) — for services/bridges only, it never leaves the server
+      const prof = l.profile && typeof l.profile === 'object' ? l.profile : {};
       return {
         id: l.id,
         name: str(l.name, 80),
+        phone: typeof prof.phone === 'string' && prof.phone.length <= 40 ? prof.phone : null,
         state: phoneOffline ? 'connected' : (STATES[st.state_event] || 'unknown'),
         // seconds or milliseconds, depending on the bridge version
         since: Number.isFinite(ts) && ts > 0 ? new Date(ts < 1e11 ? ts * 1000 : ts).toISOString() : null,

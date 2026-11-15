@@ -104,6 +104,38 @@ function sendKnownError(req, res, err) {
  */
 router.use(requireAdminSession);
 
+// ─── The user profile (docs/feature-user-profile.md) ────────────────────
+// Server settings ("Benutzer → Einstellungen"): phone numbers in the profile (on), recognition by confirmed numbers
+// only (off). The "Profil" card of a user page: what an administrator needs, the rest only where it is visible to
+// everybody; numbers as count and state — confirm or remove one without ever seeing it.
+const profileSvc = require('../../services/profile');
+function profileError(req, res, err) {
+  if (err && err.code === 'ERR_NOT_FOUND') return res.status(404).json({ ok: false, code: 'NOT_FOUND', error: req.t('error.users.not_found') });
+  if (err && err.code === 'ERR_INVALID') return res.status(400).json({ ok: false, code: 'INVALID', error: req.t('myprofile.err.invalid'), field: err.field });
+  if (err && err.code === 'ERR_PHONES_OFF') return res.status(403).json({ ok: false, code: 'PHONES_OFF', error: req.t('myprofile.err.phones_off') });
+  logger.error({ err: err && err.message }, 'users: profile request failed');
+  return res.status(500).json({ ok: false, error: req.t('myprofile.err.failed') });
+}
+router.get('/settings/profile', (req, res) => res.json({ ok: true, settings: profileSvc.getSettings() }));
+router.put('/settings/profile', (req, res) => {
+  try { return res.json({ ok: true, settings: profileSvc.setSettings(req.body || {}, { actorId: req.session.userId, ip: req.ip }) }); } catch (err) { return profileError(req, res, err); }
+});
+router.get('/:id/profile', (req, res) => {
+  const id = parseId(req);
+  if (!id) return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
+  try { return res.json({ ok: true, profile: profileSvc.adminView(id, req.session.userId) }); } catch (err) { return profileError(req, res, err); }
+});
+router.post('/:id/profile/phones/:pid/confirm', (req, res) => {
+  const id = parseId(req);
+  if (!id) return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
+  try { return res.json({ ok: true, profile: profileSvc.adminConfirmPhone(id, req.params.pid, { actorId: req.session.userId, ip: req.ip }) }); } catch (err) { return profileError(req, res, err); }
+});
+router.delete('/:id/profile/phones/:pid', (req, res) => {
+  const id = parseId(req);
+  if (!id) return res.status(404).json({ ok: false, error: req.t('error.users.not_found') });
+  try { return res.json({ ok: true, profile: profileSvc.adminRemovePhone(id, req.params.pid, { actorId: req.session.userId, ip: req.ip }) }); } catch (err) { return profileError(req, res, err); }
+});
+
 /**
  * GET /api/v1/users — List all users with what the list shows
  */
@@ -229,6 +261,8 @@ router.patch('/:id', async (req, res) => {
     }
     const before = users.getById(id);
     const user = await users.update(id, body, { actorId: req.session.userId, ip: req.ip });
+    // plugins fetch the name again (hook profileChanged, docs/feature-user-profile.md)
+    if (before && user && before.display_name !== user.display_name) require('../../services/profile').emitChanged(id, ['displayName']);
     // A role change (e.g. admin → user) must not survive in sessions that
     // were opened under the old role: log the account out everywhere.
     // API tokens stay; their scopes are capped by the current role on every

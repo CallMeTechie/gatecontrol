@@ -584,6 +584,8 @@ async function apply(db, dir, plan) {
     if (!keys.length) continue;
     db.prepare(`UPDATE users SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = datetime('now') WHERE id = ?`).run(...keys.map((k) => fields[k]), l.user_id);
     if (fields.display_name || fields.email) details.updated.push({ userId: l.user_id, name: personName(p) });
+    // plugins fetch the name again (hook profileChanged, docs/feature-user-profile.md)
+    if (fields.display_name) { try { require('../profile').emitChanged(l.user_id, ['displayName']); } catch { /* best effort */ } }
   }
 
   for (const e of plan.enables) {

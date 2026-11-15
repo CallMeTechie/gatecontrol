@@ -127,6 +127,10 @@
     if (perm.settings) ui.push(t('plugins.perm.ui_settings', { n: perm.settings }));
     rows.push({ label: t('plugins.perm.ui'), value: ui.length ? ui.join(' · ') : t('plugins.perm.none') });
     rows.push({ label: t('plugins.perm.users'), value: t(perm.users ? 'plugins.perm.users_on' : 'plugins.perm.none') });
+    // the user profile (gc.profile.get): the fields, only what the viewer may see
+    if (perm.profile && perm.profile.length) {
+      rows.push({ label: t('plugins.perm.profile'), value: t('plugins.perm.profile_on', { fields: perm.profile.map((f) => t('plugins.perm.profile_field.' + f)).join(', ') }) });
+    }
     if (perm.app) rows.push({ label: t('plugins.perm.app'), value: t('plugins.perm.app_on') });
     if (perm.kiosk) rows.push({ label: t('plugins.perm.kiosk'), value: t('plugins.perm.kiosk_on') });
     if (perm.actions) rows.push({ label: t('plugins.perm.actions'), value: t('plugins.perm.actions_on') });
@@ -496,6 +500,7 @@
     if (perm.camera) out.push('plugins.perm.camera');
     if (perm.criticalTopics && perm.criticalTopics.length) out.push('plugins.perm.notify_critical');
     if (perm.users) out.push('plugins.perm.users');
+    if (perm.profile && perm.profile.includes('phones')) out.push('plugins.perm.profile');
     if (perm.kiosk) out.push('plugins.perm.kiosk');
     if (perm.publicLinks) out.push('plugins.perm.public_links');
     if (perm.publicEndpoints) out.push('plugins.perm.public_endpoints');
