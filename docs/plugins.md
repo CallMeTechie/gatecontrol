@@ -2957,7 +2957,7 @@ names the permission first and marks it as sensitive.
 
 | Call | Answer |
 |---|---|
-| `gc.bridges.version` | `6` (`5`: without `contacts`, `matchNumbers`, `createDmByRef`; `4`: also without `history.*`, `health`; `3`: without files and a new chat by number — `media.fetch`, `send(… media)`, `resolve`, `createDm`; `2`: also without messages — `events`, `send`, …; `1`: also without `unlinkFor`, `outdated`, `wantVersion`, `host.probe`) |
+| `gc.bridges.version` | `7` (`6`: without `chat.channel` / `chat.readOnly`, `sender.channel`, `marks`, `preview`; `5`: without `contacts`, `matchNumbers`, `createDmByRef`; `4`: also without `history.*`, `health`; `3`: without files and a new chat by number — `media.fetch`, `send(… media)`, `resolve`, `createDm`; `2`: also without messages — `events`, `send`, …; `1`: also without `unlinkFor`, `outdated`, `wantVersion`, `host.probe`) |
 | `status()` | `{ available, reason, enabled, location: 'server', locations: [{ id, kind, cores, memMb, freeMb }], networks: [{ id, enabled, state: 'off' \| 'starting' \| 'running' \| 'failed', version, memMb, limitMb, outdated, wantVersion }], host: { state, error: 'compose_missing' \| 'config_missing' \| 'start_failed' \| null, checkedAt, cron, script: { host, needed }, homeserver: { running, memMb, limitMb, version, outdated, wantVersion }, limitsProvisional, probe }, history: { enabled: false } }` — states, versions and memory only; never a name, a number or a content. `outdated`: the container runs another image than this GateControl pins (`wantVersion`) — the host's `docker-compose.yml` is older. `limitsProvisional`: the memory limits are upper bounds nobody measured yet. `probe`: `null` or what `./update.sh bridges-probe` measured on the host — `{ at, result: 'ok' \| 'not_wanted' \| 'compose_missing' \| 'config_missing' \| 'start_failed' \| 'not_running', windowSeconds, services: { hs \| whatsapp \| whatsapp-relay: { running, restarts, oomKilled, memMb, memPeakMb, limitMb, writtenKb } }, sockets: { hs, whatsapp }, diskMb }` |
 | `configure({ enabled?, networks?: { whatsapp?: boolean } })` | `status()`. Only inside a changing request (POST/PUT/PATCH/DELETE) of an **administrator** (`ERR_NOT_PERSON`, `ERR_NOT_ADMIN`); logged as `bridges_changed`. Off by default |
 | `login.flows(userId, network)` | `[{ id, name, description }]` — WhatsApp: `qr`, `phone` (pairing code) |
@@ -2999,7 +2999,7 @@ table: [feature-messenger-bridges.md](feature-messenger-bridges.md),
 |---|---|
 | `events.pull({ after?, limit? })` | `{ events: [{ seq, userId, network, type, chat, … }], more }` — what the bridges delivered for **all** linked people and nobody acknowledged (`limit` ≤ 200). Needs no person: it reads no bridge and sends nothing |
 | `events.ack(upTo)` | `{ ok, pending }` — events up to this `seq` are filed; the server deletes them |
-| `chats(userId, network)` | `[{ id, kind, open }]` — inside a request of that person |
+| `chats(userId, network)` | `[{ id, kind, open, channel, readOnly }]` (`channel`, `readOnly` since version 7) — inside a request of that person |
 | `send(userId, network, chatId, { txnId, text, replyTo?, edit? })` | `{ id }` — a text as that person; the same `txnId` (8…96 of `A-Za-z0-9_-`) sends once. What became of it arrives as an event `status` |
 | `react(userId, network, chatId, { txnId, target, emoji })` | `{ id }` — take it back with `redact(…, { target: id })` |
 | `redact(userId, network, chatId, { txnId, target })` | `{ ok }` — delete a message for everyone, or take a reaction back |
@@ -3056,6 +3056,20 @@ listing, searching and matching them asks WhatsApp nothing).
 | `contacts(userId, network, { query? })` | `{ contacts: [{ ref, contactId, name, avatar, chatId }] }` — inside a request of that person; `query` (≤ 100 characters) is the bridge's own search over them. `ref`: a sealed reference to start a chat with (`k…`); `avatar`: a picture reference for `media.fetch` (`null`: none); `chatId`: the person's chat with that contact the server knows already (`null`: none); `contactId`: the contact as events name it (`sender.id`, stable). Never a number, an id or an address. The list is kept in the server's memory for 10 minutes at most |
 | `matchNumbers(userId, network, numbers)` | `{ matches: [{ index, ref, contactId, name, avatar, chatId }] }` — which of these numbers (≤ 2000, `+` and the country code; anything else matches nothing) are contacts at the bridge; `index` is the place in `numbers`. Compared with the list only — no question to WhatsApp, nothing counted. Inside a request of that person |
 | `createDmByRef(userId, network, ref)` | `{ chat: { id, kind: 'direct', name } }` — the direct chat with a contact of `contacts()` / `matchNumbers()`, made or found; inside a changing request of that person. `ERR_INVALID` / `expired_ref` for a reference of another person or network, older than 30 minutes or from before a restart of the server — list again; `ERR_BRIDGE` / `not_found` when the bridge no longer knows the contact. Not counted against the 20 numbers per hour |
+
+**Version 7 — channels, groups, format** (`gc.bridges.version >= 7`; details:
+[feature-messenger-bridges.md](feature-messenger-bridges.md), "Channels, groups, format"). No new call — new fields:
+
+| Field | Meaning |
+|---|---|
+| `chat.kind` | a WhatsApp group is `group` now (before: `direct`); a room known from before gets a `chat` event with its kind (at its next event or a few per tick) |
+| `chat.channel` | `true`: a channel the person follows (`kind: 'group'`) — read only, its posts come from the channel |
+| `chat.readOnly` | `true`: the person may not write (a channel; a group where only admins write); a change sends a new `chat` event |
+| `sender.channel` | a channel's post: `{ channel: true, system: true }` — a `text` / `media` / `unsupported` message (not a `notice`), with edits and deletions |
+| `marks` | on a `message` (`text`, a caption) and an `edit`: `[{ type: bold \| italic \| strike \| code \| link, start, end, url? }]`, UTF-16 offsets into `text`, `url` only http(s); missing = plain text. Never HTML |
+| `preview` | on a `text` message and an `edit`: `{ url, title, description, site, image: { ref, mime, w, h, size } \| null }` — `image.ref` is fetched like `media.ref` (`media.fetch`) |
+
+A channel brings at most its 10 newest posts when it is opened and of the history at a new link.
 
 Hook (optional): `async bridgeEvents({ pending, ephemeral }, gc)` — the bridges
 delivered something. `ephemeral` carries what is never stored (typing, read

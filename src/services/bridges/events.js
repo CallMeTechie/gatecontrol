@@ -44,12 +44,30 @@
 // Files of a room (stage 5): every file a message carries is noted in bridge_media (address and person, never a name);
 // once the plugin took it (index.js mediaFetched), or it was history nobody wanted, or nobody fetched it for
 // MEDIA_KEEP_MS, index.js deletes it from the homeserver (mediaToClean / mediaCleaned).
+//
+// Channels, groups, format (gc.bridges version 7, "Chats v2 – Teil A"):
+//   kind      mautrix bridgev2 sets com.beeper.room_type.v2 only for a direct chat ("dm") and a space; a group and a
+//             WhatsApp channel are RoomTypeDefault, the field is missing (bridgev2/portal.go getBridgeInfo,
+//             mautrix-whatsapp pkg/connector/chatinfo.go wrapGroupInfo / wrapNewsletterInfo). So the kind is read from
+//             the chat's own id at the bridge (m.bridge → channel.id, per network: WhatsApp …@g.us a group,
+//             …@newsletter a channel, …@s.whatsapp.net / …@lid a person) — the id itself never leaves this module.
+//   channel   chat.channel: a channel the person follows (kind 'group'). Its posts come from the bridge's own account
+//             (pkg/connector/id.go makeEventSender: NewsletterServer → EventSender{}) — the sender is { channel: true,
+//             system: true } (system for plugins of version 6) and the post a normal text or file, not a notice.
+//   readOnly  chat.readOnly: the person may not write (m.room.power_levels: their level below the one of
+//             m.room.message / events_default) — a channel, a group where only admins write.
+//   format    `marks` and `preview` of a text (format.js; com.beeper.linkpreviews, MSC4095) — the preview's picture is
+//             a file reference like any other (preview.image.ref).
+//   history   a channel brings at most CHANNEL_HISTORY posts when it is opened or linked (channelTrim).
+//   older     rooms known before this version get kind, channel and readOnly when their next event arrives, or by
+//             refreshRooms() (index.js, a few per tick) — bridge_rooms.channel NULL = not looked at yet.
 
 const crypto = require('node:crypto');
 const logger = require('../../utils/logger');
 const hs = require('./hs');
 // never a phone number as a name (names.js)
 const { nameOut } = require('./names');
+const format = require('./format');
 
 const TEXT_MAX = 16000;
 const NAME_MAX = 120;
@@ -69,6 +87,14 @@ const MEDIA_KEEP_MS = 30 * 86400000;
 const MEDIA_SETTLE_MS = 3600000;
 const PULL_MAX = 200;
 const DOUBLE_PUPPET = 'fi.mau.double_puppet_source';
+// a channel brings at most this many posts when it is opened (or with the history at a new link)
+const CHANNEL_HISTORY = 10;
+const PREVIEW_TITLE_MAX = 300;
+const PREVIEW_TEXT_MAX = 1000;
+// what the id of a chat at the bridge (m.bridge channel.id) says about its kind, per network
+const CHAT_IDS = {
+  whatsapp: [[/@newsletter$/, 'channel'], [/@g\.us$/, 'group'], [/@(s\.whatsapp\.net|lid)$/, 'direct']],
+};
 const MEDIA_TYPES = { 'm.image': 'image', 'm.video': 'video', 'm.audio': 'audio', 'm.file': 'file', 'm.location': 'location' };
 const MIME_RE = /^[a-z][a-z0-9-]{0,30}\/[a-z0-9][a-z0-9.+_-]{0,99}$/;
 const REF_RE = /^m[A-Za-z0-9_-]{40,700}$/;
@@ -162,18 +188,23 @@ function create(opts) {
     rooms.set(roomId, r);
     return r;
   }
-  function saveRoom(roomId, userId, network, state, kind) {
+  /** `i` (the room's info, when known): its kind, channel and readOnly are written with it. */
+  function saveRoom(roomId, userId, network, state, kind, i = null) {
     const now = Date.now();
     const old = roomRow(roomId);
+    const channel = i ? (i.channel ? 1 : 0) : (old ? old.channel : null);
+    const readOnly = i ? (i.readOnly ? 1 : 0) : (old ? old.read_only : 0);
     if (old) {
-      db().prepare('UPDATE bridge_rooms SET state = ?, kind = ?, updated_at = ? WHERE room_id = ?').run(state, kind || old.kind, now, roomId);
+      db().prepare('UPDATE bridge_rooms SET state = ?, kind = ?, channel = ?, read_only = ?, updated_at = ? WHERE room_id = ?').run(state, kind || old.kind, channel, readOnly, now, roomId);
     } else {
-      db().prepare('INSERT INTO bridge_rooms (room_id, ref, user_id, network, kind, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(roomId, 'r' + crypto.randomBytes(15).toString('base64url'), userId, network, kind || 'direct', state, now, now);
+      db().prepare('INSERT INTO bridge_rooms (room_id, ref, user_id, network, kind, state, channel, read_only, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(roomId, 'r' + crypto.randomBytes(15).toString('base64url'), userId, network, kind || 'direct', state, channel, readOnly || 0, now, now);
     }
     rooms.delete(roomId);
     return roomRow(roomId);
   }
+  /** Does the stored row still say what the room's state says (kind, channel, readOnly)? */
+  const rowFits = (row, i) => row.kind === i.kind && row.channel === (i.channel ? 1 : 0) && row.read_only === (i.readOnly ? 1 : 0);
 
   /** Name and kind of a room and the names of its members, from its state (asked once per room and start). */
   async function roomInfo(row, { fresh = false } = {}) {
@@ -181,7 +212,7 @@ function create(opts) {
     const target = opts.target();
     if (!target) throw new hs.HsError('ERR_BRIDGE_UNREACHABLE', 'the homeserver is not set up', 'not_running');
     const st = await hs.state(target, mxidOf(row.user_id), row.room_id);
-    const i = { kind: row.kind, name: null, names: new Map(), avatars: new Map(), avatar: null, network: null };
+    const i = { kind: row.kind, name: null, names: new Map(), avatars: new Map(), avatar: null, network: null, channel: false, readOnly: false, self: mxidOf(row.user_id), power: null };
     for (const ev of st) applyState(i, ev);
     if (info.size > 2000) info.clear();
     info.set(row.room_id, i);
@@ -206,11 +237,29 @@ function create(opts) {
     if (ev.type === 'm.bridge' || ev.type === 'uk.half-shot.bridge') {
       const p = c.protocol && typeof c.protocol === 'object' ? c.protocol.id : null;
       if (typeof p === 'string' && opts.networks.includes(p)) i.network = p;
-      const t = typeof c['com.beeper.room_type.v2'] === 'string' ? c['com.beeper.room_type.v2'] : (c['com.beeper.room_type'] === 'dm' ? 'dm' : null);
-      const kind = t === 'dm' ? 'direct' : (t ? 'group' : null);
-      if (!kind || kind === i.kind) return null;
-      i.kind = kind;
+      const t = typeof c['com.beeper.room_type.v2'] === 'string' && c['com.beeper.room_type.v2'] ? c['com.beeper.room_type.v2'] : (c['com.beeper.room_type'] === 'dm' ? 'dm' : null);
+      // the chat's id at the bridge (never passed on): a group and a channel carry no room type (see above)
+      const id = c.channel && typeof c.channel === 'object' && typeof c.channel.id === 'string' ? c.channel.id : '';
+      const byId = ((typeof p === 'string' && CHAT_IDS[p]) || []).find(([re]) => re.test(id));
+      const what = t === 'dm' ? 'direct' : (t ? 'group' : (byId ? byId[1] : null));
+      const channel = what === 'channel';
+      const kind = what === 'direct' ? 'direct' : (what ? 'group' : null);
+      if ((!kind || kind === i.kind) && channel === i.channel) return null;
+      if (kind) i.kind = kind;
+      i.channel = channel;
       return 'kind';
+    }
+    if (ev.type === 'm.room.power_levels') {
+      // may the person write? their level against the one of a message (a channel; a group where only admins write)
+      const lvl = (v, d) => (Number.isSafeInteger(Number(v)) && v !== null && v !== '' ? Number(v) : d);
+      const users = c.users && typeof c.users === 'object' ? c.users : {};
+      const events = c.events && typeof c.events === 'object' ? c.events : {};
+      const own = lvl(i.self ? users[i.self] : undefined, lvl(c.users_default, 0));
+      const send = lvl(events['m.room.message'], lvl(c.events_default, 0));
+      const readOnly = own < send;
+      if (readOnly === i.readOnly) return null;
+      i.readOnly = readOnly;
+      return 'power';
     }
     if (ev.type === 'm.room.member' && typeof ev.state_key === 'string' && ghostOf(ev.state_key)) {
       const n = nameOut(c.displayname, NAME_MAX);
@@ -223,13 +272,15 @@ function create(opts) {
     return null;
   }
 
-  const chatOf = (row, i) => ({ id: row.ref, kind: i ? i.kind : row.kind, name: i ? i.name : null, ...(i ? { avatar: pictureRef(row.user_id, i.avatar) } : {}) });
+  // version 7: channel and readOnly whenever the room's state is known (with it, every 'chat' event carries them)
+  const chatOf = (row, i) => ({ id: row.ref, kind: i ? i.kind : row.kind, name: i ? i.name : null, ...(i ? { avatar: pictureRef(row.user_id, i.avatar), channel: !!i.channel, readOnly: !!i.readOnly } : {}) });
   const contactOf = (row, i, mxid) => ({ id: contactRef(row.network, mxid), name: (i && i.names.get(mxid)) || null, avatar: i ? pictureRef(row.user_id, i.avatars.get(mxid)) : null });
 
   async function senderOf(row, i, ev) {
     const c = ev.content && typeof ev.content === 'object' ? ev.content : {};
     if (personOf(ev.sender) === row.user_id) return Object.prototype.hasOwnProperty.call(c, DOUBLE_PUPPET) ? { self: true } : null;
-    if (botOf(ev.sender) === row.network) return { system: true };
+    // a channel's post comes from the bridge's own account (version 7): the channel wrote it
+    if (botOf(ev.sender) === row.network) return i && i.channel ? { channel: true, system: true } : { system: true };
     const g = ghostOf(ev.sender);
     if (!g || g.network !== row.network) return null;
     // without double puppeting the bridge writes the person's own messages through the ghost of their own number
@@ -286,7 +337,7 @@ function create(opts) {
           catch (err) { if (err && err.code === 'ERR_BRIDGE_UNREACHABLE') throw err; stats.skipped++; return; }
           info.delete(ev.room_id);
           if (!i.network) { stats.skipped++; return; } // not a room of a bridge
-          row = saveRoom(ev.room_id, userId, i.network, 'joined', i.kind);
+          row = saveRoom(ev.room_id, userId, i.network, 'joined', i.kind, i);
         } else {
           row = saveRoom(ev.room_id, userId, row.network, 'joined');
         }
@@ -315,7 +366,7 @@ function create(opts) {
           return;
         }
         stats.history++;
-        out.push({ userId: row.user_id, network: row.network, payload: { ...payload, at, history: true }, mxc });
+        out.push({ userId: row.user_id, network: row.network, payload: { ...payload, at, history: true }, mxc, channel: !!(i && i.channel) });
         return;
       }
       out.push({ userId: row.user_id, network: row.network, payload: { ...payload, at }, mxc });
@@ -329,13 +380,18 @@ function create(opts) {
       stats.skipped++;
       return;
     }
+    // a room known from before version 7 (or whose state changed while nobody listened): the plugin learns it now
+    if (!backlog && !rowFits(row, i)) {
+      row = saveRoom(row.room_id, row.user_id, row.network, 'joined', i.kind, i);
+      push({ type: 'chat', chat: chatOf(row, i) });
+    }
 
     // state: the room's name and kind, the contacts' names
     if (typeof ev.state_key === 'string') {
       if (backlog) return;
       const changed = applyState(i, ev);
-      if (changed === 'kind') row = saveRoom(row.room_id, row.user_id, row.network, 'joined', i.kind);
-      if (changed === 'name' || changed === 'kind' || changed === 'avatar') push({ type: 'chat', chat: chatOf(row, i) });
+      if (changed === 'kind' || changed === 'power') row = saveRoom(row.room_id, row.user_id, row.network, 'joined', i.kind, i);
+      if (changed === 'name' || changed === 'kind' || changed === 'avatar' || changed === 'power') push({ type: 'chat', chat: chatOf(row, i) });
       if (changed === 'member') push({ type: 'contact', chat: chatOf(row, i), contact: contactOf(row, i, ev.state_key) });
       return;
     }
@@ -375,21 +431,30 @@ function create(opts) {
       const rel = c['m.relates_to'] && typeof c['m.relates_to'] === 'object' ? c['m.relates_to'] : {};
       if (rel.rel_type === 'm.replace' && hs.EVENT_RE.test(String(rel.event_id || ''))) {
         const nc = c['m.new_content'] && typeof c['m.new_content'] === 'object' ? c['m.new_content'] : c;
-        push({ type: 'edit', ...base, target: rel.event_id, text: text(nc.body) });
+        // version 7: the new text with its format (and a new link preview, when the bridge sends one)
+        const r = richOf(nc);
+        const pv = previewOf(row, nc);
+        push({ type: 'edit', ...base, target: rel.event_id, text: r.text, ...(r.marks ? { marks: r.marks } : {}), ...(pv ? { preview: pv.preview } : {}) }, pv && pv.mxc ? { mxc: pv.mxc } : null);
         return;
       }
       const reply = rel['m.in_reply_to'] && typeof rel['m.in_reply_to'] === 'object' && hs.EVENT_RE.test(String(rel['m.in_reply_to'].event_id || '')) ? rel['m.in_reply_to'].event_id : null;
       const msgtype = ev.type === 'm.sticker' ? 'm.sticker' : c.msgtype;
       if (msgtype === 'm.text' || msgtype === 'm.notice' || msgtype === 'm.emote') {
-        push({ type: 'message', ...base, kind: sender.system || msgtype === 'm.notice' ? 'notice' : 'text', text: text(c.body), replyTo: reply });
+        // version 7: a channel's post is a text like a contact's; the format as marks, the link preview with its picture
+        const r = richOf(c);
+        const pv = previewOf(row, c);
+        const notice = (sender.system && !sender.channel) || msgtype === 'm.notice';
+        push({ type: 'message', ...base, kind: notice ? 'notice' : 'text', text: r.text, ...(r.marks ? { marks: r.marks } : {}), ...(pv ? { preview: pv.preview } : {}), replyTo: reply },
+          pv && pv.mxc ? { mxc: pv.mxc } : null);
         return;
       }
       const mk = msgtype === 'm.sticker' ? 'sticker' : MEDIA_TYPES[msgtype];
       if (mk) {
         // the kind, the file's name and a caption; the file itself as a reference the plugin fetches (stage 4)
         const fileName = line(typeof c.filename === 'string' ? c.filename : (mk === 'location' ? '' : c.body), 200) || null;
-        const caption = typeof c.filename === 'string' && c.body !== c.filename ? text(c.body) : (mk === 'location' ? text(c.body) : '');
-        push({ type: 'message', ...base, kind: 'media', media: mediaOf(row, mk, c, fileName), text: caption || null, replyTo: reply },
+        const capRich = typeof c.filename === 'string' && c.body !== c.filename ? richOf(c) : null;
+        const caption = capRich ? capRich.text : (mk === 'location' ? text(c.body) : '');
+        push({ type: 'message', ...base, kind: 'media', media: mediaOf(row, mk, c, fileName), text: caption || null, ...(capRich && capRich.marks && caption ? { marks: capRich.marks } : {}), replyTo: reply },
           { mxc: hs.mxcOf(c.url, opts.serverName) ? c.url : null });
         return;
       }
@@ -397,11 +462,54 @@ function create(opts) {
       return;
     }
     // anything else a contact sent into the timeline (a poll, a call, …): shown as "not supported", never swallowed
-    if (!sender.system && !/^m\.room\./.test(ev.type) && !/^(m|org\.matrix)\.call\./.test(ev.type)) {
+    if ((!sender.system || sender.channel) && !/^m\.room\./.test(ev.type) && !/^(m|org\.matrix)\.call\./.test(ev.type)) {
       push({ type: 'message', ...base, kind: 'unsupported', text: null, replyTo: null });
       return;
     }
     stats.skipped++;
+  }
+
+  /** The text of a message with its format (format.js): the parsed HTML, or the plain body without marks. */
+  function richOf(c) {
+    if (c.format === 'org.matrix.custom.html' && typeof c.formatted_body === 'string') {
+      const r = format.parse(c.formatted_body, { max: TEXT_MAX });
+      if (r) return { text: text(r.text), marks: r.marks.length ? r.marks : null };
+    }
+    return { text: text(c.body), marks: null };
+  }
+
+  /**
+   * The link preview a bridge sent with a text (com.beeper.linkpreviews, MSC4095 — mautrix-whatsapp
+   * pkg/msgconv/urlpreview.go convertURLPreviewToBeeper): the first one, an http(s) address only.
+   * → { preview: { url, title, description, site, image: { ref, mime, w, h, size } | null }, mxc } or null
+   */
+  function previewOf(row, c) {
+    const list = Array.isArray(c['com.beeper.linkpreviews']) ? c['com.beeper.linkpreviews'] : [];
+    const p = list[0] && typeof list[0] === 'object' && !Array.isArray(list[0]) ? list[0] : null;
+    if (!p) return null;
+    let raw = typeof p.matched_url === 'string' && p.matched_url ? p.matched_url : (typeof p['og:url'] === 'string' ? p['og:url'] : '');
+    raw = raw.trim();
+    // WhatsApp names the address as it stood in the text — "www.…" without a scheme
+    if (raw && !/^[a-z][a-z0-9+.-]{0,20}:/i.test(raw) && !/\s/.test(raw)) {
+      try { if (new URL(`https://${raw}`).hostname.includes('.')) raw = `https://${raw}`; } catch { /* not an address */ }
+    }
+    const url = format.linkUrl(raw);
+    if (!url) return null;
+    const title = line(p['og:title'], PREVIEW_TITLE_MAX) || null;
+    const description = line(p['og:description'], PREVIEW_TEXT_MAX) || null;
+    let site = line(p['og:site_name'], 100) || null;
+    if (!site) { try { site = new URL(url).hostname.replace(/^www\./, '') || null; } catch { site = null; } }
+    const int = (v, max) => { const n = Number(v); return Number.isSafeInteger(n) && n > 0 && n <= max ? n : null; };
+    let image = null;
+    let mxc = null;
+    // an encrypted picture cannot be opened here (the rooms of the bridges are not encrypted, so there is none)
+    if (hs.mxcOf(p['og:image'], opts.serverName) && !p['beeper:image:encryption']) {
+      mxc = p['og:image'];
+      const mime = String(p['og:image:type'] || '').split(';')[0].trim().toLowerCase();
+      image = { ref: mediaRef(row.user_id, mxc), mime: MIME_RE.test(mime) ? mime : null, w: int(p['og:image:width'], 100000), h: int(p['og:image:height'], 100000), size: int(p['matrix:image:size'], 1e9) };
+    }
+    if (!title && !description && !image) return { preview: { url, title: null, description: null, site, image: null }, mxc: null };
+    return { preview: { url, title, description, site, image }, mxc };
   }
 
   /** What a plugin learns about a file: kind, name, type, size, the picture's sides, the length; the reference to fetch it. */
@@ -450,10 +558,11 @@ function create(opts) {
   /** A room just became the person's: its name and kind, then what was said before the account was in it. */
   async function opened(row, out) {
     const i = await roomInfo(row, { fresh: true });
-    if (i.kind !== row.kind) row = saveRoom(row.room_id, row.user_id, row.network, 'joined', i.kind);
+    if (!rowFits(row, i)) row = saveRoom(row.room_id, row.user_id, row.network, 'joined', i.kind, i);
     out.push({ userId: row.user_id, network: row.network, payload: { type: 'chat', chat: chatOf(row, i), at: Date.now() } });
     let list = [];
-    try { list = await hs.recent(opts.target(), mxidOf(row.user_id), row.room_id, 30); }
+    // a channel: only its newest posts
+    try { list = await hs.recent(opts.target(), mxidOf(row.user_id), row.room_id, i.channel ? CHANNEL_HISTORY : 30); }
     catch (err) { if (err && err.code === 'ERR_BRIDGE_UNREACHABLE') throw err; list = []; }
     for (const ev of list) {
       if (!ev || typeof ev !== 'object') continue;
@@ -529,6 +638,18 @@ function create(opts) {
     }
     failing.delete(id);
     const now = Date.now();
+    const stored = fileOut(out, now, () => db().prepare('INSERT OR IGNORE INTO bridge_txns (id, at) VALUES (?, ?)').run(id, now));
+    stats.transactions++;
+    stats.events += stored;
+    stats.lastAt = now;
+    if (stats.transactions % 200 === 0) prune(now);
+    const eph = [];
+    for (const ev of edus) { try { eph.push(...ephemeral(ev)); } catch { /* not understood */ } }
+    return { stored, ephemeral: eph.map((e) => ({ userId: e.userId, network: e.network, ...e.payload })), duplicate: false };
+  }
+
+  /** Neutral events into the inbox (or the backlog), in one database transaction with `also()`. → rows stored */
+  function fileOut(out, now, also = null) {
     const d = db();
     const ins = d.prepare('INSERT INTO bridge_inbox (at, user_id, network, payload) VALUES (?, ?, ?, ?)');
     const back = d.prepare('INSERT INTO bridge_backlog (at, user_id, network, chat, payload) VALUES (?, ?, ?, ?, ?)');
@@ -537,26 +658,84 @@ function create(opts) {
     const moved = d.prepare('DELETE FROM bridge_backlog WHERE user_id = ? AND chat = ?');
     const file = d.prepare("INSERT INTO bridge_media (mxc, user_id, at, state) VALUES (?, ?, ?, ?) ON CONFLICT(mxc, user_id) DO NOTHING");
     let stored = 0;
+    const trim = new Map(); // `${userId}\n${chat}` → [userId, chat]: a channel whose history grew
     d.transaction(() => {
       for (const o of out) {
         if (o.mxc) file.run(o.mxc, o.userId, now, o.drop ? 'drop' : 'wait');
         if (o.drop) continue;
         const chat = o.payload.chat && typeof o.payload.chat.id === 'string' ? o.payload.chat.id : null;
-        if (o.payload.history && chat) { back.run(now, o.userId, o.network, chat, seal(o.payload)); stored++; continue; }
+        if (o.payload.history && chat) {
+          back.run(now, o.userId, o.network, chat, seal(o.payload));
+          stored++;
+          if (o.channel) trim.set(`${o.userId}\n${chat}`, [o.userId, chat]);
+          continue;
+        }
         // the history of this chat comes first, in the order it arrived
         if (chat && FLUSH_TYPES.includes(o.payload.type) && waits.get(o.userId, chat)) { stored += move.run(o.userId, chat).changes; moved.run(o.userId, chat); }
         ins.run(now, o.userId, o.network, seal(o.payload));
         stored++;
       }
-      d.prepare('INSERT OR IGNORE INTO bridge_txns (id, at) VALUES (?, ?)').run(id, now);
+      for (const [userId, chat] of trim.values()) channelTrim(userId, chat);
+      if (also) also();
     })();
-    stats.transactions++;
-    stats.events += stored;
-    stats.lastAt = now;
-    if (stats.transactions % 200 === 0) prune(now);
-    const eph = [];
-    for (const ev of edus) { try { eph.push(...ephemeral(ev)); } catch { /* not understood */ } }
-    return { stored, ephemeral: eph.map((e) => ({ userId: e.userId, network: e.network, ...e.payload })), duplicate: false };
+    return stored;
+  }
+
+  /**
+   * A channel keeps at most CHANNEL_HISTORY posts of its history (the newest; the bridge brings up to
+   * config.HISTORY.messages of every chat at a new link): older ones go — with their edits, reactions and deletions —
+   * and their files are not wanted at the homeserver any more. Inside fileOut's transaction. → rows dropped
+   */
+  function channelTrim(userId, chat) {
+    const d = db();
+    const rows = d.prepare('SELECT seq, payload FROM bridge_backlog WHERE user_id = ? AND chat = ? ORDER BY seq DESC').all(userId, chat).map((r) => ({ seq: r.seq, p: open(r.payload) }));
+    const kept = new Set();
+    for (const r of rows) if (r.p && r.p.type === 'message' && kept.size < CHANNEL_HISTORY) kept.add(r.p.id);
+    const del = d.prepare('DELETE FROM bridge_backlog WHERE seq = ?');
+    const unwanted = d.prepare("UPDATE bridge_media SET state = 'drop' WHERE mxc = ? AND user_id = ? AND state = 'wait'");
+    let n = 0;
+    for (const r of rows) {
+      const p = r.p;
+      if (p && (p.type === 'message' ? kept.has(p.id) : kept.has(p.target))) continue;
+      del.run(r.seq);
+      n++;
+      for (const ref of [p && p.media && p.media.ref, p && p.preview && p.preview.image && p.preview.image.ref]) {
+        const f = ref ? openMediaRef(ref) : null;
+        if (f && f.userId === userId) unwanted.run(f.mxc, userId);
+      }
+      stats.historyDropped++;
+    }
+    return n;
+  }
+
+  /**
+   * Rooms known from before version 7 (bridge_rooms.channel NULL): their kind, channel and readOnly from the room's
+   * state, a few at a time (index.js tick) — the plugin gets a 'chat' event for each that changed. → { looked, changed }
+   */
+  async function refreshRooms({ limit = 20 } = {}) {
+    const n = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, 200) : 20;
+    const list = db().prepare("SELECT * FROM bridge_rooms WHERE channel IS NULL AND state = 'joined' ORDER BY created_at LIMIT ?").all(n);
+    const out = [];
+    let looked = 0;
+    for (const old of list) {
+      let row = roomRow(old.room_id) || old;
+      let i;
+      try { i = await roomInfo(row, { fresh: true }); }
+      catch (err) {
+        if (err && err.code === 'ERR_BRIDGE_UNREACHABLE') break;
+        // the account is not in the room any more
+        if (err && (err.reason === 'm_forbidden' || err.reason === 'm_not_found')) { saveRoom(row.room_id, row.user_id, row.network, 'left'); info.delete(row.room_id); }
+        else saveRoom(row.room_id, row.user_id, row.network, row.state, row.kind, { channel: false, readOnly: !!row.read_only });
+        looked++;
+        continue;
+      }
+      looked++;
+      const changed = row.kind !== i.kind || !!i.channel || !!i.readOnly;
+      row = saveRoom(row.room_id, row.user_id, row.network, 'joined', i.kind, i);
+      if (changed) out.push({ userId: row.user_id, network: row.network, payload: { type: 'chat', chat: chatOf(row, i), at: Date.now() } });
+    }
+    const stored = out.length ? fileOut(out, Date.now()) : 0;
+    return { looked, changed: out.length, stored };
   }
 
   /** Old transaction ids and an inbox nobody empties. */
@@ -668,10 +847,10 @@ function create(opts) {
     const r = roomRow(roomId);
     return r && r.user_id === userId && r.network === network && r.state !== 'left' ? r.ref : null;
   }
-  /** chats(userId, network) → [{ id, kind, open }] */
+  /** chats(userId, network) → [{ id, kind, open, channel, readOnly }] */
   function chats(userId, network) {
-    return db().prepare('SELECT ref, kind, state FROM bridge_rooms WHERE user_id = ? AND network = ? ORDER BY created_at').all(userId, network)
-      .map((r) => ({ id: r.ref, kind: r.kind, open: r.state === 'joined' }));
+    return db().prepare('SELECT ref, kind, state, channel, read_only FROM bridge_rooms WHERE user_id = ? AND network = ? ORDER BY created_at').all(userId, network)
+      .map((r) => ({ id: r.ref, kind: r.kind, open: r.state === 'joined', channel: r.channel === 1, readOnly: r.read_only === 1 }));
   }
 
   /**
@@ -689,8 +868,8 @@ function create(opts) {
   }
 
   return {
-    transaction, pull, ack, pending, roomOf, chatOfRoom, pictureRef, chats, prune, stats, mxidOf, contactRef, mediaRef, openMediaRef, adopt,
+    transaction, pull, ack, pending, roomOf, chatOfRoom, pictureRef, chats, prune, stats, mxidOf, contactRef, mediaRef, openMediaRef, adopt, refreshRooms,
     historyPull, historyAck, historyPending, historyTrim, mediaFetched, mediaToClean, mediaCleaned, mediaWaiting, _handlePdu: handlePdu, _ephemeral: ephemeral, _forget: () => { rooms.clear(); info.clear(); } };
 }
 
-module.exports = { create, TEXT_MAX, PULL_MAX, REF_RE, HISTORY_SLACK_MS, MEDIA_KEEP_MS, MEDIA_SETTLE_MS };
+module.exports = { create, TEXT_MAX, PULL_MAX, REF_RE, HISTORY_SLACK_MS, MEDIA_KEEP_MS, MEDIA_SETTLE_MS, CHANNEL_HISTORY };

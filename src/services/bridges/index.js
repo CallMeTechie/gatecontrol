@@ -859,7 +859,7 @@ async function typing(userId, network, chatId, on) {
   return hs.typing(target, mxid, row.room_id, on === true);
 }
 
-/** gc.bridges.chats(userId, network) → [{ id, kind, open }] — the person's chats on a bridge (no names: those travel with the events). */
+/** gc.bridges.chats(userId, network) → [{ id, kind, open, channel, readOnly }] — the person's chats on a bridge (no names: those travel with the events). */
 function chats(userId, network) {
   if (!NETWORKS.includes(network)) throw new BridgesError('ERR_INVALID', 'unknown network');
   mxidOf(userId);
@@ -940,6 +940,11 @@ async function cleanupRun({ limit = CLEAN_PER_RUN } = {}) {
 async function tick() {
   await backupMod.tick();
   try { await cleanupRun(); } catch (err) { logger.warn({ err: err.message }, 'bridges: clean-up failed'); }
+  // version 7: kind, channel and readOnly of the rooms known from before, a few per tick
+  try {
+    const r = runtime.events && hsTarget() ? await runtime.events.refreshRooms({ limit: 20 }) : null;
+    if (r && r.stored) (runtime.wake || wakePlugins)([]);
+  } catch (err) { logger.warn({ err: err.message }, 'bridges: rooms not looked at'); }
 }
 
 /** The master key (backup.js) — never returned by any API. */
