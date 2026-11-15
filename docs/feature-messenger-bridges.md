@@ -400,12 +400,30 @@ that person; the number must be `+` with the country code (spaces, dashes,
 brackets and a leading `00` are taken), else `ERR_INVALID` / `invalid_number`.
 At most 20 numbers per person and hour (`ERR_RATE_LIMIT` with `retryAfterS`)
 — every number is a question to WhatsApp. Of the answer only the name and the
-room go on; the bridge's id, address and identifiers (they hold the number)
+room go on, and the contact's reference as the events name it (`contactId` = `sender.id`); the bridge's id, address and identifiers (they hold the number)
 and its error texts (they name the number) stay out, and the number is never
 written to a log or a table. `createDm` knows the room at once (state
 `invited` in `bridge_rooms`, the plugin has the chat reference straight away);
 its join brings name and kind as usual, sending works as soon as the account
 is in the room.
+
+## Contacts (stage 4c)
+
+`gc.bridges.contacts(userId, network, { query? })`, `matchNumbers(userId, network, numbers)` and
+`createDmByRef(userId, network, ref)` (gc.bridges version 6) — „Neuer Chat“ with the person's WhatsApp contacts
+instead of a typed number. The provisioning API's `GET /v3/contacts` and `POST /v3/search_users { query }`
+(bridgev2 `provisionutil.GetContactList` / `SearchUsers`: `{ contacts | results: [RespResolveIdentifier] }`;
+mautrix-whatsapp `startchat.go getContactList` reads the bridge's own contact store — no question to WhatsApp). Of
+each contact only the name, the picture (as a reference for `media.fetch`, like `contact.avatar`) and the person's
+chat with it (`dm_room_mxid` → the chat reference, only when that room is the person's) go on, and the contact's reference as the events name it (`contactId` = `sender.id`); the bridge's id, the
+ghost's Matrix id and the identifiers (`tel:+…`) stay in this module. In their place a sealed reference (`k…`,
+AES-256-GCM with a key that exists only in this process): person, network, the ghost's Matrix id (or the bridge's id)
+and the time — it opens only for that person and network, for 30 minutes, until the server restarts.
+`createDmByRef` hands the ghost's Matrix id to `POST /v3/create_dm/{id}` (`ResolveIdentifier`: `ParseGhostMXID` →
+`CreateChatWithGhost`, no `IsOnWhatsApp`) and adopts the room like `createDm`; it does not count against the 20
+numbers per hour. `matchNumbers` compares the person's numbers (e.g. of their address book, handed in by the plugin)
+with the identifiers of that list — nothing else is read, nothing counted, nothing kept. The list is held in memory
+for 10 minutes per person and network (a search is not kept), never written to a table or a log.
 
 ## History (stage 5)
 
@@ -531,7 +549,7 @@ show them); the log lines stay in the file.
 | 1 | service, preview gate, wish/state files, `update.sh`, secrets, `gc.bridges` (state, switch, a person's link through the provisioning API), tests against a stand-in bridge |
 | 2 | this: compose profile `bruecken` with pinned images, generated configuration, provisional limits, the probe, "outdated", `unlinkFor`; plugins: portal page "Verknüpfte Dienste", the parents' switch in the family plugin. Open until the probe ran: whether the programs start with these files, and the real limits |
 | 3 | messages (see "Messages"): the server as an application service — transactions through `bruecken-core-relay`, neutral events in a sealed inbox, sending as the person; text, reply, edit, deletion, reaction, read, typing, what the bridge says about a sent message; the probe blanks more. Plugin: bridged chats for the linked person only |
-| 4 | files in both directions through the plugin's media with the virus scan, pictures of chats and contacts, a chat with a new number (API only); the apps follow |
+| 4 | files in both directions through the plugin's media with the virus scan, pictures of chats and contacts, a chat with a new number (API only); the apps follow. 4c: a new chat with a contact of the bridge (`contacts`, `matchNumbers`, `createDmByRef`, gc.bridges version 6) |
 | 5 | this: history (each person: off / 30 days / everything; the plugin files it at night in small portions), the nightly encrypted snapshot of the bridges' data in the GateControl backup with restore, the files of bridged chats in a sealed media area on a storage target (plugin), clean-up of the homeserver's copies, "phone not seen" from the bridge's own warning, the pins to `update.sh` (marker 8) and "client outdated" |
 | 6 | a gateway as the place, moving between places |
 | 7 | Signal, Telegram |

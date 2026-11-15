@@ -1624,6 +1624,9 @@ async function vpnDnsCall(plugin, op, args) {
 // network }) reads the state of those people's logins at the bridge (a phone not seen for 12 days, a version the
 // messenger turns away) without a person: it sends nothing and names nobody. A file taken over with media.fetch may
 // go at the homeserver afterwards (services/bridges mediaFetched).
+// Version 6 (a new chat with a contact): contacts / matchNumbers read the person's contacts at the bridge (its own
+// store — no question to the messenger) inside a request of that person; createDmByRef starts a chat with one of them
+// by its sealed reference inside a changing request of that person. No number, id or address goes to the plugin.
 
 const BRIDGES_CODES = new Set(['ERR_INVALID', 'ERR_BRIDGES_UNAVAILABLE', 'ERR_BRIDGE_UNREACHABLE', 'ERR_BRIDGE', 'ERR_BUSY', 'ERR_RATE_LIMIT']);
 const BRIDGE_FILE_TIMEOUT_MS = 200000;
@@ -1699,7 +1702,7 @@ async function bridgesCall(plugin, op, args) {
       need(target.role !== 'admin', 'ERR_BRIDGES_DENIED', "an administrator's link is never ended by somebody else");
       return await br.unlinkFor(uid, a.network, { actor: { id: actor.id, name: actor.display_name || actor.username }, pluginId: plugin.id });
     }
-    const write = op !== 'login.flows' && op !== 'logins' && op !== 'chats' && op !== 'history.get';
+    const write = op !== 'login.flows' && op !== 'logins' && op !== 'chats' && op !== 'history.get' && op !== 'contacts' && op !== 'matchNumbers';
     // a file to send: checked before anybody is asked (its own, servable)
     const file = op === 'send' && a.message && typeof a.message === 'object' && a.message.media != null
       ? bridgeFile(plugin, a.message.media && a.message.media.mediaId) : null;
@@ -1716,6 +1719,10 @@ async function bridgesCall(plugin, op, args) {
     if (op === 'send') return await br.send(uid, a.network, a.chatId, a.message, file);
     if (op === 'resolve') return await br.resolve(uid, a.network, a.number);
     if (op === 'createDm') return await br.createDm(uid, a.network, a.number);
+    // version 6: the person's contacts at the bridge
+    if (op === 'contacts') return await br.contacts(uid, a.network, { query: a.query });
+    if (op === 'matchNumbers') return await br.matchNumbers(uid, a.network, a.numbers);
+    if (op === 'createDmByRef') return await br.createDmByRef(uid, a.network, a.ref);
     if (op === 'react') return await br.react(uid, a.network, a.chatId, a.reaction);
     if (op === 'redact') return await br.redact(uid, a.network, a.chatId, a.redaction);
     if (op === 'read') return await br.read(uid, a.network, a.chatId, a.messageId);
@@ -2512,6 +2519,7 @@ async function handle(plugin, api, args, ctx) {
     case 'bridges.redact': case 'bridges.read': case 'bridges.typing':
     case 'bridges.media.fetch': case 'bridges.resolve': case 'bridges.createDm':
     case 'bridges.history.get': case 'bridges.history.set': case 'bridges.history.pull': case 'bridges.history.ack': case 'bridges.health':
+    case 'bridges.contacts': case 'bridges.matchNumbers': case 'bridges.createDmByRef':
       return bridgesCall(plugin, api.slice('bridges.'.length), args);
     // home cache (permissions.homeCache, homeCache.js — phase 3b)
     case 'homeCache.offer': return homeCacheCall(plugin, 'offer', args);

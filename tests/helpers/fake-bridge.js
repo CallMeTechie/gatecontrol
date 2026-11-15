@@ -14,6 +14,9 @@
 //   bridge.logOut(userId, loginId)   the service dropped the linked device (BAD_CREDENTIALS)
 //   bridge.oddStep = 'webauthn'      the next login starts with a step GateControl does not offer
 //   bridge.numbers   Map '+49…' → { name, room } — who is "on WhatsApp" (resolve_identifier / create_dm, stage 4)
+//   bridge.contacts  [{ number, name, lid?, avatar?, room?, chatRoom? }] — the contact store of the bridge (stage 4c:
+//                    GET contacts, POST search_users; create_dm with a ghost's Matrix id). `room`: the room a chat
+//                    with it gets; `chatRoom`: the room it has already (dm_room_mxid in the list)
 //   await bridge.close()
 
 const fs = require('node:fs');
@@ -25,7 +28,7 @@ const FLOWS = [
 ];
 
 function startFakeBridge({ socket, secret }) {
-  const state = { requests: [], logins: new Map(), processes: new Map(), oddStep: null, seq: 0, numbers: new Map() };
+  const state = { requests: [], logins: new Map(), processes: new Map(), oddStep: null, seq: 0, numbers: new Map(), contacts: [] };
   const send = (res, status, json) => { const b = JSON.stringify(json); res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(b) }); res.end(b); };
   const notFound = (res) => send(res, 404, { errcode: 'M_NOT_FOUND', error: 'Login process not found (internal detail)' });
 
@@ -61,6 +64,28 @@ function startFakeBridge({ socket, secret }) {
         });
       }
       if (m === 'GET' && seg.join('/') === 'login/flows') return send(res, 200, { flows: FLOWS });
+      // stage 4c: the contact store (startchat.go getContactList, provisionutil listcontacts.go) — as the real bridge
+      // answers: the WhatsApp id, the number in identifiers, the ghost, the room of a chat that exists
+      const contactOut = (c) => {
+        const id = c.lid ? `lid-${c.lid}` : c.number.slice(1);
+        return { id, name: c.name, ...(c.avatar ? { avatar_url: c.avatar } : {}), identifiers: [`tel:${c.number}`], mxid: `@whatsapp_${id}:gc.internal`, ...(c.chatRoom ? { dm_room_mxid: c.chatRoom } : {}) };
+      };
+      if (m === 'GET' && seg.join('/') === 'contacts') {
+        if (!(state.logins.get(userId) || []).length) return send(res, 403, { errcode: 'M_FORBIDDEN', error: 'You must be logged in to list contacts' });
+        return send(res, 200, { contacts: state.contacts.map(contactOut) });
+      }
+      if (m === 'POST' && seg.join('/') === 'search_users') {
+        if (!(state.logins.get(userId) || []).length) return send(res, 403, { errcode: 'M_FORBIDDEN', error: 'You must be logged in to list contacts' });
+        const q = String((body && body.query) || '').toLowerCase();
+        return send(res, 200, { results: state.contacts.filter((c) => c.name.toLowerCase().includes(q) || c.number.includes(q)).map(contactOut) });
+      }
+      if (m === 'POST' && seg[0] === 'create_dm' && seg[1] && seg[1].startsWith('@whatsapp_')) {
+        if (!(state.logins.get(userId) || []).length) return send(res, 400, { errcode: 'FI.MAU.NOT_LOGGED_IN', error: "You're not logged in" });
+        const c = state.contacts.find((x) => contactOut(x).mxid === seg[1]);
+        if (!c) return send(res, 404, { errcode: 'M_NOT_FOUND', error: 'Identifier not found' });
+        const out = contactOut(c);
+        return send(res, 201, { ...out, dm_room_mxid: c.chatRoom || c.room });
+      }
       if ((m === 'GET' && seg[0] === 'resolve_identifier') || (m === 'POST' && seg[0] === 'create_dm')) {
         if (!(state.logins.get(userId) || []).length) return send(res, 400, { errcode: 'FI.MAU.NOT_LOGGED_IN', error: "You're not logged in" });
         const who = state.numbers.get(seg[1]);
@@ -133,6 +158,8 @@ function startFakeBridge({ socket, secret }) {
       logins: state.logins,
       processes: state.processes,
       numbers: state.numbers,
+      get contacts() { return state.contacts; },
+      set contacts(v) { state.contacts = v; },
       set oddStep(v) { state.oddStep = v; },
       confirm: (processId) => settle(processId, 'confirm'),
       expire: (processId) => settle(processId, 'expire'),

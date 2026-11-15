@@ -660,6 +660,12 @@ function create(opts) {
     const r = db().prepare('SELECT * FROM bridge_rooms WHERE ref = ?').get(chatId);
     return r && r.user_id === userId && r.network === network ? r : null;
   }
+  /** stage 4c: the chat reference of a room the bridge named for a contact — only when it is this person's. */
+  function chatOfRoom(userId, network, roomId) {
+    if (!hs.ROOM_RE.test(String(roomId || ''))) return null;
+    const r = roomRow(roomId);
+    return r && r.user_id === userId && r.network === network && r.state !== 'left' ? r.ref : null;
+  }
   /** chats(userId, network) → [{ id, kind, open }] */
   function chats(userId, network) {
     return db().prepare('SELECT ref, kind, state FROM bridge_rooms WHERE user_id = ? AND network = ? ORDER BY created_at').all(userId, network)
@@ -681,7 +687,7 @@ function create(opts) {
   }
 
   return {
-    transaction, pull, ack, pending, roomOf, chats, prune, stats, mxidOf, contactRef, mediaRef, openMediaRef, adopt,
+    transaction, pull, ack, pending, roomOf, chatOfRoom, pictureRef, chats, prune, stats, mxidOf, contactRef, mediaRef, openMediaRef, adopt,
     historyPull, historyAck, historyPending, historyTrim, mediaFetched, mediaToClean, mediaCleaned, mediaWaiting, _handlePdu: handlePdu, _ephemeral: ephemeral, _forget: () => { rooms.clear(); info.clear(); } };
 }
 
