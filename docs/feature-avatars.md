@@ -7,7 +7,7 @@ presence). The colour is the colour of the presence ring "at home"; red means "a
 therefore not a favourite colour.
 
 Each person changes both in the GateControl app (Settings → Profil), on "Konto & Sicherheit"
-(`/profile`) or in the portal on "Meine Geräte"; an administrator changes them on the user
+(`/profile`) or in the portal on "Mein Profil" (until the user profile: "Meine Geräte"; docs/feature-user-profile.md); an administrator changes them on the user
 profile (`/users/:id`, card "Profilbild & Farbe").
 
 ## Colours

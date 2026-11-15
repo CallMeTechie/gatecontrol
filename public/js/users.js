@@ -895,7 +895,7 @@
           : T('up.pf.phones_summary', { n: ph.count, confirmed: ph.confirmed }) + (ph.recognition ? ' · ' + T('up.pf.recognition_on') : '');
         rows.push(pfRow(T('up.pf.phones'), summary, el('span', { class: 'up-pf-note' }, T('up.pf.no_digits'))));
         (ph.list || []).forEach((n, i) => {
-          const parts = [T('myprofile.kind.' + n.kind), T('myprofile.state.' + n.state)];
+          const parts = [T('myprofile.kind.' + n.kind), T('up.pf.state.' + n.state)];
           if (n.useForRecognition && p.recognition.byPhone) parts.push(T('up.pf.recognition_on'));
           const value = [parts.join(' · ')];
           if (n.duplicate) value.push(' · ', el('b', { class: 'up-pf-dupword' }, T('up.pf.duplicate')));
