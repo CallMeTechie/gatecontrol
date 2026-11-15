@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.279.0] — 2026-11-15
+
+### Features
+- Kanäle, Gruppen und Format aus WhatsApp (gc.bridges Version 7) (#495)
+
+---
+
 ## [1.278.1] — 2026-11-15
 
 ### Fixes
