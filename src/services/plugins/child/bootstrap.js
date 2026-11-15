@@ -341,16 +341,16 @@ function makeBridges() {
     cancel: (userId, network, processId) => hostCall('bridges.login.cancel', { userId, network, processId }),
   });
   return Object.freeze({
-    /** the version of this interface (raised when methods or fields are added) */
-    version: 4,
-    /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion }], host, history } */
+    /** the version of this interface (raised when methods or fields are added; 5: history, health, status().backup / cleanup) */
+    version: 5,
+    /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion, clientOutdated }], host, messages, history, backup, cleanup } */
     status: () => hostCall('bridges.status', {}),
-    /** configure({ enabled?, networks?: { whatsapp?: boolean } }) → status() — inside a changing request of an administrator */
+    /** configure({ enabled?, networks?: { whatsapp?: boolean }, history?: boolean, backupNow?: true, backupTime?: 'HH:MM' }) → status() — inside a changing request of an administrator */
     configure: (patch) => hostCall('bridges.configure', { patch }),
     login,
-    /** logins(userId, network) → [{ network, id, name, state: connected | connecting | logged_out | error | unknown, since, error }] */
+    /** logins(userId, network) → [{ network, id (a reference — HMAC per person; never the bridge’s id, which is the number), name, state: connected | connecting | logged_out | error | unknown, since, error }] */
     logins: (userId, network) => hostCall('bridges.logins', { userId, network }),
-    /** logout(userId, network, loginId) → { ok: true } */
+    /** logout(userId, network, loginId) → { ok: true } — loginId: the reference of logins() */
     logout: (userId, network, loginId) => hostCall('bridges.logout', { userId, network, loginId }),
     /** since version 2: unlinkFor(userId, network, actorId) → { unlinked } — end somebody else's link (a parent for a child); never an administrator's */
     unlinkFor: (userId, network, actor) => hostCall('bridges.unlinkFor', { userId, network, actor }),
@@ -389,6 +389,19 @@ function makeBridges() {
     resolve: (userId, network, number) => hostCall('bridges.resolve', { userId, network, number }),
     /** createDm(userId, network, number) → { chat: { id, kind: 'direct', name } } — the direct chat with this number (made or found) */
     createDm: (userId, network, number) => hostCall('bridges.createDm', { userId, network, number }),
+    // ── since version 5: older messages, the state of the people's logins (docs/plugins.md "Messenger bridges", "History") ──
+    history: Object.freeze({
+      /** get(userId) → { allowed, days, default, options, pending } — inside a request of that person */
+      get: (userId) => hostCall('bridges.history.get', { userId }),
+      /** set(userId, days) → get() — days: 0 (none) | 30 | -1 (everything); inside a changing request of that person */
+      set: (userId, days) => hostCall('bridges.history.set', { userId, days }),
+      /** pull({ limit?, chatId?, userId? }) → { events: [{ seq, userId, network, type, chat, …, history: true }], more } — needs no person */
+      pull: (opts) => hostCall('bridges.history.pull', { limit: opts && opts.limit, chatId: opts && opts.chatId, userId: opts && opts.userId }),
+      /** ack(seqs) → { ok, pending } — these are filed (or not wanted) */
+      ack: (seqs) => hostCall('bridges.history.ack', { seqs }),
+    }),
+    /** health({ userIds, network }) → [{ userId, logins: [{ state, since, error, phoneOffline, clientOutdated }] | null }] — needs no person, names no login */
+    health: (opts) => hostCall('bridges.health', { userIds: opts && opts.userIds, network: opts && opts.network }, 125000),
   });
 }
 

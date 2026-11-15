@@ -125,13 +125,20 @@ function whoamiOut(w) {
     .map((l) => {
       const st = l.state && typeof l.state === 'object' ? l.state : {};
       const ts = Number(st.timestamp);
+      const error = word(st.error).toLowerCase() || null;
+      // stage 5: mautrix-whatsapp reports a phone not seen for 12 days (pkg/connector/phoneping.go,
+      // PhoneDisconnectWarningTime) as TRANSIENT_DISCONNECT with wa-phone-offline although it is connected — the link
+      // still works; and 405 "client outdated" (handlewhatsapp.go) when WhatsApp turns the bridge's version away
+      const phoneOffline = error === 'wa-phone-offline';
       return {
         id: l.id,
         name: str(l.name, 80),
-        state: STATES[st.state_event] || 'unknown',
+        state: phoneOffline ? 'connected' : (STATES[st.state_event] || 'unknown'),
         // seconds or milliseconds, depending on the bridge version
         since: Number.isFinite(ts) && ts > 0 ? new Date(ts < 1e11 ? ts * 1000 : ts).toISOString() : null,
-        error: word(st.error).toLowerCase() || null,
+        error,
+        phoneOffline,
+        clientOutdated: error === 'wa-client-outdated',
       };
     });
   return { logins, flows: flowsOut(w && w.login_flows) };

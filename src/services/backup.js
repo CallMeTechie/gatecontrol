@@ -60,9 +60,23 @@ async function collectBackup() {
   const tables = exportTables(getDb());
   const plugins = await exportPluginsRaw();
   tables.data.plugins = plugins; // filled in place: the key keeps its position in the file
+  // the messenger bridges' state (services/bridges/backup.js): encrypted snapshot, master key, rooms — absent before
+  // the bridges were ever switched on
+  const bridges = await exportBridges();
+  if (bridges) tables.data.bridges = bridges;
   const backup = { version: tables.version, created_at: tables.created_at, plugins_incomplete: incompleteOf(plugins), data: tables.data };
-  Object.defineProperty(backup, 'release', { enumerable: false, value: () => (plugins.release ? plugins.release() : undefined) });
+  Object.defineProperty(backup, 'release', { enumerable: false, value: async () => {
+    if (bridges && bridges.release) await bridges.release();
+    if (plugins.release) await plugins.release();
+  } });
   return backup;
+}
+
+async function exportBridges() {
+  try { return await require('./bridges/backup').exportPart(); } catch (err) {
+    logger.warn({ err: err.message }, 'backup export: messenger bridges skipped');
+    return null;
+  }
 }
 
 function incompleteOf(plugins) {
@@ -100,9 +114,10 @@ function estimateSize(backup) {
     if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) for (const k of Object.keys(v)) walk(v[k]);
   };
   walk(backup.data && backup.data.plugins);
+  walk(backup.data && backup.data.bridges);
   let rest = 0;
   try {
-    const { plugins, ...tables } = backup.data || {};
+    const { plugins, bridges, ...tables } = backup.data || {};
     rest = Buffer.byteLength(JSON.stringify(tables) || '') * 1.5 + 1024 * 1024; // + indentation, plugin metadata
   } catch { rest = 32 * 1024 * 1024; }
   return Math.round(bin + rest);
@@ -184,7 +199,12 @@ async function readBackupFile(file, { under = [] } = {}) {
   const { value, spooled } = await jsonSpool.parseFile(file);
   if (!spooled) return value;
   // `under`: where the backup is in the file (['backup'] in a decrypted off-site payload)
-  return jsonSpool.resolve(value, (at) => under.every((k, i) => at[i] === k) && isPluginBinary(at.slice(under.length)));
+  return jsonSpool.resolve(value, (at) => under.every((k, i) => at[i] === k) && (isPluginBinary(at.slice(under.length)) || isBridgesBinary(at.slice(under.length))));
+}
+
+// data.bridges.snapshot.data — the encrypted snapshot of the messenger bridges stays spooled as well
+function isBridgesBinary(at) {
+  return at.length === 4 && at[0] === 'data' && at[1] === 'bridges' && at[2] === 'snapshot' && at[3] === 'data';
 }
 
 // data.plugins[i].db | .files.<path> | .data_files.<path> | .media[j].data — the parts that stay spooled
@@ -790,6 +810,7 @@ function validateBackup(backup) {
 
   errors.push(...require('./plugins/backup').validate(backup.data.plugins));
   errors.push(...require('./builtinBackup').validate(backup.data.builtin_integrations));
+  errors.push(...require('./bridges/backup').validate(backup.data.bridges));
 
   if (webhooks) {
     for (let i = 0; i < webhooks.length; i++) {
@@ -836,6 +857,8 @@ function getBackupSummary(backup) {
     plugins_incomplete: incompleteOf(d.plugins),
     // format 5 restores the complete plugin state (plugins not in it are removed)
     plugin_aware: backup.version >= 5 && Array.isArray(d.plugins),
+    // the messenger bridges' state: { snapshot, at, bytes, rooms } or null
+    bridges: require('./bridges/backup').summaryOf(d.bridges),
   };
 }
 
@@ -887,6 +910,9 @@ function validateEncryptedFields(data) {
         try { decrypt(String(v)); } catch { errors.push(`${table} #${i + 1} ${col}: cannot decrypt`); }
       }
     });
+  }
+  for (const [what, v] of require('./bridges/backup').encryptedFields(data.bridges)) {
+    try { decrypt(String(v)); } catch { errors.push(`${what}: cannot decrypt`); }
   }
   const rdp = data.rdp_routes || [];
   for (let i = 0; i < rdp.length; i++) {
@@ -1322,6 +1348,15 @@ async function restoreBackup(backup) {
     }
   }
 
+  // The messenger bridges (after the users: the rooms belong to people by name and id)
+  let bridgesResult = null;
+  if (backup.data.bridges) {
+    try {
+      const byName = new Map(getDb().prepare('SELECT id, username FROM users').all().map((u) => [u.username, u.id]));
+      bridgesResult = await require('./bridges/backup').restorePart(backup.data.bridges, { userIdByName: (n) => byName.get(n) });
+    } catch (err) { logger.warn({ error: err.message }, 'messenger bridges restore failed'); bridgesResult = { state: 'failed' }; }
+  }
+
   // Everything a device fetches may differ now — tell the open app streams.
   try {
     const control = require('./notify/control');
@@ -1349,6 +1384,7 @@ async function restoreBackup(backup) {
     plugins: pluginResult.restored,
     plugins_skipped: pluginResult.skipped,
     plugins_removed: pluginResult.removed,
+    bridges: bridgesResult,
   };
 }
 

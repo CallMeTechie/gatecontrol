@@ -19,6 +19,11 @@
 //     without a path to …/.gcdrive/files/…. Changes made on the target are
 //     found by a scan (every 15 minutes, scanArea) and reported to the plugin
 //     (journal plugin_media_changes, hook mediaChanged).
+//   * `sealed` (since the version after 1.276.0, gc.media.areas.ensure(area, { sealed: true })):
+//     the plugin keeps files of other people in the area (the messenger's
+//     files from bridged chats) — they are never readable on a target, the
+//     form is always 'blocks'. The plugin sets it; an administrator cannot
+//     choose 'files' for such an area.
 //
 // How the bytes travel:
 //
@@ -148,12 +153,18 @@ function ensure(plugin, area, opts = {}) {
   const o = opts && typeof opts === 'object' ? opts : {};
   const label = cleanLabel(o.label, area);
   const quota = quotaArg(o.quota);
+  if (o.sealed !== undefined && typeof o.sealed !== 'boolean') throw new AreaError('invalid', 'sealed: a boolean');
   const existing = rowOf(plugin.id, area);
   if (!existing) {
     if (db().prepare('SELECT COUNT(*) AS n FROM plugin_media_areas WHERE plugin = ?').get(plugin.id).n >= MAX_AREAS) throw new AreaError('limit', `at most ${MAX_AREAS} areas`);
-    db().prepare('INSERT INTO plugin_media_areas (plugin, area, label, quota_bytes) VALUES (?, ?, ?, ?)').run(plugin.id, area, label, quota);
+    db().prepare('INSERT INTO plugin_media_areas (plugin, area, label, quota_bytes, sealed) VALUES (?, ?, ?, ?, ?)').run(plugin.id, area, label, quota, o.sealed === true ? 1 : 0);
   } else {
     db().prepare("UPDATE plugin_media_areas SET label = ?, quota_bytes = ?, updated_at = datetime('now') WHERE plugin = ? AND area = ?").run(label, quota, plugin.id, area);
+    if (o.sealed !== undefined && (existing.sealed ? 1 : 0) !== (o.sealed ? 1 : 0)) {
+      db().prepare("UPDATE plugin_media_areas SET sealed = ?, updated_at = datetime('now') WHERE plugin = ? AND area = ?").run(o.sealed ? 1 : 0, plugin.id, area);
+      // readable files on a folder or a NAS become sealed ones (the worker moves them like any change of the form)
+      if (o.sealed && existing.form === 'files' && effectiveTarget(existing) != null) setTarget(plugin.id, area, effectiveTarget(existing), { form: 'blocks' });
+    }
   }
   return info(plugin.id, area);
 }
@@ -232,7 +243,7 @@ function info(pluginId, area, { admin = false, pre = null } = {}) {
     pending: p, state: failing ? 'unreachable' : (a.moving ? 'moving' : (p.count ? 'pending' : 'ok')),
     error: failing ? failing.lastError : (lastErr ? lastErr.push_error : null),
     // on this server and in blocks every file is sealed; readable files are plain on the target
-    encrypted: form === 'blocks', free: freeOf(eff),
+    encrypted: form === 'blocks', free: freeOf(eff), sealed: !!a.sealed,
     scan: form === 'files' ? { at: a.scanned_at || null, error: a.scan_error || null, stats: parseStats(a.scan_stats) } : null,
   };
 }
@@ -273,7 +284,11 @@ function setTarget(pluginId, area, targetId, { form } = {}) {
   if (tid != null && !targets().rowOf(tid)) throw new AreaError('invalid', 'no such storage target');
   if (form != null && !FORMS.includes(form)) throw new AreaError('invalid', "form: 'files' or 'blocks'");
   let f;
-  if (!filesCapable(tid)) {
+  if (a.sealed) {
+    // the plugin keeps other people's files here: sealed on every target
+    if (form === 'files') throw new AreaError('invalid', 'this area keeps its files sealed');
+    f = 'blocks';
+  } else if (!filesCapable(tid)) {
     if (form === 'files') throw new AreaError('invalid', 'readable files need a folder or a NAS');
     f = 'blocks';
   } else {

@@ -1819,7 +1819,8 @@
         + (a.free != null ? ' · ' + t('plugins.areas.free', { free: P.fmtBytes(a.free) }) : '');
       // the form (since 1.204.1): readable files or sealed blocks — only on a folder / NAS
       const curTarget = r.targets.find((tg) => tg.id === cur);
-      const form = el('select', { class: 'st-select', 'aria-label': t('plugins.areas.form_l', { name: a.label }), 'data-form': a.area, hidden: !(curTarget && curTarget.files) },
+      // a sealed area (the plugin keeps other people's files there, e.g. the messenger's bridged chats): never readable
+      const form = el('select', { class: 'st-select', 'aria-label': t('plugins.areas.form_l', { name: a.label }), 'data-form': a.area, hidden: !!a.sealed || !(curTarget && curTarget.files) },
         ['files', 'blocks'].map((f) => el('option', { value: f, text: t('plugins.areas.form_' + f) })));
       form.value = a.form;
       form.addEventListener('change', async () => {
@@ -1836,6 +1837,7 @@
           el('span', { class: 'pgx-stg-state' }, [areaState(a), a.encrypted ? pill(t('plugins.stg.encrypted'), 'blue') : pill(t('plugins.areas.readable'), 'mute')]),
         ]),
         a.state === 'unreachable' && a.error ? el('p', { class: 'pgx-stg-err', text: stgErrorText(a.error) }) : null,
+        a.sealed ? el('p', { class: 'pgx-hint', 'data-sealed': a.area, text: t('plugins.areas.sealed_hint') }) : null,
         scanBox,
         el('div', { class: 'pgx-inline pgx-area-ctl' }, [
           el('label', { class: 'st-label', text: t('plugins.areas.where') }), sel, form,

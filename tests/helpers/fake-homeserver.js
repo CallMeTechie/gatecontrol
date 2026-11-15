@@ -15,13 +15,16 @@
 //   hs.file(id, { data, mime })       a file of the homeserver: mxc://gc.internal/<id> (stage 4)
 //   hs.files                          Map id → { data, mime, name, userId } — also what GateControl uploaded
 //   hs.noLength = true                files are answered without Content-Length (chunked)
+//   hs.adminInvited = true            (stage 5) the homeserver ran "users make-user-admin @gcbot" — the bot may join
+//                                     #admins:gc.internal; joined, it may DELETE /_synapse/admin/v1/media/<server>/<id>
+//   hs.admins                         Set of the accounts in the admin room
 //   await hs.close()
 
 const fs = require('node:fs');
 const http = require('node:http');
 
 function startFakeHomeserver({ socket, asToken, coreSocket, hsToken }) {
-  const state = { requests: [], rooms: new Map(), users: new Set(), down: false, refuseJoin: null, seq: 0, sent: [], files: new Map(), noLength: false };
+  const state = { requests: [], rooms: new Map(), users: new Set(), down: false, refuseJoin: null, seq: 0, sent: [], files: new Map(), noLength: false, adminInvited: false, admins: new Set() };
   const send = (res, status, json) => { const b = JSON.stringify(json); res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(b) }); res.end(b); };
 
   const server = http.createServer((req, res) => {
@@ -59,6 +62,20 @@ function startFakeHomeserver({ socket, asToken, coreSocket, hsToken }) {
       const auth = req.headers.authorization || '';
       state.requests.push({ method: req.method, path: url.pathname, query: url.search, userId, auth, body });
       if (auth !== `Bearer ${asToken}`) return send(res, 401, { errcode: 'M_UNKNOWN_TOKEN', error: 'Unknown access token' });
+      // stage 5: the bot of the application service as the homeserver's administrator
+      if (decodeURIComponent(url.pathname) === '/_matrix/client/v3/join/#admins:gc.internal') {
+        if (userId !== '@gcbot:gc.internal') return send(res, 403, { errcode: 'M_EXCLUSIVE', error: 'User is not in namespace.' });
+        if (!state.adminInvited) return send(res, 403, { errcode: 'M_FORBIDDEN', error: 'not invited' });
+        state.admins.add(userId);
+        return send(res, 200, { room_id: '!admins:gc.internal' });
+      }
+      if (url.pathname.startsWith('/_synapse/admin/v1/media/') && req.method === 'DELETE') {
+        if (!state.admins.has(userId)) return send(res, 403, { errcode: 'M_FORBIDDEN', error: 'Only server administrators can use this endpoint' });
+        const seg = url.pathname.slice('/_synapse/admin/v1/media/'.length).split('/').map(decodeURIComponent);
+        if (seg[0] !== 'gc.internal' || !state.files.has(seg[1])) return send(res, 404, { errcode: 'M_NOT_FOUND', error: 'Media not found' });
+        state.files.delete(seg[1]);
+        return send(res, 200, { deleted_media: [seg[1]], total: 1 });
+      }
       if (!url.pathname.startsWith('/_matrix/client/v3/')) return send(res, 404, { errcode: 'M_UNRECOGNIZED', error: 'no such endpoint' });
       const seg = url.pathname.slice('/_matrix/client/v3/'.length).split('/').map(decodeURIComponent);
       const m = req.method;
@@ -123,6 +140,8 @@ function startFakeHomeserver({ socket, asToken, coreSocket, hsToken }) {
       set down(v) { state.down = !!v; },
       set refuseJoin(v) { state.refuseJoin = v; },
       set noLength(v) { state.noLength = !!v; },
+      set adminInvited(v) { state.adminInvited = !!v; },
+      admins: state.admins,
       files: state.files,
       file(id, { data, mime = 'application/octet-stream' } = {}) { state.files.set(id, { data: Buffer.from(data), mime }); return `mxc://gc.internal/${id}`; },
       room(roomId, { state: st = [], timeline = [], members = [] } = {}) {

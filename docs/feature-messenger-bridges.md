@@ -123,9 +123,24 @@ more than swapping an image.
 
 `update.sh` reports the image each container runs (`.Config.Image`); a
 container on another reference than the pinned one shows as **outdated**
-(`networks[].outdated`, `wantVersion`). That happens when the
-`docker-compose.yml` on the host is older than the server — it is replaced by
-hand, `update.sh` does not touch it. After the file was replaced, `update.sh`
+(`networks[].outdated`, `wantVersion`). Since stage 5 (marker 8) the server
+hands its pins to `update.sh` with every config file (`"bridges_images"`), and
+`update.sh` writes them into a compose override of its own
+(`.bruecken-images.yml` next to `docker-compose.yml`, used for `up` only): a
+GateControl release with a new pin updates the containers at the next run of
+the script, without a new `docker-compose.yml`. `update.sh` takes a reference
+only when it is a `<tag>@sha256:<digest>` of the repository it knows for that
+name (`bridge_repo`: Tuwunel, mautrix-whatsapp, socat) and only for a service
+the compose file has — nothing unpinned is ever pulled, and a compromised
+server cannot name another image. With an older script (or no pins) the
+`docker-compose.yml` on the host decides as before; it is replaced by hand,
+`update.sh` does not touch it.
+
+A second kind of "outdated": WhatsApp itself turns the bridge's version away
+(the bridge's state error `wa-client-outdated`, "405 client outdated",
+mautrix-whatsapp `pkg/connector/handlewhatsapp.go`) — `networks[].clientOutdated`
+(seen in a login during the last day). Only a newer pin helps, i.e. a
+GateControl update. After the file was replaced, `update.sh`
 runs `compose up` again for the containers it started (it remembers the
 file's checksum next to the configuration revision in `.bruecken-managed`).
 
@@ -392,6 +407,100 @@ written to a log or a table. `createDm` knows the room at once (state
 its join brings name and kind as usual, sending works as soon as the account
 is in the room.
 
+## History (stage 5)
+
+How the pinned bridge loads older messages (read from mautrix-whatsapp v0.2610.0 and mautrix-go v0.32.0, not run):
+
+* WhatsApp sends the recent history **once, at the link** (history sync notifications of the phone). The bridge keeps
+  it only with `backfill.enabled` (`pkg/connector/handlewhatsapp.go`: `saveWAHistorySyncNotification` only then);
+  without it the blob is neither downloaded nor stored. It lands in the bridge's database
+  (`whatsapp_history_sync_conversation` / `_message`).
+* `network.history_sync.max_initial_conversations`: rooms for this many recent chats right after the link
+  (`createPortalsFromHistorySync`), each filled with up to `backfill.max_initial_messages` messages ("forward
+  backfill", `bridgev2/portalbackfill.go` `doForwardBackfill` → `sendLegacyBackfill`: one event per message, with its
+  own time in the past, and the files re-uploaded to the homeserver). Every other chat gets its stored history when its
+  next message makes the room. Afterwards the bridge deletes what it backfilled from its own tables.
+* The backfill **queue** (`backfill.queue`, batches, `batch_delay`, `max_batches`) and the provisioning endpoint
+  `POST /v3/backfill/{room}` only work against a Beeper homeserver ("standard Matrix servers don't support inserting
+  messages into history", `bridgev2/matrix/provisioning.go` `PostPaginate` needs `BatchSending`). On Tuwunel there is
+  no "later, in batches, at night" in the bridge — and no per-person switch: the configuration is global.
+
+So the split:
+
+* **Bridge (global):** with history allowed (`bridges.history`, on by default; card „Brücken“ → `configure({ history })`)
+  `backfill: { enabled: true, max_initial_messages: 200, max_catchup_messages: 100, queue: { enabled: false } }` and
+  `history_sync.max_initial_conversations: 30`, never `request_full_sync`, never `auto_request_media` (no requests to
+  the phone for files that ran out). Off: as in stage 3. A change rewrites the configuration (new revision → `update.sh`
+  recreates the containers).
+* **Server (per person):** an event is **history** when it is older than the person's link (`bridges.linked_at`,
+  noted when a link completes) **and** older than the room is here (`bridge_rooms.created_at`), each minus a minute.
+  A late message (bridge or phone away) is newer than the link and never history; a link from before stage 5 has no
+  time, so nothing is history for it. What the person chose (`history.set`: `0` none, `30` days — the default — or `-1`
+  everything) decides: unwanted history is **never written** (one check per event, no row); wanted history goes to
+  `bridge_backlog` (sealed like the inbox, marked `history: true`). Before a live event of the same chat is filed, the
+  chat's waiting history moves into the inbox ahead of it, in the order it came — so the plugin fills a chat in order
+  and keeps the event id unique per chat (nothing twice). Fewer days later drop what waits and is not wanted.
+* **Plugin:** files the backlog at night in small portions (Messenger: 100 events a minute in its window, default
+  01:00–05:00 in the time zone of the update window), without push, as read; files of the history only on request.
+
+What it costs on the slow disk (estimates, nothing measured): the bridge writes the history sync into its SQLite in a
+few large transactions and up to 30 × 200 events plus their files into the homeserver at the link (RocksDB; Tuwunel's
+media folder). The server writes one commit per homeserver transaction, as before; the plugin one commit per portion.
+
+## Backup (stage 5)
+
+`src/services/bridges/backup.js`. A running RocksDB or SQLite is never copied, and the server has no Docker access:
+
+1. Every night after `bridges.backup_time` (default 03:10, the update window's time zone) — or on „Jetzt sichern“
+   (`configure({ backupNow: true })`) — the server writes a request id into the config file (`"bridges_backup"`).
+2. `update.sh` (marker 8, while the bridges run) stops the bridge(s), then the homeserver, packs `hs/data` and
+   `<bridge>/data` into `$DATA_DIR/bridges/backup/state-<id>.tar` (0600, owner of that folder), starts them again
+   (`compose start`) and reports in `.bridges-backup.json` (`{ id, result, at, bytes }`). Downtime: as long as the
+   tar takes plus the homeserver's start (the probe: about 4 s to open its database); the messengers hold messages back.
+3. The server takes the file at its next tick (every 5 minutes): AES-256-GCM with a key of its own, that key encrypted
+   with `GC_ENCRYPTION_KEY` (`utils/crypto`), → `backup/state.enc` + `state.json`; the plain file is deleted.
+4. The GateControl backup carries `data.bridges`: `{ version: 1, created_at, master_key_enc, rooms: [bridge_rooms with
+   user_name], snapshot: { id, at, bytes, iv, tag, key_enc, data } }` — `data` the encrypted snapshot (base64, read from
+   a hard link; spooled on a restore like the plugins' parts). Both keys are ciphertexts of `utils/crypto`, so the
+   off-site re-key converts them; `validateEncryptedFields` checks them.
+5. Restore (`restoreBackup` → `restorePart`, after the users): the master key back into `secrets.json` (the one before
+   as `secrets.json.before-restore`), the rooms of people whose id stayed the same (the internal account is
+   `@gc_<id>` — a person with a new id starts anew after a new link), inbox/backlog/transactions/file notes emptied; the
+   snapshot decrypted to `backup/restore-<id>.tar` and `"bridges_restore":"<id>"` in the config file. `update.sh` checks
+   every member (plain files and folders only, below `hs/data` or `<bridge>/data`, no `..`), stops the containers,
+   keeps the current folders as `*.prev`, unpacks, reports in `.bridges-restore.json`; the next run starts them. A file
+   the host did not take within a day is deleted again.
+
+## Files at the homeserver (stage 5)
+
+Every file a message of a room carries is noted in `bridge_media` (`mxc` address, person, state; no name). After the
+plugin took it over (`media.fetch` → `mediaFetched`), after it was history nobody wanted, or after 30 days nobody
+fetched it, the server deletes it at the homeserver: Synapse admin API `DELETE /_synapse/admin/v1/media/<server>/<id>`
+(Tuwunel serves it, `src/api/client/admin/media/delete_media.rs`), as the server's own bot `@gcbot` — the homeserver
+makes it its administrator at every start (`admin_execute = ["users make-user-admin @gcbot:gc.internal"]`,
+`admin_execute_errors_ignore`), the bot takes its seat in `#admins:gc.internal` at its first refusal. The bot has no
+password and no device; its token never leaves the server; the homeserver has no port. A file waits an hour after it
+was taken over (another person's copy of the same file may still be on its way). Pictures of chats and contacts are
+not deleted (they are fetched again when they change). `status().cleanup`: `{ deleted, waiting, lastAt, error }`
+(`no_admin` until the bot is an administrator).
+
+## Health (stage 5)
+
+`gc.bridges.health({ userIds, network })` reads `whoami` per person (no person's request needed; ≤ 100 people) and
+returns each login's state without its id and name (WhatsApp names both after the number). mautrix-whatsapp reports a
+phone not seen for **12 days** (`pkg/connector/phoneping.go`, `PhoneDisconnectWarningTime`; WhatsApp ends companion
+devices after about 14) as `TRANSIENT_DISCONNECT` with error `wa-phone-offline` while still connected — the server
+passes `state: connected`, `phoneOffline: true`, `since` (when the bridge said so; it re-evaluates at each reconnect,
+so the time is a lower bound). The plugin turns it into a push and the hint in „Verknüpfte Dienste“.
+
+## Login references (stage 5)
+
+A bridge names a login by its own id — mautrix-whatsapp by the person's phone number. That id never leaves the server:
+`logins()` and a completed login step give a reference (`l` + 22 characters, HMAC with a key derived from the bridges'
+master key over person, network and id), `logout(userId, network, ref)` asks the bridge for the person's logins and
+ends the one whose reference matches. `unlinkFor` and `health` use the bridge directly and pass no id at all. The
+messenger replaces what older versions kept (`bridge_links.login_id`) with a keyed hash at its start.
+
 ## Probe
 
 `./update.sh bridges-probe [seconds]` on the host (as root, in the install
@@ -423,7 +532,7 @@ show them); the log lines stay in the file.
 | 2 | this: compose profile `bruecken` with pinned images, generated configuration, provisional limits, the probe, "outdated", `unlinkFor`; plugins: portal page "Verknüpfte Dienste", the parents' switch in the family plugin. Open until the probe ran: whether the programs start with these files, and the real limits |
 | 3 | messages (see "Messages"): the server as an application service — transactions through `bruecken-core-relay`, neutral events in a sealed inbox, sending as the person; text, reply, edit, deletion, reaction, read, typing, what the bridge says about a sent message; the probe blanks more. Plugin: bridged chats for the linked person only |
 | 4 | files in both directions through the plugin's media with the virus scan, pictures of chats and contacts, a chat with a new number (API only); the apps follow |
-| 5 | history (30 days, in small portions at night), backup of the bridge state, storage targets for media, "phone not seen" notices, "bridge outdated" |
+| 5 | this: history (each person: off / 30 days / everything; the plugin files it at night in small portions), the nightly encrypted snapshot of the bridges' data in the GateControl backup with restore, the files of bridged chats in a sealed media area on a storage target (plugin), clean-up of the homeserver's copies, "phone not seen" from the bridge's own warning, the pins to `update.sh` (marker 8) and "client outdated" |
 | 6 | a gateway as the place, moving between places |
 | 7 | Signal, Telegram |
 
@@ -449,4 +558,10 @@ show them); the log lines stay in the file.
   (`makeBridges`), `manifest.js` (`permissions.bridges`)
 * `tests/bridges.test.js`, `tests/bridges_config.test.js`,
   `tests/helpers/fake-bridge.js`, `tests/fixtures/bridges/`
+* stage 5: `config.js` (history, `admin_execute`), `events.js` (history, `bridge_backlog`, `bridge_media`, migration
+  149), `index.js` (`history`, `health`, `cleanupRun`, `mediaFetched`, `wish()` with images and snapshot ids),
+  `backup.js`, `hs.js` (`deleteMedia`, `joinAdminRoom`), `services/backup.js` (`data.bridges`), `autoUpdate.js`
+  (`bridges_images`, `bridges_backup`, `bridges_restore`), `update.sh` marker 8 (`bridges_images_sync`, `bcompose`,
+  `bridges_backup_maybe`, `bridges_restore_maybe`), `plugins/mediaAreas.js` (`sealed`); tests
+  `tests/bridges_stage5.test.js`
 * plugin API: [plugins.md](plugins.md) "Messenger bridges"

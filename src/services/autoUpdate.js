@@ -95,12 +95,22 @@ function wantsLocalClamav() {
 // names at least one bridge ("whatsapp", later comma separated) and stops it
 // (only what it started) once the field is gone. "bridges_rev" (marker 6) is
 // the revision of the containers' configuration, written by the server right
-// before: update.sh recreates the containers when it changes. Never throws.
+// before: update.sh recreates the containers when it changes. Marker 8:
+// "bridges_images" — the images this GateControl pins (<name>=<repo>:<tag>@<digest>,
+// comma separated; update.sh takes only its known repositories and puts them
+// into a compose override of its own), "bridges_backup" / "bridges_restore" — a
+// snapshot of the stopped containers' data is wanted / one waits to be put
+// back (services/bridges/backup.js). Never throws.
+const BRIDGE_IMAGES_RE = /^([a-z-]{2,24}=[a-z0-9][a-z0-9._/-]{1,120}:[A-Za-z0-9._-]{1,60}@sha256:[0-9a-f]{64})(,[a-z-]{2,24}=[a-z0-9][a-z0-9._/-]{1,120}:[A-Za-z0-9._-]{1,60}@sha256:[0-9a-f]{64}){0,7}$/;
 function wantedBridges() {
   try {
     const w = require('./bridges').wish();
-    return { names: w.names.filter((n) => /^[a-z]{2,16}$/.test(n)), rev: typeof w.rev === 'string' && /^[0-9a-f]{12}$/.test(w.rev) ? w.rev : null };
-  } catch { return { names: [], rev: null }; }
+    const id = (v) => (typeof v === 'string' && /^[0-9a-f]{12}$/.test(v) ? v : null);
+    return {
+      names: w.names.filter((n) => /^[a-z]{2,16}$/.test(n)), rev: id(w.rev),
+      images: typeof w.images === 'string' && BRIDGE_IMAGES_RE.test(w.images) ? w.images : null, backup: id(w.backup), restore: id(w.restore),
+    };
+  } catch { return { names: [], rev: null, images: null, backup: null, restore: null }; }
 }
 function writeConfigFile(mode, win = getWindow()) {
   const cfg = { mode };
@@ -110,6 +120,9 @@ function writeConfigFile(mode, win = getWindow()) {
   if (bridges.names.length) {
     cfg.bridges = bridges.names.join(',');
     if (bridges.rev) cfg.bridges_rev = bridges.rev;
+    if (bridges.images) cfg.bridges_images = bridges.images;
+    if (bridges.backup) cfg.bridges_backup = bridges.backup;
+    if (bridges.restore) cfg.bridges_restore = bridges.restore;
   }
   writeAtomic(CONFIG_FILE, JSON.stringify(cfg) + '\n');
 }

@@ -16,6 +16,9 @@
 //   PUT  /rooms/{room}/typing/{user}
 //   GET  /_matrix/client/v1/media/download/{server}/{id}   (stage 4) a file a bridge put into a room, streamed
 //   POST /_matrix/media/v3/upload           (stage 4) a file of the person, streamed, before it is sent into a room
+//   DELETE /_synapse/admin/v1/media/{server}/{id}   (stage 5) a file of a room, once the plugin took it over — as the
+//                                           server's own bot (gcbot), the one administrator of the homeserver
+//   POST /join/#admins:<server>             (stage 5) the bot takes the seat in the admin room it is invited to
 //
 // Every address is built here from checked parts; the token never leaves this
 // module and nothing of an answer is passed on unchecked.
@@ -30,6 +33,8 @@ const SOCKET_RE = /^\/[A-Za-z0-9._/-]{1,90}\/hs\/run\/hs\.sock$/;
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,128}$/;
 const LOCAL_RE = /^gc_[0-9]{1,16}$/;
 const MXID_RE = /^@gc_[0-9]{1,16}:[a-z0-9.-]{1,64}$/;
+// the server's own bot (config.js CORE_BOT): only for the clean-up of files (stage 5)
+const BOT_RE = /^@gcbot:[a-z0-9.-]{1,64}$/;
 // room and event ids as the homeserver makes them (room versions 1…12: with or without a server part)
 const ROOM_RE = /^![A-Za-z0-9._=/+-]{1,128}(:[a-z0-9.-]{1,64})?$/;
 const EVENT_RE = /^\$[A-Za-z0-9._=/+-]{1,128}(:[a-z0-9.-]{1,64})?$/;
@@ -253,4 +258,39 @@ function upload(target, mxid, { source, length, mime, name }) {
   });
 }
 
-module.exports = { ensureUser, join, state, recent, send, redact, read, typing, download, upload, mxcOf, socketOf, HsError, ROOM_RE, EVENT_RE, MXID_RE, TXN_RE, MXC_RE };
+// ─── clean-up (stage 5) ────────────────────────────────
+
+/** A request as the server's bot. → { status, json } of a 2xx answer; throws HsError otherwise. */
+async function asBot(target, bot, method, urlPath) {
+  checkTarget(target);
+  if (!BOT_RE.test(String(bot || ''))) throw new HsError('ERR_INVALID', 'invalid account');
+  const sep = urlPath.includes('?') ? '&' : '?';
+  const r = await raw(target, method, `${urlPath}${sep}user_id=${encodeURIComponent(bot)}`, method === 'POST' ? {} : undefined);
+  if (r.status >= 200 && r.status < 300) return r.json || {};
+  throw failure(r);
+}
+
+/**
+ * Delete a file of this homeserver (Synapse admin API, which Tuwunel serves): → 'deleted' | 'gone' (not there any
+ * more). Throws HsError m_forbidden while the bot is no administrator yet.
+ */
+async function deleteMedia(target, bot, mxc, serverName) {
+  const m = mxcOf(mxc, serverName);
+  if (!m) throw new HsError('ERR_INVALID', 'invalid file address');
+  try {
+    await asBot(target, bot, 'DELETE', `/_synapse/admin/v1/media/${encodeURIComponent(m.server)}/${encodeURIComponent(m.id)}`);
+    return 'deleted';
+  } catch (e) {
+    if (e && e.reason === 'm_not_found') return 'gone';
+    throw e;
+  }
+}
+
+/** The bot joins the admin room it was invited to (config.js admin_execute "users make-user-admin"). */
+async function joinAdminRoom(target, bot, serverName) {
+  if (!/^[a-z0-9.-]{1,64}$/.test(String(serverName || ''))) throw new HsError('ERR_INVALID', 'invalid server name');
+  await asBot(target, bot, 'POST', `/_matrix/client/v3/join/${encodeURIComponent(`#admins:${serverName}`)}`);
+  return { ok: true };
+}
+
+module.exports = { deleteMedia, joinAdminRoom, BOT_RE, ensureUser, join, state, recent, send, redact, read, typing, download, upload, mxcOf, socketOf, HsError, ROOM_RE, EVENT_RE, MXID_RE, TXN_RE, MXC_RE };

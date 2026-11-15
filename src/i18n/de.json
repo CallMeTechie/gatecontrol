@@ -6960,6 +6960,7 @@
   "plugins.areas.form_text_files": "Die {{count}} Dateien werden im Hintergrund als lesbare Dateien mit ihren Ordnern abgelegt – auf der NAS kann man sie dann öffnen und mit deren Sicherung sichern. Sie liegen dort unverschlüsselt.",
   "plugins.areas.form_text_blocks": "Die {{count}} Dateien werden im Hintergrund verschlüsselt abgelegt; die lesbaren Dateien verschwinden danach von der NAS.",
   "plugins.areas.readable": "Lesbar",
+  "plugins.areas.sealed_hint": "Dieses Plugin legt hier Dateien anderer Personen ab (z. B. Anhänge aus Chats über WhatsApp): Sie liegen am Ziel immer verschlüsselt, nie als lesbare Dateien.",
   "plugins.areas.scan_at": "Zuletzt abgeglichen {{at}} · {{files}} Dateien · neu {{added}}, geändert {{changed}}, entfernt {{removed}}",
   "plugins.areas.scan_never": "Änderungen auf der NAS wurden noch nicht abgeglichen.",
   "plugins.areas.scan_now": "Jetzt abgleichen",

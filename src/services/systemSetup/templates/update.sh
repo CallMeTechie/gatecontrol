@@ -52,9 +52,24 @@
 # ("present":false = the compose file is older and has to be replaced once).
 # The probe's log lines leave out everything about linking and events and
 # blank ids, numbers and keys (probe_text).
+# Marker 8 (stage 5 of the bridges):
+#  - "bridges_images":"hs=<repo>:<tag>@<digest>,whatsapp=…" — the images the
+#    server pins. Only references of the repositories this script knows for a
+#    name (bridge_repo) and only for services the docker-compose.yml has are
+#    written into $COMPOSE_DIR/.bruecken-images.yml, a compose override used
+#    for `up`; a GateControl release with a new pin so updates the containers
+#    without a new docker-compose.yml. Nothing unpinned is pulled.
+#  - "bridges_backup":"<id>" — a snapshot: the bridges and the homeserver are
+#    stopped, their data folders packed into $DATA_DIR/bridges/backup/
+#    state-<id>.tar (owner of that folder, 0600), started again; result in
+#    $DATA_DIR/.bridges-backup.json. The server encrypts the file at once.
+#  - "bridges_restore":"<id>" — the server left backup/restore-<id>.tar: every
+#    member is checked (a plain file or folder below hs/data or <bridge>/data),
+#    the containers are stopped, the current folders kept as *.prev, the file
+#    unpacked; result in $DATA_DIR/.bridges-restore.json.
 # The marker line below is the version both sides compare; bump it whenever
 # this file changes in a way the host should pick up.
-# gc-update-sh: 7
+# gc-update-sh: 8
 #
 # Data directory: $COMPOSE_DIR/data (the release compose binds ./data:/data).
 # When the running container mounts /data from somewhere else — the named
@@ -323,6 +338,11 @@ BRIDGES_STATE="$DATA_DIR/.bridges-state.json"
 BRIDGES_PROBE="$DATA_DIR/.bridges-probe.json"
 # Next to docker-compose.yml (root's), not on the /data volume GateControl can write.
 BRIDGES_MANAGED="$COMPOSE_DIR/.bruecken-managed"
+# marker 8: the images the server pins (a compose override of this script's own), snapshots and their restore
+BRIDGES_IMAGES="$COMPOSE_DIR/.bruecken-images.yml"
+BRIDGES_BACKUP="$DATA_DIR/.bridges-backup.json"
+BRIDGES_RESTORE="$DATA_DIR/.bridges-restore.json"
+BRIDGES_BACKUP_DONE="$COMPOSE_DIR/.bruecken-backup-done"
 # docker-compose.yml mounts the bridges' folders from here (default ./data/bridges):
 # the data directory may be somewhere else (see above).
 export GC_BRIDGES_DIR="$DATA_DIR/bridges"
@@ -335,6 +355,46 @@ bridges_wanted() { # the wanted bridges, one per line (strict charset: the names
 bridges_rev() { # the revision of the containers' configuration the server wrote ("" = unknown)
   [ -f "$CONFIG_FILE" ] || return 0
   tr -d '\n' <"$CONFIG_FILE" 2>/dev/null | sed -n 's/.*"bridges_rev"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{12\}\)".*/\1/p'
+}
+bridges_id() { # $1=key → a 12-hex id the server wrote ("" = none)
+  [ -f "$CONFIG_FILE" ] || return 0
+  tr -d '\n' <"$CONFIG_FILE" 2>/dev/null | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([0-9a-f]\{12\}\)\".*/\1/p" | head -n1
+}
+bridge_repo() { # $1=name → the only repository its image may come from
+  case "$1" in
+    hs) echo 'ghcr.io/matrix-construct/tuwunel' ;;
+    whatsapp) echo 'dock.mau.dev/mautrix/whatsapp' ;;
+    core-relay|whatsapp-relay) echo 'alpine/socat' ;;
+    *) return 1 ;;
+  esac
+}
+bridges_images_sync() { # the pins of the server → .bruecken-images.yml (only known repositories, only services of the compose file)
+  local list item name ref repo svc body="" tmp
+  [ -f "$CONFIG_FILE" ] || return 0
+  list="$(tr -d '\n' <"$CONFIG_FILE" 2>/dev/null | sed -n 's/.*"bridges_images"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9._:\/@=,-]*\)".*/\1/p' | head -n1)"
+  svc="$(bridges_services)"
+  for item in $(printf '%s' "$list" | tr ',' ' '); do
+    name="${item%%=*}"; ref="${item#*=}"
+    repo="$(bridge_repo "$name")" || continue
+    case "$ref" in "$repo:"*) ;; *) log "bridges: the image for $name is not from $repo — not taken"; continue ;; esac
+    printf '%s' "${ref#"$repo:"}" | grep -Eq '^[A-Za-z0-9._-]{1,60}@sha256:[0-9a-f]{64}$' || { log "bridges: the image for $name is no pin — not taken"; continue; }
+    printf '%s\n' "$svc" | grep -qx "bruecken-$name" || continue
+    body="$body  bruecken-$name:\n    image: \"$ref\"\n"
+  done
+  if [ -z "$body" ]; then rm -f "$BRIDGES_IMAGES"; return 0; fi
+  tmp="$(mktemp "$BRIDGES_IMAGES.XXXXXX")" || return 0
+  printf '# Written by update.sh: the images GateControl pins (src/services/bridges/images.js).\nservices:\n%b' "$body" >"$tmp"
+  if cmp -s "$tmp" "$BRIDGES_IMAGES" 2>/dev/null; then rm -f "$tmp"; else chmod 644 "$tmp"; mv -f "$tmp" "$BRIDGES_IMAGES"; fi
+}
+bcompose() { # docker compose for the profile — `up` with the server's pins when it named them
+  local f=""
+  if [ "$1" = up ] && [ -f "$BRIDGES_IMAGES" ]; then
+    f="-f docker-compose.yml"
+    [ -f "$COMPOSE_DIR/docker-compose.override.yml" ] && f="$f -f docker-compose.override.yml"
+    f="$f -f $(basename "$BRIDGES_IMAGES")"
+  fi
+  # shellcheck disable=SC2086
+  ( cd "$COMPOSE_DIR" && docker compose $f --profile bruecken "$@" )
 }
 # bruecken-hs, bruecken-<name> and the relay of a bridge (bruecken-<name>-relay: hands the homeserver's calls to
 # the bridge's Unix socket)
@@ -374,7 +434,93 @@ bridges_state() { # $1=state (running|starting|failed|stopped) $2=error code (or
 # What the containers were started with: the configuration revision of the server and the docker-compose.yml.
 # A change of either means `compose up` has to look again (it recreates only what really changed; a new
 # configuration needs --force-recreate, the files are bind mounts compose does not watch).
-bridges_stamp() { printf 'rev=%s compose=%s\n' "$(bridges_rev)" "$(cksum <"$COMPOSE_DIR/docker-compose.yml" 2>/dev/null | tr -d ' ')"; }
+bridges_stamp() {
+  local img=""
+  [ -f "$BRIDGES_IMAGES" ] && img=" images=$(cksum <"$BRIDGES_IMAGES" 2>/dev/null | tr -d ' ')"
+  printf 'rev=%s compose=%s%s\n' "$(bridges_rev)" "$(cksum <"$COMPOSE_DIR/docker-compose.yml" 2>/dev/null | tr -d ' ')" "$img"
+}
+
+bridges_backup_maybe() { # $@=wanted bridges — a snapshot of the stopped containers' data, once per request of the server
+  local id dir tmp res=ok bytes=null paths="hs/data" stop="" start="bruecken-hs" n
+  id="$(bridges_id bridges_backup)"
+  [ -n "$id" ] || return 0
+  [ "$id" = "$(cat "$BRIDGES_BACKUP_DONE" 2>/dev/null || true)" ] && return 0
+  dir="$GC_BRIDGES_DIR/backup"
+  mkdir -p "$dir" && chmod 700 "$dir"
+  for n in "$@"; do
+    stop="$stop bruecken-$n"; start="$start bruecken-$n"
+    [ -d "$GC_BRIDGES_DIR/$n/data" ] && paths="$paths $n/data"
+  done
+  stop="${stop# } bruecken-hs"
+  log "bridges: snapshot — stopping$stop for a moment"
+  tmp="$dir/.state-$id.tar.part"
+  # shellcheck disable=SC2086
+  if ( cd "$COMPOSE_DIR" && docker compose --profile bruecken stop $stop ) >>"$LOG" 2>&1; then
+    # shellcheck disable=SC2086
+    if ( umask 077; tar -C "$GC_BRIDGES_DIR" -cf "$tmp" $paths ) 2>>"$LOG"; then
+      chown --reference="$dir" "$tmp" 2>/dev/null || true
+      mv -f "$tmp" "$dir/state-$id.tar"
+      bytes="$(stat -c %s "$dir/state-$id.tar" 2>/dev/null || echo null)"
+    else
+      res=failed; rm -f "$tmp"
+    fi
+  else
+    res=failed
+  fi
+  # shellcheck disable=SC2086
+  ( cd "$COMPOSE_DIR" && docker compose --profile bruecken start $start ) >>"$LOG" 2>&1 || log "bridges: start after the snapshot failed — the next run starts them"
+  [ "$res" = ok ] || log "bridges: snapshot failed"
+  printf '{"id":"%s","result":"%s","at":"%s","bytes":%s,"update_sh":%s}\n' "$id" "$res" "$(date -Iseconds)" "$bytes" "$SELF_VERSION" | write_atomic "$BRIDGES_BACKUP"
+  printf '%s\n' "$id" >"$BRIDGES_BACKUP_DONE" 2>/dev/null || true
+}
+
+bridges_restore_result() { # $1=id $2=result
+  printf '{"id":"%s","result":"%s","at":"%s","update_sh":%s}\n' "$1" "$2" "$(date -Iseconds)" "$SELF_VERSION" | write_atomic "$BRIDGES_RESTORE"
+}
+bridges_restore_maybe() { # $@=wanted bridges — put a snapshot back the server left; 0 = something was done (the containers are stopped)
+  local id f re d n stop="" dirs="hs/data" bad
+  id="$(bridges_id bridges_restore)"
+  [ -n "$id" ] || return 1
+  [ "$(sed -n 's/.*"id":"\([0-9a-f]*\)".*/\1/p' "$BRIDGES_RESTORE" 2>/dev/null | head -n1)" = "$id" ] && return 1
+  f="$GC_BRIDGES_DIR/backup/restore-$id.tar"
+  if [ ! -f "$f" ] || [ -L "$f" ]; then bridges_restore_result "$id" missing; return 1; fi
+  re='hs'
+  for n in "$@"; do re="$re|$n"; stop="$stop bruecken-$n"; dirs="$dirs $n/data"; done
+  # only plain files and folders, only below the data folders, no way out
+  bad="$(tar -tvf "$f" 2>/dev/null | awk '{ t = substr($1, 1, 1); if (t != "-" && t != "d") { print "x"; exit } }')"
+  if [ -z "$bad" ]; then
+    bad="$(tar -tf "$f" 2>/dev/null | grep -Ev "^($re)/data(/[A-Za-z0-9._+=-]+)*/?\$" | head -n1 || true)"
+    tar -tf "$f" >/dev/null 2>&1 || bad="x"
+    tar -tf "$f" 2>/dev/null | grep -q '\.\.' && bad="x"
+  fi
+  if [ -n "$bad" ]; then
+    log "bridges: the snapshot to restore holds something else than the data folders — not restored"
+    bridges_restore_result "$id" invalid; rm -f "$f"; return 1
+  fi
+  log "bridges: restoring the snapshot — stopping the containers"
+  # shellcheck disable=SC2086
+  ( cd "$COMPOSE_DIR" && docker compose --profile bruecken stop ${stop# } bruecken-hs ) >>"$LOG" 2>&1 || true
+  for d in $dirs; do
+    rm -rf "${GC_BRIDGES_DIR:?}/$d.prev"
+    [ -e "$GC_BRIDGES_DIR/$d" ] && mv "$GC_BRIDGES_DIR/$d" "$GC_BRIDGES_DIR/$d.prev"
+  done
+  if tar -C "$GC_BRIDGES_DIR" --no-same-owner -xf "$f" 2>>"$LOG"; then
+    for d in $dirs; do
+      mkdir -p "$GC_BRIDGES_DIR/$d"; chmod 700 "$GC_BRIDGES_DIR/$d"
+      chown --reference="$GC_BRIDGES_DIR/backup" "$GC_BRIDGES_DIR/$d" 2>/dev/null || true
+    done
+    bridges_restore_result "$id" ok
+  else
+    log "bridges: unpacking failed — the folders before stay"
+    for d in $dirs; do
+      rm -rf "${GC_BRIDGES_DIR:?}/$d"
+      [ -e "$GC_BRIDGES_DIR/$d.prev" ] && mv "$GC_BRIDGES_DIR/$d.prev" "$GC_BRIDGES_DIR/$d"
+    done
+    bridges_restore_result "$id" failed
+  fi
+  rm -f "$f"
+  return 0
+}
 
 sync_bridges() {
   # Every run: bring the bridges in line with the switch in the messenger's settings.
@@ -412,6 +558,10 @@ sync_bridges() {
         case " $names " in *" $n "*) ;; *) bridge_running "$n" && { log "bridges: $n switched off — removing the container"; docker rm -f "$n" >>"$LOG" 2>&1 || true; } ;; esac
       done
     fi
+    # marker 8: a snapshot to put back first (it stops the containers), then the images the server pins
+    # shellcheck disable=SC2086
+    if bridges_restore_maybe $want; then up=0; rm -f "$BRIDGES_STATE"; fi
+    bridges_images_sync
     stamp="$(bridges_stamp)"
     old="$(cat "$BRIDGES_MANAGED" 2>/dev/null || true)"
     if [ -f "$BRIDGES_MANAGED" ] && [ "$old" != "$stamp" ]; then
@@ -424,12 +574,12 @@ sync_bridges() {
       fi
     fi
     # shellcheck disable=SC2086
-    if [ "$up" = 1 ]; then bridges_state running "" $want; return 0; fi
+    if [ "$up" = 1 ]; then bridges_backup_maybe $want; bridges_state running "" $want; return 0; fi
     # a failed start is retried every 30 minutes, not every run
     if [ -n "$(find "$BRIDGES_STATE" -mmin -30 2>/dev/null)" ] && grep -q '"state":"failed"' "$BRIDGES_STATE" 2>/dev/null; then return 0; fi
     log "bridges: starting $names"
     # shellcheck disable=SC2086
-    if ( cd "$COMPOSE_DIR" && docker compose --profile bruecken up -d $force $names ) >>"$LOG" 2>&1; then
+    if bcompose up -d $force $names >>"$LOG" 2>&1; then
       printf '%s\n' "$stamp" >"$BRIDGES_MANAGED" 2>/dev/null || true
       # shellcheck disable=SC2086
       bridges_state starting "" $want
@@ -443,6 +593,7 @@ sync_bridges() {
     log "bridges: switched off — removing the containers"
     for n in $(bridges_services); do docker rm -f "$n" >>"$LOG" 2>&1 || true; done
     rm -f "$BRIDGES_MANAGED"
+    rm -f "$BRIDGES_IMAGES"
     bridges_state stopped ""
   fi
 }

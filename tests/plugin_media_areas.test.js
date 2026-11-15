@@ -411,3 +411,20 @@ describe('backup', () => {
     assert.equal(areas.rows(PID).length, 0);
   });
 });
+
+describe('a sealed area (stage 5 of the messenger bridges)', () => {
+  it('the plugin keeps it sealed: never readable on a target, an administrator cannot choose it', () => {
+    const a = areas.ensure(plugin(), 'sealedx', { label: 'Fremde Chats', sealed: true });
+    assert.equal(a.sealed, true);
+    assert.throws(() => areas.setTarget(PID, 'sealedx', tA, { form: 'files' }), /sealed/);
+    const v = areas.setTarget(PID, 'sealedx', tA);
+    assert.deepEqual([v.form, v.encrypted, v.sealed], ['blocks', true, true]);
+    assert.throws(() => areas.ensure(plugin(), 'sealedy', { sealed: 'yes' }), /sealed/);
+    // an area made readable before becomes sealed when the plugin asks for it
+    areas.ensure(plugin(), 'opened', { label: 'Offen' });
+    assert.equal(areas.setTarget(PID, 'opened', tA, { form: 'files' }).form, 'files');
+    assert.equal(areas.ensure(plugin(), 'opened', { label: 'Offen', sealed: true }).form, 'blocks');
+    areas.setTarget(PID, 'sealedx', null);
+    areas.setTarget(PID, 'opened', null);
+  });
+});
