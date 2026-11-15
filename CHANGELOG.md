@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.280.0] — 2026-11-15
+
+### Features
+- Nutzerprofil – Mein Profil, Telefonnummern, Erkennung (gc.bridges Version 8), Meine Daten (#496)
+
+---
+
 ## [1.279.0] — 2026-11-15
 
 ### Features
