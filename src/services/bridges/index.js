@@ -1,6 +1,6 @@
 'use strict';
 
-// Messenger bridges (docs/feature-messenger-bridges.md), stages 1 to 3.
+// Messenger bridges (docs/feature-messenger-bridges.md), stages 1 to 4.
 //
 // A side service next to GateControl — a small internal Matrix homeserver and
 // one bridge per outside messenger (first: WhatsApp) — lets the chat of the
@@ -37,6 +37,16 @@
 //                    bridgeEvents). Sending goes the other way through the
 //                    homeserver's client API (hs.js) as the person's internal
 //                    account — only while that person acts.
+//   files            (stage 4) a file in a bridged chat reaches a plugin as a
+//                    sealed reference (events.js); media.fetch streams it from
+//                    the homeserver into the plugin's media (hostApi.js, with
+//                    GateControl's virus scan) — never through memory. A file
+//                    of the person goes the other way: read from the plugin's
+//                    media (only when the scan let it through), streamed to the
+//                    homeserver, sent as m.image / m.video / m.audio / m.file.
+//   new chat         (stage 4) resolve / createDm ask the bridge about a phone
+//                    number (provisioning API resolve_identifier / create_dm);
+//                    the number is never logged and never stored here.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -59,6 +69,12 @@ const HOST_ERRORS = ['compose_missing', 'config_missing', 'start_failed'];
 const PROBE_RESULTS = ['ok', 'not_wanted', 'compose_missing', 'config_missing', 'start_failed', 'not_running'];
 const WAIT_KEEP_MS = 5 * 60000;
 const MAX_WAITS = 32;
+// a new chat by number: the bridge asks WhatsApp for every number — at most this many per person and hour
+const LOOKUPS_PER_HOUR = 20;
+// a phone number as the bridge takes it (E.164 with +)
+const NUMBER_RE = /^\+[1-9][0-9]{6,14}$/;
+const SEND_KINDS = { image: 'm.image', video: 'm.video', audio: 'm.audio', voice: 'm.audio', file: 'm.file' };
+const MIME_RE = /^[a-z][a-z0-9-]{0,30}\/[a-z0-9][a-z0-9.+_-]{0,99}$/;
 
 class BridgesError extends Error {
   constructor(code, message, reason) { super(message || code); this.code = code; if (reason) this.reason = reason; }
@@ -515,25 +531,72 @@ function roomFor(userId, network, chatId) {
   if (!ev || !target) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not set up yet', 'not_running');
   const row = ev.roomOf(userId, network, chatId);
   if (!row) throw new BridgesError('ERR_INVALID', 'unknown chat');
-  if (row.state !== 'joined') throw new BridgesError('ERR_BRIDGE', 'this chat is closed', 'chat_closed');
+  // invited: a chat just made by number (createDm) — the bridge's join is on its way
+  if (row.state !== 'joined' && row.state !== 'invited') throw new BridgesError('ERR_BRIDGE', 'this chat is closed', 'chat_closed');
   return { row, target, mxid: mxidOf(userId) };
 }
 
 const eventId = (v, what) => { if (!hs.EVENT_RE.test(String(v || ''))) throw new BridgesError('ERR_INVALID', `${what}: a message id`); return v; };
 const txnOf = (v) => { if (!hs.TXN_RE.test(String(v || ''))) throw new BridgesError('ERR_INVALID', 'txnId: 8…96 characters of A-Z a-z 0-9 _ -'); return v; };
 
+// what was uploaded for a file of a plugin (sending it again — "Erneut senden" — does not upload it twice)
+const uploads = new Map(); // `${pluginId}:${mediaId}` → mxc
+
+/**
+ * The content of a file message: what mautrix-whatsapp reads (pkg/msgconv/from-matrix.go, constructMediaMessage /
+ * reuploadFileToWhatsApp) — body = the caption (or the name), filename, info.mimetype / size / w / h / duration; a
+ * voice message is m.audio with org.matrix.msc3245.voice (PTT at WhatsApp) and org.matrix.msc1767.audio
+ * { duration, waveform }.
+ */
+function fileContent(m, text, mxc, file) {
+  const kind = m.kind;
+  const name = typeof m.name === 'string' && m.name.trim() ? m.name.replace(/[\0-\x1f\x7f/\\]/g, ' ').trim().slice(0, 200) : `${kind}`;
+  const int = (v, max) => { const n = Number(v); return Number.isSafeInteger(n) && n > 0 && n <= max ? n : null; };
+  const info = { mimetype: file.mime, size: file.length };
+  const w = int(m.w, 100000);
+  const h = int(m.h, 100000);
+  if (w && h && (kind === 'image' || kind === 'video')) { info.w = w; info.h = h; }
+  const duration = int(m.durationMs, 864e5);
+  if (duration && kind !== 'image' && kind !== 'file') info.duration = duration;
+  const content = { msgtype: SEND_KINDS[kind], body: text || name, filename: name, url: mxc, info };
+  if (kind === 'voice') {
+    content['org.matrix.msc3245.voice'] = {};
+    const wave = Array.isArray(m.waveform) ? m.waveform.slice(0, 64).map((x) => Math.max(0, Math.min(255, Math.round(Number(x) || 0)))) : [];
+    content['org.matrix.msc1767.audio'] = { ...(duration ? { duration } : {}), ...(wave.length ? { waveform: wave } : {}) };
+  }
+  return content;
+}
+
 /**
  * gc.bridges.send(userId, network, chatId, { txnId, text, replyTo?, edit? }) → { id }
  * A text message; `replyTo` quotes a message, `edit` replaces the text of one of the person's own. The same txnId
  * sends once (the homeserver keeps it). The bridge's word on it comes later as an event of type 'status'.
+ * Since version 4 a file: { txnId, text? (caption), replyTo?, media: { kind: image | video | audio | voice | file,
+ * name?, w?, h?, durationMs?, waveform? } } with `file` from the host API: { key, length, mime, source() } — the
+ * plugin's stored file, already checked (its own, servable).
  */
-async function send(userId, network, chatId, msg) {
+async function send(userId, network, chatId, msg, file = null) {
   const { row, target, mxid } = roomFor(userId, network, chatId);
   const m = msg && typeof msg === 'object' && !Array.isArray(msg) ? msg : null;
   if (!m) throw new BridgesError('ERR_INVALID', 'message: an object');
   const text = typeof m.text === 'string' ? m.text.replace(/\r\n?/g, '\n').replace(/[\0-\x08\x0b-\x1f\x7f]/g, '') : '';
-  if (!text.trim() || text.length > eventsMod.TEXT_MAX) throw new BridgesError('ERR_INVALID', 'text: 1…16000 characters');
   const txnId = txnOf(m.txnId);
+  if (m.media != null) {
+    const md = m.media && typeof m.media === 'object' && !Array.isArray(m.media) ? m.media : null;
+    if (!md || !SEND_KINDS[md.kind] || !file || m.edit != null) throw new BridgesError('ERR_INVALID', 'media: { kind: image | video | audio | voice | file } with a file');
+    if (text.length > eventsMod.TEXT_MAX) throw new BridgesError('ERR_INVALID', 'text: up to 16000 characters');
+    if (!MIME_RE.test(String(file.mime || '')) || !Number.isSafeInteger(file.length) || file.length < 1) throw new BridgesError('ERR_INVALID', 'invalid file');
+    let mxc = uploads.get(file.key);
+    if (!mxc) {
+      mxc = await hs.upload(target, mxid, { source: file.source(), length: file.length, mime: file.mime, name: md.name });
+      if (uploads.size > 500) uploads.clear();
+      uploads.set(file.key, mxc);
+    }
+    const content = fileContent(md, text.trim() ? text : null, mxc, file);
+    if (m.replyTo != null) content['m.relates_to'] = { 'm.in_reply_to': { event_id: eventId(m.replyTo, 'replyTo') } };
+    return { id: await hs.send(target, mxid, row.room_id, 'm.room.message', txnId, content) };
+  }
+  if (!text.trim() || text.length > eventsMod.TEXT_MAX) throw new BridgesError('ERR_INVALID', 'text: 1…16000 characters');
   let content = { msgtype: 'm.text', body: text };
   if (m.edit != null) {
     content = { msgtype: 'm.text', body: `* ${text}`, 'm.new_content': { msgtype: 'm.text', body: text }, 'm.relates_to': { rel_type: 'm.replace', event_id: eventId(m.edit, 'edit') } };
@@ -580,6 +643,100 @@ function chats(userId, network) {
   return ev ? ev.chats(userId, network) : [];
 }
 
+// ─── Files (stage 4) ───────────────────────────────────
+
+/**
+ * A file a bridge delivered for a person (`ref` from an event: media.ref, chat.avatar, contact.avatar), opened as a
+ * stream from the homeserver. No person needs to act — like events.pull, it reads what was delivered for them, and
+ * only into the plugin's own media (hostApi.js). → { stream, length, mime }
+ * @param {{ max: number }} o  the plugin's size limit: a larger file is refused before a byte is read (too_large)
+ */
+async function openFile(userId, network, ref, { max } = {}) {
+  if (!NETWORKS.includes(network)) throw new BridgesError('ERR_INVALID', 'unknown network');
+  mxidOf(userId);
+  if (!previewOn()) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not offered on this server', 'preview_off');
+  const cfg = getConfig();
+  if (!cfg.enabled || !cfg.networks[network]) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'this bridge is switched off', 'off');
+  const ev = eventsOf();
+  const target = hsTarget();
+  if (!ev || !target) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not set up yet', 'not_running');
+  const r = ev.openMediaRef(ref);
+  // a reference of another person (or of another installation) opens nothing
+  if (!r || r.userId !== userId) throw new BridgesError('ERR_INVALID', 'unknown file');
+  return hs.download(target, mxidOf(userId), r.mxc, { max, serverName: SERVER_NAME });
+}
+
+// ─── A new chat by number (stage 4) ────────────────────
+
+const lookups = new Map(); // userId → [times of the last hour]
+
+/** The number as the bridge takes it: + and 7…15 digits; spaces, dashes, dots, brackets and a leading 00 are allowed. */
+function numberOf(v) {
+  if (typeof v !== 'string' || v.length > 40) return null;
+  let n = v.replace(/[\s\-./()]/g, '');
+  if (n.startsWith('00')) n = '+' + n.slice(2);
+  return NUMBER_RE.test(n) ? n : null;
+}
+
+function countLookup(userId) {
+  const now = Date.now();
+  const list = (lookups.get(userId) || []).filter((t) => now - t < 3600000);
+  if (list.length >= LOOKUPS_PER_HOUR) throw Object.assign(new BridgesError('ERR_RATE_LIMIT', 'too many numbers asked for in the last hour'), { retryAfterS: Math.ceil((3600000 - (now - list[0])) / 1000) });
+  list.push(now);
+  if (lookups.size > 2000) lookups.clear();
+  lookups.set(userId, list);
+}
+
+/** The bridge's refusals of a number, as a word — its text names the number and goes nowhere. */
+function lookupError(e) {
+  if (e && e.code === 'ERR_BRIDGE' && e.reason === 'not_found') return new BridgesError('ERR_BRIDGE', 'not found', 'not_found');
+  if (e && e.code === 'ERR_BRIDGE') return new BridgesError('ERR_BRIDGE', 'the bridge refused', e.reason === 'refused' ? 'refused' : 'bridge_error');
+  if (e && e.code === 'ERR_BRIDGE_UNREACHABLE') return new BridgesError('ERR_BRIDGE_UNREACHABLE', 'the bridge does not answer', e.reason);
+  return e;
+}
+
+/**
+ * gc.bridges.resolve(userId, network, number) → { found: true, name } | { found: false }
+ * Is this number at the service (WhatsApp: "on WhatsApp"), and under which name? Inside a changing request of that
+ * person; at most LOOKUPS_PER_HOUR per person and hour (ERR_RATE_LIMIT with retryAfterS). The answer carries no
+ * address, no id and not the number.
+ */
+async function resolve(userId, network, number) {
+  const c = clientFor(userId, network);
+  const n = numberOf(number);
+  if (!n) throw new BridgesError('ERR_INVALID', 'number: + and the country code', 'invalid_number');
+  countLookup(userId);
+  try {
+    const r = await c.resolve(n);
+    return r ? { found: true, name: r.name } : { found: false };
+  } catch (e) {
+    if (e && e.code === 'ERR_BRIDGE' && e.reason === 'not_found') return { found: false };
+    throw lookupError(e);
+  }
+}
+
+/**
+ * gc.bridges.createDm(userId, network, number) → { chat: { id, kind: 'direct', name } }
+ * The bridge opens (or finds) the direct chat with this number; the chat is known to the plugin at once — its name
+ * and the first events follow as usual. Same rules as resolve().
+ */
+async function createDm(userId, network, number) {
+  const c = clientFor(userId, network);
+  const n = numberOf(number);
+  if (!n) throw new BridgesError('ERR_INVALID', 'number: + and the country code', 'invalid_number');
+  const ev = eventsOf();
+  if (!ev) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not set up yet', 'not_running');
+  countLookup(userId);
+  await ensureAccount(userId);
+  let r;
+  try { r = await c.createDm(n); } catch (e) { throw lookupError(e); }
+  if (!r) throw new BridgesError('ERR_BRIDGE', 'not found', 'not_found');
+  if (!r.roomId) throw new BridgesError('ERR_BRIDGE', 'the bridge opened no chat', 'bad_answer');
+  let row;
+  try { row = ev.adopt(userId, network, r.roomId); } catch (e) { throw new BridgesError('ERR_BRIDGE', e.message, e.reason || 'bad_answer'); }
+  return { chat: { id: row.ref, kind: 'direct', name: r.name } };
+}
+
 const events = {
   /** events.pull({ after?, limit? }) → { events, more } */
   pull: (o) => {
@@ -595,12 +752,12 @@ const events = {
   },
 };
 
-function _reset() { waits.clear(); accounts.clear(); selfCache.clear(); runtime.events = null; runtime.key = null; runtime.wake = null; }
+function _reset() { waits.clear(); accounts.clear(); selfCache.clear(); uploads.clear(); lookups.clear(); runtime.events = null; runtime.key = null; runtime.wake = null; }
 
 module.exports = {
   NETWORKS, SCRIPT, SERVER_NAME, BridgesError,
   previewOn, getConfig, wanted, wish, status, configure, hostStatus, ensureSecrets, readSecrets, dir,
   login, logins, logout, unlinkFor, mxidOf, _reset,
-  start, stop, send, react, redact, read, typing, chats, events,
+  start, stop, send, react, redact, read, typing, chats, events, openFile, resolve, createDm, numberOf,
   _onTransaction: onTransaction, _eventsOf: eventsOf, _runtime: runtime,
 };

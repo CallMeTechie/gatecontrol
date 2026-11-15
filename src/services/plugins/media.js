@@ -382,12 +382,13 @@ async function storeBuffer(plugin, buf, { mime, name = null, owner = null } = {}
 
 /**
  * Store `length` bytes the host streams from elsewhere (gc.cloud.import —
- * services/plugins/cloud.js): the same checks and writer as storeBuffer(),
+ * services/plugins/cloud.js; gc.bridges.media.fetch (version 4), scanKind
+ * 'bridge'): the same checks and writer as storeBuffer(),
  * the bytes never held in memory. `owner` is the person who asked.
  * @returns {Promise<{ mediaId, mime, bytes, name }>}
  * @throws {MediaError} no_media, unsupported_type, empty, too_large, quota_exceeded, length_mismatch / aborted
  */
-async function storeStream(plugin, source, { length, mime, name = null, owner = null } = {}) {
+async function storeStream(plugin, source, { length, mime, name = null, owner = null, scanKind = 'cloud' } = {}) {
   const decl = declOf(plugin);
   if (!decl) throw new MediaError('no_media', 404);
   const type = baseType(mime);
@@ -397,7 +398,7 @@ async function storeStream(plugin, source, { length, mime, name = null, owner = 
   if (usage(plugin.id).bytes + length > quotaOf(plugin)) throw new MediaError('quota_exceeded', 507);
   capacity(plugin, length);
   const clean = cleanName(name);
-  const out = await writeFile(plugin, { source, length, mime: type, owner, name: clean, scan: { kind: 'cloud' } });
+  const out = await writeFile(plugin, { source, length, mime: type, owner, name: clean, scan: { kind: scanKind } });
   return { ...out, name: clean };
 }
 

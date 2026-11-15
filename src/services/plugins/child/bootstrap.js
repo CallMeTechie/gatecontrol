@@ -327,6 +327,8 @@ function makeEdge() {
 // gc.bridges (permissions.bridges, docs/plugins.md "Messenger bridges"): the bridges to outside messengers that run
 // next to the server (services/bridges). The plugin names a network ('whatsapp') and a person by user id — never an
 // address, a token or a Matrix id. Everything about a person's link only while that person's request is in flight.
+// a file streamed from / to the homeserver and the virus scan (hostApi.callTimeout: 200 s)
+const BRIDGE_FILE_MS = 210000;
 function makeBridges() {
   const login = Object.freeze({
     /** flows(userId, network) → [{ id, name, description }] */
@@ -340,7 +342,7 @@ function makeBridges() {
   });
   return Object.freeze({
     /** the version of this interface (raised when methods or fields are added) */
-    version: 3,
+    version: 4,
     /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion }], host, history } */
     status: () => hostCall('bridges.status', {}),
     /** configure({ enabled?, networks?: { whatsapp?: boolean } }) → status() — inside a changing request of an administrator */
@@ -361,8 +363,11 @@ function makeBridges() {
     }),
     /** chats(userId, network) → [{ id, kind, open }] — inside a request of that person */
     chats: (userId, network) => hostCall('bridges.chats', { userId, network }),
-    /** send(userId, network, chatId, { txnId, text, replyTo?, edit? }) → { id } — inside a changing request of that person */
-    send: (userId, network, chatId, message) => hostCall('bridges.send', { userId, network, chatId, message }),
+    /**
+     * send(userId, network, chatId, { txnId, text, replyTo?, edit? }) → { id } — inside a changing request of that person;
+     * since version 4 a file: { txnId, text? (caption), replyTo?, media: { mediaId, kind: image | video | audio | voice | file, name?, w?, h?, durationMs?, waveform? } }
+     */
+    send: (userId, network, chatId, message) => hostCall('bridges.send', { userId, network, chatId, message }, message && message.media != null ? BRIDGE_FILE_MS : undefined),
     /** react(userId, network, chatId, { txnId, target, emoji }) → { id } */
     react: (userId, network, chatId, reaction) => hostCall('bridges.react', { userId, network, chatId, reaction }),
     /** redact(userId, network, chatId, { txnId, target }) → { ok } — delete for everyone / take a reaction back */
@@ -371,6 +376,19 @@ function makeBridges() {
     read: (userId, network, chatId, messageId) => hostCall('bridges.read', { userId, network, chatId, messageId }),
     /** typing(userId, network, chatId, on) → { ok } */
     typing: (userId, network, chatId, on) => hostCall('bridges.typing', { userId, network, chatId, on: on === true }),
+    // ── since version 4: files, a new chat by number (docs/plugins.md "Messenger bridges", "Files") ──
+    media: Object.freeze({
+      /**
+       * fetch(userId, network, ref, { name? }) → { mediaId, mime, bytes, name, scan } — a file the bridges delivered for that
+       * person (media.ref of a message, chat.avatar, contact.avatar) into this plugin's media (unclaimed, virus scan);
+       * needs no person. ERR_MEDIA_TOO_LARGE / ERR_MEDIA_TYPE / ERR_MEDIA_INFECTED like gc.media.fetch
+       */
+      fetch: (userId, network, ref, opts) => hostCall('bridges.media.fetch', { userId, network, ref, name: opts && opts.name != null ? opts.name : null }, BRIDGE_FILE_MS),
+    }),
+    /** resolve(userId, network, number) → { found, name? } — is this number at the service? ERR_RATE_LIMIT (retryAfterS); inside a changing request of that person */
+    resolve: (userId, network, number) => hostCall('bridges.resolve', { userId, network, number }),
+    /** createDm(userId, network, number) → { chat: { id, kind: 'direct', name } } — the direct chat with this number (made or found) */
+    createDm: (userId, network, number) => hostCall('bridges.createDm', { userId, network, number }),
   });
 }
 
@@ -1148,7 +1166,8 @@ process.on('message', (msg) => {
       p.reject(Object.assign(new Error(msg.error || 'host call failed'), { code: msg.code || undefined }, Number.isInteger(msg.status) ? { status: msg.status } : {},
         typeof msg.serverText === 'string' ? { serverText: msg.serverText } : {},
         // why (gc.print ERR_PRINT_FORMAT: file_type | damaged | printer | gateway_update | convert_off | office_off | office_missing)
-        typeof msg.reason === 'string' ? { reason: msg.reason } : {}));
+        typeof msg.reason === 'string' ? { reason: msg.reason } : {},
+        Number.isSafeInteger(msg.retryAfterS) ? { retryAfterS: msg.retryAfterS } : {}));
     }
     return;
   }
