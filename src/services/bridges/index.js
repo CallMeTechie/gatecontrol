@@ -59,6 +59,9 @@
 //                    wanted it for 30 days) — as the server's bot, the homeserver's only administrator (hs.js).
 //   health           (stage 5) health() tells a plugin, without a person's request, the state of each linked person's
 //                    login (also "the phone was not seen for 12 days", the bridge's own warning) — no name, no number.
+//   contacts         (stage 4c) contacts / matchNumbers / createDmByRef: the person's contacts at the bridge (its own
+//                    store, GET /v3/contacts — no question to WhatsApp) with sealed references instead of numbers;
+//                    held in memory for 10 minutes, never written, never logged.
 //   images           (stage 5) the pins of images.js go to update.sh with every config file ("bridges_images"): a
 //                    GateControl release with a new pin updates the containers at the next run of the script, without
 //                    a new docker-compose.yml on the host. Nothing unpinned is ever pulled.
@@ -267,7 +270,7 @@ function locations() {
  * no contents: states, versions and memory only.
  */
 function status() {
-  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 5 };
+  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 6 };
   const cfg = getConfig();
   const host = hostStatus();
   const up = cfg.enabled && host.state === 'running' && host.services.hs.running;
@@ -307,7 +310,7 @@ function status() {
     // stage 5: the copies of files at the homeserver that went after the plugin took them over
     cleanup: { deleted: cleanup.deleted, lastAt: cleanup.lastAt ? new Date(cleanup.lastAt).toISOString() : null, error: cleanup.error, waiting: runtime.events ? runtime.events.mediaWaiting() : 0 },
     // the version of gc.bridges this server offers (child/bootstrap.js)
-    version: 5,
+    version: 6,
   };
 }
 
@@ -918,7 +921,7 @@ function writeMasterKey(key) {
   accounts.clear();
   return true;
 }
-function forget() { if (runtime.events) runtime.events._forget(); accounts.clear(); selfCache.clear(); }
+function forget() { if (runtime.events) runtime.events._forget(); accounts.clear(); selfCache.clear(); contactLists.clear(); }
 
 // ─── A new chat by number (stage 4) ────────────────────
 
@@ -991,6 +994,135 @@ async function createDm(userId, network, number) {
   return { chat: { id: row.ref, kind: 'direct', name: r.name } };
 }
 
+// ─── A new chat with a contact (stage 4c) ────────────
+
+// The person's contacts at the bridge (WhatsApp: the contact store the bridge keeps — listing them asks WhatsApp
+// nothing). They stay in this process's memory for CONTACTS_KEEP_MS at most and are never written anywhere or logged;
+// a plugin gets a name, a picture reference, the chat it already has, and a sealed reference — never a number, a
+// WhatsApp id or a Matrix address. The reference is sealed with a key that exists only in this process (AES-256-GCM),
+// names the person and the network, and runs out after CONTACT_REF_TTL_MS (and at every restart).
+const CONTACTS_KEEP_MS = 10 * 60000;
+const CONTACT_REF_TTL_MS = 30 * 60000;
+const CONTACT_REF_RE = /^k[A-Za-z0-9_-]{40,1400}$/;
+const MATCH_MAX = 2000;
+const QUERY_MAX = 100;
+const contactLists = new Map(); // `${userId}:${network}` → { at, list } (provision.contactsOut)
+const contactKey = { key: null };
+
+function contactSealKey() {
+  if (!contactKey.key) contactKey.key = crypto.randomBytes(32);
+  return contactKey.key;
+}
+function contactRefOf(userId, network, c, now) {
+  const plain = Buffer.from(JSON.stringify({ u: userId, n: network, m: c.mxid || null, i: c.mxid ? null : c.id, t: now }), 'utf8');
+  const iv = crypto.randomBytes(12);
+  const ci = crypto.createCipheriv('aes-256-gcm', contactSealKey(), iv);
+  const ct = Buffer.concat([ci.update(plain), ci.final()]);
+  return 'k' + Buffer.concat([iv, ci.getAuthTag(), ct]).toString('base64url');
+}
+/** → { mxid, id } of a reference made here for this person and network, still valid — else null. */
+function openContactRef(userId, network, ref, now = Date.now()) {
+  if (typeof ref !== 'string' || !CONTACT_REF_RE.test(ref) || !contactKey.key) return null;
+  try {
+    const b = Buffer.from(ref.slice(1), 'base64url');
+    const d = crypto.createDecipheriv('aes-256-gcm', contactKey.key, b.subarray(0, 12));
+    d.setAuthTag(b.subarray(12, 28));
+    const o = JSON.parse(Buffer.concat([d.update(b.subarray(28)), d.final()]).toString('utf8'));
+    if (!o || o.u !== userId || o.n !== network || !Number.isFinite(o.t) || now - o.t > CONTACT_REF_TTL_MS || o.t > now + 60000) return null;
+    return o.m || o.i ? { mxid: o.m || null, id: o.i || null } : null;
+  } catch { return null; }
+}
+
+/** A contact of the bridge → what a plugin gets: { ref, name, avatar, chatId }. */
+function contactView(userId, network, c, ev, now) {
+  const chat = ev && c.roomId ? ev.chatOfRoom(userId, network, c.roomId) : null;
+  // contactId: the contact's reference as the events name it (sender.id / contact.id — an HMAC of the ghost, stable)
+  return { ref: contactRefOf(userId, network, c, now), contactId: ev && c.mxid ? ev.contactRef(network, c.mxid) : null, name: c.name,
+    avatar: ev && c.avatarUrl ? ev.pictureRef(userId, c.avatarUrl) : null, chatId: chat };
+}
+
+async function contactList(userId, network, c) {
+  const k = `${userId}:${network}`;
+  const now = Date.now();
+  const have = contactLists.get(k);
+  if (have && now - have.at < CONTACTS_KEEP_MS) return have.list;
+  let list;
+  try { list = await c.contacts(); } catch (e) { throw lookupError(e); }
+  for (const [x, v] of contactLists) if (now - v.at >= CONTACTS_KEEP_MS) contactLists.delete(x);
+  if (contactLists.size > 200) contactLists.clear();
+  contactLists.set(k, { at: now, list });
+  return list;
+}
+
+/**
+ * gc.bridges.contacts(userId, network, { query? }) → { contacts: [{ ref, contactId, name, avatar, chatId }] }
+ * The person's contacts at the bridge (`query`: the bridge's own search over them, by name). Inside a request of that
+ * person. No number, no id, no address: `ref` starts a chat (createDmByRef), `avatar` is a picture reference for
+ * media.fetch, `chatId` the chat the person has with this contact already (null: none known), `contactId` the contact's
+ * reference as the events name it (sender.id), stable — for merging and for its picture.
+ */
+async function contacts(userId, network, opts = {}) {
+  const c = clientFor(userId, network);
+  const query = opts && typeof opts.query === 'string' ? opts.query.replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, QUERY_MAX) : '';
+  let list;
+  if (query) {
+    try { list = await c.searchUsers(query); } catch (e) { throw lookupError(e); }
+  } else list = await contactList(userId, network, c);
+  const ev = eventsOf();
+  const now = Date.now();
+  return { contacts: list.map((x) => contactView(userId, network, x, ev, now)) };
+}
+
+/**
+ * gc.bridges.matchNumbers(userId, network, numbers) → { matches: [{ index, ref, contactId, name, avatar, chatId }] }
+ * Which of these numbers (the person's own, e.g. from their address book) are contacts at the bridge? Compared with
+ * the contact list the bridge keeps — no question to WhatsApp, nothing counted. `index` is the place in `numbers`; a
+ * number that is not one (+ and the country code) matches nothing. Inside a request of that person.
+ */
+async function matchNumbers(userId, network, numbers) {
+  const c = clientFor(userId, network);
+  if (!Array.isArray(numbers) || numbers.length > MATCH_MAX) throw new BridgesError('ERR_INVALID', `numbers: up to ${MATCH_MAX}`);
+  const want = new Map();
+  numbers.forEach((v, i) => { const n = numberOf(v); if (n) { if (!want.has(n)) want.set(n, []); want.get(n).push(i); } });
+  if (!want.size) return { matches: [] };
+  const list = await contactList(userId, network, c);
+  const ev = eventsOf();
+  const now = Date.now();
+  const matches = [];
+  for (const x of list) {
+    for (const n of x.numbers) {
+      const at = want.get(n);
+      if (!at) continue;
+      const view = contactView(userId, network, x, ev, now);
+      for (const index of at) matches.push({ index, ...view });
+      want.delete(n);
+    }
+  }
+  return { matches: matches.sort((a, b) => a.index - b.index) };
+}
+
+/**
+ * gc.bridges.createDmByRef(userId, network, ref) → { chat: { id, kind: 'direct', name } }
+ * The direct chat with a contact of contacts() / matchNumbers() (made or found) — by the bridge's own contact, not by a
+ * number: nothing is asked of WhatsApp about a number, nothing counted. Inside a changing request of that person;
+ * a reference of another person, another network, an older process or older than 30 minutes → ERR_INVALID / expired_ref.
+ */
+async function createDmByRef(userId, network, ref) {
+  const c = clientFor(userId, network);
+  const who = openContactRef(userId, network, ref);
+  if (!who) throw new BridgesError('ERR_INVALID', 'unknown or expired contact', 'expired_ref');
+  const ev = eventsOf();
+  if (!ev) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not set up yet', 'not_running');
+  await ensureAccount(userId);
+  let r;
+  try { r = await c.createDmWith(who.mxid || who.id); } catch (e) { throw lookupError(e); }
+  if (!r) throw new BridgesError('ERR_BRIDGE', 'not found', 'not_found');
+  if (!r.roomId) throw new BridgesError('ERR_BRIDGE', 'the bridge opened no chat', 'bad_answer');
+  let row;
+  try { row = ev.adopt(userId, network, r.roomId); } catch (e) { throw new BridgesError('ERR_BRIDGE', e.message, e.reason || 'bad_answer'); }
+  return { chat: { id: row.ref, kind: 'direct', name: r.name } };
+}
+
 const events = {
   /** events.pull({ after?, limit? }) → { events, more } */
   pull: (o) => {
@@ -1007,7 +1139,7 @@ const events = {
 };
 
 function _reset() {
-  waits.clear(); accounts.clear(); selfCache.clear(); uploads.clear(); lookups.clear(); clientOutdated.clear();
+  waits.clear(); accounts.clear(); selfCache.clear(); uploads.clear(); lookups.clear(); clientOutdated.clear(); contactLists.clear(); contactKey.key = null;
   runtime.events = null; runtime.key = null; runtime.wake = null;
   Object.assign(cleanup, { deleted: 0, lastAt: null, error: null, running: false });
 }
@@ -1016,7 +1148,7 @@ module.exports = {
   NETWORKS, SCRIPT, SERVER_NAME, BridgesError,
   previewOn, getConfig, wanted, wish, status, configure, hostStatus, ensureSecrets, readSecrets, dir,
   login, logins, logout, unlinkFor, mxidOf, _reset,
-  start, stop, send, react, redact, read, typing, chats, events, openFile, resolve, createDm, numberOf,
+  start, stop, send, react, redact, read, typing, chats, events, openFile, resolve, createDm, numberOf, contacts, matchNumbers, createDmByRef, _openContactRef: openContactRef,
   history, historyOf, linkedAt, health, mediaFetched, cleanupRun, tick, masterKey, writeMasterKey, _forget: forget, HISTORY_OPTIONS, HISTORY_DEFAULT,
   _onTransaction: onTransaction, _eventsOf: eventsOf, _runtime: runtime,
 };

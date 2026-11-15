@@ -341,8 +341,9 @@ function makeBridges() {
     cancel: (userId, network, processId) => hostCall('bridges.login.cancel', { userId, network, processId }),
   });
   return Object.freeze({
-    /** the version of this interface (raised when methods or fields are added; 5: history, health, status().backup / cleanup) */
-    version: 5,
+    /** the version of this interface (raised when methods or fields are added; 5: history, health, status().backup / cleanup;
+     *  6: contacts, matchNumbers, createDmByRef) */
+    version: 6,
     /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion, clientOutdated }], host, messages, history, backup, cleanup } */
     status: () => hostCall('bridges.status', {}),
     /** configure({ enabled?, networks?: { whatsapp?: boolean }, history?: boolean, backupNow?: true, backupTime?: 'HH:MM' }) → status() — inside a changing request of an administrator */
@@ -402,6 +403,13 @@ function makeBridges() {
     }),
     /** health({ userIds, network }) → [{ userId, logins: [{ state, since, error, phoneOffline, clientOutdated }] | null }] — needs no person, names no login */
     health: (opts) => hostCall('bridges.health', { userIds: opts && opts.userIds, network: opts && opts.network }, 125000),
+    // ── since version 6: a new chat with a contact (docs/plugins.md "Messenger bridges", "Contacts") ──
+    /** contacts(userId, network, { query? }) → { contacts: [{ ref, contactId, name, avatar, chatId }] } — the person's contacts at the bridge; inside a request of that person */
+    contacts: (userId, network, opts) => hostCall('bridges.contacts', { userId, network, query: opts && typeof opts.query === 'string' ? opts.query : null }),
+    /** matchNumbers(userId, network, numbers) → { matches: [{ index, ref, contactId, name, avatar, chatId }] } — which of these numbers are contacts at the bridge (no question to the messenger) */
+    matchNumbers: (userId, network, numbers) => hostCall('bridges.matchNumbers', { userId, network, numbers }),
+    /** createDmByRef(userId, network, ref) → { chat: { id, kind: 'direct', name } } — the direct chat with a contact of contacts() / matchNumbers(); inside a changing request of that person */
+    createDmByRef: (userId, network, ref) => hostCall('bridges.createDmByRef', { userId, network, ref }),
   });
 }
 

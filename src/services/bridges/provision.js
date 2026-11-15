@@ -13,6 +13,9 @@ const http = require('node:http');
 const path = require('node:path');
 
 const MAX_BODY = 256 * 1024;
+// stage 4c: a contact list (GET /v3/contacts, POST /v3/search_users) can be long — a few hundred bytes per contact
+const MAX_LIST_BODY = 4 * 1024 * 1024;
+const MAX_CONTACTS = 2000;
 const TIMEOUT_MS = 20000;
 // display_and_wait answers when the person scanned the code — or after the bridge's own timeout
 const WAIT_TIMEOUT_MS = 180000;
@@ -69,7 +72,7 @@ function request(target, req) {
       let size = 0;
       res.on('data', (c) => {
         size += c.length;
-        if (size > MAX_BODY) { r.destroy(new BridgeError('ERR_BRIDGE', 'answer of the bridge too large', 'too_large')); return; }
+        if (size > (req.maxBody || MAX_BODY)) { r.destroy(new BridgeError('ERR_BRIDGE', 'answer of the bridge too large', 'too_large')); return; }
         chunks.push(c);
       });
       res.on('error', (e) => reject(new BridgeError('ERR_BRIDGE_UNREACHABLE', e.message)));
@@ -152,6 +155,32 @@ function flowsOut(list) {
 
 const ROOM_RE = /^![A-Za-z0-9._=/+-]{1,128}(:[a-z0-9.-]{1,64})?$/;
 
+const GHOST_RE = /^@[a-z0-9._=/+-]{1,240}:[a-z0-9.-]{1,64}$/;
+const BRIDGE_ID_RE = /^[A-Za-z0-9._:=+@-]{1,128}$/;
+const TEL_RE = /^tel:(\+[1-9][0-9]{6,14})$/;
+
+/**
+ * stage 4c: the contact list of a bridge (provisionutil RespGetContactList.contacts / RespSearchUsers.results, each a
+ * RespResolveIdentifier) → [{ id, name, avatarUrl, mxid, roomId, numbers }] — for services/bridges only: id, mxid and
+ * numbers (from the identifiers `tel:+…`) name the person's contact and never leave the server.
+ */
+function contactsOut(list) {
+  return (Array.isArray(list) ? list : []).slice(0, MAX_CONTACTS)
+    .filter((r) => r && typeof r === 'object' && (BRIDGE_ID_RE.test(String(r.id || '')) || GHOST_RE.test(String(r.mxid || ''))))
+    .map((r) => {
+      const name = str(r.name, 480).replace(/[\0-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || null;
+      const numbers = (Array.isArray(r.identifiers) ? r.identifiers : []).slice(0, 8).map((x) => TEL_RE.exec(String(x || ''))).filter(Boolean).map((m) => m[1]);
+      return {
+        id: BRIDGE_ID_RE.test(String(r.id || '')) ? r.id : null,
+        name,
+        avatarUrl: typeof r.avatar_url === 'string' && r.avatar_url.length <= 300 ? r.avatar_url : null,
+        mxid: GHOST_RE.test(String(r.mxid || '')) ? r.mxid : null,
+        roomId: ROOM_RE.test(String(r.dm_room_mxid || '')) ? r.dm_room_mxid : null,
+        numbers,
+      };
+    });
+}
+
 /** resolve_identifier / create_dm → { name, roomId } — never the id, the address or the identifiers (they hold the number). */
 function identifierOut(r) {
   if (!r || typeof r !== 'object') return null;
@@ -187,10 +216,19 @@ function client(target, mxid) {
     // 404 (not at the service) → ERR_BRIDGE not_found
     resolve: async (number) => identifierOut(await call('GET', `resolve_identifier/${encodeURIComponent(number)}`)),
     createDm: async (number) => identifierOut(await call('POST', `create_dm/${encodeURIComponent(number)}`, {})),
+    // stage 4c: the person's contacts as the bridge keeps them (WhatsApp: its local contact store — no question to
+    // WhatsApp, startchat.go getContactList), a search over them, and a chat with one of them by the ghost's Matrix id
+    // (provisionutil.ResolveIdentifier: ParseGhostMXID → CreateChatWithGhost, no "is this number on WhatsApp")
+    contacts: async () => contactsOut((await request(target, { method: 'GET', path: 'contacts', mxid, maxBody: MAX_LIST_BODY })).contacts),
+    searchUsers: async (query) => contactsOut((await request(target, { method: 'POST', path: 'search_users', mxid, body: { query: String(query || '').slice(0, 100) }, maxBody: MAX_LIST_BODY })).results),
+    createDmWith: async (identifier) => {
+      if (!GHOST_RE.test(String(identifier || '')) && !BRIDGE_ID_RE.test(String(identifier || ''))) throw new BridgeError('ERR_INVALID', 'invalid identifier');
+      return identifierOut(await call('POST', `create_dm/${encodeURIComponent(identifier)}`, {}));
+    },
     logout: async (loginId) => { await call('POST', `logout/${seg(loginId)}`, {}); return { ok: true }; },
   };
 }
 
 function socketOf(dir, network) { return path.join(dir, 'run', `${network}.sock`); }
 
-module.exports = { client, request, stepOut, whoamiOut, flowsOut, identifierOut, socketOf, BridgeError, ID_RE, WAIT_TIMEOUT_MS };
+module.exports = { client, request, stepOut, whoamiOut, flowsOut, identifierOut, contactsOut, MAX_CONTACTS, socketOf, BridgeError, ID_RE, WAIT_TIMEOUT_MS };
