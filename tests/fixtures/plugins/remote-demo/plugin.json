@@ -1,0 +1,10 @@
+{
+  "id": "gatecontrol-remote",
+  "name": { "de": "Fernzugriff-Demo", "en": "Remote access demo" },
+  "version": "1.0.0",
+  "publisher": "GateControl Tests",
+  "description": { "de": "Plugin mit gc.remote (Tests).", "en": "Plugin with gc.remote (tests)." },
+  "gatecontrol": ">=1.0.0",
+  "entry": "server/index.js",
+  "permissions": { "remote": true, "storage": true }
+}

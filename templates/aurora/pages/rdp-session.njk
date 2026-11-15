@@ -126,7 +126,7 @@
 <script src="/js/rdp-player.js?v={{ appVersion }}"></script>
 
 {# JSON island 1: init config — no user free-text, only numeric id + enum protocol + CSRF + guac object #}
-<script type="application/json" id="rdp-session-cfg" nonce="{{ cspNonce }}">{{ { routeId: route.id, protocol: route.protocol, csrf: csrfToken, guac: guac, resolutionMode: route.resolution_mode, resWidth: route.resolution_width, resHeight: route.resolution_height } | dump | safe }}</script>
+<script type="application/json" id="rdp-session-cfg" nonce="{{ cspNonce }}">{{ { routeId: route.id, protocol: route.protocol, csrf: csrfToken, guac: guac, resolutionMode: route.resolution_mode, resWidth: route.resolution_width, resHeight: route.resolution_height, mintUrl: mintUrl, backUrl: backUrl } | dump | safe }}</script>
 
 {# JSON island 2: i18n strings needed for JS state updates #}
 <script type="application/json" id="rdp-session-i18n" nonce="{{ cspNonce }}">{{ {
@@ -205,7 +205,8 @@
       }
     },
     mint: function () {
-      return fetch('/api/v1/rdp/' + cfg.routeId + '/browser-session', {
+      /* mintUrl: a session of gc.remote (/remote/session/<ref>/token); else the old RDP route */
+      return fetch(cfg.mintUrl || ('/api/v1/rdp/' + cfg.routeId + '/browser-session'), {
         method: 'POST',
         headers: { 'X-CSRF-Token': cfg.csrf },
         credentials: 'same-origin'
@@ -258,7 +259,7 @@
 
   /* Back to RDP list */
   var backBtn = document.getElementById('rdp-back-btn');
-  if (backBtn) backBtn.addEventListener('click', function () { location.href = '/rdp'; });
+  if (backBtn) backBtn.addEventListener('click', function () { location.href = cfg.backUrl || '/rdp'; });
 
   /* Retry after error */
   document.getElementById('rdp-retry-btn').addEventListener('click', function () {

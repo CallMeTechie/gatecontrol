@@ -3,7 +3,8 @@
 // Built-in → plugin migration (docs/plugins.md "Built-in data import").
 //
 // Smart Home (deCONZ), Klimaanlage (Midea) and Fahrzeuge (Škoda) used to be
-// built into GateControl. Their code is gone — the features are the
+// built into GateControl (Remote Desktops → "Fernzugriff": see `remote` below —
+// that one stays built in for now and is only copied). Their code is gone — the features are the
 // first-party plugins listed in DATASETS below — but their tables and
 // settings are kept (never dropped, still in backups) so an existing
 // installation can bring its data into the plugin:
@@ -213,6 +214,83 @@ const skoda = {
   },
 };
 
+// Remote Desktops → the shop plugin "Fernzugriff" (gatecontrol-remote, gc.remote). Unlike the three
+// above, the built-in feature STAYS in the core while the plugin is new (stage 0/1 of the plan): its tables
+// and pages keep working, the import only copies. Secrets never go into the snapshot: every credential
+// set of a route becomes an entry of the core's key vault (services/remote/vault.js) and the snapshot
+// carries its handle — idempotent per route (source "rdp_route:<id>"), so "Erneut übernehmen" refreshes
+// the same handles. Ids stay (routes[].id = rdp_routes.id, sessions[].route_id), so the plugin's rights and
+// history keep matching; the tables stay and keep going into backups.
+const REMOTE_SESSIONS_MAX = 20000;
+
+const remote = {
+  counts() {
+    if (!tableExists('rdp_routes')) return { routes: 0, sessions: 0, maintenance: 0 };
+    const db = getDb();
+    return {
+      routes: db.prepare('SELECT COUNT(*) AS c FROM rdp_routes').get().c,
+      sessions: tableExists('rdp_sessions') ? db.prepare('SELECT COUNT(*) AS c FROM rdp_sessions').get().c : 0,
+      maintenance: db.prepare('SELECT COUNT(*) AS c FROM rdp_routes WHERE maintenance_enabled = 1').get().c,
+    };
+  },
+  /**
+   * Snapshot of rdp_routes (with vault handles instead of credentials), rdp_sessions (the newest
+   * REMOTE_SESSIONS_MAX) and the maintenance windows. `plugin` owns the vault entries.
+   */
+  export(plugin) {
+    if (!tableExists('rdp_routes')) return { routes: [], sessions: [], maintenance: [] };
+    const db = getDb();
+    const vault = require('../remote/vault');
+    const rdpCreds = require('../rdpCredentials');
+    const ids = (v) => { const a = parseJson(v, null); return Array.isArray(a) ? a.filter((x) => Number.isSafeInteger(x)) : null; };
+    const list = (v) => { const a = parseJson(v, null); return Array.isArray(a) ? a : (typeof v === 'string' && v ? v.split(',').map((x) => x.trim()).filter(Boolean) : []); };
+    const bool = (v) => v === 1 || v === true;
+    const SECRET = new Set(['username_encrypted', 'password_encrypted', 'ssh_private_key_encrypted', 'ssh_passphrase_encrypted',
+      'sftp_password_encrypted', 'sftp_private_key_encrypted', 'sftp_passphrase_encrypted', 'screenshot_data']);
+    const BOOLS = ['enabled', 'multi_monitor', 'redirect_clipboard', 'redirect_printers', 'redirect_drives', 'redirect_usb', 'redirect_smartcard',
+      'nla_enabled', 'disable_wallpaper', 'disable_themes', 'disable_animations', 'admin_session', 'wol_enabled', 'maintenance_enabled',
+      'sharing_enabled', 'sharing_require_consent', 'screenshot_enabled', 'credential_rotation_enabled', 'health_check_enabled',
+      'browser_enabled', 'browser_enable_sftp', 'sftp_disable_download', 'sftp_disable_upload', 'browser_enable_audio', 'browser_clipboard'];
+    const routes = db.prepare('SELECT * FROM rdp_routes ORDER BY id').all().map((r) => {
+      const c = rdpCreds.decryptCredentials(r);
+      const out = {};
+      for (const [k, v] of Object.entries(r)) if (!SECRET.has(k)) out[k] = v === undefined ? null : v;
+      for (const k of BOOLS) if (k in out) out[k] = bool(out[k]);
+      out.user_ids = ids(r.user_ids);
+      out.group_ids = ids(r.group_ids);
+      out.token_ids = ids(r.token_ids);
+      out.tags = list(r.tags);
+      out.protocol = r.protocol || 'rdp';
+      // the credentials of the route → one vault entry (none when nothing is stored); the SFTP ones → a second
+      const main = { username: c.username, password: c.password, domain: r.domain || null, privateKey: c.ssh_private_key, passphrase: c.ssh_passphrase };
+      const has = Object.values(main).some((v) => v);
+      out.credential = has ? vault.put(plugin.id, { ...main, label: String(r.name || '').slice(0, 120) || null }, { source: `rdp_route:${r.id}` }).handle : null;
+      const sftp = { password: c.sftp_password, privateKey: c.sftp_private_key, passphrase: c.sftp_passphrase, username: r.sftp_username || null };
+      out.sftp_credential = (sftp.password || sftp.privateKey)
+        ? vault.put(plugin.id, { ...sftp, label: (String(r.name || '').slice(0, 110) + ' (SFTP)') }, { source: `rdp_route:${r.id}:sftp` }).handle : null;
+      // a field that could not be decrypted (another server key): the plugin asks for it again
+      out.credential_unreadable = !!c.decrypt_failed || c.decrypt_failed_fields.size > 0;
+      return out;
+    });
+    const sessions = tableExists('rdp_sessions')
+      ? db.prepare(`SELECT * FROM rdp_sessions ORDER BY id DESC LIMIT ${REMOTE_SESSIONS_MAX}`).all().reverse().map((x) => ({
+        id: x.id, route_id: x.rdp_route_id, token_id: x.token_id ?? null, token_name: x.token_name || null, peer_id: x.peer_id ?? null,
+        status: x.status, started_at: x.started_at || null, last_heartbeat: x.last_heartbeat || null, ended_at: x.ended_at || null,
+        duration_seconds: x.duration_seconds ?? null, end_reason: x.end_reason || null, client_ip: x.client_ip || null,
+        via: x.via || 'native', protocol: x.protocol || 'rdp',
+      }))
+      : [];
+    const maintenance = routes.filter((r) => r.maintenance_enabled || r.maintenance_schedule).map((r) => ({
+      route_id: r.id, enabled: r.maintenance_enabled, schedule: r.maintenance_schedule || null,
+    }));
+    return { routes, sessions, maintenance };
+  },
+  /** Targets of a gateway become gc.remote listeners of the plugin (it reuses the routes' L4 ports), no home target. */
+  targetRefs() {
+    return [];
+  },
+};
+
 /**
  * Fixed mapping: plugin id → the built-in dataset it may import. `target` is
  * the plugin's home target that the GateControl routes / LAN addresses
@@ -224,6 +302,9 @@ const DATASETS = new Map([
   ['gatecontrol-smarthome', Object.freeze({ dataset: 'smarthome', target: 'gateway', source: smarthome })],
   ['gatecontrol-midea', Object.freeze({ dataset: 'midea', target: 'ac', source: midea })],
   ['gatecontrol-skoda', Object.freeze({ dataset: 'skoda', target: null, source: skoda })],
+  // notice: false — the upgrade notice ("Remote Desktops wird das Shop-Plugin Fernzugriff", i18n plugins.moved.remote)
+  // is prepared but not shown yet: the built-in feature keeps working until the plugin is in the shop (stage 1)
+  ['gatecontrol-remote', Object.freeze({ dataset: 'remote', target: null, source: remote, notice: false })],
 ]);
 
 function defOf(pluginId) {
@@ -280,6 +361,7 @@ function everImported(pluginId) {
 function pendingMoves() {
   const out = [];
   for (const [id, def] of DATASETS) {
+    if (def.notice === false) continue;
     if (installed(id) || everImported(id)) continue;
     let counts;
     try { counts = def.source.counts(); } catch { continue; }
@@ -405,7 +487,7 @@ async function runImport(pluginId, { ip } = {}) {
   if (busy.has(plugin.id)) throw new LegacyError('legacy_busy', 'an import is already running');
   busy.add(plugin.id);
   try {
-    const data = def.source.export();
+    const data = def.source.export(plugin);
     const total = Object.values(data).reduce((n, list) => n + list.length, 0);
     if (!total) throw new LegacyError('legacy_empty', 'there is no built-in data');
     const targetsAdded = assignTargets(plugin, def, def.source.targetRefs(data)); // the plugin only knows its targets

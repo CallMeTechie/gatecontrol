@@ -197,7 +197,8 @@ function mapsOf(p) { return !!(p && p.manifest && p.manifest.ui && p.manifest.ui
  * template for window.GC.tiles) for a maps frame with a known origin — the
  * CSP allows the relay only then; `scanQr` (ui.scanQr / ui.camera) for
  * window.GC.scanQr; `pickPrincipals` (permissions.groups) for
- * window.GC.pickPrincipals; `openUrl` (permissions.cloudImport) for window.GC.openUrl.
+ * window.GC.pickPrincipals; `openUrl` (permissions.cloudImport) for window.GC.openUrl; `openSession`
+ * (permissions.remote) for window.GC.openSession.
  */
 function frameHeaders(req, res, p) {
   const maps = mapsOf(p);
@@ -205,7 +206,7 @@ function frameHeaders(req, res, p) {
   const cameras = !!(p && p.manifest && p.manifest.permissions && p.manifest.permissions.cameras === true);
   frame.headers(res, { maps, avatars: true, origin, media: !!media.declOf(p), cameras });
   return { maps, tiles: maps && origin ? tiles.template() : null, scanQr: frame.scanQrOf(p && p.manifest), pickPrincipals: frame.pickPrincipalsOf(p && p.manifest),
-    openUrl: frame.openUrlOf(p && p.manifest) };
+    openUrl: frame.openUrlOf(p && p.manifest), openSession: frame.openSessionOf(p && p.manifest) };
 }
 
 function lang(req, res) { return (req.language || res.locals.language) === 'en' ? 'en' : 'de'; }

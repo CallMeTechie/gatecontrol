@@ -13,10 +13,25 @@ const rdpSessions = require('../../../services/rdpSessions');
 const { requirePeerOwnership, verifyMachineBinding } = require('./helpers');
 const config = require('../../../../config/default');
 const guacSession = require('../../../services/guacSession');
+// Once the plugin "Fernzugriff" took over the RDP targets, the plugin answers
+// these endpoints (services/remote/facade.js); without it nothing changes.
+const facade = require('../../../services/remote/facade').middleware;
 
 const router = Router();
 
-router.get('/rdp', (req, res) => {
+// The plaintext fallback of /connect (no client key): still answered for old
+// apps, but deprecated — one warning per token and hour in the server log.
+const plainWarned = new Map();
+function warnPlaintext(tokenId, routeId) {
+  const k = String(tokenId);
+  const now = Date.now();
+  if (now - (plainWarned.get(k) || 0) < 60 * 60 * 1000) return;
+  plainWarned.set(k, now);
+  if (plainWarned.size > 1000) plainWarned.delete(plainWarned.keys().next().value);
+  logger.warn({ tokenId, routeId }, 'RDP credentials sent without a client key (plaintext over HTTPS) — deprecated: update the app (ECDH)');
+}
+
+router.get('/rdp', facade('list'), (req, res) => {
   try {
     if (!hasFeature('remote_desktop')) {
       return res.status(403).json({ ok: false, error: 'Remote Desktop feature not available' });
@@ -70,7 +85,7 @@ router.get('/rdp', (req, res) => {
  * their own process, so the server performs the check on behalf
  * of the client.
  */
-router.get('/rdp/:id/status', async (req, res) => {
+router.get('/rdp/:id/status', facade('status'), async (req, res) => {
   try {
     if (!hasFeature('remote_desktop')) {
       return res.status(403).json({ ok: false, error: 'Remote Desktop feature not available' });
@@ -94,7 +109,7 @@ router.get('/rdp/:id/status', async (req, res) => {
  * Get connection data + credentials (E2EE) for an RDP route
  * Query: ?publicKey=<base64-encoded-client-public-key>
  */
-router.get('/rdp/:id/connect', (req, res) => {
+router.get('/rdp/:id/connect', facade('connect'), (req, res) => {
   try {
     if (!hasFeature('remote_desktop')) {
       return res.status(403).json({ ok: false, error: 'Remote Desktop feature not available' });
@@ -259,7 +274,11 @@ router.get('/rdp/:id/connect', (req, res) => {
           logger.warn({ error: err.message }, 'RSA E2EE encryption failed');
         }
       } else {
-        // No client public key -- send plain (only over HTTPS)
+        // No client public key -- send plain (only over HTTPS). DEPRECATED:
+        // kept for old apps and logged; targets of the plugin "Fernzugriff"
+        // (the facade above) never get this — ECDH only (docs/plugins.md
+        // "Remote access").
+        warnPlaintext(req.tokenId, route.id);
         connection.username = route.username || null;
         if (route.credential_mode === 'full') {
           connection.password = route.password || null;
@@ -283,7 +302,7 @@ router.get('/rdp/:id/connect', (req, res) => {
  * Guard order: found (route lookup → 404 in this handler) → then mintForRoute:
  *   license → cred → browser_enabled → ACL → maintenance → protocol → concurrency.
  */
-router.post('/rdp/:id/browser-session', (req, res) => {
+router.post('/rdp/:id/browser-session', facade('browserSession'), (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     const route = rdpService.getById(id, true);
@@ -305,7 +324,7 @@ router.post('/rdp/:id/browser-session', (req, res) => {
 /**
  * POST /api/v1/client/rdp/:id/session -- Start RDP session (audit)
  */
-router.post('/rdp/:id/session', (req, res) => {
+router.post('/rdp/:id/session', facade('sessionStart'), (req, res) => {
   try {
     if (!hasFeature('remote_desktop')) {
       return res.status(403).json({ ok: false, error: 'Remote Desktop feature not available' });
@@ -340,7 +359,7 @@ router.post('/rdp/:id/session', (req, res) => {
  * PATCH /api/v1/client/rdp/:id/session -- Session heartbeat
  * Body: { sessionId }
  */
-router.patch('/rdp/:id/session', (req, res) => {
+router.patch('/rdp/:id/session', facade('sessionHeartbeat'), (req, res) => {
   try {
     const { sessionId } = req.body;
     if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId required' });
@@ -365,7 +384,7 @@ router.patch('/rdp/:id/session', (req, res) => {
  * DELETE /api/v1/client/rdp/:id/session -- End RDP session
  * Body: { sessionId, endReason }
  */
-router.delete('/rdp/:id/session', (req, res) => {
+router.delete('/rdp/:id/session', facade('sessionEnd'), (req, res) => {
   try {
     const { sessionId, endReason } = req.body || {};
     const routeId = parseInt(req.params.id, 10);

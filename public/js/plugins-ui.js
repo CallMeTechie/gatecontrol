@@ -183,6 +183,8 @@
     // phase 3c, step 2: the Bluetooth sensors the administrator took over on the gateways
     if (perm.radio) rows.push({ label: t('plugins.perm.radio'), value: t('plugins.perm.radio_on') });
     if (perm.cameras) rows.push({ label: t('plugins.perm.cameras'), value: t('plugins.perm.cameras_on') });
+    // remote access (gc.remote): sessions to devices, the key vault, ports through the gateways — sensitive, named first
+    if (perm.remote) rows.unshift({ label: t('plugins.perm.remote'), value: t('plugins.perm.remote_on') });
     // DNS protection of the VPN devices: a sensitive permission, named first and marked
     if (perm.vpnDns) rows.unshift({ label: t('plugins.perm.vpn_dns'), value: t('plugins.perm.vpn_dns_on') });
     // messenger bridges: accounts in outside messengers pass through them — sensitive as well

@@ -21,12 +21,13 @@
 const stream = require('../notify/stream');
 
 const ONLINE_WINDOW_MS = 60 * 1000;
-const PLATFORMS = new Set(['android', 'windows', 'ios', 'web']);
+// linux: the Linux agent (gatecontrol-agent, plugin "Fernzugriff" stage 4) and other Linux apps
+const PLATFORMS = new Set(['android', 'windows', 'ios', 'web', 'linux']);
 const ID_RE = /^[1-9]\d{0,14}$/;
 
 function db() { return require('../../db/connection').getDb(); }
 
-/** 'android' | 'windows' | 'ios' | 'web' | null from what an app reported. */
+/** 'android' | 'windows' | 'ios' | 'web' | 'linux' | null from what an app reported. */
 function platformOf(v) {
   const s = String(v || '').trim().toLowerCase();
   if (s === 'win32') return 'windows';
