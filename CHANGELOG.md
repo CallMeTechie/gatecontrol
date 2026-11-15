@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.283.0] — 2026-11-15
+
+### Features
+- Fernzugriff Stufe 1 – Hinweis „ist jetzt ein Plugin“, /rdp führt nach der Übernahme zum Plugin, gc.remote.gateways, Fassade mit server (#499)
+
+---
+
 ## [1.282.0] — 2026-11-15
 
 ### Features
