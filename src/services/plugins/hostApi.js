@@ -1929,6 +1929,28 @@ async function camerasCall(plugin, op, args) {
   throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
 }
 
+// ─── Fernzugriff (permissions.remote, services/remote, gc.remote version 1) ───
+//
+// gc.remote.session() / end() / sessions() / vault.put|remove|info|list() /
+// probe() / wake() / listener() / listener.remove() / listeners() /
+// recordings.available|list|stream|remove() — docs/plugins.md "Remote access".
+// The plugin names person and target; the core owns guacd, the session page,
+// the tunnel and the secrets (a plugin only ever holds vault handles). Who may
+// connect where is the plugin's to check before each call — the host checks
+// that the person exists and is enabled and that the plugin is licensed.
+
+async function remoteCall(plugin, op, args) {
+  need(plugin.manifest.permissions && plugin.manifest.permissions.remote === true, 'ERR_REMOTE_DENIED', 'this plugin has no remote permission');
+  const remote = require('../remote');
+  try {
+    return await remote.call(plugin, op, args);
+  } catch (e) {
+    if (e && e.code === 'unknown_api') throw new HostApiError('ERR_UNKNOWN_API', 'unknown host API');
+    if (remote.isServiceError(e)) throw new HostApiError(remote.hostCode(e.code), e.message);
+    throw e;
+  }
+}
+
 // ─── Uploads to a home target (gc.net.uploadTarget → target.upload, since 1.193.0) ────
 //
 // gc.net.uploadTarget(id, path, { index, method, query, headers, form: {
@@ -2575,6 +2597,12 @@ async function handle(plugin, api, args, ctx) {
     case 'cameras.available': case 'cameras.list': case 'cameras.discover': case 'cameras.test': case 'cameras.add': case 'cameras.update':
     case 'cameras.remove': case 'cameras.snapshot': case 'cameras.snapshotUrl': case 'cameras.live': case 'cameras.events': case 'cameras.deleteEvent':
       return camerasCall(plugin, api.slice('cameras.'.length), args);
+    // Fernzugriff (permissions.remote, services/remote — gc.remote version 1)
+    case 'remote.session': case 'remote.end': case 'remote.sessions':
+    case 'remote.vault.put': case 'remote.vault.remove': case 'remote.vault.info': case 'remote.vault.list':
+    case 'remote.probe': case 'remote.wake': case 'remote.listener': case 'remote.listener.remove': case 'remote.listeners':
+    case 'remote.recordings.available': case 'remote.recordings.list': case 'remote.recordings.stream': case 'remote.recordings.remove':
+      return remoteCall(plugin, api.slice('remote.'.length), args);
     // person groups (permissions.groups, groups.js): read; ensure / remove need "manage"
     case 'groups.list': return require('./groups').call(plugin, 'list', args);
     case 'groups.get': return require('./groups').call(plugin, 'get', args);

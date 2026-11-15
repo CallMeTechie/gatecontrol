@@ -97,6 +97,8 @@ async function start() {
     try {
       const { attachGuacTunnel } = require('./tunnel/guacTunnel');
       attachGuacTunnel(server);
+      // tunnels of gc.remote sessions of the last run are gone (their tickets lived in memory)
+      require('./services/remote/sessions').closeLeftovers();
     } catch (err) {
       logger.warn({ err: err.message }, 'guac tunnel attach skipped');
     }

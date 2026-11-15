@@ -4154,6 +4154,77 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_user_bridge_selves_hash ON user_bridge_selves (number_hash);`,
     detect: (db) => hasColumn(db, 'users', 'recognize_by_phone') && tableExists(db, 'user_phones') && tableExists(db, 'user_emails') && tableExists(db, 'user_bridge_selves'),
   },
+  {
+    version: 152,
+    name: 'remote_host_api',
+    // gc.remote, version 1 (services/remote, docs/plugins.md "Remote access") — the core part of the plugin
+    // "Fernzugriff" (gatecontrol-remote). The old tables rdp_routes / rdp_sessions stay as they are.
+    //   remote_vault       passwords and SSH keys of a plugin's remote targets, encrypted with the server key
+    //                      (secret_enc, JSON); the plugin only holds the handle. source: an idempotency key of the
+    //                      built-in data import ("rdp_route:<id>"), unique per plugin
+    //   remote_sessions    one row per opened tunnel of a gc.remote session (like rdp_sessions per connection):
+    //                      the plugin's target id, the person, protocol, view/control, heartbeat, end reason
+    //   remote_listeners   L4 listeners (routes, route_type l4, through a gateway) a plugin asked for with
+    //                      gc.remote.listener; shared = 1: an existing route (e.g. of an old RDP route) was reused
+    //                      and is never removed with the listener
+    //   remote_recordings  recordings of sessions — empty until recording comes (stage 3); the host API reads it
+    sql: `
+      CREATE TABLE IF NOT EXISTS remote_vault (
+        handle TEXT PRIMARY KEY,
+        plugin_id TEXT NOT NULL,
+        label TEXT,
+        source TEXT,
+        secret_enc TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_remote_vault_plugin ON remote_vault (plugin_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_remote_vault_source ON remote_vault (plugin_id, source) WHERE source IS NOT NULL;
+      CREATE TABLE IF NOT EXISTS remote_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plugin_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        target_name TEXT,
+        user_id INTEGER,
+        protocol TEXT NOT NULL,
+        mode TEXT NOT NULL DEFAULT 'control',
+        record INTEGER NOT NULL DEFAULT 0,
+        via TEXT NOT NULL DEFAULT 'browser',
+        status TEXT NOT NULL DEFAULT 'active',
+        started_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_heartbeat TEXT,
+        ended_at TEXT,
+        duration_seconds INTEGER,
+        end_reason TEXT,
+        client_ip TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_remote_sessions_status ON remote_sessions (status);
+      CREATE INDEX IF NOT EXISTS idx_remote_sessions_plugin ON remote_sessions (plugin_id, started_at DESC);
+      CREATE TABLE IF NOT EXISTS remote_listeners (
+        plugin_id TEXT NOT NULL,
+        key TEXT NOT NULL,
+        route_id INTEGER NOT NULL,
+        shared INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (plugin_id, key)
+      );
+      CREATE TABLE IF NOT EXISTS remote_recordings (
+        id TEXT PRIMARY KEY,
+        plugin_id TEXT NOT NULL,
+        session_id INTEGER,
+        target_id TEXT,
+        user_id INTEGER,
+        protocol TEXT,
+        format TEXT,
+        bytes INTEGER NOT NULL DEFAULT 0,
+        path TEXT,
+        started_at TEXT,
+        ended_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_remote_recordings_plugin ON remote_recordings (plugin_id, created_at DESC);`,
+    detect: (db) => tableExists(db, 'remote_vault') && tableExists(db, 'remote_sessions') && tableExists(db, 'remote_listeners') && tableExists(db, 'remote_recordings'),
+  },
 ];
 
 module.exports = { migrations };

@@ -388,6 +388,21 @@
       answer({ ok: true });
     }
 
+    // GC.openSession (permissions.remote, gc.remote version 1): the session page of a ticket of
+    // gc.remote.session in a new tab — /remote/session/<ref> of this origin only, during a click only.
+    // The ticket itself is bound to the person and, on first use, to this browser session (server side).
+    const remoteOn = frame.getAttribute('data-plugin-remote') != null;
+    function openSession(m) {
+      const answer = (data) => reply({ type: 'gc-result', id: m.id, ok: true, status: 200, data });
+      if (!remoteOn) { answer({ ok: false, code: 'not_allowed' }); return; }
+      const ref = typeof m.ref === 'string' ? m.ref : '';
+      if (!/^[A-Za-z0-9_-]{43}$/.test(ref)) { answer({ ok: false, code: 'invalid' }); return; }
+      const ua = navigator.userActivation;
+      if (ua && ua.isActive !== true) { answer({ ok: false, code: 'no_gesture' }); return; }
+      window.open('/remote/session/' + ref, '_blank', 'noopener,noreferrer');
+      answer({ ok: true });
+    }
+
     // GC.openPortal (since 1.254.0): portal frames only — another plugin's portal tab with a short query, the same
     // address as a direct link ("/portal?<key>=<value>#plg-<id>"), during a click only and at most every 1.5 s
     const portalFrame = base.indexOf('/api/v1/portal/') === 0;
@@ -619,6 +634,7 @@
       else if (m.type === 'gc-media-bytes' && Number.isInteger(m.id)) mediaBytes(m);
       else if (m.type === 'gc-open-tab' && Number.isInteger(m.id)) openTab(m);
       else if (m.type === 'gc-open-portal' && Number.isInteger(m.id)) openPortal(m);
+      else if (m.type === 'gc-open-session' && Number.isInteger(m.id)) openSession(m);
       else if (m.type === 'gc-subscribe') setSubscribed(true);
       else if (m.type === 'gc-unsubscribe') setSubscribed(false);
       else if (m.type === 'gc-inbox-subscribe') setInbox(true);

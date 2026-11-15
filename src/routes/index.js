@@ -823,6 +823,13 @@ const { portalPageLimiter } = require('../middleware/rateLimit');
 router.get('/portal/groups/join/:token', portalPageLimiter, portalIdentity, portalOwner, groupJoin.page);
 router.post('/portal/groups/join/:token', portalPageLimiter, csrfProtection, portalIdentity, portalOwner, groupJoin.accept);
 
+// ─── Session page of gc.remote (docs/plugins.md "Remote access") ──
+// The person the plugin named, signed in (web or portal session); the ticket
+// binds itself to the browser session that opens it first.
+const remoteSession = require('./remoteSession');
+router.get('/remote/session/:ref', portalPageLimiter, portalIdentity, portalOwner, remoteSession.page);
+router.post('/remote/session/:ref/token', portalPageLimiter, csrfProtection, portalIdentity, portalOwner, remoteSession.token);
+
 // ─── Portal pages: /portal, /auto (login link of the apps), "Wer bist du?" ──
 router.use(require('./portal'));
 

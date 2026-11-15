@@ -651,6 +651,71 @@ async function deliverCameraEvent(ev) {
   return { handled: cameraHandlers.length };
 }
 
+// gc.remote (permissions.remote, version 1, docs/plugins.md "Remote access"): sessions to devices on a page of
+// the core, a key vault of the core (the plugin only holds handles, never a secret), probe / wake-on-LAN,
+// L4 listeners through the gateways, recordings (stage 3) and the hook remoteSession
+const remoteHandlers = [];
+
+function makeRemote() {
+  const o = (x) => (x && typeof x === 'object' ? x : {});
+  const listener = (target) => hostCall('remote.listener', { target: o(target) }, 60000);
+  /** listener.remove(key) → { removed } — a shared route (of an old RDP route) stays */
+  listener.remove = (key) => hostCall('remote.listener.remove', { key }, 60000);
+  return Object.freeze({
+    version: 1,
+    /** session({ user, target, protocol: rdp|vnc|ssh|telnet, mode?: view|control, record?, credential?, options?, ttlS? }) → { ref, url, expiresAt, mode, protocol } */
+    session: (opts) => hostCall('remote.session', o(opts), 30000),
+    /** end({ ref } | { sessionId }) → { ended } */
+    end: (opts) => hostCall('remote.end', o(opts)),
+    /** sessions({ active?, targetId?, limit? }) → [{ id, targetId, targetName, userId, protocol, mode, record, status, startedAt, endedAt, durationSeconds, endReason }] */
+    sessions: (opts) => hostCall('remote.sessions', o(opts)),
+    vault: Object.freeze({
+      /** put({ username?, password?, domain?, privateKey?, passphrase?, label?, handle? }) → { handle, kind, label, has, readable, createdAt, updatedAt } */
+      put: (entry) => hostCall('remote.vault.put', { entry: o(entry) }),
+      /** remove(handle) → { removed } */
+      remove: (handle) => hostCall('remote.vault.remove', { handle }),
+      /** info(handle) → metadata | null */
+      info: (handle) => hostCall('remote.vault.info', { handle }),
+      /** list() → [metadata] */
+      list: () => hostCall('remote.vault.list', {}),
+    }),
+    /** probe(target) → { online, responseTime, via: direct|gateway } */
+    probe: (target) => hostCall('remote.probe', { target: o(target) }, 30000),
+    /** wake(target with mac) → { sent, via: gateway|server } */
+    wake: (target) => hostCall('remote.wake', { target: o(target) }, 30000),
+    /** listener({ key, gateway: { peerId } | { poolId }, host, port, listenPort? }) → { key, routeId, listenPort, gateway, lanHost, lanPort, enabled, shared } */
+    listener: Object.freeze(listener),
+    /** listeners() → [listener] */
+    listeners: () => hostCall('remote.listeners', {}),
+    recordings: Object.freeze({
+      /** available() → { available, reason } */
+      available: () => hostCall('remote.recordings.available', {}),
+      /** list({ targetId?, sessionId?, limit? }) → [{ id, sessionId, targetId, userId, protocol, format, bytes, startedAt, endedAt, createdAt }] */
+      list: (opts) => hostCall('remote.recordings.list', o(opts)),
+      /** stream(id) → { url, expiresAt } */
+      stream: (id) => hostCall('remote.recordings.stream', { id }),
+      /** remove(id) → { removed } */
+      remove: (id) => hostCall('remote.recordings.remove', { id }),
+    }),
+    /** on('session', handler({ phase: start|end|abort, sessionId, ref, targetId, userId, protocol, mode, record, startedAt, reason?, durationSeconds?, endedAt? })) → off() */
+    on: (name, handler) => {
+      if (name !== 'session' || typeof handler !== 'function') throw new TypeError("gc.remote.on('session', handler)");
+      remoteHandlers.push(handler);
+      return () => { const i = remoteHandlers.indexOf(handler); if (i >= 0) remoteHandlers.splice(i, 1); };
+    },
+  });
+}
+
+async function deliverRemoteSession(ev) {
+  const arg = Object.freeze({ ...(ev && typeof ev === 'object' ? ev : {}) });
+  for (const fn of remoteHandlers.slice()) {
+    try { await fn(arg); } catch (err) {
+      send({ t: 'log', level: 'error', message: 'gc.remote.on handler failed: ' + String((err && (err.stack || err.message)) || err).slice(0, 900) });
+    }
+  }
+  return { handled: remoteHandlers.length };
+}
+
 async function deliverVpnDns(ev) {
   const arg = Object.freeze({ ...(ev && typeof ev === 'object' ? ev : {}) });
   for (const fn of vpnDnsHandlers.slice()) {
@@ -707,6 +772,7 @@ function makeGc(info) {
     ...(features.cameras ? { cameras: makeCameras() } : {}),
     ...(features.vpnDns ? { vpnDns: makeVpnDns() } : {}),
     ...(features.bridges ? { bridges: makeBridges() } : {}),
+    ...(features.remote ? { remote: makeRemote() } : {}),
     // device accounts of a gateway's MQTT broker (plugin.json edge.capabilities.mqtt): create(gatewayId,
     // { label, topics, name }) → { username, password (once), acl, label }; list(gatewayId); remove(gatewayId, username)
     ...(features.mqtt ? {
@@ -1156,6 +1222,14 @@ async function handleCall(method, payload) {
     case 'edgeEvent':
       // an event of the plugin's edge part on a gateway (gc.edge.on) — answered after the handlers ran
       return deliverEdgeEvent(payload);
+    case 'remoteSession':
+      // a session of gc.remote started / ended / was aborted (gc.remote.on('session')) — answer ignored
+      return deliverRemoteSession(payload);
+    case 'clientFacade':
+      // optional (permissions.remote, the plugin of the dataset remote after the take-over): answer the old app API
+      // /api/v1/client/rdp* — { op, id, query, body, user, ip } → { handled: false } | { status, body, credential? } | { guac }
+      if (typeof plugin.clientFacade !== 'function') return { handled: false };
+      return (await plugin.clientFacade(payload, gc)) || { handled: false };
     case 'legacyImport':
       // built-in data handed over once by the host (first-party plugins only, src/services/plugins/legacy.js)
       if (typeof plugin.legacyImport !== 'function') throw new Error('this plugin cannot import built-in data');

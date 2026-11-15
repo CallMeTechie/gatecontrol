@@ -505,9 +505,9 @@ function onConnection(ws, gw, ip) {
   ws.on('error', (e) => logger.debug({ peerId: gw.peer_id, err: e.message }, 'edge channel error'));
 }
 
-/** Wire the endpoint into the HTTP server (server.js; tests). */
+/** Wire the endpoint into the HTTP server (server.js; tests) — through the shared upgrade dispatcher (tunnel/upgrade.js). */
 function attach(httpServer) {
-  httpServer.on('upgrade', (req, socket, head) => {
+  require('../../tunnel/upgrade').register(httpServer, PATH, (req, socket, head) => {
     try { handleUpgrade(req, socket, head); } catch (e) {
       logger.warn({ err: e.message }, 'edge upgrade failed');
       try { socket.destroy(); } catch { /* gone */ }

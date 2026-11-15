@@ -211,6 +211,11 @@ function openUrlOf(manifest) {
   return !!(manifest && manifest.permissions && manifest.permissions.cloudImport);
 }
 
+/** May the plugin's frames open a session page of gc.remote (GC.openSession)? permissions.remote. */
+function openSessionOf(manifest) {
+  return !!(manifest && manifest.permissions && manifest.permissions.remote === true);
+}
+
 /** May the plugin's frames read QR codes through the page (GC.scanQr)? `ui.scanQr`, or the older `ui.camera`. */
 function scanQrOf(manifest) {
   const ui = manifest && manifest.ui;
@@ -381,6 +386,18 @@ const BRIDGE_CLIENT = `(function(){
       post({ type: 'gc-open-tab', id: id, url: String(url || '') });
     });
   }
+  // permissions.remote (gc.remote version 1): open the session page of a ticket of gc.remote.session (its ref)
+  // in a new tab — the page belongs to GateControl, not to this frame. Call it in a click
+  // → { ok: true } | { ok: false, code: 'no_gesture' | 'invalid' | 'not_allowed' }
+  function openSession(ref) {
+    return new Promise(function (resolve) {
+      var id = ++seq;
+      var done = function (d) { resolve(d && typeof d === 'object' ? d : { ok: false, code: 'failed' }); };
+      pending[id] = { resolve: done, reject: function (e) { done({ ok: false, code: (e && e.data && e.data.code) || 'failed' }); } };
+      pending[id].timer = setTimeout(function () { if (pending[id]) { delete pending[id]; done({ ok: false, code: 'timeout' }); } }, 30000);
+      post({ type: 'gc-open-session', id: id, ref: String(ref == null ? '' : ref) });
+    });
+  }
   function openPortal(o) {
     return new Promise(function (resolve) {
       var id = ++seq;
@@ -479,6 +496,7 @@ const BRIDGE_CLIENT = `(function(){
   if (/*GC_SCANQR*/false) api.scanQr = scanQr;
   if (/*GC_PICK*/false) api.pickPrincipals = pickPrincipals;
   if (/*GC_OPENURL*/false) api.openUrl = openUrl;
+  if (/*GC_SESSION*/false) api.openSession = openSession;
   window.GC = Object.freeze(api);
   if (window.ResizeObserver) new ResizeObserver(size).observe(document.documentElement);
   // a dialog shown or hidden changes no document size: watch the DOM as well
@@ -504,13 +522,14 @@ const TILES_RE = /^\/plugins\/_shared\/tiles\/[A-Za-z0-9._-]+\/\{z\}\/\{x\}\/\{y
  * only) becomes window.GC.tiles, otherwise GC.tiles is null; `scanQr`
  * (scanQrOf the plugin) gives the frame window.GC.scanQr, `pickPrincipals`
  * (pickPrincipalsOf) window.GC.pickPrincipals, `openUrl` (permissions.cloudImport,
- * openUrlOf) window.GC.openUrl.
+ * openUrlOf) window.GC.openUrl, `openSession` (permissions.remote, openSessionOf) window.GC.openSession.
  */
-function document({ html, lang, maps = false, tiles = null, scanQr = false, pickPrincipals = false, openUrl = false }) {
+function document({ html, lang, maps = false, tiles = null, scanQr = false, pickPrincipals = false, openUrl = false, openSession = false }) {
   const l = lang === 'en' ? 'en' : 'de';
   const t = maps && typeof tiles === 'string' && TILES_RE.test(tiles) ? JSON.stringify(tiles) : 'null';
   const client = BRIDGE_CLIENT.replace('/*GC_TILES*/null', () => t).replace('/*GC_SCANQR*/false', scanQr === true ? 'true' : 'false')
-    .replace('/*GC_PICK*/false', pickPrincipals === true ? 'true' : 'false').replace('/*GC_OPENURL*/false', openUrl === true ? 'true' : 'false');
+    .replace('/*GC_PICK*/false', pickPrincipals === true ? 'true' : 'false').replace('/*GC_OPENURL*/false', openUrl === true ? 'true' : 'false')
+    .replace('/*GC_SESSION*/false', openSession === true ? 'true' : 'false');
   return '<!doctype html>\n<html lang="' + escAttr(l) + '" data-theme="dark"><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="' + (maps ? REFERRER_MAPS : REFERRER) + '">'
     + '<style>' + BASE_CSS + '</style><script>' + client + '</script></head><body>'
@@ -532,4 +551,4 @@ function headers(res, opts = {}) {
   res.type('html');
 }
 
-module.exports = { CSP, cspFor, originOf, sandboxAttr, allowAttr, fullscreenOf, scanQrOf, pickPrincipalsOf, openUrlOf, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA, CAMERA_MEDIA };
+module.exports = { CSP, cspFor, originOf, sandboxAttr, allowAttr, fullscreenOf, scanQrOf, pickPrincipalsOf, openUrlOf, openSessionOf, document, headers, escAttr, OSM_TILES, SHARED_LEAFLET, SHARED_TILES, AVATARS, PLUGIN_MEDIA, CAMERA_MEDIA };
