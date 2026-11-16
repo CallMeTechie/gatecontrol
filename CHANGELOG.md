@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.294.0] — 2026-11-16
+
+### Features
+- WhatsApp-Status als eigener Raum (gc.bridges Version 12) (#512)
+
+---
+
 ## [1.293.0] — 2026-11-16
 
 ### Features
