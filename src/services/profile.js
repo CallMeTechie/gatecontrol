@@ -6,7 +6,9 @@
 // same value as the quiet hours, notify_user_prefs.tz) and phone numbers — and per field who sees it.
 //
 //   visibility     per field 'self' | 'family' | 'all' ("Familie" = a GateControl group of the kind family both
-//                  belong to). Phone numbers per number 'none' | 'family' | 'all' — 'none' is the default and means
+//                  belong to). The picture separately (visibility.avatar, services/avatars.js): 'all' | 'contacts' |
+//                  'family' | 'self' — 'contacts' is 'family' plus the Messenger's chat partners; stored only once
+//                  chosen (adoptAvatarLevel: a plugin's one-time takeover only while nothing is chosen). Phone numbers per number 'none' | 'family' | 'all' — 'none' is the default and means
 //                  nobody, not even an administrator, not even a plugin acting for the person herself.
 //   administrators see what they need to manage an account (name, user name, e-mail, language) and otherwise only
 //                  what is visible to everybody. Of the phone numbers they see count, state and whether the
@@ -34,6 +36,7 @@ const activity = require('./activity');
 const logger = require('../utils/logger');
 const config = require('../../config/default');
 const { encrypt, decrypt } = require('../utils/crypto');
+const avatars = require('./avatars');
 
 const KINDS = Object.freeze(['mobile', 'work', 'home', 'other']);
 const PHONE_VISIBILITY = Object.freeze(['none', 'family', 'all']);
@@ -138,7 +141,16 @@ function visibilityOf(row) {
   try { v = row && row.profile_visibility ? JSON.parse(row.profile_visibility) : null; } catch { v = null; }
   const out = { ...DEFAULT_VISIBILITY };
   if (v && typeof v === 'object') for (const f of VIS_FIELDS) if (FIELD_VISIBILITY.includes(v[f])) out[f] = v[f];
+  out.avatar = avatars.levelOf(row);
   return out;
+}
+
+/** The JSON stored in users.profile_visibility: the fields, and the picture's level only once it was chosen. */
+function storedVisibility(fields, avatar) {
+  const out = {};
+  for (const f of VIS_FIELDS) out[f] = fields[f];
+  if (avatar) out.avatar = avatar;
+  return JSON.stringify(out);
 }
 
 /** The directory whose sync overwrites a member's name and e-mail (administrators keep theirs — directory/sync.js), or null. */
@@ -262,7 +274,7 @@ function ownView(userId) {
     family: familyIds(u.id).length > 0,
     features: { phones: phonesOn, emailConfirm: mailReady(), recognition: true },
     limits: { phones: MAX_PHONES, emails: MAX_EMAILS, about: ABOUT_MAX, name: NAME_MAX, displayName: DISPLAY_MAX },
-    options: { kinds: [...KINDS], phoneVisibility: [...PHONE_VISIBILITY], fieldVisibility: [...FIELD_VISIBILITY], phoneStates: [...PHONE_STATES] },
+    options: { kinds: [...KINDS], phoneVisibility: [...PHONE_VISIBILITY], fieldVisibility: [...FIELD_VISIBILITY], phoneStates: [...PHONE_STATES], avatarVisibility: [...avatars.LEVELS] },
   };
 }
 
@@ -380,21 +392,33 @@ function update(userId, patch, ctx = {}) {
     if (tz === timezoneOf(u.id).timezone) tz = undefined;
     else changed.push('timezone');
   }
+  let rotate = false;
   if (p.visibility !== undefined) {
     const v = p.visibility;
     if (!v || typeof v !== 'object' || Array.isArray(v)) throw invalid('visibility');
     const cur = visibilityOf(u);
     const next = { ...cur };
+    let avatar = avatars.chosenLevel(u);
     for (const [k, level] of Object.entries(v)) {
+      if (k === 'avatar') {
+        if (!avatars.isLevel(level)) throw invalid('visibility', 'visibility.avatar: invalid');
+        avatar = level;
+        next.avatar = level;
+        continue;
+      }
       if (!VIS_FIELDS.includes(k) || !FIELD_VISIBILITY.includes(level)) throw invalid('visibility', `visibility.${k}: invalid`);
       next[k] = level;
     }
     const diff = VIS_FIELDS.filter((k) => next[k] !== cur[k]);
-    if (diff.length) {
+    const avatarDiff = next.avatar !== cur.avatar;
+    if (diff.length || avatarDiff || (avatar && !avatars.chosenLevel(u))) {
       sets.push('profile_visibility = ?');
-      vals.push(JSON.stringify(next));
+      vals.push(storedVisibility(next, avatar));
       // a field another person now sees (or no longer sees) changed for them
       for (const k of diff) changed.push(k === 'email' || k === 'language' || k === 'timezone' ? 'visibility' : k);
+      if (avatarDiff) changed.push('avatar');
+      // narrower: the picture gets a new address, the old (perhaps cached) one answers 404
+      rotate = avatarDiff && avatars.narrower(cur.avatar, next.avatar);
     }
   }
   if (p.recognition !== undefined) {
@@ -417,14 +441,41 @@ function update(userId, patch, ctx = {}) {
       db.prepare(`INSERT INTO notify_user_prefs (user_id, tz) VALUES (?, ?)
         ON CONFLICT(user_id) DO UPDATE SET tz = excluded.tz`).run(u.id, tz);
     }
+    if (rotate) avatars.rotate(u.id);
   })();
   const fields = [...new Set(changed)];
   if (fields.length) {
     log('profile_updated', `Profile of "${u.username}" changed: ${fields.join(', ')}`, u.id, ctx, { fields });
     // what plugins may care about (never e-mail, language, time zone or the consents)
-    emitChanged(u.id, fields.filter((f) => ['displayName', 'firstName', 'lastName', 'about', 'birthday'].includes(f)));
+    emitChanged(u.id, fields.filter((f) => ['displayName', 'firstName', 'lastName', 'about', 'birthday', 'avatar'].includes(f)));
   }
   return ownView(u.id);
+}
+
+// ─── Who sees the picture, for plugins ──────────────────────────
+
+/**
+ * setAvatarLevel(userId, level, ctx) → the level — a plugin forwards the person's own change (an older app that
+ * still writes the Messenger's privacy.avatar). The caller checks that it is the person's request.
+ */
+function setAvatarLevel(userId, level, ctx = {}) {
+  if (!avatars.isLevel(level)) throw invalid('visibility', 'visibility.avatar: invalid');
+  update(userId, { visibility: { avatar: level } }, ctx);
+  return avatars.levelOf(needUser(userId));
+}
+
+/**
+ * adoptAvatarLevel(userId, level, ctx) → { adopted, level } — the one-time takeover of a plugin's old setting
+ * (the Messenger's privacy.avatar): only while the person has chosen nothing here, only a narrower level than the
+ * default ('contacts', 'family', 'self'; 'all' changes nothing) — so a plugin can never widen what somebody chose.
+ */
+function adoptAvatarLevel(userId, level, ctx = {}) {
+  if (!avatars.isLevel(level)) throw invalid('visibility', 'visibility.avatar: invalid');
+  const u = needUser(userId);
+  const chosen = avatars.chosenLevel(u);
+  if (chosen || level === avatars.DEFAULT_LEVEL) return { adopted: false, level: chosen || avatars.DEFAULT_LEVEL };
+  update(u.id, { visibility: { avatar: level } }, { ...ctx, source: ctx.source || 'plugin' });
+  return { adopted: true, level };
 }
 
 // ─── Phone numbers ───────────────────────────────────────────────
@@ -771,6 +822,8 @@ function adminView(userId, adminId) {
       list,
     },
     recognition: { byWhatsapp: u.recognize_by_whatsapp === 1, byPhone: u.recognize_by_phone === 1 },
+    // the picture: administrators always see it (they may change and remove it) — "für andere verborgen"
+    avatar: { visibility: vis.avatar, hiddenFromOthers: vis.avatar !== 'all' },
     directory: directoryOf(u.id),
   };
 }
@@ -896,7 +949,7 @@ module.exports = {
   KINDS, PHONE_VISIBILITY, FIELD_VISIBILITY, PHONE_STATES, VIS_FIELDS, DEFAULT_VISIBILITY, PLUGIN_FIELDS,
   MAX_PHONES, MAX_EMAILS, ABOUT_MAX, NAME_MAX, ProfileError,
   phonesEnabled, confirmedOnly, getSettings, setSettings,
-  normalizeNumber, ownView, update, addPhone, updatePhone, removePhone,
+  normalizeNumber, ownView, update, setAvatarLevel, adoptAvatarLevel, addPhone, updatePhone, removePhone,
   addEmail, resendCode, confirmEmail, removeEmail,
   noteOwnNumbers, forgetOwnNumbers, matchContacts,
   adminView, adminConfirmPhone, adminRemovePhone,

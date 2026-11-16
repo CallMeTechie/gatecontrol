@@ -449,16 +449,30 @@ function needStorage(plugin) {
 
 function db() { return require('../../db/connection').getDb(); }
 
-// gc.users.list / get: { id, name, role, avatarUrl, color, colorHex, initials }
+// gc.users.list / get: { id, name, role, avatarUrl, color, colorHex, initials, avatarVisibility }
 // (docs/feature-avatars.md) — avatarUrl is the path /avatars/<id>.<ext> (or
 // null), served on this server's every host; color is the favourite colour's
-// palette key (never null), colorHex its #RRGGBB.
-const USER_COLS = 'id, username, display_name, role, avatar_color';
+// palette key (never null), colorHex its #RRGGBB. Who sees the picture
+// (avatarVisibility 'all' | 'contacts' | 'family' | 'self'): avatarUrl is null
+// when the viewer may not see it ('contacts' counts as 'family'); without a
+// viewer only 'all'. A viewer counts only while that person has a request to
+// this plugin in flight (like profile.get). unmasked: true hands out every
+// picture — for a plugin that applies avatarVisibility itself to each reader
+// (the Messenger, which knows who chats with whom).
+const USER_COLS = 'id, username, display_name, role, avatar_color, profile_visibility';
 function userView(u, look) {
   if (!u) return null;
   const f = look || require('../avatars').infoMany([u]).get(u.id);
-  return { id: u.id, name: u.display_name || u.username, role: u.role, avatarUrl: f.avatarUrl, color: f.color, colorHex: f.colorHex, initials: f.initials };
+  return { id: u.id, name: u.display_name || u.username, role: u.role, avatarUrl: f.avatarUrl, color: f.color, colorHex: f.colorHex, initials: f.initials, avatarVisibility: f.avatarVisibility };
 }
+/** How gc.users shows the pictures: undefined (unmasked) or { viewer } for avatars.infoMany. */
+function usersReader(plugin, args) {
+  if (args && args.unmasked === true) return undefined;
+  const v = args && args.viewer != null ? Number(args.viewer) : null;
+  need(v === null || (Number.isSafeInteger(v) && v > 0), 'ERR_INVALID', 'invalid viewer');
+  return { viewer: v !== null && require('./personContext').has(plugin.id, v) ? v : null };
+}
+const AVATAR_LEVEL_RE = /^(all|contacts|family|self)$/;
 
 const NOTIFY_PRIORITIES = ['info', 'normal', 'high', 'critical'];
 const SEVERITY_PRIORITY = { info: 'info', success: 'info', warning: 'normal', error: 'normal' };
@@ -2494,15 +2508,46 @@ async function handle(plugin, api, args, ctx) {
     }
     case 'users.list': {
       need(plugin.manifest.permissions && plugin.manifest.permissions.users, 'ERR_USERS_DENIED', 'this plugin has no users permission');
+      const reader = usersReader(plugin, args);
       const rows = db().prepare(`SELECT ${USER_COLS} FROM users WHERE enabled = 1 ORDER BY id LIMIT 5000`).all();
-      const looks = require('../avatars').infoMany(rows);
+      const looks = require('../avatars').infoMany(rows, reader);
       return rows.map((u) => userView(u, looks.get(u.id)));
     }
     case 'users.get': {
       need(plugin.manifest.permissions && plugin.manifest.permissions.users, 'ERR_USERS_DENIED', 'this plugin has no users permission');
       const id = Number(args && args.id);
       need(Number.isInteger(id) && id > 0, 'ERR_INVALID', 'invalid user id');
-      return userView(db().prepare(`SELECT ${USER_COLS} FROM users WHERE id = ? AND enabled = 1`).get(id));
+      const reader = usersReader(plugin, args);
+      const u = db().prepare(`SELECT ${USER_COLS} FROM users WHERE id = ? AND enabled = 1`).get(id);
+      return u ? userView(u, require('../avatars').infoMany([u], reader).get(u.id)) : null;
+    }
+    case 'users.setAvatarVisibility': {
+      // "Wer sieht dein Bild?" changed through the plugin (an older app writing the Messenger's privacy.avatar): only
+      // for the person whose changing request to this plugin is in flight — never for somebody else
+      need(plugin.manifest.permissions && plugin.manifest.permissions.users, 'ERR_USERS_DENIED', 'this plugin has no users permission');
+      const id = Number(args && args.userId);
+      need(Number.isSafeInteger(id) && id > 0, 'ERR_INVALID', 'invalid user id');
+      need(typeof (args && args.level) === 'string' && AVATAR_LEVEL_RE.test(args.level), 'ERR_INVALID', 'level must be all, contacts, family or self');
+      need(require('./personContext').has(plugin.id, id, { write: true }), 'ERR_FORBIDDEN', 'only for the person of a changing request in flight');
+      try {
+        return { level: require('../profile').setAvatarLevel(id, args.level, { source: 'plugin', actorId: id }) };
+      } catch (e) {
+        if (e && e.code === 'ERR_NOT_FOUND') throw new HostApiError('ERR_NOT_FOUND', 'unknown user');
+        throw e;
+      }
+    }
+    case 'users.adoptAvatarVisibility': {
+      // the one-time takeover of a plugin's old setting: only a narrower level, only while the person chose nothing
+      need(plugin.manifest.permissions && plugin.manifest.permissions.users, 'ERR_USERS_DENIED', 'this plugin has no users permission');
+      const id = Number(args && args.userId);
+      need(Number.isSafeInteger(id) && id > 0, 'ERR_INVALID', 'invalid user id');
+      need(typeof (args && args.level) === 'string' && AVATAR_LEVEL_RE.test(args.level), 'ERR_INVALID', 'level must be all, contacts, family or self');
+      try {
+        return require('../profile').adoptAvatarLevel(id, args.level, { source: 'plugin' });
+      } catch (e) {
+        if (e && e.code === 'ERR_NOT_FOUND') throw new HostApiError('ERR_NOT_FOUND', 'unknown user');
+        throw e;
+      }
     }
     case 'profile.get': {
       // the user profile (docs/feature-user-profile.md): only the fields of permissions.profile, only what the viewer

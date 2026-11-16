@@ -17,6 +17,17 @@
 //
 // The activity log gets avatar_changed / avatar_removed /
 // avatar_color_changed — never the image.
+//
+// Who sees the picture (docs/feature-avatars.md "Wer sieht dein Bild?"): the
+// person's choice users.profile_visibility.avatar — 'all' (default) |
+// 'contacts' | 'family' | 'self'. The core treats 'contacts' like 'family'
+// (only the Messenger knows who chats with whom and widens it itself);
+// 'family' = both in one GateControl group of the kind family. A look for
+// somebody who may not see the picture has avatarUrl null (the initials on
+// the favourite colour). Without a viewer only 'all'. The person herself
+// always sees it, administrators in the administration too (avatarHidden).
+// A narrower level gives the picture a new avatar_id (rotate): the old,
+// perhaps cached URL answers 404 at once.
 
 const crypto = require('node:crypto');
 const { getDb } = require('../db/connection');
@@ -46,6 +57,10 @@ const TYPES = Object.freeze({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/we
 // avatar_id: 18 random bytes → 24 url-safe characters (base64url).
 const ID_BYTES = 18;
 const FILE_RE = /^([A-Za-z0-9_-]{22,64})\.(png|jpg|webp)$/;
+// Who sees the picture, widest first.
+const LEVELS = Object.freeze(['all', 'contacts', 'family', 'self']);
+const DEFAULT_LEVEL = 'all';
+const LOOK_COLS = 'id, username, display_name, avatar_color, profile_visibility';
 
 function invalid(reason, message) {
   const err = new Error(message || `invalid image: ${reason}`);
@@ -185,18 +200,84 @@ function urlOf(avatarId, mime) {
   return avatarId && TYPES[mime] ? `/avatars/${avatarId}.${TYPES[mime]}` : null;
 }
 
+// ─── Who sees the picture ────────────────────────────────────────────────
+
+function isLevel(v) { return typeof v === 'string' && LEVELS.includes(v); }
+
+/** The stored choice of a user row (profile_visibility.avatar) or null when none was made. */
+function chosenLevel(user) {
+  const raw = user && user.profile_visibility;
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw);
+    return v && typeof v === 'object' && isLevel(v.avatar) ? v.avatar : null;
+  } catch { return null; }
+}
+
+/** Who sees the picture of a user row: 'all' | 'contacts' | 'family' | 'self'. */
+function levelOf(user) { return chosenLevel(user) || DEFAULT_LEVEL; }
+
+/** Is `next` narrower than `prev`? */
+function narrower(prev, next) { return LEVELS.indexOf(next) > LEVELS.indexOf(prev); }
+
 /**
- * Public fields of a user row (id, username, display_name, avatar_color)
- * plus its picture row ({ avatar_id, mime } or null):
- * { color, colorHex, avatarUrl, initials }.
+ * The people who share a family group with `viewerId` (the viewer included), or an empty set — the same rule as
+ * profile.sameFamily (direct members of a group of the kind family that is not archived).
  */
-function fieldsOf(user, pic) {
+function familyOf(viewerId) {
+  const out = new Set();
+  if (!Number.isSafeInteger(viewerId) || viewerId <= 0) return out;
+  let ids = [];
+  try { ids = require('./groups').groupsOfUser(viewerId).filter((g) => g.kind === 'family').map((g) => g.id); } catch { ids = []; }
+  if (!ids.length) return out;
+  const rows = getDb().prepare(`SELECT DISTINCT user_id FROM group_members WHERE group_id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+  for (const r of rows) out.add(r.user_id);
+  out.add(viewerId);
+  return out;
+}
+
+/**
+ * How a list of looks is meant for its reader:
+ *   undefined           as it is (the person herself, the administration — callers that decide themselves)
+ *   { viewer: id }      as this person may see them
+ *   { viewer: null }    as somebody without relation (shared devices, a wall tablet, no viewer): only 'all'
+ * → a function (ownerId, level) → may the reader see the picture?
+ */
+function readerOf(opts) {
+  if (!opts || !Object.prototype.hasOwnProperty.call(opts, 'viewer')) return null;
+  const viewer = Number.isSafeInteger(opts.viewer) && opts.viewer > 0 ? opts.viewer : null;
+  let fam = null;
+  return (ownerId, level) => {
+    if (level === 'all') return true;
+    if (viewer == null) return false;
+    if (viewer === ownerId) return true;
+    if (level === 'self') return false;
+    if (!fam) fam = familyOf(viewer);
+    return fam.has(ownerId);
+  };
+}
+
+/** May `viewerId` (null: nobody in particular) see the picture of the user row `user`? */
+function visibleTo(user, viewerId) {
+  return readerOf({ viewer: viewerId })(user && user.id, levelOf(user));
+}
+
+/**
+ * Public fields of a user row (id, username, display_name, avatar_color,
+ * profile_visibility) plus its picture row ({ avatar_id, mime } or null):
+ * { color, colorHex, avatarUrl, initials, avatarVisibility }. `reader`
+ * (readerOf): avatarUrl null when that reader may not see the picture.
+ */
+function fieldsOf(user, pic, reader) {
   const color = colorOf(user);
+  const level = levelOf(user);
+  const shown = !reader || reader(Number(user && user.id), level);
   return {
     color,
     colorHex: HEX_BY_KEY.get(color),
-    avatarUrl: pic ? urlOf(pic.avatar_id, pic.mime) : null,
+    avatarUrl: pic && shown ? urlOf(pic.avatar_id, pic.mime) : null,
     initials: initialsOf((user && (user.display_name || user.username)) || ''),
+    avatarVisibility: level,
   };
 }
 
@@ -204,17 +285,24 @@ function pictureRow(userId) {
   return getDb().prepare('SELECT avatar_id, mime FROM user_avatars WHERE user_id = ?').get(userId) || null;
 }
 
-/** { color, colorHex, avatarUrl | null, initials } of a user, null when unknown. */
-function info(userId) {
-  const user = getDb().prepare('SELECT id, username, display_name, avatar_color FROM users WHERE id = ?').get(userId);
-  return user ? fieldsOf(user, pictureRow(user.id)) : null;
+/**
+ * { color, colorHex, avatarUrl | null, initials, avatarVisibility } of a user, null when unknown. opts (readerOf):
+ * { viewer } for somebody else's eyes; without opts as it is.
+ */
+function info(userId, opts) {
+  const user = getDb().prepare(`SELECT ${LOOK_COLS} FROM users WHERE id = ?`).get(userId);
+  return user ? fieldsOf(user, pictureRow(user.id), readerOf(opts)) : null;
 }
 
-/** Map userId → fields for many user rows at once (one query for the pictures). */
-function infoMany(users) {
+/**
+ * Map userId → fields for many user rows at once (one query for the pictures). The rows need profile_visibility
+ * (LOOK_COLS) — without it a row counts as 'all'. opts (readerOf): { viewer } for somebody else's eyes.
+ */
+function infoMany(users, opts) {
   const pics = new Map(getDb().prepare('SELECT user_id, avatar_id, mime FROM user_avatars').all().map((r) => [r.user_id, r]));
+  const reader = readerOf(opts);
   const out = new Map();
-  for (const u of users || []) out.set(u.id, fieldsOf(u, pics.get(u.id) || null));
+  for (const u of users || []) out.set(u.id, fieldsOf(u, pics.get(u.id) || null, reader));
   return out;
 }
 
@@ -222,7 +310,7 @@ function infoMany(users) {
  * Map userId → fields for the given user ids (people lists that only carry
  * the id, e.g. group members): one query for the users, one for the pictures.
  */
-function infoByIds(ids) {
+function infoByIds(ids, opts) {
   const list = [...new Set((ids || []).map(Number).filter((n) => Number.isSafeInteger(n) && n > 0))];
   if (!list.length) return new Map();
   const db = getDb();
@@ -230,19 +318,20 @@ function infoByIds(ids) {
   // Chunks stay far below SQLite's limit of bound parameters.
   for (let i = 0; i < list.length; i += 500) {
     const part = list.slice(i, i + 500);
-    rows.push(...db.prepare(`SELECT id, username, display_name, avatar_color FROM users WHERE id IN (${part.map(() => '?').join(',')})`).all(...part));
+    rows.push(...db.prepare(`SELECT ${LOOK_COLS} FROM users WHERE id IN (${part.map(() => '?').join(',')})`).all(...part));
   }
-  return infoMany(rows);
+  return infoMany(rows, opts);
 }
 
 /**
  * The look of every person in `list` (objects with the user id in `key`):
  * a copy of each entry plus { avatarUrl, color, colorHex } — what the people
  * lists of the pages paint with GCAvatar.paint (docs/feature-avatars.md).
+ * opts (readerOf): { viewer } when the list is for somebody else's eyes.
  */
-function withLooks(list, key = 'userId') {
+function withLooks(list, key = 'userId', opts) {
   const arr = Array.isArray(list) ? list : [];
-  const looks = infoByIds(arr.map((x) => x && x[key]));
+  const looks = infoByIds(arr.map((x) => x && x[key]), opts);
   return arr.map((x) => {
     const f = x && looks.get(Number(x[key]));
     return { ...x, avatarUrl: f ? f.avatarUrl : null, color: f ? f.color : null, colorHex: f ? f.colorHex : null };
@@ -254,7 +343,7 @@ function withLooks(list, key = 'userId') {
  * { user: { id, name, initials, color, colorHex, avatarUrl }, palette }.
  */
 function profileOf(userId) {
-  const user = getDb().prepare('SELECT id, username, display_name, avatar_color FROM users WHERE id = ?').get(userId);
+  const user = getDb().prepare(`SELECT ${LOOK_COLS} FROM users WHERE id = ?`).get(userId);
   if (!user) return null;
   const f = fieldsOf(user, pictureRow(user.id));
   return {
@@ -303,6 +392,19 @@ function remove(userId, { actorId = null, ip = null, source = 'admin' } = {}) {
 }
 
 /**
+ * A new address for the picture (the level got narrower): a new random avatar_id, the old URL answers 404 at once.
+ * Returns the new avatarUrl, or null when there is no picture.
+ */
+function rotate(userId) {
+  const pic = pictureRow(userId);
+  if (!pic) return null;
+  const avatarId = crypto.randomBytes(ID_BYTES).toString('base64url');
+  getDb().prepare('UPDATE user_avatars SET avatar_id = ? WHERE user_id = ?').run(avatarId, userId);
+  logger.info({ userId }, 'Profile picture got a new address (narrower visibility)');
+  return urlOf(avatarId, pic.mime);
+}
+
+/**
  * Favourite colour: a PALETTE key, or null for the default. Anything else
  * (red included) is ERR_INVALID with reason 'color'. Returns { color, colorHex }.
  */
@@ -333,6 +435,17 @@ module.exports = {
   MIN_SIZE,
   MAX_SIZE,
   TYPES,
+  LEVELS,
+  DEFAULT_LEVEL,
+  LOOK_COLS,
+  isLevel,
+  chosenLevel,
+  levelOf,
+  narrower,
+  familyOf,
+  readerOf,
+  visibleTo,
+  rotate,
   parseImage,
   validateImage,
   isColorKey,

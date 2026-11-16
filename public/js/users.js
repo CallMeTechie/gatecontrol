@@ -946,7 +946,10 @@
   function lookCard(d) {
     const u = d.user;
     const host = el('div', { class: 'up-look' });
-    const card = upCard(T('avatar.title'), null, [host]);
+    // "Wer sieht dein Bild?" is the person's choice; administrators see the picture anyway (they may change and
+    // remove it) — with the note "für andere verborgen" when it is not for everybody
+    const hiddenNote = el('span', { class: 'us-chip us-chip-dashed', id: 'up-look-hidden', hidden: !(u.avatarHidden && u.avatarUrl) }, T('avatar.hidden_others'));
+    const card = upCard(T('avatar.title'), [hiddenNote], [host]);
     if (!window.GCAvatar) { card.hidden = true; return card; }
     const ed = window.GCAvatar.editor(host, {
       urls: { avatar: '/api/v1/users/' + u.id + '/avatar', color: '/api/v1/users/' + u.id + '/color' },
@@ -960,6 +963,7 @@
       onChange: (look) => {
         if (!look || !state.detail || state.detail.user.id !== u.id) return;
         Object.assign(state.detail.user, { avatarUrl: look.avatarUrl, color: look.color, colorHex: look.colorHex });
+        hiddenNote.hidden = !(state.detail.user.avatarHidden && look.avatarUrl);
         renderHead(state.detail);
       },
     });

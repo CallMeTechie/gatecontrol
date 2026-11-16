@@ -654,6 +654,13 @@ a.pt-user-link:hover { border-color: var(--accent-bd); }
 .pt-pf-segbtn span { padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font-weight: 600; cursor: pointer; }
 .pt-pf-segbtn input:checked + span { border-color: var(--teal); background: var(--accent-soft); color: var(--accent-text); }
 .pt-pf-segbtn input:focus-visible + span { outline: 2px solid var(--teal); outline-offset: 2px; }
+/* "Wer sieht dein Bild?" in the card "Profilbild & Farbe" (portal.js renderLookVis) */
+.pt-look-vis { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 6px; }
+.pt-look-vis-h { font-size: 13px; }
+.pt-look-vis-list { display: flex; flex-direction: column; gap: 2px; }
+.pt-look-vis-opt { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; cursor: pointer; }
+.pt-look-vis-opt input { margin: 3px 0 0; width: 16px; height: 16px; accent-color: var(--teal); flex: none; }
+.pt-look-vis-foot { margin: 4px 0 0; }
 .pt-pf-remove { align-self: flex-start; }
 @media (max-width: 900px) {
   .pt-pf-grid { grid-template-columns: minmax(0, 1fr); }

@@ -900,9 +900,15 @@ function makeGc(info) {
       /** setSecret(key, string|null): a value of the plugin's own, stored encrypted with the server key (never shown in the UI) */
       setSecret: (key, value) => hostCall('settings.setSecret', { key, value: value == null ? null : String(value) }),
     }),
+    // gc.users (permissions.users): avatarUrl only where the viewer may see the picture (avatarVisibility; without a
+    // viewer only 'all'); unmasked: true for a plugin that applies avatarVisibility itself to each reader
     users: Object.freeze({
-      list: () => hostCall('users.list', {}),
-      get: (id) => hostCall('users.get', { id }),
+      list: (opts) => hostCall('users.list', { viewer: opts && opts.viewer != null ? opts.viewer : null, unmasked: !!(opts && opts.unmasked === true) }),
+      get: (id, opts) => hostCall('users.get', { id, viewer: opts && opts.viewer != null ? opts.viewer : null, unmasked: !!(opts && opts.unmasked === true) }),
+      /** setAvatarVisibility(userId, 'all' | 'contacts' | 'family' | 'self') → { level } — only for the person of a changing request in flight */
+      setAvatarVisibility: (userId, level) => hostCall('users.setAvatarVisibility', { userId, level }),
+      /** adoptAvatarVisibility(userId, level) → { adopted, level } — one-time takeover: a narrower level, only while nothing is chosen */
+      adoptAvatarVisibility: (userId, level) => hostCall('users.adoptAvatarVisibility', { userId, level }),
     }),
     // permissions.profile (docs/plugins.md "Profile"): the fields of the user profile the plugin asked for
     profile: Object.freeze({

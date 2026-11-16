@@ -74,9 +74,11 @@ function peopleForPicker(peerId) {
   const info = usageForPeer(peerId);
   if (!info || info.mode !== 'multi' || !info.allowedUserIds.length) return [];
   const ids = info.allowedUserIds;
-  const rows = getDb().prepare(`SELECT id, username, display_name, avatar_color FROM users WHERE enabled = 1 AND id IN (${ids.map(() => '?').join(',')})`).all(...ids);
-  // Profile picture or initials on the favourite colour (docs/feature-avatars.md).
-  const looks = require('./avatars').infoMany(rows);
+  const avatars = require('./avatars');
+  const rows = getDb().prepare(`SELECT ${avatars.LOOK_COLS} FROM users WHERE enabled = 1 AND id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+  // Profile picture or initials on the favourite colour (docs/feature-avatars.md). Nobody is signed in yet on a
+  // shared device: the picture only of people who show it to everybody ("Wer sieht dein Bild?" = Alle).
+  const looks = avatars.infoMany(rows, { viewer: null });
   return rows
     .map((u) => {
       const look = looks.get(u.id);

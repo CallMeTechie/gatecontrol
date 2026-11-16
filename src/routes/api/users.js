@@ -18,6 +18,12 @@ function lookOf(f) {
   return f ? { avatarUrl: f.avatarUrl, color: f.color, colorHex: f.colorHex } : { avatarUrl: null, color: null, colorHex: null };
 }
 
+/** "Wer sieht dein Bild?" for the administration: { avatarVisibility, avatarHidden } (hidden: not for everybody). */
+function hiddenOf(f) {
+  const level = f && f.avatarVisibility ? f.avatarVisibility : 'all';
+  return { avatarVisibility: level, avatarHidden: level !== 'all' };
+}
+
 /** Destroy every login session of a user (sessionStore.destroyByUserId). */
 function revokeSessions(req, userId, reason, exceptSid = null) {
   if (req.sessionStore && typeof req.sessionStore.destroyByUserId === 'function') {
@@ -228,7 +234,8 @@ router.get('/:id', (req, res) => {
     const enabledAdmins = getDb().prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND enabled = 1").get().c;
     res.json({
       ok: true,
-      user: { ...user, ...lookOf(avatars.info(id)) },
+      // administrators always see the picture; avatarHidden: "für andere verborgen" (who sees it is the person's choice)
+      user: { ...user, ...lookOf(avatars.info(id)), ...hiddenOf(avatars.info(id)) },
       tokens: userTokens,
       peers,
       passkeys,
