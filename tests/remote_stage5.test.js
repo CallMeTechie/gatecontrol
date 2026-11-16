@@ -117,12 +117,12 @@ describe('the kit of the viewer page (no DOM)', () => {
 
 describe('gc.remote.screen (version 4): the ticket', () => {
   it('checks viewer, sender device, mode, recording and target', async () => {
-    assert.equal((await pget('/has')).version, 4);
+    assert.ok((await pget('/has')).version >= 4);
     const T = { id: 'phone-1', name: 'Ilses Handy' };
     assert.equal((await call('screen', { viewer: 999999, sender: { user: owner, device: phone.tokenId }, target: T })).code, 'ERR_NOT_FOUND');
     assert.equal((await call('screen', { viewer: adminId, sender: { user: owner, device: helperApp.tokenId }, target: T })).code, 'ERR_REMOTE_NOT_ALLOWED', 'not her phone');
     assert.equal((await call('screen', { viewer: adminId, sender: { user: owner, device: 'x' }, target: T })).code, 'ERR_INVALID');
-    assert.equal((await call('screen', { viewer: adminId, sender: { user: owner, device: phone.tokenId }, target: T, mode: 'control' })).code, 'ERR_INVALID', 'control is stage 6');
+    assert.equal((await call('screen', { viewer: adminId, sender: { user: owner, device: phone.tokenId }, target: T, mode: 'edit' })).code, 'ERR_INVALID', 'only view or control');
     assert.equal((await call('screen', { viewer: adminId, sender: { user: owner, device: phone.tokenId }, target: T, record: true })).code, 'ERR_REMOTE_RECORDING_UNAVAILABLE');
     assert.equal((await call('screen', { viewer: adminId, sender: { user: owner, device: phone.tokenId }, target: { id: 'a b' } })).code, 'ERR_INVALID');
     const r = await call('screen', { viewer: adminId, sender: { user: owner, device: phone.tokenId }, target: T });
@@ -208,9 +208,10 @@ describe('the relay: hello, key-frame gating, frames unchanged, bye', () => {
     assert.ok(viewer.media[0].equals(key), 'the key frame, byte for byte');
     assert.equal(viewer.media[1].subarray(12).toString(), 'delta-1');
     assert.ok(!viewer.media.some((m) => m.subarray(12).toString() === 'delta-before-key'), 'no delta before the first key frame');
-    // a viewer sends no pictures; its input is dropped (stage 6)
+    // a viewer sends no pictures; its input is dropped in view mode (stage 6: only with mode control)
     viewer.ws.send(frameOf(true, 1, 'from-viewer'));
-    viewer.send({ t: 'input', x: 1, y: 2 });
+    viewer.send({ t: 'input', k: 'tap', x: 0.5, y: 0.5 });
+    assert.equal((await viewer.frame('notice')).code, 'view_only');
     sender.send({ t: 'state', paused: true, reason: 'locked' });
     assert.deepEqual(await viewer.frame('state'), { t: 'state', paused: true, reason: 'locked' });
     assert.equal(sender.media.length, 0);

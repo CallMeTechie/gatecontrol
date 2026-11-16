@@ -1,7 +1,11 @@
 /* The screen viewer of gc.remote (templates/aurora/pages/remote-screen.njk, stage 5): the WebSocket
    /api/v1/remote/screen-relay, protocol gc-screen.v1 (services/remote/screen.js). The phone sends H.264
    (Annex B, SPS/PPS before every key frame); the browser decodes it with WebCodecs onto a canvas — nothing
-   is transcoded anywhere. Only watching: no input goes to the phone. A lost connection reconnects. */
+   is transcoded anywhere. A lost connection reconnects.
+   Stage 6: while the relay says mode control (the person at the phone allowed it, the phone can do it), mouse,
+   touch and keyboard on the picture go to the phone as {t:'input'} — click = tap, hold = long press, drag =
+   swipe, wheel = scroll, right button = back, typing = text into the field selected on the phone — and the
+   toolbar shows „Du steuerst“. The phone can go down to view at any time; then input stops at once. */
 (function () {
   'use strict';
   var K = window.GCScreenKit;
@@ -34,6 +38,8 @@
   var decoder = null;
   var configured = null;
   var needKey = true;
+  var mode = 'view';
+  var toastTimer = null;
 
   function fail(code) {
     stopped = true;
@@ -94,6 +100,125 @@
     } catch (e) { needKey = true; sendJson({ t: 'keyframe' }); }
   }
 
+  // ─── Stage 6: control ───
+
+  function toast(text) {
+    var el = $('rscreen-toast');
+    el.textContent = text || '';
+    el.style.display = text ? 'block' : 'none';
+    clearTimeout(toastTimer);
+    if (text) toastTimer = setTimeout(function () { el.style.display = 'none'; }, 4000);
+  }
+
+  function setMode(m, reason, announce) {
+    var was = mode;
+    mode = m === 'control' ? 'control' : 'view';
+    var on = mode === 'control';
+    $('rscreen-control').style.display = on ? 'inline-flex' : 'none';
+    $('rscreen-keys').style.display = on ? 'inline-flex' : 'none';
+    canvas.classList.toggle('rscreen-canvas--control', on);
+    if (!on) { showText(false); pointer = null; }
+    note(on ? '' : T('view_only'));
+    if (!on && (announce || was === 'control') && reason && reason !== 'viewer_only') toast(T(K.modeKey(reason)));
+  }
+
+  function input(frame) { if (mode === 'control' && frame) sendJson(frame); }
+
+  var pointer = null;
+  function unitOf(ev) { return K.toUnit(ev.clientX, ev.clientY, canvas.getBoundingClientRect(), canvas.width, canvas.height); }
+
+  canvas.addEventListener('pointerdown', function (ev) {
+    if (mode !== 'control') return;
+    ev.preventDefault();
+    canvas.focus();
+    if (ev.button === 2) { input(K.keyInput('back')); return; }
+    if (ev.button !== 0) return;
+    var u = unitOf(ev);
+    if (!u) return;
+    pointer = { id: ev.pointerId, pts: [{ x: u.x, y: u.y, t: ev.timeStamp }], last: ev.timeStamp };
+    try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* gone */ }
+  });
+  canvas.addEventListener('pointermove', function (ev) {
+    if (!pointer || ev.pointerId !== pointer.id || ev.timeStamp - pointer.last < 16) return;
+    var r = canvas.getBoundingClientRect();
+    var f = K.fit(canvas.width, canvas.height, r.width, r.height);
+    // keep moving at the edge of the picture: clamp instead of dropping the point
+    var x = Math.min(r.left + (r.width + f.width) / 2, Math.max(r.left + (r.width - f.width) / 2, ev.clientX));
+    var y = Math.min(r.top + (r.height + f.height) / 2, Math.max(r.top + (r.height - f.height) / 2, ev.clientY));
+    var u = K.toUnit(x, y, r, canvas.width, canvas.height);
+    if (!u) return;
+    pointer.last = ev.timeStamp;
+    if (pointer.pts.length < 400) pointer.pts.push({ x: u.x, y: u.y, t: ev.timeStamp });
+  });
+  function pointerEnd(ev) {
+    if (!pointer || ev.pointerId !== pointer.id) return;
+    var p = pointer;
+    pointer = null;
+    var u = unitOf(ev);
+    if (u) p.pts.push({ x: u.x, y: u.y, t: ev.timeStamp });
+    else p.pts.push({ x: p.pts[p.pts.length - 1].x, y: p.pts[p.pts.length - 1].y, t: ev.timeStamp });
+    if (ev.type === 'pointerup') input(K.gesture(p.pts));
+  }
+  canvas.addEventListener('pointerup', pointerEnd);
+  canvas.addEventListener('pointercancel', pointerEnd);
+  canvas.addEventListener('contextmenu', function (ev) { if (mode === 'control') ev.preventDefault(); });
+
+  var wheel = null;
+  canvas.addEventListener('wheel', function (ev) {
+    if (mode !== 'control') return;
+    ev.preventDefault();
+    var u = unitOf(ev);
+    if (!u) return;
+    var px = ev.deltaMode === 1 ? 40 : (ev.deltaMode === 2 ? canvas.getBoundingClientRect().height : 1);
+    if (!wheel) {
+      wheel = { at: u, dx: 0, dy: 0 };
+      setTimeout(function () {
+        var w = wheel;
+        wheel = null;
+        var r = canvas.getBoundingClientRect();
+        input(K.scroll(w.at, w.dx, w.dy, r.width, r.height));
+      }, 120);
+    }
+    wheel.dx += ev.deltaX * px;
+    wheel.dy += ev.deltaY * px;
+  }, { passive: false });
+
+  // typing on the picture: text into the field selected on the phone (gathered for a moment), Enter and Backspace as keys
+  var typed = '';
+  var typedTimer = null;
+  function flushTyped() { clearTimeout(typedTimer); if (typed) input(K.textInput(typed)); typed = ''; }
+  canvas.addEventListener('keydown', function (ev) {
+    if (mode !== 'control' || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    if (ev.key === 'Enter' || ev.key === 'Backspace') { ev.preventDefault(); flushTyped(); input(K.keyInput(ev.key === 'Enter' ? 'enter' : 'backspace')); return; }
+    if (ev.key && Array.from(ev.key).length === 1) {
+      ev.preventDefault();
+      typed += ev.key;
+      clearTimeout(typedTimer);
+      if (Array.from(typed).length >= 200) flushTyped(); else typedTimer = setTimeout(flushTyped, 300);
+    }
+  });
+  canvas.addEventListener('paste', function (ev) {
+    if (mode !== 'control') return;
+    ev.preventDefault();
+    flushTyped();
+    input(K.textInput(ev.clipboardData ? ev.clipboardData.getData('text') : ''));
+  });
+
+  function showText(on) {
+    $('rscreen-textbar').style.display = on ? 'flex' : 'none';
+    if (on) $('rscreen-text').focus(); else $('rscreen-text').value = '';
+  }
+  [['rscreen-key-back', 'back'], ['rscreen-key-home', 'home'], ['rscreen-key-recents', 'recents']].forEach(function (b) {
+    $(b[0]).addEventListener('click', function () { input(K.keyInput(b[1])); });
+  });
+  $('rscreen-key-text').addEventListener('click', function () { showText($('rscreen-textbar').style.display !== 'flex'); });
+  $('rscreen-textbar').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    input(K.textInput($('rscreen-text').value));
+    $('rscreen-text').value = '';
+  });
+  $('rscreen-text-close').addEventListener('click', function () { showText(false); });
+
   function mint() {
     return fetch('/remote/session/' + ref + '/token', { method: 'POST', headers: { 'X-CSRF-Token': cfg.csrf }, credentials: 'same-origin' })
       .then(function (r) {
@@ -136,7 +261,7 @@
           attempt = 0;
           show('rscreen-reconnect', false);
           state('connected');
-          note(T('view_only'));
+          setMode(m.mode, m.modeReason, false);
         } else if (m.t === 'waiting') {
           veil(m.reason === 'sender_lost' ? T('sender_lost') : T('waiting'));
         } else if (m.t === 'config') {
@@ -144,9 +269,16 @@
           configure(m);
         } else if (m.t === 'state') {
           veil(m.paused ? T('paused') : null);
+        } else if (m.t === 'mode') {
+          setMode(m.mode, m.reason, true);
+        } else if (m.t === 'input_fail') {
+          toast(T(K.failKey(m.reason)));
+        } else if (m.t === 'notice') {
+          if (K.noticeKey(m.code)) toast(T(K.noticeKey(m.code)));
         } else if (m.t === 'end') {
           ended = true;
           stopped = true;
+          setMode('view');
           closeDecoder();
           veil(null);
           state('disconnected', T('ended'));
