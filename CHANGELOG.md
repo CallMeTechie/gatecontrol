@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.288.0] — 2026-11-16
+
+### Features
+- Fernzugriff Stufe 7 – Windows-PC als Sender im Relais (Maus/Tastatur, gc.remote Version 6) (#504)
+
+---
+
 ## [1.287.0] — 2026-11-16
 
 ### Features
