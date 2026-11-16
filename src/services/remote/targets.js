@@ -119,10 +119,35 @@ function listenerView(key, row, route) {
   };
 }
 
+/** Every port an enabled L4 route listens on (single ports and ranges). */
+function usedListenPorts() {
+  const { parsePortRange } = require('../../utils/validate');
+  const used = new Set();
+  for (const r of db().prepare("SELECT l4_listen_port FROM routes WHERE route_type = 'l4' AND enabled = 1").all()) {
+    const range = parsePortRange(String(r.l4_listen_port || ''));
+    if (!range) continue;
+    for (let p = range.start; p <= range.end; p++) used.add(p);
+  }
+  return used;
+}
+
+/** Version 7: the first free port of the auto range (config.remoteListeners) → port | null */
+function autoListenPort() {
+  const { isPortBlocked } = require('../../utils/validate');
+  const r = config.remoteListeners || {};
+  const min = Math.max(1024, Number(r.autoMin) || 40000);
+  const max = Math.min(65535, Number(r.autoMax) || 40999);
+  const used = usedListenPorts();
+  for (let p = min; p <= max; p++) if (!used.has(p) && !isPortBlocked(p)) return p;
+  return null;
+}
+
 /**
  * gc.remote.listener({ key, gateway: { peerId } | { poolId }, host, port, listenPort? })
  * An L4 port on the server that the gateway passes on to host:port in its home network. An existing
  * L4 route with exactly this target and port (an old gateway-mode RDP route) is reused (shared).
+ * Version 7: listenPort 'auto' — the core picks the port from its range; a listener of the same key and
+ * target keeps its port, an L4 gateway route with exactly this target is shared whatever its port.
  */
 async function listener(plugin, a) {
   const o = a && typeof a === 'object' ? a : {};
@@ -134,21 +159,30 @@ async function listener(plugin, a) {
   if (typeof o.host !== 'string' || !o.host.trim() || o.host.length > 253) throw new TargetError('invalid', 'host required');
   const host = o.host.trim();
   const port = portOf(o.port);
-  const listenPort = o.listenPort == null ? port : portOf(o.listenPort, 'listenPort');
+  const auto = o.listenPort === 'auto';
+  let listenPort = auto ? null : (o.listenPort == null ? port : portOf(o.listenPort, 'listenPort'));
   if (peerId && !require('../gatewayFeatures').gatewayPeer(peerId)) throw new TargetError('not_found', 'gateway not found');
+  const view = (k, row, route) => (auto ? { ...listenerView(k, row, route), auto: true } : listenerView(k, row, route));
 
   const existing = listenerRow(plugin.id, o.key);
-  const same = (r) => r.route_type === 'l4' && r.target_kind === 'gateway' && r.target_lan_host === host && Number(r.target_lan_port) === port
-    && String(r.l4_listen_port) === String(listenPort) && (peerId ? r.target_peer_id === peerId : r.target_pool_id === poolId);
-  if (existing && same(existing.route)) return listenerView(o.key, existing.row, existing.route);
+  const sameTarget = (r) => r.route_type === 'l4' && r.target_kind === 'gateway' && r.target_lan_host === host && Number(r.target_lan_port) === port
+    && (peerId ? r.target_peer_id === peerId : r.target_pool_id === poolId);
+  const same = (r) => sameTarget(r) && (auto || String(r.l4_listen_port) === String(listenPort));
+  if (existing && same(existing.route)) return view(o.key, existing.row, existing.route);
 
   // an L4 route already passing exactly this on (e.g. the one of an old gateway-mode RDP route): reuse it
-  const shared = db().prepare("SELECT * FROM routes WHERE route_type = 'l4' AND target_kind = 'gateway' AND l4_listen_port = ?").all(String(listenPort)).find(same);
+  const shared = (auto
+    ? db().prepare("SELECT * FROM routes WHERE route_type = 'l4' AND target_kind = 'gateway' AND target_lan_host = ? ORDER BY id").all(host)
+    : db().prepare("SELECT * FROM routes WHERE route_type = 'l4' AND target_kind = 'gateway' AND l4_listen_port = ?").all(String(listenPort))).find(same);
   if (existing && existing.row.shared !== 1) await removeRoute(existing.route.id);
   if (shared) {
     db().prepare(`INSERT INTO remote_listeners (plugin_id, key, route_id, shared) VALUES (?, ?, ?, 1)
       ON CONFLICT(plugin_id, key) DO UPDATE SET route_id = excluded.route_id, shared = 1`).run(plugin.id, o.key, shared.id);
-    return listenerView(o.key, { shared: 1 }, shared);
+    return view(o.key, { shared: 1 }, shared);
+  }
+  if (auto) {
+    listenPort = autoListenPort();
+    if (!listenPort) throw new TargetError('port_in_use', 'no free port left in the range of GC_REMOTE_AUTO_PORT_MIN … GC_REMOTE_AUTO_PORT_MAX');
   }
   try {
     require('../l4').assertListenPortFree(listenPort, { protocol: 'tcp', code: 'GATEWAY_PORT_CONFLICT' });
@@ -179,7 +213,7 @@ async function listener(plugin, a) {
   }
   db().prepare(`INSERT INTO remote_listeners (plugin_id, key, route_id, shared) VALUES (?, ?, ?, 0)
     ON CONFLICT(plugin_id, key) DO UPDATE SET route_id = excluded.route_id, shared = 0`).run(plugin.id, o.key, created.id);
-  return listenerView(o.key, { shared: 0 }, db().prepare('SELECT * FROM routes WHERE id = ?').get(created.id));
+  return view(o.key, { shared: 0 }, db().prepare('SELECT * FROM routes WHERE id = ?').get(created.id));
 }
 
 async function removeRoute(routeId) {
@@ -274,9 +308,48 @@ async function probe(plugin, target) {
 const wakeLast = new Map(); // plugin:mac → ms
 const WAKE_GAP_MS = 10000;
 
-/** gc.remote.wake(target) — target.mac required → { sent: true, via: 'gateway' | 'server' } */
-async function wake(plugin, target) {
+/**
+ * Is `userId` an enabled administrator whose request to this plugin is in flight right now
+ * (plugins/personContext.js)? Version 7: gc.remote.candidates and wake by `watch` only act for one.
+ */
+function adminInRequest(plugin, userId) {
+  const n = Number(userId);
+  if (!Number.isSafeInteger(n) || n <= 0) throw new TargetError('invalid', 'user: a user id');
+  if (!require('../plugins/personContext').has(plugin.id, n)) throw new TargetError('not_allowed', 'only in a request of this administrator');
+  const u = db().prepare('SELECT role, enabled FROM users WHERE id = ?').get(n);
+  if (!u || u.enabled !== 1 || u.role !== 'admin') throw new TargetError('not_allowed', 'only for an administrator');
+  return n;
+}
+
+const WATCH_RE = /^nw-([1-9][0-9]{0,15})$/;
+
+/**
+ * Version 7: target.watch 'nw-<id>' — a device of the network watch (gc.remote.candidates) instead of a MAC:
+ * the core takes its MAC and its gateway; the plugin never sees the MAC. → { mac, peerId, lanHost }
+ */
+function watchedDevice(plugin, target, opts) {
+  const m = typeof target.watch === 'string' ? WATCH_RE.exec(target.watch) : null;
+  if (!m) throw new TargetError('invalid', 'target.watch: nw-<id>');
+  adminInRequest(plugin, opts && opts.user);
+  const row = db().prepare('SELECT peer_id, mac, ip, random_mac FROM netwatch_devices WHERE id = ?').get(Number(m[1]));
+  if (!row) throw new TargetError('not_found', 'no such device of the network watch');
+  if (row.random_mac === 1 || !MAC_RE.test(String(row.mac || ''))) throw new TargetError('not_allowed', 'this device cannot be woken');
+  return { mac: row.mac, peerId: row.peer_id, lanHost: row.ip || null };
+}
+
+/**
+ * gc.remote.wake(target, { user }?) — target.mac required (version 7: or target.watch with `user`, an administrator
+ * in a request) → { sent: true, via: 'gateway' | 'server' }
+ */
+async function wake(plugin, target, opts) {
   const t = normalise(target);
+  let watched = null;
+  if (!t.mac && target && target.watch != null) {
+    watched = watchedDevice(plugin, target, opts);
+    t.mac = watched.mac;
+    t.gatewayPeerId = watched.peerId;
+    t.host = watched.lanHost || t.host;
+  }
   if (!t.mac) throw new TargetError('invalid', 'target.mac required');
   const k = plugin.id + ':' + t.mac.toLowerCase();
   const now = Date.now();
@@ -338,6 +411,6 @@ function _resetForTest() { if (process.env.NODE_ENV === 'test') { wakeLast.clear
 
 module.exports = {
   TargetError, normalise, endpoint, resolveHost, addressAllowed, listener, removeListener, listeners, removeAllListeners, gateways, probe, wake, hubIp,
-  tokenAddress, hubAddress, peerAddress,
+  tokenAddress, hubAddress, peerAddress, adminInRequest, autoListenPort,
   _setLookupForTest, _resetForTest,
 };
