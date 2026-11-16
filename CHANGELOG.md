@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.291.1] — 2026-11-16
+
+### Fixes
+- eigene Appservice-Tokens je Brücke (#511)
+
+---
+
 ## [1.291.0] — 2026-11-16
 
 ### Features
