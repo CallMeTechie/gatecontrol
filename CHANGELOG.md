@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.287.0] — 2026-11-16
+
+### Features
+- Fernzugriff Stufe 6 – Handy steuern (Rückkanal gc-screen.v1, gc.remote Version 5) (#503)
+
+---
+
 ## [1.286.0] — 2026-11-16
 
 ### Features
