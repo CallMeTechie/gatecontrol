@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.293.0] — 2026-11-16
+
+### Features
+- Brücken Stufe 7b – Telegram (gc.bridges Version 11) (#510)
+
+---
+
 ## [1.292.0] — 2026-11-16
 
 ### Features
