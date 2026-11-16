@@ -1656,6 +1656,7 @@ async function vpnDnsCall(plugin, op, args) {
 // Version 11 (stage 7b, Telegram): the network 'telegram'; configure({ telegramApp }) takes the administrator's Telegram
 // application id (kept encrypted by services/bridges, never returned or logged — nothing here keeps or logs the
 // arguments of a host call); login.step passes the number, the code and the password of a Telegram login straight on.
+// Version 13 (old media from the phone): configure({ mediaRequests }) — passed on like every other key of the patch.
 
 const BRIDGES_CODES = new Set(['ERR_INVALID', 'ERR_BRIDGES_UNAVAILABLE', 'ERR_BRIDGE_UNREACHABLE', 'ERR_BRIDGE', 'ERR_BUSY', 'ERR_RATE_LIMIT']);
 const BRIDGE_FILE_TIMEOUT_MS = 200000;

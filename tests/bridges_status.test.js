@@ -153,7 +153,7 @@ describe('the room of the WhatsApp status updates', () => {
 });
 
 describe('gc.bridges version 12', () => {
-  it('status() and the plugin side say 12', () => {
-    assert.equal(bridges.status().version, 12);
+  it('status() and the plugin side say 13 (12: status; 13: old media from the phone)', () => {
+    assert.equal(bridges.status().version, 13);
   });
 });

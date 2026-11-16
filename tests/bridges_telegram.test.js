@@ -157,7 +157,7 @@ describe('the service with Telegram', () => {
 
   it('without the application id: not started, needs "app", nobody can link', async () => {
     const st = bridges.status();
-    assert.equal(st.version, 12);
+    assert.equal(st.version, 13);
     const tg = st.networks.find((n) => n.id === 'telegram');
     assert.equal(tg.needs, 'app');
     assert.equal(tg.state, 'stopped');

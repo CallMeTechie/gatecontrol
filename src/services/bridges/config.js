@@ -54,8 +54,26 @@
 //                link is kept by the bridge (backfill.enabled — without it the bridge drops the notification), rooms
 //                are made at the link for at most HISTORY.conversations chats, each with at most HISTORY.messages
 //                messages; the other chats get theirs when their next message arrives. No backfill queue (it needs a
-//                Beeper homeserver), no media requests to the phone. Which history a PERSON wants (off, 30 days,
-//                everything) is decided by the server when it arrives (events.js), not here.
+//                Beeper homeserver). Which history a PERSON wants (off, 30 days, everything) is decided by the server
+//                when it arrives (events.js), not here.
+//
+// gc.bridges version 13 (old media from the phone, WhatsApp only): a picture, video, voice message or file of the history
+// whose copy at WhatsApp ran out arrives as the bridge's notice "Old <kind>. …" (fi.mau.whatsapp.failed_media); the
+// bridge keeps a request for it in its database either way (pkg/connector/backfill.go, mediarequest.go). Whether it
+// asks the phone for it is the administrator's choice (opts.mediaRequests, MEDIA_REQUESTS):
+//   'off'    auto_request_media false — as before (the files stay on the phone, the notice says "open it in WhatsApp")
+//   'now'    request_method immediate — asked for the moment the message is backfilled (at the link, or a live message
+//            with a file that ran out); what was already waiting from before is not asked for
+//   'daily'  request_method local_time — the bridge's loop (mediarequest.go mediaRequestLoop) asks for everything still
+//            waiting, then every 24 hours. Its time of day (request_local_time) counts in the time zone of the person's
+//            login, and v0.2610.0 never sets one (pkg/connector/login.go: WALogin.Timezone is never written, so
+//            UserLoginMetadata.LoadTimezone is nil): the loop then starts 8 hours after the bridge connected. The bridge
+//            restarts every night for its snapshot (backup.js, BACKUP_TIME) — so the requests go out about 8 hours after
+//            that time, once a day. request_local_time is not written: it would change nothing.
+// When the phone answers, the bridge edits the notice into the file (m.replace with the media — events.js passes it on);
+// when it cannot, into the notice "Failed to bridge media after re-requesting it …" (events.js: request 'failed').
+// Signal and Telegram have no such switch: neither bridge asks a phone for a file (Telegram fetches every file from its
+// servers, Signal's bridge has no media request — their key lists hold none).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -77,6 +95,17 @@ const PUPPET_BOT = 'gcpuppetbot';
 
 // stage 5: what the bridge loads at a new link when history is allowed (estimates for a handful of people — not measured)
 const HISTORY = Object.freeze({ conversations: 30, messages: 200, catchup: 100 });
+// version 13: old media from the phone (see above) — the administrator's choice, 'off' unless set
+const MEDIA_REQUESTS = Object.freeze(['off', 'daily', 'now']);
+// 'daily': the bridge's loop starts this long after it connected (mautrix-whatsapp pkg/connector/mediarequest.go)
+const MEDIA_REQUEST_DELAY_MIN = 8 * 60;
+
+/** The media_requests section of WhatsApp's history_sync: 'off' writes exactly what was written before version 13. */
+function mediaRequestsOf(mode) {
+  if (mode === 'now') return { auto_request_media: true, request_method: 'immediate' };
+  if (mode === 'daily') return { auto_request_media: true, request_method: 'local_time' };
+  return { auto_request_media: false };
+}
 
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const userRegex = (prefix) => `@${reEsc(prefix)}.*:${reEsc(SERVER_NAME)}`;
@@ -205,7 +234,8 @@ function hsToml(model) {
 function bridgeModel(network, secrets, opts = {}) {
   const history = opts.history === true;
   if (!NETWORK_MODELS[network]) throw new Error(`bridges config: unknown network ${network}`);
-  const own = NETWORK_MODELS[network]({ history, animatedStickers: opts.animatedStickers === true, telegramApp: opts.telegramApp || null });
+  const own = NETWORK_MODELS[network]({ history, animatedStickers: opts.animatedStickers === true, telegramApp: opts.telegramApp || null,
+    mediaRequests: MEDIA_REQUESTS.includes(opts.mediaRequests) ? opts.mediaRequests : 'off' });
   const tokens = bridgeTokens(secrets, network);
   const model = {
     homeserver: {
@@ -273,7 +303,7 @@ function bridgeModel(network, secrets, opts = {}) {
  * the few `bridge` keys only that bridge needs.
  */
 const NETWORK_MODELS = {
-  whatsapp: ({ history }) => ({
+  whatsapp: ({ history, mediaRequests }) => ({
     network: {
       // a contact's name: only what the contact (or the business) shows publicly — never the phone number (the
       // default falls back to it, and to its redacted form) and no " (WA)" (the apps mark the network themselves).
@@ -282,9 +312,9 @@ const NETWORK_MODELS = {
       // bridge still names by number, the plugin shows the person's own address book name or a neutral label
       displayname_template: '{{or .BusinessName .PushName}}',
       // without history: no rooms for old conversations at login — a room appears with its first new message.
-      // With history (stage 5): rooms for the most recent chats at once; never a full sync, never asking the phone for
-      // files that ran out
-      history_sync: { max_initial_conversations: history ? HISTORY.conversations : 0, request_full_sync: false, media_requests: { auto_request_media: false } },
+      // With history (stage 5): rooms for the most recent chats at once; never a full sync. Files that ran out are asked
+      // from the phone only with the administrator's switch (version 13, mediaRequestsOf)
+      history_sync: { max_initial_conversations: history ? HISTORY.conversations : 0, request_full_sync: false, media_requests: mediaRequestsOf(mediaRequests) },
       // gc.bridges version 12 (WhatsApp status): the contacts' status updates arrive in their own room (status@broadcast),
       // which events.js marks as chat.status — the messenger shows them in its status row, not as a chat. Written down
       // so a change of the bridge's defaults moves nothing: without the room the status updates would be lost, and
@@ -436,5 +466,6 @@ function write(dir, secrets, networks, opts = {}) {
 
 module.exports = {
   SERVER_NAME, RUN_DIR, HS_SOCKET, HS_SOCKET_BRIDGE, RELAY_PORT, CORE_ID, CORE_BOT, PUPPET_ID, PUPPET_BOT, HISTORY,
+  MEDIA_REQUESTS, MEDIA_REQUEST_DELAY_MIN, mediaRequestsOf,
   hsModel, hsToml, bridgeModel, bridgeYaml, files, rev, write, bridgeTokens, BRIDGE_TOKEN_KEYS,
 };

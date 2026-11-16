@@ -110,6 +110,23 @@
 //             reports a status only when everything before it in the room was watched too.
 //   send      sending, reacting and deleting are refused here (the bridge refuses them too: disable_status_broadcast_send,
 //             ErrBroadcastReactionUnsupported) — an answer goes to the direct chat.
+//
+// Old media from the phone (gc.bridges version 13; mautrix-whatsapp v0.2610.0, config.js mediaRequestsOf):
+//   notice    a file of the history whose copy at WhatsApp ran out arrives as the bridge's m.notice "Old voice message.
+//             Requesting old media is not enabled on this bridge." (pkg/msgconv/wa-media.go makeMediaFailure; the suffix
+//             is pkg/connector/connector.go OldMediaSuffix: "…not enabled…" / "…automatically soon." / "…automatically
+//             overnight."), with the file's description in fi.mau.whatsapp.failed_media (type, content.msgtype,
+//             type_description, the caption). It becomes a message of kind 'unsupported' with oldMedia { kind: image |
+//             video | voice | audio | file | sticker, name (a file's), request: off | daily | now } and the caption as
+//             its text — never the English line. `request` is what the bridge's own suffix says (what it was configured
+//             with when it wrote the notice), else the administrator's choice now (opts.mediaRequests).
+//   failed    the bridge's other notice about a file it could not carry over ("Failed to bridge photo, please view it on
+//             the WhatsApp app") is oldMedia with request 'failed' — the same for a live message.
+//   later     when the phone sends the file, the bridge edits the notice (m.replace, pkg/connector/events.go
+//             WAMediaRetry): the edit carries `media` like a message's (with the reference to fetch it) next to the
+//             text it always had; when the phone cannot, the edit is "Failed to bridge media after re-requesting it
+//             from your phone: …" → an edit with oldMedia { request: 'failed' } and no text. Plugins before version 13
+//             ignore both fields (and an edit without text).
 
 const crypto = require('node:crypto');
 const logger = require('../../utils/logger');
@@ -152,6 +169,15 @@ const CHAT_IDS = {
 // stage 7b: the bridge's notices about a Telegram file it could not carry over (pkg/connector/tomatrix.go)
 const TG_TOO_LARGE = /^Too large file /;
 const TG_NOT_CARRIED = /^(Failed to transfer media\.|Unsupported media message\.|This message is not supported on your version|.{1,60} are not yet supported\.)/;
+// version 13: WhatsApp's notices about a file it could not carry over (see "Old media from the phone" above)
+const WA_FAILED_FIELD = 'fi.mau.whatsapp.failed_media';
+const WA_KINDS = '(photo|sticker|video attachment|video message|voice message|audio attachment|file attachment)';
+const WA_OLD = new RegExp(`^Old ${WA_KINDS}\\. (Requesting old media is not enabled on this bridge\\.|Media will be requested from your phone automatically (soon|overnight)\\.)`);
+const WA_FAILED = new RegExp(`^Failed to bridge ${WA_KINDS}, please view it on the WhatsApp app`);
+const WA_RETRY_FAILED = /^Failed to bridge media after re-requesting it from your phone/;
+const WA_TYPE = { photo: 'image', sticker: 'sticker', 'video attachment': 'video', 'video message': 'video', 'voice message': 'voice', 'audio attachment': 'audio', 'file attachment': 'file' };
+const WA_MSGTYPE = { 'm.image': 'image', 'm.video': 'video', 'm.audio': 'audio', 'm.file': 'file' };
+const OLD_MEDIA_REQUESTS = ['off', 'daily', 'now'];
 const TIMER_TYPES = ['after_read', 'after_send'];
 const TIMER_MAX_S = 366 * 86400;
 const MEDIA_TYPES = { 'm.image': 'image', 'm.video': 'video', 'm.audio': 'audio', 'm.file': 'file', 'm.location': 'location' };
@@ -557,8 +583,22 @@ function create(opts) {
       if (rel.rel_type === 'm.replace' && hs.EVENT_RE.test(String(rel.event_id || ''))) {
         const nc = c['m.new_content'] && typeof c['m.new_content'] === 'object' ? c['m.new_content'] : c;
         // version 7: the new text with its format (and a new link preview, when the bridge sends one)
+        // version 13: WhatsApp's word that the phone could not send a file it was asked for — no English text goes on
+        const wf = row.network === 'whatsapp' ? waMediaNotice(nc, true) : null;
+        if (wf) {
+          if (wf.request === 'failed') push({ type: 'edit', ...base, target: rel.event_id, text: null, oldMedia: { request: 'failed' } });
+          else stats.skipped++;
+          return;
+        }
         const r = richOf(nc);
         const pv = previewOf(row, nc);
+        // version 13: the phone sent a file that had run out — the edit carries it like a message's file
+        const emk = row.network === 'whatsapp' && hs.mxcOf(nc.url, opts.serverName) ? WA_MSGTYPE[nc.msgtype] : null;
+        if (emk) {
+          const fileName = line(typeof nc.filename === 'string' ? nc.filename : nc.body, 200) || null;
+          push({ type: 'edit', ...base, target: rel.event_id, text: r.text, ...(r.marks ? { marks: r.marks } : {}), media: mediaOf(row, emk, nc, fileName) }, { mxc: nc.url });
+          return;
+        }
         push({ type: 'edit', ...base, target: rel.event_id, text: r.text, ...(r.marks ? { marks: r.marks } : {}), ...(pv ? { preview: pv.preview } : {}) }, pv && pv.mxc ? { mxc: pv.mxc } : null);
         return;
       }
@@ -569,6 +609,15 @@ function create(opts) {
         if (hs.mxcOf(c.url, opts.serverName)) out.push({ userId: row.user_id, network: row.network, drop: true, mxc: c.url });
         push({ type: 'message', ...base, kind: 'unsupported', viewOnce: true, text: null, replyTo: reply });
         return;
+      }
+      // version 13: WhatsApp's notice about an old file (or one it could not carry over) — a placeholder of its kind
+      if (row.network === 'whatsapp' && msgtype === 'm.notice' && !sender.system) {
+        const om = waMediaNotice(c, false);
+        if (om) {
+          push({ type: 'message', ...base, kind: 'unsupported', oldMedia: { kind: om.kind, name: om.name, request: om.request }, text: om.caption ? om.caption.text : null,
+            ...(om.caption && om.caption.marks ? { marks: om.caption.marks } : {}), replyTo: reply });
+          return;
+        }
       }
       // stage 7b: the Telegram bridge's notice about a file it could not carry over — our own hint, not its English text
       if (row.network === 'telegram' && msgtype === 'm.notice' && !sender.self) {
@@ -622,6 +671,41 @@ function create(opts) {
     const type = c.type === 'after_read_by_recipient' ? 'after_read' : c.type;
     if (!seconds || !TIMER_TYPES.includes(type)) return null;
     return { type, seconds };
+  }
+
+  /**
+   * version 13: WhatsApp's notice about a file it could not carry over (an m.notice) → { kind, name, request, caption }
+   * or null when it is none. `edit`: the new content of an edit — also the notice after a request to the phone failed.
+   */
+  function waMediaNotice(c, edit) {
+    if (!c || c.msgtype !== 'm.notice' || typeof c.body !== 'string') return null;
+    const body = c.body;
+    if (edit && WA_RETRY_FAILED.test(body)) return { kind: null, name: null, request: 'failed', caption: null };
+    const old = WA_OLD.exec(body);
+    const failed = old ? null : WA_FAILED.exec(body);
+    const f = c[WA_FAILED_FIELD] && typeof c[WA_FAILED_FIELD] === 'object' && !Array.isArray(c[WA_FAILED_FIELD]) ? c[WA_FAILED_FIELD] : null;
+    if (!old && !failed && !f) return null;
+    const fc = f && f.content && typeof f.content === 'object' && !Array.isArray(f.content) ? f.content : null;
+    // the kind: the bridge's own description, else the file's msgtype, else the first words of the notice
+    let kind = f ? WA_TYPE[f.type_description] : null;
+    if (!kind && f && f.type === 'm.sticker') kind = 'sticker';
+    if (!kind && fc) kind = WA_MSGTYPE[fc.msgtype] === 'audio' && fc['org.matrix.msc3245.voice'] ? 'voice' : WA_MSGTYPE[fc.msgtype];
+    if (!kind) kind = WA_TYPE[(old || failed || [])[1]] || 'file';
+    // what the bridge was configured with when it wrote the notice (its suffix), else the administrator's choice now
+    let request = failed ? 'failed' : null;
+    if (old) request = old[3] === 'soon' ? 'now' : (old[3] === 'overnight' ? 'daily' : 'off');
+    if (!request) {
+      let now = 'off';
+      if (opts.mediaRequests) { try { now = opts.mediaRequests(); } catch { now = 'off'; } }
+      request = OLD_MEDIA_REQUESTS.includes(now) ? now : 'off';
+    }
+    // a file's name; the caption of a picture, video or file (never the English line)
+    const name = kind === 'file' && fc ? line(typeof fc.filename === 'string' ? fc.filename : fc.body, 200) || null : null;
+    let caption = null;
+    if (fc && typeof fc.filename === 'string' && typeof fc.body === 'string' && fc.body !== fc.filename) caption = richOf(fc);
+    else if (!fc) { const i = body.indexOf('\n\n'); if (i > 0) caption = { text: text(body.slice(i + 2)), marks: null }; }
+    if (caption && !caption.text.trim()) caption = null;
+    return { kind, name, request, caption };
   }
 
   /** The text of a message with its format (format.js): the parsed HTML, or the plain body without marks. */

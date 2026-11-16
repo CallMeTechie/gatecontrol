@@ -94,6 +94,13 @@
 //                    chat.status (events.js); the bridge keeps it (config.js enable_status_broadcast) and never sends
 //                    into it. read() reports "seen" there only with { status: true }; send, react and redact are refused
 //                    (reason status_room), typing is not sent.
+//   media requests   (gc.bridges version 13) old media from the phone, WhatsApp only: configure({ mediaRequests: 'off' |
+//                    'daily' | 'now' }) — whether the bridge asks the person's phone for a file of the history whose copy
+//                    at WhatsApp ran out (config.js says how and when). status().mediaRequests { mode, options, dailyAt,
+//                    timeZone } — dailyAt: about when 'daily' asks (8 hours after the nightly restart of the snapshot).
+//                    The bridge's English notice about such a file never reaches a plugin: events.js makes it
+//                    message.oldMedia { kind, name, request }, and the bridge's later edit with the file an edit with
+//                    `media` (or oldMedia { request: 'failed' } when the phone could not send it).
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -170,7 +177,22 @@ function getConfig() {
   // stage 5: older messages at a new link — on unless an administrator switched it off
   return { enabled: settings.get('bridges.enabled', '0') === '1', location: 'server', networks, history: settings.get('bridges.history', '1') !== '0',
     // stage 7a: convert animated stickers (off: a still picture) — for the bridges that convert (Telegram, 7b)
-    animatedStickers: settings.get('bridges.stickers_animated', '0') === '1' };
+    animatedStickers: settings.get('bridges.stickers_animated', '0') === '1',
+    // version 13: old media from the phone (WhatsApp) — 'off' unless an administrator chose otherwise
+    mediaRequests: mediaRequestsSetting() };
+}
+
+function mediaRequestsSetting() {
+  const v = settings.get('bridges.media_requests', 'off');
+  return config.MEDIA_REQUESTS.includes(v) ? v : 'off';
+}
+
+/** version 13: about when 'daily' asks the phone — 8 hours after the nightly snapshot restarts the bridges ('HH:MM'). */
+function mediaDailyAt() {
+  const m = /^(\d{2}):(\d{2})$/.exec(backupMod.backupTime());
+  if (!m) return null;
+  const t = (Number(m[1]) * 60 + Number(m[2]) + config.MEDIA_REQUEST_DELAY_MIN) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 }
 
 /** The update.sh marker the host runs (null: unknown — the script never reported). */
@@ -347,7 +369,7 @@ function wish() {
   const imgs = ['hs', 'core-relay', ...names.flatMap((n) => [n, `${n}-relay`])].filter((k) => images.IMAGES[k]).map((k) => `${k}=${images.ref(k)}`).join(',');
   const bk = backupMod.wish();
   const cfg = getConfig();
-  try { return { names, rev: config.write(dir(), ensureSecrets(), names, { history: cfg.history, animatedStickers: cfg.animatedStickers, telegramApp: names.includes('telegram') ? telegramApp() : null }).rev, images: imgs, ...bk }; }
+  try { return { names, rev: config.write(dir(), ensureSecrets(), names, { history: cfg.history, animatedStickers: cfg.animatedStickers, mediaRequests: cfg.mediaRequests, telegramApp: names.includes('telegram') ? telegramApp() : null }).rev, images: imgs, ...bk }; }
   catch (err) { logger.warn({ err: err.message }, 'bridges: could not write the configuration of the containers'); return { names, rev: null, images: imgs, ...bk }; }
 }
 
@@ -430,7 +452,7 @@ function locations() {
  * no contents: states, versions and memory only.
  */
 function status() {
-  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 12 };
+  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 13 };
   const cfg = getConfig();
   const host = hostStatus();
   const up = cfg.enabled && host.state === 'running' && host.services.hs.running;
@@ -464,6 +486,8 @@ function status() {
     }),
     // stage 7a: one switch for every bridge that converts animated stickers (off: a still picture, PNG)
     stickers: { animated: cfg.animatedStickers },
+    // version 13: old media from the phone (WhatsApp only) — off, once a day, or right away
+    mediaRequests: { mode: cfg.mediaRequests, options: [...config.MEDIA_REQUESTS], dailyAt: mediaDailyAt(), timeZone: backupMod.timeZone() },
     // stage 7b: the Telegram application id — whether it is there, when and by whom; never its value
     telegramApp: telegramAppStatus(),
     host: {
@@ -485,7 +509,7 @@ function status() {
     // stage 5: the copies of files at the homeserver that went after the plugin took them over
     cleanup: { deleted: cleanup.deleted, lastAt: cleanup.lastAt ? new Date(cleanup.lastAt).toISOString() : null, error: cleanup.error, waiting: runtime.events ? runtime.events.mediaWaiting() : 0 },
     // the version of gc.bridges this server offers (child/bootstrap.js)
-    version: 12,
+    version: 13,
   };
 }
 
@@ -508,11 +532,13 @@ function configure(patch, ctx) {
   if (!previewOn()) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not offered on this server', 'preview_off');
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new BridgesError('ERR_INVALID', 'patch: an object');
-  for (const k of Object.keys(p)) if (!['enabled', 'networks', 'history', 'backupNow', 'backupTime', 'animatedStickers', 'telegramApp'].includes(k)) throw new BridgesError('ERR_INVALID', `unknown key ${String(k).slice(0, 40)}`);
+  for (const k of Object.keys(p)) if (!['enabled', 'networks', 'history', 'backupNow', 'backupTime', 'animatedStickers', 'mediaRequests', 'telegramApp'].includes(k)) throw new BridgesError('ERR_INVALID', `unknown key ${String(k).slice(0, 40)}`);
   // stage 7b: the Telegram application id — checked before anything is changed; the value goes nowhere but secrets.json
   const tgApp = p.telegramApp !== undefined ? { value: telegramAppIn(p.telegramApp) } : null;
   const cur = getConfig();
-  const next = { enabled: cur.enabled, networks: { ...cur.networks }, history: cur.history, animatedStickers: cur.animatedStickers };
+  const next = { enabled: cur.enabled, networks: { ...cur.networks }, history: cur.history, animatedStickers: cur.animatedStickers, mediaRequests: cur.mediaRequests };
+  // version 13: old media from the phone (WhatsApp) — a change recreates the bridge (config.js rev)
+  if (p.mediaRequests !== undefined) { if (!config.MEDIA_REQUESTS.includes(p.mediaRequests)) throw new BridgesError('ERR_INVALID', `mediaRequests: ${config.MEDIA_REQUESTS.join(' | ')}`); next.mediaRequests = p.mediaRequests; }
   // stage 7a: animated stickers converted (on) or as a still picture (off)
   if (p.animatedStickers !== undefined) { if (typeof p.animatedStickers !== 'boolean') throw new BridgesError('ERR_INVALID', 'animatedStickers: a boolean'); next.animatedStickers = p.animatedStickers; }
   // stage 5: older messages allowed at all; a snapshot now; the time of the nightly one
@@ -537,6 +563,7 @@ function configure(patch, ctx) {
   settings.set('bridges.enabled', next.enabled ? '1' : '0');
   settings.set('bridges.history', next.history ? '1' : '0');
   settings.set('bridges.stickers_animated', next.animatedStickers ? '1' : '0');
+  settings.set('bridges.media_requests', next.mediaRequests);
   if (p.backupNow === true && !backupMod.requested()) backupMod.request('now');
   require('../autoUpdate').syncConfigFile();
   // the listener for the homeserver's events follows the switch
@@ -552,6 +579,11 @@ function configure(patch, ctx) {
   }
   if (next.animatedStickers !== cur.animatedStickers) {
     try { require('../activity').log('bridges_changed', `Messenger-Brücken: animierte Sticker ${next.animatedStickers ? 'werden umgewandelt' : 'als Standbild'}`, { source: 'admin', severity: 'info', details: { animatedStickers: next.animatedStickers, by: ctx && ctx.actor ? ctx.actor.name : null } }); }
+    catch (err) { logger.debug({ err: err.message }, 'bridges: activity not written'); }
+  }
+  if (next.mediaRequests !== cur.mediaRequests) {
+    const words = { off: 'aus', daily: 'einmal am Tag', now: 'sofort' };
+    try { require('../activity').log('bridges_changed', `Messenger-Brücken: alte Medien vom Handy nachladen – ${words[next.mediaRequests]}`, { source: 'admin', severity: 'info', details: { mediaRequests: next.mediaRequests, by: ctx && ctx.actor ? ctx.actor.name : null } }); }
     catch (err) { logger.debug({ err: err.message }, 'bridges: activity not written'); }
   }
   if (next.enabled !== cur.enabled || NETWORKS.some((n) => next.networks[n] !== cur.networks[n])) {
@@ -930,6 +962,8 @@ function eventsOf() {
     serverName: SERVER_NAME, networks: [...NETWORKS],
     key: crypto.createHmac('sha256', Buffer.from(key, 'base64url')).update('gatecontrol-bridges:events').digest(),
     target: hsTarget, selfIds, historyOf, linkedAt,
+    // version 13: what the administrator chose for old media — only when the bridge's notice does not say it itself
+    mediaRequests: () => getConfig().mediaRequests,
     // stage 7b: what the Telegram bridge keeps only in its own database (member count, bot, channel)
     facts: (network, roomId, o) => bridgedb.facts(dir(), network, roomId, o),
   });
