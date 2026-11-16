@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.291.0] — 2026-11-16
+
+### Features
+- Brücken Stufe 7a – Signal neben WhatsApp (gc.bridges Version 10, update.sh 10) (#507)
+
+---
+
 ## [1.290.0] — 2026-11-16
 
 ### Features
