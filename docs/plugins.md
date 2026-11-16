@@ -2942,9 +2942,10 @@ names **person and target** in every call — the same pattern as `gc.print` and
 A plugin process has no network of its own and its frames have `connect-src 'none'`, so a
 Guacamole WebSocket in the frame is impossible: a session always runs on a page of
 GateControl. Code: `src/services/remote/` (`sessions.js`, `vault.js`, `targets.js`,
-`recordings.js`, `facade.js`, since version 3 `term.js`, `hostKeys.js`, `sshkeys.js`), host API
-`remoteCall` in `src/services/plugins/hostApi.js`, the page `src/routes/remoteSession.js`, the
-tunnels `src/tunnel/guacTunnel.js` and `src/tunnel/termTunnel.js` (version 3).
+`recordings.js`, `facade.js`, since version 3 `term.js`, `hostKeys.js`, `sshkeys.js`, since version 4
+`screen.js`), host API `remoteCall` in `src/services/plugins/hostApi.js`, the page
+`src/routes/remoteSession.js`, the tunnels `src/tunnel/guacTunnel.js`, `src/tunnel/termTunnel.js`
+(version 3) and `src/tunnel/screenTunnel.js` (version 4).
 
 ```json
 "permissions": { "remote": true }
@@ -2956,7 +2957,8 @@ permissions). Without it `gc.remote` does not exist and the host answers
 check `gc.remote && gc.remote.version >= 1` (`>= 2` for what stage 2, the Windows switch,
 needs: `hubAddress`, `peerAddress`, `from`, the asking device's `vpnIp`, the admin part of
 the facade and signal topics; `>= 3` for stage 3: the SSH terminal of the core, tmux, pinned
-host keys, `vault.generate` and recordings).
+host keys, `vault.generate` and recordings; `>= 4` for stage 5: `gc.remote.screen`, the screen relay of
+the phones).
 
 **Targets.** Every call names a target `{ id, name?, host, port }` (direct: the VPN address
 of a device, the server's LAN, a public host) or `{ id, name?, listener: '<key>' }` (through
@@ -2969,9 +2971,10 @@ resolved by the core, every address is checked and guacd gets the checked addres
 
 | Call | Answer / rule |
 |---|---|
-| `gc.remote.version` | `3` (`2`: without `engine`, `tmux`, `hostKeys`, `vault.generate` and recordings; `1`: without `hubAddress`, `peerAddress`, `from` in the answer of `session`, `user.device.vpnIp`, the facade ops `wake` / `statusAdmin` / `statusAll`) |
+| `gc.remote.version` | `4` (`3`: without `screen`; `2`: without `engine`, `tmux`, `hostKeys`, `vault.generate` and recordings; `1`: without `hubAddress`, `peerAddress`, `from` in the answer of `session`, `user.device.vpnIp`, the facade ops `wake` / `statusAdmin` / `statusAll`) |
 | `gc.remote.session({ user, target, protocol, engine?, mode?, record?, credential?, options?, ttlS? })` | `{ ref, url: '/remote/session/<ref>', expiresAt, mode, protocol, engine, record, from }` — a **ticket**; `from` (version 2): the address guacd connects from to a direct target, the hub address (`null` for a listener target) — a Windows PC opens 3389 for exactly it. `user`: an enabled person (who may connect is the plugin's to decide before the call); `protocol`: `rdp` \| `vnc` \| `ssh` \| `telnet`; `mode`: `control` (default) \| `view` (guacd `read-only`); `credential`: a vault handle of this plugin; `options`: the fields of the old `rdp_routes` with the same meaning — `browser_clipboard, color_depth, nla_enabled, network_profile, disable_wallpaper, disable_themes, disable_animations, redirect_printers, rdp_disable_audio, resolution_mode, resolution_width, resolution_height, domain` (anything else `ERR_INVALID`; SFTP and VNC audio are not in version 1); `ttlS` 30…600 (default 120): the page must be opened by then. Version 3: `engine`: `guac` (default, guacd) \| `term` (the SSH terminal of the core, `protocol: 'ssh'` only — see "The SSH terminal" below; needs a `credential` with username and a password or key, else `ERR_REMOTE_CREDENTIAL_REQUIRED`), `options.tmux`: `{ attach: name }` \| `{ create: name }` (engine `term` only; name `^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`), `record: true`: the session is recorded (only when `recordings.available()` allows it for the engine, else `ERR_REMOTE_RECORDING_UNAVAILABLE`; the page shows the hint first). Needs a valid plugin licence (`ERR_REMOTE_UNLICENSED`) |
-| `gc.remote.end({ ref } \| { sessionId })` | `{ ended }` — the ticket goes (no reconnect) and its open tunnels close now; with `sessionId` only that tunnel |
+| `gc.remote.screen({ viewer, sender: { user, device }, target: { id, name? }, mode?, record?, ttlS? })` | version 4: `{ ref, url: '/remote/session/<ref>', expiresAt, senderRef, senderExpiresAt, mode: 'view', protocol: 'screen', engine: 'screen', record: false }` — a **screen ticket** with two sides: a phone (`sender.device`, an app device of `sender.user` — else `ERR_REMOTE_NOT_ALLOWED`) shares its screen, `viewer` (an enabled person) watches. `ref` opens like a session (`GC.openSession(ref)`) or in an app; `senderRef` only on the phone's own app token. `target.id` / `name` name the device for history and the hook. Only `mode: 'view'` (`ERR_INVALID` for `control` — later), no recording (`ERR_REMOTE_RECORDING_UNAVAILABLE`); `ttlS` 30…600 (default 120) for both sides to come. See "The screen relay" below |
+| `gc.remote.end({ ref } \| { sessionId })` | `{ ended }` — the ticket goes (no reconnect) and its open tunnels close now; with `sessionId` only that tunnel. A screen ticket ends by either of its refs (both sides get `{t:'end', reason:'ended_by_plugin'}`) |
 | `gc.remote.sessions({ active?, targetId?, limit? })` | `[{ id, targetId, targetName, userId, protocol, mode, record, engine, via, recordingId, status, startedAt, endedAt, durationSeconds, endReason }]` newest first (≤ 500) — the plugin's rows of `remote_sessions`; `via`: `browser` \| `app` (version 3: a native terminal) |
 | `gc.remote.vault.put({ username?, password?, domain?, privateKey?, passphrase?, label?, handle? })` | `{ handle: 'rv_<32 hex>', kind: password \| ssh_key \| username, label, has: { username, password, domain, privateKey, passphrase }, readable, createdAt, updatedAt }` — **never a value**. With `handle` a change of that entry: fields not given stay, `null` / `''` clears. Encrypted with the server key (AES-256-GCM, table `remote_vault`, in backups as ciphertext); `readable: false` after a restore onto another server key — ask for it again. ≤ 5000 per plugin |
 | `gc.remote.vault.remove(handle)` / `info(handle)` / `list()` | `{ removed }` / metadata \| `null` / `[metadata]` — version 3: metadata also carries `publicKey` (the public half of a generated key, else `null`) |
@@ -3034,6 +3037,33 @@ made; neither ever leaves the core.
   `{ token, wsPath, ttl }`, then the same WebSocket. The plugin hands the app the `ref`.
 * The overall guacd limit (`GC_GUAC_MAX_GLOBAL`) does not count terminal sessions; the limits per
   person and per target do.
+
+**The screen relay** (version 4, `engine: 'screen'`, `src/services/remote/screen.js`). A phone shares
+its screen (Android: MediaProjection + MediaCodec) and one person watches — over the server, no
+WebRTC, no new container, no UDP port. The core only **passes frames on**: H.264 (Annex B, SPS/PPS
+in front of every key frame) in a 12-byte head `[1, flags (bit 0 key frame), 0, 0, timestamp µs
+uint64 BE]`, never decoded, transcoded or written to the disk. Path `/api/v1/remote/screen-relay`,
+protocol **`gc-screen.v1`**, the token (60 s, single use) in `Sec-WebSocket-Protocol: gc-screen.v1,
+token.<token>`. Tokens: the viewer from the page (`POST /remote/session/<ref>/token` → `{ token,
+wsPath, ttl, engine: 'screen' }`) or an app, the phone from `POST /api/v1/client/remote/screen-token
+{ ref: senderRef }` (only the app token the plugin named; the same endpoint gives an app the viewer
+side of `ref`, `{ role }` says which). Frames: both → `{t:'hello', role}` first (within 10 s; the
+sender adds `width, height, fps, scope: display|app`), `{t:'ping'}` (→ `pong`), `{t:'bye'}` (ends
+both sides); sender → `{t:'config', codec: 'avc1.PPCCLL', width, height}` (kept and handed to a new
+viewer first), `{t:'state', paused, reason?}`, binary frames; viewer → `{t:'keyframe'}`; server →
+`{t:'ready', role, mode, peer: { name }, limits}`, viewer `{t:'waiting', reason?}`, sender
+`{t:'viewer', state: joined|left, name}`, `{t:'keyframe'}`, `{t:'rate', bitrate}`, both `{t:'end',
+reason}` / `{t:'error', code}`. A new viewer gets frames from the next key frame on; a slow one
+loses delta frames until the next key frame. A lost phone may come back for 30 s, a lost viewer for
+60 s (new token, same ref); a new connection of the same side replaces the old one. Limits
+(`config.remoteScreen`): `GC_REMOTE_SCREEN_MAX` (8) relayed sessions at once, one per phone, two
+per watching person, one viewer per session, frames ≤ 1 MiB, ≤ 1920×1080, ≤ 30 fps, a bucket of
+6 Mbit/s (4 MiB burst) per session, `GC_REMOTE_SCREEN_MAX_MIN` (240) the longest session. They do
+not count towards guacd's limits. The hook `remoteSession` gets `start` once both sides are there
+(`protocol: 'screen'`, `engine: 'screen'`), `end` for `sender` / `viewer` / `ended_by_plugin`,
+`abort` otherwise (`sender_lost`, `viewer_lost`, `max_duration`, `peer_timeout` — the latter also
+without a `sessionId` when the sides never met). End reasons and error codes: see
+docs/feature-remote-access.md. Nothing of a picture, no ref and no token is logged.
 
 **Recordings** (version 3, `src/services/remote/recordings.js`). Optional — only with
 `record: true`, and only after the hint on the session page ("Diese Sitzung wird

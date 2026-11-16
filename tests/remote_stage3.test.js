@@ -150,7 +150,7 @@ before(async () => {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   port = server.address().port;
   await install(remotePackage());
-  for (let i = 0; i < 50; i++) { try { if ((await pget('/has')).version === 3) break; } catch { /* starting */ } await wait(100); }
+  for (let i = 0; i < 50; i++) { try { if ((await pget('/has')).version >= 3) break; } catch { /* starting */ } await wait(100); }
 });
 
 after(async () => {

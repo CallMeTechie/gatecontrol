@@ -31,6 +31,8 @@ const CALLS = {
   'hostKeys.list': (gc) => gc.remote.hostKeys.list(),
   'hostKeys.remove': (gc, a) => gc.remote.hostKeys.remove(a.targetId),
   'recordings.remove': (gc, a) => gc.remote.recordings.remove(a.id),
+  // version 4 (stage 5)
+  screen: (gc, a) => gc.remote.screen(a),
 };
 
 let chain = Promise.resolve();

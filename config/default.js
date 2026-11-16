@@ -239,6 +239,14 @@ config.remoteRecordings = {
   days:  envInt('GC_REMOTE_REC_DAYS', 30),
 };
 
+// gc.remote stage 5 (services/remote/screen.js, docs/feature-remote-access.md): the relay gc-screen.v1 of
+// the screen sharing of the phones. The core only passes H.264 frames on (no decoding, no transcoding,
+// nothing on the disk): max relayed sessions at once, maxMinutes the longest one.
+config.remoteScreen = {
+  max:        envInt('GC_REMOTE_SCREEN_MAX', 8),
+  maxMinutes: envInt('GC_REMOTE_SCREEN_MAX_MIN', 240),
+};
+
 // Source ranges allowed to reach an internal-only route (HTTP gate in
 // services/caddyConfig.js, L4 gate in services/l4.js). Derived from the
 // resolved VPN subnet so it can never drift from `subnet`. The

@@ -22,6 +22,10 @@
 //      the old sessions; each opened tunnel is a row of remote_sessions.
 //   5. Hook `remoteSession` of the plugin: { phase: start | end | abort, … }.
 //
+// Stage 5 (version 4): gc.remote.screen({ viewer, sender: { user, device }, target }) → a screen ticket
+// with two sides: `ref` (the viewer: the session page or an app) and `senderRef` (only the phone's own app
+// token). Both turn into tokens of the relay gc-screen.v1 (screen.js); nothing goes through guacd.
+//
 // A ticket lives until gc.remote.end, until its plugin stops or loses its
 // licence, or for maxTicketMs after it was opened (reconnects in between mint
 // new tokens). Nothing of this is persisted: a restart ends every ticket (the
@@ -71,6 +75,7 @@ const OPTION_RULES = Object.freeze({
 });
 
 const tickets = new Map(); // ref → ticket
+const senderRefs = new Map(); // senderRef of a screen ticket → its ref
 const live = new Map();    // remote_sessions.id → { close(reason) }
 
 function db() { return require('../../db/connection').getDb(); }
@@ -111,8 +116,13 @@ function running(pluginId) {
 
 function sweep(now = Date.now()) {
   for (const [ref, t] of tickets) {
-    const dead = t.claimedBy ? now >= t.expiresAt : now >= t.openBy;
-    if (dead && !liveOf(ref).length) tickets.delete(ref);
+    let dead;
+    if (t.engine === 'screen') dead = now >= t.expiresAt || (!t.claimedBy && !t.senderClaimedAt && now >= t.openBy);
+    else dead = t.claimedBy ? now >= t.expiresAt : now >= t.openBy;
+    if (dead && !liveOf(ref).length) {
+      tickets.delete(ref);
+      if (t.senderRef) senderRefs.delete(t.senderRef);
+    }
   }
 }
 
@@ -207,6 +217,84 @@ async function create(plugin, a) {
   return { ref, url: '/remote/session/' + ref, expiresAt: new Date(now + ttlS * 1000).toISOString(), mode, protocol, engine, record, from };
 }
 
+function screenMaxMs() {
+  return Math.max(1, Number(config.remoteScreen && config.remoteScreen.maxMinutes) || 240) * 60000;
+}
+
+/**
+ * gc.remote.screen({ viewer, sender: { user, device }, target: { id, name? }, mode?, record?, ttlS? }) (version 4)
+ * → { ref, url, expiresAt, senderRef, senderExpiresAt, mode, protocol: 'screen', engine: 'screen', record: false }
+ * A phone shares its screen with one person: `viewer` watches (the session page or an app), the app device
+ * `sender.device` of `sender.user` sends. Only watching in stage 5 (mode view); no recording yet.
+ */
+function createScreen(plugin, a) {
+  const o = a && typeof a === 'object' ? a : {};
+  if (!licensed(plugin)) throw new SessionError('unlicensed', 'the plugin has no valid licence — no new sessions');
+  const viewer = userOf(o.viewer);
+  const s = o.sender && typeof o.sender === 'object' ? o.sender : {};
+  const owner = userOf(s.user);
+  const D = require('../plugins/devices');
+  const deviceId = D.idOf(s.device);
+  if (deviceId === null) throw new SessionError('invalid', 'sender.device: an app device id');
+  if (!D.ownedBy([owner.id], [deviceId]).has(deviceId)) throw new SessionError('not_allowed', 'sender.device is no app device of sender.user');
+  const mode = o.mode == null ? 'view' : String(o.mode);
+  if (mode !== 'view') throw new SessionError('invalid', 'mode: view (control comes later)');
+  if (o.record === true) throw new SessionError('recording_unavailable', 'a screen session is not recorded');
+  if (o.record != null && typeof o.record !== 'boolean') throw new SessionError('invalid', 'record: true or false');
+  const tg = o.target && typeof o.target === 'object' ? o.target : {};
+  const tid = tg.id == null ? '' : String(tg.id);
+  if (!/^[A-Za-z0-9_.:-]{1,64}$/.test(tid)) throw new SessionError('invalid', 'target.id: 1…64 of A-Z a-z 0-9 _ . : -');
+  const tname = typeof tg.name === 'string' ? tg.name.slice(0, 100) : null;
+  const ttlS = o.ttlS == null ? TTL_DEFAULT_S : Number(o.ttlS);
+  if (!Number.isInteger(ttlS) || ttlS < TTL_MIN_S || ttlS > TTL_MAX_S) throw new SessionError('invalid', `ttlS: ${TTL_MIN_S}…${TTL_MAX_S}`);
+  sweep();
+  if (tickets.size >= TICKETS_MAX) throw new SessionError('limit', 'too_many_tickets');
+  const ref = crypto.randomBytes(32).toString('base64url');
+  const senderRef = crypto.randomBytes(32).toString('base64url');
+  const now = Date.now();
+  tickets.set(ref, {
+    kind: 'session', ref, senderRef, pluginId: plugin.id, userId: viewer.id, sender: { userId: owner.id, deviceId },
+    target: { id: tid, name: tname }, protocol: 'screen', engine: 'screen', mode, record: false, tmux: null, credential: null, options: {},
+    createdAt: now, openBy: now + ttlS * 1000, claimedBy: null, claimedAt: null, senderClaimedAt: null, expiresAt: now + screenMaxMs(), tokens: 0,
+  });
+  senderRefs.set(senderRef, ref);
+  const exp = new Date(now + ttlS * 1000).toISOString();
+  return { ref, url: '/remote/session/' + ref, expiresAt: exp, senderRef, senderExpiresAt: exp, mode, protocol: 'screen', engine: 'screen', record: false };
+}
+
+/**
+ * The sending side of a screen ticket for an app request (POST /api/v1/client/remote/screen-token):
+ * only the person and the app device the plugin named, within the open time → the ticket or null.
+ */
+function claimSender(senderRef, userId, tokenId, now = Date.now()) {
+  if (typeof senderRef !== 'string' || !REF_RE.test(senderRef) || tokenId == null) return null;
+  const ref = senderRefs.get(senderRef);
+  const t = ref ? tickets.get(ref) : null;
+  if (!t || t.engine !== 'screen' || t.sender.userId !== userId || String(t.sender.deviceId) !== String(tokenId)) return null;
+  if (now >= t.expiresAt) return null;
+  if (!t.senderClaimedAt) {
+    if (now >= t.openBy) return null;
+    t.senderClaimedAt = now;
+  }
+  return t;
+}
+
+/** The screen ticket is over (screen.js ended its relay): neither side can connect again. */
+function dropScreenTicket(ref) {
+  const t = tickets.get(ref);
+  if (!t || t.engine !== 'screen') return;
+  tickets.delete(ref);
+  senderRefs.delete(t.senderRef);
+}
+
+/** A screen session ended before both sides were there (no row): the plugin hears it as an abort. */
+function screenAborted(t, reason) {
+  emit(t.pluginId, {
+    phase: 'abort', sessionId: null, ref: t.ref, targetId: t.target.id, userId: t.userId, protocol: 'screen', mode: t.mode,
+    engine: 'screen', via: null, record: false, recordingId: null, startedAt: null, reason: String(reason || 'abort'), durationSeconds: 0, endedAt: new Date().toISOString(),
+  });
+}
+
 /**
  * A playback ticket of a recording (recordings.stream) → { ref, url, expiresAt, format } — the same
  * page and the same rules as a session: only this person, the first browser session, opened
@@ -235,10 +323,15 @@ function claim(ref, userId, sid, now = Date.now()) {
   const t = tickets.get(ref);
   if (!t || t.userId !== userId) return null;
   if (!t.claimedBy) {
-    if (now >= t.openBy) { tickets.delete(ref); return null; }
+    if (now >= t.openBy) {
+      // a screen ticket whose viewer never came: screen.js ends a waiting sender (peer_timeout)
+      if (t.engine !== 'screen') tickets.delete(ref);
+      return null;
+    }
     t.claimedBy = sid;
     t.claimedAt = now;
-    t.expiresAt = now + (t.kind === 'play' ? PLAY_MAX_MS : MAX_TICKET_MS);
+    // a screen ticket keeps its end (GC_REMOTE_SCREEN_MAX_MIN from its creation)
+    if (t.engine !== 'screen') t.expiresAt = now + (t.kind === 'play' ? PLAY_MAX_MS : MAX_TICKET_MS);
     if (t.kind === 'play') viewed(t);
   } else if (t.claimedBy !== sid || now >= t.expiresAt) return null;
   return t;
@@ -269,11 +362,22 @@ function pluginOf(pluginId) {
  * A guacamole token for a claimed ticket (the session page asks for one per connect / reconnect)
  * → { ok: true, token, wsPath, ttl } | { ok: false, status, code }
  */
-async function mint(t, { clientIp, via = 'browser' } = {}) {
+async function mint(t, { clientIp, via = 'browser', role = 'viewer' } = {}) {
   if (!t || t.kind !== 'session') return { ok: false, status: 404, code: 'not_found' };
   const plugin = pluginOf(t.pluginId);
   if (!plugin || !running(plugin.id)) return { ok: false, status: 503, code: 'plugin_unavailable' };
   if (!licensed(plugin)) return { ok: false, status: 403, code: 'unlicensed' };
+  if (t.engine === 'screen') {
+    // the relay of the core (screen.js): its own limits, nothing of guacd
+    if (Date.now() >= t.expiresAt) return { ok: false, status: 404, code: 'not_found' };
+    const screen = require('./screen');
+    const adm = screen.admit(t, role);
+    if (!adm.ok) return { ok: false, status: 429, code: 'limit_reached' };
+    let r;
+    try { r = screen.mintToken(t, { role, via }); } catch { return { ok: false, status: 429, code: 'limit_reached' }; }
+    t.tokens++;
+    return { ok: true, ...r, engine: 'screen' };
+  }
   const adm = admit({ pluginId: t.pluginId, targetId: t.target.id, userId: t.userId });
   if (!adm.ok) return { ok: false, status: 429, code: 'limit_reached' };
   let ep;
@@ -324,7 +428,7 @@ async function mint(t, { clientIp, via = 'browser' } = {}) {
 /** Admission at the tunnel (after the token checked out): the ticket still lives, the limits hold. */
 function admitTunnel(conn) {
   const t = tickets.get(conn.remoteRef);
-  if (!t || t.kind !== 'session' || t.engine === 'term' || t.pluginId !== conn.remotePlugin || !t.claimedBy || Date.now() >= t.expiresAt) return { ok: false, reason: 'ticket_gone' };
+  if (!t || t.kind !== 'session' || t.engine === 'term' || t.engine === 'screen' || t.pluginId !== conn.remotePlugin || !t.claimedBy || Date.now() >= t.expiresAt) return { ok: false, reason: 'ticket_gone' };
   const plugin = pluginOf(t.pluginId);
   if (!plugin || !running(plugin.id) || !licensed(plugin)) return { ok: false, reason: 'plugin_unavailable' };
   return admit({ pluginId: t.pluginId, targetId: t.target.id, userId: t.userId });
@@ -339,6 +443,21 @@ function admitTerm(entry) {
   const plugin = pluginOf(t.pluginId);
   if (!plugin || !running(plugin.id) || !licensed(plugin)) return { ok: false, reason: 'plugin_unavailable' };
   const a = admit({ pluginId: t.pluginId, targetId: t.target.id, userId: t.userId });
+  return a.ok ? { ok: true, ticket: t } : a;
+}
+
+/**
+ * Admission of the screen relay (tunnel/screenTunnel.js) for a used-up token → { ok, ticket } | { ok: false, reason }
+ * The side must still be claimed by the same person (viewer: the ticket's person; sender: the phone's owner).
+ */
+function admitScreen(entry) {
+  const t = entry ? tickets.get(entry.ref) : null;
+  if (!t || t.kind !== 'session' || t.engine !== 'screen' || Date.now() >= t.expiresAt) return { ok: false, reason: 'ticket_gone' };
+  if (entry.role === 'viewer' && (t.userId !== entry.userId || !t.claimedBy)) return { ok: false, reason: 'ticket_gone' };
+  if (entry.role === 'sender' && (t.sender.userId !== entry.userId || !t.senderClaimedAt)) return { ok: false, reason: 'ticket_gone' };
+  const plugin = pluginOf(t.pluginId);
+  if (!plugin || !running(plugin.id) || !licensed(plugin)) return { ok: false, reason: 'plugin_unavailable' };
+  const a = require('./screen').admit(t, entry.role);
   return a.ok ? { ok: true, ticket: t } : a;
 }
 
@@ -384,7 +503,7 @@ function opened(conn, { clientIp, close, engine = 'guac', via = 'browser' } = {}
   const r = db().prepare(`INSERT INTO remote_sessions (plugin_id, target_id, target_name, user_id, protocol, mode, record, via, status, client_ip, last_heartbeat, engine, recording_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, datetime('now'), ?, ?)`)
     .run(conn.remotePlugin, conn.remoteTarget, t && t.target.name ? t.target.name : null, conn.remoteUser, conn.protocol, conn.remoteMode || 'control',
-      recId ? 1 : 0, via === 'app' ? 'app' : 'browser', clientIp || null, engine === 'term' ? 'term' : 'guac', recId);
+      recId ? 1 : 0, via === 'app' ? 'app' : 'browser', clientIp || null, ENGINE_ROWS.includes(engine) ? engine : 'guac', recId);
   const id = Number(r.lastInsertRowid);
   if (recId) {
     try {
@@ -399,8 +518,8 @@ function opened(conn, { clientIp, close, engine = 'guac', via = 'browser' } = {}
       details: { plugin: row.plugin_id, sessionId: id, targetId: row.target_id, userId: row.user_id, protocol: row.protocol, mode: row.mode, engine: row.engine, via: row.via, record: row.record === 1 },
     });
   } catch { /* best-effort */ }
-  // the terminal reports its start once it is ready (started), guacd now
-  if (engine !== 'term') emit(row.plugin_id, eventOf(row, 'start'));
+  // the terminal reports its start once it is ready, the screen relay once both sides are there (started); guacd now
+  if (engine === 'guac') emit(row.plugin_id, eventOf(row, 'start'));
   return id;
 }
 
@@ -422,7 +541,9 @@ function heartbeat(id) {
   try { db().prepare("UPDATE remote_sessions SET last_heartbeat = datetime('now') WHERE id = ? AND status = 'active'").run(id); } catch { /* ended */ }
 }
 
-const NORMAL_REASONS = new Set(['normal', 'ended_by_plugin']);
+// a screen session ends normally by either side (sender: the phone's "Beenden", viewer: the helper)
+const NORMAL_REASONS = new Set(['normal', 'ended_by_plugin', 'sender', 'viewer']);
+const ENGINE_ROWS = ['guac', 'term', 'screen'];
 
 /** A tunnel closed (or was ended) → the row ends, hook `remoteSession` end | abort. */
 function end(id, reason = 'normal') {
@@ -451,10 +572,16 @@ function endFor(plugin, a) {
   let n = 0;
   if (o.ref != null) {
     if (typeof o.ref !== 'string' || !REF_RE.test(o.ref)) throw new SessionError('invalid', 'invalid ref');
-    const t = tickets.get(o.ref);
+    // a screen ticket ends by either of its refs
+    const ref = tickets.has(o.ref) ? o.ref : (senderRefs.get(o.ref) || o.ref);
+    const t = tickets.get(ref);
     if (!t || t.pluginId !== plugin.id) return { ended: 0 };
-    tickets.delete(o.ref);
-    for (const id of liveOf(o.ref)) { closeLive(id, 'ended_by_plugin'); n++; }
+    for (const id of liveOf(ref)) { closeLive(id, 'ended_by_plugin'); n++; }
+    tickets.delete(ref);
+    if (t.engine === 'screen') {
+      senderRefs.delete(t.senderRef);
+      require('./screen').endRef(ref, 'ended_by_plugin');
+    }
     return { ended: n };
   }
   const id = Number(o.sessionId);
@@ -489,7 +616,14 @@ function list(plugin, a) {
 
 /** A plugin stopped, lost its licence or went: its tickets and tunnels end. */
 function endAllFor(pluginId, reason = 'plugin_stopped') {
-  for (const [ref, t] of tickets) if (t.pluginId === pluginId) tickets.delete(ref);
+  for (const [ref, t] of tickets) {
+    if (t.pluginId !== pluginId) continue;
+    tickets.delete(ref);
+    if (t.engine === 'screen') {
+      senderRefs.delete(t.senderRef);
+      require('./screen').endRef(ref, reason);
+    }
+  }
   for (const [id] of [...live]) {
     const row = db().prepare('SELECT plugin_id FROM remote_sessions WHERE id = ?').get(id);
     if (row && row.plugin_id === pluginId) closeLive(id, reason);
@@ -507,11 +641,12 @@ if (sweepTimer.unref) sweepTimer.unref();
 function _resetForTest() {
   if (process.env.NODE_ENV !== 'test') return;
   tickets.clear();
+  senderRefs.clear();
   live.clear();
 }
 function _ticketForTest(ref) { return process.env.NODE_ENV === 'test' ? tickets.get(ref) || null : null; }
 
 module.exports = {
-  SessionError, create, createPlayback, claim, claimApp, playbackOf, mint, admitTunnel, admitTerm, pluginOfTicket, opened, started, heartbeat, end, endFor, endAllFor, list,
+  SessionError, create, createScreen, claimSender, dropScreenTicket, screenAborted, admitScreen, createPlayback, claim, claimApp, playbackOf, mint, admitTunnel, admitTerm, pluginOfTicket, opened, started, heartbeat, end, endFor, endAllFor, list,
   activeCount, closeLeftovers, PROTOCOLS, MODES, ENGINES, WS_PATH, REF_RE, OPTION_RULES, _resetForTest, _ticketForTest, _hookMs: null,
 };

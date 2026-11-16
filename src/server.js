@@ -109,6 +109,12 @@ async function start() {
     } catch (err) {
       logger.warn({ err: err.message }, 'remote terminal attach skipped');
     }
+    // The screen relay of gc.remote (stage 5, /api/v1/remote/screen-relay, gc-screen.v1)
+    try {
+      require('./tunnel/screenTunnel').attachScreenTunnel(server);
+    } catch (err) {
+      logger.warn({ err: err.message }, 'remote screen relay attach skipped');
+    }
 
     // Edge channel of the gateways (WebSocket /api/v1/gateway/edge/ws, services/edge/hub.js):
     // edge parts of plugins and the local MQTT broker on home gateways.

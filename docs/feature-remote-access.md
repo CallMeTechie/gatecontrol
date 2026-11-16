@@ -99,6 +99,31 @@ The core adds:
   `GC_REMOTE_REC_MAX_GB` (10), `GC_REMOTE_REC_DAYS` (30). Recordings are outside `./data` and not in backups;
   pinned host keys are.
 
+## Stage 5 (the phone's screen, gc.remote version 4, the plugin „Fernzugriff“ 1.3)
+
+* **Relay `gc-screen.v1`** — `gc.remote.screen({ viewer, sender: { user, device }, target })` gives a ticket with
+  two refs: the phone (sender, only its own app token: `POST /api/v1/client/remote/screen-token { ref }`) and the
+  viewer (the session page `/remote/session/<ref>` with WebCodecs, or an app through the same endpoint). One
+  WebSocket path `/api/v1/remote/screen-relay`, the token in `Sec-WebSocket-Protocol` (docs/plugins.md "The screen
+  relay").
+* **Codec** — H.264 (Annex B) from the phone's MediaCodec, SPS/PPS in front of every key frame; the browser decodes
+  with `VideoDecoder` without a `description`. The server reads one flag byte per frame and passes the bytes on —
+  no decoding, no transcoding, nothing on the disk.
+* **Only watching** in stage 5 (`mode: 'view'`); control (Android accessibility service) is stage 6 — the relay drops
+  every input of a viewer. No recording yet (later fMP4 from the same frames, without transcoding).
+* **Limits for a small VPS (4 cores, 8 GB)** — `GC_REMOTE_SCREEN_MAX` (8) sessions at once, one per phone, two per
+  watching person, one viewer per session; frames ≤ 1 MiB, ≤ 1920×1080, ≤ 30 fps; 6 Mbit/s per session (4 MiB
+  burst; over it frames are dropped and the phone is asked for a lower bitrate, 30 s over it ends the session);
+  `GC_REMOTE_SCREEN_MAX_MIN` (240). The phone aims at 1.5 Mbit/s, 15 fps, 1280 px on the long edge: 8 sessions are
+  about 25–60 Mbit/s through the server, CPU only for TLS.
+* **End reasons** (`{t:'end', reason}`): `sender` (the phone's „Beenden“), `viewer`, `ended_by_plugin`,
+  `sender_lost` (30 s), `viewer_lost` (60 s), `max_duration`, `peer_timeout` (the other side never came),
+  `plugin_stopped`, `bad_frame`, `rate_exceeded`. **Errors** (`{t:'error', code}`): `hello_timeout`,
+  `role_mismatch`, `bad_frame`, `codec_unsupported`, `rate_exceeded`, `replaced` (the same side connected again).
+* **Honest about the network**: the server sees the stream because it passes it on — it is not end-to-end
+  encrypted (the viewer page says so). Windows with FLAG_SECURE content (banking, the app's vault pages) stays black
+  on the phone's side.
+
 ## Licence
 
 „Fernzugriff“ needs a licence of its own — monthly, yearly or a lifetime
@@ -128,6 +153,11 @@ is not affected.
   person; no key or password ever reaches a log, a recording's metadata or an app.
 * Recordings only with the hint; playback only through a ticket for the person
   the plugin names (administrators and the owner), every viewing logged.
+* Screen (stage 5): the sending side of a ticket only for the phone's own app
+  token, the watching side bound to the first browser session or app token;
+  tokens single-use and 60 s, only in `Sec-WebSocket-Protocol`; frames are
+  passed on, never stored or logged; the phone always asks the person (and
+  Android asks again) — the core never starts a capture.
 
 ## Deprecated: plaintext credentials of `/connect`
 
