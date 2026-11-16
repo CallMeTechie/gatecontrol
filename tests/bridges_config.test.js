@@ -354,8 +354,9 @@ describe('the bridge configuration (mautrix-whatsapp)', () => {
     assert.doesNotMatch(yaml, /\t/);
   });
 
-  it('knows no other network', () => {
-    assert.throws(() => config.bridgeModel('telegram', SECRETS), /unknown network/);
+  it('knows no other network (Telegram only with the application id)', () => {
+    assert.throws(() => config.bridgeModel('icq', SECRETS), /unknown network/);
+    assert.throws(() => config.bridgeModel('telegram', SECRETS), /application id/);
   });
 });
 
@@ -502,7 +503,7 @@ describe('the service with stage 2', () => {
     assert.deepEqual(p.services.hs, { running: true, restarts: 0, oomKilled: false, memMb: 71, memPeakMb: 80, limitMb: 384, writtenKb: 512 });
     assert.deepEqual(p.services.whatsapp, { running: true, restarts: 2, oomKilled: true, memMb: null, memPeakMb: null, limitMb: 512, writtenKb: 9 });
     assert.ok(!('other' in p.services));
-    assert.deepEqual(p.sockets, { hs: true, whatsapp: false, signal: false });
+    assert.deepEqual(p.sockets, { hs: true, whatsapp: false, signal: false, telegram: false });
     assert.ok(!JSON.stringify(bridges.status()).includes('SECRET'));
     fs.writeFileSync(probeFile(), '{"probed_at":"x"}');
     assert.equal(bridges.status().host.probe, null);
@@ -579,7 +580,7 @@ describe('the service with stage 2', () => {
       await assert.rejects(ctx.run(PLUGIN.id, parentId, true, () => call('bridges.unlinkFor', { userId: childId, network: 'whatsapp', actor: 999999 })), (e) => e.code === 'ERR_NOT_PERSON');
       // never an administrator's link
       await assert.rejects(ctx.run(PLUGIN.id, parentId, true, () => call('bridges.unlinkFor', { userId: adminId, network: 'whatsapp', actor: parentId })), (e) => e.code === 'ERR_BRIDGES_DENIED');
-      await assert.rejects(ctx.run(PLUGIN.id, parentId, true, () => call('bridges.unlinkFor', { userId: childId, network: 'telegram', actor: parentId })), (e) => e.code === 'ERR_INVALID');
+      await assert.rejects(ctx.run(PLUGIN.id, parentId, true, () => call('bridges.unlinkFor', { userId: childId, network: 'icq', actor: parentId })), (e) => e.code === 'ERR_INVALID');
       assert.equal((await logins()).length, 2);
       // a plugin without the permission
       await assert.rejects(ctx.run('other-demo', parentId, true, () => hostApi.handle({ id: 'other-demo', manifest: { permissions: {} } }, 'bridges.unlinkFor', { userId: childId, network: 'whatsapp', actor: parentId })), (e) => e.code === 'ERR_BRIDGES_DENIED');

@@ -52,9 +52,11 @@ const IMAGES = Object.freeze({
     version: '1.8.1.3',
     digest: 'sha256:71131702f671a88b3808a70b7330f9679cd9b9933adcafadc191508edfe55bba',
   }),
-  // stage 7b (not offered yet — it needs the administrator's Telegram application id): mautrix-telegram v0.2610.0
-  // (16 Oct 2026, the Go version; mautrix-go v0.32.0). In the compose file already, so that it is replaced only once;
-  // the server never asks update.sh for it before 7b.
+  // stage 7b: mautrix-telegram v0.2610.0 (16 Oct 2026, the Go version; mautrix-go v0.32.0, Telegram API layer 228) —
+  // the digest checked against the registry (HEAD dock.mau.dev/v2/mautrix/telegram/manifests/v0.2610.0,
+  // Docker-Content-Digest of the manifest list; amd64 and arm64). The image runs /usr/bin/mautrix-telegram and brings
+  // lottieconverter and ffmpeg (animated stickers). Started only while the administrator's Telegram application id is
+  // set (services/bridges wanted()).
   telegram: Object.freeze({
     service: 'bruecken-telegram',
     repo: 'dock.mau.dev/mautrix/telegram',

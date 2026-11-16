@@ -95,7 +95,7 @@ describe('the configuration of mautrix-signal v0.2610.0', () => {
   it('the files: whatsapp and signal side by side; another network is refused', () => {
     const f = config.files(SECRETS, ['whatsapp', 'signal']);
     assert.deepEqual(Object.keys(f).sort(), ['hs/config/tuwunel.toml', 'signal/config/config.yaml', 'whatsapp/config/config.yaml']);
-    assert.throws(() => config.bridgeModel('telegram', SECRETS), /unknown network/);
+    assert.throws(() => config.bridgeModel('icq', SECRETS), /unknown network/);
   });
 });
 
@@ -172,9 +172,9 @@ describe('the service with Signal', () => {
   });
   beforeEach(() => { marker(10); bridges._reset(); bridges._runtime.wake = () => {}; });
 
-  it('status (version 10): what each network offers, and one switch for animated stickers', () => {
+  it('status (version 10 and newer): what each network offers, and one switch for animated stickers', () => {
     const st = bridges.status();
-    assert.equal(st.version, 10);
+    assert.ok(st.version >= 10);
     const sg = st.networks.find((n) => n.id === 'signal');
     assert.deepEqual(sg.flows, ['qr']);
     assert.deepEqual(sg.history, { maxDays: 30, phoneConfirms: true });
@@ -212,7 +212,7 @@ describe('the service with Signal', () => {
       services: { hs: { running: true }, whatsapp: { running: true }, signal: { present: false, running: false } },
     }));
     const st = bridges.status();
-    assert.deepEqual(st.networks.map((n) => [n.id, n.state, n.needs]), [['whatsapp', 'running', null], ['signal', 'failed', 'compose']]);
+    assert.deepEqual(st.networks.map((n) => [n.id, n.state, n.needs]), [['whatsapp', 'running', null], ['signal', 'failed', 'compose'], ['telegram', 'off', null]]);
     fs.rmSync(path.join(au.DATA_DIR, '.bridges-state.json'), { force: true });
   });
 

@@ -1653,6 +1653,9 @@ async function vpnDnsCall(plugin, op, args) {
 // (set: a changing request) of that person; set goes through services/profile.update (time of the answer, activity log).
 // Version 10 (stage 7a, Signal): the network 'signal' everywhere a network is named; recognition per network ('whatsapp',
 // 'signal', 'telegram'); nothing else changes here — what differs per network lies in services/bridges (NET).
+// Version 11 (stage 7b, Telegram): the network 'telegram'; configure({ telegramApp }) takes the administrator's Telegram
+// application id (kept encrypted by services/bridges, never returned or logged — nothing here keeps or logs the
+// arguments of a host call); login.step passes the number, the code and the password of a Telegram login straight on.
 
 const BRIDGES_CODES = new Set(['ERR_INVALID', 'ERR_BRIDGES_UNAVAILABLE', 'ERR_BRIDGE_UNREACHABLE', 'ERR_BRIDGE', 'ERR_BUSY', 'ERR_RATE_LIMIT']);
 const BRIDGE_FILE_TIMEOUT_MS = 200000;

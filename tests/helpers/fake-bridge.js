@@ -24,6 +24,15 @@
 // — the waiting step answers with a new display_and_wait step), a login named by its ACI (a UUID) with the number as
 // name and profile phone (bridge.nextAci, bridge.nextNumber — null: an account without a visible number), the last
 // step's text naming both; contacts with `aci` are ghosts @signal_<aci>, their id the ACI.
+//
+// Stage 7b: startFakeBridge({ socket, secret, network: 'telegram' }) answers as mautrix-telegram v0.2610.0 does
+// (pkg/connector/login.go, loginphone.go, loginqr.go): the flows phone, qr, bot and manual; by phone: the number
+// (field fi.mau.telegram.login.phone_number), the code (…login.code; a wrong one → …login.code.incorrect), the password
+// of the two-step verification when bridge.tgPassword is set (…login.password; a wrong one → …login.password.incorrect);
+// by QR: tg://login?token=… (bridge.refresh gives a new one), then the password when set. The login is named by the
+// Telegram user id (bridge.nextTgId, digits) with the person's name and the number as profile phone; the last step's
+// text names both. Contacts with `tg` are ghosts @telegram_<id>, their id the user id. bridge.tgPasswords lists the
+// passwords the bridge was given (the test checks they went nowhere else).
 
 const fs = require('node:fs');
 const http = require('node:http');
@@ -33,15 +42,32 @@ const FLOWS = [
   { id: 'phone', name: 'Pairing code', description: 'Enter a pairing code in the app' },
 ];
 const SIGNAL_FLOWS = [{ id: 'qr', name: 'QR', description: 'Scan a QR code to pair the bridge to your Signal app' }];
+const TELEGRAM_FLOWS = [
+  { id: 'phone', name: 'Phone Number', description: 'Login using your Telegram phone number' },
+  { id: 'qr', name: 'QR Code', description: 'Login by scanning a QR code from your Telegram app' },
+  { id: 'bot', name: 'Bot token', description: 'Login as a bot using the bot token provided by BotFather' },
+  { id: 'manual', name: 'Manual', description: 'Login with raw session data' },
+];
+const TG = 'fi.mau.telegram.login.';
 
 function startFakeBridge({ socket, secret, network = 'whatsapp' }) {
   const signal = network === 'signal';
-  const flows = signal ? SIGNAL_FLOWS : FLOWS;
-  const state = { requests: [], logins: new Map(), processes: new Map(), oddStep: null, seq: 0, numbers: new Map(), contacts: [], nextAci: null, nextNumber: '+4915100000000' };
+  const telegram = network === 'telegram';
+  const flows = signal ? SIGNAL_FLOWS : (telegram ? TELEGRAM_FLOWS : FLOWS);
+  const state = { requests: [], logins: new Map(), processes: new Map(), oddStep: null, seq: 0, numbers: new Map(), contacts: [], nextAci: null, nextNumber: '+4915100000000',
+    nextTgId: null, tgCode: '47000', tgPassword: null, tgPasswords: [] };
   const send = (res, status, json) => { const b = JSON.stringify(json); res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(b) }); res.end(b); };
   const notFound = (res) => send(res, 404, { errcode: 'M_NOT_FOUND', error: 'Login process not found (internal detail)' });
 
   function complete(p) {
+    if (telegram) {
+      const id = state.nextTgId || String(700000000 + (++state.seq));
+      const list = state.logins.get(p.userId) || [];
+      list.push({ id, name: 'Lena Berger', phone: state.nextNumber || '', state_event: 'CONNECTED', timestamp: Date.now() });
+      state.logins.set(p.userId, list);
+      state.processes.delete(p.id);
+      return { login_id: p.id, type: 'complete', step_id: `${TG}complete`, instructions: `Successfully logged in as Lena Berger (\`${id}\`)`, complete: { user_login_id: id } };
+    }
     if (signal) {
       const aci = state.nextAci || `0f2c4b1e-7d3a-4c5b-9e8f-${String(++state.seq).padStart(12, '0')}`;
       const list = state.logins.get(p.userId) || [];
@@ -75,7 +101,7 @@ function startFakeBridge({ socket, secret, network = 'whatsapp' }) {
 
       if (m === 'GET' && seg.join('/') === 'whoami') {
         return send(res, 200, {
-          network: { displayname: signal ? 'Signal' : 'WhatsApp', network_id: network }, login_flows: flows, homeserver: 'gc.internal', bridge_bot: `@${network}bot:gc.internal`,
+          network: { displayname: signal ? 'Signal' : (telegram ? 'Telegram' : 'WhatsApp'), network_id: network }, login_flows: flows, homeserver: 'gc.internal', bridge_bot: `@${network}bot:gc.internal`,
           management_room: '!secret:gc.internal',
           logins: (state.logins.get(userId) || []).map((l) => ({ id: l.id, name: l.name, profile: { phone: l.phone !== undefined ? l.phone : l.name }, space_room: '!space:gc.internal', state: { state_event: l.state_event, timestamp: l.timestamp, ...(l.error ? { error: l.error } : {}) } })),
         });
@@ -85,6 +111,9 @@ function startFakeBridge({ socket, secret, network = 'whatsapp' }) {
       // answers: the WhatsApp id, the number in identifiers, the ghost, the room of a chat that exists
       const contactOut = (c) => {
         // Signal (pkg/connector/chatinfo.go): the ACI as id, tel: only when the number is known
+        if (telegram) {
+          return { id: c.tg, name: c.name, ...(c.avatar ? { avatar_url: c.avatar } : {}), identifiers: [...(c.number ? [`tel:${c.number}`] : []), ...(c.username ? [`telegram:${c.username}`] : [])], mxid: `@telegram_${c.tg}:gc.internal`, ...(c.chatRoom ? { dm_room_mxid: c.chatRoom } : {}) };
+        }
         if (signal) {
           return { id: c.aci, name: c.name, ...(c.avatar ? { avatar_url: c.avatar } : {}), identifiers: c.number ? [`tel:${c.number}`] : [], mxid: `@signal_${c.aci}:gc.internal`, ...(c.chatRoom ? { dm_room_mxid: c.chatRoom } : {}) };
         }
@@ -121,6 +150,11 @@ function startFakeBridge({ socket, secret, network = 'whatsapp' }) {
         const p = { id: `proc-${++state.seq}`, userId, flow: seg[2], phone: null, waiter: null };
         state.processes.set(p.id, p);
         if (state.oddStep) { const type = state.oddStep; state.oddStep = null; return send(res, 200, { login_id: p.id, type, step_id: 'fi.mau.whatsapp.login.' + type, [type]: {} }); }
+        if (telegram && p.flow === 'phone') {
+          return send(res, 200, { login_id: p.id, type: 'user_input', step_id: `${TG}phone_number`,
+            user_input: { fields: [{ type: 'phone_number', id: `${TG}phone_number`, name: 'Phone number', description: 'Include the country code with +' }] } });
+        }
+        if (telegram) return send(res, 200, qrTelegram(p));
         if (p.flow === 'phone') {
           return send(res, 200, { login_id: p.id, type: 'user_input', step_id: 'fi.mau.whatsapp.login.phone', instructions: 'Enter your phone number',
             user_input: { fields: [{ type: 'phone_number', id: 'phone_number', name: 'Phone number', description: 'Include the country code with a +', pattern: '^\\+[0-9]+$' }] } });
@@ -132,6 +166,7 @@ function startFakeBridge({ socket, secret, network = 'whatsapp' }) {
       if (m === 'POST' && seg[0] === 'login' && seg[1] === 'step' && seg.length === 5) {
         const p = state.processes.get(seg[2]);
         if (!p || p.userId !== userId) return notFound(res);
+        if (seg[4] === 'user_input' && telegram) return send(res, ...telegramInput(p, seg[3], body || {}));
         if (seg[4] === 'user_input') {
           if (!body || !/^\+[0-9]{6,15}$/.test(String(body.phone_number || ''))) return send(res, 400, { errcode: 'M_BAD_JSON', error: 'Invalid phone number +4915… (echoed input)' });
           p.phone = body.phone_number;
@@ -144,7 +179,9 @@ function startFakeBridge({ socket, secret, network = 'whatsapp' }) {
             p.waiter = null;
             if (how === 'expire') { state.processes.delete(p.id); return send(res, 500, { errcode: 'FI.MAU.WHATSAPP.LOGIN_TIMEOUT', error: 'Entering code or scanning QR timed out' }); }
             // Signal: after 45 s a new code — the same login, a new step
-            if (how === 'refresh') return send(res, 200, qrSignal(p));
+            if (how === 'refresh') return send(res, 200, telegram ? qrTelegram(p) : qrSignal(p));
+            // Telegram: with the two-step verification on, the password follows the scanned code
+            if (telegram && state.tgPassword) { p.stage = 'password'; return send(res, 200, passwordStep(p, false)); }
             return send(res, 200, complete(p));
           };
           if (p.early) { const how = p.early; p.early = null; p.waiter(how); }
@@ -167,6 +204,43 @@ function startFakeBridge({ socket, secret, network = 'whatsapp' }) {
       return send(res, 404, { errcode: 'M_UNRECOGNIZED', error: 'no such endpoint' });
     });
   });
+
+  function qrTelegram(p) {
+    p.codes = (p.codes || 0) + 1;
+    return { login_id: p.id, type: 'display_and_wait', step_id: `${TG}show_qr`, instructions: 'Scan the QR code on your phone to log in',
+      display_and_wait: { type: 'qr', data: `tg://login?token=ZmFrZVRva2Vu${p.codes}` } };
+  }
+  function passwordStep(p, wrong) {
+    return { login_id: p.id, type: 'user_input', step_id: `${TG}password${wrong ? '.incorrect' : ''}`,
+      instructions: wrong ? "Incorrect password, please try again. Use the official Telegram app to reset your password if you've forgotten it." : 'You have two-factor authentication enabled.',
+      user_input: { fields: [{ type: 'password', id: `${TG}password`, name: 'Password' }] } };
+  }
+  /** mautrix-telegram's SubmitUserInput: number → code → (password) → complete. → [status, json] */
+  function telegramInput(p, stepId, body) {
+    if (!p.stage) {
+      const phone = String(body[`${TG}phone_number`] || '');
+      if (!/^\+[0-9]{6,15}$/.test(phone)) return [400, { errcode: 'FI.MAU.TELEGRAM.PHONE_NUMBER_INVALID', error: 'The phone number is invalid' }];
+      p.phone = phone;
+      p.stage = 'code';
+      return [200, { login_id: p.id, type: 'user_input', step_id: `${TG}code`,
+        user_input: { fields: [{ type: '2fa_code', id: `${TG}code`, name: 'Code', description: 'The code was sent to the Telegram app on your phone' }] } }];
+    }
+    if (p.stage === 'code') {
+      if (String(body[`${TG}code`] || '') !== state.tgCode) {
+        return [200, { login_id: p.id, type: 'user_input', step_id: `${TG}code.incorrect`, instructions: 'Incorrect code', user_input: { fields: [{ type: '2fa_code', id: `${TG}code`, name: 'Code' }] } }];
+      }
+      if (state.tgPassword) { p.stage = 'password'; return [200, passwordStep(p, false)]; }
+      return [200, complete(p)];
+    }
+    if (p.stage === 'password') {
+      const pw = String(body[`${TG}password`] || '');
+      if (!pw) return [400, { errcode: 'FI.MAU.TELEGRAM.PASSWORD_NOT_PROVIDED', error: 'Password not provided' }];
+      state.tgPasswords.push(pw);
+      if (pw !== state.tgPassword) return [200, passwordStep(p, true)];
+      return [200, complete(p)];
+    }
+    return [400, { errcode: 'M_BAD_JSON', error: 'Wrong step' }];
+  }
 
   function qrSignal(p) {
     p.codes = (p.codes || 0) + 1;
@@ -193,6 +267,10 @@ function startFakeBridge({ socket, secret, network = 'whatsapp' }) {
       set oddStep(v) { state.oddStep = v; },
       set nextAci(v) { state.nextAci = v; },
       set nextNumber(v) { state.nextNumber = v; },
+      set nextTgId(v) { state.nextTgId = v; },
+      set tgCode(v) { state.tgCode = v; },
+      set tgPassword(v) { state.tgPassword = v; },
+      get tgPasswords() { return state.tgPasswords; },
       refresh: (processId) => settle(processId, 'refresh'),
       confirm: (processId) => settle(processId, 'confirm'),
       expire: (processId) => settle(processId, 'expire'),

@@ -1726,6 +1726,11 @@
     if (sg && (sg.linked || sg.allowed)) {
       box.appendChild(sw('pt-pf-rec-sg', T('myprofile.rec.signal'), sg.linked ? T('myprofile.rec.sg_linked') : T('myprofile.rec.sg_not_linked'), sg.allowed, 'bySignal'));
     }
+    // stage 7b: Telegram likewise
+    var tg = r.networks && r.networks.telegram;
+    if (tg && (tg.linked || tg.allowed)) {
+      box.appendChild(sw('pt-pf-rec-tg', T('myprofile.rec.telegram'), tg.linked ? T('myprofile.rec.tg_linked') : T('myprofile.rec.tg_not_linked'), tg.allowed, 'byTelegram'));
+    }
     if (p.features && p.features.phones) {
       box.appendChild(sw('pt-pf-rec-phone', T('myprofile.rec.phones'), T('myprofile.rec.phones_sub', { n: r.phonesForRecognition, total: p.phones.length }), r.byPhone, 'byPhone'));
     }
