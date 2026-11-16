@@ -102,6 +102,13 @@ async function start() {
     } catch (err) {
       logger.warn({ err: err.message }, 'guac tunnel attach skipped');
     }
+    // The SSH terminal of gc.remote (stage 3, /api/v1/remote/ssh-tunnel) and its recordings drive
+    try {
+      require('./tunnel/termTunnel').attachTermTunnel(server);
+      require('./services/remote/recordings').startTimers();
+    } catch (err) {
+      logger.warn({ err: err.message }, 'remote terminal attach skipped');
+    }
 
     // Edge channel of the gateways (WebSocket /api/v1/gateway/edge/ws, services/edge/hub.js):
     // edge parts of plugins and the local MQTT broker on home gateways.

@@ -450,7 +450,7 @@ exit 0
     assert.ok(list.includes('hs/data/000001.sst') && list.includes('whatsapp/data/whatsapp.db'));
     assert.ok(!list.some((x) => /config|secrets/.test(x)), 'only the data folders');
     const rep = JSON.parse(fs.readFileSync(data('.bridges-backup.json'), 'utf8'));
-    assert.deepEqual([rep.id, rep.result, rep.update_sh], ['abcdefabcdef', 'ok', 8]);
+    assert.deepEqual([rep.id, rep.result, rep.update_sh], ['abcdefabcdef', 'ok', 9]);
     fs.writeFileSync(st('calls'), '');
     assert.doesNotMatch(run({ bridges_backup: 'abcdefabcdef' }), / stop /, 'once');
   });

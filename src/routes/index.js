@@ -856,6 +856,7 @@ router.post('/portal/groups/join/:token', portalPageLimiter, csrfProtection, por
 const remoteSession = require('./remoteSession');
 router.get('/remote/session/:ref', portalPageLimiter, portalIdentity, portalOwner, remoteSession.page);
 router.post('/remote/session/:ref/token', portalPageLimiter, csrfProtection, portalIdentity, portalOwner, remoteSession.token);
+router.get('/remote/session/:ref/recording', portalPageLimiter, portalIdentity, portalOwner, remoteSession.recording);
 
 // ─── Portal pages: /portal, /auto (login link of the apps), "Wer bist du?" ──
 router.use(require('./portal'));

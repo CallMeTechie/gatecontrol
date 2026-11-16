@@ -466,6 +466,8 @@ function exportTables(db) {
       ai: require('./ai').exportBackup(),
       // key vault of gc.remote (services/remote/vault.js): handles of the plugin "Fernzugriff", ciphertext as stored
       remote_vault: require('./remote/vault').exportBackup(),
+      // pinned SSH host keys of gc.remote (stage 3): a restore trusts no key anew
+      remote_host_keys: require('./remote/hostKeys').exportBackup(),
       api_tokens: apiTokens,
       tags,
       gateway_locations: gatewayLocations,
@@ -988,6 +990,7 @@ async function restoreBackup(backup) {
     storage_targets: storageTargetRows,
     ai: aiData,
     remote_vault: remoteVault,
+    remote_host_keys: remoteHostKeys,
     api_tokens: apiTokens = [],
     tags = [],
     gateway_locations: gatewayLocations = [],
@@ -1235,6 +1238,9 @@ async function restoreBackup(backup) {
     // Key vault of gc.remote — replaced only when the backup has it (the plugin's data holds the handles).
     if (Array.isArray(remoteVault)) {
       try { require('./remote/vault').restoreBackup(remoteVault); } catch (err) { logger.warn({ err: err.message }, 'backup restore: remote vault skipped'); }
+    }
+    if (Array.isArray(remoteHostKeys)) {
+      try { require('./remote/hostKeys').restoreBackup(remoteHostKeys); } catch (err) { logger.warn({ err: err.message }, 'backup restore: remote host keys skipped'); }
     }
 
     // Restore rdp_routes (re-map gateway_peer_id)

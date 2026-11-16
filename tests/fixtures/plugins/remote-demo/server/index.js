@@ -23,7 +23,13 @@ const CALLS = {
   notify: (gc, a) => gc.notify(a),
   'recordings.available': (gc) => gc.remote.recordings.available(),
   'recordings.list': (gc, a) => gc.remote.recordings.list(a),
-  'recordings.stream': (gc, a) => gc.remote.recordings.stream(a.id),
+  'recordings.stream': (gc, a) => gc.remote.recordings.stream(a.id, { user: a.user }),
+  // version 3 (stage 3)
+  'vault.generate': (gc, a) => gc.remote.vault.generate(a),
+  'tmux.list': (gc, a) => gc.remote.tmux.list(a.target, { credential: a.credential }),
+  'hostKeys.pin': (gc, a) => gc.remote.hostKeys.pin(a),
+  'hostKeys.list': (gc) => gc.remote.hostKeys.list(),
+  'hostKeys.remove': (gc, a) => gc.remote.hostKeys.remove(a.targetId),
   'recordings.remove': (gc, a) => gc.remote.recordings.remove(a.id),
 };
 

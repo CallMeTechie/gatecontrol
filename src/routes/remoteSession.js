@@ -7,10 +7,14 @@
  * Guacamole WebSocket. It is the page of the old browser sessions
  * (rdp-session.njk) with another token endpoint.
  *
- * GET  /remote/session/:ref        the page — only for the person the plugin named, signed in (web or portal
- *                                  session, never a kiosk device), and only in the browser session that opened
- *                                  the address first. Anything else: one and the same 404.
- * POST /remote/session/:ref/token  a fresh single-use guacamole token (60 s) for a connect / reconnect.
+ * GET  /remote/session/:ref            the page — only for the person the plugin named, signed in (web or portal
+ *                                      session, never a kiosk device), and only in the browser session that opened
+ *                                      the address first. Anything else: one and the same 404. Three kinds:
+ *                                      guacd (RDP/VNC/SSH/Telnet), the SSH terminal of the core (engine term,
+ *                                      xterm.js, stage 3) and the playback of a recording (recordings.stream).
+ * POST /remote/session/:ref/token      a fresh single-use token (60 s) for a connect / reconnect — guacamole
+ *                                      or gc-term.v1 (engine term).
+ * GET  /remote/session/:ref/recording  the decrypted recording of a playback ticket (asciicast or .guac).
  *
  * The ref is never logged.
  */
@@ -49,11 +53,25 @@ function page(req, res) {
   if (!t) return notFound(req, res);
   ensureCsrfToken(req, res);
   noStore(res);
+  const theme = res.locals.theme || 'aurora';
+  if (t.kind === 'play') {
+    const rec = require('../services/remote/sessions').playbackOf(t);
+    if (!rec) return notFound(req, res);
+    return res.render(`${theme}/pages/remote-recording.njk`, {
+      title: res.locals.t('remote.rec.title'), remoteRef: t.ref, recording: { format: rec.format === 'guac' ? 'guac' : 'asciicast', protocol: rec.protocol || null },
+    });
+  }
+  if (t.engine === 'term') {
+    return res.render(`${theme}/pages/remote-term.njk`, {
+      title: res.locals.t('remote.term.title'), remoteRef: t.ref, term: { mode: t.mode, record: !!t.record, tmux: t.tmux ? (t.tmux.attach || t.tmux.create) : null, target: t.target.name || null },
+    });
+  }
   const o = t.options || {};
-  return res.render(`${res.locals.theme || 'aurora'}/pages/rdp-session.njk`, {
+  return res.render(`${theme}/pages/rdp-session.njk`, {
     title: res.locals.t('rdp.session.title'),
     route: { id: 0, protocol: t.protocol, resolution_mode: o.resolution_mode || 'fullscreen', resolution_width: o.resolution_width || null, resolution_height: o.resolution_height || null },
     remoteRef: t.ref,
+    remoteRecord: !!t.record,
     guac: require('../../config/default').guac,
   });
 }
@@ -63,13 +81,39 @@ async function token(req, res) {
   const t = ticketOf(req);
   if (!t) return res.status(404).json({ ok: false, error: 'not_found' });
   try {
-    const r = await require('../services/remote/sessions').mint(t, { clientIp: req.ip });
+    const r = await require('../services/remote/sessions').mint(t, { clientIp: req.ip, via: 'browser' });
     if (!r.ok) return res.status(r.status).json({ ok: false, error: r.code });
-    return res.json({ ok: true, token: r.token, wsPath: r.wsPath, ttl: r.ttl });
+    return res.json({ ok: true, token: r.token, wsPath: r.wsPath, ttl: r.ttl, engine: r.engine });
   } catch (err) {
     logger.error({ err: err.message }, 'remote session token failed');
     return res.status(500).json({ ok: false, error: 'mint_failed' });
   }
 }
 
-module.exports = { page, token };
+/** The recording of a playback ticket, decrypted on the fly (never a file on disk in the clear). */
+async function recording(req, res) {
+  noStore(res);
+  const t = ticketOf(req);
+  const sessions = require('../services/remote/sessions');
+  const rec = t ? sessions.playbackOf(t) : null;
+  if (!rec) return res.status(404).json({ ok: false, error: 'not_found' });
+  let c;
+  try { c = require('../services/remote/recordings').content(t.pluginId, rec.id); } catch { c = null; }
+  if (!c) return res.status(404).json({ ok: false, error: 'not_found' });
+  res.set('Content-Type', c.type);
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Content-Disposition', 'inline');
+  if (c.size) res.set('Content-Length', String(c.size));
+  try {
+    for await (const chunk of c.chunks()) {
+      if (!res.write(chunk)) await new Promise((r) => res.once('drain', r));
+      if (res.destroyed) return undefined;
+    }
+    return res.end();
+  } catch (err) {
+    logger.warn({ err: err.message }, 'remote recording could not be read');
+    return res.destroy();
+  }
+}
+
+module.exports = { page, token, recording };

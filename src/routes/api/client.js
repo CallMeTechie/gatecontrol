@@ -68,6 +68,8 @@ router.use(require('./client/traffic'));
 // Open a service from the apps (optional one-time auto-login on the route).
 router.use(require('./client/serviceOpen'));
 router.use(require('./client/rdp'));
+// Native SSH terminals of the apps (gc.remote stage 3): a gc-term.v1 token for a ticket of the plugin "Fernzugriff".
+router.use(require('./client/remote'));
 router.use(require('./client/splitTunnel'));
 router.use(require('./client/policy'));
 router.use(require('./client/supportBundle'));

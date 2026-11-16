@@ -658,9 +658,10 @@ async function deliverCameraEvent(ev) {
   return { handled: cameraHandlers.length };
 }
 
-// gc.remote (permissions.remote, version 2, docs/plugins.md "Remote access"): sessions to devices on a page of
+// gc.remote (permissions.remote, version 3, docs/plugins.md "Remote access"): sessions to devices on a page of
 // the core, a key vault of the core (the plugin only holds handles, never a secret), probe / wake-on-LAN,
-// L4 listeners through the gateways, recordings (stage 3) and the hook remoteSession
+// L4 listeners through the gateways, the SSH terminal of the core with tmux and pinned host keys, recordings
+// and the hook remoteSession
 const remoteHandlers = [];
 
 function makeRemote() {
@@ -669,8 +670,8 @@ function makeRemote() {
   /** listener.remove(key) → { removed } — a shared route (of an old RDP route) stays */
   listener.remove = (key) => hostCall('remote.listener.remove', { key }, 60000);
   return Object.freeze({
-    version: 2,
-    /** session({ user, target, protocol: rdp|vnc|ssh|telnet, mode?: view|control, record?, credential?, options?, ttlS? }) → { ref, url, expiresAt, mode, protocol, from } */
+    version: 3,
+    /** session({ user, target, protocol: rdp|vnc|ssh|telnet, engine?: guac|term, mode?: view|control, record?, credential?, options?: { …, tmux? }, ttlS? }) → { ref, url, expiresAt, mode, protocol, engine, record, from } */
     session: (opts) => hostCall('remote.session', o(opts), 30000),
     /** end({ ref } | { sessionId }) → { ended } */
     end: (opts) => hostCall('remote.end', o(opts)),
@@ -685,6 +686,20 @@ function makeRemote() {
       info: (handle) => hostCall('remote.vault.info', { handle }),
       /** list() → [metadata] */
       list: () => hostCall('remote.vault.list', {}),
+      /** generate({ kind: 'ed25519', label?, username?, handle? }) → { handle, publicKey, … } — the private key stays in the vault (version 3) */
+      generate: (opts) => hostCall('remote.vault.generate', o(opts)),
+    }),
+    tmux: Object.freeze({
+      /** list(target, { credential }) → [{ name, windows, attached, created, activity, attachable }] — needs a pinned host key (version 3) */
+      list: (target, opts) => hostCall('remote.tmux.list', { ...o(opts), target: o(target) }, 30000),
+    }),
+    hostKeys: Object.freeze({
+      /** pin({ targetId, alg, sha256 }) → { targetId, alg, sha256, source, pinnedBy, pinnedAt } (version 3) */
+      pin: (opts) => hostCall('remote.hostKeys.pin', o(opts)),
+      /** list() → [pin] */
+      list: () => hostCall('remote.hostKeys.list', {}),
+      /** remove(targetId) → { removed } — the next connection asks the person again */
+      remove: (targetId) => hostCall('remote.hostKeys.remove', { targetId }),
     }),
     /** probe(target) → { online, responseTime, via: direct|gateway } */
     probe: (target) => hostCall('remote.probe', { target: o(target) }, 30000),
@@ -703,14 +718,14 @@ function makeRemote() {
     recordings: Object.freeze({
       /** available() → { available, reason } */
       available: () => hostCall('remote.recordings.available', {}),
-      /** list({ targetId?, sessionId?, limit? }) → [{ id, sessionId, targetId, userId, protocol, format, bytes, startedAt, endedAt, createdAt }] */
+      /** list({ targetId?, sessionId?, userId?, limit? }) → [{ id, sessionId, targetId, userId, protocol, format, status, bytes, durationSeconds, startedAt, endedAt, createdAt }] */
       list: (opts) => hostCall('remote.recordings.list', o(opts)),
-      /** stream(id) → { url, expiresAt } */
-      stream: (id) => hostCall('remote.recordings.stream', { id }),
+      /** stream(id, { user }) → { ref, url, expiresAt, format } — a playback ticket for GC.openSession(ref), for that person */
+      stream: (id, opts) => hostCall('remote.recordings.stream', { ...o(opts), id }),
       /** remove(id) → { removed } */
       remove: (id) => hostCall('remote.recordings.remove', { id }),
     }),
-    /** on('session', handler({ phase: start|end|abort, sessionId, ref, targetId, userId, protocol, mode, record, startedAt, reason?, durationSeconds?, endedAt? })) → off() */
+    /** on('session', handler({ phase: start|end|abort|recording_viewed, sessionId, ref, targetId, userId, protocol, mode, engine, via, record, recordingId, startedAt, hostKey?, reason?, durationSeconds?, endedAt? })) → off() */
     on: (name, handler) => {
       if (name !== 'session' || typeof handler !== 'function') throw new TypeError("gc.remote.on('session', handler)");
       remoteHandlers.push(handler);

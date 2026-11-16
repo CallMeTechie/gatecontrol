@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="{{ language }}" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0e14">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="{{ appName }}">
+  {# No-FOUC theme-mode pre-paint (matches aurora/layout.njk; nonce for CSP) #}
+  <script nonce="{{ cspNonce }}">(function(){try{var s=localStorage.getItem('gc-theme-mode');var t=s||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();</script>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <title>{{ t('remote.term.title') }} — {{ appName }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css?v={{ appVersion }}">
+  {# xterm.js adds style elements of its own: they carry the page's nonce (style-src-elem; vendor/xterm/README.md) #}
+  <script nonce="{{ cspNonce }}">(function(){var n=document.currentScript&&document.currentScript.nonce;if(!n)return;var c=document.createElement.bind(document);document.createElement=function(t,o){var e=c(t,o);if(String(t).toLowerCase()==='style')e.setAttribute('nonce',n);return e;};})();</script>
+</head>
+<body class="rdp-session-body">
+{# gc.remote stage 3 — the SSH terminal of the core (services/remote/term.js, protocol gc-term.v1) #}
+<div class="rdp-session-page">
+  <div id="rterm-display" class="rdp-session-display">
+    <div id="rterm-host" class="rterm-host" aria-label="{{ t('remote.term.title') }}"></div>
+
+    {# Reconnecting overlay #}
+    <div id="rterm-reconnect" class="rdp-reconnect-veil" style="display:none">
+      <div class="rdp-reconnect-card">
+        <div class="rdp-big-spin"></div>
+        <div class="rdp-rc-title">{{ t('rdp.session.reconnecting') }}</div>
+        <div class="rdp-rc-sub" id="rterm-reconnect-sub"></div>
+      </div>
+    </div>
+
+    {# Before the start of a recorded session: the hint (gc.remote: recording only with a hint) #}
+    <div id="rterm-recnote" class="rdp-error-veil" style="display:none" role="dialog" aria-modal="true" aria-labelledby="rterm-recnote-h">
+      <div class="rdp-error-modal">
+        <div class="rdp-em-bar"></div>
+        <div class="rdp-em-body">
+          <div class="rdp-em-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg></div>
+          <h2 id="rterm-recnote-h">{{ t('remote.term.rec_title') }}</h2>
+          <p class="rdp-em-text">{{ t('remote.term.rec_text') }}</p>
+        </div>
+        <div class="rdp-em-actions">
+          <button class="btn btn-ghost" type="button" id="rterm-recnote-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> {{ t('rdp.wizard.back') }}</button>
+          <button class="btn btn-primary" type="button" id="rterm-recnote-ok">{{ t('remote.term.rec_start') }}</button>
+        </div>
+      </div>
+    </div>
+
+    {# First connection: confirm the host key #}
+    <div id="rterm-hostkey" class="rdp-error-veil" style="display:none" role="dialog" aria-modal="true" aria-labelledby="rterm-hostkey-h">
+      <div class="rdp-error-modal">
+        <div class="rdp-em-bar rdp-em-bar--warn"></div>
+        <div class="rdp-em-body">
+          <div class="rdp-em-icon rdp-em-icon--warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3M17 6l3 3M14 9l2 2"/></svg></div>
+          <h2 id="rterm-hostkey-h">{{ t('remote.term.hostkey_title') }}</h2>
+          <p class="rdp-em-text">{{ t('remote.term.hostkey_text') }}</p>
+          <code class="rterm-fp" id="rterm-fp"></code>
+        </div>
+        <div class="rdp-em-actions">
+          <button class="btn btn-ghost" type="button" id="rterm-distrust">{{ t('remote.term.distrust') }}</button>
+          <button class="btn btn-primary" type="button" id="rterm-trust">{{ t('remote.term.trust') }}</button>
+        </div>
+      </div>
+    </div>
+
+    {# Error overlay #}
+    <div id="rterm-error" class="rdp-error-veil" style="display:none" role="alertdialog" aria-modal="true" aria-labelledby="rterm-error-h">
+      <div class="rdp-error-modal">
+        <div class="rdp-em-bar"></div>
+        <div class="rdp-em-body">
+          <div class="rdp-em-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg></div>
+          <h2 id="rterm-error-h">{{ t('rdp.session.status.error') }}</h2>
+          <span class="rdp-em-cause" id="rterm-error-cause"></span>
+          <p class="rdp-em-text" id="rterm-error-text"></p>
+        </div>
+        <div class="rdp-em-actions">
+          <button class="btn btn-ghost" type="button" id="rterm-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> {{ t('rdp.wizard.back') }}</button>
+          <button class="btn btn-primary" type="button" id="rterm-retry"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> {{ t('remote.term.reconnect') }}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rdp-session-toolbar" id="rterm-toolbar">
+    <span class="rdp-pill rdp-pill--connecting" id="rterm-pill">
+      <span id="rterm-pill-dot" class="rdp-dot"></span>
+      <span id="rterm-status">{{ t('rdp.session.status.connecting') }}</span>
+    </span>
+    {% if term.record %}<span class="rterm-rec" id="rterm-recbadge" title="{{ t('remote.term.rec_title') }}"><span class="rdp-dot"></span>{{ t('remote.term.rec_badge') }}</span>{% endif %}
+    <span class="rterm-note" id="rterm-note"></span>
+    <span class="rdp-spacer"></span>
+    <button class="rdp-tbtn" type="button" id="rterm-btn-fullscreen" title="{{ t('rdp.session.fullscreen') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg><span class="rdp-tbtn-label">{{ t('rdp.session.fullscreen') }}</span></button>
+    {% if term.mode != 'view' %}<button class="rdp-tbtn" type="button" id="rterm-btn-paste" title="{{ t('rdp.session.paste') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg><span class="rdp-tbtn-label">{{ t('rdp.session.paste') }}</span></button>{% endif %}
+    <span id="rterm-clip-warn" class="rdp-clip-warn" style="display:none"></span>
+    <button class="rdp-tbtn rdp-tbtn--danger" type="button" id="rterm-btn-disconnect" title="{{ t('rdp.session.disconnect') }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg><span class="rdp-tbtn-label">{{ t('rdp.session.disconnect') }}</span></button>
+  </div>
+</div>
+
+<script src="/vendor/xterm/xterm.js?v={{ appVersion }}"></script>
+<script src="/vendor/xterm/addon-fit.js?v={{ appVersion }}"></script>
+<script src="/js/remote-term-kit.js?v={{ appVersion }}"></script>
+
+{# JSON island 1: the ticket (only its exact shape is used), CSRF, mode, recording, tmux name — no secret #}
+<script type="application/json" id="rterm-cfg" nonce="{{ cspNonce }}">{{ { ref: remoteRef, csrf: csrfToken, mode: term.mode, record: term.record, tmux: term.tmux } | dump | safe }}</script>
+{# JSON island 2: texts #}
+<script type="application/json" id="rterm-i18n" nonce="{{ cspNonce }}">{{ {
+  connecting: t('rdp.session.status.connecting'), connected: t('rdp.session.status.connected'), reconnecting: t('rdp.session.status.reconnecting'),
+  disconnected: t('rdp.session.status.disconnected'), error: t('rdp.session.status.error'), exited: t('remote.term.exited'),
+  tmux_on: t('remote.term.tmux_on'), no_tmux: t('remote.term.no_tmux'), view_only: t('remote.term.view_only'),
+  clipboard_unavailable: t('rdp.session.clipboard_unavailable'),
+  'remote.term.err.host_key_mismatch': t('remote.term.err.host_key_mismatch'), 'remote.term.err.host_key_rejected': t('remote.term.err.host_key_rejected'),
+  'remote.term.err.host_key_unpinned': t('remote.term.err.host_key_unpinned'), 'remote.term.err.auth_failed': t('remote.term.err.auth_failed'),
+  'remote.term.err.key_unreadable': t('remote.term.err.key_unreadable'), 'remote.term.err.unreachable': t('remote.term.err.unreachable'),
+  'remote.term.err.timeout': t('remote.term.err.timeout'), 'remote.term.err.credential_required': t('remote.term.err.credential_required'),
+  'remote.term.err.credential_unreadable': t('remote.term.err.credential_unreadable'), 'remote.term.err.recording_unavailable': t('remote.term.err.recording_unavailable'),
+  'remote.term.err.limit_reached': t('remote.term.err.limit_reached'), 'remote.term.err.not_found': t('remote.term.err.not_found'),
+  'remote.term.err.failed': t('remote.term.err.failed')
+} | dump | safe }}</script>
+<script src="/js/remote-term.js?v={{ appVersion }}"></script>
+</body>
+</html>

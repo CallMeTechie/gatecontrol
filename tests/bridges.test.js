@@ -404,7 +404,7 @@ exit 0
     const r = run({ mode: 'manual', bridges: 'whatsapp' });
     assert.equal(r.state.state, 'failed');
     assert.equal(r.state.error, 'compose_missing');
-    assert.equal(r.state.update_sh, 8);
+    assert.equal(r.state.update_sh, 9); // the marker of update.sh (9 since the recordings drive)
     assert.doesNotMatch(r.calls, / up -d /);
   });
 
@@ -505,7 +505,7 @@ exit 0
     r = run({ mode: 'manual', bridges: 'whatsapp' }, ['bridges-probe', '10']);
     const p = probe();
     assert.match(r.calls, /compose --profile bruecken up -d bruecken-hs bruecken-whatsapp bruecken-whatsapp-relay/);
-    assert.equal(p.update_sh, 8);
+    assert.equal(p.update_sh, 9);
     assert.equal(p.window_s, 10);
     assert.deepEqual(Object.keys(p.services), ['hs', 'whatsapp', 'whatsapp-relay']);
     assert.equal(p.services.hs.running, true);
