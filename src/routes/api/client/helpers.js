@@ -9,6 +9,7 @@ function clientLabel(platform) {
     case 'android': return 'Android Client';
     case 'win32':
     case 'windows': return 'Desktop Client';
+    case 'linux': return 'Linux Agent';
     default: return 'Client';
   }
 }

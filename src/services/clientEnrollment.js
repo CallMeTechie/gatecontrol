@@ -249,7 +249,8 @@ function _isAndroid(platform) {
 function _clientLabel(platform, clientVersion) {
   const p = String(platform || 'unknown').substring(0, 20);
   const label = _isAndroid(p) ? 'Android Client'
-    : /^win/i.test(p) ? 'Desktop Client' : 'Client';
+    : /^win/i.test(p) ? 'Desktop Client'
+      : p.toLowerCase() === 'linux' ? 'Linux Agent' : 'Client';
   return `${label} (${p}, v${String(clientVersion || '?').substring(0, 20)})`;
 }
 
