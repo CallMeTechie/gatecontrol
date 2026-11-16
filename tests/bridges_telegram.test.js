@@ -20,7 +20,7 @@ const { startFakeHomeserver } = require('./helpers/fake-homeserver');
 const config = require('../src/services/bridges/config');
 const images = require('../src/services/bridges/images');
 const KEYS = require('./fixtures/bridges/keys-mautrix-telegram-0.2610.0.json');
-const SECRETS = { asToken: 'a'.repeat(43), hsToken: 'b'.repeat(43), provisionSecret: 'c'.repeat(43), coreAsToken: 'd'.repeat(43), coreHsToken: 'e'.repeat(43), puppetAsToken: 'f'.repeat(43), puppetHsToken: 'g'.repeat(43) };
+const SECRETS = { asToken: 'a'.repeat(43), hsToken: 'b'.repeat(43), provisionSecret: 'c'.repeat(43), coreAsToken: 'd'.repeat(43), coreHsToken: 'e'.repeat(43), puppetAsToken: 'f'.repeat(43), puppetHsToken: 'g'.repeat(43), signalAsToken: 'h'.repeat(43), signalHsToken: 'i'.repeat(43), telegramAsToken: 'j'.repeat(43), telegramHsToken: 'k'.repeat(43) };
 const S = 'gc.internal';
 // made up — an application id of the right form, not a real one
 const APP = { apiId: 20000001, apiHash: '0123456789abcdef0123456789abcdef' };
@@ -94,6 +94,30 @@ describe('the configuration of mautrix-telegram v0.2610.0', () => {
     assert.match(f['telegram/config/config.yaml'], new RegExp(APP.apiHash));
     assert.doesNotMatch(f['whatsapp/config/config.yaml'] + f['hs/config/tuwunel.toml'], new RegExp(APP.apiHash));
     assert.match(config.bridgeYaml(model), /^ {4}displayname_template: "\{\{\.FullName\}\}"$/m);
+  });
+
+  it('Telegram registers with tokens of its own — never WhatsApp’s or Signal’s', () => {
+    const crypto = require('node:crypto');
+    const key = `${'A'.repeat(42)}g`;
+    // as services/bridges/index.js tokens() derives them (the module itself is loaded only inside the service's setup)
+    const derive = (p) => crypto.createHmac('sha256', Buffer.from(key, 'base64url')).update(`gatecontrol-bridges:${p}`).digest('base64url');
+    const t = { ...SECRETS, asToken: derive('as_token'), hsToken: derive('hs_token'), signalAsToken: derive('as_token:signal'), signalHsToken: derive('hs_token:signal'), telegramAsToken: derive('as_token:telegram'), telegramHsToken: derive('hs_token:telegram') };
+    const f = config.files(t, ['whatsapp', 'signal', 'telegram'], { telegramApp: APP });
+    const yaml = (n) => f[`${n}/config/config.yaml`];
+    const tok = (n) => { const y = yaml(n); return [/^ {4}as_token: "?([^"\n]+)"?$/m.exec(y)[1], /^ {4}hs_token: "?([^"\n]+)"?$/m.exec(y)[1]]; };
+    const [tgAs, tgHs] = tok('telegram');
+    assert.deepEqual([tgAs, tgHs], [t.telegramAsToken, t.telegramHsToken]);
+    assert.deepEqual([tgAs, tgHs], [derive('as_token:telegram'), derive('hs_token:telegram')]);
+    for (const other of ['whatsapp', 'signal']) {
+      for (const x of tok(other)) { assert.notEqual(x, tgAs, other); assert.notEqual(x, tgHs, other); }
+    }
+    for (const x of [t.asToken, t.hsToken, t.signalAsToken, t.signalHsToken]) assert.ok(![tgAs, tgHs].includes(x));
+    // the homeserver's registration of Telegram in tuwunel.toml carries the same pair — and neither of the others
+    const toml = f['hs/config/tuwunel.toml'];
+    const section = (id) => { const m = new RegExp(`\\[global\\.appservice\\.${id}\\]([\\s\\S]*?)(?=\\n\\[global\\.appservice\\.|$)`).exec(toml); assert.ok(m, id); return m[1]; };
+    const reg = (id) => [/as_token = "([^"]+)"/.exec(section(id))[1], /hs_token = "([^"]+)"/.exec(section(id))[1]];
+    assert.deepEqual(reg('telegram'), [tgAs, tgHs]);
+    for (const other of ['whatsapp', 'signal']) for (const x of reg(other)) assert.ok(![tgAs, tgHs].includes(x), other);
   });
 });
 
