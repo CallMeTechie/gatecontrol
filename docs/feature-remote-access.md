@@ -99,6 +99,20 @@ The core adds:
   `GC_REMOTE_REC_MAX_GB` (10), `GC_REMOTE_REC_DAYS` (30). Recordings are outside `./data` and not in backups;
   pinned host keys are.
 
+## Stage 4 (the Linux agent, the plugin „Fernzugriff“ 1.6)
+
+The agent `gatecontrol-agent` (own repository `gatecontrol-linux-agent`, Go) sets itself up with the ordinary setup
+code (`POST /api/v1/client/enroll`, `platform: 'linux'`) and registers with the plugin (`host/register`, platform
+`linux`). The core only adds what it needs:
+
+* `POST /api/v1/client/enroll` answers `vpn: { subnet, gateway }` (`GC_WG_SUBNET`, `GC_WG_GATEWAY_IP`): the agent routes
+  only the VPN network (never the `AllowedIPs = 0.0.0.0/0` of the app config), and the hub is where GateControl's SSH
+  key is valid from.
+* The push stream takes `X-Client-Platform: linux` (`gc.devices.list` shows the agent as `linux`).
+* A peer made by the agent is described as „Linux Agent (linux, v…)“.
+* The portal's „Gerät hinzufügen“ shows the command `sudo gatecontrol-agent enroll <server> <code>` under the code
+  (`portal.devices.linux_enroll`).
+
 ## Stage 5 (the phone's screen, gc.remote version 4, the plugin „Fernzugriff“ 1.3)
 
 * **Relay `gc-screen.v1`** — `gc.remote.screen({ viewer, sender: { user, device }, target })` gives a ticket with
