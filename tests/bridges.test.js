@@ -71,7 +71,7 @@ describe('the service', () => {
     assert.equal(st.locations.length, 1);
     assert.equal(st.locations[0].kind, 'server');
     assert.ok(st.locations[0].cores >= 1 && st.locations[0].memMb > 0);
-    assert.deepEqual(st.networks.map((n) => [n.id, n.enabled, n.state]), [['whatsapp', false, 'off'], ['signal', false, 'off']]);
+    assert.deepEqual(st.networks.map((n) => [n.id, n.enabled, n.state]), [['whatsapp', false, 'off'], ['signal', false, 'off'], ['telegram', false, 'off']]);
     // stage 5: older messages are allowed by default (each person chooses; 30 days unless they change it)
     assert.equal(st.history.enabled, true);
     assert.equal(st.history.default, 30);
@@ -108,7 +108,7 @@ describe('the service', () => {
 
   it('refuses anything but its two switches', () => {
     process.env.GC_BRIDGES_PREVIEW = '1';
-    for (const bad of [null, [], { enabled: 'yes' }, { networks: { telegram: true } }, { networks: { whatsapp: 1 } }, { animatedStickers: 'yes' }, { location: 'gateway' }, { networks: [] }]) {
+    for (const bad of [null, [], { enabled: 'yes' }, { networks: { icq: true } }, { networks: { whatsapp: 1 } }, { telegramApp: { apiId: 'abc' } }, { telegramApp: { apiId: 12345, apiHash: 'tjyd5yge35lbodk1xwzw2jstp90k55qz' } }, { animatedStickers: 'yes' }, { location: 'gateway' }, { networks: [] }]) {
       assert.throws(() => bridges.configure(bad, {}), (e) => e.code === 'ERR_INVALID', JSON.stringify(bad));
     }
     assert.equal(bridges.status().enabled, false);
@@ -236,7 +236,7 @@ describe('a person links their own account (stand-in bridge)', () => {
   });
 
   it('checks what goes to the bridge and what comes back', async () => {
-    await assert.rejects(async () => bridges.login.start(annaId, 'telegram', 'qr'), (e) => e.code === 'ERR_INVALID');
+    await assert.rejects(async () => bridges.login.start(annaId, 'icq', 'qr'), (e) => e.code === 'ERR_INVALID');
     await assert.rejects(async () => bridges.login.start(0, 'whatsapp', 'qr'), (e) => e.code === 'ERR_INVALID');
     await assert.rejects(bridges.login.start(annaId, 'whatsapp', '../whoami'), (e) => e.code === 'ERR_INVALID');
     await assert.rejects(bridges.login.step(annaId, 'whatsapp', 'p/../x', 's', 'user_input', { a: 'b' }), (e) => e.code === 'ERR_INVALID');
@@ -325,7 +325,7 @@ describe('host API gc.bridges', () => {
     assert.equal(err.code, 'ERR_BRIDGE');
     assert.equal(err.reason, 'not_found');
     assert.doesNotMatch(err.message, /internal detail/);
-    await assert.rejects(asPerson(annaId, true, () => call('bridges.login.start', { userId: annaId, network: 'telegram', flowId: 'qr' })), (e) => e.code === 'ERR_INVALID');
+    await assert.rejects(asPerson(annaId, true, () => call('bridges.login.start', { userId: annaId, network: 'icq', flowId: 'qr' })), (e) => e.code === 'ERR_INVALID');
   });
 });
 

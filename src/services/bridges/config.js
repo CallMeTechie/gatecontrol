@@ -7,6 +7,9 @@
 //   hs/config/tuwunel.toml         the internal homeserver (Tuwunel)
 //   whatsapp/config/config.yaml    the WhatsApp bridge (mautrix-whatsapp)
 //   signal/config/config.yaml      stage 7a: the Signal bridge (mautrix-signal) — NETWORK_MODELS says what differs
+//   telegram/config/config.yaml    stage 7b: the Telegram bridge (mautrix-telegram, the Go version) — it holds the
+//                                  administrator's Telegram application id (api_id / api_hash) in clear, the one place
+//                                  outside secrets.json; written only while that id is set (index.js wanted())
 //   hs/data, <network>/data        their databases
 //   hs/run, run                    the Unix sockets: hs/run/hs.sock (the homeserver's; the bridge sees that
 //                                  folder read-only), run/<network>.sock (a bridge's; its relay sees it read-only)
@@ -184,7 +187,7 @@ function hsToml(model) {
 function bridgeModel(network, secrets, opts = {}) {
   const history = opts.history === true;
   if (!NETWORK_MODELS[network]) throw new Error(`bridges config: unknown network ${network}`);
-  const own = NETWORK_MODELS[network]({ history });
+  const own = NETWORK_MODELS[network]({ history, animatedStickers: opts.animatedStickers === true, telegramApp: opts.telegramApp || null });
   const model = {
     homeserver: {
       address: `unix://${HS_SOCKET_BRIDGE}`,
@@ -289,6 +292,43 @@ const NETWORK_MODELS = {
       note_to_self_avatar: '',
     },
   }),
+  // stage 7b: mautrix-telegram v0.2610.0 (the Go version; pkg/connector/example-config.yaml, config.go). Logins by QR
+  // code or by number, code and password (login.go: the flows "phone" and "qr" — never "bot" or "manual", index.js NET).
+  // It needs the administrator's own application id (ValidateConfig: without api_id / api_hash, or with the example
+  // hash, it does not start) — the server writes this file only while that id is set.
+  telegram: ({ animatedStickers, telegramApp }) => {
+    if (!telegramApp || !Number.isSafeInteger(telegramApp.apiId) || typeof telegramApp.apiHash !== 'string') throw new Error('bridges config: telegram needs the application id');
+    return {
+      bridge: {
+        // a view-once picture arrives marked (com.beeper.view_limited), like Signal's — a hint, the picture not passed on
+        view_limited_media: true,
+      },
+      network: {
+        api_id: telegramApp.apiId,
+        api_hash: telegramApp.apiHash,
+        // as the session shows in Telegram › Settings › Devices
+        device_info: { device_model: 'GateControl' },
+        // off (the default): a still picture (PNG, hardly any CPU); on (the administrator's switch): an animated GIF —
+        // lottieconverter and ffmpeg are in the image. Video stickers (WebM) stay as they are.
+        animated_sticker: { target: animatedStickers ? 'gif' : 'png', convert_from_webm: false },
+        // sparing with the disk: at most 100 members of a group at the start (the others with their first message),
+        // none of a channel; rooms for the 15 most recently active chats at a new link, the others with their first
+        // message; no data export of the whole chat list
+        member_list: { max_initial_sync: 100, sync_broadcast_channels: false },
+        sync: { create_limit: 15, login_sync_limit: 15 },
+        takeout: { dialog_sync: false, forward_backfill: false, backward_backfill: false },
+        // a contact's name: what the contact shows (first and last name) — never the name of the linking person's
+        // address book, never a picture only that person sees ("not safe on multi-user instances")
+        displayname_template: '{{.FullName}}',
+        contact_names: false,
+        contact_avatars: false,
+        // the default picture of "Saved Messages" lies on another server (the chat itself is not shown — events.js)
+        saved_message_avatar: '',
+        // GateControl knows no spaces: the groups of a community one by one
+        bridge_communities: false,
+      },
+    };
+  },
 };
 
 function yamlScalar(v) {

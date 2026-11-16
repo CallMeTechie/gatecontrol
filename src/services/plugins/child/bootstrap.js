@@ -325,7 +325,7 @@ function makeEdge() {
 }
 
 // gc.bridges (permissions.bridges, docs/plugins.md "Messenger bridges"): the bridges to outside messengers that run
-// next to the server (services/bridges). The plugin names a network ('whatsapp', 'signal') and a person by user id — never an
+// next to the server (services/bridges). The plugin names a network ('whatsapp', 'signal', 'telegram') and a person by user id — never an
 // address, a token or a Matrix id. Everything about a person's link only while that person's request is in flight.
 // a file streamed from / to the homeserver and the virus scan (hostApi.callTimeout: 200 s)
 const BRIDGE_FILE_MS = 210000;
@@ -345,11 +345,13 @@ function makeBridges() {
      *  6: contacts, matchNumbers, createDmByRef; 7: channels — chat.channel / chat.readOnly, sender.channel, marks and
      *  preview of a text; 8: matchAccounts (the user profile); 9: recognition — the consent to be recognised by the own WhatsApp;
      *  10: Signal — the network 'signal', networks[].flows / history / needs, status().stickers, configure({ animatedStickers }),
-     *  chat.timer, message.action, message.viewOnce, recognition per network, matchAccounts via own_<network>) */
-    version: 10,
-    /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion, clientOutdated, flows, history: { maxDays, phoneConfirms }, needs }], host, messages, history, backup, cleanup, stickers: { animated } } */
+     *  chat.timer, message.action, message.viewOnce, recognition per network, matchAccounts via own_<network>;
+     *  11: Telegram — the network 'telegram', status().telegramApp { set, setAt, setBy }, needs 'app',
+     *  configure({ telegramApp: { apiId, apiHash } | null }), login steps with retry, chat.members / chat.bot, message.tooLarge) */
+    version: 11,
+    /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion, clientOutdated, flows, history: { maxDays, phoneConfirms }, needs }], host, messages, history, backup, cleanup, stickers: { animated }, telegramApp: { set, setAt, setBy } } */
     status: () => hostCall('bridges.status', {}),
-    /** configure({ enabled?, networks?: { whatsapp?: boolean, signal?: boolean }, history?: boolean, backupNow?: true, backupTime?: 'HH:MM', animatedStickers?: boolean }) → status() — inside a changing request of an administrator */
+    /** configure({ enabled?, networks?: { whatsapp?: boolean, signal?: boolean, telegram?: boolean }, history?: boolean, backupNow?: true, backupTime?: 'HH:MM', animatedStickers?: boolean, telegramApp?: { apiId, apiHash } | null }) → status() — inside a changing request of an administrator; the Telegram application id is kept encrypted and never returned */
     configure: (patch) => hostCall('bridges.configure', { patch }),
     login,
     /** logins(userId, network) → [{ network, id (a reference — HMAC per person; never the bridge’s id, which is the number), name, state: connected | connecting | logged_out | error | unknown, since, error }] */

@@ -73,6 +73,25 @@
 //             a message of kind 'unsupported' with viewOnce: true — the picture is not passed on and not kept.
 //   sticker   m.sticker as before (kind 'sticker'), the emoji as its name.
 //   history   at most the days the network allows (opts.historyOf(userId, network): Signal 30).
+//
+// Telegram (gc.bridges version 11, stage 7b; mautrix-telegram v0.2610.0, the Go version):
+//   kind      the chat's id at the bridge is "user:<n>" (a person or a bot), "chat:<n>" (a small group) or "channel:<n>"
+//             (a supergroup or a channel; "channel:<n>:<topic>" a topic of a forum) — never passed on.
+//   channel   a Telegram channel (broadcast: only its admins post) is chat.channel like a WhatsApp channel. The bridge
+//             makes the channel itself a member of its room with the highest level (@telegram_channel-<n>, chatinfo.go
+//             wrapChatInfo) and posts through it — seen in the room's state; bridgedb.js tells it too (not a supergroup).
+//             Its posts carry sender { channel: true, system: true }, at most CHANNEL_HISTORY of them come along.
+//   saved     "Saved Messages" (the direct chat with the person's own account, user:<own id>) is not shown: its room is
+//             closed here at once (state 'left'), nothing of it goes to a plugin.
+//   facts     what the bridge keeps only in its own database (bridgedb.js, opts.facts): chat.members — the member count
+//             as Telegram reports it (a plugin mutes a group of 200 and more at first) — and chat.bot — a direct chat
+//             with a bot.
+//   files     a file larger than the homeserver takes (max_request_size) arrives as the bridge's notice "Too large file
+//             …" → a message of kind 'unsupported' with tooLarge: true; the bridge's other notices about media it could
+//             not carry over ("…are not yet supported", fi.mau.telegram.unsupported) → kind 'unsupported'. No English
+//             text and no file name of them go on.
+//   buttons   the bridge does not carry the buttons under a bot's message (reply markup) and does not mark such a
+//             message: message.buttons (true: "Diese Nachricht hat Knöpfe") is never set by v0.2610.0.
 
 const crypto = require('node:crypto');
 const logger = require('../../utils/logger');
@@ -108,7 +127,13 @@ const CHAT_IDS = {
   whatsapp: [[/@newsletter$/, 'channel'], [/@g\.us$/, 'group'], [/@(s\.whatsapp\.net|lid)$/, 'direct']],
   // stage 7a: a Signal group's id is 32 bytes in Base64 (44 characters), a person's a service id (UUID, PNI:<uuid>)
   signal: [[/^[A-Za-z0-9+/]{43}=$/, 'group'], [/^(PNI:)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, 'direct']],
+  // stage 7b: Telegram (pkg/connector/ids MakePortalID): a person or a bot, a small group, a supergroup or channel (a
+  // channel is told from a supergroup by the room's state, see above), a topic of a forum
+  telegram: [[/^user:\d{1,20}$/, 'direct'], [/^chat:\d{1,20}$/, 'group'], [/^channel:\d{1,20}(:-?\d{1,12})?$/, 'group']],
 };
+// stage 7b: the bridge's notices about a Telegram file it could not carry over (pkg/connector/tomatrix.go)
+const TG_TOO_LARGE = /^Too large file /;
+const TG_NOT_CARRIED = /^(Failed to transfer media\.|Unsupported media message\.|This message is not supported on your version|.{1,60} are not yet supported\.)/;
 const TIMER_TYPES = ['after_read', 'after_send'];
 const TIMER_MAX_S = 366 * 86400;
 const MEDIA_TYPES = { 'm.image': 'image', 'm.video': 'video', 'm.audio': 'audio', 'm.file': 'file', 'm.location': 'location' };
@@ -228,8 +253,11 @@ function create(opts) {
     const target = opts.target();
     if (!target) throw new hs.HsError('ERR_BRIDGE_UNREACHABLE', 'the homeserver is not set up', 'not_running');
     const st = await hs.state(target, mxidOf(row.user_id), row.room_id);
-    const i = { kind: row.kind, name: null, names: new Map(), avatars: new Map(), avatar: null, network: null, channel: false, readOnly: false, self: mxidOf(row.user_id), power: null, timer: null };
+    const i = { kind: row.kind, name: null, names: new Map(), avatars: new Map(), avatar: null, network: null, channel: false, readOnly: false, self: mxidOf(row.user_id), power: null, timer: null,
+      // stage 7b (Telegram): the chat's peer at the bridge, the channel accounts seen in the room, the bridge's facts
+      tgPeer: null, tgChannels: new Set(), members: null, bot: false, broadcast: false, hidden: false };
     for (const ev of st) applyState(i, ev);
+    if (row.network === 'telegram' || i.network === 'telegram') await telegramFacts(row, i, fresh);
     if (info.size > 2000) info.clear();
     info.set(row.room_id, i);
     return i;
@@ -258,7 +286,9 @@ function create(opts) {
       const id = c.channel && typeof c.channel === 'object' && typeof c.channel.id === 'string' ? c.channel.id : '';
       const byId = ((typeof p === 'string' && CHAT_IDS[p]) || []).find(([re]) => re.test(id));
       const what = t === 'dm' ? 'direct' : (t ? 'group' : (byId ? byId[1] : null));
-      const channel = what === 'channel';
+      // stage 7b: a Telegram chat's peer (its id stays here); a channel is told by the room's state (tgBroadcast)
+      if (p === 'telegram') { const m = /^(user|chat|channel):(\d{1,20})(:-?\d{1,12})?$/.exec(id); i.tgPeer = m ? { type: m[1], id: m[2], topic: !!m[3] } : null; }
+      const channel = what === 'channel' || (p === 'telegram' && tgBroadcast(i));
       const kind = what === 'direct' ? 'direct' : (what ? 'group' : null);
       if ((!kind || kind === i.kind) && channel === i.channel) return null;
       if (kind) i.kind = kind;
@@ -280,11 +310,16 @@ function create(opts) {
       const own = lvl(i.self ? users[i.self] : undefined, lvl(c.users_default, 0));
       const send = lvl(events['m.room.message'], lvl(c.events_default, 0));
       const readOnly = own < send;
+      // stage 7b: a Telegram channel is a member of its own room with the highest level
+      for (const u of Object.keys(users).slice(0, 500)) if (u.startsWith('@telegram_channel-')) noteTgChannel(i, u);
+      if (tgRecheck(i)) { i.readOnly = readOnly; return 'kind'; }
       if (readOnly === i.readOnly) return null;
       i.readOnly = readOnly;
       return 'power';
     }
     if (ev.type === 'm.room.member' && typeof ev.state_key === 'string' && ghostOf(ev.state_key)) {
+      // stage 7b: the channel's own account in its room → a Telegram channel
+      if (c.membership === 'join' || c.membership === 'invite') { noteTgChannel(i, ev.state_key); if (tgRecheck(i)) return 'kind'; }
       const n = nameOut(c.displayname, NAME_MAX);
       const a = hs.mxcOf(c.avatar_url, opts.serverName) ? c.avatar_url : null;
       if (c.membership !== 'join' && c.membership !== 'invite') return null;
@@ -295,8 +330,47 @@ function create(opts) {
     return null;
   }
 
+  // ─── Telegram (stage 7b) ───────────────────────────────
+
+  /** A channel account (@telegram_channel-<n>) seen in a room — its number only, kept in the room's info. */
+  function noteTgChannel(i, mxid) {
+    const g = ghostOf(mxid);
+    const m = g && g.network === 'telegram' ? /^channel-(\d{1,20})$/.exec(g.id) : null;
+    if (m && i.tgChannels.size < 50) i.tgChannels.add(m[1]);
+  }
+  /** Is this Telegram chat a channel (broadcast)? Its own account is in the room, or the bridge says so (bridgedb). */
+  function tgBroadcast(i) {
+    if (!i.tgPeer || i.tgPeer.type !== 'channel' || i.tgPeer.topic) return false;
+    return i.tgChannels.has(i.tgPeer.id) || i.broadcast === true;
+  }
+  /** After a change of the room's state: did it become (or stop being) a channel? → true when channel changed. */
+  function tgRecheck(i) {
+    if (i.network !== 'telegram' || !i.tgPeer) return false;
+    const ch = tgBroadcast(i);
+    if (ch === i.channel) return false;
+    i.channel = ch;
+    i.kind = 'group';
+    return true;
+  }
+  /** The bridge's own facts of the room (member count, a bot, a channel) and "Saved Messages" (the person's own chat). */
+  async function telegramFacts(row, i, fresh) {
+    let f = null;
+    if (opts.facts) { try { f = opts.facts('telegram', row.room_id, { fresh }); } catch { f = null; } }
+    if (f) {
+      i.members = f.members;
+      i.bot = f.bot === true && i.kind === 'direct';
+      i.broadcast = f.broadcast === true;
+    }
+    tgRecheck(i);
+    if (i.tgPeer && i.tgPeer.type === 'user' && opts.selfIds) {
+      try { i.hidden = (await opts.selfIds(row.user_id, 'telegram')).includes(i.tgPeer.id); } catch { i.hidden = false; }
+    }
+  }
+
   // version 7: channel and readOnly whenever the room's state is known (with it, every 'chat' event carries them)
-  const chatOf = (row, i) => ({ id: row.ref, kind: i ? i.kind : row.kind, name: i ? i.name : null, ...(i ? { avatar: pictureRef(row.user_id, i.avatar), channel: !!i.channel, readOnly: !!i.readOnly, timer: i.timer ? { ...i.timer } : null } : {}) });
+  // stage 7b: members (the count the bridge knows) and bot (a direct chat with a Telegram bot) when known
+  const chatOf = (row, i) => ({ id: row.ref, kind: i ? i.kind : row.kind, name: i ? i.name : null, ...(i ? { avatar: pictureRef(row.user_id, i.avatar), channel: !!i.channel, readOnly: !!i.readOnly, timer: i.timer ? { ...i.timer } : null } : {}),
+    ...(i && i.members != null ? { members: i.members } : {}), ...(i && i.bot ? { bot: true } : {}) });
   const contactOf = (row, i, mxid) => ({ id: contactRef(row.network, mxid), name: (i && i.names.get(mxid)) || null, avatar: i ? pictureRef(row.user_id, i.avatars.get(mxid)) : null });
 
   async function senderOf(row, i, ev) {
@@ -306,6 +380,8 @@ function create(opts) {
     if (botOf(ev.sender) === row.network) return i && i.channel ? { channel: true, system: true } : { system: true };
     const g = ghostOf(ev.sender);
     if (!g || g.network !== row.network) return null;
+    // stage 7b: a Telegram channel posts as its own account
+    if (row.network === 'telegram' && i && i.channel && i.tgPeer && g.id === `channel-${i.tgPeer.id}`) return { channel: true, system: true };
     // without double puppeting the bridge writes the person's own messages through the ghost of their own number
     let self = false;
     if (opts.selfIds) { try { self = (await opts.selfIds(row.user_id, row.network)).includes(g.id); } catch { self = false; } }
@@ -403,6 +479,8 @@ function create(opts) {
       stats.skipped++;
       return;
     }
+    // stage 7b: Telegram's "Saved Messages" (known only now): closed, nothing goes out
+    if (i.hidden) { if (!backlog) { saveRoom(row.room_id, row.user_id, row.network, 'left', i.kind, i); info.delete(row.room_id); } stats.skipped++; return; }
     // a room known from before version 7 (or whose state changed while nobody listened): the plugin learns it now
     if (!backlog && !rowFits(row, i)) {
       row = saveRoom(row.room_id, row.user_id, row.network, 'joined', i.kind, i);
@@ -467,6 +545,12 @@ function create(opts) {
         if (hs.mxcOf(c.url, opts.serverName)) out.push({ userId: row.user_id, network: row.network, drop: true, mxc: c.url });
         push({ type: 'message', ...base, kind: 'unsupported', viewOnce: true, text: null, replyTo: reply });
         return;
+      }
+      // stage 7b: the Telegram bridge's notice about a file it could not carry over — our own hint, not its English text
+      if (row.network === 'telegram' && msgtype === 'm.notice' && !sender.self) {
+        const body = typeof c.body === 'string' ? c.body : '';
+        if (TG_TOO_LARGE.test(body)) { push({ type: 'message', ...base, kind: 'unsupported', tooLarge: true, text: null, replyTo: reply }); return; }
+        if (c['fi.mau.telegram.unsupported'] === true || TG_NOT_CARRIED.test(body)) { push({ type: 'message', ...base, kind: 'unsupported', text: null, replyTo: reply }); return; }
       }
       if (msgtype === 'm.text' || msgtype === 'm.notice' || msgtype === 'm.emote') {
         // version 7: a channel's post is a text like a contact's; the format as marks, the link preview with its picture
@@ -606,6 +690,8 @@ function create(opts) {
   /** A room just became the person's: its name and kind, then what was said before the account was in it. */
   async function opened(row, out) {
     const i = await roomInfo(row, { fresh: true });
+    // stage 7b: Telegram's "Saved Messages" is not shown — closed here, nothing goes out
+    if (i.hidden) { saveRoom(row.room_id, row.user_id, row.network, 'left', i.kind, i); return; }
     if (!rowFits(row, i)) row = saveRoom(row.room_id, row.user_id, row.network, 'joined', i.kind, i);
     out.push({ userId: row.user_id, network: row.network, payload: { type: 'chat', chat: chatOf(row, i), at: Date.now() } });
     let list = [];

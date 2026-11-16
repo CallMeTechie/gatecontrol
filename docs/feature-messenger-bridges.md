@@ -116,7 +116,7 @@ compose files (a test keeps them in step):
 | `bruecken-whatsapp-relay` | `alpine/socat` | 1.8.1.3 | `sha256:71131702f671a88b3808a70b7330f9679cd9b9933adcafadc191508edfe55bba` |
 | `bruecken-signal` | `dock.mau.dev/mautrix/signal` | v0.2610.0 (mautrix-go v0.32.0, libsignal 0.105.0) | `sha256:39afa721aa69472b2e91c75bd7d81a739e47f7e480fc0ff5ac8247af28eb2d0a` |
 | `bruecken-signal-relay` | `alpine/socat` | 1.8.1.3 | (as above) |
-| `bruecken-telegram` | `dock.mau.dev/mautrix/telegram` | v0.2610.0 (the Go version; stage 7b, not started before) | `sha256:ed3f3b39289fae425a875311d8875729271c24f88ba03209bd1bfbaf31e6c78f` |
+| `bruecken-telegram` | `dock.mau.dev/mautrix/telegram` | v0.2610.0 (the Go version, mautrix-go v0.32.0; stage 7b, started only with the administrator's application id) | `sha256:ed3f3b39289fae425a875311d8875729271c24f88ba03209bd1bfbaf31e6c78f` |
 | `bruecken-telegram-relay` | `alpine/socat` | 1.8.1.3 | (as above) |
 
 The digests are the `Docker-Content-Digest` of the tag's manifest list at the
@@ -697,6 +697,85 @@ once per Signal chat.
 `status().stickers.animated`, off by default (a still picture). Signal sends its stickers as pictures and converts
 nothing; Telegram (stage 7b) is the first bridge that uses the switch.
 
+## Telegram (stage 7b, gc.bridges version 11)
+
+A third bridge, read from the sources of mautrix-telegram v0.2610.0 (the Go version on bridgev2, mautrix-go v0.32.0)
+and tested against the stand-ins (`tests/bridges_telegram.test.js`, `tests/helpers/fake-bridge.js` with
+`network: 'telegram'`); not yet run with a real Telegram account. The pin was checked against the registry
+(`Docker-Content-Digest` of the manifest list, amd64 and arm64); the image runs `/usr/bin/mautrix-telegram` and brings
+`lottieconverter` and `ffmpeg`. Containers, relay (29321) and update.sh marker 10 as for Signal (both in the release
+`docker-compose.yml` since 7a).
+
+**The application id.** Telegram wants an id of its own for every program that logs in (my.telegram.org › API
+development tools: `api_id`, a number, and `api_hash`, 32 hex digits). The administrator enters it once in the
+messenger's settings: `configure({ telegramApp: { apiId, apiHash } })` (only inside a changing request of an
+administrator; `null` removes it). The values are checked (5 to 10 digits, 32 hex digits, never the bridge's example
+values) without being echoed in an error, kept in `/data/bridges/secrets.json` (0600) next to the master key as
+`telegramApp: { enc, setAt, setBy }` — `enc` encrypted with `GC_ENCRYPTION_KEY` (`utils/crypto`), so a restored master
+key does not lose it — and written in clear only into the Telegram bridge's configuration file (0600). No API returns
+it: `status().telegramApp` is `{ set, setAt, setBy }`; the activity log says "Telegram-Anwendung hinterlegt / entfernt"
+and who did it. Without it Telegram is not asked of update.sh (`wanted()`), its `status().networks[]` says
+`needs: 'app'` (state `stopped`), and every call for a person answers `ERR_BRIDGES_UNAVAILABLE` / `no_app`. The
+GateControl backup carries it as it lies (`data.bridges.telegram_app`, still encrypted); a restore puts it back when it
+opens with that server's key. A changed `GC_ENCRYPTION_KEY` without a re-key means: enter it again.
+
+**Configuration** (`config.js`, every key in `tests/fixtures/bridges/keys-mautrix-telegram-0.2610.0.json`):
+`api_id` / `api_hash`, `device_info.device_model: GateControl` (Telegram › Settings › Devices),
+`displayname_template: '{{.FullName}}'` with `contact_names: false` (the name the contact shows, not the linking
+person's address book) and `contact_avatars: false` (no pictures only that person sees), `sync.create_limit: 15` and
+`login_sync_limit: 15` (rooms for the 15 most recently active chats at a new link, the others with their first message),
+`member_list.max_initial_sync: 100`, `sync_broadcast_channels: false`, no data export (`takeout.*: false`),
+`bridge_communities: false`, `saved_message_avatar: ''`, `animated_sticker.target` `png` (the default: a still
+picture) or `gif` (the administrator's switch `animatedStickers`), `bridge.view_limited_media: true`,
+`logging.min_level: warn`.
+
+**Login.** The flows `qr` and `phone` (`NET.telegram.flows`); the bridge's `bot` (a bot is no person) and `manual` (raw
+session data) are never offered. By phone: a step with a `phone_number` field, then a `2fa_code` field (the code comes in
+the Telegram app), then — when the two-step verification is on — a `password` field. A wrong code or password comes back
+as the same kind of step with `retry: true` (the bridge's `….incorrect` step ids). By QR: `tg://login?token=…`, renewed
+when it runs out (a new `display_and_wait` step, same step id), then the password step when it is on. Number, code and
+password go from the plugin through `login.step` to the bridge's socket and nowhere else: not stored, not logged (no
+host call's arguments are), not in an error (the bridge's errors are words like `fi_mau_telegram_phone_number_invalid`).
+The bridge's last text names the person and the Telegram id — replaced like every step's. A login is named by the
+Telegram user id (digits — never taken for a phone number); `logins()` names it by the number of its profile, or not at
+all. Errors at the start: `fi_mau_telegram_phone_number_invalid`, `fi_mau_telegram_flood_wait_…` / `…_flood` (too many
+tries — Telegram's wait), `fi_mau_telegram_login_email_required` (Telegram wants an e-mail login set up: use the QR
+code), `fi_mau_telegram_login_timed_out`.
+
+**What the bridge keeps to itself** (`bridgedb.js`): the member count of a group or channel (`PortalMetadata.
+member_count`) and whether a contact is a bot (`ghost.is_bot`) never reach the homeserver (at most 100 members are in
+a room; the bot flag would need `ghost_extra_profile_info`, which writes the contacts' numbers into the homeserver's
+profiles). The server reads them from the bridge's own SQLite file (`telegram/data/telegram.db`), read-only, one row
+per room, kept 10 minutes; nothing else of the file is read.
+
+**Events.** Kind from the chat's id: `user:<n>` a person or bot (`direct`), `chat:<n>` a small group, `channel:<n>` a
+supergroup or a channel (`group`; `channel:<n>:<topic>` a forum topic). A **channel** (broadcast) is told by the room's
+state — the bridge makes the channel itself a member with the highest level (`@telegram_channel-<n>`) — or by the
+bridge's database (not a supergroup): `chat.channel: true`, read-only, its posts by `{ channel: true, system: true }`,
+at most `CHANNEL_HISTORY` (10) of its history. `chat.members` (the count Telegram reports; the messenger mutes a group of
+200 and more at first) and `chat.bot` (a direct chat with a bot) come from the database. "Saved Messages" (the direct
+chat with the person's own account) is not shown: its room is closed here at once. A file larger than the homeserver
+takes (`max_request_size`, 32 MB) arrives as the bridge's notice "Too large file …" → a message of kind `unsupported`
+with `tooLarge: true`; its other notices about media it cannot carry (stories, games without support,
+`fi.mau.telegram.unsupported`, a failed download) → kind `unsupported`; neither their English text nor a file name goes
+on. A file the homeserver took but that is larger than the messenger's own limit is the plugin's (`media.maxBytes`,
+`too_large` at `media.fetch`). Secret chats never arrive (they exist only on the phone). Not solved: the bridge does not
+carry the buttons under a bot's message (reply markup) and does not mark such a message — `message.buttons` is defined
+for that hint but never set with v0.2610.0.
+
+**History.** What the person chose (`NET.telegram.historyDays: null`): Telegram brings older messages from its server
+whenever a room is made (at the link: the 15 most recent chats, each with up to `HISTORY.messages`; later: a chat with
+its first new message). The bridge waits out Telegram's `FLOOD_WAIT` itself (`backfill.go`, `tgerr.FloodWait`); the
+server keeps the load small (15 chats, 100 members, channels trimmed to 10) and the plugin files the history at night in
+small portions as for WhatsApp.
+
+**Erkennen.** A Telegram login and contact carry a fixed account id, the numeric user id (`NET.telegram.accountIds`,
+`ACCOUNT_RE.telegram`; a channel's `channel-<n>` is none): noted as a keyed hash (`profile.noteOwnAccounts`),
+compared by `matchAccounts` — `via: 'own_telegram'`, strong, only with the consent `byTelegram`. Numbers count where the
+bridge knows them (contacts that share their number). User names never count. A profile number the own Telegram has
+becomes `state: 'telegram'` ("Bestätigt über dein Telegram"); the portal's profile shows the line "An meinem
+verknüpften Telegram".
+
 ## Stages
 
 | # | Content |
@@ -707,7 +786,7 @@ nothing; Telegram (stage 7b) is the first bridge that uses the switch.
 | 4 | files in both directions through the plugin's media with the virus scan, pictures of chats and contacts, a chat with a new number (API only); the apps follow. 4c: a new chat with a contact of the bridge (`contacts`, `matchNumbers`, `createDmByRef`, gc.bridges version 6) |
 | 5 | this: history (each person: off / 30 days / everything; the plugin files it at night in small portions), the nightly encrypted snapshot of the bridges' data in the GateControl backup with restore, the files of bridged chats in a sealed media area on a storage target (plugin), clean-up of the homeserver's copies, "phone not seen" from the bridge's own warning, the pins to `update.sh` (marker 8) and "client outdated" |
 | 6 | a gateway as the place, moving between places |
-| 7 | 7a: Signal (see "Signal"; gc.bridges version 10, update.sh marker 10, the compose file with Signal and Telegram), 7b: Telegram |
+| 7 | 7a: Signal (see "Signal"; gc.bridges version 10, update.sh marker 10, the compose file with Signal and Telegram), 7b: Telegram (see "Telegram"; gc.bridges version 11, the administrator's application id, `bridgedb.js`) |
 
 ## Files
 
@@ -737,4 +816,7 @@ nothing; Telegram (stage 7b) is the first bridge that uses the switch.
   (`bridges_images`, `bridges_backup`, `bridges_restore`), `update.sh` marker 8 (`bridges_images_sync`, `bcompose`,
   `bridges_backup_maybe`, `bridges_restore_maybe`), `plugins/mediaAreas.js` (`sealed`); tests
   `tests/bridges_stage5.test.js`
+* stage 7b: `config.js` (Telegram model), `index.js` (`NET.telegram`, the application id `telegramApp`), `bridgedb.js`
+  (member count, bot), `events.js` (Telegram kinds, channels, "Saved Messages", too large files), `backup.js`
+  (`telegram_app`); tests `tests/bridges_telegram.test.js`, `tests/fixtures/bridges/keys-mautrix-telegram-0.2610.0.json`
 * plugin API: [plugins.md](plugins.md) "Messenger bridges"

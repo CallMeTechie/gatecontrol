@@ -4,7 +4,8 @@
 //
 // What has to be kept: the homeserver's database (RocksDB), the bridge's database (SQLite with the WhatsApp session
 // keys of every linked person), the master key in /data/bridges/secrets.json (all tokens and the seal of the inbox
-// derive from it) and which room is whose chat (bridge_rooms).
+// derive from it) and which room is whose chat (bridge_rooms). Stage 7b: the administrator's Telegram application id
+// (secrets.json telegramApp, already encrypted with GC_ENCRYPTION_KEY) goes along as it lies there (telegram_app).
 //
 //   consistent   a running RocksDB or SQLite file is never copied. This process has no Docker access, so update.sh
 //                (marker 8) does it on the host when the server asks ("bridges_backup":"<id>" in the config file,
@@ -211,6 +212,9 @@ async function exportPart() {
     rooms = db.prepare('SELECT r.room_id, r.ref, r.user_id, u.username AS user_name, r.network, r.kind, r.state, r.created_at, r.updated_at FROM bridge_rooms r JOIN users u ON u.id = r.user_id ORDER BY r.created_at').all();
   } catch (err) { logger.warn({ err: err.message }, 'bridges backup: rooms not exported'); }
   const part = { version: VERSION, created_at: new Date().toISOString(), master_key_enc: encrypt(key), rooms, snapshot: null };
+  // stage 7b: the Telegram application id, still encrypted (never in clear in a backup)
+  const tg = typeof b.telegramAppSealed === 'function' ? b.telegramAppSealed() : null;
+  if (tg) part.telegram_app = { enc: tg.enc, setAt: tg.setAt, setBy: tg.setBy };
   let link = null;
   const s = snapshot();
   if (s) {
@@ -235,6 +239,7 @@ function validate(part) {
   if (part.version !== VERSION) e.push('Invalid backup: bridges.version is unknown');
   if (typeof part.master_key_enc !== 'string') e.push('Invalid backup: bridges.master_key_enc missing');
   if (!Array.isArray(part.rooms) || part.rooms.length > 100000) e.push('Invalid backup: bridges.rooms must be a list');
+  if (part.telegram_app != null && (typeof part.telegram_app !== 'object' || typeof part.telegram_app.enc !== 'string')) e.push('Invalid backup: bridges.telegram_app is damaged');
   const s = part.snapshot;
   if (s != null && (typeof s !== 'object' || !ID_RE.test(String(s.id || '')) || !/^[0-9a-f]{24}$/.test(String(s.iv || '')) || !/^[0-9a-f]{32}$/.test(String(s.tag || ''))
     || typeof s.key_enc !== 'string' || !isB64(s.data))) e.push('Invalid backup: bridges.snapshot is damaged');
@@ -247,6 +252,7 @@ function encryptedFields(part) {
   const out = [];
   if (typeof part.master_key_enc === 'string') out.push(['bridges master key', part.master_key_enc]);
   if (part.snapshot && typeof part.snapshot.key_enc === 'string') out.push(['bridges snapshot key', part.snapshot.key_enc]);
+  if (part.telegram_app && typeof part.telegram_app.enc === 'string') out.push(['bridges Telegram application', part.telegram_app.enc]);
   return out;
 }
 
@@ -260,6 +266,8 @@ async function restorePart(part, { userIdByName } = {}) {
   const b = bridges();
   const key = decrypt(part.master_key_enc);
   b.writeMasterKey(key);
+  // stage 7b: the Telegram application id as it was (only when it opens with this server's key)
+  if (part.telegram_app && typeof b.restoreTelegramApp === 'function') b.restoreTelegramApp(part.telegram_app);
   const db = require('../../db/connection').getDb();
   let rooms = 0;
   let skipped = 0;

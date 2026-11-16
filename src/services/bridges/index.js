@@ -81,6 +81,15 @@
 //                    recognition.get / set per network (whatsapp, signal, telegram). One switch for all bridges that
 //                    convert animated stickers (configure({ animatedStickers }), off = a still picture) — Telegram (7b)
 //                    is the first that does.
+//   telegram         (stage 7b, gc.bridges version 11) a third bridge: mautrix-telegram, logged in by QR code or by
+//                    number, code and the password of the two-step verification (each passed straight to the bridge,
+//                    never stored or logged here). It needs the administrator's own Telegram application id
+//                    (configure({ telegramApp: { apiId, apiHash } })): kept encrypted in secrets.json (GC_ENCRYPTION_KEY,
+//                    utils/crypto), written into the bridge's configuration only, never returned — status() says
+//                    { set, setAt, setBy }. Without it Telegram is not started (wanted()) and its state says needs 'app'.
+//                    A Telegram login and contact carry a fixed account id (the numeric user id) for "Erkennen", never
+//                    taken for a number. What the bridge keeps only in its own database — a group's member count, a bot
+//                    — comes from bridgedb.js (read-only).
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -95,19 +104,28 @@ const hs = require('./hs');
 const appservice = require('./appservice');
 const eventsMod = require('./events');
 const backupMod = require('./backup');
+const bridgedb = require('./bridgedb');
 
-const NETWORKS = Object.freeze(['whatsapp', 'signal']);
+const NETWORKS = Object.freeze(['whatsapp', 'signal', 'telegram']);
 // stage 7a: what differs per network (see the head of this file)
 //   script       the update.sh marker the bridge needs — a bridge whose marker the host does not have yet is not asked for
 //   flows        the login flows offered (the bridge's own ids); others are refused before the bridge is asked
 //   historyDays  the most days of history this bridge brings (null: what the person chose)
 //   phoneConfirms the phone asks at the link whether it hands over the history (Signal's transfer archive)
-//   accountIds   a login and a contact carry a fixed account id at the service (Signal: the ACI)
+//   accountIds   a login and a contact carry a fixed account id at the service (Signal: the ACI; Telegram: the user id)
+//   needsApp     (stage 7b) it starts only with the administrator's own application id (Telegram's api_id / api_hash)
 const NET = Object.freeze({
-  whatsapp: Object.freeze({ script: 8, flows: Object.freeze(['phone', 'qr']), historyDays: null, phoneConfirms: false, accountIds: false }),
-  signal: Object.freeze({ script: 10, flows: Object.freeze(['qr']), historyDays: 30, phoneConfirms: true, accountIds: true }),
+  whatsapp: Object.freeze({ script: 8, flows: Object.freeze(['phone', 'qr']), historyDays: null, phoneConfirms: false, accountIds: false, needsApp: false }),
+  signal: Object.freeze({ script: 10, flows: Object.freeze(['qr']), historyDays: 30, phoneConfirms: true, accountIds: true, needsApp: false }),
+  // stage 7b: QR code or number + code (+ password); never "bot" (a bot is no person) or "manual" (raw session data)
+  telegram: Object.freeze({ script: 10, flows: Object.freeze(['qr', 'phone']), historyDays: null, phoneConfirms: false, accountIds: true, needsApp: true }),
 });
-// the networks of the consent "Erkennen" (the user profile keeps one per network; Telegram follows with stage 7b)
+// the fixed account id of a login or a contact, per network (never passed on — compared as a keyed hash)
+const ACCOUNT_RE = Object.freeze({
+  signal: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  telegram: /^[1-9][0-9]{0,19}$/,
+});
+// the networks of the consent "Erkennen" (the user profile keeps one per network)
 const RECOGNITION_NETWORKS = Object.freeze(['whatsapp', 'signal', 'telegram']);
 const UUID_RE = /^(PNI:|pni_)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SERVER_NAME = config.SERVER_NAME;
@@ -169,9 +187,13 @@ function wanted() {
     const cfg = getConfig();
     if (!cfg.enabled) return [];
     const host = hostScript();
-    return NETWORKS.filter((n) => cfg.networks[n] && !scriptTooOld(n, host));
+    // stage 7b: Telegram only with the administrator's application id
+    return NETWORKS.filter((n) => cfg.networks[n] && !scriptTooOld(n, host) && !appMissing(n));
   } catch { return []; }
 }
+
+/** stage 7b: a network that needs the administrator's application id and has none (Telegram). */
+function appMissing(network) { return !!(NET[network] && NET[network].needsApp) && !telegramApp(); }
 
 // ─── Secrets ───────────────────────────────────────────
 
@@ -185,12 +207,86 @@ function derive(key, purpose) {
   return crypto.createHmac('sha256', Buffer.from(key, 'base64url')).update(`gatecontrol-bridges:${purpose}`).digest('base64url');
 }
 
+function readFile() {
+  try { const s = JSON.parse(fs.readFileSync(secretsFile(), 'utf8')); return s && typeof s === 'object' && !Array.isArray(s) ? s : null; }
+  catch { return null; }
+}
 function readKey() {
+  const s = readFile();
+  return s && typeof s.key === 'string' && KEY_RE.test(s.key) ? s.key : null;
+}
+/** Write secrets.json (0600, atomically) — the master key and what else lies next to it (stage 7b: telegramApp). */
+function writeFile(obj) {
+  fs.mkdirSync(path.join(dir(), 'run'), { recursive: true, mode: 0o700 });
+  const tmp = `${secretsFile()}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  try { fs.writeFileSync(tmp, JSON.stringify(obj) + '\n', { mode: 0o600 }); fs.renameSync(tmp, secretsFile()); }
+  catch (err) { try { fs.unlinkSync(tmp); } catch { /* never written */ } throw err; }
+}
+
+// ─── The Telegram application id (stage 7b) ────────────
+
+// Telegram wants an application id of its own for every program that logs in (my.telegram.org › API development
+// tools): api_id (a number) and api_hash (32 hex digits). The administrator enters it once in the messenger's settings;
+// it lies in secrets.json encrypted with GC_ENCRYPTION_KEY (utils/crypto) as `telegramApp: { enc, setAt, setBy }`, and in
+// clear only in the Telegram bridge's own configuration file (config.js, 0600). Never returned, never logged — a plugin
+// learns { set, setAt, setBy }. The example values of the bridge (and anything else malformed) are refused.
+const TG_API_ID_RE = /^[1-9][0-9]{4,9}$/;
+const TG_API_HASH_RE = /^[0-9a-f]{32}$/;
+const TG_EXAMPLE_HASH = 'tjyd5yge35lbodk1xwzw2jstp90k55qz';
+const TG_EXAMPLE_ID = 12345;
+
+/** The stored application id → { apiId, apiHash } or null (none, or it cannot be decrypted with this server's key). */
+function telegramApp() {
+  const s = readFile();
+  const t = s && s.telegramApp && typeof s.telegramApp === 'object' ? s.telegramApp : null;
+  if (!t || typeof t.enc !== 'string') return null;
   try {
-    const s = JSON.parse(fs.readFileSync(secretsFile(), 'utf8'));
-    if (s && typeof s.key === 'string' && KEY_RE.test(s.key)) return s.key;
-  } catch { /* not made yet */ }
+    const v = JSON.parse(require('../../utils/crypto').decrypt(t.enc));
+    if (v && Number.isSafeInteger(v.apiId) && TG_API_ID_RE.test(String(v.apiId)) && typeof v.apiHash === 'string' && TG_API_HASH_RE.test(v.apiHash)) return { apiId: v.apiId, apiHash: v.apiHash };
+  } catch { /* another key, or damaged */ }
   return null;
+}
+/** What may be said about it: { set, setAt, setBy } — never the value. */
+function telegramAppStatus() {
+  const s = readFile();
+  const t = s && s.telegramApp && typeof s.telegramApp === 'object' ? s.telegramApp : null;
+  const set = !!telegramApp();
+  return { set, setAt: set && typeof t.setAt === 'string' ? t.setAt : null, setBy: set && typeof t.setBy === 'string' ? t.setBy.slice(0, 120) : null };
+}
+/** configure({ telegramApp }): { apiId, apiHash } → checked (no echo of the value in an error); null → remove. */
+function telegramAppIn(v) {
+  if (v === null) return null;
+  if (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).some((k) => k !== 'apiId' && k !== 'apiHash')) throw new BridgesError('ERR_INVALID', 'telegramApp: { apiId, apiHash } or null', 'telegram_app');
+  const id = typeof v.apiId === 'number' ? String(v.apiId) : (typeof v.apiId === 'string' ? v.apiId.trim() : '');
+  const hash = typeof v.apiHash === 'string' ? v.apiHash.trim().toLowerCase() : '';
+  if (!TG_API_ID_RE.test(id) || Number(id) === TG_EXAMPLE_ID) throw new BridgesError('ERR_INVALID', 'telegramApp.apiId: a number of 5 to 10 digits', 'telegram_app_id');
+  if (!TG_API_HASH_RE.test(hash) || hash === TG_EXAMPLE_HASH) throw new BridgesError('ERR_INVALID', 'telegramApp.apiHash: 32 hexadecimal digits', 'telegram_app_hash');
+  return { apiId: Number(id), apiHash: hash };
+}
+/** Keep (or remove) it next to the master key. */
+function writeTelegramApp(app, by) {
+  const s = readFile() || {};
+  if (app) s.telegramApp = { enc: require('../../utils/crypto').encrypt(JSON.stringify(app)), setAt: new Date().toISOString(), setBy: typeof by === 'string' && by ? by.slice(0, 120) : null };
+  else delete s.telegramApp;
+  writeFile(s);
+}
+/** backup.js: the encrypted form as it lies in secrets.json (it stays encrypted with GC_ENCRYPTION_KEY), or null. */
+function telegramAppSealed() {
+  const s = readFile();
+  const t = s && s.telegramApp && typeof s.telegramApp === 'object' && typeof s.telegramApp.enc === 'string' ? s.telegramApp : null;
+  return t ? { enc: t.enc, setAt: typeof t.setAt === 'string' ? t.setAt : null, setBy: typeof t.setBy === 'string' ? t.setBy : null } : null;
+}
+/** backup.js: put it back after a restore (only when it opens with this server's key). → true when written */
+function restoreTelegramApp(t) {
+  if (!t || typeof t !== 'object' || typeof t.enc !== 'string' || t.enc.length > 4096) return false;
+  try {
+    const v = JSON.parse(require('../../utils/crypto').decrypt(t.enc));
+    if (!v || !TG_API_ID_RE.test(String(v.apiId)) || !TG_API_HASH_RE.test(String(v.apiHash))) return false;
+  } catch { return false; }
+  const s = readFile() || {};
+  s.telegramApp = { enc: t.enc, setAt: typeof t.setAt === 'string' ? t.setAt.slice(0, 40) : null, setBy: typeof t.setBy === 'string' ? t.setBy.slice(0, 120) : null };
+  writeFile(s);
+  return true;
 }
 
 function tokens(key) {
@@ -215,9 +311,8 @@ function ensureSecrets() {
   fs.mkdirSync(path.join(dir(), 'run'), { recursive: true, mode: 0o700 });
   if (have) return tokens(have);
   const key = crypto.randomBytes(32).toString('base64url');
-  const tmp = `${secretsFile()}.${crypto.randomBytes(6).toString('hex')}.tmp`;
-  try { fs.writeFileSync(tmp, JSON.stringify({ key }) + '\n', { mode: 0o600 }); fs.renameSync(tmp, secretsFile()); }
-  catch (err) { try { fs.unlinkSync(tmp); } catch { /* never written */ } throw err; }
+  // stage 7b: what lies next to it already (the Telegram application id, entered before the first switch-on) stays
+  writeFile({ ...(readFile() || {}), key });
   return tokens(key);
 }
 
@@ -234,7 +329,7 @@ function wish() {
   const imgs = ['hs', 'core-relay', ...names.flatMap((n) => [n, `${n}-relay`])].filter((k) => images.IMAGES[k]).map((k) => `${k}=${images.ref(k)}`).join(',');
   const bk = backupMod.wish();
   const cfg = getConfig();
-  try { return { names, rev: config.write(dir(), ensureSecrets(), names, { history: cfg.history, animatedStickers: cfg.animatedStickers }).rev, images: imgs, ...bk }; }
+  try { return { names, rev: config.write(dir(), ensureSecrets(), names, { history: cfg.history, animatedStickers: cfg.animatedStickers, telegramApp: names.includes('telegram') ? telegramApp() : null }).rev, images: imgs, ...bk }; }
   catch (err) { logger.warn({ err: err.message }, 'bridges: could not write the configuration of the containers'); return { names, rev: null, images: imgs, ...bk }; }
 }
 
@@ -317,7 +412,7 @@ function locations() {
  * no contents: states, versions and memory only.
  */
 function status() {
-  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 10 };
+  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 11 };
   const cfg = getConfig();
   const host = hostStatus();
   const up = cfg.enabled && host.state === 'running' && host.services.hs.running;
@@ -338,16 +433,21 @@ function status() {
       // stage 7a (version 10): what this network offers and what it still waits for —
       //   needs 'script'  the host's update.sh is older than the bridge needs (it is not started until it updated itself)
       //   needs 'compose' the docker-compose.yml on the host has no service for it (an older file: replace it once)
+      //   needs 'app'     (stage 7b, version 11) Telegram without the administrator's application id — not started
       const tooOld = cfg.enabled && cfg.networks[id] && scriptTooOld(id, host.script.host);
       if (tooOld) state = 'starting';
-      const needs = tooOld ? 'script' : (cfg.enabled && cfg.networks[id] && s.present === false ? 'compose' : null);
+      const noApp = cfg.networks[id] && appMissing(id);
+      let needs = tooOld ? 'script' : (cfg.enabled && cfg.networks[id] && s.present === false ? 'compose' : null);
       if (needs === 'compose') state = 'failed';
+      if (noApp) { needs = 'app'; state = cfg.enabled ? 'stopped' : 'off'; }
       return { id, enabled: cfg.networks[id], state, version: s.version, memMb: s.memMb, limitMb: s.limitMb, outdated: s.outdated === true, wantVersion: images.IMAGES[id].version,
         clientOutdated: !!(clientOutdated.get(id) && Date.now() - clientOutdated.get(id) < 86400000),
         flows: [...NET[id].flows], history: { maxDays: NET[id].historyDays, phoneConfirms: NET[id].phoneConfirms }, needs, scriptNeeded: NET[id].script };
     }),
     // stage 7a: one switch for every bridge that converts animated stickers (off: a still picture, PNG)
     stickers: { animated: cfg.animatedStickers },
+    // stage 7b: the Telegram application id — whether it is there, when and by whom; never its value
+    telegramApp: telegramAppStatus(),
     host: {
       state: cfg.enabled ? host.state : 'stopped', error: cfg.enabled ? host.error : null, checkedAt: host.checkedAt,
       cron: host.cron, script: host.script,
@@ -367,7 +467,7 @@ function status() {
     // stage 5: the copies of files at the homeserver that went after the plugin took them over
     cleanup: { deleted: cleanup.deleted, lastAt: cleanup.lastAt ? new Date(cleanup.lastAt).toISOString() : null, error: cleanup.error, waiting: runtime.events ? runtime.events.mediaWaiting() : 0 },
     // the version of gc.bridges this server offers (child/bootstrap.js)
-    version: 10,
+    version: 11,
   };
 }
 
@@ -390,7 +490,9 @@ function configure(patch, ctx) {
   if (!previewOn()) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not offered on this server', 'preview_off');
   const p = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : null;
   if (!p) throw new BridgesError('ERR_INVALID', 'patch: an object');
-  for (const k of Object.keys(p)) if (!['enabled', 'networks', 'history', 'backupNow', 'backupTime', 'animatedStickers'].includes(k)) throw new BridgesError('ERR_INVALID', `unknown key ${String(k).slice(0, 40)}`);
+  for (const k of Object.keys(p)) if (!['enabled', 'networks', 'history', 'backupNow', 'backupTime', 'animatedStickers', 'telegramApp'].includes(k)) throw new BridgesError('ERR_INVALID', `unknown key ${String(k).slice(0, 40)}`);
+  // stage 7b: the Telegram application id — checked before anything is changed; the value goes nowhere but secrets.json
+  const tgApp = p.telegramApp !== undefined ? { value: telegramAppIn(p.telegramApp) } : null;
   const cur = getConfig();
   const next = { enabled: cur.enabled, networks: { ...cur.networks }, history: cur.history, animatedStickers: cur.animatedStickers };
   // stage 7a: animated stickers converted (on) or as a still picture (off)
@@ -411,6 +513,8 @@ function configure(patch, ctx) {
     }
   }
   if (next.enabled) ensureSecrets();
+  const hadApp = tgApp ? !!telegramApp() : null;
+  if (tgApp) writeTelegramApp(tgApp.value, ctx && ctx.actor ? ctx.actor.name : null);
   settings.set('bridges.networks', JSON.stringify(next.networks));
   settings.set('bridges.enabled', next.enabled ? '1' : '0');
   settings.set('bridges.history', next.history ? '1' : '0');
@@ -421,6 +525,11 @@ function configure(patch, ctx) {
   start().catch((err) => logger.warn({ err: err.message }, 'bridges: listener not started'));
   if (next.history !== cur.history) {
     try { require('../activity').log('bridges_changed', `Messenger-Brücken: älterer Verlauf ${next.history ? 'erlaubt' : 'abgeschaltet'}`, { source: 'admin', severity: 'info', details: { history: next.history, by: ctx && ctx.actor ? ctx.actor.name : null } }); }
+    catch (err) { logger.debug({ err: err.message }, 'bridges: activity not written'); }
+  }
+  if (tgApp && (tgApp.value || hadApp)) {
+    // never the value: only that it was entered or removed, and by whom
+    try { require('../activity').log('bridges_changed', `Messenger-Brücken: Telegram-Anwendung ${tgApp.value ? 'hinterlegt' : 'entfernt'}`, { source: 'admin', severity: 'info', details: { telegramApp: tgApp.value ? 'set' : 'removed', by: ctx && ctx.actor ? ctx.actor.name : null, plugin: ctx ? ctx.pluginId : null } }); }
     catch (err) { logger.debug({ err: err.message }, 'bridges: activity not written'); }
   }
   if (next.animatedStickers !== cur.animatedStickers) {
@@ -452,6 +561,8 @@ function clientFor(userId, network) {
   if (!previewOn()) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not offered on this server', 'preview_off');
   const cfg = getConfig();
   if (!cfg.enabled || !cfg.networks[network]) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'this bridge is switched off', 'off');
+  // stage 7b: Telegram without the administrator's application id does not run
+  if (appMissing(network)) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'this bridge is not set up yet', 'no_app');
   const secrets = readSecrets();
   if (!secrets) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not set up yet', 'not_running');
   return provision.client({ socket: provision.socketOf(dir(), network), secret: secrets.provisionSecret }, mxid);
@@ -564,11 +675,16 @@ function loginRef(userId, network, raw) {
 const STEP_TEXTS = {
   whatsapp: { display_and_wait: 'Scan the code in WhatsApp › Linked devices, or enter the pairing code there.', user_input: 'Enter your WhatsApp phone number with the country code.', complete: 'WhatsApp is linked.' },
   signal: { display_and_wait: 'Scan the code in Signal › Settings › Linked devices › Link new device.', user_input: '', complete: 'Signal is linked.' },
+  // stage 7b: the bridge's last words name the person's name and Telegram id ("Successfully logged in as … (`<id>`)")
+  telegram: { display_and_wait: 'Scan the code in Telegram › Settings › Devices › Link Desktop Device.', user_input: '', complete: 'Telegram is linked.' },
 };
 /** A login step as a plugin gets it: a completed one names the login by its reference; the texts are ours. */
 function stepOut(userId, network, r) {
   if (!r || !r.step) return r;
   const step = { ...r.step, instructions: (STEP_TEXTS[network] && STEP_TEXTS[network][r.step.type]) || '' };
+  // stage 7b: the bridge asks again after a wrong code or password (mautrix-telegram …login.code.incorrect /
+  // …login.password.incorrect) — said as a field of our own, the apps show their own words
+  if (step.type === 'user_input' && /\.incorrect$/.test(String(step.id || ''))) step.retry = true;
   // the fields keep their ids and types; their names and descriptions are the bridge's words — not passed on
   if (Array.isArray(step.fields)) step.fields = step.fields.map((f) => ({ ...f, name: '', description: '' }));
   if (step.type === 'complete') step.loginId = step.loginId ? loginRef(userId, network, step.loginId) : null;
@@ -581,20 +697,22 @@ async function logins(userId, network) {
   noteOwn(userId, network, w.logins);
   // never the number of the login (phone); stage 7a: never a fixed account id as its name either (Signal names a
   // login without a number by its ACI) — the name is the person's own number at the service, or nothing
-  return w.logins.map(({ phone, ...l }) => ({ network, ...l, name: loginName(network, l.name), id: loginRef(userId, network, l.id) }));
+  return w.logins.map(({ phone, ...l }) => ({ network, ...l, name: loginName(network, l.name, phone), id: loginRef(userId, network, l.id) }));
 }
-function loginName(network, name) {
+/** stage 7b: Telegram names a login by the person's name — the number of its profile is said instead (or nothing). */
+function loginName(network, name, phone = null) {
   const n = typeof name === 'string' ? name : '';
-  if (NET[network] && NET[network].accountIds) return numberOf(n) || '';
+  if (NET[network] && NET[network].accountIds) return numberOf(n) || (typeof phone === 'string' ? numberOf(phone) : null) || '';
   return n;
 }
 
 // ─── The own number (the user profile, docs/feature-user-profile.md) ─
 
 /** The number of a login: the bridge's profile phone, else a WhatsApp id made of digits, else a name that is one. */
-function loginNumber(l) {
+function loginNumber(l, network = 'whatsapp') {
   if (!l) return null;
-  return numberOf(l.phone || '') || (/^[1-9][0-9]{6,14}$/.test(String(l.id || '')) ? numberOf('+' + l.id) : null) || numberOf(String(l.name || ''));
+  // a WhatsApp login is named by its number; a Telegram login's id is the account's user id — never taken for a number
+  return numberOf(l.phone || '') || (network === 'whatsapp' && /^[1-9][0-9]{6,14}$/.test(String(l.id || '')) ? numberOf('+' + l.id) : null) || numberOf(String(l.name || ''));
 }
 /**
  * After every whoami: the numbers of the person's own logins go to the profile (keyed hashes only — services/profile);
@@ -604,15 +722,19 @@ function noteOwn(userId, network, list) {
   try {
     const live = (list || []).filter((l) => l && l.state !== 'logged_out');
     const profile = require('../profile');
-    profile.noteOwnNumbers(userId, network, live.map(loginNumber).filter(Boolean));
+    profile.noteOwnNumbers(userId, network, live.map((l) => loginNumber(l, network)).filter(Boolean));
     if (NET[network] && NET[network].accountIds) profile.noteOwnAccounts(userId, network, live.map((l) => accountOf(network, l.id)).filter(Boolean));
   } catch (err) { logger.debug({ err: err.message }, 'bridges: own number not noted'); }
 }
-/** stage 7a: the fixed account id of a login or a contact at a service (Signal: the ACI, lower case), else null. */
+/**
+ * stage 7a: the fixed account id of a login or a contact at a service (Signal: the ACI, lower case; stage 7b Telegram:
+ * the numeric user id — not a channel's "channel-<n>"), else null.
+ */
 function accountOf(network, id) {
-  if (!NET[network] || !NET[network].accountIds) return null;
+  if (!NET[network] || !NET[network].accountIds || !ACCOUNT_RE[network]) return null;
   const v = String(id || '');
-  return UUID_RE.test(v) && !/^(PNI:|pni_)/i.test(v) ? v.toLowerCase() : null;
+  if (network === 'signal') return UUID_RE.test(v) && !/^(PNI:|pni_)/i.test(v) ? v.toLowerCase() : null;
+  return ACCOUNT_RE[network].test(v) ? v : null;
 }
 /**
  * refreshOwnNumbers(userId, network) — before the profile is shown: ask the bridge (kept 10 minutes, see selfIds) when
@@ -622,7 +744,7 @@ async function refreshOwnNumbers(userId, network) {
   try {
     if (!previewOn() || !NETWORKS.includes(network)) return;
     const cfg = getConfig();
-    if (!cfg.enabled || !cfg.networks[network] || !linkedAt(userId, network)) return;
+    if (!cfg.enabled || !cfg.networks[network] || appMissing(network) || !linkedAt(userId, network)) return;
     await selfIds(userId, network);
   } catch { /* the stored state stays */ }
 }
@@ -790,6 +912,8 @@ function eventsOf() {
     serverName: SERVER_NAME, networks: [...NETWORKS],
     key: crypto.createHmac('sha256', Buffer.from(key, 'base64url')).update('gatecontrol-bridges:events').digest(),
     target: hsTarget, selfIds, historyOf, linkedAt,
+    // stage 7b: what the Telegram bridge keeps only in its own database (member count, bot, channel)
+    facts: (network, roomId, o) => bridgedb.facts(dir(), network, roomId, o),
   });
   return runtime.events;
 }
@@ -854,6 +978,7 @@ function roomFor(userId, network, chatId) {
   if (!previewOn()) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not offered on this server', 'preview_off');
   const cfg = getConfig();
   if (!cfg.enabled || !cfg.networks[network]) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'this bridge is switched off', 'off');
+  if (appMissing(network)) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'this bridge is not set up yet', 'no_app');
   const ev = eventsOf();
   const target = hsTarget();
   if (!ev || !target) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not set up yet', 'not_running');
@@ -985,6 +1110,7 @@ async function openFile(userId, network, ref, { max } = {}) {
   if (!previewOn()) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not offered on this server', 'preview_off');
   const cfg = getConfig();
   if (!cfg.enabled || !cfg.networks[network]) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'this bridge is switched off', 'off');
+  if (appMissing(network)) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'this bridge is not set up yet', 'no_app');
   const ev = eventsOf();
   const target = hsTarget();
   if (!ev || !target) throw new BridgesError('ERR_BRIDGES_UNAVAILABLE', 'the bridges are not set up yet', 'not_running');
@@ -1060,9 +1186,8 @@ function writeMasterKey(key) {
   if (have === key) return false;
   fs.mkdirSync(path.join(dir(), 'run'), { recursive: true, mode: 0o700 });
   if (have) { try { fs.copyFileSync(secretsFile(), `${secretsFile()}.before-restore`); fs.chmodSync(`${secretsFile()}.before-restore`, 0o600); } catch { /* best effort */ } }
-  const tmp = `${secretsFile()}.${crypto.randomBytes(6).toString('hex')}.tmp`;
-  try { fs.writeFileSync(tmp, JSON.stringify({ key }) + '\n', { mode: 0o600 }); fs.renameSync(tmp, secretsFile()); }
-  catch (err) { try { fs.unlinkSync(tmp); } catch { /* never written */ } throw err; }
+  // stage 7b: the Telegram application id next to it stays (it is not encrypted with the master key)
+  writeFile({ ...(readFile() || {}), key });
   runtime.events = null;
   runtime.key = null;
   accounts.clear();
@@ -1334,6 +1459,7 @@ const events = {
 };
 
 function _reset() {
+  bridgedb._reset();
   waits.clear(); accounts.clear(); selfCache.clear(); uploads.clear(); lookups.clear(); clientOutdated.clear(); contactLists.clear(); contactKey.key = null;
   runtime.events = null; runtime.key = null; runtime.wake = null;
   Object.assign(cleanup, { deleted: 0, lastAt: null, error: null, running: false });
@@ -1346,7 +1472,7 @@ function ghostLocal(network, mxid) {
 }
 
 module.exports = {
-  NETWORKS, NET, RECOGNITION_NETWORKS, SCRIPT, SERVER_NAME, BridgesError,
+  NETWORKS, NET, RECOGNITION_NETWORKS, SCRIPT, SERVER_NAME, BridgesError, telegramAppStatus, telegramAppSealed, restoreTelegramApp,
   previewOn, getConfig, wanted, wish, status, configure, hostStatus, ensureSecrets, readSecrets, dir,
   login, logins, logout, unlinkFor, mxidOf, _reset,
   start, stop, send, react, redact, read, typing, chats, events, openFile, resolve, createDm, numberOf, contacts, matchNumbers, createDmByRef, matchAccounts, recognition, refreshOwnNumbers, _openContactRef: openContactRef,

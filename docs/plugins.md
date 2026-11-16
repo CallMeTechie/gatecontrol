@@ -3309,6 +3309,19 @@ listing, searching and matching them asks WhatsApp nothing).
 | `recognition.get(userId, network = 'whatsapp')` (version 9) | `{ asked, allowed, linked }` — the person's own answer to "Dürfen andere auf diesem Server dich an deinem WhatsApp erkennen?": the consent "an meinem verknüpften WhatsApp" of the user profile ([feature-user-profile.md](feature-user-profile.md), "Recognition"). `asked`: answered once (in the profile or through a plugin), `linked`: a login of the network is known. `whatsapp` (since version 10 also `signal`, `telegram`; else `ERR_INVALID`). Inside a request of that person |
 | `recognition.set(userId, allowed, network = 'whatsapp')` (version 9) | → `get()` — the messenger asks it right after WhatsApp was linked; the profile keeps the answer with its time (both answers stay under "Erkennung") and writes the activity log. `allowed` true or false. Inside a changing request of that person |
 
+**Version 11 — Telegram** (`gc.bridges.version >= 11`; details: [feature-messenger-bridges.md](feature-messenger-bridges.md),
+"Telegram"). The network `telegram` works wherever a network is named. `configure({ telegramApp: { apiId, apiHash } |
+null })` takes the administrator's Telegram application id (5–10 digits, 32 hex digits; `ERR_INVALID` with the reason
+`telegram_app_id` / `telegram_app_hash`, never the value) — the server keeps it encrypted and never returns it:
+`status().telegramApp` is `{ set, setAt, setBy }`. Without it `status().networks[]` of Telegram says `needs: 'app'` (state
+`stopped`) and calls for a person answer `ERR_BRIDGES_UNAVAILABLE` / `no_app`. A plugin passes the number, the code and
+the password of a login straight to `login.step` and keeps none of them (no table, no log, no activity entry). Telegram's
+`flows` are `['qr', 'phone']`; a step after a wrong code or password carries `retry: true`. Events: `chat.members` (the
+member count the bridge knows — a group of 200 and more is meant to start muted), `chat.bot` (a direct chat with a
+bot), a Telegram channel is `chat.channel` like a WhatsApp channel, a message of kind `unsupported` may carry
+`tooLarge: true` (the file was too large for the homeserver: "open it in Telegram"); `message.buttons` (a bot's message
+had buttons) is defined but not set by the pinned bridge. `matchAccounts` answers `via: 'own_telegram'`.
+
 **Version 10 — Signal** (`gc.bridges.version >= 10`; details: [feature-messenger-bridges.md](feature-messenger-bridges.md),
 "Signal"). The network `signal` works wherever a network is named. `status().networks[]` adds `flows` (Signal: `['qr']`
 only — `login.start` refuses another flow), `history: { maxDays, phoneConfirms }` (Signal: at most 30 days, once at the
