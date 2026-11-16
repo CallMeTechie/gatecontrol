@@ -4296,6 +4296,19 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_user_bridge_accounts_hash ON user_bridge_accounts (network, account_hash);`,
     detect: (db) => hasColumn(db, 'users', 'recognize_by_telegram_at') && tableExists(db, 'user_bridge_accounts'),
   },
+  {
+    version: 156,
+    name: 'bridge_rooms_status',
+    // Messenger bridges, gc.bridges version 12 (services/bridges/events.js "WhatsApp status"):
+    //   status   1 the room of the contacts' WhatsApp status updates (status@broadcast at the bridge) — chat.status
+    // Such a room known from before fitted none of the ids and was kept as a direct chat: every WhatsApp room of kind
+    // 'direct' is looked at once more (channel NULL → events.refreshRooms, a few per tick), so it turns into the status
+    // room at once and not only with the next status update. The others stay what they are.
+    sql: `
+      ALTER TABLE bridge_rooms ADD COLUMN status INTEGER NOT NULL DEFAULT 0;
+      UPDATE bridge_rooms SET channel = NULL WHERE network = 'whatsapp' AND kind = 'direct';`,
+    detect: (db) => hasColumn(db, 'bridge_rooms', 'status'),
+  },
 ];
 
 module.exports = { migrations };

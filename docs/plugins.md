@@ -3256,7 +3256,7 @@ table: [feature-messenger-bridges.md](feature-messenger-bridges.md),
 | `send(userId, network, chatId, { txnId, text, replyTo?, edit? })` | `{ id }` — a text as that person; the same `txnId` (8…96 of `A-Za-z0-9_-`) sends once. What became of it arrives as an event `status` |
 | `react(userId, network, chatId, { txnId, target, emoji })` | `{ id }` — take it back with `redact(…, { target: id })` |
 | `redact(userId, network, chatId, { txnId, target })` | `{ ok }` — delete a message for everyone, or take a reaction back |
-| `read(userId, network, chatId, messageId)` / `typing(userId, network, chatId, on)` | `{ ok }` |
+| `read(userId, network, chatId, messageId, opts?)` / `typing(userId, network, chatId, on)` | `{ ok }` — version 12: in a status room (`chat.status`) `read` only with `opts { status: true }`, else `{ ok: true, skipped: 'status' }` |
 
 `send`, `react`, `redact`, `read` and `typing` act **as a person towards the
 outside messenger**: only inside a changing request of exactly that person
@@ -3312,6 +3312,15 @@ listing, searching and matching them asks WhatsApp nothing).
 | `matchAccounts(userId, network)` (version 8) | `{ matches: [{ contactId, userId, strength, via }] }` — which of the person's contacts at the bridge are **accounts on this server** (the user profile, [feature-user-profile.md](feature-user-profile.md)). `contactId` names the contact as the events do (`sender.id`), `strength` is `strong` or `medium`, `via` `own_whatsapp` (the account's own linked WhatsApp has the contact's number) or `profile_phone` (a number in the account's profile). Only accounts that agreed (two switches under "Erkennung", both off by default), enabled, never the person herself; a number that stands in two accounts is never used, an unconfirmed number only as `medium` and only while the administrator allows it. Numbers and hashes stay in the server — the plugin gets the pairing only. Inside a request of that person |
 | `recognition.get(userId, network = 'whatsapp')` (version 9) | `{ asked, allowed, linked }` — the person's own answer to "Dürfen andere auf diesem Server dich an deinem WhatsApp erkennen?": the consent "an meinem verknüpften WhatsApp" of the user profile ([feature-user-profile.md](feature-user-profile.md), "Recognition"). `asked`: answered once (in the profile or through a plugin), `linked`: a login of the network is known. `whatsapp` (since version 10 also `signal`, `telegram`; else `ERR_INVALID`). Inside a request of that person |
 | `recognition.set(userId, allowed, network = 'whatsapp')` (version 9) | → `get()` — the messenger asks it right after WhatsApp was linked; the profile keeps the answer with its time (both answers stay under "Erkennung") and writes the activity log. `allowed` true or false. Inside a changing request of that person |
+
+**Version 12 — WhatsApp status** (`gc.bridges.version >= 12`; details: [feature-messenger-bridges.md](feature-messenger-bridges.md),
+"WhatsApp-Status"). The room of the contacts' WhatsApp status updates is `chat.status: true` (`kind: 'group'`,
+`readOnly: true`; also in `chats()`); its messages are the status updates (text, picture, video with caption), a
+deletion is a `redact`, nothing comes when one runs out after 24 hours — the plugin deletes it itself. `read(userId,
+network, chatId, messageId, { status: true })` reports "seen" there (the bridge marks everything in the room up to this
+message read at WhatsApp, for every sender); without `{ status: true }` nothing is sent (`{ ok: true, skipped: 'status'
+}`). `send`, `react` and `redact` there answer `ERR_BRIDGE` / `status_room` (an answer goes to the direct chat),
+`typing` is not sent. Plugins before version 12 ignore `chat.status`.
 
 **Version 11 — Telegram** (`gc.bridges.version >= 11`; details: [feature-messenger-bridges.md](feature-messenger-bridges.md),
 "Telegram"). The network `telegram` works wherever a network is named. `configure({ telegramApp: { apiId, apiHash } |

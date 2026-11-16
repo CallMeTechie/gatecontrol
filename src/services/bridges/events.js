@@ -92,6 +92,24 @@
 //             text and no file name of them go on.
 //   buttons   the bridge does not carry the buttons under a bot's message (reply markup) and does not mark such a
 //             message: message.buttons (true: "Diese Nachricht hat Knöpfe") is never set by v0.2610.0.
+//
+// WhatsApp status (gc.bridges version 12; mautrix-whatsapp v0.2610.0, config.js enable_status_broadcast):
+//   status    the contacts' status updates come into one room per person whose id at the bridge is status@broadcast
+//             (pkg/connector/chatinfo.go wrapStatusBroadcastInfo: RoomTypeDefault, name "WhatsApp Status Broadcast").
+//             It is chat.status: true (kind 'group', readOnly: true) — a plugin shows its messages as status updates of
+//             their senders, not as a chat; plugins before version 12 ignore the field and show the chat as before.
+//             bridge_rooms.status keeps it; a room known from before (kind 'direct', it fitted no id) is looked at once
+//             more by refreshRooms (the migration sets its channel back to NULL).
+//   sender    each status is a message of the contact's ghost (text, picture or video with its caption; a deletion
+//             is a redaction) — sender.id is the contactRef of that ghost, the same as in the direct chat when the
+//             bridge names the contact by the same ghost (docs/feature-messenger-bridges.md "WhatsApp-Status").
+//   expiry    WhatsApp sends nothing when a status runs out after 24 hours: the plugin deletes it itself.
+//   seen      read() in this room only with { status: true } (a plugin's explicit "the person watched this status"):
+//             the bridge marks everything between its last receipt and this message read, for every sender
+//             (handlematrix.go HandleMatrixReadReceipt) — so an automatic receipt here is never sent; the plugin
+//             reports a status only when everything before it in the room was watched too.
+//   send      sending, reacting and deleting are refused here (the bridge refuses them too: disable_status_broadcast_send,
+//             ErrBroadcastReactionUnsupported) — an answer goes to the direct chat.
 
 const crypto = require('node:crypto');
 const logger = require('../../utils/logger');
@@ -124,7 +142,7 @@ const PREVIEW_TITLE_MAX = 300;
 const PREVIEW_TEXT_MAX = 1000;
 // what the id of a chat at the bridge (m.bridge channel.id) says about its kind, per network
 const CHAT_IDS = {
-  whatsapp: [[/@newsletter$/, 'channel'], [/@g\.us$/, 'group'], [/@(s\.whatsapp\.net|lid)$/, 'direct']],
+  whatsapp: [[/@newsletter$/, 'channel'], [/@g\.us$/, 'group'], [/@(s\.whatsapp\.net|lid)$/, 'direct'], [/^status@broadcast$/, 'status']],
   // stage 7a: a Signal group's id is 32 bytes in Base64 (44 characters), a person's a service id (UUID, PNI:<uuid>)
   signal: [[/^[A-Za-z0-9+/]{43}=$/, 'group'], [/^(PNI:)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, 'direct']],
   // stage 7b: Telegram (pkg/connector/ids MakePortalID): a person or a bot, a small group, a supergroup or channel (a
@@ -235,17 +253,19 @@ function create(opts) {
     const old = roomRow(roomId);
     const channel = i ? (i.channel ? 1 : 0) : (old ? old.channel : null);
     const readOnly = i ? (i.readOnly ? 1 : 0) : (old ? old.read_only : 0);
+    // version 12: the room of the contacts' WhatsApp status updates
+    const status = i ? (i.status ? 1 : 0) : (old ? old.status || 0 : 0);
     if (old) {
-      db().prepare('UPDATE bridge_rooms SET state = ?, kind = ?, channel = ?, read_only = ?, updated_at = ? WHERE room_id = ?').run(state, kind || old.kind, channel, readOnly, now, roomId);
+      db().prepare('UPDATE bridge_rooms SET state = ?, kind = ?, channel = ?, read_only = ?, status = ?, updated_at = ? WHERE room_id = ?').run(state, kind || old.kind, channel, readOnly, status, now, roomId);
     } else {
-      db().prepare('INSERT INTO bridge_rooms (room_id, ref, user_id, network, kind, state, channel, read_only, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(roomId, 'r' + crypto.randomBytes(15).toString('base64url'), userId, network, kind || 'direct', state, channel, readOnly || 0, now, now);
+      db().prepare('INSERT INTO bridge_rooms (room_id, ref, user_id, network, kind, state, channel, read_only, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(roomId, 'r' + crypto.randomBytes(15).toString('base64url'), userId, network, kind || 'direct', state, channel, readOnly || 0, status, now, now);
     }
     rooms.delete(roomId);
     return roomRow(roomId);
   }
   /** Does the stored row still say what the room's state says (kind, channel, readOnly)? */
-  const rowFits = (row, i) => row.kind === i.kind && row.channel === (i.channel ? 1 : 0) && row.read_only === (i.readOnly ? 1 : 0);
+  const rowFits = (row, i) => row.kind === i.kind && row.channel === (i.channel ? 1 : 0) && row.read_only === (i.readOnly ? 1 : 0) && (row.status || 0) === (i.status ? 1 : 0);
 
   /** Name and kind of a room and the names of its members, from its state (asked once per room and start). */
   async function roomInfo(row, { fresh = false } = {}) {
@@ -253,7 +273,7 @@ function create(opts) {
     const target = opts.target();
     if (!target) throw new hs.HsError('ERR_BRIDGE_UNREACHABLE', 'the homeserver is not set up', 'not_running');
     const st = await hs.state(target, mxidOf(row.user_id), row.room_id);
-    const i = { kind: row.kind, name: null, names: new Map(), avatars: new Map(), avatar: null, network: null, channel: false, readOnly: false, self: mxidOf(row.user_id), power: null, timer: null,
+    const i = { kind: row.kind, name: null, names: new Map(), avatars: new Map(), avatar: null, network: null, channel: false, readOnly: false, status: false, self: mxidOf(row.user_id), power: null, timer: null,
       // stage 7b (Telegram): the chat's peer at the bridge, the channel accounts seen in the room, the bridge's facts
       tgPeer: null, tgChannels: new Set(), members: null, bot: false, broadcast: false, hidden: false };
     for (const ev of st) applyState(i, ev);
@@ -290,9 +310,12 @@ function create(opts) {
       if (p === 'telegram') { const m = /^(user|chat|channel):(\d{1,20})(:-?\d{1,12})?$/.exec(id); i.tgPeer = m ? { type: m[1], id: m[2], topic: !!m[3] } : null; }
       const channel = what === 'channel' || (p === 'telegram' && tgBroadcast(i));
       const kind = what === 'direct' ? 'direct' : (what ? 'group' : null);
-      if ((!kind || kind === i.kind) && channel === i.channel) return null;
+      // version 12: WhatsApp's status room (status@broadcast)
+      const status = what === 'status' || (what === null && i.status);
+      if ((!kind || kind === i.kind) && channel === i.channel && status === i.status) return null;
       if (kind) i.kind = kind;
       i.channel = channel;
+      i.status = status;
       return 'kind';
     }
     // stage 7a: the chat's disappearing messages (bridgev2 database.DisappearingSetting.ToEventContent: {} when off)
@@ -369,8 +392,9 @@ function create(opts) {
 
   // version 7: channel and readOnly whenever the room's state is known (with it, every 'chat' event carries them)
   // stage 7b: members (the count the bridge knows) and bot (a direct chat with a Telegram bot) when known
-  const chatOf = (row, i) => ({ id: row.ref, kind: i ? i.kind : row.kind, name: i ? i.name : null, ...(i ? { avatar: pictureRef(row.user_id, i.avatar), channel: !!i.channel, readOnly: !!i.readOnly, timer: i.timer ? { ...i.timer } : null } : {}),
-    ...(i && i.members != null ? { members: i.members } : {}), ...(i && i.bot ? { bot: true } : {}) });
+  // version 12: status (the room of the contacts' WhatsApp status updates — nobody writes there, readOnly) when it is one
+  const chatOf = (row, i) => ({ id: row.ref, kind: i ? i.kind : row.kind, name: i ? i.name : null, ...(i ? { avatar: pictureRef(row.user_id, i.avatar), channel: !!i.channel, readOnly: !!i.readOnly || !!i.status, timer: i.timer ? { ...i.timer } : null } : {}),
+    ...(i && i.members != null ? { members: i.members } : {}), ...(i && i.bot ? { bot: true } : {}), ...((i ? i.status : row.status === 1) ? { status: true } : {}) });
   const contactOf = (row, i, mxid) => ({ id: contactRef(row.network, mxid), name: (i && i.names.get(mxid)) || null, avatar: i ? pictureRef(row.user_id, i.avatars.get(mxid)) : null });
 
   async function senderOf(row, i, ev) {
@@ -864,7 +888,7 @@ function create(opts) {
         continue;
       }
       looked++;
-      const changed = row.kind !== i.kind || !!i.channel || !!i.readOnly;
+      const changed = row.kind !== i.kind || !!i.channel || !!i.readOnly || !!i.status !== (row.status === 1);
       row = saveRoom(row.room_id, row.user_id, row.network, 'joined', i.kind, i);
       if (changed) out.push({ userId: row.user_id, network: row.network, payload: { type: 'chat', chat: chatOf(row, i), at: Date.now() } });
     }
@@ -983,8 +1007,8 @@ function create(opts) {
   }
   /** chats(userId, network) → [{ id, kind, open, channel, readOnly }] */
   function chats(userId, network) {
-    return db().prepare('SELECT ref, kind, state, channel, read_only FROM bridge_rooms WHERE user_id = ? AND network = ? ORDER BY created_at').all(userId, network)
-      .map((r) => ({ id: r.ref, kind: r.kind, open: r.state === 'joined', channel: r.channel === 1, readOnly: r.read_only === 1 }));
+    return db().prepare('SELECT ref, kind, state, channel, read_only, status FROM bridge_rooms WHERE user_id = ? AND network = ? ORDER BY created_at').all(userId, network)
+      .map((r) => ({ id: r.ref, kind: r.kind, open: r.state === 'joined', channel: r.channel === 1, readOnly: r.read_only === 1 || r.status === 1, ...(r.status === 1 ? { status: true } : {}) }));
   }
 
   /**

@@ -90,6 +90,10 @@
 //                    A Telegram login and contact carry a fixed account id (the numeric user id) for "Erkennen", never
 //                    taken for a number. What the bridge keeps only in its own database — a group's member count, a bot
 //                    — comes from bridgedb.js (read-only).
+//   status           (gc.bridges version 12) the contacts' WhatsApp status updates: their room (status@broadcast) is
+//                    chat.status (events.js); the bridge keeps it (config.js enable_status_broadcast) and never sends
+//                    into it. read() reports "seen" there only with { status: true }; send, react and redact are refused
+//                    (reason status_room), typing is not sent.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -426,7 +430,7 @@ function locations() {
  * no contents: states, versions and memory only.
  */
 function status() {
-  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 11 };
+  if (!previewOn()) return { available: false, reason: 'preview_off', enabled: false, location: 'server', locations: [], networks: [], host: null, history: { enabled: false }, version: 12 };
   const cfg = getConfig();
   const host = hostStatus();
   const up = cfg.enabled && host.state === 'running' && host.services.hs.running;
@@ -481,7 +485,7 @@ function status() {
     // stage 5: the copies of files at the homeserver that went after the plugin took them over
     cleanup: { deleted: cleanup.deleted, lastAt: cleanup.lastAt ? new Date(cleanup.lastAt).toISOString() : null, error: cleanup.error, waiting: runtime.events ? runtime.events.mediaWaiting() : 0 },
     // the version of gc.bridges this server offers (child/bootstrap.js)
-    version: 11,
+    version: 12,
   };
 }
 
@@ -1002,6 +1006,10 @@ function roomFor(userId, network, chatId) {
   if (row.state !== 'joined' && row.state !== 'invited') throw new BridgesError('ERR_BRIDGE', 'this chat is closed', 'chat_closed');
   return { row, target, mxid: mxidOf(userId) };
 }
+/** version 12: the room of the contacts' WhatsApp status updates takes nothing from the person (an answer goes to the direct chat). */
+function noStatusRoom(row) {
+  if (row.status === 1) throw new BridgesError('ERR_BRIDGE', 'the status room takes no messages', 'status_room');
+}
 
 const eventId = (v, what) => { if (!hs.EVENT_RE.test(String(v || ''))) throw new BridgesError('ERR_INVALID', `${what}: a message id`); return v; };
 const txnOf = (v) => { if (!hs.TXN_RE.test(String(v || ''))) throw new BridgesError('ERR_INVALID', 'txnId: 8…96 characters of A-Z a-z 0-9 _ -'); return v; };
@@ -1044,6 +1052,7 @@ function fileContent(m, text, mxc, file) {
  */
 async function send(userId, network, chatId, msg, file = null) {
   const { row, target, mxid } = roomFor(userId, network, chatId);
+  noStatusRoom(row);
   const m = msg && typeof msg === 'object' && !Array.isArray(msg) ? msg : null;
   if (!m) throw new BridgesError('ERR_INVALID', 'message: an object');
   const text = typeof m.text === 'string' ? m.text.replace(/\r\n?/g, '\n').replace(/[\0-\x08\x0b-\x1f\x7f]/g, '') : '';
@@ -1076,6 +1085,7 @@ async function send(userId, network, chatId, msg, file = null) {
 /** gc.bridges.react(userId, network, chatId, { txnId, target, emoji }) → { id } — take it back with redact(…, { target: id }). */
 async function react(userId, network, chatId, r) {
   const { row, target, mxid } = roomFor(userId, network, chatId);
+  noStatusRoom(row);
   const x = r && typeof r === 'object' ? r : {};
   if (typeof x.emoji !== 'string' || !x.emoji || x.emoji.length > 32 || /[\s\0-\x1f\x7f]/.test(x.emoji)) throw new BridgesError('ERR_INVALID', 'emoji: 1…32 characters');
   const content = { 'm.relates_to': { rel_type: 'm.annotation', event_id: eventId(x.target, 'target'), key: x.emoji } };
@@ -1085,20 +1095,30 @@ async function react(userId, network, chatId, r) {
 /** gc.bridges.redact(userId, network, chatId, { txnId, target }) → { ok } — delete a message for everyone, or take a reaction back. */
 async function redact(userId, network, chatId, r) {
   const { row, target, mxid } = roomFor(userId, network, chatId);
+  noStatusRoom(row);
   const x = r && typeof r === 'object' ? r : {};
   await hs.redact(target, mxid, row.room_id, eventId(x.target, 'target'), txnOf(x.txnId));
   return { ok: true };
 }
 
-/** gc.bridges.read(userId, network, chatId, messageId) → { ok } — the person read up to this message. */
-async function read(userId, network, chatId, messageId) {
+/**
+ * gc.bridges.read(userId, network, chatId, messageId, opts?) → { ok } — the person read up to this message.
+ * Version 12: in the room of the WhatsApp status updates only with opts { status: true } — the plugin's explicit word
+ * "the person watched this status" (the bridge tells WhatsApp "seen" for everything in the room up to it, see
+ * events.js). Without it nothing is sent there ({ ok: true, skipped: 'status' }): an older plugin opening the room as
+ * a chat tells nobody anything.
+ */
+async function read(userId, network, chatId, messageId, opts = null) {
   const { row, target, mxid } = roomFor(userId, network, chatId);
-  return hs.read(target, mxid, row.room_id, eventId(messageId, 'messageId'));
+  const id = eventId(messageId, 'messageId');
+  if (row.status === 1 && !(opts && typeof opts === 'object' && opts.status === true)) return { ok: true, skipped: 'status' };
+  return hs.read(target, mxid, row.room_id, id);
 }
 
 /** gc.bridges.typing(userId, network, chatId, on) → { ok } */
 async function typing(userId, network, chatId, on) {
   const { row, target, mxid } = roomFor(userId, network, chatId);
+  if (row.status === 1) return { ok: true, skipped: 'status' };
   return hs.typing(target, mxid, row.room_id, on === true);
 }
 

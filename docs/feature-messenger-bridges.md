@@ -780,6 +780,49 @@ bridge knows them (contacts that share their number). User names never count. A 
 becomes `state: 'telegram'` ("Bestätigt über dein Telegram"); the portal's profile shows the line "An meinem
 verknüpften Telegram".
 
+## WhatsApp-Status (gc.bridges version 12)
+
+What mautrix-whatsapp v0.2610.0 does with the contacts' status updates (read from its source, `pkg/connector`):
+
+* With `network.enable_status_broadcast` (its default, and since version 12 written by `config.js` so a change of the
+  default moves nothing) it makes **one room per person** for the chat `status@broadcast` (`makeWAPortalKey`: the
+  broadcast server gets the login as receiver). Name "WhatsApp Status Broadcast", `RoomTypeDefault` (no
+  `com.beeper.room_type.v2`), no backfill. Every status is a normal message of the contact's ghost: `m.text` (colour and
+  font of a text status are lost), `m.image` / `m.video` with the caption as `body`. A status the contact deletes comes
+  as a redaction; **when a status runs out after 24 hours nothing comes** — WhatsApp sends no such event and the bridge
+  deletes nothing. Own status updates (posted on the phone) are dropped by the bridge (`handlewhatsapp.go`).
+* `network.disable_status_broadcast_send` (default, also written): a message into the room is refused
+  (`ErrBroadcastSendDisabled`) — without it, a message there would post a status of the person to all their contacts.
+* A **reaction** to a status is always refused (`PreHandleMatrixReaction` → `ErrBroadcastReactionUnsupported`, no
+  switch). An answer or a reaction goes to the direct chat with the contact as a normal message (the plugin does it).
+* A **read receipt** in the room (`HandleMatrixReadReceipt`) marks every message between the bridge's last receipt there
+  and this one read at WhatsApp, for every sender (`GetMessagesBetweenTimeQuery`, grouped by sender → `MarkRead`) —
+  the contacts then see the person under "Gesehen von".
+* `mute_status_broadcast` / `status_broadcast_tag` are account data of the person's Matrix account — GateControl does
+  not read them, so they change nothing here and keep their defaults.
+
+**Server.** `events.js` knows the room by its id at the bridge (`CHAT_IDS.whatsapp`: `status@broadcast`, never passed on):
+`chat.status: true`, `kind: 'group'`, `readOnly: true` (kept in `bridge_rooms.status`, migration 156). A plugin before
+version 12 ignores the field and shows the chat as before. `read(…, messageId)` there sends nothing (`{ ok: true,
+skipped: 'status' }`) unless the plugin adds `{ status: true }` — its explicit word "the person watched this status and
+wants WhatsApp to know". `send`, `react`, `redact` there are refused (`ERR_BRIDGE` / `status_room`), `typing` is not sent.
+Rooms known from before (kept as a direct chat — no id fitted): migration 156 sets `channel` of every WhatsApp direct
+chat back to NULL, so `refreshRooms` looks at each once more (a few per tick) and the plugin gets one `chat` event for
+the status room; the next status update would do the same.
+
+**The same contact.** The bridge names the sender of a message by `pickLID(Info.Sender, Info.SenderAlt)`
+(`events.go GetSender`) — in the direct chat and in the status room alike: the LID ghost (`@whatsapp_lid-…`) whenever
+WhatsApp tells the LID, else the number's ghost. `sender.id` is the HMAC of that ghost, so a contact is the same
+`sender.id` in both rooms whenever WhatsApp delivered both messages with the LID (the usual case since WhatsApp moved to
+LIDs). When one came only with the number (an old client of the contact), the two ids differ: the plugin then finds the
+direct chat by the contact's `contactId` in `contacts()` (the bridge's contact store names the LID ghost when it knows
+it) and otherwise offers no answer — it never guesses by name.
+
+**The plugin's part** (messenger 1.25.0): the room's messages are not a chat but status updates of their senders in the
+status row (`GET status/feed` → `bridged`); deleted after 24 hours with their files; no push; "seen" to WhatsApp only on
+the person's own switch, while watching, and only for a status before which everything in the room was watched too (so
+the bridge's "everything up to here" never reports a status nobody saw).
+
 ## Stages
 
 | # | Content |
@@ -790,7 +833,7 @@ verknüpften Telegram".
 | 4 | files in both directions through the plugin's media with the virus scan, pictures of chats and contacts, a chat with a new number (API only); the apps follow. 4c: a new chat with a contact of the bridge (`contacts`, `matchNumbers`, `createDmByRef`, gc.bridges version 6) |
 | 5 | this: history (each person: off / 30 days / everything; the plugin files it at night in small portions), the nightly encrypted snapshot of the bridges' data in the GateControl backup with restore, the files of bridged chats in a sealed media area on a storage target (plugin), clean-up of the homeserver's copies, "phone not seen" from the bridge's own warning, the pins to `update.sh` (marker 8) and "client outdated" |
 | 6 | a gateway as the place, moving between places |
-| 7 | 7a: Signal (see "Signal"; gc.bridges version 10, update.sh marker 10, the compose file with Signal and Telegram), 7b: Telegram (see "Telegram"; gc.bridges version 11, the administrator's application id, `bridgedb.js`) |
+| 7 | 7a: Signal (see "Signal"; gc.bridges version 10, update.sh marker 10, the compose file with Signal and Telegram), 7b: Telegram (see "Telegram"; gc.bridges version 11, the administrator's application id, `bridgedb.js`); WhatsApp status in the status row (see "WhatsApp-Status"; gc.bridges version 12) |
 
 ## Files
 
