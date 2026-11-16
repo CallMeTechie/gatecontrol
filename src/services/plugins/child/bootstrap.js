@@ -349,11 +349,13 @@ function makeBridges() {
      *  11: Telegram — the network 'telegram', status().telegramApp { set, setAt, setBy }, needs 'app',
      *  configure({ telegramApp: { apiId, apiHash } | null }), login steps with retry, chat.members / chat.bot, message.tooLarge;
      *  12: WhatsApp status — chat.status (the room of the contacts' status updates, readOnly), read(…, { status: true }),
-     *  send / react / redact there refused with reason status_room) */
-    version: 12,
-    /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion, clientOutdated, flows, history: { maxDays, phoneConfirms }, needs }], host, messages, history, backup, cleanup, stickers: { animated }, telegramApp: { set, setAt, setBy } } */
+     *  send / react / redact there refused with reason status_room; 13: old media from the phone — status().mediaRequests
+     *  { mode, options, dailyAt, timeZone }, configure({ mediaRequests: 'off' | 'daily' | 'now' }), message.oldMedia
+     *  { kind, name, request }, edit.media (the file the phone sent later) and edit.oldMedia { request: 'failed' }) */
+    version: 13,
+    /** status() → { available, reason, enabled, location, locations, networks: [{ id, enabled, state, version, memMb, limitMb, outdated, wantVersion, clientOutdated, flows, history: { maxDays, phoneConfirms }, needs }], host, messages, history, backup, cleanup, stickers: { animated }, telegramApp: { set, setAt, setBy }, mediaRequests: { mode, options, dailyAt, timeZone } } */
     status: () => hostCall('bridges.status', {}),
-    /** configure({ enabled?, networks?: { whatsapp?: boolean, signal?: boolean, telegram?: boolean }, history?: boolean, backupNow?: true, backupTime?: 'HH:MM', animatedStickers?: boolean, telegramApp?: { apiId, apiHash } | null }) → status() — inside a changing request of an administrator; the Telegram application id is kept encrypted and never returned */
+    /** configure({ enabled?, networks?: { whatsapp?: boolean, signal?: boolean, telegram?: boolean }, history?: boolean, backupNow?: true, backupTime?: 'HH:MM', animatedStickers?: boolean, mediaRequests?: 'off' | 'daily' | 'now', telegramApp?: { apiId, apiHash } | null }) → status() — inside a changing request of an administrator; the Telegram application id is kept encrypted and never returned */
     configure: (patch) => hostCall('bridges.configure', { patch }),
     login,
     /** logins(userId, network) → [{ network, id (a reference — HMAC per person; never the bridge’s id, which is the number), name, state: connected | connecting | logged_out | error | unknown, since, error }] */

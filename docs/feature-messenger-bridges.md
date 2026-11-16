@@ -226,7 +226,9 @@ differs from the built-in defaults is written, the bridge fills in the rest):
 `backfill.enabled`; `double_puppet.*` (emptied — the defaults carry example
 servers); `encryption.allow/default/require`; `logging`;
 `network.history_sync.max_initial_conversations` (0),
-`.request_full_sync`, `.media_requests.auto_request_media`;
+`.request_full_sync`, `.media_requests.auto_request_media` (and, with the
+administrator's switch since gc.bridges version 13, `.request_method` — see
+[Old media from the phone](#old-media-from-the-phone-gcbridges-version-13));
 `network.displayname_template` (`{{or .BusinessName .PushName}}`, see
 [Names](#names)).
 
@@ -486,8 +488,9 @@ So the split:
 
 * **Bridge (global):** with history allowed (`bridges.history`, on by default; card „Brücken“ → `configure({ history })`)
   `backfill: { enabled: true, max_initial_messages: 200, max_catchup_messages: 100, queue: { enabled: false } }` and
-  `history_sync.max_initial_conversations: 30`, never `request_full_sync`, never `auto_request_media` (no requests to
-  the phone for files that ran out). Off: as in stage 3. A change rewrites the configuration (new revision → `update.sh`
+  `history_sync.max_initial_conversations: 30`, never `request_full_sync`; `auto_request_media` (requests to the phone
+  for files that ran out) only with the administrator's switch of version 13 (see "Old media from the phone"). Off: as
+  in stage 3. A change rewrites the configuration (new revision → `update.sh`
   recreates the containers).
 * **Server (per person):** an event is **history** when it is older than the person's link (`bridges.linked_at`,
   noted when a link completes) **and** older than the room is here (`bridge_rooms.created_at`), each minus a minute.
@@ -823,6 +826,55 @@ status row (`GET status/feed` → `bridged`); deleted after 24 hours with their 
 the person's own switch, while watching, and only for a status before which everything in the room was watched too (so
 the bridge's "everything up to here" never reports a status nobody saw).
 
+## Old media from the phone (gc.bridges version 13)
+
+A picture, video, voice message or file of the history whose copy at WhatsApp ran out (WhatsApp keeps the files of a
+chat on its servers only for a while; the phone keeps them) cannot be downloaded by the bridge. What mautrix-whatsapp
+v0.2610.0 then does (read from its source, `pkg/msgconv/wa-media.go`, `pkg/connector/connector.go`, `mediarequest.go`,
+`backfill.go`, `events.go`):
+
+* It writes an **`m.notice`** in place of the file: `Old <kind>. <suffix>` (`<kind>`: `photo`, `sticker`, `video
+  attachment`, `video message`, `voice message`, `audio attachment`, `file attachment`; a caption follows after a blank
+  line), with the file's description in `fi.mau.whatsapp.failed_media` (`type`, `content` with `msgtype` and the caption,
+  `type_description`, the keys). The suffix says what the bridge was configured with: `Requesting old media is not
+  enabled on this bridge.` / `Media will be requested from your phone automatically soon.` / `… overnight.`
+* It keeps a **request** for the file in its database either way (`media_backfill_requests`, status "not requested").
+* With `history_sync.media_requests.auto_request_media` it asks the **phone** for the file (a media retry receipt;
+  the phone uploads it again): `request_method: immediate` at once when the message is backfilled (what was waiting
+  from before is not asked for); `local_time` from a loop that sends everything still waiting, then every 24 hours.
+  Its time of day (`request_local_time`, minutes after midnight) counts in the time zone of the person's login — and
+  **v0.2610.0 never sets one** (`WALogin.Timezone` is never written, `LoadTimezone` gives nil): the loop then starts
+  **8 hours after the bridge connected**. The bridges restart every night for their snapshot (`BACKUP_TIME`, see
+  "Backup"), so the requests go out about 8 hours after that time, once a day (`03:10` → about `11:10`; a snapshot at
+  `19:00` gives about `03:00`). `request_local_time` is therefore not written.
+* When the phone answers, the bridge **edits the notice** (`m.replace`, `WAMediaRetry`) into the file. When it cannot
+  (not on the phone any more, an error), into the notice `Failed to bridge media after re-requesting it from your
+  phone: …`.
+* Signal and Telegram have no such option: Telegram's bridge fetches every file from Telegram's servers, Signal's has
+  no media request (neither key list holds one).
+
+**Configuration.** The administrator's switch (card „Brücken“ of the messenger → `configure({ mediaRequests })`,
+setting `bridges.media_requests`): `'off'` (the default) writes `media_requests: { auto_request_media: false }` exactly as
+before — an update to this version recreates no container; `'daily'` writes `auto_request_media: true, request_method:
+local_time`; `'now'` `auto_request_media: true, request_method: immediate`. A change is a new revision (`config.rev`),
+`update.sh` recreates the WhatsApp bridge. `HISTORY.conversations` stays 30. `status().mediaRequests: { mode, options,
+dailyAt, timeZone }` — `dailyAt`: about when `'daily'` asks (the snapshot's time plus 8 hours, in `timeZone`).
+
+**Server.** The notice never reaches a plugin as text (`events.js`, WhatsApp rooms only): an `m.notice` of a contact
+with `fi.mau.whatsapp.failed_media` or the words above becomes a message of kind `'unsupported'` with `oldMedia: { kind:
+image | video | voice | audio | file | sticker, name (a file's name, else null), request: off | daily | now }` and the
+caption as its text. `request` is what the bridge's suffix says (what it was configured with when it wrote the notice),
+else the administrator's choice now. The bridge's other notice about a file it could not carry over (`Failed to bridge
+photo, please view it on the WhatsApp app` — also for a live message) is `oldMedia` with `request: 'failed'`. The edit
+with the file is an `edit` that carries `media` like a message (kind, reference, type, size, length, waveform — the file
+is noted in `bridge_media` for the clean-up) next to the text it always had; the edit "Failed to bridge media after
+re-requesting it …" is an `edit` with `text: null` and `oldMedia: { request: 'failed' }`. Plugins before version 13
+ignore both fields (and an edit without text); they show the message as "not shown here yet".
+
+**The plugin's part** (messenger 1.26.0): the placeholder „Ältere Sprachnachricht – öffne sie in WhatsApp“ (off) /
+„… – wird später vom Handy geladen“ (daily) / „… – wird geladen“ (now) / „… – kam vom Handy nicht; öffne sie in WhatsApp“
+(failed); the edit with the file turns it into the file (fetched like any other, with the virus scan).
+
 ## Stages
 
 | # | Content |
@@ -833,7 +885,7 @@ the bridge's "everything up to here" never reports a status nobody saw).
 | 4 | files in both directions through the plugin's media with the virus scan, pictures of chats and contacts, a chat with a new number (API only); the apps follow. 4c: a new chat with a contact of the bridge (`contacts`, `matchNumbers`, `createDmByRef`, gc.bridges version 6) |
 | 5 | this: history (each person: off / 30 days / everything; the plugin files it at night in small portions), the nightly encrypted snapshot of the bridges' data in the GateControl backup with restore, the files of bridged chats in a sealed media area on a storage target (plugin), clean-up of the homeserver's copies, "phone not seen" from the bridge's own warning, the pins to `update.sh` (marker 8) and "client outdated" |
 | 6 | a gateway as the place, moving between places |
-| 7 | 7a: Signal (see "Signal"; gc.bridges version 10, update.sh marker 10, the compose file with Signal and Telegram), 7b: Telegram (see "Telegram"; gc.bridges version 11, the administrator's application id, `bridgedb.js`); WhatsApp status in the status row (see "WhatsApp-Status"; gc.bridges version 12) |
+| 7 | 7a: Signal (see "Signal"; gc.bridges version 10, update.sh marker 10, the compose file with Signal and Telegram), 7b: Telegram (see "Telegram"; gc.bridges version 11, the administrator's application id, `bridgedb.js`); WhatsApp status in the status row (see "WhatsApp-Status"; gc.bridges version 12); old media from the phone (see "Old media from the phone"; gc.bridges version 13) |
 
 ## Files
 
